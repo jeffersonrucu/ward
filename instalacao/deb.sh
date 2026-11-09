@@ -62,13 +62,14 @@ cp -a -- "$STAGING" "$PACOTE"
 find "$PACOTE" -perm /6000 -exec chmod ug-s -- {} +
 find "$PACOTE" -type d -exec chmod 0755 -- {} +
 
-# Scripts do mantenedor. As marcas `#@GRUPOS@` (grupos.sh), `#@CHROME@` (chrome.sh) e
-# `#@PASTAS@` (pastas comuns de arvore.txt) viram o conteúdo; cada marca que um modelo
+# Scripts do mantenedor. As marcas `#@GRUPOS@` (grupos.sh), `#@CHROME@` (chrome.sh),
+# `#@DESPEJO@` (despejo.sh, Fase 51c) e `#@PASTAS@` (pastas comuns de arvore.txt) viram
+# o conteúdo; cada marca que um modelo
 # usa aparece uma vez só, e nenhuma sobra.
 install -d -m 0755 -- "$PACOTE/DEBIAN"
-/usr/bin/python3 -I -B - "$AQUI/deb" "$AQUI/grupos.sh" "$AQUI/chrome.sh" "$AQUI/arvore.txt" "$PACOTE/DEBIAN" <<'EOF'
+/usr/bin/python3 -I -B - "$AQUI/deb" "$AQUI/grupos.sh" "$AQUI/chrome.sh" "$AQUI/despejo.sh" "$AQUI/arvore.txt" "$PACOTE/DEBIAN" <<'EOF'
 import re, sys
-modelos, grupos, chrome, arvore, saida = sys.argv[1:]
+modelos, grupos, chrome, despejo, arvore, saida = sys.argv[1:]
 pastas = []
 for linha in open(arvore, encoding="utf-8"):
     campos = linha.split()
@@ -81,6 +82,7 @@ for linha in open(arvore, encoding="utf-8"):
 trocas = {
     "#@GRUPOS@\n": open(grupos, encoding="utf-8").read(),
     "#@CHROME@\n": open(chrome, encoding="utf-8").read(),
+    "#@DESPEJO@\n": open(despejo, encoding="utf-8").read(),
     "#@PASTAS@\n": "\n".join(pastas) + "\n",
 }
 for s in ("preinst", "postinst", "prerm", "postrm"):

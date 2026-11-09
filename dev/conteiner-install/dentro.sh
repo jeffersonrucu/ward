@@ -163,6 +163,18 @@ confere "V9.6: allowed_origins só com o id" "$(grep allowed_origins /etc/opt/ch
 confere "Fase 51a: política com NativeMessagingUserLevelHosts false" "$(python3 -I -c 'import json,sys; p=json.load(open(sys.argv[1])); print(p["NativeMessagingUserLevelHosts"] is False, sorted(p))' /etc/opt/chrome/policies/managed/ward.json)" "True ['ExtensionSettings', 'NativeMessagingUserLevelHosts']"
 igual_marca="$(for g in ward-app ward-nm; do echo "$g $(getent group "$g" | cut -d: -f3)"; done)"
 confere "Fase 51a: marca dos grupos criados (nome e gid)" "$(sort /usr/local/lib/ward/grupos-criados)" "$igual_marca"
+# Fase 51c (S2, S8): sem o apport e o libwebkit2gtk na imagem, as pastas são criadas e a
+# lista sai com os caminhos do multiarch; o systemd lê o drop-in do systemd-coredump.
+confere "51c: sem o libwebkit2gtk-4.1-0, a instalação avisa" "$r" "libwebkit2gtk-4.1-0 ($(dpkg --print-architecture)) não está instalado"
+case "$(dpkg --print-architecture)" in arm64) MA=aarch64-linux-gnu ;; *) MA=x86_64-linux-gnu ;; esac
+for l in report-ignore blacklist.d; do
+    confere "51c: /etc/apport/$l/ward com o WebKitWebProcess" "$(cat "/etc/apport/$l/ward")" "/usr/lib/$MA/webkit2gtk-4.1/WebKitWebProcess"
+    confere "51c: /etc/apport/$l/ward com o ward-app" "$(cat "/etc/apport/$l/ward")" "/usr/local/bin/ward-app"
+done
+cc="$(systemd-analyze cat-config systemd/coredump.conf 2>&1 || true)"
+confere "51c: systemd-analyze cat-config lê o drop-in do Ward" "$cc" "# /etc/systemd/coredump.conf.d/ward.conf"
+confere "51c: Storage=none" "$cc" "Storage=none"
+confere "51c: ProcessSizeMax=0" "$cc" "ProcessSizeMax=0"
 confere "Fase 51a: marca root 0644" "$(stat -c '%U %a' /usr/local/lib/ward/grupos-criados)" "root 644"
 
 # V9.11: os grupos criados.
@@ -339,6 +351,7 @@ confere "V9.10 nenhum arquivo do Ward" "$(nada_do_ward)" "nada"
 for d in /usr/local/lib/ward /usr/local/share/ward /run/ward; do
     [ ! -e "$d" ] && ok "V9.10 $d apagada" || falhou "V9.10 $d ficou"
 done
+nao_tem "51c: depois do uninstall, o systemd-coredump não lê mais o drop-in" "$(systemd-analyze cat-config systemd/coredump.conf 2>&1 || true)" "ward.conf"
 confere "V9.10 grupos apagados" "$(getent group ward-app ward-nm || echo ausente)" "ausente"
 confere "V9.10 nenhuma unit wardd@ carregada" "[$(systemctl list-units --all --plain --no-legend 'wardd@*' || true)]" "[]"
 nao_tem "V9.10 wardd@$UID_T.socket não está mais habilitado" "$(systemctl is-enabled "wardd@$UID_T.socket" 2>&1 || true)" "enabled"

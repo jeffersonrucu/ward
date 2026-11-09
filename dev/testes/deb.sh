@@ -15,7 +15,10 @@
 #    dentro dele: `dpkg -i` sem sshpass (falha), grupo fora de D60 (recusa sem arquivo),
 #    instalação, reinstalação, `dpkg -r`/`-P` (`dev/conteiner-deb/dentro.sh`). Mesmas
 #    permissões do `make teste-units`: CAP_SYS_ADMIN e sem AppArmor só para o systemd
-#    remontar a subárvore de cgroup dele.
+#    remontar a subárvore de cgroup dele. CAP_SYS_PTRACE (Fase 51c) só para o apport,
+#    chamado à mão como root, ler o /proc/<pid>/exe do processo "crashado" do uid 1000.
+#    O apport e o systemd-coredump rodam com um core falso; o kernel.core_pattern (do
+#    host) nunca é escrito: o /proc/sys do contêiner é só leitura, conferido antes.
 #
 # Fica fora do `make check` (exige Docker). Uso: dev/testes/deb.sh [--so-host]
 
@@ -116,6 +119,11 @@ grep -q '^conferir_politicas_chrome()' "$TMP/control/preinst" && grep -q '^     
     ok "preinst confere as outras políticas do Chrome (Fase 51a)" || falhou "preinst sem conferir_politicas_chrome"
 grep -q '^apagar_grupos_marcados()' "$TMP/control/postrm" && ok "postrm tem a marca dos grupos (Fase 51a)" || falhou "postrm sem apagar_grupos_marcados"
 grep -q '^avisar_manifestos_de_usuario()' "$TMP/control/postinst" && ok "postinst avisa dos manifestos do perfil (Fase 51a)" || falhou "postinst sem o aviso"
+grep -q '^avisar_core_pattern()' "$TMP/control/postinst" && grep -q '^        avisar_core_pattern$' "$TMP/control/postinst" &&
+    ok "postinst avisa de core_pattern fora do apport/systemd-coredump (Fase 51c)" || falhou "postinst sem avisar_core_pattern"
+confere "Fase 51c: pacote com a lista do apport (WebKitWebProcess)" "$(cat "$X/etc/apport/report-ignore/ward")" "/webkit2gtk-4.1/WebKitWebProcess"
+cmp -s "$RAIZ/instalacao/coredump.conf.d/ward.conf" "$X/etc/systemd/coredump.conf.d/ward.conf" &&
+    ok "Fase 51c: pacote com o drop-in do systemd-coredump" || falhou "Fase 51c: drop-in do systemd-coredump fora do pacote"
 for s in preinst postinst prerm postrm; do
     confere "$s sem marca de modelo" "$(grep -c '#@' "$TMP/control/$s" || true)" "0"
 done
@@ -196,7 +204,7 @@ IMAGEM="ward-teste/deb-systemd:1"
 docker build --quiet -t "$IMAGEM" -f "$RAIZ/dev/conteiner-deb/Dockerfile" "$RAIZ/dev/conteiner-units" >/dev/null
 docker run -d --name "$NOME" --network none --pull never \
     --tmpfs /run --tmpfs /run/lock --tmpfs /tmp \
-    --cgroupns=private --cap-add SYS_ADMIN --security-opt apparmor=unconfined \
+    --cgroupns=private --cap-add SYS_ADMIN --cap-add SYS_PTRACE --security-opt apparmor=unconfined \
     --ulimit memlock=-1:-1 \
     -v "$C:/opt/teste:ro" \
     -v "$RAIZ/dev/conteiner-deb/dentro.sh:/opt/dentro.sh:ro" \

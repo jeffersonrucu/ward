@@ -68,6 +68,56 @@ limpar_grupos() {
     for g in ward-app ward-nm; do groupdel "$g" 2>/dev/null || true; done
 }
 
+# --- Fase 51c (S2, S8): crash dos auxiliares do WebKitGTK ----------------------------
+# O kernel.core_pattern é do host (não tem namespace): o teste nunca o escreve e chama o
+# apport e o systemd-coredump à mão, como o kernel chamaria, com um core falso (bytes
+# aleatórios) de um `sleep` do uid 1000. Antes de tudo: /proc/sys só leitura.
+if [ -w /proc/sys/kernel/core_pattern ] || [ -w /proc/sys/fs/suid_dumpable ]; then
+    echo "FALHOU: /proc/sys gravável no contêiner; o teste pararia de proteger o core_pattern do host"
+    exit 1
+fi
+ok "51c: /proc/sys só leitura (o core_pattern do host fica intacto)"
+mapfile -t AUX_WEBKIT < <(dpkg -L libwebkit2gtk-4.1-0 | grep -E '/webkit2gtk-4\.1/WebKit[A-Za-z]*Process$' | sort)
+[ "${#AUX_WEBKIT[@]}" -ge 3 ] && ok "51c: ${#AUX_WEBKIT[@]} auxiliares no libwebkit2gtk-4.1-0 (${AUX_WEBKIT[*]##*/})" ||
+    falhou "51c: auxiliares do WebKitGTK não achados (${AUX_WEBKIT[*]})"
+WEBPROC="$(printf '%s\n' "${AUX_WEBKIT[@]}" | grep '/WebKitWebProcess$' || true)"
+NUCLEO=/tmp/nucleo-falso
+head -c 65536 /dev/urandom >"$NUCLEO"
+install -d -m 3777 /var/crash
+install -d -m 0755 /var/lib/systemd/coredump
+setpriv --reuid="$UID_T" --regid="$UID_T" --clear-groups sleep 3600 &
+ALVO=$!
+sleep 0.3
+# crash_apport <executável>: "gravado" se o apport escreveu o relatório em /var/crash
+# (legível pelo usuário: dump mode 1, o dos auxiliares dumpable), "nada" se não. O
+# limite de core é 0, como o RLIMIT_CORE que o app passa aos auxiliares.
+crash_apport() {
+    local exe="$1" rel
+    rel="/var/crash/${exe//\//_}.$UID_T.crash"
+    rm -f -- "$rel"
+    /usr/share/apport/apport "-p$ALVO" -s11 -c0 -d1 "-P$ALVO" "-u$UID_T" "-g$UID_T" -- "${exe//\//!}" <"$NUCLEO" >/dev/null 2>&1 || true
+    if [ -e "$rel" ]; then echo "gravado $(stat -c %U -- "$rel")"; rm -f -- "$rel"; else echo "nada"; fi
+}
+# crash_coredump: quantos cores o systemd-coredump guardou. O limite passado é o fixo
+# do /usr/lib/sysctl.d/50-coredump.conf do Ubuntu (ignora o RLIMIT_CORE).
+SOCK_CD=/run/systemd/coredump
+systemd-socket-activate --seqpacket -a -l "$SOCK_CD" /opt/coredump/usr/lib/systemd/systemd-coredump >/tmp/coredump.log 2>&1 &
+ATIVADOR=$!
+for _ in $(seq 1 50); do [ -S "$SOCK_CD" ] && break; sleep 0.1; done
+crash_coredump() {
+    rm -f /var/lib/systemd/coredump/core.*
+    /opt/coredump/usr/lib/systemd/systemd-coredump "$ALVO" "$UID_T" "$UID_T" 11 "$(date +%s)" 9223372036854775808 conteiner 1 <"$NUCLEO" >/dev/null 2>&1 || true
+    sleep 1
+    local n
+    n="$(find /var/lib/systemd/coredump -maxdepth 1 -name 'core.*' | wc -l)"
+    rm -f /var/lib/systemd/coredump/core.*
+    echo "cores=$n"
+}
+# Controle sem o Ward: a falha da auditoria do M5 reproduzida (relatório do
+# WebKitWebProcess do usuário, mesmo com o limite 0; core guardado pelo systemd-coredump).
+confere "51c controle sem o Ward: o apport grava o crash do WebKitWebProcess (legível pelo usuário)" "$(crash_apport "$WEBPROC")" "gravado $USUARIO"
+confere "51c controle sem o Ward: o systemd-coredump guarda o core" "$(crash_coredump)" "cores=1"
+
 # --- V9.8: o que o Ward não pode tocar, antes de tudo ---------------------------------
 # Chave pessoal falsa (gerada aqui, descartada com o contêiner), config e known_hosts do
 # usuário; /etc/ssh do openssh-client; o ambiente do gerente do usuário com um
@@ -183,6 +233,20 @@ igual "overrides registrados" "$(overrides)" "$(printf 'root ward-app 2755 /usr/
 confere "manifesto de native messaging com o id" "$(cat /etc/opt/chrome/native-messaging-hosts/br.ward.nm.json)" "chrome-extension://$ID/"
 confere "Fase 51a: política com NativeMessagingUserLevelHosts false" "$(grep -c '^  "NativeMessagingUserLevelHosts": false,$' /etc/opt/chrome/policies/managed/ward.json)" "1"
 confere "Fase 51a: marca dos grupos criados pelo preinst" "$(sort /usr/local/lib/ward/grupos-criados)" "$(for g in ward-app ward-nm; do echo "$g $(getent group "$g" | cut -d: -f3)"; done)"
+# Fase 51c: a lista cobre cada auxiliar do pacote (caminho real do dpkg -L), e o apport
+# e o systemd-coredump de verdade não gravam nada; controles mostram que não calou tudo.
+for l in report-ignore blacklist.d; do
+    for c in "${AUX_WEBKIT[@]}" /usr/local/bin/ward-app /usr/local/lib/ward/ward-nm /usr/local/bin/wardd /usr/local/bin/ward; do
+        grep -qxF -- "$c" "/etc/apport/$l/ward" || falhou "51c: $c fora de /etc/apport/$l/ward"
+    done
+done
+ok "51c: /etc/apport/{report-ignore,blacklist.d}/ward com os auxiliares do dpkg -L e os binários do Ward"
+for c in "${AUX_WEBKIT[@]}"; do
+    confere "51c com o Ward: o apport não grava o crash de ${c##*/}" "$(crash_apport "$c")" "nada"
+done
+confere "51c com o Ward: crash do ward-app sem relatório" "$(crash_apport /usr/local/bin/ward-app)" "nada"
+confere "51c controle com o Ward: o apport ainda grava o crash de outro programa (/usr/bin/sleep)" "$(crash_apport /usr/bin/sleep)" "gravado"
+confere "51c com o Ward: o systemd-coredump não guarda core" "$(crash_coredump)" "cores=0"
 for g in ward-app ward-nm; do
     IFS=: read -r _ _ gid membros <<<"$(getent group "$g")"
     if [ "$gid" -gt 0 ] && [ "$gid" -lt 1000 ]; then ok "V9.11 (.deb) $g é de sistema (gid $gid)"; else falhou "V9.11 (.deb) $g gid $gid"; fi
@@ -246,6 +310,13 @@ confere "V9.10 nenhuma unit wardd@ carregada" "[$(systemctl list-units --all --p
 confere "V9.10 nenhum link em sockets.target.wants" "$(ls /etc/systemd/system/sockets.target.wants/ 2>/dev/null | grep -c wardd || true)" "0"
 confere "V9.10 o cofre do usuário intacto" "$(sha256sum "$COFRE_T/cofre.ward"; stat -c '%U %a' "$COFRE_T/cofre.ward")" "$antes"
 igual "V9.8 SSH igual depois de remover" "$SSH_ANTES" "$(retrato_ssh)"
+# Fase 51c: dpkg -r tira a lista e o drop-in (o README do apport fica).
+for c in /etc/apport/report-ignore/ward /etc/apport/blacklist.d/ward /etc/systemd/coredump.conf.d/ward.conf; do
+    [ ! -e "$c" ] && ok "51c dpkg -r: $c apagado" || falhou "51c dpkg -r: $c ficou"
+done
+[ -e /etc/apport/report-ignore/README.denylist ] && ok "51c dpkg -r: o README do pacote apport fica" || falhou "51c dpkg -r: README do apport apagado"
+confere "51c dpkg -r: o apport volta a gravar o crash do WebKitWebProcess" "$(crash_apport "$WEBPROC")" "gravado"
+confere "51c dpkg -r: o systemd-coredump volta a guardar" "$(crash_coredump)" "cores=1"
 r="$(dpkg -P ward 2>&1; echo "saiu=$?")"
 confere "dpkg -P depois do -r sai 0" "$r" "saiu=0"
 confere "dpkg -P: pacote fora do banco do dpkg" "$(status ward)" "ausente"
@@ -266,6 +337,8 @@ confere "dpkg -r: ward-app (criado pelo preinst) apagado" "$(getent group ward-a
 groupdel ward-nm
 dpkg -P ward >/dev/null 2>&1 || true
 
+kill "$ATIVADOR" "$ALVO" 2>/dev/null || true
+rm -f /var/crash/*.crash /var/lib/systemd/coredump/core.* "$NUCLEO"
 usuario unset-environment "$VAR_AGENTE_SSH" >/dev/null 2>&1 || true
 systemctl stop "user@$UID_T.service" "user-runtime-dir@$UID_T.service" || true
 
