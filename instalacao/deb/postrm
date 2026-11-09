@@ -1,0 +1,49 @@
+#!/bin/bash -p
+# postrm do `.deb` do Ward (Fase 52; D47, D60; V9.9, V9.10). Depois de o dpkg apagar os
+# arquivos: tira os overrides dos binários setgid, /run/ward (se vazia), as units do
+# systemd e os grupos `ward-app`/`ward-nm` (como o `make uninstall`). Nunca toca no home:
+# o cofre e os backups em ~/.local/share/ward/ ficam.
+#
+# Na instalação abortada (preinst recusou) só saem os overrides: um grupo que já existia
+# e foi recusado (D60) é do administrador, não do Ward.
+
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export LC_ALL=C
+set -euo pipefail
+
+tirar_overrides() {
+    local c
+    for c in /usr/local/bin/ward-app /usr/local/lib/ward/ward-nm; do
+        if [ -n "$(dpkg-statoverride --list "$c" || true)" ]; then
+            dpkg-statoverride --quiet --remove "$c" || true
+        fi
+    done
+}
+
+case "${1:-}" in
+    remove | purge)
+        tirar_overrides
+        if [ -d /run/systemd/system ]; then
+            systemctl daemon-reload || true
+            systemctl reset-failed 'wardd@*' 2>/dev/null || true
+        fi
+        if [ -d /run/ward ] && [ ! -L /run/ward ]; then
+            for p in /run/ward/*; do
+                [ -d "$p" ] && [ ! -L "$p" ] && { rmdir -- "$p" 2>/dev/null || printf 'ward: aviso: %s não está vazia; ficou\n' "$p" >&2; }
+            done
+            rmdir /run/ward 2>/dev/null || printf 'ward: aviso: /run/ward não está vazia; ficou\n' >&2
+        fi
+        for g in ward-nm ward-app; do
+            if grep -q -- "^${g}:" /etc/group; then
+                groupdel "$g" || printf 'ward: aviso: não deu para apagar o grupo %s\n' "$g" >&2
+            fi
+        done
+        printf 'ward: o cofre e os backups em ~/.local/share/ward/ não foram tocados\n'
+        ;;
+    abort-install)
+        tirar_overrides
+        ;;
+    upgrade | failed-upgrade | abort-upgrade | disappear) ;;
+    *) printf 'ward (postrm): argumento desconhecido: %s\n' "${1:-}" >&2; exit 1 ;;
+esac
+exit 0

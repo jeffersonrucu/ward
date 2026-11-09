@@ -68,7 +68,7 @@ CARGO_DENY_VERSAO := 0.20.2
 	dev-cofre-conferir dev-variacoes teste-dev-cofre dev-daemon dev-daemon-parar teste-cli teste-docker-uid teste-units \
 	app-front app-check app-ponte teste-docker-plataforma teste-sem-modo-teste teste-socket-ataques \
 	teste-webkit-real teste-logs-app teste-nm teste-playwright teste-skill teste-migracao \
-	release install uninstall teste-install extensao teste-extensao
+	release install uninstall teste-install extensao teste-extensao deb extensao-crx teste-deb
 
 ## check: pré-checagem das origens, depois fmt, clippy -D warnings, testes, cargo audit,
 ## cargo deny e gitleaks, nessa ordem (V1.1)
@@ -409,6 +409,46 @@ teste-install: origens
 	$(CARGO) build --quiet --locked -p ward-plataforma --features modo-teste --example ward-plataforma-conteiner
 	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd
 	dev/testes/install.sh
+
+# --- Pacote .deb (Fase 52; D18; V9.9) ------------------------------------------------
+# `make deb` (como o usuário) monta o staging com o `instalar.sh` (DESTDIR) e o empacota
+# por `dpkg-deb`; os binários setgid vão 0755 no pacote e o 2755 entra pelo
+# `dpkg-statoverride` do preinst. `make extensao-crx` empacota a extensão pelo Chrome.
+DEB_DIR ?= $(CURDIR)/target/deb
+CHAVE_EXTENSAO ?= $(CURDIR)/.dev/extensao/chave.pem
+deb: export DEB_DIR := $(DEB_DIR)
+deb: export EXTENSAO_ID := $(EXTENSAO_ID)
+deb: export EXTENSAO_CRX := $(EXTENSAO_CRX)
+deb: export BIN_WARD := $(BIN_WARD)
+deb: export BIN_WARDD := $(BIN_WARDD)
+deb: export BIN_NM := $(BIN_NM)
+deb: export BIN_APP := $(BIN_APP)
+extensao-crx: export CHAVE_EXTENSAO := $(CHAVE_EXTENSAO)
+
+## deb: `make deb EXTENSAO_ID=<id> EXTENSAO_CRX=<pacote.crx>` (depois de `make release`),
+## sem sudo: target/deb/ward_<versão>_<arq>.deb com a árvore do `make install`, Depends
+## com sshpass; instalar com `sudo dpkg -i` (roteiro em docs/instalacao.md)
+deb:
+	instalacao/deb.sh
+
+## extensao-crx: empacota extensao/dist/ (do `make extensao`) em target/extensao/ward.crx
+## pelo Chrome com a chave .dev/extensao/chave.pem (CHAVE_EXTENSAO); recusa id ≠ ID_EXTENSAO
+extensao-crx:
+	instalacao/empacotar-extensao.sh
+
+## teste-deb: V9.9 (Fase 52): `make deb` com os artefatos sem `modo-teste` e um CRX3 falso
+## (lista do `dpkg-deb -c` = staging, root/root, sem setgid no pacote, Depends com
+## sshpass, recusas) e, num contêiner ubuntu:24.04 com systemd e sem rede, `dpkg -i`
+## (falta de sshpass, grupo fora de D60, instalação, statoverride 2755, socket, primeira
+## conexão, ~/.ssh e /etc/ssh intactos, V9.8), reinstalar, `dpkg -r`/`-P` com o cofre
+## intacto. Exige Docker (o build da imagem usa rede) e gcc; fora do `make check`
+teste-deb: origens
+	$(CARGO) build --quiet --locked -p wardd --bin wardd --example wardd-cliente-teste --target-dir target/sem-modo-teste
+	$(CARGO) build --quiet --locked -p ward --bin ward --target-dir target/sem-modo-teste
+	$(CARGO) build --quiet --locked -p ward-nm --bin ward-nm --target-dir target/sem-modo-teste
+	$(CARGO) build --quiet --locked -p ward-app-nucleo --example partida-conteiner --target-dir target/sem-modo-teste
+	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd
+	dev/testes/deb.sh
 
 # --- Daemon de teste (Fase 22) ------------------------------------------------------
 # `wardd` com a feature `modo-teste`: cofre de `.dev/`, socket em
