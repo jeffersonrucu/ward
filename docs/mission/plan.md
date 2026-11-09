@@ -464,6 +464,8 @@ Pendências da 26a (2026-11-09): lista final no handoff (PATH fixo; HOME/USER/LO
 
 Pendências da 51 (2026-11-09): `EXTENSAO_ID`/`EXTENSAO_CRX` obrigatórios no `make install` (pacote real sai da 41); `make release` com o Tauri não rodou (disco); `wardd` de release carrega o texto `WARD_DEV_DBUS_SISTEMA` (pôr `caminho_de_teste` atrás de `cfg(modo-teste)` e tirar a exceção do `instalar.sh`); `sudo make install` de árvore gravável pelo usuário — pacote malicioso do mesmo uid pode trocar `Makefile`/`instalar.sh` antes do sudo (roteiro da 52: clone limpo e `git status` antes; decisão do usuário); D18 do PRD desatualizado (units do sistema, D46); política do Chrome: `ExtensionSettings` em arquivo próprio não se funde, e `update_url` `file://` em force-install no Linux não confirmado (V9.5; alternativa `external_crx`); sem `.desktop` do app; uninstall apaga os grupos mesmo se já existiam; teste `d34_pty` agora espera o `pty-pronto` do falso (corrida sob carga, corrigida no merge).
 
+Pendências da 41 (2026-11-09): **decisão nova para o planner registrar** — exceção de `modo-teste` `WARD_DEV_EXTENSAO=chrome` (modelo D63): o daemon de teste dá o papel extensão ao filho direto do `/opt/google/chrome/chrome` conferido pelo `/proc`, sem egid; resíduo só no daemon de teste (qualquer processo do usuário que abra o Chrome instalado com manifesto próprio ganha o papel; mesmo RA6 do release); `teste-sem-modo-teste` confere a ausência no release. Id fixo `nhkehjnmlgkebhmelajfpmpblepaichf`; chave privada em `.dev/extensao/chave.pem` do checkout principal (fora do git; perder muda o id); `ward-nm` só aceita esse id. `Sugestao` ganhou `ambiente` e `totp` (booleano). Estados sem frame: lista vazia, erro e host ausente. Code Cache do Chrome casou padrão de `.dev/variacoes.txt` (provável PIN só dígitos — avaliar padrão). Strings JS não se zeram (só os bytes da senha). Testes de tempo `d34_pty`/`v3_33` instáveis sob carga (d34 corrigido; v3_33 ainda com margem curta).
+
 ## Milestone 3 — Daemon e protocolo
 Contrato: V3.1–V3.41
 
@@ -839,7 +841,7 @@ Contrato: V6.1–V6.16
   direto ou por intermediário, navegador dumpable ou não, handoff 21), origem da aba
   comparada no daemon (D9).
   V6.1, V6.2.
-- [ ] Fase 41 — **(UI)** Extensão MV3 e popup "Sugestões do domínio": sugere por origem,
+- [x] Fase 41 — **(UI)** Extensão MV3 e popup "Sugestões do domínio": sugere por origem,
   preenche usuário, senha e TOTP só no documento da origem certa, sem
   `externally_connectable`, nada guardado em `chrome.storage`. V6.2, V6.4–V6.7.
 - [ ] Fase 42 — **(UI)** Popup "Salvar login novo" e "Cofre travado". V6.8, V6.9.
