@@ -361,7 +361,10 @@ ou com nova resposta do usuário.
   em separado. **D34 revisto (2026-11-09):** nada é segurado nem atrasado; cada pedaço
   lido sai na hora, mascarado (o segredo inteiro dentro do pedaço; o estado do casamento
   segue, então o pedaço que completa um segredo quebrado sai marcado, e o começo que já
-  saiu fica como saiu). O código TOTP não é mascarado (o agente o recebe, R8).
+  saiu fica como saiu). **Fase 28g:** cada leitura pega tudo o que já está no pipe ou no
+  pty (sem esperar dado novo), num buffer de 256 KiB, e os pipes de saída do filho têm
+  256 KiB (`F_SETPIPE_SZ`, sem falhar se o kernel recusar): um `write` único de até
+  256 KiB é mascarado inteiro. O código TOTP não é mascarado (o agente o recebe, R8).
   Segredo com menos de 6 caracteres é mascarado do mesmo jeito, e o app avisa que a
   máscara fica pouco confiável.
 - D12. **Agente SSH temporário** do `ward ssh` com chave: socket em
@@ -393,7 +396,9 @@ ou com nova resposta do usuário.
   `ssh` do salto (só o `-F`), que ficaria com o `known_hosts`, as identidades e o agente
   padrão do `~/.ssh` (contra este D13 e R19). Também não daria para passar o usuário do
   salto só por `-l` (D43). No lugar, o daemon abre uma ponte em `127.0.0.1:<porta>`
-  (`crates/wardd/src/ponte.rs`): para cada conexão do grupo de processos do filho, lança
+  (`crates/wardd/src/ponte.rs`): para cada conexão do grupo de processos do filho (no
+  grupo e na sessão do filho, auditoria do M4; ou, Fase 28g, filho direto dele com
+  sessão própria, como o `ssh` que o `sshpass` cria com `setsid()`), lança
   por `execve` um `ssh -W <alvo>:<porta>` até a entrada de salto com o mesmo
   endurecimento (`-F /dev/null`, `known_hosts` do Ward, ambiente do zero, usuário por
   `-l`, host depois de `--`, senha por `sshpass -e` ou chave no agente de D12), e o

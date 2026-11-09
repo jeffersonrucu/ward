@@ -278,8 +278,14 @@ inclusive o valor revelado (PRD D64).
   for morto).
 - **S3** Segredo nunca vai em argv (visível em `/proc/<pid>/cmdline`); só no
   ambiente do processo filho, em arquivo temporário ou em fd.
-- **S4** A máscara cobre os valores secretos e as variações declaradas, inclusive
-  quando o valor chega quebrado entre dois pedaços da saída.
+- **S4** A máscara cobre os valores secretos e as variações declaradas quando o
+  valor inteiro está num mesmo pedaço da saída (D34 revisto, 2026-11-09: nada é
+  segurado nem atrasado, para a máscara não virar oráculo de prefixo). O daemon lê
+  de uma vez tudo o que já está no pipe ou no pty, e o pipe de saída tem 256 KiB:
+  um `write` único de até esse tamanho é mascarado inteiro. Quando o valor chega
+  cortado entre leituras separadas no tempo (escrita lenta, byte a byte, ou um
+  `write` maior que o pipe), o pedaço que o completa sai marcado e o começo que já
+  saiu fica em claro; risco aceito pelo usuário.
 - **S5** Socket 0600 do usuário em pasta do root (`/run/ward/<uid>/`, criada pelo
   systemd do sistema; o daemon de teste usa um diretório 0700 do usuário),
   conferência do uid do cliente por `SO_PEERCRED`. A CLI e o app conferem que o

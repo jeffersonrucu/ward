@@ -44,6 +44,7 @@ use ward_plataforma::filho::{self, Comando, Grupo};
 use zeroize::Zeroizing;
 
 use crate::agente_ssh::{AgenteSsh, Permitido};
+use crate::execucao;
 use crate::ssh::{Autent, Cred, Destino, Programa, ProgramasSsh, montar_argv};
 use crate::{aviso, depurar};
 
@@ -454,17 +455,19 @@ impl FimDeEscrita for fs::File {}
 /// O `stderr` do `ssh` da ponte: mascarado (as duas entradas, D19) e entregue.
 fn ler_erro(mut f: fs::File, mascara: &Mascara, saida: &SaidaDeErro) {
     let mut m = mascara.fluxo();
-    let mut buf = Zeroizing::new(vec![0u8; PEDACO]);
+    // Fase 28g: o que já está no pipe vai num lote só (como a saída do `ward run`).
+    let mut buf = Zeroizing::new(vec![0u8; execucao::LOTE]);
     let mut out = Zeroizing::new(Vec::with_capacity(2 * PEDACO));
     loop {
-        let n = match f.read(&mut buf) {
-            Ok(0) => break,
-            Ok(n) => n,
-            Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
-            Err(_) => break,
-        };
-        m.mascarar(&buf[..n], &mut out);
-        saida(&mut out);
+        let (n, fim) = execucao::ler_lote(&mut f, &mut buf);
+        if n > 0 {
+            m.mascarar(&buf[..n], &mut out);
+            zeroize::Zeroize::zeroize(&mut buf[..n]);
+            saida(&mut out);
+        }
+        if fim {
+            break;
+        }
     }
     m.terminar(&mut out);
     saida(&mut out);
@@ -528,8 +531,17 @@ fn endereco(s: &str) -> Option<SocketAddrV4> {
     Some(SocketAddrV4::new(Ipv4Addr::new(a, b, c, d), porta))
 }
 
-/// Algum processo do grupo `grupo` e da sessão `grupo` (em `proc`) tem o socket `inode`
-/// aberto?
+/// Algum processo do filho `grupo` (em `proc`) tem o socket `inode` aberto? Passa:
+/// - quem está no grupo `grupo` **e** na sessão `grupo` (o filho do daemon é líder dos
+///   dois; auditoria do M4: um processo de fora que entrasse no grupo por `setpgid`
+///   ficaria noutra sessão);
+/// - o filho **direto** do líder que abriu sessão própria (Fase 28g): o `sshpass` faz
+///   `setsid()` no `ssh` que ele cria, e sem isso um servidor com senha e salto era
+///   recusado. Confere pelo pai (`ppid` = o líder, que ainda é líder do grupo e da
+///   sessão `grupo`) e por ele ser líder da sessão nova (pid = grupo = sessão). Nenhum
+///   processo de fora vira filho do líder (o pai só muda para um subreaper ou o init, e
+///   o pid do líder não é reusado enquanto o grupo existe); um neto que sai da sessão
+///   continua recusado.
 pub(crate) fn processo_do_grupo_com_socket(proc: &Path, grupo: u32, inode: u64) -> bool {
     let Ok(dir) = fs::read_dir(proc) else {
         return false;
@@ -543,7 +555,8 @@ pub(crate) fn processo_do_grupo_com_socket(proc: &Path, grupo: u32, inode: u64) 
         let Ok(stat) = fs::read_to_string(proc.join(pid.to_string()).join("stat")) else {
             continue;
         };
-        if grupo_do_stat(&stat) != Some(grupo) || sessao_do_stat(&stat) != Some(grupo) {
+        let do_grupo = grupo_do_stat(&stat) == Some(grupo) && sessao_do_stat(&stat) == Some(grupo);
+        if !do_grupo && !filho_direto_com_sessao_propria(proc, pid, &stat, grupo) {
             continue;
         }
         let Ok(fds) = fs::read_dir(proc.join(pid.to_string()).join("fd")) else {
@@ -556,6 +569,27 @@ pub(crate) fn processo_do_grupo_com_socket(proc: &Path, grupo: u32, inode: u64) 
         }
     }
     false
+}
+
+/// `pid` (com `stat`) é filho direto do líder `grupo` e líder de uma sessão própria
+/// (pid = grupo = sessão), e o líder ainda é líder do grupo e da sessão `grupo`?
+fn filho_direto_com_sessao_propria(proc: &Path, pid: u32, stat: &str, grupo: u32) -> bool {
+    if pid == grupo
+        || pai_do_stat(stat) != Some(grupo)
+        || grupo_do_stat(stat) != Some(pid)
+        || sessao_do_stat(stat) != Some(pid)
+    {
+        return false;
+    }
+    let Ok(lider) = fs::read_to_string(proc.join(grupo.to_string()).join("stat")) else {
+        return false;
+    };
+    grupo_do_stat(&lider) == Some(grupo) && sessao_do_stat(&lider) == Some(grupo)
+}
+
+/// O `ppid` de `/proc/<pid>/stat` (o 4.º campo).
+pub(crate) fn pai_do_stat(stat: &str) -> Option<u32> {
+    campo_do_stat(stat, 1)
 }
 
 /// O `pgrp` de `/proc/<pid>/stat` (o 5.º campo; o nome do programa, entre parênteses,
@@ -658,6 +692,57 @@ mod testes {
         criar(901, 500, 900, 22);
         assert!(processo_do_grupo_com_socket(&raiz, 500, 11));
         assert!(!processo_do_grupo_com_socket(&raiz, 500, 22));
+        let _ = fs::remove_dir_all(&raiz);
+    }
+
+    /// Fase 28g: o `ssh` que o `sshpass` (líder 500) cria com `setsid()` passa; o resto
+    /// que tem sessão própria, não: processo de fora (pai = init ou outro), neto do
+    /// líder, filho que não é líder da sessão dele, e o filho de um "líder" que já não é
+    /// líder do grupo e da sessão 500.
+    #[test]
+    fn f28g_filho_direto_do_lider_com_sessao_propria() {
+        let raiz = std::env::temp_dir().join(format!("ponte-proc-28g-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&raiz);
+        let criar = |raiz: &Path, pid: u32, pai: u32, grupo: u32, sessao: u32, inode: u64| {
+            let d = raiz.join(pid.to_string());
+            fs::create_dir_all(d.join("fd")).unwrap();
+            fs::write(
+                d.join("stat"),
+                format!("{pid} (ssh) S {pai} {grupo} {sessao} 0 -1"),
+            )
+            .unwrap();
+            std::os::unix::fs::symlink(format!("socket:[{inode}]"), d.join("fd").join("3"))
+                .unwrap();
+        };
+        criar(&raiz, 500, 400, 500, 500, 10);
+        // O `ssh` do `sshpass`: filho direto, sessão própria.
+        criar(&raiz, 501, 500, 501, 501, 11);
+        assert!(processo_do_grupo_com_socket(&raiz, 500, 11));
+        // De fora, com sessão própria: pai init, pai outro processo.
+        criar(&raiz, 700, 1, 700, 700, 22);
+        criar(&raiz, 701, 699, 701, 701, 23);
+        // Neto do líder (pai = o 501), sessão própria.
+        criar(&raiz, 702, 501, 702, 702, 24);
+        // Filho direto que não é líder da sessão dele (grupo próprio na sessão 900).
+        criar(&raiz, 703, 500, 703, 900, 25);
+        // Filho direto em outro grupo da sessão 500 (não é a sessão própria).
+        criar(&raiz, 704, 500, 704, 500, 26);
+        for inode in [22, 23, 24, 25, 26] {
+            assert!(
+                !processo_do_grupo_com_socket(&raiz, 500, inode),
+                "inode {inode} passou"
+            );
+        }
+        let _ = fs::remove_dir_all(&raiz);
+
+        // O líder 500 saiu da sessão dele (ou o pid é de outro): o filho não passa.
+        criar(&raiz, 500, 400, 500, 300, 10);
+        criar(&raiz, 501, 500, 501, 501, 11);
+        assert!(!processo_do_grupo_com_socket(&raiz, 500, 11));
+        let _ = fs::remove_dir_all(&raiz);
+        // Sem o líder no `/proc`: não passa.
+        criar(&raiz, 501, 500, 501, 501, 11);
+        assert!(!processo_do_grupo_com_socket(&raiz, 500, 11));
         let _ = fs::remove_dir_all(&raiz);
     }
 

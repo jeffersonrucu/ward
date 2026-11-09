@@ -506,7 +506,8 @@ dev-daemon: origens
 	WARD_DEV_APP="$(WARD_DEV_APP)" dev/daemon.sh subir
 
 ## teste-cli: CLI `ward` de teste num pty (Fase 25): V4.2 com servidor falso, V4.1 e
-## V4.22 contra o daemon de teste; precisa de `make dev-daemon` e `make dev-variacoes`
+## V4.22 contra o daemon de teste; precisa de `make dev-daemon WARD_DEV_APP=` (sem a
+## ponte: recusa no começo se o daemon de teste subiu com WARD_DEV_APP) e `make dev-variacoes`
 teste-cli: origens
 	$(CARGO) build --quiet --locked -p ward --features modo-teste --bin ward
 	$(PYTHON) dev/testes/cli.py target/debug/ward "$(CURDIR)"

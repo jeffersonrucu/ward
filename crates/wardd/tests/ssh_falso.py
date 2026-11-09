@@ -202,7 +202,14 @@ def principal():
     agente = opcao("IdentityAgent")
     if NOME == "sshpass":
         registrar(extra)
-        os.execv(ARGV[1], ARGV[1:])
+        # Como o sshpass de verdade (Fase 28g): o `ssh` roda num filho com sessão
+        # própria (`setsid`), e o sshpass espera por ele e sai com o código dele.
+        pid = os.fork()
+        if pid == 0:
+            os.setsid()
+            os.execv(ARGV[1], ARGV[1:])
+        _, st = os.waitpid(pid, 0)
+        os._exit(os.waitstatus_to_exitcode(st) & 0xFF)
     if NOME == "sftp":
         registrar(extra)
         linhas = sys.stdin.read().splitlines()

@@ -29,6 +29,10 @@ ponta, com o terminal num pty de verdade.
    `/proc/<ward>/fd/*` não acha o token; `--token` em argv é recusado sem conectar; canal
    com lixo, vazio, grande ou pipe é recusado sem eco. Não precisa dos SSH de teste.
 
+O daemon de teste tem de estar sem `WARD_DEV_APP` (`make dev-daemon WARD_DEV_APP=`): com
+a ponte ligada, os pedidos com aprovação esperam o humano e expiram; a suíte recusa no
+começo (Fase 28g).
+
 Com `WARD_DEV_SOCKET_DIR` no ambiente (pasta absoluta 0700), usa o daemon de teste
 desse socket (o de `WARD_DEV_SOCKET_DIR=… make dev-daemon`), no lugar de
 `$XDG_RUNTIME_DIR/ward-teste`.
@@ -99,6 +103,36 @@ def rodar_pty(args, digitar=None, env=None, prazo=150):
     os.close(fd)
     return os.waitstatus_to_exitcode(st), tela.decode("utf-8", "replace"), viu_prompt
 
+
+# --- 0. O daemon de teste tem de estar sem WARD_DEV_APP (Fase 28g) -------------------
+# Com o `abrir_app` ligado (o padrão do `make dev-daemon` é a ponte de teste), um pedido
+# "com aprovação" abre a ponte e espera o humano até expirar: V4.30, V4.32 e o
+# `--token-fd` da 27a dariam "pedido expirado" no lugar de "aprovação indisponível".
+# A marca `.dev/wardd.app` (do `dev/daemon.sh`) diz com que WARD_DEV_APP e em que
+# socket o daemon de teste deste checkout subiu.
+def app_do_daemon_de_teste():
+    try:
+        p = open(os.path.join(RAIZ, ".dev/wardd.pid")).read(16).strip()
+        if not p.isdigit() or open(f"/proc/{p}/comm").read().strip() != "wardd":
+            return ""
+        linhas = open(os.path.join(RAIZ, ".dev/wardd.app")).read(8192).splitlines()
+    except OSError:
+        return ""
+    app = linhas[0] if linhas else ""
+    socket_da_marca = linhas[1] if len(linhas) > 1 else ""
+    if socket_da_marca and socket_da_marca != os.path.join(PASTA_SOCKET, "wardd.sock"):
+        return ""
+    return app
+
+
+if app_do_daemon_de_teste():
+    print(
+        "FALHA o daemon de teste está no ar com WARD_DEV_APP (abre a ponte nos pedidos com "
+        "aprovação, e V4.30, V4.32 e a 27a dariam 'pedido expirado'). Rode "
+        "'make dev-daemon-parar' e suba com 'make dev-daemon WARD_DEV_APP=' antes do "
+        "'make teste-cli'."
+    )
+    sys.exit(1)
 
 # --- 1. V4.2: servidor falso no socket de teste -----------------------------------
 pasta = f"/run/user/{UID}/ward-cli-falso-{os.getpid()}"

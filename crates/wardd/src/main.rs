@@ -142,6 +142,12 @@ fn main() -> ExitCode {
             e.kind()
         ),
     }
+    // Fase 28g: pastas do agente SSH (`<rt>ssh-*/`) que um `wardd` morto deixou.
+    match wardd::agente_ssh::limpar_pastas(&config.rt) {
+        Ok(0) => {}
+        Ok(n) => aviso!("{n} pasta(s) do agente SSH de antes da partida apagada(s)"),
+        Err(e) => aviso!("pastas do agente SSH indisponíveis ({})", e.kind()),
+    }
     // D6 (Fase 44): storage states e perfis do `ward playwright` de antes da partida.
     match wardd::playwright::limpar(&config.rt) {
         Ok(0) => {}
