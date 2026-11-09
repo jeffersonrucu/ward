@@ -39,6 +39,12 @@ pub enum ErroApp {
     /// Editar uma entrada com anexos: o protocolo não traz o conteúdo dos anexos para
     /// regravar, e salvar sem eles os apagaria (Fase 34).
     AnexosNaoMantidos,
+    /// Não há como escolher arquivo neste modo (sem diálogo, sem pasta de teste).
+    SeletorIndisponivel,
+    /// O terminal do "Conectar" não abriu.
+    TerminalIndisponivel,
+    /// "Conectar" numa entrada que não é `servidor`.
+    NaoEServidor,
 }
 
 impl ErroApp {
@@ -60,6 +66,9 @@ impl ErroApp {
             ErroApp::AleatorioIndisponivel => "aleatorio-indisponivel",
             ErroApp::SemSenhaGerada => "sem-senha-gerada",
             ErroApp::AnexosNaoMantidos => "anexos-nao-mantidos",
+            ErroApp::SeletorIndisponivel => "seletor-indisponivel",
+            ErroApp::TerminalIndisponivel => "terminal-indisponivel",
+            ErroApp::NaoEServidor => "nao-e-servidor",
         }
     }
 }
@@ -86,6 +95,9 @@ impl fmt::Display for ErroApp {
             ErroApp::AnexosNaoMantidos => {
                 "esta entrada tem anexos; editá-la aqui ainda apagaria os anexos"
             }
+            ErroApp::SeletorIndisponivel => "não foi possível abrir a escolha de arquivo",
+            ErroApp::TerminalIndisponivel => "não foi possível abrir o terminal",
+            ErroApp::NaoEServidor => "Conectar só vale para entradas servidor",
         })
     }
 }

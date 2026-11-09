@@ -48,6 +48,13 @@ pub const DESCARTAR_FORMULARIO: &str = "descartar_formulario";
 /// `salvar_credencial { anterior, formulario }`: cria ou edita uma entrada (Fase 33).
 /// Segredo mantido e senha gerada são postos no rascunho pelo lado Rust.
 pub const SALVAR_CREDENCIAL: &str = "salvar_credencial";
+/// `escolher_anexo`: o lado Rust escolhe e lê o arquivo (Fase 34); a resposta traz id,
+/// nome e tamanho, ou o aviso. Sem argumento: a interface não escolhe caminho.
+pub const ESCOLHER_ANEXO: &str = "escolher_anexo";
+/// `remover_anexo { id }`: tira um anexo escolhido e ainda não salvo.
+pub const REMOVER_ANEXO: &str = "remover_anexo";
+/// `conectar { entrada }`: "Conectar" do `servidor` (D3); o token não volta.
+pub const CONECTAR: &str = "conectar";
 
 /// Todos os comandos, na ordem em que aparecem nas capabilities.
 pub const COMANDOS: &[&str] = &[
@@ -65,6 +72,9 @@ pub const COMANDOS: &[&str] = &[
     USAR_SENHA_GERADA,
     DESCARTAR_FORMULARIO,
     SALVAR_CREDENCIAL,
+    ESCOLHER_ANEXO,
+    REMOVER_ANEXO,
+    CONECTAR,
 ];
 
 /// Nome da permissão gerada pelo Tauri para o comando (`allow-estado-do-cofre`).
@@ -89,6 +99,9 @@ pub enum Comando {
     UsarSenhaGerada,
     DescartarFormulario,
     SalvarCredencial,
+    EscolherAnexo,
+    RemoverAnexo,
+    Conectar,
 }
 
 impl Comando {
@@ -108,6 +121,9 @@ impl Comando {
             USAR_SENHA_GERADA => Some(Comando::UsarSenhaGerada),
             DESCARTAR_FORMULARIO => Some(Comando::DescartarFormulario),
             SALVAR_CREDENCIAL => Some(Comando::SalvarCredencial),
+            ESCOLHER_ANEXO => Some(Comando::EscolherAnexo),
+            REMOVER_ANEXO => Some(Comando::RemoverAnexo),
+            CONECTAR => Some(Comando::Conectar),
             _ => None,
         }
     }
@@ -183,6 +199,9 @@ mod testes {
                 "usar_senha_gerada",
                 "descartar_formulario",
                 "salvar_credencial",
+                "escolher_anexo",
+                "remover_anexo",
+                "conectar",
             ]
         );
         assert_eq!(permissao(COPIAR_CAMPO), "allow-copiar-campo");

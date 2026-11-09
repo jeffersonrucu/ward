@@ -495,3 +495,71 @@ fn tcp_so_em_127_0_0_1_com_cabecalhos_de_seguranca() {
     assert!(!resposta.contains("unsafe-inline") && !resposta.contains("unsafe-eval"));
     fs::remove_dir_all(base).unwrap();
 }
+
+/// Fase 34 (V5.12, V5.24, S11) pela ponte: `escolher_anexo` devolve só id, nome e
+/// tamanho (o conteúdo nunca), o anexo vai no salvar pelo id, `remover_anexo` com id
+/// forjado é recusado, e `conectar` devolve `null` (o token não vem) e só vale para
+/// `servidor`. A pasta do seletor tem mais de um arquivo: nada é escolhido.
+#[test]
+fn ataque_anexos_e_conectar_pela_ponte() {
+    use ward_ponte_teste::simulados::{SeletorDePasta, TerminalDeTeste};
+    let base = dist("anexos34");
+    let pasta = base.join("anexos");
+    fs::create_dir_all(&pasta).unwrap();
+    fs::write(pasta.join("deploy.pem"), "falso-anexo-ponte-34\n").unwrap();
+    let servico = Servico::novo(DaemonFalso::cheio(), Copiador::novo(Area::default()))
+        .com_seletor(SeletorDePasta(pasta.clone()))
+        .com_terminal(TerminalDeTeste);
+    let (p, _l) = Ponte::abrir(servico, &base.join("dist")).unwrap();
+    let r = p.responder(&post(&p, "escolher_anexo", "{}", &[]));
+    let v = r.corpo_json().unwrap();
+    assert_eq!(
+        v["valor"],
+        serde_json::json!({"resultado": "anexado", "id": 0, "nome": "deploy.pem", "tamanho": 21}),
+        "{v}"
+    );
+    assert!(!String::from_utf8_lossy(&r.corpo).contains("falso-anexo"));
+    let novo = serde_json::json!({ "formulario": {
+        "tipo": "generico", "nome": "gama-anexo", "grupo": "gama", "ambiente": "dev",
+        "projeto": "", "tags": [], "campos": {}, "segredos": {},
+        "extras": [{"nome": "REGIAO", "segredo": false, "valor": {"novo": "r-01"}}],
+        "anexos": [0]
+    }});
+    let r = p.responder(&post(&p, "salvar_credencial", &novo.to_string(), &[]));
+    assert_eq!(r.corpo_json().unwrap()["valor"]["salvo"], "gama-anexo");
+    let r = p.responder(&post(
+        &p,
+        "detalhe_credencial",
+        r#"{"entrada":"gama-anexo"}"#,
+        &[],
+    ));
+    assert!(!String::from_utf8_lossy(&r.corpo).contains("falso-anexo"));
+    assert_eq!(r.corpo_json().unwrap()["valor"]["anexos"][0]["tamanho"], 21);
+    for corpo in [r#"{"id":"0"}"#, r#"{"id":-1}"#, r#"{"id":99}"#, r#"{}"#] {
+        let r = p.responder(&post(&p, "remover_anexo", corpo, &[]));
+        assert_eq!(r.corpo_json().unwrap()["ok"], false, "{corpo}");
+    }
+    fs::write(pasta.join("outro.txt"), "x").unwrap();
+    let r = p.responder(&post(&p, "escolher_anexo", "{}", &[]));
+    assert_eq!(r.corpo_json().unwrap()["ok"], false);
+
+    let r = p.responder(&post(
+        &p,
+        "conectar",
+        r#"{"entrada":"acme-ssh-salto"}"#,
+        &[],
+    ));
+    assert_eq!(
+        r.corpo_json().unwrap(),
+        serde_json::json!({"ok": true, "valor": null})
+    );
+    for corpo in [
+        r#"{"entrada":"acme-pg-aprovacao"}"#,
+        r#"{"entrada":"-oProxyCommand=x"}"#,
+        r#"{"entrada":5}"#,
+    ] {
+        let r = p.responder(&post(&p, "conectar", corpo, &[]));
+        assert_eq!(r.corpo_json().unwrap()["ok"], false, "{corpo}");
+    }
+    fs::remove_dir_all(base).unwrap();
+}

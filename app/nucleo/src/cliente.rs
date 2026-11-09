@@ -22,6 +22,7 @@ use zeroize::Zeroizing;
 use crate::ErroApp;
 use crate::daemon::{Daemon, EstadoCofre};
 use crate::segredo::Segredo;
+use crate::terminal::Token;
 
 /// Um pedido e a resposta já lida. Um `erro` do daemon vira [`ErroApp`] com mensagem
 /// fixa (o código do protocolo não vai à interface).
@@ -139,6 +140,18 @@ pub fn totp<D: Daemon + ?Sized>(daemon: &mut D, entrada: &str) -> Result<CodigoT
 
 /// Resultado do `salvar_entrada`: salvo, ou os problemas de validação por campo (só
 /// textos fixos do `ward-core`; nenhum valor do usuário).
+/// `emitir_token`: o token de uso único do "Conectar" (D3), conferido antes de ir a um
+/// argv ([`Token::de_resposta`]).
+pub fn emitir_token<D: Daemon + ?Sized>(daemon: &mut D, entrada: &str) -> Result<Token, ErroApp> {
+    let pedido = Pedido::EmitirToken {
+        entrada: entrada.to_owned(),
+    };
+    match pedir(daemon, &pedido)? {
+        Resposta::Token(t) => Token::de_resposta(t.expor()).ok_or(ErroApp::RespostaInvalida),
+        _ => Err(ErroApp::RespostaInvalida),
+    }
+}
+
 pub enum Salvamento {
     Salvo,
     Problemas(Vec<Problema>),
