@@ -1,0 +1,1001 @@
+origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
+/home/jeffersonoliveira/.cargo/bin/cargo test --workspace --all-features --locked
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+     Running unittests src/lib.rs (target/debug/deps/ward-ddbe80b6fb27342b)
+
+running 21 tests
+test args::testes::ssh ... ok
+test args::testes::nao_utf8 ... ok
+test args::testes::ataque_argumento_nao_volta_na_mensagem ... ok
+test args::testes::comandos ... ok
+test args::testes::run ... ok
+test testes::com_daemon_falso::ataque_socket_trocado_enquanto_digita ... ok
+test testes::daemon_ausente ... ok
+test testes::uso_e_ajuda ... ok
+test testes::com_daemon_falso::destravar_na_ordem ... ok
+test testes::com_daemon_falso::v4_1_lista_em_texto_e_json ... ok
+test texto::testes::ataque_texto_com_controle_bidi_e_aspas ... ok
+test texto::testes::json_so_com_os_campos_da_lista ... ok
+test testes::com_daemon_falso::v4_22_travar_e_lista_responde_travado ... ok
+test texto::testes::tabela ... ok
+test testes::com_daemon_falso::destravar_senha_errada_vazia_cancelada ... ok
+test testes::com_daemon_falso::ataque_resposta_com_credencial_ou_nivel_recusada ... ok
+test testes::com_daemon_falso::ssh_pedido_token_saida_e_codigo ... ok
+test testes::com_daemon_falso::run_pedido_saida_e_codigo ... ok
+test testes::d52_run_grande_demais_recusado_antes_de_conectar ... ok
+test testes::v4_2_ataque_servidor_falso_no_socket_de_teste_recusado ... ok
+test testes::v4_2_ataque_servidor_falso_recusado_antes_de_ler_a_senha ... ok
+
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running unittests src/main.rs (target/debug/deps/ward-fed77967afea954d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/ward_app_nucleo-3e639d186069fbad)
+
+running 130 tests
+test area_transferencia::testes::ataque_binario_fora_do_padrao_e_recusado ... ok
+test aprovacao::testes::decisao_so_pelos_quatro_nomes ... ok
+test area_transferencia::testes::prazo_e_30_segundos ... ok
+test area_transferencia::testes::ataque_valor_vazio_ou_grande_demais_e_recusado ... ok
+test anexos::testes::ataque_ids_forjados_pela_interface ... ok
+test anexos::testes::ataque_anexos_demais ... ok
+test area_transferencia::testes::limpar_agora_respeita_a_mesma_condicao ... ok
+test anexos::testes::anexa_lista_e_remove_sem_conteudo_na_resposta ... ok
+test aprovacao::testes::prazo_de_120_s_e_expirado_sai ... ok
+test aprovacao::testes::vigia_tira_a_aprovacao_e_deixa_o_destrave ... ok
+test comandos::testes::ataque_comando_inventado_ou_de_plugin_nao_existe ... ok
+test aprovacao::testes::ordem_de_chegada_sem_repetir_e_com_limite ... ok
+test comandos::testes::ataque_referencia_fora_do_formato ... ok
+test configuracoes::testes::ataque_minutos_fora_da_faixa ... ok
+test configuracoes::testes::ataque_erros_e_debug_nao_mostram_valor ... ok
+test configuracoes::testes::ataque_campo_a_mais_ou_tipo_errado_e_recusado ... ok
+test comandos::testes::lista_e_permissoes ... ok
+test aprovacao::testes::ataque_texto_do_agente_vira_escape_visivel ... ok
+test configuracoes::testes::ataque_pin_atual_ou_novo_fora_do_formato_e_recusado ... ok
+test cliente::testes::erros_do_daemon_tem_mensagem_fixa ... ok
+test configuracoes::testes::pelo_servico::ataque_tempo_fora_da_faixa_nem_chega_ao_daemon ... ok
+test configuracoes::testes::trocas_validas_passam ... ok
+test aprovacao::testes_servico::ataque_resposta_forjada_nao_chega_ao_daemon ... ok
+test cliente::testes::ataque_resposta_de_outro_tipo_ou_forjada_e_recusada ... ok
+test configuracoes::testes::pelo_servico::ataque_pin_ou_senha_fora_da_regra_nao_chegam_ao_daemon ... ok
+test configuracoes::testes::pelo_servico::v5_22_padrao_4h_desligado_e_tempo_alteravel ... ok
+test daemon::testes::ataque_arquivo_comum_no_lugar_do_socket_e_recusado ... ok
+test daemon::testes::ataque_diretorio_por_link_simbolico_e_recusado ... ok
+test anexos::testes::ataque_arquivo_grande_soma_e_vazio_nao_sao_guardados ... ok
+test daemon::testes::ataque_servidor_falso_do_mesmo_uid_e_recusado_sem_receber_nada ... ok
+test configuracoes::testes::ataque_senha_nova_curta_ou_diferente_e_atual_vazia_recusadas ... ok
+test daemon::testes::caminho_padrao_sem_variavel_de_ambiente ... ok
+test daemon::testes::ataque_socket_aberto_para_outros_e_recusado ... ok
+test daemon::testes::ataque_sem_a_conexao_da_partida_nao_reconecta ... ok
+test daemon::testes::socket_ausente_e_indisponivel ... ok
+test daemon::testes::v5_33_avisos_no_meio_vao_para_a_fila_e_a_resposta_para_quem_pediu ... ok
+test cliente::testes::ataque_d65_lista_sem_resumo_ou_com_segredo_no_resumo_e_recusada ... ok
+test cliente::testes::estado_lista_e_detalhe_pelo_protocolo ... ok
+test daemon::testes::v5_33_resposta_sem_pedido_fecha_a_conexao ... ok
+test daemon::testes::v5_33_quadro_acima_do_limite_fecha_a_conexao ... ok
+test daemon::testes::v5_33_tipo_do_papel_agente_ou_forjado_fecha_sem_mostrar_nada ... ok
+test daemon_falso::testes::so_o_papel_app_e_atendido ... ok
+test destrave::testes::ataque_debug_da_senha_nao_mostra_o_valor ... ok
+test destrave::testes::ataque_senha_fora_do_formato_e_recusada_sem_eco ... ok
+test destrave::testes::pedido_conta_de_120_s_recomeca_e_some ... ok
+test destrave::testes::vigia_tira_o_destrave_e_marca_o_pedido ... ok
+test daemon_falso::testes::mesmas_entradas_das_fixtures ... ok
+test formulario::testes::ataque_formulario_com_chave_desconhecida_e_recusado ... ok
+test formulario::testes::ataque_debug_do_texto_secreto_nao_mostra_o_valor ... ok
+test formulario::testes::ataque_otpauth_fora_de_sha1_6_30_e_recusado ... ok
+test formulario::testes::ataque_problema_forjado_pelo_daemon_nao_vira_texto_livre ... ok
+test formulario::testes::recusa_do_orcamento_da_mascara_vai_para_os_anexos ... ok
+test formulario::testes::semente_digitada_e_normalizada ... ok
+test gerador::testes::ataque_gerar_nao_devolve_o_valor ... ok
+test daemon::testes::pedido_grande_demais_nao_sai_e_a_conexao_continua ... ok
+test gerador::testes::ataque_opcoes_fora_do_formato_sao_recusadas ... ok
+test gerador::testes::descartar_zera_e_gerar_de_novo_troca ... ok
+test gerador::testes::limites_da_tela_dentro_do_nucleo ... ok
+test gerador::testes::forca_do_design ... ok
+test gerador::testes::simbolos_sao_os_de_d35 ... ok
+test nivel::testes::ataque_debug_do_pin_nao_mostra_o_valor ... ok
+test nivel::testes::nivel_so_pelos_tres_nomes_do_protocolo ... ok
+test nivel::testes::ataque_pin_fora_do_formato_e_recusado_sem_eco ... ok
+test partida::testes::ataque_sem_papel_app_na_primeira_resposta_sai_sem_usar_a_conexao ... ok
+test partida::testes::ataque_ambiente_de_fora_nao_chega_a_conectar ... ok
+test partida::testes::mensagem_sem_valor ... ok
+test partida::testes::com_outro_pai_pede_a_instancia_verdadeira_e_sai ... ok
+test gerador::testes::senha_respeita_tamanho_e_conjuntos ... ok
+test primeiro_uso::testes::ataque_campo_a_mais_ou_tipo_errado_e_recusado ... ok
+test primeiro_uso::testes::ataque_confirmacao_diferente_e_recusada ... ok
+test primeiro_uso::testes::ataque_erros_e_debug_nao_mostram_valor ... ok
+test primeiro_uso::testes::ataque_pin_com_3_ou_7_digitos_ou_letras_e_recusado ... ok
+test primeiro_uso::testes::pelo_servico::ataque_pin_ou_confirmacao_invalidos_nao_chegam_ao_daemon ... ok
+test primeiro_uso::testes::ataque_senha_curta_ou_grande_demais_e_recusada ... ok
+test daemon::testes::v5_33_mil_avisos_a_fila_nao_passa_de_16_e_o_app_segue_respondendo ... ok
+test primeiro_uso::testes::pelo_servico::sem_cofre_o_resto_e_recusado ... ok
+test primeiro_uso::testes::senha_e_pin_validos_passam ... ok
+test segredo::testes::ataque_debug_nao_mostra_o_valor ... ok
+test servico::testes::ataque_anexo_grande_vazio_e_id_forjado ... ok
+test servico::testes::ataque_anexo_nao_volta_a_interface_e_vai_no_rascunho ... ok
+test servico::testes::ataque_autenticacao_forjada_pela_interface ... ok
+test servico::testes::ataque_conectar_so_servidor_e_sem_token_na_resposta ... ok
+test servico::testes::ataque_copiar_nao_devolve_o_valor ... ok
+test servico::testes::ataque_erro_nao_carrega_o_pedido ... ok
+test servico::testes::ataque_formulario_forjado_pela_interface ... ok
+test servico::testes::ataque_gerador_copia_sem_devolver_o_valor ... ok
+test daemon::testes::ataque_diretorio_aberto_para_outros_e_recusado ... ok
+test servico::testes::ataque_lista_e_detalhes_de_todas_as_entradas_sem_segredo ... ok
+test servico::testes::ataque_nome_de_entrada_fora_do_formato_nem_chega_ao_daemon ... ok
+test daemon::testes::esperar_destrave_deixa_a_aprovacao_na_fila ... ok
+test daemon::testes::esperar_aprovacao_deixa_o_destrave_na_fila ... ok
+test servico::testes::ataque_nome_ou_nivel_forjado_nem_chega_ao_daemon ... ok
+test servico::testes::ataque_otpauth_nao_suportado_nao_e_salvo ... ok
+test servico::testes::ataque_revelar_so_de_segredo_e_respostas_sem_segredo ... ok
+test servico::testes::banco_servidor_e_ftp_salvam_e_editam ... ok
+test servico::testes::cofre_vazio ... ok
+test servico::testes::d65_lista_numa_troca_so_com_resumo_e_usuario ... ok
+test servico::testes::erros_dos_tipos_novos_no_campo ... ok
+test primeiro_uso::testes::pelo_servico::ataque_criar_por_cima_de_cofre_existente_e_recusado ... ok
+test primeiro_uso::testes::pelo_servico::cria_o_cofre_e_fica_destravado ... ok
+test servico::testes::gerador_do_formulario_preenche_a_senha_sem_passar_pela_interface ... ok
+test servico::testes::lista_e_detalhe_do_acme_pg_dev_como_no_frame ... ok
+test servico::testes::salvar_sem_obrigatorio_mostra_erro_no_campo ... ok
+test servico::testes::salvar_novo_e_editar_mantendo_segredo ... ok
+test servico::testes_destravar::ataque_a_senha_so_vai_no_pedido_destravar ... ok
+test servico::testes_destravar::ataque_erro_do_destravar_sem_senha_nem_contagem ... ok
+test servico::testes_destravar::pedido_do_agente_aparece_so_travado_e_some_ao_destravar ... ok
+test servico::testes_destravar::senha_errada_nao_destrava_e_a_certa_destrava ... ok
+test terminal::testes::ataque_entrada_que_viraria_opcao_nao_vai_ao_argv ... ok
+test terminal::testes::ataque_token_forjado_pelo_daemon_e_recusado ... ok
+test terminal::testes::comando_do_terminal_com_ambiente_do_zero ... ok
+test credenciais::testes::d65_datas_no_detalhe_da_tela ... ok
+test daemon::testes::sem_resposta_no_prazo_fecha_e_a_atrasada_nao_vira_outra ... ok
+test servico::testes::ataque_limpeza_do_gerador_nao_apaga_texto_do_usuario ... ok
+test aprovacao::testes_servico::sempre_deixa_livre_e_fechar_nega_todos ... ok
+test aprovacao::testes_servico::negar_sem_pin_e_permitir_uma_vez_com_pin ... ok
+test area_transferencia::testes::ataque_texto_do_usuario_copiado_depois_nao_e_apagado ... ok
+test area_transferencia::testes::copia_e_limpa_depois_do_prazo ... ok
+test area_transferencia::testes::ataque_prefixo_do_valor_nao_conta_como_igual ... ok
+test primeiro_uso::testes::pelo_servico::daemon_guarda_so_o_hash_do_pin ... ok
+test aprovacao::testes_servico::ataque_nada_de_segredo_ou_pin_na_janela ... ok
+test servico::testes::ataque_resposta_e_erro_do_mudar_nivel_sem_pin ... ok
+test configuracoes::testes::pelo_servico::v5_22_trocar_senha_pede_a_atual_e_a_nova_destrava ... ok
+test servico::testes::mudar_nivel_com_pin_e_os_tres_niveis_tambem_em_prod ... ok
+test configuracoes::testes::pelo_servico::ataque_adivinhar_o_pin_pela_troca_trava_no_quinto_erro ... ok
+test aprovacao::testes_servico::ataque_pin_errado_cinco_vezes_trava_e_nega ... ok
+test area_transferencia::testes::copia_nova_substitui_o_prazo_da_anterior ... ok
+test servico::testes_destravar::daemon_falso_espera_d20_antes_de_olhar_a_senha ... ok
+test configuracoes::testes::pelo_servico::v5_22_trocar_pin_pede_o_pin_atual ... ok
+test servico::testes::ataque_pin_errado_nao_muda_e_o_quinto_erro_trava ... ok
+
+test result: ok. 130 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.08s
+
+     Running tests/configuracao_tauri.rs (target/debug/deps/configuracao_tauri-0ee3af895295fdb7)
+
+running 7 tests
+test ataque_devtools_ou_acl_dinamica_no_release ... ok
+test ataque_capability_com_permissao_a_mais ... ok
+test limites_do_gerador_na_interface_sao_os_do_rust ... ok
+test ataque_csp_frouxa_ou_conteudo_remoto ... ok
+test lista_de_comandos_da_interface_e_a_mesma ... ok
+test janela_de_aprovacao_segue_o_rust_e_nao_usa_html ... ok
+test ataque_interface_guarda_ou_injeta_conteudo ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/lib.rs (target/debug/deps/ward_core-35e20cadbfd947f1)
+
+running 284 tests
+test backup::testes::filho_backup ... ignored, só roda como processo filho dos testes de backup
+test backup::testes::ataque_nome_fora_do_formato_recusado ... ok
+test backup::testes::nome_do_instante_em_utc_e_ida_e_volta ... ok
+test configuracao::testes::backup_externo ... ok
+test configuracao::testes::tempo_de_trava_na_faixa ... ok
+test configuracao::testes::hash_inflado_recusado_rapido ... ok
+test corpo::testes::d65_corpo_v3_recusado ... ok
+test corpo::testes::d65_datas_forjadas_no_corpo ... ok
+test corpo::testes::d65_datas_so_mudam_os_16_bytes_da_entrada ... ok
+test corpo::testes::d65_regra_das_datas ... ok
+test configuracao::testes::configuracao_nova_tem_os_padroes ... ok
+test corpo::testes::erros_sem_dado_do_cofre ... ok
+test corpo::testes::formato_conhecido_de_uma_entrada ... ok
+test corpo::testes::ataque_corpo_forjado_com_texto_variavel_e_usuario ... ok
+test corpo::testes::serializar_recusa_configuracao_fora_da_regra ... ok
+test corpo::testes::serializar_recusa_cofre_que_nao_reabriria ... ok
+test configuracao::testes::cada_hash_tem_sal_proprio ... ok
+test corpo::testes::v2_30_anexo_vazio_recusado_ao_salvar_e_no_corpo ... ok
+test configuracao::testes::pin_de_4_a_6_digitos ... ok
+test configuracao::testes::hash_e_phc_argon2id_padrao ... ok
+test corpo::testes::v2_30_ida_e_volta_do_cofre_de_teste ... ok
+test corpo::testes::v2_30_cofre_vazio ... ok
+test corpo::testes::serializar_recusa_mais_de_10_000_entradas ... ok
+test configuracao::testes::debug_e_erros_sem_segredo ... ok
+test configuracao::testes::hash_do_pin_confere_o_pin_certo_e_recusa_os_outros ... ok
+test configuracao::testes::trocar_o_pin ... ok
+test corpo::testes::v2_31_campos_forjados ... ok
+test corpo::testes::v2_30_configuracao_volta_igual ... ok
+test corpo::testes::v2_39_corpo_v1_sem_secao_ou_sem_hash_recusado ... ok
+test corpo::testes::v2_39_hash_rebaixado_do_pin_certo_recusado ... ok
+test corpo::testes::v2_39_pin_so_como_hash_no_corpo ... ok
+test corpo::testes::v2_39_secao_de_configuracao_forjada ... ok
+test corpo::testes::leitura_no_limite_aceita_e_acima_recusa ... ok
+test configuracao::testes::hash_adulterado_nao_confere ... ok
+test corpo::testes::v2_44_geracao_zero_e_corpo_v2_recusados ... ok
+test corpo::testes::v2_31_truncado_em_cada_tamanho_e_byte_a_mais ... ok
+test corpo::testes::v2_51_mensagem_de_grande_demais_acompanha_os_limites ... ok
+test cripto::testes::abrir_recusa_qualquer_bit_trocado ... ok
+test cripto::testes::aleatorio_nao_repete ... ok
+test cripto::testes::derivar_kek_e_o_argon2id_sem_extras ... ok
+test cripto::testes::v2_5_argon2id_rfc9106 ... ok
+test cripto::testes::v2_5_xchacha20poly1305_draft_abrir ... ok
+test cripto::testes::v2_5_xchacha20poly1305_draft_selar ... ok
+test entrada::testes::ataque_extra_ou_anexo_sobrescreve_variavel_do_tipo ... ok
+test entrada::testes::ataque_host_e_usuario_viram_opcao_do_ssh ... ok
+test entrada::testes::ataque_nivel_nao_muda_ao_salvar_nem_ao_editar ... ok
+test entrada::testes::ataque_nome_de_anexo_sai_do_diretorio ... ok
+test entrada::testes::ataque_segredo_com_nulo_ou_binario ... ok
+test corpo::testes::v2_58_corpo_forjado_com_ultimo_rotulo_numerico ... ok
+test entrada::testes::ataque_texto_invisivel_forja_a_janela_de_aprovacao ... ok
+test entrada::testes::ataque_variavel_perigosa_no_api ... ok
+test entrada::testes::cofre_de_teste_do_contrato_valida_e_confere ... ok
+test entrada::testes::conferir_no_cofre_referencias ... ok
+test entrada::testes::mensagens_citam_os_limites_atuais ... ok
+test entrada::testes::nivel_combinado_e_nomes ... ok
+test entrada::testes::porta_vazia_usa_a_padrao ... ok
+test entrada::testes::um_de_cada_tipo_valida ... ok
+test entrada::testes::v2_12_banco_com_motor_fora_da_lista ... ok
+test entrada::testes::v2_12_campo_obrigatorio_de_cada_tipo ... ok
+test entrada::testes::v2_12_junta_todos_os_erros ... ok
+test entrada::testes::v2_12_outros_formatos ... ok
+test entrada::testes::v2_12_sem_grupo_sem_ambiente_e_ambiente_fora_da_lista ... ok
+test entrada::testes::v2_12_servidor_com_senha_e_chave_ou_sem_nenhuma ... ok
+test entrada::testes::v2_13_campos_secretos_de_cada_tipo ... ok
+test entrada::testes::v2_16_normalizacao_e_repetidos ... ok
+test entrada::testes::v2_27_debug_e_display_sem_segredo ... ok
+test entrada::testes::v2_27_erros_nao_carregam_valor_do_usuario ... ok
+test entrada::testes::v2_28_tipos_de_segredo_zeram_e_nao_clonam ... ok
+test entrada::testes::ataque_tamanhos_excessivos ... ok
+test entrada::testes::v2_37_base_do_banco ... ok
+test entrada::testes::v2_45_texto_de_exibicao_e_lista_branca ... ok
+test entrada::testes::v2_47_url_estrita ... ok
+test entrada::testes::v2_48_variavel_do_api_com_sufixo ... ok
+test entrada::testes::v2_49_usuario_do_ssh ... ok
+test entrada::testes::v2_58_ultimo_rotulo_com_digito ... ok
+test entrega::testes::ataque_debug_e_erros_sem_segredo ... ok
+test entrega::testes::ataque_extra_vira_variavel_do_sistema ... ok
+test entrega::testes::ataque_recurso_devolve_lixo ... ok
+test entrega::testes::ataque_senha_usuario_ou_base_mudam_o_destino_do_url ... ok
+test entrega::testes::defesa_conferir_recusa_lista_invalida ... ok
+test entrega::testes::entrega_zera_ao_sair_e_nao_clona ... ok
+test entrega::testes::extras_entram_em_todo_tipo_que_tem_entrega ... ok
+test entrega::testes::host_ipv6_vai_entre_colchetes_no_url ... ok
+test entrega::testes::marca_de_segredo_bate_com_o_valor ... ok
+test entrega::testes::opcionais_ausentes_ficam_de_fora ... ok
+test entrega::testes::percent_encoding_de_todos_os_bytes ... ok
+test entrega::testes::redis_com_base_numerica_vai_no_url ... ok
+test entrega::testes::url_alocada_uma_vez_no_tamanho_exato ... ok
+test entrega::testes::v2_14_comuns_vem_primeiro_e_na_ordem ... ok
+test entrega::testes::v2_14_entrega_esperada_do_contrato ... ok
+test entrega::testes::v2_15_todos_os_motores ... ok
+test entrega::testes::v2_16_extra_e_anexo_normalizados ... ok
+test entrega::testes::v2_37_base_valida_sai_igual ... ok
+test entrega::testes::v2_48_variavel_aceita_sai_com_o_token ... ok
+test entrega::testes::variaveis_do_tipo_batem_com_as_reservadas ... ok
+test exibicao::testes::argumentos_entre_aspas_e_separados ... ok
+test exibicao::testes::ataque_controle_e_bidi_viram_escape_visivel ... ok
+test exibicao::testes::ataque_imitar_escape_ou_separador_nao_engana ... ok
+test exibicao::testes::byte_invalido_vira_x ... ok
+test exibicao::testes::corte_com_aviso_nunca_em_silencio ... ok
+test exibicao::testes::neutralizar_e_idempotente_sobre_a_saida ... ok
+test exibicao::testes::texto_sem_aspas ... ok
+test backup::testes::ataque_link_com_nome_de_versao_nao_e_seguido ... ok
+test corpo::testes::v2_36_corpo_forjado_com_entrada_grande_demais ... ok
+test entrada::testes::v2_36_anexos_somados_e_orcamento_ao_salvar ... ok
+test corpo::testes::v2_30_uma_de_cada_tipo_no_maximo_do_modelo ... ok
+test corpo::testes::v2_44_geracao_esgotada_nao_toca_no_disco ... ok
+test formato::testes::cabecalho_e_aad_do_corpo ... ok
+test formato::testes::conteudo_vazio_abre ... ok
+test formato::testes::nada_em_claro_no_arquivo ... ok
+test formato::testes::ida_e_volta ... ok
+test backup::testes::ataque_pasta_com_permissao_aberta_recusada ... ok
+test formato::testes::parametros_acima_do_maximo_recusados_sem_derivar ... ok
+test formato::testes::debug_nao_mostra_segredo ... ok
+test formato::testes::lixo_nao_abre ... ok
+test formato::testes::v2_4_bem_formado_abaixo_do_minimo_recusado ... ok
+test backup::testes::mesmo_segundo_ganha_sufixo_sem_sobrescrever ... ok
+test corpo::testes::d65_cofre_v3_no_disco_recusado_sem_tocar_no_arquivo ... ok
+test formato::testes::troca_de_senha_exige_a_atual ... ok
+test formato::testes::v2_4_cabecalho_registra_parametros ... ok
+test formato::testes::v2_1_senha_errada_mesmo_erro_de_adulterado ... ok
+test gerador::testes::ataque_debug_da_senha_e_erros_sem_valor ... ok
+test gerador::testes::ataque_rng_falha_nao_gera_senha_fraca ... ok
+test gerador::testes::ataque_rng_preso_nao_trava ... ok
+test gerador::testes::ataque_vies_de_modulo ... ok
+test gerador::testes::conjuntos_sao_disjuntos_e_ascii_visivel ... ok
+test corpo::testes::troca_de_senha_sela_e_grava_pelo_mesmo_caminho ... ok
+test gerador::testes::v2_26_tamanho_e_conjuntos_invalidos ... ok
+test gerador::testes::v2_26_toda_aleatoriedade_vem_da_fonte ... ok
+test gerador::testes::v2_28_senha_gerada_zera ... ok
+test gravacao::testes::caminho_relativo_sem_diretorio ... ok
+test formato::testes::v2_5_composicao_do_formato ... ok
+test corpo::testes::v2_31_bit_trocado_em_cada_byte ... ok
+test gravacao::testes::d53_corpo_que_nao_serializa_nao_queima ... ok
+test formato::testes::selar_de_novo_reabre_e_troca_o_nonce ... ok
+test corpo::testes::v2_30_ida_e_volta_pelo_disco_com_anexos_no_limite ... ok
+test formato::testes::recorte_entre_cofres_e_gravacoes_falha ... ok
+test gerador::testes::v2_26_dez_mil_senhas_por_combinacao ... ok
+test corpo::testes::v2_31_100_000_mutacoes_aleatorias ... ok
+test formato::testes::v2_6_dois_cofres_iguais_sao_diferentes ... ok
+test gravacao::testes::erro_nao_carrega_conteudo ... ok
+test gravacao::testes::filho_gravacao ... ignored, só roda como processo filho dos testes de gravação
+test formato::testes::v2_4_rebaixamento_para_8_mib_falha ... ok
+test gravacao::testes::limpar_temporarios_so_apaga_os_do_cofre ... ok
+test corpo::testes::v2_44_geracao_sobe_e_retrocesso_e_recusado ... ok
+test backup::testes::ataque_guardar_atual_so_aceita_o_arquivo_autentico ... ok
+test gravacao::testes::d62_identidade_do_fd_e_troca_logo_depois_do_rename ... ok
+test gravacao::testes::temporario_nao_segue_link_simbolico_nem_reaproveita_arquivo ... ok
+test gravacao::testes::temporario_nasce_0600_com_umask_qualquer ... ok
+test gravacao::testes::destino_invalido ... ok
+test gravacao::testes::recusa_gravar_bytes_que_nao_sao_cofre ... ok
+test gravacao::testes::nomes_de_temporario_nao_repetem ... ok
+test gravacao::testes::destino_diretorio_falha_sem_deixar_temporario ... ok
+test gravacao::testes::destino_link_simbolico_nao_e_seguido ... ok
+test gravacao::testes::substitui_destino_existente_e_fixa_0600 ... ok
+test gravacao::testes::v2_9_falha_de_es_injetada_em_cada_ponto ... ok
+test limites::testes::v2_35_validacao_e_corpo_no_mesmo_limite_de_anexos ... ok
+test limites::testes::v2_36_custo_recusa_acima_do_orcamento_e_nota_fica_fora ... ok
+test gravacao::testes::d53_queimada_menor_que_o_disco_nao_desce ... ok
+test limites::testes::v2_35_orcamento_e_o_mesmo_na_validacao_e_na_mascara ... ok
+test backup::testes::v7_3_sigkill_em_100_pontos_aleatorios ... ok
+test mascara::testes::anexo_com_varias_linhas ... ok
+test mascara::testes::ataque_anexo_grande_demais_falha_fechado ... ok
+test mascara::testes::ataque_debug_sem_segredo ... ok
+test mascara::testes::ataque_json_escapado ... ok
+test mascara::testes::ataque_saida_patologica_continua_linear ... ok
+test mascara::testes::ataque_segredo_dentro_de_base64_maior ... ok
+test mascara::testes::ataque_segredos_sobrepostos ... ok
+test mascara::testes::automato_alocado_uma_vez ... ok
+test mascara::testes::base64_rfc4648 ... ok
+test mascara::testes::codigo_totp_nao_e_mascarado ... ok
+test mascara::testes::d34_ataque_prefixo_em_base64_e_percent_tambem_vira_marca ... ok
+test mascara::testes::d34_continuacao_que_diverge_sai_normal ... ok
+test mascara::testes::d34_prefixo_parado_sai_como_marca_e_o_resto_do_segredo_nao_sai ... ok
+test mascara::testes::d34_soltar_varias_vezes_no_mesmo_segredo_da_uma_marca_so ... ok
+test mascara::testes::d54_formas_novas_so_quando_mudam_e_linha_sem_base64 ... ok
+test mascara::testes::d61_candidatos_so_quando_mudam ... ok
+test mascara::testes::entrega_marca_o_que_e_segredo ... ok
+test mascara::testes::formas_escapadas_so_quando_mudam ... ok
+test mascara::testes::mascara_e_fluxo_zeram_e_nao_clonam ... ok
+test mascara::testes::mascara_sem_segredo_nao_mexe_em_nada ... ok
+test mascara::testes::propriedade_cortes_aleatorios ... ok
+test mascara::testes::salto_e_tunel_juntam_as_duas_entradas ... ok
+test mascara::testes::segredo_curto_e_mascarado_e_avisado ... ok
+test mascara::testes::stdout_e_stderr_em_fluxos_separados ... ok
+test mascara::testes::v2_17_literal ... ok
+test mascara::testes::v2_18_cada_ponto_de_corte ... ok
+test mascara::testes::v2_18_prefixo_no_fim_do_pedaco_fica_segurado ... ok
+test mascara::testes::v2_19_formulario_com_espaco ... ok
+test mascara::testes::v2_19_percent_encoding ... ok
+test mascara::testes::v2_20_base64 ... ok
+test mascara::testes::v2_20_base64_url_safe_difere_do_padrao ... ok
+test mascara::testes::v2_21_database_url_inteiro ... ok
+test mascara::testes::v2_22_segredo_que_contem_outro ... ok
+test mascara::testes::v2_23_anexo_inteiro_linha_e_valor ... ok
+test mascara::testes::v2_24_saida_sem_segredo_sai_igual ... ok
+test mascara::testes::v2_38_mutacao_sem_minimo_mascararia_o_valor_curto ... ok
+test mascara::testes::v2_38_valor_curto_de_chave_valor_nao_vira_padrao ... ok
+test mascara::testes::v2_41_chave_em_campo_mascarada_por_linha ... ok
+test mascara::testes::v2_41_controle_sem_a_passada_por_linha_vazaria ... ok
+test mascara::testes::v2_41_json_de_varias_linhas_e_yaml ... ok
+test mascara::testes::v2_42_formas_escapadas ... ok
+test mascara::testes::v2_54_entrega_de_varias_linhas_por_linha ... ok
+test mascara::testes::v2_55_formas_de_texto_por_linha ... ok
+test mascara::testes::v2_56_formas_novas_e_parser_de_linha ... ok
+test mascara::testes::v2_56_printf_q_igual_ao_bash ... ok
+test mascara::testes::v2_57_oraculo_e_mascara_com_valores_de_d54 ... ok
+test mascara::testes::v3_29_delta_api_simbolos_e_go_com_ensure_ascii ... ok
+test mascara::testes::v3_29_go_com_ensure_ascii_por_linha_e_linha_binaria ... ok
+test gravacao::testes::ida_e_volta_modo_0600_sem_temporario ... ok
+test mascara::testes::v3_31_json_numa_linha ... ok
+test mascara::testes::v3_32_yaml_dotenv_e_tab_de_linha_binaria ... ok
+test protocolo::testes::ataque_d65_data_no_rascunho_recusada ... ok
+test protocolo::testes::ataque_definir_backup_externo_fora_do_formato ... ok
+test protocolo::testes::ataque_restaurar_com_caminho_no_nome_recusado ... ok
+test limites::testes::v2_43_entrada_que_so_passa_do_orcamento_por_d36_e_recusada ... ok
+test protocolo::testes::base64_estrito ... ok
+test protocolo::testes::d39_erros_do_destravar_e_das_gravacoes ... ok
+test protocolo::testes::ataque_d65_detalhe_com_data_forjada_recusado ... ok
+test protocolo::testes::d39_geracao_nunca_vem_do_cliente_nem_vai_para_ele ... ok
+test protocolo::testes::d50_lista_do_agente_sem_nivel_e_do_app_com_nivel ... ok
+test protocolo::testes::d65_alvo_acha_so_os_segredos_da_entrada ... ok
+test protocolo::testes::d65_datas_so_no_detalhe_do_app ... ok
+test protocolo::testes::debug_sem_segredo ... ok
+test protocolo::testes::entrada_inexistente_tem_um_quadro_so ... ok
+test protocolo::testes::envelope_recusado ... ok
+test protocolo::testes::erros_sem_numero_e_mensagem_fixa_na_leitura ... ok
+test protocolo::testes::d65_lista_do_app_com_resumo_e_do_agente_sem ... ok
+test protocolo::testes::executar_recusa_nul_igual_e_vazio ... ok
+test protocolo::testes::formato_conhecido_do_quadro ... ok
+test protocolo::testes::fuzz_quadro_e_json_aleatorios ... ok
+test protocolo::testes::ida_e_volta_de_todo_pedido_e_resposta ... ok
+test protocolo::testes::json_estrito ... ok
+test protocolo::testes::json_limites_de_profundidade_nos_e_chaves ... ok
+test protocolo::testes::leitura_da_resposta_e_estrita ... ok
+test protocolo::testes::fuzz_decodificador ... ok
+test protocolo::testes::pin_e_decisao_da_aprovacao ... ok
+test protocolo::testes::revelar_exige_um_alvo_conhecido ... ok
+test protocolo::testes::d29_anexos_ate_256_kib_somados_pelo_app ... ok
+test protocolo::testes::s9_rascunho_sem_nivel_e_sem_campo_de_outro_tipo ... ok
+test protocolo::testes::texto_com_escape_vai_e_volta ... ok
+test protocolo::testes::s1_resposta_com_credencial_nunca_vai_ao_agente ... ok
+test protocolo::testes::v3_15_tabela_operacao_papel ... ok
+test protocolo::testes::v3_38_estado_traz_o_papel_e_so_ele ... ok
+test protocolo::testes::v3_15_sem_porta_dos_fundos_no_codigo ... ok
+test protocolo::testes::v3_3_campos_inventados_recusam_o_pedido ... ok
+test protocolo::testes::v3_3_operacoes_de_app_e_extensao_do_agente_sao_nao_autorizadas ... ok
+test protocolo::testes::v3_4_json_invalido_e_operacao_desconhecida_respondem_erro ... ok
+test protocolo::testes::v3_4_quadro_truncado_e_fechado ... ok
+test protocolo::testes::v3_3_lista_e_detalhe_do_cofre_de_teste_sem_segredo ... ok
+test protocolo::testes::v7_8_backup_externo_so_pelo_app ... ok
+test protocolo::testes::v7_8_restaurar_e_backups_so_pelo_app ... ok
+test totp::testes::ataque_debug_e_erros_sem_semente ... ok
+test totp::testes::ataque_digitos_fora_do_intervalo ... ok
+test totp::testes::ataque_semente_malformada_e_recusada ... ok
+test totp::testes::ataque_tempo_extremo_nao_entra_em_panico ... ok
+test totp::testes::base32_vetores_rfc4648 ... ok
+test totp::testes::enchimento_no_fim_e_aceito ... ok
+test totp::testes::restante_e_codigo_agora ... ok
+test totp::testes::v2_25_bate_com_oathtool ... ok
+test totp::testes::v2_25_semente_do_contrato_codigos_conhecidos ... ok
+test totp::testes::v2_25_vetores_rfc4226_hotp ... ok
+test totp::testes::v2_25_vetores_rfc6238_sha1 ... ok
+test totp::testes::v2_25_ward_totp_da_entrega_vem_deste_modulo ... ok
+test totp::testes::v2_28_totp_sem_clone_e_semente_zera ... ok
+test protocolo::testes::v3_4_quadros_recusados_antes_de_ler_o_corpo ... ok
+test formato::testes::v2_8_troca_de_senha ... ok
+test protocolo::testes::maior_entrada_cabe_no_quadro_do_app ... ok
+test gravacao::testes::d65_v4_byte_alterado_nas_datas_falha_a_abertura ... ok
+test gravacao::testes::v2_10_v2_11_strace_ordem_e_nada_em_claro ... ok
+test backup::testes::v7_2_backup_cifrado_senha_errada_e_byte_alterado ... ok
+test gravacao::testes::d62_cofre_novo_depois_da_geracao_queimada ... ok
+test backup::testes::troca_de_senha_vai_para_o_backup_com_a_senha_nova ... ok
+test limites::testes::v2_36_par_banco_e_servidor_de_tunel_monta_a_mascara ... ok
+test gravacao::testes::v2_9_sigkill_em_cada_ponto ... ok
+test backup::testes::v7_1_31_gravacoes_deixam_30_versoes ... ok
+test formato::testes::v2_3_truncado_e_acrescido ... ok
+test gravacao::testes::d65_v4_sigkill_em_cada_ponto_mantem_as_datas ... ok
+test backup::testes::v7_3_sigkill_em_cada_ponto_do_backup ... ok
+test formato::testes::v2_2_bit_trocado_em_cada_byte ... ok
+test gravacao::testes::v2_53_fsync_do_diretorio_falha_e_a_geracao_nao_repete ... ok
+test gravacao::testes::v2_9_sigkill_em_200_pontos_aleatorios ... ok
+test limites::testes::v2_36_maior_entrada_de_cada_tipo_monta_a_mascara ... ok
+test gravacao::testes::v2_44_falha_em_cada_ponto_queima_a_geracao ... ok
+
+test result: ok. 282 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 61.15s
+
+     Running tests/corpo_memoria.rs (target/debug/deps/corpo_memoria-57286dc64f27ee09)
+
+running 5 tests
+test s8_protocolo_nenhum_bloco_liberado_tem_segredo ... ok
+test v2_32_corpo_forjado_recusado_rapido_sem_alocar ... ok
+test v2_32_corpo_autentico_aloca_so_o_que_existe ... ok
+test v2_32_codificador_recusa_acima_do_limite_antes_de_alocar ... ok
+test v2_33_nenhum_bloco_liberado_tem_segredo ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 27.92s
+
+     Running tests/fontes.rs (target/debug/deps/fontes-485becc9674938e6)
+
+running 2 tests
+test v2_50_unicas_gravacoes_publicas ... ok
+test v2_46_chave_no_heap_e_sem_hash_password ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running unittests examples/dev-cofre/main.rs (target/debug/examples/dev_cofre-a38f3912dc474570)
+
+running 17 tests
+test testes::opcoes_da_linha_de_comando ... ok
+test testes::ataque_json_malformado_recusado ... ok
+test testes::json_le_o_que_as_fixtures_usam ... ok
+test testes::dev_ausente_e_criado_0700 ... ok
+test testes::ataque_dev_que_e_link_recusado ... ok
+test testes::ataque_saida_fora_de_dev_recusada ... ok
+test testes::ataque_link_simbolico_no_caminho_recusado ... ok
+test testes::ataque_arquivo_de_entrada_grande_demais_recusado ... ok
+test testes::v2_29_saida_dentro_de_dev_aceita ... ok
+test testes::ataque_fixture_com_campo_desconhecido_recusada ... ok
+test testes::ataque_fixture_invalida_recusada_sem_valor_no_erro ... ok
+test testes::ataque_arquivo_de_entrada_fora_da_pasta_recusado ... ok
+test testes::v2_29_niveis_da_tabela ... ok
+test testes::ataque_cofre_inconsistente_nao_grava ... ok
+test testes::v2_29_fixtures_iguais_a_tabela_do_contrato ... ok
+test testes::v2_39_cofre_gerado_tem_a_configuracao ... ok
+test testes::v2_29_grava_reabre_e_confere ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.41s
+
+     Running unittests src/main.rs (target/debug/deps/ward_nm-f3115f442e1a0288)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/ward_plataforma-1bddfa1a78dd6ee9)
+
+running 79 tests
+test endurecimento::testes::acha_qualquer_variavel_ld ... ok
+test endurecimento::testes::mensagem_nao_tem_valor ... ok
+test endurecimento::testes::ataque_lista_insegura_da_glibc ... ok
+test app::testes::sem_setgid_largar_grupo_nao_muda_nada ... ok
+test endurecimento::testes::ataque_nome_com_controle_nao_vai_cru_para_a_mensagem ... ok
+test endurecimento::testes::d62_memoria_release_falha_fechado_e_modo_teste_avisa ... ok
+test app::testes::ataque_pai_que_nao_e_o_daemon_e_recusado ... ok
+test filho::testes::debug_sem_valor ... ok
+test filho::testes::ataque_ambiente_do_daemon_nao_chega_ao_filho ... ok
+test filho::testes::ataque_fd_do_daemon_nao_chega_ao_filho ... ok
+test filho::testes::argv_cwd_e_ambiente_exatos ... ok
+test filho::testes::codigo_e_sinal ... ok
+test filho::testes::entrada_chega_ao_filho ... ok
+test filho::testes::filho_morre_com_a_thread_que_o_criou ... ok
+test filho::testes::falhas_antes_do_exec ... ok
+test filho::testes::busca_no_path_do_filho_sem_shell ... ok
+test filho::testes::matar_grupo_leva_os_netos ... ok
+test lancador::testes::ataque_binario_de_usuario_ou_sem_setgid_e_recusado ... ok
+test lancador::testes::ataque_binario_de_teste_fora_das_regras_e_recusado ... ok
+test lancador::testes::app_de_teste_recebe_o_ambiente_de_d57 ... ok
+test lancador::testes::ataque_barramento_ou_pasta_da_sessao_trocados ... ok
+test lancador::testes::ambiente_montado_tem_so_as_variaveis_de_d57 ... ok
+test filho::testes::sinais_no_padrao ... ok
+test lancador::testes::locale_so_nome_de_locale ... ok
+test lancador::testes::mensagens_sem_valor ... ok
+test lancador::testes::ataque_lancador_nao_passa_ambiente_nem_fd_do_daemon ... ok
+test lancador::testes::ataque_dois_sockets_wayland_ou_link_nao_abre ... ok
+test lancador::testes::home_vem_do_passwd ... ok
+test memoria::testes::regiao_existente_e_travada ... ok
+test memoria::testes::buffer_travado_le_escreve_e_trava ... ok
+test memoria::testes::debug_nao_mostra_conteudo ... ok
+test papel::testes::ataque_gid_dentro_de_faixa_do_subgid ... ok
+test lancador::testes::lancar_poe_dev_null_e_fecha_fds ... ok
+test papel::testes::ataque_grupo_com_membro_repetido_ou_estragado ... ok
+test processo::testes::ambiente_com_qualquer_ld_recusa_sem_valor ... ok
+test pasta::testes::ataque_nome_que_sai_da_pasta_recusado ... ok
+test memoria::testes::zerar_apaga_a_regiao_inteira ... ok
+test processo::testes::caminho_permitido_so_absoluto_e_canonico ... ok
+test lancador::testes::ataque_ambiente_forcado_no_app_e_recusado ... ok
+test processo::testes::instalacao_recusa_arquivo_de_usuario_e_link ... ok
+test pasta::testes::renomeia_e_nunca_sobrescreve ... ok
+test papel::testes::grupo_do_etc_group ... ok
+test papel::testes::politica_do_kernel ... ok
+test processo::testes::linha_de_mapa ... ok
+test processo::testes::mapas_recusam_biblioteca_fora_do_root ... ok
+test processo::testes::nome_da_cadeia_higienizado ... ok
+test processo::testes::cadeia_do_proprio_processo_termina_nele ... ok
+test papel::testes::ataque_gid_que_este_processo_ja_tem ... ok
+test processo::testes::recusa_nao_vaza_detalhe ... ok
+test processo::testes::mapas_recusam_inode_diferente_do_caminho ... ok
+test processo::testes::tracer_pid_e_ppid_do_status ... ok
+test servidor::testes::caminho_invalido_recusa ... ok
+test servidor::testes::mensagens_sem_caminho ... ok
+test servidor::testes::sistema_so_aceita_uid_0 ... ok
+test servidor::testes::teste_aceita_o_proprio_uid_e_nao_o_root ... ok
+test socket::testes::caminho_do_diretorio_invalido_recusa ... ok
+test socket::testes::caminho_do_sistema_pelo_euid ... ok
+test socket::testes::ataque_pasta_do_usuario_nao_passa_por_pasta_do_sistema ... ok
+test socket::testes::listen_pid_e_fds_so_decimal_simples ... ok
+test socket::testes::pai_gravavel_por_outros_recusa ... ok
+test socket::testes::par_fechou_sem_consumir_bytes ... ok
+test socket::testes::pastas_do_root_sao_aceitas_e_link_nao ... ok
+test socket::testes::runtime_pelo_euid ... ok
+test socket::testes::uid_diferente_recusa ... ok
+test terminal::testes::arquivo_comum_nao_e_terminal ... ok
+test terminal::testes::cancelar_e_limite ... ok
+test terminal::testes::capacidade_reservada_sem_realocar ... ok
+test terminal::testes::edicao_da_linha ... ok
+test terminal::testes::modo_cru_liga_e_volta_e_tamanho_do_pty ... ok
+test terminal::testes::ctrl_c_cancela_e_restaura ... ok
+test lancador::testes::ataque_so_o_pid_do_lancador_e_o_app ... ok
+test memoria::testes::tamanho_fora_do_limite_recusa ... ok
+test lancador::testes::ponte_de_teste_recebe_o_ambiente_minimo_e_o_log_e_0600 ... ok
+test lancador::testes::saida_do_app_fica_para_o_log ... ok
+test relogio::testes::nao_volta_e_bate_com_o_uptime ... ok
+test app::testes::socket_do_std_tem_cloexec_e_o_fechamento_e_visto ... ok
+test terminal::testes::ataque_senha_nao_ecoa_no_pty ... ok
+test filho::testes::pty_terminal_de_controle_janela_e_entrada ... ok
+test filho::testes::pty_matar_o_grupo_leva_a_sessao_e_o_ambiente_e_exato ... ok
+
+test result: ok. 79 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.31s
+
+     Running tests/ativacao.rs (target/debug/deps/ativacao-a62ad0db23786de9)
+
+running 5 tests
+test filho_auxiliar ... ok
+test ataque_mais_de_um_fd ... ok
+test ataque_socket_em_outro_caminho ... ok
+test ataque_systemd_falso_do_usuario_com_socket_na_pasta_dele ... ok
+test ataque_listen_pid_e_listen_fds_errados ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/endurecimento.rs (target/debug/deps/endurecimento-3384dbc5d0f5eceb)
+
+running 10 tests
+test filho_auxiliar ... ok
+test sobe_limpo_sem_ld_e_sem_depurador ... ok
+test ataque_sigsegv_nao_deixa_core ... ok
+test v3_34_memlock_de_8_mib ... ok
+test v3_34_filho_nao_herda_o_mlockall ... ok
+test ataque_subir_com_ld_recusa ... ok
+test ataque_ler_memoria_ambiente_e_ptrace_do_processo_endurecido ... ok
+test ataque_v3_25_nome_forjado_sai_cortado ... ok
+test ataque_subir_sob_strace_recusa ... ok
+test ataque_subir_com_lista_insegura_da_glibc_recusa ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/identificacao.rs (target/debug/deps/identificacao-11d1a09b9c5d661e)
+
+running 13 tests
+test binario_instalado_e_identificado ... ok
+test ataque_biblioteca_de_usuario_sem_variavel ... ok
+test ataque_ptrace_scope_0_ou_suid_dumpable_1_desliga_os_papeis ... ok
+test host_da_extensao_exige_o_pai_permitido ... ok
+test ataque_servidor_de_teste_com_socket_aberto_ou_endereco_trocado ... ok
+test ataque_processo_que_sai_antes_da_conferencia ... ok
+test ataque_namespace_de_usuario_nao_forja_o_grupo ... ok
+test ataque_cliente_sob_strace ... ok
+test host_da_extensao_sem_pai_permitido_quando_o_pai_e_o_teste ... ok
+test ataque_binario_copiado_para_fora_da_instalacao ... ok
+test app_de_teste_sem_egid_so_com_o_pai_daemon ... ok
+test ataque_servidor_falso_do_mesmo_uid_e_recusado_antes_de_qualquer_byte ... ok
+test ataque_variaveis_ld_no_ambiente ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/socket.rs (target/debug/deps/socket-8a6fcbb8ebb22c86)
+
+running 10 tests
+test ataque_arquivo_no_lugar_do_diretorio ... ok
+test ataque_diretorio_de_outro_dono_nao_sobe ... ok
+test ataque_pasta_acima_gravavel_por_grupo ... ok
+test ataque_link_simbolico_no_lugar_do_diretorio ... ok
+test ataque_diretorio_existente_0755_nao_sobe_nem_conserta ... ok
+test diretorio_novo_fica_0700_e_socket_0600_do_usuario ... ok
+test ataque_arquivo_ou_link_no_lugar_do_socket ... ok
+test diretorio_trocado_depois_de_preparar_recusa_escutar ... ok
+test segundo_daemon_no_mesmo_socket_recusa_e_socket_velho_e_trocado ... ok
+test aceitar_traz_pid_e_uid_do_par ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/ward_ponte_teste-b7738f5182b291e6)
+
+running 1 test
+test partida::testes::dist_so_de_dev_absoluto ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/deps/ward_ponte_teste-11c835d63b1d439f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/ataques.rs (target/debug/deps/ataques-f6fa0c6418c77ec2)
+
+running 17 tests
+test csp_da_ponte_e_a_do_app ... ok
+test ataque_pedido_fora_dos_limites ... ok
+test ataque_ponte_sem_papel_app_sai_na_primeira_resposta ... ok
+test ataque_comando_de_plugin_ou_inventado ... ok
+test ataque_gerador_avulso_pela_ponte ... ok
+test ataque_host_ou_origem_de_outro_site ... ok
+test ataque_sem_token_token_errado_ou_repetido ... ok
+test ataque_arquivo_fora_do_dist ... ok
+test tcp_so_em_127_0_0_1_com_cabecalhos_de_seguranca ... ok
+test copiar_passa_e_a_resposta_nao_tem_o_valor ... ok
+test ataque_formulario_pela_ponte ... ok
+test ataque_anexos_e_conectar_pela_ponte ... ok
+test ataque_respostas_da_tela_credenciais_sem_segredo ... ok
+test ataque_primeiro_uso_pela_ponte ... ok
+test ataque_configuracoes_pela_ponte ... ok
+test ataque_mudar_nivel_pela_ponte ... ok
+test ataque_destravar_pela_ponte ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.80s
+
+     Running unittests src/lib.rs (target/debug/deps/wardd-301e0f40f575675a)
+
+running 26 tests
+test execucao::testes::ld_e_proibida ... ok
+test config::testes::caminho_relativo_ou_com_ponto_ponto_recusado ... ok
+test config::testes::modo_teste_exige_dev_dir ... ok
+test execucao::testes::ataque_rt_aberto_ou_link_recusado ... ok
+test execucao::testes::locale_utf8_fica_e_c_vira_c_utf8 ... ok
+test execucao::testes::partida_limpa_o_que_ficou ... ok
+test agente_ssh::testes::so_lista_e_assina ... ok
+test arquivos::testes::estado_estrito ... ok
+test agente_ssh::testes::ataque_adicionar_remover_travar_e_lixo_recusados ... ok
+test arquivos::testes::d62_formato_antigo_le_zero_e_novo_tem_a_linha ... ok
+test execucao::testes::temporarios_0600_zerados_e_apagados ... ok
+test servidor::testes::d63_sem_o_grupo_o_pid_do_lancador_nao_da_papel_app ... ok
+test ssh::testes::chave_usa_o_agente_da_sessao ... ok
+test ssh::testes::ataque_valores_fora_do_formato_recusados ... ok
+test ssh::testes::d43_usuario_com_arroba_so_depois_de_l ... ok
+test ssh::testes::d56_sftp ... ok
+test trava::testes::ataque_caminho_do_barramento_estranho ... ok
+test trava::testes::estado_travar_e_erro_nao_contam_como_uso ... ok
+test trava::testes::venceu_no_limite_e_falha_fechada ... ok
+test udisks::testes::ataque_montagem_estranha_conta_como_nao_montado ... ok
+test udisks::testes::rotulo_sem_controle_e_cortado ... ok
+test uso::testes::nivel_combinado_e_o_mais_restritivo ... ok
+test lancamento::testes::saida_vai_ao_log_so_com_numeros ... ok
+test servidor::testes::assinante_escreve_quadro_inteiro_e_falha_fechado ... ok
+test servidor::testes::d63_par_filho_sem_egid_fica_agente ... ok
+test servidor::testes::ataque_conexoes_de_agente_nao_despejam_o_app ... ok
+
+test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running unittests src/main.rs (target/debug/deps/wardd-ae3b45a51136ce91)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests app-teste/main.rs (target/debug/deps/wardd_app_teste-e168bb8688737602)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/app_teste.rs (target/debug/deps/app_teste-c507e152f2a473a9)
+
+running 1 test
+test v3_37_so_o_app_aberto_pelo_daemon_de_teste_e_app ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.64s
+
+     Running tests/app_valor.rs (target/debug/deps/app_valor-f9173bd6bda34341)
+
+running 1 test
+test v3_39_v3_40_valores_e_lista_do_app_pelo_daemon_de_teste ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.25s
+
+     Running tests/aprovacao.rs (target/debug/deps/aprovacao-b60b5007d9f82589)
+
+running 19 tests
+test ataque_v3_15_gancho_sem_feature_ou_fora_do_lugar ... ok
+test v3_36_so_o_pid_do_lancador_e_app ... ok
+test v3_15_sem_aprovador_no_binario ... ok
+test v3_38_estado_traz_o_papel ... ok
+test v3_14_negar_e_fechar_negam ... ok
+test ataque_agente_responde_a_aprovacao ... ok
+test d51_comando_e_cadeia_com_escape_visivel ... ok
+test v3_14_uma_vez_so_aquele_pedido ... ok
+test cliente_que_cai_cancela ... ok
+test app_aberto_recebe_o_pedido_ao_assinar ... ok
+test v3_14_sem_resposta_expira_em_2_min ... ok
+test v3_14_sempre_deixa_livre_no_arquivo ... ok
+test ataque_permitir_sem_pin_valido ... ok
+test v3_16_prod_tem_os_mesmos_niveis_e_botoes ... ok
+test v3_14_uma_hora_ate_59_59_e_travar_encerra ... ok
+test d19_nivel_combinado ... ok
+test d57_abrir_app ... ok
+test v3_18_espera_o_destrave_ate_2_min ... ok
+test d21_aprovacao_indisponivel ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.90s
+
+     Running tests/backup.rs (target/debug/deps/backup-c894eb9e042c91f8)
+
+running 9 tests
+test v7_8_agente_e_extensao_nao_restauram ... ok
+test ataque_pasta_de_backups_trocada_por_link ... ok
+test ataque_versao_trocada_por_link ... ok
+test ataque_restaurar_sem_pin_senha_errada_e_travado ... ok
+test ataque_restaurar_com_cofre_trocado_fora_do_ward ... ok
+test ataque_restaurar_sem_gravar_o_estado_nao_troca_o_cofre ... ok
+test restaurar_pede_a_senha_da_versao ... ok
+test v7_1_cada_gravacao_do_daemon_vai_para_o_backup ... ok
+test v7_11_restaurar_sela_geracao_nova_e_copia_a_mao_e_retrocesso ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.74s
+
+     Running tests/configuracoes.rs (target/debug/deps/configuracoes-f652bba1f9f42f9a)
+
+running 7 tests
+test ataque_resposta_configuracao_sem_hash_nem_pin ... ok
+test ataque_configuracao_com_o_cofre_travado ... ok
+test ataque_adivinhar_pin_pela_troca_trava_no_quinto_erro ... ok
+test v5_22_padrao_4h_desligado_e_tempo_alteravel_gravado_no_cofre ... ok
+test ataque_agente_e_extensao_nao_leem_nem_mudam_a_configuracao ... ok
+test v5_22_trocar_pin_pede_o_pin_atual ... ok
+test v5_22_trocar_senha_pede_a_atual_e_mantem_a_configuracao ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.63s
+
+     Running tests/d62.rs (target/debug/deps/d62-bf84b2c3e71b7d7d)
+
+running 6 tests
+test v3_35_criar_cofre_sem_estado_e_com_estado_invalido ... ok
+test v3_33_formato_antigo_e_estado_sem_segredo ... ok
+test v3_35_criar_cofre_com_estado_velho_e_copia_antiga ... ok
+test v3_35_troca_logo_depois_do_rename_e_recusada ... ok
+test ataque_agente_no_meio_da_espera_nao_atrasa_o_app ... ok
+test v3_33_espera_do_agente_sobrevive_ao_reinicio ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 23.56s
+
+     Running tests/datas.rs (target/debug/deps/datas-4422d6ef8299521b)
+
+running 5 tests
+test ataque_v3_41_data_vinda_do_cliente_recusada ... ok
+test ataque_v3_41_datas_nao_vao_ao_agente ... ok
+test relogio_ilegivel_grava_sem_data_nova ... ok
+test restaurar_mantem_as_datas ... ok
+test v3_41_datas_pelo_relogio_do_daemon ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.95s
+
+     Running tests/externo.rs (target/debug/deps/externo-c3d9b6a64e961d34)
+
+running 12 tests
+test externo_nao_usa_link ... ok
+test udisks_falso_e_lido_com_as_conferencias ... ok
+test v7_4_desligado_por_padrao_nao_grava_nada ... ok
+test v7_8_agente_e_extensao_nao_ligam_nem_leem ... ok
+test ataque_pendrive_trocado_ou_uuid_repetido_nao_recebe_nada ... ok
+test ataque_montagem_ou_pasta_que_e_link ... ok
+test pendrives_sem_udisks_e_uuid_invalido ... ok
+test ataque_versao_existente_no_pendrive_nao_e_sobrescrita ... ok
+test pendrive_fica_com_30_versoes ... ok
+test travado_ou_desligado_nao_copia ... ok
+test v7_5_sinal_do_udisks_copia_para_o_pendrive_montado ... ok
+test v7_5_v7_6_copia_so_para_o_pendrive_escolhido_e_sem_segredo ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.84s
+
+     Running tests/memoria.rs (target/debug/deps/memoria-756f6f045973c982)
+
+running 1 test
+test v3_8_travar_zera_a_chave_e_os_segredos_antes_de_liberar ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 26.22s
+
+     Running tests/nucleo.rs (target/debug/deps/nucleo-e5132315f554feee)
+
+running 10 tests
+test v3_17_v3_26_lista_do_agente_e_bloqueada_igual_inexistente ... ok
+test v3_10_travar_e_tudo_responde_travado ... ok
+test v3_27_entrada_nova_nasce_com_aprovacao ... ok
+test v3_11_mudar_nivel_exige_pin_e_papel_app ... ok
+test primeiro_uso_e_pin_so_como_hash ... ok
+test v3_12_cinco_erros_de_pin_travam ... ok
+test d52_trocar_senha_com_senha_errada ... ok
+test v3_22_rollback_e_arquivo_trocado ... ok
+test v3_9_senha_errada_espera_crescente_sem_contagem ... ok
+test v3_28_geracao_queimada_no_estado ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.74s
+
+     Running tests/run.rs (target/debug/deps/run-197aa3b767c58a41)
+
+running 5 tests
+test v4_15_cli_que_cai_e_daemon_morto ... ok
+test ra1_registro_environ_do_filho_legivel_pelo_mesmo_uid ... ok
+test d52_pedido_grande_demais_recusado_pelo_daemon ... ok
+test v4_entrega_mascara_codigo_e_recusas ... ok
+test v4_21_travado_espera_o_destravar_da_cli ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.63s
+
+     Running tests/socket.rs (target/debug/deps/socket-66630c49b4a504cf)
+
+running 4 tests
+test v3_30_ambiente_com_tmpdir_ou_ld_recusa_subir ... ok
+test v3_6_wardd_no_ar_nega_proc_ptrace_e_core ... ok
+test v3_20_ciclo_pelo_socket_sem_segredo_no_log ... ok
+test v3_33_kill_9_entre_as_senhas_erradas ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.82s
+
+     Running tests/ssh.rs (target/debug/deps/ssh-6727266d1fbca66c)
+
+running 8 tests
+test v4_35_d43_usuario_com_arroba_e_senha_so_no_ambiente ... ok
+test recusas_sem_executar_nada ... ok
+test d12_sftp_com_chave_atende_o_ssh_do_sftp ... ok
+test v5_24_token_do_conectar ... ok
+test d12_travar_derruba_o_agente ... ok
+test v4_24_d12_agente_so_do_filho ... ok
+test d34_pty_prefixo_parado_vira_marca_e_o_resto_nao_sai ... ok
+test v4_37_d56_sftp_com_user_e_host_depois_de_traco_traco ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.11s
+
+     Running tests/trava.rs (target/debug/deps/trava-a6836d6372358cfb)
+
+running 11 tests
+test daemon_de_teste_sem_barramento_falso_nao_liga_o_logind ... ok
+test ataque_barramento_cai_com_o_cofre_aberto_trava ... ok
+test v3_19_inatividade_com_relogio_injetado ... ok
+test ataque_agente_nao_segura_o_cofre_aberto_com_estado_ou_erro ... ok
+test ataque_sinal_forjado_nao_destrava_nem_segura ... ok
+test v3_19_tempo_lido_da_configuracao_do_cofre ... ok
+test v3_19_binario_trava_com_lock_session_do_logind_falso ... ok
+test ataque_relogio_que_volta_ou_ilegivel_trava ... ok
+test v3_19_prepare_for_sleep_trava_antes_de_soltar_o_inibidor ... ok
+test v3_19_lock_e_locked_hint_travam_em_ate_2s ... ok
+test d62_trava_automatica_nao_mexe_na_espera_do_d20 ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.26s
+
+     Running tests/units.rs (target/debug/deps/units-58ddd7d21acf8cbf)
+
+running 3 tests
+test v3_21_servico_com_user_limitcore_e_sem_ld ... ok
+test d57_ataque_nenhuma_diretiva_que_liga_no_new_privs ... ok
+test v3_21_socket_do_sistema ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/valor_app.rs (target/debug/deps/valor_app-238f19f3b96ff160)
+
+running 4 tests
+test ataque_v3_39_agente_e_extensao_nao_revelam_nem_copiam_nem_tiram_totp ... ok
+test v3_40_lista_do_app_com_resumo_e_do_agente_sem_nivel_nem_resumo ... ok
+test v3_39_app_revela_e_copia_sem_pin_nem_aprovacao_ate_a_bloqueada ... ok
+test v3_39_totp_do_app_pelo_relogio_do_daemon ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.67s
+
+   Doc-tests ward
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests ward_app_nucleo
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests ward_core
+
+running 1 test
+test crates/ward-core/src/gravacao.rs - gravacao (line 44) - compile ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 6 tests
+test crates/ward-core/src/formato.rs - formato::CofreAberto (line 255) - compile fail ... ok
+test crates/ward-core/src/formato.rs - formato::CofreAberto (line 225) - compile fail ... ok
+test crates/ward-core/src/formato.rs - formato::CofreAberto (line 243) - compile fail ... ok
+test crates/ward-core/src/gravacao.rs - gravacao (line 22) - compile fail ... ok
+test crates/ward-core/src/gravacao.rs - gravacao (line 30) - compile fail ... ok
+test crates/ward-core/src/formato.rs - formato::CofreAberto (line 234) - compile fail ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+all doctests ran in 0.36s; merged doctests compilation took 0.29s
+   Doc-tests ward_plataforma
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests ward_ponte_teste
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests wardd
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

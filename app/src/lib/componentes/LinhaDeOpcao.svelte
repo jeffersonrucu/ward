@@ -52,7 +52,13 @@
     role="switch"
     checked={ligado}
     disabled={desabilitado}
-    onchange={(e) => onmudar?.(e.currentTarget.checked)}
+    onchange={(e) => {
+      // Controlado (Fase 48): o clique só pede a mudança; o estado volta ao `ligado`
+      // até quem usa a linha decidir (ligar o backup externo abre a escolha primeiro).
+      const pedido = e.currentTarget.checked;
+      e.currentTarget.checked = ligado;
+      onmudar?.(pedido);
+    }}
   />
   <span class="interruptor" class:ligado aria-hidden="true">
     <span class="botao"></span>

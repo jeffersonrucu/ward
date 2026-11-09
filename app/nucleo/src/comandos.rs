@@ -69,6 +69,9 @@ pub const CRIAR_COFRE: &str = "criar_cofre";
 /// `destravar { senha }`: destrava com a senha mestra (Fase 31). A senha vai só ao
 /// daemon, num tipo que zera; a resposta não a traz nem diz quantas tentativas houve.
 pub const DESTRAVAR: &str = "destravar";
+/// `travar`: "Travar agora" da `Navegação lateral` (Fase 39; a bandeja trava pelo lado
+/// Rust). Sem argumento; limpa a área de transferência e o formulário antes.
+pub const TRAVAR: &str = "travar";
 /// `ouvir_avisos { canal }`: o canal do Tauri por onde o lado Rust avisa a tela de um
 /// `pedido_de_destrave` (Fase 31, D65 a). O aviso leva só o nome dele, sem dado.
 pub const OUVIR_AVISOS: &str = "ouvir_avisos";
@@ -91,6 +94,14 @@ pub const TROCAR_SENHA_MESTRA: &str = "trocar_senha_mestra";
 /// `definir_tempo_trava { minutos }`: tempo de trava por inatividade, gravado na
 /// configuração do cofre (Fase 38, D30, D45).
 pub const DEFINIR_TEMPO_TRAVA: &str = "definir_tempo_trava";
+/// `backup_externo`: ligado ou não, o UUID escolhido e, se conectado, o pendrive (rótulo
+/// neutralizado, D51). Nunca o caminho de montagem (Fase 48, V7.9).
+pub const BACKUP_EXTERNO: &str = "backup_externo";
+/// `listar_pendrives`: os pendrives que o daemon vê, para escolher (Fase 48).
+pub const LISTAR_PENDRIVES: &str = "listar_pendrives";
+/// `definir_backup_externo { ligado, uuid? }`: ligar com um pendrive que o daemon vê
+/// agora (o lado Rust confere de novo) ou desligar mantendo o UUID (Fase 48, D17, D30).
+pub const DEFINIR_BACKUP_EXTERNO: &str = "definir_backup_externo";
 
 /// Comandos da janela principal, na ordem da capability `principal`.
 pub const COMANDOS_PRINCIPAL: &[&str] = &[
@@ -119,6 +130,10 @@ pub const COMANDOS_PRINCIPAL: &[&str] = &[
     TROCAR_PIN,
     TROCAR_SENHA_MESTRA,
     DEFINIR_TEMPO_TRAVA,
+    BACKUP_EXTERNO,
+    LISTAR_PENDRIVES,
+    DEFINIR_BACKUP_EXTERNO,
+    TRAVAR,
 ];
 
 /// Comandos da janela de aprovação, na ordem da capability `aprovacao` (Fase 36). O
@@ -157,8 +172,12 @@ pub const COMANDOS: &[&str] = &[
     TROCAR_PIN,
     TROCAR_SENHA_MESTRA,
     DEFINIR_TEMPO_TRAVA,
+    BACKUP_EXTERNO,
+    LISTAR_PENDRIVES,
+    DEFINIR_BACKUP_EXTERNO,
     PEDIDO_DE_APROVACAO,
     RESPONDER_APROVACAO,
+    TRAVAR,
 ];
 
 /// Nome da permissão gerada pelo Tauri para o comando (`allow-estado-do-cofre`).
@@ -194,8 +213,12 @@ pub enum Comando {
     TrocarPin,
     TrocarSenhaMestra,
     DefinirTempoTrava,
+    BackupExterno,
+    ListarPendrives,
+    DefinirBackupExterno,
     PedidoDeAprovacao,
     ResponderAprovacao,
+    Travar,
 }
 
 impl Comando {
@@ -226,8 +249,12 @@ impl Comando {
             TROCAR_PIN => Some(Comando::TrocarPin),
             TROCAR_SENHA_MESTRA => Some(Comando::TrocarSenhaMestra),
             DEFINIR_TEMPO_TRAVA => Some(Comando::DefinirTempoTrava),
+            BACKUP_EXTERNO => Some(Comando::BackupExterno),
+            LISTAR_PENDRIVES => Some(Comando::ListarPendrives),
+            DEFINIR_BACKUP_EXTERNO => Some(Comando::DefinirBackupExterno),
             PEDIDO_DE_APROVACAO => Some(Comando::PedidoDeAprovacao),
             RESPONDER_APROVACAO => Some(Comando::ResponderAprovacao),
+            TRAVAR => Some(Comando::Travar),
             _ => None,
         }
     }
@@ -314,8 +341,12 @@ mod testes {
                 "trocar_pin",
                 "trocar_senha_mestra",
                 "definir_tempo_trava",
+                "backup_externo",
+                "listar_pendrives",
+                "definir_backup_externo",
                 "pedido_de_aprovacao",
                 "responder_aprovacao",
+                "travar",
             ]
         );
         // As duas janelas juntas são todos; em comum, só o canal de avisos.

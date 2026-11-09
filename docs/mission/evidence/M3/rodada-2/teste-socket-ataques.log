@@ -1,0 +1,70 @@
+origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
+/home/jeffersonoliveira/.cargo/bin/cargo build --quiet --locked -p wardd --features modo-teste --bin wardd
+dev/testes/socket-ataques.sh target/debug/wardd "10000"
+wardd de teste só deste script: pid 2889462, socket /run/user/1000/ward-socket-ataques-2889450-jqjUAm/wardd.sock
+==> V3.4: quadros ruins e 10000 conexões caladas
+ok    antes: cliente normal atendido em 0.00 s
+ok    tamanho de 2 MiB: erro:quadro_invalido
+ok    tamanho 0xFFFFFFFF (negativo em i32): erro:quadro_invalido
+ok    tamanho negativo com corpo: erro:quadro_invalido
+ok    tamanho 0: erro:quadro_invalido
+ok    JSON inválido: erro:pedido_invalido
+ok    JSON sem versão nem op: erro:pedido_invalido
+ok    UTF-8 inválido: erro:pedido_invalido
+ok    versão errada: erro:versao_desconhecida
+ok    operação desconhecida: erro:operacao_desconhecida
+ok    quadro cortado: fechado
+ok    daemon vivo depois dos quadros ruins
+ok    depois dos quadros ruins: cliente normal atendido em 0.00 s
+info  10000 conexões caladas abertas em 0.2 s (0 connect falhou)
+ok    com 10000 conexões caladas: cliente normal atendido em 0.09 s
+ok    das 10000 caladas, 63 seguem abertas (até 129)
+ok    daemon vivo depois da enxurrada
+ok    depois da enxurrada: cliente normal atendido em 0.00 s
+socket_ataque: V3.4 ok
+==> V3.3: matriz operação × entrada × campo (agente)
+info  lista do agente: 21 entradas; matriz com 23
+info  4301 pedidos
+info  abrir_app                aprovacao_indisponivel × 46
+info  abrir_app                pedido_invalido × 92
+info  backup_externo           nao_autorizado × 138
+info  backups                  nao_autorizado × 138
+info  configuracao             nao_autorizado × 138
+info  copiar                   nao_autorizado × 138
+info  criar_cofre              nao_autorizado × 138
+info  definir_backup_externo   nao_autorizado × 138
+info  detalhe                  nao_autorizado × 138
+info  emitir_token             nao_autorizado × 138
+info  entrada_padrao           pedido_invalido × 138
+info  estado                   estado × 46
+info  estado                   pedido_invalido × 92
+info  executar                 pedido_invalido × 138
+info  executar(env)            aprovacao_indisponivel × 5
+info  executar(env)            entrada_inexistente × 2
+info  executar(env)            entrega_falhou × 1
+info  executar(env)            fim × 14
+info  executar(env)            tipo_sem_entrega × 1
+info  janela                   pedido_invalido × 138
+info  lista                    lista × 46
+info  lista                    pedido_invalido × 92
+info  login                    pedido_invalido × 138
+info  mudar_nivel              nao_autorizado × 138
+info  pendrives                nao_autorizado × 138
+info  playwright               pedido_invalido × 138
+info  preencher                nao_autorizado × 138
+info  remover_entrada          nao_autorizado × 138
+info  responder_aprovacao      nao_autorizado × 138
+info  restaurar_backup         nao_autorizado × 138
+info  revelar                  nao_autorizado × 138
+info  salvar_entrada           nao_autorizado × 138
+info  salvar_login             nao_autorizado × 138
+info  ssh                      pedido_invalido × 138
+info  sugerir                  nao_autorizado × 138
+info  tempo_trava              nao_autorizado × 138
+info  totp                     nao_autorizado × 138
+info  trocar_pin               nao_autorizado × 138
+info  trocar_senha             nao_autorizado × 138
+socket_matriz: V3.3 ok (4301 pedidos, nenhum segredo, app/extensão não autorizado)
+==> log do daemon (RUST_LOG=trace) sem segredo
+ok    log do daemon (4341 linhas) sem padrão de .dev/variacoes.txt
+teste-socket-ataques: V3.3 e V3.4 ok

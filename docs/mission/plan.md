@@ -436,6 +436,12 @@ Pendências da 38 (2026-11-09): frame `15242` diz "Trocar pede a senha mestra" n
 
 Pendências da 24a (2026-11-09): 1º `kill -SEGV` cai no tratador de pilha do Rust e só o 2º mata (sem core nos dois; V3.6 fala em um); nesta máquina `suid_dumpable=2` e `core_pattern` é pipe do apport — o que impede o core é `PR_SET_DUMPABLE=0` (levar à instalação, M9); sem `gdb` no host; nome de variável que começa com byte inválido sai vazio na mensagem; extensão divide as 64 vagas com o agente.
 
+Pendências da 39 (2026-11-09): menu da bandeja é acessível a qualquer processo do mesmo uid pelo barramento da sessão (só textos fixos e travar/mostrar/fechar; auditor do M5 confere); dependências novas só no app: `tray-icon 0.25.1`, `libappindicator 0.9.0`, `libappindicator-sys 0.9.0`, `libloading 0.7.4`; `configuracao` conta como uso no `wardd`, então a bandeja só lê o tempo de trava ao destravar/criar; ícone só até 32 px (falta export 64 px); `make teste-logs-app` falta na tabela do CLAUDE.md; bandeja e janela de aprovação no COSMIC ficam para o roteiro (`docs/mission/roteiro-usuario.md`).
+
+Pendências da 48 (2026-11-09): frames `16178`/`16334` mostram caminho de montagem e "última cópia", que o protocolo não traz — corrigir FigCraft ou criar operação de última cópia (só data e contagem); diálogo "Escolher pendrive" sem frame; app só liga com pendrive conectado agora (o `wardd` aceita qualquer UUID no formato); `neutralizar` não escapa `\` (cosmético).
+
+Pendências do scrutiny do M3, 2ª rodada (aprovado, 2026-11-09): `teste-socket-ataques` regrava `target/debug/wardd` (o mesmo do `dev-daemon`) — usar `--target-dir` próprio; vaga do app só com teste de unidade; `ganchos-teste` aceito (só dois ganchos, depende de `modo-teste`).
+
 ## Milestone 3 — Daemon e protocolo
 Contrato: V3.1–V3.41
 
@@ -781,7 +787,7 @@ Contrato: V5.1–V5.35
   `save_file` e PNG das telas ao usuário. V5.35.
 - [x] Fase 38 — **(UI)** Configurações (PIN, senha mestra, tempo de trava gravado na
   configuração do cofre, D30; backup externo só exibido desligado). V5.22.
-- [ ] Fase 39 — **(UI)** Bandeja; `docs/mission/roteiro-usuario.md` da janela nativa;
+- [x] Fase 39 — **(UI)** Bandeja; `docs/mission/roteiro-usuario.md` da janela nativa;
   varredura de logs do app. V5.23, V5.27, V5.28.
 
 ## Milestone 6 — Extensão, `ward login` e `ward playwright`
@@ -812,7 +818,7 @@ Contrato: V7.1–V7.11
 - [x] Fase 46 — Backup externo em pendrive por UUID via udisks2, desligado por padrão;
   ligado/desligado e UUID ficam na configuração do cofre (D30). V7.4–V7.6, V7.8.
 - [ ] Fase 47 — **(UI)** Restaurar backup. V7.7.
-- [ ] Fase 48 — **(UI)** Configurações › backup externo. V7.9.
+- [x] Fase 48 — **(UI)** Configurações › backup externo. V7.9.
 - [ ] Fase 49 — **(UI)** Kit de emergência para imprimir. V7.10.
 
 ## Milestone 8 — Skill `ward`

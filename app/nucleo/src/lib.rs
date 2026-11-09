@@ -31,8 +31,12 @@
 //! - [`configuracoes`]: tela Configurações (Fase 38): trocar PIN (pede o atual), trocar
 //!   senha mestra (pede a atual; a nova com a regra do primeiro uso) e tempo de trava,
 //!   gravados pelo daemon na configuração do cofre (D30, D39).
+//! - [`backup_externo`]: Configurações › backup externo (Fase 48): o pendrive escolhido
+//!   tem de estar na lista do daemon; o rótulo (não confiável) chega neutralizado (D51).
 //! - [`aprovacao`]: janela de aprovação (Fase 36): pedidos do daemon com o texto do
 //!   agente neutralizado (D51) e a resposta com PIN, só pela janela `aprovacao`.
+//! - [`bandeja`]: ícone e menu da bandeja (Fase 39): textos por estado, ações (nenhuma
+//!   revela, copia ou aprova) e a pasta 0700 do ícone.
 //! - [`servico`]: o que cada comando faz. Nenhuma resposta leva segredo (S1, S11).
 
 #![forbid(unsafe_code)]
@@ -40,6 +44,8 @@
 pub mod anexos;
 pub mod aprovacao;
 pub mod area_transferencia;
+pub mod backup_externo;
+pub mod bandeja;
 pub mod cliente;
 pub mod comandos;
 pub mod configuracoes;

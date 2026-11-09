@@ -84,6 +84,17 @@
     consultar();
   }
 
+  // "Travar agora" da `Navegação lateral` (Fase 39): o lado Rust limpa a área de
+  // transferência e o formulário e trava; a casca sai e a tela vai para `Destravar`.
+  async function travarAgora() {
+    try {
+      await chamar('travar');
+    } catch {
+      // O estado relido abaixo mostra o que houve.
+    }
+    travou();
+  }
+
   function falhaAoDestravar(m) {
     falhou = true;
     travado = false;
@@ -124,7 +135,7 @@
   <JanelaAprovacao />
 {:else if destravado}
   <div class="casca">
-    <NavegacaoLateral ativo={tela} onnavegar={navegar} />
+    <NavegacaoLateral ativo={tela} onnavegar={navegar} ontravar={travarAgora} />
     {#if tela === 'credenciais'}
       <Credenciais ontravado={travou} />
     {:else if tela === 'gerador'}

@@ -1,6 +1,7 @@
 """QA da Fase 49 (V7.10): kit de emergência pela ponte, Chrome headless 1280x800.
 
-Uso: qa49.py <saida-da-ponte> <chrome> <pasta-evidencia> <variacoes.txt|-> <rotulo>
+Uso: qa49.py <saida-da-ponte> <chrome> <pasta-evidencia> <variacoes.txt|-> <rotulo> [pendrive-esperado]
+`pendrive-esperado` (opcional): texto que o item "Pendrive" da folha precisa conter.
 O PDF é gerado em memória (page.pdf sem path) e só o texto extraído é conferido; nada
 dele é gravado no repositório.
 """
@@ -14,6 +15,7 @@ sys.path.insert(0, "/tmp/claude-1000/-home-jeffersonoliveira-projetos-cofre/d2e2
 from playwright.sync_api import sync_playwright  # noqa: E402
 
 saida_ponte, chrome, pasta, variacoes, rotulo = sys.argv[1:6]
+pendrive_esperado = sys.argv[6] if len(sys.argv) > 6 else "backup externo desligado"
 url = None
 for _ in range(600):
     m = re.search(r"http://127\.0\.0\.1:\d+/#token=[0-9a-f]{64}", open(saida_ponte).read())
@@ -67,6 +69,7 @@ with sync_playwright() as p:
     r["tem_cofre"] = "~/.local/share/ward/" in texto
     r["tem_backups"] = "~/.local/share/ward/backups/" in texto
     r["pendrive"] = pg.inner_text("[data-teste=kit-pendrive]")
+    r["pendrive_esperado"] = pendrive_esperado in r["pendrive"]
     r["senha_linhas_em_branco"] = pg.evaluate(
         "() => [...document.querySelectorAll('.folha .linha')].map(l => l.textContent.trim().length)"
     ) == [0, 0]

@@ -987,6 +987,19 @@ headless, 1280×800, tema claro do sistema), PNG do frame e `qa.json` em
 `Configurações / Backup externo ligado` (`16178`) não entra: ligar o backup externo é da
 Fase 46.
 
+## Fase 48 — Configurações › backup externo no código (só leitura do FigCraft)
+
+Lido de uma cópia do `Ward.figcraft` (o original não foi alterado), por `get_node` e
+`screenshot`. Capturas do app (ponte de teste com `--daemon-falso cheio`,
+`backup-externo-ligado` e `sem-udisks`, Chrome headless, 1280×800), PNG do frame e
+`qa.json` em `docs/mission/evidence/fase-48/`.
+
+| Frame / componente no FigCraft | Id | No código |
+| --- | --- | --- |
+| `Configurações / Backup externo ligado` | `16178` (`corpo` `16255`; `Linha de opção` interruptor `16265`) | `app/src/telas/Configuracoes.svelte` › `configuracoes-backup-externo-ligado-1280x800.png` |
+| Cartão `pendrive` (frame solto, não é componente) | `16318` (avatar `16320` com `Ícone/sucesso` `16329`; textos `16321`: nome `16332`, detalhe `16333`, estado `16334`; `Botão` "Trocar" `16322`) | `app/src/lib/componentes/CartaoDePendrive.svelte` (borda `borda/foco` 6:71, estado `sucesso/texto` 6:86) |
+| Diálogo "Escolher pendrive" / "Trocar pendrive" | sem frame | `app/src/telas/EscolherPendrive.svelte` (`Modal` 611, opções no desenho do `16318`, `Botão` 263) › `escolher-pendrive-1280x800.png` |
+
 ## Fase 36 — janela de aprovação no código (só leitura do FigCraft)
 
 Lido de uma cópia do `Ward.figcraft` (o original não foi alterado), por `get_node` e
@@ -1012,8 +1025,9 @@ Textos da janela em `app/src/telas/aprovacao.js`.
 ## Fase 49 — kit de emergência no código (só leitura do FigCraft)
 
 Lido de uma cópia do `Ward.figcraft` (o original não foi alterado), por `get_node` e
-`screenshot`. Capturas (ponte com `--daemon-falso cheio`, `&tela=configuracoes`, Chrome
-headless 1280×800), página do PDF e `qa-falso.json` em `docs/mission/evidence/fase-49/`.
+`screenshot`. Capturas (ponte com `--daemon-falso cheio` e `backup-externo-ligado`,
+`&tela=configuracoes`, Chrome headless 1280×800), página do PDF, `qa-falso.json` e
+`qa-backup-externo-ligado.json` em `docs/mission/evidence/fase-49/`.
 
 | Frame / componente no FigCraft | Id | No código |
 | --- | --- | --- |

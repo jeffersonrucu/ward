@@ -7,8 +7,9 @@
   // janela de impressão do sistema decide a impressora, e um PDF só existe se o usuário
   // escolher "Imprimir em arquivo" e o lugar. O app não grava nada em disco.
   //
-  // A folha não tem segredo: as pastas são as fixas da instalação e do daemon vem só se
-  // o backup externo está ligado (`configuracoes`). A senha mestra é escrita à mão nas
+  // A folha não tem segredo: as pastas são as fixas da instalação e do daemon vem só o
+  // backup externo (`backup_externo`: ligado, UUID e rótulo do pendrive, se conectado;
+  // tudo passa por `linhaDoPendrive`). A senha mestra é escrita à mão nas
   // duas linhas em branco; não existe campo, valor nem estado para ela.
   //
   // Na impressão (`@media print`), só a folha sai: o resto da página some. Para isso o
@@ -51,9 +52,15 @@
     externo = null;
     data = dataImpressa(new Date());
     try {
-      const c = await chamar('configuracoes');
+      // Fase 48: `backup_externo` traz ligado, UUID (D45) e o pendrive, se conectado
+      // (rótulo já neutralizado no Rust). Nenhum caminho de montagem, nenhum segredo.
+      const b = await chamar('backup_externo');
       if (minha !== leitura) return;
-      externo = { ligado: c?.backup_externo === true };
+      externo = {
+        ligado: b?.ligado === true,
+        uuid: typeof b?.uuid === 'string' ? b.uuid : null,
+        pendrive: b?.pendrive && typeof b.pendrive.rotulo === 'string' ? { rotulo: b.pendrive.rotulo } : null,
+      };
       pronto = true;
     } catch (e) {
       if (minha !== leitura) return;

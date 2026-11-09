@@ -13,6 +13,7 @@ use crate::ErroApp;
 use crate::anexos::{Anexos, Escolha, Seletor, SemSeletor};
 use crate::aprovacao::{self, Aprovacoes, PedidoExibido, ResultadoAprovacao};
 use crate::area_transferencia::{AreaTransferencia, Copiador};
+use crate::backup_externo::{self, BackupExternoVisto, EscolhaDoPendrive, PendriveVisto};
 use crate::cliente;
 use crate::comandos::{Referencia, validar_nome_entrada};
 use crate::configuracoes::{Configuracoes, ResultadoTroca, TrocaPin, TrocaSenha, minutos_validos};
@@ -70,6 +71,30 @@ pub struct Servico<D: Daemon, A: AreaTransferencia> {
     aprovacoes: Arc<Aprovacoes>,
     /// O `pedido_de_destrave` do agente que está esperando (Fase 31, D65 a).
     pedido: Arc<PedidoPendente>,
+}
+
+/// O estado do backup externo: a configuração e, com um UUID escolhido, se ele está
+/// entre os pendrives vistos. O udisks2 sem resposta não é erro aqui: o cartão diz que
+/// não deu para ver.
+fn backup_externo_de<D: Daemon + ?Sized>(d: &mut D) -> Result<BackupExternoVisto, ErroApp> {
+    let (ligado, uuid) = cliente::backup_externo(d)?;
+    let (pendrive, pendrives_visiveis) = match &uuid {
+        None => (None, true),
+        Some(u) => match cliente::pendrives(d) {
+            Ok(lista) => (
+                backup_externo::achar(&lista, u).map(PendriveVisto::de),
+                true,
+            ),
+            Err(ErroApp::PendrivesIndisponiveis) => (None, false),
+            Err(e) => return Err(e),
+        },
+    };
+    Ok(BackupExternoVisto {
+        ligado,
+        uuid,
+        pendrive,
+        pendrives_visiveis,
+    })
 }
 
 /// Valores que o formulário pede sem passar pela interface.
@@ -617,6 +642,43 @@ impl<D: Daemon, A: AreaTransferencia> Servico<D, A> {
         cliente::configuracao(&mut *d)
     }
 
+    /// `backup_externo` (Fase 48, V7.9): ligado ou não, o UUID escolhido e, se ele
+    /// estiver conectado, o pendrive (rótulo neutralizado, D51). Sem caminho de montagem.
+    pub fn backup_externo(&self) -> Result<BackupExternoVisto, ErroApp> {
+        backup_externo_de(&mut *self.daemon()?)
+    }
+
+    /// `listar_pendrives` (Fase 48): os pendrives que o daemon vê, para escolher.
+    pub fn listar_pendrives(&self) -> Result<Vec<PendriveVisto>, ErroApp> {
+        let lista = cliente::pendrives(&mut *self.daemon()?)?;
+        Ok(lista.iter().map(PendriveVisto::de).collect())
+    }
+
+    /// `definir_backup_externo { ligado, uuid? }` (Fase 48, V7.9; D17, D30). Ligar: o UUID
+    /// (formato de D45, conferido em [`EscolhaDoPendrive::nova`]) tem de ser de um pendrive que o
+    /// daemon vê agora; senão nada vai ao `definir_backup_externo`. Vai o UUID como o
+    /// daemon o deu. Desligar mantém o UUID guardado. A resposta é o estado lido de novo.
+    pub fn definir_backup_externo(
+        &self,
+        ligado: bool,
+        uuid: Option<&str>,
+    ) -> Result<BackupExternoVisto, ErroApp> {
+        let escolha = EscolhaDoPendrive::nova(ligado, uuid)?;
+        let mut d = self.daemon()?;
+        match escolha {
+            EscolhaDoPendrive::Ligar(u) => {
+                let lista = cliente::pendrives(&mut *d)?;
+                let p = backup_externo::achar(&lista, &u).ok_or(ErroApp::PendriveNaoConectado)?;
+                cliente::definir_backup_externo(&mut *d, true, Some(p.uuid.clone()))?;
+            }
+            EscolhaDoPendrive::Desligar => {
+                let (_, atual) = cliente::backup_externo(&mut *d)?;
+                cliente::definir_backup_externo(&mut *d, false, atual)?;
+            }
+        }
+        backup_externo_de(&mut *d)
+    }
+
     fn usadas_travadas(&self) -> MutexGuard<'_, BTreeMap<String, Segredo>> {
         // Pânico com o lock na mão: as senhas usadas são descartadas.
         self.usadas.lock().unwrap_or_else(|e| {
@@ -633,6 +695,22 @@ impl<D: Daemon, A: AreaTransferencia> Servico<D, A> {
             g.descartar();
             g
         }))
+    }
+
+    /// "Travar agora" (janela e bandeja, Fase 39): limpa a área de transferência (se
+    /// ainda tem o valor copiado) e o que o formulário e o gerador guardavam **antes** de
+    /// pedir a trava, e o pedido do agente que esperava o destrave sai da tela. Mesmo com
+    /// o daemon fora, o que é local é limpo.
+    pub fn travar(&self) -> Result<(), ErroApp> {
+        self.ao_sair();
+        let r = cliente::travar(&mut *self.daemon()?);
+        self.ao_sair();
+        r
+    }
+
+    /// Estado para a bandeja (Fase 39): só `estado`, que o daemon não conta como uso.
+    pub fn estado_da_bandeja(&self) -> crate::bandeja::EstadoBandeja {
+        crate::bandeja::EstadoBandeja::de(self.estado_do_cofre())
     }
 
     /// Ao travar ou fechar o app: limpa a área se ainda tiver o valor copiado e zera a
@@ -1611,6 +1689,82 @@ mod testes {
             Err(ErroApp::TerminalIndisponivel)
         );
         assert_eq!(sem.escolher_anexo(), Err(ErroApp::SeletorIndisponivel));
+    }
+    /// Fase 39 (V5.23, S12): "Travar agora" limpa a área de transferência que ainda tem
+    /// o valor copiado e o formulário, e o cofre fica travado: depois, revelar e copiar
+    /// respondem "travado".
+    #[test]
+    fn ataque_travar_limpa_a_area_e_trava() {
+        let (s, area) = servico();
+        s.copiar_campo("acme-pg-dev", "senha").unwrap();
+        assert!(area.0.lock().unwrap().is_some());
+        assert_eq!(
+            s.estado_da_bandeja(),
+            crate::bandeja::EstadoBandeja::Destravado
+        );
+        s.travar().unwrap();
+        assert!(area.0.lock().unwrap().is_none(), "área não foi limpa");
+        assert_eq!(s.estado_do_cofre(), Ok(EstadoCofre::Travado));
+        assert_eq!(
+            s.estado_da_bandeja(),
+            crate::bandeja::EstadoBandeja::Travado
+        );
+        assert_eq!(
+            s.revelar_campo("acme-pg-dev", "senha").map(|_| ()),
+            Err(ErroApp::Travado)
+        );
+        assert!(s.copiar_campo("acme-pg-dev", "senha").is_err());
+        // Travar de novo não falha.
+        s.travar().unwrap();
+    }
+
+    /// Daemon que anota a operação de cada pedido (para o teste da consulta da bandeja).
+    struct Anotador(DaemonFalso, Arc<Mutex<Vec<String>>>);
+
+    impl Daemon for Anotador {
+        fn trocar(&mut self, pedido: &[u8]) -> Result<Zeroizing<Vec<u8>>, ErroApp> {
+            let v: serde_json::Value = serde_json::from_slice(pedido).unwrap();
+            self.1
+                .lock()
+                .unwrap()
+                .push(v["op"].as_str().unwrap_or("?").to_owned());
+            self.0.trocar(pedido)
+        }
+    }
+
+    /// Ataque (Fase 39): a consulta periódica da bandeja não pode segurar o cofre aberto.
+    /// Ela só manda `estado`, que o `wardd` não conta como uso
+    /// (`wardd::trava::conta_como_uso`); nenhuma outra operação sai dela.
+    #[test]
+    fn ataque_consulta_da_bandeja_so_pede_estado() {
+        let ops = Arc::new(Mutex::new(Vec::new()));
+        let s = Servico::novo(
+            Anotador(DaemonFalso::cheio(), Arc::clone(&ops)),
+            Copiador::novo(Arc::new(Area::default())),
+        );
+        for _ in 0..5 {
+            s.estado_da_bandeja();
+        }
+        assert_eq!(*ops.lock().unwrap(), vec!["estado"; 5]);
+    }
+
+    /// Sem daemon, travar ainda limpa o que é local e responde o erro.
+    #[test]
+    fn travar_sem_daemon_limpa_e_responde_erro() {
+        struct Fora;
+        impl Daemon for Fora {
+            fn trocar(&mut self, _: &[u8]) -> Result<Zeroizing<Vec<u8>>, ErroApp> {
+                Err(ErroApp::DaemonIndisponivel)
+            }
+        }
+        let area = Arc::new(Area::default());
+        let s = Servico::novo(Fora, Copiador::novo(Arc::clone(&area)));
+        *area.0.lock().unwrap() = Some(b"qualquer".to_vec());
+        assert!(s.travar().is_err());
+        assert_eq!(
+            s.estado_da_bandeja(),
+            crate::bandeja::EstadoBandeja::SemDaemon
+        );
     }
 }
 
