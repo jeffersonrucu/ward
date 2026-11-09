@@ -4,8 +4,8 @@
 //!   `build.rs` do Tauri, as capabilities e a ponte de teste saem dela (S11).
 //! - [`cliente`]: os pedidos do papel app pelo protocolo da Fase 20 (`estado`,
 //!   `lista`, `detalhe`, `copiar`), com a leitura estrita da resposta.
-//! - [`daemon`]: transporte até o `wardd` (socket conferido). A troca de quadros entra
-//!   com a Fase 22; até lá responde [`ErroApp::SemProtocolo`].
+//! - [`daemon`]: transporte até o `wardd` (socket conferido): quadros na conexão
+//!   única, thread leitora e fila de avisos (D65 a, Fase 23a).
 //! - [`daemon_falso`] (só testes e `modo-teste`): responde pelo protocolo com as
 //!   entradas falsas do cofre de teste, para a ponte de teste.
 //! - [`credenciais`]: lista e detalhe da tela Credenciais (Fase 32), sem segredo.

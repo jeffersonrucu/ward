@@ -409,3 +409,32 @@ fn ataque_servidor_de_teste_com_socket_aberto_ou_endereco_trocado() {
     drop(s);
     srv.encerrar();
 }
+
+/// D63 (modo-teste): o app de teste ganha a classe app **sem** o egid do grupo, mas
+/// só com o pai = este processo (o "daemon"); com o bash de pai, fica comum. O pid do
+/// lançador é conferido pelo `wardd` (Fase 23a).
+#[test]
+fn app_de_teste_sem_egid_so_com_o_pai_daemon() {
+    let (_d, escuta) = escutar();
+    let py = python_real();
+    let (filho, par) = conectar(&escuta, cliente_python(&py, escuta.caminho(), None));
+    assert_eq!(par.classificar_app_de_teste(), ClassePar::App);
+    // Pelo grupo (release), o mesmo par sem o egid do app é comum.
+    assert_eq!(
+        par.classificar(&inst_app(GID_NENHUM), &politica_ok()),
+        ClassePar::Comum {
+            motivo: Recusa::GrupoComum
+        }
+    );
+    drop(filho);
+
+    let mut filho = iniciar(cliente_com_bash_de_pai(escuta.caminho()));
+    filho.esperar("conectado");
+    let par = escuta.aceitar().unwrap().par;
+    assert_eq!(
+        par.classificar_app_de_teste(),
+        ClassePar::Comum {
+            motivo: Recusa::PaiDoAppNaoPermitido
+        }
+    );
+}

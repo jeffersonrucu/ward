@@ -10,7 +10,7 @@ use std::sync::Arc;
 use ward_plataforma::{BinarioPermitido, Escuta, Instalacao};
 use wardd::aprovacao::{Motor, RelogioMonotonico};
 use wardd::config::Config;
-use wardd::lancamento::AbridorReal;
+use wardd::lancamento::{AbridorReal, AppDeTeste};
 use wardd::nucleo::{Daemon, RelogioReal};
 use wardd::servidor::{self, Papeis};
 use wardd::{aviso, log, trava};
@@ -32,6 +32,26 @@ fn escuta(config: &Config) -> Result<Escuta, String> {
         }
         None => Err("sem o socket do systemd (LISTEN_FDS); o wardd sobe pela unit".into()),
     }
+}
+
+/// Só no daemon de teste (D63): o abridor do `WARD_DEV_APP` e o papel app do processo
+/// que ele abrir. No release, nenhum dos dois existe.
+#[cfg(feature = "modo-teste")]
+fn abridor_de_teste(config: &Config) -> (Option<AbridorReal>, Option<AppDeTeste>) {
+    match &config.app_de_teste {
+        Some(b) => {
+            aviso!("daemon de teste: abrir_app abre o app de teste da configuração");
+            let a = AbridorReal::de_teste(b.clone());
+            let app = AppDeTeste::novo(a.app_lancado());
+            (Some(a), Some(app))
+        }
+        None => (None, None),
+    }
+}
+
+#[cfg(not(feature = "modo-teste"))]
+fn abridor_de_teste(_: &Config) -> (Option<AbridorReal>, Option<AppDeTeste>) {
+    (None, None)
 }
 
 fn main() -> ExitCode {
@@ -67,8 +87,17 @@ fn main() -> ExitCode {
         aviso!("daemon de TESTE (modo-teste): cofre de .dev/, nunca o real");
     }
     // D57/D63: o app só é aberto pelo lançador, e só o processo que ele abriu é app.
-    let abridor = instalacao.as_ref().and_then(AbridorReal::instalado);
-    let app = abridor.as_ref().map(AbridorReal::app_lancado);
+    // No daemon de teste com `WARD_DEV_APP`, o lançador abre o binário de teste, e só
+    // ele é app (sem o egid).
+    let (abridor, app_de_teste) = abridor_de_teste(&config);
+    let (abridor, app) = match abridor {
+        Some(a) => (Some(a), None),
+        None => {
+            let a = instalacao.as_ref().and_then(AbridorReal::instalado);
+            let app = a.as_ref().map(AbridorReal::app_lancado);
+            (a, app)
+        }
+    };
     let mut daemon = Daemon::novo(config.caminhos, Box::new(RelogioReal));
     if let Some(a) = abridor {
         daemon = daemon.com_motor(Motor::novo(
@@ -96,7 +125,12 @@ fn main() -> ExitCode {
         }
     }
     aviso!("pronto");
-    match servidor::servir(&escuta, daemon, Arc::new(Papeis { instalacao, app })) {
+    let papeis = Papeis {
+        instalacao,
+        app,
+        app_de_teste,
+    };
+    match servidor::servir(&escuta, daemon, Arc::new(papeis)) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             aviso!("laço do socket parou ({})", e.kind());

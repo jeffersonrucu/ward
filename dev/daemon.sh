@@ -12,6 +12,12 @@
 # V3.19 com o `loginctl lock-session` de verdade, passe
 # WARD_DEV_DBUS_SISTEMA=/run/dbus/system_bus_socket; isso trava a tela do usuário).
 #
+# WARD_DEV_APP (Fase 23a, D63): caminho absoluto do binário que o `abrir_app` do daemon
+# de teste abre (a `ward-ponte-teste` ou o `ward-app` de teste), dentro do repositório;
+# o daemon confere o resto e recusa subir fora da regra. Só esse processo, filho do
+# daemon, recebe o papel app. O valor usado fica em .dev/wardd.app: com o daemon já no
+# ar com outro WARD_DEV_APP (ou sem), o `subir` falha em vez de fingir que trocou.
+#
 # Uso: dev/daemon.sh subir | parar | estado
 
 export PATH=/usr/bin:/bin
@@ -24,6 +30,12 @@ ESTADO="$DEV/cofre-teste.estado"
 LOGS="$DEV/logs"
 LOG="$LOGS/wardd.log"
 PID="$DEV/wardd.pid"
+MARCA_APP="$DEV/wardd.app"
+APP="${WARD_DEV_APP:-}"
+case "$APP" in
+    ""|/*) ;;
+    *) echo "WARD_DEV_APP não é absoluto" >&2; exit 1 ;;
+esac
 
 UID_ATUAL="$(id -u)"
 CASA="$(getent passwd "$UID_ATUAL" | cut -d: -f6)"
@@ -55,6 +67,12 @@ subir() {
     [ -x "$BIN" ] || { echo "falta $BIN (o make compila antes)" >&2; exit 1; }
     [ -f "$COFRE" ] || { echo "falta o cofre de teste: rode 'make dev-cofre'" >&2; exit 1; }
     if p="$(pid_vivo)"; then
+        local atual=""
+        [ -f "$MARCA_APP" ] && atual="$(head -n 1 -- "$MARCA_APP")"
+        if [ "$atual" != "$APP" ]; then
+            echo "o daemon de teste já está no ar (pid $p) com outro WARD_DEV_APP; rode 'make dev-daemon-parar' antes" >&2
+            exit 1
+        fi
         echo "o daemon de teste já está no ar (pid $p, socket $SOCKET)"
         return 0
     fi
@@ -74,9 +92,11 @@ subir() {
         LANG="${LANG:-C.UTF-8}" \
         WARD_DEV_DIR="$DEV" \
         ${WARD_DEV_DBUS_SISTEMA:+"WARD_DEV_DBUS_SISTEMA=$WARD_DEV_DBUS_SISTEMA"} \
+        ${APP:+"WARD_DEV_APP=$APP"} \
         "$BIN" </dev/null >>"$LOG" 2>&1 &
     local p=$!
     echo "$p" > "$PID"
+    printf '%s\n' "$APP" > "$MARCA_APP"
     for _ in $(seq 1 100); do
         if [ -S "$SOCKET" ] && pid_vivo >/dev/null; then
             echo "daemon de teste no ar: pid $p, socket $SOCKET, log $LOG"
@@ -89,14 +109,14 @@ subir() {
     done
     echo "o daemon de teste não subiu; fim do log ($LOG):" >&2
     tail -n 20 -- "$LOG" >&2 || true
-    rm -f -- "$PID"
+    rm -f -- "$PID" "$MARCA_APP"
     exit 1
 }
 
 parar() {
     local p
     if ! p="$(pid_vivo)"; then
-        rm -f -- "$PID"
+        rm -f -- "$PID" "$MARCA_APP"
         echo "o daemon de teste não está no ar"
         return 0
     fi
@@ -108,7 +128,7 @@ parar() {
     if kill -0 "$p" 2>/dev/null; then
         kill -KILL "$p"
     fi
-    rm -f -- "$PID"
+    rm -f -- "$PID" "$MARCA_APP"
     echo "daemon de teste parado"
 }
 

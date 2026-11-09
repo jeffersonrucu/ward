@@ -11,8 +11,6 @@ pub enum ErroApp {
     /// O diretório ou o socket do daemon não passaram na conferência (dono, permissão,
     /// tipo). O app não conversa com ele.
     DaemonNaoConfiavel,
-    /// O protocolo do daemon ainda não existe (Fase 20).
-    SemProtocolo,
     /// A conexão aberta na partida (D47) não existe mais; o app se executa de novo.
     ConexaoPerdida,
     /// O pedido da interface não passou na validação (tamanho, formato).
@@ -44,7 +42,6 @@ impl ErroApp {
         match self {
             ErroApp::DaemonIndisponivel => "daemon-indisponivel",
             ErroApp::DaemonNaoConfiavel => "daemon-nao-confiavel",
-            ErroApp::SemProtocolo => "sem-protocolo",
             ErroApp::ConexaoPerdida => "conexao-perdida",
             ErroApp::PedidoInvalido => "pedido-invalido",
             ErroApp::Travado => "travado",
@@ -67,7 +64,6 @@ impl fmt::Display for ErroApp {
             ErroApp::DaemonNaoConfiavel => {
                 "o socket do daemon não é confiável; o app não se conecta"
             }
-            ErroApp::SemProtocolo => "o protocolo do daemon ainda não está disponível",
             ErroApp::ConexaoPerdida => "a conexão com o daemon caiu; o app vai se reabrir",
             ErroApp::PedidoInvalido => "pedido inválido",
             ErroApp::Travado => "o cofre está travado",
