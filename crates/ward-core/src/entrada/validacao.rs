@@ -1234,7 +1234,7 @@ fn usuario_ssh_valido(v: &str) -> bool {
 ///   dígito (`0x7f000001`, `1.2.3.0x4`, `x.123`) é recusado (D55);
 /// - porta opcional de 1 a 65535, sem zero à esquerda;
 /// - caminho, query e fragmento sem `\`, e todo `%` seguido de dois dígitos hex.
-fn url_valida(v: &str) -> bool {
+pub(crate) fn url_valida(v: &str) -> bool {
     if !ascii_visivel(v) {
         return false;
     }
@@ -1263,7 +1263,7 @@ fn url_valida(v: &str) -> bool {
 }
 
 /// `host` e `porta` (sem os `:`) da autoridade; IPv6 vem com os colchetes.
-fn separar_host_porta(autoridade: &str) -> Option<(&str, Option<&str>)> {
+pub(crate) fn separar_host_porta(autoridade: &str) -> Option<(&str, Option<&str>)> {
     if autoridade.starts_with('[') {
         let fecha = autoridade.find(']')?;
         let (host, resto) = autoridade.split_at(fecha + 1);

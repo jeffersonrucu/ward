@@ -6,5 +6,22 @@ edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 
+[features]
+# D7/D46: host de teste. Fala com o daemon de teste (pasta 0700 do usuário,
+# `/run/user/<uid>/ward-teste/` ou `WARD_DEV_SOCKET_DIR`) e, no lugar da conferência do
+# uid 0, exige que o processo do socket seja não-dumpable, como a CLI de teste. A
+# instalação recusa artefato com esta feature (V9.2).
+modo-teste = ["ward-plataforma/modo-teste"]
+
+# Motivo de cada dependência no handoff da Fase 40 (S14). Nenhuma traz crate nova ao
+# `Cargo.lock`.
+[dependencies]
+# Protocolo do socket (pedido, resposta, quadro): a mesma leitura estrita do daemon.
+ward-core = { workspace = true }
+# Conferência do servidor (D46) e endurecimento do processo (dumpable 0, sem core).
+ward-plataforma = { workspace = true }
+# Mensagens e quadros com credencial em `Zeroizing` (S8).
+zeroize = { version = "1.9.1", default-features = false, features = ["alloc"] }
+
 [lints]
 workspace = true

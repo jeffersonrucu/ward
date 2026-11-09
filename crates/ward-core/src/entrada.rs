@@ -21,7 +21,7 @@ use core::fmt;
 use zeroize::ZeroizeOnDrop;
 
 mod segredo;
-mod validacao;
+pub(crate) mod validacao;
 
 #[cfg(test)]
 mod testes;

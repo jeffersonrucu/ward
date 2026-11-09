@@ -1,5 +1,5 @@
 #!/bin/bash -p
-# Parte de dentro do `make teste-docker-plataforma` (Fases 21b e 29a; D46, D47, D57; V3.5,
+# Parte de dentro do `make teste-docker-plataforma` (Fases 21b, 29a e 40; D46, D47, D57; V3.5,
 # V3.23, V3.24, V5.31). Roda como root **só dentro** do contêiner `ubuntu:24.04` descartável; nada do
 # host é montado além de /opt/teste (somente leitura: o binário de teste e a biblioteca
 # de ataque) e deste script.
@@ -282,12 +282,100 @@ confere "D57: o lançador só abre o ward-app do root, setgid do grupo ward-app"
 kill "$SRV2" "$W1" "$BUS" 2>/dev/null || true
 wait "$SRV2" 2>/dev/null || true
 
+# === Fase 40: ward-nm com o wardd de teste real (D5, D9, D47; V6.1, V6.2) ============
+# O `ward-nm` é o do release (sem `modo-teste`): só fala com /run/ward/1000/wardd.sock
+# em pasta do root e par uid 0. O daemon é o `wardd` de teste (cofre de teste, cópia)
+# com o socket do "systemd" por LISTEN_FDS. O "Chrome" é o `chrome-falso` instalado em
+# /opt/google/chrome/chrome (root, 0755): abre o host como filho direto, como o Chrome.
+LOG40=/tmp/wardd-40.log
+DEV40=/tmp/ward-dev-40
+install -d -o 1000 -g 1000 -m 0700 "$DEV40"
+install -o 1000 -g 1000 -m 0600 /opt/teste/cofre-teste.ward "$DEV40/cofre-teste.ward"
+printf 'ward-estado 1\nvista 0\nqueimada 0\n' > "$DEV40/cofre-teste.estado"
+chown 1000:1000 "$DEV40/cofre-teste.estado"
+chmod 0600 "$DEV40/cofre-teste.estado"
+install -o root -g root -m 0755 /opt/teste/wardd-real /usr/local/bin/wardd-real
+install -o root -g ward-nm -m 2755 /opt/teste/ward-nm-real /usr/local/bin/ward-nm
+install -d -o root -g root -m 0755 /opt/google /opt/google/chrome
+install -o root -g root -m 0755 /opt/teste/chrome-falso /opt/google/chrome/chrome
+/usr/local/bin/ward-servidor ativar "$SOCK" 1000 -- /usr/bin/env HOME="$DEV40" \
+    XDG_RUNTIME_DIR=/run/user/1000 LANG=C.UTF-8 WARD_DEV_DIR="$DEV40" RUST_LOG=trace \
+    /usr/local/bin/wardd-real >"$LOG40" 2>&1 &
+SRV40=$!
+for _ in $(seq 100); do grep -q "pronto" "$LOG40" 2>/dev/null && break; sleep 0.1; done
+confere "Fase 40: o wardd de teste real subiu com o socket do systemd" "$(grep -c pronto "$LOG40" || true)" "1"
+r="$(como_1000 /opt/teste/wardd-cliente-teste "$SOCK" destravar < /opt/teste/senha)"
+confere "Fase 40: destravou a cópia do cofre de teste" "$r" "resposta: ok"
+
+M=/tmp/msgs-40.jsonl
+cat > "$M" <<'FIM'
+{"v":1,"op":"estado"}
+{"v":1,"op":"sugerir","dados":{"origem":"http://localhost:8081/wp-login.php"}}
+{"v":1,"op":"preencher","dados":{"entrada":"acme-wp-dev","origem":"http://localhost:8081/wp-login.php"}}
+{"v":1,"op":"preencher","dados":{"entrada":"acme-wp-dev","origem":"http://127.0.0.1:8081/wp-login.php"}}
+{"v":1,"op":"sugerir","dados":{"origem":"http://127.0.0.1:8081/wp-login.php"}}
+{"v":1,"op":"revelar","dados":{"entrada":"acme-wp-dev","campo":"senha"}}
+{"v":1,"op":"lista"}
+FIM
+chmod 0644 "$M"
+# Linha $1 da saída em $r.
+l() { sed -n "${1}p" <<<"$r"; }
+r="$(como_1000 /opt/google/chrome/chrome /usr/local/bin/ward-nm "$M")"
+confere "D47: ward-nm setgid aberto pelo Chrome instalado recebe o papel extensão" "$(l 1)" '"papel":"extensao"'
+confere "D9: sugerir em localhost:8081 traz acme-wp-dev" "$(l 2)" '"nome":"acme-wp-dev"'
+confere "D9: sugerir em localhost:8081 traz acme-wp-prod" "$(l 2)" '"nome":"acme-wp-prod"'
+confere "D9: preencher acme-wp-dev na origem certa devolve o preenchimento" "$(l 3)" '"tipo":"preenchimento","dados":{"usuario":"wp_admin","senha":"'
+confere "V6.2: preencher acme-wp-dev em 127.0.0.1:8081 é recusado pelo daemon" "$(l 4)" '"codigo":"origem_diferente"'
+nao_tem "V6.2: a recusa de origem não leva valor" "$(l 4)" '"senha"'
+confere "V6.2: sugerir em 127.0.0.1:8081 não traz acme-wp-*" "$(l 5)" '"itens":[]'
+confere "papel extensão: revelar (operação do app) recusado" "$(l 6)" '"codigo":"nao_autorizado"'
+confere "papel extensão: lista (operação do agente e do app) recusada" "$(l 7)" '"codigo":"nao_autorizado"'
+confere "o host sai 0 no fim do stdin" "$(l 8)" "saida=0"
+
+# V6.1: o mesmo ward-nm executado por um processo do usuário (pai não é o Chrome).
+printf '{"v":1,"op":"preencher","dados":{"entrada":"acme-wp-dev","origem":"http://localhost:8081/wp-login.php"}}' > /tmp/v61.json
+printf "$(printf '\\x%02x\\x00\\x00\\x00' "$(stat -c %s /tmp/v61.json)")" > /tmp/v61.bin
+cat /tmp/v61.json >> /tmp/v61.bin
+chmod 0644 /tmp/v61.bin
+r="$(como_1000 /usr/bin/bash -c '/usr/local/bin/ward-nm chrome-extension://dkacdineofgfabdognjgeoakekaenaei/ < /tmp/v61.bin | tr -d "\000-\037"; true')"
+confere "V6.1: ward-nm executado direto: o daemon recusa (nao_autorizado)" "$r" "nao_autorizado"
+nao_tem "V6.1: ward-nm executado direto: nada de senha no stdout" "$r" "senha"
+# Uma cópia do "Chrome" fora do caminho instalado, do usuário: agente.
+como_1000 cp /opt/google/chrome/chrome /run/user/1000/chrome
+r="$(como_1000 /run/user/1000/chrome /usr/local/bin/ward-nm "$M")"
+confere "V6.1: pai que é cópia do Chrome fora de /opt/google/chrome: estado nao_autorizado" "$(l 1)" '"codigo":"nao_autorizado"'
+confere "V6.1: pai que é cópia do Chrome: preencher recusado" "$(l 3)" '"codigo":"nao_autorizado"'
+nao_tem "V6.1: pai que é cópia do Chrome: nada de preenchimento" "$r" "preenchimento"
+# O Chrome instalado com LD_PRELOAD no ambiente (o Chrome não é setgid): agente.
+r="$(como_1000 /usr/bin/env LD_PRELOAD="$LIB" /opt/google/chrome/chrome /usr/local/bin/ward-nm "$M")"
+confere "D5: Chrome com LD_PRELOAD de pai: preencher recusado" "$(l 3)" '"codigo":"nao_autorizado"'
+nao_tem "D5: Chrome com LD_PRELOAD de pai: nada de preenchimento" "$r" "preenchimento"
+# Uma cópia do ward-nm (sem setgid) com o Chrome instalado de pai: agente.
+como_1000 cp /usr/local/bin/ward-nm /run/user/1000/ward-nm-copia
+r="$(como_1000 /opt/google/chrome/chrome /run/user/1000/ward-nm-copia "$M")"
+confere "V3.5/D47: cópia do ward-nm sem setgid, com o Chrome de pai: preencher recusado" "$(l 3)" '"codigo":"nao_autorizado"'
+nao_tem "V3.5/D47: cópia do ward-nm: nada de preenchimento" "$r" "preenchimento"
+# Mensagem acima do limite pelo Chrome.
+printf '{"v":1,"op":"sugerir","dados":{"origem":"http://localhost:8081/%s"}}\n' "$(head -c 70000 /dev/zero | tr '\0' a)" > /tmp/grande-40.jsonl
+chmod 0644 /tmp/grande-40.jsonl
+r="$(como_1000 /opt/google/chrome/chrome /usr/local/bin/ward-nm /tmp/grande-40.jsonl)"
+confere "mensagem de mais de 64 KiB: quadro_invalido" "$r" '"codigo":"quadro_invalido"'
+confere "mensagem de mais de 64 KiB: o host sai ≠ 0" "$r" "saida=1"
+
+kill "$SRV40" 2>/dev/null || true
+wait "$SRV40" 2>/dev/null || true
+n="$(grep -c 'falso-' "$LOG40" || true)"
+confere "S13: o log do wardd (RUST_LOG=trace) não tem valor falso do cofre" "falso=$n" "falso=0"
+confere "D9: o daemon registrou a recusa de origem (só o nome da entrada)" "$(grep 'origem diferente' "$LOG40" || true)" "preencher acme-wp-dev recusado: origem diferente"
+nao_tem "S13: o log não tem a origem pedida" "$(cat "$LOG40")" "127.0.0.1:8081"
+
 echo
 if [ "$falhas" -ne 0 ]; then
     echo "teste-docker-plataforma: $falhas conferência(s) falharam"
     echo "--- log do servidor ---"; cat "$LOG"
     echo "--- log do servidor (29a) ---"; cat "$LOG2" 2>/dev/null || true
     echo "--- relatório do app (29a) ---"; cat "$REL" 2>/dev/null || true
+    echo "--- log do wardd (40) ---"; grep -v 'falso-' "$LOG40" 2>/dev/null || true
     exit 1
 fi
 echo "teste-docker-plataforma: tudo certo"

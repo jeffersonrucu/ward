@@ -67,7 +67,7 @@ CARGO_DENY_VERSAO := 0.20.2
 	dev-servicos-parar dev-servicos-estado dev-servicos-conferir dev-servicos-trocar-chave-host dev-cofre \
 	dev-cofre-conferir dev-variacoes teste-dev-cofre dev-daemon dev-daemon-parar teste-cli teste-docker-uid teste-units \
 	app-front app-check app-ponte teste-docker-plataforma teste-sem-modo-teste teste-socket-ataques \
-	teste-webkit-real
+	teste-webkit-real teste-nm
 
 ## check: pré-checagem das origens, depois fmt, clippy -D warnings, testes, cargo audit,
 ## cargo deny e gitleaks, nessa ordem (V1.1)
@@ -304,12 +304,16 @@ teste-webkit-real: origens
 # root e entregue por LISTEN_FDS. Nada de sudo nem de /etc ou /run do host. Exige Docker
 # e gcc (a biblioteca do ataque de LD_PRELOAD); fica fora do `make check`.
 
-## teste-docker-plataforma: V3.5 (forma de D47), V3.23, V3.24 e V5.31 (lançador e partida
-## do app, D57) num contêiner ubuntu:24.04
+## teste-docker-plataforma: V3.5 (forma de D47), V3.23, V3.24, V5.31 (lançador e partida
+## do app, D57) e V6.1/V6.2 (Fase 40: ward-nm setgid com o "Chrome" de pai e o wardd de
+## teste real; precisa de `make dev-cofre`) num contêiner ubuntu:24.04
 teste-docker-plataforma: origens
 	$(CARGO) build --quiet --locked -p ward-plataforma --features modo-teste --example ward-plataforma-conteiner
 	$(CARGO) build --quiet --locked -p ward-app-nucleo --example partida-conteiner
-	dev/testes/docker-plataforma.sh target/debug/examples/ward-plataforma-conteiner target/debug/examples/partida-conteiner
+	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd --example wardd-cliente-teste
+	$(CARGO) build --quiet --locked -p ward-nm --bin ward-nm --example chrome-falso
+	dev/testes/docker-plataforma.sh target/debug/examples/ward-plataforma-conteiner target/debug/examples/partida-conteiner \
+		target/debug/wardd target/debug/ward-nm target/debug/examples/chrome-falso target/debug/examples/wardd-cliente-teste
 
 ## teste-docker-uid: V3.2 (D49) num contêiner ubuntu:24.04: o wardd de teste roda como
 ## uid 1000; clientes de outro uid (4242, também com CAP_DAC_OVERRIDE) e o root são
@@ -363,6 +367,18 @@ CONEXOES ?= 10000
 teste-socket-ataques: origens
 	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd
 	dev/testes/socket-ataques.sh target/debug/wardd "$(CONEXOES)"
+
+## teste-nm: Fase 40 (V6.1; D5, D9, D47): o `ward-nm` de teste aberto à mão fica agente
+## e não recebe segredo; com o Chrome real (headless, perfil temporário em .dev/nm.*,
+## manifesto só nele) o host é filho direto do navegador, o `conferir_pai` aceita esse
+## pai e recusa outro, e o host responde pelo Chrome. Daemon de teste só dele (cópia do
+## cofre, socket próprio). Precisa de `make dev-cofre`, `make dev-variacoes` e do Chrome
+## em /opt/google/chrome; fora do `make check`
+teste-nm: origens
+	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd
+	$(CARGO) build --quiet --locked -p ward-nm --features modo-teste --bin ward-nm
+	$(CARGO) build --quiet --locked -p ward-plataforma --example pai-chrome
+	dev/testes/nm.sh target/debug/wardd target/debug/ward-nm target/debug/examples/pai-chrome
 
 ## dev-daemon-parar: para o daemon de teste (confere que o pid é mesmo o wardd daqui)
 dev-daemon-parar:
