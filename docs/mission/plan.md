@@ -347,7 +347,7 @@ Contrato: V2.1–V2.58
     `CLAUDE.md`. Testes com os valores falsos da V2.52, mais os de antes (V2.29).
     `make check` e `make teste-dev-cofre` limpos. V2.52, V2.29.
 
-- [ ] Fase 19e — Achados da reauditoria do M2 (D53–D55). Depende da 19d; **a Fase 22
+- [x] Fase 19e — Achados da reauditoria do M2 (D53–D55). Depende da 19d; **a Fase 22
   só começa depois dela**. Pode rodar ao lado da 21b (arquivos separados). Repros em
   `/tmp/claude-1000/-home-jeffersonoliveira-projetos-cofre/d2e230bd-a662-43be-afff-2572da5a4e80/scratchpad/ataque/src/bin/`
   (`geracao.rs`, `desvio.rs`, `url.rs`): ler antes, rodar contra o código novo e
