@@ -2,7 +2,7 @@
 // de teste (D7), a ponte HTTP do `ward-ponte-teste`. Nenhuma resposta traz segredo
 // (o "copiar" é resolvido no Rust, D4), e nada daqui guarda resposta em estado global,
 // no armazenamento do navegador ou na URL.
-import { invoke } from '@tauri-apps/api/core';
+import { Channel, invoke } from '@tauri-apps/api/core';
 import { COMANDOS } from './comandos.js';
 
 let transporte = null;
@@ -38,4 +38,38 @@ export async function chamar(comando, args = {}) {
     }
     throw falha('falha', 'não foi possível falar com o app');
   }
+}
+
+/** Os avisos que o lado Rust manda pelo canal (D65 a), um por janela. */
+export const AVISOS = Object.freeze(['pedido-de-destrave', 'pedido-de-aprovacao']);
+
+/**
+ * Avisos do lado Rust (D65 a): `aoChegar()` é chamado quando chega o `aviso` — na
+ * janela principal, `pedido-de-destrave` (Fase 31); na de aprovação,
+ * `pedido-de-aprovacao` (Fase 36). O aviso não traz dado; quem recebe consulta. No app,
+ * pelo canal do Tauri (`ouvir_avisos`, um por janela); na ponte de teste, que não tem
+ * canal, por consulta periódica. Devolve a função que para de ouvir.
+ * @param {() => Promise<void> | void} aoChegar
+ * @param {string} [aviso]
+ * @returns {Promise<() => void>}
+ */
+export async function ouvirAvisos(aoChegar, aviso = 'pedido-de-destrave') {
+  if (!AVISOS.includes(aviso)) throw falha('aviso-desconhecido', 'aviso desconhecido');
+  if (import.meta.env.MODE === 'teste' && !('__TAURI_INTERNALS__' in window)) {
+    const { ouvirPorConsulta } = await import('./ponte-teste.js');
+    return ouvirPorConsulta(aoChegar);
+  }
+  let ativo = true;
+  const canal = new Channel();
+  canal.onmessage = (m) => {
+    if (ativo && m && m.aviso === aviso) aoChegar();
+  };
+  try {
+    await invoke('ouvir_avisos', { canal });
+  } catch {
+    // Sem o canal, a tela ainda vê o pedido ao consultar de novo.
+  }
+  return () => {
+    ativo = false;
+  };
 }

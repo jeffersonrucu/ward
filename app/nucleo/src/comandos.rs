@@ -4,8 +4,9 @@
 //! todo comando registrado ficaria liberado), a capability `principal` libera só as
 //! permissões `allow-<comando>` de [`COMANDOS_PRINCIPAL`], a capability `aprovacao`
 //! (janela de aprovação, Fase 36) só as de [`COMANDOS_APROVACAO`], e a ponte de teste
-//! recusa qualquer outro nome. Nenhum comando está nas duas: a janela principal não
-//! responde aprovação, e a de aprovação não lê credencial nem revela nada.
+//! recusa qualquer outro nome. Em comum, só o `ouvir_avisos` (canal por janela, aviso
+//! sem dado): a janela principal não responde aprovação, e a de aprovação não lê
+//! credencial nem revela nada.
 //! Fases seguintes acrescentam comandos aqui, um por tela que precisa.
 
 use ward_core::limites;
@@ -65,6 +66,12 @@ pub const CONECTAR: &str = "conectar";
 /// (Fase 30). Conferido no lado Rust; o daemon grava só o hash do PIN (D30). A resposta
 /// traz `criado` ou os erros por campo, nunca o valor.
 pub const CRIAR_COFRE: &str = "criar_cofre";
+/// `destravar { senha }`: destrava com a senha mestra (Fase 31). A senha vai só ao
+/// daemon, num tipo que zera; a resposta não a traz nem diz quantas tentativas houve.
+pub const DESTRAVAR: &str = "destravar";
+/// `ouvir_avisos { canal }`: o canal do Tauri por onde o lado Rust avisa a tela de um
+/// `pedido_de_destrave` (Fase 31, D65 a). O aviso leva só o nome dele, sem dado.
+pub const OUVIR_AVISOS: &str = "ouvir_avisos";
 /// `pedido_de_aprovacao`: o pedido da vez para a janela de aprovação (Fase 36), com o
 /// texto do agente já neutralizado (D51), ou `null`. Só a janela `aprovacao`.
 pub const PEDIDO_DE_APROVACAO: &str = "pedido_de_aprovacao";
@@ -93,10 +100,17 @@ pub const COMANDOS_PRINCIPAL: &[&str] = &[
     REMOVER_ANEXO,
     CONECTAR,
     CRIAR_COFRE,
+    DESTRAVAR,
+    OUVIR_AVISOS,
 ];
 
-/// Comandos da janela de aprovação, na ordem da capability `aprovacao` (Fase 36).
-pub const COMANDOS_APROVACAO: &[&str] = &[PEDIDO_DE_APROVACAO, RESPONDER_APROVACAO];
+/// Comandos da janela de aprovação, na ordem da capability `aprovacao` (Fase 36). O
+/// `ouvir_avisos` é o único nas duas janelas: o canal é por janela e o aviso não leva
+/// dado (a principal recebe `pedido-de-destrave`; a de aprovação, `pedido-de-aprovacao`).
+pub const COMANDOS_APROVACAO: &[&str] = &[OUVIR_AVISOS, PEDIDO_DE_APROVACAO, RESPONDER_APROVACAO];
+
+/// Os comandos que as duas janelas têm (só o canal de avisos, sem dado).
+pub const COMANDOS_DAS_DUAS: &[&str] = &[OUVIR_AVISOS];
 
 /// Todos os comandos (manifesto do app e ponte de teste): os da janela principal e os da
 /// janela de aprovação.
@@ -120,6 +134,8 @@ pub const COMANDOS: &[&str] = &[
     REMOVER_ANEXO,
     CONECTAR,
     CRIAR_COFRE,
+    DESTRAVAR,
+    OUVIR_AVISOS,
     PEDIDO_DE_APROVACAO,
     RESPONDER_APROVACAO,
 ];
@@ -151,6 +167,8 @@ pub enum Comando {
     RemoverAnexo,
     Conectar,
     CriarCofre,
+    Destravar,
+    OuvirAvisos,
     PedidoDeAprovacao,
     ResponderAprovacao,
 }
@@ -177,6 +195,8 @@ impl Comando {
             REMOVER_ANEXO => Some(Comando::RemoverAnexo),
             CONECTAR => Some(Comando::Conectar),
             CRIAR_COFRE => Some(Comando::CriarCofre),
+            DESTRAVAR => Some(Comando::Destravar),
+            OUVIR_AVISOS => Some(Comando::OuvirAvisos),
             PEDIDO_DE_APROVACAO => Some(Comando::PedidoDeAprovacao),
             RESPONDER_APROVACAO => Some(Comando::ResponderAprovacao),
             _ => None,
@@ -259,24 +279,27 @@ mod testes {
                 "remover_anexo",
                 "conectar",
                 "criar_cofre",
+                "destravar",
+                "ouvir_avisos",
                 "pedido_de_aprovacao",
                 "responder_aprovacao",
             ]
         );
-        // As duas janelas juntas são todos; nenhum comando nas duas.
-        assert_eq!(
-            COMANDOS_PRINCIPAL.len() + COMANDOS_APROVACAO.len(),
-            COMANDOS.len()
-        );
+        // As duas janelas juntas são todos; em comum, só o canal de avisos.
         for c in COMANDOS {
             assert!(
-                COMANDOS_PRINCIPAL.contains(c) != COMANDOS_APROVACAO.contains(c),
+                COMANDOS_PRINCIPAL.contains(c) || COMANDOS_APROVACAO.contains(c),
+                "{c}"
+            );
+            assert_eq!(
+                COMANDOS_PRINCIPAL.contains(c) && COMANDOS_APROVACAO.contains(c),
+                COMANDOS_DAS_DUAS.contains(c),
                 "{c}"
             );
         }
         assert_eq!(
             COMANDOS_APROVACAO,
-            &["pedido_de_aprovacao", "responder_aprovacao"]
+            &["ouvir_avisos", "pedido_de_aprovacao", "responder_aprovacao"]
         );
         assert_eq!(permissao(COPIAR_CAMPO), "allow-copiar-campo");
         for c in COMANDOS {

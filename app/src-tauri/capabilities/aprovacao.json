@@ -1,9 +1,10 @@
 {
   "identifier": "aprovacao",
-  "description": "Janela de aprovação do Ward (Fase 36, S10, S11): só ler o pedido da vez e responder. Nenhum outro comando do app, nenhuma permissão de plugin nem do núcleo do Tauri, nenhuma origem remota.",
+  "description": "Janela de aprovação do Ward (Fase 36, S10, S11): ouvir o aviso de pedido novo (canal próprio, sem dado), ler o pedido da vez e responder. Nenhum outro comando do app, nenhuma permissão de plugin nem do núcleo do Tauri, nenhuma origem remota.",
   "local": true,
   "windows": ["aprovacao"],
   "permissions": [
+    "allow-ouvir-avisos",
     "allow-pedido-de-aprovacao",
     "allow-responder-aprovacao"
   ]

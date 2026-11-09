@@ -50,6 +50,12 @@ pub enum ErroApp {
     CofreJaExiste,
     /// Primeiro uso: o daemon não conseguiu gravar o cofre novo.
     CofreNaoGravado,
+    /// Destravar (Fase 31): senha mestra errada (ou arquivo adulterado; o formato não
+    /// distingue). A resposta não diz quantas tentativas houve (D20).
+    SenhaIncorreta,
+    /// Destravar (D39): o cofre no disco é mais antigo que o último aberto; nada foi
+    /// aberto.
+    CofreRetrocesso,
 }
 
 impl ErroApp {
@@ -76,6 +82,8 @@ impl ErroApp {
             ErroApp::NaoEServidor => "nao-e-servidor",
             ErroApp::CofreJaExiste => "cofre-ja-existe",
             ErroApp::CofreNaoGravado => "cofre-nao-gravado",
+            ErroApp::SenhaIncorreta => "senha-incorreta",
+            ErroApp::CofreRetrocesso => "cofre-retrocesso",
         }
     }
 }
@@ -105,6 +113,10 @@ impl fmt::Display for ErroApp {
             ErroApp::SeletorIndisponivel => "não foi possível abrir a escolha de arquivo",
             ErroApp::TerminalIndisponivel => "não foi possível abrir o terminal",
             ErroApp::NaoEServidor => "Conectar só vale para entradas servidor",
+            ErroApp::SenhaIncorreta => "Senha mestra incorreta.",
+            ErroApp::CofreRetrocesso => {
+                "o cofre no disco é mais antigo que o último aberto; nada foi aberto"
+            }
             ErroApp::CofreJaExiste => "já existe um cofre neste computador",
             ErroApp::CofreNaoGravado => {
                 "não foi possível gravar o cofre; confira o espaço e as permissões da pasta do Ward"

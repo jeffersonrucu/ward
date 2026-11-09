@@ -5,8 +5,11 @@
   // raio janela, borda borda/sutil, Sombra/Modal.
   //
   // - O pedido vem do lado Rust (`pedido_de_aprovacao`) com o texto do agente já
-  //   neutralizado (D51) e entra aqui só como texto: nada de HTML. A consulta é a cada
-  //   segundo (contagem e pedido seguinte); a janela não guarda nada fora do componente.
+  //   neutralizado (D51) e entra aqui só como texto: nada de HTML. A janela consulta ao
+  //   abrir, a cada aviso `pedido-de-aprovacao` do canal (`ouvir_avisos`, o mesmo da
+  //   Fase 31, um por janela), depois de responder e quando a contagem chega a zero. A
+  //   contagem anda aqui só para mostrar; quem expira o pedido é o daemon (S10). Nada
+  //   fica fora do componente.
   // - Foco inicial em "Negar"; Esc nega; Enter no PIN não permite nada (V5.19). Fechar
   //   (o X ou a janela) nega (S10). O PIN fica só no estado do `Campo PIN` e é limpo a
   //   cada envio.
@@ -24,7 +27,7 @@
   import Icone from '../lib/componentes/Icone.svelte';
   import { tipoDe } from '../lib/componentes/tipos.js';
   import simbolo from '../lib/componentes/ward-simbolo.svg';
-  import { chamar } from '../lib/ponte/index.js';
+  import { chamar, ouvirAvisos } from '../lib/ponte/index.js';
   import {
     ID_NEGAR,
     SEGUNDOS_URGENTE,
@@ -47,6 +50,8 @@
 
   let consultando = false;
   let relogio = null;
+  let pararDeOuvir = null;
+  let saiu = false;
 
   async function focarNegar() {
     await tick();
@@ -105,13 +110,26 @@
     }
   }
 
-  onMount(() => {
-    consultar();
-    relogio = setInterval(consultar, 1000);
+  // Só a exibição: um segundo a menos; no zero, pergunta de novo (o pedido expirado já
+  // saiu do lado Rust).
+  function contar() {
+    if (!pedido || bloqueado) return;
+    if (pedido.restante > 0) pedido.restante -= 1;
+    if (pedido.restante === 0) consultar();
+  }
+
+  onMount(async () => {
+    relogio = setInterval(contar, 1000);
+    await consultar();
+    const parar = await ouvirAvisos(consultar, 'pedido-de-aprovacao');
+    if (saiu) parar();
+    else pararDeOuvir = parar;
   });
 
   onDestroy(() => {
+    saiu = true;
     if (relogio) clearInterval(relogio);
+    if (pararDeOuvir) pararDeOuvir();
     pin = '';
   });
 </script>

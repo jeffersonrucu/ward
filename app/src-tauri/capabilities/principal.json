@@ -22,6 +22,8 @@
     "allow-escolher-anexo",
     "allow-remover-anexo",
     "allow-conectar",
-    "allow-criar-cofre"
+    "allow-criar-cofre",
+    "allow-destravar",
+    "allow-ouvir-avisos"
   ]
 }

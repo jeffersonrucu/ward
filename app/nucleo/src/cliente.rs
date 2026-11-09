@@ -1,6 +1,6 @@
 //! Os pedidos do app ao daemon pelo protocolo da Fase 20 (`ward_core::protocolo`), com
 //! o papel app (D5): `estado`, `lista`, `detalhe`, `copiar`, `revelar`, `totp`,
-//! `salvar_entrada` e `mudar_nivel` (Fase 35).
+//! `salvar_entrada`, `mudar_nivel` (Fase 35) e `destravar` (Fase 31).
 //!
 //! Aqui o pedido vira o corpo do quadro (`codificar_pedido`) e a resposta é lida com a
 //! leitura estrita do cliente (`decodificar_resposta`), que recusa tipo de outro papel e
@@ -47,6 +47,8 @@ fn erro_do_daemon(e: &ErroResposta) -> ErroApp {
         ErroResposta::CofreJaExiste => ErroApp::CofreJaExiste,
         ErroResposta::FalhaAoGravar => ErroApp::CofreNaoGravado,
         ErroResposta::PinIncorreto => ErroApp::PinIncorreto,
+        ErroResposta::SenhaIncorreta => ErroApp::SenhaIncorreta,
+        ErroResposta::Retrocesso => ErroApp::CofreRetrocesso,
         _ => ErroApp::Recusado,
     }
 }
@@ -281,6 +283,22 @@ pub fn responder_aprovacao<D: Daemon + ?Sized>(
         Ok(Resposta::Erro(e)) => Err(erro_do_daemon(&e)),
         Ok(_) => Err(ErroApp::RespostaInvalida),
         Err(_) => Err(ErroApp::RespostaInvalida),
+    }
+}
+
+/// `destravar { senha }` (Fase 31): a senha mestra só vai ao pedido, num `Segredo` do
+/// núcleo (que zera). `ok` destrava; senha errada é [`ErroApp::SenhaIncorreta`], sem
+/// contagem (D20: a espera é do daemon, antes de olhar a senha).
+pub fn destravar<D: Daemon + ?Sized>(
+    daemon: &mut D,
+    senha: &crate::destrave::SenhaMestra,
+) -> Result<(), ErroApp> {
+    let pedido = Pedido::Destravar {
+        senha: senha.para_o_protocolo(),
+    };
+    match pedir(daemon, &pedido)? {
+        Resposta::Ok => Ok(()),
+        _ => Err(ErroApp::RespostaInvalida),
     }
 }
 

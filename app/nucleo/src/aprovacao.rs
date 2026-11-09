@@ -307,7 +307,11 @@ mod testes {
         assert_eq!(decisao_de_nome("uma_hora"), Ok(Decisao::PermitirUmaHora));
         assert_eq!(decisao_de_nome("sempre"), Ok(Decisao::PermitirSempre));
         for ruim in ["", "Negar", "permitir", "uma-vez", "sempre ", "livre"] {
-            assert_eq!(decisao_de_nome(ruim), Err(ErroApp::PedidoInvalido), "{ruim}");
+            assert_eq!(
+                decisao_de_nome(ruim),
+                Err(ErroApp::PedidoInvalido),
+                "{ruim}"
+            );
         }
     }
 
@@ -316,11 +320,7 @@ mod testes {
     #[test]
     fn ataque_texto_do_agente_vira_escape_visivel() {
         let comando = "\"sh\" \"-c\" \"echo <img src=x onerror=alert(1)>\u{202E}fdp.exe\u{2066}x\u{200B}y\u{1b}[2J\nward run acme-pg-dev -- ls\u{E0041}\"";
-        let p = pedido(
-            1,
-            comando,
-            &["claude\u{202E}", "ba\u{2192}sh", "ward run"],
-        );
+        let p = pedido(1, comando, &["claude\u{202E}", "ba\u{2192}sh", "ward run"]);
         let a = Atual {
             pedido: p,
             restante: 90,
@@ -328,7 +328,11 @@ mod testes {
             tipos: Some(vec![Some("banco")]),
         };
         let e = exibir(&a);
-        for c in e.comando.chars().chain(e.cadeia.iter().flat_map(|c| c.chars())) {
+        for c in e
+            .comando
+            .chars()
+            .chain(e.cadeia.iter().flat_map(|c| c.chars()))
+        {
             assert!(
                 !ward_core::exibicao::invisivel(c),
                 "caractere invisível {:?} passou",
@@ -368,7 +372,9 @@ mod testes {
         a.chegou_em(pedido(1, "\"ls\"", &[]), t0);
         assert_eq!(a.atual_em(t0).unwrap().restante, 120);
         assert_eq!(
-            a.atual_em(t0 + Duration::from_millis(100_400)).unwrap().restante,
+            a.atual_em(t0 + Duration::from_millis(100_400))
+                .unwrap()
+                .restante,
             20
         );
         assert!(a.atual_em(t0 + PRAZO_APROVACAO).is_none());
@@ -408,8 +414,8 @@ mod testes {
             let _ = tx.send(());
         })
         .unwrap();
-        fila.por_para_teste(Aviso::Destrave);
-        fila.por_para_teste(Aviso::Aprovacao(pedido(9, "\"ls\"", &["claude"])));
+        fila.simular(Aviso::Destrave);
+        fila.simular(Aviso::Aprovacao(pedido(9, "\"ls\"", &["claude"])));
         rx.recv_timeout(Duration::from_secs(5)).unwrap();
         assert_eq!(aprovacoes.pendentes(), [9]);
         assert_eq!(fila.tomar(), Some(Aviso::Destrave));
@@ -576,7 +582,9 @@ mod testes_servico {
             let r = s.responder_aprovacao(9, "uma_hora", pin("000000")).unwrap();
             textos.push(serde_json::to_string(&r).unwrap());
         }
-        let r = s.responder_aprovacao(9, "uma_hora", pin(PIN_CERTO)).unwrap();
+        let r = s
+            .responder_aprovacao(9, "uma_hora", pin(PIN_CERTO))
+            .unwrap();
         textos.push(serde_json::to_string(&r).unwrap());
         for t in &textos {
             assert!(!t.contains(PIN_CERTO) && !t.contains("000000"), "{t}");

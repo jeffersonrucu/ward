@@ -20,9 +20,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
+use tauri::ipc::Channel;
 use tauri::{
     AppHandle, Builder, Manager, RunEvent, Runtime, State, WebviewUrl, WebviewWindow,
     WebviewWindowBuilder, WindowEvent,
@@ -33,6 +34,7 @@ use ward_app_nucleo::aprovacao::{self, PedidoExibido, ResultadoAprovacao};
 use ward_app_nucleo::area_transferencia::{Copiador, Wayland};
 use ward_app_nucleo::credenciais::{DetalheCredencial, ItemCredencial};
 use ward_app_nucleo::daemon::DaemonSocket;
+use ward_app_nucleo::destrave::{self, InfoPedido, SenhaMestra};
 use ward_app_nucleo::formulario::Formulario;
 use ward_app_nucleo::gerador::Opcoes;
 use ward_app_nucleo::nivel::{NivelMudado, Pin};
@@ -59,26 +61,120 @@ impl From<ErroApp> for Falha {
     }
 }
 
+/// Fase 31: com o cofre travado, `pedido` é o pedido do agente que espera o destrave
+/// (só um id e os segundos que faltam; o aviso não traz entrada nem comando).
 #[derive(Serialize)]
 struct RespostaEstado {
     estado: &'static str,
+    pedido: Option<InfoPedido>,
+}
+
+/// O que o canal de avisos leva à tela: só o nome do aviso, sem dado (D65 a).
+#[derive(Clone, Serialize)]
+struct AvisoTela {
+    aviso: &'static str,
+}
+
+/// Canais do Tauri que as telas abriram com `ouvir_avisos`, um por janela (o mais novo
+/// de cada uma vale). A principal recebe `pedido-de-destrave` (Fase 31); a de aprovação,
+/// `pedido-de-aprovacao` (Fase 36). Nenhum aviso leva dado: quem recebe consulta.
+#[derive(Default)]
+struct Canais {
+    principal: Option<Channel<AvisoTela>>,
+    aprovacao: Option<Channel<AvisoTela>>,
+}
+
+type CanalAvisos = Arc<Mutex<Canais>>;
+
+fn travar_canais(canais: &CanalAvisos) -> std::sync::MutexGuard<'_, Canais> {
+    canais.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Manda o aviso (só o nome) pelo canal da janela, se ela abriu um.
+fn avisar(canais: &CanalAvisos, janela: &str, aviso: &'static str) {
+    let c = travar_canais(canais);
+    let canal = match janela {
+        JANELA_PRINCIPAL => c.principal.as_ref(),
+        JANELA_APROVACAO => c.aprovacao.as_ref(),
+        _ => None,
+    };
+    if let Some(canal) = canal {
+        let _ = canal.send(AvisoTela { aviso });
+    }
 }
 
 /// Serviço montado na partida. Sem `wl-copy`/`wl-paste` confiáveis, os comandos
 /// respondem o erro (o app abre e mostra a falha). `Arc`: a vigia da conexão limpa a
 /// área de transferência antes de reexecutar o app.
-struct Estado(Arc<Result<ServicoApp, ErroApp>>);
+struct Estado {
+    servico: Arc<Result<ServicoApp, ErroApp>>,
+    canal: CanalAvisos,
+}
 
 impl Estado {
+    fn novo(servico: Arc<Result<ServicoApp, ErroApp>>) -> Estado {
+        Estado {
+            servico,
+            canal: Arc::new(Mutex::new(Canais::default())),
+        }
+    }
+
     fn servico(&self) -> Result<&ServicoApp, Falha> {
-        self.0.as_ref().as_ref().map_err(|e| Falha::from(*e))
+        self.servico.as_ref().as_ref().map_err(|e| Falha::from(*e))
     }
 }
 
 #[tauri::command]
 fn estado_do_cofre(estado: State<'_, Estado>) -> Result<RespostaEstado, Falha> {
-    let e = estado.servico()?.estado_do_cofre()?;
-    Ok(RespostaEstado { estado: e.codigo() })
+    let s = estado.servico()?;
+    let e = s.estado_do_cofre()?;
+    Ok(RespostaEstado {
+        estado: e.codigo(),
+        pedido: s.info_do_pedido(e),
+    })
+}
+
+/// Destravar (Fase 31). A senha chega num `SenhaMestra` (zera ao sair; vazio ou acima
+/// do limite é recusado na leitura, sem eco) e só vai ao daemon; a resposta não a traz
+/// nem diz quantas tentativas houve (D20).
+#[tauri::command]
+fn destravar(senha: SenhaMestra, estado: State<'_, Estado>) -> Result<(), Falha> {
+    Ok(estado.servico()?.destravar(senha)?)
+}
+
+/// D65 a: a tela passa o canal por onde o lado Rust a avisa: a principal, de um
+/// `pedido_de_destrave`; a de aprovação (Fase 36), de um `pedido_de_aprovacao`. O canal
+/// fica com a janela que o abriu (rótulo dado pelo Tauri, não pela tela), e uma janela
+/// não recebe o aviso da outra. Canal do Tauri (não `emit`/`listen`): a capability não
+/// ganha permissão do núcleo (`core:event:*`).
+#[tauri::command]
+fn ouvir_avisos<R: Runtime>(
+    canal: Channel<AvisoTela>,
+    janela: WebviewWindow<R>,
+    estado: State<'_, Estado>,
+) -> Result<(), Falha> {
+    let mut c = travar_canais(&estado.canal);
+    match janela.label() {
+        JANELA_PRINCIPAL => c.principal = Some(canal),
+        JANELA_APROVACAO => c.aprovacao = Some(canal),
+        _ => return Err(Falha::from(ErroApp::NaoAutorizado)),
+    }
+    Ok(())
+}
+
+/// A vigia da fila de avisos da conexão (D65 a): cada `pedido_de_destrave` marca o
+/// pedido no serviço e avisa a tela pelo canal, se ela já abriu um.
+fn vigiar_avisos(estado: &Estado, fila: Option<Arc<ward_app_nucleo::daemon::FilaAvisos>>) {
+    let (Some(fila), Ok(s)) = (fila, estado.servico()) else {
+        return;
+    };
+    let canais = Arc::clone(&estado.canal);
+    let r = destrave::vigiar(fila, s.pedido_de_destrave(), move || {
+        avisar(&canais, JANELA_PRINCIPAL, "pedido-de-destrave");
+    });
+    if r.is_err() {
+        eprintln!("ward-app: não foi possível vigiar os avisos do daemon");
+    }
 }
 
 /// D4: o valor vai do daemon para a área de transferência aqui; a resposta não o traz.
@@ -257,6 +353,8 @@ fn criar_cofre(dados: NovoCofre, estado: State<'_, Estado>) -> Result<ResultadoC
     Ok(estado.servico()?.criar_cofre(dados)?)
 }
 
+/// Rótulo da janela principal (capability `principal`).
+const JANELA_PRINCIPAL: &str = "principal";
 /// Rótulo da janela de aprovação: a capability `aprovacao` vale só para ela.
 const JANELA_APROVACAO: &str = "aprovacao";
 
@@ -413,6 +511,8 @@ fn com_comandos<R: Runtime>(builder: Builder<R>, estado: Estado) -> Builder<R> {
             remover_anexo,
             conectar,
             criar_cofre,
+            destravar,
+            ouvir_avisos,
             pedido_de_aprovacao,
             responder_aprovacao
         ])
@@ -435,25 +535,32 @@ fn main() {
         }
     });
 
-    let app = com_comandos(tauri::Builder::default(), Estado(servico))
+    let estado = Estado::novo(servico);
+    let canais = Arc::clone(&estado.canal);
+    vigiar_avisos(&estado, fila.clone());
+    let app = com_comandos(tauri::Builder::default(), estado)
         .on_window_event(|janela, evento| {
             if janela.label() == JANELA_APROVACAO && matches!(evento, WindowEvent::Destroyed) {
-                ao_fechar_a_aprovacao(Arc::clone(&janela.state::<Estado>().0));
+                let estado = janela.state::<Estado>();
+                travar_canais(&estado.canal).aprovacao = None;
+                ao_fechar_a_aprovacao(Arc::clone(&estado.servico));
             }
         })
         .setup(move |app| {
-            // D65 a: cada `pedido_de_aprovacao` da fila abre a janela de aprovação.
+            // D65 a: cada `pedido_de_aprovacao` da fila abre (ou traz para a frente) a
+            // janela de aprovação e a avisa pelo canal dela (`ouvir_avisos`), sem dado.
             if let (Some(fila), Ok(s)) = (fila, na_aprovacao.as_ref()) {
                 let h = app.handle().clone();
                 let r = aprovacao::vigiar(fila, s.aprovacoes(), move || {
                     let h2 = h.clone();
                     let _ = h.run_on_main_thread(move || abrir_janela_de_aprovacao(&h2));
+                    avisar(&canais, JANELA_APROVACAO, "pedido-de-aprovacao");
                 });
                 if r.is_err() {
                     eprintln!("ward-app: não foi possível vigiar os pedidos de aprovação");
                 }
             }
-            WebviewWindowBuilder::new(app, "principal", WebviewUrl::App("index.html".into()))
+            WebviewWindowBuilder::new(app, JANELA_PRINCIPAL, WebviewUrl::App("index.html".into()))
                 .title("Ward")
                 .inner_size(1280.0, 800.0)
                 .min_inner_size(1024.0, 640.0)
@@ -484,7 +591,7 @@ mod testes {
     use tauri::webview::InvokeRequest;
 
     fn app_de_teste() -> tauri::App<MockRuntime> {
-        let estado = Estado(Arc::new(montar_servico(DaemonSocket::padrao())));
+        let estado = Estado::novo(Arc::new(montar_servico(DaemonSocket::padrao())));
         com_comandos(mock_builder(), estado)
             .build(tauri::generate_context!())
             .expect("app de teste")
@@ -809,6 +916,118 @@ mod testes {
         );
     }
 
+    /// Fase 31 (S13, D65 a): `destravar` e `ouvir_avisos` só passam pela ACL na janela
+    /// `principal` com a origem local; a senha fora do formato é recusada na leitura dos
+    /// argumentos, sem eco; o canal de avisos não abre `plugin:event|*`.
+    #[test]
+    fn ataque_destravar_so_na_janela_certa_e_senha_sem_eco() {
+        let app = app_de_teste();
+        let principal = WebviewWindowBuilder::new(&app, "principal", Default::default())
+            .build()
+            .unwrap();
+        let outra = WebviewWindowBuilder::new(&app, "outra", Default::default())
+            .build()
+            .unwrap();
+        let pedido = serde_json::json!({"senha": "falso-mestra-ward-01"});
+        for comando in ["destravar", "ouvir_avisos"] {
+            let r = chamar(&outra, comando, ORIGEM, pedido.clone());
+            assert!(
+                r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+                "{comando} em janela sem capability: {r:?}"
+            );
+            let r = chamar(&principal, comando, "https://example.com", pedido.clone());
+            assert!(
+                r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+                "{comando} com origem remota: {r:?}"
+            );
+        }
+        let longa = "x".repeat(ward_core_max_segredo() + 1);
+        for senha in [
+            serde_json::json!(""),
+            serde_json::json!(longa),
+            serde_json::json!(135790),
+            serde_json::Value::Null,
+            serde_json::json!(["falso-mestra-ward-01"]),
+        ] {
+            let r = chamar(
+                &principal,
+                "destravar",
+                ORIGEM,
+                serde_json::json!({"senha": senha}),
+            );
+            let texto = format!("{r:?}");
+            assert!(
+                r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+                "senha fora do formato passou da leitura: {}",
+                texto.len()
+            );
+            assert!(!texto.contains("falso-mestra") && !texto.contains("xxxx"));
+        }
+        // Bem formada, chega ao serviço (sem daemon: erro com código, sem a senha).
+        let r = chamar(&principal, "destravar", ORIGEM, pedido);
+        let texto = format!("{r:?}");
+        assert!(
+            r.as_ref().err().is_some_and(|e| e["codigo"].is_string()),
+            "{texto}"
+        );
+        assert!(!texto.contains("falso-mestra"), "{texto}");
+        // O canal não libera os comandos de evento do núcleo.
+        for comando in [
+            "plugin:event|listen",
+            "plugin:event|emit",
+            "plugin:event|emit_to",
+        ] {
+            let r = chamar(
+                &principal,
+                comando,
+                ORIGEM,
+                serde_json::json!({"event": "pedido-de-destrave", "target": {"kind": "Any"}, "handler": 0}),
+            );
+            assert!(r.is_err(), "{comando} deveria ser negado: {r:?}");
+        }
+    }
+
+    fn ward_core_max_segredo() -> usize {
+        64 * 1024
+    }
+
+    /// D65 a, Fase 36: o canal de avisos é por janela. O aviso de aprovação não chega à
+    /// principal nem o de destrave à de aprovação, e nenhum leva dado além do nome.
+    #[test]
+    fn ataque_aviso_de_uma_janela_nao_vai_para_a_outra() {
+        use std::sync::mpsc;
+        let canal = |tx: mpsc::Sender<String>| {
+            Channel::<AvisoTela>::new(move |corpo| {
+                let texto = match corpo {
+                    tauri::ipc::InvokeResponseBody::Json(j) => j,
+                    tauri::ipc::InvokeResponseBody::Raw(_) => "bruto".to_owned(),
+                };
+                let _ = tx.send(texto);
+                Ok(())
+            })
+        };
+        let (tx_p, rx_p) = mpsc::channel();
+        let (tx_a, rx_a) = mpsc::channel();
+        let canais: CanalAvisos = Arc::default();
+        travar_canais(&canais).principal = Some(canal(tx_p));
+        travar_canais(&canais).aprovacao = Some(canal(tx_a));
+        avisar(&canais, JANELA_APROVACAO, "pedido-de-aprovacao");
+        avisar(&canais, JANELA_PRINCIPAL, "pedido-de-destrave");
+        avisar(&canais, "outra", "pedido-de-aprovacao");
+        assert_eq!(
+            rx_a.try_iter().collect::<Vec<_>>(),
+            vec![r#"{"aviso":"pedido-de-aprovacao"}"#]
+        );
+        assert_eq!(
+            rx_p.try_iter().collect::<Vec<_>>(),
+            vec![r#"{"aviso":"pedido-de-destrave"}"#]
+        );
+        // Janela de aprovação destruída: o canal dela sai, e o aviso não vai a ninguém.
+        travar_canais(&canais).aprovacao = None;
+        avisar(&canais, JANELA_APROVACAO, "pedido-de-aprovacao");
+        assert!(rx_a.try_iter().next().is_none() && rx_p.try_iter().next().is_none());
+    }
+
     /// Fase 36 (S10, S11): responder aprovação só na janela `aprovacao`, com a origem
     /// local. A janela principal (e qualquer outra) não lê o pedido nem responde; a de
     /// aprovação não alcança nenhum outro comando nem plugin. Resposta forjada (id que o
@@ -826,13 +1045,18 @@ mod testes {
         let aprovacao = WebviewWindowBuilder::new(&app, JANELA_APROVACAO, Default::default())
             .build()
             .unwrap();
-        let negado_pela_acl =
-            |r: &Result<serde_json::Value, serde_json::Value>| r.as_ref().err().is_some_and(|e| !e["codigo"].is_string());
+        let negado_pela_acl = |r: &Result<serde_json::Value, serde_json::Value>| {
+            r.as_ref().err().is_some_and(|e| !e["codigo"].is_string())
+        };
         let resposta = serde_json::json!({"id": 1, "decisao": "uma_vez", "pin": "135790"});
         for janela in [&principal, &outra] {
             for comando in ["pedido_de_aprovacao", "responder_aprovacao"] {
                 let r = chamar(janela, comando, ORIGEM, resposta.clone());
-                assert!(negado_pela_acl(&r), "{comando} em {}: {r:?}", janela.label());
+                assert!(
+                    negado_pela_acl(&r),
+                    "{comando} em {}: {r:?}",
+                    janela.label()
+                );
                 assert!(!format!("{r:?}").contains("135790"));
             }
         }
@@ -865,7 +1089,10 @@ mod testes {
                 ORIGEM,
                 serde_json::json!({"entrada": "acme-pg-aprovacao", "campo": "senha", "nivel": "livre", "pin": "135790"}),
             );
-            assert!(negado_pela_acl(&r), "{comando} na janela de aprovação: {r:?}");
+            assert!(
+                negado_pela_acl(&r),
+                "{comando} na janela de aprovação: {r:?}"
+            );
         }
         // PIN fora do formato e decisão de outro tipo: recusados na leitura, sem eco.
         for corpo in [
@@ -879,13 +1106,19 @@ mod testes {
             let r = chamar(&aprovacao, "responder_aprovacao", ORIGEM, corpo);
             let texto = format!("{r:?}");
             assert!(negado_pela_acl(&r), "{texto}");
-            assert!(!texto.contains("135790") && !texto.contains("13579a"), "{texto}");
+            assert!(
+                !texto.contains("135790") && !texto.contains("13579a"),
+                "{texto}"
+            );
         }
         // Bem formada, mas o daemon nunca mandou o pedido 1: o serviço recusa (ou nem
         // montou, sem área de transferência). Erro com código, sem o PIN.
         let r = chamar(&aprovacao, "responder_aprovacao", ORIGEM, resposta);
         let texto = format!("{r:?}");
-        assert!(r.as_ref().err().is_some_and(|e| e["codigo"].is_string()), "{texto}");
+        assert!(
+            r.as_ref().err().is_some_and(|e| e["codigo"].is_string()),
+            "{texto}"
+        );
         assert!(!texto.contains("135790"), "{texto}");
     }
 
