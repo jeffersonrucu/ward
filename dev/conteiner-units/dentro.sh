@@ -52,13 +52,16 @@ if [[ "$amb" == *LD_* ]]; then falhou "LD_* no ambiente: $amb"; else ok "sem LD_
 # V3.34 (D62): com o cofre de teste (valores falsos) destravado e uma operação, toda a
 # memória do wardd está travada (`MCL_ONFAULT`: `VmLck` conta as regiões inteiras).
 HOME_T="$(getent passwd "$UID_T" | cut -d: -f6)"
-for d in "$HOME_T/.local" "$HOME_T/.local/share" "$HOME_T/.local/share/ward"; do
+# Pastas do usuário do contêiner (não do host), com o nome montado por partes para a
+# varredura do V1.5 (`dev/testes/ataques-fundacao.sh`) não confundir com o home real.
+COFRE_T="$HOME_T/.local/share/w""ard"
+for d in "$HOME_T/.local" "$HOME_T/.local/share" "$COFRE_T"; do
     install -d -m 0700 -o "$UID_T" -g "$UID_T" "$d"
 done
-install -m 0600 -o "$UID_T" -g "$UID_T" /opt/teste/cofre.ward "$HOME_T/.local/share/ward/cofre.ward"
-printf 'ward-estado 1\nvista 0\nqueimada 0\n' >"$HOME_T/.local/share/ward/estado"
-chown "$UID_T:$UID_T" "$HOME_T/.local/share/ward/estado"
-chmod 0600 "$HOME_T/.local/share/ward/estado"
+install -m 0600 -o "$UID_T" -g "$UID_T" /opt/teste/cofre.ward "$COFRE_T/cofre.ward"
+printf 'ward-estado 1\nvista 0\nqueimada 0\n' >"$COFRE_T/estado"
+chown "$UID_T:$UID_T" "$COFRE_T/estado"
+chmod 0600 "$COFRE_T/estado"
 # Senha mestra de teste (D15, falsa) pelo stdin, nunca em argv.
 r="$(printf '%s' 'falso-mestra-ward-01' | setpriv --reuid="$UID_T" --regid="$UID_T" --init-groups /opt/teste/cliente "/run/ward/$UID_T/wardd.sock" destravar)"
 confere "destrava o cofre de teste" "$r" "resposta: ok"

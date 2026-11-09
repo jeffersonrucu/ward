@@ -838,9 +838,10 @@ Reauditoria do M2 (Fase 19e, D53–D55). Repros em `scratchpad/ataque/src/bin/`
   com "aprovação indisponível" (vale o nível mais restritivo, D19).
 - [ ] V4.31 — Dado `ward ssh acme-ssh-senha-stage` interativo num pty (`expect`), quando
   digita `whoami` e `exit`, então vê `deploy` e a CLI sai 0.
-- [ ] V4.32 — (SEG) Dado `ward ssh --token <aleatório> acme-pg-aprovacao` (token
-  inventado), quando roda sem app, então o token é ignorado e vale o nível ("aprovação
-  indisponível") (D3).
+- [ ] V4.32 — (SEG) Dado `ward ssh --token-fd <n> acme-pg-aprovacao` com um token
+  inventado entregue pelo socket herdado no fd `<n>` (o token nunca vai em argv; D3,
+  Fase 27a), quando roda sem app, então o token é ignorado e vale o nível ("aprovação
+  indisponível"; com o app de teste que nega, "pedido negado") (D3).
 - [ ] V4.33 — (SEG) Dada a suíte do M4 com `RUST_LOG=trace`, quando o auditor procura
   segredos nos logs do daemon e da CLI, então não acha — cobre S13.
 - [ ] V4.34 — (SEG) Dado `ward ssh acme-ssh-senha-stage` interativo num pty (`expect`),

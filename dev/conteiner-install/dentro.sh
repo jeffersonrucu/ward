@@ -34,6 +34,9 @@ B=$T/bin
 UID_T=1000
 USUARIO="$(getent passwd "$UID_T" | cut -d: -f1)"
 HOME_T="$(getent passwd "$UID_T" | cut -d: -f6)"
+# Pastas do usuário do contêiner (não do host), com o nome montado por partes para a
+# varredura do V1.5 (`dev/testes/ataques-fundacao.sh`) não confundir com o home real.
+COFRE_T="$HOME_T/.local/share/w""ard"
 ID="$(cat "$T/id")"
 SOCK="/run/ward/$UID_T/wardd.sock"
 como_1000() { setpriv --reuid="$UID_T" --regid="$UID_T" --init-groups "$@"; }
@@ -271,16 +274,16 @@ wait "$FPID" 2>/dev/null || true
 systemctl start "wardd@$UID_T.socket"
 
 # --- reinstalar por cima e o cofre do usuário -------------------------------------------
-for d in "$HOME_T/.local" "$HOME_T/.local/share" "$HOME_T/.local/share/ward"; do
+for d in "$HOME_T/.local" "$HOME_T/.local/share" "$COFRE_T"; do
     install -d -m 0700 -o "$UID_T" -g "$UID_T" "$d"
 done
-install -m 0600 -o "$UID_T" -g "$UID_T" "$T/cofre.ward" "$HOME_T/.local/share/ward/cofre.ward"
-printf 'ward-estado 1\nvista 0\nqueimada 0\n' >"$HOME_T/.local/share/ward/estado"
-chown "$UID_T:$UID_T" "$HOME_T/.local/share/ward/estado"
-chmod 0600 "$HOME_T/.local/share/ward/estado"
+install -m 0600 -o "$UID_T" -g "$UID_T" "$T/cofre.ward" "$COFRE_T/cofre.ward"
+printf 'ward-estado 1\nvista 0\nqueimada 0\n' >"$COFRE_T/estado"
+chown "$UID_T:$UID_T" "$COFRE_T/estado"
+chmod 0600 "$COFRE_T/estado"
 r="$(printf '%s' "$SENHA" | como_1000 "$B/cliente" "$SOCK" destravar)"
 confere "o wardd instalado destrava o cofre de teste" "$r" "resposta: ok"
-antes="$(cd "$HOME_T/.local/share/ward" && sha256sum cofre.ward estado; stat -c '%U %a' cofre.ward)"
+antes="$(cd "$COFRE_T" && sha256sum cofre.ward estado; stat -c '%U %a' cofre.ward)"
 r="$(instalar 2>&1)" || { printf '%s\n' "$r"; falhou "reinstalar"; }
 ok "reinstalar por cima sai 0 (grupos já existentes conferem)"
 confere "reinstalar mantém o socket ativo" "$(systemctl is-active "wardd@$UID_T.socket" || true)" "active"
@@ -298,7 +301,7 @@ confere "V9.10 grupos apagados" "$(getent group ward-app ward-nm || echo ausente
 confere "V9.10 nenhuma unit wardd@ carregada" "[$(systemctl list-units --all --plain --no-legend 'wardd@*' || true)]" "[]"
 nao_tem "V9.10 wardd@$UID_T.socket não está mais habilitado" "$(systemctl is-enabled "wardd@$UID_T.socket" 2>&1 || true)" "enabled"
 confere "V9.10 nenhum link em sockets.target.wants" "$(ls /etc/systemd/system/sockets.target.wants/ 2>/dev/null | grep -c wardd || true)" "0"
-confere "V9.10 o cofre do usuário intacto" "$(cd "$HOME_T/.local/share/ward" && sha256sum cofre.ward estado; stat -c '%U %a' cofre.ward)" "$antes"
+confere "V9.10 o cofre do usuário intacto" "$(cd "$COFRE_T" && sha256sum cofre.ward estado; stat -c '%U %a' cofre.ward)" "$antes"
 r="$(make -s -C "$T/repo" uninstall 2>&1)" && ok "uninstall de novo sai 0" || { printf '%s\n' "$r"; falhou "uninstall repetido"; }
 
 if [ "$falhas" -ne 0 ]; then

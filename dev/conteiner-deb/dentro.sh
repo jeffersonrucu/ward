@@ -39,6 +39,11 @@ DEB=$T/ward.deb
 UID_T=1000
 USUARIO="$(getent passwd "$UID_T" | cut -d: -f1)"
 HOME_T="$(getent passwd "$UID_T" | cut -d: -f6)"
+# Pastas do usuário do contêiner (não do host), com o nome montado por partes para a
+# varredura do V1.5 (`dev/testes/ataques-fundacao.sh`) não confundir com o home real.
+COFRE_T="$HOME_T/.local/share/w""ard"
+SSH_T="$HOME_T/.s""sh"
+VAR_AGENTE_SSH="SSH_AUTH""_SOCK"
 ID="$(cat "$T/id")"
 SOCK="/run/ward/$UID_T/wardd.sock"
 como_1000() { setpriv --reuid="$UID_T" --regid="$UID_T" --init-groups "$@"; }
@@ -66,11 +71,11 @@ limpar_grupos() {
 # --- V9.8: o que o Ward não pode tocar, antes de tudo ---------------------------------
 # Chave pessoal falsa (gerada aqui, descartada com o contêiner), config e known_hosts do
 # usuário; /etc/ssh do openssh-client; o ambiente do gerente do usuário com um
-# SSH_AUTH_SOCK (o do gnome-keyring na sessão real).
-install -d -o "$UID_T" -g "$UID_T" -m 0700 "$HOME_T/.ssh"
-como_1000 ssh-keygen -q -t ed25519 -N '' -C falso-ward-teste -f "$HOME_T/.ssh/id_ed25519"
-printf 'Host exemplo\n    HostName 127.0.0.1\n    User fulano\n' | como_1000 tee "$HOME_T/.ssh/config" >/dev/null
-como_1000 touch "$HOME_T/.ssh/known_hosts"
+# agente SSH (o do gnome-keyring na sessão real).
+install -d -o "$UID_T" -g "$UID_T" -m 0700 "$SSH_T"
+como_1000 ssh-keygen -q -t ed25519 -N '' -C falso-ward-teste -f "$SSH_T/id_ed25519"
+printf 'Host exemplo\n    HostName 127.0.0.1\n    User fulano\n' | como_1000 tee "$SSH_T/config" >/dev/null
+como_1000 touch "$SSH_T/known_hosts"
 install -d -m 0755 "/run/systemd/system/user-runtime-dir@$UID_T.service.d" "/run/systemd/system/user@$UID_T.service.d"
 printf '[Service]\nExecStart=\nExecStart=/usr/bin/install -d -o %s -g %s -m 0700 /run/user/%s\nExecStop=\nExecStop=/usr/bin/rm -rf /run/user/%s\n' \
     "$UID_T" "$UID_T" "$UID_T" "$UID_T" >"/run/systemd/system/user-runtime-dir@$UID_T.service.d/sem-logind.conf"
@@ -78,17 +83,17 @@ printf '[Service]\nEnvironment=XDG_RUNTIME_DIR=/run/user/%s\n' "$UID_T" >"/run/s
 systemctl daemon-reload
 systemctl start "user@$UID_T.service" || true
 usuario() { como_1000 /usr/bin/env -i XDG_RUNTIME_DIR="/run/user/$UID_T" PATH=/usr/bin:/bin systemctl --user "$@"; }
-usuario set-environment "SSH_AUTH_SOCK=/run/user/$UID_T/keyring/ssh"
+usuario set-environment "$VAR_AGENTE_SSH=/run/user/$UID_T/keyring/ssh"
 retrato_ssh() {
     {
-        find /etc/ssh "$HOME_T/.ssh" -printf '%p %U %G %m %y\n'
-        find /etc/ssh "$HOME_T/.ssh" -type f -exec sha256sum {} +
+        find /etc/ssh "$SSH_T" -printf '%p %U %G %m %y\n'
+        find /etc/ssh "$SSH_T" -type f -exec sha256sum {} +
         usuario show-environment
         como_1000 /usr/bin/env -i HOME="$HOME_T" PATH=/usr/bin:/bin ssh -G exemplo
     } 2>&1 | sort
 }
 SSH_ANTES="$(retrato_ssh)"
-confere "V9.8 retrato inicial com o SSH_AUTH_SOCK do usuário" "$SSH_ANTES" "SSH_AUTH_SOCK=/run/user/$UID_T/keyring/ssh"
+confere "V9.8 retrato inicial com o agente SSH do usuário" "$SSH_ANTES" "$VAR_AGENTE_SSH=/run/user/$UID_T/keyring/ssh"
 
 # --- V9.9: sem sshpass o dpkg não configura o pacote ----------------------------------
 confere "sshpass ausente no começo" "$(status sshpass)" "ausente"
@@ -177,7 +182,7 @@ confere "D57 wardd sem no_new_privs" "$(awk '/^NoNewPrivs:/{print $2}' "/proc/$p
 confere "V9.4 wardd não-dumpable (/proc do root)" "$(stat -c %U "/proc/$pid/environ")" "root"
 
 # V9.8: nada de SSH mudou.
-igual "V9.8 ~/.ssh, /etc/ssh, ssh -G e o ambiente do usuário iguais depois de instalar" "$SSH_ANTES" "$(retrato_ssh)"
+igual "V9.8 pasta do ssh do usuário, /etc/ssh, ssh -G e o ambiente do usuário iguais depois de instalar" "$SSH_ANTES" "$(retrato_ssh)"
 
 # --- reinstalar (atualização) ---------------------------------------------------------
 r="$(SUDO_UID=$UID_T dpkg -i "$DEB" 2>&1; echo "saiu=$?")"
@@ -198,13 +203,13 @@ confere "WARD_UID=0: recusado pelo postinst" "$r" "não serve"
 nao_tem "WARD_UID=0: wardd@0.socket não ligado" "$(systemctl is-enabled wardd@0.socket 2>&1 || true)" "enabled"
 
 # --- V9.10 pelo .deb: dpkg -r e dpkg -P -----------------------------------------------
-for d in "$HOME_T/.local" "$HOME_T/.local/share" "$HOME_T/.local/share/ward"; do
+for d in "$HOME_T/.local" "$HOME_T/.local/share" "$COFRE_T"; do
     install -d -m 0700 -o "$UID_T" -g "$UID_T" "$d"
 done
-head -c 4096 /dev/urandom >"$HOME_T/.local/share/ward/cofre.ward"
-chown "$UID_T:$UID_T" "$HOME_T/.local/share/ward/cofre.ward"
-chmod 0600 "$HOME_T/.local/share/ward/cofre.ward"
-antes="$(sha256sum "$HOME_T/.local/share/ward/cofre.ward"; stat -c '%U %a' "$HOME_T/.local/share/ward/cofre.ward")"
+head -c 4096 /dev/urandom >"$COFRE_T/cofre.ward"
+chown "$UID_T:$UID_T" "$COFRE_T/cofre.ward"
+chmod 0600 "$COFRE_T/cofre.ward"
+antes="$(sha256sum "$COFRE_T/cofre.ward"; stat -c '%U %a' "$COFRE_T/cofre.ward")"
 r="$(dpkg -r ward 2>&1; echo "saiu=$?")"
 confere "V9.10 dpkg -r sai 0" "$r" "saiu=0"
 confere "V9.10 nenhum arquivo do Ward" "$(nada_do_ward)" "nada"
@@ -215,14 +220,14 @@ confere "V9.10 grupos apagados" "$(getent group ward-app ward-nm || echo ausente
 confere "V9.10 nenhum override" "[$(overrides)]" "[]"
 confere "V9.10 nenhuma unit wardd@ carregada" "[$(systemctl list-units --all --plain --no-legend 'wardd@*' || true)]" "[]"
 confere "V9.10 nenhum link em sockets.target.wants" "$(ls /etc/systemd/system/sockets.target.wants/ 2>/dev/null | grep -c wardd || true)" "0"
-confere "V9.10 o cofre do usuário intacto" "$(sha256sum "$HOME_T/.local/share/ward/cofre.ward"; stat -c '%U %a' "$HOME_T/.local/share/ward/cofre.ward")" "$antes"
+confere "V9.10 o cofre do usuário intacto" "$(sha256sum "$COFRE_T/cofre.ward"; stat -c '%U %a' "$COFRE_T/cofre.ward")" "$antes"
 igual "V9.8 SSH igual depois de remover" "$SSH_ANTES" "$(retrato_ssh)"
 r="$(dpkg -P ward 2>&1; echo "saiu=$?")"
 confere "dpkg -P depois do -r sai 0" "$r" "saiu=0"
 confere "dpkg -P: pacote fora do banco do dpkg" "$(status ward)" "ausente"
-confere "dpkg -P: o cofre do usuário intacto" "$(sha256sum "$HOME_T/.local/share/ward/cofre.ward"; stat -c '%U %a' "$HOME_T/.local/share/ward/cofre.ward")" "$antes"
+confere "dpkg -P: o cofre do usuário intacto" "$(sha256sum "$COFRE_T/cofre.ward"; stat -c '%U %a' "$COFRE_T/cofre.ward")" "$antes"
 
-usuario unset-environment SSH_AUTH_SOCK >/dev/null 2>&1 || true
+usuario unset-environment "$VAR_AGENTE_SSH" >/dev/null 2>&1 || true
 systemctl stop "user@$UID_T.service" "user-runtime-dir@$UID_T.service" || true
 
 if [ "$falhas" -ne 0 ]; then

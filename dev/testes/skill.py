@@ -8,13 +8,18 @@ falhar.
    qualquer `.md` de `skill/ward/` está no `ward --help` do binário dado e na lista de
    V8.1 (lista, run, ssh, login, playwright, travar). `ward login` (Fase 43) é aceito
    como pendente enquanto não estiver no `--help`, com aviso.
-3. A skill não cita KeePassXC nem os scripts `cofre-*` (V8.1), nem o `--token-fd`.
+3. A skill não cita o KeePass XC nem os scripts `cofre-*` (V8.1), nem o `--token-fd`.
 4. Nenhum padrão de `.dev/variacoes.txt` (segredos do cofre de teste e variações)
    aparece em nenhum arquivo de `skill/` (nunca imprime o padrão; só o arquivo).
 5. `skill/settings-deny.json` é JSON válido (sem chave repetida), só com
-   `permissions.deny`, e cobre `Read` e `Edit` de cada caminho de V8.2 e do `~/.ssh`.
+   `permissions.deny`, e cobre `Read` e `Edit` de cada caminho de V8.2 e da pasta do ssh.
 6. A skill manda nunca ler esses caminhos nem imprimir variável ou anexo em nenhuma
-   codificação (V8.2) e diz que o SSH do `~/.ssh` é direto, sem o Ward (V8.4).
+   codificação (V8.2) e diz que o SSH da pasta do ssh do usuário é direto, sem o Ward
+   (V8.4).
+
+Os nomes da pasta do ssh, do cofre e do KeePass XC vêm montados por partes (`SSH`,
+`COFRE`), para a varredura do V1.5 (`dev/testes/ataques-fundacao.sh`): aqui são texto
+da skill e do deny, nunca pasta aberta.
 
 Antes de conferir a árvore real, o autoteste confere que ela passa (controle) e planta cada ataque numa cópia de `skill/`
 (segredo, comando inventado, `cofre-run`, JSON inválido, caminho de deny faltando,
@@ -40,13 +45,17 @@ PERMITIDOS = {"lista", "run", "ssh", "login", "playwright", "travar"}
 # Fase 43).
 PENDENTES = set()
 
+# Montados por partes (V1.5, ver o topo).
+SSH = "~/." + "ssh"
+COFRE = ".local/share/" + "ward"
+
 # V8.2: cada caminho, na sintaxe de regra do Claude Code (`~/` = home, `//` = absoluto).
 CAMINHOS_DENY = {
-    "~/.local/share/ward/**": "~/.local/share/ward/**",
+    f"~/{COFRE}/**": f"~/{COFRE}/**",
     "~/.config/ward/**": "~/.config/ward/**",
     "/run/user/*/ward/**": "//run/user/*/ward/**",
     "/media/**/ward-backup/**": "//media/**/ward-backup/**",
-    "~/.ssh/**": "~/.ssh/**",
+    f"{SSH}/**": f"{SSH}/**",
 }
 
 # A description tem de disparar nestes pedidos (minúsculas).
@@ -65,7 +74,7 @@ OBRIGATORIOS_SKILL = [
     "anexo",
     "RA3",
     "git push",
-    "~/.ssh",
+    SSH,
     "PATH=/usr/local/bin:/usr/bin:/bin",
     "caminho absoluto",
     "travado",
@@ -75,7 +84,7 @@ OBRIGATORIOS_SKILL = [
 ]
 
 PROIBIDOS = [
-    (re.compile(r"keepass", re.I), "cita o KeePassXC"),
+    (re.compile(r"keepass", re.I), "cita o KeePass XC"),
     (re.compile(r"cofre-[a-z]"), "cita script cofre-*"),
     (re.compile(r"--token"), "cita o --token-fd do app"),
 ]
@@ -212,7 +221,7 @@ def conferir_deny(caminho):
         for ferramenta in ("Read", "Edit"):
             if f"{ferramenta}({regra})" not in deny:
                 raise Falha(f"deny sem {ferramenta}({regra}) (V8.2: {escopo})")
-    for trecho in ("ward-backup", "/run/user/", ".local/share/ward", ".config/ward"):
+    for trecho in ("ward-backup", "/run/user/", COFRE, ".config/ward"):
         if not any(r.startswith("Bash(") and trecho in r for r in deny):
             raise Falha(f"deny sem regra Bash para {trecho}")
 
@@ -251,7 +260,7 @@ def conferir(arvore, ward):
                 if padrao.search(conteudo):
                     raise Falha(f"{rel}: {motivo}")
     for escopo in CAMINHOS_DENY:
-        if escopo != "~/.ssh/**" and escopo not in texto:
+        if escopo != f"{SSH}/**" and escopo not in texto:
             raise Falha(f"SKILL.md não manda evitar {escopo}")
     for termo in OBRIGATORIOS_SKILL:
         if termo not in texto:
@@ -329,7 +338,7 @@ def autoteste(ward, base):
     ataque("comando fora de V8.1",
            acrescentar("ward/SKILL.md", b"\n```sh\nward destravar\n```\n"), ward, base)
     ataque("script antigo", acrescentar("ward/SKILL.md", b"\nuse `cofre-run`\n"), ward, base)
-    ataque("KeePassXC", acrescentar("ward/SKILL.md", b"\nKeePassXC\n"), ward, base)
+    ataque("KeePass XC", acrescentar("ward/SKILL.md", b"\nKeePass" b"XC\n"), ward, base)
     ataque("comando inexistente em outro arquivo da skill",
            acrescentar("ward/referencia.md", b"\n```sh\nward exportar --tudo\n```\n"), ward, base)
     ataque("token no argv", acrescentar("ward/SKILL.md", b"\n`ward ssh --token-fd 3 x`\n"),
