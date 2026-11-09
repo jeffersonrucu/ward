@@ -371,7 +371,7 @@ asserção abaixo vira teste de ataque no `ward-core`.
   entradas de D15 sem mudança; e uma entrada que passou do orçamento só por causa de
   D36/D37 é recusada com "entrada grande demais para a máscara do `ward run`" (D29) —
   cobre S4.
-- [ ] V2.44 — (SEG) (Reescrita pela Fase 19e, D53; a aprovação anterior valia para "segue
+- [x] V2.44 — (SEG) (Reescrita pela Fase 19e, D53; a aprovação anterior valia para "segue
   com n".) Dado o cofre de teste com a geração n, quando grava por
   `gravar_entradas` e quando troca a senha, então o arquivo relido tem n+1 e depois
   n+2; quando a gravação falha antes do rename (injeção do V2.9), então o arquivo
@@ -453,7 +453,7 @@ Reauditoria do M2 (Fase 19e, D53–D55). Repros em `scratchpad/ataque/src/bin/`
 (`geracao.rs`, `desvio.rs`, `url.rs`); cada asserção vira teste de ataque no
 `ward-core` (e no teste do `variacoes.py`, para a V2.57).
 
-- [ ] V2.53 — (SEG) Dado um cofre na geração n num diretório temporário, quando o
+- [x] V2.53 — (SEG) Dado um cofre na geração n num diretório temporário, quando o
   ataque do `geracao.rs` tira a leitura do diretório (0300) para o fsync do diretório
   falhar depois do rename, grava a mudança A (uma entrada a menos), devolve 0700 e
   grava a mudança B (a entrada de volta), então a gravação A devolve erro com o
@@ -463,19 +463,19 @@ Reauditoria do M2 (Fase 19e, D53–D55). Repros em `scratchpad/ataque/src/bin/`
   arquivo A com `geracao_minima` = n e `geracao_queimada` = n+2, então o `CofreAberto`
   fica em n+2 e a gravação seguinte grava n+3; e `trocar_senha` com
   `geracao_queimada` = n+5 sobre um arquivo em n+3 grava n+6 (D53) — cobre S7, S9.
-- [ ] V2.54 — (SEG) Dado um `api` com o token `falso-tok-linha-um-01\nfalso-tok-linha-dois-02`
+- [x] V2.54 — (SEG) Dado um `api` com o token `falso-tok-linha-um-01\nfalso-tok-linha-dois-02`
   e a máscara montada só por `ConstrutorMascara::new().entrega(&g).construir()`, quando
   a saída traz `head -n1 <<<"$GITHUB_TOKEN"` (bash real), cada linha sozinha, a linha
   com `\r` e a linha aparada, então nenhum trecho de 6+ caracteres do token sobra; o
   mesmo com `Mascara::da_entrada` (D54) — cobre S4.
-- [ ] V2.55 — (SEG) Dado um `genérico` com o extra secreto
+- [x] V2.55 — (SEG) Dado um `genérico` com o extra secreto
   `linha-um-ação-01\nlinha-dois-ação-02\nlinha-tres-Ab3$k&<9>Zq!`, quando a saída é a
   de `python3 -I -c 'json.dumps(os.environ["NOTA"].splitlines())'` (linhas em
   `ensure_ascii`), de `json.dumps({"l": linha1})`, de `L=$(sed -n 3p <<<"$NOTA");
   declare -p L` e da linha 3 no JSON do Go, então nenhum trecho de 6+ caracteres de
   nenhuma linha sobra, comparando também com a forma decodificada; e a saída sem
   segredo com `\u00e7` segue intacta (D54, formas de texto por linha) — cobre S4.
-- [ ] V2.56 — (SEG) Dado o `desvio.rs` contra o código novo, quando a saída traz: `printf
+- [x] V2.56 — (SEG) Dado o `desvio.rs` contra o código novo, quando a saída traz: `printf
   '%q\n' "$NOTA"` de `Ab3$k&<9>Zq!` (bash real); `echo "${NOTA@Q}"`, `set | grep
   ^NOTA=` e `set -x` com `falso-it's-01x`; `falso\/a\u00e7\u00e3o\/01` (`json_encode`
   do PHP) para `falso/ação/01`; e, num extra secreto de várias linhas, as linhas
@@ -488,7 +488,7 @@ Reauditoria do M2 (Fase 19e, D53–D55). Repros em `scratchpad/ataque/src/bin/`
   teste registra o resultado sem exigir máscara; e o V2.43 refeito com a tabela de D54
   segue ≤ 8 MiB, com o custo da validação ≥ o real e as 21 entradas de D15 aceitas
   (D54, D29) — cobre S4.
-- [ ] V2.57 — (SEG) Dado o `dev/variacoes.py` e o cofre de teste, quando o teste cruzado
+- [x] V2.57 — (SEG) Dado o `dev/variacoes.py` e o cofre de teste, quando o teste cruzado
   (rodado por `dev/testes/dev-cofre.sh` em `make teste-dev-cofre`) põe cada padrão de
   `make dev-variacoes` sozinho numa saída e passa pela máscara da entrada de onde ele
   veio, então todo padrão sai `••••`; e o teste do `variacoes.py` confere, com valores
@@ -497,7 +497,7 @@ Reauditoria do M2 (Fase 19e, D53–D55). Repros em `scratchpad/ataque/src/bin/`
   `printf %q`) e os campos de tab, e **não** ganha base64 nem miolos; o oráculo continua
   sem importar nem chamar o código da máscara, determinístico, 0600, sem linha vazia
   nem padrão com menos de 6 bytes (D54, V2.52) — cobre S4.
-- [ ] V2.58 — (SEG) Dado um `login` e um `api`, quando a URL é `https://0x7f000001/`,
+- [x] V2.58 — (SEG) Dado um `login` e um `api`, quando a URL é `https://0x7f000001/`,
   `https://0x7f.0.0.1/`, `https://1.2.3.0x4/`, `https://x.123/`, `https://x.0x10/` ou
   `https://x.example.9z/`, então a validação recusa com a mensagem de URL inválida, e o
   corpo forjado com ela também; e `https://cliente.com.br/`, `https://x1.example/`,
