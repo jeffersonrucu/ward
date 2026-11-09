@@ -687,3 +687,67 @@ fn ataque_ponte_sem_papel_app_sai_na_primeira_resposta() {
         let _ = fs::remove_dir_all(&dir);
     }
 }
+
+/// Fase 31 (S13, D20): destravar pela ponte. A senha sai do corpo como `SenhaMestra`; o
+/// formato errado nem chega ao daemon; a resposta não ecoa a senha nem diz quantas
+/// tentativas houve; o `estado_do_cofre` travado traz só `pedido` (aqui `null`).
+#[test]
+fn ataque_destravar_pela_ponte() {
+    let (p, _l, _a, base) = ponte("destravar");
+    let estado = |p: &Ponte<DaemonFalso, Area>| {
+        p.responder(&post(p, "estado_do_cofre", "{}", &[]))
+            .corpo_json()
+            .unwrap()["valor"]
+            .clone()
+    };
+    // Trava pelo 5º PIN errado (Fase 35), como no app.
+    for _ in 0..5 {
+        p.responder(&post(
+            &p,
+            "mudar_nivel",
+            r#"{"entrada":"acme-pg-prod","nivel":"livre","pin":"000000"}"#,
+            &[],
+        ));
+    }
+    assert_eq!(
+        estado(&p),
+        serde_json::json!({"estado": "travado", "pedido": null})
+    );
+    let destravar = |p: &Ponte<DaemonFalso, Area>, corpo: &str| {
+        let r = p.responder(&post(p, "destravar", corpo, &[]));
+        let texto = String::from_utf8_lossy(&r.corpo).into_owned();
+        assert!(
+            !texto.contains("falso-mestra"),
+            "senha na resposta: {texto}"
+        );
+        r.corpo_json().unwrap()
+    };
+    for corpo in [
+        r#"{}"#,
+        r#"{"senha":""}"#,
+        r#"{"senha":135790}"#,
+        r#"{"senha":null}"#,
+        r#"{"senha":["falso-mestra-ward-01"]}"#,
+        r#"{"senha":"falso-mestra-ward-01","extra":1}"#,
+    ] {
+        let v = destravar(&p, corpo);
+        assert_eq!(v["codigo"], "pedido-invalido", "{corpo}: {v}");
+    }
+    assert_eq!(estado(&p)["estado"], "travado");
+    let v = destravar(&p, r#"{"senha":"falso-mestra-ward-00"}"#);
+    assert_eq!(v["codigo"], "senha-incorreta", "{v}");
+    let msg = v["mensagem"].as_str().unwrap().to_owned();
+    assert!(!msg.chars().any(|c| c.is_ascii_digit()), "{msg}");
+    assert_eq!(estado(&p)["estado"], "travado");
+    // A 2ª tentativa espera 1 s no daemon (D20) e destrava.
+    let v = destravar(&p, r#"{"senha":"falso-mestra-ward-01"}"#);
+    assert_eq!(v, serde_json::json!({"ok": true, "valor": null}));
+    assert_eq!(
+        estado(&p),
+        serde_json::json!({"estado": "destravado", "pedido": null})
+    );
+    // `ouvir_avisos` não existe na ponte (o canal é do Tauri).
+    let r = p.responder(&post(&p, "ouvir_avisos", "{}", &[]));
+    assert_eq!(r.corpo_json().unwrap()["codigo"], "pedido-invalido");
+    let _ = fs::remove_dir_all(base);
+}

@@ -14,6 +14,7 @@ use ward_app_nucleo::ErroApp;
 use ward_app_nucleo::area_transferencia::AreaTransferencia;
 use ward_app_nucleo::comandos::Comando;
 use ward_app_nucleo::daemon::Daemon;
+use ward_app_nucleo::destrave::SenhaMestra;
 use ward_app_nucleo::formulario::Formulario;
 use ward_app_nucleo::gerador::Opcoes;
 use ward_app_nucleo::nivel::Pin;
@@ -189,13 +190,22 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Ponte<D, A> {
             Comando::MudarNivel => args.remove("pin").map(serde_json::from_value::<Pin>),
             _ => None,
         };
+        // Fase 31: a senha mestra também sai do mapa (posse) e vira um `SenhaMestra`.
+        let senha = match comando {
+            Comando::Destravar => args
+                .remove("senha")
+                .map(serde_json::from_value::<SenhaMestra>),
+            _ => None,
+        };
         let texto = |chave: &str| args.get(chave).and_then(Value::as_str);
         let marcado = |chave: &str| args.get(chave).and_then(Value::as_bool);
         let resultado = match comando {
+            // Fase 31: com o cofre travado, o pedido do agente que espera (só id e os
+            // segundos que faltam).
             Comando::EstadoDoCofre => self
                 .servico
                 .estado_do_cofre()
-                .map(|e| json!({ "estado": e.codigo() })),
+                .map(|e| json!({ "estado": e.codigo(), "pedido": self.servico.info_do_pedido(e) })),
             Comando::CopiarCampo => match (texto("entrada"), texto("campo")) {
                 (Some(e), Some(c)) => self.servico.copiar_campo(e, c).map(|()| Value::Null),
                 _ => Err(ErroApp::PedidoInvalido),
@@ -323,6 +333,16 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Ponte<D, A> {
                 Some(e) => self.servico.conectar(e).map(|()| Value::Null),
                 None => Err(ErroApp::PedidoInvalido),
             },
+            // Fase 31: a resposta não traz a senha nem quantas tentativas houve.
+            Comando::Destravar => match senha {
+                Some(Ok(senha)) if args.is_empty() => {
+                    self.servico.destravar(senha).map(|()| Value::Null)
+                }
+                _ => Err(ErroApp::PedidoInvalido),
+            },
+            // O canal do Tauri não existe na ponte: a tela de teste consulta o estado
+            // (`ponte-teste.js` › `ouvirAvisos`).
+            Comando::OuvirAvisos => Err(ErroApp::PedidoInvalido),
         };
         match resultado {
             Ok(valor) => Resposta::json(200, &json!({ "ok": true, "valor": valor })),

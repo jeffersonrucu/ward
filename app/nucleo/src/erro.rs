@@ -46,6 +46,12 @@ pub enum ErroApp {
     TerminalIndisponivel,
     /// "Conectar" numa entrada que não é `servidor`.
     NaoEServidor,
+    /// Destravar (Fase 31): senha mestra errada (ou arquivo adulterado; o formato não
+    /// distingue). A resposta não diz quantas tentativas houve (D20).
+    SenhaIncorreta,
+    /// Destravar (D39): o cofre no disco é mais antigo que o último aberto; nada foi
+    /// aberto.
+    CofreRetrocesso,
 }
 
 impl ErroApp {
@@ -70,6 +76,8 @@ impl ErroApp {
             ErroApp::SeletorIndisponivel => "seletor-indisponivel",
             ErroApp::TerminalIndisponivel => "terminal-indisponivel",
             ErroApp::NaoEServidor => "nao-e-servidor",
+            ErroApp::SenhaIncorreta => "senha-incorreta",
+            ErroApp::CofreRetrocesso => "cofre-retrocesso",
         }
     }
 }
@@ -99,6 +107,10 @@ impl fmt::Display for ErroApp {
             ErroApp::SeletorIndisponivel => "não foi possível abrir a escolha de arquivo",
             ErroApp::TerminalIndisponivel => "não foi possível abrir o terminal",
             ErroApp::NaoEServidor => "Conectar só vale para entradas servidor",
+            ErroApp::SenhaIncorreta => "Senha mestra incorreta.",
+            ErroApp::CofreRetrocesso => {
+                "o cofre no disco é mais antigo que o último aberto; nada foi aberto"
+            }
         })
     }
 }

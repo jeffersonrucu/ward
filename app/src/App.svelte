@@ -1,14 +1,16 @@
 <script>
   // App: com o cofre destravado, a casca com a `Navegação lateral` e a tela escolhida;
-  // fora disso, o esqueleto da Fase 29 com o estado do daemon. As telas do M0 chegam nas
-  // Fases 30–39, cada uma a partir dos nodes de docs/mission/design-nodes.md.
-  import { onMount } from 'svelte';
+  // travado, a tela `Destravar` (Fase 31), com o pedido do agente quando um uso espera o
+  // destrave; fora disso, o esqueleto da Fase 29 com o estado do daemon. As telas do M0
+  // chegam nas Fases 30–39, cada uma a partir dos nodes de docs/mission/design-nodes.md.
+  import { onDestroy, onMount } from 'svelte';
   import Botao from './lib/componentes/Botao.svelte';
   import Logo from './lib/componentes/Logo.svelte';
   import NavegacaoLateral from './lib/componentes/NavegacaoLateral.svelte';
   import Toast from './lib/componentes/Toast.svelte';
-  import { chamar } from './lib/ponte/index.js';
+  import { chamar, ouvirAvisos } from './lib/ponte/index.js';
   import Credenciais from './telas/Credenciais.svelte';
+  import Destravar from './telas/Destravar.svelte';
   import GeradorSenha from './telas/GeradorSenha.svelte';
 
   const TEXTOS = {
@@ -21,27 +23,54 @@
   let mensagem = $state('Conectando ao daemon…');
   let falhou = $state(false);
   let destravado = $state(false);
+  let travado = $state(false);
+  // Fase 31: o pedido do agente que espera o destrave (só id e segundos; sem dado).
+  let pedido = $state(null);
   let tela = $state('credenciais');
   let Vitrine = $state(null);
+  let pararDeOuvir = null;
+
+  function aplicar(r) {
+    destravado = r?.estado === 'destravado';
+    travado = r?.estado === 'travado';
+    pedido = travado && r?.pedido ? { id: r.pedido.id, restante: r.pedido.restante } : null;
+    mensagem = TEXTOS[r?.estado] ?? 'Estado desconhecido.';
+  }
 
   async function consultar() {
     falhou = false;
     mensagem = 'Conectando ao daemon…';
     try {
-      const r = await chamar('estado_do_cofre');
-      destravado = r?.estado === 'destravado';
-      mensagem = TEXTOS[r?.estado] ?? 'Estado desconhecido.';
+      aplicar(await chamar('estado_do_cofre'));
     } catch (e) {
       falhou = true;
+      travado = false;
       mensagem = e.mensagem;
     }
   }
 
+  // Aviso do lado Rust (pedido de destrave) ou consulta periódica da ponte de teste: o
+  // estado é lido de novo sem apagar a tela; erro aqui não troca a tela.
+  async function atualizar() {
+    if (falhou) return;
+    try {
+      aplicar(await chamar('estado_do_cofre'));
+    } catch {
+      // A próxima ação na tela mostra o erro.
+    }
+  }
+
   // O cofre travou durante o uso (Fase 35: 5º PIN errado, S9): a casca sai e o estado
-  // do daemon é consultado de novo. A tela `Destravar / Padrão` chega na Fase 31.
+  // do daemon é consultado de novo, o que leva a `Destravar / Padrão`.
   function travou() {
     destravado = false;
     consultar();
+  }
+
+  function falhaAoDestravar(m) {
+    falhou = true;
+    travado = false;
+    mensagem = m;
   }
 
   function navegar(nova) {
@@ -60,11 +89,13 @@
         return;
       }
     }
-    consultar();
+    await consultar();
+    pararDeOuvir = await ouvirAvisos(atualizar);
     if (import.meta.env.MODE === 'teste') {
       Vitrine = (await import('./lib/teste/Vitrine.svelte')).default;
     }
   });
+  onDestroy(() => pararDeOuvir?.());
 </script>
 
 {#if destravado}
@@ -78,6 +109,8 @@
       <main class="vazio"><p class="estado">Esta tela ainda não existe.</p></main>
     {/if}
   </div>
+{:else if travado}
+  <Destravar {pedido} ondestravado={consultar} onerro={falhaAoDestravar} />
 {:else}
   <main class="janela">
     <section class="painel">

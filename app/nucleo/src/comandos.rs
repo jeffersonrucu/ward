@@ -58,6 +58,12 @@ pub const ESCOLHER_ANEXO: &str = "escolher_anexo";
 pub const REMOVER_ANEXO: &str = "remover_anexo";
 /// `conectar { entrada }`: "Conectar" do `servidor` (D3); o token não volta.
 pub const CONECTAR: &str = "conectar";
+/// `destravar { senha }`: destrava com a senha mestra (Fase 31). A senha vai só ao
+/// daemon, num tipo que zera; a resposta não a traz nem diz quantas tentativas houve.
+pub const DESTRAVAR: &str = "destravar";
+/// `ouvir_avisos { canal }`: o canal do Tauri por onde o lado Rust avisa a tela de um
+/// `pedido_de_destrave` (Fase 31, D65 a). O aviso leva só o nome dele, sem dado.
+pub const OUVIR_AVISOS: &str = "ouvir_avisos";
 
 /// Todos os comandos, na ordem em que aparecem nas capabilities.
 pub const COMANDOS: &[&str] = &[
@@ -79,6 +85,8 @@ pub const COMANDOS: &[&str] = &[
     ESCOLHER_ANEXO,
     REMOVER_ANEXO,
     CONECTAR,
+    DESTRAVAR,
+    OUVIR_AVISOS,
 ];
 
 /// Nome da permissão gerada pelo Tauri para o comando (`allow-estado-do-cofre`).
@@ -107,6 +115,8 @@ pub enum Comando {
     EscolherAnexo,
     RemoverAnexo,
     Conectar,
+    Destravar,
+    OuvirAvisos,
 }
 
 impl Comando {
@@ -130,6 +140,8 @@ impl Comando {
             ESCOLHER_ANEXO => Some(Comando::EscolherAnexo),
             REMOVER_ANEXO => Some(Comando::RemoverAnexo),
             CONECTAR => Some(Comando::Conectar),
+            DESTRAVAR => Some(Comando::Destravar),
+            OUVIR_AVISOS => Some(Comando::OuvirAvisos),
             _ => None,
         }
     }
@@ -209,6 +221,8 @@ mod testes {
                 "escolher_anexo",
                 "remover_anexo",
                 "conectar",
+                "destravar",
+                "ouvir_avisos",
             ]
         );
         assert_eq!(permissao(COPIAR_CAMPO), "allow-copiar-campo");

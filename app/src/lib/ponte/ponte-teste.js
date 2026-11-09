@@ -59,3 +59,22 @@ export function telaPedida() {
   lerToken();
   return tela;
 }
+
+/**
+ * A ponte não tem o canal de avisos do Tauri: consulta a cada 2 s, uma consulta por vez
+ * (a anterior precisa terminar), e para quando a tela sai. Só no modo de teste.
+ * @param {() => Promise<void> | void} aoChegar
+ */
+export function ouvirPorConsulta(aoChegar) {
+  let ocupado = false;
+  const id = setInterval(async () => {
+    if (ocupado) return;
+    ocupado = true;
+    try {
+      await aoChegar();
+    } finally {
+      ocupado = false;
+    }
+  }, 2000);
+  return () => clearInterval(id);
+}
