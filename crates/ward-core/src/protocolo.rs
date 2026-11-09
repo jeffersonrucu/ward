@@ -62,7 +62,9 @@ mod resposta;
 mod testes;
 
 pub use erros::{ErroResposta, MSG_COFRE_MUDOU, MSG_GERACAO_ESGOTADA, MSG_RETROCESSO, Problema};
-pub use pedido::{Alvo, Decisao, Janela, Pedido, PedidoExecutar, Variavel};
+pub use pedido::{
+    Alvo, Decisao, Janela, Pedido, PedidoExecutar, ResultadoLogin, Variavel, id_login_ok,
+};
 pub use resposta::{
     AnexoDetalhe, DetalheEntrada, ExtraDetalhe, Fluxo, ItemLista, MAX_BACKUPS, MAX_PENDRIVES,
     MAX_ROTULO, PedidoDeAprovacao, Pendrive, Resposta, ResumoItem, Sugestao,
@@ -205,6 +207,9 @@ tabela! {
     Sugerir = "sugerir", SO_EXTENSAO, "Entradas `login` da origem da aba.";
     Preencher = "preencher", SO_EXTENSAO, "Usuário, senha e TOTP para preencher, se a origem bater (D9).";
     SalvarLogin = "salvar_login", SO_EXTENSAO, "Salvar um login novo visto pela extensão.";
+    AguardarLogin = "aguardar_login", SO_EXTENSAO, "`ward login` (Fase 43): a extensão espera o próximo pedido de login (até 25 s).";
+    PreencherLogin = "preencher_login", SO_EXTENSAO, "`ward login` (Fase 43): usuário, senha e TOTP do pedido, se a origem da aba bater (D9).";
+    ResultadoLogin = "resultado_login", SO_EXTENSAO, "`ward login` (Fase 43): o desfecho do pedido na aba.";
     AbrirApp = "abrir_app", TODOS, "Abrir a instância verdadeira do app, filha do daemon (D57); sem campo e sem segredo.";
 }
 
@@ -225,6 +230,7 @@ tabela! {
     CodigoTotp = "codigo_totp", APP_E_EXTENSAO, "Código TOTP atual.";
     Sugestoes = "sugestoes", SO_EXTENSAO, "Entradas sugeridas para a aba.";
     Preenchimento = "preenchimento", SO_EXTENSAO, "Usuário, senha e TOTP para preencher.";
+    PedidoDeLogin = "pedido_de_login", SO_EXTENSAO, "`ward login` (Fase 43): id e nome da entrada, sem valor.";
     Backups = "backups", SO_APP, "Nomes das versões do backup local (D17, Fase 45).";
     Configuracao = "configuracao", SO_APP, "Tempo de trava em minutos e backup externo ligado ou não (Fase 38).";
     BackupExterno = "backup_externo", SO_APP, "Configuração do backup externo (D17, D30, Fase 46).";
@@ -259,6 +265,14 @@ const _: () = {
     assert!(!Operacao::Copiar.papeis().agente);
     assert!(!Operacao::EmitirToken.papeis().agente);
     assert!(!Operacao::Preencher.papeis().agente);
+    // Fase 43: só a extensão espera, preenche e responde o `ward login`.
+    assert!(!Operacao::AguardarLogin.papeis().agente);
+    assert!(!Operacao::AguardarLogin.papeis().app);
+    assert!(!Operacao::PreencherLogin.papeis().agente);
+    assert!(!Operacao::PreencherLogin.papeis().app);
+    assert!(!Operacao::ResultadoLogin.papeis().agente);
+    assert!(!Operacao::ResultadoLogin.papeis().app);
+    assert!(!TipoResposta::PedidoDeLogin.papeis().agente);
     // V7.8: restaurar e listar backups só pelo app (D17).
     assert!(!Operacao::RestaurarBackup.papeis().agente);
     assert!(!Operacao::RestaurarBackup.papeis().extensao);

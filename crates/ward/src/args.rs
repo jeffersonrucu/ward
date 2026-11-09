@@ -30,6 +30,11 @@ pub enum Comando {
     Playwright {
         entrada: String,
     },
+    /// `ward login <entrada>` (Fase 43): a extensão do Chrome confere a origem da aba
+    /// ativa, preenche, envia e limpa os campos. Nenhum valor volta.
+    Login {
+        entrada: String,
+    },
     Ajuda,
     Versao,
 }
@@ -50,6 +55,8 @@ pub enum ErroUso {
     TokenEmArgv,
     /// `ward playwright` sem entrada ou com argumento a mais.
     UsoPlaywright,
+    /// `ward login` sem entrada ou com argumento a mais.
+    UsoLogin,
 }
 
 impl ErroUso {
@@ -65,6 +72,7 @@ impl ErroUso {
                  use o botão Conectar do app"
                 .to_owned(),
             ErroUso::UsoPlaywright => "uso: ward playwright <entrada>".to_owned(),
+            ErroUso::UsoLogin => "uso: ward login <entrada>".to_owned(),
         }
     }
 }
@@ -94,6 +102,10 @@ Uso:
                         o mesmo, aberto pelo botão Conectar do app: o token de
                         uso único chega pelo fd <n> que o app passa ao terminal,
                         nunca pela linha de comando
+  ward login <entrada>   faz o login da entrada na aba ativa do Chrome, pela
+                        extensão do Ward: confere que a origem da aba é a da
+                        entrada (senão, \"domínio não confere\"), preenche,
+                        envia o formulário e limpa os campos
   ward playwright <entrada>
                         faz o login da entrada no Chrome (headless) e imprime o
                         caminho do storage state para o Playwright
@@ -223,6 +235,12 @@ pub fn interpretar(args: impl IntoIterator<Item = OsString>) -> Result<Comando, 
                 })
             }
             _ => Err(ErroUso::UsoPlaywright),
+        },
+        "login" => match resto.as_slice() {
+            [entrada] if !entrada.is_empty() && !entrada.starts_with('-') => Ok(Comando::Login {
+                entrada: (*entrada).to_owned(),
+            }),
+            _ => Err(ErroUso::UsoLogin),
         },
         "lista" => match resto.as_slice() {
             [] => Ok(Comando::Lista { json: false }),
@@ -444,6 +462,29 @@ mod testes {
         }
         // A mensagem de uso não repete argumento.
         let m = ler(&["playwright", "e", "falso-WP-senha-02"])
+            .unwrap_err()
+            .mensagem();
+        assert!(!m.contains("falso"), "{m}");
+    }
+
+    #[test]
+    fn login() {
+        assert_eq!(
+            ler(&["login", "acme-wp-prod"]),
+            Ok(Comando::Login {
+                entrada: "acme-wp-prod".into()
+            })
+        );
+        for ruim in [
+            &["login"][..],
+            &["login", ""],
+            &["login", "-x"],
+            &["login", "a", "b"],
+            &["login", "--", "a"],
+        ] {
+            assert_eq!(ler(ruim), Err(ErroUso::UsoLogin), "{ruim:?}");
+        }
+        let m = ler(&["login", "e", "falso-WP-senha-02"])
             .unwrap_err()
             .mensagem();
         assert!(!m.contains("falso"), "{m}");

@@ -10,6 +10,11 @@
     "activeTab",
     "scripting"
   ],
+  "host_permissions": [
+    "https://*/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
   "background": {
     "service_worker": "servico.js",
     "type": "module"

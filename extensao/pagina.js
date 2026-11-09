@@ -25,11 +25,50 @@ export function sondar() {
 }
 
 /**
+ * Depois do envio do `ward login` (Fase 43): a origem do documento do quadro principal,
+ * se ele já carregou e se ainda há campo de senha visível (o site recusou o login).
+ * Nenhum valor é lido.
+ */
+export function sondarDepois() {
+  try {
+    const tipoDe = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'type').get;
+    const pronto = Object.getOwnPropertyDescriptor(Document.prototype, 'readyState').get;
+    const campos = Array.prototype.slice.call(
+      Document.prototype.querySelectorAll.call(document, 'input'),
+    );
+    const senha = campos.some((el) => {
+      if (tipoDe.call(el) !== 'password') return false;
+      if (
+        !Element.prototype.checkVisibility.call(el, { checkOpacity: true, checkVisibilityCSS: true })
+      ) {
+        return false;
+      }
+      const r = Element.prototype.getBoundingClientRect.call(el);
+      return r.width >= 4 && r.height >= 4;
+    });
+    return {
+      origem: String(window.location.origin),
+      topo: window === window.top,
+      pronto: pronto.call(document) === 'complete',
+      senha,
+    };
+  } catch {
+    return { origem: '', topo: false, pronto: false, senha: false };
+  }
+}
+
+/**
  * Preenche usuário, senha e TOTP no documento do quadro principal, só se a origem dele
  * for a esperada. Devolve só o que preencheu (nunca valores). A senha chega em base64
  * (como no protocolo); os bytes decodificados são zerados logo depois de virar texto.
+ *
+ * `enviar` (só o `ward login`, Fase 43): antes de escrever, exige um formulário de login
+ * que dê para enviar com segurança: exatamente um campo de senha visível, dentro de um
+ * `<form>` com método POST, destino (`action` e o `formaction` do botão) na mesma origem
+ * e sem `target` para outro contexto, e o campo do usuário quando há usuário. Depois
+ * envia (`requestSubmit`, que monta os dados do envio na hora) e limpa os campos.
  */
-export function preencherNaPagina(origemEsperada, usuario, senhaB64, totp) {
+export function preencherNaPagina(origemEsperada, usuario, senhaB64, totp, enviar) {
   const desc = (proto, nome) => Object.getOwnPropertyDescriptor(proto, nome);
   const pegar = (proto, nome) => {
     const d = desc(proto, nome);
@@ -135,9 +174,69 @@ export function preencherNaPagina(origemEsperada, usuario, senhaB64, totp) {
     for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
     const senha = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
 
+    let envio = null;
+    if (enviar === true) {
+      if (senhas.length !== 1 || !form) return { ok: false, motivo: 'formulario' };
+      if (usuario && !usuarioCampo) return { ok: false, motivo: 'formulario' };
+      const F = HTMLFormElement.prototype;
+      const doForm = (k) => desc(F, k).get.call(form);
+      const destinoOk = (acao, metodo, alvo) => {
+        let u;
+        try {
+          u = new URL(String(acao), String(window.location.href));
+        } catch {
+          return false;
+        }
+        return (
+          u.origin === origemEsperada &&
+          String(metodo).toLowerCase() === 'post' &&
+          (!alvo || String(alvo) === '_self')
+        );
+      };
+      if (!destinoOk(doForm('action'), doForm('method'), doForm('target'))) {
+        return { ok: false, motivo: 'formulario' };
+      }
+      const B = HTMLButtonElement.prototype;
+      const ehBotao = (c) =>
+        (c instanceof HTMLButtonElement && desc(B, 'type').get.call(c) === 'submit') ||
+        (c instanceof HTMLInputElement && ['submit', 'image'].includes(tipoDe(c)));
+      const botaoVisivel = (c) =>
+        !desc(c instanceof HTMLButtonElement ? B : HTMLInputElement.prototype, 'disabled').get.call(c) &&
+        Element.prototype.checkVisibility.call(c, { checkOpacity: true, checkVisibilityCSS: true });
+      const elementos = Array.prototype.slice.call(doForm('elements'));
+      const botao = elementos.find((c) => ehBotao(c) && botaoVisivel(c)) || null;
+      if (botao) {
+        const P = botao instanceof HTMLButtonElement ? B : HTMLInputElement.prototype;
+        const g = (k) => desc(P, k).get.call(botao);
+        const tem = (a) => Element.prototype.hasAttribute.call(botao, a);
+        if (
+          !destinoOk(
+            tem('formaction') ? g('formAction') : doForm('action'),
+            tem('formmethod') ? g('formMethod') : doForm('method'),
+            tem('formtarget') ? g('formTarget') : doForm('target'),
+          )
+        ) {
+          return { ok: false, motivo: 'formulario' };
+        }
+      }
+      envio = () => F.requestSubmit.call(form, botao);
+    }
+
     if (usuarioCampo && usuario) escrever(usuarioCampo, usuario);
     escrever(senhaCampo, senha);
     if (totpCampo) escrever(totpCampo, totp);
+    if (envio) {
+      // Os dados do envio são montados dentro do `requestSubmit`; depois os campos
+      // voltam vazios (a janela de leitura pela página fica a menor possível).
+      try {
+        envio();
+      } finally {
+        if (usuarioCampo && usuario) escrever(usuarioCampo, '');
+        escrever(senhaCampo, '');
+        if (totpCampo) escrever(totpCampo, '');
+      }
+      return { ok: true, enviado: true };
+    }
     return { ok: true, usuario: Boolean(usuarioCampo && usuario), totp: Boolean(totpCampo) };
   } catch {
     return { ok: false, motivo: 'falha' };

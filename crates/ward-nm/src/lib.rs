@@ -41,11 +41,14 @@ pub const MAX_MENSAGEM_SAIDA: usize = 1024 * KIB;
 /// Operações que o host leva ao daemon: as do papel extensão na tabela do protocolo.
 /// Lista explícita: uma operação nova na tabela não passa sem mudar aqui (o teste
 /// `operacoes_sao_as_da_extensao` prende as duas).
-pub const OPERACOES: [Operacao; 5] = [
+pub const OPERACOES: [Operacao; 8] = [
     Operacao::Estado,
     Operacao::Sugerir,
     Operacao::Preencher,
     Operacao::SalvarLogin,
+    Operacao::AguardarLogin,
+    Operacao::PreencherLogin,
+    Operacao::ResultadoLogin,
     Operacao::AbrirApp,
 ];
 
@@ -59,6 +62,10 @@ pub fn resposta_cabe(op: Operacao, tipo: TipoResposta) -> bool {
                 | (Operacao::Sugerir, TipoResposta::Sugestoes)
                 | (Operacao::Preencher, TipoResposta::Preenchimento)
                 | (Operacao::SalvarLogin, TipoResposta::Ok)
+                // `ward login` (Fase 43): `ok` é a espera que acabou sem pedido.
+                | (Operacao::AguardarLogin, TipoResposta::PedidoDeLogin | TipoResposta::Ok)
+                | (Operacao::PreencherLogin, TipoResposta::Preenchimento)
+                | (Operacao::ResultadoLogin, TipoResposta::Ok)
                 | (Operacao::AbrirApp, TipoResposta::Ok)
         )
 }

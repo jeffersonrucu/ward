@@ -51,7 +51,14 @@ fn dados_validos(op: Operacao) -> String {
         | Operacao::Backups
         | Operacao::Configuracao
         | Operacao::BackupExterno
+        | Operacao::AguardarLogin
         | Operacao::Pendrives => "{}".into(),
+        Operacao::PreencherLogin => {
+            r#"{"id":"AbCdEfGhIjKlMnOpQrStUvWxYz012345","origem":"http://localhost:8081"}"#.into()
+        }
+        Operacao::ResultadoLogin => {
+            r#"{"id":"AbCdEfGhIjKlMnOpQrStUvWxYz012345","resultado":"enviado"}"#.into()
+        }
         Operacao::DefinirBackupExterno => r#"{"ligado":true,"uuid":"ABCD-1234"}"#.into(),
         Operacao::RestaurarBackup => {
             format!(r#"{{"versao":"ward-20261109-153000.ward","senha":"{senha}","pin":"{pin}"}}"#)
@@ -200,6 +207,10 @@ fn uma_resposta_de_cada() -> Vec<Resposta> {
             senha: seg("falso-WP-senha-01"),
             totp: Some(zeroize::Zeroizing::new("654321".into())),
         },
+        Resposta::PedidoDeLogin {
+            id: "AbCdEfGhIjKlMnOpQrStUvWxYz012345".into(),
+            entrada: "acme-wp-prod".into(),
+        },
         Resposta::Backups(vec![
             "ward-20261109-153000-1.ward".into(),
             "ward-20261109-153000.ward".into(),
@@ -267,6 +278,9 @@ fn v3_15_tabela_operacao_papel() {
         ("sugerir", false, false, true),
         ("preencher", false, false, true),
         ("salvar_login", false, false, true),
+        ("aguardar_login", false, false, true),
+        ("preencher_login", false, false, true),
+        ("resultado_login", false, false, true),
         ("abrir_app", true, true, true),
     ];
     let real: Vec<_> = Operacao::TODAS
@@ -302,6 +316,7 @@ fn v3_15_tabela_operacao_papel() {
         ("codigo_totp", false, true, true, true),
         ("sugestoes", false, false, true, false),
         ("preenchimento", false, false, true, true),
+        ("pedido_de_login", false, false, true, false),
         ("backups", false, true, false, false),
         ("configuracao", false, true, false, false),
         ("backup_externo", false, true, false, false),
@@ -2121,4 +2136,101 @@ fn ataque_definir_backup_externo_fora_do_formato() {
     }
     let quadro = r#"{"v":1,"tipo":"pendrives","dados":{"itens":[{"uuid":"ABCD-1234","rotulo":"a\u0007b","montado":true}]}}"#;
     assert!(decodificar_resposta(Papel::App, quadro.as_bytes()).is_err());
+}
+
+/// Fase 43 (`ward login`): as três operações e o `pedido_de_login` são só da extensão;
+/// id fora do formato, desfecho desconhecido, campo a mais e valor no `pedido_de_login`
+/// são recusados. O pedido de login nunca leva valor da entrada.
+#[test]
+fn ataque_fase_43_login_so_extensao_e_formato_estrito() {
+    const ID: &str = "AbCdEfGhIjKlMnOpQrStUvWxYz012345";
+    for (op, dados) in [
+        ("aguardar_login", "{}".to_owned()),
+        (
+            "preencher_login",
+            format!(r#"{{"id":"{ID}","origem":"http://localhost:8081"}}"#),
+        ),
+        (
+            "resultado_login",
+            format!(r#"{{"id":"{ID}","resultado":"enviado"}}"#),
+        ),
+    ] {
+        let q = format!(r#"{{"v":1,"op":"{op}","dados":{dados}}}"#);
+        for papel in [Papel::Agente, Papel::App] {
+            assert_eq!(
+                ped(papel, &q).unwrap_err(),
+                ErroResposta::NaoAutorizado,
+                "{op}"
+            );
+        }
+        assert!(ped(Papel::Extensao, &q).is_ok(), "{op}");
+    }
+    for ruim in [
+        r#"{"id":"curto","origem":"http://localhost:8081"}"#.to_owned(),
+        format!(r#"{{"id":"{ID}x","origem":"http://localhost:8081"}}"#),
+        format!(
+            r#"{{"id":"{}","origem":"http://localhost:8081"}}"#,
+            "AbCdEfGhIjKlMnOpQrStUvWxYz01234-"
+        ),
+        format!(
+            r#"{{"id":"{}","origem":"http://localhost:8081"}}"#,
+            "AbCdEfGhIjKlMnOpQrStUvWxYz0123é"
+        ),
+        format!(r#"{{"id":"{ID}"}}"#),
+        format!(r#"{{"id":"{ID}","origem":"http://localhost:8081","entrada":"acme-wp-prod"}}"#),
+    ] {
+        let q = format!(r#"{{"v":1,"op":"preencher_login","dados":{ruim}}}"#);
+        assert_eq!(
+            ped(Papel::Extensao, &q).unwrap_err(),
+            ErroResposta::PedidoInvalido,
+            "{ruim}"
+        );
+    }
+    for ruim in ["ENVIADO", "ok", "", "enviado "] {
+        let q = format!(
+            r#"{{"v":1,"op":"resultado_login","dados":{{"id":"{ID}","resultado":"{ruim}"}}}}"#
+        );
+        assert_eq!(
+            ped(Papel::Extensao, &q).unwrap_err(),
+            ErroResposta::PedidoInvalido,
+            "{ruim}"
+        );
+    }
+    assert_eq!(
+        ped(
+            Papel::Extensao,
+            r#"{"v":1,"op":"aguardar_login","dados":{"entrada":"x"}}"#
+        )
+        .unwrap_err(),
+        ErroResposta::PedidoInvalido
+    );
+    for r in ResultadoLogin::TODOS {
+        assert_eq!(ResultadoLogin::de_nome(r.nome()), Some(r));
+    }
+    // O `pedido_de_login` não vai ao agente nem ao app, e não aceita campo a mais (um
+    // valor da entrada, por exemplo) nem id fora do formato.
+    let p = Resposta::PedidoDeLogin {
+        id: ID.into(),
+        entrada: "acme-wp-prod".into(),
+    };
+    for papel in [Papel::Agente, Papel::App] {
+        assert_eq!(
+            codificar_resposta(papel, &p).unwrap_err(),
+            ErroCodificar::NaoPermitidaAoPapel
+        );
+    }
+    let q = codificar_resposta(Papel::Extensao, &p).unwrap();
+    assert!(!String::from_utf8_lossy(&q).contains("falso"));
+    let com_senha = format!(
+        r#"{{"v":1,"tipo":"pedido_de_login","dados":{{"id":"{ID}","entrada":"acme-wp-prod","senha":"{}"}}}}"#,
+        b64(b"falso-WP-senha-02")
+    );
+    assert!(decodificar_resposta(Papel::Extensao, com_senha.as_bytes()).is_err());
+    let id_ruim = r#"{"v":1,"tipo":"pedido_de_login","dados":{"id":"x","entrada":"acme-wp-prod"}}"#;
+    assert!(decodificar_resposta(Papel::Extensao, id_ruim.as_bytes()).is_err());
+    for papel in [Papel::Agente, Papel::App] {
+        let bom =
+            format!(r#"{{"v":1,"tipo":"pedido_de_login","dados":{{"id":"{ID}","entrada":"e"}}}}"#);
+        assert!(decodificar_resposta(papel, bom.as_bytes()).is_err());
+    }
 }
