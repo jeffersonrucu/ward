@@ -775,6 +775,13 @@ Contrato: V4.1–V4.38
   e `make teste-ataques-fundacao` volta a passar; texto do V4.32 com `--token-fd` no
   lugar de `--token`; linhas do `CLAUDE.md` para `make teste-ssh-home` e o V4.21
   cronometrado no `teste-cli`. V1.5, V4.32.
+- [ ] Fase 28d — Scrutiny do M4 reprovou pela 2ª vez (2026-11-09) só por defeito do
+  script: `copiar_workspace` de `dev/testes/ataques-fundacao.sh` copia só `crates/`, mas
+  `ward-ponte-teste` depende de `app/nucleo`; a cópia quebra antes dos ataques (falsa
+  falha do V1.2 e aborta antes do V1.5). Copiar também o que o workspace referencia
+  (`app/` sem `node_modules`/`dist`) e `make teste-ataques-fundacao` inteiro até "Todos
+  os ataques foram barrados". Decisão do usuário: com isso passando, o scrutiny do M4
+  conta como aprovado, sem 3ª rodada. V1.2, V1.5.
 
 ## Milestone 5 — App desktop
 Contrato: V5.1–V5.35
