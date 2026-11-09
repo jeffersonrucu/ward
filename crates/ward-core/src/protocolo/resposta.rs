@@ -18,9 +18,9 @@ use crate::entrada::{
     Ambiente, Autenticacao, Dados, Entrada, NivelAcesso, Segredo, TipoEntrada, ValorExtra,
 };
 use crate::limites::{
-    MAX_ANEXOS, MAX_ANEXOS_SOMADOS, MAX_ENTRADAS, MAX_EXTRAS, MAX_LINHA, MAX_NOME, MAX_NOME_ANEXO,
-    MAX_NOME_EXTRA, MAX_SEGREDO, MAX_TAG, MAX_TAGS, MAX_TEXTO, MAX_TEXTO_EXIBIDO, MAX_URL,
-    MAX_VALOR_EXTRA,
+    MAX_ANEXOS, MAX_ANEXOS_SOMADOS, MAX_ENTRADAS, MAX_EXTRAS, MAX_LINHA, MAX_MINUTOS_TRAVA,
+    MAX_NOME, MAX_NOME_ANEXO, MAX_NOME_EXTRA, MAX_SEGREDO, MAX_TAG, MAX_TAGS, MAX_TEXTO,
+    MAX_TEXTO_EXIBIDO, MAX_URL, MAX_VALOR_EXTRA, MIN_MINUTOS_TRAVA,
 };
 
 /// Fluxo de um pedaço de saída.
@@ -364,6 +364,13 @@ pub enum Resposta {
     /// Nomes das versões do backup local, da mais nova para a mais antiga (Fase 45). Só
     /// nomes no formato exato; nenhum caminho, conteúdo ou geração.
     Backups(Vec<String>),
+    /// A parte da configuração do cofre que a tela Configurações mostra (Fase 38): o
+    /// tempo de trava e se o backup externo está ligado. Nunca o hash do PIN nem o UUID
+    /// do pendrive.
+    Configuracao {
+        minutos_trava: u32,
+        backup_externo: bool,
+    },
 }
 
 const OPERACOES_APROVADAS: [Operacao; 4] = [
@@ -397,6 +404,7 @@ impl Resposta {
             Resposta::Sugestoes(_) => TipoResposta::Sugestoes,
             Resposta::Preenchimento { .. } => TipoResposta::Preenchimento,
             Resposta::Backups(_) => TipoResposta::Backups,
+            Resposta::Configuracao { .. } => TipoResposta::Configuracao,
         }
     }
 
@@ -466,6 +474,9 @@ impl Resposta {
                 ok(digitos_totp(codigo) && (1..=30).contains(restante))
             }
             Resposta::Backups(l) => ok(l.len() <= MAX_BACKUPS && l.iter().all(|n| backup_ok(n))),
+            Resposta::Configuracao { minutos_trava, .. } => {
+                ok((MIN_MINUTOS_TRAVA..=MAX_MINUTOS_TRAVA).contains(minutos_trava))
+            }
             Resposta::Sugestoes(l) => ok(l.len() <= MAX_ENTRADAS
                 && l.iter()
                     .all(|s| s.nome.len() <= MAX_NOME && s.usuario.len() <= MAX_TEXTO)),
@@ -633,6 +644,15 @@ impl Resposta {
             Resposta::Backups(l) => {
                 e.chave("versoes");
                 escrever_textos(e, l);
+            }
+            Resposta::Configuracao {
+                minutos_trava,
+                backup_externo,
+            } => {
+                e.chave("minutos_trava");
+                e.inteiro(u64::from(*minutos_trava));
+                e.chave("backup_externo");
+                e.logico(*backup_externo);
             }
             Resposta::Sugestoes(l) => {
                 e.chave("itens");
@@ -969,6 +989,10 @@ pub(crate) fn ler(papel: Papel, tipo: TipoResposta, mut c: Campos) -> R<Resposta
             c.lista("versoes", MAX_BACKUPS)?,
             crate::limites::MAX_NOME,
         )?),
+        TipoResposta::Configuracao => Resposta::Configuracao {
+            minutos_trava: u32::try_from(c.inteiro("minutos_trava")?).map_err(|_| JsonInvalido)?,
+            backup_externo: c.logico("backup_externo")?,
+        },
         TipoResposta::Preenchimento => Resposta::Preenchimento {
             usuario: c.texto("usuario", MAX_TEXTO)?,
             senha: segredo_de(c.tirar("senha").ok_or(JsonInvalido)?, MAX_SEGREDO)?,

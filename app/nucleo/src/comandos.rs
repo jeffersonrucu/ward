@@ -69,6 +69,19 @@ pub const DESTRAVAR: &str = "destravar";
 /// `pedido_de_destrave` (Fase 31, D65 a). O aviso leva só o nome dele, sem dado.
 pub const OUVIR_AVISOS: &str = "ouvir_avisos";
 
+/// `configuracoes`: tempo de trava e backup externo ligado ou não (Fase 38). Sem
+/// argumento; sem hash de PIN nem UUID.
+pub const CONFIGURACOES: &str = "configuracoes";
+/// `trocar_pin { dados: { atual, novo, confirmacao } }`: troca o PIN pedindo o atual
+/// (Fase 38, V5.22, S9). A resposta traz `trocado` ou os erros por campo, nunca o valor.
+pub const TROCAR_PIN: &str = "trocar_pin";
+/// `trocar_senha_mestra { dados: { atual, nova, confirmacao } }`: troca a senha mestra
+/// pedindo a atual (Fase 38, V5.22). A resposta traz `trocado` ou os erros por campo.
+pub const TROCAR_SENHA_MESTRA: &str = "trocar_senha_mestra";
+/// `definir_tempo_trava { minutos }`: tempo de trava por inatividade, gravado na
+/// configuração do cofre (Fase 38, D30, D45).
+pub const DEFINIR_TEMPO_TRAVA: &str = "definir_tempo_trava";
+
 /// Todos os comandos, na ordem em que aparecem nas capabilities.
 pub const COMANDOS: &[&str] = &[
     ESTADO_DO_COFRE,
@@ -92,6 +105,10 @@ pub const COMANDOS: &[&str] = &[
     CRIAR_COFRE,
     DESTRAVAR,
     OUVIR_AVISOS,
+    CONFIGURACOES,
+    TROCAR_PIN,
+    TROCAR_SENHA_MESTRA,
+    DEFINIR_TEMPO_TRAVA,
 ];
 
 /// Nome da permissão gerada pelo Tauri para o comando (`allow-estado-do-cofre`).
@@ -123,6 +140,10 @@ pub enum Comando {
     CriarCofre,
     Destravar,
     OuvirAvisos,
+    Configuracoes,
+    TrocarPin,
+    TrocarSenhaMestra,
+    DefinirTempoTrava,
 }
 
 impl Comando {
@@ -149,6 +170,10 @@ impl Comando {
             CRIAR_COFRE => Some(Comando::CriarCofre),
             DESTRAVAR => Some(Comando::Destravar),
             OUVIR_AVISOS => Some(Comando::OuvirAvisos),
+            CONFIGURACOES => Some(Comando::Configuracoes),
+            TROCAR_PIN => Some(Comando::TrocarPin),
+            TROCAR_SENHA_MESTRA => Some(Comando::TrocarSenhaMestra),
+            DEFINIR_TEMPO_TRAVA => Some(Comando::DefinirTempoTrava),
             _ => None,
         }
     }
@@ -231,6 +256,10 @@ mod testes {
                 "criar_cofre",
                 "destravar",
                 "ouvir_avisos",
+                "configuracoes",
+                "trocar_pin",
+                "trocar_senha_mestra",
+                "definir_tempo_trava",
             ]
         );
         assert_eq!(permissao(COPIAR_CAMPO), "allow-copiar-campo");

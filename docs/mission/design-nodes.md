@@ -969,3 +969,20 @@ Chrome headless, 1280×800), PNG dos frames e `qa.json` em
 | `Destravar / Padrão` | `3342` (`formulário` `3368`, selo `3389`, `Destaque` `18701`) | `app/src/telas/Destravar.svelte` › `destravar-padrao.png` |
 | `Destravar / Senha errada` | `3393` (`Campo senha` erro `3427`, botão `3435`, `Destaque` `18706`) | `destravar-senha-errada.png` (campo esvaziado, foco nele) |
 | `Destravar / Pedido do agente` | `3450` (`formulário` `3476`, cartão `3501`, contagem `3506`, `ações` `3527`, `Destaque` `18711`) | `destravar-pedido-do-agente.png`; sem nome, tipo, ambiente e comando (o aviso do protocolo não os traz; ver handoff 31) |
+
+## Fase 38 — Configurações no código (só leitura do FigCraft)
+
+Lido de uma cópia do `Ward.figcraft` (o original não foi alterado), por `get_node` e
+`screenshot`. Capturas do app (ponte de teste com `--daemon-falso cheio`, Chrome
+headless, 1280×800, tema claro do sistema), PNG do frame e `qa.json` em
+`docs/mission/evidence/fase-38/`.
+
+| Frame / componente no FigCraft | Id | No código |
+| --- | --- | --- |
+| `Configurações / Geral` | `15242` (`acesso` `15289`, `backup` `15325`, `nota` `15374`) | `app/src/telas/Configuracoes.svelte` › `configuracoes-geral-1280x800.png` |
+| `Linha de opção` `Controle=botão` / `Controle=select` | `10380` / `10825` | `app/src/lib/componentes/LinhaDeOpcao.svelte` (snippet `controle`) |
+| `Select` compacto na linha | `10829` (`largura/select-compacto`) | `app/src/lib/componentes/Select.svelte` (`compacto`) |
+| Diálogos "Trocar senha mestra" e "Trocar PIN" | sem frame | `app/src/telas/TrocarSenha.svelte`, `TrocarPin.svelte` (`Modal` 611 + `Campo senha` 17511 / `Campo PIN` 650) |
+
+`Configurações / Backup externo ligado` (`16178`) não entra: ligar o backup externo é da
+Fase 46.

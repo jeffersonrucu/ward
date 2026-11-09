@@ -48,7 +48,8 @@ fn dados_validos(op: Operacao) -> String {
         | Operacao::Travar
         | Operacao::Lista
         | Operacao::AbrirApp
-        | Operacao::Backups => "{}".into(),
+        | Operacao::Backups
+        | Operacao::Configuracao => "{}".into(),
         Operacao::RestaurarBackup => {
             format!(r#"{{"versao":"ward-20261109-153000.ward","senha":"{senha}","pin":"{pin}"}}"#)
         }
@@ -197,6 +198,10 @@ fn uma_resposta_de_cada() -> Vec<Resposta> {
             "ward-20261109-153000-1.ward".into(),
             "ward-20261109-153000.ward".into(),
         ]),
+        Resposta::Configuracao {
+            minutos_trava: 240,
+            backup_externo: false,
+        },
     ]
 }
 
@@ -240,6 +245,7 @@ fn v3_15_tabela_operacao_papel() {
         ("tempo_trava", false, true, false),
         ("backups", false, true, false),
         ("restaurar_backup", false, true, false),
+        ("configuracao", false, true, false),
         ("sugerir", false, false, true),
         ("preencher", false, false, true),
         ("salvar_login", false, false, true),
@@ -279,6 +285,7 @@ fn v3_15_tabela_operacao_papel() {
         ("sugestoes", false, false, true, false),
         ("preenchimento", false, false, true, true),
         ("backups", false, true, false, false),
+        ("configuracao", false, true, false, false),
     ];
     let real: Vec<_> = TipoResposta::TODAS
         .iter()

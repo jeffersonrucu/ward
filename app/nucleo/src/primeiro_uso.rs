@@ -44,7 +44,7 @@ impl Digitado {
         self.0.as_bytes()
     }
 
-    fn igual(&self, outro: &Digitado) -> bool {
+    pub(crate) fn igual(&self, outro: &Digitado) -> bool {
         // O tamanho não é segredo aqui (as duas vieram da mesma pessoa, na mesma tela).
         self.bytes().len() == outro.bytes().len() && self.bytes().ct_eq(outro.bytes()).to_bool()
     }

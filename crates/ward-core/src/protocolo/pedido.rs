@@ -221,6 +221,8 @@ pub enum Pedido {
     AbrirApp,
     /// Versões do backup local (Fase 45), sem campo.
     Backups,
+    /// Tempo de trava e backup externo ligado ou não (Fase 38), sem campo.
+    Configuracao,
     /// Restaurar uma versão do backup local (D17, D39; Fase 45): o nome exato do arquivo
     /// (`ward-AAAAMMDD-HHMMSS[-N].ward`, nunca um caminho), a senha mestra daquela versão
     /// e o PIN do cofre atual (S9: restaurar volta níveis e PIN).
@@ -263,6 +265,7 @@ impl Pedido {
             Pedido::SalvarLogin { .. } => Operacao::SalvarLogin,
             Pedido::AbrirApp => Operacao::AbrirApp,
             Pedido::Backups => Operacao::Backups,
+            Pedido::Configuracao => Operacao::Configuracao,
             Pedido::RestaurarBackup { .. } => Operacao::RestaurarBackup,
         }
     }
@@ -330,7 +333,8 @@ impl Pedido {
             | Pedido::Travar
             | Pedido::Lista
             | Pedido::AbrirApp
-            | Pedido::Backups => Ok(()),
+            | Pedido::Backups
+            | Pedido::Configuracao => Ok(()),
         }
     }
 
@@ -341,7 +345,8 @@ impl Pedido {
             | Pedido::Travar
             | Pedido::Lista
             | Pedido::AbrirApp
-            | Pedido::Backups => {}
+            | Pedido::Backups
+            | Pedido::Configuracao => {}
             Pedido::RestaurarBackup { versao, senha, pin } => {
                 e.chave("versao");
                 e.texto(versao);
@@ -604,6 +609,7 @@ pub(crate) fn ler(op: Operacao, mut c: Campos) -> R<Pedido> {
         Operacao::Lista => Pedido::Lista,
         Operacao::AbrirApp => Pedido::AbrirApp,
         Operacao::Backups => Pedido::Backups,
+        Operacao::Configuracao => Pedido::Configuracao,
         Operacao::RestaurarBackup => Pedido::RestaurarBackup {
             versao: c.texto("versao", MAX_NOME)?,
             senha: c.segredo("senha", MAX_SEGREDO)?,

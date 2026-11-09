@@ -1,6 +1,7 @@
 //! Os pedidos do app ao daemon pelo protocolo da Fase 20 (`ward_core::protocolo`), com
 //! o papel app (D5): `estado`, `lista`, `detalhe`, `copiar`, `revelar`, `totp`,
-//! `salvar_entrada`, `mudar_nivel` (Fase 35) e `destravar` (Fase 31).
+//! `salvar_entrada`, `mudar_nivel` (Fase 35), `destravar` (Fase 31) e, na tela
+//! Configurações (Fase 38), `configuracao`, `trocar_pin`, `trocar_senha` e `tempo_trava`.
 //!
 //! Aqui o pedido vira o corpo do quadro (`codificar_pedido`) e a resposta é lida com a
 //! leitura estrita do cliente (`decodificar_resposta`), que recusa tipo de outro papel e
@@ -256,6 +257,67 @@ pub fn destravar<D: Daemon + ?Sized>(
         senha: senha.para_o_protocolo(),
     };
     match pedir(daemon, &pedido)? {
+        Resposta::Ok => Ok(()),
+        _ => Err(ErroApp::RespostaInvalida),
+    }
+}
+
+/// `configuracao` (Fase 38): tempo de trava e backup externo ligado ou não. A leitura
+/// estrita já recusou minutos fora de D45 e campo a mais.
+pub fn configuracao<D: Daemon + ?Sized>(
+    daemon: &mut D,
+) -> Result<crate::configuracoes::Configuracoes, ErroApp> {
+    match pedir(daemon, &Pedido::Configuracao)? {
+        Resposta::Configuracao {
+            minutos_trava,
+            backup_externo,
+        } => Ok(crate::configuracoes::Configuracoes {
+            minutos_trava,
+            backup_externo,
+        }),
+        _ => Err(ErroApp::RespostaInvalida),
+    }
+}
+
+/// `trocar_pin { atual, novo }` (Fase 38, S9): os dois PINs já conferidos no formato por
+/// [`crate::configuracoes`], em `Segredo` do núcleo (zera). PIN atual errado é
+/// [`ErroApp::PinIncorreto`]; a contagem e a trava no 5.º erro são do daemon.
+pub fn trocar_pin<D: Daemon + ?Sized>(
+    daemon: &mut D,
+    atual: &[u8],
+    novo: &[u8],
+) -> Result<(), ErroApp> {
+    let pedido = Pedido::TrocarPin {
+        atual: SegredoCore::de_bytes(atual.to_vec()),
+        novo: SegredoCore::de_bytes(novo.to_vec()),
+    };
+    match pedir(daemon, &pedido)? {
+        Resposta::Ok => Ok(()),
+        _ => Err(ErroApp::RespostaInvalida),
+    }
+}
+
+/// `trocar_senha { atual, nova }` (Fase 38): senha atual errada é
+/// [`ErroApp::SenhaIncorreta`] (D52); o daemon grava o cofre com a chave nova e geração
+/// nova (D39, D53).
+pub fn trocar_senha<D: Daemon + ?Sized>(
+    daemon: &mut D,
+    atual: &[u8],
+    nova: &[u8],
+) -> Result<(), ErroApp> {
+    let pedido = Pedido::TrocarSenha {
+        atual: SegredoCore::de_bytes(atual.to_vec()),
+        nova: SegredoCore::de_bytes(nova.to_vec()),
+    };
+    match pedir(daemon, &pedido)? {
+        Resposta::Ok => Ok(()),
+        _ => Err(ErroApp::RespostaInvalida),
+    }
+}
+
+/// `tempo_trava { minutos }` (Fase 38, D30): o daemon grava na configuração do cofre.
+pub fn tempo_trava<D: Daemon + ?Sized>(daemon: &mut D, minutos: u32) -> Result<(), ErroApp> {
+    match pedir(daemon, &Pedido::TempoTrava { minutos })? {
         Resposta::Ok => Ok(()),
         _ => Err(ErroApp::RespostaInvalida),
     }
