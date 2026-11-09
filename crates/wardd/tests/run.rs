@@ -307,17 +307,13 @@ fn v4_entrega_mascara_codigo_e_recusas() {
     assert_eq!(run(&w, "t-livre", &sh("exit 7"), &[]).fim, Some(7));
     assert_eq!(run(&w, "t-livre", &sh("kill -TERM $$"), &[]).fim, Some(143));
     // Comando que não existe: como o shell (127), com mensagem fixa.
-    let r = run(
-        &w,
-        "t-livre",
-        &["comando-que-nao-existe-26"],
-        &[("PATH", "/usr/bin:/bin")],
-    );
+    let r = run(&w, "t-livre", &["comando-que-nao-existe-26"], &[]);
     assert_eq!(r.fim, Some(127));
     assert!(texto(&r.erro).contains("comando não encontrado"), "{r:?}");
 
-    // D13 e D60: o ambiente é só o do pedido, sem `LD_*`, e nada do daemon; locale C
-    // vira LC_CTYPE=C.UTF-8; a entrega por cima do mesmo nome vindo da CLI.
+    // D13, D60 e Fase 26a: o ambiente é montado do zero (só a lista da CLI, sem `LD_*`,
+    // e nada do daemon); locale C vira LC_CTYPE=C.UTF-8; a entrega por cima do mesmo
+    // nome vindo da CLI.
     let r = run(
         &w,
         "t-livre",
@@ -326,7 +322,7 @@ fn v4_entrega_mascara_codigo_e_recusas() {
             ("LD_PRELOAD", "/nao/existe.so"),
             ("LD_LIBRARY_PATH", "/tmp"),
             ("LANG", "C"),
-            ("DA_CLI", "sim"),
+            ("DA_CLI", "nao-pode-passar"),
             ("WARD_PASS", "valor-da-cli"),
         ],
     );
@@ -339,6 +335,7 @@ fn v4_entrega_mascara_codigo_e_recusas() {
         "RUST_LOG",
         "LISTEN_",
         "valor-da-cli",
+        "DA_CLI",
     ] {
         assert!(
             !env.contains(proibido),
@@ -346,11 +343,11 @@ fn v4_entrega_mascara_codigo_e_recusas() {
         );
     }
     for esperado in [
-        "DA_CLI=sim",
         "LANG=C\n",
         "LC_CTYPE=C.UTF-8",
         "WARD_PASS=••••",
         "WARD_ENTRADA=t-livre",
+        "PATH=/usr/local/bin:/usr/bin:/bin\n",
     ] {
         assert!(env.contains(esperado), "{esperado} faltando:\n{env}");
     }
@@ -478,6 +475,163 @@ fn v4_entrega_mascara_codigo_e_recusas() {
 /// em até 1 s; o filho morto por SIGKILL também apaga o anexo; o `wardd` morto por
 /// SIGKILL leva o filho junto (`PR_SET_PDEATHSIG`) e, ao subir de novo, esvazia
 /// `<rt>tmp/`.
+/// Fase 26a (achado médio da auditoria do M3): o ambiente da CLI não muda o comando
+/// aprovado. `PATH` com a pasta do atacante na frente, `BASH_ENV`/`ENV`,
+/// `NODE_OPTIONS=--require`, `GIT_SSH_COMMAND`, `PYTHONSTARTUP`, `PGSERVICEFILE`,
+/// `HOME` e locale/fuso/terminal apontando para arquivo do atacante: nada disso chega
+/// ao filho, e o comando sem `/` é achado só pelo `PATH` fixo. O diretório de
+/// trabalho continua o da CLI.
+#[test]
+fn f26a_ataque_ambiente_da_cli_nao_muda_o_comando() {
+    let dev = Dir::novo("f26a");
+    cofre(&dev);
+    let sock = DirSocket::novo("f26a");
+    let w = subir(&dev, &sock);
+    destravar_por(&w);
+
+    // A pasta do atacante: `true`, `sh`, `env` e `wardfalso-26a` falsos que deixam uma
+    // marca; um rc para o `BASH_ENV`/`ENV`; um módulo para o `--require`.
+    let atacante = dev.0.join("atacante");
+    fs::create_dir_all(&atacante).unwrap();
+    let marca = dev.0.join("marca-26a");
+    let falso = format!("#!/bin/sh\necho pego >> '{}'\n", marca.display());
+    for nome in ["true", "sh", "env", "id", "wardfalso-26a"] {
+        let p = atacante.join(nome);
+        fs::write(&p, &falso).unwrap();
+        fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let rc = atacante.join("rc.sh");
+    fs::write(&rc, format!("echo pego >> '{}'\n", marca.display())).unwrap();
+    let a = |n: &str| atacante.join(n).display().to_string();
+    let path_atacante = format!("{}:/usr/bin:/bin", atacante.display());
+    let rc_s = rc.display().to_string();
+    let require = format!("--require {}", a("mod.js"));
+    let ssh_cmd = format!("{} -x", a("true"));
+    let home = atacante.display().to_string();
+    let amb: Vec<(&str, &str)> = vec![
+        ("PATH", path_atacante.as_str()),
+        ("BASH_ENV", rc_s.as_str()),
+        ("ENV", rc_s.as_str()),
+        ("NODE_OPTIONS", require.as_str()),
+        ("GIT_SSH_COMMAND", ssh_cmd.as_str()),
+        ("PYTHONSTARTUP", rc_s.as_str()),
+        ("PYTHONPATH", home.as_str()),
+        ("PERL5LIB", home.as_str()),
+        ("PGSERVICEFILE", rc_s.as_str()),
+        ("SSH_AUTH_SOCK", rc_s.as_str()),
+        ("HOME", home.as_str()),
+        ("USER", "atacante"),
+        ("LOCPATH", home.as_str()),
+        ("LANG", "/tmp/atacante-locale"),
+        ("TZ", "../../../tmp/atacante-fuso"),
+        ("TERM", "../atacante"),
+        ("TERMINFO", home.as_str()),
+        ("COLORTERM", "truecolor"),
+        ("NO_COLOR", "1"),
+    ];
+
+    // O comando sem `/` vem do `PATH` fixo: `true`, `sh` e `env` do sistema; o que só
+    // existe na pasta do atacante não é achado (127).
+    let r = run(&w, "t-livre", &["true"], &amb);
+    assert_eq!(r.fim, Some(0), "{r:?}");
+    let r = run(&w, "t-livre", &["wardfalso-26a"], &amb);
+    assert_eq!(r.fim, Some(127), "{r:?}");
+    // `bash -c` (não interativo) leria o `BASH_ENV`; `sh -c` com `ENV`.
+    let r = run(&w, "t-livre", &["bash", "-c", "exit 0"], &amb);
+    assert_eq!(r.fim, Some(0), "{r:?}");
+    let r = run(&w, "t-livre", &["sh", "-c", "exit 0"], &amb);
+    assert_eq!(r.fim, Some(0), "{r:?}");
+    let r = run(&w, "t-livre", &["sh", "-i", "-c", "exit 0"], &amb);
+    assert_eq!(r.fim, Some(0), "{r:?}");
+    assert!(!marca.exists(), "o comando do atacante rodou");
+
+    // O ambiente do filho: só o fixo, a lista e a entrega.
+    let r = run(&w, "t-livre", &["env"], &amb);
+    assert_eq!(r.fim, Some(0), "{r:?}");
+    let env = texto(&r.saida);
+    let (usuario, pessoal) = ward_plataforma::conta_do_usuario().unwrap();
+    for esperado in [
+        "PATH=/usr/local/bin:/usr/bin:/bin\n".to_owned(),
+        format!("HOME={}\n", pessoal.to_string_lossy()),
+        format!("USER={}\n", usuario.to_string_lossy()),
+        format!("LOGNAME={}\n", usuario.to_string_lossy()),
+        "COLORTERM=truecolor\n".to_owned(),
+        "NO_COLOR=1\n".to_owned(),
+        "LC_CTYPE=C.UTF-8\n".to_owned(),
+        "WARD_ENTRADA=t-livre\n".to_owned(),
+    ] {
+        assert!(env.contains(&esperado), "{esperado:?} faltando:\n{env}");
+    }
+    for proibido in [
+        "atacante",
+        "BASH_ENV",
+        "ENV=",
+        "NODE_OPTIONS",
+        "GIT_",
+        "PYTHON",
+        "PERL5LIB",
+        "PGSERVICEFILE",
+        "SSH_",
+        "LOCPATH",
+        "LANG=",
+        "TZ=",
+        "TERM=",
+        "TERMINFO",
+    ] {
+        assert!(
+            !env.lines()
+                .any(|l| l.starts_with(proibido) || l.contains("atacante")),
+            "{proibido} no ambiente do filho:\n{env}"
+        );
+    }
+    let linhas: Vec<&str> = env.lines().collect();
+    let nomes: Vec<&str> = linhas
+        .iter()
+        .map(|l| l.split_once('=').map_or(*l, |(n, _)| n))
+        .collect();
+    for n in &nomes {
+        assert!(
+            [
+                "PATH",
+                "HOME",
+                "USER",
+                "LOGNAME",
+                "COLORTERM",
+                "NO_COLOR",
+                "LC_CTYPE"
+            ]
+            .contains(n)
+                || n.starts_with("WARD_"),
+            "{n} não devia estar no ambiente:\n{env}"
+        );
+    }
+
+    // Valores aceitos passam como vieram; o diretório de trabalho é o da CLI.
+    let r = run(
+        &w,
+        "t-livre",
+        &[
+            "sh",
+            "-c",
+            "printf '%s|%s|%s|' \"$TZ\" \"$TERM\" \"$LANG\"; pwd",
+        ],
+        &[
+            ("TZ", "America/Sao_Paulo"),
+            ("TERM", "xterm-256color"),
+            ("LANG", "pt_BR.UTF-8"),
+        ],
+    );
+    assert_eq!(
+        texto(&r.saida),
+        "America/Sao_Paulo|xterm-256color|pt_BR.UTF-8|/\n",
+        "{r:?}"
+    );
+    assert!(!marca.exists(), "o comando do atacante rodou");
+    // O log do daemon conta as variáveis tiradas, sem nome nem valor.
+    let log = fs::read_to_string(&w.log).unwrap();
+    assert!(!log.contains("atacante"), "{log}");
+}
+
 #[test]
 fn v4_15_cli_que_cai_e_daemon_morto() {
     let dev = Dir::novo("cai");

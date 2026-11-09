@@ -180,6 +180,10 @@
           </div>
         {/each}
         <CaixaDeCodigo rotulo={TEXTOS.comando}>{pedido.comando}</CaixaDeCodigo>
+        <!-- Fase 26a: o comando roda no diretório da CLI; só o `executar` tem um. -->
+        {#if pedido.diretorio}
+          <CaixaDeCodigo rotulo={TEXTOS.diretorio}>{pedido.diretorio}</CaixaDeCodigo>
+        {/if}
         <!-- A seta é só desenho (outra cor); a que vier num nome já chega como escape. -->
         <CaixaDeCodigo rotulo={TEXTOS.quemPediu}
           >{#if pedido.cadeia.length === 0}{TEXTOS.cadeiaVazia}{/if}{#each pedido.cadeia as processo, i (i)}{#if i > 0}<span

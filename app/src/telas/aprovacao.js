@@ -23,6 +23,7 @@ export const TEXTOS = Object.freeze({
   nivel: 'Nível',
   nivelValor: 'com aprovação',
   comando: 'Comando',
+  diretorio: 'Diretório de trabalho',
   quemPediu: 'Quem pediu',
   cadeiaVazia: 'processo desconhecido',
   pin: 'PIN',

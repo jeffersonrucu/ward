@@ -536,6 +536,7 @@ mod testes {
             ambiente: Ambiente::Prod,
             operacao: Operacao::Executar,
             comando: "\"true\"".into(),
+            diretorio: "\"/\"".into(),
             cadeia: vec!["claude".into()],
         };
         assert!(s.entregar(&Resposta::PedidoDeAprovacao(p.clone())));

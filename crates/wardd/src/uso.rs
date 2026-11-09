@@ -73,13 +73,26 @@ fn nivel_efetivo(a: &Aberto, e: &Entrada, agora: std::time::Duration) -> NivelAc
     }
 }
 
-/// O que o pedido do agente quer: operação, entrada e o comando exato para exibir.
-fn descrever(pedido: &Pedido) -> Option<(Operacao, &str, String)> {
-    Some(match pedido {
+/// O que o pedido do agente quer, para exibir.
+struct Descricao<'a> {
+    operacao: Operacao,
+    entrada: &'a str,
+    /// O comando exato (D51).
+    comando: String,
+    /// Onde o comando roda: no `executar`, o diretório da CLI (Fase 26a), entre aspas
+    /// e com escape visível; vazio nas outras operações (o `ssh` roda na pasta pessoal
+    /// do passwd, fixa).
+    diretorio: String,
+}
+
+/// O que o pedido do agente quer: operação, entrada, o comando exato e o diretório.
+fn descrever(pedido: &Pedido) -> Option<Descricao<'_>> {
+    let (operacao, entrada, comando, diretorio) = match pedido {
         Pedido::Executar(x) => (
             Operacao::Executar,
             x.entrada.as_str(),
             exibicao::exibir_argumentos(&x.argv, MAX_TEXTO_EXIBIDO),
+            exibicao::exibir_argumentos(&[x.cwd.as_slice()], MAX_TEXTO_EXIBIDO),
         ),
         Pedido::Ssh {
             entrada, comando, ..
@@ -87,10 +100,27 @@ fn descrever(pedido: &Pedido) -> Option<(Operacao, &str, String)> {
             Operacao::Ssh,
             entrada.as_str(),
             exibicao::exibir_argumentos(comando, MAX_TEXTO_EXIBIDO),
+            String::new(),
         ),
-        Pedido::Login { entrada } => (Operacao::Login, entrada.as_str(), String::new()),
-        Pedido::Playwright { entrada } => (Operacao::Playwright, entrada.as_str(), String::new()),
+        Pedido::Login { entrada } => (
+            Operacao::Login,
+            entrada.as_str(),
+            String::new(),
+            String::new(),
+        ),
+        Pedido::Playwright { entrada } => (
+            Operacao::Playwright,
+            entrada.as_str(),
+            String::new(),
+            String::new(),
+        ),
         _ => return None,
+    };
+    Some(Descricao {
+        operacao,
+        entrada,
+        comando,
+        diretorio,
     })
 }
 
@@ -114,7 +144,12 @@ impl Daemon {
         cliente: &dyn Cliente,
         pedido: &Pedido,
     ) -> Result<Autorizacao, ErroResposta> {
-        let (op, nome, comando) = descrever(pedido).ok_or(ErroResposta::PedidoInvalido)?;
+        let Descricao {
+            operacao: op,
+            entrada: nome,
+            comando,
+            diretorio,
+        } = descrever(pedido).ok_or(ErroResposta::PedidoInvalido)?;
         if self.travado() {
             self.aprovacao
                 .esperar_destrave(&|| self.travado(), cliente)?;
@@ -156,6 +191,7 @@ impl Daemon {
                     ambiente,
                     operacao: op,
                     comando,
+                    diretorio,
                     cadeia: cadeia_para_exibir(cliente),
                 };
                 self.aprovacao.pedir_aprovacao(p, cliente)?;

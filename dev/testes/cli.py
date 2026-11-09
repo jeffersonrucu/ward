@@ -241,6 +241,52 @@ conferir(r.returncode != 0 and b"passam de 750 KiB" in r.stderr and b"xxxx" not 
 r = run(["acme-wp-prod", "--", "/usr/bin/env"], env=ambiente({"LD_PRELOAD": "/nao/existe.so"}))
 conferir(r.returncode == 0 and b"LD_PRELOAD" not in r.stdout, "D13 LD_* não chega ao filho")
 
+# Fase 26a (achado médio da auditoria do M3): o ambiente do filho é montado do zero no
+# daemon. A pasta do atacante (em .dev/) vem na frente do PATH da CLI com `true`,
+# `env` e `wardfalso-26a` falsos que deixam uma marca; BASH_ENV/ENV, NODE_OPTIONS,
+# GIT_SSH_COMMAND, PYTHONSTARTUP, PGSERVICEFILE e HOME apontam para ela. Nada disso
+# chega ao filho; o comando sem `/` vem do PATH fixo.
+import shutil  # noqa: E402
+import tempfile  # noqa: E402
+
+atacante = tempfile.mkdtemp(prefix="atacante-26a-", dir=os.path.join(RAIZ, ".dev"))
+try:
+    marca = os.path.join(atacante, "marca")
+    for nome in ("true", "env", "sh", "wardfalso-26a"):
+        f = os.path.join(atacante, nome)
+        with open(f, "w") as a:
+            a.write(f"#!/bin/sh\necho pego >> '{marca}'\n")
+        os.chmod(f, 0o755)
+    rc = os.path.join(atacante, "rc.sh")
+    with open(rc, "w") as a:
+        a.write(f"echo pego >> '{marca}'\n")
+    amb_ataque = ambiente({
+        "PATH": f"{atacante}:/usr/bin:/bin", "BASH_ENV": rc, "ENV": rc,
+        "NODE_OPTIONS": f"--require {atacante}/mod.js", "GIT_SSH_COMMAND": f"{atacante}/true",
+        "PYTHONSTARTUP": rc, "PGSERVICEFILE": rc, "HOME": atacante, "LANG": atacante,
+        "TZ": "../../.." + atacante, "TERM": "../x",
+    })
+    r = run(["acme-wp-prod", "--", "true"], env=amb_ataque)
+    conferir(r.returncode == 0, f"26a `true` sem `/` vem do PATH fixo (saiu {r.returncode})")
+    r = run(["acme-wp-prod", "--", "wardfalso-26a"], env=amb_ataque)
+    conferir(r.returncode == 127, f"26a comando só na pasta do atacante não é achado (saiu {r.returncode})")
+    r = run(["acme-wp-prod", "--", "bash", "-c", "exit 0"], env=amb_ataque)
+    conferir(r.returncode == 0, "26a bash -c com BASH_ENV da CLI")
+    r = run(["acme-wp-prod", "--", "env"], env=amb_ataque)
+    saida = r.stdout.decode(errors="replace")
+    nomes = {l.split("=", 1)[0] for l in saida.splitlines() if "=" in l}
+    permitidos = {"PATH", "HOME", "USER", "LOGNAME", "LC_CTYPE"}
+    conferir(r.returncode == 0 and not os.path.exists(marca), "26a nada da pasta do atacante rodou")
+    conferir("PATH=/usr/local/bin:/usr/bin:/bin" in saida.splitlines(), "26a PATH fixo no filho")
+    conferir(atacante not in saida and all(n in permitidos or n.startswith("WARD_") for n in nomes),
+             f"26a só PATH/HOME/USER/LOGNAME, locale e a entrega no filho ({sorted(nomes)})")
+    r = run(["acme-wp-prod", "--", "/bin/sh", "-c", 'printf "%s|%s|%s|" "$LANG" "$TZ" "$TERM"; pwd'],
+            env=ambiente({"LANG": "pt_BR.UTF-8", "TZ": "America/Sao_Paulo", "TERM": "xterm-256color"}))
+    conferir(r.stdout.decode() == f"pt_BR.UTF-8|America/Sao_Paulo|xterm-256color|{os.getcwd()}\n",
+             "26a LANG/TZ/TERM válidos passam e o diretório de trabalho é o da CLI")
+finally:
+    shutil.rmtree(atacante, ignore_errors=True)
+
 # V4.17 (S4): $PGPASSWORD puro, em base64, com urllib.parse.quote, cortado no `:` com
 # `sleep 0.2`, e tudo de novo no stderr.
 V417 = r'''

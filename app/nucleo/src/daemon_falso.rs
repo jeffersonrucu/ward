@@ -126,6 +126,7 @@ pub fn aprovacoes_simuladas(modo: &str) -> Option<Vec<AprovacaoSimulada>> {
         ambiente,
         operacao: Operacao::Executar,
         comando: comando.to_owned(),
+        diretorio: "\"/home/dev/projetos/acme\"".to_owned(),
         cadeia: cadeia.iter().map(|c| (*c).to_owned()).collect(),
     };
     let psql = |entrada: &str| {

@@ -230,8 +230,9 @@ fn montar(
 }
 
 /// Valor de locale: 1 a 64 bytes de `[A-Za-z0-9_.@-]`, sem começar por `.` nem ter
-/// `..` (nunca um caminho: a glibc carregaria o locale de qualquer pasta).
-fn locale_valido(v: &[u8]) -> bool {
+/// `..` (nunca um caminho: a glibc carregaria o locale de qualquer pasta). Também vale
+/// para o ambiente do `ward run` (Fase 26a).
+pub fn locale_valido(v: &[u8]) -> bool {
     !v.is_empty()
         && v.len() <= MAX_LOCALE
         && v[0] != b'.'

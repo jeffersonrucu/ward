@@ -134,11 +134,15 @@ fn assinar(d: &Daemon, id: u64) -> Receiver<Recebido> {
 }
 
 fn executar_json(nome: &str, argv: &[&[u8]]) -> String {
+    executar_json_em(nome, argv, b"/")
+}
+
+fn executar_json_em(nome: &str, argv: &[&[u8]], cwd: &[u8]) -> String {
     let argv: Vec<String> = argv.iter().map(|a| format!("\"{}\"", b64(a))).collect();
     format!(
         r#"{{"entrada":"{nome}","argv":[{}],"cwd":"{}","ambiente":[]}}"#,
         argv.join(","),
-        b64(b"/")
+        b64(cwd)
     )
 }
 
@@ -745,6 +749,37 @@ fn d51_comando_e_cadeia_com_escape_visivel() {
         assert_eq!(p.operacao, Operacao::Executar);
         assert_eq!(p.comando, r#""rm" "-rf /\x1b[2K\rls \u{202E}" "\xff""#);
         assert_eq!(p.cadeia, ["claude", r"ba\u{202E}hs", r"ward\x1b[2K"]);
+        assert!(ok(&responder(&c.d, Papel::App, p.id, "negar", None)));
+        t.join().unwrap()
+    });
+    assert_eq!(r, Err(ErroResposta::Negado));
+}
+
+/// Fase 26a: o `executar` roda no diretório da CLI, e a janela mostra esse diretório
+/// exato, entre aspas e com escape visível (D51): o agente que roda `./deploy.sh` numa
+/// pasta forjada não esconde onde o comando roda. O `ssh` (pasta pessoal do passwd,
+/// fixa) vai sem diretório.
+#[test]
+fn f26a_diretorio_de_trabalho_vai_a_janela_com_escape_visivel() {
+    let c = cena("f26a");
+    let rx = assinar(&c.d, 1);
+    let r = std::thread::scope(|s| {
+        let t = s.spawn(|| {
+            let q = executar_json_em(
+                "t-aprov",
+                &[b"./deploy.sh"],
+                "/tmp/atacante/\u{202E}hs.yolped\x1b[2K /home/dev".as_bytes(),
+            );
+            let p = ped(Papel::Agente, "executar", &q).unwrap();
+            c.d.autorizar_uso(&SemCliente, &p)
+        });
+        let _g = ExpirarSeCair(&c.relogio);
+        let p = pedido(&rx);
+        assert_eq!(p.comando, r#""./deploy.sh""#);
+        assert_eq!(
+            p.diretorio,
+            r#""/tmp/atacante/\u{202E}hs.yolped\x1b[2K /home/dev""#
+        );
         assert!(ok(&responder(&c.d, Papel::App, p.id, "negar", None)));
         t.join().unwrap()
     });

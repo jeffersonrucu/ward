@@ -181,6 +181,7 @@ fn uma_resposta_de_cada() -> Vec<Resposta> {
             ambiente: Ambiente::Prod,
             operacao: Operacao::Executar,
             comando: "psql -c 'select 1'".into(),
+            diretorio: "\"/home/usuario/projetos/acme\"".into(),
             cadeia: vec!["claude".into(), "bash".into(), "ward run".into()],
         }),
         Resposta::PedidoDeDestrave,

@@ -65,3 +65,9 @@ pub fn uid_efetivo() -> u32 {
 pub fn pasta_pessoal() -> std::io::Result<std::ffi::OsString> {
     sys::home_do_uid(sys::geteuid())
 }
+
+/// Nome e pasta pessoal do uid efetivo pelo `getpwuid_r` (nunca por `$USER`/`$HOME`):
+/// `USER`, `LOGNAME` e `HOME` do filho do `ward run` (Fase 26a).
+pub fn conta_do_usuario() -> std::io::Result<(std::ffi::OsString, std::ffi::OsString)> {
+    sys::conta_do_uid(sys::geteuid())
+}
