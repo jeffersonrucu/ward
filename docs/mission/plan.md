@@ -767,7 +767,7 @@ Contrato: V4.1–V4.38
   `--token-fd` no lugar de `--token` (D3). V4.13 (RA1): risco aceito pelo usuário
   (2026-11-09), registrado no escopo; registrar também em RA1 do PRD.
   V4.1, V4.9, V4.21, V4.27.
-- [ ] Fase 28c — Pendências da 28b: a varredura do V1.5 (`dev/testes/ataques-fundacao.sh`)
+- [x] Fase 28c — Pendências da 28b: a varredura do V1.5 (`dev/testes/ataques-fundacao.sh`)
   acusa pastas do usuário citadas em `dev/conteiner-deb/dentro.sh`,
   `dev/conteiner-units/dentro.sh`, `dev/conteiner-install/dentro.sh`,
   `dev/testes/migracao.py`, `dev/testes/skill.py`, `dev/testes/install.sh` e no `Makefile`
