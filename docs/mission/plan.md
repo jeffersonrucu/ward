@@ -426,6 +426,12 @@ Pendências da 31 (2026-11-09): V5.8 parcial — o aviso `pedido_de_destrave` n�
 
 Pendências da 22d (2026-11-09): relógio ilegível grava sem carimbo novo (entrada nova fica sem datas para sempre) — planner pode inverter para recusar; entrada antiga editada mostra só "Alterada em" (caso parcial fora do V5.34); datas seguem provisórias no escopo/PRD (D65 d).
 
+Pendências da 46 (2026-11-09): cópia externa só com o cofre destravado (UUID está na parte cifrada) e só com o pendrive já montado (o Ward não monta; montar exigiria polkit) — planner decide; modo da `ward-backup` no vfat não é conferido (vem das opções de montagem); btrfs (dispositivo anônimo) nunca recebe cópia; loops do sistema (snap) aparecem em `pendrives`; V7.4/V7.5 com vfat real montado ficam para o validador do M7 (receita no handoff).
+
+Pendências da 36 (2026-11-09): letras RTL fortes (hebraico/árabe) não são escapadas por D51 — decidir no escopo; fechar a janela nega todos os pendentes, inclusive os não vistos (falha segura; escopo fala em "o pedido"); protocolo não manda o prazo do pedido (app conta 120 s da chegada); texto do bloqueio do `CampoPin` difere do frame `16960`; V5.16 ponta a ponta e V5.28 (foco no COSMIC) ficam para o M5/usuário. Testes do `app/src-tauri` agora usam socket inexistente (`sem_daemon()`), independentes do `wardd` de teste no ar.
+
+Pendências da 27 (2026-11-09): dependência nova `ssh-key =0.7.0-rc.12` (versão rc; acompanhar a estável; auditoria do M4 revisa); só Ed25519 (RSA dá `entrega falhou`) — decidir se o escopo exige RSA; protocolo `Ssh` sem cwd nem ambiente (filho com ambiente fixo, cwd = home) — decidir; modo chave usa `IdentityFile=<id.pub do Ward>` + `IdentitiesOnly` (D13 diz `IdentityFile=none` só no modo senha) — alinhar D13; `emitir_token` emite para `servidor` bloqueado (token inútil); caminho do `known_hosts` não fixado no escopo; V4.27 sem `inotifywait` e sem bwrap com home em tmpfs; V4.35/V4.37 por `/proc/<pid>/cmdline`, não por strace; V3.15 só varre o 1º nível de `wardd/src/` (deveria percorrer subpastas); RA2 a confirmar com o usuário; `make teste-ataques-servicos`/`teste-home-real` não rodam em worktree (git abre `.git/worktrees/…`).
+
 ## Milestone 3 — Daemon e protocolo
 Contrato: V3.1–V3.41
 
@@ -636,6 +642,23 @@ Contrato: V3.1–V3.41
   - testes de formato de V2 (byte alterado, gravação morta) repetidos com o v4.
   V3.41, V5.34.
 
+- [ ] Fase 24a — Correções do scrutiny do M3 (2026-11-09; `docs/mission/evidence/M3/`).
+  - V3.25 (reprovada): `nome_para_mensagem` (`crates/ward-plataforma/src/endurecimento.rs`)
+    corta no primeiro byte fora de `[A-Za-z0-9_]` e no 64º, sem `?` nem `…`; teste
+    atualizado.
+  - Conexão do papel app (assinante de avisos) não é despejada pelo limite de 64
+    conexões (`crates/wardd/src/servidor.rs` `reservar`): vaga reservada ao app.
+  - V3.3/V3.4 no repositório: levar `docs/mission/evidence/M3/{ataque,matriz}.py` para
+    `dev/testes/` (10 000 conexões caladas; matriz operação × entrada × campo pelo
+    socket, sem padrão de `.dev/variacoes.txt`) e ligar num alvo `make`.
+  - V3.6 no binário: teste que sobe o `wardd` e confere `/proc/<pid>/{mem,environ}`,
+    `limits` (core 0) e `PTRACE` negado.
+  - `com_gancho_depois_de_gravar` e `com_programas_ssh` fora do release (`#[cfg(test)]` ou
+    feature só de teste aceita pelo V3.15); V3.15 percorre subpastas de `wardd/src/`.
+  - Alvos que usam `.dev/` com nomes fixos (`teste-dev-cofre`) com trava (`flock`) ou
+    nomes únicos por execução.
+  - `plan.md`: linha duplicada "`ward-plataforma`, ajustes da Fase 21:".
+
 ## Milestone 4 — CLI e integração Claude (run/ssh)
 Contrato: V4.1–V4.38
 
@@ -656,7 +679,7 @@ Contrato: V4.1–V4.38
   mensagem clara (D52). Teste de ataque de D63 no contêiner: `ward run <livre> --
   /usr/local/bin/ward-app` (e `ward-nm`) fica agente. V4.3–V4.17, V4.19–V4.21, V4.36,
   V4.38.
-- [ ] Fase 27 — `ward ssh` com senha e com chave: `sshpass -e`, agente temporário só do
+- [x] Fase 27 — `ward ssh` com senha e com chave: `sshpass -e`, agente temporário só do
   `ssh` filho (D12), `-F /dev/null` e `known_hosts` próprio (D13), pty interativo,
   token do "Conectar" ainda sem app (token inválido vale o nível, D3); no pty, o fim
   segurado pela máscara é solto como `••••` após 300 ms sem saída nova, guardando o
@@ -743,7 +766,7 @@ Contrato: V5.1–V5.35
   no campo, números de `ward_core::limites`; D29, D32); base do `banco` com o formato
   de D33. V5.10, V5.12, V5.24.
 - [x] Fase 35 — **(UI)** Nível de acesso com PIN. V5.15.
-- [ ] Fase 36 — **(UI)** Janela de aprovação em primeiro plano, aberta pelo daemon, com
+- [x] Fase 36 — **(UI)** Janela de aprovação em primeiro plano, aberta pelo daemon, com
   os cinco estados do M0; comando e cadeia exibidos pela função de D51, nunca como HTML.
   Consome `pedido_de_aprovacao` da fila da 23a (D65 a). V5.16–V5.20, V5.29.
 - [x] Fase 37 — **(UI)** Gerador de senha avulso (símbolos de D35). V5.21.

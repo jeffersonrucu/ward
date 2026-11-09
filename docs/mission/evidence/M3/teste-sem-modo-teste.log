@@ -1,0 +1,125 @@
+origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
+dev/testes/sem-modo-teste.sh
+==> 1/3 cargo tree: ninguém liga modo-teste em dependência normal
+==> 2/3 testes de unidade sem a feature
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.03s
+     Running unittests src/lib.rs (target/sem-modo-teste/debug/deps/ward_plataforma-ea684ef4646bb9ff)
+
+running 70 tests
+test app::testes::sem_setgid_largar_grupo_nao_muda_nada ... ok
+test endurecimento::testes::acha_qualquer_variavel_ld ... ok
+test endurecimento::testes::ataque_lista_insegura_da_glibc ... ok
+test app::testes::ataque_pai_que_nao_e_o_daemon_e_recusado ... ok
+test endurecimento::testes::ataque_nome_com_controle_nao_vai_cru_para_a_mensagem ... ok
+test endurecimento::testes::d62_memoria_release_falha_fechado_e_modo_teste_avisa ... ok
+test endurecimento::testes::mensagem_nao_tem_valor ... ok
+test filho::testes::debug_sem_valor ... ok
+test filho::testes::ataque_fd_do_daemon_nao_chega_ao_filho ... ok
+test filho::testes::argv_cwd_e_ambiente_exatos ... ok
+test filho::testes::entrada_chega_ao_filho ... ok
+test filho::testes::ataque_ambiente_do_daemon_nao_chega_ao_filho ... ok
+test filho::testes::codigo_e_sinal ... ok
+test filho::testes::filho_morre_com_a_thread_que_o_criou ... ok
+test filho::testes::falhas_antes_do_exec ... ok
+test filho::testes::busca_no_path_do_filho_sem_shell ... ok
+test lancador::testes::ataque_binario_de_usuario_ou_sem_setgid_e_recusado ... ok
+test lancador::testes::ambiente_montado_tem_so_as_variaveis_de_d57 ... ok
+test filho::testes::matar_grupo_leva_os_netos ... ok
+test filho::testes::sinais_no_padrao ... ok
+test lancador::testes::ataque_barramento_ou_pasta_da_sessao_trocados ... ok
+test lancador::testes::ataque_dois_sockets_wayland_ou_link_nao_abre ... ok
+test lancador::testes::locale_so_nome_de_locale ... ok
+test lancador::testes::mensagens_sem_valor ... ok
+test lancador::testes::lancar_poe_dev_null_e_fecha_fds ... ok
+test memoria::testes::buffer_travado_le_escreve_e_trava ... ok
+test lancador::testes::ataque_lancador_nao_passa_ambiente_nem_fd_do_daemon ... ok
+test memoria::testes::regiao_existente_e_travada ... ok
+test lancador::testes::home_vem_do_passwd ... ok
+test lancador::testes::ataque_ambiente_forcado_no_app_e_recusado ... ok
+test memoria::testes::zerar_apaga_a_regiao_inteira ... ok
+test papel::testes::ataque_gid_dentro_de_faixa_do_subgid ... ok
+test processo::testes::linha_de_mapa ... ok
+test memoria::testes::debug_nao_mostra_conteudo ... ok
+test processo::testes::mapas_recusam_biblioteca_fora_do_root ... ok
+test processo::testes::caminho_permitido_so_absoluto_e_canonico ... ok
+test processo::testes::instalacao_recusa_arquivo_de_usuario_e_link ... ok
+test processo::testes::nome_da_cadeia_higienizado ... ok
+test processo::testes::recusa_nao_vaza_detalhe ... ok
+test papel::testes::ataque_gid_que_este_processo_ja_tem ... ok
+test papel::testes::ataque_grupo_com_membro_repetido_ou_estragado ... ok
+test papel::testes::grupo_do_etc_group ... ok
+test papel::testes::politica_do_kernel ... ok
+test processo::testes::ambiente_com_qualquer_ld_recusa_sem_valor ... ok
+test processo::testes::mapas_recusam_inode_diferente_do_caminho ... ok
+test processo::testes::tracer_pid_e_ppid_do_status ... ok
+test servidor::testes::caminho_invalido_recusa ... ok
+test servidor::testes::mensagens_sem_caminho ... ok
+test socket::testes::listen_pid_e_fds_so_decimal_simples ... ok
+test servidor::testes::sistema_so_aceita_uid_0 ... ok
+test socket::testes::caminho_do_sistema_pelo_euid ... ok
+test socket::testes::caminho_do_diretorio_invalido_recusa ... ok
+test socket::testes::ataque_pasta_do_usuario_nao_passa_por_pasta_do_sistema ... ok
+test socket::testes::runtime_pelo_euid ... ok
+test socket::testes::uid_diferente_recusa ... ok
+test socket::testes::pastas_do_root_sao_aceitas_e_link_nao ... ok
+test socket::testes::pai_gravavel_por_outros_recusa ... ok
+test socket::testes::par_fechou_sem_consumir_bytes ... ok
+test terminal::testes::arquivo_comum_nao_e_terminal ... ok
+test terminal::testes::cancelar_e_limite ... ok
+test terminal::testes::capacidade_reservada_sem_realocar ... ok
+test processo::testes::cadeia_do_proprio_processo_termina_nele ... ok
+test terminal::testes::edicao_da_linha ... ok
+test terminal::testes::ctrl_c_cancela_e_restaura ... ok
+test lancador::testes::ataque_so_o_pid_do_lancador_e_o_app ... ok
+test memoria::testes::tamanho_fora_do_limite_recusa ... ok
+test lancador::testes::saida_do_app_fica_para_o_log ... ok
+test relogio::testes::nao_volta_e_bate_com_o_uptime ... ok
+   Compiling zcheapstr v1.2.0
+   Compiling zbus_utils v6.1.0
+test app::testes::socket_do_std_tem_cloexec_e_o_fechamento_e_visto ... ok
+test terminal::testes::ataque_senha_nao_ecoa_no_pty ... ok
+
+test result: ok. 70 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running unittests src/lib.rs (target/sem-modo-teste/debug/deps/wardd-4fded789be7b409e)
+
+running 16 tests
+test arquivos::testes::d62_formato_antigo_le_zero_e_novo_tem_a_linha ... ok
+test config::testes::caminho_relativo_ou_com_ponto_ponto_recusado ... ok
+test arquivos::testes::estado_estrito ... ok
+test execucao::testes::locale_utf8_fica_e_c_vira_c_utf8 ... ok
+test execucao::testes::ld_e_proibida ... ok
+test execucao::testes::ataque_rt_aberto_ou_link_recusado ... ok
+test execucao::testes::partida_limpa_o_que_ficou ... ok
+test servidor::testes::d63_sem_o_grupo_o_pid_do_lancador_nao_da_papel_app ... ok
+test trava::testes::ataque_caminho_do_barramento_estranho ... ok
+test execucao::testes::temporarios_0600_zerados_e_apagados ... ok
+test trava::testes::estado_travar_e_erro_nao_contam_como_uso ... ok
+test trava::testes::venceu_no_limite_e_falha_fechada ... ok
+test uso::testes::nivel_combinado_e_o_mais_restritivo ... ok
+test lancamento::testes::saida_vai_ao_log_so_com_numeros ... ok
+test servidor::testes::assinante_escreve_quadro_inteiro_e_falha_fechado ... ok
+test servidor::testes::d63_par_filho_sem_egid_fica_agente ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+==> 3/3 strings no release
+    Blocking waiting for file lock on build directory
+   Compiling zbus_macros v6.2.1
+   Compiling zbus v6.2.1
+   Compiling wardd v0.1.0 (/home/jeffersonoliveira/projetos/cofre/crates/wardd)
+    Finished `release` profile [optimized] target(s) in 47.17s
+    Finished `release` profile [optimized] target(s) in 41.63s
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking   Compiling waiting for file lock on build directory
+ libc v0.2.191
+   Compiling ward-plataforma v0.1.0 (/home/jeffersonoliveira/projetos/cofre/crates/ward-plataforma)
+    Finished `release` profile [optimized] target(s) in 3.00s
+    Finished `release` profile [optimized] target(s) in 2.99s
+sem-modo-teste: release sem WARD_DEV_APP nem a exceção do app de teste
+sem-modo-teste: release sem WARD_DEV_APP nem a exceção do app de teste
+exit 0
+exit 0

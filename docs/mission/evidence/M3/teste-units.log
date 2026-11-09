@@ -1,0 +1,85 @@
+origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
+/home/jeffersonoliveira/.cargo/bin/cargo build --quiet --locked -p wardd --bin wardd --example wardd-cliente-teste --target-dir target/sem-modo-teste
+ok: systemd de pé
+/home/jeffersonoliveira/.cargo/bin/cargo build --quiet --locked -p ward --bin ward --target-dir target/sem-modo-teste
+dev/testes/units.sh target/sem-modo-teste/debug/wardd target/sem-modo-teste/debug/examples/wardd-cliente-teste target/sem-modo-teste/debug/ward
+ok: socket ativo
+ok: serviço ainda parado
+ok: /run/ward root:root 0755
+ok: /run/ward/1000 root:root 0755
+ok: socket do uid, 0600
+==> systemd-analyze verify
+ok: primeira conexão responde
+ok: serviço subiu
+ok: wardd roda com o uid
+ok: sem no_new_privs (D57)
+ok: LimitCORE=0
+ok: LimitMEMLOCK=infinity (D62)
+ok: sem LD_* no ambiente (HOME INVOCATION_ID JOURNAL_STREAM LANG LISTEN_FDNAMES LISTEN_FDS LISTEN_PID LOGNAME MEMORY_PRESSURE_WATCH MEMORY_PRESSURE_WRITE PATH SHELL SYSTEMD_EXEC_PID USER )
+ok: systemd-analyze verify
+ok: o verify acusa diretiva inválida (controle)
+==> imagem com systemd
+==> contêiner
+ok: destrava o cofre de teste
+ok: lista com o cofre destravado
+Stopping 'wardd@1000.service', but its triggering units are still active:
+wardd@1000.socket
+ok: systemd de pé
+ok: socket ativo
+ok: serviço ainda parado
+ok: /run/ward root:root 0755
+ok: /run/ward/1000 root:root 0755
+ok: socket do uid, 0600
+ok: primeira conexão responde
+ok: serviço subiu
+ok: wardd roda com o uid
+ok: sem no_new_privs (D57)
+ok: LimitCORE=0
+ok: LimitMEMLOCK=infinity (D62)
+ok: sem LD_* no ambiente (HOME INVOCATION_ID JOURNAL_STREAM LANG LISTEN_FDNAMES LISTEN_FDS LISTEN_PID LOGNAME MEMORY_PRESSURE_WATCH MEMORY_PRESSURE_WRITE PATH SHELL SYSTEMD_EXEC_PID USER )
+ok: V4.38 destrava de novo, com os grupos
+ok: V4.38 ward run -- ward-app: papel agente
+ok: V4.38 ward run -- ward-app: lista do agente
+ok: V4.38 ward run -- ward-nm: papel agente
+ok: ward run de release: a senha sai mascarada
+ok: destrava o cofre de teste
+ok: lista com o cofre destravado
+Stopping 'wardd@1000.service', but its triggering units are still active:
+wardd@1000.socket
+ok: V4.38 o daemon recusou o papel app ao filho (D63)
+ok: journal sem valor do cofre
+ok: VmLck 482156 kB cobre o VmRSS 7904 kB (mlockall, D62)
+ok: 8 MiB de memlock: sai 1
+ok: 8 MiB de memlock: mensagem
+ok: 8 MiB de memlock: não chegou ao socket
+ok: V4.38 destrava de novo, com os grupos
+ok: V4.38 ward run -- ward-app: papel agente
+ok: V4.38 ward run -- ward-app: lista do agente
+ok: V4.38 ward run -- ward-nm: papel agente
+ok: ward run de release: a senha sai mascarada
+ok: V4.38 o daemon recusou o papel app ao filho (D63)
+ok: journal sem valor do cofre
+ok: VmLck 482156 kB cobre o VmRSS 7780 kB (mlockall, D62)
+ok: 8 MiB de memlock: sai 1
+ok: 8 MiB de memlock: mensagem
+ok: 8 MiB de memlock: não chegou ao socket
+ok: depois de morto, a conexão sobe de novo
+ok: pid novo (202)
+ok: uid 1000 não mexe em /run/ward/1000
+Nov 09 08:38:56 c8d15bec2638 wardd[148]: wardd: papel app recusado (pid 168): não é o app aberto pelo lançador (D63)
+Nov 09 08:38:56 c8d15bec2638 wardd[148]: wardd: papel especial recusado (pid 178): o processo pai não é o Chrome instalado
+Nov 09 08:38:58 c8d15bec2638 wardd[202]: wardd: pasta de temporários do ward run indisponível (permission denied)
+Nov 09 08:38:58 c8d15bec2638 wardd[202]: wardd: pronto
+Nov 09 08:38:58 c8d15bec2638 wardd[202]: wardd: logind: barramento do sistema indisponível; só a trava por inatividade vale até conectar
+teste-units: tudo ok
+exit 0
+ok: depois de morto, a conexão sobe de novo
+ok: pid novo (199)
+ok: uid 1000 não mexe em /run/ward/1000
+Nov 09 08:38:57 9d70e3a0edc6 wardd[145]: wardd: papel app recusado (pid 165): não é o app aberto pelo lançador (D63)
+Nov 09 08:38:57 9d70e3a0edc6 wardd[145]: wardd: papel especial recusado (pid 175): o processo pai não é o Chrome instalado
+Nov 09 08:38:59 9d70e3a0edc6 wardd[199]: wardd: pasta de temporários do ward run indisponível (permission denied)
+Nov 09 08:38:59 9d70e3a0edc6 wardd[199]: wardd: pronto
+Nov 09 08:38:59 9d70e3a0edc6 wardd[199]: wardd: logind: barramento do sistema indisponível; só a trava por inatividade vale até conectar
+teste-units: tudo ok
+exit 0
