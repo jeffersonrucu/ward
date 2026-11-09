@@ -25,15 +25,16 @@ use std::time::Duration;
 use ward_app_nucleo::area_transferencia::{Copiador, Wayland};
 
 use ward_app_nucleo::daemon::{Aviso, Daemon, DaemonSocket, FilaAvisos};
-use ward_app_nucleo::daemon_falso::DaemonFalso;
-use ward_app_nucleo::destrave;
+use ward_app_nucleo::daemon_falso::{AprovacaoSimulada, DaemonFalso, aprovacoes_simuladas};
 use ward_app_nucleo::servico::Servico;
+use ward_app_nucleo::{aprovacao, destrave};
 use ward_ponte_teste::http::Ponte;
 use ward_ponte_teste::partida;
 use ward_ponte_teste::simulados::{SeletorDePasta, TerminalDeTeste};
 
 const USO: &str = "uso: ward-ponte-teste [--dist <diretório do build --mode teste> \
-[--daemon-falso cheio|vazio|travado|travado-com-pedido|sem-cofre]] [--anexos <pasta com um arquivo>]";
+[--daemon-falso cheio|vazio|travado|travado-com-pedido|sem-cofre|aprovacao|aprovacao-prod|\
+aprovacao-expirando|aprovacao-ataque]] [--anexos <pasta com um arquivo>]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -60,15 +61,15 @@ fn main() -> ExitCode {
         },
         ["--dist", d] => com_o_daemon(Path::new(d), anexos),
         ["--dist", d, "--daemon-falso", "cheio"] => {
-            servir(DaemonFalso::cheio(), None, Path::new(d), anexos)
+            servir(DaemonFalso::cheio(), None, Path::new(d), anexos, &[])
         }
         ["--dist", d, "--daemon-falso", "vazio"] => {
-            servir(DaemonFalso::vazio(), None, Path::new(d), anexos)
+            servir(DaemonFalso::vazio(), None, Path::new(d), anexos, &[])
         }
         // Fase 31: `Destravar / *` com o falso travado; com `-com-pedido`, um
         // `pedido_de_destrave` chega 3 s depois de subir, como se um `ward run` esperasse.
         ["--dist", d, "--daemon-falso", "travado"] => {
-            servir(DaemonFalso::travado(), None, Path::new(d), anexos)
+            servir(DaemonFalso::travado(), None, Path::new(d), anexos, &[])
         }
         ["--dist", d, "--daemon-falso", "travado-com-pedido"] => {
             let fila = Arc::new(FilaAvisos::default());
@@ -77,11 +78,34 @@ fn main() -> ExitCode {
                 std::thread::sleep(Duration::from_secs(3));
                 f.simular(Aviso::Destrave);
             });
-            servir(DaemonFalso::travado(), Some(fila), Path::new(d), anexos)
+            servir(
+                DaemonFalso::travado(),
+                Some(fila),
+                Path::new(d),
+                anexos,
+                &[],
+            )
         }
         // Fase 30: sem cofre, para o `Primeiro uso / *`.
         ["--dist", d, "--daemon-falso", "sem-cofre"] => {
-            servir(DaemonFalso::sem_cofre(), None, Path::new(d), anexos)
+            servir(DaemonFalso::sem_cofre(), None, Path::new(d), anexos, &[])
+        }
+        // Fase 36: cofre cheio com um pedido de aprovação esperando a janela
+        // (`#token=…&tela=aprovacao`).
+        ["--dist", d, "--daemon-falso", modo] if modo.starts_with("aprovacao") => {
+            match aprovacoes_simuladas(modo) {
+                Some(pedidos) => {
+                    let mut falso = DaemonFalso::cheio();
+                    for (p, _) in &pedidos {
+                        falso = falso.com_aprovacao(p);
+                    }
+                    servir(falso, None, Path::new(d), anexos, &pedidos)
+                }
+                None => {
+                    eprintln!("{USO}");
+                    ExitCode::from(2)
+                }
+            }
         }
         _ => {
             eprintln!("{USO}");
@@ -107,7 +131,7 @@ fn com_o_daemon(dist: &Path, anexos: Option<PathBuf>) -> ExitCode {
     match daemon {
         Ok(d) => {
             let fila = d.avisos();
-            servir(d, Some(fila), dist, anexos)
+            servir(d, Some(fila), dist, anexos, &[])
         }
         Err(e) => {
             eprintln!("ward-ponte-teste: {e}");
@@ -121,6 +145,7 @@ fn servir<D: Daemon + 'static>(
     avisos: Option<Arc<FilaAvisos>>,
     dist: &Path,
     anexos: Option<PathBuf>,
+    aprovacoes: &[AprovacaoSimulada],
 ) -> ExitCode {
     let dist: PathBuf = dist.to_path_buf();
     let servico = match Wayland::novo() {
@@ -136,10 +161,16 @@ fn servir<D: Daemon + 'static>(
             return ExitCode::FAILURE;
         }
     };
+    for (p, decorrido) in aprovacoes {
+        servico.aprovacoes().chegou_ha(p.clone(), *decorrido);
+    }
     // Fase 31 (D65 a): os `pedido_de_destrave` da conexão marcam o pedido que a tela lê
     // no `estado_do_cofre` (a ponte não tem o canal do Tauri; a tela consulta).
+    // Fase 36: os `pedido_de_aprovacao` da mesma fila vão para a janela de aprovação
+    // (`&tela=aprovacao`), que consulta `pedido_de_aprovacao` a cada segundo.
     if let Some(fila) = avisos
-        && destrave::vigiar(fila, servico.pedido_de_destrave(), || {}).is_err()
+        && (aprovacao::vigiar(Arc::clone(&fila), servico.aprovacoes(), || {}).is_err()
+            || destrave::vigiar(fila, servico.pedido_de_destrave(), || {}).is_err())
     {
         eprintln!("ward-ponte-teste: não foi possível vigiar os avisos do daemon");
         return ExitCode::FAILURE;
