@@ -1228,7 +1228,8 @@ fn usuario_ssh_valido(v: &str) -> bool {
 /// - host: domínio em minúsculas (rótulos `[a-z0-9-]` de 1 a 63, sem `-` nas pontas,
 ///   até 253 no total; nome internacional só em punycode `xn--`), IPv4 de 4 octetos sem
 ///   zero à esquerda, ou IPv6 entre colchetes (os dois lidos por `std::net`). Host só de
-///   dígitos e pontos é sempre lido como IPv4;
+///   dígitos e pontos é sempre lido como IPv4; domínio cujo último rótulo começa por
+///   dígito (`0x7f000001`, `1.2.3.0x4`, `x.123`) é recusado (D55);
 /// - porta opcional de 1 a 65535, sem zero à esquerda;
 /// - caminho, query e fragmento sem `\`, e todo `%` seguido de dois dígitos hex.
 fn url_valida(v: &str) -> bool {
@@ -1289,6 +1290,16 @@ fn host_de_url_valido(host: &str) -> bool {
         // zero à esquerda; a conferência abaixo repete a regra por garantia.
         return host.parse::<std::net::Ipv4Addr>().is_ok()
             && host.split('.').all(|o| o.len() == 1 || !o.starts_with('0'));
+    }
+    // D55: o último rótulo de um domínio não começa por dígito. O Chrome e o `curl`
+    // leem `0x7f000001`, `0x7f.0.0.1` e `1.2.3.0x4` como IPv4 (formas hex e numéricas
+    // do WHATWG), e `x.123` não é domínio. Isso inclui todo rótulo final `0x…`.
+    if host
+        .rsplit('.')
+        .next()
+        .is_none_or(|ultimo| ultimo.starts_with(|c: char| c.is_ascii_digit()))
+    {
+        return false;
     }
     host.len() <= MAX_HOST
         && host.split('.').all(|rotulo| {

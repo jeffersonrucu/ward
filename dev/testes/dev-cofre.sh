@@ -1,5 +1,6 @@
 #!/bin/bash -p
-# V2.29, V2.52 e ataques ao `make dev-cofre` / `make dev-variacoes` (Fases 19 e 19d).
+# V2.29, V2.52, V2.57 e ataques ao `make dev-cofre` / `make dev-variacoes` (Fases 19, 19d
+# e 19e).
 # Cada ataque tem de FALHAR. Uso: dev/testes/dev-cofre.sh  (ou `make teste-dev-cofre`).
 #
 # Nunca imprime segredo: as buscas usam `grep -q`/`-c` e as mensagens só dizem o quê.
@@ -273,6 +274,32 @@ PY
     fi
 }
 
+# --- V2.57: teste cruzado oráculo → máscara (Fase 19e, D54) ------------------------------
+# Cada padrão do `variacoes.py`, sozinho numa saída, passa pela máscara da entrada de
+# onde ele veio e tem de sair `••••`. Os padrões vão do Python para o `dev-cofre` por um
+# pipe (nenhum arquivo); o `dev-cofre` só imprime contagens e números de linha.
+cruzado() {
+    if python3 -I -B - "$RAIZ" <<'PY' | dev_cofre --cruzado >"$TMP/cruzado.log" 2>&1; then
+import importlib.util, json, pathlib, sys
+raiz = pathlib.Path(sys.argv[1])
+spec = importlib.util.spec_from_file_location("variacoes", raiz / "dev" / "variacoes.py")
+v = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(v)
+dados = json.loads((raiz / "dev" / "fixtures" / "entradas.json").read_text(encoding="utf-8"))
+saida = sys.stdout.buffer
+for e in dados["entradas"]:
+    for tipo, padroes in (("inteiro", v.da_entrada(e)), ("url", v.database_url(e))):
+        for p in sorted(padroes):
+            saida.write(e["nome"].encode() + b"\t" + tipo.encode() + b"\t" + p.hex().encode() + b"\n")
+PY
+        ok "V2.57: todo padrão do oráculo sai •••• pela máscara da entrada ($(grep -o 'os [0-9]* padrões de [0-9]* entradas' "$TMP/cruzado.log"))"
+    else
+        falhou "V2.57: padrão do oráculo que a máscara não cobre (saída em $TMP/cruzado.log)"
+        cat "$TMP/cruzado.log" >&2
+    fi
+    sem_segredo "teste cruzado" "$TMP/cruzado.log"
+}
+
 # --- V2.29 (S15): saída fora de .dev/ recusada, nos dois alvos -------------------------
 saida_fora() { # alvo variável extensão
     local alvo="$1" var="$2" ext="$3" fora="$TMP/fora-$1"
@@ -332,6 +359,7 @@ saida_dentro() {
 variacoes
 variacoes_d36_d37
 cofre_duas_vezes
+cruzado
 saida_fora dev-cofre COFRE .ward
 saida_fora dev-variacoes VARIACOES .txt
 saida_dentro

@@ -13,20 +13,29 @@
 //! - base64 padrão e URL-safe, com e sem `=`, e o miolo do base64 do segredo nos três
 //!   alinhamentos (pega o segredo dentro de um base64 maior, como `x:token`);
 //! - base64 de `usuário:senha` (Basic auth) com o usuário da entrada;
-//! - o valor escapado em JSON (`\"`, `\\`, `\/`);
-//! - as formas escapadas de D37, cada uma só quando difere do valor literal: o JSON do
-//!   Go (`&`, `<`, `>`, U+2028 e U+2029 como `\u0026`, `\u003c`, `\u003e`, `\u2028`,
-//!   `\u2029`), o JSON com `ensure_ascii` do Python (todo caractere fora do ASCII como
-//!   `\uXXXX` em minúsculas, com par substituto acima de U+FFFF) e as aspas duplas do
-//!   shell (`declare -p`, `export -p`: `\` antes de `$`, `` ` ``, `"` e `\`).
+//! - as **formas de texto** (D37, D54), cada uma só quando difere do valor literal: o
+//!   escape JSON padrão (`\"`, `\\`, controles), com e sem `\/`; o JSON do Go (`&`,
+//!   `<`, `>`, U+2028 e U+2029 como `\u0026`, `\u003c`, `\u003e`, `\u2028`,
+//!   `\u2029`); o JSON com `ensure_ascii` do Python (todo caractere fora do ASCII como
+//!   `\uXXXX` em minúsculas, com par substituto acima de U+FFFF); o `json_encode` do PHP
+//!   (`\/` e `\uXXXX` juntos, só quando o valor tem `/` e caractere fora do ASCII); as
+//!   aspas duplas do shell (`declare -p`, `export -p`: `\` antes de `$`, `` ` ``, `"` e
+//!   `\`); as aspas simples do shell (`${X@Q}`, `set`, `set -x`: `'` vira `'\''`, só
+//!   quando o valor tem `'`); e o `printf %q` do bash (barra antes de cada caractere
+//!   especial, só para valor em ASCII visível e espaço; com controle ou fora do ASCII o
+//!   bash troca para `$'…'`, que fica em RA3).
 //!
 //! Anexos: o conteúdo inteiro (e sem a quebra de linha final) e seu base64, e a passada
-//! por linha. Todo segredo de campo ou extra com `\n` (a chave privada do `servidor` e
-//! do `ftp/sftp`, um JSON de conta de serviço num extra) também passa por linha (D36),
-//! além de inteiro. A passada por linha cobre: cada linha com 6 caracteres ou mais, sem
-//! o `\r` do fim e também aparada; e o valor de linhas `CHAVE=valor` (com ou sem
-//! `export`), `"chave": "valor"` (JSON) e `chave: valor` (YAML), com e sem aspas, com 6
-//! caracteres ou mais (D34), com as mesmas variações de um segredo.
+//! por linha. Todo segredo de campo, extra ou entrega com `\n` (a chave privada do
+//! `servidor` e do `ftp/sftp`, um JSON de conta de serviço num extra, um token de `api`
+//! de várias linhas) também passa por linha (D36, D54), além de inteiro. A passada por
+//! linha cobre: cada linha com 6 caracteres ou mais, sem o `\r` do fim e também
+//! aparada, com as formas de texto dela (sem base64 nem miolos, D54); os campos de 6+
+//! de uma linha com tab (`cut -f`, TSV); e o valor de linhas `CHAVE=valor` (com ou sem
+//! `export`), `"chave": "valor"` (JSON, chave com qualquer caractere menos `"`, também
+//! colado `"k":"v"`) e `chave: valor` (YAML, também `chave : valor` e `chave:\tvalor`),
+//! com e sem aspas, com 6 caracteres ou mais (D34). O valor de linha e o campo de tab
+//! têm todas as variações de um segredo inteiro.
 //!
 //! Orçamento (D29): [`custo_da_entrada`] conta os padrões de uma entrada e da entrega
 //! dela pelo mesmo [`Gerador`]; a validação recusa a entrada acima de
@@ -301,7 +310,13 @@ fn visitar(c: &ConstrutorMascara<'_>, f: &mut Visitante<'_>) -> Result<(), ErroM
     }
     for g_ in &c.entregas {
         for v in g_.variaveis().iter().filter(|v| v.e_segredo()) {
-            g.segredo(v.expor().as_bytes(), f)?;
+            let valor = v.expor().as_bytes();
+            g.segredo(valor, f)?;
+            // D54: valor secreto de entrega com `\n` (o token de `api` de várias
+            // linhas) também por linha, mesmo sem `.entrada(…)` no construtor.
+            if valor.contains(&b'\n') {
+                g.linhas(valor, f)?;
+            }
         }
     }
     Ok(())
@@ -383,6 +398,12 @@ impl Gerador {
                 }
             }
         }
+        self.formas_de_texto(s, f)
+    }
+
+    /// As formas de texto de D37 e D54, cada uma só quando difere da literal (e, no
+    /// caso do JSON, do escape padrão).
+    fn formas_de_texto(&mut self, s: &[u8], f: &mut Visitante<'_>) -> Result<(), ErroMascara> {
         for barra in [false, true] {
             if json_muda(s, barra) {
                 self.tmp.clear();
@@ -390,10 +411,8 @@ impl Gerador {
                 f(&self.tmp)?;
             }
         }
-        // D37: as três formas escapadas, cada uma só quando difere da literal (e, no
-        // caso do JSON, do escape padrão acima).
         if let Ok(texto) = core::str::from_utf8(s) {
-            for modo in [JsonEscapado::Go, JsonEscapado::Ascii] {
+            for modo in [JsonEscapado::Go, JsonEscapado::Ascii, JsonEscapado::Php] {
                 if json_escapado_muda(texto, modo) {
                     self.tmp.clear();
                     json_escapado(texto, modo, &mut self.tmp);
@@ -404,6 +423,16 @@ impl Gerador {
         if s.iter().any(|b| aspas_duplas_escapa(*b)) {
             self.tmp.clear();
             aspas_duplas(s, &mut self.tmp);
+            f(&self.tmp)?;
+        }
+        if s.contains(&b'\'') {
+            self.tmp.clear();
+            aspas_simples(s, &mut self.tmp);
+            f(&self.tmp)?;
+        }
+        if printf_q_muda(s) {
+            self.tmp.clear();
+            printf_q(s, &mut self.tmp);
             f(&self.tmp)?;
         }
         Ok(())
@@ -453,19 +482,39 @@ impl Gerador {
         self.linhas(c, f)
     }
 
-    /// A passada por linha (D11, D34, D36), dos anexos e de todo segredo de várias
+    /// A passada por linha (D11, D34, D36, D54), dos anexos e de todo segredo de várias
     /// linhas: cada linha com [`MINIMO_CONFIAVEL`] caracteres ou mais, sem o `\r` do fim
     /// e também aparada (a saída com CRLF do pty, `head`, `grep -v`, `sed -n` pegam
-    /// linhas soltas); e o valor de `CHAVE=valor`, `"chave": "valor"` e `chave: valor`,
-    /// com o mesmo mínimo e as variações de um segredo (`cut -d=`, `jq -r`, `yq`).
+    /// linhas soltas), com as formas de texto dela (`json.dumps(linhas)`, `declare -p`
+    /// de uma linha), sem base64 nem miolos (D54: o base64 de linha solta fica em RA3);
+    /// os campos de uma linha com tab (`cut -f`); e o valor de `CHAVE=valor`,
+    /// `"chave": "valor"` e `chave: valor`, com o mesmo mínimo e as variações de um
+    /// segredo (`cut -d=`, `jq -r`, `yq`).
     fn linhas(&mut self, c: &[u8], f: &mut Visitante<'_>) -> Result<(), ErroMascara> {
         for linha in c.split(|b| *b == b'\n') {
             let linha = linha.strip_suffix(b"\r").unwrap_or(linha);
             if caracteres(linha) >= MINIMO_CONFIAVEL {
+                // As formas de texto e os campos de tab só valem para linha que é texto
+                // (UTF-8 válido): uma linha de anexo binário não passa por `json.dumps`,
+                // `printf %q` nem `cut -f` sem virar outra coisa, e com elas um binário
+                // de 256 KiB passaria do orçamento de D29.
+                let texto = core::str::from_utf8(linha).is_ok();
                 f(linha)?;
+                if texto {
+                    self.formas_de_texto(linha, f)?;
+                }
                 let aparada = linha.trim_ascii();
                 if aparada.len() != linha.len() && caracteres(aparada) >= MINIMO_CONFIAVEL {
                     f(aparada)?;
+                    if texto {
+                        self.formas_de_texto(aparada, f)?;
+                    }
+                }
+                // D54: cada campo de uma linha de texto com tab é um valor de linha.
+                if texto && linha.contains(&b'\t') {
+                    for campo in linha.split(|b| *b == b'\t') {
+                        self.valor_da_linha(campo.trim_ascii(), f)?;
+                    }
                 }
                 // D34: o valor só vira padrão próprio com o mesmo mínimo das linhas;
                 // sem isso, `PORT=8080` mascararia todo `8080` da saída. A linha inteira
@@ -526,10 +575,12 @@ fn valor_de_chave(linha: &[u8]) -> Option<&[u8]> {
     (!valor.is_empty()).then_some(valor)
 }
 
-/// O valor de uma linha `"chave": "valor"` (JSON, com ou sem a vírgula do fim) ou
-/// `chave: valor` (YAML, também como item `- chave: valor`), aparado. A chave do YAML
-/// é `[A-Za-z0-9_.-]` e precisa de espaço (ou fim) depois dos dois pontos, para não
-/// confundir com `https://…` ou `host:porta`.
+/// O valor de uma linha `"chave": "valor"` (JSON, com ou sem a vírgula do fim, também
+/// colado `"k":"v"`, com a chave de qualquer caractere menos `"`) ou `chave: valor`
+/// (YAML, também como item `- chave: valor`, `chave : valor` e `chave:\tvalor`),
+/// aparado. A chave do YAML é `[A-Za-z0-9_.-]` (com espaço ou tab antes dos dois
+/// pontos) e precisa de espaço, tab (ou fim) depois deles, para não confundir com
+/// `https://…` ou `host:porta`.
 fn valor_de_dois_pontos(linha: &[u8]) -> Option<&[u8]> {
     let l = linha.trim_ascii();
     let l = l.strip_prefix(b"- ").map_or(l, <[u8]>::trim_ascii_start);
@@ -541,7 +592,7 @@ fn valor_de_dois_pontos(linha: &[u8]) -> Option<&[u8]> {
         depois[fim + 1..].trim_ascii_start().strip_prefix(b":")?
     } else {
         let p = l.iter().position(|b| *b == b':')?;
-        let chave = &l[..p];
+        let chave = l[..p].trim_ascii_end();
         if chave.is_empty()
             || !chave
                 .iter()
@@ -610,6 +661,10 @@ enum JsonEscapado {
     /// `json.dumps` do Python com `ensure_ascii` (o padrão): todo caractere fora do
     /// ASCII visível e do espaço como `\uXXXX` (par substituto acima de U+FFFF).
     Ascii,
+    /// `json_encode` do PHP (o padrão): `/` como `\/` e todo caractere fora do ASCII
+    /// como `\uXXXX` (D54). Só quando o valor tem os dois; com um só, o JSON com `\/`
+    /// ou o `ensure_ascii` já cobrem.
+    Php,
 }
 
 /// O caractere vai como `\uXXXX` nesta forma (fora os escapes curtos do JSON padrão).
@@ -617,12 +672,16 @@ fn json_escapado_u(c: char, modo: JsonEscapado) -> bool {
     match modo {
         JsonEscapado::Go => matches!(c, '&' | '<' | '>' | '\u{2028}' | '\u{2029}'),
         JsonEscapado::Ascii => !c.is_ascii() || c == '\u{7f}',
+        JsonEscapado::Php => !c.is_ascii(),
     }
 }
 
 /// A forma difere do escape padrão (que já é um padrão próprio quando muda algo).
 fn json_escapado_muda(s: &str, modo: JsonEscapado) -> bool {
-    s.chars().any(|c| json_escapado_u(c, modo))
+    match modo {
+        JsonEscapado::Php => s.contains('/') && !s.is_ascii(),
+        _ => s.chars().any(|c| json_escapado_u(c, modo)),
+    }
 }
 
 /// O valor como o Go ou o Python o escrevem dentro de uma string JSON. Hex em
@@ -648,8 +707,9 @@ fn json_escapado(s: &str, modo: JsonEscapado, saida: &mut Zeroizing<Vec<u8>>) {
             continue;
         }
         let bytes = c.encode_utf8(&mut utf8).as_bytes();
-        if bytes.len() == 1 && json_escapa(bytes[0], false) {
-            json(bytes, false, saida);
+        let barra = modo == JsonEscapado::Php;
+        if bytes.len() == 1 && json_escapa(bytes[0], barra) {
+            json(bytes, barra, saida);
         } else {
             saida.extend_from_slice(bytes);
         }
@@ -668,6 +728,49 @@ fn aspas_duplas(s: &[u8], saida: &mut Zeroizing<Vec<u8>>) {
     reservar(saida, s.len() * 2);
     for &b in s {
         if aspas_duplas_escapa(b) {
+            saida.push(b'\\');
+        }
+        saida.push(b);
+    }
+}
+
+/// O valor como o bash o escreve entre aspas simples (`${X@Q}`, `set`, `set -x`): cada
+/// `'` vira `'\''` (D54). As aspas das pontas ficam fora do padrão.
+fn aspas_simples(s: &[u8], saida: &mut Zeroizing<Vec<u8>>) {
+    reservar(saida, s.len() * 4);
+    for &b in s {
+        if b == b'\'' {
+            saida.extend_from_slice(b"'\\''");
+        } else {
+            saida.push(b);
+        }
+    }
+}
+
+/// `printf %q` do bash 5.2 põe `\` antes deste caractere na posição `i` de `s` (D54,
+/// conferido contra o bash real em `v2_56_printf_q_igual_ao_bash`): os especiais do
+/// shell sempre; `#` só no começo; `~` no começo ou depois de `=` ou `:`.
+fn printf_q_escapa(s: &[u8], i: usize) -> bool {
+    match s[i] {
+        b' ' | b'!' | b'"' | b'$' | b'&' | b'\'' | b'(' | b')' | b'*' | b',' | b';' | b'<'
+        | b'>' | b'?' | b'[' | b'\\' | b']' | b'^' | b'`' | b'{' | b'|' | b'}' => true,
+        b'#' => i == 0,
+        b'~' => i == 0 || matches!(s[i - 1], b'=' | b':'),
+        _ => false,
+    }
+}
+
+/// O `printf %q` só vale aqui para valor em ASCII visível e espaço: com controle ou
+/// fora do ASCII o bash troca para `$'…'` (RA3).
+fn printf_q_muda(s: &[u8]) -> bool {
+    s.iter().all(|b| (0x20..=0x7e).contains(b)) && (0..s.len()).any(|i| printf_q_escapa(s, i))
+}
+
+/// O valor como o `printf %q` do bash o escreve.
+fn printf_q(s: &[u8], saida: &mut Zeroizing<Vec<u8>>) {
+    reservar(saida, s.len() * 2);
+    for (i, &b) in s.iter().enumerate() {
+        if printf_q_escapa(s, i) {
             saida.push(b'\\');
         }
         saida.push(b);

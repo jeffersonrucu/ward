@@ -824,3 +824,222 @@ fn v2_10_v2_11_strace_ordem_e_nada_em_claro() {
     );
     assert_eq!(abrir_conteudo(&cofre_bytes), conteudo(&marca, 1, 4096));
 }
+
+// --- Geração queimada ao selar (D53, V2.44 reescrita, V2.53) ----------------------------
+
+/// O cofre de teste de D15 (as mesmas entradas dos testes do corpo). O módulo de teste
+/// do corpo é privado dele; incluir o arquivo de novo aqui evita abrir a visibilidade
+/// do `corpo::testes` só para os testes da gravação.
+#[allow(clippy::duplicate_mod)]
+#[path = "../corpo/cofre_teste.rs"]
+mod cofre_teste;
+use crate as wc;
+
+/// Geração gravada no arquivo (abre sem mínimo nem queimada).
+fn geracao_no_disco(caminho: &Path) -> u64 {
+    let bytes = fs::read(caminho).unwrap();
+    let _g = ARGON.lock().unwrap_or_else(|e| e.into_inner());
+    crate::corpo::abrir_entradas(&bytes, &senha())
+        .unwrap()
+        .0
+        .geracao()
+}
+
+fn cofre_novo() -> CofreAberto {
+    let _g = ARGON.lock().unwrap_or_else(|e| e.into_inner());
+    CofreAberto::novo(&senha(), configuracao()).unwrap()
+}
+
+/// O mesmo ponto, sem olhar quanto já foi escrito.
+fn mesmo_ponto(a: Ponto, b: Ponto) -> bool {
+    std::mem::discriminant(&a) == std::mem::discriminant(&b)
+}
+
+/// Erro e `Debug` do erro sem valor do cofre de teste.
+fn sem_valor(texto: &str) {
+    for s in cofre_teste::SEGREDOS {
+        assert!(!texto.contains(s), "erro com segredo de teste");
+    }
+    assert!(
+        !texto.contains("falso") && !texto.contains("acme"),
+        "{texto}"
+    );
+}
+
+/// V2.44 (reescrita, D53): falha injetada em cada ponto da gravação (V2.9). O cofre
+/// aberto fica com a geração que selou (n+1) mesmo que a gravação falhe antes do rename
+/// (o arquivo segue com n) ou depois dele (o arquivo já tem n+1); a gravação seguinte
+/// grava n+2. Nenhum par de arquivos selados tem a mesma geração.
+#[test]
+fn v2_44_falha_em_cada_ponto_queima_a_geracao() {
+    let entradas = cofre_teste::cofre_de_teste();
+    for (i, alvo) in PONTOS.iter().enumerate() {
+        let d = Dir::novo("queimada");
+        let mut c = cofre_novo();
+        gravar_entradas(&d.cofre(), &mut c, &entradas).unwrap();
+        let n = c.geracao();
+        assert_eq!(n, 1);
+        let mut passou = false;
+        let r = gravar_entradas_com_pontos(&d.cofre(), &mut c, &entradas, &mut |p| {
+            if mesmo_ponto(p, *alvo) && !passou {
+                passou = true;
+                return Err(io::Error::from(io::ErrorKind::StorageFull));
+            }
+            Ok(())
+        });
+        assert!(passou, "ponto {alvo:?} não aconteceu");
+        assert_eq!(
+            r,
+            Err(ErroGravacao::Io {
+                etapa: etapa_esperada(i),
+                tipo: io::ErrorKind::StorageFull
+            }),
+            "{alvo:?}"
+        );
+        assert_eq!(
+            c.geracao(),
+            n + 1,
+            "{alvo:?}: a geração selada tem de ficar"
+        );
+        let no_disco = geracao_no_disco(&d.cofre());
+        if i < ANTES_DO_RENAME {
+            assert_eq!(no_disco, n, "{alvo:?}: a versão anterior tem de ficar");
+        } else {
+            assert_eq!(no_disco, n + 1, "{alvo:?}: a versão nova já está no lugar");
+        }
+        assert!(d.temporarios().is_empty(), "{alvo:?}: temporário ficou");
+        // A gravação seguinte usa um número que nunca foi selado.
+        gravar_entradas(&d.cofre(), &mut c, &entradas).unwrap();
+        assert_eq!(c.geracao(), n + 2, "{alvo:?}");
+        assert_eq!(geracao_no_disco(&d.cofre()), n + 2, "{alvo:?}");
+    }
+}
+
+/// D53: um corpo que não serializa não chega a selar, então não queima nem toca no
+/// disco.
+#[test]
+fn d53_corpo_que_nao_serializa_nao_queima() {
+    let d = Dir::novo("nao-queima");
+    let mut c = cofre_novo();
+    gravar_entradas(&d.cofre(), &mut c, &[]).unwrap();
+    let antes = fs::read(d.cofre()).unwrap();
+    // Duas entradas com o mesmo nome não viram corpo.
+    let um = cofre_teste::cofre_de_teste().remove(0);
+    let dois = cofre_teste::cofre_de_teste().remove(0);
+    let r = gravar_entradas(&d.cofre(), &mut c, &[um, dois]);
+    assert!(matches!(r, Err(ErroGravacao::Corpo(_))), "{r:?}");
+    assert_eq!(c.geracao(), 1);
+    assert!(fs::read(d.cofre()).unwrap() == antes);
+    assert!(d.temporarios().is_empty());
+}
+
+/// V2.53 (D53, repro `geracao.rs` do auditor): o atacante tira a leitura do diretório
+/// (0300), então o fsync do diretório falha depois do rename. A gravação A (uma entrada
+/// a menos) devolve erro com o cofre aberto em n+1; a B (a entrada de volta) grava n+2;
+/// a cópia de A posta no lugar de B é recusada com `Retrocesso` pelo mínimo n+2, sem
+/// entrada e sem valor. Antes de D53, B gravava n+1 de novo e A abria com o mínimo.
+#[test]
+fn v2_53_fsync_do_diretorio_falha_e_a_geracao_nao_repete() {
+    let d = Dir::novo("v2-53");
+    let mut c = cofre_novo();
+    let mut entradas = cofre_teste::cofre_de_teste();
+    gravar_entradas(&d.cofre(), &mut c, &entradas).unwrap();
+    let n = c.geracao();
+    let arquivo_n = fs::read(d.cofre()).unwrap();
+    let ultima = entradas.pop().unwrap();
+
+    fs::set_permissions(&d.0, fs::Permissions::from_mode(0o300)).unwrap();
+    // Root lê o diretório mesmo com 0300: aí o ataque não reproduz, e o caso fica
+    // coberto pela injeção de `v2_44_falha_em_cada_ponto_queima_a_geracao`.
+    if File::open(&d.0).is_ok() {
+        fs::set_permissions(&d.0, fs::Permissions::from_mode(0o700)).unwrap();
+        eprintln!("v2_53: o processo lê diretório 0300 (root?); ataque não reproduz aqui");
+        return;
+    }
+    let r = gravar_entradas(&d.cofre(), &mut c, &entradas);
+    fs::set_permissions(&d.0, fs::Permissions::from_mode(0o700)).unwrap();
+    assert_eq!(
+        r,
+        Err(ErroGravacao::Io {
+            etapa: Etapa::FsyncDiretorio,
+            tipo: io::ErrorKind::PermissionDenied
+        })
+    );
+    assert_eq!(c.geracao(), n + 1);
+    let arquivo_a = fs::read(d.cofre()).unwrap();
+    assert_eq!(geracao_no_disco(&d.cofre()), n + 1);
+
+    entradas.push(ultima);
+    gravar_entradas(&d.cofre(), &mut c, &entradas).unwrap();
+    assert_eq!(c.geracao(), n + 2);
+    let arquivo_b = fs::read(d.cofre()).unwrap();
+    assert_eq!(geracao_no_disco(&d.cofre()), n + 2);
+
+    // Nenhum par de arquivos selados nessa sequência tem a mesma geração.
+    let geracoes: Vec<u64> = [&arquivo_n, &arquivo_a, &arquivo_b]
+        .iter()
+        .map(|b| {
+            let _g = ARGON.lock().unwrap_or_else(|e| e.into_inner());
+            crate::corpo::abrir_entradas(b, &senha())
+                .unwrap()
+                .0
+                .geracao()
+        })
+        .collect();
+    assert_eq!(geracoes, [n, n + 1, n + 2]);
+
+    // O atacante troca B por A; o daemon abre com a maior geração vista (n+2).
+    {
+        let _g = ARGON.lock().unwrap_or_else(|e| e.into_inner());
+        match crate::corpo::abrir_entradas_desde(&arquivo_a, &senha(), n + 2, n + 2) {
+            Ok(_) => panic!("a cópia de A abriu com o mínimo de B"),
+            Err(e) => {
+                assert_eq!(e, crate::corpo::ErroAbrir::Retrocesso);
+                sem_valor(&format!("{e} {e:?}"));
+            }
+        }
+    }
+
+    // Reaberto com a queimada que o daemon guardou, A (n+1 ≥ n) fica em n+2 e a
+    // gravação seguinte sela n+3, nunca n+2 de novo.
+    fs::write(d.cofre(), &arquivo_a).unwrap();
+    let (mut reaberto, lidas) = {
+        let _g = ARGON.lock().unwrap_or_else(|e| e.into_inner());
+        crate::corpo::abrir_entradas_desde(&arquivo_a, &senha(), n, n + 2).unwrap()
+    };
+    assert_eq!(reaberto.geracao(), n + 2);
+    gravar_entradas(&d.cofre(), &mut reaberto, &lidas).unwrap();
+    assert_eq!(reaberto.geracao(), n + 3);
+    assert_eq!(geracao_no_disco(&d.cofre()), n + 3);
+
+    // A troca de senha com queimada n+5 sobre o arquivo em n+3 sela n+6.
+    let nova = SenhaMestra::nova("falso-mestra-ward-02".to_owned());
+    let trocado = {
+        let _g = ARGON.lock().unwrap_or_else(|e| e.into_inner());
+        trocar_senha(&d.cofre(), &senha(), &nova, n + 3, n + 5).unwrap()
+    };
+    assert_eq!(trocado.geracao(), n + 6);
+    let bytes = fs::read(d.cofre()).unwrap();
+    let _g = ARGON.lock().unwrap_or_else(|e| e.into_inner());
+    let (lido, _) = crate::corpo::abrir_entradas(&bytes, &nova).unwrap();
+    assert_eq!(lido.geracao(), n + 6);
+}
+
+/// D53: a queimada nunca desce a geração: abrir com queimada menor que a do disco fica
+/// com a do disco, e a troca de senha com queimada menor sela a do disco + 1.
+#[test]
+fn d53_queimada_menor_que_o_disco_nao_desce() {
+    let d = Dir::novo("queimada-menor");
+    let mut c = cofre_novo();
+    gravar_entradas(&d.cofre(), &mut c, &[]).unwrap();
+    gravar_entradas(&d.cofre(), &mut c, &[]).unwrap();
+    gravar_entradas(&d.cofre(), &mut c, &[]).unwrap();
+    assert_eq!(c.geracao(), 3);
+    let bytes = fs::read(d.cofre()).unwrap();
+    let _g = ARGON.lock().unwrap_or_else(|e| e.into_inner());
+    let (aberto, _) = crate::corpo::abrir_entradas_desde(&bytes, &senha(), 0, 1).unwrap();
+    assert_eq!(aberto.geracao(), 3);
+    let nova = SenhaMestra::nova("falso-mestra-ward-02".to_owned());
+    let trocado = trocar_senha(&d.cofre(), &senha(), &nova, 3, 2).unwrap();
+    assert_eq!(trocado.geracao(), 4);
+}

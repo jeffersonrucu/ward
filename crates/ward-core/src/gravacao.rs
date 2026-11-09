@@ -9,7 +9,7 @@
 //! Só bytes que já são um cofre cifrado entram aqui (S2). As únicas gravações públicas
 //! são [`gravar_entradas`] (o caminho do daemon) e [`trocar_senha`] (D27, D44): as duas
 //! partem de um [`CofreAberto`] ou da senha atual, serializam ou validam o corpo (com o
-//! hash do PIN, D30) e gravam a geração seguinte (D39) antes de selar. Selar e gravar
+//! hash do PIN, D30) e selam uma geração que nunca foi selada (D39, D53). Selar e gravar
 //! bytes soltos ([`CofreAberto::selar`], `gravar_cofre`, `gravar`) é interno ao crate:
 //! `gravar` só confere a estrutura do cabeçalho, não a autenticidade (não tem a chave),
 //! e `gravar_cofre` selaria qualquer corpo, inclusive um sem hash de PIN. Nenhum caminho
@@ -167,9 +167,11 @@ enum Ponto {
 /// (D26, D30), sela com a chave do cofre aberto e grava de forma atômica. O corpo em
 /// claro zera ao sair.
 ///
-/// Só depois que a gravação dá certo o `cofre` passa à geração nova; se falhar, ele
-/// continua na de antes. Em `u64::MAX`, recusa com [`ErroGravacao::GeracaoEsgotada`]
-/// sem tocar no disco.
+/// Geração queimada (D53): assim que o corpo é selado, o `cofre` passa à geração nova,
+/// antes de escrever o temporário, e fica nela se qualquer passo seguinte falhar
+/// (escrita, fsync, rename, fsync do diretório). A gravação seguinte sela outra, nunca a
+/// mesma. Em `u64::MAX`, recusa com [`ErroGravacao::GeracaoEsgotada`] antes de selar,
+/// sem tocar no disco e sem queimar; um corpo que não serializa também não queima.
 pub fn gravar_entradas(
     destino: &Path,
     cofre: &mut CofreAberto,
@@ -189,26 +191,33 @@ fn gravar_entradas_com_pontos(
         .ok_or(ErroGravacao::GeracaoEsgotada)?;
     let conteudo =
         corpo::serializar(cofre.configuracao(), geracao, entradas).map_err(ErroGravacao::Corpo)?;
-    gravar_cofre_com_pontos(destino, cofre, &conteudo, ponto)?;
-    cofre.gravou(geracao);
-    Ok(())
+    let arquivo = cofre.selar(&conteudo).map_err(ErroGravacao::Formato)?;
+    drop(conteudo);
+    // D53: a geração está selada; daqui em diante ela não volta a ser usada.
+    cofre.queimar(geracao);
+    gravar_com_pontos(destino, &arquivo, ponto)
 }
 
 /// Troca a senha mestra do cofre em `destino` (V2.8): lê o arquivo, exige a senha
 /// atual, confere que o corpo é válido e lê a configuração e as entradas dele (D30),
-/// sela de novo com sal, chave de dados e nonces novos, na geração seguinte à do
-/// arquivo (D39), e grava de forma atômica. Devolve o cofre aberto com a senha nova, a
-/// mesma configuração e a geração nova.
+/// sela de novo com sal, chave de dados e nonces novos e grava de forma atômica.
+/// Devolve o cofre aberto com a senha nova, a mesma configuração e a geração nova.
 ///
 /// `geracao_minima` (D39): um arquivo com geração menor (trocado por uma versão
 /// autêntica mais antiga) é recusado com [`ErroGravacao::Retrocesso`]. O daemon passa
-/// a maior geração que já viu; 0 aceita qualquer uma. Corpo inválido, retrocesso ou
-/// geração esgotada: nada é gravado.
+/// a maior geração confirmada no disco; 0 aceita qualquer uma.
+///
+/// `geracao_queimada` (D53): a maior geração já selada ou tentada que o chamador
+/// conhece. A troca sela max(geração do arquivo, `geracao_queimada`) + 1, então nunca
+/// repete um número que uma gravação que falhou já selou. Corpo inválido, retrocesso
+/// ou geração esgotada: nada é gravado. Um erro depois de selar perde o cofre aberto
+/// devolvido; o chamador trava e reabre com a geração queimada que guardou.
 pub fn trocar_senha(
     destino: &Path,
     atual: &SenhaMestra,
     nova: &SenhaMestra,
     geracao_minima: u64,
+    geracao_queimada: u64,
 ) -> Result<CofreAberto, ErroGravacao> {
     let arquivo = ler_arquivo(destino)?;
     let (chaves, conteudo) =
@@ -219,7 +228,7 @@ pub fn trocar_senha(
     if geracao < geracao_minima {
         return Err(ErroGravacao::Retrocesso);
     }
-    let mut cofre = CofreAberto::de_partes(chaves, configuracao, geracao);
+    let mut cofre = CofreAberto::de_partes(chaves, configuracao, geracao.max(geracao_queimada));
     gravar_entradas(destino, &mut cofre, &entradas)?;
     Ok(cofre)
 }
@@ -239,7 +248,7 @@ fn ler_arquivo(destino: &Path) -> Result<Vec<u8>, ErroGravacao> {
 
 /// Sela `conteudo` com a chave do cofre aberto e grava o arquivo de forma atômica. Só
 /// dentro do crate (D44): selaria qualquer corpo, inclusive um sem hash de PIN, e não
-/// sobe a geração. De fora, o caminho é [`gravar_entradas`]. Hoje só os testes do
+/// queima a geração (D53). De fora, o caminho é [`gravar_entradas`]. Hoje só os testes do
 /// crate chamam direto; o backup (Fase 45) vai usar.
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn gravar_cofre(

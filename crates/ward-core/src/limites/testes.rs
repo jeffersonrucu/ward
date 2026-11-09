@@ -135,15 +135,19 @@ fn dados_grandes(tipo: TipoEntrada, tunel: Option<&str>) -> RascunhoDados {
 
 /// Extra secreto de várias linhas (D36): um JSON de conta de serviço com linhas
 /// `"chave": "valor"`, `chave: valor` e `CHAVE=valor`, de `n` bytes. Cada linha e cada
-/// valor viram padrões, com as formas escapadas de D37 (`$`, `&`, `\`, não ASCII).
+/// valor viram padrões, com as formas escapadas de D37 (`$`, `&`, `\`, não ASCII) e as
+/// formas de texto por linha de D54 (aspas simples, `printf %q`, PHP, campos de tab,
+/// `chave : valor`).
 fn json_de_varias_linhas(n: usize) -> Vec<u8> {
     let mut v = b"{\n".to_vec();
     let mut i = 0usize;
     while v.len() + 80 < n {
-        let linha = match i % 3 {
+        let linha = match i % 5 {
             0 => format!("  \"campo_{i:05}\": \"falso-valor-$&ç-{i:05}-0123456789\",\n"),
             1 => format!("  chave_{i:05}: falso-yaml-\\-{i:05}-0123456789\n"),
-            _ => format!("  CHAVE_{i:05}=falso-env-`<>`-{i:05}-0123456789\n"),
+            2 => format!("  CHAVE_{i:05}=falso-env-`<>`-{i:05}-0123456789\n"),
+            3 => format!("  \"x/{i:05}\":\"falso-'php'/ação-{i:05}\tcampo-{i:05}\",\n"),
+            _ => format!("  chave_{i:05} : falso esp {i:05}\tcampo-de-tab-{i:05}\n"),
         };
         v.extend_from_slice(linha.as_bytes());
         i += 1;
