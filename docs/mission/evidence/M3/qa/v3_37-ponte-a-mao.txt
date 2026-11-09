@@ -1,0 +1,2 @@
+ward-ponte-teste: o daemon não deu o papel app
+exit=

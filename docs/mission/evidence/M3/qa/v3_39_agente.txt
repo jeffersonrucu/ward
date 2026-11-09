@@ -1,0 +1,9 @@
+estado  -> {"v":1,"tipo":"estado","dados":{"travado":false,"cofre_existe":true,"papel":"agente"}} | padroes de variacoes: 0
+lista  -> itens com resumo:False usuario:False tem gama-bloqueada:False | padroes de variacoes: 0
+revelar acme-pg-dev -> {"v":1,"tipo":"erro","dados":{"codigo":"nao_autorizado","mensagem":"não autorizado"}} | padroes de variacoes: 0
+revelar gama-bloqueada -> {"v":1,"tipo":"erro","dados":{"codigo":"nao_autorizado","mensagem":"não autorizado"}} | padroes de variacoes: 0
+copiar acme-pg-dev -> {"v":1,"tipo":"erro","dados":{"codigo":"nao_autorizado","mensagem":"não autorizado"}} | padroes de variacoes: 0
+totp acme-pg-dev -> {"v":1,"tipo":"erro","dados":{"codigo":"nao_autorizado","mensagem":"não autorizado"}} | padroes de variacoes: 0
+totp gama-bloqueada -> {"v":1,"tipo":"erro","dados":{"codigo":"nao_autorizado","mensagem":"não autorizado"}} | padroes de variacoes: 0
+mudar_nivel acme-pg-dev -> {"v":1,"tipo":"erro","dados":{"codigo":"nao_autorizado","mensagem":"não autorizado"}} | padroes de variacoes: 0
+detalhe acme-pg-dev -> {"v":1,"tipo":"erro","dados":{"codigo":"nao_autorizado","mensagem":"não autorizado"}} | padroes de variacoes: 0

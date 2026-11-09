@@ -1,0 +1,12 @@
+[destravar] exit=1 t=1.29s Senha mestra do Ward:  ward: senha mestra incorreta ou arquivo do cofre adulterado  
+[destravar] exit=1 t=2.73s Senha mestra do Ward:  ward: senha mestra incorreta ou arquivo do cofre adulterado  
+[destravar] exit=1 t=3.24s Senha mestra do Ward:  ward: senha mestra incorreta ou arquivo do cofre adulterado  
+[destravar] exit=1 t=5.16s Senha mestra do Ward:  ward: senha mestra incorreta ou arquivo do cofre adulterado  
+[destravar] exit=1 t=9.7s Senha mestra do Ward:  ward: senha mestra incorreta ou arquivo do cofre adulterado  
+[destravar] exit=1 t=16.82s Senha mestra do Ward:  ward: senha mestra incorreta ou arquivo do cofre adulterado  
+[destravar] exit=1 t=31.81s Senha mestra do Ward:  ward: senha mestra incorreta ou arquivo do cofre adulterado  
+[destravar] exit=1 t=30.7s Senha mestra do Ward:  ward: senha mestra incorreta ou arquivo do cofre adulterado  
+[destravar] exit=0 t=30.56s
+Senha mestra do Ward: 
+cofre destravado
+

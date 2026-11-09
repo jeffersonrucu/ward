@@ -1,0 +1,22 @@
+[run acme-pg-dev -- env] exit=0 t=0.01s
+PATH=/usr/bin:/bin
+HOME=/nao-existe
+LANG=C.UTF-8
+WARD_ENTRADA=acme-pg-dev
+WARD_GRUPO=acme
+WARD_AMBIENTE=dev
+PGHOST=127.0.0.1
+PGPORT=55432
+PGDATABASE=app_teste
+PGUSER=app
+PGPASSWORD=••••
+DATABASE_URL=••••
+
+[run gama-bloqueada -- env] exit=125 t=0.0s
+ward: entrada inexistente
+
+[run inexistente-xyz -- env] exit=125 t=0.0s
+ward: entrada inexistente
+
+[run acme-wp-prod -- true] exit=0 t=0.0s
+

@@ -506,10 +506,10 @@ Reauditoria do M2 (Fase 19e, D53–D55). Repros em `scratchpad/ataque/src/bin/`
 
 ## Milestone 3 — Daemon e protocolo
 
-- [ ] V3.1 — (SEG) Dado o daemon de teste no ar, quando `stat` em `<rt>` e no socket,
+- [x] V3.1 — (SEG) Dado o daemon de teste no ar, quando `stat` em `<rt>` e no socket,
   então o diretório é 0700 e o socket 0600, do usuário; quando `<rt>` já existe com 0755
   ou de outro dono, então o daemon não sobe — cobre S5.
-- [ ] V3.2 — (SEG) Dado um contêiner `ubuntu:24.04` que não monta nada do `/run/user`
+- [x] V3.2 — (SEG) Dado um contêiner `ubuntu:24.04` que não monta nada do `/run/user`
   do host, com o `wardd` de teste subido pelo root do contêiner como uid 1000
   (`setpriv --reuid 1000 --regid 1000 --clear-groups`) em `/run/user/1000/ward-teste/`
   (D49), quando conecta: (a) um cliente de uid 4242 sem capacidade → o `connect` falha
@@ -518,77 +518,77 @@ Reauditoria do M2 (Fase 19e, D53–D55). Repros em `scratchpad/ataque/src/bin/`
   `lista` → o daemon fecha sem mandar nenhum byte e o log traz `UidRecusado` com uid
   4242; (c) um cliente uid 0 → igual a (b); e depois um cliente do uid 1000 recebe
   resposta normal. Roda por `make teste-docker-uid` — cobre S5.
-- [ ] V3.3 — (SEG) Dado um cliente em Python que fala direto com o socket
+- [x] V3.3 — (SEG) Dado um cliente em Python que fala direto com o socket
   (`ataque_socket.py`), quando manda cada operação do protocolo com cada entrada do
   cofre de teste e com campos extras inventados (`"revelar": true`, `"campo":
   "senha"`), então nenhuma resposta contém segredo e as operações de app e extensão
   respondem "não autorizado" — cobre S1.
-- [ ] V3.4 — (SEG) Dado o mesmo cliente, quando manda quadro de 2 MiB, tamanho negativo,
+- [x] V3.4 — (SEG) Dado o mesmo cliente, quando manda quadro de 2 MiB, tamanho negativo,
   JSON inválido, operação desconhecida e 10 000 conexões abertas sem falar, então o
   daemon recusa ou fecha cada uma e continua respondendo a um cliente normal.
-- [ ] V3.5 — (SEG) Dado o binário de teste do app, quando é copiado para
+- [x] V3.5 — (SEG) Dado o binário de teste do app, quando é copiado para
   `/tmp/ward-app` e pede `revelar`, quando o binário permitido sobe com
   `LD_PRELOAD=<libqualquer>.so`, e quando sobe sob `strace -f` (TracerPid ≠ 0), então
   `revelar` e `copiar` respondem "não autorizado" nos três casos — cobre S1 (D5).
   Com D47 (confirmada em 2026-11-08), o mesmo ataque vale com o binário setgid num contêiner: a cópia perde
   o setgid e vira agente, o `LD_PRELOAD` é ignorado pelo `ld.so` (`AT_SECURE`) e o
   `strace -f` não consegue se prender; o que se confere é o papel, não o `/proc`.
-- [ ] V3.6 — (SEG) Dado o `wardd` no ar, quando outro processo do usuário tenta
+- [x] V3.6 — (SEG) Dado o `wardd` no ar, quando outro processo do usuário tenta
   `cat /proc/<pid>/mem`, `cat /proc/<pid>/environ`, `gdb -p <pid>` e
   `strace -p <pid>`, então todos falham por permissão; `/proc/<pid>/limits` mostra core
   0; e `kill -SEGV` no daemon não deixa core em `coredumpctl` nem no disco — cobre S8.
-- [ ] V3.7 — (SEG) Dado `LD_PRELOAD`, `LD_AUDIT` ou `LD_LIBRARY_PATH` definidos, ou o
+- [x] V3.7 — (SEG) Dado `LD_PRELOAD`, `LD_AUDIT` ou `LD_LIBRARY_PATH` definidos, ou o
   daemon iniciado sob `strace`, quando o `wardd` sobe, então sai ≠ 0 com mensagem e
   sem criar socket — cobre S8.
-- [ ] V3.8 — (SEG) Dado o daemon destravado, quando trava, então o estado não guarda
+- [x] V3.8 — (SEG) Dado o daemon destravado, quando trava, então o estado não guarda
   mais entradas nem a chave de dados, e o teste com observador do buffer confirma que
   a memória da chave foi zerada antes de liberar — cobre S8.
-- [ ] V3.9 — (SEG) Dado o socket, quando um cliente tenta destravar com 10 senhas
+- [x] V3.9 — (SEG) Dado o socket, quando um cliente tenta destravar com 10 senhas
   erradas seguidas, então cada tentativa demora mais que a anterior (espera crescente
   até 30 s, D20) e nenhuma resposta diz quantas faltam.
-- [ ] V3.10 — Dado o daemon destravado, quando recebe `travar`, então qualquer operação
+- [x] V3.10 — Dado o daemon destravado, quando recebe `travar`, então qualquer operação
   seguinte responde "travado" até destravar de novo.
-- [ ] V3.11 — (SEG) Dado `mudar_nivel` de `acme-pg-dev` para bloqueado, quando vem do
+- [x] V3.11 — (SEG) Dado `mudar_nivel` de `acme-pg-dev` para bloqueado, quando vem do
   papel app sem PIN ou com PIN errado, então recusa e o arquivo não muda; quando vem do
   papel agente com o PIN certo, então responde "não autorizado" — cobre S9.
-- [ ] V3.12 — (SEG) Dado o papel app, quando erra o PIN 5 vezes seguidas (inclusive
+- [x] V3.12 — (SEG) Dado o papel app, quando erra o PIN 5 vezes seguidas (inclusive
   reconectando entre tentativas), então o cofre trava; 4 erros e 1 acerto zeram a
   contagem — cobre S9.
-- [ ] V3.13 — (SEG) Dado o cofre de teste aberto pelo núcleo, quando o auditor procura
+- [x] V3.13 — (SEG) Dado o cofre de teste aberto pelo núcleo, quando o auditor procura
   o PIN, então ele só existe como hash Argon2id na seção de configuração do corpo v2,
   dentro da parte cifrada (D30), e a comparação é em tempo constante — cobre S9.
-- [ ] V3.14 — (SEG) Dado o motor de aprovação com relógio injetado e o aprovador em
+- [x] V3.14 — (SEG) Dado o motor de aprovação com relógio injetado e o aprovador em
   processo (D8), quando: não há resposta por 120 s → negado; a janela fecha → negado;
   "Permitir uma vez" → só aquele pedido passa, o seguinte pergunta de novo; "Permitir
   por 1 hora" → pedidos até 59:59 passam sem perguntar, em 60:01 pergunta, e travar
   encerra a liberação (D2); "Permitir sempre" → a entrada vira livre no arquivo; os
   três "Permitir" sem PIN válido → negado — cobre S10, S9.
-- [ ] V3.15 — (SEG) Dado o protocolo de release, quando o auditor lista as operações por
+- [x] V3.15 — (SEG) Dado o protocolo de release, quando o auditor lista as operações por
   papel, então nenhuma de aprovar, responder aprovação ou mudar nível é aceita do papel
   agente, e não há feature, variável ou argumento que ligue um aprovador no socket —
   cobre S10 (D8).
-- [ ] V3.16 — Dadas `acme-pg-prod` (com aprovação) e `acme-wp-prod` (livre), quando o
+- [x] V3.16 — Dadas `acme-pg-prod` (com aprovação) e `acme-wp-prod` (livre), quando o
   motor avalia, então `prod` livre passa sem perguntar e o pedido de `prod` com
   aprovação oferece os quatro botões, inclusive "Permitir sempre" (R16).
-- [ ] V3.17 — (SEG) Dado `gama-bloqueada`, quando o papel agente pede `lista`, então ela
+- [x] V3.17 — (SEG) Dado `gama-bloqueada`, quando o papel agente pede `lista`, então ela
   não aparece; quando pede `run` com ela, então a resposta é byte a byte igual à de uma
   entrada inexistente — cobre S1.
-- [ ] V3.18 — Dado o cofre travado, quando chega um pedido do agente, então o daemon
+- [x] V3.18 — Dado o cofre travado, quando chega um pedido do agente, então o daemon
   pede a abertura do app e segura o pedido; destravado em 60 s → o pedido segue;
   passados 120 s → "travado: tempo esgotado" (D16).
-- [ ] V3.19 — Dado o daemon de teste destravado, quando roda `loginctl lock-session`,
+- [x] V3.19 — Dado o daemon de teste destravado, quando roda `loginctl lock-session`,
   então em até 2 s está travado; dado o sinal `PrepareForSleep(true)` simulado no teste,
   então trava; dado o relógio injetado, então 3h59 sem uso não trava, 4h00 trava e um
   uso às 3h zera a contagem.
-- [ ] V3.20 — (SEG) Dada a suíte de integração do M3 com `RUST_LOG=trace`, quando o
+- [x] V3.20 — (SEG) Dada a suíte de integração do M3 com `RUST_LOG=trace`, quando o
   auditor procura segredos em stdout, stderr, journal e `.dev/logs/`, então não acha
   nenhum — cobre S13.
-- [ ] V3.21 — Dadas as units de teste `wardd@.socket` e `wardd@.service` do sistema
+- [x] V3.21 — Dadas as units de teste `wardd@.socket` e `wardd@.service` do sistema
   (D46), quando o auditor lê, então o `.socket` tem `ListenStream=/run/ward/%i/wardd.sock`,
   `SocketUser=%i` e `SocketMode=0600`, e o `.service` tem `User=%i`, `LimitCORE=0` e
   nenhum `Environment=LD_*`; e, num contêiner com systemd, a primeira conexão ao socket
   sobe o `wardd`.
-- [ ] V3.22 — (SEG) Dado o daemon de teste com o cofre na geração n+2 e uma cópia
+- [x] V3.22 — (SEG) Dado o daemon de teste com o cofre na geração n+2 e uma cópia
   autêntica da geração n (backup de teste), quando, com o daemon travado, o atacante faz
   `cp` da cópia por cima de `.dev/cofre-teste.ward` e destrava, então o destravar
   recusa com "o cofre no disco é mais antigo que o último aberto", o cofre segue
@@ -598,7 +598,7 @@ Reauditoria do M2 (Fase 19e, D53–D55). Repros em `scratchpad/ataque/src/bin/`
   uma operação que grava, então o daemon não grava por cima, trava e avisa "o arquivo
   do cofre mudou fora do Ward"; o arquivo de estado é 0600, sem segredo, e o log não
   traz valor (D39) — cobre S7, S9, S13.
-- [ ] V3.23 — (SEG) Dado um servidor falso do mesmo uid escutando no caminho do socket
+- [x] V3.23 — (SEG) Dado um servidor falso do mesmo uid escutando no caminho do socket
   de teste (um `socat` ou script Python), quando a conferência do cliente da
   `ward-plataforma` roda num build sem `modo-teste`, então recusa antes de mandar
   qualquer byte (o uid do par não é 0, ou a pasta não é do root); dado o listener
@@ -606,7 +606,7 @@ Reauditoria do M2 (Fase 19e, D53–D55). Repros em `scratchpad/ataque/src/bin/`
   uid 1000) e entregue ao `wardd` de teste por `LISTEN_FDS`, então a conferência aceita
   e o `wardd` atende; quando o atacante (uid 1000) mata o `wardd` e tenta `bind` em
   `/run/ward/1000/`, então recebe EACCES — cobre S5 (D46).
-- [ ] V3.24 — (SEG) Dado `ward-app` e `ward-nm` de teste instalados no contêiner como
+- [x] V3.24 — (SEG) Dado `ward-app` e `ward-nm` de teste instalados no contêiner como
   root:`ward-app`/root:`ward-nm` 2755, quando cada um conecta, então recebe o papel
   pelo grupo; quando o processo que os lançou faz `PTRACE_ATTACH`/`PTRACE_SEIZE` logo
   depois do `exec`, com o filho parado antes de conectar, então recebe EPERM; quando o
@@ -616,18 +616,18 @@ Reauditoria do M2 (Fase 19e, D53–D55). Repros em `scratchpad/ataque/src/bin/`
   de usuário) conecta, então fica agente (com o userns sem privilégio bloqueado no
   sistema, o caso diz isso na saída e passa, D60); e com `ptrace_scope` 0 simulado no
   teste, o daemon recusa o papel app — cobre S1, S8 (D47).
-- [ ] V3.25 — (SEG) Dado o `wardd` subindo com `GLIBC_TUNABLES`, `GCONV_PATH` ou um
+- [x] V3.25 — (SEG) Dado o `wardd` subindo com `GLIBC_TUNABLES`, `GCONV_PATH` ou um
   `LD_` de nome inventado, então sai ≠ 0 com o nome da variável na mensagem,
   higienizado (`[A-Za-z0-9_]`, até 64 caracteres; um nome com `\n`, `\x1b` ou 200
   caracteres sai cortado e só com esses caracteres), e sem o valor; o mesmo com
   `TMPDIR` e `MALLOC_ARENA_MAX` (D48, D60) — cobre S8.
-- [ ] V3.26 — (SEG) Dado o papel agente, quando pede `lista` (texto e `--json`), então
+- [x] V3.26 — (SEG) Dado o papel agente, quando pede `lista` (texto e `--json`), então
   nenhuma entrada traz o nível; dado o papel app, então traz (D50) — cobre S1.
-- [ ] V3.27 — (SEG) Dado o papel app, quando cria uma entrada sem nível, então ela nasce
+- [x] V3.27 — (SEG) Dado o papel app, quando cria uma entrada sem nível, então ela nasce
   "com aprovação"; quando cria com "livre" sem PIN, então recusa; quando remove
   `acme-pg-aprovacao` e a recria com o mesmo nome, então ela volta "com aprovação"
   (D50) — cobre S9.
-- [ ] V3.28 — (SEG) Dado o daemon de teste destravado na geração n, com a gravação do
+- [x] V3.28 — (SEG) Dado o daemon de teste destravado na geração n, com a gravação do
   cofre forçada a falhar depois do rename (fsync do diretório, injeção de teste),
   quando o papel app grava a mudança A e depois a B, então o arquivo de estado traz
   `queimada` = n+1 antes do rename de A, A responde `falha_ao_gravar`, B grava n+2 e o
@@ -637,7 +637,7 @@ Reauditoria do M2 (Fase 19e, D53–D55). Repros em `scratchpad/ataque/src/bin/`
   grava um número maior que `queimada`; quando a escrita do estado falha, então o cofre
   não é gravado; e quando `trocar_senha` falha depois de selar, então o cofre trava
   (D53) — cobre S7, S9.
-- [ ] V3.29 — (SEG) Dada a Fase 22a, quando `make dev-cofre` e `make teste-dev-cofre`,
+- [x] V3.29 — (SEG) Dada a Fase 22a, quando `make dev-cofre` e `make teste-dev-cofre`,
   então o cofre de teste tem 22 entradas, `delta-api-simbolos` abre igual à tabela
   (D59) e cabe no orçamento de D29; e quando o teste cruzado põe sozinho na saída cada
   padrão do oráculo dela (literal, base64, percent, aspas simples com `'\''`, aspas
@@ -646,10 +646,10 @@ Reauditoria do M2 (Fase 19e, D53–D55). Repros em `scratchpad/ataque/src/bin/`
   um sai `••••`; o mesmo para o Go com `ensure_ascii` num segredo de várias linhas,
   linha a linha; e uma linha binária de anexo continua mascarada pelo literal, sem
   formas de texto (D54) — cobre S4.
-- [ ] V3.30 — Dado `TMPDIR=/tmp` e `LD_LIBRARY_PATH=/x` na sessão, quando `make
+- [x] V3.30 — Dado `TMPDIR=/tmp` e `LD_LIBRARY_PATH=/x` na sessão, quando `make
   dev-daemon`, então o daemon de teste sobe e atende `ward lista` (ambiente limpo por
   `env -i` e lista fixa, D60; com qualquer uma das duas ele recusaria subir, V3.25).
-- [ ] V3.31 — (SEG) Dadas entradas `genérico` criadas no teste (fora do cofre de D15)
+- [x] V3.31 — (SEG) Dadas entradas `genérico` criadas no teste (fora do cofre de D15)
   com o anexo `client.json` de uma linha
   `{"installed":{"client_id":"x.apps","client_secret":"falso-GOCSPX-minificado-01"}}`,
   o extra secreto `{"user":"x","token":"falso-json-uma-linha-01"}` e um extra de várias
@@ -659,7 +659,7 @@ Reauditoria do M2 (Fase 19e, D53–D55). Repros em `scratchpad/ataque/src/bin/`
   valor com `\u00e7` e `\/` no JSON, impresso decodificado), então nenhum trecho de 6+
   caracteres de nenhum dos valores sai em claro; e o `dev/variacoes.py` gera os mesmos
   padrões, que o teste cruzado põe sozinhos na saída e saem `••••` (D61) — cobre S4.
-- [ ] V3.32 — (SEG) Dado um extra secreto de várias linhas com
+- [x] V3.32 — (SEG) Dado um extra secreto de várias linhas com
   `senha: falso-yaml-coment-01 # comentario`, `private key: falso-yaml-chave-espaco-02`,
   `aws/secret: falso-yaml-chave-barra-03`, `SENHA_DB="falso-env-coment-05" # dotenv` e
   `tok: 'falso-it''s-yaml-06'`, quando a máscara recebe cada valor como o `yq` e o
@@ -670,7 +670,7 @@ Reauditoria do M2 (Fase 19e, D53–D55). Repros em `scratchpad/ataque/src/bin/`
   `cut -f2` e do `cut -f3`, então sai `••••`; e o custo das duas entradas cabe no
   orçamento de D29, com as 22 de D15 ainda aceitas (V2.36, V2.43). `iconv` e `repr()`
   ficam em RA3 e não são cobrados aqui (D61) — cobre S4.
-- [ ] V3.33 — (SEG) Dado o daemon de teste travado, quando um cliente do papel agente
+- [x] V3.33 — (SEG) Dado o daemon de teste travado, quando um cliente do papel agente
   erra a senha 10 vezes, depois o atacante mata o `wardd` (`kill -9`), o daemon sobe de
   novo e o agente tenta outra senha, então essa tentativa ainda espera 30 s (contador
   do agente no arquivo de estado, gravado antes da resposta de erro); com o agente no
@@ -678,27 +678,27 @@ Reauditoria do M2 (Fase 19e, D53–D55). Repros em `scratchpad/ataque/src/bin/`
   destravar certo, os dois contadores zeram; o arquivo de estado no formato antigo é
   lido como contador 0; e o arquivo de estado não tem senha, PIN nem segredo (D62) —
   cobre S9.
-- [ ] V3.34 — (SEG) Dado o `wardd` de release no contêiner com `RLIMIT_MEMLOCK`
+- [x] V3.34 — (SEG) Dado o `wardd` de release no contêiner com `RLIMIT_MEMLOCK`
   infinito, quando destrava o cofre de teste e roda uma operação, então `VmLck` no
   `/proc/<pid>/status` é maior que zero e cobre o `VmRSS` (`MCL_ONFAULT`), e o app
   lançado tem `VmLck: 0 kB`; dado o mesmo binário com `RLIMIT_MEMLOCK` de 8 MiB, então
   sai ≠ 0 com mensagem e sem criar socket; com `modo-teste` e 8 MiB, sobe com aviso no
   log; e as units de teste da Fase 24 têm `LimitMEMLOCK=infinity` (D62) — cobre S8.
-- [ ] V3.35 — (SEG) Dado um estado com `vista` = `queimada` = 7 e nenhum cofre, quando
+- [x] V3.35 — (SEG) Dado um estado com `vista` = `queimada` = 7 e nenhum cofre, quando
   o papel app cria o cofre, então ele nasce na geração 8 e o estado fica 8/8; quando o
   atacante põe no lugar a cópia de um cofre anterior na geração 5 e destrava, então
   recusa com "o cofre no disco é mais antigo que o último aberto"; e dado um gancho de
   teste que troca o arquivo logo depois do rename do `gravar_entradas`, quando o daemon
   grava de novo, então responde "o arquivo do cofre mudou fora do Ward", trava e não
   grava (identidade lida do fd do temporário, D62) — cobre S7, S13.
-- [ ] V3.36 — (SEG) Dado o contêiner da 21b com `ward-app` de teste setgid, quando o
+- [x] V3.36 — (SEG) Dado o contêiner da 21b com `ward-app` de teste setgid, quando o
   lançador do daemon o abre, então ele recebe o papel app, e depois de se reexecutar
   (mesmo pid) continua app; quando um processo com egid `ward-app` e `PPid` igual ao
   daemon que **não** veio do lançador conecta (no teste do classificador, um pid que
   não é o do pidfd; na Fase 26, V4.38), então fica agente; e quando o app lançado já
   morreu e o pidfd não vale mais, então nenhum par com aquele pid é app (D63) — cobre
   S1.
-- [ ] V3.37 — (SEG) Dado `make dev-daemon` com `WARD_DEV_APP` da ponte, quando `make
+- [x] V3.37 — (SEG) Dado `make dev-daemon` com `WARD_DEV_APP` da ponte, quando `make
   app-ponte`, então a ponte é aberta pelo daemon, o `estado` dela diz `app` e o QA
   destrava, cria uma entrada e muda o nível com o PIN de teste pelo Chrome; quando
   conectam um cliente Python, a `ward-ponte-teste` executada à mão, uma cópia dela ou um
@@ -708,14 +708,14 @@ Reauditoria do M2 (Fase 19e, D53–D55). Repros em `scratchpad/ataque/src/bin/`
   com o ambiente fixo; no build sem `modo-teste`, um par sem egid aberto pelo lançador
   fica agente; e `strings` no `wardd` e no `ward-plataforma` de release não acha
   `WARD_DEV_APP` (D63, D7, D8) — cobre S1, S10, S11.
-- [ ] V3.38 — (SEG) Dado o daemon de teste, quando um cliente pede `estado`, então a
+- [x] V3.38 — (SEG) Dado o daemon de teste, quando um cliente pede `estado`, então a
   resposta traz o papel (`agente`, `app` ou `extensao`) e nada mais de novo; quando o
   app de teste ou a ponte recebem `agente` na primeira resposta (aberto fora do
   lançador ou com o pai trocado), então saem com mensagem antes de mostrar qualquer
   tela de credencial; e o log do daemon registra o código de saída (ou o sinal) do app
   que lançou, só o número (D63) — cobre S1.
 
-- [ ] V3.39 — (SEG) Dado o daemon de teste destravado, quando um cliente Python no papel
+- [x] V3.39 — (SEG) Dado o daemon de teste destravado, quando um cliente Python no papel
   agente (e outro simulando extensão, fora do pai Chrome) pede `revelar`, `copiar` e
   `totp` de `acme-pg-dev` e de `gama-bloqueada`, então todos recebem "não autorizado" e
   nenhuma resposta contém segredo; quando o app de teste (papel app pelo lançador, D63)
@@ -723,13 +723,13 @@ Reauditoria do M2 (Fase 19e, D53–D55). Repros em `scratchpad/ataque/src/bin/`
   sem PIN e sem janela de aprovação; travado, recebe "travado"; campo inexistente, "campo
   inexistente"; e o log do daemon tem `revelar <entrada> <campo>` sem nenhum padrão de
   `.dev/variacoes.txt` (D4, D65) — cobre S1, S13.
-- [ ] V3.40 — (SEG) Dado o daemon de teste, quando o app de teste pede `lista`, então
+- [x] V3.40 — (SEG) Dado o daemon de teste, quando o app de teste pede `lista`, então
   cada item traz `resumo` (campos de texto, ids dos segredos, nº de extras e de anexos)
   e nenhum segredo; quando um cliente agente pede `lista`, então nenhum item traz
   `resumo` nem usuário; um quadro forjado com `resumo` decodificado no papel agente é
   recusado, e `codificar_resposta` recusa mandar ao agente um item com `resumo` (D50,
   D65) — cobre S1.
-- [ ] V3.41 — (SEG) Dado o corpo v4 (D65), quando o app cria uma entrada, edita, muda o
+- [x] V3.41 — (SEG) Dado o corpo v4 (D65), quando o app cria uma entrada, edita, muda o
   nível e o daemon reabre o cofre, então `criada_em` não muda, `alterada_em` sobe a cada
   gravação (relógio injetado) e as duas chegam só no `detalhe` do papel app; um
   `salvar_entrada` com data no rascunho é recusado pelo decodificador; um cofre v3 é
