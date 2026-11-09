@@ -757,7 +757,7 @@ Contrato: V4.1–V4.38
   atacante na frente, `BASH_ENV`, `NODE_OPTIONS=--require`, `GIT_SSH_COMMAND`,
   `PYTHONSTARTUP`, `PGSERVICEFILE`. Atualizar `teste-cli` e o roteiro da skill (comando
   fora do `PATH` fixo vai com caminho absoluto). V4.3–V4.8, V4.36.
-- [ ] Fase 28b — Correções do scrutiny do M4 (1ª reprovação, 2026-11-09): teste do V4.27
+- [x] Fase 28b — Correções do scrutiny do M4 (1ª reprovação, 2026-11-09): teste do V4.27
   com home em tmpfs (bwrap) e `strace`/`inotifywait` provando que o `ward ssh` não abre
   nada do home do passwd; teste cronometrado do V4.21 (travado sem destravar sai ≠ 0 em
   120 s ± 2 s, `--ignored` ou no `teste-cli`); `required-features = ["modo-teste"]` nos
@@ -767,6 +767,14 @@ Contrato: V4.1–V4.38
   `--token-fd` no lugar de `--token` (D3). V4.13 (RA1): risco aceito pelo usuário
   (2026-11-09), registrado no escopo; registrar também em RA1 do PRD.
   V4.1, V4.9, V4.21, V4.27.
+- [ ] Fase 28c — Pendências da 28b: a varredura do V1.5 (`dev/testes/ataques-fundacao.sh`)
+  acusa pastas do usuário citadas em `dev/conteiner-deb/dentro.sh`,
+  `dev/conteiner-units/dentro.sh`, `dev/conteiner-install/dentro.sh`,
+  `dev/testes/migracao.py`, `dev/testes/skill.py`, `dev/testes/install.sh` e no `Makefile`
+  (linhas ~395 e ~444): montar os nomes por partes ou mudar a regra com justificativa,
+  e `make teste-ataques-fundacao` volta a passar; texto do V4.32 com `--token-fd` no
+  lugar de `--token`; linhas do `CLAUDE.md` para `make teste-ssh-home` e o V4.21
+  cronometrado no `teste-cli`. V1.5, V4.32.
 
 ## Milestone 5 — App desktop
 Contrato: V5.1–V5.35
