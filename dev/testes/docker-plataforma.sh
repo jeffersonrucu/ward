@@ -8,6 +8,8 @@
 # `.dev/` com o binário de teste (`ward-plataforma-conteiner`, feature `modo-teste`) e a
 # biblioteca de ataque do LD_PRELOAD, mais o script de dentro. Fica fora do `make
 # check` (exige Docker). Uso: dev/testes/docker-plataforma.sh <binário de teste>
+# <app de teste>. O app de teste (Fase 29a) é o `partida-conteiner` do `app/nucleo`: a
+# partida do app real (D47, D57) sem o GTK.
 
 export PATH=/usr/bin:/bin
 set -euo pipefail
@@ -17,8 +19,10 @@ RAIZ="$(cd -P -- "${BASH_SOURCE[0]%/*}/../.." && pwd -P)"
 
 # Imagem pela digest (a lista multiarquitetura de ubuntu:24.04 conferida na Fase 21b).
 IMAGEM="ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852"
-BIN="${1:?uso: docker-plataforma.sh <binário de teste>}"
+BIN="${1:?uso: docker-plataforma.sh <binário de teste> <app de teste>}"
+APP="${2:?uso: docker-plataforma.sh <binário de teste> <app de teste>}"
 [ -x "$BIN" ] || { echo "binário de teste não encontrado: $BIN" >&2; exit 1; }
+[ -x "$APP" ] || { echo "app de teste não encontrado: $APP" >&2; exit 1; }
 for p in docker gcc; do
     command -v "$p" >/dev/null 2>&1 || { echo "falta o programa: $p" >&2; exit 1; }
 done
@@ -28,6 +32,7 @@ TMP="$(mktemp -d "$RAIZ/.dev/conteiner-plataforma.XXXXXX")"
 trap 'rm -rf -- "$TMP"' EXIT
 chmod 0755 "$TMP"
 install -m 0755 "$BIN" "$TMP/ward-teste"
+install -m 0755 "$APP" "$TMP/ward-app-teste"
 gcc -shared -fPIC -O2 -Wall -Werror -o "$TMP/libmarca.so" "$RAIZ/dev/conteiner-plataforma/marca.c"
 chmod 0644 "$TMP/libmarca.so"
 

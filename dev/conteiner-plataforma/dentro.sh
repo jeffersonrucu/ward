@@ -1,6 +1,6 @@
 #!/bin/bash -p
-# Parte de dentro do `make teste-docker-plataforma` (Fase 21b; D46, D47; V3.5, V3.23,
-# V3.24). Roda como root **só dentro** do contêiner `ubuntu:24.04` descartável; nada do
+# Parte de dentro do `make teste-docker-plataforma` (Fases 21b e 29a; D46, D47, D57; V3.5,
+# V3.23, V3.24, V5.31). Roda como root **só dentro** do contêiner `ubuntu:24.04` descartável; nada do
 # host é montado além de /opt/teste (somente leitura: o binário de teste e a biblioteca
 # de ataque) e deste script.
 #
@@ -78,7 +78,7 @@ confere "V3.24: o egid do ward-app é o grupo ward-app" "$r" "gid=1000,$GID_APP"
 
 # --- ward-app lançado por outro processo: agente --------------------------------------
 r="$(como_1000 /usr/local/bin/ward-app cliente)"
-confere "D47: ward-app lançado por quem não é o daemon nem o systemd --user fica agente" \
+confere "D47, D57: ward-app lançado por quem não é o daemon fica agente" \
     "$r" "papel=agente motivo=PaiDoAppNaoPermitido"
 
 # --- ward-nm com o "Chrome" de pai: papel extensão ----------------------------------
@@ -151,10 +151,139 @@ fi
 r="$(como_1000 /usr/local/bin/ward-servidor cliente)"
 confere "com o wardd morto, o cliente vê o daemon indisponível" "$r" "servidor=Ausente"
 
+# === Fase 29a: lançador do daemon e partida do app (D47, D57; V5.31) ==================
+# O `ward-app` agora é o app de teste do `app/nucleo` (a partida do app real, sem GTK),
+# e o daemon de teste se chama `wardd` (o app confere o nome do pai).
+APP29=/opt/teste/ward-app-teste
+REL=/tmp/ward-app-relatorio.txt
+LOG2=/tmp/servidor-29a.log
+install -o root -g root -m 0755 "$BIN" /usr/local/bin/wardd
+install -o root -g ward-app -m 2755 "$APP29" /usr/local/bin/ward-app
+# Sessão do uid 1000: um socket Wayland e o barramento, do uid (o lançador confere).
+como_1000 /usr/local/bin/wardd escutar /run/user/1000/wayland-1 >/dev/null &
+W1=$!
+como_1000 /usr/local/bin/wardd escutar /run/user/1000/bus >/dev/null &
+BUS=$!
+como_1000 touch /run/user/1000/wayland-1.lock
+for _ in $(seq 50); do [ -S /run/user/1000/wayland-1 ] && [ -S /run/user/1000/bus ] && break; sleep 0.1; done
+rm -f "$REL"
+# Linha do relatório do app (`inicio`/`depois`/`erro`/`queda`) para o pid $2.
+linha_app() { grep -E "^$1 pid=$2( |$)" "$REL" 2>/dev/null || true; }
+# pid da última execução do app com o prefixo `erro`.
+ultimo_erro_pid() { grep '^erro ' "$REL" | tail -1 | sed -E 's/^erro pid=([0-9]+) .*/\1/'; }
+
+# O daemon sobe com o ambiente "sujo" (um `systemctl --user set-environment` do atacante
+# chegaria assim): nada disso pode chegar ao app (D57: ambiente montado do zero).
+/usr/local/bin/wardd ativar "$SOCK" 1000 -- /usr/bin/env \
+    WAYLAND_DISPLAY=/tmp/proxy.sock GTK_MODULES=/tmp/x.so GST_PLUGIN_PATH=/tmp/gst \
+    GIO_EXTRA_MODULES=/tmp/gio DISPLAY=:0 DBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/bus \
+    WEBKIT_INJECTED_BUNDLE_PATH=/tmp/wk LANG=C.UTF-8 \
+    /usr/local/bin/wardd servidor --chrome /usr/bin/bash \
+    --abrir-app /usr/local/bin/ward-app \
+    --abrir-app-com /usr/local/bin/ward-app WAYLAND_DISPLAY=/tmp/proxy.sock \
+    --abrir-app-com /usr/local/bin/ward-app WAYLAND_DISPLAY=../x \
+    --abrir-app-com /usr/local/bin/ward-app DBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/bus \
+    --abrir-app-com /usr/local/bin/ward-app XDG_RUNTIME_DIR=/tmp/x \
+    --abrir-app-com /usr/local/bin/ward-app GTK_MODULES=/tmp/x.so \
+    >"$LOG2" 2>&1 &
+SRV2=$!
+for _ in $(seq 100); do [ "$(grep -c '^forcado: aberto' "$LOG2" 2>/dev/null)" = 5 ] && break; sleep 0.1; done
+for _ in $(seq 50); do [ "$(grep -c '^queda ' "$REL" 2>/dev/null)" -ge 1 ] && [ "$(grep -c '^erro ' "$REL" 2>/dev/null)" -ge 5 ] && break; sleep 0.1; done
+sleep 0.5
+
+r="$(grep '^lancador:' "$LOG2" || true)"
+confere "D57: o lançador do daemon abriu o ward-app setgid" "$r" "lancador: aberto pid="
+confere "D57: uma instância por vez (o segundo pedido não abre outra)" "$r" "lancador: segundo JaAberto"
+APID="$(grep '^lancador: aberto' "$LOG2" | head -1 | sed -E 's/.*pid=([0-9]+).*/\1/')"
+r="$(linha_app inicio "$APID" | head -1)"
+confere "V5.31: desde o exec, o ward-app está no grupo ward-app" "$r" "gid=1000,$GID_APP,$GID_APP,$GID_APP"
+nao_tem "V5.31: desde o exec, Dumpable ≠ 1 (2 com suid_dumpable=2)" "$r" "dumpable=1"
+confere "V5.31: desde o exec, TracerPid 0" "$r" "tracer=0"
+confere "D57: o app recebe só 0–2, ligados a /dev/null (fds ≥ 3 fechados)" "$r" "fds=0,1,2,3 std=/dev/null,/dev/null,/dev/null"
+r="$(linha_app depois "$APID" | head -1)"
+confere "V5.31: depois da partida, os gids voltam ao real" "$r" "gid=1000,1000,1000,1000"
+confere "V5.31: depois da partida, Dumpable 0" "$r" "dumpable=0"
+confere "V5.31: depois da partida, TracerPid 0" "$r" "tracer=0"
+confere "V5.31: o socket do daemon tem CLOEXEC" "$r" "socket_cloexec=true/2"
+confere "V5.31: o ambiente do app é exatamente o de D57 (sem DISPLAY, LISTEN_*, GTK_MODULES, GST_PLUGIN_PATH, GIO_EXTRA_MODULES, WEBKIT_INJECTED_BUNDLE_PATH)" \
+    "$r" "env=DBUS_SESSION_BUS_ADDRESS,GDK_BACKEND,GST_PLUGIN_SYSTEM_PATH,HOME,LANG,NO_AT_BRIDGE,PATH,WAYLAND_DISPLAY,WEBKIT_A11Y_BUS_ADDRESS,XDG_RUNTIME_DIR,XDG_SESSION_TYPE"
+r="$(grep "^servidor: pid=$APID " "$LOG2" || true)"
+confere "V5.31: o app aberto pelo daemon conectou antes de largar o grupo e recebeu o papel app" "$r" "gid=$GID_APP papel=app"
+confere "D47: com a conexão caída e o pai ainda o daemon, o app se executa de novo" "$(linha_app queda "$APID")" "queda pid=$APID"
+n="$(grep -c "^servidor: pid=$APID gid=$GID_APP papel=app" "$LOG2" || true)"
+confere "D47: depois de se executar de novo, o app reconecta com o papel app" "conexoes=$n" "conexoes=2"
+# Variáveis postas à força no ambiente do app aberto pelo daemon: o conferidor do app
+# sai antes de conectar.
+n_forcados=0
+while read -r fpid nome; do
+    n_forcados=$((n_forcados + 1))
+    r="$(linha_app erro "$fpid")"
+    confere "V5.31: app aberto pelo daemon com $nome forçado sai com mensagem" "$r" "variável $nome"
+    r="$(grep "^servidor: pid=$fpid " "$LOG2" || true)"
+    if [ -z "$r" ]; then ok "V5.31: com $nome forçado, o app nem conecta"; else falhou "o app com $nome forçado conectou: $r"; fi
+done < <(grep '^forcado: aberto' "$LOG2" | sed -E 's/^forcado: aberto pid=([0-9]+) (.*)$/\1 \2/')
+confere "V5.31: os cinco ambientes forçados foram tentados" "forcados=$n_forcados" "forcados=5"
+
+# Lançado por um processo qualquer, com o próprio ambiente: sai antes de conectar.
+como_1000 /usr/local/bin/ward-app || true
+r="$(linha_app erro "$(ultimo_erro_pid)")"
+confere "V5.31: o ward-app aberto por outro processo, com o ambiente dele, sai" "$r" "não é do ambiente do app"
+# Lançado por um processo qualquer com o ambiente de D57 copiado: conecta, o daemon dá
+# o papel agente (o pai não é ele) e o app sai.
+amb="$(como_1000 /usr/local/bin/wardd ambiente)"
+# O `bash -c '…; true'` fica de pai (sem ele, o pai seria o pid 1 do contêiner).
+# shellcheck disable=SC2086
+como_1000 /usr/bin/bash -c "/usr/bin/env -i $(echo $amb) /usr/local/bin/ward-app; true"
+QPID="$(ultimo_erro_pid)"
+confere "V5.31: o ward-app aberto por outro processo sai com mensagem" "$(linha_app erro "$QPID")" "não foi aberto pelo daemon"
+confere "V5.31: o ward-app aberto por outro processo não recebe o papel app" \
+    "$(grep "^servidor: pid=$QPID " "$LOG2" || true)" "papel=agente motivo=PaiDoAppNaoPermitido"
+# Lançado por quem imita o `systemd --user` (como uma unit de ~/.config/systemd/user/).
+install -d -o 1000 -g 1000 -m 0755 /tmp/gerente
+install -o 1000 -g 1000 -m 0755 "$BIN" /tmp/gerente/systemd
+rm -f /tmp/gerente.log
+como_1000 /usr/bin/env WARD_GERENTE_PROGRAMA=/usr/local/bin/ward-app /usr/bin/bash -c \
+    '( exec -a /usr/lib/systemd/systemd /tmp/gerente/systemd --user >/tmp/gerente.log 2>&1 & )'
+for _ in $(seq 50); do grep -q "gerente: Ok" /tmp/gerente.log 2>/dev/null && break; sleep 0.1; done
+r="$(cat /tmp/gerente.log 2>/dev/null || true)"
+confere "V5.31: o pai falso imita o gerente (Name, PPid 1 e cmdline)" "$r" "gerente: nome=systemd ppid=1 cmdline=/usr/lib/systemd/systemd --user"
+GPID="$(ultimo_erro_pid)"
+confere "V5.31: o ward-app aberto pelo gerente falso sai com mensagem" "$(linha_app erro "$GPID")" "não foi aberto pelo daemon"
+confere "V5.31: o ward-app aberto pelo gerente falso não recebe o papel app" \
+    "$(grep "^servidor: pid=$GPID " "$LOG2" || true)" "papel=agente motivo=PaiDoAppNaoPermitido"
+
+# Sessão errada: o lançador não abre e responde "aprovação indisponível" (D21).
+como_1000 /usr/local/bin/wardd escutar /run/user/1000/wayland-0 >/dev/null &
+W0=$!
+for _ in $(seq 50); do [ -S /run/user/1000/wayland-0 ] && break; sleep 0.1; done
+r="$(como_1000 /usr/local/bin/wardd lancar-app /usr/local/bin/ward-app)"
+confere "V5.31: com dois wayland-<n>, o lançador não abre (aprovação indisponível)" "$r" "Sessao(VariosWayland) indisponivel=true"
+kill "$W0" 2>/dev/null || true; wait "$W0" 2>/dev/null || true
+rm -f /run/user/1000/wayland-0
+como_1000 /usr/local/bin/wardd escutar /run/user/1000/proxy.sock >/dev/null &
+PROXY=$!
+for _ in $(seq 50); do [ -S /run/user/1000/proxy.sock ] && break; sleep 0.1; done
+mv /run/user/1000/wayland-1 /run/user/1000/wayland-1.real
+como_1000 ln -s /run/user/1000/proxy.sock /run/user/1000/wayland-1
+r="$(como_1000 /usr/local/bin/wardd lancar-app /usr/local/bin/ward-app)"
+confere "V5.31: com o wayland-<n> trocado por um link, o lançador não abre" "$r" "Sessao(WaylandNaoConfiavel) indisponivel=true"
+rm -f /run/user/1000/wayland-1
+mv /run/user/1000/wayland-1.real /run/user/1000/wayland-1
+kill "$PROXY" 2>/dev/null || true
+# Binário que não é o instalado (cópia do usuário, sem setgid): o lançador não abre.
+como_1000 cp /usr/local/bin/ward-app /run/user/1000/ward-app-29a
+r="$(como_1000 /usr/local/bin/wardd lancar-app /run/user/1000/ward-app-29a)"
+confere "D57: o lançador só abre o ward-app do root, setgid do grupo ward-app" "$r" "BinarioNaoConfiavel"
+
+kill "$SRV2" "$W1" "$BUS" 2>/dev/null || true
+wait "$SRV2" 2>/dev/null || true
+
 echo
 if [ "$falhas" -ne 0 ]; then
     echo "teste-docker-plataforma: $falhas conferência(s) falharam"
     echo "--- log do servidor ---"; cat "$LOG"
+    echo "--- log do servidor (29a) ---"; cat "$LOG2" 2>/dev/null || true
+    echo "--- relatório do app (29a) ---"; cat "$REL" 2>/dev/null || true
     exit 1
 fi
 echo "teste-docker-plataforma: tudo certo"

@@ -120,7 +120,7 @@ fn insegura(nome: &[u8]) -> bool {
 
 /// Nome para a mensagem: só letras ASCII, dígitos e `_` (o resto vira `?`), até
 /// [`MAX_NOME_VARIAVEL`] caracteres.
-fn nome_para_mensagem(nome: &[u8]) -> String {
+pub(crate) fn nome_para_mensagem(nome: &[u8]) -> String {
     let mut s: String = nome
         .iter()
         .take(MAX_NOME_VARIAVEL)

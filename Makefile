@@ -286,10 +286,12 @@ app-ponte: origens
 # root e entregue por LISTEN_FDS. Nada de sudo nem de /etc ou /run do host. Exige Docker
 # e gcc (a biblioteca do ataque de LD_PRELOAD); fica fora do `make check`.
 
-## teste-docker-plataforma: V3.5 (forma de D47), V3.23 e V3.24 num contêiner ubuntu:24.04
+## teste-docker-plataforma: V3.5 (forma de D47), V3.23, V3.24 e V5.31 (lançador e partida
+## do app, D57) num contêiner ubuntu:24.04
 teste-docker-plataforma: origens
 	$(CARGO) build --quiet --locked -p ward-plataforma --features modo-teste --example ward-plataforma-conteiner
-	dev/testes/docker-plataforma.sh target/debug/examples/ward-plataforma-conteiner
+	$(CARGO) build --quiet --locked -p ward-app-nucleo --example partida-conteiner
+	dev/testes/docker-plataforma.sh target/debug/examples/ward-plataforma-conteiner target/debug/examples/partida-conteiner
 
 # Alvos que as próximas fases implementam. Falham em vez de fingir que funcionam.
 

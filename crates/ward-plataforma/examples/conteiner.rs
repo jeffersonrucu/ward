@@ -17,6 +17,19 @@
 //!   o egid depois do `exec`: sob depurador o kernel não aplica o setgid;
 //! - `bind <socket>`: tenta criar um socket (o atacante na pasta do root).
 //!
+//! Fase 29a (D57; V5.31), com o `ward-app` de teste do `app/nucleo`
+//! (`partida-conteiner`):
+//! - `servidor … --abrir-app <bin>`: o daemon abre o app pelo lançador de D57 (e tenta
+//!   abrir de novo logo em seguida: uma instância por vez);
+//! - `servidor … --abrir-app-com <bin> <VAR=valor>`: o daemon abre o app com o
+//!   ambiente de D57 e uma variável posta à força (teste do conferidor do app);
+//! - `lancar-app <bin>`: só o lançador, para os casos de sessão errada (dois
+//!   `wayland-<n>`, link);
+//! - `escutar <socket>`: cria um socket e fica escutando (Wayland e barramento falsos);
+//! - `ambiente`: imprime o ambiente de D57 (`VAR=valor` por linha);
+//! - `--user` (chamado como `/usr/lib/systemd/systemd --user`): imita o gerente do
+//!   usuário e abre o programa de `WARD_GERENTE_PROGRAMA` com o ambiente de D57.
+//!
 //! `unsafe` só para `ptrace`/`waitpid`/`prctl` dos ataques, com `// SAFETY:`.
 
 use std::io::{BufRead, BufReader, Read, Write};
@@ -25,9 +38,9 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use ward_plataforma::{
-    BinarioPermitido, ClassePar, Instalacao, PoliticaKernel, ServidorEsperado,
-    caminho_socket_sistema, conectar_servidor, conferir_conexao, escutar_de_listen_fds,
-    iniciar_endurecido,
+    BinarioPermitido, ClassePar, Instalacao, Lancador, PoliticaKernel, ServidorEsperado,
+    ambiente_do_app, caminho_socket_sistema, conectar_servidor, conferir_conexao,
+    escutar_de_listen_fds, iniciar_endurecido,
 };
 
 fn main() {
@@ -43,8 +56,14 @@ fn main() {
         "prender" => prender(resto),
         "traceme" => traceme(resto),
         "bind" => bind(resto),
+        "lancar-app" => lancar_app(resto),
+        "escutar" => escutar(resto),
+        "ambiente" => ambiente(),
+        "--user" => gerente(),
         _ => {
-            eprintln!("uso: ativar|servidor|cliente|prender|traceme|bind");
+            eprintln!(
+                "uso: ativar|servidor|cliente|prender|traceme|bind|lancar-app|escutar|ambiente"
+            );
             std::process::exit(2);
         }
     }
@@ -94,15 +113,39 @@ fn estado_dos_fds(listener: &UnixListener) -> String {
     format!("fd3_aberto={fd3} cloexec={cloexec}")
 }
 
+/// Como o app será aberto pelo servidor (Fase 29a).
+enum Abertura {
+    /// Pelo lançador de D57.
+    Lancador(String),
+    /// Ambiente de D57 com `VAR=valor` posto à força.
+    Com(String, String),
+}
+
 fn servidor(args: &[String]) {
     let mut chrome = None;
     let mut lancar: Vec<String> = Vec::new();
+    let mut aberturas: Vec<Abertura> = Vec::new();
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
             "--chrome" => {
                 chrome = args.get(i + 1).cloned();
                 i += 2;
+            }
+            "--abrir-app" => {
+                let bin = args
+                    .get(i + 1)
+                    .cloned()
+                    .unwrap_or_else(|| falhar("--abrir-app"));
+                aberturas.push(Abertura::Lancador(bin));
+                i += 2;
+            }
+            "--abrir-app-com" => {
+                let (Some(bin), Some(var)) = (args.get(i + 1), args.get(i + 2)) else {
+                    falhar("--abrir-app-com <bin> <VAR=valor>");
+                };
+                aberturas.push(Abertura::Com(bin.clone(), var.clone()));
+                i += 3;
             }
             "--lancar" => {
                 lancar = args[i + 1..].to_vec();
@@ -149,6 +192,7 @@ fn servidor(args: &[String]) {
             Err(e) => println!("app-filho: erro {e}"),
         }
     }
+    let _lancadores = abrir_apps(&aberturas, &inst);
     for conexao in escuta.listener().incoming() {
         let Ok(mut stream) = conexao else { continue };
         let par = match conferir_conexao(&stream) {
@@ -398,4 +442,108 @@ fn bind(args: &[String]) {
         Err(e) if e.raw_os_error() == Some(libc::EACCES) => println!("bind=EACCES"),
         Err(e) => println!("bind={e}"),
     }
+}
+
+/// Abre os apps pedidos (Fase 29a). Devolve os lançadores, para os filhos não serem
+/// colhidos antes da hora.
+fn abrir_apps(aberturas: &[Abertura], inst: &Instalacao) -> Vec<Lancador> {
+    let mut lancadores = Vec::new();
+    for a in aberturas {
+        match a {
+            Abertura::Lancador(bin) => {
+                let b = BinarioPermitido::novo(bin).unwrap_or_else(|e| falhar(e));
+                let mut l = Lancador::novo(b, inst);
+                match l.abrir() {
+                    Ok(pid) => println!("lancador: aberto pid={pid}"),
+                    Err(e) => println!("lancador: erro {e:?}"),
+                }
+                match l.abrir() {
+                    Ok(pid) => println!("lancador: segundo aberto pid={pid}"),
+                    Err(e) => println!("lancador: segundo {e:?}"),
+                }
+                lancadores.push(l);
+            }
+            Abertura::Com(bin, var) => {
+                let Some((nome, valor)) = var.split_once('=') else {
+                    falhar("VAR=valor");
+                };
+                let amb = ambiente_do_app().unwrap_or_else(|e| falhar(e));
+                let filho = Command::new(bin)
+                    .env_clear()
+                    .envs(amb.variaveis().filter(|(k, _)| *k != nome))
+                    .env(nome, valor)
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .spawn();
+                match filho {
+                    Ok(f) => println!("forcado: aberto pid={} {nome}", f.id()),
+                    Err(e) => println!("forcado: erro {e}"),
+                }
+            }
+        }
+        let _ = std::io::stdout().flush();
+        std::thread::sleep(std::time::Duration::from_millis(300));
+    }
+    lancadores
+}
+
+fn lancar_app(args: &[String]) {
+    let [bin] = args else {
+        falhar("lancar-app <bin>")
+    };
+    let chrome = BinarioPermitido::novo("/usr/bin/bash").unwrap_or_else(|e| falhar(e));
+    let inst = Instalacao::do_sistema(chrome).unwrap_or_else(|e| falhar(e));
+    let b = BinarioPermitido::novo(bin).unwrap_or_else(|e| falhar(e));
+    match Lancador::novo(b, &inst).abrir() {
+        Ok(pid) => println!("lancar-app: aberto pid={pid}"),
+        Err(e) => println!(
+            "lancar-app: {e:?} indisponivel={}",
+            matches!(&e, ward_plataforma::ErroLancador::Sessao(s) if s.sessao_indisponivel())
+        ),
+    }
+}
+
+fn escutar(args: &[String]) {
+    let [socket] = args else {
+        falhar("escutar <socket>")
+    };
+    let _ = std::fs::remove_file(socket);
+    let _l = UnixListener::bind(socket).unwrap_or_else(|e| falhar(e));
+    println!("escutando");
+    let _ = std::io::stdout().flush();
+    loop {
+        std::thread::sleep(std::time::Duration::from_secs(3600));
+    }
+}
+
+fn ambiente() {
+    let amb = ambiente_do_app().unwrap_or_else(|e| falhar(e));
+    for (k, v) in amb.variaveis() {
+        println!("{k}={v}");
+    }
+}
+
+/// Imita o `systemd --user` (Fase 29a, V5.31): `Name: systemd`, `cmdline`
+/// `/usr/lib/systemd/systemd --user`, órfão (`PPid: 1`). Abre o programa com o
+/// ambiente de D57, como uma unit de `~/.config/systemd/user/` faria.
+fn gerente() {
+    let programa =
+        std::env::var("WARD_GERENTE_PROGRAMA").unwrap_or_else(|_| falhar("WARD_GERENTE_PROGRAMA"));
+    // O subshell que deixou este processo órfão sai logo; espera o `PPid` virar 1.
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    let cmdline = std::fs::read("/proc/self/cmdline").unwrap_or_default();
+    println!(
+        "gerente: nome={} ppid={} cmdline={}",
+        status("Name:"),
+        status("PPid:"),
+        String::from_utf8_lossy(&cmdline).replace('\0', " ").trim()
+    );
+    let amb = ambiente_do_app().unwrap_or_else(|e| falhar(e));
+    let status = Command::new(programa)
+        .env_clear()
+        .envs(amb.variaveis())
+        .stdin(Stdio::null())
+        .status();
+    println!("gerente: {status:?}");
 }

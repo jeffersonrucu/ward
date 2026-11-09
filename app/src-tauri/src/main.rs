@@ -5,14 +5,22 @@
 //! manifesto no `build.rs`), CSP estrita no `tauri.conf.json`, interface embutida
 //! (`custom-protocol`), navegação só dentro do app, sem arrastar arquivo para a
 //! janela, devtools só com a feature `modo-teste`.
+//!
+//! D47/D57: a primeira coisa do `main` é a partida do app setgid
+//! (`ward_app_nucleo::partida`), antes do GTK: ambiente de D57 conferido, conexão ao
+//! daemon com o egid do grupo `ward-app`, grupo largado, não-dumpable de novo e o pai
+//! conferido. Fora disso o app sai com a mensagem, sem abrir janela.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+use std::sync::Arc;
 
 use serde::Serialize;
 use tauri::{Builder, Manager, RunEvent, Runtime, State, WebviewUrl, WebviewWindowBuilder};
 use ward_app_nucleo::ErroApp;
 use ward_app_nucleo::area_transferencia::{Copiador, Wayland};
 use ward_app_nucleo::daemon::DaemonSocket;
+use ward_app_nucleo::partida;
 use ward_app_nucleo::servico::Servico;
 
 type ServicoApp = Servico<DaemonSocket, Wayland>;
@@ -38,13 +46,14 @@ struct RespostaEstado {
     estado: &'static str,
 }
 
-/// Serviço montado na partida. Sem `wl-copy`/`wl-paste` confiáveis ou sem caminho do
-/// socket, os comandos respondem o erro (o app abre e mostra a falha).
-struct Estado(Result<ServicoApp, ErroApp>);
+/// Serviço montado na partida. Sem `wl-copy`/`wl-paste` confiáveis, os comandos
+/// respondem o erro (o app abre e mostra a falha). `Arc`: a vigia da conexão limpa a
+/// área de transferência antes de reexecutar o app.
+struct Estado(Arc<Result<ServicoApp, ErroApp>>);
 
 impl Estado {
     fn servico(&self) -> Result<&ServicoApp, Falha> {
-        self.0.as_ref().map_err(|e| Falha::from(*e))
+        self.0.as_ref().as_ref().map_err(|e| Falha::from(*e))
     }
 }
 
@@ -60,8 +69,8 @@ fn copiar_campo(entrada: String, campo: String, estado: State<'_, Estado>) -> Re
     Ok(estado.servico()?.copiar_campo(&entrada, &campo)?)
 }
 
-fn montar_servico() -> Result<ServicoApp, ErroApp> {
-    let daemon = DaemonSocket::padrao()?;
+fn montar_servico(daemon: Result<DaemonSocket, ErroApp>) -> Result<ServicoApp, ErroApp> {
+    let daemon = daemon?;
     let area = Wayland::novo()?;
     Ok(Servico::novo(daemon, Copiador::novo(area)))
 }
@@ -74,14 +83,28 @@ fn navegacao_permitida(url: &tauri::Url) -> bool {
 
 /// Estado e comandos. O teste de ataque monta o mesmo builder com o runtime falso do
 /// Tauri e as capabilities reais (`generate_context!`).
-fn com_comandos<R: Runtime>(builder: Builder<R>) -> Builder<R> {
+fn com_comandos<R: Runtime>(builder: Builder<R>, estado: Estado) -> Builder<R> {
     builder
-        .manage(Estado(montar_servico()))
+        .manage(estado)
         .invoke_handler(tauri::generate_handler![estado_do_cofre, copiar_campo])
 }
 
 fn main() {
-    let app = com_comandos(tauri::Builder::default())
+    // Antes do GTK (D47, D57).
+    let mut partida = partida::iniciar().unwrap_or_else(|e| {
+        eprintln!("ward-app: {e}");
+        std::process::exit(1)
+    });
+    let daemon = partida.tomar_daemon().ok_or(ErroApp::ConexaoPerdida);
+    let servico = Arc::new(montar_servico(daemon));
+    let na_vigia = Arc::clone(&servico);
+    partida.vigiar(move || {
+        if let Ok(s) = na_vigia.as_ref() {
+            s.ao_sair();
+        }
+    });
+
+    let app = com_comandos(tauri::Builder::default(), Estado(servico))
         .setup(|app| {
             WebviewWindowBuilder::new(app, "principal", WebviewUrl::App("index.html".into()))
                 .title("Ward")
@@ -114,7 +137,8 @@ mod testes {
     use tauri::webview::InvokeRequest;
 
     fn app_de_teste() -> tauri::App<MockRuntime> {
-        com_comandos(mock_builder())
+        let estado = Estado(Arc::new(montar_servico(DaemonSocket::padrao())));
+        com_comandos(mock_builder(), estado)
             .build(tauri::generate_context!())
             .expect("app de teste")
     }

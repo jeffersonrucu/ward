@@ -182,15 +182,20 @@ pub(crate) fn desligar_dumpable() -> io::Result<()> {
 }
 
 /// `prctl(PR_GET_DUMPABLE)`: `true` quando o processo pode ser depurado ou dar core.
-#[allow(unsafe_code)]
 pub(crate) fn dumpable() -> io::Result<bool> {
+    Ok(valor_dumpable()? != 0)
+}
+
+/// `prctl(PR_GET_DUMPABLE)` como o kernel devolve: 0, 1 ou 2 (`SUID_DUMP_ROOT`).
+#[allow(unsafe_code)]
+pub(crate) fn valor_dumpable() -> io::Result<i32> {
     let zero: libc::c_ulong = 0;
     // SAFETY: `PR_GET_DUMPABLE` não recebe ponteiro; devolve o valor no retorno.
     let r = unsafe { libc::prctl(libc::PR_GET_DUMPABLE, zero, zero, zero, zero) };
     if r < 0 {
         return Err(erro_os());
     }
-    Ok(r != 0)
+    Ok(r)
 }
 
 /// `setrlimit(RLIMIT_CORE, 0, 0)`: o limite rígido também em 0, para o processo não
@@ -408,4 +413,165 @@ pub(crate) unsafe fn por_no_fd_ativacao(fd: BorrowedFd<'_>) -> io::Result<()> {
         return Err(erro_os());
     }
     Ok(())
+}
+
+// --- Partida do app e lançador (Fase 29a; D47, D57) -----------------------------------
+
+/// `getresgid`: gid real, efetivo e salvo.
+#[allow(unsafe_code)]
+pub(crate) fn getresgid() -> io::Result<(u32, u32, u32)> {
+    let (mut r, mut e, mut s) = (u32::MAX, u32::MAX, u32::MAX);
+    // SAFETY: os três ponteiros são de locais `gid_t` válidos; o kernel só escreve neles.
+    let rc = unsafe { libc::getresgid(&raw mut r, &raw mut e, &raw mut s) };
+    if rc != 0 {
+        return Err(erro_os());
+    }
+    Ok((r, e, s))
+}
+
+/// Larga o grupo do setgid: `setresgid(real, real, real)`, conferido por `getresgid`
+/// depois. Com os três iguais ao real, o processo não volta ao grupo do binário (o
+/// salvo também mudou).
+#[allow(unsafe_code)]
+pub(crate) fn largar_grupo_efetivo() -> io::Result<()> {
+    let (real, _, _) = getresgid()?;
+    // SAFETY: só inteiros; o kernel deixa um processo sem privilégio pôr os três gids
+    // em qualquer um dos que ele já tem (o real é um deles).
+    let rc = unsafe { libc::setresgid(real, real, real) };
+    if rc != 0 {
+        return Err(erro_os());
+    }
+    if getresgid()? != (real, real, real) {
+        return Err(io::Error::other(
+            "setresgid não deixou os três gids no real",
+        ));
+    }
+    Ok(())
+}
+
+#[allow(unsafe_code)]
+pub(crate) fn getppid() -> u32 {
+    // SAFETY: sem argumentos e sem efeito colateral; nunca falha.
+    let p = unsafe { libc::getppid() };
+    u32::try_from(p).unwrap_or(0)
+}
+
+/// O fd tem `FD_CLOEXEC`?
+#[allow(unsafe_code)]
+pub(crate) fn tem_cloexec(fd: BorrowedFd<'_>) -> io::Result<bool> {
+    // SAFETY: `F_GETFD` só consulta a tabela de fds; `fd` está aberto pelo empréstimo.
+    let r = unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_GETFD) };
+    if r < 0 {
+        return Err(erro_os());
+    }
+    Ok(r & libc::FD_CLOEXEC != 0)
+}
+
+/// Só nos testes: tira o `FD_CLOEXEC` de `fd`, para simular um fd que o `exec` herdaria.
+#[cfg(test)]
+#[allow(unsafe_code)]
+pub(crate) fn tirar_cloexec(fd: BorrowedFd<'_>) -> io::Result<()> {
+    // SAFETY: `F_SETFD` com 0 só muda a flag do fd, aberto pelo empréstimo.
+    if unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_SETFD, 0) } < 0 {
+        return Err(erro_os());
+    }
+    Ok(())
+}
+
+/// Espera até o outro lado do socket fechar (`POLLRDHUP`/`POLLHUP`/`POLLERR`), sem ler
+/// nada: não consome os bytes de uma resposta do protocolo.
+#[allow(unsafe_code)]
+pub(crate) fn esperar_fechamento(fd: BorrowedFd<'_>) -> io::Result<()> {
+    loop {
+        let mut pfd = libc::pollfd {
+            fd: fd.as_raw_fd(),
+            events: libc::POLLRDHUP,
+            revents: 0,
+        };
+        // SAFETY: `pfd` é um `pollfd` local e válido, e o tamanho passado é 1; o fd
+        // está aberto pelo empréstimo; timeout -1 espera sem prazo.
+        let r = unsafe { libc::poll(&raw mut pfd, 1, -1) };
+        if r < 0 {
+            let e = erro_os();
+            if e.kind() == io::ErrorKind::Interrupted {
+                continue;
+            }
+            return Err(e);
+        }
+        let fim = libc::POLLRDHUP | libc::POLLHUP | libc::POLLERR | libc::POLLNVAL;
+        if pfd.revents & fim != 0 {
+            return Ok(());
+        }
+    }
+}
+
+/// Diretório do usuário `uid` pelo `getpwuid_r` (passwd ou NSS do sistema), nunca pelo
+/// `$HOME`. Sem entrada ou com home vazio é erro.
+#[allow(unsafe_code)]
+pub(crate) fn home_do_uid(uid: u32) -> io::Result<std::ffi::OsString> {
+    use std::os::unix::ffi::OsStrExt;
+    let mut tamanho = 4096usize;
+    loop {
+        let mut buf = vec![0u8; tamanho];
+        // SAFETY: `passwd` é uma struct C só de ponteiros e inteiros; zerada é um valor
+        // válido (ponteiros nulos), e o `getpwuid_r` a preenche.
+        let mut pw: libc::passwd = unsafe { std::mem::zeroed() };
+        let mut resultado: *mut libc::passwd = std::ptr::null_mut();
+        // SAFETY: `pw` e `resultado` são locais; `buf` tem `buf.len()` bytes graváveis
+        // e vive até o fim desta volta do laço, enquanto os ponteiros de `pw` apontam
+        // para dentro dele.
+        let rc = unsafe {
+            libc::getpwuid_r(
+                uid,
+                &raw mut pw,
+                buf.as_mut_ptr().cast(),
+                buf.len(),
+                &raw mut resultado,
+            )
+        };
+        if rc == libc::ERANGE && tamanho < 1024 * 1024 {
+            tamanho *= 4;
+            continue;
+        }
+        if rc != 0 {
+            return Err(io::Error::from_raw_os_error(rc));
+        }
+        if resultado.is_null() || pw.pw_dir.is_null() {
+            return Err(io::ErrorKind::NotFound.into());
+        }
+        // SAFETY: `pw_dir` não é nulo e aponta para uma string C dentro de `buf`, que
+        // ainda está vivo; a cópia sai antes de `buf` ser liberado.
+        let dir = unsafe { CStr::from_ptr(pw.pw_dir) };
+        if dir.to_bytes().is_empty() {
+            return Err(io::ErrorKind::NotFound.into());
+        }
+        return Ok(std::ffi::OsStr::from_bytes(dir.to_bytes()).to_owned());
+    }
+}
+
+/// Faz o `exec` de `cmd` fechar todo fd ≥ 3: depois do `fork`, marca todos com
+/// `FD_CLOEXEC` (`close_range` com `CLOSE_RANGE_CLOEXEC`), e o `exec` os fecha; o
+/// programa recebe só 0–2. Marcar em vez de fechar mantém o canal do `std` que avisa a
+/// falha do `exec` ao pai. Kernel sem a opção (< 5.11) faz o `spawn`/`exec` falhar
+/// (falha fechada).
+#[allow(unsafe_code)]
+pub(crate) fn fechar_fds_no_exec(cmd: &mut std::process::Command) {
+    use std::os::unix::process::CommandExt;
+    // SAFETY: o fechamento roda no filho entre o `fork` e o `exec` (ou no próprio
+    // processo, logo antes do `exec`) e só faz uma syscall (`close_range`), que é
+    // async-signal-safe: não aloca nem toca em trava.
+    unsafe {
+        cmd.pre_exec(|| {
+            let r = libc::syscall(
+                libc::SYS_close_range,
+                3 as libc::c_uint,
+                libc::c_uint::MAX,
+                libc::CLOSE_RANGE_CLOEXEC,
+            );
+            if r != 0 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
 }
