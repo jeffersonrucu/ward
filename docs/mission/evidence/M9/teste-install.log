@@ -1,0 +1,251 @@
+origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
+/home/jeffersonoliveira/.cargo/bin/cargo build --quiet --locked -p wardd --bin wardd --example wardd-cliente-teste --target-dir target/sem-modo-teste
+/home/jeffersonoliveira/.cargo/bin/cargo build --quiet --locked -p ward --bin ward --target-dir target/sem-modo-teste
+/home/jeffersonoliveira/.cargo/bin/cargo build --quiet --locked -p ward-nm --bin ward-nm --target-dir target/sem-modo-teste
+/home/jeffersonoliveira/.cargo/bin/cargo build --quiet --locked -p ward-app-nucleo --example partida-conteiner --target-dir target/sem-modo-teste
+/home/jeffersonoliveira/.cargo/bin/cargo build --quiet --locked -p ward-plataforma --features modo-teste --example ward-plataforma-conteiner
+/home/jeffersonoliveira/.cargo/bin/cargo build --quiet --locked -p wardd --features modo-teste --bin wardd
+dev/testes/install.sh
+==> 1. DESTDIR (host, sem root)
+ok: make install DESTDIR saiu 0
+ok: V9.1: árvore exata (11 arquivos)
+ok: V9.1: modos de arvore.txt (ward-app e ward-nm 2755), sem escrita para grupo e outros
+ok: binários iguais aos artefatos
+ok: units, tmpfiles.d e pacote iguais aos do repositório
+ok: V9.6: manifesto de native messaging (allowed_origins só o id, path do ward-nm)
+ok: política do Chrome: NativeMessagingUserLevelHosts false, só a extensão do Ward, force_installed, update local
+ok: update.xml: id, pacote local e versão do pacote
+ok: systemd-analyze verify das units instaladas
+ok: reinstalar troca o link plantado pelo binário
+ok: o alvo do link plantado não foi escrito
+ok: V9.10: uninstall apaga todo arquivo do Ward
+ok: V9.10: pastas comuns ficam
+ok: V9.10: o cofre e o arquivo de outro pacote intactos
+ok: uninstall de novo (nada instalado) sai 0
+==> 1b. Recusas (cada uma numa pasta nova)
+ok: V9.2: wardd com modo-teste: recusado (saiu 2)
+ok: V9.2: wardd com modo-teste: mensagem
+ok: V9.2: wardd com modo-teste: nenhum arquivo do Ward
+ok: V9.2: ward com WARD_DEV_SOCKET_DIR: recusado (saiu 2)
+ok: V9.2: ward com WARD_DEV_SOCKET_DIR: mensagem
+ok: V9.2: ward com WARD_DEV_SOCKET_DIR: nenhum arquivo do Ward
+ok: V9.2: ward-nm com WARD_DEV_DIR: recusado (saiu 2)
+ok: V9.2: ward-nm com WARD_DEV_DIR: mensagem
+ok: V9.2: ward-nm com WARD_DEV_DIR: nenhum arquivo do Ward
+ok: V9.2: ward-app com a ponte de teste: recusado (saiu 2)
+ok: V9.2: ward-app com a ponte de teste: mensagem
+ok: V9.2: ward-app com a ponte de teste: nenhum arquivo do Ward
+ok: V9.2: wardd com WARD_DEV_DBUS_SISTEMA (sem exceção): recusado (saiu 2)
+ok: V9.2: wardd com WARD_DEV_DBUS_SISTEMA (sem exceção): mensagem
+ok: V9.2: wardd com WARD_DEV_DBUS_SISTEMA (sem exceção): nenhum arquivo do Ward
+ok: o wardd de release não tem nenhum WARD_DEV_
+ok: política: outro arquivo com NativeMessagingUserLevelHosts: recusado (saiu 2)
+ok: política: outro arquivo com NativeMessagingUserLevelHosts: mensagem
+ok: política: outro arquivo com NativeMessagingUserLevelHosts: nenhum arquivo do Ward
+ok: política: outro arquivo com ExtensionSettings: recusado (saiu 2)
+ok: política: outro arquivo com ExtensionSettings: mensagem
+ok: política: outro arquivo com ExtensionSettings: nenhum arquivo do Ward
+ok: política: nome escondido com escape \u: recusado (saiu 2)
+ok: política: nome escondido com escape \u: mensagem
+ok: política: nome escondido com escape \u: nenhum arquivo do Ward
+ok: política: arquivo oculto também conta: recusado (saiu 2)
+ok: política: arquivo oculto também conta: mensagem
+ok: política: arquivo oculto também conta: nenhum arquivo do Ward
+ok: política: outro arquivo sem os nomes do Ward não impede
+ok: política: o outro arquivo ficou intacto
+ok: wardd que não é ELF: recusado (saiu 2)
+ok: wardd que não é ELF: mensagem
+ok: wardd que não é ELF: nenhum arquivo do Ward
+ok: ward por link simbólico: recusado (saiu 2)
+ok: ward por link simbólico: mensagem
+ok: ward por link simbólico: nenhum arquivo do Ward
+ok: artefato ausente: recusado (saiu 2)
+ok: artefato ausente: mensagem
+ok: artefato ausente: nenhum arquivo do Ward
+ok: EXTENSAO_ID vazio: recusado (saiu 2)
+ok: EXTENSAO_ID vazio: mensagem
+ok: EXTENSAO_ID vazio: nenhum arquivo do Ward
+ok: EXTENSAO_ID em maiúsculas: recusado (saiu 2)
+ok: EXTENSAO_ID em maiúsculas: mensagem
+ok: EXTENSAO_ID em maiúsculas: nenhum arquivo do Ward
+ok: EXTENSAO_ID com 31 letras: recusado (saiu 2)
+ok: EXTENSAO_ID com 31 letras: mensagem
+ok: EXTENSAO_ID com 31 letras: nenhum arquivo do Ward
+ok: EXTENSAO_ID com aspas (injeção no JSON): recusado (saiu 2)
+ok: EXTENSAO_ID com aspas (injeção no JSON): mensagem
+ok: EXTENSAO_ID com aspas (injeção no JSON): nenhum arquivo do Ward
+ok: EXTENSAO_ID de outra extensão: recusado (saiu 2)
+ok: EXTENSAO_ID de outra extensão: mensagem
+ok: EXTENSAO_ID de outra extensão: nenhum arquivo do Ward
+ok: pacote com id que não é o da chave: recusado (saiu 2)
+ok: pacote com id que não é o da chave: mensagem
+ok: pacote com id que não é o da chave: nenhum arquivo do Ward
+ok: pacote com versão fora do formato: recusado (saiu 2)
+ok: pacote com versão fora do formato: mensagem
+ok: pacote com versão fora do formato: nenhum arquivo do Ward
+ok: pacote ausente: recusado (saiu 2)
+ok: pacote ausente: mensagem
+ok: pacote ausente: nenhum arquivo do Ward
+ok: PREFIX=/opt/ward: recusado (saiu 2)
+ok: PREFIX=/opt/ward: mensagem
+ok: PREFIX=/opt/ward: nenhum arquivo do Ward
+ok: PREFIX=/usr/local/../tmp: recusado (saiu 2)
+ok: PREFIX=/usr/local/../tmp: mensagem
+ok: PREFIX=/usr/local/../tmp: nenhum arquivo do Ward
+ok: DESTDIR por link: recusado (saiu 2)
+ok: DESTDIR por link: mensagem
+ok: DESTDIR por link: nenhum arquivo do Ward
+ok: DESTDIR por link: nada no alvo do link
+ok: DESTDIR com ..: recusado (saiu 2)
+ok: DESTDIR com ..: mensagem
+ok: DESTDIR com ..: nenhum arquivo do Ward
+ok: usr/local/bin por link dentro do DESTDIR: recusado (saiu 2)
+ok: usr/local/bin por link dentro do DESTDIR: mensagem
+ok: usr/local/bin por link dentro do DESTDIR: nenhum arquivo do Ward
+ok: pasta-link: nada escrito no alvo
+ok: DESTDIR relativo: recusado
+ok: DESTDIR relativo: não sai 0
+ok: make install no sistema sem root: recusa
+ok: make install no sistema sem root: não sai 0
+ok: make uninstall no sistema sem root: recusa
+ok: make uninstall no sistema sem root: não sai 0
+==> 2. Contêiner com systemd (root só dentro dele)
+ok: systemd de pé
+ok: o systemd lê /usr/local/lib/systemd/system
+ok: V9.11 gid >= 1000: recusado
+ok: V9.11 gid >= 1000: mensagem
+ok: V9.11 gid >= 1000: nenhum arquivo do Ward (nem o setgid)
+ok: V9.11 com membro: recusado
+ok: V9.11 com membro: mensagem
+ok: V9.11 com membro: nenhum arquivo do Ward (nem o setgid)
+ok: V9.11 com senha no gshadow: recusado
+ok: V9.11 com senha no gshadow: mensagem
+ok: V9.11 com senha no gshadow: nenhum arquivo do Ward (nem o setgid)
+ok: V9.11 com administrador no gshadow: recusado
+ok: V9.11 com administrador no gshadow: mensagem
+ok: V9.11 com administrador no gshadow: nenhum arquivo do Ward (nem o setgid)
+ok: V9.11 outro grupo com o mesmo gid: recusado
+ok: V9.11 outro grupo com o mesmo gid: mensagem
+ok: V9.11 outro grupo com o mesmo gid: nenhum arquivo do Ward (nem o setgid)
+ok: V9.11 grupo primário de um usuário: recusado
+ok: V9.11 grupo primário de um usuário: mensagem
+ok: V9.11 grupo primário de um usuário: nenhum arquivo do Ward (nem o setgid)
+ok: V9.11 gid numa faixa do /etc/subgid: recusado
+ok: V9.11 gid numa faixa do /etc/subgid: mensagem
+ok: V9.11 gid numa faixa do /etc/subgid: nenhum arquivo do Ward (nem o setgid)
+ok: V9.11 grupo novo cairia no /etc/subgid: recusado
+ok: V9.11 grupo novo cairia no /etc/subgid: mensagem
+ok: V9.11 grupo novo cairia no /etc/subgid: nenhum arquivo do Ward (nem o setgid)
+ok: V9.11 o grupo recém-criado e recusado foi apagado
+ok: V9.11 pam_group (group.conf) dá o grupo no login: recusado
+ok: V9.11 pam_group (group.conf) dá o grupo no login: mensagem
+ok: V9.11 pam_group (group.conf) dá o grupo no login: nenhum arquivo do Ward (nem o setgid)
+ok: V9.11 sudoers.d com sudo -g ward-nm: recusado
+ok: V9.11 sudoers.d com sudo -g ward-nm: mensagem
+ok: V9.11 sudoers.d com sudo -g ward-nm: nenhum arquivo do Ward (nem o setgid)
+ok: V9.11 sudoers por @include com #<gid>: recusado
+ok: V9.11 sudoers por @include com #<gid>: mensagem
+ok: V9.11 sudoers por @include com #<gid>: nenhum arquivo do Ward (nem o setgid)
+ok: V9.11 nsswitch com subid: sss: recusado
+ok: V9.11 nsswitch com subid: sss: mensagem
+ok: V9.11 nsswitch com subid: sss: nenhum arquivo do Ward (nem o setgid)
+ok: V9.11 nsswitch com sudoers: files ldap: recusado
+ok: V9.11 nsswitch com sudoers: files ldap: mensagem
+ok: V9.11 nsswitch com sudoers: files ldap: nenhum arquivo do Ward (nem o setgid)
+ok: V9.11 nsswitch com group: files sss: recusado
+ok: V9.11 nsswitch com group: files sss: mensagem
+ok: V9.11 nsswitch com group: files sss: nenhum arquivo do Ward (nem o setgid)
+ok: V9.11 nsswitch com initgroups: files ldap: recusado
+ok: V9.11 nsswitch com initgroups: files ldap: mensagem
+ok: V9.11 nsswitch com initgroups: files ldap: nenhum arquivo do Ward (nem o setgid)
+ok: V9.11 (51a) os grupos recém-criados e recusados foram apagados
+ok: política conflitante (NativeMessagingUserLevelHosts em outro arquivo): recusada
+ok: política conflitante: mensagem
+ok: política conflitante: nenhum arquivo do Ward
+ok: política conflitante: nenhum grupo criado
+ok: V9.2: wardd com modo-teste recusado
+ok: V9.2: mensagem
+ok: V9.2: nenhum arquivo do Ward
+ok: V9.2: nenhum grupo criado
+ok: make install (root, sem DESTDIR) saiu 0
+ok: V9.1: donos e modos de arvore.txt (root:root, ward-app e ward-nm root:<grupo> 2755)
+ok: V9.6: manifesto de native messaging do root
+ok: V9.6: allowed_origins só com o id
+ok: Fase 51a: política com NativeMessagingUserLevelHosts false
+ok: Fase 51a: marca dos grupos criados (nome e gid)
+ok: Fase 51a: marca root 0644
+ok: V9.11 ward-app é de sistema (gid 997)
+ok: V9.11 ward-app sem membros
+ok: V9.11 ward-app com '!' no gshadow
+ok: V9.11 ward-app sem administradores nem membros no gshadow
+ok: V9.11 ward-app fora das faixas do /etc/subgid
+ok: V9.11 ward-nm é de sistema (gid 996)
+ok: V9.11 ward-nm sem membros
+ok: V9.11 ward-nm com '!' no gshadow
+ok: V9.11 ward-nm sem administradores nem membros no gshadow
+ok: V9.11 ward-nm fora das faixas do /etc/subgid
+ok: V9.11 newgrp ward-app pelo uid 1000 falha
+ok: V9.11 sg ward-app pelo uid 1000 falha
+ok: V9.11 o uid 1000 não ganha o gid de ward-app
+ok: V9.7 wardd@1000.socket habilitado
+ok: V9.7 wardd@1000.socket ativo
+ok: V9.7 serviço ainda parado (sobe na primeira conexão)
+ok: V9.7 /run/ward root:root 0755 (tmpfiles.d)
+ok: V9.7 /run/ward/1000 root:root 0755
+ok: V9.7 socket do uid, 0600
+ok: V9.11 systemctl show: NoNewPrivileges=no
+ok: V9.11 systemctl show: RestrictSUIDSGID=no
+ok: V9.11 systemd-analyze security: NoNewPrivileges= não ligado
+ok: V9.11 systemd-analyze security: RestrictSUIDSGID= não ligado
+ok: V9.7 a primeira conexão sobe o wardd e ele responde
+ok: V9.7 wardd roda com o uid
+ok: D57 wardd sem no_new_privs
+ok: V9.4 core 0
+ok: D62 LimitMEMLOCK=infinity
+ok: V9.4 /proc/<wardd>/environ do root (dumpable 0)
+ok: V9.4 o uid 1000 não lê o environ do wardd
+ok: V9.4 o uid 1000 não abre o mem do wardd
+ok: V9.4 o uid 1000 não muda o ambiente do gerente do sistema
+ok: V9.4 o gerente do sistema continua sem LD_PRELOAD
+ok: V9.4 gerente do usuário (user@1000.service) no ar
+ok: V9.4 o atacante põe LD_PRELOAD no gerente do usuário
+ok: V9.4 o gerente do usuário tem o LD_PRELOAD
+ok: V9.4 depois de morto, a conexão sobe outro wardd
+ok: V9.4 o wardd novo não tem LD_PRELOAD (environ lido como root: HOME INVOCATION_ID JOURNAL_STREAM LANG LISTEN_FDNAMES LISTEN_FDS LISTEN_PID LOGNAME MEMORY_PRESSURE_WATCH MEMORY_PRESSURE_WRITE PATH SHELL SYSTEMD_EXEC_PID USER )
+ok: V9.4 a lib do atacante não está no wardd
+ok: V9.4 o wardd novo também é não-dumpable
+ok: o ward-app aberto pelo usuário sai (pai não é o daemon)
+ok: V9.11 o daemon abriu o ward-app setgid e ele recebeu o papel app
+ok: V9.11 o app largou o grupo depois de conectar
+ok: V9.11 o app ficou não-dumpable
+ok: V9.11 o exec aplicou o setgid (units sem no_new_privs, D57)
+ok: V9.11 o daemon não recusou o papel app ao app que ele abriu
+ok: V9.3 o wardd copiado para ~/bin não sobe sem o systemd
+ok: V9.3 o wardd copiado não fica no ar
+ok: V9.3 servidor falso do uid escutando em /run/user/1000/ward
+ok: V9.3 ward destravar não sai 0
+ok: V9.3 ward destravar não pede a senha
+ok: V9.3 o servidor falso não recebeu conexão nem byte
+ok: o wardd instalado destrava o cofre de teste
+ok: reinstalar por cima sai 0 (grupos já existentes conferem)
+ok: reinstalar mantém o socket ativo
+ok: depois de reinstalar, o wardd responde
+ok: make uninstall saiu 0
+ok: V9.10 nenhum arquivo do Ward
+ok: V9.10 /usr/local/lib/ward apagada
+ok: V9.10 /usr/local/share/ward apagada
+ok: V9.10 /run/ward apagada
+ok: V9.10 grupos apagados
+ok: V9.10 nenhuma unit wardd@ carregada
+ok: V9.10 wardd@1000.socket não está mais habilitado
+ok: V9.10 nenhum link em sockets.target.wants
+ok: V9.10 o cofre do usuário intacto
+ok: uninstall de novo sai 0
+ok: grupo do administrador: aceito
+ok: grupo do administrador: fora da marca
+ok: uninstall: ward-app do administrador fica (mesmo gid)
+ok: uninstall: avisa que ficou
+ok: uninstall: ward-nm (criado pelo Ward) apagado
+ok: uninstall: /usr/local/lib/ward (com a marca) apagada
+teste-install (contêiner): tudo ok
+teste-install: tudo ok

@@ -1,0 +1,29 @@
+origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
+/home/jeffersonoliveira/.cargo/bin/cargo build --quiet --locked -p wardd --bin wardd --target-dir target/sem-modo-teste
+/home/jeffersonoliveira/.cargo/bin/cargo build --quiet --locked -p ward --bin ward --target-dir target/sem-modo-teste
+/home/jeffersonoliveira/.cargo/bin/cargo build --quiet --locked -p ward-nm --bin ward-nm --target-dir target/sem-modo-teste
+/home/jeffersonoliveira/.cargo/bin/cargo build --quiet --locked -p ward-app-nucleo --example partida-conteiner --target-dir target/sem-modo-teste
+/home/jeffersonoliveira/.cargo/bin/cargo build --quiet --locked -p wardd --features modo-teste --bin wardd
+/home/jeffersonoliveira/.cargo/bin/cargo build --quiet --locked -p ward-nm --features modo-teste --bin ward-nm
+dev/testes/politica-chrome.sh target/debug/wardd target/debug/ward-nm \
+	target/sem-modo-teste/debug/ward target/sem-modo-teste/debug/wardd \
+	target/sem-modo-teste/debug/ward-nm target/sem-modo-teste/debug/examples/partida-conteiner
+ok: a política gerada pelo instalar.sh tem NativeMessagingUserLevelHosts false
+==> 1. precedência sem política (controle)
+    {"sistema": false, "usuario": true}
+ok: sem a política, o manifesto plantado no perfil vence (o ataque da auditoria)
+==> 2. precedência com a política do Ward
+    {"sistema": true, "usuario": false}
+ok: com a política, o manifesto plantado no perfil não é chamado
+ok: com a política, o manifesto do sistema é chamado
+==> 3. ataque da auditoria sem política (controle, fora do bwrap)
+    {"atacante_rodou": true, "sistema_rodou": false, "respostas": {"sugerir http://localhost:8081": "sugestoes", "preencher acme-wp-dev": "preenchimento", "preencher acme-wp-prod": "preenchimento", "sugerir http://localhost:8083": "sugestoes", "preencher acme-totp-dev": "preenchimento", "sugerir http://localhost:8084": "sugestoes", "preencher delta-redir": "preenchimento"}, "com_segredo": 4}
+ok: sem a política, o host do atacante faz exec do ward-nm e tira senhas (controle)
+ok: roubo-sem-politica/wardd.log sem padrão de .dev/variacoes.txt
+ok: roubo-sem-politica/chrome.log sem padrão de .dev/variacoes.txt
+==> 4. ataque da auditoria com a política do Ward
+    {"atacante_rodou": false, "sistema_rodou": true, "respostas": {}, "com_segredo": 0}
+ok: com a política, o host do atacante (no perfil) nem roda
+ok: com a política, o Chrome abre o host do sistema
+ok: com a política, nenhuma senha sai
+teste-politica-chrome: tudo ok

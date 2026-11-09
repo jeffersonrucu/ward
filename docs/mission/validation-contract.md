@@ -1140,16 +1140,16 @@ O QA usa o Chrome em modo de teste (D7) e confere a aparência contra o frame.
 
 ## Milestone 9 — Instalação
 
-- [ ] V9.1 — Dado `make install DESTDIR=<staging>`, então a árvore tem exatamente os
+- [x] V9.1 — Dado `make install DESTDIR=<staging>`, então a árvore tem exatamente os
   caminhos de D18, e instalada com `sudo` todo arquivo é root:root sem escrita para
   grupo e outros.
-- [ ] V9.2 — (SEG) Dado um artefato com `modo-teste`, quando `make install`, então recusa
+- [x] V9.2 — (SEG) Dado um artefato com `modo-teste`, quando `make install`, então recusa
   (D7).
-- [ ] V9.3 — (SEG) Dado o `wardd` instalado, quando um `wardd` copiado para `~/bin`
+- [x] V9.3 — (SEG) Dado o `wardd` instalado, quando um `wardd` copiado para `~/bin`
   sobe e escuta onde puder (`/run/user/<uid>/`, `~/.local/`, um caminho em
   `WARD_SOCKET`), então `ward destravar` recusa antes de pedir a senha, porque só aceita
   o socket em `/run/ward/<uid>/` com pasta do root e par de uid 0 (D46) — cobre S5.
-- [ ] V9.4 — (SEG) Dadas as units instaladas (D46), quando o atacante roda `systemctl
+- [x] V9.4 — (SEG) Dadas as units instaladas (D46), quando o atacante roda `systemctl
   --user set-environment LD_PRELOAD=<lib>` e força o `wardd` a subir de novo (mata o
   processo e conecta), então o `wardd` do sistema não herda a variável
   (`/proc/<pid>/environ` lido como root no roteiro não a traz) e a lib não é carregada;
@@ -1157,7 +1157,7 @@ O QA usa o Chrome em modo de teste (D7) e confere a aparência contra o frame.
 - [ ] V9.5 — (SEG) Dada a política do Chrome instalada, então a extensão aparece como
   instalada pela organização e não pode ser desativada nem removida, e carregar outra
   extensão com o mesmo ID pelo modo desenvolvedor é bloqueado (roteiro do usuário).
-- [ ] V9.6 — (SEG) O manifesto de native messaging tem `allowed_origins` só com o ID da
+- [x] V9.6 — (SEG) O manifesto de native messaging tem `allowed_origins` só com o ID da
   extensão e `path` para `/usr/local/lib/ward/ward-nm`, dono root.
 - [ ] V9.7 — Dado o boot e o login do usuário, então `wardd@<uid>.socket` está ativo,
   `/run/ward/<uid>/` é root:root 0755 com `wardd.sock` 0600 do usuário, a primeira
@@ -1166,11 +1166,11 @@ O QA usa o Chrome em modo de teste (D7) e confere a aparência contra o frame.
 - [ ] V9.8 — (SEG) Depois de instalar, `~/.ssh`, `/etc/ssh/ssh_config*` e o
   `SSH_AUTH_SOCK` de `systemctl --user show-environment` estão como antes, e `git push`
   com a chave pessoal funciona como antes (R19; roteiro do usuário).
-- [ ] V9.9 — O `.deb` tem a mesma lista de arquivos do staging (`dpkg -c`) e declara a
+- [x] V9.9 — O `.deb` tem a mesma lista de arquivos do staging (`dpkg -c`) e declara a
   dependência de `sshpass`; instala e desinstala num contêiner `ubuntu:24.04`.
-- [ ] V9.10 — `sudo make uninstall` remove os arquivos instalados e não toca em
+- [x] V9.10 — `sudo make uninstall` remove os arquivos instalados e não toca em
   `~/.local/share/ward/`.
-- [ ] V9.11 — (SEG) Dado `make install` num contêiner `ubuntu:24.04`, então `ward-app`
+- [x] V9.11 — (SEG) Dado `make install` num contêiner `ubuntu:24.04`, então `ward-app`
   e `ward-nm` são grupos de sistema (gid < 1000), fora das faixas do `/etc/subgid`,
   sem membros, com `!` no `gshadow`; quando o grupo já existe com membro, com senha no
   `gshadow` ou com gid ≥ 1000, então a instalação recusa e não instala o binário

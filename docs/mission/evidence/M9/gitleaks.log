@@ -1,0 +1,22 @@
+/home/jeffersonoliveira/projetos/cofre/.dev/ferramentas/bin/gitleaks dir --config dev/gitleaks-arvore.toml --redact --verbose --no-banner --exit-code 1 .
+7:02PM INF scanned ~6921244 bytes (6.92 MB) in 346ms
+7:02PM INF no leaks found
+/home/jeffersonoliveira/projetos/cofre/.dev/ferramentas/bin/gitleaks git --staged --pre-commit --config .gitleaks.toml --redact --verbose --no-banner --exit-code 1 .
+7:02PM INF 0 commits scanned.
+7:02PM INF scanned ~0 bytes (0) in 184ms
+7:02PM INF no leaks found
+/home/jeffersonoliveira/projetos/cofre/.dev/ferramentas/bin/gitleaks git --config .gitleaks.toml --redact --verbose --no-banner --exit-code 1 .
+7:02PM INF 158 commits scanned.
+7:02PM INF scanned ~7208271 bytes (7.21 MB) in 2.19s
+7:02PM INF no leaks found
+/home/jeffersonoliveira/projetos/cofre/.dev/ferramentas/bin/gitleaks dir --config dev/gitleaks-extra-arvore.toml --redact --verbose --no-banner --exit-code 1 --max-archive-depth 3 .
+7:02PM INF scanned ~128505004 bytes (128.51 MB) in 1.08s
+7:02PM INF no leaks found
+/home/jeffersonoliveira/projetos/cofre/.dev/ferramentas/bin/gitleaks git --staged --pre-commit --config dev/gitleaks-extra.toml --redact --verbose --no-banner --exit-code 1 --max-archive-depth 3 .
+7:02PM INF 0 commits scanned.
+7:02PM INF scanned ~0 bytes (0) in 3.32ms
+7:02PM INF no leaks found
+/home/jeffersonoliveira/projetos/cofre/.dev/ferramentas/bin/gitleaks git --config dev/gitleaks-extra.toml --redact --verbose --no-banner --exit-code 1 --max-archive-depth 3 .
+7:02PM INF 158 commits scanned.
+7:02PM INF scanned ~7208271 bytes (7.21 MB) in 807ms
+7:02PM INF no leaks found

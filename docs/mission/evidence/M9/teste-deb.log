@@ -1,0 +1,171 @@
+origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
+/home/jeffersonoliveira/.cargo/bin/cargo build --quiet --locked -p wardd --bin wardd --example wardd-cliente-teste --target-dir target/sem-modo-teste
+/home/jeffersonoliveira/.cargo/bin/cargo build --quiet --locked -p ward --bin ward --target-dir target/sem-modo-teste
+/home/jeffersonoliveira/.cargo/bin/cargo build --quiet --locked -p ward-nm --bin ward-nm --target-dir target/sem-modo-teste
+/home/jeffersonoliveira/.cargo/bin/cargo build --quiet --locked -p ward-app-nucleo --example partida-conteiner --target-dir target/sem-modo-teste
+/home/jeffersonoliveira/.cargo/bin/cargo build --quiet --locked -p wardd --features modo-teste --bin wardd
+dev/testes/deb.sh
+==> 1. make deb (host, sem root)
+ok: make deb gera ward_<versão>_<arq>.deb
+ok: make deb imprime o sha256
+ok: V9.9: dpkg -c tem a mesma lista do staging
+ok: V9.9: e a mesma de instalacao/arvore.txt (28 caminhos)
+ok: todo caminho do pacote é root/root
+ok: nenhum bit setuid/setgid/sticky no pacote
+ok: nada com escrita para grupo e outros
+ok: nenhum link no pacote
+ok: ward-app vai 0755 no pacote (2755 só pelo statoverride)
+ok: ward-nm vai 0755 no pacote
+ok: staging tem ward-app 2755 (o modo da árvore)
+ok: V9.9: Depends declara sshpass
+ok: Depends declara openssh-client e systemd
+ok: Package e Version
+ok: binários do pacote iguais aos artefatos
+ok: conteúdo do pacote igual ao staging
+ok: manifesto de native messaging com o id
+ok: DEBIAN/preinst executável e sem erro de sintaxe
+ok: DEBIAN/postinst executável e sem erro de sintaxe
+ok: DEBIAN/prerm executável e sem erro de sintaxe
+ok: DEBIAN/postrm executável e sem erro de sintaxe
+ok: preinst tem as funções de instalacao/grupos.sh
+ok: preinst confere as outras políticas do Chrome (Fase 51a)
+ok: postrm tem a marca dos grupos (Fase 51a)
+ok: postinst avisa dos manifestos do perfil (Fase 51a)
+ok: preinst sem marca de modelo
+ok: postinst sem marca de modelo
+ok: prerm sem marca de modelo
+ok: postrm sem marca de modelo
+ok: política do pacote com NativeMessagingUserLevelHosts false (Fase 51a)
+ok: preinst confere as pastas do sistema
+ok: sem conffiles (a política e o manifesto saem com o pacote)
+==> 1b. Recusas (nenhuma deixa .deb)
+ok: V9.2: wardd com modo-teste: recusado (saiu 2)
+ok: V9.2: wardd com modo-teste: mensagem
+ok: V9.2: wardd com modo-teste: nenhum .deb
+ok: EXTENSAO_ID de outra extensão: recusado (saiu 2)
+ok: EXTENSAO_ID de outra extensão: mensagem
+ok: EXTENSAO_ID de outra extensão: nenhum .deb
+ok: EXTENSAO_ID vazio: recusado (saiu 2)
+ok: EXTENSAO_ID vazio: mensagem
+ok: EXTENSAO_ID vazio: nenhum .deb
+ok: DEB_DIR por link: recusado (saiu 2)
+ok: DEB_DIR por link: mensagem
+ok: DEB_DIR por link: nenhum .deb
+ok: DEB_DIR por link: nada no alvo
+ok: DEB_DIR relativo: recusado
+ok: DEB_DIR relativo: não sai 0
+==> 1c. make extensao-crx: chave errada, chave aberta e chave por link são recusadas
+ok: extensao-crx: outra chave (outro id) recusada
+ok: extensao-crx: outra chave não sai 0
+ok: extensao-crx: nenhum pacote com a chave errada
+ok: extensao-crx: chave 0644 recusada
+ok: extensao-crx: chave por link recusada
+ok: extensao-crx: link dentro do dist recusado
+==> 2. Contêiner com systemd (root só dentro dele)
+ok: systemd de pé
+ok: V9.8 retrato inicial com o agente SSH do usuário
+ok: sshpass ausente no começo
+ok: V9.9 dpkg -i sem sshpass não sai 0
+ok: V9.9 a falha cita a dependência de sshpass
+ok: V9.9 o pacote não fica configurado
+ok: desempacotado e não configurado: ward-app sem setgid (0755 root:root)
+ok: desempacotado e não configurado: ward-nm sem setgid (0755 root:root)
+ok: dpkg -r do pacote não configurado
+ok: dpkg -r: nenhum arquivo do Ward
+ok: dpkg -r: nenhum override
+ok: dpkg -r: grupos apagados
+ok: sshpass instalado do pacote local
+ok: V9.11 (.deb) gid >= 1000: recusado
+ok: V9.11 (.deb) gid >= 1000: mensagem do preinst
+ok: V9.11 (.deb) gid >= 1000: nenhum arquivo do Ward (nem o setgid)
+ok: V9.11 (.deb) gid >= 1000: pacote não instalado
+ok: V9.11 (.deb) gid >= 1000: nenhum override
+ok: V9.11 (.deb) com membro: recusado
+ok: V9.11 (.deb) com membro: mensagem do preinst
+ok: V9.11 (.deb) com membro: nenhum arquivo do Ward (nem o setgid)
+ok: V9.11 (.deb) com membro: pacote não instalado
+ok: V9.11 (.deb) com membro: nenhum override
+ok: V9.11 (.deb) com senha no gshadow: recusado
+ok: V9.11 (.deb) com senha no gshadow: mensagem do preinst
+ok: V9.11 (.deb) com senha no gshadow: nenhum arquivo do Ward (nem o setgid)
+ok: V9.11 (.deb) com senha no gshadow: pacote não instalado
+ok: V9.11 (.deb) com senha no gshadow: nenhum override
+ok: V9.11 (.deb) grupo primário de um usuário: recusado
+ok: V9.11 (.deb) grupo primário de um usuário: mensagem do preinst
+ok: V9.11 (.deb) grupo primário de um usuário: nenhum arquivo do Ward (nem o setgid)
+ok: V9.11 (.deb) grupo primário de um usuário: pacote não instalado
+ok: V9.11 (.deb) grupo primário de um usuário: nenhum override
+ok: V9.11 (.deb) pam_group (group.conf, Fase 51a): recusado
+ok: V9.11 (.deb) pam_group (group.conf, Fase 51a): mensagem do preinst
+ok: V9.11 (.deb) pam_group (group.conf, Fase 51a): nenhum arquivo do Ward (nem o setgid)
+ok: V9.11 (.deb) pam_group (group.conf, Fase 51a): pacote não instalado
+ok: V9.11 (.deb) pam_group (group.conf, Fase 51a): nenhum override
+ok: V9.11 (.deb) nsswitch com group: files sss (Fase 51b): recusado
+ok: V9.11 (.deb) nsswitch com group: files sss (Fase 51b): mensagem do preinst
+ok: V9.11 (.deb) nsswitch com group: files sss (Fase 51b): nenhum arquivo do Ward (nem o setgid)
+ok: V9.11 (.deb) nsswitch com group: files sss (Fase 51b): pacote não instalado
+ok: V9.11 (.deb) nsswitch com group: files sss (Fase 51b): nenhum override
+ok: política conflitante: dpkg -i recusado
+ok: política conflitante: mensagem do preinst
+ok: política conflitante: nenhum arquivo do Ward
+ok: política conflitante: nenhum grupo
+ok: política conflitante: o outro arquivo intacto
+ok: V9.9 dpkg -i (com SUDO_UID) sai 0
+ok: V9.9 pacote instalado
+ok: postinst liga o socket do SUDO_UID
+ok: dpkg -L tem os 11 arquivos de arvore.txt
+ok: donos e modos de arvore.txt (ward-app e ward-nm root:<grupo> 2755)
+ok: overrides registrados
+ok: manifesto de native messaging com o id
+ok: Fase 51a: política com NativeMessagingUserLevelHosts false
+ok: Fase 51a: marca dos grupos criados pelo preinst
+ok: V9.11 (.deb) ward-app é de sistema (gid 997)
+ok: V9.11 (.deb) ward-app sem membros
+ok: V9.11 (.deb) ward-app com '!' no gshadow
+ok: V9.11 (.deb) ward-nm é de sistema (gid 996)
+ok: V9.11 (.deb) ward-nm sem membros
+ok: V9.11 (.deb) ward-nm com '!' no gshadow
+ok: V9.11 (.deb) sg ward-app pelo uid 1000 falha
+ok: V9.7 wardd@1000.socket habilitado
+ok: V9.7 wardd@1000.socket ativo
+ok: V9.7 /run/ward root:root 0755
+ok: V9.7 /run/ward/1000 root:root 0755
+ok: V9.7 socket do uid, 0600
+ok: V9.7 a primeira conexão sobe o wardd instalado pelo .deb
+ok: V9.7 wardd roda com o uid
+ok: D57 wardd sem no_new_privs
+ok: V9.4 wardd não-dumpable (/proc do root)
+ok: V9.8 pasta do ssh do usuário, /etc/ssh, ssh -G e o ambiente do usuário iguais depois de instalar
+ok: reinstalar o .deb sai 0
+ok: reinstalar: ward-app continua root:ward-app 2755
+ok: reinstalar: ward-nm continua root:ward-nm 2755
+ok: reinstalar: socket ativo
+ok: reinstalar: o wardd responde
+ok: sem SUDO_UID: dpkg -i sai 0
+ok: sem SUDO_UID: o postinst diz como ligar o socket
+ok: WARD_UID=0: dpkg -i sai 0
+ok: WARD_UID=0: recusado pelo postinst
+ok: WARD_UID=0: wardd@0.socket não ligado
+ok: V9.10 dpkg -r sai 0
+ok: V9.10 nenhum arquivo do Ward
+ok: V9.10 /usr/local/lib/ward apagada
+ok: V9.10 /usr/local/share/ward apagada
+ok: V9.10 /run/ward apagada
+ok: V9.10 grupos apagados
+ok: V9.10 nenhum override
+ok: V9.10 nenhuma unit wardd@ carregada
+ok: V9.10 nenhum link em sockets.target.wants
+ok: V9.10 o cofre do usuário intacto
+ok: V9.8 SSH igual depois de remover
+ok: dpkg -P depois do -r sai 0
+ok: dpkg -P: pacote fora do banco do dpkg
+ok: dpkg -P: o cofre do usuário intacto
+ok: grupo do administrador: dpkg -i sai 0
+ok: grupo do administrador: aceito pelo preinst
+ok: grupo do administrador: dpkg -r sai 0
+ok: dpkg -r: ward-nm do administrador fica (mesmo gid)
+ok: dpkg -r: avisa que ficou
+ok: dpkg -r: ward-app (criado pelo preinst) apagado
+ok: dpkg -r: /usr/local/lib/ward (com a marca) apagada
+teste-deb (contêiner): tudo ok
+teste-deb: tudo ok

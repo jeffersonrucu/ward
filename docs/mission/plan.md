@@ -1196,6 +1196,15 @@ aprovada depois da Fase 51b; segue o QA.
     contêineres estão sem rodar); ficam para o QA do M9.
   - O S1 do escopo não cita a exceção. O V9.11 não lista os casos de NSS.
   - Um `nsswitch.conf` sem a linha `group:` não é recusado.
+QA do M9 (2026-11-09): **aprovado**. `teste-install` deu 238 ok, `teste-deb` 158 ok,
+`teste-politica-chrome` 10 ok e `gitleaks` 0. Marquei V9.1–V9.4, V9.6 e V9.9–V9.11.
+V9.5, V9.7 e V9.8 ficam para o roteiro do usuário, no host
+(`docs/mission/evidence/M9/roteiro-usuario.md`).
+`conferir_host` contra os manifestos desta máquina: 1Password e KeePassXC dão ok; o
+Claude in Chrome (host no home) dá "NÃO COPIE".
+Baixos de documentação ainda abertos:
+- o heredoc do `conferir_host` vem indentado no texto cru;
+- um `path` em `/bin/...` dá "/bin é um link", e falta dizer que `/usr/bin/...` passa.
 
 ## Milestone 10 — Migração e saída do KeePassXC
 Contrato: V10.1–V10.4
