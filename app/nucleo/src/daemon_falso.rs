@@ -4,8 +4,10 @@
 //!
 //! Serve para a interface ser conferida no Chrome pela ponte de teste antes do `wardd`
 //! da Fase 22. Recebe o corpo do quadro, lê com `decodificar_pedido` no papel app, monta
-//! a resposta com `ItemLista::de_entrada` / `DetalheEntrada::de_entrada` (sem segredo
-//! por construção) e devolve o corpo de `codificar_resposta`. Atende `estado`, `lista`,
+//! a resposta com `ItemLista::de_entrada` (com o resumo do papel app, D65 c) /
+//! `DetalheEntrada::de_entrada` (sem segredo por construção) e devolve o corpo de
+//! `codificar_resposta`. O segredo do `revelar`/`copiar`/`totp` sai por
+//! `Alvo::segredo_em`, o mesmo do `wardd` (D65 b). Atende `estado`, `lista`,
 //! `detalhe`, `copiar`, `revelar`, `totp`, `emitir_token` (Fase 34) e `salvar_entrada` (Fase 33, com a mesma
 //! regra do `wardd`: `Rascunho::validar`, `conferir_no_cofre`, nível "com aprovação" na
 //! entrada nova e mantido na editada) e `mudar_nivel` (Fase 35, a mesma regra do
@@ -21,9 +23,7 @@
 use zeroize::Zeroizing;
 
 use ward_core::configuracao::HashPin;
-use ward_core::entrada::{
-    Entrada, NivelAcesso, OrigemSegredo, Rascunho, Segredo as SegredoCore, TipoEntrada,
-};
+use ward_core::entrada::{Entrada, NivelAcesso, Rascunho, Segredo as SegredoCore, TipoEntrada};
 use ward_core::protocolo::{
     self, Alvo, DetalheEntrada, ErroResposta, ItemLista, Papel, Pedido, Resposta,
 };
@@ -142,18 +142,17 @@ impl DaemonFalso {
             },
             Pedido::Copiar { entrada, alvo } | Pedido::Revelar { entrada, alvo } => {
                 match self.entrada(&entrada) {
-                    Some(e) => match valor(e, &alvo) {
-                        Some(v) => Resposta::Segredo(SegredoCore::de_bytes(v.to_vec())),
+                    Some(e) => match alvo.segredo_em(e) {
+                        Some(v) => Resposta::Segredo(SegredoCore::de_bytes(v.expor().to_vec())),
                         None => Resposta::Erro(ErroResposta::CampoInexistente),
                     },
                     None => Resposta::Erro(ErroResposta::EntradaInexistente),
                 }
             }
             Pedido::Totp { entrada } => match self.entrada(&entrada) {
-                Some(e) => match valor(e, &Alvo::Campo("totp_semente".to_owned())) {
-                    Some(v) => {
-                        let semente = SegredoCore::de_bytes(v.to_vec());
-                        match Totp::de_semente(&semente).and_then(|t| t.codigo_agora()) {
+                Some(e) => match Alvo::Campo("totp_semente".to_owned()).segredo_em(e) {
+                    Some(semente) => {
+                        match Totp::de_semente(semente).and_then(|t| t.codigo_agora()) {
                             Ok(c) => Resposta::CodigoTotp {
                                 codigo: Zeroizing::new(c.codigo().to_owned()),
                                 restante: c.restante(),
@@ -257,33 +256,6 @@ impl DaemonFalso {
         self.entradas.sort_by(|a, b| a.nome().cmp(b.nome()));
         Ok(())
     }
-}
-
-/// Nome do segredo do tipo em `Entrada::segredos` a partir do identificador do
-/// protocolo.
-fn origem_do_campo(id: &str) -> Option<&'static str> {
-    Some(match id {
-        "senha" => "senha",
-        "totp_semente" => "semente TOTP",
-        "chave_privada" => "chave privada",
-        "passphrase" => "passphrase",
-        "token" => "token",
-        "secret_access_key" => "secret access key",
-        "session_token" => "session token",
-        "texto" => "texto",
-        _ => return None,
-    })
-}
-
-fn valor<'a>(e: &'a Entrada, alvo: &Alvo) -> Option<&'a [u8]> {
-    e.segredos().into_iter().find_map(|s| {
-        let bate = match (alvo, s.origem) {
-            (Alvo::Campo(id), OrigemSegredo::Campo(nome)) => origem_do_campo(id) == Some(nome),
-            (Alvo::Extra(x), OrigemSegredo::Extra(nome)) => x == nome,
-            _ => false,
-        };
-        bate.then(|| s.valor.expor())
-    })
 }
 
 impl Daemon for DaemonFalso {

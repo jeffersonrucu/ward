@@ -336,6 +336,54 @@ mod testes {
     }
 
     #[test]
+    fn ataque_d65_lista_sem_resumo_ou_com_segredo_no_resumo_e_recusada() {
+        // A lista do papel app traz o resumo de cada item (D65 c), sem segredo.
+        let mut falso = DaemonFalso::cheio();
+        let itens = lista(&mut falso).unwrap();
+        assert!(
+            itens
+                .iter()
+                .all(|i| i.resumo.is_some() && i.nivel.is_some())
+        );
+        let quadro = protocolo::codificar_pedido(Papel::App, &Pedido::Lista).unwrap();
+        let verdadeira = String::from_utf8(falso.trocar(&quadro).unwrap().to_vec()).unwrap();
+        for s in crate::daemon_falso::SEGREDOS {
+            assert!(!verdadeira.contains(s), "segredo na lista do app");
+        }
+        // A lista do agente (sem nível nem resumo) não serve ao app.
+        let do_agente: Vec<ItemLista> = itens
+            .iter()
+            .map(|i| ItemLista {
+                nivel: None,
+                resumo: None,
+                ..i.clone()
+            })
+            .collect();
+        let q = protocolo::codificar_resposta(Papel::Agente, &Resposta::Lista(do_agente))
+            .unwrap()
+            .to_vec();
+        assert_eq!(
+            lista(&mut Resposta1(q)).unwrap_err(),
+            ErroApp::RespostaInvalida
+        );
+        // Um "daemon" que enfia um segredo no resumo (campo secreto em `campos`, ou
+        // chave a mais): recusado inteiro, nada chega à interface.
+        let alvo = r#""resumo":{"#;
+        assert!(verdadeira.contains(alvo));
+        for troca in [
+            r#""resumo":{"campos":{"senha":"falso-PG:s3nha/01@#"},"segredos":[],"extras":0,"anexos":0},"x":{"#,
+            r#""resumo":{"valor":"ZmFsc28tUEc=","#,
+        ] {
+            let f = verdadeira.replacen(alvo, troca, 1).into_bytes();
+            assert_eq!(
+                lista(&mut Resposta1(f)).unwrap_err(),
+                ErroApp::RespostaInvalida,
+                "{troca}"
+            );
+        }
+    }
+
+    #[test]
     fn erros_do_daemon_tem_mensagem_fixa() {
         let nao = br#"{"v":1,"tipo":"erro","dados":{"codigo":"nao_autorizado","mensagem":"<img src=x> falso-PG:s3nha/01@#"}}"#.to_vec();
         let e = lista(&mut Resposta1(nao)).unwrap_err();

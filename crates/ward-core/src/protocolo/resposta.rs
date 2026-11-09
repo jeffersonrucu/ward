@@ -55,7 +55,44 @@ pub struct ItemLista {
     pub nivel: Option<NivelAcesso>,
     /// URL (`login`, `api`) ou host (`banco`, `servidor`, `smtp`, `ftp/sftp`).
     pub endereco: Option<String>,
+    /// Resumo para a 2ª linha e a busca do app (D65 c): `Some` só na lista do app, no
+    /// mesmo padrão do nível (D50). [`super::codificar_resposta`] recusa mandar ao
+    /// agente um item com resumo, e a leitura do agente recusa um item que o traga.
+    pub resumo: Option<ResumoItem>,
 }
+
+/// O que a lista do app leva além do cabeçalho (D65 c), para a tela montar a 2ª linha
+/// e a busca por usuário sem um `detalhe` por entrada. Sem segredo por construção: os
+/// mesmos campos de texto do [`DetalheEntrada`], só o identificador dos segredos
+/// preenchidos e a contagem de extras e anexos (nem o nome deles).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResumoItem {
+    /// Campos de texto do tipo preenchidos (identificador do protocolo, valor).
+    pub campos: Vec<(String, String)>,
+    /// Campos secretos do tipo preenchidos (só o identificador).
+    pub segredos: Vec<String>,
+    /// Número de campos extras.
+    pub extras: u64,
+    /// Número de anexos.
+    pub anexos: u64,
+}
+
+impl ResumoItem {
+    /// O resumo de uma entrada.
+    pub fn de_entrada(e: &Entrada) -> Self {
+        let (campos, segredos) = campos_e_segredos(e);
+        Self {
+            campos,
+            segredos,
+            extras: e.extras().len() as u64,
+            anexos: e.anexos().len() as u64,
+        }
+    }
+}
+
+/// Valores no JSON de um resumo, no máximo: o objeto, `campos`, `segredos`, `extras`,
+/// `anexos` e os itens de `campos` e de `segredos` (para o limite de nós da resposta).
+pub(crate) const MAX_NOS_RESUMO: usize = 5 + CAMPOS_TEXTO.len() + CAMPOS_SECRETOS.len();
 
 impl ItemLista {
     /// O item de uma entrada para o papel: com o nível só para o app (D50). Quem filtra
@@ -79,6 +116,7 @@ impl ItemLista {
             tags: e.tags().to_vec(),
             nivel: (papel == Papel::App).then(|| e.nivel()),
             endereco,
+            resumo: (papel == Papel::App).then(|| ResumoItem::de_entrada(e)),
         }
     }
 }
@@ -119,87 +157,7 @@ pub struct DetalheEntrada {
 impl DetalheEntrada {
     /// O detalhe de uma entrada.
     pub fn de_entrada(e: &Entrada) -> Self {
-        let mut campos: Vec<(String, String)> = Vec::new();
-        let mut segredos: Vec<String> = Vec::new();
-        let mut t = |k: &str, v: &str| campos.push((k.to_owned(), v.to_owned()));
-        let mut s = |k: &str| segredos.push(k.to_owned());
-        let auth = |a: &Autenticacao, s: &mut dyn FnMut(&str)| match a {
-            Autenticacao::Senha(_) => s("senha"),
-            Autenticacao::Chave { passphrase, .. } => {
-                s("chave_privada");
-                if passphrase.is_some() {
-                    s("passphrase");
-                }
-            }
-        };
-        match e.dados() {
-            Dados::Login(l) => {
-                t("url", &l.url);
-                t("usuario", &l.usuario);
-                s("senha");
-                if l.totp_semente.is_some() {
-                    s("totp_semente");
-                }
-            }
-            Dados::Banco(b) => {
-                t("motor", b.motor.nome());
-                t("host", &b.host);
-                t("porta", &b.porta.to_string());
-                if let Some(x) = &b.base {
-                    t("base", x);
-                }
-                t("usuario", &b.usuario);
-                if let Some(x) = &b.tunel {
-                    t("tunel", x);
-                }
-                s("senha");
-            }
-            Dados::Servidor(v) => {
-                t("host", &v.host);
-                t("porta", &v.porta.to_string());
-                t("usuario", &v.usuario);
-                if let Some(x) = &v.salto {
-                    t("salto", x);
-                }
-                auth(&v.autenticacao, &mut s);
-            }
-            Dados::Api(a) => {
-                if let Some(x) = &a.url {
-                    t("url", x);
-                }
-                if let Some(x) = &a.variavel {
-                    t("variavel", x);
-                }
-                s("token");
-            }
-            Dados::Aws(a) => {
-                t("access_key_id", &a.access_key_id);
-                t("regiao", &a.regiao);
-                if let Some(x) = &a.role_arn {
-                    t("role_arn", x);
-                }
-                s("secret_access_key");
-                if a.session_token.is_some() {
-                    s("session_token");
-                }
-            }
-            Dados::Smtp(m) => {
-                t("host", &m.host);
-                t("porta", &m.porta.to_string());
-                t("usuario", &m.usuario);
-                t("seguranca", m.seguranca.nome());
-                s("senha");
-            }
-            Dados::FtpSftp(f) => {
-                t("protocolo", f.protocolo.nome());
-                t("host", &f.host);
-                t("porta", &f.porta.to_string());
-                t("usuario", &f.usuario);
-                auth(&f.autenticacao, &mut s);
-            }
-            Dados::NotaSegura(_) => s("texto"),
-            Dados::Generico => {}
-        }
+        let (campos, segredos) = campos_e_segredos(e);
         Self {
             nome: e.nome().to_owned(),
             tipo: e.tipo(),
@@ -231,6 +189,96 @@ impl DetalheEntrada {
                 .collect(),
         }
     }
+}
+
+/// Campos de texto (identificador, valor) e identificadores dos segredos preenchidos.
+type CamposESegredos = (Vec<(String, String)>, Vec<String>);
+
+/// Os campos de texto do tipo preenchidos (identificador, valor) e os identificadores
+/// dos campos secretos preenchidos, sem o valor (do `detalhe` e do resumo da lista).
+fn campos_e_segredos(e: &Entrada) -> CamposESegredos {
+    let mut campos: Vec<(String, String)> = Vec::new();
+    let mut segredos: Vec<String> = Vec::new();
+    let mut t = |k: &str, v: &str| campos.push((k.to_owned(), v.to_owned()));
+    let mut s = |k: &str| segredos.push(k.to_owned());
+    let auth = |a: &Autenticacao, s: &mut dyn FnMut(&str)| match a {
+        Autenticacao::Senha(_) => s("senha"),
+        Autenticacao::Chave { passphrase, .. } => {
+            s("chave_privada");
+            if passphrase.is_some() {
+                s("passphrase");
+            }
+        }
+    };
+    match e.dados() {
+        Dados::Login(l) => {
+            t("url", &l.url);
+            t("usuario", &l.usuario);
+            s("senha");
+            if l.totp_semente.is_some() {
+                s("totp_semente");
+            }
+        }
+        Dados::Banco(b) => {
+            t("motor", b.motor.nome());
+            t("host", &b.host);
+            t("porta", &b.porta.to_string());
+            if let Some(x) = &b.base {
+                t("base", x);
+            }
+            t("usuario", &b.usuario);
+            if let Some(x) = &b.tunel {
+                t("tunel", x);
+            }
+            s("senha");
+        }
+        Dados::Servidor(v) => {
+            t("host", &v.host);
+            t("porta", &v.porta.to_string());
+            t("usuario", &v.usuario);
+            if let Some(x) = &v.salto {
+                t("salto", x);
+            }
+            auth(&v.autenticacao, &mut s);
+        }
+        Dados::Api(a) => {
+            if let Some(x) = &a.url {
+                t("url", x);
+            }
+            if let Some(x) = &a.variavel {
+                t("variavel", x);
+            }
+            s("token");
+        }
+        Dados::Aws(a) => {
+            t("access_key_id", &a.access_key_id);
+            t("regiao", &a.regiao);
+            if let Some(x) = &a.role_arn {
+                t("role_arn", x);
+            }
+            s("secret_access_key");
+            if a.session_token.is_some() {
+                s("session_token");
+            }
+        }
+        Dados::Smtp(m) => {
+            t("host", &m.host);
+            t("porta", &m.porta.to_string());
+            t("usuario", &m.usuario);
+            t("seguranca", m.seguranca.nome());
+            s("senha");
+        }
+        Dados::FtpSftp(f) => {
+            t("protocolo", f.protocolo.nome());
+            t("host", &f.host);
+            t("porta", &f.porta.to_string());
+            t("usuario", &f.usuario);
+            auth(&f.autenticacao, &mut s);
+        }
+        Dados::NotaSegura(_) => s("texto"),
+        Dados::Generico => {}
+    }
+    (campos, segredos)
 }
 
 /// Identificadores dos campos de texto de todos os tipos.
@@ -348,8 +396,8 @@ impl Resposta {
         }
     }
 
-    /// Confere os limites que a leitura confere, e o nível da lista pelo papel (D50:
-    /// o app sempre recebe, o agente nunca).
+    /// Confere os limites que a leitura confere, e o nível e o resumo da lista pelo
+    /// papel (D50, D65 c: o app sempre recebe, o agente nunca).
     pub(crate) fn conferir(&self, papel: Papel) -> R<()> {
         let ok = |c: bool| if c { Ok(()) } else { Err(JsonInvalido) };
         let item_ok = |i: &ItemLista| {
@@ -359,6 +407,11 @@ impl Resposta {
                 && i.tags.len() <= MAX_TAGS
                 && i.tags.iter().all(|t| t.len() <= MAX_TAG)
                 && i.endereco.as_ref().is_none_or(|p| p.len() <= MAX_URL)
+                && i.resumo.as_ref().is_none_or(|r| {
+                    campos_ok(&r.campos, &r.segredos)
+                        && r.extras <= MAX_EXTRAS as u64
+                        && r.anexos <= MAX_ANEXOS as u64
+                })
         };
         match self {
             // O papel do `estado` só é conferido na escrita (`codificar_resposta`): o
@@ -375,7 +428,9 @@ impl Resposta {
             }),
             Resposta::Lista(l) => ok(l.len() <= MAX_ENTRADAS
                 && l.iter().all(item_ok)
-                && l.iter().all(|i| i.nivel.is_some() == (papel == Papel::App))),
+                && l.iter().all(|i| i.nivel.is_some() == (papel == Papel::App))
+                && l.iter()
+                    .all(|i| i.resumo.is_some() == (papel == Papel::App))),
             Resposta::Saida { dados, .. } => ok(dados.len() <= MAX_TEXTO_EXIBIDO),
             Resposta::SessaoPlaywright { caminho } => {
                 ok(!caminho.is_empty() && caminho.len() <= MAX_TEXTO)
@@ -385,14 +440,7 @@ impl Resposta {
                 && d.projeto.as_ref().is_none_or(|p| p.len() <= MAX_TEXTO)
                 && d.tags.len() <= MAX_TAGS
                 && d.tags.iter().all(|t| t.len() <= MAX_TAG)
-                && d.campos.len() <= CAMPOS_TEXTO.len()
-                && d.campos
-                    .iter()
-                    .all(|(k, v)| CAMPOS_TEXTO.contains(&k.as_str()) && v.len() <= MAX_TEXTO)
-                && d.segredos.len() <= CAMPOS_SECRETOS.len()
-                && d.segredos
-                    .iter()
-                    .all(|k| CAMPOS_SECRETOS.contains(&k.as_str()))
+                && campos_ok(&d.campos, &d.segredos)
                 && d.extras.len() <= MAX_EXTRAS
                 && d.extras.iter().all(|x| {
                     x.nome.len() <= MAX_NOME_EXTRA
@@ -480,6 +528,16 @@ impl Resposta {
                                 e.chave("endereco");
                                 e.texto(x);
                             }
+                            if let Some(r) = &i.resumo {
+                                e.chave("resumo");
+                                e.objeto(|e| {
+                                    escrever_campos(e, &r.campos, &r.segredos);
+                                    e.chave("extras");
+                                    e.inteiro(r.extras);
+                                    e.chave("anexos");
+                                    e.inteiro(r.anexos);
+                                });
+                            }
                         });
                     }
                 });
@@ -509,20 +567,7 @@ impl Resposta {
                     &d.tags,
                     Some(d.nivel),
                 );
-                e.chave("campos");
-                e.objeto(|e| {
-                    for (k, v) in &d.campos {
-                        e.chave(k);
-                        e.texto(v);
-                    }
-                });
-                e.chave("segredos");
-                e.lista(|e| {
-                    for k in &d.segredos {
-                        e.item();
-                        e.texto(k);
-                    }
-                });
+                escrever_campos(e, &d.campos, &d.segredos);
                 e.chave("extras");
                 e.lista(|e| {
                     for x in &d.extras {
@@ -616,6 +661,47 @@ impl Resposta {
 const MAX_PROBLEMAS: usize = 512;
 /// Processos na cadeia mostrada na aprovação.
 const MAX_CADEIA: usize = 64;
+
+/// Os campos de texto e os identificadores dos segredos, sem valor: identificador de
+/// texto conhecido, valor no limite e só identificador de segredo conhecido (o mesmo
+/// do `detalhe` e do resumo da lista).
+fn campos_ok(campos: &[(String, String)], segredos: &[String]) -> bool {
+    campos.len() <= CAMPOS_TEXTO.len()
+        && campos
+            .iter()
+            .all(|(k, v)| CAMPOS_TEXTO.contains(&k.as_str()) && v.len() <= MAX_TEXTO)
+        && segredos.len() <= CAMPOS_SECRETOS.len()
+        && segredos
+            .iter()
+            .all(|k| CAMPOS_SECRETOS.contains(&k.as_str()))
+}
+
+fn escrever_campos(e: &mut Escritor, campos: &[(String, String)], segredos: &[String]) {
+    e.chave("campos");
+    e.objeto(|e| {
+        for (k, v) in campos {
+            e.chave(k);
+            e.texto(v);
+        }
+    });
+    e.chave("segredos");
+    escrever_textos(e, segredos);
+}
+
+/// Lê `campos` e `segredos` (do `detalhe` e do resumo): na ordem do quadro, só os
+/// campos de texto conhecidos (a chave repetida o JSON já recusou); a conferência no
+/// fim limita a quantidade e os identificadores dos segredos.
+fn ler_campos(c: &mut Campos) -> R<CamposESegredos> {
+    let mut campos = Vec::new();
+    for (k, v) in c.objeto("campos")?.em_ordem() {
+        if !CAMPOS_TEXTO.contains(&k.as_str()) {
+            return Err(JsonInvalido);
+        }
+        campos.push((k, texto_de(v, MAX_TEXTO)?));
+    }
+    let segredos = textos_de(c.lista("segredos", CAMPOS_SECRETOS.len())?, MAX_NOME)?;
+    Ok((campos, segredos))
+}
 
 fn escrever_textos(e: &mut Escritor, l: &[String]) {
     e.lista(|e| {
@@ -727,6 +813,24 @@ pub(crate) fn ler(papel: Papel, tipo: TipoResposta, mut c: Campos) -> R<Resposta
                 let mut o = Campos::de(v)?;
                 let k = ler_cabecalho(&mut o, papel == Papel::App)?;
                 let endereco = o.texto_opc("endereco", MAX_URL)?;
+                // D65 c: o resumo é obrigatório na lista do app e proibido na do agente.
+                let resumo = match o.tirar("resumo") {
+                    Some(v) if papel == Papel::App => {
+                        let mut r = Campos::de(v)?;
+                        let (campos, segredos) = ler_campos(&mut r)?;
+                        let extras = r.inteiro("extras")?;
+                        let anexos = r.inteiro("anexos")?;
+                        r.fim()?;
+                        Some(ResumoItem {
+                            campos,
+                            segredos,
+                            extras,
+                            anexos,
+                        })
+                    }
+                    None if papel != Papel::App => None,
+                    _ => return Err(JsonInvalido),
+                };
                 o.fim()?;
                 itens.push(ItemLista {
                     nome: k.nome,
@@ -737,6 +841,7 @@ pub(crate) fn ler(papel: Papel, tipo: TipoResposta, mut c: Campos) -> R<Resposta
                     tags: k.tags,
                     nivel: k.nivel,
                     endereco,
+                    resumo,
                 });
             }
             Resposta::Lista(itens)
@@ -760,16 +865,7 @@ pub(crate) fn ler(papel: Papel, tipo: TipoResposta, mut c: Campos) -> R<Resposta
         },
         TipoResposta::Detalhe => {
             let k = ler_cabecalho(&mut c, true)?;
-            // Na ordem do quadro; só os campos de texto conhecidos (a chave repetida o
-            // JSON já recusou), e a conferência no fim limita a quantidade.
-            let mut campos = Vec::new();
-            for (k, v) in c.objeto("campos")?.em_ordem() {
-                if !CAMPOS_TEXTO.contains(&k.as_str()) {
-                    return Err(JsonInvalido);
-                }
-                campos.push((k, texto_de(v, MAX_TEXTO)?));
-            }
-            let segredos = textos_de(c.lista("segredos", CAMPOS_SECRETOS.len())?, MAX_NOME)?;
+            let (campos, segredos) = ler_campos(&mut c)?;
             let mut extras = Vec::new();
             for v in c.lista("extras", MAX_EXTRAS)? {
                 let mut o = Campos::de(v)?;

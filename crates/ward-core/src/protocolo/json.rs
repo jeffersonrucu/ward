@@ -30,9 +30,10 @@ pub(crate) const MAX_PROFUNDIDADE: usize = 8;
 /// Maior número de valores num pedido (cada texto, número, item e objeto conta 1).
 pub(crate) const MAX_NOS: usize = 20_000;
 /// Maior número de valores numa resposta: a lista de um cofre cheio (cada item tem
-/// até 8 valores mais as tags).
-pub(crate) const MAX_NOS_RESPOSTA: usize =
-    crate::limites::MAX_ENTRADAS * (8 + crate::limites::MAX_TAGS) + 1024;
+/// até 9 valores mais as tags e o resumo do app, D65 c).
+pub(crate) const MAX_NOS_RESPOSTA: usize = crate::limites::MAX_ENTRADAS
+    * (9 + crate::limites::MAX_TAGS + super::resposta::MAX_NOS_RESUMO)
+    + 1024;
 /// Maior número de chaves num objeto.
 pub(crate) const MAX_CHAVES: usize = 32;
 
