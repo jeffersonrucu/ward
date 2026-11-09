@@ -382,6 +382,8 @@ Contrato: V2.1–V2.58
 
 Decisões do usuário em 2026-11-08 sobre a Fase 19c: RA4 (troca conjunta de cofre e estado com o daemon parado) fica fora do modelo de ameaça — o planner registra isso em `docs/escopo.md` › fora do modelo; D41 (http só em localhost) e D42 (sufixo obrigatório no `api`) confirmados; D43 mudou: usuário de `servidor`/`ftp-sftp` aceita `@` já na v1. Registrado pelo planner depois da 19c: RA4 no escopo e no PRD; D43 confirmado também para `banco`/`smtp` (ASCII visível, sem `-` no começo; V2.49); D37 e V2.42 com os escapes literais; Fase 19d criada; Fases 20 e 22 com a API nova do núcleo.
 
+Decisão do usuário em 2026-11-09: acessibilidade (AT-SPI) desligada no app (`NO_AT_BRIDGE=1`, `WEBKIT_A11Y_BUS_ADDRESS=unix:path=/dev/null`); leitor de tela não funciona no Ward. Pendências da 29a para o planner: incluir as 3 variáveis de D48 (GStreamer, AT-SPI) na lista de D57; app conferir o papel na 1ª resposta do protocolo; como o app de teste ganha o papel app (Fases 22/23); log do código de saída do filho no daemon (Fase 23); texto da V5.31 (dumpable por `prctl`); `/tmp/nvidia-mps` (RA8); RA7 — RUSTSEC-2024-0429 talvez já não detectado.
+
 ## Milestone 3 — Daemon e protocolo
 Contrato: V3.1–V3.30
 
