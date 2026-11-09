@@ -590,8 +590,21 @@ mod testes {
     use tauri::test::{INVOKE_KEY, MockRuntime, get_ipc_response, mock_builder};
     use tauri::webview::InvokeRequest;
 
+    /// Sem daemon: um socket num caminho que não existe, com as regras do daemon
+    /// instalado (pasta do root). Nunca o `DaemonSocket::padrao()`: no `modo-teste` ele
+    /// é o socket de teste do uid, `/run/user/<uid>/ward-teste/`, que pode ter um
+    /// `wardd` de teste de outro worktree no ar (e o teste falaria com ele).
+    fn sem_daemon() -> DaemonSocket {
+        let caminho = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join(format!("sem-daemon-{}", std::process::id()))
+            .join("wardd.sock");
+        assert!(!caminho.exists());
+        DaemonSocket::sistema_em(caminho)
+    }
+
     fn app_de_teste() -> tauri::App<MockRuntime> {
-        let estado = Estado::novo(Arc::new(montar_servico(DaemonSocket::padrao())));
+        let estado = Estado::novo(Arc::new(montar_servico(Ok(sem_daemon()))));
         com_comandos(mock_builder(), estado)
             .build(tauri::generate_context!())
             .expect("app de teste")

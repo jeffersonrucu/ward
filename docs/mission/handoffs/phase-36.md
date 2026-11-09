@@ -40,6 +40,7 @@
   - PNGs da janela: `aprovacao-normal`, `-prod`, `-pin-errado`, `-pin-bloqueado`, `-expirando` e `-ataque-d51`.
   - PNGs dos frames do FigCraft: `figcraft-16701…17035`.
 - `docs/mission/design-nodes.md` ganhou a seção "Fase 36" ligando componentes e frames ao código.
+- **Testes do `app/src-tauri` isolados do daemon de teste do uid (pedido do orchestrator).** O `app_de_teste()` monta o serviço com `sem_daemon()`, só em `#[cfg(test)]`: um `DaemonSocket::sistema_em(<app/src-tauri/target/sem-daemon-<pid>/wardd.sock>)`, num caminho que não existe (conferido por `assert!`). Antes ele usava `DaemonSocket::padrao()`, que no `modo-teste` é o socket compartilhado `/run/user/<uid>/ward-teste/`. O caminho do release e o do `modo-teste` em produção não mudaram. Os testes da ponte usam o `DaemonFalso` e não precisaram de mudança.
 
 ## Segurança
 - **Invariantes tocadas e como a fase as respeita.**
@@ -88,9 +89,8 @@
 | `python3 -I qa36.py …` (Playwright, Chrome headless) | 0 |
 | `make app-front` | 0 |
 | `make check` | 0 |
-| `make app-check` | 2 (ambiente, ver Problemas): fmt e clippy passaram; `cargo test --all-features` deu 9/11 |
-| `cargo-audit`, `cargo-deny`, `cargo build --release` e `dev/testes/app-release.sh` (os passos do `app-check` depois do teste, rodados um a um) | 0 |
-| `bwrap … --tmpfs /run/user/1000/ward-teste cargo test --all-features` (sem o daemon alheio) | 101: 10/11, só `criar_cofre` falha por falta de Wayland dentro do bwrap |
+| `make app-check` (antes do isolamento, com o `wardd` de outro worktree no ar) | 2: 9/11 testes |
+| `make app-check` (depois do `sem_daemon()`, com o mesmo `wardd` alheio ainda no ar) | 0: 11/11 |
 
 ## Problemas descobertos
 - **Caracteres RTL fortes** (hebraico, árabe) não são escapados por D51. Mesmo com `unicode-bidi:isolate`, eles podem reordenar visualmente o trecho em que estão. Proposta: decidir no escopo se `neutralizar` escapa as letras RTL ou se basta marcar a presença delas.
@@ -101,12 +101,11 @@
 - **O `PedidoDeAprovacao` do protocolo não traz o prazo.** O app conta 120 s desde a chegada; a contagem pode adiantar ou atrasar alguns ms em relação ao daemon.
 - **Restaurar backup (Fase 45)** não cancela aprovações pendentes no app. O daemon responde `Expirado`, e a janela trata.
 - **`npm audit`** mostra 2 vulnerabilidades low em dependência de desenvolvimento (`deepmerge`, que veio do master). `make app-front` sai 0 (o limite é moderate).
-
-- **`make app-check` depende de não haver daemon de teste no ar.** Durante a fase, outro worktree (`agent-ae99eafcfad2810a2`) deixou um `wardd` de teste escutando em `/run/user/1000/ward-teste/wardd.sock`. Esse socket é compartilhado: o caminho vem do uid, e trocar o `XDG_RUNTIME_DIR` não muda nada.
+- **(Resolvido nesta fase.) `make app-check` dependia de não haver daemon de teste no ar.** Durante a fase, outro worktree (`agent-ae99eafcfad2810a2`) deixou um `wardd` de teste escutando em `/run/user/1000/ward-teste/wardd.sock`. Esse socket é compartilhado: o caminho vem do uid, e trocar o `XDG_RUNTIME_DIR` não muda nada.
   - Com o daemon no ar, dois testes do master pressupõem "sem daemon" e falharam: `ataque_comandos_proprios_so_na_janela_e_origem_certas` (Fase 29) e `ataque_destravar_so_na_janela_certa_e_senha_sem_eco` (Fase 31).
   - O segundo chegou a mandar a senha mestra de teste (falsa) ao daemon do outro agente e o destravou.
   - Com um tmpfs sobre o diretório (bwrap), os dois passam. Sem bwrap, os outros 9 passam; o único que falha dentro do bwrap (`criar_cofre`, por falta de Wayland) passa fora dele.
-  - Não mexi no processo alheio. Proposta: os testes do Tauri não devem usar `DaemonSocket::padrao()`; podem usar um caminho que não existe, ou o socket de teste ficar por worktree.
+  - Não mexi no processo alheio. Corrigido com o `sem_daemon()` (ver Implementado). Continua valendo para quem roda `make dev-daemon`/`teste-cli`: o socket de teste é um só por uid, compartilhado entre worktrees.
 
 ## Arquivos criados/alterados
 | Arquivo | Ação |
@@ -138,7 +137,7 @@
 | `docs/mission/handoffs/phase-36.md` | criado |
 
 ## Procedimentos
-- [x] `make check` rodado (fmt, clippy, testes, audit, deny, gitleaks); `make app-check` com 2 testes falhando por causa do ambiente (ver Problemas)
+- [x] `make check` rodado (fmt, clippy, testes, audit, deny, gitleaks); `make app-check` e `make app-front` saem 0
 - [x] Só cofre de teste e credenciais falsas usados
 - [x] Teste de ataque para cada (SEG) tocado
 - [x] (UI/DESIGN) Conferido contra o FigCraft (cópia, só leitura)
