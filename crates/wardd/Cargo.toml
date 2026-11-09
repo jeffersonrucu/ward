@@ -6,5 +6,34 @@ edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 
+[features]
+# D7: daemon de teste. Cofre e estado em `WARD_DEV_DIR` (obrigatório) e socket num
+# diretório 0700 do usuário (`/run/user/<uid>/ward-teste/` ou `WARD_DEV_SOCKET_DIR`).
+# Só muda caminhos: nenhuma operação, papel ou aprovador a mais (D8, V3.15). A
+# instalação recusa artefato com esta feature (V9.2).
+modo-teste = ["ward-plataforma/modo-teste"]
+
+# Motivo de cada dependência no handoff da Fase 22 (S14). Nenhuma traz crate nova ao
+# `Cargo.lock`.
+[dependencies]
+ward-core = { workspace = true }
+ward-plataforma = { workspace = true }
+# `libc`: só as constantes `O_NOFOLLOW`/`O_CLOEXEC` para abrir o cofre e o estado sem
+# seguir link simbólico (nenhuma chamada; o crate não tem `unsafe`).
+libc = { version = "0.2.191", default-features = false }
+zeroize = { version = "1.9.1", default-features = false, features = ["alloc"] }
+
+[dev-dependencies]
+# V3.8: o teste do observador de memória desembrulha a chave de dados do cofre de teste
+# com as mesmas bibliotecas auditadas do núcleo, para procurá-la nos blocos liberados.
+argon2 = { version = "0.6.0", default-features = false, features = ["alloc", "zeroize"] }
+chacha20poly1305 = { version = "0.11.0", default-features = false, features = ["alloc", "zeroize"] }
+
+# Cliente mínimo do contêiner de `make teste-docker-uid` (V3.2, D49): o `ubuntu:24.04`
+# não tem Python.
+[[example]]
+name = "wardd-cliente-teste"
+path = "examples/cliente-teste.rs"
+
 [lints]
 workspace = true

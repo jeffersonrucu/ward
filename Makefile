@@ -65,7 +65,7 @@ CARGO_DENY_VERSAO := 0.20.2
 .PHONY: check build fmt fmt-check clippy test audit deny gitleaks ferramentas \
 	origens gitleaks-binario teste-ataques-fundacao teste-ataques-servicos teste-iscas-home teste-home-real dev-servicos dev-servicos-subir \
 	dev-servicos-parar dev-servicos-estado dev-servicos-conferir dev-servicos-trocar-chave-host dev-cofre \
-	dev-cofre-conferir dev-variacoes teste-dev-cofre dev-daemon dev-daemon-parar \
+	dev-cofre-conferir dev-variacoes teste-dev-cofre dev-daemon dev-daemon-parar teste-docker-uid \
 	app-front app-check app-ponte teste-docker-plataforma
 
 ## check: pré-checagem das origens, depois fmt, clippy -D warnings, testes, cargo audit,
@@ -220,6 +220,8 @@ VARIACOES ?= .dev/variacoes.txt
 dev-cofre: export WARD_DEV_SAIDA = $(COFRE)
 dev-cofre: origens dev-servicos
 	$(CARGO) run --quiet --locked -p ward-core --example dev-cofre -- --saida "$$WARD_DEV_SAIDA"
+	@# Cofre recriado: o estado do daemon de teste (D39) era do cofre anterior.
+	rm -f -- "$${WARD_DEV_SAIDA%.ward}.estado"
 
 ## dev-cofre-conferir: só abre o cofre de teste com a senha de teste e confere as entradas
 dev-cofre-conferir: export WARD_DEV_SAIDA = $(COFRE)
@@ -291,10 +293,23 @@ teste-docker-plataforma: origens
 	$(CARGO) build --quiet --locked -p ward-plataforma --features modo-teste --example ward-plataforma-conteiner
 	dev/testes/docker-plataforma.sh target/debug/examples/ward-plataforma-conteiner
 
-# Alvos que as próximas fases implementam. Falham em vez de fingir que funcionam.
+## teste-docker-uid: V3.2 (D49) num contêiner ubuntu:24.04: o wardd de teste roda como
+## uid 1000; clientes de outro uid (4242, também com CAP_DAC_OVERRIDE) e o root são
+## recusados sem receber um byte; o uid 1000 é atendido
+teste-docker-uid: origens
+	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd --example wardd-cliente-teste
+	dev/testes/docker-uid.sh target/debug/wardd target/debug/examples/wardd-cliente-teste
 
-dev-daemon:
-	@echo "make dev-daemon: chega com o wardd (Milestone 3)" >&2; exit 1
+# --- Daemon de teste (Fase 22) ------------------------------------------------------
+# `wardd` com a feature `modo-teste`: cofre de `.dev/`, socket em
+# $XDG_RUNTIME_DIR/ward-teste/. Sobe com `env -i` e uma lista fixa (HOME, PATH,
+# XDG_RUNTIME_DIR, LANG, WARD_DEV_DIR): o wardd recusa TMPDIR e LD_* (V3.30).
 
+## dev-daemon: compila e sobe o daemon de teste em segundo plano (log em .dev/logs/)
+dev-daemon: origens
+	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd
+	dev/daemon.sh subir
+
+## dev-daemon-parar: para o daemon de teste (confere que o pid é mesmo o wardd daqui)
 dev-daemon-parar:
-	@echo "make dev-daemon-parar: chega com o wardd (Milestone 3)" >&2; exit 1
+	dev/daemon.sh parar

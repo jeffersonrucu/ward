@@ -37,6 +37,8 @@
 //! conhecida → **papel** → campos. Assim, uma operação de app ou de extensão pedida pelo
 //! agente responde [`ErroResposta::NaoAutorizado`] seja qual for o resto do quadro.
 //!
+//! A `lista` do agente vai sem o nível de cada entrada (D50); a do app leva.
+//!
 //! **Nenhuma resposta que carrega credencial vai para o agente** (S1): as que carregam
 //! ([`TipoResposta::carrega_credencial`]) são só de app ou de extensão, e
 //! [`codificar_resposta`] recusa mandá-las a outro papel. A asserção de compilação no
@@ -368,7 +370,14 @@ pub fn codificar_resposta(papel: Papel, r: &Resposta) -> Result<Zeroizing<Vec<u8
     if !tipo.permitida(papel) {
         return Err(ErroCodificar::NaoPermitidaAoPapel);
     }
-    r.conferir().map_err(|_| ErroCodificar::Invalida)?;
+    // D50: o nível de acesso nunca vai ao agente na lista.
+    if let Resposta::Lista(itens) = r
+        && papel != Papel::App
+        && itens.iter().any(|i| i.nivel.is_some())
+    {
+        return Err(ErroCodificar::NaoPermitidaAoPapel);
+    }
+    r.conferir(papel).map_err(|_| ErroCodificar::Invalida)?;
     json::codificar(quadro::LIMITE_RESPOSTA, |e| {
         e.abre_objeto();
         e.chave("v");
@@ -391,7 +400,7 @@ pub fn decodificar_resposta(papel: Papel, bytes: &[u8]) -> Result<Resposta, Resp
         return Err(RespostaInvalida);
     }
     let dados = env.dados().map_err(|_| RespostaInvalida)?;
-    resposta::ler(tipo, dados).map_err(|_| RespostaInvalida)
+    resposta::ler(papel, tipo, dados).map_err(|_| RespostaInvalida)
 }
 
 /// A resposta de erro para um quadro recusado pela leitura (V3.4). O daemon manda esta
