@@ -14,7 +14,9 @@ use std::time::Duration;
 
 use comum::*;
 use ward_core::entrada::{Ambiente, NivelAcesso};
-use ward_core::protocolo::{ErroResposta, Operacao, Papel, PedidoDeAprovacao, Resposta};
+use ward_core::protocolo::{
+    ErroResposta, Operacao, Papel, PedidoDeAprovacao, PedidoDeDestrave, Resposta,
+};
 use ward_plataforma::{ClassePar, Recusa};
 use wardd::aprovacao::{
     AbridorApp, Assinante, Cliente, ErroAbrirApp, Motor, RelogioMotor, SemCliente,
@@ -47,7 +49,7 @@ impl RelogioMotor for RelogioManual {
 #[derive(Debug)]
 enum Recebido {
     Aprovacao(PedidoDeAprovacao),
-    Destrave,
+    Destrave(PedidoDeDestrave),
 }
 
 struct AppFalso(Sender<Recebido>);
@@ -56,7 +58,7 @@ impl Assinante for AppFalso {
     fn entregar(&mut self, r: &Resposta) -> bool {
         let x = match r {
             Resposta::PedidoDeAprovacao(p) => Recebido::Aprovacao(p.clone()),
-            Resposta::PedidoDeDestrave => Recebido::Destrave,
+            Resposta::PedidoDeDestrave(p) => Recebido::Destrave(p.clone()),
             outra => panic!("o motor mandou ao app {outra:?}"),
         };
         self.0.send(x).is_ok()
@@ -827,7 +829,7 @@ fn v3_18_espera_o_destrave_ate_2_min() {
         let t = s.spawn(|| usar(&c.d, &SemCliente, "t-livre"));
         assert!(matches!(
             rx.recv_timeout(PRAZO).unwrap(),
-            Recebido::Destrave
+            Recebido::Destrave(_)
         ));
         c.relogio.ir(Duration::from_secs(60));
         std::thread::sleep(Duration::from_millis(100));
@@ -843,7 +845,7 @@ fn v3_18_espera_o_destrave_ate_2_min() {
         let t = s.spawn(|| usar(&c.d, &SemCliente, "t-aprov"));
         assert!(matches!(
             rx.recv_timeout(PRAZO).unwrap(),
-            Recebido::Destrave
+            Recebido::Destrave(_)
         ));
         c.relogio.avancar(Duration::from_secs(110));
         assert!(ok(&destravar(&c.d, SENHA)));
@@ -861,7 +863,7 @@ fn v3_18_espera_o_destrave_ate_2_min() {
         let t = s.spawn(|| usar(&c.d, &SemCliente, "t-livre"));
         assert!(matches!(
             rx.recv_timeout(PRAZO).unwrap(),
-            Recebido::Destrave
+            Recebido::Destrave(_)
         ));
         c.relogio.avancar(Duration::from_secs(120));
         t.join().unwrap()
@@ -879,6 +881,126 @@ fn v3_18_espera_o_destrave_ate_2_min() {
         )),
         Some(ErroResposta::Travado)
     );
+}
+
+fn destrave(rx: &Receiver<Recebido>) -> PedidoDeDestrave {
+    match rx
+        .recv_timeout(PRAZO)
+        .expect("o app não recebeu o pedido de destrave")
+    {
+        Recebido::Destrave(p) => p,
+        outro => panic!("{outro:?}"),
+    }
+}
+
+/// Fase 39a (V5.8, D51): o `pedido_de_destrave` leva a entrada que o agente pediu, a
+/// operação, o comando exato com escape visível e os segundos que faltam pelo relógio do
+/// motor. Ataque: nome e argv com `ESC`, bidi (U+202E), largura zero e tag Unicode, e
+/// aspas que fingem fechar o argumento. Nada invisível chega ao app, a fronteira de cada
+/// argumento fica clara, e o app que assina depois recebe o mais novo com o prazo certo.
+#[test]
+fn ataque_fase_39a_destrave_com_entrada_e_comando_neutralizados() {
+    let c = cena("destrave-39a");
+    let rx = assinar(&c.d, 1);
+    assert!(ok(&pedir(&c.d, Papel::Agente, "travar", "{}")));
+    let invisivel = |t: &str| t.chars().any(ward_core::exibicao::invisivel);
+    let nome_json = "t-livre\\u202e\\u001b[2K\\u200b\\udb40\\udc41";
+    let argv: [&[u8]; 3] = [
+        b"psql",
+        b"-c",
+        b"select 1\" \"; rm -rf /\x1b[2K\xe2\x80\xae",
+    ];
+    let r = std::thread::scope(|s| {
+        let t = s.spawn(|| {
+            let p = ped(Papel::Agente, "executar", &executar_json(nome_json, &argv)).unwrap();
+            c.d.autorizar_uso(&SemCliente, &p)
+        });
+        let p = destrave(&rx);
+        assert_eq!(p.operacao, Operacao::Executar);
+        assert_eq!(p.restante, 120);
+        assert!(!invisivel(&p.entrada), "{:?}", p.entrada);
+        assert!(!invisivel(&p.comando), "{:?}", p.comando);
+        assert_eq!(p.entrada, r"t-livre\u{202E}\x1b[2K\u{200B}\u{E0041}");
+        assert_eq!(
+            p.comando,
+            r#""psql" "-c" "select 1\" \"; rm -rf /\x1b[2K\u{202E}""#
+        );
+        // O app que assina depois (janela reaberta) recebe o mesmo pedido, com o que
+        // falta pelo relógio do motor.
+        c.relogio.ir(Duration::from_millis(50_400));
+        let rx2 = assinar(&c.d, 2);
+        let q = destrave(&rx2);
+        assert_eq!(q.restante, 70);
+        assert_eq!(
+            (q.entrada.as_str(), q.comando.as_str()),
+            (p.entrada.as_str(), p.comando.as_str())
+        );
+        // Um segundo uso esperando: o app recebe o mais novo (ssh, sem argv: comando vazio).
+        let t2 = s.spawn(|| {
+            let p = ped(Papel::Agente, "ssh", r#"{"entrada":"t-aprov"}"#).unwrap();
+            c.d.autorizar_uso(&SemCliente, &p)
+        });
+        let n = destrave(&rx2);
+        assert_eq!(
+            (n.entrada.as_str(), n.operacao, n.restante),
+            ("t-aprov", Operacao::Ssh, 120)
+        );
+        // Reassinar entrega só o mais novo.
+        let rx3 = assinar(&c.d, 3);
+        assert_eq!(destrave(&rx3).entrada, "t-aprov");
+        assert!(rx3.recv_timeout(Duration::from_millis(200)).is_err());
+        c.relogio.avancar(Duration::from_secs(120));
+        (t.join().unwrap(), t2.join().unwrap())
+    });
+    assert_eq!(r.0, Err(ErroResposta::TravadoTempoEsgotado));
+    assert_eq!(r.1, Err(ErroResposta::TravadoTempoEsgotado));
+    // Sem ninguém esperando, quem assina não recebe destrave.
+    let rx4 = assinar(&c.d, 4);
+    assert!(rx4.recv_timeout(Duration::from_millis(200)).is_err());
+}
+
+/// Fase 39a: ataque de negação. Com o cofre travado, um agente manda um uso com entrada
+/// vazia: o aviso de destrave sairia fora do formato e a falha na entrega derrubaria a
+/// conexão do app (e negaria o pedido de aprovação que ele mostra). A leitura do
+/// protocolo já recusa (`pedido_invalido`); por dentro (segunda camada), o daemon
+/// responde "entrada inexistente" na hora, sem aviso, e o app segue assinado.
+#[test]
+fn ataque_fase_39a_entrada_vazia_nao_derruba_o_app() {
+    let c = cena("destrave-vazia");
+    let rx = assinar(&c.d, 1);
+    assert!(ok(&pedir(&c.d, Papel::Agente, "travar", "{}")));
+    assert_eq!(
+        erro(&pedir(
+            &c.d,
+            Papel::Agente,
+            "executar",
+            &executar_json("", &[b"true"])
+        )),
+        Some(ErroResposta::PedidoInvalido)
+    );
+    for p in [
+        ward_core::protocolo::Pedido::Login {
+            entrada: String::new(),
+        },
+        ward_core::protocolo::Pedido::Playwright {
+            entrada: String::new(),
+        },
+    ] {
+        assert_eq!(
+            c.d.autorizar_uso(&SemCliente, &p),
+            Err(ErroResposta::EntradaInexistente)
+        );
+    }
+    assert!(rx.recv_timeout(Duration::from_millis(200)).is_err());
+    assert!(c.d.motor().tem_assinante());
+    // O app continua recebendo o pedido seguinte, com nome.
+    let r = std::thread::scope(|s| {
+        let t = s.spawn(|| usar(&c.d, &SemCliente, "t-livre"));
+        assert_eq!(destrave(&rx).entrada, "t-livre");
+        assert!(ok(&destravar(&c.d, SENHA)));
+        t.join().unwrap()
+    });
+    assert_eq!(r, Ok(Autorizacao::SemPerguntar));
 }
 
 /// D57: `abrir_app` de qualquer papel, sem campo; abre pelo lançador; sem sessão,

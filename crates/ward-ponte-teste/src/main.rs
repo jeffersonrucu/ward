@@ -9,7 +9,7 @@
 //! socket, mas executada à mão o daemon dá o papel agente e ela sai na primeira
 //! resposta ([`ward_ponte_teste::partida`]).
 //!
-//! `--daemon-falso cheio|vazio|travado|travado-com-pedido|sem-cofre` troca o socket pelo
+//! `--daemon-falso cheio|vazio|travado|travado-com-pedido|travado-com-pedido-ataque|sem-cofre` troca o socket pelo
 //! daemon falso do núcleo (`ward_app_nucleo::daemon_falso`, Fase 32), que responde pelo
 //! protocolo com as entradas falsas do cofre de teste (ou com nenhuma, travado para o
 //! destravar, ou sem cofre para o primeiro uso), para conferir as telas no Chrome
@@ -35,7 +35,7 @@ use ward_ponte_teste::partida;
 use ward_ponte_teste::simulados::{SeletorDePasta, TerminalDeTeste};
 
 const USO: &str = "uso: ward-ponte-teste [--dist <diretório do build --mode teste> \
-[--daemon-falso cheio|vazio|travado|travado-com-pedido|sem-cofre|aprovacao|aprovacao-prod|\
+[--daemon-falso cheio|vazio|travado|travado-com-pedido|travado-com-pedido-ataque|sem-cofre|aprovacao|aprovacao-prod|\
 aprovacao-expirando|aprovacao-ataque|backup-externo-ligado|sem-udisks|sem-backups|\
 backups-indisponiveis]] [--anexos <pasta com um arquivo>]";
 
@@ -74,12 +74,24 @@ fn main() -> ExitCode {
         ["--dist", d, "--daemon-falso", "travado"] => {
             servir(DaemonFalso::travado(), None, Path::new(d), anexos, &[])
         }
-        ["--dist", d, "--daemon-falso", "travado-com-pedido"] => {
+        // Fase 39a: o aviso traz entrada e comando; `-ataque` manda os dois crus, com
+        // controle, bidi, largura zero e HTML (D51).
+        [
+            "--dist",
+            d,
+            "--daemon-falso",
+            modo @ ("travado-com-pedido" | "travado-com-pedido-ataque"),
+        ] => {
+            let aviso = if *modo == "travado-com-pedido" {
+                Aviso::destrave_de_teste("acme-pg-aprovacao")
+            } else {
+                Aviso::destrave_hostil_de_teste()
+            };
             let fila = Arc::new(FilaAvisos::default());
             let f = Arc::clone(&fila);
             let _ = std::thread::Builder::new().spawn(move || {
                 std::thread::sleep(Duration::from_secs(3));
-                f.simular(Aviso::Destrave);
+                f.simular(aviso);
             });
             servir(
                 DaemonFalso::travado(),

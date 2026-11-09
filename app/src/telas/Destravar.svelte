@@ -11,10 +11,15 @@
   // - a espera de D20 é do daemon, antes de olhar a senha. A contagem do botão ("Tente
   //   de novo em N s") é a mesma regra (dobra a partir de 1 s, até 30 s), contada aqui só
   //   com os erros desta tela: a resposta não diz quantas tentativas houve;
-  // - o pedido do agente vem do lado Rust (`estado_do_cofre` › `pedido`): só um id e os
-  //   segundos que faltam. O aviso do protocolo não traz entrada nem comando.
+  // - o pedido do agente vem do lado Rust (`estado_do_cofre` › `pedido`): id, segundos
+  //   que faltam pelo prazo do daemon e (Fase 39a) a entrada pedida, a operação e o
+  //   comando exato, já com escape visível (D51: o daemon formata e o Rust do app passa
+  //   por `neutralizar`). Vêm do agente: entram só como texto (nunca HTML), isolados da
+  //   direção do texto ao redor e sem ligaduras. Sem tipo nem ambiente: com o cofre
+  //   travado o daemon não os sabe, então o cartão não tem os selos do frame 3450.
   import { onDestroy, onMount, tick } from 'svelte';
   import Botao from '../lib/componentes/Botao.svelte';
+  import CaixaDeCodigo from '../lib/componentes/CaixaDeCodigo.svelte';
   import CampoSenha from '../lib/componentes/CampoSenha.svelte';
   import Destaque from '../lib/componentes/Destaque.svelte';
   import Icone from '../lib/componentes/Icone.svelte';
@@ -24,9 +29,25 @@
   /** Espera máxima de D20, em segundos. */
   const ESPERA_MAXIMA = 30;
 
+  /** Como o agente pediu, pela operação do protocolo (`Operacao::nome`). */
+  const COMANDO_DA_OPERACAO = Object.freeze({
+    executar: 'ward run',
+    ssh: 'ward ssh',
+    login: 'ward login',
+    playwright: 'ward playwright',
+  });
+  const comandoDaOperacao = (op) =>
+    Object.hasOwn(COMANDO_DA_OPERACAO, op) ? COMANDO_DA_OPERACAO[op] : '';
+
   /**
    * @type {{
-   *   pedido?: { id: number, restante: number } | null,
+   *   pedido?: {
+   *     id: number,
+   *     restante: number,
+   *     entrada: string,
+   *     operacao: string,
+   *     comando: string
+   *   } | null,
    *   ondestravado: () => void,
    *   onerro?: (mensagem: string) => void
    * }}
@@ -142,13 +163,16 @@
               <Icone nome="relogio" tamanho="xs" tom="aviso" />{contagem(restante)}
             </span>
           </div>
-          <div class="sem-detalhe">
-            <span class="rotulo-detalhe">Pedido</span>
-            <p>
-              Um comando do agente espera o cofre destravar. Ele segue sozinho quando você
-              destravar; se não, é negado quando a contagem acabar.
-            </p>
+          <div class="entrada">
+            <span class="avatar"><Icone nome="chave" /></span>
+            <div class="textos">
+              <span class="nome">{pedido.entrada}</span>
+              <span class="operacao">{comandoDaOperacao(pedido.operacao)}</span>
+            </div>
           </div>
+          {#if pedido.comando}
+            <CaixaDeCodigo rotulo="Comando">{pedido.comando}</CaixaDeCodigo>
+          {/if}
         </section>
       {/if}
 
@@ -283,24 +307,47 @@
     line-height: var(--altura-linha-xs);
     font-variant-numeric: tabular-nums;
   }
-  .sem-detalhe {
+  .entrada {
     display: flex;
-    flex-direction: column;
-    gap: var(--espaco-4);
-    padding: var(--espaco-16);
-    border-radius: var(--raio-controle);
-    border: var(--linha-fina) solid var(--cor-borda-sutil);
-    background: var(--cor-fundo-padrao);
+    align-items: center;
+    gap: var(--espaco-12);
   }
-  .rotulo-detalhe {
+  .avatar {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: var(--controle-md);
+    height: var(--controle-md);
+    border-radius: var(--raio-controle);
+    border: var(--linha-fina) solid var(--cor-borda-padrao);
+    background: var(--cor-superficie-elevada);
+    color: var(--cor-texto-secundario);
+  }
+  .textos {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: var(--espaco-6);
+    min-width: 0;
+  }
+  .nome {
+    font-weight: var(--peso-medio);
+    font-size: var(--tamanho-base);
+    line-height: var(--altura-linha-base);
+    color: var(--cor-texto-primario);
+    overflow-wrap: anywhere;
+    /* D51: o nome vem do agente; cada caractere como é, isolado da direção ao redor. */
+    font-variant-ligatures: none;
+    font-feature-settings: 'liga' 0, 'calt' 0;
+    direction: ltr;
+    unicode-bidi: isolate;
+  }
+  .operacao {
+    font-family: var(--familia-mono);
     font-size: var(--tamanho-xs);
     line-height: var(--altura-linha-xs);
     color: var(--cor-texto-secundario);
-  }
-  .sem-detalhe p {
-    margin: var(--espaco-0);
-    font-size: var(--tamanho-sm);
-    line-height: var(--altura-linha-sm);
   }
   .acoes {
     display: flex;

@@ -67,7 +67,8 @@ pub use pedido::{
 };
 pub use resposta::{
     AnexoDetalhe, DetalheEntrada, ExtraDetalhe, Fluxo, ItemLista, MAX_BACKUPS, MAX_PENDRIVES,
-    MAX_ROTULO, PedidoDeAprovacao, Pendrive, Resposta, ResumoItem, Sugestao,
+    MAX_RESTANTE_DESTRAVE, MAX_ROTULO, PedidoDeAprovacao, PedidoDeDestrave, Pendrive, Resposta,
+    ResumoItem, Sugestao,
 };
 
 /// Versão do protocolo.
@@ -226,7 +227,7 @@ tabela! {
     Segredo = "segredo", SO_APP, "Valor de um segredo (revelar/copiar).";
     Token = "token", SO_APP, "Token do \"Conectar\".";
     PedidoDeAprovacao = "pedido_de_aprovacao", SO_APP, "O daemon pede ao app a janela de aprovação.";
-    PedidoDeDestrave = "pedido_de_destrave", SO_APP, "O daemon pede ao app a tela de destravar (D16).";
+    PedidoDeDestrave = "pedido_de_destrave", SO_APP, "O daemon pede ao app a tela de destravar (D16): entrada, operação, comando com escape visível (D51) e segundos que faltam (Fase 39a).";
     CodigoTotp = "codigo_totp", APP_E_EXTENSAO, "Código TOTP atual.";
     Sugestoes = "sugestoes", SO_EXTENSAO, "Entradas sugeridas para a aba.";
     Preenchimento = "preenchimento", SO_EXTENSAO, "Usuário, senha e TOTP para preencher.";

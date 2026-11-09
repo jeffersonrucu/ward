@@ -191,7 +191,12 @@ fn uma_resposta_de_cada() -> Vec<Resposta> {
             diretorio: "\"/home/usuario/projetos/acme\"".into(),
             cadeia: vec!["claude".into(), "bash".into(), "ward run".into()],
         }),
-        Resposta::PedidoDeDestrave,
+        Resposta::PedidoDeDestrave(PedidoDeDestrave {
+            entrada: "acme-pg-aprovacao".into(),
+            operacao: Operacao::Executar,
+            comando: r#""psql" "-c" "select 1""#.into(),
+            restante: 102,
+        }),
         Resposta::CodigoTotp {
             codigo: zeroize::Zeroizing::new("123456".into()),
             restante: 17,
@@ -2232,5 +2237,92 @@ fn ataque_fase_43_login_so_extensao_e_formato_estrito() {
         let bom =
             format!(r#"{{"v":1,"tipo":"pedido_de_login","dados":{{"id":"{ID}","entrada":"e"}}}}"#);
         assert!(decodificar_resposta(papel, bom.as_bytes()).is_err());
+    }
+}
+
+/// Fase 39a (V5.8, D51, D65 a): o `pedido_de_destrave` leva entrada, operação, comando e
+/// segundos que faltam, só ao app, e a leitura é estrita: sem campo a mais (um valor da
+/// entrada, por exemplo), operação que não pede destrave, `restante` fora de 1..=120,
+/// entrada vazia ou grande demais, ou o aviso antigo sem campo.
+#[test]
+fn ataque_fase_39a_pedido_de_destrave_so_app_e_formato_estrito() {
+    let p = Resposta::PedidoDeDestrave(PedidoDeDestrave {
+        entrada: "acme-pg-aprovacao".into(),
+        operacao: Operacao::Ssh,
+        comando: r#""uptime""#.into(),
+        restante: 120,
+    });
+    for papel in [Papel::Agente, Papel::Extensao] {
+        assert_eq!(
+            codificar_resposta(papel, &p).unwrap_err(),
+            ErroCodificar::NaoPermitidaAoPapel
+        );
+    }
+    let q = codificar_resposta(Papel::App, &p).unwrap();
+    let s = String::from_utf8(q.to_vec()).unwrap();
+    match decodificar_resposta(Papel::App, s.as_bytes()).unwrap() {
+        Resposta::PedidoDeDestrave(d) => {
+            assert_eq!(d.entrada, "acme-pg-aprovacao");
+            assert_eq!(d.operacao, Operacao::Ssh);
+            assert_eq!(d.comando, r#""uptime""#);
+            assert_eq!(d.restante, 120);
+        }
+        r => panic!("{:?}", r.tipo()),
+    }
+    for papel in [Papel::Agente, Papel::Extensao] {
+        assert!(decodificar_resposta(papel, s.as_bytes()).is_err());
+    }
+    let dados = |entrada: &str, op: &str, restante: &str, extra: &str| {
+        format!(
+            r#"{{"v":1,"tipo":"pedido_de_destrave","dados":{{"entrada":{entrada},"operacao":"{op}","comando":"\"uptime\"","restante":{restante}{extra}}}}}"#
+        )
+    };
+    assert!(
+        decodificar_resposta(Papel::App, dados(r#""a""#, "executar", "1", "").as_bytes()).is_ok()
+    );
+    let grande = format!("\"{}\"", "a".repeat(wc::limites::MAX_TEXTO + 1));
+    for ruim in [
+        dados(r#""a""#, "executar", "0", ""),
+        dados(r#""a""#, "executar", "121", ""),
+        dados(r#""a""#, "executar", "-1", ""),
+        dados(r#""a""#, "executar", "\"5\"", ""),
+        dados(r#""a""#, "lista", "5", ""),
+        dados(r#""a""#, "destravar", "5", ""),
+        dados(r#""a""#, "EXECUTAR", "5", ""),
+        dados(r#""""#, "executar", "5", ""),
+        dados(&grande, "executar", "5", ""),
+        dados("5", "executar", "5", ""),
+        dados(r#""a""#, "executar", "5", &format!(r#","senha":"{}""#, b64(b"falso-PG-senha-01"))),
+        dados(r#""a""#, "executar", "5", r#","ambiente":"prod""#),
+        r#"{"v":1,"tipo":"pedido_de_destrave","dados":{}}"#.to_owned(),
+        r#"{"v":1,"tipo":"pedido_de_destrave","dados":{"entrada":"a","operacao":"ssh","restante":5}}"#.to_owned(),
+    ] {
+        assert!(
+            decodificar_resposta(Papel::App, ruim.as_bytes()).is_err(),
+            "aceitou {ruim}"
+        );
+    }
+    // O daemon não monta um aviso fora do formato.
+    for ruim in [
+        PedidoDeDestrave {
+            entrada: String::new(),
+            operacao: Operacao::Executar,
+            comando: String::new(),
+            restante: 5,
+        },
+        PedidoDeDestrave {
+            entrada: "a".into(),
+            operacao: Operacao::Lista,
+            comando: String::new(),
+            restante: 5,
+        },
+        PedidoDeDestrave {
+            entrada: "a".into(),
+            operacao: Operacao::Login,
+            comando: String::new(),
+            restante: 0,
+        },
+    ] {
+        assert!(codificar_resposta(Papel::App, &Resposta::PedidoDeDestrave(ruim)).is_err());
     }
 }

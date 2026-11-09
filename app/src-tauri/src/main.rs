@@ -77,7 +77,7 @@ impl From<ErroApp> for Falha {
 }
 
 /// Fase 31: com o cofre travado, `pedido` é o pedido do agente que espera o destrave
-/// (só um id e os segundos que faltam; o aviso não traz entrada nem comando).
+/// (id, segundos que faltam e, Fase 39a, entrada, operação e comando com D51).
 #[derive(Serialize)]
 struct RespostaEstado {
     estado: &'static str,

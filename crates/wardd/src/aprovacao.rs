@@ -13,7 +13,10 @@
 //!   cada botão e a liberação de 1 hora ficam no [`crate::nucleo`]; aqui só se decide o
 //!   pedido ([`Motor::decidir`]).
 //! - Cofre travado num uso do agente: o motor pede ao app a tela de destravar e espera
-//!   até [`PRAZO_DESTRAVE`] (D16), contado em separado da aprovação.
+//!   até [`PRAZO_DESTRAVE`] (D16), contado em separado da aprovação. O aviso leva a
+//!   entrada, a operação e o comando já com escape visível (D51) e os segundos que
+//!   faltam pelo relógio do motor (Fase 39a). Com mais de um uso esperando, o app recebe
+//!   o mais novo (um aviso por espera nova; ao assinar, só o mais novo).
 //!
 //! Não há aprovador no binário: os testes (D8) assinam um [`Assinante`] em processo e
 //! respondem por [`crate::nucleo::Daemon::atender`] com o papel app, o mesmo caminho do
@@ -22,7 +25,9 @@
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
-use ward_core::protocolo::{ErroResposta, PedidoDeAprovacao, Resposta};
+use ward_core::protocolo::{
+    ErroResposta, MAX_RESTANTE_DESTRAVE, PedidoDeAprovacao, PedidoDeDestrave, Resposta,
+};
 
 use crate::{aviso, depurar};
 
@@ -122,12 +127,32 @@ struct Pendente {
     resultado: Option<Result<(), ErroResposta>>,
 }
 
+/// Um uso do agente esperando o destrave: o aviso (sem `restante`, que é calculado na
+/// entrega) e o prazo pelo relógio do motor.
+struct EsperaDestrave {
+    id: u64,
+    prazo: Duration,
+    aviso: PedidoDeDestrave,
+}
+
+impl EsperaDestrave {
+    /// O aviso com os segundos que faltam em `agora`, arredondados para cima, em
+    /// 1..=[`MAX_RESTANTE_DESTRAVE`] (o formato do protocolo).
+    fn aviso_em(&self, agora: Duration) -> Resposta {
+        let falta = self.prazo.saturating_sub(agora);
+        let s = falta.as_secs() + u64::from(falta.subsec_nanos() > 0);
+        let mut a = self.aviso.clone();
+        a.restante = s.clamp(1, MAX_RESTANTE_DESTRAVE);
+        Resposta::PedidoDeDestrave(a)
+    }
+}
+
 struct Estado {
     proximo_id: u64,
     pendentes: Vec<Pendente>,
     assinante: Option<(u64, Box<dyn Assinante>)>,
-    /// Pedidos do agente esperando o destrave agora.
-    esperando_destrave: u32,
+    /// Pedidos do agente esperando o destrave agora, do mais antigo ao mais novo.
+    esperando_destrave: Vec<EsperaDestrave>,
 }
 
 impl Estado {
@@ -140,16 +165,17 @@ impl Estado {
         Some(self.pendentes.remove(i))
     }
 
-    /// Entrega ao assinante tudo que ainda não foi entregue (e o destrave, se `destrave`).
-    /// Falha na entrega: o assinante sai.
-    fn entregar_pendentes(&mut self, destrave: bool) {
+    /// Entrega ao assinante tudo que ainda não foi entregue (e o destrave mais novo, com
+    /// os segundos que faltam em `agora`, se `destrave`). Falha na entrega: o assinante
+    /// sai.
+    fn entregar_pendentes(&mut self, destrave: Option<Duration>) {
         let Some((aid, a)) = self.assinante.as_mut() else {
             return;
         };
         let aid = *aid;
         let mut ok = true;
-        if destrave && self.esperando_destrave > 0 {
-            ok = a.entregar(&Resposta::PedidoDeDestrave);
+        if let (Some(agora), Some(d)) = (destrave, self.esperando_destrave.last()) {
+            ok = a.entregar(&d.aviso_em(agora));
         }
         for p in self.pendentes.iter_mut() {
             if !ok {
@@ -226,7 +252,7 @@ impl Motor {
                     proximo_id: 1,
                     pendentes: Vec::new(),
                     assinante: None,
-                    esperando_destrave: 0,
+                    esperando_destrave: Vec::new(),
                 }),
                 mudou: Condvar::new(),
             }),
@@ -285,7 +311,7 @@ impl Motor {
             }
         }
         g.assinante = Some((id, a));
-        g.entregar_pendentes(true);
+        g.entregar_pendentes(Some(self.relogio.agora()));
         drop(g);
         self.interno.mudou.notify_all();
     }
@@ -321,7 +347,7 @@ impl Motor {
             resultado: None,
         });
         if g.assinante.is_some() {
-            g.entregar_pendentes(false);
+            g.entregar_pendentes(None);
         } else {
             drop(g);
             if self.abrir().is_err() {
@@ -382,22 +408,35 @@ impl Motor {
     }
 
     /// Cofre travado num uso do agente (D16): pede ao app a tela de destravar e espera
-    /// até 2 min. `travado` é consultado sem nenhuma trava do motor.
+    /// até 2 min. `aviso` é o que a tela mostra (entrada, operação e comando já com
+    /// escape visível, D51; o `restante` é do motor). `travado` é consultado sem nenhuma
+    /// trava do motor.
     pub fn esperar_destrave(
         &self,
+        aviso: PedidoDeDestrave,
         travado: &dyn Fn() -> bool,
         cliente: &dyn Cliente,
     ) -> Result<(), ErroResposta> {
-        let prazo = self.relogio.agora().saturating_add(PRAZO_DESTRAVE);
+        let agora = self.relogio.agora();
+        let prazo = agora.saturating_add(PRAZO_DESTRAVE);
+        let espera;
         {
             let mut g = self.interno.estado();
-            g.esperando_destrave = g.esperando_destrave.saturating_add(1);
+            espera = g.proximo_id;
+            g.proximo_id = g.proximo_id.saturating_add(1);
+            let d = EsperaDestrave {
+                id: espera,
+                prazo,
+                aviso,
+            };
+            let resposta = d.aviso_em(agora);
+            g.esperando_destrave.push(d);
             if g.assinante.is_some() {
                 // Só o pedido de destrave (os de aprovação já foram).
                 let ok = g
                     .assinante
                     .as_mut()
-                    .is_some_and(|(_, a)| a.entregar(&Resposta::PedidoDeDestrave));
+                    .is_some_and(|(_, a)| a.entregar(&resposta));
                 if !ok && let Some((aid, _)) = g.assinante.as_ref() {
                     let aid = *aid;
                     g.sair_assinante(aid);
@@ -407,7 +446,7 @@ impl Motor {
                 if self.abrir().is_err() {
                     if !self.esperar_sem_app {
                         // Ninguém mostraria a tela; quem pediu fica sabendo já.
-                        self.sair_destrave();
+                        self.sair_destrave(espera);
                         aviso!("pedido com o cofre travado: app indisponível");
                         return Err(ErroResposta::Travado);
                     }
@@ -430,12 +469,12 @@ impl Motor {
             }
             std::thread::sleep(PASSO);
         };
-        self.sair_destrave();
+        self.sair_destrave(espera);
         r
     }
 
-    fn sair_destrave(&self) {
+    fn sair_destrave(&self, id: u64) {
         let mut g = self.interno.estado();
-        g.esperando_destrave = g.esperando_destrave.saturating_sub(1);
+        g.esperando_destrave.retain(|d| d.id != id);
     }
 }
