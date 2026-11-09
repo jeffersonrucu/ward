@@ -40,28 +40,37 @@
 //!   com o cofre destravado, o PIN atual (S9) e a senha mestra da versão: o cofre atual
 //!   vira backup antes, e a versão é selada de novo com geração = maior queimada + 1
 //!   (D39), com o estado atualizado antes e depois, como numa gravação comum.
+//! - **Backup externo** (Fase 46, D17, D30): ligado/desligado e o UUID ficam na
+//!   configuração do cofre (`backup_externo`/`definir_backup_externo`, só app; desligado
+//!   por padrão). Com o cofre destravado e o externo ligado,
+//!   [`Daemon::sincronizar_externo`] copia as versões do backup local para o pendrive
+//!   do UUID ([`crate::externo`]); a thread do [`crate::udisks`] chama a cada pendrive
+//!   conectado, e o daemon a cutuca depois de destravar e de gravar.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Mutex, MutexGuard};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc::{Receiver, SyncSender, TrySendError};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::time::{Duration, SystemTime};
 
 use zeroize::Zeroizing;
 
 use ward_core::backup::{self, ErroBackup, Versao};
-use ward_core::configuracao::{Configuracao, HashPin};
+use ward_core::configuracao::{BackupExterno, Configuracao, HashPin};
 use ward_core::corpo::{self, ErroAbrir, ErroCorpo};
-use ward_core::entrada::{Entrada, NivelAcesso, Rascunho, Segredo};
+use ward_core::entrada::{Datas, Entrada, NivelAcesso, Rascunho, Segredo};
 use ward_core::formato::{CofreAberto, SenhaMestra};
 use ward_core::gravacao::{self, ErroGravacao, Etapa};
 use ward_core::protocolo::{
-    Alvo, DetalheEntrada, ErroResposta, ItemLista, MAX_BACKUPS, Operacao, Papel, Pedido, Problema,
-    Resposta,
+    Alvo, DetalheEntrada, ErroResposta, ItemLista, MAX_BACKUPS, MAX_PENDRIVES, Operacao, Papel,
+    Pedido, Pendrive, Problema, Resposta,
 };
 use ward_core::totp::Totp;
 
 use crate::aprovacao::{Cliente, Motor, SemCliente};
 use crate::arquivos::{self, ArquivoEstado, Geracoes, Identidade};
+use crate::externo::{self, Copia, ErroExterno, FontePendrives};
 use crate::{aviso, depurar};
 
 /// Erros de PIN seguidos que travam o cofre (S9).
@@ -125,6 +134,9 @@ pub(crate) struct Aberto {
     /// "Permitir por 1 hora" (D2): entrada → até quando, no relógio do motor. Some ao
     /// travar (vai junto com o `Aberto`), ao mudar o nível e ao remover ou renomear.
     pub(crate) liberacoes: HashMap<String, Duration>,
+    /// Tokens do "Conectar" ainda não usados (D3, Fase 27): somem ao travar, junto com
+    /// o `Aberto`.
+    pub(crate) tokens: Vec<crate::ssh::TokenConectar>,
     /// Identidade do arquivo depois da última leitura ou gravação. `None`: não deu para
     /// ler depois de gravar, e a próxima gravação recusa como "mudou".
     identidade: Option<Identidade>,
@@ -146,11 +158,15 @@ pub(crate) struct Estado {
     /// A próxima tentativa do agente é a primeira desde a partida: a espera conta da
     /// partida (D62).
     primeira_do_agente: bool,
+    /// Quantas vezes o cofre travou (Fase 27): o agente SSH de uma sessão some quando
+    /// o número muda (D12).
+    travas: Arc<AtomicU64>,
 }
 
 impl Estado {
     pub(crate) fn travar(&mut self) {
         if let Some(a) = self.aberto.take() {
+            self.travas.fetch_add(1, Ordering::AcqRel);
             self.identidade_conhecida = a.identidade;
             // `CofreAberto` e `Entrada` zeram ao sair (chave de dados, hash, segredos).
             drop(a);
@@ -188,6 +204,16 @@ pub struct Daemon {
     /// `<rt>` (Fase 26): os anexos do `ward run` ficam em `<rt>tmp/` (S2). `None`: o
     /// `ward run` de entrada com arquivo responde `entrega_falhou`.
     temporarios: Option<PathBuf>,
+    /// Os pendrives (udisks2) para a operação `pendrives` (Fase 46). `None`: sem
+    /// barramento, responde `pendrives_indisponiveis`.
+    pendrives: Option<Arc<dyn FontePendrives>>,
+    /// Cutuca a thread da cópia externa (Fase 46), se ligada.
+    cutucao: OnceLock<SyncSender<()>>,
+    /// Uma cópia externa por vez.
+    vez_externo: Mutex<()>,
+    /// `ssh`, `sshpass` e `sftp` do `ward ssh` (Fase 27): os do sistema, por caminho
+    /// absoluto (sem busca no `PATH`).
+    programas_ssh: crate::ssh::ProgramasSsh,
 }
 
 /// Gancho de teste de [`Daemon::com_gancho_depois_de_gravar`].
@@ -345,6 +371,26 @@ fn confirmar(caminhos: &Caminhos, a: &mut Aberto, id: Identidade) {
     a.identidade = Some(id);
 }
 
+/// Operações que, dando certo, podem ter algo novo para o pendrive (Fase 46): o cofre
+/// destravou, foi gravado ou o externo foi ligado.
+fn muda_o_externo(op: Operacao) -> bool {
+    matches!(
+        op,
+        Operacao::Destravar
+            | Operacao::CriarCofre
+            | Operacao::SalvarEntrada
+            | Operacao::RemoverEntrada
+            | Operacao::MudarNivel
+            | Operacao::ResponderAprovacao
+            | Operacao::TrocarPin
+            | Operacao::TrocarSenha
+            | Operacao::TempoTrava
+            | Operacao::RestaurarBackup
+            | Operacao::DefinirBackupExterno
+            | Operacao::SalvarLogin
+    )
+}
+
 /// Nome fixo do erro de gravação para o log (sem caminho nem valor).
 fn codigo_gravacao(e: &ErroGravacao) -> &'static str {
     match e {
@@ -386,6 +432,7 @@ impl Daemon {
                 falhas_agente,
                 falhas_app: 0,
                 primeira_do_agente: true,
+                travas: Arc::new(AtomicU64::new(0)),
             }),
             vez_agente: Mutex::new(()),
             vez_app: Mutex::new(()),
@@ -394,7 +441,94 @@ impl Daemon {
             aprovacao: Motor::sem_app(),
             gancho_gravado: None,
             temporarios: None,
+            pendrives: None,
+            cutucao: OnceLock::new(),
+            vez_externo: Mutex::new(()),
+            programas_ssh: crate::ssh::ProgramasSsh::do_sistema(),
         }
+    }
+
+    /// Liga a fonte dos pendrives (o udisks2; uma lista nos testes) da operação
+    /// `pendrives` (Fase 46).
+    pub fn com_pendrives(mut self, fonte: Arc<dyn FontePendrives>) -> Self {
+        self.pendrives = Some(fonte);
+        self
+    }
+
+    /// Cria o canal dos cutucões da cópia externa e devolve a ponta de leitura (para a
+    /// thread de [`crate::udisks::vigiar_copia`]). Só a primeira chamada liga.
+    pub fn ligar_copia_externa(&self) -> Option<Receiver<()>> {
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        self.cutucao.set(tx).ok().map(|()| rx)
+    }
+
+    /// Pede uma cópia externa à thread dela (sem esperar; cutucões juntam).
+    pub fn cutucar_externo(&self) {
+        if let Some(tx) = self.cutucao.get() {
+            match tx.try_send(()) {
+                Ok(()) | Err(TrySendError::Full(())) => {}
+                Err(TrySendError::Disconnected(())) => {
+                    aviso!("backup externo: a thread da cópia parou");
+                }
+            }
+        }
+    }
+
+    /// UUID do pendrive se o cofre está destravado e o externo ligado.
+    fn uuid_externo(&self) -> Option<String> {
+        let est = self.estado();
+        let b = est.aberto.as_ref()?.cofre.configuracao().backup();
+        if b.ligado() {
+            b.uuid().map(str::to_owned)
+        } else {
+            None
+        }
+    }
+
+    /// Copia o backup local para o pendrive escolhido (Fase 46, D17). `Ok(None)`: cofre
+    /// travado ou externo desligado (nada é feito, nem a consulta ao udisks2). O estado
+    /// não fica preso durante a cópia: só o UUID é lido dele.
+    pub fn sincronizar_externo(
+        &self,
+        fonte: &dyn FontePendrives,
+    ) -> Result<Option<Copia>, ErroExterno> {
+        let _vez = self.vez_externo.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(uuid) = self.uuid_externo() else {
+            return Ok(None);
+        };
+        let vistos = fonte.pendrives().ok_or(ErroExterno::SemUdisks)?;
+        let visto = externo::escolher(&vistos, &uuid)?.clone();
+        let local = abrir_pasta(&self.caminhos).ok_or(ErroExterno::SemBackupLocal)?;
+        externo::copiar(&local, &visto, &uuid, fonte).map(Some)
+    }
+
+    /// Troca os programas do `ward ssh` (Fase 27). Só os testes do crate chamam (com
+    /// programas falsos que registram o argv); o binário usa sempre os do sistema, e
+    /// nenhum pedido do socket chega aqui.
+    #[doc(hidden)]
+    pub fn com_programas_ssh(mut self, p: crate::ssh::ProgramasSsh) -> Self {
+        self.programas_ssh = p;
+        self
+    }
+
+    pub(crate) fn programas_ssh(&self) -> &crate::ssh::ProgramasSsh {
+        &self.programas_ssh
+    }
+
+    /// `known_hosts` próprio do Ward (D13), ao lado do cofre: no release,
+    /// `~/.local/share/ward/known_hosts`; no daemon de teste, dentro de `WARD_DEV_DIR`.
+    pub(crate) fn known_hosts(&self) -> PathBuf {
+        self.caminhos
+            .cofre
+            .parent()
+            .map(|p| p.join("known_hosts"))
+            .unwrap_or_else(|| PathBuf::from("/nonexistent/ward-known_hosts"))
+    }
+
+    /// A contagem de travas e o valor dela agora, lido com o estado travado (Fase 27,
+    /// D12): o agente SSH de uma sessão some quando o número muda.
+    pub(crate) fn travas_agora(&self, est: &Estado) -> (Arc<AtomicU64>, u64) {
+        (est.travas.clone(), est.travas.load(Ordering::Acquire))
     }
 
     /// Liga o `<rt>` dos temporários do `ward run` (Fase 26, S2): `<rt>tmp/`.
@@ -494,6 +628,9 @@ impl Daemon {
         if crate::trava::conta_como_uso(op, &r) {
             self.registrar_uso();
         }
+        if muda_o_externo(op) && !matches!(r, Resposta::Erro(_)) {
+            self.cutucar_externo();
+        }
         depurar!(
             "{} ({}): {}",
             op.nome(),
@@ -563,14 +700,20 @@ impl Daemon {
             Pedido::Totp { entrada } => self.totp_do_app(papel, &entrada),
             Pedido::Backups => self.backups(),
             Pedido::Configuracao => self.configuracao(),
+            Pedido::BackupExterno => self.backup_externo(),
+            Pedido::DefinirBackupExterno { ligado, uuid } => {
+                self.definir_backup_externo(ligado, uuid.as_deref())
+            }
+            Pedido::Pendrives => self.pendrives(),
             Pedido::RestaurarBackup { versao, senha, pin } => {
                 self.restaurar_backup(&versao, &senha, &pin)
             }
-            // Das fases seguintes (token: 27/34; extensão: 40+). Nada é feito e nada sai.
-            Pedido::EmitirToken { .. }
-            | Pedido::Sugerir { .. }
-            | Pedido::Preencher { .. }
-            | Pedido::SalvarLogin { .. } => Err(ErroResposta::Interno),
+            // D3 (Fase 27): token de uso único do "Conectar", só para o app.
+            Pedido::EmitirToken { entrada } => self.emitir_token(papel, &entrada),
+            // Das fases seguintes (extensão: 40+). Nada é feito e nada sai.
+            Pedido::Sugerir { .. } | Pedido::Preencher { .. } | Pedido::SalvarLogin { .. } => {
+                Err(ErroResposta::Interno)
+            }
         };
         r.unwrap_or_else(Resposta::Erro)
     }
@@ -676,6 +819,7 @@ impl Daemon {
             cofre,
             entradas,
             liberacoes: HashMap::new(),
+            tokens: Vec::new(),
             identidade: Some(id),
             geracoes: novo,
         });
@@ -828,6 +972,7 @@ impl Daemon {
             cofre,
             entradas: Vec::new(),
             liberacoes: HashMap::new(),
+            tokens: Vec::new(),
             identidade: None,
             geracoes: antes,
         };
@@ -875,11 +1020,28 @@ impl Daemon {
         }
     }
 
+    /// Segundos UTC do relógio do daemon para carimbar uma entrada (D65 d). Relógio
+    /// ilegível ou fora da faixa de [`Datas`]: `None`, e a gravação segue sem carimbo
+    /// novo (as datas são só informação; nenhuma decisão de segurança usa).
+    fn agora_para_datas(&self) -> Option<u64> {
+        let agora = self.relogio.segundos_unix().and_then(Datas::instante);
+        if agora.is_none() {
+            aviso!("relógio de parede ilegível: a entrada é gravada sem data nova (D65 d)");
+        }
+        agora
+    }
+
+    /// As datas da entrada depois de uma alteração em `agora` (as mesmas sem relógio).
+    fn alterado(datas: Datas, agora: Option<u64>) -> Datas {
+        agora.and_then(|a| datas.alterado(a)).unwrap_or(datas)
+    }
+
     fn salvar_entrada(
         &self,
         anterior: Option<&str>,
         rascunho: Rascunho,
     ) -> Result<Resposta, ErroResposta> {
+        let agora = self.agora_para_datas();
         let mut est = self.estado();
         let a = est.aberto.as_mut().ok_or(ErroResposta::Travado)?;
         let mut nova = rascunho
@@ -890,6 +1052,12 @@ impl Daemon {
                 // D50: toda entrada nova nasce "com aprovação"; outro nível só pelo
                 // `mudar_nivel`, com PIN (S9).
                 nova.definir_nivel(NivelAcesso::ComAprovacao);
+                // D65 d: a entrada nova ganha as duas datas, do relógio do daemon.
+                nova.definir_datas(
+                    agora
+                        .and_then(Datas::carimbo_novo)
+                        .unwrap_or(Datas::NENHUMA),
+                );
                 nova.conferir_no_cofre(a.entradas.iter())
                     .map_err(|e| ErroResposta::de_validacao(&e))?;
                 None
@@ -902,6 +1070,8 @@ impl Daemon {
                     .ok_or(ErroResposta::EntradaInexistente)?;
                 // Editar não muda o nível. Renomear tira a liberação de 1 hora (D2).
                 nova.definir_nivel(a.entradas[i].nivel());
+                // D65 d: a criação fica a da entrada editada; só a alteração muda.
+                nova.definir_datas(Self::alterado(a.entradas[i].datas(), agora));
                 if nova.nome() != nome {
                     a.liberacoes.remove(nome);
                 }
@@ -964,6 +1134,7 @@ impl Daemon {
         nivel: NivelAcesso,
         pin: &Segredo,
     ) -> Result<Resposta, ErroResposta> {
+        let agora = self.agora_para_datas();
         let mut est = self.estado();
         Self::conferir_pin(&mut est, pin)?;
         let a = est.aberto.as_mut().ok_or(ErroResposta::Travado)?;
@@ -973,13 +1144,18 @@ impl Daemon {
             .find(|e| e.nome() == nome)
             .ok_or(ErroResposta::EntradaInexistente)?;
         let antes = e.nivel();
+        let datas_antes = e.datas();
+        // D65 d: mudar o nível é alterar a entrada.
+        let datas = Self::alterado(datas_antes, agora);
         e.definir_nivel(nivel);
+        e.definir_datas(datas);
         // Voltar atrás é mudar o nível: a liberação de 1 hora acaba (D2).
         a.liberacoes.remove(nome);
         let nome = nome.to_owned();
         self.gravar_ou_desfazer(&mut est, move |a| {
             if let Some(e) = a.entradas.iter_mut().find(|e| e.nome() == nome) {
                 e.definir_nivel(antes);
+                e.definir_datas(datas_antes);
             }
         })
     }
@@ -1119,6 +1295,67 @@ impl Daemon {
                 .into_iter()
                 .take(MAX_BACKUPS)
                 .map(|v| v.nome())
+                .collect(),
+        ))
+    }
+
+    /// Configuração do backup externo (Fase 46): só com o cofre destravado.
+    fn backup_externo(&self) -> Result<Resposta, ErroResposta> {
+        let est = self.estado();
+        let a = est.aberto.as_ref().ok_or(ErroResposta::Travado)?;
+        let b = a.cofre.configuracao().backup();
+        Ok(Resposta::BackupExterno {
+            ligado: b.ligado(),
+            uuid: b.uuid().map(str::to_owned),
+        })
+    }
+
+    /// Liga ou desliga o backup externo (Fase 46, D30): grava a configuração no cofre
+    /// pela gravação comum; erro desfaz. Desligar não apaga nada do pendrive.
+    fn definir_backup_externo(
+        &self,
+        ligado: bool,
+        uuid: Option<&str>,
+    ) -> Result<Resposta, ErroResposta> {
+        let novo = BackupExterno::novo(ligado, uuid).map_err(|_| ErroResposta::PedidoInvalido)?;
+        let mut est = self.estado();
+        let a = est.aberto.as_mut().ok_or(ErroResposta::Travado)?;
+        let antes = a.cofre.configuracao().backup().clone();
+        a.cofre.configuracao_mut().definir_backup(novo);
+        let r = self.gravar_ou_desfazer(&mut est, move |a| {
+            a.cofre.configuracao_mut().definir_backup(antes);
+        });
+        if r.is_ok() {
+            aviso!(
+                "backup externo {}",
+                if ligado { "ligado" } else { "desligado" }
+            );
+        }
+        r
+    }
+
+    /// Pendrives que o udisks2 vê (Fase 46): só com o cofre destravado. O estado não
+    /// fica preso durante a consulta.
+    fn pendrives(&self) -> Result<Resposta, ErroResposta> {
+        if self.travado() {
+            return Err(ErroResposta::Travado);
+        }
+        let fonte = self
+            .pendrives
+            .as_ref()
+            .ok_or(ErroResposta::PendrivesIndisponiveis)?;
+        let vistos = fonte
+            .pendrives()
+            .ok_or(ErroResposta::PendrivesIndisponiveis)?;
+        Ok(Resposta::Pendrives(
+            vistos
+                .into_iter()
+                .take(MAX_PENDRIVES)
+                .map(|v| Pendrive {
+                    montado: v.montagem.is_some(),
+                    uuid: v.uuid,
+                    rotulo: v.rotulo,
+                })
                 .collect(),
         ))
     }

@@ -21,6 +21,7 @@ pub mod filho;
 pub mod lancador;
 pub mod memoria;
 pub mod papel;
+pub mod pasta;
 pub mod processo;
 pub mod relogio;
 pub mod servidor;
@@ -50,9 +51,15 @@ pub use socket::{
     Conexao, DiretorioSocket, ErroAceitar, ErroAtivacao, Escuta, caminho_socket_sistema,
     conferir_conexao, escutar_de_listen_fds, par_fechou, preparar_diretorio,
 };
-pub use terminal::{ErroTerminal, ler_senha};
+pub use terminal::{ErroTerminal, ModoCru, ler_senha};
 
 /// uid efetivo deste processo.
 pub fn uid_efetivo() -> u32 {
     sys::geteuid()
+}
+
+/// Pasta pessoal do uid efetivo pelo `getpwuid_r` (nunca pelo `$HOME`): o diretório de
+/// trabalho do `ssh`/`sftp` filho do daemon (Fase 27).
+pub fn pasta_pessoal() -> std::io::Result<std::ffi::OsString> {
+    sys::home_do_uid(sys::geteuid())
 }

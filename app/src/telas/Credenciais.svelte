@@ -21,6 +21,9 @@
   // Fase 35: o cartão do nível é o `Cartão de nível` (18998) e "Mudar nível" abre o
   // `Diálogo de nível` (967), que pede o PIN (S9). Mudou: recarrega a lista e o
   // detalhe. O 5º PIN errado trava o cofre: `ontravado` leva o App à tela de travado.
+  //
+  // Fase 22d (D65 d): o rodapé do detalhe (`metadados` 4400) mostra "Criada em … ·
+  // Alterada em …" com as datas do daemon, no fuso local; sem data, nada.
   import { onMount, tick } from 'svelte';
   import Botao from '../lib/componentes/Botao.svelte';
   import BadgeAmbiente from '../lib/componentes/BadgeAmbiente.svelte';
@@ -91,6 +94,23 @@
     resumoDoTopo(itens.length, gruposDe(itens).length, visiveis.length, filtrando),
   );
   const nFiltros = $derived(filtrosLigados(filtros));
+
+  /** `dd/mm/aaaa` no fuso local, de segundos UTC (D65 d). */
+  function data(segundos) {
+    if (!Number.isSafeInteger(segundos) || segundos <= 0) return '';
+    const d = new Date(segundos * 1000);
+    if (Number.isNaN(d.getTime())) return '';
+    const dois = (n) => String(n).padStart(2, '0');
+    return `${dois(d.getDate())}/${dois(d.getMonth() + 1)}/${d.getFullYear()}`;
+  }
+  const metadados = $derived.by(() => {
+    if (!detalhe) return '';
+    const criada = data(detalhe.criada_em);
+    const alterada = data(detalhe.alterada_em);
+    return [criada && `Criada em ${criada}`, alterada && `Alterada em ${alterada}`]
+      .filter(Boolean)
+      .join(' · ');
+  });
 
   const opcoesGrupo = $derived([
     { valor: '', rotulo: 'Todos' },
@@ -519,7 +539,7 @@
           <CartaoDeNivel nivel={detalhe.nivel} onmudar={mudarNivel} />
         </div>
         <footer class="rodape">
-          <span class="espaco"></span>
+          <span class="metadados">{metadados}</span>
           <Botao variante="secundario" icone="copiar">Duplicar</Botao>
           <Botao variante="perigo">Excluir</Botao>
         </footer>
@@ -757,8 +777,14 @@
     padding: var(--espaco-16) var(--espaco-24);
     border-top: var(--linha-fina) solid var(--cor-borda-sutil);
   }
-  .espaco {
+  .metadados {
     flex: 1;
+    min-width: var(--espaco-0);
+    color: var(--cor-texto-secundario);
+    font-weight: var(--peso-regular);
+    font-size: var(--tamanho-xs);
+    line-height: var(--altura-linha-xs);
+    letter-spacing: var(--espacamento-letra-normal);
   }
   .vazio {
     display: flex;

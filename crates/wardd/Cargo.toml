@@ -30,6 +30,11 @@ zeroize = { version = "1.9.1", default-features = false, features = ["alloc"] }
 zbus = { version = "=6.2.1", default-features = false, features = ["default-rt"] }
 # Só o trait `Stream`, para ler o `MessageStream` do zbus (já vem com ele; nenhuma crate nova).
 futures-core = { version = "0.3.34", default-features = false }
+# Fase 27 (motivo no handoff): agente SSH temporário do `ward ssh` com chave (D12). Lê
+# a chave OpenSSH da entrada (com passphrase: bcrypt-pbkdf + AES, pelo RustCrypto) e
+# assina com Ed25519 (`ed25519-dalek`) dentro do daemon; a chave nunca sai dele. Sem
+# `rsa` (RUSTSEC-2023-0071), sem `getrandom`/`std` padrão: só o necessário.
+ssh-key = { version = "=0.7.0-rc.12", default-features = false, features = ["alloc", "ed25519", "encryption"] }
 
 [dev-dependencies]
 # V3.8: o teste do observador de memória desembrulha a chave de dados do cofre de teste

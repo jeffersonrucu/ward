@@ -13,6 +13,7 @@
   import Credenciais from './telas/Credenciais.svelte';
   import Destravar from './telas/Destravar.svelte';
   import GeradorSenha from './telas/GeradorSenha.svelte';
+  import JanelaAprovacao from './telas/JanelaAprovacao.svelte';
   import PrimeiroUso from './telas/PrimeiroUso.svelte';
 
   const TEXTOS = {
@@ -32,6 +33,10 @@
   let semCofre = $state(false);
   let tela = $state('credenciais');
   let Vitrine = $state(null);
+  // Fase 36: a janela `aprovacao`, aberta pelo lado Rust quando chega um pedido do
+  // daemon, mostra só a aprovação (a capability dela só tem os comandos dela). O
+  // rótulo vem dos metadados que o Tauri injeta na janela, sem IPC.
+  let aprovacao = $state(window.__TAURI_INTERNALS__?.metadata?.currentWindow?.label === 'aprovacao');
   let pararDeOuvir = null;
 
   function aplicar(r) {
@@ -90,11 +95,16 @@
   }
 
   onMount(async () => {
+    if (aprovacao) return;
     // Só no build de teste (some do pacote de produção): a URL de abertura da ponte pode
     // pedir uma tela (`&tela=gerador`) para o QA no Chrome, e a vitrine de componentes.
     if (import.meta.env.MODE === 'teste' && !('__TAURI_INTERNALS__' in window)) {
       const { telaPedida } = await import('./lib/ponte/ponte-teste.js');
       const pedida = telaPedida();
+      if (pedida === 'aprovacao') {
+        aprovacao = true;
+        return;
+      }
       if (pedida && TELAS.includes(pedida)) {
         tela = pedida;
         destravado = true;
@@ -110,7 +120,9 @@
   onDestroy(() => pararDeOuvir?.());
 </script>
 
-{#if destravado}
+{#if aprovacao}
+  <JanelaAprovacao />
+{:else if destravado}
   <div class="casca">
     <NavegacaoLateral ativo={tela} onnavegar={navegar} />
     {#if tela === 'credenciais'}

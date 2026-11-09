@@ -10,6 +10,11 @@ ponta, com o terminal num pty de verdade.
    `ward lista` responde "travado" (V4.22); `ward destravar` com senha errada e certa
    pelo pty; `ward lista --json` só com os seis campos e sem nenhum padrão de
    `.dev/variacoes.txt` (V4.1, S1). O prompt aparece e a senha não ecoa.
+3. `ward run` (Fase 26).
+4. `ward ssh` (Fase 27) contra os SSH de teste (2222, 2223): V4.23, V4.24, V4.26 (agente
+   atacado por `ssh-add`, SIGKILL na CLI, travar), V4.28, V4.31, V4.32, V4.34 (pty),
+   V4.14 e V4.35/V4.37 pelo argv em `/proc/<pid>/cmdline` (o `wardd` recusa subir sob
+   `strace`).
 
 Uso: dev/testes/cli.py <binário ward> <raiz do repositório>. Só valores falsos (D15).
 """
@@ -321,6 +326,337 @@ for nome, vars_ in ESPERADO.items():
         bate = bate and linhas.get("WARD_TOTP") in {h(totp(semente, t)) for t in (antes, depois)}
     conferir(bate, f"V4.3–V4.10 entrega de {nome} bate com a tabela ({len(nomes)} itens)")
     sem_variacao(r, f"hashes de {nome}")
+
+# --- 4. `ward ssh` (Fase 27) contra o daemon de teste e os SSH de teste ---------------
+# O `ssh`/`sshpass`/`sftp` quem roda é o daemon (D13: `-F /dev/null`, `known_hosts` do
+# Ward em `.dev/known_hosts`); daqui só a CLI. Precisa dos serviços de pé
+# (`make dev-servicos-subir`); sem eles, a seção é pulada com aviso (não passa).
+import glob  # noqa: E402
+import signal  # noqa: E402
+
+DEV = os.path.join(RAIZ, ".dev")
+RT_TESTE = f"/run/user/{UID}/ward-teste"
+SENHA_SSH = FIX["acme-ssh-senha-stage"]["segredos"]["senha"]
+
+
+def porta_aberta(p):
+    try:
+        socket.create_connection(("127.0.0.1", p), timeout=2).close()
+        return True
+    except OSError:
+        return False
+
+
+def ssh(args, entrada=b"", env=None, prazo=150):
+    return subprocess.run([WARD, "ssh"] + args, env=env or ambiente(), input=entrada,
+                          capture_output=True, timeout=prazo)
+
+
+class Varredor(threading.Thread):
+    """V4.14: lê `/proc/*/cmdline` a cada 50 ms e guarda o que tiver padrão de segredo."""
+
+    def __init__(self):
+        super().__init__(daemon=True)
+        self.parar = False
+        self.achados = 0
+        self.vistos = 0
+
+    def run(self):
+        while not self.parar:
+            for f in glob.glob("/proc/[0-9]*/cmdline"):
+                try:
+                    c = open(f, "rb").read()
+                except OSError:
+                    continue
+                self.vistos += 1
+                if any(p in c for p in padroes):
+                    self.achados += 1
+            time.sleep(0.05)
+
+
+def agentes():
+    return glob.glob(os.path.join(RT_TESTE, "ssh-*"))
+
+
+def esperar(cond, prazo):
+    fim = time.time() + prazo
+    while time.time() < fim:
+        if cond():
+            return True
+        time.sleep(0.05)
+    return cond()
+
+
+def octal(s):
+    return "".join("\\%03o" % b for b in s.encode())
+
+
+def interativo(entrada, passos, prazo=60):
+    """`ward ssh <entrada>` num pty: `passos` é uma lista de (esperar, digitar). Devolve
+    (código, tela, [(hora, pedaço)])."""
+    pid, fd = pty.fork()
+    if pid == 0:
+        os.execve(WARD, [WARD, "ssh", entrada], ambiente({"TERM": "xterm"}))
+    tela = b""
+    pedacos = []
+    fim = time.time() + prazo
+    passos = list(passos)
+    inicio = time.time()
+    while time.time() < fim:
+        if passos and passos[0][0].encode() in tela:
+            _, digitar = passos.pop(0)
+            if digitar is not None:
+                time.sleep(0.1)
+                os.write(fd, digitar.encode())
+        r, _, _ = select.select([fd], [], [], 0.05)
+        if r:
+            try:
+                b = os.read(fd, 4096)
+            except OSError:
+                break
+            if not b:
+                break
+            tela += b
+            pedacos.append((time.time() - inicio, b))
+    codigo = None
+    if passos:
+        os.kill(pid, signal.SIGKILL)
+        os.waitpid(pid, 0)
+    else:
+        _, st = os.waitpid(pid, 0)
+        codigo = os.waitstatus_to_exitcode(st)
+    os.close(fd)
+    return codigo, tela, pedacos
+
+
+servicos = porta_aberta(2222) and porta_aberta(2223)
+if not servicos:
+    conferir(False, "Fase 27: SSH de teste fora do ar (make dev-servicos-subir); seção ssh pulada")
+else:
+    varredor = Varredor()
+    varredor.start()
+
+    # V4.23 (senha, com o argv do filho em /proc/<pid>/cmdline) e V4.24 (chave).
+    vistos = []
+
+    def olhar_filhos():
+        fim = time.time() + 20
+        while time.time() < fim and not vistos:
+            for f in glob.glob("/proc/[0-9]*/cmdline"):
+                try:
+                    a = open(f, "rb").read().split(b"\0")
+                except OSError:
+                    continue
+                if a and a[0] == b"/usr/bin/sshpass" and b"--" in a:
+                    vistos.append(a)
+            time.sleep(0.02)
+
+    t = threading.Thread(target=olhar_filhos, daemon=True)
+    t.start()
+    r = ssh(["acme-ssh-senha-stage", "sleep 1; whoami"])
+    t.join()
+    conferir(r.returncode == 0 and r.stdout.strip() == b"deploy", f"V4.23 ssh por senha: whoami → deploy ({r.returncode})")
+    a = vistos[0] if vistos else []
+    o = [a[i + 1] for i in range(len(a) - 1) if a[i] == b"-o"]
+    conferir(a[:3] == [b"/usr/bin/sshpass", b"-e", b"/usr/bin/ssh"] and b"PubkeyAuthentication=no" in o
+             and b"IdentityAgent=none" in o and a[3:5] == [b"-F", b"/dev/null"],
+             "V4.23 o filho é sshpass -e → ssh -F /dev/null com PubkeyAuthentication=no e IdentityAgent=none")
+    i = a.index(b"--") if b"--" in a else -1
+    conferir(i > 2 and a[i - 2:i] == [b"-l", b"deploy"] and a[i + 1] == b"127.0.0.1"
+             and not any(x.startswith(b"User=") or x.endswith(b"@127.0.0.1") for x in a),
+             "V4.35 usuário só depois de -l, host depois de --, sem usuário@host nem User=")
+    conferir(f"UserKnownHostsFile={DEV}/known_hosts".encode() in o, "D13 known_hosts do Ward")
+    sem_variacao(r, "ssh por senha")
+
+    r = ssh(["acme-ssh-chave-prod", "whoami"])
+    conferir(r.returncode == 0 and r.stdout.strip() == b"deploy", f"V4.24 ssh por chave: whoami → deploy ({r.returncode})")
+    sem_variacao(r, "ssh por chave")
+    conferir(not agentes(), "D12 o agente some no fim da sessão")
+
+    r = ssh(["acme-ssh-senha-stage", "exit", "3"])
+    conferir(r.returncode == 3, f"o código do comando remoto volta (saiu {r.returncode})")
+
+    # V4.37: sftp com login de verdade (sftpuser, 2222) e comando pela entrada padrão.
+    r = ssh(["beta-sftp-dev"], entrada=b"pwd\n")
+    conferir(r.returncode == 0 and b"Remote working directory" in r.stdout, f"V4.37 sftp entra no SSH de teste ({r.returncode})")
+    sem_variacao(r, "sftp")
+    r = ssh(["beta-sftp-dev", "ls"])
+    conferir(r.returncode == 125 and b"pedido inv" in r.stderr, "sftp com comando recusado")
+
+    r = ssh(["gama-nota", "id"])
+    conferir(r.returncode == 125 and b"tipo sem entrega" in r.stderr, "nota segura: tipo sem entrega")
+    r = ssh(["gama-bloqueada", "id"])
+    conferir(r.returncode == 125 and b"entrada" in r.stderr, "bloqueada = inexistente")
+
+    # V4.32: token inventado numa entrada com aprovação, sem app: vale o nível.
+    r = ssh(["--token", "AbCdEfGhIjKlMnOpQrStUvWxYz012345", "acme-pg-aprovacao", "id"])
+    # O daemon de teste abre a ponte de teste como app (WARD_DEV_APP), que nega; sem app
+    # seria "aprovação indisponível". Os dois são o nível valendo.
+    conferir(r.returncode == 125 and (b"pedido negado" in r.stderr or "aprovação indisponível".encode() in r.stderr),
+             f"V4.32 token inventado ignorado: vale o nível ({r.stderr[:80]!r})")
+
+    # V4.26: outro processo do usuário acha o socket do agente e tenta listar, adicionar
+    # e remover: recusado nas três. O ssh-add roda com HOME falso, sem config.
+    p = subprocess.Popen([WARD, "ssh", "acme-ssh-chave-prod", "sleep 8"], env=ambiente(),
+                         stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    conferir(esperar(lambda: glob.glob(os.path.join(RT_TESTE, "ssh-*/agent.sock")), 20), "D12 agente da sessão no ar")
+    socks = glob.glob(os.path.join(RT_TESTE, "ssh-*/agent.sock"))
+    if socks:
+        falsa = os.path.join(DEV, "logs", f"chave-qualquer-{os.getpid()}")
+        subprocess.run(["/usr/bin/ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", falsa],
+                       env=ambiente(), check=True, capture_output=True)
+        amb = ambiente({"SSH_AUTH_SOCK": socks[0]})
+        for rotulo, args in [("ssh-add -L", ["-L"]), ("ssh-add <chave>", [falsa]), ("ssh-add -D", ["-D"])]:
+            x = subprocess.run(["/usr/bin/ssh-add"] + args, env=amb, capture_output=True, timeout=20)
+            conferir(x.returncode != 0 and b"ssh-ed25519" not in x.stdout, f"V4.26 {rotulo} de outro processo recusado")
+        for f in (falsa, falsa + ".pub"):
+            os.remove(f)
+    p.wait(timeout=60)
+    conferir(p.returncode == 0, f"a sessão do agente atacado terminou normal ({p.returncode})")
+    conferir(esperar(lambda: not agentes(), 3), "V4.26 socket e pasta do agente somem no fim")
+
+    # V4.26: SIGKILL na CLI derruba a sessão e o agente.
+    p = subprocess.Popen([WARD, "ssh", "acme-ssh-chave-prod", "sleep 20"], env=ambiente(),
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    conferir(esperar(lambda: agentes(), 20), "agente no ar (SIGKILL)")
+    p.kill()
+    p.wait()
+    conferir(esperar(lambda: not agentes(), 3), "V4.26 SIGKILL na CLI: o agente some")
+
+    # V4.26: travar no meio da sessão derruba o agente.
+    p = subprocess.Popen([WARD, "ssh", "acme-ssh-chave-prod", "sleep 5"], env=ambiente(),
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    conferir(esperar(lambda: agentes(), 20), "agente no ar (travar)")
+    cod, _, _ = rodar_pty(["travar"])
+    conferir(cod == 0 and esperar(lambda: not agentes(), 3), "V4.26 travar o cofre derruba o agente")
+    p.wait(timeout=60)
+    cod, tela, _ = rodar_pty(["destravar"], digitar=SENHA)
+    conferir(cod == 0, "destravar de novo")
+
+    # V4.31 e V4.34 (D34) interativo num pty: prompt, whoami, um prefixo da senha parado
+    # (vira •••• em até 1 s, o resto não aparece) e uma saída que diverge (sai normal).
+    prefixo, resto = SENHA_SSH[:4], SENHA_SSH[4:]
+    diverge = prefixo + "Z"
+    cmd = (f"printf 'P:{octal(prefixo)}'; sleep 2; printf '{octal(resto)}\\n'; "
+           f"printf 'Q:{octal(diverge)}\\n'; echo FIM$((30+4))\r")
+    cod, tela, pedacos = interativo("acme-ssh-senha-stage", [
+        ("$ ", "whoami\r"),
+        ("deploy\r\n", cmd),
+        ("FIM34\r\n", "exit\r"),
+    ])
+    conferir(cod == 0 and b"deploy\r\n" in tela, f"V4.31 interativo: whoami → deploy e sai 0 ({cod})")
+    # Depois do eco da linha digitada (o eco não tem a saída: só octais).
+    depois = tela.split(b"FIM$((30+4))", 1)[-1]
+    conferir("P:••••".encode() in depois, "V4.34 o prefixo parado vira ••••")
+    t_p = next((t for t, b in pedacos if b"P:" in b and b"printf" not in b), None)
+    t_m = next((t for t, b in pedacos if "••••".encode() in b), None)
+    conferir(t_p is not None and t_m is not None and 0 <= t_m - t_p <= 1.0,
+             f"V4.34 a marca chega em até 1 s ({t_p}, {t_m})")
+    conferir(prefixo.encode() + b"\r" not in depois and ("P:" + prefixo).encode() not in tela
+             and resto.encode() not in tela and SENHA_SSH.encode() not in tela,
+             "V4.34 nenhum pedaço da senha em claro")
+    conferir(("Q:" + diverge).encode() in tela, "V4.34 a saída que diverge sai normal")
+    conferir(sum(1 for x in padroes if x in tela) == 0, "S4 nenhum padrão de .dev/variacoes.txt no pty")
+
+    # V4.28: a chave de host do 2222 mudou (linha falsa no known_hosts do Ward): recusa.
+    kh = os.path.join(DEV, "known_hosts")
+    original = open(kh, "rb").read() if os.path.exists(kh) else None
+    falsa = os.path.join(DEV, "logs", f"host-falso-{os.getpid()}")
+    subprocess.run(["/usr/bin/ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", falsa],
+                   env=ambiente(), check=True, capture_output=True)
+    pub = open(falsa + ".pub").read().split()[:2]
+    os.remove(falsa)
+    os.remove(falsa + ".pub")
+    try:
+        with open(kh, "w") as f:
+            f.write(f"[127.0.0.1]:2222 {pub[0]} {pub[1]}\n")
+        r = ssh(["acme-ssh-senha-stage", "whoami"])
+        conferir(r.returncode != 0 and b"deploy" not in r.stdout
+                 and (b"IDENTIFICATION HAS CHANGED" in r.stderr or b"verification failed" in r.stderr),
+                 f"V4.28 chave de host mudada: recusa ({r.returncode})")
+    finally:
+        if original is None:
+            os.remove(kh)
+        else:
+            with open(kh, "wb") as f:
+                f.write(original)
+
+    varredor.parar = True
+    varredor.join()
+    conferir(varredor.vistos > 0 and varredor.achados == 0,
+             f"V4.14 nenhum segredo em /proc/*/cmdline durante o ward ssh ({varredor.vistos} lidos)")
+
+    # V4.35/V4.37: o argv de cada `sshpass`/`ssh`/`sftp` que o daemon cria, lido em
+    # /proc/<pid>/cmdline enquanto o processo vive (é o argv do `execve`). O `strace` do
+    # contrato não dá: o `wardd` recusa subir sob depurador (TracerPid) e o
+    # `ptrace_scope=1` não deixa anexar a quem não é descendente.
+    PROGS = {b"/usr/bin/sshpass", b"/usr/bin/ssh", b"/usr/bin/sftp"}
+
+    def ppid(pid):
+        try:
+            return int(open(f"/proc/{pid}/stat").read().rsplit(")", 1)[1].split()[1])
+        except (OSError, ValueError, IndexError):
+            return None
+
+    def comm(pid):
+        try:
+            return open(f"/proc/{pid}/comm").read().strip()
+        except OSError:
+            return ""
+
+    def capturar(rodar):
+        vistos = {}
+        fim = []
+
+        def laco():
+            while not fim:
+                for f in glob.glob("/proc/[0-9]*/cmdline"):
+                    pid = int(f.split("/")[2])
+                    if pid in vistos:
+                        continue
+                    try:
+                        a = open(f, "rb").read().split(b"\0")[:-1]
+                    except OSError:
+                        continue
+                    if a and a[0] in PROGS:
+                        pai = ppid(pid)
+                        vistos[pid] = (a, pai, comm(pai) if pai else "")
+                time.sleep(0.005)
+
+        t = threading.Thread(target=laco, daemon=True)
+        t.start()
+        r = rodar()
+        fim.append(1)
+        t.join()
+        return r, vistos
+
+    def sftp_devagar():
+        p = subprocess.Popen([WARD, "ssh", "beta-sftp-dev"], env=ambiente(), stdin=subprocess.PIPE,
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        time.sleep(2)
+        out, _ = p.communicate(b"pwd\n", timeout=60)
+        return out
+
+    r1, v1 = capturar(lambda: ssh(["acme-ssh-senha-stage", "sleep 1; whoami"]))
+    out2, v2 = capturar(sftp_devagar)
+    conferir(r1.stdout.strip() == b"deploy" and b"Remote working directory" in out2, "ssh e sftp com o argv capturado")
+    ssh_l = [x for x in v1.values() if x[0][0] == b"/usr/bin/ssh"]
+    sp_l = [x for x in v1.values() if x[0][0] == b"/usr/bin/sshpass"]
+    conferir(len(ssh_l) == 1 and all(x[0][1:3] == [b"-F", b"/dev/null"] and b"-l" in x[0]
+                                     and x[0][x[0].index(b"-l"):x[0].index(b"-l") + 4] == [b"-l", b"deploy", b"--", b"127.0.0.1"]
+                                     and not any(y.startswith(b"User=") or b"@" in y for y in x[0]) for x in ssh_l),
+             "V4.35 ssh: -F /dev/null, -l deploy -- 127.0.0.1, sem usuário@host nem User=")
+    conferir(len(sp_l) == 1 and sp_l[0][2] == "wardd" and sp_l[0][0][:3] == [b"/usr/bin/sshpass", b"-e", b"/usr/bin/ssh"],
+             f"V4.35 sem sh -c: o wardd executa o sshpass direto ({[x[2] for x in sp_l]})")
+    sftp_l = [x for x in v2.values() if x[0][0] == b"/usr/bin/sftp"]
+    conferir(len(sftp_l) == 1 and sftp_l[0][0][1:3] == [b"-F", b"/dev/null"]
+             and sftp_l[0][0][-6:] == [b"-o", b"User=sftpuser", b"-P", b"2222", b"--", b"127.0.0.1"]
+             and b"-l" not in sftp_l[0][0] and not any(b"@" in y for y in sftp_l[0][0]),
+             "V4.37 sftp: -F /dev/null, -o User=sftpuser -P 2222 -- 127.0.0.1, sem -l nem usuário@host")
+    sp2 = [x for x in v2.values() if x[0][0] == b"/usr/bin/sshpass"]
+    conferir(len(sp2) == 1 and sp2[0][2] == "wardd", "V4.37 sem sh -c: o wardd executa o sshpass do sftp direto")
+    tudo = b"\n".join(b"\0".join(x[0]) for x in list(v1.values()) + list(v2.values()))
+    conferir(sum(1 for x in padroes if x in tudo) == 0, "S3 nenhum segredo no argv do ssh/sftp")
 
 print(f"\n{len(falhas)} falha(s)")
 sys.exit(1 if falhas else 0)

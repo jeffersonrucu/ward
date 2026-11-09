@@ -49,7 +49,10 @@ fn dados_validos(op: Operacao) -> String {
         | Operacao::Lista
         | Operacao::AbrirApp
         | Operacao::Backups
-        | Operacao::Configuracao => "{}".into(),
+        | Operacao::Configuracao
+        | Operacao::BackupExterno
+        | Operacao::Pendrives => "{}".into(),
+        Operacao::DefinirBackupExterno => r#"{"ligado":true,"uuid":"ABCD-1234"}"#.into(),
         Operacao::RestaurarBackup => {
             format!(r#"{{"versao":"ward-20261109-153000.ward","senha":"{senha}","pin":"{pin}"}}"#)
         }
@@ -202,6 +205,15 @@ fn uma_resposta_de_cada() -> Vec<Resposta> {
             minutos_trava: 240,
             backup_externo: false,
         },
+        Resposta::BackupExterno {
+            ligado: true,
+            uuid: Some("ABCD-1234".into()),
+        },
+        Resposta::Pendrives(vec![Pendrive {
+            uuid: "ABCD-1234".into(),
+            rotulo: "PENDRIVE \"A\"".into(),
+            montado: true,
+        }]),
     ]
 }
 
@@ -246,6 +258,9 @@ fn v3_15_tabela_operacao_papel() {
         ("backups", false, true, false),
         ("restaurar_backup", false, true, false),
         ("configuracao", false, true, false),
+        ("backup_externo", false, true, false),
+        ("definir_backup_externo", false, true, false),
+        ("pendrives", false, true, false),
         ("sugerir", false, false, true),
         ("preencher", false, false, true),
         ("salvar_login", false, false, true),
@@ -286,6 +301,8 @@ fn v3_15_tabela_operacao_papel() {
         ("preenchimento", false, false, true, true),
         ("backups", false, true, false, false),
         ("configuracao", false, true, false, false),
+        ("backup_externo", false, true, false, false),
+        ("pendrives", false, true, false, false),
     ];
     let real: Vec<_> = TipoResposta::TODAS
         .iter()
@@ -1817,4 +1834,288 @@ fn ataque_restaurar_com_caminho_no_nome_recusado() {
     assert!(decodificar_resposta(Papel::App, quadro.as_bytes()).is_err());
     let muitos = Resposta::Backups(vec!["ward-20261109-153000.ward".into(); MAX_BACKUPS + 1]);
     assert!(codificar_resposta(Papel::App, &muitos).is_err());
+}
+
+// ---- Fase 22d: D65 d (datas no `detalhe` do app; V3.41) ----
+
+/// V3.41: as datas vão só no `detalhe` (papel app), voltam iguais e, sem data, a chave
+/// não vai; o agente não recebe `detalhe`, e a lista não leva data para ninguém.
+#[test]
+fn d65_datas_so_no_detalhe_do_app() {
+    use crate::entrada::{Datas, NivelAcesso};
+    let mut entradas = cofre_de_teste();
+    let i = entradas
+        .iter()
+        .position(|e| e.nome() == "acme-pg-dev")
+        .unwrap();
+    entradas[i].definir_datas(
+        Datas::carimbo_novo(1_762_041_600)
+            .unwrap()
+            .alterado(1_762_473_600)
+            .unwrap(),
+    );
+    let d = DetalheEntrada::de_entrada(&entradas[i]);
+    let q = codificar_resposta(Papel::App, &Resposta::Detalhe(d.clone())).unwrap();
+    let s = String::from_utf8(q.to_vec()).unwrap();
+    assert!(s.contains(r#""criada_em":1762041600"#), "{s}");
+    assert!(s.contains(r#""alterada_em":1762473600"#), "{s}");
+    match decodificar_resposta(Papel::App, &q).unwrap() {
+        Resposta::Detalhe(lido) => assert_eq!(lido, d),
+        outra => panic!("{:?}", outra.tipo()),
+    }
+    // O detalhe nunca vai ao agente nem à extensão (D5), com ou sem data.
+    for papel in [Papel::Agente, Papel::Extensao] {
+        assert!(codificar_resposta(papel, &Resposta::Detalhe(d.clone())).is_err());
+        assert!(decodificar_resposta(papel, &q).is_err());
+    }
+    // A lista não leva data para ninguém.
+    for papel in [Papel::App, Papel::Agente] {
+        let itens = entradas
+            .iter()
+            .filter(|e| papel == Papel::App || e.nivel() != NivelAcesso::Bloqueado)
+            .map(|e| ItemLista::de_entrada(e, papel))
+            .collect();
+        let q = codificar_resposta(papel, &Resposta::Lista(itens)).unwrap();
+        let s = String::from_utf8_lossy(&q);
+        assert!(!s.contains("criada_em") && !s.contains("alterada_em"));
+        assert!(!s.contains("1762041600") && !s.contains("1762473600"));
+    }
+    // Sem datas: nenhuma das chaves vai.
+    let sem = entradas
+        .iter()
+        .find(|e| e.nome() == "gama-bloqueada")
+        .unwrap();
+    let q = codificar_resposta(
+        Papel::App,
+        &Resposta::Detalhe(DetalheEntrada::de_entrada(sem)),
+    )
+    .unwrap();
+    let s = String::from_utf8_lossy(&q);
+    assert!(!s.contains("criada_em") && !s.contains("alterada_em"));
+}
+
+/// V3.41: um `detalhe` forjado com data fora da regra (criação depois da alteração,
+/// criação sem alteração, fora da faixa, texto no lugar de número, negativo, repetida)
+/// é recusado pela leitura do app.
+#[test]
+fn ataque_d65_detalhe_com_data_forjada_recusado() {
+    let entradas = cofre_de_teste();
+    let e = entradas.iter().find(|e| e.nome() == "acme-pg-dev").unwrap();
+    let q = codificar_resposta(
+        Papel::App,
+        &Resposta::Detalhe(DetalheEntrada::de_entrada(e)),
+    )
+    .unwrap();
+    let s = String::from_utf8(q.to_vec()).unwrap();
+    let com = |extra: &str| s.replacen(r#""nome":"#, &format!(r#"{extra},"nome":"#), 1);
+    assert!(decodificar_resposta(Papel::App, com(r#""alterada_em":5"#).as_bytes()).is_ok());
+    assert!(
+        decodificar_resposta(
+            Papel::App,
+            com(r#""criada_em":5,"alterada_em":5"#).as_bytes()
+        )
+        .is_ok()
+    );
+    for forjado in [
+        r#""criada_em":6,"alterada_em":5"#,
+        r#""criada_em":5"#,
+        r#""criada_em":0,"alterada_em":5"#,
+        r#""alterada_em":0"#,
+        r#""alterada_em":253402300800"#,
+        r#""alterada_em":18446744073709551615"#,
+        r#""alterada_em":"5""#,
+        r#""alterada_em":-5"#,
+        r#""alterada_em":5.5"#,
+        r#""alterada_em":null"#,
+        r#""alterada_em":5,"alterada_em":6"#,
+        r#""criado_em":5"#,
+    ] {
+        assert!(
+            decodificar_resposta(Papel::App, com(forjado).as_bytes()).is_err(),
+            "aceitou {forjado}"
+        );
+    }
+}
+
+/// V3.41: data vinda do cliente é recusada pelo decodificador: no `salvar_entrada` (no
+/// topo do rascunho, nos campos e fora do rascunho), no `salvar_login` da extensão e no
+/// `mudar_nivel`.
+#[test]
+fn ataque_d65_data_no_rascunho_recusada() {
+    let base = dados_validos(Operacao::SalvarEntrada);
+    let q = |d: &str| ped(Papel::App, &quadro_de(Operacao::SalvarEntrada, d));
+    assert!(q(&base).is_ok());
+    for chave in ["criada_em", "alterada_em", "datas"] {
+        for valor in ["1762041600", "\"2026-11-02\"", "{}"] {
+            let par = format!(r#""{chave}":{valor}"#);
+            let no_topo = base.replacen(r#""nome":"#, &format!(r#"{par},"nome":"#), 1);
+            assert_eq!(
+                q(&no_topo).unwrap_err(),
+                ErroResposta::PedidoInvalido,
+                "{par}"
+            );
+            let nos_campos = base.replacen(r#""url":"#, &format!(r#"{par},"url":"#), 1);
+            assert_eq!(
+                q(&nos_campos).unwrap_err(),
+                ErroResposta::PedidoInvalido,
+                "{par}"
+            );
+            let fora = com_campo(&base, &par);
+            assert_eq!(q(&fora).unwrap_err(), ErroResposta::PedidoInvalido, "{par}");
+        }
+    }
+    for op in [Operacao::SalvarLogin, Operacao::MudarNivel] {
+        let validos = dados_validos(op);
+        let papel = papel_de(op);
+        assert!(ped(papel, &quadro_de(op, &validos)).is_ok());
+        let com = com_campo(&validos, r#""alterada_em":1762041600"#);
+        assert_eq!(
+            ped(papel, &quadro_de(op, &com)).unwrap_err(),
+            ErroResposta::PedidoInvalido
+        );
+    }
+    let login =
+        dados_validos(Operacao::SalvarLogin).replacen(r#""nome":"#, r#""criada_em":1,"nome":"#, 1);
+    assert_eq!(
+        ped(Papel::Extensao, &quadro_de(Operacao::SalvarLogin, &login)).unwrap_err(),
+        ErroResposta::PedidoInvalido
+    );
+}
+
+// ---- Fase 46: backup externo ----
+
+/// V7.8 (D17, D30): o agente e a extensão pedindo `backup_externo`,
+/// `definir_backup_externo` ou `pendrives` recebem "não autorizado", com qualquer campo;
+/// o app é atendido. As respostas `backup_externo` e `pendrives` não vão a outro papel.
+#[test]
+fn v7_8_backup_externo_so_pelo_app() {
+    for op in [
+        Operacao::BackupExterno,
+        Operacao::DefinirBackupExterno,
+        Operacao::Pendrives,
+    ] {
+        let bom = quadro_de(op, &dados_validos(op));
+        for papel in [Papel::Agente, Papel::Extensao] {
+            for q in [
+                bom.clone(),
+                quadro_de(op, "{}"),
+                quadro_de(op, r#"{"ligado":true,"uuid":"ABCD-1234"}"#),
+                quadro_de(op, r#"{"ligado":false}"#),
+                quadro_de(op, &com_campo(&dados_validos(op), r#""papel":"app""#)),
+            ] {
+                assert_eq!(
+                    ped(papel, &q).unwrap_err(),
+                    ErroResposta::NaoAutorizado,
+                    "{} pelo {}",
+                    op.nome(),
+                    papel.nome()
+                );
+            }
+            let p = ped(Papel::App, &bom).unwrap();
+            assert_eq!(
+                codificar_pedido(papel, &p).unwrap_err(),
+                ErroCodificar::NaoPermitidaAoPapel
+            );
+        }
+        assert!(ped(Papel::App, &bom).is_ok());
+    }
+    for r in [
+        Resposta::BackupExterno {
+            ligado: true,
+            uuid: Some("ABCD-1234".into()),
+        },
+        Resposta::Pendrives(vec![Pendrive {
+            uuid: "ABCD-1234".into(),
+            rotulo: "PENDRIVE".into(),
+            montado: true,
+        }]),
+    ] {
+        for papel in [Papel::Agente, Papel::Extensao] {
+            assert_eq!(
+                codificar_resposta(papel, &r).unwrap_err(),
+                ErroCodificar::NaoPermitidaAoPapel
+            );
+        }
+        let bytes = codificar_resposta(Papel::App, &r).unwrap();
+        assert!(decodificar_resposta(Papel::Agente, &bytes).is_err());
+        assert!(decodificar_resposta(Papel::Extensao, &bytes).is_err());
+        assert!(decodificar_resposta(Papel::App, &bytes).is_ok());
+    }
+}
+
+/// O UUID do `definir_backup_externo` segue a configuração (D45): caminho, `..`, espaço,
+/// `-` nas pontas, longo, vazio, ligado sem UUID e campo a mais são recusados; uma
+/// resposta `pendrives` com UUID ruim ou rótulo com caractere de controle também.
+#[test]
+fn ataque_definir_backup_externo_fora_do_formato() {
+    for dados in [
+        r#"{"ligado":true}"#.to_owned(),
+        r#"{"ligado":true,"uuid":""}"#.to_owned(),
+        r#"{"ligado":true,"uuid":"../../etc"}"#.to_owned(),
+        r#"{"ligado":true,"uuid":"/media/usuario/PEN"}"#.to_owned(),
+        r#"{"ligado":true,"uuid":"ABCD 1234"}"#.to_owned(),
+        r#"{"ligado":true,"uuid":"-ABCD"}"#.to_owned(),
+        r#"{"ligado":true,"uuid":"ABCD-"}"#.to_owned(),
+        r#"{"ligado":true,"uuid":"xyz"}"#.to_owned(),
+        format!(r#"{{"ligado":true,"uuid":"{}"}}"#, "A".repeat(37)),
+        r#"{"ligado":"sim","uuid":"ABCD-1234"}"#.to_owned(),
+        r#"{"uuid":"ABCD-1234"}"#.to_owned(),
+        r#"{"ligado":true,"uuid":"ABCD-1234","caminho":"/tmp"}"#.to_owned(),
+    ] {
+        let q = quadro_de(Operacao::DefinirBackupExterno, &dados);
+        assert_eq!(
+            ped(Papel::App, &q).unwrap_err(),
+            ErroResposta::PedidoInvalido,
+            "{dados}"
+        );
+    }
+    // Desligado, com ou sem UUID; ligado com o UUID (vfat e ext4).
+    for dados in [
+        r#"{"ligado":false}"#,
+        r#"{"ligado":false,"uuid":"ABCD-1234"}"#,
+        r#"{"ligado":true,"uuid":"0f3c2b7e-9a51-4c1e-8d2f-5b6a7c8d9e01"}"#,
+    ] {
+        let q = quadro_de(Operacao::DefinirBackupExterno, dados);
+        assert!(ped(Papel::App, &q).is_ok(), "{dados}");
+    }
+    let p = Pedido::DefinirBackupExterno {
+        ligado: true,
+        uuid: None,
+    };
+    assert_eq!(
+        codificar_pedido(Papel::App, &p).unwrap_err(),
+        ErroCodificar::Invalida
+    );
+    for ruim in [
+        Resposta::Pendrives(vec![Pendrive {
+            uuid: "../x".into(),
+            rotulo: "PEN".into(),
+            montado: true,
+        }]),
+        Resposta::Pendrives(vec![Pendrive {
+            uuid: "ABCD-1234".into(),
+            rotulo: "PEN\u{1b}[2J".into(),
+            montado: true,
+        }]),
+        Resposta::Pendrives(vec![
+            Pendrive {
+                uuid: "ABCD-1234".into(),
+                rotulo: String::new(),
+                montado: false,
+            };
+            MAX_PENDRIVES + 1
+        ]),
+        Resposta::BackupExterno {
+            ligado: true,
+            uuid: None,
+        },
+    ] {
+        assert_eq!(
+            codificar_resposta(Papel::App, &ruim).unwrap_err(),
+            ErroCodificar::Invalida,
+            "{ruim:?}"
+        );
+    }
+    let quadro = r#"{"v":1,"tipo":"pendrives","dados":{"itens":[{"uuid":"ABCD-1234","rotulo":"a\u0007b","montado":true}]}}"#;
+    assert!(decodificar_resposta(Papel::App, quadro.as_bytes()).is_err());
 }

@@ -10,17 +10,20 @@
 use std::ffi::OsString;
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use ward_core::entrada::Segredo;
 use ward_core::limites::{KIB, MAX_ARGUMENTO, MAX_ARGUMENTOS, MAX_SEGREDO, MAX_VARIAVEIS_AMBIENTE};
 use ward_core::protocolo::{
-    ErroCodificar, ErroResposta, Fluxo, Papel, Pedido, PedidoExecutar, Resposta, Variavel,
+    ErroCodificar, ErroResposta, Fluxo, Janela, Papel, Pedido, PedidoExecutar, Resposta, Variavel,
 };
 use ward_plataforma::{ErroTerminal, ServidorEsperado};
 use zeroize::Zeroizing;
 
 use crate::args::{AJUDA, Comando};
-use crate::cliente::{Conexao, ErroConexao};
+use crate::cliente::{Conexao, ErroConexao, EscritaSessao, Sessao};
 use crate::texto;
 
 /// Código de saída: sucesso.
@@ -68,6 +71,33 @@ pub trait Entorno {
     /// Entrada padrão, repassada ao comando do `ward run`.
     fn entrada_padrao(&mut self) -> Box<dyn Read + Send> {
         Box::new(io::stdin())
+    }
+    /// `ward ssh` interativo (Fase 27): o tamanho do terminal, se a entrada e a saída
+    /// padrão são terminais; `None` sem terminal (pipe, arquivo).
+    fn terminal(&self) -> Option<Janela> {
+        if !ward_plataforma::terminal::e_terminal(io::stdin())
+            || !ward_plataforma::terminal::e_terminal(io::stdout())
+        {
+            return None;
+        }
+        Some(janela_de(ward_plataforma::terminal::tamanho(io::stdin())))
+    }
+    /// O tamanho do terminal agora (a thread que acompanha a janela pergunta de novo).
+    fn tamanho_terminal(&self) -> Box<dyn Fn() -> Option<(u16, u16)> + Send> {
+        Box::new(|| ward_plataforma::terminal::tamanho(io::stdin()))
+    }
+    /// Põe o terminal de entrada em modo cru; volta quando o valor sai.
+    fn modo_cru(&mut self) -> Option<ward_plataforma::ModoCru> {
+        ward_plataforma::ModoCru::ligar(io::stdin()).ok()
+    }
+}
+
+/// Tamanho do terminal para o protocolo (24×80 quando o terminal não diz).
+fn janela_de(t: Option<(u16, u16)>) -> Janela {
+    let (linhas, colunas) = t.unwrap_or((24, 80));
+    Janela {
+        linhas: linhas.clamp(1, 10_000),
+        colunas: colunas.clamp(1, 10_000),
     }
 }
 
@@ -125,6 +155,11 @@ pub fn executar(cmd: Comando, e: &mut dyn Entorno) -> u8 {
         Comando::Travar => travar(e),
         Comando::Destravar => destravar(e),
         Comando::Run { entrada, argv } => run(e, entrada, argv),
+        Comando::Ssh {
+            entrada,
+            token,
+            comando,
+        } => ssh(e, entrada, token, comando),
     }
 }
 
@@ -333,12 +368,18 @@ fn run(e: &mut dyn Entorno, entrada: String, argv: Vec<OsString>) -> u8 {
         Ok(_) => return falhar_run(e, "resposta inesperada do daemon"),
         Err(erro) => return falhar_run(e, &erro.mensagem()),
     }
-    let (mut sessao, mut escrita) = match c.abrir_sessao(&pedido) {
+    let (sessao, escrita) = match c.abrir_sessao(&pedido) {
         Ok(s) => s,
         Err(erro) => return falhar_run(e, &erro.mensagem()),
     };
     drop(pedido);
-    // A entrada padrão vai ao comando numa thread; no fim dela, um quadro vazio.
+    let escrita = Arc::new(Mutex::new(escrita));
+    repassar_entrada(e, escrita);
+    receber_sessao(e, sessao)
+}
+
+/// A entrada padrão vai ao comando numa thread; no fim dela, um quadro vazio.
+fn repassar_entrada(e: &mut dyn Entorno, escrita: Arc<Mutex<EscritaSessao>>) {
     let mut fonte = e.entrada_padrao();
     let _ = std::thread::Builder::new()
         .name("ward-entrada".into())
@@ -351,11 +392,16 @@ fn run(e: &mut dyn Entorno, entrada: String, argv: Vec<OsString>) -> u8 {
                     Err(_) => 0,
                 };
                 let dados = Segredo::de_bytes(buf[..n].to_vec());
-                if escrita.entrada(dados).is_err() || n == 0 {
+                let mut w = escrita.lock().unwrap_or_else(|e| e.into_inner());
+                if w.entrada(dados).is_err() || n == 0 {
                     return;
                 }
             }
         });
+}
+
+/// Repassa a saída da sessão até o `fim` e devolve o código.
+fn receber_sessao(e: &mut dyn Entorno, mut sessao: Sessao) -> u8 {
     loop {
         match sessao.receber() {
             Ok(Resposta::Saida { fluxo, dados }) => {
@@ -375,4 +421,114 @@ fn run(e: &mut dyn Entorno, entrada: String, argv: Vec<OsString>) -> u8 {
             Err(erro) => return falhar_run(e, &erro.mensagem()),
         }
     }
+}
+
+/// De quanto em quanto tempo o `ward ssh` interativo olha o tamanho do terminal.
+const PASSO_JANELA: Duration = Duration::from_millis(250);
+
+/// O pedido do `ssh`, ou a mensagem de por que ele não cabe (os mesmos limites do
+/// `ward run`, D52). Nenhum valor vai para a mensagem.
+pub fn pedido_ssh(
+    entrada: String,
+    token: Option<String>,
+    comando: Vec<OsString>,
+    janela: Option<Janela>,
+) -> Result<Pedido, &'static str> {
+    use std::os::unix::ffi::OsStringExt;
+    let comando: Vec<Vec<u8>> = comando.into_iter().map(OsStringExt::into_vec).collect();
+    if comando.iter().map(Vec::len).sum::<usize>() > MAX_RUN {
+        return Err(MSG_RUN_GRANDE);
+    }
+    if comando.len() > MAX_ARGUMENTOS || comando.iter().any(|a| a.len() > MAX_ARGUMENTO) {
+        return Err(MSG_RUN_CAMPO);
+    }
+    let pedido = Pedido::Ssh {
+        entrada,
+        comando: comando.into_iter().map(Zeroizing::new).collect(),
+        token: token.map(Segredo::de_texto),
+        janela,
+    };
+    match ward_core::protocolo::codificar_pedido(Papel::Agente, &pedido) {
+        Ok(_) => Ok(pedido),
+        Err(ErroCodificar::GrandeDemais) => Err(MSG_RUN_GRANDE),
+        Err(_) => Err(MSG_RUN_CAMPO),
+    }
+}
+
+/// `ward ssh [--token <t>] <entrada> [comando…]` (Fase 27). O daemon conecta com a
+/// credencial (senha por `sshpass`, chave pelo agente temporário de D12) e devolve a
+/// saída já mascarada e o código. Sem comando e com terminal: shell remoto num pty, com
+/// o terminal local em modo cru e o tamanho acompanhado. Nenhum segredo passa por aqui
+/// (S1); o token do "Conectar" não é segredo de credencial e morre no primeiro uso (D3).
+fn ssh(e: &mut dyn Entorno, entrada: String, token: Option<String>, comando: Vec<OsString>) -> u8 {
+    let janela = if comando.is_empty() {
+        e.terminal()
+    } else {
+        None
+    };
+    let pedido = match pedido_ssh(entrada, token, comando, janela) {
+        Ok(p) => p,
+        Err(msg) => return falhar_run(e, msg),
+    };
+    let mut c = match e.conectar() {
+        Ok(c) => c,
+        Err(erro) => return falhar_run(e, &erro.mensagem()),
+    };
+    match c.pedir(&Pedido::Estado) {
+        Ok(Resposta::Estado {
+            cofre_existe: false,
+            ..
+        }) => return falhar_run(e, &mensagem_do_daemon(&ErroResposta::CofreInexistente)),
+        Ok(Resposta::Estado { travado: true, .. }) => {
+            let _ = writeln!(e.erro(), "ward: {MSG_RUN_TRAVADO}");
+        }
+        Ok(Resposta::Estado { .. }) => {}
+        Ok(Resposta::Erro(erro)) => return falhar_run(e, &mensagem_do_daemon(&erro)),
+        Ok(_) => return falhar_run(e, "resposta inesperada do daemon"),
+        Err(erro) => return falhar_run(e, &erro.mensagem()),
+    }
+    let (sessao, escrita) = match c.abrir_sessao(&pedido) {
+        Ok(s) => s,
+        Err(erro) => return falhar_run(e, &erro.mensagem()),
+    };
+    drop(pedido);
+    let escrita = Arc::new(Mutex::new(escrita));
+    // Interativo: terminal cru enquanto a sessão durar (volta no `Drop`, mesmo em erro).
+    let cru = janela.and_then(|_| e.modo_cru());
+    let fim = Arc::new(AtomicBool::new(false));
+    if let Some(inicial) = janela {
+        acompanhar_janela(e, inicial, escrita.clone(), fim.clone());
+    }
+    repassar_entrada(e, escrita);
+    let codigo = receber_sessao(e, sessao);
+    fim.store(true, Ordering::Release);
+    drop(cru);
+    codigo
+}
+
+/// Manda o tamanho novo do terminal quando ele muda (sem tratador de sinal: olha a
+/// cada [`PASSO_JANELA`]).
+fn acompanhar_janela(
+    e: &mut dyn Entorno,
+    inicial: Janela,
+    escrita: Arc<Mutex<EscritaSessao>>,
+    fim: Arc<AtomicBool>,
+) {
+    let tamanho = e.tamanho_terminal();
+    let _ = std::thread::Builder::new()
+        .name("ward-janela".into())
+        .spawn(move || {
+            let mut atual = inicial;
+            while !fim.load(Ordering::Acquire) {
+                std::thread::sleep(PASSO_JANELA);
+                let nova = janela_de(tamanho());
+                if nova != atual {
+                    atual = nova;
+                    let mut w = escrita.lock().unwrap_or_else(|e| e.into_inner());
+                    if w.janela(nova).is_err() {
+                        return;
+                    }
+                }
+            }
+        });
 }

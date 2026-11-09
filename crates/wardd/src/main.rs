@@ -13,7 +13,7 @@ use wardd::config::Config;
 use wardd::lancamento::{AbridorReal, AppDeTeste};
 use wardd::nucleo::{Daemon, RelogioReal};
 use wardd::servidor::{self, Papeis};
-use wardd::{aviso, execucao, log, trava};
+use wardd::{aviso, execucao, log, trava, udisks};
 
 /// Chrome instalado, pai aceito do host da extensão (D5, D47).
 const CHROME: &str = "/opt/google/chrome/chrome";
@@ -123,24 +123,48 @@ fn main() -> ExitCode {
         None => Motor::sem_app(),
     };
     daemon = daemon.com_motor(motor.esperando_sem_app());
+    // Fase 24 (logind) e Fase 46 (udisks2): o mesmo barramento do sistema.
+    let barramento = match trava::barramento_do_daemon() {
+        Ok(b) => b,
+        Err(e) => {
+            aviso!("{e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let udisks: Option<Arc<udisks::Udisks>> = barramento
+        .as_ref()
+        .map(|s| Arc::new(udisks::Udisks::novo(s.clone())));
+    if let Some(u) = &udisks {
+        daemon = daemon.com_pendrives(u.clone());
+    }
     let daemon = Arc::new(daemon);
     // Fase 24: trava por inatividade e pelo logind (bloqueio de tela, suspensão).
     if trava::vigiar_inatividade(daemon.clone(), trava::INTERVALO_INATIVIDADE).is_err() {
         aviso!("não deu para criar a thread da trava por inatividade");
         return ExitCode::FAILURE;
     }
-    match trava::barramento_do_daemon() {
-        Ok(Some(socket)) => {
-            if trava::vigiar_logind(daemon.clone(), socket, Box::new(|| {})).is_err() {
+    match (barramento, udisks) {
+        (Some(socket), Some(fonte)) => {
+            if trava::vigiar_logind(daemon.clone(), socket.clone(), Box::new(|| {})).is_err() {
                 aviso!("não deu para criar a thread do logind");
                 return ExitCode::FAILURE;
             }
+            // Fase 46: backup externo. A cópia só acontece com o cofre destravado e o
+            // externo ligado na configuração do cofre (desligado por padrão).
+            let Some(cutucoes) = daemon.ligar_copia_externa() else {
+                aviso!("cópia externa já ligada");
+                return ExitCode::FAILURE;
+            };
+            if udisks::vigiar_copia(daemon.clone(), fonte, cutucoes).is_err()
+                || udisks::vigiar_udisks(daemon.clone(), socket, Box::new(|| {})).is_err()
+            {
+                aviso!("não deu para criar as threads do backup externo");
+                return ExitCode::FAILURE;
+            }
         }
-        Ok(None) => aviso!("daemon de teste sem WARD_DEV_DBUS_SISTEMA: logind desligado"),
-        Err(e) => {
-            aviso!("{e}");
-            return ExitCode::FAILURE;
-        }
+        _ => aviso!(
+            "daemon de teste sem WARD_DEV_DBUS_SISTEMA: logind desligado; udisks2 (backup externo) desligado"
+        ),
     }
     aviso!("pronto");
     let papeis = Papeis {

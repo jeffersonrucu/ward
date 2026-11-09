@@ -14,22 +14,30 @@
 //! `wardd`: PIN conferido no hash Argon2id da configuração do cofre de teste, em tempo
 //! constante pela biblioteca; o 5º erro seguido trava, e travado tudo menos `estado`
 //! responde "travado"), `destravar` (Fase 31: senha mestra de teste conferida em tempo
-//! constante, espera de D20 antes de olhar a senha); o resto responde `interno`. As
+//! constante, espera de D20 antes de olhar a senha) e `responder_aprovacao` (Fase 36,
+//! só os pedidos postos por [`DaemonFalso::com_aprovacao`], com a mesma regra do
+//! `wardd`); o resto responde `interno`. As
 //! mudanças ficam só na memória do processo (travado, só reiniciando a ponte). No
 //! [`DaemonFalso::sem_cofre`], atende `criar_cofre` (Fase 30): guarda só o hash do PIN
 //! (D30), que o `mudar_nivel` passa a conferir no lugar do PIN de teste. Na tela
 //! Configurações (Fase 38): `configuracao`, `tempo_trava` (1 a 1440, D45), `trocar_pin`
 //! (PIN atual conferido como no `mudar_nivel`, com a mesma contagem de erros) e
 //! `trocar_senha` (senha atual conferida em tempo constante; a nova passa a destravar).
+//! As datas de D65 d (Fase 22d) seguem a regra do `wardd`: entrada nova ganha as duas,
+//! edição e `mudar_nivel` só a alteração, pelo relógio do processo; as do cofre de
+//! teste nascem sem datas.
 //!
 //! Sem a feature `modo-teste` este módulo nem existe no binário (só nos testes).
 
 use zeroize::Zeroizing;
 
 use ward_core::configuracao::HashPin;
-use ward_core::entrada::{Entrada, NivelAcesso, Rascunho, Segredo as SegredoCore, TipoEntrada};
+use ward_core::entrada::{
+    Datas, Entrada, NivelAcesso, Rascunho, Segredo as SegredoCore, TipoEntrada,
+};
 use ward_core::protocolo::{
-    self, Alvo, DetalheEntrada, ErroResposta, ItemLista, Papel, Pedido, Resposta,
+    self, Alvo, Decisao, DetalheEntrada, ErroResposta, ItemLista, Papel, Pedido, PedidoDeAprovacao,
+    Resposta,
 };
 use ward_core::totp::Totp;
 
@@ -63,6 +71,81 @@ pub struct DaemonFalso {
     minutos_trava: u32,
     /// Senha mestra trocada pelo `trocar_senha` (Fase 38); sem ela vale a de teste.
     senha: Option<Zeroizing<Vec<u8>>>,
+    /// Pedidos de aprovação pendentes (Fase 36): id e entradas.
+    aprovacoes: Vec<(u64, Vec<String>)>,
+}
+
+/// Pedido de aprovação simulado e há quanto tempo "chegou" (Fase 36, ponte de teste).
+pub type AprovacaoSimulada = (PedidoDeAprovacao, std::time::Duration);
+
+/// Os pedidos de aprovação da ponte de teste (`--daemon-falso aprovacao…`), para a QA
+/// dos estados do M0 no Chrome. Tudo falso; nenhum segredo (o pedido não tem campo
+/// para isso).
+/// - `aprovacao`: `acme-pg-aprovacao` (stage), como o `Aprovação / Normal`;
+/// - `aprovacao-prod`: `acme-pg-prod`, para o `Aprovação / prod`;
+/// - `aprovacao-expirando`: o normal chegado há 104 s (faltam 16 s);
+/// - `aprovacao-ataque` (V5.29): `sh -c` com U+202E, U+2066, largura zero, `ESC[2J`,
+///   `\n` imitando outro comando e HTML, crus (como se o daemon não tivesse
+///   neutralizado), e um processo `claude\u{202E}` na cadeia.
+pub fn aprovacoes_simuladas(modo: &str) -> Option<Vec<AprovacaoSimulada>> {
+    use std::time::Duration;
+    use ward_core::entrada::Ambiente;
+    use ward_core::protocolo::Operacao;
+    let pedido = |id, entrada: &str, ambiente, comando: &str, cadeia: &[&str]| PedidoDeAprovacao {
+        id,
+        entradas: vec![entrada.to_owned()],
+        ambiente,
+        operacao: Operacao::Executar,
+        comando: comando.to_owned(),
+        cadeia: cadeia.iter().map(|c| (*c).to_owned()).collect(),
+    };
+    let psql = |entrada: &str| {
+        ward_core::exibicao::exibir_argumentos(
+            &[
+                "ward",
+                "run",
+                entrada,
+                "--",
+                "psql",
+                "-c",
+                "select count(*) from pedidos",
+            ],
+            64 * 1024,
+        )
+    };
+    let cadeia = ["claude", "bash", "ward run"];
+    let normal = pedido(
+        1,
+        "acme-pg-aprovacao",
+        Ambiente::Stage,
+        &psql("acme-pg-aprovacao"),
+        &cadeia,
+    );
+    Some(match modo {
+        "aprovacao" => vec![(normal, Duration::ZERO)],
+        "aprovacao-prod" => vec![(
+            pedido(
+                2,
+                "acme-pg-prod",
+                Ambiente::Prod,
+                &psql("acme-pg-prod"),
+                &cadeia,
+            ),
+            Duration::ZERO,
+        )],
+        "aprovacao-expirando" => vec![(normal, Duration::from_secs(104))],
+        "aprovacao-ataque" => vec![(
+            pedido(
+                3,
+                "acme-pg-aprovacao",
+                Ambiente::Stage,
+                "\"ward\" \"run\" \"acme-pg-aprovacao\" \"--\" \"sh\" \"-c\" \"echo <b>ok</b>\u{202E}txt.exe\u{2066}x\u{200B}y\u{1b}[2J\nward run acme-pg-dev -- ls\"",
+                &["claude\u{202E}", "bash", "ward run"],
+            ),
+            Duration::ZERO,
+        )],
+        _ => return None,
+    })
 }
 
 /// Erros de PIN seguidos que travam o cofre (o mesmo `MAX_ERROS_PIN` do `wardd`).
@@ -89,6 +172,7 @@ impl DaemonFalso {
             espera_d20: true,
             minutos_trava: wc::limites::MINUTOS_TRAVA_PADRAO,
             senha: None,
+            aprovacoes: Vec::new(),
         }
     }
 
@@ -150,6 +234,23 @@ impl DaemonFalso {
             None => cofre_teste::SENHA_MESTRA.as_bytes(),
         };
         senha.expor().len() == certa.len() && senha.expor().ct_eq(certa).to_bool()
+    }
+
+    /// Fase 36: um pedido de aprovação pendente, como se o `wardd` o tivesse mandado ao
+    /// app (o aviso vai à fila do serviço por quem monta a ponte).
+    pub fn com_aprovacao(mut self, p: &PedidoDeAprovacao) -> DaemonFalso {
+        self.aprovacoes.push((p.id, p.entradas.clone()));
+        self
+    }
+
+    /// Ids dos pedidos de aprovação que ainda esperam (só para os testes).
+    pub fn aprovacoes_pendentes(&self) -> Vec<u64> {
+        self.aprovacoes.iter().map(|(id, _)| *id).collect()
+    }
+
+    /// Nível de uma entrada (só para os testes).
+    pub fn nivel_de(&self, nome: &str) -> Option<NivelAcesso> {
+        self.entrada(nome).map(Entrada::nivel)
     }
 
     /// O PIN confere com o hash guardado pelo `criar_cofre` (só para os testes).
@@ -245,6 +346,15 @@ impl DaemonFalso {
             },
             // Fase 34: o token do "Conectar" (D3), só para `servidor`. O falso não abre
             // sessão nenhuma; o token é aleatório e não é guardado.
+            // Fase 36: a mesma regra do `wardd` (`uso.rs` › `responder_aprovacao`).
+            Pedido::ResponderAprovacao {
+                pedido,
+                decisao,
+                pin,
+            } => match self.responder_aprovacao(pedido, decisao, pin.as_ref()) {
+                Ok(()) => Resposta::Ok,
+                Err(e) => Resposta::Erro(e),
+            },
             Pedido::EmitirToken { entrada } => match self.entrada(&entrada) {
                 Some(e) if e.tipo() == TipoEntrada::Servidor => {
                     match ward_core::gerador::gerar(&ward_core::gerador::OpcoesGerador {
@@ -288,8 +398,8 @@ impl DaemonFalso {
         }
     }
 
-    /// A mesma regra do `wardd` (`crates/wardd/src/nucleo.rs` › `conferir_pin`): acerto
-    /// zera a contagem; o 5.º erro seguido trava.
+    /// A mesma regra do `wardd` (`crates/wardd/src/nucleo.rs` › `conferir_pin`): hash
+    /// Argon2id da biblioteca (tempo constante); o 5º erro seguido trava.
     fn conferir_pin(&mut self, pin: &SegredoCore) -> Result<(), ErroResposta> {
         let confere = match &self.hash_pin {
             Some(h) => h.conferir(pin.expor()),
@@ -329,8 +439,45 @@ impl DaemonFalso {
         Ok(())
     }
 
-    /// A mesma regra do `wardd` (`nucleo.rs` › `mudar_nivel`): o PIN primeiro, e só
-    /// depois a entrada.
+    /// A mesma regra do `wardd` (`uso.rs` › `responder_aprovacao`): pedido desconhecido
+    /// é `expirado`; "Negar" sem PIN; PIN errado deixa pendente, e o 5º trava e nega;
+    /// "sempre" deixa livre as entradas do pedido que estão "com aprovação".
+    fn responder_aprovacao(
+        &mut self,
+        id: u64,
+        decisao: Decisao,
+        pin: Option<&SegredoCore>,
+    ) -> Result<(), ErroResposta> {
+        let i = self
+            .aprovacoes
+            .iter()
+            .position(|(p, _)| *p == id)
+            .ok_or(ErroResposta::Expirado)?;
+        if decisao == Decisao::Negar {
+            self.aprovacoes.remove(i);
+            return Ok(());
+        }
+        let pin = pin.ok_or(ErroResposta::PedidoInvalido)?;
+        if let Err(e) = self.conferir_pin(pin) {
+            if self.travado {
+                self.aprovacoes.remove(i);
+            }
+            return Err(e);
+        }
+        let (_, entradas) = self.aprovacoes.remove(i);
+        if decisao == Decisao::PermitirSempre {
+            for e in self.entradas.iter_mut() {
+                if entradas.iter().any(|n| n == e.nome()) && e.nivel() == NivelAcesso::ComAprovacao
+                {
+                    e.definir_nivel(NivelAcesso::Livre);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// A mesma regra do `wardd` (`crates/wardd/src/nucleo.rs` › `conferir_pin` e
+    /// `mudar_nivel`): o PIN primeiro, e só depois a entrada.
     fn mudar_nivel(
         &mut self,
         nome: &str,
@@ -344,6 +491,7 @@ impl DaemonFalso {
             .find(|e| e.nome() == nome)
             .ok_or(ErroResposta::EntradaInexistente)?;
         e.definir_nivel(nivel);
+        e.definir_datas(alterado(e.datas()));
         Ok(())
     }
 
@@ -355,6 +503,11 @@ impl DaemonFalso {
         match anterior {
             None => {
                 nova.definir_nivel(NivelAcesso::ComAprovacao);
+                nova.definir_datas(
+                    agora()
+                        .and_then(Datas::carimbo_novo)
+                        .unwrap_or(Datas::NENHUMA),
+                );
                 nova.conferir_no_cofre(self.entradas.iter())
                     .map_err(|e| ErroResposta::de_validacao(&e))?;
             }
@@ -365,6 +518,7 @@ impl DaemonFalso {
                     .position(|e| e.nome() == nome)
                     .ok_or(ErroResposta::EntradaInexistente)?;
                 nova.definir_nivel(self.entradas[i].nivel());
+                nova.definir_datas(alterado(self.entradas[i].datas()));
                 nova.conferir_no_cofre(self.entradas.iter().filter(|e| e.nome() != nome))
                     .map_err(|e| ErroResposta::de_validacao(&e))?;
                 drop(self.entradas.remove(i));
@@ -384,6 +538,19 @@ impl Daemon for DaemonFalso {
         };
         protocolo::codificar_resposta(Papel::App, &resposta).map_err(|_| ErroApp::RespostaInvalida)
     }
+}
+
+/// Segundos UTC do relógio do processo (o `RelogioReal` do `wardd`, D65 d).
+fn agora() -> Option<u64> {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .and_then(|d| Datas::instante(d.as_secs()))
+}
+
+/// As datas depois de uma alteração agora (as mesmas sem relógio), como no `wardd`.
+fn alterado(datas: Datas) -> Datas {
+    agora().and_then(|a| datas.alterado(a)).unwrap_or(datas)
 }
 
 #[cfg(test)]

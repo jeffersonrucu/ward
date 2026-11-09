@@ -79,6 +79,10 @@ pub struct DetalheCredencial {
     pub segredos: Vec<CampoSecreto>,
     pub extras: Vec<Extra>,
     pub anexos: Vec<Anexo>,
+    /// Datas do daemon (D65 d), em segundos UTC; a tela mostra no fuso local. `None`:
+    /// a entrada não tem a data (as do `make dev-cofre`), e o rodapé não a mostra.
+    pub criada_em: Option<u64>,
+    pub alterada_em: Option<u64>,
 }
 
 /// Rótulo da interface de um campo do protocolo (o identificador, se for novo).
@@ -281,6 +285,95 @@ impl DetalheCredencial {
                     tamanho: a.tamanho,
                 })
                 .collect(),
+            criada_em: d.datas.criada_em(),
+            alterada_em: d.datas.alterada_em(),
         }
+    }
+}
+
+#[cfg(test)]
+mod testes {
+    use super::*;
+    use crate::daemon::Daemon;
+    use crate::daemon_falso::{DaemonFalso, SEGREDOS};
+    use ward_core::entrada::{NivelAcesso, Rascunho, RascunhoDados, Segredo};
+    use ward_core::protocolo::{self, Papel, Pedido, Resposta};
+
+    fn trocar(d: &mut DaemonFalso, pedido: &Pedido) -> Resposta {
+        let q = protocolo::codificar_pedido(Papel::App, pedido).unwrap();
+        let r = d.trocar(&q).unwrap();
+        protocolo::decodificar_resposta(Papel::App, &r).unwrap()
+    }
+
+    fn detalhe(d: &mut DaemonFalso, nome: &str) -> DetalheCredencial {
+        let p = Pedido::Detalhe {
+            entrada: nome.to_owned(),
+        };
+        match trocar(d, &p) {
+            Resposta::Detalhe(x) => DetalheCredencial::novo(&x),
+            outra => panic!("{:?}", outra.tipo()),
+        }
+    }
+
+    fn agora() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+    }
+
+    /// V5.34 do lado Rust (D65 d): a entrada criada pelo app chega à tela com as duas
+    /// datas do daemon; a do cofre de teste, sem datas (`null`, e a tela não mostra o
+    /// rodapé). O JSON que vai à interface não tem segredo.
+    #[test]
+    fn d65_datas_no_detalhe_da_tela() {
+        let mut d = DaemonFalso::cheio();
+        let sem = detalhe(&mut d, "acme-pg-dev");
+        assert_eq!((sem.criada_em, sem.alterada_em), (None, None));
+        let json = serde_json::to_string(&sem).unwrap();
+        assert!(
+            json.contains(r#""criada_em":null,"alterada_em":null"#),
+            "{json}"
+        );
+
+        let antes = agora();
+        let novo = Pedido::SalvarEntrada {
+            anterior: None,
+            rascunho: Rascunho {
+                nome: "clientex-stage-wp".to_owned(),
+                grupo: "clientex".to_owned(),
+                ambiente: "stage".to_owned(),
+                projeto: String::new(),
+                tags: Vec::new(),
+                dados: RascunhoDados::Login {
+                    url: "https://clientex.invalid/login".to_owned(),
+                    usuario: "admin".to_owned(),
+                    senha: Some(Segredo::de_texto(SEGREDOS[0].to_owned())),
+                    totp_semente: None,
+                },
+                extras: Vec::new(),
+                anexos: Vec::new(),
+            },
+        };
+        assert!(matches!(trocar(&mut d, &novo), Resposta::Ok));
+        let x = detalhe(&mut d, "clientex-stage-wp");
+        let criada = x.criada_em.unwrap();
+        assert!(criada >= antes && criada <= agora());
+        assert_eq!(x.alterada_em, Some(criada));
+        let json = serde_json::to_string(&x).unwrap();
+        assert!(json.contains(&format!(r#""criada_em":{criada}"#)), "{json}");
+        for s in SEGREDOS {
+            assert!(!json.contains(s));
+        }
+        // Mudar o nível (com o PIN de teste) só mexe na alteração.
+        let mudar = Pedido::MudarNivel {
+            entrada: "clientex-stage-wp".to_owned(),
+            nivel: NivelAcesso::Livre,
+            pin: Segredo::de_texto("135790".to_owned()),
+        };
+        assert!(matches!(trocar(&mut d, &mudar), Resposta::Ok));
+        let y = detalhe(&mut d, "clientex-stage-wp");
+        assert_eq!(y.criada_em, Some(criada));
+        assert!(y.alterada_em.unwrap() >= criada);
     }
 }

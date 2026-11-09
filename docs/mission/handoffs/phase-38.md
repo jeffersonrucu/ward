@@ -127,6 +127,10 @@
 | `make ferramentas` | 0 |
 | `make check`: a 1ª rodada falhou em `v3_15_tabela_operacao_papel`, porque faltava `configuracao` na tabela de respostas do teste. Corrigi, e a 2ª rodada saiu limpa | 2, depois 0 |
 | `make app-check` com o `PKG_CONFIG_PATH` do scratchpad (R32): a 1ª rodada falhou em `ataque_comandos_proprios_so_na_janela_e_origem_certas` e `ataque_destravar_so_na_janela_certa_e_senha_sem_eco`, porque o `wardd` de teste de outro worktree estava destravado no socket fixo do uid (pendência da 35); o teste novo da fase passou. Com aquele daemon parado (não fui eu que o parei), a 2ª rodada saiu limpa | 2, depois 0 |
+| Depois do `git merge master`: `make check` | 0 |
+| Depois do merge: `make app-front` | 0 |
+| Depois do merge: `make app-check` (R32) | 0 |
+| Depois do merge: ponte `--daemon-falso cheio` + `qa38.py`, com todas as checagens `true` | 0 |
 
 ## Problemas descobertos
 - **Design × contrato no PIN:** a descrição do frame `15242` diz "Trocar pede a senha
@@ -156,6 +160,23 @@
   worktrees em paralelo, isso volta a acontecer; vale isolar o socket do teste.
 - **Cópias no JS e no IPC:** as mesmas das Fases 30 e 31. O lado Rust zera a partir do
   `Digitado`.
+
+## Merge com o master (Fases 46, 36, 27, 22d)
+- **Protocolo:** `configuracao` ficou junto de `backup_externo`, `definir_backup_externo`
+  e `pendrives` da 46, nessa ordem, nas tabelas `Operacao`/`TipoResposta`, em
+  `pedido.rs`/`resposta.rs` e nas tabelas do V3.15 em `testes.rs`. Nenhum `ErroResposta`
+  novo na 38, então o `SIMPLES` continua com o tamanho que o master deixou (29).
+- **`backup_externo` × `configuracao`:** as duas respostas leem a mesma fonte no `wardd`
+  (`a.cofre.configuracao().backup().ligado()`), então não divergem. A tela continua
+  lendo pelo `configuracoes` (uma ida ao daemon só, sem UUID). O app ainda não tem
+  comando para a operação `backup_externo` da 46, e criar um seria escopo da tela de
+  ligar o backup externo. Se essa tela usar `backup_externo`, o campo `backup_externo`
+  da resposta `configuracao` pode sair.
+- **App:** os quatro comandos da 38 entraram em `COMANDOS_PRINCIPAL` (só a capability
+  `principal`). `COMANDOS` agora é principal + aprovação, espelhado em `comandos.js` e no
+  `generate_handler!`. No `daemon_falso`, os campos `minutos_trava`/`senha` convivem com
+  `aprovacoes` da 36. `cheio()`/`sem_cofre()` seguem com `..vazio()`, e o
+  `conferir_pin` é o mesmo para trocar PIN, mudar nível e responder aprovação.
 
 ## Arquivos criados/alterados
 | Arquivo | Ação |

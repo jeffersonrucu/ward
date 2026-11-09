@@ -39,35 +39,82 @@ fn limites_do_gerador_na_interface_sao_os_do_rust() {
     }
 }
 
+/// Fase 36: a janela passa a `Aprovação / Expirando` no mesmo limiar do Rust, e a tela
+/// nunca põe o texto do pedido como HTML.
+#[test]
+fn janela_de_aprovacao_segue_o_rust_e_nao_usa_html() {
+    use ward_app_nucleo::aprovacao::SEGUNDOS_URGENTE;
+    let js = fs::read_to_string(app().join("src/telas/aprovacao.js")).unwrap();
+    assert!(
+        js.contains(&format!(
+            "export const SEGUNDOS_URGENTE = {SEGUNDOS_URGENTE};"
+        )),
+        "SEGUNDOS_URGENTE diverge do Rust"
+    );
+    let tela = fs::read_to_string(app().join("src/telas/JanelaAprovacao.svelte")).unwrap();
+    assert!(tela.contains("{pedido.comando}"), "comando como texto");
+    assert!(tela.contains("{processo}"), "cadeia como texto");
+    assert!(tela.contains("{entrada.nome}"), "entrada como texto");
+}
+
+/// S11, Fase 36: duas capabilities, uma por janela; em comum só o `ouvir_avisos` (canal
+/// por janela, aviso sem dado). A janela principal não responde aprovação; a de
+/// aprovação só ouve o aviso, lê o pedido e responde.
 #[test]
 fn ataque_capability_com_permissao_a_mais() {
+    use ward_app_nucleo::comandos::{COMANDOS_APROVACAO, COMANDOS_DAS_DUAS, COMANDOS_PRINCIPAL};
     let dir = app().join("src-tauri/capabilities");
-    let arquivos: Vec<_> = fs::read_dir(&dir)
+    let mut arquivos: Vec<_> = fs::read_dir(&dir)
         .unwrap()
         .map(|e| e.unwrap().file_name())
         .collect();
-    assert_eq!(arquivos, vec!["principal.json"], "só uma capability");
-    let cap = json(&dir.join("principal.json"));
-    let esperadas: Vec<Value> = COMANDOS.iter().map(|c| Value::from(permissao(c))).collect();
+    arquivos.sort();
     assert_eq!(
-        cap["permissions"],
-        Value::from(esperadas),
-        "só allow-<comando próprio>"
+        arquivos,
+        vec!["aprovacao.json", "principal.json"],
+        "só as duas capabilities"
     );
-    assert_eq!(cap["windows"], serde_json::json!(["principal"]));
-    assert_eq!(cap["local"], Value::Bool(true));
-    assert!(cap.get("remote").is_none(), "nenhuma origem remota");
-    assert!(cap.get("webviews").is_none());
-    assert!(cap.get("platforms").is_none());
-    for p in cap["permissions"].as_array().unwrap() {
+    for (arquivo, janela, comandos) in [
+        ("principal.json", "principal", COMANDOS_PRINCIPAL),
+        ("aprovacao.json", "aprovacao", COMANDOS_APROVACAO),
+    ] {
+        let cap = json(&dir.join(arquivo));
+        let esperadas: Vec<Value> = comandos.iter().map(|c| Value::from(permissao(c))).collect();
+        assert_eq!(
+            cap["permissions"],
+            Value::from(esperadas),
+            "{arquivo}: só allow-<comando próprio da janela>"
+        );
+        assert_eq!(cap["identifier"], janela);
+        assert_eq!(cap["windows"], serde_json::json!([janela]));
+        assert_eq!(cap["local"], Value::Bool(true));
+        assert!(cap.get("remote").is_none(), "nenhuma origem remota");
+        assert!(cap.get("webviews").is_none());
+        assert!(cap.get("platforms").is_none());
+        for p in cap["permissions"].as_array().unwrap() {
+            assert!(
+                !p.as_str().unwrap().contains(':'),
+                "permissão de plugin ou do núcleo: {p}"
+            );
+        }
+    }
+    assert_eq!(COMANDOS_DAS_DUAS, &["ouvir_avisos"]);
+    let principal = json(&dir.join("principal.json"));
+    for c in COMANDOS_APROVACAO
+        .iter()
+        .filter(|c| !COMANDOS_DAS_DUAS.contains(c))
+    {
         assert!(
-            !p.as_str().unwrap().contains(':'),
-            "permissão de plugin ou do núcleo: {p}"
+            !principal["permissions"]
+                .as_array()
+                .unwrap()
+                .contains(&Value::from(permissao(c))),
+            "a janela principal não pode {c}"
         );
     }
     assert_eq!(
         conf()["app"]["security"]["capabilities"],
-        serde_json::json!(["principal"])
+        serde_json::json!(["principal", "aprovacao"])
     );
 }
 

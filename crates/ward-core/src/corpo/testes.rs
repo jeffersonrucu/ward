@@ -164,6 +164,7 @@ fn conferir_iguais(a: &Entrada, b: &Entrada) {
     assert_eq!(a.ambiente(), b.ambiente(), "{nome}: ambiente");
     assert_eq!(a.projeto(), b.projeto(), "{nome}: projeto");
     assert_eq!(a.tags(), b.tags(), "{nome}: tags");
+    assert_eq!(a.datas(), b.datas(), "{nome}: datas");
     assert!(mesmos_dados(a.dados(), b.dados()), "{nome}: dados");
     assert_eq!(a.extras().len(), b.extras().len(), "{nome}: extras");
     for (x, y) in a.extras().iter().zip(b.extras()) {
@@ -232,6 +233,9 @@ struct Crua {
     dados: Vec<Vec<u8>>,
     extras: Vec<(Vec<u8>, u8, Vec<u8>)>,
     anexos: Vec<(Vec<u8>, Vec<u8>)>,
+    /// D65 d: criação e alteração, 0 = sem.
+    criada: u64,
+    alterada: u64,
 }
 
 /// A seção de configuração como bytes crus, para forjar.
@@ -304,6 +308,8 @@ fn cruas(corpo: &[u8]) -> Vec<Crua> {
                         (n.to_vec(), c.to_vec())
                     })
                     .collect(),
+                criada: b.datas.criada_em().unwrap_or(0),
+                alterada: b.datas.alterada_em().unwrap_or(0),
             }
         })
         .collect()
@@ -317,6 +323,18 @@ fn forjar_com(versao: u16, n: u32, entradas: &[Crua]) -> Vec<u8> {
 
 /// Escritor independente, com a seção de configuração dada (ou sem ela, `None`).
 fn forjar_cfg(versao: u16, cfg: Option<&CruaCfg>, n: u32, entradas: &[Crua]) -> Vec<u8> {
+    forjar_bruto(versao, cfg, n, entradas, true)
+}
+
+/// Escritor independente; `com_datas: false` monta as entradas como no corpo v3, sem
+/// os 16 bytes das datas (D65 d).
+fn forjar_bruto(
+    versao: u16,
+    cfg: Option<&CruaCfg>,
+    n: u32,
+    entradas: &[Crua],
+    com_datas: bool,
+) -> Vec<u8> {
     fn u32le(v: &mut Vec<u8>, n: usize) {
         v.extend_from_slice(&(n as u32).to_le_bytes());
     }
@@ -365,6 +383,10 @@ fn forjar_cfg(versao: u16, cfg: Option<&CruaCfg>, n: u32, entradas: &[Crua]) -> 
             campo(&mut v, nome);
             campo(&mut v, conteudo);
         }
+        if com_datas {
+            v.extend_from_slice(&e.criada.to_le_bytes());
+            v.extend_from_slice(&e.alterada.to_le_bytes());
+        }
     }
     v
 }
@@ -402,8 +424,17 @@ impl SplitMix {
 
 #[test]
 fn v2_30_ida_e_volta_do_cofre_de_teste() {
-    let originais = cofre_de_teste();
+    let mut originais = cofre_de_teste();
     assert_eq!(originais.len(), 22);
+    // D65 d: datas nas três formas (as duas, só a alteração, nenhuma).
+    originais[0].definir_datas(Datas::carimbo_novo(1_762_000_000).unwrap());
+    originais[1].definir_datas(
+        Datas::carimbo_novo(1_762_000_000)
+            .unwrap()
+            .alterado(1_762_500_000)
+            .unwrap(),
+    );
+    originais[2].definir_datas(Datas::NENHUMA.alterado(MAX_DATA).unwrap());
     let corpo = serializar(cfg(), 1, &originais).unwrap();
     let voltaram = ler(&corpo).unwrap();
     conferir_ida_e_volta(&originais, &voltaram);
@@ -423,7 +454,7 @@ fn v2_30_ida_e_volta_do_cofre_de_teste() {
 
     // Canônico: de novo dá os mesmos bytes, e a ordem de entrada não importa.
     assert!(serializar(cfg(), 1, &voltaram).unwrap()[..] == corpo[..]);
-    let mut invertidas = cofre_de_teste();
+    let mut invertidas = ler(&corpo).unwrap();
     invertidas.reverse();
     assert!(serializar(cfg(), 1, &invertidas).unwrap()[..] == corpo[..]);
     // Saem em ordem de nome.
@@ -451,11 +482,11 @@ fn v2_30_uma_de_cada_tipo_no_maximo_do_modelo() {
 
 #[test]
 fn v2_30_cofre_vazio() {
-    // Só a configuração: versão 3, geração 1, hash do PIN, 240 minutos, backup desligado
+    // Só a configuração: versão 4, geração 1, hash do PIN, 240 minutos, backup desligado
     // sem UUID, zero entradas.
     let corpo = serializar(cfg(), 1, &[]).unwrap();
     let hash = cfg().hash_pin().bytes();
-    let mut esperado = vec![3, 0];
+    let mut esperado = vec![4, 0];
     esperado.extend_from_slice(&1u64.to_le_bytes());
     esperado.extend_from_slice(&(hash.len() as u32).to_le_bytes());
     esperado.extend_from_slice(hash);
@@ -603,9 +634,9 @@ fn troca_de_senha_sela_e_grava_pelo_mesmo_caminho() {
 #[test]
 fn formato_conhecido_de_uma_entrada() {
     // Uma entrada genérica escrita à mão, byte a byte, como no desenho do módulo:
-    // versão 3, configuração (geração 7, hash, 240 minutos, backup desligado, sem UUID),
-    // 1 entrada.
-    let mut v: Vec<u8> = vec![3, 0];
+    // versão 4, configuração (geração 7, hash, 240 minutos, backup desligado, sem UUID),
+    // 1 entrada, com as datas no fim (D65 d).
+    let mut v: Vec<u8> = vec![4, 0];
     v.extend_from_slice(&7u64.to_le_bytes());
     let campo = |v: &mut Vec<u8>, b: &[u8]| {
         v.extend_from_slice(&(b.len() as u32).to_le_bytes());
@@ -629,6 +660,8 @@ fn formato_conhecido_de_uma_entrada() {
     v.push(0);
     campo(&mut v, b"valor");
     v.extend_from_slice(&0u32.to_le_bytes());
+    v.extend_from_slice(&1_762_000_000u64.to_le_bytes());
+    v.extend_from_slice(&1_762_086_400u64.to_le_bytes());
 
     let entradas = ler(&v).unwrap();
     assert_eq!(entradas.len(), 1);
@@ -640,6 +673,8 @@ fn formato_conhecido_de_uma_entrada() {
     assert_eq!(e.projeto(), None);
     assert_eq!(e.tags(), ["tag".to_owned()]);
     assert!(matches!(e.extras()[0].valor(), ValorExtra::Texto(t) if t == "valor"));
+    assert_eq!(e.datas().criada_em(), Some(1_762_000_000));
+    assert_eq!(e.datas().alterada_em(), Some(1_762_086_400));
     assert_eq!(desserializar(&v).map(|(_, g, _)| g), Ok(7));
     assert!(serializar(cfg(), 7, &entradas).unwrap()[..] == v[..]);
 }
@@ -781,8 +816,8 @@ fn v2_31_campos_forjados() {
     // (caso, corpo forjado, valor que não pode aparecer no erro)
     let mut casos: Vec<(&str, Vec<u8>, &str)> = Vec::new();
     // A versão 1 (só entradas, Fase 15a) é desconhecida desde D30, e a 2 (sem geração)
-    // desde D39.
-    for versao in [0u16, 1, 2, 4, 0xffff] {
+    // desde D39, e a 3 (sem datas) desde D65 d.
+    for versao in [0u16, 1, 2, 3, 5, 0xffff] {
         casos.push((
             "versão desconhecida",
             forjar_com(versao, n, &base),
@@ -1747,4 +1782,166 @@ fn v2_58_corpo_forjado_com_ultimo_rotulo_numerico() {
     c[login].dados[0] = b"https://1password.com/".to_vec();
     c[api].dados[0] = b"https://x1.example2/".to_vec();
     assert!(ler(&forjar(&c)).is_ok());
+}
+
+// ---- Fase 22d: D65 d (datas de criação e alteração, corpo v4; V3.41) ----
+
+/// A regra das datas: faixa de 1 a `MAX_DATA`, criação só com alteração e não depois
+/// dela; a alteração nunca desce, nem com o relógio voltando.
+#[test]
+fn d65_regra_das_datas() {
+    assert_eq!(Datas::carimbo_novo(0), None);
+    assert_eq!(Datas::carimbo_novo(MAX_DATA + 1), None);
+    assert_eq!(Datas::carimbo_novo(u64::MAX), None);
+    let d = Datas::carimbo_novo(1_000).unwrap();
+    assert_eq!((d.criada_em(), d.alterada_em()), (Some(1_000), Some(1_000)));
+    let depois = d.alterado(5_000).unwrap();
+    assert_eq!(
+        (depois.criada_em(), depois.alterada_em()),
+        (Some(1_000), Some(5_000))
+    );
+    // Relógio que volta: a alteração fica onde estava, a criação não muda.
+    let voltou = depois.alterado(10).unwrap();
+    assert_eq!(
+        (voltou.criada_em(), voltou.alterada_em()),
+        (Some(1_000), Some(5_000))
+    );
+    assert_eq!(depois.alterado(0), None);
+    assert_eq!(depois.alterado(MAX_DATA + 1), None);
+    // Sem datas: a alteração ganha data, a criação segue desconhecida.
+    let so_alterada = Datas::NENHUMA.alterado(77).unwrap();
+    assert_eq!(
+        (so_alterada.criada_em(), so_alterada.alterada_em()),
+        (None, Some(77))
+    );
+    assert_eq!(Datas::de_partes(Some(5), Some(4)), None);
+    assert_eq!(Datas::de_partes(Some(5), None), None);
+    assert_eq!(Datas::de_partes(None, Some(0)), None);
+    assert_eq!(Datas::de_partes(Some(0), Some(1)), None);
+}
+
+/// V3.41: o corpo v3 (sem datas) é recusado como versão desconhecida, com o erro
+/// genérico; o v4 sem os bytes das datas, ou com a versão trocada para 3, também.
+#[test]
+fn d65_corpo_v3_recusado() {
+    let corpo = corpo_de_teste();
+    let base = cruas(&corpo);
+    let n = base.len() as u32;
+    let cfg = CruaCfg::padrao();
+    recusado(
+        &forjar_bruto(3, Some(&cfg), n, &base, false),
+        "corpo v3",
+        "falso",
+    );
+    recusado(
+        &forjar_bruto(3, Some(&cfg), n, &base, true),
+        "v4 rotulado 3",
+        "falso",
+    );
+    recusado(
+        &forjar_bruto(4, Some(&cfg), n, &base, false),
+        "v4 sem datas",
+        "falso",
+    );
+    recusado(
+        &forjar_bruto(5, Some(&cfg), n, &base, true),
+        "versão 5",
+        "falso",
+    );
+    // O cofre v3 vazio também: a versão é conferida antes de tudo.
+    recusado(
+        &forjar_bruto(3, Some(&cfg), 0, &[], false),
+        "v3 vazio",
+        "falso",
+    );
+    // Controle: a mesma montagem com a versão 4 e as datas abre.
+    assert!(ler(&forjar_bruto(4, Some(&cfg), n, &base, true)).is_ok());
+    assert_eq!(corpo[..2], [4, 0]);
+}
+
+/// V3.41: datas forjadas no corpo (fora da faixa, criação depois da alteração,
+/// criação sem alteração) recusam o corpo inteiro com o erro genérico, sem o valor; as
+/// formas válidas abrem e voltam iguais.
+#[test]
+fn d65_datas_forjadas_no_corpo() {
+    let corpo = corpo_de_teste();
+    let base = cruas(&corpo);
+    let i = indice(&base, "acme-pg-dev");
+    let com = |criada: u64, alterada: u64| {
+        let mut c = base.clone();
+        c[i].criada = criada;
+        c[i].alterada = alterada;
+        forjar(&c)
+    };
+    for (caso, criada, alterada) in [
+        ("criação depois da alteração", 1_762_000_001, 1_762_000_000),
+        ("criação sem alteração", 1_762_000_000, 0),
+        ("criação acima do máximo", MAX_DATA + 1, MAX_DATA + 1),
+        ("alteração acima do máximo", 0, MAX_DATA + 1),
+        ("as duas em u64::MAX", u64::MAX, u64::MAX),
+        ("alteração em u64::MAX", 1, u64::MAX),
+    ] {
+        recusado(&com(criada, alterada), caso, &alterada.to_string());
+    }
+    for (criada, alterada) in [(0, 0), (0, 7), (7, 7), (1, MAX_DATA), (MAX_DATA, MAX_DATA)] {
+        let v = com(criada, alterada);
+        let (c, entradas) = ler_tudo(&v).unwrap();
+        conferir_aceito(&v, &c, &entradas);
+        let e = entradas.iter().find(|e| e.nome() == "acme-pg-dev").unwrap();
+        let opc = |d: u64| (d != 0).then_some(d);
+        assert_eq!(e.datas().criada_em(), opc(criada));
+        assert_eq!(e.datas().alterada_em(), opc(alterada));
+    }
+}
+
+/// V3.41: as datas não guardam nem vazam segredo: o corpo com datas tem os mesmos
+/// bytes do corpo sem elas fora dos 16 bytes de cada entrada, e mexer só nas datas não
+/// muda nenhum outro campo.
+#[test]
+fn d65_datas_so_mudam_os_16_bytes_da_entrada() {
+    let sem = corpo_de_teste();
+    let mut entradas = cofre_de_teste();
+    for e in &mut entradas {
+        e.definir_datas(Datas::carimbo_novo(1_762_000_000).unwrap());
+    }
+    let com = serializar(cfg(), 1, &entradas).unwrap();
+    assert_eq!(sem.len(), com.len());
+    let diferentes = sem.iter().zip(com.iter()).filter(|(a, b)| a != b).count();
+    // 1_762_000_000 = 0x6905_C680: 4 bytes não nulos em cada uma das 2 datas.
+    assert_eq!(diferentes, entradas.len() * 2 * 4);
+}
+
+/// V3.41: um cofre v3 autêntico no disco (selado com a chave certa, corpo v3 sem datas)
+/// é recusado pela abertura do daemon (`abrir_entradas_lida`) como corpo inválido, não
+/// como senha errada, e a abertura não toca no arquivo nem deixa temporário.
+#[cfg(unix)]
+#[test]
+fn d65_cofre_v3_no_disco_recusado_sem_tocar_no_arquivo() {
+    let dir = Dir::novo("v3");
+    let destino = dir.0.join("cofre.ward");
+    let senha = SenhaMestra::nova(SENHA_MESTRA.to_owned());
+    let cofre = CofreAberto::novo(&senha, configuracao_nova()).unwrap();
+    let mut c = CruaCfg::de(cofre.configuracao());
+    c.geracao = Some(1);
+    let base = cruas(&corpo_de_teste());
+    let v3 = forjar_bruto(3, Some(&c), base.len() as u32, &base, false);
+    let arquivo = cofre.selar(&v3).unwrap();
+    crate::gravacao::gravar(&destino, &arquivo).unwrap();
+    let antes = std::fs::read(&destino).unwrap();
+    let meta = std::fs::metadata(&destino).unwrap();
+    for (minima, queimada) in [(0, 0), (1, 1), (5, 9)] {
+        let lido = std::fs::read(&destino).unwrap();
+        assert_eq!(
+            abrir_entradas_lida(&lido, &senha, minima, queimada).map(|_| ()),
+            Err(ErroAbrir::Corpo(ErroCorpo::Invalido))
+        );
+    }
+    let depois = std::fs::metadata(&destino).unwrap();
+    assert!(std::fs::read(&destino).unwrap() == antes, "o arquivo mudou");
+    assert_eq!(meta.modified().unwrap(), depois.modified().unwrap());
+    let nomes: Vec<_> = std::fs::read_dir(&dir.0).unwrap().collect();
+    assert_eq!(nomes.len(), 1, "sobrou arquivo além do cofre");
+    // Controle: o mesmo cofre com o corpo v4 abre.
+    let v4 = forjar_bruto(4, Some(&c), base.len() as u32, &base, true);
+    assert!(abrir_entradas(&cofre.selar(&v4).unwrap(), &senha).is_ok());
 }

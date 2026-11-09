@@ -507,6 +507,79 @@ pub struct SegredoDaEntrada<'a> {
     pub valor: &'a Segredo,
 }
 
+/// Datas de criação e de alteração da entrada (D65 d, provisória), em segundos UTC
+/// desde 1970.
+///
+/// - Só o daemon carimba, pelo relógio dele: nem o [`Rascunho`] nem o protocolo do
+///   cliente têm data. Nenhuma decisão de segurança usa estas datas (o rollback é D39,
+///   pela geração).
+/// - Regra (conferida na construção e na leitura do corpo): cada data vai de 1 a
+///   [`crate::limites::MAX_DATA`]; com `criada_em`, `alterada_em` existe e não é menor.
+///   Uma entrada sem datas (a do `make dev-cofre`, por exemplo) pode ganhar só a de
+///   alteração quando é editada: a criação continua desconhecida.
+/// - Fora do crate só se lê: o valor nasce de uma [`Entrada`] ou de [`Datas::carimbo`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Datas {
+    criada_em: Option<u64>,
+    alterada_em: Option<u64>,
+}
+
+impl Datas {
+    /// Sem nenhuma data.
+    pub const NENHUMA: Datas = Datas {
+        criada_em: None,
+        alterada_em: None,
+    };
+
+    /// Um instante válido para carimbar (de 1 a `MAX_DATA`), ou `None`.
+    pub fn instante(segundos: u64) -> Option<u64> {
+        (1..=crate::limites::MAX_DATA)
+            .contains(&segundos)
+            .then_some(segundos)
+    }
+
+    /// Monta e confere a regra. `None` quando não vale.
+    pub(crate) fn de_partes(criada_em: Option<u64>, alterada_em: Option<u64>) -> Option<Datas> {
+        let valida = |d: Option<u64>| d.is_none_or(|s| Self::instante(s).is_some());
+        let ordem = match (criada_em, alterada_em) {
+            (Some(c), Some(a)) => a >= c,
+            (Some(_), None) => false,
+            (None, _) => true,
+        };
+        (valida(criada_em) && valida(alterada_em) && ordem).then_some(Datas {
+            criada_em,
+            alterada_em,
+        })
+    }
+
+    /// Criação, se conhecida.
+    pub fn criada_em(self) -> Option<u64> {
+        self.criada_em
+    }
+
+    /// Última alteração, se conhecida.
+    pub fn alterada_em(self) -> Option<u64> {
+        self.alterada_em
+    }
+
+    /// As datas de uma entrada nova: as duas em `agora`. `None` com `agora` fora da faixa.
+    pub fn carimbo_novo(agora: u64) -> Option<Datas> {
+        Self::de_partes(Some(agora), Some(agora))
+    }
+
+    /// As datas depois de uma alteração: a criação fica, e `alterada_em` passa a
+    /// `agora`, sem nunca descer (um relógio que volta não faz a data voltar). `None`
+    /// com `agora` fora da faixa.
+    pub fn alterado(self, agora: u64) -> Option<Datas> {
+        let agora = Self::instante(agora)?;
+        let alterada = [Some(agora), self.alterada_em, self.criada_em]
+            .into_iter()
+            .flatten()
+            .max();
+        Self::de_partes(self.criada_em, alterada)
+    }
+}
+
 /// Entrada validada do cofre. Sem `Clone`; o `Debug` mostra os segredos como `••••`.
 #[derive(Debug)]
 pub struct Entrada {
@@ -516,6 +589,7 @@ pub struct Entrada {
     projeto: Option<String>,
     tags: Vec<String>,
     nivel: NivelAcesso,
+    datas: Datas,
     dados: Dados,
     extras: Vec<CampoExtra>,
     anexos: Vec<Anexo>,
@@ -563,6 +637,18 @@ impl Entrada {
     /// Troca o nível. **Só o daemon chama, depois de conferir o PIN e o papel app (S9).**
     pub fn definir_nivel(&mut self, nivel: NivelAcesso) {
         self.nivel = nivel;
+    }
+
+    /// Datas de criação e alteração (D65 d).
+    pub fn datas(&self) -> Datas {
+        self.datas
+    }
+
+    /// Troca as datas. **Só o daemon chama**, com datas tiradas do relógio dele
+    /// ([`Datas::carimbo_novo`], [`Datas::alterado`]) ou com as que a entrada já tinha
+    /// (para desfazer uma gravação que falhou). Um [`Datas`] só existe dentro da regra.
+    pub fn definir_datas(&mut self, datas: Datas) {
+        self.datas = datas;
     }
 
     /// Tipo.

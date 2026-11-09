@@ -354,7 +354,7 @@ pub(crate) fn conferir_pin(pin: &[u8], phc: &PhcPin) -> bool {
 
 /// Igualdade de bytes em tempo constante, pelo `CtEq` do `ctutils` (o mesmo que o `phc`
 /// usa). Comprimentos diferentes dão `false`.
-fn iguais_em_tempo_constante(a: &[u8], b: &[u8]) -> bool {
+pub(crate) fn iguais_em_tempo_constante(a: &[u8], b: &[u8]) -> bool {
     use ctutils::CtEq;
     a.ct_eq(b).to_bool()
 }

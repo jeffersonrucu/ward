@@ -2,7 +2,11 @@
 //!
 //! O `build.rs` do Tauri registra exatamente estes nomes no manifesto do app (sem ele,
 //! todo comando registrado ficaria liberado), a capability `principal` libera só as
-//! permissões `allow-<comando>` deles, e a ponte de teste recusa qualquer outro nome.
+//! permissões `allow-<comando>` de [`COMANDOS_PRINCIPAL`], a capability `aprovacao`
+//! (janela de aprovação, Fase 36) só as de [`COMANDOS_APROVACAO`], e a ponte de teste
+//! recusa qualquer outro nome. Em comum, só o `ouvir_avisos` (canal por janela, aviso
+//! sem dado): a janela principal não responde aprovação, e a de aprovação não lê
+//! credencial nem revela nada.
 //! Fases seguintes acrescentam comandos aqui, um por tela que precisa.
 
 use ward_core::limites;
@@ -68,6 +72,12 @@ pub const DESTRAVAR: &str = "destravar";
 /// `ouvir_avisos { canal }`: o canal do Tauri por onde o lado Rust avisa a tela de um
 /// `pedido_de_destrave` (Fase 31, D65 a). O aviso leva só o nome dele, sem dado.
 pub const OUVIR_AVISOS: &str = "ouvir_avisos";
+/// `pedido_de_aprovacao`: o pedido da vez para a janela de aprovação (Fase 36), com o
+/// texto do agente já neutralizado (D51), ou `null`. Só a janela `aprovacao`.
+pub const PEDIDO_DE_APROVACAO: &str = "pedido_de_aprovacao";
+/// `responder_aprovacao { id, decisao, pin }`: Negar (sem PIN) ou um dos três Permitir
+/// (com PIN, S9, S10). Só a janela `aprovacao`; a resposta não traz o PIN.
+pub const RESPONDER_APROVACAO: &str = "responder_aprovacao";
 
 /// `configuracoes`: tempo de trava e backup externo ligado ou não (Fase 38). Sem
 /// argumento; sem hash de PIN nem UUID.
@@ -82,7 +92,45 @@ pub const TROCAR_SENHA_MESTRA: &str = "trocar_senha_mestra";
 /// configuração do cofre (Fase 38, D30, D45).
 pub const DEFINIR_TEMPO_TRAVA: &str = "definir_tempo_trava";
 
-/// Todos os comandos, na ordem em que aparecem nas capabilities.
+/// Comandos da janela principal, na ordem da capability `principal`.
+pub const COMANDOS_PRINCIPAL: &[&str] = &[
+    ESTADO_DO_COFRE,
+    COPIAR_CAMPO,
+    LISTAR_CREDENCIAIS,
+    DETALHE_CREDENCIAL,
+    GERAR_SENHA,
+    COPIAR_SENHA_GERADA,
+    REVELAR_SENHA_GERADA,
+    DESCARTAR_SENHA_GERADA,
+    REVELAR_CAMPO,
+    CODIGO_TOTP,
+    COPIAR_CODIGO_TOTP,
+    USAR_SENHA_GERADA,
+    DESCARTAR_FORMULARIO,
+    SALVAR_CREDENCIAL,
+    MUDAR_NIVEL,
+    ESCOLHER_ANEXO,
+    REMOVER_ANEXO,
+    CONECTAR,
+    CRIAR_COFRE,
+    DESTRAVAR,
+    OUVIR_AVISOS,
+    CONFIGURACOES,
+    TROCAR_PIN,
+    TROCAR_SENHA_MESTRA,
+    DEFINIR_TEMPO_TRAVA,
+];
+
+/// Comandos da janela de aprovação, na ordem da capability `aprovacao` (Fase 36). O
+/// `ouvir_avisos` é o único nas duas janelas: o canal é por janela e o aviso não leva
+/// dado (a principal recebe `pedido-de-destrave`; a de aprovação, `pedido-de-aprovacao`).
+pub const COMANDOS_APROVACAO: &[&str] = &[OUVIR_AVISOS, PEDIDO_DE_APROVACAO, RESPONDER_APROVACAO];
+
+/// Os comandos que as duas janelas têm (só o canal de avisos, sem dado).
+pub const COMANDOS_DAS_DUAS: &[&str] = &[OUVIR_AVISOS];
+
+/// Todos os comandos (manifesto do app e ponte de teste): os da janela principal e os da
+/// janela de aprovação.
 pub const COMANDOS: &[&str] = &[
     ESTADO_DO_COFRE,
     COPIAR_CAMPO,
@@ -109,6 +157,8 @@ pub const COMANDOS: &[&str] = &[
     TROCAR_PIN,
     TROCAR_SENHA_MESTRA,
     DEFINIR_TEMPO_TRAVA,
+    PEDIDO_DE_APROVACAO,
+    RESPONDER_APROVACAO,
 ];
 
 /// Nome da permissão gerada pelo Tauri para o comando (`allow-estado-do-cofre`).
@@ -144,6 +194,8 @@ pub enum Comando {
     TrocarPin,
     TrocarSenhaMestra,
     DefinirTempoTrava,
+    PedidoDeAprovacao,
+    ResponderAprovacao,
 }
 
 impl Comando {
@@ -174,6 +226,8 @@ impl Comando {
             TROCAR_PIN => Some(Comando::TrocarPin),
             TROCAR_SENHA_MESTRA => Some(Comando::TrocarSenhaMestra),
             DEFINIR_TEMPO_TRAVA => Some(Comando::DefinirTempoTrava),
+            PEDIDO_DE_APROVACAO => Some(Comando::PedidoDeAprovacao),
+            RESPONDER_APROVACAO => Some(Comando::ResponderAprovacao),
             _ => None,
         }
     }
@@ -260,7 +314,25 @@ mod testes {
                 "trocar_pin",
                 "trocar_senha_mestra",
                 "definir_tempo_trava",
+                "pedido_de_aprovacao",
+                "responder_aprovacao",
             ]
+        );
+        // As duas janelas juntas são todos; em comum, só o canal de avisos.
+        for c in COMANDOS {
+            assert!(
+                COMANDOS_PRINCIPAL.contains(c) || COMANDOS_APROVACAO.contains(c),
+                "{c}"
+            );
+            assert_eq!(
+                COMANDOS_PRINCIPAL.contains(c) && COMANDOS_APROVACAO.contains(c),
+                COMANDOS_DAS_DUAS.contains(c),
+                "{c}"
+            );
+        }
+        assert_eq!(
+            COMANDOS_APROVACAO,
+            &["ouvir_avisos", "pedido_de_aprovacao", "responder_aprovacao"]
         );
         assert_eq!(permissao(COPIAR_CAMPO), "allow-copiar-campo");
         for c in COMANDOS {

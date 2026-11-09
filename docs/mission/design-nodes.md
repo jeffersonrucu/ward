@@ -986,3 +986,25 @@ headless, 1280×800, tema claro do sistema), PNG do frame e `qa.json` em
 
 `Configurações / Backup externo ligado` (`16178`) não entra: ligar o backup externo é da
 Fase 46.
+
+## Fase 36 — janela de aprovação no código (só leitura do FigCraft)
+
+Lido de uma cópia do `Ward.figcraft` (o original não foi alterado), por `get_node` e
+`screenshot`. Capturas da janela (ponte de teste com `--daemon-falso aprovacao`,
+`aprovacao-prod`, `aprovacao-expirando` e `aprovacao-ataque`, `&tela=aprovacao`, Chrome
+headless), PNG dos frames e `qa.json` em `docs/mission/evidence/fase-36/`.
+
+| Frame / componente no FigCraft | Id | No código |
+| --- | --- | --- |
+| `Contagem` (set; normal, urgente) | `16348` (`16335`, `16343`) | `app/src/lib/componentes/Contagem.svelte` (`urgente` a partir de 20 s, `SEGUNDOS_URGENTE`) |
+| `Caixa de código` | `16340` | `app/src/lib/componentes/CaixaDeCodigo.svelte` (texto puro, `direction: ltr; unicode-bidi: isolate`) |
+| `Botão ícone` | `18832` | `app/src/lib/componentes/BotaoIcone.svelte` (fechar = negar) |
+| `Destaque` prod / perigo | `18756` / `18760`, `18765` | `Destaque.svelte` (`tipo="prod"`, `tipo="perigo"`) |
+| `Aprovação / Normal` | `16701` | `app/src/telas/JanelaAprovacao.svelte` › `aprovacao-normal.png` |
+| `Aprovação / prod` | `16810` | `aprovacao-prod.png` (borda do `pedido` e `Destaque` prod) |
+| `Aprovação / PIN errado` | `16885` | `aprovacao-pin-errado.png` (campo esvaziado a cada envio) |
+| `Aprovação / PIN bloqueado` | `16960` | `aprovacao-pin-bloqueado.png` (sem `Contagem`, Permitir desligados) |
+| `Aprovação / Expirando` | `17035` | `aprovacao-expirando.png` |
+| (sem frame: V5.29) | — | `aprovacao-ataque-d51.png`: comando e cadeia com escapes de D51 |
+
+Textos da janela em `app/src/telas/aprovacao.js`.

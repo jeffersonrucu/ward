@@ -38,9 +38,13 @@ use ward_core::entrada::{Dados, Entrada, NivelAcesso, Segredo};
 use ward_core::entrega::{self, Entrega, ErroEntrega, ErroRecurso, Recursos};
 use ward_core::limites::{MAX_QUADRO_COMUM, MAX_TEXTO_EXIBIDO};
 use ward_core::mascara::Mascara;
-use ward_core::protocolo::{self, ErroResposta, Fluxo, Papel, Pedido, Resposta, Variavel, quadro};
+use ward_core::protocolo::{
+    self, ErroResposta, Fluxo, Janela, Papel, Pedido, Resposta, Variavel, quadro,
+};
 use ward_core::totp::Totp;
-use ward_plataforma::filho::{self, Comando, Grupo};
+use ward_plataforma::filho::{self, Comando, Grupo, Pty};
+
+use crate::agente_ssh::{AgenteSsh, Permitido};
 
 use crate::aprovacao::Cliente;
 use crate::nucleo::Daemon;
@@ -56,6 +60,8 @@ const PASSO_LEITURA_MS: i32 = 100;
 const PEDACO: usize = 16 * 1024;
 /// Quadros de entrada guardados à espera do filho ler (pressão de volta na CLI).
 const FILA_ENTRADA: usize = 8;
+/// Saída interativa (D34): sem saída nova por este tempo, o fim segurado sai como marca.
+pub const PAUSA_INTERATIVA: Duration = Duration::from_millis(300);
 /// Locale que o filho recebe quando o da CLI não é UTF-8.
 const LOCALE_UTF8: &[u8] = b"C.UTF-8";
 
@@ -243,12 +249,26 @@ impl Recursos for RecursosRun<'_> {
     }
 }
 
-/// Tudo pronto para lançar: o comando (com o ambiente, que tem segredo), a máscara e os
-/// temporários (apagados ao sair).
-struct Preparo {
-    comando: Comando,
-    mascara: Mascara,
-    temporarios: Option<Temporarios>,
+/// Tudo pronto para lançar: o comando (com o ambiente, que tem segredo), a máscara, os
+/// temporários (apagados ao sair) e, no `ward ssh` (Fase 27), o pty e o agente SSH.
+pub(crate) struct Preparo {
+    pub(crate) comando: Comando,
+    pub(crate) mascara: Mascara,
+    pub(crate) temporarios: Option<Temporarios>,
+    /// `ward ssh` interativo: o filho num pty deste tamanho (D13, D34).
+    pub(crate) pty: Option<Janela>,
+    /// `ward ssh` com chave: o agente de D12, que só atende o filho.
+    pub(crate) agente: Option<AgentePreparado>,
+}
+
+/// O agente SSH da sessão, pronto para receber o pid do filho (D12).
+pub(crate) struct AgentePreparado {
+    pub(crate) agente: AgenteSsh,
+    /// `sftp`: o `ssh` é filho do filho.
+    pub(crate) filho_do_filho: bool,
+    /// A contagem de travas do núcleo e o valor dela quando a sessão foi autorizada.
+    pub(crate) travas: Arc<AtomicU64>,
+    pub(crate) inicial: u64,
 }
 
 /// Nome de variável que o daemon tira do ambiente da CLI (D13): `LD_*` (carregador
@@ -394,6 +414,8 @@ impl Daemon {
             comando,
             mascara,
             temporarios: recursos.temporarios,
+            pty: None,
+            agente: None,
         })
     }
 }
@@ -402,7 +424,7 @@ impl Daemon {
 
 /// O lado da CLI: quadros escritos por várias threads, um inteiro por vez.
 #[derive(Clone)]
-struct Cli(Arc<Mutex<UnixStream>>);
+pub(crate) struct Cli(Arc<Mutex<UnixStream>>);
 
 impl Cli {
     /// Escreve a resposta; `false` se a CLI não está mais lá.
@@ -433,7 +455,10 @@ impl Cli {
 }
 
 /// Lê a saída do filho, mascara e manda à CLI (D11; um fluxo por saída). Para no fim
-/// do pipe ou quando `parar` liga (um neto fora do grupo segurando o pipe).
+/// do pipe ou quando `parar` liga (um neto fora do grupo segurando o pipe). Com
+/// `interativo` (o pty do `ward ssh`, D34), um fim segurado que fica
+/// [`PAUSA_INTERATIVA`] sem saída nova sai como marca, nunca em claro, e o estado do
+/// casamento continua.
 fn ler_saida(
     mut f: File,
     fluxo: Fluxo,
@@ -441,23 +466,38 @@ fn ler_saida(
     cli: Cli,
     parar: Arc<AtomicBool>,
     pronto: mpsc::Sender<()>,
+    interativo: bool,
 ) {
     let mut m = mascara.fluxo();
     let mut buf = Zeroizing::new(vec![0u8; PEDACO]);
     let mut out = Zeroizing::new(Vec::with_capacity(2 * PEDACO));
     let mut cli_ok = true;
+    let mut ultimo = Instant::now();
     loop {
         match filho::pronto_para_ler(&f, PASSO_LEITURA_MS) {
             Ok(true) => {}
-            Ok(false) if !parar.load(Ordering::Acquire) => continue,
+            Ok(false) if !parar.load(Ordering::Acquire) => {
+                if interativo && m.segurando() && ultimo.elapsed() >= PAUSA_INTERATIVA {
+                    m.soltar(&mut out);
+                    if cli_ok {
+                        cli_ok = cli.enviar_saida(fluxo, &mut out);
+                    } else {
+                        zeroize::Zeroize::zeroize(&mut *out);
+                    }
+                }
+                continue;
+            }
             _ => break,
         }
         let n = match f.read(&mut buf) {
             Ok(0) => break,
             Ok(n) => n,
             Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+            // O mestre do pty dá `EIO` quando o último processo da sessão fecha o
+            // escravo: é o fim da saída.
             Err(_) => break,
         };
+        ultimo = Instant::now();
         m.mascarar(&buf[..n], &mut out);
         if cli_ok {
             cli_ok = cli.enviar_saida(fluxo, &mut out);
@@ -482,14 +522,17 @@ fn escrever_entrada(mut f: File, fila: Receiver<Option<Segredo>>) {
     }
 }
 
-/// Lê os quadros da CLI durante a sessão: `entrada_padrao` vai para o filho, `janela`
-/// é ignorada (sem pty no `ward run`); qualquer outro quadro, ou a conexão que cai,
-/// mata o grupo do filho (D13). Depois do fim normal, a leitura acaba sem matar nada.
+/// Lê os quadros da CLI durante a sessão: `entrada_padrao` vai para o filho; `janela`
+/// muda o tamanho do pty (sem pty, como no `ward run`, é ignorada); qualquer outro
+/// quadro, ou a conexão que cai, mata o grupo do filho (D13). Depois do fim normal, a
+/// leitura acaba sem matar nada. No pty, a entrada vazia não fecha nada (o fim da
+/// entrada é o Ctrl+D que o terminal manda como byte).
 fn ler_da_cli(
     mut s: UnixStream,
     grupo: Arc<Grupo>,
     fila: SyncSender<Option<Segredo>>,
     fim: Arc<AtomicBool>,
+    pty: Option<Arc<Pty>>,
 ) {
     let mut entrada_aberta = true;
     loop {
@@ -505,7 +548,7 @@ fn ler_da_cli(
         };
         match protocolo::decodificar_pedido(Papel::Agente, &bytes) {
             Ok(Pedido::EntradaPadrao { dados }) => {
-                if !entrada_aberta {
+                if !entrada_aberta || (dados.is_empty() && pty.is_some()) {
                     continue;
                 }
                 let item = if dados.is_empty() {
@@ -518,7 +561,11 @@ fn ler_da_cli(
                     return;
                 }
             }
-            Ok(Pedido::Janela(_)) => {}
+            Ok(Pedido::Janela(j)) => {
+                if let Some(p) = &pty {
+                    let _ = p.definir_janela(j.linhas, j.colunas);
+                }
+            }
             _ => {
                 if !fim.load(Ordering::Acquire) {
                     aviso!("executar: quadro fora da sessão; o grupo do comando foi morto");
@@ -571,16 +618,39 @@ fn thread(nome: &str, f: impl FnOnce() + Send + 'static) -> bool {
 /// antes de lançar qualquer processo (a conexão segue, como nas outras operações);
 /// `false` quando a sessão aconteceu e a conexão acabou.
 pub fn sessao(daemon: &Daemon, cliente: &dyn Cliente, stream: &UnixStream, pedido: Pedido) -> bool {
+    sessao_com(
+        stream,
+        |c| {
+            let r = daemon.preparar_execucao(c, pedido);
+            if let Err(e) = &r {
+                depurar!("executar (agente): {}", e.codigo());
+            }
+            r
+        },
+        cliente,
+    )
+}
+
+/// O lançamento: o filho com pipes ou num pty.
+enum Lancado {
+    Pipes(filho::Pipes),
+    Pty(Arc<Pty>),
+}
+
+/// Prepara (com `preparar`) e roda a sessão de `executar` ou `ssh` na conexão: mesmo
+/// retorno de [`sessao`].
+pub(crate) fn sessao_com(
+    stream: &UnixStream,
+    preparar: impl FnOnce(&dyn Cliente) -> Result<Preparo, ErroResposta>,
+    cliente: &dyn Cliente,
+) -> bool {
     let Ok(escrita) = stream.try_clone() else {
         return false;
     };
     let cli = Cli(Arc::new(Mutex::new(escrita)));
-    let preparo = match daemon.preparar_execucao(cliente, pedido) {
+    let preparo = match preparar(cliente) {
         Ok(p) => p,
-        Err(e) => {
-            depurar!("executar (agente): {}", e.codigo());
-            return cli.enviar(&Resposta::Erro(e));
-        }
+        Err(e) => return cli.enviar(&Resposta::Erro(e)),
     };
     // A sessão dura o que o comando durar; a CLI pode ficar parada (pipe cheio).
     let _ = stream.set_read_timeout(None);
@@ -589,15 +659,23 @@ pub fn sessao(daemon: &Daemon, cliente: &dyn Cliente, stream: &UnixStream, pedid
         comando,
         mascara,
         temporarios,
+        pty,
+        agente,
     } = preparo;
-    let lancado = comando.lancar();
+    let lancado = match pty {
+        Some(j) => comando
+            .lancar_em_pty(j.linhas, j.colunas)
+            .map(|(g, p)| (g, Lancado::Pty(Arc::new(p)))),
+        None => comando.lancar().map(|(g, p)| (g, Lancado::Pipes(p))),
+    };
     // O ambiente com segredo zera agora, não no fim do comando.
     drop(comando);
-    let (grupo, pipes) = match lancado {
+    let (grupo, lancado) = match lancado {
         Ok(g) => g,
         Err(e) => {
             depurar!("executar: o filho não foi criado ({e:?})");
             drop(temporarios);
+            drop(agente);
             let mut msg = Zeroizing::new(Vec::new());
             msg.extend_from_slice(b"ward: ");
             msg.extend_from_slice(e.mensagem().as_bytes());
@@ -615,21 +693,52 @@ pub fn sessao(daemon: &Daemon, cliente: &dyn Cliente, stream: &UnixStream, pedid
     };
     let pid = grupo.pid();
     depurar!("executar: filho pid {pid}");
+    // D12: o agente só atende o filho que acabou de nascer (o pid não é reusado: o
+    // daemon só colhe o filho no fim).
+    let agente = agente.map(|a| {
+        a.agente.iniciar(
+            Permitido {
+                pid,
+                filho_do_filho: a.filho_do_filho,
+            },
+            a.travas,
+            a.inicial,
+        )
+    });
     let grupo = Arc::new(grupo);
     let mascara = Arc::new(mascara);
     let parar = Arc::new(AtomicBool::new(false));
     let fim = Arc::new(AtomicBool::new(false));
     let (pronto_tx, pronto_rx) = mpsc::channel();
     let mut leitores = 0;
-    let filho::Pipes {
-        entrada,
-        saida,
-        erro,
-    } = pipes;
-    for (f, fluxo, nome) in [
-        (saida, Fluxo::Saida, "wardd-run-saida"),
-        (erro, Fluxo::Erro, "wardd-run-erro"),
-    ] {
+    let (entrada, saidas, pty) = match lancado {
+        Lancado::Pipes(filho::Pipes {
+            entrada,
+            saida,
+            erro,
+        }) => (
+            entrada,
+            vec![
+                (saida, Fluxo::Saida, "wardd-run-saida"),
+                (erro, Fluxo::Erro, "wardd-run-erro"),
+            ],
+            None,
+        ),
+        Lancado::Pty(p) => {
+            let leitura = p.mestre.try_clone().ok();
+            let escrita = p.mestre.try_clone().ok();
+            if leitura.is_none() || escrita.is_none() {
+                grupo.matar();
+            }
+            (
+                escrita,
+                vec![(leitura, Fluxo::Saida, "wardd-ssh-pty")],
+                Some(p),
+            )
+        }
+    };
+    let interativo = pty.is_some();
+    for (f, fluxo, nome) in saidas {
         let Some(f) = f else { continue };
         let (m, c, p, t) = (
             mascara.clone(),
@@ -637,7 +746,7 @@ pub fn sessao(daemon: &Daemon, cliente: &dyn Cliente, stream: &UnixStream, pedid
             parar.clone(),
             pronto_tx.clone(),
         );
-        if thread(nome, move || ler_saida(f, fluxo, m, c, p, t)) {
+        if thread(nome, move || ler_saida(f, fluxo, m, c, p, t, interativo)) {
             leitores += 1;
         }
     }
@@ -648,8 +757,8 @@ pub fn sessao(daemon: &Daemon, cliente: &dyn Cliente, stream: &UnixStream, pedid
     }
     let leitor_ok = match stream.try_clone() {
         Ok(s) => {
-            let (g, f) = (grupo.clone(), fim.clone());
-            thread("wardd-run-cli", move || ler_da_cli(s, g, fila_tx, f))
+            let (g, f, p) = (grupo.clone(), fim.clone(), pty.clone());
+            thread("wardd-run-cli", move || ler_da_cli(s, g, fila_tx, f, p))
         }
         Err(_) => false,
     };
@@ -658,11 +767,12 @@ pub fn sessao(daemon: &Daemon, cliente: &dyn Cliente, stream: &UnixStream, pedid
         grupo.matar();
     }
 
-    // Fim do filho: o grupo inteiro morre, o temporário some (V4.15) e a saída que
-    // falta é entregue.
+    // Fim do filho: o grupo inteiro morre, o temporário e o agente somem (V4.15, D12)
+    // e a saída que falta é entregue.
     let _ = grupo.esperar_fim();
     grupo.matar();
     let resultado = grupo.colher();
+    drop(agente);
     drop(temporarios);
     let limite = Instant::now() + PRAZO_RESTO_DA_SAIDA;
     for _ in 0..leitores {
@@ -672,6 +782,7 @@ pub fn sessao(daemon: &Daemon, cliente: &dyn Cliente, stream: &UnixStream, pedid
         }
     }
     parar.store(true, Ordering::Release);
+    drop(pty);
     let codigo = match resultado {
         Ok(f) => {
             match f {

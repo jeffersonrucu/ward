@@ -190,6 +190,11 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Ponte<D, A> {
         // Fase 35: o PIN sai do mapa (posse, sem cópia) e vira um `Pin` que zera.
         let pin = match comando {
             Comando::MudarNivel => args.remove("pin").map(serde_json::from_value::<Pin>),
+            // Fase 36: `null` (Negar) fica `None`; o resto vira `Pin` ou erro.
+            Comando::ResponderAprovacao => match args.remove("pin") {
+                None | Some(Value::Null) => None,
+                Some(v) => Some(serde_json::from_value::<Pin>(v)),
+            },
             _ => None,
         };
         // Fase 31: a senha mestra também sai do mapa (posse) e vira um `SenhaMestra`.
@@ -356,6 +361,24 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Ponte<D, A> {
             // O canal do Tauri não existe na ponte: a tela de teste consulta o estado
             // (`ponte-teste.js` › `ouvirAvisos`).
             Comando::OuvirAvisos => Err(ErroApp::PedidoInvalido),
+            // Fase 36: a janela de aprovação. Na ponte não há janelas separadas (a ACL por
+            // janela é do Tauri); o serviço confere id, decisão e PIN do mesmo jeito.
+            Comando::PedidoDeAprovacao => self
+                .servico
+                .pedido_de_aprovacao()
+                .and_then(|r| serde_json::to_value(r).map_err(|_| ErroApp::RespostaInvalida)),
+            Comando::ResponderAprovacao => match (
+                args.get("id").and_then(Value::as_u64),
+                texto("decisao"),
+                pin,
+            ) {
+                (Some(id), Some(d), None) => self.servico.responder_aprovacao(id, d, None),
+                (Some(id), Some(d), Some(Ok(p))) => {
+                    self.servico.responder_aprovacao(id, d, Some(p))
+                }
+                _ => Err(ErroApp::PedidoInvalido),
+            }
+            .and_then(|r| serde_json::to_value(r).map_err(|_| ErroApp::RespostaInvalida)),
             // Fase 30: senha mestra e PIN conferidos no lado Rust; a resposta não traz
             // valor. `dados` sai do objeto por `remove`, sem cópia do texto.
             Comando::CriarCofre => match args

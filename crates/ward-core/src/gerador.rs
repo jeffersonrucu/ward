@@ -183,5 +183,26 @@ pub(crate) fn gerar_com(
     Err(ErroGerador::AleatorioIndisponivel)
 }
 
+/// Tamanho do token do "Conectar" (D3): 32 caracteres de `[A-Za-z0-9]` (~190 bits).
+pub const TAMANHO_TOKEN: usize = 32;
+
+/// Token de uso único do "Conectar" (D3, Fase 27): aleatório pelo RNG do sistema, só
+/// letras e dígitos (cabe no argv do terminal sem aspas e no formato que o app aceita).
+pub fn token_conectar() -> Result<Segredo, ErroGerador> {
+    gerar(&OpcoesGerador {
+        tamanho: TAMANHO_TOKEN,
+        minusculas: true,
+        maiusculas: true,
+        digitos: true,
+        simbolos: false,
+    })
+}
+
+/// Igualdade de dois tokens em tempo constante, pela biblioteca (o `CtEq` do
+/// `ctutils`). Tamanhos diferentes dão `false`.
+pub fn tokens_iguais(a: &[u8], b: &[u8]) -> bool {
+    cripto::iguais_em_tempo_constante(a, b)
+}
+
 #[cfg(test)]
 mod testes;

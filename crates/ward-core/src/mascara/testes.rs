@@ -2260,3 +2260,72 @@ fn d61_candidatos_so_quando_mudam() {
         Some(&b"falso-x-01"[..])
     );
 }
+
+// ---- D34: saída interativa (`ward ssh` com pty), o fim segurado solto como marca ----
+
+const SENHA_SSH: &str = "falso-SSH-senha-01";
+
+#[test]
+fn d34_prefixo_parado_sai_como_marca_e_o_resto_do_segredo_nao_sai() {
+    let m = mascara(&generico(&[SENHA_SSH]));
+    let mut f = m.fluxo();
+    let mut out = Vec::new();
+    f.mascarar(b"senha? fals", &mut out);
+    assert_eq!(texto(&out), "senha? ");
+    assert!(f.segurando());
+    // 300 ms sem saída nova: sai a marca, nunca o prefixo.
+    assert!(f.soltar(&mut out));
+    assert_eq!(texto(&out), format!("senha? {M}"));
+    assert!(!f.segurando());
+    assert!(!f.soltar(&mut out));
+    // O resto do segredo chega: nenhum pedaço dele sai, nem marca nova.
+    f.mascarar(b"o-SSH-senha-01 fim", &mut out);
+    f.terminar(&mut out);
+    let s = texto(&out);
+    assert_eq!(s, format!("senha? {M} fim"));
+    for pedaco in ["fals", "o-SSH", "senha-01"] {
+        assert!(!s.contains(pedaco), "{s}");
+    }
+}
+
+#[test]
+fn d34_continuacao_que_diverge_sai_normal() {
+    let m = mascara(&generico(&[SENHA_SSH]));
+    let mut f = m.fluxo();
+    let mut out = Vec::new();
+    f.mascarar(b"x fals", &mut out);
+    assert!(f.soltar(&mut out));
+    f.mascarar(b"e normal", &mut out);
+    f.terminar(&mut out);
+    assert_eq!(texto(&out), format!("x {M}e normal"));
+}
+
+#[test]
+fn d34_soltar_varias_vezes_no_mesmo_segredo_da_uma_marca_so() {
+    let m = mascara(&generico(&[SENHA_SSH]));
+    let mut f = m.fluxo();
+    let mut out = Vec::new();
+    for pedaco in [&b"fals"[..], b"o-SS", b"H-sen", b"ha-01", b" ok"] {
+        f.mascarar(pedaco, &mut out);
+        f.soltar(&mut out);
+    }
+    f.terminar(&mut out);
+    assert_eq!(texto(&out), format!("{M} ok"));
+}
+
+#[test]
+fn d34_ataque_prefixo_em_base64_e_percent_tambem_vira_marca() {
+    let m = mascara(&generico(&[SENHA_SSH]));
+    // Começo da senha em percent-encoding e em base64, parado no meio.
+    let b = b64(SENHA_SSH.as_bytes(), false, true);
+    for (prefixo, resto) in [("falso%2DSS", "H-senha-01"), (&b[..8], &b[8..])] {
+        let mut f = m.fluxo();
+        let mut out = Vec::new();
+        f.mascarar(prefixo.as_bytes(), &mut out);
+        f.soltar(&mut out);
+        assert_eq!(texto(&out), M, "{prefixo}");
+        f.mascarar(resto.as_bytes(), &mut out);
+        f.terminar(&mut out);
+        assert_eq!(texto(&out), M, "{prefixo}");
+    }
+}

@@ -121,6 +121,32 @@ pub(crate) fn pidfd_vivo(pidfd: BorrowedFd<'_>) -> io::Result<bool> {
     }
 }
 
+/// `renameat2(dir, de, dir, para, RENAME_NOREPLACE)`: renomeia dentro de `dir` sem
+/// nunca sobrescrever (`EEXIST` se `para` existe). Funciona em vfat, que não tem
+/// `link(2)` (Fase 46).
+#[allow(unsafe_code)]
+pub(crate) fn renameat_sem_sobrescrever(
+    dir: BorrowedFd<'_>,
+    de: &CStr,
+    para: &CStr,
+) -> io::Result<()> {
+    // SAFETY: `dir` está aberto pelo empréstimo; `de` e `para` são strings C válidas até
+    // o fim da chamada, e o kernel só as lê.
+    let r = unsafe {
+        libc::renameat2(
+            dir.as_raw_fd(),
+            de.as_ptr(),
+            dir.as_raw_fd(),
+            para.as_ptr(),
+            libc::RENAME_NOREPLACE,
+        )
+    };
+    if r != 0 {
+        return Err(erro_os());
+    }
+    Ok(())
+}
+
 /// `openat(dir, nome, flags | O_CLOEXEC)`. `nome` é relativo a `dir`.
 #[allow(unsafe_code)]
 pub(crate) fn openat(dir: BorrowedFd<'_>, nome: &CStr, flags: libc::c_int) -> io::Result<OwnedFd> {
@@ -524,9 +550,9 @@ pub(crate) fn tcsetattr(
     Ok(())
 }
 
-/// Só nos testes: abre um pseudoterminal novo e devolve (mestre, escravo), os dois com
-/// `O_NOCTTY` e `O_CLOEXEC`, para testar a leitura da senha sem um terminal de verdade.
-#[cfg(test)]
+/// Abre um pseudoterminal novo e devolve (mestre, escravo), os dois com `O_NOCTTY` e
+/// `O_CLOEXEC`: o pty do `ward ssh` interativo (Fase 27) e, nos testes, a leitura da
+/// senha sem um terminal de verdade.
 #[allow(unsafe_code)]
 pub(crate) fn abrir_pty() -> io::Result<(OwnedFd, OwnedFd)> {
     let flags = libc::O_RDWR | libc::O_NOCTTY | libc::O_CLOEXEC;
@@ -557,6 +583,48 @@ pub(crate) fn abrir_pty() -> io::Result<(OwnedFd, OwnedFd)> {
     // SAFETY: `e` acabou de ser aberto e só este `OwnedFd` o fecha.
     let escravo = unsafe { OwnedFd::from_raw_fd(e) };
     Ok((mestre, escravo))
+}
+
+/// `TIOCSWINSZ`: tamanho da janela do terminal em `fd` (o mestre do pty do `ward ssh`;
+/// o kernel manda `SIGWINCH` ao grupo da frente).
+#[allow(unsafe_code)]
+pub(crate) fn definir_janela(fd: BorrowedFd<'_>, linhas: u16, colunas: u16) -> io::Result<()> {
+    let w = libc::winsize {
+        ws_row: linhas,
+        ws_col: colunas,
+        ws_xpixel: 0,
+        ws_ypixel: 0,
+    };
+    // SAFETY: `w` é um `winsize` local, só lido pelo kernel; `fd` está aberto pelo
+    // empréstimo.
+    if unsafe { libc::ioctl(fd.as_raw_fd(), libc::TIOCSWINSZ, &raw const w) } != 0 {
+        return Err(erro_os());
+    }
+    Ok(())
+}
+
+/// `TIOCGWINSZ`: (linhas, colunas) do terminal em `fd`. `ENOTTY` se não é terminal.
+#[allow(unsafe_code)]
+pub(crate) fn ler_janela(fd: BorrowedFd<'_>) -> io::Result<(u16, u16)> {
+    let mut w = libc::winsize {
+        ws_row: 0,
+        ws_col: 0,
+        ws_xpixel: 0,
+        ws_ypixel: 0,
+    };
+    // SAFETY: `w` é um `winsize` local e gravável, do tamanho que o `TIOCGWINSZ`
+    // escreve; `fd` está aberto pelo empréstimo.
+    if unsafe { libc::ioctl(fd.as_raw_fd(), libc::TIOCGWINSZ, &raw mut w) } != 0 {
+        return Err(erro_os());
+    }
+    Ok((w.ws_row, w.ws_col))
+}
+
+/// `cfmakeraw` em `t` (modo cru do terminal da CLI no `ward ssh` interativo).
+#[allow(unsafe_code)]
+pub(crate) fn modo_cru(t: &mut libc::termios) {
+    // SAFETY: `t` é um `termios` válido e gravável; o `cfmakeraw` só mexe nos campos.
+    unsafe { libc::cfmakeraw(t) };
 }
 
 /// Só nos testes: tira o `FD_CLOEXEC` de `fd`, para simular um fd que o `exec` herdaria.
@@ -742,12 +810,30 @@ pub(crate) struct PreparoExec<'a> {
     pub cwd: &'a CStr,
 }
 
-/// O filho lançado: pid e as pontas do pai dos três pipes.
+/// Como o filho recebe 0, 1 e 2.
+pub(crate) enum Stdio {
+    /// Três pipes novos (o `ward run`, o `ward ssh` com comando).
+    Pipes,
+    /// O escravo de um pty nos três, como terminal de controle de uma sessão nova
+    /// (`setsid` + `TIOCSCTTY`; o `ward ssh` interativo). O pai fica com o mestre.
+    Pty(OwnedFd),
+}
+
+/// As pontas do pai.
+pub(crate) enum PontasPai {
+    Pipes {
+        entrada: OwnedFd,
+        saida: OwnedFd,
+        erro: OwnedFd,
+    },
+    /// O pai não guarda o escravo: o fim da sessão aparece no mestre (`EIO`).
+    Pty,
+}
+
+/// O filho lançado: pid e as pontas do pai.
 pub(crate) struct FilhoCru {
     pub pid: libc::pid_t,
-    pub entrada: OwnedFd,
-    pub saida: OwnedFd,
-    pub erro: OwnedFd,
+    pub pontas: PontasPai,
 }
 
 /// Por que o filho não chegou ao `execve`.
@@ -777,14 +863,38 @@ fn errno() -> i32 {
 /// falha antes do `execve` volta pelo pipe de aviso (5 bytes: etapa e `errno`); o
 /// sucesso fecha o pipe no `exec`, sem bytes. Nada passa por shell (S3).
 #[allow(unsafe_code)]
-pub(crate) fn fork_exec(p: &PreparoExec<'_>) -> Result<FilhoCru, ErroExec> {
+pub(crate) fn fork_exec(p: &PreparoExec<'_>, stdio: Stdio) -> Result<FilhoCru, ErroExec> {
     let nulo = |v: &[*const libc::c_char]| v.last().is_some_and(|x| x.is_null());
     if p.caminhos.is_empty() || !nulo(p.argv) || !nulo(p.envp) {
         return Err(ErroExec::Sistema(io::ErrorKind::InvalidInput.into()));
     }
-    let (in_r, in_w) = pipe_cloexec().map_err(ErroExec::Sistema)?;
-    let (out_r, out_w) = pipe_cloexec().map_err(ErroExec::Sistema)?;
-    let (err_r, err_w) = pipe_cloexec().map_err(ErroExec::Sistema)?;
+    // (fds do filho, pontas do pai, se é sessão nova com terminal de controle)
+    let (filho_fds, pontas, sessao) = match stdio {
+        Stdio::Pipes => {
+            let (in_r, in_w) = pipe_cloexec().map_err(ErroExec::Sistema)?;
+            let (out_r, out_w) = pipe_cloexec().map_err(ErroExec::Sistema)?;
+            let (err_r, err_w) = pipe_cloexec().map_err(ErroExec::Sistema)?;
+            (
+                [in_r, out_w, err_w],
+                PontasPai::Pipes {
+                    entrada: in_w,
+                    saida: out_r,
+                    erro: err_r,
+                },
+                false,
+            )
+        }
+        Stdio::Pty(escravo) => {
+            let escravo = acima_de_2(escravo).map_err(ErroExec::Sistema)?;
+            let e2 = escravo.try_clone().map_err(ErroExec::Sistema)?;
+            let e3 = escravo.try_clone().map_err(ErroExec::Sistema)?;
+            let (e2, e3) = (
+                acima_de_2(e2).map_err(ErroExec::Sistema)?,
+                acima_de_2(e3).map_err(ErroExec::Sistema)?,
+            );
+            ([escravo, e2, e3], PontasPai::Pty, true)
+        }
+    };
     let (aviso_r, aviso_w) = pipe_cloexec().map_err(ErroExec::Sistema)?;
     // SAFETY: `getpid` não tem pré-condição.
     let pai = unsafe { libc::getpid() };
@@ -799,9 +909,9 @@ pub(crate) fn fork_exec(p: &PreparoExec<'_>) -> Result<FilhoCru, ErroExec> {
         (vazio, padrao)
     };
     let fds = [
-        (in_r.as_raw_fd(), 0),
-        (out_w.as_raw_fd(), 1),
-        (err_w.as_raw_fd(), 2),
+        (filho_fds[0].as_raw_fd(), 0),
+        (filho_fds[1].as_raw_fd(), 1),
+        (filho_fds[2].as_raw_fd(), 2),
     ];
     let aviso = aviso_w.as_raw_fd();
     // SAFETY: `fork` não tem pré-condição; no filho só seguem chamadas
@@ -813,13 +923,17 @@ pub(crate) fn fork_exec(p: &PreparoExec<'_>) -> Result<FilhoCru, ErroExec> {
     if pid == 0 {
         // SAFETY: estamos no filho logo depois do `fork`; os ponteiros do `PreparoExec`
         // apontam para memória do pai copiada no filho, viva até o `execve`/`_exit`.
-        unsafe { filho_depois_do_fork(p, pai, &fds, aviso, &vazio, &padrao) }
+        unsafe { filho_depois_do_fork(p, pai, &fds, sessao, aviso, &vazio, &padrao) }
     }
-    drop((in_r, out_w, err_w, aviso_w));
-    // Também no pai, para o grupo existir já na volta (sem corrida com o `kill`).
-    // SAFETY: `setpgid` só mexe no grupo do filho; o erro (já trocou de grupo, ou já
-    // fez o `exec`) não importa.
-    unsafe { libc::setpgid(pid, pid) };
+    drop((filho_fds, aviso_w));
+    if !sessao {
+        // Também no pai, para o grupo existir já na volta (sem corrida com o `kill`).
+        // Com pty, o filho é líder de sessão (`setsid`): o grupo existe quando o pipe de
+        // aviso fecha no `exec`, antes da volta.
+        // SAFETY: `setpgid` só mexe no grupo do filho; o erro (já trocou de grupo, ou
+        // já fez o `exec`) não importa.
+        unsafe { libc::setpgid(pid, pid) };
+    }
     let mut buf = [0u8; 5];
     let mut lido = 0;
     let mut f = std::fs::File::from(aviso_r);
@@ -832,12 +946,7 @@ pub(crate) fn fork_exec(p: &PreparoExec<'_>) -> Result<FilhoCru, ErroExec> {
         }
     }
     if lido == 0 {
-        return Ok(FilhoCru {
-            pid,
-            entrada: in_w,
-            saida: out_r,
-            erro: err_r,
-        });
+        return Ok(FilhoCru { pid, pontas });
     }
     // O filho não chegou ao `exec` e já saiu (ou vai sair): colhe.
     let _ = colher(pid);
@@ -862,6 +971,7 @@ unsafe fn filho_depois_do_fork(
     p: &PreparoExec<'_>,
     pai: libc::pid_t,
     fds: &[(libc::c_int, libc::c_int); 3],
+    sessao: bool,
     aviso: libc::c_int,
     vazio: &libc::sigset_t,
     padrao: &libc::sigaction,
@@ -874,11 +984,21 @@ unsafe fn filho_depois_do_fork(
         unsafe { libc::write(aviso, msg.as_ptr().cast(), msg.len()) };
     };
     // SAFETY: (todo o bloco) no filho de um `fork`, só chamadas async-signal-safe
-    // (`setpgid`, `prctl`, `getppid`, `sigaction`, `sigprocmask`, `dup2`, `chdir`,
-    // `syscall(close_range)`, `execve`, `write`, `_exit`), sobre fds e ponteiros válidos
-    // (os do `PreparoExec`, vivos na cópia da memória do pai).
+    // (`setpgid`, `setsid`, `ioctl(TIOCSCTTY)`, `prctl`, `getppid`, `sigaction`,
+    // `sigprocmask`, `dup2`, `chdir`, `syscall(close_range)`, `execve`, `write`,
+    // `_exit`), sobre fds e ponteiros válidos (os do `PreparoExec`, vivos na cópia da
+    // memória do pai).
     unsafe {
-        libc::setpgid(0, 0);
+        if sessao {
+            // Sessão nova (o grupo tem o pid do filho) com o escravo como terminal de
+            // controle: o `ssh` lê a janela e os sinais do terminal dele.
+            if libc::setsid() < 0 || libc::ioctl(fds[0].0, libc::TIOCSCTTY, 0 as libc::c_int) != 0 {
+                avisar(ETAPA_PREPARO, errno());
+                libc::_exit(127);
+            }
+        } else {
+            libc::setpgid(0, 0);
+        }
         if libc::prctl(
             libc::PR_SET_PDEATHSIG,
             libc::SIGKILL as libc::c_ulong,
