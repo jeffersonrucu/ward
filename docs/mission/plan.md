@@ -404,6 +404,8 @@ Pendências da 37a (2026-11-09): contagens no FigCraft ficaram em 21/13, mas a f
 
 Pendências da 33 para o planner (2026-11-09): anexos — não há operação para ler o conteúdo de um anexo e `salvar_entrada` substitui a entrada inteira, então editar entrada com anexo é recusado (`AnexosNaoMantidos`) e "Adicionar arquivo" está desabilitado; decidir operação (manter anexos por id no salvar, ou ler/gravar anexo) e fase. Botão Salvar no Novo vazio fica clicável (V5.10) ao contrário do design; placeholder da URL trocado por "Endereço com http ou https" (o `app-dist.py` recusa "https://").
 
+Pendências da 22b (2026-11-09): V3.34 do lado do app (`VmLck: 0 kB` no app filho) fica para o contêiner da 23a/29b; `criar_cofre` com estado ilegível recusa com `falha_ao_gravar` sem dizer ao usuário o que fazer (mensagem a melhorar); gancho `com_gancho_depois_de_gravar` existe no release (nunca ligado) — auditoria do M3 olha.
+
 ## Milestone 3 — Daemon e protocolo
 Contrato: V3.1–V3.41
 
@@ -578,7 +580,7 @@ Contrato: V3.1–V3.41
   Nota do planner (D62, 2026-11-09), para a fase em andamento: as units de teste levam
   `LimitMEMLOCK=infinity` (o `mlockall` entra na 22b e, com limite, o Argon2 falharia).
   A trava automática não mexe no contador de espera do D20, que a 22b separa por papel.
-- [ ] Fase 22b — (Depende das 23 e 24: as três mexem em `crates/wardd`.) Problemas do
+- [x] Fase 22b — (Depende das 23 e 24: as três mexem em `crates/wardd`.) Problemas do
   handoff 22 (D62). Arquivos: `crates/wardd`, `crates/ward-plataforma`
   (`iniciar_endurecido`), `crates/ward-core` (`gravar_entradas` devolve a identidade do
   fd; criação com geração inicial, se faltar) e os testes.
