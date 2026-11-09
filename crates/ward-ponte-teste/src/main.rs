@@ -21,14 +21,15 @@ use std::process::ExitCode;
 
 use ward_app_nucleo::area_transferencia::{Copiador, Wayland};
 use ward_app_nucleo::daemon::{Daemon, DaemonSocket};
-use ward_app_nucleo::daemon_falso::DaemonFalso;
+use ward_app_nucleo::daemon_falso::{AprovacaoSimulada, DaemonFalso, aprovacoes_simuladas};
 use ward_app_nucleo::servico::Servico;
 use ward_ponte_teste::http::Ponte;
 use ward_ponte_teste::partida;
 use ward_ponte_teste::simulados::{SeletorDePasta, TerminalDeTeste};
 
 const USO: &str = "uso: ward-ponte-teste [--dist <diretório do build --mode teste> \
-[--daemon-falso cheio|vazio|sem-cofre]] [--anexos <pasta com um arquivo>]";
+[--daemon-falso cheio|vazio|sem-cofre|aprovacao|aprovacao-prod|aprovacao-expirando|\
+aprovacao-ataque]] [--anexos <pasta com um arquivo>]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -55,14 +56,31 @@ fn main() -> ExitCode {
         },
         ["--dist", d] => com_o_daemon(Path::new(d), anexos),
         ["--dist", d, "--daemon-falso", "cheio"] => {
-            servir(DaemonFalso::cheio(), Path::new(d), anexos)
+            servir(DaemonFalso::cheio(), Path::new(d), anexos, &[])
         }
         ["--dist", d, "--daemon-falso", "vazio"] => {
-            servir(DaemonFalso::vazio(), Path::new(d), anexos)
+            servir(DaemonFalso::vazio(), Path::new(d), anexos, &[])
         }
         // Fase 30: sem cofre, para o `Primeiro uso / *`.
         ["--dist", d, "--daemon-falso", "sem-cofre"] => {
-            servir(DaemonFalso::sem_cofre(), Path::new(d), anexos)
+            servir(DaemonFalso::sem_cofre(), Path::new(d), anexos, &[])
+        }
+        // Fase 36: cofre cheio com um pedido de aprovação esperando a janela
+        // (`#token=…&tela=aprovacao`).
+        ["--dist", d, "--daemon-falso", modo] if modo.starts_with("aprovacao") => {
+            match aprovacoes_simuladas(modo) {
+                Some(pedidos) => {
+                    let mut falso = DaemonFalso::cheio();
+                    for (p, _) in &pedidos {
+                        falso = falso.com_aprovacao(p);
+                    }
+                    servir(falso, Path::new(d), anexos, &pedidos)
+                }
+                None => {
+                    eprintln!("{USO}");
+                    ExitCode::from(2)
+                }
+            }
         }
         _ => {
             eprintln!("{USO}");
@@ -86,7 +104,7 @@ fn com_o_daemon(dist: &Path, anexos: Option<PathBuf>) -> ExitCode {
             .map_err(|e| e.to_string())
         });
     match daemon {
-        Ok(d) => servir(d, dist, anexos),
+        Ok(d) => servir(d, dist, anexos, &[]),
         Err(e) => {
             eprintln!("ward-ponte-teste: {e}");
             ExitCode::FAILURE
@@ -94,7 +112,12 @@ fn com_o_daemon(dist: &Path, anexos: Option<PathBuf>) -> ExitCode {
     }
 }
 
-fn servir<D: Daemon + 'static>(daemon: D, dist: &Path, anexos: Option<PathBuf>) -> ExitCode {
+fn servir<D: Daemon + 'static>(
+    daemon: D,
+    dist: &Path,
+    anexos: Option<PathBuf>,
+    aprovacoes: &[AprovacaoSimulada],
+) -> ExitCode {
     let dist: PathBuf = dist.to_path_buf();
     let servico = match Wayland::novo() {
         Ok(a) => {
@@ -109,6 +132,9 @@ fn servir<D: Daemon + 'static>(daemon: D, dist: &Path, anexos: Option<PathBuf>) 
             return ExitCode::FAILURE;
         }
     };
+    for (p, decorrido) in aprovacoes {
+        servico.aprovacoes().chegou_ha(p.clone(), *decorrido);
+    }
     let (ponte, ouvinte) = match Ponte::abrir(servico, &dist) {
         Ok(p) => p,
         Err(_) => {

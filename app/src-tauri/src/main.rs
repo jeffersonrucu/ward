@@ -1,8 +1,9 @@
 //! App desktop do Ward (Tauri 2). Só a janela e a ligação dos comandos: o que cada
 //! comando faz está em `ward_app_nucleo::servico` (o mesmo que a ponte de teste usa).
 //!
-//! S11: capabilities só com os comandos próprios (`capabilities/principal.json`,
-//! manifesto no `build.rs`), CSP estrita no `tauri.conf.json`, interface embutida
+//! S11: capabilities só com os comandos próprios (`capabilities/principal.json` para a
+//! janela principal, `capabilities/aprovacao.json` para a janela de aprovação; manifesto
+//! no `build.rs`), CSP estrita no `tauri.conf.json`, interface embutida
 //! (`custom-protocol`), navegação só dentro do app, sem arrastar arquivo para a
 //! janela, devtools só com a feature `modo-teste`.
 //!
@@ -10,6 +11,11 @@
 //! (`ward_app_nucleo::partida`), antes do GTK: ambiente de D57 conferido, conexão ao
 //! daemon com o egid do grupo `ward-app`, grupo largado, não-dumpable de novo e o pai
 //! conferido. Fora disso o app sai com a mensagem, sem abrir janela.
+//!
+//! Fase 36 (S10, D65 a): a vigia da fila de avisos tira cada `pedido_de_aprovacao` e
+//! abre (ou traz para a frente) a janela `aprovacao`, sempre no topo. Só ela responde
+//! (capability própria, e o comando confere o rótulo de novo); fechar a janela nega
+//! todo pedido pendente.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -17,9 +23,13 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use serde::Serialize;
-use tauri::{Builder, Manager, RunEvent, Runtime, State, WebviewUrl, WebviewWindowBuilder};
+use tauri::{
+    AppHandle, Builder, Manager, RunEvent, Runtime, State, WebviewUrl, WebviewWindow,
+    WebviewWindowBuilder, WindowEvent,
+};
 use ward_app_nucleo::ErroApp;
 use ward_app_nucleo::anexos::{Escolha, Seletor};
+use ward_app_nucleo::aprovacao::{self, PedidoExibido, ResultadoAprovacao};
 use ward_app_nucleo::area_transferencia::{Copiador, Wayland};
 use ward_app_nucleo::credenciais::{DetalheCredencial, ItemCredencial};
 use ward_app_nucleo::daemon::DaemonSocket;
@@ -247,6 +257,92 @@ fn criar_cofre(dados: NovoCofre, estado: State<'_, Estado>) -> Result<ResultadoC
     Ok(estado.servico()?.criar_cofre(dados)?)
 }
 
+/// Rótulo da janela de aprovação: a capability `aprovacao` vale só para ela.
+const JANELA_APROVACAO: &str = "aprovacao";
+
+/// Segunda camada além da ACL: os comandos da aprovação só respondem na janela certa.
+fn na_janela_de_aprovacao<R: Runtime>(janela: &WebviewWindow<R>) -> Result<(), Falha> {
+    if janela.label() == JANELA_APROVACAO {
+        Ok(())
+    } else {
+        Err(Falha::from(ErroApp::NaoAutorizado))
+    }
+}
+
+/// Janela de aprovação (Fase 36): o pedido da vez, com o texto do agente já
+/// neutralizado (D51), ou `null`. Sem pedido, a janela fecha (não há o que negar).
+#[tauri::command]
+fn pedido_de_aprovacao<R: Runtime>(
+    janela: WebviewWindow<R>,
+    estado: State<'_, Estado>,
+) -> Result<Option<PedidoExibido>, Falha> {
+    na_janela_de_aprovacao(&janela)?;
+    let p = estado.servico()?.pedido_de_aprovacao()?;
+    if p.is_none() {
+        let _ = janela.destroy();
+    }
+    Ok(p)
+}
+
+/// Janela de aprovação (Fase 36, S9, S10): Negar sem PIN, os três Permitir com o PIN
+/// (num `Pin` que zera; fora do formato é recusado na leitura, sem eco). A resposta não
+/// traz o PIN. Sem outro pedido esperando, a janela fecha.
+#[tauri::command]
+fn responder_aprovacao<R: Runtime>(
+    id: u64,
+    decisao: String,
+    pin: Option<Pin>,
+    janela: WebviewWindow<R>,
+    estado: State<'_, Estado>,
+) -> Result<ResultadoAprovacao, Falha> {
+    na_janela_de_aprovacao(&janela)?;
+    let r = estado.servico()?.responder_aprovacao(id, &decisao, pin)?;
+    if !r.ha_outro {
+        let _ = janela.destroy();
+    }
+    Ok(r)
+}
+
+/// Abre a janela de aprovação ou a traz para a frente (S10: "abre em primeiro plano").
+/// Na thread principal (quem chama usa `run_on_main_thread`).
+fn abrir_janela_de_aprovacao<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(j) = app.get_webview_window(JANELA_APROVACAO) {
+        let _ = j.unminimize();
+        let _ = j.show();
+        let _ = j.set_always_on_top(true);
+        let _ = j.set_focus();
+        return;
+    }
+    let r = WebviewWindowBuilder::new(app, JANELA_APROVACAO, WebviewUrl::App("index.html".into()))
+        .title("Pedido de aprovação · Ward")
+        .inner_size(560.0, 880.0)
+        .min_inner_size(480.0, 560.0)
+        .center()
+        .always_on_top(true)
+        .focused(true)
+        .theme(Some(tauri::Theme::Dark))
+        .disable_drag_drop_handler()
+        .devtools(cfg!(feature = "modo-teste"))
+        .on_navigation(navegacao_permitida)
+        .build();
+    if r.is_err() {
+        // Sem a janela, ninguém responde: o pedido expira e nega no daemon (S10).
+        eprintln!("ward-app: não foi possível abrir a janela de aprovação");
+    }
+}
+
+/// Fechar a janela de aprovação nega (S10). Em outra thread: a conversa com o daemon
+/// não prende o laço de eventos.
+fn ao_fechar_a_aprovacao(servico: Arc<Result<ServicoApp, ErroApp>>) {
+    let _ = std::thread::Builder::new()
+        .name("ward-app-negar".into())
+        .spawn(move || {
+            if let Ok(s) = servico.as_ref() {
+                s.negar_aprovacoes_pendentes();
+            }
+        });
+}
+
 /// O diálogo "Adicionar arquivo" do GTK, na janela do app.
 struct SeletorGtk;
 
@@ -316,7 +412,9 @@ fn com_comandos<R: Runtime>(builder: Builder<R>, estado: Estado) -> Builder<R> {
             escolher_anexo,
             remover_anexo,
             conectar,
-            criar_cofre
+            criar_cofre,
+            pedido_de_aprovacao,
+            responder_aprovacao
         ])
 }
 
@@ -327,7 +425,9 @@ fn main() {
         std::process::exit(1)
     });
     let daemon = partida.tomar_daemon().ok_or(ErroApp::ConexaoPerdida);
+    let fila = daemon.as_ref().ok().map(DaemonSocket::avisos);
     let servico = Arc::new(montar_servico(daemon));
+    let na_aprovacao = Arc::clone(&servico);
     let na_vigia = Arc::clone(&servico);
     partida.vigiar(move || {
         if let Ok(s) = na_vigia.as_ref() {
@@ -336,7 +436,23 @@ fn main() {
     });
 
     let app = com_comandos(tauri::Builder::default(), Estado(servico))
-        .setup(|app| {
+        .on_window_event(|janela, evento| {
+            if janela.label() == JANELA_APROVACAO && matches!(evento, WindowEvent::Destroyed) {
+                ao_fechar_a_aprovacao(Arc::clone(&janela.state::<Estado>().0));
+            }
+        })
+        .setup(move |app| {
+            // D65 a: cada `pedido_de_aprovacao` da fila abre a janela de aprovação.
+            if let (Some(fila), Ok(s)) = (fila, na_aprovacao.as_ref()) {
+                let h = app.handle().clone();
+                let r = aprovacao::vigiar(fila, s.aprovacoes(), move || {
+                    let h2 = h.clone();
+                    let _ = h.run_on_main_thread(move || abrir_janela_de_aprovacao(&h2));
+                });
+                if r.is_err() {
+                    eprintln!("ward-app: não foi possível vigiar os pedidos de aprovação");
+                }
+            }
             WebviewWindowBuilder::new(app, "principal", WebviewUrl::App("index.html".into()))
                 .title("Ward")
                 .inner_size(1280.0, 800.0)
@@ -691,6 +807,86 @@ mod testes {
             r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
             "campo a mais: {r:?}"
         );
+    }
+
+    /// Fase 36 (S10, S11): responder aprovação só na janela `aprovacao`, com a origem
+    /// local. A janela principal (e qualquer outra) não lê o pedido nem responde; a de
+    /// aprovação não alcança nenhum outro comando nem plugin. Resposta forjada (id que o
+    /// daemon não mandou) é recusada pelo serviço; PIN fora do formato, na leitura, sem
+    /// eco.
+    #[test]
+    fn ataque_aprovacao_so_pela_janela_certa() {
+        let app = app_de_teste();
+        let principal = WebviewWindowBuilder::new(&app, "principal", Default::default())
+            .build()
+            .unwrap();
+        let outra = WebviewWindowBuilder::new(&app, "outra", Default::default())
+            .build()
+            .unwrap();
+        let aprovacao = WebviewWindowBuilder::new(&app, JANELA_APROVACAO, Default::default())
+            .build()
+            .unwrap();
+        let negado_pela_acl =
+            |r: &Result<serde_json::Value, serde_json::Value>| r.as_ref().err().is_some_and(|e| !e["codigo"].is_string());
+        let resposta = serde_json::json!({"id": 1, "decisao": "uma_vez", "pin": "135790"});
+        for janela in [&principal, &outra] {
+            for comando in ["pedido_de_aprovacao", "responder_aprovacao"] {
+                let r = chamar(janela, comando, ORIGEM, resposta.clone());
+                assert!(negado_pela_acl(&r), "{comando} em {}: {r:?}", janela.label());
+                assert!(!format!("{r:?}").contains("135790"));
+            }
+        }
+        for comando in ["pedido_de_aprovacao", "responder_aprovacao"] {
+            let r = chamar(&aprovacao, comando, "https://example.com", resposta.clone());
+            assert!(negado_pela_acl(&r), "{comando} com origem remota: {r:?}");
+        }
+        // A janela de aprovação não alcança mais nada.
+        for comando in [
+            "estado_do_cofre",
+            "copiar_campo",
+            "listar_credenciais",
+            "detalhe_credencial",
+            "revelar_campo",
+            "revelar_senha_gerada",
+            "mudar_nivel",
+            "salvar_credencial",
+            "conectar",
+            "criar_cofre",
+            "plugin:window|close",
+            "plugin:window|set_always_on_top",
+            "plugin:webview|create_webview_window",
+            "plugin:event|listen",
+            "plugin:fs|read_text_file",
+            "plugin:shell|execute",
+        ] {
+            let r = chamar(
+                &aprovacao,
+                comando,
+                ORIGEM,
+                serde_json::json!({"entrada": "acme-pg-aprovacao", "campo": "senha", "nivel": "livre", "pin": "135790"}),
+            );
+            assert!(negado_pela_acl(&r), "{comando} na janela de aprovação: {r:?}");
+        }
+        // PIN fora do formato e decisão de outro tipo: recusados na leitura, sem eco.
+        for corpo in [
+            serde_json::json!({"id": 1, "decisao": "uma_vez", "pin": "12"}),
+            serde_json::json!({"id": 1, "decisao": "uma_vez", "pin": "13579a"}),
+            serde_json::json!({"id": 1, "decisao": "uma_vez", "pin": 135790}),
+            serde_json::json!({"id": "1", "decisao": "uma_vez", "pin": "135790"}),
+            serde_json::json!({"id": -1, "decisao": "negar", "pin": null}),
+            serde_json::json!({"id": 1, "decisao": 1, "pin": null}),
+        ] {
+            let r = chamar(&aprovacao, "responder_aprovacao", ORIGEM, corpo);
+            let texto = format!("{r:?}");
+            assert!(negado_pela_acl(&r), "{texto}");
+            assert!(!texto.contains("135790") && !texto.contains("13579a"), "{texto}");
+        }
+        // Bem formada, mas o daemon nunca mandou o pedido 1: o serviço recusa (ou nem
+        // montou, sem área de transferência). Erro com código, sem o PIN.
+        let r = chamar(&aprovacao, "responder_aprovacao", ORIGEM, resposta);
+        let texto = format!("{r:?}");
+        assert!(r.as_ref().err().is_some_and(|e| e["codigo"].is_string()), "{texto}");
+        assert!(!texto.contains("135790"), "{texto}");
     }
 
     #[test]

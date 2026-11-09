@@ -243,6 +243,47 @@ pub fn mudar_nivel<D: Daemon + ?Sized>(
     }
 }
 
+/// O que o daemon disse da resposta da janela de aprovação (Fase 36).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Respondida {
+    Ok,
+    PinIncorreto,
+    /// O daemon já não tem o pedido (expirou, ou outra resposta chegou antes).
+    Expirado,
+}
+
+/// `responder_aprovacao` (S10): o PIN vai só neste pedido, e só nos "Permitir" (o
+/// protocolo recusa PIN no "Negar" e "Permitir" sem PIN). O quadro com o PIN é largado
+/// (e zerado) logo depois da troca. A contagem de erros e a trava no 5º são do daemon.
+pub fn responder_aprovacao<D: Daemon + ?Sized>(
+    daemon: &mut D,
+    id: u64,
+    decisao: protocolo::Decisao,
+    pin: Option<&crate::nivel::Pin>,
+) -> Result<Respondida, ErroApp> {
+    if decisao.pede_pin() != pin.is_some() {
+        return Err(ErroApp::PedidoInvalido);
+    }
+    let pedido = Pedido::ResponderAprovacao {
+        pedido: id,
+        decisao,
+        pin: pin.map(crate::nivel::Pin::para_o_protocolo),
+    };
+    let quadro =
+        protocolo::codificar_pedido(Papel::App, &pedido).map_err(|_| ErroApp::PedidoInvalido)?;
+    drop(pedido);
+    let corpo = daemon.trocar(&quadro)?;
+    drop(quadro);
+    match protocolo::decodificar_resposta(Papel::App, &corpo) {
+        Ok(Resposta::Ok) => Ok(Respondida::Ok),
+        Ok(Resposta::Erro(ErroResposta::PinIncorreto)) => Ok(Respondida::PinIncorreto),
+        Ok(Resposta::Erro(ErroResposta::Expirado)) => Ok(Respondida::Expirado),
+        Ok(Resposta::Erro(e)) => Err(erro_do_daemon(&e)),
+        Ok(_) => Err(ErroApp::RespostaInvalida),
+        Err(_) => Err(ErroApp::RespostaInvalida),
+    }
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;

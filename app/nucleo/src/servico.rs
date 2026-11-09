@@ -3,7 +3,7 @@
 //! e as mesmas respostas. Nenhuma resposta carrega segredo (S1, S11, D4).
 
 use std::collections::BTreeMap;
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use serde::Serialize;
 use ward_core::entrada::{Rascunho, RascunhoAnexo, Segredo as SegredoCore, TipoEntrada};
@@ -11,6 +11,7 @@ use ward_core::protocolo::Alvo;
 
 use crate::ErroApp;
 use crate::anexos::{Anexos, Escolha, Seletor, SemSeletor};
+use crate::aprovacao::{self, Aprovacoes, PedidoExibido, ResultadoAprovacao};
 use crate::area_transferencia::{AreaTransferencia, Copiador};
 use crate::cliente;
 use crate::comandos::{Referencia, validar_nome_entrada};
@@ -63,6 +64,8 @@ pub struct Servico<D: Daemon, A: AreaTransferencia> {
     seletor: Box<dyn Seletor>,
     /// Quem abre o terminal do "Conectar" (D3).
     terminal: Box<dyn Terminal>,
+    /// Os `pedido_de_aprovacao` que esperam a janela (Fase 36, D65 a).
+    aprovacoes: Arc<Aprovacoes>,
 }
 
 /// Valores que o formulário pede sem passar pela interface.
@@ -97,7 +100,114 @@ impl<D: Daemon, A: AreaTransferencia> Servico<D, A> {
             anexos: Mutex::new(Anexos::default()),
             seletor: Box::new(SemSeletor),
             terminal: Box::new(SemTerminal),
+            aprovacoes: Arc::new(Aprovacoes::default()),
         }
+    }
+
+    /// Os pedidos de aprovação que a vigia da fila de avisos preenche
+    /// ([`crate::aprovacao::vigiar`]).
+    pub fn aprovacoes(&self) -> Arc<Aprovacoes> {
+        Arc::clone(&self.aprovacoes)
+    }
+
+    /// `pedido_de_aprovacao` (Fase 36): o pedido da vez como a janela o mostra, com todo
+    /// texto do agente neutralizado (D51), ou `None`. Os tipos das entradas vêm do
+    /// detalhe (uma vez por pedido; sem ele, a tela mostra o ícone genérico).
+    pub fn pedido_de_aprovacao(&self) -> Result<Option<PedidoExibido>, ErroApp> {
+        let Some(mut atual) = self.aprovacoes.atual() else {
+            return Ok(None);
+        };
+        if atual.tipos.is_none() && !atual.bloqueado {
+            let mut d = self.daemon()?;
+            let tipos: Vec<Option<&'static str>> = atual
+                .pedido
+                .entradas
+                .iter()
+                .map(|n| cliente::detalhe(&mut *d, n).ok().map(|x| x.tipo.nome()))
+                .collect();
+            drop(d);
+            self.aprovacoes.guardar_tipos(atual.pedido.id, tipos.clone());
+            atual.tipos = Some(tipos);
+        }
+        Ok(Some(aprovacao::exibir(&atual)))
+    }
+
+    /// `responder_aprovacao { id, decisao, pin }` (Fase 36, S9, S10). Só um pedido que o
+    /// daemon mandou a este app e que ainda está aqui; "Negar" sem PIN, os três
+    /// "Permitir" com PIN (já conferido no formato, num [`Pin`] que zera).
+    /// - PIN errado: o pedido continua pendente; se o cofre travou (5º erro), o daemon
+    ///   já negou e a janela mostra `bloqueado`.
+    /// - "Negar" num pedido `bloqueado` só o tira da janela (o daemon já negou).
+    pub fn responder_aprovacao(
+        &self,
+        id: u64,
+        decisao: &str,
+        pin: Option<Pin>,
+    ) -> Result<ResultadoAprovacao, ErroApp> {
+        let decisao = aprovacao::decisao_de_nome(decisao)?;
+        if decisao.pede_pin() != pin.is_some() {
+            return Err(ErroApp::PedidoInvalido);
+        }
+        let resultado = match self.aprovacoes.situacao(id) {
+            None => return Err(ErroApp::PedidoInvalido),
+            Some(true) => {
+                if decisao.pede_pin() {
+                    return Err(ErroApp::Travado);
+                }
+                self.aprovacoes.remover(id);
+                "respondido"
+            }
+            Some(false) => {
+                let r = cliente::responder_aprovacao(
+                    &mut *self.daemon()?,
+                    id,
+                    decisao,
+                    pin.as_ref(),
+                );
+                drop(pin);
+                match r? {
+                    cliente::Respondida::Ok => {
+                        self.aprovacoes.remover(id);
+                        "respondido"
+                    }
+                    cliente::Respondida::Expirado => {
+                        self.aprovacoes.remover(id);
+                        "expirado"
+                    }
+                    cliente::Respondida::PinIncorreto => {
+                        if self.estado_do_cofre()? == EstadoCofre::Destravado {
+                            "pin-incorreto"
+                        } else {
+                            // O 5º erro travou o cofre: o daemon negou o pedido (S9).
+                            self.aprovacoes.marcar_bloqueado(id);
+                            "bloqueado"
+                        }
+                    }
+                }
+            }
+        };
+        Ok(ResultadoAprovacao {
+            resultado,
+            ha_outro: self.aprovacoes.ha_pedido(),
+        })
+    }
+
+    /// Fechar a janela nega (S10): todo pedido pendente aqui recebe "Negar". Os
+    /// bloqueados só saem (o daemon já negou). Falha ao falar com o daemon não abre
+    /// nada: sem resposta, o pedido expira e nega no daemon.
+    pub fn negar_aprovacoes_pendentes(&self) {
+        for id in self.aprovacoes.pendentes() {
+            if let Ok(mut d) = self.daemon() {
+                let _ = cliente::responder_aprovacao(
+                    &mut *d,
+                    id,
+                    ward_core::protocolo::Decisao::Negar,
+                    None,
+                );
+            }
+            self.aprovacoes.remover(id);
+        }
+        self.aprovacoes.esvaziar();
     }
 
     /// Troca o seletor de arquivo (sem ele, `escolher_anexo` responde o erro).

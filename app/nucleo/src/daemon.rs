@@ -160,6 +160,36 @@ impl FilaAvisos {
         }
     }
 
+    /// Só nos testes de outros módulos: põe um aviso como se viesse do daemon.
+    #[cfg(test)]
+    pub(crate) fn por_para_teste(&self, aviso: Aviso) {
+        self.por(aviso);
+    }
+
+    /// Fase 36: espera até `prazo` pelo `pedido_de_aprovacao` mais antigo e o tira da
+    /// fila. Os `pedido_de_destrave` ficam onde estão, na ordem, para a tela de destravar
+    /// (Fase 31). `None`: nenhum chegou no prazo.
+    pub fn esperar_aprovacao(&self, prazo: Duration) -> Option<PedidoDeAprovacao> {
+        let fim = Instant::now() + prazo;
+        let mut f = self.travar();
+        loop {
+            if let Some(i) = f
+                .itens
+                .iter()
+                .position(|a| matches!(a, Aviso::Aprovacao(_)))
+                && let Some(Aviso::Aprovacao(p)) = f.itens.remove(i)
+            {
+                return Some(p);
+            }
+            let falta = fim.checked_duration_since(Instant::now())?;
+            f = self
+                .chegou
+                .wait_timeout(f, falta)
+                .unwrap_or_else(|e| e.into_inner())
+                .0;
+        }
+    }
+
     /// Avisos esperando.
     pub fn tamanho(&self) -> usize {
         self.travar().itens.len()
@@ -751,6 +781,37 @@ mod testes {
         // Ficam os 16 primeiros, na ordem.
         assert_eq!(avisos.tomar(), Some(Aviso::Aprovacao(aprovacao(0))));
         assert_eq!(avisos.tomar(), Some(Aviso::Destrave));
+    }
+
+    /// Fase 36: a vigia da aprovação tira só os `pedido_de_aprovacao`, na ordem; os de
+    /// destrave ficam para a Fase 31. Sem aprovação, espera o prazo e diz `None`.
+    #[test]
+    fn esperar_aprovacao_deixa_o_destrave_na_fila() {
+        let f = FilaAvisos::default();
+        assert_eq!(f.esperar_aprovacao(Duration::from_millis(30)), None);
+        f.por(Aviso::Destrave);
+        f.por(Aviso::Aprovacao(aprovacao(1)));
+        f.por(Aviso::Destrave);
+        f.por(Aviso::Aprovacao(aprovacao(2)));
+        assert_eq!(
+            f.esperar_aprovacao(Duration::from_millis(30)),
+            Some(aprovacao(1))
+        );
+        assert_eq!(
+            f.esperar_aprovacao(Duration::from_millis(30)),
+            Some(aprovacao(2))
+        );
+        assert_eq!(f.esperar_aprovacao(Duration::from_millis(30)), None);
+        assert_eq!(f.tomar(), Some(Aviso::Destrave));
+        assert_eq!(f.tomar(), Some(Aviso::Destrave));
+        assert_eq!(f.tomar(), None);
+        // Chega de outra thread enquanto espera.
+        let f = Arc::new(f);
+        let g = Arc::clone(&f);
+        let t = std::thread::spawn(move || g.esperar_aprovacao(Duration::from_secs(10)));
+        std::thread::sleep(Duration::from_millis(50));
+        f.por(Aviso::Aprovacao(aprovacao(3)));
+        assert_eq!(t.join().unwrap(), Some(aprovacao(3)));
     }
 
     #[test]
