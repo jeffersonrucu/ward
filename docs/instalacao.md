@@ -160,6 +160,47 @@ grep -E '^(Max core)' /proc/$(pgrep -x wardd)/limits                       # 0 0
 systemctl --user unset-environment LD_PRELOAD
 ```
 
+### 3a. Core dump
+
+O `ward`, o `wardd`, o `ward-app` e o `ward-nm` são não-dumpable: o kernel não gera core
+deles. Os auxiliares do WebKitGTK que o app abre (`WebKitWebProcess`,
+`WebKitNetworkProcess`, `WebKitGPUProcess`) são programas comuns, com a memória do que o
+app mostra. Um `kill -SEGV` de outro programa seu neles faria o apport gravar essa
+memória em `/var/crash`, legível por você, mesmo com o limite de core em 0. Por isso a
+instalação:
+
+- põe o Ward e os auxiliares do WebKitGTK na lista do apport,
+  `/etc/apport/report-ignore/ward` (e no nome antigo, `/etc/apport/blacklist.d/ward`).
+  O apport deixa de gravar relatório de crash desses programas, inclusive quando outro
+  app que usa o WebKitGTK 4.1 cai;
+- desliga o armazenamento do systemd-coredump, se ele for instalado algum dia:
+  `/etc/systemd/coredump.conf.d/ward.conf` com `Storage=none` e `ProcessSizeMax=0`. Ele
+  não tem lista por programa, então isso vale para o **sistema inteiro**: nenhum core é
+  guardado em `/var/lib/systemd/coredump` (o journal ainda registra programa e sinal).
+  Se você precisa de core para depurar outro programa, apague esse arquivo enquanto
+  depura e reinstale o Ward depois.
+
+Conferir:
+
+```sh
+cat /proc/sys/kernel/core_pattern
+# |/usr/share/apport/apport ...      -> apport: a lista abaixo vale
+# |/usr/lib/systemd/systemd-coredump -> systemd-coredump: o drop-in abaixo vale
+# core (ou outro arquivo)            -> o limite 0 que o app passa aos auxiliares vale
+# outro programa                     -> a instalação avisou: o Ward não cobre esse caso
+grep -vx '#.*' /etc/apport/report-ignore/ward
+# /usr/local/bin/ward ... e /usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/WebKit*Process
+dpkg -L libwebkit2gtk-4.1-0 | grep -E 'WebKit[A-Za-z]*Process$' |
+    grep -vxF -f /etc/apport/report-ignore/ward          # nada: todo auxiliar na lista
+systemd-analyze cat-config systemd/coredump.conf | grep -E 'ward.conf|Storage|ProcessSizeMax'
+ls /var/crash | grep -i -E 'webkit|ward'                # nada
+```
+
+Se um crash do app acontecer, `/var/log/apport.log` (com `sudo`) mostra "executable
+version is in denylist" no lugar de "wrote report". A atualização do WebKitGTK que
+trouxer um auxiliar novo faz a reinstalação do Ward recusar com o nome dele, até a lista
+do Ward (`instalacao/despejo.sh`) ser atualizada.
+
 ## 4. Conferir o Chrome (V9.5)
 
 Feche e abra o Chrome.
@@ -392,7 +433,9 @@ não usa `SSH_AUTH_SOCK`, `environment.d` nem `ssh_config` (D18).
 sudo dpkg -r ward          # ou sudo dpkg -P ward; ou sudo make uninstall
 ```
 
-A remoção para e desliga todo `wardd@*`, apaga os arquivos, os overrides e `/run/ward`.
+A remoção para e desliga todo `wardd@*`, apaga os arquivos, os overrides e `/run/ward`,
+inclusive a lista do apport e o drop-in do systemd-coredump do passo 3a (as pastas
+`/etc/apport/…` e `/etc/systemd/coredump.conf.d/` ficam).
 Dos grupos `ward-app` e `ward-nm`, apaga só os que a instalação criou (anotados em
 `/usr/local/lib/ward/grupos-criados`, com o gid). Um grupo que já existia antes fica, e
 a remoção avisa. O cofre e os backups em `~/.local/share/ward/` ficam, e também os

@@ -14,7 +14,13 @@
 #               (ELF, sem marca de `modo-teste`; D7, D63) antes de qualquer mudança;
 #   src:<arq>   arquivo deste repositório, copiado como está;
 #   crx         o pacote da extensão (EXTENSAO_CRX), conferido pelo `crx.py`;
-#   ger:<nome>  gerado pelo instalar.sh a partir do id e da versão da extensão.
+#   ger:<nome>  gerado pelo instalar.sh: a partir do id e da versão da extensão, ou a
+#               lista do apport (`lista_apport` de despejo.sh, Fase 51c).
+#
+# Fase 51c: as pastas do apport e do systemd-coredump são comuns (D): a instalação as
+# cria mesmo sem o apport ou o systemd-coredump no sistema, para valerem se um deles
+# for instalado depois; o uninstall tira só os arquivos do Ward. O apport 2.28 lê as
+# duas pastas (report-ignore e o nome antigo blacklist.d); os anteriores, só a antiga.
 #
 # Nesta lista ficam exatamente os caminhos que o V9.1 confere (`make teste-install`).
 D 0755 root root     usr
@@ -34,6 +40,11 @@ D 0755 root root     etc/opt/chrome
 D 0755 root root     etc/opt/chrome/native-messaging-hosts
 D 0755 root root     etc/opt/chrome/policies
 D 0755 root root     etc/opt/chrome/policies/managed
+D 0755 root root     etc/apport
+D 0755 root root     etc/apport/report-ignore
+D 0755 root root     etc/apport/blacklist.d
+D 0755 root root     etc/systemd
+D 0755 root root     etc/systemd/coredump.conf.d
 f 0755 root root     usr/local/bin/ward                                     bin:ward
 f 0755 root root     usr/local/bin/wardd                                    bin:wardd
 f 2755 root ward-app usr/local/bin/ward-app                                 bin:app
@@ -45,3 +56,6 @@ f 0644 root root     usr/local/share/ward/extensao/ward.crx                 crx
 f 0644 root root     usr/local/share/ward/extensao/update.xml               ger:update
 f 0644 root root     etc/opt/chrome/native-messaging-hosts/br.ward.nm.json  ger:nm
 f 0644 root root     etc/opt/chrome/policies/managed/ward.json              ger:politica
+f 0644 root root     etc/apport/report-ignore/ward                          ger:apport
+f 0644 root root     etc/apport/blacklist.d/ward                            ger:apport
+f 0644 root root     etc/systemd/coredump.conf.d/ward.conf                  src:instalacao/coredump.conf.d/ward.conf

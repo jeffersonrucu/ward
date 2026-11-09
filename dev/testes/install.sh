@@ -60,6 +60,9 @@ falhou() { echo "FALHOU: $*"; falhas=$((falhas + 1)); }
 confere() {
     if [[ "$2" == *"$3"* ]]; then ok "$1"; else falhou "$1 (esperado '$3', veio '$2')"; fi
 }
+nao_tem() {
+    if [[ "$2" != *"$3"* ]]; then ok "$1"; else falhou "$1 (não devia ter '$3': $2)"; fi
+}
 
 # Pacote falso e o id dele.
 CRX="$TMP/ward.crx"
@@ -131,6 +134,72 @@ done
 cmp -s "$RAIZ/instalacao/tmpfiles.d/ward.conf" "$D/usr/local/lib/tmpfiles.d/ward.conf" || falhou "tmpfiles diferente"
 cmp -s "$CRX" "$D/usr/local/share/ward/extensao/ward.crx" || falhou "pacote da extensão diferente"
 ok "units, tmpfiles.d e pacote iguais aos do repositório"
+
+# Fase 51c (S2, S8): lista do apport e systemd-coredump sem armazenamento.
+cmp -s "$RAIZ/instalacao/coredump.conf.d/ward.conf" "$D/etc/systemd/coredump.conf.d/ward.conf" &&
+    ok "51c: drop-in do systemd-coredump igual ao do repositório" || falhou "51c: drop-in do systemd-coredump diferente"
+confere "51c: drop-in com Storage=none e ProcessSizeMax=0" \
+    "$(grep -v '^#' "$D/etc/systemd/coredump.conf.d/ward.conf" | tr '\n' ' ')" "[Coredump] Storage=none ProcessSizeMax=0"
+cmp -s "$D/etc/apport/report-ignore/ward" "$D/etc/apport/blacklist.d/ward" &&
+    ok "51c: report-ignore/ward e blacklist.d/ward iguais" || falhou "51c: as duas listas do apport diferem"
+LISTA_APPORT="$(grep -v '^#' "$D/etc/apport/report-ignore/ward")"
+for c in /usr/local/bin/ward /usr/local/bin/wardd /usr/local/bin/ward-app /usr/local/lib/ward/ward-nm; do
+    grep -qxF -- "$c" <<<"$LISTA_APPORT" || falhou "51c: $c fora da lista do apport"
+done
+# Oráculo independente do despejo.sh: os auxiliares do pacote instalado no host.
+ARQ_DPKG="$(dpkg --print-architecture)"
+AUX_PACOTE="$(dpkg-query -L "libwebkit2gtk-4.1-0:$ARQ_DPKG" 2>/dev/null | grep -E '/webkit2gtk-4\.1/WebKit[A-Za-z]*Process$' || true)"
+if [ -n "$AUX_PACOTE" ]; then
+    while IFS= read -r c; do
+        grep -qxF -- "$c" <<<"$LISTA_APPORT" || falhou "51c: auxiliar $c do libwebkit2gtk-4.1-0 fora da lista do apport"
+    done <<<"$AUX_PACOTE"
+    ok "51c: os $(wc -l <<<"$AUX_PACOTE") auxiliares do libwebkit2gtk-4.1-0 do host e os 4 binários do Ward na lista"
+else
+    echo "aviso: libwebkit2gtk-4.1-0 fora do host; os auxiliares ficam para o teste-deb"
+fi
+nao_tem "51c: nenhuma linha vazia ou com espaço na lista (o apport compara a linha inteira)" \
+    "$(grep -n -E '^$|^[^#].*[[:space:]]' "$D/etc/apport/report-ignore/ward" || true)" ":"
+# O próprio código do apport (Report.check_ignored) lendo a lista instalada, nas duas
+# pastas; controles fora da lista não são calados.
+if /usr/bin/python3 -I -c 'import apport.report' 2>/dev/null; then
+    mapfile -t IGN <<<"$LISTA_APPORT"
+    for pasta in report-ignore blacklist.d; do
+        r="$(env -i PATH=/usr/bin:/bin HOME=/nonexistent /usr/bin/python3 -I "$RAIZ/dev/testes/apport_lista.py" \
+            "$D/etc/apport/$pasta" "${IGN[@]}" -- /usr/bin/sleep "${IGN[-1]}X" /usr/local/bin/ward-appX 2>&1; echo "saiu=$?")"
+        confere "51c: o apport ($pasta) cala os ${#IGN[@]} caminhos e não os controles" "$r" "saiu=0"
+        nao_tem "51c: apport ($pasta) sem FALHOU" "$r" "FALHOU"
+    done
+else
+    echo "aviso: sem o módulo do apport no host; a leitura pelo apport fica para o teste-deb"
+fi
+
+# despejo.sh por dentro, com dpkg/dpkg-query falsos (funções vencem comandos).
+despejo() {
+    env -i PATH=/usr/bin:/bin /bin/bash -p -c '
+        erro() { printf "ERRO: %s\n" "$*" >&2; exit 1; }
+        aviso() { printf "AVISO: %s\n" "$*" >&2; }
+        . "$1"; shift; eval "$1"' _ "$RAIZ/instalacao/despejo.sh" "$1" 2>&1
+    echo "saiu=$?"
+}
+r="$(despejo 'dpkg() { echo amd64; }; dpkg-query() { printf "%s\n" /usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/WebKitWebProcess /usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/WebKitPrintProcess; }; lista_apport')"
+confere "51c ataque: auxiliar novo no pacote (WebKitPrintProcess) recusa a lista" "$r" "WebKitPrintProcess, fora da lista"
+nao_tem "51c ataque: auxiliar novo não sai 0" "$r" "saiu=0"
+r="$(despejo 'dpkg() { echo sparc64; }; lista_apport')"
+confere "51c: arquitetura fora da tabela recusa" "$r" "fora da tabela"
+nao_tem "51c: arquitetura fora da tabela não sai 0" "$r" "saiu=0"
+r="$(despejo 'dpkg() { echo arm64; }; dpkg-query() { return 1; }; lista_apport')"
+confere "51c: sem o libwebkit2gtk, avisa e usa o caminho do multiarch" "$r" "AVISO: libwebkit2gtk-4.1-0 (arm64) não está instalado"
+confere "51c: arm64 -> aarch64-linux-gnu" "$r" "/usr/lib/aarch64-linux-gnu/webkit2gtk-4.1/WebKitWebProcess"
+printf '%s' '|/usr/share/apport/apport -p%p -s%s -c%c -d%d -P%P -u%u -g%g -F%F -- %E' >"$TMP/cp-apport"
+printf '%s' '|/usr/lib/systemd/systemd-coredump %P %u %g %s %t 9223372036854775808 %h %d' >"$TMP/cp-systemd"
+printf '%s' 'core' >"$TMP/cp-arquivo"
+printf '%s' '|/usr/libexec/abrt-hook-ccpp %s %c %p %u %g %t %e' >"$TMP/cp-outro"
+printf '%s' '@/run/outro/coredump.socket' >"$TMP/cp-socket"
+for c in apport systemd arquivo; do
+    nao_tem "51c: core_pattern $c sem aviso" "$(despejo "avisar_core_pattern $TMP/cp-$c")" "AVISO"
+done
+confere "51c: core_pattern de outro programa avisa" "$(despejo "avisar_core_pattern $TMP/cp-outro")" "AVISO: kernel.core_pattern entrega o core a '|/usr/libexec/abrt-hook-ccpp'"
+confere "51c: core_pattern por outro socket avisa" "$(despejo "avisar_core_pattern $TMP/cp-socket")" "AVISO: kernel.core_pattern"
 # V9.6, a política e o update.xml.
 r="$(/usr/bin/python3 -I - "$D" "$ID" <<'EOF'
 import json, sys, xml.etree.ElementTree as ET
@@ -260,6 +329,14 @@ mkdir -p "$d/usr/local" "$TMP/alvo-bin"
 ln -s "$TMP/alvo-bin" "$d/usr/local/bin"
 recusa "usr/local/bin por link dentro do DESTDIR" "link simbólico" "$d"
 confere "pasta-link: nada escrito no alvo" "$(ls -A "$TMP/alvo-bin")" ""
+# Fase 51c: a pasta da lista do apport e a do systemd-coredump por link.
+for p in etc/apport/report-ignore etc/systemd/coredump.conf.d; do
+    nova
+    mkdir -p "$d/${p%/*}" "$TMP/alvo-$n"
+    ln -s "$TMP/alvo-$n" "$d/$p"
+    recusa "51c: $p por link" "link simbólico" "$d"
+    confere "51c: $p por link: nada escrito no alvo" "$(ls -A "$TMP/alvo-$n")" ""
+done
 # DESTDIR relativo (o make passa como veio).
 r="$(cd "$TMP" && /usr/bin/make -s -C "$RAIZ" install DESTDIR=relativo EXTENSAO_ID="$ID" EXTENSAO_CRX="$CRX" \
     BIN_WARD="$WARD" BIN_WARDD="$WARDD" BIN_NM="$NM" BIN_APP="$APP" 2>&1; echo "saiu=$?")"
@@ -290,10 +367,12 @@ COFRE_TESTE="$RAIZ/.dev/cofre-teste.ward"
 C="$TMP/conteiner"
 mkdir -m 0755 "$C" "$C/repo" "$C/bin"
 install -m 0644 "$RAIZ/Makefile" "$C/repo/Makefile"
-mkdir -m 0755 "$C/repo/instalacao" "$C/repo/instalacao/systemd" "$C/repo/instalacao/tmpfiles.d"
+mkdir -m 0755 "$C/repo/instalacao" "$C/repo/instalacao/systemd" "$C/repo/instalacao/tmpfiles.d" \
+    "$C/repo/instalacao/coredump.conf.d"
 install -m 0644 "$RAIZ/instalacao/arvore.txt" "$C/repo/instalacao/"
 install -m 0755 "$RAIZ/instalacao/instalar.sh" "$RAIZ/instalacao/crx.py" "$C/repo/instalacao/"
-install -m 0644 "$RAIZ/instalacao/grupos.sh" "$RAIZ/instalacao/chrome.sh" "$C/repo/instalacao/"
+install -m 0644 "$RAIZ/instalacao/grupos.sh" "$RAIZ/instalacao/chrome.sh" "$RAIZ/instalacao/despejo.sh" "$C/repo/instalacao/"
+install -m 0644 "$RAIZ/instalacao/coredump.conf.d/ward.conf" "$C/repo/instalacao/coredump.conf.d/"
 install -m 0644 "$RAIZ/instalacao/systemd/wardd@.socket" "$RAIZ/instalacao/systemd/wardd@.service" "$C/repo/instalacao/systemd/"
 install -m 0644 "$RAIZ/instalacao/tmpfiles.d/ward.conf" "$C/repo/instalacao/tmpfiles.d/"
 install -m 0755 "$WARD" "$C/bin/ward"

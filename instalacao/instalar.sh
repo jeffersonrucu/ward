@@ -7,6 +7,10 @@
 #   instalar.sh desinstalar  desfaz a instalação; nunca toca no home (o cofre em
 #                            ~/.local/share/ward/ fica)
 #
+# Core dump (Fase 51c; S2, S8): a lista do apport (/etc/apport/report-ignore/ward e o
+# legado blacklist.d/ward) com o Ward e os auxiliares do WebKitGTK, e o systemd-coredump
+# sem armazenamento (/etc/systemd/coredump.conf.d/ward.conf). Ver despejo.sh.
+#
 # Variáveis (o Makefile exporta):
 #   DESTDIR       vazio: instala no sistema (exige root: `sudo make install`). Com valor
 #                 (caminho absoluto, sem link): só copia a árvore para lá, sem grupos,
@@ -121,6 +125,9 @@ conferir_elf() {
 # --- políticas do Chrome (Fase 51a): conferir_politicas_chrome, a mesma do `.deb` -----
 # shellcheck source=instalacao/chrome.sh
 . "$AQUI/chrome.sh"
+# --- core dump (Fase 51c): pasta_webkit, lista_apport e avisar_core_pattern -----------
+# shellcheck source=instalacao/despejo.sh
+. "$AQUI/despejo.sh"
 
 # --- pastas e arquivos ----------------------------------------------------------------
 # Pasta: sem link; no sistema, do root e sem escrita para grupo e outros.
@@ -230,6 +237,9 @@ EOF
   </app>
 </gupdate>
 EOF
+    # Fase 51c: a lista do apport (Ward e auxiliares do WebKitGTK), conferida contra o
+    # libwebkit2gtk-4.1-0 instalado antes de qualquer mudança.
+    lista_apport >"$TMP/ger-apport"
 
     if [ "$SISTEMA" = 1 ]; then
         passo "grupos de sistema (D47, D60)"
@@ -244,6 +254,7 @@ EOF
         suid="$(cat /proc/sys/fs/suid_dumpable 2>/dev/null || echo ?)"
         [ "$ptrace" != 0 ] || aviso "kernel.yama.ptrace_scope = 0: o daemon recusa os papéis app e extensão (D47)"
         [ "$suid" != 1 ] || aviso "fs.suid_dumpable = 1: o daemon recusa os papéis app e extensão (D47)"
+        avisar_core_pattern
     fi
 
     passo "arquivos em ${DESTDIR:-/}"

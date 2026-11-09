@@ -13,10 +13,15 @@ set -euo pipefail
 umask 022
 
 erro() { printf 'ward (postinst): %s\n' "$*" >&2; exit 1; }
+aviso() { printf 'ward: aviso: %s\n' "$*" >&2; }
 passo() { printf 'ward: %s\n' "$*"; }
 
 # avisar_manifestos_de_usuario (Fase 51a) e conferir_politicas_chrome, de chrome.sh.
 #@CHROME@
+
+# avisar_core_pattern (Fase 51c), de despejo.sh. A lista do apport e o drop-in do
+# systemd-coredump vêm no pacote (gerados no staging pelo instalar.sh).
+#@DESPEJO@
 
 # Binário setgid: root:<grupo> 2755, arquivo regular. Na primeira instalação o dpkg já
 # leu a base de overrides antes do preinst registrar o do Ward, então o arquivo chega
@@ -50,6 +55,7 @@ case "${1:-}" in
     configure)
         conferir_setgid ward-app /usr/local/bin/ward-app
         conferir_setgid ward-nm /usr/local/lib/ward/ward-nm
+        avisar_core_pattern
         if [ -d /run/systemd/system ]; then
             systemd-tmpfiles --create /usr/local/lib/tmpfiles.d/ward.conf
             systemctl daemon-reload

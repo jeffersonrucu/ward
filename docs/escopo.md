@@ -289,8 +289,18 @@ inclusive o valor revelado (PRD D64).
   passa a devolver segredo: voltam só níveis de acesso e o PIN antigo.
 - Chrome depurado por um processo do usuário que seja ancestral dele (decisão do
   usuário, 2026-11-08). O app e o host da extensão são setgid e não-dumpable desde o
-  `exec`, mas o Chrome e os processos auxiliares do WebKitGTK não são endurecidos e
-  ficam protegidos só pelo Yama (`ptrace_scope=1`) contra quem não é ancestral. Um
+  `exec`, mas o Chrome e os processos auxiliares do WebKitGTK (`WebKitWebProcess`,
+  `WebKitNetworkProcess`, `WebKitGPUProcess`) não são endurecidos: o `exec` os deixa
+  dumpable. Contra o `ptrace` de quem não é ancestral, protege o Yama
+  (`ptrace_scope=1`). Contra o core dump (um `kill -SEGV` de outro processo do uid), o
+  RLIMIT_CORE 0 que o app passa aos auxiliares não basta: o apport grava o relatório em
+  `/var/crash`, legível pelo usuário, mesmo com o limite em 0, e o systemd-coredump do
+  Ubuntu recebe um limite fixo. Por isso a instalação põe o Ward e os auxiliares do
+  WebKitGTK na lista do apport (`/etc/apport/report-ignore/ward` e o nome antigo
+  `blacklist.d`) e desliga o armazenamento do systemd-coredump
+  (`/etc/systemd/coredump.conf.d/ward.conf`, para o sistema inteiro: ele não tem lista
+  por programa); outro programa no `kernel.core_pattern` só recebe aviso (Fase 51c). O
+  crash do Chrome continua indo para o apport, como o de qualquer navegador. Um
   pacote malicioso que feche o Chrome e o abra de novo como filho pode se prender a
   ele por `ptrace` e fazer o navegador mentir a origem da aba; esse Chrome recebe o
   preenchimento de qualquer entrada `login`. É o mesmo limite da leitura do campo de
