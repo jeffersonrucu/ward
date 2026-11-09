@@ -844,7 +844,8 @@ Reauditoria do M2 (Fase 19e, D53–D55). Repros em `scratchpad/ataque/src/bin/`
   indisponível"; com o app de teste que nega, "pedido negado") (D3).
 - [ ] V4.33 — (SEG) Dada a suíte do M4 com `RUST_LOG=trace`, quando o auditor procura
   segredos nos logs do daemon e da CLI, então não acha — cobre S13.
-- [ ] V4.34 — (SEG) Dado `ward ssh acme-ssh-senha-stage` interativo num pty (`expect`),
+- [x] V4.34 — **Retirada (decisão do usuário, 2026-11-09, D34 revisto): segurar prefixo
+  vira oráculo; a máscara cobre só o segredo inteiro.** Texto original: (SEG) Dado `ward ssh acme-ssh-senha-stage` interativo num pty (`expect`),
   quando o servidor imprime um prompt que termina num prefixo da senha (ex.: `fals`) e
   fica parado, então em até 1 s o pty mostra `••••` no lugar do prefixo, nunca o
   prefixo em claro; e quando em seguida chega o resto da senha, então nenhum pedaço

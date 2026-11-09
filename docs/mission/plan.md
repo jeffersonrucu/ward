@@ -789,7 +789,9 @@ Auditoria de segurança do M4 (2026-11-09): **reprovada** (1ª vez), com 1 crít
   de prefixo — no pty o prefixo parado sai `••••` e o resto sai em claro; sem pty o
   prefixo segurado atrasa a saída; o agente recuperou os 18 bytes da senha de
   `acme-ssh-senha-stage` só pelo `ward ssh` (53 consultas, 314 s). Correção conforme
-  decisão do usuário (ver nota abaixo), mudar D34/V4.34 no PRD e no contrato, e o
+  decisão do usuário (2026-11-09: "nunca segurar" — a máscara cobre só o segredo
+  inteiro num mesmo bloco de saída; nenhum prefixo é segurado nem atrasado, com ou sem
+  pty; o V4.34 sai do contrato), registrar no PRD (D34) e no contrato, e o
   oráculo da auditoria (pty e por tempo) vira teste de ataque que tem de falhar.
   **Alto:** no sftp, `par_permitido` (`wardd/src/agente_ssh.rs`) aceita qualquer filho do
   `sftp`; o `!cmd` do sftp usa o agente temporário (`ssh-add -L`, login com a chave em

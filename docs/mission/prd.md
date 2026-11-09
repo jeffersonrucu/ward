@@ -597,6 +597,10 @@ Fases 19a e 19b (M2) e nas fases pendentes citadas.
   `WARD_TOTP` e `WARD_ARQUIVO_*` não entram na máscara (D11: o código TOTP não é
   mascarado; o caminho não é segredo, o conteúdo do anexo é).
 - D34. **Máscara: `CHAVE=valor` e saída interativa** (handoff 17).
+  **Revisto pelo usuário (2026-11-09, auditoria do M4):** segurar o prefixo virou oráculo
+  (o agente recuperou a senha caractere a caractere); a máscara passa a cobrir só o
+  segredo inteiro num mesmo bloco de saída, sem segurar nem atrasar prefixo. Segredo
+  impresso em pedaços não é cenário do uso (sempre a senha inteira).
   - Em linha `CHAVE=valor` de anexo, o **valor só vira padrão próprio com 6 caracteres
     ou mais**, o mesmo mínimo das linhas (D11). Sem mínimo, `DEBUG=1` ou `PORT=8080`
     fariam todo `1` ou todo `8080` da saída virar `••••`. A linha inteira continua
