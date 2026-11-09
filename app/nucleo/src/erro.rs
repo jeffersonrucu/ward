@@ -21,6 +21,10 @@ pub enum ErroApp {
     Travado,
     /// A área de transferência não aceitou o valor.
     AreaTransferencia,
+    /// O RNG do sistema não respondeu; o gerador não usa fonte reserva.
+    AleatorioIndisponivel,
+    /// "Copiar" ou "revelar" do gerador avulso sem senha gerada (ou já descartada).
+    SemSenhaGerada,
 }
 
 impl ErroApp {
@@ -34,6 +38,8 @@ impl ErroApp {
             ErroApp::PedidoInvalido => "pedido-invalido",
             ErroApp::Travado => "travado",
             ErroApp::AreaTransferencia => "area-transferencia",
+            ErroApp::AleatorioIndisponivel => "aleatorio-indisponivel",
+            ErroApp::SemSenhaGerada => "sem-senha-gerada",
         }
     }
 }
@@ -50,6 +56,8 @@ impl fmt::Display for ErroApp {
             ErroApp::PedidoInvalido => "pedido inválido",
             ErroApp::Travado => "o cofre está travado",
             ErroApp::AreaTransferencia => "não foi possível usar a área de transferência",
+            ErroApp::AleatorioIndisponivel => "o gerador aleatório do sistema não respondeu",
+            ErroApp::SemSenhaGerada => "gere uma senha antes",
         })
     }
 }

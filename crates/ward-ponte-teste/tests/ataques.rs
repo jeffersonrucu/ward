@@ -128,6 +128,62 @@ fn copiar_passa_e_a_resposta_nao_tem_o_valor() {
     fs::remove_dir_all(base).unwrap();
 }
 
+/// V5.21 pela ponte: "gerar" devolve só tamanho, força e símbolos de D35; "copiar"
+/// devolve `null` e a senha vai para a área; o valor só sai no "revelar"; opções fora do
+/// formato (tamanho fora de 8–64, tipo errado, campo faltando) são recusadas.
+#[test]
+fn ataque_gerador_avulso_pela_ponte() {
+    let (p, _l, area, base) = ponte("gerador");
+    let opcoes =
+        r#"{"tamanho":24,"minusculas":true,"maiusculas":true,"digitos":true,"simbolos":true}"#;
+    let r = p.responder(&post(&p, "gerar_senha", opcoes, &[]));
+    assert_eq!(
+        r.corpo_json().unwrap(),
+        serde_json::json!({ "ok": true, "valor": {
+            "tamanho": 24, "bits": 150, "forca": "muito-forte",
+            "simbolos": "!#$%&()*+,-./:;<=>?@[]^_{|}~"
+        }})
+    );
+    let r = p.responder(&post(&p, "copiar_senha_gerada", "{}", &[]));
+    assert_eq!(
+        r.corpo_json().unwrap(),
+        serde_json::json!({ "ok": true, "valor": null })
+    );
+    let copiado = area.0.lock().unwrap().clone().unwrap();
+    assert_eq!(copiado.len(), 24);
+    let r = p.responder(&post(&p, "revelar_senha_gerada", "{}", &[]));
+    assert_eq!(
+        r.corpo_json().unwrap()["valor"]["valor"]
+            .as_str()
+            .unwrap()
+            .as_bytes(),
+        &copiado[..]
+    );
+    let r = p.responder(&post(&p, "descartar_senha_gerada", "{}", &[]));
+    assert_eq!(r.corpo_json().unwrap()["ok"], true);
+    let r = p.responder(&post(&p, "revelar_senha_gerada", "{}", &[]));
+    assert_eq!(r.corpo_json().unwrap()["codigo"], "sem-senha-gerada");
+    for corpo in [
+        r#"{"tamanho":7,"minusculas":true,"maiusculas":true,"digitos":true,"simbolos":true}"#,
+        r#"{"tamanho":65,"minusculas":true,"maiusculas":true,"digitos":true,"simbolos":true}"#,
+        r#"{"tamanho":128,"minusculas":true,"maiusculas":true,"digitos":true,"simbolos":true}"#,
+        r#"{"tamanho":-1,"minusculas":true,"maiusculas":true,"digitos":true,"simbolos":true}"#,
+        r#"{"tamanho":24.5,"minusculas":true,"maiusculas":true,"digitos":true,"simbolos":true}"#,
+        r#"{"tamanho":"24","minusculas":true,"maiusculas":true,"digitos":true,"simbolos":true}"#,
+        r#"{"tamanho":24,"minusculas":"sim","maiusculas":true,"digitos":true,"simbolos":true}"#,
+        r#"{"tamanho":24,"maiusculas":true,"digitos":true,"simbolos":true}"#,
+        r#"{"tamanho":24,"minusculas":false,"maiusculas":false,"digitos":false,"simbolos":false}"#,
+    ] {
+        let r = p.responder(&post(&p, "gerar_senha", corpo, &[]));
+        assert_eq!(
+            r.corpo_json().unwrap()["codigo"],
+            "pedido-invalido",
+            "{corpo}"
+        );
+    }
+    fs::remove_dir_all(base).unwrap();
+}
+
 #[test]
 fn ataque_sem_token_token_errado_ou_repetido() {
     let (p, _l, area, base) = ponte("token");

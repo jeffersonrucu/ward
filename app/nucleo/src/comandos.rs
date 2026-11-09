@@ -15,8 +15,26 @@ pub const ESTADO_DO_COFRE: &str = "estado_do_cofre";
 /// transferência pelo lado Rust (D4); a resposta não traz o valor.
 pub const COPIAR_CAMPO: &str = "copiar_campo";
 
+/// `gerar_senha { tamanho, minusculas, maiusculas, digitos, simbolos }`: gerador avulso
+/// (Fase 37). A senha fica no lado Rust; a resposta traz só tamanho, força e símbolos.
+pub const GERAR_SENHA: &str = "gerar_senha";
+/// `copiar_senha_gerada`: a senha avulsa vai para a área de transferência (D4); a
+/// resposta não traz o valor.
+pub const COPIAR_SENHA_GERADA: &str = "copiar_senha_gerada";
+/// `revelar_senha_gerada`: o valor, só no clique em "revelar" (S11).
+pub const REVELAR_SENHA_GERADA: &str = "revelar_senha_gerada";
+/// `descartar_senha_gerada`: zera a senha avulsa ao sair da tela.
+pub const DESCARTAR_SENHA_GERADA: &str = "descartar_senha_gerada";
+
 /// Todos os comandos, na ordem em que aparecem nas capabilities.
-pub const COMANDOS: &[&str] = &[ESTADO_DO_COFRE, COPIAR_CAMPO];
+pub const COMANDOS: &[&str] = &[
+    ESTADO_DO_COFRE,
+    COPIAR_CAMPO,
+    GERAR_SENHA,
+    COPIAR_SENHA_GERADA,
+    REVELAR_SENHA_GERADA,
+    DESCARTAR_SENHA_GERADA,
+];
 
 /// Nome da permissão gerada pelo Tauri para o comando (`allow-estado-do-cofre`).
 pub fn permissao(comando: &str) -> String {
@@ -28,6 +46,10 @@ pub fn permissao(comando: &str) -> String {
 pub enum Comando {
     EstadoDoCofre,
     CopiarCampo,
+    GerarSenha,
+    CopiarSenhaGerada,
+    RevelarSenhaGerada,
+    DescartarSenhaGerada,
 }
 
 impl Comando {
@@ -35,6 +57,10 @@ impl Comando {
         match nome {
             ESTADO_DO_COFRE => Some(Comando::EstadoDoCofre),
             COPIAR_CAMPO => Some(Comando::CopiarCampo),
+            GERAR_SENHA => Some(Comando::GerarSenha),
+            COPIAR_SENHA_GERADA => Some(Comando::CopiarSenhaGerada),
+            REVELAR_SENHA_GERADA => Some(Comando::RevelarSenhaGerada),
+            DESCARTAR_SENHA_GERADA => Some(Comando::DescartarSenhaGerada),
             _ => None,
         }
     }
@@ -83,7 +109,17 @@ mod testes {
 
     #[test]
     fn lista_e_permissoes() {
-        assert_eq!(COMANDOS, &["estado_do_cofre", "copiar_campo"]);
+        assert_eq!(
+            COMANDOS,
+            &[
+                "estado_do_cofre",
+                "copiar_campo",
+                "gerar_senha",
+                "copiar_senha_gerada",
+                "revelar_senha_gerada",
+                "descartar_senha_gerada",
+            ]
+        );
         assert_eq!(permissao(COPIAR_CAMPO), "allow-copiar-campo");
         for c in COMANDOS {
             assert!(Comando::de_nome(c).is_some());

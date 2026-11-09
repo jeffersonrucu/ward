@@ -1,20 +1,26 @@
 <script>
-  // Esqueleto do app (Fase 29): mostra se o daemon responde. As telas do M0 chegam nas
+  // App: com o cofre destravado, a casca com a `Navegação lateral` e a tela escolhida;
+  // fora disso, o esqueleto da Fase 29 com o estado do daemon. As telas do M0 chegam nas
   // Fases 30–39, cada uma a partir dos nodes de docs/mission/design-nodes.md.
   import { onMount } from 'svelte';
   import Botao from './lib/componentes/Botao.svelte';
   import Logo from './lib/componentes/Logo.svelte';
+  import NavegacaoLateral from './lib/componentes/NavegacaoLateral.svelte';
   import Toast from './lib/componentes/Toast.svelte';
   import { chamar } from './lib/ponte/index.js';
+  import GeradorSenha from './telas/GeradorSenha.svelte';
 
   const TEXTOS = {
     'sem-cofre': 'Nenhum cofre criado ainda.',
     travado: 'O cofre está travado.',
     destravado: 'O cofre está destravado.',
   };
+  const TELAS = ['credenciais', 'gerador', 'configuracoes'];
 
   let mensagem = $state('Conectando ao daemon…');
   let falhou = $state(false);
+  let destravado = $state(false);
+  let tela = $state('credenciais');
   let Vitrine = $state(null);
 
   async function consultar() {
@@ -22,6 +28,7 @@
     mensagem = 'Conectando ao daemon…';
     try {
       const r = await chamar('estado_do_cofre');
+      destravado = r?.estado === 'destravado';
       mensagem = TEXTOS[r?.estado] ?? 'Estado desconhecido.';
     } catch (e) {
       falhou = true;
@@ -29,30 +36,68 @@
     }
   }
 
+  function navegar(nova) {
+    if (TELAS.includes(nova)) tela = nova;
+  }
+
   onMount(async () => {
+    // Só no build de teste (some do pacote de produção): a URL de abertura da ponte pode
+    // pedir uma tela (`&tela=gerador`) para o QA no Chrome, e a vitrine de componentes.
+    if (import.meta.env.MODE === 'teste' && !('__TAURI_INTERNALS__' in window)) {
+      const { telaPedida } = await import('./lib/ponte/ponte-teste.js');
+      const pedida = telaPedida();
+      if (pedida && TELAS.includes(pedida)) {
+        tela = pedida;
+        destravado = true;
+        return;
+      }
+    }
     consultar();
-    // Vitrine de componentes: só no build de teste (some do pacote de produção).
     if (import.meta.env.MODE === 'teste') {
       Vitrine = (await import('./lib/teste/Vitrine.svelte')).default;
     }
   });
 </script>
 
-<main class="janela">
-  <section class="painel">
-    <Logo />
-    <h1>Cofre de credenciais</h1>
-    {#if falhou}
-      <Toast tipo="erro" {mensagem} />
-      <Botao variante="secundario" onclick={consultar}>Tentar de novo</Botao>
+{#if destravado}
+  <div class="casca">
+    <NavegacaoLateral ativo={tela} onnavegar={navegar} />
+    {#if tela === 'gerador'}
+      <GeradorSenha />
     {:else}
-      <p class="estado">{mensagem}</p>
+      <main class="vazio"><p class="estado">Esta tela ainda não existe.</p></main>
     {/if}
-  </section>
-  {#if Vitrine}<Vitrine />{/if}
-</main>
+  </div>
+{:else}
+  <main class="janela">
+    <section class="painel">
+      <Logo />
+      <h1>Cofre de credenciais</h1>
+      {#if falhou}
+        <Toast tipo="erro" {mensagem} />
+        <Botao variante="secundario" onclick={consultar}>Tentar de novo</Botao>
+      {:else}
+        <p class="estado">{mensagem}</p>
+      {/if}
+    </section>
+    {#if Vitrine}<Vitrine />{/if}
+  </main>
+{/if}
 
 <style>
+  .casca {
+    display: flex;
+    gap: var(--espaco-16);
+    height: 100%;
+    padding: var(--espaco-16);
+    background: var(--cor-fundo-padrao);
+  }
+  .vazio {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+  }
   .janela {
     display: flex;
     flex-direction: column;

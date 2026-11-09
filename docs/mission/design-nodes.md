@@ -786,3 +786,17 @@ Lidos de uma cópia do `Ward.figcraft` (o original não foi alterado), pelo MCP 
 | Variables (todas as coleções) e estilos de texto/efeito | `variable.export css`, `variable.list`, `style.list` → `app/design/figcraft-export.jsonl` | `app/src/lib/estilo/tokens.css` (gerado por `python3 -I -B app/scripts/gerar_design.py`) |
 | Ícones 20×20, traço 1.5 | frame `178` (filhos `179`–`257` e `5197`) → `app/design/icones/*.svg` | `app/src/lib/componentes/icones.js` (gerado) e `Icone.svelte` |
 | Botão, Campo, Campo secreto, Select, Badge de ambiente/tipo, Toast, Item de lista (`553`), Modal, Campo de PIN | página Design System | `app/src/lib/componentes/*.svelte` (só tokens; conferência pixel a pixel por tela fica para as fases de UI) |
+
+## Fase 37 — gerador de senha avulso no código (só leitura do FigCraft)
+
+Lido de uma cópia do `Ward.figcraft` (o original não foi alterado), por `get_node`,
+`screenshot` e `inspect.code` (HTML/CSS com as variables ligadas). Capturas em
+`docs/mission/evidence/fase-37/` (a do FigCraft é `figcraft-13141-gerador-avulso.png`).
+
+| Node no FigCraft | No código |
+| --- | --- |
+| `Gerador de senha / Avulso` `13141` (`principal` `13182`: `topo` `13183`, `colunas` `13199`) | `app/src/telas/GeradorSenha.svelte` |
+| `Navegação lateral` `782`, variante `Ativo=Gerador de senha` `3037` (instância `13142`) | `app/src/lib/componentes/NavegacaoLateral.svelte` |
+| `Linha de opção` `10379`, variante interruptor `10368`; `Interruptor` `6838` (ligado `6836`, desligado `6839`) | `app/src/lib/componentes/LinhaDeOpcao.svelte` |
+| `Controle deslizante` `12604` (alça e preenchido de `9896`) | `app/src/lib/componentes/ControleDeslizante.svelte` |
+| `Campo secreto` `375` (máscara de 24 pontos `13822`), `Ação de campo` `2882`, `Botão` `263` | componentes da Fase 29; o `Campo secreto` ganhou `mascara` (um ponto por caractere) |
