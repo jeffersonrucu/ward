@@ -16,14 +16,25 @@
 //! abre (ou traz para a frente) a janela `aprovacao`, sempre no topo. Só ela responde
 //! (capability própria, e o comando confere o rótulo de novo); fechar a janela nega
 //! todo pedido pendente.
+//!
+//! Fase 39 (V5.23): ícone e menu na bandeja (AppIndicator, `ward_app_nucleo::bandeja`):
+//! "Abrir o Ward", "Travar agora"/"Destravar…" e "Sair". Com a bandeja ativa, fechar a
+//! janela principal a destrói (a webview e o que a tela tinha somem) e o app fica na
+//! bandeja; "Abrir o Ward" ou um `pedido_de_destrave` a criam de novo. Sem a biblioteca
+//! do AppIndicator ou sem pasta segura para o ícone, o app abre sem bandeja e fechar a
+//! janela fecha o app, como antes.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use serde::Serialize;
+use tauri::image::Image;
 use tauri::ipc::Channel;
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::tray::{TrayIcon, TrayIconBuilder};
 use tauri::{
     AppHandle, Builder, Manager, RunEvent, Runtime, State, WebviewUrl, WebviewWindow,
     WebviewWindowBuilder, WindowEvent,
@@ -32,6 +43,7 @@ use ward_app_nucleo::ErroApp;
 use ward_app_nucleo::anexos::{Escolha, Seletor};
 use ward_app_nucleo::aprovacao::{self, PedidoExibido, ResultadoAprovacao};
 use ward_app_nucleo::area_transferencia::{Copiador, Wayland};
+use ward_app_nucleo::bandeja::{self, Acao, EstadoBandeja, Icone};
 use ward_app_nucleo::configuracoes::{Configuracoes, ResultadoTroca, TrocaPin, TrocaSenha};
 use ward_app_nucleo::credenciais::{DetalheCredencial, ItemCredencial};
 use ward_app_nucleo::daemon::DaemonSocket;
@@ -143,6 +155,15 @@ fn destravar(senha: SenhaMestra, estado: State<'_, Estado>) -> Result<(), Falha>
     Ok(estado.servico()?.destravar(senha)?)
 }
 
+/// "Travar agora" da `Navegação lateral` (Fase 39): limpa a área de transferência e o
+/// formulário, trava, e a bandeja passa a mostrar travado.
+#[tauri::command]
+fn travar<R: Runtime>(app: AppHandle<R>, estado: State<'_, Estado>) -> Result<(), Falha> {
+    let r = estado.servico()?.travar();
+    atualizar_bandeja(&app);
+    Ok(r?)
+}
+
 /// D65 a: a tela passa o canal por onde o lado Rust a avisa: a principal, de um
 /// `pedido_de_destrave`; a de aprovação (Fase 36), de um `pedido_de_aprovacao`. O canal
 /// fica com a janela que o abriu (rótulo dado pelo Tauri, não pela tela), e uma janela
@@ -165,12 +186,21 @@ fn ouvir_avisos<R: Runtime>(
 
 /// A vigia da fila de avisos da conexão (D65 a): cada `pedido_de_destrave` marca o
 /// pedido no serviço e avisa a tela pelo canal, se ela já abriu um.
-fn vigiar_avisos(estado: &Estado, fila: Option<Arc<ward_app_nucleo::daemon::FilaAvisos>>) {
+/// Fase 39: com o app só na bandeja, o pedido também traz a janela principal de volta
+/// (D16: "o app abre e pede a senha mestra").
+fn vigiar_avisos<R: Runtime>(
+    app: &AppHandle<R>,
+    estado: &Estado,
+    fila: Option<Arc<ward_app_nucleo::daemon::FilaAvisos>>,
+) {
     let (Some(fila), Ok(s)) = (fila, estado.servico()) else {
         return;
     };
     let canais = Arc::clone(&estado.canal);
+    let h = app.clone();
     let r = destrave::vigiar(fila, s.pedido_de_destrave(), move || {
+        let h2 = h.clone();
+        let _ = h.run_on_main_thread(move || mostrar_principal(&h2));
         avisar(&canais, JANELA_PRINCIPAL, "pedido-de-destrave");
     });
     if r.is_err() {
@@ -356,8 +386,14 @@ fn criar_cofre(dados: NovoCofre, estado: State<'_, Estado>) -> Result<ResultadoC
 
 /// Configurações (Fase 38): tempo de trava e backup externo, sem hash nem UUID.
 #[tauri::command]
-fn configuracoes(estado: State<'_, Estado>) -> Result<Configuracoes, Falha> {
-    Ok(estado.servico()?.configuracoes()?)
+fn configuracoes<R: Runtime>(
+    app: AppHandle<R>,
+    estado: State<'_, Estado>,
+) -> Result<Configuracoes, Falha> {
+    let c = estado.servico()?.configuracoes()?;
+    // Fase 39: a tela abriu (ação do usuário); a bandeja aproveita o tempo lido.
+    tempo_da_bandeja(&app, c.minutos_trava);
+    Ok(c)
 }
 
 /// Trocar o PIN (Fase 38, V5.22, S9): atual, novo e confirmação em `Digitado` (zera);
@@ -379,8 +415,15 @@ fn trocar_senha_mestra(
 
 /// Tempo de trava (Fase 38, D30, D45): 1 a 1440 minutos, gravado no cofre pelo daemon.
 #[tauri::command]
-fn definir_tempo_trava(minutos: u64, estado: State<'_, Estado>) -> Result<Configuracoes, Falha> {
-    Ok(estado.servico()?.definir_tempo_trava(minutos)?)
+fn definir_tempo_trava<R: Runtime>(
+    minutos: u64,
+    app: AppHandle<R>,
+    estado: State<'_, Estado>,
+) -> Result<Configuracoes, Falha> {
+    let c = estado.servico()?.definir_tempo_trava(minutos)?;
+    // Fase 39: o subtítulo da bandeja passa a dizer o tempo novo.
+    tempo_da_bandeja(&app, c.minutos_trava);
+    Ok(c)
 }
 
 /// Rótulo da janela principal (capability `principal`).
@@ -502,6 +545,222 @@ impl Seletor for SeletorGtk {
     }
 }
 
+/// De quanto em quanto tempo a bandeja consulta o estado (só `estado`, que o daemon não
+/// conta como uso: a consulta não segura o cofre aberto). Pega a trava sozinha
+/// (inatividade, bloqueio de tela, suspensão, `ward travar`).
+const INTERVALO_DA_BANDEJA: Duration = Duration::from_secs(2);
+
+/// O menu da bandeja e o estado que ele mostra. Os itens de texto ficam desabilitados.
+struct Bandeja<R: Runtime> {
+    estado: Mutex<EstadoBandeja>,
+    /// Tempo de trava lido da configuração, só depois de uma ação do usuário
+    /// (`bandeja::ler_configuracao_na_passagem`, tela Configurações).
+    minutos: Mutex<Option<u32>>,
+    titulo: MenuItem<R>,
+    subtitulo: MenuItem<R>,
+    acao: MenuItem<R>,
+    icone: TrayIcon<R>,
+}
+
+fn icone_da_bandeja(i: Icone) -> Image<'static> {
+    match i {
+        Icone::Destravado => tauri::include_image!("icons/bandeja-destravado-32.png"),
+        Icone::Travado => tauri::include_image!("icons/bandeja-travado-32.png"),
+    }
+}
+
+/// Cria o ícone e o menu (frames `Bandeja / Destravado` `17269` e `/ Travado` `17300`).
+/// Sem a biblioteca do AppIndicator (o `tray-icon` entraria em pânico, e o release
+/// aborta) ou sem pasta segura para o PNG do ícone, não cria: o app segue sem bandeja.
+fn criar_bandeja<R: Runtime>(
+    app: &AppHandle<R>,
+    inicial: EstadoBandeja,
+) -> Result<(), &'static str> {
+    if !bandeja::biblioteca_do_sistema() {
+        return Err("sem a biblioteca do AppIndicator");
+    }
+    let pasta =
+        bandeja::pasta_dos_icones_da_sessao().map_err(|_| "sem pasta segura para o ícone")?;
+    let a = bandeja::aparencia(inicial);
+    let erro = |_| "menu da bandeja";
+    let titulo =
+        MenuItem::with_id(app, bandeja::ID_TITULO, a.titulo, false, None::<&str>).map_err(erro)?;
+    let subtitulo = MenuItem::with_id(app, bandeja::ID_SUBTITULO, a.subtitulo, false, None::<&str>)
+        .map_err(erro)?;
+    let abrir = MenuItem::with_id(
+        app,
+        bandeja::ID_ABRIR,
+        bandeja::TEXTO_ABRIR,
+        true,
+        None::<&str>,
+    )
+    .map_err(erro)?;
+    let acao = MenuItem::with_id(
+        app,
+        bandeja::ID_ACAO,
+        a.acao,
+        a.acao_habilitada,
+        None::<&str>,
+    )
+    .map_err(erro)?;
+    let sair = MenuItem::with_id(
+        app,
+        bandeja::ID_SAIR,
+        bandeja::TEXTO_SAIR,
+        true,
+        None::<&str>,
+    )
+    .map_err(erro)?;
+    let sep1 = PredefinedMenuItem::separator(app).map_err(erro)?;
+    let sep2 = PredefinedMenuItem::separator(app).map_err(erro)?;
+    let menu = Menu::with_items(
+        app,
+        &[&titulo, &subtitulo, &sep1, &abrir, &acao, &sep2, &sair],
+    )
+    .map_err(erro)?;
+    let icone = TrayIconBuilder::with_id("ward")
+        .icon(icone_da_bandeja(a.icone))
+        .menu(&menu)
+        .show_menu_on_left_click(true)
+        .temp_dir_path(pasta)
+        .on_menu_event(|app, evento| ao_clicar_na_bandeja(app, evento.id().as_ref()))
+        .build(app)
+        .map_err(|_| "ícone da bandeja")?;
+    app.manage(Bandeja {
+        estado: Mutex::new(inicial),
+        minutos: Mutex::new(None),
+        titulo,
+        subtitulo,
+        acao,
+        icone,
+    });
+    Ok(())
+}
+
+fn estado_mostrado<R: Runtime>(b: &Bandeja<R>) -> std::sync::MutexGuard<'_, EstadoBandeja> {
+    b.estado.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Consulta o estado e, se mudou, troca textos e ícone da bandeja e avisa a janela
+/// principal (que relê o estado e vai para `Destravar` se travou). Sem bandeja, só avisa.
+fn atualizar_bandeja<R: Runtime>(app: &AppHandle<R>) {
+    let estado = app.state::<Estado>();
+    let Ok(s) = estado.servico() else { return };
+    let novo = s.estado_da_bandeja();
+    let Some(b) = app.try_state::<Bandeja<R>>() else {
+        avisar(&estado.canal, JANELA_PRINCIPAL, "estado-mudou");
+        return;
+    };
+    let mut atual = estado_mostrado(&b);
+    if *atual == novo {
+        return;
+    }
+    let a = bandeja::aparencia(novo);
+    // `configuracao` conta como uso no daemon: só na passagem que o usuário fez
+    // (destravou ou criou o cofre), nunca na consulta periódica nem na partida.
+    let mut minutos = b.minutos.lock().unwrap_or_else(|e| e.into_inner());
+    if bandeja::ler_configuracao_na_passagem(*atual, novo) {
+        *minutos = s.configuracoes().ok().map(|c| c.minutos_trava);
+    }
+    let subtitulo = match novo {
+        EstadoBandeja::Destravado => bandeja::subtitulo_destravado(*minutos),
+        _ => a.subtitulo.to_owned(),
+    };
+    drop(minutos);
+    let _ = b.titulo.set_text(a.titulo);
+    let _ = b.subtitulo.set_text(subtitulo);
+    let _ = b.acao.set_text(a.acao);
+    let _ = b.acao.set_enabled(a.acao_habilitada);
+    let _ = b.icone.set_icon(Some(icone_da_bandeja(a.icone)));
+    *atual = novo;
+    drop(atual);
+    avisar(&estado.canal, JANELA_PRINCIPAL, "estado-mudou");
+}
+
+/// O tempo de trava que a tela Configurações leu ou gravou (ação do usuário): o
+/// subtítulo do destravado passa a dizê-lo.
+fn tempo_da_bandeja<R: Runtime>(app: &AppHandle<R>, minutos_trava: u32) {
+    let Some(b) = app.try_state::<Bandeja<R>>() else {
+        return;
+    };
+    *b.minutos.lock().unwrap_or_else(|e| e.into_inner()) = Some(minutos_trava);
+    if *estado_mostrado(&b) == EstadoBandeja::Destravado {
+        let _ = b
+            .subtitulo
+            .set_text(bandeja::subtitulo_destravado(Some(minutos_trava)));
+    }
+}
+
+/// A vigia da bandeja: consulta o estado a cada [`INTERVALO_DA_BANDEJA`].
+fn vigiar_bandeja<R: Runtime>(app: AppHandle<R>) {
+    let r = std::thread::Builder::new()
+        .name("ward-app-bandeja".into())
+        .spawn(move || {
+            loop {
+                std::thread::sleep(INTERVALO_DA_BANDEJA);
+                atualizar_bandeja(&app);
+            }
+        });
+    if r.is_err() {
+        eprintln!("ward-app: não foi possível vigiar o estado para a bandeja");
+    }
+}
+
+/// Clique num item (S10, S13): o id é conferido em `bandeja::acao` contra o estado que o
+/// menu mostrava; nenhuma ação revela, copia ou aprova. Na thread principal.
+fn ao_clicar_na_bandeja<R: Runtime>(app: &AppHandle<R>, id: &str) {
+    let Some(b) = app.try_state::<Bandeja<R>>() else {
+        return;
+    };
+    let mostrado = *estado_mostrado(&b);
+    match bandeja::acao(id, mostrado) {
+        Some(Acao::Abrir | Acao::Destravar) => mostrar_principal(app),
+        Some(Acao::Travar) => {
+            // A conversa com o daemon fora da thread principal.
+            let h = app.clone();
+            let _ = std::thread::Builder::new()
+                .name("ward-app-travar".into())
+                .spawn(move || {
+                    if let Ok(s) = h.state::<Estado>().servico()
+                        && s.travar().is_err()
+                    {
+                        eprintln!("ward-app: o daemon não respondeu ao travar");
+                    }
+                    atualizar_bandeja(&h);
+                });
+        }
+        Some(Acao::Sair) => app.exit(0),
+        None => {}
+    }
+}
+
+/// Mostra a janela principal ou a cria de novo (fechada com a bandeja ativa). Na thread
+/// principal.
+fn mostrar_principal<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(j) = app.get_webview_window(JANELA_PRINCIPAL) {
+        let _ = j.unminimize();
+        let _ = j.show();
+        let _ = j.set_focus();
+        return;
+    }
+    if criar_janela_principal(app).is_err() {
+        eprintln!("ward-app: não foi possível abrir a janela principal");
+    }
+}
+
+fn criar_janela_principal<R: Runtime, M: Manager<R>>(app: &M) -> tauri::Result<WebviewWindow<R>> {
+    WebviewWindowBuilder::new(app, JANELA_PRINCIPAL, WebviewUrl::App("index.html".into()))
+        .title("Ward")
+        .inner_size(1280.0, 800.0)
+        .min_inner_size(1024.0, 640.0)
+        .theme(Some(tauri::Theme::Dark))
+        .disable_drag_drop_handler()
+        .devtools(cfg!(feature = "modo-teste"))
+        .on_navigation(navegacao_permitida)
+        .focused(true)
+        .build()
+}
+
 fn montar_servico(daemon: Result<DaemonSocket, ErroApp>) -> Result<ServicoApp, ErroApp> {
     let daemon = daemon?;
     let area = Wayland::novo()?;
@@ -548,7 +807,8 @@ fn com_comandos<R: Runtime>(builder: Builder<R>, estado: Estado) -> Builder<R> {
             trocar_senha_mestra,
             definir_tempo_trava,
             pedido_de_aprovacao,
-            responder_aprovacao
+            responder_aprovacao,
+            travar
         ])
 }
 
@@ -571,7 +831,6 @@ fn main() {
 
     let estado = Estado::novo(servico);
     let canais = Arc::clone(&estado.canal);
-    vigiar_avisos(&estado, fila.clone());
     let app = com_comandos(tauri::Builder::default(), estado)
         .on_window_event(|janela, evento| {
             if janela.label() == JANELA_APROVACAO && matches!(evento, WindowEvent::Destroyed) {
@@ -579,8 +838,19 @@ fn main() {
                 travar_canais(&estado.canal).aprovacao = None;
                 ao_fechar_a_aprovacao(Arc::clone(&estado.servico));
             }
+            // Fase 39: a janela principal fechada (com a bandeja o app continua): o canal
+            // dela sai e o que o formulário e o gerador guardavam é zerado. A área de
+            // transferência segue com o prazo de 30 s.
+            if janela.label() == JANELA_PRINCIPAL && matches!(evento, WindowEvent::Destroyed) {
+                let estado = janela.state::<Estado>();
+                travar_canais(&estado.canal).principal = None;
+                if let Ok(s) = estado.servico() {
+                    s.descartar_formulario();
+                }
+            }
         })
         .setup(move |app| {
+            vigiar_avisos(app.handle(), &app.state::<Estado>(), fila.clone());
             // D65 a: cada `pedido_de_aprovacao` da fila abre (ou traz para a frente) a
             // janela de aprovação e a avisa pelo canal dela (`ouvir_avisos`), sem dado.
             if let (Some(fila), Ok(s)) = (fila, na_aprovacao.as_ref()) {
@@ -594,26 +864,34 @@ fn main() {
                     eprintln!("ward-app: não foi possível vigiar os pedidos de aprovação");
                 }
             }
-            WebviewWindowBuilder::new(app, JANELA_PRINCIPAL, WebviewUrl::App("index.html".into()))
-                .title("Ward")
-                .inner_size(1280.0, 800.0)
-                .min_inner_size(1024.0, 640.0)
-                .theme(Some(tauri::Theme::Dark))
-                .disable_drag_drop_handler()
-                .devtools(cfg!(feature = "modo-teste"))
-                .on_navigation(navegacao_permitida)
-                .build()?;
+            criar_janela_principal(app)?;
+            // Fase 39 (V5.23): a bandeja, com o estado de agora; sem ela o app segue.
+            let inicial = app
+                .state::<Estado>()
+                .servico()
+                .map(|s| s.estado_da_bandeja())
+                .unwrap_or(EstadoBandeja::SemDaemon);
+            match criar_bandeja(app.handle(), inicial) {
+                Ok(()) => vigiar_bandeja(app.handle().clone()),
+                Err(motivo) => eprintln!("ward-app: sem bandeja ({motivo})"),
+            }
             Ok(())
         })
         .build(tauri::generate_context!())
         .expect("o app do Ward não pôde iniciar");
 
-    app.run(|handle, evento| {
-        if let RunEvent::Exit = evento
-            && let Ok(s) = handle.state::<Estado>().servico()
-        {
-            s.ao_sair();
+    app.run(|handle, evento| match evento {
+        // Fase 39: com a bandeja, fechar a última janela não fecha o app ("Sair" fecha,
+        // com código).
+        RunEvent::ExitRequested {
+            code: None, api, ..
+        } if handle.try_state::<Bandeja<tauri::Wry>>().is_some() => api.prevent_exit(),
+        RunEvent::Exit => {
+            if let Ok(s) = handle.state::<Estado>().servico() {
+                s.ao_sair();
+            }
         }
+        _ => {}
     });
 }
 
@@ -1291,5 +1569,52 @@ mod testes {
         let f = Falha::from(ErroApp::PedidoInvalido);
         assert_eq!(f.codigo, "pedido-invalido");
         assert_eq!(f.mensagem, "pedido inválido");
+    }
+
+    /// Fase 39 (V5.23): `travar` passa pela ACL só na janela principal e com a origem
+    /// local; a janela de aprovação e uma janela qualquer não travam (nem com argumento
+    /// inventado). Sem daemon, o serviço responde o erro dele, com código.
+    #[test]
+    fn ataque_travar_so_na_janela_principal() {
+        let app = app_de_teste();
+        let principal = WebviewWindowBuilder::new(&app, "principal", Default::default())
+            .build()
+            .unwrap();
+        let r = chamar(&principal, "travar", ORIGEM, serde_json::json!({}));
+        assert!(
+            r.as_ref().err().is_some_and(|e| e["codigo"].is_string()),
+            "erro do serviço, não da ACL: {r:?}"
+        );
+        let r = chamar(
+            &principal,
+            "travar",
+            "https://example.com",
+            serde_json::json!({}),
+        );
+        assert!(
+            r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+            "origem remota: {r:?}"
+        );
+        for rotulo in ["aprovacao", "outra"] {
+            let janela = WebviewWindowBuilder::new(&app, rotulo, Default::default())
+                .build()
+                .unwrap();
+            let r = chamar(&janela, "travar", ORIGEM, serde_json::json!({}));
+            assert!(
+                r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+                "{rotulo}: {r:?}"
+            );
+        }
+    }
+
+    /// Fase 39: sem a bandeja (o teste não cria uma), atualizar só avisa a principal e
+    /// não entra em pânico; um clique forjado sem bandeja não faz nada.
+    #[test]
+    fn bandeja_ausente_nao_quebra() {
+        let app = app_de_teste();
+        atualizar_bandeja(app.handle());
+        ao_clicar_na_bandeja(app.handle(), bandeja::ID_SAIR);
+        ao_clicar_na_bandeja(app.handle(), "inventado");
+        assert!(app.try_state::<Bandeja<MockRuntime>>().is_none());
     }
 }

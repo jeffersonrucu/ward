@@ -69,6 +69,9 @@ pub const CRIAR_COFRE: &str = "criar_cofre";
 /// `destravar { senha }`: destrava com a senha mestra (Fase 31). A senha vai só ao
 /// daemon, num tipo que zera; a resposta não a traz nem diz quantas tentativas houve.
 pub const DESTRAVAR: &str = "destravar";
+/// `travar`: "Travar agora" da `Navegação lateral` (Fase 39; a bandeja trava pelo lado
+/// Rust). Sem argumento; limpa a área de transferência e o formulário antes.
+pub const TRAVAR: &str = "travar";
 /// `ouvir_avisos { canal }`: o canal do Tauri por onde o lado Rust avisa a tela de um
 /// `pedido_de_destrave` (Fase 31, D65 a). O aviso leva só o nome dele, sem dado.
 pub const OUVIR_AVISOS: &str = "ouvir_avisos";
@@ -119,6 +122,7 @@ pub const COMANDOS_PRINCIPAL: &[&str] = &[
     TROCAR_PIN,
     TROCAR_SENHA_MESTRA,
     DEFINIR_TEMPO_TRAVA,
+    TRAVAR,
 ];
 
 /// Comandos da janela de aprovação, na ordem da capability `aprovacao` (Fase 36). O
@@ -159,6 +163,7 @@ pub const COMANDOS: &[&str] = &[
     DEFINIR_TEMPO_TRAVA,
     PEDIDO_DE_APROVACAO,
     RESPONDER_APROVACAO,
+    TRAVAR,
 ];
 
 /// Nome da permissão gerada pelo Tauri para o comando (`allow-estado-do-cofre`).
@@ -196,6 +201,7 @@ pub enum Comando {
     DefinirTempoTrava,
     PedidoDeAprovacao,
     ResponderAprovacao,
+    Travar,
 }
 
 impl Comando {
@@ -228,6 +234,7 @@ impl Comando {
             DEFINIR_TEMPO_TRAVA => Some(Comando::DefinirTempoTrava),
             PEDIDO_DE_APROVACAO => Some(Comando::PedidoDeAprovacao),
             RESPONDER_APROVACAO => Some(Comando::ResponderAprovacao),
+            TRAVAR => Some(Comando::Travar),
             _ => None,
         }
     }
@@ -316,6 +323,7 @@ mod testes {
                 "definir_tempo_trava",
                 "pedido_de_aprovacao",
                 "responder_aprovacao",
+                "travar",
             ]
         );
         // As duas janelas juntas são todos; em comum, só o canal de avisos.

@@ -635,6 +635,22 @@ impl<D: Daemon, A: AreaTransferencia> Servico<D, A> {
         }))
     }
 
+    /// "Travar agora" (janela e bandeja, Fase 39): limpa a área de transferência (se
+    /// ainda tem o valor copiado) e o que o formulário e o gerador guardavam **antes** de
+    /// pedir a trava, e o pedido do agente que esperava o destrave sai da tela. Mesmo com
+    /// o daemon fora, o que é local é limpo.
+    pub fn travar(&self) -> Result<(), ErroApp> {
+        self.ao_sair();
+        let r = cliente::travar(&mut *self.daemon()?);
+        self.ao_sair();
+        r
+    }
+
+    /// Estado para a bandeja (Fase 39): só `estado`, que o daemon não conta como uso.
+    pub fn estado_da_bandeja(&self) -> crate::bandeja::EstadoBandeja {
+        crate::bandeja::EstadoBandeja::de(self.estado_do_cofre())
+    }
+
     /// Ao travar ou fechar o app: limpa a área se ainda tiver o valor copiado e zera a
     /// senha avulsa.
     pub fn ao_sair(&self) {
@@ -1611,6 +1627,82 @@ mod testes {
             Err(ErroApp::TerminalIndisponivel)
         );
         assert_eq!(sem.escolher_anexo(), Err(ErroApp::SeletorIndisponivel));
+    }
+    /// Fase 39 (V5.23, S12): "Travar agora" limpa a área de transferência que ainda tem
+    /// o valor copiado e o formulário, e o cofre fica travado: depois, revelar e copiar
+    /// respondem "travado".
+    #[test]
+    fn ataque_travar_limpa_a_area_e_trava() {
+        let (s, area) = servico();
+        s.copiar_campo("acme-pg-dev", "senha").unwrap();
+        assert!(area.0.lock().unwrap().is_some());
+        assert_eq!(
+            s.estado_da_bandeja(),
+            crate::bandeja::EstadoBandeja::Destravado
+        );
+        s.travar().unwrap();
+        assert!(area.0.lock().unwrap().is_none(), "área não foi limpa");
+        assert_eq!(s.estado_do_cofre(), Ok(EstadoCofre::Travado));
+        assert_eq!(
+            s.estado_da_bandeja(),
+            crate::bandeja::EstadoBandeja::Travado
+        );
+        assert_eq!(
+            s.revelar_campo("acme-pg-dev", "senha").map(|_| ()),
+            Err(ErroApp::Travado)
+        );
+        assert!(s.copiar_campo("acme-pg-dev", "senha").is_err());
+        // Travar de novo não falha.
+        s.travar().unwrap();
+    }
+
+    /// Daemon que anota a operação de cada pedido (para o teste da consulta da bandeja).
+    struct Anotador(DaemonFalso, Arc<Mutex<Vec<String>>>);
+
+    impl Daemon for Anotador {
+        fn trocar(&mut self, pedido: &[u8]) -> Result<Zeroizing<Vec<u8>>, ErroApp> {
+            let v: serde_json::Value = serde_json::from_slice(pedido).unwrap();
+            self.1
+                .lock()
+                .unwrap()
+                .push(v["op"].as_str().unwrap_or("?").to_owned());
+            self.0.trocar(pedido)
+        }
+    }
+
+    /// Ataque (Fase 39): a consulta periódica da bandeja não pode segurar o cofre aberto.
+    /// Ela só manda `estado`, que o `wardd` não conta como uso
+    /// (`wardd::trava::conta_como_uso`); nenhuma outra operação sai dela.
+    #[test]
+    fn ataque_consulta_da_bandeja_so_pede_estado() {
+        let ops = Arc::new(Mutex::new(Vec::new()));
+        let s = Servico::novo(
+            Anotador(DaemonFalso::cheio(), Arc::clone(&ops)),
+            Copiador::novo(Arc::new(Area::default())),
+        );
+        for _ in 0..5 {
+            s.estado_da_bandeja();
+        }
+        assert_eq!(*ops.lock().unwrap(), vec!["estado"; 5]);
+    }
+
+    /// Sem daemon, travar ainda limpa o que é local e responde o erro.
+    #[test]
+    fn travar_sem_daemon_limpa_e_responde_erro() {
+        struct Fora;
+        impl Daemon for Fora {
+            fn trocar(&mut self, _: &[u8]) -> Result<Zeroizing<Vec<u8>>, ErroApp> {
+                Err(ErroApp::DaemonIndisponivel)
+            }
+        }
+        let area = Arc::new(Area::default());
+        let s = Servico::novo(Fora, Copiador::novo(Arc::clone(&area)));
+        *area.0.lock().unwrap() = Some(b"qualquer".to_vec());
+        assert!(s.travar().is_err());
+        assert_eq!(
+            s.estado_da_bandeja(),
+            crate::bandeja::EstadoBandeja::SemDaemon
+        );
     }
 }
 

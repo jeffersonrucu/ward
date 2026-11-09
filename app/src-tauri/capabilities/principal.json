@@ -28,6 +28,7 @@
     "allow-configuracoes",
     "allow-trocar-pin",
     "allow-trocar-senha-mestra",
-    "allow-definir-tempo-trava"
+    "allow-definir-tempo-trava",
+    "allow-travar"
   ]
 }

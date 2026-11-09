@@ -193,7 +193,8 @@ fn ataque_devtools_ou_acl_dinamica_no_release() {
         "dynamic-acl",
         "protocol-asset",
         "webview-data-url",
-        "tray-icon",
+        "image-png",
+        "image-ico",
         "test",
     ] {
         assert!(
@@ -201,6 +202,13 @@ fn ataque_devtools_ou_acl_dinamica_no_release() {
             "feature {f} no build normal"
         );
     }
+    // Fase 39: a bandeja (`tray-icon`, AppIndicator) entrou; a lista de features é
+    // exatamente esta, nada mais.
+    assert!(
+        linha_tauri
+            .contains(r#"features = ["wry", "compression", "custom-protocol", "tray-icon"] }"#),
+        "features do tauri fora da lista: {linha_tauri}"
+    );
     let modo = toml
         .lines()
         .find(|l| l.starts_with("modo-teste = "))

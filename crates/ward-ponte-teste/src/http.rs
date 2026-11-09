@@ -358,6 +358,9 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Ponte<D, A> {
                 }
                 _ => Err(ErroApp::PedidoInvalido),
             },
+            // Fase 39: "Travar agora"; limpa a área e o formulário antes.
+            Comando::Travar if args.is_empty() => self.servico.travar().map(|()| Value::Null),
+            Comando::Travar => Err(ErroApp::PedidoInvalido),
             // O canal do Tauri não existe na ponte: a tela de teste consulta o estado
             // (`ponte-teste.js` › `ouvirAvisos`).
             Comando::OuvirAvisos => Err(ErroApp::PedidoInvalido),

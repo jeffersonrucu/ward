@@ -67,7 +67,7 @@ CARGO_DENY_VERSAO := 0.20.2
 	dev-servicos-parar dev-servicos-estado dev-servicos-conferir dev-servicos-trocar-chave-host dev-cofre \
 	dev-cofre-conferir dev-variacoes teste-dev-cofre dev-daemon dev-daemon-parar teste-cli teste-docker-uid teste-units \
 	app-front app-check app-ponte teste-docker-plataforma teste-sem-modo-teste teste-socket-ataques \
-	teste-webkit-real
+	teste-webkit-real teste-logs-app
 
 ## check: pré-checagem das origens, depois fmt, clippy -D warnings, testes, cargo audit,
 ## cargo deny e gitleaks, nessa ordem (V1.1)
@@ -289,6 +289,15 @@ app-ponte: origens
 	$(CARGO) build --quiet --locked -p ward-ponte-teste --features modo-teste --bin ward-ponte-teste
 	WARD_DEV_APP="$(PONTE_DE_TESTE)" dev/daemon.sh subir
 	dev/ponte.sh
+
+## teste-logs-app: V5.27 (S13, Fase 39): nenhum padrão de .dev/variacoes.txt nos logs de
+## .dev/logs/ (app, ponte, daemon de teste e o console da webview que o QA grava ali);
+## antes, o autoteste com um log plantado (o ataque tem de ser achado). Nunca imprime a
+## lista nem o trecho. Precisa de `make dev-variacoes`; fora do `make check`.
+## `LOGS="<arquivo ou pasta em .dev/> ..."` troca o que é varrido
+teste-logs-app:
+	$(PYTHON) dev/testes/varredura-logs.py --autoteste
+	$(PYTHON) dev/testes/varredura-logs.py $(LOGS)
 
 ## teste-webkit-real: V5.32 (D48, D57, D64) com o WebKitGTK real sob strace -f: harness do
 ## app sem a partida, montado só em .dev/webkit-real; abre uma janela na sessão Wayland

@@ -282,7 +282,12 @@ impl DaemonFalso {
                 _ => Resposta::Erro(ErroResposta::CofreInexistente),
             };
         }
-        if self.travado && !matches!(pedido, Pedido::Estado | Pedido::Destravar { .. }) {
+        if self.travado
+            && !matches!(
+                pedido,
+                Pedido::Estado | Pedido::Destravar { .. } | Pedido::Travar
+            )
+        {
             return Resposta::Erro(ErroResposta::Travado);
         }
         match pedido {
@@ -295,6 +300,10 @@ impl DaemonFalso {
                 Ok(()) => Resposta::Ok,
                 Err(e) => Resposta::Erro(e),
             },
+            Pedido::Travar => {
+                self.travado = true;
+                Resposta::Ok
+            }
             Pedido::CriarCofre { .. } => Resposta::Erro(ErroResposta::CofreJaExiste),
             Pedido::Lista => Resposta::Lista(
                 self.entradas
