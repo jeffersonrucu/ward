@@ -864,9 +864,13 @@ instalar `libwebkit2gtk-4.1-dev` (para `make app-check` e `make teste-webkit-rea
 rodarem) e executar `docs/mission/roteiro-usuario.md` na janela nativa (V5.28; também a
 única prova real de V5.4, V5.5, V5.16, V5.23, V5.25).
 
-- [ ] Fase 39a — Aviso `pedido_de_destrave` com entrada e comando passados por
+- [x] Fase 39a — Aviso `pedido_de_destrave` com entrada e comando passados por
   `neutralizar` (D51), em `ward-core`, `wardd` e app; o cartão do `Destravar / Pedido do
   agente` mostra entrada, comando e contagem. V5.8.
+  Pendências da 39a: frame `3450` com selos de tipo/ambiente e comando fora de D51
+  (ajustar: sem selos, linha da operação e argv entre aspas); vários usos esperando o
+  destrave mostram só o mais novo ("e mais N"?); "Agora não" ainda não nega (falta
+  operação); `make app-check` não rodou (sem `libwebkit2gtk-4.1-dev`).
 - [ ] Fase 39b — Anexos na edição: operação no protocolo (ou manter anexos por id em
   `salvar_entrada`) para adicionar, listar e remover anexo de `servidor` e `genérico`
   já salvos; decidir se nome começando por `.` (ex.: `.env`) é aceito. V5.12.
