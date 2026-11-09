@@ -432,6 +432,10 @@ Pendências da 36 (2026-11-09): letras RTL fortes (hebraico/árabe) não são es
 
 Pendências da 27 (2026-11-09): dependência nova `ssh-key =0.7.0-rc.12` (versão rc; acompanhar a estável; auditoria do M4 revisa); só Ed25519 (RSA dá `entrega falhou`) — decidir se o escopo exige RSA; protocolo `Ssh` sem cwd nem ambiente (filho com ambiente fixo, cwd = home) — decidir; modo chave usa `IdentityFile=<id.pub do Ward>` + `IdentitiesOnly` (D13 diz `IdentityFile=none` só no modo senha) — alinhar D13; `emitir_token` emite para `servidor` bloqueado (token inútil); caminho do `known_hosts` não fixado no escopo; V4.27 sem `inotifywait` e sem bwrap com home em tmpfs; V4.35/V4.37 por `/proc/<pid>/cmdline`, não por strace; V3.15 só varre o 1º nível de `wardd/src/` (deveria percorrer subpastas); RA2 a confirmar com o usuário; `make teste-ataques-servicos`/`teste-home-real` não rodam em worktree (git abre `.git/worktrees/…`).
 
+Pendências da 38 (2026-11-09): frame `15242` diz "Trocar pede a senha mestra" no PIN, contrato e `wardd` pedem o PIN atual (corrigir FigCraft); máximo do tempo de trava: design 4 h, D45 1440 min — decidir; diálogos "Trocar senha mestra"/"Trocar PIN" sem frame; `trocar_senha` sem espera crescente de D20 na senha atual (só papel app) — decidir; mínimo de 12 e NFC continuam só no app; operação nova `configuracao` (só app) convive com `backup_externo` da 46.
+
+Pendências da 24a (2026-11-09): 1º `kill -SEGV` cai no tratador de pilha do Rust e só o 2º mata (sem core nos dois; V3.6 fala em um); nesta máquina `suid_dumpable=2` e `core_pattern` é pipe do apport — o que impede o core é `PR_SET_DUMPABLE=0` (levar à instalação, M9); sem `gdb` no host; nome de variável que começa com byte inválido sai vazio na mensagem; extensão divide as 64 vagas com o agente.
+
 ## Milestone 3 — Daemon e protocolo
 Contrato: V3.1–V3.41
 
@@ -464,7 +468,6 @@ Contrato: V3.1–V3.41
     ataques que já existem em `daemon.rs` continuam e ganham o do servidor falso do
     mesmo uid (V3.23). Basta `cargo test` do `app/nucleo`; o `make app-check` exige
     `libwebkit2gtk-4.1-dev` (R32).
-  `ward-plataforma`, ajustes da Fase 21:
   `ward-plataforma`, ajustes da Fase 21:
   - D46: `escutar_de_listen_fds()` (aceita o fd do systemd e confere que é socket Unix
     em escuta no caminho esperado); `conferir_servidor` passa a exigir pasta do root e
@@ -642,7 +645,7 @@ Contrato: V3.1–V3.41
   - testes de formato de V2 (byte alterado, gravação morta) repetidos com o v4.
   V3.41, V5.34.
 
-- [ ] Fase 24a — Correções do scrutiny do M3 (2026-11-09; `docs/mission/evidence/M3/`).
+- [x] Fase 24a — Correções do scrutiny do M3 (2026-11-09; `docs/mission/evidence/M3/`).
   - V3.25 (reprovada): `nome_para_mensagem` (`crates/ward-plataforma/src/endurecimento.rs`)
     corta no primeiro byte fora de `[A-Za-z0-9_]` e no 64º, sem `?` nem `…`; teste
     atualizado.
@@ -776,7 +779,7 @@ Contrato: V5.1–V5.35
   frame `Credenciais / Sem resultado`; cartão de nível bloqueado no detalhe; contagens
   da fixture nos frames de Credenciais. Inspirações só leitura; termina com
   `save_file` e PNG das telas ao usuário. V5.35.
-- [ ] Fase 38 — **(UI)** Configurações (PIN, senha mestra, tempo de trava gravado na
+- [x] Fase 38 — **(UI)** Configurações (PIN, senha mestra, tempo de trava gravado na
   configuração do cofre, D30; backup externo só exibido desligado). V5.22.
 - [ ] Fase 39 — **(UI)** Bandeja; `docs/mission/roteiro-usuario.md` da janela nativa;
   varredura de logs do app. V5.23, V5.27, V5.28.

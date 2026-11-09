@@ -3,8 +3,9 @@
  "destravou": true,
  "revelou": true,
  "ocultou": true,
+ "configuracoes_abre": true,
  "travar_agora_vai_para_destravar": true,
  "sem_valor_depois_de_travar": true,
  "destrava_de_novo": true,
- "linhas_no_console": 1
+ "linhas_no_console": 3
 }

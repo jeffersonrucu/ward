@@ -10,7 +10,12 @@
 //!   destravar (a senha é digitada na janela do Ward) e sair. Nenhum item leva nome de
 //!   entrada nem valor (S1, S10, S13). Um id desconhecido ou fora do estado não faz nada.
 //! - A consulta periódica usa só `estado`, que o `wardd` não conta como uso
-//!   (`wardd::trava::conta_como_uso`): a bandeja não segura o cofre aberto.
+//!   (`wardd::trava::conta_como_uso`): a bandeja não segura o cofre aberto. O tempo
+//!   de trava (`configuracao`, que **conta** como uso) só é lido depois de uma ação do
+//!   usuário: a passagem de travado (ou sem cofre) para destravado, que exige a senha
+//!   mestra, e a tela Configurações ([`ler_configuracao_na_passagem`]). Nunca na partida
+//!   nem na consulta periódica: um agente que derruba o app e pede `abrir_app` de novo
+//!   não renova o prazo de inatividade.
 //! - O ícone (fixo, embutido no binário) é gravado pelo AppIndicator numa pasta própria
 //!   em `XDG_RUNTIME_DIR`, 0700 e do uid, conferida sem seguir link ([`pasta_dos_icones`]).
 //! - A biblioteca do AppIndicator é carregada na hora pelo `tray-icon`, que entra em pânico
@@ -99,9 +104,36 @@ pub struct Aparencia {
     pub icone: Icone,
 }
 
+/// Subtítulo do destravado com o tempo de trava lido da configuração ("Trava sozinho
+/// após 4 h sem uso", frame `17269`); sem a leitura, o texto genérico de [`aparencia`].
+pub fn subtitulo_destravado(minutos: Option<u32>) -> String {
+    let Some(m) = minutos.filter(|m| *m > 0) else {
+        return aparencia(EstadoBandeja::Destravado).subtitulo.to_owned();
+    };
+    let tempo = match (m / 60, m % 60) {
+        (0, min) => format!("{min} min"),
+        (h, 0) => format!("{h} h"),
+        (h, min) => format!("{h} h {min} min"),
+    };
+    format!("Trava sozinho após {tempo} sem uso")
+}
+
+/// Ler o tempo de trava (`configuracao`, que o daemon conta como uso) nesta passagem de
+/// estado? Só quando o cofre acabou de ser destravado (ou criado) pelo usuário: de
+/// travado ou sem cofre para destravado. Nunca de "sem daemon" (partida do app,
+/// reconexão) nem de destravado para destravado (consulta periódica).
+pub fn ler_configuracao_na_passagem(antes: EstadoBandeja, depois: EstadoBandeja) -> bool {
+    matches!(
+        (antes, depois),
+        (
+            EstadoBandeja::Travado | EstadoBandeja::SemCofre,
+            EstadoBandeja::Destravado
+        )
+    )
+}
+
 /// Textos do menu (frames `Bandeja / Destravado` `17269` e `/ Travado` `17300`). O
-/// subtítulo do destravado não diz as horas: o protocolo não tem leitura do tempo de
-/// trava configurado (o padrão é 4 h, mas pode ter mudado em Configurações).
+/// subtítulo do destravado aqui é o genérico; com o tempo lido, [`subtitulo_destravado`].
 pub fn aparencia(estado: EstadoBandeja) -> Aparencia {
     match estado {
         EstadoBandeja::Destravado => Aparencia {
@@ -330,6 +362,53 @@ mod testes {
                 assert!(!texto.contains("acme-"), "{texto}");
             }
         }
+    }
+
+    #[test]
+    fn subtitulo_com_o_tempo_de_trava() {
+        assert_eq!(
+            subtitulo_destravado(Some(240)),
+            "Trava sozinho após 4 h sem uso"
+        );
+        assert_eq!(
+            subtitulo_destravado(Some(30)),
+            "Trava sozinho após 30 min sem uso"
+        );
+        assert_eq!(
+            subtitulo_destravado(Some(90)),
+            "Trava sozinho após 1 h 30 min sem uso"
+        );
+        assert_eq!(
+            subtitulo_destravado(None),
+            aparencia(EstadoBandeja::Destravado).subtitulo
+        );
+        assert_eq!(
+            subtitulo_destravado(Some(0)),
+            aparencia(EstadoBandeja::Destravado).subtitulo
+        );
+    }
+
+    /// Ataque (trava por inatividade): `configuracao` conta como uso no `wardd`. A
+    /// bandeja só a lê quando o usuário acabou de destravar (ou criar) o cofre; a
+    /// partida do app (de "sem daemon"), a consulta periódica e a trava não a leem. Um
+    /// agente que derruba o app e pede `abrir_app` em laço não segura o cofre aberto.
+    #[test]
+    fn ataque_configuracao_so_depois_de_destravar() {
+        use EstadoBandeja::*;
+        assert!(ler_configuracao_na_passagem(Travado, Destravado));
+        assert!(ler_configuracao_na_passagem(SemCofre, Destravado));
+        for antes in TODOS {
+            for depois in TODOS {
+                if !matches!((antes, depois), (Travado | SemCofre, Destravado)) {
+                    assert!(
+                        !ler_configuracao_na_passagem(antes, depois),
+                        "{antes:?} -> {depois:?}"
+                    );
+                }
+            }
+        }
+        assert!(!ler_configuracao_na_passagem(SemDaemon, Destravado));
+        assert!(!ler_configuracao_na_passagem(Destravado, Destravado));
     }
 
     #[test]

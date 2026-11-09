@@ -15,6 +15,7 @@ use crate::aprovacao::{self, Aprovacoes, PedidoExibido, ResultadoAprovacao};
 use crate::area_transferencia::{AreaTransferencia, Copiador};
 use crate::cliente;
 use crate::comandos::{Referencia, validar_nome_entrada};
+use crate::configuracoes::{Configuracoes, ResultadoTroca, TrocaPin, TrocaSenha, minutos_validos};
 use crate::credenciais::{DetalheCredencial, ItemCredencial};
 use crate::daemon::{Daemon, EstadoCofre};
 use crate::destrave::{InfoPedido, PedidoPendente, SenhaMestra};
@@ -569,6 +570,51 @@ impl<D: Daemon, A: AreaTransferencia> Servico<D, A> {
             entrada: entrada.to_owned(),
             nivel: nivel.nome(),
         })
+    }
+
+    /// `configuracoes` (Fase 38): tempo de trava e backup externo, sem hash nem UUID.
+    pub fn configuracoes(&self) -> Result<Configuracoes, ErroApp> {
+        cliente::configuracao(&mut *self.daemon()?)
+    }
+
+    /// `trocar_pin { dados }` (Fase 38, V5.22, S9): confere o formato dos três campos e a
+    /// confirmação aqui; com erro de campo, nada vai ao daemon. O daemon confere o PIN
+    /// atual (o 5.º erro seguido trava). A resposta não traz valor.
+    pub fn trocar_pin(&self, troca: TrocaPin) -> Result<ResultadoTroca, ErroApp> {
+        let erros = troca.erros();
+        if !erros.is_empty() {
+            return Ok(ResultadoTroca::com_erros(erros));
+        }
+        cliente::trocar_pin(
+            &mut *self.daemon()?,
+            troca.atual.bytes(),
+            troca.novo.bytes(),
+        )?;
+        Ok(ResultadoTroca::trocado())
+    }
+
+    /// `trocar_senha_mestra { dados }` (Fase 38, V5.22): a nova segue a regra do primeiro
+    /// uso; o daemon confere a atual. A resposta não traz valor.
+    pub fn trocar_senha_mestra(&self, troca: TrocaSenha) -> Result<ResultadoTroca, ErroApp> {
+        let erros = troca.erros();
+        if !erros.is_empty() {
+            return Ok(ResultadoTroca::com_erros(erros));
+        }
+        cliente::trocar_senha(
+            &mut *self.daemon()?,
+            troca.atual.bytes(),
+            troca.nova.bytes(),
+        )?;
+        Ok(ResultadoTroca::trocado())
+    }
+
+    /// `definir_tempo_trava { minutos }` (Fase 38, D30, D45): fora de 1 a 1440 nem chega
+    /// ao daemon. A resposta é a configuração lida de novo do daemon.
+    pub fn definir_tempo_trava(&self, minutos: u64) -> Result<Configuracoes, ErroApp> {
+        let minutos = minutos_validos(minutos)?;
+        let mut d = self.daemon()?;
+        cliente::tempo_trava(&mut *d, minutos)?;
+        cliente::configuracao(&mut *d)
     }
 
     fn usadas_travadas(&self) -> MutexGuard<'_, BTreeMap<String, Segredo>> {

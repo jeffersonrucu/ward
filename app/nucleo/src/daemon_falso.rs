@@ -19,7 +19,10 @@
 //! `wardd`); o resto responde `interno`. As
 //! mudanças ficam só na memória do processo (travado, só reiniciando a ponte). No
 //! [`DaemonFalso::sem_cofre`], atende `criar_cofre` (Fase 30): guarda só o hash do PIN
-//! (D30), que o `mudar_nivel` passa a conferir no lugar do PIN de teste.
+//! (D30), que o `mudar_nivel` passa a conferir no lugar do PIN de teste. Na tela
+//! Configurações (Fase 38): `configuracao`, `tempo_trava` (1 a 1440, D45), `trocar_pin`
+//! (PIN atual conferido como no `mudar_nivel`, com a mesma contagem de erros) e
+//! `trocar_senha` (senha atual conferida em tempo constante; a nova passa a destravar).
 //! As datas de D65 d (Fase 22d) seguem a regra do `wardd`: entrada nova ganha as duas,
 //! edição e `mudar_nivel` só a alteração, pelo relógio do processo; as do cofre de
 //! teste nascem sem datas.
@@ -64,6 +67,10 @@ pub struct DaemonFalso {
     /// Dorme a espera de D20 antes de olhar a senha, como o `wardd` (os testes de
     /// unidade desligam para não esperar).
     espera_d20: bool,
+    /// Tempo de trava da configuração (D30; padrão 240).
+    minutos_trava: u32,
+    /// Senha mestra trocada pelo `trocar_senha` (Fase 38); sem ela vale a de teste.
+    senha: Option<Zeroizing<Vec<u8>>>,
     /// Pedidos de aprovação pendentes (Fase 36): id e entradas.
     aprovacoes: Vec<(u64, Vec<String>)>,
 }
@@ -149,13 +156,7 @@ impl DaemonFalso {
     pub fn cheio() -> DaemonFalso {
         DaemonFalso {
             entradas: cofre_teste::cofre_de_teste(),
-            existe: true,
-            hash_pin: None,
-            erros_pin: 0,
-            travado: false,
-            falhas_destravar: 0,
-            espera_d20: true,
-            aprovacoes: Vec::new(),
+            ..DaemonFalso::vazio()
         }
     }
 
@@ -169,6 +170,8 @@ impl DaemonFalso {
             travado: false,
             falhas_destravar: 0,
             espera_d20: true,
+            minutos_trava: wc::limites::MINUTOS_TRAVA_PADRAO,
+            senha: None,
             aprovacoes: Vec::new(),
         }
     }
@@ -202,14 +205,7 @@ impl DaemonFalso {
                 .min(30);
             std::thread::sleep(std::time::Duration::from_secs(segundos));
         }
-        let certa = {
-            use ctutils::CtEq;
-            senha
-                .expor()
-                .ct_eq(cofre_teste::SENHA_MESTRA.as_bytes())
-                .to_bool()
-        };
-        if !certa {
+        if !self.senha_confere(senha) {
             self.falhas_destravar = self.falhas_destravar.saturating_add(1);
             return Err(ErroResposta::SenhaIncorreta);
         }
@@ -224,15 +220,20 @@ impl DaemonFalso {
     /// `criar_cofre`, que deixa o cofre vazio e destravado, como o `wardd`.
     pub fn sem_cofre() -> DaemonFalso {
         DaemonFalso {
-            entradas: Vec::new(),
             existe: false,
-            hash_pin: None,
-            erros_pin: 0,
-            travado: false,
-            falhas_destravar: 0,
-            espera_d20: true,
-            aprovacoes: Vec::new(),
+            ..DaemonFalso::vazio()
         }
+    }
+
+    /// A senha mestra confere, em tempo constante: a trocada pelo `trocar_senha` ou, sem
+    /// troca, a de teste (D15).
+    fn senha_confere(&self, senha: &SegredoCore) -> bool {
+        use ctutils::CtEq;
+        let certa: &[u8] = match &self.senha {
+            Some(s) => s,
+            None => cofre_teste::SENHA_MESTRA.as_bytes(),
+        };
+        senha.expor().len() == certa.len() && senha.expor().ct_eq(certa).to_bool()
     }
 
     /// Fase 36: um pedido de aprovação pendente, como se o `wardd` o tivesse mandado ao
@@ -379,6 +380,29 @@ impl DaemonFalso {
                 Some(_) => Resposta::Erro(ErroResposta::PedidoInvalido),
                 None => Resposta::Erro(ErroResposta::EntradaInexistente),
             },
+            // Fase 38: a configuração e as trocas (sem hash nem UUID na resposta).
+            Pedido::Configuracao => Resposta::Configuracao {
+                minutos_trava: self.minutos_trava,
+                backup_externo: false,
+            },
+            Pedido::TempoTrava { minutos } => {
+                if (wc::limites::MIN_MINUTOS_TRAVA..=wc::limites::MAX_MINUTOS_TRAVA)
+                    .contains(&minutos)
+                {
+                    self.minutos_trava = minutos;
+                    Resposta::Ok
+                } else {
+                    Resposta::Erro(ErroResposta::PedidoInvalido)
+                }
+            }
+            Pedido::TrocarPin { atual, novo } => match self.trocar_pin(&atual, &novo) {
+                Ok(()) => Resposta::Ok,
+                Err(e) => Resposta::Erro(e),
+            },
+            Pedido::TrocarSenha { atual, nova } => match self.trocar_senha(&atual, &nova) {
+                Ok(()) => Resposta::Ok,
+                Err(e) => Resposta::Erro(e),
+            },
             _ => Resposta::Erro(ErroResposta::Interno),
         }
     }
@@ -398,6 +422,29 @@ impl DaemonFalso {
             return Err(ErroResposta::PinIncorreto);
         }
         self.erros_pin = 0;
+        Ok(())
+    }
+
+    /// A mesma regra do `wardd` (`nucleo.rs` › `trocar_pin`): o PIN atual primeiro; o
+    /// novo vira só o hash (D30).
+    fn trocar_pin(&mut self, atual: &SegredoCore, novo: &SegredoCore) -> Result<(), ErroResposta> {
+        self.conferir_pin(atual)?;
+        self.hash_pin =
+            Some(HashPin::criar(novo.expor()).map_err(|_| ErroResposta::PedidoInvalido)?);
+        Ok(())
+    }
+
+    /// A mesma resposta do `wardd` (`nucleo.rs` › `trocar_senha`, D52): a atual errada é
+    /// `senha_incorreta` e não trava.
+    fn trocar_senha(
+        &mut self,
+        atual: &SegredoCore,
+        nova: &SegredoCore,
+    ) -> Result<(), ErroResposta> {
+        if !self.senha_confere(atual) {
+            return Err(ErroResposta::SenhaIncorreta);
+        }
+        self.senha = Some(Zeroizing::new(nova.expor().to_vec()));
         Ok(())
     }
 

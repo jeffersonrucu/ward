@@ -13,6 +13,7 @@ use serde_json::{Value, json};
 use ward_app_nucleo::ErroApp;
 use ward_app_nucleo::area_transferencia::AreaTransferencia;
 use ward_app_nucleo::comandos::Comando;
+use ward_app_nucleo::configuracoes::{TrocaPin, TrocaSenha};
 use ward_app_nucleo::daemon::Daemon;
 use ward_app_nucleo::destrave::SenhaMestra;
 use ward_app_nucleo::formulario::Formulario;
@@ -203,6 +204,17 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Ponte<D, A> {
                 .map(serde_json::from_value::<SenhaMestra>),
             _ => None,
         };
+        // Fase 38: os dados das trocas também saem do mapa (posse) e viram `Digitado`.
+        let troca_pin = match comando {
+            Comando::TrocarPin => args.remove("dados").map(serde_json::from_value::<TrocaPin>),
+            _ => None,
+        };
+        let troca_senha = match comando {
+            Comando::TrocarSenhaMestra => args
+                .remove("dados")
+                .map(serde_json::from_value::<TrocaSenha>),
+            _ => None,
+        };
         let texto = |chave: &str| args.get(chave).and_then(Value::as_str);
         let marcado = |chave: &str| args.get(chave).and_then(Value::as_bool);
         let resultado = match comando {
@@ -380,6 +392,33 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Ponte<D, A> {
                     .servico
                     .criar_cofre(n)
                     .and_then(|r| serde_json::to_value(r).map_err(|_| ErroApp::RespostaInvalida)),
+                _ => Err(ErroApp::PedidoInvalido),
+            },
+            // Fase 38 (V5.22): nenhuma resposta traz PIN, senha ou hash.
+            Comando::Configuracoes if args.is_empty() => self
+                .servico
+                .configuracoes()
+                .and_then(|c| serde_json::to_value(c).map_err(|_| ErroApp::RespostaInvalida)),
+            Comando::Configuracoes => Err(ErroApp::PedidoInvalido),
+            Comando::TrocarPin => match troca_pin {
+                Some(Ok(t)) if args.is_empty() => self
+                    .servico
+                    .trocar_pin(t)
+                    .and_then(|r| serde_json::to_value(r).map_err(|_| ErroApp::RespostaInvalida)),
+                _ => Err(ErroApp::PedidoInvalido),
+            },
+            Comando::TrocarSenhaMestra => match troca_senha {
+                Some(Ok(t)) if args.is_empty() => self
+                    .servico
+                    .trocar_senha_mestra(t)
+                    .and_then(|r| serde_json::to_value(r).map_err(|_| ErroApp::RespostaInvalida)),
+                _ => Err(ErroApp::PedidoInvalido),
+            },
+            Comando::DefinirTempoTrava => match args.get("minutos").and_then(Value::as_u64) {
+                Some(m) if args.len() == 1 => self
+                    .servico
+                    .definir_tempo_trava(m)
+                    .and_then(|c| serde_json::to_value(c).map_err(|_| ErroApp::RespostaInvalida)),
                 _ => Err(ErroApp::PedidoInvalido),
             },
         };

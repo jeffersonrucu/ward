@@ -9,6 +9,7 @@
   import NavegacaoLateral from './lib/componentes/NavegacaoLateral.svelte';
   import Toast from './lib/componentes/Toast.svelte';
   import { chamar, ouvirAvisos } from './lib/ponte/index.js';
+  import Configuracoes from './telas/Configuracoes.svelte';
   import Credenciais from './telas/Credenciais.svelte';
   import Destravar from './telas/Destravar.svelte';
   import GeradorSenha from './telas/GeradorSenha.svelte';
@@ -140,7 +141,7 @@
     {:else if tela === 'gerador'}
       <GeradorSenha />
     {:else}
-      <main class="vazio"><p class="estado">Esta tela ainda não existe.</p></main>
+      <Configuracoes ontravado={travou} />
     {/if}
   </div>
 {:else if travado}
@@ -170,12 +171,6 @@
     height: 100%;
     padding: var(--espaco-16);
     background: var(--cor-fundo-padrao);
-  }
-  .vazio {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex: 1;
   }
   .janela {
     display: flex;

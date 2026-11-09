@@ -504,7 +504,9 @@ impl Daemon {
 
     /// Troca os programas do `ward ssh` (Fase 27). Só os testes do crate chamam (com
     /// programas falsos que registram o argv); o binário usa sempre os do sistema, e
-    /// nenhum pedido do socket chega aqui.
+    /// nenhum pedido do socket chega aqui. Fora do release (scrutiny do M3): só existe
+    /// com a feature `ganchos-teste`, que liga o `modo-teste` (V3.15, V9.2).
+    #[cfg(feature = "ganchos-teste")]
     #[doc(hidden)]
     pub fn com_programas_ssh(mut self, p: crate::ssh::ProgramasSsh) -> Self {
         self.programas_ssh = p;
@@ -543,7 +545,9 @@ impl Daemon {
     }
 
     /// Liga o gancho de teste chamado logo depois de cada gravação do cofre (V3.35). O
-    /// binário não chama, e nenhum pedido do socket chega aqui.
+    /// binário não chama, e nenhum pedido do socket chega aqui. Fora do release
+    /// (scrutiny do M3): só existe com a feature `ganchos-teste` (V3.15, V9.2).
+    #[cfg(feature = "ganchos-teste")]
     #[doc(hidden)]
     pub fn com_gancho_depois_de_gravar(mut self, gancho: Gancho) -> Self {
         self.gancho_gravado = Some(gancho);
@@ -699,6 +703,7 @@ impl Daemon {
             }
             Pedido::Totp { entrada } => self.totp_do_app(papel, &entrada),
             Pedido::Backups => self.backups(),
+            Pedido::Configuracao => self.configuracao(),
             Pedido::BackupExterno => self.backup_externo(),
             Pedido::DefinirBackupExterno { ligado, uuid } => {
                 self.definir_backup_externo(ligado, uuid.as_deref())
@@ -1262,6 +1267,19 @@ impl Daemon {
                 Err(ErroResposta::from(&e))
             }
         }
+    }
+
+    /// Tempo de trava e backup externo ligado ou não (Fase 38), para a tela
+    /// Configurações. Só com o cofre destravado e só pelo app; nunca o hash do PIN nem o
+    /// UUID do pendrive.
+    fn configuracao(&self) -> Result<Resposta, ErroResposta> {
+        let est = self.estado();
+        let a = est.aberto.as_ref().ok_or(ErroResposta::Travado)?;
+        let c = a.cofre.configuracao();
+        Ok(Resposta::Configuracao {
+            minutos_trava: c.minutos_trava(),
+            backup_externo: c.backup().ligado(),
+        })
     }
 
     /// Versões do backup local (Fase 45), da mais nova para a mais antiga. Só com o

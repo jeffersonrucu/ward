@@ -44,6 +44,7 @@ use ward_app_nucleo::anexos::{Escolha, Seletor};
 use ward_app_nucleo::aprovacao::{self, PedidoExibido, ResultadoAprovacao};
 use ward_app_nucleo::area_transferencia::{Copiador, Wayland};
 use ward_app_nucleo::bandeja::{self, Acao, EstadoBandeja, Icone};
+use ward_app_nucleo::configuracoes::{Configuracoes, ResultadoTroca, TrocaPin, TrocaSenha};
 use ward_app_nucleo::credenciais::{DetalheCredencial, ItemCredencial};
 use ward_app_nucleo::daemon::DaemonSocket;
 use ward_app_nucleo::destrave::{self, InfoPedido, SenhaMestra};
@@ -383,6 +384,48 @@ fn criar_cofre(dados: NovoCofre, estado: State<'_, Estado>) -> Result<ResultadoC
     Ok(estado.servico()?.criar_cofre(dados)?)
 }
 
+/// Configurações (Fase 38): tempo de trava e backup externo, sem hash nem UUID.
+#[tauri::command]
+fn configuracoes<R: Runtime>(
+    app: AppHandle<R>,
+    estado: State<'_, Estado>,
+) -> Result<Configuracoes, Falha> {
+    let c = estado.servico()?.configuracoes()?;
+    // Fase 39: a tela abriu (ação do usuário); a bandeja aproveita o tempo lido.
+    tempo_da_bandeja(&app, c.minutos_trava);
+    Ok(c)
+}
+
+/// Trocar o PIN (Fase 38, V5.22, S9): atual, novo e confirmação em `Digitado` (zera);
+/// conferidos no núcleo, o atual pelo daemon. A resposta não traz valor.
+#[tauri::command]
+fn trocar_pin(dados: TrocaPin, estado: State<'_, Estado>) -> Result<ResultadoTroca, Falha> {
+    Ok(estado.servico()?.trocar_pin(dados)?)
+}
+
+/// Trocar a senha mestra (Fase 38, V5.22): a atual conferida pelo daemon; a nova com a
+/// regra do primeiro uso. A resposta não traz valor.
+#[tauri::command]
+fn trocar_senha_mestra(
+    dados: TrocaSenha,
+    estado: State<'_, Estado>,
+) -> Result<ResultadoTroca, Falha> {
+    Ok(estado.servico()?.trocar_senha_mestra(dados)?)
+}
+
+/// Tempo de trava (Fase 38, D30, D45): 1 a 1440 minutos, gravado no cofre pelo daemon.
+#[tauri::command]
+fn definir_tempo_trava<R: Runtime>(
+    minutos: u64,
+    app: AppHandle<R>,
+    estado: State<'_, Estado>,
+) -> Result<Configuracoes, Falha> {
+    let c = estado.servico()?.definir_tempo_trava(minutos)?;
+    // Fase 39: o subtítulo da bandeja passa a dizer o tempo novo.
+    tempo_da_bandeja(&app, c.minutos_trava);
+    Ok(c)
+}
+
 /// Rótulo da janela principal (capability `principal`).
 const JANELA_PRINCIPAL: &str = "principal";
 /// Rótulo da janela de aprovação: a capability `aprovacao` vale só para ela.
@@ -510,6 +553,9 @@ const INTERVALO_DA_BANDEJA: Duration = Duration::from_secs(2);
 /// O menu da bandeja e o estado que ele mostra. Os itens de texto ficam desabilitados.
 struct Bandeja<R: Runtime> {
     estado: Mutex<EstadoBandeja>,
+    /// Tempo de trava lido da configuração, só depois de uma ação do usuário
+    /// (`bandeja::ler_configuracao_na_passagem`, tela Configurações).
+    minutos: Mutex<Option<u32>>,
     titulo: MenuItem<R>,
     subtitulo: MenuItem<R>,
     acao: MenuItem<R>,
@@ -582,6 +628,7 @@ fn criar_bandeja<R: Runtime>(
         .map_err(|_| "ícone da bandeja")?;
     app.manage(Bandeja {
         estado: Mutex::new(inicial),
+        minutos: Mutex::new(None),
         titulo,
         subtitulo,
         acao,
@@ -609,14 +656,39 @@ fn atualizar_bandeja<R: Runtime>(app: &AppHandle<R>) {
         return;
     }
     let a = bandeja::aparencia(novo);
+    // `configuracao` conta como uso no daemon: só na passagem que o usuário fez
+    // (destravou ou criou o cofre), nunca na consulta periódica nem na partida.
+    let mut minutos = b.minutos.lock().unwrap_or_else(|e| e.into_inner());
+    if bandeja::ler_configuracao_na_passagem(*atual, novo) {
+        *minutos = s.configuracoes().ok().map(|c| c.minutos_trava);
+    }
+    let subtitulo = match novo {
+        EstadoBandeja::Destravado => bandeja::subtitulo_destravado(*minutos),
+        _ => a.subtitulo.to_owned(),
+    };
+    drop(minutos);
     let _ = b.titulo.set_text(a.titulo);
-    let _ = b.subtitulo.set_text(a.subtitulo);
+    let _ = b.subtitulo.set_text(subtitulo);
     let _ = b.acao.set_text(a.acao);
     let _ = b.acao.set_enabled(a.acao_habilitada);
     let _ = b.icone.set_icon(Some(icone_da_bandeja(a.icone)));
     *atual = novo;
     drop(atual);
     avisar(&estado.canal, JANELA_PRINCIPAL, "estado-mudou");
+}
+
+/// O tempo de trava que a tela Configurações leu ou gravou (ação do usuário): o
+/// subtítulo do destravado passa a dizê-lo.
+fn tempo_da_bandeja<R: Runtime>(app: &AppHandle<R>, minutos_trava: u32) {
+    let Some(b) = app.try_state::<Bandeja<R>>() else {
+        return;
+    };
+    *b.minutos.lock().unwrap_or_else(|e| e.into_inner()) = Some(minutos_trava);
+    if *estado_mostrado(&b) == EstadoBandeja::Destravado {
+        let _ = b
+            .subtitulo
+            .set_text(bandeja::subtitulo_destravado(Some(minutos_trava)));
+    }
 }
 
 /// A vigia da bandeja: consulta o estado a cada [`INTERVALO_DA_BANDEJA`].
@@ -730,6 +802,10 @@ fn com_comandos<R: Runtime>(builder: Builder<R>, estado: Estado) -> Builder<R> {
             criar_cofre,
             destravar,
             ouvir_avisos,
+            configuracoes,
+            trocar_pin,
+            trocar_senha_mestra,
+            definir_tempo_trava,
             pedido_de_aprovacao,
             responder_aprovacao,
             travar
@@ -1233,6 +1309,105 @@ mod testes {
                 serde_json::json!({"event": "pedido-de-destrave", "target": {"kind": "Any"}, "handler": 0}),
             );
             assert!(r.is_err(), "{comando} deveria ser negado: {r:?}");
+        }
+    }
+
+    /// Fase 38 (V5.22, S9): os comandos da tela Configurações só passam pela ACL na
+    /// janela `principal` com a origem local; campo a mais e tipo errado são recusados
+    /// na leitura, e PIN ou senha fora da regra voltam como erro de campo sem ir ao
+    /// daemon e sem valor na resposta.
+    #[test]
+    fn ataque_configuracoes_so_na_janela_certa_e_conferidas_no_rust() {
+        let app = app_de_teste();
+        let principal = WebviewWindowBuilder::new(&app, "principal", Default::default())
+            .build()
+            .unwrap();
+        let outra = WebviewWindowBuilder::new(&app, "outra", Default::default())
+            .build()
+            .unwrap();
+        let pin = |atual: &str, novo: &str| {
+            serde_json::json!({ "dados": {
+                "atual": atual, "novo": novo, "confirmacao": novo } })
+        };
+        let senha = |atual: &str, nova: &str| {
+            serde_json::json!({ "dados": {
+                "atual": atual, "nova": nova, "confirmacao": nova } })
+        };
+        for (comando, corpo) in [
+            ("configuracoes", serde_json::json!({})),
+            ("trocar_pin", pin("135790", "2468")),
+            (
+                "trocar_senha_mestra",
+                senha("falso-mestra-ward-01", "falso-nova-mestra-02"),
+            ),
+            ("definir_tempo_trava", serde_json::json!({ "minutos": 30 })),
+        ] {
+            let r = chamar(&outra, comando, ORIGEM, corpo.clone());
+            assert!(
+                r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+                "{comando} em janela sem capability: {r:?}"
+            );
+            let r = chamar(&principal, comando, "https://example.com", corpo.clone());
+            assert!(
+                r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+                "{comando} com origem remota: {r:?}"
+            );
+        }
+        for (atual, novo, campo) in [
+            ("135", "2468", "atual"),
+            ("135790", "13579a", "novo"),
+            ("135790", "1357901", "novo"),
+        ] {
+            let r = chamar(&principal, "trocar_pin", ORIGEM, pin(atual, novo)).unwrap();
+            assert_eq!(r["trocado"], false);
+            assert_eq!(r["erros"][0]["campo"], campo, "{atual} {novo}");
+            let texto = r.to_string();
+            assert!(!texto.contains(atual) && !texto.contains(novo), "{texto}");
+        }
+        let r = chamar(
+            &principal,
+            "trocar_senha_mestra",
+            ORIGEM,
+            senha("falso-mestra-ward-01", "falso-curta"),
+        )
+        .unwrap();
+        assert_eq!(r["erros"][0]["campo"], "nova");
+        assert!(!r.to_string().contains("falso"), "{r}");
+        let mut forjado = pin("135790", "2468");
+        forjado["dados"]["nivel"] = "livre".into();
+        let r = chamar(&principal, "trocar_pin", ORIGEM, forjado);
+        assert!(
+            r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+            "campo a mais: {r:?}"
+        );
+        for minutos in [
+            serde_json::json!("30"),
+            serde_json::json!(-1),
+            serde_json::Value::Null,
+        ] {
+            let r = chamar(
+                &principal,
+                "definir_tempo_trava",
+                ORIGEM,
+                serde_json::json!({ "minutos": minutos }),
+            );
+            assert!(
+                r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+                "{minutos}: {r:?}"
+            );
+        }
+        // Fora de 1 a 1440: recusado no serviço, antes do daemon (que nem existe aqui).
+        for minutos in [0, 1441] {
+            let r = chamar(
+                &principal,
+                "definir_tempo_trava",
+                ORIGEM,
+                serde_json::json!({ "minutos": minutos }),
+            );
+            assert!(
+                r.as_ref().err().is_some_and(|e| e["codigo"].is_string()),
+                "{minutos}: {r:?}"
+            );
         }
     }
 

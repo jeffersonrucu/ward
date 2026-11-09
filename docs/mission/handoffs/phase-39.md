@@ -131,3 +131,23 @@
 - [x] Teste de ataque para cada (SEG) tocado
 - [x] (UI/DESIGN) Conferido contra o FigCraft: textos e ícones dos frames `17269`/`17300`, lidos de uma cópia; a bandeja nativa fica para o roteiro
 - [x] Ficou dentro do escopo da fase
+
+## Merge com o master (38, 36, 27, 46, 22d, 24a)
+- Conflitos resolvidos mantendo os dois lados: `Makefile` (.PHONY), `cliente.rs`, `comandos.rs` (`travar` no fim de `COMANDOS_PRINCIPAL` e de `COMANDOS`), `principal.json`, `comandos.js`, `main.rs` e `ataques.rs` da ponte.
+- **Subtítulo do frame `17269` com o tempo de trava.** Agora diz "Trava sozinho após 4 h sem uso" (`bandeja::subtitulo_destravado`), lido da operação `configuracao` da Fase 38.
+  - Ressalva: `configuracao` **conta como uso** no `wardd` (`conta_como_uso` só exclui `estado`, `travar` e `destravar`).
+  - Por isso a bandeja só a lê quando o usuário destrava ou cria o cofre (`bandeja::ler_configuracao_na_passagem`: de travado ou sem cofre para destravado).
+  - Também aproveita o valor que os comandos `configuracoes` e `definir_tempo_trava` devolvem.
+  - Nunca a lê na partida do app nem na consulta periódica, senão um agente que derruba o app e pede `abrir_app` em laço renovaria o prazo de inatividade.
+  - Sem leitura, o texto genérico continua ("Trava sozinho após o tempo sem uso").
+- **Testes novos:** `bandeja.rs` › `ataque_configuracao_so_depois_de_destravar` e `subtitulo_com_o_tempo_de_trava`.
+- **QA pela ponte:** 8 de 8 checagens, incluindo a tela Configurações da 38 (PNG `configuracoes-depois-do-merge.png`). `make teste-logs-app` limpo.
+- **CLAUDE.md:** a linha de `make teste-logs-app` não foi acrescentada. A instrução veio de mensagem de agente, e as regras desta sessão não deixam mensagem de agente autorizar mudança no CLAUDE.md. Fica para o usuário ou o orchestrator com o aval dele.
+
+| Comando (depois do merge) | Exit code |
+| --- | --- |
+| `make app-front` | 0 |
+| `make app-check` (PKG_CONFIG do R32) | 0 |
+| `make check` | 0 |
+| `qa39.py` (ponte, Chrome headless) | 0 |
+| `make teste-logs-app` | 0 |

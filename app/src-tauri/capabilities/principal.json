@@ -25,6 +25,10 @@
     "allow-criar-cofre",
     "allow-destravar",
     "allow-ouvir-avisos",
+    "allow-configuracoes",
+    "allow-trocar-pin",
+    "allow-trocar-senha-mestra",
+    "allow-definir-tempo-trava",
     "allow-travar"
   ]
 }

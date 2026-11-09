@@ -49,6 +49,7 @@ fn dados_validos(op: Operacao) -> String {
         | Operacao::Lista
         | Operacao::AbrirApp
         | Operacao::Backups
+        | Operacao::Configuracao
         | Operacao::BackupExterno
         | Operacao::Pendrives => "{}".into(),
         Operacao::DefinirBackupExterno => r#"{"ligado":true,"uuid":"ABCD-1234"}"#.into(),
@@ -200,6 +201,10 @@ fn uma_resposta_de_cada() -> Vec<Resposta> {
             "ward-20261109-153000-1.ward".into(),
             "ward-20261109-153000.ward".into(),
         ]),
+        Resposta::Configuracao {
+            minutos_trava: 240,
+            backup_externo: false,
+        },
         Resposta::BackupExterno {
             ligado: true,
             uuid: Some("ABCD-1234".into()),
@@ -252,6 +257,7 @@ fn v3_15_tabela_operacao_papel() {
         ("tempo_trava", false, true, false),
         ("backups", false, true, false),
         ("restaurar_backup", false, true, false),
+        ("configuracao", false, true, false),
         ("backup_externo", false, true, false),
         ("definir_backup_externo", false, true, false),
         ("pendrives", false, true, false),
@@ -294,6 +300,7 @@ fn v3_15_tabela_operacao_papel() {
         ("sugestoes", false, false, true, false),
         ("preenchimento", false, false, true, true),
         ("backups", false, true, false, false),
+        ("configuracao", false, true, false, false),
         ("backup_externo", false, true, false, false),
         ("pendrives", false, true, false, false),
     ];
