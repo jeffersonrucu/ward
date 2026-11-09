@@ -1,0 +1,19 @@
+== estado
+600 jeffersonoliveira .dev/seg-m3/cofre-teste.estado
+ward-estado 1
+vista 1
+queimada 1
+falhas_agente 0
+== cofre: cabeçalho
+00000000: 5741 5244 434f 4652 0100 0101 0000 0400  WARDCOFR........
+00000010: 0300 0000 0400 0000 fdd1 6afe 8a16 7370  ..........j...sp
+00000020: 68cb 1463 b21c 85ae 1ba1 0419 d975 83da  h..c.........u..
+00000030: 7a71 46e5 0ed1 2077 0e6e 1560 e8eb 1726  zqF... w.n.`...&
+00000040: bc8b ce4c 8a8c 0df3 1b29 8c9c bd6b 92b9  ...L.....)...k..
+00000050: ded0 b60b e006 cc73 2783 c9c9 03a4 5ae6  .......s'.....Z.
+== segredos em claro em .dev/seg-m3 e logs
+.dev/seg-m3/cofre-teste.ward:0
+.dev/seg-m3/cofre-teste.estado:0
+.dev/seg-m3/logs/wardd.log:0
+== byte alterado
+1

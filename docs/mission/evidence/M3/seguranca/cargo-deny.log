@@ -1,0 +1,34 @@
+warning[duplicate]: found 2 duplicate entries for crate 'syn'
+   ┌─ /home/jeffersonoliveira/projetos/cofre/Cargo.lock:75:1
+   │  
+75 │ ╭ syn 2.0.119 registry+https://github.com/rust-lang/crates.io-index
+76 │ │ syn 3.0.9 registry+https://github.com/rust-lang/crates.io-index
+   │ ╰───────────────────────────────────────────────────────────────┘ lock entries
+   │  
+   ├ syn v2.0.119
+     └── curve25519-dalek-derive v0.1.1
+         └── curve25519-dalek v5.0.0
+             └── ed25519-dalek v3.0.0
+                 └── ssh-key v0.7.0-rc.12
+                     └── wardd v0.1.0
+   ├ syn v3.0.9
+     ├── async-trait v0.1.92
+     │   └── zbus v6.2.1
+     │       └── (dev) wardd v0.1.0
+     ├── serde_derive v1.0.229
+     │   └── serde v1.0.229
+     │       ├── ward-app-nucleo v0.1.0
+     │       │   └── ward-ponte-teste v0.1.0
+     │       ├── zbus v6.2.1 (*)
+     │       ├── zbus_utils v6.1.0
+     │       │   ├── zbus v6.2.1 (*)
+     │       │   └── zbus_macros v6.2.1
+     │       │       └── zbus v6.2.1 (*)
+     │       └── zcheapstr v1.2.0
+     │           └── zbus v6.2.1 (*)
+     ├── serde_repr v0.1.21
+     │   └── zbus v6.2.1 (*)
+     ├── zbus_macros v6.2.1 (*)
+     └── zbus_utils v6.1.0 (*)
+
+advisories ok, bans ok, licenses ok, sources ok

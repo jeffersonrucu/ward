@@ -1,0 +1,31 @@
+[LD_PRELOAD=/x.so] rc=1 sem-socket :: ERROR: ld.so: object '/x.so' from LD_PRELOAD cannot be preloaded (cannot open shared object file): ignored.
+[LD_AUDIT=/x] rc=1 sem-socket :: ERROR: ld.so: object '/x' cannot be loaded as audit interface: cannot open shared object file; ignored.
+[LD_LIBRARY_PATH=/x] rc=1 sem-socket :: wardd: variável LD_LIBRARY_PATH definida no ambiente; o processo não sobe com LD_*, GLIBC_TUNABLES, GCONV_PATH e as outras da lista insegura da glibc
+[LD_FOO=1] rc=1 sem-socket :: wardd: variável LD_FOO definida no ambiente; o processo não sobe com LD_*, GLIBC_TUNABLES, GCONV_PATH e as outras da lista insegura da glibc
+[GLIBC_TUNABLES=glibc.malloc.check=3] rc=1 sem-socket :: wardd: variável GLIBC_TUNABLES definida no ambiente; o processo não sobe com LD_*, GLIBC_TUNABLES, GCONV_PATH e as outras da lista insegura da glibc
+[GCONV_PATH=/x] rc=1 sem-socket :: wardd: variável GCONV_PATH definida no ambiente; o processo não sobe com LD_*, GLIBC_TUNABLES, GCONV_PATH e as outras da lista insegura da glibc
+[TMPDIR=/tmp] rc=1 sem-socket :: wardd: variável TMPDIR definida no ambiente; o processo não sobe com LD_*, GLIBC_TUNABLES, GCONV_PATH e as outras da lista insegura da glibc
+[MALLOC_ARENA_MAX=1] rc=1 sem-socket :: wardd: variável MALLOC_ARENA_MAX definida no ambiente; o processo não sobe com LD_*, GLIBC_TUNABLES, GCONV_PATH e as outras da lista insegura da glibc
+[MALLOC_TRACE=/tmp/claude-1000/mt] rc=1 sem-socket :: wardd: variável MALLOC_TRACE definida no ambiente; o processo não sobe com LD_*, GLIBC_TUNABLES, GCONV_PATH e as outras da lista insegura da glibc
+[LOCPATH=/x] rc=1 sem-socket :: wardd: variável LOCPATH definida no ambiente; o processo não sobe com LD_*, GLIBC_TUNABLES, GCONV_PATH e as outras da lista insegura da glibc
+[NLSPATH=/x] rc=1 sem-socket :: wardd: variável NLSPATH definida no ambiente; o processo não sobe com LD_*, GLIBC_TUNABLES, GCONV_PATH e as outras da lista insegura da glibc
+[HOSTALIASES=/x] rc=1 sem-socket :: wardd: variável HOSTALIASES definida no ambiente; o processo não sobe com LD_*, GLIBC_TUNABLES, GCONV_PATH e as outras da lista insegura da glibc
+[RES_OPTIONS=debug] rc=1 sem-socket :: wardd: variável RES_OPTIONS definida no ambiente; o processo não sobe com LD_*, GLIBC_TUNABLES, GCONV_PATH e as outras da lista insegura da glibc
+[LOCALDOMAIN=x] rc=1 sem-socket :: wardd: variável LOCALDOMAIN definida no ambiente; o processo não sobe com LD_*, GLIBC_TUNABLES, GCONV_PATH e as outras da lista insegura da glibc
+[TZDIR=/x] rc=1 sem-socket :: wardd: variável TZDIR definida no ambiente; o processo não sobe com LD_*, GLIBC_TUNABLES, GCONV_PATH e as outras da lista insegura da glibc
+[RESOLV_HOST_CONF=/x] rc=1 sem-socket :: wardd: variável RESOLV_HOST_CONF definida no ambiente; o processo não sobe com LD_*, GLIBC_TUNABLES, GCONV_PATH e as outras da lista insegura da glibc
+[NIS_PATH=/x] rc=1 sem-socket :: wardd: variável NIS_PATH definida no ambiente; o processo não sobe com LD_*, GLIBC_TUNABLES, GCONV_PATH e as outras da lista insegura da glibc
+[GETCONF_DIR=/x] rc=1 sem-socket :: wardd: variável GETCONF_DIR definida no ambiente; o processo não sobe com LD_*, GLIBC_TUNABLES, GCONV_PATH e as outras da lista insegura da glibc
+[MALLOC_PERTURB_=1] rc=1 sem-socket :: wardd: variável MALLOC_PERTURB_ definida no ambiente; o processo não sobe com LD_*, GLIBC_TUNABLES, GCONV_PATH e as outras da lista insegura da glibc
+[MALLOC_CHECK_=3] rc=1 sem-socket :: wardd: variável MALLOC_CHECK_ definida no ambiente; o processo não sobe com LD_*, GLIBC_TUNABLES, GCONV_PATH e as outras da lista insegura da glibc
+[RUST_LOG=trace] rc=124 SOCKET :: wardd: daemon de teste com a memória sem travar: RLIMIT_MEMLOCK de 2053808128 bytes, e não infinito; o processo trava toda a memória (mlockall) e sobe pela u
+[RUST_BACKTRACE=full] rc=124 SOCKET :: wardd: daemon de teste com a memória sem travar: RLIMIT_MEMLOCK de 2053808128 bytes, e não infinito; o processo trava toda a memória (mlockall) e sobe pela u
+[DBUS_SYSTEM_BUS_ADDRESS=unix:path=/tmp/x] rc=124 SOCKET :: wardd: daemon de teste com a memória sem travar: RLIMIT_MEMLOCK de 2053808128 bytes, e não infinito; o processo trava toda a memória (mlockall) e sobe pela u
+[TZ=:/etc/passwd] rc=124 SOCKET :: wardd: daemon de teste com a memória sem travar: RLIMIT_MEMLOCK de 2053808128 bytes, e não infinito; o processo trava toda a memória (mlockall) e sobe pela u
+[LANGUAGE=x] rc=124 SOCKET :: wardd: daemon de teste com a memória sem travar: RLIMIT_MEMLOCK de 2053808128 bytes, e não infinito; o processo trava toda a memória (mlockall) e sobe pela u
+[LC_ALL=C] rc=124 SOCKET :: wardd: daemon de teste com a memória sem travar: RLIMIT_MEMLOCK de 2053808128 bytes, e não infinito; o processo trava toda a memória (mlockall) e sobe pela u
+[LD_[31mX
+Y=1] rc=1 sem-socket :: wardd: variável LD_ definida no ambiente; o processo não sobe com LD_*, GLIBC_TUNABLES, GCONV_PATH e as outras da lista insegura da glibc
+[LD_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=1] rc=1 sem-socket :: wardd: variável LD_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA definida no ambiente; o processo não sobe com LD_*, GLIBC_TUNABLES, GCONV_PAT
+strace rc=1 sem-socket :: wardd: processo sob depurador (TracerPid ≠ 0); não sobe
+ls: não foi possível acessar '/tmp/claude-1000/mt': Arquivo ou diretório inexistente

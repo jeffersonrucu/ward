@@ -1,0 +1,43 @@
+info  lista do agente: 21 entradas; matriz com 23
+info  4301 pedidos
+info  abrir_app                aprovacao_indisponivel × 46
+info  abrir_app                pedido_invalido × 92
+info  backup_externo           nao_autorizado × 138
+info  backups                  nao_autorizado × 138
+info  configuracao             nao_autorizado × 138
+info  copiar                   nao_autorizado × 138
+info  criar_cofre              nao_autorizado × 138
+info  definir_backup_externo   nao_autorizado × 138
+info  detalhe                  nao_autorizado × 138
+info  emitir_token             nao_autorizado × 138
+info  entrada_padrao           pedido_invalido × 138
+info  estado                   estado × 46
+info  estado                   pedido_invalido × 92
+info  executar                 pedido_invalido × 138
+info  executar(env)            aprovacao_indisponivel × 5
+info  executar(env)            entrada_inexistente × 2
+info  executar(env)            entrega_falhou × 1
+info  executar(env)            fim × 14
+info  executar(env)            tipo_sem_entrega × 1
+info  janela                   pedido_invalido × 138
+info  lista                    lista × 46
+info  lista                    pedido_invalido × 92
+info  login                    pedido_invalido × 138
+info  mudar_nivel              nao_autorizado × 138
+info  pendrives                nao_autorizado × 138
+info  playwright               pedido_invalido × 138
+info  preencher                nao_autorizado × 138
+info  remover_entrada          nao_autorizado × 138
+info  responder_aprovacao      nao_autorizado × 138
+info  restaurar_backup         nao_autorizado × 138
+info  revelar                  nao_autorizado × 138
+info  salvar_entrada           nao_autorizado × 138
+info  salvar_login             nao_autorizado × 138
+info  ssh                      pedido_invalido × 138
+info  sugerir                  nao_autorizado × 138
+info  tempo_trava              nao_autorizado × 138
+info  totp                     nao_autorizado × 138
+info  trocar_pin               nao_autorizado × 138
+info  trocar_senha             nao_autorizado × 138
+socket_matriz: V3.3 ok (4301 pedidos, nenhum segredo, app/extensão não autorizado)
+/usr/bin/python3 -I -B dev/testes/socket_matriz.py $SOCK $PWD   0,44s user 0,06s system 34% cpu 1,454 total

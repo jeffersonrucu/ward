@@ -1,0 +1,26 @@
+pid 3038610
+TracerPid:	0
+CapEff:	0000000000000000
+NoNewPrivs:	0
+Seccomp:	0
+Seccomp_filters:	0
+-r-------- 1 root root 0 nov  9 06:49 /proc/3038610/environ
+-r--r--r-- 1 root root 0 nov  9 06:48 /proc/3038610/maps
+-rw------- 1 root root 0 nov  9 06:49 /proc/3038610/mem
+mem: recusado
+environ: recusado
+maps: recusado
+cmdline: LEU
+auxv: recusado
+stack: recusado
+syscall: recusado
+dd: falha ao abrir '/proc/3038610/mem': Permissão negada
+Max core file size        0                    0                    bytes     
+strace: attach: ptrace(PTRACE_SEIZE, 3038610): Operação não permitida
+PTRACE_ATTACH -1 1
+process_vm_readv -1 1
+ls: não foi possível abrir o diretório '/proc/3038610/fd': Permissão negada
+1
+2
+|/usr/share/apport/apport -p%p -s%s -c%c -d%d -P%P -u%u -g%g -F%F -- %E
+gdb not found
