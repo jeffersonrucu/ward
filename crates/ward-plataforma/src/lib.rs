@@ -24,6 +24,7 @@ pub mod processo;
 pub mod servidor;
 pub mod socket;
 mod sys;
+pub mod terminal;
 #[cfg(feature = "modo-teste")]
 pub mod teste;
 
@@ -44,6 +45,7 @@ pub use socket::{
     Conexao, DiretorioSocket, ErroAceitar, ErroAtivacao, Escuta, caminho_socket_sistema,
     conferir_conexao, escutar_de_listen_fds, preparar_diretorio,
 };
+pub use terminal::{ErroTerminal, ler_senha};
 
 /// uid efetivo deste processo.
 pub fn uid_efetivo() -> u32 {

@@ -335,6 +335,11 @@ dependencies = [
 [[package]]
 name = "ward"
 version = "0.1.0"
+dependencies = [
+ "ward-core",
+ "ward-plataforma",
+ "zeroize",
+]
 
 [[package]]
 name = "ward-app-nucleo"

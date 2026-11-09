@@ -54,6 +54,7 @@ ferramentas (`override`). Toolchain fixa em `rust-toolchain.toml`.
 | Subir o daemon de teste (`wardd` com `modo-teste`; cofre `.dev/cofre-teste.ward`, estado `.dev/cofre-teste.estado`, socket em `$XDG_RUNTIME_DIR/ward-teste/wardd.sock`, log em `.dev/logs/wardd.log`, pid em `.dev/wardd.pid`). Sobe com `env -i` e só HOME, PATH, XDG_RUNTIME_DIR, LANG e WARD_DEV_DIR, então funciona com `TMPDIR`/`LD_*` na sessão (V3.30). Sem estado, cria um com geração 0 (só o de teste). Destravar com a senha de teste; `make dev-cofre` apaga o estado velho | `make dev-daemon` | pronto |
 | V3.2 (D49) num contêiner `ubuntu:24.04` sem rede: `wardd` de teste como uid 1000; uid 4242 recebe EACCES, uid 4242 com `CAP_DAC_OVERRIDE` e o root são fechados sem nenhum byte (log com `UidRecusado`), uid 1000 é atendido. Exige Docker; fora do `make check` | `make teste-docker-uid` | pronto |
 | Parar o daemon de teste (só mata o pid se o `cmdline` for o `target/debug/wardd` daqui) | `make dev-daemon-parar` | pronto |
+| CLI `ward` de teste (`modo-teste`) num pty: V4.2 com servidor falso em Python no socket de teste (recusa antes do prompt, falso com 0 bytes), V4.22, destravar com senha errada e certa sem eco, V4.1 com `lista --json` sem padrão de `.dev/variacoes.txt`; precisa de `make dev-daemon` e `make dev-variacoes` | `make teste-cli` | pronto |
 
 Os alvos marcados com fase ainda não existem: falham com mensagem até a fase chegar.
 

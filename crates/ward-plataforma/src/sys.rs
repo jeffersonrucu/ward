@@ -467,6 +467,70 @@ pub(crate) fn tem_cloexec(fd: BorrowedFd<'_>) -> io::Result<bool> {
     Ok(r & libc::FD_CLOEXEC != 0)
 }
 
+/// `tcgetattr`: atributos do terminal em `fd` (Fase 25, senha do `ward destravar`).
+/// `ENOTTY` quando `fd` não é terminal.
+#[allow(unsafe_code)]
+pub(crate) fn tcgetattr(fd: BorrowedFd<'_>) -> io::Result<libc::termios> {
+    // SAFETY: `termios` é uma struct C só de inteiros e arrays de inteiros; zerada é um
+    // valor válido, e o `tcgetattr` a preenche inteira.
+    let mut t: libc::termios = unsafe { std::mem::zeroed() };
+    // SAFETY: `t` é local e gravável; `fd` está aberto pelo empréstimo.
+    if unsafe { libc::tcgetattr(fd.as_raw_fd(), &raw mut t) } != 0 {
+        return Err(erro_os());
+    }
+    Ok(t)
+}
+
+/// `tcsetattr(fd, acao, t)` (`TCSANOW`, `TCSAFLUSH`…).
+#[allow(unsafe_code)]
+pub(crate) fn tcsetattr(
+    fd: BorrowedFd<'_>,
+    acao: libc::c_int,
+    t: &libc::termios,
+) -> io::Result<()> {
+    // SAFETY: `t` aponta para um `termios` válido que só é lido; `fd` está aberto pelo
+    // empréstimo.
+    if unsafe { libc::tcsetattr(fd.as_raw_fd(), acao, t) } != 0 {
+        return Err(erro_os());
+    }
+    Ok(())
+}
+
+/// Só nos testes: abre um pseudoterminal novo e devolve (mestre, escravo), os dois com
+/// `O_NOCTTY` e `O_CLOEXEC`, para testar a leitura da senha sem um terminal de verdade.
+#[cfg(test)]
+#[allow(unsafe_code)]
+pub(crate) fn abrir_pty() -> io::Result<(OwnedFd, OwnedFd)> {
+    let flags = libc::O_RDWR | libc::O_NOCTTY | libc::O_CLOEXEC;
+    // SAFETY: `posix_openpt` só recebe as flags e devolve um fd novo ou -1.
+    let m = unsafe { libc::posix_openpt(flags) };
+    if m < 0 {
+        return Err(erro_os());
+    }
+    // SAFETY: `m` acabou de ser aberto por `posix_openpt` e só este `OwnedFd` o fecha.
+    let mestre = unsafe { OwnedFd::from_raw_fd(m) };
+    // SAFETY: `grantpt`/`unlockpt` só recebem o fd do mestre, aberto acima.
+    if unsafe { libc::grantpt(m) } != 0 || unsafe { libc::unlockpt(m) } != 0 {
+        return Err(erro_os());
+    }
+    let mut nome = [0u8; 128];
+    // SAFETY: `nome` é local, com `nome.len()` bytes graváveis; o `ptsname_r` escreve
+    // uma string C terminada em zero dentro desse tamanho ou devolve erro.
+    let rc = unsafe { libc::ptsname_r(m, nome.as_mut_ptr().cast(), nome.len()) };
+    if rc != 0 {
+        return Err(io::Error::from_raw_os_error(rc));
+    }
+    let nome = CStr::from_bytes_until_nul(&nome).map_err(|_| io::ErrorKind::InvalidData)?;
+    // SAFETY: `nome` é uma string C válida; `open` devolve um fd novo ou -1.
+    let e = unsafe { libc::open(nome.as_ptr(), flags) };
+    if e < 0 {
+        return Err(erro_os());
+    }
+    // SAFETY: `e` acabou de ser aberto e só este `OwnedFd` o fecha.
+    let escravo = unsafe { OwnedFd::from_raw_fd(e) };
+    Ok((mestre, escravo))
+}
+
 /// Só nos testes: tira o `FD_CLOEXEC` de `fd`, para simular um fd que o `exec` herdaria.
 #[cfg(test)]
 #[allow(unsafe_code)]
