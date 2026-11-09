@@ -3,5 +3,12 @@
   "description": "Janela principal do Ward: só os comandos próprios do app (S11). Nenhuma permissão de plugin nem do núcleo do Tauri, nenhuma origem remota.",
   "local": true,
   "windows": ["principal"],
-  "permissions": ["allow-estado-do-cofre", "allow-copiar-campo"]
+  "permissions": [
+    "allow-estado-do-cofre",
+    "allow-copiar-campo",
+    "allow-gerar-senha",
+    "allow-copiar-senha-gerada",
+    "allow-revelar-senha-gerada",
+    "allow-descartar-senha-gerada"
+  ]
 }

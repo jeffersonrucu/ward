@@ -21,6 +21,24 @@ fn conf() -> Value {
     json(&app().join("src-tauri/tauri.conf.json"))
 }
 
+/// Fase 37: os limites que a tela do gerador mostra ("De 8 a 64", padrão 24) são os que o
+/// Rust aceita.
+#[test]
+fn limites_do_gerador_na_interface_sao_os_do_rust() {
+    use ward_app_nucleo::gerador::{TAMANHO_MAX, TAMANHO_MIN, TAMANHO_PADRAO};
+    let js = fs::read_to_string(app().join("src/telas/GeradorSenha.svelte")).unwrap();
+    for (nome, valor) in [
+        ("TAMANHO_MIN", TAMANHO_MIN),
+        ("TAMANHO_MAX", TAMANHO_MAX),
+        ("TAMANHO_PADRAO", TAMANHO_PADRAO),
+    ] {
+        assert!(
+            js.contains(&format!("const {nome} = {valor};")),
+            "{nome} diverge do Rust"
+        );
+    }
+}
+
 #[test]
 fn ataque_capability_com_permissao_a_mais() {
     let dir = app().join("src-tauri/capabilities");

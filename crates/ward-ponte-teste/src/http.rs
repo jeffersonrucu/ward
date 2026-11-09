@@ -14,6 +14,7 @@ use ward_app_nucleo::ErroApp;
 use ward_app_nucleo::area_transferencia::AreaTransferencia;
 use ward_app_nucleo::comandos::Comando;
 use ward_app_nucleo::daemon::Daemon;
+use ward_app_nucleo::gerador::Opcoes;
 use ward_app_nucleo::servico::Servico;
 use zeroize::Zeroizing;
 
@@ -182,6 +183,7 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Ponte<D, A> {
             return Resposta::erro(400, ErroApp::PedidoInvalido);
         };
         let texto = |chave: &str| args.get(chave).and_then(Value::as_str);
+        let marcado = |chave: &str| args.get(chave).and_then(Value::as_bool);
         let resultado = match comando {
             Comando::EstadoDoCofre => self
                 .servico
@@ -191,6 +193,47 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Ponte<D, A> {
                 (Some(e), Some(c)) => self.servico.copiar_campo(e, c).map(|()| Value::Null),
                 _ => Err(ErroApp::PedidoInvalido),
             },
+            Comando::GerarSenha => match (
+                args.get("tamanho").and_then(Value::as_u64),
+                marcado("minusculas"),
+                marcado("maiusculas"),
+                marcado("digitos"),
+                marcado("simbolos"),
+            ) {
+                (
+                    Some(tamanho),
+                    Some(minusculas),
+                    Some(maiusculas),
+                    Some(digitos),
+                    Some(simbolos),
+                ) => self
+                    .servico
+                    .gerar_senha(Opcoes {
+                        tamanho,
+                        minusculas,
+                        maiusculas,
+                        digitos,
+                        simbolos,
+                    })
+                    .map(|g| {
+                        json!({
+                            "tamanho": g.tamanho,
+                            "bits": g.bits,
+                            "forca": g.forca.codigo(),
+                            "simbolos": g.simbolos,
+                        })
+                    }),
+                _ => Err(ErroApp::PedidoInvalido),
+            },
+            Comando::CopiarSenhaGerada => self.servico.copiar_senha_gerada().map(|()| Value::Null),
+            // S11: o valor só sai no "revelar", como no app.
+            Comando::RevelarSenhaGerada => self
+                .servico
+                .revelar_senha_gerada()
+                .map(|r| json!({ "valor": r.expor() })),
+            Comando::DescartarSenhaGerada => {
+                self.servico.descartar_senha_gerada().map(|()| Value::Null)
+            }
         };
         match resultado {
             Ok(valor) => Resposta::json(200, &json!({ "ok": true, "valor": valor })),

@@ -7,6 +7,9 @@
 //! - [`area_transferencia`]: "copiar" resolvido aqui (D4). O valor vai do daemon para a
 //!   área de transferência sem passar pela webview, e a limpeza em 30 s só apaga se a
 //!   área ainda contém o valor copiado (S12).
+//! - [`gerador`]: gerador de senha avulso (Fase 37). A senha nasce em
+//!   `ward_core::gerador` e fica aqui; a interface recebe só tamanho, força e símbolos,
+//!   e o valor só no "revelar".
 //! - [`partida`]: partida do app setgid antes do GTK (D47, D57): ambiente de D57,
 //!   conexão com o egid do grupo `ward-app`, largar o grupo, não-dumpable, reexecução.
 //! - [`servico`]: o que cada comando faz. Nenhuma resposta leva segredo (S1, S11).
@@ -17,6 +20,7 @@ pub mod area_transferencia;
 pub mod comandos;
 pub mod daemon;
 mod erro;
+pub mod gerador;
 pub mod partida;
 pub mod segredo;
 pub mod servico;

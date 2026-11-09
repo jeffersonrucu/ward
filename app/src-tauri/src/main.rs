@@ -20,6 +20,7 @@ use tauri::{Builder, Manager, RunEvent, Runtime, State, WebviewUrl, WebviewWindo
 use ward_app_nucleo::ErroApp;
 use ward_app_nucleo::area_transferencia::{Copiador, Wayland};
 use ward_app_nucleo::daemon::DaemonSocket;
+use ward_app_nucleo::gerador::Opcoes;
 use ward_app_nucleo::partida;
 use ward_app_nucleo::servico::Servico;
 
@@ -69,6 +70,66 @@ fn copiar_campo(entrada: String, campo: String, estado: State<'_, Estado>) -> Re
     Ok(estado.servico()?.copiar_campo(&entrada, &campo)?)
 }
 
+#[derive(Serialize)]
+struct RespostaGerada {
+    tamanho: usize,
+    bits: u32,
+    forca: &'static str,
+    simbolos: &'static str,
+}
+
+/// Gerador avulso (Fase 37): a senha nasce no `ward_core::gerador` e fica no Rust; a
+/// resposta não traz o valor. Os argumentos vêm da interface (não confiável) e são
+/// conferidos no núcleo (tamanho 8–64, pelo menos um conjunto).
+#[tauri::command]
+fn gerar_senha(
+    tamanho: u64,
+    minusculas: bool,
+    maiusculas: bool,
+    digitos: bool,
+    simbolos: bool,
+    estado: State<'_, Estado>,
+) -> Result<RespostaGerada, Falha> {
+    let g = estado.servico()?.gerar_senha(Opcoes {
+        tamanho,
+        minusculas,
+        maiusculas,
+        digitos,
+        simbolos,
+    })?;
+    Ok(RespostaGerada {
+        tamanho: g.tamanho,
+        bits: g.bits,
+        forca: g.forca.codigo(),
+        simbolos: g.simbolos,
+    })
+}
+
+/// D4: a senha avulsa vai para a área de transferência aqui; a resposta não a traz.
+#[tauri::command]
+fn copiar_senha_gerada(estado: State<'_, Estado>) -> Result<(), Falha> {
+    Ok(estado.servico()?.copiar_senha_gerada()?)
+}
+
+#[derive(Serialize)]
+struct RespostaRevelada {
+    valor: String,
+}
+
+/// S11: o único comando que leva o valor à webview, no clique em "revelar".
+#[tauri::command]
+fn revelar_senha_gerada(estado: State<'_, Estado>) -> Result<RespostaRevelada, Falha> {
+    let r = estado.servico()?.revelar_senha_gerada()?;
+    Ok(RespostaRevelada {
+        valor: r.expor().to_owned(),
+    })
+}
+
+#[tauri::command]
+fn descartar_senha_gerada(estado: State<'_, Estado>) -> Result<(), Falha> {
+    Ok(estado.servico()?.descartar_senha_gerada()?)
+}
+
 fn montar_servico(daemon: Result<DaemonSocket, ErroApp>) -> Result<ServicoApp, ErroApp> {
     let daemon = daemon?;
     let area = Wayland::novo()?;
@@ -86,7 +147,14 @@ fn navegacao_permitida(url: &tauri::Url) -> bool {
 fn com_comandos<R: Runtime>(builder: Builder<R>, estado: Estado) -> Builder<R> {
     builder
         .manage(estado)
-        .invoke_handler(tauri::generate_handler![estado_do_cofre, copiar_campo])
+        .invoke_handler(tauri::generate_handler![
+            estado_do_cofre,
+            copiar_campo,
+            gerar_senha,
+            copiar_senha_gerada,
+            revelar_senha_gerada,
+            descartar_senha_gerada
+        ])
 }
 
 fn main() {
@@ -232,6 +300,65 @@ mod testes {
             r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
             "origem remota: {r:?}"
         );
+    }
+
+    /// Fase 37 (V5.21, S11): os comandos do gerador passam pela ACL só na janela
+    /// `principal` e com a origem local; "gerar" não devolve o valor; tamanho fora de
+    /// 8–64 ou de tipo errado é recusado.
+    #[test]
+    fn ataque_gerador_so_na_janela_certa_e_sem_valor_no_gerar() {
+        let app = app_de_teste();
+        let principal = WebviewWindowBuilder::new(&app, "principal", Default::default())
+            .build()
+            .unwrap();
+        let opcoes = serde_json::json!({
+            "tamanho": 24, "minusculas": true, "maiusculas": true,
+            "digitos": true, "simbolos": true
+        });
+        match chamar(&principal, "gerar_senha", ORIGEM, opcoes.clone()) {
+            // Sem `wl-copy` confiável o serviço não monta e responde o erro dele.
+            Err(falha) => assert!(falha["codigo"].is_string(), "erro da ACL: {falha}"),
+            Ok(r) => {
+                let chaves: Vec<&String> = r.as_object().unwrap().keys().collect();
+                assert_eq!(chaves, ["bits", "forca", "simbolos", "tamanho"]);
+                let v = chamar(&principal, "revelar_senha_gerada", ORIGEM, opcoes.clone()).unwrap();
+                let valor = v["valor"].as_str().unwrap();
+                assert_eq!(valor.len(), 24);
+                assert!(!r.to_string().contains(valor));
+                for ruim in [
+                    serde_json::json!({ "tamanho": 7, "minusculas": true, "maiusculas": true, "digitos": true, "simbolos": true }),
+                    serde_json::json!({ "tamanho": 65, "minusculas": true, "maiusculas": true, "digitos": true, "simbolos": true }),
+                    serde_json::json!({ "tamanho": "24", "minusculas": true, "maiusculas": true, "digitos": true, "simbolos": true }),
+                    serde_json::json!({ "tamanho": -1, "minusculas": true, "maiusculas": true, "digitos": true, "simbolos": true }),
+                    serde_json::json!({ "tamanho": 24 }),
+                ] {
+                    assert!(
+                        chamar(&principal, "gerar_senha", ORIGEM, ruim.clone()).is_err(),
+                        "{ruim}"
+                    );
+                }
+            }
+        }
+        let outra = WebviewWindowBuilder::new(&app, "outra", Default::default())
+            .build()
+            .unwrap();
+        for comando in [
+            "gerar_senha",
+            "revelar_senha_gerada",
+            "copiar_senha_gerada",
+            "descartar_senha_gerada",
+        ] {
+            let r = chamar(&outra, comando, ORIGEM, opcoes.clone());
+            assert!(
+                r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+                "{comando} em janela sem capability: {r:?}"
+            );
+            let r = chamar(&principal, comando, "https://example.com", opcoes.clone());
+            assert!(
+                r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+                "{comando} com origem remota: {r:?}"
+            );
+        }
     }
 
     #[test]

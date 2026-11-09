@@ -12,7 +12,7 @@
   /**
    * @type {{
    *   rotulo: string, id: string, revelado?: string | null, copiado?: boolean,
-   *   ajuda?: string, vazio?: boolean, mostrarGerar?: boolean,
+   *   ajuda?: string, vazio?: boolean, mostrarGerar?: boolean, mascara?: string,
    *   onrevelar?: () => void, onesconder?: () => void, oncopiar?: () => void, ongerar?: () => void
    * }}
    */
@@ -24,6 +24,9 @@
     ajuda = 'Revelar e copiar não pedem PIN.',
     vazio = false,
     mostrarGerar = false,
+    // A máscara não sai do valor: quem conhece o tamanho (o gerador) pode passar um
+    // ponto por caractere; o padrão tem 12.
+    mascara = '••••••••••••',
     onrevelar = undefined,
     onesconder = undefined,
     oncopiar = undefined,
@@ -41,7 +44,7 @@
     {:else if aberto}
       <span class="valor revelado">{revelado}</span>
     {:else}
-      <span class="valor" aria-label="valor oculto">••••••••••••</span>
+      <span class="valor" aria-label="valor oculto">{mascara}</span>
     {/if}
     <div class="acoes">
       {#if !vazio}
@@ -102,6 +105,10 @@
   .revelado {
     font-family: var(--familia-mono);
     user-select: text;
+    /* O valor aparece caractere a caractere: sem ligaduras (`<=` ou `->` virariam um
+       glifo só e a senha lida não seria a copiada). */
+    font-variant-ligatures: none;
+    font-feature-settings: 'liga' 0, 'calt' 0;
   }
   .placeholder {
     color: var(--cor-texto-secundario);

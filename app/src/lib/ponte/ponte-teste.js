@@ -6,11 +6,15 @@
 // `Authorization` de cada chamada.
 
 let token = null;
+let tela = null;
 
 function lerToken() {
   if (token !== null) return token;
-  const m = /^#token=([0-9a-f]{64})$/.exec(window.location.hash);
+  // `&tela=<nome>` (opcional, só no modo de teste): abre direto numa tela para o QA no
+  // Chrome, antes de as telas de destravar existirem. Sai da URL junto com o token.
+  const m = /^#token=([0-9a-f]{64})(?:&tela=([a-z-]{1,32}))?$/.exec(window.location.hash);
   token = m ? m[1] : '';
+  tela = m && m[2] ? m[2] : null;
   // Tira o token da barra de endereço e do histórico.
   window.history.replaceState(null, '', window.location.pathname);
   return token;
@@ -48,4 +52,10 @@ export function criarTransporte() {
       mensagem: String(corpo?.mensagem ?? 'falha na ponte de teste'),
     };
   };
+}
+
+/** Tela pedida na URL de abertura (`&tela=gerador`), ou `null`. Só no modo de teste. */
+export function telaPedida() {
+  lerToken();
+  return tela;
 }
