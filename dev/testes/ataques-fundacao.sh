@@ -26,7 +26,12 @@ export PATH="$PATH:$CASA_PASSWD/.cargo/bin"
 # O gitleaks é sempre o de `.dev/` (não uma variável herdada), conferido por sha256.
 GITLEAKS="$RAIZ/.dev/ferramentas/bin/gitleaks"
 (cd "$RAIZ" && make -s gitleaks-binario)
-TMP="$(mktemp -d)"
+# Fase 28d: as cópias ficam em `.dev/` (0700, ignorada pelo git e pulada pelos gitleaks da
+# árvore), não no `/tmp`. O `cargo test` da cópia sobe o daemon de teste com
+# `WARD_DEV_APP`, e o `BinarioDeTeste` recusa (de propósito) app sob pasta gravável por
+# outros, como o `/tmp` (1777): numa cópia em `/tmp` esse teste falha sempre.
+mkdir -p -m 0700 "$RAIZ/.dev"
+TMP="$(mktemp -d "$RAIZ/.dev/ataques-fundacao.XXXXXX")"
 VAZAMENTO="$RAIZ/vazamento.txt"
 limpar() { rm -rf "$TMP"; rm -f "$VAZAMENTO"; }
 trap limpar EXIT
@@ -35,18 +40,27 @@ falhas=0
 ok() { printf 'ok    %s\n' "$1"; }
 falhou() { printf 'FALHA %s\n' "$1" >&2; falhas=$((falhas + 1)); }
 
-# Copia só o que o cargo e o `make check` precisam, sem `.dev/` nem `target/`. O
-# gitleaks vai para o `.dev/` da cópia: o Makefile só usa o dele (`GITLEAKS :=`) e confere
-# o sha256 do binário.
+# Copia os arquivos que o git rastreia (`git ls-files`, com o conteúdo da árvore de
+# trabalho), sem `.dev/`, `target/` nem `node_modules/`, que o git ignora. Fase 28d: antes
+# copiava só `crates/` e alguns arquivos soltos, mas o workspace tem membro em `app/`
+# (`app/nucleo`) e os testes leem `dev/fixtures/` por `include_str!`; a cópia quebrava no
+# clippy antes dos ataques. Com a lista do git, o que o workspace referencia vai junto.
+# O gitleaks vai para o `.dev/` da cópia: o Makefile só usa o dele (`GITLEAKS :=`) e
+# confere o sha256 do binário.
 copiar_workspace() {
     local destino="$1"
-    mkdir -p "$destino/dev" "$destino/.dev/ferramentas/bin"
-    cp -r "$RAIZ/Cargo.toml" "$RAIZ/Cargo.lock" "$RAIZ/rust-toolchain.toml" \
-        "$RAIZ/deny.toml" "$RAIZ/Makefile" "$RAIZ/.gitleaks.toml" "$RAIZ/.gitignore" \
-        "$RAIZ/crates" "$destino/"
-    cp "$RAIZ/dev/gitleaks-arvore.toml" "$RAIZ/dev/gitleaks-extra.toml" \
-        "$RAIZ/dev/gitleaks-extra-arvore.toml" "$RAIZ/dev/origens.py" "$RAIZ/dev/ambiente.sh" \
-        "$destino/dev/"
+    mkdir -p "$destino/.dev/ferramentas/bin"
+    (cd "$RAIZ" && git ls-files -z --cached) \
+        | (cd "$RAIZ" && tar --null --no-recursion -T - -cf -) \
+        | tar -C "$destino" -xf -
+    # A cópia fica dentro do repositório (em `.dev/`): um repositório git vazio nela corta
+    # a descoberta, e o `git`/`gitleaks git` da cópia nunca vê o repositório de cima.
+    (cd "$destino" && git init -q)
+    local essencial
+    for essencial in Cargo.toml Cargo.lock Makefile dev/origens.py app/nucleo/Cargo.toml \
+        dev/fixtures/entradas.json; do
+        [ -f "$destino/$essencial" ] || { echo "copiar_workspace: falta $essencial" >&2; exit 1; }
+    done
     cp "$GITLEAKS" "$destino/.dev/ferramentas/bin/gitleaks"
 }
 
@@ -574,7 +588,8 @@ color = \"never\"" crates/ward-core/.cargo/config.toml)"
 
 # --- Fase 12b (S14): config do CARGO_HOME só com chaves inofensivas -------------------------
 # Num bwrap com o home do passwd coberto por tmpfs (o ~/.cargo real nunca é tocado): só o
-# rustup e os binários de ~/.cargo/bin voltam, somente leitura. O `config.toml` do CARGO_HOME
+# rustup e os binários de ~/.cargo/bin voltam, somente leitura, e o `$TMP` deste script
+# (Fase 28d: fica no `.dev/` do repositório, que está no home). O `config.toml` do CARGO_HOME
 # é escrito no tmpfs. Workspace mínimo sem dependências (o cargo metadata não precisa do
 # registro). Também prova a checagem do toolchain ativo com um `rustup override` simulado.
 config_do_cargo_home() {
@@ -602,6 +617,7 @@ EOF
         /usr/bin/env -i PATH=/usr/bin:/bin bwrap --die-with-parent --dev-bind / / --tmpfs "$CASA_PASSWD" \
             --ro-bind "$CASA_PASSWD/.rustup" "$CASA_PASSWD/.rustup" "${extra[@]}" \
             --ro-bind "$CASA_PASSWD/.cargo/bin" "$CASA_PASSWD/.cargo/bin" --bind /tmp /tmp \
+            --bind "$TMP" "$TMP" \
             -- /bin/bash -p "$TMP/no-home.sh" "$CASA_PASSWD" "$m" "$1"
     }
     local c rc
@@ -720,20 +736,27 @@ git_sem_config_do_usuario() {
     if [ "$rc" -eq 0 ]; then ok "controle: sem o isolamento o ignore global vale"; else falhou "controle: ignore global não valeu nem sem isolamento"; fi
 }
 
-v1_2
-allowlist_ancorada
-dev_forcado_no_indice
-v1_3_advisory
-v1_3_git
-v1_3_lockfile
-v1_5
-extra_sem_allowlist_de_caminho
-origens_do_cargo
-ferramentas_fixas
-origens_lista_permitida
-config_do_cargo_home
-ambiente_do_make
-git_sem_config_do_usuario
+# Fase 28d: cada cópia compila o workspace inteiro no próprio `target/`; apaga os
+# `target/` das cópias depois de cada ataque para não somar vários GB no disco.
+rodar() {
+    "$1"
+    rm -rf "$TMP"/*/target
+}
+
+rodar v1_2
+rodar allowlist_ancorada
+rodar dev_forcado_no_indice
+rodar v1_3_advisory
+rodar v1_3_git
+rodar v1_3_lockfile
+rodar v1_5
+rodar extra_sem_allowlist_de_caminho
+rodar origens_do_cargo
+rodar ferramentas_fixas
+rodar origens_lista_permitida
+rodar config_do_cargo_home
+rodar ambiente_do_make
+rodar git_sem_config_do_usuario
 
 if [ "$falhas" -ne 0 ]; then
     printf '\n%d ataque(s) passaram: corrigir antes de seguir.\n' "$falhas" >&2
