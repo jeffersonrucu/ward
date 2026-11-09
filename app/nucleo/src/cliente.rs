@@ -214,12 +214,19 @@ pub enum Salvamento {
 }
 
 /// `salvar_entrada`: cria (`anterior` vazio) ou edita. O nível não vai no pedido (S9).
+/// `manter_anexos` (Fase 39b): nomes dos anexos da entrada editada que continuam nela;
+/// o daemon copia o conteúdo, que nunca passa pelo app.
 pub fn salvar<D: Daemon + ?Sized>(
     daemon: &mut D,
     anterior: Option<String>,
     rascunho: Rascunho,
+    manter_anexos: Vec<String>,
 ) -> Result<Salvamento, ErroApp> {
-    let pedido = Pedido::SalvarEntrada { anterior, rascunho };
+    let pedido = Pedido::SalvarEntrada {
+        anterior,
+        rascunho,
+        manter_anexos,
+    };
     let quadro =
         protocolo::codificar_pedido(Papel::App, &pedido).map_err(|_| ErroApp::PedidoInvalido)?;
     drop(pedido);

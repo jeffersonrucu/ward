@@ -685,6 +685,7 @@ fn s8_protocolo_nenhum_bloco_liberado_tem_segredo() {
         let p = Pedido::SalvarEntrada {
             anterior: None,
             rascunho: rascunho("falso-anexo-01"),
+            manter_anexos: Vec::new(),
         };
         let q = protocolo::codificar_pedido(Papel::App, &p).unwrap();
         let lido = pelo_socket(&q, limite_app);
@@ -705,6 +706,7 @@ fn s8_protocolo_nenhum_bloco_liberado_tem_segredo() {
         let p = Pedido::SalvarEntrada {
             anterior: None,
             rascunho: rascunho("falso-anexo-01"),
+            manter_anexos: Vec::new(),
         };
         let q = protocolo::codificar_pedido(Papel::App, &p).unwrap();
         assert_eq!(
@@ -719,6 +721,7 @@ fn s8_protocolo_nenhum_bloco_liberado_tem_segredo() {
         let acima = Pedido::SalvarEntrada {
             anterior: None,
             rascunho: rascunho(&grande),
+            manter_anexos: Vec::new(),
         };
         assert!(protocolo::codificar_pedido(Papel::App, &acima).is_err());
         drop((p, q, grande, acima));

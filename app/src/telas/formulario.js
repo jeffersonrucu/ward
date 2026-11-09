@@ -315,6 +315,9 @@ export function montarFormulario(tipo, estado) {
       valor: x.guardado ? { manter: x.original } : { novo: x.segredo ? x.valor : nfc(x.valor) },
     })),
     anexos: (estado.anexos ?? []).map((a) => a.id),
+    // Fase 39b: na edição, os anexos guardados que continuam (pelo nome). O conteúdo
+    // fica no daemon; o que sair desta lista é removido ao salvar.
+    anexos_mantidos: (estado.guardados ?? []).map((a) => a.nome),
   };
 }
 

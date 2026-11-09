@@ -15,8 +15,8 @@ use crate::entrada::{
 };
 use crate::gravacao::ErroGravacao;
 use crate::limites::{
-    KIB, MAX_ANEXOS_SOMADOS, MAX_EXTRAS, MAX_NOTA, MAX_QUADRO_APP, MAX_QUADRO_COMUM,
-    MAX_VALOR_EXTRA, MIB,
+    KIB, MAX_ANEXOS, MAX_ANEXOS_SOMADOS, MAX_EXTRAS, MAX_NOME_ANEXO, MAX_NOTA, MAX_QUADRO_APP,
+    MAX_QUADRO_COMUM, MAX_VALOR_EXTRA, MIB,
 };
 
 // O mesmo cofre de teste dos testes do corpo (o módulo deles é privado de `corpo`).
@@ -954,6 +954,7 @@ fn d29_anexos_ate_256_kib_somados_pelo_app() {
     let no_limite = Pedido::SalvarEntrada {
         anterior: None,
         rascunho: rascunho_com_anexos(&[MAX_ANEXOS_SOMADOS - 10 * KIB, 10 * KIB]),
+        manter_anexos: Vec::new(),
     };
     let q = codificar_pedido(Papel::App, &no_limite).unwrap();
     assert!(q.len() > MAX_ANEXOS_SOMADOS && q.len() < MAX_QUADRO_APP);
@@ -974,6 +975,7 @@ fn d29_anexos_ate_256_kib_somados_pelo_app() {
     let acima = Pedido::SalvarEntrada {
         anterior: Some("clientex-stage-vpn".into()),
         rascunho: rascunho_com_anexos(&[MAX_ANEXOS_SOMADOS - 10 * KIB, 10 * KIB + 1]),
+        manter_anexos: Vec::new(),
     };
     assert_eq!(
         codificar_pedido(Papel::App, &acima).unwrap_err(),
@@ -987,6 +989,131 @@ fn d29_anexos_ate_256_kib_somados_pelo_app() {
         ped(Papel::App, &forjado).unwrap_err(),
         ErroResposta::PedidoInvalido
     );
+}
+
+// ---- Fase 39b: anexos mantidos na edição (V5.12) ----
+
+/// `manter_anexos` vai e volta; ausente quando vazio (o quadro de hoje não muda).
+#[test]
+fn fase39b_manter_anexos_vai_e_volta() {
+    let p = Pedido::SalvarEntrada {
+        anterior: Some("clientex-stage-vpn".into()),
+        rascunho: rascunho_com_anexos(&[10]),
+        manter_anexos: vec!["cliente-0.ovpn".into(), "app.env".into()],
+    };
+    let q = codificar_pedido(Papel::App, &p).unwrap();
+    let Pedido::SalvarEntrada { manter_anexos, .. } = decodificar_pedido(Papel::App, &q).unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(manter_anexos, ["cliente-0.ovpn", "app.env"]);
+    let sem = Pedido::SalvarEntrada {
+        anterior: Some("clientex-stage-vpn".into()),
+        rascunho: rascunho_com_anexos(&[10]),
+        manter_anexos: Vec::new(),
+    };
+    let q = codificar_pedido(Papel::App, &sem).unwrap();
+    assert!(!String::from_utf8_lossy(&q).contains("manter_anexos"));
+    assert_eq!(
+        decodificar_pedido(Papel::Agente, &q).unwrap_err(),
+        ErroResposta::NaoAutorizado
+    );
+}
+
+/// Ataques ao `manter_anexos`: numa entrada nova, nome vazio, repetido, longo demais,
+/// fora de lista de textos, e mantidos mais novos acima de `MAX_ANEXOS`.
+#[test]
+fn fase39b_ataque_manter_anexos_forjado() {
+    let base = dados_validos(Operacao::SalvarEntrada);
+    let q = |d: &str| ped(Papel::App, &quadro_de(Operacao::SalvarEntrada, d));
+    let editar = |campo: &str| {
+        base.replacen(
+            '{',
+            &format!(r#"{{"anterior":"clientex-stage-wp",{campo},"#),
+            1,
+        )
+    };
+    assert!(q(&editar(r#""manter_anexos":["app.env"]"#)).is_ok());
+    assert!(q(&editar(r#""manter_anexos":[]"#)).is_ok());
+    // Sem `anterior`: não há de onde manter.
+    let novo = base.replacen('{', r#"{"manter_anexos":["app.env"],"#, 1);
+    assert_eq!(q(&novo).unwrap_err(), ErroResposta::PedidoInvalido);
+    let longo = format!(r#""manter_anexos":["{}"]"#, "a".repeat(MAX_NOME_ANEXO + 1));
+    let muitos = format!(
+        r#""manter_anexos":[{}]"#,
+        (0..=MAX_ANEXOS)
+            .map(|i| format!(r#""a{i}.env""#))
+            .collect::<Vec<_>>()
+            .join(",")
+    );
+    for forjado in [
+        r#""manter_anexos":[""]"#.to_owned(),
+        r#""manter_anexos":["app.env","app.env"]"#.to_owned(),
+        r#""manter_anexos":"app.env""#.to_owned(),
+        r#""manter_anexos":[{"nome":"app.env","conteudo":"QQ=="}]"#.to_owned(),
+        r#""manter_anexos":[1]"#.to_owned(),
+        longo,
+        muitos,
+    ] {
+        assert_eq!(
+            q(&editar(&forjado)).unwrap_err(),
+            ErroResposta::PedidoInvalido,
+            "{forjado}"
+        );
+    }
+    // Mantidos mais novos acima de `MAX_ANEXOS`: o cliente não codifica.
+    let p = Pedido::SalvarEntrada {
+        anterior: Some("clientex-stage-vpn".into()),
+        rascunho: rascunho_com_anexos(&[1; MAX_ANEXOS]),
+        manter_anexos: vec!["app.env".into()],
+    };
+    assert_eq!(
+        codificar_pedido(Papel::App, &p).unwrap_err(),
+        ErroCodificar::Invalida
+    );
+}
+
+/// `juntar_anexos_mantidos`: copia o conteúdo da entrada editada à frente dos novos;
+/// nome que a entrada não tem (inclusive com `/` ou `..`) ou repetido é pedido inválido
+/// e o rascunho não muda; a soma de D29 continua valendo pela validação inteira.
+#[test]
+fn fase39b_ataque_juntar_anexos_mantidos() {
+    let antiga = rascunho_com_anexos(&[200 * KIB, 10]).validar().unwrap();
+    let mut r = rascunho_com_anexos(&[5]);
+    r.anexos[0].nome = "novo.env".into();
+    for nomes in [
+        vec!["nao-existe.ovpn".to_owned()],
+        vec!["cliente-0.ovpn".to_owned(), "cliente-0.ovpn".to_owned()],
+        vec!["../cliente-0.ovpn".to_owned()],
+        vec!["CLIENTE-0.OVPN".to_owned()],
+    ] {
+        assert_eq!(
+            juntar_anexos_mantidos(&mut r, &antiga, &nomes).unwrap_err(),
+            ErroResposta::PedidoInvalido,
+            "{nomes:?}"
+        );
+        assert_eq!(r.anexos.len(), 1);
+    }
+    juntar_anexos_mantidos(&mut r, &antiga, &["cliente-1.ovpn".to_owned()]).unwrap();
+    let nomes: Vec<&str> = r.anexos.iter().map(|a| a.nome.as_str()).collect();
+    assert_eq!(nomes, ["cliente-1.ovpn", "novo.env"]);
+    assert_eq!(
+        r.anexos[0].conteudo.expor(),
+        antiga.anexos()[1].conteudo().expor()
+    );
+    let e = r.validar().unwrap();
+    assert_eq!(e.anexos().len(), 2);
+
+    // Mantido de 200 KiB + novo de 60 KiB passa da soma: a validação recusa.
+    let mut r = rascunho_com_anexos(&[60 * KIB]);
+    r.anexos[0].nome = "novo.env".into();
+    juntar_anexos_mantidos(&mut r, &antiga, &["cliente-0.ovpn".to_owned()]).unwrap();
+    assert!(r.validar().is_err());
+
+    // Nome mantido igual ao de um anexo novo: a validação acusa a repetição.
+    let mut r = rascunho_com_anexos(&[5]);
+    juntar_anexos_mantidos(&mut r, &antiga, &["cliente-0.ovpn".to_owned()]).unwrap();
+    assert!(r.validar().is_err());
 }
 
 /// A maior entrada que a validação aceita (nota de 1 MiB, 64 extras de 64 KiB, anexos
@@ -1018,6 +1145,7 @@ fn maior_entrada_cabe_no_quadro_do_app() {
     let p = Pedido::SalvarEntrada {
         anterior: None,
         rascunho: r,
+        manter_anexos: Vec::new(),
     };
     let q = codificar_pedido(Papel::App, &p).unwrap();
     assert!(q.len() > MAX_QUADRO_COMUM, "{}", q.len());

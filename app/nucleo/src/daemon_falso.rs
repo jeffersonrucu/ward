@@ -488,12 +488,14 @@ impl DaemonFalso {
                 },
                 None => Resposta::Erro(ErroResposta::EntradaInexistente),
             },
-            Pedido::SalvarEntrada { anterior, rascunho } => {
-                match self.salvar(anterior.as_deref(), rascunho) {
-                    Ok(()) => Resposta::Ok,
-                    Err(e) => Resposta::Erro(e),
-                }
-            }
+            Pedido::SalvarEntrada {
+                anterior,
+                rascunho,
+                manter_anexos,
+            } => match self.salvar(anterior.as_deref(), rascunho, &manter_anexos) {
+                Ok(()) => Resposta::Ok,
+                Err(e) => Resposta::Erro(e),
+            },
             Pedido::MudarNivel {
                 entrada,
                 nivel,
@@ -741,7 +743,18 @@ impl DaemonFalso {
     }
 
     /// A mesma regra do `wardd` (`crates/wardd/src/nucleo.rs` › `salvar_entrada`).
-    fn salvar(&mut self, anterior: Option<&str>, rascunho: Rascunho) -> Result<(), ErroResposta> {
+    fn salvar(
+        &mut self,
+        anterior: Option<&str>,
+        mut rascunho: Rascunho,
+        manter_anexos: &[String],
+    ) -> Result<(), ErroResposta> {
+        // Fase 39b: a mesma regra do `wardd` (`nucleo.rs` › `salvar_entrada`).
+        if !manter_anexos.is_empty() {
+            let nome = anterior.ok_or(ErroResposta::PedidoInvalido)?;
+            let antiga = self.entrada(nome).ok_or(ErroResposta::EntradaInexistente)?;
+            protocolo::juntar_anexos_mantidos(&mut rascunho, antiga, manter_anexos)?;
+        }
         let mut nova = rascunho
             .validar()
             .map_err(|e| ErroResposta::de_validacao(&e))?;

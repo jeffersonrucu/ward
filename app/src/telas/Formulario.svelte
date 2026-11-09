@@ -109,6 +109,10 @@
 
   /** @type {Array<{ id: number, nome: string, tamanho: number }>} */
   let anexos = $state([]);
+  // Fase 39b: anexos já guardados na entrada editada (nome e tamanho do detalhe; o
+  // conteúdo nunca vem). Remover aqui só tira da lista; vale ao salvar.
+  /** @type {Array<{ nome: string, tamanho: number }>} */
+  let guardados = $state((detalhe?.anexos ?? []).map((a) => ({ nome: a.nome, tamanho: a.tamanho })));
   let avisoAnexo = $state('');
   let escolhendo = $state(false);
   let conectando = $state(false);
@@ -272,7 +276,10 @@
     escolhendo = true;
     avisoAnexo = '';
     try {
-      const r = await chamar('escolher_anexo');
+      const r = await chamar(
+        'escolher_anexo',
+        editando ? { edicao: { entrada: detalhe.nome, mantidos: guardados.map((a) => a.nome) } } : {},
+      );
       if (!ativa) return;
       if (r.resultado === 'anexado') {
         anexos.push({ id: r.id, nome: r.nome, tamanho: r.tamanho });
@@ -285,6 +292,12 @@
     } finally {
       escolhendo = false;
     }
+  }
+
+  function removerGuardado(i) {
+    guardados.splice(i, 1);
+    avisoAnexo = '';
+    delete erros.anexos;
   }
 
   async function removerAnexo(i) {
@@ -335,6 +348,7 @@
         segredos,
         extras,
         anexos,
+        guardados,
       });
       const r = await chamar('salvar_credencial', {
         anterior: editando ? detalhe.nome : null,
@@ -602,11 +616,18 @@
         >
       {/snippet}
     </TituloDeSecao>
-    {#if anexos.length === 0}
+    {#if anexos.length === 0 && guardados.length === 0}
       <p class="caixa-vazia" class:erro={erroDe('anexos')}>
         Nenhum anexo. Use Adicionar arquivo (até 256 KiB somados).
       </p>
     {:else}
+      {#each guardados as a, i (a.nome)}
+        <Anexo
+          nome={a.nome}
+          detalhe="{tamanhoLegivel(a.tamanho)} · {variavelDoAnexo(a.nome)}"
+          onremover={() => removerGuardado(i)}
+        />
+      {/each}
       {#each anexos as a, i (a.id)}
         <Anexo
           nome={a.nome}

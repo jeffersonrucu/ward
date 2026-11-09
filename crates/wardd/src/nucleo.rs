@@ -738,9 +738,11 @@ impl Daemon {
             Pedido::EntradaPadrao { .. } | Pedido::Janela(_) => Err(ErroResposta::PedidoInvalido),
             Pedido::CriarCofre { senha, pin } => self.criar_cofre(&senha, &pin),
             Pedido::Detalhe { entrada } => self.detalhe(&entrada),
-            Pedido::SalvarEntrada { anterior, rascunho } => {
-                self.salvar_entrada(anterior.as_deref(), rascunho)
-            }
+            Pedido::SalvarEntrada {
+                anterior,
+                rascunho,
+                manter_anexos,
+            } => self.salvar_entrada(anterior.as_deref(), rascunho, &manter_anexos),
             Pedido::RemoverEntrada { entrada } => self.remover_entrada(&entrada),
             Pedido::MudarNivel {
                 entrada,
@@ -1185,11 +1187,23 @@ impl Daemon {
     fn salvar_entrada(
         &self,
         anterior: Option<&str>,
-        rascunho: Rascunho,
+        mut rascunho: Rascunho,
+        manter_anexos: &[String],
     ) -> Result<Resposta, ErroResposta> {
         let agora = self.agora_para_datas();
         let mut est = self.estado();
         let a = est.aberto.as_mut().ok_or(ErroResposta::Travado)?;
+        // Fase 39b (V5.12): os anexos mantidos são copiados da entrada editada aqui
+        // dentro, antes da validação inteira (soma de D29, nomes, orçamento da máscara).
+        if !manter_anexos.is_empty() {
+            let nome = anterior.ok_or(ErroResposta::PedidoInvalido)?;
+            let antiga = a
+                .entradas
+                .iter()
+                .find(|e| e.nome() == nome)
+                .ok_or(ErroResposta::EntradaInexistente)?;
+            ward_core::protocolo::juntar_anexos_mantidos(&mut rascunho, antiga, manter_anexos)?;
+        }
         let mut nova = rascunho
             .validar()
             .map_err(|e| ErroResposta::de_validacao(&e))?;
@@ -1268,7 +1282,7 @@ impl Daemon {
         {
             return Err(ErroResposta::PedidoInvalido);
         }
-        let r = self.salvar_entrada(None, rascunho);
+        let r = self.salvar_entrada(None, rascunho, &[]);
         if r.is_ok() {
             aviso!("salvar_login: login novo gravado pela extensão (com aprovação)");
         }

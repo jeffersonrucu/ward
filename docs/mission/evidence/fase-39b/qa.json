@@ -1,0 +1,20 @@
+{
+  "editar_habilitado_com_anexo": true,
+  "edicao_lista_guardado": true,
+  "edicao_guardado_com_tamanho_e_variavel": true,
+  "sem_conteudo_no_dom_edicao": true,
+  "ponto_no_comeco_vira_env": true,
+  "sem_conteudo_no_dom_apos_adicionar": true,
+  "salvo_mantem_e_adiciona": true,
+  "sem_conteudo_no_dom_detalhe_salvo": true,
+  "soma_com_guardados_avisa": true,
+  "grande_avisa": true,
+  "vazio_recusado": true,
+  "remover_tira_da_lista": true,
+  "salvo_sem_o_removido": true,
+  "cancelar_nao_remove": true,
+  "sem_conteudo_no_dom_fim": true,
+  "armazenamento_vazio": true,
+  "url_sem_conteudo": true,
+  "so_pedidos_locais": true
+}

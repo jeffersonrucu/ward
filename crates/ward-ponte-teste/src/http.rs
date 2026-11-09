@@ -11,6 +11,7 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 use ward_app_nucleo::ErroApp;
+use ward_app_nucleo::anexos::EdicaoDosAnexos;
 use ward_app_nucleo::area_transferencia::AreaTransferencia;
 use ward_app_nucleo::comandos::Comando;
 use ward_app_nucleo::configuracoes::{TrocaPin, TrocaSenha};
@@ -346,10 +347,19 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Ponte<D, A> {
             },
             // Fase 34: o arquivo é escolhido e lido no lado Rust; volta id, nome e
             // tamanho, ou o aviso (S11, V5.12).
-            Comando::EscolherAnexo => self
-                .servico
-                .escolher_anexo()
-                .and_then(|e| serde_json::to_value(e).map_err(|_| ErroApp::RespostaInvalida)),
+            // Fase 39b: na edição, `edicao { entrada, mantidos }` (os anexos guardados que
+            // continuam contam nos limites).
+            Comando::EscolherAnexo => {
+                let edicao = match args.get("edicao") {
+                    None | Some(Value::Null) => Ok(None),
+                    Some(v) => serde_json::from_value::<EdicaoDosAnexos>(v.clone())
+                        .map(Some)
+                        .map_err(|_| ErroApp::PedidoInvalido),
+                };
+                edicao
+                    .and_then(|ed| self.servico.escolher_anexo(ed.as_ref()))
+                    .and_then(|e| serde_json::to_value(e).map_err(|_| ErroApp::RespostaInvalida))
+            }
             Comando::RemoverAnexo => match args.get("id").and_then(Value::as_u64) {
                 Some(id) => self.servico.remover_anexo(id).map(|()| Value::Null),
                 None => Err(ErroApp::PedidoInvalido),

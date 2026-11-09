@@ -34,9 +34,6 @@ pub enum ErroApp {
     AleatorioIndisponivel,
     /// "Copiar" ou "revelar" do gerador avulso sem senha gerada (ou já descartada).
     SemSenhaGerada,
-    /// Editar uma entrada com anexos: o protocolo não traz o conteúdo dos anexos para
-    /// regravar, e salvar sem eles os apagaria (Fase 34).
-    AnexosNaoMantidos,
     /// O PIN não confere (S9). Nada foi alterado; 5 erros seguidos travam o cofre (o
     /// daemon conta; a resposta não diz quantos faltam).
     PinIncorreto,
@@ -87,7 +84,6 @@ impl ErroApp {
             ErroApp::RespostaInvalida => "resposta-invalida",
             ErroApp::AleatorioIndisponivel => "aleatorio-indisponivel",
             ErroApp::SemSenhaGerada => "sem-senha-gerada",
-            ErroApp::AnexosNaoMantidos => "anexos-nao-mantidos",
             ErroApp::PinIncorreto => "pin-incorreto",
             ErroApp::SeletorIndisponivel => "seletor-indisponivel",
             ErroApp::TerminalIndisponivel => "terminal-indisponivel",
@@ -123,9 +119,6 @@ impl fmt::Display for ErroApp {
             ErroApp::RespostaInvalida => "resposta inválida do daemon",
             ErroApp::AleatorioIndisponivel => "o gerador aleatório do sistema não respondeu",
             ErroApp::SemSenhaGerada => "gere uma senha antes",
-            ErroApp::AnexosNaoMantidos => {
-                "esta entrada tem anexos; editá-la aqui ainda apagaria os anexos"
-            }
             ErroApp::PinIncorreto => "PIN incorreto. Nada foi alterado.",
             ErroApp::SeletorIndisponivel => "não foi possível abrir a escolha de arquivo",
             ErroApp::TerminalIndisponivel => "não foi possível abrir o terminal",
