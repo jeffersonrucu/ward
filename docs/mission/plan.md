@@ -871,9 +871,12 @@ rodarem) e executar `docs/mission/roteiro-usuario.md` na janela nativa (V5.28; t
   (ajustar: sem selos, linha da operação e argv entre aspas); vários usos esperando o
   destrave mostram só o mais novo ("e mais N"?); "Agora não" ainda não nega (falta
   operação); `make app-check` não rodou (sem `libwebkit2gtk-4.1-dev`).
-- [ ] Fase 39b — Anexos na edição: operação no protocolo (ou manter anexos por id em
+- [x] Fase 39b — Anexos na edição: operação no protocolo (ou manter anexos por id em
   `salvar_entrada`) para adicionar, listar e remover anexo de `servidor` e `genérico`
   já salvos; decidir se nome começando por `.` (ex.: `.env`) é aceito. V5.12.
+  Pendências da 39b: `.env` é anexado como `env` (pontos do começo tirados; `ward-core`
+  segue recusando `.`) — registrar no escopo; `v3_33_kill_9_entre_as_senhas_erradas`
+  falha sob carga (limite de 1,5 s precisa de margem); `make app-check` não rodou.
 - [ ] Fase 39c — Ponta a ponta do app com o daemon de teste e a ponte: `ward run` real
   com janela (negar → CLI ≠ 0, "1 hora", "sempre") e "Conectar" abrindo terminal com
   `ward ssh` real, mais os três ataques de token (V5.16, V5.24); Salvar desabilitado no
