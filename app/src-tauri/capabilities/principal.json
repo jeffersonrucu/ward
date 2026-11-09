@@ -29,6 +29,9 @@
     "allow-trocar-pin",
     "allow-trocar-senha-mestra",
     "allow-definir-tempo-trava",
+    "allow-backup-externo",
+    "allow-listar-pendrives",
+    "allow-definir-backup-externo",
     "allow-travar"
   ]
 }

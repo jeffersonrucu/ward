@@ -56,6 +56,11 @@ pub enum ErroApp {
     /// Destravar (D39): o cofre no disco é mais antigo que o último aberto; nada foi
     /// aberto.
     CofreRetrocesso,
+    /// Backup externo (Fase 48): o udisks2 não respondeu; não dá para ver os pendrives.
+    PendrivesIndisponiveis,
+    /// Backup externo (Fase 48): o UUID pedido não é de um pendrive conectado agora (ou
+    /// há dois com o mesmo UUID). Nada foi gravado.
+    PendriveNaoConectado,
 }
 
 impl ErroApp {
@@ -84,6 +89,8 @@ impl ErroApp {
             ErroApp::CofreNaoGravado => "cofre-nao-gravado",
             ErroApp::SenhaIncorreta => "senha-incorreta",
             ErroApp::CofreRetrocesso => "cofre-retrocesso",
+            ErroApp::PendrivesIndisponiveis => "pendrives-indisponiveis",
+            ErroApp::PendriveNaoConectado => "pendrive-nao-conectado",
         }
     }
 }
@@ -118,6 +125,12 @@ impl fmt::Display for ErroApp {
                 "o cofre no disco é mais antigo que o último aberto; nada foi aberto"
             }
             ErroApp::CofreJaExiste => "já existe um cofre neste computador",
+            ErroApp::PendrivesIndisponiveis => {
+                "não deu para ver os pendrives (o udisks não respondeu)"
+            }
+            ErroApp::PendriveNaoConectado => {
+                "esse pendrive não está conectado; conecte-o e atualize a lista"
+            }
             ErroApp::CofreNaoGravado => {
                 "não foi possível gravar o cofre; confira o espaço e as permissões da pasta do Ward"
             }

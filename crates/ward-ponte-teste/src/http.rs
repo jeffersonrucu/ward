@@ -421,6 +421,33 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Ponte<D, A> {
                     .and_then(|c| serde_json::to_value(c).map_err(|_| ErroApp::RespostaInvalida)),
                 _ => Err(ErroApp::PedidoInvalido),
             },
+            // Fase 48 (V7.9): sem caminho de montagem; o UUID é conferido no serviço
+            // (formato e lista do daemon).
+            Comando::BackupExterno if args.is_empty() => self
+                .servico
+                .backup_externo()
+                .and_then(|b| serde_json::to_value(b).map_err(|_| ErroApp::RespostaInvalida)),
+            Comando::ListarPendrives if args.is_empty() => self
+                .servico
+                .listar_pendrives()
+                .and_then(|l| serde_json::to_value(l).map_err(|_| ErroApp::RespostaInvalida)),
+            Comando::BackupExterno | Comando::ListarPendrives => Err(ErroApp::PedidoInvalido),
+            Comando::DefinirBackupExterno => {
+                let uuid = match args.get("uuid") {
+                    None | Some(Value::Null) => Ok(None),
+                    Some(Value::String(u)) => Ok(Some(u.as_str())),
+                    Some(_) => Err(ErroApp::PedidoInvalido),
+                };
+                let so_conhecidos = args.keys().all(|k| k == "ligado" || k == "uuid");
+                match (marcado("ligado"), uuid) {
+                    (Some(l), Ok(u)) if so_conhecidos => {
+                        self.servico.definir_backup_externo(l, u).and_then(|b| {
+                            serde_json::to_value(b).map_err(|_| ErroApp::RespostaInvalida)
+                        })
+                    }
+                    _ => Err(ErroApp::PedidoInvalido),
+                }
+            }
         };
         match resultado {
             Ok(valor) => Resposta::json(200, &json!({ "ok": true, "valor": valor })),

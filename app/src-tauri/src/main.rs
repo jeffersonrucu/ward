@@ -43,6 +43,7 @@ use ward_app_nucleo::ErroApp;
 use ward_app_nucleo::anexos::{Escolha, Seletor};
 use ward_app_nucleo::aprovacao::{self, PedidoExibido, ResultadoAprovacao};
 use ward_app_nucleo::area_transferencia::{Copiador, Wayland};
+use ward_app_nucleo::backup_externo::{BackupExternoVisto, PendriveVisto};
 use ward_app_nucleo::bandeja::{self, Acao, EstadoBandeja, Icone};
 use ward_app_nucleo::configuracoes::{Configuracoes, ResultadoTroca, TrocaPin, TrocaSenha};
 use ward_app_nucleo::credenciais::{DetalheCredencial, ItemCredencial};
@@ -426,6 +427,32 @@ fn definir_tempo_trava<R: Runtime>(
     Ok(c)
 }
 
+/// Backup externo (Fase 48, V7.9): ligado ou não, o UUID e, se conectado, o pendrive
+/// (rótulo neutralizado, D51). Nenhum caminho de montagem.
+#[tauri::command]
+fn backup_externo(estado: State<'_, Estado>) -> Result<BackupExternoVisto, Falha> {
+    Ok(estado.servico()?.backup_externo()?)
+}
+
+/// Os pendrives que o daemon vê, para escolher o do backup externo (Fase 48).
+#[tauri::command]
+fn listar_pendrives(estado: State<'_, Estado>) -> Result<Vec<PendriveVisto>, Falha> {
+    Ok(estado.servico()?.listar_pendrives()?)
+}
+
+/// Ligar (com um pendrive que o daemon vê agora; o UUID da interface é conferido de novo
+/// no núcleo) ou desligar o backup externo (Fase 48, D17, D30).
+#[tauri::command]
+fn definir_backup_externo(
+    ligado: bool,
+    uuid: Option<String>,
+    estado: State<'_, Estado>,
+) -> Result<BackupExternoVisto, Falha> {
+    Ok(estado
+        .servico()?
+        .definir_backup_externo(ligado, uuid.as_deref())?)
+}
+
 /// Rótulo da janela principal (capability `principal`).
 const JANELA_PRINCIPAL: &str = "principal";
 /// Rótulo da janela de aprovação: a capability `aprovacao` vale só para ela.
@@ -806,6 +833,9 @@ fn com_comandos<R: Runtime>(builder: Builder<R>, estado: Estado) -> Builder<R> {
             trocar_pin,
             trocar_senha_mestra,
             definir_tempo_trava,
+            backup_externo,
+            listar_pendrives,
+            definir_backup_externo,
             pedido_de_aprovacao,
             responder_aprovacao,
             travar
@@ -1407,6 +1437,73 @@ mod testes {
             assert!(
                 r.as_ref().err().is_some_and(|e| e["codigo"].is_string()),
                 "{minutos}: {r:?}"
+            );
+        }
+    }
+
+    /// Fase 48 (V7.9): os comandos do backup externo só na janela `principal` com a
+    /// origem local; o UUID forjado pela interface (fora do formato, ligar sem UUID,
+    /// desligar trocando o UUID, tipo errado) é recusado no Rust antes do daemon.
+    #[test]
+    fn ataque_backup_externo_so_na_janela_certa_e_uuid_conferido_no_rust() {
+        let app = app_de_teste();
+        let principal = WebviewWindowBuilder::new(&app, "principal", Default::default())
+            .build()
+            .unwrap();
+        let outra = WebviewWindowBuilder::new(&app, "outra", Default::default())
+            .build()
+            .unwrap();
+        let aprovacao = WebviewWindowBuilder::new(&app, "aprovacao", Default::default())
+            .build()
+            .unwrap();
+        for (comando, corpo) in [
+            ("backup_externo", serde_json::json!({})),
+            ("listar_pendrives", serde_json::json!({})),
+            (
+                "definir_backup_externo",
+                serde_json::json!({ "ligado": true, "uuid": "7C1E-42A9" }),
+            ),
+        ] {
+            for janela in [&outra, &aprovacao] {
+                let r = chamar(janela, comando, ORIGEM, corpo.clone());
+                assert!(
+                    r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+                    "{comando} em {}: {r:?}",
+                    janela.label()
+                );
+            }
+            let r = chamar(&principal, comando, "https://example.com", corpo.clone());
+            assert!(
+                r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+                "{comando} com origem remota: {r:?}"
+            );
+        }
+        // Formato errado: o núcleo recusa antes de abrir o daemon (`pedido-invalido`,
+        // não `daemon-indisponivel`).
+        for corpo in [
+            serde_json::json!({ "ligado": true, "uuid": "../etc" }),
+            serde_json::json!({ "ligado": true, "uuid": "/media/usuario/WARD-BACKUP" }),
+            serde_json::json!({ "ligado": true, "uuid": "7C1E-42A9\u{202E}" }),
+            serde_json::json!({ "ligado": true, "uuid": "" }),
+            serde_json::json!({ "ligado": true }),
+            serde_json::json!({ "ligado": false, "uuid": "DEAD-BEEF" }),
+        ] {
+            let r = chamar(&principal, "definir_backup_externo", ORIGEM, corpo.clone());
+            assert_eq!(
+                r.as_ref().err().map(|e| e["codigo"].clone()),
+                Some(serde_json::json!("pedido-invalido")),
+                "{corpo}: {r:?}"
+            );
+        }
+        for corpo in [
+            serde_json::json!({ "ligado": "sim", "uuid": "7C1E-42A9" }),
+            serde_json::json!({ "ligado": true, "uuid": 4242 }),
+            serde_json::json!({ "uuid": "7C1E-42A9" }),
+        ] {
+            let r = chamar(&principal, "definir_backup_externo", ORIGEM, corpo.clone());
+            assert!(
+                r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+                "{corpo}: {r:?}"
             );
         }
     }

@@ -13,6 +13,7 @@ use crate::ErroApp;
 use crate::anexos::{Anexos, Escolha, Seletor, SemSeletor};
 use crate::aprovacao::{self, Aprovacoes, PedidoExibido, ResultadoAprovacao};
 use crate::area_transferencia::{AreaTransferencia, Copiador};
+use crate::backup_externo::{self, BackupExternoVisto, EscolhaDoPendrive, PendriveVisto};
 use crate::cliente;
 use crate::comandos::{Referencia, validar_nome_entrada};
 use crate::configuracoes::{Configuracoes, ResultadoTroca, TrocaPin, TrocaSenha, minutos_validos};
@@ -70,6 +71,30 @@ pub struct Servico<D: Daemon, A: AreaTransferencia> {
     aprovacoes: Arc<Aprovacoes>,
     /// O `pedido_de_destrave` do agente que está esperando (Fase 31, D65 a).
     pedido: Arc<PedidoPendente>,
+}
+
+/// O estado do backup externo: a configuração e, com um UUID escolhido, se ele está
+/// entre os pendrives vistos. O udisks2 sem resposta não é erro aqui: o cartão diz que
+/// não deu para ver.
+fn backup_externo_de<D: Daemon + ?Sized>(d: &mut D) -> Result<BackupExternoVisto, ErroApp> {
+    let (ligado, uuid) = cliente::backup_externo(d)?;
+    let (pendrive, pendrives_visiveis) = match &uuid {
+        None => (None, true),
+        Some(u) => match cliente::pendrives(d) {
+            Ok(lista) => (
+                backup_externo::achar(&lista, u).map(PendriveVisto::de),
+                true,
+            ),
+            Err(ErroApp::PendrivesIndisponiveis) => (None, false),
+            Err(e) => return Err(e),
+        },
+    };
+    Ok(BackupExternoVisto {
+        ligado,
+        uuid,
+        pendrive,
+        pendrives_visiveis,
+    })
 }
 
 /// Valores que o formulário pede sem passar pela interface.
@@ -615,6 +640,43 @@ impl<D: Daemon, A: AreaTransferencia> Servico<D, A> {
         let mut d = self.daemon()?;
         cliente::tempo_trava(&mut *d, minutos)?;
         cliente::configuracao(&mut *d)
+    }
+
+    /// `backup_externo` (Fase 48, V7.9): ligado ou não, o UUID escolhido e, se ele
+    /// estiver conectado, o pendrive (rótulo neutralizado, D51). Sem caminho de montagem.
+    pub fn backup_externo(&self) -> Result<BackupExternoVisto, ErroApp> {
+        backup_externo_de(&mut *self.daemon()?)
+    }
+
+    /// `listar_pendrives` (Fase 48): os pendrives que o daemon vê, para escolher.
+    pub fn listar_pendrives(&self) -> Result<Vec<PendriveVisto>, ErroApp> {
+        let lista = cliente::pendrives(&mut *self.daemon()?)?;
+        Ok(lista.iter().map(PendriveVisto::de).collect())
+    }
+
+    /// `definir_backup_externo { ligado, uuid? }` (Fase 48, V7.9; D17, D30). Ligar: o UUID
+    /// (formato de D45, conferido em [`EscolhaDoPendrive::nova`]) tem de ser de um pendrive que o
+    /// daemon vê agora; senão nada vai ao `definir_backup_externo`. Vai o UUID como o
+    /// daemon o deu. Desligar mantém o UUID guardado. A resposta é o estado lido de novo.
+    pub fn definir_backup_externo(
+        &self,
+        ligado: bool,
+        uuid: Option<&str>,
+    ) -> Result<BackupExternoVisto, ErroApp> {
+        let escolha = EscolhaDoPendrive::nova(ligado, uuid)?;
+        let mut d = self.daemon()?;
+        match escolha {
+            EscolhaDoPendrive::Ligar(u) => {
+                let lista = cliente::pendrives(&mut *d)?;
+                let p = backup_externo::achar(&lista, &u).ok_or(ErroApp::PendriveNaoConectado)?;
+                cliente::definir_backup_externo(&mut *d, true, Some(p.uuid.clone()))?;
+            }
+            EscolhaDoPendrive::Desligar => {
+                let (_, atual) = cliente::backup_externo(&mut *d)?;
+                cliente::definir_backup_externo(&mut *d, false, atual)?;
+            }
+        }
+        backup_externo_de(&mut *d)
     }
 
     fn usadas_travadas(&self) -> MutexGuard<'_, BTreeMap<String, Segredo>> {

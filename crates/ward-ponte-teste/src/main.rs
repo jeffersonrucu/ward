@@ -13,7 +13,9 @@
 //! daemon falso do núcleo (`ward_app_nucleo::daemon_falso`, Fase 32), que responde pelo
 //! protocolo com as entradas falsas do cofre de teste (ou com nenhuma, travado para o
 //! destravar, ou sem cofre para o primeiro uso), para conferir as telas no Chrome
-//! antes do `wardd` da Fase 22.
+//! antes do `wardd` da Fase 22. Fase 48: `backup-externo-ligado` (o cheio com o backup
+//! externo ligado no pendrive falso `WARD-BACKUP`) e `sem-udisks` (o cheio com o udisks2
+//! sem resposta); os pendrives são só dados (`pendrives_de_teste`), nada é montado.
 
 #![forbid(unsafe_code)]
 
@@ -34,7 +36,7 @@ use ward_ponte_teste::simulados::{SeletorDePasta, TerminalDeTeste};
 
 const USO: &str = "uso: ward-ponte-teste [--dist <diretório do build --mode teste> \
 [--daemon-falso cheio|vazio|travado|travado-com-pedido|sem-cofre|aprovacao|aprovacao-prod|\
-aprovacao-expirando|aprovacao-ataque]] [--anexos <pasta com um arquivo>]";
+aprovacao-expirando|aprovacao-ataque|backup-externo-ligado|sem-udisks]] [--anexos <pasta com um arquivo>]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -86,6 +88,21 @@ fn main() -> ExitCode {
                 &[],
             )
         }
+        // Fase 48: `Configurações / Backup externo ligado` e o udisks2 sem resposta.
+        ["--dist", d, "--daemon-falso", "backup-externo-ligado"] => servir(
+            DaemonFalso::backup_externo_ligado(),
+            None,
+            Path::new(d),
+            anexos,
+            &[],
+        ),
+        ["--dist", d, "--daemon-falso", "sem-udisks"] => servir(
+            DaemonFalso::backup_externo_ligado().com_pendrives(None),
+            None,
+            Path::new(d),
+            anexos,
+            &[],
+        ),
         // Fase 30: sem cofre, para o `Primeiro uso / *`.
         ["--dist", d, "--daemon-falso", "sem-cofre"] => {
             servir(DaemonFalso::sem_cofre(), None, Path::new(d), anexos, &[])
