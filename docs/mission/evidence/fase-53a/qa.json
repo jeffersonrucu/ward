@@ -1,0 +1,54 @@
+[
+ {
+  "passo": "botão Carregar de arquivo no campo Chave privada",
+  "ok": true
+ },
+ {
+  "passo": "texto que não é chave: aviso",
+  "ok": true
+ },
+ {
+  "passo": "textarea continua (nada carregado)",
+  "ok": true
+ },
+ {
+  "passo": "arquivo acima de 64 KiB: aviso",
+  "ok": true
+ },
+ {
+  "passo": "cancelado: textarea continua",
+  "ok": true
+ },
+ {
+  "passo": "chave carregada: máscara e tamanho",
+  "ok": true
+ },
+ {
+  "passo": "DOM sem a chave",
+  "ok": true
+ },
+ {
+  "passo": "localStorage/sessionStorage/URL sem a chave",
+  "ok": true
+ },
+ {
+  "passo": "salvo: entrada na lista",
+  "ok": true
+ },
+ {
+  "passo": "nenhuma resposta da ponte trouxe a chave",
+  "ok": true
+ },
+ {
+  "passo": "DOM depois de salvar sem a chave",
+  "ok": true
+ },
+ {
+  "passo": "revelar mostra a chave carregada (foi ao daemon)",
+  "ok": true
+ },
+ {
+  "passo": "ocultar tira a chave do DOM",
+  "ok": true
+ }
+]

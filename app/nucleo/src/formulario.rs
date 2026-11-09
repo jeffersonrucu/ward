@@ -17,6 +17,8 @@
 //!   o lado Rust pede ao daemon (`revelar`) e o põe direto no rascunho;
 //! - `"gerada"`: a senha que o gerador do formulário guardou no lado Rust ("Usar esta
 //!   senha"). Também não passa pela interface.
+//! - `"carregada"` (Fase 53a): a chave privada lida do arquivo pelo "Carregar de
+//!   arquivo" e guardada no lado Rust. Também não passa pela interface.
 //!
 //! TOTP (D35): a semente digitada é normalizada aqui (sem espaço, em maiúsculas); um
 //! `otpauth://` colado é lido e recusado com "parâmetros de TOTP não suportados" se
@@ -80,6 +82,7 @@ pub enum ValorSecreto {
     Vazio,
     Manter,
     Gerada,
+    Carregada,
     Novo(TextoSecreto),
 }
 
@@ -362,6 +365,8 @@ pub trait Fontes {
     fn guardado(&mut self, alvo: ward_core::protocolo::Alvo) -> Result<SegredoCore, ErroApp>;
     /// Senha gerada para este campo ("Usar esta senha").
     fn gerada(&mut self, campo: &str) -> Result<SegredoCore, ErroApp>;
+    /// Chave lida do arquivo para este campo ("Carregar de arquivo", Fase 53a).
+    fn carregada(&mut self, campo: &str) -> Result<SegredoCore, ErroApp>;
 }
 
 /// O que falta para salvar: o rascunho dos dados e dos extras, ou o motivo.
@@ -442,6 +447,7 @@ pub fn montar(
                 _ => return Err(ErroApp::PedidoInvalido.into()),
             },
             ValorSecreto::Gerada => Some(fontes.gerada(id)?),
+            ValorSecreto::Carregada => Some(fontes.carregada(id)?),
         })
     };
     let dados = match tipo {

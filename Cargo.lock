@@ -856,6 +856,7 @@ name = "ward-app-nucleo"
 version = "0.1.0"
 dependencies = [
  "ctutils",
+ "libc",
  "serde",
  "serde_json",
  "ward-core",

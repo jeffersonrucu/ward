@@ -28,6 +28,10 @@ ctutils = { version = "0.4.8", default-features = false }
 # ponte de teste. Só tipos sem segredo derivam `Serialize` (o `Segredo` não). Já no
 # lockfile (serde_json, dev-dependência, puxa `serde`; `serde_derive` também está).
 serde = { version = "1.0.229", default-features = false, features = ["std", "derive"] }
+# Fase 53a: só as constantes `O_NOFOLLOW`/`O_NONBLOCK`/`O_NOCTTY` e `ELOOP` para ler o
+# arquivo da chave privada sem seguir link nem prender numa FIFO (a mesma versão que o
+# `ward-plataforma` e o `wardd` já usam; nada novo no lockfile).
+libc = { version = "0.2.191", default-features = false }
 # Segredo em memória zerado ao sair (já no lockfile pelo `ward-core`).
 zeroize = { version = "1.9.1", default-features = false, features = ["alloc"] }
 

@@ -45,6 +45,7 @@ use ward_app_nucleo::aprovacao::{self, PedidoExibido, ResultadoAprovacao};
 use ward_app_nucleo::area_transferencia::{Copiador, Wayland};
 use ward_app_nucleo::backup_externo::{BackupExternoVisto, PendriveVisto};
 use ward_app_nucleo::bandeja::{self, Acao, EstadoBandeja, Icone};
+use ward_app_nucleo::chave::Carregamento;
 use ward_app_nucleo::configuracoes::{Configuracoes, ResultadoTroca, TrocaPin, TrocaSenha};
 use ward_app_nucleo::credenciais::{DetalheCredencial, ItemCredencial};
 use ward_app_nucleo::daemon::DaemonSocket;
@@ -378,6 +379,15 @@ fn remover_anexo(id: u64, estado: State<'_, Estado>) -> Result<(), Falha> {
     Ok(estado.servico()?.remover_anexo(id)?)
 }
 
+/// "Carregar de arquivo" da chave privada (Fase 53a, S2, S11): o diálogo do GTK escolhe
+/// o arquivo e o núcleo o lê e confere (sem link, só arquivo comum, até 64 KiB, só chave
+/// OpenSSH/PEM). A chave fica no lado Rust até salvar; a resposta traz só o tamanho ou
+/// o aviso. Síncrono, como o `escolher_anexo` (o GTK abre o diálogo na thread principal).
+#[tauri::command]
+fn carregar_chave(campo: String, estado: State<'_, Estado>) -> Result<Carregamento, Falha> {
+    Ok(estado.servico()?.carregar_chave(&campo)?)
+}
+
 /// "Conectar" (D3): token de uso único e o terminal padrão; o token não volta.
 #[tauri::command]
 fn conectar(entrada: String, estado: State<'_, Estado>) -> Result<(), Falha> {
@@ -577,30 +587,41 @@ struct SeletorGtk;
 
 impl Seletor for SeletorGtk {
     fn escolher(&self) -> Result<Option<PathBuf>, ErroApp> {
-        use gtk::prelude::{DialogExt, FileChooserExt, GtkWindowExt};
-        if !gtk::is_initialized_main_thread() {
-            return Err(ErroApp::SeletorIndisponivel);
-        }
-        let dialogo = gtk::FileChooserDialog::with_buttons(
-            Some("Adicionar arquivo"),
-            None::<&gtk::Window>,
-            gtk::FileChooserAction::Open,
-            &[
-                ("Cancelar", gtk::ResponseType::Cancel),
-                ("Anexar", gtk::ResponseType::Accept),
-            ],
-        );
-        dialogo.set_modal(true);
-        dialogo.set_select_multiple(false);
-        dialogo.set_local_only(true);
-        let resposta = dialogo.run();
-        let arquivo = (resposta == gtk::ResponseType::Accept)
-            .then(|| dialogo.filename())
-            .flatten();
-        // `close` pede o fechamento como o botão da janela: o diálogo é destruído.
-        dialogo.close();
-        Ok(arquivo)
+        dialogo_de_arquivo("Adicionar arquivo", "Anexar")
     }
+
+    /// Fase 53a: o mesmo diálogo, com o título e o botão do "Carregar de arquivo".
+    fn escolher_chave(&self) -> Result<Option<PathBuf>, ErroApp> {
+        dialogo_de_arquivo("Carregar chave privada", "Carregar")
+    }
+}
+
+/// O diálogo de abrir arquivo do GTK, modal, um arquivo só, só local. `Ok(None)`:
+/// cancelado.
+fn dialogo_de_arquivo(titulo: &str, botao: &str) -> Result<Option<PathBuf>, ErroApp> {
+    use gtk::prelude::{DialogExt, FileChooserExt, GtkWindowExt};
+    if !gtk::is_initialized_main_thread() {
+        return Err(ErroApp::SeletorIndisponivel);
+    }
+    let dialogo = gtk::FileChooserDialog::with_buttons(
+        Some(titulo),
+        None::<&gtk::Window>,
+        gtk::FileChooserAction::Open,
+        &[
+            ("Cancelar", gtk::ResponseType::Cancel),
+            (botao, gtk::ResponseType::Accept),
+        ],
+    );
+    dialogo.set_modal(true);
+    dialogo.set_select_multiple(false);
+    dialogo.set_local_only(true);
+    let resposta = dialogo.run();
+    let arquivo = (resposta == gtk::ResponseType::Accept)
+        .then(|| dialogo.filename())
+        .flatten();
+    // `close` pede o fechamento como o botão da janela: o diálogo é destruído.
+    dialogo.close();
+    Ok(arquivo)
 }
 
 /// De quanto em quanto tempo a bandeja consulta o estado (só `estado`, que o daemon não
@@ -856,6 +877,7 @@ fn com_comandos<R: Runtime>(builder: Builder<R>, estado: Estado) -> Builder<R> {
             mudar_nivel,
             escolher_anexo,
             remover_anexo,
+            carregar_chave,
             conectar,
             criar_cofre,
             destravar,
@@ -1163,6 +1185,8 @@ mod testes {
             // Fase 34: anexos e "Conectar" seguem a mesma regra.
             "escolher_anexo",
             "remover_anexo",
+            // Fase 53a: "Carregar de arquivo" da chave privada.
+            "carregar_chave",
             "conectar",
         ] {
             let r = chamar(&outra, comando, ORIGEM, formulario.clone());

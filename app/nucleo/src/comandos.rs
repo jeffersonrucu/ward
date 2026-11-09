@@ -60,6 +60,10 @@ pub const MUDAR_NIVEL: &str = "mudar_nivel";
 pub const ESCOLHER_ANEXO: &str = "escolher_anexo";
 /// `remover_anexo { id }`: tira um anexo escolhido e ainda não salvo.
 pub const REMOVER_ANEXO: &str = "remover_anexo";
+/// `carregar_chave { campo }`: "Carregar de arquivo" do campo "Chave privada" (Fase
+/// 53a). O lado Rust escolhe, lê e confere o arquivo e guarda a chave até salvar; a
+/// resposta traz só o tamanho, ou o aviso. A interface não manda caminho.
+pub const CARREGAR_CHAVE: &str = "carregar_chave";
 /// `conectar { entrada }`: "Conectar" do `servidor` (D3); o token não volta.
 pub const CONECTAR: &str = "conectar";
 /// `criar_cofre { dados: { senha, confirmacao, pin, confirmacao_pin } }`: primeiro uso
@@ -129,6 +133,7 @@ pub const COMANDOS_PRINCIPAL: &[&str] = &[
     MUDAR_NIVEL,
     ESCOLHER_ANEXO,
     REMOVER_ANEXO,
+    CARREGAR_CHAVE,
     CONECTAR,
     CRIAR_COFRE,
     DESTRAVAR,
@@ -173,6 +178,7 @@ pub const COMANDOS: &[&str] = &[
     MUDAR_NIVEL,
     ESCOLHER_ANEXO,
     REMOVER_ANEXO,
+    CARREGAR_CHAVE,
     CONECTAR,
     CRIAR_COFRE,
     DESTRAVAR,
@@ -216,6 +222,7 @@ pub enum Comando {
     MudarNivel,
     EscolherAnexo,
     RemoverAnexo,
+    CarregarChave,
     Conectar,
     CriarCofre,
     Destravar,
@@ -254,6 +261,7 @@ impl Comando {
             MUDAR_NIVEL => Some(Comando::MudarNivel),
             ESCOLHER_ANEXO => Some(Comando::EscolherAnexo),
             REMOVER_ANEXO => Some(Comando::RemoverAnexo),
+            CARREGAR_CHAVE => Some(Comando::CarregarChave),
             CONECTAR => Some(Comando::Conectar),
             CRIAR_COFRE => Some(Comando::CriarCofre),
             DESTRAVAR => Some(Comando::Destravar),
@@ -348,6 +356,7 @@ mod testes {
                 "mudar_nivel",
                 "escolher_anexo",
                 "remover_anexo",
+                "carregar_chave",
                 "conectar",
                 "criar_cofre",
                 "destravar",
