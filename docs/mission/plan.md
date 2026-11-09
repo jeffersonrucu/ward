@@ -922,6 +922,17 @@ Contrato: V7.1–V7.11
 - [x] Fase 48 — **(UI)** Configurações › backup externo. V7.9.
 - [x] Fase 49 — **(UI)** Kit de emergência para imprimir. V7.10.
 
+- [ ] Fase 49a — Achados da auditoria do M7 (aprovado, 2026-11-09). Médio: rotação e
+  ordem dos backups confiam na data do nome (30 versões plantadas com data futura fazem
+  o daemon apagar as reais, local e no pendrive, e aparecem como a mais nova no
+  restaurar) — ignorar/recusar data maior que agora + margem, nunca apagar versão com
+  data passada para manter uma futura, mostrar geração ou data selada no item. Baixos:
+  restaurar preserva backup externo e tempo de trava atuais (ou avisa na confirmação);
+  pasta de backups insegura vira aviso no app (linha "Backup local"); limpar
+  `.estado.tmp-*` ao subir; documentar pendrive identificado só pelo UUID (ou marcador
+  aleatório em `ward-backup/`); cancelar pedidos de aprovação pendentes ao restaurar.
+  Testes de ataque para cada um. V7.1, V7.3, V7.5, V7.7, V7.11.
+
 Scrutiny do M7 (2026-11-09): aprovado com ressalvas. Para o planner: restaurar uma
 versão antiga troca também a configuração dela (backup externo pode desligar sem aviso)
 — avisar na confirmação ou preservar o externo; `window.print()` no WebKitGTK real não
