@@ -1,0 +1,221 @@
+//! S11 (V5.1, V5.2, V5.6): a configuração do app Tauri e da interface, conferida no
+//! `make check` (o crate do Tauri não compila sem o WebKitGTK de desenvolvimento).
+//! Cada teste é um ataque de configuração: uma permissão a mais, uma CSP frouxa, um
+//! armazenamento no navegador ou a ponte vazando para o build de produção.
+
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use serde_json::Value;
+use ward_app_nucleo::comandos::{COMANDOS, permissao};
+
+fn app() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("..")
+}
+
+fn json(caminho: &Path) -> Value {
+    serde_json::from_str(&fs::read_to_string(caminho).unwrap()).unwrap()
+}
+
+fn conf() -> Value {
+    json(&app().join("src-tauri/tauri.conf.json"))
+}
+
+#[test]
+fn ataque_capability_com_permissao_a_mais() {
+    let dir = app().join("src-tauri/capabilities");
+    let arquivos: Vec<_> = fs::read_dir(&dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name())
+        .collect();
+    assert_eq!(arquivos, vec!["principal.json"], "só uma capability");
+    let cap = json(&dir.join("principal.json"));
+    let esperadas: Vec<Value> = COMANDOS.iter().map(|c| Value::from(permissao(c))).collect();
+    assert_eq!(
+        cap["permissions"],
+        Value::from(esperadas),
+        "só allow-<comando próprio>"
+    );
+    assert_eq!(cap["windows"], serde_json::json!(["principal"]));
+    assert_eq!(cap["local"], Value::Bool(true));
+    assert!(cap.get("remote").is_none(), "nenhuma origem remota");
+    assert!(cap.get("webviews").is_none());
+    assert!(cap.get("platforms").is_none());
+    for p in cap["permissions"].as_array().unwrap() {
+        assert!(
+            !p.as_str().unwrap().contains(':'),
+            "permissão de plugin ou do núcleo: {p}"
+        );
+    }
+    assert_eq!(
+        conf()["app"]["security"]["capabilities"],
+        serde_json::json!(["principal"])
+    );
+}
+
+#[test]
+fn ataque_csp_frouxa_ou_conteudo_remoto() {
+    let c = conf();
+    let seg = &c["app"]["security"];
+    let csp = seg["csp"].as_object().expect("CSP por diretiva");
+    assert_eq!(csp["default-src"], "'none'");
+    for d in ["script-src", "style-src", "img-src", "font-src"] {
+        assert_eq!(csp[d], "'self'", "{d}");
+    }
+    for d in [
+        "base-uri",
+        "form-action",
+        "frame-src",
+        "worker-src",
+        "object-src",
+        "media-src",
+        "manifest-src",
+    ] {
+        assert_eq!(csp[d], "'none'", "{d}");
+    }
+    assert_eq!(
+        csp["connect-src"], "ipc: http://ipc.localhost",
+        "só a IPC do Tauri"
+    );
+    for (d, v) in csp {
+        let v = v.as_str().unwrap();
+        for proibido in [
+            "unsafe-inline",
+            "unsafe-eval",
+            "unsafe-hashes",
+            "wasm-unsafe-eval",
+            "*",
+            "data:",
+            "blob:",
+            "https:",
+            "http:",
+        ] {
+            let achou = v
+                .split_whitespace()
+                .any(|t| t.contains(proibido) && t != "http://ipc.localhost");
+            assert!(!achou, "{d} contém {proibido}");
+        }
+    }
+    assert!(seg.get("devCsp").is_none(), "sem CSP de desenvolvimento");
+    assert_eq!(seg["freezePrototype"], true);
+    assert_eq!(seg["dangerousDisableAssetCspModification"], false);
+    assert_eq!(seg["assetProtocol"]["enable"], false);
+    assert!(seg.get("dangerousRemoteDomainIpcAccess").is_none());
+    assert_eq!(c["app"]["withGlobalTauri"], false);
+    assert!(
+        c["build"].get("devUrl").is_none(),
+        "interface só embutida, nunca de servidor"
+    );
+    assert!(c["build"].get("beforeDevCommand").is_none());
+    assert_eq!(c["plugins"], serde_json::json!({}), "nenhum plugin");
+    assert_eq!(
+        c["app"]["windows"],
+        serde_json::json!([]),
+        "janela criada no código, com navegação restrita"
+    );
+}
+
+#[test]
+fn ataque_devtools_ou_acl_dinamica_no_release() {
+    let toml = fs::read_to_string(app().join("src-tauri/Cargo.toml")).unwrap();
+    let linha_tauri = toml.lines().find(|l| l.starts_with("tauri = ")).unwrap();
+    assert!(
+        linha_tauri.contains("default-features = false"),
+        "sem as features padrão (dynamic-acl)"
+    );
+    for f in [
+        "devtools",
+        "dynamic-acl",
+        "protocol-asset",
+        "webview-data-url",
+        "tray-icon",
+        "test",
+    ] {
+        assert!(
+            !linha_tauri.contains(&format!("\"{f}\"")),
+            "feature {f} no build normal"
+        );
+    }
+    let modo = toml
+        .lines()
+        .find(|l| l.starts_with("modo-teste = "))
+        .unwrap();
+    assert!(
+        modo.contains("tauri/devtools"),
+        "devtools só com modo-teste"
+    );
+    assert_eq!(
+        toml.matches("devtools").count(),
+        2,
+        "devtools só no comentário e na feature modo-teste"
+    );
+    let main = fs::read_to_string(app().join("src-tauri/src/main.rs")).unwrap();
+    assert!(main.contains(".devtools(cfg!(feature = \"modo-teste\"))"));
+    assert!(main.contains(".on_navigation(navegacao_permitida)"));
+    assert!(!main.contains("WARD_DEV_DIR"));
+}
+
+#[test]
+fn lista_de_comandos_da_interface_e_a_mesma() {
+    let js = fs::read_to_string(app().join("src/lib/ponte/comandos.js")).unwrap();
+    let lista: String = COMANDOS
+        .iter()
+        .map(|c| format!("'{c}'"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    assert!(
+        js.contains(&format!("Object.freeze([{lista}])")),
+        "comandos.js diverge de COMANDOS"
+    );
+}
+
+fn fontes(dir: &Path, saida: &mut Vec<PathBuf>) {
+    for e in fs::read_dir(dir).unwrap() {
+        let p = e.unwrap().path();
+        if p.is_dir() {
+            fontes(&p, saida);
+        } else if matches!(
+            p.extension().and_then(|e| e.to_str()),
+            Some("js" | "svelte" | "html")
+        ) {
+            saida.push(p);
+        }
+    }
+}
+
+#[test]
+fn ataque_interface_guarda_ou_injeta_conteudo() {
+    let mut arquivos = Vec::new();
+    fontes(&app().join("src"), &mut arquivos);
+    arquivos.push(app().join("index.html"));
+    assert!(arquivos.len() > 10);
+    for a in &arquivos {
+        let t = fs::read_to_string(a).unwrap();
+        for proibido in [
+            "localStorage",
+            "sessionStorage",
+            "indexedDB",
+            "document.cookie",
+            "innerHTML",
+            "outerHTML",
+            "{@html",
+            "eval(",
+            "new Function",
+            "postMessage",
+            "window.open",
+            "style=\"",
+            "http://",
+            "https://",
+        ] {
+            assert!(!t.contains(proibido), "{} contém {proibido}", a.display());
+        }
+        // Script inline no HTML (no .svelte, `<script>` é o bloco do componente).
+        if a.extension().is_some_and(|e| e == "html") {
+            assert!(
+                !t.contains("<script>") && !t.contains("<style"),
+                "{} com script ou estilo inline",
+                a.display()
+            );
+        }
+    }
+}

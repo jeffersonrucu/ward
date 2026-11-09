@@ -1,0 +1,53 @@
+//! Erros que a interface recebe. Só mensagens fixas em português: nenhum valor da
+//! entrada, nenhum caminho e nenhum texto de erro do sistema (S13).
+
+use std::fmt;
+
+/// Erro de um comando do app. `Display` dá a mensagem que a tela mostra.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ErroApp {
+    /// O socket do daemon não existe ou não aceitou a conexão.
+    DaemonIndisponivel,
+    /// O diretório ou o socket do daemon não passaram na conferência (dono, permissão,
+    /// tipo). O app não conversa com ele.
+    DaemonNaoConfiavel,
+    /// O protocolo do daemon ainda não existe (Fase 20).
+    SemProtocolo,
+    /// O pedido da interface não passou na validação (tamanho, formato).
+    PedidoInvalido,
+    /// O cofre está travado.
+    Travado,
+    /// A área de transferência não aceitou o valor.
+    AreaTransferencia,
+}
+
+impl ErroApp {
+    /// Código estável, para a interface escolher a tela sem comparar texto.
+    pub fn codigo(self) -> &'static str {
+        match self {
+            ErroApp::DaemonIndisponivel => "daemon-indisponivel",
+            ErroApp::DaemonNaoConfiavel => "daemon-nao-confiavel",
+            ErroApp::SemProtocolo => "sem-protocolo",
+            ErroApp::PedidoInvalido => "pedido-invalido",
+            ErroApp::Travado => "travado",
+            ErroApp::AreaTransferencia => "area-transferencia",
+        }
+    }
+}
+
+impl fmt::Display for ErroApp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            ErroApp::DaemonIndisponivel => "o daemon do Ward não está rodando",
+            ErroApp::DaemonNaoConfiavel => {
+                "o socket do daemon não é confiável; o app não se conecta"
+            }
+            ErroApp::SemProtocolo => "o protocolo do daemon ainda não está disponível",
+            ErroApp::PedidoInvalido => "pedido inválido",
+            ErroApp::Travado => "o cofre está travado",
+            ErroApp::AreaTransferencia => "não foi possível usar a área de transferência",
+        })
+    }
+}
+
+impl std::error::Error for ErroApp {}

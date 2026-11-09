@@ -1,0 +1,56 @@
+[package]
+name = "ward-app"
+description = "App desktop do Ward (Tauri): cliente do daemon, sem tocar em segredo fora do copiar (D4)."
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+publish = false
+
+# Workspace próprio (fora do `make check`; ver o `exclude` do Cargo.toml da raiz): o
+# Tauri precisa das bibliotecas de desenvolvimento do WebKitGTK e traz a árvore do GTK 3.
+# `make app-check` roda fmt, clippy, testes, audit e deny daqui.
+[workspace]
+
+[[bin]]
+name = "ward-app"
+path = "src/main.rs"
+
+[features]
+# D7, V5.1: só o app de teste tem devtools e fala com o daemon de teste
+# (`/run/user/<uid>/ward-teste/`). O build de release não liga esta feature e
+# `make install` recusa artefatos com ela.
+modo-teste = ["tauri/devtools", "ward-app-nucleo/modo-teste"]
+
+# Motivo de cada dependência no handoff da Fase 29 (S14).
+[dependencies]
+ward-app-nucleo = { path = "../nucleo" }
+# Sem as features padrão: fora `dynamic-acl` (capabilities só as do build, nada
+# acrescentado em tempo de execução), `x11`, `dbus` e `common-controls-v6`.
+# `custom-protocol`: a interface vem sempre embutida no binário (`tauri://localhost`),
+# nunca de um servidor de desenvolvimento (S11: nenhum conteúdo remoto).
+tauri = { version = "=2.12.5", default-features = false, features = ["wry", "compression", "custom-protocol"] }
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+# Runtime falso do Tauri (`tauri::test`), para o teste de ataque da ACL (V5.1).
+tauri = { version = "=2.12.5", default-features = false, features = ["wry", "compression", "custom-protocol", "test"] }
+serde_json = "1"
+
+[build-dependencies]
+# A lista de comandos do manifesto do app sai do núcleo (uma fonte só, S11).
+ward-app-nucleo = { path = "../nucleo" }
+tauri-build = { version = "=2.7.4", default-features = false, features = ["config-json"] }
+
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+dbg_macro = "deny"
+todo = "deny"
+
+[profile.release]
+overflow-checks = true
+lto = true
+codegen-units = 1
+strip = "symbols"
+panic = "abort"

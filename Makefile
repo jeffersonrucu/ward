@@ -65,7 +65,8 @@ CARGO_DENY_VERSAO := 0.20.2
 .PHONY: check build fmt fmt-check clippy test audit deny gitleaks ferramentas \
 	origens gitleaks-binario teste-ataques-fundacao teste-ataques-servicos teste-iscas-home teste-home-real dev-servicos dev-servicos-subir \
 	dev-servicos-parar dev-servicos-estado dev-servicos-conferir dev-servicos-trocar-chave-host dev-cofre \
-	dev-cofre-conferir dev-variacoes teste-dev-cofre dev-daemon dev-daemon-parar
+	dev-cofre-conferir dev-variacoes teste-dev-cofre dev-daemon dev-daemon-parar \
+	app-front app-check app-ponte
 
 ## check: pré-checagem das origens, depois fmt, clippy -D warnings, testes, cargo audit,
 ## cargo deny e gitleaks, nessa ordem (V1.1)
@@ -234,6 +235,50 @@ dev-variacoes: dev-servicos
 ## teste-dev-cofre: V2.29 e ataques ao dev-cofre/dev-variacoes (cada ataque tem de falhar)
 teste-dev-cofre: origens
 	dev/testes/dev-cofre.sh
+
+# --- App desktop (Fase 29) -----------------------------------------------------------
+# `app/nucleo` (comandos, cliente do daemon, copiar) e a ponte de teste estão no
+# workspace da raiz e entram no `make check`. O crate do Tauri (`app/src-tauri`) tem
+# workspace e lockfile próprios: precisa das bibliotecas de desenvolvimento do WebKitGTK
+# 4.1 (`libwebkit2gtk-4.1-dev`; o pkg-config do sistema ou um PKG_CONFIG_PATH herdado)
+# e entra só no `make app-check`.
+#
+# node/npm não estão no PATH fixo. Padrão: o node mais novo do nvm do usuário; troque
+# com `make app-check NODE_DIR=/caminho/do/node/bin`. O `npm ci` roda com
+# `--ignore-scripts` (e o `app/.npmrc` também proíbe scripts de instalação).
+NODE_DIR ?= $(lastword $(sort $(wildcard $(CASA)/.nvm/versions/node/v*/bin)))
+override APP_NPM = PATH="$(NODE_DIR):/usr/bin:/bin" "$(NODE_DIR)/npm" --prefix "$(CURDIR)/app"
+# Advisories do gtk-rs 0.18 que o Tauri 2 exige no Linux (motivo no app/src-tauri/deny.toml
+# e no handoff da Fase 29). Nenhuma outra exceção.
+override APP_AUDIT_IGNORAR := --ignore RUSTSEC-2024-0370 --ignore RUSTSEC-2024-0429
+
+## app-front: npm ci (lockfile, sem scripts), build de produção e de teste da interface,
+## conferência dos pacotes (V5.2) e npm audit (dependências de runtime sem nenhum aviso)
+app-front:
+	@test -x "$(NODE_DIR)/node" || { echo "node não encontrado; use NODE_DIR=/caminho/do/node/bin" >&2; exit 1; }
+	$(APP_NPM) ci --ignore-scripts --no-audit --no-fund
+	$(APP_NPM) run build
+	$(APP_NPM) run build:teste
+	$(PYTHON) dev/testes/app-dist.py
+	$(APP_NPM) audit --omit=dev
+	$(APP_NPM) audit --audit-level=moderate
+
+## app-check: app-front + fmt, clippy -D warnings, testes (ACL com o runtime falso do
+## Tauri), cargo audit e cargo deny do app Tauri, build de release e V5.6 (strings)
+app-check: origens app-front
+	cd app/src-tauri && $(CARGO) fmt --check
+	cd app/src-tauri && $(CARGO) clippy --all-targets --all-features --locked -- -D warnings
+	cd app/src-tauri && $(CARGO) test --all-features --locked
+	cd app/src-tauri && $(CARGO_AUDIT) audit --deny warnings $(APP_AUDIT_IGNORAR)
+	cd app/src-tauri && $(CARGO_DENY) --all-features check
+	cd app/src-tauri && $(CARGO) build --release --locked
+	dev/testes/app-release.sh app/src-tauri/target/release/ward-app
+
+## app-ponte: sobe a ponte de teste (D7) servindo app/dist-teste; imprime a URL com o
+## token para o Chrome de teste. Precisa do daemon de teste (Milestone 3) para responder.
+app-ponte: origens
+	@test -f app/dist-teste/index.html || { echo "rode 'make app-front' antes" >&2; exit 1; }
+	$(CARGO) run --quiet --locked -p ward-ponte-teste --features modo-teste -- --dist app/dist-teste
 
 # Alvos que as próximas fases implementam. Falham em vez de fingir que funcionam.
 

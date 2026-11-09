@@ -7,7 +7,12 @@ members = [
     "crates/ward",
     "crates/ward-nm",
     "crates/ward-ponte-teste",
+    "app/nucleo",
 ]
+# O crate do Tauri tem workspace e lockfile próprios (`app/src-tauri/Cargo.lock`): ele
+# precisa das bibliotecas de desenvolvimento do WebKitGTK para compilar e traz a árvore do
+# GTK 3. Fica fora do `make check` e entra no `make app-check` (Fase 29).
+exclude = ["app/src-tauri"]
 
 [workspace.package]
 version = "0.1.0"
@@ -19,6 +24,7 @@ publish = false
 [workspace.dependencies]
 ward-core = { path = "crates/ward-core" }
 ward-plataforma = { path = "crates/ward-plataforma" }
+ward-app-nucleo = { path = "app/nucleo" }
 
 [workspace.lints.rust]
 # `unsafe` só em `ward-plataforma`, com `// SAFETY:` e teste; os outros crates usam
