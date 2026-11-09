@@ -822,6 +822,26 @@ Auditoria de segurança do M4 (2026-11-09): **reprovada** (1ª vez), com 1 crít
   Feita: cópias em `~/.cache/ward-ataques-fundacao.*` (0700, cadeia conferida); `make
   teste-ataques-fundacao` 167 `ok`, 0 `FALHA`; `origens` da raiz limpo durante a rodada.
   Com isso a 28d fecha e, pela decisão do usuário, o scrutiny do M4 conta como aprovado.
+  Reauditoria de segurança do M4 (2026-11-09): **aprovada**. Os quatro ataques da 1ª
+  auditoria falham agora (oráculo por pty e por tempo, `!cmd` do sftp, grupo do filho,
+  `known_hosts` frouxo). Ficaram 1 médio e 2 baixos, levados para a Fase 28g.
+- [ ] Fase 28g — Achados da 2ª auditoria do M4 (não bloqueiam o QA).
+  - **Médio:** um `write` único acima de 64 KiB mostra o começo do segredo em claro. O
+    leitor de pipe/pty do `wardd` corta no tamanho do buffer (`mascara.rs:1285-1300`).
+    Reproduzir: `os.write(1, b'b'*n + PGPASSWORD + b'\n')` com n de 65520 a 65539 sob
+    `ward run acme-pg-dev`. Correção: quando a leitura enche o buffer, ler de novo sem
+    bloquear até EAGAIN e só então mascarar, com buffer de 64 KiB ou mais. Não segura
+    nada através de pausa, então não reabre o oráculo de tempo. Teste novo com esse
+    caso.
+  - **Baixo:** o `sshpass` faz `setsid()` no filho, e a ponte (`ponte.rs:533-556`) exige
+    pgrp == sid == líder. Resultado: um `servidor` com senha e salto é recusado no `ward
+    ssh`, falhando fechado. Aceitar o filho direto do líder conferindo pid e pai, com
+    teste, ou documentar que a combinação não é suportada.
+  - **Baixo:** depois de SIGKILL no `wardd`, a pasta `<rt>ssh-*/` sobra. Apagar os
+    `ssh-*` na partida, como já é feito com `tmp/`.
+  - Texto: o S4 de `docs/escopo.md` ainda diz "inclusive quando o valor chega quebrado
+    entre dois pedaços". Alinhar com D34 revisto ("nunca segurar"; o corte entre leituras
+    lentas sai com o começo em claro, risco aceito pelo usuário).
 
 ## Milestone 5 — App desktop
 Contrato: V5.1–V5.35
