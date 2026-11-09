@@ -447,9 +447,15 @@ asserção abaixo vira teste de ataque no `ward-core`.
 - [ ] V3.1 — (SEG) Dado o daemon de teste no ar, quando `stat` em `<rt>` e no socket,
   então o diretório é 0700 e o socket 0600, do usuário; quando `<rt>` já existe com 0755
   ou de outro dono, então o daemon não sobe — cobre S5.
-- [ ] V3.2 — (SEG) Dado o diretório do socket montado num contêiner `docker run --user
-  4242 -v <rt>:<rt>`, quando o processo de uid 4242 conecta e manda `lista`, então o
-  daemon fecha a conexão sem responder e registra a recusa — cobre S5.
+- [ ] V3.2 — (SEG) Dado um contêiner `ubuntu:24.04` que não monta nada do `/run/user`
+  do host, com o `wardd` de teste subido pelo root do contêiner como uid 1000
+  (`setpriv --reuid 1000 --regid 1000 --clear-groups`) em `/run/user/1000/ward-teste/`
+  (D49), quando conecta: (a) um cliente de uid 4242 sem capacidade → o `connect` falha
+  com EACCES; (b) um cliente de uid 4242 com `CAP_DAC_OVERRIDE` ambiente (`setpriv
+  --reuid 4242 --inh-caps +dac_override --ambient-caps +dac_override`) que manda
+  `lista` → o daemon fecha sem mandar nenhum byte e o log traz `UidRecusado` com uid
+  4242; (c) um cliente uid 0 → igual a (b); e depois um cliente do uid 1000 recebe
+  resposta normal. Roda por `make teste-docker-uid` — cobre S5.
 - [ ] V3.3 — (SEG) Dado um cliente em Python que fala direto com o socket
   (`ataque_socket.py`), quando manda cada operação do protocolo com cada entrada do
   cofre de teste e com campos extras inventados (`"revelar": true`, `"campo":
@@ -462,6 +468,9 @@ asserção abaixo vira teste de ataque no `ward-core`.
   `/tmp/ward-app` e pede `revelar`, quando o binário permitido sobe com
   `LD_PRELOAD=<libqualquer>.so`, e quando sobe sob `strace -f` (TracerPid ≠ 0), então
   `revelar` e `copiar` respondem "não autorizado" nos três casos — cobre S1 (D5).
+  Com D47 aceito, o mesmo ataque vale com o binário setgid num contêiner: a cópia perde
+  o setgid e vira agente, o `LD_PRELOAD` é ignorado pelo `ld.so` (`AT_SECURE`) e o
+  `strace -f` não consegue se prender; o que se confere é o papel, não o `/proc`.
 - [ ] V3.6 — (SEG) Dado o `wardd` no ar, quando outro processo do usuário tenta
   `cat /proc/<pid>/mem`, `cat /proc/<pid>/environ`, `gdb -p <pid>` e
   `strace -p <pid>`, então todos falham por permissão; `/proc/<pid>/limits` mostra core
@@ -512,7 +521,8 @@ asserção abaixo vira teste de ataque no `ward-core`.
 - [ ] V3.20 — (SEG) Dada a suíte de integração do M3 com `RUST_LOG=trace`, quando o
   auditor procura segredos em stdout, stderr, journal e `.dev/logs/`, então não acha
   nenhum — cobre S13.
-- [ ] V3.21 — Dado o unit `wardd.service` de teste, quando o auditor lê, então tem
+- [ ] V3.21 — (Com D46 aceito, valem as units `wardd@.socket`/`wardd@.service` do
+  sistema, com `User=`, e o daemon sobe pela primeira conexão.) Dado o unit `wardd.service` de teste, quando o auditor lê, então tem
   `LimitCORE=0`, sem `Environment=LD_*`, e o daemon sobe com `systemctl --user`.
 - [ ] V3.22 — (SEG) Dado o daemon de teste com o cofre na geração n+2 e uma cópia
   autêntica da geração n (backup de teste), quando, com o daemon travado, o atacante faz
@@ -524,6 +534,31 @@ asserção abaixo vira teste de ataque no `ward-core`.
   uma operação que grava, então o daemon não grava por cima, trava e avisa "o arquivo
   do cofre mudou fora do Ward"; o arquivo de estado é 0600, sem segredo, e o log não
   traz valor (D39) — cobre S7, S9, S13.
+- [ ] V3.23 — (SEG) Dado um servidor falso do mesmo uid escutando no caminho do socket
+  de teste (um `socat` ou script Python), quando a conferência do cliente da
+  `ward-plataforma` roda num build sem `modo-teste`, então recusa antes de mandar
+  qualquer byte (o uid do par não é 0, ou a pasta não é do root); dado o listener
+  criado pelo root de um contêiner em `/run/ward/1000/` (root:root 0755, socket 0600 do
+  uid 1000) e entregue ao `wardd` de teste por `LISTEN_FDS`, então a conferência aceita
+  e o `wardd` atende; quando o atacante (uid 1000) mata o `wardd` e tenta `bind` em
+  `/run/ward/1000/`, então recebe EACCES — cobre S5 (**provisória**, D46).
+- [ ] V3.24 — (SEG) Dado `ward-app` e `ward-nm` de teste instalados no contêiner como
+  root:`ward-app`/root:`ward-nm` 2755, quando cada um conecta, então recebe o papel
+  pelo grupo; quando o processo que os lançou faz `PTRACE_ATTACH`/`PTRACE_SEIZE` logo
+  depois do `exec` (antes da primeira linha do `main`, com `SIGSTOP` no filho), então
+  recebe EPERM; quando sobem com `LD_PRELOAD=<lib>` que grava um arquivo-marca, então a
+  marca não existe; quando um processo do uid de teste com outro gid (ou num namespace
+  de usuário) conecta, então fica agente; e com `ptrace_scope` 0 simulado no teste, o
+  daemon recusa o papel app — cobre S1, S8 (**provisória**, D47).
+- [ ] V3.25 — (SEG) Dado o `wardd` subindo com `GLIBC_TUNABLES`, `GCONV_PATH` ou um
+  `LD_` de nome inventado, então sai ≠ 0 com o nome da variável na mensagem e sem o
+  valor (D48) — cobre S8.
+- [ ] V3.26 — (SEG) Dado o papel agente, quando pede `lista` (texto e `--json`), então
+  nenhuma entrada traz o nível; dado o papel app, então traz (D50) — cobre S1.
+- [ ] V3.27 — (SEG) Dado o papel app, quando cria uma entrada sem nível, então ela nasce
+  "com aprovação"; quando cria com "livre" sem PIN, então recusa; quando remove
+  `acme-pg-aprovacao` e a recria com o mesmo nome, então ela volta "com aprovação"
+  (D50) — cobre S9.
 
 ## Milestone 4 — CLI e integração Claude (run/ssh)
 
@@ -633,6 +668,9 @@ asserção abaixo vira teste de ataque no `ward-core`.
   depois de `--`, não há `usuário@host` nem `-o User=`, nenhum `sh -c` aparece na cadeia
   e o `ProxyJump` traz só usuário e host validados (D43, D13); o mesmo com uma entrada
   de usuário `deploy@cliente.com.br`, que chega inteiro depois de `-l` — cobre S3.
+- [ ] V4.36 — Dado `ward run acme-pg-dev -- true` com uma variável de 800 KiB no
+  ambiente, quando roda, então a CLI sai ≠ 0 com a mensagem do limite de 750 KiB, sem
+  valor, e nada é executado (D52).
 
 ## Milestone 5 — App desktop
 
@@ -732,6 +770,11 @@ O QA usa o Chrome em modo de teste (D7) e confere a aparência contra o frame.
 - [ ] V5.28 — `docs/mission/roteiro-usuario.md` traz os passos da janela nativa (app
   abre, janela de aprovação aparece em primeiro plano no COSMIC, bandeja funciona,
   copiar limpa em 30 s) e o usuário confirmou.
+- [ ] V5.29 — (UI)(SEG) Dado `ward run acme-pg-aprovacao -- sh -c` com argumento que
+  traz U+202E, U+2066, largura zero, `\x1b[2J` e `\n` falso imitando outro comando,
+  e com um processo pai de nome `claude\u202E` na cadeia, quando a janela abre, então
+  cada caractere aparece como escape visível, cada argumento separado e entre aspas,
+  nada é reordenado nem apagado, e o que executa é o comando exato (D51) — cobre S10.
 
 ## Milestone 6 — Extensão, `ward login` e `ward playwright`
 
@@ -839,9 +882,11 @@ O QA usa o Chrome em modo de teste (D7) e confere a aparência contra o frame.
   grupo e outros.
 - [ ] V9.2 — (SEG) Dado um artefato com `modo-teste`, quando `make install`, então recusa
   (D7).
-- [ ] V9.3 — (SEG) Dado o `wardd` instalado, quando um `wardd` copiado para `~/bin` sobe
+- [ ] V9.3 — (SEG) (Com D46 aceito: o falso escuta onde puder, e a CLI só aceita o
+  socket em `/run/ward/<uid>/` com par de uid 0.) Dado o `wardd` instalado, quando um `wardd` copiado para `~/bin` sobe
   no lugar dele, então `ward destravar` recusa antes de pedir a senha — cobre S5.
-- [ ] V9.4 — (SEG) Dado o unit instalado, quando `systemctl --user set-environment
+- [ ] V9.4 — (SEG) (Com D46 aceito, o ataque passa a ser editar o ambiente do
+  systemd do usuário e conferir que o `wardd` do sistema não o herda.) Dado o unit instalado, quando `systemctl --user set-environment
   LD_PRELOAD=<lib>` e reinicia, então o `wardd` não sobe; sem a variável, sobe com
   dumpable 0 e core 0 — cobre S8.
 - [ ] V9.5 — (SEG) Dada a política do Chrome instalada, então a extensão aparece como

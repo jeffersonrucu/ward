@@ -341,3 +341,14 @@ servidores, Windows e macOS (por enquanto).
 ## Pendências (não bloqueiam o plano)
 
 - Ícone do produto: definir na missão 0.
+- **Conferência do servidor (S5) contra o daemon endurecido (S8)** — provisório,
+  aguarda o usuário (PRD D46, RA5). Proposta: o socket passa a ser criado pelo systemd
+  do sistema em `/run/ward/<uid>/` (pasta do root) e entregue ao `wardd`, que roda como
+  o usuário; a CLI e o app conferem que quem escuta tem uid 0. Muda "Arquitetura"
+  (hoje: systemd do usuário). Até a resposta, o texto de "Arquitetura" e de S5 fica
+  como está.
+- **Identificação do app e do host da extensão sem janela de endurecimento** —
+  provisório, aguarda o usuário (PRD D47, D48, RA6). Proposta: `ward-app` e `ward-nm`
+  setgid para grupos próprios, papel pelo grupo do `SO_PEERCRED`. Resíduo a aceitar:
+  os processos do WebKitGTK e o Chrome não são endurecidos (um Chrome sob ptrace de um
+  ancestral malicioso pode mentir a origem da aba).

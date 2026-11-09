@@ -350,9 +350,9 @@ Contrato: V2.1–V2.52
 Decisões do usuário em 2026-11-08 sobre a Fase 19c: RA4 (troca conjunta de cofre e estado com o daemon parado) fica fora do modelo de ameaça — o planner registra isso em `docs/escopo.md` › fora do modelo; D41 (http só em localhost) e D42 (sufixo obrigatório no `api`) confirmados; D43 mudou: usuário de `servidor`/`ftp-sftp` aceita `@` já na v1. Registrado pelo planner depois da 19c: RA4 no escopo e no PRD; D43 confirmado também para `banco`/`smtp` (ASCII visível, sem `-` no começo; V2.49); D37 e V2.42 com os escapes literais; Fase 19d criada; Fases 20 e 22 com a API nova do núcleo.
 
 ## Milestone 3 — Daemon e protocolo
-Contrato: V3.1–V3.22
+Contrato: V3.1–V3.27
 
-- [ ] Fase 20 — (Depende da Fase 19c; não depende da 19d.) Protocolo em `ward-core`: quadros com limite de tamanho, mensagens
+- [x] Fase 20 — (Depende da Fase 19c; não depende da 19d.) Protocolo em `ward-core`: quadros com limite de tamanho, mensagens
   versionadas, papéis agente/app/extensão (D5) e a tabela operação × papel, sem
   operação que devolva segredo ao papel agente; testes de fuzz do decodificador; limite
   de quadro do cliente comum (V3.4) e envio de anexos de até 256 KiB somados pelo papel
@@ -362,11 +362,24 @@ Contrato: V3.1–V3.22
   cofre mudou fora do Ward"; `GeracaoEsgotada`). Nenhuma mensagem carrega a geração
   para o papel agente nem aceita geração vinda do cliente.
   V3.3, V3.4, V3.15.
-- [ ] Fase 21 — `ward-plataforma`: diretório do socket 0700, `SO_PEERCRED`, identificação
+- [x] Fase 21 — `ward-plataforma`: diretório do socket 0700, `SO_PEERCRED`, identificação
   do processo (exe instalado, dono root, `TracerPid`, `LD_*`, pai Chrome), cadeia de
   processos para exibir, endurecimento do processo (`PR_SET_DUMPABLE=0`,
   `RLIMIT_CORE=0`, recusa de `LD_*` e de depurador, `mlock` dos buffers de segredo,
   D14). V3.1, V3.2, V3.5–V3.7.
+- [ ] Fase 21b — (Depende da resposta do usuário a RA5/RA6; sem resposta, não começa.)
+  `ward-plataforma`, ajustes da Fase 21:
+  - D46: `escutar_de_listen_fds()` (aceita o fd do systemd e confere que é socket Unix
+    em escuta no caminho esperado); `conferir_servidor` passa a exigir pasta do root e
+    par de uid 0, com a exceção só no `modo-teste`;
+  - D47: papel pelo egid do `SO_PEERCRED` (grupos `ward-app`/`ward-nm` vindos da
+    `Instalacao`), `PPid` do app igual ao `systemd --user` ou ao daemon, recusa com
+    `ptrace_scope` 0 ou `suid_dumpable` 1; a leitura de `exe`/`environ`/`maps` fica só
+    para o pai Chrome e a cadeia exibida;
+  - D48: lista insegura da glibc no `conferir_ambiente_proprio`.
+  Testes em contêiner (`ubuntu:24.04`, root só dentro dele). Se o usuário recusar D46
+  ou D47, a fase só registra o risco aceito no escopo e mantém a Fase 21 como está.
+  V3.5 (forma de D47), V3.23–V3.25.
 - [ ] Fase 22 — `wardd`: estado travado/destravado, destravar com espera crescente
   (D20), travar com zeroização, PIN (confere pelo hash da seção de configuração do
   corpo v3 e pela função da Fase 19b, D30; 5 erros travam), mudar nível só do
@@ -392,26 +405,44 @@ Contrato: V3.1–V3.22
   `mtime`/tamanho por `fstat` antes de gravar ou reabrir (mudou → não grava, trava e
   avisa). RA4 (troca conjunta de cofre e estado com o daemon parado) está fora do modelo
   de ameaça por decisão do usuário (2026-11-08) e não ganha trabalho.
-  V3.8–V3.13, V3.17, V3.20, V3.22.
+  Notas das Fases 20 e 21:
+  - na troca de senha, `ErroGravacao::Formato` de `trocar_senha` responde
+    `senha_incorreta`; em `gravar_entradas` segue `falha_ao_gravar` (D52);
+  - a `lista` do papel agente sai sem o nível; o app continua recebendo (D50); entrada
+    criada nasce "com aprovação", e criar com outro nível pede PIN (D50);
+    `remover_entrada` e `tempo_trava` sem PIN, só do papel app (D50);
+  - `main`: `iniciar_endurecido()` antes de tudo (V3.7); socket por `LISTEN_FDS` quando
+    houver (D46, provisório) ou pelo diretório de teste; a cada conexão,
+    `conferir_conexao` com log da recusa e papel pela classificação vigente
+    (`ClassePar` da Fase 21 ou egid de D47, conforme RA6);
+  - V3.2 por `make teste-docker-uid` (D49): contêiner `ubuntu:24.04`, `wardd` de teste
+    como uid 1000 via `setpriv`, clientes uid 4242 sem e com `CAP_DAC_OVERRIDE`
+    ambiente e uid 0, e um cliente do uid 1000 no fim; nada do `/run/user` do host é
+    montado; o alvo fica fora do `make check`.
+  V3.2, V3.8–V3.13, V3.17, V3.20, V3.22, V3.26, V3.27.
 - [ ] Fase 23 — Motor de aprovação com relógio injetado e aprovador em processo só nos
   testes (D8): uma vez, 1 hora (D2), sempre, expirar em 2 min, fechar nega, nível
   combinado (D19), aprovação indisponível (D21); espera de até 2 min pelo destrave
-  (D16). V3.14–V3.16, V3.18.
+  (D16). O texto do pedido (`comando`, `cadeia`) vai exato para o app, e a função que o
+  formata para exibir, no `ward-core`, neutraliza controle e bidi por escape visível
+  (D51), com testes. V3.14–V3.16, V3.18.
 - [ ] Fase 24 — Trava automática: `Lock`/`LockedHint` e `PrepareForSleep` do logind,
   4 h sem uso com relógio injetado, lidas do tempo de trava da configuração do cofre
-  (D30); unit `wardd.service` (`LimitCORE=0`). V3.19, V3.21.
+  (D30); unit `wardd.service` (`LimitCORE=0`), ou as units do sistema de D46 se o
+  usuário aceitar. V3.19, V3.21.
 
 ## Milestone 4 — CLI e integração Claude (run/ssh)
-Contrato: V4.1–V4.35
+Contrato: V4.1–V4.36
 
 - [ ] Fase 25 — CLI `ward`: `lista [--json]`, `travar`, `destravar` (senha do TTY, só
   depois de conferir que o servidor é o `wardd` instalado), mensagens em português.
-  V4.1, V4.2, V4.18, V4.22.
+  A conferência é a de D46 (ou o risco aceito no escopo, RA5). V4.1, V4.2, V4.18, V4.22.
 - [ ] Fase 26 — `ward run`: o daemon cria o filho com argv, cwd e ambiente da CLI sem
   `LD_*` (D13), entrega de D10, anexos em `<rt>tmp/` 0600 com limpeza em toda saída e
   na partida, saída mascarada, código de saída, espera do destrave. Pesquisa e
   registro de RA1 (environ e anexos lidos por outro processo do mesmo uid), com teste
-  do ataque. V4.3–V4.17, V4.19–V4.21.
+  do ataque. A CLI mede argv + ambiente antes de mandar e passa de 750 KiB com
+  mensagem clara (D52). V4.3–V4.17, V4.19–V4.21, V4.36.
 - [ ] Fase 27 — `ward ssh` com senha e com chave: `sshpass -e`, agente temporário só do
   `ssh` filho (D12), `-F /dev/null` e `known_hosts` próprio (D13), pty interativo,
   token do "Conectar" ainda sem app (token inválido vale o nível, D3); no pty, o fim
@@ -426,12 +457,14 @@ Contrato: V4.1–V4.35
   combinado (D19); logs da suíte do M4 sem segredo. V4.25, V4.27, V4.29, V4.30, V4.33.
 
 ## Milestone 5 — App desktop
-Contrato: V5.1–V5.28
+Contrato: V5.1–V5.29
 
 - [ ] Fase 29 — Esqueleto Tauri + Svelte: capabilities só com os comandos próprios,
   CSP estrita, sem conteúdo remoto, devtools fora do release; cliente do socket no lado
   Rust; "copiar" resolvido no Rust (D4); tokens e componentes do M0 em Svelte; ponte de
-  teste só com `modo-teste` (D7). V5.1, V5.2, V5.4–V5.6.
+  teste só com `modo-teste` (D7). Com D47: conecta antes do GTK, larga o grupo, limpa o
+  ambiente por lista branca e se reexecuta se a conexão cair; sem D47, testa a regra de
+  D48 contra o WebKitGTK real. V5.1, V5.2, V5.4–V5.6.
 - [ ] Fase 30 — **(UI)** Primeiro uso (o PIN vai para a seção de configuração do corpo
   v2 como hash, D30). V5.7, V5.25, V5.26.
 - [ ] Fase 31 — **(UI)** Destravar, inclusive o estado "Pedido do agente". V5.8.
@@ -447,7 +480,8 @@ Contrato: V5.1–V5.28
   de D33. V5.10, V5.12, V5.24.
 - [ ] Fase 35 — **(UI)** Nível de acesso com PIN. V5.15.
 - [ ] Fase 36 — **(UI)** Janela de aprovação em primeiro plano, aberta pelo daemon, com
-  os cinco estados do M0. V5.16–V5.20.
+  os cinco estados do M0; comando e cadeia exibidos pela função de D51, nunca como HTML.
+  V5.16–V5.20, V5.29.
 - [ ] Fase 37 — **(UI)** Gerador de senha avulso (símbolos de D35). V5.21.
 - [ ] Fase 38 — **(UI)** Configurações (PIN, senha mestra, tempo de trava gravado na
   configuração do cofre, D30; backup externo só exibido desligado). V5.22.
@@ -458,7 +492,9 @@ Contrato: V5.1–V5.28
 Contrato: V6.1–V6.16
 
 - [ ] Fase 40 — `ward-nm` (native messaging): mensagens com limite, papel extensão no
-  daemon (exe instalado + pai Chrome, D5), origem da aba comparada no daemon (D9).
+  daemon (D47 se aceito, senão D5; pai Chrome conferido com o Chrome real: lançado
+  direto ou por intermediário, navegador dumpable ou não, handoff 21), origem da aba
+  comparada no daemon (D9).
   V6.1, V6.2.
 - [ ] Fase 41 — **(UI)** Extensão MV3 e popup "Sugestões do domínio": sugere por origem,
   preenche usuário, senha e TOTP só no documento da origem certa, sem
@@ -496,7 +532,9 @@ Contrato: V9.1–V9.10
 
 - [ ] Fase 51 — `make install`/`uninstall` com `DESTDIR` e `PREFIX=/usr/local`, unit do
   systemd do usuário, manifesto de native messaging, política do Chrome com
-  force-install e update local, recusa de artefato `modo-teste`. V9.1–V9.4, V9.6,
+  force-install e update local, recusa de artefato `modo-teste`; com D46, units
+  `wardd@.socket`/`wardd@.service` do sistema e `/run/ward/` por `tmpfiles.d`; com D47,
+  grupos `ward-app`/`ward-nm` e binários 2755. V9.1–V9.4, V9.6,
   V9.7, V9.10.
 - [ ] Fase 52 — `.deb` por `dpkg-deb` a partir do staging (dependência `sshpass`), teste
   num contêiner `ubuntu:24.04` e roteiro de instalação para o usuário (política do
