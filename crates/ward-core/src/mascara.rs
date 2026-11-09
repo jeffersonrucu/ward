@@ -17,7 +17,9 @@
 //!   escape JSON padrão (`\"`, `\\`, controles), com e sem `\/`; o JSON do Go (`&`,
 //!   `<`, `>`, U+2028 e U+2029 como `\u0026`, `\u003c`, `\u003e`, `\u2028`,
 //!   `\u2029`); o JSON com `ensure_ascii` do Python (todo caractere fora do ASCII como
-//!   `\uXXXX` em minúsculas, com par substituto acima de U+FFFF); o `json_encode` do PHP
+//!   `\uXXXX` em minúsculas, com par substituto acima de U+FFFF); o JSON do Go com
+//!   `ensure_ascii` (D58: os dois juntos, só quando o valor tem `&`, `<` ou `>` e
+//!   caractere fora do ASCII); o `json_encode` do PHP
 //!   (`\/` e `\uXXXX` juntos, só quando o valor tem `/` e caractere fora do ASCII); as
 //!   aspas duplas do shell (`declare -p`, `export -p`: `\` antes de `$`, `` ` ``, `"` e
 //!   `\`); as aspas simples do shell (`${X@Q}`, `set`, `set -x`: `'` vira `'\''`, só
@@ -36,6 +38,22 @@
 //! colado `"k":"v"`) e `chave: valor` (YAML, também `chave : valor` e `chave:\tvalor`),
 //! com e sem aspas, com 6 caracteres ou mais (D34). O valor de linha e o campo de tab
 //! têm todas as variações de um segredo inteiro.
+//!
+//! Reauditoria da 19e (D61), na mesma passada por linha:
+//! - **JSON na linha:** em toda linha de texto, e no segredo de uma linha só que, aparado,
+//!   começa por `{` ou `[`, cada par `"chave"` + `:` + string JSON, em qualquer posição
+//!   da linha (objeto minificado, aninhado, duas chaves na linha), dá a string
+//!   decodificada pelos escapes do JSON como valor de linha (6+; escape inválido descarta
+//!   o par). Elemento de array sem chave e o flow do YAML ficam em RA3;
+//! - **comentário no fim** (YAML e dotenv): valor sem aspas até antes do primeiro espaço
+//!   ou tab seguido de `#`; valor entre aspas seguido de espaços e `# …` dá o miolo;
+//! - **chave YAML composta** (`private key:`, `aws/secret:`): a chave vai até o primeiro
+//!   `:` seguido de espaço, tab ou fim, sem `#` nem aspas, e não começa por `-`, `{`, `[`;
+//! - **`''` do YAML:** no valor entre aspas simples, `''` vira `'`;
+//! - **campos de tab de linha que não é texto:** cada campo de 6+ bytes só pelo literal
+//!   (aparado e cru) e pelo percent, sem formas de texto nem base64.
+//!
+//! Cada candidato a mais só entra quando difere do que a linha já gera.
 //!
 //! Orçamento (D29): [`custo_da_entrada`] conta os padrões de uma entrada e da entrega
 //! dela pelo mesmo [`Gerador`]; a validação recusa a entrada acima de
@@ -279,30 +297,19 @@ pub fn custo_da_entrada(entrada: &Entrada) -> Result<usize, ErroMascara> {
 type Visitante<'f> = dyn FnMut(&[u8]) -> Result<(), ErroMascara> + 'f;
 
 fn visitar(c: &ConstrutorMascara<'_>, f: &mut Visitante<'_>) -> Result<(), ErroMascara> {
-    let mut g = Gerador {
-        tmp: Zeroizing::new(Vec::new()),
-        tmp2: Zeroizing::new(Vec::new()),
-    };
+    let mut g = Gerador::novo();
     for e in &c.entradas {
         let usuario = usuario(e.dados());
         for s in e.segredos() {
             let valor = s.valor.expor();
             match s.origem {
                 OrigemSegredo::Anexo(_) => g.anexo(valor, f)?,
-                OrigemSegredo::Extra(_) => {
-                    g.segredo(valor, f)?;
-                    // D36: segredo de várias linhas também por linha, como os anexos.
-                    if valor.contains(&b'\n') {
-                        g.linhas(valor, f)?;
-                    }
-                }
+                // D36: segredo de várias linhas também por linha, como os anexos.
+                OrigemSegredo::Extra(_) => g.segredo_de_campo(valor, f)?,
                 OrigemSegredo::Campo(_) => {
-                    g.segredo(valor, f)?;
+                    g.segredo_de_campo(valor, f)?;
                     if let Some(u) = usuario {
                         g.basic(u.as_bytes(), valor, f)?;
-                    }
-                    if valor.contains(&b'\n') {
-                        g.linhas(valor, f)?;
                     }
                 }
             }
@@ -310,13 +317,10 @@ fn visitar(c: &ConstrutorMascara<'_>, f: &mut Visitante<'_>) -> Result<(), ErroM
     }
     for g_ in &c.entregas {
         for v in g_.variaveis().iter().filter(|v| v.e_segredo()) {
-            let valor = v.expor().as_bytes();
-            g.segredo(valor, f)?;
             // D54: valor secreto de entrega com `\n` (o token de `api` de várias
-            // linhas) também por linha, mesmo sem `.entrada(…)` no construtor.
-            if valor.contains(&b'\n') {
-                g.linhas(valor, f)?;
-            }
+            // linhas) também por linha, mesmo sem `.entrada(…)` no construtor; e o JSON
+            // de uma linha só (D61), do mesmo jeito.
+            g.segredo_de_campo(v.expor().as_bytes(), f)?;
         }
     }
     Ok(())
@@ -360,9 +364,137 @@ fn base64(dados: &[u8], alfabeto: &[u8; 64], com_igual: bool, saida: &mut Zeroiz
 struct Gerador {
     tmp: Zeroizing<Vec<u8>>,
     tmp2: Zeroizing<Vec<u8>>,
+    /// Valor decodificado (string JSON, `''` do YAML) que vira segredo inteiro. Sai do
+    /// `Gerador` enquanto é usado ([`core::mem::take`]) e volta zerado.
+    tmp3: Zeroizing<Vec<u8>>,
 }
 
 impl Gerador {
+    fn novo() -> Self {
+        Gerador {
+            tmp: Zeroizing::new(Vec::new()),
+            tmp2: Zeroizing::new(Vec::new()),
+            tmp3: Zeroizing::new(Vec::new()),
+        }
+    }
+
+    /// Segredo de campo, extra ou entrega: inteiro; por linha se tem `\n` (D36, D54);
+    /// e, se é uma linha só de texto que aparada começa por `{` ou `[`, os valores JSON
+    /// dela (D61).
+    fn segredo_de_campo(&mut self, s: &[u8], f: &mut Visitante<'_>) -> Result<(), ErroMascara> {
+        self.segredo(s, f)?;
+        if s.contains(&b'\n') {
+            self.linhas(s, f)?;
+        } else if matches!(s.trim_ascii().first(), Some(b'{' | b'['))
+            && core::str::from_utf8(s).is_ok()
+        {
+            self.json_da_linha(s, None, f)?;
+        }
+        Ok(())
+    }
+
+    /// Valor de linha (D34): segredo inteiro, se tem o mínimo.
+    fn valor_minimo(&mut self, v: &[u8], f: &mut Visitante<'_>) -> Result<(), ErroMascara> {
+        if caracteres(v) >= MINIMO_CONFIAVEL {
+            self.segredo(v, f)?;
+        }
+        Ok(())
+    }
+
+    /// Os pares `"chave": "string"` da linha de texto (D61), em qualquer posição: cada
+    /// string decodificada com 6+ caracteres é valor de linha. `ja` é o valor que a linha
+    /// já gerou pelo parser de `chave: valor` (não se repete).
+    fn json_da_linha(
+        &mut self,
+        linha: &[u8],
+        ja: Option<&[u8]>,
+        f: &mut Visitante<'_>,
+    ) -> Result<(), ErroMascara> {
+        let mut buf = core::mem::take(&mut self.tmp3);
+        let mut r = Ok(());
+        let mut i = 0usize;
+        while let Some(p) = linha[i..].iter().position(|b| *b == b'"') {
+            let Some(fim_chave) = fim_string_json(linha, i + p) else {
+                break;
+            };
+            let j = pular_branco_json(linha, fim_chave);
+            if linha.get(j) != Some(&b':') {
+                i = fim_chave;
+                continue;
+            }
+            let j = pular_branco_json(linha, j + 1);
+            if linha.get(j) != Some(&b'"') {
+                i = fim_chave;
+                continue;
+            }
+            let Some(fim_valor) = fim_string_json(linha, j) else {
+                break;
+            };
+            buf.clear();
+            if decodificar_string_json(&linha[j + 1..fim_valor - 1], &mut buf)
+                && ja != Some(&buf[..])
+            {
+                r = self.valor_minimo(&buf, f);
+                if r.is_err() {
+                    break;
+                }
+            }
+            i = fim_valor;
+        }
+        buf.zeroize();
+        self.tmp3 = buf;
+        r
+    }
+
+    /// Os candidatos a mais de um valor de `CHAVE=valor` ou `chave: valor` (D61):
+    /// comentário no fim e, no YAML (`yaml`), o `''` das aspas simples.
+    fn comentario_e_aspas(
+        &mut self,
+        valor: &[u8],
+        yaml: bool,
+        f: &mut Visitante<'_>,
+    ) -> Result<(), ErroMascara> {
+        let Some(&q) = valor.first() else {
+            return Ok(());
+        };
+        if !matches!(q, b'"' | b'\'') {
+            if let Some(c) = antes_de_comentario(valor) {
+                self.valor_minimo(c, f)?;
+            }
+            return Ok(());
+        }
+        let base = sem_aspas(valor);
+        let miolo = miolo_antes_de_comentario(valor);
+        if let Some(m) = miolo
+            && Some(m) != base
+        {
+            self.valor_minimo(m, f)?;
+        }
+        if yaml
+            && q == b'\''
+            && let Some(dentro) = miolo.or(base)
+            && dentro.windows(2).any(|w| w == b"''")
+        {
+            let mut buf = core::mem::take(&mut self.tmp3);
+            buf.clear();
+            reservar(&mut buf, dentro.len());
+            let mut k = 0;
+            while k < dentro.len() {
+                buf.push(dentro[k]);
+                k += if dentro[k] == b'\'' && dentro.get(k + 1) == Some(&b'\'') {
+                    2
+                } else {
+                    1
+                };
+            }
+            let r = self.valor_minimo(&buf, f);
+            buf.zeroize();
+            self.tmp3 = buf;
+            r?;
+        }
+        Ok(())
+    }
+
     fn segredo(&mut self, s: &[u8], f: &mut Visitante<'_>) -> Result<(), ErroMascara> {
         if s.is_empty() {
             return Ok(());
@@ -412,7 +544,12 @@ impl Gerador {
             }
         }
         if let Ok(texto) = core::str::from_utf8(s) {
-            for modo in [JsonEscapado::Go, JsonEscapado::Ascii, JsonEscapado::Php] {
+            for modo in [
+                JsonEscapado::Go,
+                JsonEscapado::Ascii,
+                JsonEscapado::Php,
+                JsonEscapado::GoAscii,
+            ] {
                 if json_escapado_muda(texto, modo) {
                     self.tmp.clear();
                     json_escapado(texto, modo, &mut self.tmp);
@@ -516,14 +653,41 @@ impl Gerador {
                         self.valor_da_linha(campo.trim_ascii(), f)?;
                     }
                 }
+                // D61: na linha que não é texto, o campo de tab só pelo literal (e pelo
+                // percent, que o autômato lê em toda forma), aparado e cru, 6+ bytes,
+                // quando difere da linha e da linha aparada.
+                if !texto && linha.contains(&b'\t') {
+                    for campo in linha.split(|b| *b == b'\t') {
+                        let aparado = campo.trim_ascii();
+                        let cru = (aparado.len() != campo.len()).then_some(campo);
+                        for c in core::iter::once(aparado).chain(cru) {
+                            if c.len() >= MINIMO_CONFIAVEL && c != linha && c != aparada {
+                                f(c)?;
+                            }
+                        }
+                    }
+                }
                 // D34: o valor só vira padrão próprio com o mesmo mínimo das linhas;
                 // sem isso, `PORT=8080` mascararia todo `8080` da saída. A linha inteira
                 // continua mascarada (acima).
                 if let Some(valor) = valor_de_chave(linha) {
                     self.valor_da_linha(valor, f)?;
+                    self.comentario_e_aspas(valor, false, f)?;
                 }
-                if let Some(valor) = valor_de_dois_pontos(linha) {
+                let dois = valor_de_dois_pontos(linha);
+                if let Some(valor) = dois {
                     self.valor_da_linha(valor, f)?;
+                    self.comentario_e_aspas(valor, true, f)?;
+                }
+                if let Some(valor) = valor_de_chave_composta(linha)
+                    && Some(valor) != dois
+                {
+                    self.valor_da_linha(valor, f)?;
+                    self.comentario_e_aspas(valor, true, f)?;
+                }
+                // D61: os pares `"chave": "string"` em qualquer posição da linha.
+                if texto {
+                    self.json_da_linha(linha, dois.and_then(sem_aspas), f)?;
                 }
             }
         }
@@ -613,6 +777,148 @@ fn valor_de_dois_pontos(linha: &[u8]) -> Option<&[u8]> {
     (!v.is_empty()).then_some(v)
 }
 
+/// Chave YAML composta (D61): `private key: v`, `aws/secret: v`. Depois do recuo (e do
+/// `- ` de item), a chave vai até o primeiro `:` seguido de espaço, tab ou fim, sem `#`
+/// nem aspas, e não começa por `-`, `{` nem `[`. O valor sai como no
+/// [`valor_de_dois_pontos`] (aparado, sem a vírgula do fim).
+fn valor_de_chave_composta(linha: &[u8]) -> Option<&[u8]> {
+    let l = linha.trim_ascii();
+    let l = l.strip_prefix(b"- ").map_or(l, <[u8]>::trim_ascii_start);
+    let p = (0..l.len())
+        .find(|&p| l[p] == b':' && l.get(p + 1).is_none_or(|b| matches!(b, b' ' | b'\t')))?;
+    let chave = &l[..p];
+    let primeiro = *chave.first()?;
+    if matches!(primeiro, b'-' | b'{' | b'[')
+        || chave.iter().any(|b| matches!(b, b'#' | b'"' | b'\''))
+    {
+        return None;
+    }
+    let mut v = l[p + 1..].trim_ascii();
+    if let Some(sem_virgula) = v.strip_suffix(b",") {
+        v = sem_virgula.trim_ascii_end();
+    }
+    (!v.is_empty()).then_some(v)
+}
+
+/// Valor sem aspas com comentário no fim (D61): o que vem antes do primeiro espaço ou
+/// tab seguido de `#`, aparado.
+fn antes_de_comentario(v: &[u8]) -> Option<&[u8]> {
+    let k = (1..v.len()).find(|&k| v[k] == b'#' && matches!(v[k - 1], b' ' | b'\t'))?;
+    let c = v[..k].trim_ascii_end();
+    (!c.is_empty()).then_some(c)
+}
+
+/// Valor entre aspas seguido de espaços e `# …` (D61): o miolo das aspas, até a primeira
+/// aspa igual à de abertura seguida de espaços ou tabs e, depois deles, `#`.
+fn miolo_antes_de_comentario(v: &[u8]) -> Option<&[u8]> {
+    let q = *v.first()?;
+    let k = (1..v.len()).find(|&k| {
+        v[k] == q
+            && matches!(v.get(k + 1), Some(b' ' | b'\t'))
+            && v.get(pular_branco_json(v, k + 1)) == Some(&b'#')
+    })?;
+    Some(&v[1..k])
+}
+
+/// Espaço e tab entre os elementos de um par JSON na linha.
+fn pular_branco_json(l: &[u8], mut i: usize) -> usize {
+    while matches!(l.get(i), Some(b' ' | b'\t')) {
+        i += 1;
+    }
+    i
+}
+
+/// Fim (depois da aspa de fechamento) da string JSON que começa na aspa em `ini`. `\`
+/// e o byte seguinte andam juntos. `None` se a string não fecha na linha.
+fn fim_string_json(l: &[u8], ini: usize) -> Option<usize> {
+    let mut p = ini + 1;
+    while p < l.len() {
+        match l[p] {
+            b'\\' => p += 2,
+            b'"' => return Some(p + 1),
+            _ => p += 1,
+        }
+    }
+    None
+}
+
+fn hex4_json(b: &[u8], i: usize) -> Option<u32> {
+    b.get(i..i + 4)?
+        .iter()
+        .try_fold(0u32, |n, c| Some((n << 4) | u32::from(hex(*c)?)))
+}
+
+/// Decodifica o miolo de uma string JSON (D61): `\"`, `\\`, `\/`, `\b\f\n\r\t` e
+/// `\uXXXX` (com par substituto). Escape inválido ou substituto sozinho: `false` (o par
+/// é descartado). Os outros bytes passam iguais.
+fn decodificar_string_json(raw: &[u8], saida: &mut Zeroizing<Vec<u8>>) -> bool {
+    reservar(saida, raw.len());
+    let mut utf8 = [0u8; 4];
+    let mut k = 0usize;
+    let mut ok = true;
+    while k < raw.len() {
+        let b = raw[k];
+        if b != b'\\' {
+            saida.push(b);
+            k += 1;
+            continue;
+        }
+        let curto = match raw.get(k + 1) {
+            Some(b'"') => b'"',
+            Some(b'\\') => b'\\',
+            Some(b'/') => b'/',
+            Some(b'b') => 0x08,
+            Some(b'f') => 0x0c,
+            Some(b'n') => b'\n',
+            Some(b'r') => b'\r',
+            Some(b't') => b'\t',
+            Some(b'u') => {
+                let n = match hex4_json(raw, k + 2) {
+                    Some(alto @ 0xd800..=0xdbff) => {
+                        let baixo = if raw.get(k + 6..k + 8) == Some(b"\\u") {
+                            hex4_json(raw, k + 8)
+                        } else {
+                            None
+                        };
+                        match baixo {
+                            Some(baixo @ 0xdc00..=0xdfff) => {
+                                k += 12;
+                                0x10000 + ((alto - 0xd800) << 10) + (baixo - 0xdc00)
+                            }
+                            _ => {
+                                ok = false;
+                                break;
+                            }
+                        }
+                    }
+                    Some(n @ (0..=0xd7ff | 0xe000..=0xffff)) => {
+                        k += 6;
+                        n
+                    }
+                    _ => {
+                        ok = false;
+                        break;
+                    }
+                };
+                let Some(c) = char::from_u32(n) else {
+                    ok = false;
+                    break;
+                };
+                saida.extend_from_slice(c.encode_utf8(&mut utf8).as_bytes());
+                continue;
+            }
+            _ => {
+                ok = false;
+                break;
+            }
+        };
+        saida.push(curto);
+        k += 2;
+    }
+    utf8.zeroize();
+    ok
+}
+
 fn sem_aspas(v: &[u8]) -> Option<&[u8]> {
     let (&a, resto) = v.split_first()?;
     let (&z, meio) = resto.split_last()?;
@@ -665,6 +971,11 @@ enum JsonEscapado {
     /// como `\uXXXX` (D54). Só quando o valor tem os dois; com um só, o JSON com `\/`
     /// ou o `ensure_ascii` já cobrem.
     Php,
+    /// JSON "html-safe" com `ensure_ascii` (D58): o `ensure_ascii` mais `&`, `<` e `>`
+    /// como `\uXXXX`. Só quando o valor tem `&`, `<` ou `>` e caractere fora do ASCII;
+    /// com um só, o Go ou o `ensure_ascii` já cobrem (U+2028 e U+2029 já saem em `\u`
+    /// no `ensure_ascii`, então sozinhos não mudam nada aqui).
+    GoAscii,
 }
 
 /// O caractere vai como `\uXXXX` nesta forma (fora os escapes curtos do JSON padrão).
@@ -673,6 +984,7 @@ fn json_escapado_u(c: char, modo: JsonEscapado) -> bool {
         JsonEscapado::Go => matches!(c, '&' | '<' | '>' | '\u{2028}' | '\u{2029}'),
         JsonEscapado::Ascii => !c.is_ascii() || c == '\u{7f}',
         JsonEscapado::Php => !c.is_ascii(),
+        JsonEscapado::GoAscii => !c.is_ascii() || matches!(c, '\u{7f}' | '&' | '<' | '>'),
     }
 }
 
@@ -680,6 +992,7 @@ fn json_escapado_u(c: char, modo: JsonEscapado) -> bool {
 fn json_escapado_muda(s: &str, modo: JsonEscapado) -> bool {
     match modo {
         JsonEscapado::Php => s.contains('/') && !s.is_ascii(),
+        JsonEscapado::GoAscii => s.contains(['&', '<', '>']) && !s.is_ascii(),
         _ => s.chars().any(|c| json_escapado_u(c, modo)),
     }
 }

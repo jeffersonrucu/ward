@@ -1,6 +1,6 @@
 #!/usr/bin/python3 -IB
-"""Lista de segredos do cofre de teste e das variações de D11, D36, D37 e D54 (Fases 19,
-19d e 19e).
+"""Lista de segredos do cofre de teste e das variações de D11, D36, D37, D54, D58 e D61
+(Fases 19, 19d, 19e e 22a).
 
 Uso (da raiz):
     python3 -I -B dev/variacoes.py [--saida .dev/<nome>.txt]      # make dev-variacoes
@@ -19,21 +19,29 @@ D54, a mesma que a máscara implementa (sem uma chamar a outra):
 2. Basic: base64 de `usuário:segredo`, só para segredo de campo de entrada com usuário;
 3. por linha (segredo com `\\n` e anexo; D36, D54): cada linha com 6+ caracteres, sem o
    `\\r` do fim e aparada, URL-encoded e com as formas de texto dela, sem base64 nem
-   miolos (o base64 de linha solta fica em RA3); os campos de 6+ de uma linha com tab;
+   miolos (o base64 de linha solta fica em RA3); os campos de 6+ de uma linha de texto
+   com tab; numa linha que não é texto, os campos de tab de 6+ bytes só pelo literal e
+   URL-encoded (D61);
 4. valor de linha (`CHAVE=valor`/`export CHAVE=valor`, `"chave": "valor"` com a chave de
    qualquer caractere menos `"` e também colado, `chave: valor`, `chave : valor`,
    `chave:\\tvalor`, `- chave: valor`, e o campo de tab), com e sem aspas, 6+: tratado
-   como segredo inteiro (1).
+   como segredo inteiro (1). Mais (D61): o comentário no fim (`v # x`, `"v" # x`) do
+   YAML e do dotenv; a chave YAML com espaço ou `/` (`private key: v`); o `''` das aspas
+   simples do YAML; e a string decodificada de cada par `"chave": "string"` em qualquer
+   posição de uma linha de texto (também no segredo de uma linha só que começa por `{`
+   ou `[`).
 Anexo inteiro: o conteúdo, sem a quebra de linha final, URL-encoded e base64.
 
 Formas de texto (D37, D54), cada uma só quando difere do literal e só para texto
 (UTF-8 válido): escape JSON padrão, com e sem `\\/`; JSON do Go (`&`, `<`, `>`, U+2028 e
 U+2029 como `\\u0026`, `\\u003c`, `\\u003e`, `\\u2028`, `\\u2029`); `ensure_ascii` do
 Python (`\\uXXXX` minúsculo, com par substituto acima de U+FFFF); `json_encode` do PHP
-(`\\/` e `\\uXXXX` juntos, só com `/` e caractere fora do ASCII); aspas duplas do shell
+(`\\/` e `\\uXXXX` juntos, só com `/` e caractere fora do ASCII); Go com `ensure_ascii`
+(D58: `\\uXXXX` de `&<>` e de todo caractere fora do ASCII, só com os dois); aspas duplas do shell
 (`\\` antes de `$`, `` ` ``, `"` e `\\`); aspas simples do shell (`'` vira `'\\''`, só
 com `'`); e `printf %q` do bash 5.2 (só ASCII visível e espaço). O hex em maiúsculas,
-o `$'…'` do bash e o `expand` ficam de fora (RA3). Mais o `DATABASE_URL` das entradas
+o `$'…'` do bash, o `expand`, o `repr()`, o `iconv`, o elemento de array JSON e o flow
+do YAML ficam de fora (RA3). Mais o `DATABASE_URL` das entradas
 `banco` (D10).
 
 Independente do código da máscara (Fases 17, 19c e 19e) de propósito: é o oráculo de
@@ -305,6 +313,16 @@ def json_php(t: str) -> str | None:
     return "".join(partes)
 
 
+def json_go_ascii(t: str) -> str | None:
+    """JSON "html-safe" com `ensure_ascii` (D58): o `json.dumps` padrão do Python com `&`,
+    `<`, `>` também em `\\uXXXX`. Só quando o valor tem `&`, `<`, `>`, U+2028 ou U+2029
+    e caractere fora do ASCII."""
+    if not any(c in GO_HTML for c in t) or all(ord(c) < 0x80 for c in t):
+        return None
+    j = json.dumps(t, ensure_ascii=True)[1:-1]
+    return "".join(GO_HTML.get(c, c) for c in j)
+
+
 def aspas_duplas(t: str) -> str:
     """Valor dentro de aspas duplas do shell (`declare -p`, `export -p`)."""
     return re.sub(r'([$`"\\])', r"\\\1", t)
@@ -343,7 +361,7 @@ def escapadas(v: bytes) -> set[bytes]:
     if t is None:
         return set()
     formas = {json_go(t), json_ascii(t), aspas_duplas(t)}
-    for extra in (json_php(t), aspas_simples(t), printf_q(t)):
+    for extra in (json_php(t), json_go_ascii(t), aspas_simples(t), printf_q(t)):
         if extra is not None:
             formas.add(extra)
     return ({f.encode("utf-8") for f in formas} | set(json_escape(v))) - {v}
@@ -368,6 +386,13 @@ def aparar(v: bytes) -> bytes:
 CHAVE_IGUAL = re.compile(rb"^(?:export\s+)?[A-Za-z_.-][A-Za-z0-9_.-]*\s*=(.*)$")
 CHAVE_JSON = re.compile(rb'^(?:- [ \t\n\x0c\r]*)?"[^"]+"[ \t\n\x0c\r]*:(.*)$')
 CHAVE_YAML = re.compile(rb"^(?:- [ \t\n\x0c\r]*)?[A-Za-z0-9_.-]+[ \t\n\x0c\r]*:(?:[ \t](.*))?$")
+# D61: chave YAML com espaço ou `/`; a chave vai até o primeiro `:` seguido de espaço,
+# tab ou fim, sem `#` nem aspas, e não começa por `-`, `{` nem `[`.
+CHAVE_YAML_COMPOSTA = re.compile(rb"""^(?:- [ \t\n\x0c\r]*)?[^#"'{\[\- \t\n\x0c\r][^#"']*?:(?:[ \t](.*))?$""", re.S)
+# D61: comentário no fim. Sem aspas: até antes do primeiro espaço/tab seguido de `#`.
+# Entre aspas: o miolo até a primeira aspa igual seguida de espaços e `#`.
+COMENTARIO = re.compile(rb"[ \t]#")
+ENTRE_ASPAS_COMENTARIO = re.compile(rb"""^(["'])(.*?)\1[ \t]+#""", re.S)
 
 
 def valores_da_linha(aparada: bytes) -> list[bytes]:
@@ -377,20 +402,103 @@ def valores_da_linha(aparada: bytes) -> list[bytes]:
     aspas, cada um com 6+ caracteres (D34)."""
     aparada = aparar(aparada)
     brutos = []
-    for regex, virgula in ((CHAVE_IGUAL, False), (CHAVE_JSON, True), (CHAVE_YAML, True)):
+    for regex, virgula, yaml in (
+        (CHAVE_IGUAL, False, False),
+        (CHAVE_JSON, True, True),
+        (CHAVE_YAML, True, True),
+        (CHAVE_YAML_COMPOSTA, True, True),
+    ):
         m = regex.match(aparada)
         if not m or m.group(1) is None:
             continue
         valor = aparar(m.group(1))
         if virgula and valor.endswith(b","):
             valor = aparar(valor[:-1])
-        brutos.append(valor)
+        brutos.append((valor, yaml))
     saida = []
-    for valor in brutos:
+    for valor, yaml in brutos:
         formas = [valor]
         if len(valor) >= 3 and valor[:1] == valor[-1:] and valor[:1] in (b'"', b"'"):
             formas.append(valor[1:-1])
+        formas += comentario_e_aspas(valor, yaml)
         saida += [x for x in formas if caracteres(x) >= MIN_PADRAO]
+    return saida
+
+
+def comentario_e_aspas(valor: bytes, yaml: bool) -> list[bytes]:
+    """Os candidatos a mais de D61 para um valor de linha: o valor antes do comentário do
+    fim (com ou sem aspas) e, no YAML, `''` trocado por `'` no valor entre aspas
+    simples."""
+    if not valor:
+        return []
+    if valor[:1] not in (b'"', b"'"):
+        m = COMENTARIO.search(valor)
+        return [aparar(valor[: m.start()])] if m else []
+    saida = []
+    m = ENTRE_ASPAS_COMENTARIO.match(valor)
+    miolo = m.group(2) if m else None
+    if miolo is not None:
+        saida.append(miolo)
+    if yaml and valor[:1] == b"'":
+        if miolo is None and len(valor) >= 3 and valor[-1:] == b"'":
+            miolo = valor[1:-1]
+        if miolo is not None and b"''" in miolo:
+            saida.append(miolo.replace(b"''", b"'"))
+    return saida
+
+
+STRING_JSON = re.compile(rb'"(?:[^"\\]|\\.)*"', re.S)
+
+
+def valores_json(linha: bytes) -> list[bytes]:
+    """D61: cada par `"chave"` + espaços + `:` + espaços + string JSON, em qualquer posição
+    da linha de texto, dá a string decodificada (escape inválido ou substituto sozinho
+    descarta o par), com 6+ caracteres. A busca anda de string em string: depois de um
+    par, segue do fim do valor; depois de uma string que não é chave, do fim dela."""
+    if texto(linha) is None:
+        return []
+    saida = []
+    i = 0
+    while True:
+        i = linha.find(b'"', i)
+        if i < 0:
+            break
+        chave = STRING_JSON.match(linha, i)
+        if not chave:
+            break
+        j = chave.end()
+        while linha[j : j + 1] in (b" ", b"\t"):
+            j += 1
+        if linha[j : j + 1] != b":":
+            i = chave.end()
+            continue
+        j += 1
+        while linha[j : j + 1] in (b" ", b"\t"):
+            j += 1
+        if linha[j : j + 1] != b'"':
+            i = chave.end()
+            continue
+        valor = STRING_JSON.match(linha, j)
+        if not valor:
+            break
+        try:
+            d = json.loads(valor.group(0).decode("utf-8"), strict=False).encode("utf-8")
+        except (ValueError, UnicodeEncodeError):
+            d = None
+        if d is not None and caracteres(d) >= MIN_PADRAO:
+            saida.append(d)
+        i = valor.end()
+    return saida
+
+
+def campos_de_tab_binarios(linha: bytes) -> list[bytes]:
+    """D61: os campos de uma linha com tab que não é texto, aparados e crus, com 6+
+    bytes. Só literal (e URL-encoded): sem formas de texto nem base64."""
+    if b"\t" not in linha or texto(linha) is not None:
+        return []
+    saida = []
+    for campo in linha.split(b"\t"):
+        saida += [x for x in (aparar(campo), campo) if len(x) >= MIN_PADRAO]
     return saida
 
 
@@ -413,14 +521,16 @@ def linhas_de_anexo(v: bytes) -> list[bytes]:
     """As linhas de 6+ caracteres de um segredo de várias linhas (sem o `\\r` do fim e
     aparadas; D11, D36) e os valores de linha delas (`valores_da_linha`, campos de tab).
     A linha entra como linha (formas de texto, sem base64); o valor, como inteiro."""
-    linhas, valores = por_linha(v)
-    return sorted(linhas | valores)
+    linhas, valores, crus = por_linha(v)
+    return sorted(linhas | valores | crus)
 
 
-def por_linha(v: bytes) -> tuple[set[bytes], set[bytes]]:
-    """Linha 3 (as linhas) e linha 4 (os valores) da tabela."""
+def por_linha(v: bytes) -> tuple[set[bytes], set[bytes], set[bytes]]:
+    """Linha 3 (as linhas), linha 4 (os valores) da tabela e os campos de tab de linha
+    que não é texto (só literal, D61)."""
     linhas: set[bytes] = set()
     valores: set[bytes] = set()
+    crus: set[bytes] = set()
     for linha in v.split(b"\n"):
         if linha.endswith(b"\r"):
             linha = linha[:-1]
@@ -432,16 +542,21 @@ def por_linha(v: bytes) -> tuple[set[bytes], set[bytes]]:
             linhas.add(aparada)
         valores.update(campos_de_tab(linha))
         valores.update(valores_da_linha(linha))
-    return linhas, valores
+        valores.update(valores_json(linha))
+        crus.update(campos_de_tab_binarios(linha))
+    return linhas, valores, crus
 
 
 def de_linha(v: bytes) -> set[bytes]:
     """As variações da passada por linha (linhas 3 e 4)."""
-    linhas, valores = por_linha(v)
+    linhas, valores, crus = por_linha(v)
     pad: set[bytes] = set()
     for linha in linhas:
         pad.add(linha)
         pad |= set(url(linha)) | escapadas(linha)
+    for campo in crus:
+        pad.add(campo)
+        pad |= set(url(campo))
     for valor in valores:
         pad |= inteiro(valor)
     return pad
@@ -466,6 +581,10 @@ def variacoes(v: bytes, usuario: str | None, anexo: bool = False) -> set[bytes]:
             pad |= basic(usuario, v)
         if b"\n" in v:
             pad |= de_linha(v)
+        elif aparar(v)[:1] in (b"{", b"["):
+            # D61: JSON de uma linha só (`{"token": "…"}` num extra).
+            for valor in valores_json(v):
+                pad |= inteiro(valor)
     return {p for p in pad if listavel(p)}
 
 

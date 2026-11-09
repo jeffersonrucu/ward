@@ -214,8 +214,8 @@ teste-home-real:
 COFRE ?= .dev/cofre-teste.ward
 VARIACOES ?= .dev/variacoes.txt
 
-## dev-cofre: cria (ou recria) .dev/cofre-teste.ward com as 21 entradas de
-## dev/fixtures/entradas.json (D15 + D28), reabre com a senha de teste e confere;
+## dev-cofre: cria (ou recria) .dev/cofre-teste.ward com as 22 entradas de
+## dev/fixtures/entradas.json (D15 + D28 + D59), reabre com a senha de teste e confere;
 ## COFRE=.dev/<nome>.ward troca o destino (só dentro de .dev/)
 dev-cofre: export WARD_DEV_SAIDA = $(COFRE)
 dev-cofre: origens dev-servicos
@@ -229,12 +229,15 @@ dev-cofre-conferir: origens
 	$(CARGO) run --quiet --locked -p ward-core --example dev-cofre -- --saida "$$WARD_DEV_SAIDA" --conferir
 
 ## dev-variacoes: grava em .dev/variacoes.txt (0600) os segredos do cofre de teste e as
-## variações de D11, um padrão por linha, para `grep -F -f`; VARIACOES=.dev/<nome>.txt
+## variações da tabela única de D54 (segredo inteiro, Basic, por linha e valor de linha,
+## com as formas de texto; mais D58 e D61), a mesma da máscara, um padrão por linha,
+## para `grep -F -f`; VARIACOES=.dev/<nome>.txt
 dev-variacoes: export WARD_DEV_SAIDA = $(VARIACOES)
 dev-variacoes: dev-servicos
 	$(PYTHON) dev/variacoes.py --saida "$$WARD_DEV_SAIDA"
 
-## teste-dev-cofre: V2.29 e ataques ao dev-cofre/dev-variacoes (cada ataque tem de falhar)
+## teste-dev-cofre: V2.29, V2.52, V2.57, V3.29, V3.31, V3.32 e ataques ao
+## dev-cofre/dev-variacoes (cada ataque tem de falhar)
 teste-dev-cofre: origens
 	dev/testes/dev-cofre.sh
 

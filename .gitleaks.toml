@@ -35,4 +35,6 @@ regexes = [
     '''^falso-anexo-01$''',
     '''^falso-BLOQ-01$''',
     '''^falso-REDIR-01$''',
+    '''^falso-Ab3\$k&<9>Zq!'/ç-01$''',
+    '''^falso-Ab3\$k&<9>Zq!'$''',
 ]

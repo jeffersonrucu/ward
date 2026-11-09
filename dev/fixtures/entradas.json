@@ -1,5 +1,5 @@
 {
-  "_sobre": "Entradas do cofre de teste (D15 + acme-totp-dev de D28, tabela 'Cofre de teste' de docs/mission/validation-contract.md). Tudo falso. Fonte única: make dev-servicos lê daqui as senhas dos serviços de teste e make dev-cofre (Fase 19) monta .dev/cofre-teste.ward e make dev-variacoes gera .dev/variacoes.txt a partir daqui. 'campos' não são segredo; 'segredos' são. Caminhos relativos à raiz do repositório.",
+  "_sobre": "Entradas do cofre de teste (D15 + acme-totp-dev de D28 + delta-api-simbolos de D59, tabela 'Cofre de teste' de docs/mission/validation-contract.md). Tudo falso. Fonte única: make dev-servicos lê daqui as senhas dos serviços de teste e make dev-cofre (Fase 19) monta .dev/cofre-teste.ward e make dev-variacoes gera .dev/variacoes.txt a partir daqui. 'campos' não são segredo; 'segredos' são. Caminhos relativos à raiz do repositório.",
   "versao": 1,
   "senha_mestra": "falso-mestra-ward-01",
   "pin": "135790",
@@ -199,6 +199,18 @@
       "nivel": "livre",
       "campos": { "url": "http://localhost:8083/login", "usuario": "wp_admin" },
       "segredos": { "senha": "falso-WP-senha-01", "totp_semente": "JBSWY3DPEHPK3PXP" }
+    },
+    {
+      "nome": "delta-api-simbolos",
+      "tipo": "api",
+      "grupo": "delta",
+      "ambiente": "dev",
+      "nivel": "livre",
+      "campos": { "url": "https://api.teste.invalid", "variavel": "SIMBOLOS_TOKEN" },
+      "segredos": { "token": "falso-Ab3$k&<9>Zq!'/ç-01" },
+      "extras": [
+        { "nome": "SEGREDO_ASCII", "valor": "falso-Ab3$k&<9>Zq!'", "segredo": true }
+      ]
     }
   ]
 }

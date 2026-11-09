@@ -94,16 +94,16 @@ fn montar_texto(json_txt: &str) -> Result<Montado, Erro> {
 
 // --- V2.29: as fixtures são a tabela do contrato -----------------------------------
 
-/// As 21 entradas das fixtures, montadas pelo caminho do `make dev-cofre`, dão o mesmo
+/// As 22 entradas das fixtures, montadas pelo caminho do `make dev-cofre`, dão o mesmo
 /// corpo canônico que o cofre de teste da Fase 15a (escrito a partir da tabela do
-/// contrato, com `acme-totp-dev` de D28): mesmos nomes, tipos, campos, segredos e níveis.
+/// contrato, com `acme-totp-dev` de D28 e `delta-api-simbolos` de D59): mesmos nomes, tipos, campos, segredos e níveis.
 #[test]
 fn v2_29_fixtures_iguais_a_tabela_do_contrato() {
     let (r, f) = fixtures_reais();
     let mut ler = ler_de_teste(&r);
     let (_senha, pin, montadas) = montar(&f, &mut ler).expect("fixtures montam");
     assert_eq!(pin.as_str(), PIN_TESTE, "PIN de D15");
-    assert_eq!(montadas.len(), 21);
+    assert_eq!(montadas.len(), 22);
     let totp = montadas
         .iter()
         .find(|e| e.nome() == "acme-totp-dev")
@@ -145,7 +145,7 @@ fn v2_29_grava_reabre_e_confere() {
     // Segunda gravação (V2.29 "roda duas vezes"): troca o arquivo pelo mesmo caminho.
     gravar_entradas(&saida, &mut cofre, &montadas).unwrap();
     // A segunda gravação do mesmo cofre aberto sobe a geração (D39).
-    assert_eq!(conferir(&saida, &senha, &pin, &montadas).unwrap(), (21, 2));
+    assert_eq!(conferir(&saida, &senha, &pin, &montadas).unwrap(), (22, 2));
     let modo = fs::metadata(&saida).unwrap().permissions().mode() & 0o777;
     assert_eq!(modo, 0o600);
 
@@ -590,7 +590,7 @@ fn v2_39_cofre_gerado_tem_a_configuracao() {
     );
     let (cofre, lidas) = abrir_entradas(&bytes, &senha).unwrap();
     let cfg = cofre.configuracao();
-    assert_eq!(lidas.len(), 21);
+    assert_eq!(lidas.len(), 22);
     // D39: o cofre recém-criado está na geração 1.
     assert_eq!(cofre.geracao(), 1);
     assert_eq!(cfg.minutos_trava(), 240);

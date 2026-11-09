@@ -403,7 +403,7 @@ impl SplitMix {
 #[test]
 fn v2_30_ida_e_volta_do_cofre_de_teste() {
     let originais = cofre_de_teste();
-    assert_eq!(originais.len(), 21);
+    assert_eq!(originais.len(), 22);
     let corpo = serializar(cfg(), 1, &originais).unwrap();
     let voltaram = ler(&corpo).unwrap();
     conferir_ida_e_volta(&originais, &voltaram);
@@ -514,7 +514,7 @@ fn v2_30_ida_e_volta_pelo_disco_com_anexos_no_limite() {
     let senha = SenhaMestra::nova(SENHA_MESTRA.to_owned());
     let mut cofre = CofreAberto::novo(&senha, configuracao_nova()).unwrap();
 
-    // 21 do cofre de teste + uma de cada tipo cheia, cada uma com anexos que somam o
+    // 22 do cofre de teste + uma de cada tipo cheia, cada uma com anexos que somam o
     // limite de D29 (256 KiB).
     let mut originais = cofre_de_teste();
     originais.extend(um_de_cada_cheio());
@@ -1128,7 +1128,7 @@ fn v2_30_configuracao_volta_igual() {
     c.definir_backup(BackupExterno::novo(true, Some("1234-ABCD")).unwrap());
     let corpo = serializar(&c, 1, &cofre_de_teste()).unwrap();
     let (lida, entradas) = ler_tudo(&corpo).unwrap();
-    assert_eq!(entradas.len(), 21);
+    assert_eq!(entradas.len(), 22);
     assert_eq!(lida.minutos_trava(), 30);
     assert_eq!(
         lida.backup(),

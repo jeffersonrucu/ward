@@ -1,6 +1,6 @@
 #!/bin/bash -p
-# V2.29, V2.52, V2.57 e ataques ao `make dev-cofre` / `make dev-variacoes` (Fases 19, 19d
-# e 19e).
+# V2.29, V2.52, V2.57, V3.29 e ataques ao `make dev-cofre` / `make dev-variacoes` (Fases
+# 19, 19d, 19e e 22a).
 # Cada ataque tem de FALHAR. Uso: dev/testes/dev-cofre.sh  (ou `make teste-dev-cofre`).
 #
 # Nunca imprime segredo: as buscas usam `grep -q`/`-c` e as mensagens só dizem o quê.
@@ -179,7 +179,7 @@ PY
     fi
 }
 
-# --- V2.29: roda duas vezes, 21 entradas da tabela, abre com a senha de teste -----------
+# --- V2.29: roda duas vezes, 22 entradas da tabela, abre com a senha de teste -----------
 cofre_duas_vezes() {
     local i
     for i in 1 2; do
@@ -221,13 +221,14 @@ PY
     fi
     sem_segredo "dev-cofre-conferir" "$TMP/conferir.log"
     grep -P '^  \S+\t\S+\t\S+$' "$TMP/conferir.log" | sed 's/^  //' | sort >"$TMP/lidas.txt"
-    if [ "$(wc -l <"$TMP/tabela.txt")" = 21 ] && cmp -s "$TMP/tabela.txt" "$TMP/lidas.txt"; then
-        ok "o cofre reaberto tem as 21 entradas da tabela, com tipo e nível (inclui acme-totp-dev)"
+    if [ "$(wc -l <"$TMP/tabela.txt")" = 22 ] && cmp -s "$TMP/tabela.txt" "$TMP/lidas.txt"; then
+        ok "o cofre reaberto tem as 22 entradas da tabela, com tipo e nível (inclui acme-totp-dev e delta-api-simbolos)"
     else
         falhou "entradas do cofre diferem da tabela do contrato"
         diff "$TMP/tabela.txt" "$TMP/lidas.txt" >&2 || true
     fi
     grep -qxP 'acme-totp-dev\tlogin\tlivre' "$TMP/lidas.txt" && ok "acme-totp-dev (D28) no cofre" || falhou "acme-totp-dev fora do cofre"
+    grep -qxP 'delta-api-simbolos\tapi\tlivre' "$TMP/lidas.txt" && ok "delta-api-simbolos (D59) no cofre" || falhou "delta-api-simbolos fora do cofre"
 
     # A lista de nomes/níveis não casa com a lista de segredos (sem falso positivo).
     if grep -qF -f "$LISTA" "$TMP/lidas.txt"; then falhou "nome de entrada casa com a lista de segredos"; else
@@ -300,6 +301,67 @@ PY
     sem_segredo "teste cruzado" "$TMP/cruzado.log"
 }
 
+# --- V3.29: as formas de texto de delta-api-simbolos (D54, D58, D59) na lista -----------
+# Calculadas aqui pelo bash real (`${X@Q}`, `declare -p`, `printf %q`) e pela biblioteca
+# padrão do Python (JSON), sem o `variacoes.py`; o teste cruzado confere depois que cada
+# uma sai `••••` pela máscara da entrada. Nada é impresso: os padrões vão para o TMP.
+simbolos_d59() {
+    python3 -I -B - "$RAIZ/dev/fixtures/entradas.json" >"$TMP/simbolos.env" <<'PY'
+import json, shlex, sys
+d = json.load(open(sys.argv[1], encoding="utf-8"))
+e = next(x for x in d["entradas"] if x["nome"] == "delta-api-simbolos")
+assert e["tipo"] == "api" and e["nivel"] == "livre" and e["campos"]["variavel"] == "SIMBOLOS_TOKEN"
+extras = [x for x in e.get("extras", []) if x.get("segredo") is True]
+assert [x["nome"] for x in extras] == ["SEGREDO_ASCII"]
+print("TOKEN=" + shlex.quote(e["segredos"]["token"]))
+print("ASCII=" + shlex.quote(extras[0]["valor"]))
+PY
+    python3 -I -B - "$TMP/simbolos.env" >"$TMP/simbolos-json.txt" <<'PY'
+import json, shlex, sys, base64
+from urllib.parse import quote
+v = {}
+for linha in open(sys.argv[1], encoding="utf-8"):
+    k, _, r = linha.rstrip("\n").partition("=")
+    v[k] = shlex.split(r)[0]
+bs = chr(92)
+html = {"&": bs + "u0026", "<": bs + "u003c", ">": bs + "u003e"}
+saida = []
+for x in (v["TOKEN"], v["ASCII"]):
+    saida.append(x)
+    saida.append(base64.b64encode(x.encode()).decode())
+    saida.append(quote(x, safe=""))
+    saida.append("".join(html.get(c, c) for c in json.dumps(x, ensure_ascii=False)[1:-1]))
+t = v["TOKEN"]
+saida.append(json.dumps(t, ensure_ascii=True)[1:-1].replace("/", bs + "/"))
+go_ascii = "".join(html.get(c, c) for c in json.dumps(t, ensure_ascii=True)[1:-1])
+# A forma de D58 citada no V3.29, montada em pedaços (o texto não fica inteiro aqui).
+assert go_ascii == "falso-Ab3$k" + bs + "u0026" + bs + "u003c9" + bs + "u003eZq!'/" + bs + "u00e7-01"
+saida.append(go_ascii)
+print("\n".join(saida))
+PY
+    # As formas do shell, pelo bash real, em locale UTF-8 (no C o bash troca o valor fora
+    # do ASCII por `$'…'`, que fica em RA3).
+    (
+        set +u
+        export LC_ALL=C.UTF-8
+        # shellcheck disable=SC1091
+        . "$TMP/simbolos.env"
+        q="${TOKEN@Q}"; printf '%s\n' "${q:1:${#q}-2}"
+        q="${ASCII@Q}"; printf '%s\n' "${q:1:${#q}-2}"
+        printf '%q\n' "$ASCII"
+        d="$(declare -p TOKEN)"; d="${d#*=\"}"; printf '%s\n' "${d%\"}"
+    ) >"$TMP/simbolos-shell.txt"
+    local faltou=0 v n=0
+    while IFS= read -r v; do
+        [ -n "$v" ] || continue
+        n=$((n + 1))
+        grep -qxF -- "$v" "$LISTA" || { faltou=1; falhou "V3.29: forma de delta-api-simbolos fora da lista (padrão nº $n)"; }
+    done < <(cat "$TMP/simbolos-json.txt" "$TMP/simbolos-shell.txt")
+    [ "$n" -ge 14 ] || falhou "V3.29: poucas formas de delta-api-simbolos ($n)"
+    [ "$faltou" = 0 ] && ok "V3.29: $n formas de delta-api-simbolos na lista (literal, base64, percent, @Q, aspas duplas, %q, Go, PHP, Go + ensure_ascii)"
+    rm -f "$TMP/simbolos.env"
+}
+
 # --- V2.29 (S15): saída fora de .dev/ recusada, nos dois alvos -------------------------
 saida_fora() { # alvo variável extensão
     local alvo="$1" var="$2" ext="$3" fora="$TMP/fora-$1"
@@ -359,6 +421,7 @@ saida_dentro() {
 variacoes
 variacoes_d36_d37
 cofre_duas_vezes
+simbolos_d59
 cruzado
 saida_fora dev-cofre COFRE .ward
 saida_fora dev-variacoes VARIACOES .txt

@@ -405,12 +405,12 @@ fn v2_32_corpo_forjado_recusado_rapido_sem_alocar() {
 #[test]
 fn v2_32_corpo_autentico_aloca_so_o_que_existe() {
     // O cofre de teste lido de verdade: o maior pedido é o corpo (cópia de um campo) ou
-    // o vetor das 21 entradas que existem, nunca algo do tamanho declarado.
+    // o vetor das 22 entradas que existem, nunca algo do tamanho declarado.
     let corpo = serializar(configuracao_de_teste(), 1, &cofre_de_teste()).unwrap();
     let (r, pedidos, maior) = contando(|| desserializar(&corpo));
-    assert_eq!(r.map(|(_, _, e)| e.len()), Ok(21));
+    assert_eq!(r.map(|(_, _, e)| e.len()), Ok(22));
     assert!(pedidos > 0);
-    let teto = corpo.len().max(21 * std::mem::size_of::<Entrada>());
+    let teto = corpo.len().max(22 * std::mem::size_of::<Entrada>());
     assert!(maior <= teto, "pedido de {maior} > {teto}");
 }
 
@@ -552,13 +552,13 @@ fn v2_33_nenhum_bloco_liberado_tem_segredo() {
         let entradas = cofre_de_teste();
         let corpo = serializar(&cfg, 1, &entradas).unwrap();
         let (_, _, lidas) = desserializar(&corpo).unwrap();
-        assert_eq!(lidas.len(), 21);
+        assert_eq!(lidas.len(), 22);
         drop(corpo);
         let mut cofre = CofreAberto::novo(&senha, cfg).unwrap();
         gravar_entradas(&destino, &mut cofre, &entradas).unwrap();
         let arquivo = std::fs::read(&destino).unwrap();
         let (mut reaberto, voltaram) = abrir_entradas(&arquivo, &senha).unwrap();
-        assert_eq!(voltaram.len(), 21);
+        assert_eq!(voltaram.len(), 22);
         assert_eq!(reaberto.geracao(), 1);
         // O PIN confere no hash lido do corpo (D30), e um hash novo nasce e morre.
         assert!(reaberto.configuracao().conferir_pin(PIN_TESTE.as_bytes()));
