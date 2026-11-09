@@ -229,6 +229,75 @@ fn ataque_formulario_pela_ponte() {
     fs::remove_dir_all(base).unwrap();
 }
 
+/// V5.15 pela ponte (S9): `mudar_nivel` com o PIN certo muda e responde só o nível;
+/// PIN errado responde "pin-incorreto" e não muda; PIN fora do formato, nível
+/// inventado e campo faltando são recusados sem contar erro; o 5º erro de PIN seguido
+/// trava, e daí tudo responde "travado". Nenhuma resposta traz o PIN.
+#[test]
+fn ataque_mudar_nivel_pela_ponte() {
+    let (p, _l, _a, base) = ponte("nivel");
+    let nivel = |p: &Ponte<DaemonFalso, Area>| {
+        let r = p.responder(&post(
+            p,
+            "detalhe_credencial",
+            r#"{"entrada":"acme-pg-prod"}"#,
+            &[],
+        ));
+        r.corpo_json().unwrap()["valor"]["nivel"].clone()
+    };
+    let mudar = |p: &Ponte<DaemonFalso, Area>, corpo: &str| {
+        let r = p.responder(&post(p, "mudar_nivel", corpo, &[]));
+        assert!(
+            !String::from_utf8_lossy(&r.corpo).contains("135790"),
+            "PIN na resposta"
+        );
+        r.corpo_json().unwrap()
+    };
+    let v = mudar(
+        &p,
+        r#"{"entrada":"acme-pg-prod","nivel":"livre","pin":"135790"}"#,
+    );
+    assert_eq!(
+        v,
+        serde_json::json!({"ok": true, "valor": {"entrada": "acme-pg-prod", "nivel": "livre"}})
+    );
+    assert_eq!(nivel(&p), "livre");
+    // Recusados antes do daemon: não contam erro de PIN (seriam 6 × 6 erros).
+    for _ in 0..6 {
+        for corpo in [
+            r#"{"entrada":"acme-pg-prod","nivel":"bloqueado","pin":"12"}"#,
+            r#"{"entrada":"acme-pg-prod","nivel":"bloqueado","pin":135790}"#,
+            r#"{"entrada":"acme-pg-prod","nivel":"bloqueado","pin":"13579a"}"#,
+            r#"{"entrada":"acme-pg-prod","nivel":"admin","pin":"000000"}"#,
+            r#"{"entrada":"acme-pg-prod","nivel":"bloqueado"}"#,
+            r#"{"entrada":"acme\npg","nivel":"bloqueado","pin":"000000"}"#,
+        ] {
+            let v = mudar(&p, corpo);
+            assert_eq!(v["ok"], false, "{corpo}");
+            assert_eq!(v["codigo"], "pedido-invalido", "{corpo}: {v}");
+        }
+    }
+    assert_eq!(nivel(&p), "livre");
+    for k in 1..=5 {
+        let v = mudar(
+            &p,
+            r#"{"entrada":"acme-pg-prod","nivel":"bloqueado","pin":"000000"}"#,
+        );
+        assert_eq!(v["codigo"], "pin-incorreto", "erro {k}: {v}");
+        if k < 5 {
+            assert_eq!(nivel(&p), "livre");
+        }
+    }
+    let r = p.responder(&post(&p, "estado_do_cofre", "{}", &[]));
+    assert_eq!(r.corpo_json().unwrap()["valor"]["estado"], "travado");
+    let v = mudar(
+        &p,
+        r#"{"entrada":"acme-pg-prod","nivel":"bloqueado","pin":"135790"}"#,
+    );
+    assert_eq!(v["codigo"], "travado", "{v}");
+    fs::remove_dir_all(base).unwrap();
+}
+
 /// V5.21 pela ponte: "gerar" devolve só tamanho, força e símbolos de D35; "copiar"
 /// devolve `null` e a senha vai para a área; o valor só sai no "revelar"; opções fora do
 /// formato (tamanho fora de 8–64, tipo errado, campo faltando) são recusadas.
