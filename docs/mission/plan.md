@@ -993,6 +993,24 @@ a janela nativa do app de teste pelo daemon de teste, destravou com a senha de t
 "está bom, continue". O roteiro inteiro (aprovação em primeiro plano, bandeja, copiar 30 s)
 não foi conferido passo a passo; V5.28 fica parcial até o QA final.
 
+Scrutiny do M5, rodada 2 (2026-11-09): **reprovado** (2ª vez), só pelo harness.
+`make check`, `make app-check` e o `cargo test` do workspace deram 0, este duas vezes e
+sem teste instável. Falha: o `make teste-webkit-real` sai 2. O recorte do
+`dev/testes/webkit-real.sh:109-114` (de `// Antes do GTK` até `let app = com_comandos(`)
+apaga `estado`, `canais`, `fila` e `na_aprovacao`, que o `main` atual define nesse
+trecho, e o harness não compila (E0425). Com o recorte só da `partida`, numa cópia, deu
+"V5.32 ok". V5.28 continua parcial.
+Decisão do usuário: corrigir e seguir. O scrutiny do M5 conta como aprovado depois da
+39e; seguem a segurança e o QA.
+
+- [ ] Fase 39e — Consertar o recorte do `dev/testes/webkit-real.sh`: tirar só o bloco
+  da `partida` (o `let mut partida = partida::iniciar()…`, o `tomar_daemon` trocado por
+  `Err(ErroApp::ConexaoPerdida)` e o `partida.vigiar(…)`), de modo que o harness resista
+  a variáveis novas no `main`. A cópia do scrutiny está no scratchpad em `wk.sh`. Rodar
+  `make teste-webkit-real` até "V5.32 ok". Pôr no `CLAUDE.md` as linhas de
+  `make teste-logs-app`, `make teste-canais-gst` e `make teste-app-e2e` (pendência da
+  39c). V5.32.
+
 ## Milestone 6 — Extensão, `ward login` e `ward playwright`
 Contrato: V6.1–V6.16
 
