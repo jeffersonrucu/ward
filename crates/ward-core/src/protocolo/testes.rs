@@ -11,8 +11,7 @@ use super::*;
 use crate as wc;
 use crate::corpo::ErroAbrir;
 use crate::entrada::{
-    Ambiente, NivelAcesso, Rascunho, RascunhoAnexo, RascunhoDados, RascunhoExtra, Segredo,
-    TipoEntrada,
+    Ambiente, Rascunho, RascunhoAnexo, RascunhoDados, RascunhoExtra, Segredo, TipoEntrada,
 };
 use crate::gravacao::ErroGravacao;
 use crate::limites::{
@@ -127,7 +126,7 @@ fn item(nome: &str) -> ItemLista {
         ambiente: Ambiente::Stage,
         projeto: Some("portal \"novo\" \\ ação".into()),
         tags: vec!["web".into()],
-        nivel: NivelAcesso::ComAprovacao,
+        nivel: None,
         endereco: Some("https://clientex.invalid/login".into()),
     }
 }
@@ -437,6 +436,11 @@ fn s1_resposta_com_credencial_nunca_vai_ao_agente() {
     for r in uma_resposta_de_cada() {
         let t = r.tipo();
         for papel in Papel::TODOS {
+            // A lista do exemplo é a do agente (sem nível); a do app, com nível, está no
+            // `d50_lista_do_agente_sem_nivel_e_do_app_com_nivel`.
+            if t == TipoResposta::Lista && papel == Papel::App {
+                continue;
+            }
             let enc = codificar_resposta(papel, &r);
             if t.permitida(papel) {
                 let q = enc.unwrap();
@@ -493,7 +497,12 @@ fn contem(palheiro: &[u8], agulha: &[u8]) -> bool {
 fn v3_3_lista_e_detalhe_do_cofre_de_teste_sem_segredo() {
     let entradas = cofre_de_teste();
     assert_eq!(entradas.len(), 21);
-    let lista = Resposta::Lista(entradas.iter().map(ItemLista::de_entrada).collect());
+    let lista = Resposta::Lista(
+        entradas
+            .iter()
+            .map(|e| ItemLista::de_entrada(e, Papel::Agente))
+            .collect(),
+    );
     let q_lista = codificar_resposta(Papel::Agente, &lista).unwrap();
     let detalhes: Vec<_> = entradas
         .iter()
@@ -1368,4 +1377,47 @@ fn fuzz_quadro_e_json_aleatorios() {
         }
     }
     let _ = wc::limites::MAX_QUADRO_RESPOSTA;
+}
+
+/// D50 (V3.26): a lista do agente vai sem o nível, a do app com ele. O daemon não
+/// consegue mandar ao agente um item com nível, e um quadro forjado com nível é
+/// recusado pela leitura do agente (e um sem nível, pela do app).
+#[test]
+fn d50_lista_do_agente_sem_nivel_e_do_app_com_nivel() {
+    let entradas = cofre_de_teste();
+    let do_papel = |p: Papel| {
+        Resposta::Lista(
+            entradas
+                .iter()
+                .map(|e| ItemLista::de_entrada(e, p))
+                .collect(),
+        )
+    };
+    // Agente: nenhum `"nivel"` no quadro, e a leitura devolve `None`.
+    let q = codificar_resposta(Papel::Agente, &do_papel(Papel::Agente)).unwrap();
+    assert!(!contem(&q, b"\"nivel\""));
+    let Resposta::Lista(itens) = decodificar_resposta(Papel::Agente, &q).unwrap() else {
+        panic!("não é lista")
+    };
+    assert!(itens.iter().all(|i| i.nivel.is_none()));
+    // App: todo item com nível, igual ao da entrada.
+    let q_app = codificar_resposta(Papel::App, &do_papel(Papel::App)).unwrap();
+    let Resposta::Lista(itens) = decodificar_resposta(Papel::App, &q_app).unwrap() else {
+        panic!("não é lista")
+    };
+    for (i, e) in itens.iter().zip(&entradas) {
+        assert_eq!(i.nivel, Some(e.nivel()));
+    }
+    // Ataques: o item do app mandado ao agente é recusado na escrita; o quadro do app
+    // lido como agente é recusado; o do agente lido como app também.
+    assert_eq!(
+        codificar_resposta(Papel::Agente, &do_papel(Papel::App)).unwrap_err(),
+        ErroCodificar::NaoPermitidaAoPapel
+    );
+    assert_eq!(
+        codificar_resposta(Papel::App, &do_papel(Papel::Agente)).unwrap_err(),
+        ErroCodificar::Invalida
+    );
+    assert!(decodificar_resposta(Papel::Agente, &q_app).is_err());
+    assert!(decodificar_resposta(Papel::App, &q).is_err());
 }

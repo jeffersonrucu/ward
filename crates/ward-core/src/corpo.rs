@@ -176,6 +176,20 @@ pub fn abrir_entradas_desde(
     geracao_minima: u64,
     geracao_queimada: u64,
 ) -> Result<(CofreAberto, Vec<Entrada>), ErroAbrir> {
+    abrir_entradas_lida(arquivo, senha, geracao_minima, geracao_queimada)
+        .map(|(cofre, entradas, _)| (cofre, entradas))
+}
+
+/// Como [`abrir_entradas_desde`], e devolve também a geração **lida do corpo** (Fase 22,
+/// D53). O [`CofreAberto::geracao`] fica em max(lida, `geracao_queimada`); o daemon
+/// precisa da lida para subir a maior geração confirmada no disco (`vista`) sem
+/// confundi-la com uma queimada que nunca chegou ao disco.
+pub fn abrir_entradas_lida(
+    arquivo: &[u8],
+    senha: &SenhaMestra,
+    geracao_minima: u64,
+    geracao_queimada: u64,
+) -> Result<(CofreAberto, Vec<Entrada>, u64), ErroAbrir> {
     let (chaves, conteudo) = formato::abrir(arquivo, senha).map_err(ErroAbrir::Formato)?;
     let (configuracao, geracao, entradas) = desserializar(&conteudo).map_err(ErroAbrir::Corpo)?;
     drop(conteudo);
@@ -186,6 +200,7 @@ pub fn abrir_entradas_desde(
     Ok((
         CofreAberto::de_partes(chaves, configuracao, geracao.max(geracao_queimada)),
         entradas,
+        geracao,
     ))
 }
 

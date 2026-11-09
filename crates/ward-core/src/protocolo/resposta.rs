@@ -13,7 +13,7 @@ use super::campos::{Campos, R, segredo_de, texto_de, textos_de};
 use super::erros::{ErroResposta, Problema};
 use super::json::{Escritor, JsonInvalido};
 use super::pedido::CAMPOS_SECRETOS;
-use super::{Operacao, TipoResposta};
+use super::{Operacao, Papel, TipoResposta};
 use crate::entrada::{
     Ambiente, Autenticacao, Dados, Entrada, NivelAcesso, Segredo, TipoEntrada, ValorExtra,
 };
@@ -40,7 +40,7 @@ impl Fluxo {
 }
 
 /// Um item da `lista`: o que o agente pode ver ("Comandos": nome, tipo, grupo,
-/// ambiente, projeto, URL/host), mais tags e nível.
+/// ambiente, projeto, URL/host), mais tags; o nível só vai ao app (D50).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ItemLista {
     pub nome: String,
@@ -49,14 +49,18 @@ pub struct ItemLista {
     pub ambiente: Ambiente,
     pub projeto: Option<String>,
     pub tags: Vec<String>,
-    pub nivel: NivelAcesso,
+    /// Nível de acesso: `Some` só na lista do app. A do agente vai sem ele (D50):
+    /// [`super::codificar_resposta`] recusa mandar ao agente um item com nível, e a
+    /// leitura do agente recusa um item que o traga.
+    pub nivel: Option<NivelAcesso>,
     /// URL (`login`, `api`) ou host (`banco`, `servidor`, `smtp`, `ftp/sftp`).
     pub endereco: Option<String>,
 }
 
 impl ItemLista {
-    /// O item de uma entrada. Quem filtra as bloqueadas para o agente é o daemon.
-    pub fn de_entrada(e: &Entrada) -> Self {
+    /// O item de uma entrada para o papel: com o nível só para o app (D50). Quem filtra
+    /// as bloqueadas para o agente é o daemon.
+    pub fn de_entrada(e: &Entrada, papel: Papel) -> Self {
         let endereco = match e.dados() {
             Dados::Login(l) => Some(l.url.clone()),
             Dados::Api(a) => a.url.clone(),
@@ -73,7 +77,7 @@ impl ItemLista {
             ambiente: e.ambiente(),
             projeto: e.projeto().map(str::to_owned),
             tags: e.tags().to_vec(),
-            nivel: e.nivel(),
+            nivel: (papel == Papel::App).then(|| e.nivel()),
             endereco,
         }
     }
@@ -341,8 +345,9 @@ impl Resposta {
         }
     }
 
-    /// Confere os limites que a leitura confere.
-    pub(crate) fn conferir(&self) -> R<()> {
+    /// Confere os limites que a leitura confere, e o nível da lista pelo papel (D50:
+    /// o app sempre recebe, o agente nunca).
+    pub(crate) fn conferir(&self, papel: Papel) -> R<()> {
         let ok = |c: bool| if c { Ok(()) } else { Err(JsonInvalido) };
         let item_ok = |i: &ItemLista| {
             i.nome.len() <= MAX_NOME
@@ -363,7 +368,9 @@ impl Resposta {
                 }
                 _ => true,
             }),
-            Resposta::Lista(l) => ok(l.len() <= MAX_ENTRADAS && l.iter().all(item_ok)),
+            Resposta::Lista(l) => ok(l.len() <= MAX_ENTRADAS
+                && l.iter().all(item_ok)
+                && l.iter().all(|i| i.nivel.is_some() == (papel == Papel::App))),
             Resposta::Saida { dados, .. } => ok(dados.len() <= MAX_TEXTO_EXIBIDO),
             Resposta::SessaoPlaywright { caminho } => {
                 ok(!caminho.is_empty() && caminho.len() <= MAX_TEXTO)
@@ -485,7 +492,14 @@ impl Resposta {
             }
             Resposta::Detalhe(d) => {
                 cabecalho(
-                    e, &d.nome, d.tipo, &d.grupo, d.ambiente, &d.projeto, &d.tags, d.nivel,
+                    e,
+                    &d.nome,
+                    d.tipo,
+                    &d.grupo,
+                    d.ambiente,
+                    &d.projeto,
+                    &d.tags,
+                    Some(d.nivel),
                 );
                 e.chave("campos");
                 e.objeto(|e| {
@@ -613,7 +627,7 @@ fn cabecalho(
     ambiente: Ambiente,
     projeto: &Option<String>,
     tags: &[String],
-    nivel: NivelAcesso,
+    nivel: Option<NivelAcesso>,
 ) {
     e.chave("nome");
     e.texto(nome);
@@ -629,8 +643,10 @@ fn cabecalho(
     }
     e.chave("tags");
     escrever_textos(e, tags);
-    e.chave("nivel");
-    e.texto(nivel.nome());
+    if let Some(nivel) = nivel {
+        e.chave("nivel");
+        e.texto(nivel.nome());
+    }
 }
 
 struct Cabecalho {
@@ -640,10 +656,12 @@ struct Cabecalho {
     ambiente: Ambiente,
     projeto: Option<String>,
     tags: Vec<String>,
-    nivel: NivelAcesso,
+    nivel: Option<NivelAcesso>,
 }
 
-fn ler_cabecalho(c: &mut Campos) -> R<Cabecalho> {
+/// Lê o cabeçalho de um item ou detalhe. `com_nivel`: o nível é obrigatório (app) ou
+/// proibido (lista do agente, D50).
+fn ler_cabecalho(c: &mut Campos, com_nivel: bool) -> R<Cabecalho> {
     Ok(Cabecalho {
         nome: c.texto("nome", MAX_NOME)?,
         tipo: TipoEntrada::de_nome(&c.texto("tipo", MAX_NOME)?).ok_or(JsonInvalido)?,
@@ -651,12 +669,16 @@ fn ler_cabecalho(c: &mut Campos) -> R<Cabecalho> {
         ambiente: Ambiente::de_nome(&c.texto("ambiente", MAX_NOME)?).ok_or(JsonInvalido)?,
         projeto: c.texto_opc("projeto", MAX_TEXTO)?,
         tags: textos_de(c.lista("tags", MAX_TAGS)?, MAX_TAG)?,
-        nivel: NivelAcesso::de_nome(&c.texto("nivel", MAX_NOME)?).ok_or(JsonInvalido)?,
+        nivel: match c.texto_opc("nivel", MAX_NOME)? {
+            Some(n) if com_nivel => Some(NivelAcesso::de_nome(&n).ok_or(JsonInvalido)?),
+            None if !com_nivel => None,
+            _ => return Err(JsonInvalido),
+        },
     })
 }
 
 /// Lê os `dados` de uma resposta do tipo (o papel já foi conferido).
-pub(crate) fn ler(tipo: TipoResposta, mut c: Campos) -> R<Resposta> {
+pub(crate) fn ler(papel: Papel, tipo: TipoResposta, mut c: Campos) -> R<Resposta> {
     let r = match tipo {
         TipoResposta::Ok => Resposta::Ok,
         TipoResposta::PedidoDeDestrave => Resposta::PedidoDeDestrave,
@@ -693,7 +715,7 @@ pub(crate) fn ler(tipo: TipoResposta, mut c: Campos) -> R<Resposta> {
             let mut itens = Vec::new();
             for v in c.lista("itens", MAX_ENTRADAS)? {
                 let mut o = Campos::de(v)?;
-                let k = ler_cabecalho(&mut o)?;
+                let k = ler_cabecalho(&mut o, papel == Papel::App)?;
                 let endereco = o.texto_opc("endereco", MAX_URL)?;
                 o.fim()?;
                 itens.push(ItemLista {
@@ -727,7 +749,7 @@ pub(crate) fn ler(tipo: TipoResposta, mut c: Campos) -> R<Resposta> {
             caminho: c.texto("caminho", MAX_TEXTO)?,
         },
         TipoResposta::Detalhe => {
-            let k = ler_cabecalho(&mut c)?;
+            let k = ler_cabecalho(&mut c, true)?;
             // Na ordem do quadro; só os campos de texto conhecidos (a chave repetida o
             // JSON já recusou), e a conferência no fim limita a quantidade.
             let mut campos = Vec::new();
@@ -766,7 +788,7 @@ pub(crate) fn ler(tipo: TipoResposta, mut c: Campos) -> R<Resposta> {
                 ambiente: k.ambiente,
                 projeto: k.projeto,
                 tags: k.tags,
-                nivel: k.nivel,
+                nivel: k.nivel.ok_or(JsonInvalido)?,
                 campos,
                 segredos,
                 extras,
@@ -818,6 +840,6 @@ pub(crate) fn ler(tipo: TipoResposta, mut c: Campos) -> R<Resposta> {
         },
     };
     c.fim()?;
-    r.conferir()?;
+    r.conferir(papel)?;
     Ok(r)
 }

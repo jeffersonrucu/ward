@@ -428,7 +428,7 @@ Contrato: V3.1–V3.30
   - D48: lista insegura da glibc no `conferir_ambiente_proprio`.
   Testes em contêiner (`ubuntu:24.04`, root só dentro dele). V3.5 (forma de D47),
   V3.23–V3.25.
-- [ ] Fase 22 — (Depende das Fases 19e e 21b; não começa antes delas.) `wardd`: estado travado/destravado, destravar com espera crescente
+- [x] Fase 22 — (Depende das Fases 19e e 21b; não começa antes delas.) `wardd`: estado travado/destravado, destravar com espera crescente
   (D20), travar com zeroização, PIN (confere pelo hash da seção de configuração do
   corpo v3 e pela função da Fase 19b, D30; 5 erros travam), mudar nível só do
   papel app com PIN, `lista` sem bloqueadas, logs sem segredo; lê e grava o corpo pela
