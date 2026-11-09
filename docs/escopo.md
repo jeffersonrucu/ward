@@ -228,6 +228,12 @@ inclusive o valor revelado (PRD D64).
 
 ### Fora do modelo de ameaça (dito com honestidade)
 
+- Extensão com acesso a todo site https sem clique (decisão do usuário, 2026-11-09,
+  D66). O `ward login` precisa preencher a aba ativa sem gesto do usuário, então a
+  extensão declara `host_permissions` para `https://*/*`, `localhost` e `127.0.0.1`.
+  Uma extensão comprometida pode rodar código em qualquer página https; a origem do
+  preenchimento continua conferida no daemon.
+
 - Root comprometido, kernel ou firmware.
 - Leitura, por outro processo do mesmo usuário, do segredo entregue ao filho do
   `ward run` ou ao `sshpass` do `ward ssh` enquanto ele roda: variáveis em

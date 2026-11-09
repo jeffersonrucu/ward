@@ -1355,6 +1355,16 @@ em `/tmp/claude-1000/-home-jeffersonoliveira-projetos-cofre/d2e230bd-a662-43be-a
     (busca ou filtros sem resultado), cartão de nível bloqueado no detalhe e contagens
     do cofre de teste tiradas da fixture (21 entradas hoje, 22 depois da Fase 22a; 13
     no acme).
+- D66. **Extensão com `host_permissions` e content script fixo** (decisão do usuário,
+  2026-11-09; Fases 42 e 43). Para oferecer "Salvar login" no envio e para o `ward
+  login` preencher a aba ativa sem clique, a extensão declara `host_permissions`
+  exatamente `https://*/*`, `http://localhost/*` e `http://127.0.0.1/*` (as origens que
+  D9 aceita), um content script `envio.js` em todo http/https (só quadro principal, só
+  envio com gesto real) e um service worker `servico.js` (remetente conferido pelo
+  `sender` do Chrome; senha capturada só na memória dele, no máximo 3 min). O
+  `dev/extensao/montar.py` recusa qualquer desvio. Preço aceito: a extensão pode
+  injetar código em qualquer página https sem clique. A origem continua conferida no
+  daemon (D9) e cada preenchimento vale uma vez.
 
 ### Riscos abertos
 
@@ -1367,6 +1377,8 @@ em `/tmp/claude-1000/-home-jeffersonoliveira-projetos-cofre/d2e230bd-a662-43be-a
   aceita) e registra o resultado. Sem mitigação que funcione, a asserção V4.13 reprova
   e o usuário decide entre aceitar o risco (vai para "Fora do modelo" no escopo) ou
   mudar a entrega.
+  **Decisão do usuário (2026-11-09): risco aceito**, registrado em "Fora do modelo de
+  ameaça" no escopo.
 - **RA2. Caminho do usuário no `ward ssh`** (confirmar antes do M4). D3 é a leitura
   segura de "quem chamou é conhecido pelo próprio `ward ssh`". Se o usuário quiser
   `ward ssh` sem PIN digitado direto no terminal, não há sinal que o Claude não forje,
