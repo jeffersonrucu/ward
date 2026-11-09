@@ -5,8 +5,10 @@
 //! instalados setgid para os grupos `ward-app` e `ward-nm`. O `exec` setgid deixa o
 //! processo não-dumpable desde a primeira instrução e põe o `ld.so` em modo seguro
 //! (`AT_SECURE`), e o kernel fixa o egid no `SO_PEERCRED` no `connect`. O daemon dá:
-//! - papel app ao egid `ward-app`, com o pai igual ao próprio daemon ou ao
-//!   `systemd --user` do usuário e sem depurador;
+//! - papel app ao egid `ward-app`, com o pai igual ao próprio daemon e sem depurador.
+//!   O daemon é o único pai aceito (D57): o `systemd --user` roda as units de
+//!   `~/.config/systemd/user/`, que um pacote do usuário escreve, e a conferência dele
+//!   pelo `/proc` (nome, `cmdline`, cgroup) é forjável;
 //! - papel extensão ao egid `ward-nm`, sem depurador e com o pai igual ao Chrome
 //!   instalado, conferido pelo `/proc` do pai;
 //! - papel comum (agente) a qualquer outro;
@@ -85,7 +87,7 @@ pub enum Recusa {
     GrupoComum,
     /// `ptrace_scope` 0, `suid_dumpable` 1 ou ilegíveis: sem papel especial (D47).
     PoliticaKernel,
-    /// O pai do app não é o daemon nem o `systemd --user` do usuário (D47).
+    /// O pai do app não é o daemon (D47, D57).
     PaiDoAppNaoPermitido,
 }
 
@@ -110,9 +112,7 @@ impl fmt::Display for Recusa {
             Recusa::PoliticaKernel => {
                 "ptrace_scope 0 ou suid_dumpable 1: papel de app e extensão desligado"
             }
-            Recusa::PaiDoAppNaoPermitido => {
-                "o pai do app não é o daemon nem o systemd --user do usuário"
-            }
+            Recusa::PaiDoAppNaoPermitido => "o pai do app não é o daemon",
         };
         f.write_str(s)
     }
@@ -221,7 +221,7 @@ impl BinarioPermitido {
 
 /// Arquivo regular do root, sem escrita para grupo/outros, com todas as pastas acima
 /// também do root e sem escrita para grupo/outros, sem link simbólico no caminho.
-fn conferir_arquivo_do_root(caminho: &Path) -> Result<Metadata, ()> {
+pub(crate) fn conferir_arquivo_do_root(caminho: &Path) -> Result<Metadata, ()> {
     let meta = std::fs::symlink_metadata(caminho).map_err(|_| ())?;
     if !meta.file_type().is_file() || !do_root_sem_escrita(&meta) {
         return Err(());
@@ -412,17 +412,16 @@ impl ProcessoPar {
         self.alvo.conferir_vivo()
     }
 
-    /// O pai do app é este processo (o daemon o abriu) ou o `systemd --user` do
-    /// usuário (D47).
+    /// O pai do app é este processo: o daemon o abriu pelo lançador (D57). Qualquer
+    /// outro pai, inclusive um que imite o `systemd --user`, recusa.
     fn conferir_pai_do_app(&self) -> Result<(), Recusa> {
         let pai = self.pai().map_err(|r| match r {
             Recusa::ProcessoSumiu => r,
             _ => Recusa::PaiDoAppNaoPermitido,
         })?;
-        if pai.pid == std::process::id() {
-            return self.alvo.conferir_vivo();
+        if pai.pid != std::process::id() {
+            return Err(Recusa::PaiDoAppNaoPermitido);
         }
-        e_gerente_systemd_do_usuario(&pai)?;
         self.alvo.conferir_vivo()
     }
 
@@ -477,49 +476,6 @@ impl ProcessoPar {
             return Err(Recusa::UidDiferente);
         }
         Ok(())
-    }
-}
-
-/// Executável e linha de comando do gerente de serviços do usuário.
-const CMDLINE_SYSTEMD_USUARIO: &[u8] = b"/usr/lib/systemd/systemd\0--user\0";
-
-/// `pai` é o `systemd --user` deste usuário: `Name: systemd`, os quatro uids iguais ao
-/// do daemon, `PPid: 1`, sem depurador, `cmdline` exata e o cgroup `init.scope` do
-/// `user@<uid>.service`. O gerente é não-dumpable (o `exe` dele não se lê), então essa
-/// é a conferência possível pelo `/proc`; ela não é prova forte (ver o handoff da
-/// Fase 21b): o próprio `systemd --user` roda as units de `~/.config/systemd/user/`.
-fn e_gerente_systemd_do_usuario(pai: &Alvo) -> Result<(), Recusa> {
-    let recusa = |_| Recusa::PaiDoAppNaoPermitido;
-    let vista = pai.vista().map_err(recusa)?;
-    let status = vista.status().map_err(recusa)?;
-    let uid = sys::geteuid();
-    let nome_ok = status
-        .split(|&b| b == b'\n')
-        .any(|l| l == b"Name:\tsystemd");
-    let uids_ok = status
-        .split(|&b| b == b'\n')
-        .find_map(|l| l.strip_prefix(b"Uid:"))
-        .and_then(|l| std::str::from_utf8(l).ok())
-        .is_some_and(|l| {
-            let v: Vec<&str> = l.split_whitespace().collect();
-            v.len() == 4 && v.iter().all(|u| u.parse::<u32>().ok() == Some(uid))
-        });
-    let pai_ok = campo_status(&status, b"PPid:") == Some(1);
-    let tracer_ok = ler_tracer_pid(&status) == Some(0);
-    let cmdline = vista.ler(c"cmdline", 4096).map_err(recusa)?;
-    let cgroup = vista.ler(c"cgroup", 4096).map_err(recusa)?;
-    let cgroup_esperado =
-        format!("0::/user.slice/user-{uid}.slice/user@{uid}.service/init.scope\n");
-    if nome_ok
-        && uids_ok
-        && pai_ok
-        && tracer_ok
-        && cmdline == CMDLINE_SYSTEMD_USUARIO
-        && cgroup == cgroup_esperado.as_bytes()
-    {
-        pai.conferir_vivo().map_err(recusa)
-    } else {
-        Err(Recusa::PaiDoAppNaoPermitido)
     }
 }
 

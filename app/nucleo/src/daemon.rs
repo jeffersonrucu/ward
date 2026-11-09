@@ -13,7 +13,13 @@
 //! - Fase 20 (protocolo): `DaemonSocket::estado` e `DaemonSocket::valor_para_copiar`
 //!   passam a montar o quadro do protocolo; hoje devolvem `ErroApp::SemProtocolo`
 //!   depois de conferir e abrir o socket.
-//! - Fase 29a: o app setgid conecta antes de iniciar o GTK (D47).
+//!
+//! Conexão única (D47, Fase 29a): o app setgid conecta **uma vez**, antes do GTK, com o
+//! egid do grupo `ward-app` (o papel vem dele), e depois larga o grupo
+//! ([`crate::partida`]). Uma conexão nova depois disso teria o gid real e cairia no
+//! papel agente; por isso o [`DaemonSocket`] da partida nunca reconecta: sem a
+//! conexão, os pedidos respondem [`ErroApp::ConexaoPerdida`] e o app se executa de
+//! novo. O [`DaemonSocket::padrao`] (ponte de teste, testes) conecta no primeiro uso.
 
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
@@ -59,6 +65,9 @@ pub trait Daemon: Send {
 /// Daemon real, pelo socket local.
 pub struct DaemonSocket {
     esperado: ServidorEsperado,
+    conexao: Option<UnixStream>,
+    /// `false` depois da partida: a conexão do setgid não se refaz neste processo.
+    pode_conectar: bool,
 }
 
 impl DaemonSocket {
@@ -71,22 +80,50 @@ impl DaemonSocket {
         let esperado = ServidorEsperado::sistema();
         #[cfg(feature = "modo-teste")]
         let esperado = ServidorEsperado::teste();
-        Ok(DaemonSocket { esperado })
+        Ok(DaemonSocket::sem_conexao(esperado))
+    }
+
+    fn sem_conexao(esperado: ServidorEsperado) -> DaemonSocket {
+        DaemonSocket {
+            esperado,
+            conexao: None,
+            pode_conectar: true,
+        }
+    }
+
+    /// Conecta agora (com toda a conferência do servidor) e trava a conexão: daqui em
+    /// diante este `DaemonSocket` nunca conecta de novo. É o que a partida do app chama
+    /// antes de largar o grupo (D47).
+    pub fn conectar_agora(&mut self) -> Result<&UnixStream, ErroApp> {
+        self.pode_conectar = false;
+        self.conexao = None;
+        let s = self.conectar()?;
+        Ok(self.conexao.insert(s))
+    }
+
+    /// A conexão aberta. Sem ela: conecta no primeiro uso, menos depois de
+    /// [`conectar_agora`](Self::conectar_agora), quando responde
+    /// [`ErroApp::ConexaoPerdida`].
+    fn conexao(&mut self) -> Result<&UnixStream, ErroApp> {
+        if self.conexao.is_none() {
+            if !self.pode_conectar {
+                return Err(ErroApp::ConexaoPerdida);
+            }
+            let s = self.conectar()?;
+            self.conexao = Some(s);
+        }
+        self.conexao.as_ref().ok_or(ErroApp::ConexaoPerdida)
     }
 
     /// Outro caminho, com as regras do daemon instalado (pasta do root, par uid 0).
     pub fn sistema_em(caminho: PathBuf) -> DaemonSocket {
-        DaemonSocket {
-            esperado: ServidorEsperado::sistema_em(caminho),
-        }
+        DaemonSocket::sem_conexao(ServidorEsperado::sistema_em(caminho))
     }
 
     /// Outro caminho, com as regras do daemon de teste. Só no `modo-teste`.
     #[cfg(feature = "modo-teste")]
     pub fn teste_em(caminho: PathBuf) -> DaemonSocket {
-        DaemonSocket {
-            esperado: ServidorEsperado::teste_em(caminho),
-        }
+        DaemonSocket::sem_conexao(ServidorEsperado::teste_em(caminho))
     }
 
     pub fn caminho(&self) -> &Path {
@@ -110,13 +147,13 @@ impl DaemonSocket {
 
 impl Daemon for DaemonSocket {
     fn estado(&mut self) -> Result<EstadoCofre, ErroApp> {
-        let _conexao = self.conectar()?;
+        let _conexao = self.conexao()?;
         // Fase 20: pedido "estado" do protocolo.
         Err(ErroApp::SemProtocolo)
     }
 
     fn valor_para_copiar(&mut self, _referencia: &Referencia) -> Result<Segredo, ErroApp> {
-        let _conexao = self.conectar()?;
+        let _conexao = self.conexao()?;
         // Fase 20: pedido "copiar" do papel app (D5), resposta com o valor num quadro
         // que vira `Segredo` direto, sem cópia intermediária em `String`.
         Err(ErroApp::SemProtocolo)
@@ -221,6 +258,37 @@ mod testes {
             Err(ErroApp::DaemonNaoConfiavel)
         ));
         nada_recebido(&l);
+    }
+
+    #[test]
+    fn ataque_sem_a_conexao_da_partida_nao_reconecta() {
+        // D47: depois de largar o grupo, uma conexão nova teria o gid real (papel
+        // agente). Falhou na partida: nenhum pedido conecta depois.
+        let base = Base::nova("partida");
+        let dir = base.0.join("ward");
+        fs::DirBuilder::new().mode(0o700).create(&dir).unwrap();
+        let mut d = DaemonSocket::sistema_em(dir.join(SOCKET));
+        assert!(d.conectar_agora().is_err());
+        let l = servidor_falso(&dir);
+        assert_eq!(d.estado(), Err(ErroApp::ConexaoPerdida));
+        let r = Referencia::nova("acme-pg-dev", "senha").unwrap();
+        assert!(matches!(
+            d.valor_para_copiar(&r),
+            Err(ErroApp::ConexaoPerdida)
+        ));
+        assert!(l.accept().is_err(), "reconectou depois da partida");
+        #[cfg(feature = "modo-teste")]
+        {
+            // Com a conexão da partida aberta, os pedidos usam a mesma, sem conectar
+            // de novo.
+            let mut t = DaemonSocket::teste_em(dir.join(SOCKET));
+            let c = t.conectar_agora().unwrap();
+            assert!(ward_plataforma::app::tem_cloexec(c).unwrap());
+            assert!(l.accept().is_ok());
+            assert_eq!(t.estado(), Err(ErroApp::SemProtocolo));
+            assert_eq!(t.estado(), Err(ErroApp::SemProtocolo));
+            assert!(l.accept().is_err(), "conectou de novo");
+        }
     }
 
     #[test]

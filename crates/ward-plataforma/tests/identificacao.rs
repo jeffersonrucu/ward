@@ -231,7 +231,7 @@ fn host_da_extensao_exige_o_pai_permitido() {
             motivo: Recusa::PaiNaoPermitido
         }
     );
-    // Com o grupo do app e o bash de pai (não é o daemon nem o systemd --user).
+    // Com o grupo do app e o bash de pai: só o daemon é pai aceito (D57).
     assert_eq!(
         par.classificar(&inst_app(egid), &politica_ok()),
         ClassePar::Comum {
