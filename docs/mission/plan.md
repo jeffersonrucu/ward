@@ -412,6 +412,10 @@ Pendências da 23a (2026-11-09): `make teste-sem-modo-teste` fica fora do `make 
 
 Pendências da 35 (2026-11-09): 5º PIN errado deve ir a `Destravar / Padrão` (Fase 31); frame `6373` mostra dígitos no PIN errado, app esvazia (ajustar design); textos dos níveis em `credenciais.js` e `niveis.js` (unificar); teste `ataque_comandos_proprios_so_na_janela_e_origem_certas` do `app/src-tauri` falha se houver `wardd` de teste no socket fixo do uid — isolar o socket do teste.
 
+Pendências da 26 (2026-11-09) — perguntar ao usuário: V4.13/RA1 reprova (environ e anexo do filho legíveis pelo mesmo uid, sem mitigação genérica); o ambiente da CLI (`PATH`, `BASH_ENV`, `NODE_OPTIONS`, `GIT_SSH_COMMAND`…) muda o que o comando aprovado faz e a janela de aprovação não mostra ambiente nem cwd. Para o planner: `<rt>` do release é `/run/user/<uid>/ward/` — sem sessão logind não existe (unit com `RuntimeDirectory=`?); `wardd` de produção agora espera até 2 min o `ward destravar` com cofre travado e sem app (V4.21); grupo inteiro morre no fim (neto com `setsid` escapa); V4.9/V4.12 não rodaram no worktree (serviços de outro checkout, sem `psql`) — validador do M4 roda; `teste-home-real` reprova em worktree (git abre `.git/worktrees/…`).
+
+Pendências da 30 (2026-11-09): mínimo de 12 caracteres da senha mestra só no app (decidir se vai a `ward_core::limites` e ao daemon, inclusive troca de senha V5.22); normalização Unicode (NFC) da senha mestra entre app e CLI — decidir; rótulo de força "boa" do design vs rótulos do gerador; `make app-ponte` não serve para primeiro uso (`dev/daemon.sh` exige cofre).
+
 ## Milestone 3 — Daemon e protocolo
 Contrato: V3.1–V3.41
 
@@ -633,7 +637,7 @@ Contrato: V4.1–V4.38
   D20 mais o Argon2 (a espera do agente passa a sobreviver ao reinício do daemon, Fase
   22b). A resposta de `estado` ganha o campo do papel (Fase 23); a CLI não depende dele
   e não deve recusar um campo a mais vindo da 23.
-- [ ] Fase 26 — `ward run`: o daemon cria o filho com argv, cwd e ambiente da CLI sem
+- [x] Fase 26 — `ward run`: o daemon cria o filho com argv, cwd e ambiente da CLI sem
   `LD_*` (D13), entrega de D10, anexos em `<rt>tmp/` 0600 com limpeza em toda saída e
   na partida, saída mascarada, código de saída, espera do destrave. Pesquisa e
   registro de RA1 (environ e anexos lidos por outro processo do mesmo uid), com teste
