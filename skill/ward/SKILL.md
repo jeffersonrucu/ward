@@ -24,7 +24,7 @@ Ward. Veja "SSH com chave do `~/.ssh`" no fim.
    - **ambiente**: "teste"/"local"/"desenvolvimento" → `dev`; "homologação"/"stage" →
      `stage`; "produção" → `prod`;
    - **tipo**: banco → `banco`; servidor/SSH → `servidor`; site/painel → `login`;
-     token/API → `api`; AWS → `aws`; e-mail → `smtp`; SFTP/FTP → `ftp/sftp`.
+     token/API → `api`; AWS → `aws`; e-mail → `smtp`; SFTP/FTP → `ftp-sftp` (na tela, "ftp/sftp").
 
    Se sobrar mais de uma candidata, ou nenhuma, **pergunte ao usuário** em vez de
    chutar. Nunca troque de ambiente por conta própria (não use `prod` quando o pedido
@@ -76,7 +76,7 @@ ward run acme-pg-tunel -- /usr/bin/psql -tAc 'select 1'   # túnel SSH aberto pe
   - `aws`: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`,
     `AWS_REGION`, `AWS_DEFAULT_REGION`, `AWS_ROLE_ARN`;
   - `smtp`: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_SECURITY`;
-  - `ftp/sftp`: `WARD_PROTOCOLO`, `WARD_HOST`, `WARD_PORT`, `WARD_USER`, `WARD_PASS`;
+  - `ftp-sftp`: `WARD_PROTOCOLO`, `WARD_HOST`, `WARD_PORT`, `WARD_USER`, `WARD_PASS`;
   - `genérico`: `WARD_<CAMPO>` de cada campo extra;
   - anexos: `WARD_ARQUIVO_<NOME>` com o **caminho** de um arquivo temporário 0600,
     apagado quando o comando termina;
@@ -111,7 +111,7 @@ printf 'ls\n' | ward ssh beta-sftp-dev         # sftp: comandos pela entrada pad
 - O Ward resolve senha, chave e salto. Não passe `-i`, `-J`, `-o` nem porta: o host,
   o usuário e a porta vêm da entrada.
 - A chave do servidor nunca vira arquivo seu e nunca vai para o `~/.ssh`.
-- Numa entrada `ftp/sftp`, os comandos do sftp vão pela entrada padrão; o diretório
+- Numa entrada `ftp-sftp`, os comandos do sftp vão pela entrada padrão; o diretório
   local é o home do usuário, então use caminho local absoluto em `get`/`put`.
 - Para um banco atrás de SSH, use a entrada `banco` com túnel (ex.: `acme-pg-tunel`)
   no `ward run`; o Ward abre o túnel e ajusta `PGHOST`/`PGPORT`/`DATABASE_URL`.

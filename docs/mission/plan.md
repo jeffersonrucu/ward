@@ -959,6 +959,9 @@ Contrato: V8.1–V8.4
   codificação, RA3) e o trecho de deny para `~/.claude/settings.json`; a instalação
   no `~/.claude` é feita pelo usuário no M10. V8.1–V8.4.
 
+Scrutiny do M8 (2026-11-09): aprovado; tipo `ftp-sftp` corrigido na skill. `Bash(*…)` e
+caminhos `//` do `settings-deny.json` só se conferem no Claude Code real (M10).
+
 ## Milestone 9 — Instalação
 Contrato: V9.1–V9.11
 
