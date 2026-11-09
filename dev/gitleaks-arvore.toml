@@ -1,0 +1,21 @@
+# gitleaks para a varredura da árvore de trabalho (`gitleaks dir`, em `make gitleaks`).
+# Herda `.gitleaks.toml` (regras padrão + allowlist de D15) e só acrescenta os
+# diretórios que o `.gitignore` tira do git. As varreduras do índice (`--staged`) e do
+# histórico usam `.gitleaks.toml` direto, sem esta lista: um arquivo de `.dev/` forçado
+# para o git (`git add -f`) é achado.
+
+title = "Ward (árvore de trabalho)"
+
+[extend]
+# Caminho relativo à raiz do repositório (o Makefile roda de lá).
+path = ".gitleaks.toml"
+
+[[allowlists]]
+# Diretórios que o `.gitignore` já tira do git (cofre de teste, build, dependências).
+description = "Diretórios ignorados pelo git"
+paths = [
+    '''^\.dev/''',
+    '''^target/''',
+    '''(^|/)node_modules/''',
+    '''(^|/)dist/''',
+]

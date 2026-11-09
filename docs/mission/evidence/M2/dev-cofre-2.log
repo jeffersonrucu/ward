@@ -1,0 +1,27 @@
+origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
+/usr/bin/python3 -I -B dev/servicos/gerar.py
+dev-servicos: pronto em .dev/servicos/
+/home/jeffersonoliveira/.cargo/bin/cargo run --quiet --locked -p ward-core --example dev-cofre -- --saida "$WARD_DEV_SAIDA"
+dev-cofre: gravado .dev/cofre-teste.ward (0600) com 21 entradas; reaberto e conferido
+dev-cofre: configuração: hash do PIN Argon2id (m=65536 KiB, t=3, p=1), trava em 240 min, backup externo desligado
+  acme-pg-aprovacao	banco	com-aprovacao
+  acme-pg-dev	banco	livre
+  acme-pg-prod	banco	com-aprovacao
+  acme-pg-tunel	banco	livre
+  acme-ssh-chave-prod	servidor	livre
+  acme-ssh-interno	servidor	livre
+  acme-ssh-interno-aprov	servidor	livre
+  acme-ssh-salto	servidor	com-aprovacao
+  acme-ssh-salto-livre	servidor	livre
+  acme-ssh-senha-stage	servidor	livre
+  acme-totp-dev	login	livre
+  acme-wp-dev	login	com-aprovacao
+  acme-wp-prod	login	livre
+  beta-aws-dev	aws	livre
+  beta-github-api	api	livre
+  beta-sftp-dev	ftp-sftp	livre
+  beta-smtp-stage	smtp	livre
+  delta-redir	login	livre
+  gama-bloqueada	login	bloqueado
+  gama-generico	generico	livre
+  gama-nota	nota-segura	livre

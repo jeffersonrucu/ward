@@ -1,0 +1,98 @@
+==> 1/6 cargo fmt --check
+cargo fmt --all --check
+==> 2/6 cargo clippy --all-targets -- -D warnings
+cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.03s
+==> 3/6 cargo test
+cargo test --workspace --all-features --locked
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.03s
+     Running unittests src/main.rs (target/debug/deps/ward-69769626f758aea6)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/ward_core-89897a4e64b4af33)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/deps/ward_nm-f3115f442e1a0288)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/ward_plataforma-4fe9763a730dab0d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/ward_ponte_teste-c806c47be09a044c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/deps/wardd-8ce2893e11e77798)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests ward_core
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests ward_plataforma
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests ward_ponte_teste
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+==> 4/6 cargo audit
+cargo audit --deny warnings
+    Fetching advisory database from `https://github.com/RustSec/advisory-db.git`
+      Loaded 1422 security advisories (from /home/jeffersonoliveira/.cargo/advisory-db)
+    Updating crates.io index
+    Scanning Cargo.lock for vulnerabilities (6 crate dependencies)
+==> 5/6 cargo deny check (e origens do cargo)
+cargo deny --all-features check
+advisories ok, bans ok, licenses ok, sources ok
+python3 -I -B dev/origens.py
+origens: só crates.io e paths dentro do repositório; sem source/patch/registries
+==> 6/6 gitleaks
+/home/jeffersonoliveira/projetos/cofre/.dev/ferramentas/bin/gitleaks dir --config dev/gitleaks-arvore.toml --redact --verbose --no-banner --exit-code 1 .
+[90m3:50PM[0m [32mINF[0m [1mscanned ~649019 bytes (649.02 KB) in 43.8ms[0m
+[90m3:50PM[0m [32mINF[0m [1mno leaks found[0m
+/home/jeffersonoliveira/projetos/cofre/.dev/ferramentas/bin/gitleaks git --staged --pre-commit --config .gitleaks.toml --redact --verbose --no-banner --exit-code 1 .
+[90m3:50PM[0m [32mINF[0m [1m0 commits scanned.[0m
+[90m3:50PM[0m [32mINF[0m [1mscanned ~0 bytes (0) in 98.5ms[0m
+[90m3:50PM[0m [32mINF[0m [1mno leaks found[0m
+/home/jeffersonoliveira/projetos/cofre/.dev/ferramentas/bin/gitleaks git --config .gitleaks.toml --redact --verbose --no-banner --exit-code 1 .
+[90m3:50PM[0m [32mINF[0m [1m0 commits scanned.[0m
+[90m3:50PM[0m [32mINF[0m [1mscanned ~0 bytes (0) in 104ms[0m
+[90m3:50PM[0m [32mINF[0m [1mno leaks found[0m
+/home/jeffersonoliveira/projetos/cofre/.dev/ferramentas/bin/gitleaks dir --config dev/gitleaks-extra-arvore.toml --redact --verbose --no-banner --exit-code 1 --max-archive-depth 3 .
+[90m3:50PM[0m [32mINF[0m [1mscanned ~18258372 bytes (18.26 MB) in 89.2ms[0m
+[90m3:50PM[0m [32mINF[0m [1mno leaks found[0m
+/home/jeffersonoliveira/projetos/cofre/.dev/ferramentas/bin/gitleaks git --staged --pre-commit --config dev/gitleaks-extra.toml --redact --verbose --no-banner --exit-code 1 --max-archive-depth 3 .
+[90m3:50PM[0m [32mINF[0m [1m0 commits scanned.[0m
+[90m3:50PM[0m [32mINF[0m [1mscanned ~0 bytes (0) in 3.88ms[0m
+[90m3:50PM[0m [32mINF[0m [1mno leaks found[0m
+/home/jeffersonoliveira/projetos/cofre/.dev/ferramentas/bin/gitleaks git --config dev/gitleaks-extra.toml --redact --verbose --no-banner --exit-code 1 --max-archive-depth 3 .
+[90m3:50PM[0m [32mINF[0m [1m0 commits scanned.[0m
+[90m3:50PM[0m [32mINF[0m [1mscanned ~0 bytes (0) in 5.34ms[0m
+[90m3:50PM[0m [32mINF[0m [1mno leaks found[0m
+==> make check: tudo limpo
+exit=0

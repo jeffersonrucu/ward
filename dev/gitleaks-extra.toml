@@ -1,0 +1,29 @@
+# gitleaks — varredura extra de chave privada e credencial AWS (Fase 12a, S15).
+#
+# Sem `useDefault`: não herda a allowlist global de caminhos das regras padrão do
+# gitleaks (`gitleaks.toml`, lockfiles, imagens, svg, pdf, fontes, vendor...), que deixava
+# passar uma chave privada num `package-lock.json`, num `.svg` ou num `gitleaks.toml`.
+# Só três regras, de falso positivo raro, e NENHUMA allowlist de caminho ou de valor:
+# não há valor falso de D15 que case com elas. Usada direto no índice e no histórico;
+# a árvore usa `dev/gitleaks-extra-arvore.toml`, que só tira os diretórios ignorados.
+# O Makefile roda com `--max-archive-depth`, para entrar em .gz/.zip/.tar.
+
+title = "Ward (extra: chave privada e AWS, sem allowlist de caminho)"
+
+[[rules]]
+id = "ward-chave-privada"
+description = "Chave privada (PEM/OpenSSH/PGP)"
+regex = '''(?i)-----BEGIN[ A-Z0-9_-]{0,100}PRIVATE KEY(?: BLOCK)?-----[\s\S-]{64,}?KEY(?: BLOCK)?-----'''
+keywords = ["-----begin"]
+
+[[rules]]
+id = "ward-aws-access-key-id"
+description = "Access Key ID da AWS"
+regex = '''\b((?:A3T[A-Z0-9]|AKIA|ASIA|ABIA|ACCA)[A-Z2-7]{16})\b'''
+keywords = ["a3t", "akia", "asia", "abia", "acca"]
+
+[[rules]]
+id = "ward-aws-secret-access-key"
+description = "Secret Access Key da AWS (nome de variável ou chave de config + 40 caracteres)"
+regex = '''(?i)(?:aws_?(?:secret_?access_?key|secret_?key|secret)|secret_?access_?key)\b["']?\s*(?:[:=]|:=|=>)\s*["']?([A-Za-z0-9/+=]{40})(?:["'\s,;]|$)'''
+keywords = ["aws", "secret"]

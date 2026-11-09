@@ -1,0 +1,32 @@
+origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
+dev/testes/dev-cofre.sh
+ok    make dev-variacoes
+ok    dev-variacoes é determinístico
+ok    variacoes.txt 0600
+ok    variacoes.txt sem linha vazia nem padrão curto
+ok    todo literal das fixtures está na lista
+ok    variações de D11 (URL, base64, Basic, DATABASE_URL, anexo) na lista
+ok    chave privada de .dev/ na lista (inteira em base64 e linha a linha)
+ok    segredo dentro de base64 maior e de formulário é achado
+ok    make dev-cofre (1.ª vez)
+ok    make dev-cofre (2.ª vez)
+ok    .dev/cofre-teste.ward existe
+ok    cofre 0600
+ok    .dev 0700
+ok    cofre e lista ignorados pelo git
+ok    nenhum temporário sobrou
+ok    arquivo com a magia do formato
+ok    make dev-cofre-conferir
+ok    o cofre reaberto tem as 21 entradas da tabela, com tipo e nível (inclui acme-totp-dev)
+ok    acme-totp-dev (D28) no cofre
+ok    nomes, tipos e níveis não casam com a lista de segredos
+ok    nenhum segredo nem variação em claro no cofre
+ok    configuração do corpo v2: hash Argon2id do PIN de teste, trava 240, backup desligado
+ok    PIN de teste e hash PHC fora do arquivo em claro
+ok    abre com a senha de teste (pelo stdin)
+ok    senha errada recusada
+ok    senha em argv recusada
+ok    dev-cofre recusa 11 saídas fora de .dev/ (absoluta, '..', links, injeção) e nada é criado fora
+ok    dev-variacoes recusa 11 saídas fora de .dev/ (absoluta, '..', links, injeção) e nada é criado fora
+ok    VARIACOES=.dev/<outro>.txt aceito
+teste-dev-cofre: tudo barrado/conferido

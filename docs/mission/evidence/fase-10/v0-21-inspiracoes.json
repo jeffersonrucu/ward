@@ -1,0 +1,14 @@
+{
+  "descricao": "Fase 10: V0.21. O Ward.figcraft não tem página Inspirações (só Design System e Layout), então não há figcraft-inspiracoes.json. A página 1:3 do Figma foi lida só com get_metadata (sem escrita) e comparada com docs/mission/evidence/fase-1-inspiracoes.json.",
+  "fileKey": "<id-do-arquivo-figma>",
+  "pagina": {"id": "1:3", "nome": "Inspiration"},
+  "conferido_em": "2026-11-08",
+  "filhos_lidos": [
+    {"id": "2:3", "nome": "image 1", "x": -2767, "y": -234, "w": 1011, "h": 665},
+    {"id": "2:9", "nome": "image 3", "x": -1704, "y": -234, "w": 887, "h": 665},
+    {"id": "2:12", "nome": "image 4", "x": -765, "y": -234, "w": 874, "h": 655},
+    {"id": "2:15", "nome": "image 5", "x": -2767, "y": 521, "w": 965, "h": 724}
+  ],
+  "resultado": "idêntico ao snapshot da Fase 1: os mesmos 4 filhos, com os mesmos ids, nomes, posições e tamanhos. A get_metadata não traz o imageHash; a Fase 1 registrou os hashes.",
+  "figcraft": "Ward.figcraft: páginas 'Design System' (2) e 'Layout' (2796). O arquivo guarda 4 imagens no imageIndex sem nenhum node que as use."
+}

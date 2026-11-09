@@ -1,0 +1,79 @@
+final.figcraft — Ward (13624 nodes, 18 styles, 226 variables, 4 images)
+page 2 "Design System": 2022 nodes, 25 top-level
+  3 FRAME "Tokens / Cores" 564.0×1681.0
+  178 FRAME "Componentes / Ícones" 560.0×104.0
+  260 FRAME "Seção / Botão" 1735.0×452.0
+  328 FRAME "Seção / Campo" 1826.0×298.0
+  17499 FRAME "Seção / Campo senha" 2170.0×298.0
+  372 FRAME "Seção / Campo secreto" 1908.0×298.0
+  418 FRAME "Seção / Select" 1826.0×416.0
+  459 FRAME "Seção / Badge ambiente" 1179.0×256.0
+  475 FRAME "Seção / Badge tipo" 917.0×208.0
+  522 FRAME "Seção / Toast" 1242.0×254.0
+  550 FRAME "Seção / Item de lista" 1561.0×754.0
+  608 FRAME "Seção / Modal" 1098.0×374.0
+  647 FRAME "Seção / Campo PIN" 1966.0×302.0
+  716 FRAME "Seção / Telas de acesso" 1122.0×864.0
+  760 FRAME "Seção / App" 3774.0×1584.0
+  2965 FRAME "Seção / Ação de campo" 1259.0×236.0
+  3286 FRAME "Seção / Logo" 1049.0×782.0
+  5219 FRAME "Seção / Filtros" 704.0×588.0
+  6796 FRAME "Seção / Formulário" 794.0×838.0
+  9453 FRAME "Seção / Gerador e configurações" 1274.0×2110.0
+  12580 FRAME "Seção / Nota segura" 704.0×586.0
+  16319 FRAME "Seção / Aprovação" 934.0×260.0
+  17137 FRAME "Seção / Bandeja e extensão" 704.0×1316.0
+  17583 FRAME "Seção / Nova credencial" 704.0×394.0
+  18670 FRAME "Seção / Destaque" 704.0×592.0
+page 2796 "Layout": 11600 nodes, 51 top-level
+  3342 FRAME "Destravar / Padrão" 1280.0×800.0
+  3537 FRAME "Primeiro uso / Criar cofre" 1280.0×800.0
+  3450 FRAME "Destravar / Pedido do agente" 1280.0×800.0
+  3619 FRAME "Primeiro uso / Senha mestra" 1280.0×800.0
+  3733 FRAME "Primeiro uso / PIN" 1280.0×800.0
+  3393 FRAME "Destravar / Senha errada" 1280.0×800.0
+  4063 FRAME "Credenciais / Cheia" 1280.0×800.0
+  17657 FRAME "Nova credencial / Escolher tipo" 1280.0×800.0
+  18055 FRAME "Nova credencial / Tipo escolhido" 1280.0×800.0
+  13141 FRAME "Gerador de senha / Avulso" 1280.0×800.0
+  15242 FRAME "Configurações / Geral" 1280.0×800.0
+  16349 FRAME "Restaurar backup / Versões" 1280.0×800.0
+  16512 FRAME "Restaurar backup / Confirmar" 1280.0×800.0
+  16178 FRAME "Configurações / Backup externo ligado" 1280.0×800.0
+  6926 FRAME "Formulário / login / Edição" 1280.0×1392.0
+  14307 FRAME "Gerador de senha / No formulário" 1280.0×1392.0
+  10389 FRAME "Formulário / api / Edição" 1280.0×1410.0
+  11705 FRAME "Formulário / aws / Edição" 1280.0×1502.0
+  12170 FRAME "Formulário / aws / Novo" 1280.0×1462.0
+  11272 FRAME "Formulário / api / Novo" 1280.0×1370.0
+  9454 FRAME "Formulário / smtp / Edição" 1280.0×1392.0
+  12683 FRAME "Formulário / nota segura / Edição" 1280.0×1296.0
+  13459 FRAME "Formulário / genérico / Edição" 1280.0×1296.0
+  10895 FRAME "Formulário / ftp/sftp / Edição" 1280.0×1488.0
+  7908 FRAME "Formulário / banco / Edição" 1280.0×1496.0
+  8981 FRAME "Formulário / servidor / Edição" 1280.0×1496.0
+  9900 FRAME "Formulário / servidor / Novo" 1280.0×1436.0
+  8537 FRAME "Formulário / banco / Novo" 1280.0×1436.0
+  7450 FRAME "Formulário / login / Novo" 1280.0×1370.0
+  13867 FRAME "Formulário / smtp / Novo" 1280.0×1370.0
+  15399 FRAME "Formulário / nota segura / Novo" 1280.0×1240.0
+  15845 FRAME "Formulário / genérico / Novo" 1280.0×1296.0
+  14743 FRAME "Formulário / ftp/sftp / Novo" 1280.0×1462.0
+  5615 FRAME "Nível de acesso / Escolher" 1280.0×800.0
+  6373 FRAME "Nível de acesso / PIN errado" 1280.0×800.0
+  5994 FRAME "Nível de acesso / PIN" 1280.0×800.0
+  5259 FRAME "Credenciais / Filtros" 1280.0×800.0
+  4780 FRAME "Credenciais / Vazia" 1280.0×800.0
+  4410 FRAME "Credenciais / Filtrada" 1280.0×800.0
+  16701 FRAME "Aprovação / Normal" 560.0×784.0
+  17035 FRAME "Aprovação / Expirando" 560.0×874.0
+  16960 FRAME "Aprovação / PIN bloqueado" 560.0×878.0
+  16885 FRAME "Aprovação / PIN errado" 560.0×784.0
+  16810 FRAME "Aprovação / prod" 560.0×874.0
+  16773 FRAME "Kit de emergência / Impressão" 794.0×1123.0
+  17269 FRAME "Bandeja / Destravado" 480.0×300.0
+  17300 FRAME "Bandeja / Travado" 480.0×300.0
+  17332 FRAME "Extensão / Sugestões do domínio" 360.0×494.0
+  17392 FRAME "Extensão / Cofre travado" 360.0×343.0
+  17414 FRAME "Extensão / Salvar login novo" 360.0×600.0
+  18850 FRAME "Extensão / Salvar login novo / Conteúdo inteiro" 360.0×806.0

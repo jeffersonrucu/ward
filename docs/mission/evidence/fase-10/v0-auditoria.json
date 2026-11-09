@@ -1,0 +1,605 @@
+{
+ "V0.1": {
+  "colecoes": [
+   "Primitivas",
+   "Cores",
+   "Tipografia",
+   "Espaçamento",
+   "Raio",
+   "Largura",
+   "Elevação",
+   "Tom do ícone"
+  ],
+  "modos_Cores": [
+   "Escuro"
+  ],
+  "tem_Tipografia_Espacamento_Raio_Largura": true,
+  "semanticas_cobertas": {
+   "fundo": true,
+   "superficie": true,
+   "texto": true,
+   "borda": true,
+   "primaria": true,
+   "perigo": true,
+   "aviso": true,
+   "sucesso": true,
+   "ambiente/dev": true,
+   "ambiente/stage": true,
+   "ambiente/prod": true
+  },
+  "raio": {
+   "raio/nenhum": 0.0,
+   "raio/sm": 6.0,
+   "raio/md": 10.0,
+   "raio/lg": 12.0,
+   "raio/xl": 16.0,
+   "raio/2xl": 20.0,
+   "raio/total": 9999.0,
+   "raio/3xl": 24.0,
+   "raio/controle": "6:151",
+   "raio/item": "6:152",
+   "raio/cartao": "6:153",
+   "raio/painel": "6:154",
+   "raio/janela": "VariableID:12",
+   "raio/pilula": "6:155"
+  }
+ },
+ "V0.2": {
+  "frames": 51,
+  "valores_soltos": []
+ },
+ "V0.3": {
+  "Botão": {
+   "id": 263,
+   "variantes": [
+    "Tipo=primário, Estado=padrão",
+    "Tipo=primário, Estado=hover",
+    "Tipo=primário, Estado=foco",
+    "Tipo=primário, Estado=desabilitado",
+    "Tipo=secundário, Estado=padrão",
+    "Tipo=secundário, Estado=hover",
+    "Tipo=secundário, Estado=foco",
+    "Tipo=secundário, Estado=desabilitado",
+    "Tipo=perigo, Estado=padrão",
+    "Tipo=perigo, Estado=hover",
+    "Tipo=perigo, Estado=foco",
+    "Tipo=perigo, Estado=desabilitado",
+    "Tipo=fantasma, Estado=padrão",
+    "Tipo=fantasma, Estado=hover",
+    "Tipo=fantasma, Estado=foco",
+    "Tipo=fantasma, Estado=desabilitado"
+   ]
+  },
+  "Campo": {
+   "id": 331,
+   "variantes": [
+    "Estado=vazio",
+    "Estado=padrão",
+    "Estado=foco",
+    "Estado=erro",
+    "Estado=desabilitado"
+   ]
+  },
+  "Campo secreto": {
+   "id": 375,
+   "variantes": [
+    "Estado=oculto",
+    "Estado=revelado",
+    "Estado=copiado",
+    "Estado=vazio"
+   ]
+  },
+  "Select": {
+   "id": 421,
+   "variantes": [
+    "Estado=padrão",
+    "Estado=foco",
+    "Estado=aberto",
+    "Estado=desabilitado",
+    "Estado=combobox"
+   ]
+  },
+  "Badge ambiente": {
+   "id": 462,
+   "variantes": [
+    "Ambiente=dev, Tamanho=padrão",
+    "Ambiente=stage, Tamanho=padrão",
+    "Ambiente=prod, Tamanho=padrão",
+    "Ambiente=dev, Tamanho=grande",
+    "Ambiente=stage, Tamanho=grande",
+    "Ambiente=prod, Tamanho=grande"
+   ]
+  },
+  "Badge tipo": {
+   "id": 478,
+   "variantes": [
+    "Tipo=login",
+    "Tipo=banco",
+    "Tipo=servidor",
+    "Tipo=api",
+    "Tipo=aws",
+    "Tipo=smtp",
+    "Tipo=ftp/sftp",
+    "Tipo=nota segura",
+    "Tipo=genérico"
+   ]
+  },
+  "Item de lista": {
+   "id": 553,
+   "variantes": [
+    "Estado=padrão, Densidade=larga",
+    "Estado=hover, Densidade=larga",
+    "Estado=selecionado, Densidade=larga",
+    "Estado=padrão, Densidade=compacta",
+    "Estado=hover, Densidade=compacta",
+    "Estado=selecionado, Densidade=compacta"
+   ]
+  },
+  "Modal": {
+   "id": 611,
+   "variantes": [
+    "Tipo=padrão",
+    "Tipo=perigo"
+   ]
+  },
+  "Toast": {
+   "id": 525,
+   "variantes": [
+    "Tipo=sucesso",
+    "Tipo=erro",
+    "Tipo=aviso"
+   ]
+  },
+  "Campo PIN": {
+   "id": 650,
+   "variantes": [
+    "Estado=vazio",
+    "Estado=digitando",
+    "Estado=completo",
+    "Estado=erro",
+    "Estado=bloqueado"
+   ]
+  },
+  "Campo senha": {
+   "id": 17502,
+   "variantes": [
+    "Estado=vazio",
+    "Estado=padrão",
+    "Estado=foco",
+    "Estado=erro",
+    "Estado=desabilitado",
+    "Estado=revelado"
+   ]
+  },
+  "Botão ícone": {
+   "id": 18832,
+   "variantes": []
+  },
+  "componentes_fora_da_Design_System": []
+ },
+ "V0.4": {
+  "suspeitos_desanexados": [],
+  "instancias_por_componente": {
+   "Botão": 197,
+   "Item de lista": 160,
+   "Campo": 153,
+   "Select": 81,
+   "Título de seção": 55,
+   "Navegação lateral": 33,
+   "Badge tipo": 31,
+   "Badge ambiente": 31,
+   "Campo secreto": 31,
+   "Linha de opção": 28,
+   "Cabeçalho de grupo": 27,
+   "Ícone/check": 21,
+   "Cartão de tipo": 18,
+   "Ícone/cadeado": 14,
+   "Destaque": 14,
+   "Ícone/tipo-banco": 14,
+   "Campo extra": 12,
+   "Caixa de código": 10,
+   "Campo PIN": 7,
+   "Painel de marca": 6,
+   "Campo senha": 5,
+   "Logo / Símbolo": 5,
+   "Contagem": 5,
+   "Botão ícone": 5,
+   "Ícone/tipo-login": 4,
+   "Cabeçalho do popup": 4,
+   "Indicador de passos": 3,
+   "Ícone/tipo-servidor": 3,
+   "Ícone/relogio": 3,
+   "Código TOTP": 3,
+   "Anexo": 3,
+   "Diálogo de nível": 3,
+   "Diálogo de restauração": 2,
+   "Ícone/tipo-api": 2,
+   "Ícone/tipo-aws": 2,
+   "Ícone/tipo-smtp": 2,
+   "Ícone/tipo-nota": 2,
+   "Campo nota segura": 2,
+   "Ícone/tipo-generico": 2,
+   "Ícone/tipo-ftp": 2,
+   "Ícone da bandeja": 2,
+   "Menu da bandeja": 2,
+   "Ícone/mais": 1,
+   "Controle deslizante": 1,
+   "Ícone/gerador": 1,
+   "Ícone/sucesso": 1,
+   "Popover do gerador": 1,
+   "Diálogo de filtros": 1,
+   "Ícone/chave": 1,
+   "Logo / Horizontal": 1
+  },
+  "instancias_com_componente_ausente": []
+ },
+ "V0.5-18_frames": {
+  "Primeiro uso / Criar cofre": {
+   "id": 3537,
+   "w": 1280.0,
+   "h": 800.0
+  },
+  "Primeiro uso / Senha mestra": {
+   "id": 3619,
+   "w": 1280.0,
+   "h": 800.0
+  },
+  "Primeiro uso / PIN": {
+   "id": 3733,
+   "w": 1280.0,
+   "h": 800.0
+  },
+  "Destravar / Padrão": {
+   "id": 3342,
+   "w": 1280.0,
+   "h": 800.0
+  },
+  "Destravar / Senha errada": {
+   "id": 3393,
+   "w": 1280.0,
+   "h": 800.0
+  },
+  "Destravar / Pedido do agente": {
+   "id": 3450,
+   "w": 1280.0,
+   "h": 800.0
+  },
+  "Credenciais / Vazia": {
+   "id": 4780,
+   "w": 1280.0,
+   "h": 800.0
+  },
+  "Credenciais / Cheia": {
+   "id": 4063,
+   "w": 1280.0,
+   "h": 800.0
+  },
+  "Credenciais / Filtrada": {
+   "id": 4410,
+   "w": 1280.0,
+   "h": 800.0
+  },
+  "Nível de acesso / Escolher": {
+   "id": 5615,
+   "w": 1280.0,
+   "h": 800.0
+  },
+  "Nível de acesso / PIN": {
+   "id": 5994,
+   "w": 1280.0,
+   "h": 800.0
+  },
+  "Nível de acesso / PIN errado": {
+   "id": 6373,
+   "w": 1280.0,
+   "h": 800.0
+  },
+  "Gerador de senha / Avulso": {
+   "id": 13141,
+   "w": 1280.0,
+   "h": 800.0
+  },
+  "Gerador de senha / No formulário": {
+   "id": 14307,
+   "w": 1280.0,
+   "h": 1392.0
+  },
+  "Configurações / Geral": {
+   "id": 15242,
+   "w": 1280.0,
+   "h": 800.0
+  },
+  "Configurações / Backup externo ligado": {
+   "id": 16178,
+   "w": 1280.0,
+   "h": 800.0
+  },
+  "Restaurar backup / Versões": {
+   "id": 16349,
+   "w": 1280.0,
+   "h": 800.0
+  },
+  "Restaurar backup / Confirmar": {
+   "id": 16512,
+   "w": 1280.0,
+   "h": 800.0
+  },
+  "Kit de emergência / Impressão": {
+   "id": 16773,
+   "w": 794.0,
+   "h": 1123.0
+  },
+  "Aprovação / Normal": {
+   "id": 16701,
+   "w": 560.0,
+   "h": 784.0
+  },
+  "Aprovação / prod": {
+   "id": 16810,
+   "w": 560.0,
+   "h": 874.0
+  },
+  "Aprovação / PIN errado": {
+   "id": 16885,
+   "w": 560.0,
+   "h": 784.0
+  },
+  "Aprovação / PIN bloqueado": {
+   "id": 16960,
+   "w": 560.0,
+   "h": 878.0
+  },
+  "Aprovação / Expirando": {
+   "id": 17035,
+   "w": 560.0,
+   "h": 874.0
+  },
+  "Bandeja / Destravado": {
+   "id": 17269,
+   "w": 480.0,
+   "h": 300.0
+  },
+  "Bandeja / Travado": {
+   "id": 17300,
+   "w": 480.0,
+   "h": 300.0
+  },
+  "Extensão / Sugestões do domínio": {
+   "id": 17332,
+   "w": 360.0,
+   "h": 494.0
+  },
+  "Extensão / Salvar login novo": {
+   "id": 17414,
+   "w": 360.0,
+   "h": 600.0
+  },
+  "Extensão / Cofre travado": {
+   "id": 17392,
+   "w": 360.0,
+   "h": 343.0
+  },
+  "Formulário / login / Novo": {
+   "id": 7450,
+   "w": 1280.0,
+   "h": 1370.0
+  },
+  "Formulário / login / Edição": {
+   "id": 6926,
+   "w": 1280.0,
+   "h": 1392.0
+  },
+  "Formulário / banco / Novo": {
+   "id": 8537,
+   "w": 1280.0,
+   "h": 1436.0
+  },
+  "Formulário / banco / Edição": {
+   "id": 7908,
+   "w": 1280.0,
+   "h": 1496.0
+  },
+  "Formulário / servidor / Novo": {
+   "id": 9900,
+   "w": 1280.0,
+   "h": 1436.0
+  },
+  "Formulário / servidor / Edição": {
+   "id": 8981,
+   "w": 1280.0,
+   "h": 1496.0
+  },
+  "Formulário / api / Novo": {
+   "id": 11272,
+   "w": 1280.0,
+   "h": 1370.0
+  },
+  "Formulário / api / Edição": {
+   "id": 10389,
+   "w": 1280.0,
+   "h": 1410.0
+  },
+  "Formulário / aws / Novo": {
+   "id": 12170,
+   "w": 1280.0,
+   "h": 1462.0
+  },
+  "Formulário / aws / Edição": {
+   "id": 11705,
+   "w": 1280.0,
+   "h": 1502.0
+  },
+  "Formulário / smtp / Novo": {
+   "id": 13867,
+   "w": 1280.0,
+   "h": 1370.0
+  },
+  "Formulário / smtp / Edição": {
+   "id": 9454,
+   "w": 1280.0,
+   "h": 1392.0
+  },
+  "Formulário / ftp/sftp / Novo": {
+   "id": 14743,
+   "w": 1280.0,
+   "h": 1462.0
+  },
+  "Formulário / ftp/sftp / Edição": {
+   "id": 10895,
+   "w": 1280.0,
+   "h": 1488.0
+  },
+  "Formulário / nota segura / Novo": {
+   "id": 15399,
+   "w": 1280.0,
+   "h": 1240.0
+  },
+  "Formulário / nota segura / Edição": {
+   "id": 12683,
+   "w": 1280.0,
+   "h": 1296.0
+  },
+  "Formulário / genérico / Novo": {
+   "id": 15845,
+   "w": 1280.0,
+   "h": 1296.0
+  },
+  "Formulário / genérico / Edição": {
+   "id": 13459,
+   "w": 1280.0,
+   "h": 1296.0
+  }
+ },
+ "V0.5-18_faltando": [],
+ "V0.19": {
+  "modo_paginas": {
+   "Design System": {
+    "6:54": "6:2"
+   },
+   "Layout": {
+    "6:54": "6:2"
+   }
+  },
+  "nodes_com_Cores_diferente_de_Escuro": [],
+  "textos_com_tema_claro": [],
+  "componentes_com_claro": []
+ },
+ "V0.20": {
+  "segredos_do_contrato_no_arquivo": {
+   "senha-mestra": {
+    "achado": false,
+    "formas": []
+   },
+   "pin": {
+    "achado": false,
+    "formas": []
+   },
+   "acme-wp-dev.senha": {
+    "achado": false,
+    "formas": []
+   },
+   "acme-wp-prod.senha": {
+    "achado": false,
+    "formas": []
+   },
+   "acme-wp.totp": {
+    "achado": false,
+    "formas": []
+   },
+   "acme-pg.senha": {
+    "achado": false,
+    "formas": []
+   },
+   "acme-ssh-senha-stage.senha": {
+    "achado": false,
+    "formas": []
+   },
+   "acme-ssh-chave-prod.passphrase": {
+    "achado": false,
+    "formas": []
+   },
+   "acme-ssh-salto.senha": {
+    "achado": false,
+    "formas": []
+   },
+   "beta-github-api.token": {
+    "achado": false,
+    "formas": []
+   },
+   "beta-aws-dev.secret": {
+    "achado": false,
+    "formas": []
+   },
+   "beta-aws-dev.session_token": {
+    "achado": false,
+    "formas": []
+   },
+   "beta-smtp-stage.senha": {
+    "achado": false,
+    "formas": []
+   },
+   "beta-sftp-dev.senha": {
+    "achado": false,
+    "formas": []
+   },
+   "gama-nota.texto": {
+    "achado": false,
+    "formas": []
+   },
+   "gama-generico.licenca": {
+    "achado": false,
+    "formas": []
+   },
+   "gama-generico.anexo": {
+    "achado": false,
+    "formas": []
+   },
+   "gama-bloqueada.senha": {
+    "achado": false,
+    "formas": []
+   },
+   "delta-redir.senha": {
+    "achado": false,
+    "formas": []
+   }
+  },
+  "falso_strings": {
+   "quantidade": 1,
+   "do_contrato": [],
+   "fora_do_contrato": 1
+  },
+  "textos_unicos_layout": 508
+ },
+ "V0.22": {
+  "ids_citados": 805,
+  "ids_ausentes": [
+   719,
+   723,
+   785,
+   789,
+   822,
+   861,
+   904,
+   905,
+   907,
+   3039,
+   3043,
+   3079,
+   3083,
+   3384,
+   3439,
+   3496,
+   3701,
+   3806,
+   3908,
+   3916,
+   3925,
+   3942,
+   3998,
+   5137,
+   5164
+  ],
+  "frames_sem_id_no_md": [],
+  "componentes_sem_id_no_md": []
+ }
+}

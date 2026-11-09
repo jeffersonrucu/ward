@@ -1,0 +1,104 @@
+==> 1/6 cargo fmt --check
+cargo fmt --all --check
+==> 2/6 cargo clippy --all-targets -- -D warnings
+cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+   Compiling libc v0.2.191
+    Checking ward-ponte-teste v0.1.0 (/home/jeffersonoliveira/projetos/cofre/crates/ward-ponte-teste)
+    Checking ward-plataforma v0.1.0 (/home/jeffersonoliveira/projetos/cofre/crates/ward-plataforma)
+    Checking wardd v0.1.0 (/home/jeffersonoliveira/projetos/cofre/crates/wardd)
+    Checking ward-nm v0.1.0 (/home/jeffersonoliveira/projetos/cofre/crates/ward-nm)
+    Checking ward-core v0.1.0 (/home/jeffersonoliveira/projetos/cofre/crates/ward-core)
+    Checking ward v0.1.0 (/home/jeffersonoliveira/projetos/cofre/crates/ward)
+    Checking time v0.1.43
+    Checking qa-advisory v0.0.0 (/home/jeffersonoliveira/projetos/cofre/crates/qa-advisory)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.60s
+==> 3/6 cargo test
+cargo test --workspace --all-features --locked
+   Compiling libc v0.2.191
+   Compiling time v0.1.43
+   Compiling qa-advisory v0.0.0 (/home/jeffersonoliveira/projetos/cofre/crates/qa-advisory)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.56s
+     Running unittests src/lib.rs (target/debug/deps/qa_advisory-3bb03d4bb536a055)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/deps/ward-69769626f758aea6)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/ward_core-89897a4e64b4af33)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/deps/ward_nm-f3115f442e1a0288)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/ward_plataforma-4fe9763a730dab0d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/ward_ponte_teste-c806c47be09a044c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/deps/wardd-8ce2893e11e77798)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests qa_advisory
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests ward_core
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests ward_plataforma
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests ward_ponte_teste
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+==> 4/6 cargo audit
+cargo audit --deny warnings
+    Fetching advisory database from `https://github.com/RustSec/advisory-db.git`
+      Loaded 1422 security advisories (from /home/jeffersonoliveira/.cargo/advisory-db)
+    Updating crates.io index
+    Scanning Cargo.lock for vulnerabilities (12 crate dependencies)
+Crate:     time
+Version:   0.1.43
+Title:     Potential segfault in the time crate
+Date:      2020-11-18
+ID:        RUSTSEC-2020-0071
+URL:       https://rustsec.org/advisories/RUSTSEC-2020-0071
+Severity:  6.2 (medium)
+Solution:  Upgrade to >=0.2.23
+
+error: 1 vulnerability found!
+make[1]: *** [Makefile:68: audit] Erro 1
+make: *** [Makefile:44: check] Erro 2

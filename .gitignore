@@ -1,0 +1,14 @@
+# cofre de teste, cache e build
+.dev/
+target/
+node_modules/
+dist/
+*.ward
+*.ward.bak*
+# nunca versionar segredo
+.env*
+*.pem
+*.key
+id_*
+__pycache__/
+*.pyc

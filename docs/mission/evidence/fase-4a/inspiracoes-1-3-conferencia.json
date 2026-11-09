@@ -1,0 +1,14 @@
+{
+  "descricao": "Fase 4a: o Ward.figcraft não tem página Inspirações (só Design System e, agora, Layout). Por isso a referência foi lida na página 1:3 do Figma, só leitura (get_metadata e get_screenshot, sem escrita). Resultado comparado com docs/mission/evidence/fase-1-inspiracoes.json.",
+  "fileKey": "<id-do-arquivo-figma>",
+  "pagina": {"id": "1:3", "nome": "Inspiration"},
+  "conferido_em": "2026-11-08",
+  "filhos_lidos": [
+    {"id": "2:3", "nome": "image 1", "x": -2767, "y": -234, "w": 1011, "h": 665},
+    {"id": "2:9", "nome": "image 3", "x": -1704, "y": -234, "w": 887, "h": 665},
+    {"id": "2:12", "nome": "image 4", "x": -765, "y": -234, "w": 874, "h": 655},
+    {"id": "2:15", "nome": "image 5", "x": -2767, "y": 521, "w": 965, "h": 724}
+  ],
+  "resultado": "idêntico ao snapshot da Fase 1 (mesmos 4 filhos, ids, nomes, posições e tamanhos)",
+  "figcraft_inspiracoes": "não existe página Inspirações no Ward.figcraft; figcraft-inspiracoes.json não foi gerado. O arquivo guarda 4 imagens (imageIndex) sem nenhum node que as use."
+}

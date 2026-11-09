@@ -1,0 +1,53 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/ward-core",
+    "crates/ward-plataforma",
+    "crates/wardd",
+    "crates/ward",
+    "crates/ward-nm",
+    "crates/ward-ponte-teste",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+publish = false
+
+# Dependências novas só com motivo escrito no handoff da fase (S14).
+[workspace.dependencies]
+ward-core = { path = "crates/ward-core" }
+ward-plataforma = { path = "crates/ward-plataforma" }
+
+[workspace.lints.rust]
+# `unsafe` só em `ward-plataforma`, com `// SAFETY:` e teste; os outros crates usam
+# `#![forbid(unsafe_code)]`.
+unsafe_code = "deny"
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+undocumented_unsafe_blocks = "deny"
+dbg_macro = "deny"
+todo = "deny"
+
+[profile.release]
+overflow-checks = true
+lto = true
+codegen-units = 1
+strip = "symbols"
+
+# Argon2id com 256 MiB leva dezenas de segundos sem otimização, e os testes do formato
+# usam os parâmetros reais (V2.2, V2.4). As crates de cripto compilam otimizadas também
+# no perfil dev/test; o código do Ward continua sem otimização.
+[profile.dev.package.argon2]
+opt-level = 3
+
+[profile.dev.package.blake2]
+opt-level = 3
+
+[profile.dev.package.chacha20]
+opt-level = 3
+
+[profile.dev.package.poly1305]
+opt-level = 3

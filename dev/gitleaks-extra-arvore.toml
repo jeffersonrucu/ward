@@ -1,0 +1,18 @@
+# Varredura extra da árvore de trabalho: as regras de `dev/gitleaks-extra.toml` menos
+# os diretórios que o `.gitignore` tira do git (os mesmos de `dev/gitleaks-arvore.toml`).
+# O índice e o histórico usam `dev/gitleaks-extra.toml` direto, sem exceção nenhuma.
+
+title = "Ward (extra, árvore de trabalho)"
+
+[extend]
+# Relativo à raiz do repositório (o Makefile roda de lá).
+path = "dev/gitleaks-extra.toml"
+
+[[allowlists]]
+description = "Diretórios ignorados pelo git"
+paths = [
+    '''^\.dev/''',
+    '''^target/''',
+    '''(^|/)node_modules/''',
+    '''(^|/)dist/''',
+]

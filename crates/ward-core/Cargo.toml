@@ -1,0 +1,34 @@
+[package]
+name = "ward-core"
+description = "Núcleo do Ward: formato, criptografia, tipos, máscara e protocolo (sem dependência de Linux)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+# Cripto só por bibliotecas auditadas (S6, V2.7). Motivo de cada uma no handoff da Fase 13.
+[dependencies]
+# `password-hash` (Fase 19b, D30): só os tipos do texto PHC (`phc`) e a comparação em
+# tempo constante do `phc::Output`, para o hash do PIN. O hash em si passa por
+# `cripto::argon2id`. Não traz crate nova ao `Cargo.lock` (já estavam lá).
+argon2 = { version = "0.6.0", default-features = false, features = ["alloc", "zeroize", "password-hash"] }
+# `ctutils` (Fase 19c, D40): o `CtEq` que compara a saída recalculada do hash do PIN
+# com a guardada, em tempo constante. É o mesmo crate que o `phc` já usa (estava no
+# `Cargo.lock`); nada novo entra na árvore.
+ctutils = { version = "0.4.8", default-features = false }
+chacha20poly1305 = { version = "0.11.0", default-features = false, features = ["alloc", "zeroize"] }
+getrandom = { version = "0.4.3", default-features = false }
+# HMAC-SHA1 do TOTP (RFC 6238, Fase 18), do RustCrypto; `zeroize` zera o estado ao sair.
+hmac = { version = "0.13.0", default-features = false, features = ["zeroize"] }
+sha1 = { version = "0.11.0", default-features = false, features = ["zeroize"] }
+zeroize = { version = "1.9.1", default-features = false, features = ["alloc"] }
+
+[lints]
+workspace = true
+
+# `make dev-cofre` (Fase 19): monta o cofre de teste em `.dev/` pela API pública. Só
+# desenvolvimento; `test = true` faz o `cargo test` rodar os testes de ataque dele.
+[[example]]
+name = "dev-cofre"
+path = "examples/dev-cofre/main.rs"
+test = true

@@ -1,0 +1,104 @@
+GITLEAKS="/home/jeffersonoliveira/projetos/cofre/.dev/ferramentas/bin/gitleaks" dev/testes/ataques-fundacao.sh
+ok    V1.2 make check sai 2 e aponta vazamento.txt
+ok    V1.2 a saída do make check não repete o segredo
+ok    V1.2 sem o arquivo, make check volta a 0
+ok    allowlist: valor falso com sufixo ainda é achado
+ok    índice: chave em .dev/ forçada com git add -f é achada
+ok    V1.3 make check falha em cargo audit com RUSTSEC-2020-0071
+ok    V1.3 cargo deny também recusa RUSTSEC-2020-0071
+ok    V1.3 make check falha em cargo deny pela origem git
+ok    V1.3 Cargo.lock existe e não é ignorado
+ok    V1.5 .dev/qualquer é ignorado
+ok    V1.5 .dev/cofre-teste.ward é ignorado
+ok    V1.5 .dev/ferramentas/bin/gitleaks é ignorado
+ok    V1.5 Makefile e dev/ não citam pasta proibida
+ok    extra: chave em app/package-lock.json é achado na árvore
+ok    extra: chave em app/package-lock.json é achado no índice
+ok    extra: chave em app/pnpm-lock.yaml é achado na árvore
+ok    extra: chave em app/pnpm-lock.yaml é achado no índice
+ok    extra: chave em Cargo.lock.bak é achado na árvore
+ok    extra: chave em Cargo.lock.bak é achado no índice
+ok    extra: chave em go.sum é achado na árvore
+ok    extra: chave em go.sum é achado no índice
+ok    extra: chave em gitleaks.toml é achado na árvore
+ok    extra: chave em gitleaks.toml é achado no índice
+ok    extra: chave em docs/.gitleaks.toml é achado na árvore
+ok    extra: chave em docs/.gitleaks.toml é achado no índice
+ok    extra: chave em docs/icone.svg é achado na árvore
+ok    extra: chave em docs/icone.svg é achado no índice
+ok    extra: chave em docs/foto.png é achado na árvore
+ok    extra: chave em docs/foto.png é achado no índice
+ok    extra: chave em docs/manual.pdf é achado na árvore
+ok    extra: chave em docs/manual.pdf é achado no índice
+ok    extra: chave em docs/fonte.woff2 é achado na árvore
+ok    extra: chave em docs/fonte.woff2 é achado no índice
+ok    extra: chave em vendor/x/README é achado na árvore
+ok    extra: chave em vendor/x/README é achado no índice
+ok    extra: chave em docs/pacote.txt.gz é achado na árvore
+ok    extra: chave em docs/pacote.txt.gz é achado no índice
+ok    extra: aws em app/package-lock.json é achado na árvore
+ok    extra: aws em app/package-lock.json é achado no índice
+ok    extra: aws em app/pnpm-lock.yaml é achado na árvore
+ok    extra: aws em app/pnpm-lock.yaml é achado no índice
+ok    extra: aws em Cargo.lock.bak é achado na árvore
+ok    extra: aws em Cargo.lock.bak é achado no índice
+ok    extra: aws em go.sum é achado na árvore
+ok    extra: aws em go.sum é achado no índice
+ok    extra: aws em gitleaks.toml é achado na árvore
+ok    extra: aws em gitleaks.toml é achado no índice
+ok    extra: aws em docs/.gitleaks.toml é achado na árvore
+ok    extra: aws em docs/.gitleaks.toml é achado no índice
+ok    extra: aws em docs/icone.svg é achado na árvore
+ok    extra: aws em docs/icone.svg é achado no índice
+ok    extra: aws em docs/foto.png é achado na árvore
+ok    extra: aws em docs/foto.png é achado no índice
+ok    extra: aws em docs/manual.pdf é achado na árvore
+ok    extra: aws em docs/manual.pdf é achado no índice
+ok    extra: aws em docs/fonte.woff2 é achado na árvore
+ok    extra: aws em docs/fonte.woff2 é achado no índice
+ok    extra: aws em vendor/x/README é achado na árvore
+ok    extra: aws em vendor/x/README é achado no índice
+ok    extra: aws em docs/pacote.txt.gz é achado na árvore
+ok    extra: aws em docs/pacote.txt.gz é achado no índice
+ok    extra: id em app/package-lock.json é achado na árvore
+ok    extra: id em app/package-lock.json é achado no índice
+ok    extra: id em app/pnpm-lock.yaml é achado na árvore
+ok    extra: id em app/pnpm-lock.yaml é achado no índice
+ok    extra: id em Cargo.lock.bak é achado na árvore
+ok    extra: id em Cargo.lock.bak é achado no índice
+ok    extra: id em go.sum é achado na árvore
+ok    extra: id em go.sum é achado no índice
+ok    extra: id em gitleaks.toml é achado na árvore
+ok    extra: id em gitleaks.toml é achado no índice
+ok    extra: id em docs/.gitleaks.toml é achado na árvore
+ok    extra: id em docs/.gitleaks.toml é achado no índice
+ok    extra: id em docs/icone.svg é achado na árvore
+ok    extra: id em docs/icone.svg é achado no índice
+ok    extra: id em docs/foto.png é achado na árvore
+ok    extra: id em docs/foto.png é achado no índice
+ok    extra: id em docs/manual.pdf é achado na árvore
+ok    extra: id em docs/manual.pdf é achado no índice
+ok    extra: id em docs/fonte.woff2 é achado na árvore
+ok    extra: id em docs/fonte.woff2 é achado no índice
+ok    extra: id em vendor/x/README é achado na árvore
+ok    extra: id em vendor/x/README é achado no índice
+ok    extra: id em docs/pacote.txt.gz é achado na árvore
+ok    extra: id em docs/pacote.txt.gz é achado no índice
+ok    origens: make check falha no passo 5/6 com replace-with para vendor/
+ok    origens: source em chave pontilhada é recusado
+ok    origens: .cargo/config com [patch] é recusado
+ok    origens: [registries] é recusado
+ok    origens: source num .cargo/config.toml de diretório pai é recusado
+ok    origens: .cargo/config.toml inválido é recusado
+ok    origens: CARGO_REGISTRIES_MAU_INDEX no ambiente é recusado
+ok    origens: [patch] no Cargo.toml é recusado
+ok    origens: [replace] no Cargo.toml é recusado
+ok    origens: dependência por path fora do repositório é recusado
+ok    origens: path relativo com .. para fora do repositório é recusado
+ok    origens: cópia limpa passa
+ok    GITLEAKS=/bin/true no ambiente não desliga o gitleaks
+ok    CARGO=false no ambiente não troca o cargo
+ok    gitleaks trocado em .dev/ é recusado pelo sha256
+ok    gitleaks com um byte a mais é recusado
+
+Todos os ataques foram barrados.

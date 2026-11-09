@@ -1,0 +1,38 @@
+# gitleaks (S15): o repositório nunca contém segredo real.
+# Regras padrão do gitleaks + allowlist SÓ dos valores falsos fixos do cofre de teste
+# (D15, tabela "Cofre de teste" do contrato). Cada valor é casado inteiro (^…$):
+# "falso-x" seguido de um segredo real continua sendo achado.
+# Não acrescente padrão genérico (ex.: `falso-.*`) nem caminho inteiro.
+
+title = "Ward"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Valores falsos fixos do cofre de teste (D15)"
+regexTarget = "secret"
+condition = "OR"
+regexes = [
+    '''^falso-mestra-ward-01$''',
+    '''^135790$''',
+    '''^falso-WP-senha-01$''',
+    '''^falso-WP-senha-02$''',
+    '''^JBSWY3DPEHPK3PXP$''',
+    '''^falso-PG:s3nha/01@#$''',
+    '''^falso-PG%3As3nha%2F01%40%23$''',
+    '''^falso-SSH-senha-01$''',
+    '''^falso-passphrase-01$''',
+    '''^falso-SALTO-01$''',
+    '''^falso_token_github_01$''',
+    '''^FALSOACCESSKEY01$''',
+    '''^falso-aws-secret-01$''',
+    '''^falso-aws-session-01$''',
+    '''^falso-SMTP-01$''',
+    '''^falso-SFTP-01$''',
+    '''^falso-nota-01$''',
+    '''^falso-licenca-01$''',
+    '''^falso-anexo-01$''',
+    '''^falso-BLOQ-01$''',
+    '''^falso-REDIR-01$''',
+]

@@ -1,0 +1,87 @@
+==> 1/6 cargo fmt --check
+cargo fmt --all --check
+==> 2/6 cargo clippy --all-targets -- -D warnings
+cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.03s
+==> 3/6 cargo test
+cargo test --workspace --all-features --locked
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.02s
+     Running unittests src/main.rs (target/debug/deps/ward-69769626f758aea6)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/ward_core-89897a4e64b4af33)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/deps/ward_nm-f3115f442e1a0288)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/ward_plataforma-4fe9763a730dab0d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/ward_ponte_teste-c806c47be09a044c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/deps/wardd-8ce2893e11e77798)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests ward_core
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests ward_plataforma
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests ward_ponte_teste
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+==> 4/6 cargo audit
+cargo audit --deny warnings
+    Fetching advisory database from `https://github.com/RustSec/advisory-db.git`
+      Loaded 1422 security advisories (from /home/jeffersonoliveira/.cargo/advisory-db)
+    Updating crates.io index
+    Scanning Cargo.lock for vulnerabilities (6 crate dependencies)
+==> 5/6 cargo deny check (e origens do cargo)
+cargo deny --all-features check
+advisories ok, bans ok, licenses ok, sources ok
+python3 -I -B dev/origens.py
+origens: só crates.io e paths dentro do repositório; sem source/patch/registries
+==> 6/6 gitleaks
+/home/jeffersonoliveira/projetos/cofre/.dev/ferramentas/bin/gitleaks dir --config dev/gitleaks-arvore.toml --redact --verbose --no-banner --exit-code 1 .
+Finding:     [1;3;mREDACTED[0m
+Secret:      [1;3;mREDACTED[0m
+RuleID:      private-key
+Entropy:     5.575745
+File:        vazamento.txt
+Line:        1
+Fingerprint: vazamento.txt:private-key:1
+
+[90m3:50PM[0m [32mINF[0m [1mscanned ~661721 bytes (661.72 KB) in 35.8ms[0m
+[90m3:50PM[0m [33mWRN[0m [1mleaks found: 1[0m
+make[1]: *** [Makefile:94: gitleaks] Erro 1
+make: *** [Makefile:48: check] Erro 2

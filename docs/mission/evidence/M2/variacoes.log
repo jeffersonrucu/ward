@@ -1,0 +1,4 @@
+/usr/bin/python3 -I -B dev/servicos/gerar.py
+dev-servicos: pronto em .dev/servicos/
+/usr/bin/python3 -I -B dev/variacoes.py --saida "$WARD_DEV_SAIDA"
+dev-variacoes: gravado .dev/variacoes.txt (0600) com 299 padrões; uso: grep -F -f .dev/variacoes.txt

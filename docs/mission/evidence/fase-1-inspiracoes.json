@@ -1,0 +1,15 @@
+{
+  "descricao": "Snapshot dos filhos diretos da página Inspirações (node 1:3, nome no arquivo: \"Inspiration\") tirado na Fase 1, antes de qualquer escrita no arquivo. Usado em V0.21.",
+  "fileKey": "<id-do-arquivo-figma>",
+  "pagina": { "id": "1:3", "nome": "Inspiration" },
+  "capturado_em": "2026-11-08",
+  "total_filhos": 4,
+  "total_descendentes_abaixo_dos_filhos": 0,
+  "filhos": [
+    { "id": "2:3",  "nome": "image 1", "tipo": "RECTANGLE", "x": -2767, "y": -234, "w": 1011, "h": 665, "rotacao": 0, "visivel": true, "travado": false, "opacidade": 1, "fill": { "tipo": "IMAGE", "imageHash": "0e4c7c7e63114df45a02fb27106b55085e12b27c", "scaleMode": "FILL" } },
+    { "id": "2:9",  "nome": "image 3", "tipo": "RECTANGLE", "x": -1704, "y": -234, "w": 887,  "h": 665, "rotacao": 0, "visivel": true, "travado": false, "opacidade": 1, "fill": { "tipo": "IMAGE", "imageHash": "078207da2392a577237dcda3cc2dc6af0bf9dabc", "scaleMode": "FILL" } },
+    { "id": "2:12", "nome": "image 4", "tipo": "RECTANGLE", "x": -765,  "y": -234, "w": 874,  "h": 655, "rotacao": 0, "visivel": true, "travado": false, "opacidade": 1, "fill": { "tipo": "IMAGE", "imageHash": "43522bd7d8e99c62605eceacd331e39180e2ba63", "scaleMode": "FILL" } },
+    { "id": "2:15", "nome": "image 5", "tipo": "RECTANGLE", "x": -2767, "y": 521,  "w": 965,  "h": 724, "rotacao": 0, "visivel": true, "travado": false, "opacidade": 1, "fill": { "tipo": "IMAGE", "imageHash": "d5c7b41b20ef7a0599237825b2e921891c50f25e", "scaleMode": "FILL" } }
+  ],
+  "script_de_conferencia": "const p = await figma.getNodeByIdAsync('1:3'); await figma.setCurrentPageAsync(p); return p.children.map(n => ({id:n.id,name:n.name,type:n.type,x:n.x,y:n.y,w:n.width,h:n.height,rotation:n.rotation,visible:n.visible,locked:n.locked,opacity:n.opacity,fills:n.fills.map(f=>({type:f.type,imageHash:f.imageHash,scaleMode:f.scaleMode})), desc: ('findAll' in n) ? n.findAll(()=>true).length : 0}));"
+}

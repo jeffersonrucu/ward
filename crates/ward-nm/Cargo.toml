@@ -1,0 +1,10 @@
+[package]
+name = "ward-nm"
+description = "Host de native messaging do Ward para a extensão do Chrome."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true

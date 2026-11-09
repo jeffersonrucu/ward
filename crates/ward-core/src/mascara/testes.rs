@@ -1,0 +1,1217 @@
+//! Testes da máscara (D11, S4): V2.17–V2.24 e os ataques (pedaços quebrados,
+//! codificações que a lista de D11 não cita, saída patológica, segredo em `Debug`).
+//! Só valores falsos do cofre de teste (D15).
+
+use super::*;
+use crate::entrada::{Rascunho, RascunhoAnexo, RascunhoDados, RascunhoExtra, Segredo};
+use crate::entrega::{ErroRecurso, Recursos, montar};
+
+// ---- Ajudantes ----
+
+const SENHA_PG: &str = "falso-PG:s3nha/01@#";
+const URL_PG: &str = "postgresql://app:falso-PG%3As3nha%2F01%40%23@127.0.0.1:55432/app_teste";
+const M: &str = MARCA;
+
+fn t(v: &str) -> String {
+    v.to_owned()
+}
+
+fn s(v: &str) -> Option<Segredo> {
+    Some(Segredo::de_texto(t(v)))
+}
+
+fn rascunho(nome: &str, dados: RascunhoDados) -> Rascunho {
+    Rascunho {
+        nome: t(nome),
+        grupo: t("acme"),
+        ambiente: t("dev"),
+        projeto: String::new(),
+        tags: Vec::new(),
+        dados,
+        extras: Vec::new(),
+        anexos: Vec::new(),
+    }
+}
+
+fn extra(nome: &str, valor: &str, segredo: bool) -> RascunhoExtra {
+    RascunhoExtra {
+        nome: t(nome),
+        valor: Segredo::de_texto(t(valor)),
+        segredo,
+    }
+}
+
+fn anexo(nome: &str, conteudo: &[u8]) -> RascunhoAnexo {
+    RascunhoAnexo {
+        nome: t(nome),
+        conteudo: Segredo::de_bytes(conteudo.to_vec()),
+    }
+}
+
+fn valida(r: Rascunho) -> Entrada {
+    r.validar().unwrap_or_else(|e| panic!("devia validar: {e}"))
+}
+
+fn pg_dev() -> Entrada {
+    valida(rascunho(
+        "acme-pg-dev",
+        RascunhoDados::Banco {
+            motor: t("postgres"),
+            host: t("127.0.0.1"),
+            porta: t("55432"),
+            base: t("app_teste"),
+            usuario: t("app"),
+            senha: s(SENHA_PG),
+            tunel: String::new(),
+        },
+    ))
+}
+
+fn gama_generico() -> Entrada {
+    let mut r = rascunho("gama-generico", RascunhoDados::Generico);
+    r.grupo = t("gama");
+    r.ambiente = t("stage");
+    r.extras = vec![
+        extra("REGIAO", "r-01", false),
+        extra("CHAVE_LICENCA", "falso-licenca-01", true),
+    ];
+    r.anexos = vec![anexo("app.env", b"FALSO_ENV=falso-anexo-01\n")];
+    valida(r)
+}
+
+/// Genérico só com extras secretos (para os testes de vários segredos).
+fn generico(segredos: &[&str]) -> Entrada {
+    let mut r = rascunho("teste-generico", RascunhoDados::Generico);
+    r.extras = segredos
+        .iter()
+        .enumerate()
+        .map(|(i, v)| extra(&format!("S{i}"), v, true))
+        .collect();
+    valida(r)
+}
+
+const CODIGO_FALSO: &str = "123456";
+
+struct Falsos;
+
+impl Recursos for Falsos {
+    fn codigo_totp(&mut self, _: &Segredo) -> Result<Zeroizing<String>, ErroRecurso> {
+        Ok(Zeroizing::new(t(CODIGO_FALSO)))
+    }
+    fn arquivo(&mut self, nome: &str, _: &Segredo) -> Result<String, ErroRecurso> {
+        Ok(format!("/run/user/1000/ward/tmp/1-{nome}"))
+    }
+    fn tunel(&mut self, _: &str, _: &str, _: u16) -> Result<u16, ErroRecurso> {
+        Ok(40123)
+    }
+}
+
+fn entrega(e: &Entrada) -> Entrega {
+    montar(e, &mut Falsos).unwrap_or_else(|erro| panic!("{erro}"))
+}
+
+/// Máscara da entrada com a entrega dela (como o `ward run` monta).
+fn mascara(e: &Entrada) -> Mascara {
+    let g = entrega(e);
+    Mascara::da_entrada(e, Some(&g)).expect("máscara")
+}
+
+/// Passa a saída em pedaços (cortes em posições crescentes) e junta o resultado.
+fn em_pedacos(m: &Mascara, saida: &[u8], cortes: &[usize]) -> Vec<u8> {
+    let mut f = m.fluxo();
+    let mut out = Vec::new();
+    let mut ini = 0;
+    for &c in cortes.iter().chain(core::iter::once(&saida.len())) {
+        f.mascarar(&saida[ini..c], &mut out);
+        ini = c;
+    }
+    f.terminar(&mut out);
+    out
+}
+
+fn byte_a_byte(m: &Mascara, saida: &[u8]) -> Vec<u8> {
+    let cortes: Vec<usize> = (1..saida.len()).collect();
+    em_pedacos(m, saida, &cortes)
+}
+
+fn texto(b: &[u8]) -> String {
+    String::from_utf8_lossy(b).into_owned()
+}
+
+/// Base64 de teste, independente do da máscara (acumulador de bits).
+fn b64(dados: &[u8], url: bool, igual: bool) -> String {
+    let alf: Vec<char> = if url {
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+    } else {
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+    }
+    .chars()
+    .collect();
+    let mut out = String::new();
+    let (mut acc, mut bits) = (0u32, 0u32);
+    for &b in dados {
+        acc = (acc << 8) | u32::from(b);
+        bits += 8;
+        while bits >= 6 {
+            bits -= 6;
+            out.push(alf[((acc >> bits) & 63) as usize]);
+        }
+    }
+    if bits > 0 {
+        out.push(alf[((acc << (6 - bits)) & 63) as usize]);
+    }
+    while igual && !out.len().is_multiple_of(4) {
+        out.push('=');
+    }
+    out
+}
+
+/// Percent-encoding de teste: `todos` codifica tudo fora de `A-Za-z0-9-._~`;
+/// `minusculo` usa hex minúsculo; `mais` troca espaço por `+`.
+fn pct(v: &str, minusculo: bool, mais: bool) -> String {
+    let mut out = String::new();
+    for &b in v.as_bytes() {
+        if b.is_ascii_alphanumeric() || b"-._~".contains(&b) {
+            out.push(b as char);
+        } else if b == b' ' && mais {
+            out.push('+');
+        } else if minusculo {
+            out.push_str(&format!("%{b:02x}"));
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
+}
+
+/// Confere que nenhum pedaço do segredo com 4 bytes ou mais sobrou na saída.
+fn sem_pedaco(saida: &[u8], segredo: &[u8]) {
+    for n in 4..=segredo.len() {
+        for janela in segredo.windows(n) {
+            assert!(
+                !saida.windows(n).any(|w| w == janela),
+                "sobrou pedaço do segredo na saída: {}",
+                texto(saida)
+            );
+        }
+    }
+}
+
+/// Gerador pseudoaleatório de teste (xorshift64*). Não é cripto: só sorteia cortes.
+struct Sorteio(u64);
+
+impl Sorteio {
+    fn proximo(&mut self) -> u64 {
+        let mut x = self.0;
+        x ^= x >> 12;
+        x ^= x << 25;
+        x ^= x >> 27;
+        self.0 = x;
+        x.wrapping_mul(0x2545_f491_4f6c_dd1d)
+    }
+    fn ate(&mut self, n: usize) -> usize {
+        (self.proximo() % n as u64) as usize
+    }
+}
+
+// ---- V2.17 ----
+
+#[test]
+fn v2_17_literal() {
+    let m = mascara(&pg_dev());
+    let saida = m.mascarar_tudo(format!("x {SENHA_PG} y").as_bytes());
+    assert_eq!(texto(&saida), format!("x {M} y"));
+}
+
+// ---- V2.18 ----
+
+#[test]
+fn v2_18_cada_ponto_de_corte() {
+    let m = mascara(&pg_dev());
+    let saida = format!("x {SENHA_PG} y");
+    let b = saida.as_bytes();
+    let esperado = format!("x {M} y");
+    let ini = 2;
+    let fim = ini + SENHA_PG.len();
+    for k in ini..=fim {
+        assert_eq!(texto(&em_pedacos(&m, b, &[k])), esperado, "corte {k}");
+        for j in k..=fim {
+            assert_eq!(
+                texto(&em_pedacos(&m, b, &[k, j])),
+                esperado,
+                "cortes {k},{j}"
+            );
+        }
+    }
+    assert_eq!(texto(&byte_a_byte(&m, b)), esperado);
+}
+
+#[test]
+fn v2_18_prefixo_no_fim_do_pedaco_fica_segurado() {
+    // O que já saiu não pode conter o começo do segredo: o fluxo segura o fim.
+    let m = mascara(&pg_dev());
+    let saida = format!("x {SENHA_PG} y");
+    let b = saida.as_bytes();
+    for k in 3..2 + SENHA_PG.len() {
+        let mut f = m.fluxo();
+        let mut out = Vec::new();
+        f.mascarar(&b[..k], &mut out);
+        assert_eq!(texto(&out), "x ", "corte {k}: devolveu o começo do segredo");
+        // Descartado sem terminar: nada do que estava segurado sai.
+        drop(f);
+        assert_eq!(texto(&out), "x ");
+    }
+}
+
+// ---- V2.19 ----
+
+#[test]
+fn v2_19_percent_encoding() {
+    let m = mascara(&pg_dev());
+    let formas = [
+        pct(SENHA_PG, false, false),    // maiúsculo: falso-PG%3As3nha%2F01%40%23
+        pct(SENHA_PG, true, false),     // minúsculo
+        pct(SENHA_PG, false, true),     // formulário
+        t("falso-PG%3As3nha/01%40%23"), // urllib.parse.quote (deixa a barra)
+        t("falso-PG%3as3nha%2F01@%23"), // misturado
+        t("%66%61%6C%73%6F-PG:s3nha/01@#"), // até as letras codificadas
+    ];
+    assert_eq!(formas[0], "falso-PG%3As3nha%2F01%40%23");
+    for forma in &formas {
+        let saida = format!("x {forma} y");
+        let esperado = format!("x {M} y");
+        assert_eq!(
+            texto(&m.mascarar_tudo(saida.as_bytes())),
+            esperado,
+            "{forma}"
+        );
+        assert_eq!(
+            texto(&byte_a_byte(&m, saida.as_bytes())),
+            esperado,
+            "{forma}"
+        );
+    }
+}
+
+#[test]
+fn v2_19_formulario_com_espaco() {
+    let m = mascara(&generico(&["falso senha 01/x"]));
+    for forma in [
+        pct("falso senha 01/x", false, true),
+        pct("falso senha 01/x", true, true),
+        pct("falso senha 01/x", false, false),
+        t("falso+senha+01%2fx"),
+    ] {
+        let saida = format!("a={forma}&b=1");
+        assert_eq!(
+            texto(&byte_a_byte(&m, saida.as_bytes())),
+            format!("a={M}&b=1")
+        );
+    }
+}
+
+// ---- V2.20 ----
+
+#[test]
+fn v2_20_base64() {
+    let m = mascara(&pg_dev());
+    let basic = b64(format!("app:{SENHA_PG}").as_bytes(), false, true);
+    assert_eq!(basic, "YXBwOmZhbHNvLVBHOnMzbmhhLzAxQCM=");
+    let formas = [
+        b64(SENHA_PG.as_bytes(), false, true),
+        b64(SENHA_PG.as_bytes(), false, false),
+        b64(SENHA_PG.as_bytes(), true, true),
+        b64(SENHA_PG.as_bytes(), true, false),
+        basic.clone(),
+        basic.trim_end_matches('=').to_owned(),
+    ];
+    for forma in &formas {
+        let saida = format!("Authorization: Basic {forma}\n");
+        let esperado = format!("Authorization: Basic {M}\n");
+        assert_eq!(
+            texto(&m.mascarar_tudo(saida.as_bytes())),
+            esperado,
+            "{forma}"
+        );
+        assert_eq!(
+            texto(&byte_a_byte(&m, saida.as_bytes())),
+            esperado,
+            "{forma}"
+        );
+    }
+}
+
+#[test]
+fn v2_20_base64_url_safe_difere_do_padrao() {
+    // Segredo cujo base64 tem `+` e `/`: o URL-safe troca por `-` e `_`.
+    let segredo = "falso-PG:s3nha?01>>~";
+    let m = mascara(&generico(&[segredo]));
+    let padrao = b64(segredo.as_bytes(), false, true);
+    let url = b64(segredo.as_bytes(), true, true);
+    assert_ne!(padrao, url);
+    for forma in [
+        &padrao,
+        &url,
+        &t(padrao.trim_end_matches('=')),
+        &t(url.trim_end_matches('=')),
+    ] {
+        assert_eq!(texto(&byte_a_byte(&m, forma.as_bytes())), M, "{forma}");
+    }
+}
+
+#[test]
+fn ataque_segredo_dentro_de_base64_maior() {
+    // `usuario:token` com qualquer usuário, em qualquer alinhamento: o miolo do base64
+    // do token é mascarado e não sobra pedaço que decodifique o token.
+    let token = "falso-token-gh-01";
+    let m = mascara(&generico(&[token]));
+    for prefixo in ["x-access-token:", "x-access-tok:", "ab:", "a:", ""] {
+        let codificado = b64(format!("{prefixo}{token}").as_bytes(), false, true);
+        let saida = m.mascarar_tudo(codificado.as_bytes());
+        assert!(texto(&saida).contains(M), "{prefixo}: {}", texto(&saida));
+        // O que sobrou do base64 não tem mais que 2 caracteres colados ao segredo.
+        let sobra: String = texto(&saida).replace(M, "");
+        let limite = b64(prefixo.as_bytes(), false, false).len() + 2 + 4;
+        assert!(sobra.len() <= limite, "{prefixo}: sobrou {sobra}");
+    }
+}
+
+// ---- V2.21 ----
+
+#[test]
+fn v2_21_database_url_inteiro() {
+    let e = pg_dev();
+    let g = entrega(&e);
+    assert_eq!(g.valor("DATABASE_URL"), Some(URL_PG));
+    let m = Mascara::da_entrada(&e, Some(&g)).unwrap();
+    for saida in [
+        format!("DATABASE_URL={URL_PG}\n"),
+        // O cliente pode imprimir o URL decodificado.
+        format!("DATABASE_URL=postgresql://app:{SENHA_PG}@127.0.0.1:55432/app_teste\n"),
+    ] {
+        for out in [
+            m.mascarar_tudo(saida.as_bytes()),
+            byte_a_byte(&m, saida.as_bytes()),
+        ] {
+            sem_pedaco(&out, SENHA_PG.as_bytes());
+            sem_pedaco(&out, pct(SENHA_PG, false, false).as_bytes());
+            assert!(!texto(&out).contains("s3nha"), "{}", texto(&out));
+        }
+    }
+    let out = m.mascarar_tudo(format!("DATABASE_URL={URL_PG}\n").as_bytes());
+    assert_eq!(texto(&out), format!("DATABASE_URL={M}\n"));
+}
+
+#[test]
+fn entrega_marca_o_que_e_segredo() {
+    // Só o que a entrega marcou como segredo entra: host, porta, base e usuário não
+    // viram `••••`.
+    let e = pg_dev();
+    let m = mascara(&e);
+    let saida = "PGHOST=127.0.0.1 PGPORT=55432 PGDATABASE=app_teste PGUSER=app\n";
+    assert_eq!(texto(&m.mascarar_tudo(saida.as_bytes())), saida);
+}
+
+#[test]
+fn codigo_totp_nao_e_mascarado() {
+    let e = valida(rascunho(
+        "acme-wp-dev",
+        RascunhoDados::Login {
+            url: t("http://localhost:8081/wp-login.php"),
+            usuario: t("wp_admin"),
+            senha: s("falso-WP-senha-01"),
+            totp_semente: s("JBSWY3DPEHPK3PXP"),
+        },
+    ));
+    let g = entrega(&e);
+    assert_eq!(g.valor("WARD_TOTP"), Some(CODIGO_FALSO));
+    let m = Mascara::da_entrada(&e, Some(&g)).unwrap();
+    let saida = format!("codigo {CODIGO_FALSO} semente JBSWY3DPEHPK3PXP senha falso-WP-senha-01");
+    assert_eq!(
+        texto(&m.mascarar_tudo(saida.as_bytes())),
+        format!("codigo {CODIGO_FALSO} semente {M} senha {M}")
+    );
+}
+
+// ---- V2.22 ----
+
+#[test]
+fn v2_22_segredo_que_contem_outro() {
+    let maior = "falso-abc-123-xyz";
+    let menor = "abc-123";
+    let m = mascara(&generico(&[maior, menor]));
+    for colado in [
+        format!("{maior}{menor}"),
+        format!("{menor}{maior}"),
+        format!("{menor}{menor}"),
+        format!("{maior}{maior}"),
+        format!("{menor}{maior}{menor}"),
+    ] {
+        let saida = format!("<{colado}>");
+        for out in [
+            m.mascarar_tudo(saida.as_bytes()),
+            byte_a_byte(&m, saida.as_bytes()),
+        ] {
+            assert_eq!(texto(&out), format!("<{M}>"), "{colado}");
+        }
+    }
+    // O menor dentro do começo do maior, que depois diverge: o autômato está no meio do
+    // maior quando o menor termina e precisa achá-lo pelo sufixo.
+    let saida = format!("<falso-{menor}-!>");
+    for out in [
+        m.mascarar_tudo(saida.as_bytes()),
+        byte_a_byte(&m, saida.as_bytes()),
+    ] {
+        assert_eq!(texto(&out), format!("<falso-{M}-!>"));
+    }
+}
+
+#[test]
+fn ataque_segredos_sobrepostos() {
+    // O fim de um é o começo do outro: casar só o primeiro deixaria "-fim" do segundo.
+    let a = "falso-sobre-01";
+    let b = "sobre-01-fim";
+    let m = mascara(&generico(&[a, b]));
+    for colado in ["falso-sobre-01-fim", "falso-sobre-01-fimfalso-sobre-01"] {
+        let saida = format!("[{colado}]");
+        for out in [
+            m.mascarar_tudo(saida.as_bytes()),
+            byte_a_byte(&m, saida.as_bytes()),
+        ] {
+            assert_eq!(texto(&out), format!("[{M}]"), "{colado}");
+            sem_pedaco(&out, a.as_bytes());
+            sem_pedaco(&out, b.as_bytes());
+        }
+    }
+}
+
+// ---- V2.23 ----
+
+#[test]
+fn v2_23_anexo_inteiro_linha_e_valor() {
+    let e = gama_generico();
+    let m = mascara(&e);
+    let casos = [
+        ("FALSO_ENV=falso-anexo-01\n", M.to_owned()),
+        ("FALSO_ENV=falso-anexo-01", M.to_owned()),
+        // O conteúdo inteiro inclui a quebra de linha final.
+        (
+            "antes\nFALSO_ENV=falso-anexo-01\ndepois",
+            format!("antes\n{M}depois"),
+        ),
+        (
+            "antes FALSO_ENV=falso-anexo-01 depois",
+            format!("antes {M} depois"),
+        ),
+        ("valor: falso-anexo-01.", format!("valor: {M}.")),
+        ("licença falso-licenca-01", format!("licença {M}")),
+        ("REGIAO=r-01", t("REGIAO=r-01")),
+    ];
+    for (saida, esperado) in casos {
+        assert_eq!(
+            texto(&m.mascarar_tudo(saida.as_bytes())),
+            esperado,
+            "{saida}"
+        );
+        assert_eq!(
+            texto(&byte_a_byte(&m, saida.as_bytes())),
+            esperado,
+            "{saida}"
+        );
+    }
+    let b = b64(b"FALSO_ENV=falso-anexo-01\n", false, true);
+    assert_eq!(texto(&m.mascarar_tudo(b.as_bytes())), M);
+}
+
+#[test]
+fn anexo_com_varias_linhas() {
+    let conteudo = "# comentário longo\n  export TOKEN=\"falso-tok-anexo\"\nA=1\nSEGREDO_X=falso-x-anexo-02\r\n";
+    let mut r = rascunho("teste-anexo", RascunhoDados::Generico);
+    r.extras = vec![extra("X", "y", false)];
+    r.anexos = vec![anexo("app.env", conteudo.as_bytes())];
+    let m = mascara(&valida(r));
+    let casos = [
+        (conteudo.to_owned(), M.to_owned()),
+        // Valor com e sem aspas, linha aparada, linha com CRLF.
+        (t("tok=falso-tok-anexo;"), format!("tok={M};")),
+        (t("\"falso-tok-anexo\""), M.to_owned()),
+        (t("export TOKEN=\"falso-tok-anexo\""), M.to_owned()),
+        (t("SEGREDO_X=falso-x-anexo-02\n"), format!("{M}\n")),
+        (t("v falso-x-anexo-02 v"), format!("v {M} v")),
+        // Linha curta (< 6) não entra sozinha.
+        (t("A=1"), t("A=1")),
+    ];
+    for (saida, esperado) in casos {
+        assert_eq!(
+            texto(&byte_a_byte(&m, saida.as_bytes())),
+            esperado,
+            "{saida}"
+        );
+    }
+}
+
+// ---- V2.24 ----
+
+#[test]
+fn v2_24_saida_sem_segredo_sai_igual() {
+    let m = mascara(&pg_dev());
+    let mut sorteio = Sorteio(0x5eed_0001);
+    let mut binario = vec![0u8; 1024 * 1024];
+    for b in &mut binario {
+        *b = sorteio.proximo() as u8;
+    }
+    // Escapes e prefixos do segredo espalhados, sem formar o segredo.
+    binario[100..106].copy_from_slice(b"%3A%2F");
+    binario[2000..2008].copy_from_slice(b"falso-PG");
+    let saidas: Vec<Vec<u8>> = vec![
+        b"texto comum, nada de segredo aqui\n".to_vec(),
+        vec![0xff, 0xfe, b'f', 0xc3, 0x28, b'%', b'4', 0x80, b'+'],
+        binario,
+        // O fim que ficou segurado (começo do segredo, escape pela metade) sai igual.
+        b"termina com falso-PG:s3".to_vec(),
+        b"termina com %4".to_vec(),
+        b"termina com %".to_vec(),
+    ];
+    for saida in &saidas {
+        assert_eq!(&m.mascarar_tudo(saida), saida);
+        let cortes: Vec<usize> = (1..saida.len()).step_by(4093).collect();
+        assert_eq!(&em_pedacos(&m, saida, &cortes), saida);
+        if saida.len() < 100 {
+            assert_eq!(&byte_a_byte(&m, saida), saida);
+        }
+    }
+}
+
+#[test]
+fn mascara_sem_segredo_nao_mexe_em_nada() {
+    let mut r = rascunho("so-extras", RascunhoDados::Generico);
+    r.extras = vec![extra("REGIAO", "r-01", false)];
+    let e = valida(r);
+    let m = mascara(&e);
+    assert_eq!(m.mascarar_tudo(b"r-01 \xff"), b"r-01 \xff");
+}
+
+// ---- Propriedade: cortes aleatórios ----
+
+#[test]
+fn propriedade_cortes_aleatorios() {
+    let e = pg_dev();
+    let g = entrega(&e);
+    let m = Mascara::da_entrada(&e, Some(&g)).unwrap();
+    let variacoes: Vec<String> = vec![
+        t(SENHA_PG),
+        pct(SENHA_PG, false, false),
+        pct(SENHA_PG, true, false),
+        b64(SENHA_PG.as_bytes(), false, true),
+        b64(SENHA_PG.as_bytes(), true, false),
+        b64(format!("app:{SENHA_PG}").as_bytes(), false, true),
+        t(URL_PG),
+    ];
+    let ruido: &[u8] = b"abc %2 % falso-PG: s3nha 01@# \n\xff\x00=+/";
+    let mut sorteio = Sorteio(0x0dd_ba11);
+    for rodada in 0..300 {
+        let mut saida = Vec::new();
+        let mut inseridas = 0;
+        for _ in 0..1 + sorteio.ate(8) {
+            for _ in 0..sorteio.ate(12) {
+                saida.push(ruido[sorteio.ate(ruido.len())]);
+            }
+            // Separador: o ruído não termina a variação de outro jeito.
+            saida.push(b' ');
+            saida.extend_from_slice(variacoes[sorteio.ate(variacoes.len())].as_bytes());
+            saida.push(b' ');
+            inseridas += 1;
+        }
+        let inteira = m.mascarar_tudo(&saida);
+        let mut cortes: Vec<usize> = (0..sorteio.ate(10))
+            .map(|_| sorteio.ate(saida.len()))
+            .collect();
+        cortes.sort_unstable();
+        let pedacos = em_pedacos(&m, &saida, &cortes);
+        assert_eq!(
+            pedacos, inteira,
+            "rodada {rodada}: cortes mudaram o resultado"
+        );
+        sem_pedaco(&pedacos, SENHA_PG.as_bytes());
+        for v in &variacoes {
+            assert!(
+                !texto(&pedacos).contains(v.as_str()),
+                "rodada {rodada}: sobrou {v}"
+            );
+        }
+        let marcas = texto(&pedacos).matches(M).count();
+        assert!(marcas >= 1 && marcas <= inseridas, "rodada {rodada}");
+    }
+}
+
+// ---- Ataques ----
+
+#[test]
+fn ataque_json_escapado() {
+    let m = mascara(&pg_dev());
+    // PHP (`json_encode`) escapa a barra; JSON comum, não.
+    for saida in [
+        r#"{"senha":"falso-PG:s3nha\/01@#"}"#,
+        r#"{"senha":"falso-PG:s3nha/01@#"}"#,
+    ] {
+        assert_eq!(
+            texto(&m.mascarar_tudo(saida.as_bytes())),
+            format!(r#"{{"senha":"{M}"}}"#)
+        );
+    }
+    let m = mascara(&generico(&["falso\"aspas\\01"]));
+    assert_eq!(
+        texto(&m.mascarar_tudo(br#"{"v":"falso\"aspas\\01"}"#)),
+        format!(r#"{{"v":"{M}"}}"#)
+    );
+}
+
+#[test]
+fn ataque_saida_patologica_continua_linear() {
+    // Segredo de 64 KiB repetitivo contra 1 MiB do mesmo byte (cru e em %61): uma
+    // busca ingênua faria 64 bilhões de comparações; o autômato é linear.
+    let segredo = "a".repeat(64 * 1024);
+    let m = mascara(&generico(&[&segredo]));
+    let saida = vec![b'a'; 1024 * 1024];
+    let mut f = m.fluxo();
+    let mut out = Vec::new();
+    for pedaco in saida.chunks(4096) {
+        f.mascarar(pedaco, &mut out);
+    }
+    f.terminar(&mut out);
+    assert_eq!(texto(&out), M);
+    let codificada = "%61".repeat(128 * 1024);
+    assert_eq!(texto(&m.mascarar_tudo(codificada.as_bytes())), M);
+    // Saída um pouco menor que o segredo: não é segredo, sai igual.
+    let quase = vec![b'a'; 64 * 1024 - 1];
+    assert_eq!(m.mascarar_tudo(&quase), quase);
+}
+
+#[test]
+fn stdout_e_stderr_em_fluxos_separados() {
+    let m = mascara(&pg_dev());
+    let (mut out, mut err) = (m.fluxo(), m.fluxo());
+    let (mut so, mut se) = (Vec::new(), Vec::new());
+    out.mascarar(b"o falso-PG:", &mut so);
+    err.mascarar(b"e falso-PG:s3nha/01@# e", &mut se);
+    out.mascarar(b"s3nha/01@# o", &mut so);
+    out.terminar(&mut so);
+    err.terminar(&mut se);
+    assert_eq!(texto(&so), format!("o {M} o"));
+    assert_eq!(texto(&se), format!("e {M} e"));
+}
+
+#[test]
+fn salto_e_tunel_juntam_as_duas_entradas() {
+    let a = pg_dev();
+    let b = generico(&["falso-ssh-senha-01"]);
+    let m = ConstrutorMascara::new()
+        .entrada(&a)
+        .entrada(&b)
+        .construir()
+        .unwrap();
+    assert_eq!(
+        texto(&m.mascarar_tudo(b"falso-ssh-senha-01 falso-PG:s3nha/01@#")),
+        format!("{M} {M}")
+    );
+}
+
+#[test]
+fn segredo_curto_e_mascarado_e_avisado() {
+    let m = mascara(&generico(&["ab12"]));
+    assert!(m.tem_segredo_curto());
+    assert_eq!(texto(&m.mascarar_tudo(b"x ab12 y")), format!("x {M} y"));
+    assert!(!mascara(&pg_dev()).tem_segredo_curto());
+    // Anexo não conta como segredo curto (as linhas curtas é que ficam de fora).
+    assert!(!mascara(&gama_generico()).tem_segredo_curto());
+}
+
+#[test]
+fn ataque_anexo_grande_demais_falha_fechado() {
+    // Cada entrada cabe no orçamento (D29), mas juntas passam do limite da máscara:
+    // acima dele a máscara não é montada; o `ward run` não roda sem máscara.
+    let grandes: Vec<Entrada> = (0..8)
+        .map(|i| {
+            let mut r = rascunho(&format!("anexo-grande-{i}"), RascunhoDados::Generico);
+            r.extras = vec![extra("X", "y", false)];
+            r.anexos = vec![anexo(
+                "grande.bin",
+                &vec![b'z'; crate::limites::MAX_ANEXOS_SOMADOS],
+            )];
+            valida(r)
+        })
+        .collect();
+    let mut soma = 0;
+    let mut usadas = 0;
+    for e in &grandes {
+        let custo = custo_da_entrada(e).expect("cabe no orçamento");
+        assert!(custo <= ORCAMENTO_MASCARA);
+        soma += custo;
+        usadas += 1;
+        if soma > LIMITE_PADROES {
+            break;
+        }
+    }
+    assert!(soma > LIMITE_PADROES, "o teste precisa passar do limite");
+    let mut c = ConstrutorMascara::new();
+    for e in &grandes[..usadas] {
+        c = c.entrada(e);
+    }
+    let erro = c.construir().unwrap_err();
+    assert_eq!(erro, ErroMascara::GrandeDemais);
+    assert!(!erro.to_string().contains("zzzz"));
+}
+
+#[test]
+fn ataque_debug_sem_segredo() {
+    let e = pg_dev();
+    let g = entrega(&e);
+    let m = Mascara::da_entrada(&e, Some(&g)).unwrap();
+    let mut f = m.fluxo();
+    let mut out = Vec::new();
+    f.mascarar(b"falso-PG:s3n", &mut out);
+    let c = ConstrutorMascara::new().entrada(&e).entrega(&g);
+    for d in [
+        format!("{m:?}"),
+        format!("{f:?}"),
+        format!("{c:?}"),
+        format!("{m:#?}"),
+    ] {
+        assert!(!d.contains("falso"), "{d}");
+        assert!(!d.contains("s3n"), "{d}");
+    }
+}
+
+// ---- S8 / V2.28: zera ao sair, sem Clone ----
+
+/// Falha a compilação se `T` implementar `Clone` (dois impls viram ambíguos).
+trait NaoClone<A> {
+    fn conferir() {}
+}
+impl<T> NaoClone<()> for T {}
+#[allow(dead_code)]
+struct ImplementaClone;
+impl<T: Clone> NaoClone<ImplementaClone> for T {}
+
+fn zera_ao_sair<T: ZeroizeOnDrop>() {}
+
+#[test]
+fn mascara_e_fluxo_zeram_e_nao_clonam() {
+    <Mascara as NaoClone<_>>::conferir();
+    <Fluxo<'static> as NaoClone<_>>::conferir();
+    <ConstrutorMascara<'static> as NaoClone<_>>::conferir();
+    zera_ao_sair::<Mascara>();
+    zera_ao_sair::<Fluxo<'static>>();
+}
+
+#[test]
+fn automato_alocado_uma_vez() {
+    // A capacidade calculada antes cobre todos os nós: nenhuma realocação deixa cópia
+    // dos padrões em memória liberada.
+    let e = gama_generico();
+    let g = entrega(&e);
+    let c = ConstrutorMascara::new().entrada(&e).entrega(&g);
+    let mut total = 0;
+    visitar(&c, &mut |p| {
+        total += p.len();
+        Ok(())
+    })
+    .unwrap();
+    let m = c.construir().unwrap();
+    assert!(m.automato.nos() <= total + 1);
+}
+
+// ---- Codificações (não é cripto, mas tem de bater com a RFC 4648) ----
+
+#[test]
+fn base64_rfc4648() {
+    let casos = [
+        ("", ""),
+        ("f", "Zg=="),
+        ("fo", "Zm8="),
+        ("foo", "Zm9v"),
+        ("foob", "Zm9vYg=="),
+        ("fooba", "Zm9vYmE="),
+        ("foobar", "Zm9vYmFy"),
+    ];
+    for (entrada, esperado) in casos {
+        let mut out = Zeroizing::new(Vec::new());
+        base64(entrada.as_bytes(), B64_PADRAO, true, &mut out);
+        assert_eq!(texto(&out), esperado);
+        assert_eq!(b64(entrada.as_bytes(), false, true), esperado);
+    }
+    let mut out = Zeroizing::new(Vec::new());
+    base64(&[0xfb, 0xff], B64_URL, false, &mut out);
+    assert_eq!(texto(&out), "-_8");
+}
+
+// ---- V2.38: `CHAVE=valor` curto (D34) ----
+
+#[test]
+fn v2_38_valor_curto_de_chave_valor_nao_vira_padrao() {
+    let mut r = rascunho("gama-generico", RascunhoDados::Generico);
+    r.extras = vec![extra("REGIAO", "r-01", false)];
+    r.anexos = vec![anexo(
+        "app.env",
+        b"PORT=8080\nDEBUG=1\nFALSO_ENV=falso-anexo-01\n",
+    )];
+    let m = mascara(&valida(r));
+    let casos = [
+        // Valor curto sozinho na saída: sai intacto (RA3, aceito).
+        (t("porta 8080 debug 1"), t("porta 8080 debug 1")),
+        (t("8080"), t("8080")),
+        (t("1"), t("1")),
+        // O valor longo sozinho e a linha inteira viram `••••`.
+        (t("falso-anexo-01"), M.to_owned()),
+        (t("PORT=8080"), M.to_owned()),
+        (t("x PORT=8080 y"), format!("x {M} y")),
+        (t("DEBUG=1"), M.to_owned()),
+        (t("[FALSO_ENV=falso-anexo-01]"), format!("[{M}]")),
+    ];
+    for (saida, esperado) in casos {
+        for out in [
+            m.mascarar_tudo(saida.as_bytes()),
+            byte_a_byte(&m, saida.as_bytes()),
+        ] {
+            assert_eq!(texto(&out), esperado, "{saida}");
+        }
+    }
+    // Com aspas: `"abcd"` tem 6 caracteres e vira padrão; sem aspas (4), não.
+    let mut r = rascunho("teste-aspas", RascunhoDados::Generico);
+    r.extras = vec![extra("X", "y", false)];
+    r.anexos = vec![anexo("a.env", b"CURTO=\"abcd\"\n")];
+    let m = mascara(&valida(r));
+    assert_eq!(texto(&m.mascarar_tudo(b"v \"abcd\" v")), format!("v {M} v"));
+    assert_eq!(texto(&m.mascarar_tudo(b"v abcd v")), "v abcd v");
+
+    // O segredo de campo segue mascarado em qualquer tamanho (D11).
+    let curto = generico(&["ab12"]);
+    let m = mascara(&curto);
+    assert_eq!(texto(&m.mascarar_tudo(b"x ab12 y")), format!("x {M} y"));
+    assert_eq!(texto(&byte_a_byte(&m, b"x ab12 y")), format!("x {M} y"));
+}
+
+#[test]
+fn v2_38_mutacao_sem_minimo_mascararia_o_valor_curto() {
+    // Controle do teste acima: o mesmo valor curto como segredo de campo é mascarado, então
+    // a saída intacta de V2.38 vem da regra de D34, não de um defeito da busca.
+    let m = mascara(&generico(&["8080"]));
+    assert_eq!(texto(&m.mascarar_tudo(b"porta 8080")), format!("porta {M}"));
+}
+
+// ---- Fase 19c: D36 (por linha) e D37 (formas escapadas) ----
+
+/// Maior trecho contíguo do segredo que sobra na saída (o repro `mascara.rs` do auditor).
+fn maior_trecho(saida: &[u8], segredo: &[u8]) -> usize {
+    let mut melhor = 0;
+    for i in 0..segredo.len() {
+        for j in (i + melhor + 1)..=segredo.len() {
+            if saida.windows(j - i).any(|w| w == &segredo[i..j]) {
+                melhor = j - i;
+            } else {
+                break;
+            }
+        }
+    }
+    melhor
+}
+
+/// A última linha de base64 da chave de teste: curta (menos de 6 caracteres), como a
+/// sobra do fim de uma chave real. É o único trecho que pode sobrar (V2.41).
+const FIM_CURTO: &str = "AQID";
+
+/// Chave privada falsa no formato OpenSSH, em várias linhas de 70 caracteres de base64
+/// pseudoaleatório (semente fixa) e uma última linha curta. Montada em tempo de
+/// execução (o texto do cabeçalho não fica inteiro no repositório). Não é chave de
+/// verdade: só bytes falsos com a forma de uma.
+fn chave_de_varias_linhas() -> String {
+    const ALFABETO: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let rotulo = ["OPENSSH", "PRIVATE", "KEY"].join(" ");
+    let mut sorteio = Sorteio(0x0c4a_7e19);
+    let mut c = format!("-----BEGIN {rotulo}-----\n");
+    for _ in 0..6 {
+        for _ in 0..70 {
+            c.push(char::from(ALFABETO[sorteio.ate(64)]));
+        }
+        c.push('\n');
+    }
+    c.push_str(FIM_CURTO);
+    c.push('\n');
+    c.push_str(&format!("-----END {rotulo}-----\n"));
+    c
+}
+
+fn servidor_com_chave(chave: &str) -> Entrada {
+    valida(rascunho(
+        "acme-ssh-chave-prod",
+        RascunhoDados::Servidor {
+            host: t("127.0.0.1"),
+            porta: t("2223"),
+            usuario: t("deploy"),
+            senha: None,
+            chave_privada: s(chave),
+            passphrase: s("falso-passphrase-01"),
+            salto: String::new(),
+        },
+    ))
+}
+
+/// Toda linha da chave com 6 caracteres ou mais sumiu (nenhum pedaço de 6 dela sobra),
+/// e o maior trecho da chave que sobra é a linha curta do fim com as quebras ao lado.
+fn sem_linha_da_chave(caso: &str, saida: &[u8], chave: &str) {
+    for linha in chave
+        .lines()
+        .filter(|l| l.chars().count() >= MINIMO_CONFIAVEL)
+    {
+        for janela in linha.as_bytes().windows(MINIMO_CONFIAVEL) {
+            assert!(
+                !saida.windows(janela.len()).any(|w| w == janela),
+                "{caso}: sobrou pedaço de uma linha da chave: {}",
+                texto(saida)
+            );
+        }
+    }
+    let maior = maior_trecho(saida, chave.as_bytes());
+    assert!(
+        maior <= FIM_CURTO.len() + 2,
+        "{caso}: sobraram {maior} bytes seguidos da chave: {}",
+        texto(saida)
+    );
+}
+
+/// V2.41 (D36), o achado médio 1 do auditor: a chave privada em campo (não anexo) era
+/// mascarada só inteira. `grep -v -- -----`, `head -n 4`, o CRLF do pty e cada linha
+/// sozinha deixavam passar quase tudo.
+#[test]
+fn v2_41_chave_em_campo_mascarada_por_linha() {
+    let chave = chave_de_varias_linhas();
+    let e = servidor_com_chave(&chave);
+    let m = mascara(&e);
+    let linhas: Vec<&str> = chave.lines().collect();
+
+    let crlf = chave.replace('\n', "\r\n");
+    let cabeca: String = linhas[..4].iter().map(|l| format!("{l}\n")).collect();
+    let miolo: String = linhas[1..linhas.len() - 2]
+        .iter()
+        .map(|l| format!("{l}\n"))
+        .collect();
+    let mut casos: Vec<(String, String)> = vec![
+        (t("cat"), chave.clone()),
+        (t("CRLF do pty"), crlf.clone()),
+        (t("head -n 4"), cabeca),
+        (t("grep -v -- -----"), miolo.clone()),
+        (t("grep -v com CRLF"), miolo.replace('\n', "\r\n")),
+    ];
+    for (i, l) in linhas.iter().enumerate() {
+        casos.push((format!("linha {i} sozinha"), format!("x {l} y\n")));
+        casos.push((format!("linha {i} com CR"), format!("{l}\r\n")));
+        casos.push((format!("linha {i} aparada"), format!("   {l}   \n")));
+    }
+    for (caso, saida) in &casos {
+        sem_linha_da_chave(caso, &m.mascarar_tudo(saida.as_bytes()), &chave);
+        sem_linha_da_chave(caso, &byte_a_byte(&m, saida.as_bytes()), &chave);
+    }
+    // A chave inteira continua um `••••` só.
+    assert_eq!(texto(&m.mascarar_tudo(chave.as_bytes())), M);
+}
+
+/// V2.41 (D36): extra secreto de várias linhas (JSON de conta de serviço) e o valor de
+/// `"chave": "valor"`; e a linha `token: valor` de um anexo YAML.
+#[test]
+fn v2_41_json_de_varias_linhas_e_yaml() {
+    const VALOR: &str = "falso-chave-de-conta-de-servico-0123456789";
+    let json = format!("{{\n  \"type\": \"service_account\",\n  \"private_key\": \"{VALOR}\"\n}}");
+    let mut r = rascunho("x-gen", RascunhoDados::Generico);
+    r.extras = vec![extra("GCP", &json, true)];
+    let m = mascara(&valida(r));
+    let linha = format!("  \"private_key\": \"{VALOR}\"");
+    for (caso, saida, esperado) in [
+        ("JSON inteiro", json.clone(), M.to_owned()),
+        ("a linha", format!("{linha}\n"), format!("{M}\n")),
+        ("jq -r .private_key", format!("{VALOR}\n"), format!("{M}\n")),
+        ("o valor com aspas", format!("\"{VALOR}\""), M.to_owned()),
+        (
+            "o valor no meio do texto",
+            format!("chave={VALOR};"),
+            format!("chave={M};"),
+        ),
+    ] {
+        assert_eq!(
+            texto(&m.mascarar_tudo(saida.as_bytes())),
+            esperado,
+            "{caso}"
+        );
+        assert_eq!(
+            texto(&byte_a_byte(&m, saida.as_bytes())),
+            esperado,
+            "{caso}"
+        );
+    }
+
+    // Anexo YAML (kubeconfig): `token: valor`, com e sem aspas, e item de lista.
+    let kube = "apiVersion: v1\nusers:\n- name: dev\n  user:\n    token: falso-token-kube-01\n    senha: \"falso-senha-kube-02\"\n- item-da-lista: falso-dados-kube-03\n";
+    let mut r = rascunho("x-kube", RascunhoDados::Generico);
+    r.extras = vec![extra("X", "y", false)];
+    r.anexos = vec![anexo("kubeconfig", kube.as_bytes())];
+    let m = mascara(&valida(r));
+    for valor in [
+        "falso-token-kube-01",
+        "falso-senha-kube-02",
+        "falso-dados-kube-03",
+    ] {
+        for saida in [
+            format!("{valor}\n"),
+            format!("v={valor}."),
+            format!("'{valor}'"),
+        ] {
+            let fora = texto(&m.mascarar_tudo(saida.as_bytes()));
+            assert!(!fora.contains(valor), "{saida} -> {fora}");
+            assert!(fora.contains(M), "{saida}");
+        }
+    }
+    // `host:porta` e URL não viram `chave: valor` (sem espaço depois dos dois pontos).
+    let mut r = rascunho("x-url", RascunhoDados::Generico);
+    r.extras = vec![extra("X", "y", false)];
+    r.anexos = vec![anexo("hosts.txt", b"db:5432\n")];
+    let m = mascara(&valida(r));
+    assert_eq!(texto(&m.mascarar_tudo(b"porta 5432")), "porta 5432");
+}
+
+/// Controle de D36: sem a passada por linha nos segredos de campo, `grep -v` deixaria
+/// a chave passar (o achado do auditor). A máscara montada só com o texto inteiro, como
+/// era antes, deixa sobrar as linhas.
+#[test]
+fn v2_41_controle_sem_a_passada_por_linha_vazaria() {
+    let chave = chave_de_varias_linhas();
+    let e = servidor_com_chave(&chave);
+    // Só o segredo inteiro e as variações dele, sem `linhas` (o código de antes).
+    let mut g = Gerador {
+        tmp: Zeroizing::new(Vec::new()),
+        tmp2: Zeroizing::new(Vec::new()),
+    };
+    let mut padroes: Vec<Vec<u8>> = Vec::new();
+    for sg in e.segredos() {
+        g.segredo(sg.valor.expor(), &mut |p| {
+            padroes.push(p.to_vec());
+            Ok(())
+        })
+        .unwrap();
+    }
+    let linhas: Vec<&str> = chave.lines().collect();
+    let miolo: String = linhas[1..linhas.len() - 2]
+        .iter()
+        .map(|l| format!("{l}\n"))
+        .collect();
+    // Nenhum padrão antigo casa com o miolo: ele sairia em claro.
+    assert!(
+        !padroes
+            .iter()
+            .any(|p| miolo.as_bytes().windows(p.len()).any(|w| w == &p[..]))
+    );
+    // Com a máscara de verdade, não sobra.
+    sem_linha_da_chave(
+        "controle",
+        &mascara(&e).mascarar_tudo(miolo.as_bytes()),
+        &chave,
+    );
+}
+
+fn banco_com_senha(senha: &str) -> Entrada {
+    valida(rascunho(
+        "x-pg",
+        RascunhoDados::Banco {
+            motor: t("postgres"),
+            host: t("127.0.0.1"),
+            porta: String::new(),
+            base: t("app"),
+            usuario: t("app"),
+            senha: s(senha),
+            tunel: String::new(),
+        },
+    ))
+}
+
+/// V2.42 (D37), o achado baixo 5: o JSON do Go (`docker inspect`), o `declare -p` do
+/// bash e o `json.dumps` do Python escrevem a senha de outro jeito.
+#[test]
+fn v2_42_formas_escapadas() {
+    let senha = "Ab3$k&<9>Zq!";
+    let m = mascara(&banco_com_senha(senha));
+    for (caso, saida, esperado) in [
+        (
+            "JSON do Go",
+            r#"{"Env":["PGPASSWORD=Ab3$k\u0026\u003c9\u003eZq!"]}"#,
+            format!(r#"{{"Env":["PGPASSWORD={M}"]}}"#),
+        ),
+        (
+            "declare -p",
+            r#"declare -x PGPASSWORD="Ab3\$k&<9>Zq!""#,
+            format!(r#"declare -x PGPASSWORD="{M}""#),
+        ),
+        ("literal", senha, M.to_owned()),
+        (
+            "JSON padrão",
+            r#"{"p":"Ab3$k&<9>Zq!"}"#,
+            format!(r#"{{"p":"{M}"}}"#),
+        ),
+    ] {
+        let fora = m.mascarar_tudo(saida.as_bytes());
+        assert_eq!(texto(&fora), esperado, "{caso}");
+        sem_pedaco(&fora, senha.as_bytes());
+        assert_eq!(
+            texto(&byte_a_byte(&m, saida.as_bytes())),
+            esperado,
+            "{caso}"
+        );
+    }
+
+    // `json.dumps` com `ensure_ascii` (o padrão do Python): fora do ASCII vira `\uXXXX`.
+    let m = mascara(&banco_com_senha("senha-ação-01"));
+    assert_eq!(
+        texto(&m.mascarar_tudo(br#"{"p": "senha-a\u00e7\u00e3o-01"}"#)),
+        format!(r#"{{"p": "{M}"}}"#)
+    );
+    assert_eq!(texto(&m.mascarar_tudo("senha-ação-01".as_bytes())), M);
+    // Acima de U+FFFF, o par substituto.
+    let m = mascara(&banco_com_senha("falso-😀-01"));
+    assert_eq!(texto(&m.mascarar_tudo(br"falso-\ud83d\ude00-01")), M);
+    assert_eq!(texto(&m.mascarar_tudo("falso-😀-01".as_bytes())), M);
+    // Go: U+2028 e U+2029 também.
+    let m = mascara(&banco_com_senha("falso\u{2028}linha\u{2029}01"));
+    assert_eq!(texto(&m.mascarar_tudo(br"falso\u2028linha\u202901")), M);
+
+    // Saída sem segredo com `&`, `<`, `$`, `\u0026` e aspas sai igual.
+    let m = mascara(&banco_com_senha(senha));
+    for limpa in [
+        "a & b <c> $HOME \"x\" \\u0026 `y`",
+        r#"{"Env":["HOME=/root","X=a\u0026b"]}"#,
+        "declare -x PATH=\"/usr/bin\"",
+    ] {
+        assert_eq!(texto(&m.mascarar_tudo(limpa.as_bytes())), limpa);
+    }
+}
+
+/// D37: cada forma só existe quando difere da literal (senão o padrão seria repetido e
+/// pesaria no orçamento à toa).
+#[test]
+fn formas_escapadas_so_quando_mudam() {
+    let contar = |valor: &str| {
+        let mut g = Gerador {
+            tmp: Zeroizing::new(Vec::new()),
+            tmp2: Zeroizing::new(Vec::new()),
+        };
+        let mut n = 0usize;
+        g.segredo(valor.as_bytes(), &mut |_| {
+            n += 1;
+            Ok(())
+        })
+        .unwrap();
+        n
+    };
+    let simples = contar("falso-simples-01");
+    assert_eq!(contar("falso-simples-02"), simples);
+    // `&`: só a forma do Go a mais. `$`: só a do shell. `ç`: só a do `ensure_ascii`.
+    assert_eq!(contar("falso-simples&01"), simples + 1);
+    assert_eq!(contar("falso-simples$01"), simples + 1);
+    assert_eq!(contar("falso-simplesç01"), simples + 1);
+}
