@@ -11,6 +11,12 @@
     "allow-gerar-senha",
     "allow-copiar-senha-gerada",
     "allow-revelar-senha-gerada",
-    "allow-descartar-senha-gerada"
+    "allow-descartar-senha-gerada",
+    "allow-revelar-campo",
+    "allow-codigo-totp",
+    "allow-copiar-codigo-totp",
+    "allow-usar-senha-gerada",
+    "allow-descartar-formulario",
+    "allow-salvar-credencial"
   ]
 }

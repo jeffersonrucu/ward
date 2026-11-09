@@ -171,6 +171,64 @@ fn ataque_respostas_da_tela_credenciais_sem_segredo() {
     fs::remove_dir_all(base).unwrap();
 }
 
+/// Fase 33 pela ponte (V5.3, V5.10, V5.11, V5.13, V5.14): salvar, TOTP e "usar esta
+/// senha" não devolvem segredo; só o `revelar_campo` traz o valor; formulário forjado
+/// (campo desconhecido, nível, "manter" numa entrada nova, tipo de outro jeito) é
+/// recusado sem eco.
+#[test]
+fn ataque_formulario_pela_ponte() {
+    let (p, _l, _a, base) = ponte("formulario");
+    let novo = serde_json::json!({ "formulario": {
+        "tipo": "api", "nome": "beta-gitlab-api", "grupo": "beta", "ambiente": "dev",
+        "projeto": "", "tags": [], "campos": {"url": "https://gitlab.exemplo.com", "variavel": "GITLAB_TOKEN"},
+        "segredos": {"token": {"novo": "falso-token-gitlab-99"}}, "extras": []
+    }});
+    let r = p.responder(&post(&p, "salvar_credencial", &novo.to_string(), &[]));
+    let v = r.corpo_json().unwrap();
+    assert_eq!(v["valor"]["salvo"], "beta-gitlab-api", "{v}");
+    assert!(!String::from_utf8_lossy(&r.corpo).contains("falso-token-gitlab"));
+    let r = p.responder(&post(
+        &p,
+        "revelar_campo",
+        r#"{"entrada":"beta-gitlab-api","campo":"token"}"#,
+        &[],
+    ));
+    assert_eq!(
+        r.corpo_json().unwrap()["valor"]["valor"],
+        "falso-token-gitlab-99"
+    );
+    let r = p.responder(&post(
+        &p,
+        "codigo_totp",
+        r#"{"entrada":"acme-wp-dev"}"#,
+        &[],
+    ));
+    let v = r.corpo_json().unwrap();
+    assert_eq!(v["valor"]["codigo"].as_str().unwrap().len(), 6, "{v}");
+    assert!(!tem_segredo(&r.corpo));
+    let gerar =
+        r#"{"tamanho":20,"minusculas":true,"maiusculas":true,"digitos":true,"simbolos":true}"#;
+    p.responder(&post(&p, "gerar_senha", gerar, &[]));
+    let r = p.responder(&post(&p, "usar_senha_gerada", r#"{"campo":"senha"}"#, &[]));
+    assert_eq!(
+        r.corpo_json().unwrap()["valor"],
+        serde_json::json!({ "tamanho": 20 })
+    );
+    for corpo in [
+        r#"{"formulario":{"tipo":"login","nome":"x","grupo":"g","ambiente":"dev","projeto":"","tags":[],"campos":{},"segredos":{},"extras":[],"nivel":"livre"}}"#,
+        r#"{"formulario":{"tipo":"login","nome":"acme-x","grupo":"g","ambiente":"dev","projeto":"","tags":[],"campos":{},"segredos":{"senha":"manter"},"extras":[]}}"#,
+        r#"{"anterior":5,"formulario":{"tipo":"login","nome":"x","grupo":"g","ambiente":"dev","projeto":"","tags":[],"campos":{},"segredos":{},"extras":[]}}"#,
+        r#"{"formulario":"<img src=x>"}"#,
+        r#"{}"#,
+    ] {
+        let r = p.responder(&post(&p, "salvar_credencial", corpo, &[]));
+        let v = r.corpo_json().unwrap();
+        assert_eq!(v["ok"], false, "{corpo}");
+        assert!(!String::from_utf8_lossy(&r.corpo).contains("img"));
+    }
+    fs::remove_dir_all(base).unwrap();
+}
+
 /// V5.21 pela ponte: "gerar" devolve só tamanho, força e símbolos de D35; "copiar"
 /// devolve `null` e a senha vai para a área; o valor só sai no "revelar"; opções fora do
 /// formato (tamanho fora de 8–64, tipo errado, campo faltando) são recusadas.

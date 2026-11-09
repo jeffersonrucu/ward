@@ -131,6 +131,12 @@ fn bits(o: &OpcoesGerador) -> u32 {
 pub struct Revelada(Zeroizing<String>);
 
 impl Revelada {
+    /// Valor de um segredo do cofre para o "revelar" do formulário (Fase 33). Só UTF-8.
+    pub(crate) fn de_segredo(s: &Segredo) -> Option<Revelada> {
+        let texto = core::str::from_utf8(s.expor()).ok()?;
+        Some(Revelada(Zeroizing::new(texto.to_owned())))
+    }
+
     /// O texto, só para a serialização da resposta do "revelar".
     pub fn expor(&self) -> &str {
         &self.0

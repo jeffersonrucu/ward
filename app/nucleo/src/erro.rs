@@ -36,6 +36,9 @@ pub enum ErroApp {
     AleatorioIndisponivel,
     /// "Copiar" ou "revelar" do gerador avulso sem senha gerada (ou já descartada).
     SemSenhaGerada,
+    /// Editar uma entrada com anexos: o protocolo não traz o conteúdo dos anexos para
+    /// regravar, e salvar sem eles os apagaria (Fase 34).
+    AnexosNaoMantidos,
 }
 
 impl ErroApp {
@@ -56,6 +59,7 @@ impl ErroApp {
             ErroApp::RespostaInvalida => "resposta-invalida",
             ErroApp::AleatorioIndisponivel => "aleatorio-indisponivel",
             ErroApp::SemSenhaGerada => "sem-senha-gerada",
+            ErroApp::AnexosNaoMantidos => "anexos-nao-mantidos",
         }
     }
 }
@@ -79,6 +83,9 @@ impl fmt::Display for ErroApp {
             ErroApp::RespostaInvalida => "resposta inválida do daemon",
             ErroApp::AleatorioIndisponivel => "o gerador aleatório do sistema não respondeu",
             ErroApp::SemSenhaGerada => "gere uma senha antes",
+            ErroApp::AnexosNaoMantidos => {
+                "esta entrada tem anexos; editá-la aqui ainda apagaria os anexos"
+            }
         })
     }
 }
