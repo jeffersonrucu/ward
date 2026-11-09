@@ -966,6 +966,17 @@ Contrato: V8.1–V8.4
   codificação, RA3) e o trecho de deny para `~/.claude/settings.json`; a instalação
   no `~/.claude` é feita pelo usuário no M10. V8.1–V8.4.
 
+- [ ] Fase 50a — Achados da auditoria do M8 (aprovado, 2026-11-09). Médio: o deny de
+  Bash em `skill/settings-deny.json` não pega as formas que a skill cita (`ward run X --
+  /usr/bin/env`, `sh -c env`, `od`, `rev`, `fold`, `tr`, `cut`, `python3 -c`, `> arquivo`,
+  `/usr/local/bin/ward run`, globs em `~/.local/share/w*`, `/proc/N/env*`) — regras sem
+  âncora (`Bash(*ward run*env*)` etc.) e autoteste com cada forma. Baixos: caminho do
+  storage state do `ward playwright` casa com o deny de `/run/user/*/ward*` (ajustar
+  skill ou regra); `//run/media/**/ward-backup/**` no deny; exemplo do `curl` do
+  `beta-github-api` sem usar `$GITHUB_TOKEN`; `make teste-skill` compila o `ward` sem
+  `modo-teste` no `target/` compartilhado (usar target próprio); escopo e roteiro do M10
+  dizem explicitamente que nível "livre" = o agente consegue ler o segredo (RA3). V8.2.
+
 Scrutiny do M8 (2026-11-09): aprovado; tipo `ftp-sftp` corrigido na skill. `Bash(*…)` e
 caminhos `//` do `settings-deny.json` só se conferem no Claude Code real (M10).
 
