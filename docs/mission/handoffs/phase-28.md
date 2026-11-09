@@ -60,6 +60,15 @@
   - `dev/conteiner-plataforma/dentro.sh` (V4.2, 2ª parte): falso não-dumpable, `wardd` copiado e `bind` em `/run/ward/1000/`.
 - **Dependências novas**: nenhuma. O `falso.c` é programa de teste compilado com o gcc do host, que o alvo já exigia. O `pg_select.py` usa só a biblioteca padrão.
 
+## Reexecução depois do merge do master (disco cheio)
+- **Causa da falha no master: o disco cheio.** O `/` estava 100% cheio quando os testes de ssh falharam (ENOSPC). Depois que o coordenador liberou 22 GB, rodei `git merge master` (o conflito no `CLAUDE.md` foi resolvido mantendo as duas linhas; merge em b905c8e) e repeti os testes:
+  - `cargo test --all-features -p wardd --test ssh` passou com 12/12 numa execução sozinho e em 3 execuções em paralelo.
+  - `make check` passou ("tudo limpo") duas vezes seguidas.
+- **Endurecimento dos testes contra corrida** (sem mudar código de produção). Rodando em paralelo, apareceram duas corridas:
+  - `fechar_entrada` (`crates/wardd/tests/ssh.rs`) dava pânico com broken pipe quando o daemon já tinha respondido e fechado o stream numa recusa cedo. Agora ignora o erro da escrita.
+  - A checagem "porta fechada no fim" passou a usar o inode do socket de escuta (`inode_da_escuta`/`escuta_fechada`, por `/proc/net/tcp` e `/proc/self/fd`), porque, com testes em paralelo, outro teste pode reusar o número da porta.
+  - O timeout de conexão subiu de 10 para 60 s no `ssh_falso.py` e no cliente Python do teste. Sob carga, o ssh falso do salto com chave roda o cliente do agente com um neto antes de responder.
+
 ## Ficou de fora
 - **V4.27**: o `inotifywait` não está instalado e não há sudo. O `ssh` da ponte usa as mesmas opções do `ward ssh` da 27 (`-F /dev/null`, `IdentityFile=none`/`id.pub`, `CertificateFile=/dev/null`, `known_hosts` do Ward, ambiente do zero), mas a ausência total de acesso ao `~/.ssh` não foi provada. É o mesmo residual R19 do handoff 27.
 - **`ward run` de um `servidor` com salto**: o `uso.rs` já cobra o nível combinado, mas a entrega continua com o `WARD_HOST`/`WARD_PORT` do destino, sem abrir a ponte. O escopo só cita o túnel de `banco` no `ward run`.
@@ -78,6 +87,9 @@
 | `make fmt` | 0 |
 | `make check` (fmt, clippy, testes, audit, deny, gitleaks: "tudo limpo") | 0 |
 | `make dev-daemon-parar` (só o daemon desta worktree) | 0 |
+| `git merge master` (após liberar o disco) | 0 (conflito no `CLAUDE.md` resolvido) |
+| `cargo test --all-features -p wardd --test ssh` (1 sozinho + 3 em paralelo, 12/12 cada) | 0 |
+| `make check` duas vezes seguidas após o merge | 0, 0 |
 | `make teste-home-real` / `make teste-ataques-servicos` | não rodados (worktree) |
 
 ## Problemas descobertos

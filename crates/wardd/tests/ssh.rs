@@ -389,13 +389,18 @@ fn sessao_de(c: &Cena, pedido: Pedido, cli: impl FnOnce(&mut UnixStream), run: b
     r
 }
 
+/// Fecha a entrada do comando. Quando o pedido é recusado antes de lançar (token
+/// inválido, nível), o daemon pode já ter respondido e soltado a ponta: a escrita que
+/// falha aí não é erro do teste (a resposta é conferida depois).
 fn fechar_entrada(s: &mut UnixStream) {
-    mandar(
-        s,
+    let corpo = protocolo::codificar_pedido(
+        Papel::Agente,
         &Pedido::EntradaPadrao {
             dados: Segredo::de_bytes(Vec::new()),
         },
-    );
+    )
+    .unwrap();
+    let _ = quadro::escrever_quadro(s, &corpo, MAX_QUADRO_COMUM);
 }
 
 /// O registro de um programa falso: `campo → valores`, na ordem.
@@ -916,8 +921,28 @@ fn estranho_e_recusado(porta: u16) {
     );
 }
 
-fn porta_fechada(porta: u16) -> bool {
-    std::net::TcpStream::connect(("127.0.0.1", porta)).is_err()
+/// O inode do socket que escuta em `127.0.0.1:<porta>` (`/proc/net/tcp`, estado `0A`).
+/// A conferência do fim usa o inode, não a porta: com os testes em paralelo, outra
+/// ponte pode receber do kernel o mesmo número de porta logo depois.
+fn inode_da_escuta(porta: u16) -> u64 {
+    let t = fs::read_to_string("/proc/net/tcp").unwrap();
+    let local = format!("0100007F:{porta:04X}");
+    t.lines()
+        .skip(1)
+        .map(|l| l.split_whitespace().collect::<Vec<_>>())
+        .find(|c| c.len() > 9 && c[1] == local && c[3] == "0A")
+        .and_then(|c| c[9].parse().ok())
+        .unwrap_or_else(|| panic!("ninguém escuta em 127.0.0.1:{porta}"))
+}
+
+/// A escuta da ponte (pelo inode) foi fechada? (O daemon roda neste processo.)
+fn escuta_fechada(inode: u64) -> bool {
+    let alvo = format!("socket:[{inode}]");
+    esperar(Duration::from_secs(5), || {
+        !fs::read_dir("/proc/self/fd")
+            .unwrap()
+            .any(|e| fs::read_link(e.unwrap().path()).is_ok_and(|l| l.as_os_str() == alvo.as_str()))
+    })
 }
 
 fn ninguem_com_w(c: &Cena) -> bool {
@@ -973,11 +998,13 @@ fn fase28_salto_com_senha_pela_ponte() {
     c.modo("normal");
     fs::write(c.base.join("esperar-ponte"), "").unwrap();
     let porta = std::cell::Cell::new(0u16);
+    let inode = std::cell::Cell::new(0u64);
     let r = sessao(&c, pedido_ssh("s-salto", &["hostname"], None, None), |s| {
         fechar_entrada(s);
         let principal = esperar_registro(&c, "ssh", "HostKeyAlias=");
         let pt: u16 = depois_de(&argv(&principal), "-p").parse().unwrap();
         porta.set(pt);
+        inode.set(inode_da_escuta(pt));
         estranho_e_recusado(pt);
         assert!(
             ninguem_com_w(&c),
@@ -997,7 +1024,10 @@ fn fase28_salto_com_senha_pela_ponte() {
     assert!(!contem(&r.saida, SENHA_SSH.as_bytes()));
     assert!(!contem(&r.erro, SENHA_SSH.as_bytes()));
     let pt = porta.get();
-    assert!(porta_fechada(pt), "a ponte ficou aberta depois da sessão");
+    assert!(
+        escuta_fechada(inode.get()),
+        "a ponte ficou aberta depois da sessão"
+    );
 
     // O principal: `sshpass -e ssh … -p <ponte> -l deploy -- 127.0.0.1 hostname`.
     let principal = esperar_registro(&c, "ssh", "HostKeyAlias=");
@@ -1114,7 +1144,7 @@ fim = time.time() + 30
 while time.time() < fim and not os.path.exists({marca:?}):
     time.sleep(0.02)
 for i in range(2):
-    s = socket.create_connection(("127.0.0.1", porta), timeout=10)
+    s = socket.create_connection(("127.0.0.1", porta), timeout=60)
     s.sendall(b"select %d\n" % i)
     d = b""
     while not d.endswith(b"\n"):
@@ -1142,6 +1172,7 @@ for i in range(2):
         }],
     });
     let porta = std::cell::Cell::new(0u16);
+    let inode = std::cell::Cell::new(0u64);
     let r = sessao_de(
         &c,
         pedido,
@@ -1152,6 +1183,7 @@ for i in range(2):
             }));
             let pt: u16 = fs::read_to_string(&arq_porta).unwrap().parse().unwrap();
             porta.set(pt);
+            inode.set(inode_da_escuta(pt));
             estranho_e_recusado(pt);
             assert!(
                 ninguem_com_w(&c),
@@ -1181,7 +1213,10 @@ for i in range(2):
     }
     let erro = String::from_utf8_lossy(&r.erro).into_owned();
     assert!(erro.contains("erro-salto ••••"), "{erro}");
-    assert!(porta_fechada(pt), "o túnel ficou aberto depois do comando");
+    assert!(
+        escuta_fechada(inode.get()),
+        "o túnel ficou aberto depois do comando"
+    );
     let tuneis: Vec<Reg> = c
         .registros("ssh")
         .into_iter()

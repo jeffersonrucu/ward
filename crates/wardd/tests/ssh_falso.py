@@ -170,7 +170,9 @@ def ponte_do_lado_do_salto():
 
 
 def conversar(porta, msg):
-    s = socket.create_connection(("127.0.0.1", porta), timeout=10)
+    # Prazo largo: sob carga, o `ssh` falso do salto com chave ainda faz o cliente do
+    # agente (com um neto) antes de responder.
+    s = socket.create_connection(("127.0.0.1", porta), timeout=60)
     try:
         s.sendall(msg)
         dados = b""
