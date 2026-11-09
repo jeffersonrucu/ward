@@ -1,18 +1,27 @@
 //! Identificação do processo do outro lado do socket (D5, S1, S5) e a cadeia de
 //! processos para exibir na aprovação.
 //!
-//! O daemon só trata uma conexão como do app ou do host da extensão quando o processo
-//! que fez o `connect` passa em tudo:
+//! Papel pelo grupo (D47, [`ProcessoPar::classificar`]): o `ward-app` e o `ward-nm` são
+//! instalados setgid para os grupos `ward-app` e `ward-nm`. O `exec` setgid deixa o
+//! processo não-dumpable desde a primeira instrução e põe o `ld.so` em modo seguro
+//! (`AT_SECURE`), e o kernel fixa o egid no `SO_PEERCRED` no `connect`. O daemon dá:
+//! - papel app ao egid `ward-app`, com o pai igual ao próprio daemon ou ao
+//!   `systemd --user` do usuário e sem depurador;
+//! - papel extensão ao egid `ward-nm`, sem depurador e com o pai igual ao Chrome
+//!   instalado, conferido pelo `/proc` do pai;
+//! - papel comum (agente) a qualquer outro;
+//! - e nenhum papel especial com `kernel.yama.ptrace_scope` 0 ou `fs.suid_dumpable` 1
+//!   ([`PoliticaKernel`]).
+//!
+//! A leitura de `exe`, `environ` e `maps` ([`ProcessoPar::identificar`]) fica só para o
+//! pai Chrome e para testes; nunca dá papel sozinha:
 //! - `/proc/<pid>/exe` é exatamente o caminho instalado, e o arquivo aberto por ele é o
-//!   mesmo inode do caminho (um binário copiado para `/tmp` não passa, V3.5);
+//!   mesmo inode do caminho (um binário copiado para `/tmp` não passa);
 //! - o binário e cada pasta acima dele são do root e sem escrita para grupo e outros;
-//! - `TracerPid: 0` (sem `strace`/`gdb`, V3.5);
+//! - `TracerPid: 0`;
 //! - nenhuma variável `LD_*` no ambiente inicial (`/proc/<pid>/environ`);
 //! - toda biblioteca mapeada como executável é arquivo do root, sem escrita para grupo
-//!   e outros, e é o mesmo inode do mapeamento (pega `LD_PRELOAD` que apagou a própria
-//!   variável, biblioteca de `/tmp`, `memfd`);
-//! - para o host da extensão, o pai é o Chrome instalado (exe e dono root, sem
-//!   depurador nem `LD_*`).
+//!   e outros, e é o mesmo inode do mapeamento (no pai Chrome, o `maps` não é lido).
 //!
 //! Qualquer falha, inclusive de leitura, cai no papel comum (agente): a regra falha
 //! fechada. Contra reaproveitamento de pid, o daemon usa o pidfd do `SO_PEERPIDFD`:
@@ -29,6 +38,7 @@ use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::{Component, Path, PathBuf};
 
+use crate::papel::{Instalacao, PoliticaKernel};
 use crate::sys;
 
 /// Limite para ler `/proc/<pid>/status`.
@@ -71,6 +81,12 @@ pub enum Recusa {
     BibliotecaNaoConfiavel,
     /// O pai do host da extensão não é o Chrome instalado.
     PaiNaoPermitido,
+    /// O egid do par não é o grupo do app nem o do host (D47): cliente comum.
+    GrupoComum,
+    /// `ptrace_scope` 0, `suid_dumpable` 1 ou ilegíveis: sem papel especial (D47).
+    PoliticaKernel,
+    /// O pai do app não é o daemon nem o `systemd --user` do usuário (D47).
+    PaiDoAppNaoPermitido,
 }
 
 impl fmt::Display for Recusa {
@@ -90,6 +106,13 @@ impl fmt::Display for Recusa {
             Recusa::AmbienteGrande => "ambiente do processo grande demais",
             Recusa::BibliotecaNaoConfiavel => "biblioteca executável fora do root",
             Recusa::PaiNaoPermitido => "o processo pai não é o Chrome instalado",
+            Recusa::GrupoComum => "o grupo do processo não é o do app nem o da extensão",
+            Recusa::PoliticaKernel => {
+                "ptrace_scope 0 ou suid_dumpable 1: papel de app e extensão desligado"
+            }
+            Recusa::PaiDoAppNaoPermitido => {
+                "o pai do app não é o daemon nem o systemd --user do usuário"
+            }
         };
         f.write_str(s)
     }
@@ -216,15 +239,6 @@ fn conferir_arquivo_do_root(caminho: &Path) -> Result<Metadata, ()> {
 
 fn do_root_sem_escrita(m: &Metadata) -> bool {
     m.uid() == 0 && m.mode() & 0o022 == 0
-}
-
-/// Binários instalados que dão papel especial (D5). Os caminhos vêm da instalação
-/// (M9); o daemon de teste usa os de teste.
-#[derive(Clone, Debug)]
-pub struct Instalacao {
-    pub app: BinarioPermitido,
-    pub host_extensao: BinarioPermitido,
-    pub chrome: BinarioPermitido,
 }
 
 /// Credenciais do `SO_PEERCRED`.
@@ -359,49 +373,86 @@ impl ProcessoPar {
         self.cred
     }
 
-    /// Identifica o par como `binario` (D5), com todas as conferências do módulo.
+    /// Conferência de D5 pelo `/proc` (exe, dono root, `TracerPid`, `LD_*`, `maps`).
+    /// Desde D47 ela não dá papel: serve ao pai Chrome ([`conferir_pai`](Self::conferir_pai))
+    /// e aos testes. Contra um processo não-dumpable (o app e o host setgid, o `wardd`)
+    /// falha fechada com [`Recusa::SemAcesso`].
     pub fn identificar(&self, binario: &BinarioPermitido) -> Result<(), Recusa> {
         self.conferir_uid()?;
         identificar_imagem(&self.alvo, binario, true)
     }
 
-    /// Identifica o par como o host da extensão: [`identificar`](Self::identificar)
-    /// com `host` e o pai identificado como o `chrome`.
-    pub fn identificar_host_extensao(
-        &self,
-        host: &BinarioPermitido,
-        chrome: &BinarioPermitido,
-    ) -> Result<(), Recusa> {
-        self.identificar(host)?;
+    /// pid do pai, com o pidfd dele aberto e o `PPid` relido depois (se o pai tivesse
+    /// saído e o número fosse de outro, o filho já teria outro `PPid`).
+    fn pai(&self) -> Result<Alvo, Recusa> {
         let vista = self.alvo.vista()?;
         let ppid = campo_status(&vista.status()?, b"PPid:").ok_or(Recusa::Leitura)?;
-        let ppid = u32::try_from(ppid).map_err(|_| Recusa::PaiNaoPermitido)?;
-        if ppid <= 1 {
-            return Err(Recusa::PaiNaoPermitido);
+        let ppid = u32::try_from(ppid).map_err(|_| Recusa::Leitura)?;
+        if ppid == 0 {
+            return Err(Recusa::Leitura);
         }
-        let pai = Alvo::do_pid(ppid).map_err(|_| Recusa::PaiNaoPermitido)?;
-        // O pidfd do pai foi aberto depois de ler o PPid: se o pai tivesse saído e o
-        // número fosse de outro, o filho já teria outro PPid. Relê com o filho vivo.
+        let pai = Alvo::do_pid(ppid).map_err(|e| recusa_de_io(&e))?;
         let de_novo = campo_status(&vista.status()?, b"PPid:").ok_or(Recusa::Leitura)?;
         self.alvo.conferir_vivo()?;
         if de_novo != u64::from(ppid) {
-            return Err(Recusa::PaiNaoPermitido);
+            return Err(Recusa::ProcessoSumiu);
         }
-        // Do Chrome não se conferem as bibliotecas: ele mapeia componentes baixados
-        // para a pasta do usuário (Widevine). Exe, dono, depurador e LD_* sim.
-        identificar_imagem(&pai, chrome, false).map_err(|_| Recusa::PaiNaoPermitido)
+        Ok(pai)
     }
 
-    /// Classifica o par (D5). Qualquer falha dá [`ClassePar::Comum`].
-    pub fn classificar(&self, inst: &Instalacao) -> ClassePar {
-        let app = match self.identificar(&inst.app) {
-            Ok(()) => return ClassePar::App,
-            Err(r) => r,
-        };
-        match self.identificar_host_extensao(&inst.host_extensao, &inst.chrome) {
-            Ok(()) => ClassePar::HostExtensao,
-            Err(extensao) => ClassePar::Comum { app, extensao },
+    /// O pai do par é o `chrome` instalado (host da extensão): exe, dono root,
+    /// depurador e `LD_*` lidos do `/proc` do pai. Do Chrome não se conferem as
+    /// bibliotecas: ele mapeia componentes baixados para a pasta do usuário (Widevine).
+    pub fn conferir_pai(&self, chrome: &BinarioPermitido) -> Result<(), Recusa> {
+        let pai = self.pai().map_err(|_| Recusa::PaiNaoPermitido)?;
+        if pai.pid <= 1 {
+            return Err(Recusa::PaiNaoPermitido);
         }
+        identificar_imagem(&pai, chrome, false).map_err(|_| Recusa::PaiNaoPermitido)?;
+        self.alvo.conferir_vivo()
+    }
+
+    /// O pai do app é este processo (o daemon o abriu) ou o `systemd --user` do
+    /// usuário (D47).
+    fn conferir_pai_do_app(&self) -> Result<(), Recusa> {
+        let pai = self.pai().map_err(|r| match r {
+            Recusa::ProcessoSumiu => r,
+            _ => Recusa::PaiDoAppNaoPermitido,
+        })?;
+        if pai.pid == std::process::id() {
+            return self.alvo.conferir_vivo();
+        }
+        e_gerente_systemd_do_usuario(&pai)?;
+        self.alvo.conferir_vivo()
+    }
+
+    /// Papel pelo egid do `SO_PEERCRED` (D47). Qualquer falha dá [`ClassePar::Comum`]
+    /// com o motivo para o log.
+    pub fn classificar(&self, inst: &Instalacao, politica: &PoliticaKernel) -> ClassePar {
+        let gid = self.cred.gid;
+        let r = if gid == inst.gid_app() {
+            self.conferir_especial(politica)
+                .and_then(|()| self.conferir_pai_do_app())
+                .map(|()| ClassePar::App)
+        } else if gid == inst.gid_extensao() {
+            self.conferir_especial(politica)
+                .and_then(|()| self.conferir_pai(inst.chrome()))
+                .map(|()| ClassePar::HostExtensao)
+        } else {
+            Err(Recusa::GrupoComum)
+        };
+        // Depurador preso no meio da conferência também recusa.
+        match r.and_then(|c| self.reconferir_sem_depurador().map(|()| c)) {
+            Ok(c) => c,
+            Err(motivo) => ClassePar::Comum { motivo },
+        }
+    }
+
+    /// Antes de qualquer papel especial: mesmo uid, política do kernel e sem depurador.
+    fn conferir_especial(&self, politica: &PoliticaKernel) -> Result<(), Recusa> {
+        self.conferir_uid()?;
+        politica.conferir()?;
+        self.reconferir_sem_depurador()
     }
 
     /// Reconfere, antes de cada operação sensível de app ou extensão, que o processo
@@ -429,16 +480,58 @@ impl ProcessoPar {
     }
 }
 
+/// Executável e linha de comando do gerente de serviços do usuário.
+const CMDLINE_SYSTEMD_USUARIO: &[u8] = b"/usr/lib/systemd/systemd\0--user\0";
+
+/// `pai` é o `systemd --user` deste usuário: `Name: systemd`, os quatro uids iguais ao
+/// do daemon, `PPid: 1`, sem depurador, `cmdline` exata e o cgroup `init.scope` do
+/// `user@<uid>.service`. O gerente é não-dumpable (o `exe` dele não se lê), então essa
+/// é a conferência possível pelo `/proc`; ela não é prova forte (ver o handoff da
+/// Fase 21b): o próprio `systemd --user` roda as units de `~/.config/systemd/user/`.
+fn e_gerente_systemd_do_usuario(pai: &Alvo) -> Result<(), Recusa> {
+    let recusa = |_| Recusa::PaiDoAppNaoPermitido;
+    let vista = pai.vista().map_err(recusa)?;
+    let status = vista.status().map_err(recusa)?;
+    let uid = sys::geteuid();
+    let nome_ok = status
+        .split(|&b| b == b'\n')
+        .any(|l| l == b"Name:\tsystemd");
+    let uids_ok = status
+        .split(|&b| b == b'\n')
+        .find_map(|l| l.strip_prefix(b"Uid:"))
+        .and_then(|l| std::str::from_utf8(l).ok())
+        .is_some_and(|l| {
+            let v: Vec<&str> = l.split_whitespace().collect();
+            v.len() == 4 && v.iter().all(|u| u.parse::<u32>().ok() == Some(uid))
+        });
+    let pai_ok = campo_status(&status, b"PPid:") == Some(1);
+    let tracer_ok = ler_tracer_pid(&status) == Some(0);
+    let cmdline = vista.ler(c"cmdline", 4096).map_err(recusa)?;
+    let cgroup = vista.ler(c"cgroup", 4096).map_err(recusa)?;
+    let cgroup_esperado =
+        format!("0::/user.slice/user-{uid}.slice/user@{uid}.service/init.scope\n");
+    if nome_ok
+        && uids_ok
+        && pai_ok
+        && tracer_ok
+        && cmdline == CMDLINE_SYSTEMD_USUARIO
+        && cgroup == cgroup_esperado.as_bytes()
+    {
+        pai.conferir_vivo().map_err(recusa)
+    } else {
+        Err(Recusa::PaiDoAppNaoPermitido)
+    }
+}
+
 /// Papel que a plataforma reconhece no par. O protocolo (Fase 20) mapeia: `App` → papel
 /// app, `HostExtensao` → papel extensão, `Comum` → papel agente.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ClassePar {
     App,
     HostExtensao,
-    /// Cliente comum, com o motivo de não ser cada um dos outros (para o log).
+    /// Cliente comum, com o motivo (para o log).
     Comum {
-        app: Recusa,
-        extensao: Recusa,
+        motivo: Recusa,
     },
 }
 
@@ -619,17 +712,6 @@ fn higienizar_nome(bruto: &[u8]) -> String {
     } else {
         nome
     }
-}
-
-/// Usada pela CLI e pelo app antes de mandar a senha mestra (S5): o servidor do outro
-/// lado do socket é do mesmo usuário e é o `wardd` instalado.
-///
-/// Atenção (handoff da Fase 21): o `wardd` endurecido é não-dumpable, e aí o `/proc`
-/// dele (`exe`, `environ`, `maps`) não é legível por outro processo do usuário. Contra
-/// o daemon real esta conferência dá [`Recusa::SemAcesso`] — falha fechada.
-pub fn conferir_servidor(socket: &impl AsFd, wardd: &BinarioPermitido) -> Result<(), Recusa> {
-    let par = ProcessoPar::do_socket(socket).map_err(|e| recusa_de_io(&e))?;
-    par.identificar(wardd)
 }
 
 #[cfg(test)]

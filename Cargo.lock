@@ -343,6 +343,7 @@ dependencies = [
  "ctutils",
  "serde_json",
  "ward-core",
+ "ward-plataforma",
  "zeroize",
 ]
 

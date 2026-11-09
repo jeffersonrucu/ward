@@ -10,13 +10,17 @@ publish.workspace = true
 # Tauri (`app/src-tauri`, workspace próprio) e a ponte de teste (`ward-ponte-teste`) só
 # chamam o `Servico` daqui, então os dois expõem exatamente os mesmos comandos.
 [features]
-# D7: socket do daemon de teste (`/run/user/<uid>/ward-teste/`). Sem a feature, o
-# caminho de teste nem existe no binário.
-modo-teste = []
+# D7: socket do daemon de teste (`/run/user/<uid>/ward-teste/`, pasta 0700 do usuário
+# e par do mesmo uid). Sem a feature, o caminho de teste e essa exceção nem existem no
+# binário: só o socket do systemd do sistema (D46).
+modo-teste = ["ward-plataforma/modo-teste"]
 
 [dependencies]
 # Limites de nome de entrada e de campo (D32), numa fonte só.
 ward-core.workspace = true
+# Conferência do servidor antes de qualquer byte (S5, D46): a mesma da CLI, numa fonte
+# só. Crate do workspace; a `libc` que ele usa já está no lockfile.
+ward-plataforma.workspace = true
 # Comparação em tempo constante do valor copiado com o que está na área de
 # transferência (o mesmo crate que o `ward-core` já usa; nada novo no lockfile).
 ctutils = { version = "0.4.8", default-features = false }

@@ -66,7 +66,7 @@ CARGO_DENY_VERSAO := 0.20.2
 	origens gitleaks-binario teste-ataques-fundacao teste-ataques-servicos teste-iscas-home teste-home-real dev-servicos dev-servicos-subir \
 	dev-servicos-parar dev-servicos-estado dev-servicos-conferir dev-servicos-trocar-chave-host dev-cofre \
 	dev-cofre-conferir dev-variacoes teste-dev-cofre dev-daemon dev-daemon-parar \
-	app-front app-check app-ponte
+	app-front app-check app-ponte teste-docker-plataforma
 
 ## check: pré-checagem das origens, depois fmt, clippy -D warnings, testes, cargo audit,
 ## cargo deny e gitleaks, nessa ordem (V1.1)
@@ -279,6 +279,17 @@ app-check: origens app-front
 app-ponte: origens
 	@test -f app/dist-teste/index.html || { echo "rode 'make app-front' antes" >&2; exit 1; }
 	$(CARGO) run --quiet --locked -p ward-ponte-teste --features modo-teste -- --dist app/dist-teste
+
+# --- Plataforma em contêiner (Fase 21b) ---------------------------------------------
+# D46/D47 com root só dentro de um contêiner ubuntu:24.04 descartável, sem rede: grupos
+# ward-app/ward-nm, binários setgid 2755, /run/ward/1000 do root e socket criado pelo
+# root e entregue por LISTEN_FDS. Nada de sudo nem de /etc ou /run do host. Exige Docker
+# e gcc (a biblioteca do ataque de LD_PRELOAD); fica fora do `make check`.
+
+## teste-docker-plataforma: V3.5 (forma de D47), V3.23 e V3.24 num contêiner ubuntu:24.04
+teste-docker-plataforma: origens
+	$(CARGO) build --quiet --locked -p ward-plataforma --features modo-teste --example ward-plataforma-conteiner
+	dev/testes/docker-plataforma.sh target/debug/examples/ward-plataforma-conteiner
 
 # Alvos que as próximas fases implementam. Falham em vez de fingir que funcionam.
 

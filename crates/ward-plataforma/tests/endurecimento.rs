@@ -260,6 +260,24 @@ fn ataque_subir_com_ld_recusa() {
 }
 
 #[test]
+fn ataque_subir_com_lista_insegura_da_glibc_recusa() {
+    // V3.25 (D48): o nome vai na mensagem, o valor não.
+    for (nome, valor) in [
+        ("GLIBC_TUNABLES", "glibc.malloc.check=3:valor-falso-ward"),
+        ("GCONV_PATH", "/tmp/valor-falso-ward"),
+        ("LD_nome_inventado_ward", "valor-falso-ward"),
+        ("MALLOC_ARENA_MAX", "valor-falso-ward"),
+        ("LOCPATH", "/tmp/valor-falso-ward"),
+    ] {
+        let (r, codigo) = iniciar_com(Some((nome, valor)), false);
+        assert!(r.starts_with("erro:"), "{nome}: {r}");
+        assert!(r.contains(nome), "sem o nome: {r}");
+        assert!(!r.contains("valor-falso-ward"), "valor na mensagem: {r}");
+        assert_ne!(codigo, Some(0), "{nome}");
+    }
+}
+
+#[test]
 fn ataque_subir_sob_strace_recusa() {
     let (r, codigo) = iniciar_com(None, true);
     assert!(r.starts_with("erro:") && r.contains("depurador"), "{r}");
