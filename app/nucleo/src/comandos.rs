@@ -102,6 +102,13 @@ pub const LISTAR_PENDRIVES: &str = "listar_pendrives";
 /// `definir_backup_externo { ligado, uuid? }`: ligar com um pendrive que o daemon vê
 /// agora (o lado Rust confere de novo) ou desligar mantendo o UUID (Fase 48, D17, D30).
 pub const DEFINIR_BACKUP_EXTERNO: &str = "definir_backup_externo";
+/// `listar_backups`: as versões do backup local (nome e instante, nunca conteúdo), da
+/// mais nova para a mais antiga (Fase 47, V7.7).
+pub const LISTAR_BACKUPS: &str = "listar_backups";
+/// `restaurar_backup { dados: { versao, senha, pin } }`: restaura uma versão com a senha
+/// mestra dela e o PIN atual (Fase 47, V7.7; D17, D39, S9). A resposta traz só
+/// `restaurado` e a contagem de entradas.
+pub const RESTAURAR_BACKUP: &str = "restaurar_backup";
 
 /// Comandos da janela principal, na ordem da capability `principal`.
 pub const COMANDOS_PRINCIPAL: &[&str] = &[
@@ -133,6 +140,8 @@ pub const COMANDOS_PRINCIPAL: &[&str] = &[
     BACKUP_EXTERNO,
     LISTAR_PENDRIVES,
     DEFINIR_BACKUP_EXTERNO,
+    LISTAR_BACKUPS,
+    RESTAURAR_BACKUP,
     TRAVAR,
 ];
 
@@ -175,6 +184,8 @@ pub const COMANDOS: &[&str] = &[
     BACKUP_EXTERNO,
     LISTAR_PENDRIVES,
     DEFINIR_BACKUP_EXTERNO,
+    LISTAR_BACKUPS,
+    RESTAURAR_BACKUP,
     PEDIDO_DE_APROVACAO,
     RESPONDER_APROVACAO,
     TRAVAR,
@@ -216,6 +227,8 @@ pub enum Comando {
     BackupExterno,
     ListarPendrives,
     DefinirBackupExterno,
+    ListarBackups,
+    RestaurarBackup,
     PedidoDeAprovacao,
     ResponderAprovacao,
     Travar,
@@ -252,6 +265,8 @@ impl Comando {
             BACKUP_EXTERNO => Some(Comando::BackupExterno),
             LISTAR_PENDRIVES => Some(Comando::ListarPendrives),
             DEFINIR_BACKUP_EXTERNO => Some(Comando::DefinirBackupExterno),
+            LISTAR_BACKUPS => Some(Comando::ListarBackups),
+            RESTAURAR_BACKUP => Some(Comando::RestaurarBackup),
             PEDIDO_DE_APROVACAO => Some(Comando::PedidoDeAprovacao),
             RESPONDER_APROVACAO => Some(Comando::ResponderAprovacao),
             TRAVAR => Some(Comando::Travar),
@@ -344,6 +359,8 @@ mod testes {
                 "backup_externo",
                 "listar_pendrives",
                 "definir_backup_externo",
+                "listar_backups",
+                "restaurar_backup",
                 "pedido_de_aprovacao",
                 "responder_aprovacao",
                 "travar",

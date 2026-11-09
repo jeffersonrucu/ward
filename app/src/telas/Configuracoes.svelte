@@ -13,7 +13,7 @@
   //   Ligar abre a escolha do pendrive (`EscolherPendrive`); ligado, o cartão do
   //   pendrive (16318) mostra o escolhido e "Trocar". Desligar mantém o UUID guardado e
   //   não apaga nada do pendrive. Lido por `backup_externo` (sem caminho de montagem).
-  //   Restaurar (Fase 47) ainda não abre nada.
+  //   Restaurar (Fase 47, V7.7) abre `RestaurarBackup` (16349/16512).
   // - Kit de emergência (Fase 49, V7.10): "Imprimir" abre a folha (`KitEmergencia`).
   //
   // Nenhum valor secreto passa por esta tela: as respostas trazem só os minutos, o
@@ -31,6 +31,8 @@
   import TrocarPin from './TrocarPin.svelte';
   import TrocarSenha from './TrocarSenha.svelte';
   import EscolherPendrive from './EscolherPendrive.svelte';
+  import RestaurarBackup from './RestaurarBackup.svelte';
+  import { mensagemRestaurado } from './restaurar.js';
   import { cartaoDoPendrive, opcoesDeTrava } from './configuracoes.js';
   import { mensagemDoRust } from './primeiro-uso.js';
 
@@ -194,7 +196,9 @@
         {#snippet descricao()}Automático e cifrado a cada mudança, com 30 versões em
           ~/.local/share/ward/backups/.{/snippet}
         {#snippet controle()}
-          <Botao variante="secundario" desabilitado aria-label="Restaurar backup">Restaurar</Botao>
+          <Botao variante="secundario" onclick={() => (dialogo = 'restaurar')} aria-label="Restaurar backup"
+            >Restaurar</Botao
+          >
         {/snippet}
       </LinhaDeOpcao>
       <LinhaDeOpcao
@@ -269,6 +273,19 @@
   atual={externo?.uuid ?? null}
   onfechar={fecharDialogo}
   onescolhido={pendriveEscolhido}
+  ontravado={() => {
+    dialogo = '';
+    ontravado?.();
+  }}
+/>
+<RestaurarBackup
+  aberto={dialogo === 'restaurar'}
+  onfechar={fecharDialogo}
+  onrestaurado={(r) => {
+    dialogo = '';
+    avisar(mensagemRestaurado(r.instante, r.entradas));
+    carregar();
+  }}
   ontravado={() => {
     dialogo = '';
     ontravado?.();

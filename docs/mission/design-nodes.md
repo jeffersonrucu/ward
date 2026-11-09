@@ -1037,3 +1037,12 @@ Lido de uma cópia do `Ward.figcraft` (o original não foi alterado), por `get_n
 | `Logo / Horizontal` com o nome em `impressao/texto` | `16781` (`16785`) | `Logo.svelte` com `impressao` |
 | `Linha de opção` botão (Kit de emergência › Imprimir) | `15242` › `10380` | `Configuracoes.svelte` › `config-kit`, agora habilitado |
 | (sem frame) janela de pré-visualização com "Fechar"/"Imprimir" | — | `KitEmergencia.svelte` › `.barra` (`kit-de-emergencia-1280x800-falso.png`) |
+
+## Fase 47 — Restaurar backup (UI; lido de uma cópia do `Ward.figcraft`, nada salvo)
+
+| Nó | Id | No código |
+| --- | --- | --- |
+| `Restaurar backup / Versões` | `16349` (diálogo `16458`, itens `16466` … `16494`, legenda `16501`, rodapé `16502`) | `app/src/telas/RestaurarBackup.svelte`, etapa `versoes` |
+| `Restaurar backup / Confirmar` | `16512` (diálogo `16621`, item `16676`, `Campo senha` `16683`, aviso `18775`, legenda `16664`, rodapé `16665`) | `RestaurarBackup.svelte`, etapa `confirmar` (+ `Campo PIN` "PIN atual", que o frame não tem) |
+| `Item de versão` (set) | `11264` (padrão `11243`, selecionado `11265`) | `app/src/lib/componentes/ItemDeVersao.svelte` |
+| `Diálogo de restauração` (set) | `13033` | o `<dialog>` de `RestaurarBackup.svelte` |

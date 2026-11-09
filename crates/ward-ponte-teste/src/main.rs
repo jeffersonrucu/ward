@@ -36,7 +36,8 @@ use ward_ponte_teste::simulados::{SeletorDePasta, TerminalDeTeste};
 
 const USO: &str = "uso: ward-ponte-teste [--dist <diretório do build --mode teste> \
 [--daemon-falso cheio|vazio|travado|travado-com-pedido|sem-cofre|aprovacao|aprovacao-prod|\
-aprovacao-expirando|aprovacao-ataque|backup-externo-ligado|sem-udisks]] [--anexos <pasta com um arquivo>]";
+aprovacao-expirando|aprovacao-ataque|backup-externo-ligado|sem-udisks|sem-backups|\
+backups-indisponiveis]] [--anexos <pasta com um arquivo>]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -98,6 +99,21 @@ fn main() -> ExitCode {
         ),
         ["--dist", d, "--daemon-falso", "sem-udisks"] => servir(
             DaemonFalso::backup_externo_ligado().com_pendrives(None),
+            None,
+            Path::new(d),
+            anexos,
+            &[],
+        ),
+        // Fase 47: restaurar sem nenhuma versão e com a pasta de backups indisponível.
+        ["--dist", d, "--daemon-falso", "sem-backups"] => servir(
+            DaemonFalso::cheio().com_backups(Some(Vec::new())),
+            None,
+            Path::new(d),
+            anexos,
+            &[],
+        ),
+        ["--dist", d, "--daemon-falso", "backups-indisponiveis"] => servir(
+            DaemonFalso::cheio().com_backups(None),
             None,
             Path::new(d),
             anexos,

@@ -2,7 +2,8 @@
 //! o papel app (D5): `estado`, `lista`, `detalhe`, `copiar`, `revelar`, `totp`,
 //! `salvar_entrada`, `mudar_nivel` (Fase 35), `destravar` (Fase 31) e, na tela
 //! Configurações (Fase 38), `configuracao`, `trocar_pin`, `trocar_senha` e `tempo_trava`;
-//! no backup externo (Fase 48), `backup_externo`, `pendrives` e `definir_backup_externo`.
+//! no backup externo (Fase 48), `backup_externo`, `pendrives` e `definir_backup_externo`;
+//! no restaurar (Fase 47), `backups` e `restaurar_backup`.
 //!
 //! Aqui o pedido vira o corpo do quadro (`codificar_pedido`) e a resposta é lida com a
 //! leitura estrita do cliente (`decodificar_resposta`), que recusa tipo de outro papel e
@@ -53,6 +54,9 @@ fn erro_do_daemon(e: &ErroResposta) -> ErroApp {
         ErroResposta::SenhaIncorreta => ErroApp::SenhaIncorreta,
         ErroResposta::Retrocesso => ErroApp::CofreRetrocesso,
         ErroResposta::PendrivesIndisponiveis => ErroApp::PendrivesIndisponiveis,
+        ErroResposta::BackupInexistente => ErroApp::BackupInexistente,
+        ErroResposta::BackupIndisponivel => ErroApp::BackupIndisponivel,
+        ErroResposta::CofreMudou => ErroApp::CofreMudou,
         _ => ErroApp::Recusado,
     }
 }
@@ -406,6 +410,43 @@ pub fn definir_backup_externo<D: Daemon + ?Sized>(
 ) -> Result<(), ErroApp> {
     match pedir(daemon, &Pedido::DefinirBackupExterno { ligado, uuid })? {
         Resposta::Ok => Ok(()),
+        _ => Err(ErroApp::RespostaInvalida),
+    }
+}
+
+/// `backups` (Fase 45/47): os nomes das versões do backup local, da mais nova para a
+/// mais antiga. A leitura estrita já recusou nome fora do formato e mais de
+/// `MAX_BACKUPS`.
+pub fn backups<D: Daemon + ?Sized>(daemon: &mut D) -> Result<Vec<String>, ErroApp> {
+    match pedir(daemon, &Pedido::Backups)? {
+        Resposta::Backups(l) => Ok(l),
+        _ => Err(ErroApp::RespostaInvalida),
+    }
+}
+
+/// `restaurar_backup { versao, senha, pin }` (Fase 45/47; D17, D39, S9): a senha mestra
+/// daquela versão e o PIN atual vão só neste pedido, em `Segredo` do núcleo (zera), e o
+/// quadro é largado logo depois da troca. PIN errado é [`ErroApp::PinIncorreto`] (o
+/// daemon conta; o 5.º trava); a senha da versão errada, [`ErroApp::SenhaIncorreta`].
+pub fn restaurar_backup<D: Daemon + ?Sized>(
+    daemon: &mut D,
+    versao: &str,
+    senha: &crate::destrave::SenhaMestra,
+    pin: &crate::nivel::Pin,
+) -> Result<(), ErroApp> {
+    let pedido = Pedido::RestaurarBackup {
+        versao: versao.to_owned(),
+        senha: senha.para_o_protocolo(),
+        pin: pin.para_o_protocolo(),
+    };
+    let quadro =
+        protocolo::codificar_pedido(Papel::App, &pedido).map_err(|_| ErroApp::PedidoInvalido)?;
+    drop(pedido);
+    let corpo = daemon.trocar(&quadro)?;
+    drop(quadro);
+    match protocolo::decodificar_resposta(Papel::App, &corpo) {
+        Ok(Resposta::Ok) => Ok(()),
+        Ok(Resposta::Erro(e)) => Err(erro_do_daemon(&e)),
         _ => Err(ErroApp::RespostaInvalida),
     }
 }

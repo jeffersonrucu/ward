@@ -33,6 +33,9 @@
 //!   gravados pelo daemon na configuração do cofre (D30, D39).
 //! - [`backup_externo`]: Configurações › backup externo (Fase 48): o pendrive escolhido
 //!   tem de estar na lista do daemon; o rótulo (não confiável) chega neutralizado (D51).
+//! - [`restaurar`]: restaurar backup (Fase 47): versões só pelo nome (data e hora, sem
+//!   conteúdo); a versão pedida tem de estar na lista do daemon; senha da versão e PIN
+//!   atual em tipos que zeram.
 //! - [`aprovacao`]: janela de aprovação (Fase 36): pedidos do daemon com o texto do
 //!   agente neutralizado (D51) e a resposta com PIN, só pela janela `aprovacao`.
 //! - [`bandeja`]: ícone e menu da bandeja (Fase 39): textos por estado, ações (nenhuma
@@ -60,6 +63,7 @@ pub mod gerador;
 pub mod nivel;
 pub mod partida;
 pub mod primeiro_uso;
+pub mod restaurar;
 pub mod segredo;
 pub mod servico;
 pub mod terminal;

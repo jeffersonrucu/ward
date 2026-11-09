@@ -61,6 +61,13 @@ pub enum ErroApp {
     /// Backup externo (Fase 48): o UUID pedido não é de um pendrive conectado agora (ou
     /// há dois com o mesmo UUID). Nada foi gravado.
     PendriveNaoConectado,
+    /// Restaurar (Fase 47): a versão não está (mais) na pasta de backups. Nada mudou.
+    BackupInexistente,
+    /// Restaurar (Fase 47): a pasta de backups não abre ou não é segura (0700 do
+    /// usuário, sem link). Nada mudou.
+    BackupIndisponivel,
+    /// Restaurar (D39): o arquivo do cofre mudou fora do Ward; o daemon travou o cofre.
+    CofreMudou,
 }
 
 impl ErroApp {
@@ -91,6 +98,9 @@ impl ErroApp {
             ErroApp::CofreRetrocesso => "cofre-retrocesso",
             ErroApp::PendrivesIndisponiveis => "pendrives-indisponiveis",
             ErroApp::PendriveNaoConectado => "pendrive-nao-conectado",
+            ErroApp::BackupInexistente => "backup-inexistente",
+            ErroApp::BackupIndisponivel => "backup-indisponivel",
+            ErroApp::CofreMudou => "cofre-mudou",
         }
     }
 }
@@ -130,6 +140,15 @@ impl fmt::Display for ErroApp {
             }
             ErroApp::PendriveNaoConectado => {
                 "esse pendrive não está conectado; conecte-o e atualize a lista"
+            }
+            ErroApp::BackupInexistente => {
+                "essa versão não está mais na pasta de backups; nada mudou no cofre atual"
+            }
+            ErroApp::BackupIndisponivel => {
+                "a pasta de backups não está disponível ou não é segura; nada mudou no cofre atual"
+            }
+            ErroApp::CofreMudou => {
+                "o arquivo do cofre mudou fora do Ward; o cofre foi travado e nada foi restaurado"
             }
             ErroApp::CofreNaoGravado => {
                 "não foi possível gravar o cofre; confira o espaço e as permissões da pasta do Ward"
