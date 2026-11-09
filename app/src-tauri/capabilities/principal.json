@@ -20,6 +20,7 @@
     "allow-salvar-credencial",
     "allow-escolher-anexo",
     "allow-remover-anexo",
-    "allow-conectar"
+    "allow-conectar",
+    "allow-criar-cofre"
   ]
 }

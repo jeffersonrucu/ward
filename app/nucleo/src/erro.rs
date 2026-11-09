@@ -45,6 +45,10 @@ pub enum ErroApp {
     TerminalIndisponivel,
     /// "Conectar" numa entrada que não é `servidor`.
     NaoEServidor,
+    /// Primeiro uso: o daemon já tem um cofre (Fase 30).
+    CofreJaExiste,
+    /// Primeiro uso: o daemon não conseguiu gravar o cofre novo.
+    CofreNaoGravado,
 }
 
 impl ErroApp {
@@ -69,6 +73,8 @@ impl ErroApp {
             ErroApp::SeletorIndisponivel => "seletor-indisponivel",
             ErroApp::TerminalIndisponivel => "terminal-indisponivel",
             ErroApp::NaoEServidor => "nao-e-servidor",
+            ErroApp::CofreJaExiste => "cofre-ja-existe",
+            ErroApp::CofreNaoGravado => "cofre-nao-gravado",
         }
     }
 }
@@ -98,6 +104,10 @@ impl fmt::Display for ErroApp {
             ErroApp::SeletorIndisponivel => "não foi possível abrir a escolha de arquivo",
             ErroApp::TerminalIndisponivel => "não foi possível abrir o terminal",
             ErroApp::NaoEServidor => "Conectar só vale para entradas servidor",
+            ErroApp::CofreJaExiste => "já existe um cofre neste computador",
+            ErroApp::CofreNaoGravado => {
+                "não foi possível gravar o cofre; confira o espaço e as permissões da pasta do Ward"
+            }
         })
     }
 }

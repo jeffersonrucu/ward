@@ -13,7 +13,7 @@
 //! [`crate::servico`]: a área de transferência (D4), o "revelar" no clique (S11) ou o
 //! rascunho que volta ao daemon ao editar (Fase 33).
 
-use ward_core::entrada::Rascunho;
+use ward_core::entrada::{Rascunho, Segredo as SegredoCore};
 use ward_core::protocolo::{
     self, Alvo, DetalheEntrada, ErroResposta, ItemLista, Papel, Pedido, Problema, Resposta,
 };
@@ -44,6 +44,8 @@ fn erro_do_daemon(e: &ErroResposta) -> ErroApp {
         ErroResposta::EntradaInexistente => ErroApp::EntradaInexistente,
         ErroResposta::CampoInexistente => ErroApp::CampoInexistente,
         ErroResposta::NaoAutorizado => ErroApp::NaoAutorizado,
+        ErroResposta::CofreJaExiste => ErroApp::CofreJaExiste,
+        ErroResposta::FalhaAoGravar => ErroApp::CofreNaoGravado,
         _ => ErroApp::Recusado,
     }
 }
@@ -57,6 +59,25 @@ pub fn estado<D: Daemon + ?Sized>(daemon: &mut D) -> Result<EstadoCofre, ErroApp
         } => Ok(EstadoCofre::SemCofre),
         Resposta::Estado { travado: true, .. } => Ok(EstadoCofre::Travado),
         Resposta::Estado { travado: false, .. } => Ok(EstadoCofre::Destravado),
+        _ => Err(ErroApp::RespostaInvalida),
+    }
+}
+
+/// `criar_cofre` (primeiro uso, Fase 30): a senha mestra e o PIN já conferidos por
+/// [`crate::primeiro_uso`]. O daemon grava o hash do PIN na configuração do corpo
+/// (D30) e deixa o cofre destravado. Os valores vão em `Segredo` do núcleo (zera ao
+/// sair) e o quadro é zerado depois da troca.
+pub fn criar_cofre<D: Daemon + ?Sized>(
+    daemon: &mut D,
+    senha: &[u8],
+    pin: &[u8],
+) -> Result<(), ErroApp> {
+    let pedido = Pedido::CriarCofre {
+        senha: SegredoCore::de_bytes(senha.to_vec()),
+        pin: SegredoCore::de_bytes(pin.to_vec()),
+    };
+    match pedir(daemon, &pedido)? {
+        Resposta::Ok => Ok(()),
         _ => Err(ErroApp::RespostaInvalida),
     }
 }

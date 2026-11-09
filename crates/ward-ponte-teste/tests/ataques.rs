@@ -563,3 +563,83 @@ fn ataque_anexos_e_conectar_pela_ponte() {
     }
     fs::remove_dir_all(base).unwrap();
 }
+
+/// Fase 30 (V5.7): primeiro uso pela ponte, com o daemon falso sem cofre. PIN com 3 ou 7
+/// dígitos, com letras e confirmação diferente voltam como erro de campo sem ir ao
+/// daemon; dados com campo a mais ou fora do formato são recusados; nenhuma resposta
+/// traz a senha ou o PIN; depois de criado, o cofre está destravado e vazio, e criar de
+/// novo é recusado.
+#[test]
+fn ataque_primeiro_uso_pela_ponte() {
+    let base = dist("primeiro-uso");
+    let servico = Servico::novo(DaemonFalso::sem_cofre(), Copiador::novo(Area::default()));
+    let (p, _l) = Ponte::abrir(servico, &base.join("dist")).unwrap();
+    let estado = || {
+        p.responder(&post(&p, "estado_do_cofre", "{}", &[]))
+            .corpo_json()
+            .unwrap()["valor"]["estado"]
+            .clone()
+    };
+    assert_eq!(estado(), "sem-cofre");
+    let dados = |senha: &str, conf: &str, pin: &str, conf_pin: &str| {
+        serde_json::json!({ "dados": {
+            "senha": senha, "confirmacao": conf, "pin": pin, "confirmacao_pin": conf_pin
+        }})
+        .to_string()
+    };
+    let senha = "falso-mestra-ward-01";
+    for (corpo, campo) in [
+        (dados(senha, senha, "135", "135"), "pin"),
+        (dados(senha, senha, "1357901", "1357901"), "pin"),
+        (dados(senha, senha, "13579a", "13579a"), "pin"),
+        (dados(senha, senha, "135790", "135791"), "confirmacao_pin"),
+        (
+            dados(senha, "falso-mestra-ward-02", "135790", "135790"),
+            "confirmacao",
+        ),
+        (
+            dados("falso-curta", "falso-curta", "135790", "135790"),
+            "senha",
+        ),
+    ] {
+        let r = p.responder(&post(&p, "criar_cofre", &corpo, &[]));
+        let texto = String::from_utf8_lossy(&r.corpo).into_owned();
+        let v = r.corpo_json().unwrap();
+        assert_eq!(v["valor"]["criado"], false, "{v}");
+        assert_eq!(v["valor"]["erros"][0]["campo"], campo, "{v}");
+        for agulha in ["falso-", "1357"] {
+            assert!(!texto.contains(agulha), "{texto}");
+        }
+    }
+    assert_eq!(estado(), "sem-cofre");
+    for corpo in [
+        r#"{"dados":{"senha":"falso-mestra-ward-01","confirmacao":"falso-mestra-ward-01","pin":"135790","confirmacao_pin":"135790","nivel":"livre"}}"#,
+        r#"{"dados":{"senha":"falso-mestra-ward-01","confirmacao":"falso-mestra-ward-01","pin":135790,"confirmacao_pin":"135790"}}"#,
+        r#"{"senha":"falso-mestra-ward-01","pin":"135790"}"#,
+        r#"{"dados":"falso-mestra-ward-01"}"#,
+    ] {
+        let r = p.responder(&post(&p, "criar_cofre", corpo, &[]));
+        let v = r.corpo_json().unwrap();
+        assert_eq!(v["codigo"], "pedido-invalido", "{v}");
+        assert!(!String::from_utf8_lossy(&r.corpo).contains("falso-"));
+    }
+    let r = p.responder(&post(
+        &p,
+        "criar_cofre",
+        &dados(senha, senha, "135790", "135790"),
+        &[],
+    ));
+    assert_eq!(r.corpo_json().unwrap()["valor"]["criado"], true);
+    assert!(!String::from_utf8_lossy(&r.corpo).contains("falso-"));
+    assert_eq!(estado(), "destravado");
+    let r = p.responder(&post(&p, "listar_credenciais", "{}", &[]));
+    assert_eq!(r.corpo_json().unwrap()["valor"], serde_json::json!([]));
+    let r = p.responder(&post(
+        &p,
+        "criar_cofre",
+        &dados(senha, senha, "2468", "2468"),
+        &[],
+    ));
+    assert_eq!(r.corpo_json().unwrap()["codigo"], "cofre-ja-existe");
+    fs::remove_dir_all(base).unwrap();
+}

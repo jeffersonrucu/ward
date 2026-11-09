@@ -18,6 +18,7 @@ use crate::credenciais::{DetalheCredencial, ItemCredencial};
 use crate::daemon::{Daemon, EstadoCofre};
 use crate::formulario::{self, ErroCampo, Falta, Fontes, Formulario};
 use crate::gerador::{Gerada, Gerador, Opcoes, Revelada};
+use crate::primeiro_uso::NovoCofre;
 use crate::segredo::Segredo;
 use crate::terminal::{SemTerminal, Terminal, entrada_para_argv};
 
@@ -29,6 +30,13 @@ const CAMPOS_GERAVEIS: &[&str] = &["senha"];
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ResultadoSalvar {
     pub salvo: Option<String>,
+    pub erros: Vec<ErroCampo>,
+}
+
+/// Resposta do `criar_cofre`: criado, ou os erros por campo. Sem valor.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ResultadoCriar {
+    pub criado: bool,
     pub erros: Vec<ErroCampo>,
 }
 
@@ -151,6 +159,24 @@ impl<D: Daemon, A: AreaTransferencia> Servico<D, A> {
     /// `estado_do_cofre`.
     pub fn estado_do_cofre(&self) -> Result<EstadoCofre, ErroApp> {
         cliente::estado(&mut *self.daemon()?)
+    }
+
+    /// `criar_cofre` (primeiro uso, Fase 30): confere senha mestra, PIN e as duas
+    /// confirmações aqui e só então pede ao daemon. Com erro de campo, nada vai ao
+    /// daemon. A resposta não traz valor nenhum; o `novo` é zerado ao sair.
+    pub fn criar_cofre(&self, novo: NovoCofre) -> Result<ResultadoCriar, ErroApp> {
+        let erros = novo.erros();
+        if !erros.is_empty() {
+            return Ok(ResultadoCriar {
+                criado: false,
+                erros,
+            });
+        }
+        cliente::criar_cofre(&mut *self.daemon()?, novo.senha.bytes(), novo.pin.bytes())?;
+        Ok(ResultadoCriar {
+            criado: true,
+            erros: Vec::new(),
+        })
     }
 
     /// `listar_credenciais`: `lista` e, para a segunda linha de cada item (usuário,

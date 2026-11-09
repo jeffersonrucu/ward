@@ -16,6 +16,7 @@ use ward_app_nucleo::comandos::Comando;
 use ward_app_nucleo::daemon::Daemon;
 use ward_app_nucleo::formulario::Formulario;
 use ward_app_nucleo::gerador::Opcoes;
+use ward_app_nucleo::primeiro_uso::NovoCofre;
 use ward_app_nucleo::servico::Servico;
 use zeroize::Zeroizing;
 
@@ -180,7 +181,7 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Ponte<D, A> {
         let Some(comando) = Comando::de_nome(nome) else {
             return Resposta::erro(404, ErroApp::PedidoInvalido);
         };
-        let Ok(Value::Object(args)) = serde_json::from_slice::<Value>(&p.corpo) else {
+        let Ok(Value::Object(mut args)) = serde_json::from_slice::<Value>(&p.corpo) else {
             return Resposta::erro(400, ErroApp::PedidoInvalido);
         };
         let texto = |chave: &str| args.get(chave).and_then(Value::as_str);
@@ -309,6 +310,18 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Ponte<D, A> {
             Comando::Conectar => match texto("entrada") {
                 Some(e) => self.servico.conectar(e).map(|()| Value::Null),
                 None => Err(ErroApp::PedidoInvalido),
+            },
+            // Fase 30: senha mestra e PIN conferidos no lado Rust; a resposta não traz
+            // valor. `dados` sai do objeto por `remove`, sem cópia do texto.
+            Comando::CriarCofre => match args
+                .remove("dados")
+                .map(serde_json::from_value::<NovoCofre>)
+            {
+                Some(Ok(n)) => self
+                    .servico
+                    .criar_cofre(n)
+                    .and_then(|r| serde_json::to_value(r).map_err(|_| ErroApp::RespostaInvalida)),
+                _ => Err(ErroApp::PedidoInvalido),
             },
         };
         match resultado {

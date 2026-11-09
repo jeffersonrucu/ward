@@ -8,13 +8,15 @@
 //! por construção) e devolve o corpo de `codificar_resposta`. Atende `estado`, `lista`,
 //! `detalhe`, `copiar`, `revelar`, `totp`, `emitir_token` (Fase 34) e `salvar_entrada` (Fase 33, com a mesma
 //! regra do `wardd`: `Rascunho::validar`, `conferir_no_cofre`, nível "com aprovação" na
-//! entrada nova e mantido na editada); o resto responde `interno`. As mudanças ficam
+//! entrada nova e mantido na editada) e, no [`DaemonFalso::sem_cofre`], `criar_cofre`
+//! (Fase 30, guarda só o hash do PIN, D30); o resto responde `interno`. As mudanças ficam
 //! só na memória do processo.
 //!
 //! Sem a feature `modo-teste` este módulo nem existe no binário (só nos testes).
 
 use zeroize::Zeroizing;
 
+use ward_core::configuracao::HashPin;
 use ward_core::entrada::{
     Entrada, NivelAcesso, OrigemSegredo, Rascunho, Segredo as SegredoCore, TipoEntrada,
 };
@@ -37,6 +39,10 @@ pub use cofre_teste::SEGREDOS;
 /// Daemon falso com as entradas em memória.
 pub struct DaemonFalso {
     entradas: Vec<Entrada>,
+    /// `false` só no [`DaemonFalso::sem_cofre`] até o `criar_cofre` (Fase 30).
+    existe: bool,
+    /// Hash do PIN do cofre criado pelo `criar_cofre`, como o `wardd` o guarda (D30).
+    hash_pin: Option<HashPin>,
 }
 
 impl DaemonFalso {
@@ -44,6 +50,8 @@ impl DaemonFalso {
     pub fn cheio() -> DaemonFalso {
         DaemonFalso {
             entradas: cofre_teste::cofre_de_teste(),
+            existe: true,
+            hash_pin: None,
         }
     }
 
@@ -51,7 +59,25 @@ impl DaemonFalso {
     pub fn vazio() -> DaemonFalso {
         DaemonFalso {
             entradas: Vec::new(),
+            existe: true,
+            hash_pin: None,
         }
+    }
+
+    /// Sem cofre ainda (`Primeiro uso / *`, Fase 30): `estado` responde
+    /// `cofre_existe: false`, o resto responde "ainda não existe cofre" até o
+    /// `criar_cofre`, que deixa o cofre vazio e destravado, como o `wardd`.
+    pub fn sem_cofre() -> DaemonFalso {
+        DaemonFalso {
+            entradas: Vec::new(),
+            existe: false,
+            hash_pin: None,
+        }
+    }
+
+    /// O PIN confere com o hash guardado pelo `criar_cofre` (só para os testes).
+    pub fn pin_confere(&self, pin: &[u8]) -> bool {
+        self.hash_pin.as_ref().is_some_and(|h| h.conferir(pin))
     }
 
     fn entrada(&self, nome: &str) -> Option<&Entrada> {
@@ -59,12 +85,32 @@ impl DaemonFalso {
     }
 
     fn atender(&mut self, pedido: Pedido) -> Resposta {
+        if !self.existe {
+            return match pedido {
+                Pedido::Estado => Resposta::Estado {
+                    travado: true,
+                    cofre_existe: false,
+                    papel: Papel::App,
+                },
+                // Como o `wardd` (`nucleo.rs` › `criar_cofre`): só o hash do PIN fica.
+                Pedido::CriarCofre { senha: _, pin } => match HashPin::criar(pin.expor()) {
+                    Ok(h) => {
+                        self.hash_pin = Some(h);
+                        self.existe = true;
+                        Resposta::Ok
+                    }
+                    Err(_) => Resposta::Erro(ErroResposta::PedidoInvalido),
+                },
+                _ => Resposta::Erro(ErroResposta::CofreInexistente),
+            };
+        }
         match pedido {
             Pedido::Estado => Resposta::Estado {
                 travado: false,
                 cofre_existe: true,
                 papel: Papel::App,
             },
+            Pedido::CriarCofre { .. } => Resposta::Erro(ErroResposta::CofreJaExiste),
             Pedido::Lista => Resposta::Lista(
                 self.entradas
                     .iter()
