@@ -458,6 +458,10 @@ Pendências da 49 (2026-11-09): `window.print()` não conferido no app real (Web
 
 Pendências da 50 (2026-11-09): `ward login` descrito pelo contrato — depois da 43, conferir texto do erro de domínio, se exige aba aberta e o que a CLI imprime, e tirar `login` de `PENDENTES` em `dev/testes/skill.py`; depois da 26a, conferir a lista de variáveis e o `PATH` fixo no texto da skill; regras `Bash` com `*` inicial e `//` absoluto só conferidas no Claude Code real no M10; `Read(~/.ssh/**)` vai além de V8.2 (o usuário pode trocar por `Read(~/.ssh/id_*)`); regras `Bash` são cinto de segurança, contornáveis.
 
+Pendências da 47 (2026-11-09): o frame `16512` não tem PIN e diz "O PIN não serve aqui", mas o `wardd` exige o PIN atual — app pede o PIN; ajustar o FigCraft; `16349` mostra tamanho e origem da versão que o protocolo não traz (item mostra "Cópia local"); "Último: hoje às 14:32" fora; restaurar com cofre travado/corrompido e cancelar aprovações pendentes ao restaurar (Pendências da 45) seguem abertos; ponta a ponta com o `wardd` real fica para o M7.
+
+Pendências da 26a (2026-11-09): lista final no handoff (PATH fixo; HOME/USER/LOGNAME do passwd; LANG/LC_*/TERM/COLORTERM/TZ/NO_COLOR conferidos); `PedidoDeAprovacao` ganhou `diretorio` e a janela mostra "Diretório de trabalho" — frames `Aprovação / *` (16701…17035) sem a caixa; D13/D60 do PRD ainda dizem "ambiente da CLI sem `LD_*`"; sugerida asserção V4.x (SEG) para a lista; risco que fica: o diretório da CLI decide o `.git/config` etc.; workers em paralelo precisam copiar `.dev/servicos/` do checkout principal.
+
 ## Milestone 3 — Daemon e protocolo
 Contrato: V3.1–V3.41
 
@@ -729,7 +733,7 @@ Contrato: V4.1–V4.38
   argv/ambiente, e o `ward ssh` lê o token desse canal; `--token` em argv é recusado.
   Teste de ataque: leitor de `/proc/*/cmdline` e `/proc/*/environ` em laço durante o
   "Conectar" não acha o token. V5.24, S9, S10.
-- [ ] Fase 26a — Ambiente do `executar` por lista fixa (decisão do usuário, achado médio
+- [x] Fase 26a — Ambiente do `executar` por lista fixa (decisão do usuário, achado médio
   da auditoria do M3): o daemon monta o ambiente do comando do zero — `PATH` fixo
   `/usr/local/bin:/usr/bin:/bin`, só variáveis de uma lista permitida (`HOME`, `USER`,
   `LOGNAME`, `LANG`, `LC_*`, `TERM`, `TZ`, `COLORTERM`, `NO_COLOR` e as que a entrega da
@@ -852,7 +856,7 @@ Contrato: V7.1–V7.11
   de estado é atualizado (D39). V7.1–V7.3, V7.8, V7.11.
 - [x] Fase 46 — Backup externo em pendrive por UUID via udisks2, desligado por padrão;
   ligado/desligado e UUID ficam na configuração do cofre (D30). V7.4–V7.6, V7.8.
-- [ ] Fase 47 — **(UI)** Restaurar backup. V7.7.
+- [x] Fase 47 — **(UI)** Restaurar backup. V7.7.
 - [x] Fase 48 — **(UI)** Configurações › backup externo. V7.9.
 - [x] Fase 49 — **(UI)** Kit de emergência para imprimir. V7.10.
 
