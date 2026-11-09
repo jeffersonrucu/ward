@@ -21,6 +21,7 @@ pub mod lancador;
 pub mod memoria;
 pub mod papel;
 pub mod processo;
+pub mod relogio;
 pub mod servidor;
 pub mod socket;
 mod sys;
@@ -40,6 +41,7 @@ pub use processo::{
     BinarioPermitido, ClassePar, CredenciaisPar, ElementoCadeia, ProcessoPar, Recusa,
     cadeia_de_processos,
 };
+pub use relogio::tempo_desde_boot;
 pub use servidor::{RecusaServidor, ServidorEsperado, conectar_servidor, conferir_servidor};
 pub use socket::{
     Conexao, DiretorioSocket, ErroAceitar, ErroAtivacao, Escuta, caminho_socket_sistema,

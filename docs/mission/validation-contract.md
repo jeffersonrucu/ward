@@ -715,16 +715,43 @@ Reauditoria do M2 (Fase 19e, D53–D55). Repros em `scratchpad/ataque/src/bin/`
   tela de credencial; e o log do daemon registra o código de saída (ou o sinal) do app
   que lançou, só o número (D63) — cobre S1.
 
+- [ ] V3.39 — (SEG) Dado o daemon de teste destravado, quando um cliente Python no papel
+  agente (e outro simulando extensão, fora do pai Chrome) pede `revelar`, `copiar` e
+  `totp` de `acme-pg-dev` e de `gama-bloqueada`, então todos recebem "não autorizado" e
+  nenhuma resposta contém segredo; quando o app de teste (papel app pelo lançador, D63)
+  pede `revelar` da senha de `acme-pg-dev` e da de `gama-bloqueada`, então recebe o valor
+  sem PIN e sem janela de aprovação; travado, recebe "travado"; campo inexistente, "campo
+  inexistente"; e o log do daemon tem `revelar <entrada> <campo>` sem nenhum padrão de
+  `.dev/variacoes.txt` (D4, D65) — cobre S1, S13.
+- [ ] V3.40 — (SEG) Dado o daemon de teste, quando o app de teste pede `lista`, então
+  cada item traz `resumo` (campos de texto, ids dos segredos, nº de extras e de anexos)
+  e nenhum segredo; quando um cliente agente pede `lista`, então nenhum item traz
+  `resumo` nem usuário; um quadro forjado com `resumo` decodificado no papel agente é
+  recusado, e `codificar_resposta` recusa mandar ao agente um item com `resumo` (D50,
+  D65) — cobre S1.
+- [ ] V3.41 — (SEG) Dado o corpo v4 (D65), quando o app cria uma entrada, edita, muda o
+  nível e o daemon reabre o cofre, então `criada_em` não muda, `alterada_em` sobe a cada
+  gravação (relógio injetado) e as duas chegam só no `detalhe` do papel app; um
+  `salvar_entrada` com data no rascunho é recusado pelo decodificador; um cofre v3 é
+  recusado como versão não suportada sem tocar no arquivo; e 1 byte alterado nas datas
+  faz a abertura falhar como em V2 — cobre S1, S6.
+
 ## Milestone 4 — CLI e integração Claude (run/ssh)
 
 - [ ] V4.1 — Dado o cofre destravado, quando `ward lista`, então aparecem as 19
   entradas visíveis (todas menos `gama-bloqueada`) com nome, tipo, grupo, ambiente,
   projeto e URL/host; `ward lista --json` tem só esses campos e nenhum segredo.
-- [ ] V4.2 — (SEG) Dado o daemon parado e um servidor falso em Python no caminho do
-  socket que grava tudo o que recebe, quando o usuário roda `ward destravar` e digita a
-  senha (via `expect`), então a CLI aborta com "servidor não é o wardd" **antes** de
-  ler ou enviar a senha, e o registro do falso não contém a senha; o mesmo com o
-  `wardd` verdadeiro copiado para `/tmp` — cobre S5.
+- [ ] V4.2 — (SEG) Duas partes (D65). (1) Build de teste: dado o daemon parado e um
+  servidor falso em Python no socket de teste que grava tudo o que recebe, quando o
+  usuário roda `ward destravar` e digita a senha (via `expect`), então a CLI aborta com
+  "servidor não é o wardd" **antes** de ler ou enviar a senha, e o registro do falso não
+  contém a senha. (2) Build sem `modo-teste`, no contêiner de `make
+  teste-docker-plataforma`: dado o `wardd` verdadeiro copiado para `/tmp` e, à parte,
+  um falso que chama `prctl(PR_SET_DUMPABLE, 0)`, os dois rodando como uid 1000 e
+  escutando em pastas desse uid, quando o uid 1000 roda `ward destravar`, `ward lista` e
+  `ward travar` e digita a senha, então a CLI sai ≠ 0 com "o daemon não está rodando" ou
+  "servidor não é o wardd" sem pedir a senha, nenhum dos dois falsos recebe byte algum,
+  e o `bind` do uid 1000 em `/run/ward/1000/` falha — cobre S5.
 - [ ] V4.3 — Dado `acme-wp-prod` (livre), quando
   `ward run acme-wp-prod -- sh -c '<sha256 de cada variável>'`, então os hashes batem
   com "Entrega esperada" e `WARD_TOTP` bate com `oathtool`.
@@ -919,7 +946,8 @@ O QA usa o Chrome em modo de teste (D7) e confere a aparência contra o frame.
   autorizado" e o pedido continua pendente — cobre S10.
 - [ ] V5.21 — (UI) `Gerador de senha / Avulso`: tamanho, conjuntos, sem símbolos, gerar
   de novo e copiar (o copiar respeita V5.5); os símbolos mostrados são os de D35, sem
-  espaço, aspas, crase e `\`.
+  espaço, aspas, crase e `\`; o tamanho vai de 8 a 64 e o comando recusa 7 e 65, no
+  avulso e no formulário; a força segue os limiares de D65.
 - [ ] V5.22 — (UI) `Configurações / Geral`: trocar PIN pede o PIN atual; trocar senha
   mestra pede a atual; tempo de trava padrão 4 h e alterável; backup externo aparece
   desligado.
@@ -982,6 +1010,22 @@ O QA usa o Chrome em modo de teste (D7) e confere a aparência contra o frame.
   `~/.local/share/gstreamer-1.0/plugins` não carrega; e a lista de `open`/`connect` em
   `/tmp`, `/var/tmp`, `/dev/shm` e `/run/user/<uid>` (fora do `wayland-<n>` e do `bus`)
   sai vazia ou cada item está registrado com decisão (D64) — cobre S8.
+
+- [ ] V5.33 — (SEG) Dado o app de teste contra um daemon falso que intercala avisos,
+  quando o daemon manda `pedido_de_aprovacao` e `pedido_de_destrave` entre um pedido e a
+  resposta, então a resposta chega a quem pediu e os avisos vão para a fila, nunca no
+  lugar dela; quando manda 1000 avisos seguidos, então a fila não passa de 16, o
+  excedente é descartado com log sem conteúdo e o app continua respondendo; quando manda
+  uma resposta sem pedido, um quadro acima do limite ou um tipo do papel agente, então o
+  app fecha a conexão sem mostrar nada (D65, D47) — cobre S1, S11.
+- [ ] V5.34 — (UI) Rodapé do detalhe em `Credenciais / Cheia`: "Criada em … · Alterada em
+  …" de uma entrada criada pelo app, com as datas do daemon; uma entrada sem datas não
+  mostra o texto (D65).
+- [ ] V5.35 — (UI) Design (Fase 37a): no `Ward.figcraft`, a descrição de "Símbolos" em
+  `Gerador de senha / Avulso` e no popover do formulário é o conjunto de D35; existem o
+  frame `Credenciais / Sem resultado` e o cartão de nível bloqueado do detalhe, com
+  instâncias dos componentes e tokens como variables; as contagens batem com a fixture
+  (D65).
 
 ## Milestone 6 — Extensão, `ward login` e `ward playwright`
 
