@@ -706,7 +706,7 @@ Contrato: V5.1–V5.35
   Testes de ataque no contêiner da 21b (binário setgid de teste), incluindo o pai que
   imita o `systemd --user`. Exige `libwebkit2gtk-4.1-dev` (R32). V3.5 (forma de D47),
   V3.24, V5.31.
-- [ ] Fase 29b — (Depende da 23a: as duas mexem no lançador.) Pendências da 29a (D64).
+- [x] Fase 29b — (Depende da 23a: as duas mexem no lançador.) Pendências da 29a (D64).
   Arquivos: `crates/ward-plataforma` (`ambiente_do_app` e `conferir_ambiente_do_app`),
   `app/src-tauri/deny.toml` e o teste com o WebKitGTK real.
   - `CUDA_MPS_PIPE_DIRECTORY=/proc/ward-sem-mps` no ambiente de D57, conferido pelo app;
