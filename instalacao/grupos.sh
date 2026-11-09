@@ -16,7 +16,10 @@
 #   - nenhuma linha do pam_group (/etc/security/group.conf e group.conf.d) dá o grupo
 #     no login, e nenhum sudoers (/etc/sudoers, /etc/sudoers.d e os includes deles) cita
 #     o nome nem `#<gid>` (`sudo -g ward-app` daria o gid); com `sudoers:` no
-#     nsswitch.conf vindo de fora de `files`, recusa (Fase 51a).
+#     nsswitch.conf vindo de fora de `files`, recusa (Fase 51a);
+#   - `group:` e `initgroups:` no /etc/nsswitch.conf só com `files` e `systemd` (Fase
+#     51b): outra fonte (sss, ldap, nis, compat…) pode pôr o usuário no grupo sem passar
+#     pelo /etc/group que a instalação confere.
 #
 # Marca (Fase 51a): o grupo que a instalação cria vai para MARCA_GRUPOS com o gid; o
 # uninstall e o `dpkg -r` só apagam grupo que está na marca com o mesmo gid. Um grupo que
@@ -44,14 +47,34 @@ conferir_grupo() {
     [[ "$senha" == '!'* ]] || { echo "o grupo $nome tem senha no /etc/gshadow (precisa ser '!')"; return 1; }
     [ -z "$admins" ] || { echo "o grupo $nome tem administradores no /etc/gshadow"; return 1; }
     [ -z "$membros" ] || { echo "o grupo $nome tem membros no /etc/gshadow"; return 1; }
-    # nsswitch.conf: faixas de subgid e regras de sudo vindas de fora dos arquivos.
-    local fonte
-    for fonte in subid sudoers; do
-        if [ -f /etc/nsswitch.conf ] && awk -v k="$fonte:" '
-            { sub(/#.*/, "") }
-            $1 == k { for (i = 2; i <= NF; i++) if ($i !~ /^\[/ && $i != "files") achou = 1 }
+    # nsswitch.conf: faixas de subgid, regras de sudo e grupos vindos de fora dos
+    # arquivos. `group:`/`initgroups:` aceitam também o `systemd` (usuários dinâmicos e
+    # userdb do root; o padrão do Pop!_OS e do Ubuntu é `files systemd`). O nome da base
+    # é casado como o glibc o lê (espaço antes e depois, `:` colado à fonte, sem caixa);
+    # na dúvida (ação `[...]` com espaço dentro, por exemplo), recusa.
+    local fonte aceitas
+    for fonte in subid sudoers group initgroups; do
+        case "$fonte" in
+            group | initgroups) aceitas="files systemd" ;;
+            *) aceitas="files" ;;
+        esac
+        if [ -f /etc/nsswitch.conf ] && awk -v k="$fonte" -v aceitas=" $aceitas " '
+            {
+                sub(/#.*/, "")
+                linha = $0
+                sub(/^[ \t]+/, "", linha)
+                if (tolower(substr(linha, 1, length(k))) != k) next
+                linha = substr(linha, length(k) + 1)
+                if (linha !~ /^[ \t]*:/) next
+                sub(/^[ \t]*:/, "", linha)
+                n = split(linha, f, /[ \t]+/)
+                for (i = 1; i <= n; i++) {
+                    if (f[i] == "" || f[i] ~ /^\[[^] \t]*\]$/) continue
+                    if (index(aceitas, " " f[i] " ") == 0) achou = 1
+                }
+            }
             END { exit !achou }' /etc/nsswitch.conf; then
-            echo "o /etc/nsswitch.conf busca '$fonte' fora de 'files' (a instalação não consegue conferir $nome ali)"
+            echo "o /etc/nsswitch.conf busca '$fonte' fora de ($aceitas) (a instalação não consegue conferir $nome ali)"
             return 1
         fi
     done

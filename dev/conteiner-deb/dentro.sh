@@ -140,6 +140,12 @@ install -d -m 0755 /etc/security
 printf '*;*;*;Al0000-2400;ward-nm\n' >>/etc/security/group.conf
 caso_grupo "pam_group (group.conf, Fase 51a)" "pam_group"
 sed -i '/;ward-nm$/d' /etc/security/group.conf
+# Fase 51b: grupos vindos de outra fonte do NSS (sss, ldap…) fora do /etc/group.
+cp /etc/nsswitch.conf /tmp/nsswitch.orig
+sed -i '/^group:/d' /etc/nsswitch.conf
+printf 'group: files sss\n' >>/etc/nsswitch.conf
+caso_grupo "nsswitch com group: files sss (Fase 51b)" "busca 'group'"
+cp /tmp/nsswitch.orig /etc/nsswitch.conf
 
 # --- Fase 51a: outra política do Chrome com os nomes da do Ward -> o preinst recusa -----
 install -d -m 0755 /etc/opt/chrome/policies/managed

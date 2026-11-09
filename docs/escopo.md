@@ -46,7 +46,8 @@ escolha segurança e registre a decisão.
   `systemctl enable --now wardd@<uid>.socket`. Depois disso, o uso diário não pede
   `sudo`. A extensão é instalada por política do Chrome (`/etc/opt/chrome/policies`), sem
   modo desenvolvedor. Motivo: o Claude roda como o usuário e não pode trocar os
-  binários nem a extensão por versões falsas.
+  binários por versões falsas. A extensão não tem essa proteção: no Linux o Chrome
+  guarda o código dela no perfil do usuário (RA10, "Fora do modelo de ameaça").
 
 ## Credenciais
 
@@ -224,8 +225,13 @@ inclusive o valor revelado (PRD D64).
    que manda ele exfiltrar senhas). Defesa: ele nunca recebe segredo, a máscara de
    saída, os níveis de acesso, a aprovação com PIN e a checagem de domínio.
 2. **Pacote ou script malicioso rodando como o usuário** (npm, pip, cargo). Defesa:
-   não há operação que devolva segredo, binários e extensão em pasta do root, peer
-   credentials no socket, daemon não-dumpable e sem `ptrace`.
+   não há operação que devolva segredo à CLI, binários em pasta do root (o app e o
+   host da extensão setgid para grupos próprios), peer credentials no socket, daemon
+   não-dumpable e sem `ptrace`. A extensão **não** está nessa lista: o pacote dela
+   (`.crx`) e a política ficam em pastas do root, mas o Chrome do Linux desempacota o
+   código no perfil do usuário e roda essa cópia. O que a extensão pode pedir ao daemon
+   (sugerir e preencher login no domínio conferido) fica exposto a um processo do
+   mesmo uid que se passe pelo Chrome (RA10, "Fora do modelo de ameaça").
 3. **Disco, backup ou pendrive roubados.** Defesa: tudo cifrado em repouso, com
    Argon2id e AEAD.
 4. **Página de phishing** recebendo a senha pelo preenchimento. Defesa: checagem de
@@ -238,6 +244,29 @@ inclusive o valor revelado (PRD D64).
   extensão declara `host_permissions` para `https://*/*`, `localhost` e `127.0.0.1`.
   Uma extensão comprometida pode rodar código em qualquer página https; a origem do
   preenchimento continua conferida no daemon.
+
+- Processo do mesmo uid que se passa pelo Chrome diante do `ward-nm` (RA10; decisão
+  do usuário, 2026-11-09, depois da 2ª auditoria do M9). O daemon reconhece o host da
+  extensão pelo grupo setgid e o `ward-nm` confere que o pai é o Chrome instalado
+  (`/opt/google/chrome/chrome`). Dois caminhos passam por isso sem root:
+  - **exec com troca de pai:** o processo faz fork, o filho faz `exec` do `ward-nm` e o
+    pai em seguida faz `exec` do Chrome instalado. O `ward-nm` vê o Chrome do root como
+    pai e recebe o papel extensão. Nenhuma conferência local fecha isso: o horário de
+    início não serve (subreaper) e os fds do pai não são legíveis (não-dumpable). A 2ª
+    auditoria do M9 tirou assim senhas e TOTP de 4 entradas `login` do cofre de teste.
+  - **extensão adulterada no perfil:** a extensão force-installed é desempacotada em
+    `~/.config/google-chrome/…/Extensions/<id>/`. Trocar o código, recalcular
+    `_metadata/computed_hashes.json` e apagar o `Service Worker` faz o Chrome rodar o
+    código novo com o mesmo id.
+  Os dois dão o que a extensão já pode pedir: sugestão e preenchimento de entradas
+  `login` (usuário, senha e TOTP) sem clique, para qualquer origem que o atacante diga.
+  Vale também para o próprio agente (ameaça 1), se ele rodar um programa assim, porque
+  ele roda como o usuário; as regras de deny da skill não cobrem todo programa. O
+  socket continua sem operação que devolva segredo ao papel agente: o ganho vem do
+  papel extensão, e a parte de S1 "preencher só pela extensão no domínio certo" deixa
+  de valer contra esse processo. O que reduz: a política do Chrome com
+  `NativeMessagingUserLevelHosts: false` (manifesto de host no perfil não vale) e o
+  `ward-nm` setgid e não-dumpable.
 
 - Root comprometido, kernel ou firmware.
 - Leitura, por outro processo do mesmo usuário, do segredo entregue ao filho do
