@@ -300,6 +300,15 @@ impl CofreAberto {
         })
     }
 
+    /// Cofre novo que já conhece a geração `queimada` (D62): a primeira gravação sela
+    /// `queimada + 1`. Para o daemon que cria um cofre onde um arquivo de estado velho
+    /// já queimou gerações: uma cópia antiga de um cofre anterior, posta no lugar depois,
+    /// fica abaixo da `vista` e é recusada como retrocesso. Nunca desce a geração.
+    pub fn depois_da_geracao(mut self, queimada: u64) -> Self {
+        self.geracao = self.geracao.max(queimada);
+        self
+    }
+
     /// Junta as chaves de um arquivo aberto à configuração e à geração lidas do corpo
     /// dele.
     pub(crate) fn de_partes(chaves: ChavesCofre, configuracao: Configuracao, geracao: u64) -> Self {

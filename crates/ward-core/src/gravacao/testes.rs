@@ -349,6 +349,7 @@ fn erro_nao_carrega_conteudo() {
     let e = ErroGravacao::Io {
         etapa: Etapa::FsyncTemporario,
         tipo: io::ErrorKind::StorageFull,
+        identidade: None,
     };
     let texto = format!("{e} {e:?}");
     assert!(texto.contains("sincronizar"));
@@ -380,6 +381,28 @@ fn etapa_esperada(i: usize) -> Etapa {
     }
 }
 
+/// O erro de E/S injetado no ponto `i`: etapa e tipo certos; depois do rename, a
+/// identidade (D62) é a do arquivo que ficou no lugar; antes, nenhuma.
+fn conferir_erro_io(r: Result<(), ErroGravacao>, i: usize, destino: &Path, alvo: &Ponto) {
+    match r {
+        Err(ErroGravacao::Io {
+            etapa,
+            tipo,
+            identidade,
+        }) => {
+            assert_eq!(etapa, etapa_esperada(i), "{alvo:?}");
+            assert_eq!(tipo, io::ErrorKind::StorageFull, "{alvo:?}");
+            if i < ANTES_DO_RENAME {
+                assert_eq!(identidade, None, "{alvo:?}");
+            } else {
+                let no_lugar = IdentidadeArquivo::from(&fs::metadata(destino).unwrap());
+                assert_eq!(identidade, Some(no_lugar), "{alvo:?}");
+            }
+        }
+        outro => panic!("{alvo:?}: {outro:?}"),
+    }
+}
+
 #[test]
 fn v2_9_falha_de_es_injetada_em_cada_ponto() {
     let marca = hex_aleatorio();
@@ -397,14 +420,7 @@ fn v2_9_falha_de_es_injetada_em_cada_ponto() {
             Ok(())
         });
         assert!(passou, "ponto {alvo:?} não aconteceu");
-        assert_eq!(
-            r,
-            Err(ErroGravacao::Io {
-                etapa: etapa_esperada(i),
-                tipo: io::ErrorKind::StorageFull
-            }),
-            "{alvo:?}"
-        );
+        conferir_erro_io(r.map(|_| ()), i, &d.cofre(), alvo);
         let ficou = fs::read(d.cofre()).unwrap();
         if i < ANTES_DO_RENAME {
             assert_eq!(ficou, antigo, "{alvo:?}: a versão anterior tem de ficar");
@@ -888,14 +904,7 @@ fn v2_44_falha_em_cada_ponto_queima_a_geracao() {
             Ok(())
         });
         assert!(passou, "ponto {alvo:?} não aconteceu");
-        assert_eq!(
-            r,
-            Err(ErroGravacao::Io {
-                etapa: etapa_esperada(i),
-                tipo: io::ErrorKind::StorageFull
-            }),
-            "{alvo:?}"
-        );
+        conferir_erro_io(r.map(|_| ()), i, &d.cofre(), alvo);
         assert_eq!(
             c.geracao(),
             n + 1,
@@ -958,11 +967,13 @@ fn v2_53_fsync_do_diretorio_falha_e_a_geracao_nao_repete() {
     }
     let r = gravar_entradas(&d.cofre(), &mut c, &entradas);
     fs::set_permissions(&d.0, fs::Permissions::from_mode(0o700)).unwrap();
+    let no_lugar = IdentidadeArquivo::from(&fs::metadata(d.cofre()).unwrap());
     assert_eq!(
         r,
         Err(ErroGravacao::Io {
             etapa: Etapa::FsyncDiretorio,
-            tipo: io::ErrorKind::PermissionDenied
+            tipo: io::ErrorKind::PermissionDenied,
+            identidade: Some(no_lugar),
         })
     );
     assert_eq!(c.geracao(), n + 1);
@@ -1016,7 +1027,9 @@ fn v2_53_fsync_do_diretorio_falha_e_a_geracao_nao_repete() {
     let nova = SenhaMestra::nova("falso-mestra-ward-02".to_owned());
     let trocado = {
         let _g = ARGON.lock().unwrap_or_else(|e| e.into_inner());
-        trocar_senha(&d.cofre(), &senha(), &nova, n + 3, n + 5).unwrap()
+        trocar_senha(&d.cofre(), &senha(), &nova, n + 3, n + 5)
+            .unwrap()
+            .0
     };
     assert_eq!(trocado.geracao(), n + 6);
     let bytes = fs::read(d.cofre()).unwrap();
@@ -1040,6 +1053,61 @@ fn d53_queimada_menor_que_o_disco_nao_desce() {
     let (aberto, _) = crate::corpo::abrir_entradas_desde(&bytes, &senha(), 0, 1).unwrap();
     assert_eq!(aberto.geracao(), 3);
     let nova = SenhaMestra::nova("falso-mestra-ward-02".to_owned());
-    let trocado = trocar_senha(&d.cofre(), &senha(), &nova, 3, 2).unwrap();
+    let (trocado, _) = trocar_senha(&d.cofre(), &senha(), &nova, 3, 2).unwrap();
     assert_eq!(trocado.geracao(), 4);
+}
+
+/// D62 (S7): a identidade devolvida é a do arquivo gravado (do fd do temporário), e uma
+/// troca logo depois do rename não muda o que foi devolvido: quem chama nota a troca
+/// comparando com o disco, em vez de aceitar o arquivo trocado como sendo do Ward.
+#[test]
+fn d62_identidade_do_fd_e_troca_logo_depois_do_rename() {
+    let d = Dir::novo("d62-identidade");
+    let mut c = cofre_novo();
+    let id = gravar_entradas(&d.cofre(), &mut c, &[]).unwrap();
+    assert_eq!(
+        id,
+        IdentidadeArquivo::from(&fs::metadata(d.cofre()).unwrap())
+    );
+
+    // Gancho logo depois do rename: outro processo põe outro arquivo no lugar.
+    let outro = d.0.join("outro");
+    let mut trocou = false;
+    let r = gravar_entradas_com_pontos(&d.cofre(), &mut c, &[], &mut |p| {
+        if p == Ponto::DepoisDoRename {
+            let bytes = fs::read(d.cofre()).unwrap();
+            fs::write(&outro, &bytes).unwrap();
+            fs::rename(&outro, d.cofre()).unwrap();
+            trocou = true;
+        }
+        Ok(())
+    });
+    assert!(trocou);
+    let devolvida = r.unwrap();
+    let no_disco = IdentidadeArquivo::from(&fs::metadata(d.cofre()).unwrap());
+    assert_ne!(
+        devolvida, no_disco,
+        "a troca depois do rename passaria como do Ward"
+    );
+    sem_valor(&format!("{devolvida:?}"));
+}
+
+/// D62 (V3.35): um cofre novo criado onde o estado velho queimou a geração 7 sela a 8
+/// na primeira gravação; a geração nunca desce; em `u64::MAX`, a gravação é recusada.
+#[test]
+fn d62_cofre_novo_depois_da_geracao_queimada() {
+    let d = Dir::novo("d62-geracao");
+    let mut c = cofre_novo().depois_da_geracao(7);
+    assert_eq!(c.geracao(), 7);
+    gravar_entradas(&d.cofre(), &mut c, &[]).unwrap();
+    assert_eq!(c.geracao(), 8);
+    assert_eq!(geracao_no_disco(&d.cofre()), 8);
+    let c = c.depois_da_geracao(3);
+    assert_eq!(c.geracao(), 8, "nunca desce");
+    let mut cheio = cofre_novo().depois_da_geracao(u64::MAX);
+    assert_eq!(
+        gravar_entradas(&d.cofre(), &mut cheio, &[]),
+        Err(ErroGravacao::GeracaoEsgotada)
+    );
+    assert_eq!(geracao_no_disco(&d.cofre()), 8);
 }

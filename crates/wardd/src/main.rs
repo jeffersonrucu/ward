@@ -7,7 +7,7 @@
 use std::process::ExitCode;
 use std::sync::Arc;
 
-use ward_plataforma::{BinarioPermitido, Escuta, Instalacao};
+use ward_plataforma::{BinarioPermitido, Escuta, Instalacao, Memoria};
 use wardd::aprovacao::{Motor, RelogioMonotonico};
 use wardd::config::Config;
 use wardd::lancamento::AbridorReal;
@@ -36,11 +36,19 @@ fn escuta(config: &Config) -> Result<Escuta, String> {
 
 fn main() -> ExitCode {
     // V3.7, V3.25: antes de qualquer outra coisa (inclusive de abrir arquivo).
-    if let Err(e) = ward_plataforma::iniciar_endurecido() {
-        eprintln!("wardd: {e}");
-        return ExitCode::FAILURE;
-    }
+    // D62: o release só segue com toda a memória travada (`mlockall`); o `modo-teste`
+    // com o limite comum do usuário segue com aviso.
+    let memoria = match ward_plataforma::iniciar_endurecido() {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!("wardd: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
     log::configurar();
+    if let Memoria::SemTravar(e) = &memoria {
+        aviso!("daemon de teste com a memória sem travar: {e}");
+    }
     let config = match Config::do_ambiente() {
         Ok(c) => c,
         Err(e) => {

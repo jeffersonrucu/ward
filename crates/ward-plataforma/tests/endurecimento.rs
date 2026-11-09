@@ -34,14 +34,37 @@ fn filho_auxiliar() {
             let _ = std::io::stdin().read_to_end(&mut Vec::new());
         }
         "iniciar" => match ward_plataforma::iniciar_endurecido() {
-            Ok(()) => println!("{MARCA}ok"),
+            Ok(ward_plataforma::Memoria::Travada) => println!("{MARCA}ok"),
+            Ok(ward_plataforma::Memoria::SemTravar(e)) => println!("{MARCA}ok-sem-travar:{e}"),
             Err(e) => {
                 println!("{MARCA}erro:{e}");
                 std::process::exit(3);
             }
         },
+        "mlockall-e-filho" => {
+            if mlockall_como_o_daemon() != 0 {
+                println!("{MARCA}sem-mlockall");
+                return;
+            }
+            let eu = vmlck(&std::fs::read_to_string("/proc/self/status").unwrap());
+            let filho = Command::new("/bin/cat")
+                .arg("/proc/self/status")
+                .env_clear()
+                .output()
+                .unwrap();
+            let dele = vmlck(&String::from_utf8_lossy(&filho.stdout));
+            println!("{MARCA}{eu} {dele}");
+        }
         _ => panic!("modo desconhecido"),
     }
+}
+
+/// As mesmas flags do `iniciar_endurecido` (D62), aqui sem a regra do limite, para ver
+/// o que o filho herda.
+#[allow(unsafe_code)]
+fn mlockall_como_o_daemon() -> i32 {
+    // SAFETY: `mlockall` só recebe as flags; não lê nem escreve memória do processo.
+    unsafe { libc::mlockall(libc::MCL_CURRENT | libc::MCL_FUTURE | libc::MCL_ONFAULT) }
 }
 
 /// O `std` do Rust instala um tratador de SIGSEGV (para estouro de pilha) que, num
@@ -52,6 +75,16 @@ fn sigsegv_padrao() {
     // SAFETY: troca a ação de um sinal pela padrão; nenhum ponteiro de função nosso.
     let r = unsafe { libc::signal(libc::SIGSEGV, libc::SIG_DFL) };
     assert_ne!(r, libc::SIG_ERR);
+}
+
+/// `VmLck` do `/proc/<pid>/status`, em kB.
+fn vmlck(status: &str) -> u64 {
+    status
+        .lines()
+        .find_map(|l| l.strip_prefix("VmLck:"))
+        .and_then(|v| v.trim().strip_suffix("kB"))
+        .and_then(|v| v.trim().parse().ok())
+        .expect("VmLck no status")
 }
 
 fn comando_filho(programa: Option<&Path>, modo: &str) -> Command {
@@ -240,8 +273,83 @@ fn iniciar_com(var: Option<(&str, &str)>, sob_strace: bool) -> (String, Option<i
 #[test]
 fn sobe_limpo_sem_ld_e_sem_depurador() {
     let (r, codigo) = iniciar_com(None, false);
-    assert_eq!(r, "ok");
-    assert_eq!(codigo, Some(0));
+    let infinito = limite_memlock_infinito();
+    if infinito {
+        assert_eq!(r, "ok");
+        assert_eq!(codigo, Some(0));
+    } else if cfg!(feature = "modo-teste") {
+        // D62: com o limite comum do usuário, o modo de teste só avisa.
+        assert!(r.starts_with("ok-sem-travar:"), "{r}");
+        assert_eq!(codigo, Some(0));
+    } else {
+        assert!(r.starts_with("erro:") && r.contains("LimitMEMLOCK"), "{r}");
+        assert_ne!(codigo, Some(0));
+    }
+}
+
+fn limite_memlock_infinito() -> bool {
+    std::fs::read_to_string("/proc/self/limits")
+        .unwrap()
+        .lines()
+        .any(|l| l.starts_with("Max locked memory") && l.contains("unlimited"))
+}
+
+/// V3.34 (D62, S8): com `RLIMIT_MEMLOCK` de 8 MiB, o `iniciar_endurecido` do release
+/// recusa subir (o do `modo-teste`, que é este, só avisa e não trava nada); a mensagem
+/// diz o limite e a diretiva da unit.
+#[test]
+fn v3_34_memlock_de_8_mib() {
+    let eu = std::env::current_exe().unwrap();
+    let mut c = Command::new("/usr/bin/prlimit");
+    c.arg("--memlock=8388608:8388608").arg("--").arg(&eu);
+    c.args([
+        "--exact",
+        "filho_auxiliar",
+        "--nocapture",
+        "--test-threads=1",
+    ])
+    .env_clear()
+    .env("PATH", "/usr/bin:/bin")
+    .env(MODO, "iniciar")
+    .stdin(Stdio::piped())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::null());
+    let mut filho = c.spawn().unwrap();
+    let mut saida = BufReader::new(filho.stdout.take().unwrap());
+    let r = resultado(&mut saida);
+    drop(filho.stdin.take());
+    let st = filho.wait().unwrap();
+    assert!(
+        r.contains("8388608") && r.contains("LimitMEMLOCK=infinity"),
+        "{r}"
+    );
+    if cfg!(feature = "modo-teste") {
+        assert!(r.starts_with("ok-sem-travar:"), "{r}");
+        assert_eq!(st.code(), Some(0));
+    } else {
+        assert!(r.starts_with("erro:"), "{r}");
+        assert_ne!(st.code(), Some(0));
+    }
+}
+
+/// V3.34 (D62): o `mlockall` do daemon não passa ao filho (`fork` + `execve`): o
+/// processo travado tem `VmLck` > 0, e o programa que ele executa, `VmLck: 0 kB` (é o
+/// caso do app lançado e dos filhos do `ward run`).
+#[test]
+fn v3_34_filho_nao_herda_o_mlockall() {
+    let mut filho = comando_filho(None, "mlockall-e-filho").spawn().unwrap();
+    let mut saida = BufReader::new(filho.stdout.take().unwrap());
+    let r = resultado(&mut saida);
+    drop(filho.stdin.take());
+    let _ = filho.wait();
+    if r == "sem-mlockall" {
+        eprintln!("v3_34: o limite do usuário não deixa o mlockall; caso coberto no contêiner");
+        return;
+    }
+    let (eu, dele) = r.split_once(' ').unwrap();
+    let (eu, dele): (u64, u64) = (eu.parse().unwrap(), dele.parse().unwrap());
+    assert!(eu > 0, "o processo travado tem VmLck 0");
+    assert_eq!(dele, 0, "o filho herdou o travamento");
 }
 
 #[test]

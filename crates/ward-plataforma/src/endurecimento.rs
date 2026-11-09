@@ -10,6 +10,14 @@
 //! (`UNSECURE_ENVVARS` do `unsecvars.h`, a que o `ld.so` apaga em modo seguro), mais os
 //! apelidos `MALLOC_*` dos tunables. O ambiente do daemon instalado vem da unit, então
 //! a regra estrita não custa nada.
+//!
+//! Memória (D14 revista pela D62): por último, `mlockall(MCL_CURRENT | MCL_FUTURE |
+//! MCL_ONFAULT)` tira o processo inteiro da swap (chave de dados, segredos e a memória
+//! do Argon2). Sem `RLIMIT_MEMLOCK` infinito, o `MCL_FUTURE` faria a alocação do Argon2
+//! falhar; então, sem o limite infinito ou com erro do `mlockall`, o build de release
+//! falha fechado (sai ≠ 0 sem socket) e o `modo-teste` só devolve o aviso
+//! ([`Memoria::SemTravar`]), sem chamar o `mlockall`, para o `make dev-daemon` subir
+//! com o limite comum do usuário. `fork` e `execve` não herdam o travamento.
 
 use std::ffi::OsStr;
 use std::fmt;
@@ -56,6 +64,21 @@ pub enum ErroInicio {
     Depurador,
     /// Não deu para ler `/proc/self/status`.
     LerStatus(io::Error),
+    /// `RLIMIT_MEMLOCK` não é infinito (D62): com limite, o `mlockall` com
+    /// `MCL_FUTURE` faria a alocação do Argon2 falhar. Traz o limite atual em bytes.
+    LimiteMemlock(u64),
+    /// O `mlockall` (ou a leitura do `RLIMIT_MEMLOCK`) falhou (D62).
+    TravarMemoria(io::Error),
+}
+
+/// Como ficou a memória do processo depois de [`iniciar_endurecido`] (D62).
+#[derive(Debug)]
+pub enum Memoria {
+    /// `mlockall(MCL_CURRENT | MCL_FUTURE | MCL_ONFAULT)` aplicado.
+    Travada,
+    /// Só no `modo-teste`: a memória não foi travada; o erro diz o motivo, para o aviso
+    /// no log. No release, o mesmo motivo é erro.
+    SemTravar(ErroInicio),
 }
 
 impl fmt::Display for ErroInicio {
@@ -71,6 +94,17 @@ impl fmt::Display for ErroInicio {
                 write!(f, "processo sob depurador (TracerPid ≠ 0); não sobe")
             }
             ErroInicio::LerStatus(e) => write!(f, "não deu para ler /proc/self/status: {e}"),
+            ErroInicio::LimiteMemlock(atual) => write!(
+                f,
+                "RLIMIT_MEMLOCK de {atual} bytes, e não infinito; o processo trava toda a \
+                 memória (mlockall) e sobe pela unit com LimitMEMLOCK=infinity"
+            ),
+            ErroInicio::TravarMemoria(e) => {
+                write!(
+                    f,
+                    "não deu para travar a memória do processo (mlockall): {e}"
+                )
+            }
         }
     }
 }
@@ -102,11 +136,42 @@ pub fn conferir_ambiente_proprio() -> Result<(), ErroInicio> {
     }
 }
 
-/// [`endurecer_processo`] e depois [`conferir_ambiente_proprio`]. Erro: o processo
-/// deve sair ≠ 0 com a mensagem, sem criar socket (V3.7, V3.25).
-pub fn iniciar_endurecido() -> Result<(), ErroInicio> {
+/// [`endurecer_processo`], [`conferir_ambiente_proprio`] e o travamento da memória
+/// (D62). Erro: o processo deve sair ≠ 0 com a mensagem, sem criar socket (V3.7,
+/// V3.25, V3.34). [`Memoria::SemTravar`] só no `modo-teste`: quem chama avisa no log.
+pub fn iniciar_endurecido() -> Result<Memoria, ErroInicio> {
     endurecer_processo().map_err(ErroInicio::Endurecer)?;
-    conferir_ambiente_proprio()
+    conferir_ambiente_proprio()?;
+    let limite = sys::rlimit_memlock().map(|(atual, _)| atual);
+    decidir_memoria(
+        limite,
+        cfg!(feature = "modo-teste"),
+        sys::travar_toda_memoria,
+    )
+}
+
+/// A regra do D62, separada das chamadas ao sistema para o teste cobrir os dois builds:
+/// limite infinito → `mlockall`; limite finito, erro na leitura ou no `mlockall` →
+/// erro no release e [`Memoria::SemTravar`] no `modo-teste`. Com limite finito, o
+/// `mlockall` nunca é chamado (o `MCL_FUTURE` quebraria o Argon2).
+fn decidir_memoria(
+    limite: io::Result<u64>,
+    modo_teste: bool,
+    travar: impl FnOnce() -> io::Result<()>,
+) -> Result<Memoria, ErroInicio> {
+    let falha = match limite {
+        Ok(libc::RLIM_INFINITY) => match travar() {
+            Ok(()) => return Ok(Memoria::Travada),
+            Err(e) => ErroInicio::TravarMemoria(e),
+        },
+        Ok(atual) => ErroInicio::LimiteMemlock(atual),
+        Err(e) => ErroInicio::TravarMemoria(e),
+    };
+    if modo_teste {
+        Ok(Memoria::SemTravar(falha))
+    } else {
+        Err(falha)
+    }
 }
 
 /// O nome é inseguro pela lista ou pelo prefixo. Compara bytes exatos (`ld_preload`
@@ -197,6 +262,46 @@ mod testes {
         let longo = format!("LD_{}", "A".repeat(200));
         let n = primeira_variavel_insegura([longo.as_str()]).unwrap();
         assert_eq!(n.chars().count(), MAX_NOME_VARIAVEL + 1);
+    }
+
+    /// D62 (V3.34): release falha fechado sem limite infinito ou com erro do
+    /// `mlockall`; o `modo-teste` só avisa; com limite finito o `mlockall` nunca é
+    /// chamado.
+    #[test]
+    fn d62_memoria_release_falha_fechado_e_modo_teste_avisa() {
+        let oito_mib = 8 * 1024 * 1024;
+        for modo_teste in [false, true] {
+            let mut chamou = false;
+            let r = decidir_memoria(Ok(oito_mib), modo_teste, || {
+                chamou = true;
+                Ok(())
+            });
+            assert!(!chamou, "mlockall com limite finito");
+            match (modo_teste, r) {
+                (false, Err(ErroInicio::LimiteMemlock(n))) => assert_eq!(n, oito_mib),
+                (true, Ok(Memoria::SemTravar(ErroInicio::LimiteMemlock(n)))) => {
+                    assert_eq!(n, oito_mib)
+                }
+                (m, r) => panic!("modo_teste={m}: {r:?}"),
+            }
+            let r = decidir_memoria(Ok(libc::RLIM_INFINITY), modo_teste, || {
+                Err(io::Error::from_raw_os_error(libc::ENOMEM))
+            });
+            match (modo_teste, r) {
+                (false, Err(ErroInicio::TravarMemoria(_))) => {}
+                (true, Ok(Memoria::SemTravar(ErroInicio::TravarMemoria(_)))) => {}
+                (m, r) => panic!("modo_teste={m}: {r:?}"),
+            }
+            let r = decidir_memoria(Err(io::ErrorKind::Other.into()), modo_teste, || Ok(()));
+            assert_eq!(r.is_err(), !modo_teste);
+            let r = decidir_memoria(Ok(libc::RLIM_INFINITY), modo_teste, || Ok(()));
+            assert!(matches!(r, Ok(Memoria::Travada)));
+        }
+        let m = ErroInicio::LimiteMemlock(oito_mib).to_string();
+        assert!(
+            m.contains("LimitMEMLOCK=infinity") && m.contains("8388608"),
+            "{m}"
+        );
     }
 
     #[test]

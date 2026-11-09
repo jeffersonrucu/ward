@@ -112,7 +112,7 @@ fn binario_instalado_e_identificado() {
 fn ataque_binario_copiado_para_fora_da_instalacao() {
     // V3.5: o mesmo binário, copiado para uma pasta do usuário.
     let copia = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("ward-app-copiado");
-    std::fs::copy(python_real(), &copia).unwrap();
+    comum::copiar_binario(&python_real(), &copia);
     let (_d, escuta) = escutar();
     let (filho, par) = conectar(&escuta, cliente_python(&copia, escuta.caminho(), None));
     assert_eq!(
