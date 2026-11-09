@@ -240,13 +240,13 @@ PY
         ok "nenhum segredo nem variação em claro no cofre"
     fi
 
-    # Corpo v3 (Fase 19b, D30; Fase 19c, D39): a conferência abriu a seção de
+    # Corpo v4 (Fase 19b, D30; Fase 19c, D39; Fase 22d, D65 d): a conferência abriu a seção de
     # configuração, o cofre recém-criado está na geração 1 e o PIN de teste conferiu no
     # hash Argon2id; o PIN e o texto PHC não aparecem em claro.
     if grep -qxF 'dev-cofre: configuração: geração 1, hash do PIN Argon2id (m=65536 KiB, t=3, p=1), trava em 240 min, backup externo desligado' "$TMP/conferir.log"; then
-        ok "configuração do corpo v3: geração 1, hash Argon2id do PIN de teste, trava 240, backup desligado"
+        ok "configuração do corpo v4: geração 1, hash Argon2id do PIN de teste, trava 240, backup desligado"
     else
-        falhou "conferência sem a configuração do corpo v3"
+        falhou "conferência sem a configuração do corpo v4"
     fi
     if grep -qaF -e '135790' -e '$argon2id$' "$COFRE"; then falhou "PIN ou hash PHC em claro no cofre"; else
         ok "PIN de teste e hash PHC fora do arquivo em claro"

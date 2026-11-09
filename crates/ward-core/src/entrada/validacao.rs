@@ -10,9 +10,9 @@
 use core::fmt;
 
 use super::{
-    Ambiente, Anexo, Api, Autenticacao, Aws, Banco, CampoExtra, Dados, Entrada, FtpSftp, Login,
-    Motor, NivelAcesso, NotaSegura, Protocolo, Segredo, SegurancaSmtp, Servidor, Smtp, TipoEntrada,
-    ValorExtra,
+    Ambiente, Anexo, Api, Autenticacao, Aws, Banco, CampoExtra, Dados, Datas, Entrada, FtpSftp,
+    Login, Motor, NivelAcesso, NotaSegura, Protocolo, Segredo, SegurancaSmtp, Servidor, Smtp,
+    TipoEntrada, ValorExtra,
 };
 
 // Limites (D25, D29): numa fonte só, `crate::limites` (D32). Tudo o que vem do socket
@@ -638,6 +638,8 @@ impl Rascunho {
                     projeto,
                     tags,
                     nivel: NivelAcesso::ComAprovacao,
+                    // D65 d: só o daemon carimba (relógio dele); o rascunho não tem data.
+                    datas: Datas::NENHUMA,
                     dados,
                     extras,
                     anexos,

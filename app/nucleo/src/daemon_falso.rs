@@ -16,14 +16,18 @@
 //! responde "travado"); o resto responde `interno`. As mudanças ficam só na memória do
 //! processo (travado, só reiniciando a ponte). No [`DaemonFalso::sem_cofre`], atende
 //! `criar_cofre` (Fase 30): guarda só o hash do PIN (D30), que o `mudar_nivel` passa a
-//! conferir no lugar do PIN de teste.
+//! conferir no lugar do PIN de teste. As datas de D65 d (Fase 22d) seguem a regra do
+//! `wardd`: entrada nova ganha as duas, edição e `mudar_nivel` só a alteração, pelo
+//! relógio do processo; as do cofre de teste nascem sem datas.
 //!
 //! Sem a feature `modo-teste` este módulo nem existe no binário (só nos testes).
 
 use zeroize::Zeroizing;
 
 use ward_core::configuracao::HashPin;
-use ward_core::entrada::{Entrada, NivelAcesso, Rascunho, Segredo as SegredoCore, TipoEntrada};
+use ward_core::entrada::{
+    Datas, Entrada, NivelAcesso, Rascunho, Segredo as SegredoCore, TipoEntrada,
+};
 use ward_core::protocolo::{
     self, Alvo, DetalheEntrada, ErroResposta, ItemLista, Papel, Pedido, Resposta,
 };
@@ -226,6 +230,7 @@ impl DaemonFalso {
             .find(|e| e.nome() == nome)
             .ok_or(ErroResposta::EntradaInexistente)?;
         e.definir_nivel(nivel);
+        e.definir_datas(alterado(e.datas()));
         Ok(())
     }
 
@@ -237,6 +242,11 @@ impl DaemonFalso {
         match anterior {
             None => {
                 nova.definir_nivel(NivelAcesso::ComAprovacao);
+                nova.definir_datas(
+                    agora()
+                        .and_then(Datas::carimbo_novo)
+                        .unwrap_or(Datas::NENHUMA),
+                );
                 nova.conferir_no_cofre(self.entradas.iter())
                     .map_err(|e| ErroResposta::de_validacao(&e))?;
             }
@@ -247,6 +257,7 @@ impl DaemonFalso {
                     .position(|e| e.nome() == nome)
                     .ok_or(ErroResposta::EntradaInexistente)?;
                 nova.definir_nivel(self.entradas[i].nivel());
+                nova.definir_datas(alterado(self.entradas[i].datas()));
                 nova.conferir_no_cofre(self.entradas.iter().filter(|e| e.nome() != nome))
                     .map_err(|e| ErroResposta::de_validacao(&e))?;
                 drop(self.entradas.remove(i));
@@ -266,6 +277,19 @@ impl Daemon for DaemonFalso {
         };
         protocolo::codificar_resposta(Papel::App, &resposta).map_err(|_| ErroApp::RespostaInvalida)
     }
+}
+
+/// Segundos UTC do relógio do processo (o `RelogioReal` do `wardd`, D65 d).
+fn agora() -> Option<u64> {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .and_then(|d| Datas::instante(d.as_secs()))
+}
+
+/// As datas depois de uma alteração agora (as mesmas sem relógio), como no `wardd`.
+fn alterado(datas: Datas) -> Datas {
+    agora().and_then(|a| datas.alterado(a)).unwrap_or(datas)
 }
 
 #[cfg(test)]

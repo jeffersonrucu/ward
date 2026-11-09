@@ -1111,3 +1111,121 @@ fn d62_cofre_novo_depois_da_geracao_queimada() {
     );
     assert_eq!(geracao_no_disco(&d.cofre()), 8);
 }
+
+// --- D65 d (V3.41): os testes de V2.2 e V2.9 com o corpo v4 e as datas -------------------
+
+/// Três notas seguras grandes (sem entrega, fora do orçamento da máscara) com datas: o
+/// corpo v4 passa de `TAM_GRANDE`, para haver ponto no meio da escrita. As três entradas
+/// têm o mesmo tamanho.
+fn corpo_v4_com_datas(versao: u64) -> zeroize::Zeroizing<Vec<u8>> {
+    use crate::corpo::serializar;
+    use crate::entrada::{Datas, Rascunho, RascunhoDados, Segredo};
+    let entradas: Vec<_> = (0..3u64)
+        .map(|i| {
+            let mut e = Rascunho {
+                nome: format!("nota-{i}"),
+                grupo: "g".to_owned(),
+                ambiente: "dev".to_owned(),
+                projeto: String::new(),
+                tags: Vec::new(),
+                dados: RascunhoDados::NotaSegura {
+                    texto: Some(Segredo::de_bytes(vec![b'n'; crate::limites::MAX_NOTA])),
+                },
+                extras: Vec::new(),
+                anexos: Vec::new(),
+            }
+            .validar()
+            .unwrap();
+            let criada = 1_762_000_000 + i;
+            e.definir_datas(
+                Datas::carimbo_novo(criada)
+                    .unwrap()
+                    .alterado(criada + versao)
+                    .unwrap(),
+            );
+            e
+        })
+        .collect();
+    serializar(cofre().configuracao(), 1 + versao, &entradas).unwrap()
+}
+
+fn datas_do_corpo(conteudo: &[u8]) -> Vec<(Option<u64>, Option<u64>)> {
+    crate::corpo::desserializar(conteudo)
+        .unwrap()
+        .2
+        .iter()
+        .map(|e| (e.datas().criada_em(), e.datas().alterada_em()))
+        .collect()
+}
+
+/// V3.41/V2.9 com o v4: SIGKILL em cada ponto da gravação de um corpo com datas deixa a
+/// versão anterior ou a nova inteira, e as datas voltam como foram gravadas.
+#[test]
+fn d65_v4_sigkill_em_cada_ponto_mantem_as_datas() {
+    let corpo_antigo = corpo_v4_com_datas(0);
+    let corpo_novo = corpo_v4_com_datas(86_400);
+    assert!(corpo_novo.len() > TAM_GRANDE);
+    let antigo = cofre().selar(&corpo_antigo).unwrap();
+    let novo = cofre().selar(&corpo_novo).unwrap();
+    for (i, alvo) in PONTOS.iter().enumerate() {
+        let d = Dir::novo("d65-sigkill");
+        gravar(&d.cofre(), &antigo).unwrap();
+        fs::write(d.0.join("novo"), &novo).unwrap();
+        let mut f = filho(&format!("ponto:{i}"), &d.0);
+        esperar_linha(&mut f, "WARD-PONTO");
+        matar(f);
+        let ficou = fs::read(d.cofre()).unwrap();
+        let esperado = if i < ANTES_DO_RENAME { &antigo } else { &novo };
+        assert!(ficou == *esperado, "ponto {alvo:?}");
+        limpar_temporarios(&d.cofre()).unwrap();
+    }
+    let lidas = datas_do_corpo(&abrir_conteudo(&novo));
+    assert_eq!(lidas[0], (Some(1_762_000_000), Some(1_762_086_400)));
+    let lidas = datas_do_corpo(&abrir_conteudo(&antigo));
+    assert_eq!(lidas[2], (Some(1_762_000_002), Some(1_762_000_002)));
+}
+
+/// V3.41/V2.2 com o v4: um bit trocado em cada byte cifrado das datas (os 16 que fecham
+/// cada uma das 3 entradas) faz a tag do corpo recusar, e o arquivo com um desses bytes
+/// trocado não abre nem com a senha certa (o mesmo erro de V2.1).
+#[test]
+fn d65_v4_byte_alterado_nas_datas_falha_a_abertura() {
+    let corpo = corpo_v4_com_datas(7);
+    let vazio = crate::corpo::serializar(cofre().configuracao(), 8, &[])
+        .unwrap()
+        .len();
+    let tam = (corpo.len() - vazio) / 3;
+    assert_eq!(vazio + 3 * tam, corpo.len());
+    // A cifra é de fluxo: o byte i do corpo está no byte TAM_CABECALHO + i do arquivo.
+    let mut posicoes = Vec::new();
+    for k in 1..=3 {
+        let fim = corpo.len() - (3 - k) * tam;
+        assert_eq!(
+            corpo[fim - 8..fim],
+            (1_762_000_000 + k as u64 - 1 + 7).to_le_bytes(),
+            "a alteração fecha a entrada"
+        );
+        posicoes.extend((fim - 16..fim).map(|p| crate::formato::TAM_CABECALHO + p));
+    }
+    assert_eq!(posicoes.len(), 48);
+    let arquivo = cofre().selar(&corpo).unwrap();
+    assert!(
+        cofre().autentica(&arquivo),
+        "controle: o original autentica"
+    );
+    for p in &posicoes {
+        let mut a = arquivo.clone();
+        a[*p] ^= 1 << (p % 8);
+        assert!(
+            !cofre().autentica(&a),
+            "byte {p} das datas trocado e aceito"
+        );
+    }
+    let mut a = arquivo.clone();
+    a[posicoes[5]] ^= 0x01;
+    let _g = ARGON.lock().unwrap_or_else(|e| e.into_inner());
+    assert_eq!(
+        abrir(&a, &senha()).map(|_| ()),
+        Err(crate::formato::ErroFormato::SenhaOuArquivo)
+    );
+}

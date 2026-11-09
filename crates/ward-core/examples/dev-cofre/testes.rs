@@ -606,7 +606,7 @@ fn v2_39_cofre_gerado_tem_a_configuracao() {
             .windows(PIN_TESTE.len())
             .any(|w| w == PIN_TESTE.as_bytes())
     );
-    assert!(corpo[..2] == [3, 0], "corpo v3");
+    assert!(corpo[..2] == [4, 0], "corpo v4");
     assert!(corpo[2..10] == 1u64.to_le_bytes(), "geração 1");
     let prefixo = b"$argon2id$v=19$m=65536,t=3,p=1$";
     assert!(

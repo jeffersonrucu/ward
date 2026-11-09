@@ -51,7 +51,7 @@ use zeroize::Zeroizing;
 use ward_core::backup::{self, ErroBackup, Versao};
 use ward_core::configuracao::{Configuracao, HashPin};
 use ward_core::corpo::{self, ErroAbrir, ErroCorpo};
-use ward_core::entrada::{Entrada, NivelAcesso, Rascunho, Segredo};
+use ward_core::entrada::{Datas, Entrada, NivelAcesso, Rascunho, Segredo};
 use ward_core::formato::{CofreAberto, SenhaMestra};
 use ward_core::gravacao::{self, ErroGravacao, Etapa};
 use ward_core::protocolo::{
@@ -874,11 +874,28 @@ impl Daemon {
         }
     }
 
+    /// Segundos UTC do relógio do daemon para carimbar uma entrada (D65 d). Relógio
+    /// ilegível ou fora da faixa de [`Datas`]: `None`, e a gravação segue sem carimbo
+    /// novo (as datas são só informação; nenhuma decisão de segurança usa).
+    fn agora_para_datas(&self) -> Option<u64> {
+        let agora = self.relogio.segundos_unix().and_then(Datas::instante);
+        if agora.is_none() {
+            aviso!("relógio de parede ilegível: a entrada é gravada sem data nova (D65 d)");
+        }
+        agora
+    }
+
+    /// As datas da entrada depois de uma alteração em `agora` (as mesmas sem relógio).
+    fn alterado(datas: Datas, agora: Option<u64>) -> Datas {
+        agora.and_then(|a| datas.alterado(a)).unwrap_or(datas)
+    }
+
     fn salvar_entrada(
         &self,
         anterior: Option<&str>,
         rascunho: Rascunho,
     ) -> Result<Resposta, ErroResposta> {
+        let agora = self.agora_para_datas();
         let mut est = self.estado();
         let a = est.aberto.as_mut().ok_or(ErroResposta::Travado)?;
         let mut nova = rascunho
@@ -889,6 +906,12 @@ impl Daemon {
                 // D50: toda entrada nova nasce "com aprovação"; outro nível só pelo
                 // `mudar_nivel`, com PIN (S9).
                 nova.definir_nivel(NivelAcesso::ComAprovacao);
+                // D65 d: a entrada nova ganha as duas datas, do relógio do daemon.
+                nova.definir_datas(
+                    agora
+                        .and_then(Datas::carimbo_novo)
+                        .unwrap_or(Datas::NENHUMA),
+                );
                 nova.conferir_no_cofre(a.entradas.iter())
                     .map_err(|e| ErroResposta::de_validacao(&e))?;
                 None
@@ -901,6 +924,8 @@ impl Daemon {
                     .ok_or(ErroResposta::EntradaInexistente)?;
                 // Editar não muda o nível. Renomear tira a liberação de 1 hora (D2).
                 nova.definir_nivel(a.entradas[i].nivel());
+                // D65 d: a criação fica a da entrada editada; só a alteração muda.
+                nova.definir_datas(Self::alterado(a.entradas[i].datas(), agora));
                 if nova.nome() != nome {
                     a.liberacoes.remove(nome);
                 }
@@ -963,6 +988,7 @@ impl Daemon {
         nivel: NivelAcesso,
         pin: &Segredo,
     ) -> Result<Resposta, ErroResposta> {
+        let agora = self.agora_para_datas();
         let mut est = self.estado();
         Self::conferir_pin(&mut est, pin)?;
         let a = est.aberto.as_mut().ok_or(ErroResposta::Travado)?;
@@ -972,13 +998,18 @@ impl Daemon {
             .find(|e| e.nome() == nome)
             .ok_or(ErroResposta::EntradaInexistente)?;
         let antes = e.nivel();
+        let datas_antes = e.datas();
+        // D65 d: mudar o nível é alterar a entrada.
+        let datas = Self::alterado(datas_antes, agora);
         e.definir_nivel(nivel);
+        e.definir_datas(datas);
         // Voltar atrás é mudar o nível: a liberação de 1 hora acaba (D2).
         a.liberacoes.remove(nome);
         let nome = nome.to_owned();
         self.gravar_ou_desfazer(&mut est, move |a| {
             if let Some(e) = a.entradas.iter_mut().find(|e| e.nome() == nome) {
                 e.definir_nivel(antes);
+                e.definir_datas(datas_antes);
             }
         })
     }

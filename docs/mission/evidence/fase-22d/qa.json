@@ -1,0 +1,22 @@
+{
+  "sem_datas_texto_vazio": true,
+  "sem_datas_sem_criada": true,
+  "metadados": "Criada em 09/11/2026 · Alterada em 09/11/2026",
+  "criada_e_alterada_hoje": true,
+  "estilo": [
+    "12px",
+    "16px",
+    "400",
+    "rgb(154, 161, 174)",
+    "Inter, system-ui, sans-serif"
+  ],
+  "estilo_como_4400": true,
+  "altura_16": true,
+  "sem_segredo_no_dom:detalhe_com_datas": true,
+  "trocar_de_entrada_limpa": true,
+  "armazenamento_vazio": true,
+  "so_pedidos_locais": true,
+  "console": [
+    "Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ]
+}
