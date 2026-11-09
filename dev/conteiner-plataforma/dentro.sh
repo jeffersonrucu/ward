@@ -1,8 +1,9 @@
 #!/bin/bash -p
-# Parte de dentro do `make teste-docker-plataforma` (Fases 21b e 29a; D46, D47, D57; V3.5,
-# V3.23, V3.24, V5.31). Roda como root **só dentro** do contêiner `ubuntu:24.04` descartável; nada do
-# host é montado além de /opt/teste (somente leitura: o binário de teste e a biblioteca
-# de ataque) e deste script.
+# Parte de dentro do `make teste-docker-plataforma` (Fases 21b, 29a e 28; D46, D47, D57,
+# D65 e; V3.5, V3.23, V3.24, V5.31 e a 2ª parte do V4.2). Roda como root **só dentro** do contêiner `ubuntu:24.04` descartável; nada do
+# host é montado além de /opt/teste (somente leitura: o binário de teste, a biblioteca
+# de ataque, a CLI `ward` e o `wardd` de release e o servidor falso do V4.2) e deste
+# script.
 #
 # Monta o que a instalação (Fase 51) vai montar: grupos de sistema `ward-app`/`ward-nm`
 # sem membros, `ward-app` e `ward-nm` root:<grupo> 2755 em /usr/local/bin e a pasta
@@ -281,6 +282,104 @@ confere "D57: o lançador só abre o ward-app do root, setgid do grupo ward-app"
 
 kill "$SRV2" "$W1" "$BUS" 2>/dev/null || true
 wait "$SRV2" 2>/dev/null || true
+
+# === Fase 28: V4.2, 2ª parte (D46, D65 e; S5) ============================================
+# Build SEM `modo-teste` (o de release): a CLI `ward` só conecta em /run/ward/<uid>/
+# (pasta do root) e exige o par uid 0. O `wardd` verdadeiro, copiado para /tmp, e um
+# falso não-dumpable (`falso.c`, que passaria na conferência extra do `modo-teste`) rodam
+# como o uid 1000 em pastas desse uid; nenhum dos dois recebe byte algum, a CLI sai ≠ 0
+# sem pedir a senha, e o uid 1000 não cria socket em /run/ward/1000/.
+CLI=/opt/teste/ward-release
+WARDD_REL=/opt/teste/wardd-release
+FALSO=/opt/teste/falso
+install -o root -g root -m 0755 "$CLI" /usr/local/bin/ward
+install -d -o 1000 -g 1000 -m 0700 /run/user/1000/ward /run/user/1000/ward-teste /run/user/1000/copia /tmp/v42
+REG=/tmp/v42/registro
+como_1000 touch "$REG"
+
+# O wardd verdadeiro copiado pelo usuário: não escuta fora de /run/ward/<uid>/ (o socket
+# de LISTEN_FDS numa pasta do uid é recusado; sem LISTEN_FDS, não sobe).
+como_1000 cp "$WARDD_REL" /tmp/v42/wardd
+como_1000 chmod 0755 /tmp/v42/wardd
+# `timeout`: se a cópia subisse, ficaria no ar (124 conta como falha).
+r="$(como_1000 /usr/bin/timeout 10 /usr/bin/env -i HOME=/tmp/v42 PATH=/usr/bin:/bin "$FALSO" --ativar /run/user/1000/copia/wardd.sock /tmp/v42/wardd 2>&1; echo "saiu=$?")"
+nao_tem "V4.2: o wardd copiado não fica escutando numa pasta do uid 1000" "$r" "saiu=0"
+nao_tem "V4.2: o wardd copiado não fica no ar com o socket de uma pasta do uid 1000" "$r" "saiu=124"
+echo "   (wardd copiado com LISTEN_FDS de /run/user/1000/copia: $(tr '\n' ' ' <<<"$r"))"
+r="$(como_1000 /usr/bin/timeout 10 /usr/bin/env -i HOME=/tmp/v42 PATH=/usr/bin:/bin XDG_RUNTIME_DIR=/run/user/1000 /tmp/v42/wardd 2>&1; echo "saiu=$?")"
+nao_tem "V4.2: o wardd copiado sem o systemd não sobe" "$r" "saiu=0"
+nao_tem "V4.2: o wardd copiado sem o systemd não fica no ar" "$r" "saiu=124"
+echo "   (wardd copiado sem LISTEN_FDS: $(tr '\n' ' ' <<<"$r"))"
+
+# Os falsos não-dumpable do uid 1000: no caminho antigo (/run/user/<uid>/ward/), no do
+# daemon de teste (ward-teste) e no da cópia.
+FPIDS=()
+for d in ward ward-teste copia; do
+    como_1000 "$FALSO" "/run/user/1000/$d/wardd.sock" "$REG" 40 >"/tmp/v42/falso-$d.out" 2>&1 &
+    FPIDS+=("$!")
+done
+for d in ward ward-teste copia; do
+    for _ in $(seq 50); do grep -q pronto "/tmp/v42/falso-$d.out" 2>/dev/null && break; sleep 0.1; done
+    confere "V4.2: falso não-dumpable do uid 1000 escutando em /run/user/1000/$d" "$(cat "/tmp/v42/falso-$d.out")" "pronto dumpable=0"
+done
+# Controle: o registro pega uma conexão de verdade (depois é zerado).
+como_1000 "$FALSO" --conectar /run/user/1000/ward/wardd.sock x
+for _ in $(seq 50); do grep -q "bytes 1" "$REG" && break; sleep 0.1; done
+confere "controle: o falso registra conexão e bytes" "$(tr '\n' ' ' <"$REG")" "conexao 0 bytes 1"
+: >"$REG"
+r="$(como_1000 "$FALSO" /run/ward/1000/falso-v42.sock "$REG" 1 2>&1; echo "saiu=$?")"
+confere "V4.2: o falso do uid 1000 não faz bind em /run/ward/1000/ (EACCES)" "$r" "bind=EACCES"
+# Com o socket velho do root no caminho do wardd: o uid 1000 não o apaga nem o toma.
+r="$(como_1000 "$FALSO" "$SOCK" "$REG" 1 2>&1; echo "saiu=$?")"
+confere "V4.2: com o socket velho do root, o falso não toma o caminho do wardd" "$r" "saiu=3"
+[ -S "$SOCK" ] && [ "$(stat -c %U /run/ward/1000)" = root ] && ok "V4.2: o socket velho continua lá, na pasta do root" || falhou "o socket velho sumiu ou a pasta mudou de dono"
+
+# A CLI de release num pty (`script`), com a senha (falsa) digitada assim mesmo e o
+# ambiente apontando para os falsos: sai ≠ 0 sem mostrar o prompt.
+SENHA_V42="falso-mestra-ward-01"
+cli_pty() {
+    printf '%s\n' "$SENHA_V42" | como_1000 /usr/bin/env -i HOME=/tmp/v42 PATH=/usr/bin:/bin LANG=C.UTF-8 \
+        XDG_RUNTIME_DIR=/run/user/1000 WARD_DEV_SOCKET_DIR=/run/user/1000/ward-teste \
+        /usr/bin/script -qec "/usr/local/bin/ward $1" /dev/null 2>&1
+    echo "saiu=$?"
+}
+conferir_cli() {
+    local rotulo="$1" r="$2"
+    nao_tem "V4.2 ($rotulo): a CLI de release não sai 0" "$r" "saiu=0"
+    if [[ "$r" == *"o daemon não está rodando"* || "$r" == *"servidor não é o wardd"* ]]; then
+        ok "V4.2 ($rotulo): a CLI de release recusa ('o daemon não está rodando' ou 'servidor não é o wardd')"
+    else
+        falhou "V4.2 ($rotulo): mensagem inesperada: $r"
+    fi
+    nao_tem "V4.2 ($rotulo): a CLI não pede a senha" "$r" "Senha mestra"
+}
+# Com o socket velho do root em /run/ward/1000 (ninguém escutando) e sem ele.
+for caso in socket-velho sem-socket; do
+    if [ "$caso" = sem-socket ]; then
+        rm -f "$SOCK"
+        r="$(como_1000 "$FALSO" "$SOCK" "$REG" 1 2>&1; echo "saiu=$?")"
+        confere "V4.2: sem o socket, o falso do uid 1000 não faz bind em $SOCK (EACCES)" "$r" "bind=EACCES"
+        r="$(como_1000 /usr/local/bin/ward-servidor bind "$SOCK")"
+        confere "V4.2: nem o binário de teste (bind em $SOCK)" "$r" "bind=EACCES"
+    fi
+    for cmd in destravar lista travar; do
+        conferir_cli "$caso, ward $cmd" "$(cli_pty "$cmd")"
+    done
+done
+# O root apaga a pasta /run/ward/1000: o uid 1000 também não a cria.
+rmdir /run/ward/1000
+r="$(como_1000 mkdir /run/ward/1000 2>&1; echo "saiu=$?")"
+nao_tem "V4.2: o uid 1000 não cria /run/ward/1000" "$r" "saiu=0"
+conferir_cli "sem a pasta, ward destravar" "$(cli_pty destravar)"
+install -d -o root -g root -m 0755 /run/ward/1000
+
+kill "${FPIDS[@]}" 2>/dev/null || true
+wait "${FPIDS[@]}" 2>/dev/null || true
+if [ -s "$REG" ]; then
+    falhou "V4.2: um falso recebeu conexão ou bytes: $(tr '\n' ' ' <"$REG")"
+else
+    ok "V4.2: nenhum dos falsos recebeu conexão nem byte"
+fi
 
 echo
 if [ "$falhas" -ne 0 ]; then

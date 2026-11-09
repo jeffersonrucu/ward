@@ -5,6 +5,12 @@ como sha256; arquivo `registro-<nome>-<pid>.txt`, uma linha `campo<TAB>valor`) e
 agente de D12: lista, assina e tenta adicionar, remover e travar; um neto (outro
 processo) também tenta listar. O que fazer com a saída vem do arquivo `modo` da pasta
 do teste. Chamado como `python3 -I ssh_falso.py <nome> <pasta> <argv…>`.
+
+Fase 28 (salto e túnel): com `-W <alvo>`, faz o papel do `ssh` da ponte: lê uma linha
+da entrada, responde `eco:<alvo>:<linha>` e escreve no stderr uma linha com o
+`SSHPASS` (para conferir que a ponte mascara o stderr). Com `HostKeyAlias=…` (o `ssh`
+principal do salto), conecta na ponte (`127.0.0.1:<-p>`), manda `oi`, imprime a
+resposta e tenta uma segunda conexão (o salto aceita uma só).
 """
 
 import hashlib
@@ -138,6 +144,48 @@ def esperar_continuar():
         time.sleep(0.02)
 
 
+def esperar_arquivo(nome):
+    if not os.path.exists(os.path.join(BASE, "esperar-" + nome)):
+        return
+    fim = time.time() + 30
+    while time.time() < fim and not os.path.exists(os.path.join(BASE, "continuar-" + nome)):
+        time.sleep(0.02)
+
+
+def valor(op):
+    i = ARGV.index(op)
+    return ARGV[i + 1]
+
+
+def ponte_do_lado_do_salto():
+    """O `ssh -W` da ponte: eco de uma linha; o stderr leva o SSHPASS (a ponte mascara)."""
+    alvo = valor("-W")
+    sys.stderr.write("erro-salto " + os.environ.get("SSHPASS", "(nada)") + "\n")
+    sys.stderr.flush()
+    linha = sys.stdin.buffer.readline()
+    sys.stdout.buffer.write(b"eco:" + alvo.encode() + b":" + linha)
+    sys.stdout.flush()
+    sys.stdin.buffer.read()
+    sys.exit(0)
+
+
+def conversar(porta, msg):
+    s = socket.create_connection(("127.0.0.1", porta), timeout=10)
+    try:
+        s.sendall(msg)
+        dados = b""
+        while not dados.endswith(b"\n"):
+            d = s.recv(4096)
+            if not d:
+                break
+            dados += d
+        return dados.decode(errors="replace").strip() or "fechada"
+    except OSError as e:
+        return "erro:" + type(e).__name__
+    finally:
+        s.close()
+
+
 def principal():
     modo = ler("modo", "normal")
     extra = {}
@@ -155,6 +203,20 @@ def principal():
             subprocess.run([os.path.join(BASE, "ssh")] + ARGV, timeout=60)
         sys.exit(0)
     # ssh
+    if "-W" in ARGV:
+        if agente and agente != "none":
+            extra["agente"] = cliente_do_agente(agente)
+        registrar(extra)
+        ponte_do_lado_do_salto()
+    if opcao("HostKeyAlias"):
+        if agente and agente != "none":
+            extra["agente"] = cliente_do_agente(agente)
+        registrar(extra)
+        esperar_arquivo("ponte")
+        porta = int(valor("-p"))
+        print("ponte=" + conversar(porta, b"oi\n"), flush=True)
+        print("segunda=" + conversar(porta, b"de-novo\n"), flush=True)
+        sys.exit(0)
     if agente and agente != "none":
         extra["agente"] = cliente_do_agente(agente)
         registrar(extra)

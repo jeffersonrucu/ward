@@ -10,6 +10,7 @@
 //!   [`lancamento`]: o daemon abre o app pelo lançador (D57).
 //! - [`trava`]: trava automática por inatividade e pelo logind (Fase 24).
 //! - [`execucao`]: o `ward run` (Fase 26): entrega, máscara, filho e temporários.
+//! - [`ssh`]: o `ward ssh` (Fase 27); [`ponte`]: o salto e o túnel sem shell (Fase 28).
 //! - [`externo`]: backup externo em pendrive (Fase 46); [`udisks`]: os pendrives pelo
 //!   udisks2 no barramento do sistema.
 //!
@@ -27,6 +28,7 @@ pub mod execucao;
 pub mod externo;
 pub mod lancamento;
 pub mod nucleo;
+pub mod ponte;
 pub mod servidor;
 pub mod ssh;
 pub mod trava;

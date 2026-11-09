@@ -304,12 +304,16 @@ teste-webkit-real: origens
 # root e entregue por LISTEN_FDS. Nada de sudo nem de /etc ou /run do host. Exige Docker
 # e gcc (a biblioteca do ataque de LD_PRELOAD); fica fora do `make check`.
 
-## teste-docker-plataforma: V3.5 (forma de D47), V3.23, V3.24 e V5.31 (lançador e partida
-## do app, D57) num contêiner ubuntu:24.04
+## teste-docker-plataforma: V3.5 (forma de D47), V3.23, V3.24, V5.31 (lançador e partida
+## do app, D57) e a 2ª parte do V4.2 (CLI e wardd sem modo-teste, falso não-dumpable do
+## uid 1000; Fase 28) num contêiner ubuntu:24.04
 teste-docker-plataforma: origens
 	$(CARGO) build --quiet --locked -p ward-plataforma --features modo-teste --example ward-plataforma-conteiner
 	$(CARGO) build --quiet --locked -p ward-app-nucleo --example partida-conteiner
-	dev/testes/docker-plataforma.sh target/debug/examples/ward-plataforma-conteiner target/debug/examples/partida-conteiner
+	$(CARGO) build --quiet --locked -p ward --bin ward --target-dir target/sem-modo-teste
+	$(CARGO) build --quiet --locked -p wardd --bin wardd --target-dir target/sem-modo-teste
+	dev/testes/docker-plataforma.sh target/debug/examples/ward-plataforma-conteiner target/debug/examples/partida-conteiner \
+		target/sem-modo-teste/debug/ward target/sem-modo-teste/debug/wardd
 
 ## teste-docker-uid: V3.2 (D49) num contêiner ubuntu:24.04: o wardd de teste roda como
 ## uid 1000; clientes de outro uid (4242, também com CAP_DAC_OVERRIDE) e o root são
