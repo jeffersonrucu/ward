@@ -434,6 +434,8 @@ Pendências da 27 (2026-11-09): dependência nova `ssh-key =0.7.0-rc.12` (versã
 
 Pendências da 38 (2026-11-09): frame `15242` diz "Trocar pede a senha mestra" no PIN, contrato e `wardd` pedem o PIN atual (corrigir FigCraft); máximo do tempo de trava: design 4 h, D45 1440 min — decidir; diálogos "Trocar senha mestra"/"Trocar PIN" sem frame; `trocar_senha` sem espera crescente de D20 na senha atual (só papel app) — decidir; mínimo de 12 e NFC continuam só no app; operação nova `configuracao` (só app) convive com `backup_externo` da 46.
 
+Pendências da 24a (2026-11-09): 1º `kill -SEGV` cai no tratador de pilha do Rust e só o 2º mata (sem core nos dois; V3.6 fala em um); nesta máquina `suid_dumpable=2` e `core_pattern` é pipe do apport — o que impede o core é `PR_SET_DUMPABLE=0` (levar à instalação, M9); sem `gdb` no host; nome de variável que começa com byte inválido sai vazio na mensagem; extensão divide as 64 vagas com o agente.
+
 ## Milestone 3 — Daemon e protocolo
 Contrato: V3.1–V3.41
 
@@ -643,7 +645,7 @@ Contrato: V3.1–V3.41
   - testes de formato de V2 (byte alterado, gravação morta) repetidos com o v4.
   V3.41, V5.34.
 
-- [ ] Fase 24a — Correções do scrutiny do M3 (2026-11-09; `docs/mission/evidence/M3/`).
+- [x] Fase 24a — Correções do scrutiny do M3 (2026-11-09; `docs/mission/evidence/M3/`).
   - V3.25 (reprovada): `nome_para_mensagem` (`crates/ward-plataforma/src/endurecimento.rs`)
     corta no primeiro byte fora de `[A-Za-z0-9_]` e no 64º, sem `?` nem `…`; teste
     atualizado.
