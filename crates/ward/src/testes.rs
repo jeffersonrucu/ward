@@ -455,9 +455,63 @@ mod com_daemon_falso {
         }
     }
 
-    /// `ward ssh` (Fase 27) contra um daemon falso: o pedido leva entrada, comando e
-    /// token (sem janela fora de terminal); a saída e o código vêm do daemon; erro do
-    /// daemon sai 125 com a mensagem fixa.
+    /// Um canal como o do app (Fase 27a): `conteudo` na fila de um socket Unix cuja
+    /// outra ponta já fechou. Devolve o número do fd; a posse passa à CLI, que o fecha.
+    fn canal(conteudo: &[u8]) -> u32 {
+        use std::os::fd::IntoRawFd;
+        let (mut a, b) = std::os::unix::net::UnixStream::pair().unwrap();
+        a.write_all(conteudo).unwrap();
+        drop(a);
+        u32::try_from(b.into_raw_fd()).unwrap()
+    }
+
+    /// Ataque (Fase 27a): canal do token com lixo, vazio, grande, de outro tipo (pipe,
+    /// que o mesmo uid reabriria por `/proc`) ou fechado. A CLI sai 125 com mensagem
+    /// fixa, sem o conteúdo, e **sem conectar** (nada vai ao daemon); `--token` em argv
+    /// sai 2 sem conectar.
+    #[test]
+    fn ataque_canal_do_token_forjado_nao_conecta() {
+        use crate::comandos::{MSG_TOKEN_FORMATO, SAIDA_RUN_ERRO};
+        use std::os::fd::IntoRawFd;
+        let pasta = Pasta::nova();
+        let visto = servidor(&pasta, None);
+        let lixo = b"falso-lixo;rm -rf /\n\xff".repeat(2);
+        let (r, mut w) = std::io::pipe().unwrap();
+        w.write_all(b"AbCdEfGhIjKlMnOpQrStUvWxYz012345").unwrap();
+        drop(w);
+        let pipe = u32::try_from(r.into_raw_fd()).unwrap();
+        for (fd, msg) in [
+            (canal(&lixo[..30]), MSG_TOKEN_FORMATO),
+            (canal(b"-AbCdEfGhIjKlMnOpQr"), MSG_TOKEN_FORMATO),
+            (canal(b""), "o canal do token do Conectar veio vazio"),
+            (
+                canal(&b"falso-grande-".repeat(10)),
+                "o canal do token do Conectar passa do tamanho do token",
+            ),
+            (pipe, "o canal do token do Conectar não é o do app"),
+            (1_000_000, "o canal do token do Conectar não está aberto"),
+        ] {
+            let mut t = teste(&pasta);
+            let n = fd.to_string();
+            assert_eq!(
+                t.rodar(&["ssh", "--token-fd", &n, "acme-ssh", "id"]),
+                SAIDA_RUN_ERRO
+            );
+            assert_eq!(t.err(), format!("ward: {msg}\n"));
+            assert!(!t.err().contains("falso") && !t.err().contains("AbCd"));
+            assert_eq!(t.eventos, ["endurecer"], "{msg}");
+        }
+        let mut t = teste(&pasta);
+        let codigo = t.rodar(&["ssh", "--token", "AbCdEfGhIjKlMnOpQrStUvWxYz012345", "e"]);
+        assert_eq!(codigo, SAIDA_USO);
+        assert!(!t.err().contains("AbCd"), "{}", t.err());
+        assert!(t.eventos.is_empty());
+        assert_eq!(visto.lock().unwrap().conexoes, 0);
+    }
+
+    /// `ward ssh` (Fases 27 e 27a) contra um daemon falso: o pedido leva entrada,
+    /// comando e o token que chegou pelo fd (sem janela fora de terminal); a saída e o
+    /// código vêm do daemon; erro do daemon sai 125 com a mensagem fixa.
     #[test]
     fn ssh_pedido_token_saida_e_codigo() {
         use crate::comandos::SAIDA_RUN_ERRO;
@@ -492,9 +546,12 @@ mod com_daemon_falso {
             })),
         );
         let mut t = teste(&pasta);
-        let codigo = t.rodar(&["ssh", "--token", token, "acme-ssh", "--", "ls", "-la"]);
+        let fd = canal(token.as_bytes()).to_string();
+        let codigo = t.rodar(&["ssh", "--token-fd", &fd, "acme-ssh", "--", "ls", "-la"]);
         assert_eq!(codigo, 4, "{}", t.err());
         assert_eq!(t.out(), "senha=••••\n");
+        // O processo endurece antes de o token existir na memória e lê antes de conectar.
+        assert_eq!(t.eventos, ["endurecer", "conectar"]);
         let mut t = teste(&pasta);
         assert_eq!(t.rodar(&["ssh", "t-nota", "id"]), SAIDA_RUN_ERRO);
         assert_eq!(t.err(), "ward: tipo sem entrega\n");

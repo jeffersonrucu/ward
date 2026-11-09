@@ -19,6 +19,7 @@ use ward_core::limites::{KIB, MAX_ARGUMENTO, MAX_ARGUMENTOS, MAX_SEGREDO, MAX_VA
 use ward_core::protocolo::{
     ErroCodificar, ErroResposta, Fluxo, Janela, Papel, Pedido, PedidoExecutar, Resposta, Variavel,
 };
+use ward_plataforma::conectar::ErroCanal;
 use ward_plataforma::{ErroTerminal, ServidorEsperado};
 use zeroize::Zeroizing;
 
@@ -90,6 +91,11 @@ pub trait Entorno {
     fn modo_cru(&mut self) -> Option<ward_plataforma::ModoCru> {
         ward_plataforma::ModoCru::ligar(io::stdin()).ok()
     }
+    /// `ward ssh --token-fd <n>` (Fase 27a): lê o token do "Conectar" do fd herdado do
+    /// app e fecha o fd.
+    fn ler_token(&mut self, fd: u32) -> Result<Zeroizing<Vec<u8>>, ErroCanal> {
+        ward_plataforma::conectar::ler_token_herdado(fd)
+    }
 }
 
 /// Tamanho do terminal para o protocolo (24×80 quando o terminal não diz).
@@ -157,9 +163,9 @@ pub fn executar(cmd: Comando, e: &mut dyn Entorno) -> u8 {
         Comando::Run { entrada, argv } => run(e, entrada, argv),
         Comando::Ssh {
             entrada,
-            token,
+            token_fd,
             comando,
-        } => ssh(e, entrada, token, comando),
+        } => ssh(e, entrada, token_fd, comando),
     }
 }
 
@@ -430,7 +436,7 @@ const PASSO_JANELA: Duration = Duration::from_millis(250);
 /// `ward run`, D52). Nenhum valor vai para a mensagem.
 pub fn pedido_ssh(
     entrada: String,
-    token: Option<String>,
+    token: Option<Segredo>,
     comando: Vec<OsString>,
     janela: Option<Janela>,
 ) -> Result<Pedido, &'static str> {
@@ -445,7 +451,7 @@ pub fn pedido_ssh(
     let pedido = Pedido::Ssh {
         entrada,
         comando: comando.into_iter().map(Zeroizing::new).collect(),
-        token: token.map(Segredo::de_texto),
+        token,
         janela,
     };
     match ward_core::protocolo::codificar_pedido(Papel::Agente, &pedido) {
@@ -455,12 +461,33 @@ pub fn pedido_ssh(
     }
 }
 
-/// `ward ssh [--token <t>] <entrada> [comando…]` (Fase 27). O daemon conecta com a
-/// credencial (senha por `sshpass`, chave pelo agente temporário de D12) e devolve a
-/// saída já mascarada e o código. Sem comando e com terminal: shell remoto num pty, com
-/// o terminal local em modo cru e o tamanho acompanhado. Nenhum segredo passa por aqui
-/// (S1); o token do "Conectar" não é segredo de credencial e morre no primeiro uso (D3).
-fn ssh(e: &mut dyn Entorno, entrada: String, token: Option<String>, comando: Vec<OsString>) -> u8 {
+/// Mensagem do token do canal fora do formato do daemon (sem o conteúdo).
+pub const MSG_TOKEN_FORMATO: &str = "o token do Conectar veio fora do formato";
+
+/// O token do "Conectar" pelo fd herdado (Fase 27a). Antes de ler, o processo fica
+/// não-dumpable e sem core (o token passa a existir na memória dele). O fd fecha na
+/// leitura, antes de qualquer conexão. O conteúdo nunca vai para mensagem.
+fn token_do_canal(e: &mut dyn Entorno, fd: u32) -> Result<Segredo, &'static str> {
+    e.endurecer()
+        .map_err(|_| "não foi possível proteger o processo antes de ler o token")?;
+    let mut bytes = e.ler_token(fd).map_err(ErroCanal::mensagem)?;
+    if !crate::args::token_ok(&bytes) {
+        return Err(MSG_TOKEN_FORMATO);
+    }
+    Ok(Segredo::de_bytes(std::mem::take(&mut *bytes)))
+}
+
+/// `ward ssh [--token-fd <n>] <entrada> [comando…]` (Fases 27 e 27a). O daemon conecta
+/// com a credencial (senha por `sshpass`, chave pelo agente temporário de D12) e
+/// devolve a saída já mascarada e o código. Sem comando e com terminal: shell remoto
+/// num pty, com o terminal local em modo cru e o tamanho acompanhado. Nenhum segredo
+/// passa por aqui (S1). O token do "Conectar" (D3) chega por um fd herdado do app,
+/// nunca por argv ou ambiente, é lido e o fd fechado antes de conectar.
+fn ssh(e: &mut dyn Entorno, entrada: String, token_fd: Option<u32>, comando: Vec<OsString>) -> u8 {
+    let token = match token_fd.map(|fd| token_do_canal(e, fd)).transpose() {
+        Ok(t) => t,
+        Err(msg) => return falhar_run(e, msg),
+    };
     let janela = if comando.is_empty() {
         e.terminal()
     } else {

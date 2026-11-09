@@ -17,11 +17,12 @@ pub enum Comando {
         entrada: String,
         argv: Vec<OsString>,
     },
-    /// `ward ssh [--token <t>] <entrada> [--] [comando…]` (Fase 27): o comando remoto
-    /// em bytes; o token é o do "Conectar" do app (D3).
+    /// `ward ssh [--token-fd <n>] <entrada> [--] [comando…]` (Fases 27 e 27a): o
+    /// comando remoto em bytes; `token_fd` é o número do fd herdado do app por onde
+    /// chega o token do "Conectar" (D3). O token nunca vem no argv.
     Ssh {
         entrada: String,
-        token: Option<String>,
+        token_fd: Option<u32>,
         comando: Vec<OsString>,
     },
     Ajuda,
@@ -37,8 +38,11 @@ pub enum ErroUso {
     NaoUtf8,
     /// `ward run` sem entrada, sem `--` ou sem comando.
     UsoRun,
-    /// `ward ssh` sem entrada, ou com token fora do formato.
+    /// `ward ssh` sem entrada, ou com `--token-fd` fora do formato.
     UsoSsh,
+    /// `ward ssh --token <t>` (Fase 27a): o token no argv fica legível em
+    /// `/proc/<pid>/cmdline` por qualquer processo do mesmo usuário. Recusado.
+    TokenEmArgv,
 }
 
 impl ErroUso {
@@ -49,9 +53,10 @@ impl ErroUso {
             ErroUso::ArgumentoInesperado(cmd) => format!("argumento inesperado para `{cmd}`"),
             ErroUso::NaoUtf8 => "argumento que não é UTF-8".to_owned(),
             ErroUso::UsoRun => "uso: ward run <entrada> -- <comando> [argumentos…]".to_owned(),
-            ErroUso::UsoSsh => {
-                "uso: ward ssh [--token <token>] <entrada> [--] [comando remoto…]".to_owned()
-            }
+            ErroUso::UsoSsh => "uso: ward ssh <entrada> [--] [comando remoto…]".to_owned(),
+            ErroUso::TokenEmArgv => "o token do Conectar não vai na linha de comando; \
+                 use o botão Conectar do app"
+                .to_owned(),
         }
     }
 }
@@ -73,8 +78,10 @@ Uso:
                         ~/.ssh); sem comando, abre o shell remoto no terminal;
                         numa entrada sftp, abre o sftp. A saída volta com os
                         segredos trocados por ••••
-  ward ssh --token <token> <entrada>
-                        o mesmo, pelo botão Conectar do app (token de uso único)
+  ward ssh --token-fd <n> <entrada>
+                        o mesmo, aberto pelo botão Conectar do app: o token de
+                        uso único chega pelo fd <n> que o app passa ao terminal,
+                        nunca pela linha de comando
   ward --help           esta ajuda
   ward --version        versão
 
@@ -103,28 +110,42 @@ fn interpretar_run(resto: Vec<OsString>) -> Result<Comando, ErroUso> {
 }
 
 /// Token do "Conectar" (D3): o formato que o daemon emite e o app aceita.
-pub fn token_ok(t: &str) -> bool {
+pub fn token_ok(t: &[u8]) -> bool {
     (16..=64).contains(&t.len())
-        && !t.starts_with('-')
-        && t.bytes()
-            .all(|c| c.is_ascii_alphanumeric() || c == b'_' || c == b'-')
+        && t[0] != b'-'
+        && t.iter()
+            .all(|c| c.is_ascii_alphanumeric() || *c == b'_' || *c == b'-')
 }
 
-/// `ssh [--token <t>] <entrada> [--] [comando…]`.
+/// Número de `--token-fd`: só dígitos decimais (sem sinal, sem espaço), de 3 a
+/// `MAX_NUMERO_FD` (0–2 são a entrada e as saídas padrão).
+fn numero_fd(a: &OsString) -> Option<u32> {
+    let t = a.to_str()?;
+    if t.is_empty() || t.len() > 7 || !t.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let n: u32 = t.parse().ok()?;
+    (3..=ward_plataforma::conectar::MAX_NUMERO_FD)
+        .contains(&n)
+        .then_some(n)
+}
+
+/// `ssh [--token-fd <n>] <entrada> [--] [comando…]`. `--token` (com o valor em argv,
+/// separado ou com `=`) é recusado (Fase 27a).
 fn interpretar_ssh(resto: Vec<OsString>) -> Result<Comando, ErroUso> {
+    use std::os::unix::ffi::OsStrExt;
     let mut it = resto.into_iter().peekable();
-    let mut token = None;
-    if it.peek().is_some_and(|a| a == "--token") {
+    if it.peek().is_some_and(|a| {
+        let b = a.as_bytes();
+        b == b"--token" || b.starts_with(b"--token=")
+    }) {
+        return Err(ErroUso::TokenEmArgv);
+    }
+    let mut token_fd = None;
+    if it.peek().is_some_and(|a| a == "--token-fd") {
         it.next();
-        let t = it
-            .next()
-            .ok_or(ErroUso::UsoSsh)?
-            .into_string()
-            .map_err(|_| ErroUso::UsoSsh)?;
-        if !token_ok(&t) {
-            return Err(ErroUso::UsoSsh);
-        }
-        token = Some(t);
+        let n = it.next().ok_or(ErroUso::UsoSsh)?;
+        token_fd = Some(numero_fd(&n).ok_or(ErroUso::UsoSsh)?);
     }
     let entrada = it
         .next()
@@ -143,7 +164,7 @@ fn interpretar_ssh(resto: Vec<OsString>) -> Result<Comando, ErroUso> {
     }
     Ok(Comando::Ssh {
         entrada,
-        token,
+        token_fd,
         comando,
     })
 }
@@ -273,12 +294,11 @@ mod testes {
 
     #[test]
     fn ssh() {
-        let t = "AbCdEfGhIjKlMnOpQrStUvWxYz012345";
         assert_eq!(
             ler(&["ssh", "acme-ssh-senha-stage"]),
             Ok(Comando::Ssh {
                 entrada: "acme-ssh-senha-stage".into(),
-                token: None,
+                token_fd: None,
                 comando: vec![],
             })
         );
@@ -286,7 +306,7 @@ mod testes {
             ler(&["ssh", "e", "whoami"]),
             Ok(Comando::Ssh {
                 entrada: "e".into(),
-                token: None,
+                token_fd: None,
                 comando: vec!["whoami".into()],
             })
         );
@@ -294,35 +314,90 @@ mod testes {
             ler(&["ssh", "e", "--", "ls", "-la"]),
             Ok(Comando::Ssh {
                 entrada: "e".into(),
-                token: None,
+                token_fd: None,
                 comando: vec!["ls".into(), "-la".into()],
             })
         );
         assert_eq!(
-            ler(&["ssh", "--token", t, "e"]),
+            ler(&["ssh", "--token-fd", "7", "e"]),
             Ok(Comando::Ssh {
                 entrada: "e".into(),
-                token: Some(t.into()),
+                token_fd: Some(7),
                 comando: vec![],
             })
         );
         for ruim in [
             &["ssh"][..],
-            &["ssh", "--token"],
-            &["ssh", "--token", t],
-            &["ssh", "--token", "curto", "e"],
-            &["ssh", "--token", "-AbCdEfGhIjKlMnOpQr", "e"],
-            &["ssh", "--token", "AbCdEfGhIjKlMnOp$rStUv", "e"],
+            &["ssh", "--token-fd"],
+            &["ssh", "--token-fd", "7"],
+            &["ssh", "--token-fd", "0", "e"],
+            &["ssh", "--token-fd", "2", "e"],
+            &["ssh", "--token-fd", "-3", "e"],
+            &["ssh", "--token-fd", "+3", "e"],
+            &["ssh", "--token-fd", " 3", "e"],
+            &["ssh", "--token-fd", "0x3", "e"],
+            &["ssh", "--token-fd", "", "e"],
+            &["ssh", "--token-fd", "99999999", "e"],
+            &["ssh", "--token-fd", "1048577", "e"],
             &["ssh", "-x", "e"],
             &["ssh", "e", ""],
         ] {
             assert_eq!(ler(ruim), Err(ErroUso::UsoSsh), "{ruim:?}");
         }
-        // A mensagem de uso não repete argumento.
+    }
+
+    /// Ataque (Fase 27a, achado alto do M3): o token em argv (`--token <t>`,
+    /// `--token=<t>`, com ou sem entrada) é recusado antes de qualquer conexão, e a
+    /// mensagem não repete o valor.
+    #[test]
+    fn ataque_token_em_argv_recusado_sem_eco() {
+        let t = "AbCdEfGhIjKlMnOpQrStUvWxYz012345";
+        let igual = format!("--token={t}");
+        for ruim in [
+            &["ssh", "--token", t, "e"][..],
+            &["ssh", "--token", t],
+            &["ssh", "--token"],
+            &["ssh", &igual, "e"],
+            &["ssh", "--token=", "e"],
+        ] {
+            let e = ler(ruim).unwrap_err();
+            assert_eq!(e, ErroUso::TokenEmArgv, "{ruim:?}");
+            assert!(!e.mensagem().contains("AbCd"), "{}", e.mensagem());
+        }
+        // Depois da entrada, `--token` é argumento do comando remoto (como qualquer
+        // outro), não o token do Ward: o daemon nunca o vê como token.
+        assert_eq!(
+            ler(&["ssh", "e", "--token", t]),
+            Ok(Comando::Ssh {
+                entrada: "e".into(),
+                token_fd: None,
+                comando: vec!["--token".into(), t.into()],
+            })
+        );
         let m = ler(&["ssh", "--token", "falso-SSH-senha-01!"])
             .unwrap_err()
             .mensagem();
         assert!(!m.contains("falso"), "{m}");
+        assert!(
+            !AJUDA.contains("--token <"),
+            "a ajuda ainda ensina o token em argv"
+        );
+    }
+
+    #[test]
+    fn formato_do_token() {
+        assert!(token_ok(b"AbCdEfGhIjKlMnOpQrStUvWxYz012345"));
+        for t in [
+            &b""[..],
+            b"curto",
+            b"-AbCdEfGhIjKlMnOpQr",
+            b"AbCdEfGhIjKlMnOp$rStUv",
+            b"AbCdEfGhIjKlMnOp\nrStUv",
+            b"AbCdEfGhIjKlMnOp\xffStUv",
+            &[b'a'; 65],
+        ] {
+            assert!(!token_ok(t), "{t:?}");
+        }
     }
 
     #[test]

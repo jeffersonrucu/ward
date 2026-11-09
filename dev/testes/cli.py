@@ -21,6 +21,16 @@ ponta, com o terminal num pty de verdade.
    V4.33 (log do daemon, que o `make dev-daemon` sobe com `RUST_LOG=trace`, sem nenhum
    padrão de `.dev/variacoes.txt`).
 
+6. Fase 27a (achado alto da auditoria do M3): o token do "Conectar" chega ao `ward ssh`
+   só por um socket herdado (`--token-fd <n>`), por um terminal falso, contra o daemon
+   de teste; um leitor em laço de `/proc/*/cmdline`, `/proc/*/environ` e
+   `/proc/<ward>/fd/*` não acha o token; `--token` em argv é recusado sem conectar; canal
+   com lixo, vazio, grande ou pipe é recusado sem eco. Não precisa dos SSH de teste.
+
+Com `WARD_DEV_SOCKET_DIR` no ambiente (pasta absoluta 0700), usa o daemon de teste
+desse socket (o de `WARD_DEV_SOCKET_DIR=… make dev-daemon`), no lugar de
+`$XDG_RUNTIME_DIR/ward-teste`.
+
 Uso: dev/testes/cli.py <binário ward> <raiz do repositório>. Só valores falsos (D15).
 """
 
@@ -45,8 +55,16 @@ def conferir(cond, msg):
         falhas.append(msg)
 
 
+PASTA_SOCKET = os.environ.get("WARD_DEV_SOCKET_DIR") or f"/run/user/{UID}/ward-teste"
+if not os.path.isabs(PASTA_SOCKET):
+    print("FALHA WARD_DEV_SOCKET_DIR não é absoluto")
+    sys.exit(1)
+
+
 def ambiente(extra=None):
     e = {"PATH": "/usr/bin:/bin", "HOME": "/nao-existe", "LANG": "C.UTF-8"}
+    if "WARD_DEV_SOCKET_DIR" in os.environ:
+        e["WARD_DEV_SOCKET_DIR"] = PASTA_SOCKET
     e.update(extra or {})
     return e
 
@@ -128,7 +146,7 @@ finally:
     os.rmdir(pasta)
 
 # --- 2. Contra o daemon de teste ----------------------------------------------------
-sock = f"/run/user/{UID}/ward-teste/wardd.sock"
+sock = os.path.join(PASTA_SOCKET, "wardd.sock")
 if not os.path.exists(sock):
     print("FALHA o daemon de teste não está no ar: rode 'make dev-daemon'")
     sys.exit(1)
@@ -340,7 +358,7 @@ import glob  # noqa: E402
 import signal  # noqa: E402
 
 DEV = os.path.join(RAIZ, ".dev")
-RT_TESTE = f"/run/user/{UID}/ward-teste"
+RT_TESTE = PASTA_SOCKET
 SENHA_SSH = FIX["acme-ssh-senha-stage"]["segredos"]["senha"]
 
 
@@ -355,6 +373,33 @@ def porta_aberta(p):
 def ssh(args, entrada=b"", env=None, prazo=150):
     return subprocess.run([WARD, "ssh"] + args, env=env or ambiente(), input=entrada,
                           capture_output=True, timeout=prazo)
+
+
+# Terminal falso da Fase 27a: tira o `-e` e roda o resto, como o `x-terminal-emulator
+# -e`; repassa os fds herdados (o que o cosmic-term e o xterm fazem).
+TERMINAL_FALSO = ["/bin/sh", "-c", 'shift; exec "$@"', "terminal-falso", "-e"]
+
+
+def ssh_com_canal(conteudo, args, canal="socket", prazo=150):
+    """Como o app (Fase 27a): `conteudo` na fila de um socket Unix (ou de um pipe, para
+    o ataque), a ponta de quem escreve fechada, e só a outra ponta herdada pelo terminal
+    falso → `ward ssh --token-fd <n>`. O conteúdo nunca vai em argv nem no ambiente."""
+    if canal == "socket":
+        a, b = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
+        if conteudo:
+            a.sendall(conteudo)
+        a.close()
+        fd = b.detach()
+    else:
+        fd, w = os.pipe()
+        os.write(w, conteudo)
+        os.close(w)
+    try:
+        return subprocess.run(TERMINAL_FALSO + [WARD, "ssh", "--token-fd", str(fd)] + args,
+                              env=ambiente(), pass_fds=(fd,), stdin=subprocess.DEVNULL,
+                              capture_output=True, timeout=prazo)
+    finally:
+        os.close(fd)
 
 
 class Varredor(threading.Thread):
@@ -493,8 +538,9 @@ else:
     r = ssh(["gama-bloqueada", "id"])
     conferir(r.returncode == 125 and b"entrada" in r.stderr, "bloqueada = inexistente")
 
-    # V4.32: token inventado numa entrada com aprovação, sem app: vale o nível.
-    r = ssh(["--token", "AbCdEfGhIjKlMnOpQrStUvWxYz012345", "acme-pg-aprovacao", "id"])
+    # V4.32: token inventado (pelo canal do fd, Fase 27a) numa entrada com aprovação,
+    # sem app: vale o nível. A seção 6 repete com o leitor de /proc.
+    r = ssh_com_canal(b"AbCdEfGhIjKlMnOpQrStUvWxYz012345", ["acme-pg-aprovacao", "id"])
     # O daemon de teste abre a ponte de teste como app (WARD_DEV_APP), que nega; sem app
     # seria "aprovação indisponível". Os dois são o nível valendo.
     conferir(r.returncode == 125 and (b"pedido negado" in r.stderr or "aprovação indisponível".encode() in r.stderr),
@@ -755,6 +801,118 @@ else:
     conferir(b"wardd[debug]" in texto_log, "V4.33 o daemon de teste está com RUST_LOG=trace (linhas [debug] no log)")
     conferir(texto_log and sum(1 for x in padroes if x in texto_log) == 0,
              f"V4.33 nenhum padrão de .dev/variacoes.txt no log do daemon ({len(texto_log)} bytes)")
+
+# --- 6. Fase 27a: o token do "Conectar" só pelo canal do fd -----------------------------
+# Não precisa dos SSH de teste: `acme-pg-aprovacao` é `banco` com aprovação, e o daemon
+# confere o nível antes do tipo (V4.32). O token é inventado aqui (formato do daemon,
+# aleatório a cada rodada, nunca escrito no repositório); o daemon de teste o ignora
+# (vale o nível) e registra "token inválido" no log, prova de que ele chegou pelo canal.
+import secrets  # noqa: E402
+import string  # noqa: E402
+
+LOG_DAEMON = os.path.join(DEV, "logs", "wardd.log")
+MSG_TOKEN_INVALIDO = "ssh: token inválido, vencido, já usado ou de outra entrada".encode()
+
+
+def linhas_token_invalido():
+    try:
+        return open(LOG_DAEMON, "rb").read().count(MSG_TOKEN_INVALIDO)
+    except OSError:
+        return -1
+
+
+class LeitorDeProc(threading.Thread):
+    """Lê em laço `/proc/*/cmdline` e `/proc/*/environ` de todo processo e tenta reabrir
+    e ler cada `/proc/<pid>/fd/*` dos processos do `ward` e do terminal falso. Conta
+    onde o token apareceu."""
+
+    def __init__(self, agulha):
+        super().__init__(daemon=True)
+        self.agulha = agulha
+        self.parar = False
+        self.achados = []
+        self.varridos = 0
+        self.wards = set()
+        self.fds_tentados = 0
+
+    def run(self):
+        while not self.parar:
+            for d in glob.glob("/proc/[0-9]*"):
+                for arq in ("cmdline", "environ"):
+                    try:
+                        c = open(os.path.join(d, arq), "rb").read()
+                    except OSError:
+                        continue
+                    self.varridos += 1
+                    if self.agulha in c:
+                        self.achados.append(f"{d}/{arq}")
+                try:
+                    a0 = open(os.path.join(d, "cmdline"), "rb").read().split(b"\0")
+                except OSError:
+                    continue
+                if WARD.encode() in a0 or b"terminal-falso" in a0:
+                    self.wards.add(d)
+                    for f in glob.glob(os.path.join(d, "fd", "*")):
+                        # 0–2 são os pipes deste script (ler o 1 ou o 2 roubaria a
+                        # saída da CLI); o canal é ≥ 3.
+                        if os.path.basename(f) in ("0", "1", "2"):
+                            continue
+                        self.fds_tentados += 1
+                        try:
+                            fd = os.open(f, os.O_RDONLY | os.O_NONBLOCK)
+                        except OSError:
+                            continue
+                        try:
+                            if self.agulha in os.read(fd, 4096):
+                                self.achados.append(f)
+                        except OSError:
+                            pass
+                        finally:
+                            os.close(fd)
+            time.sleep(0.005)
+
+
+alfabeto = string.ascii_letters + string.digits
+token = "".join(secrets.choice(alfabeto) for _ in range(32)).encode()
+antes = linhas_token_invalido()
+leitor = LeitorDeProc(token)
+leitor.start()
+r = ssh_com_canal(token, ["acme-pg-aprovacao", "id"])
+time.sleep(0.2)
+leitor.parar = True
+leitor.join()
+conferir(r.returncode == 125 and (b"pedido negado" in r.stderr or "aprovação indisponível".encode() in r.stderr),
+         f"27a ward ssh --token-fd pelo terminal falso: token inventado, vale o nível ({r.returncode}, {r.stderr[:80]!r})")
+conferir(linhas_token_invalido() == antes + 1,
+         "27a o token chegou ao daemon pelo canal (uma linha 'token inválido' a mais no log)")
+conferir(leitor.varridos > 0 and leitor.wards, f"27a o leitor varreu {leitor.varridos} arquivos e viu o ward")
+conferir(not leitor.achados, f"27a token em nenhum /proc/*/cmdline, environ ou fd reaberto ({leitor.achados})")
+conferir(token not in r.stdout + r.stderr, "27a o token não volta na saída")
+
+# `--token` em argv: recusado (2) sem conectar (nada novo no log do daemon).
+antes = linhas_token_invalido()
+for args in (["--token", token.decode(), "acme-pg-aprovacao", "id"],
+             ["--token=" + token.decode(), "acme-pg-aprovacao", "id"]):
+    r = ssh(args)
+    conferir(r.returncode == 2 and b"linha de comando" in r.stderr and token not in r.stderr,
+             f"27a {args[0][:8]} em argv recusado sem eco ({r.returncode})")
+conferir(linhas_token_invalido() == antes, "27a --token em argv não chega ao daemon")
+
+# Canal forjado: lixo, vazio, grande, pipe (reabrível por /proc), fd fechado.
+casos = [
+    (b"falso-lixo;id\n" * 2, "socket", "fora do formato"),
+    (b"", "socket", "veio vazio"),
+    (b"A" * 4096, "socket", "passa do tamanho"),
+    (token, "pipe", "não é o do app"),
+]
+for conteudo, canal, msg in casos:
+    r = ssh_com_canal(conteudo, ["acme-pg-aprovacao", "id"], canal=canal)
+    conferir(r.returncode == 125 and msg.encode() in r.stderr and b"falso" not in r.stderr
+             and token not in r.stderr and b"AAAA" not in r.stderr,
+             f"27a canal {canal} ({msg}) recusado sem eco ({r.returncode}, {r.stderr[:70]!r})")
+r = ssh(["--token-fd", "1000", "acme-pg-aprovacao", "id"])
+conferir(r.returncode == 125 and "não está aberto".encode() in r.stderr, f"27a fd fechado recusado ({r.returncode})")
+conferir(linhas_token_invalido() == antes, "27a nenhum canal forjado chegou ao daemon")
 
 print(f"\n{len(falhas)} falha(s)")
 sys.exit(1 if falhas else 0)

@@ -1,9 +1,23 @@
 //! "Conectar" da entrada `servidor` (D3, V5.24, Fase 34).
 //!
 //! O app pede ao daemon um token de uso único (`emitir_token`: 30 s, uma conexão, preso
-//! à entrada) e abre o terminal padrão rodando `ward ssh --token <t> <entrada>`. O token
-//! não é segredo de credencial (D3) e morre no primeiro uso; mesmo assim ele só vai ao
-//! argv do terminal, nunca à interface nem a log.
+//! à entrada) e abre o terminal padrão rodando `ward ssh --token-fd <n> <entrada>`.
+//!
+//! O token pula o nível e a aprovação, então nenhum outro processo do mesmo uid pode
+//! vê-lo (Fase 27a; achado alto da auditoria do M3). Ele **nunca** vai em argv nem em
+//! variável de ambiente (`/proc/<pid>/cmdline` e `/proc/<pid>/environ` são legíveis pelo
+//! mesmo uid), nem à interface, nem a log. Vai por um socket Unix
+//! ([`ward_plataforma::conectar::CanalConectar`]): o app escreve o token e fecha a ponta
+//! dele; a outra ponta é o único fd ≥ 3 que o terminal herda, e o terminal a repassa ao
+//! `ward ssh`, que lê o token e fecha o fd antes de conectar. O número do fd vai em
+//! argv (não é segredo). Um socket não reabre por `/proc/<pid>/fd/<n>`, ao contrário de
+//! pipe ou arquivo.
+//!
+//! Terminais conferidos (o terminal tem de repassar o fd herdado ao comando do `-e`):
+//! `cosmic-term` (o `x-terminal-emulator` do COSMIC) e `xterm`. Um terminal que entrega
+//! o comando a um servidor já aberto (ex.: `gnome-terminal`) não repassa o fd: o
+//! `ward ssh` sai com "o canal do token do Conectar não está aberto" e não conecta
+//! (falha fechada).
 //!
 //! O [`Terminal`] real ([`TerminalDoSistema`]) chama `/usr/bin/x-terminal-emulator -e`
 //! (o terminal padrão do Debian/Ubuntu; a política do Debian exige o `-e <comando>
@@ -14,6 +28,7 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use ward_plataforma::conectar::CanalConectar;
 use zeroize::Zeroizing;
 
 use crate::ErroApp;
@@ -32,9 +47,8 @@ const MIN_TOKEN: usize = 16;
 const MAX_TOKEN: usize = 64;
 
 impl Token {
-    /// A resposta do daemon não é confiável (S1): o token vai para o argv de outro
-    /// programa, então só `[A-Za-z0-9_-]`, de 16 a 64 bytes, sem começar por `-` (não
-    /// vira opção).
+    /// A resposta do daemon não é confiável (S1): só `[A-Za-z0-9_-]`, de 16 a 64 bytes,
+    /// sem começar por `-` (o formato que o `ward ssh` aceita do canal).
     pub fn de_resposta(bytes: &[u8]) -> Option<Token> {
         let ok = (MIN_TOKEN..=MAX_TOKEN).contains(&bytes.len())
             && bytes[0] != b'-'
@@ -109,12 +123,37 @@ impl Default for TerminalDoSistema {
     }
 }
 
+/// O comando do terminal e o canal do token. O canal tem de viver até o `spawn`
+/// voltar ([`Abertura::abrir`] cuida disso).
+pub struct Abertura {
+    pub comando: Command,
+    canal: CanalConectar,
+}
+
+impl Abertura {
+    /// Roda o terminal e solta a ponta do canal do app: o terminal fica com a única
+    /// cópia, e o token, só na fila do socket.
+    pub fn abrir(mut self) -> std::io::Result<std::process::Child> {
+        let filho = self.comando.spawn();
+        drop(self.canal);
+        filho
+    }
+}
+
 impl TerminalDoSistema {
-    /// O comando, sem rodar (os testes conferem argv e ambiente).
-    pub fn comando(&self, entrada: &str, token: &Token) -> Result<Command, ErroApp> {
+    /// Para os testes: outro emulador e outro `ward`.
+    pub fn com_caminhos(emulador: PathBuf, ward: PathBuf) -> TerminalDoSistema {
+        TerminalDoSistema { emulador, ward }
+    }
+
+    /// O comando, sem rodar (os testes conferem argv e ambiente), com o canal do token
+    /// já escrito. O token não vai em argv nem no ambiente: só o número do fd.
+    pub fn comando(&self, entrada: &str, token: &Token) -> Result<Abertura, ErroApp> {
         if !entrada_para_argv(entrada) {
             return Err(ErroApp::PedidoInvalido);
         }
+        let canal = CanalConectar::novo(token.expor().as_bytes())
+            .map_err(|_| ErroApp::TerminalIndisponivel)?;
         let mut c = Command::new(&self.emulador);
         c.env_clear()
             .env("PATH", "/usr/local/bin:/usr/bin:/bin")
@@ -124,20 +163,21 @@ impl TerminalDoSistema {
             .stderr(Stdio::null())
             .arg("-e")
             .arg(&self.ward)
-            .args(["ssh", "--token", token.expor(), entrada]);
+            .args(["ssh", "--token-fd", &canal.numero().to_string(), entrada]);
         for k in AMBIENTE_DO_TERMINAL {
             if let Some(v) = std::env::var_os(k) {
                 c.env(k, v);
             }
         }
-        Ok(c)
+        canal.preparar(&mut c);
+        Ok(Abertura { comando: c, canal })
     }
 }
 
 impl Terminal for TerminalDoSistema {
     fn abrir(&self, entrada: &str, token: &Token) -> Result<(), ErroApp> {
-        let mut c = self.comando(entrada, token)?;
-        let mut filho = c.spawn().map_err(|_| ErroApp::TerminalIndisponivel)?;
+        let a = self.comando(entrada, token)?;
+        let mut filho = a.abrir().map_err(|_| ErroApp::TerminalIndisponivel)?;
         // Espera o terminal numa thread para não deixar processo zumbi.
         std::thread::spawn(move || {
             let _ = filho.wait();
@@ -188,19 +228,21 @@ mod testes {
     #[test]
     fn comando_do_terminal_com_ambiente_do_zero() {
         let t = Token::de_resposta(b"tokendeteste0123456789").unwrap();
-        let c = TerminalDoSistema::default()
+        let a = TerminalDoSistema::default()
             .comando("acme-ssh-salto", &t)
             .unwrap();
+        let c = &a.comando;
         assert_eq!(c.get_program(), "/usr/bin/x-terminal-emulator");
         let args: Vec<_> = c.get_args().map(|a| a.to_str().unwrap()).collect();
+        let fd = a.canal.numero().to_string();
         assert_eq!(
             args,
             [
                 "-e",
                 "/usr/local/bin/ward",
                 "ssh",
-                "--token",
-                "tokendeteste0123456789",
+                "--token-fd",
+                fd.as_str(),
                 "acme-ssh-salto"
             ]
         );
@@ -214,6 +256,150 @@ mod testes {
                 "{k}"
             );
         }
+        // Fase 27a: o token não está em nenhum argumento nem valor de ambiente.
+        for v in c
+            .get_args()
+            .chain(c.get_envs().filter_map(|(_, v)| v))
+            .chain([c.get_program()])
+        {
+            assert!(!v.to_string_lossy().contains("tokendeteste"), "{v:?}");
+        }
         assert_eq!(c.get_current_dir(), Some(Path::new("/")));
+    }
+
+    /// Fase 27a (achado alto da auditoria do M3): um "Conectar" de verdade, com um
+    /// terminal falso (tira o `-e` e roda o resto) e um `ward` falso (lê o fd do
+    /// `--token-fd`, grava o que leu e a lista de fds, e espera). Enquanto os dois rodam,
+    /// um leitor em laço varre `/proc/*/cmdline` e `/proc/*/environ` de todo processo e
+    /// tenta reabrir `/proc/<pid>/fd/*` do terminal e do `ward`: o token não aparece em
+    /// lugar nenhum, e o `ward` falso o recebe inteiro pelo canal.
+    #[test]
+    fn ataque_token_do_conectar_nao_aparece_em_proc() {
+        use std::os::unix::fs::PermissionsExt;
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+        let base = std::env::temp_dir().join(format!("ward-terminal-27a-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir(&base).unwrap();
+        std::fs::set_permissions(&base, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let emulador = base.join("terminal-falso");
+        let ward = base.join("ward-falso");
+        let saida = base.join("saida");
+        let pronto = base.join("pronto");
+        std::fs::write(&emulador, "#!/bin/sh\nshift\nexec \"$@\"\n").unwrap();
+        // $1=ssh $2=--token-fd $3=<n> $4=<entrada>. Lê o canal, lista os fds e fica
+        // vivo um pouco para o leitor varrer o processo com o fd ainda aberto.
+        std::fs::write(
+            &ward,
+            format!(
+                "#!/bin/sh\nls -l /proc/$$/fd > '{d}/fds' 2>&1\nsleep 0.4\n\
+                 eval \"cat <&$3\" > '{s}'\n: > '{p}'\nsleep 0.4\n",
+                d = base.display(),
+                s = saida.display(),
+                p = pronto.display()
+            ),
+        )
+        .unwrap();
+        for f in [&emulador, &ward] {
+            std::fs::set_permissions(f, std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
+
+        // Token novo a cada rodada, gerado aqui (nunca escrito no repositório).
+        let gerado = ward_core::gerador::token_conectar().unwrap();
+        let token = Token::de_resposta(gerado.expor()).unwrap();
+        let agulha = gerado.expor().to_vec();
+
+        let parar = Arc::new(AtomicBool::new(false));
+        let achados = Arc::new(AtomicUsize::new(0));
+        let varridos = Arc::new(AtomicUsize::new(0));
+        let fds_tentados = Arc::new(AtomicUsize::new(0));
+        let leitor = {
+            let (parar, achados, varridos, fds_tentados) = (
+                parar.clone(),
+                achados.clone(),
+                varridos.clone(),
+                fds_tentados.clone(),
+            );
+            let agulha = agulha.clone();
+            let ward = ward.clone();
+            std::thread::spawn(move || {
+                let contem = |b: &[u8]| b.windows(agulha.len()).any(|w| w == agulha);
+                while !parar.load(Ordering::Relaxed) {
+                    let Ok(dir) = std::fs::read_dir("/proc") else {
+                        continue;
+                    };
+                    for p in dir.flatten() {
+                        let nome = p.file_name();
+                        if !nome.to_string_lossy().bytes().all(|b| b.is_ascii_digit()) {
+                            continue;
+                        }
+                        for arq in ["cmdline", "environ"] {
+                            if let Ok(b) = std::fs::read(p.path().join(arq)) {
+                                varridos.fetch_add(1, Ordering::Relaxed);
+                                if contem(&b) {
+                                    achados.fetch_add(1, Ordering::Relaxed);
+                                }
+                            }
+                        }
+                        // Os processos do terminal e do `ward` falsos: reabrir cada fd.
+                        let cmd = std::fs::read(p.path().join("cmdline")).unwrap_or_default();
+                        if contem_caminho(&cmd, &ward)
+                            && let Ok(fds) = std::fs::read_dir(p.path().join("fd"))
+                        {
+                            for f in fds.flatten() {
+                                // 0–2 são os arquivos de saída do próprio teste (o
+                                // `ward` falso grava neles o que leu); o canal é ≥ 3.
+                                if matches!(f.file_name().to_str(), Some("0" | "1" | "2")) {
+                                    continue;
+                                }
+                                fds_tentados.fetch_add(1, Ordering::Relaxed);
+                                if let Ok(mut a) = std::fs::File::open(f.path()) {
+                                    let mut buf = vec![0u8; 256];
+                                    if let Ok(n) = std::io::Read::read(&mut a, &mut buf)
+                                        && contem(&buf[..n])
+                                    {
+                                        achados.fetch_add(1, Ordering::Relaxed);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            })
+        };
+
+        let t = TerminalDoSistema::com_caminhos(emulador.clone(), ward.clone());
+        let a = t.comando("acme-ssh-salto", &token).unwrap();
+        let mut filho = a.abrir().unwrap();
+        let st = filho.wait().unwrap();
+        parar.store(true, Ordering::Relaxed);
+        leitor.join().unwrap();
+
+        assert!(st.success(), "{st:?}");
+        assert!(pronto.exists());
+        assert_eq!(
+            std::fs::read(&saida).unwrap(),
+            agulha,
+            "o ward não recebeu o token"
+        );
+        let fds = std::fs::read_to_string(base.join("fds")).unwrap();
+        assert!(fds.contains("socket:["), "{fds}");
+        assert!(varridos.load(Ordering::Relaxed) > 0);
+        assert!(
+            fds_tentados.load(Ordering::Relaxed) > 0,
+            "o leitor não viu o ward"
+        );
+        assert_eq!(
+            achados.load(Ordering::Relaxed),
+            0,
+            "token visto por outro processo"
+        );
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    fn contem_caminho(cmdline: &[u8], caminho: &Path) -> bool {
+        let c = caminho.as_os_str().as_encoded_bytes();
+        cmdline.split(|b| *b == 0).any(|a| a == c)
     }
 }

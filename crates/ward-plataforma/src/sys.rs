@@ -741,6 +741,66 @@ pub(crate) fn fechar_fds_no_exec(cmd: &mut std::process::Command) {
     }
 }
 
+/// Como [`fechar_fds_no_exec`], mas deixa `fd` aberto no programa (Fase 27a, canal do
+/// "Conectar"): depois do `fork`, marca todo fd ≥ 3 com `FD_CLOEXEC` e então tira a
+/// marca só de `fd`. O número não muda (sem `dup2`), então não pisa no canal do `std`
+/// que avisa a falha do `exec`. Quem chama mantém `fd` aberto até o `spawn` voltar.
+#[allow(unsafe_code)]
+pub(crate) fn herdar_so_no_exec(cmd: &mut std::process::Command, fd: libc::c_int) {
+    use std::os::unix::process::CommandExt;
+    // SAFETY: roda no filho entre o `fork` e o `exec` e só faz duas syscalls
+    // (`close_range` e `fcntl(F_SETFD)`), ambas async-signal-safe: não alocam nem tocam
+    // em trava. `fd` é só um inteiro copiado para o fechamento.
+    unsafe {
+        cmd.pre_exec(move || {
+            let r = libc::syscall(
+                libc::SYS_close_range,
+                3 as libc::c_uint,
+                libc::c_uint::MAX,
+                libc::CLOSE_RANGE_CLOEXEC,
+            );
+            if r != 0 {
+                return Err(io::Error::last_os_error());
+            }
+            if libc::fcntl(fd, libc::F_SETFD, 0) != 0 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+}
+
+/// Toma posse de um fd herdado pelo número (Fase 27a: `ward ssh --token-fd <n>`). Só
+/// aceita `n ≥ 3` (nunca a entrada e as saídas padrão) e um fd aberto que seja socket
+/// (`SO_DOMAIN` responde); qualquer outra coisa é recusada **sem** tomar posse. O fd
+/// fica com `FD_CLOEXEC` antes de voltar.
+///
+/// Quem chama faz isso uma vez, no começo do processo, com o número que o pai passou:
+/// nada deste processo abriu aquele fd, então o `OwnedFd` devolvido é o único dono.
+#[allow(unsafe_code)]
+pub(crate) fn tomar_socket_herdado(n: libc::c_int) -> io::Result<OwnedFd> {
+    if n < 3 {
+        return Err(io::ErrorKind::InvalidInput.into());
+    }
+    // SAFETY: `F_GETFD` só consulta a tabela de fds; não recebe ponteiro.
+    if unsafe { libc::fcntl(n, libc::F_GETFD) } < 0 {
+        return Err(erro_os());
+    }
+    // SAFETY: o fd `n` acabou de ser conferido como aberto, e o empréstimo só vive nesta
+    // função, que não o fecha.
+    let emprestado = unsafe { BorrowedFd::borrow_raw(n) };
+    sockopt_int(emprestado, libc::SO_DOMAIN)?;
+    // SAFETY: `n` está aberto, é socket, veio do pai deste processo (argv) e nada deste
+    // processo o abriu nem o guarda (contrato acima): o `OwnedFd` passa a ser o único
+    // dono e o fecha ao sair.
+    let dono = unsafe { OwnedFd::from_raw_fd(n) };
+    // SAFETY: `F_SETFD` com `FD_CLOEXEC` só muda a flag do fd, que é nosso.
+    if unsafe { libc::fcntl(dono.as_raw_fd(), libc::F_SETFD, libc::FD_CLOEXEC) } < 0 {
+        return Err(erro_os());
+    }
+    Ok(dono)
+}
+
 /// `clock_gettime(CLOCK_BOOTTIME)`: relógio monotônico que **conta o tempo suspenso**
 /// (o `Instant` do Rust usa `CLOCK_MONOTONIC`, que para na suspensão). Serve à trava por
 /// inatividade (Fase 24): 4 h com a máquina suspensa contam como 4 h sem uso.
