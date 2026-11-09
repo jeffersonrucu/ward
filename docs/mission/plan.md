@@ -1176,9 +1176,35 @@ V6.1–V6.6 e V6.13–V6.16 passam como escritas.
   `PasswordLeakDetectionEnabled`. O Chrome pode oferecer guardar a senha e manda um hash
   dela ao Google.
 - **Baixo:** `apagar_sessoes` (`playwright.rs:172-185`) segue link no `read_dir`.
-Decisão do usuário pendente.
+Decisões do usuário (2026-11-09):
+- localhost: aprovação com clique para origem `http`;
+- pipe CDP: aceito no RA10, com o texto ampliado;
+- gerenciador de senhas do Chrome: desligar os dois.
 
-- [ ] Fase 44b — Baixos do scrutiny do M6, sem bloquear:
+- [ ] Fase 44c — Achados da auditoria do M6 (com a 44b junto).
+  - **Origem `http`** (`localhost`/`127.0.0.1`): `ward playwright`, `ward login` e o
+    preencher do popup sempre passam pela janela de aprovação do app, com a origem à
+    vista, mesmo no nível "livre". Sem app, "aprovação indisponível". Sem PIN extra no
+    nível livre, salvo se o nível já pedir. Para `https`, nada muda.
+    - O Chrome do `ward playwright` passa a usar
+      `--host-resolver-rules="MAP localhost 127.0.0.1"`.
+    - Teste de ataque com o falso em `[::1]:<porta>` (script
+      `scratchpad/falso_v6.py` da auditoria): sem aprovar, nada sai; o pedido mostra a
+      origem.
+    - Atualizar D9, a ameaça 4 e o contrato (V6.x).
+  - **RA10 ampliado** (`docs/escopo.md`, PRD): um processo do mesmo uid lê e escreve nos
+    pipes do Chrome por `/proc/<pid>/fd` (o pipe CDP do `ward playwright` e o stdout do
+    `ward-nm` no Chrome do usuário). Corrigir o "Fora do modelo", que diz que o Yama
+    protege o Chrome contra quem não é ancestral; isso não vale para fds.
+  - **Política do Chrome** (`instalar.sh` e `.deb`): `PasswordManagerEnabled: false` e
+    `PasswordLeakDetectionEnabled: false`, conferidos no `teste-install`/`teste-deb` e no
+    `teste-politica-chrome`. Explicar o efeito no `docs/instalacao.md`.
+  - **Baixo:** `apagar_sessoes` (`playwright.rs:172-185`) usa `symlink_metadata` ou
+    `preparar_diretorio` antes de listar; teste com link.
+  - **44b:** mensagem real do `ward login` negado no roteiro do M6; comentário de
+    `extensao/pagina.js:9-13`.
+  S1, S9, S10, V6.*, V9.5.
+- [x] Fase 44b — (juntada à 44c) Baixos do scrutiny do M6, sem bloquear:
   - o passo 1.2 do roteiro do M6 cita a mensagem "negado"; conferir a mensagem real do
     `ward login` negado;
   - corrigir o comentário de `extensao/pagina.js:9-13` sobre clobbering do `document`.
