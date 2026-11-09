@@ -195,7 +195,9 @@ pub fn caminho_de_teste(p: &Path) -> Result<PathBuf, String> {
     }
 }
 
-async fn conectar(socket: &Path) -> Option<Connection> {
+/// Conexão ao barramento em `socket` (caminho conferido por [`caminho_de_teste`]), com o
+/// prazo [`PRAZO_CHAMADA`]. Também usada pelo udisks2 (Fase 46).
+pub(crate) async fn conectar(socket: &Path) -> Option<Connection> {
     let caminho = caminho_de_teste(socket).ok()?;
     let endereco = format!("unix:path={}", caminho.display());
     Builder::address(endereco.as_str())

@@ -121,6 +121,32 @@ pub(crate) fn pidfd_vivo(pidfd: BorrowedFd<'_>) -> io::Result<bool> {
     }
 }
 
+/// `renameat2(dir, de, dir, para, RENAME_NOREPLACE)`: renomeia dentro de `dir` sem
+/// nunca sobrescrever (`EEXIST` se `para` existe). Funciona em vfat, que não tem
+/// `link(2)` (Fase 46).
+#[allow(unsafe_code)]
+pub(crate) fn renameat_sem_sobrescrever(
+    dir: BorrowedFd<'_>,
+    de: &CStr,
+    para: &CStr,
+) -> io::Result<()> {
+    // SAFETY: `dir` está aberto pelo empréstimo; `de` e `para` são strings C válidas até
+    // o fim da chamada, e o kernel só as lê.
+    let r = unsafe {
+        libc::renameat2(
+            dir.as_raw_fd(),
+            de.as_ptr(),
+            dir.as_raw_fd(),
+            para.as_ptr(),
+            libc::RENAME_NOREPLACE,
+        )
+    };
+    if r != 0 {
+        return Err(erro_os());
+    }
+    Ok(())
+}
+
 /// `openat(dir, nome, flags | O_CLOEXEC)`. `nome` é relativo a `dir`.
 #[allow(unsafe_code)]
 pub(crate) fn openat(dir: BorrowedFd<'_>, nome: &CStr, flags: libc::c_int) -> io::Result<OwnedFd> {

@@ -48,7 +48,10 @@ fn dados_validos(op: Operacao) -> String {
         | Operacao::Travar
         | Operacao::Lista
         | Operacao::AbrirApp
-        | Operacao::Backups => "{}".into(),
+        | Operacao::Backups
+        | Operacao::BackupExterno
+        | Operacao::Pendrives => "{}".into(),
+        Operacao::DefinirBackupExterno => r#"{"ligado":true,"uuid":"ABCD-1234"}"#.into(),
         Operacao::RestaurarBackup => {
             format!(r#"{{"versao":"ward-20261109-153000.ward","senha":"{senha}","pin":"{pin}"}}"#)
         }
@@ -197,6 +200,15 @@ fn uma_resposta_de_cada() -> Vec<Resposta> {
             "ward-20261109-153000-1.ward".into(),
             "ward-20261109-153000.ward".into(),
         ]),
+        Resposta::BackupExterno {
+            ligado: true,
+            uuid: Some("ABCD-1234".into()),
+        },
+        Resposta::Pendrives(vec![Pendrive {
+            uuid: "ABCD-1234".into(),
+            rotulo: "PENDRIVE \"A\"".into(),
+            montado: true,
+        }]),
     ]
 }
 
@@ -240,6 +252,9 @@ fn v3_15_tabela_operacao_papel() {
         ("tempo_trava", false, true, false),
         ("backups", false, true, false),
         ("restaurar_backup", false, true, false),
+        ("backup_externo", false, true, false),
+        ("definir_backup_externo", false, true, false),
+        ("pendrives", false, true, false),
         ("sugerir", false, false, true),
         ("preencher", false, false, true),
         ("salvar_login", false, false, true),
@@ -279,6 +294,8 @@ fn v3_15_tabela_operacao_papel() {
         ("sugestoes", false, false, true, false),
         ("preenchimento", false, false, true, true),
         ("backups", false, true, false, false),
+        ("backup_externo", false, true, false, false),
+        ("pendrives", false, true, false, false),
     ];
     let real: Vec<_> = TipoResposta::TODAS
         .iter()
@@ -1810,4 +1827,142 @@ fn ataque_restaurar_com_caminho_no_nome_recusado() {
     assert!(decodificar_resposta(Papel::App, quadro.as_bytes()).is_err());
     let muitos = Resposta::Backups(vec!["ward-20261109-153000.ward".into(); MAX_BACKUPS + 1]);
     assert!(codificar_resposta(Papel::App, &muitos).is_err());
+}
+
+// ---- Fase 46: backup externo ----
+
+/// V7.8 (D17, D30): o agente e a extensão pedindo `backup_externo`,
+/// `definir_backup_externo` ou `pendrives` recebem "não autorizado", com qualquer campo;
+/// o app é atendido. As respostas `backup_externo` e `pendrives` não vão a outro papel.
+#[test]
+fn v7_8_backup_externo_so_pelo_app() {
+    for op in [
+        Operacao::BackupExterno,
+        Operacao::DefinirBackupExterno,
+        Operacao::Pendrives,
+    ] {
+        let bom = quadro_de(op, &dados_validos(op));
+        for papel in [Papel::Agente, Papel::Extensao] {
+            for q in [
+                bom.clone(),
+                quadro_de(op, "{}"),
+                quadro_de(op, r#"{"ligado":true,"uuid":"ABCD-1234"}"#),
+                quadro_de(op, r#"{"ligado":false}"#),
+                quadro_de(op, &com_campo(&dados_validos(op), r#""papel":"app""#)),
+            ] {
+                assert_eq!(
+                    ped(papel, &q).unwrap_err(),
+                    ErroResposta::NaoAutorizado,
+                    "{} pelo {}",
+                    op.nome(),
+                    papel.nome()
+                );
+            }
+            let p = ped(Papel::App, &bom).unwrap();
+            assert_eq!(
+                codificar_pedido(papel, &p).unwrap_err(),
+                ErroCodificar::NaoPermitidaAoPapel
+            );
+        }
+        assert!(ped(Papel::App, &bom).is_ok());
+    }
+    for r in [
+        Resposta::BackupExterno {
+            ligado: true,
+            uuid: Some("ABCD-1234".into()),
+        },
+        Resposta::Pendrives(vec![Pendrive {
+            uuid: "ABCD-1234".into(),
+            rotulo: "PENDRIVE".into(),
+            montado: true,
+        }]),
+    ] {
+        for papel in [Papel::Agente, Papel::Extensao] {
+            assert_eq!(
+                codificar_resposta(papel, &r).unwrap_err(),
+                ErroCodificar::NaoPermitidaAoPapel
+            );
+        }
+        let bytes = codificar_resposta(Papel::App, &r).unwrap();
+        assert!(decodificar_resposta(Papel::Agente, &bytes).is_err());
+        assert!(decodificar_resposta(Papel::Extensao, &bytes).is_err());
+        assert!(decodificar_resposta(Papel::App, &bytes).is_ok());
+    }
+}
+
+/// O UUID do `definir_backup_externo` segue a configuração (D45): caminho, `..`, espaço,
+/// `-` nas pontas, longo, vazio, ligado sem UUID e campo a mais são recusados; uma
+/// resposta `pendrives` com UUID ruim ou rótulo com caractere de controle também.
+#[test]
+fn ataque_definir_backup_externo_fora_do_formato() {
+    for dados in [
+        r#"{"ligado":true}"#.to_owned(),
+        r#"{"ligado":true,"uuid":""}"#.to_owned(),
+        r#"{"ligado":true,"uuid":"../../etc"}"#.to_owned(),
+        r#"{"ligado":true,"uuid":"/media/usuario/PEN"}"#.to_owned(),
+        r#"{"ligado":true,"uuid":"ABCD 1234"}"#.to_owned(),
+        r#"{"ligado":true,"uuid":"-ABCD"}"#.to_owned(),
+        r#"{"ligado":true,"uuid":"ABCD-"}"#.to_owned(),
+        r#"{"ligado":true,"uuid":"xyz"}"#.to_owned(),
+        format!(r#"{{"ligado":true,"uuid":"{}"}}"#, "A".repeat(37)),
+        r#"{"ligado":"sim","uuid":"ABCD-1234"}"#.to_owned(),
+        r#"{"uuid":"ABCD-1234"}"#.to_owned(),
+        r#"{"ligado":true,"uuid":"ABCD-1234","caminho":"/tmp"}"#.to_owned(),
+    ] {
+        let q = quadro_de(Operacao::DefinirBackupExterno, &dados);
+        assert_eq!(
+            ped(Papel::App, &q).unwrap_err(),
+            ErroResposta::PedidoInvalido,
+            "{dados}"
+        );
+    }
+    // Desligado, com ou sem UUID; ligado com o UUID (vfat e ext4).
+    for dados in [
+        r#"{"ligado":false}"#,
+        r#"{"ligado":false,"uuid":"ABCD-1234"}"#,
+        r#"{"ligado":true,"uuid":"0f3c2b7e-9a51-4c1e-8d2f-5b6a7c8d9e01"}"#,
+    ] {
+        let q = quadro_de(Operacao::DefinirBackupExterno, dados);
+        assert!(ped(Papel::App, &q).is_ok(), "{dados}");
+    }
+    let p = Pedido::DefinirBackupExterno {
+        ligado: true,
+        uuid: None,
+    };
+    assert_eq!(
+        codificar_pedido(Papel::App, &p).unwrap_err(),
+        ErroCodificar::Invalida
+    );
+    for ruim in [
+        Resposta::Pendrives(vec![Pendrive {
+            uuid: "../x".into(),
+            rotulo: "PEN".into(),
+            montado: true,
+        }]),
+        Resposta::Pendrives(vec![Pendrive {
+            uuid: "ABCD-1234".into(),
+            rotulo: "PEN\u{1b}[2J".into(),
+            montado: true,
+        }]),
+        Resposta::Pendrives(vec![
+            Pendrive {
+                uuid: "ABCD-1234".into(),
+                rotulo: String::new(),
+                montado: false,
+            };
+            MAX_PENDRIVES + 1
+        ]),
+        Resposta::BackupExterno {
+            ligado: true,
+            uuid: None,
+        },
+    ] {
+        assert_eq!(
+            codificar_resposta(Papel::App, &ruim).unwrap_err(),
+            ErroCodificar::Invalida,
+            "{ruim:?}"
+        );
+    }
+    let quadro = r#"{"v":1,"tipo":"pendrives","dados":{"itens":[{"uuid":"ABCD-1234","rotulo":"a\u0007b","montado":true}]}}"#;
+    assert!(decodificar_resposta(Papel::App, quadro.as_bytes()).is_err());
 }

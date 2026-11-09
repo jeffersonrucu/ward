@@ -322,6 +322,16 @@ pub struct Sugestao {
     pub usuario: String,
 }
 
+/// Um pendrive visto pelo udisks2 (Fase 46): o UUID do sistema de arquivos, o rótulo
+/// (sem caractere de controle) e se está montado. Nenhum caminho de montagem vai ao
+/// cliente.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Pendrive {
+    pub uuid: String,
+    pub rotulo: String,
+    pub montado: bool,
+}
+
 /// Resposta do daemon.
 #[derive(Debug)]
 pub enum Resposta {
@@ -364,6 +374,13 @@ pub enum Resposta {
     /// Nomes das versões do backup local, da mais nova para a mais antiga (Fase 45). Só
     /// nomes no formato exato; nenhum caminho, conteúdo ou geração.
     Backups(Vec<String>),
+    /// Configuração do backup externo (Fase 46): ligado ou não e o UUID do pendrive.
+    BackupExterno {
+        ligado: bool,
+        uuid: Option<String>,
+    },
+    /// Pendrives vistos pelo udisks2 (Fase 46), até [`MAX_PENDRIVES`].
+    Pendrives(Vec<Pendrive>),
 }
 
 const OPERACOES_APROVADAS: [Operacao; 4] = [
@@ -397,6 +414,8 @@ impl Resposta {
             Resposta::Sugestoes(_) => TipoResposta::Sugestoes,
             Resposta::Preenchimento { .. } => TipoResposta::Preenchimento,
             Resposta::Backups(_) => TipoResposta::Backups,
+            Resposta::BackupExterno { .. } => TipoResposta::BackupExterno,
+            Resposta::Pendrives(_) => TipoResposta::Pendrives,
         }
     }
 
@@ -466,6 +485,13 @@ impl Resposta {
                 ok(digitos_totp(codigo) && (1..=30).contains(restante))
             }
             Resposta::Backups(l) => ok(l.len() <= MAX_BACKUPS && l.iter().all(|n| backup_ok(n))),
+            Resposta::BackupExterno { ligado, uuid } => {
+                ok(crate::configuracao::BackupExterno::novo(*ligado, uuid.as_deref()).is_ok())
+            }
+            Resposta::Pendrives(l) => ok(l.len() <= MAX_PENDRIVES
+                && l.iter().all(|p| {
+                    crate::configuracao::uuid_valido(p.uuid.as_bytes()) && rotulo_ok(&p.rotulo)
+                })),
             Resposta::Sugestoes(l) => ok(l.len() <= MAX_ENTRADAS
                 && l.iter()
                     .all(|s| s.nome.len() <= MAX_NOME && s.usuario.len() <= MAX_TEXTO)),
@@ -634,6 +660,30 @@ impl Resposta {
                 e.chave("versoes");
                 escrever_textos(e, l);
             }
+            Resposta::BackupExterno { ligado, uuid } => {
+                e.chave("ligado");
+                e.logico(*ligado);
+                if let Some(u) = uuid {
+                    e.chave("uuid");
+                    e.texto(u);
+                }
+            }
+            Resposta::Pendrives(l) => {
+                e.chave("itens");
+                e.lista(|e| {
+                    for p in l {
+                        e.item();
+                        e.objeto(|e| {
+                            e.chave("uuid");
+                            e.texto(&p.uuid);
+                            e.chave("rotulo");
+                            e.texto(&p.rotulo);
+                            e.chave("montado");
+                            e.logico(p.montado);
+                        });
+                    }
+                });
+            }
             Resposta::Sugestoes(l) => {
                 e.chave("itens");
                 e.lista(|e| {
@@ -671,6 +721,16 @@ const MAX_PROBLEMAS: usize = 512;
 /// Mais versões numa resposta `backups`: as 30 da rotação e folga para arquivos com
 /// nome válido postos à mão na pasta (a lista sai cortada nas mais novas).
 pub const MAX_BACKUPS: usize = 64;
+
+/// Mais pendrives numa resposta `pendrives` (Fase 46).
+pub const MAX_PENDRIVES: usize = 32;
+/// Maior rótulo de pendrive, em bytes (o do ext4 tem 16, o do NTFS até 128 em UTF-16).
+pub const MAX_ROTULO: usize = 128;
+
+/// Rótulo de pendrive: até [`MAX_ROTULO`] bytes, sem caractere de controle.
+fn rotulo_ok(r: &str) -> bool {
+    r.len() <= MAX_ROTULO && !r.chars().any(char::is_control)
+}
 
 /// Nome de versão de backup no formato exato (Fase 45).
 fn backup_ok(n: &str) -> bool {
@@ -969,6 +1029,26 @@ pub(crate) fn ler(papel: Papel, tipo: TipoResposta, mut c: Campos) -> R<Resposta
             c.lista("versoes", MAX_BACKUPS)?,
             crate::limites::MAX_NOME,
         )?),
+        TipoResposta::BackupExterno => Resposta::BackupExterno {
+            ligado: c.logico("ligado")?,
+            uuid: c.texto_opc("uuid", crate::limites::MAX_UUID_BACKUP)?,
+        },
+        TipoResposta::Pendrives => {
+            let mut itens = Vec::new();
+            for v in c.lista("itens", MAX_PENDRIVES)? {
+                let mut o = Campos::de(v)?;
+                let uuid = o.texto("uuid", crate::limites::MAX_UUID_BACKUP)?;
+                let rotulo = o.texto("rotulo", MAX_ROTULO)?;
+                let montado = o.logico("montado")?;
+                o.fim()?;
+                itens.push(Pendrive {
+                    uuid,
+                    rotulo,
+                    montado,
+                });
+            }
+            Resposta::Pendrives(itens)
+        }
         TipoResposta::Preenchimento => Resposta::Preenchimento {
             usuario: c.texto("usuario", MAX_TEXTO)?,
             senha: segredo_de(c.tirar("senha").ok_or(JsonInvalido)?, MAX_SEGREDO)?,

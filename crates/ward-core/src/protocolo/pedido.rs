@@ -17,8 +17,8 @@ use crate::entrada::{
 use crate::limites::{
     MAX_ANEXOS, MAX_ANEXOS_SOMADOS, MAX_ARGUMENTO, MAX_ARGUMENTOS, MAX_DIGITOS_PIN, MAX_EXTRAS,
     MAX_MINUTOS_TRAVA, MAX_NOME, MAX_NOME_ANEXO, MAX_NOME_EXTRA, MAX_NOTA, MAX_SEGREDO, MAX_TAG,
-    MAX_TAGS, MAX_TEXTO, MAX_URL, MAX_VALOR_EXTRA, MAX_VARIAVEIS_AMBIENTE, MIN_DIGITOS_PIN,
-    MIN_MINUTOS_TRAVA,
+    MAX_TAGS, MAX_TEXTO, MAX_URL, MAX_UUID_BACKUP, MAX_VALOR_EXTRA, MAX_VARIAVEIS_AMBIENTE,
+    MIN_DIGITOS_PIN, MIN_MINUTOS_TRAVA,
 };
 
 /// Bytes que zeram ao sair (argumento, diretório, nome de variável).
@@ -229,6 +229,17 @@ pub enum Pedido {
         senha: Segredo,
         pin: Segredo,
     },
+    /// Configuração do backup externo (Fase 46), sem campo.
+    BackupExterno,
+    /// Liga ou desliga o backup externo (D17, D30; Fase 46). Ligado exige o UUID do
+    /// sistema de arquivos do pendrive (`[0-9A-Fa-f-]`, até 36, sem `-` nas pontas);
+    /// desligado pode guardar o UUID ou não.
+    DefinirBackupExterno {
+        ligado: bool,
+        uuid: Option<String>,
+    },
+    /// Pendrives vistos pelo udisks2 (Fase 46), sem campo.
+    Pendrives,
 }
 
 impl Pedido {
@@ -264,6 +275,9 @@ impl Pedido {
             Pedido::AbrirApp => Operacao::AbrirApp,
             Pedido::Backups => Operacao::Backups,
             Pedido::RestaurarBackup { .. } => Operacao::RestaurarBackup,
+            Pedido::BackupExterno => Operacao::BackupExterno,
+            Pedido::DefinirBackupExterno { .. } => Operacao::DefinirBackupExterno,
+            Pedido::Pendrives => Operacao::Pendrives,
         }
     }
 
@@ -326,11 +340,14 @@ impl Pedido {
             Pedido::RestaurarBackup { versao, senha, pin } => {
                 ok(versao_ok(versao) && senha_ok(senha) && pin_ok(pin))
             }
+            Pedido::DefinirBackupExterno { ligado, uuid } => ok(backup_externo_ok(*ligado, uuid)),
             Pedido::Estado
             | Pedido::Travar
             | Pedido::Lista
             | Pedido::AbrirApp
-            | Pedido::Backups => Ok(()),
+            | Pedido::Backups
+            | Pedido::BackupExterno
+            | Pedido::Pendrives => Ok(()),
         }
     }
 
@@ -341,7 +358,17 @@ impl Pedido {
             | Pedido::Travar
             | Pedido::Lista
             | Pedido::AbrirApp
-            | Pedido::Backups => {}
+            | Pedido::Backups
+            | Pedido::BackupExterno
+            | Pedido::Pendrives => {}
+            Pedido::DefinirBackupExterno { ligado, uuid } => {
+                e.chave("ligado");
+                e.logico(*ligado);
+                if let Some(u) = uuid {
+                    e.chave("uuid");
+                    e.texto(u);
+                }
+            }
             Pedido::RestaurarBackup { versao, senha, pin } => {
                 e.chave("versao");
                 e.texto(versao);
@@ -514,6 +541,12 @@ fn versao_ok(v: &str) -> bool {
     }
 }
 
+/// Backup externo no formato que a configuração aceita (D45): UUID `[0-9A-Fa-f-]`, de 1
+/// a 36, sem `-` nas pontas; ligado exige o UUID.
+fn backup_externo_ok(ligado: bool, uuid: &Option<String>) -> bool {
+    crate::configuracao::BackupExterno::novo(ligado, uuid.as_deref()).is_ok()
+}
+
 fn senha_ok(s: &Segredo) -> bool {
     !s.is_empty() && s.len() <= MAX_SEGREDO
 }
@@ -604,6 +637,12 @@ pub(crate) fn ler(op: Operacao, mut c: Campos) -> R<Pedido> {
         Operacao::Lista => Pedido::Lista,
         Operacao::AbrirApp => Pedido::AbrirApp,
         Operacao::Backups => Pedido::Backups,
+        Operacao::BackupExterno => Pedido::BackupExterno,
+        Operacao::Pendrives => Pedido::Pendrives,
+        Operacao::DefinirBackupExterno => Pedido::DefinirBackupExterno {
+            ligado: c.logico("ligado")?,
+            uuid: c.texto_opc("uuid", MAX_UUID_BACKUP)?,
+        },
         Operacao::RestaurarBackup => Pedido::RestaurarBackup {
             versao: c.texto("versao", MAX_NOME)?,
             senha: c.segredo("senha", MAX_SEGREDO)?,

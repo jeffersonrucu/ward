@@ -81,6 +81,8 @@ pub enum ErroResposta {
     /// A pasta de backups não está acessível ou não é um diretório 0700 do usuário, ou
     /// o cofre atual não pôde ser guardado antes de restaurar (Fase 45).
     BackupIndisponivel,
+    /// O udisks2 não respondeu: não dá para ver os pendrives (Fase 46).
+    PendrivesIndisponiveis,
     /// Erro interno do daemon (sem detalhe).
     Interno,
 }
@@ -96,7 +98,7 @@ pub const MSG_GERACAO_ESGOTADA: &str =
 
 impl ErroResposta {
     /// Todos os códigos sem dado (o de validação fica de fora).
-    pub const SIMPLES: [ErroResposta; 28] = [
+    pub const SIMPLES: [ErroResposta; 29] = [
         Self::NaoAutorizado,
         Self::Travado,
         Self::TravadoTempoEsgotado,
@@ -124,6 +126,7 @@ impl ErroResposta {
         Self::EntregaFalhou,
         Self::BackupInexistente,
         Self::BackupIndisponivel,
+        Self::PendrivesIndisponiveis,
         Self::Interno,
     ];
 
@@ -158,6 +161,7 @@ impl ErroResposta {
             Self::EntregaFalhou => "entrega_falhou",
             Self::BackupInexistente => "backup_inexistente",
             Self::BackupIndisponivel => "backup_indisponivel",
+            Self::PendrivesIndisponiveis => "pendrives_indisponiveis",
             Self::Interno => "interno",
         }
     }
@@ -193,6 +197,9 @@ impl ErroResposta {
             Self::EntregaFalhou => "a entrega da credencial falhou; nada foi executado",
             Self::BackupInexistente => "a versão do backup não existe",
             Self::BackupIndisponivel => "a pasta de backups não está disponível ou não é segura",
+            Self::PendrivesIndisponiveis => {
+                "não deu para ver os pendrives (o udisks não respondeu)"
+            }
             Self::Interno => "erro interno do Ward",
         }
     }
