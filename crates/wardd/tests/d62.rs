@@ -7,6 +7,7 @@
 mod comum;
 
 use std::fs;
+#[cfg(feature = "ganchos-teste")]
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
@@ -15,7 +16,7 @@ use std::time::Duration;
 use comum::*;
 use ward_core::configuracao::{Configuracao, HashPin};
 use ward_core::formato::{CofreAberto, SenhaMestra};
-use ward_core::protocolo::{ErroResposta, MSG_COFRE_MUDOU, MSG_RETROCESSO, Papel, Resposta};
+use ward_core::protocolo::{ErroResposta, MSG_RETROCESSO, Papel, Resposta};
 use wardd::arquivos::{self, Geracoes};
 use wardd::nucleo::{Caminhos, Daemon, ESPERA_MAXIMA, Relogio, espera_destrave};
 
@@ -360,6 +361,7 @@ fn v3_35_criar_cofre_sem_estado_e_com_estado_invalido() {
 
 /// Troca o arquivo do cofre por uma cópia de bytes iguais em outro inode (o que um
 /// processo do mesmo usuário faria logo depois do rename).
+#[cfg(feature = "ganchos-teste")]
 fn trocar_por_copia(c: &Caminhos) {
     let bytes = fs::read(&c.cofre).unwrap();
     let tmp = c.cofre.with_extension("troca");
@@ -371,6 +373,7 @@ fn trocar_por_copia(c: &Caminhos) {
 /// `gravar_entradas`. A identidade que o daemon guarda é a do fd do temporário, então
 /// a gravação seguinte responde "o arquivo do cofre mudou fora do Ward", trava e não
 /// grava. Com o `stat` depois do rename, a troca passaria como sendo do Ward.
+#[cfg(feature = "ganchos-teste")]
 #[test]
 fn v3_35_troca_logo_depois_do_rename_e_recusada() {
     let dir = Dir::novo("d62-rename");
@@ -408,7 +411,10 @@ fn v3_35_troca_logo_depois_do_rename_e_recusada() {
     let trocado = fs::read(&c.cofre).unwrap();
     let r = pedir(&d, Papel::App, "tempo_trava", r#"{"minutos":32}"#);
     assert_eq!(erro(&r), Some(ErroResposta::CofreMudou));
-    assert_eq!(ErroResposta::CofreMudou.mensagem(), MSG_COFRE_MUDOU);
+    assert_eq!(
+        ErroResposta::CofreMudou.mensagem(),
+        ward_core::protocolo::MSG_COFRE_MUDOU
+    );
     assert!(d.travado());
     assert_eq!(
         fs::read(&c.cofre).unwrap(),

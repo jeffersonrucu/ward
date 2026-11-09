@@ -831,3 +831,102 @@ fn ataque_destravar_pela_ponte() {
     assert_eq!(r.corpo_json().unwrap()["codigo"], "pedido-invalido");
     let _ = fs::remove_dir_all(base);
 }
+
+/// Fase 38 (V5.22, S9): a tela Configurações pela ponte. Padrão 4 h e backup desligado;
+/// tempo fora de 1 a 1440, campo a mais e tipo errado recusados; trocar o PIN pede o
+/// atual e trocar a senha pede a atual; nenhuma resposta traz PIN, senha ou hash.
+#[test]
+fn ataque_configuracoes_pela_ponte() {
+    let base = dist("configuracoes");
+    let servico = Servico::novo(DaemonFalso::cheio(), Copiador::novo(Area::default()));
+    let (p, _l) = Ponte::abrir(servico, &base.join("dist")).unwrap();
+    let pedir = |comando: &str, corpo: &str| {
+        let r = p.responder(&post(&p, comando, corpo, &[]));
+        let texto = String::from_utf8_lossy(&r.corpo).into_owned();
+        for agulha in ["falso-", "1357", "2468", "argon2", "$m="] {
+            assert!(!texto.contains(agulha), "{comando}: {texto}");
+        }
+        r.corpo_json().unwrap()
+    };
+    let v = pedir("configuracoes", "{}");
+    assert_eq!(v["valor"]["minutos_trava"], 240, "{v}");
+    assert_eq!(v["valor"]["backup_externo"], false, "{v}");
+    assert_eq!(
+        pedir("configuracoes", r#"{"hash":1}"#)["codigo"],
+        "pedido-invalido"
+    );
+    let v = pedir("definir_tempo_trava", r#"{"minutos":60}"#);
+    assert_eq!(v["valor"]["minutos_trava"], 60, "{v}");
+    for corpo in [
+        r#"{"minutos":0}"#,
+        r#"{"minutos":1441}"#,
+        r#"{"minutos":"60"}"#,
+        r#"{"minutos":-1}"#,
+        r#"{"minutos":60,"pin":"135790"}"#,
+        r#"{}"#,
+    ] {
+        assert_eq!(
+            pedir("definir_tempo_trava", corpo)["codigo"],
+            "pedido-invalido",
+            "{corpo}"
+        );
+    }
+    assert_eq!(pedir("configuracoes", "{}")["valor"]["minutos_trava"], 60);
+    let troca_pin = |atual: &str, novo: &str, conf: &str| {
+        serde_json::json!({ "dados": { "atual": atual, "novo": novo, "confirmacao": conf } })
+            .to_string()
+    };
+    for (corpo, campo) in [
+        (troca_pin("135", "2468", "2468"), "atual"),
+        (troca_pin("135790", "13579a", "13579a"), "novo"),
+        (troca_pin("135790", "2468", "2469"), "confirmacao"),
+    ] {
+        let v = pedir("trocar_pin", &corpo);
+        assert_eq!(v["valor"]["trocado"], false, "{v}");
+        assert_eq!(v["valor"]["erros"][0]["campo"], campo, "{v}");
+    }
+    for corpo in [
+        r#"{"dados":{"atual":"135790","novo":"2468","confirmacao":"2468","nivel":"livre"}}"#,
+        r#"{"dados":{"atual":135790,"novo":"2468","confirmacao":"2468"}}"#,
+        r#"{"dados":{"atual":"135790","novo":"2468","confirmacao":"2468"},"x":1}"#,
+        r#"{"atual":"135790","novo":"2468"}"#,
+    ] {
+        assert_eq!(
+            pedir("trocar_pin", corpo)["codigo"],
+            "pedido-invalido",
+            "{corpo}"
+        );
+    }
+    assert_eq!(
+        pedir("trocar_pin", &troca_pin("246801", "2468", "2468"))["codigo"],
+        "pin-incorreto"
+    );
+    assert_eq!(
+        pedir("trocar_pin", &troca_pin("135790", "2468", "2468"))["valor"]["trocado"],
+        true
+    );
+    let troca_senha = |atual: &str, nova: &str| {
+        serde_json::json!({ "dados": { "atual": atual, "nova": nova, "confirmacao": nova } })
+            .to_string()
+    };
+    let v = pedir(
+        "trocar_senha_mestra",
+        &troca_senha("falso-mestra-ward-01", "falso-curta"),
+    );
+    assert_eq!(v["valor"]["erros"][0]["campo"], "nova", "{v}");
+    assert_eq!(
+        pedir(
+            "trocar_senha_mestra",
+            &troca_senha("falso-errada-mestra-09", "falso-nova-mestra-02")
+        )["codigo"],
+        "senha-incorreta"
+    );
+    assert_eq!(
+        pedir(
+            "trocar_senha_mestra",
+            &troca_senha("falso-mestra-ward-01", "falso-nova-mestra-02")
+        )["valor"]["trocado"],
+        true
+    );
+    let _ = fs::remove_dir_all(base);
+}

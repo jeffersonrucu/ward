@@ -183,24 +183,17 @@ fn insegura(nome: &[u8]) -> bool {
             .any(|p| nome.starts_with(p.as_bytes()))
 }
 
-/// Nome para a mensagem: só letras ASCII, dígitos e `_` (o resto vira `?`), até
-/// [`MAX_NOME_VARIAVEL`] caracteres.
+/// Nome para a mensagem (V3.25, D48): o prefixo do nome até o primeiro byte fora de
+/// `[A-Za-z0-9_]` (exclusive), com no máximo [`MAX_NOME_VARIAVEL`] caracteres. Nada é
+/// trocado nem acrescentado (sem `?`, sem `…`): a mensagem só leva bytes que vieram
+/// do nome e são desse conjunto, então um `\n`, um `\x1b` ou um nome comprido não
+/// forjam linha nem sequência de terminal no log.
 pub(crate) fn nome_para_mensagem(nome: &[u8]) -> String {
-    let mut s: String = nome
-        .iter()
+    nome.iter()
         .take(MAX_NOME_VARIAVEL)
-        .map(|&b| {
-            if b.is_ascii_alphanumeric() || b == b'_' {
-                char::from(b)
-            } else {
-                '?'
-            }
-        })
-        .collect();
-    if nome.len() > MAX_NOME_VARIAVEL {
-        s.push('…');
-    }
-    s
+        .take_while(|&&b| b.is_ascii_alphanumeric() || b == b'_')
+        .map(|&b| char::from(b))
+        .collect()
 }
 
 fn primeira_variavel_insegura<I, S>(nomes: I) -> Option<String>
@@ -257,11 +250,36 @@ mod testes {
 
     #[test]
     fn ataque_nome_com_controle_nao_vai_cru_para_a_mensagem() {
+        // V3.25: corta no primeiro byte fora de `[A-Za-z0-9_]`, sem trocar por `?`.
         let n = primeira_variavel_insegura([OsStr::from_bytes(b"LD_\x1b[31m\nx\xff")]).unwrap();
-        assert_eq!(n, "LD_??31m?x?");
+        assert_eq!(n, "LD_");
+        let n = primeira_variavel_insegura([OsStr::from_bytes(b"LD_AB\nCD")]).unwrap();
+        assert_eq!(n, "LD_AB");
+        let n = primeira_variavel_insegura([OsStr::from_bytes(b"LD_X\xffY")]).unwrap();
+        assert_eq!(n, "LD_X");
+        let n = primeira_variavel_insegura([OsStr::from_bytes(b"LD_\xe2\x80\xa6")]).unwrap();
+        assert_eq!(n, "LD_");
+        // 200 caracteres: os 64 primeiros, sem `…`.
         let longo = format!("LD_{}", "A".repeat(200));
         let n = primeira_variavel_insegura([longo.as_str()]).unwrap();
-        assert_eq!(n.chars().count(), MAX_NOME_VARIAVEL + 1);
+        assert_eq!(n, longo[..MAX_NOME_VARIAVEL]);
+        // Exatamente 64 passa inteiro; o corte por controle antes do 64º vale.
+        let exato = format!("LD_{}", "B".repeat(MAX_NOME_VARIAVEL - 3));
+        assert_eq!(nome_para_mensagem(exato.as_bytes()), exato);
+        for nome in [
+            &b"LD_\x1b]0;titulo\x07"[..],
+            b"GLIBC_TUNABLES",
+            b"LD_a-b",
+            b"LD_\r\nwardd: forjado",
+        ] {
+            let m = nome_para_mensagem(nome);
+            assert!(m.len() <= MAX_NOME_VARIAVEL);
+            assert!(
+                m.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_'),
+                "{m:?}"
+            );
+            assert!(nome.starts_with(m.as_bytes()), "{m:?} não é prefixo");
+        }
     }
 
     /// D62 (V3.34): release falha fechado sem limite infinito ou com erro do

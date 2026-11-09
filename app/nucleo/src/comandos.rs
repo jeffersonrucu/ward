@@ -79,6 +79,19 @@ pub const PEDIDO_DE_APROVACAO: &str = "pedido_de_aprovacao";
 /// (com PIN, S9, S10). Só a janela `aprovacao`; a resposta não traz o PIN.
 pub const RESPONDER_APROVACAO: &str = "responder_aprovacao";
 
+/// `configuracoes`: tempo de trava e backup externo ligado ou não (Fase 38). Sem
+/// argumento; sem hash de PIN nem UUID.
+pub const CONFIGURACOES: &str = "configuracoes";
+/// `trocar_pin { dados: { atual, novo, confirmacao } }`: troca o PIN pedindo o atual
+/// (Fase 38, V5.22, S9). A resposta traz `trocado` ou os erros por campo, nunca o valor.
+pub const TROCAR_PIN: &str = "trocar_pin";
+/// `trocar_senha_mestra { dados: { atual, nova, confirmacao } }`: troca a senha mestra
+/// pedindo a atual (Fase 38, V5.22). A resposta traz `trocado` ou os erros por campo.
+pub const TROCAR_SENHA_MESTRA: &str = "trocar_senha_mestra";
+/// `definir_tempo_trava { minutos }`: tempo de trava por inatividade, gravado na
+/// configuração do cofre (Fase 38, D30, D45).
+pub const DEFINIR_TEMPO_TRAVA: &str = "definir_tempo_trava";
+
 /// Comandos da janela principal, na ordem da capability `principal`.
 pub const COMANDOS_PRINCIPAL: &[&str] = &[
     ESTADO_DO_COFRE,
@@ -102,6 +115,10 @@ pub const COMANDOS_PRINCIPAL: &[&str] = &[
     CRIAR_COFRE,
     DESTRAVAR,
     OUVIR_AVISOS,
+    CONFIGURACOES,
+    TROCAR_PIN,
+    TROCAR_SENHA_MESTRA,
+    DEFINIR_TEMPO_TRAVA,
 ];
 
 /// Comandos da janela de aprovação, na ordem da capability `aprovacao` (Fase 36). O
@@ -136,6 +153,10 @@ pub const COMANDOS: &[&str] = &[
     CRIAR_COFRE,
     DESTRAVAR,
     OUVIR_AVISOS,
+    CONFIGURACOES,
+    TROCAR_PIN,
+    TROCAR_SENHA_MESTRA,
+    DEFINIR_TEMPO_TRAVA,
     PEDIDO_DE_APROVACAO,
     RESPONDER_APROVACAO,
 ];
@@ -169,6 +190,10 @@ pub enum Comando {
     CriarCofre,
     Destravar,
     OuvirAvisos,
+    Configuracoes,
+    TrocarPin,
+    TrocarSenhaMestra,
+    DefinirTempoTrava,
     PedidoDeAprovacao,
     ResponderAprovacao,
 }
@@ -197,6 +222,10 @@ impl Comando {
             CRIAR_COFRE => Some(Comando::CriarCofre),
             DESTRAVAR => Some(Comando::Destravar),
             OUVIR_AVISOS => Some(Comando::OuvirAvisos),
+            CONFIGURACOES => Some(Comando::Configuracoes),
+            TROCAR_PIN => Some(Comando::TrocarPin),
+            TROCAR_SENHA_MESTRA => Some(Comando::TrocarSenhaMestra),
+            DEFINIR_TEMPO_TRAVA => Some(Comando::DefinirTempoTrava),
             PEDIDO_DE_APROVACAO => Some(Comando::PedidoDeAprovacao),
             RESPONDER_APROVACAO => Some(Comando::ResponderAprovacao),
             _ => None,
@@ -281,6 +310,10 @@ mod testes {
                 "criar_cofre",
                 "destravar",
                 "ouvir_avisos",
+                "configuracoes",
+                "trocar_pin",
+                "trocar_senha_mestra",
+                "definir_tempo_trava",
                 "pedido_de_aprovacao",
                 "responder_aprovacao",
             ]

@@ -12,6 +12,12 @@ publish.workspace = true
 # Só muda caminhos: nenhuma operação, papel ou aprovador a mais (D8, V3.15). A
 # instalação recusa artefato com esta feature (V9.2).
 modo-teste = ["ward-plataforma/modo-teste"]
+# Scrutiny do M3: os ganchos dos testes de integração (`Daemon::com_gancho_depois_de_gravar`,
+# V3.35, e `Daemon::com_programas_ssh`, Fase 27) só existem com esta feature. Liga o
+# `modo-teste`, então o artefato com ela é recusado pela instalação como o de teste
+# (V9.2) e o `make teste-sem-modo-teste` acusa quem a ligar por dependência normal.
+# Nenhum pedido do socket chega a esses ganchos; o V3.15 aceita a feature só neles.
+ganchos-teste = ["modo-teste"]
 
 # Motivo de cada dependência no handoff da Fase 22 (S14). Nenhuma traz crate nova ao
 # `Cargo.lock`.

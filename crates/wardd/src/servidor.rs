@@ -3,10 +3,15 @@
 //!
 //! - Uid diferente, ou sem identidade do processo: fecha sem mandar nenhum byte e
 //!   registra `UidRecusado` com uid e pid (V3.2).
-//! - No máximo [`MAX_CONEXOES`] conexões ao mesmo tempo, uma thread cada. Cheio: a
-//!   conexão ociosa (esperando quadro) mais antiga é derrubada para dar lugar à nova;
-//!   sem nenhuma ociosa, a nova recebe `ocupado` e fecha. Assim 10 000 conexões caladas
-//!   não impedem um cliente normal de ser atendido (V3.4).
+//! - No máximo [`MAX_CONEXOES`] conexões de agente e extensão ao mesmo tempo, uma
+//!   thread cada. Cheio: a conexão ociosa (esperando quadro) mais antiga entre elas é
+//!   derrubada para dar lugar à nova; sem nenhuma ociosa, a nova recebe `ocupado` e
+//!   fecha. Assim 10 000 conexões caladas não impedem um cliente normal de ser atendido
+//!   (V3.4).
+//! - O papel app tem vagas à parte ([`MAX_CONEXOES_APP`], scrutiny do M3): a conexão
+//!   dele, que espera avisos calada (assinante), nunca é despejada por conexões de
+//!   outro papel, e um agente com as 64 vagas ocupadas não tira a vaga do app. Só o
+//!   processo que o lançador abriu é app (D63), então ninguém mais enche essas vagas.
 //! - Cada leitura tem prazo ([`PRAZO_LEITURA`]); quadro recusado pela leitura recebe
 //!   `quadro_invalido` e a conexão fecha.
 //! - Antes de cada pedido de app ou extensão, o daemon reconfere que o cliente segue
@@ -37,8 +42,10 @@ use crate::lancamento::{AppDeTeste, AppLancado};
 use crate::nucleo::Daemon;
 use crate::{aviso, depurar};
 
-/// Conexões atendidas ao mesmo tempo.
+/// Conexões de agente e extensão atendidas ao mesmo tempo.
 pub const MAX_CONEXOES: usize = 64;
+/// Conexões do papel app ao mesmo tempo, à parte das [`MAX_CONEXOES`].
+pub const MAX_CONEXOES_APP: usize = 8;
 /// Prazo de cada leitura do socket.
 pub const PRAZO_LEITURA: Duration = Duration::from_secs(60);
 /// Prazo de cada escrita.
@@ -46,6 +53,8 @@ pub const PRAZO_ESCRITA: Duration = Duration::from_secs(10);
 
 struct Vaga {
     id: u64,
+    /// Vaga do papel app: fora da conta e do despejo das outras.
+    app: bool,
     stream: UnixStream,
     ociosa: Arc<AtomicBool>,
     desde: Instant,
@@ -58,14 +67,21 @@ struct Vagas {
 }
 
 impl Vagas {
-    /// Reserva uma vaga, derrubando a ociosa mais antiga se estiver cheio.
-    fn reservar(&self, stream: &UnixStream) -> Option<(u64, Arc<AtomicBool>)> {
+    /// Reserva uma vaga no grupo do papel (app ou o resto). Cheio: no grupo do resto,
+    /// derruba a ociosa mais antiga dele; no do app, recusa. Uma conexão nunca derruba
+    /// a de outro grupo.
+    fn reservar(&self, stream: &UnixStream, papel: Papel) -> Option<(u64, Arc<AtomicBool>)> {
+        let app = papel == Papel::App;
         let mut lista = self.lista.lock().unwrap_or_else(|e| e.into_inner());
-        if lista.len() >= MAX_CONEXOES {
+        let limite = if app { MAX_CONEXOES_APP } else { MAX_CONEXOES };
+        if lista.iter().filter(|v| v.app == app).count() >= limite {
+            if app {
+                return None;
+            }
             let velha = lista
                 .iter()
                 .enumerate()
-                .filter(|(_, v)| v.ociosa.load(Ordering::Acquire))
+                .filter(|(_, v)| !v.app && v.ociosa.load(Ordering::Acquire))
                 .min_by_key(|(_, v)| v.desde)
                 .map(|(i, _)| i)?;
             let v = lista.swap_remove(velha);
@@ -76,6 +92,7 @@ impl Vagas {
         let ociosa = Arc::new(AtomicBool::new(true));
         lista.push(Vaga {
             id,
+            app,
             stream: copia,
             ociosa: ociosa.clone(),
             desde: Instant::now(),
@@ -340,7 +357,7 @@ pub fn servir(escuta: &Escuta, daemon: Arc<Daemon>, papeis: Arc<Papeis>) -> io::
             }
         };
         let papel = papeis.papel(&par);
-        let Some((id, _)) = vagas.reservar(&stream) else {
+        let Some((id, _)) = vagas.reservar(&stream, papel) else {
             let mut s = stream;
             let _ = s.set_write_timeout(Some(Duration::from_secs(1)));
             let _ = responder(&mut s, papel, &Resposta::Erro(ErroResposta::Ocupado));
@@ -428,6 +445,80 @@ mod testes {
         let _ = filho.kill();
         let _ = filho.wait();
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn vivo(s: &UnixStream) -> bool {
+        !ward_plataforma::par_fechou(s)
+    }
+
+    /// Scrutiny do M3: a conexão do app (assinante, ociosa) não é despejada por 10 000
+    /// conexões caladas de agente; o agente cheio não tira a vaga do app; e o app cheio
+    /// não despeja agente.
+    #[test]
+    fn ataque_conexoes_de_agente_nao_despejam_o_app() {
+        let vagas = Vagas::default();
+        // O app conecta primeiro e fica calado (esperando avisos).
+        let (app_d, app_c) = UnixStream::pair().unwrap();
+        let (id_app, _) = vagas.reservar(&app_d, Papel::App).unwrap();
+        // 10 000 agentes calados: os velhos são despejados entre eles.
+        let mut agentes = Vec::new();
+        for _ in 0..10_000 {
+            let (d, c) = UnixStream::pair().unwrap();
+            assert!(vagas.reservar(&d, Papel::Agente).is_some());
+            agentes.push(c);
+            if agentes.len() > MAX_CONEXOES * 2 {
+                agentes.remove(0);
+            }
+        }
+        assert!(vivo(&app_c), "a conexão do app foi derrubada");
+        {
+            let lista = vagas.lista.lock().unwrap();
+            assert!(lista.iter().any(|v| v.id == id_app && v.app));
+            assert_eq!(lista.iter().filter(|v| !v.app).count(), MAX_CONEXOES);
+        }
+        // 64 agentes ocupados (nenhum ocioso): agente novo recebe `ocupado`, o app
+        // ainda conecta.
+        let ids: Vec<u64> = vagas
+            .lista
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|v| !v.app)
+            .map(|v| v.id)
+            .collect();
+        for id in &ids {
+            vagas.marcar(*id, false);
+        }
+        let (d, _c) = UnixStream::pair().unwrap();
+        assert!(vagas.reservar(&d, Papel::Agente).is_none());
+        let (d, _c2) = UnixStream::pair().unwrap();
+        assert!(vagas.reservar(&d, Papel::Extensao).is_none());
+        let mut apps = vec![(app_d, app_c)];
+        for _ in 1..MAX_CONEXOES_APP {
+            let (d, c) = UnixStream::pair().unwrap();
+            assert!(vagas.reservar(&d, Papel::App).is_some());
+            apps.push((d, c));
+        }
+        // App cheio: recusa e não despeja ninguém (nem app, nem agente).
+        let (d, _c3) = UnixStream::pair().unwrap();
+        assert!(vagas.reservar(&d, Papel::App).is_none());
+        for (_, c) in &apps {
+            assert!(vivo(c));
+        }
+        assert_eq!(
+            vagas
+                .lista
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|v| !v.app)
+                .count(),
+            MAX_CONEXOES
+        );
+        // Soltar uma vaga de app abre lugar para outra.
+        vagas.soltar(id_app);
+        let (d, _c4) = UnixStream::pair().unwrap();
+        assert!(vagas.reservar(&d, Papel::App).is_some());
     }
 
     /// O que o motor entrega ao app sai como um quadro de resposta do papel app, inteiro;

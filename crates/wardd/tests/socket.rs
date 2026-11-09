@@ -348,3 +348,156 @@ fn v3_33_kill_9_entre_as_senhas_erradas() {
         assert!(!contem(&log, b64(s.as_bytes()).as_bytes()));
     }
 }
+
+/// Lê `/proc/<pid>/<arquivo>` por outro processo do mesmo uid (`/usr/bin/cat`): só
+/// diz se conseguiu ler algum byte, nunca o conteúdo.
+fn outro_processo_le(pid: u32, arquivo: &str) -> bool {
+    let o = Command::new("/usr/bin/cat")
+        .arg(format!("/proc/{pid}/{arquivo}"))
+        .env_clear()
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    o.status.success() || !o.stdout.is_empty()
+}
+
+/// V3.6 (S8) no binário (scrutiny do M3): o `wardd` de teste no ar e destravado (com
+/// segredos em memória). Outro processo do mesmo uid não lê `/proc/<pid>/mem`,
+/// `environ` nem `maps`, e este teste (o pai, que o Yama deixaria) também não;
+/// `strace -p` e `gdb -p` (se houver) não se prendem; `/proc/<pid>/limits` mostra core
+/// 0 (atual e máximo); e `kill -SEGV` não gera core (o kernel não marca core no status
+/// e não sobra arquivo). Controle: o mesmo `cat` lê o `environ` de um processo comum.
+#[test]
+fn v3_6_wardd_no_ar_nega_proc_ptrace_e_core() {
+    use std::os::unix::process::ExitStatusExt;
+
+    let mut controle = Command::new("/usr/bin/sleep")
+        .arg("30")
+        .env_clear()
+        .env("WARD_CONTROLE", "1")
+        .spawn()
+        .unwrap();
+    // O `environ` só fica certo depois do exec: tenta por um instante.
+    let fim = Instant::now() + Duration::from_secs(5);
+    while !outro_processo_le(controle.id(), "environ") {
+        assert!(
+            Instant::now() < fim,
+            "controle: cat não leu o environ de um processo comum"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let _ = controle.kill();
+    let _ = controle.wait();
+
+    let dev = Dir::novo("v36");
+    {
+        let (d, _) = cofre_de_teste(&dev);
+        d.travar();
+    }
+    let sock = DirSocket::novo("v36");
+    let log = dev.0.join("wardd.log");
+    let mut c = comando(&dev.0, &sock.0, &log);
+    // Diretório de trabalho do daemon: onde um core em arquivo cairia.
+    c.current_dir(&dev.0);
+    let filho = c.spawn().unwrap();
+    let socket = sock.0.join(ward_plataforma::socket::NOME_SOCKET);
+    let fim = Instant::now() + Duration::from_secs(20);
+    while !socket.exists() {
+        assert!(Instant::now() < fim, "o wardd não criou o socket");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let mut w = Wardd { filho, log, socket };
+    let mut s = conectar(&w);
+    let (_, r) = pedir_por(&mut s, "destravar", &senha_json(SENHA));
+    assert!(ok(&r), "{r:?}");
+    let pid = w.filho.id();
+
+    for arquivo in ["mem", "environ", "maps"] {
+        assert!(
+            !outro_processo_le(pid, arquivo),
+            "/proc/<pid>/{arquivo} legível por outro processo"
+        );
+        let r = fs::read(format!("/proc/{pid}/{arquivo}"));
+        assert_eq!(
+            r.as_ref().map_err(|e| e.kind()).err(),
+            Some(std::io::ErrorKind::PermissionDenied),
+            "/proc/<pid>/{arquivo} legível pelo pai"
+        );
+    }
+    // `strace -p`: não se prende (sai ≠ 0 com EPERM).
+    let st = Command::new("/usr/bin/strace")
+        .args(["-o", "/dev/null", "-p", &pid.to_string()])
+        .env_clear()
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .unwrap();
+    assert!(!st.success(), "strace -p conseguiu");
+    // `gdb -p`, se houver gdb: o attach falha por permissão.
+    if Path::new("/usr/bin/gdb").exists() {
+        let o = Command::new("/usr/bin/gdb")
+            .args([
+                "-nx",
+                "-batch",
+                "-p",
+                &pid.to_string(),
+                "-ex",
+                "info registers",
+            ])
+            .env_clear()
+            .env("HOME", &dev.0)
+            .env("LANG", "C")
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        let texto =
+            String::from_utf8_lossy(&o.stderr).into_owned() + &String::from_utf8_lossy(&o.stdout);
+        assert!(
+            texto.contains("Operation not permitted"),
+            "gdb -p não recusou: {texto}"
+        );
+    } else {
+        eprintln!("v3_6: sem /usr/bin/gdb; o strace -p cobre o mesmo ptrace");
+    }
+    // Core desligado: `Max core file size 0 0`.
+    let limits = fs::read_to_string(format!("/proc/{pid}/limits")).unwrap();
+    let core = limits
+        .lines()
+        .find(|l| l.starts_with("Max core file size"))
+        .unwrap();
+    let campos: Vec<&str> = core.split_whitespace().collect();
+    assert_eq!(&campos[4..6], &["0", "0"], "{core}");
+    // O daemon segue atendendo depois das tentativas.
+    let (_, r) = pedir_por(&mut s, "estado", "{}");
+    assert!(
+        matches!(r, Resposta::Estado { travado: false, .. }),
+        "{r:?}"
+    );
+
+    // `kill -SEGV` com o cofre destravado: morre pelo sinal, sem core. O primeiro
+    // SIGSEGV mandado por `kill` cai no tratador do std do Rust (o de estouro de
+    // pilha), que volta o tratador ao padrão e retorna; o seguinte mata. Manda de novo
+    // a cada 200 ms até morrer.
+    let fim = Instant::now() + Duration::from_secs(10);
+    let saida = loop {
+        if let Some(st) = w.filho.try_wait().unwrap() {
+            break st;
+        }
+        assert!(Instant::now() < fim, "o wardd não morreu com SIGSEGV");
+        let st = Command::new("/usr/bin/kill")
+            .args(["-SEGV", &pid.to_string()])
+            .stderr(Stdio::null())
+            .status()
+            .unwrap();
+        assert!(st.success() || w.filho.try_wait().unwrap().is_some());
+        std::thread::sleep(Duration::from_millis(200));
+    };
+    assert_eq!(saida.signal(), Some(11), "{saida:?}");
+    assert!(!saida.core_dumped(), "o kernel gerou core do wardd");
+    for e in fs::read_dir(&dev.0).unwrap() {
+        let nome = e.unwrap().file_name().to_string_lossy().into_owned();
+        assert!(!nome.starts_with("core"), "core no disco: {nome}");
+    }
+    drop(s);
+}

@@ -32,6 +32,7 @@ use ward_app_nucleo::ErroApp;
 use ward_app_nucleo::anexos::{Escolha, Seletor};
 use ward_app_nucleo::aprovacao::{self, PedidoExibido, ResultadoAprovacao};
 use ward_app_nucleo::area_transferencia::{Copiador, Wayland};
+use ward_app_nucleo::configuracoes::{Configuracoes, ResultadoTroca, TrocaPin, TrocaSenha};
 use ward_app_nucleo::credenciais::{DetalheCredencial, ItemCredencial};
 use ward_app_nucleo::daemon::DaemonSocket;
 use ward_app_nucleo::destrave::{self, InfoPedido, SenhaMestra};
@@ -353,6 +354,35 @@ fn criar_cofre(dados: NovoCofre, estado: State<'_, Estado>) -> Result<ResultadoC
     Ok(estado.servico()?.criar_cofre(dados)?)
 }
 
+/// Configurações (Fase 38): tempo de trava e backup externo, sem hash nem UUID.
+#[tauri::command]
+fn configuracoes(estado: State<'_, Estado>) -> Result<Configuracoes, Falha> {
+    Ok(estado.servico()?.configuracoes()?)
+}
+
+/// Trocar o PIN (Fase 38, V5.22, S9): atual, novo e confirmação em `Digitado` (zera);
+/// conferidos no núcleo, o atual pelo daemon. A resposta não traz valor.
+#[tauri::command]
+fn trocar_pin(dados: TrocaPin, estado: State<'_, Estado>) -> Result<ResultadoTroca, Falha> {
+    Ok(estado.servico()?.trocar_pin(dados)?)
+}
+
+/// Trocar a senha mestra (Fase 38, V5.22): a atual conferida pelo daemon; a nova com a
+/// regra do primeiro uso. A resposta não traz valor.
+#[tauri::command]
+fn trocar_senha_mestra(
+    dados: TrocaSenha,
+    estado: State<'_, Estado>,
+) -> Result<ResultadoTroca, Falha> {
+    Ok(estado.servico()?.trocar_senha_mestra(dados)?)
+}
+
+/// Tempo de trava (Fase 38, D30, D45): 1 a 1440 minutos, gravado no cofre pelo daemon.
+#[tauri::command]
+fn definir_tempo_trava(minutos: u64, estado: State<'_, Estado>) -> Result<Configuracoes, Falha> {
+    Ok(estado.servico()?.definir_tempo_trava(minutos)?)
+}
+
 /// Rótulo da janela principal (capability `principal`).
 const JANELA_PRINCIPAL: &str = "principal";
 /// Rótulo da janela de aprovação: a capability `aprovacao` vale só para ela.
@@ -513,6 +543,10 @@ fn com_comandos<R: Runtime>(builder: Builder<R>, estado: Estado) -> Builder<R> {
             criar_cofre,
             destravar,
             ouvir_avisos,
+            configuracoes,
+            trocar_pin,
+            trocar_senha_mestra,
+            definir_tempo_trava,
             pedido_de_aprovacao,
             responder_aprovacao
         ])
@@ -997,6 +1031,105 @@ mod testes {
                 serde_json::json!({"event": "pedido-de-destrave", "target": {"kind": "Any"}, "handler": 0}),
             );
             assert!(r.is_err(), "{comando} deveria ser negado: {r:?}");
+        }
+    }
+
+    /// Fase 38 (V5.22, S9): os comandos da tela Configurações só passam pela ACL na
+    /// janela `principal` com a origem local; campo a mais e tipo errado são recusados
+    /// na leitura, e PIN ou senha fora da regra voltam como erro de campo sem ir ao
+    /// daemon e sem valor na resposta.
+    #[test]
+    fn ataque_configuracoes_so_na_janela_certa_e_conferidas_no_rust() {
+        let app = app_de_teste();
+        let principal = WebviewWindowBuilder::new(&app, "principal", Default::default())
+            .build()
+            .unwrap();
+        let outra = WebviewWindowBuilder::new(&app, "outra", Default::default())
+            .build()
+            .unwrap();
+        let pin = |atual: &str, novo: &str| {
+            serde_json::json!({ "dados": {
+                "atual": atual, "novo": novo, "confirmacao": novo } })
+        };
+        let senha = |atual: &str, nova: &str| {
+            serde_json::json!({ "dados": {
+                "atual": atual, "nova": nova, "confirmacao": nova } })
+        };
+        for (comando, corpo) in [
+            ("configuracoes", serde_json::json!({})),
+            ("trocar_pin", pin("135790", "2468")),
+            (
+                "trocar_senha_mestra",
+                senha("falso-mestra-ward-01", "falso-nova-mestra-02"),
+            ),
+            ("definir_tempo_trava", serde_json::json!({ "minutos": 30 })),
+        ] {
+            let r = chamar(&outra, comando, ORIGEM, corpo.clone());
+            assert!(
+                r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+                "{comando} em janela sem capability: {r:?}"
+            );
+            let r = chamar(&principal, comando, "https://example.com", corpo.clone());
+            assert!(
+                r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+                "{comando} com origem remota: {r:?}"
+            );
+        }
+        for (atual, novo, campo) in [
+            ("135", "2468", "atual"),
+            ("135790", "13579a", "novo"),
+            ("135790", "1357901", "novo"),
+        ] {
+            let r = chamar(&principal, "trocar_pin", ORIGEM, pin(atual, novo)).unwrap();
+            assert_eq!(r["trocado"], false);
+            assert_eq!(r["erros"][0]["campo"], campo, "{atual} {novo}");
+            let texto = r.to_string();
+            assert!(!texto.contains(atual) && !texto.contains(novo), "{texto}");
+        }
+        let r = chamar(
+            &principal,
+            "trocar_senha_mestra",
+            ORIGEM,
+            senha("falso-mestra-ward-01", "falso-curta"),
+        )
+        .unwrap();
+        assert_eq!(r["erros"][0]["campo"], "nova");
+        assert!(!r.to_string().contains("falso"), "{r}");
+        let mut forjado = pin("135790", "2468");
+        forjado["dados"]["nivel"] = "livre".into();
+        let r = chamar(&principal, "trocar_pin", ORIGEM, forjado);
+        assert!(
+            r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+            "campo a mais: {r:?}"
+        );
+        for minutos in [
+            serde_json::json!("30"),
+            serde_json::json!(-1),
+            serde_json::Value::Null,
+        ] {
+            let r = chamar(
+                &principal,
+                "definir_tempo_trava",
+                ORIGEM,
+                serde_json::json!({ "minutos": minutos }),
+            );
+            assert!(
+                r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+                "{minutos}: {r:?}"
+            );
+        }
+        // Fora de 1 a 1440: recusado no serviço, antes do daemon (que nem existe aqui).
+        for minutos in [0, 1441] {
+            let r = chamar(
+                &principal,
+                "definir_tempo_trava",
+                ORIGEM,
+                serde_json::json!({ "minutos": minutos }),
+            );
+            assert!(
+                r.as_ref().err().is_some_and(|e| e["codigo"].is_string()),
+                "{minutos}: {r:?}"
+            );
         }
     }
 
