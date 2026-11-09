@@ -416,6 +416,8 @@ Pendências da 26 (2026-11-09) — perguntar ao usuário: V4.13/RA1 reprova (env
 
 Pendências da 30 (2026-11-09): mínimo de 12 caracteres da senha mestra só no app (decidir se vai a `ward_core::limites` e ao daemon, inclusive troca de senha V5.22); normalização Unicode (NFC) da senha mestra entre app e CLI — decidir; rótulo de força "boa" do design vs rótulos do gerador; `make app-ponte` não serve para primeiro uso (`dev/daemon.sh` exige cofre).
 
+Pendências da 22c (2026-11-09): lista do app com resumo repete URL/host; perto de 64 MiB de texto a lista passa de `MAX_QUADRO_RESPOSTA` e o daemon responde `interno` (decidir limite); log do `wardd` agora leva nome da entrada e campo em `revelar`/`copiar`/`totp` (D65 b; doc do `log.rs` atualizada); `Alvo::segredo_em` entrou no protocolo; V3.39 simula a extensão só por `argv[0]`. O `v3_33` ganhou margem (1500 ms + checagem relativa).
+
 ## Milestone 3 — Daemon e protocolo
 Contrato: V3.1–V3.41
 
@@ -603,7 +605,7 @@ Contrato: V3.1–V3.41
   - testes de ataque: `kill -9` entre as senhas erradas, agente atrasando o app, cópia
     antiga depois do `criar_cofre`, troca logo depois do rename, `VmLck` no contêiner.
   V3.33–V3.35.
-- [ ] Fase 22c — (Depende da 22b e da 23a: mexe em `crates/wardd`, no protocolo e no
+- [x] Fase 22c — (Depende da 22b e da 23a: mexe em `crates/wardd`, no protocolo e no
   `app/nucleo`.) Operações de valor do app e lista do app (D65 b, c). Arquivos:
   `crates/ward-core/src/protocolo*` (só `ItemLista`/`ResumoItem`), `crates/wardd`,
   `app/nucleo` (`cliente.rs`, `credenciais.rs`, `daemon_falso.rs`) e os testes.
