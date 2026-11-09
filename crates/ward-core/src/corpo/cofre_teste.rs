@@ -1,4 +1,5 @@
-//! Cofre de teste para os testes do corpo (D15 + `acme-totp-dev` de D28): as 21 entradas
+//! Cofre de teste para os testes do corpo (D15 + `acme-totp-dev` de D28 +
+//! `delta-api-simbolos` de D59): as 22 entradas
 //! da tabela do contrato, com os níveis dela, e as entradas "cheias" do V2.30. Só valores
 //! falsos.
 //!
@@ -54,6 +55,8 @@ pub const SEGREDOS: &[&str] = &[
     "falso-anexo-01",
     "falso-BLOQ-01",
     "falso-REDIR-01",
+    "falso-Ab3$k&<9>Zq!'/ç-01",
+    "falso-Ab3$k&<9>Zq!'",
 ];
 
 fn t(v: &str) -> String {
@@ -153,7 +156,7 @@ fn servidor_chave(host: &str, porta: &str, salto: &str) -> RascunhoDados {
     }
 }
 
-/// As 21 entradas do cofre de teste, com os níveis da tabela (fora de ordem de nome).
+/// As 22 entradas do cofre de teste, com os níveis da tabela (fora de ordem de nome).
 pub fn cofre_de_teste() -> Vec<Entrada> {
     use NivelAcesso::{Bloqueado, ComAprovacao, Livre};
     const WP: &str = "http://localhost:8081/wp-login.php";
@@ -173,6 +176,22 @@ pub fn cofre_de_teste() -> Vec<Entrada> {
     generico.anexos = vec![RascunhoAnexo {
         nome: t("app.env"),
         conteudo: Segredo::de_bytes(b"FALSO_ENV=falso-anexo-01\n".to_vec()),
+    }];
+    // D59: caracteres especiais (aspas simples, `$&<>`, `/` e fora do ASCII).
+    let mut simbolos = rascunho(
+        "delta-api-simbolos",
+        "delta",
+        "dev",
+        RascunhoDados::Api {
+            url: t("https://api.teste.invalid"),
+            token: s("falso-Ab3$k&<9>Zq!'/ç-01"),
+            variavel: t("SIMBOLOS_TOKEN"),
+        },
+    );
+    simbolos.extras = vec![RascunhoExtra {
+        nome: t("SEGREDO_ASCII"),
+        valor: Segredo::de_texto(t("falso-Ab3$k&<9>Zq!'")),
+        segredo: true,
     }];
     let lista = vec![
         (
@@ -397,6 +416,7 @@ pub fn cofre_de_teste() -> Vec<Entrada> {
             ),
             Livre,
         ),
+        (simbolos, Livre),
     ];
     lista
         .into_iter()

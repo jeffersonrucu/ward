@@ -1,6 +1,6 @@
 #!/usr/bin/python3 -IB
-"""Testes do `dev/variacoes.py` (V2.52 e V2.57, mais as variações de D11 de V2.29; Fases
-19d e 19e).
+"""Testes do `dev/variacoes.py` (V2.52, V2.57, V3.29, V3.31 e V3.32, mais as variações de
+D11 de V2.29; Fases 19d, 19e e 22a).
 
 Uso (da raiz): python3 -I -B dev/testes/variacoes_teste.py  (`make teste-dev-cofre` roda).
 
@@ -342,6 +342,85 @@ class D54TabelaUnica(unittest.TestCase):
             env={"PATH": "/usr/bin:/bin", "V": "falso-it's-01x"}, capture_output=True, check=True,
         )
         self.assertEqual(r.stdout.decode().strip(), "'" + V.aspas_simples("falso-it's-01x") + "'")
+
+
+class D58D61(unittest.TestCase):
+    """V3.29 (Go com `ensure_ascii`, D58), V3.31 (JSON na linha) e V3.32 (YAML, dotenv e
+    campos de tab de linha que não é texto), D61."""
+
+    def test_go_com_ensure_ascii_inteiro(self):
+        v = "falso-Ab3$k&<9>Zq!'/" + C + "-01"
+        self.assertTrue(esc8("falso-Ab3$k~u0026~u003c9~u003eZq!'/~u00e7-01") in pad(v), "D58 inteiro")
+
+    def test_go_com_ensure_ascii_so_com_os_dois(self):
+        self.assertIsNone(V.json_go_ascii("falso-Ab3$k&<9>Zq!"), "D58 sem caractere fora do ASCII")
+        self.assertIsNone(V.json_go_ascii("falso-a" + C + "o-01"), "D58 sem &<>")
+        self.assertEqual(V.json_go_ascii("a&" + C), "a~u0026~u00e7".replace("~", "\\"))
+
+    def test_go_com_ensure_ascii_por_linha_e_valor_de_linha(self):
+        linha = "linha-tres-Ab3$k&<9>Zq!-a" + C + "o"
+        p = pad("falso-linha-um-01\n" + linha + "\nTOKEN=falso-tok&" + C + "-02\n")
+        self.assertTrue(esc8("linha-tres-Ab3$k~u0026~u003c9~u003eZq!-a~u00e7o") in p, "D58 por linha")
+        self.assertTrue(esc8("falso-tok~u0026~u00e7-02") in p, "D58 no valor de linha")
+
+    def test_json_numa_linha(self):
+        anexo = b'{"installed":{"client_id":"x.apps","client_secret":"falso-GOCSPX-minificado-01"}}\n'
+        p = V.variacoes(anexo, None, anexo=True)
+        self.assertTrue(b"falso-GOCSPX-minificado-01" in p, "anexo JSON minificado")
+        self.assertTrue(base64.b64encode(b"falso-GOCSPX-minificado-01") in p, "como segredo inteiro")
+        self.assertTrue(b"x.apps" in p, "valor de 6 caracteres também")
+        p = pad('{"user":"x","token":"falso-json-uma-linha-01"}')
+        self.assertTrue(b"falso-json-uma-linha-01" in p, "segredo de uma linha que começa por {")
+        p = pad('{\n  "db": {"senha": "falso-json-aninhado-02"},\n  "a": "x", "b": "falso-json-duas-chaves-03"\n}')
+        self.assertTrue(b"falso-json-aninhado-02" in p, "objeto aninhado na linha")
+        self.assertTrue(b"falso-json-duas-chaves-03" in p, "duas chaves na linha")
+
+    def test_json_decodificado(self):
+        bs = "\\"
+        p = pad('{"k": "falso-' + bs + "u00e7" + bs + "/x" + bs + '"y-01", "z": "falso-par-'
+                + bs + "ud83d" + bs + 'ude00-02"}')
+        self.assertTrue(("falso-" + C + '/x"y-01').encode() in p, "escapes do JSON decodificados")
+        self.assertTrue(("falso-par-" + chr(0x1F600) + "-02").encode() in p, "par substituto")
+
+    def test_json_escape_invalido_descarta(self):
+        bs = "\\"
+        p = pad('{"k": "falso-invalido-' + bs + 'x-01", "s": "falso-sozinho-' + bs + 'ud800-02"}')
+        self.assertFalse(any(b"falso-invalido-x-01" in x for x in p), "escape inválido")
+        self.assertFalse(any(x.startswith(b"falso-sozinho-") for x in p), "substituto sozinho")
+
+    def test_json_array_e_flow_ficam_em_ra3(self):
+        self.assertEqual(V.valores_json(b'["falso-elemento-01", "falso-elemento-02"]'), [])
+        self.assertEqual(V.valores_json(b"{k: falso-flow-yaml-01}"), [])
+
+    def test_yaml_e_dotenv(self):
+        valor = (
+            "senha: falso-yaml-coment-01 # comentario\n"
+            "private key: falso-yaml-chave-espaco-02\n"
+            "aws/secret: falso-yaml-chave-barra-03\n"
+            'SENHA_DB="falso-env-coment-05" # dotenv\n'
+            "tok: 'falso-it''s-yaml-06'\n"
+            "outro: 'falso-it''s-yaml-07' # c\n"
+        )
+        p = pad(valor)
+        for x in (b"falso-yaml-coment-01", b"falso-yaml-chave-espaco-02", b"falso-yaml-chave-barra-03",
+                  b"falso-env-coment-05", b"falso-it's-yaml-06", b"falso-it's-yaml-07"):
+            self.assertTrue(x in p, "valor de YAML ou dotenv (D61)")
+            self.assertTrue(base64.b64encode(x) in p, "como segredo inteiro")
+
+    def test_chave_composta_nao_pega_url_nem_comentario(self):
+        self.assertEqual(V.valores_da_linha(b"https://host.invalid:8080/x"), [])
+        self.assertEqual(V.valores_da_linha(b"# nota: falso-comentado-01"), [])
+        self.assertEqual(V.valores_da_linha(b"{k: falso-flow-yaml-01}"), [])
+
+    def test_campos_de_tab_de_linha_binaria(self):
+        anexo = (b"SENHA=falso-latin\xe7-01\tTOKEN=falso-campo-tab-02\n"
+                 b"nome\xe7\tfalso-campo-tsv-03\tfalso-campo-tsv-04\n")
+        p = V.variacoes(anexo, None, anexo=True)
+        for x in (b"TOKEN=falso-campo-tab-02", b"falso-campo-tsv-03", b"falso-campo-tsv-04"):
+            self.assertTrue(x in p, "campo de tab de linha binária pelo literal")
+        self.assertTrue(b"TOKEN%3Dfalso-campo-tab-02" in p, "e pelo percent")
+        self.assertFalse(base64.b64encode(b"falso-campo-tsv-04") in p, "sem base64 (D61)")
+        self.assertFalse(b"falso-campo-tab-02" in p, "valor depois do = do campo binário (RA3)")
 
 
 class Independencia(unittest.TestCase):

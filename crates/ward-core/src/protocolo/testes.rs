@@ -490,13 +490,13 @@ fn contem(palheiro: &[u8], agulha: &[u8]) -> bool {
     agulha.len() <= palheiro.len() && palheiro.windows(agulha.len()).any(|w| w == agulha)
 }
 
-/// V3.3: a lista de todas as entradas do cofre de teste (as 21, inclusive as
+/// V3.3: a lista de todas as entradas do cofre de teste (as 22, inclusive as
 /// bloqueadas, que o daemon ainda filtraria) para o agente e o detalhe de cada uma
 /// para o app não têm segredo nenhum, em nenhuma forma.
 #[test]
 fn v3_3_lista_e_detalhe_do_cofre_de_teste_sem_segredo() {
     let entradas = cofre_de_teste();
-    assert_eq!(entradas.len(), 21);
+    assert_eq!(entradas.len(), 22);
     let lista = Resposta::Lista(
         entradas
             .iter()
@@ -534,7 +534,7 @@ fn v3_3_lista_e_detalhe_do_cofre_de_teste_sem_segredo() {
     let Resposta::Lista(itens) = decodificar_resposta(Papel::Agente, &q_lista).unwrap() else {
         panic!("não é lista")
     };
-    assert_eq!(itens.len(), 21);
+    assert_eq!(itens.len(), 22);
     assert!(itens.iter().any(|i| i.nome == "gama-bloqueada"));
 }
 

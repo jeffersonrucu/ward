@@ -137,17 +137,25 @@ fn dados_grandes(tipo: TipoEntrada, tunel: Option<&str>) -> RascunhoDados {
 /// `"chave": "valor"`, `chave: valor` e `CHAVE=valor`, de `n` bytes. Cada linha e cada
 /// valor viram padrões, com as formas escapadas de D37 (`$`, `&`, `\`, não ASCII) e as
 /// formas de texto por linha de D54 (aspas simples, `printf %q`, PHP, campos de tab,
-/// `chave : valor`).
+/// `chave : valor`) e os candidatos de D61 (pares JSON em qualquer posição da linha,
+/// comentário no fim do YAML e do dotenv, chave YAML composta, `''`, Go com
+/// `ensure_ascii`).
 fn json_de_varias_linhas(n: usize) -> Vec<u8> {
     let mut v = b"{\n".to_vec();
     let mut i = 0usize;
     while v.len() + 80 < n {
-        let linha = match i % 5 {
+        let linha = match i % 9 {
             0 => format!("  \"campo_{i:05}\": \"falso-valor-$&ç-{i:05}-0123456789\",\n"),
             1 => format!("  chave_{i:05}: falso-yaml-\\-{i:05}-0123456789\n"),
             2 => format!("  CHAVE_{i:05}=falso-env-`<>`-{i:05}-0123456789\n"),
             3 => format!("  \"x/{i:05}\":\"falso-'php'/ação-{i:05}\tcampo-{i:05}\",\n"),
-            _ => format!("  chave_{i:05} : falso esp {i:05}\tcampo-de-tab-{i:05}\n"),
+            4 => format!("  chave_{i:05} : falso esp {i:05}\tcampo-de-tab-{i:05}\n"),
+            5 => format!(
+                "  \"a\": \"x\", \"p_{i:05}\": \"falso-par-\\u00e7-{i:05}\", \"b\": {{\"c\": \"falso-ani-&ç-{i:05}\"}},\n"
+            ),
+            6 => format!("  senha_{i:05}: falso-yaml-{i:05}-0123 # comentario {i:05}\n"),
+            7 => format!("  private key {i:05}: 'falso-it''s-{i:05}-0123' # c\n"),
+            _ => format!("  SENHA_{i:05}=\"falso-env-{i:05}-0123456789\" # dotenv\n"),
         };
         v.extend_from_slice(linha.as_bytes());
         i += 1;

@@ -1085,10 +1085,7 @@ fn v2_41_controle_sem_a_passada_por_linha_vazaria() {
     let chave = chave_de_varias_linhas();
     let e = servidor_com_chave(&chave);
     // Só o segredo inteiro e as variações dele, sem `linhas` (o código de antes).
-    let mut g = Gerador {
-        tmp: Zeroizing::new(Vec::new()),
-        tmp2: Zeroizing::new(Vec::new()),
-    };
+    let mut g = Gerador::novo();
     let mut padroes: Vec<Vec<u8>> = Vec::new();
     for sg in e.segredos() {
         g.segredo(sg.valor.expor(), &mut |p| {
@@ -1196,10 +1193,7 @@ fn v2_42_formas_escapadas() {
 #[test]
 fn formas_escapadas_so_quando_mudam() {
     let contar = |valor: &str| {
-        let mut g = Gerador {
-            tmp: Zeroizing::new(Vec::new()),
-            tmp2: Zeroizing::new(Vec::new()),
-        };
+        let mut g = Gerador::novo();
         let mut n = 0usize;
         g.segredo(valor.as_bytes(), &mut |_| {
             n += 1;
@@ -1369,10 +1363,7 @@ fn v2_54_entrega_de_varias_linhas_por_linha() {
     }
     // Controle: sem a passada por linha da entrega (só o valor inteiro), a linha 1
     // sozinha sobrava inteira.
-    let mut g_ = Gerador {
-        tmp: Zeroizing::new(Vec::new()),
-        tmp2: Zeroizing::new(Vec::new()),
-    };
+    let mut g_ = Gerador::novo();
     let mut padroes: Vec<Vec<u8>> = Vec::new();
     g_.segredo(token.as_bytes(), &mut |p| {
         padroes.push(p.to_vec());
@@ -1636,10 +1627,7 @@ fn v2_56_printf_q_igual_ao_bash() {
 #[test]
 fn d54_formas_novas_so_quando_mudam_e_linha_sem_base64() {
     let contar = |valor: &str| {
-        let mut g = Gerador {
-            tmp: Zeroizing::new(Vec::new()),
-            tmp2: Zeroizing::new(Vec::new()),
-        };
+        let mut g = Gerador::novo();
         let mut n = 0usize;
         g.formas_de_texto(valor.as_bytes(), &mut |_| {
             n += 1;
@@ -1660,10 +1648,7 @@ fn d54_formas_novas_so_quando_mudam_e_linha_sem_base64() {
     let linha = "falso-linha-solta-0123456789";
     let mut b64 = Zeroizing::new(Vec::new());
     base64(linha.as_bytes(), B64_PADRAO, false, &mut b64);
-    let mut g = Gerador {
-        tmp: Zeroizing::new(Vec::new()),
-        tmp2: Zeroizing::new(Vec::new()),
-    };
+    let mut g = Gerador::novo();
     let mut padroes: Vec<Vec<u8>> = Vec::new();
     g.linhas(
         format!("{linha}\noutra-linha-falsa\n").as_bytes(),
@@ -1785,4 +1770,493 @@ fn de_hex(h: &[u8]) -> Vec<u8> {
     h.chunks(2)
         .map(|p| u8::from_str_radix(core::str::from_utf8(p).unwrap(), 16).unwrap())
         .collect()
+}
+
+// ---- Fase 22a: D58 (Go com `ensure_ascii`), D59 e D61 (repro `contorno19e.rs`) ----
+
+/// Roda o bash com variáveis de bytes quaisquer (o anexo Latin-1 não é `&str`). `None`
+/// sem bash nesta máquina.
+fn bash_bytes(script: &str, env: &[(&str, &[u8])]) -> Option<Vec<u8>> {
+    use std::os::unix::ffi::OsStrExt as _;
+    if !std::path::Path::new(BASH).exists() {
+        eprintln!("{BASH} não existe aqui: caso do programa real pulado");
+        return None;
+    }
+    let mut c = std::process::Command::new(BASH);
+    c.args(["--norc", "--noprofile", "-c", script])
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .env("LC_ALL", "C.UTF-8");
+    for (k, v) in env {
+        c.env(k, std::ffi::OsStr::from_bytes(v));
+    }
+    let saida = c.output().expect("rodar o bash de teste");
+    assert!(saida.status.success(), "bash falhou");
+    Some(saida.stdout)
+}
+
+/// O oráculo (`dev/variacoes.py`, pelo python, sem a máscara) gera os padrões de cada
+/// pedido (máscara, usuário, anexo, valor) e cada padrão, sozinho, tem de sair `••••`
+/// pela máscara do pedido. Devolve quantos padrões conferiu (0 sem python).
+fn oraculo_cobre(pedidos: &[(&Mascara, Option<&str>, bool, &[u8])]) -> usize {
+    let fonte = concat!(env!("CARGO_MANIFEST_DIR"), "/../../dev/variacoes.py");
+    if !std::path::Path::new(PYTHON).exists() {
+        eprintln!("{PYTHON} não existe aqui: teste cruzado pulado");
+        return 0;
+    }
+    let mut pedido = String::new();
+    for (i, (_, u, a, v)) in pedidos.iter().enumerate() {
+        pedido.push_str(&format!(
+            "{i}\t{}\t{}\t{}\n",
+            u.unwrap_or(""),
+            u8::from(*a),
+            hex(v)
+        ));
+    }
+    let script = "import importlib.util,sys\n\
+        spec=importlib.util.spec_from_file_location('variacoes',sys.argv[1])\n\
+        v=importlib.util.module_from_spec(spec);spec.loader.exec_module(v)\n\
+        for linha in sys.stdin.read().splitlines():\n\
+        \x20   g,u,a,h=linha.split('\\t')\n\
+        \x20   for p in sorted(v.variacoes(bytes.fromhex(h),u or None,anexo=a=='1')):\n\
+        \x20       print(g+'\\t'+p.hex())\n";
+    let mut filho = std::process::Command::new(PYTHON)
+        .args(["-I", "-B", "-c", script, fonte])
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    {
+        use std::io::Write as _;
+        filho
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(pedido.as_bytes())
+            .unwrap();
+    }
+    let saida = filho.wait_with_output().unwrap();
+    assert!(saida.status.success(), "o oráculo falhou");
+    let mut n = 0usize;
+    for linha in saida
+        .stdout
+        .split(|b| *b == b'\n')
+        .filter(|l| !l.is_empty())
+    {
+        let tab = linha.iter().position(|b| *b == b'\t').unwrap();
+        let i: usize = core::str::from_utf8(&linha[..tab])
+            .unwrap()
+            .parse()
+            .unwrap();
+        let padrao = de_hex(&linha[tab + 1..]);
+        assert_eq!(
+            pedidos[i].0.mascarar_tudo(&padrao),
+            M.as_bytes(),
+            "padrão nº {n} do oráculo (pedido {i}) não saiu {M}"
+        );
+        n += 1;
+    }
+    n
+}
+
+/// Os padrões que o `Gerador` monta para um segredo de várias linhas (ou anexo).
+fn padroes_das_linhas(c: &[u8]) -> Vec<Vec<u8>> {
+    let mut g = Gerador::novo();
+    let mut padroes = Vec::new();
+    g.linhas(c, &mut |p| {
+        padroes.push(p.to_vec());
+        Ok(())
+    })
+    .unwrap();
+    padroes
+}
+
+const TOKEN_D59: &str = "falso-Ab3$k&<9>Zq!'/ç-01";
+const ASCII_D59: &str = "falso-Ab3$k&<9>Zq!'";
+
+/// `delta-api-simbolos` (D59), montada como na tabela do contrato.
+fn delta_api_simbolos() -> Entrada {
+    let mut r = rascunho(
+        "delta-api-simbolos",
+        RascunhoDados::Api {
+            url: t("https://api.teste.invalid"),
+            token: s(TOKEN_D59),
+            variavel: t("SIMBOLOS_TOKEN"),
+        },
+    );
+    r.grupo = t("delta");
+    r.extras = vec![extra("SEGREDO_ASCII", ASCII_D59, true)];
+    valida(r)
+}
+
+/// Python que imprime o valor de `V` como JSON "html-safe" com `ensure_ascii` (o
+/// `json.dumps` padrão mais `&<>` em `\u`, como o `htmlsafe_json_dumps` do Jinja e o
+/// `json_script` do Django). `{}` é a expressão do valor.
+fn py_html_safe(expr: &str) -> String {
+    format!(
+        "import os,json;\
+         h=lambda s:s.replace('&','\\\\u0026').replace('<','\\\\u003c').replace('>','\\\\u003e');\
+         print(h(json.dumps({expr})))"
+    )
+}
+
+/// V3.29 (D58, D59): o Go com `ensure_ascii` do token de `delta-api-simbolos` (a forma
+/// do contrato e a do python real), as formas do shell e do PHP; cada padrão do oráculo
+/// da entrada sai `••••`; o custo cabe no orçamento de D29.
+#[test]
+fn v3_29_delta_api_simbolos_e_go_com_ensure_ascii() {
+    let e = delta_api_simbolos();
+    let m = mascara(&e);
+    let custo = custo_da_entrada(&e).unwrap();
+    assert!(custo <= ORCAMENTO_MASCARA, "D29: {custo}");
+    let contrato = br"falso-Ab3$k\u0026\u003c9\u003eZq!'/\u00e7-01".to_vec();
+    let mut saidas: Vec<(&str, Vec<u8>)> = vec![
+        ("Go + ensure_ascii (contrato)", contrato.clone()),
+        ("PHP à mão", br"falso-Ab3$k&<9>Zq!'\/\u00e7-01".to_vec()),
+    ];
+    for (caso, script) in [
+        (
+            "html-safe + ensure_ascii (python)",
+            py_html_safe("os.environ['V']"),
+        ),
+        (
+            "ensure_ascii (python)",
+            t("import os,json;print(json.dumps(os.environ['V']))"),
+        ),
+    ] {
+        if let Some(o) = python(&script, &[("V", TOKEN_D59)]) {
+            saidas.push((caso, o));
+        }
+    }
+    for (caso, script) in [
+        ("${V@Q}", "echo \"${V@Q}\""),
+        ("declare -p", "declare -p V"),
+    ] {
+        if let Some(o) = bash(script, &[("V", TOKEN_D59)]) {
+            saidas.push((caso, o));
+        }
+    }
+    for (caso, saida) in &saidas {
+        sem_trecho_de_6(caso, &m, saida, TOKEN_D59);
+    }
+    if let Some(o) = bash("printf '%q\\n' \"$V\"", &[("V", ASCII_D59)]) {
+        sem_trecho_de_6("printf %q do SEGREDO_ASCII", &m, &o, ASCII_D59);
+    }
+    // A forma do contrato inteira vira uma marca só.
+    assert_eq!(texto(&m.mascarar_tudo(&contrato)), M);
+    // O oráculo da entrada (token e extra), sozinho padrão por padrão.
+    let n = oraculo_cobre(&[
+        (&m, None, false, TOKEN_D59.as_bytes()),
+        (&m, None, false, ASCII_D59.as_bytes()),
+    ]);
+    assert!(n == 0 || n > 20, "o oráculo gerou poucos padrões ({n})");
+}
+
+/// V3.29 (D58): o Go com `ensure_ascii` também por linha de um segredo de várias linhas
+/// e no valor de linha; e uma linha binária de anexo continua mascarada pelo literal,
+/// sem formas de texto (D54).
+#[test]
+fn v3_29_go_com_ensure_ascii_por_linha_e_linha_binaria() {
+    let linhas = [
+        "linha-um-ação-01",
+        "linha-dois-Ab3$k&<9>Zq!-ação-02",
+        "TOKEN=falso-tok&<ç>-03",
+    ];
+    let nota = linhas.join("\n");
+    let e = generico(&[&nota]);
+    let m = mascara(&e);
+    let mut saidas: Vec<(&str, Vec<u8>)> = vec![(
+        "linha 2 à mão",
+        br#"["linha-dois-Ab3$k\u0026\u003c9\u003eZq!-a\u00e7\u00e3o-02"]"#.to_vec(),
+    )];
+    if let Some(o) = python(
+        &py_html_safe("os.environ['V'].splitlines()"),
+        &[("V", &nota)],
+    ) {
+        saidas.push(("html-safe + ensure_ascii das linhas (python)", o));
+    }
+    if let Some(o) = python(
+        &py_html_safe("os.environ['V']"),
+        &[("V", "falso-tok&<ç>-03")],
+    ) {
+        saidas.push(("valor de linha (python)", o));
+    }
+    for (caso, saida) in &saidas {
+        for alvo in linhas.iter().chain(["falso-tok&<ç>-03"].iter()) {
+            sem_trecho_de_6(caso, &m, saida, alvo);
+        }
+    }
+    // Só quando muda: sem `&<>` ou sem caractere fora do ASCII, nenhuma forma a mais.
+    let contar = |valor: &str| {
+        let mut g = Gerador::novo();
+        let mut n = 0usize;
+        g.formas_de_texto(valor.as_bytes(), &mut |_| {
+            n += 1;
+            Ok(())
+        })
+        .unwrap();
+        n
+    };
+    assert_eq!(contar("falso-ação-01"), 1, "só o ensure_ascii");
+    assert_eq!(contar("falso-a&b-01"), 2, "Go e %q");
+    assert_eq!(contar("falso-a&ç-01"), 3, "Go, ensure_ascii e D58");
+    assert_eq!(
+        contar("falso\u{2028}ç-01"),
+        2,
+        "U+2028 sem &<>: Go e ensure_ascii"
+    );
+    // Linha binária: o literal (com e sem `\r`, aparada) e nada de forma de texto.
+    let binaria: &[u8] = b"falso-bin-\xff&<x>-linha-01 \r\nFALSO_ENV=falso-anexo-01\n";
+    let padroes = padroes_das_linhas(binaria);
+    assert!(padroes.iter().any(|p| p == b"falso-bin-\xff&<x>-linha-01 "));
+    assert!(padroes.iter().any(|p| p == b"falso-bin-\xff&<x>-linha-01"));
+    assert!(
+        !padroes
+            .iter()
+            .any(|p| p.windows(6).any(|w| w == br"\u0026")),
+        "linha binária ganhou forma de texto"
+    );
+    let mut r = rascunho("teste-binario", RascunhoDados::Generico);
+    r.extras = vec![extra("OBS", "nada", false)];
+    r.anexos = vec![anexo("cfg.bin", binaria)];
+    let mb = mascara(&valida(r));
+    assert_eq!(
+        mb.mascarar_tudo(b"falso-bin-\xff&<x>-linha-01\n"),
+        format!("{M}\n").as_bytes()
+    );
+}
+
+/// V3.31 (D61): JSON numa linha. O anexo `client.json` minificado, o extra de uma linha
+/// só `{"user":…,"token":…}`, o objeto aninhado na linha e duas chaves na linha de um
+/// extra de várias linhas, e um valor com `\u00e7` e `\/` impresso decodificado, cada um
+/// pela saída real do `json.loads` do python; nenhum trecho de 6+ sobra, e o oráculo
+/// gera os mesmos padrões.
+#[test]
+fn v3_31_json_numa_linha() {
+    let client: &[u8] =
+        b"{\"installed\":{\"client_id\":\"x.apps\",\"client_secret\":\"falso-GOCSPX-minificado-01\"}}\n";
+    let um = r#"{"user":"x","token":"falso-json-uma-linha-01"}"#;
+    let varias = "{\n  \"db\": {\"senha\": \"falso-json-aninhado-02\"},\n  \"a\": \"x\", \"b\": \"falso-json-duas-chaves-03\"\n}";
+    let escapado = r#"{"k": "falso-a\u00e7\/b-json-04"}"#;
+    let mut r = rascunho("teste-json", RascunhoDados::Generico);
+    r.extras = vec![
+        extra("UM", um, true),
+        extra("VARIAS", varias, true),
+        extra("ESC", escapado, true),
+    ];
+    r.anexos = vec![anexo("client.json", client)];
+    let e = valida(r);
+    let m = mascara(&e);
+    let custo = custo_da_entrada(&e).unwrap();
+    assert!(custo <= ORCAMENTO_MASCARA, "D29: {custo}");
+    let cliente = core::str::from_utf8(client).unwrap();
+    let casos: [(&str, &str, &str, &str); 5] = [
+        (
+            "anexo minificado, .installed.client_secret",
+            cliente,
+            "print(json.loads(os.environ['V'])['installed']['client_secret'])",
+            "falso-GOCSPX-minificado-01",
+        ),
+        (
+            "extra de uma linha, .token",
+            um,
+            "print(json.loads(os.environ['V'])['token'])",
+            "falso-json-uma-linha-01",
+        ),
+        (
+            "objeto aninhado na linha",
+            varias,
+            "print(json.loads(os.environ['V'])['db']['senha'])",
+            "falso-json-aninhado-02",
+        ),
+        (
+            "duas chaves na linha",
+            varias,
+            "print(json.loads(os.environ['V'])['b'])",
+            "falso-json-duas-chaves-03",
+        ),
+        (
+            "\\u00e7 e \\/ decodificados",
+            escapado,
+            "print(json.loads(os.environ['V'])['k'])",
+            "falso-aç/b-json-04",
+        ),
+    ];
+    for (caso, v, script, alvo) in casos {
+        let mut saidas = vec![format!("{alvo}\n").into_bytes()];
+        if let Some(o) = python(&format!("import os,json;{script}"), &[("V", v)]) {
+            assert_eq!(
+                o,
+                format!("{alvo}\n").into_bytes(),
+                "{caso}: o python leu outro valor"
+            );
+            saidas.push(o);
+        }
+        for saida in &saidas {
+            sem_trecho_de_6(caso, &m, saida, alvo);
+            assert_eq!(texto(&m.mascarar_tudo(saida)), format!("{M}\n"), "{caso}");
+        }
+    }
+    // Escape inválido descarta o par; elemento de array sem chave fica em RA3 (só
+    // registrado).
+    let padroes =
+        padroes_das_linhas(br#"  "k": "falso-invalido-\x-01", "s": "falso-sozinho-\ud800-02","#);
+    assert!(!padroes.iter().any(|p| p == b"falso-invalido-x-01"));
+    assert!(!padroes.iter().any(|p| p.starts_with(b"falso-sozinho-")));
+    let arr = generico(&[r#"["falso-elemento-array-01"]"#]);
+    let fora = mascara(&arr).mascarar_tudo(b"falso-elemento-array-01\n");
+    eprintln!(
+        "RA3 (array JSON sem chave): {}",
+        if maior_trecho(&fora, b"falso-elemento-array-01") >= 6 {
+            "não mascarado"
+        } else {
+            "mascarado"
+        }
+    );
+    // O oráculo dá os mesmos padrões.
+    let n = oraculo_cobre(&[
+        (&m, None, true, client),
+        (&m, None, false, um.as_bytes()),
+        (&m, None, false, varias.as_bytes()),
+        (&m, None, false, escapado.as_bytes()),
+    ]);
+    assert!(n == 0 || n > 40, "o oráculo gerou poucos padrões ({n})");
+}
+
+/// V3.32 (D61): YAML e dotenv (comentário no fim, chave com espaço e com `/`, `''` das
+/// aspas simples) como o `yq` e o `source` do bash imprimem, e os campos de tab de uma
+/// linha Latin-1 de anexo pelo `cut -f2`/`-f3` real; o custo das duas entradas cabe no
+/// orçamento de D29, e o oráculo gera os mesmos padrões.
+#[test]
+fn v3_32_yaml_dotenv_e_tab_de_linha_binaria() {
+    let nota = "url: https://x.example\nsenha: falso-yaml-coment-01 # comentario\nprivate key: falso-yaml-chave-espaco-02\naws/secret: falso-yaml-chave-barra-03\n  aninhado:\n    senha: falso-yaml-indent-04\nSENHA_DB=\"falso-env-coment-05\" # dotenv\ntok: 'falso-it''s-yaml-06'";
+    let e = generico(&[nota]);
+    let m = mascara(&e);
+    assert!(custo_da_entrada(&e).unwrap() <= ORCAMENTO_MASCARA);
+    for alvo in [
+        "falso-yaml-coment-01",
+        "falso-yaml-chave-espaco-02",
+        "falso-yaml-chave-barra-03",
+        "falso-yaml-indent-04",
+        "falso-it's-yaml-06",
+    ] {
+        // Como o `yq` imprime o valor (decodificado, sem aspas nem comentário).
+        let saida = format!("{alvo}\n");
+        sem_trecho_de_6(alvo, &m, saida.as_bytes(), alvo);
+        assert_eq!(texto(&m.mascarar_tudo(saida.as_bytes())), format!("{M}\n"));
+    }
+    if let Some(o) = bash(
+        "eval \"$(sed -n 7p <<<\"$NOTA\")\"; echo \"$SENHA_DB\"",
+        &[("NOTA", nota)],
+    ) {
+        assert_eq!(o, b"falso-env-coment-05\n", "o source leu outro valor");
+        sem_trecho_de_6("dotenv pelo source", &m, &o, "falso-env-coment-05");
+    }
+    // Anexo Latin-1 (não é UTF-8) com campos de tab.
+    let mut an: Vec<u8> = b"# config\n".to_vec();
+    an.extend_from_slice(b"SENHA=falso-latin\xe7-01\tTOKEN=falso-campo-tab-02\n");
+    an.extend_from_slice(b"nome\xe7\tfalso-campo-tsv-03\tfalso-campo-tsv-04\n");
+    let mut r = rascunho("teste-latin1", RascunhoDados::Generico);
+    r.extras = vec![extra("OBS", "nada", false)];
+    r.anexos = vec![anexo("cfg.ini", &an)];
+    let ea = valida(r);
+    let ma = mascara(&ea);
+    assert!(custo_da_entrada(&ea).unwrap() <= ORCAMENTO_MASCARA);
+    for (caso, script, alvo) in [
+        (
+            "cut -f2 (KEY=v)",
+            "printf '%s' \"$A\" | sed -n 2p | cut -f2",
+            "TOKEN=falso-campo-tab-02",
+        ),
+        (
+            "cut -f2 (TSV)",
+            "printf '%s' \"$A\" | sed -n 3p | cut -f2",
+            "falso-campo-tsv-03",
+        ),
+        (
+            "cut -f3 (TSV)",
+            "printf '%s' \"$A\" | sed -n 3p | cut -f3",
+            "falso-campo-tsv-04",
+        ),
+    ] {
+        let mut saidas = vec![format!("{alvo}\n").into_bytes()];
+        if let Some(o) = bash_bytes(script, &[("A", &an)]) {
+            assert_eq!(
+                o,
+                format!("{alvo}\n").into_bytes(),
+                "{caso}: o cut deu outro campo"
+            );
+            saidas.push(o);
+        }
+        for saida in &saidas {
+            assert_eq!(texto(&ma.mascarar_tudo(saida)), format!("{M}\n"), "{caso}");
+        }
+    }
+    // Só pelo literal: o campo binário não ganha base64 nem forma de texto.
+    let padroes = padroes_das_linhas(&an);
+    let mut b64 = Zeroizing::new(Vec::new());
+    base64(b"falso-campo-tsv-04", B64_PADRAO, true, &mut b64);
+    assert!(
+        !padroes.iter().any(|p| p[..] == b64[..]),
+        "campo binário com base64"
+    );
+    // `iconv` e `repr()` ficam em RA3: só registrados.
+    if let Some(o) = bash_bytes(
+        "printf '%s' \"$A\" | sed -n 3p | iconv -f latin1 -t utf-8",
+        &[("A", &an)],
+    ) {
+        let fora = ma.mascarar_tudo(&o);
+        eprintln!(
+            "RA3 (iconv da linha Latin-1): {}",
+            if maior_trecho(&fora, b"falso-campo-tsv-03") >= 6 {
+                "não mascarado"
+            } else {
+                "mascarado"
+            }
+        );
+    }
+    let n = oraculo_cobre(&[(&m, None, false, nota.as_bytes()), (&ma, None, true, &an)]);
+    assert!(n == 0 || n > 40, "o oráculo gerou poucos padrões ({n})");
+}
+
+/// D61: cada candidato a mais só entra quando difere do que a linha já gera (o
+/// orçamento de D29 não paga duas vezes o mesmo valor).
+#[test]
+fn d61_candidatos_so_quando_mudam() {
+    let contar = |linha: &[u8], alvo: &[u8]| {
+        padroes_das_linhas(linha)
+            .iter()
+            .filter(|p| p[..] == *alvo)
+            .count()
+    };
+    assert_eq!(
+        contar(b"senha: falso-yaml-simples-01", b"falso-yaml-simples-01"),
+        1
+    );
+    assert_eq!(
+        contar(
+            br#""k": "falso-json-simples-01","#,
+            b"falso-json-simples-01"
+        ),
+        1
+    );
+    assert_eq!(
+        contar(b"SENHA=falso-env-simples-01", b"falso-env-simples-01"),
+        1
+    );
+    // A chave composta que dá o mesmo valor do parser antigo não repete o valor.
+    assert_eq!(
+        contar(b"chave_x : falso-yaml-esp-01", b"falso-yaml-esp-01"),
+        1
+    );
+    // URL, comentário e flow do YAML não viram chave composta.
+    assert!(valor_de_chave_composta(b"https://host.invalid:8080/x").is_none());
+    assert!(valor_de_chave_composta(b"# nota: x").is_none());
+    assert!(valor_de_chave_composta(b"{k: falso-flow-01}").is_none());
+    assert_eq!(
+        valor_de_chave_composta(b"  - private key: falso-x-01,"),
+        Some(&b"falso-x-01"[..])
+    );
 }
