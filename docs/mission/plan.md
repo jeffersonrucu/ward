@@ -1121,6 +1121,28 @@ item novo no menu da bandeja só pode ser ação que não entrega segredo. Depoi
   - falta asserção V9.x própria;
   - as linhas `teste-install`/`teste-deb` do `CLAUDE.md` não citam a 51c.
 
+2ª auditoria de segurança do M5, focada (2026-11-09): **aprovada**. Os dois altos estão
+fechados: `teste-area-transferencia` 0 (sem disco nem programa externo), `teste-deb` 0
+(apport e systemd-coredump reais) e `make check` 0. No Wayland sem foco, o
+`gtk_clipboard_clear` destrói a fonte antiga, então nada continua sendo servido. Segue o
+QA do M5.
+- [ ] Fase 39g — Restos da 2ª auditoria do M5 (não bloqueiam o QA).
+  - **Médio:** com o valor revelado, selecionar com o mouse ou dar Ctrl+C o leva à
+    PRIMARY ou à CLIPBOARD pelo WebKit, sem prazo nem dica `secret`
+    (`CampoSecreto.svelte:204-207`, `.revelado { user-select: text }`). Usar
+    `user-select: none` e bloquear `copy`/`selectstart` no campo revelado; o botão copiar
+    continua. Teste com o `scratchpad/primary.py` da auditoria.
+  - **Baixo:** U+FEFD e U+FEFE (não atribuídos, AL na ICU) não são isolados nem escapados
+    (`bidi.js:17`, `ward-core/src/exibicao.rs:31`). Estender a faixa ou escapar todo
+    código não atribuído.
+  - **Baixo:** sem bandeja, a trava de fora não limpa na hora (`main.rs:742-745`).
+    Chamar `na_passagem_da_bandeja` antes do `try_state`.
+  - **Baixo:** `anexos.rs:247` lê num buffer fixo com `Zeroizing`, como o `chave.rs`.
+  - **Escopo:** o crash do Chrome (apport e crashpad no perfil) com a senha preenchida
+    entra no "Fora do modelo", junto do RA10; o Chrome não vai para a lista do apport
+    (parecer do auditor: baixo).
+  S2, S12, D51.
+
 Scrutiny do M6 (2026-11-09): **reprovado** (1ª vez).
 - `make check`, `teste-nm`, `teste-extensao`, `teste-login` e o `cargo test --ignored`
   do Playwright deram 0.
