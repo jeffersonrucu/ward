@@ -925,6 +925,13 @@ Contrato: V7.1–V7.11
 - [x] Fase 48 — **(UI)** Configurações › backup externo. V7.9.
 - [x] Fase 49 — **(UI)** Kit de emergência para imprimir. V7.10.
 
+Validação do M7 (2026-11-09): scrutiny, segurança e QA aprovados com ressalvas; o
+contrato V7.* é marcado depois da 49a. QA: V7.4–V7.6 e V7.9 ligado/desligado não
+exercitados na UI (daemon de teste sem udisks); "Duplicar" em Credenciais não faz nada
+no modo de teste; a vitrine de componentes aparece abaixo da tela de erro no
+`dist-teste` (conferir que o de produção não tem); item da lista de versões sem
+tamanho. Roteiro do usuário: `docs/mission/evidence/M7/roteiro-usuario.md`.
+
 - [ ] Fase 49a — Achados da auditoria do M7 (aprovado, 2026-11-09). Médio: rotação e
   ordem dos backups confiam na data do nome (30 versões plantadas com data futura fazem
   o daemon apagar as reais, local e no pendrive, e aparecem como a mais nova no
