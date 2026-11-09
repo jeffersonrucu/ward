@@ -1156,3 +1156,37 @@ presentes). PNG em `docs/mission/evidence/fase-49b/`. Textos iguais aos do app
 | `Restaurar backup / Versões com cópia plantada` | `20548` | x 0, y 13300 | diálogo `20657`; itens `20665` (`fora de ordem`, "08/11/2026 às 14:35", "agora"), `20672`, `20679`, `20686`, `20693` (padrão, "Cópia local", sem tamanho nem pendrive, como no app); legenda `20700` ("31 versões, da mais nova para a mais antiga. …"); "Continuar" `20707` desabilitado (nada escolhido) |
 | `Restaurar backup / Confirmar cópia plantada` | `20711` | x 1360, y 13300 | diálogo `20820`; item `20828` (`fora de ordem selecionado`); `Campo senha` `20835` (ajuda "É a senha que valia em 08/11/2026. O PIN não serve aqui."); aviso `20847` com a frase nova e a data da versão |
 | `Configurações / Backup local inseguro` | `20863` | x 2720, y 13300 | cópia de `Configurações / Geral`; coluna `backup` `20939` › `corpo` `20940`; linha "Backup local" `20942` (descrição sem "Último: …", como no app); `Destaque` aviso `20971` ("aviso backup local", `fill`, logo abaixo da linha) com `AVISO_BACKUP_LOCAL` = `#config-backup-local-aviso` |
+
+## Fase 53c — botão "Carregar de arquivo" e estados do campo "Chave privada" (design)
+
+Editado numa cópia do `Ward.figcraft` aberta pelo MCP `figcraft` headless e salvo por
+cima do original com `save_file` depois de conferir que o sha256 do original não tinha
+mudado. Conferido relendo o arquivo do disco (`unzip -t` sem erro; PNG exportados do
+arquivo salvo pela CLI). PNG em `docs/mission/evidence/fase-53c/`. Textos iguais aos
+do app (`Formulario.svelte`, `chave.rs`; Fase 53a).
+
+### Componente (Design System)
+
+Seção `Seção / Campo chave privada` `20976` (x 21000, y 0; título `20977`, descrição
+`20978`; fundo `6:56`, raio `VariableID:16`, gap `6:133`, padding `6:136`).
+
+| Nó | Id | Notas |
+| --- | --- | --- |
+| `Campo chave privada` (set) | `20988` | props `Rótulo` (rótulos `20980` `20990`), `Ajuda` (`20986`), `Aviso` (`20997`) |
+| `Estado=vazio` | `20979` | gap `espaco/8`, largura mínima `largura/campo`; rótulo `20980` (`Texto/Rótulo`, `texto/primario`); `entrada` `20981` (caixa de várias linhas: altura `espaco/96`, padding `espaco/12` × `espaco/16`, raio `raio/controle`, fundo `superficie/campo`, borda `borda/sutil` `linha/fina`) com `placeholder` `20987` "Cole a chave privada (formato OpenSSH ou PEM)" (`Texto/Corpo`, `texto/secundario`); `Carregar de arquivo` `20982` = `Botão` secundário padrão com ícone `clipe` (`217`); ajuda `20986` "Cole a chave ou use Carregar de arquivo. Depois de salvo, ela só aparece com revelar." (`Texto/Legenda`, `texto/secundario`) |
+| `Estado=aviso` | `20989` | igual ao vazio (`entrada` `20991`, botão `20993`); a linha de ajuda vira `aviso` `20997` com o motivo fixo ("o arquivo não é uma chave privada OpenSSH ou PEM") em `perigo/texto` (`6:79`); a caixa não ganha borda de erro (como no app) |
+| Exemplo "chave carregada" | `20998` | instância do `Campo secreto` `Estado=oculto` (`376`) sem revelar, copiar nem gerar, máscara de 8 pontos (`21001`), ajuda "Chave carregada do arquivo (411 bytes). Ela fica oculta e vai para o cofre ao salvar." — é o que a tela mostra depois de carregar (sem componente novo) |
+
+### Telas (Layout, 1280 de largura; altura para o corpo caber acima do rodapé)
+
+| Frame | Id | Posição | Principais |
+| --- | --- | --- | --- |
+| `Formulário / ftp/sftp / Novo` (alterado) | `14743` | x 1360, y 7200 | altura 1470 → 1574; `linha chave` `15210`: `Campo chave privada` vazio `21023` no lugar do `Campo secreto` vazio `15067` (apagado); Passphrase `15211` |
+| `Formulário / servidor / Novo / Chave` | `21032` | x 0, y 14400 | cópia de `9900` (1556 de altura); Host `21306` `Estado=padrão`; Autenticação `21336` "Chave"; `linha chave` `21342`: `Campo chave privada` vazio `21418` + Passphrase (opcional) `Campo secreto` vazio `21427` |
+| `Formulário / servidor / Novo / Chave com aviso` | `21452` | x 1360, y 14400 | cópia do anterior (1540); `Campo chave privada` `Estado=aviso` `21763` (botão `21767`); Passphrase `21772` |
+| `Formulário / servidor / Novo / Chave carregada` | `21847` | x 2720, y 14400 | cópia do anterior (1436); `linha chave` `22157`: `Campo secreto` oculto `22242` (máscara `22245`, ajuda `22266`, sem revelar/copiar) + Passphrase `22167` |
+| `Formulário / servidor / Edição / Trocar chave` | `22268` | x 4080, y 14400 | cópia de `8981` (1616) depois de "Trocar valor" na chave: `linha chave` `22603`: `Campo chave privada` vazio `22724` + Passphrase oculta `22629` |
+
+`Formulário / servidor / Novo` `9900` (Autenticação "Senha") e `Formulário / servidor /
+Edição` `8981` (chave salva, `Campo secreto` oculto `9326`) ficam como estavam: nesses
+estados o app não mostra o botão. Os estados novos saem deles nos frames acima.
