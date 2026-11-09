@@ -49,6 +49,7 @@ pub mod aprovacao;
 pub mod area_transferencia;
 pub mod backup_externo;
 pub mod bandeja;
+pub mod chave;
 pub mod cliente;
 pub mod comandos;
 pub mod configuracoes;

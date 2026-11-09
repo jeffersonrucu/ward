@@ -633,6 +633,111 @@ fn ataque_anexos_e_conectar_pela_ponte() {
     fs::remove_dir_all(base).unwrap();
 }
 
+/// Fase 53a (S2, S11) pela ponte: `carregar_chave` devolve só o tamanho (nunca a chave
+/// nem o caminho); a chave vai no salvar como `"carregada"` e o daemon a guarda; campo
+/// fora da lista, argumento a mais ou de outro tipo são recusados antes do seletor;
+/// texto que não é chave dá o aviso fixo; `"carregada"` sem nada carregado (ou depois de
+/// salvo, que descarta) é pedido inválido.
+#[test]
+fn ataque_carregar_chave_pela_ponte() {
+    use ward_ponte_teste::simulados::SeletorDePasta;
+    let base = dist("chave53a");
+    let pasta = base.join("chave");
+    fs::create_dir_all(&pasta).unwrap();
+    let miolo = "ZmFsc28tY2hhdmUtcG9udGUtNTNh";
+    let rotulo = ["OPENSSH", " PRIVATE", " KEY"].concat();
+    let chave = format!("-----BEGIN {rotulo}-----\n{miolo}\n-----END {rotulo}-----\n");
+    fs::write(pasta.join("deploy_ed25519"), &chave).unwrap();
+    let servico = Servico::novo(DaemonFalso::cheio(), Copiador::novo(Area::default()))
+        .com_seletor(SeletorDePasta(pasta.clone()));
+    let (p, _l) = Ponte::abrir(servico, &base.join("dist")).unwrap();
+    for corpo in [
+        r#"{}"#,
+        r#"{"campo":"senha"}"#,
+        r#"{"campo":"passphrase"}"#,
+        r#"{"campo":5}"#,
+        r#"{"campo":"chave_privada","caminho":"/etc/shadow"}"#,
+    ] {
+        let r = p.responder(&post(&p, "carregar_chave", corpo, &[]));
+        assert_eq!(r.corpo_json().unwrap()["ok"], false, "{corpo}");
+    }
+    let r = p.responder(&post(
+        &p,
+        "carregar_chave",
+        r#"{"campo":"chave_privada"}"#,
+        &[],
+    ));
+    let corpo = String::from_utf8_lossy(&r.corpo).into_owned();
+    assert!(
+        !corpo.contains(miolo) && !corpo.contains("deploy_ed25519") && !corpo.contains('/'),
+        "{corpo}"
+    );
+    assert_eq!(
+        r.corpo_json().unwrap()["valor"],
+        serde_json::json!({"resultado": "carregada", "tamanho": chave.len()})
+    );
+    let novo = |nome: &str| {
+        serde_json::json!({ "formulario": {
+            "tipo": "servidor", "nome": nome, "grupo": "clientex", "ambiente": "stage",
+            "projeto": "", "tags": [],
+            "campos": {"host": "127.0.0.1", "porta": "2223", "usuario": "deploy", "salto": ""},
+            "segredos": {"senha": "vazio", "chave_privada": "carregada", "passphrase": "vazio"},
+            "extras": [], "anexos": []
+        }})
+        .to_string()
+    };
+    let r = p.responder(&post(
+        &p,
+        "salvar_credencial",
+        &novo("clientex-ssh-53a"),
+        &[],
+    ));
+    assert_eq!(
+        r.corpo_json().unwrap()["valor"]["salvo"],
+        "clientex-ssh-53a",
+        "{}",
+        String::from_utf8_lossy(&r.corpo)
+    );
+    let r = p.responder(&post(
+        &p,
+        "detalhe_credencial",
+        r#"{"entrada":"clientex-ssh-53a"}"#,
+        &[],
+    ));
+    assert!(!String::from_utf8_lossy(&r.corpo).contains(miolo));
+    // Salvo, a chave carregada foi descartada: "carregada" de novo é pedido inválido.
+    let r = p.responder(&post(
+        &p,
+        "salvar_credencial",
+        &novo("clientex-ssh-53b"),
+        &[],
+    ));
+    assert_eq!(r.corpo_json().unwrap()["ok"], false);
+    // Texto que não é chave: aviso fixo, nada guardado.
+    fs::write(pasta.join("deploy_ed25519"), "falso-texto-53a\n").unwrap();
+    let r = p.responder(&post(
+        &p,
+        "carregar_chave",
+        r#"{"campo":"chave_privada"}"#,
+        &[],
+    ));
+    assert!(!String::from_utf8_lossy(&r.corpo).contains("falso-texto"));
+    assert_eq!(
+        r.corpo_json().unwrap()["valor"]["resultado"],
+        "aviso",
+        "{}",
+        String::from_utf8_lossy(&r.corpo)
+    );
+    let r = p.responder(&post(
+        &p,
+        "salvar_credencial",
+        &novo("clientex-ssh-53b"),
+        &[],
+    ));
+    assert_eq!(r.corpo_json().unwrap()["ok"], false);
+    fs::remove_dir_all(base).unwrap();
+}
+
 /// Fase 30 (V5.7): primeiro uso pela ponte, com o daemon falso sem cofre. PIN com 3 ou 7
 /// dígitos, com letras e confirmação diferente voltam como erro de campo sem ir ao
 /// daemon; dados com campo a mais ou fora do formato são recusados; nenhuma resposta

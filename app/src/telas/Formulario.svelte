@@ -14,6 +14,11 @@
   // Fase 34: anexos são escolhidos e lidos no Rust (`escolher_anexo`); a tela recebe só
   // id, nome e tamanho, ou o aviso (arquivo acima de 256 KiB, soma acima disso, vazio).
   // "Conectar" (D3) pede ao Rust o token e o terminal; o token não volta.
+  //
+  // Fase 53a (S2, S11): "Carregar de arquivo" no campo "Chave privada" pede ao Rust
+  // (`carregar_chave`), que escolhe, lê e confere o arquivo e guarda a chave; a tela
+  // recebe só o tamanho (ou o aviso), e a chave vai no salvar como "carregada", sem
+  // área de transferência e sem passar por aqui.
   import { onDestroy, onMount } from 'svelte';
   import Anexo from '../lib/componentes/Anexo.svelte';
   import BadgeAmbiente from '../lib/componentes/BadgeAmbiente.svelte';
@@ -126,6 +131,9 @@
   );
   let avisoAnexo = $state('');
   let escolhendo = $state(false);
+  /** @type {Record<string, string>} */
+  let avisoChave = $state({});
+  let carregando = $state(false);
   let conectando = $state(false);
   let conectado = $state(false);
 
@@ -259,6 +267,7 @@
 
   function trocar(id) {
     esconder(id);
+    delete avisoChave[id];
     segredos[id] = { modo: 'digitando', digitado: '', tamanho: 0 };
     if (id === 'totp_semente') {
       clearTimeout(prazoTotp);
@@ -269,6 +278,27 @@
   function usarGerada(tamanho) {
     segredos[geradorPara] = { modo: 'gerada', digitado: '', tamanho };
     geradorPara = '';
+  }
+
+  // Fase 53a: a chave fica no Rust; aqui só o modo "carregada" e o tamanho (máscara).
+  async function carregarChave(id) {
+    if (carregando) return;
+    carregando = true;
+    delete avisoChave[id];
+    try {
+      const r = await chamar('carregar_chave', { campo: id });
+      if (!ativa) return;
+      if (r.resultado === 'carregada') {
+        segredos[id] = { modo: 'carregada', digitado: '', tamanho: r.tamanho };
+        delete erros[id];
+      } else if (r.resultado === 'aviso') {
+        avisoChave[id] = r.motivo;
+      }
+    } catch (e) {
+      avisoChave[id] = e.mensagem;
+    } finally {
+      carregando = false;
+    }
   }
 
   function adicionarExtra() {
@@ -409,7 +439,9 @@
       ? 'Revelar e copiar não pedem PIN.'
       : s.modo === 'gerada'
         ? 'Senha gerada. Ela fica oculta e vai para o cofre ao salvar.'
-        : 'Digite ou gere o valor. Depois de salvo, ele fica oculto.'}
+        : s.modo === 'carregada'
+          ? `Chave carregada do arquivo (${tamanhoLegivel(s.tamanho)}). Ela fica oculta e vai para o cofre ao salvar.`
+          : 'Digite ou gere o valor. Depois de salvo, ele fica oculto.'}
     placeholder="Nenhum valor salvo"
     onrevelar={() => revelar(c.id)}
     onesconder={() => esconder(c.id)}
@@ -444,7 +476,9 @@
     </div>
   {:else if c.tipo === 'segredo' && c.multilinha && segredos[c.id].modo === 'digitando'}
     <!-- Chave privada: várias linhas (o <input> perderia as quebras). O texto fica
-         mascarado na tela (text-security) e só no estado deste formulário. -->
+         mascarado na tela (text-security) e só no estado deste formulário.
+         Fase 53a: "Carregar de arquivo" lê o arquivo no Rust; o conteúdo não vem. -->
+    {@const aviso = avisoChave[c.id] ?? ''}
     <div class="nota">
       <label class="rotulo" for="form-{c.id}">{c.rotulo}</label>
       <textarea
@@ -457,8 +491,20 @@
         autocomplete="off"
         aria-invalid={erroDe(c.id) ? 'true' : undefined}
       ></textarea>
-      <span class="ajuda" class:erro={erroDe(c.id)}>
-        {erroDe(c.id) || 'O conteúdo fica oculto. Depois de salvo, ele só aparece com revelar.'}
+      <div class="acao-chave">
+        <Botao
+          variante="secundario"
+          icone="clipe"
+          desabilitado={carregando}
+          title="Lê o arquivo da chave direto para o cofre, sem área de transferência."
+          data-acao="carregar-chave"
+          onclick={() => carregarChave(c.id)}>Carregar de arquivo</Botao
+        >
+      </div>
+      <span class="ajuda" class:erro={erroDe(c.id) || aviso} role={aviso ? 'alert' : undefined}>
+        {erroDe(c.id) ||
+          aviso ||
+          'Cole a chave ou use Carregar de arquivo. Depois de salvo, ela só aparece com revelar.'}
       </span>
     </div>
   {:else if c.tipo === 'segredo'}
@@ -778,6 +824,9 @@
     display: flex;
     flex-direction: column;
     gap: var(--espaco-8);
+  }
+  .acao-chave {
+    display: flex;
   }
   .rotulo {
     font-weight: var(--peso-medio);

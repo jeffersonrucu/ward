@@ -14,6 +14,7 @@ use crate::anexos::{Anexos, Base, EdicaoDosAnexos, Escolha, Seletor, SemSeletor}
 use crate::aprovacao::{self, Aprovacoes, PedidoExibido, ResultadoAprovacao};
 use crate::area_transferencia::{AreaTransferencia, Copiador};
 use crate::backup_externo::{self, BackupExternoVisto, EscolhaDoPendrive, PendriveVisto};
+use crate::chave::{self, CAMPOS_CARREGAVEIS, Carregamento};
 use crate::cliente;
 use crate::comandos::{Referencia, validar_nome_entrada};
 use crate::configuracoes::{Configuracoes, ResultadoTroca, TrocaPin, TrocaSenha, minutos_validos};
@@ -61,6 +62,9 @@ pub struct Servico<D: Daemon, A: AreaTransferencia> {
     /// Senhas que o gerador do formulário passou a um campo ("Usar esta senha"), só em
     /// memória, até salvar, cancelar ou sair.
     usadas: Mutex<BTreeMap<String, Segredo>>,
+    /// Chaves privadas lidas pelo "Carregar de arquivo" (Fase 53a), por campo, só em
+    /// memória, até salvar, cancelar ou sair. O conteúdo nunca vai à interface.
+    carregadas: Mutex<BTreeMap<String, Segredo>>,
     /// Anexos escolhidos no formulário aberto (Fase 34), só em memória, até salvar,
     /// cancelar ou sair. O conteúdo nunca vai à interface.
     anexos: Mutex<Anexos>,
@@ -103,6 +107,7 @@ struct FontesDoServico<'a, D: Daemon> {
     daemon: &'a mut D,
     entrada: Option<&'a str>,
     usadas: &'a BTreeMap<String, Segredo>,
+    carregadas: &'a BTreeMap<String, Segredo>,
 }
 
 impl<D: Daemon> Fontes for FontesDoServico<'_, D> {
@@ -118,6 +123,13 @@ impl<D: Daemon> Fontes for FontesDoServico<'_, D> {
             .map(|s| SegredoCore::de_bytes(s.expor().to_vec()))
             .ok_or(ErroApp::SemSenhaGerada)
     }
+
+    fn carregada(&mut self, campo: &str) -> Result<SegredoCore, ErroApp> {
+        self.carregadas
+            .get(campo)
+            .map(|s| SegredoCore::de_bytes(s.expor().to_vec()))
+            .ok_or(ErroApp::PedidoInvalido)
+    }
 }
 
 impl<D: Daemon, A: AreaTransferencia> Servico<D, A> {
@@ -127,6 +139,7 @@ impl<D: Daemon, A: AreaTransferencia> Servico<D, A> {
             copiador,
             gerador: Mutex::new(Gerador::default()),
             usadas: Mutex::new(BTreeMap::new()),
+            carregadas: Mutex::new(BTreeMap::new()),
             anexos: Mutex::new(Anexos::default()),
             seletor: Box::new(SemSeletor),
             terminal: Box::new(SemTerminal),
@@ -326,6 +339,39 @@ impl<D: Daemon, A: AreaTransferencia> Servico<D, A> {
         Ok(base)
     }
 
+    /// `carregar_chave { campo }` (Fase 53a): "Carregar de arquivo" do campo "Chave
+    /// privada". O campo é conferido antes de abrir o seletor; o arquivo é lido e
+    /// conferido aqui ([`chave::ler_chave`]: sem link, só arquivo comum, até 64 KiB, só
+    /// chave OpenSSH/PEM) e guardado até salvar, cancelar ou sair. A resposta traz só o
+    /// tamanho, ou o aviso; nunca o conteúdo nem o caminho (S2, S11). Um aviso ou um
+    /// cancelamento não apagam a chave carregada antes.
+    pub fn carregar_chave(&self, campo: &str) -> Result<Carregamento, ErroApp> {
+        let campo = CAMPOS_CARREGAVEIS
+            .iter()
+            .find(|c| **c == campo)
+            .ok_or(ErroApp::PedidoInvalido)?;
+        let Some(caminho) = self.seletor.escolher_chave()? else {
+            return Ok(Carregamento::Cancelado);
+        };
+        match chave::ler_chave(&caminho) {
+            Ok(s) => {
+                let tamanho = s.len() as u64;
+                self.carregadas_travadas().insert((*campo).to_owned(), s);
+                Ok(Carregamento::Carregada { tamanho })
+            }
+            Err(motivo) => Ok(Carregamento::Aviso { motivo }),
+        }
+    }
+
+    fn carregadas_travadas(&self) -> MutexGuard<'_, BTreeMap<String, Segredo>> {
+        // Pânico com o lock na mão: as chaves carregadas são descartadas.
+        self.carregadas.lock().unwrap_or_else(|e| {
+            let mut m = e.into_inner();
+            m.clear();
+            m
+        })
+    }
+
     /// `remover_anexo { id }`: tira um anexo escolhido e ainda não salvo.
     pub fn remover_anexo(&self, id: u64) -> Result<(), ErroApp> {
         self.anexos_travados().remover(id)
@@ -509,6 +555,7 @@ impl<D: Daemon, A: AreaTransferencia> Servico<D, A> {
     /// e a do gerador.
     pub fn descartar_formulario(&self) {
         self.usadas_travadas().clear();
+        self.carregadas_travadas().clear();
         self.anexos_travados().limpar();
         if let Ok(mut g) = self.gerador_travado() {
             g.descartar();
@@ -562,10 +609,12 @@ impl<D: Daemon, A: AreaTransferencia> Servico<D, A> {
             .as_ref()
             .map(|det| (det.segredos.as_slice(), extras_guardados.as_slice()));
         let usadas = self.usadas_travadas();
+        let carregadas = self.carregadas_travadas();
         let mut fontes = FontesDoServico {
             daemon: &mut *d,
             entrada: anterior,
             usadas: &usadas,
+            carregadas: &carregadas,
         };
         let montado = match formulario::montar(&mut f, tipo, editando, &mut fontes) {
             Ok(m) => m,
@@ -575,6 +624,7 @@ impl<D: Daemon, A: AreaTransferencia> Servico<D, A> {
             }
         };
         drop(usadas);
+        drop(carregadas);
         // Os anexos pedidos, copiados: se o daemon recusar, continuam escolhidos para o
         // próximo salvar.
         let anexos: Vec<RascunhoAnexo> = self
@@ -1698,6 +1748,139 @@ mod testes {
         // Salvo, os anexos escolhidos são descartados: o id não vale de novo.
         let mut v = servidor_novo("clientex-ssh-anexo2");
         v["anexos"] = serde_json::json!([id]);
+        assert_eq!(
+            s.salvar_credencial(None, form(v)),
+            Err(ErroApp::PedidoInvalido)
+        );
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    fn chave_53a(miolo: &str) -> String {
+        let rotulo = ["OPENSSH", " PRIVATE", " KEY"].concat();
+        format!("-----BEGIN {rotulo}-----\n{miolo}\n-----END {rotulo}-----\n")
+    }
+
+    fn servidor_carregado(nome: &str) -> serde_json::Value {
+        let mut v = servidor_novo(nome);
+        v["segredos"]["chave_privada"] = serde_json::json!("carregada");
+        v
+    }
+
+    /// Fase 53a (S2, S11): "Carregar de arquivo" lê a chave no Rust; a resposta traz só o
+    /// tamanho; salvar com `"carregada"` grava exatamente o arquivo no cofre (o revelar
+    /// do daemon devolve o mesmo); salvar descarta a chave carregada.
+    #[test]
+    fn carregar_chave_vai_ao_daemon_sem_passar_pela_interface() {
+        let (s, sel, _) = servico_34();
+        let d = pasta_34("chave53a");
+        let k = chave_53a("ZmFsc28tY2hhdmUtc2VydmljbzUzYQ==");
+        std::fs::write(d.join("deploy_ed25519"), &k).unwrap();
+        *sel.0.lock().unwrap() = Some(d.join("deploy_ed25519"));
+        let r = s.carregar_chave("chave_privada").unwrap();
+        assert_eq!(
+            r,
+            Carregamento::Carregada {
+                tamanho: k.len() as u64
+            }
+        );
+        let json = serde_json::to_string(&r).unwrap();
+        assert!(
+            !json.contains("ZmFsc28") && !json.contains("deploy"),
+            "{json}"
+        );
+        let r = s
+            .salvar_credencial(None, form(servidor_carregado("clientex-ssh-53a")))
+            .unwrap();
+        assert_eq!(r.salvo.as_deref(), Some("clientex-ssh-53a"), "{r:?}");
+        let v = s
+            .revelar_campo("clientex-ssh-53a", "chave_privada")
+            .unwrap();
+        assert_eq!(v.expor(), k.as_str());
+        // Salvo, a chave foi descartada: "carregada" de novo é pedido inválido.
+        assert_eq!(
+            s.salvar_credencial(None, form(servidor_carregado("clientex-ssh-53b"))),
+            Err(ErroApp::PedidoInvalido)
+        );
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    /// Fase 53a: campo fora da lista nem abre o seletor; cancelar, aviso e
+    /// `descartar_formulario` não deixam chave para o salvar; o aviso não traz o
+    /// conteúdo nem o caminho; um aviso não apaga a chave carregada antes.
+    #[test]
+    fn ataque_carregar_chave_campo_forjado_aviso_e_descartar() {
+        let (s, sel, _) = servico_34();
+        let d = pasta_34("chave53a-ataque");
+        let texto = d.join("segredo-qualquer.txt");
+        std::fs::write(&texto, "falso-texto-53a=valor\n").unwrap();
+        *sel.0.lock().unwrap() = Some(texto.clone());
+        for campo in ["senha", "passphrase", "totp_semente", "", "chave_privada "] {
+            assert_eq!(
+                s.carregar_chave(campo),
+                Err(ErroApp::PedidoInvalido),
+                "{campo:?}"
+            );
+        }
+        let r = s.carregar_chave("chave_privada").unwrap();
+        assert_eq!(
+            r,
+            Carregamento::Aviso {
+                motivo: chave::AVISO_NAO_E_CHAVE.into()
+            }
+        );
+        let json = serde_json::to_string(&r).unwrap();
+        assert!(!json.contains("falso-texto") && !json.contains("segredo-qualquer"));
+        assert_eq!(
+            s.salvar_credencial(None, form(servidor_carregado("clientex-ssh-53c"))),
+            Err(ErroApp::PedidoInvalido)
+        );
+        // Link para a chave: recusado (o seletor devolve o caminho do link).
+        let k = chave_53a("ZmFsc28tbGluaw==");
+        std::fs::write(d.join("chave"), &k).unwrap();
+        std::os::unix::fs::symlink(d.join("chave"), d.join("link")).unwrap();
+        *sel.0.lock().unwrap() = Some(d.join("link"));
+        assert_eq!(
+            s.carregar_chave("chave_privada").unwrap(),
+            Carregamento::Aviso {
+                motivo: chave::AVISO_LINK.into()
+            }
+        );
+        // Carregada e depois um aviso: a carregada continua; descartar a apaga.
+        *sel.0.lock().unwrap() = Some(d.join("chave"));
+        assert!(matches!(
+            s.carregar_chave("chave_privada").unwrap(),
+            Carregamento::Carregada { .. }
+        ));
+        *sel.0.lock().unwrap() = Some(texto);
+        assert!(matches!(
+            s.carregar_chave("chave_privada").unwrap(),
+            Carregamento::Aviso { .. }
+        ));
+        s.descartar_formulario();
+        assert_eq!(
+            s.salvar_credencial(None, form(servidor_carregado("clientex-ssh-53c"))),
+            Err(ErroApp::PedidoInvalido)
+        );
+        // Travar também descarta.
+        *sel.0.lock().unwrap() = Some(d.join("chave"));
+        assert!(matches!(
+            s.carregar_chave("chave_privada").unwrap(),
+            Carregamento::Carregada { .. }
+        ));
+        s.ao_sair();
+        assert_eq!(
+            s.salvar_credencial(None, form(servidor_carregado("clientex-ssh-53c"))),
+            Err(ErroApp::PedidoInvalido)
+        );
+        // Cancelado: nada.
+        *sel.0.lock().unwrap() = None;
+        assert_eq!(
+            s.carregar_chave("chave_privada").unwrap(),
+            Carregamento::Cancelado
+        );
+        // "carregada" num campo que não é de chave: pedido inválido.
+        let mut v = servidor_novo("clientex-ssh-53d");
+        v["segredos"]["passphrase"] = serde_json::json!("carregada");
         assert_eq!(
             s.salvar_credencial(None, form(v)),
             Err(ErroApp::PedidoInvalido)

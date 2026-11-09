@@ -7,8 +7,9 @@
 // id (o conteúdo fica no Rust, S11).
 //
 // S11: o formulário nunca recebe segredo do cofre. Segredo salvo vai como "manter" (o
-// Rust o põe no rascunho), senha do gerador vai como "gerada" (idem), e só o que o
-// usuário digitou vai como `{ novo }`.
+// Rust o põe no rascunho), senha do gerador vai como "gerada" (idem), chave lida pelo
+// "Carregar de arquivo" vai como "carregada" (idem, Fase 53a), e só o que o usuário
+// digitou vai como `{ novo }`.
 
 export const AMBIENTES_FORM = Object.freeze([
   { valor: '', rotulo: 'Escolha o ambiente' },
@@ -310,6 +311,7 @@ export function montarFormulario(tipo, estado) {
       if (!s) segredos[c.id] = 'vazio';
       else if (s.modo === 'salvo') segredos[c.id] = 'manter';
       else if (s.modo === 'gerada') segredos[c.id] = 'gerada';
+      else if (s.modo === 'carregada') segredos[c.id] = 'carregada';
       else if (s.digitado === '') segredos[c.id] = 'vazio';
       else segredos[c.id] = { novo: c.tipo === 'nota' ? nfc(s.digitado) : s.digitado };
     }

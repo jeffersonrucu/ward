@@ -29,6 +29,12 @@ use crate::segredo::Segredo;
 /// Quem escolhe o arquivo. `Ok(None)`: o usuário cancelou.
 pub trait Seletor: Send + Sync {
     fn escolher(&self) -> Result<Option<PathBuf>, ErroApp>;
+
+    /// O arquivo da chave privada ("Carregar de arquivo", Fase 53a). O padrão é o mesmo
+    /// seletor; o do GTK troca só o título e o botão do diálogo.
+    fn escolher_chave(&self) -> Result<Option<PathBuf>, ErroApp> {
+        self.escolher()
+    }
 }
 
 /// Sem seletor (o padrão do serviço até alguém montar um).

@@ -364,6 +364,15 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Ponte<D, A> {
                 Some(id) => self.servico.remover_anexo(id).map(|()| Value::Null),
                 None => Err(ErroApp::PedidoInvalido),
             },
+            // Fase 53a: "Carregar de arquivo" da chave privada; o arquivo é escolhido,
+            // lido e conferido no lado Rust; volta só o tamanho, ou o aviso (S2, S11).
+            Comando::CarregarChave => match texto("campo") {
+                Some(c) if args.len() == 1 => self
+                    .servico
+                    .carregar_chave(c)
+                    .and_then(|r| serde_json::to_value(r).map_err(|_| ErroApp::RespostaInvalida)),
+                _ => Err(ErroApp::PedidoInvalido),
+            },
             // D3: o token não volta à interface.
             Comando::Conectar => match texto("entrada") {
                 Some(e) => self.servico.conectar(e).map(|()| Value::Null),
