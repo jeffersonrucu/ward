@@ -1,4 +1,5 @@
-# Ward: daemon do cofre do uid %i (D46, D57, D62, Fase 24). Unit do systemd do SISTEMA.
+# Ward: daemon do cofre do uid %i (D46, D57, D62, Fases 24 e 51). Unit do systemd do
+# SISTEMA, instalada pelo `sudo make install` em /usr/local/lib/systemd/system/.
 #
 # Sobe na primeira conexão ao wardd@%i.socket e recebe o socket por LISTEN_FDS.
 #
@@ -16,7 +17,6 @@
 
 [Unit]
 Description=Ward: daemon do cofre do uid %i
-Documentation=file:///usr/local/share/doc/ward/README
 Requires=wardd@%i.socket
 After=wardd@%i.socket
 

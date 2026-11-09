@@ -67,7 +67,8 @@ CARGO_DENY_VERSAO := 0.20.2
 	dev-servicos-parar dev-servicos-estado dev-servicos-conferir dev-servicos-trocar-chave-host dev-cofre \
 	dev-cofre-conferir dev-variacoes teste-dev-cofre dev-daemon dev-daemon-parar teste-cli teste-docker-uid teste-units \
 	app-front app-check app-ponte teste-docker-plataforma teste-sem-modo-teste teste-socket-ataques \
-	teste-webkit-real teste-logs-app teste-nm teste-playwright teste-skill
+	teste-webkit-real teste-logs-app teste-nm teste-playwright teste-skill \
+	release install uninstall teste-install
 
 ## check: pré-checagem das origens, depois fmt, clippy -D warnings, testes, cargo audit,
 ## cargo deny e gitleaks, nessa ordem (V1.1)
@@ -337,13 +338,77 @@ teste-docker-uid: origens
 	dev/testes/docker-uid.sh target/debug/wardd target/debug/examples/wardd-cliente-teste
 
 ## teste-units: V3.21 (Fase 24; D46, D57, D62): `systemd-analyze verify` das units de
-## `dev/systemd/` e, num contêiner ubuntu:24.04 com systemd e sem rede, a primeira
+## `instalacao/systemd/` e, num contêiner ubuntu:24.04 com systemd e sem rede, a primeira
 ## conexão ao `wardd@1000.socket` sobe o `wardd` (sem `modo-teste`) como o uid 1000,
 ## com LimitCORE=0, LimitMEMLOCK=infinity e sem no_new_privs
 teste-units: origens
 	$(CARGO) build --quiet --locked -p wardd --bin wardd --example wardd-cliente-teste --target-dir target/sem-modo-teste
 	$(CARGO) build --quiet --locked -p ward --bin ward --target-dir target/sem-modo-teste
 	dev/testes/units.sh target/sem-modo-teste/debug/wardd target/sem-modo-teste/debug/examples/wardd-cliente-teste target/sem-modo-teste/debug/ward
+
+# --- Instalação (Fase 51; D18, D46, D47, D57, D60, D62, D63) --------------------------
+# `make release` (como o usuário, sem root) compila os artefatos por pacote (`-p`, sem
+# `modo-teste`, D63); `sudo make install` só confere e copia (nunca chama o cargo como
+# root) e `sudo make uninstall` desfaz. O trabalho fica em instalacao/instalar.sh e a
+# árvore, em instalacao/arvore.txt. Com DESTDIR=<pasta absoluta>, só copia a árvore
+# (sem grupos, sem dono root, sem systemctl): staging do `.deb` (Fase 52) e testes.
+PREFIX ?= /usr/local
+DESTDIR ?=
+WARD_UID ?= $(SUDO_UID)
+EXTENSAO_ID ?=
+EXTENSAO_CRX ?=
+BIN_WARD ?= $(CURDIR)/target/release/ward
+BIN_WARDD ?= $(CURDIR)/target/release/wardd
+BIN_NM ?= $(CURDIR)/target/release/ward-nm
+BIN_APP ?= $(CURDIR)/app/src-tauri/target/release/ward-app
+# Pelo ambiente (`export`), nunca interpolado na linha do shell.
+install uninstall: export DESTDIR := $(DESTDIR)
+install uninstall: export PREFIX := $(PREFIX)
+install uninstall: export WARD_UID := $(WARD_UID)
+install uninstall: export EXTENSAO_ID := $(EXTENSAO_ID)
+install uninstall: export EXTENSAO_CRX := $(EXTENSAO_CRX)
+install uninstall: export BIN_WARD := $(BIN_WARD)
+install uninstall: export BIN_WARDD := $(BIN_WARDD)
+install uninstall: export BIN_NM := $(BIN_NM)
+install uninstall: export BIN_APP := $(BIN_APP)
+
+## release: artefatos de release para o `make install`, como o usuário: ward, wardd e
+## ward-nm por pacote (`-p`, sem `modo-teste`, D63) e o app (`app-front` + build do
+## Tauri; precisa de libwebkit2gtk-4.1-dev ou PKG_CONFIG_PATH, R32), com o V5.6
+release: origens app-front
+	$(CARGO) build --release --locked -p ward --bin ward
+	$(CARGO) build --release --locked -p wardd --bin wardd
+	$(CARGO) build --release --locked -p ward-nm --bin ward-nm
+	cd app/src-tauri && $(CARGO) build --release --locked
+	dev/testes/app-release.sh app/src-tauri/target/release/ward-app
+
+## install: `sudo make install EXTENSAO_ID=<id> EXTENSAO_CRX=<pacote.crx>` (depois de
+## `make release`): grupos ward-app/ward-nm (D60), binários (ward-app e ward-nm 2755),
+## units do sistema, /run/ward por tmpfiles.d, manifesto de native messaging, política
+## do Chrome e `systemctl enable --now wardd@<SUDO_UID>.socket`. Recusa artefato com
+## `modo-teste` (V9.2). DESTDIR=<pasta> só copia a árvore
+install:
+	instalacao/instalar.sh instalar
+
+## uninstall: `sudo make uninstall`: para e desliga o wardd@*, apaga os arquivos e os
+## grupos; nunca toca em ~/.local/share/ward/ (V9.10)
+uninstall:
+	instalacao/instalar.sh desinstalar
+
+## teste-install: V9.1, V9.2, V9.6, V9.10 com DESTDIR em .dev/ (árvore, modos, conteúdo,
+## systemd-analyze verify, recusas) e, num contêiner ubuntu:24.04 com systemd e sem
+## rede, `make install`/`uninstall` como root: grupos (D60, V9.11), units sem
+## no_new_privs (D57), socket e primeira conexão (V9.7), ambiente e dumpable do wardd
+## (V9.4), app aberto pelo daemon com o papel app, CLI recusa servidor falso (V9.3).
+## Exige Docker (o build da imagem usa rede), gcc e `make dev-cofre`; fora do `make check`
+teste-install: origens
+	$(CARGO) build --quiet --locked -p wardd --bin wardd --example wardd-cliente-teste --target-dir target/sem-modo-teste
+	$(CARGO) build --quiet --locked -p ward --bin ward --target-dir target/sem-modo-teste
+	$(CARGO) build --quiet --locked -p ward-nm --bin ward-nm --target-dir target/sem-modo-teste
+	$(CARGO) build --quiet --locked -p ward-app-nucleo --example partida-conteiner --target-dir target/sem-modo-teste
+	$(CARGO) build --quiet --locked -p ward-plataforma --features modo-teste --example ward-plataforma-conteiner
+	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd
+	dev/testes/install.sh
 
 # --- Daemon de teste (Fase 22) ------------------------------------------------------
 # `wardd` com a feature `modo-teste`: cofre de `.dev/`, socket em

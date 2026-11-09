@@ -5,12 +5,12 @@
 # uid %i, 0600. Quem conecta vê uid 0 no SO_PEERCRED (quem fez o listen), e é isso que a
 # CLI e o app conferem antes de mandar a senha mestra (S5).
 #
-# Units de teste: a instalação (Fase 51) instala estas mesmas units e roda
-# `systemctl enable --now wardd@<uid>.socket`. Nunca instale no host durante a missão.
+# Instaladas pelo `sudo make install` (Fase 51) em /usr/local/lib/systemd/system/, que
+# também roda `systemctl enable --now wardd@<uid>.socket`; `make teste-units` e
+# `make teste-install` as sobem só num contêiner. Nunca instale no host durante a missão.
 
 [Unit]
 Description=Ward: socket do cofre do uid %i
-Documentation=file:///usr/local/share/doc/ward/README
 
 [Socket]
 ListenStream=/run/ward/%i/wardd.sock
