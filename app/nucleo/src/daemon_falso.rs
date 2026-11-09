@@ -5,17 +5,21 @@
 //! Serve para a interface ser conferida no Chrome pela ponte de teste antes do `wardd`
 //! da Fase 22. Recebe o corpo do quadro, lê com `decodificar_pedido` no papel app, monta
 //! a resposta com `ItemLista::de_entrada` / `DetalheEntrada::de_entrada` (sem segredo
-//! por construção) e devolve o corpo de `codificar_resposta`. Só atende `estado`,
-//! `lista`, `detalhe` e `copiar`; o resto responde `interno`.
+//! por construção) e devolve o corpo de `codificar_resposta`. Atende `estado`, `lista`,
+//! `detalhe`, `copiar`, `revelar`, `totp` e `salvar_entrada` (Fase 33, com a mesma
+//! regra do `wardd`: `Rascunho::validar`, `conferir_no_cofre`, nível "com aprovação" na
+//! entrada nova e mantido na editada); o resto responde `interno`. As mudanças ficam
+//! só na memória do processo.
 //!
 //! Sem a feature `modo-teste` este módulo nem existe no binário (só nos testes).
 
 use zeroize::Zeroizing;
 
-use ward_core::entrada::{Entrada, OrigemSegredo, Segredo as SegredoCore};
+use ward_core::entrada::{Entrada, NivelAcesso, OrigemSegredo, Rascunho, Segredo as SegredoCore};
 use ward_core::protocolo::{
     self, Alvo, DetalheEntrada, ErroResposta, ItemLista, Papel, Pedido, Resposta,
 };
+use ward_core::totp::Totp;
 
 use crate::ErroApp;
 use crate::daemon::Daemon;
@@ -52,7 +56,7 @@ impl DaemonFalso {
         self.entradas.iter().find(|e| e.nome() == nome)
     }
 
-    fn atender(&self, pedido: Pedido) -> Resposta {
+    fn atender(&mut self, pedido: Pedido) -> Resposta {
         match pedido {
             Pedido::Estado => Resposta::Estado {
                 travado: false,
@@ -69,15 +73,67 @@ impl DaemonFalso {
                 Some(e) => Resposta::Detalhe(DetalheEntrada::de_entrada(e)),
                 None => Resposta::Erro(ErroResposta::EntradaInexistente),
             },
-            Pedido::Copiar { entrada, alvo } => match self.entrada(&entrada) {
-                Some(e) => match valor(e, &alvo) {
-                    Some(v) => Resposta::Segredo(SegredoCore::de_bytes(v.to_vec())),
+            Pedido::Copiar { entrada, alvo } | Pedido::Revelar { entrada, alvo } => {
+                match self.entrada(&entrada) {
+                    Some(e) => match valor(e, &alvo) {
+                        Some(v) => Resposta::Segredo(SegredoCore::de_bytes(v.to_vec())),
+                        None => Resposta::Erro(ErroResposta::CampoInexistente),
+                    },
+                    None => Resposta::Erro(ErroResposta::EntradaInexistente),
+                }
+            }
+            Pedido::Totp { entrada } => match self.entrada(&entrada) {
+                Some(e) => match valor(e, &Alvo::Campo("totp_semente".to_owned())) {
+                    Some(v) => {
+                        let semente = SegredoCore::de_bytes(v.to_vec());
+                        match Totp::de_semente(&semente).and_then(|t| t.codigo_agora()) {
+                            Ok(c) => Resposta::CodigoTotp {
+                                codigo: Zeroizing::new(c.codigo().to_owned()),
+                                restante: c.restante(),
+                            },
+                            Err(_) => Resposta::Erro(ErroResposta::Interno),
+                        }
+                    }
                     None => Resposta::Erro(ErroResposta::CampoInexistente),
                 },
                 None => Resposta::Erro(ErroResposta::EntradaInexistente),
             },
+            Pedido::SalvarEntrada { anterior, rascunho } => {
+                match self.salvar(anterior.as_deref(), rascunho) {
+                    Ok(()) => Resposta::Ok,
+                    Err(e) => Resposta::Erro(e),
+                }
+            }
             _ => Resposta::Erro(ErroResposta::Interno),
         }
+    }
+
+    /// A mesma regra do `wardd` (`crates/wardd/src/nucleo.rs` › `salvar_entrada`).
+    fn salvar(&mut self, anterior: Option<&str>, rascunho: Rascunho) -> Result<(), ErroResposta> {
+        let mut nova = rascunho
+            .validar()
+            .map_err(|e| ErroResposta::de_validacao(&e))?;
+        match anterior {
+            None => {
+                nova.definir_nivel(NivelAcesso::ComAprovacao);
+                nova.conferir_no_cofre(self.entradas.iter())
+                    .map_err(|e| ErroResposta::de_validacao(&e))?;
+            }
+            Some(nome) => {
+                let i = self
+                    .entradas
+                    .iter()
+                    .position(|e| e.nome() == nome)
+                    .ok_or(ErroResposta::EntradaInexistente)?;
+                nova.definir_nivel(self.entradas[i].nivel());
+                nova.conferir_no_cofre(self.entradas.iter().filter(|e| e.nome() != nome))
+                    .map_err(|e| ErroResposta::de_validacao(&e))?;
+                drop(self.entradas.remove(i));
+            }
+        }
+        self.entradas.push(nova);
+        self.entradas.sort_by(|a, b| a.nome().cmp(b.nome()));
+        Ok(())
     }
 }
 

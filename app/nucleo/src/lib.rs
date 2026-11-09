@@ -12,6 +12,8 @@
 //! - [`area_transferencia`]: "copiar" resolvido aqui (D4). O valor vai do daemon para a
 //!   área de transferência sem passar pela webview, e a limpeza em 30 s só apaga se a
 //!   área ainda contém o valor copiado (S12).
+//! - [`formulario`]: formulário de entrada (Fase 33). Segredo mantido e senha gerada
+//!   ficam no lado Rust; a semente TOTP e o `otpauth://` são normalizados aqui (D35).
 //! - [`gerador`]: gerador de senha avulso (Fase 37). A senha nasce em
 //!   `ward_core::gerador` e fica aqui; a interface recebe só tamanho, força e símbolos,
 //!   e o valor só no "revelar".
@@ -29,6 +31,7 @@ pub mod daemon;
 #[cfg(any(test, feature = "modo-teste"))]
 pub mod daemon_falso;
 mod erro;
+pub mod formulario;
 pub mod gerador;
 pub mod partida;
 pub mod segredo;

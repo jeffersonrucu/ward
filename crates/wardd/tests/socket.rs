@@ -287,3 +287,58 @@ fn v3_20_ciclo_pelo_socket_sem_segredo_no_log() {
 fn protocolo_erro(r: &Resposta) -> Option<ErroResposta> {
     erro(r)
 }
+
+/// V3.33 (D62, S9) pelo binário: `kill -9` entre as senhas erradas do agente não zera
+/// a espera. A falha já está no arquivo de estado quando a resposta chega, e o daemon
+/// que sobe de novo espera pelo contador do disco (contado da partida).
+#[test]
+fn v3_33_kill_9_entre_as_senhas_erradas() {
+    let dev = Dir::novo("kill9");
+    {
+        let (d, _) = cofre_de_teste(&dev);
+        d.travar();
+    }
+    let estado = dev.caminhos().estado;
+    let falhas = || {
+        wardd::arquivos::ler_estado_completo(&estado)
+            .unwrap()
+            .falhas_agente
+    };
+    let sock = DirSocket::novo("kill9");
+    let mut esperas = Vec::new();
+    for i in 0..3u32 {
+        let mut w = subir(&dev, &sock);
+        let mut s = conectar(&w);
+        let t = Instant::now();
+        let (_, r) = pedir_por(&mut s, "destravar", &senha_json("falso-errada-k9"));
+        esperas.push(t.elapsed());
+        assert_eq!(protocolo_erro(&r), Some(ErroResposta::SenhaIncorreta));
+        // Gravado (com fsync) antes da resposta: o `kill -9` logo depois não perde.
+        w.filho.kill().unwrap();
+        let _ = w.filho.wait();
+        assert_eq!(falhas(), i + 1);
+        let _ = fs::remove_dir_all(&sock.0);
+    }
+    // 0 s, 1 s e 2 s, menos o tempo de subida (contado da partida).
+    assert!(esperas[0] < Duration::from_millis(900), "{esperas:?}");
+    assert!(esperas[1] >= Duration::from_millis(500), "{esperas:?}");
+    assert!(esperas[2] >= Duration::from_millis(1500), "{esperas:?}");
+    // O log não tem a senha.
+    let log = fs::read(dev.0.join("wardd.log")).unwrap();
+    // V3.34 (D62): com o limite comum do usuário, o daemon de teste sobe com aviso.
+    let infinito = fs::read_to_string("/proc/self/limits")
+        .unwrap()
+        .lines()
+        .any(|l| l.starts_with("Max locked memory") && l.contains("unlimited"));
+    if !infinito {
+        assert!(
+            contem(&log, "memória sem travar".as_bytes()),
+            "{}",
+            String::from_utf8_lossy(&log)
+        );
+    }
+    for s in [SENHA, "falso-errada-k9"] {
+        assert!(!contem(&log, s.as_bytes()));
+        assert!(!contem(&log, b64(s.as_bytes()).as_bytes()));
+    }
+}

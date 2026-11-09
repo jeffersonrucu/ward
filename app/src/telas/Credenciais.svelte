@@ -8,9 +8,14 @@
   // (largura/coluna-lista, padding e gap espaco/16 e espaco/12) e `detalhe` (cabeçalho,
   // corpo e rodapé).
   //
-  // S11/D4: a lista e o detalhe vêm do Rust sem segredo. O `Campo secreto` só desenha
-  // a máscara; "copiar" pede ao Rust, que põe o valor na área de transferência (a
-  // resposta não traz o valor). Nada daqui vai para armazenamento do navegador ou URL.
+  // S11/D4: a lista e o detalhe vêm do Rust sem segredo. O `Campo secreto` desenha a
+  // máscara; "revelar" pede `revelar_campo` (D65 b) e o valor sai em 30 s, ao esconder,
+  // ao trocar de entrada ou ao sair; "copiar" pede ao Rust, que põe o valor na área de
+  // transferência (a resposta não traz o valor). Nada daqui vai para armazenamento do
+  // navegador ou URL.
+  //
+  // Fase 33: "Nova credencial" abre `Escolher tipo` e o formulário no painel de
+  // detalhe; "Editar" abre o formulário da entrada (tipos da fase, sem anexos).
   import { onMount, tick } from 'svelte';
   import Botao from '../lib/componentes/Botao.svelte';
   import BadgeAmbiente from '../lib/componentes/BadgeAmbiente.svelte';
@@ -20,6 +25,9 @@
   import CampoSecreto from '../lib/componentes/CampoSecreto.svelte';
   import Destaque from '../lib/componentes/Destaque.svelte';
   import DialogoFiltros from '../lib/componentes/DialogoFiltros.svelte';
+  import EscolherTipo from './EscolherTipo.svelte';
+  import Formulario from './Formulario.svelte';
+  import { TIPOS_FORM } from './formulario.js';
   import Icone from '../lib/componentes/Icone.svelte';
   import ItemDeLista from '../lib/componentes/ItemDeLista.svelte';
   import Toast from '../lib/componentes/Toast.svelte';
@@ -39,6 +47,8 @@
 
   // Quanto tempo o "Copiado" fica na `Ação de campo`.
   const COPIADO_MS = 2000;
+  const PRAZO_REVELAR_MS = 30_000;
+  const SUCESSO_MS = 4000;
 
   let itens = $state([]);
   let carregado = $state(false);
@@ -52,6 +62,15 @@
   let entradaBusca = $state();
   let listaEl = $state();
   let rolagem = $state({ esmaecer: false });
+  /** 'detalhe' | 'escolher' | 'formulario' */
+  let modo = $state('detalhe');
+  let tipoForm = $state('');
+  let detalheForm = $state(null);
+  let sucesso = $state('');
+  /** Valor revelado de um segredo do detalhe (um por vez). */
+  let revelado = $state({ id: '', valor: '' });
+  let prazoRevelar = 0;
+  let prazoSucesso = 0;
 
   const filtrando = $derived(filtrosLigados(filtros) > 0 || busca.trim() !== '');
   const visiveis = $derived(filtrar(itens, filtros, busca));
@@ -92,6 +111,8 @@
   async function abrir(nome, focar = true) {
     selecionada = nome;
     copiado = '';
+    esconder();
+    modo = 'detalhe';
     const meu = ++pedidoDetalhe;
     try {
       const d = await chamar('detalhe_credencial', { entrada: nome });
@@ -121,6 +142,57 @@
     } catch (e) {
       erro = e.mensagem;
     }
+  }
+
+  function esconder() {
+    clearTimeout(prazoRevelar);
+    revelado = { id: '', valor: '' };
+  }
+
+  async function revelar(campo) {
+    if (!detalhe) return;
+    const entrada = detalhe.nome;
+    try {
+      const r = await chamar('revelar_campo', { entrada, campo });
+      if (detalhe?.nome !== entrada || modo !== 'detalhe') return;
+      revelado = { id: campo, valor: r.valor };
+      clearTimeout(prazoRevelar);
+      prazoRevelar = setTimeout(esconder, PRAZO_REVELAR_MS);
+    } catch (e) {
+      erro = e.mensagem;
+    }
+  }
+
+  const editavel = $derived(
+    !!detalhe && Object.hasOwn(TIPOS_FORM, detalhe.tipo) && detalhe.anexos.length === 0,
+  );
+
+  function novaCredencial() {
+    esconder();
+    erro = '';
+    modo = 'escolher';
+  }
+
+  function editar() {
+    if (!editavel) return;
+    esconder();
+    erro = '';
+    tipoForm = detalhe.tipo;
+    detalheForm = detalhe;
+    modo = 'formulario';
+  }
+
+  function cancelarFormulario() {
+    modo = 'detalhe';
+  }
+
+  async function salvo(nome) {
+    modo = 'detalhe';
+    await carregar();
+    await abrir(nome, false);
+    sucesso = 'Credencial salva.';
+    clearTimeout(prazoSucesso);
+    prazoSucesso = setTimeout(() => (sucesso = ''), SUCESSO_MS);
   }
 
   function itemDe(nome) {
@@ -202,7 +274,11 @@
 
   onMount(() => {
     carregar();
-    return () => clearTimeout(temporizador);
+    return () => {
+      clearTimeout(temporizador);
+      clearTimeout(prazoSucesso);
+      esconder();
+    };
   });
 </script>
 
@@ -291,13 +367,33 @@
         {#if rolagem.esmaecer}<div class="esmaecer" aria-hidden="true"></div>{/if}
       </div>
       {#if erro}<Toast tipo="erro" mensagem={erro} />{/if}
+      {#if sucesso}<Toast tipo="sucesso" mensagem={sucesso} />{/if}
       <div class="nova">
-        <Botao variante="primario" icone="mais">Nova credencial</Botao>
+        <Botao variante="primario" icone="mais" onclick={novaCredencial}>Nova credencial</Botao>
       </div>
     </section>
 
     <section class="detalhe" aria-label="Detalhe da entrada" aria-live="polite">
-      {#if vazio}
+      {#if modo === 'escolher'}
+        <EscolherTipo
+          onescolher={(t) => {
+            tipoForm = t;
+            detalheForm = null;
+            modo = 'formulario';
+          }}
+          oncancelar={cancelarFormulario}
+        />
+      {:else if modo === 'formulario'}
+        {#key detalheForm?.nome ?? tipoForm}
+          <Formulario
+            tipo={tipoForm}
+            detalhe={detalheForm}
+            grupos={gruposDe(itens).map((g) => g.nome)}
+            oncancelar={cancelarFormulario}
+            onsalvo={salvo}
+          />
+        {/key}
+      {:else if vazio}
         <div class="corpo centro">
           <div class="vazio">
             <span class="avatar"><Icone nome="chave" tamanho="lg" /></span>
@@ -324,7 +420,12 @@
               <span class="subtitulo">{detalhe.subtitulo}</span>
             </div>
           </div>
-          <Botao variante="secundario">Editar</Botao>
+          <Botao
+            variante="secundario"
+            desabilitado={!editavel}
+            title={editavel ? undefined : 'Entradas deste tipo ou com anexos ainda não são editadas aqui.'}
+            onclick={editar}>Editar</Botao
+          >
         </header>
         <div class="corpo">
           {#if detalhe.campos.length > 0}
@@ -345,7 +446,10 @@
             <CampoSecreto
               id="segredo-{s.id}"
               rotulo={s.rotulo}
+              revelado={revelado.id === s.id ? revelado.valor : null}
               copiado={copiado === s.id}
+              onrevelar={() => revelar(s.id)}
+              onesconder={esconder}
               oncopiar={() => copiar(s.id)}
             />
           {/each}
@@ -357,7 +461,10 @@
                     id="extra-{x.nome}"
                     rotulo={x.nome}
                     ajuda=""
+                    revelado={revelado.id === x.nome ? revelado.valor : null}
                     copiado={copiado === x.nome}
+                    onrevelar={() => revelar(x.nome)}
+                    onesconder={esconder}
                     oncopiar={() => copiar(x.nome)}
                   />
                 {:else}
@@ -526,6 +633,7 @@
     flex: 1;
   }
   .detalhe {
+    position: relative;
     display: flex;
     flex-direction: column;
     flex: 1;

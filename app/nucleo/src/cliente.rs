@@ -1,5 +1,6 @@
 //! Os pedidos do app ao daemon pelo protocolo da Fase 20 (`ward_core::protocolo`), com
-//! o papel app (D5): `estado`, `lista`, `detalhe` e `copiar`.
+//! o papel app (D5): `estado`, `lista`, `detalhe`, `copiar`, `revelar`, `totp` e
+//! `salvar_entrada`.
 //!
 //! Aqui o pedido vira o corpo do quadro (`codificar_pedido`) e a resposta é lida com a
 //! leitura estrita do cliente (`decodificar_resposta`), que recusa tipo de outro papel e
@@ -7,12 +8,16 @@
 //! é o [`Daemon`]: o socket do `wardd` ([`crate::daemon::DaemonSocket`]) ou, nos testes
 //! e na ponte de teste, o daemon falso ([`crate::daemon_falso`]).
 //!
-//! Nenhuma função daqui devolve segredo à interface: só [`copiar`] lê um valor, e ele
-//! vai em [`Segredo`] direto para a área de transferência (D4).
+//! Nenhuma função daqui devolve segredo à interface: [`copiar`] e [`revelar`] leem um
+//! valor em [`Segredo`] (que zera ao sair); quem decide o destino é o
+//! [`crate::servico`]: a área de transferência (D4), o "revelar" no clique (S11) ou o
+//! rascunho que volta ao daemon ao editar (Fase 33).
 
+use ward_core::entrada::Rascunho;
 use ward_core::protocolo::{
-    self, Alvo, DetalheEntrada, ErroResposta, ItemLista, Papel, Pedido, Resposta,
+    self, Alvo, DetalheEntrada, ErroResposta, ItemLista, Papel, Pedido, Problema, Resposta,
 };
+use zeroize::Zeroizing;
 
 use crate::ErroApp;
 use crate::daemon::{Daemon, EstadoCofre};
@@ -118,11 +123,75 @@ pub fn copiar<D: Daemon + ?Sized>(
     }
 }
 
+/// `revelar`: o valor de um segredo para mostrar no clique em "revelar" (S11) ou para
+/// manter o valor ao editar a entrada (o rascunho leva todos os segredos).
+pub fn revelar<D: Daemon + ?Sized>(
+    daemon: &mut D,
+    entrada: &str,
+    alvo: Alvo,
+) -> Result<Segredo, ErroApp> {
+    let pedido = Pedido::Revelar {
+        entrada: entrada.to_owned(),
+        alvo,
+    };
+    match pedir(daemon, &pedido)? {
+        Resposta::Segredo(s) => Ok(Segredo::novo(s.expor().to_vec())),
+        _ => Err(ErroApp::RespostaInvalida),
+    }
+}
+
+/// Código TOTP atual de uma entrada e os segundos até o próximo.
+pub struct CodigoTotp {
+    pub codigo: Zeroizing<String>,
+    pub restante: u64,
+}
+
+/// `totp`: o código atual (6 dígitos, D35) e quanto falta para trocar (1 a 30 s).
+pub fn totp<D: Daemon + ?Sized>(daemon: &mut D, entrada: &str) -> Result<CodigoTotp, ErroApp> {
+    let pedido = Pedido::Totp {
+        entrada: entrada.to_owned(),
+    };
+    match pedir(daemon, &pedido)? {
+        Resposta::CodigoTotp { codigo, restante }
+            if codigo.len() == 6 && (1..=30).contains(&restante) =>
+        {
+            Ok(CodigoTotp { codigo, restante })
+        }
+        _ => Err(ErroApp::RespostaInvalida),
+    }
+}
+
+/// Resultado do `salvar_entrada`: salvo, ou os problemas de validação por campo (só
+/// textos fixos do `ward-core`; nenhum valor do usuário).
+pub enum Salvamento {
+    Salvo,
+    Problemas(Vec<Problema>),
+}
+
+/// `salvar_entrada`: cria (`anterior` vazio) ou edita. O nível não vai no pedido (S9).
+pub fn salvar<D: Daemon + ?Sized>(
+    daemon: &mut D,
+    anterior: Option<String>,
+    rascunho: Rascunho,
+) -> Result<Salvamento, ErroApp> {
+    let pedido = Pedido::SalvarEntrada { anterior, rascunho };
+    let quadro =
+        protocolo::codificar_pedido(Papel::App, &pedido).map_err(|_| ErroApp::PedidoInvalido)?;
+    drop(pedido);
+    let corpo = daemon.trocar(&quadro)?;
+    drop(quadro);
+    match protocolo::decodificar_resposta(Papel::App, &corpo) {
+        Ok(Resposta::Ok) => Ok(Salvamento::Salvo),
+        Ok(Resposta::Erro(ErroResposta::Validacao(p))) => Ok(Salvamento::Problemas(p)),
+        Ok(Resposta::Erro(e)) => Err(erro_do_daemon(&e)),
+        _ => Err(ErroApp::RespostaInvalida),
+    }
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;
     use crate::daemon_falso::DaemonFalso;
-    use zeroize::Zeroizing;
 
     /// Daemon que devolve sempre o mesmo corpo (o "servidor" é o atacante).
     struct Resposta1(Vec<u8>);

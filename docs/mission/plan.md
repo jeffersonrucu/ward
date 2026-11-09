@@ -400,6 +400,12 @@ datas no corpo v4, Fase 22d (provisória); (e) V4.2 em duas partes, a 2ª no con
 Fase 28. Pendências da 37: faixa 8–64 e limiares em D65 (f); símbolos do FigCraft e
 frames que faltaram na 32, Fase 37a.
 
+Pendências da 37a (2026-11-09): contagens no FigCraft ficaram em 21/13, mas a fixture passou a 22 (D59) — atualizar numa próxima fase de design; cartões de nível dos 18 formulários e do gerador no formulário seguem soltos (ícone de check em "Com aprovação", herdado do M0) — trocar por instâncias do `Cartão de nível`.
+
+Pendências da 33 para o planner (2026-11-09): anexos — não há operação para ler o conteúdo de um anexo e `salvar_entrada` substitui a entrada inteira, então editar entrada com anexo é recusado (`AnexosNaoMantidos`) e "Adicionar arquivo" está desabilitado; decidir operação (manter anexos por id no salvar, ou ler/gravar anexo) e fase. Botão Salvar no Novo vazio fica clicável (V5.10) ao contrário do design; placeholder da URL trocado por "Endereço com http ou https" (o `app-dist.py` recusa "https://").
+
+Pendências da 22b (2026-11-09): V3.34 do lado do app (`VmLck: 0 kB` no app filho) fica para o contêiner da 23a/29b; `criar_cofre` com estado ilegível recusa com `falha_ao_gravar` sem dizer ao usuário o que fazer (mensagem a melhorar); gancho `com_gancho_depois_de_gravar` existe no release (nunca ligado) — auditoria do M3 olha.
+
 ## Milestone 3 — Daemon e protocolo
 Contrato: V3.1–V3.41
 
@@ -574,7 +580,7 @@ Contrato: V3.1–V3.41
   Nota do planner (D62, 2026-11-09), para a fase em andamento: as units de teste levam
   `LimitMEMLOCK=infinity` (o `mlockall` entra na 22b e, com limite, o Argon2 falharia).
   A trava automática não mexe no contador de espera do D20, que a 22b separa por papel.
-- [ ] Fase 22b — (Depende das 23 e 24: as três mexem em `crates/wardd`.) Problemas do
+- [x] Fase 22b — (Depende das 23 e 24: as três mexem em `crates/wardd`.) Problemas do
   handoff 22 (D62). Arquivos: `crates/wardd`, `crates/ward-plataforma`
   (`iniciar_endurecido`), `crates/ward-core` (`gravar_entradas` devolve a identidade do
   fd; criação com geração inicial, se faltar) e os testes.
@@ -699,7 +705,7 @@ Contrato: V5.1–V5.35
 - [ ] Fase 31 — **(UI)** Destravar, inclusive o estado "Pedido do agente". Consome
   `pedido_de_destrave` da fila da 23a e o leva à tela por evento do Tauri (D65 a). V5.8.
 - [x] Fase 32 — **(UI)** Credenciais (vazia, cheia, filtrada, busca). V5.3, V5.9.
-- [ ] Fase 33 — **(UI)** Formulário, parte 1: `login`, `api`, `aws`, `smtp`,
+- [x] Fase 33 — **(UI)** Formulário, parte 1: `login`, `api`, `aws`, `smtp`,
   `nota segura`, `genérico`, com campo secreto (revelar 30 s, copiar com limpeza em
   30 s), campos extras, TOTP e gerador no formulário (símbolos de D35; `otpauth://`
   fora de SHA1/6/30 recusado, D35). V5.3, V5.5, V5.10, V5.11, V5.13, V5.14.
@@ -721,7 +727,7 @@ Contrato: V5.1–V5.35
   os cinco estados do M0; comando e cadeia exibidos pela função de D51, nunca como HTML.
   Consome `pedido_de_aprovacao` da fila da 23a (D65 a). V5.16–V5.20, V5.29.
 - [x] Fase 37 — **(UI)** Gerador de senha avulso (símbolos de D35). V5.21.
-- [ ] Fase 37a — **(DESIGN)** Correções do design (D65 f e design pendente; pode rodar a
+- [x] Fase 37a — **(DESIGN)** Correções do design (D65 f e design pendente; pode rodar a
   qualquer momento, só mexe no `Ward.figcraft` e em `docs/mission/design-nodes.md`):
   descrição de "Símbolos" com o conjunto de D35 no avulso e no popover do formulário;
   frame `Credenciais / Sem resultado`; cartão de nível bloqueado no detalhe; contagens

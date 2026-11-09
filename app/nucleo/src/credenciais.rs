@@ -68,6 +68,9 @@ pub struct DetalheCredencial {
     pub grupo: String,
     pub ambiente: &'static str,
     pub nivel: &'static str,
+    /// Projeto e tags, para o formulário de edição (Fase 33).
+    pub projeto: Option<String>,
+    pub tags: Vec<String>,
     /// Linha ao lado dos selos (`grupo acme · postgres`).
     pub subtitulo: String,
     pub campos: Vec<CampoTexto>,
@@ -235,6 +238,8 @@ impl DetalheCredencial {
             grupo: d.grupo.clone(),
             ambiente: d.ambiente.nome(),
             nivel: d.nivel.nome(),
+            projeto: d.projeto.clone(),
+            tags: d.tags.clone(),
             subtitulo,
             // O motor e o protocolo já estão no subtítulo.
             campos: d

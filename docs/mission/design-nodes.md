@@ -878,3 +878,28 @@ Filtros, as três de Nível de acesso, os 18 formulários, `Gerador de senha / N
 formulário` e as duas de `Nova credencial`. Quando a Fase 22a acrescentar a 22ª entrada, as contagens mudam de
 novo.
 
+
+## Fase 33 — formulário parte 1 no código (só leitura do FigCraft)
+
+Lido de uma cópia do `Ward.figcraft` (o original não foi alterado), por `get_node` e
+`screenshot`. Capturas do app (ponte de teste com `--daemon-falso cheio`, Chrome headless,
+1280×800) e `qa.json` em `docs/mission/evidence/fase-33/`.
+
+| Frame / componente no FigCraft | Id | No código |
+| --- | --- | --- |
+| `Formulário / login / Novo` e `/ Edição` | `7450` (detalhe `7648`, corpo `7669`) e `6926` (`7120`, `7141`) | `app/src/telas/Formulario.svelte` + `formulario.js` (`TIPOS_FORM.login`) |
+| `Formulário / api / Novo` e `/ Edição` | `11272` (corpo `11475`) e `10389` (`10608`) | idem (`TIPOS_FORM.api`) |
+| `Formulário / aws / Novo` e `/ Edição` | `12170` (`12373`) e `11705` (`11908`) | idem (`TIPOS_FORM.aws`) |
+| `Formulário / smtp / Novo` e `/ Edição` | `13867` (`14086`) e `9454` (`9673`) | idem (`TIPOS_FORM.smtp`) |
+| `Formulário / nota segura / Novo` e `/ Edição` | `15399` (`15618`) e `12683` (`12835`) | idem; `Campo nota segura` (`15828` vazio, `13122` oculto) virou o `textarea` da tela e o `Campo secreto` editável |
+| `Formulário / genérico / Novo` e `/ Edição` | `15845` (`16064`) e `13459` (`13600`) | idem (`TIPOS_FORM.generico`) |
+| `Gerador de senha / No formulário` | `14307` (popover `15135`) | `app/src/lib/componentes/PopoverGerador.svelte` |
+| `Nova credencial / Escolher tipo` e `/ Tipo escolhido` | `17657` (detalhe `17851`, grade `17975`) e `18055` | `app/src/telas/EscolherTipo.svelte` |
+| `Título de seção` | `6841` | `app/src/lib/componentes/TituloDeSecao.svelte` |
+| `Campo extra` (não `6861`, sim `6879`) | set `6878` | `app/src/lib/componentes/CampoExtra.svelte` (editável) |
+| `Código TOTP` | `6909` | `app/src/lib/componentes/CodigoTotp.svelte` |
+| `Popover do gerador` | `11671` | `PopoverGerador.svelte` |
+| `Cartão de tipo` | `17607` | `app/src/lib/componentes/CartaoDeTipo.svelte` |
+| Combobox de grupo | `7691` (smtp: `14115`) | `app/src/lib/componentes/ComboboxGrupo.svelte` |
+| `Interruptor` compacto | `6838` | `app/src/lib/componentes/Interruptor.svelte` |
+| `Campo secreto` vazio (10c) | `375` / `18609` | `CampoSecreto.svelte` ganhou `editavel`, `ontrocar`, `mostrarRevelar`, `mostrarCopiar` e `erro`; o revelar do detalhe de Credenciais usa `revelar_campo` (D65 b) |

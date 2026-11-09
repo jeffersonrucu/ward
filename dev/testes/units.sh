@@ -8,7 +8,9 @@
 #    systemd (`dev/conteiner-units/Dockerfile`; rede só no build), rodando sem rede,
 #    com root só dentro dele. O `dentro.sh` instala as units e o `wardd` (sem
 #    `modo-teste`), e confere que a primeira conexão ao socket sobe o daemon como o
-#    uid 1000, com `LimitCORE=0`, `LimitMEMLOCK=infinity` e sem `no_new_privs`.
+#    uid 1000, com `LimitCORE=0`, `LimitMEMLOCK=infinity` e sem `no_new_privs`; com o
+#    cofre de teste destravado, `VmLck` cobre o `VmRSS` (mlockall, D62), e o mesmo
+#    binário com `RLIMIT_MEMLOCK` de 8 MiB sai ≠ 0 com mensagem (V3.34).
 #
 # O systemd precisa escrever no /sys/fs/cgroup do contêiner (a subárvore dele, com
 # `--cgroupns=private`), que o Docker monta somente leitura: o contêiner ganha
@@ -66,6 +68,11 @@ fi
 
 install -m 0755 "$WARDD" "$TMP/wardd"
 install -m 0755 "$CLIENTE" "$TMP/cliente"
+# V3.34 (D62): o cofre de teste (só valores falsos, de `make dev-cofre`) para o `wardd`
+# do contêiner destravar e mostrar o `VmLck`.
+COFRE_TESTE="$RAIZ/.dev/cofre-teste.ward"
+[ -f "$COFRE_TESTE" ] || { echo "falta $COFRE_TESTE; rode 'make dev-cofre' antes" >&2; exit 1; }
+install -m 0600 "$COFRE_TESTE" "$TMP/cofre.ward"
 
 echo "==> imagem com systemd"
 IMAGEM="ward-teste/units-systemd:1"

@@ -30,7 +30,7 @@ pub mod terminal;
 pub mod teste;
 
 pub use endurecimento::{
-    ErroInicio, conferir_ambiente_proprio, endurecer_processo, iniciar_endurecido,
+    ErroInicio, Memoria, conferir_ambiente_proprio, endurecer_processo, iniciar_endurecido,
 };
 pub use lancador::{
     AmbienteApp, ErroLancador, ErroSessao, Lancador, ambiente_do_app, conferir_ambiente_do_app,

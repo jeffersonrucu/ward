@@ -587,7 +587,7 @@ fn troca_de_senha_sela_e_grava_pelo_mesmo_caminho() {
     );
     assert!(std::fs::read(&destino).unwrap() == antes);
 
-    let mut novo = trocar_senha(&destino, &atual, &nova, 0, 0).unwrap();
+    let (mut novo, _) = trocar_senha(&destino, &atual, &nova, 0, 0).unwrap();
     // A troca de senha mantém a configuração (o mesmo hash do PIN).
     assert!(novo.configuracao().hash_pin().bytes() == &hash[..]);
     let depois = std::fs::read(&destino).unwrap();
@@ -1507,7 +1507,7 @@ fn v2_44_geracao_sobe_e_retrocesso_e_recusado() {
     assert_eq!(geracao_do_arquivo(&senha), n + 1);
 
     // A troca de senha (mínimo n+1, o que o daemon viu; queimada n+2) sela n+3.
-    let trocado = trocar_senha(&destino, &senha, &nova, n + 1, cofre.geracao()).unwrap();
+    let (trocado, _) = trocar_senha(&destino, &senha, &nova, n + 1, cofre.geracao()).unwrap();
     assert_eq!(trocado.geracao(), n + 3);
     assert_eq!(geracao_do_arquivo(&nova), n + 3);
     let do_n3 = std::fs::read(&destino).unwrap();
