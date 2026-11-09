@@ -848,6 +848,7 @@ mod testes {
             tags: vec![],
             nivel: None,
             endereco: None,
+            resumo: None,
         };
         let do_agente = protocolo::codificar_resposta(Papel::Agente, &Resposta::Lista(vec![item]))
             .unwrap()

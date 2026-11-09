@@ -154,10 +154,14 @@
 
       <CampoSenha
         id="senha-mestra"
+        rotulo="Senha mestra"
+        placeholder="Digite a senha mestra"
+        ajuda="Só a senha mestra destrava. O PIN não serve aqui."
         bind:valor={senha}
         bind:entrada
         {erro}
-        somenteLeitura={enviando}
+        readonly={enviando}
+        autocomplete="off"
         oninput={digitou}
       />
 

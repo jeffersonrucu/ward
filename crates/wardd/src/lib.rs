@@ -9,6 +9,7 @@
 //!   uso do agente (nível combinado, liberação de 1 hora, botões com PIN);
 //!   [`lancamento`]: o daemon abre o app pelo lançador (D57).
 //! - [`trava`]: trava automática por inatividade e pelo logind (Fase 24).
+//! - [`execucao`]: o `ward run` (Fase 26): entrega, máscara, filho e temporários.
 //!
 //! Sem `unsafe`: o que depende do sistema está no `ward-plataforma`.
 
@@ -19,6 +20,7 @@ pub mod log;
 pub mod aprovacao;
 pub mod arquivos;
 pub mod config;
+pub mod execucao;
 pub mod lancamento;
 pub mod nucleo;
 pub mod servidor;

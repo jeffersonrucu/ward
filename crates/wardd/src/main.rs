@@ -13,7 +13,7 @@ use wardd::config::Config;
 use wardd::lancamento::{AbridorReal, AppDeTeste};
 use wardd::nucleo::{Daemon, RelogioReal};
 use wardd::servidor::{self, Papeis};
-use wardd::{aviso, log, trava};
+use wardd::{aviso, execucao, log, trava};
 
 /// Chrome instalado, pai aceito do host da extensão (D5, D47).
 const CHROME: &str = "/opt/google/chrome/chrome";
@@ -106,13 +106,23 @@ fn main() -> ExitCode {
             (a, app)
         }
     };
-    let mut daemon = Daemon::novo(config.caminhos, Box::new(RelogioReal));
-    if let Some(a) = abridor {
-        daemon = daemon.com_motor(Motor::novo(
-            Arc::new(RelogioMonotonico::novo()),
-            Box::new(a),
-        ));
+    // S2, V4.15: o que um `wardd` morto deixou em `<rt>tmp/` some na partida.
+    match execucao::limpar_temporarios(&config.rt) {
+        Ok(0) => {}
+        Ok(n) => aviso!("{n} pasta(s) temporária(s) de antes da partida apagada(s) (S2)"),
+        Err(e) => aviso!(
+            "pasta de temporários do ward run indisponível ({})",
+            e.kind()
+        ),
     }
+    let mut daemon =
+        Daemon::novo(config.caminhos, Box::new(RelogioReal)).com_temporarios(config.rt);
+    // V4.21: travado e sem app, o pedido do agente espera o `ward destravar` (D16).
+    let motor = match abridor {
+        Some(a) => Motor::novo(Arc::new(RelogioMonotonico::novo()), Box::new(a)),
+        None => Motor::sem_app(),
+    };
+    daemon = daemon.com_motor(motor.esperando_sem_app());
     let daemon = Arc::new(daemon);
     // Fase 24: trava por inatividade e pelo logind (bloqueio de tela, suspensão).
     if trava::vigiar_inatividade(daemon.clone(), trava::INTERVALO_INATIVIDADE).is_err() {

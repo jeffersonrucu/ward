@@ -5,11 +5,18 @@
 use std::ffi::OsString;
 
 /// O que a CLI vai fazer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Comando {
-    Lista { json: bool },
+    Lista {
+        json: bool,
+    },
     Travar,
     Destravar,
+    /// `ward run <entrada> -- <comando…>` (Fase 26): o argv vai em bytes, sem shell.
+    Run {
+        entrada: String,
+        argv: Vec<OsString>,
+    },
     Ajuda,
     Versao,
 }
@@ -21,6 +28,8 @@ pub enum ErroUso {
     ComandoDesconhecido,
     ArgumentoInesperado(&'static str),
     NaoUtf8,
+    /// `ward run` sem entrada, sem `--` ou sem comando.
+    UsoRun,
 }
 
 impl ErroUso {
@@ -30,6 +39,7 @@ impl ErroUso {
             ErroUso::ComandoDesconhecido => "comando desconhecido".to_owned(),
             ErroUso::ArgumentoInesperado(cmd) => format!("argumento inesperado para `{cmd}`"),
             ErroUso::NaoUtf8 => "argumento que não é UTF-8".to_owned(),
+            ErroUso::UsoRun => "uso: ward run <entrada> -- <comando> [argumentos…]".to_owned(),
         }
     }
 }
@@ -42,14 +52,43 @@ Uso:
                         ambiente, projeto e URL/host (nunca segredo)
   ward destravar        destrava o cofre com a senha mestra, lida do terminal
   ward travar           trava o cofre agora
+  ward run <entrada> -- <comando> [argumentos…]
+                        roda o comando com a credencial no ambiente (D10); a
+                        saída volta com os segredos trocados por ••••, e o
+                        código de saída é o do comando (125: erro do Ward)
   ward --help           esta ajuda
   ward --version        versão
 
 Nenhum comando devolve segredo. Revelar e copiar existem só no app.
 ";
 
+/// `run <entrada> -- <comando…>`: a entrada em UTF-8; o comando em bytes, como veio.
+fn interpretar_run(resto: Vec<OsString>) -> Result<Comando, ErroUso> {
+    let mut it = resto.into_iter();
+    let entrada = it
+        .next()
+        .ok_or(ErroUso::UsoRun)?
+        .into_string()
+        .map_err(|_| ErroUso::NaoUtf8)?;
+    if entrada.is_empty() || entrada.starts_with('-') {
+        return Err(ErroUso::UsoRun);
+    }
+    if it.next().is_none_or(|s| s != "--") {
+        return Err(ErroUso::UsoRun);
+    }
+    let argv: Vec<OsString> = it.collect();
+    if argv.first().is_none_or(|a| a.is_empty()) {
+        return Err(ErroUso::UsoRun);
+    }
+    Ok(Comando::Run { entrada, argv })
+}
+
 /// Lê os argumentos (sem o nome do programa).
 pub fn interpretar(args: impl IntoIterator<Item = OsString>) -> Result<Comando, ErroUso> {
+    let mut args: Vec<OsString> = args.into_iter().collect();
+    if args.first().is_some_and(|a| a == "run") {
+        return interpretar_run(args.split_off(1));
+    }
     let mut textos = Vec::new();
     for a in args {
         textos.push(a.into_string().map_err(|_| ErroUso::NaoUtf8)?);
@@ -120,6 +159,48 @@ mod testes {
             let m = ler(a).unwrap_err().mensagem();
             assert!(!m.contains("falso-mestra"), "{m}");
         }
+    }
+
+    #[test]
+    fn run() {
+        assert_eq!(
+            ler(&["run", "acme-pg-dev", "--", "psql", "-tAc", "select 1"]),
+            Ok(Comando::Run {
+                entrada: "acme-pg-dev".into(),
+                argv: vec!["psql".into(), "-tAc".into(), "select 1".into()],
+            })
+        );
+        // O `--` do comando é dele.
+        assert_eq!(
+            ler(&["run", "e", "--", "sh", "--", "-c"]),
+            Ok(Comando::Run {
+                entrada: "e".into(),
+                argv: vec!["sh".into(), "--".into(), "-c".into()],
+            })
+        );
+        for ruim in [
+            &["run"][..],
+            &["run", "e"][..],
+            &["run", "e", "--"][..],
+            &["run", "e", "psql"][..],
+            &["run", "--", "psql"][..],
+            &["run", "-x", "--", "psql"][..],
+            &["run", "e", "--", ""][..],
+        ] {
+            assert_eq!(ler(ruim), Err(ErroUso::UsoRun), "{ruim:?}");
+        }
+        // Argumento do comando que não é UTF-8 passa em bytes.
+        use std::os::unix::ffi::OsStringExt;
+        let r = interpretar([
+            OsString::from("run"),
+            OsString::from("e"),
+            OsString::from("--"),
+            OsString::from_vec(vec![b'x', 0xff]),
+        ]);
+        assert!(matches!(r, Ok(Comando::Run { .. })));
+        // A mensagem de uso não repete argumento.
+        let m = ler(&["run", "falso-PG:s3nha/01@#"]).unwrap_err().mensagem();
+        assert!(!m.contains("falso"), "{m}");
     }
 
     #[test]

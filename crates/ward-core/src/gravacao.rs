@@ -9,7 +9,9 @@
 //! Só bytes que já são um cofre cifrado entram aqui (S2). As únicas gravações públicas
 //! são [`gravar_entradas`] (o caminho do daemon) e [`trocar_senha`] (D27, D44): as duas
 //! partem de um [`CofreAberto`] ou da senha atual, serializam ou validam o corpo (com o
-//! hash do PIN, D30) e selam uma geração que nunca foi selada (D39, D53). Selar e gravar
+//! hash do PIN, D30) e selam uma geração que nunca foi selada (D39, D53). As variantes
+//! [`gravar_entradas_com_backup`] e [`trocar_senha_com_backup`] (Fase 45) gravam também,
+//! na pasta de backups, os mesmos bytes que acabaram de selar ([`crate::backup`]). Selar e gravar
 //! bytes soltos ([`CofreAberto::selar`], `gravar_cofre`, `gravar`) é interno ao crate:
 //! `gravar` só confere a estrutura do cabeçalho, não a autenticidade (não tem a chave),
 //! e `gravar_cofre` selaria qualquer corpo, inclusive um sem hash de PIN. Nenhum caminho
@@ -63,7 +65,9 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
+use crate::backup::{ErroBackup, PastaBackup, Versao};
 use crate::corpo::{self, ErroCorpo};
 use crate::cripto;
 use crate::entrada::Entrada;
@@ -186,7 +190,7 @@ impl std::error::Error for ErroGravacao {}
 
 /// Ponto da gravação em que o teste pode injetar falha ou parar o processo.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Ponto {
+pub(crate) enum Ponto {
     DepoisDeCriar,
     /// Depois de cada pedaço escrito, com o total escrito até ali.
     Escrevendo(usize),
@@ -221,6 +225,17 @@ fn gravar_entradas_com_pontos(
     entradas: &[Entrada],
     ponto: &mut dyn FnMut(Ponto) -> io::Result<()>,
 ) -> Result<IdentidadeArquivo, ErroGravacao> {
+    gravar_entradas_selado(destino, cofre, entradas, ponto).map(|(id, _)| id)
+}
+
+/// Como [`gravar_entradas_com_pontos`], e devolve também o arquivo selado (cifrado),
+/// para o backup gravar a mesma versão (Fase 45).
+fn gravar_entradas_selado(
+    destino: &Path,
+    cofre: &mut CofreAberto,
+    entradas: &[Entrada],
+    ponto: &mut dyn FnMut(Ponto) -> io::Result<()>,
+) -> Result<(IdentidadeArquivo, Vec<u8>), ErroGravacao> {
     let geracao = cofre
         .proxima_geracao()
         .ok_or(ErroGravacao::GeracaoEsgotada)?;
@@ -230,7 +245,37 @@ fn gravar_entradas_com_pontos(
     drop(conteudo);
     // D53: a geração está selada; daqui em diante ela não volta a ser usada.
     cofre.queimar(geracao);
-    gravar_com_pontos(destino, &arquivo, ponto)
+    let id = gravar_com_pontos(destino, &arquivo, ponto)?;
+    Ok((id, arquivo))
+}
+
+/// Resultado de uma gravação com backup (Fase 45): a identidade do cofre gravado (D62)
+/// e o que aconteceu com o backup. O backup falhar não desfaz a gravação do cofre, que
+/// já está no lugar; quem chama registra no log.
+#[derive(Debug)]
+pub struct Gravado {
+    /// Identidade do arquivo do cofre, lida do fd do temporário (D62).
+    pub identidade: IdentidadeArquivo,
+    /// A versão gravada na pasta de backups, ou por que não foi.
+    pub backup: Result<Versao, ErroBackup>,
+}
+
+/// [`gravar_entradas`] e, depois que a gravação do cofre deu certo inteira (até o
+/// fsync do diretório), grava **a mesma versão selada** como backup na `pasta` (D17,
+/// D27): mesmo formato, cifrado, gravação atômica sem sobrescrever, 30 versões. Nenhum
+/// byte em claro passa por aqui. Erro da gravação do cofre: nenhum backup é feito.
+pub fn gravar_entradas_com_backup(
+    destino: &Path,
+    cofre: &mut CofreAberto,
+    entradas: &[Entrada],
+    pasta: &PastaBackup,
+    instante: SystemTime,
+) -> Result<Gravado, ErroGravacao> {
+    let (identidade, arquivo) = gravar_entradas_selado(destino, cofre, entradas, &mut |_| Ok(()))?;
+    Ok(Gravado {
+        identidade,
+        backup: pasta.guardar(&arquivo, instante),
+    })
 }
 
 /// Troca a senha mestra do cofre em `destino` (V2.8): lê o arquivo, exige a senha
@@ -256,6 +301,34 @@ pub fn trocar_senha(
     geracao_minima: u64,
     geracao_queimada: u64,
 ) -> Result<(CofreAberto, IdentidadeArquivo), ErroGravacao> {
+    trocar_senha_selado(destino, atual, nova, geracao_minima, geracao_queimada)
+        .map(|(cofre, id, _)| (cofre, id))
+}
+
+/// [`trocar_senha`] e, depois que ela deu certo inteira, o backup da versão nova (com
+/// a senha nova) na `pasta`, como em [`gravar_entradas_com_backup`] (Fase 45).
+pub fn trocar_senha_com_backup(
+    destino: &Path,
+    atual: &SenhaMestra,
+    nova: &SenhaMestra,
+    geracao_minima: u64,
+    geracao_queimada: u64,
+    pasta: &PastaBackup,
+    instante: SystemTime,
+) -> Result<(CofreAberto, Gravado), ErroGravacao> {
+    let (cofre, identidade, arquivo) =
+        trocar_senha_selado(destino, atual, nova, geracao_minima, geracao_queimada)?;
+    let backup = pasta.guardar(&arquivo, instante);
+    Ok((cofre, Gravado { identidade, backup }))
+}
+
+fn trocar_senha_selado(
+    destino: &Path,
+    atual: &SenhaMestra,
+    nova: &SenhaMestra,
+    geracao_minima: u64,
+    geracao_queimada: u64,
+) -> Result<(CofreAberto, IdentidadeArquivo, Vec<u8>), ErroGravacao> {
     let arquivo = ler_arquivo(destino)?;
     let (chaves, conteudo) =
         formato::trocar_senha(&arquivo, atual, nova).map_err(ErroGravacao::Formato)?;
@@ -266,8 +339,9 @@ pub fn trocar_senha(
         return Err(ErroGravacao::Retrocesso);
     }
     let mut cofre = CofreAberto::de_partes(chaves, configuracao, geracao.max(geracao_queimada));
-    let identidade = gravar_entradas(destino, &mut cofre, &entradas)?;
-    Ok((cofre, identidade))
+    let (identidade, selado) =
+        gravar_entradas_selado(destino, &mut cofre, &entradas, &mut |_| Ok(()))?;
+    Ok((cofre, identidade, selado))
 }
 
 /// Lê o arquivo do cofre (já cifrado) sem passar do maior tamanho possível de um cofre.
@@ -285,8 +359,8 @@ fn ler_arquivo(destino: &Path) -> Result<Vec<u8>, ErroGravacao> {
 
 /// Sela `conteudo` com a chave do cofre aberto e grava o arquivo de forma atômica. Só
 /// dentro do crate (D44): selaria qualquer corpo, inclusive um sem hash de PIN, e não
-/// queima a geração (D53). De fora, o caminho é [`gravar_entradas`]. Hoje só os testes do
-/// crate chamam direto; o backup (Fase 45) vai usar.
+/// queima a geração (D53). De fora, o caminho é [`gravar_entradas`]. Só os testes do
+/// crate chamam direto (o backup grava os bytes já selados pela gravação do cofre).
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn gravar_cofre(
     destino: &Path,
@@ -311,7 +385,9 @@ fn gravar_cofre_com_pontos(
 /// bytes que não tenham a estrutura de um cofre.
 ///
 /// Só dentro do crate (D27): confere a estrutura, não a autenticidade. O backup
-/// (Fase 45) também usa esta função por dentro do `ward-core`; hoje, só os testes.
+/// (Fase 45) usa o mesmo caminho interno ([`escrever_temporario`] e o fsync do
+/// diretório), só que publicando por link sem sobrescrever
+/// ([`gravar_novo_com_pontos`]).
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn gravar(destino: &Path, arquivo: &[u8]) -> Result<IdentidadeArquivo, ErroGravacao> {
     gravar_com_pontos(destino, arquivo, &mut |_| Ok(()))
@@ -372,28 +448,32 @@ fn criar_temporario(caminho: &Path) -> io::Result<File> {
     Ok(f)
 }
 
-/// Apaga o temporário quando a gravação não chega ao rename.
-struct Temporario<'a> {
-    caminho: &'a Path,
+/// Apaga o temporário quando a gravação não chega ao fim (rename ou link).
+struct Temporario {
+    caminho: PathBuf,
     ativo: bool,
 }
 
-impl Drop for Temporario<'_> {
+impl Drop for Temporario {
     fn drop(&mut self) {
         if self.ativo {
-            let _ = fs::remove_file(self.caminho);
+            let _ = fs::remove_file(&self.caminho);
         }
     }
 }
 
-fn gravar_com_pontos(
-    destino: &Path,
+/// Escreve `arquivo` (já cifrado, com a estrutura conferida) num temporário novo
+/// `.<nome>.ward-tmp-<32 hex>` em `dir`: `O_EXCL`, 0600, escrita em pedaços e fsync.
+/// Devolve o guarda do temporário (apaga ao sair, se ainda ativo) e a identidade lida
+/// do fd depois do fsync (D62).
+fn escrever_temporario(
+    dir: &Path,
+    nome: &std::ffi::OsStr,
     arquivo: &[u8],
     ponto: &mut dyn FnMut(Ponto) -> io::Result<()>,
-) -> Result<IdentidadeArquivo, ErroGravacao> {
+) -> Result<(Temporario, IdentidadeArquivo), ErroGravacao> {
     // S2: só um cofre cifrado bem formado vai para o disco.
     formato::ler_cabecalho(arquivo).map_err(|_| ErroGravacao::NaoECofre)?;
-    let (dir, nome) = separar(destino).ok_or(ErroGravacao::DestinoInvalido)?;
 
     let mut aleatorio = [0u8; 16];
     cripto::aleatorio(&mut aleatorio).map_err(|_| ErroGravacao::Io {
@@ -402,7 +482,7 @@ fn gravar_com_pontos(
         identidade: None,
     })?;
     let mut nome_tmp = OsString::from(".");
-    nome_tmp.push(&nome);
+    nome_tmp.push(nome);
     nome_tmp.push(MARCA_TEMPORARIO);
     for b in aleatorio {
         nome_tmp.push(format!("{b:02x}"));
@@ -410,8 +490,8 @@ fn gravar_com_pontos(
     let caminho_tmp = dir.join(nome_tmp);
 
     let mut f = criar_temporario(&caminho_tmp).map_err(erro(Etapa::CriarTemporario))?;
-    let mut tmp = Temporario {
-        caminho: &caminho_tmp,
+    let tmp = Temporario {
+        caminho: caminho_tmp,
         ativo: true,
     };
     ponto(Ponto::DepoisDeCriar).map_err(erro(Etapa::CriarTemporario))?;
@@ -435,22 +515,75 @@ fn gravar_com_pontos(
         .map(|m| IdentidadeArquivo::from(&m))
         .map_err(erro(Etapa::FsyncTemporario))?;
     drop(f);
+    Ok((tmp, identidade))
+}
 
-    fs::rename(&caminho_tmp, destino).map_err(erro(Etapa::Renomear))?;
-    tmp.ativo = false;
+/// fsync do diretório depois do rename (ou do link), com os pontos de teste.
+fn sincronizar_diretorio(
+    dir: &Path,
+    identidade: IdentidadeArquivo,
+    ponto: &mut dyn FnMut(Ponto) -> io::Result<()>,
+) -> Result<(), ErroGravacao> {
     let depois_do_rename = move |e: io::Error| ErroGravacao::Io {
         etapa: Etapa::FsyncDiretorio,
         tipo: e.kind(),
         identidade: Some(identidade),
     };
     ponto(Ponto::DepoisDoRename).map_err(depois_do_rename)?;
-
     // fsync do diretório: a troca de nome também chega ao disco.
-    File::open(&dir)
+    File::open(dir)
         .and_then(|d| d.sync_all())
         .map_err(depois_do_rename)?;
     ponto(Ponto::DepoisDoFsyncDir).map_err(depois_do_rename)?;
+    Ok(())
+}
+
+fn gravar_com_pontos(
+    destino: &Path,
+    arquivo: &[u8],
+    ponto: &mut dyn FnMut(Ponto) -> io::Result<()>,
+) -> Result<IdentidadeArquivo, ErroGravacao> {
+    formato::ler_cabecalho(arquivo).map_err(|_| ErroGravacao::NaoECofre)?;
+    let (dir, nome) = separar(destino).ok_or(ErroGravacao::DestinoInvalido)?;
+    let (mut tmp, identidade) = escrever_temporario(&dir, &nome, arquivo, ponto)?;
+    fs::rename(&tmp.caminho, destino).map_err(erro(Etapa::Renomear))?;
+    tmp.ativo = false;
+    sincronizar_diretorio(&dir, identidade, ponto)?;
     Ok(identidade)
+}
+
+/// Grava de forma atômica um arquivo já cifrado em `dir` com o primeiro nome livre de
+/// `candidatos`, **sem sobrescrever** nada (backup, Fase 45): temporário (como
+/// [`gravar`]) → fsync → `link(2)` para o nome final, que falha se o nome já existe
+/// (arquivo, link simbólico ou o que for) → apaga o temporário → fsync do diretório.
+/// O nome final só aparece com o arquivo inteiro e sincronizado. Devolve o índice do
+/// nome usado e a identidade (D62). Nenhum nome livre: `Io { Renomear, AlreadyExists }`.
+pub(crate) fn gravar_novo_com_pontos(
+    dir: &Path,
+    nome_tmp: &std::ffi::OsStr,
+    candidatos: &[OsString],
+    arquivo: &[u8],
+    ponto: &mut dyn FnMut(Ponto) -> io::Result<()>,
+) -> Result<(usize, IdentidadeArquivo), ErroGravacao> {
+    let (tmp, identidade) = escrever_temporario(dir, nome_tmp, arquivo, ponto)?;
+    for (i, nome) in candidatos.iter().enumerate() {
+        // `linkat(…, 0)`: não segue link simbólico na origem; destino existente → EEXIST.
+        match fs::hard_link(&tmp.caminho, dir.join(nome)) {
+            Ok(()) => {
+                // O guarda apaga o temporário; o nome final fica com o inode.
+                drop(tmp);
+                sincronizar_diretorio(dir, identidade, ponto)?;
+                return Ok((i, identidade));
+            }
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
+            Err(e) => return Err(erro(Etapa::Renomear)(e)),
+        }
+    }
+    Err(ErroGravacao::Io {
+        etapa: Etapa::Renomear,
+        tipo: io::ErrorKind::AlreadyExists,
+        identidade: None,
+    })
 }
 
 #[cfg(test)]

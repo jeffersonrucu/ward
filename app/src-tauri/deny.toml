@@ -10,12 +10,18 @@ version = 2
 db-urls = ["https://github.com/rustsec/advisory-db"]
 yanked = "deny"
 unmaintained = "all"
+# `unsound` padrão ("workspace") só olha os crates do workspace e as dependências
+# diretas; com ele o cargo-deny não via a RUSTSEC-2024-0429 (glib, transitiva) e
+# avisava `advisory-not-detected`, enquanto o `cargo audit` a acha. Com "all" os dois
+# veem a mesma coisa, e a exceção abaixo deixa de ser cega (D64, Fase 29b).
+unsound = "all"
 ignore = [
     # proc-macro-error 1.0.4: sem manutenção. Só proc-macro de compilação do
     # glib-macros/gtk3-macros (gtk-rs 0.18, base do Tauri 2 no Linux); não roda no app.
     { id = "RUSTSEC-2024-0370", reason = "proc-macro de compilação do gtk-rs 0.18 (Tauri 2 no Linux); sem alternativa até o Tauri sair do GTK 3" },
     # glib 0.18.5: `VariantStrIter` com `Iterator` não sólido. O app não usa
-    # `glib::Variant`; vem do gtk-rs 0.18 que o Tauri 2 exige no Linux.
+    # `glib::Variant`; vem do gtk-rs 0.18 que o Tauri 2 exige no Linux. Fica (D64):
+    # o `cargo audit` em app/src-tauri ainda a detecta (Fase 29b, 2026-11-09).
     { id = "RUSTSEC-2024-0429", reason = "glib 0.18 do gtk-rs (Tauri 2 no Linux); o app não usa VariantStrIter" },
 ]
 

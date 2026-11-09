@@ -20,6 +20,7 @@ use crate::destrave::{InfoPedido, PedidoPendente, SenhaMestra};
 use crate::formulario::{self, ErroCampo, Falta, Fontes, Formulario};
 use crate::gerador::{Gerada, Gerador, Opcoes, Revelada};
 use crate::nivel::{NivelMudado, Pin, nivel_de_nome};
+use crate::primeiro_uso::NovoCofre;
 use crate::segredo::Segredo;
 use crate::terminal::{SemTerminal, Terminal, entrada_para_argv};
 
@@ -31,6 +32,13 @@ const CAMPOS_GERAVEIS: &[&str] = &["senha"];
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ResultadoSalvar {
     pub salvo: Option<String>,
+    pub erros: Vec<ErroCampo>,
+}
+
+/// Resposta do `criar_cofre`: criado, ou os erros por campo. Sem valor.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ResultadoCriar {
+    pub criado: bool,
     pub erros: Vec<ErroCampo>,
 }
 
@@ -185,17 +193,33 @@ impl<D: Daemon, A: AreaTransferencia> Servico<D, A> {
         cliente::estado(&mut *self.daemon()?)
     }
 
-    /// `listar_credenciais`: `lista` e, para a segunda linha de cada item (usuário,
-    /// porta, motor), o `detalhe` de cada entrada. Nada de segredo.
+    /// `criar_cofre` (primeiro uso, Fase 30): confere senha mestra, PIN e as duas
+    /// confirmações aqui e só então pede ao daemon. Com erro de campo, nada vai ao
+    /// daemon. A resposta não traz valor nenhum; o `novo` é zerado ao sair.
+    pub fn criar_cofre(&self, novo: NovoCofre) -> Result<ResultadoCriar, ErroApp> {
+        let erros = novo.erros();
+        if !erros.is_empty() {
+            return Ok(ResultadoCriar {
+                criado: false,
+                erros,
+            });
+        }
+        cliente::criar_cofre(&mut *self.daemon()?, novo.senha.bytes(), novo.pin.bytes())?;
+        Ok(ResultadoCriar {
+            criado: true,
+            erros: Vec::new(),
+        })
+    }
+
+    /// `listar_credenciais`: só a `lista`, numa troca; a segunda linha de cada item
+    /// (usuário, porta, motor) e o usuário da busca vêm do resumo do papel app (D65 c),
+    /// sem um `detalhe` por entrada. Nada de segredo. Item sem resumo ou sem nível
+    /// recusa a resposta inteira.
     pub fn listar_credenciais(&self) -> Result<Vec<ItemCredencial>, ErroApp> {
-        let mut d = self.daemon()?;
-        let itens = cliente::lista(&mut *d)?;
+        let itens = cliente::lista(&mut *self.daemon()?)?;
         itens
             .iter()
-            .map(|item| {
-                let detalhe = cliente::detalhe(&mut *d, &item.nome)?;
-                Ok(ItemCredencial::novo(item, &detalhe))
-            })
+            .map(|item| ItemCredencial::novo(item).ok_or(ErroApp::RespostaInvalida))
             .collect()
     }
 
@@ -954,6 +978,34 @@ mod testes {
             let d = serde_json::to_string(&s.detalhe_credencial(&item.nome).unwrap()).unwrap();
             sem_segredo(&d, &item.nome);
         }
+    }
+
+    /// D65 c: a lista da tela sai de uma troca só (sem um `detalhe` por entrada), com a
+    /// 2ª linha e o usuário da busca tirados do resumo.
+    #[test]
+    fn d65_lista_numa_troca_so_com_resumo_e_usuario() {
+        struct Contador(DaemonFalso, Arc<std::sync::atomic::AtomicUsize>);
+        impl Daemon for Contador {
+            fn trocar(&mut self, p: &[u8]) -> Result<Zeroizing<Vec<u8>>, ErroApp> {
+                self.1.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                self.0.trocar(p)
+            }
+        }
+        let n = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let s = Servico::novo(
+            Contador(DaemonFalso::cheio(), Arc::clone(&n)),
+            Copiador::novo(Arc::new(Area::default())),
+        );
+        let lista = s.listar_credenciais().unwrap();
+        assert_eq!(n.load(std::sync::atomic::Ordering::SeqCst), 1);
+        let pg = lista.iter().find(|i| i.nome == "acme-pg-dev").unwrap();
+        assert_eq!(pg.usuario.as_deref(), Some("app"));
+        let totp = lista.iter().find(|i| i.nome == "acme-totp-dev").unwrap();
+        assert_eq!(totp.usuario.as_deref(), Some("wp_admin"));
+        assert!(totp.resumo.ends_with("TOTP"), "{}", totp.resumo);
+        let g = lista.iter().find(|i| i.nome == "gama-generico").unwrap();
+        assert_eq!(g.resumo, "2 campos extras · 1 anexo");
+        sem_segredo(&serde_json::to_string(&lista).unwrap(), "lista");
     }
 
     #[test]

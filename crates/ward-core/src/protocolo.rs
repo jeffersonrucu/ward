@@ -37,7 +37,8 @@
 //! conhecida → **papel** → campos. Assim, uma operação de app ou de extensão pedida pelo
 //! agente responde [`ErroResposta::NaoAutorizado`] seja qual for o resto do quadro.
 //!
-//! A `lista` do agente vai sem o nível de cada entrada (D50); a do app leva.
+//! A `lista` do agente vai sem o nível de cada entrada (D50) e sem o resumo (D65 c); a
+//! do app leva os dois.
 //!
 //! **Nenhuma resposta que carrega credencial vai para o agente** (S1): as que carregam
 //! ([`TipoResposta::carrega_credencial`]) são só de app ou de extensão, e
@@ -63,8 +64,8 @@ mod testes;
 pub use erros::{ErroResposta, MSG_COFRE_MUDOU, MSG_GERACAO_ESGOTADA, MSG_RETROCESSO, Problema};
 pub use pedido::{Alvo, Decisao, Janela, Pedido, PedidoExecutar, Variavel};
 pub use resposta::{
-    AnexoDetalhe, DetalheEntrada, ExtraDetalhe, Fluxo, ItemLista, PedidoDeAprovacao, Resposta,
-    Sugestao,
+    AnexoDetalhe, DetalheEntrada, ExtraDetalhe, Fluxo, ItemLista, MAX_BACKUPS, PedidoDeAprovacao,
+    Resposta, ResumoItem, Sugestao,
 };
 
 /// Versão do protocolo.
@@ -195,6 +196,8 @@ tabela! {
     TrocarPin = "trocar_pin", SO_APP, "Trocar o PIN.";
     TrocarSenha = "trocar_senha", SO_APP, "Trocar a senha mestra.";
     TempoTrava = "tempo_trava", SO_APP, "Tempo de trava por inatividade, em minutos.";
+    Backups = "backups", SO_APP, "Versões do backup local, da mais nova para a mais antiga (D17, Fase 45).";
+    RestaurarBackup = "restaurar_backup", SO_APP, "Restaurar uma versão do backup local, com a senha mestra dela e o PIN atual (D17, D39, Fase 45).";
     Sugerir = "sugerir", SO_EXTENSAO, "Entradas `login` da origem da aba.";
     Preencher = "preencher", SO_EXTENSAO, "Usuário, senha e TOTP para preencher, se a origem bater (D9).";
     SalvarLogin = "salvar_login", SO_EXTENSAO, "Salvar um login novo visto pela extensão.";
@@ -218,6 +221,7 @@ tabela! {
     CodigoTotp = "codigo_totp", APP_E_EXTENSAO, "Código TOTP atual.";
     Sugestoes = "sugestoes", SO_EXTENSAO, "Entradas sugeridas para a aba.";
     Preenchimento = "preenchimento", SO_EXTENSAO, "Usuário, senha e TOTP para preencher.";
+    Backups = "backups", SO_APP, "Nomes das versões do backup local (D17, Fase 45).";
 }
 
 impl TipoResposta {
@@ -248,6 +252,11 @@ const _: () = {
     assert!(!Operacao::Copiar.papeis().agente);
     assert!(!Operacao::EmitirToken.papeis().agente);
     assert!(!Operacao::Preencher.papeis().agente);
+    // V7.8: restaurar e listar backups só pelo app (D17).
+    assert!(!Operacao::RestaurarBackup.papeis().agente);
+    assert!(!Operacao::RestaurarBackup.papeis().extensao);
+    assert!(!Operacao::Backups.papeis().agente);
+    assert!(!Operacao::Backups.papeis().extensao);
     // O quadro do app cabe a maior entrada (D29) em base64 e os textos escapados.
     assert!(
         json::tamanho_base64(limites::MAX_ENTRADA)
@@ -376,10 +385,12 @@ pub fn codificar_resposta(papel: Papel, r: &Resposta) -> Result<Zeroizing<Vec<u8
     if !tipo.permitida(papel) {
         return Err(ErroCodificar::NaoPermitidaAoPapel);
     }
-    // D50: o nível de acesso nunca vai ao agente na lista.
+    // D50: o nível de acesso nunca vai ao agente na lista; D65 c: nem o resumo.
     if let Resposta::Lista(itens) = r
         && papel != Papel::App
-        && itens.iter().any(|i| i.nivel.is_some())
+        && itens
+            .iter()
+            .any(|i| i.nivel.is_some() || i.resumo.is_some())
     {
         return Err(ErroCodificar::NaoPermitidaAoPapel);
     }

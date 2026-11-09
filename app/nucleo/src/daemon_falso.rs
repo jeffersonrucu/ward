@@ -4,24 +4,27 @@
 //!
 //! Serve para a interface ser conferida no Chrome pela ponte de teste antes do `wardd`
 //! da Fase 22. Recebe o corpo do quadro, lê com `decodificar_pedido` no papel app, monta
-//! a resposta com `ItemLista::de_entrada` / `DetalheEntrada::de_entrada` (sem segredo
-//! por construção) e devolve o corpo de `codificar_resposta`. Atende `estado`, `lista`,
+//! a resposta com `ItemLista::de_entrada` (com o resumo do papel app, D65 c) /
+//! `DetalheEntrada::de_entrada` (sem segredo por construção) e devolve o corpo de
+//! `codificar_resposta`. O segredo do `revelar`/`copiar`/`totp` sai por
+//! `Alvo::segredo_em`, o mesmo do `wardd` (D65 b). Atende `estado`, `lista`,
 //! `detalhe`, `copiar`, `revelar`, `totp`, `emitir_token` (Fase 34) e `salvar_entrada` (Fase 33, com a mesma
 //! regra do `wardd`: `Rascunho::validar`, `conferir_no_cofre`, nível "com aprovação" na
 //! entrada nova e mantido na editada) e `mudar_nivel` (Fase 35, a mesma regra do
 //! `wardd`: PIN conferido no hash Argon2id da configuração do cofre de teste, em tempo
 //! constante pela biblioteca; o 5º erro seguido trava, e travado tudo menos `estado`
-//! responde "travado") e `destravar` (Fase 31: senha mestra de teste conferida em tempo
-//! constante, espera de D20 antes de olhar a senha); o resto responde `interno`. As mudanças ficam só na memória do
-//! processo (travado, só reiniciando a ponte).
+//! responde "travado"), `destravar` (Fase 31: senha mestra de teste conferida em tempo
+//! constante, espera de D20 antes de olhar a senha); o resto responde `interno`. As
+//! mudanças ficam só na memória do processo (travado, só reiniciando a ponte). No
+//! [`DaemonFalso::sem_cofre`], atende `criar_cofre` (Fase 30): guarda só o hash do PIN
+//! (D30), que o `mudar_nivel` passa a conferir no lugar do PIN de teste.
 //!
 //! Sem a feature `modo-teste` este módulo nem existe no binário (só nos testes).
 
 use zeroize::Zeroizing;
 
-use ward_core::entrada::{
-    Entrada, NivelAcesso, OrigemSegredo, Rascunho, Segredo as SegredoCore, TipoEntrada,
-};
+use ward_core::configuracao::HashPin;
+use ward_core::entrada::{Entrada, NivelAcesso, Rascunho, Segredo as SegredoCore, TipoEntrada};
 use ward_core::protocolo::{
     self, Alvo, DetalheEntrada, ErroResposta, ItemLista, Papel, Pedido, Resposta,
 };
@@ -41,6 +44,10 @@ pub use cofre_teste::SEGREDOS;
 /// Daemon falso com as entradas em memória.
 pub struct DaemonFalso {
     entradas: Vec<Entrada>,
+    /// `false` só no [`DaemonFalso::sem_cofre`] até o `criar_cofre` (Fase 30).
+    existe: bool,
+    /// Hash do PIN do cofre criado pelo `criar_cofre`, como o `wardd` o guarda (D30).
+    hash_pin: Option<HashPin>,
     /// Erros de PIN seguidos (S9). Zera no acerto.
     erros_pin: u32,
     travado: bool,
@@ -59,6 +66,8 @@ impl DaemonFalso {
     pub fn cheio() -> DaemonFalso {
         DaemonFalso {
             entradas: cofre_teste::cofre_de_teste(),
+            existe: true,
+            hash_pin: None,
             erros_pin: 0,
             travado: false,
             falhas_destravar: 0,
@@ -70,6 +79,8 @@ impl DaemonFalso {
     pub fn vazio() -> DaemonFalso {
         DaemonFalso {
             entradas: Vec::new(),
+            existe: true,
+            hash_pin: None,
             erros_pin: 0,
             travado: false,
             falhas_destravar: 0,
@@ -123,11 +134,50 @@ impl DaemonFalso {
         Ok(())
     }
 
+    /// Sem cofre ainda (`Primeiro uso / *`, Fase 30): `estado` responde
+    /// `cofre_existe: false`, o resto responde "ainda não existe cofre" até o
+    /// `criar_cofre`, que deixa o cofre vazio e destravado, como o `wardd`.
+    pub fn sem_cofre() -> DaemonFalso {
+        DaemonFalso {
+            entradas: Vec::new(),
+            existe: false,
+            hash_pin: None,
+            erros_pin: 0,
+            travado: false,
+            falhas_destravar: 0,
+            espera_d20: true,
+        }
+    }
+
+    /// O PIN confere com o hash guardado pelo `criar_cofre` (só para os testes).
+    pub fn pin_confere(&self, pin: &[u8]) -> bool {
+        self.hash_pin.as_ref().is_some_and(|h| h.conferir(pin))
+    }
+
     fn entrada(&self, nome: &str) -> Option<&Entrada> {
         self.entradas.iter().find(|e| e.nome() == nome)
     }
 
     fn atender(&mut self, pedido: Pedido) -> Resposta {
+        if !self.existe {
+            return match pedido {
+                Pedido::Estado => Resposta::Estado {
+                    travado: true,
+                    cofre_existe: false,
+                    papel: Papel::App,
+                },
+                // Como o `wardd` (`nucleo.rs` › `criar_cofre`): só o hash do PIN fica.
+                Pedido::CriarCofre { senha: _, pin } => match HashPin::criar(pin.expor()) {
+                    Ok(h) => {
+                        self.hash_pin = Some(h);
+                        self.existe = true;
+                        Resposta::Ok
+                    }
+                    Err(_) => Resposta::Erro(ErroResposta::PedidoInvalido),
+                },
+                _ => Resposta::Erro(ErroResposta::CofreInexistente),
+            };
+        }
         if self.travado && !matches!(pedido, Pedido::Estado | Pedido::Destravar { .. }) {
             return Resposta::Erro(ErroResposta::Travado);
         }
@@ -141,6 +191,7 @@ impl DaemonFalso {
                 Ok(()) => Resposta::Ok,
                 Err(e) => Resposta::Erro(e),
             },
+            Pedido::CriarCofre { .. } => Resposta::Erro(ErroResposta::CofreJaExiste),
             Pedido::Lista => Resposta::Lista(
                 self.entradas
                     .iter()
@@ -153,18 +204,17 @@ impl DaemonFalso {
             },
             Pedido::Copiar { entrada, alvo } | Pedido::Revelar { entrada, alvo } => {
                 match self.entrada(&entrada) {
-                    Some(e) => match valor(e, &alvo) {
-                        Some(v) => Resposta::Segredo(SegredoCore::de_bytes(v.to_vec())),
+                    Some(e) => match alvo.segredo_em(e) {
+                        Some(v) => Resposta::Segredo(SegredoCore::de_bytes(v.expor().to_vec())),
                         None => Resposta::Erro(ErroResposta::CampoInexistente),
                     },
                     None => Resposta::Erro(ErroResposta::EntradaInexistente),
                 }
             }
             Pedido::Totp { entrada } => match self.entrada(&entrada) {
-                Some(e) => match valor(e, &Alvo::Campo("totp_semente".to_owned())) {
-                    Some(v) => {
-                        let semente = SegredoCore::de_bytes(v.to_vec());
-                        match Totp::de_semente(&semente).and_then(|t| t.codigo_agora()) {
+                Some(e) => match Alvo::Campo("totp_semente".to_owned()).segredo_em(e) {
+                    Some(semente) => {
+                        match Totp::de_semente(semente).and_then(|t| t.codigo_agora()) {
                             Ok(c) => Resposta::CodigoTotp {
                                 codigo: Zeroizing::new(c.codigo().to_owned()),
                                 restante: c.restante(),
@@ -220,7 +270,11 @@ impl DaemonFalso {
         nivel: NivelAcesso,
         pin: &SegredoCore,
     ) -> Result<(), ErroResposta> {
-        if !cofre_teste::configuracao_de_teste().conferir_pin(pin.expor()) {
+        let confere = match &self.hash_pin {
+            Some(h) => h.conferir(pin.expor()),
+            None => cofre_teste::configuracao_de_teste().conferir_pin(pin.expor()),
+        };
+        if !confere {
             self.erros_pin = self.erros_pin.saturating_add(1);
             if self.erros_pin >= MAX_ERROS_PIN {
                 self.travado = true;
@@ -264,33 +318,6 @@ impl DaemonFalso {
         self.entradas.sort_by(|a, b| a.nome().cmp(b.nome()));
         Ok(())
     }
-}
-
-/// Nome do segredo do tipo em `Entrada::segredos` a partir do identificador do
-/// protocolo.
-fn origem_do_campo(id: &str) -> Option<&'static str> {
-    Some(match id {
-        "senha" => "senha",
-        "totp_semente" => "semente TOTP",
-        "chave_privada" => "chave privada",
-        "passphrase" => "passphrase",
-        "token" => "token",
-        "secret_access_key" => "secret access key",
-        "session_token" => "session token",
-        "texto" => "texto",
-        _ => return None,
-    })
-}
-
-fn valor<'a>(e: &'a Entrada, alvo: &Alvo) -> Option<&'a [u8]> {
-    e.segredos().into_iter().find_map(|s| {
-        let bate = match (alvo, s.origem) {
-            (Alvo::Campo(id), OrigemSegredo::Campo(nome)) => origem_do_campo(id) == Some(nome),
-            (Alvo::Extra(x), OrigemSegredo::Extra(nome)) => x == nome,
-            _ => false,
-        };
-        bate.then(|| s.valor.expor())
-    })
 }
 
 impl Daemon for DaemonFalso {

@@ -225,3 +225,29 @@
 - [x] Teste de ataque para cada (SEG) tocado
 - [x] (UI/DESIGN) Conferido contra o FigCraft (cópia; nada gravado no original)
 - [x] Ficou dentro do escopo da fase
+
+## Merge com o master (Fases 30, 22c, 26, 45)
+
+- `CampoSenha.svelte` e `PainelDeMarca.svelte`: ficou um componente de cada, o da Fase 30
+  (o olho volta a ocultar em 30 s, tem `desabilitado` e repassa atributos). O `Destravar`
+  passa `rotulo`, `placeholder`, `ajuda`, `readonly={enviando}` e `autocomplete="off"`.
+  As duas telas usam o mesmo arquivo, sem cópia.
+- Listas de comandos (núcleo, `comandos.js`, capability e `generate_handler`):
+  `criar_cofre`, `destravar` e `ouvir_avisos`, nessa ordem. `ErroApp` ficou com as
+  variantes das duas fases.
+- `DaemonFalso`: `sem_cofre` e `travado` convivem. Travado, deixa passar `estado` e
+  `destravar`. Sem cofre, só `estado` e `criar_cofre`.
+- Ponte: `--daemon-falso cheio|vazio|travado|travado-com-pedido|sem-cofre`. O `http.rs`
+  tem `CriarCofre` e `Destravar`.
+- `App.svelte`: destravado vai para a casca, travado para o `Destravar` e sem cofre para
+  o `PrimeiroUso`.
+- Testes do Tauri: os dois testes de ataque (`criar_cofre` e `destravar`) mantidos.
+- QA pela ponte, nos dois fluxos:
+  - destravar com o `qa31.py`, sem falhas;
+  - primeiro uso: painel e rótulos, erro de confirmação, revelar e ocultar, criação que
+    cai nas credenciais e nem senha nem PIN no DOM.
+  - PNGs em `docs/mission/evidence/fase-31/merge/`.
+- `make check` 0, `make app-front` 0, `make app-check` 0.
+- Problema: a primeira rodada do `qa31.py` passou dos 40 s de prazo esperando o botão
+  voltar, enquanto o `make check` rodava ao mesmo tempo. A segunda rodada, com a ponte
+  nova, passou inteira. Parece lentidão da máquina, não do código.

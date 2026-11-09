@@ -1,72 +1,84 @@
 <script>
-  // `Campo senha` (set 17502): vazio, padrão, foco, erro, desabilitado, revelado. Rótulo
-  // em Texto/Rótulo, caixa de altura controle/padrao com raio controle, borda
-  // borda/sutil (foco borda/foco, erro perigo/texto), fundo superficie/campo, padding
-  // 0 × espaco/8 × 0 × espaco/16, gap espaco/8; `Ícone à esquerda` (cadeado), valor,
-  // "revelar" 32×32 (raio sm); ajuda ou erro em Texto/Pequeno.
+  // `Campo senha` (set da Fase 10b; foco 17524, padrão 17511): rótulo Texto/Rótulo, gap
+  // espaco/8; entrada altura controle/padrao, raio controle, padding 0 espaco/8 0
+  // espaco/16, gap espaco/8, fundo superficie/campo, borda borda/sutil (foco: borda/foco
+  // em linha/grossa); `Ícone à esquerda` cadeado; `ação revelar` 32×32 (controle/sm);
+  // ajuda ou erro em Texto/Legenda.
   //
-  // A senha fica só no `valor` que a tela dona liga (`bind:valor`) e tira dele ao
-  // mandar; o olho mostra o que o próprio usuário digitou, só nesta caixa. Sem
-  // `autocomplete` de senha salva: o navegador não guarda nem sugere a senha mestra.
+  // Para a senha mestra digitada (primeiro uso, destravar). O valor é do usuário e fica
+  // só no estado do componente dono; o olho mostra a digitação no próprio campo e volta a
+  // ocultar em 30 s. Sem autocompletar e sem corretor.
+  import { onDestroy } from 'svelte';
   import Icone from './Icone.svelte';
+
+  const PRAZO_VISIVEL_MS = 30_000;
 
   /**
    * @type {{
-   *   id: string, rotulo?: string, placeholder?: string, ajuda?: string, erro?: string,
-   *   valor?: string, somenteLeitura?: boolean, entrada?: HTMLInputElement | null,
-   *   oninput?: () => void
+   *   rotulo: string, id: string, valor?: string, placeholder?: string, ajuda?: string,
+   *   erro?: string, desabilitado?: boolean, entrada?: HTMLInputElement,
+   *   [k: string]: unknown
    * }}
    */
   let {
+    rotulo,
     id,
-    rotulo = 'Senha mestra',
-    placeholder = 'Digite a senha mestra',
-    ajuda = 'Só a senha mestra destrava. O PIN não serve aqui.',
-    erro = '',
     valor = $bindable(''),
-    somenteLeitura = false,
-    entrada = $bindable(null),
-    oninput = undefined,
+    placeholder = '',
+    ajuda = '',
+    erro = '',
+    desabilitado = false,
+    entrada = $bindable(),
+    ...resto
   } = $props();
 
   let visivel = $state(false);
-  const descricao = $derived(`${id}-ajuda`);
+  let prazo = null;
+
+  function alternar() {
+    visivel = !visivel;
+    clearTimeout(prazo);
+    if (visivel) prazo = setTimeout(() => (visivel = false), PRAZO_VISIVEL_MS);
+  }
+
+  onDestroy(() => clearTimeout(prazo));
+  const descricao = $derived(erro || ajuda ? `${id}-ajuda` : undefined);
 </script>
 
 <div class="campo" class:com-erro={erro}>
   <label class="rotulo" for={id}>{rotulo}</label>
-  <div class="entrada">
-    <Icone nome="cadeado" />
+  <div class="caixa" class:desabilitado>
+    <Icone nome="cadeado" tom={desabilitado ? 'desabilitado' : undefined} />
     <input
-      {id}
       bind:this={entrada}
-      class="valor"
-      class:visivel
+      {id}
+      class="entrada"
       type={visivel ? 'text' : 'password'}
       bind:value={valor}
       {placeholder}
-      readonly={somenteLeitura}
-      autocomplete="off"
+      disabled={desabilitado}
+      autocomplete="new-password"
       autocapitalize="off"
       spellcheck="false"
       aria-invalid={erro ? 'true' : undefined}
       aria-describedby={descricao}
-      {oninput}
+      {...resto}
     />
     <button
-      class="revelar"
+      class="acao-icone"
       type="button"
-      aria-label={visivel ? 'Ocultar a senha digitada' : 'Mostrar a senha digitada'}
+      disabled={desabilitado}
+      aria-label={visivel ? `Ocultar ${rotulo}` : `Mostrar ${rotulo}`}
       aria-pressed={visivel}
-      onclick={() => (visivel = !visivel)}
+      onclick={alternar}
     >
       <Icone nome={visivel ? 'olho-fechado' : 'olho'} />
     </button>
   </div>
   {#if erro}
-    <span class="ajuda erro" id={descricao} role="alert">{erro}</span>
-  {:else}
-    <span class="ajuda" id={descricao}>{ajuda}</span>
+    <span class="ajuda erro" id="{id}-ajuda" role="alert">{erro}</span>
+  {:else if ajuda}
+    <span class="ajuda" id="{id}-ajuda">{ajuda}</span>
   {/if}
 </div>
 
@@ -81,8 +93,9 @@
     font-weight: var(--peso-medio);
     font-size: var(--tamanho-sm);
     line-height: var(--altura-linha-sm);
+    color: var(--cor-texto-primario);
   }
-  .entrada {
+  .caixa {
     display: flex;
     align-items: center;
     gap: var(--espaco-8);
@@ -92,13 +105,17 @@
     border: var(--linha-fina) solid var(--cor-borda-sutil);
     background: var(--cor-superficie-campo);
   }
-  .entrada:focus-within {
+  .caixa:focus-within {
     border-color: var(--cor-borda-foco);
+    box-shadow: inset var(--espaco-0) var(--espaco-0) var(--espaco-0) var(--linha-fina) var(--cor-borda-foco);
   }
-  .com-erro .entrada {
-    border-color: var(--cor-perigo-texto);
+  .com-erro .caixa {
+    border-color: var(--cor-perigo-borda);
   }
-  .valor {
+  .desabilitado {
+    background: var(--cor-superficie-desabilitada);
+  }
+  .entrada {
     flex: 1;
     min-width: 0;
     height: 100%;
@@ -109,18 +126,13 @@
     font-size: var(--tamanho-base);
     line-height: var(--altura-linha-base);
   }
-  .valor:focus-visible {
+  .entrada:focus-visible {
     outline: none;
   }
-  .valor::placeholder {
+  .entrada::placeholder {
     color: var(--cor-texto-secundario);
   }
-  .visivel {
-    font-family: var(--familia-mono);
-    font-variant-ligatures: none;
-    font-feature-settings: 'liga' 0, 'calt' 0;
-  }
-  .revelar {
+  .acao-icone {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -131,7 +143,7 @@
     background: transparent;
     cursor: pointer;
   }
-  .revelar:hover {
+  .acao-icone:hover:not(:disabled) {
     background: var(--cor-superficie-elevada);
   }
   .ajuda {

@@ -58,6 +58,10 @@ pub const ESCOLHER_ANEXO: &str = "escolher_anexo";
 pub const REMOVER_ANEXO: &str = "remover_anexo";
 /// `conectar { entrada }`: "Conectar" do `servidor` (D3); o token não volta.
 pub const CONECTAR: &str = "conectar";
+/// `criar_cofre { dados: { senha, confirmacao, pin, confirmacao_pin } }`: primeiro uso
+/// (Fase 30). Conferido no lado Rust; o daemon grava só o hash do PIN (D30). A resposta
+/// traz `criado` ou os erros por campo, nunca o valor.
+pub const CRIAR_COFRE: &str = "criar_cofre";
 /// `destravar { senha }`: destrava com a senha mestra (Fase 31). A senha vai só ao
 /// daemon, num tipo que zera; a resposta não a traz nem diz quantas tentativas houve.
 pub const DESTRAVAR: &str = "destravar";
@@ -85,6 +89,7 @@ pub const COMANDOS: &[&str] = &[
     ESCOLHER_ANEXO,
     REMOVER_ANEXO,
     CONECTAR,
+    CRIAR_COFRE,
     DESTRAVAR,
     OUVIR_AVISOS,
 ];
@@ -115,6 +120,7 @@ pub enum Comando {
     EscolherAnexo,
     RemoverAnexo,
     Conectar,
+    CriarCofre,
     Destravar,
     OuvirAvisos,
 }
@@ -140,6 +146,7 @@ impl Comando {
             ESCOLHER_ANEXO => Some(Comando::EscolherAnexo),
             REMOVER_ANEXO => Some(Comando::RemoverAnexo),
             CONECTAR => Some(Comando::Conectar),
+            CRIAR_COFRE => Some(Comando::CriarCofre),
             DESTRAVAR => Some(Comando::Destravar),
             OUVIR_AVISOS => Some(Comando::OuvirAvisos),
             _ => None,
@@ -221,6 +228,7 @@ mod testes {
                 "escolher_anexo",
                 "remover_anexo",
                 "conectar",
+                "criar_cofre",
                 "destravar",
                 "ouvir_avisos",
             ]

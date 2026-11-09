@@ -13,7 +13,7 @@
 //! [`crate::servico`]: a área de transferência (D4), o "revelar" no clique (S11) ou o
 //! rascunho que volta ao daemon ao editar (Fase 33).
 
-use ward_core::entrada::{NivelAcesso, Rascunho};
+use ward_core::entrada::{NivelAcesso, Rascunho, Segredo as SegredoCore};
 use ward_core::protocolo::{
     self, Alvo, DetalheEntrada, ErroResposta, ItemLista, Papel, Pedido, Problema, Resposta,
 };
@@ -44,6 +44,8 @@ fn erro_do_daemon(e: &ErroResposta) -> ErroApp {
         ErroResposta::EntradaInexistente => ErroApp::EntradaInexistente,
         ErroResposta::CampoInexistente => ErroApp::CampoInexistente,
         ErroResposta::NaoAutorizado => ErroApp::NaoAutorizado,
+        ErroResposta::CofreJaExiste => ErroApp::CofreJaExiste,
+        ErroResposta::FalhaAoGravar => ErroApp::CofreNaoGravado,
         ErroResposta::PinIncorreto => ErroApp::PinIncorreto,
         ErroResposta::SenhaIncorreta => ErroApp::SenhaIncorreta,
         ErroResposta::Retrocesso => ErroApp::CofreRetrocesso,
@@ -60,6 +62,25 @@ pub fn estado<D: Daemon + ?Sized>(daemon: &mut D) -> Result<EstadoCofre, ErroApp
         } => Ok(EstadoCofre::SemCofre),
         Resposta::Estado { travado: true, .. } => Ok(EstadoCofre::Travado),
         Resposta::Estado { travado: false, .. } => Ok(EstadoCofre::Destravado),
+        _ => Err(ErroApp::RespostaInvalida),
+    }
+}
+
+/// `criar_cofre` (primeiro uso, Fase 30): a senha mestra e o PIN já conferidos por
+/// [`crate::primeiro_uso`]. O daemon grava o hash do PIN na configuração do corpo
+/// (D30) e deixa o cofre destravado. Os valores vão em `Segredo` do núcleo (zera ao
+/// sair) e o quadro é zerado depois da troca.
+pub fn criar_cofre<D: Daemon + ?Sized>(
+    daemon: &mut D,
+    senha: &[u8],
+    pin: &[u8],
+) -> Result<(), ErroApp> {
+    let pedido = Pedido::CriarCofre {
+        senha: SegredoCore::de_bytes(senha.to_vec()),
+        pin: SegredoCore::de_bytes(pin.to_vec()),
+    };
+    match pedir(daemon, &pedido)? {
+        Resposta::Ok => Ok(()),
         _ => Err(ErroApp::RespostaInvalida),
     }
 }
@@ -330,6 +351,54 @@ mod testes {
             lista(&mut Resposta1(versao)).unwrap_err(),
             ErroApp::RespostaInvalida
         );
+    }
+
+    #[test]
+    fn ataque_d65_lista_sem_resumo_ou_com_segredo_no_resumo_e_recusada() {
+        // A lista do papel app traz o resumo de cada item (D65 c), sem segredo.
+        let mut falso = DaemonFalso::cheio();
+        let itens = lista(&mut falso).unwrap();
+        assert!(
+            itens
+                .iter()
+                .all(|i| i.resumo.is_some() && i.nivel.is_some())
+        );
+        let quadro = protocolo::codificar_pedido(Papel::App, &Pedido::Lista).unwrap();
+        let verdadeira = String::from_utf8(falso.trocar(&quadro).unwrap().to_vec()).unwrap();
+        for s in crate::daemon_falso::SEGREDOS {
+            assert!(!verdadeira.contains(s), "segredo na lista do app");
+        }
+        // A lista do agente (sem nível nem resumo) não serve ao app.
+        let do_agente: Vec<ItemLista> = itens
+            .iter()
+            .map(|i| ItemLista {
+                nivel: None,
+                resumo: None,
+                ..i.clone()
+            })
+            .collect();
+        let q = protocolo::codificar_resposta(Papel::Agente, &Resposta::Lista(do_agente))
+            .unwrap()
+            .to_vec();
+        assert_eq!(
+            lista(&mut Resposta1(q)).unwrap_err(),
+            ErroApp::RespostaInvalida
+        );
+        // Um "daemon" que enfia um segredo no resumo (campo secreto em `campos`, ou
+        // chave a mais): recusado inteiro, nada chega à interface.
+        let alvo = r#""resumo":{"#;
+        assert!(verdadeira.contains(alvo));
+        for troca in [
+            r#""resumo":{"campos":{"senha":"falso-PG:s3nha/01@#"},"segredos":[],"extras":0,"anexos":0},"x":{"#,
+            r#""resumo":{"valor":"ZmFsc28tUEc=","#,
+        ] {
+            let f = verdadeira.replacen(alvo, troca, 1).into_bytes();
+            assert_eq!(
+                lista(&mut Resposta1(f)).unwrap_err(),
+                ErroApp::RespostaInvalida,
+                "{troca}"
+            );
+        }
     }
 
     #[test]

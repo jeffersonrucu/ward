@@ -319,8 +319,14 @@ fn v3_33_kill_9_entre_as_senhas_erradas() {
         assert_eq!(falhas(), i + 1);
         let _ = fs::remove_dir_all(&sock.0);
     }
-    // 0 s, 1 s e 2 s, menos o tempo de subida (contado da partida).
-    assert!(esperas[0] < Duration::from_millis(900), "{esperas:?}");
+    // 0 s, 1 s e 2 s, menos o tempo de subida (contado da partida). A primeira só tem
+    // o Argon2 (com margem para máquina carregada); que ela não esperou 1 s se vê pela
+    // distância até a terceira, que espera 2 s menos a subida.
+    assert!(esperas[0] < Duration::from_millis(1500), "{esperas:?}");
+    assert!(
+        esperas[2] >= esperas[0] + Duration::from_millis(1200),
+        "{esperas:?}"
+    );
     assert!(esperas[1] >= Duration::from_millis(500), "{esperas:?}");
     assert!(esperas[2] >= Duration::from_millis(1500), "{esperas:?}");
     // O log não tem a senha.

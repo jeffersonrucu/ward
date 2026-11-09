@@ -17,6 +17,7 @@
 
 pub mod app;
 pub mod endurecimento;
+pub mod filho;
 pub mod lancador;
 pub mod memoria;
 pub mod papel;

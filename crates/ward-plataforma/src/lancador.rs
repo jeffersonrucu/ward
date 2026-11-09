@@ -18,7 +18,11 @@
 //!     do WebKitGTK carrega os plugins de `~/.local/share/gstreamer-1.0/plugins`;
 //!   - `NO_AT_BRIDGE=1` e `WEBKIT_A11Y_BUS_ADDRESS=unix:path=/dev/null`: sem elas, o GTK
 //!     e o processo web publicam a árvore de acessibilidade (o texto da tela, com o
-//!     valor revelado) no barramento AT-SPI da sessão, que qualquer processo do uid lê.
+//!     valor revelado) no barramento AT-SPI da sessão, que qualquer processo do uid lê;
+//!   - `CUDA_MPS_PIPE_DIRECTORY=/proc/ward-sem-mps` (D64): sem ela, o cliente MPS da
+//!     biblioteca da NVIDIA, no processo web, conecta a `/tmp/nvidia-mps/control`, onde
+//!     um processo do mesmo uid pode escutar. Em `/proc` ninguém cria a pasta, nem o
+//!     root; o efeito é o de uma máquina sem servidor MPS.
 //!
 //! Os valores não são segredo; as mensagens de erro levam só o nome da variável.
 
@@ -54,7 +58,12 @@ pub const VARIAVEIS_FIXAS: &[(&str, &str)] = &[
     ("GST_PLUGIN_SYSTEM_PATH", PLUGINS_GST_DO_SISTEMA),
     ("NO_AT_BRIDGE", "1"),
     ("WEBKIT_A11Y_BUS_ADDRESS", "unix:path=/dev/null"),
+    ("CUDA_MPS_PIPE_DIRECTORY", PASTA_MPS_INEXISTENTE),
 ];
+
+/// Pasta do canal do MPS da NVIDIA (D64): dentro de `/proc`, onde nenhum processo, nem
+/// o root, cria pasta. Fixa: o cliente MPS não acha o canal e segue sem MPS.
+pub const PASTA_MPS_INEXISTENTE: &str = "/proc/ward-sem-mps";
 
 /// Variáveis de locale aceitas (valor do próprio daemon).
 pub const VARIAVEIS_DE_LOCALE: &[&str] = &[
@@ -877,6 +886,14 @@ mod testes {
             Some(PLUGINS_GST_DO_SISTEMA)
         );
         assert_eq!(a.valor("NO_AT_BRIDGE"), Some("1"));
+        assert_eq!(
+            a.valor("WEBKIT_A11Y_BUS_ADDRESS"),
+            Some("unix:path=/dev/null")
+        );
+        assert_eq!(
+            a.valor("CUDA_MPS_PIPE_DIRECTORY"),
+            Some("/proc/ward-sem-mps")
+        );
         assert_eq!(a.valor("LANG"), Some("pt_BR.UTF-8"));
         for proibida in [
             "DISPLAY",
@@ -976,6 +993,10 @@ mod testes {
             ("PATH", "/tmp/bin:/usr/bin"),
             ("GST_PLUGIN_SYSTEM_PATH", "/home/teste/.local/gst"),
             ("NO_AT_BRIDGE", "0"),
+            // D64: o canal do MPS levado de volta a `/tmp`, onde o atacante escuta.
+            ("CUDA_MPS_PIPE_DIRECTORY", "/tmp/nvidia-mps"),
+            ("CUDA_MPS_PIPE_DIRECTORY", "/run/user/1000/mps"),
+            ("CUDA_MPS_PIPE_DIRECTORY", ""),
             ("LANG", "../../tmp/locale"),
             ("LANG", "/tmp/locale"),
         ] {
@@ -1016,6 +1037,13 @@ mod testes {
         assert_eq!(
             s.conferir(&pares(&v)),
             Err(ErroSessao::Faltando("NO_AT_BRIDGE"))
+        );
+        // D64: sem a variável do MPS, o cliente da NVIDIA volta ao `/tmp/nvidia-mps`.
+        let mut v = certo.clone();
+        v.retain(|(k, _)| k != "CUDA_MPS_PIPE_DIRECTORY");
+        assert_eq!(
+            s.conferir(&pares(&v)),
+            Err(ErroSessao::Faltando("CUDA_MPS_PIPE_DIRECTORY"))
         );
         let mut v = certo.clone();
         v.push(("WAYLAND_DISPLAY".to_owned(), "/tmp/proxy.sock".to_owned()));

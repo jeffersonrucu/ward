@@ -18,6 +18,7 @@ use ward_app_nucleo::destrave::SenhaMestra;
 use ward_app_nucleo::formulario::Formulario;
 use ward_app_nucleo::gerador::Opcoes;
 use ward_app_nucleo::nivel::Pin;
+use ward_app_nucleo::primeiro_uso::NovoCofre;
 use ward_app_nucleo::servico::Servico;
 use zeroize::Zeroizing;
 
@@ -343,6 +344,18 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Ponte<D, A> {
             // O canal do Tauri não existe na ponte: a tela de teste consulta o estado
             // (`ponte-teste.js` › `ouvirAvisos`).
             Comando::OuvirAvisos => Err(ErroApp::PedidoInvalido),
+            // Fase 30: senha mestra e PIN conferidos no lado Rust; a resposta não traz
+            // valor. `dados` sai do objeto por `remove`, sem cópia do texto.
+            Comando::CriarCofre => match args
+                .remove("dados")
+                .map(serde_json::from_value::<NovoCofre>)
+            {
+                Some(Ok(n)) => self
+                    .servico
+                    .criar_cofre(n)
+                    .and_then(|r| serde_json::to_value(r).map_err(|_| ErroApp::RespostaInvalida)),
+                _ => Err(ErroApp::PedidoInvalido),
+            },
         };
         match resultado {
             Ok(valor) => Resposta::json(200, &json!({ "ok": true, "valor": valor })),

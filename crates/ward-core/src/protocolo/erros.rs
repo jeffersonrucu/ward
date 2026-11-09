@@ -71,6 +71,16 @@ pub enum ErroResposta {
     OrigemDiferente,
     /// A entrada não passou na validação.
     Validacao(Vec<Problema>),
+    /// `ward run` de um tipo sem entrega (`nota segura`, D10): nada é executado.
+    TipoSemEntrega,
+    /// A entrega da credencial não pôde ser montada (arquivo temporário, código TOTP,
+    /// túnel): nada é executado.
+    EntregaFalhou,
+    /// A versão de backup pedida não existe na pasta (Fase 45).
+    BackupInexistente,
+    /// A pasta de backups não está acessível ou não é um diretório 0700 do usuário, ou
+    /// o cofre atual não pôde ser guardado antes de restaurar (Fase 45).
+    BackupIndisponivel,
     /// Erro interno do daemon (sem detalhe).
     Interno,
 }
@@ -86,7 +96,7 @@ pub const MSG_GERACAO_ESGOTADA: &str =
 
 impl ErroResposta {
     /// Todos os códigos sem dado (o de validação fica de fora).
-    pub const SIMPLES: [ErroResposta; 24] = [
+    pub const SIMPLES: [ErroResposta; 28] = [
         Self::NaoAutorizado,
         Self::Travado,
         Self::TravadoTempoEsgotado,
@@ -110,6 +120,10 @@ impl ErroResposta {
         Self::Expirado,
         Self::AprovacaoIndisponivel,
         Self::OrigemDiferente,
+        Self::TipoSemEntrega,
+        Self::EntregaFalhou,
+        Self::BackupInexistente,
+        Self::BackupIndisponivel,
         Self::Interno,
     ];
 
@@ -140,6 +154,10 @@ impl ErroResposta {
             Self::AprovacaoIndisponivel => "aprovacao_indisponivel",
             Self::OrigemDiferente => "origem_diferente",
             Self::Validacao(_) => "validacao",
+            Self::TipoSemEntrega => "tipo_sem_entrega",
+            Self::EntregaFalhou => "entrega_falhou",
+            Self::BackupInexistente => "backup_inexistente",
+            Self::BackupIndisponivel => "backup_indisponivel",
             Self::Interno => "interno",
         }
     }
@@ -171,6 +189,10 @@ impl ErroResposta {
             Self::AprovacaoIndisponivel => "aprovação indisponível",
             Self::OrigemDiferente => "a origem da página não bate com a da entrada",
             Self::Validacao(_) => "entrada inválida",
+            Self::TipoSemEntrega => "tipo sem entrega",
+            Self::EntregaFalhou => "a entrega da credencial falhou; nada foi executado",
+            Self::BackupInexistente => "a versão do backup não existe",
+            Self::BackupIndisponivel => "a pasta de backups não está disponível ou não é segura",
             Self::Interno => "erro interno do Ward",
         }
     }

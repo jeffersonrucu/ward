@@ -12,6 +12,7 @@
   import Credenciais from './telas/Credenciais.svelte';
   import Destravar from './telas/Destravar.svelte';
   import GeradorSenha from './telas/GeradorSenha.svelte';
+  import PrimeiroUso from './telas/PrimeiroUso.svelte';
 
   const TEXTOS = {
     'sem-cofre': 'Nenhum cofre criado ainda.',
@@ -26,6 +27,8 @@
   let travado = $state(false);
   // Fase 31: o pedido do agente que espera o destrave (só id e segundos; sem dado).
   let pedido = $state(null);
+  // Fase 30: sem cofre, o primeiro uso; ao criar, o daemon deixa o cofre destravado.
+  let semCofre = $state(false);
   let tela = $state('credenciais');
   let Vitrine = $state(null);
   let pararDeOuvir = null;
@@ -33,6 +36,7 @@
   function aplicar(r) {
     destravado = r?.estado === 'destravado';
     travado = r?.estado === 'travado';
+    semCofre = r?.estado === 'sem-cofre';
     pedido = travado && r?.pedido ? { id: r.pedido.id, restante: r.pedido.restante } : null;
     mensagem = TEXTOS[r?.estado] ?? 'Estado desconhecido.';
   }
@@ -45,6 +49,7 @@
     } catch (e) {
       falhou = true;
       travado = false;
+      semCofre = false;
       mensagem = e.mensagem;
     }
   }
@@ -58,6 +63,12 @@
     } catch {
       // A próxima ação na tela mostra o erro.
     }
+  }
+
+  function aoCriar() {
+    semCofre = false;
+    tela = 'credenciais';
+    destravado = true;
   }
 
   // O cofre travou durante o uso (Fase 35: 5º PIN errado, S9): a casca sai e o estado
@@ -111,6 +122,8 @@
   </div>
 {:else if travado}
   <Destravar {pedido} ondestravado={consultar} onerro={falhaAoDestravar} />
+{:else if semCofre}
+  <PrimeiroUso oncriado={aoCriar} />
 {:else}
   <main class="janela">
     <section class="painel">

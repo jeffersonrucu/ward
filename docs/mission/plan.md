@@ -412,6 +412,16 @@ Pendências da 23a (2026-11-09): `make teste-sem-modo-teste` fica fora do `make 
 
 Pendências da 35 (2026-11-09): 5º PIN errado deve ir a `Destravar / Padrão` (Fase 31); frame `6373` mostra dígitos no PIN errado, app esvazia (ajustar design); textos dos níveis em `credenciais.js` e `niveis.js` (unificar); teste `ataque_comandos_proprios_so_na_janela_e_origem_certas` do `app/src-tauri` falha se houver `wardd` de teste no socket fixo do uid — isolar o socket do teste.
 
+Pendências da 26 (2026-11-09) — perguntar ao usuário: V4.13/RA1 reprova (environ e anexo do filho legíveis pelo mesmo uid, sem mitigação genérica); o ambiente da CLI (`PATH`, `BASH_ENV`, `NODE_OPTIONS`, `GIT_SSH_COMMAND`…) muda o que o comando aprovado faz e a janela de aprovação não mostra ambiente nem cwd. Para o planner: `<rt>` do release é `/run/user/<uid>/ward/` — sem sessão logind não existe (unit com `RuntimeDirectory=`?); `wardd` de produção agora espera até 2 min o `ward destravar` com cofre travado e sem app (V4.21); grupo inteiro morre no fim (neto com `setsid` escapa); V4.9/V4.12 não rodaram no worktree (serviços de outro checkout, sem `psql`) — validador do M4 roda; `teste-home-real` reprova em worktree (git abre `.git/worktrees/…`).
+
+Pendências da 30 (2026-11-09): mínimo de 12 caracteres da senha mestra só no app (decidir se vai a `ward_core::limites` e ao daemon, inclusive troca de senha V5.22); normalização Unicode (NFC) da senha mestra entre app e CLI — decidir; rótulo de força "boa" do design vs rótulos do gerador; `make app-ponte` não serve para primeiro uso (`dev/daemon.sh` exige cofre).
+
+Pendências da 22c (2026-11-09): lista do app com resumo repete URL/host; perto de 64 MiB de texto a lista passa de `MAX_QUADRO_RESPOSTA` e o daemon responde `interno` (decidir limite); log do `wardd` agora leva nome da entrada e campo em `revelar`/`copiar`/`totp` (D65 b; doc do `log.rs` atualizada); `Alvo::segredo_em` entrou no protocolo; V3.39 simula a extensão só por `argv[0]`. O `v3_33` ganhou margem (1500 ms + checagem relativa).
+
+Pendências da 45 (2026-11-09) — decisão do planner/usuário: restaurar exige cofre destravado + PIN atual + senha da versão (além de D17/V7.7); com o cofre principal corrompido ou senha atual esquecida não há restaurar pelo app — decidir se existe restaurar com o cofre travado e como a 47 pede o PIN. Também: pedidos de aprovação pendentes não são cancelados ao restaurar (26/36); a 46 deve abrir a pasta pelo fd como o `wardd` e não pode usar `link(2)` em vfat; nome do backup em UTC (a 47 mostra no fuso local).
+
+Pendências da 29b (2026-11-09) — canais novos ao planner: `gst-plugin-scanner` carrega `.so` de `~/.frei0r-1/lib`, `~/.ladspa`, `~/.libvisual/actor` (apagar o registry força; `FREI0R_PATH` fecha o frei0r, `GST_PLUGIN_LOADING_WHITELIST` fecha tudo mas o WebKit avisa appsink); `/dev/shm/cuda_injection_path_shm` e socket abstrato `@cuda-uvmfd-…`; `~/.nv/*`, `~/.mfx_trace`, `/dev/shm/GFX_MEDIA_TRACE` (família RA8); pasta de dados do WebKit `~/.local/share/local.ward.app/` (auditoria do M5 confere que nenhum valor revelado vai para lá); alinhar `unsound = "all"` no `deny.toml` da raiz.
+
 ## Milestone 3 — Daemon e protocolo
 Contrato: V3.1–V3.41
 
@@ -599,7 +609,7 @@ Contrato: V3.1–V3.41
   - testes de ataque: `kill -9` entre as senhas erradas, agente atrasando o app, cópia
     antiga depois do `criar_cofre`, troca logo depois do rename, `VmLck` no contêiner.
   V3.33–V3.35.
-- [ ] Fase 22c — (Depende da 22b e da 23a: mexe em `crates/wardd`, no protocolo e no
+- [x] Fase 22c — (Depende da 22b e da 23a: mexe em `crates/wardd`, no protocolo e no
   `app/nucleo`.) Operações de valor do app e lista do app (D65 b, c). Arquivos:
   `crates/ward-core/src/protocolo*` (só `ItemLista`/`ResumoItem`), `crates/wardd`,
   `app/nucleo` (`cliente.rs`, `credenciais.rs`, `daemon_falso.rs`) e os testes.
@@ -633,7 +643,7 @@ Contrato: V4.1–V4.38
   D20 mais o Argon2 (a espera do agente passa a sobreviver ao reinício do daemon, Fase
   22b). A resposta de `estado` ganha o campo do papel (Fase 23); a CLI não depende dele
   e não deve recusar um campo a mais vindo da 23.
-- [ ] Fase 26 — `ward run`: o daemon cria o filho com argv, cwd e ambiente da CLI sem
+- [x] Fase 26 — `ward run`: o daemon cria o filho com argv, cwd e ambiente da CLI sem
   `LD_*` (D13), entrega de D10, anexos em `<rt>tmp/` 0600 com limpeza em toda saída e
   na partida, saída mascarada, código de saída, espera do destrave. Pesquisa e
   registro de RA1 (environ e anexos lidos por outro processo do mesmo uid), com teste
@@ -696,7 +706,7 @@ Contrato: V5.1–V5.35
   Testes de ataque no contêiner da 21b (binário setgid de teste), incluindo o pai que
   imita o `systemd --user`. Exige `libwebkit2gtk-4.1-dev` (R32). V3.5 (forma de D47),
   V3.24, V5.31.
-- [ ] Fase 29b — (Depende da 23a: as duas mexem no lançador.) Pendências da 29a (D64).
+- [x] Fase 29b — (Depende da 23a: as duas mexem no lançador.) Pendências da 29a (D64).
   Arquivos: `crates/ward-plataforma` (`ambiente_do_app` e `conferir_ambiente_do_app`),
   `app/src-tauri/deny.toml` e o teste com o WebKitGTK real.
   - `CUDA_MPS_PIPE_DIRECTORY=/proc/ward-sem-mps` no ambiente de D57, conferido pelo app;
@@ -706,7 +716,7 @@ Contrato: V5.1–V5.35
   - RUSTSEC-2024-0429: sai do `deny.toml` do app se o `cargo audit` em
     `app/src-tauri/` não a achar;
   - `make app-check` limpo. V5.30, V5.32.
-- [ ] Fase 30 — **(UI)** Primeiro uso (o PIN vai para a seção de configuração do corpo
+- [x] Fase 30 — **(UI)** Primeiro uso (o PIN vai para a seção de configuração do corpo
   v2 como hash, D30). V5.7, V5.25, V5.26.
 - [ ] Fase 31 — **(UI)** Destravar, inclusive o estado "Pedido do agente". Consome
   `pedido_de_destrave` da fila da 23a e o leva à tela por evento do Tauri (D65 a). V5.8.
@@ -765,7 +775,7 @@ Contrato: V6.1–V6.16
 ## Milestone 7 — Backup
 Contrato: V7.1–V7.11
 
-- [ ] Fase 45 — Backup local automático (30 versões, mesmo formato, gravação atômica,
+- [x] Fase 45 — Backup local automático (30 versões, mesmo formato, gravação atômica,
   dentro do `ward-core` pelo `gravar` interno, D27) e restaurar no daemon, só pelo papel
   app (D17); a versão restaurada é selada com `geracao` = maior vista + 1 e o arquivo
   de estado é atualizado (D39). V7.1–V7.3, V7.8, V7.11.

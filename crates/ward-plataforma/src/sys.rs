@@ -696,3 +696,334 @@ pub(crate) fn relogio_boot() -> io::Result<std::time::Duration> {
     }
     Ok(std::time::Duration::new(seg, nano))
 }
+
+// --- Filho do `ward run` (Fase 26; S3, S8, D13, D60) ---------------------------------
+
+/// `pipe2` com `O_CLOEXEC`: (leitura, escrita), os dois ≥ 3 (um fd 0–2 vira cópia ≥ 3),
+/// para o `dup2` do filho nunca pisar num fd que ainda vai usar.
+#[allow(unsafe_code)]
+fn pipe_cloexec() -> io::Result<(OwnedFd, OwnedFd)> {
+    let mut fds = [0 as libc::c_int; 2];
+    // SAFETY: `fds` é um array local de dois `c_int`, o que o `pipe2` escreve.
+    if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) } != 0 {
+        return Err(erro_os());
+    }
+    // SAFETY: os dois fds acabaram de ser criados pelo `pipe2` e são só nossos.
+    let (r, w) = unsafe { (OwnedFd::from_raw_fd(fds[0]), OwnedFd::from_raw_fd(fds[1])) };
+    Ok((acima_de_2(r)?, acima_de_2(w)?))
+}
+
+/// O mesmo fd, ou uma cópia `CLOEXEC` ≥ 3 se ele for 0, 1 ou 2.
+#[allow(unsafe_code)]
+fn acima_de_2(fd: OwnedFd) -> io::Result<OwnedFd> {
+    if fd.as_raw_fd() > 2 {
+        return Ok(fd);
+    }
+    // SAFETY: `F_DUPFD_CLOEXEC` só duplica o fd aberto (vivo pelo `fd`) para o menor
+    // número livre ≥ 3.
+    let novo = unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_DUPFD_CLOEXEC, 3) };
+    if novo < 0 {
+        return Err(erro_os());
+    }
+    // SAFETY: `novo` acabou de ser criado pelo `fcntl` e é só nosso.
+    Ok(unsafe { OwnedFd::from_raw_fd(novo) })
+}
+
+/// Tudo que o filho usa, montado antes do `fork`: depois dele, o filho só faz chamadas
+/// async-signal-safe, sem alocar nem tocar em trava (o daemon tem várias threads).
+pub(crate) struct PreparoExec<'a> {
+    /// Caminhos a tentar no `execve`, na ordem (a busca no `PATH` já feita).
+    pub caminhos: &'a [*const libc::c_char],
+    /// `argv`, terminado por nulo.
+    pub argv: &'a [*const libc::c_char],
+    /// `envp`, terminado por nulo.
+    pub envp: &'a [*const libc::c_char],
+    /// Diretório de trabalho.
+    pub cwd: &'a CStr,
+}
+
+/// O filho lançado: pid e as pontas do pai dos três pipes.
+pub(crate) struct FilhoCru {
+    pub pid: libc::pid_t,
+    pub entrada: OwnedFd,
+    pub saida: OwnedFd,
+    pub erro: OwnedFd,
+}
+
+/// Por que o filho não chegou ao `execve`.
+#[derive(Debug)]
+pub(crate) enum ErroExec {
+    /// Falha no pai (pipe, fork).
+    Sistema(io::Error),
+    /// O filho avisou pelo pipe: etapa ([`ETAPA_DIRETORIO`]…) e `errno`.
+    Filho { etapa: u8, errno: i32 },
+}
+
+pub(crate) const ETAPA_PREPARO: u8 = 1;
+pub(crate) const ETAPA_DIRETORIO: u8 = 2;
+pub(crate) const ETAPA_EXEC: u8 = 3;
+
+/// `errno` da thread, sem alocar.
+#[allow(unsafe_code)]
+fn errno() -> i32 {
+    // SAFETY: `__errno_location` devolve o ponteiro (válido) para o `errno` da thread.
+    unsafe { *libc::__errno_location() }
+}
+
+/// `fork` + `execve` com o `PreparoExec` (Fase 26). No filho, nesta ordem: grupo de
+/// processos próprio (`setpgid`), morte junto com a thread do daemon que o criou
+/// (`PR_SET_PDEATHSIG`), sinais no padrão e máscara vazia, os pipes em 0–2, o `chdir`,
+/// todo fd ≥ 3 marcado `CLOEXEC` (`close_range`) e o `execve` de cada caminho. Uma
+/// falha antes do `execve` volta pelo pipe de aviso (5 bytes: etapa e `errno`); o
+/// sucesso fecha o pipe no `exec`, sem bytes. Nada passa por shell (S3).
+#[allow(unsafe_code)]
+pub(crate) fn fork_exec(p: &PreparoExec<'_>) -> Result<FilhoCru, ErroExec> {
+    let nulo = |v: &[*const libc::c_char]| v.last().is_some_and(|x| x.is_null());
+    if p.caminhos.is_empty() || !nulo(p.argv) || !nulo(p.envp) {
+        return Err(ErroExec::Sistema(io::ErrorKind::InvalidInput.into()));
+    }
+    let (in_r, in_w) = pipe_cloexec().map_err(ErroExec::Sistema)?;
+    let (out_r, out_w) = pipe_cloexec().map_err(ErroExec::Sistema)?;
+    let (err_r, err_w) = pipe_cloexec().map_err(ErroExec::Sistema)?;
+    let (aviso_r, aviso_w) = pipe_cloexec().map_err(ErroExec::Sistema)?;
+    // SAFETY: `getpid` não tem pré-condição.
+    let pai = unsafe { libc::getpid() };
+    // SAFETY: `sigset_t` e `sigaction` são structs C de inteiros; zeradas são valores
+    // válidos, e o `sigemptyset` as deixa no formato certo.
+    let (vazio, padrao) = unsafe {
+        let mut vazio: libc::sigset_t = std::mem::zeroed();
+        libc::sigemptyset(&raw mut vazio);
+        let mut padrao: libc::sigaction = std::mem::zeroed();
+        padrao.sa_sigaction = libc::SIG_DFL;
+        libc::sigemptyset(&raw mut padrao.sa_mask);
+        (vazio, padrao)
+    };
+    let fds = [
+        (in_r.as_raw_fd(), 0),
+        (out_w.as_raw_fd(), 1),
+        (err_w.as_raw_fd(), 2),
+    ];
+    let aviso = aviso_w.as_raw_fd();
+    // SAFETY: `fork` não tem pré-condição; no filho só seguem chamadas
+    // async-signal-safe (`filho_depois_do_fork`), sem alocar.
+    let pid = unsafe { libc::fork() };
+    if pid < 0 {
+        return Err(ErroExec::Sistema(erro_os()));
+    }
+    if pid == 0 {
+        // SAFETY: estamos no filho logo depois do `fork`; os ponteiros do `PreparoExec`
+        // apontam para memória do pai copiada no filho, viva até o `execve`/`_exit`.
+        unsafe { filho_depois_do_fork(p, pai, &fds, aviso, &vazio, &padrao) }
+    }
+    drop((in_r, out_w, err_w, aviso_w));
+    // Também no pai, para o grupo existir já na volta (sem corrida com o `kill`).
+    // SAFETY: `setpgid` só mexe no grupo do filho; o erro (já trocou de grupo, ou já
+    // fez o `exec`) não importa.
+    unsafe { libc::setpgid(pid, pid) };
+    let mut buf = [0u8; 5];
+    let mut lido = 0;
+    let mut f = std::fs::File::from(aviso_r);
+    while lido < buf.len() {
+        match io::Read::read(&mut f, &mut buf[lido..]) {
+            Ok(0) => break,
+            Ok(n) => lido += n,
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+            Err(_) => break,
+        }
+    }
+    if lido == 0 {
+        return Ok(FilhoCru {
+            pid,
+            entrada: in_w,
+            saida: out_r,
+            erro: err_r,
+        });
+    }
+    // O filho não chegou ao `exec` e já saiu (ou vai sair): colhe.
+    let _ = colher(pid);
+    let errno = if lido == buf.len() {
+        i32::from_ne_bytes([buf[1], buf[2], buf[3], buf[4]])
+    } else {
+        libc::EIO
+    };
+    Err(ErroExec::Filho {
+        etapa: buf[0],
+        errno,
+    })
+}
+
+/// Parte do filho, entre o `fork` e o `execve`. Nunca volta.
+///
+/// # Safety
+/// Só no filho recém-criado pelo `fork`, com o `PreparoExec` válido (ponteiros para
+/// strings C terminadas em nulo, listas terminadas em nulo).
+#[allow(unsafe_code)]
+unsafe fn filho_depois_do_fork(
+    p: &PreparoExec<'_>,
+    pai: libc::pid_t,
+    fds: &[(libc::c_int, libc::c_int); 3],
+    aviso: libc::c_int,
+    vazio: &libc::sigset_t,
+    padrao: &libc::sigaction,
+) -> ! {
+    let avisar = |etapa: u8, e: i32| {
+        let b = e.to_ne_bytes();
+        let msg = [etapa, b[0], b[1], b[2], b[3]];
+        // SAFETY: `msg` é local; `write` é async-signal-safe; o erro não importa (o pai
+        // vê o pipe fechar sem os 5 bytes).
+        unsafe { libc::write(aviso, msg.as_ptr().cast(), msg.len()) };
+    };
+    // SAFETY: (todo o bloco) no filho de um `fork`, só chamadas async-signal-safe
+    // (`setpgid`, `prctl`, `getppid`, `sigaction`, `sigprocmask`, `dup2`, `chdir`,
+    // `syscall(close_range)`, `execve`, `write`, `_exit`), sobre fds e ponteiros válidos
+    // (os do `PreparoExec`, vivos na cópia da memória do pai).
+    unsafe {
+        libc::setpgid(0, 0);
+        if libc::prctl(
+            libc::PR_SET_PDEATHSIG,
+            libc::SIGKILL as libc::c_ulong,
+            0,
+            0,
+            0,
+        ) != 0
+        {
+            avisar(ETAPA_PREPARO, errno());
+            libc::_exit(127);
+        }
+        // A thread do daemon já morreu antes do `prctl`: não segue órfão.
+        if libc::getppid() != pai {
+            libc::_exit(127);
+        }
+        // O runtime do Rust ignora o SIGPIPE; o filho começa com tudo no padrão.
+        for sinal in 1..65 {
+            if sinal != libc::SIGKILL && sinal != libc::SIGSTOP {
+                libc::sigaction(sinal, padrao, std::ptr::null_mut());
+            }
+        }
+        if libc::sigprocmask(libc::SIG_SETMASK, vazio, std::ptr::null_mut()) != 0 {
+            avisar(ETAPA_PREPARO, errno());
+            libc::_exit(127);
+        }
+        for &(de, para) in fds {
+            // `de` ≥ 3 (`pipe_cloexec`): nunca é um dos destinos 0–2.
+            if libc::dup2(de, para) < 0 {
+                avisar(ETAPA_PREPARO, errno());
+                libc::_exit(127);
+            }
+        }
+        if libc::chdir(p.cwd.as_ptr()) != 0 {
+            avisar(ETAPA_DIRETORIO, errno());
+            libc::_exit(127);
+        }
+        // Nenhum fd do daemon (socket, cofre, conexões) chega ao programa.
+        if libc::syscall(
+            libc::SYS_close_range,
+            3 as libc::c_uint,
+            libc::c_uint::MAX,
+            libc::CLOSE_RANGE_CLOEXEC,
+        ) != 0
+        {
+            avisar(ETAPA_PREPARO, errno());
+            libc::_exit(127);
+        }
+        // A busca do `execvpe`: segue nos erros de "não está aqui"; com `EACCES` em
+        // algum, esse é o erro final. Sem o recurso ao `/bin/sh` do `ENOEXEC`.
+        let mut viu_eacces = false;
+        let mut ultimo = libc::ENOENT;
+        for &c in p.caminhos {
+            libc::execve(c, p.argv.as_ptr(), p.envp.as_ptr());
+            ultimo = errno();
+            match ultimo {
+                libc::EACCES => viu_eacces = true,
+                libc::ENOENT | libc::ENOTDIR | libc::ESTALE | libc::ENODEV | libc::ETIMEDOUT => {}
+                _ => break,
+            }
+        }
+        avisar(ETAPA_EXEC, if viu_eacces { libc::EACCES } else { ultimo });
+        libc::_exit(127)
+    }
+}
+
+/// Espera o processo `pid` terminar **sem colher** (`waitid` com `WNOWAIT`): o zumbi
+/// segura o pid (e o grupo), e o `kill` do grupo não acerta outro processo.
+#[allow(unsafe_code)]
+pub(crate) fn esperar_sem_colher(pid: libc::pid_t) -> io::Result<()> {
+    let id = libc::id_t::try_from(pid).map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
+    loop {
+        // SAFETY: `siginfo_t` é uma struct C; zerada é válida, e o `waitid` a escreve.
+        let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+        // SAFETY: `info` é local; `P_PID` com um pid nosso; `WNOWAIT` não colhe.
+        let r = unsafe {
+            libc::waitid(
+                libc::P_PID,
+                id,
+                &raw mut info,
+                libc::WEXITED | libc::WNOWAIT,
+            )
+        };
+        if r == 0 {
+            return Ok(());
+        }
+        let e = erro_os();
+        if e.kind() != io::ErrorKind::Interrupted {
+            return Err(e);
+        }
+    }
+}
+
+/// Colhe o filho `pid` (`waitpid`) e devolve o status cru.
+#[allow(unsafe_code)]
+pub(crate) fn colher(pid: libc::pid_t) -> io::Result<libc::c_int> {
+    loop {
+        let mut status: libc::c_int = 0;
+        // SAFETY: `status` é local; o pid é de um filho nosso.
+        let r = unsafe { libc::waitpid(pid, &raw mut status, 0) };
+        if r == pid {
+            return Ok(status);
+        }
+        let e = erro_os();
+        if e.kind() != io::ErrorKind::Interrupted {
+            return Err(e);
+        }
+    }
+}
+
+/// Há o que ler em `fd` (dados, fim ou erro) dentro de `espera_ms`? Sem ler nada.
+#[allow(unsafe_code)]
+pub(crate) fn esperar_leitura(fd: BorrowedFd<'_>, espera_ms: libc::c_int) -> io::Result<bool> {
+    loop {
+        let mut pfd = libc::pollfd {
+            fd: fd.as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        // SAFETY: `pfd` é um `pollfd` local e válido, e o tamanho passado é 1; o fd
+        // está aberto pelo empréstimo.
+        let r = unsafe { libc::poll(&raw mut pfd, 1, espera_ms) };
+        if r < 0 {
+            let e = erro_os();
+            if e.kind() == io::ErrorKind::Interrupted {
+                continue;
+            }
+            return Err(e);
+        }
+        return Ok(r > 0);
+    }
+}
+
+/// `SIGKILL` para o grupo de processos `pgid` inteiro. Grupo que não existe mais não é
+/// erro.
+#[allow(unsafe_code)]
+pub(crate) fn matar_grupo(pgid: libc::pid_t) -> io::Result<()> {
+    if pgid <= 1 {
+        return Err(io::ErrorKind::InvalidInput.into());
+    }
+    // SAFETY: `kill` com `-pgid` (> 1) manda o sinal só ao grupo; sem ponteiros.
+    if unsafe { libc::kill(-pgid, libc::SIGKILL) } != 0 {
+        let e = erro_os();
+        if e.raw_os_error() != Some(libc::ESRCH) {
+            return Err(e);
+        }
+    }
+    Ok(())
+}

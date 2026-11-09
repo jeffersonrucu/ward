@@ -1,9 +1,8 @@
 <script>
-  // `Painel de marca` (717): painel das telas de acesso (destravar, primeiro uso).
-  // Raio painel, borda borda/sutil nos 4 lados, fundo superficie/padrao, padding
-  // espaco/48, conteúdo distribuído (marca no topo, mensagem no meio, rodapé embaixo).
-  // Marca = `Logo / Horizontal` Marca; mensagem em Título/Destaque, descrição em
-  // Texto/Corpo secundário e as três garantias com `Ícone/check` (gap espaco/12).
+  // `Painel de marca` (717): coluna esquerda do primeiro uso e do destravar. Padding
+  // espaco/48, raio painel, borda borda/sutil, fundo superficie/padrao; `Logo /
+  // Horizontal` em cima, mensagem (Título/Destaque, Texto/Corpo secundário e as três
+  // garantias com `Ícone/check`, gap espaco/16 e espaco/12) e rodapé em Texto/Legenda.
   import Icone from './Icone.svelte';
   import Logo from './Logo.svelte';
 
@@ -14,11 +13,11 @@
   ];
 </script>
 
-<aside class="painel" aria-label="Ward">
-  <div class="marca"><Logo /></div>
+<aside class="painel">
+  <Logo />
   <div class="mensagem">
     <p class="titulo">Credenciais de trabalho, fora da conversa.</p>
-    <p class="descricao">
+    <p class="texto">
       O Claude recebe o acesso, nunca a senha. Cada uso respeita o nível de acesso da entrada.
     </p>
     <ul class="garantias">
@@ -35,34 +34,28 @@
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    /* 560 no FigCraft (largura fixa da instância, sem variable própria); é o mesmo
-       valor de largura/dialogo-largo. */
-    flex: 0 0 var(--largura-dialogo-largo);
+    flex: none;
+    /* 560 no FigCraft (sem variable ligada; o valor é o de largura/dialogo-largo). */
+    width: var(--largura-dialogo-largo);
     padding: var(--espaco-48);
     border-radius: var(--raio-painel);
     border: var(--linha-fina) solid var(--cor-borda-sutil);
     background: var(--cor-superficie-padrao);
-  }
-  .marca {
-    display: flex;
-    align-items: center;
   }
   .mensagem {
     display: flex;
     flex-direction: column;
     gap: var(--espaco-16);
   }
-  p {
-    margin: var(--espaco-0);
-  }
   .titulo {
+    margin: var(--espaco-0);
     font-weight: var(--peso-semibold);
     font-size: var(--tamanho-3xl);
     line-height: var(--altura-linha-3xl);
     letter-spacing: var(--espacamento-letra-titulo);
-    color: var(--cor-texto-primario);
   }
-  .descricao {
+  .texto {
+    margin: var(--espaco-0);
     color: var(--cor-texto-secundario);
   }
   .garantias {
@@ -77,9 +70,9 @@
     display: flex;
     align-items: center;
     gap: var(--espaco-12);
-    color: var(--cor-texto-primario);
   }
   .rodape {
+    margin: var(--espaco-0);
     font-size: var(--tamanho-xs);
     line-height: var(--altura-linha-xs);
     color: var(--cor-texto-secundario);

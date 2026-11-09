@@ -44,7 +44,14 @@ fn dados_validos(op: Operacao) -> String {
     let pin = b64(b"135790");
     let senha = b64(b"falso-mestra-ward-01");
     match op {
-        Operacao::Estado | Operacao::Travar | Operacao::Lista | Operacao::AbrirApp => "{}".into(),
+        Operacao::Estado
+        | Operacao::Travar
+        | Operacao::Lista
+        | Operacao::AbrirApp
+        | Operacao::Backups => "{}".into(),
+        Operacao::RestaurarBackup => {
+            format!(r#"{{"versao":"ward-20261109-153000.ward","senha":"{senha}","pin":"{pin}"}}"#)
+        }
         Operacao::Destravar => format!(r#"{{"senha":"{senha}"}}"#),
         Operacao::Executar => format!(
             r#"{{"entrada":"acme-pg-dev","argv":["{}"],"cwd":"{}","ambiente":[{{"nome":"{}","valor":"{}"}}]}}"#,
@@ -128,6 +135,7 @@ fn item(nome: &str) -> ItemLista {
         tags: vec!["web".into()],
         nivel: None,
         endereco: Some("https://clientex.invalid/login".into()),
+        resumo: None,
     }
 }
 
@@ -185,6 +193,10 @@ fn uma_resposta_de_cada() -> Vec<Resposta> {
             senha: seg("falso-WP-senha-01"),
             totp: Some(zeroize::Zeroizing::new("654321".into())),
         },
+        Resposta::Backups(vec![
+            "ward-20261109-153000-1.ward".into(),
+            "ward-20261109-153000.ward".into(),
+        ]),
     ]
 }
 
@@ -226,6 +238,8 @@ fn v3_15_tabela_operacao_papel() {
         ("trocar_pin", false, true, false),
         ("trocar_senha", false, true, false),
         ("tempo_trava", false, true, false),
+        ("backups", false, true, false),
+        ("restaurar_backup", false, true, false),
         ("sugerir", false, false, true),
         ("preencher", false, false, true),
         ("salvar_login", false, false, true),
@@ -264,6 +278,7 @@ fn v3_15_tabela_operacao_papel() {
         ("codigo_totp", false, true, true, true),
         ("sugestoes", false, false, true, false),
         ("preenchimento", false, false, true, true),
+        ("backups", false, true, false, false),
     ];
     let real: Vec<_> = TipoResposta::TODAS
         .iter()
@@ -1506,4 +1521,293 @@ fn d50_lista_do_agente_sem_nivel_e_do_app_com_nivel() {
     );
     assert!(decodificar_resposta(Papel::Agente, &q_app).is_err());
     assert!(decodificar_resposta(Papel::App, &q).is_err());
+}
+
+/// D65 c (V3.40): a lista do app leva o resumo de cada entrada (campos de texto, ids
+/// dos segredos, nº de extras e de anexos) e nenhum segredo; a do agente, nenhum resumo
+/// nem usuário. Os dois sentidos de D50: o daemon não manda ao agente um item com
+/// resumo, a leitura do agente recusa um quadro forjado com resumo, e a do app recusa
+/// item sem resumo ou com resumo que leve segredo.
+#[test]
+fn d65_lista_do_app_com_resumo_e_do_agente_sem() {
+    let entradas = cofre_de_teste();
+    let do_papel = |p: Papel| {
+        Resposta::Lista(
+            entradas
+                .iter()
+                .map(|e| ItemLista::de_entrada(e, p))
+                .collect(),
+        )
+    };
+    let q_app = codificar_resposta(Papel::App, &do_papel(Papel::App)).unwrap();
+    let Resposta::Lista(itens) = decodificar_resposta(Papel::App, &q_app).unwrap() else {
+        panic!("não é lista")
+    };
+    assert_eq!(itens.len(), entradas.len());
+    for (i, e) in itens.iter().zip(&entradas) {
+        let r = i.resumo.as_ref().expect("item do app sem resumo");
+        let d = DetalheEntrada::de_entrada(e);
+        assert_eq!(r.campos, d.campos, "{}", e.nome());
+        assert_eq!(r.segredos, d.segredos, "{}", e.nome());
+        assert_eq!(r.extras, e.extras().len() as u64);
+        assert_eq!(r.anexos, e.anexos().len() as u64);
+    }
+    let pg = itens.iter().find(|i| i.nome == "acme-pg-dev").unwrap();
+    let r = pg.resumo.as_ref().unwrap();
+    assert!(r.campos.contains(&("usuario".to_owned(), "app".to_owned())));
+    assert_eq!(r.segredos, vec!["senha".to_owned()]);
+    let generico = itens.iter().find(|i| i.nome == "gama-generico").unwrap();
+    assert_eq!(generico.resumo.as_ref().unwrap().extras, 2);
+    // Nenhum segredo do cofre de teste no quadro do app, nem em base64.
+    for s in cofre_teste::SEGREDOS {
+        assert!(!contem(&q_app, s.as_bytes()), "segredo na lista do app");
+        let b = Base64::encode_string(s.as_bytes());
+        assert!(!contem(&q_app, b.as_bytes()), "segredo em base64 na lista");
+    }
+    assert!(!contem(&q_app, b"falso-licenca-01"));
+
+    // Agente: sem resumo e sem usuário.
+    let q = codificar_resposta(Papel::Agente, &do_papel(Papel::Agente)).unwrap();
+    assert!(!contem(&q, b"\"resumo\""));
+    assert!(!contem(&q, b"\"usuario\""));
+    assert!(!contem(&q, b"wp_admin"));
+    let Resposta::Lista(itens) = decodificar_resposta(Papel::Agente, &q).unwrap() else {
+        panic!("não é lista")
+    };
+    assert!(itens.iter().all(|i| i.resumo.is_none()));
+
+    // Ataque: item com resumo (sem nível) mandado ao agente é recusado na escrita.
+    let mut so_resumo: Vec<ItemLista> = entradas
+        .iter()
+        .map(|e| ItemLista::de_entrada(e, Papel::App))
+        .collect();
+    for i in &mut so_resumo {
+        i.nivel = None;
+    }
+    assert_eq!(
+        codificar_resposta(Papel::Agente, &Resposta::Lista(so_resumo)).unwrap_err(),
+        ErroCodificar::NaoPermitidaAoPapel
+    );
+    // Ataque: item do app sem resumo (só o nível) não sai.
+    let mut sem_resumo: Vec<ItemLista> = entradas
+        .iter()
+        .map(|e| ItemLista::de_entrada(e, Papel::App))
+        .collect();
+    sem_resumo[0].resumo = None;
+    assert_eq!(
+        codificar_resposta(Papel::App, &Resposta::Lista(sem_resumo)).unwrap_err(),
+        ErroCodificar::Invalida
+    );
+
+    // Ataque: quadro do agente forjado com um resumo é recusado pela leitura do agente.
+    let texto = String::from_utf8(q.to_vec()).unwrap();
+    let resumo = r#""resumo":{"campos":{"usuario":"app"},"segredos":["senha"],"extras":0,"anexos":0},"nome":"#;
+    let forjado = texto.replacen(r#""nome":"#, resumo, 1);
+    assert_ne!(forjado, texto);
+    assert!(decodificar_resposta(Papel::Agente, forjado.as_bytes()).is_err());
+    // E o quadro do app inteiro, lido como agente.
+    assert!(decodificar_resposta(Papel::Agente, &q_app).is_err());
+
+    // Ataques do lado do app: item sem resumo, resumo com campo secreto em `campos`,
+    // com id de segredo desconhecido, com chave a mais ou com valor de segredo.
+    let app = String::from_utf8(q_app.to_vec()).unwrap();
+    let alvo = r#""resumo":{"#;
+    assert!(app.contains(alvo));
+    let sem = {
+        // Tira o primeiro resumo inteiro (até o fim do objeto dele).
+        let i = app.find(alvo).unwrap();
+        let fim = i + app[i..].find(r#""anexos":"#).unwrap();
+        let fim = fim + app[fim..].find('}').unwrap() + 1;
+        // A vírgula antes do resumo sai junto.
+        format!("{}{}", &app[..i - 1], &app[fim..])
+    };
+    // JSON válido: a recusa é pela falta do resumo, não pela sintaxe.
+    assert!(json::ler(sem.as_bytes(), json::MAX_NOS_RESPOSTA).is_ok());
+    assert!(decodificar_resposta(Papel::App, sem.as_bytes()).is_err());
+    for troca in [
+        r#""resumo":{"campos":{"senha":"falso-PG:s3nha/01@#"},"#,
+        r#""resumo":{"x":1,"#,
+        r#""resumo":{"valor":"ZmFsc28tUEc=","#,
+    ] {
+        let f = app.replacen(alvo, troca, 1);
+        assert!(
+            decodificar_resposta(Papel::App, f.as_bytes()).is_err(),
+            "{troca}"
+        );
+    }
+    let f = app.replacen(r#""segredos":["#, r#""segredos":["chave_mestra","#, 1);
+    assert!(decodificar_resposta(Papel::App, f.as_bytes()).is_err());
+}
+
+/// D65 b: `Alvo::segredo_em` acha cada segredo preenchido pelo identificador do
+/// protocolo (o mesmo que o detalhe lista) e nada mais: campo de outro tipo, campo
+/// vazio, extra comum e extra inexistente dão `None`.
+#[test]
+fn d65_alvo_acha_so_os_segredos_da_entrada() {
+    let entradas = cofre_de_teste();
+    for e in &entradas {
+        let d = DetalheEntrada::de_entrada(e);
+        let todos: Vec<&[u8]> = e.segredos().iter().map(|s| s.valor.expor()).collect();
+        for id in CAMPOS_SECRETOS_TESTE {
+            let achado = Alvo::Campo((*id).to_owned()).segredo_em(e);
+            assert_eq!(
+                achado.is_some(),
+                d.segredos.iter().any(|s| s == id),
+                "{} {id}",
+                e.nome()
+            );
+            if let Some(v) = achado {
+                assert!(todos.contains(&v.expor()));
+            }
+        }
+        for x in &d.extras {
+            let achado = Alvo::Extra(x.nome.clone()).segredo_em(e);
+            assert_eq!(
+                achado.is_some(),
+                x.valor.is_none(),
+                "{} {}",
+                e.nome(),
+                x.nome
+            );
+        }
+        assert!(Alvo::Extra("nao-existe".into()).segredo_em(e).is_none());
+        assert!(Alvo::Campo("usuario".into()).segredo_em(e).is_none());
+    }
+    let generico = entradas
+        .iter()
+        .find(|e| e.nome() == "gama-generico")
+        .unwrap();
+    assert_eq!(
+        Alvo::Extra("CHAVE_LICENCA".into())
+            .segredo_em(generico)
+            .unwrap()
+            .expor(),
+        b"falso-licenca-01"
+    );
+    assert!(Alvo::Extra("REGIAO".into()).segredo_em(generico).is_none());
+}
+
+const CAMPOS_SECRETOS_TESTE: &[&str] = &[
+    "senha",
+    "totp_semente",
+    "chave_privada",
+    "passphrase",
+    "token",
+    "secret_access_key",
+    "session_token",
+    "texto",
+];
+
+// ---- Fase 45: backups e restaurar ----
+
+/// V7.8 (D17): o agente e a extensão pedindo `backups` ou `restaurar_backup` recebem
+/// "não autorizado", com qualquer campo; o app é atendido. A resposta `backups` não vai
+/// a outro papel.
+#[test]
+fn v7_8_restaurar_e_backups_so_pelo_app() {
+    for op in [Operacao::Backups, Operacao::RestaurarBackup] {
+        let bom = quadro_de(op, &dados_validos(op));
+        for papel in [Papel::Agente, Papel::Extensao] {
+            for q in [
+                bom.clone(),
+                quadro_de(op, "{}"),
+                quadro_de(op, r#"{"versao":"../cofre.ward"}"#),
+                quadro_de(op, &com_campo(&dados_validos(op), r#""papel":"app""#)),
+            ] {
+                assert_eq!(
+                    ped(papel, &q).unwrap_err(),
+                    ErroResposta::NaoAutorizado,
+                    "{} pelo {}",
+                    op.nome(),
+                    papel.nome()
+                );
+            }
+            let p = ped(Papel::App, &bom).unwrap();
+            assert_eq!(
+                codificar_pedido(papel, &p).unwrap_err(),
+                ErroCodificar::NaoPermitidaAoPapel
+            );
+        }
+        assert!(ped(Papel::App, &bom).is_ok());
+    }
+    let r = Resposta::Backups(vec!["ward-20261109-153000.ward".into()]);
+    for papel in [Papel::Agente, Papel::Extensao] {
+        assert_eq!(
+            codificar_resposta(papel, &r).unwrap_err(),
+            ErroCodificar::NaoPermitidaAoPapel
+        );
+    }
+    let bytes = codificar_resposta(Papel::App, &r).unwrap();
+    assert!(decodificar_resposta(Papel::Agente, &bytes).is_err());
+    match decodificar_resposta(Papel::App, &bytes).unwrap() {
+        Resposta::Backups(l) => assert_eq!(l, ["ward-20261109-153000.ward"]),
+        outra => panic!("{outra:?}"),
+    }
+}
+
+/// O nome da versão no `restaurar_backup` é só o nome exato do arquivo: caminho, `..`,
+/// barra, sufixo com zero à esquerda e campo a mais são recusados na leitura; senha
+/// vazia e PIN fora do formato também. Uma resposta `backups` com nome fora do formato
+/// é recusada pelo cliente.
+#[test]
+fn ataque_restaurar_com_caminho_no_nome_recusado() {
+    let pin = b64(b"135790");
+    let senha = b64(b"falso-mestra-ward-01");
+    for versao in [
+        "../cofre.ward",
+        "ward-20261109-153000.ward/../../cofre.ward",
+        "/home/usuario/.local/share/ward/cofre.ward",
+        "backups/ward-20261109-153000.ward",
+        "ward-20261109-153000-01.ward",
+        "ward-20261109-153000",
+        "",
+    ] {
+        let q = quadro_de(
+            Operacao::RestaurarBackup,
+            &format!(r#"{{"versao":"{versao}","senha":"{senha}","pin":"{pin}"}}"#),
+        );
+        assert_eq!(
+            ped(Papel::App, &q).unwrap_err(),
+            ErroResposta::PedidoInvalido,
+            "{versao}"
+        );
+    }
+    for dados in [
+        format!(r#"{{"versao":"ward-20261109-153000.ward","senha":"","pin":"{pin}"}}"#),
+        format!(
+            r#"{{"versao":"ward-20261109-153000.ward","senha":"{senha}","pin":"{}"}}"#,
+            b64(b"12ab")
+        ),
+        format!(r#"{{"versao":"ward-20261109-153000.ward","senha":"{senha}"}}"#),
+        format!(
+            r#"{{"versao":"ward-20261109-153000.ward","senha":"{senha}","pin":"{pin}","geracao":9}}"#
+        ),
+    ] {
+        let q = quadro_de(Operacao::RestaurarBackup, &dados);
+        assert_eq!(
+            ped(Papel::App, &q).unwrap_err(),
+            ErroResposta::PedidoInvalido,
+            "{dados}"
+        );
+    }
+    let p = Pedido::RestaurarBackup {
+        versao: "../cofre.ward".into(),
+        senha: seg("falso-mestra-ward-01"),
+        pin: seg("135790"),
+    };
+    assert_eq!(
+        codificar_pedido(Papel::App, &p).unwrap_err(),
+        ErroCodificar::Invalida
+    );
+    // `backups` com nome fora do formato ou além do limite: o daemon não manda e o
+    // cliente não aceita.
+    let ruim = Resposta::Backups(vec!["../cofre.ward".into()]);
+    assert_eq!(
+        codificar_resposta(Papel::App, &ruim).unwrap_err(),
+        ErroCodificar::Invalida
+    );
+    let quadro = r#"{"v":1,"tipo":"backups","dados":{"versoes":["../cofre.ward"]}}"#;
+    assert!(decodificar_resposta(Papel::App, quadro.as_bytes()).is_err());
+    let muitos = Resposta::Backups(vec!["ward-20261109-153000.ward".into(); MAX_BACKUPS + 1]);
+    assert!(codificar_resposta(Papel::App, &muitos).is_err());
 }

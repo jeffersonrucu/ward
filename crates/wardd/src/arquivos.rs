@@ -228,6 +228,56 @@ pub fn gravar_estado_completo(caminho: &Path, e: ArquivoEstado) -> io::Result<()
     r
 }
 
+/// Pasta de backups aberta pelo fd (Fase 45): o diretório foi aberto com
+/// `O_NOFOLLOW | O_DIRECTORY` e conferido pelo `fstat` (diretório do euid, 0700). Todo
+/// acesso passa por `/proc/self/fd/<n>/…`, então trocar a pasta por um link simbólico
+/// ou por outro diretório depois de aberta não desvia nada.
+pub struct PastaAberta {
+    fd: File,
+}
+
+impl PastaAberta {
+    /// O caminho pelo fd, para o `ward_core::backup`.
+    pub fn caminho(&self) -> PathBuf {
+        use std::os::fd::AsRawFd;
+        PathBuf::from(format!("/proc/self/fd/{}", self.fd.as_raw_fd()))
+    }
+
+    /// A pasta para o núcleo, com o uid esperado.
+    pub fn pasta(&self) -> ward_core::backup::PastaBackup {
+        ward_core::backup::PastaBackup::nova(self.caminho(), ward_plataforma::uid_efetivo())
+    }
+}
+
+/// Pasta de backups ao lado do cofre: `<pasta do cofre>/backups` (D17:
+/// `~/.local/share/ward/backups`; no `modo-teste`, `.dev/backups`).
+pub fn dir_backups(cofre: &Path) -> Option<PathBuf> {
+    cofre
+        .parent()
+        .filter(|d| !d.as_os_str().is_empty())
+        .map(|d| d.join("backups"))
+}
+
+/// Abre a pasta de backups (cria 0700 se faltar, sem criar os pais). Link simbólico no
+/// lugar, outro dono ou qualquer permissão de grupo/outros: `PermissionDenied`.
+pub fn abrir_pasta_backup(dir: &Path) -> io::Result<PastaAberta> {
+    use std::os::unix::fs::DirBuilderExt;
+    match fs::DirBuilder::new().mode(0o700).create(dir) {
+        Ok(()) => {}
+        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
+        Err(e) => return Err(e),
+    }
+    let fd = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_DIRECTORY | libc::O_CLOEXEC)
+        .open(dir)?;
+    let m = fd.metadata()?;
+    if !m.is_dir() || m.uid() != ward_plataforma::uid_efetivo() || m.mode() & 0o077 != 0 {
+        return Err(io::ErrorKind::PermissionDenied.into());
+    }
+    Ok(PastaAberta { fd })
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;

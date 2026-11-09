@@ -11,7 +11,8 @@ use super::Operacao;
 use super::campos::{Campos, R, bytes_de, segredo_de, texto_de, textos_de};
 use super::json::{Escritor, JsonInvalido, Valor};
 use crate::entrada::{
-    NivelAcesso, Rascunho, RascunhoAnexo, RascunhoDados, RascunhoExtra, Segredo, TipoEntrada,
+    Autenticacao, Dados, Entrada, NivelAcesso, Rascunho, RascunhoAnexo, RascunhoDados,
+    RascunhoExtra, Segredo, TipoEntrada, ValorExtra,
 };
 use crate::limites::{
     MAX_ANEXOS, MAX_ANEXOS_SOMADOS, MAX_ARGUMENTO, MAX_ARGUMENTOS, MAX_DIGITOS_PIN, MAX_EXTRAS,
@@ -53,6 +54,44 @@ pub struct Janela {
 pub enum Alvo {
     Campo(String),
     Extra(String),
+}
+
+impl Alvo {
+    /// O segredo da entrada que este alvo aponta (D65 b: `revelar`/`copiar` do app), ou
+    /// `None` se o tipo não tem o campo, o campo não está preenchido ou o extra não
+    /// existe ou não é secreto. Anexo não é alvo.
+    pub fn segredo_em<'a>(&self, e: &'a Entrada) -> Option<&'a Segredo> {
+        match self {
+            Alvo::Extra(nome) => e.extras().iter().find_map(|x| match x.valor() {
+                ValorExtra::Segredo(v) if x.nome() == nome => Some(v),
+                _ => None,
+            }),
+            Alvo::Campo(id) => segredo_do_campo(e.dados(), id),
+        }
+    }
+}
+
+/// Campo secreto do tipo pelo identificador do protocolo ([`CAMPOS_SECRETOS`]).
+fn segredo_do_campo<'a>(d: &'a Dados, id: &str) -> Option<&'a Segredo> {
+    let auth = |a: &'a Autenticacao| match (a, id) {
+        (Autenticacao::Senha(s), "senha") => Some(s),
+        (Autenticacao::Chave { chave_privada, .. }, "chave_privada") => Some(chave_privada),
+        (Autenticacao::Chave { passphrase, .. }, "passphrase") => passphrase.as_ref(),
+        _ => None,
+    };
+    match (d, id) {
+        (Dados::Login(l), "senha") => Some(&l.senha),
+        (Dados::Login(l), "totp_semente") => l.totp_semente.as_ref(),
+        (Dados::Banco(b), "senha") => Some(&b.senha),
+        (Dados::Servidor(v), _) => auth(&v.autenticacao),
+        (Dados::FtpSftp(f), _) => auth(&f.autenticacao),
+        (Dados::Api(a), "token") => Some(&a.token),
+        (Dados::Aws(a), "secret_access_key") => Some(&a.secret_access_key),
+        (Dados::Aws(a), "session_token") => a.session_token.as_ref(),
+        (Dados::Smtp(m), "senha") => Some(&m.senha),
+        (Dados::NotaSegura(n), "texto") => Some(&n.texto),
+        _ => None,
+    }
 }
 
 /// Botão da janela de aprovação. Todos menos "Negar" pedem PIN.
@@ -180,6 +219,16 @@ pub enum Pedido {
     },
     /// D57: abrir a instância verdadeira do app (filho do daemon), sem nenhum campo.
     AbrirApp,
+    /// Versões do backup local (Fase 45), sem campo.
+    Backups,
+    /// Restaurar uma versão do backup local (D17, D39; Fase 45): o nome exato do arquivo
+    /// (`ward-AAAAMMDD-HHMMSS[-N].ward`, nunca um caminho), a senha mestra daquela versão
+    /// e o PIN do cofre atual (S9: restaurar volta níveis e PIN).
+    RestaurarBackup {
+        versao: String,
+        senha: Segredo,
+        pin: Segredo,
+    },
 }
 
 impl Pedido {
@@ -213,6 +262,8 @@ impl Pedido {
             Pedido::Preencher { .. } => Operacao::Preencher,
             Pedido::SalvarLogin { .. } => Operacao::SalvarLogin,
             Pedido::AbrirApp => Operacao::AbrirApp,
+            Pedido::Backups => Operacao::Backups,
+            Pedido::RestaurarBackup { .. } => Operacao::RestaurarBackup,
         }
     }
 
@@ -272,14 +323,33 @@ impl Pedido {
             Pedido::SalvarLogin { rascunho } => {
                 ok(matches!(rascunho.dados, RascunhoDados::Login { .. }) && rascunho_ok(rascunho))
             }
-            Pedido::Estado | Pedido::Travar | Pedido::Lista | Pedido::AbrirApp => Ok(()),
+            Pedido::RestaurarBackup { versao, senha, pin } => {
+                ok(versao_ok(versao) && senha_ok(senha) && pin_ok(pin))
+            }
+            Pedido::Estado
+            | Pedido::Travar
+            | Pedido::Lista
+            | Pedido::AbrirApp
+            | Pedido::Backups => Ok(()),
         }
     }
 
     /// Escreve os `dados` do pedido.
     pub(crate) fn escrever(&self, e: &mut Escritor) {
         match self {
-            Pedido::Estado | Pedido::Travar | Pedido::Lista | Pedido::AbrirApp => {}
+            Pedido::Estado
+            | Pedido::Travar
+            | Pedido::Lista
+            | Pedido::AbrirApp
+            | Pedido::Backups => {}
+            Pedido::RestaurarBackup { versao, senha, pin } => {
+                e.chave("versao");
+                e.texto(versao);
+                e.chave("senha");
+                e.base64(senha.expor());
+                e.chave("pin");
+                e.base64(pin.expor());
+            }
             Pedido::Destravar { senha } => {
                 e.chave("senha");
                 e.base64(senha.expor());
@@ -431,6 +501,19 @@ fn nome_ok(n: &str) -> bool {
     !n.is_empty() && n.len() <= MAX_NOME
 }
 
+/// Nome exato de uma versão de backup (Fase 45): sem barra, sem `..`, sem caminho.
+fn versao_ok(v: &str) -> bool {
+    #[cfg(unix)]
+    {
+        crate::backup::nome_valido(v)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = v;
+        false
+    }
+}
+
 fn senha_ok(s: &Segredo) -> bool {
     !s.is_empty() && s.len() <= MAX_SEGREDO
 }
@@ -520,6 +603,12 @@ pub(crate) fn ler(op: Operacao, mut c: Campos) -> R<Pedido> {
         Operacao::Travar => Pedido::Travar,
         Operacao::Lista => Pedido::Lista,
         Operacao::AbrirApp => Pedido::AbrirApp,
+        Operacao::Backups => Pedido::Backups,
+        Operacao::RestaurarBackup => Pedido::RestaurarBackup {
+            versao: c.texto("versao", MAX_NOME)?,
+            senha: c.segredo("senha", MAX_SEGREDO)?,
+            pin: c.segredo("pin", MAX_DIGITOS_PIN)?,
+        },
         Operacao::Destravar => Pedido::Destravar {
             senha: c.segredo("senha", MAX_SEGREDO)?,
         },
