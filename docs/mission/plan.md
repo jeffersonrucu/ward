@@ -1155,6 +1155,25 @@ O vetor da 1ª auditoria está fechado (`teste-politica-chrome` 0) e os baixos t
   reabre o ataque original.
 - **Baixo:** o D60 não vê grupo de outra fonte do NSS (`group: files sss`).
 O M9 reprovou duas vezes: a decisão é do usuário.
+Decisão do usuário (2026-11-09): **aceitar o risco** (RA10). Um processo do mesmo uid
+que execute o Chrome instalado se passa pelo navegador, e a extensão no perfil pode ser
+adulterada. A extensão continua preenchendo sem clique. A segurança do M9 conta como
+aprovada depois da Fase 51b; segue o QA.
+
+- [ ] Fase 51b — Registrar o RA10 e fechar o resto da 2ª auditoria do M9.
+  - `docs/escopo.md`: em "Fora do modelo de ameaça", acrescentar que um processo do mesmo
+    uid que execute o Chrome instalado (exec com troca de pai) ou adultere a extensão no
+    perfil se passa pelo navegador para o `ward-nm`. Reescrever o modelo 2 ("extensão em
+    pasta do root"), que no Linux não protege o código da extensão. Atualizar o PRD D18,
+    pendente desde a 51.
+  - `docs/instalacao.md` 4a: tirar "esse risco é do app, não do Ward". Dizer que copiar
+    para o sistema um host cujo `path` (ou alguma pasta acima) é gravável pelo usuário
+    deixa um programa do usuário rodar como filho do Chrome. Mandar conferir dono root e
+    sem escrita para grupo e outros no `path` e em cada pasta acima, e não copiar quando
+    falhar (o Claude in Chrome com host no home entra nesse caso).
+  - Baixo: `instalacao/grupos.sh` (D60) recusa `group:` do `nsswitch.conf` fora de
+    `files`/`systemd`, como já faz com `subid:`/`sudoers:`. Teste em `teste-install`/
+    `teste-deb`, ou no autoteste do `grupos.sh` se ele cobrir o caso.
 
 ## Milestone 10 — Migração e saída do KeePassXC
 Contrato: V10.1–V10.4
