@@ -784,7 +784,7 @@ Contrato: V4.1–V4.38
   conta como aprovado, sem 3ª rodada. V1.2, V1.5.
 Auditoria de segurança do M4 (2026-11-09): **reprovada** (1ª vez), com 1 crítico e 1 alto.
 
-- [ ] Fase 28e — Achados da auditoria do M4. **Crítico:** a máscara (`Fluxo` em
+- [x] Fase 28e — Achados da auditoria do M4. **Crítico:** a máscara (`Fluxo` em
   `ward-core/src/mascara.rs`, `PAUSA_INTERATIVA` em `wardd/src/execucao.rs`) vira oráculo
   de prefixo — no pty o prefixo parado sai `••••` e o resto sai em claro; sem pty o
   prefixo segurado atrasa a saída; o agente recuperou os 18 bytes da senha de
@@ -803,6 +803,14 @@ Auditoria de segurança do M4 (2026-11-09): **reprovada** (1ª vez), com 1 crít
   com pasta 0700 e arquivo 0600 do daemon, recusa se frouxo. V4.14, V4.26, V4.29, V4.34,
   V4.28. Scripts da auditoria: scratchpad `bin/` (`oraculo_pty.py`, `tempo.py`,
   `sftp_cmds.txt`, `entrar_grupo.py`).
+  Pendências da 28e: S4 do `docs/escopo.md` ainda fala de valor "quebrado entre dois
+  pedaços" (alinhar com D34 revisto); notas do planner em V2.18, V2.24 e V4.17; linha do
+  `teste-cli` no `CLAUDE.md` cita o V4.34; na máquina real, `~/.local/share/ward/known_hosts`
+  antigo com 0644 é recusado (o usuário faz `chmod 600`/`700`); descendente que sai da
+  sessão não usa o túnel; segredo impresso byte a byte mostra o começo em claro.
+  28d: 160 `ok` e nenhuma falha até `config_do_cargo_home`; faltaram `ambiente_do_make` e
+  `git_sem_config_do_usuario` por disco — rodar `make teste-ataques-fundacao` sozinho com
+  ~12 GB livres.
 
 ## Milestone 5 — App desktop
 Contrato: V5.1–V5.35
