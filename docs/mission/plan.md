@@ -384,10 +384,12 @@ Decisões do usuário em 2026-11-08 sobre a Fase 19c: RA4 (troca conjunta de cof
 
 Decisão do usuário em 2026-11-09: acessibilidade (AT-SPI) desligada no app (`NO_AT_BRIDGE=1`, `WEBKIT_A11Y_BUS_ADDRESS=unix:path=/dev/null`); leitor de tela não funciona no Ward. Pendências da 29a para o planner: incluir as 3 variáveis de D48 (GStreamer, AT-SPI) na lista de D57; app conferir o papel na 1ª resposta do protocolo; como o app de teste ganha o papel app (Fases 22/23); log do código de saída do filho no daemon (Fase 23); texto da V5.31 (dumpable por `prctl`); `/tmp/nvidia-mps` (RA8); RA7 — RUSTSEC-2024-0429 talvez já não detectado.
 
+Resolvido pelo planner em 2026-11-09: reauditoria da 19e em D61 (Fase 22a); Problemas do handoff 22 em D62 (Fase 22b); papel app só ao pid do lançador e app de teste em D63 (Fases 23 e 23a); pendências da 29a em D64 (lista de D57 e V5.31 já no PRD e no contrato; MPS, varredura e RA7 na Fase 29b). Acessibilidade desligada registrada em `docs/escopo.md` › "App desktop".
+
 Decisão do usuário em 2026-11-09: limiares de força do gerador (Fase 37) aceitos — fraca <60 bits, razoável <80, forte <128, muito forte ≥128; a Fase 33 usa os mesmos. Pendências da 37 para o planner: faixa de tamanho 8–64 na interface (núcleo 4–128) no PRD; texto dos símbolos no FigCraft diverge de D35 (app segue D35) — corrigir numa fase de design.
 
 ## Milestone 3 — Daemon e protocolo
-Contrato: V3.1–V3.30
+Contrato: V3.1–V3.38
 
 - [x] Fase 20 — (Depende da Fase 19c; não depende da 19d.) Protocolo em `ward-core`: quadros com limite de tamanho, mensagens
   versionadas, papéis agente/app/extensão (D5) e a tabela operação × papel, sem
@@ -497,7 +499,18 @@ Contrato: V3.1–V3.30
   - texto de ajuda do `dev-variacoes` no `Makefile` atualizado para a tabela única de
     D54 (vem da 19d; o da linha no `CLAUDE.md` já foi feito na 19e).
   V3.29 (e V2.29/V2.30 com 22 entradas).
-  Pendente do planner (reauditoria da 19e, 2026-11-08): máscara não pega JSON numa linha só (anexo `client_secret_*.json` minificado, extra `{"token":…}`) — médio; YAML/dotenv com ` # comentário`, chave YAML com espaço ou barra, `''` do YAML; campos de tab em linha Latin-1 (aplicar só o literal); `repr()` do Python; Go + `ensure_ascii` juntos — baixos. Decidir variação ou RA3 antes da 22a; repros em `scratchpad/ataque/src/bin/contorno19e.rs`. `make teste-dev-cofre` falha em master até a 22a (tabela já pede `delta-api-simbolos`).
+  - **Reauditoria da 19e (D61, decidida em 2026-11-09):** na máscara e no oráculo, com
+    teste cruzado e o mesmo orçamento: valores JSON na linha (par `"chave": "string"`
+    em qualquer posição de linha de texto, e no segredo de uma linha que começa por `{`
+    ou `[`, decodificado, 6+ → valor de linha); YAML/dotenv com comentário no fim,
+    chave YAML com espaço ou `/` e `''` do YAML; campos de tab de linha que não é UTF-8
+    só pelo literal e percent. `repr()`/`util.inspect`, `iconv`, array JSON e flow do
+    YAML ficam em RA3 (não implementar). Os repros estão em
+    `/tmp/claude-1000/-home-jeffersonoliveira-projetos-cofre/d2e230bd-a662-43be-afff-2572da5a4e80/scratchpad/ataque/src/bin/contorno19e.rs`
+    (só leitura; os testes da fase são próprios e com valores falsos). Se uma entrada de
+    D15 passar a ser recusada pelo orçamento, a fase para e devolve ao planner.
+    V3.31, V3.32.
+  `make teste-dev-cofre` falha em master até a 22a (tabela já pede `delta-api-simbolos`).
 - [ ] Fase 23 — Motor de aprovação com relógio injetado e aprovador em processo só nos
   testes (D8): uma vez, 1 hora (D2), sempre, expirar em 2 min, fechar nega, nível
   combinado (D19), aprovação indisponível (D21); espera de até 2 min pelo destrave
@@ -508,26 +521,74 @@ Contrato: V3.1–V3.30
   quando precisa da janela, e sem sessão Wayland válida responde "aprovação
   indisponível" (D21). Se a 29a ainda não tiver fechado, a operação entra com o
   lançador como dependência e a fase espera. V3.14–V3.16, V3.18.
+  Nota do planner (D63, 2026-11-09), para a fase em andamento:
+  - o lançador guarda o pidfd do processo que abriu; o papel app passa a exigir egid
+    `ward-app` **e** pid igual ao do pidfd, vivo, **e** `PPid` = daemon (qualquer outro
+    filho do daemon fica agente). A classificação fica num ponto só, para a 23a
+    acrescentar a exceção do `modo-teste`; **não** faça a exceção de teste aqui;
+  - a resposta de `estado` traz o papel (`agente`/`app`/`extensao`), sem outro dado;
+  - o log do daemon registra o código de saída (ou sinal) do app lançado, só o número.
+  V3.36 (a parte do classificador), V3.38 (a parte do protocolo e do log).
+- [ ] Fase 23a — (Depende da 23.) App de teste com o papel app (D63). Arquivos:
+  `crates/wardd` (config e classificação, só atrás de `modo-teste`),
+  `crates/ward-plataforma` (`lancar_para_teste`: ambiente fixo mínimo para a ponte,
+  saída em `.dev/logs/<binário>.log` 0600), `app/nucleo` e `crates/ward-ponte-teste`
+  (conferir o papel na primeira resposta e sair sem `app`), `dev/daemon.sh`, `Makefile`
+  (`dev-daemon` com `WARD_DEV_APP`, `app-ponte` pelo `abrir_app`) e as linhas no
+  `CLAUDE.md`.
+  - no `modo-teste`, o papel app vale para o pid do lançador sem exigir o egid; o
+    `abrir_app` lança só o `WARD_DEV_APP` (absoluto, arquivo regular do uid, sem link,
+    dentro do repositório), nunca algo vindo do pedido;
+  - teste sem a feature (par sem egid aberto pelo lançador fica agente), conferência de
+    que nenhum membro do workspace liga `wardd/modo-teste` ou
+    `ward-plataforma/modo-teste` em dependência normal (`cargo tree -e features`), e
+    `strings` do release sem `WARD_DEV_APP`;
+  - ataques do V3.37 (cliente Python, ponte à mão, cópia, app fora do lançador,
+    `abrir_app` com caminho/ambiente no pedido).
+  V3.36, V3.37, V3.38.
 - [ ] Fase 24 — Trava automática: `Lock`/`LockedHint` e `PrepareForSleep` do logind,
   4 h sem uso com relógio injetado, lidas do tempo de trava da configuração do cofre
   (D30); units de teste `wardd@.socket`/`wardd@.service` do sistema (D46), com
   `LimitCORE=0` e **sem** `NoNewPrivileges=`, `RestrictSUIDSGID=`,
   `MemoryDenyWriteExecute=` nem opção que implique `no_new_privs` com `User=` (D57:
   senão o setgid do app não vale). V3.19, V3.21.
+  Nota do planner (D62, 2026-11-09), para a fase em andamento: as units de teste levam
+  `LimitMEMLOCK=infinity` (o `mlockall` entra na 22b e, com limite, o Argon2 falharia).
+  A trava automática não mexe no contador de espera do D20, que a 22b separa por papel.
+- [ ] Fase 22b — (Depende das 23 e 24: as três mexem em `crates/wardd`.) Problemas do
+  handoff 22 (D62). Arquivos: `crates/wardd`, `crates/ward-plataforma`
+  (`iniciar_endurecido`), `crates/ward-core` (`gravar_entradas` devolve a identidade do
+  fd; criação com geração inicial, se faltar) e os testes.
+  - espera do D20 com contador por papel; o do agente no arquivo de estado (linha nova,
+    formato antigo lido como 0, fsync antes da resposta de erro), aplicado ao subir;
+  - `mlockall(MCL_CURRENT | MCL_FUTURE | MCL_ONFAULT)` no `iniciar_endurecido`: release
+    falha fechada sem `RLIMIT_MEMLOCK` infinito; `modo-teste` só avisa;
+  - `criar_cofre` com estado velho nasce na geração `queimada` + 1;
+  - identidade do cofre gravado pelo `fstat` do temporário, sem `stat` depois do rename;
+  - testes de ataque: `kill -9` entre as senhas erradas, agente atrasando o app, cópia
+    antiga depois do `criar_cofre`, troca logo depois do rename, `VmLck` no contêiner.
+  V3.33–V3.35.
 
 ## Milestone 4 — CLI e integração Claude (run/ssh)
-Contrato: V4.1–V4.37
+Contrato: V4.1–V4.38
 
 - [ ] Fase 25 — CLI `ward`: `lista [--json]`, `travar`, `destravar` (senha do TTY, só
   depois de conferir que o servidor é o `wardd` instalado), mensagens em português.
   A conferência é a de D46 (pasta do root e par de uid 0). V4.1, V4.2, V4.18, V4.22.
+  Nota do planner (D62, D63, 2026-11-09), para a fase em andamento: a CLI é papel
+  agente; o prazo de leitura do `ward destravar` tem de passar dos 30 s da espera de
+  D20 mais o Argon2 (a espera do agente passa a sobreviver ao reinício do daemon, Fase
+  22b). A resposta de `estado` ganha o campo do papel (Fase 23); a CLI não depende dele
+  e não deve recusar um campo a mais vindo da 23.
 - [ ] Fase 26 — `ward run`: o daemon cria o filho com argv, cwd e ambiente da CLI sem
   `LD_*` (D13), entrega de D10, anexos em `<rt>tmp/` 0600 com limpeza em toda saída e
   na partida, saída mascarada, código de saída, espera do destrave. Pesquisa e
   registro de RA1 (environ e anexos lidos por outro processo do mesmo uid), com teste
   do ataque. O ambiente do filho vem só do da CLI, nunca do daemon (sem `LISTEN_*`,
   D60). A CLI mede argv + ambiente antes de mandar e passa de 750 KiB com
-  mensagem clara (D52). V4.3–V4.17, V4.19–V4.21, V4.36.
+  mensagem clara (D52). Teste de ataque de D63 no contêiner: `ward run <livre> --
+  /usr/local/bin/ward-app` (e `ward-nm`) fica agente. V4.3–V4.17, V4.19–V4.21, V4.36,
+  V4.38.
 - [ ] Fase 27 — `ward ssh` com senha e com chave: `sshpass -e`, agente temporário só do
   `ssh` filho (D12), `-F /dev/null` e `known_hosts` próprio (D13), pty interativo,
   token do "Conectar" ainda sem app (token inválido vale o nível, D3); no pty, o fim
@@ -545,7 +606,7 @@ Contrato: V4.1–V4.37
   combinado (D19); logs da suíte do M4 sem segredo. V4.25, V4.27, V4.29, V4.30, V4.33.
 
 ## Milestone 5 — App desktop
-Contrato: V5.1–V5.31
+Contrato: V5.1–V5.32
 
 - [x] Fase 29 — Esqueleto Tauri + Svelte: capabilities só com os comandos próprios,
   CSP estrita, sem conteúdo remoto, devtools fora do release; cliente do socket no lado
@@ -579,6 +640,16 @@ Contrato: V5.1–V5.31
   Testes de ataque no contêiner da 21b (binário setgid de teste), incluindo o pai que
   imita o `systemd --user`. Exige `libwebkit2gtk-4.1-dev` (R32). V3.5 (forma de D47),
   V3.24, V5.31.
+- [ ] Fase 29b — (Depende da 23a: as duas mexem no lançador.) Pendências da 29a (D64).
+  Arquivos: `crates/ward-plataforma` (`ambiente_do_app` e `conferir_ambiente_do_app`),
+  `app/src-tauri/deny.toml` e o teste com o WebKitGTK real.
+  - `CUDA_MPS_PIPE_DIRECTORY=/proc/ward-sem-mps` no ambiente de D57, conferido pelo app;
+  - `strace -f` do `ward-app` com o ambiente de D57: nada em `/tmp/nvidia-mps`, e a
+    lista de `open`/`connect` em pastas graváveis fora do root vai ao handoff; canal
+    novo volta ao planner;
+  - RUSTSEC-2024-0429: sai do `deny.toml` do app se o `cargo audit` em
+    `app/src-tauri/` não a achar;
+  - `make app-check` limpo. V5.30, V5.32.
 - [ ] Fase 30 — **(UI)** Primeiro uso (o PIN vai para a seção de configuração do corpo
   v2 como hash, D30). V5.7, V5.25, V5.26.
 - [ ] Fase 31 — **(UI)** Destravar, inclusive o estado "Pedido do agente". V5.8.
@@ -650,7 +721,8 @@ Contrato: V9.1–V9.11
   `ward-app`/`ward-nm` e binários 2755 (D47; grupos com `groupadd --system`, gid < 1000,
   fora das faixas do `/etc/subgid`, sem membros, senha travada `!` no `gshadow`, e
   recusa de grupo existente fora disso, D60), units sem `NoNewPrivileges=` nem opção
-  que o implique (D57), manifesto de native messaging, política
+  que o implique (D57), `LimitMEMLOCK=infinity` (D62), build de release por pacote
+  (`-p`, sem `modo-teste`, D63), manifesto de native messaging, política
   do Chrome com force-install e update local, recusa de artefato `modo-teste`. V9.1–V9.4, V9.6,
   V9.7, V9.10, V9.11.
 - [ ] Fase 52 — `.deb` por `dpkg-deb` a partir do staging (dependência `sshpass`), teste
