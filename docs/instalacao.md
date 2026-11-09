@@ -196,17 +196,29 @@ política, esse arquivo é ignorado. O teste é o `make teste-politica-chrome`.
 
 **O efeito colateral.** Apps que instalaram o manifesto só no seu perfil param de
 falar com a extensão deles no Chrome. Exemplos: o 1Password (destravar pelo app do
-desktop) e o Claude in Chrome. Para voltarem a funcionar, copie o manifesto de cada um
-para a pasta do sistema. **Você** executa os comandos abaixo, um app por vez.
+desktop) e o Claude in Chrome. Alguns podem voltar a funcionar com o manifesto copiado
+para a pasta do sistema; outros **não podem ser copiados**. **Você** executa os
+comandos abaixo, um app por vez.
 
-Antes de copiar, saiba que o manifesto copiado continua apontando (`path`) para o
-mesmo programa de antes. Se esse programa está no seu home, um processo do seu usuário
-ainda pode trocá-lo. Esse risco é do app, não do Ward: o host do Ward é o
-`/usr/local/lib/ward/ward-nm`, do root. Copie só os apps que você usa de fato.
+**Quando não copiar.** O manifesto copiado continua apontando (`path`) para o mesmo
+programa de antes, e o Chrome roda esse programa como filho dele. Se o programa, ou
+qualquer pasta acima dele, é gravável pelo seu usuário (está no seu home, por
+exemplo), um processo do seu usuário troca o programa por outro e passa a rodar como
+filho do Chrome. Isso reabre o ataque que a política fecha: um script nessa posição
+fala com o `ward-nm` como se fosse o Chrome e tira senhas do Ward (2ª auditoria do M9).
+Por isso, só copie quando o `path` e **cada pasta acima dele**, até a `/`, são do root
+e sem escrita para grupo e outros, sem link no caminho, e o programa não é um script
+(`#!`), porque o interpretador e o que ele carrega podem vir do seu home. O passo 1
+confere isso e diz "NÃO COPIE" quando falha. O Claude in Chrome, com o host no seu
+home, cai nesse caso: ele fica sem a ponte com o Chrome enquanto o Ward estiver
+instalado. Mesmo copiando, o Ward não resolve tudo: um processo do seu usuário que
+execute o Chrome instalado ainda consegue se passar por ele (RA10, risco aceito, em
+`docs/escopo.md` › "Fora do modelo de ameaça").
 
-1. Copie o manifesto para uma pasta do root e leia a cópia. Assim nada do seu usuário
-   consegue trocá-lo entre a leitura e a instalação. Troque `<nome>` pelo nome do
-   arquivo, sem o `.json` (por exemplo, `com.1password.1password`):
+1. Copie o manifesto para uma pasta do root e confira a cópia. Assim nada do seu
+   usuário consegue trocá-lo entre a conferência e a instalação. Troque `<nome>` pelo
+   nome do arquivo, sem o `.json` (por exemplo, `com.1password.1password`). Rode tudo
+   no mesmo terminal, porque o passo 2 usa a função `conferir_host`:
 
    ```sh
    nome='<nome>'
@@ -216,23 +228,64 @@ ainda pode trocá-lo. Esse risco é do app, não do Ward: o host do Ward é o
    cat ~/.config/google-chrome/NativeMessagingHosts/"$nome".json | sudo tee /root/ward-nm-hosts/"$nome".json >/dev/null
    sudo chmod 0600 /root/ward-nm-hosts/"$nome".json
    sudo python3 -I -m json.tool /root/ward-nm-hosts/"$nome".json
+
+   # Confere o `name` e o `path` da cópia: o programa e cada pasta acima dele são do
+   # root, sem escrita para grupo e outros, sem link, e o programa não é script.
+   conferir_host() {
+       sudo python3 -I - /root/ward-nm-hosts/"$nome".json "$nome" <<'PY'
+   import json, os, stat, sys
+   arq, nome = sys.argv[1], sys.argv[2]
+   def nao(motivo):
+       sys.exit("NÃO COPIE: " + motivo)
+   m = json.load(open(arq))
+   if m.get("name") != nome or nome == "br.ward.nm":
+       nao("o name não é %r (ou é br.ward.nm)" % nome)
+   p = m.get("path")
+   if not isinstance(p, str) or not p.startswith("/") or os.path.normpath(p) != p:
+       nao("o path não é um caminho absoluto simples: %r" % (p,))
+   atual = p
+   while True:
+       try:
+           st = os.lstat(atual)
+       except OSError as e:
+           nao("%s: %s" % (atual, e.strerror))
+       if stat.S_ISLNK(st.st_mode):
+           nao("%s é um link" % atual)
+       if st.st_uid != 0:
+           nao("%s não é do root (dono uid %d)" % (atual, st.st_uid))
+       if st.st_mode & 0o022:
+           nao("%s tem escrita para grupo ou outros (%o)" % (atual, stat.S_IMODE(st.st_mode)))
+       if atual == "/":
+           break
+       atual = os.path.dirname(atual)
+   st = os.lstat(p)
+   if not stat.S_ISREG(st.st_mode):
+       nao("%s não é um arquivo comum" % p)
+   with open(p, "rb") as f:
+       if f.read(2) == b"#!":
+           nao("%s é um script (#!): o interpretador e o que ele carrega podem vir do seu home" % p)
+   print("ok: %s e cada pasta acima são do root e sem escrita para grupo e outros" % p)
+   PY
+   }
+   conferir_host
    ```
 
    Confira na saída:
-   - `"name"` é igual a `<nome>`, e **nunca** `br.ward.nm`;
+   - a última linha começa com `ok:`. Se começar com `NÃO COPIE`, pare aqui, apague a
+     cópia (`sudo rm /root/ward-nm-hosts/"$nome".json`) e deixe esse app sem a ponte
+     com o Chrome;
    - `"path"` é um caminho absoluto do app que você conhece (por exemplo,
      `/opt/1Password/…`);
    - `"allowed_origins"` só tem a extensão desse app.
 
    Se algo não bater, pare e apague a cópia (`sudo rm /root/ward-nm-hosts/"$nome".json`).
 
-2. Instale a cópia lida na pasta do sistema. O comando só instala se a cópia é um JSON
-   com `name` igual a `<nome>` (e não `br.ward.nm`), e não sobrescreve um arquivo que
-   já esteja lá:
+2. Instale a cópia conferida na pasta do sistema. O comando roda a conferência do passo
+   1 de novo e só instala se ela passar; também não sobrescreve um arquivo que já
+   esteja lá:
 
    ```sh
-   sudo python3 -I -c 'import json, sys; m = json.load(open(sys.argv[1])); sys.exit(not (m.get("name") == sys.argv[2] != "br.ward.nm"))' \
-       /root/ward-nm-hosts/"$nome".json "$nome" &&
+   conferir_host &&
      [ ! -e /etc/opt/chrome/native-messaging-hosts/"$nome".json ] &&
      sudo install -m 0644 -o root -g root /root/ward-nm-hosts/"$nome".json /etc/opt/chrome/native-messaging-hosts/ &&
      echo instalado

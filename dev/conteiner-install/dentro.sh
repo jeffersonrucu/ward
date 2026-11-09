@@ -122,6 +122,12 @@ printf 'subid: sss\n' >>/etc/nsswitch.conf
 caso_grupo "nsswitch com subid: sss" "subid"
 printf 'sudoers: files ldap\n' >>/etc/nsswitch.conf
 caso_grupo "nsswitch com sudoers: files ldap" "sudoers"
+# Fase 51b: grupos vindos de outra fonte do NSS (sss, ldap…) fora do /etc/group.
+sed -i '/^group:/d' /etc/nsswitch.conf
+printf 'group: files sss\n' >>/etc/nsswitch.conf
+caso_grupo "nsswitch com group: files sss" "busca 'group'"
+printf 'initgroups: files ldap\n' >>/etc/nsswitch.conf
+caso_grupo "nsswitch com initgroups: files ldap" "busca 'initgroups'"
 confere "V9.11 (51a) os grupos recém-criados e recusados foram apagados" "$(getent group ward-app ward-nm || echo ausente)" "ausente"
 rm -rf /usr/local/lib/ward
 

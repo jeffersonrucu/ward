@@ -179,7 +179,9 @@ campo de senha da página no instante do preenchimento; troca conjunta do cofre 
 arquivo de estado por cópias antigas com o daemon parado (RA4, decisão do usuário em
 2026-11-08); Chrome (e auxiliares do WebKitGTK) depurado por um ancestral malicioso,
 que pode mentir a origem da aba, e matar o `wardd` como negação de serviço (RA6, RA5,
-decisão do usuário em 2026-11-08). Também fora, por decisão do escopo: SSH com chaves do `~/.ssh` (o Ward
+decisão do usuário em 2026-11-08); processo do mesmo uid que se passa pelo Chrome diante
+do `ward-nm` (exec com troca de pai) ou adultera a extensão no perfil (RA10, decisão do
+usuário em 2026-11-09). Também fora, por decisão do escopo: SSH com chaves do `~/.ssh` (o Ward
 não interfere).
 
 | # | Invariante (texto do escopo) | Milestones |
@@ -423,13 +425,34 @@ ou com nova resposta do usuário.
   `<montagem>/ward-backup/`, também com 30 versões. Restaurar pede a senha mestra da
   versão escolhida e grava o atual como backup antes de trocar. As regras de deny da
   skill passam a cobrir `/media/**/ward-backup/**`.
-- D18. **Instalação.** Binários em `/usr/local/bin` (`ward`, `wardd`, `ward-app`) e
-  `/usr/local/lib/ward/` (`ward-nm`); unit em
-  `/usr/local/lib/systemd/user/wardd.service`; manifesto de native messaging em
-  `/etc/opt/chrome/native-messaging-hosts/`; política da extensão em
-  `/etc/opt/chrome/policies/managed/` (force-install com update local e só a extensão
-  do Ward com aquele ID). Nada de `SSH_AUTH_SOCK`, `environment.d` ou `ssh_config`.
-  `.deb` gerado por `dpkg-deb` a partir da mesma árvore, sem dependência nova de build.
+- D18. **Instalação** (revista por D46/D47 e pelas Fases 51, 51a e 52; texto atualizado
+  na Fase 51b). Árvore exata em `instalacao/arvore.txt`, tudo root:root salvo os setgid:
+  - binários `/usr/local/bin/ward` e `/usr/local/bin/wardd` (0755),
+    `/usr/local/bin/ward-app` (2755, grupo `ward-app`) e
+    `/usr/local/lib/ward/ward-nm` (2755, grupo `ward-nm`); os artefatos com `modo-teste`
+    são recusados (D63);
+  - units **do sistema** `wardd@.socket`/`wardd@.service` em
+    `/usr/local/lib/systemd/system/` e `/run/ward` por
+    `/usr/local/lib/tmpfiles.d/ward.conf` (D46); a instalação roda
+    `systemctl enable --now wardd@<uid>.socket` (`SUDO_UID`, ou `WARD_UID`). Não há unit
+    de usuário;
+  - grupos `ward-app` e `ward-nm` por `groupadd --system`, conferidos pelas regras de
+    D60 (`instalacao/grupos.sh`); os criados pela instalação ficam anotados em
+    `/usr/local/lib/ward/grupos-criados`, e só esses o uninstall/`dpkg -r` apagam;
+  - manifesto `br.ward.nm.json` em `/etc/opt/chrome/native-messaging-hosts/`; política
+    `ward.json` em `/etc/opt/chrome/policies/managed/` com `ExtensionSettings`
+    (force-install, update local por `file://` em `/usr/local/share/ward/extensao/`,
+    com `ward.crx` e `update.xml`) e `"NativeMessagingUserLevelHosts": false` (Fase 51a:
+    manifesto de host no perfil do usuário não vale). A instalação recusa se outro
+    arquivo dessa pasta citar `ExtensionSettings` ou `NativeMessagingUserLevelHosts`;
+  - nada de `SSH_AUTH_SOCK`, `environment.d` ou `ssh_config`; o `~/.local/share/ward/`
+    nunca é tocado, nem no uninstall.
+  `sudo make install` (`instalacao/instalar.sh`, `PREFIX` só `/usr/local`) e o `.deb`
+  (`make deb`, por `dpkg-deb --root-owner-group` a partir do staging do mesmo script,
+  setgid pelo `dpkg-statoverride` do preinst/postinst, Depends `sshpass,
+  openssh-client, systemd, libwebkit2gtk-4.1-0`) instalam a mesma árvore, sem
+  dependência nova de build. Limite: o código da extensão roda de uma cópia no perfil
+  do usuário (RA10).
 
 - D19. **Nível combinado.** Quando um uso envolve duas entradas (`servidor` com salto,
   `banco` com túnel), vale o nível mais restritivo das duas, e a janela de aprovação
@@ -1553,6 +1576,22 @@ em `/tmp/claude-1000/-home-jeffersonoliveira-projetos-cofre/d2e230bd-a662-43be-a
   Proposta: aceitar como está (nada sai do cofre e as ações são as que o mesmo uid já
   tem), com a regra de que item novo no menu que revele, copie, aprove ou mude estado
   além de travar volta ao planner. Alternativa: tirar a bandeja (V5.23 sai do escopo).
+- **RA10. Processo do mesmo uid que se passa pelo Chrome** (2ª auditoria do M9;
+  **fechado em 2026-11-09: risco aceito pelo usuário**, registrado na Fase 51b em
+  "Segurança" › "Fora do modelo de ameaça"; S1, D47, D5). Dois caminhos dão o papel
+  extensão a um processo do usuário, sem root:
+  - **exec com troca de pai** (`conferir_pai` e `classificar` em
+    `crates/ward-plataforma/src/processo.rs`): o filho faz `exec` do `ward-nm` setgid e o pai faz `exec` do
+    `/opt/google/chrome/chrome` instalado; o `ward-nm` vê o Chrome do root como pai.
+    Horário de início (subreaper) e fds do pai (não-dumpable) não fecham. A auditoria
+    tirou senhas e TOTP de 4 entradas `login` do `wardd` de teste, sem manifesto nem
+    extensão.
+  - **extensão adulterada no perfil:** trocar o `sw.js` da extensão force-installed,
+    recalcular `_metadata/computed_hashes.json` e apagar o `Service Worker` faz o
+    Chrome rodar o código novo com o mesmo id. A defesa "extensão em pasta do root" do
+    modelo 2 não vale no Linux (o escopo foi reescrito).
+  A extensão continua preenchendo sem clique. A segurança do M9 conta como aprovada
+  depois da Fase 51b. Mudança que feche o caso volta ao usuário.
 
 ## Critérios de aceite
 
