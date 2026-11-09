@@ -669,10 +669,12 @@ pub struct ElementoCadeia {
 }
 
 /// Cadeia de processos de `pid` até o mais antigo que der para ler, do mais antigo para
-/// o mais novo (`claude → bash → ward`). Até [`MAX_CADEIA`] elementos; nomes
-/// higienizados (sem caractere de controle nem de direção de texto, até
-/// [`MAX_NOME_CADEIA`] caracteres). Só para exibir: entre uma leitura e outra os pids
-/// podem mudar.
+/// o mais novo (`claude → bash → ward`). Até [`MAX_CADEIA`] elementos; nomes até
+/// [`MAX_NOME_CADEIA`] caracteres, **sem escape**: quem exibe passa cada nome pelo
+/// escape visível de D51 (`ward_core::exibicao::exibir_texto`, no `wardd`). Fase 39f:
+/// trocar o caractere de controle ou de direção por `?` escondia o que o processo pôs
+/// no nome (U+202E virava `?`, igual a um `?` de verdade). Só para exibir: entre uma
+/// leitura e outra os pids podem mudar.
 pub fn cadeia_de_processos(pid: u32) -> Vec<ElementoCadeia> {
     let mut cadeia = Vec::new();
     let mut vistos = HashSet::new();
@@ -687,7 +689,7 @@ pub fn cadeia_de_processos(pid: u32) -> Vec<ElementoCadeia> {
         let nome = status
             .split(|&b| b == b'\n')
             .find_map(|l| l.strip_prefix(b"Name:"))
-            .map(higienizar_nome)
+            .map(nome_do_status)
             .unwrap_or_else(|| "?".to_owned());
         cadeia.push(ElementoCadeia { pid: atual, nome });
         let Some(ppid) = campo_status(&status, b"PPid:").and_then(|p| u32::try_from(p).ok()) else {
@@ -699,15 +701,12 @@ pub fn cadeia_de_processos(pid: u32) -> Vec<ElementoCadeia> {
     cadeia
 }
 
-fn higienizar_nome(bruto: &[u8]) -> String {
-    let texto = String::from_utf8_lossy(bruto);
-    let nome: String = texto
-        .trim()
+/// O nome depois de `Name:` no `status` (o kernel separa com um `\t`), como está, até
+/// [`MAX_NOME_CADEIA`] caracteres. Byte que não é UTF-8 vira U+FFFD.
+fn nome_do_status(bruto: &[u8]) -> String {
+    let bruto = bruto.strip_prefix(b"\t").unwrap_or(bruto);
+    let nome: String = String::from_utf8_lossy(bruto)
         .chars()
-        .map(|c| {
-            let direcao = matches!(c, '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}');
-            if c.is_control() || direcao { '?' } else { c }
-        })
         .take(MAX_NOME_CADEIA)
         .collect();
     if nome.is_empty() {
@@ -840,17 +839,41 @@ mod testes {
         );
     }
 
+    /// Fase 39f (D51): o nome vai como o processo o pôs (U+202E, ESC e espaço não
+    /// viram `?` nem somem); o escape visível é de quem exibe (o `wardd`).
     #[test]
-    fn nome_da_cadeia_higienizado() {
-        assert_eq!(higienizar_nome(b"\tbash"), "bash");
-        assert_eq!(higienizar_nome(b"a\x1b[31mb"), "a?[31mb");
-        assert_eq!(higienizar_nome("x\u{202E}y".as_bytes()), "x?y");
-        assert_eq!(higienizar_nome(b""), "?");
+    fn nome_da_cadeia_sem_troca_por_interrogacao() {
+        assert_eq!(nome_do_status(b"\tbash"), "bash");
+        assert_eq!(nome_do_status(b"\ta\x1b[31mb"), "a\x1b[31mb");
+        assert_eq!(nome_do_status("\tx\u{202E}y".as_bytes()), "x\u{202E}y");
+        assert_eq!(nome_do_status("\t claude ".as_bytes()), " claude ");
+        assert_eq!(nome_do_status(b"\t"), "?");
         assert_eq!(
-            higienizar_nome(&[b'a'; 200]).chars().count(),
+            nome_do_status(&[b'a'; 200]).chars().count(),
             MAX_NOME_CADEIA
         );
-        assert_eq!(higienizar_nome(&[0xff, b'a']), "\u{FFFD}a");
+        assert_eq!(nome_do_status(&[0xff, b'a']), "\u{FFFD}a");
+    }
+
+    /// Fase 39f (D51): um processo de verdade com U+202E no `comm` aparece na cadeia com
+    /// o U+202E, não com `?`.
+    #[test]
+    fn ataque_processo_com_u202e_no_nome_chega_inteiro_na_cadeia() {
+        let dir = std::env::temp_dir().join(format!("ward-cadeia-39f-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // `comm` = nome do executável (até 15 bytes).
+        let exe = dir.join("cl\u{202E}edua");
+        std::fs::copy("/usr/bin/sleep", &exe).unwrap();
+        let mut filho = std::process::Command::new(&exe).arg("5").spawn().unwrap();
+        let cadeia = cadeia_de_processos(filho.id());
+        let _ = filho.kill();
+        let _ = filho.wait();
+        let _ = std::fs::remove_dir_all(&dir);
+        let ultimo = cadeia.last().expect("cadeia do filho");
+        assert_eq!(ultimo.pid, filho.id());
+        assert_eq!(ultimo.nome, "cl\u{202E}edua");
+        assert!(!ultimo.nome.contains('?'));
     }
 
     #[test]

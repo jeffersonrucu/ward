@@ -15,6 +15,8 @@
 #![forbid(unsafe_code)]
 
 #[cfg(feature = "modo-teste")]
+pub mod area_wl;
+#[cfg(feature = "modo-teste")]
 pub mod http;
 #[cfg(feature = "modo-teste")]
 pub mod partida;

@@ -20,6 +20,7 @@
   import { onDestroy, onMount, tick } from 'svelte';
   import Botao from '../lib/componentes/Botao.svelte';
   import CaixaDeCodigo from '../lib/componentes/CaixaDeCodigo.svelte';
+  import TextoDoAgente from '../lib/componentes/TextoDoAgente.svelte';
   import CampoSenha from '../lib/componentes/CampoSenha.svelte';
   import Destaque from '../lib/componentes/Destaque.svelte';
   import Icone from '../lib/componentes/Icone.svelte';
@@ -166,12 +167,12 @@
           <div class="entrada">
             <span class="avatar"><Icone nome="chave" /></span>
             <div class="textos">
-              <span class="nome">{pedido.entrada}</span>
+              <span class="nome"><TextoDoAgente texto={pedido.entrada} /></span>
               <span class="operacao">{comandoDaOperacao(pedido.operacao)}</span>
             </div>
           </div>
           {#if pedido.comando}
-            <CaixaDeCodigo rotulo="Comando">{pedido.comando}</CaixaDeCodigo>
+            <CaixaDeCodigo rotulo="Comando"><TextoDoAgente texto={pedido.comando} /></CaixaDeCodigo>
           {/if}
         </section>
       {/if}

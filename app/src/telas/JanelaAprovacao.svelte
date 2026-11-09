@@ -25,6 +25,7 @@
   import Contagem from '../lib/componentes/Contagem.svelte';
   import Destaque from '../lib/componentes/Destaque.svelte';
   import Icone from '../lib/componentes/Icone.svelte';
+  import TextoDoAgente from '../lib/componentes/TextoDoAgente.svelte';
   import { tipoDe } from '../lib/componentes/tipos.js';
   import simbolo from '../lib/componentes/ward-simbolo.svg';
   import { chamar, ouvirAvisos } from '../lib/ponte/index.js';
@@ -165,7 +166,7 @@
           <div class="entrada">
             <span class="avatar"><Icone nome={tipoDe(entrada.tipo ?? 'generico').icone} /></span>
             <div class="textos">
-              <span class="nome">{entrada.nome}</span>
+              <span class="nome"><TextoDoAgente texto={entrada.nome} /></span>
               <span class="selos">
                 {#if entrada.tipo}<BadgeTipo tipo={entrada.tipo} />{/if}
                 <BadgeAmbiente ambiente={pedido.ambiente} />
@@ -179,17 +180,17 @@
             {/if}
           </div>
         {/each}
-        <CaixaDeCodigo rotulo={TEXTOS.comando}>{pedido.comando}</CaixaDeCodigo>
+        <CaixaDeCodigo rotulo={TEXTOS.comando}><TextoDoAgente texto={pedido.comando} /></CaixaDeCodigo>
         <!-- Fase 26a: o comando roda no diretório da CLI; só o `executar` tem um. -->
         {#if pedido.diretorio}
-          <CaixaDeCodigo rotulo={TEXTOS.diretorio}>{pedido.diretorio}</CaixaDeCodigo>
+          <CaixaDeCodigo rotulo={TEXTOS.diretorio}><TextoDoAgente texto={pedido.diretorio} /></CaixaDeCodigo>
         {/if}
         <!-- A seta é só desenho (outra cor); a que vier num nome já chega como escape. -->
         <CaixaDeCodigo rotulo={TEXTOS.quemPediu}
           >{#if pedido.cadeia.length === 0}{TEXTOS.cadeiaVazia}{/if}{#each pedido.cadeia as processo, i (i)}{#if i > 0}<span
                 class="seta"
                 aria-hidden="true">{SEPARADOR}</span
-              >{/if}<span class="processo">{processo}</span>{/each}</CaixaDeCodigo
+              >{/if}<span class="processo"><TextoDoAgente texto={processo} /></span>{/each}</CaixaDeCodigo
         >
       </div>
 
@@ -329,6 +330,9 @@
     line-height: var(--altura-linha-base);
     color: var(--cor-texto-primario);
     overflow-wrap: anywhere;
+    /* D51: da esquerda para a direita, isolado; letras RTL isoladas no TextoDoAgente. */
+    direction: ltr;
+    unicode-bidi: isolate;
   }
   .selos {
     display: flex;

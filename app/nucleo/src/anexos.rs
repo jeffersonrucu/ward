@@ -16,8 +16,9 @@
 //! `ward-core` não aceita nome de anexo que comece por `.` (o nome vira arquivo em
 //! `/run/user/<uid>/ward/tmp/` e `WARD_ARQUIVO_<NOME>`), e a tela mostra o nome guardado.
 
-use std::fs::File;
+use std::fs::OpenOptions;
 use std::io::Read;
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -224,8 +225,17 @@ enum Leitura {
 
 /// Lê no máximo `max` bytes de um arquivo regular. O tamanho é conferido pelo `fstat`
 /// do arquivo aberto e de novo pelo que foi lido (o arquivo pode crescer entre os dois).
+///
+/// Fase 39f (auditoria do M5), como o `chave.rs`: `O_NOFOLLOW` recusa link simbólico no
+/// último componente (o usuário escolhe o arquivo, não um atalho para outro lugar) e
+/// `O_NONBLOCK` faz uma FIFO não prender o app na abertura (ela é recusada pelo `fstat`
+/// logo depois); `O_NOCTTY`, para um terminal escolhido não virar o terminal do app.
 fn ler_limitado(caminho: &Path, max: usize) -> Result<Leitura, ()> {
-    let arquivo = File::open(caminho).map_err(|_| ())?;
+    let arquivo = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_NOCTTY)
+        .open(caminho)
+        .map_err(|_| ())?;
     let meta = arquivo.metadata().map_err(|_| ())?;
     if !meta.is_file() {
         return Err(());
@@ -247,6 +257,7 @@ fn ler_limitado(caminho: &Path, max: usize) -> Result<Leitura, ()> {
 #[cfg(test)]
 mod testes {
     use super::*;
+    use std::fs::File;
     use std::io::Write;
 
     fn pasta(nome: &str) -> PathBuf {
@@ -287,6 +298,46 @@ mod testes {
 
     /// V5.12: 300 KiB avisa e não guarda; passar de 256 KiB somados avisa e não guarda;
     /// arquivo vazio é recusado; diretório e arquivo inexistente dão aviso fixo.
+    /// Fase 39f (baixo da auditoria do M5): link simbólico escolhido como anexo é
+    /// recusado (não segue para o alvo), e uma FIFO não prende o app: volta o aviso
+    /// fixo na hora, sem guardar nada.
+    #[test]
+    fn ataque_link_e_fifo_sao_recusados_sem_prender() {
+        let d = pasta("link-fifo");
+        let alvo = arquivo(&d, "alvo.txt", 64);
+        let link = d.join("atalho.txt");
+        std::os::unix::fs::symlink(&alvo, &link).unwrap();
+        let mut a = Anexos::default();
+        assert_eq!(
+            a.anexar(&link),
+            Escolha::Aviso {
+                motivo: AVISO_LEITURA.into()
+            }
+        );
+        let fifo = d.join("cano");
+        let ok = std::process::Command::new("/usr/bin/mkfifo")
+            .arg(&fifo)
+            .status()
+            .unwrap();
+        assert!(ok.success());
+        let (tx, rx) = std::sync::mpsc::channel();
+        let f = fifo.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send(Anexos::default().anexar(&f));
+        });
+        let r = rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("a FIFO prendeu a leitura do anexo");
+        assert_eq!(
+            r,
+            Escolha::Aviso {
+                motivo: AVISO_LEITURA.into()
+            }
+        );
+        assert!(a.is_empty());
+        let _ = std::fs::remove_dir_all(d);
+    }
+
     #[test]
     fn ataque_arquivo_grande_soma_e_vazio_nao_sao_guardados() {
         let d = pasta("limites");

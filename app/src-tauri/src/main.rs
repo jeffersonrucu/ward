@@ -26,10 +26,13 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod area_gtk;
+
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use area_gtk::AreaGtk;
 use serde::Serialize;
 use tauri::image::Image;
 use tauri::ipc::Channel;
@@ -42,7 +45,7 @@ use tauri::{
 use ward_app_nucleo::ErroApp;
 use ward_app_nucleo::anexos::{EdicaoDosAnexos, Escolha, Seletor};
 use ward_app_nucleo::aprovacao::{self, PedidoExibido, ResultadoAprovacao};
-use ward_app_nucleo::area_transferencia::{Copiador, Wayland};
+use ward_app_nucleo::area_transferencia::Copiador;
 use ward_app_nucleo::backup_externo::{BackupExternoVisto, PendriveVisto};
 use ward_app_nucleo::bandeja::{self, Acao, EstadoBandeja, Icone};
 use ward_app_nucleo::chave::Carregamento;
@@ -59,7 +62,7 @@ use ward_app_nucleo::restaurar::{Restauracao, Restaurado, VersaoVista};
 use ward_app_nucleo::servico::{CodigoTotp, ResultadoCriar, ResultadoSalvar, Servico};
 use ward_app_nucleo::terminal::TerminalDoSistema;
 
-type ServicoApp = Servico<DaemonSocket, Wayland>;
+type ServicoApp = Servico<DaemonSocket, AreaGtk>;
 
 /// O que a interface recebe num erro: código estável e mensagem fixa, sem valor.
 #[derive(Serialize)]
@@ -119,8 +122,8 @@ fn avisar(canais: &CanalAvisos, janela: &str, aviso: &'static str) {
     }
 }
 
-/// Serviço montado na partida. Sem `wl-copy`/`wl-paste` confiáveis, os comandos
-/// respondem o erro (o app abre e mostra a falha). `Arc`: a vigia da conexão limpa a
+/// Serviço montado na partida. Sem o daemon, os comandos respondem o erro (o app abre
+/// e mostra a falha). `Arc`: a vigia da conexão limpa a
 /// área de transferência antes de reexecutar o app.
 struct Estado {
     servico: Arc<Result<ServicoApp, ErroApp>>,
@@ -855,8 +858,8 @@ fn criar_janela_principal<R: Runtime, M: Manager<R>>(app: &M) -> tauri::Result<W
 
 fn montar_servico(daemon: Result<DaemonSocket, ErroApp>) -> Result<ServicoApp, ErroApp> {
     let daemon = daemon?;
-    let area = Wayland::novo()?;
-    Ok(Servico::novo(daemon, Copiador::novo(area))
+    // Fase 39f (S2): o valor copiado fica na memória do app (GTK), sem `wl-copy`.
+    Ok(Servico::novo(daemon, Copiador::novo(AreaGtk::nova()))
         .com_seletor(SeletorGtk)
         .com_terminal(TerminalDoSistema::default()))
 }
@@ -1125,7 +1128,7 @@ mod testes {
             "digitos": true, "simbolos": true
         });
         match chamar(&principal, "gerar_senha", ORIGEM, opcoes.clone()) {
-            // Sem `wl-copy` confiável o serviço não monta e responde o erro dele.
+            // Sem o daemon o serviço responde o erro dele.
             Err(falha) => assert!(falha["codigo"].is_string(), "erro da ACL: {falha}"),
             Ok(r) => {
                 let chaves: Vec<&String> = r.as_object().unwrap().keys().collect();

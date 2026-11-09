@@ -1,32 +1,33 @@
-//! "Copiar" no lado Rust do app (D4, S11, S12).
+//! "Copiar" no lado Rust do app (D4, S2, S11, S12).
 //!
 //! O valor vem do daemon como [`Segredo`], vai direto para a área de transferência e
 //! nunca passa pela webview. Depois de [`PRAZO_LIMPEZA`], a limpeza só apaga se a área
 //! ainda contém exatamente o valor copiado (comparação em tempo constante): se o
 //! usuário copiou outra coisa nesse meio-tempo, ela fica lá (V5.5).
 //!
-//! A área de transferência do Wayland é usada pelo `wl-copy`/`wl-paste` do sistema
-//! (`/usr/bin`, dono root, sem escrita para grupo e outros), com o valor pela entrada
-//! padrão, nunca em argv (S3), e ambiente limpo (só `WAYLAND_DISPLAY` e
-//! `XDG_RUNTIME_DIR`). Ver "Problemas" no handoff da Fase 29 sobre o COSMIC.
+//! Fase 39f (S2): quem implementa [`AreaTransferencia`] no app é a área do GTK
+//! (`app/src-tauri/src/area_gtk.rs`), que serve o valor da memória do processo. Nenhum
+//! programa externo (`wl-copy`, que gravava o valor em `/tmp`) entra no caminho do
+//! app. A ponte de teste (só valores falsos) tem a sua, em `ward-ponte-teste`.
 
-use std::fs;
-use std::io::{Read, Write};
-use std::os::unix::fs::{MetadataExt, PermissionsExt};
-use std::path::Path;
-use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
 use ward_core::limites;
-use zeroize::Zeroizing;
+/// O tipo que [`AreaTransferencia::ler`] devolve, para quem implementa a área fora
+/// daqui sem depender do `zeroize` (o app Tauri).
+pub use zeroize::Zeroizing;
 
 use crate::ErroApp;
 use crate::segredo::Segredo;
 
 /// S12: a área de transferência é limpa 30 s depois do "copiar".
 pub const PRAZO_LIMPEZA: Duration = Duration::from_secs(30);
+
+/// Maior valor que o "copiar" aceita (o limite de um segredo de texto do `ward-core`).
+/// Quem lê a área não precisa de mais que `MAX_VALOR + 1` bytes para comparar.
+pub const MAX_VALOR: usize = limites::MAX_SEGREDO;
 
 /// Onde o valor copiado fica. Os testes usam uma área falsa.
 pub trait AreaTransferencia: Send + Sync + 'static {
@@ -122,106 +123,6 @@ fn limpar_se_ainda_for<A: AreaTransferencia>(
 fn iguais(a: &[u8], b: &[u8]) -> bool {
     use ctutils::CtEq;
     a.ct_eq(b).to_bool()
-}
-
-/// `wl-copy`/`wl-paste` do sistema.
-pub struct Wayland {
-    _privado: (),
-}
-
-const WL_COPY: &str = "/usr/bin/wl-copy";
-const WL_PASTE: &str = "/usr/bin/wl-paste";
-const TIPO: &str = "text/plain;charset=utf-8";
-
-impl Wayland {
-    /// Confere os dois binários (dono root, arquivo comum, sem escrita para grupo e
-    /// outros, sem link simbólico) antes de usar.
-    pub fn novo() -> Result<Wayland, ErroApp> {
-        for b in [WL_COPY, WL_PASTE] {
-            binario_confiavel(Path::new(b))?;
-        }
-        Ok(Wayland { _privado: () })
-    }
-
-    fn comando(programa: &str) -> Command {
-        let mut c = Command::new(programa);
-        c.env_clear();
-        for v in ["WAYLAND_DISPLAY", "XDG_RUNTIME_DIR"] {
-            if let Some(valor) = std::env::var_os(v) {
-                c.env(v, valor);
-            }
-        }
-        c.stderr(Stdio::null());
-        c
-    }
-}
-
-fn binario_confiavel(caminho: &Path) -> Result<(), ErroApp> {
-    let md = fs::symlink_metadata(caminho).map_err(|_| ErroApp::AreaTransferencia)?;
-    if !md.file_type().is_file() || md.uid() != 0 || md.permissions().mode() & 0o022 != 0 {
-        return Err(ErroApp::AreaTransferencia);
-    }
-    Ok(())
-}
-
-impl AreaTransferencia for Wayland {
-    fn escrever(&self, valor: &[u8]) -> Result<(), ErroApp> {
-        let mut filho = Self::comando(WL_COPY)
-            .args(["--type", TIPO])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::null())
-            .spawn()
-            .map_err(|_| ErroApp::AreaTransferencia)?;
-        {
-            let mut entrada = filho.stdin.take().ok_or(ErroApp::AreaTransferencia)?;
-            entrada
-                .write_all(valor)
-                .map_err(|_| ErroApp::AreaTransferencia)?;
-        }
-        let estado = filho.wait().map_err(|_| ErroApp::AreaTransferencia)?;
-        if estado.success() {
-            Ok(())
-        } else {
-            Err(ErroApp::AreaTransferencia)
-        }
-    }
-
-    fn ler(&self) -> Result<Option<Zeroizing<Vec<u8>>>, ErroApp> {
-        let mut filho = Self::comando(WL_PASTE)
-            .args(["--no-newline", "--type", "text/plain"])
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .spawn()
-            .map_err(|_| ErroApp::AreaTransferencia)?;
-        let mut saida = Zeroizing::new(Vec::new());
-        let lido = filho
-            .stdout
-            .take()
-            .ok_or(ErroApp::AreaTransferencia)?
-            .take(limites::MAX_SEGREDO as u64 + 1)
-            .read_to_end(&mut saida);
-        // Mais que o limite: o resto fica no cano e o wl-paste é encerrado.
-        let _ = filho.kill();
-        let estado = filho.wait().map_err(|_| ErroApp::AreaTransferencia)?;
-        if lido.is_err() || (!estado.success() && saida.is_empty()) {
-            return Ok(None); // vazia ou sem texto
-        }
-        Ok(Some(saida))
-    }
-
-    fn limpar(&self) -> Result<(), ErroApp> {
-        let estado = Self::comando(WL_COPY)
-            .arg("--clear")
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .status()
-            .map_err(|_| ErroApp::AreaTransferencia)?;
-        if estado.success() {
-            Ok(())
-        } else {
-            Err(ErroApp::AreaTransferencia)
-        }
-    }
 }
 
 #[cfg(test)]
@@ -343,20 +244,5 @@ mod testes {
             Err(ErroApp::PedidoInvalido)
         );
         assert_eq!(*area.conteudo.lock().unwrap(), None);
-    }
-
-    #[test]
-    fn ataque_binario_fora_do_padrao_e_recusado() {
-        let base = std::env::temp_dir().join(format!("ward-app-wl-{}", std::process::id()));
-        fs::create_dir_all(&base).unwrap();
-        let falso = base.join("wl-copy");
-        fs::write(&falso, b"#!/bin/sh\n").unwrap();
-        fs::set_permissions(&falso, fs::Permissions::from_mode(0o755)).unwrap();
-        // Arquivo do usuário (não root) e link simbólico: os dois recusados.
-        assert_eq!(binario_confiavel(&falso), Err(ErroApp::AreaTransferencia));
-        let link = base.join("link");
-        std::os::unix::fs::symlink("/usr/bin/env", &link).unwrap();
-        assert_eq!(binario_confiavel(&link), Err(ErroApp::AreaTransferencia));
-        fs::remove_dir_all(base).unwrap();
     }
 }

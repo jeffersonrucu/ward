@@ -25,13 +25,14 @@ use std::process::ExitCode;
 
 use std::sync::Arc;
 use std::time::Duration;
-use ward_app_nucleo::area_transferencia::{Copiador, Wayland};
+use ward_app_nucleo::area_transferencia::Copiador;
 
 use ward_app_nucleo::daemon::{Aviso, Daemon, DaemonSocket, FilaAvisos};
 use ward_app_nucleo::daemon_falso::{AprovacaoSimulada, DaemonFalso, aprovacoes_simuladas};
 use ward_app_nucleo::servico::Servico;
 use ward_app_nucleo::terminal::Terminal;
 use ward_app_nucleo::{aprovacao, destrave};
+use ward_ponte_teste::area_wl::WlCopy;
 use ward_ponte_teste::http::Ponte;
 use ward_ponte_teste::partida;
 use ward_ponte_teste::simulados::{SeletorDePasta, TerminalDeTeste, TerminalDoRepositorio};
@@ -241,7 +242,7 @@ fn servir_com<D: Daemon + 'static>(
     terminal: Box<dyn Terminal>,
 ) -> ExitCode {
     let dist: PathBuf = dist.to_path_buf();
-    let servico = match Wayland::novo() {
+    let servico = match WlCopy::novo() {
         Ok(a) => {
             let s = Servico::novo(daemon, Copiador::novo(a)).com_terminal(terminal);
             match anexos {

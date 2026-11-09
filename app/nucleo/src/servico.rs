@@ -836,14 +836,16 @@ impl<D: Daemon, A: AreaTransferencia> Servico<D, A> {
     }
 
     /// A bandeja viu o estado mudar (Fase 53d): se o cofre deixou de estar destravado
-    /// (trava vinda de fora do app), zera o que o formulário guardava.
+    /// (trava vinda de fora do app), zera o que o formulário guardava. Fase 39f (S12):
+    /// e limpa a área de transferência na hora, se ela ainda tem o valor do Ward, como o
+    /// "Travar agora" do app.
     pub fn na_passagem_da_bandeja(
         &self,
         antes: crate::bandeja::EstadoBandeja,
         depois: crate::bandeja::EstadoBandeja,
     ) {
         if crate::bandeja::descartar_na_passagem(antes, depois) {
-            self.descartar_formulario();
+            self.ao_sair();
         }
     }
 
@@ -1035,6 +1037,33 @@ mod testes {
         s.copiar_senha_gerada().unwrap();
         std::thread::sleep(std::time::Duration::from_millis(200));
         assert_eq!(*area.0.lock().unwrap(), None);
+    }
+
+    /// Fase 39f (S12, baixo da auditoria do M5): a trava que vem de fora (inatividade,
+    /// `ward travar`, tela bloqueada), vista pela bandeja, limpa a área de transferência
+    /// na hora, se ela ainda tem o valor do Ward; o texto que o usuário copiou depois
+    /// fica; a consulta periódica com o cofre destravado não limpa.
+    #[test]
+    fn ataque_trava_de_fora_limpa_a_area_na_hora() {
+        use crate::bandeja::EstadoBandeja::*;
+        for depois in [Travado, SemDaemon, SemCofre] {
+            let (s, area) = servico();
+            s.copiar_campo("acme-pg-dev", "senha").unwrap();
+            s.na_passagem_da_bandeja(Destravado, Destravado);
+            s.na_passagem_da_bandeja(Travado, Destravado);
+            assert!(area.0.lock().unwrap().is_some(), "{depois:?}");
+            s.na_passagem_da_bandeja(Destravado, depois);
+            assert_eq!(*area.0.lock().unwrap(), None, "{depois:?}");
+
+            s.copiar_campo("acme-pg-dev", "senha").unwrap();
+            *area.0.lock().unwrap() = Some(b"texto do usuario".to_vec());
+            s.na_passagem_da_bandeja(Destravado, depois);
+            assert_eq!(
+                area.0.lock().unwrap().as_deref(),
+                Some(&b"texto do usuario"[..]),
+                "{depois:?}"
+            );
+        }
     }
 
     #[test]

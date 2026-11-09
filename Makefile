@@ -67,7 +67,7 @@ CARGO_DENY_VERSAO := 0.20.2
 	dev-servicos-parar dev-servicos-estado dev-servicos-conferir dev-servicos-trocar-chave-host dev-cofre \
 	dev-cofre-conferir dev-variacoes teste-dev-cofre dev-daemon dev-daemon-parar teste-cli teste-docker-uid teste-units \
 	app-front app-check app-ponte teste-docker-plataforma teste-sem-modo-teste teste-socket-ataques \
-	teste-webkit-real teste-canais-gst teste-app-e2e teste-logs-app teste-nm teste-playwright teste-skill teste-migracao \
+	teste-webkit-real teste-area-transferencia teste-canais-gst teste-app-e2e teste-logs-app teste-nm teste-playwright teste-skill teste-migracao \
 	release install uninstall teste-install extensao teste-extensao deb extensao-crx teste-deb teste-login \
 	teste-ssh-home teste-politica-chrome
 
@@ -261,13 +261,15 @@ override APP_NPM = PATH="$(NODE_DIR):/usr/bin:/bin" "$(NODE_DIR)/npm" --prefix "
 override APP_AUDIT_IGNORAR := --ignore RUSTSEC-2024-0370 --ignore RUSTSEC-2024-0429
 
 ## app-front: npm ci (lockfile, sem scripts), build de produção e de teste da interface,
-## conferência dos pacotes (V5.2) e npm audit (dependências de runtime sem nenhum aviso)
+## conferência dos pacotes (V5.2), isolamento das letras RTL (D51, Fase 39f) e npm audit
+## (dependências de runtime sem nenhum aviso)
 app-front:
 	@test -x "$(NODE_DIR)/node" || { echo "node não encontrado; use NODE_DIR=/caminho/do/node/bin" >&2; exit 1; }
 	$(APP_NPM) ci --ignore-scripts --no-audit --no-fund
 	$(APP_NPM) run build
 	$(APP_NPM) run build:teste
 	$(PYTHON) dev/testes/app-dist.py
+	PATH="$(NODE_DIR):/usr/bin:/bin" "$(NODE_DIR)/node" dev/testes/bidi.mjs
 	$(APP_NPM) audit --omit=dev
 	$(APP_NPM) audit --audit-level=moderate
 
@@ -300,6 +302,16 @@ app-ponte: origens
 teste-logs-app:
 	$(PYTHON) dev/testes/varredura-logs.py --autoteste
 	$(PYTHON) dev/testes/varredura-logs.py $(LOGS)
+
+## teste-area-transferencia: Fase 39f (S2, S12; V5.4, V5.5): a área do GTK do app na sessão
+## gráfica sob strace -f (teste ignorado `area_gtk::testes::sessao_real`): nenhum programa
+## executado (nada de wl-copy), nenhum arquivo em /tmp, /var/tmp nem $XDG_RUNTIME_DIR com
+## o valor (inotify e varredura; antes, o autoteste acha o que o wl-copy grava), wl-paste
+## devolve o valor com x-kde-passwordManagerHint, some no prazo, texto do usuário fica,
+## trava de fora limpa na hora. Só valores falsos; limpa a área no fim. Exige strace,
+## wl-clipboard, python3-gi e libwebkit2gtk-4.1-dev (ou PKG_CONFIG_PATH); fora do `make check`
+teste-area-transferencia: origens
+	dev/testes/area-transferencia.sh "$(CARGO)"
 
 ## teste-webkit-real: V5.32 (D48, D57, D64) com o WebKitGTK real sob strace -f: harness do
 ## app sem a partida, montado só em .dev/webkit-real; abre uma janela na sessão Wayland

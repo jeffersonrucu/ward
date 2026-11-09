@@ -63,6 +63,15 @@ seção por enquanto.
    - Esperado: não cola mais nada. A área de transferência foi limpa.
 5. [ ] Copie de novo, copie outro texto qualquer por cima antes dos 30 s e espere passar o prazo.
    - Esperado: o seu texto continua lá. O Ward só apaga o que ele mesmo copiou.
+6. [ ] (Fase 39f) Copie a senha de novo e, num terminal, rode
+   `ls -d /tmp/wl-copy-buffer-* 2>/dev/null; pgrep -a wl-copy` antes de colar.
+   - Esperado: nada aparece. O app serve o valor da memória dele, sem `wl-copy` nem
+     arquivo em `/tmp`. Colar ainda funciona.
+7. [ ] (Fase 39f) Copie a senha e, antes dos 30 s, trave o cofre por fora:
+   `target/debug/ward travar` num terminal. Espere uns 3 s e cole.
+   - Esperado: não cola mais nada. A trava vista pela bandeja limpou a área na hora.
+8. [ ] (Fase 39f) Copie a senha e feche o app pelo "Sair" da bandeja. Cole.
+   - Esperado: não cola mais nada.
 
 ## 5. Formulários
 
