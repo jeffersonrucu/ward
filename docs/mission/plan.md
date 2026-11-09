@@ -1144,6 +1144,10 @@ Auditoria do M10 (2026-11-09): **reprovada** (1ª vez), achado alto: o passo 2b 
 `wl-copy < arquivo` com a chave privada, e o wl-clipboard 2.2.1 grava a entrada em
 `/tmp/wl-copy-buffer-XXXXXX/` (ext4, caminho fixo no binário) até o `--clear` — chave
 em claro no disco (S2).
+2ª auditoria do M10 (2026-11-09, depois de 53a, 53b e 53c): **aprovada**. O alto está
+fechado; `make app-check` saiu 0; a corrida de link/FIFO no `carregar_chave` (81 mil
+chamadas) não carregou nada fora do arquivo escolhido. Os 2 médios e 4 baixos foram para
+a Fase 53d.
 
 - [x] Fase 53a — App: botão "Carregar de arquivo" no campo "Chave privada" (`servidor`)
   que lê o arquivo escolhido (tmpfs) direto para o daemon, sem área de transferência;
@@ -1190,3 +1194,27 @@ em claro no disco (S2).
   servidor para entradas `servidor`, gnome-keyring e "Chrome Safe Storage", desfazer
   `montagem.md`, senhas do Chrome, troca da skill, desinstalar o KeePassXC por último).
   A fase não executa nenhum passo. V10.1–V10.4.
+- [ ] Fase 53d — Achados da 2ª auditoria do M10 (não bloqueiam o QA).
+  - **Médio:** o lint do `dev/testes/migracao.py` deixa a chave voltar ao disco:
+    - `cp`/`mv` com origem na pasta em memória `/run/user/$(id -u)/migracao/`;
+    - `..` nos caminhos de `cp`/`mv`/`install` (`../tmp` escapa do padrão `/tmp`);
+    - argumentos de `find … -exec cp`;
+    - `chmod 644` de chave, `grep .` de chave e `busctl … Item Delete`.
+    Correção: a pasta em memória conta como origem de chave, e o destino só pode ser ela
+    mesma ou o `~/.ssh`. Recusar `..` em todo caminho e conferir os argumentos do `-exec`.
+    Limitar o `chmod` a 600/700, o `grep` a `-x`/`-q` sem caminho de chave e o `busctl` a
+    `SearchItems`/`NameHasOwner`/`status`. Os 9 casos entram no autoteste.
+  - **Médio:** no passo 2a do `docs/migracao.md`, uma chave pessoal sem passphrase é
+    salva direto em `~/.ssh` (ext4, com a umask) e só depois ganha passphrase. Correção:
+    salvar na pasta em memória, rodar `ssh-keygen -p -f` lá, `install -m 600` para o
+    `~/.ssh` e `rm -f` da cópia. O lint passa a aceitar esse caminho.
+  - **Baixo:** no passo 3, o `>>` cria o `known_hosts` do Ward com a umask, e o daemon
+    recusa o `ward ssh`. Correção: `install -m 600 /dev/null …` antes, ou `chmod 600`
+    depois, com o lint ajustado.
+  - **Baixo:** em `app/src-tauri/src/main.rs`, o `atualizar_bandeja` não zera
+    `carregadas`/`usadas` quando a trava vem de fora (inatividade, `ward travar`, tela
+    bloqueada). Correção: chamar `descartar_formulario()` na passagem para `Travado`.
+  - **Baixo:** desligar `gtk-recent-files-enabled` nas `GtkSettings` do app, para o
+    diálogo de arquivo não gravar o caminho em `recently-used.xbel`.
+  - **Baixo:** `app/nucleo/src/chave.rs` deve ler num buffer fixo de `MAX_CHAVE + 1` com
+    `Zeroizing`, sem realocar.
