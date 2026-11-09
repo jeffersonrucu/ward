@@ -738,9 +738,10 @@ Reauditoria do M2 (Fase 19e, D53–D55). Repros em `scratchpad/ataque/src/bin/`
 
 ## Milestone 4 — CLI e integração Claude (run/ssh)
 
-- [ ] V4.1 — Dado o cofre destravado, quando `ward lista`, então aparecem as 19
-  entradas visíveis (todas menos `gama-bloqueada`) com nome, tipo, grupo, ambiente,
-  projeto e URL/host; `ward lista --json` tem só esses campos e nenhum segredo.
+- [ ] V4.1 — Dado o cofre destravado, quando `ward lista`, então aparecem as 21
+  entradas visíveis (as 22 do cofre de teste menos `gama-bloqueada`) com nome, tipo,
+  grupo, ambiente, projeto e URL/host; `ward lista --json` tem só esses campos e nenhum
+  segredo.
 - [ ] V4.2 — (SEG) Duas partes (D65). (1) Build de teste: dado o daemon parado e um
   servidor falso em Python no socket de teste que grava tudo o que recebe, quando o
   usuário roda `ward destravar` e digita a senha (via `expect`), então a CLI aborta com
@@ -766,9 +767,10 @@ Reauditoria do M2 (Fase 19e, D53–D55). Repros em `scratchpad/ataque/src/bin/`
   variáveis AWS batem.
 - [ ] V4.8 — Dado `beta-smtp-stage`, quando `ward run` com os hashes, então as cinco
   `SMTP_*` batem.
-- [ ] V4.9 — Dado `beta-sftp-dev`, quando `ward run beta-sftp-dev -- sh -c 'sshpass -e
-  sftp -P 2222 sftpuser@127.0.0.1 <<< ls'` com `SSHPASS` vindo de `WARD_PASS`, então
-  conecta, e os hashes das `WARD_*` batem.
+- [ ] V4.9 — Dado `beta-sftp-dev`, quando `ward run beta-sftp-dev -- bash -c
+  'SSHPASS="$WARD_PASS" sshpass -e sftp -P 2222 sftpuser@127.0.0.1 <<< ls'` (ou `sh -c`
+  com `printf 'ls\n' | SSHPASS="$WARD_PASS" sshpass -e sftp …`: o `sh` não tem `<<<`),
+  então conecta, e os hashes das `WARD_*` batem.
 - [ ] V4.10 — Dado `gama-generico`, quando `ward run` com os hashes, então `WARD_REGIAO`,
   `WARD_CHAVE_LICENCA` e o conteúdo do arquivo de `WARD_ARQUIVO_APP_ENV` batem.
 - [ ] V4.11 — Dado `gama-nota`, quando `ward run gama-nota -- touch .dev/marca`, então

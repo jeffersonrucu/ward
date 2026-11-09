@@ -65,6 +65,42 @@ name = "wardd-app-teste"
 path = "app-teste/main.rs"
 required-features = ["modo-teste"]
 
+# Scrutiny do M4 (Fase 28b): os testes de integração que sobem o `wardd` de teste
+# (`WARD_DEV_DIR`, `WARD_DEV_SOCKET_DIR`, `WARD_DEV_APP`) ou usam os ganchos só existem
+# com a feature. Sem ela (`cargo test -p wardd`), o cargo os pula em vez de compilá-los
+# e falhar em tempo de execução contra um `wardd` de release.
+[[test]]
+name = "run"
+required-features = ["modo-teste"]
+
+[[test]]
+name = "socket"
+required-features = ["modo-teste"]
+
+[[test]]
+name = "trava"
+required-features = ["modo-teste"]
+
+[[test]]
+name = "app_teste"
+required-features = ["modo-teste"]
+
+[[test]]
+name = "app_valor"
+required-features = ["modo-teste"]
+
+[[test]]
+name = "ssh"
+required-features = ["ganchos-teste"]
+
+[[test]]
+name = "login"
+required-features = ["ganchos-teste"]
+
+[[test]]
+name = "playwright"
+required-features = ["ganchos-teste"]
+
 # Cliente mínimo do contêiner de `make teste-docker-uid` (V3.2, D49): o `ubuntu:24.04`
 # não tem Python.
 [[example]]

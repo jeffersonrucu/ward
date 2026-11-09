@@ -275,6 +275,12 @@ ou com nova resposta do usuário.
   rodando `ward ssh --token <t> <entrada>`. O token não é segredo de credencial e
   morre no primeiro uso. `ward ssh` sem token segue o nível. A CLI não tem operação de
   escrita; destravar e travar são as únicas mudanças de estado.
+  **Divergência registrada (Fases 27a e 28b):** o token não vai em argv. `ward ssh
+  --token <t>` deixaria o token em `/proc/<pid>/cmdline` do terminal e da CLI, legível
+  por qualquer processo do mesmo uid (achado alto da auditoria do M3). O app entrega o
+  token por um socket herdado e a CLI o lê com `ward ssh --token-fd <n> <entrada>`;
+  `--token` em argv é recusado sem conectar. O V4.32 vale com `--token-fd` (token
+  inventado é ignorado e vale o nível).
 - D4. **Revelar e copiar** exigem só o app destravado, sem PIN. "Revelar" mostra o
   valor por 30 s ou até sair da tela e depois o tira do DOM. "Copiar" é resolvido no
   lado Rust do app: o valor vai do daemon direto para a área de transferência e nunca
@@ -362,6 +368,12 @@ ou com nova resposta do usuário.
   filho daquela sessão; carrega só a chave da entrada (e a do salto, se houver); só
   lista e assina, e recusa adicionar, remover e travar chaves; some (socket e
   diretório) quando o `ssh` termina, falha ou é morto, e quando o cofre trava.
+  **Divergência registrada (Fases 27 e 28b):** o agente só aceita chave **Ed25519**
+  (assinatura por `ed25519-dalek`, pelo `ssh-key` do RustCrypto). RSA ficaria com
+  RUSTSEC-2023-0071 (crate `rsa`), que o `cargo audit` recusa; ECDSA não foi
+  implementado. Uma entrada `servidor` com chave de outro tipo falha no `ward ssh` com
+  "só chaves Ed25519 são aceitas pelo agente", sem conectar. Aceitar RSA/ECDSA é decisão
+  do usuário (dependência nova e advisory).
 - D13. **`ward run` e `ward ssh`**: a CLI manda ao daemon o argv, o cwd e o ambiente
   dela sem `LD_*`. O daemon cria o filho, repassa stdin (e pty no `ward ssh`
   interativo), devolve stdout/stderr mascarados e o código de saída, e mata o grupo de
@@ -373,6 +385,20 @@ ou com nova resposta do usuário.
   argv), `PubkeyAuthentication=no`, `IdentityAgent=none`. Com chave: agente de D12.
   Salto por `ProxyJump` com as credenciais da entrada de salto. `sshpass` vira
   dependência de sistema declarada na instalação.
+  **Divergência registrada (Fases 28 e 28b):** o salto **não** usa `ProxyJump`. No
+  OpenSSH, o `ProxyJump` vira um `ProxyCommand` executado por `$SHELL -c` (um `sh -c` na
+  cadeia, que o V4.35 proíbe), e as opções de `-o` da linha de comando não chegam ao
+  `ssh` do salto (só o `-F`), que ficaria com o `known_hosts`, as identidades e o agente
+  padrão do `~/.ssh` (contra este D13 e R19). Também não daria para passar o usuário do
+  salto só por `-l` (D43). No lugar, o daemon abre uma ponte em `127.0.0.1:<porta>`
+  (`crates/wardd/src/ponte.rs`): para cada conexão do grupo de processos do filho, lança
+  por `execve` um `ssh -W <alvo>:<porta>` até a entrada de salto com o mesmo
+  endurecimento (`-F /dev/null`, `known_hosts` do Ward, ambiente do zero, usuário por
+  `-l`, host depois de `--`, senha por `sshpass -e` ou chave no agente de D12), e o
+  `ssh` principal conecta na ponte com `HostKeyAlias` igual ao nome do destino no
+  `known_hosts`. O túnel de `banco` por `servidor` usa a mesma ponte. O V4.27 confere,
+  com o home do passwd coberto por tmpfs e iscas, que nem o `ssh` principal nem o do
+  salto abrem nada do home.
 - D14. **Memória.** O daemon trava (`mlock`) os buffers de segredo e a chave de dados;
   a memória de trabalho do Argon2 não é travada (limite de `RLIMIT_MEMLOCK` do usuário).
   Risco residual registrado: swap sem cifra; o Pop!_OS com disco cifrado cifra a swap.
@@ -747,6 +773,8 @@ cabe ao daemon fica anotado nas Fases 22, 27 e 45.
     montado só com usuário e host já validados; com `@` no usuário do salto, ele não
     pode ir como `usuário@host` na linha do `ProxyJump` (a Fase 28 usa um `ssh_config`
     gerado com `User` literal sem `%`, ou recusa o salto com `@`).
+    (Fase 28b: a Fase 28 não usa `ProxyJump`; o usuário do salto vai por `-l` no
+    `ssh -W` da ponte, ver a divergência registrada em D13.)
   - **`banco` e `smtp` (confirmado pelo planner em 2026-11-08, depois da 19c):** o
     usuário é campo técnico de D38, só ASCII visível (U+0021 a U+007E, sem espaço) e
     sem `-` no começo, para não virar opção de `psql -U` ou de cliente de e-mail.
@@ -1378,7 +1406,10 @@ em `/tmp/claude-1000/-home-jeffersonoliveira-projetos-cofre/d2e230bd-a662-43be-a
   e o usuário decide entre aceitar o risco (vai para "Fora do modelo" no escopo) ou
   mudar a entrega.
   **Decisão do usuário (2026-11-09): risco aceito**, registrado em "Fora do modelo de
-  ameaça" no escopo.
+  ameaça" no escopo. Consequência (Fase 28b): a entrega por ambiente e anexo 0600 de
+  D10/D13 fica como está; o V4.13 não bloqueia o M4 e o teste `ra1_…` de
+  `crates/wardd/tests/run.rs` só registra o estado (o environ do filho segue legível
+  pelo mesmo uid). Mudar a entrega volta a ser decisão do usuário.
 - **RA2. Caminho do usuário no `ward ssh`** (confirmar antes do M4). D3 é a leitura
   segura de "quem chamou é conhecido pelo próprio `ward ssh`". Se o usuário quiser
   `ward ssh` sem PIN digitado direto no terminal, não há sinal que o Claude não forje,
