@@ -710,7 +710,7 @@ Contrato: V5.1–V5.35
   - RUSTSEC-2024-0429: sai do `deny.toml` do app se o `cargo audit` em
     `app/src-tauri/` não a achar;
   - `make app-check` limpo. V5.30, V5.32.
-- [ ] Fase 30 — **(UI)** Primeiro uso (o PIN vai para a seção de configuração do corpo
+- [x] Fase 30 — **(UI)** Primeiro uso (o PIN vai para a seção de configuração do corpo
   v2 como hash, D30). V5.7, V5.25, V5.26.
 - [ ] Fase 31 — **(UI)** Destravar, inclusive o estado "Pedido do agente". Consome
   `pedido_de_destrave` da fila da 23a e o leva à tela por evento do Tauri (D65 a). V5.8.
