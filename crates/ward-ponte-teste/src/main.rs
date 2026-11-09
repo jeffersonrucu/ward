@@ -18,23 +18,37 @@ use ward_app_nucleo::daemon::{Daemon, DaemonSocket};
 use ward_app_nucleo::daemon_falso::DaemonFalso;
 use ward_app_nucleo::servico::Servico;
 use ward_ponte_teste::http::Ponte;
+use ward_ponte_teste::simulados::{SeletorDePasta, TerminalDeTeste};
 
 const USO: &str = "uso: ward-ponte-teste --dist <diretório do build --mode teste> \
-[--daemon-falso cheio|vazio]";
+[--daemon-falso cheio|vazio] [--anexos <pasta com um arquivo>]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    let mut args: Vec<&str> = args.iter().map(String::as_str).collect();
+    // Fase 34: `--anexos <pasta>` no fim troca o seletor de arquivo (simulados.rs).
+    let anexos = match args.as_slice() {
+        [.., "--anexos", p] => {
+            let p = PathBuf::from(*p);
+            args.truncate(args.len() - 2);
+            Some(p)
+        }
+        _ => None,
+    };
     match args.as_slice() {
         ["--dist", d] => match DaemonSocket::padrao() {
-            Ok(daemon) => servir(daemon, Path::new(d)),
+            Ok(daemon) => servir(daemon, Path::new(d), anexos),
             Err(e) => {
                 eprintln!("ward-ponte-teste: {e}");
                 ExitCode::FAILURE
             }
         },
-        ["--dist", d, "--daemon-falso", "cheio"] => servir(DaemonFalso::cheio(), Path::new(d)),
-        ["--dist", d, "--daemon-falso", "vazio"] => servir(DaemonFalso::vazio(), Path::new(d)),
+        ["--dist", d, "--daemon-falso", "cheio"] => {
+            servir(DaemonFalso::cheio(), Path::new(d), anexos)
+        }
+        ["--dist", d, "--daemon-falso", "vazio"] => {
+            servir(DaemonFalso::vazio(), Path::new(d), anexos)
+        }
         _ => {
             eprintln!("{USO}");
             ExitCode::from(2)
@@ -42,10 +56,16 @@ fn main() -> ExitCode {
     }
 }
 
-fn servir<D: Daemon + 'static>(daemon: D, dist: &Path) -> ExitCode {
+fn servir<D: Daemon + 'static>(daemon: D, dist: &Path, anexos: Option<PathBuf>) -> ExitCode {
     let dist: PathBuf = dist.to_path_buf();
     let servico = match Wayland::novo() {
-        Ok(a) => Servico::novo(daemon, Copiador::novo(a)),
+        Ok(a) => {
+            let s = Servico::novo(daemon, Copiador::novo(a)).com_terminal(TerminalDeTeste);
+            match anexos {
+                Some(p) => s.com_seletor(SeletorDePasta(p)),
+                None => s,
+            }
+        }
         Err(e) => {
             eprintln!("ward-ponte-teste: {e}");
             return ExitCode::FAILURE;

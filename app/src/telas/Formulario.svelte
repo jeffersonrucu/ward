@@ -1,7 +1,6 @@
 <script>
-  // Formulário de credencial (Fase 33): frames `Formulário / <tipo> / Novo` e `/ Edição`
-  // dos tipos login, api, aws, smtp, nota segura e genérico (ids em
-  // docs/mission/design-nodes.md). Ocupa o painel de detalhe de Credenciais: cabeçalho
+  // Formulário de credencial (Fases 33 e 34): frames `Formulário / <tipo> / Novo` e
+  // `/ Edição` dos 9 tipos (ids em docs/mission/design-nodes.md). Ocupa o painel de detalhe de Credenciais: cabeçalho
   // (avatar, nome ou "Nova credencial", selos), corpo com rolagem (identificação em grade
   // de 2 colunas, "Acesso" com os campos do tipo, "Campos extras", "Anexos", cartão do
   // nível) e rodapé (obrigatórios, Cancelar, Salvar).
@@ -11,7 +10,12 @@
   // esconder ou ao sair; "copiar" pede ao Rust. A senha do gerador fica no Rust ("Usar
   // esta senha" devolve só o tamanho) e vai como "gerada". O que o usuário digita fica
   // só no estado desta tela, que some ao sair (`descartar_formulario` limpa o Rust).
+  //
+  // Fase 34: anexos são escolhidos e lidos no Rust (`escolher_anexo`); a tela recebe só
+  // id, nome e tamanho, ou o aviso (arquivo acima de 256 KiB, soma acima disso, vazio).
+  // "Conectar" (D3) pede ao Rust o token e o terminal; o token não volta.
   import { onDestroy, onMount } from 'svelte';
+  import Anexo from '../lib/componentes/Anexo.svelte';
   import BadgeAmbiente from '../lib/componentes/BadgeAmbiente.svelte';
   import BadgeTipo from '../lib/componentes/BadgeTipo.svelte';
   import Botao from '../lib/componentes/Botao.svelte';
@@ -30,24 +34,32 @@
   import { NIVEIS } from './credenciais.js';
   import {
     AMBIENTES_FORM,
+    AUTENTICACOES,
+    MOTORES,
+    PROTOCOLOS,
     REGIOES_AWS,
     SEGURANCAS,
     TEXTOS_ANEXOS,
     TEXTOS_EXTRAS,
     TIPOS_FORM,
+    acessoDoBanco,
+    campoVisivel,
     camposDoTipo,
     errosPorCampo,
     montarFormulario,
+    portaPadrao,
+    tamanhoLegivel,
+    variavelDoAnexo,
   } from './formulario.js';
 
   const PRAZO_REVELAR_MS = 30_000;
   const COPIADO_MS = 2_000;
 
   /**
-   * @type {{ tipo: string, detalhe?: any, grupos: string[], oncancelar: () => void,
-   *   onsalvo: (nome: string) => void }}
+   * @type {{ tipo: string, detalhe?: any, grupos: string[], servidores?: string[],
+   *   oncancelar: () => void, onsalvo: (nome: string) => void }}
    */
-  let { tipo, detalhe = null, grupos, oncancelar, onsalvo } = $props();
+  let { tipo, detalhe = null, grupos, servidores = [], oncancelar, onsalvo } = $props();
 
   const editando = detalhe !== null;
   const def = TIPOS_FORM[tipo];
@@ -61,11 +73,19 @@
   let ambiente = $state(detalhe?.ambiente ?? '');
   let projeto = $state(detalhe?.projeto ?? '');
   let tags = $state((detalhe?.tags ?? []).join(', '));
+  // Valor inicial dos selects sem valor salvo. "Autenticação" (só da tela) vem do
+  // segredo que a entrada editada tem.
+  const PADROES = {
+    seguranca: 'starttls',
+    motor: 'postgres',
+    protocolo: 'sftp',
+    autenticacao: salvo('chave_privada') ? 'chave' : 'senha',
+  };
   let campos = $state(
     Object.fromEntries(
       camposTipo
         .filter((c) => c.tipo === 'texto' || c.tipo === 'select')
-        .map((c) => [c.id, inicial(c.id) || (c.id === 'seguranca' ? 'starttls' : '')]),
+        .map((c) => [c.id, inicial(c.id) || (PADROES[c.id] ?? '')]),
     ),
   );
   let segredos = $state(
@@ -87,6 +107,13 @@
     })),
   );
 
+  /** @type {Array<{ id: number, nome: string, tamanho: number }>} */
+  let anexos = $state([]);
+  let avisoAnexo = $state('');
+  let escolhendo = $state(false);
+  let conectando = $state(false);
+  let conectado = $state(false);
+
   let erros = $state({});
   let erroGeral = $state('');
   let salvando = $state(false);
@@ -106,7 +133,34 @@
       })),
     ),
   );
-  const opcoesSelect = $derived({ regioes, segurancas: SEGURANCAS });
+  // Servidores para túnel e salto: os do cofre, menos a própria entrada; o valor salvo
+  // entra na lista mesmo que a entrada não exista mais (a validação dá o erro).
+  const opcoesServidores = (atual) =>
+    [{ valor: '', rotulo: 'Nenhum' }].concat(
+      [...new Set([...(atual ? [atual] : []), ...servidores])]
+        .filter((n) => n !== detalhe?.nome)
+        .map((n) => ({ valor: n, rotulo: n })),
+    );
+  const opcoesSelect = $derived({
+    regioes,
+    segurancas: SEGURANCAS,
+    motores: MOTORES,
+    protocolos: PROTOCOLOS,
+    // ftp não aceita chave (o ward-core recusa); a tela só oferece senha.
+    autenticacoes: campos.protocolo === 'ftp' ? AUTENTICACOES.slice(0, 1) : AUTENTICACOES,
+    servidores: opcoesServidores(campos.tunel),
+    saltos: opcoesServidores(campos.salto),
+  });
+  const textoAcesso = $derived(tipo === 'banco' ? acessoDoBanco(campos.motor) : def.acesso);
+  const linhasVisiveis = $derived(
+    def.linhas
+      .map((l) => l.filter((c) => campoVisivel(c, campos.autenticacao)))
+      .filter((l) => l.length > 0),
+  );
+
+  $effect(() => {
+    if (campos.protocolo === 'ftp' && campos.autenticacao !== 'senha') campos.autenticacao = 'senha';
+  });
 
   let ativa = true;
   const prazos = {};
@@ -213,6 +267,54 @@
     });
   }
 
+  async function adicionarAnexo() {
+    if (escolhendo) return;
+    escolhendo = true;
+    avisoAnexo = '';
+    try {
+      const r = await chamar('escolher_anexo');
+      if (!ativa) return;
+      if (r.resultado === 'anexado') {
+        anexos.push({ id: r.id, nome: r.nome, tamanho: r.tamanho });
+        delete erros.anexos;
+      } else if (r.resultado === 'aviso') {
+        avisoAnexo = r.motivo;
+      }
+    } catch (e) {
+      avisoAnexo = e.mensagem;
+    } finally {
+      escolhendo = false;
+    }
+  }
+
+  async function removerAnexo(i) {
+    const a = anexos[i];
+    try {
+      await chamar('remover_anexo', { id: a.id });
+      anexos.splice(i, 1);
+      avisoAnexo = '';
+    } catch (e) {
+      avisoAnexo = e.mensagem;
+    }
+  }
+
+  async function conectar() {
+    if (conectando || !editando) return;
+    conectando = true;
+    erroGeral = '';
+    try {
+      await chamar('conectar', { entrada: detalhe.nome });
+      if (!ativa) return;
+      conectado = true;
+      clearTimeout(prazoCopiado);
+      prazoCopiado = setTimeout(() => (conectado = false), COPIADO_MS);
+    } catch (e) {
+      erroGeral = e.mensagem;
+    } finally {
+      conectando = false;
+    }
+  }
+
   function erroDe(id) {
     return erros[id] ?? '';
   }
@@ -232,6 +334,7 @@
         campos,
         segredos,
         extras,
+        anexos,
       });
       const r = await chamar('salvar_credencial', {
         anterior: editando ? detalhe.nome : null,
@@ -297,7 +400,7 @@
       id="form-{c.id}"
       rotulo={c.rotulo}
       bind:valor={campos[c.id]}
-      placeholder={c.placeholder ?? ''}
+      placeholder={c.porta ? portaPadrao(tipo, campos) : (c.placeholder ?? '')}
       ajuda={c.ajuda ?? ''}
       erro={erroDe(c.id)}
       inputmode={c.modo}
@@ -313,6 +416,25 @@
         opcoes={opcoesSelect[c.opcoes]}
       />
       {#if erroDe(c.id)}<span class="erro">{erroDe(c.id)}</span>{/if}
+    </div>
+  {:else if c.tipo === 'segredo' && c.multilinha && segredos[c.id].modo === 'digitando'}
+    <!-- Chave privada: várias linhas (o <input> perderia as quebras). O texto fica
+         mascarado na tela (text-security) e só no estado deste formulário. -->
+    <div class="nota">
+      <label class="rotulo" for="form-{c.id}">{c.rotulo}</label>
+      <textarea
+        id="form-{c.id}"
+        class="texto-nota secreto"
+        class:com-erro={erroDe(c.id)}
+        bind:value={segredos[c.id].digitado}
+        placeholder="Cole a chave privada (formato OpenSSH ou PEM)"
+        spellcheck="false"
+        autocomplete="off"
+        aria-invalid={erroDe(c.id) ? 'true' : undefined}
+      ></textarea>
+      <span class="ajuda" class:erro={erroDe(c.id)}>
+        {erroDe(c.id) || 'O conteúdo fica oculto. Depois de salvo, ele só aparece com revelar.'}
+      </span>
     </div>
   {:else if c.tipo === 'segredo'}
     {@render campoSecreto(c)}
@@ -362,6 +484,16 @@
       {/if}
     </div>
   </div>
+  {#if editando && tipo === 'servidor'}
+    <Botao
+      variante="secundario"
+      icone={conectado ? 'check' : 'tipo-servidor'}
+      desabilitado={conectando}
+      title="Abre o seu terminal já conectado, sem PIN (token de uso único)."
+      data-conectado={conectado ? 'sim' : undefined}
+      onclick={conectar}>Conectar</Botao
+    >
+  {/if}
 </header>
 
 <form
@@ -378,7 +510,7 @@
       id="form-nome"
       rotulo="Nome"
       bind:valor={nome}
-      placeholder="Ex.: acme-wp-dev"
+      placeholder={def.exemplo ?? 'Ex.: acme-wp-dev'}
       erro={erroDe('nome')}
     />
     <Select
@@ -411,8 +543,8 @@
 
   {#if def.linhas.length > 0}
     <section class="secao" aria-labelledby="secao-acesso">
-      <TituloDeSecao id="secao-acesso" titulo={def.tituloAcesso ?? 'Acesso'} descricao={def.acesso} />
-      {#each def.linhas as linha, i (i)}
+      <TituloDeSecao id="secao-acesso" titulo={def.tituloAcesso ?? 'Acesso'} descricao={textoAcesso} />
+      {#each linhasVisiveis as linha (linha.map((c) => c.id).join('+'))}
         <div class="linha" class:dupla={linha.length > 1}>
           {#each linha as c (c.id)}
             {@render campoDaLinha(c)}
@@ -465,10 +597,26 @@
       descricao={TEXTOS_ANEXOS[tipo] ?? TEXTOS_ANEXOS.padrao}
     >
       {#snippet acao()}
-        <Botao variante="fantasma" icone="clipe" desabilitado>Adicionar arquivo</Botao>
+        <Botao variante="fantasma" icone="clipe" desabilitado={escolhendo} onclick={adicionarAnexo}
+          >Adicionar arquivo</Botao
+        >
       {/snippet}
     </TituloDeSecao>
-    <p class="caixa-vazia">Nenhum anexo. Arraste um arquivo para cá ou use Adicionar arquivo.</p>
+    {#if anexos.length === 0}
+      <p class="caixa-vazia" class:erro={erroDe('anexos')}>
+        Nenhum anexo. Use Adicionar arquivo (até 256 KiB somados).
+      </p>
+    {:else}
+      {#each anexos as a, i (a.id)}
+        <Anexo
+          nome={a.nome}
+          detalhe="{tamanhoLegivel(a.tamanho)} · {variavelDoAnexo(a.nome)}"
+          onremover={() => removerAnexo(i)}
+        />
+      {/each}
+    {/if}
+    {#if avisoAnexo}<span class="erro" role="alert" id="aviso-anexo">{avisoAnexo}</span>{/if}
+    {#if erroDe('anexos')}<span class="erro" id="erro-anexos">{erroDe('anexos')}</span>{/if}
   </section>
 
   <div class="nivel">
@@ -541,6 +689,12 @@
     display: flex;
     align-items: center;
     gap: var(--espaco-8);
+  }
+  .subtitulo {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .subtitulo,
   .metadados {
@@ -616,6 +770,9 @@
   }
   .texto-nota.com-erro {
     border-color: var(--cor-perigo-borda);
+  }
+  .texto-nota.secreto {
+    -webkit-text-security: disc;
   }
   .texto-nota::placeholder {
     color: var(--cor-texto-secundario);

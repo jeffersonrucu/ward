@@ -19,10 +19,14 @@
 //!   e o valor só no "revelar".
 //! - [`partida`]: partida do app setgid antes do GTK (D47, D57): ambiente de D57,
 //!   conexão com o egid do grupo `ward-app`, largar o grupo, não-dumpable, reexecução.
+//! - [`anexos`]: anexos do formulário (Fase 34). O arquivo é escolhido e lido no lado
+//!   Rust; a interface recebe só nome e tamanho (S11).
+//! - [`terminal`]: "Conectar" do `servidor` (D3): token de uso único e o terminal padrão.
 //! - [`servico`]: o que cada comando faz. Nenhuma resposta leva segredo (S1, S11).
 
 #![forbid(unsafe_code)]
 
+pub mod anexos;
 pub mod area_transferencia;
 pub mod cliente;
 pub mod comandos;
@@ -36,5 +40,6 @@ pub mod gerador;
 pub mod partida;
 pub mod segredo;
 pub mod servico;
+pub mod terminal;
 
 pub use erro::ErroApp;

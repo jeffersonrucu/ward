@@ -17,6 +17,9 @@
     "allow-copiar-codigo-totp",
     "allow-usar-senha-gerada",
     "allow-descartar-formulario",
-    "allow-salvar-credencial"
+    "allow-salvar-credencial",
+    "allow-escolher-anexo",
+    "allow-remover-anexo",
+    "allow-conectar"
   ]
 }
