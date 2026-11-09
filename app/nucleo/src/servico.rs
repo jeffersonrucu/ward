@@ -1923,7 +1923,7 @@ mod testes_destravar {
         })
         .unwrap();
         assert_eq!(s.info_do_pedido(EstadoCofre::Travado), None);
-        fila.simular(Aviso::Destrave);
+        fila.simular(Aviso::destrave_de_teste("acme-pg-aprovacao"));
         rx.recv_timeout(Duration::from_secs(5)).unwrap();
         let info = s.info_do_pedido(EstadoCofre::Travado).unwrap();
         assert!(info.restante > 110 && info.restante <= 120, "{info:?}");
@@ -1934,12 +1934,13 @@ mod testes_destravar {
         assert!(s.info_do_pedido(EstadoCofre::Travado).is_some());
         s.destravar(senha(SENHA_CERTA)).unwrap();
         assert_eq!(s.info_do_pedido(EstadoCofre::Travado), None);
-        // O JSON que vai à tela tem só id e restante.
-        fila.simular(Aviso::Destrave);
+        // O JSON que vai à tela: id, restante e o texto do pedido (Fase 39a), nada mais.
+        fila.simular(Aviso::destrave_de_teste("acme-pg-aprovacao"));
         rx.recv_timeout(Duration::from_secs(5)).unwrap();
         let j = serde_json::to_value(s.info_do_pedido(EstadoCofre::Travado).unwrap()).unwrap();
-        let chaves: Vec<&String> = j.as_object().unwrap().keys().collect();
-        assert_eq!(chaves, ["id", "restante"]);
+        let mut chaves: Vec<&String> = j.as_object().unwrap().keys().collect();
+        chaves.sort();
+        assert_eq!(chaves, ["comando", "entrada", "id", "operacao", "restante"]);
     }
 
     #[test]

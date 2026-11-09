@@ -48,7 +48,7 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use ward_core::protocolo::quadro::{self, ErroQuadro};
-use ward_core::protocolo::{self, Papel, PedidoDeAprovacao, Resposta};
+use ward_core::protocolo::{self, Operacao, Papel, PedidoDeAprovacao, PedidoDeDestrave, Resposta};
 use ward_plataforma::{RecusaServidor, ServidorEsperado, conectar_servidor};
 
 use zeroize::Zeroizing;
@@ -95,13 +95,42 @@ pub trait Daemon: Send {
 }
 
 /// O que o daemon manda sem pedido, só na conexão do papel app (D65 a). Nenhum dos dois
-/// tem segredo: o texto do pedido (`comando`, `cadeia`) é exibido pela Fase 36 com D51.
+/// tem segredo: o texto do pedido (`comando`, `cadeia`, `entrada`) é exibido pelas
+/// Fases 36 e 39a com D51.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Aviso {
     /// Um uso do agente espera aprovação (Fase 36).
     Aprovacao(PedidoDeAprovacao),
-    /// Um uso do agente espera o destrave (Fase 31).
-    Destrave,
+    /// Um uso do agente espera o destrave (Fases 31 e 39a).
+    Destrave(PedidoDeDestrave),
+}
+
+impl Aviso {
+    /// Só nos testes e na ponte de teste: um `pedido_de_destrave` com dados falsos (D15).
+    #[cfg(any(test, feature = "modo-teste"))]
+    pub fn destrave_de_teste(entrada: &str) -> Aviso {
+        Aviso::Destrave(PedidoDeDestrave {
+            entrada: entrada.to_owned(),
+            operacao: Operacao::Executar,
+            comando: r#""psql" "-c" "select count(*) from pedidos""#.to_owned(),
+            restante: 120,
+        })
+    }
+
+    /// Só nos testes e na ponte de teste (Fase 39a, D51): um `pedido_de_destrave` com
+    /// entrada e comando crus, como um daemon que não formatou ou um quadro forjado:
+    /// `ESC`, bidi, largura zero, aspas e tag HTML. A tela tem de mostrar tudo como
+    /// escape visível e texto, nunca como HTML.
+    #[cfg(any(test, feature = "modo-teste"))]
+    pub fn destrave_hostil_de_teste() -> Aviso {
+        Aviso::Destrave(PedidoDeDestrave {
+            entrada: "acme-pg-\u{202E}vorpa\u{200B}<b>x</b>".to_owned(),
+            operacao: Operacao::Executar,
+            comando: "\"psql\" \"-c\" \"select 1\u{1b}[2K\" \"<img src=x onerror=alert(1)>\""
+                .to_owned(),
+            restante: 120,
+        })
+    }
 }
 
 #[derive(Default)]
@@ -163,19 +192,24 @@ impl FilaAvisos {
     /// Fase 31: espera até `prazo` por um `pedido_de_destrave` e tira **todos** os que
     /// estão na fila (vários avisos seguidos são um pedido só na tela). Os avisos de
     /// aprovação ficam onde estão, na ordem, para a janela de aprovação (Fase 36).
-    /// `true`: havia pelo menos um.
-    pub fn esperar_destrave(&self, prazo: Duration) -> bool {
+    /// Fase 39a: devolve o mais novo (o daemon manda o mais novo por último); `None`:
+    /// nenhum chegou no prazo.
+    pub fn esperar_destrave(&self, prazo: Duration) -> Option<PedidoDeDestrave> {
         let fim = Instant::now() + prazo;
         let mut f = self.travar();
         loop {
-            let antes = f.itens.len();
-            f.itens.retain(|a| *a != Aviso::Destrave);
-            if f.itens.len() != antes {
-                return true;
+            let mut ultimo = None;
+            f.itens.retain(|a| match a {
+                Aviso::Destrave(p) => {
+                    ultimo = Some(p.clone());
+                    false
+                }
+                Aviso::Aprovacao(_) => true,
+            });
+            if ultimo.is_some() {
+                return ultimo;
             }
-            let Some(falta) = fim.checked_duration_since(Instant::now()) else {
-                return false;
-            };
+            let falta = fim.checked_duration_since(Instant::now())?;
             f = self
                 .chegou
                 .wait_timeout(f, falta)
@@ -340,7 +374,7 @@ fn ler(
     while let Ok(q) = quadro::ler_quadro(&mut s, quadro::LIMITE_RESPOSTA) {
         match protocolo::decodificar_resposta(Papel::App, &q) {
             Ok(Resposta::PedidoDeAprovacao(p)) => avisos.por(Aviso::Aprovacao(p)),
-            Ok(Resposta::PedidoDeDestrave) => avisos.por(Aviso::Destrave),
+            Ok(Resposta::PedidoDeDestrave(p)) => avisos.por(Aviso::Destrave(p)),
             Ok(_) => {
                 // Resposta sem pedido: sai.
                 if !esperando.swap(false, Ordering::AcqRel) || tx.send(q).is_err() {
@@ -735,13 +769,18 @@ mod testes {
     #[test]
     fn esperar_destrave_deixa_a_aprovacao_na_fila() {
         let f = FilaAvisos::default();
-        assert!(!f.esperar_destrave(Duration::from_millis(30)));
+        assert_eq!(f.esperar_destrave(Duration::from_millis(30)), None);
         f.simular(Aviso::Aprovacao(aprovacao(1)));
-        f.simular(Aviso::Destrave);
+        f.simular(Aviso::destrave_de_teste("acme-pg-velho"));
         f.simular(Aviso::Aprovacao(aprovacao(2)));
-        f.simular(Aviso::Destrave);
-        assert!(f.esperar_destrave(Duration::from_millis(30)));
-        assert!(!f.esperar_destrave(Duration::from_millis(30)));
+        f.simular(Aviso::destrave_de_teste("acme-pg-novo"));
+        // Fase 39a: o mais novo.
+        assert_eq!(
+            f.esperar_destrave(Duration::from_millis(30))
+                .map(|p| p.entrada),
+            Some("acme-pg-novo".to_owned())
+        );
+        assert_eq!(f.esperar_destrave(Duration::from_millis(30)), None);
         assert_eq!(f.tomar(), Some(Aviso::Aprovacao(aprovacao(1))));
         assert_eq!(f.tomar(), Some(Aviso::Aprovacao(aprovacao(2))));
         assert_eq!(f.tomar(), None);
@@ -750,8 +789,15 @@ mod testes {
         let g = f.clone();
         let t = std::thread::spawn(move || g.esperar_destrave(Duration::from_secs(10)));
         std::thread::sleep(Duration::from_millis(50));
-        f.simular(Aviso::Destrave);
-        assert!(t.join().unwrap());
+        f.simular(Aviso::destrave_de_teste("acme-pg-dev"));
+        assert!(t.join().unwrap().is_some());
+    }
+
+    fn destrave() -> Resposta {
+        match Aviso::destrave_de_teste("acme-pg-aprovacao") {
+            Aviso::Destrave(p) => Resposta::PedidoDeDestrave(p),
+            Aviso::Aprovacao(_) => unreachable!(),
+        }
     }
 
     fn aprovacao(id: u64) -> PedidoDeAprovacao {
@@ -785,7 +831,7 @@ mod testes {
                     ward_core::protocolo::Pedido::Estado
                 ));
                 mandar(&mut b, &Resposta::PedidoDeAprovacao(aprovacao(7)));
-                mandar(&mut b, &Resposta::PedidoDeDestrave);
+                mandar(&mut b, &destrave());
                 mandar(&mut b, &estado_app());
             }
             b
@@ -794,11 +840,14 @@ mod testes {
         assert_eq!(cliente::papel(&mut d), Ok(Papel::App));
         let _b = servidor.join().unwrap();
         assert_eq!(avisos.tomar(), Some(Aviso::Aprovacao(aprovacao(7))));
-        assert_eq!(avisos.tomar(), Some(Aviso::Destrave));
+        assert_eq!(
+            avisos.tomar(),
+            Some(Aviso::destrave_de_teste("acme-pg-aprovacao"))
+        );
         assert_eq!(avisos.tomar(), Some(Aviso::Aprovacao(aprovacao(7))));
         assert_eq!(
             avisos.esperar(Duration::from_millis(50)),
-            Some(Aviso::Destrave)
+            Some(Aviso::destrave_de_teste("acme-pg-aprovacao"))
         );
         assert_eq!(avisos.tomar(), None);
         assert_eq!(avisos.descartados(), 0);
@@ -814,7 +863,7 @@ mod testes {
                 if i % 2 == 0 {
                     mandar(&mut b, &Resposta::PedidoDeAprovacao(aprovacao(i)));
                 } else {
-                    mandar(&mut b, &Resposta::PedidoDeDestrave);
+                    mandar(&mut b, &destrave());
                 }
             }
             for _ in 0..2 {
@@ -830,7 +879,10 @@ mod testes {
         assert_eq!(avisos.descartados(), 1000 - 16);
         // Ficam os 16 primeiros, na ordem.
         assert_eq!(avisos.tomar(), Some(Aviso::Aprovacao(aprovacao(0))));
-        assert_eq!(avisos.tomar(), Some(Aviso::Destrave));
+        assert_eq!(
+            avisos.tomar(),
+            Some(Aviso::destrave_de_teste("acme-pg-aprovacao"))
+        );
     }
 
     /// Fase 36: a vigia da aprovação tira só os `pedido_de_aprovacao`, na ordem; os de
@@ -839,9 +891,9 @@ mod testes {
     fn esperar_aprovacao_deixa_o_destrave_na_fila() {
         let f = FilaAvisos::default();
         assert_eq!(f.esperar_aprovacao(Duration::from_millis(30)), None);
-        f.por(Aviso::Destrave);
+        f.por(Aviso::destrave_de_teste("acme-pg-aprovacao"));
         f.por(Aviso::Aprovacao(aprovacao(1)));
-        f.por(Aviso::Destrave);
+        f.por(Aviso::destrave_de_teste("acme-pg-aprovacao"));
         f.por(Aviso::Aprovacao(aprovacao(2)));
         assert_eq!(
             f.esperar_aprovacao(Duration::from_millis(30)),
@@ -852,8 +904,14 @@ mod testes {
             Some(aprovacao(2))
         );
         assert_eq!(f.esperar_aprovacao(Duration::from_millis(30)), None);
-        assert_eq!(f.tomar(), Some(Aviso::Destrave));
-        assert_eq!(f.tomar(), Some(Aviso::Destrave));
+        assert_eq!(
+            f.tomar(),
+            Some(Aviso::destrave_de_teste("acme-pg-aprovacao"))
+        );
+        assert_eq!(
+            f.tomar(),
+            Some(Aviso::destrave_de_teste("acme-pg-aprovacao"))
+        );
         assert_eq!(f.tomar(), None);
         // Chega de outra thread enquanto espera.
         let f = Arc::new(f);

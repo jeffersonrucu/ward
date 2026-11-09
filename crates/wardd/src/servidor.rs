@@ -395,7 +395,7 @@ pub fn servir(escuta: &Escuta, daemon: Arc<Daemon>, papeis: Arc<Papeis>) -> io::
 mod testes {
     use super::*;
     use ward_core::entrada::Ambiente;
-    use ward_core::protocolo::{Operacao, PedidoDeAprovacao};
+    use ward_core::protocolo::{Operacao, PedidoDeAprovacao, PedidoDeDestrave};
 
     /// D63: sem o grupo, o pid do lançador não basta; com o grupo, só o pid do lançador.
     /// Vale nos dois builds (o `make teste-sem-modo-teste` roda sem a feature).
@@ -567,24 +567,30 @@ mod testes {
             cadeia: vec!["claude".into()],
         };
         assert!(s.entregar(&Resposta::PedidoDeAprovacao(p.clone())));
-        assert!(s.entregar(&Resposta::PedidoDeDestrave));
+        let d = PedidoDeDestrave {
+            entrada: "t-aprov".into(),
+            operacao: Operacao::Executar,
+            comando: "\"true\"".into(),
+            restante: 120,
+        };
+        assert!(s.entregar(&Resposta::PedidoDeDestrave(d.clone())));
         let q = quadro::ler_quadro(&mut b, quadro::LIMITE_RESPOSTA).unwrap();
         match protocolo::decodificar_resposta(Papel::App, &q).unwrap() {
             Resposta::PedidoDeAprovacao(lido) => assert_eq!(lido, p),
             r => panic!("{r:?}"),
         }
         let q = quadro::ler_quadro(&mut b, quadro::LIMITE_RESPOSTA).unwrap();
-        assert!(matches!(
-            protocolo::decodificar_resposta(Papel::App, &q).unwrap(),
-            Resposta::PedidoDeDestrave
-        ));
+        match protocolo::decodificar_resposta(Papel::App, &q).unwrap() {
+            Resposta::PedidoDeDestrave(lido) => assert_eq!(lido, d),
+            r => panic!("{r:?}"),
+        }
         // O agente não lê esse quadro.
         assert!(protocolo::decodificar_resposta(Papel::Agente, &q).is_err());
         drop(b);
         // Outro teste em paralelo que faz `fork` segura uma cópia do fd até o `exec`
         // (CLOEXEC): a falha vem logo depois.
         let falhou = (0..200).any(|_| {
-            let f = !s.entregar(&Resposta::PedidoDeDestrave);
+            let f = !s.entregar(&Resposta::PedidoDeDestrave(d.clone()));
             if !f {
                 std::thread::sleep(std::time::Duration::from_millis(10));
             }

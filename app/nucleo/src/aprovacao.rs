@@ -439,11 +439,14 @@ mod testes {
             let _ = tx.send(());
         })
         .unwrap();
-        fila.simular(Aviso::Destrave);
+        fila.simular(Aviso::destrave_de_teste("acme-pg-aprovacao"));
         fila.simular(Aviso::Aprovacao(pedido(9, "\"ls\"", &["claude"])));
         rx.recv_timeout(Duration::from_secs(5)).unwrap();
         assert_eq!(aprovacoes.pendentes(), [9]);
-        assert_eq!(fila.tomar(), Some(Aviso::Destrave));
+        assert_eq!(
+            fila.tomar(),
+            Some(Aviso::destrave_de_teste("acme-pg-aprovacao"))
+        );
     }
 }
 

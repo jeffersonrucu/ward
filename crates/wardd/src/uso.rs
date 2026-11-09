@@ -16,7 +16,9 @@
 use ward_core::entrada::{Ambiente, Dados, Entrada, NivelAcesso, Segredo};
 use ward_core::exibicao;
 use ward_core::limites::{MAX_TEXTO, MAX_TEXTO_EXIBIDO};
-use ward_core::protocolo::{Decisao, ErroResposta, Operacao, Pedido, PedidoDeAprovacao, Resposta};
+use ward_core::protocolo::{
+    Decisao, ErroResposta, Operacao, Pedido, PedidoDeAprovacao, PedidoDeDestrave, Resposta,
+};
 
 use crate::aprovacao::{Cliente, UMA_HORA};
 use crate::aviso;
@@ -150,9 +152,25 @@ impl Daemon {
             comando,
             diretorio,
         } = descrever(pedido).ok_or(ErroResposta::PedidoInvalido)?;
+        // Nome vazio nunca é de uma entrada (o `ward-core` exige nome não vazio): responde
+        // como inexistente antes de qualquer espera. Fase 39a: assim o aviso de destrave
+        // nunca sai fora do formato (entrada vazia), o que fecharia a conexão do app e
+        // negaria o que ele tinha na tela.
+        if nome.is_empty() {
+            return Err(ErroResposta::EntradaInexistente);
+        }
         if self.travado() {
+            // Fase 39a (D51): a tela de destravar mostra o que o agente pediu, com escape
+            // visível. Com o cofre travado não se sabe se a entrada existe, nem o tipo e o
+            // ambiente; o nome vai como o agente mandou.
+            let aviso = PedidoDeDestrave {
+                entrada: exibicao::exibir_texto(nome.as_bytes(), MAX_TEXTO),
+                operacao: op,
+                comando: comando.clone(),
+                restante: 0,
+            };
             self.aprovacao
-                .esperar_destrave(&|| self.travado(), cliente)?;
+                .esperar_destrave(aviso, &|| self.travado(), cliente)?;
         }
         let agora = self.aprovacao.agora();
         let (nivel, entradas, ambiente) = {

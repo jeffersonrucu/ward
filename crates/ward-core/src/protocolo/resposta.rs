@@ -322,6 +322,27 @@ pub struct PedidoDeAprovacao {
     pub cadeia: Vec<String>,
 }
 
+/// O daemon pede ao app a tela de destravar (D16; Fase 39a): um uso do agente espera
+/// com o cofre travado. Com o cofre travado o daemon não sabe tipo nem ambiente (o
+/// índice é cifrado): o aviso leva só o que o agente pediu, já formatado para exibir
+/// por [`crate::exibicao`] (D51), e o app ainda trata como não confiável
+/// (`neutralizar`). Nenhum segredo: a entrada é o nome que o agente mandou (nem se sabe
+/// se existe) e o comando é o mesmo que a janela de aprovação mostraria.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PedidoDeDestrave {
+    /// O nome que o agente pediu, com escape visível.
+    pub entrada: String,
+    /// `executar`, `ssh`, `login` ou `playwright`.
+    pub operacao: Operacao,
+    /// O comando exato com escape visível (D51); vazio no `login` e no `playwright`.
+    pub comando: String,
+    /// Segundos que faltam do prazo do daemon (D16), de 1 a [`MAX_RESTANTE_DESTRAVE`].
+    pub restante: u64,
+}
+
+/// Maior `restante` de um [`PedidoDeDestrave`]: os 2 min de D16.
+pub const MAX_RESTANTE_DESTRAVE: u64 = 120;
+
 /// Entrada sugerida pela extensão. Sem segredo: nome, usuário, ambiente e se a
 /// entrada tem semente TOTP (só o fato, para o popup mostrar "com TOTP"; Fase 41).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -370,7 +391,7 @@ pub enum Resposta {
     Segredo(Segredo),
     Token(Segredo),
     PedidoDeAprovacao(PedidoDeAprovacao),
-    PedidoDeDestrave,
+    PedidoDeDestrave(PedidoDeDestrave),
     CodigoTotp {
         codigo: Zeroizing<String>,
         restante: u64,
@@ -433,7 +454,7 @@ impl Resposta {
             Resposta::Segredo(_) => TipoResposta::Segredo,
             Resposta::Token(_) => TipoResposta::Token,
             Resposta::PedidoDeAprovacao(_) => TipoResposta::PedidoDeAprovacao,
-            Resposta::PedidoDeDestrave => TipoResposta::PedidoDeDestrave,
+            Resposta::PedidoDeDestrave(_) => TipoResposta::PedidoDeDestrave,
             Resposta::CodigoTotp { .. } => TipoResposta::CodigoTotp,
             Resposta::Sugestoes(_) => TipoResposta::Sugestoes,
             Resposta::Preenchimento { .. } => TipoResposta::Preenchimento,
@@ -465,7 +486,12 @@ impl Resposta {
         match self {
             // O papel do `estado` só é conferido na escrita (`codificar_resposta`): o
             // cliente lê o que veio e decide (D63).
-            Resposta::Ok | Resposta::Estado { .. } | Resposta::PedidoDeDestrave => Ok(()),
+            Resposta::Ok | Resposta::Estado { .. } => Ok(()),
+            Resposta::PedidoDeDestrave(p) => ok(!p.entrada.is_empty()
+                && p.entrada.len() <= MAX_TEXTO
+                && OPERACOES_APROVADAS.contains(&p.operacao)
+                && p.comando.len() <= MAX_TEXTO_EXIBIDO
+                && (1..=MAX_RESTANTE_DESTRAVE).contains(&p.restante)),
             Resposta::Fim { .. } => Ok(()),
             Resposta::Erro(e) => ok(match e {
                 ErroResposta::Validacao(p) => {
@@ -542,7 +568,17 @@ impl Resposta {
     /// Escreve os `dados` da resposta.
     pub(crate) fn escrever(&self, e: &mut Escritor) {
         match self {
-            Resposta::Ok | Resposta::PedidoDeDestrave => {}
+            Resposta::Ok => {}
+            Resposta::PedidoDeDestrave(p) => {
+                e.chave("entrada");
+                e.texto(&p.entrada);
+                e.chave("operacao");
+                e.texto(p.operacao.nome());
+                e.chave("comando");
+                e.texto(&p.comando);
+                e.chave("restante");
+                e.inteiro(p.restante);
+            }
             Resposta::Estado {
                 travado,
                 cofre_existe,
@@ -925,7 +961,12 @@ fn ler_cabecalho(c: &mut Campos, com_nivel: bool) -> R<Cabecalho> {
 pub(crate) fn ler(papel: Papel, tipo: TipoResposta, mut c: Campos) -> R<Resposta> {
     let r = match tipo {
         TipoResposta::Ok => Resposta::Ok,
-        TipoResposta::PedidoDeDestrave => Resposta::PedidoDeDestrave,
+        TipoResposta::PedidoDeDestrave => Resposta::PedidoDeDestrave(PedidoDeDestrave {
+            entrada: c.texto("entrada", MAX_TEXTO)?,
+            operacao: Operacao::de_nome(&c.texto("operacao", MAX_NOME)?).ok_or(JsonInvalido)?,
+            comando: c.texto("comando", MAX_TEXTO_EXIBIDO)?,
+            restante: c.inteiro("restante")?,
+        }),
         TipoResposta::Estado => Resposta::Estado {
             travado: c.logico("travado")?,
             cofre_existe: c.logico("cofre_existe")?,

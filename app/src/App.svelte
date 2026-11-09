@@ -27,7 +27,8 @@
   let falhou = $state(false);
   let destravado = $state(false);
   let travado = $state(false);
-  // Fase 31: o pedido do agente que espera o destrave (só id e segundos; sem dado).
+  // Fase 31: o pedido do agente que espera o destrave: id, segundos e (Fase 39a) a
+  // entrada, a operação e o comando com escape visível (D51). Nenhum segredo.
   let pedido = $state(null);
   // Fase 30: sem cofre, o primeiro uso; ao criar, o daemon deixa o cofre destravado.
   let semCofre = $state(false);
@@ -39,11 +40,23 @@
   let aprovacao = $state(window.__TAURI_INTERNALS__?.metadata?.currentWindow?.label === 'aprovacao');
   let pararDeOuvir = null;
 
+  // Só os campos conhecidos, cada um no tipo certo; o resto é ignorado.
+  const texto = (v) => (typeof v === 'string' ? v : '');
+  function pedidoDe(p) {
+    return {
+      id: p.id,
+      restante: p.restante,
+      entrada: texto(p.entrada),
+      operacao: texto(p.operacao),
+      comando: texto(p.comando),
+    };
+  }
+
   function aplicar(r) {
     destravado = r?.estado === 'destravado';
     travado = r?.estado === 'travado';
     semCofre = r?.estado === 'sem-cofre';
-    pedido = travado && r?.pedido ? { id: r.pedido.id, restante: r.pedido.restante } : null;
+    pedido = travado && r?.pedido ? pedidoDe(r.pedido) : null;
     mensagem = TEXTOS[r?.estado] ?? 'Estado desconhecido.';
   }
 

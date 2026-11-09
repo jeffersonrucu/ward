@@ -968,7 +968,7 @@ Chrome headless, 1280×800), PNG dos frames e `qa.json` em
 | `Campo senha` (set; vazio, foco, erro) | `17502` (`17503`, `17524`, `17537`) | `app/src/lib/componentes/CampoSenha.svelte` (erro com borda `perigo/texto`) |
 | `Destravar / Padrão` | `3342` (`formulário` `3368`, selo `3389`, `Destaque` `18701`) | `app/src/telas/Destravar.svelte` › `destravar-padrao.png` |
 | `Destravar / Senha errada` | `3393` (`Campo senha` erro `3427`, botão `3435`, `Destaque` `18706`) | `destravar-senha-errada.png` (campo esvaziado, foco nele) |
-| `Destravar / Pedido do agente` | `3450` (`formulário` `3476`, cartão `3501`, contagem `3506`, `ações` `3527`, `Destaque` `18711`) | `destravar-pedido-do-agente.png`; sem nome, tipo, ambiente e comando (o aviso do protocolo não os traz; ver handoff 31) |
+| `Destravar / Pedido do agente` | `3450` (`formulário` `3476`, cartão `3501`, contagem `3506`, `ações` `3527`, `Destaque` `18711`) | Fase 39a: `entrada` `3503` (avatar `3507` com `Ícone/chave`, nome `3518`) e `comando` `3504` = `CaixaDeCodigo.svelte`; no lugar dos `selos` `3519` (tipo e ambiente não existem com o cofre travado) vai o comando da operação (`ward run` etc.); `evidence/fase-39a/destravar-pedido-do-agente*.png` |
 
 ## Fase 38 — Configurações no código (só leitura do FigCraft)
 
