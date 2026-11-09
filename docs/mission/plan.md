@@ -1090,7 +1090,7 @@ item novo no menu da bandeja só pode ser ação que não entrega segredo. Depoi
     passos 3–8). O compositor só aceita a seleção de janela com foco.
   - A linha do `CLAUDE.md` do alvo novo espera autorização do usuário.
   - Um gerenciador de área de transferência que tome a seleção impede a limpeza.
-- [ ] Fase 51c — Core dump dos auxiliares do WebKitGTK (S2/S8).
+- [x] Fase 51c — Core dump dos auxiliares do WebKitGTK (S2/S8).
   - A instalação (`instalar.sh` e `.deb`) põe na blacklist do apport
     (`/etc/apport/blacklist.d/ward`) o `ward-app` e os binários auxiliares do WebKitGTK
     que o app usa (`WebKitWebProcess`, `WebKitNetworkProcess`, `WebKitGPUProcess`, com os
@@ -1105,6 +1105,21 @@ item novo no menu da bandeja só pode ser ação que não entrega segredo. Depoi
     pelo Yama, e citar o apport/coredump.
   - Guia `docs/instalacao.md`: como conferir.
   S2, S8, V9.*.
+  Feita (2026-11-09):
+  - `instalacao/despejo.sh` põe na blacklist do apport (`blacklist.d` e `report-ignore`)
+    o `ward*` e os auxiliares `WebKit*Process`, conferidos contra o `dpkg -L`. Um
+    auxiliar desconhecido faz a instalação recusar.
+  - Drop-in `coredump.conf.d/ward.conf` com `Storage=none` e `ProcessSizeMax=0`. Vale
+    para o sistema inteiro: o systemd-coredump não tem lista por programa.
+  - Aviso sobre `core_pattern` de terceiros.
+  - Proteger só os processos do app não dá: o mesmo uid baixa o RLIMIT com `prlimit`.
+  - `teste-install` e `teste-deb` 0 (apport e coredump reais no contêiner). `make check`
+    0, com o gitleaks rodado à parte.
+  Pendências:
+  - decisão do usuário sobre o crash do **Chrome** ir para o apport (o renderer guarda a
+    senha preenchida);
+  - falta asserção V9.x própria;
+  - as linhas `teste-install`/`teste-deb` do `CLAUDE.md` não citam a 51c.
 
 Scrutiny do M6 (2026-11-09): **reprovado** (1ª vez).
 - `make check`, `teste-nm`, `teste-extensao`, `teste-login` e o `cargo test --ignored`
