@@ -1035,6 +1035,27 @@ Contrato: V6.1–V6.16
   temporário (D6), storage state 0600, limpeza ao travar e na partida; logs sem
   segredo. V6.12–V6.16.
 
+Auditoria de segurança do M5 (2026-11-09): **reprovada**, com 2 altos. É a 3ª reprovação
+do M5, então a decisão é do usuário.
+- **Alto (S2):** `app/nucleo/src/area_transferencia.rs:168-187`. O `wl-copy` 2.2.1 grava
+  o valor em `/tmp/wl-copy-buffer-*/stdin` (ext4). O bloco físico é alocado em cerca de
+  28 s, antes da limpeza de 30 s, e fica no disco depois de liberado (sem `discard`).
+  Vale para todo "copiar" do app. Correção: servir da memória (`gtk::Clipboard` ou
+  data-control, ex. `wl-clipboard-rs`), mais `x-kde-passwordManagerHint: secret`.
+- **Alto (S2/S8):** o `WebKitWebProcess` é dumpable, e o apport (`core_pattern` com
+  pipe) ignora `RLIMIT_CORE=0`. Um `kill -SEGV` de outro processo do uid gera
+  `/var/crash/*.crash`, legível pelo usuário, com a memória do processo. Mecanismo
+  provado com um processo comum; o tiro final no `WebKitWebProcess` foi barrado pelo
+  classificador. Correção: blacklist do apport e do systemd-coredump para o WebKitGTK na
+  instalação, e corrigir o "Fora do modelo de ameaça".
+- **Baixos:**
+  - o `anexos.rs:228` segue link e trava em FIFO;
+  - D51: o RTL hebraico passa cru, e U+202E no nome do processo vira `?`;
+  - uma trava vinda de fora não limpa a área de transferência na hora.
+- **RA9:** parecer **baixo**, com aceitação recomendada (travar, sair e roubo de foco
+  pelo menu da bandeja no D-Bus).
+Asserções que passaram: V5.1, V5.2, V5.6, V5.15, V5.16, V5.19, V5.20, V5.27, V5.29–V5.33.
+
 Scrutiny do M6 (2026-11-09): **reprovado** (1ª vez).
 - `make check`, `teste-nm`, `teste-extensao`, `teste-login` e o `cargo test --ignored`
   do Playwright deram 0.
