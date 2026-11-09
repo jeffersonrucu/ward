@@ -19,6 +19,11 @@
 # daemon, recebe o papel app. O valor usado fica em .dev/wardd.app: com o daemon já no
 # ar com outro WARD_DEV_APP (ou sem), o `subir` falha em vez de fingir que trocou.
 #
+# WARD_DEV_SOCKET_DIR (Fase 27a): pasta 0700 do socket no lugar de
+# `$XDG_RUNTIME_DIR/ward-teste` (absoluta), para subir o daemon de uma worktree ao lado
+# do daemon de teste de outro checkout sem derrubá-lo. Vai ao daemon pelo `env -i`; a
+# CLI de teste e o `dev/testes/cli.py` usam a mesma variável.
+#
 # Uso: dev/daemon.sh subir | parar | estado
 
 export PATH=/usr/bin:/bin
@@ -54,7 +59,13 @@ case "$RUNTIME" in
     /*) ;;
     *) echo "XDG_RUNTIME_DIR não é absoluto" >&2; exit 1 ;;
 esac
-SOCKET="$RUNTIME/ward-teste/wardd.sock"
+PASTA_SOCKET="${WARD_DEV_SOCKET_DIR:-}"
+case "$PASTA_SOCKET" in
+    "") ;;
+    /*) ;;
+    *) echo "WARD_DEV_SOCKET_DIR não é absoluto" >&2; exit 1 ;;
+esac
+SOCKET="${PASTA_SOCKET:-$RUNTIME/ward-teste}/wardd.sock"
 
 # PID do daemon de teste que está no ar, se for mesmo ele (o binário deste repositório):
 # um PID velho reaproveitado por outro programa não é morto nem tomado por daemon.
@@ -102,6 +113,7 @@ subir() {
         WARD_DEV_DIR="$DEV" \
         RUST_LOG="$NIVEL_LOG" \
         ${WARD_DEV_DBUS_SISTEMA:+"WARD_DEV_DBUS_SISTEMA=$WARD_DEV_DBUS_SISTEMA"} \
+        ${PASTA_SOCKET:+"WARD_DEV_SOCKET_DIR=$PASTA_SOCKET"} \
         ${APP:+"WARD_DEV_APP=$APP"} \
         "$BIN" </dev/null >>"$LOG" 2>&1 &
     local p=$!

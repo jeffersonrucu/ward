@@ -1,7 +1,8 @@
 //! Tudo o que depende do sistema (Linux): socket local, `SO_PEERCRED`, identificação
 //! do processo que chama, endurecimento do processo e memória travada (R3, D5, D14,
 //! S5, S8), com o socket do systemd do sistema (D46) e o papel pelo grupo setgid
-//! (D47), o lançador do app e a partida dele (D57, módulos [`lancador`] e [`app`]).
+//! (D47), o lançador do app e a partida dele (D57, módulos [`lancador`] e [`app`]) e o
+//! canal do token do "Conectar" (Fase 27a, [`conectar`]).
 //! Iniciar com a sessão, bloqueio de tela e agente SSH chegam em fases
 //! seguintes.
 //!
@@ -16,6 +17,7 @@
 //! binário.
 
 pub mod app;
+pub mod conectar;
 pub mod endurecimento;
 pub mod filho;
 pub mod lancador;

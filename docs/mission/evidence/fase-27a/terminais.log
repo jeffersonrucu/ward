@@ -1,0 +1,20 @@
+# Fase 27a — "Conectar" com terminal de verdade (2026-11-09, host do usuário, COSMIC)
+# x-terminal-emulator -> /usr/bin/cosmic-term (update-alternatives); xterm instalado.
+# Canal: socketpair com um token inventado (32 letras/dígitos, aleatório, não salvo);
+# `ward ssh` de teste real (target/debug/ward, modo-teste) contra o wardd de teste da
+# worktree (WARD_DEV_SOCKET_DIR=/run/user/1000/ward-27a), entrada acme-pg-aprovacao.
+# Prova de chegada: uma linha "ssh: token inválido…" a mais no log do daemon.
+# Leitor em laço de /proc/*/cmdline e /proc/*/environ durante o teste.
+
+terminal: /usr/bin/x-terminal-emulator -e
+token chegou ao daemon pelo canal: True
+leitor varreu 80993 arquivos; achados: []
+
+terminal: /usr/bin/xterm -e
+token chegou ao daemon pelo canal: True
+leitor varreu 20647 arquivos; achados: []
+
+# Sondagem anterior (script que lista /proc/self/fd e lê o fd 9 herdado): cosmic-term
+# e xterm repassam o fd herdado ao comando do -e. O cosmic-term também passa ao filho
+# fds `/dmabuf:` dele mesmo (não são do app). gnome-terminal, konsole e outros não
+# estão instalados: não conferidos.

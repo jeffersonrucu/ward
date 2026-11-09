@@ -301,7 +301,8 @@ impl<D: Daemon, A: AreaTransferencia> Servico<D, A> {
     }
 
     /// `conectar { entrada }` (D3): só `servidor`. O daemon emite o token de uso único e
-    /// o terminal abre `ward ssh --token <t> <entrada>`. A resposta não traz o token.
+    /// o terminal abre `ward ssh --token-fd <n> <entrada>` e o token vai pelo canal do fd
+    /// (Fase 27a), nunca em argv. A resposta não traz o token.
     pub fn conectar(&self, entrada: &str) -> Result<(), ErroApp> {
         validar_nome_entrada(entrada)?;
         if !entrada_para_argv(entrada) {
