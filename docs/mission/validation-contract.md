@@ -1181,7 +1181,7 @@ O QA usa o Chrome em modo de teste (D7) e confere a aparência contra o frame.
 
 ## Milestone 10 — Migração e saída do KeePassXC
 
-- [ ] V10.1 — `docs/migracao.md` traz, nesta ordem: cadastrar as credenciais à mão no
+- [x] V10.1 — `docs/migracao.md` traz, nesta ordem: cadastrar as credenciais à mão no
   Ward; mover as chaves SSH pessoais do KeePassXC para o `~/.ssh` (agente do sistema)
   e as de servidor para entradas `servidor`; conferir com `ward ssh` cada servidor;
   devolver o chaveiro ao gnome-keyring, inclusive "Chrome Safe Storage"; desfazer cada
@@ -1189,10 +1189,10 @@ O QA usa o Chrome em modo de teste (D7) e confere a aparência contra o frame.
   ativação D-Bus, autostart, PAM), um por um; conferir as senhas do Chrome; instalar a
   skill `ward` e remover a `cofre` e os scripts antigos; só então desinstalar o
   KeePassXC.
-- [ ] V10.2 — (SEG) Nenhum passo do guia pede para colar segredo na conversa com o
+- [x] V10.2 — (SEG) Nenhum passo do guia pede para colar segredo na conversa com o
   Claude, e todo passo que toca `~/.ssh` ou o chaveiro é executado pelo usuário, não
   pela missão (R19).
-- [ ] V10.3 — O guia tem, para cada passo, como conferir que deu certo e como voltar
+- [x] V10.3 — O guia tem, para cada passo, como conferir que deu certo e como voltar
   atrás.
 - [ ] V10.4 — O usuário executou o guia e confirmou que o Chrome manteve as senhas antes
   de desinstalar o KeePassXC (registro em `plan.md`).

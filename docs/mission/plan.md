@@ -1200,6 +1200,12 @@ em claro no disco (S2).
 fechado; `make app-check` saiu 0; a corrida de link/FIFO no `carregar_chave` (81 mil
 chamadas) não carregou nada fora do arquivo escolhido. Os 2 médios e 4 baixos foram para
 a Fase 53d.
+QA do M10 (2026-11-09): **aprovado**. V10.1–V10.3 estão marcados. O botão bate com os
+frames da 53c, com 14 de 14 asserções pela ponte; a evidência está em
+`docs/mission/evidence/M10/`. O V10.4 é do usuário. Observações: a ponte de teste pede um
+`favicon.ico` que não existe (404, só no teste); com o daemon real, a ponte não tem
+seletor (falta `--anexos`), então o fluxo real fica para a janela nativa; "Salvar" fica
+habilitado cedo, uma diferença cosmética em relação ao design (V5.10).
 
 - [x] Fase 53a — App: botão "Carregar de arquivo" no campo "Chave privada" (`servidor`)
   que lê o arquivo escolhido (tmpfs) direto para o daemon, sem área de transferência;
