@@ -914,6 +914,14 @@ Contrato: V7.1–V7.11
 - [x] Fase 48 — **(UI)** Configurações › backup externo. V7.9.
 - [x] Fase 49 — **(UI)** Kit de emergência para imprimir. V7.10.
 
+Scrutiny do M7 (2026-11-09): aprovado com ressalvas. Para o planner: restaurar uma
+versão antiga troca também a configuração dela (backup externo pode desligar sem aviso)
+— avisar na confirmação ou preservar o externo; `window.print()` no WebKitGTK real não
+conferido (V7.10); restaurar sem cofre destravado/PIN atual sem caminho guiado; pedidos
+de aprovação pendentes não são cancelados ao restaurar; falha intermitente em testes
+de gravação do `ward-core` sob carga (`v2_10_v2_11`, `v2_44`, `v2_53`) a repetir com a
+máquina calma; ponte de teste só usa o socket fixo (sem `WARD_DEV_SOCKET_DIR`).
+
 ## Milestone 8 — Skill `ward`
 Contrato: V8.1–V8.4
 
