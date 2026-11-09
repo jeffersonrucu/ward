@@ -145,6 +145,17 @@ seção por enquanto.
    - Esperado: o autoteste passa e todo arquivo de `.dev/logs/` (`wardd.log`, `ward-app.log` e o resto) sai como "limpo", "0 com segredo".
 2. [ ] Opcional: abra o inspetor da janela (o app de teste tem devtools) e confira que o console não mostra nenhuma senha. Isso cobre o console da webview.
 
+## 11a. Canais do WebKitGTK (V5.32, Fase 39c)
+
+Precisa do `libwebkit2gtk-4.1-dev` instalado. Abre uma janela do app por uns 20 s.
+
+1. [ ] `make app-front` e depois `make teste-webkit-real`.
+   - Esperado: sai 0 ("V5.32 ok"). As iscas de frei0r, LADSPA, libvisual, LV2 e CUDA não carregam, e nenhum processo abre `~/.nv/nvidia-application-profiles-rc`, `~/.mfx_trace`, `/dev/shm/GFX_MEDIA_TRACE` nem `/dev/shm/cuda_injection_path_shm` (D67).
+   - Se aparecer "aviso - o WebKit avisou elemento do GStreamer ausente", anote o nome do elemento: a lista `GST_PLUGIN_LOADING_WHITELIST` pode precisar dele.
+   - A janela do app de teste tem de desenhar normal durante os 20 s.
+2. [ ] Opcional (controle): `make teste-webkit-real SEM_39C=1`.
+   - Esperado: sai 1, com as iscas carregando. Mostra o ataque que as duas variáveis fecham.
+
 ## 12. Encerrar
 
 1. `make dev-daemon-parar`.

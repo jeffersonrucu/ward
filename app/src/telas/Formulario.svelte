@@ -47,6 +47,7 @@
     camposDoTipo,
     errosPorCampo,
     montarFormulario,
+    novoVazio,
     portaPadrao,
     tamanhoLegivel,
     variavelDoAnexo,
@@ -109,6 +110,15 @@
 
   /** @type {Array<{ id: number, nome: string, tamanho: number }>} */
   let anexos = $state([]);
+  // V5.10 (Fase 39c): no Novo, "Salvar" fica desabilitado até algo ser preenchido.
+  const camposIniciais = $state.snapshot(campos);
+  let vazio = $derived(
+    !editando &&
+      novoVazio(
+        { nome, grupo, ambiente, projeto, tags, campos, segredos, extras, anexos },
+        camposIniciais,
+      ),
+  );
   let avisoAnexo = $state('');
   let escolhendo = $state(false);
   let conectando = $state(false);
@@ -320,7 +330,7 @@
   }
 
   async function salvar() {
-    if (salvando) return;
+    if (salvando || vazio) return;
     salvando = true;
     erroGeral = '';
     esconderTudo();
@@ -648,7 +658,7 @@
     variante="primario"
     tipo="submit"
     form="formulario-credencial"
-    desabilitado={salvando}
+    desabilitado={salvando || vazio}
   >
     {editando ? 'Salvar alterações' : 'Salvar'}
   </Botao>

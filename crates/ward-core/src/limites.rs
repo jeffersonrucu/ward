@@ -98,6 +98,11 @@ pub const MAX_ENTRADAS: usize = 10_000;
 
 // ---- Configuração do cofre (D30) ----
 
+/// Senha mestra nova (criar o cofre, trocar a senha): 12 caracteres ou mais, contados
+/// em pontos de código depois do NFC (texto de ajuda do design `Primeiro uso / Senha
+/// mestra`; handoff 30; Fase 39c). Vale no app e no daemon; destravar não confere.
+pub const MIN_CARACTERES_SENHA_MESTRA: usize = 12;
+
 /// PIN: de 4 a 6 dígitos ("Aprovação").
 pub const MIN_DIGITOS_PIN: usize = 4;
 /// PIN: de 4 a 6 dígitos ("Aprovação").

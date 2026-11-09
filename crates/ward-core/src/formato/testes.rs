@@ -475,3 +475,57 @@ fn lixo_nao_abre() {
         Err(ErroFormato::VersaoNaoSuportada(2))
     );
 }
+
+// --- Senha mestra digitada: NFC e mínimo (Fase 39c) -------------------------------------
+
+fn digitada(b: &[u8]) -> SenhaMestra {
+    SenhaMestra::digitada(Zeroizing::new(b.to_vec()))
+}
+
+/// O mesmo texto composto (app) ou decomposto (outro método de entrada, CLI) vira os
+/// mesmos bytes, e o cofre criado com um abre com o outro.
+#[test]
+fn senha_digitada_composta_ou_decomposta_abre_o_mesmo_cofre() {
+    let composta = "falso-mestra-\u{e9}-\u{e7}\u{e3}o-01";
+    let decomposta = "falso-mestra-e\u{301}-c\u{327}a\u{303}o-01";
+    assert_ne!(composta.as_bytes(), decomposta.as_bytes());
+    assert_eq!(
+        digitada(composta.as_bytes()).bytes(),
+        digitada(decomposta.as_bytes()).bytes()
+    );
+    assert_eq!(digitada(decomposta.as_bytes()).bytes(), composta.as_bytes());
+    let arquivo = com_vaga(|| {
+        ChavesCofre::novo_com(&digitada(composta.as_bytes()), ParametrosKdf::PADRAO)
+            .unwrap()
+            .selar(CONTEUDO)
+            .unwrap()
+    });
+    let aberto = com_vaga(|| abrir(&arquivo, &digitada(decomposta.as_bytes())));
+    assert_eq!(&**aberto.unwrap().1, CONTEUDO);
+    // Sem o NFC (o que o daemon fazia antes), a decomposta não abre.
+    let cru = com_vaga(|| abrir(&arquivo, &SenhaMestra::nova(decomposta.to_owned())));
+    assert_eq!(cru.map(|_| ()), Err(ErroFormato::SenhaOuArquivo));
+}
+
+#[test]
+fn senha_digitada_ascii_e_bytes_invalidos_ficam_iguais() {
+    for b in [&b"falso-mestra-ward-01"[..], b"\xff\xfefalso\x80", b""] {
+        assert_eq!(digitada(b).bytes(), b);
+    }
+}
+
+/// Ataque: passar do mínimo de 12 com marcas combinantes (11 letras com acento
+/// decompostas são 22 pontos de código, e 11 depois do NFC), com bytes que não são
+/// UTF-8 ou com 11 caracteres. O daemon confere depois do NFC.
+#[test]
+fn ataque_senha_nova_curta_disfarcada_e_recusada() {
+    let decomposta: String = "e\u{301}".repeat(11);
+    assert_eq!(decomposta.chars().count(), 22);
+    assert!(!digitada(decomposta.as_bytes()).serve_de_nova());
+    assert!(!digitada(b"falso-mest1").serve_de_nova());
+    assert!(!digitada(&[0xff; 13]).serve_de_nova());
+    assert!(!digitada(b"").serve_de_nova());
+    assert!(digitada(b"falso-mestr12").serve_de_nova());
+    assert!(digitada("\u{e9}".repeat(12).as_bytes()).serve_de_nova());
+    assert!(digitada("e\u{301}".repeat(12).as_bytes()).serve_de_nova());
+}

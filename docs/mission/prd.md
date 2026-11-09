@@ -1077,9 +1077,11 @@ em `/tmp/claude-1000/-home-jeffersonoliveira-projetos-cofre/d2e230bd-a662-43be-a
     - `HOME` do `getpwuid`, `PATH=/usr/local/bin:/usr/bin:/bin`, `LANG`/`LC_*` do
       próprio daemon (que vêm do locale do sistema pela unit);
     - as variáveis que desligam fontes de módulos e canais fora do root (D48, fixadas
-      pela Fase 29a e por D64): `GST_PLUGIN_SYSTEM_PATH=/usr/lib/<multiarch>/gstreamer-1.0`,
-      `NO_AT_BRIDGE=1`, `WEBKIT_A11Y_BUS_ADDRESS=unix:path=/dev/null` e
-      `CUDA_MPS_PIPE_DIRECTORY=/proc/ward-sem-mps`.
+      pela Fase 29a, por D64 e por D67): `GST_PLUGIN_SYSTEM_PATH=/usr/lib/<multiarch>/gstreamer-1.0`,
+      `NO_AT_BRIDGE=1`, `WEBKIT_A11Y_BUS_ADDRESS=unix:path=/dev/null`,
+      `CUDA_MPS_PIPE_DIRECTORY=/proc/ward-sem-mps`,
+      `GST_PLUGIN_LOADING_WHITELIST` (só `coreelements` e `app` da pasta do sistema) e
+      `__GL_APPLICATION_PROFILE=0`.
   - o app confere, antes do GTK, que o ambiente que recebeu tem exatamente essas
     variáveis nessas formas (pasta, sockets, donos, sem link); fora disso, não usa o
     papel e sai com mensagem. É defesa em profundidade: o daemon já montou assim;
@@ -1394,6 +1396,38 @@ em `/tmp/claude-1000/-home-jeffersonoliveira-projetos-cofre/d2e230bd-a662-43be-a
   injetar código em qualquer página https sem clique. A origem continua conferida no
   daemon (D9) e cada preenchimento vale uma vez.
 
+- D67. **Canais da 29b fechados por variável** (handoff 29b; D57, D64; S8; decisão da
+  Fase 39c, 2026-11-09, pelo lado mais seguro). A varredura da 29b achou, com o ambiente
+  de D57 completo, o `gst-plugin-scanner` (filho do processo web) carregando código do
+  HOME e abrindo canais graváveis. Medido de novo na 39c sem o WebKit
+  (`make teste-canais-gst`: o mesmo scanner do sistema e o EGL da GPU, HOME falso):
+  - **frei0r, LADSPA e libvisual** (`dlopen` de `~/.frei0r-1/lib`, `~/.ladspa`,
+    `~/.libvisual/actor`), **`/dev/shm/cuda_injection_path_shm`**, o socket abstrato
+    `@cuda-uvmfd-…` e `~/.nv/ComputeCache` (libcuda, pelo `nvcodec`), **`~/.mfx_trace`** e
+    `/dev/shm/GFX_MEDIA_TRACE` (plugins de vídeo da Intel): todos vêm do `plugin_init`
+    de plugins que o app não usa. Fecha
+    `GST_PLUGIN_LOADING_WHITELIST=gstreamer@<pasta>/libgstcoreelements.so:gst-plugins-base@<pasta>/libgstapp.so`
+    (`<pasta>` = a de `GST_PLUGIN_SYSTEM_PATH`): o scanner ainda faz `dlopen` dos
+    arquivos do root, mas só esses dois rodam o `plugin_init`. `LADSPA_PATH` não fecha o
+    `~/.ladspa`, a libvisual não tem variável e `FREI0R_PATH` fecha só o frei0r; por
+    isso a lista, e não uma variável por plugin. Descartadas: registro do root com
+    `GST_REGISTRY_UPDATE=no` (precisa da instalação e de regravar a cada atualização do
+    GStreamer) e pasta só com os plugins (idem). Sem mídia no app, perder os outros
+    plugins não tira nada; se o WebKitGTK avisar elemento ausente, o
+    `make teste-webkit-real` mostra.
+  - **`~/.nv/nvidia-application-profiles-rc*`** (driver da NVIDIA no app e no processo
+    web, que muda opções do driver): fecha `__GL_APPLICATION_PROFILE=0`, mesmo com um
+    `nvidia-application-profile-globals-rc` plantado com `enabled: true`. O driver
+    ainda lê esse arquivo de globais (só a chave `enabled`, que a variável vence): fica
+    em RA8.
+  - O app confere as duas como as outras de D57 (`conferir_ambiente_do_app`), e o
+    `make teste-webkit-real` passa a reprovar V5.32 se uma isca carregar ou se um
+    desses caminhos for aberto (antes saía 2, "pendente"). A conferência com o
+    WebKitGTK real fica com o usuário enquanto o `libwebkit2gtk-4.1-dev` faltar (R32).
+  - Fora da lista de canais, sem mudança: a pasta de dados do WebKit
+    (`~/.local/share/local.ward.app/`, cache HTTP legível pelo uid; handoff 29b) segue
+    para a auditoria do M5.
+
 ### Riscos abertos
 
 - **RA1. `/proc/<pid>/environ` do filho** (decidir antes de fechar o M4). Enquanto o
@@ -1483,7 +1517,30 @@ em `/tmp/claude-1000/-home-jeffersonoliveira-projetos-cofre/d2e230bd-a662-43be-a
   conferir o compositor pela cadeia de processos até o gerente de login do root, que é
   específica do COSMIC, frágil e forjável por um compositor aninhado. O
   `/tmp/nvidia-mps` saiu daqui por D64; tema do GTK (`settings.ini`, `gtk.css`), dconf e
-  caches de fonte, que o app lê do home, entram aqui (handoff 29a).
+  caches de fonte, que o app lê do home, entram aqui (handoff 29a), e também o
+  `~/.nv/nvidia-application-profile-globals-rc` que o driver da NVIDIA ainda lê com
+  `__GL_APPLICATION_PROFILE=0` (D67).
+- **RA9. Menu da bandeja no barramento da sessão** (handoff 39; registrado na Fase
+  39c; **vai ao usuário com o M5**; S10, S13). A bandeja (V5.23) usa o AppIndicator: o
+  menu é exportado pelo `dbusmenu` no barramento da sessão, e qualquer processo do
+  mesmo uid lê os rótulos e "clica" nos itens. O que um pacote malicioso ganha com isso:
+  - **ler:** só textos fixos ("Cofre destravado"/"Cofre travado", "Trava sozinho após
+    4 h sem uso"), que o papel agente já obtém pelo `estado`; nenhum nome de entrada,
+    grupo ou valor entra no menu;
+  - **clicar:** "Travar agora" (trava o cofre: negação de serviço que ele já tinha com
+    `ward travar`), "Abrir o Ward"/"Destravar…" (só mostram a janela; a senha é
+    digitada nela) e "Sair" (fecha o app, que ele já podia matar). Nenhum item revela,
+    copia, aprova, muda nível ou destrava; id desconhecido ou ação fora do estado
+    mostrado não fazem nada (`app/nucleo/src/bandeja.rs`,
+    `ataque_id_forjado_no_menu_nao_faz_nada`);
+  - **canal novo do app no barramento:** o app passa a ter um nome e objetos no
+    barramento da sessão (o AppIndicator registra o ícone no `StatusNotifierWatcher`).
+    Quem controla o barramento (RA8) já controla mais que isso;
+  - **o ícone em disco:** o PNG fixo vai para `$XDG_RUNTIME_DIR/ward-bandeja` (0700,
+    conferida sem seguir link).
+  Proposta: aceitar como está (nada sai do cofre e as ações são as que o mesmo uid já
+  tem), com a regra de que item novo no menu que revele, copie, aprove ou mude estado
+  além de travar volta ao planner. Alternativa: tirar a bandeja (V5.23 sai do escopo).
 
 ## Critérios de aceite
 

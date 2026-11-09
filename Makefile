@@ -67,7 +67,7 @@ CARGO_DENY_VERSAO := 0.20.2
 	dev-servicos-parar dev-servicos-estado dev-servicos-conferir dev-servicos-trocar-chave-host dev-cofre \
 	dev-cofre-conferir dev-variacoes teste-dev-cofre dev-daemon dev-daemon-parar teste-cli teste-docker-uid teste-units \
 	app-front app-check app-ponte teste-docker-plataforma teste-sem-modo-teste teste-socket-ataques \
-	teste-webkit-real teste-logs-app teste-nm teste-playwright teste-skill teste-migracao \
+	teste-webkit-real teste-canais-gst teste-app-e2e teste-logs-app teste-nm teste-playwright teste-skill teste-migracao \
 	release install uninstall teste-install extensao teste-extensao deb extensao-crx teste-deb teste-login \
 	teste-ssh-home
 
@@ -303,11 +303,33 @@ teste-logs-app:
 
 ## teste-webkit-real: V5.32 (D48, D57, D64) com o WebKitGTK real sob strace -f: harness do
 ## app sem a partida, montado só em .dev/webkit-real; abre uma janela na sessão Wayland
-## por ~20 s. Sai 1 se V5.32 falhar e 2 se um canal pendente no planner carregar código.
+## por ~20 s. Sai 1 se V5.32 falhar (inclusive os canais da 29b, fechados na Fase 39c).
 ## Exige libwebkit2gtk-4.1-dev (ou PKG_CONFIG_PATH, R32), strace, gcc e `make app-front`;
-## fora do `make check`. `SEM_MPS=1` roda sem CUDA_MPS_PIPE_DIRECTORY (mostra o ataque)
+## fora do `make check`. `SEM_MPS=1` roda sem CUDA_MPS_PIPE_DIRECTORY e `SEM_39C=1` sem
+## GST_PLUGIN_LOADING_WHITELIST/__GL_APPLICATION_PROFILE (mostram os ataques)
 teste-webkit-real: origens
-	dev/testes/webkit-real.sh "$(CARGO)" $(if $(filter 1,$(SEM_MPS)),--sem-mps)
+	dev/testes/webkit-real.sh "$(CARGO)" $(if $(filter 1,$(SEM_MPS)),--sem-mps)$(if $(filter 1,$(SEM_39C)),--sem-39c)
+
+## teste-app-e2e: V5.10, V5.16, V5.24 (Fase 39c) de ponta a ponta pela ponte: `wardd` de
+## teste só dele (WARD_DEV_SOCKET_DIR, padrão /run/user/<uid>/ward-teste-e2e) com a ponte
+## aberta pelo daemon, Chrome headless e a CLI de teste de verdade (`ward run` com a
+## janela de aprovação; "Conectar" com `ward ssh --token-fd` no ssh-salto e os ataques ao
+## token); varredura de logs no fim; o cofre de teste volta ao que era. Precisa de
+## `make dev-cofre`, `make dev-variacoes`, `make app-front`, dos serviços de pé e do
+## Playwright do Python em PW_PYTHONPATH; fora do `make check`
+teste-app-e2e: origens
+	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd
+	$(CARGO) build --quiet --locked -p ward-ponte-teste --features modo-teste --bin ward-ponte-teste
+	$(CARGO) build --quiet --locked -p ward --features modo-teste --bin ward
+	PW_PYTHONPATH="$(PW_PYTHONPATH)" WARD_DEV_SOCKET_DIR="$(WARD_DEV_SOCKET_DIR)" dev/testes/app-e2e.sh
+
+## teste-canais-gst: canais da 29b (Fase 39c) sem o WebKitGTK: o gst-plugin-scanner do
+## sistema e o EGL da GPU com o ambiente de D57 (valores do lancador.rs), HOME falso em
+## .dev/canais-gst e iscas (frei0r, LADSPA, libvisual, LV2, perfis da NVIDIA). Roda antes
+## sem as variáveis da 39c e exige que as iscas carreguem (o teste enxerga o ataque);
+## depois com elas, nada carrega. Exige gst-inspect-1.0, strace e gcc; fora do `make check`
+teste-canais-gst:
+	dev/testes/canais-gst.sh
 
 # --- Plataforma em contêiner (Fase 21b) ---------------------------------------------
 # D46/D47 com root só dentro de um contêiner ubuntu:24.04 descartável, sem rede: grupos

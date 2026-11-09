@@ -17,15 +17,19 @@
 #   `/run/user/<uid>` (fora do `wayland-<n>` e do `bus`), no HOME e os sockets
 #   abstratos, para o handoff (D64: canal novo volta ao planner).
 # Iscas dos canais achados na Fase 29b (código nas pastas de plugin do HOME que o
-# `gst-plugin-scanner` varre, e o `/dev/shm/cuda_injection_path_shm` do libcuda): se
-# alguma carregar, sai 2 ("canal pendente no planner"), separado da falha de V5.32.
+# `gst-plugin-scanner` varre, e o `/dev/shm/cuda_injection_path_shm` do libcuda),
+# fechados na Fase 39c por `GST_PLUGIN_LOADING_WHITELIST` e `__GL_APPLICATION_PROFILE=0`:
+# se alguma carregar, ou se algum processo abrir `~/.nv/nvidia-application-profiles-rc*`,
+# `~/.mfx_trace`, `/dev/shm/GFX_MEDIA_TRACE` ou `/dev/shm/cuda_injection_path_shm`,
+# V5.32 falha (sai 1). Um canal novo na lista do fim volta ao planner (D64).
 #
 # Abre uma janela do app na sessão Wayland do usuário por ~20 s. Exige o WebKitGTK 4.1
 # (as bibliotecas de desenvolvimento para compilar: `libwebkit2gtk-4.1-dev` ou
 # PKG_CONFIG_PATH, R32), `strace`, `gcc`, uma sessão com um único `wayland-<n>` e
 # `make app-front` antes. O HOME é falso, em `.dev/webkit-real/`; o cofre não é tocado.
-# Uso: dev/testes/webkit-real.sh <cargo> [--sem-mps]  (ou `make teste-webkit-real`)
+# Uso: dev/testes/webkit-real.sh <cargo> [--sem-mps|--sem-39c]  (ou `make teste-webkit-real`)
 #   --sem-mps: roda sem `CUDA_MPS_PIPE_DIRECTORY`, para ver o ataque que D64 fecha.
+#   --sem-39c: roda sem as duas variáveis da Fase 39c, para ver as iscas carregarem.
 
 set -euo pipefail
 export PATH=/usr/bin:/bin
@@ -34,7 +38,9 @@ RAIZ="$(cd -P -- "${BASH_SOURCE[0]%/*}/../.." && pwd -P)"
 
 CARGO="${1:?uso: webkit-real.sh <cargo> [--sem-mps]}"
 SEM_MPS=0
+SEM_39C=0
 [[ "${2:-}" == "--sem-mps" ]] && SEM_MPS=1
+[[ "${2:-}" == "--sem-39c" ]] && SEM_39C=1
 [[ -x "$CARGO" ]] || { echo "webkit-real: cargo não encontrado em $CARGO" >&2; exit 1; }
 for f in strace gcc python3 timeout; do
     command -v "$f" > /dev/null || { echo "webkit-real: falta $f" >&2; exit 1; }
@@ -183,6 +189,10 @@ VARS=(
     "WEBKIT_A11Y_BUS_ADDRESS=$(valor_fixo WEBKIT_A11Y_BUS_ADDRESS)"
 )
 [[ $SEM_MPS -eq 1 ]] || VARS+=("CUDA_MPS_PIPE_DIRECTORY=$(valor_fixo CUDA_MPS_PIPE_DIRECTORY)")
+if [[ $SEM_39C -eq 0 ]]; then
+    VARS+=("GST_PLUGIN_LOADING_WHITELIST=$(valor_fixo GST_PLUGIN_LOADING_WHITELIST)")
+    VARS+=("__GL_APPLICATION_PROFILE=$(valor_fixo __GL_APPLICATION_PROFILE)")
+fi
 
 echo "==> abrindo o app (WebKitGTK real) sob strace -f por 20 s"
 set +e
@@ -196,7 +206,6 @@ LPID=""
 
 # --- Conferência ---------------------------------------------------------------------
 falhou=0
-pendente=0
 ok() { echo "ok - $1"; }
 nao() { echo "FALHOU - $1"; falhou=1; }
 
@@ -232,12 +241,20 @@ if grep -qx gst "$MARCA" 2> /dev/null; then
 else
     ok "o plugin-marca de ~/.local/share/gstreamer-1.0/plugins não carregou"
 fi
+# Fase 39c: os canais da 29b agora fazem parte de V5.32.
 for rot in frei0r ladspa libvisual lv2 cuda; do
     if grep -qx "$rot" "$MARCA" 2> /dev/null; then
-        echo "PENDENTE - código da isca '$rot' carregou num processo do app (canal no planner, handoff 29b)"
-        pendente=1
+        nao "código da isca '$rot' carregou num processo do app (canal da 29b, Fase 39c)"
     else
-        echo "ok - a isca '$rot' não carregou"
+        ok "a isca '$rot' não carregou"
+    fi
+done
+for canal in "$CASA/.nv/nvidia-application-profiles-rc" "$CASA/.mfx_trace" \
+    /dev/shm/GFX_MEDIA_TRACE "$SHM_CUDA" "$CASA/.nv/ComputeCache"; do
+    if grep -qF "\"$canal" "$SAIDA/strace.log"; then
+        nao "algum processo do app abriu ${canal/#$CASA/\~} (canal da 29b, Fase 39c)"
+    else
+        ok "nenhum processo do app abriu ${canal/#$CASA/\~}"
     fi
 done
 
@@ -275,12 +292,12 @@ for c, cnt in cats.items():
         print("  %-9s %-14s x%-3d %s" % (sc, ok, n, p))
 PY
 
+if grep -q "GStreamer element .* not found" "$SAIDA/app.out"; then
+    echo "aviso - o WebKit avisou elemento do GStreamer ausente (a lista da Fase 39c tirou um que ele procura):"
+    grep -o "GStreamer element .* not found" "$SAIDA/app.out" | sort -u | sed 's/^/  /'
+fi
 if [[ $falhou -ne 0 ]]; then
     echo "webkit-real: V5.32 falhou (strace em $SAIDA/strace.log)" >&2
     exit 1
-fi
-if [[ $pendente -ne 0 ]]; then
-    echo "webkit-real: V5.32 ok, mas há canal pendente no planner (handoff 29b)" >&2
-    exit 2
 fi
 echo "webkit-real: V5.32 ok"

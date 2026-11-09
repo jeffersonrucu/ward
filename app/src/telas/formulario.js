@@ -277,6 +277,20 @@ export function tagsDe(texto) {
 }
 
 /**
+ * Novo ainda vazio (Fase 39c, V5.10): nada digitado, escolhido ou anexado além dos
+ * padrões dos selects (`camposIniciais`). O frame `Formulário / <tipo> / Novo` desenha o
+ * "Salvar" desabilitado nesse estado; com qualquer coisa preenchida ele habilita, e
+ * salvar sem um obrigatório mostra o erro no campo.
+ */
+export function novoVazio(estado, camposIniciais) {
+  const { nome, grupo, ambiente, projeto, tags, campos, segredos, extras, anexos } = estado;
+  const semTexto = [nome, grupo, ambiente, projeto, tags].every((v) => !String(v ?? '').trim());
+  const camposIguais = Object.entries(campos).every(([id, v]) => v === camposIniciais[id]);
+  const semSegredo = Object.values(segredos).every((s) => s.modo === 'digitando' && !s.digitado);
+  return semTexto && camposIguais && semSegredo && extras.length === 0 && anexos.length === 0;
+}
+
+/**
  * Corpo do `salvar_credencial`. `segredos[id]`: `{ modo, digitado }` com modo salvo,
  * gerada ou digitando; `extras`: `{ nome, valor, segredo, guardado, original }`.
  */

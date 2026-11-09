@@ -258,3 +258,67 @@ fn v5_22_trocar_senha_pede_a_atual_e_mantem_a_configuracao() {
     assert_eq!(configuracao(&d), (60, false));
     assert!(ok(&mudar_nivel(&d, Papel::App, "t-aprov", "livre", PIN)));
 }
+
+/// Fase 39c: o mínimo de 12 caracteres da senha mestra vale também no daemon, contado
+/// depois do NFC. Ataque: um cliente do papel app que pule a tela manda senha curta, ou
+/// 11 letras com acento decompostas (22 pontos de código). Nada é gravado, nenhuma
+/// geração é queimada e a senha atual continua valendo.
+#[test]
+fn ataque_senha_mestra_nova_curta_recusada_pelo_daemon() {
+    let campo = |r: &Resposta| match r {
+        Resposta::Erro(ErroResposta::Validacao(p)) => {
+            assert!(p.iter().all(|p| p.motivo.contains("12 caracteres")));
+            p.iter().map(|p| p.campo.clone()).collect::<Vec<_>>()
+        }
+        outra => panic!("{outra:?}"),
+    };
+    let disfarcada = "e\u{301}".repeat(11);
+
+    // Criar o cofre.
+    let dir = Dir::novo("cfg-senha-curta");
+    let c = dir.caminhos();
+    let (d, _) = daemon_em(c.clone());
+    // (Vazia nem passa do protocolo: `pedido_invalido`.)
+    for curta in ["falso-mest1", disfarcada.as_str()] {
+        let r = pedir(
+            &d,
+            Papel::App,
+            "criar_cofre",
+            &format!(
+                r#"{{"senha":"{}","pin":"{}"}}"#,
+                b64(curta.as_bytes()),
+                b64(PIN.as_bytes())
+            ),
+        );
+        assert_eq!(campo(&r), ["senha"], "{curta:?}");
+        assert!(!c.cofre.exists());
+        assert!(!c.estado.exists());
+    }
+
+    // Trocar a senha.
+    let dir = Dir::novo("cfg-senha-curta-troca");
+    let (d, _) = cofre_de_teste(&dir);
+    let antes = geracoes(&dir);
+    for curta in ["falso-mest1", disfarcada.as_str()] {
+        assert_eq!(campo(&trocar_senha(&d, Papel::App, SENHA, curta)), ["nova"]);
+    }
+    assert_eq!(geracoes(&dir), antes);
+    d.travar();
+    assert!(ok(&destravar(&d, SENHA)));
+}
+
+/// Fase 39c: a senha mestra criada composta abre decomposta (e o contrário), pelo
+/// mesmo socket que o app e a CLI usam.
+#[test]
+fn senha_mestra_composta_abre_decomposta_pelo_daemon() {
+    let composta = "falso-mestra-\u{e9}\u{e7}\u{e3}o-01";
+    let decomposta = "falso-mestra-e\u{301}c\u{327}a\u{303}o-01";
+    let dir = Dir::novo("cfg-senha-nfc");
+    let (d, _) = cofre_de_teste(&dir);
+    assert!(ok(&trocar_senha(&d, Papel::App, SENHA, decomposta)));
+    d.travar();
+    assert!(ok(&destravar(&d, composta)));
+    d.travar();
+    assert!(ok(&destravar(&d, decomposta)));
+    assert!(ok(&trocar_senha(&d, Papel::App, composta, SENHA)));
+}

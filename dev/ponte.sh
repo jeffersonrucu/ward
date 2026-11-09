@@ -16,7 +16,13 @@ RAIZ="$(cd -P -- "${BASH_SOURCE[0]%/*}/.." && pwd -P)"
 . "$RAIZ/dev/ambiente.sh"
 
 LOG="$RAIZ/.dev/logs/ward-ponte-teste.log"
-SOCKET="/run/user/$(id -u)/ward-teste/wardd.sock"
+# WARD_DEV_SOCKET_DIR (Fase 39c): o daemon de teste noutra pasta (dev/daemon.sh); o
+# daemon passa a mesma pasta à ponte que abre.
+case "${WARD_DEV_SOCKET_DIR:-}" in
+    "") SOCKET="/run/user/$(id -u)/ward-teste/wardd.sock" ;;
+    /*) SOCKET="$WARD_DEV_SOCKET_DIR/wardd.sock" ;;
+    *) echo "WARD_DEV_SOCKET_DIR não é absoluto" >&2; exit 1 ;;
+esac
 URL_RE='^http://127\.0\.0\.1:[0-9]{1,5}/#token=[0-9a-f]{64}$'
 
 antes=0

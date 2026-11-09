@@ -25,6 +25,12 @@ getrandom = { version = "0.4.3", default-features = false }
 # HMAC-SHA1 do TOTP (RFC 6238, Fase 18), do RustCrypto; `zeroize` zera o estado ao sair.
 hmac = { version = "0.13.0", default-features = false, features = ["zeroize"] }
 sha1 = { version = "0.11.0", default-features = false, features = ["zeroize"] }
+# NFC da senha mestra digitada (Fase 39c; handoff 30): o mesmo texto composto ou
+# decomposto tem de abrir o cofre pelo app e pela CLI. Não há NFC na biblioteca padrão
+# e fazer a tabela à mão seria pior. unicode-rs (o mesmo projeto do `unicode-ident`),
+# MIT/Apache-2.0; traz `tinyvec` e `tinyvec_macros` (Zlib/Apache-2.0/MIT), sem `unsafe`
+# de plataforma nem rede.
+unicode-normalization = { version = "=0.1.25", default-features = false }
 zeroize = { version = "1.9.1", default-features = false, features = ["alloc"] }
 
 [lints]

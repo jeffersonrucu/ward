@@ -405,11 +405,23 @@ impl DaemonSocket {
     /// systemd do sistema. No build de teste, o daemon de teste em
     /// `/run/user/<uid>/ward-teste/wardd.sock`. O uid é o efetivo do processo, não
     /// `XDG_RUNTIME_DIR` nem outra variável.
+    ///
+    /// Só no `modo-teste` (Fase 39c), `WARD_DEV_SOCKET_DIR` troca a pasta do socket de
+    /// teste, como na CLI de teste: o daemon de teste passa ao app e à ponte que abre a
+    /// pasta dele (da configuração do daemon, nunca do pedido), e assim um daemon de
+    /// teste noutra pasta não divide o socket fixo com outro checkout. As conferências
+    /// não mudam (pasta 0700 do uid, sem link, par com o mesmo uid), e o papel app
+    /// continua dependendo do pid que o lançador abriu (D63).
     pub fn padrao() -> Result<DaemonSocket, ErroApp> {
         #[cfg(not(feature = "modo-teste"))]
         let esperado = ServidorEsperado::sistema();
         #[cfg(feature = "modo-teste")]
-        let esperado = ServidorEsperado::teste();
+        let esperado = match std::env::var_os("WARD_DEV_SOCKET_DIR") {
+            Some(d) => ServidorEsperado::teste_em(
+                std::path::PathBuf::from(d).join(ward_plataforma::socket::NOME_SOCKET),
+            ),
+            None => ServidorEsperado::teste(),
+        };
         Ok(DaemonSocket::sem_conexao(esperado))
     }
 

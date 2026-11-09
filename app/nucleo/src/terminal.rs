@@ -88,6 +88,13 @@ pub trait Terminal: Send + Sync {
     fn abrir(&self, entrada: &str, token: &Token) -> Result<(), ErroApp>;
 }
 
+/// Um terminal escolhido em tempo de execução (a ponte de teste, Fase 39c).
+impl<T: Terminal + ?Sized> Terminal for Box<T> {
+    fn abrir(&self, entrada: &str, token: &Token) -> Result<(), ErroApp> {
+        (**self).abrir(entrada, token)
+    }
+}
+
 /// Sem terminal (o padrão do serviço até alguém montar um).
 pub struct SemTerminal;
 
