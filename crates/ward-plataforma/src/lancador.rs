@@ -593,11 +593,15 @@ impl ErroBinarioDeTeste {
     pub fn mensagem(&self) -> &'static str {
         match self {
             ErroBinarioDeTeste::Caminho => "caminho do app de teste fora da forma absoluta simples",
-            ErroBinarioDeTeste::ForaDoRepositorio => "o app de teste não está dentro do repositório",
+            ErroBinarioDeTeste::ForaDoRepositorio => {
+                "o app de teste não está dentro do repositório"
+            }
             ErroBinarioDeTeste::Link => "link simbólico no caminho do app de teste",
             ErroBinarioDeTeste::NaoArquivo => "o app de teste não é arquivo regular executável",
             ErroBinarioDeTeste::OutroDono => "o app de teste não é do usuário do daemon",
-            ErroBinarioDeTeste::Gravavel => "o app de teste (ou uma pasta dele) tem escrita para outros",
+            ErroBinarioDeTeste::Gravavel => {
+                "o app de teste (ou uma pasta dele) tem escrita para outros"
+            }
         }
     }
 }
@@ -676,7 +680,8 @@ impl BinarioDeTeste {
         if self.caminho == self.raiz || !self.caminho.starts_with(&self.raiz) {
             return Err(ErroBinarioDeTeste::ForaDoRepositorio);
         }
-        let m = std::fs::symlink_metadata(&self.caminho).map_err(|_| ErroBinarioDeTeste::NaoArquivo)?;
+        let m =
+            std::fs::symlink_metadata(&self.caminho).map_err(|_| ErroBinarioDeTeste::NaoArquivo)?;
         if m.file_type().is_symlink() {
             return Err(ErroBinarioDeTeste::Link);
         }
@@ -722,7 +727,9 @@ impl BinarioDeTeste {
         vars.insert("PATH", PATH_DE_TESTE.to_owned());
         vars.insert(
             "XDG_RUNTIME_DIR",
-            rt.to_str().ok_or(ErroSessao::RuntimeNaoConfiavel)?.to_owned(),
+            rt.to_str()
+                .ok_or(ErroSessao::RuntimeNaoConfiavel)?
+                .to_owned(),
         );
         if let Some(v) = std::env::var_os("LANG")
             && locale_valido(v.as_bytes())
@@ -739,7 +746,9 @@ impl BinarioDeTeste {
     fn abrir_log(&self) -> io::Result<std::fs::File> {
         use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
         let uid = sys::geteuid();
-        let nome = self.nome().map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
+        let nome = self
+            .nome()
+            .map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
         match std::fs::DirBuilder::new().mode(0o700).create(&self.logs) {
             Ok(()) => {}
             Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
@@ -1218,8 +1227,14 @@ mod testes {
             ));
             let _ = fs::remove_dir_all(&p);
             fs::DirBuilder::new().mode(0o700).create(&p).unwrap();
-            fs::DirBuilder::new().mode(0o700).create(p.join("bin")).unwrap();
-            fs::DirBuilder::new().mode(0o700).create(p.join(".dev")).unwrap();
+            fs::DirBuilder::new()
+                .mode(0o700)
+                .create(p.join("bin"))
+                .unwrap();
+            fs::DirBuilder::new()
+                .mode(0o700)
+                .create(p.join(".dev"))
+                .unwrap();
             Repo(p)
         }
 
@@ -1356,7 +1371,10 @@ mod testes {
         esperados.sort_unstable();
         assert_eq!(nomes, esperados, "{texto}");
         assert!(texto.contains("PATH=/usr/bin:/bin\n"));
-        assert!(texto.contains("argumentos=0\n"), "argumentos do pedido chegaram");
+        assert!(
+            texto.contains("argumentos=0\n"),
+            "argumentos do pedido chegaram"
+        );
         // O log como link para fora: não abre (nada é escrito lá).
         fs::remove_file(&log).unwrap();
         let alvo = r.0.join("alvo.txt");

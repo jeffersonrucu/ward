@@ -16,7 +16,9 @@ use std::os::unix::process::ExitStatusExt;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use ward_plataforma::{BinarioPermitido, ClassePar, ErroLancador, Instalacao, Lancador, ProcessoPar};
+use ward_plataforma::{
+    BinarioPermitido, ClassePar, ErroLancador, Instalacao, Lancador, ProcessoPar,
+};
 
 use crate::aprovacao::{AbridorApp, ErroAbrirApp};
 use crate::aviso;

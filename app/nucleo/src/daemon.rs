@@ -700,7 +700,10 @@ mod testes {
         let avisos = d.avisos();
         let servidor = std::thread::spawn(move || {
             for _ in 0..2 {
-                assert!(matches!(pedido_lido(&mut b), ward_core::protocolo::Pedido::Estado));
+                assert!(matches!(
+                    pedido_lido(&mut b),
+                    ward_core::protocolo::Pedido::Estado
+                ));
                 mandar(&mut b, &Resposta::PedidoDeAprovacao(aprovacao(7)));
                 mandar(&mut b, &Resposta::PedidoDeDestrave);
                 mandar(&mut b, &estado_app());
@@ -713,7 +716,10 @@ mod testes {
         assert_eq!(avisos.tomar(), Some(Aviso::Aprovacao(aprovacao(7))));
         assert_eq!(avisos.tomar(), Some(Aviso::Destrave));
         assert_eq!(avisos.tomar(), Some(Aviso::Aprovacao(aprovacao(7))));
-        assert_eq!(avisos.esperar(Duration::from_millis(50)), Some(Aviso::Destrave));
+        assert_eq!(
+            avisos.esperar(Duration::from_millis(50)),
+            Some(Aviso::Destrave)
+        );
         assert_eq!(avisos.tomar(), None);
         assert_eq!(avisos.descartados(), 0);
     }

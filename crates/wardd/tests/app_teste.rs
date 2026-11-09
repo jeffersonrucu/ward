@@ -179,7 +179,8 @@ fn v3_37_so_o_app_aberto_pelo_daemon_de_teste_e_app() {
     assert!(texto.contains("papel=app\n"), "{texto}");
     assert!(texto.contains("argumentos=0\n"), "{texto}");
     assert!(
-        texto.contains("ambiente=HOME,LANG,PATH,WARD_DEV_DIR,WARD_DEV_SOCKET_DIR,XDG_RUNTIME_DIR\n"),
+        texto
+            .contains("ambiente=HOME,LANG,PATH,WARD_DEV_DIR,WARD_DEV_SOCKET_DIR,XDG_RUNTIME_DIR\n"),
         "{texto}"
     );
     assert_eq!(

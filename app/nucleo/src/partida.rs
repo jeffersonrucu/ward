@@ -275,7 +275,10 @@ mod testes {
         for papel in [Papel::Agente, Papel::Extensao] {
             let (mut d, h) = daemon_que_da(papel);
             let r = conferir_papel(&mut d, Ok(()));
-            assert!(matches!(r, Err(ErroPartida::Papel(p)) if p == papel), "{r:?}");
+            assert!(
+                matches!(r, Err(ErroPartida::Papel(p)) if p == papel),
+                "{r:?}"
+            );
             drop(d);
             // Só o `estado`: nenhum pedido de tela depois.
             assert_eq!(h.join().unwrap(), ["estado"]);
@@ -291,7 +294,10 @@ mod testes {
         // O app do menu (pai qualquer) recebeu `agente`: pede `abrir_app` e sai (D57).
         let (mut d, h) = daemon_que_da(Papel::Agente);
         let r = conferir_papel(&mut d, Err(PaiDiferente::NaoEoDaemon));
-        assert!(matches!(r, Err(ErroPartida::Pai(PaiDiferente::NaoEoDaemon))));
+        assert!(matches!(
+            r,
+            Err(ErroPartida::Pai(PaiDiferente::NaoEoDaemon))
+        ));
         drop(d);
         assert_eq!(h.join().unwrap(), ["estado", "abrir_app"]);
     }

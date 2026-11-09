@@ -52,7 +52,10 @@ fn main() -> ExitCode {
         .collect();
     nomes.sort();
     println!("ambiente={}", nomes.join(","));
-    println!("argumentos={}", std::env::args_os().count().saturating_sub(1));
+    println!(
+        "argumentos={}",
+        std::env::args_os().count().saturating_sub(1)
+    );
     let dir = std::env::var_os("WARD_DEV_SOCKET_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| {
@@ -70,12 +73,12 @@ fn main() -> ExitCode {
     };
     let _ = s.set_read_timeout(Some(Duration::from_secs(10)));
     let papel = pedir(&mut s, &Pedido::Estado).and_then(|c| {
-        Papel::TODOS.into_iter().find_map(|p| {
-            match protocolo::decodificar_resposta(p, &c) {
+        Papel::TODOS
+            .into_iter()
+            .find_map(|p| match protocolo::decodificar_resposta(p, &c) {
                 Ok(Resposta::Estado { papel, .. }) => Some(papel),
                 _ => None,
-            }
-        })
+            })
     });
     match papel {
         Some(p) => println!("papel={}", p.nome()),
@@ -88,7 +91,10 @@ fn main() -> ExitCode {
             alvo: Alvo::Campo("senha".into()),
         },
     );
-    println!("revelar={}", r.as_deref().map(descrever).unwrap_or_default());
+    println!(
+        "revelar={}",
+        r.as_deref().map(descrever).unwrap_or_default()
+    );
     let _ = std::io::stdout().flush();
     ExitCode::SUCCESS
 }

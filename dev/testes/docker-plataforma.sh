@@ -39,7 +39,9 @@ chmod 0644 "$TMP/libmarca.so"
 docker image inspect "$IMAGEM" >/dev/null 2>&1 || docker pull --quiet "$IMAGEM" >/dev/null
 
 # Sem rede; sem `no-new-privileges` (ele desligaria justamente o setgid que se testa).
-docker run --rm --network none --pull never \
+# `memlock` infinito: o "daemon" do contêiner faz o `mlockall` de D62 (V3.34: o app que
+# ele lança não herda o travamento).
+docker run --rm --network none --pull never --ulimit memlock=-1:-1 \
     -v "$TMP:/opt/teste:ro" \
     -v "$RAIZ/dev/conteiner-plataforma/dentro.sh:/opt/dentro.sh:ro" \
     "$IMAGEM" /bin/bash -p /opt/dentro.sh

@@ -37,7 +37,9 @@ fn main() -> ExitCode {
         [] => match partida::dist_do_repositorio(std::env::var_os("WARD_DEV_DIR")) {
             Some(dist) => com_o_daemon(&dist),
             None => {
-                eprintln!("ward-ponte-teste: WARD_DEV_DIR ausente ou fora da forma <repositório>/.dev");
+                eprintln!(
+                    "ward-ponte-teste: WARD_DEV_DIR ausente ou fora da forma <repositório>/.dev"
+                );
                 ExitCode::FAILURE
             }
         },

@@ -368,7 +368,10 @@ mod testes {
                 Papel::Agente
             );
         }
-        assert_eq!(papel_da_classe(ClassePar::App, 42, |_| false), Papel::Agente);
+        assert_eq!(
+            papel_da_classe(ClassePar::App, 42, |_| false),
+            Papel::Agente
+        );
         assert_eq!(papel_da_classe(ClassePar::App, 42, |p| p == 42), Papel::App);
     }
 
