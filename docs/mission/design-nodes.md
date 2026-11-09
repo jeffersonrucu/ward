@@ -1021,3 +1021,12 @@ headless), PNG dos frames e `qa.json` em `docs/mission/evidence/fase-36/`.
 | (sem frame: V5.29) | — | `aprovacao-ataque-d51.png`: comando e cadeia com escapes de D51 |
 
 Textos da janela em `app/src/telas/aprovacao.js`.
+
+## Fase 47 — Restaurar backup (UI; lido de uma cópia do `Ward.figcraft`, nada salvo)
+
+| Nó | Id | No código |
+| --- | --- | --- |
+| `Restaurar backup / Versões` | `16349` (diálogo `16458`, itens `16466` … `16494`, legenda `16501`, rodapé `16502`) | `app/src/telas/RestaurarBackup.svelte`, etapa `versoes` |
+| `Restaurar backup / Confirmar` | `16512` (diálogo `16621`, item `16676`, `Campo senha` `16683`, aviso `18775`, legenda `16664`, rodapé `16665`) | `RestaurarBackup.svelte`, etapa `confirmar` (+ `Campo PIN` "PIN atual", que o frame não tem) |
+| `Item de versão` (set) | `11264` (padrão `11243`, selecionado `11265`) | `app/src/lib/componentes/ItemDeVersao.svelte` |
+| `Diálogo de restauração` (set) | `13033` | o `<dialog>` de `RestaurarBackup.svelte` |

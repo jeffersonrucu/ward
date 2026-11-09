@@ -27,6 +27,12 @@
 //! conferência do `wardd`: `BackupExterno::novo`) e `pendrives`, com os pendrives falsos
 //! de [`pendrives_de_teste`] (nenhum dispositivo de verdade; rótulos com HTML, direção de
 //! texto e largura zero para a QA da exibição).
+//! Restaurar (Fase 47): `backups` e `restaurar_backup` com a mesma ordem de conferência
+//! do `wardd` (`nucleo.rs` › `restaurar_backup`): nome no formato, PIN atual (conta para
+//! os 5 que travam), versão na pasta, senha mestra da versão (em tempo constante); o
+//! atual vira a versão mais nova e o cofre passa a ter as entradas, a senha e o PIN da
+//! versão. As versões falsas ([`backups_de_teste`]) são cópias do cofre de teste com
+//! menos entradas, todas com a senha mestra de teste (D15).
 //! As datas de D65 d (Fase 22d) seguem a regra do `wardd`: entrada nova ganha as duas,
 //! edição e `mudar_nivel` só a alteração, pelo relógio do processo; as do cofre de
 //! teste nascem sem datas.
@@ -81,6 +87,70 @@ pub struct DaemonFalso {
     backup: wc::configuracao::BackupExterno,
     /// Pendrives que o "udisks2" vê; `None` é o udisks2 sem resposta.
     pendrives: Option<Vec<Pendrive>>,
+    /// Versões do backup local (Fase 47), da mais nova para a mais antiga; `None` é a
+    /// pasta de backups indisponível.
+    backups: Option<Vec<BackupFalso>>,
+}
+
+/// Uma versão falsa do backup local (Fase 47): o nome, a senha mestra que valia nela e
+/// as entradas. Só em memória.
+pub struct BackupFalso {
+    nome: String,
+    senha: Zeroizing<Vec<u8>>,
+    entradas: EntradasDoBackup,
+}
+
+/// As entradas de uma versão falsa. `Entrada` não tem `Clone` (tem segredo): as versões
+/// de teste são montadas de novo a cada restaurar; o cofre guardado no restaurar vai
+/// inteiro (e sai da lista quando é restaurado, a única diferença para o `wardd`, que
+/// deixa o arquivo na pasta).
+enum EntradasDoBackup {
+    /// O cofre de teste menos as `n` últimas entradas.
+    Teste {
+        menos: usize,
+    },
+    Guardadas(Vec<Entrada>),
+}
+
+fn cofre_de_teste_menos(menos: usize) -> Vec<Entrada> {
+    let mut e = cofre_teste::cofre_de_teste();
+    e.truncate(e.len().saturating_sub(menos));
+    e
+}
+
+/// Quantas versões ficam (D17), como o `wardd`.
+const VERSOES_FALSAS: usize = 30;
+
+/// As 30 versões falsas da ponte de teste (Fase 47), contadas para trás a partir de
+/// `agora`: há 2 min, há 5 h, ontem, há 3 e há 6 dias e depois uma a cada 9 h. A versão
+/// `i` tem as entradas do cofre de teste menos as `min(i, 6)` últimas, para a troca
+/// aparecer na lista. Todas com a senha mestra de teste (D15); nenhum arquivo.
+pub fn backups_de_teste(agora: std::time::SystemTime) -> Vec<BackupFalso> {
+    use std::time::Duration;
+    let min = |m: u64| Duration::from_secs(m * 60);
+    let mut idades = vec![
+        min(2),
+        min(5 * 60 + 17),
+        min(25 * 60 + 45),
+        min(3 * 24 * 60 + 3 * 60 + 30),
+        min(6 * 24 * 60 + 22 * 60 + 12),
+    ];
+    while idades.len() < VERSOES_FALSAS {
+        let ultima = idades[idades.len() - 1];
+        idades.push(ultima + min(9 * 60));
+    }
+    idades
+        .iter()
+        .enumerate()
+        .filter_map(|(i, idade)| {
+            let nome = wc::backup::Versao::do_instante(agora.checked_sub(*idade)?)?.nome();
+            Some(BackupFalso {
+                nome,
+                senha: Zeroizing::new(cofre_teste::SENHA_MESTRA.as_bytes().to_vec()),
+                entradas: EntradasDoBackup::Teste { menos: i.min(6) },
+            })
+        })
+        .collect()
 }
 
 /// Os pendrives falsos da ponte de teste (Fase 48). Só dados: nenhum dispositivo, nenhum
@@ -185,6 +255,7 @@ impl DaemonFalso {
     pub fn cheio() -> DaemonFalso {
         DaemonFalso {
             entradas: cofre_teste::cofre_de_teste(),
+            backups: Some(backups_de_teste(std::time::SystemTime::now())),
             ..DaemonFalso::vazio()
         }
     }
@@ -204,6 +275,7 @@ impl DaemonFalso {
             aprovacoes: Vec::new(),
             backup: wc::configuracao::BackupExterno::desligado(),
             pendrives: Some(pendrives_de_teste()),
+            backups: Some(Vec::new()),
         }
     }
 
@@ -220,6 +292,31 @@ impl DaemonFalso {
     pub fn com_pendrives(mut self, pendrives: Option<Vec<Pendrive>>) -> DaemonFalso {
         self.pendrives = pendrives;
         self
+    }
+
+    /// Fase 47: as versões do backup local; `None` é a pasta indisponível.
+    pub fn com_backups(mut self, backups: Option<Vec<BackupFalso>>) -> DaemonFalso {
+        self.backups = backups;
+        self
+    }
+
+    /// Nomes das versões do backup local (só para os testes).
+    pub fn nomes_dos_backups(&self) -> Vec<String> {
+        self.backups
+            .iter()
+            .flatten()
+            .map(|b| b.nome.clone())
+            .collect()
+    }
+
+    /// Quantas entradas o cofre tem (só para os testes).
+    pub fn quantas_entradas(&self) -> usize {
+        self.entradas.len()
+    }
+
+    /// Erros de PIN seguidos (só para os testes).
+    pub fn erros_de_pin(&self) -> u32 {
+        self.erros_pin
     }
 
     /// Backup externo da configuração (só para os testes).
@@ -455,6 +552,17 @@ impl DaemonFalso {
                 Some(l) => Resposta::Pendrives(l.clone()),
                 None => Resposta::Erro(ErroResposta::PendrivesIndisponiveis),
             },
+            // Fase 47: a mesma regra do `wardd` (Fase 45).
+            Pedido::Backups => match &self.backups {
+                Some(l) => Resposta::Backups(l.iter().map(|b| b.nome.clone()).collect()),
+                None => Resposta::Erro(ErroResposta::BackupIndisponivel),
+            },
+            Pedido::RestaurarBackup { versao, senha, pin } => {
+                match self.restaurar(&versao, &senha, &pin) {
+                    Ok(()) => Resposta::Ok,
+                    Err(e) => Resposta::Erro(e),
+                }
+            }
             Pedido::TempoTrava { minutos } => {
                 if (wc::limites::MIN_MINUTOS_TRAVA..=wc::limites::MAX_MINUTOS_TRAVA)
                     .contains(&minutos)
@@ -501,6 +609,63 @@ impl DaemonFalso {
         self.conferir_pin(atual)?;
         self.hash_pin =
             Some(HashPin::criar(novo.expor()).map_err(|_| ErroResposta::PedidoInvalido)?);
+        Ok(())
+    }
+
+    /// A mesma ordem do `wardd` (`nucleo.rs` › `restaurar_backup`): o nome no formato, o
+    /// PIN atual (conta para os 5 que travam), a versão na pasta e a senha dela (tempo
+    /// constante). O atual vira a versão mais nova (com a senha de agora); o cofre passa a
+    /// ter as entradas, a senha e o PIN da versão (o de teste), sem liberações pendentes.
+    fn restaurar(
+        &mut self,
+        versao: &str,
+        senha: &SegredoCore,
+        pin: &SegredoCore,
+    ) -> Result<(), ErroResposta> {
+        use ctutils::CtEq;
+        if !wc::backup::nome_valido(versao) {
+            return Err(ErroResposta::PedidoInvalido);
+        }
+        self.conferir_pin(pin)?;
+        let Some(lista) = self.backups.as_mut() else {
+            return Err(ErroResposta::BackupIndisponivel);
+        };
+        let Some(i) = lista.iter().position(|b| b.nome == versao) else {
+            return Err(ErroResposta::BackupInexistente);
+        };
+        let s = senha.expor();
+        let certa = &lista[i].senha;
+        if s.len() != certa.len() || !s.ct_eq(&certa[..]).to_bool() {
+            return Err(ErroResposta::SenhaIncorreta);
+        }
+        let senha_da_versao = certa.clone();
+        let entradas = match &lista[i].entradas {
+            EntradasDoBackup::Teste { menos } => cofre_de_teste_menos(*menos),
+            EntradasDoBackup::Guardadas(_) => match lista.remove(i).entradas {
+                EntradasDoBackup::Guardadas(e) => e,
+                EntradasDoBackup::Teste { menos } => cofre_de_teste_menos(menos),
+            },
+        };
+        let agora = wc::backup::Versao::do_instante(std::time::SystemTime::now())
+            .ok_or(ErroResposta::Interno)?
+            .nome();
+        let senha_atual = match &self.senha {
+            Some(s) => s.clone(),
+            None => Zeroizing::new(cofre_teste::SENHA_MESTRA.as_bytes().to_vec()),
+        };
+        let atual = BackupFalso {
+            nome: agora,
+            senha: senha_atual,
+            entradas: EntradasDoBackup::Guardadas(std::mem::replace(&mut self.entradas, entradas)),
+        };
+        let lista = self.backups.get_or_insert_with(Vec::new);
+        lista.retain(|b| b.nome != atual.nome);
+        lista.insert(0, atual);
+        lista.truncate(VERSOES_FALSAS);
+        self.senha = Some(senha_da_versao);
+        self.hash_pin = None;
+        self.erros_pin = 0;
+        self.aprovacoes.clear();
         Ok(())
     }
 

@@ -20,6 +20,7 @@ use ward_app_nucleo::formulario::Formulario;
 use ward_app_nucleo::gerador::Opcoes;
 use ward_app_nucleo::nivel::Pin;
 use ward_app_nucleo::primeiro_uso::NovoCofre;
+use ward_app_nucleo::restaurar::Restauracao;
 use ward_app_nucleo::servico::Servico;
 use zeroize::Zeroizing;
 
@@ -213,6 +214,13 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Ponte<D, A> {
             Comando::TrocarSenhaMestra => args
                 .remove("dados")
                 .map(serde_json::from_value::<TrocaSenha>),
+            _ => None,
+        };
+        // Fase 47: senha da versão e PIN atual também saem do mapa (posse).
+        let restauracao = match comando {
+            Comando::RestaurarBackup => args
+                .remove("dados")
+                .map(serde_json::from_value::<Restauracao>),
             _ => None,
         };
         let texto = |chave: &str| args.get(chave).and_then(Value::as_str);
@@ -432,6 +440,21 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Ponte<D, A> {
                 .listar_pendrives()
                 .and_then(|l| serde_json::to_value(l).map_err(|_| ErroApp::RespostaInvalida)),
             Comando::BackupExterno | Comando::ListarPendrives => Err(ErroApp::PedidoInvalido),
+            // Fase 47 (V7.7): só nome e instante das versões; a resposta do restaurar só
+            // diz restaurado e quantas entradas. A versão é conferida no serviço
+            // (formato e lista do daemon).
+            Comando::ListarBackups if args.is_empty() => self
+                .servico
+                .listar_backups()
+                .and_then(|l| serde_json::to_value(l).map_err(|_| ErroApp::RespostaInvalida)),
+            Comando::ListarBackups => Err(ErroApp::PedidoInvalido),
+            Comando::RestaurarBackup => match restauracao {
+                Some(Ok(r)) if args.is_empty() => self
+                    .servico
+                    .restaurar_backup(r)
+                    .and_then(|r| serde_json::to_value(r).map_err(|_| ErroApp::RespostaInvalida)),
+                _ => Err(ErroApp::PedidoInvalido),
+            },
             Comando::DefinirBackupExterno => {
                 let uuid = match args.get("uuid") {
                     None | Some(Value::Null) => Ok(None),

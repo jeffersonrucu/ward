@@ -32,6 +32,8 @@
     "allow-backup-externo",
     "allow-listar-pendrives",
     "allow-definir-backup-externo",
+    "allow-listar-backups",
+    "allow-restaurar-backup",
     "allow-travar"
   ]
 }

@@ -1056,3 +1056,105 @@ fn ataque_backup_externo_pela_ponte() {
     assert_eq!(v["valor"]["uuid"], "7C1E-42A9", "{v}");
     let _ = fs::remove_dir_all(base);
 }
+
+/// Fase 47 (V7.7): restaurar backup pela ponte. A lista traz só nome e instante; versão
+/// forjada (caminho, `..`, fora da lista), PIN errado, senha da versão errada, tipo
+/// errado e campo a mais não mudam nada; nenhuma resposta traz segredo, PIN, senha,
+/// caminho ou geração; o restaurar certo troca as entradas pelas da versão.
+#[test]
+fn ataque_restaurar_backup_pela_ponte() {
+    let base = dist("restaurar-backup");
+    let servico = Servico::novo(DaemonFalso::cheio(), Copiador::novo(Area::default()));
+    let (p, _l) = Ponte::abrir(servico, &base.join("dist")).unwrap();
+    let pedir = |comando: &str, corpo: &str| {
+        let r = p.responder(&post(&p, comando, corpo, &[]));
+        let texto = String::from_utf8_lossy(&r.corpo).into_owned();
+        for s in SEGREDOS {
+            assert!(!texto.contains(s), "{comando}: segredo na resposta");
+        }
+        for agulha in ["135790", "/home", ".local", "backups/", "geracao"] {
+            assert!(!texto.contains(agulha), "{comando}: {agulha} em {texto}");
+        }
+        r.corpo_json().unwrap()
+    };
+    let corpo = |versao: &str, senha: &str, pin: &str| {
+        serde_json::json!({ "dados": { "versao": versao, "senha": senha, "pin": pin } }).to_string()
+    };
+    let entradas = || {
+        pedir("listar_credenciais", "{}")["valor"]
+            .as_array()
+            .unwrap()
+            .len()
+    };
+    let antes = entradas();
+    let v = pedir("listar_backups", "{}");
+    let lista = v["valor"].as_array().unwrap().clone();
+    assert_eq!(lista.len(), 30, "{v}");
+    for item in &lista {
+        let chaves: Vec<_> = item.as_object().unwrap().keys().cloned().collect();
+        assert_eq!(chaves, ["instante", "nome"], "{item}");
+    }
+    let alvo = lista[4]["nome"].as_str().unwrap().to_owned();
+    assert_eq!(
+        pedir("listar_backups", r#"{"todos":true}"#)["codigo"],
+        "pedido-invalido"
+    );
+    // Formato, tipo e campo a mais: recusados antes do daemon.
+    let a_mais = serde_json::json!({ "dados": {
+        "versao": alvo, "senha": "falso-mestra-ward-01", "pin": "135790", "geracao": 9 } });
+    let pin_numero = serde_json::json!({ "dados": {
+        "versao": alvo, "senha": "falso-mestra-ward-01", "pin": 135790 } });
+    let fora = serde_json::json!({ "dados": {
+        "versao": alvo, "senha": "falso-mestra-ward-01", "pin": "135790" }, "a_mais": 1 });
+    for c in [
+        corpo("../cofre.ward", "falso-mestra-ward-01", "135790"),
+        corpo(
+            "/home/usuario/.local/share/ward/cofre.ward",
+            "falso-mestra-ward-01",
+            "135790",
+        ),
+        corpo(&alvo, "falso-mestra-ward-01", "12ab"),
+        corpo(&alvo, "", "135790"),
+        a_mais.to_string(),
+        pin_numero.to_string(),
+        fora.to_string(),
+        r#"{"versao":"ward-20261108-143200.ward"}"#.to_owned(),
+    ] {
+        assert_eq!(
+            pedir("restaurar_backup", &c)["codigo"],
+            "pedido-invalido",
+            "{c}"
+        );
+    }
+    // Versão no formato, mas inexistente.
+    let inexistente = corpo(
+        "ward-19990101-000000.ward",
+        "falso-mestra-ward-01",
+        "135790",
+    );
+    assert_eq!(
+        pedir("restaurar_backup", &inexistente)["codigo"],
+        "backup-inexistente"
+    );
+    // PIN errado e senha da versão errada.
+    let pin_errado = corpo(&alvo, "falso-mestra-ward-01", "000000");
+    assert_eq!(
+        pedir("restaurar_backup", &pin_errado)["codigo"],
+        "pin-incorreto"
+    );
+    let senha_errada = corpo(&alvo, "falso-mestra-ward-09", "135790");
+    assert_eq!(
+        pedir("restaurar_backup", &senha_errada)["codigo"],
+        "senha-incorreta"
+    );
+    assert_eq!(entradas(), antes);
+    // O certo: a versão 4 tem quatro entradas a menos.
+    let v = pedir(
+        "restaurar_backup",
+        &corpo(&alvo, "falso-mestra-ward-01", "135790"),
+    );
+    assert_eq!(v["valor"]["restaurado"], true, "{v}");
+    assert_eq!(v["valor"]["entradas"], antes - 4, "{v}");
+    assert_eq!(entradas(), antes - 4);
+    let _ = fs::remove_dir_all(base);
+}

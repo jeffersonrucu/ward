@@ -54,6 +54,7 @@ use ward_app_nucleo::gerador::Opcoes;
 use ward_app_nucleo::nivel::{NivelMudado, Pin};
 use ward_app_nucleo::partida;
 use ward_app_nucleo::primeiro_uso::NovoCofre;
+use ward_app_nucleo::restaurar::{Restauracao, Restaurado, VersaoVista};
 use ward_app_nucleo::servico::{CodigoTotp, ResultadoCriar, ResultadoSalvar, Servico};
 use ward_app_nucleo::terminal::TerminalDoSistema;
 
@@ -453,6 +454,31 @@ fn definir_backup_externo(
         .definir_backup_externo(ligado, uuid.as_deref())?)
 }
 
+/// Versões do backup local (Fase 47, V7.7): nome e instante (do nome), da mais nova
+/// para a mais antiga. Nenhum conteúdo nem caminho.
+#[tauri::command]
+fn listar_backups(estado: State<'_, Estado>) -> Result<Vec<VersaoVista>, Falha> {
+    Ok(estado.servico()?.listar_backups()?)
+}
+
+/// Restaurar uma versão (Fase 47, V7.7; D17, D39, S9): a versão (formato conferido e
+/// presença na lista do daemon), a senha mestra dela (`SenhaMestra`, zera) e o PIN atual
+/// (`Pin`, zera). A resposta traz só `restaurado` e a contagem de entradas.
+#[tauri::command]
+fn restaurar_backup<R: Runtime>(
+    dados: Restauracao,
+    app: AppHandle<R>,
+    estado: State<'_, Estado>,
+) -> Result<Restaurado, Falha> {
+    let servico = estado.servico()?;
+    let r = servico.restaurar_backup(dados)?;
+    // A versão traz a configuração dela (D30): a bandeja passa a dizer o tempo dela.
+    if let Ok(c) = servico.configuracoes() {
+        tempo_da_bandeja(&app, c.minutos_trava);
+    }
+    Ok(r)
+}
+
 /// Rótulo da janela principal (capability `principal`).
 const JANELA_PRINCIPAL: &str = "principal";
 /// Rótulo da janela de aprovação: a capability `aprovacao` vale só para ela.
@@ -836,6 +862,8 @@ fn com_comandos<R: Runtime>(builder: Builder<R>, estado: Estado) -> Builder<R> {
             backup_externo,
             listar_pendrives,
             definir_backup_externo,
+            listar_backups,
+            restaurar_backup,
             pedido_de_aprovacao,
             responder_aprovacao,
             travar
@@ -1504,6 +1532,96 @@ mod testes {
             assert!(
                 r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
                 "{corpo}: {r:?}"
+            );
+        }
+    }
+
+    /// Fase 47 (V7.7, V7.8): listar e restaurar backup só na janela `principal` com a
+    /// origem local; versão forjada (caminho, `..`, fora do formato), PIN fora do
+    /// formato, senha vazia e campo a mais (`geracao`) são recusados no Rust antes do
+    /// daemon.
+    #[test]
+    fn ataque_restaurar_backup_so_na_janela_certa_e_versao_conferida_no_rust() {
+        let app = app_de_teste();
+        let principal = WebviewWindowBuilder::new(&app, "principal", Default::default())
+            .build()
+            .unwrap();
+        let outra = WebviewWindowBuilder::new(&app, "outra", Default::default())
+            .build()
+            .unwrap();
+        let aprovacao = WebviewWindowBuilder::new(&app, "aprovacao", Default::default())
+            .build()
+            .unwrap();
+        let dados = |versao: &str, senha: &str, pin: &str| serde_json::json!({ "dados": { "versao": versao, "senha": senha, "pin": pin } });
+        let bom = dados(
+            "ward-20261108-143200.ward",
+            "falso-mestra-ward-01",
+            "135790",
+        );
+        for (comando, corpo) in [
+            ("listar_backups", serde_json::json!({})),
+            ("restaurar_backup", bom.clone()),
+        ] {
+            for janela in [&outra, &aprovacao] {
+                let r = chamar(janela, comando, ORIGEM, corpo.clone());
+                assert!(
+                    r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+                    "{comando} em {}: {r:?}",
+                    janela.label()
+                );
+            }
+            let r = chamar(&principal, comando, "https://example.com", corpo.clone());
+            assert!(
+                r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+                "{comando} com origem remota: {r:?}"
+            );
+        }
+        // Na janela certa, sem daemon: passa da leitura e do formato e para no socket.
+        let r = chamar(&principal, "restaurar_backup", ORIGEM, bom.clone());
+        let codigo = r.as_ref().err().map(|e| e["codigo"].clone());
+        assert!(
+            codigo
+                .as_ref()
+                .is_some_and(|c| c.is_string() && c != "pedido-invalido"),
+            "{r:?}"
+        );
+        // Versão fora do formato: o núcleo recusa antes de abrir o daemon.
+        for versao in [
+            "../cofre.ward",
+            "/home/usuario/.local/share/ward/cofre.ward",
+            "backups/ward-20261108-143200.ward",
+            "ward-20261108-143200.ward\u{202E}",
+            "",
+        ] {
+            let corpo = dados(versao, "falso-mestra-ward-01", "135790");
+            let r = chamar(&principal, "restaurar_backup", ORIGEM, corpo);
+            assert_eq!(
+                r.as_ref().err().map(|e| e["codigo"].clone()),
+                Some(serde_json::json!("pedido-invalido")),
+                "{versao:?}: {r:?}"
+            );
+        }
+        // PIN e senha fora do formato, campo a mais ou faltando: recusados na leitura.
+        let mut a_mais = bom.clone();
+        a_mais["dados"]["geracao"] = serde_json::json!(9);
+        for corpo in [
+            dados("ward-20261108-143200.ward", "falso-mestra-ward-01", "12ab"),
+            dados("ward-20261108-143200.ward", "falso-mestra-ward-01", "123"),
+            dados("ward-20261108-143200.ward", "", "135790"),
+            a_mais,
+            serde_json::json!({ "dados": { "versao": "ward-20261108-143200.ward" } }),
+            serde_json::json!({ "versao": "ward-20261108-143200.ward" }),
+        ] {
+            let r = chamar(&principal, "restaurar_backup", ORIGEM, corpo.clone());
+            assert!(
+                r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+                "{corpo}: {r:?}"
+            );
+            // A recusa não ecoa o que veio.
+            let texto = format!("{r:?}");
+            assert!(
+                !texto.contains("falso-mestra") && !texto.contains("135790"),
+                "{texto}"
             );
         }
     }
