@@ -406,6 +406,8 @@ Pendências da 33 para o planner (2026-11-09): anexos — não há operação pa
 
 Pendências da 22b (2026-11-09): V3.34 do lado do app (`VmLck: 0 kB` no app filho) fica para o contêiner da 23a/29b; `criar_cofre` com estado ilegível recusa com `falha_ao_gravar` sem dizer ao usuário o que fazer (mensagem a melhorar); gancho `com_gancho_depois_de_gravar` existe no release (nunca ligado) — auditoria do M3 olha.
 
+Pendências da 34 (2026-11-09): editar com anexo segue bloqueado (mesma decisão da 33); o `ward-core` recusa nome de anexo começando por `.` (ex.: `.env`, citado no escopo) e a tela não renomeia — decidir; V5.24 ponta a ponta ("Conectar" → `emitir_token` no `wardd` responde `interno`, `ward ssh --token` vem na 27); lista de túnel não sabe quais servidores têm salto (erro só ao salvar); chave privada virou textarea mascarado; dependência direta nova `gtk =0.18.2` no `app/src-tauri` (diálogo de arquivo) — RA7/auditoria do M5 olha; `x-terminal-emulator` no COSMIC não conferido.
+
 ## Milestone 3 — Daemon e protocolo
 Contrato: V3.1–V3.41
 
@@ -717,7 +719,7 @@ Contrato: V5.1–V5.35
   real atende na 22c. Gerador no formulário: tamanho 8–64 e limiares da 37; símbolos de
   `ward_core::gerador::SIMBOLOS`, não do texto do FigCraft. Datas do rodapé ficam para
   a 22d.
-- [ ] Fase 34 — **(UI)** Formulário, parte 2: `banco`, `servidor` (com "Conectar" e
+- [x] Fase 34 — **(UI)** Formulário, parte 2: `banco`, `servidor` (com "Conectar" e
   token de uso único, D3), `ftp/sftp`, anexos (aviso ao escolher arquivo acima de
   256 KiB ou soma acima disso, arquivo vazio recusado, recusa do orçamento da máscara
   no campo, números de `ward_core::limites`; D29, D32); base do `banco` com o formato
