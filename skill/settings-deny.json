@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(~/.local/share/ward/**)",
+      "Edit(~/.local/share/ward/**)",
+      "Read(~/.config/ward/**)",
+      "Edit(~/.config/ward/**)",
+      "Read(//run/user/*/ward/**)",
+      "Edit(//run/user/*/ward/**)",
+      "Read(//media/**/ward-backup/**)",
+      "Edit(//media/**/ward-backup/**)",
+      "Read(~/.ssh/**)",
+      "Edit(~/.ssh/**)",
+      "Bash(*.local/share/ward*)",
+      "Bash(*.config/ward*)",
+      "Bash(*/run/user/*/ward*)",
+      "Bash(*ward-backup*)",
+      "Bash(*/.ssh/id_*)",
+      "Bash(*/environ*)",
+      "Bash(ward destravar*)",
+      "Bash(ward ssh --token*)",
+      "Bash(ward run * -- env*)",
+      "Bash(ward run *printenv*)",
+      "Bash(ward run *export -p*)",
+      "Bash(ward run *declare -p*)",
+      "Bash(ward run *set -x*)",
+      "Bash(ward run *bash -x*)",
+      "Bash(ward run *sh -x*)",
+      "Bash(ward run *base64*)",
+      "Bash(ward run *base32*)",
+      "Bash(ward run *xxd*)",
+      "Bash(ward run *hexdump*)",
+      "Bash(ward run *cat *WARD_ARQUIVO_*)"
+    ]
+  }
+}
