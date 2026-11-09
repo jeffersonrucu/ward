@@ -939,7 +939,7 @@ no modo de teste; a vitrine de componentes aparece abaixo da tela de erro no
 `dist-teste` (conferir que o de produção não tem); item da lista de versões sem
 tamanho. Roteiro do usuário: `docs/mission/evidence/M7/roteiro-usuario.md`.
 
-- [ ] Fase 49a — Achados da auditoria do M7 (aprovado, 2026-11-09). Médio: rotação e
+- [x] Fase 49a — Achados da auditoria do M7 (aprovado, 2026-11-09). Médio: rotação e
   ordem dos backups confiam na data do nome (30 versões plantadas com data futura fazem
   o daemon apagar as reais, local e no pendrive, e aparecem como a mais nova no
   restaurar) — ignorar/recusar data maior que agora + margem, nunca apagar versão com
@@ -949,6 +949,14 @@ tamanho. Roteiro do usuário: `docs/mission/evidence/M7/roteiro-usuario.md`.
   `.estado.tmp-*` ao subir; documentar pendrive identificado só pelo UUID (ou marcador
   aleatório em `ward-backup/`); cancelar pedidos de aprovação pendentes ao restaurar.
   Testes de ataque para cada um. V7.1, V7.3, V7.5, V7.7, V7.11.
+  Pendências da 49a: geração não vai ao item (invariante `d39_…`; daemon manda só as
+  marcas `conferida`/`fora_de_ordem`); relógio atrasado > 5 min esconde versões até
+  alcançar; `backups` decifra até 64 versões com o estado preso; restaurar link dá
+  `backup_inexistente`; `make app-check` não rodou.
+- [ ] Fase 49b — **(DESIGN)** Estados novos da 49a no FigCraft: item de versão "gravação
+  mais antiga do que a data diz", aviso de "Backup local" inseguro em Configurações e a
+  frase nova da confirmação do restaurar (mantém tempo de trava e backup externo). V7.7,
+  V7.9.
 
 Scrutiny do M7 (2026-11-09): aprovado com ressalvas. Para o planner: restaurar uma
 versão antiga troca também a configuração dela (backup externo pode desligar sem aviso)

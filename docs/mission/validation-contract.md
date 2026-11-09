@@ -1086,29 +1086,29 @@ O QA usa o Chrome em modo de teste (D7) e confere a aparência contra o frame.
 
 ## Milestone 7 — Backup
 
-- [ ] V7.1 — Dado o cofre de teste, quando faz 31 gravações, então existem 30 arquivos
+- [x] V7.1 — Dado o cofre de teste, quando faz 31 gravações, então existem 30 arquivos
   `ward-AAAAMMDD-HHMMSS.ward` em `.dev/backups/` e o mais antigo saiu.
-- [ ] V7.2 — (SEG) Dado um backup, quando abre com senha errada ou com 1 byte alterado
+- [x] V7.2 — (SEG) Dado um backup, quando abre com senha errada ou com 1 byte alterado
   (cada posição), então falha; `grep -a` não acha segredo — cobre S6.
-- [ ] V7.3 — (SEG) Dada a gravação do backup morta com SIGKILL em 100 pontos, então os
+- [x] V7.3 — (SEG) Dada a gravação do backup morta com SIGKILL em 100 pontos, então os
   backups anteriores continuam abrindo — cobre S7.
-- [ ] V7.4 — Dado um cofre novo, quando um pendrive de teste (imagem em loop montada via
+- [x] V7.4 — Dado um cofre novo, quando um pendrive de teste (imagem em loop montada via
   `udisksctl`) é conectado, então nada é copiado (externo desligado por padrão).
-- [ ] V7.5 — Dado o externo ligado com o UUID do pendrive A, quando A é conectado, então
+- [x] V7.5 — Dado o externo ligado com o UUID do pendrive A, quando A é conectado, então
   as versões vão para `<montagem>/ward-backup/`; quando o pendrive B é conectado, então
   nada é copiado.
-- [ ] V7.6 — (SEG) Dados os arquivos escritos no pendrive, quando o auditor procura
+- [x] V7.6 — (SEG) Dados os arquivos escritos no pendrive, quando o auditor procura
   segredos, então não acha — cobre S2.
-- [ ] V7.7 — (UI) `Restaurar backup / Versões` e `/ Confirmar`: escolhe uma versão, pede
+- [x] V7.7 — (UI) `Restaurar backup / Versões` e `/ Confirmar`: escolhe uma versão, pede
   a senha daquela versão, o atual vira backup e as entradas da versão aparecem.
-- [ ] V7.8 — (SEG) Dado o papel agente, quando pede restaurar ou ligar o backup
+- [x] V7.8 — (SEG) Dado o papel agente, quando pede restaurar ou ligar o backup
   externo pelo socket, então "não autorizado".
-- [ ] V7.9 — (UI) `Configurações / Backup externo ligado`: escolher o pendrive, ligar e
+- [x] V7.9 — (UI) `Configurações / Backup externo ligado`: escolher o pendrive, ligar e
   desligar.
-- [ ] V7.10 — (UI)(SEG) `Kit de emergência / Impressão`: mostra onde estão o cofre, os
+- [x] V7.10 — (UI)(SEG) `Kit de emergência / Impressão`: mostra onde estão o cofre, os
   backups e o pendrive e a linha em branco para a senha; imprimir em PDF e procurar
   segredos e a senha mestra no PDF e no DOM não acha nada.
-- [ ] V7.11 — (SEG) Dado o cofre de teste na geração n+2 e o backup da geração n, quando
+- [x] V7.11 — (SEG) Dado o cofre de teste na geração n+2 e o backup da geração n, quando
   o usuário restaura esse backup pelo app, então o cofre restaurado tem geração n+3, o
   arquivo de estado também, o daemon destrava com ele e as entradas são as da versão
   n; quando o mesmo backup é copiado à mão por cima do arquivo, então cai no V3.22
