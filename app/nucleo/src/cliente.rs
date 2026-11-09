@@ -114,7 +114,16 @@ mod testes {
         let mut d = DaemonFalso::cheio();
         assert_eq!(estado(&mut d), Ok(EstadoCofre::Destravado));
         let itens = lista(&mut d).unwrap();
-        assert_eq!(itens.len(), 21);
+        assert_eq!(
+            itens.len(),
+            serde_json::from_str::<serde_json::Value>(include_str!(
+                "../../../dev/fixtures/entradas.json"
+            ))
+            .unwrap()["entradas"]
+                .as_array()
+                .unwrap()
+                .len()
+        );
         let det = detalhe(&mut d, "acme-pg-dev").unwrap();
         assert_eq!(det.segredos, vec!["senha".to_owned()]);
         assert_eq!(

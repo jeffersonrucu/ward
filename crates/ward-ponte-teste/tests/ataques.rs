@@ -140,7 +140,16 @@ fn ataque_respostas_da_tela_credenciais_sem_segredo() {
         .iter()
         .map(|i| i["nome"].as_str().unwrap().to_owned())
         .collect();
-    assert_eq!(nomes.len(), 21);
+    assert_eq!(
+        nomes.len(),
+        serde_json::from_str::<serde_json::Value>(include_str!(
+            "../../../dev/fixtures/entradas.json"
+        ))
+        .unwrap()["entradas"]
+            .as_array()
+            .unwrap()
+            .len()
+    );
     for nome in &nomes {
         let corpo = serde_json::json!({ "entrada": nome }).to_string();
         let r = p.responder(&post(&p, "detalhe_credencial", &corpo, &[]));

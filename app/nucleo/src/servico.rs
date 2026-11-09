@@ -190,7 +190,16 @@ mod testes {
         // interface (JSON), não tem nenhum segredo do cofre de teste, em nenhuma forma.
         let (s, _) = servico();
         let lista = s.listar_credenciais().unwrap();
-        assert_eq!(lista.len(), 21);
+        assert_eq!(
+            lista.len(),
+            serde_json::from_str::<serde_json::Value>(include_str!(
+                "../../../dev/fixtures/entradas.json"
+            ))
+            .unwrap()["entradas"]
+                .as_array()
+                .unwrap()
+                .len()
+        );
         sem_segredo(&serde_json::to_string(&lista).unwrap(), "lista");
         for item in &lista {
             let d = s.detalhe_credencial(&item.nome).unwrap();

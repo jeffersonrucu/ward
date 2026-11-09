@@ -498,7 +498,7 @@ Contrato: V3.1–V3.41
   - o daemon não lança processo nesta fase; quando lançar (Fases 23 e 26), nunca passa
     o próprio ambiente (`LISTEN_*`).
   V3.2, V3.8–V3.13, V3.17, V3.20, V3.22, V3.26–V3.28, V3.30.
-- [ ] Fase 22a — (Depende da 22: as duas mexem no `Makefile` e nas contagens do cofre de
+- [x] Fase 22a — (Depende da 22: as duas mexem no `Makefile` e nas contagens do cofre de
   teste.) Fixture com caracteres especiais e Go com `ensure_ascii` (D58, D59).
   Arquivos: `dev/fixtures/entradas.json`, `crates/ward-core/examples/dev-cofre/`,
   `crates/ward-core/src/mascara.rs` e testes, `dev/variacoes.py` e testes,

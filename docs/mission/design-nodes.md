@@ -6,7 +6,7 @@ mantêm o formato `6:xx`; as criadas no FigCraft são `VariableID:n`). O Figma
 `bzu9PxxFur2tU3vlNCHvsY` é só histórico: os ids `n:m` dos handoffs 1–4 **não** valem
 aqui.
 
-Atualizado na Fase 4a (2026-11-08), na Fase 4b (estilos, ícones, coleção `Elevação`), na Fase 4c (componentes base parte 1, `Ação de campo`, brilho e perigo translúcido) na Fase 4d (componentes base parte 2 e de apoio, altura padrão comum `controle/padrao`) na Fase 4g (logo), na Fase 4e (telas de acesso no Layout, logo na navegação) e na Fase 4f (telas de Credenciais e Nível de acesso, campos que esticam, Densidade compacta, Diálogo de filtros, "Cliente" virou "Grupo", selos em minúsculas). Fase 10a: limpeza de tokens e do `Chip de filtro` (seção no fim). Fase 10: conferência final do M0 (seção no fim). Fase 10d: ajustes do scrutiny e do QA do M0 (seção no fim). As Fases 5–9a e 10b (feitas em paralelo) foram consolidadas aqui na Fase 10c, que também registra os refinamentos dela (seções no fim do arquivo).
+Atualizado na Fase 4a (2026-11-08), na Fase 4b (estilos, ícones, coleção `Elevação`), na Fase 4c (componentes base parte 1, `Ação de campo`, brilho e perigo translúcido) na Fase 4d (componentes base parte 2 e de apoio, altura padrão comum `controle/padrao`) na Fase 4g (logo), na Fase 4e (telas de acesso no Layout, logo na navegação) e na Fase 4f (telas de Credenciais e Nível de acesso, campos que esticam, Densidade compacta, Diálogo de filtros, "Cliente" virou "Grupo", selos em minúsculas). Fase 10a: limpeza de tokens e do `Chip de filtro` (seção no fim). Fase 10: conferência final do M0 (seção no fim). Fase 10d: ajustes do scrutiny e do QA do M0 (seção no fim). Fase 37a: correções de D65 (f) e design pendente da Fase 32 (seção no fim). As Fases 5–9a e 10b (feitas em paralelo) foram consolidadas aqui na Fase 10c, que também registra os refinamentos dela (seções no fim do arquivo).
 
 ## Páginas
 
@@ -500,8 +500,8 @@ secundário `filtrar` com `Ícone/filtro`) e `colunas`: `lista` (largura
 | Frame | Id | Principais |
 | --- | --- | --- |
 | `Credenciais / Vazia` | `4780` | busca e `Filtrar` desabilitados (`4846`, `5209`); lista vazia `5133`; estado vazio `5132` (avatar com `Ícone/chave`, título, texto, nota do nível com aprovação = `Destaque` neutro `18726` (Fase 10c; era `5137`)); `Nova credencial` `4999` |
-| `Credenciais / Cheia` | `4063` | nav `4064`; topo `4125` (resumo `4137` "20 entradas · 4 grupos", busca `4128`, filtrar `5201`); lista `4138` (itens `4141`: `Cabeçalho de grupo` `4161` + 7 `Item de lista` compactos `4165` `4182` (selecionado) `4199` `4216` `4233` `4250` `4267`; `Nova credencial` `4142`); detalhe `4139` de `acme-pg-dev` (cabeçalho `4146`: avatar `4290`, nome `4299`, selos `4300`, `Editar` `4292`; corpo `4147`: Host `4337` e Usuário `4376` com Copiar, Porta `4350`, Base `4363`, `Campo secreto` oculto `4311`, cartão do nível `4336` com "Mudar nível" `4392`; rodapé `4148`: metadados `4400`, Duplicar `4401`, Excluir `4405`) |
-| `Credenciais / Filtrada` | `4410` | busca foco "pg" `4476`; `Filtros · 2` `5205`; linha de resumo `5213` ("Tipo banco · ambiente stage · busca pg" + `Limpar` `5215`); grupo `4500` "2 de 12 entradas"; `acme-pg-aprovacao` selecionado `4504`, `acme-pg-tunel` `4555`; detalhe com nível "Com aprovação" |
+| `Credenciais / Cheia` | `4063` | nav `4064`; topo `4125` (resumo `4137` "21 entradas · 4 grupos" desde a 37a, busca `4128`, filtrar `5201`); lista `4138` (itens `4141`: `Cabeçalho de grupo` `4161` + 7 `Item de lista` compactos `4165` `4182` (selecionado) `4199` `4216` `4233` `4250` `4267`; `Nova credencial` `4142`); detalhe `4139` de `acme-pg-dev` (cabeçalho `4146`: avatar `4290`, nome `4299`, selos `4300`, `Editar` `4292`; corpo `4147`: Host `4337` e Usuário `4376` com Copiar, Porta `4350`, Base `4363`, `Campo secreto` oculto `4311`, cartão do nível = instância `19026` do `Cartão de nível` livre desde a 37a (era o frame `4336`); rodapé `4148`: metadados `4400`, Duplicar `4401`, Excluir `4405`) |
+| `Credenciais / Filtrada` | `4410` | busca foco "pg" `4476`; `Filtros · 2` `5205`; linha de resumo `5213` ("Tipo banco · ambiente stage · busca pg" + `Limpar` `5215`); grupo `4500` "2 de 13 entradas" (37a); `acme-pg-aprovacao` selecionado `4504`, `acme-pg-tunel` `4555`; detalhe com nível "Com aprovação" (instância `19038` desde a 37a) |
 | `Credenciais / Filtros` | `5259` | Cheia sob `sobreposição` `5577` (`fundo/sobreposicao`) com `Diálogo de filtros` `5578` |
 | `Nível de acesso / Escolher` | `5615` | lista com `acme-pg-prod` selecionado `5714`; `sobreposição` `5934`; `Diálogo de nível` Escolher `5935` |
 | `Nível de acesso / PIN` | `5994` | `sobreposição` `6313`; `Diálogo de nível` PIN `6314` |
@@ -818,3 +818,63 @@ Lido de uma cópia do `Ward.figcraft` (o original não foi alterado), por `get_n
 | `Linha de opção` `10379`, variante interruptor `10368`; `Interruptor` `6838` (ligado `6836`, desligado `6839`) | `app/src/lib/componentes/LinhaDeOpcao.svelte` |
 | `Controle deslizante` `12604` (alça e preenchido de `9896`) | `app/src/lib/componentes/ControleDeslizante.svelte` |
 | `Campo secreto` `375` (máscara de 24 pontos `13822`), `Ação de campo` `2882`, `Botão` `263` | componentes da Fase 29; o `Campo secreto` ganhou `mascara` (um ponto por caractere) |
+
+## Fase 37a — correções do design (D65 f e design pendente da Fase 32)
+
+Editado no `Ward.figcraft` original (cópia de segurança antes de editar, no scratchpad
+da sessão), pelo MCP `figcraft` headless; salvo com `save_file` e conferido reaberto.
+PNG em `docs/mission/evidence/fase-37a/`.
+
+### Símbolos do gerador (D35)
+
+O texto mostra o conjunto de `ward_core::gerador::SIMBOLOS`,
+`!#$%&()*+,-./:;<=>?@[]^_{|}~` (28 caracteres, sem espaço, aspas, crase e `\`), com
+`liga` e `calt` desligados no texto para a Inter não juntar `<=>` numa seta.
+
+| Onde | Id | Texto |
+| --- | --- | --- |
+| `Gerador de senha / Avulso`, descrição da opção Símbolos | `13815` (rótulo `13814`) | `!#$%&()*+,-./:;<=>?@[]^_{\|}~` + quebra + "Desligue se o painel não aceitar." |
+| `Popover do gerador` (componente), rótulo do interruptor | `12124` | "Símbolos" (era "Símbolos (!@#$%)") |
+| `Popover do gerador`, texto novo `descrição símbolos` no fim de `conjuntos` `11699` | `18956` | "Símbolos: `!#$%&()*+,-./:;<=>?@[]^_{\|}~`" + quebra + "Desligue se o painel não aceitar." (estilo `8:14`, cor `6:65`) |
+| `Gerador de senha / No formulário`, instância do popover `15135` | rótulo `15192`, descrição `18957` | herdados do componente |
+
+### Componente novo: `Cartão de nível`
+
+Seção `Seção / Cartão de nível` `18958` (Design System, x 19000, y 0; título `18959`,
+descrição `18960`). Set `18998` (fundo `6:55`, gap `6:135`, padding `6:136`, raio
+`VariableID:15`). Cada variante: frame horizontal (fundo `6:58`, borda `VariableID:24`,
+raio `VariableID:15`, padding `6:134`, gap `6:133`), `ícone` 20 px (`6:144`, traço
+`VariableID:96`), `textos` (rótulo "Nível de acesso" `8:16`, nível `8:13`, explicação
+`8:14`) e `Botão` secundário "Mudar nível" com `Ícone/cadeado`. Nas telas, largura `fill`.
+
+| Variante | Id | Ícone | Explicação |
+| --- | --- | --- | --- |
+| `Nível=livre` | `18986` | `Ícone/check` `189` | O Claude usa sem perguntar e só vê a saída mascarada. Mudar o nível pede o PIN. |
+| `Nível=com aprovação` | `18999` | `Ícone/cadeado` `206` | Cada uso do Claude abre a janela de aprovação, que pede o seu PIN. Mudar o nível também pede o PIN. |
+| `Nível=bloqueado` | `19011` | `Ícone/olho-fechado` `182` | O Claude nem vê esta entrada: ela some do ward lista. Só você usa, pelo app. Mudar o nível pede o PIN. |
+
+Os cartões soltos do detalhe de Credenciais viraram instâncias (o frame antigo foi
+apagado): `Credenciais / Cheia` `19026` (livre, era `4336`), `/ Filtrada` `19038` (com
+aprovação, era `4734`), `/ Filtros` `19051` (livre, era `5554`), `Nível de acesso /
+Escolher` `19063`, `/ PIN` `19076`, `/ PIN errado` `19089` (com aprovação; eram `5910`,
+`6289`, `6668`). Os cartões dos formulários (textos próprios por tipo) continuam frames
+soltos.
+
+### Telas novas no Layout
+
+| Frame | Id | Posição | Principais |
+| --- | --- | --- | --- |
+| `Credenciais / Sem resultado` | `19102` | x 5440, y 2000 | resumo `19147` "0 de 21 entradas · filtros ativos"; busca em foco "mysql" `19148` (valor `19154`); `Filtros · 2` `19161`; linha `filtros ativos` `19167` ("Tipo banco · ambiente prod · busca mysql" `19168` + `Limpar` `19169`); `itens` `19173` centralizado com "Nenhuma entrada com essa busca ou esses filtros." `19341`; `Nova credencial` `19212`; detalhe `19216` só com `corpo` `19342` › `vazio` `19343`: avatar `19344` com `Ícone/busca` `19356` (24, `6:145`), título "Nenhuma entrada encontrada" `19349`, texto "Limpe a busca ou os filtros para ver todas as entradas." `19350` |
+| `Credenciais / Bloqueada` | `19359` | x 4080, y 3000 | resumo `19404` "3 de 21 entradas · filtros ativos"; busca "gama" `19405`; `Filtrar` `19418`; linha "Busca gama" `19425`; grupo `19598` "gama · 3 de 3 entradas"; `gama-bloqueada` selecionado `19602` (`4045`), `gama-generico` `19619`, `gama-nota` `19636`; detalhe `19473` de `gama-bloqueada` (avatar `Ícone/tipo-login` `19653`, nome `19480`, `Badge tipo` login `19482`, `Badge ambiente` prod `19487`, "grupo gama" `19489`; URL `19496` "https://bloqueada.invalid", Usuário `19523` "x", `Campo secreto` `19549`; **cartão `Nível=bloqueado` `19574`**; rodapé `19587`) |
+
+### Contagens da fixture
+
+`dev/fixtures/entradas.json` tem 21 entradas: acme 13, beta 4, gama 3, delta 1. Todos os
+"20 entradas · 4 grupos" viraram "21 entradas · 4 grupos", "12 entradas" (acme) viraram
+"13 entradas" (texto e propriedade `Contagem` do `Cabeçalho de grupo`), e a Filtrada
+mostra "2 de 21 entradas · filtros ativos" (`4475`) e "2 de 13 entradas" (`4500`). Os
+grupos beta (4) e gama (3) já batiam. São 27 frames: Credenciais Cheia, Filtrada e
+Filtros, as três de Nível de acesso, os 18 formulários, `Gerador de senha / No
+formulário` e as duas de `Nova credencial`. Quando a Fase 22a acrescentar a 22ª entrada, as contagens mudam de
+novo.
+
