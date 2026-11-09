@@ -519,11 +519,13 @@ teste-socket-ataques: origens
 ## em /opt/google/chrome; fora do `make check`
 ## teste-skill: Fase 50 (V8.1, V8.2, V8.4): frontmatter da skill `ward`, comandos citados
 ## no `ward --help`, nenhum padrão de .dev/variacoes.txt em skill/, JSON do deny válido e
-## com os caminhos do escopo; antes, o autoteste planta cada ataque numa cópia e exige
-## falha. Precisa de `make dev-variacoes`; fora do `make check`
+## com os caminhos do escopo, regras Bash sem âncora que negam cada forma de ATAQUES_BASH
+## e nenhum exemplo da skill (Fase 50a); antes, o autoteste planta cada ataque numa cópia e exige
+## falha. O `ward` (sem `modo-teste`) vai para target/sem-modo-teste, fora do target/debug
+## dos outros testes. Precisa de `make dev-variacoes`; fora do `make check`
 teste-skill: origens
-	$(CARGO) build --quiet --locked -p ward --bin ward
-	$(PYTHON) dev/testes/skill.py target/debug/ward
+	$(CARGO) build --quiet --locked -p ward --bin ward --target-dir target/sem-modo-teste
+	$(PYTHON) dev/testes/skill.py target/sem-modo-teste/debug/ward
 
 ## teste-migracao: Fase 53 (V10.1–V10.3): ordem dos passos de docs/migracao.md, os itens
 ## de montagem.md um por um, Conferir e Voltar atrás em cada passo, nada para a conversa

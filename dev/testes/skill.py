@@ -16,6 +16,11 @@ falhar.
 6. A skill manda nunca ler esses caminhos nem imprimir variável ou anexo em nenhuma
    codificação (V8.2) e diz que o SSH da pasta do ssh do usuário é direto, sem o Ward
    (V8.4).
+7. (Fase 50a) As regras `Bash` do deny, lidas como o Claude Code lê (`*` = qualquer
+   texto), negam cada comando de `ATAQUES_BASH` (env, `sh -c`, od, rev, fold, tr,
+   cut, `python3 -c`, `>`, `/usr/local/bin/ward run`, curingas nos caminhos do Ward,
+   `/proc/N/env*`…), olhando o comando inteiro e cada subcomando, e não negam nenhum
+   comando de `LEGITIMOS` nem dos blocos ```sh da skill.
 
 Os nomes da pasta do ssh, do cofre e do KeePass XC vêm montados por partes (`SSH`,
 `COFRE`), para a varredura do V1.5 (`dev/testes/ataques-fundacao.sh`): aqui são texto
@@ -23,9 +28,11 @@ da skill e do deny, nunca pasta aberta.
 
 Antes de conferir a árvore real, o autoteste confere que ela passa (controle) e planta cada ataque numa cópia de `skill/`
 (segredo, comando inventado, `cofre-run`, JSON inválido, caminho de deny faltando,
-frontmatter errado) e exige que a conferência falhe.
+frontmatter errado, regra Bash ancorada ou faltando, regra que nega o uso normal,
+exemplo da skill que o deny nega) e exige que a conferência falhe.
 
-Uso: python3 -I -B dev/testes/skill.py target/debug/ward   (ou `make teste-skill`)
+Uso: python3 -I -B dev/testes/skill.py target/sem-modo-teste/debug/ward
+     (ou `make teste-skill`)
 """
 
 import json
@@ -55,8 +62,127 @@ CAMINHOS_DENY = {
     "~/.config/ward/**": "~/.config/ward/**",
     "/run/user/*/ward/**": "//run/user/*/ward/**",
     "/media/**/ward-backup/**": "//media/**/ward-backup/**",
+    "/run/media/**/ward-backup/**": "//run/media/**/ward-backup/**",
     f"{SSH}/**": f"{SSH}/**",
 }
+
+# Regras `Bash` (cinto de segurança, RA3; Fase 50a): cada comando de ATAQUES_BASH tem
+# de ser negado, e nenhum comando de exemplo da skill (blocos ```sh) nem de LEGITIMOS
+# pode ser. O Claude Code compara o texto da regra com `*` como curinga; não está
+# conferido (M10) se ele olha o comando inteiro ou cada subcomando (`&&`, `;`, `|`),
+# então os dois modelos são exigidos. `{e}` = entrada de banco, `{a}` = entrada com
+# anexo, `{h}` = home (trocados por `str.replace`, sem `format`).
+ATAQUES_BASH = [
+    # Formas que escapavam das regras com âncora `ward run * -- …` (auditoria do M8).
+    "ward run {e} -- /usr/bin/env",
+    "ward run {e} -- env",
+    "/usr/local/bin/ward run {e} -- printenv PGPASSWORD",
+    "cd /tmp && ward run {e} -- env",
+    "ward  run {e} -- env",
+    '"ward" run {e} -- env',
+    "ward run {e} -- sh -c env",
+    "ward run {e} -- sh -c 'set'",
+    'ward run {e} -- bash -c "set"',
+    "ward run {e} -- sh -c 'true;set'",
+    "ward run {e} -- sh -c 'export -p'",
+    "ward run {e} -- bash -c 'declare -p PGPASSWORD'",
+    "ward run {e} -- bash -c 'typeset -p'",
+    "ward run {e} -- bash -c 'compgen -v'",
+    "ward run {e} -- bash -xc '/usr/bin/psql -c 1'",
+    "ward run {e} -- sh -x -c '/usr/bin/psql'",
+    "ward run {e} -- sh -c 'set -x; /usr/bin/psql'",
+    "ward run {e} -- bash -o xtrace -c '/usr/bin/psql'",
+    "ward run {e} -- sh -c 'echo $PGPASSWORD'",
+    "ward run {e} -- sh -c 'echo \"${PGPASSWORD}\"'",
+    "ward run {e} -- sh -c 'printf %s \"$PGPASSWORD\"'",
+    "ward run {e} -- sh -c 'cat <<<$PGPASSWORD'",
+    "ward run {e} -- sh -c 'od -c /proc/self/environ'",
+    "ward run {e} -- /usr/bin/od -An -c /proc/self/environ",
+    "ward run {e} -- sh -c 'cat /proc/$$/environ | od -c'",
+    "ward run {e} -- sh -c 'base64 -w4 /proc/self/environ'",
+    "ward run {e} -- sh -c 'basenc --base16 /proc/self/environ'",
+    "ward run {e} -- python3 -c 'import os; print(os.environ[\"PGPASSWORD\"][::-1])'",
+    "ward run {e} -- python3 -c 'import os; print(os.getenv(\"PGPASSWORD\")[::-1])'",
+    "ward run {e} -- /usr/bin/python3 -c 'import os; print(os.environb)'",
+    "ward run {e} -- node -e 'console.log(process.env)'",
+    "ward run {e} -- node -p 'process.env.PGPASSWORD'",
+    "ward run {e} -- perl -e 'print $ENV{PGPASSWORD}'",
+    "ward run {e} -- ruby -e 'puts ENV[\"PGPASSWORD\"]'",
+    "ward run {e} -- awk 'BEGIN{print ENVIRON[\"PGPASSWORD\"]}'",
+    "ward run {e} -- php -r 'echo getenv(\"PGPASSWORD\");'",
+    "ward run {e} -- sh -c 'od -c <<X\n$PGPASSWORD\nX'",
+    "ward run {e} -- sh -c 'rev /dev/stdin <<X\n$PGPASSWORD\nX'",
+    "ward run {e} -- sh -c '/usr/bin/rev <<X\n$PGPASSWORD\nX'",
+    "ward run {e} -- sh -c 'tr a-z n-za-m <<X\n$PGPASSWORD\nX'",
+    "ward run {e} -- sh -c 'cut -c1-4 <<X\n$PGPASSWORD\nX'",
+    "ward run {e} -- sh -c 'fold -w1 <<X\n$PGPASSWORD\nX'",
+    "ward run {e} -- sh -c 'xxd <<X\n$PGPASSWORD\nX'",
+    "ward run {e} -- sh -c 'hexdump -C <<X\n$PGPASSWORD\nX'",
+    "ward run {e} -- sh -c 'base32 <<X\n$PGPASSWORD\nX'",
+    "ward run {e} -- sh -c 'head -c 4 <<X\n$PGPASSWORD\nX'",
+    "ward run {e} -- sh -c 'openssl enc -base64 <<X\n$PGPASSWORD\nX'",
+    "ward run {e} -- /usr/bin/psql -c 'select 1' > /tmp/saida",
+    "ward run {e} -- sh -c '/usr/bin/psql -c 1 2>&1'",
+    "ward run {e} -- printenv > /tmp/x",
+    "ward run {e} -- sh -c 'tee /tmp/x <<X\n$PGPASSWORD\nX'",
+    "ward run {e} -- sh -c 'cp {h}/.pgpass /tmp'",
+    "ward run {e} -- sh -c 'git config --global user.senha \"$PGPASSWORD\"'",
+    "ward run {a} -- sh -c 'cat \"$WARD_ARQUIVO_CHAVE\"'",
+    "ward run {a} -- sh -c 'head -n 3 \"$WARD_ARQUIVO_CHAVE\"'",
+    "ward run {a} -- sh -c 'cp \"$WARD_ARQUIVO_CHAVE\" /tmp/k'",
+    "ward run {a} -- sh -c 'base64 \"$WARD_ARQUIVO_CHAVE\"'",
+    "ward run {a} -- sh -c 'xxd < \"$WARD_ARQUIVO_CHAVE\"'",
+    "ward run {a} -- sh -c 'ln -s \"$WARD_ARQUIVO_CHAVE\" /tmp/k'",
+    # Caminhos do Ward: por extenso, com curinga, por variável e por `cd`.
+    "cat {h}/" + COFRE + "/cofre.ward",
+    "ls ~/.local/share/w*",
+    "ls ~/.local/sh*/w*",
+    "cp ~/.local/share/w?rd/* /tmp",
+    "ls ~/.local/*/w?rd",
+    "ls $HOME/.local/share/[w]ard",
+    'ls "$XDG_DATA_HOME"/w*',
+    "cd ~/.local && ls share/w*",
+    "cat ~/.config/ward/x",
+    "cat ~/.config/w*/x",
+    "cat /run/user/1000/ward/tmp/x",
+    "ls /run/user/*/w*",
+    "cat /run/user/1000/ward/playwright/acme-wp-prod.json",
+    'ls "$XDG_RUNTIME_DIR"/ward',
+    "cd /run/user/1000 && ls ward",
+    "ls /media/u/PEN/ward-backup",
+    "ls /run/media/u/PEN/*",
+    "cat /proc/self/environ",
+    "cat /proc/1234/env*",
+    "cat /proc/*/environ",
+    "cat /proc/1234/e?viron",
+    "cd /proc/1234 && cat env*",
+    "cd /proc && cat 1234/env*",
+    "cd / && cat proc/1234/env*",
+    "cat " + SSH + "/id_ed25519",
+    "cat " + SSH + "/id*",
+    "ward destravar",
+    "/usr/local/bin/ward ssh --token-fd 3 acme-ssh-senha-stage id",
+]
+
+# Comandos de uso normal que nenhuma regra pode negar (além dos blocos ```sh da skill).
+LEGITIMOS = [
+    "ward lista",
+    "ward lista --json",
+    "ward travar",
+    "ward ssh acme-ssh-senha-stage -- uname -a",
+    "ward run acme-pg-dev -- /usr/bin/psql -tAc 'select count(*) from pedidos'",
+    "ward run beta-aws-dev -- /usr/local/bin/aws s3 ls",
+    "ward run beta-github-api -- /usr/bin/curl -sf --variable %GITHUB_TOKEN"
+    " --expand-header 'Authorization: Bearer {{GITHUB_TOKEN}}' https://api.github.com/user",
+    "ward run acme-wp-dev -- /bin/sh -c '/usr/bin/curl -sf -u \"$WARD_USER:$WARD_PASS\""
+    " \"$WARD_URL/wp-json/wp/v2/users/me\"'",
+    'WARD_ESTADO="$(ward playwright acme-wp-prod)" /usr/bin/python3 tests/test_painel.py',
+    "ls ~/.local/bin",
+    "~/.local/bin/uv run pytest -q",
+    "/usr/bin/env python3 scripts/x.py",
+    "git push",
+    "ssh git@github.com",
+]
 
 # A description tem de disparar nestes pedidos (minúsculas).
 GATILHOS = ["login", "senha", "ssh", "token", "banco"]
@@ -215,15 +341,82 @@ def conferir_deny(caminho):
     if len(set(deny)) != len(deny):
         raise Falha("regra repetida no deny")
     for regra in deny:
+        # Sem parêntese dentro: o leitor de regras do Claude Code pode cortar no `)`.
         if not re.fullmatch(r"(Read|Edit|Bash)\([^()]+\)", regra):
             raise Falha(f"regra fora do formato: {regra}")
     for escopo, regra in CAMINHOS_DENY.items():
         for ferramenta in ("Read", "Edit"):
             if f"{ferramenta}({regra})" not in deny:
                 raise Falha(f"deny sem {ferramenta}({regra}) (V8.2: {escopo})")
-    for trecho in ("ward-backup", "/run/user/", COFRE, ".config/ward"):
-        if not any(r.startswith("Bash(") and trecho in r for r in deny):
-            raise Falha(f"deny sem regra Bash para {trecho}")
+    return [r[len("Bash(") : -1] for r in deny if r.startswith("Bash(")]
+
+
+def padrao_regex(padrao):
+    """Regra `Bash(...)` do Claude Code: `*` casa qualquer texto; o resto é literal."""
+    return re.compile("".join(".*" if c == "*" else re.escape(c) for c in padrao), re.S)
+
+
+def subcomandos(comando):
+    """Parte o comando em `;`, `&`, `|` e fim de linha fora de aspas (aproximação do
+    que o Claude Code faz com `&&`, `||`, `;` e `|`)."""
+    partes, atual, aspa, i = [], [], None, 0
+    while i < len(comando):
+        c = comando[i]
+        if aspa:
+            if c == "\\" and aspa == '"' and i + 1 < len(comando):
+                atual.append(comando[i : i + 2])
+                i += 2
+                continue
+            if c == aspa:
+                aspa = None
+        elif c in "'\"":
+            aspa = c
+        elif c in ";&|\n":
+            partes.append("".join(atual))
+            atual = []
+            i += 1
+            continue
+        atual.append(c)
+        i += 1
+    partes.append("".join(atual))
+    return [p.strip() for p in partes if p.strip()]
+
+
+def negado(regras, comando):
+    """(inteiro, por subcomando): se alguma regra nega, em cada modelo."""
+    inteiro = any(r.fullmatch(comando.strip()) for r in regras)
+    partes = any(r.fullmatch(p) for r in regras for p in subcomandos(comando))
+    return inteiro, partes
+
+
+def comandos_da_skill(texto):
+    """Linhas dos blocos ```sh da skill, sem comentários."""
+    linhas = []
+    for bloco in re.findall(r"^```sh\n(.*?)^```", texto, re.M | re.S):
+        for linha in bloco.split("\n"):
+            linha = re.sub(r"\s+#.*$", "", linha).strip()
+            if linha and not linha.startswith("#"):
+                linhas.append(linha)
+    return linhas
+
+
+def conferir_bash(padroes, texto):
+    regras = [padrao_regex(p) for p in padroes]
+    trocas = {"{e}": "acme-pg-dev", "{a}": "acme-ssh-chave-prod", "{h}": "$HOME"}
+    for modelo in ATAQUES_BASH:
+        comando = modelo
+        for velho, novo in trocas.items():
+            comando = comando.replace(velho, novo)
+        inteiro, partes = negado(regras, comando)
+        if not (inteiro and partes):
+            qual = "inteiro" if not inteiro else "por subcomando"
+            raise Falha(f"deny Bash não nega ({qual}): {comando!r}")
+    comandos = comandos_da_skill(texto)
+    if len(comandos) < 8:
+        raise Falha("SKILL.md com poucos exemplos em blocos ```sh")
+    for comando in LEGITIMOS + comandos:
+        if any(negado(regras, comando)):
+            raise Falha(f"deny Bash nega comando legítimo: {comando!r}")
 
 
 def conferir(arvore, ward):
@@ -260,13 +453,14 @@ def conferir(arvore, ward):
                 if padrao.search(conteudo):
                     raise Falha(f"{rel}: {motivo}")
     for escopo in CAMINHOS_DENY:
-        if escopo != f"{SSH}/**" and escopo not in texto:
+        if escopo != f"{SSH}/**" and f"`{escopo}`" not in texto:
             raise Falha(f"SKILL.md não manda evitar {escopo}")
     for termo in OBRIGATORIOS_SKILL:
         if termo not in texto:
             raise Falha(f"SKILL.md não cita {termo!r}")
     conferir_segredos(arvore, ler_padroes())
-    conferir_deny(os.path.join(arvore, "settings-deny.json"))
+    padroes_bash = conferir_deny(os.path.join(arvore, "settings-deny.json"))
+    conferir_bash(padroes_bash, texto)
     return avisos
 
 
@@ -306,12 +500,25 @@ def trocar(rel, velho, novo, todos=False):
     return f
 
 
-def tirar_deny(regra):
+def tirar_deny(*regras):
     def f(copia):
         p = os.path.join(copia, "settings-deny.json")
         with open(p, encoding="utf-8") as arq:
             d = json.load(arq)
-        d["permissions"]["deny"].remove(regra)
+        for regra in regras:
+            d["permissions"]["deny"].remove(regra)
+        with open(p, "w", encoding="utf-8") as arq:
+            json.dump(d, arq)
+
+    return f
+
+
+def acrescentar_deny(regra):
+    def f(copia):
+        p = os.path.join(copia, "settings-deny.json")
+        with open(p, encoding="utf-8") as arq:
+            d = json.load(arq)
+        d["permissions"]["deny"].append(regra)
         with open(p, "w", encoding="utf-8") as arq:
             json.dump(d, arq)
 
@@ -358,8 +565,33 @@ def autoteste(ward, base):
     ataque("skill sem a regra de base64", trocar("ward/SKILL.md", "base64", "b64", todos=True),
            ward, base)
     ataque("skill sem o caminho do backup",
-           trocar("ward/SKILL.md", "/media/**/ward-backup/**", "pendrive"),
+           trocar("ward/SKILL.md", "`/media/**/ward-backup/**`", "pendrive"),
            ward, base)
+
+    # Fase 50a: as regras Bash ancoradas no início deixavam passar estas formas.
+    ataque("deny com a regra de env ancorada no início",
+           trocar("settings-deny.json", "Bash(*ward*run*env*)", "Bash(ward run * -- env*)"),
+           ward, base)
+    ataque("deny sem a regra de env", tirar_deny("Bash(*ward*run*env*)"), ward, base)
+    ataque("deny sem as regras de od",
+           tirar_deny(*(f"Bash(*ward*run*{b}od*)" for b in (" ", "/", "'", "\"", "|"))),
+           ward, base)
+    ataque("deny sem a regra de redirecionamento", tirar_deny("Bash(*ward*run*>*)"), ward, base)
+    ataque("deny sem a regra de /run/user", tirar_deny("Bash(*/run/user*)"), ward, base)
+    ataque("deny sem a regra de /proc", tirar_deny("Bash(*/proc/*)"), ward, base)
+    ataque("deny que nega o uso normal", acrescentar_deny("Bash(*ward run*)"), ward, base)
+    ataque("deny com parênteses no padrão", acrescentar_deny("Bash(*ward*run*(set*)"), ward, base)
+    ataque("skill com o caminho do storage state num comando",
+           trocar("ward/SKILL.md",
+                  'WARD_ESTADO="$(ward playwright acme-wp-prod)" /usr/bin/python3 tests/test_painel.py',
+                  "/usr/bin/python3 tests/test_painel.py /run/user/1000/ward/playwright/x.json"),
+           ward, base)
+    ataque("skill com exemplo que imprime o token",
+           acrescentar("ward/SKILL.md",
+                       b"\n```sh\nward run beta-github-api -- sh -c 'echo $GITHUB_TOKEN'\n```\n"),
+           ward, base)
+    ataque("skill sem o backup em /run/media",
+           trocar("ward/SKILL.md", "/run/media/**/ward-backup/**", "pendrive"), ward, base)
 
     def link(copia):
         os.symlink(VARIACOES, os.path.join(copia, "ward", "variacoes.md"))
