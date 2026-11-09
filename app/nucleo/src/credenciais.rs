@@ -1,5 +1,7 @@
 //! O que a tela Credenciais (Fase 32) recebe: a lista e o detalhe de uma entrada,
-//! montados das respostas `lista` e `detalhe` do protocolo.
+//! montados das respostas `lista` e `detalhe` do protocolo. A 2ª linha e o usuário da
+//! busca saem do `resumo` de cada item da lista do app (D65 c), numa troca só, sem um
+//! `detalhe` por entrada.
 //!
 //! S11/D4: nada daqui tem segredo. Dos segredos vai só o identificador e o rótulo do
 //! campo (para o `Campo secreto` desenhar a máscara); dos extras secretos, só o nome;
@@ -9,7 +11,7 @@
 
 use serde::Serialize;
 use ward_core::entrada::TipoEntrada;
-use ward_core::protocolo::{DetalheEntrada, ItemLista};
+use ward_core::protocolo::{DetalheEntrada, ItemLista, ResumoItem};
 
 /// Uma linha da lista (`Item de lista` compacto).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -140,11 +142,12 @@ fn juntar(partes: &[&str]) -> String {
         .join(" · ")
 }
 
-/// A segunda linha do item, pelo tipo (como nos frames `Credenciais / *`).
-fn resumo(d: &DetalheEntrada) -> String {
-    let c = |id: &str| campo(&d.campos, id);
-    let tem = |id: &str| d.segredos.iter().any(|s| s == id);
-    match d.tipo {
+/// A segunda linha do item, pelo tipo (como nos frames `Credenciais / *`), do resumo
+/// da lista do app.
+fn resumo(tipo: TipoEntrada, r: &ResumoItem) -> String {
+    let c = |id: &str| campo(&r.campos, id);
+    let tem = |id: &str| r.segredos.iter().any(|s| s == id);
+    match tipo {
         TipoEntrada::Banco => {
             let motor = c("motor").unwrap_or_default();
             if c("tunel").is_some() {
@@ -186,7 +189,7 @@ fn resumo(d: &DetalheEntrada) -> String {
             c("regiao").unwrap_or_default(),
         ]),
         TipoEntrada::NotaSegura => "texto protegido".to_owned(),
-        TipoEntrada::Generico => match (d.extras.len(), d.anexos.len()) {
+        TipoEntrada::Generico => match (r.extras, r.anexos) {
             (0, 0) => "sem campos".to_owned(),
             (e, a) => juntar(&[
                 &plural(e, "campo extra", "campos extras"),
@@ -196,7 +199,7 @@ fn resumo(d: &DetalheEntrada) -> String {
     }
 }
 
-fn plural(n: usize, um: &str, varios: &str) -> String {
+fn plural(n: u64, um: &str, varios: &str) -> String {
     match n {
         0 => String::new(),
         1 => format!("1 {um}"),
@@ -205,20 +208,21 @@ fn plural(n: usize, um: &str, varios: &str) -> String {
 }
 
 impl ItemCredencial {
-    /// O item da lista, com o resumo tirado do detalhe da mesma entrada.
-    pub fn novo(item: &ItemLista, detalhe: &DetalheEntrada) -> ItemCredencial {
-        ItemCredencial {
+    /// O item da lista do app, com a 2ª linha e o usuário tirados do resumo (D65 c).
+    /// `None` quando o item não tem nível ou resumo: não é lista do papel app (D50), e
+    /// quem chama recusa a resposta inteira.
+    pub fn novo(item: &ItemLista) -> Option<ItemCredencial> {
+        let r = item.resumo.as_ref()?;
+        Some(ItemCredencial {
             nome: item.nome.clone(),
             tipo: item.tipo.nome(),
             grupo: item.grupo.clone(),
             ambiente: item.ambiente.nome(),
-            // D50: o nível da lista é `Option` (só o papel app o recebe); o do detalhe
-            // da mesma entrada é sempre presente.
-            nivel: detalhe.nivel.nome(),
-            resumo: resumo(detalhe),
+            nivel: item.nivel?.nome(),
+            resumo: resumo(item.tipo, r),
             endereco: item.endereco.clone(),
-            usuario: campo(&detalhe.campos, "usuario").map(str::to_owned),
-        }
+            usuario: campo(&r.campos, "usuario").map(str::to_owned),
+        })
     }
 }
 

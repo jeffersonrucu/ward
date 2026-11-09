@@ -306,6 +306,7 @@ mod com_daemon_falso {
             tags: vec![],
             nivel: None,
             endereco: endereco.map(str::to_owned),
+            resumo: None,
         }
     }
 

@@ -11,7 +11,8 @@ use super::Operacao;
 use super::campos::{Campos, R, bytes_de, segredo_de, texto_de, textos_de};
 use super::json::{Escritor, JsonInvalido, Valor};
 use crate::entrada::{
-    NivelAcesso, Rascunho, RascunhoAnexo, RascunhoDados, RascunhoExtra, Segredo, TipoEntrada,
+    Autenticacao, Dados, Entrada, NivelAcesso, Rascunho, RascunhoAnexo, RascunhoDados,
+    RascunhoExtra, Segredo, TipoEntrada, ValorExtra,
 };
 use crate::limites::{
     MAX_ANEXOS, MAX_ANEXOS_SOMADOS, MAX_ARGUMENTO, MAX_ARGUMENTOS, MAX_DIGITOS_PIN, MAX_EXTRAS,
@@ -53,6 +54,44 @@ pub struct Janela {
 pub enum Alvo {
     Campo(String),
     Extra(String),
+}
+
+impl Alvo {
+    /// O segredo da entrada que este alvo aponta (D65 b: `revelar`/`copiar` do app), ou
+    /// `None` se o tipo não tem o campo, o campo não está preenchido ou o extra não
+    /// existe ou não é secreto. Anexo não é alvo.
+    pub fn segredo_em<'a>(&self, e: &'a Entrada) -> Option<&'a Segredo> {
+        match self {
+            Alvo::Extra(nome) => e.extras().iter().find_map(|x| match x.valor() {
+                ValorExtra::Segredo(v) if x.nome() == nome => Some(v),
+                _ => None,
+            }),
+            Alvo::Campo(id) => segredo_do_campo(e.dados(), id),
+        }
+    }
+}
+
+/// Campo secreto do tipo pelo identificador do protocolo ([`CAMPOS_SECRETOS`]).
+fn segredo_do_campo<'a>(d: &'a Dados, id: &str) -> Option<&'a Segredo> {
+    let auth = |a: &'a Autenticacao| match (a, id) {
+        (Autenticacao::Senha(s), "senha") => Some(s),
+        (Autenticacao::Chave { chave_privada, .. }, "chave_privada") => Some(chave_privada),
+        (Autenticacao::Chave { passphrase, .. }, "passphrase") => passphrase.as_ref(),
+        _ => None,
+    };
+    match (d, id) {
+        (Dados::Login(l), "senha") => Some(&l.senha),
+        (Dados::Login(l), "totp_semente") => l.totp_semente.as_ref(),
+        (Dados::Banco(b), "senha") => Some(&b.senha),
+        (Dados::Servidor(v), _) => auth(&v.autenticacao),
+        (Dados::FtpSftp(f), _) => auth(&f.autenticacao),
+        (Dados::Api(a), "token") => Some(&a.token),
+        (Dados::Aws(a), "secret_access_key") => Some(&a.secret_access_key),
+        (Dados::Aws(a), "session_token") => a.session_token.as_ref(),
+        (Dados::Smtp(m), "senha") => Some(&m.senha),
+        (Dados::NotaSegura(n), "texto") => Some(&n.texto),
+        _ => None,
+    }
 }
 
 /// Botão da janela de aprovação. Todos menos "Negar" pedem PIN.

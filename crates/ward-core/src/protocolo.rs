@@ -37,7 +37,8 @@
 //! conhecida → **papel** → campos. Assim, uma operação de app ou de extensão pedida pelo
 //! agente responde [`ErroResposta::NaoAutorizado`] seja qual for o resto do quadro.
 //!
-//! A `lista` do agente vai sem o nível de cada entrada (D50); a do app leva.
+//! A `lista` do agente vai sem o nível de cada entrada (D50) e sem o resumo (D65 c); a
+//! do app leva os dois.
 //!
 //! **Nenhuma resposta que carrega credencial vai para o agente** (S1): as que carregam
 //! ([`TipoResposta::carrega_credencial`]) são só de app ou de extensão, e
@@ -64,7 +65,7 @@ pub use erros::{ErroResposta, MSG_COFRE_MUDOU, MSG_GERACAO_ESGOTADA, MSG_RETROCE
 pub use pedido::{Alvo, Decisao, Janela, Pedido, PedidoExecutar, Variavel};
 pub use resposta::{
     AnexoDetalhe, DetalheEntrada, ExtraDetalhe, Fluxo, ItemLista, PedidoDeAprovacao, Resposta,
-    Sugestao,
+    ResumoItem, Sugestao,
 };
 
 /// Versão do protocolo.
@@ -376,10 +377,12 @@ pub fn codificar_resposta(papel: Papel, r: &Resposta) -> Result<Zeroizing<Vec<u8
     if !tipo.permitida(papel) {
         return Err(ErroCodificar::NaoPermitidaAoPapel);
     }
-    // D50: o nível de acesso nunca vai ao agente na lista.
+    // D50: o nível de acesso nunca vai ao agente na lista; D65 c: nem o resumo.
     if let Resposta::Lista(itens) = r
         && papel != Papel::App
-        && itens.iter().any(|i| i.nivel.is_some())
+        && itens
+            .iter()
+            .any(|i| i.nivel.is_some() || i.resumo.is_some())
     {
         return Err(ErroCodificar::NaoPermitidaAoPapel);
     }

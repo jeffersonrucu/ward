@@ -2,7 +2,10 @@
 //!
 //! S13: as mensagens são texto fixo mais números, nomes de operação, papel e códigos de
 //! erro. Nenhuma chamada recebe valor de pedido, de entrada, de caminho do cliente nem
-//! de variável de ambiente; quem chama passa só `&'static str` e inteiros. Com
+//! de variável de ambiente; quem chama passa só `&'static str` e inteiros. A exceção é
+//! o `revelar`/`copiar`/`totp` do app (D65 b), que registra o nome da entrada (do
+//! cofre, já validado) e o campo (da lista fixa do protocolo, ou o nome do extra com
+//! escape), nunca o valor. Com
 //! `RUST_LOG` em `debug` ou `trace`, sai também uma linha por pedido (operação, papel e
 //! resultado), nunca o conteúdo.
 

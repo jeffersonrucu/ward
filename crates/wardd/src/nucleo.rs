@@ -24,8 +24,13 @@
 //! - **Criar com estado velho** (D62): sem cofre e com um estado de `queimada` q, o
 //!   cofre novo nasce na geração q+1, e uma cópia de um cofre anterior fica abaixo da
 //!   `vista`.
-//! - Nenhuma resposta ao agente tem nível (D50), e uma entrada bloqueada responde igual
-//!   a uma inexistente (V3.17).
+//! - Nenhuma resposta ao agente tem nível nem resumo (D50, D65 c), e uma entrada
+//!   bloqueada responde igual a uma inexistente (V3.17).
+//! - **Revelar, copiar e TOTP do app** (D4, D65 b): só o papel app, com o cofre
+//!   destravado, sem PIN, sem janela de aprovação e sem olhar o nível (a entrada
+//!   bloqueada também). O log registra `revelar <entrada> <campo>` (ou `copiar`,
+//!   `totp`) sem valor (S13); o valor vai só na resposta, num `Segredo` que zera ao
+//!   sair.
 //! - Uso do agente e aprovação (Fase 23): em [`crate::uso`], com o motor de
 //!   [`crate::aprovacao`].
 
@@ -42,8 +47,9 @@ use ward_core::entrada::{Entrada, NivelAcesso, Rascunho, Segredo};
 use ward_core::formato::{CofreAberto, SenhaMestra};
 use ward_core::gravacao::{self, ErroGravacao, Etapa};
 use ward_core::protocolo::{
-    DetalheEntrada, ErroResposta, ItemLista, Papel, Pedido, Problema, Resposta,
+    Alvo, DetalheEntrada, ErroResposta, ItemLista, Operacao, Papel, Pedido, Problema, Resposta,
 };
+use ward_core::totp::Totp;
 
 use crate::aprovacao::{Cliente, Motor, SemCliente};
 use crate::arquivos::{self, ArquivoEstado, Geracoes, Identidade};
@@ -72,6 +78,15 @@ pub trait Relogio: Send + Sync {
     /// inatividade (Fase 24). `None` (não deu para ler) trava: falha fechada.
     fn agora(&self) -> Option<Duration> {
         ward_plataforma::tempo_desde_boot().ok()
+    }
+
+    /// Segundos desde 1970 pelo relógio de parede, para o código TOTP (D65 b). `None`
+    /// (relógio antes de 1970): o `totp` responde erro, nunca um código.
+    fn segundos_unix(&self) -> Option<u64> {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()
+            .map(|d| d.as_secs())
     }
 }
 
@@ -455,12 +470,16 @@ impl Daemon {
             Pedido::TrocarPin { atual, novo } => self.trocar_pin(&atual, &novo),
             Pedido::TrocarSenha { atual, nova } => self.trocar_senha(&atual, &nova),
             Pedido::TempoTrava { minutos } => self.tempo_trava(minutos),
-            // Das fases seguintes (revelar/copiar/TOTP: 30+; token: 27/34;
-            // extensão: 40+). Nada é feito e nada sai.
-            Pedido::Revelar { .. }
-            | Pedido::Copiar { .. }
-            | Pedido::Totp { .. }
-            | Pedido::EmitirToken { .. }
+            // D4, D65 b: só o app, sem PIN, aprovação nem nível.
+            Pedido::Revelar { entrada, alvo } => {
+                self.valor_do_app(papel, Operacao::Revelar, &entrada, &alvo)
+            }
+            Pedido::Copiar { entrada, alvo } => {
+                self.valor_do_app(papel, Operacao::Copiar, &entrada, &alvo)
+            }
+            Pedido::Totp { entrada } => self.totp_do_app(papel, &entrada),
+            // Das fases seguintes (token: 27/34; extensão: 40+). Nada é feito e nada sai.
+            Pedido::EmitirToken { .. }
             | Pedido::Sugerir { .. }
             | Pedido::Preencher { .. }
             | Pedido::SalvarLogin { .. } => Err(ErroResposta::Interno),
@@ -603,6 +622,66 @@ impl Daemon {
             .map(|e| ItemLista::de_entrada(e, papel))
             .collect();
         Ok(Resposta::Lista(itens))
+    }
+
+    /// `revelar` e `copiar` (D4, D65 b): o valor de um segredo da entrada para o app.
+    /// Só o papel app (a tabela do protocolo e o `atender_de` já conferiram; aqui é a
+    /// terceira camada), com o cofre destravado, sem PIN, sem aprovação e sem olhar o
+    /// nível: a entrada bloqueada também é revelável no app. O log leva a operação, o
+    /// nome da entrada (do cofre, já validado) e o campo, nunca o valor (S13).
+    fn valor_do_app(
+        &self,
+        papel: Papel,
+        op: Operacao,
+        nome: &str,
+        alvo: &Alvo,
+    ) -> Result<Resposta, ErroResposta> {
+        if papel != Papel::App {
+            return Err(ErroResposta::NaoAutorizado);
+        }
+        let est = self.estado();
+        let a = est.aberto.as_ref().ok_or(ErroResposta::Travado)?;
+        let e = a
+            .entradas
+            .iter()
+            .find(|e| e.nome() == nome)
+            .ok_or(ErroResposta::EntradaInexistente)?;
+        let valor = alvo.segredo_em(e).ok_or(ErroResposta::CampoInexistente)?;
+        // O campo do tipo já passou pela lista fixa do protocolo; o nome do extra vem
+        // da entrada e sai com escape (sem quebra de linha nem controle no log).
+        match alvo {
+            Alvo::Campo(c) => aviso!("{} {} {c}", op.nome(), e.nome()),
+            Alvo::Extra(x) => aviso!("{} {} extra {x:?}", op.nome(), e.nome()),
+        }
+        Ok(Resposta::Segredo(Segredo::de_bytes(valor.expor().to_vec())))
+    }
+
+    /// `totp` do app (D65 b): o código atual da semente da entrada `login`, pelo
+    /// relógio do daemon, com as mesmas regras do `revelar`. Sem semente: "campo
+    /// inexistente". O código não é segredo do cofre (R8), mas vai num `Zeroizing`.
+    fn totp_do_app(&self, papel: Papel, nome: &str) -> Result<Resposta, ErroResposta> {
+        if papel != Papel::App {
+            return Err(ErroResposta::NaoAutorizado);
+        }
+        let est = self.estado();
+        let a = est.aberto.as_ref().ok_or(ErroResposta::Travado)?;
+        let e = a
+            .entradas
+            .iter()
+            .find(|e| e.nome() == nome)
+            .ok_or(ErroResposta::EntradaInexistente)?;
+        let semente = Alvo::Campo("totp_semente".to_owned())
+            .segredo_em(e)
+            .ok_or(ErroResposta::CampoInexistente)?;
+        let agora = self.relogio.segundos_unix().ok_or(ErroResposta::Interno)?;
+        let c = Totp::de_semente(semente)
+            .map_err(|_| ErroResposta::Interno)?
+            .codigo_em(agora);
+        aviso!("totp {}", e.nome());
+        Ok(Resposta::CodigoTotp {
+            codigo: Zeroizing::new(c.codigo().to_owned()),
+            restante: c.restante(),
+        })
     }
 
     fn criar_cofre(&self, senha: &Segredo, pin: &Segredo) -> Result<Resposta, ErroResposta> {

@@ -128,6 +128,7 @@ fn item(nome: &str) -> ItemLista {
         tags: vec!["web".into()],
         nivel: None,
         endereco: Some("https://clientex.invalid/login".into()),
+        resumo: None,
     }
 }
 
@@ -1507,3 +1508,178 @@ fn d50_lista_do_agente_sem_nivel_e_do_app_com_nivel() {
     assert!(decodificar_resposta(Papel::Agente, &q_app).is_err());
     assert!(decodificar_resposta(Papel::App, &q).is_err());
 }
+
+/// D65 c (V3.40): a lista do app leva o resumo de cada entrada (campos de texto, ids
+/// dos segredos, nº de extras e de anexos) e nenhum segredo; a do agente, nenhum resumo
+/// nem usuário. Os dois sentidos de D50: o daemon não manda ao agente um item com
+/// resumo, a leitura do agente recusa um quadro forjado com resumo, e a do app recusa
+/// item sem resumo ou com resumo que leve segredo.
+#[test]
+fn d65_lista_do_app_com_resumo_e_do_agente_sem() {
+    let entradas = cofre_de_teste();
+    let do_papel = |p: Papel| {
+        Resposta::Lista(
+            entradas
+                .iter()
+                .map(|e| ItemLista::de_entrada(e, p))
+                .collect(),
+        )
+    };
+    let q_app = codificar_resposta(Papel::App, &do_papel(Papel::App)).unwrap();
+    let Resposta::Lista(itens) = decodificar_resposta(Papel::App, &q_app).unwrap() else {
+        panic!("não é lista")
+    };
+    assert_eq!(itens.len(), entradas.len());
+    for (i, e) in itens.iter().zip(&entradas) {
+        let r = i.resumo.as_ref().expect("item do app sem resumo");
+        let d = DetalheEntrada::de_entrada(e);
+        assert_eq!(r.campos, d.campos, "{}", e.nome());
+        assert_eq!(r.segredos, d.segredos, "{}", e.nome());
+        assert_eq!(r.extras, e.extras().len() as u64);
+        assert_eq!(r.anexos, e.anexos().len() as u64);
+    }
+    let pg = itens.iter().find(|i| i.nome == "acme-pg-dev").unwrap();
+    let r = pg.resumo.as_ref().unwrap();
+    assert!(r.campos.contains(&("usuario".to_owned(), "app".to_owned())));
+    assert_eq!(r.segredos, vec!["senha".to_owned()]);
+    let generico = itens.iter().find(|i| i.nome == "gama-generico").unwrap();
+    assert_eq!(generico.resumo.as_ref().unwrap().extras, 2);
+    // Nenhum segredo do cofre de teste no quadro do app, nem em base64.
+    for s in cofre_teste::SEGREDOS {
+        assert!(!contem(&q_app, s.as_bytes()), "segredo na lista do app");
+        let b = Base64::encode_string(s.as_bytes());
+        assert!(!contem(&q_app, b.as_bytes()), "segredo em base64 na lista");
+    }
+    assert!(!contem(&q_app, b"falso-licenca-01"));
+
+    // Agente: sem resumo e sem usuário.
+    let q = codificar_resposta(Papel::Agente, &do_papel(Papel::Agente)).unwrap();
+    assert!(!contem(&q, b"\"resumo\""));
+    assert!(!contem(&q, b"\"usuario\""));
+    assert!(!contem(&q, b"wp_admin"));
+    let Resposta::Lista(itens) = decodificar_resposta(Papel::Agente, &q).unwrap() else {
+        panic!("não é lista")
+    };
+    assert!(itens.iter().all(|i| i.resumo.is_none()));
+
+    // Ataque: item com resumo (sem nível) mandado ao agente é recusado na escrita.
+    let mut so_resumo: Vec<ItemLista> = entradas
+        .iter()
+        .map(|e| ItemLista::de_entrada(e, Papel::App))
+        .collect();
+    for i in &mut so_resumo {
+        i.nivel = None;
+    }
+    assert_eq!(
+        codificar_resposta(Papel::Agente, &Resposta::Lista(so_resumo)).unwrap_err(),
+        ErroCodificar::NaoPermitidaAoPapel
+    );
+    // Ataque: item do app sem resumo (só o nível) não sai.
+    let mut sem_resumo: Vec<ItemLista> = entradas
+        .iter()
+        .map(|e| ItemLista::de_entrada(e, Papel::App))
+        .collect();
+    sem_resumo[0].resumo = None;
+    assert_eq!(
+        codificar_resposta(Papel::App, &Resposta::Lista(sem_resumo)).unwrap_err(),
+        ErroCodificar::Invalida
+    );
+
+    // Ataque: quadro do agente forjado com um resumo é recusado pela leitura do agente.
+    let texto = String::from_utf8(q.to_vec()).unwrap();
+    let resumo = r#""resumo":{"campos":{"usuario":"app"},"segredos":["senha"],"extras":0,"anexos":0},"nome":"#;
+    let forjado = texto.replacen(r#""nome":"#, resumo, 1);
+    assert_ne!(forjado, texto);
+    assert!(decodificar_resposta(Papel::Agente, forjado.as_bytes()).is_err());
+    // E o quadro do app inteiro, lido como agente.
+    assert!(decodificar_resposta(Papel::Agente, &q_app).is_err());
+
+    // Ataques do lado do app: item sem resumo, resumo com campo secreto em `campos`,
+    // com id de segredo desconhecido, com chave a mais ou com valor de segredo.
+    let app = String::from_utf8(q_app.to_vec()).unwrap();
+    let alvo = r#""resumo":{"#;
+    assert!(app.contains(alvo));
+    let sem = {
+        // Tira o primeiro resumo inteiro (até o fim do objeto dele).
+        let i = app.find(alvo).unwrap();
+        let fim = i + app[i..].find(r#""anexos":"#).unwrap();
+        let fim = fim + app[fim..].find('}').unwrap() + 1;
+        // A vírgula antes do resumo sai junto.
+        format!("{}{}", &app[..i - 1], &app[fim..])
+    };
+    // JSON válido: a recusa é pela falta do resumo, não pela sintaxe.
+    assert!(json::ler(sem.as_bytes(), json::MAX_NOS_RESPOSTA).is_ok());
+    assert!(decodificar_resposta(Papel::App, sem.as_bytes()).is_err());
+    for troca in [
+        r#""resumo":{"campos":{"senha":"falso-PG:s3nha/01@#"},"#,
+        r#""resumo":{"x":1,"#,
+        r#""resumo":{"valor":"ZmFsc28tUEc=","#,
+    ] {
+        let f = app.replacen(alvo, troca, 1);
+        assert!(
+            decodificar_resposta(Papel::App, f.as_bytes()).is_err(),
+            "{troca}"
+        );
+    }
+    let f = app.replacen(r#""segredos":["#, r#""segredos":["chave_mestra","#, 1);
+    assert!(decodificar_resposta(Papel::App, f.as_bytes()).is_err());
+}
+
+/// D65 b: `Alvo::segredo_em` acha cada segredo preenchido pelo identificador do
+/// protocolo (o mesmo que o detalhe lista) e nada mais: campo de outro tipo, campo
+/// vazio, extra comum e extra inexistente dão `None`.
+#[test]
+fn d65_alvo_acha_so_os_segredos_da_entrada() {
+    let entradas = cofre_de_teste();
+    for e in &entradas {
+        let d = DetalheEntrada::de_entrada(e);
+        let todos: Vec<&[u8]> = e.segredos().iter().map(|s| s.valor.expor()).collect();
+        for id in CAMPOS_SECRETOS_TESTE {
+            let achado = Alvo::Campo((*id).to_owned()).segredo_em(e);
+            assert_eq!(
+                achado.is_some(),
+                d.segredos.iter().any(|s| s == id),
+                "{} {id}",
+                e.nome()
+            );
+            if let Some(v) = achado {
+                assert!(todos.contains(&v.expor()));
+            }
+        }
+        for x in &d.extras {
+            let achado = Alvo::Extra(x.nome.clone()).segredo_em(e);
+            assert_eq!(
+                achado.is_some(),
+                x.valor.is_none(),
+                "{} {}",
+                e.nome(),
+                x.nome
+            );
+        }
+        assert!(Alvo::Extra("nao-existe".into()).segredo_em(e).is_none());
+        assert!(Alvo::Campo("usuario".into()).segredo_em(e).is_none());
+    }
+    let generico = entradas
+        .iter()
+        .find(|e| e.nome() == "gama-generico")
+        .unwrap();
+    assert_eq!(
+        Alvo::Extra("CHAVE_LICENCA".into())
+            .segredo_em(generico)
+            .unwrap()
+            .expor(),
+        b"falso-licenca-01"
+    );
+    assert!(Alvo::Extra("REGIAO".into()).segredo_em(generico).is_none());
+}
+
+const CAMPOS_SECRETOS_TESTE: &[&str] = &[
+    "senha",
+    "totp_semente",
+    "chave_privada",
+    "passphrase",
+    "token",
+    "secret_access_key",
+    "session_token",
+    "texto",
+];

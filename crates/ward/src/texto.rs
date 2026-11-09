@@ -176,6 +176,7 @@ mod testes {
             tags: vec!["etiqueta-x".to_owned()],
             nivel: None,
             endereco: endereco.map(str::to_owned),
+            resumo: None,
         }
     }
 
