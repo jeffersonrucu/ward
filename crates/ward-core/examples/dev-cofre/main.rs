@@ -10,7 +10,16 @@
 //! ```text
 //! dev-cofre [--saida .dev/<nome>.ward]               cria (ou recria) o cofre
 //! dev-cofre [--saida …] --conferir [--senha-stdin]   só abre e confere
+//! dev-cofre [--saida …] --cruzado < padroes.tsv       teste cruzado (V2.57)
 //! ```
+//!
+//! `--cruzado` (Fase 19e, D54, V2.57): lê do stdin, uma por linha, `entrada<TAB>tipo<TAB>
+//! padrão em hex` (gerado por `dev/testes/dev-cofre.sh` a partir do `dev/variacoes.py`),
+//! abre o cofre de teste e passa cada padrão, sozinho, pela máscara da entrada de onde
+//! ele veio (com a entrega dela, montada com recursos falsos). `tipo` `inteiro`: a saída
+//! tem de ser `••••`. `tipo` `url` (o `DATABASE_URL`, que depende do host e da porta de
+//! quem roda): tem de ter `••••` e nenhum trecho de 6+ bytes de segredo da entrada. Só
+//! imprime contagens, nomes de entrada e o número do padrão; nunca o padrão.
 //!
 //! Regras (S15, R19):
 //! - A saída tem de ficar dentro de `<raiz>/.dev/`. A conferência é feita primeiro só
@@ -41,9 +50,11 @@ use ward_core::entrada::{
     Entrada, NivelAcesso, Rascunho, RascunhoAnexo, RascunhoDados, RascunhoExtra, Segredo,
     TipoEntrada,
 };
+use ward_core::entrega::{self, ErroEntrega, ErroRecurso, Recursos};
 use ward_core::formato::{CofreAberto, SenhaMestra};
 use ward_core::gravacao::gravar_entradas;
 use ward_core::limites::{MAX_ANEXOS_SOMADOS, MINUTOS_TRAVA_PADRAO};
+use ward_core::mascara::{MARCA, Mascara};
 use zeroize::Zeroizing;
 
 #[cfg(test)]
@@ -108,7 +119,7 @@ impl fmt::Display for Erro {
         match self {
             Erro::Uso(m) => write!(
                 f,
-                "{m}\nuso: dev-cofre [--saida .dev/<nome>.ward] [--conferir [--senha-stdin]]"
+                "{m}\nuso: dev-cofre [--saida .dev/<nome>.ward] [--conferir [--senha-stdin] | --cruzado]"
             ),
             Erro::Saida(m) => write!(f, "caminho de saída recusado: {m}"),
             Erro::Arquivo { qual, motivo } => write!(f, "{qual}: {motivo}"),
@@ -133,6 +144,7 @@ struct Opcoes {
     saida: Option<OsString>,
     conferir: bool,
     senha_stdin: bool,
+    cruzado: bool,
 }
 
 fn ler_opcoes(args: impl Iterator<Item = OsString>) -> Result<Opcoes, Erro> {
@@ -148,8 +160,14 @@ fn ler_opcoes(args: impl Iterator<Item = OsString>) -> Result<Opcoes, Erro> {
             }
             Some("--conferir") => o.conferir = true,
             Some("--senha-stdin") => o.senha_stdin = true,
+            Some("--cruzado") => o.cruzado = true,
             _ => return Err(Erro::Uso("argumento desconhecido")),
         }
+    }
+    if o.cruzado && (o.conferir || o.senha_stdin) {
+        return Err(Erro::Uso(
+            "--cruzado não vale com --conferir nem --senha-stdin",
+        ));
     }
     if o.senha_stdin && !o.conferir {
         return Err(Erro::Uso("--senha-stdin só vale com --conferir"));
@@ -172,6 +190,11 @@ fn executar(args: impl Iterator<Item = OsString>) -> Result<(), Erro> {
     let mut ler = |origem: Origem, caminho: &str| ler_do_repositorio(&raiz, origem, caminho);
     let (senha, pin, esperadas) = montar(&fixtures, &mut ler)?;
     drop(fixtures);
+
+    if opcoes.cruzado {
+        conferir(&saida, &senha, &pin, &esperadas)?;
+        return cruzado(&saida, &senha);
+    }
 
     if opcoes.conferir {
         let senha = if opcoes.senha_stdin {
@@ -298,6 +321,126 @@ fn conferir_configuracao(cfg: &Configuracao, pin: &str) -> Result<(), Erro> {
             "a configuração do cofre não é a padrão; rode make dev-cofre".into(),
         ));
     }
+    Ok(())
+}
+
+// --- Teste cruzado oráculo → máscara (V2.57) -----------------------------------------
+
+/// Recursos falsos para montar a entrega de cada entrada (o código TOTP e o caminho não
+/// entram na máscara; a porta do túnel é qualquer uma).
+struct RecursosFalsos;
+
+impl Recursos for RecursosFalsos {
+    fn codigo_totp(&mut self, _: &Segredo) -> Result<Zeroizing<String>, ErroRecurso> {
+        Ok(Zeroizing::new(String::from("000000")))
+    }
+    fn arquivo(&mut self, nome: &str, _: &Segredo) -> Result<String, ErroRecurso> {
+        Ok(format!("/run/user/0/ward-teste/{nome}"))
+    }
+    fn tunel(&mut self, _: &str, _: &str, _: u16) -> Result<u16, ErroRecurso> {
+        Ok(40123)
+    }
+}
+
+/// Maior padrão aceito numa linha do stdin (o maior anexo de D29 em hex, com folga).
+const MAX_LINHA_CRUZADO: usize = 4 * MAX_ANEXOS_SOMADOS + 1024;
+
+fn hex_para_bytes(h: &[u8]) -> Option<Zeroizing<Vec<u8>>> {
+    if !h.len().is_multiple_of(2) {
+        return None;
+    }
+    let digito = |c: u8| (c as char).to_digit(16).map(|d| d as u8);
+    let mut v = Zeroizing::new(Vec::with_capacity(h.len() / 2));
+    for par in h.chunks(2) {
+        v.push((digito(par[0])? << 4) | digito(par[1])?);
+    }
+    Some(v)
+}
+
+/// Algum trecho de 6 bytes ou mais de algum segredo da entrada sobra na saída.
+fn sobra_segredo(saida: &[u8], e: &Entrada) -> bool {
+    e.segredos().iter().any(|s| {
+        let v = s.valor.expor();
+        v.len() >= 6 && v.windows(6).any(|j| saida.windows(6).any(|w| w == j))
+    })
+}
+
+/// V2.57: cada padrão do oráculo, sozinho, sai `••••` pela máscara da entrada dele.
+fn cruzado(saida: &Path, senha: &SenhaMestra) -> Result<(), Erro> {
+    let bytes = fs::read(saida).map_err(|_| Erro::Cofre("não deu para ler o cofre".into()))?;
+    let (_, lidas) = abrir_entradas(&bytes, senha)
+        .map_err(|e| Erro::Cofre(format!("o cofre não abriu: {e}")))?;
+    let mut tsv = Zeroizing::new(Vec::new());
+    io::stdin()
+        .take(64 * 1024 * 1024)
+        .read_to_end(&mut tsv)
+        .map_err(|_| Erro::Uso("não deu para ler os padrões do stdin"))?;
+    let mut mascaras: Vec<(String, Mascara)> = Vec::new();
+    let (mut total, mut falhas) = (0usize, 0usize);
+    let mut nomes = std::collections::BTreeSet::new();
+    for (i, linha) in tsv.split(|b| *b == b'\n').enumerate() {
+        if linha.is_empty() {
+            continue;
+        }
+        let mut partes = linha.splitn(3, |b| *b == b'\t');
+        let (Some(nome), Some(tipo), Some(hex)) = (partes.next(), partes.next(), partes.next())
+        else {
+            return Err(Erro::Uso("linha do stdin sem entrada, tipo e padrão"));
+        };
+        if hex.len() > MAX_LINHA_CRUZADO {
+            return Err(Erro::Uso("padrão grande demais no stdin"));
+        }
+        let nome = String::from_utf8_lossy(nome).into_owned();
+        let Some(e) = lidas.iter().find(|e| e.nome() == nome) else {
+            return Err(Erro::Cofre(format!(
+                "cruzado: entrada {nome} não está no cofre"
+            )));
+        };
+        let Some(padrao) = hex_para_bytes(hex) else {
+            return Err(Erro::Uso("padrão do stdin não está em hex"));
+        };
+        if !mascaras.iter().any(|(n, _)| *n == nome) {
+            let g = match entrega::montar(e, &mut RecursosFalsos) {
+                Ok(g) => Some(g),
+                Err(ErroEntrega::TipoSemEntrega) => None,
+                Err(_) => return Err(Erro::Cofre(format!("cruzado: entrega de {nome} falhou"))),
+            };
+            let m = Mascara::da_entrada(e, g.as_ref())
+                .map_err(|_| Erro::Cofre(format!("cruzado: máscara de {nome} não montou")))?;
+            mascaras.push((nome.clone(), m));
+        }
+        let m = &mascaras.iter().find(|(n, _)| *n == nome).unwrap().1;
+        let fora = Zeroizing::new(m.mascarar_tudo(&padrao));
+        let ok = match tipo {
+            b"inteiro" => fora.as_slice() == MARCA.as_bytes(),
+            b"url" => {
+                fora.windows(MARCA.len()).any(|w| w == MARCA.as_bytes()) && !sobra_segredo(&fora, e)
+            }
+            _ => return Err(Erro::Uso("tipo de padrão desconhecido no stdin")),
+        };
+        total += 1;
+        nomes.insert(nome.clone());
+        if !ok {
+            falhas += 1;
+            eprintln!(
+                "dev-cofre: cruzado: o padrão da linha {} ({}) de {nome} não saiu {MARCA}",
+                i + 1,
+                String::from_utf8_lossy(tipo)
+            );
+        }
+    }
+    if total == 0 {
+        return Err(Erro::Uso("nenhum padrão no stdin"));
+    }
+    if falhas > 0 {
+        return Err(Erro::Cofre(format!(
+            "cruzado: {falhas} de {total} padrões não saíram {MARCA}"
+        )));
+    }
+    println!(
+        "dev-cofre: cruzado: os {total} padrões de {} entradas saem {MARCA} pela máscara da entrada",
+        nomes.len()
+    );
     Ok(())
 }
 

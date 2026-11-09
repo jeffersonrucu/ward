@@ -1930,3 +1930,97 @@ fn v2_49_usuario_do_ssh() {
     }
     assert!(erros(rascunho("x", "acme", "dev", d)).tem("usuário"));
 }
+
+/// V2.58 (D55, repro `url.rs` do auditor): o último rótulo de domínio que começa por
+/// dígito é recusado, porque o Chrome e o `curl` leem `0x7f000001`, `0x7f.0.0.1` e
+/// `1.2.3.0x4` como IPv4 (formas hex e numéricas do WHATWG) e `x.123` não é domínio.
+/// A mensagem é a de URL inválida, sem o valor. Os outros casos do repro que já eram
+/// recusados seguem recusados; os aceitos da V2.47 e os da V2.58 passam.
+#[test]
+fn v2_58_ultimo_rotulo_com_digito() {
+    let recusadas = [
+        // D55
+        "https://0x7f000001/",
+        "https://0x7f.0.0.1/",
+        "https://1.2.3.0x4/",
+        "https://x.123/",
+        "https://x.0x10/",
+        "https://x.example.9z/",
+        "https://0X7F000001/",
+        "https://017700000001/",
+        "http://0x7f000001/",
+        "https://x.example.0/",
+        // Do repro, já recusadas antes de D55.
+        "https://127.0.0.1./",
+        "https://cliente.com.br./",
+        "http://localhost./",
+        "http://LOCALHOST/",
+        "http://localhost:0/",
+        "http://localhost:65536/",
+        "https://x.example:/",
+        "http://[::1]/",
+        "https://[::1%25lo]/",
+        "https://[v1.x]/",
+        "https://[::1]x/",
+        "https://[::1]:/",
+        "https://a_b.example/",
+        "https://1.1.1.1.1/",
+        "https://999.1.1.1/",
+        "https://xn--/",
+        "https://x.example/\u{7f}",
+        "https:x.example",
+        "https:/x.example",
+        "https:///x.example",
+        "https://x.example;@evil/",
+        "https://[::1]:443:1/",
+        "https://x.example:44a/",
+        "https://x.example\u{ff0e}com/",
+    ];
+    for url in recusadas {
+        let mut d = login();
+        if let RascunhoDados::Login { url: u, .. } = &mut d {
+            *u = t(url);
+        }
+        let e = erros(rascunho("x", "acme", "dev", d));
+        assert!(e.tem("url"), "login {url:?}");
+        let msg = format!("{e}");
+        assert!(
+            msg.contains("use https://") || msg.contains("caractere não permitido"),
+            "{url:?}: {msg}"
+        );
+        sem_o_valor(&e, url);
+        let mut d = api();
+        if let RascunhoDados::Api { url: u, .. } = &mut d {
+            *u = t(url);
+        }
+        assert!(
+            erros(rascunho("x", "beta", "dev", d)).tem("url"),
+            "api {url:?}"
+        );
+    }
+    for url in [
+        "https://cliente.com.br/",
+        "https://x1.example/",
+        "https://1password.com/",
+        "https://x.example2/",
+        "https://9gag.com/",
+        "https://a.b2c.example/",
+        "https://cliente.com.br/wp-login.php?x=1#y",
+        "https://xn--clente-9ya.com.br",
+        "https://[::1]:8443/",
+        "http://localhost:8083/login",
+        "http://127.0.0.1:8081/",
+        "https://10.0.0.1/",
+    ] {
+        let mut d = login();
+        if let RascunhoDados::Login { url: u, .. } = &mut d {
+            *u = t(url);
+        }
+        valida(rascunho("x", "acme", "dev", d));
+        let mut d = api();
+        if let RascunhoDados::Api { url: u, .. } = &mut d {
+            *u = t(url);
+        }
+        valida(rascunho("x", "beta", "dev", d));
+    }
+}

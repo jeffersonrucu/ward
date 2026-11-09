@@ -215,8 +215,11 @@ impl fmt::Debug for SenhaMestra {
 /// grava um corpo sem o hash do PIN. Sem `Clone`; o `Debug` não mostra a chave nem o
 /// hash.
 ///
-/// A geração (D39) é o número da última versão gravada ou lida: toda gravação grava a
-/// seguinte e só depois de dar certo o `CofreAberto` passa a tê-la. Ela pode ser lida
+/// A geração (D39, D53) é o número da última versão lida ou selada: toda gravação sela
+/// a seguinte e o `CofreAberto` passa a tê-la logo ao selar, antes de escrever o
+/// temporário, e fica com ela mesmo que a escrita, o fsync, o rename ou o fsync do
+/// diretório falhem (geração queimada). Assim, nenhum par de arquivos selados tem a
+/// mesma geração. Ela pode ser lida
 /// ([`CofreAberto::geracao`]), mas não existe setter público, nem pela configuração:
 ///
 /// ```compile_fail,E0609
@@ -307,8 +310,10 @@ impl CofreAberto {
         }
     }
 
-    /// Geração da versão deste cofre (D39): a do corpo lido ou a da última gravação que
-    /// deu certo; 0 num cofre novo ainda não gravado. Só leitura.
+    /// Geração deste cofre (D39, D53): a última lida ou selada. Ao abrir, é a maior
+    /// entre a do corpo e a geração queimada que o chamador conhece; depois de cada
+    /// gravação, a que ela selou, tenha a escrita dado certo ou não. 0 num cofre novo
+    /// ainda não gravado. Só leitura.
     pub fn geracao(&self) -> u64 {
         self.geracao
     }
@@ -319,10 +324,11 @@ impl CofreAberto {
         self.geracao.checked_add(1)
     }
 
-    /// Só depois que a gravação da geração `geracao` deu certo (D39).
-    pub(crate) fn gravou(&mut self, geracao: u64) {
+    /// Queima a geração `geracao` (D53): chamada logo depois de selar o corpo com ela,
+    /// antes de escrever o temporário. O contador nunca desce.
+    pub(crate) fn queimar(&mut self, geracao: u64) {
         debug_assert!(geracao > self.geracao);
-        self.geracao = geracao;
+        self.geracao = self.geracao.max(geracao);
     }
 
     /// Parâmetros do Argon2id deste cofre.

@@ -1210,8 +1210,579 @@ fn formas_escapadas_so_quando_mudam() {
     };
     let simples = contar("falso-simples-01");
     assert_eq!(contar("falso-simples-02"), simples);
-    // `&`: só a forma do Go a mais. `$`: só a do shell. `ç`: só a do `ensure_ascii`.
-    assert_eq!(contar("falso-simples&01"), simples + 1);
-    assert_eq!(contar("falso-simples$01"), simples + 1);
+    // `&`: a forma do Go e a do `printf %q` (D54). `$`: a das aspas duplas e a do
+    // `printf %q`. `ç`: só a do `ensure_ascii` (o `printf %q` não vale fora do ASCII).
+    assert_eq!(contar("falso-simples&01"), simples + 2);
+    assert_eq!(contar("falso-simples$01"), simples + 2);
     assert_eq!(contar("falso-simplesç01"), simples + 1);
+}
+
+// ---- Fase 19e: D54 (reauditoria do M2, repro `desvio.rs`) ----
+
+const BASH: &str = "/bin/bash";
+const PYTHON: &str = "/usr/bin/python3";
+
+/// Roda `prog` com o ambiente limpo (só `PATH`, locale UTF-8 e as variáveis dadas) e
+/// devolve o stdout. `None` quando o programa não existe nesta máquina (o teste avisa e
+/// segue com os casos montados à mão).
+fn rodar(prog: &str, args: &[&str], env: &[(&str, &str)]) -> Option<Vec<u8>> {
+    if !std::path::Path::new(prog).exists() {
+        eprintln!("{prog} não existe aqui: caso do programa real pulado");
+        return None;
+    }
+    let mut c = std::process::Command::new(prog);
+    c.args(args)
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .env("LC_ALL", "C.UTF-8");
+    for (k, v) in env {
+        c.env(k, v);
+    }
+    let saida = c.output().expect("rodar o programa de teste");
+    assert!(saida.status.success(), "{prog} falhou");
+    Some(saida.stdout)
+}
+
+fn bash(script: &str, env: &[(&str, &str)]) -> Option<Vec<u8>> {
+    rodar(BASH, &["--norc", "--noprofile", "-c", script], env)
+}
+
+fn python(script: &str, env: &[(&str, &str)]) -> Option<Vec<u8>> {
+    rodar(PYTHON, &["-I", "-c", script], env)
+}
+
+/// A saída como um leitor a veria depois de desfazer os escapes de JSON (`\uXXXX`, com
+/// par substituto, `\"`, `\\`, `\/`, `\n`, `\t`) e a barra do shell (`\x` vira `x`).
+/// Só para conferir que nenhum trecho do segredo sobra nem na forma decodificada.
+fn decodificada(saida: &[u8]) -> Vec<u8> {
+    let s = String::from_utf8_lossy(saida);
+    let c: Vec<char> = s.chars().collect();
+    let mut out = String::new();
+    let mut i = 0;
+    let hex4 = |c: &[char], i: usize| -> Option<u32> {
+        let h: String = c.get(i..i + 4)?.iter().collect();
+        u32::from_str_radix(&h, 16).ok()
+    };
+    while i < c.len() {
+        if c[i] != '\\' || i + 1 >= c.len() {
+            out.push(c[i]);
+            i += 1;
+            continue;
+        }
+        match c[i + 1] {
+            'u' => match hex4(&c, i + 2) {
+                Some(alto @ 0xd800..=0xdbff)
+                    if c.get(i + 6) == Some(&'\\') && c.get(i + 7) == Some(&'u') =>
+                {
+                    let baixo = hex4(&c, i + 8).unwrap_or(0);
+                    let n = 0x10000 + ((alto - 0xd800) << 10) + (baixo.wrapping_sub(0xdc00));
+                    out.push(char::from_u32(n).unwrap_or('?'));
+                    i += 12;
+                }
+                Some(n) => {
+                    out.push(char::from_u32(n).unwrap_or('?'));
+                    i += 6;
+                }
+                None => {
+                    out.push('u');
+                    i += 2;
+                }
+            },
+            'n' => {
+                out.push('\n');
+                i += 2;
+            }
+            't' => {
+                out.push('\t');
+                i += 2;
+            }
+            outro => {
+                out.push(outro);
+                i += 2;
+            }
+        }
+    }
+    // `'\''` (aspas simples do shell) volta a ser `'`.
+    out.replace("'''", "'").into_bytes()
+}
+
+/// Nenhum trecho de 6 bytes ou mais do alvo sobra na saída mascarada, nem crua nem
+/// decodificada. A mensagem diz o caso, nunca o valor.
+fn sem_trecho_de_6(caso: &str, m: &Mascara, saida: &[u8], alvo: &str) {
+    let fora = m.mascarar_tudo(saida);
+    let alvo = alvo.as_bytes();
+    assert!(
+        maior_trecho(&fora, alvo) < 6,
+        "{caso}: sobrou trecho do segredo"
+    );
+    assert!(
+        maior_trecho(&decodificada(&fora), alvo) < 6,
+        "{caso}: sobrou trecho do segredo na forma decodificada"
+    );
+}
+
+fn api_de_varias_linhas(token: &str) -> Entrada {
+    valida(rascunho(
+        "beta-api-varias",
+        RascunhoDados::Api {
+            url: String::new(),
+            token: s(token),
+            variavel: t("GITHUB_TOKEN"),
+        },
+    ))
+}
+
+/// V2.54 (D54): o token de `api` de várias linhas passa por linha já pela entrega, sem
+/// a entrada no construtor (`head -n1 <<<"$GITHUB_TOKEN"`, cada linha sozinha, com `\r`
+/// e aparada). O mesmo com `Mascara::da_entrada`.
+#[test]
+fn v2_54_entrega_de_varias_linhas_por_linha() {
+    let um = "falso-tok-linha-um-01";
+    let dois = "falso-tok-linha-dois-02";
+    let token = format!("{um}\n{dois}");
+    let e = api_de_varias_linhas(&token);
+    let g = entrega(&e);
+    let so_entrega = ConstrutorMascara::new().entrega(&g).construir().unwrap();
+    let completa = Mascara::da_entrada(&e, Some(&g)).unwrap();
+    let mut saidas: Vec<(String, Vec<u8>)> = vec![
+        ("linha 1".into(), format!("{um}\n").into_bytes()),
+        ("linha 2".into(), format!("{dois}\n").into_bytes()),
+        ("linha 1 com CR".into(), format!("{um}\r\n").into_bytes()),
+        (
+            "linha 2 aparada".into(),
+            format!("  {dois}  \n").into_bytes(),
+        ),
+    ];
+    if let Some(o) = bash("head -n1 <<<\"$GITHUB_TOKEN\"", &[("GITHUB_TOKEN", &token)]) {
+        assert_eq!(o, format!("{um}\n").into_bytes());
+        saidas.push(("head -n1 (bash)".into(), o));
+    }
+    if let Some(o) = bash("tail -n1 <<<\"$GITHUB_TOKEN\"", &[("GITHUB_TOKEN", &token)]) {
+        saidas.push(("tail -n1 (bash)".into(), o));
+    }
+    for (nome, m) in [("só a entrega", &so_entrega), ("da_entrada", &completa)] {
+        for (caso, saida) in &saidas {
+            for alvo in [um, dois] {
+                sem_trecho_de_6(&format!("{nome}: {caso}"), m, saida, alvo);
+            }
+        }
+    }
+    // Controle: sem a passada por linha da entrega (só o valor inteiro), a linha 1
+    // sozinha sobrava inteira.
+    let mut g_ = Gerador {
+        tmp: Zeroizing::new(Vec::new()),
+        tmp2: Zeroizing::new(Vec::new()),
+    };
+    let mut padroes: Vec<Vec<u8>> = Vec::new();
+    g_.segredo(token.as_bytes(), &mut |p| {
+        padroes.push(p.to_vec());
+        Ok(())
+    })
+    .unwrap();
+    assert!(!padroes.iter().any(|p| p == um.as_bytes()));
+}
+
+/// V2.55 (D54): as formas de texto valem por linha. As linhas de um extra secreto de
+/// várias linhas, escritas pelo `json.dumps` do Python (lista de linhas e uma linha num
+/// objeto, `ensure_ascii`), pelo `declare -p` do bash de uma linha com `$` e pelo JSON
+/// do Go, viram `••••`, sem trecho de 6+ nem na forma decodificada; e a saída sem
+/// segredo com `\u00e7` segue intacta.
+#[test]
+fn v2_55_formas_de_texto_por_linha() {
+    let linhas = [
+        "linha-um-ação-01",
+        "linha-dois-ação-02",
+        "linha-tres-Ab3$k&<9>Zq!",
+    ];
+    let nota = linhas.join("\n");
+    let e = generico(&[&nota]);
+    let m = mascara(&e);
+    let env = [("NOTA", nota.as_str())];
+    let mut saidas: Vec<(&str, Vec<u8>)> = vec![
+        // JSON do Go da linha 3, montado à mão (o `encoding/json`).
+        (
+            "Go linha 3",
+            br#"{"l":"linha-tres-Ab3$k\u0026\u003c9\u003eZq!"}"#.to_vec(),
+        ),
+        // `ensure_ascii` à mão, se o python não existir.
+        (
+            "ensure_ascii linha 1",
+            br#"["linha-um-a\u00e7\u00e3o-01"]"#.to_vec(),
+        ),
+        (
+            "aspas duplas linha 3",
+            br#"declare -- L="linha-tres-Ab3\$k&<9>Zq!""#.to_vec(),
+        ),
+    ];
+    if let Some(o) = python(
+        "import os,json;print(json.dumps(os.environ['NOTA'].splitlines()))",
+        &env,
+    ) {
+        assert!(
+            o.windows(6).any(|w| w == br"\u00e7"),
+            "python sem ensure_ascii"
+        );
+        saidas.push(("json.dumps(splitlines())", o));
+    }
+    if let Some(o) = python(
+        "import os,json;print(json.dumps({'l': os.environ['NOTA'].splitlines()[0]}))",
+        &env,
+    ) {
+        saidas.push(("json.dumps({l: linha 1})", o));
+    }
+    if let Some(o) = bash("L=$(sed -n 3p <<<\"$NOTA\"); declare -p L", &env) {
+        assert!(o.windows(2).any(|w| w == br"\$"), "declare -p sem a barra");
+        saidas.push(("declare -p L (linha 3)", o));
+    }
+    for (caso, saida) in &saidas {
+        for alvo in linhas {
+            sem_trecho_de_6(caso, &m, saida, alvo);
+        }
+    }
+    for limpa in [
+        r#"{"cidade": "S\u00e3o Paulo", "a\u00e7\u00e3o": 1}"#,
+        r#"["linha-um", "a\u00e7\u00e3o-02"]"#,
+    ] {
+        assert_eq!(texto(&m.mascarar_tudo(limpa.as_bytes())), limpa);
+    }
+}
+
+/// V2.56 (D54): `printf %q` (bash real) da senha do gerador; `${X@Q}`, `set` e `set -x`
+/// com `'`; o `json_encode` do PHP (`\/` + `\uXXXX`); e, num extra de várias linhas, as
+/// linhas `chave : valor`, `chave:\tvalor`, `"k":"v"` colado e chave JSON com espaço e
+/// com `/`, inteiras e só o valor, mais o `cut -f1` de uma linha com tab. Tudo vira
+/// `••••` e nenhum trecho de 6+ sobra. Os casos de RA3 só são registrados.
+#[test]
+fn v2_56_formas_novas_e_parser_de_linha() {
+    // `printf %q`.
+    let senha = "Ab3$k&<9>Zq!";
+    let m = mascara(&generico(&[senha]));
+    let mut saidas: Vec<(&str, Vec<u8>)> =
+        vec![("printf %q à mão", br"Ab3\$k\&\<9\>Zq\!".to_vec())];
+    if let Some(o) = bash("printf '%q\\n' \"$NOTA\"", &[("NOTA", senha)]) {
+        saidas.push(("printf %q (bash)", o));
+    }
+    for (caso, saida) in &saidas {
+        sem_trecho_de_6(caso, &m, saida, senha);
+        assert_eq!(texto(&m.mascarar_tudo(saida)).trim_end(), M, "{caso}");
+    }
+
+    // Aspas simples do shell.
+    let aspa = "falso-it's-01x";
+    let m = mascara(&generico(&[aspa]));
+    let mut saidas: Vec<(&str, Vec<u8>)> = vec![("@Q à mão", br"'falso-it'\''s-01x'".to_vec())];
+    let env = [("NOTA", aspa)];
+    for (caso, script) in [
+        ("${NOTA@Q}", "echo \"${NOTA@Q}\""),
+        ("set", "set | grep ^NOTA="),
+        ("set -x stderr", "exec 2>&1; set -x; : \"$NOTA\""),
+    ] {
+        if let Some(o) = bash(script, &env) {
+            saidas.push((caso, o));
+        }
+    }
+    for (caso, saida) in &saidas {
+        sem_trecho_de_6(caso, &m, saida, aspa);
+    }
+
+    // `json_encode` do PHP.
+    let php = "falso/ação/01";
+    let m = mascara(&generico(&[php]));
+    let mut saidas: Vec<(&str, Vec<u8>)> =
+        vec![("PHP à mão", br#""falso\/a\u00e7\u00e3o\/01""#.to_vec())];
+    if let Some(o) = python(
+        "import os,json;print(json.dumps(os.environ['NOTA']).replace('/','\\\\/'))",
+        &[("NOTA", php)],
+    ) {
+        saidas.push(("PHP simulado (python)", o));
+    }
+    for (caso, saida) in &saidas {
+        assert_eq!(
+            texto(&m.mascarar_tudo(saida)).trim_end(),
+            format!("\"{M}\""),
+            "{caso}"
+        );
+        sem_trecho_de_6(caso, &m, saida, "falso");
+    }
+
+    // Parser de linha e campos de tab.
+    let linhas = [
+        ("senha2 : falso-yaml-esp-02", "falso-yaml-esp-02"),
+        ("senha:\tfalso-yaml-tab-01", "falso-yaml-tab-01"),
+        ("\"k\":\"falso-json-colado-03\"", "falso-json-colado-03"),
+        (
+            "  \"private key\": \"falso-valor-com-espaco-na-chave-01\",",
+            "falso-valor-com-espaco-na-chave-01",
+        ),
+        (
+            "  \"x/y\": \"falso-valor-barra-chave-02\"",
+            "falso-valor-barra-chave-02",
+        ),
+        ("falso-um-linha\tcom-tab", "falso-um-linha"),
+    ];
+    let nota: String = linhas
+        .iter()
+        .map(|(l, _)| *l)
+        .collect::<Vec<_>>()
+        .join("\n");
+    let m = mascara(&generico(&[&nota]));
+    for (linha, valor) in linhas {
+        assert_eq!(
+            texto(&m.mascarar_tudo(format!("{linha}\n").as_bytes())),
+            format!("{M}\n")
+        );
+        assert_eq!(
+            texto(&m.mascarar_tudo(format!("{valor}\n").as_bytes())),
+            format!("{M}\n")
+        );
+        sem_trecho_de_6("linha inteira", &m, linha.as_bytes(), valor);
+    }
+    if let Some(o) = bash("sed -n 6p <<<\"$NOTA\" | cut -f1", &[("NOTA", &nota)]) {
+        assert_eq!(o, b"falso-um-linha\n");
+        assert_eq!(texto(&m.mascarar_tudo(&o)), format!("{M}\n"));
+    }
+    if let Some(o) = bash("sed -n 6p <<<\"$NOTA\" | cut -f2", &[("NOTA", &nota)]) {
+        assert_eq!(texto(&m.mascarar_tudo(&o)), format!("{M}\n"));
+    }
+
+    // RA3: registrados, sem exigir máscara (nenhum valor no registro).
+    let ctl = "falso-ctl\u{1b}-01x";
+    let m = mascara(&generico(&[ctl]));
+    if let Some(o) = bash("printf '%q\\n' \"$NOTA\"", &[("NOTA", ctl)]) {
+        eprintln!(
+            "RA3 printf %q com controle: mascarou = {}",
+            m.mascarar_tudo(&o) != o
+        );
+    }
+    let m = mascara(&generico(&[&nota]));
+    if let Some(o) = bash("sed -n 6p <<<\"$NOTA\" | expand", &[("NOTA", &nota)]) {
+        eprintln!(
+            "RA3 expand da linha com tab: sobra {} bytes",
+            maior_trecho(&m.mascarar_tudo(&o), b"falso-um-linha\tcom-tab")
+        );
+    }
+    if let Some(o) = bash("sed -n 1p <<<\"$NOTA\" | base64 -w0", &[("NOTA", &nota)]) {
+        eprintln!(
+            "RA3 base64 de uma linha: mascarou = {}",
+            m.mascarar_tudo(&o) != o
+        );
+    }
+}
+
+/// D54: o `printf %q` da máscara é igual ao do bash real para todo caractere ASCII
+/// visível e o espaço, no começo, no meio, no fim e depois de `=` e `:`; e as aspas
+/// simples, iguais ao miolo do `${X@Q}`.
+#[test]
+fn v2_56_printf_q_igual_ao_bash() {
+    let mut valores = Vec::new();
+    for c in (0x20u8..=0x7e).map(char::from) {
+        for v in [
+            format!("a{c}b"),
+            format!("{c}b"),
+            format!("a{c}"),
+            format!("a={c}b"),
+            format!("a:{c}b"),
+        ] {
+            valores.push(v);
+        }
+    }
+    // Um processo só: o bash imprime um por linha (nenhum valor tem `\n`).
+    let junto = valores.join("\n");
+    let Some(o) = bash(
+        "while IFS= read -r v; do printf '%q\\n' \"$v\"; done <<<\"$VALORES\"",
+        &[("VALORES", &junto)],
+    ) else {
+        return;
+    };
+    let do_bash: Vec<&[u8]> = o
+        .strip_suffix(b"\n")
+        .unwrap()
+        .split(|b| *b == b'\n')
+        .collect();
+    assert_eq!(do_bash.len(), valores.len());
+    for (v, esperado) in valores.iter().zip(do_bash) {
+        let mut nosso = Zeroizing::new(Vec::new());
+        printf_q(v.as_bytes(), &mut nosso);
+        assert_eq!(nosso.as_slice(), esperado, "printf %q de {v:?}");
+        assert_eq!(
+            printf_q_muda(v.as_bytes()),
+            esperado != v.as_bytes(),
+            "{v:?}"
+        );
+    }
+    let Some(o) = bash(
+        "while IFS= read -r v; do echo \"${v@Q}\"; done <<<\"$VALORES\"",
+        &[("VALORES", "falso-it's-01x\n'a''b'\nsem-aspa")],
+    ) else {
+        return;
+    };
+    let do_bash: Vec<&[u8]> = o
+        .strip_suffix(b"\n")
+        .unwrap()
+        .split(|b| *b == b'\n')
+        .collect();
+    for (v, esperado) in ["falso-it's-01x", "'a''b'", "sem-aspa"].iter().zip(do_bash) {
+        let mut nosso = Zeroizing::new(Vec::new());
+        aspas_simples(v.as_bytes(), &mut nosso);
+        let mut com_pontas = b"'".to_vec();
+        com_pontas.extend_from_slice(&nosso);
+        com_pontas.push(b'\'');
+        assert_eq!(com_pontas, esperado, "@Q de {v:?}");
+    }
+}
+
+/// D54: cada forma nova só existe quando muda o valor, e a linha solta não ganha
+/// base64 nem miolos (o base64 de linha solta fica em RA3).
+#[test]
+fn d54_formas_novas_so_quando_mudam_e_linha_sem_base64() {
+    let contar = |valor: &str| {
+        let mut g = Gerador {
+            tmp: Zeroizing::new(Vec::new()),
+            tmp2: Zeroizing::new(Vec::new()),
+        };
+        let mut n = 0usize;
+        g.formas_de_texto(valor.as_bytes(), &mut |_| {
+            n += 1;
+            Ok(())
+        })
+        .unwrap();
+        n
+    };
+    assert_eq!(contar("falso-simples-01"), 0);
+    assert_eq!(contar("falso-it's-01"), 2, "aspas simples e %q");
+    assert_eq!(contar("falso/simples/01"), 1, "só o JSON com \\/");
+    assert_eq!(contar("falso-ação-01"), 1, "só o ensure_ascii");
+    assert_eq!(contar("falso/ação/01"), 3, "\\/, ensure_ascii e PHP");
+    assert_eq!(contar("falso simples"), 1, "só o %q");
+    assert_eq!(contar("falso~a"), 0, "~ no meio não muda o %q");
+    assert_eq!(contar("~falso-a"), 1, "~ no começo muda o %q");
+
+    let linha = "falso-linha-solta-0123456789";
+    let mut b64 = Zeroizing::new(Vec::new());
+    base64(linha.as_bytes(), B64_PADRAO, false, &mut b64);
+    let mut g = Gerador {
+        tmp: Zeroizing::new(Vec::new()),
+        tmp2: Zeroizing::new(Vec::new()),
+    };
+    let mut padroes: Vec<Vec<u8>> = Vec::new();
+    g.linhas(
+        format!("{linha}\noutra-linha-falsa\n").as_bytes(),
+        &mut |p| {
+            padroes.push(p.to_vec());
+            Ok(())
+        },
+    )
+    .unwrap();
+    assert!(padroes.iter().any(|p| p == linha.as_bytes()));
+    assert!(
+        !padroes
+            .iter()
+            .any(|p| p.windows(8).any(|w| b64.windows(8).any(|x| x == w))),
+        "a linha solta ganhou base64"
+    );
+}
+
+/// V2.57 (D54), com valores que as fixtures não têm: o oráculo (`dev/variacoes.py`,
+/// rodado pelo python, sem chamar nada da máscara) gera os padrões de valores com `$`,
+/// `&`, `<`, `'`, `/`, acento, tab e linhas de chave e valor, e cada padrão, sozinho,
+/// sai `••••` pela máscara da entrada dele. A tabela de D54 é a mesma nas duas pontas.
+#[test]
+fn v2_57_oraculo_e_mascara_com_valores_de_d54() {
+    let fonte = concat!(env!("CARGO_MANIFEST_DIR"), "/../../dev/variacoes.py");
+    if !std::path::Path::new(PYTHON).exists() {
+        eprintln!("{PYTHON} não existe aqui: teste cruzado pulado");
+        return;
+    }
+    let extras = [
+        "falso-Ab3$k&<9>Zq!",
+        "falso-it's-01x",
+        "falso/ação/01",
+        "falso com espaço ~ #01",
+        "linha-um-ação-01\nlinha-dois-ação-02\nlinha-tres-Ab3$k&<9>Zq!",
+        "senha2 : falso-yaml-esp-02\nsenha:\tfalso-yaml-tab-01\n\"k\":\"falso-json-colado-03\"\n  \"private key\": \"falso-valor-com-espaco-na-chave-01\",\n  \"x/y\": \"falso-valor-barra-chave-02\"\nfalso-um-linha\tcom-tab\nexport FALSO_X='falso-it''s-02'\n",
+    ];
+    let anexo_ = "FALSO_ENV=falso-anexo-01\nPORT=8080\nnome\tfalso-tsv-valor-01\tfalso/ação\r\n";
+    let senha_banco = "falso-PG$&<x>'q/ç-01";
+    let mut r = rascunho("teste-generico", RascunhoDados::Generico);
+    r.extras = extras
+        .iter()
+        .enumerate()
+        .map(|(i, v)| extra(&format!("S{i}"), v, true))
+        .collect();
+    r.anexos = vec![anexo("app.env", anexo_.as_bytes())];
+    let generico = valida(r);
+    let banco = valida(rascunho(
+        "teste-banco",
+        RascunhoDados::Banco {
+            motor: t("postgres"),
+            host: t("127.0.0.1"),
+            porta: t("55432"),
+            base: t("app_teste"),
+            usuario: t("app"),
+            senha: s(senha_banco),
+            tunel: String::new(),
+        },
+    ));
+    // Pedido ao oráculo pelo stdin: grupo, usuário (ou vazio), anexo (0/1), valor em hex.
+    let mut pedido = String::new();
+    for v in extras {
+        pedido.push_str(&format!("g\t\t0\t{}\n", hex(v.as_bytes())));
+    }
+    pedido.push_str(&format!("g\t\t1\t{}\n", hex(anexo_.as_bytes())));
+    pedido.push_str(&format!("b\tapp\t0\t{}\n", hex(senha_banco.as_bytes())));
+    let script = "import importlib.util,sys\n\
+        spec=importlib.util.spec_from_file_location('variacoes',sys.argv[1])\n\
+        v=importlib.util.module_from_spec(spec);spec.loader.exec_module(v)\n\
+        for linha in sys.stdin.read().splitlines():\n\
+        \x20   g,u,a,h=linha.split('\\t')\n\
+        \x20   for p in sorted(v.variacoes(bytes.fromhex(h),u or None,anexo=a=='1')):\n\
+        \x20       print(g+'\\t'+p.hex())\n";
+    let mut filho = std::process::Command::new(PYTHON)
+        .args(["-I", "-B", "-c", script, fonte])
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    {
+        use std::io::Write as _;
+        filho
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(pedido.as_bytes())
+            .unwrap();
+    }
+    let saida = filho.wait_with_output().unwrap();
+    assert!(saida.status.success(), "o oráculo falhou");
+    let m_g = mascara(&generico);
+    let m_b = mascara(&banco);
+    let mut n = 0usize;
+    for linha in saida
+        .stdout
+        .split(|b| *b == b'\n')
+        .filter(|l| !l.is_empty())
+    {
+        let (grupo, h) = linha.split_at(1);
+        let padrao = de_hex(&h[1..]);
+        let m = if grupo == b"g" { &m_g } else { &m_b };
+        assert_eq!(
+            m.mascarar_tudo(&padrao),
+            M.as_bytes(),
+            "padrão nº {n} do oráculo não saiu {M}"
+        );
+        n += 1;
+    }
+    assert!(n > 200, "o oráculo gerou poucos padrões ({n})");
+}
+
+fn hex(b: &[u8]) -> String {
+    b.iter().map(|x| format!("{x:02x}")).collect()
+}
+
+fn de_hex(h: &[u8]) -> Vec<u8> {
+    h.chunks(2)
+        .map(|p| u8::from_str_radix(core::str::from_utf8(p).unwrap(), 16).unwrap())
+        .collect()
 }

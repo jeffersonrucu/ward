@@ -1,39 +1,47 @@
 #!/usr/bin/python3 -IB
-"""Lista de segredos do cofre de teste e das variações de D11, D36 e D37 (Fases 19, 19d).
+"""Lista de segredos do cofre de teste e das variações de D11, D36, D37 e D54 (Fases 19,
+19d e 19e).
 
 Uso (da raiz):
     python3 -I -B dev/variacoes.py [--saida .dev/<nome>.txt]      # make dev-variacoes
 
 Os validadores usam a lista com `grep -F -f .dev/variacoes.txt` ("contém segredo" do
-contrato). Uma linha por padrão, sem linha vazia, nenhum padrão com menos de 6 bytes.
+contrato). Uma linha por padrão, sem linha vazia, nenhum padrão com menos de 6 bytes;
+forma com quebra de linha ou nulo não cabe numa linha e fica de fora.
 
-O que entra, para cada valor secreto das fixtures (`segredos`, extras com
-`segredo: true`, anexos, a chave privada de `.dev/servicos/chaves/`, a senha mestra e o
-PIN):
-- o valor literal;
-- segredo de várias linhas (chave privada, extra secreto com `\\n`, anexos; D36): cada
-  linha aparada com 6+ caracteres e o valor, com e sem aspas e com 6+ caracteres, das
-  linhas `CHAVE=valor`/`export CHAVE=valor`, `"chave": "valor"` (JSON, com ou sem a
-  vírgula do fim) e `chave: valor` (YAML, também `- chave: valor`); cada linha e cada
-  valor recebem as mesmas codificações abaixo;
-- URL-encoded: `quote` sem nada seguro, com `/` seguro, `quote_plus` (formulário), com
-  hexadecimal maiúsculo e minúsculo, e todo byte codificado;
-- base64 padrão e URL-safe, com e sem `=`, e o miolo do base64 do valor dentro de um
-  base64 maior (os 3 alinhamentos);
-- Basic auth: base64 de `usuário:segredo` para as entradas com usuário;
-- escape JSON (e o `\\/` do PHP);
-- as formas escapadas de D37, cada uma só quando difere da literal: JSON do Go (`&`,
-  `<`, `>`, U+2028 e U+2029 como `\\u0026`, `\\u003c`, `\\u003e`, `\\u2028`,
-  `\\u2029`), JSON com `ensure_ascii` do Python (`\\uXXXX` minúsculo, com par
-  substituto acima de U+FFFF) e aspas duplas do shell (`\\` antes de `$`, `` ` ``,
-  `"` e `\\`). O hex em maiúsculas fica de fora (RA3);
-- `DATABASE_URL` das entradas `banco` (D10).
+Para cada valor secreto das fixtures (`segredos`, extras com `segredo: true`, anexos, a
+chave privada de `.dev/servicos/chaves/`, a senha mestra e o PIN), a tabela única de
+D54, a mesma que a máscara implementa (sem uma chamar a outra):
+1. segredo inteiro: o literal; URL-encoded (`quote` sem nada seguro, com `/` seguro,
+   `quote_plus`, hex maiúsculo e minúsculo, todo byte codificado); base64 padrão e
+   URL-safe, com e sem `=`; o miolo do base64 do valor dentro de um base64 maior (3
+   alinhamentos); e as formas de texto;
+2. Basic: base64 de `usuário:segredo`, só para segredo de campo de entrada com usuário;
+3. por linha (segredo com `\\n` e anexo; D36, D54): cada linha com 6+ caracteres, sem o
+   `\\r` do fim e aparada, URL-encoded e com as formas de texto dela, sem base64 nem
+   miolos (o base64 de linha solta fica em RA3); os campos de 6+ de uma linha com tab;
+4. valor de linha (`CHAVE=valor`/`export CHAVE=valor`, `"chave": "valor"` com a chave de
+   qualquer caractere menos `"` e também colado, `chave: valor`, `chave : valor`,
+   `chave:\\tvalor`, `- chave: valor`, e o campo de tab), com e sem aspas, 6+: tratado
+   como segredo inteiro (1).
+Anexo inteiro: o conteúdo, sem a quebra de linha final, URL-encoded e base64.
 
-Independente do código da máscara (Fases 17 e 19c) de propósito: é o oráculo de quem
-confere; não importa nem chama o `ward-core`. Testes: `dev/testes/variacoes_teste.py`
-(rodado por `make teste-dev-cofre`). Só a biblioteca padrão. Nada vai para
-stdout/stderr além do caminho e da contagem; a lista é gravada 0600, de forma atômica,
-só dentro de `.dev/`. Nunca lê fora do repositório.
+Formas de texto (D37, D54), cada uma só quando difere do literal e só para texto
+(UTF-8 válido): escape JSON padrão, com e sem `\\/`; JSON do Go (`&`, `<`, `>`, U+2028 e
+U+2029 como `\\u0026`, `\\u003c`, `\\u003e`, `\\u2028`, `\\u2029`); `ensure_ascii` do
+Python (`\\uXXXX` minúsculo, com par substituto acima de U+FFFF); `json_encode` do PHP
+(`\\/` e `\\uXXXX` juntos, só com `/` e caractere fora do ASCII); aspas duplas do shell
+(`\\` antes de `$`, `` ` ``, `"` e `\\`); aspas simples do shell (`'` vira `'\\''`, só
+com `'`); e `printf %q` do bash 5.2 (só ASCII visível e espaço). O hex em maiúsculas,
+o `$'…'` do bash e o `expand` ficam de fora (RA3). Mais o `DATABASE_URL` das entradas
+`banco` (D10).
+
+Independente do código da máscara (Fases 17, 19c e 19e) de propósito: é o oráculo de
+quem confere; não importa nem chama o `ward-core`. Testes: `dev/testes/variacoes_teste.py`
+e o teste cruzado oráculo → máscara de `dev/testes/dev-cofre.sh` (os dois rodados por
+`make teste-dev-cofre`). Só a biblioteca padrão. Nada vai para stdout/stderr além do
+caminho e da contagem; a lista é gravada 0600, de forma atômica, só dentro de `.dev/`.
+Nunca lê fora do repositório.
 """
 
 from __future__ import annotations
@@ -182,6 +190,24 @@ def gravar(caminho: Path, conteudo: bytes) -> None:
 
 
 # --- Variações -----------------------------------------------------------------------
+#
+# A tabela única de D54. Escrita aqui a partir do texto do PRD (D11, D34, D36, D37,
+# D54), não do `mascara.rs`:
+#   1. segredo inteiro: literal, base64 (padrão e URL-safe, com e sem `=`), miolos de
+#      base64 (3 alinhamentos), percent e as formas de texto;
+#   2. Basic: base64 de `usuário:segredo` (só segredo de campo de entrada com usuário);
+#   3. por linha (segredo de várias linhas e anexo): a linha de 6+ (sem o `\r` do fim e
+#      aparada), percent e as formas de texto dela, sem base64 nem miolos; os campos de
+#      6+ de uma linha com tab;
+#   4. valor de linha (`CHAVE=valor`, `"chave": "valor"`, `chave: valor`, campo de tab),
+#      com e sem aspas, 6+: tratado como segredo inteiro (1).
+# Anexo inteiro: o conteúdo, sem a quebra de linha final, base64 e percent.
+# Formas de texto e campos de tab só para texto (UTF-8 válido).
+
+BARRA = chr(92)
+# Espaço em branco ASCII das pontas (o mesmo conjunto nas duas implementações:
+# espaço, tab, LF, FF, CR; o VT fica).
+BRANCO = b" \t\n\x0c\r"
 
 
 def b64(v: bytes) -> list[bytes]:
@@ -233,15 +259,22 @@ def caracteres(v: bytes) -> int:
 
 
 def json_escape(v: bytes) -> list[bytes]:
+    """Escape JSON padrão, com e sem `\\/`."""
     t = texto(v)
     if t is None:
         return []
     j = json.dumps(t, ensure_ascii=False)[1:-1]
-    return [x.encode("utf-8") for x in {j, j.replace("/", "\\/")}]
+    return [x.encode("utf-8") for x in {j, j.replace("/", BARRA + "/")}]
 
 
 # D37. Cada forma é escrita aqui a partir da descrição do PRD, não do `mascara.rs`.
-GO_HTML = {"&": "\\u0026", "<": "\\u003c", ">": "\\u003e", "\u2028": "\\u2028", "\u2029": "\\u2029"}
+GO_HTML = {
+    "&": BARRA + "u0026",
+    "<": BARRA + "u003c",
+    ">": BARRA + "u003e",
+    chr(0x2028): BARRA + "u2028",
+    chr(0x2029): BARRA + "u2029",
+}
 
 
 def json_go(t: str) -> str:
@@ -256,38 +289,101 @@ def json_ascii(t: str) -> str:
     return json.dumps(t, ensure_ascii=True)[1:-1]
 
 
+def json_php(t: str) -> str | None:
+    """`json_encode` do PHP (D54): `/` como `\\/` e todo caractere fora do ASCII como
+    `\\uXXXX` minúsculo. Só quando o valor tem os dois."""
+    if "/" not in t or all(ord(c) < 0x80 for c in t):
+        return None
+    partes = []
+    for c in t:
+        if ord(c) >= 0x80:
+            partes.append(json.dumps(c, ensure_ascii=True)[1:-1])
+        elif c == "/":
+            partes.append(BARRA + "/")
+        else:
+            partes.append(json.dumps(c, ensure_ascii=False)[1:-1])
+    return "".join(partes)
+
+
 def aspas_duplas(t: str) -> str:
     """Valor dentro de aspas duplas do shell (`declare -p`, `export -p`)."""
     return re.sub(r'([$`"\\])', r"\\\1", t)
 
 
+def aspas_simples(t: str) -> str | None:
+    """Valor dentro de aspas simples do shell (`${X@Q}`, `set`, `set -x`, D54): cada `'`
+    vira `'\\''`. Só quando o valor tem `'`."""
+    if "'" not in t:
+        return None
+    return t.replace("'", "'" + BARRA + "''")
+
+
+# `printf %q` do bash 5.2 (D54): barra antes destes sempre; `#` só no começo; `~` no
+# começo ou depois de `=` ou `:`. Só para ASCII visível e espaço (o resto vai para
+# `$'…'`, RA3). Conferido contra o bash real em `dev/testes/variacoes_teste.py`.
+PRINTF_Q_SEMPRE = set(" !\"$&'()*,;<>?[]^`{|}" + BARRA)
+
+
+def printf_q(t: str) -> str | None:
+    if not t or any(not (0x20 <= ord(c) <= 0x7E) for c in t):
+        return None
+    saida = []
+    for i, c in enumerate(t):
+        if c in PRINTF_Q_SEMPRE or (c == "#" and i == 0) or (c == "~" and (i == 0 or t[i - 1] in "=:")):
+            saida.append(BARRA)
+        saida.append(c)
+    return "".join(saida)
+
+
 def escapadas(v: bytes) -> set[bytes]:
-    """As formas de D37 que diferem do valor literal (vazio se nenhuma muda nada)."""
+    """As formas de texto de D37 e D54 que diferem do valor literal (vazio se nenhuma
+    muda nada): escape JSON padrão (com e sem `\\/`), JSON do Go, `ensure_ascii`, PHP,
+    aspas duplas, aspas simples e `printf %q`. Só para texto."""
     t = texto(v)
     if t is None:
         return set()
-    formas = {json_go(t), json_ascii(t)}
-    if "\n" not in t and "\r" not in t:
-        formas.add(aspas_duplas(t))
-    return {f.encode("utf-8") for f in formas} - {v}
+    formas = {json_go(t), json_ascii(t), aspas_duplas(t)}
+    for extra in (json_php(t), aspas_simples(t), printf_q(t)):
+        if extra is not None:
+            formas.add(extra)
+    return ({f.encode("utf-8") for f in formas} | set(json_escape(v))) - {v}
+
+
+def inteiro(x: bytes) -> set[bytes]:
+    """Linha 1 da tabela: o segredo inteiro e as variações dele."""
+    if not x:
+        return set()
+    return {x} | set(b64(x)) | set(miolos_b64(x)) | set(url(x)) | escapadas(x)
+
+
+def basic(usuario: str, x: bytes) -> set[bytes]:
+    """Linha 2: base64 de `usuário:segredo`."""
+    return set(b64(usuario.encode("utf-8") + b":" + x)) if x else set()
+
+
+def aparar(v: bytes) -> bytes:
+    return v.strip(BRANCO)
 
 
 CHAVE_IGUAL = re.compile(rb"^(?:export\s+)?[A-Za-z_.-][A-Za-z0-9_.-]*\s*=(.*)$")
-CHAVE_JSON = re.compile(rb'^(?:-\s+)?"[^"]+"\s*:(.*)$')
-CHAVE_YAML = re.compile(rb"^(?:-\s+)?[A-Za-z0-9_.-]+:(?:[ \t](.*))?$")
+CHAVE_JSON = re.compile(rb'^(?:- [ \t\n\x0c\r]*)?"[^"]+"[ \t\n\x0c\r]*:(.*)$')
+CHAVE_YAML = re.compile(rb"^(?:- [ \t\n\x0c\r]*)?[A-Za-z0-9_.-]+[ \t\n\x0c\r]*:(?:[ \t](.*))?$")
 
 
 def valores_da_linha(aparada: bytes) -> list[bytes]:
-    """O valor de `CHAVE=valor`, `"chave": "valor"` e `chave: valor` (D11, D36), sem a
-    vírgula do fim no JSON/YAML, com e sem aspas, cada um com 6+ caracteres (D34)."""
+    """O valor de `CHAVE=valor`, `"chave": "valor"` (também colado `"k":"v"` e com a
+    chave de qualquer caractere menos `"`) e `chave: valor` (também `chave : valor` e
+    `chave:\\tvalor`) (D11, D36, D54), sem a vírgula do fim no JSON/YAML, com e sem
+    aspas, cada um com 6+ caracteres (D34)."""
+    aparada = aparar(aparada)
     brutos = []
     for regex, virgula in ((CHAVE_IGUAL, False), (CHAVE_JSON, True), (CHAVE_YAML, True)):
         m = regex.match(aparada)
         if not m or m.group(1) is None:
             continue
-        valor = m.group(1).strip()
+        valor = aparar(m.group(1))
         if virgula and valor.endswith(b","):
-            valor = valor[:-1].rstrip()
+            valor = aparar(valor[:-1])
         brutos.append(valor)
     saida = []
     for valor in brutos:
@@ -298,38 +394,79 @@ def valores_da_linha(aparada: bytes) -> list[bytes]:
     return saida
 
 
-def linhas_de_anexo(v: bytes) -> list[bytes]:
-    """Passada por linha de um segredo de várias linhas (D11, D36): cada linha aparada
-    com 6+ caracteres e os valores de `valores_da_linha`."""
+def campos_de_tab(linha: bytes) -> list[bytes]:
+    """Os campos de uma linha de texto com tab (`cut -f`, TSV; D54), aparados, com e sem
+    aspas, 6+."""
+    if b"\t" not in linha or texto(linha) is None:
+        return []
     saida = []
-    for linha in v.split(b"\n"):
-        aparada = linha.rstrip(b"\r").strip()
-        if caracteres(aparada) >= MIN_PADRAO:
-            saida.append(aparada)
-            saida += valores_da_linha(aparada)
+    for campo in linha.split(b"\t"):
+        campo = aparar(campo)
+        formas = [campo]
+        if len(campo) >= 3 and campo[:1] == campo[-1:] and campo[:1] in (b'"', b"'"):
+            formas.append(campo[1:-1])
+        saida += [x for x in formas if caracteres(x) >= MIN_PADRAO]
     return saida
 
 
-def todas(x: bytes) -> set[bytes]:
-    """Codificações de um valor (o literal fica de fora: pode ter quebra de linha)."""
-    return set(b64(x)) | set(miolos_b64(x)) | set(json_escape(x)) | escapadas(x) | set(url(x))
+def linhas_de_anexo(v: bytes) -> list[bytes]:
+    """As linhas de 6+ caracteres de um segredo de várias linhas (sem o `\\r` do fim e
+    aparadas; D11, D36) e os valores de linha delas (`valores_da_linha`, campos de tab).
+    A linha entra como linha (formas de texto, sem base64); o valor, como inteiro."""
+    linhas, valores = por_linha(v)
+    return sorted(linhas | valores)
 
 
-def variacoes(v: bytes, usuario: str | None) -> set[bytes]:
+def por_linha(v: bytes) -> tuple[set[bytes], set[bytes]]:
+    """Linha 3 (as linhas) e linha 4 (os valores) da tabela."""
+    linhas: set[bytes] = set()
+    valores: set[bytes] = set()
+    for linha in v.split(b"\n"):
+        if linha.endswith(b"\r"):
+            linha = linha[:-1]
+        if caracteres(linha) < MIN_PADRAO:
+            continue
+        linhas.add(linha)
+        aparada = aparar(linha)
+        if caracteres(aparada) >= MIN_PADRAO:
+            linhas.add(aparada)
+        valores.update(campos_de_tab(linha))
+        valores.update(valores_da_linha(linha))
+    return linhas, valores
+
+
+def de_linha(v: bytes) -> set[bytes]:
+    """As variações da passada por linha (linhas 3 e 4)."""
+    linhas, valores = por_linha(v)
     pad: set[bytes] = set()
-    inteiro = {v, v.rstrip(b"\r\n")} - {b""}
-    for x in inteiro:
-        if b"\n" not in x and b"\r" not in x:
-            pad.add(x)
-            if usuario:
-                pad.update(b64(usuario.encode("utf-8") + b":" + x))
-        pad |= todas(x)
-    # Segredo de várias linhas (chave, anexo): cada linha e cada valor `CHAVE=valor`.
-    if b"\n" in v or b"\r" in v:
-        for linha in linhas_de_anexo(v):
-            pad.add(linha)
-            pad |= todas(linha)
+    for linha in linhas:
+        pad.add(linha)
+        pad |= set(url(linha)) | escapadas(linha)
+    for valor in valores:
+        pad |= inteiro(valor)
     return pad
+
+
+def variacoes(v: bytes, usuario: str | None, anexo: bool = False) -> set[bytes]:
+    """As variações de um valor secreto que cabem numa linha da lista. `usuario`
+    (segredo de campo de entrada com usuário) acrescenta o Basic; `anexo` troca a linha
+    1 pelo anexo inteiro."""
+    pad: set[bytes] = set()
+    if anexo:
+        sem_quebra = v[:-1] if v.endswith(b"\n") else v
+        sem_quebra = sem_quebra[:-1] if sem_quebra.endswith(b"\r") else sem_quebra
+        for x in {v, sem_quebra} - {b""}:
+            pad.add(x)
+            pad |= set(url(x))
+        pad |= set(b64(v))
+        pad |= de_linha(v)
+    else:
+        pad |= inteiro(v)
+        if usuario:
+            pad |= basic(usuario, v)
+        if b"\n" in v:
+            pad |= de_linha(v)
+    return {p for p in pad if listavel(p)}
 
 
 def database_url(e: dict) -> list[bytes]:
@@ -346,7 +483,31 @@ def database_url(e: dict) -> list[bytes]:
     return [alvo.encode(), f"{esquema}://{usuario}:{cifrada}@".encode()]
 
 
+def listavel(p: bytes) -> bool:
+    """Padrão que cabe numa linha do `grep -F -f` (sem quebra de linha nem nulo)."""
+    return b"\n" not in p and b"\r" not in p and b"\0" not in p
+
+
 # --- Montagem ------------------------------------------------------------------------
+
+
+def da_entrada(e: dict) -> set[bytes]:
+    """As variações dos segredos de uma entrada das fixtures, sem o `DATABASE_URL` (que
+    vem da entrega, com host e porta de quem roda) e só as que cabem numa linha."""
+    pad: set[bytes] = set()
+    usuario = e.get("campos", {}).get("usuario") or None
+    for campo, valor in e.get("segredos", {}).items():
+        if campo.endswith("_arquivo"):
+            bruto = ler_do_repositorio(valor, BASE_CHAVES)
+        else:
+            bruto = valor.encode("utf-8")
+        pad |= variacoes(bruto, usuario)
+    for x in e.get("extras", []):
+        if x.get("segredo") is True:
+            pad |= variacoes(x["valor"].encode("utf-8"), None)
+    for a in e.get("anexos", []):
+        pad |= variacoes(ler_do_repositorio(a["arquivo"], BASE_ANEXOS), None, anexo=True)
+    return {p for p in pad if listavel(p)}
 
 
 def coletar(dados: dict) -> set[bytes]:
@@ -354,20 +515,9 @@ def coletar(dados: dict) -> set[bytes]:
     for chave in ("senha_mestra", "pin"):
         pad |= variacoes(dados[chave].encode("utf-8"), None)
     for e in dados["entradas"]:
-        usuario = e.get("campos", {}).get("usuario") or None
-        for campo, valor in e.get("segredos", {}).items():
-            if campo.endswith("_arquivo"):
-                bruto = ler_do_repositorio(valor, BASE_CHAVES)
-            else:
-                bruto = valor.encode("utf-8")
-            pad |= variacoes(bruto, usuario)
-        for x in e.get("extras", []):
-            if x.get("segredo") is True:
-                pad |= variacoes(x["valor"].encode("utf-8"), usuario)
-        for a in e.get("anexos", []):
-            pad |= variacoes(ler_do_repositorio(a["arquivo"], BASE_ANEXOS), None)
+        pad |= da_entrada(e)
         pad.update(database_url(e))
-    return pad
+    return {p for p in pad if listavel(p)}
 
 
 def conferir_padroes(pad: set[bytes]) -> list[bytes]:

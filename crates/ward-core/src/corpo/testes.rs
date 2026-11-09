@@ -582,12 +582,12 @@ fn troca_de_senha_sela_e_grava_pelo_mesmo_caminho() {
 
     // Senha atual errada: recusa e não toca no arquivo.
     assert_eq!(
-        trocar_senha(&destino, &nova, &nova, 0).unwrap_err(),
+        trocar_senha(&destino, &nova, &nova, 0, 0).unwrap_err(),
         ErroGravacao::Formato(ErroFormato::SenhaOuArquivo)
     );
     assert!(std::fs::read(&destino).unwrap() == antes);
 
-    let mut novo = trocar_senha(&destino, &atual, &nova, 0).unwrap();
+    let mut novo = trocar_senha(&destino, &atual, &nova, 0, 0).unwrap();
     // A troca de senha mantém a configuração (o mesmo hash do PIN).
     assert!(novo.configuracao().hash_pin().bytes() == &hash[..]);
     let depois = std::fs::read(&destino).unwrap();
@@ -1465,8 +1465,9 @@ fn serializar_recusa_configuracao_fora_da_regra() {
 
 // ---- Fase 19c: D39 (geração, anti-rollback) ----
 
-/// V2.44 (D39), achado médio 2 (o repro `gravar.rs` do auditor regravava o mesmo cofre
-/// aberto sem nada que distinguisse as versões): cada gravação sobe a geração; uma
+/// V2.44 (D39, D53), achado médio 2 (o repro `gravar.rs` do auditor regravava o mesmo
+/// cofre aberto sem nada que distinguisse as versões): cada gravação sobe a geração, e
+/// uma gravação que falha depois de selar queima a dela; uma
 /// versão autêntica mais antiga copiada por cima é recusada com `Retrocesso`, sem
 /// entrada e sem valor no erro; a troca de senha também sobe e também recusa.
 #[cfg(unix)]
@@ -1497,24 +1498,26 @@ fn v2_44_geracao_sobe_e_retrocesso_e_recusado() {
     assert_eq!(cofre.geracao(), n + 1);
     assert_eq!(geracao_do_arquivo(&senha), n + 1);
 
-    // Falha na gravação (destino vira diretório): o cofre aberto segue na mesma.
+    // Falha na gravação depois de selar (destino vira diretório, o rename falha): o
+    // arquivo segue com n+1 e o cofre aberto fica com a geração que selou (D53).
     let diretorio = dir.0.join("sou-diretorio");
     std::fs::create_dir(&diretorio).unwrap();
     assert!(gravar_entradas(&diretorio, &mut cofre, &entradas).is_err());
-    assert_eq!(cofre.geracao(), n + 1);
+    assert_eq!(cofre.geracao(), n + 2);
+    assert_eq!(geracao_do_arquivo(&senha), n + 1);
 
-    // n+2 pela troca de senha (com mínimo n+1, o que o daemon viu).
-    let trocado = trocar_senha(&destino, &senha, &nova, n + 1).unwrap();
-    assert_eq!(trocado.geracao(), n + 2);
-    assert_eq!(geracao_do_arquivo(&nova), n + 2);
-    let do_n2 = std::fs::read(&destino).unwrap();
-    let (_, lidas) = abrir_entradas_desde(&do_n2, &nova, n + 2).unwrap();
+    // A troca de senha (mínimo n+1, o que o daemon viu; queimada n+2) sela n+3.
+    let trocado = trocar_senha(&destino, &senha, &nova, n + 1, cofre.geracao()).unwrap();
+    assert_eq!(trocado.geracao(), n + 3);
+    assert_eq!(geracao_do_arquivo(&nova), n + 3);
+    let do_n3 = std::fs::read(&destino).unwrap();
+    let (_, lidas) = abrir_entradas_desde(&do_n3, &nova, n + 3, n + 3).unwrap();
     conferir_ida_e_volta(&entradas, &lidas);
 
     // Rollback com versão autêntica: o arquivo da geração n copiado por cima.
     std::fs::write(&destino, &antigo).unwrap();
     let arquivo = std::fs::read(&destino).unwrap();
-    match abrir_entradas_desde(&arquivo, &senha, n + 2) {
+    match abrir_entradas_desde(&arquivo, &senha, n + 3, n + 3) {
         Ok(_) => panic!("abriu um cofre mais antigo que o último visto"),
         Err(e) => {
             assert_eq!(e, ErroAbrir::Retrocesso);
@@ -1527,11 +1530,11 @@ fn v2_44_geracao_sobe_e_retrocesso_e_recusado() {
         }
     }
     // Sem mínimo (0, primeira abertura) abre; a mesma geração do mínimo também.
-    assert!(abrir_entradas_desde(&arquivo, &senha, 0).is_ok());
-    assert!(abrir_entradas_desde(&arquivo, &senha, n).is_ok());
+    assert!(abrir_entradas_desde(&arquivo, &senha, 0, 0).is_ok());
+    assert!(abrir_entradas_desde(&arquivo, &senha, n, 0).is_ok());
     // A troca de senha sobre o arquivo antigo também recusa, e não toca no disco.
     assert_eq!(
-        trocar_senha(&destino, &senha, &nova, n + 2).unwrap_err(),
+        trocar_senha(&destino, &senha, &nova, n + 3, n + 3).unwrap_err(),
         ErroGravacao::Retrocesso
     );
     assert!(std::fs::read(&destino).unwrap() == antigo);
@@ -1549,7 +1552,7 @@ fn v2_44_geracao_esgotada_nao_toca_no_disco() {
     let mut cofre = CofreAberto::novo(&senha, configuracao_nova()).unwrap();
     gravar_entradas(&destino, &mut cofre, &[]).unwrap();
     let antes = std::fs::read(&destino).unwrap();
-    cofre.gravou(u64::MAX);
+    cofre.queimar(u64::MAX);
     assert_eq!(
         gravar_entradas(&destino, &mut cofre, &cofre_de_teste()).unwrap_err(),
         ErroGravacao::GeracaoEsgotada
@@ -1715,4 +1718,33 @@ fn v2_51_mensagem_de_grande_demais_acompanha_os_limites() {
             "o limite do corpo é um número inteiro de MiB"
         )
     };
+}
+
+/// V2.58 (D55): a leitura do corpo aplica a regra do último rótulo. Um corpo forjado
+/// com a URL do `login` ou do `api` lida como IPv4 pelo navegador é recusado com o erro
+/// genérico, sem o valor; um domínio com dígito só no começo de um rótulo do meio abre.
+#[test]
+fn v2_58_corpo_forjado_com_ultimo_rotulo_numerico() {
+    let corpo = corpo_de_teste();
+    let base = cruas(&corpo);
+    let login = indice(&base, "acme-wp-dev");
+    let api = indice(&base, "beta-github-api");
+    for url in [
+        "https://0x7f000001/",
+        "https://0x7f.0.0.1/",
+        "https://1.2.3.0x4/",
+        "https://x.123/",
+        "https://x.0x10/",
+        "https://x.example.9z/",
+    ] {
+        for (i, nome) in [(login, "login"), (api, "api")] {
+            let mut c = base.clone();
+            c[i].dados[0] = url.as_bytes().to_vec();
+            recusado(&forjar(&c), &format!("url {url} no {nome}"), url);
+        }
+    }
+    let mut c = base.clone();
+    c[login].dados[0] = b"https://1password.com/".to_vec();
+    c[api].dados[0] = b"https://x1.example2/".to_vec();
+    assert!(ler(&forjar(&c)).is_ok());
 }

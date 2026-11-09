@@ -153,22 +153,28 @@ impl std::error::Error for ErroAbrir {}
 /// (D30, D39). O conteúdo decifrado zera ao sair; as entradas voltam em ordem de nome.
 ///
 /// Aceita qualquer geração. O daemon (Fase 22) abre por [`abrir_entradas_desde`], com
-/// a maior geração que já viu.
+/// a maior geração que já viu e a maior que já queimou.
 pub fn abrir_entradas(
     arquivo: &[u8],
     senha: &SenhaMestra,
 ) -> Result<(CofreAberto, Vec<Entrada>), ErroAbrir> {
-    abrir_entradas_desde(arquivo, senha, 0)
+    abrir_entradas_desde(arquivo, senha, 0, 0)
 }
 
 /// Como [`abrir_entradas`], mas recusa com [`ErroAbrir::Retrocesso`] um corpo cuja
 /// geração seja menor que `geracao_minima` (D39): a troca do arquivo por uma versão
 /// autêntica mais antiga. A conferência vem depois de decifrar e de validar o corpo
 /// inteiro, e nenhuma entrada é devolvida.
+///
+/// `geracao_queimada` (D53) é a maior geração já selada ou tentada que o chamador
+/// conhece (uma gravação que falhou depois de selar). O [`CofreAberto`] devolvido fica
+/// com max(geração do corpo, `geracao_queimada`), e a próxima gravação usa um número
+/// que nunca foi selado.
 pub fn abrir_entradas_desde(
     arquivo: &[u8],
     senha: &SenhaMestra,
     geracao_minima: u64,
+    geracao_queimada: u64,
 ) -> Result<(CofreAberto, Vec<Entrada>), ErroAbrir> {
     let (chaves, conteudo) = formato::abrir(arquivo, senha).map_err(ErroAbrir::Formato)?;
     let (configuracao, geracao, entradas) = desserializar(&conteudo).map_err(ErroAbrir::Corpo)?;
@@ -178,7 +184,7 @@ pub fn abrir_entradas_desde(
         return Err(ErroAbrir::Retrocesso);
     }
     Ok((
-        CofreAberto::de_partes(chaves, configuracao, geracao),
+        CofreAberto::de_partes(chaves, configuracao, geracao.max(geracao_queimada)),
         entradas,
     ))
 }

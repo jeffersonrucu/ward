@@ -1,5 +1,6 @@
 #!/usr/bin/python3 -IB
-"""Testes do `dev/variacoes.py` (V2.52, mais as variações de D11 de V2.29; Fase 19d).
+"""Testes do `dev/variacoes.py` (V2.52 e V2.57, mais as variações de D11 de V2.29; Fases
+19d e 19e).
 
 Uso (da raiz): python3 -I -B dev/testes/variacoes_teste.py  (`make teste-dev-cofre` roda).
 
@@ -14,6 +15,7 @@ from __future__ import annotations
 import base64
 import importlib.util
 import re
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -222,6 +224,124 @@ class D11DeAntes(unittest.TestCase):
         for caminho in ("/tmp/variacoes.txt", "../variacoes.txt", "dev/variacoes.txt"):
             with self.assertRaises(V.Recusa):
                 V.validar_saida(caminho)
+
+
+def esc8(forma: str) -> bytes:
+    """Como `esc`, mas a forma pode ter caractere fora do ASCII (fica em UTF-8)."""
+    return forma.replace("~", "\\").encode("utf-8")
+
+
+C = chr(0xE7)  # ç
+# Linha com `"`, `'`, `/`, `ç`, `$`, `&`, `<`, `>` e espaço; e uma só em ASCII para o %q.
+LINHA = 'falso-"q\'/' + C + "$&<x> 01"
+LINHA_ASCII = "falso-\"q' $&<x>#01"
+
+
+class D54TabelaUnica(unittest.TestCase):
+    """V2.57: a linha de segredo de várias linhas ganha as formas de texto e os campos de
+    tab, e não ganha base64 nem miolos; formas novas (PHP, aspas simples, `printf %q`)."""
+
+    def varias(self) -> set[bytes]:
+        return pad("falso-linha-um-01\n" + LINHA + "\n" + LINHA_ASCII + "\n")
+
+    def test_linha_ganha_as_formas_de_texto(self):
+        p = self.varias()
+        esperadas = {
+            "JSON padrão": 'falso-~"q\'/' + C + "$&<x> 01",
+            "JSON com ~/": 'falso-~"q\'~/' + C + "$&<x> 01",
+            "Go": 'falso-~"q\'/' + C + "$~u0026~u003cx~u003e 01",
+            "ensure_ascii": 'falso-~"q\'/~u00e7$&<x> 01',
+            "PHP": 'falso-~"q\'~/~u00e7$&<x> 01',
+            "aspas duplas": 'falso-~"q\'/' + C + "~$&<x> 01",
+            "aspas simples": "falso-\"q'~''/" + C + "$&<x> 01",
+            "printf %q": "falso-~\"q~'~ ~$~&~<x~>#01",
+        }
+        for caso, forma in esperadas.items():
+            self.assertTrue(esc8(forma) in p, f"falta a forma da linha: {caso}")
+        self.assertTrue(LINHA.encode() in p and LINHA_ASCII.encode() in p, "a linha literal")
+
+    def test_linha_nao_ganha_base64_nem_miolos(self):
+        p = self.varias()
+        for linha in (LINHA, LINHA_ASCII):
+            b = linha.encode()
+            proibidas = set()
+            for k in (0, 1, 2):
+                for codificar in (base64.b64encode, base64.urlsafe_b64encode):
+                    proibidas.add(codificar(b"\0" * k + b))
+            self.assertFalse(any(len(x) >= 8 and any(x in q for q in proibidas) for x in p),
+                             "base64 ou miolo de linha solta (RA3)")
+
+    def test_printf_q_so_em_ascii(self):
+        self.assertIsNone(V.printf_q(LINHA), "printf %q fora do ASCII (vai para RA3)")
+        self.assertIsNone(V.printf_q("falso-ctl" + chr(0x1B) + "-01"), "printf %q com controle")
+        self.assertEqual(V.escapadas(b"falso-simples-01"), set(), "forma sem caractere")
+
+    def test_php_so_com_barra_e_fora_do_ascii(self):
+        self.assertIsNone(V.json_php("falso/simples/01"), "PHP sem caractere fora do ASCII")
+        self.assertIsNone(V.json_php("falso-a" + C + "o-01"), "PHP sem barra")
+        self.assertEqual(V.json_php("falso/a" + C + "/01"), "falso~/a~u00e7~/01".replace("~", "\\"))
+
+    def test_aspas_simples_so_com_aspa(self):
+        self.assertIsNone(V.aspas_simples("falso-simples-01"), "aspas simples sem aspa")
+        self.assertEqual(V.aspas_simples("falso-it's-01x"), "falso-it'~''s-01x".replace("~", "\\"))
+
+    def test_campos_de_tab(self):
+        p = pad("nome\tfalso-campo-tab-01\tcurto\n'falso-tsv-aspas-02'\tx\n")
+        self.assertTrue(b"falso-campo-tab-01" in p, "campo de tab")
+        self.assertTrue(b"falso-tsv-aspas-02" in p, "campo de tab sem aspas")
+        # O campo é valor de linha: segredo inteiro, com base64.
+        self.assertTrue(base64.b64encode(b"falso-campo-tab-01") in p, "base64 do campo de tab")
+        self.assertFalse(b"curto" in p, "campo curto virou padrão")
+
+    def test_parser_de_linha_novo(self):
+        valor = (
+            "senha2 : falso-yaml-esp-02\n"
+            "senha:\tfalso-yaml-tab-01\n"
+            '"k":"falso-json-colado-03"\n'
+            '  "private key": "falso-valor-com-espaco-na-chave-01",\n'
+            '  "x/y": "falso-valor-barra-chave-02"\n'
+        )
+        p = pad(valor)
+        for x in (
+            b"falso-yaml-esp-02",
+            b"falso-yaml-tab-01",
+            b"falso-json-colado-03",
+            b"falso-valor-com-espaco-na-chave-01",
+            b"falso-valor-barra-chave-02",
+        ):
+            self.assertTrue(x in p, "valor de linha (D54)")
+            self.assertTrue(base64.b64encode(x) in p, "valor de linha como segredo inteiro")
+
+    def test_anexo_inteiro_sem_miolo_nem_json(self):
+        anexo = b"FALSO_ENV=falso-anexo-01\nPORT=8080\n"
+        p = V.variacoes(anexo, None, anexo=True)
+        self.assertTrue(base64.b64encode(anexo) in p, "base64 do anexo inteiro")
+        self.assertFalse(any(rb"falso-anexo-01\nPORT" in x for x in p), "JSON do anexo inteiro")
+        self.assertTrue(b"falso-anexo-01" in p and b"FALSO_ENV=falso-anexo-01" in p, "linha e valor")
+
+    def test_printf_q_e_aspas_simples_iguais_ao_bash(self):
+        bash = "/bin/bash"
+        if not Path(bash).exists():
+            self.skipTest("sem bash")
+        valores = []
+        for i in range(0x20, 0x7F):
+            c = chr(i)
+            valores += ["a" + c + "b", c + "b", "a" + c, "a=" + c + "b", "a:" + c + "b"]
+        r = subprocess.run(
+            [bash, "--norc", "--noprofile", "-c",
+             'while IFS= read -r v; do printf "%q\\n" "$v"; done <<<"$VALORES"'],
+            env={"PATH": "/usr/bin:/bin", "LC_ALL": "C.UTF-8", "VALORES": "\n".join(valores)},
+            capture_output=True, check=True,
+        )
+        do_bash = r.stdout.decode().split("\n")[:-1]
+        self.assertEqual(len(do_bash), len(valores))
+        for v, esperado in zip(valores, do_bash):
+            self.assertEqual(V.printf_q(v) or v, esperado, f"printf %q do caractere {ord(v[-2] if len(v) > 1 else v[0])}")
+        r = subprocess.run(
+            [bash, "--norc", "--noprofile", "-c", 'echo "${V@Q}"'],
+            env={"PATH": "/usr/bin:/bin", "V": "falso-it's-01x"}, capture_output=True, check=True,
+        )
+        self.assertEqual(r.stdout.decode().strip(), "'" + V.aspas_simples("falso-it's-01x") + "'")
 
 
 class Independencia(unittest.TestCase):
