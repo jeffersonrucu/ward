@@ -59,12 +59,13 @@ use zeroize::Zeroizing;
 use ward_core::backup::{self, ErroBackup, Versao};
 use ward_core::configuracao::{BackupExterno, Configuracao, HashPin};
 use ward_core::corpo::{self, ErroAbrir, ErroCorpo};
-use ward_core::entrada::{Datas, Entrada, NivelAcesso, Rascunho, Segredo};
+use ward_core::entrada::{Dados, Datas, Entrada, NivelAcesso, Rascunho, Segredo};
 use ward_core::formato::{CofreAberto, SenhaMestra};
 use ward_core::gravacao::{self, ErroGravacao, Etapa};
+use ward_core::origem::Origem;
 use ward_core::protocolo::{
     Alvo, DetalheEntrada, ErroResposta, ItemLista, MAX_BACKUPS, MAX_PENDRIVES, Operacao, Papel,
-    Pedido, Pendrive, Problema, Resposta,
+    Pedido, Pendrive, Problema, Resposta, Sugestao,
 };
 use ward_core::totp::Totp;
 
@@ -714,10 +715,11 @@ impl Daemon {
             }
             // D3 (Fase 27): token de uso único do "Conectar", só para o app.
             Pedido::EmitirToken { entrada } => self.emitir_token(papel, &entrada),
-            // Das fases seguintes (extensão: 40+). Nada é feito e nada sai.
-            Pedido::Sugerir { .. } | Pedido::Preencher { .. } | Pedido::SalvarLogin { .. } => {
-                Err(ErroResposta::Interno)
-            }
+            // Fase 40 (D9): sugerir e preencher pela origem da aba, só para a extensão.
+            Pedido::Sugerir { origem } => self.sugerir(papel, &origem),
+            Pedido::Preencher { entrada, origem } => self.preencher(papel, &entrada, &origem),
+            // Salvar login novo: Fase 42. Nada é feito e nada sai.
+            Pedido::SalvarLogin { .. } => Err(ErroResposta::Interno),
         };
         r.unwrap_or_else(Resposta::Erro)
     }
@@ -917,6 +919,84 @@ impl Daemon {
         Ok(Resposta::CodigoTotp {
             codigo: Zeroizing::new(c.codigo().to_owned()),
             restante: c.restante(),
+        })
+    }
+
+    /// `sugerir` (Fase 40, D9): as entradas `login` cuja URL tem a mesma origem da aba
+    /// (esquema, host e porta, [`Origem`]). Só o papel extensão (terceira camada, como
+    /// em [`Daemon::valor_do_app`]). Sem segredo: nome e usuário. O nível não conta
+    /// (ele regula o agente; quem usa a extensão é o usuário), então a bloqueada também
+    /// aparece. Origem que o parser estrito recusa não casa com nada: lista vazia. A
+    /// origem vem da extensão (não confiável) e nunca vai para o log.
+    fn sugerir(&self, papel: Papel, origem: &str) -> Result<Resposta, ErroResposta> {
+        if papel != Papel::Extensao {
+            return Err(ErroResposta::NaoAutorizado);
+        }
+        let est = self.estado();
+        let a = est.aberto.as_ref().ok_or(ErroResposta::Travado)?;
+        let Some(aba) = Origem::da_url(origem) else {
+            return Ok(Resposta::Sugestoes(Vec::new()));
+        };
+        let mut itens: Vec<Sugestao> = a
+            .entradas
+            .iter()
+            .filter_map(|e| match e.dados() {
+                Dados::Login(l) if Origem::da_url(&l.url).as_ref() == Some(&aba) => {
+                    Some(Sugestao {
+                        nome: e.nome().to_owned(),
+                        usuario: l.usuario.clone(),
+                    })
+                }
+                _ => None,
+            })
+            .collect();
+        itens.sort_by(|x, y| x.nome.cmp(&y.nome));
+        depurar!("sugerir: {} entrada(s)", itens.len());
+        Ok(Resposta::Sugestoes(itens))
+    }
+
+    /// `preencher` (Fase 40, D9): usuário, senha e o código TOTP atual da entrada
+    /// `login`, só se a origem da aba for a da URL da entrada. Só o papel extensão. A
+    /// entrada que não existe e a que não é `login` respondem igual; a origem diferente
+    /// responde `origem_diferente` sem nenhum valor. O log leva o nome da entrada (do
+    /// cofre), nunca a origem nem os valores (S13).
+    fn preencher(&self, papel: Papel, nome: &str, origem: &str) -> Result<Resposta, ErroResposta> {
+        if papel != Papel::Extensao {
+            return Err(ErroResposta::NaoAutorizado);
+        }
+        let est = self.estado();
+        let a = est.aberto.as_ref().ok_or(ErroResposta::Travado)?;
+        let e = a
+            .entradas
+            .iter()
+            .find(|e| e.nome() == nome)
+            .ok_or(ErroResposta::EntradaInexistente)?;
+        let Dados::Login(l) = e.dados() else {
+            return Err(ErroResposta::EntradaInexistente);
+        };
+        let casa = match (Origem::da_url(&l.url), Origem::da_url(origem)) {
+            (Some(x), Some(y)) => x == y,
+            _ => false,
+        };
+        if !casa {
+            aviso!("preencher {} recusado: origem diferente (D9)", e.nome());
+            return Err(ErroResposta::OrigemDiferente);
+        }
+        let totp = match &l.totp_semente {
+            Some(semente) => {
+                let agora = self.relogio.segundos_unix().ok_or(ErroResposta::Interno)?;
+                let c = Totp::de_semente(semente)
+                    .map_err(|_| ErroResposta::Interno)?
+                    .codigo_em(agora);
+                Some(Zeroizing::new(c.codigo().to_owned()))
+            }
+            None => None,
+        };
+        aviso!("preencher {}", e.nome());
+        Ok(Resposta::Preenchimento {
+            usuario: l.usuario.clone(),
+            senha: Segredo::de_bytes(l.senha.expor().to_vec()),
+            totp,
         })
     }
 

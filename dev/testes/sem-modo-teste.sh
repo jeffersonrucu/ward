@@ -54,6 +54,8 @@ echo "==> 2/3 testes de unidade sem a feature"
 
 echo "==> 3/3 strings no release"
 "$CARGO" build --release --locked --target-dir "$ALVO" -p wardd --bin wardd
+# Fase 40: o host da extensão do release também não pode ter a forma de teste.
+"$CARGO" build --release --locked --target-dir "$ALVO" -p ward-nm --bin ward-nm
 "$CARGO" build --release --locked --target-dir "$ALVO" -p ward-plataforma --lib \
     --message-format=json > "$TMP/build.json"
 RLIB="$(grep -o '"filenames":\["[^"]*/libward_plataforma[^"]*\.rlib"' "$TMP/build.json" \
@@ -75,6 +77,7 @@ conferir() {
 }
 TEXTOS=(WARD_DEV_APP WARD_DEV_DIR WARD_DEV_SOCKET_DIR wardd-app-teste ward-ponte-teste)
 conferir "$RLIB" "${TEXTOS[@]}"
+conferir "$ALVO/release/ward-nm" "${TEXTOS[@]}"
 conferir "$ALVO/release/wardd" "${TEXTOS[@]}" classificar_app_de_teste BinarioDeTeste lancar_para_teste
 # O binário conferido é mesmo o daemon (tem o socket do sistema).
 grep -qF -- '/run/ward' "$TMP/textos" || {

@@ -19,25 +19,34 @@ RAIZ="$(cd -P -- "${BASH_SOURCE[0]%/*}/../.." && pwd -P)"
 # shellcheck source=dev/servicos/comum.sh
 . "$RAIZ/dev/servicos/comum.sh"
 
+# Uso: dev/testes/docker-plataforma.sh (ver $USO abaixo). Fase 40: o ward-nm setgid com o
+# "Chrome" de pai fala com o wardd de teste real (D9, V6.1, V6.2).
+
 # Imagem pela digest (a lista multiarquitetura de ubuntu:24.04 conferida na Fase 21b).
 IMAGEM="ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852"
-USO="uso: docker-plataforma.sh <binário de teste> <app de teste> <ward de release> <wardd de release>"
+USO="uso: docker-plataforma.sh <binário de teste> <app de teste> <ward de release> <wardd de release> <wardd modo-teste> <ward-nm de release> <chrome-falso> <wardd-cliente-teste>"
 BIN="${1:?$USO}"
 APP="${2:?$USO}"
 CLI="${3:?$USO}"
 WARDD="${4:?$USO}"
-[ -x "$BIN" ] || { echo "binário de teste não encontrado: $BIN" >&2; exit 1; }
-[ -x "$APP" ] || { echo "app de teste não encontrado: $APP" >&2; exit 1; }
-[ -x "$CLI" ] || { echo "ward de release não encontrado: $CLI" >&2; exit 1; }
-[ -x "$WARDD" ] || { echo "wardd de release não encontrado: $WARDD" >&2; exit 1; }
-# V4.2 (2ª parte) exige o build sem `modo-teste`: as strings do daemon de teste não podem
-# estar nos binários (o `ward` de teste aceitaria o socket de `WARD_DEV_SOCKET_DIR`).
-for b in "$CLI" "$WARDD"; do
+WARDD_TESTE="${5:?$USO}"
+NM="${6:?$USO}"
+CHROME_FALSO="${7:?$USO}"
+CLIENTE="${8:?$USO}"
+for b in "$BIN" "$APP" "$CLI" "$WARDD" "$WARDD_TESTE" "$NM" "$CHROME_FALSO" "$CLIENTE"; do
+    [ -x "$b" ] || { echo "binário não encontrado: $b" >&2; exit 1; }
+done
+# V4.2 (2ª parte) e a Fase 40 exigem o build sem `modo-teste`: as strings do daemon de
+# teste não podem estar nos binários (o `ward` ou o `ward-nm` de teste aceitariam o
+# socket de `WARD_DEV_SOCKET_DIR`).
+for b in "$CLI" "$WARDD" "$NM"; do
     if grep -q -a -F 'WARD_DEV_SOCKET_DIR' -- "$b"; then
         echo "$b foi compilado com modo-teste" >&2
         exit 1
     fi
 done
+COFRE="$RAIZ/.dev/cofre-teste.ward"
+[ -f "$COFRE" ] && [ ! -L "$COFRE" ] || { echo "falta o cofre de teste: rode 'make dev-cofre'" >&2; exit 1; }
 for p in docker gcc; do
     command -v "$p" >/dev/null 2>&1 || { echo "falta o programa: $p" >&2; exit 1; }
 done
@@ -50,6 +59,17 @@ install -m 0755 "$BIN" "$TMP/ward-teste"
 install -m 0755 "$APP" "$TMP/ward-app-teste"
 install -m 0755 "$CLI" "$TMP/ward-release"
 install -m 0755 "$WARDD" "$TMP/wardd-release"
+# Fase 40: o wardd de teste real, o ward-nm sem `modo-teste` (o do release: só aceita o
+# socket do sistema com par uid 0), o "Chrome" falso e o cliente mínimo. Uma cópia do
+# cofre de teste e a senha de teste (falsa, D15), lidas das fixtures.
+install -m 0755 "$WARDD_TESTE" "$TMP/wardd-real"
+install -m 0755 "$NM" "$TMP/ward-nm-real"
+install -m 0755 "$CHROME_FALSO" "$TMP/chrome-falso"
+install -m 0755 "$CLIENTE" "$TMP/wardd-cliente-teste"
+install -m 0644 "$COFRE" "$TMP/cofre-teste.ward"
+/usr/bin/python3 -I -c 'import json,sys; sys.stdout.write(json.load(open(sys.argv[1]))["senha_mestra"])' \
+    "$RAIZ/dev/fixtures/entradas.json" > "$TMP/senha"
+chmod 0644 "$TMP/senha"
 gcc -shared -fPIC -O2 -Wall -Werror -o "$TMP/libmarca.so" "$RAIZ/dev/conteiner-plataforma/marca.c"
 chmod 0644 "$TMP/libmarca.so"
 gcc -O2 -Wall -Werror -o "$TMP/falso" "$RAIZ/dev/conteiner-plataforma/falso.c"
