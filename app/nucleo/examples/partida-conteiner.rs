@@ -125,11 +125,12 @@ fn main() {
         .collect();
     nomes.sort();
     relatar(&format!(
-        "depois pid={pid} gid={} dumpable={} tracer={} socket_cloexec={} pai={} env={}",
+        "depois pid={pid} gid={} dumpable={} tracer={} socket_cloexec={} vmlck={} pai={} env={}",
         status("Gid:"),
         dumpable(),
         status("TracerPid:"),
         sockets_com_cloexec(),
+        status("VmLck:"),
         p.pid_do_pai(),
         nomes.join(",")
     ));

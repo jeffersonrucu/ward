@@ -122,6 +122,22 @@
 | `make app-check` com o `PKG_CONFIG_PATH` do scratchpad (R32): fmt, clippy, ACL (7 testes, com o `ataque_mudar_nivel_so_na_janela_certa_e_pin_no_formato`), audit, deny e release com a checagem de strings | 0 |
 | `make app-front` (final) | 0 |
 
+## Merge com o master (Fases 34 e 23a)
+- Os conflitos foram resolvidos mantendo os dois lados: `escolher_anexo`,
+  `remover_anexo` e `conectar` (34) ao lado de `mudar_nivel`, na lista de comandos, na
+  capability, no `comandos.js` (mesma ordem do Rust), no Tauri e na ponte;
+  `ErroApp::PinIncorreto` junto dos erros da 34; os testes das duas fases em
+  `servico.rs`; a seção da 34 antes da 35 em `design-nodes.md`.
+- Depois do merge: os testes do núcleo e da ponte, `make app-front` e o QA do diálogo
+  de nível pela ponte passaram de novo (sem falha no `qa.json`).
+- A primeira rodada do `make app-check` depois do merge saiu 2: o teste do master
+  `ataque_comandos_proprios_so_na_janela_e_origem_certas` (`app/src-tauri/src/main.rs`)
+  supõe que não há daemon e recebeu `{"estado":"travado"}` de um `wardd` de teste de
+  outro worker em `/run/user/1000/ward-teste/wardd.sock`. O caminho sai do euid, não
+  do `XDG_RUNTIME_DIR`, então não dá para isolar por variável. Com aquele daemon já
+  parado, a segunda rodada saiu 0. Problema: o teste depende do ambiente e quebra
+  quando alguém roda `make dev-daemon` ao mesmo tempo.
+
 ## Problemas descobertos
 - **Fase 31:** o "5º erro leva ao `Destravar / Padrão`" depende dela (veja "Ficou de
   fora").

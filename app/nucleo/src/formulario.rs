@@ -1,5 +1,7 @@
-//! Formulário de entrada (Fase 33, `Formulário / <tipo> / Novo` e `/ Edição`):
-//! `login`, `api`, `aws`, `smtp`, `nota segura` e `genérico`.
+//! Formulário de entrada (`Formulário / <tipo> / Novo` e `/ Edição`) dos 9 tipos:
+//! `login`, `api`, `aws`, `smtp`, `nota segura` e `genérico` (Fase 33); `banco`,
+//! `servidor` e `ftp/sftp` (Fase 34). Os anexos não vêm da interface: o formulário só
+//! diz quais dos anexos escolhidos no lado Rust (`escolher_anexo`) vão no rascunho.
 //!
 //! O que a interface manda ([`Formulario`]) é não confiável: chave de campo fora da
 //! lista do tipo, lista grande demais ou texto longo demais são recusados aqui
@@ -26,7 +28,8 @@ use std::fmt;
 use serde::de::{self, Deserializer, Visitor};
 use serde::{Deserialize, Serialize};
 use ward_core::entrada::{
-    Rascunho, RascunhoDados, RascunhoExtra, Segredo as SegredoCore, TipoEntrada,
+    GRANDE_PARA_MASCARA, Rascunho, RascunhoAnexo, RascunhoDados, RascunhoExtra,
+    Segredo as SegredoCore, TipoEntrada,
 };
 use ward_core::limites;
 use ward_core::protocolo::{ErroResposta, Problema};
@@ -110,6 +113,10 @@ pub struct Formulario {
     pub campos: BTreeMap<String, String>,
     pub segredos: BTreeMap<String, ValorSecreto>,
     pub extras: Vec<ExtraFormulario>,
+    /// Identificadores dos anexos escolhidos no lado Rust que vão no rascunho, na ordem
+    /// da tela. O conteúdo nunca passa pela interface (S11, V5.12).
+    #[serde(default)]
+    pub anexos: Vec<u64>,
 }
 
 /// Um problema mostrado no campo: o identificador do campo no formulário (`nome`,
@@ -122,17 +129,9 @@ pub struct ErroCampo {
     pub motivo: String,
 }
 
-/// Tipos que o formulário desta fase monta (os outros três chegam na Fase 34).
+/// Tipo do formulário: os 9 tipos (Fases 33 e 34).
 pub fn tipo_do_formulario(nome: &str) -> Option<TipoEntrada> {
-    match TipoEntrada::de_nome(nome)? {
-        t @ (TipoEntrada::Login
-        | TipoEntrada::Api
-        | TipoEntrada::Aws
-        | TipoEntrada::Smtp
-        | TipoEntrada::NotaSegura
-        | TipoEntrada::Generico) => Some(t),
-        _ => None,
-    }
+    TipoEntrada::de_nome(nome)
 }
 
 /// Campos de texto e segredos de cada tipo, com os identificadores do protocolo.
@@ -146,7 +145,19 @@ pub fn campos_do_tipo(tipo: TipoEntrada) -> (&'static [&'static str], &'static [
         ),
         TipoEntrada::Smtp => (&["host", "porta", "usuario", "seguranca"], &["senha"]),
         TipoEntrada::NotaSegura => (&[], &["texto"]),
-        _ => (&[], &[]),
+        TipoEntrada::Banco => (
+            &["motor", "host", "porta", "base", "usuario", "tunel"],
+            &["senha"],
+        ),
+        TipoEntrada::Servidor => (
+            &["host", "porta", "usuario", "salto"],
+            &["senha", "chave_privada", "passphrase"],
+        ),
+        TipoEntrada::FtpSftp => (
+            &["protocolo", "host", "porta", "usuario"],
+            &["senha", "chave_privada", "passphrase"],
+        ),
+        TipoEntrada::Generico => (&[], &[]),
     }
 }
 
@@ -175,6 +186,15 @@ fn campo_do_problema(nome: &str) -> &'static str {
         "segurança" => "seguranca",
         "texto" => "texto",
         "campos extras" => "extras",
+        "motor" => "motor",
+        "base" => "base",
+        "túnel SSH" => "tunel",
+        "servidor de salto" => "salto",
+        "protocolo" => "protocolo",
+        "chave privada" => "chave_privada",
+        "passphrase" => "passphrase",
+        "autenticação" => "autenticacao",
+        "anexos" => "anexos",
         _ => "formulario",
     }
 }
@@ -193,8 +213,15 @@ pub fn erros_do_daemon(problemas: &[Problema]) -> Vec<ErroCampo> {
             let limpo = p.motivo.chars().count() <= MAX_MOTIVO
                 && !p.motivo.is_empty()
                 && !p.motivo.chars().any(|c| c.is_control() || formatacao(c));
+            // D29: a recusa do orçamento da máscara vem da entrada inteira; a tela a
+            // mostra no campo dos anexos, o que mais pesa no orçamento.
+            let campo = if p.campo == "entrada" && p.motivo == GRANDE_PARA_MASCARA {
+                "anexos"
+            } else {
+                campo_do_problema(&p.campo)
+            };
             ErroCampo {
-                campo: campo_do_problema(&p.campo),
+                campo,
                 posicao: p.posicao.filter(|n| (1..=1024).contains(n)),
                 motivo: if limpo {
                     p.motivo.clone()
@@ -232,6 +259,7 @@ fn conferir_limites(f: &Formulario) -> Result<(), ErroApp> {
             ValorSecreto::Novo(t) => t.0.len() <= limites::MAX_NOTA,
             _ => true,
         })
+        && f.anexos.len() <= limites::MAX_ANEXOS + 1
         && f.extras.len() <= limites::MAX_EXTRAS + 1
         && f.extras.iter().all(|x| {
             texto_ok(&x.nome)
@@ -378,6 +406,13 @@ pub fn montar(
         tirar("porta"),
         tirar("seguranca"),
     );
+    let (motor, base, tunel, salto, protocolo) = (
+        tirar("motor"),
+        tirar("base"),
+        tirar("tunel"),
+        tirar("salto"),
+        tirar("protocolo"),
+    );
     let mut segredo = |id: &'static str| -> Result<SegredoMontado, Falta> {
         let valor = f.segredos.remove(id).unwrap_or(ValorSecreto::Vazio);
         Ok(match valor {
@@ -433,8 +468,34 @@ pub fn montar(
         TipoEntrada::NotaSegura => RascunhoDados::NotaSegura {
             texto: segredo("texto")?,
         },
+        TipoEntrada::Banco => RascunhoDados::Banco {
+            motor,
+            host,
+            porta,
+            base,
+            usuario,
+            senha: segredo("senha")?,
+            tunel,
+        },
+        TipoEntrada::Servidor => RascunhoDados::Servidor {
+            host,
+            porta,
+            usuario,
+            senha: segredo("senha")?,
+            chave_privada: segredo("chave_privada")?,
+            passphrase: segredo("passphrase")?,
+            salto,
+        },
+        TipoEntrada::FtpSftp => RascunhoDados::FtpSftp {
+            protocolo,
+            host,
+            porta,
+            usuario,
+            senha: segredo("senha")?,
+            chave_privada: segredo("chave_privada")?,
+            passphrase: segredo("passphrase")?,
+        },
         TipoEntrada::Generico => RascunhoDados::Generico,
-        _ => return Err(ErroApp::PedidoInvalido.into()),
     };
     let mut extras = Vec::with_capacity(f.extras.len());
     for x in f.extras.drain(..) {
@@ -523,9 +584,58 @@ pub fn copiar_rascunho(r: &Rascunho) -> Rascunho {
         RascunhoDados::NotaSegura { texto } => RascunhoDados::NotaSegura {
             texto: copiar_opcional(texto),
         },
-        // Só os tipos desta fase chegam aqui (`tipo_do_formulario`); os outros viram
-        // genérico, que a validação recusa sem extras e o daemon recusa pelo tipo.
-        _ => RascunhoDados::Generico,
+        RascunhoDados::Banco {
+            motor,
+            host,
+            porta,
+            base,
+            usuario,
+            senha,
+            tunel,
+        } => RascunhoDados::Banco {
+            motor: motor.clone(),
+            host: host.clone(),
+            porta: porta.clone(),
+            base: base.clone(),
+            usuario: usuario.clone(),
+            senha: copiar_opcional(senha),
+            tunel: tunel.clone(),
+        },
+        RascunhoDados::Servidor {
+            host,
+            porta,
+            usuario,
+            senha,
+            chave_privada,
+            passphrase,
+            salto,
+        } => RascunhoDados::Servidor {
+            host: host.clone(),
+            porta: porta.clone(),
+            usuario: usuario.clone(),
+            senha: copiar_opcional(senha),
+            chave_privada: copiar_opcional(chave_privada),
+            passphrase: copiar_opcional(passphrase),
+            salto: salto.clone(),
+        },
+        RascunhoDados::FtpSftp {
+            protocolo,
+            host,
+            porta,
+            usuario,
+            senha,
+            chave_privada,
+            passphrase,
+        } => RascunhoDados::FtpSftp {
+            protocolo: protocolo.clone(),
+            host: host.clone(),
+            porta: porta.clone(),
+            usuario: usuario.clone(),
+            senha: copiar_opcional(senha),
+            chave_privada: copiar_opcional(chave_privada),
+            passphrase: copiar_opcional(passphrase),
+        },
+        RascunhoDados::Generico => RascunhoDados::Generico,
     };
     Rascunho {
         nome: r.nome.clone(),
@@ -543,7 +653,14 @@ pub fn copiar_rascunho(r: &Rascunho) -> Rascunho {
                 segredo: x.segredo,
             })
             .collect(),
-        anexos: Vec::new(),
+        anexos: r
+            .anexos
+            .iter()
+            .map(|a| RascunhoAnexo {
+                nome: a.nome.clone(),
+                conteudo: copiar_segredo(&a.conteudo),
+            })
+            .collect(),
     }
 }
 
@@ -636,6 +753,28 @@ mod testes {
         assert_eq!(e[2].motivo, "inválido");
         assert_eq!(e[3].motivo, "inválido");
         assert_eq!(e[4].motivo, "inválido");
+    }
+
+    /// D29/V5.12: a recusa do orçamento da máscara (campo "entrada") aparece no campo
+    /// dos anexos; outro motivo em "entrada" não vira erro de anexo.
+    #[test]
+    fn recusa_do_orcamento_da_mascara_vai_para_os_anexos() {
+        let p = |campo: &str, motivo: &str| Problema {
+            campo: campo.to_owned(),
+            posicao: None,
+            motivo: motivo.to_owned(),
+        };
+        let e = erros_do_daemon(&[
+            p("entrada", GRANDE_PARA_MASCARA),
+            p("entrada", "outra coisa"),
+            p("túnel SSH", "precisa ser uma entrada servidor existente"),
+            p("autenticação", "informe a senha ou a chave"),
+        ]);
+        assert_eq!(e[0].campo, "anexos");
+        assert_eq!(e[0].motivo, GRANDE_PARA_MASCARA);
+        assert_eq!(e[1].campo, "formulario");
+        assert_eq!(e[2].campo, "tunel");
+        assert_eq!(e[3].campo, "autenticacao");
     }
 
     #[test]

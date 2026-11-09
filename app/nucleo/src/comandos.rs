@@ -51,6 +51,13 @@ pub const SALVAR_CREDENCIAL: &str = "salvar_credencial";
 /// `mudar_nivel { entrada, nivel, pin }`: muda o nível de acesso com o PIN (Fase 35,
 /// S9). O PIN vai só ao daemon; a resposta traz o nível novo.
 pub const MUDAR_NIVEL: &str = "mudar_nivel";
+/// `escolher_anexo`: o lado Rust escolhe e lê o arquivo (Fase 34); a resposta traz id,
+/// nome e tamanho, ou o aviso. Sem argumento: a interface não escolhe caminho.
+pub const ESCOLHER_ANEXO: &str = "escolher_anexo";
+/// `remover_anexo { id }`: tira um anexo escolhido e ainda não salvo.
+pub const REMOVER_ANEXO: &str = "remover_anexo";
+/// `conectar { entrada }`: "Conectar" do `servidor` (D3); o token não volta.
+pub const CONECTAR: &str = "conectar";
 
 /// Todos os comandos, na ordem em que aparecem nas capabilities.
 pub const COMANDOS: &[&str] = &[
@@ -69,6 +76,9 @@ pub const COMANDOS: &[&str] = &[
     DESCARTAR_FORMULARIO,
     SALVAR_CREDENCIAL,
     MUDAR_NIVEL,
+    ESCOLHER_ANEXO,
+    REMOVER_ANEXO,
+    CONECTAR,
 ];
 
 /// Nome da permissão gerada pelo Tauri para o comando (`allow-estado-do-cofre`).
@@ -94,6 +104,9 @@ pub enum Comando {
     DescartarFormulario,
     SalvarCredencial,
     MudarNivel,
+    EscolherAnexo,
+    RemoverAnexo,
+    Conectar,
 }
 
 impl Comando {
@@ -114,6 +127,9 @@ impl Comando {
             DESCARTAR_FORMULARIO => Some(Comando::DescartarFormulario),
             SALVAR_CREDENCIAL => Some(Comando::SalvarCredencial),
             MUDAR_NIVEL => Some(Comando::MudarNivel),
+            ESCOLHER_ANEXO => Some(Comando::EscolherAnexo),
+            REMOVER_ANEXO => Some(Comando::RemoverAnexo),
+            CONECTAR => Some(Comando::Conectar),
             _ => None,
         }
     }
@@ -190,6 +206,9 @@ mod testes {
                 "descartar_formulario",
                 "salvar_credencial",
                 "mudar_nivel",
+                "escolher_anexo",
+                "remover_anexo",
+                "conectar",
             ]
         );
         assert_eq!(permissao(COPIAR_CAMPO), "allow-copiar-campo");

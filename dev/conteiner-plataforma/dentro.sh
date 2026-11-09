@@ -204,7 +204,11 @@ r="$(linha_app depois "$APID" | head -1)"
 confere "V5.31: depois da partida, os gids voltam ao real" "$r" "gid=1000,1000,1000,1000"
 confere "V5.31: depois da partida, Dumpable 0" "$r" "dumpable=0"
 confere "V5.31: depois da partida, TracerPid 0" "$r" "tracer=0"
-confere "V5.31: o socket do daemon tem CLOEXEC" "$r" "socket_cloexec=true/2"
+# Todos os sockets (a conexão, a cópia da vigia e as do transporte de D65 a; a leitora
+# solta a dela quando o "daemon" fecha, então o número varia) têm CLOEXEC.
+confere "V5.31: o socket do daemon tem CLOEXEC" "$r" "socket_cloexec=true/"
+confere "V3.34: o app lançado tem VmLck 0 kB (o mlockall do daemon não passa pelo execve)" "$r" "vmlck=0,kB"
+nao_tem "V3.34: o daemon de teste travou a memória (mlockall com LimitMEMLOCK infinito)" "$(grep '^servidor: pronto' "$LOG2" || true)" "vmlck=0,kB"
 confere "V5.31: o ambiente do app é exatamente o de D57 (sem DISPLAY, LISTEN_*, GTK_MODULES, GST_PLUGIN_PATH, GIO_EXTRA_MODULES, WEBKIT_INJECTED_BUNDLE_PATH)" \
     "$r" "env=DBUS_SESSION_BUS_ADDRESS,GDK_BACKEND,GST_PLUGIN_SYSTEM_PATH,HOME,LANG,NO_AT_BRIDGE,PATH,WAYLAND_DISPLAY,WEBKIT_A11Y_BUS_ADDRESS,XDG_RUNTIME_DIR,XDG_SESSION_TYPE"
 r="$(grep "^servidor: pid=$APID " "$LOG2" || true)"

@@ -1,6 +1,10 @@
-// Formulário de credencial (Fase 33): os campos de cada tipo, como o FigCraft os desenha
-// (frames `Formulário / <tipo> / Novo` e `/ Edição`, docs/mission/design-nodes.md), e a
-// montagem do pedido `salvar_credencial`.
+// Formulário de credencial (Fases 33 e 34): os campos de cada um dos 9 tipos, como o
+// FigCraft os desenha (frames `Formulário / <tipo> / Novo` e `/ Edição`,
+// docs/mission/design-nodes.md), e a montagem do pedido `salvar_credencial`.
+//
+// Fase 34: `banco`, `servidor` e `ftp/sftp`. "Autenticação" é só da tela (senha ou
+// chave): decide quais segredos vão; os da outra forma vão "vazio". Anexos vão só pelo
+// id (o conteúdo fica no Rust, S11).
 //
 // S11: o formulário nunca recebe segredo do cofre. Segredo salvo vai como "manter" (o
 // Rust o põe no rascunho), senha do gerador vai como "gerada" (idem), e só o que o
@@ -44,10 +48,53 @@ export const SEGURANCAS = Object.freeze([
   { valor: 'nenhuma', rotulo: 'Nenhuma' },
 ]);
 
+// Motores do `banco` (ward-core `Motor`), com a porta padrão e as variáveis de D10.
+export const MOTORES = Object.freeze([
+  { valor: 'postgres', rotulo: 'postgres', porta: '5432', variaveis: 'PGHOST, PGPORT, PGUSER, PGPASSWORD e DATABASE_URL' },
+  { valor: 'mysql', rotulo: 'mysql', porta: '3306', variaveis: 'MYSQL_HOST, MYSQL_TCP_PORT, MYSQL_USER, MYSQL_PWD e DATABASE_URL' },
+  { valor: 'mongo', rotulo: 'mongo', porta: '27017', variaveis: 'MONGODB_URI e DATABASE_URL' },
+  { valor: 'redis', rotulo: 'redis', porta: '6379', variaveis: 'REDIS_HOST, REDIS_PORT, REDISCLI_AUTH, REDIS_URL e DATABASE_URL' },
+  { valor: 'sqlserver', rotulo: 'sqlserver', porta: '1433', variaveis: 'SQLCMDSERVER, SQLCMDUSER, SQLCMDPASSWORD e DATABASE_URL' },
+]);
+
+export const PROTOCOLOS = Object.freeze([
+  { valor: 'sftp', rotulo: 'sftp', porta: '22' },
+  { valor: 'ftp', rotulo: 'ftp', porta: '21' },
+]);
+
+export const AUTENTICACOES = Object.freeze([
+  { valor: 'senha', rotulo: 'Senha' },
+  { valor: 'chave', rotulo: 'Chave' },
+]);
+
+/** Texto de "Acesso" do banco para o motor escolhido. */
+export function acessoDoBanco(motor) {
+  const m = MOTORES.find((x) => x.valor === motor) ?? MOTORES[0];
+  return `Entregues como ${m.variaveis}.`;
+}
+
+/** Porta padrão (placeholder) do campo porta, pelo motor, protocolo ou segurança. */
+export function portaPadrao(tipo, campos) {
+  if (tipo === 'banco') return MOTORES.find((x) => x.valor === campos.motor)?.porta ?? '';
+  if (tipo === 'ftp-sftp') return PROTOCOLOS.find((x) => x.valor === campos.protocolo)?.porta ?? '';
+  if (tipo === 'servidor') return '22';
+  if (tipo === 'smtp') return { nenhuma: '25', starttls: '587', tls: '465' }[campos.seguranca] ?? '587';
+  return '';
+}
+
 // Cada linha da grade: um campo inteiro ou dois lado a lado. `tipo`: texto, segredo,
 // select, totp (o `Código TOTP`) ou nota (o texto da nota segura).
 const T = (id, rotulo, extra = {}) => ({ id, rotulo, tipo: 'texto', ...extra });
 const S = (id, rotulo, extra = {}) => ({ id, rotulo, tipo: 'segredo', ...extra });
+// Select só da tela: não vai em `campos` (decide quais segredos vão).
+const AUTENTICACAO = { id: 'autenticacao', rotulo: 'Autenticação', tipo: 'select', opcoes: 'autenticacoes', local: true };
+const LINHAS_AUTENTICACAO = [
+  [S('senha', 'Senha', { gerar: true, auth: 'senha' })],
+  [
+    S('chave_privada', 'Chave privada', { auth: 'chave', multilinha: true }),
+    S('passphrase', 'Passphrase (opcional)', { auth: 'chave' }),
+  ],
+];
 
 export const TIPOS_FORM = Object.freeze({
   login: {
@@ -56,6 +103,35 @@ export const TIPOS_FORM = Object.freeze({
       [T('url', 'URL', { placeholder: 'Endereço com http ou https', url: true })],
       [T('usuario', 'Usuário', { placeholder: 'Ex.: wp_admin' }), S('senha', 'Senha', { gerar: true })],
       [S('totp_semente', 'Semente TOTP'), { id: 'codigo', tipo: 'totp' }],
+    ],
+  },
+  banco: {
+    exemplo: 'Ex.: acme-pg-dev',
+    acesso: acessoDoBanco('postgres'),
+    linhas: [
+      [
+        { id: 'motor', rotulo: 'Motor', tipo: 'select', opcoes: 'motores' },
+        T('host', 'Host', { placeholder: 'Ex.: 127.0.0.1' }),
+      ],
+      [
+        T('porta', 'Porta', { porta: true, modo: 'numeric' }),
+        T('base', 'Base', { placeholder: 'Ex.: app_teste' }),
+      ],
+      [T('usuario', 'Usuário', { placeholder: 'Ex.: app' }), S('senha', 'Senha', { gerar: true })],
+      [{ id: 'tunel', rotulo: 'Túnel SSH (opcional)', tipo: 'select', opcoes: 'servidores' }],
+    ],
+  },
+  servidor: {
+    exemplo: 'Ex.: acme-ssh-stage',
+    acesso: 'O Claude entra com ward ssh; o Conectar abre o seu terminal.',
+    linhas: [
+      [
+        T('host', 'Host', { placeholder: 'Ex.: 127.0.0.1' }),
+        T('porta', 'Porta', { porta: true, modo: 'numeric' }),
+      ],
+      [T('usuario', 'Usuário', { placeholder: 'Ex.: deploy' }), AUTENTICACAO],
+      ...LINHAS_AUTENTICACAO,
+      [{ id: 'salto', rotulo: 'Servidor de salto (opcional)', tipo: 'select', opcoes: 'saltos' }],
     ],
   },
   api: {
@@ -98,6 +174,20 @@ export const TIPOS_FORM = Object.freeze({
       [S('senha', 'Senha', { gerar: true })],
     ],
   },
+  'ftp-sftp': {
+    exemplo: 'Ex.: beta-sftp-dev',
+    acesso:
+      'Entregues como WARD_PROTOCOLO, WARD_HOST, WARD_PORT, WARD_USER e WARD_ARQUIVO_CHAVE (+ WARD_PASSPHRASE) ou WARD_PASS.',
+    linhas: [
+      [{ id: 'protocolo', rotulo: 'Protocolo', tipo: 'select', opcoes: 'protocolos' }],
+      [
+        T('host', 'Host', { placeholder: 'Ex.: sftp.exemplo.com' }),
+        T('porta', 'Porta', { porta: true, modo: 'numeric' }),
+      ],
+      [T('usuario', 'Usuário', { placeholder: 'Ex.: sftpuser' }), AUTENTICACAO],
+      ...LINHAS_AUTENTICACAO,
+    ],
+  },
   'nota-segura': {
     acesso: 'Sem entrega: o ward run recusa este tipo e o Claude nunca recebe o texto.',
     tituloAcesso: 'Conteúdo',
@@ -117,22 +207,37 @@ export const TEXTOS_ANEXOS = Object.freeze({
   padrao: 'Viram WARD_ARQUIVO_<NOME> no ward run.',
 });
 
-// Cartões de `Nova credencial / Escolher tipo` (17657). Os três tipos da Fase 34 ficam
-// desabilitados até lá.
+// Cartões de `Nova credencial / Escolher tipo` (17657).
 export const CARTOES_TIPO = Object.freeze([
   { tipo: 'login', nome: 'login', descricao: 'URL, usuário, senha e TOTP' },
-  { tipo: 'banco', nome: 'banco', descricao: 'Motor, host, porta, base e senha', depois: true },
-  { tipo: 'servidor', nome: 'servidor', descricao: 'SSH com senha ou chave', depois: true },
+  { tipo: 'banco', nome: 'banco', descricao: 'Motor, host, porta, base e senha' },
+  { tipo: 'servidor', nome: 'servidor', descricao: 'SSH com senha ou chave' },
   { tipo: 'api', nome: 'api', descricao: 'URL base, token e variável' },
   { tipo: 'aws', nome: 'aws', descricao: 'Access key, secret, região e role' },
   { tipo: 'smtp', nome: 'smtp', descricao: 'Envio de e-mail com usuário e senha' },
-  { tipo: 'ftp-sftp', nome: 'ftp/sftp', descricao: 'Arquivos por senha ou chave', depois: true },
+  { tipo: 'ftp-sftp', nome: 'ftp/sftp', descricao: 'Arquivos por senha ou chave' },
   { tipo: 'nota-segura', nome: 'nota segura', descricao: 'Texto secreto, sem entrega' },
   { tipo: 'generico', nome: 'genérico', descricao: 'Só campos extras, do seu jeito' },
 ]);
 
 export function camposDoTipo(tipo) {
   return (TIPOS_FORM[tipo]?.linhas ?? []).flat();
+}
+
+/** O campo aparece com a autenticação escolhida? (Só os de senha ou de chave mudam.) */
+export function campoVisivel(c, autenticacao) {
+  return !c.auth || c.auth === autenticacao;
+}
+
+/** Tamanho do anexo como o design escreve (`1,2 KB`, `300 bytes`). */
+export function tamanhoLegivel(bytes) {
+  if (bytes < 1024) return `${bytes} ${bytes === 1 ? 'byte' : 'bytes'}`;
+  return `${(bytes / 1024).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} KB`;
+}
+
+/** `WARD_ARQUIVO_<NOME>` como o ward-core monta (D10): maiúsculas; o resto vira `_`. */
+export function variavelDoAnexo(nome) {
+  return `WARD_ARQUIVO_${nome.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`;
 }
 
 /** Texto como o cofre guarda: NFC (o Rust valida de novo). */
@@ -178,8 +283,12 @@ export function tagsDe(texto) {
 export function montarFormulario(tipo, estado) {
   const campos = {};
   const segredos = {};
+  const auth = estado.campos.autenticacao;
   for (const c of camposDoTipo(tipo)) {
-    if (c.tipo === 'texto' || c.tipo === 'select') {
+    if (c.local) continue;
+    if (c.auth && c.auth !== auth) {
+      segredos[c.id] = 'vazio';
+    } else if (c.tipo === 'texto' || c.tipo === 'select') {
       const v = estado.campos[c.id] ?? '';
       campos[c.id] = c.url ? urlComPunycode(v) : nfc(v).trim();
     } else if (c.tipo === 'segredo' || c.tipo === 'nota') {
@@ -205,6 +314,7 @@ export function montarFormulario(tipo, estado) {
       segredo: x.segredo,
       valor: x.guardado ? { manter: x.original } : { novo: x.segredo ? x.valor : nfc(x.valor) },
     })),
+    anexos: (estado.anexos ?? []).map((a) => a.id),
   };
 }
 

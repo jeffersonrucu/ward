@@ -308,6 +308,21 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Ponte<D, A> {
                     .and_then(|r| serde_json::to_value(r).map_err(|_| ErroApp::RespostaInvalida)),
                 _ => Err(ErroApp::PedidoInvalido),
             },
+            // Fase 34: o arquivo é escolhido e lido no lado Rust; volta id, nome e
+            // tamanho, ou o aviso (S11, V5.12).
+            Comando::EscolherAnexo => self
+                .servico
+                .escolher_anexo()
+                .and_then(|e| serde_json::to_value(e).map_err(|_| ErroApp::RespostaInvalida)),
+            Comando::RemoverAnexo => match args.get("id").and_then(Value::as_u64) {
+                Some(id) => self.servico.remover_anexo(id).map(|()| Value::Null),
+                None => Err(ErroApp::PedidoInvalido),
+            },
+            // D3: o token não volta à interface.
+            Comando::Conectar => match texto("entrada") {
+                Some(e) => self.servico.conectar(e).map(|()| Value::Null),
+                None => Err(ErroApp::PedidoInvalido),
+            },
         };
         match resultado {
             Ok(valor) => Resposta::json(200, &json!({ "ok": true, "valor": valor })),

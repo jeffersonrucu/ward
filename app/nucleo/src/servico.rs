@@ -6,10 +6,11 @@ use std::collections::BTreeMap;
 use std::sync::{Mutex, MutexGuard};
 
 use serde::Serialize;
-use ward_core::entrada::{Rascunho, Segredo as SegredoCore};
+use ward_core::entrada::{Rascunho, RascunhoAnexo, Segredo as SegredoCore, TipoEntrada};
 use ward_core::protocolo::Alvo;
 
 use crate::ErroApp;
+use crate::anexos::{Anexos, Escolha, Seletor, SemSeletor};
 use crate::area_transferencia::{AreaTransferencia, Copiador};
 use crate::cliente;
 use crate::comandos::{Referencia, validar_nome_entrada};
@@ -19,6 +20,7 @@ use crate::formulario::{self, ErroCampo, Falta, Fontes, Formulario};
 use crate::gerador::{Gerada, Gerador, Opcoes, Revelada};
 use crate::nivel::{NivelMudado, Pin, nivel_de_nome};
 use crate::segredo::Segredo;
+use crate::terminal::{SemTerminal, Terminal, entrada_para_argv};
 
 /// Campos do formulário que aceitam "Usar esta senha" (o `Campo secreto` com gerar no
 /// design é só o da senha).
@@ -46,6 +48,13 @@ pub struct Servico<D: Daemon, A: AreaTransferencia> {
     /// Senhas que o gerador do formulário passou a um campo ("Usar esta senha"), só em
     /// memória, até salvar, cancelar ou sair.
     usadas: Mutex<BTreeMap<String, Segredo>>,
+    /// Anexos escolhidos no formulário aberto (Fase 34), só em memória, até salvar,
+    /// cancelar ou sair. O conteúdo nunca vai à interface.
+    anexos: Mutex<Anexos>,
+    /// Quem escolhe o arquivo do anexo (diálogo do GTK no app; pasta na ponte).
+    seletor: Box<dyn Seletor>,
+    /// Quem abre o terminal do "Conectar" (D3).
+    terminal: Box<dyn Terminal>,
 }
 
 /// Valores que o formulário pede sem passar pela interface.
@@ -77,7 +86,63 @@ impl<D: Daemon, A: AreaTransferencia> Servico<D, A> {
             copiador,
             gerador: Mutex::new(Gerador::default()),
             usadas: Mutex::new(BTreeMap::new()),
+            anexos: Mutex::new(Anexos::default()),
+            seletor: Box::new(SemSeletor),
+            terminal: Box::new(SemTerminal),
         }
+    }
+
+    /// Troca o seletor de arquivo (sem ele, `escolher_anexo` responde o erro).
+    pub fn com_seletor(mut self, seletor: impl Seletor + 'static) -> Self {
+        self.seletor = Box::new(seletor);
+        self
+    }
+
+    /// Troca o terminal do "Conectar" (sem ele, `conectar` responde o erro).
+    pub fn com_terminal(mut self, terminal: impl Terminal + 'static) -> Self {
+        self.terminal = Box::new(terminal);
+        self
+    }
+
+    fn anexos_travados(&self) -> MutexGuard<'_, Anexos> {
+        // Pânico com o lock na mão: os anexos escolhidos são descartados.
+        self.anexos.lock().unwrap_or_else(|e| {
+            let mut a = e.into_inner();
+            a.limpar();
+            a
+        })
+    }
+
+    /// `escolher_anexo`: o seletor do lado Rust escolhe o arquivo e ele é lido aqui
+    /// (limites de D29/D32). A resposta traz id, nome e tamanho, ou o aviso; nunca o
+    /// conteúdo (S11, V5.12).
+    pub fn escolher_anexo(&self) -> Result<Escolha, ErroApp> {
+        match self.seletor.escolher()? {
+            None => Ok(Escolha::Cancelado),
+            Some(caminho) => Ok(self.anexos_travados().anexar(&caminho)),
+        }
+    }
+
+    /// `remover_anexo { id }`: tira um anexo escolhido e ainda não salvo.
+    pub fn remover_anexo(&self, id: u64) -> Result<(), ErroApp> {
+        self.anexos_travados().remover(id)
+    }
+
+    /// `conectar { entrada }` (D3): só `servidor`. O daemon emite o token de uso único e
+    /// o terminal abre `ward ssh --token <t> <entrada>`. A resposta não traz o token.
+    pub fn conectar(&self, entrada: &str) -> Result<(), ErroApp> {
+        validar_nome_entrada(entrada)?;
+        if !entrada_para_argv(entrada) {
+            return Err(ErroApp::PedidoInvalido);
+        }
+        let token = {
+            let mut d = self.daemon()?;
+            if cliente::detalhe(&mut *d, entrada)?.tipo != TipoEntrada::Servidor {
+                return Err(ErroApp::NaoEServidor);
+            }
+            cliente::emitir_token(&mut *d, entrada)?
+        };
+        self.terminal.abrir(entrada, &token)
     }
 
     fn daemon(&self) -> Result<MutexGuard<'_, D>, ErroApp> {
@@ -224,6 +289,7 @@ impl<D: Daemon, A: AreaTransferencia> Servico<D, A> {
     /// e a do gerador.
     pub fn descartar_formulario(&self) {
         self.usadas_travadas().clear();
+        self.anexos_travados().limpar();
         if let Ok(mut g) = self.gerador_travado() {
             g.descartar();
         }
@@ -282,6 +348,17 @@ impl<D: Daemon, A: AreaTransferencia> Servico<D, A> {
             }
         };
         drop(usadas);
+        // Os anexos pedidos, copiados: se o daemon recusar, continuam escolhidos para o
+        // próximo salvar.
+        let anexos: Vec<RascunhoAnexo> = self
+            .anexos_travados()
+            .escolhidos(&f.anexos)?
+            .into_iter()
+            .map(|p| RascunhoAnexo {
+                nome: p.nome.clone(),
+                conteudo: SegredoCore::de_bytes(p.conteudo.expor().to_vec()),
+            })
+            .collect();
         let nome = f.nome.clone();
         let rascunho = Rascunho {
             nome: f.nome,
@@ -291,7 +368,7 @@ impl<D: Daemon, A: AreaTransferencia> Servico<D, A> {
             tags: f.tags,
             dados: montado.dados,
             extras: montado.extras,
-            anexos: Vec::new(),
+            anexos,
         };
         if let Err(erros) = formulario::validar_local(&rascunho) {
             return Ok(ResultadoSalvar { salvo: None, erros });
@@ -768,7 +845,7 @@ mod testes {
             s.salvar_credencial(None, form(c)),
             Err(ErroApp::PedidoInvalido)
         );
-        // Tipo da Fase 34 e tipo inventado.
+        // Campos de login num tipo da Fase 34, e tipo inventado.
         for tipo in ["banco", "servidor", "ftp-sftp", "root", ""] {
             let mut c = login_novo("acme-x");
             c["tipo"] = serde_json::json!(tipo);
@@ -969,5 +1046,334 @@ mod testes {
             .unwrap_err();
         let texto = format!("{e} {e:?} {}", e.codigo());
         assert!(!texto.chars().any(|c| c.is_ascii_digit()), "{texto}");
+    }
+
+    // ---- Fase 34: banco, servidor, ftp/sftp, anexos e "Conectar" ----
+
+    use crate::anexos::Escolha;
+    use crate::terminal::Token;
+    use std::path::PathBuf;
+
+    /// Seletor de teste: devolve o caminho que o teste pôs.
+    #[derive(Clone, Default)]
+    struct SeletorFixo(Arc<Mutex<Option<PathBuf>>>);
+
+    impl crate::anexos::Seletor for SeletorFixo {
+        fn escolher(&self) -> Result<Option<PathBuf>, ErroApp> {
+            Ok(self.0.lock().unwrap().clone())
+        }
+    }
+
+    /// Terminal de teste: guarda entrada e token pedidos.
+    #[derive(Clone, Default)]
+    struct TerminalFixo(Arc<Mutex<Vec<(String, String)>>>);
+
+    impl crate::terminal::Terminal for TerminalFixo {
+        fn abrir(&self, entrada: &str, token: &Token) -> Result<(), ErroApp> {
+            // `Token` não expõe o valor fora do módulo; o teste só vê o tamanho e o Debug.
+            self.0
+                .lock()
+                .unwrap()
+                .push((entrada.to_owned(), format!("{token:?}:{}", token.len())));
+            Ok(())
+        }
+    }
+
+    fn servico_34() -> (Servico<DaemonFalso, Arc<Area>>, SeletorFixo, TerminalFixo) {
+        let (s, _) = servico();
+        let sel = SeletorFixo::default();
+        let ter = TerminalFixo::default();
+        (
+            s.com_seletor(sel.clone()).com_terminal(ter.clone()),
+            sel,
+            ter,
+        )
+    }
+
+    fn pasta_34(nome: &str) -> PathBuf {
+        let p = std::env::temp_dir().join(format!("ward-servico-34-{}-{nome}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&p);
+        std::fs::create_dir_all(&p).unwrap();
+        p
+    }
+
+    fn chave_de_teste() -> String {
+        // Montada em pedaços: o texto inteiro de uma chave não fica no repositório.
+        [
+            "-----BEGIN ",
+            "OPENSSH",
+            " PRIVATE",
+            " KEY-----\n",
+            "falso-chave-fase34\n",
+            "-----END ",
+            "OPENSSH",
+            " PRIVATE",
+            " KEY-----\n",
+        ]
+        .concat()
+    }
+
+    fn servidor_novo(nome: &str) -> serde_json::Value {
+        serde_json::json!({
+            "tipo": "servidor", "nome": nome, "grupo": "clientex", "ambiente": "stage",
+            "projeto": "", "tags": [],
+            "campos": {"host": "127.0.0.1", "porta": "2222", "usuario": "deploy", "salto": ""},
+            "segredos": {"senha": "vazio", "chave_privada": {"novo": chave_de_teste()},
+                "passphrase": {"novo": "falso-frase-34"}},
+            "extras": [], "anexos": []
+        })
+    }
+
+    /// V5.10: os três tipos da fase salvam e editam (mantendo o segredo, o nível fica).
+    #[test]
+    fn banco_servidor_e_ftp_salvam_e_editam() {
+        let (s, _, _) = servico_34();
+        let banco = serde_json::json!({
+            "tipo": "banco", "nome": "clientex-pg-stage", "grupo": "clientex", "ambiente": "stage",
+            "projeto": "", "tags": [],
+            "campos": {"motor": "postgres", "host": "127.0.0.1", "porta": "", "base": "app_teste",
+                "usuario": "app", "tunel": "acme-ssh-senha-stage"},
+            "segredos": {"senha": {"novo": "falso-banco-34"}},
+            "extras": [], "anexos": []
+        });
+        let r = s.salvar_credencial(None, form(banco)).unwrap();
+        assert_eq!(r.salvo.as_deref(), Some("clientex-pg-stage"), "{r:?}");
+        let d = s.detalhe_credencial("clientex-pg-stage").unwrap();
+        assert!(
+            d.campos
+                .iter()
+                .any(|c| c.id == "porta" && c.valor == "5432")
+        );
+        assert!(
+            d.campos
+                .iter()
+                .any(|c| c.id == "tunel" && c.valor == "acme-ssh-senha-stage")
+        );
+
+        let r = s
+            .salvar_credencial(None, form(servidor_novo("clientex-ssh-stage")))
+            .unwrap();
+        assert_eq!(r.salvo.as_deref(), Some("clientex-ssh-stage"), "{r:?}");
+        assert_eq!(
+            s.detalhe_credencial("clientex-ssh-stage")
+                .unwrap()
+                .segredos
+                .len(),
+            2
+        );
+
+        let ftp = serde_json::json!({
+            "tipo": "ftp-sftp", "nome": "clientex-ftp", "grupo": "clientex", "ambiente": "dev",
+            "projeto": "", "tags": [],
+            "campos": {"protocolo": "ftp", "host": "127.0.0.1", "porta": "", "usuario": "sftpuser"},
+            "segredos": {"senha": {"novo": "falso-ftp-34"}, "chave_privada": "vazio", "passphrase": "vazio"},
+            "extras": [], "anexos": []
+        });
+        let r = s.salvar_credencial(None, form(ftp)).unwrap();
+        assert_eq!(r.salvo.as_deref(), Some("clientex-ftp"), "{r:?}");
+
+        // Edição do servidor com chave do cofre de teste, mantendo chave e passphrase.
+        let ed = serde_json::json!({
+            "tipo": "servidor", "nome": "acme-ssh-chave-prod", "grupo": "acme", "ambiente": "prod",
+            "projeto": "", "tags": [],
+            "campos": {"host": "127.0.0.1", "porta": "2223", "usuario": "deploy", "salto": ""},
+            "segredos": {"senha": "vazio", "chave_privada": "manter", "passphrase": "manter"},
+            "extras": [], "anexos": []
+        });
+        let r = s
+            .salvar_credencial(Some("acme-ssh-chave-prod"), form(ed))
+            .unwrap();
+        assert_eq!(r.salvo.as_deref(), Some("acme-ssh-chave-prod"), "{r:?}");
+        let chave = s
+            .revelar_campo("acme-ssh-chave-prod", "chave_privada")
+            .unwrap();
+        assert!(chave.expor().contains("falso-chave-ed25519-teste"));
+    }
+
+    /// V5.10 e D33: os erros dos tipos novos voltam no campo certo, sem valor.
+    #[test]
+    fn erros_dos_tipos_novos_no_campo() {
+        let (s, _, _) = servico_34();
+        let banco = serde_json::json!({
+            "tipo": "banco", "nome": "clientex-pg", "grupo": "clientex", "ambiente": "dev",
+            "projeto": "", "tags": [],
+            "campos": {"motor": "postgres", "host": "127.0.0.1", "porta": "99999", "base": "app.teste?x",
+                "usuario": "app", "tunel": "acme-pg-dev"},
+            "segredos": {"senha": {"novo": "falso-banco-erro"}},
+            "extras": [], "anexos": []
+        });
+        let r = s.salvar_credencial(None, form(banco)).unwrap();
+        let campos: Vec<_> = r.erros.iter().map(|e| e.campo).collect();
+        assert!(
+            campos.contains(&"base") && campos.contains(&"porta"),
+            "{r:?}"
+        );
+        assert!(!serde_json::to_string(&r).unwrap().contains("falso-banco"));
+        // Túnel que não é servidor: erro do daemon no campo do túnel.
+        let mut b = serde_json::json!({
+            "tipo": "banco", "nome": "clientex-pg", "grupo": "clientex", "ambiente": "dev",
+            "projeto": "", "tags": [],
+            "campos": {"motor": "postgres", "host": "127.0.0.1", "porta": "", "base": "app",
+                "usuario": "app", "tunel": "acme-pg-dev"},
+            "segredos": {"senha": {"novo": "falso-banco-erro"}},
+            "extras": [], "anexos": []
+        });
+        let r = s.salvar_credencial(None, form(b.clone())).unwrap();
+        assert_eq!(r.erros.first().map(|e| e.campo), Some("tunel"), "{r:?}");
+        b["campos"]["motor"] = serde_json::json!("oracle");
+        b["campos"]["tunel"] = serde_json::json!("");
+        let r = s.salvar_credencial(None, form(b)).unwrap();
+        assert!(r.erros.iter().any(|e| e.campo == "motor"), "{r:?}");
+        // Sem senha nem chave no servidor: erro em "autenticacao".
+        let mut v = servidor_novo("clientex-ssh");
+        v["segredos"] =
+            serde_json::json!({"senha": "vazio", "chave_privada": "vazio", "passphrase": "vazio"});
+        let r = s.salvar_credencial(None, form(v)).unwrap();
+        assert!(r.erros.iter().any(|e| e.campo == "autenticacao"), "{r:?}");
+    }
+
+    /// S1: a interface forjando os dois métodos, ou chave no ftp, é recusada pela
+    /// validação; "manter" da chave numa entrada que só tem senha é pedido inválido.
+    #[test]
+    fn ataque_autenticacao_forjada_pela_interface() {
+        let (s, _, _) = servico_34();
+        let mut v = servidor_novo("clientex-ssh");
+        v["segredos"]["senha"] = serde_json::json!({"novo": "falso-as-duas-34"});
+        let r = s.salvar_credencial(None, form(v)).unwrap();
+        assert!(r.erros.iter().any(|e| e.campo == "autenticacao"), "{r:?}");
+        let mut f = servidor_novo("clientex-ftp");
+        f["tipo"] = serde_json::json!("ftp-sftp");
+        f["campos"] = serde_json::json!({"protocolo": "ftp", "host": "127.0.0.1", "porta": "", "usuario": "u"});
+        let r = s.salvar_credencial(None, form(f)).unwrap();
+        assert!(r.erros.iter().any(|e| e.campo == "autenticacao"), "{r:?}");
+        let ed = serde_json::json!({
+            "tipo": "servidor", "nome": "acme-ssh-senha-stage", "grupo": "acme", "ambiente": "stage",
+            "projeto": "", "tags": [],
+            "campos": {"host": "127.0.0.1", "porta": "2222", "usuario": "deploy", "salto": ""},
+            "segredos": {"senha": "vazio", "chave_privada": "manter", "passphrase": "vazio"},
+            "extras": [], "anexos": []
+        });
+        assert_eq!(
+            s.salvar_credencial(Some("acme-ssh-senha-stage"), form(ed)),
+            Err(ErroApp::PedidoInvalido)
+        );
+    }
+
+    /// V5.12 (S11): o anexo é escolhido e lido no Rust; a resposta traz só id, nome e
+    /// tamanho; ele vai no rascunho pelo id, e o detalhe mostra nome e tamanho.
+    #[test]
+    fn ataque_anexo_nao_volta_a_interface_e_vai_no_rascunho() {
+        let (s, sel, _) = servico_34();
+        let d = pasta_34("anexo");
+        let conteudo = "falso-conteudo-do-anexo-34\nLINHA=falso-valor-34\n";
+        std::fs::write(d.join("acme-vpn.ovpn"), conteudo).unwrap();
+        *sel.0.lock().unwrap() = Some(d.join("acme-vpn.ovpn"));
+        let e = s.escolher_anexo().unwrap();
+        let json = serde_json::to_string(&e).unwrap();
+        assert!(
+            !json.contains("falso-conteudo") && !json.contains("falso-valor"),
+            "{json}"
+        );
+        let Escolha::Anexado { id, tamanho, .. } = e else {
+            panic!("{e:?}")
+        };
+        assert_eq!(tamanho, conteudo.len() as u64);
+        let mut v = servidor_novo("clientex-ssh-anexo");
+        v["anexos"] = serde_json::json!([id]);
+        let r = s.salvar_credencial(None, form(v)).unwrap();
+        assert_eq!(r.salvo.as_deref(), Some("clientex-ssh-anexo"), "{r:?}");
+        let det = s.detalhe_credencial("clientex-ssh-anexo").unwrap();
+        assert_eq!(det.anexos.len(), 1);
+        assert_eq!(det.anexos[0].nome, "acme-vpn.ovpn");
+        assert_eq!(det.anexos[0].tamanho, conteudo.len() as u64);
+        sem_segredo(&serde_json::to_string(&det).unwrap(), "detalhe com anexo");
+        assert!(
+            !serde_json::to_string(&det)
+                .unwrap()
+                .contains("falso-conteudo")
+        );
+        // Salvo, os anexos escolhidos são descartados: o id não vale de novo.
+        let mut v = servidor_novo("clientex-ssh-anexo2");
+        v["anexos"] = serde_json::json!([id]);
+        assert_eq!(
+            s.salvar_credencial(None, form(v)),
+            Err(ErroApp::PedidoInvalido)
+        );
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    /// V5.12 (D29): 300 KiB e soma acima de 256 KiB avisam e não são guardados; vazio é
+    /// recusado; id forjado ou repetido é pedido inválido; cancelar não guarda nada; o
+    /// nome reservado (`CHAVE` no servidor) dá o erro no campo dos anexos.
+    #[test]
+    fn ataque_anexo_grande_vazio_e_id_forjado() {
+        let (s, sel, _) = servico_34();
+        let d = pasta_34("limites");
+        let escolher = |nome: &str, tamanho: usize| {
+            std::fs::write(d.join(nome), vec![b'a'; tamanho]).unwrap();
+            *sel.0.lock().unwrap() = Some(d.join(nome));
+            s.escolher_anexo().unwrap()
+        };
+        assert!(matches!(
+            escolher("grande.bin", 300 * 1024),
+            Escolha::Aviso { .. }
+        ));
+        assert!(matches!(escolher("vazio.txt", 0), Escolha::Aviso { .. }));
+        let Escolha::Anexado { id, .. } = escolher("a.pem", 200 * 1024) else {
+            panic!()
+        };
+        assert!(matches!(
+            escolher("b.pem", 100 * 1024),
+            Escolha::Aviso { .. }
+        ));
+        *sel.0.lock().unwrap() = None;
+        assert_eq!(s.escolher_anexo().unwrap(), Escolha::Cancelado);
+        for ids in [serde_json::json!([id, id]), serde_json::json!([id + 99])] {
+            let mut v = servidor_novo("clientex-ssh-x");
+            v["anexos"] = ids;
+            assert_eq!(
+                s.salvar_credencial(None, form(v)),
+                Err(ErroApp::PedidoInvalido)
+            );
+        }
+        s.remover_anexo(id).unwrap();
+        assert_eq!(s.remover_anexo(id), Err(ErroApp::PedidoInvalido));
+        let Escolha::Anexado { id, .. } = escolher("chave", 10) else {
+            panic!()
+        };
+        let mut v = servidor_novo("clientex-ssh-x");
+        v["anexos"] = serde_json::json!([id]);
+        let r = s.salvar_credencial(None, form(v)).unwrap();
+        assert!(r.erros.iter().any(|e| e.campo == "anexos"), "{r:?}");
+        // Cancelar o formulário descarta os escolhidos.
+        s.descartar_formulario();
+        assert_eq!(s.remover_anexo(id), Err(ErroApp::PedidoInvalido));
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    /// V5.24 do lado do app (D3): "Conectar" só para `servidor`; o token vai ao terminal
+    /// e nunca à resposta; nome fora do formato nem chega ao daemon. (Reuso, prazo e
+    /// entrada trocada são do daemon e da CLI, Fase 27.)
+    #[test]
+    fn ataque_conectar_so_servidor_e_sem_token_na_resposta() {
+        let (s, _, ter) = servico_34();
+        s.conectar("acme-ssh-salto").unwrap();
+        let abertos = ter.0.lock().unwrap().clone();
+        assert_eq!(abertos.len(), 1);
+        assert_eq!(abertos[0].0, "acme-ssh-salto");
+        assert_eq!(abertos[0].1, "Token(••••):32");
+        assert_eq!(s.conectar("acme-pg-aprovacao"), Err(ErroApp::NaoEServidor));
+        assert_eq!(s.conectar("nao-existe"), Err(ErroApp::EntradaInexistente));
+        for nome in ["-oProxyCommand=x", "", "acme ssh", "Acme"] {
+            assert_eq!(s.conectar(nome), Err(ErroApp::PedidoInvalido), "{nome}");
+        }
+        assert_eq!(ter.0.lock().unwrap().len(), 1);
+        // Sem terminal montado, o erro fixo.
+        let (sem, _) = servico();
+        assert_eq!(
+            sem.conectar("acme-ssh-salto"),
+            Err(ErroApp::TerminalIndisponivel)
+        );
+        assert_eq!(sem.escolher_anexo(), Err(ErroApp::SeletorIndisponivel));
     }
 }

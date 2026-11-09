@@ -564,3 +564,126 @@ fn tcp_so_em_127_0_0_1_com_cabecalhos_de_seguranca() {
     assert!(!resposta.contains("unsafe-inline") && !resposta.contains("unsafe-eval"));
     fs::remove_dir_all(base).unwrap();
 }
+
+/// Fase 34 (V5.12, V5.24, S11) pela ponte: `escolher_anexo` devolve só id, nome e
+/// tamanho (o conteúdo nunca), o anexo vai no salvar pelo id, `remover_anexo` com id
+/// forjado é recusado, e `conectar` devolve `null` (o token não vem) e só vale para
+/// `servidor`. A pasta do seletor tem mais de um arquivo: nada é escolhido.
+#[test]
+fn ataque_anexos_e_conectar_pela_ponte() {
+    use ward_ponte_teste::simulados::{SeletorDePasta, TerminalDeTeste};
+    let base = dist("anexos34");
+    let pasta = base.join("anexos");
+    fs::create_dir_all(&pasta).unwrap();
+    fs::write(pasta.join("deploy.pem"), "falso-anexo-ponte-34\n").unwrap();
+    let servico = Servico::novo(DaemonFalso::cheio(), Copiador::novo(Area::default()))
+        .com_seletor(SeletorDePasta(pasta.clone()))
+        .com_terminal(TerminalDeTeste);
+    let (p, _l) = Ponte::abrir(servico, &base.join("dist")).unwrap();
+    let r = p.responder(&post(&p, "escolher_anexo", "{}", &[]));
+    let v = r.corpo_json().unwrap();
+    assert_eq!(
+        v["valor"],
+        serde_json::json!({"resultado": "anexado", "id": 0, "nome": "deploy.pem", "tamanho": 21}),
+        "{v}"
+    );
+    assert!(!String::from_utf8_lossy(&r.corpo).contains("falso-anexo"));
+    let novo = serde_json::json!({ "formulario": {
+        "tipo": "generico", "nome": "gama-anexo", "grupo": "gama", "ambiente": "dev",
+        "projeto": "", "tags": [], "campos": {}, "segredos": {},
+        "extras": [{"nome": "REGIAO", "segredo": false, "valor": {"novo": "r-01"}}],
+        "anexos": [0]
+    }});
+    let r = p.responder(&post(&p, "salvar_credencial", &novo.to_string(), &[]));
+    assert_eq!(r.corpo_json().unwrap()["valor"]["salvo"], "gama-anexo");
+    let r = p.responder(&post(
+        &p,
+        "detalhe_credencial",
+        r#"{"entrada":"gama-anexo"}"#,
+        &[],
+    ));
+    assert!(!String::from_utf8_lossy(&r.corpo).contains("falso-anexo"));
+    assert_eq!(r.corpo_json().unwrap()["valor"]["anexos"][0]["tamanho"], 21);
+    for corpo in [r#"{"id":"0"}"#, r#"{"id":-1}"#, r#"{"id":99}"#, r#"{}"#] {
+        let r = p.responder(&post(&p, "remover_anexo", corpo, &[]));
+        assert_eq!(r.corpo_json().unwrap()["ok"], false, "{corpo}");
+    }
+    fs::write(pasta.join("outro.txt"), "x").unwrap();
+    let r = p.responder(&post(&p, "escolher_anexo", "{}", &[]));
+    assert_eq!(r.corpo_json().unwrap()["ok"], false);
+
+    let r = p.responder(&post(
+        &p,
+        "conectar",
+        r#"{"entrada":"acme-ssh-salto"}"#,
+        &[],
+    ));
+    assert_eq!(
+        r.corpo_json().unwrap(),
+        serde_json::json!({"ok": true, "valor": null})
+    );
+    for corpo in [
+        r#"{"entrada":"acme-pg-aprovacao"}"#,
+        r#"{"entrada":"-oProxyCommand=x"}"#,
+        r#"{"entrada":5}"#,
+    ] {
+        let r = p.responder(&post(&p, "conectar", corpo, &[]));
+        assert_eq!(r.corpo_json().unwrap()["ok"], false, "{corpo}");
+    }
+    fs::remove_dir_all(base).unwrap();
+}
+
+/// V3.37/V3.38 (D63): a ponte executada à mão (ou uma cópia, ou com outro pai) recebe
+/// `agente` do daemon de teste e sai na primeira resposta, sem abrir a porta HTTP; com
+/// `app`, segue. O "daemon" aqui é um servidor do mesmo uid numa pasta 0700, que
+/// responde `estado` com o papel pedido e anota o que recebeu.
+#[test]
+fn ataque_ponte_sem_papel_app_sai_na_primeira_resposta() {
+    use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
+    use std::os::unix::net::UnixListener;
+    use ward_app_nucleo::daemon::DaemonSocket;
+    use ward_ponte_teste::partida::{SEM_PAPEL_APP, conectar_com_papel_app};
+
+    let uid = fs::metadata("/proc/self").unwrap().uid();
+    for papel in ["agente", "extensao", "app"] {
+        let dir = PathBuf::from(format!(
+            "/run/user/{uid}/ward-ponte-papel-{}-{papel}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::DirBuilder::new().mode(0o700).create(&dir).unwrap();
+        let sock = dir.join("wardd.sock");
+        let l = UnixListener::bind(&sock).unwrap();
+        fs::set_permissions(&sock, fs::Permissions::from_mode(0o600)).unwrap();
+        let servidor = std::thread::spawn(move || {
+            let (mut c, _) = l.accept().unwrap();
+            let mut recebidos = Vec::new();
+            loop {
+                let mut n = [0u8; 4];
+                if c.read_exact(&mut n).is_err() {
+                    break;
+                }
+                let mut b = vec![0u8; u32::from_be_bytes(n) as usize];
+                c.read_exact(&mut b).unwrap();
+                recebidos.push(String::from_utf8(b).unwrap());
+                let r = format!(
+                    r#"{{"v":1,"tipo":"estado","dados":{{"travado":true,"cofre_existe":true,"papel":"{papel}"}}}}"#
+                );
+                c.write_all(&(r.len() as u32).to_be_bytes()).unwrap();
+                c.write_all(r.as_bytes()).unwrap();
+            }
+            recebidos
+        });
+        let r = conectar_com_papel_app(DaemonSocket::teste_em(sock));
+        if papel == "app" {
+            assert!(r.is_ok(), "{:?}", r.err());
+        } else {
+            assert_eq!(r.as_ref().err().map(String::as_str), Some(SEM_PAPEL_APP));
+        }
+        drop(r);
+        let recebidos = servidor.join().unwrap();
+        assert_eq!(recebidos.len(), 1, "{recebidos:?}");
+        assert!(recebidos[0].contains(r#""op":"estado""#), "{recebidos:?}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+}

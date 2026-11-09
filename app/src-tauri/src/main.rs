@@ -13,11 +13,13 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use serde::Serialize;
 use tauri::{Builder, Manager, RunEvent, Runtime, State, WebviewUrl, WebviewWindowBuilder};
 use ward_app_nucleo::ErroApp;
+use ward_app_nucleo::anexos::{Escolha, Seletor};
 use ward_app_nucleo::area_transferencia::{Copiador, Wayland};
 use ward_app_nucleo::credenciais::{DetalheCredencial, ItemCredencial};
 use ward_app_nucleo::daemon::DaemonSocket;
@@ -26,6 +28,7 @@ use ward_app_nucleo::gerador::Opcoes;
 use ward_app_nucleo::nivel::{NivelMudado, Pin};
 use ward_app_nucleo::partida;
 use ward_app_nucleo::servico::{CodigoTotp, ResultadoSalvar, Servico};
+use ward_app_nucleo::terminal::TerminalDoSistema;
 
 type ServicoApp = Servico<DaemonSocket, Wayland>;
 
@@ -217,10 +220,62 @@ fn mudar_nivel(
     Ok(estado.servico()?.mudar_nivel(&entrada, &nivel, pin)?)
 }
 
+/// Anexo (Fase 34): o diálogo de arquivo do GTK escolhe o arquivo e o núcleo o lê; a
+/// resposta traz id, nome e tamanho ou o aviso, nunca o conteúdo (S11, V5.12). Comando
+/// síncrono: roda na thread principal, onde o GTK pode abrir o diálogo.
+#[tauri::command]
+fn escolher_anexo(estado: State<'_, Estado>) -> Result<Escolha, Falha> {
+    Ok(estado.servico()?.escolher_anexo()?)
+}
+
+#[tauri::command]
+fn remover_anexo(id: u64, estado: State<'_, Estado>) -> Result<(), Falha> {
+    Ok(estado.servico()?.remover_anexo(id)?)
+}
+
+/// "Conectar" (D3): token de uso único e o terminal padrão; o token não volta.
+#[tauri::command]
+fn conectar(entrada: String, estado: State<'_, Estado>) -> Result<(), Falha> {
+    Ok(estado.servico()?.conectar(&entrada)?)
+}
+
+/// O diálogo "Adicionar arquivo" do GTK, na janela do app.
+struct SeletorGtk;
+
+impl Seletor for SeletorGtk {
+    fn escolher(&self) -> Result<Option<PathBuf>, ErroApp> {
+        use gtk::prelude::{DialogExt, FileChooserExt, GtkWindowExt};
+        if !gtk::is_initialized_main_thread() {
+            return Err(ErroApp::SeletorIndisponivel);
+        }
+        let dialogo = gtk::FileChooserDialog::with_buttons(
+            Some("Adicionar arquivo"),
+            None::<&gtk::Window>,
+            gtk::FileChooserAction::Open,
+            &[
+                ("Cancelar", gtk::ResponseType::Cancel),
+                ("Anexar", gtk::ResponseType::Accept),
+            ],
+        );
+        dialogo.set_modal(true);
+        dialogo.set_select_multiple(false);
+        dialogo.set_local_only(true);
+        let resposta = dialogo.run();
+        let arquivo = (resposta == gtk::ResponseType::Accept)
+            .then(|| dialogo.filename())
+            .flatten();
+        // `close` pede o fechamento como o botão da janela: o diálogo é destruído.
+        dialogo.close();
+        Ok(arquivo)
+    }
+}
+
 fn montar_servico(daemon: Result<DaemonSocket, ErroApp>) -> Result<ServicoApp, ErroApp> {
     let daemon = daemon?;
     let area = Wayland::novo()?;
-    Ok(Servico::novo(daemon, Copiador::novo(area)))
+    Ok(Servico::novo(daemon, Copiador::novo(area))
+        .com_seletor(SeletorGtk)
+        .com_terminal(TerminalDoSistema::default()))
 }
 
 /// Só a interface embutida: `tauri://localhost` (Linux). Qualquer outra URL (link,
@@ -249,7 +304,10 @@ fn com_comandos<R: Runtime>(builder: Builder<R>, estado: Estado) -> Builder<R> {
             usar_senha_gerada,
             descartar_formulario,
             salvar_credencial,
-            mudar_nivel
+            mudar_nivel,
+            escolher_anexo,
+            remover_anexo,
+            conectar
         ])
 }
 
@@ -473,7 +531,7 @@ mod testes {
             "anterior": null,
             "formulario": {"tipo": "login", "nome": "x", "grupo": "g", "ambiente": "dev",
                 "projeto": "", "tags": [], "campos": {}, "segredos": {}, "extras": []},
-            "entrada": "acme-wp-dev", "campo": "senha"
+            "entrada": "acme-wp-dev", "campo": "senha", "id": 0
         });
         for comando in [
             "revelar_campo",
@@ -482,6 +540,10 @@ mod testes {
             "usar_senha_gerada",
             "descartar_formulario",
             "salvar_credencial",
+            // Fase 34: anexos e "Conectar" seguem a mesma regra.
+            "escolher_anexo",
+            "remover_anexo",
+            "conectar",
         ] {
             let r = chamar(&outra, comando, ORIGEM, formulario.clone());
             assert!(

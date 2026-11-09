@@ -30,6 +30,9 @@ ward-app-nucleo = { path = "../nucleo" }
 # nunca de um servidor de desenvolvimento (S11: nenhum conteúdo remoto).
 tauri = { version = "=2.12.5", default-features = false, features = ["wry", "compression", "custom-protocol"] }
 serde = { version = "1", features = ["derive"] }
+# Diálogo "Adicionar arquivo" no lado Rust (Fase 34, S11): o mesmo gtk 0.18 que o
+# Tauri/wry já trazem; nenhum crate novo no Cargo.lock.
+gtk = { version = "=0.18.2", default-features = false }
 
 [dev-dependencies]
 # Runtime falso do Tauri (`tauri::test`), para o teste de ataque da ACL (V5.1).

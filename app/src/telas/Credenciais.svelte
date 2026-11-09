@@ -15,7 +15,8 @@
   // navegador ou URL.
   //
   // Fase 33: "Nova credencial" abre `Escolher tipo` e o formulário no painel de
-  // detalhe; "Editar" abre o formulário da entrada (tipos da fase, sem anexos).
+  // detalhe; "Editar" abre o formulário da entrada (sem anexos: o protocolo não traz o
+  // conteúdo deles para regravar). Fase 34: os 9 tipos.
   //
   // Fase 35: o cartão do nível é o `Cartão de nível` (18998) e "Mudar nível" abre o
   // `Diálogo de nível` (967), que pede o PIN (S9). Mudou: recarrega a lista e o
@@ -424,6 +425,7 @@
             tipo={tipoForm}
             detalhe={detalheForm}
             grupos={gruposDe(itens).map((g) => g.nome)}
+            servidores={itens.filter((i) => i.tipo === 'servidor').map((i) => i.nome)}
             oncancelar={cancelarFormulario}
             onsalvo={salvo}
           />
@@ -457,7 +459,7 @@
           <Botao
             variante="secundario"
             desabilitado={!editavel}
-            title={editavel ? undefined : 'Entradas deste tipo ou com anexos ainda não são editadas aqui.'}
+            title={editavel ? undefined : 'Entradas com anexos ainda não são editadas aqui.'}
             onclick={editar}>Editar</Botao
           >
         </header>

@@ -904,6 +904,21 @@ Lido de uma cópia do `Ward.figcraft` (o original não foi alterado), por `get_n
 | `Interruptor` compacto | `6838` | `app/src/lib/componentes/Interruptor.svelte` |
 | `Campo secreto` vazio (10c) | `375` / `18609` | `CampoSecreto.svelte` ganhou `editavel`, `ontrocar`, `mostrarRevelar`, `mostrarCopiar` e `erro`; o revelar do detalhe de Credenciais usa `revelar_campo` (D65 b) |
 
+## Fase 34 — formulário parte 2 no código (só leitura do FigCraft)
+
+Lido de uma cópia do `Ward.figcraft` (o original não foi alterado; sha256 igual antes e
+depois), por `get_node` e `screenshot`. Capturas do app (ponte de teste com
+`--daemon-falso cheio --anexos <pasta>`, Chrome headless, 1280×800) e `qa.json` em
+`docs/mission/evidence/fase-34/`.
+
+| Frame / componente no FigCraft | Id | No código |
+| --- | --- | --- |
+| `Formulário / banco / Novo` e `/ Edição` | `8537` (detalhe `8731`, corpo `8752`) e `7908` (`8106`, `8127`; túnel `8475`, anexo `8507`) | `app/src/telas/Formulario.svelte` + `formulario.js` (`TIPOS_FORM.banco`; texto de "Acesso" e porta padrão pelo motor) |
+| `Formulário / servidor / Novo` e `/ Edição` | `9900` (`10094`, `10119`; `Conectar` oculto `10113`) e `8981` (`9175`, `9196`; `Conectar` `9192`, anexo `9387`, chave `9326`) | idem (`TIPOS_FORM.servidor`; "Autenticação" escolhe senha ou chave + passphrase; `Conectar` no cabeçalho só na edição) |
+| `Formulário / ftp/sftp / Novo` e `/ Edição` | `14743` (corpo `14962`) e `10895` (corpo `11047`) | idem (`TIPOS_FORM['ftp-sftp']`; com `ftp`, só senha) |
+| `Anexo` | `6849` (avatar `6850`, nome `6859`, detalhe `6860`, Remover `6852`) | `app/src/lib/componentes/Anexo.svelte` |
+| `Botão` secundário com `Ícone/tipo-servidor` ("Conectar") | `9192` (main `280`, ícone `225`) | `Botao` com `icone="tipo-servidor"` |
+
 ## Fase 35 — nível de acesso com PIN no código (só leitura do FigCraft)
 
 Lido de uma cópia do `Ward.figcraft` (o original não foi alterado), por `get_node` e

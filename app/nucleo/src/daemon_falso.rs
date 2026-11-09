@@ -6,7 +6,7 @@
 //! da Fase 22. Recebe o corpo do quadro, lê com `decodificar_pedido` no papel app, monta
 //! a resposta com `ItemLista::de_entrada` / `DetalheEntrada::de_entrada` (sem segredo
 //! por construção) e devolve o corpo de `codificar_resposta`. Atende `estado`, `lista`,
-//! `detalhe`, `copiar`, `revelar`, `totp` e `salvar_entrada` (Fase 33, com a mesma
+//! `detalhe`, `copiar`, `revelar`, `totp`, `emitir_token` (Fase 34) e `salvar_entrada` (Fase 33, com a mesma
 //! regra do `wardd`: `Rascunho::validar`, `conferir_no_cofre`, nível "com aprovação" na
 //! entrada nova e mantido na editada) e `mudar_nivel` (Fase 35, a mesma regra do
 //! `wardd`: PIN conferido no hash Argon2id da configuração do cofre de teste, em tempo
@@ -18,7 +18,9 @@
 
 use zeroize::Zeroizing;
 
-use ward_core::entrada::{Entrada, NivelAcesso, OrigemSegredo, Rascunho, Segredo as SegredoCore};
+use ward_core::entrada::{
+    Entrada, NivelAcesso, OrigemSegredo, Rascunho, Segredo as SegredoCore, TipoEntrada,
+};
 use ward_core::protocolo::{
     self, Alvo, DetalheEntrada, ErroResposta, ItemLista, Papel, Pedido, Resposta,
 };
@@ -127,6 +129,24 @@ impl DaemonFalso {
             } => match self.mudar_nivel(&entrada, nivel, &pin) {
                 Ok(()) => Resposta::Ok,
                 Err(e) => Resposta::Erro(e),
+            },
+            // Fase 34: o token do "Conectar" (D3), só para `servidor`. O falso não abre
+            // sessão nenhuma; o token é aleatório e não é guardado.
+            Pedido::EmitirToken { entrada } => match self.entrada(&entrada) {
+                Some(e) if e.tipo() == TipoEntrada::Servidor => {
+                    match ward_core::gerador::gerar(&ward_core::gerador::OpcoesGerador {
+                        tamanho: 32,
+                        minusculas: true,
+                        maiusculas: true,
+                        digitos: true,
+                        simbolos: false,
+                    }) {
+                        Ok(t) => Resposta::Token(t),
+                        Err(_) => Resposta::Erro(ErroResposta::Interno),
+                    }
+                }
+                Some(_) => Resposta::Erro(ErroResposta::PedidoInvalido),
+                None => Resposta::Erro(ErroResposta::EntradaInexistente),
             },
             _ => Resposta::Erro(ErroResposta::Interno),
         }

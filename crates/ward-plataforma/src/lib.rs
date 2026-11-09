@@ -35,6 +35,8 @@ pub use endurecimento::{
 pub use lancador::{
     AmbienteApp, ErroLancador, ErroSessao, Lancador, ambiente_do_app, conferir_ambiente_do_app,
 };
+#[cfg(feature = "modo-teste")]
+pub use lancador::{BinarioDeTeste, ErroBinarioDeTeste};
 pub use memoria::{BufferTravado, travar_regiao};
 pub use papel::{ErroInstalacao, GRUPO_APP, GRUPO_EXTENSAO, Instalacao, PoliticaKernel};
 pub use processo::{

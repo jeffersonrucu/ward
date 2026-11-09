@@ -22,6 +22,7 @@ use zeroize::Zeroizing;
 use crate::ErroApp;
 use crate::daemon::{Daemon, EstadoCofre};
 use crate::segredo::Segredo;
+use crate::terminal::Token;
 
 /// Um pedido e a resposta já lida. Um `erro` do daemon vira [`ErroApp`] com mensagem
 /// fixa (o código do protocolo não vai à interface).
@@ -57,6 +58,30 @@ pub fn estado<D: Daemon + ?Sized>(daemon: &mut D) -> Result<EstadoCofre, ErroApp
         } => Ok(EstadoCofre::SemCofre),
         Resposta::Estado { travado: true, .. } => Ok(EstadoCofre::Travado),
         Resposta::Estado { travado: false, .. } => Ok(EstadoCofre::Destravado),
+        _ => Err(ErroApp::RespostaInvalida),
+    }
+}
+
+/// O papel que o daemon deu a esta conexão, pela resposta de `estado` (D63). O app e a
+/// ponte de teste pedem isto **primeiro** e, sem [`Papel::App`], não usam a conexão.
+pub fn papel<D: Daemon + ?Sized>(daemon: &mut D) -> Result<Papel, ErroApp> {
+    match pedir(daemon, &Pedido::Estado)? {
+        Resposta::Estado { papel, .. } => Ok(papel),
+        _ => Err(ErroApp::RespostaInvalida),
+    }
+}
+
+/// O papel desta conexão é o de app? (O mesmo de [`papel`], para quem não depende do
+/// `ward-core`, como a ponte de teste.)
+pub fn tem_papel_app<D: Daemon + ?Sized>(daemon: &mut D) -> Result<bool, ErroApp> {
+    papel(daemon).map(|p| p == Papel::App)
+}
+
+/// `abrir_app` (D57): pede ao daemon que abra a instância verdadeira do app. Sem
+/// campo: nada do pedido chega ao processo que o daemon abre.
+pub fn abrir_app<D: Daemon + ?Sized>(daemon: &mut D) -> Result<(), ErroApp> {
+    match pedir(daemon, &Pedido::AbrirApp)? {
+        Resposta::Ok => Ok(()),
         _ => Err(ErroApp::RespostaInvalida),
     }
 }
@@ -140,6 +165,18 @@ pub fn totp<D: Daemon + ?Sized>(daemon: &mut D, entrada: &str) -> Result<CodigoT
 
 /// Resultado do `salvar_entrada`: salvo, ou os problemas de validação por campo (só
 /// textos fixos do `ward-core`; nenhum valor do usuário).
+/// `emitir_token`: o token de uso único do "Conectar" (D3), conferido antes de ir a um
+/// argv ([`Token::de_resposta`]).
+pub fn emitir_token<D: Daemon + ?Sized>(daemon: &mut D, entrada: &str) -> Result<Token, ErroApp> {
+    let pedido = Pedido::EmitirToken {
+        entrada: entrada.to_owned(),
+    };
+    match pedir(daemon, &pedido)? {
+        Resposta::Token(t) => Token::de_resposta(t.expor()).ok_or(ErroApp::RespostaInvalida),
+        _ => Err(ErroApp::RespostaInvalida),
+    }
+}
+
 pub enum Salvamento {
     Salvo,
     Problemas(Vec<Problema>),

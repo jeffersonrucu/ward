@@ -5,12 +5,20 @@
 //! lugar nenhum. Por isso uma vigia colhe o filho e registra no log do daemon como ele
 //! saiu (código ou sinal; pendência da 29a). Nada do pedido entra no ambiente do app:
 //! a operação `abrir_app` não tem campo.
+//!
+//! Daemon de teste (D63, Fase 23a): o abridor abre o binário de teste da configuração
+//! (o `ward-app` de teste ou a ponte) pelo mesmo lançador, e [`AppDeTeste`] dá a esse
+//! processo o papel app **sem** o egid do grupo (o pid do lançador e o pai = daemon
+//! continuam exigidos). No release, [`AppDeTeste`] não tem valor possível: o tipo só se
+//! constrói com a feature `modo-teste`.
 
 use std::os::unix::process::ExitStatusExt;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use ward_plataforma::{BinarioPermitido, ErroLancador, Instalacao, Lancador};
+use ward_plataforma::{
+    BinarioPermitido, ClassePar, ErroLancador, Instalacao, Lancador, ProcessoPar,
+};
 
 use crate::aprovacao::{AbridorApp, ErroAbrirApp};
 use crate::aviso;
@@ -36,6 +44,16 @@ impl AbridorReal {
     }
 }
 
+impl AbridorReal {
+    /// Só no daemon de teste (D63): abre o binário de teste conferido pela configuração.
+    #[cfg(feature = "modo-teste")]
+    pub fn de_teste(binario: ward_plataforma::BinarioDeTeste) -> Self {
+        Self {
+            lancador: Arc::new(Mutex::new(Lancador::de_teste(binario))),
+        }
+    }
+}
+
 /// Quem o lançador abriu (D63): o papel app só vale para esse processo, vivo.
 #[derive(Clone)]
 pub struct AppLancado(Arc<Mutex<Lancador>>);
@@ -54,6 +72,45 @@ impl AbridorReal {
     /// Para a classificação dos pares (D63).
     pub fn app_lancado(&self) -> AppLancado {
         AppLancado(self.lancador.clone())
+    }
+}
+
+/// O app de teste (D63): o processo que o lançador de teste abriu ganha o papel app sem
+/// o egid do grupo `ward-app`. Sem a feature `modo-teste`, o tipo não tem valor
+/// (`Infallible`): o release não tem como dar o papel app sem o grupo.
+pub struct AppDeTeste {
+    #[cfg(feature = "modo-teste")]
+    app: AppLancado,
+    #[cfg(not(feature = "modo-teste"))]
+    nunca: std::convert::Infallible,
+}
+
+impl AppDeTeste {
+    #[cfg(feature = "modo-teste")]
+    pub fn novo(app: AppLancado) -> Self {
+        Self { app }
+    }
+
+    /// `pid` é o app que o lançador de teste abriu, vivo?
+    pub fn e_o_app(&self, pid: u32) -> bool {
+        #[cfg(feature = "modo-teste")]
+        return self.app.e_o_app(pid);
+        #[cfg(not(feature = "modo-teste"))]
+        {
+            let _ = pid;
+            match self.nunca {}
+        }
+    }
+
+    /// A classe do par sem o egid (mesmo uid, sem depurador, pai = daemon).
+    pub fn classificar(&self, par: &ProcessoPar) -> ClassePar {
+        #[cfg(feature = "modo-teste")]
+        return par.classificar_app_de_teste();
+        #[cfg(not(feature = "modo-teste"))]
+        {
+            let _ = par;
+            match self.nunca {}
+        }
     }
 }
 
