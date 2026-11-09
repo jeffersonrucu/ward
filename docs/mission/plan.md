@@ -775,7 +775,7 @@ Contrato: V4.1–V4.38
   e `make teste-ataques-fundacao` volta a passar; texto do V4.32 com `--token-fd` no
   lugar de `--token`; linhas do `CLAUDE.md` para `make teste-ssh-home` e o V4.21
   cronometrado no `teste-cli`. V1.5, V4.32.
-- [ ] Fase 28d — Scrutiny do M4 reprovou pela 2ª vez (2026-11-09) só por defeito do
+- [x] Fase 28d — Scrutiny do M4 reprovou pela 2ª vez (2026-11-09) só por defeito do
   script: `copiar_workspace` de `dev/testes/ataques-fundacao.sh` copia só `crates/`, mas
   `ward-ponte-teste` depende de `app/nucleo`; a cópia quebra antes dos ataques (falsa
   falha do V1.2 e aborta antes do V1.5). Copiar também o que o workspace referencia
@@ -811,7 +811,7 @@ Auditoria de segurança do M4 (2026-11-09): **reprovada** (1ª vez), com 1 crít
   28d: 160 `ok` e nenhuma falha até `config_do_cargo_home`; faltaram `ambiente_do_make` e
   `git_sem_config_do_usuario` por disco — rodar `make teste-ataques-fundacao` sozinho com
   ~12 GB livres.
-- [ ] Fase 28f — A 28d pôs as cópias do `teste-ataques-fundacao` em `.dev/ataques-fundacao.*`,
+- [x] Fase 28f — A 28d pôs as cópias do `teste-ataques-fundacao` em `.dev/ataques-fundacao.*`,
   e o `dev/origens.py` acha os `.cargo/config*` plantados nelas: enquanto o teste roda,
   todo `make` do checkout falha em `origens`, e o próprio V1.2 (`make check` na raiz)
   sai 2 por isso, sem citar `vazamento.txt` (falsa falha). Pôr as cópias fora do
@@ -819,6 +819,9 @@ Auditoria de segurança do M4 (2026-11-09): **reprovada** (1ª vez), com 1 crít
   fazer o `origens.py` ignorar `.dev/` com justificativa (cargo não lê config de
   subpastas). Critério: `make teste-ataques-fundacao` inteiro até "Todos os ataques foram
   barrados" e `make origens` limpo durante a rodada. V1.2, V1.5.
+  Feita: cópias em `~/.cache/ward-ataques-fundacao.*` (0700, cadeia conferida); `make
+  teste-ataques-fundacao` 167 `ok`, 0 `FALHA`; `origens` da raiz limpo durante a rodada.
+  Com isso a 28d fecha e, pela decisão do usuário, o scrutiny do M4 conta como aprovado.
 
 ## Milestone 5 — App desktop
 Contrato: V5.1–V5.35
