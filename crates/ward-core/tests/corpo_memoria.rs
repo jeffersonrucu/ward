@@ -199,9 +199,9 @@ fn campo(v: &mut Vec<u8>, b: &[u8]) {
     v.extend_from_slice(b);
 }
 
-/// Versão (3) e geração (D39) no começo de todo corpo forjado aqui.
+/// Versão (4, D65 d) e geração (D39) no começo de todo corpo forjado aqui.
 fn inicio(geracao: u64) -> Vec<u8> {
-    let mut v = vec![3, 0];
+    let mut v = vec![4, 0];
     v.extend_from_slice(&geracao.to_le_bytes());
     v
 }
@@ -209,7 +209,7 @@ fn inicio(geracao: u64) -> Vec<u8> {
 /// Onde começa o campo do hash do PIN: depois da versão (2) e da geração (8).
 const P_HASH: usize = 2 + 8;
 
-/// O corpo vazio do cofre de teste: versão 3 e a configuração (D30, D39), mais a
+/// O corpo vazio do cofre de teste: versão 4 e a configuração (D30, D39), mais a
 /// contagem.
 fn corpo_vazio() -> Vec<u8> {
     serializar(configuracao_de_teste(), 1, &[])
@@ -296,10 +296,13 @@ fn forjados() -> Vec<(&'static str, Vec<u8>)> {
     let mut v = com_contagem(generico_ate_anexos(), 0);
     v[0] = 1;
     casos.push(("versão 1", v));
-    // D39: a versão 2 (sem geração), e a 3 com geração 0.
+    // D39: a versão 2 (sem geração), a 3 (sem datas, D65 d) e a 4 com geração 0.
     let mut v = com_contagem(generico_ate_anexos(), 0);
     v[0] = 2;
     casos.push(("versão 2", v));
+    let mut v = com_contagem(generico_ate_anexos(), 0);
+    v[0] = 3;
+    casos.push(("versão 3", v));
     let mut v = com_contagem(generico_ate_anexos(), 0);
     v[2..P_HASH].copy_from_slice(&0u64.to_le_bytes());
     casos.push(("geração 0", v));
@@ -373,8 +376,9 @@ fn forjados() -> Vec<(&'static str, Vec<u8>)> {
 
 #[test]
 fn v2_32_corpo_forjado_recusado_rapido_sem_alocar() {
-    // Controle: o corpo forjado bem formado (uma entrada genérica) é aceito.
-    let ok = com_contagem(generico_ate_anexos(), 0);
+    // Controle: o corpo forjado bem formado (uma entrada genérica, sem datas) é aceito.
+    let mut ok = com_contagem(generico_ate_anexos(), 0);
+    ok.extend_from_slice(&[0; 16]);
     assert_eq!(desserializar(&ok).map(|(_, _, e)| e.len()), Ok(1));
     // Controle da seção: o cabeçalho remontado com o hash de teste é o do módulo.
     assert!(cabecalho_com_hash(&hash_de_teste()) == cabecalho());

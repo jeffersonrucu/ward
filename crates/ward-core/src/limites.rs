@@ -114,6 +114,9 @@ pub const MAX_MINUTOS_TRAVA: u32 = 24 * 60;
 /// UUID do sistema de arquivos do pendrive do backup externo (D17): até 36 caracteres
 /// (o UUID de 128 bits com hífens; FAT e exFAT usam `XXXX-XXXX`).
 pub const MAX_UUID_BACKUP: usize = 36;
+/// Maior data de criação ou alteração de uma entrada (D65 d), em segundos UTC desde
+/// 1970: 9999-12-31 23:59:59. Cabe com folga no `Number` do JavaScript (2^53).
+pub const MAX_DATA: u64 = 253_402_300_799;
 
 // ---- Protocolo do socket (Fase 20) ----
 

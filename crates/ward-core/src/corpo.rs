@@ -1,11 +1,11 @@
-//! Corpo do cofre (D26, D30, D39): a configuração, a geração e as entradas em bytes,
+//! Corpo do cofre (D26, D30, D39, D65 d): a configuração, a geração e as entradas em bytes,
 //! para o [`crate::formato`] cifrar.
 //!
 //! Codificação binária própria, versionada e canônica, sem dependência nova (S14).
 //! Inteiros em little-endian; todo campo de bytes leva o comprimento antes (u32 LE).
 //!
 //! ```text
-//! corpo   = versão (u16) = 3 ‖ configuração ‖ n de entradas (u32) ‖ entrada × n
+//! corpo   = versão (u16) = 4 ‖ configuração ‖ n de entradas (u32) ‖ entrada × n
 //! configuração = geração (u64, ≥ 1)
 //!           ‖ hash do PIN (campo: texto PHC do Argon2id, obrigatório)
 //!           ‖ minutos de trava (u32) ‖ backup ligado (u8 0|1)
@@ -15,6 +15,7 @@
 //!           ‖ campos do tipo (ver `esquema`)
 //!           ‖ n de extras (u32) ‖ (nome ‖ segredo: u8 0|1 ‖ valor) × n
 //!           ‖ n de anexos (u32) ‖ (nome ‖ conteúdo) × n
+//!           ‖ criada em (u64) ‖ alterada em (u64)
 //! campo   = comprimento (u32) ‖ bytes
 //! ```
 //!
@@ -26,6 +27,11 @@
 //!   desconhecidas e recusadas como qualquer outra; geração 0, um corpo sem hash de
 //!   PIN, com hash fora do formato ou com custo fora da faixa também. Não há migração:
 //!   não existe cofre real nas versões antigas.
+//! - **Versão 4** (D65 d, provisória): cada entrada termina com as datas de criação e
+//!   de alteração ([`Datas`]), em segundos UTC; 0 é "sem data". A leitura confere a
+//!   regra de [`Datas`] (faixa de 1 a [`MAX_DATA`], criação só com alteração e não
+//!   depois dela). A versão 3 (sem datas) é recusada como versão desconhecida, sem
+//!   migração: não há cofre instalado, e o `make dev-cofre` regrava o de teste.
 //! - Tipo, nível, ambiente, motor, segurança e protocolo vão pelos identificadores
 //!   estáveis da Fase 15 (`login`, `com-aprovacao`…). A porta vai em 2 bytes (u16).
 //!   Campo opcional ausente é um campo vazio.
@@ -54,7 +60,7 @@ use zeroize::Zeroizing;
 
 use crate::configuracao::{self, BackupExterno, Configuracao, HashPin};
 use crate::entrada::{
-    Autenticacao, Dados, Entrada, NivelAcesso, Rascunho, RascunhoAnexo, RascunhoDados,
+    Autenticacao, Dados, Datas, Entrada, NivelAcesso, Rascunho, RascunhoAnexo, RascunhoDados,
     RascunhoExtra, Segredo, TipoEntrada, ValorExtra,
 };
 use crate::formato::{self, CofreAberto, ErroFormato, SenhaMestra};
@@ -62,14 +68,15 @@ use crate::formato::{self, CofreAberto, ErroFormato, SenhaMestra};
 #[cfg(test)]
 mod testes;
 
-/// Versão atual do corpo (D30: com a seção de configuração; D39: com a geração).
-pub const VERSAO_CORPO: u16 = 3;
+/// Versão atual do corpo (D30: com a seção de configuração; D39: com a geração; D65 d:
+/// com as datas de cada entrada).
+pub const VERSAO_CORPO: u16 = 4;
 
 // Os limites estão em `crate::limites` (D32): a leitura recusa acima deles antes de
 // alocar, e a validação da entrada confere de novo, com o limite exato de cada campo.
 use crate::limites::{
-    MAX_ANEXOS, MAX_ANEXOS_SOMADOS, MAX_EXTRAS, MAX_HASH_PIN, MAX_NOTA, MAX_SEGREDO, MAX_TAGS,
-    MAX_TEXTO, MAX_UUID_BACKUP, MAX_VALOR_EXTRA, MIB,
+    MAX_ANEXOS, MAX_ANEXOS_SOMADOS, MAX_DATA, MAX_EXTRAS, MAX_HASH_PIN, MAX_NOTA, MAX_SEGREDO,
+    MAX_TAGS, MAX_TEXTO, MAX_UUID_BACKUP, MAX_VALOR_EXTRA, MIB,
 };
 pub use crate::limites::{MAX_CORPO, MAX_ENTRADAS};
 /// Mais campos de um tipo (`banco`, `servidor`, `ftp/sftp`). Estrutural, não é limite.
@@ -596,6 +603,16 @@ fn escrever_entrada(s: &mut Saida<'_>, e: &Entrada) {
         s.campo(anexo.nome().as_bytes(), MAX_TEXTO);
         s.campo(anexo.conteudo().expor(), MAX_ANEXOS_SOMADOS);
     }
+    // D65 d: 0 = sem data. Uma `Datas` só existe dentro da regra; a faixa é conferida
+    // de novo para o que se grava sempre reabrir.
+    let datas = e.datas();
+    for d in [datas.criada_em(), datas.alterada_em()] {
+        let d = d.unwrap_or(0);
+        if d > MAX_DATA {
+            s.erro = true;
+        }
+        s.por(&d.to_le_bytes());
+    }
 }
 
 // ---- Leitura ----
@@ -622,6 +639,13 @@ impl<'a> Leitor<'a> {
     fn u16(&mut self) -> Result<u16, ErroCorpo> {
         let b = self.bytes(2)?;
         Ok(u16::from_le_bytes([b[0], b[1]]))
+    }
+
+    fn u64(&mut self) -> Result<u64, ErroCorpo> {
+        let b = self.bytes(8)?;
+        let mut b8 = [0u8; 8];
+        b8.copy_from_slice(b);
+        Ok(u64::from_le_bytes(b8))
     }
 
     fn u32(&mut self) -> Result<usize, ErroCorpo> {
@@ -670,6 +694,8 @@ struct Bruta<'a> {
     dados: [&'a [u8]; MAX_DADOS],
     extras: Lista<'a>,
     anexos: Lista<'a>,
+    /// Já conferidas pela regra de [`Datas`] (D65 d).
+    datas: Datas,
 }
 
 /// A seção de configuração como está no buffer, já conferida inteira (sem alocar).
@@ -695,10 +721,7 @@ fn ler_cabecalho<'a>(l: &mut Leitor<'a>) -> Result<(BrutaConfiguracao<'a>, usize
 /// 0|1 e UUID válido; ligado sem UUID é recusado. Nada aloca.
 fn ler_configuracao<'a>(l: &mut Leitor<'a>) -> Result<BrutaConfiguracao<'a>, ErroCorpo> {
     // D39: a geração começa em 1; 0 é corpo inválido (o erro genérico).
-    let g = l.bytes(8)?;
-    let mut b8 = [0u8; 8];
-    b8.copy_from_slice(g);
-    let geracao = u64::from_le_bytes(b8);
+    let geracao = l.u64()?;
     if geracao == 0 {
         return Err(ErroCorpo::Invalido);
     }
@@ -824,6 +847,7 @@ fn ler_bruta<'a>(l: &mut Leitor<'a>) -> Result<Bruta<'a>, ErroCorpo> {
     }
     let extras = ler_lista(l, MAX_EXTRAS, ler_extra)?;
     let anexos = ler_anexos(l)?;
+    let datas = ler_datas(l)?;
     Ok(Bruta {
         tipo,
         nivel,
@@ -835,7 +859,16 @@ fn ler_bruta<'a>(l: &mut Leitor<'a>) -> Result<Bruta<'a>, ErroCorpo> {
         dados,
         extras,
         anexos,
+        datas,
     })
+}
+
+/// As datas da entrada (D65 d): 0 = sem; o resto pela regra de [`Datas`].
+fn ler_datas(l: &mut Leitor<'_>) -> Result<Datas, ErroCorpo> {
+    let opcional = |d: u64| (d != 0).then_some(d);
+    let criada = l.u64()?;
+    let alterada = l.u64()?;
+    Datas::de_partes(opcional(criada), opcional(alterada)).ok_or(ErroCorpo::Invalido)
 }
 
 /// 1ª passada: o corpo inteiro, sem alocar. Devolve o número de entradas.
@@ -983,5 +1016,6 @@ fn montar(b: &Bruta<'_>) -> Result<Entrada, ErroCorpo> {
         return Err(ErroCorpo::Invalido);
     }
     entrada.definir_nivel(b.nivel);
+    entrada.definir_datas(b.datas);
     Ok(entrada)
 }

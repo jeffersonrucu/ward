@@ -15,7 +15,7 @@ use super::json::{Escritor, JsonInvalido};
 use super::pedido::CAMPOS_SECRETOS;
 use super::{Operacao, Papel, TipoResposta};
 use crate::entrada::{
-    Ambiente, Autenticacao, Dados, Entrada, NivelAcesso, Segredo, TipoEntrada, ValorExtra,
+    Ambiente, Autenticacao, Dados, Datas, Entrada, NivelAcesso, Segredo, TipoEntrada, ValorExtra,
 };
 use crate::limites::{
     MAX_ANEXOS, MAX_ANEXOS_SOMADOS, MAX_ENTRADAS, MAX_EXTRAS, MAX_LINHA, MAX_NOME, MAX_NOME_ANEXO,
@@ -152,6 +152,9 @@ pub struct DetalheEntrada {
     pub segredos: Vec<String>,
     pub extras: Vec<ExtraDetalhe>,
     pub anexos: Vec<AnexoDetalhe>,
+    /// Datas de criação e alteração (D65 d), carimbadas pelo daemon. O `detalhe` é só
+    /// do papel app; o agente nunca recebe datas. Sem data, a chave não vai.
+    pub datas: Datas,
 }
 
 impl DetalheEntrada {
@@ -187,6 +190,7 @@ impl DetalheEntrada {
                     tamanho: a.conteudo().len() as u64,
                 })
                 .collect(),
+            datas: e.datas(),
         }
     }
 }
@@ -453,7 +457,8 @@ impl Resposta {
                 && d.anexos.len() <= MAX_ANEXOS
                 && d.anexos.iter().all(|a| {
                     a.nome.len() <= MAX_NOME_ANEXO && a.tamanho <= MAX_ANEXOS_SOMADOS as u64
-                })),
+                })
+                && Datas::de_partes(d.datas.criada_em(), d.datas.alterada_em()).is_some()),
             Resposta::Segredo(s) => ok(s.len() <= crate::limites::MAX_NOTA),
             Resposta::Token(t) => ok(!t.is_empty() && t.len() <= MAX_NOME),
             Resposta::PedidoDeAprovacao(p) => ok((1..=2).contains(&p.entradas.len())
@@ -601,6 +606,15 @@ impl Resposta {
                         });
                     }
                 });
+                // D65 d: só as datas que existem.
+                if let Some(c) = d.datas.criada_em() {
+                    e.chave("criada_em");
+                    e.inteiro(c);
+                }
+                if let Some(a) = d.datas.alterada_em() {
+                    e.chave("alterada_em");
+                    e.inteiro(a);
+                }
             }
             Resposta::Segredo(s) => {
                 e.chave("valor");
@@ -913,6 +927,16 @@ pub(crate) fn ler(papel: Papel, tipo: TipoResposta, mut c: Campos) -> R<Resposta
                 o.fim()?;
                 anexos.push(AnexoDetalhe { nome, tamanho });
             }
+            // D65 d: datas opcionais, pela regra de `Datas` (faixa, criação só com
+            // alteração e não depois dela).
+            let mut data = |k: &str| match c.tirar(k) {
+                None => Ok(None),
+                Some(super::json::Valor::Inteiro(n)) => Ok(Some(n)),
+                Some(_) => Err(JsonInvalido),
+            };
+            let criada = data("criada_em")?;
+            let alterada = data("alterada_em")?;
+            let datas = Datas::de_partes(criada, alterada).ok_or(JsonInvalido)?;
             Resposta::Detalhe(DetalheEntrada {
                 nome: k.nome,
                 tipo: k.tipo,
@@ -925,6 +949,7 @@ pub(crate) fn ler(papel: Papel, tipo: TipoResposta, mut c: Campos) -> R<Resposta
                 segredos,
                 extras,
                 anexos,
+                datas,
             })
         }
         TipoResposta::Segredo => Resposta::Segredo(c.segredo("valor", crate::limites::MAX_NOTA)?),

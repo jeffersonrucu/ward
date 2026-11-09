@@ -1,8 +1,9 @@
 //! `make dev-cofre` (Fase 19, V2.29): monta o cofre de teste a partir de
 //! `dev/fixtures/entradas.json` (D15 + `acme-totp-dev` de D28) pela API pública do
-//! `ward-core` (validação da Fase 15, corpo v3 com a configuração de D30 e a geração de
+//! `ward-core` (validação da Fase 15, corpo v4 com a configuração de D30 e a geração de
 //! D39, `gravar_entradas` de D27/D44) e o reabre com a senha de teste para conferir. O
-//! cofre recém-criado está sempre na geração 1. O PIN de
+//! cofre recém-criado está sempre na geração 1, e as entradas nascem sem as datas de
+//! D65 d (só o daemon carimba, pelo relógio dele; a tela não mostra o rodapé). O PIN de
 //! teste da fixture só entra no cofre como hash Argon2id (D30); nunca em claro.
 //!
 //! Uso (da raiz; o `make` passa os argumentos):
