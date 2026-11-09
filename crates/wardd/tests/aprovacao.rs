@@ -474,7 +474,11 @@ fn fontes_rs(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
 }
 
 /// Em ordem alfabética (o teste compara com a lista achada, ordenada).
-const GANCHOS_DE_TESTE: [&str; 2] = ["com_gancho_depois_de_gravar", "com_programas_ssh"];
+const GANCHOS_DE_TESTE: [&str; 3] = [
+    "com_chrome",
+    "com_gancho_depois_de_gravar",
+    "com_programas_ssh",
+];
 const CFG_GANCHOS: &str = "#[cfg(feature = \"ganchos-teste\")]";
 
 fn conferir_v3_15(rel: &str, texto: &str, ganchos: &mut Vec<&'static str>) {

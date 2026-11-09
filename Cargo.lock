@@ -893,6 +893,8 @@ dependencies = [
  "chacha20poly1305",
  "futures-core",
  "libc",
+ "serde",
+ "serde_json",
  "ssh-key",
  "ward-core",
  "ward-plataforma",

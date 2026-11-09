@@ -24,6 +24,11 @@ pub enum Comando {
         token: Option<String>,
         comando: Vec<OsString>,
     },
+    /// `ward playwright <entrada>` (Fase 44, D6): o daemon faz o login no Chrome
+    /// headless e a CLI imprime só o caminho do storage state.
+    Playwright {
+        entrada: String,
+    },
     Ajuda,
     Versao,
 }
@@ -39,6 +44,8 @@ pub enum ErroUso {
     UsoRun,
     /// `ward ssh` sem entrada, ou com token fora do formato.
     UsoSsh,
+    /// `ward playwright` sem entrada ou com argumento a mais.
+    UsoPlaywright,
 }
 
 impl ErroUso {
@@ -52,6 +59,7 @@ impl ErroUso {
             ErroUso::UsoSsh => {
                 "uso: ward ssh [--token <token>] <entrada> [--] [comando remoto…]".to_owned()
             }
+            ErroUso::UsoPlaywright => "uso: ward playwright <entrada>".to_owned(),
         }
     }
 }
@@ -75,6 +83,11 @@ Uso:
                         segredos trocados por ••••
   ward ssh --token <token> <entrada>
                         o mesmo, pelo botão Conectar do app (token de uso único)
+  ward playwright <entrada>
+                        faz o login da entrada no Chrome (headless) e imprime o
+                        caminho do storage state para o Playwright
+                        (`storage_state=`); a senha nunca vai para o arquivo.
+                        Travar o cofre apaga as sessões
   ward --help           esta ajuda
   ward --version        versão
 
@@ -178,6 +191,14 @@ pub fn interpretar(args: impl IntoIterator<Item = OsString>) -> Result<Comando, 
         "-V" | "--version" => sem_resto(Comando::Versao, "--version"),
         "travar" => sem_resto(Comando::Travar, "travar"),
         "destravar" => sem_resto(Comando::Destravar, "destravar"),
+        "playwright" => match resto.as_slice() {
+            [entrada] if !entrada.is_empty() && !entrada.starts_with('-') => {
+                Ok(Comando::Playwright {
+                    entrada: (*entrada).to_owned(),
+                })
+            }
+            _ => Err(ErroUso::UsoPlaywright),
+        },
         "lista" => match resto.as_slice() {
             [] => Ok(Comando::Lista { json: false }),
             ["--json"] => Ok(Comando::Lista { json: true }),
@@ -320,6 +341,30 @@ mod testes {
         }
         // A mensagem de uso não repete argumento.
         let m = ler(&["ssh", "--token", "falso-SSH-senha-01!"])
+            .unwrap_err()
+            .mensagem();
+        assert!(!m.contains("falso"), "{m}");
+    }
+
+    #[test]
+    fn playwright() {
+        assert_eq!(
+            ler(&["playwright", "acme-wp-prod"]),
+            Ok(Comando::Playwright {
+                entrada: "acme-wp-prod".into()
+            })
+        );
+        for ruim in [
+            &["playwright"][..],
+            &["playwright", ""],
+            &["playwright", "-x"],
+            &["playwright", "a", "b"],
+            &["playwright", "--", "a"],
+        ] {
+            assert_eq!(ler(ruim), Err(ErroUso::UsoPlaywright), "{ruim:?}");
+        }
+        // A mensagem de uso não repete argumento.
+        let m = ler(&["playwright", "e", "falso-WP-senha-02"])
             .unwrap_err()
             .mensagem();
         assert!(!m.contains("falso"), "{m}");

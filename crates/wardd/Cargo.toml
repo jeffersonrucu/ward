@@ -41,6 +41,13 @@ futures-core = { version = "0.3.34", default-features = false }
 # assina com Ed25519 (`ed25519-dalek`) dentro do daemon; a chave nunca sai dele. Sem
 # `rsa` (RUSTSEC-2023-0071), sem `getrandom`/`std` padrão: só o necessário.
 ssh-key = { version = "=0.7.0-rc.12", default-features = false, features = ["alloc", "ed25519", "encryption"] }
+# Fase 44 (motivo no handoff): o `ward playwright` conversa com o Chrome pelo DevTools
+# Protocol (JSON com números de ponto flutuante e negativos, que o leitor estrito do
+# protocolo recusa). Só structs próprias com os campos usados (o resto é pulado sem cópia)
+# e o storage state no formato do Playwright. Os dois já estão no `Cargo.lock` (pelo
+# `ward-app-nucleo`); nenhuma crate nova entra na árvore.
+serde = { version = "1.0.229", default-features = false, features = ["std", "derive"] }
+serde_json = { version = "1.0.154", default-features = false, features = ["std"] }
 
 [dev-dependencies]
 # V3.8: o teste do observador de memória desembrulha a chave de dados do cofre de teste

@@ -1262,6 +1262,26 @@ fn url_valida(v: &str) -> bool {
     caminho_de_url_valido(depois)
 }
 
+/// Origem de uma URL (D9): `esquema://host[:porta]`, sem a porta padrão do esquema
+/// (80 no `http`, 443 no `https`), pelo mesmo parser estrito de D41. `None` para
+/// qualquer URL que o parser recusa (inclusive `http` fora de `localhost`/`127.0.0.1`),
+/// e quem compara origens trata `None` como origem diferente. O host já vem em
+/// minúsculas e em punycode (o parser recusa o resto), então duas origens iguais têm o
+/// mesmo texto. Subdomínio é outra origem.
+pub fn origem_da_url(v: &str) -> Option<String> {
+    if !url_valida(v) {
+        return None;
+    }
+    let (esquema, resto) = v.split_once("://")?;
+    let fim = resto.find(['/', '?', '#']).unwrap_or(resto.len());
+    let (host, porta) = separar_host_porta(&resto[..fim])?;
+    let padrao = if esquema == "https" { "443" } else { "80" };
+    Some(match porta {
+        Some(p) if p != padrao => format!("{esquema}://{host}:{p}"),
+        _ => format!("{esquema}://{host}"),
+    })
+}
+
 /// `host` e `porta` (sem os `:`) da autoridade; IPv6 vem com os colchetes.
 fn separar_host_porta(autoridade: &str) -> Option<(&str, Option<&str>)> {
     if autoridade.starts_with('[') {

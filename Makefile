@@ -67,7 +67,7 @@ CARGO_DENY_VERSAO := 0.20.2
 	dev-servicos-parar dev-servicos-estado dev-servicos-conferir dev-servicos-trocar-chave-host dev-cofre \
 	dev-cofre-conferir dev-variacoes teste-dev-cofre dev-daemon dev-daemon-parar teste-cli teste-docker-uid teste-units \
 	app-front app-check app-ponte teste-docker-plataforma teste-sem-modo-teste teste-socket-ataques \
-	teste-webkit-real
+	teste-webkit-real teste-playwright
 
 ## check: pré-checagem das origens, depois fmt, clippy -D warnings, testes, cargo audit,
 ## cargo deny e gitleaks, nessa ordem (V1.1)
@@ -346,6 +346,18 @@ dev-daemon: origens
 teste-cli: origens
 	$(CARGO) build --quiet --locked -p ward --features modo-teste --bin ward
 	$(PYTHON) dev/testes/cli.py target/debug/ward "$(CURDIR)"
+
+## teste-playwright: `ward playwright` de ponta a ponta (Fase 44; V6.12–V6.16 da parte do
+## daemon) com o Chrome instalado: os ataques contra sites locais (`cargo test --ignored`)
+## e, com os serviços de pé, o WordPress e o phish contra um `wardd` de teste só dele
+## (WARD_DEV_SOCKET_DIR próprio). Precisa de `make dev-cofre`, `make dev-variacoes` e do
+## Playwright do Python em PW_PYTHONPATH (ou SEM_PLAYWRIGHT_PYTHON=1); fora do `make check`
+teste-playwright: origens
+	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd
+	$(CARGO) build --quiet --locked -p ward --features modo-teste --bin ward
+	$(CARGO) test --quiet --locked -p wardd --all-features --test playwright -- --ignored
+	PW_PYTHONPATH="$(PW_PYTHONPATH)" SEM_PLAYWRIGHT_PYTHON="$(SEM_PLAYWRIGHT_PYTHON)" \
+		dev/testes/playwright.sh target/debug/wardd target/debug/ward
 
 ## teste-sem-modo-teste: D63/V3.37: nenhum membro liga modo-teste em dependência normal,
 ## testes de unidade do wardd e do ward-plataforma sem a feature e strings do release

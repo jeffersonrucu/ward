@@ -10,6 +10,8 @@
 //!   [`lancamento`]: o daemon abre o app pelo lançador (D57).
 //! - [`trava`]: trava automática por inatividade e pelo logind (Fase 24).
 //! - [`execucao`]: o `ward run` (Fase 26): entrega, máscara, filho e temporários.
+//! - [`playwright`]: o `ward playwright` (Fase 44) pelo Chrome com o pipe de
+//!   depuração ([`cdp`]).
 //! - [`externo`]: backup externo em pendrive (Fase 46); [`udisks`]: os pendrives pelo
 //!   udisks2 no barramento do sistema.
 //!
@@ -22,11 +24,13 @@ pub mod log;
 pub mod agente_ssh;
 pub mod aprovacao;
 pub mod arquivos;
+pub mod cdp;
 pub mod config;
 pub mod execucao;
 pub mod externo;
 pub mod lancamento;
 pub mod nucleo;
+pub mod playwright;
 pub mod servidor;
 pub mod ssh;
 pub mod trava;

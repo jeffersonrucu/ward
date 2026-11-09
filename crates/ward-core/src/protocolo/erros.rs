@@ -69,6 +69,14 @@ pub enum ErroResposta {
     AprovacaoIndisponivel,
     /// A origem da aba não bate com a da entrada (D9).
     OrigemDiferente,
+    /// `ward playwright` (Fase 44): a página da entrada não tem um formulário de login
+    /// que dê para preencher com segurança, ou o site não aceitou o login.
+    LoginRecusado,
+    /// `ward playwright` (Fase 44): o Chrome não abriu, caiu ou não respondeu a tempo.
+    NavegadorFalhou,
+    /// `ward playwright` (Fase 44, S1): a sessão do site guardou a senha (ou uma
+    /// variação dela) em cookie ou `localStorage`; nada foi gravado.
+    SessaoComSegredo,
     /// A entrada não passou na validação.
     Validacao(Vec<Problema>),
     /// `ward run` de um tipo sem entrega (`nota segura`, D10): nada é executado.
@@ -98,7 +106,7 @@ pub const MSG_GERACAO_ESGOTADA: &str =
 
 impl ErroResposta {
     /// Todos os códigos sem dado (o de validação fica de fora).
-    pub const SIMPLES: [ErroResposta; 29] = [
+    pub const SIMPLES: [ErroResposta; 32] = [
         Self::NaoAutorizado,
         Self::Travado,
         Self::TravadoTempoEsgotado,
@@ -122,6 +130,9 @@ impl ErroResposta {
         Self::Expirado,
         Self::AprovacaoIndisponivel,
         Self::OrigemDiferente,
+        Self::LoginRecusado,
+        Self::NavegadorFalhou,
+        Self::SessaoComSegredo,
         Self::TipoSemEntrega,
         Self::EntregaFalhou,
         Self::BackupInexistente,
@@ -156,6 +167,9 @@ impl ErroResposta {
             Self::Expirado => "expirado",
             Self::AprovacaoIndisponivel => "aprovacao_indisponivel",
             Self::OrigemDiferente => "origem_diferente",
+            Self::LoginRecusado => "login_recusado",
+            Self::NavegadorFalhou => "navegador_falhou",
+            Self::SessaoComSegredo => "sessao_com_segredo",
             Self::Validacao(_) => "validacao",
             Self::TipoSemEntrega => "tipo_sem_entrega",
             Self::EntregaFalhou => "entrega_falhou",
@@ -192,6 +206,11 @@ impl ErroResposta {
             Self::Expirado => "pedido expirado",
             Self::AprovacaoIndisponivel => "aprovação indisponível",
             Self::OrigemDiferente => "a origem da página não bate com a da entrada",
+            Self::LoginRecusado => {
+                "a página não tem um formulário de login seguro ou o site não aceitou o login"
+            }
+            Self::NavegadorFalhou => "o navegador não abriu ou não respondeu a tempo",
+            Self::SessaoComSegredo => "a sessão do site guarda a senha; nada foi gravado",
             Self::Validacao(_) => "entrada inválida",
             Self::TipoSemEntrega => "tipo sem entrega",
             Self::EntregaFalhou => "a entrega da credencial falhou; nada foi executado",

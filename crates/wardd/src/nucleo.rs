@@ -161,6 +161,8 @@ pub(crate) struct Estado {
     /// Quantas vezes o cofre travou (Fase 27): o agente SSH de uma sessão some quando
     /// o número muda (D12).
     travas: Arc<AtomicU64>,
+    /// `<rt>` (Fase 44, D6): ao travar, os storage states do `ward playwright` somem.
+    rt_playwright: Option<PathBuf>,
 }
 
 impl Estado {
@@ -170,6 +172,13 @@ impl Estado {
             self.identidade_conhecida = a.identidade;
             // `CofreAberto` e `Entrada` zeram ao sair (chave de dados, hash, segredos).
             drop(a);
+            // D6: as sessões do `ward playwright` não sobrevivem à trava.
+            if let Some(rt) = &self.rt_playwright {
+                let n = crate::playwright::apagar_sessoes(rt);
+                if n > 0 {
+                    aviso!("{n} sessão(ões) do ward playwright apagada(s) ao travar (D6)");
+                }
+            }
         }
         self.erros_pin = 0;
         self.ultimo_uso = None;
@@ -214,6 +223,8 @@ pub struct Daemon {
     /// `ssh`, `sshpass` e `sftp` do `ward ssh` (Fase 27): os do sistema, por caminho
     /// absoluto (sem busca no `PATH`).
     programas_ssh: crate::ssh::ProgramasSsh,
+    /// O Chrome do `ward playwright` (Fase 44): o instalado, por caminho absoluto.
+    chrome: PathBuf,
 }
 
 /// Gancho de teste de [`Daemon::com_gancho_depois_de_gravar`].
@@ -433,6 +444,7 @@ impl Daemon {
                 falhas_app: 0,
                 primeira_do_agente: true,
                 travas: Arc::new(AtomicU64::new(0)),
+                rt_playwright: None,
             }),
             vez_agente: Mutex::new(()),
             vez_app: Mutex::new(()),
@@ -445,6 +457,7 @@ impl Daemon {
             cutucao: OnceLock::new(),
             vez_externo: Mutex::new(()),
             programas_ssh: crate::ssh::ProgramasSsh::do_sistema(),
+            chrome: PathBuf::from(crate::playwright::CHROME),
         }
     }
 
@@ -513,6 +526,21 @@ impl Daemon {
         self
     }
 
+    /// Troca o Chrome do `ward playwright` (Fase 44). Só os testes do crate chamam (com
+    /// um navegador falso que fala o protocolo pelo pipe); o binário usa sempre o
+    /// instalado, e nenhum pedido do socket chega aqui. Só com a feature `ganchos-teste`
+    /// (V3.15, V9.2).
+    #[cfg(feature = "ganchos-teste")]
+    #[doc(hidden)]
+    pub fn com_chrome(mut self, chrome: PathBuf) -> Self {
+        self.chrome = chrome;
+        self
+    }
+
+    pub(crate) fn chrome(&self) -> &std::path::Path {
+        &self.chrome
+    }
+
     pub(crate) fn programas_ssh(&self) -> &crate::ssh::ProgramasSsh {
         &self.programas_ssh
     }
@@ -535,6 +563,11 @@ impl Daemon {
 
     /// Liga o `<rt>` dos temporários do `ward run` (Fase 26, S2): `<rt>tmp/`.
     pub fn com_temporarios(mut self, rt: PathBuf) -> Self {
+        // D6 (Fase 44): o mesmo `<rt>` guarda os storage states, apagados ao travar.
+        self.estado
+            .get_mut()
+            .unwrap_or_else(|e| e.into_inner())
+            .rt_playwright = Some(rt.clone());
         self.temporarios = Some(rt);
         self
     }
@@ -664,12 +697,12 @@ impl Daemon {
                 Ok(Resposta::Ok)
             }
             Pedido::Lista => self.lista(papel),
-            // Fase 23: nível, destrave e aprovação. A execução chega nas Fases 26/27;
-            // até lá, o uso autorizado responde erro interno.
-            Pedido::Executar(_)
-            | Pedido::Ssh { .. }
-            | Pedido::Login { .. }
-            | Pedido::Playwright { .. } => self
+            // D6 (Fase 44): só o caminho do storage state volta.
+            Pedido::Playwright { .. } => self.playwright(cliente, &pedido),
+            // Fase 23: nível, destrave e aprovação. O `executar` e o `ssh` são atendidos
+            // pela sessão do servidor (Fases 26/27) e o `login` chega na Fase 43; aqui o
+            // uso autorizado responde erro interno.
+            Pedido::Executar(_) | Pedido::Ssh { .. } | Pedido::Login { .. } => self
                 .autorizar_uso(cliente, &pedido)
                 .and(Err(ErroResposta::Interno)),
             Pedido::ResponderAprovacao {
