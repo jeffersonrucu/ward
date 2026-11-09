@@ -1156,10 +1156,15 @@ em claro no disco (S2).
   (clippy/ACL/release do Tauri; o host já tem o webkit 2.52.6, rodar no checkout); o
   diálogo GTK real e o `recently-used.xbel` ficam para o roteiro nativo; teste por tempo
   `v3_33_kill_9_entre_as_senhas_erradas` (limite 1,5 s) falha com a máquina carregada.
-- [ ] Fase 53c (DESIGN) — Desenhar no `Ward.figcraft` o botão "Carregar de arquivo" e os
+- [x] Fase 53c (DESIGN) — Desenhar no `Ward.figcraft` o botão "Carregar de arquivo" e os
   estados "aviso" e "chave carregada" do campo "Chave privada" (frames `9900`, `8981`,
   `14743`) e atualizar o `design-nodes.md`. A tela da 53a usa só componentes e tokens
   existentes.
+  Feita (2026-11-09): componente `Campo chave privada` (set `20988`, estados vazio e
+  aviso), frames novos `21032`, `21452`, `21847`, `22268` e o `14743` corrigido; ids no
+  `design-nodes.md`, PNG em `docs/mission/evidence/fase-53c/`. Pendências: aba antiga não
+  salva no MCP headless do FigCraft (não salvar dela); `docs/escopo.md` não cita o
+  "Carregar de arquivo"; ajuda da chave salva em `8981` difere do app (antigo).
 - [x] Fase 53b — Guia e lint da migração (achados médios/baixos da auditoria do M10):
   passo 2b usa o "Carregar de arquivo" da 53a e nunca `wl-copy` para chave; chaves que só
   existem no `~/.ssh` também vão para o Ward e, conferido o passo 3, são apagadas (não
