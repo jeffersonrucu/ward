@@ -26,8 +26,9 @@ escolhe-se segurança e a decisão fica registrada aqui ("Objetivo").
 
 ### Arquitetura
 - R1. `wardd` é **o único processo que toca em segredo**; CLI, app e extensão são
-  clientes dele por socket local. Inicia com a sessão (systemd do usuário).
-  ("Arquitetura")
+  clientes dele por socket local. Sobe pelo socket do systemd do sistema
+  (`wardd@<uid>.socket` em `/run/ward/<uid>/`, pasta do root) e roda como o usuário
+  (D46). ("Arquitetura")
 - R2. Núcleo em Rust (`ward-core`): formato, criptografia, tipos, máscara, protocolo.
   Daemon e CLI usam o núcleo. ("Arquitetura")
 - R3. Só Linux (Pop!_OS 24.04, COSMIC, Wayland). O que depende do sistema (iniciar com
@@ -36,7 +37,8 @@ escolhe-se segurança e a decisão fica registrada aqui ("Objetivo").
   formato, tipos e interface não dependem de Linux. ("Arquitetura")
 - R4. Instalação em `/usr/local`, dono root, por `sudo make install` ou `.deb`;
   extensão instalada por política do Chrome em `/etc/opt/chrome/policies`, sem modo
-  desenvolvedor. ("Arquitetura")
+  desenvolvedor. O `sudo` é pedido uma vez, na instalação, que põe as units do sistema,
+  os grupos `ward-app`/`ward-nm` e os binários setgid (D46, D47). ("Arquitetura")
 
 ### Credenciais
 - R5. Nove tipos v1: `login`, `banco`, `servidor`, `api`, `aws`, `smtp`, `ftp/sftp`,
@@ -169,7 +171,9 @@ comprometidos; acesso físico à máquina destravada; processo feito de propósi
 driblar a máscara (quem barra é a aprovação, que mostra o comando exato); leitura do
 campo de senha da página no instante do preenchimento; troca conjunta do cofre e do
 arquivo de estado por cópias antigas com o daemon parado (RA4, decisão do usuário em
-2026-11-08). Também fora, por decisão do escopo: SSH com chaves do `~/.ssh` (o Ward
+2026-11-08); Chrome (e auxiliares do WebKitGTK) depurado por um ancestral malicioso,
+que pode mentir a origem da aba, e matar o `wardd` como negação de serviço (RA6, RA5,
+decisão do usuário em 2026-11-08). Também fora, por decisão do escopo: SSH com chaves do `~/.ssh` (o Ward
 não interfere).
 
 | # | Invariante (texto do escopo) | Milestones |
@@ -178,7 +182,7 @@ não interfere).
 | S2 | Segredo nunca vai para disco em claro. Anexo temporário só em `/run/user/<uid>/ward/`, 0600, apagado ao fim (inclusive se o comando falhar ou for morto). | M2, M4, M6, M7 |
 | S3 | Segredo nunca vai em argv (visível em `/proc/<pid>/cmdline`); só no ambiente do processo filho, em arquivo temporário ou em fd. | M4, M6 |
 | S4 | A máscara cobre os valores secretos e as variações declaradas, inclusive quando o valor chega quebrado entre dois pedaços da saída. | M2, M4 |
-| S5 | Socket em diretório 0700, conferência do uid do cliente por `SO_PEERCRED`. A CLI confere que o servidor é o `wardd` instalado antes de enviar a senha mestra. | M3, M4, M9 |
+| S5 | Socket 0600 do usuário em pasta do root (`/run/ward/<uid>/`, criada pelo systemd do sistema; o daemon de teste usa um diretório 0700 do usuário), conferência do uid do cliente por `SO_PEERCRED`. A CLI e o app conferem que o servidor é o `wardd` instalado (pasta do root e par com uid 0 no `SO_PEERCRED`) antes de enviar a senha mestra. | M3, M4, M9 |
 | S6 | Criptografia só com bibliotecas auditadas: Argon2id (parâmetros registrados no cabeçalho, mínimo ~256 MiB / 3 passes), XChaCha20-Poly1305 com o cabeçalho como dado autenticado, chave de dados aleatória embrulhada pela chave derivada. Um byte alterado no arquivo faz a abertura falhar. Nada de cripto feita à mão. | M2, M7 |
 | S7 | Gravação atômica (temp + fsync + rename). Uma gravação interrompida nunca corrompe a versão anterior. | M2, M7 |
 | S8 | Daemon com `PR_SET_DUMPABLE=0`, sem core dump, segredos zerados da memória ao travar e após o uso (`zeroize`). Daemon recusa iniciar com `LD_PRELOAD` e similares. | M3, M9 |
@@ -281,7 +285,7 @@ ou com nova resposta do usuário.
   mandar a senha mestra (S5). **Revisto pela Fase 21:** contra o `wardd` endurecido
   (S8) a conferência pelo `/proc` falha fechada, e o app e o host precisam ficar
   dumpable até serem identificados. Ver D46 (servidor), D47 (app e host) e D48 (`LD_*`),
-  provisórios até a resposta do usuário (RA5, RA6).
+  confirmados pelo usuário em 2026-11-08 (RA5, RA6 fechados).
 - D6. **`ward playwright`**: o daemon abre o Chrome instalado em headless com
   `--remote-debugging-pipe` (sem porta TCP) e perfil temporário em
   `/run/user/<uid>/ward/pw-<aleatório>/`, confere a origem, preenche, envia, confere
@@ -339,7 +343,9 @@ ou com nova resposta do usuário.
   mais (e, em linhas `CHAVE=valor`, também pelo valor). Todo segredo de várias linhas
   (chave privada de `servidor` e `ftp/sftp`, extra secreto com `\n`) também passa por
   linha, como os anexos (D36). Também entram as formas escapadas de D37: `\u00XX` de
-  JSON (Go e `ensure_ascii`) e `\$` entre aspas duplas de shell (`declare -p`). stdout e stderr são mascarados
+  JSON (Go e `ensure_ascii`) e `\$` entre aspas duplas de shell (`declare -p`), e a
+  tabela única de D54 (formas de texto por linha, aspas simples, `printf %q`, PHP,
+  campo de tab). stdout e stderr são mascarados
   em separado, com buffer que segura o fim de cada pedaço até saber se é começo de
   segredo. O código TOTP não é mascarado (o agente o recebe, R8).
   Segredo com menos de 6 caracteres é mascarado do mesmo jeito, e o app avisa que a
@@ -646,8 +652,9 @@ cabe ao daemon fica anotado nas Fases 22, 27 e 45.
   - **Na Fase 19c (núcleo):** a seção de configuração ganha a `geracao` (u64, a partir
     de 1). Por isso o corpo vai para a **versão 3**, e a 2 passa a ser desconhecida
     (não há cofre real, como em D30). Toda gravação que parte de um `CofreAberto`
-    (`gravar_entradas`, `trocar_senha`) grava `geracao + 1`. O `CofreAberto` só passa
-    a ter o número novo depois que a gravação dá certo. Em `u64::MAX`, a gravação é
+    (`gravar_entradas`, `trocar_senha`) grava `geracao + 1`. A geração é queimada ao
+    selar, e o `CofreAberto` sobe mesmo se a gravação falhar (D53, Fase 19e; antes, ele
+    só subia depois da gravação que dava certo). Em `u64::MAX`, a gravação é
     recusada. O número pode ser lido (`CofreAberto::geracao()`), mas não existe setter
     público: `configuracao_mut` não mexe nele. A abertura ganha uma variante com
     `geracao_minima`. Abaixo dela, a abertura falha com um erro próprio, `Retrocesso`
@@ -656,7 +663,8 @@ cabe ao daemon fica anotado nas Fases 22, 27 e 45.
     `make dev-cofre` grava a geração 1.
   - **Na Fase 22 (M3, daemon):** o daemon guarda a maior geração vista num arquivo de
     estado ao lado do cofre (`~/.local/share/ward/estado`, `.dev/` nos testes; 0600,
-    sem segredo, gravação atômica). Ele atualiza o arquivo a cada destravar e a cada
+    sem segredo, gravação atômica), com os dois números de D53 (`vista` e `queimada`).
+    Ele atualiza o arquivo a cada destravar e a cada
     gravação e abre sempre com `geracao_minima`. Com `Retrocesso`, o cofre fica
     travado e a mensagem aparece no estado de erro que a tela Destravar já tem, sem
     tela nova. Se o arquivo de estado faltar ou estiver ilegível com o cofre já
@@ -724,7 +732,8 @@ cabe ao daemon fica anotado nas Fases 22, 27 e 45.
     `-l <usuário>`, com o host depois de `--`, por `execve` sem shell. Nunca como
     `usuário@host` nem como `-o User=`, que no `ssh_config` expande `%`. Com `@` no
     usuário isso é obrigatório: `deploy@cliente.com.br@host` seria lido pelo `ssh` de
-    outro jeito. A Fase 27 tem teste com usuário que contém `@`. O `ProxyJump` é
+    outro jeito. A Fase 27 tem teste com usuário que contém `@`. No `sftp` e no `scp`,
+    onde `-l` é limite de banda, vale D56 (`-o User=`). O `ProxyJump` é
     montado só com usuário e host já validados; com `@` no usuário do salto, ele não
     pode ir como `usuário@host` na linha do `ProxyJump` (a Fase 28 usa um `ssh_config`
     gerado com `User` literal sem `%`, ou recusa o salto com `@`).
@@ -759,12 +768,13 @@ cabe ao daemon fica anotado nas Fases 22, 27 e 45.
     teste `mensagens_citam_os_limites_atuais`, ou a monta a partir de
     `ward_core::limites`, para que ela não fique desatualizada se a constante mudar.
 
-- D46. **Conferência do servidor pelo socket do sistema** (**provisória**, Fase 21;
-  depende do usuário porque muda "Arquitetura" › "systemd do usuário"; S5, S8, D5). Com
+- D46. **Conferência do servidor pelo socket do sistema** (**confirmada pelo usuário
+  em 2026-11-08**, Fase 21; mudou "Arquitetura" para o systemd do sistema, a instalação
+  para o `sudo` uma vez e o texto de S5; S5, S8, D5). Com
   o `wardd` não-dumpable (S8), `exe`, `environ` e `maps` dele ficam ilegíveis para o
   mesmo uid (EACCES), e a conferência de D5 pelo `/proc` falha fechada contra o daemon
   real. Também não há segredo que o daemon guarde e um processo do mesmo uid não leia.
-  Proposta: o socket deixa de ser criado pelo próprio `wardd`. Um par
+  Decisão: o socket deixa de ser criado pelo próprio `wardd`. Um par
   `wardd@.socket`/`wardd@.service` **do systemd do sistema** cria o socket em
   `/run/ward/<uid>/wardd.sock`, com o diretório root:root 0755 e o socket do usuário
   0600 (`SocketUser=`, `SocketMode=0600`), e entrega o fd ao `wardd` (`LISTEN_FDS`),
@@ -788,17 +798,17 @@ cabe ao daemon fica anotado nas Fases 22, 27 e 45.
   então o rótulo é forjável, e confinar o `wardd` atrapalha o `ward run`, que executa
   qualquer comando); nome do processo (`Name: wardd` no `status`), que qualquer um
   forja; aceitar o risco, que entrega a senha mestra, e com ela o arquivo do cofre, a um
-  pacote malicioso (ameaça 2). Se o usuário recusar D46, S5 fica sem a conferência do
-  servidor e isso vai para "Fora do modelo de ameaça" no escopo.
-- D47. **App e host da extensão identificados por grupo setgid** (**provisória**, Fase
-  21; depende do usuário porque cria grupos e binários setgid na instalação e registra
-  um resíduo novo; S1, S8, D5). A identificação de D5 lê o `/proc` do cliente, o que
+  pacote malicioso (ameaça 2). A negação de serviço (matar o `wardd`) está em "Fora do
+  modelo de ameaça" no escopo.
+- D47. **App e host da extensão identificados por grupo setgid** (**confirmada pelo
+  usuário em 2026-11-08**, Fase 21; cria grupos e binários setgid na instalação e
+  registra o resíduo RA6 em "Fora do modelo de ameaça"; S1, S8, D5). A identificação de D5 lê o `/proc` do cliente, o que
   obriga o app e o `ward-nm` a ficarem dumpable até o daemon responder. Nessa janela,
   qualquer ancestral (inclusive um pacote malicioso que lance ele mesmo o
   `/usr/local/bin/ward-app`, o que o Yama `ptrace_scope=1` permite) se prende, injeta
   código, se solta e herda o papel app. O `TracerPid` só pega o depurador preso, e
   código escrito por `/proc/<pid>/mem` numa biblioteca do root não aparece no `maps`.
-  Proposta:
+  Decisão:
   - `ward-app` instalado root:`ward-app` 2755 e `ward-nm` root:`ward-nm` 2755, com dois
     grupos de sistema sem membros e sem permissão em arquivo nenhum;
   - o `exec` com setgid deixa o processo não-dumpable desde a primeira instrução (o
@@ -833,9 +843,8 @@ cabe ao daemon fica anotado nas Fases 22, 27 e 45.
   Chrome e pode se prender a ele; um Chrome assim pode mentir a origem da aba e
   receber o preenchimento de qualquer entrada do tipo login. É o mesmo caso de "Fora do
   modelo de ameaça" › leitura do campo de senha por um script feito para isso, agora
-  dito com o ptrace, e só sai do modelo se o usuário aceitar. Se o
-  usuário recusar D47, vale D5 com a janela de endurecimento registrada em "Fora do
-  modelo de ameaça".
+  dito com o ptrace, e o usuário o aceitou fora do modelo (escopo, "Segurança" › "Fora
+  do modelo de ameaça", 2026-11-08).
 - D48. **`LD_*` e bibliotecas** (Fase 21; S8, D5, D47).
   - `wardd`: recusa **qualquer** `LD_*` e também `GLIBC_TUNABLES`, `GCONV_PATH`,
     `MALLOC_TRACE` e `LOCPATH` (a lista insegura da glibc é o "e similares" de S8). O
@@ -844,12 +853,13 @@ cabe ao daemon fica anotado nas Fases 22, 27 e 45.
     neutraliza `LD_*` é o `AT_SECURE`, e a lista branca de D47 cuida do que o GTK, o GIO
     e o GStreamer leriam do ambiente. Quem tem `LD_LIBRARY_PATH` na sessão continua
     usando o app normalmente.
-  - Sem D47 (usuário recusa): fica a regra da Fase 21 (qualquer `LD_*` e toda
-    biblioteca executável do root), com teste na Fase 29 contra o WebKitGTK real
-    (módulos do GTK, plugins do GStreamer em `~/.local/share/gstreamer-1.0`, IBus) e na
-    Fase 40 contra o Chrome real. Se algo legítimo de fora do root for mapeado, o app
-    pré-define o ambiente que desliga essa fonte (ex.: `GST_PLUGIN_SYSTEM_PATH` e
-    `GST_PLUGIN_PATH` vazios) em vez de afrouxar a regra.
+  - Como D47 foi aceita (2026-11-08), vale o ramo acima: a regra da Fase 21 (qualquer
+    `LD_*` e toda biblioteca executável do root, lidas do `/proc` do app e do host) sai
+    para o app e o host e fica só para o pai Chrome e a cadeia exibida. A Fase 29
+    confere com o WebKitGTK real que a lista branca de ambiente de D47 basta (módulos do
+    GTK, plugins do GStreamer em `~/.local/share/gstreamer-1.0`, IBus); se algo de fora
+    do root for carregado pelo ambiente, o app pré-define o ambiente que desliga essa
+    fonte (ex.: `GST_PLUGIN_SYSTEM_PATH` e `GST_PLUGIN_PATH` vazios).
 - D49. **V3.2 em Docker** (Fase 21; S5). Sem root não há processo de outro uid no
   host, e com o diretório 0700 o uid 4242 nem chega ao socket. O teste roda num
   contêiner `ubuntu:24.04` (mesma glibc do Pop!_OS 24.04 e mesmo kernel do host), que
@@ -895,6 +905,105 @@ cabe ao daemon fica anotado nas Fases 22, 27 e 45.
     "o comando e o ambiente passam de 750 KiB; reduza o ambiente (ex.: `env -i`)",
     sem citar valor; o daemon segue recusando com `quadro_invalido`.
 
+Reauditoria do M2 (2026-11-08): aprovou, com um achado médio e quatro baixos. Repros
+em `/tmp/claude-1000/-home-jeffersonoliveira-projetos-cofre/d2e230bd-a662-43be-afff-2572da5a4e80/scratchpad/ataque/src/bin/`
+(`geracao.rs`, `desvio.rs`, `url.rs`). O código muda na Fase 19e, antes da Fase 22.
+
+- D53. **Geração queimada ao selar** (achado médio; D39; "Backup"; S7, S9). Se a
+  gravação falhava depois do rename (ex.: no fsync do diretório), o `CofreAberto`
+  ficava em n e a gravação seguinte selava n+1 de novo. Dois arquivos diferentes com a
+  mesma geração: a cópia do primeiro abria com `geracao_minima` = n+1.
+  - **Núcleo (Fase 19e):** `gravar_entradas` e `gravacao::trocar_senha` queimam a
+    geração assim que o corpo é selado. O contador do `CofreAberto` sobe para n+1 antes
+    de escrever o temporário e fica lá se qualquer passo seguinte falhar (escrita,
+    fsync, rename, fsync do diretório). A recusa em `u64::MAX` continua antes de selar,
+    sem tocar no disco e sem queimar. A abertura com piso recebe também a maior geração
+    já queimada que o chamador conhece: `abrir_entradas_desde(arquivo, senha,
+    geracao_minima, geracao_queimada)`. Disco abaixo de `geracao_minima` continua
+    `Retrocesso`. O `CofreAberto` aberto fica com o contador em max(geração do disco,
+    `geracao_queimada`), e a próxima gravação usa um número que nunca foi selado.
+    `trocar_senha(destino, atual, nova, geracao_minima, geracao_queimada)` sela com
+    max(disco, queimada) + 1. `CofreAberto::geracao()` passa a ser "a última geração
+    lida ou selada", e continua sem setter público.
+  - **Daemon (Fase 22):** o arquivo de estado guarda dois números: `vista` (a maior
+    geração confirmada no disco, passada como `geracao_minima`) e `queimada` (a maior
+    selada ou tentada). Antes de cada gravação, o daemon grava no estado `queimada` =
+    `cofre.geracao()` + 1, com gravação atômica e fsync. Se essa escrita falhar, a do
+    cofre não acontece. Depois da gravação que deu certo, `vista` = `cofre.geracao()`.
+    Em erro, o estado fica como está, e o `CofreAberto` já subiu. Um erro de
+    `trocar_senha` depois de selar trava o cofre, porque o `CofreAberto` que o daemon
+    guarda não passou pela queima; o destravar seguinte abre com a `queimada` do
+    estado. Ao destravar, o daemon abre com (`vista`, `queimada`) e sobe `vista` para a
+    geração lida, se ela for maior.
+  - Resíduo, sem trabalho: o temporário selado de uma gravação que falhou antes do
+    rename pode ser copiado por um processo do mesmo uid enquanto existe. Posto no
+    lugar do cofre antes de outra gravação, ele abre (n+1 ≥ `vista`) e traz a mudança
+    que o daemon disse ter falhado. Não é retrocesso, porque é a versão mais nova
+    tentada, e a gravação seguinte usa n+2.
+- D54. **Máscara: entregas, linhas e formas novas** (achados baixos; D11, D36, D37;
+  RA3; S4).
+  - **Entrega com `\n`:** todo valor secreto de entrega que contém `\n` passa também
+    por `linhas`, como o segredo de campo (D36). A chamada fica no `visitar`, e
+    `ConstrutorMascara::new().entrega(&g).construir()` sozinho já cobre o token de `api`
+    de várias linhas (`head -n1`). Escolhido em vez de fazer o `construir` exigir a
+    entrada de cada entrega, que mudaria a API das Fases 26–28 sem cobrir mais nada.
+  - **D37 por linha:** cada linha de 6+ caracteres de segredo de várias linhas e de
+    anexo (com e sem `\r`, e aparada) gera as **formas de texto** da tabela abaixo,
+    cada uma só quando difere da linha literal. As **codificações base64** (com e sem
+    `=`, URL-safe, miolos) não valem por linha: ficam para o segredo inteiro e para o
+    valor de linha, como hoje. O base64 de uma linha solta vai para RA3, porque com ele
+    um anexo de 256 KiB passaria dos 4 MiB de D29. O percent-encoding vale em todo
+    padrão, porque o autômato o lê em qualquer forma (D11).
+  - **Formas fora de D37, decisão por caso:**
+    - `${X@Q}`, `set` e `set -x` (aspas simples do shell, `'` vira `'\''`):
+      **variação**, só quando o valor tem `'`;
+    - `printf %q` do bash (barra antes de cada caractere especial): **variação**, só
+      para valor em ASCII visível e espaço, com o conjunto do bash 5.2 do Pop!_OS
+      24.04 conferido contra o bash real no teste. Com controle ou fora do ASCII o bash
+      troca para `$'…'`, e esse caso vai para **RA3**, como o `${X@Q}` de valor com
+      controle;
+    - `json_encode` do PHP (`\/` e `\uXXXX` minúsculo juntos): **variação** combinada,
+      só quando o valor tem `/` e caractere fora do ASCII;
+    - YAML `chave : valor` (espaço antes do `:`), `chave:\tvalor`, JSON colado
+      `"k":"v"` e chave JSON entre aspas com qualquer caractere menos `"` (`"private
+      key"`, `"x/y"`): **variação**, no parser da linha (`valor_de_dois_pontos`);
+    - campo separado por tab (`cut -f`, `awk -F'\t'`, TSV): **variação** na passada
+      por linha. Cada campo de 6+ caracteres de uma linha com tab vira padrão e é
+      tratado como valor de linha. O `expand` (tab trocado por espaços) vai para
+      **RA3**.
+  - **Tabela única (oráculo × máscara).** A máscara e o `dev/variacoes.py` implementam
+    a mesma tabela, sem um chamar o outro:
+    1. **segredo inteiro** sem quebra de linha: literal, base64 (padrão e URL-safe,
+       com e sem `=`), miolos de base64 (3 alinhamentos), percent e as formas de texto;
+    2. **Basic**: base64 de `usuário:segredo`;
+    3. **por linha** (segredo de várias linhas e anexo): a linha de 6+ (com e sem
+       `\r`, aparada), percent e as formas de texto dela; os campos de tab de 6+;
+    4. **valor de linha** (`CHAVE=valor`, `"chave": "valor"`, `chave: valor` nas formas
+       acima, campo de tab), com e sem aspas, 6+: tratado como segredo inteiro (1).
+    **Formas de texto:** escape JSON padrão (com e sem `\/`), JSON do Go, `ensure_ascii`,
+    PHP (`\/` + `ensure_ascii`), aspas duplas do shell, aspas simples do shell e
+    `printf %q`, cada uma só quando difere do literal. O `variacoes.py` deixa de
+    aplicar base64 e miolos à linha (hoje aplica `todas(linha)`), passa a aplicar as
+    formas de texto e ganha as formas novas. Um teste cruzado (rodado por
+    `dev/testes/dev-cofre.sh`) confere que cada padrão do oráculo, sozinho na saída,
+    sai `••••` pela máscara da entrada dele.
+  - **Orçamento:** tudo pela mesma função de custo (D29). A Fase 19e refaz o V2.36 e o
+    V2.43; se uma entrada de D15 passar a ser recusada, a fase para e devolve o caso ao
+    planner, sem afrouxar o orçamento.
+- D55. **Último rótulo do domínio** (achado baixo; D41; S13). O host aceitava
+  `0x7f000001`, `0x7f.0.0.1`, `1.2.3.0x4` e `x.123`, que o Chrome e o `curl` leem como
+  IPv4 (formas hex e numéricas do WHATWG) ou que não são domínio. Regra nova: domínio
+  cujo último rótulo começa por dígito é recusado, com a mensagem de URL inválida. Isso
+  inclui todo rótulo que começa por `0x`. Host só de dígitos e pontos continua lido
+  como IPv4 por D41. Vale ao salvar, na leitura do corpo, no `login` e no `api`.
+- D56. **Usuário no `sftp`** (achado baixo; D43; S3). No `sftp` (e no `scp`), `-l` é
+  limite de banda, não usuário. Onde o daemon executa `sftp` ou `scp` (Fase 27), o
+  usuário vai como dois argumentos, `-o` e `User=<usuário>`, com `-F /dev/null` e o
+  host depois de `--`, por `execve` sem shell. O `-o User=` que D43 proíbe no `ssh` é
+  aceito só aqui, porque o conjunto de D43 (`[A-Za-z0-9._@-]`, sem `-` no começo) não
+  tem `%`, espaço, aspas, `=` nem `,`, e nada é expandido. No `ssh` continua `-l`. Se o
+  conjunto de D43 crescer, D56 é revista antes.
+
 ### Riscos abertos
 
 - **RA1. `/proc/<pid>/environ` do filho** (decidir antes de fechar o M4). Enquanto o
@@ -924,7 +1033,9 @@ cabe ao daemon fica anotado nas Fases 22, 27 e 45.
   M2 (D36, D37), a lista ganha dois casos que continuam sem cobertura: `\u` com hex
   em maiúsculas e o valor JSON com escapes que o `jq -r` decodifica (a `private_key`
   com `\n` vira várias linhas, e só as linhas que aparecem iguais no segredo são
-  mascaradas).
+  mascaradas). Depois da reauditoria do M2 (D54), entram também: base64 de uma linha
+  solta de segredo de várias linhas; `printf %q` e `${X@Q}` de valor com controle ou
+  fora do ASCII (`$'…'`); e o `expand` de linha com tab.
 - **RA4. Rollback com o daemon parado** (D39; **fechado em 2026-11-08: fora do modelo
   de ameaça por decisão do usuário**, registrado em "Segurança" › "Fora do modelo de
   ameaça"; não há trabalho nem asserção nova). O contador de geração e o arquivo de estado pegam a troca do cofre
@@ -936,14 +1047,15 @@ cabe ao daemon fica anotado nas Fases 22, 27 e 45.
   e o hash antigo do PIN. O PIN antigo só serve a quem também o conhece. A V3.22
   continua cobrindo o que o daemon pega (troca só do cofre, estado apagado, troca com
   o daemon rodando).
-- **RA5. Conferência do servidor (S5)** (Fase 21; **aberto, depende do usuário**). Ver
-  D46. Até a resposta, a Fase 22 aceita o socket por `LISTEN_FDS` e também o criado pelo
-  próprio daemon (só no daemon de teste), e a Fase 25 não fecha V4 sem a conferência.
-- **RA6. Janela de endurecimento do app e do host** (Fase 21; **aberto, depende do
-  usuário**). Ver D47. Com D47, sobra o resíduo dos auxiliares do WebKitGTK e do Chrome
-  (protegidos só pelo Yama contra quem não é ancestral). Sem D47, sobra a janela entre
-  a identificação e o `PR_SET_DUMPABLE=0`, em que um ancestral malicioso injeta código.
-  Qualquer dos dois resíduos vai para "Fora do modelo de ameaça" se o usuário aceitar.
+- **RA5. Conferência do servidor (S5)** (Fase 21; **fechado em 2026-11-08: D46
+  confirmada**). A Fase 22 aceita o socket por `LISTEN_FDS` e, só no daemon de teste,
+  o criado pelo próprio daemon. Matar o `wardd` (negação de serviço) ficou em "Fora do
+  modelo de ameaça".
+- **RA6. Janela de endurecimento do app e do host** (Fase 21; **fechado em
+  2026-11-08: D47 confirmada**). Sobra o resíduo dos auxiliares do WebKitGTK e do
+  Chrome (protegidos só pelo Yama contra quem não é ancestral; um Chrome depurado por
+  um ancestral malicioso pode mentir a origem da aba), registrado em "Segurança" ›
+  "Fora do modelo de ameaça".
 
 ## Critérios de aceite
 
@@ -963,15 +1075,19 @@ cabe ao daemon fica anotado nas Fases 22, 27 e 45.
   seção de configuração (D30); correções da auditoria do M2 (D36–D45): máscara por
   linha e formas escapadas, texto por lista branca, geração contra rollback no corpo
   v3, chave no heap, URL estrita, variável do `api` por sufixo, usuário SSH restrito e
-  `gravar_cofre`/`selar` fora da API pública.
+  `gravar_cofre`/`selar` fora da API pública; reauditoria (D53–D55): geração
+  queimada ao selar, máscara com a tabela única de D54 (entregas de várias linhas,
+  formas de texto por linha, formas novas, oráculo alinhado) e último rótulo do domínio
+  sem dígito.
 - [ ] M3: `wardd` endurecido (S5, S8), papéis de D5, destravar/travar, trava
   automática, PIN, níveis e o motor de aprovação (S9, S10) testados em Rust; nenhuma
   operação do socket devolve segredo a um cliente comum; V3.2 em Docker (D49);
-  conferência do servidor e papel do app/host por D46/D47 ou risco aceito no escopo
-  (RA5, RA6).
+  conferência do servidor por D46 e papel do app/host por D47 (confirmadas); arquivo
+  de estado com `vista` e `queimada` (D53).
 - [ ] M4: `ward lista/run/ssh/travar/destravar` contra Postgres e SSH de teste (senha,
   chave com agente temporário, salto, túnel de banco), saída mascarada, anexos
-  temporários limpos, nada lido ou gravado em `~/.ssh`; RA1 e RA2 resolvidos.
+  temporários limpos, nada lido ou gravado em `~/.ssh`; usuário do `sftp`/`scp` por
+  `-o User=` (D56); RA1 e RA2 resolvidos.
 - [ ] M5: app Tauri com todas as telas do M0, janela de aprovação com os 4 botões e PIN,
   bandeja, "Conectar" do `servidor` (D3), S11 e S12 conferidas; roteiro da janela
   nativa conferido pelo usuário.
@@ -981,7 +1097,7 @@ cabe ao daemon fica anotado nas Fases 22, 27 e 45.
   restaurar e kit de emergência.
 - [ ] M8: skill `ward` nova com fluxo e deny rules, pronta para instalar.
 - [ ] M9: `sudo make install` e `.deb` instalam tudo em pastas de root; o `wardd`
-  instalado sobe com a sessão; nada em `~/.ssh` nem no `SSH_AUTH_SOCK` muda.
+  instalado sobe pelo `wardd@<uid>.socket` do sistema, com o `sudo` só na instalação; nada em `~/.ssh` nem no `SSH_AUTH_SOCK` muda.
 - [ ] M10: etapa final guiada documentada e verificável (mover chaves pessoais do
   KeePassXC para o `~/.ssh` e as de servidor para entradas `servidor`, gnome-keyring,
   `montagem.md`, senhas do Chrome), feita pelo usuário; o KeePassXC só sai depois de

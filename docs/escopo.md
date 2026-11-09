@@ -20,9 +20,14 @@ escolha segurança e registre a decisão.
 
 ## Arquitetura
 
-- **Daemon `wardd`**: inicia com a sessão (systemd do usuário) e é **o único
-  processo que toca em segredo**. CLI, app e extensão são clientes dele, por socket
-  local.
+- **Daemon `wardd`**: sobe pelo **systemd do sistema** e roda como o usuário. Um par
+  `wardd@.socket`/`wardd@.service` cria o socket em `/run/ward/<uid>/wardd.sock`
+  (pasta do root, socket 0600 do usuário) e entrega o fd ao `wardd` (`User=<uid>`), que
+  sobe na primeira conexão (decisão do usuário, 2026-11-08). Ele é **o único processo
+  que toca em segredo**. CLI, app e extensão são clientes dele, por esse socket. O app
+  (`ward-app`) e o host da extensão (`ward-nm`) são instalados setgid para grupos
+  próprios (`ward-app`, `ward-nm`), e o daemon reconhece cada um pelo grupo que o
+  kernel informa na conexão (decisão do usuário, 2026-11-08).
 - **Núcleo em Rust**: formato do arquivo, criptografia, tipos, máscara de saída e
   protocolo. O daemon e a CLI usam o núcleo.
 - **App desktop em Tauri + Svelte**: cliente do daemon. Telas abaixo.
@@ -33,7 +38,10 @@ escolha segurança e registre a decisão.
   identificação do processo que chama. O núcleo, o formato, os tipos e a interface
   não dependem de Linux. Windows e macOS virão depois.
 - **Instalação em `/usr/local`** (dono root), com `sudo make install` ou `.deb`.
-  A extensão é instalada por política do Chrome (`/etc/opt/chrome/policies`), sem
+  O `sudo` é pedido **uma vez**, na instalação: ela instala as units do sistema, cria
+  os grupos `ward-app` e `ward-nm`, instala os dois binários setgid e roda
+  `systemctl enable --now wardd@<uid>.socket`. Depois disso, o uso diário não pede
+  `sudo`. A extensão é instalada por política do Chrome (`/etc/opt/chrome/policies`), sem
   modo desenvolvedor. Motivo: o Claude roda como o usuário e não pode trocar os
   binários nem a extensão por versões falsas.
 
@@ -226,6 +234,15 @@ de tema).
   onde guardar o número da versão fora do alcance desse processo. O contador de geração
   pega a troca com o daemon rodando e a troca só do arquivo do cofre. Nenhuma operação
   passa a devolver segredo: voltam só níveis de acesso e o PIN antigo.
+- Chrome depurado por um processo do usuário que seja ancestral dele (decisão do
+  usuário, 2026-11-08). O app e o host da extensão são setgid e não-dumpable desde o
+  `exec`, mas o Chrome e os processos auxiliares do WebKitGTK não são endurecidos e
+  ficam protegidos só pelo Yama (`ptrace_scope=1`) contra quem não é ancestral. Um
+  pacote malicioso que feche o Chrome e o abra de novo como filho pode se prender a
+  ele por `ptrace` e fazer o navegador mentir a origem da aba; esse Chrome recebe o
+  preenchimento de qualquer entrada `login`. É o mesmo limite da leitura do campo de
+  senha por um script feito para isso. Também fica fora a negação de serviço de matar
+  o `wardd` (o systemd o sobe de novo, sem que o processo receba a senha).
 
 ### Invariantes (o contrato de validação deve cobrir cada uma)
 
@@ -238,9 +255,11 @@ de tema).
   ambiente do processo filho, em arquivo temporário ou em fd.
 - **S4** A máscara cobre os valores secretos e as variações declaradas, inclusive
   quando o valor chega quebrado entre dois pedaços da saída.
-- **S5** Socket em diretório 0700, conferência do uid do cliente por
-  `SO_PEERCRED`. A CLI confere que o servidor é o `wardd` instalado antes de
-  enviar a senha mestra.
+- **S5** Socket 0600 do usuário em pasta do root (`/run/ward/<uid>/`, criada pelo
+  systemd do sistema; o daemon de teste usa um diretório 0700 do usuário),
+  conferência do uid do cliente por `SO_PEERCRED`. A CLI e o app conferem que o
+  servidor é o `wardd` instalado (pasta do root e par com uid 0 no `SO_PEERCRED`)
+  antes de enviar a senha mestra.
 - **S6** Criptografia só com bibliotecas auditadas: Argon2id (parâmetros
   registrados no cabeçalho, mínimo ~256 MiB / 3 passes), XChaCha20-Poly1305 com o
   cabeçalho como dado autenticado, chave de dados aleatória embrulhada pela chave
@@ -341,14 +360,6 @@ servidores, Windows e macOS (por enquanto).
 ## Pendências (não bloqueiam o plano)
 
 - Ícone do produto: definir na missão 0.
-- **Conferência do servidor (S5) contra o daemon endurecido (S8)** — provisório,
-  aguarda o usuário (PRD D46, RA5). Proposta: o socket passa a ser criado pelo systemd
-  do sistema em `/run/ward/<uid>/` (pasta do root) e entregue ao `wardd`, que roda como
-  o usuário; a CLI e o app conferem que quem escuta tem uid 0. Muda "Arquitetura"
-  (hoje: systemd do usuário). Até a resposta, o texto de "Arquitetura" e de S5 fica
-  como está.
-- **Identificação do app e do host da extensão sem janela de endurecimento** —
-  provisório, aguarda o usuário (PRD D47, D48, RA6). Proposta: `ward-app` e `ward-nm`
-  setgid para grupos próprios, papel pelo grupo do `SO_PEERCRED`. Resíduo a aceitar:
-  os processos do WebKitGTK e o Chrome não são endurecidos (um Chrome sob ptrace de um
-  ancestral malicioso pode mentir a origem da aba).
+- Conferência do servidor (PRD D46) e identificação do app e do host por grupo setgid
+  (PRD D47): **resolvidas** pelo usuário em 2026-11-08 e registradas em "Arquitetura",
+  S5 e "Fora do modelo de ameaça".

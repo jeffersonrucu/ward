@@ -9,10 +9,11 @@ Regras gerais:
 - Em todo milestone a partir do M1, `make check` passa limpo (S14, S15).
 - Ataques rodam só contra o cofre de teste e o daemon de teste. Onde o texto diz
   `<rt>`, leia `/run/user/<uid>/ward-teste/` no daemon de teste (D7) e
-  `/run/user/<uid>/ward/` no instalado (M9).
+  `/run/user/<uid>/ward/` no instalado (M9), onde ficam os temporários; o socket do
+  instalado fica em `/run/ward/<uid>/wardd.sock` (D46).
 - "Contém segredo" = contém qualquer valor secreto da tabela abaixo **ou** qualquer
   variação de D11 (URL-encoded, base64, Basic auth, `DATABASE_URL`), mais as linhas e
-  valores de D36 e as formas escapadas de D37. O validador gera a lista de variações
+  valores de D36, as formas escapadas de D37 e a tabela única de D54. O validador gera a lista de variações
   com `make dev-variacoes` (Fase 19, atualizado pela Fase 19d) e faz `grep -F -f`.
 - Comparar conteúdo de variável sem expor o valor: `ward run <e> -- sh -c 'printf %s
   "$VAR" | sha256sum'` contra o sha256 calculado localmente do valor esperado.
@@ -367,9 +368,12 @@ asserção abaixo vira teste de ataque no `ward-core`.
   entradas de D15 sem mudança; e uma entrada que passou do orçamento só por causa de
   D36/D37 é recusada com "entrada grande demais para a máscara do `ward run`" (D29) —
   cobre S4.
-- [x] V2.44 — (SEG) Dado o cofre de teste com a geração n, quando grava por
+- [ ] V2.44 — (SEG) (Reescrita pela Fase 19e, D53; a aprovação anterior valia para "segue
+  com n".) Dado o cofre de teste com a geração n, quando grava por
   `gravar_entradas` e quando troca a senha, então o arquivo relido tem n+1 e depois
-  n+2; quando a gravação falha (injeção do V2.9), então o `CofreAberto` segue com n;
+  n+2; quando a gravação falha antes do rename (injeção do V2.9), então o arquivo
+  segue com n e o `CofreAberto` fica com n+1 (geração queimada), e a gravação seguinte
+  grava n+2;
   quando o teste copia o arquivo da geração n por cima do da n+2 (rollback com versão
   autêntica) e abre com `geracao_minima` = n+2, então a abertura falha com
   `Retrocesso`, sem entrada devolvida e sem valor no erro; um corpo v2 e um corpo com
@@ -442,6 +446,61 @@ asserção abaixo vira teste de ataque no `ward-core`.
   continua determinístico, 0600, sem linha vazia nem padrão com menos de 6 bytes, e
   sem segredo na saída (D36, D37, V2.29) — cobre S4.
 
+Reauditoria do M2 (Fase 19e, D53–D55). Repros em `scratchpad/ataque/src/bin/`
+(`geracao.rs`, `desvio.rs`, `url.rs`); cada asserção vira teste de ataque no
+`ward-core` (e no teste do `variacoes.py`, para a V2.57).
+
+- [ ] V2.53 — (SEG) Dado um cofre na geração n num diretório temporário, quando o
+  ataque do `geracao.rs` tira a leitura do diretório (0300) para o fsync do diretório
+  falhar depois do rename, grava a mudança A (uma entrada a menos), devolve 0700 e
+  grava a mudança B (a entrada de volta), então a gravação A devolve erro com o
+  `CofreAberto` em n+1, B grava n+2, e a cópia do arquivo A posta no lugar de B abre
+  com `geracao_minima` = n+2 → `Retrocesso`, sem entrada e sem valor; nenhum par de
+  arquivos selados nessa sequência tem a mesma geração; quando o teste reabre o
+  arquivo A com `geracao_minima` = n e `geracao_queimada` = n+2, então o `CofreAberto`
+  fica em n+2 e a gravação seguinte grava n+3; e `trocar_senha` com
+  `geracao_queimada` = n+5 sobre um arquivo em n+3 grava n+6 (D53) — cobre S7, S9.
+- [ ] V2.54 — (SEG) Dado um `api` com o token `falso-tok-linha-um-01\nfalso-tok-linha-dois-02`
+  e a máscara montada só por `ConstrutorMascara::new().entrega(&g).construir()`, quando
+  a saída traz `head -n1 <<<"$GITHUB_TOKEN"` (bash real), cada linha sozinha, a linha
+  com `\r` e a linha aparada, então nenhum trecho de 6+ caracteres do token sobra; o
+  mesmo com `Mascara::da_entrada` (D54) — cobre S4.
+- [ ] V2.55 — (SEG) Dado um `genérico` com o extra secreto
+  `linha-um-ação-01\nlinha-dois-ação-02\nlinha-tres-Ab3$k&<9>Zq!`, quando a saída é a
+  de `python3 -I -c 'json.dumps(os.environ["NOTA"].splitlines())'` (linhas em
+  `ensure_ascii`), de `json.dumps({"l": linha1})`, de `L=$(sed -n 3p <<<"$NOTA");
+  declare -p L` e da linha 3 no JSON do Go, então nenhum trecho de 6+ caracteres de
+  nenhuma linha sobra, comparando também com a forma decodificada; e a saída sem
+  segredo com `\u00e7` segue intacta (D54, formas de texto por linha) — cobre S4.
+- [ ] V2.56 — (SEG) Dado o `desvio.rs` contra o código novo, quando a saída traz: `printf
+  '%q\n' "$NOTA"` de `Ab3$k&<9>Zq!` (bash real); `echo "${NOTA@Q}"`, `set | grep
+  ^NOTA=` e `set -x` com `falso-it's-01x`; `falso\/a\u00e7\u00e3o\/01` (`json_encode`
+  do PHP) para `falso/ação/01`; e, num extra secreto de várias linhas, as linhas
+  `senha2 : falso-yaml-esp-02`, `senha:\tfalso-yaml-tab-01`, `"k":"falso-json-colado-03"`,
+  `"private key": "falso-valor-com-espaco-na-chave-01"` e `"x/y":
+  "falso-valor-barra-chave-02"`, cada uma inteira e só o valor (`jq -r`), e a linha
+  `falso-um-linha\tcom-tab` cortada por `cut -f1`, então tudo vira `••••` e nenhum
+  trecho de 6+ caracteres sobra; e, para os casos que D54 manda para RA3 (`printf %q`
+  de valor com controle, `expand` da linha com tab, base64 de uma linha solta), o
+  teste registra o resultado sem exigir máscara; e o V2.43 refeito com a tabela de D54
+  segue ≤ 8 MiB, com o custo da validação ≥ o real e as 21 entradas de D15 aceitas
+  (D54, D29) — cobre S4.
+- [ ] V2.57 — (SEG) Dado o `dev/variacoes.py` e o cofre de teste, quando o teste cruzado
+  (rodado por `dev/testes/dev-cofre.sh` em `make teste-dev-cofre`) põe cada padrão de
+  `make dev-variacoes` sozinho numa saída e passa pela máscara da entrada de onde ele
+  veio, então todo padrão sai `••••`; e o teste do `variacoes.py` confere, com valores
+  falsos montados nele, que uma linha de segredo de várias linhas ganha as formas de
+  texto (JSON padrão, `\/`, Go, `ensure_ascii`, PHP, aspas duplas, aspas simples,
+  `printf %q`) e os campos de tab, e **não** ganha base64 nem miolos; o oráculo continua
+  sem importar nem chamar o código da máscara, determinístico, 0600, sem linha vazia
+  nem padrão com menos de 6 bytes (D54, V2.52) — cobre S4.
+- [ ] V2.58 — (SEG) Dado um `login` e um `api`, quando a URL é `https://0x7f000001/`,
+  `https://0x7f.0.0.1/`, `https://1.2.3.0x4/`, `https://x.123/`, `https://x.0x10/` ou
+  `https://x.example.9z/`, então a validação recusa com a mensagem de URL inválida, e o
+  corpo forjado com ela também; e `https://cliente.com.br/`, `https://x1.example/`,
+  `https://1password.com/`, `https://x.example2/` e os casos aceitos da V2.47 passam
+  (D55, D41) — cobre S13.
+
 ## Milestone 3 — Daemon e protocolo
 
 - [ ] V3.1 — (SEG) Dado o daemon de teste no ar, quando `stat` em `<rt>` e no socket,
@@ -468,7 +527,7 @@ asserção abaixo vira teste de ataque no `ward-core`.
   `/tmp/ward-app` e pede `revelar`, quando o binário permitido sobe com
   `LD_PRELOAD=<libqualquer>.so`, e quando sobe sob `strace -f` (TracerPid ≠ 0), então
   `revelar` e `copiar` respondem "não autorizado" nos três casos — cobre S1 (D5).
-  Com D47 aceito, o mesmo ataque vale com o binário setgid num contêiner: a cópia perde
+  Com D47 (confirmada em 2026-11-08), o mesmo ataque vale com o binário setgid num contêiner: a cópia perde
   o setgid e vira agente, o `LD_PRELOAD` é ignorado pelo `ld.so` (`AT_SECURE`) e o
   `strace -f` não consegue se prender; o que se confere é o papel, não o `/proc`.
 - [ ] V3.6 — (SEG) Dado o `wardd` no ar, quando outro processo do usuário tenta
@@ -521,9 +580,11 @@ asserção abaixo vira teste de ataque no `ward-core`.
 - [ ] V3.20 — (SEG) Dada a suíte de integração do M3 com `RUST_LOG=trace`, quando o
   auditor procura segredos em stdout, stderr, journal e `.dev/logs/`, então não acha
   nenhum — cobre S13.
-- [ ] V3.21 — (Com D46 aceito, valem as units `wardd@.socket`/`wardd@.service` do
-  sistema, com `User=`, e o daemon sobe pela primeira conexão.) Dado o unit `wardd.service` de teste, quando o auditor lê, então tem
-  `LimitCORE=0`, sem `Environment=LD_*`, e o daemon sobe com `systemctl --user`.
+- [ ] V3.21 — Dadas as units de teste `wardd@.socket` e `wardd@.service` do sistema
+  (D46), quando o auditor lê, então o `.socket` tem `ListenStream=/run/ward/%i/wardd.sock`,
+  `SocketUser=%i` e `SocketMode=0600`, e o `.service` tem `User=%i`, `LimitCORE=0` e
+  nenhum `Environment=LD_*`; e, num contêiner com systemd, a primeira conexão ao socket
+  sobe o `wardd`.
 - [ ] V3.22 — (SEG) Dado o daemon de teste com o cofre na geração n+2 e uma cópia
   autêntica da geração n (backup de teste), quando, com o daemon travado, o atacante faz
   `cp` da cópia por cima de `.dev/cofre-teste.ward` e destrava, então o destravar
@@ -541,7 +602,7 @@ asserção abaixo vira teste de ataque no `ward-core`.
   criado pelo root de um contêiner em `/run/ward/1000/` (root:root 0755, socket 0600 do
   uid 1000) e entregue ao `wardd` de teste por `LISTEN_FDS`, então a conferência aceita
   e o `wardd` atende; quando o atacante (uid 1000) mata o `wardd` e tenta `bind` em
-  `/run/ward/1000/`, então recebe EACCES — cobre S5 (**provisória**, D46).
+  `/run/ward/1000/`, então recebe EACCES — cobre S5 (D46).
 - [ ] V3.24 — (SEG) Dado `ward-app` e `ward-nm` de teste instalados no contêiner como
   root:`ward-app`/root:`ward-nm` 2755, quando cada um conecta, então recebe o papel
   pelo grupo; quando o processo que os lançou faz `PTRACE_ATTACH`/`PTRACE_SEIZE` logo
@@ -549,7 +610,7 @@ asserção abaixo vira teste de ataque no `ward-core`.
   recebe EPERM; quando sobem com `LD_PRELOAD=<lib>` que grava um arquivo-marca, então a
   marca não existe; quando um processo do uid de teste com outro gid (ou num namespace
   de usuário) conecta, então fica agente; e com `ptrace_scope` 0 simulado no teste, o
-  daemon recusa o papel app — cobre S1, S8 (**provisória**, D47).
+  daemon recusa o papel app — cobre S1, S8 (D47).
 - [ ] V3.25 — (SEG) Dado o `wardd` subindo com `GLIBC_TUNABLES`, `GCONV_PATH` ou um
   `LD_` de nome inventado, então sai ≠ 0 com o nome da variável na mensagem e sem o
   valor (D48) — cobre S8.
@@ -559,6 +620,16 @@ asserção abaixo vira teste de ataque no `ward-core`.
   "com aprovação"; quando cria com "livre" sem PIN, então recusa; quando remove
   `acme-pg-aprovacao` e a recria com o mesmo nome, então ela volta "com aprovação"
   (D50) — cobre S9.
+- [ ] V3.28 — (SEG) Dado o daemon de teste destravado na geração n, com a gravação do
+  cofre forçada a falhar depois do rename (fsync do diretório, injeção de teste),
+  quando o papel app grava a mudança A e depois a B, então o arquivo de estado traz
+  `queimada` = n+1 antes do rename de A, A responde `falha_ao_gravar`, B grava n+2 e o
+  estado fica com `vista` = `queimada` = n+2; quando o atacante põe a cópia de A no
+  lugar do cofre e destrava, então recusa com "o cofre no disco é mais antigo que o
+  último aberto"; quando o daemon é morto e sobe de novo entre A e B, então B ainda
+  grava um número maior que `queimada`; quando a escrita do estado falha, então o cofre
+  não é gravado; e quando `trocar_senha` falha depois de selar, então o cofre trava
+  (D53) — cobre S7, S9.
 
 ## Milestone 4 — CLI e integração Claude (run/ssh)
 
@@ -671,6 +742,13 @@ asserção abaixo vira teste de ataque no `ward-core`.
 - [ ] V4.36 — Dado `ward run acme-pg-dev -- true` com uma variável de 800 KiB no
   ambiente, quando roda, então a CLI sai ≠ 0 com a mensagem do limite de 750 KiB, sem
   valor, e nada é executado (D52).
+- [ ] V4.37 — (SEG) Dado `strace -f -e trace=execve` de uma entrega por `sftp` de
+  `beta-sftp-dev` e de uma entrada `ftp/sftp` de teste com usuário
+  `deploy@cliente.com.br`, quando o auditor lê o argv do `sftp` (e do `scp`, se a Fase
+  27 o usar), então não há `-l`, o usuário vem como `-o` seguido de
+  `User=<usuário>` inteiro num só argumento, há `-F /dev/null`, o host vem depois de
+  `--`, sem `usuário@host` nem `sh -c`; e `sftpuser` entra no SSH de teste (2222) por
+  esse argv; no `ssh` segue o V4.35 (D56, D43) — cobre S3.
 
 ## Milestone 5 — App desktop
 
@@ -882,20 +960,24 @@ O QA usa o Chrome em modo de teste (D7) e confere a aparência contra o frame.
   grupo e outros.
 - [ ] V9.2 — (SEG) Dado um artefato com `modo-teste`, quando `make install`, então recusa
   (D7).
-- [ ] V9.3 — (SEG) (Com D46 aceito: o falso escuta onde puder, e a CLI só aceita o
-  socket em `/run/ward/<uid>/` com par de uid 0.) Dado o `wardd` instalado, quando um `wardd` copiado para `~/bin` sobe
-  no lugar dele, então `ward destravar` recusa antes de pedir a senha — cobre S5.
-- [ ] V9.4 — (SEG) (Com D46 aceito, o ataque passa a ser editar o ambiente do
-  systemd do usuário e conferir que o `wardd` do sistema não o herda.) Dado o unit instalado, quando `systemctl --user set-environment
-  LD_PRELOAD=<lib>` e reinicia, então o `wardd` não sobe; sem a variável, sobe com
-  dumpable 0 e core 0 — cobre S8.
+- [ ] V9.3 — (SEG) Dado o `wardd` instalado, quando um `wardd` copiado para `~/bin`
+  sobe e escuta onde puder (`/run/user/<uid>/`, `~/.local/`, um caminho em
+  `WARD_SOCKET`), então `ward destravar` recusa antes de pedir a senha, porque só aceita
+  o socket em `/run/ward/<uid>/` com pasta do root e par de uid 0 (D46) — cobre S5.
+- [ ] V9.4 — (SEG) Dadas as units instaladas (D46), quando o atacante roda `systemctl
+  --user set-environment LD_PRELOAD=<lib>` e força o `wardd` a subir de novo (mata o
+  processo e conecta), então o `wardd` do sistema não herda a variável
+  (`/proc/<pid>/environ` lido como root no roteiro não a traz) e a lib não é carregada;
+  e o `wardd` sobe com dumpable 0 e core 0 — cobre S8.
 - [ ] V9.5 — (SEG) Dada a política do Chrome instalada, então a extensão aparece como
   instalada pela organização e não pode ser desativada nem removida, e carregar outra
   extensão com o mesmo ID pelo modo desenvolvedor é bloqueado (roteiro do usuário).
 - [ ] V9.6 — (SEG) O manifesto de native messaging tem `allowed_origins` só com o ID da
   extensão e `path` para `/usr/local/lib/ward/ward-nm`, dono root.
-- [ ] V9.7 — Dado o login do usuário, então o `wardd` sobe pelo systemd do usuário e
-  `/run/user/<uid>/ward/` é 0700 (roteiro do usuário).
+- [ ] V9.7 — Dado o boot e o login do usuário, então `wardd@<uid>.socket` está ativo,
+  `/run/ward/<uid>/` é root:root 0755 com `wardd.sock` 0600 do usuário, a primeira
+  conexão sobe o `wardd` como o usuário, `/run/user/<uid>/ward/` (temporários) é 0700, e
+  o uso diário não pede `sudo` (roteiro do usuário; D46).
 - [ ] V9.8 — (SEG) Depois de instalar, `~/.ssh`, `/etc/ssh/ssh_config*` e o
   `SSH_AUTH_SOCK` de `systemctl --user show-environment` estão como antes, e `git push`
   com a chave pessoal funciona como antes (R19; roteiro do usuário).
