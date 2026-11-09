@@ -16,6 +16,8 @@ pub mod formato;
 pub mod limites;
 // Máscara de saída em fluxo (D11, Fase 17).
 pub mod mascara;
+// Protocolo do socket: quadros, mensagens, papéis e a tabela operação × papel (Fase 20).
+pub mod protocolo;
 // TOTP (RFC 6238) e gerador de senha (Fase 18).
 pub mod gerador;
 pub mod totp;

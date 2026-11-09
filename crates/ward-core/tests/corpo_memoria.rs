@@ -599,3 +599,126 @@ fn saida_vec(cfg: &Configuracao) -> Vec<u8> {
     let texto = &corpo[P_HASH + 4..P_HASH + 4 + n];
     texto[texto.iter().rposition(|b| *b == b'$').unwrap() + 1..].to_vec()
 }
+
+/// S8 no protocolo (Fase 20): o caminho do quadro inteiro (codificar, escrever, ler o
+/// quadro, decodificar, validar a entrada que chegou, responder um segredo ao app e
+/// ler a resposta) e as recusas (papel errado, anexo acima de D29) não deixam segredo
+/// em bloco liberado, nem cru nem no base64 do quadro.
+#[test]
+fn s8_protocolo_nenhum_bloco_liberado_tem_segredo() {
+    use std::io::Cursor;
+    use ward_core::protocolo::quadro::{escrever_quadro, ler_quadro, limite_do_quadro};
+    use ward_core::protocolo::{self, ErroResposta, Papel, Pedido, Resposta};
+    use zeroize::Zeroizing;
+
+    fn s(v: &str) -> Segredo {
+        Segredo::de_texto(v.to_owned())
+    }
+    fn rascunho(anexo: &str) -> Rascunho {
+        Rascunho {
+            nome: "clientex-stage-wp".to_owned(),
+            grupo: "clientex".to_owned(),
+            ambiente: "stage".to_owned(),
+            projeto: String::new(),
+            tags: Vec::new(),
+            dados: RascunhoDados::Login {
+                url: "https://clientex.invalid/login".to_owned(),
+                usuario: "admin".to_owned(),
+                senha: Some(s("falso-WP-senha-01")),
+                totp_semente: Some(s("JBSWY3DPEHPK3PXP")),
+            },
+            extras: vec![RascunhoExtra {
+                nome: "PIN_BANCO".to_owned(),
+                valor: s("falso-nota-01"),
+                segredo: true,
+            }],
+            anexos: vec![RascunhoAnexo {
+                nome: "chave.pem".to_owned(),
+                conteudo: s(anexo),
+            }],
+        }
+    }
+    /// Escreve o quadro num buffer que zera e lê de volta pelo leitor de quadros.
+    fn pelo_socket(q: &[u8], limite: usize) -> Zeroizing<Vec<u8>> {
+        let mut buf = Zeroizing::new(vec![0u8; q.len() + 4]);
+        escrever_quadro(&mut Cursor::new(&mut buf[..]), q, limite).unwrap();
+        ler_quadro(&mut &buf[..], limite).unwrap()
+    }
+
+    // A marca extra é o base64 da senha mestra, como vai no quadro.
+    let destravar = Pedido::Destravar {
+        senha: s(SENHA_MESTRA),
+    };
+    let q = protocolo::codificar_pedido(Papel::Agente, &destravar).unwrap();
+    let texto = core::str::from_utf8(&q).unwrap();
+    let ini = texto.find(r#""senha":""#).unwrap() + 9;
+    let fim = ini + texto[ini..].find('"').unwrap();
+    let b64 = texto.as_bytes()[ini..fim].to_vec();
+    assert!(b64.len() > 20);
+    marcar_extra(&b64);
+    // Controle: o detector vê o quadro num `Vec` comum.
+    let achados = procurando(|| drop(q.to_vec()));
+    assert!(achados >= 1, "o detector não viu o quadro");
+    drop((q, destravar));
+
+    let achados = procurando(|| {
+        let limite_comum = limite_do_quadro(Papel::Agente);
+        let limite_app = limite_do_quadro(Papel::App);
+        // Destravar pela CLI.
+        let p = Pedido::Destravar {
+            senha: s(SENHA_MESTRA),
+        };
+        let q = protocolo::codificar_pedido(Papel::Agente, &p).unwrap();
+        let lido = pelo_socket(&q, limite_comum);
+        let Ok(Pedido::Destravar { senha }) = protocolo::decodificar_pedido(Papel::Agente, &lido)
+        else {
+            panic!("destravar não voltou")
+        };
+        assert_eq!(senha.expor(), SENHA_MESTRA.as_bytes());
+        drop((p, q, lido, senha));
+
+        // Salvar pelo app, validar o que chegou e responder um segredo ao app.
+        let p = Pedido::SalvarEntrada {
+            anterior: None,
+            rascunho: rascunho("falso-anexo-01"),
+        };
+        let q = protocolo::codificar_pedido(Papel::App, &p).unwrap();
+        let lido = pelo_socket(&q, limite_app);
+        let Ok(Pedido::SalvarEntrada { rascunho: r, .. }) =
+            protocolo::decodificar_pedido(Papel::App, &lido)
+        else {
+            panic!("salvar não voltou")
+        };
+        let entrada = r.validar().unwrap();
+        let resposta = Resposta::Segredo(s("falso-REDIR-01"));
+        let qr = protocolo::codificar_resposta(Papel::App, &resposta).unwrap();
+        let lida = protocolo::decodificar_resposta(Papel::App, &qr).unwrap();
+        // O agente não lê esse quadro (S1).
+        assert!(protocolo::decodificar_resposta(Papel::Agente, &qr).is_err());
+        drop((p, q, lido, entrada, resposta, qr, lida));
+
+        // Recusas: a mesma operação pelo agente e um anexo acima da soma de D29.
+        let p = Pedido::SalvarEntrada {
+            anterior: None,
+            rascunho: rascunho("falso-anexo-01"),
+        };
+        let q = protocolo::codificar_pedido(Papel::App, &p).unwrap();
+        assert_eq!(
+            protocolo::decodificar_pedido(Papel::Agente, &q).unwrap_err(),
+            ErroResposta::NaoAutorizado
+        );
+        let mut grande = Zeroizing::new(String::with_capacity(MAX_ANEXOS_SOMADOS + 1));
+        grande.push_str("falso-anexo-01");
+        while grande.len() <= MAX_ANEXOS_SOMADOS {
+            grande.push('x');
+        }
+        let acima = Pedido::SalvarEntrada {
+            anterior: None,
+            rascunho: rascunho(&grande),
+        };
+        assert!(protocolo::codificar_pedido(Papel::App, &acima).is_err());
+        drop((p, q, grande, acima));
+    });
+    assert_eq!(achados, 0, "segredo do protocolo em bloco liberado");
+    marcar_extra(&[]);
+}
