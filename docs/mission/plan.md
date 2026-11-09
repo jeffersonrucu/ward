@@ -1050,6 +1050,26 @@ atacante faz `exec` do `ward-nm` real (mesmo pid, pai = Chrome) e fica com o std
 dele — tirou senhas e TOTP de 4 entradas `login`. Aguarda decisão do usuário (a política
 desliga também os manifestos de usuário de 1Password, Claude Code e KeePassXC).
 
+Decisão do usuário (2026-11-09) sobre o crítico do M9: política com
+`NativeMessagingUserLevelHosts: false` e guia para mover os manifestos de outros apps
+(1Password, Claude in Chrome) para `/etc/opt/chrome/native-messaging-hosts/`.
+
+- [ ] Fase 51a — Achados da auditoria do M9. **Crítico:** `instalar.sh` (e o `.deb`, mesmo
+  staging) gera a política com `"NativeMessagingUserLevelHosts": false`; `teste-install`
+  e `teste-deb` conferem; teste com o Chrome real num bwrap com `/etc/opt/chrome` trocado
+  (manifesto plantado no perfil não é chamado; o do sistema é), a partir dos scripts da
+  auditoria (scratchpad `e2e/rodar.py`, `e2e/hospedeiro.py`, `nmhijack/`); `docs/instalacao.md`
+  explica o efeito e mostra como copiar com sudo os manifestos de usuário de outros apps
+  (1Password, Claude in Chrome) para `/etc/opt/chrome/native-messaging-hosts/`, com
+  conferência e volta atrás (o usuário executa). **Baixos:** avisar/recusar se outro
+  arquivo de `/etc/opt/chrome/policies/managed/` define `ExtensionSettings` ou
+  `NativeMessagingUserLevelHosts`; D60 confere também `/etc/security/group.conf`,
+  `sudoers` com `ward-app`/`ward-nm` e `subid:` por NSS; uninstall/`dpkg -r` só apagam
+  grupos criados pelo Ward (marca em `/usr/local/lib/ward/`); `Operacao` sem uso sem
+  `modo-teste` (`app/nucleo/src/daemon.rs:51`); `WARD_DEV_DBUS_SISTEMA` atrás de
+  `cfg(feature = "modo-teste")` e sem a exceção no `instalar.sh`. V9.2, V9.5, V9.6,
+  V9.10, V9.11.
+
 ## Milestone 10 — Migração e saída do KeePassXC
 Contrato: V10.1–V10.4
 
@@ -1063,7 +1083,7 @@ em claro no disco (S2).
   que lê o arquivo escolhido (tmpfs) direto para o daemon, sem área de transferência;
   limite de tamanho, recusa de link e de arquivo que não é chave OpenSSH/PEM; conteúdo
   nunca volta à webview; testes de ataque e QA pela ponte. S2, S12, V5.13.
-- [ ] Fase 53b — Guia e lint da migração (achados médios/baixos da auditoria do M10):
+- [x] Fase 53b — Guia e lint da migração (achados médios/baixos da auditoria do M10):
   passo 2b usa o "Carregar de arquivo" da 53a e nunca `wl-copy` para chave; chaves que só
   existem no `~/.ssh` também vão para o Ward e, conferido o passo 3, são apagadas (não
   guardadas em `~/ward-migracao`), e a frase "nenhum deles tem segredo" é corrigida;
@@ -1078,6 +1098,10 @@ em claro no disco (S2).
   do dono, frases "conversa/chat/agente/assistente" + verbo de envio recusadas mesmo com
   negação, blocos de qualquer linguagem; os 22 ataques do auditor (scratchpad
   `burla.py`) entram no autoteste. V10.1–V10.3.
+  Pendências da 53b: passo 2b depende do botão **Carregar de arquivo** da 53a (o lint
+  confere esse nome); guarda do `secret-tool clear` assume `Comm=gnome-keyring-d` no
+  `busctl status` (falha fechada); não conferido se `wl-copy --clear` ou o histórico da
+  área de transferência do COSMIC gravam em disco; comentário do alvo no `Makefile`.
 
 - [x] Fase 53 — `docs/migracao.md`: guia da etapa final, executado pelo usuário, com
   conferência e volta atrás em cada passo (chaves pessoais para `~/.ssh`, chaves de

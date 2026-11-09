@@ -16,21 +16,30 @@ volta.
 - O Ward já está instalado (`sudo make install` ou o `.deb`), o cofre real foi
   criado no app (primeiro uso: senha mestra e PIN) e o kit de emergência está
   impresso, com a senha mestra anotada à mão.
+- O app do Ward tem o botão **Carregar de arquivo** no campo "Chave privada" das
+  entradas `servidor` (Fase 53a). Sem ele, não faça o passo 2b: nenhuma chave
+  privada passa pela área de transferência.
 - Tenha uma cópia do arquivo `.kdbx` do KeePassXC (`~/cofre/`) num lugar seguro
-  (pendrive ou backup cifrado). Ele já é cifrado; não exporte para CSV nem para texto.
-- Crie a pasta de backups dos arquivos de configuração que o guia move (nenhum deles
-  tem segredo) e a pasta temporária em memória para as chaves (tmpfs, some ao
-  desligar):
+  (pendrive ou backup cifrado). Ele já é cifrado; nunca gere uma cópia em texto
+  dele.
+- Crie a pasta de backups e a pasta temporária em memória para as chaves (tmpfs,
+  some ao desligar):
 
   ```bash
   install -d -m 700 ~/ward-migracao
   install -d -m 700 "/run/user/$(id -u)/migracao"
   ```
 
-- Se o `wl-copy` existir (`command -v wl-copy`), ele copia um arquivo para a área de
-  transferência sem passar pela tela, e `wl-copy --clear` limpa. Sem ele, use o editor
-  de texto só para selecionar e copiar, sem salvar. Se o painel do COSMIC guardar
-  histórico da área de transferência, limpe o histórico ao fim de cada passo.
+  A `~/ward-migracao` recebe arquivos de configuração, a skill antiga e a cópia dos
+  bancos de senhas do Chrome. Esses bancos são cifrados pela chave "Chrome Safe
+  Storage", mas quem tiver o banco e o chaveiro abre as senhas: trate a pasta como
+  sensível (0700, fora de backup em nuvem). Chave privada e senha em claro nunca vão
+  para ela.
+- Área de transferência: só valores curtos (senha, passphrase, o valor do "Chrome
+  Safe Storage"), copiados no KeePassXC e colados direto no destino. O KeePassXC
+  limpa a área sozinho depois de alguns segundos; mesmo assim, no fim de cada passo
+  que copiou algo, rode `wl-copy --clear`. Se o painel do COSMIC guardar histórico da
+  área de transferência, limpe o histórico também.
 - Os passos 4, 5 e 6 são feitos de uma vez, na mesma sessão: o Chrome fica fechado
   do começo do passo 4 até o passo 6, e a skill `cofre` para de funcionar no passo 4.
 
@@ -47,12 +56,16 @@ ou para o gerenciador do Chrome.
 2. Para cada entrada de trabalho do grupo exposto do KeePassXC: no Ward, **Nova
    credencial**, escolha o tipo (login, banco, servidor, api, aws, smtp, ftp/sftp,
    nota segura, genérico), preencha grupo, ambiente (`dev`, `stage` ou `prod`) e os
-   campos. Para o valor secreto, copie no KeePassXC (ele limpa a área de transferência
-   sozinho) e cole direto no campo do Ward. Se preferir, gere senha nova no gerador
-   do Ward e troque no serviço.
+   campos. Para o valor secreto, copie no KeePassXC e cole direto no campo do Ward.
+   Se preferir, gere senha nova no gerador do Ward e troque no serviço.
 3. Entradas `servidor` com chave ficam para o passo 2. Com senha, cadastre já.
 4. Escolha o nível de cada entrada (padrão "com aprovação"; "bloqueado" para o que o
    Claude nunca deve usar).
+5. Ao terminar, limpe a área de transferência:
+
+   ```bash
+   wl-copy --clear
+   ```
 
 ### Conferir
 
@@ -76,7 +89,7 @@ Hoje o KeePassXC carrega chaves no agente do sistema (`gcr-ssh-agent`, em
 - **chaves pessoais** (GitHub, GitLab etc.) ficam no `~/.ssh`, com o agente do
   sistema, fora do Ward;
 - **chaves de servidor de trabalho** ficam só em entradas `servidor` do Ward. No
-  `~/.ssh` não fica nada dos servidores.
+  `~/.ssh` não fica nada dos servidores, nem as chaves que hoje só existem lá.
 
 ### 2a. Chaves pessoais
 
@@ -92,9 +105,16 @@ Para cada chave pessoal no KeePassXC (entrada com a aba **Agente SSH** ligada):
    ssh-keygen -y -f ~/.ssh/id_ed25519_github > ~/.ssh/id_ed25519_github.pub
    ```
 
-3. No KeePassXC, desligue nessa entrada "Adicionar ao agente ao abrir/desbloquear".
-4. Se o agente perguntar se deve lembrar a passphrase, **não marque** até o passo 5
-   terminar: hoje "lembrar" grava no KeePassXC, que vai sair.
+3. Se o `ssh-keygen -y` não pediu passphrase, a chave está sem nenhuma: ponha uma
+   agora. O comando pede a passphrase nova duas vezes, no terminal:
+
+   ```bash
+   ssh-keygen -p -f ~/.ssh/id_ed25519_github
+   ```
+
+4. No KeePassXC, desligue nessa entrada "Adicionar ao agente ao abrir/desbloquear".
+5. Se o agente SSH perguntar se deve lembrar a passphrase, **não marque** até o
+   passo 5 terminar: hoje "lembrar" grava no KeePassXC, que vai sair.
 
 ### 2b. Chaves de servidor
 
@@ -103,29 +123,48 @@ Para cada servidor cuja chave está no KeePassXC:
 1. Salve o anexo da chave privada na pasta em memória:
    `/run/user/<uid>/migracao/<servidor>` (nunca no disco).
 2. No Ward, crie (ou edite) a entrada `servidor`: host, porta, usuário,
-   autenticação **chave**. Copie o conteúdo do arquivo (`wl-copy <
-   "/run/user/$(id -u)/migracao/<servidor>"`) e cole no campo "Chave privada"; a
-   passphrase, copie do KeePassXC e cole no campo "Passphrase". Servidor de salto, se
-   houver.
-3. Apague a cópia e limpe a área de transferência:
+   autenticação **chave**. No campo "Chave privada", use **Carregar de arquivo** e
+   escolha o arquivo da pasta em memória: o app manda o conteúdo direto para o
+   daemon, sem área de transferência. A passphrase, copie do KeePassXC e cole no
+   campo "Passphrase". Servidor de salto, se houver.
+3. Apague a cópia e limpe a área de transferência (a passphrase passou por ela):
 
    ```bash
    rm -f "/run/user/$(id -u)/migracao/<servidor>"
    wl-copy --clear
    ```
 
-4. Se alguma chave de servidor de trabalho estiver hoje no `~/.ssh` (arquivo ou
-   bloco `Host` no `~/.ssh/config`), mova para `~/ward-migracao/ssh-servidores/` só
-   depois do passo 3 conferir esse servidor.
+Para cada chave de servidor de trabalho que hoje só existe no `~/.ssh` (arquivo
+usado por um bloco `Host` no `~/.ssh/config`), ela também vai para o Ward:
+
+1. Copie a chave para a pasta em memória e guarde o `~/.ssh/config` como está (ele
+   não tem segredo, só nomes e caminhos):
+
+   ```bash
+   install -m 600 ~/.ssh/<chave> "/run/user/$(id -u)/migracao/<servidor>"
+   cp -p ~/.ssh/config ~/ward-migracao/config-do-ssh.antes
+   ```
+
+2. Crie a entrada `servidor` como no item 2 acima, com **Carregar de arquivo**. Se
+   a chave não tiver passphrase, deixe o campo "Passphrase" vazio.
+3. Apague a cópia em memória:
+
+   ```bash
+   rm -f "/run/user/$(id -u)/migracao/<servidor>"
+   ```
+
+4. Não apague nada do `~/.ssh` ainda: a chave e o bloco `Host` saem no passo 3,
+   depois de o `ward ssh` conferir esse servidor.
 
 Por fim, com todas as chaves movidas: no KeePassXC, **Ferramentas › Configurações ›
 Agente SSH**, desligue a integração.
 
 ### Conferir
 
-- `ssh-add -D` esvazia o agente; `ssh-add ~/.ssh/id_ed25519_github` carrega a chave do
-  arquivo; `ssh-add -l` mostra a impressão digital dela; `ssh -T git@github.com`
-  responde com o seu usuário. Faça o mesmo com cada chave pessoal.
+- `ssh-add -D` esvazia o agente SSH; `ssh-add ~/.ssh/id_ed25519_github` carrega a
+  chave do arquivo e pede a passphrase; `ssh-add -l` mostra a impressão digital dela;
+  `ssh -T git@github.com` responde com o seu usuário. Faça o mesmo com cada chave
+  pessoal.
 - `ls -l ~/.ssh` mostra cada chave privada com `-rw-------`.
 - `ls -A "/run/user/$(id -u)/migracao"` está vazio.
 - No app do Ward, cada entrada `servidor` com chave mostra "chave" na autenticação
@@ -137,36 +176,67 @@ Agente SSH**, desligue a integração.
   "Adicionar ao agente" na entrada e a integração do Agente SSH no KeePassXC, trave e
   destrave o KeePassXC; `ssh-add -l` volta a mostrar a chave.
 - Chave de servidor: no Ward, **Excluir entrada** (ou volte a autenticação para o
-  que era); o arquivo movido do `~/.ssh`, traga de volta de
-  `~/ward-migracao/ssh-servidores/`. A chave continua no KeePassXC.
+  que era). A chave continua no KeePassXC, e a que só existia no `~/.ssh` continua
+  lá, porque ela só sai no passo 3.
 
 ## Passo 3 — Conferir cada servidor com `ward ssh`
 
+O `ward ssh` aceita a chave do host na primeira conexão e grava no `known_hosts` do
+Ward (`~/.local/share/ward/known_hosts`), não no `~/.ssh`. Para a primeira conexão
+não confiar no que vier da rede, passe antes a linha que você já tem.
+
 Para cada entrada `servidor` (com senha ou chave):
 
-1. Antes da primeira conexão, anote a impressão digital que você já conhece do host:
-   `ssh-keygen -l -F <host> -f ~/.ssh/known_hosts` (porta diferente de 22:
-   `-F '[<host>]:<porta>'`).
-2. Rode `ward ssh <entrada> hostname`. A primeira conexão grava a chave do host no
-   `known_hosts` do Ward (`~/.local/share/ward/known_hosts`), não no `~/.ssh`.
-3. Servidor com salto e banco com túnel: `ward ssh <entrada-com-salto> hostname` e
+1. Antes do primeiro `ward ssh` da entrada, grave no `known_hosts` do Ward a linha
+   do host que está no seu `~/.ssh/known_hosts` (porta diferente de 22:
+   `'[<host>]:<porta>'` no lugar de `'<host>'`):
+
+   ```bash
+   ssh-keygen -F '<host>' -f ~/.ssh/known_hosts | grep -v '^#' >> ~/.local/share/ward/known_hosts
+   ssh-keygen -l -F '<host>' -f ~/.local/share/ward/known_hosts
+   ```
+
+   A segunda linha mostra a impressão digital gravada. Se ela não mostrar nada, o
+   host não estava no seu `~/.ssh/known_hosts`: pegue a impressão digital por outro
+   canal (painel do provedor, quem administra o servidor) antes de conectar.
+2. Servidor com salto: faça o mesmo para o host do salto e para o host de destino.
+3. Rode `ward ssh <entrada> hostname`. Com salto e banco com túnel:
+   `ward ssh <entrada-com-salto> hostname` e
    `ward run <entrada-banco-com-tunel> -- psql -c 'select 1'`.
 
 ### Conferir
 
 - Cada `ward ssh <entrada> hostname` imprime o nome do servidor e sai 0, sem pedir
   senha nem passphrase.
-- `ssh-keygen -l -f ~/.local/share/ward/known_hosts` mostra, para cada host, a mesma
-  impressão digital do item 1. Diferente: **pare** e descubra o motivo antes de
-  usar a entrada.
+- `ssh-keygen -l -F '<host>' -f ~/.local/share/ward/known_hosts` mostra a mesma
+  impressão digital de antes da primeira conexão (a do seu `~/.ssh/known_hosts` ou a
+  do outro canal), uma linha por tipo de chave. Diferente: **pare** e descubra o
+  motivo antes de usar a entrada.
 - O `~/.ssh/known_hosts` não mudou (`ls -l` antes e depois).
+
+### Depois de conferir: tirar do `~/.ssh` as chaves de servidor
+
+Só para os servidores conferidos acima cuja chave existia no `~/.ssh`: apague a chave
+e tire o bloco `Host` do `~/.ssh/config` no seu editor (a cópia do arquivo inteiro já
+está em `~/ward-migracao/config-do-ssh.antes`).
+
+```bash
+rm -f ~/.ssh/<chave> ~/.ssh/<chave>.pub
+```
+
+A chave fica só no Ward (e nos backups cifrados do cofre). Não guarde cópia dela em
+`~/ward-migracao` nem em outro lugar do disco.
 
 ### Voltar atrás
 
 - Nada a desfazer no servidor. Se uma entrada falhar, corrija no app do Ward e
   repita; enquanto isso, a entrada do KeePassXC e o `cofre-ssh` continuam
-  funcionando. Uma linha errada do `known_hosts` do Ward se tira com
-  `ssh-keygen -R <host> -f ~/.local/share/ward/known_hosts`.
+  funcionando. Não apague a chave do `~/.ssh` de servidor que não conferiu.
+- Uma linha errada do `known_hosts` do Ward se tira com
+  `ssh-keygen -R '<host>' -f ~/.local/share/ward/known_hosts`.
+- O bloco `Host` volta de `~/ward-migracao/config-do-ssh.antes`. A chave apagada do
+  `~/.ssh` não volta para o disco: ela continua na entrada do Ward, que é o lugar
+  dela.
 
 ## Passo 4 — Devolver o chaveiro ao gnome-keyring, inclusive "Chrome Safe Storage"
 
@@ -176,9 +246,22 @@ voltar sem essa chave, o Chrome cria uma nova e deixa de abrir as senhas antigas
 Neste passo a chave e as outras entradas criadas por aplicativos são copiadas para o
 gnome-keyring, **antes** de desfazer a montagem (passo 5).
 
-1. Feche o Chrome e os aplicativos que usam o chaveiro (VS Code, Slack e outros
+1. Com o KeePassXC ainda como Serviço Secreto, conte os itens do Chrome que ele
+   guarda (a resposta tem só caminhos, nenhum valor):
+
+   ```bash
+   busctl --user call org.freedesktop.secrets /org/freedesktop/secrets \
+     org.freedesktop.Secret.Service SearchItems 'a{ss}' 1 application chrome
+   ```
+
+   A resposta é `ao ao` e duas listas de caminhos (itens destravados e travados),
+   cada uma começando pelo número de itens dela. Some os dois números e anote: é o
+   total de itens do Chrome. Em geral é 1; pode ser mais (por exemplo, uma versão
+   antiga do esquema ao lado da nova).
+2. Feche o Chrome e os aplicativos que usam o chaveiro (VS Code, Slack e outros
    Electron). `pgrep -a chrome` não mostra nada.
-2. Copie os bancos de senhas do Chrome (já cifrados) para o backup:
+3. Copie os bancos de senhas do Chrome (já cifrados) para o backup, todos os
+   `Login Data*` de todos os perfis:
 
    ```bash
    install -d -m 700 ~/ward-migracao/chrome
@@ -188,13 +271,15 @@ gnome-keyring, **antes** de desfazer a montagem (passo 5).
 
    Anote também quantas senhas o Chrome tem (você confere no passo 6): abra antes
    `chrome://password-manager/passwords`, anote o número e feche de novo.
-3. No KeePassXC, no grupo exposto ao Serviço Secreto, liste as entradas criadas por
-   aplicativos (não as suas credenciais): "Chrome Safe Storage" e, se houver, "Code
-   Safe Storage", "Slack Safe Storage", senhas de rede etc. Para cada uma, anote só o
-   **título** e os **atributos** (aba **Avançado**, atributos adicionais; no Chrome é
-   em geral `application` = `chrome` e `xdg:schema` =
-   `chrome_libsecret_os_crypt_password_v2`). Não anote o valor.
-4. No KeePassXC, **Ferramentas › Configurações › Integração com o Serviço Secreto**,
+4. No KeePassXC, no grupo exposto ao Serviço Secreto, liste as entradas criadas por
+   aplicativos (não as suas credenciais): todos os itens do Chrome contados no item 1
+   e, se houver, "Code Safe Storage", "Slack Safe Storage", senhas de rede etc. Para
+   cada uma, anote só o **título** e os **atributos** (aba **Avançado**, atributos
+   adicionais; no Chrome é em geral `application` = `chrome` e `xdg:schema` =
+   `chrome_libsecret_os_crypt_password_v2`). Não anote o valor. Se dois itens tiverem
+   exatamente os mesmos atributos, **pare**: o gnome-keyring guarda um só item por
+   conjunto de atributos, e copiar os dois perderia um.
+5. No KeePassXC, **Ferramentas › Configurações › Integração com o Serviço Secreto**,
    desligue a integração e aplique. Confira que ninguém é dono do nome:
 
    ```bash
@@ -203,17 +288,18 @@ gnome-keyring, **antes** de desfazer a montagem (passo 5).
    ```
 
    Esperado: `b false`.
-5. Ligue os segredos do gnome-keyring nesta sessão e confira o dono:
+6. Ligue os segredos do gnome-keyring nesta sessão e confira o dono:
 
    ```bash
    gnome-keyring-daemon --start --components=secrets
-   busctl --user status org.freedesktop.secrets | grep -i comm
+   busctl --user status org.freedesktop.secrets | grep -x 'Comm=gnome-keyring-d'
    ```
 
-   Esperado: `gnome-keyring-d`. Se não for, pare e siga "Voltar atrás".
-6. Para cada entrada do item 3, grave no gnome-keyring com os mesmos atributos. O
-   `secret-tool store` pede o valor num prompt (nunca na linha de comando): copie o
-   valor no KeePassXC e cole no prompt. Exemplo do Chrome:
+   Esperado: a linha `Comm=gnome-keyring-d`. Se não aparecer, pare e siga "Voltar
+   atrás".
+7. Para cada entrada do item 4, grave no gnome-keyring com o mesmo título e os mesmos
+   atributos. O `secret-tool store` pede o valor num prompt (nunca na linha de
+   comando): copie o valor no KeePassXC e cole no prompt. Exemplo do Chrome:
 
    ```bash
    secret-tool store --label='Chrome Safe Storage' \
@@ -221,29 +307,37 @@ gnome-keyring, **antes** de desfazer a montagem (passo 5).
    ```
 
    Se o gnome-keyring pedir para criar o chaveiro padrão, use a mesma senha do seu
-   login, para o login destravá-lo sozinho. Depois, `wl-copy --clear`.
-7. Mantenha o Chrome fechado e siga para o passo 5.
+   login, para o login destravá-lo sozinho. Depois da última entrada:
+
+   ```bash
+   wl-copy --clear
+   ```
+
+8. Mantenha o Chrome fechado e siga para o passo 5.
 
 ### Conferir
 
-- `secret-tool search --all application chrome 2>&1 >/dev/null` mostra o rótulo
-  "Chrome Safe Storage" e os atributos do item 3, num caminho
-  `/org/freedesktop/secrets/collection/…` do gnome-keyring (a parte
-  `2>&1 >/dev/null` descarta o valor e deixa só os atributos).
-- Só um item do Chrome aparece. Faça o mesmo para cada entrada do item 3.
-- `ls ~/ward-migracao/chrome` tem um `Login Data` por perfil do Chrome.
+- O `SearchItems` do item 1, rodado de novo, dá o mesmo total de itens do Chrome que
+  você anotou, agora servido pelo gnome-keyring. Não conte com rótulo nem com o
+  formato do caminho: confira o número.
+- Faça o mesmo para cada entrada do item 4, trocando `application chrome` pelos
+  atributos dela (o número depois de `a{ss}` é a quantidade de pares).
+- `ls -R ~/ward-migracao/chrome` tem os `Login Data*` de cada perfil do Chrome.
 
 ### Voltar atrás
 
-1. Confira que o dono ainda é o gnome-keyring
-   (`busctl --user status org.freedesktop.secrets | grep -i comm` dá `gnome-keyring-d`;
-   se der `keepassxc`, **não** rode o `clear`, que apagaria a cópia do KeePassXC).
-2. Apague só o que você criou: `secret-tool clear application chrome xdg:schema
-   chrome_libsecret_os_crypt_password_v2` (e o mesmo para cada entrada do item 3).
-3. `systemctl --user restart gnome-keyring-daemon` (ele volta só com `pkcs11`, como
+1. Apague só o que você criou, e só se o dono do Serviço Secreto ainda for o
+   gnome-keyring. O `grep` guarda o `clear`: se o dono for o KeePassXC, o `clear`
+   não roda (ele apagaria a cópia do KeePassXC). Para cada entrada do item 4:
+
+   ```bash
+   busctl --user status org.freedesktop.secrets | grep -qx 'Comm=gnome-keyring-d' && secret-tool clear application chrome xdg:schema chrome_libsecret_os_crypt_password_v2
+   ```
+
+2. `systemctl --user restart gnome-keyring-daemon` (ele volta só com `pkcs11`, como
    na montagem), religue a integração com o Serviço Secreto no KeePassXC e confira
-   que `busctl --user status org.freedesktop.secrets | grep -i comm` dá `keepassxc`.
-4. Abra o Chrome: as senhas continuam lá, porque a chave do KeePassXC não mudou.
+   que `busctl --user status org.freedesktop.secrets` mostra `Comm=keepassxc`.
+3. Abra o Chrome: as senhas continuam lá, porque a chave do KeePassXC não mudou.
 
 ## Passo 5 — Desfazer a montagem do KeePassXC, um item por vez
 
@@ -314,10 +408,10 @@ Saia da sessão e entre de novo (o console do 5d continua aberto).
 
 ### Conferir
 
-- `busctl --user status org.freedesktop.secrets | grep -i comm` dá `gnome-keyring-d`,
-  sem o KeePassXC aberto e sem rodar nada à mão.
-- `secret-tool search --all application chrome 2>&1 >/dev/null` mostra o item do
-  passo 4 sem pedir senha (o login destravou o chaveiro).
+- `busctl --user status org.freedesktop.secrets` mostra `Comm=gnome-keyring-d`, sem
+  o KeePassXC aberto e sem rodar nada à mão.
+- O `SearchItems` do passo 4 dá o mesmo total de itens do Chrome, todos na lista de
+  destravados (o login destravou o chaveiro, sem pedir senha).
 - `echo "$SSH_AUTH_SOCK"` continua `/run/user/<uid>/gcr/ssh` e `ssh -T
   git@github.com` funciona com a chave do `~/.ssh` (agora pode marcar "lembrar a
   passphrase", se quiser).
@@ -326,7 +420,7 @@ Saia da sessão e entre de novo (o console do 5d continua aberto).
 
 - Desfaça na ordem inversa (5d, 5c, 5b, 5a), cada um pelo seu "Voltar atrás", saia e
   entre na sessão e religue a integração com o Serviço Secreto no KeePassXC. Confira
-  que `busctl --user status org.freedesktop.secrets | grep -i comm` dá `keepassxc`.
+  que `busctl --user status org.freedesktop.secrets` mostra `Comm=keepassxc`.
 
 ## Passo 6 — Conferir as senhas do Chrome
 
@@ -338,21 +432,31 @@ Saia da sessão e entre de novo (o console do 5d continua aberto).
 ### Conferir
 
 - O número de senhas é o mesmo do passo 4 e o "mostrar" funciona.
-- `secret-tool search --all application chrome 2>&1 >/dev/null` continua com um só
-  item do Chrome (ele não criou uma chave nova).
+- O `SearchItems` do passo 4 continua com o mesmo total de itens do Chrome (ele não
+  criou uma chave nova).
 - Repita a conferência com os outros aplicativos do passo 4 (VS Code, Slack…).
 
 ### Voltar atrás
 
-1. Feche o Chrome.
+1. Feche o Chrome (`pgrep -a chrome` não mostra nada).
 2. Volte o passo 5 inteiro (seu "Voltar atrás") e o passo 4 (seu "Voltar atrás").
-3. Se o Chrome tiver regravado o banco de senhas, devolva a cópia do passo 4 com ele
-   fechado: `cp -p ~/ward-migracao/chrome/<perfil>/'Login Data'
-   ~/.config/google-chrome/<perfil>/`.
+3. Se o Chrome tiver regravado os bancos de senhas, devolva todos os `Login Data*`
+   do backup do passo 4, com ele fechado. Os atuais vão antes para
+   `~/ward-migracao/chrome-depois` (nada é perdido), e depois voltam os do backup:
+
+   ```bash
+   install -d -m 700 ~/ward-migracao/chrome-depois
+   cd ~/.config/google-chrome && find . -maxdepth 2 -name 'Login Data*' \
+     -exec cp --parents -p {} ~/ward-migracao/chrome-depois/ \; -exec rm {} \; ; cd -
+   cd ~/ward-migracao/chrome && find . -maxdepth 2 -name 'Login Data*' \
+     -exec cp --parents -p {} ~/.config/google-chrome/ \; ; cd -
+   ```
+
 4. Abra o Chrome e confira as senhas com o KeePassXC como Serviço Secreto.
 
-Só avance se as senhas do Chrome estiverem todas lá. Avise na missão: "Chrome
-manteve as senhas" (sem nenhum valor), para o registro do V10.4 no `plan.md`.
+Só avance se as senhas do Chrome estiverem todas lá. Para o registro do V10.4 no
+`plan.md`, escreva na missão só a frase "Chrome manteve as senhas", sem nenhum
+valor.
 
 ## Passo 7 — Instalar a skill `ward` e remover a `cofre` e os scripts antigos
 
@@ -395,24 +499,29 @@ manteve as senhas" (sem nenhum valor), para o registro do V10.4 no `plan.md`.
 Só faça este passo depois do passo 6 conferido e registrado. É o único passo que não
 volta sozinho: a volta é reinstalar e abrir o `.kdbx` guardado.
 
-1. Feche o KeePassXC.
+1. Abra a cópia guardada do `.kdbx` (a do "Antes de começar", não a de `~/cofre/`)
+   no KeePassXC, por **Banco de dados › Abrir banco de dados**, com a senha dele, e
+   confira que as entradas estão lá. Se o banco usa arquivo-chave, guarde uma cópia
+   do arquivo-chave também, num lugar seguro separado da cópia do `.kdbx`: sem ele a
+   cópia não abre. Feche o KeePassXC.
 2. Desinstale pelo mesmo meio que instalou: `sudo apt remove keepassxc` (ou
    `flatpak uninstall org.keepassxc.KeePassXC`).
-3. Guarde o `.kdbx` (cifrado) no backup do "Antes de começar" até ter certeza de que
-   nada faltou; depois, apague a cópia do disco (`~/cofre/`). A configuração do
-   KeePassXC fica em `~/.config/keepassxc/`; apague quando não for mais voltar.
+3. Guarde a cópia do `.kdbx` (cifrada) até ter certeza de que nada faltou; depois,
+   apague o original do disco (`~/cofre/`). A configuração do KeePassXC fica em
+   `~/.config/keepassxc/`; apague quando não for mais voltar.
 4. Quando não for mais voltar, apague `~/ward-migracao/` e a pasta
    `/run/user/<uid>/migracao` (some sozinha ao desligar).
 
 ### Conferir
 
 - `command -v keepassxc` não imprime nada.
-- `busctl --user status org.freedesktop.secrets | grep -i comm` continua
-  `gnome-keyring-d`; o Chrome abre com as senhas; `ssh -T git@github.com` funciona;
-  `ward lista` e um `ward ssh <entrada> hostname` funcionam.
+- `busctl --user status org.freedesktop.secrets` continua com `Comm=gnome-keyring-d`;
+  o Chrome abre com as senhas; `ssh -T git@github.com` funciona; `ward lista` e um
+  `ward ssh <entrada> hostname` funcionam.
 
 ### Voltar atrás
 
-- `sudo apt install keepassxc` (ou o flatpak), abra o `.kdbx` guardado e, se precisar
-  do KeePassXC como Serviço Secreto de novo, desfaça os passos 7, 5 e 4 pelos seus
-  "Voltar atrás" (refazendo a montagem a partir dos arquivos em `~/ward-migracao/`).
+- `sudo apt install keepassxc` (ou o flatpak), abra a cópia guardada do `.kdbx` (com
+  o arquivo-chave, se houver) e, se precisar do KeePassXC como Serviço Secreto de
+  novo, desfaça os passos 7, 5 e 4 pelos seus "Voltar atrás" (refazendo a montagem
+  a partir dos arquivos em `~/ward-migracao/`).
