@@ -388,6 +388,8 @@ Resolvido pelo planner em 2026-11-09: reauditoria da 19e em D61 (Fase 22a); Prob
 
 Decisão do usuário em 2026-11-09: limiares de força do gerador (Fase 37) aceitos — fraca <60 bits, razoável <80, forte <128, muito forte ≥128; a Fase 33 usa os mesmos. Pendências da 37 para o planner: faixa de tamanho 8–64 na interface (núcleo 4–128) no PRD; texto dos símbolos no FigCraft diverge de D35 (app segue D35) — corrigir numa fase de design.
 
+Teste instável (2026-11-09): `ward-plataforma --test identificacao` › `ataque_binario_copiado_para_fora_da_instalacao` falhou uma vez com ETXTBSY ("Text file busy") ao executar o binário copiado — corrida clássica de fd de escrita herdado por fork de outra thread de teste. Corrigir na Fase 22b (fechar e sincronizar a cópia antes, ou repetir o spawn em ETXTBSY).
+
 ## Milestone 3 — Daemon e protocolo
 Contrato: V3.1–V3.38
 
@@ -653,7 +655,7 @@ Contrato: V5.1–V5.32
 - [ ] Fase 30 — **(UI)** Primeiro uso (o PIN vai para a seção de configuração do corpo
   v2 como hash, D30). V5.7, V5.25, V5.26.
 - [ ] Fase 31 — **(UI)** Destravar, inclusive o estado "Pedido do agente". V5.8.
-- [ ] Fase 32 — **(UI)** Credenciais (vazia, cheia, filtrada, busca). V5.3, V5.9.
+- [x] Fase 32 — **(UI)** Credenciais (vazia, cheia, filtrada, busca). V5.3, V5.9.
 - [ ] Fase 33 — **(UI)** Formulário, parte 1: `login`, `api`, `aws`, `smtp`,
   `nota segura`, `genérico`, com campo secreto (revelar 30 s, copiar com limpeza em
   30 s), campos extras, TOTP e gerador no formulário (símbolos de D35; `otpauth://`
