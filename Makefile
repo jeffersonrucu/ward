@@ -67,7 +67,7 @@ CARGO_DENY_VERSAO := 0.20.2
 	dev-servicos-parar dev-servicos-estado dev-servicos-conferir dev-servicos-trocar-chave-host dev-cofre \
 	dev-cofre-conferir dev-variacoes teste-dev-cofre dev-daemon dev-daemon-parar teste-cli teste-docker-uid teste-units \
 	app-front app-check app-ponte teste-docker-plataforma teste-sem-modo-teste teste-socket-ataques \
-	teste-webkit-real teste-logs-app teste-nm teste-playwright teste-skill \
+	teste-webkit-real teste-logs-app teste-nm teste-playwright teste-skill teste-migracao \
 	release install uninstall teste-install extensao teste-extensao
 
 ## check: pré-checagem das origens, depois fmt, clippy -D warnings, testes, cargo audit,
@@ -472,6 +472,14 @@ teste-socket-ataques: origens
 teste-skill: origens
 	$(CARGO) build --quiet --locked -p ward --bin ward
 	$(PYTHON) dev/testes/skill.py target/debug/ward
+
+## teste-migracao: Fase 53 (V10.1–V10.3): ordem dos passos de docs/migracao.md, os itens
+## de montagem.md um por um, Conferir e Voltar atrás em cada passo, nada para a conversa
+## com o Claude, nenhum segredo em argv nem padrão de .dev/variacoes.txt; antes, o
+## autoteste planta cada ataque numa cópia e exige falha. Só lê o guia; não executa
+## nenhum passo. Precisa de `make dev-variacoes`; fora do `make check`
+teste-migracao:
+	$(PYTHON) dev/testes/migracao.py
 
 teste-nm: origens
 	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd
