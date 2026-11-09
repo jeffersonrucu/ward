@@ -493,6 +493,7 @@ Contrato: V3.1–V3.30
   - texto de ajuda do `dev-variacoes` no `Makefile` atualizado para a tabela única de
     D54 (vem da 19d; o da linha no `CLAUDE.md` já foi feito na 19e).
   V3.29 (e V2.29/V2.30 com 22 entradas).
+  Pendente do planner (reauditoria da 19e, 2026-11-08): máscara não pega JSON numa linha só (anexo `client_secret_*.json` minificado, extra `{"token":…}`) — médio; YAML/dotenv com ` # comentário`, chave YAML com espaço ou barra, `''` do YAML; campos de tab em linha Latin-1 (aplicar só o literal); `repr()` do Python; Go + `ensure_ascii` juntos — baixos. Decidir variação ou RA3 antes da 22a; repros em `scratchpad/ataque/src/bin/contorno19e.rs`. `make teste-dev-cofre` falha em master até a 22a (tabela já pede `delta-api-simbolos`).
 - [ ] Fase 23 — Motor de aprovação com relógio injetado e aprovador em processo só nos
   testes (D8): uma vez, 1 hora (D2), sempre, expirar em 2 min, fechar nega, nível
   combinado (D19), aprovação indisponível (D21); espera de até 2 min pelo destrave
