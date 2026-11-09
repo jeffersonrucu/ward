@@ -6,5 +6,15 @@ edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 
+# Motivo de cada uma no handoff da Fase 21. Nenhuma traz crate nova ao `Cargo.lock`
+# (as duas já estavam lá, pelo `ward-core`).
+[dependencies]
+# `libc`: `getsockopt` (`SO_PEERCRED`, `SO_PEERPIDFD`), `pidfd_open`/
+# `pidfd_send_signal`, `openat`/`readlinkat`, `prctl`, `setrlimit`, `mmap`/`mlock`/
+# `madvise`. A biblioteca padrão não tem nenhuma delas estável.
+libc = { version = "0.2.191", default-features = false }
+# `zeroize`: zera o `BufferTravado` antes de devolver as páginas (S8).
+zeroize = { version = "1.9.1", default-features = false }
+
 [lints]
 workspace = true
