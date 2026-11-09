@@ -3,11 +3,18 @@
   // padding 0 espaco/12 0 espaco/8, gap espaco/6, ícone 16, Texto/Rótulo.
   import Icone from './Icone.svelte';
 
-  /** @type {{ rotulo: string, icone?: string, copiado?: boolean, onclick?: () => void, desabilitado?: boolean }} */
-  let { rotulo, icone = 'copiar', copiado = false, onclick = undefined, desabilitado = false } = $props();
+  /** @type {{ rotulo: string, icone?: string, copiado?: boolean, onclick?: () => void, desabilitado?: boolean, [k: string]: unknown }} */
+  let {
+    rotulo,
+    icone = 'copiar',
+    copiado = false,
+    onclick = undefined,
+    desabilitado = false,
+    ...resto
+  } = $props();
 </script>
 
-<button class="acao" class:copiado type="button" disabled={desabilitado} {onclick}>
+<button class="acao" class:copiado type="button" disabled={desabilitado} {onclick} {...resto}>
   <Icone nome={copiado ? 'check' : icone} tamanho="sm" tom={copiado ? 'sucesso' : undefined} />
   <span>{copiado ? 'Copiado' : rotulo}</span>
 </button>

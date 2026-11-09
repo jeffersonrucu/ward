@@ -9,28 +9,13 @@ use std::sync::{Arc, Mutex};
 
 use ward_app_nucleo::ErroApp;
 use ward_app_nucleo::area_transferencia::{AreaTransferencia, Copiador};
-use ward_app_nucleo::comandos::Referencia;
-use ward_app_nucleo::daemon::{Daemon, EstadoCofre};
-use ward_app_nucleo::segredo::Segredo;
+use ward_app_nucleo::daemon_falso::{DaemonFalso, SEGREDOS};
 use ward_app_nucleo::servico::Servico;
 use ward_ponte_teste::http::{MAX_CABECALHO, MAX_CORPO, Pedido, Ponte, ler_pedido};
 use zeroize::Zeroizing;
 
-const SEGREDO: &[u8] = b"falso-pg-dev-senha-ponte";
-
-struct DaemonFalso;
-impl Daemon for DaemonFalso {
-    fn estado(&mut self) -> Result<EstadoCofre, ErroApp> {
-        Ok(EstadoCofre::Destravado)
-    }
-    fn valor_para_copiar(&mut self, r: &Referencia) -> Result<Segredo, ErroApp> {
-        if (r.entrada(), r.campo()) == ("acme-pg-dev", "senha") {
-            Ok(Segredo::novo(SEGREDO.to_vec()))
-        } else {
-            Err(ErroApp::PedidoInvalido)
-        }
-    }
-}
+/// A senha de `acme-pg-dev` no cofre de teste (D15), a que o "copiar" pede.
+const SEGREDO: &[u8] = b"falso-PG:s3nha/01@#";
 
 #[derive(Default, Clone)]
 struct Area(Arc<Mutex<Option<Vec<u8>>>>);
@@ -73,7 +58,7 @@ fn ponte(
 ) {
     let base = dist(nome);
     let area = Area::default();
-    let servico = Servico::novo(DaemonFalso, Copiador::novo(area.clone()));
+    let servico = Servico::novo(DaemonFalso::cheio(), Copiador::novo(area.clone()));
     let (p, l) = Ponte::abrir(servico, &base.join("dist")).unwrap();
     (p, l, area, base)
 }
@@ -125,6 +110,55 @@ fn copiar_passa_e_a_resposta_nao_tem_o_valor() {
     assert_eq!(area.0.lock().unwrap().as_deref(), Some(SEGREDO));
     let r = p.responder(&post(&p, "estado_do_cofre", "{}", &[]));
     assert_eq!(r.corpo_json().unwrap()["valor"]["estado"], "destravado");
+    fs::remove_dir_all(base).unwrap();
+}
+
+/// Algum segredo do cofre de teste nos bytes da resposta (inteiro, escapado em JSON ou
+/// por linha)?
+fn tem_segredo(corpo: &[u8]) -> bool {
+    let texto = String::from_utf8_lossy(corpo);
+    SEGREDOS.iter().any(|s| {
+        let json = serde_json::to_string(s).unwrap();
+        texto.contains(s)
+            || texto.contains(&json[1..json.len() - 1])
+            || s.lines().any(|l| l.len() >= 6 && texto.contains(l))
+    })
+}
+
+#[test]
+fn ataque_respostas_da_tela_credenciais_sem_segredo() {
+    // V5.3 pela ponte: a lista e o detalhe de todas as entradas do cofre de teste, como
+    // chegam à interface, não têm nenhum segredo.
+    let (p, _l, _a, base) = ponte("credenciais");
+    let r = p.responder(&post(&p, "listar_credenciais", "{}", &[]));
+    assert_eq!(r.status, 200);
+    assert!(!tem_segredo(&r.corpo));
+    let lista = r.corpo_json().unwrap()["valor"].clone();
+    let nomes: Vec<String> = lista
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["nome"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(nomes.len(), 21);
+    for nome in &nomes {
+        let corpo = serde_json::json!({ "entrada": nome }).to_string();
+        let r = p.responder(&post(&p, "detalhe_credencial", &corpo, &[]));
+        assert_eq!(r.corpo_json().unwrap()["ok"], true, "{nome}");
+        assert!(!tem_segredo(&r.corpo), "segredo no detalhe de {nome}");
+    }
+    // Nome fora do formato, de outro tipo ou ausente: erro sem eco do pedido.
+    for corpo in [
+        r#"{"entrada":"acme-pg-dev\n"}"#,
+        r#"{"entrada":"<img src=x onerror=alert(1)>"}"#,
+        r#"{"entrada":1}"#,
+        r#"{}"#,
+    ] {
+        let r = p.responder(&post(&p, "detalhe_credencial", corpo, &[]));
+        let v = r.corpo_json().unwrap();
+        assert_eq!(v["ok"], false, "{corpo}");
+        assert!(!String::from_utf8_lossy(&r.corpo).contains("img"));
+    }
     fs::remove_dir_all(base).unwrap();
 }
 

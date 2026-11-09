@@ -24,6 +24,10 @@ ward-plataforma.workspace = true
 # Comparação em tempo constante do valor copiado com o que está na área de
 # transferência (o mesmo crate que o `ward-core` já usa; nada novo no lockfile).
 ctutils = { version = "0.4.8", default-features = false }
+# Respostas da tela Credenciais (Fase 32) serializadas uma vez só, para o Tauri e para a
+# ponte de teste. Só tipos sem segredo derivam `Serialize` (o `Segredo` não). Já no
+# lockfile (serde_json, dev-dependência, puxa `serde`; `serde_derive` também está).
+serde = { version = "1.0.229", default-features = false, features = ["std", "derive"] }
 # Segredo em memória zerado ao sair (já no lockfile pelo `ward-core`).
 zeroize = { version = "1.9.1", default-features = false, features = ["alloc"] }
 

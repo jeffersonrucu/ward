@@ -1,0 +1,43 @@
+{
+ "vazia_resumo": "Nenhuma entrada",
+ "vazia_busca_desabilitada": true,
+ "cheia_resumo": "21 entradas · 4 grupos",
+ "grupos": [
+  "acme",
+  "beta",
+  "delta",
+  "gama"
+ ],
+ "itens": 21,
+ "teclado_seta_enter": "acme-pg-prod",
+ "ctrl_k_foca_busca": "busca",
+ "barra_foca_busca": "busca",
+ "copiar_msg": 1,
+ "copiar_resposta": "{\"ok\":true,\"valor\":null}",
+ "copiar_host_resposta": "{\"ok\":true,\"valor\":null}",
+ "v53_segredos_em_qualquer_detalhe": [],
+ "v53_storage": [
+  "[0, 0, \"\", 0]"
+ ],
+ "filtrada_itens": [
+  "acme-pg-aprovacao",
+  "acme-pg-tunel"
+ ],
+ "filtrada_resumo": "2 de 21 entradas · filtros ativos",
+ "filtrada_linha": "Tipo banco · ambiente stage · busca pg",
+ "filtrada_botao": "Filtros · 2",
+ "filtrada_grupos": [
+  "2 de 13 entradas"
+ ],
+ "busca_vazia": "Busca inexistente-xyz\nLimpar\n\nNenhuma entrada com essa busca ou esses filtros.\n\nNova credencial",
+ "busca_por_usuario": [
+  "acme-ssh-chave-prod",
+  "acme-ssh-interno",
+  "acme-ssh-interno-aprov",
+  "acme-ssh-senha-stage"
+ ],
+ "erros_console": [
+  "Failed to load resource: the server responded with a status of 404 (Not Found)"
+ ],
+ "respostas_ponte": 34
+}

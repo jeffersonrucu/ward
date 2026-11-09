@@ -2,8 +2,13 @@
 //!
 //! - [`comandos`]: a lista fechada dos comandos que a interface pode chamar. O
 //!   `build.rs` do Tauri, as capabilities e a ponte de teste saem dela (S11).
-//! - [`daemon`]: cliente do socket do `wardd`. O protocolo chega na Fase 20; até lá,
-//!   toda operação responde [`ErroApp::SemProtocolo`].
+//! - [`cliente`]: os pedidos do papel app pelo protocolo da Fase 20 (`estado`,
+//!   `lista`, `detalhe`, `copiar`), com a leitura estrita da resposta.
+//! - [`daemon`]: transporte até o `wardd` (socket conferido). A troca de quadros entra
+//!   com a Fase 22; até lá responde [`ErroApp::SemProtocolo`].
+//! - [`daemon_falso`] (só testes e `modo-teste`): responde pelo protocolo com as
+//!   entradas falsas do cofre de teste, para a ponte de teste.
+//! - [`credenciais`]: lista e detalhe da tela Credenciais (Fase 32), sem segredo.
 //! - [`area_transferencia`]: "copiar" resolvido aqui (D4). O valor vai do daemon para a
 //!   área de transferência sem passar pela webview, e a limpeza em 30 s só apaga se a
 //!   área ainda contém o valor copiado (S12).
@@ -17,8 +22,12 @@
 #![forbid(unsafe_code)]
 
 pub mod area_transferencia;
+pub mod cliente;
 pub mod comandos;
+pub mod credenciais;
 pub mod daemon;
+#[cfg(any(test, feature = "modo-teste"))]
+pub mod daemon_falso;
 mod erro;
 pub mod gerador;
 pub mod partida;

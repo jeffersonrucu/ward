@@ -15,6 +15,13 @@ pub const ESTADO_DO_COFRE: &str = "estado_do_cofre";
 /// transferência pelo lado Rust (D4); a resposta não traz o valor.
 pub const COPIAR_CAMPO: &str = "copiar_campo";
 
+/// `listar_credenciais`: as entradas para a tela Credenciais (Fase 32), sem segredo.
+/// Sem argumento.
+pub const LISTAR_CREDENCIAIS: &str = "listar_credenciais";
+/// `detalhe_credencial { entrada }`: o painel de detalhe de uma entrada (Fase 32): campos
+/// de texto, só os nomes dos segredos, extras sem o valor secreto e anexos sem o
+/// conteúdo.
+pub const DETALHE_CREDENCIAL: &str = "detalhe_credencial";
 /// `gerar_senha { tamanho, minusculas, maiusculas, digitos, simbolos }`: gerador avulso
 /// (Fase 37). A senha fica no lado Rust; a resposta traz só tamanho, força e símbolos.
 pub const GERAR_SENHA: &str = "gerar_senha";
@@ -30,6 +37,8 @@ pub const DESCARTAR_SENHA_GERADA: &str = "descartar_senha_gerada";
 pub const COMANDOS: &[&str] = &[
     ESTADO_DO_COFRE,
     COPIAR_CAMPO,
+    LISTAR_CREDENCIAIS,
+    DETALHE_CREDENCIAL,
     GERAR_SENHA,
     COPIAR_SENHA_GERADA,
     REVELAR_SENHA_GERADA,
@@ -46,6 +55,8 @@ pub fn permissao(comando: &str) -> String {
 pub enum Comando {
     EstadoDoCofre,
     CopiarCampo,
+    ListarCredenciais,
+    DetalheCredencial,
     GerarSenha,
     CopiarSenhaGerada,
     RevelarSenhaGerada,
@@ -57,6 +68,8 @@ impl Comando {
         match nome {
             ESTADO_DO_COFRE => Some(Comando::EstadoDoCofre),
             COPIAR_CAMPO => Some(Comando::CopiarCampo),
+            LISTAR_CREDENCIAIS => Some(Comando::ListarCredenciais),
+            DETALHE_CREDENCIAL => Some(Comando::DetalheCredencial),
             GERAR_SENHA => Some(Comando::GerarSenha),
             COPIAR_SENHA_GERADA => Some(Comando::CopiarSenhaGerada),
             REVELAR_SENHA_GERADA => Some(Comando::RevelarSenhaGerada),
@@ -96,6 +109,16 @@ impl Referencia {
     }
 }
 
+/// Nome de entrada vindo da interface (não confiável), com a mesma regra da
+/// [`Referencia`].
+pub fn validar_nome_entrada(nome: &str) -> Result<(), ErroApp> {
+    if nome_valido(nome, limites::MAX_NOME) {
+        Ok(())
+    } else {
+        Err(ErroApp::PedidoInvalido)
+    }
+}
+
 fn nome_valido(nome: &str, max: usize) -> bool {
     !nome.is_empty()
         && nome.chars().count() <= max
@@ -114,6 +137,8 @@ mod testes {
             &[
                 "estado_do_cofre",
                 "copiar_campo",
+                "listar_credenciais",
+                "detalhe_credencial",
                 "gerar_senha",
                 "copiar_senha_gerada",
                 "revelar_senha_gerada",
@@ -137,6 +162,10 @@ mod testes {
             "COPIAR_CAMPO",
             "copiar_campo ",
             "copiar-campo",
+            "revelar",
+            "detalhe",
+            "lista",
+            "detalhe_credencial ",
         ] {
             assert_eq!(Comando::de_nome(nome), None, "{nome}");
         }

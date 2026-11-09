@@ -193,6 +193,17 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Ponte<D, A> {
                 (Some(e), Some(c)) => self.servico.copiar_campo(e, c).map(|()| Value::Null),
                 _ => Err(ErroApp::PedidoInvalido),
             },
+            Comando::ListarCredenciais => self
+                .servico
+                .listar_credenciais()
+                .and_then(|l| serde_json::to_value(l).map_err(|_| ErroApp::RespostaInvalida)),
+            Comando::DetalheCredencial => match texto("entrada") {
+                Some(e) => self
+                    .servico
+                    .detalhe_credencial(e)
+                    .and_then(|d| serde_json::to_value(d).map_err(|_| ErroApp::RespostaInvalida)),
+                None => Err(ErroApp::PedidoInvalido),
+            },
             Comando::GerarSenha => match (
                 args.get("tamanho").and_then(Value::as_u64),
                 marcado("minusculas"),
