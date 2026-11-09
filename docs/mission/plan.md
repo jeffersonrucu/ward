@@ -1003,13 +1003,19 @@ trecho, e o harness não compila (E0425). Com o recorte só da `partida`, numa c
 Decisão do usuário: corrigir e seguir. O scrutiny do M5 conta como aprovado depois da
 39e; seguem a segurança e o QA.
 
-- [ ] Fase 39e — Consertar o recorte do `dev/testes/webkit-real.sh`: tirar só o bloco
+- [x] Fase 39e — Consertar o recorte do `dev/testes/webkit-real.sh`: tirar só o bloco
   da `partida` (o `let mut partida = partida::iniciar()…`, o `tomar_daemon` trocado por
   `Err(ErroApp::ConexaoPerdida)` e o `partida.vigiar(…)`), de modo que o harness resista
   a variáveis novas no `main`. A cópia do scrutiny está no scratchpad em `wk.sh`. Rodar
   `make teste-webkit-real` até "V5.32 ok". Pôr no `CLAUDE.md` as linhas de
   `make teste-logs-app`, `make teste-canais-gst` e `make teste-app-e2e` (pendência da
   39c). V5.32.
+  Feita (2026-11-09): o recorte agora tira só a `partida`, em três trocas, com `assert` de
+  ocorrência única. `make teste-webkit-real` deu 0 ("V5.32 ok"). Com `SEM_39C=1` deu 2,
+  então o ataque continua visível. `make check` 0. As linhas do `CLAUDE.md` não entraram:
+  o worker pede a autorização do usuário; o texto está no handoff da 39c, linhas
+  131–141. `SEM_MPS=1` não mostra o ataque de D64 nesta GPU. O comentário do Makefile
+  ainda diz "sai 1", mas o script sai 2.
 
 ## Milestone 6 — Extensão, `ward login` e `ward playwright`
 Contrato: V6.1–V6.16

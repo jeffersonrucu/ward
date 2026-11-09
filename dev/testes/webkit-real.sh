@@ -108,11 +108,27 @@ assert '"frontendDist": "../dist"' in s, "tauri.conf.json do app mudou"
 open(p, "w").write(s.replace('"frontendDist": "../dist"', '"frontendDist": "%s/app/dist"' % raiz))
 p = h + "/src/main.rs"
 s = open(p).read()
-ini, fim = "    // Antes do GTK (D47, D57).", "    let app = com_comandos("
-assert s.count(ini) == 1 and s.count(fim) == 1, "main.rs do app mudou"
-a, b = s.index(ini), s.index(fim)
-s = s[:a] + "    // webkit-real.sh: sem a partida (só em .dev).\n    let servico = Arc::new(montar_servico(Err(ErroApp::ConexaoPerdida)));\n\n" + s[b:]
+# Tira só o bloco da partida; o resto do main (variáveis novas inclusive) fica.
+def um(t):
+    assert s.count(t) == 1, "main.rs do app mudou: %r" % t
+    return s.index(t)
+# 1) let mut partida = partida::iniciar().unwrap_or_else(|e| { ... });
+a = um("    let mut partida = partida::iniciar()")
+b = s.index("\n    });\n", a) + len("\n    });\n")
+s = s[:a] + "    // webkit-real.sh: sem a partida (só em .dev).\n" + s[b:]
+# 2) daemon: nenhum, como se a partida não tivesse entregado a conexão
+t = "partida.tomar_daemon().ok_or(ErroApp::ConexaoPerdida)"
+um(t)
+s = s.replace(t, "Err::<DaemonSocket, ErroApp>(ErroApp::ConexaoPerdida)")
+# 3) partida.vigiar(move || { ... });
+a = um("    partida.vigiar(move || {")
+b = s.index("\n    });\n", a) + len("\n    });\n")
+assert "na_vigia" in s[a:b], "main.rs do app mudou: vigiar"
+s = s[:a] + "    drop(na_vigia);\n" + s[b:]
+um("use ward_app_nucleo::partida;\n")
 s = s.replace("use ward_app_nucleo::partida;\n", "")
+import re
+assert not re.search(r"\bpartida\s*[.:(]", re.sub(r"//[^\n]*", "", s)), "main.rs do app mudou: partida restante"
 open(p, "w").write(s)
 PY
 echo "==> compilando o harness em .dev/webkit-real (release, sem LTO)"
