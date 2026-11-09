@@ -456,6 +456,8 @@ Pendências da 44 (2026-11-09): RA1 — processo do mesmo uid pode abrir `/proc/
 
 Pendências da 49 (2026-11-09): `window.print()` não conferido no app real (WebKitGTK deve abrir a impressão do GTK; validador do M7 confere, senão comando nativo); pastas da folha são as fixas da instalação; texto "Como restaurar" depende da decisão da Fase 47 (restaurar exige cofre destravado + PIN); barra "Fechar/Imprimir" sem frame no FigCraft; pendrive desconectado com o backup ligado não coberto pelo QA.
 
+Pendências da 50 (2026-11-09): `ward login` descrito pelo contrato — depois da 43, conferir texto do erro de domínio, se exige aba aberta e o que a CLI imprime, e tirar `login` de `PENDENTES` em `dev/testes/skill.py`; depois da 26a, conferir a lista de variáveis e o `PATH` fixo no texto da skill; regras `Bash` com `*` inicial e `//` absoluto só conferidas no Claude Code real no M10; `Read(~/.ssh/**)` vai além de V8.2 (o usuário pode trocar por `Read(~/.ssh/id_*)`); regras `Bash` são cinto de segurança, contornáveis.
+
 ## Milestone 3 — Daemon e protocolo
 Contrato: V3.1–V3.41
 
@@ -857,7 +859,7 @@ Contrato: V7.1–V7.11
 ## Milestone 8 — Skill `ward`
 Contrato: V8.1–V8.4
 
-- [ ] Fase 50 — Skill `ward` do zero em `skill/ward/` (fluxo, comandos, SSH com
+- [x] Fase 50 — Skill `ward` do zero em `skill/ward/` (fluxo, comandos, SSH com
   `~/.ssh` fica de fora; nunca imprimir anexo nem variável de credencial em nenhuma
   codificação, RA3) e o trecho de deny para `~/.claude/settings.json`; a instalação
   no `~/.claude` é feita pelo usuário no M10. V8.1–V8.4.
