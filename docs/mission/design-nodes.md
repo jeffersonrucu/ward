@@ -903,3 +903,21 @@ Lido de uma cópia do `Ward.figcraft` (o original não foi alterado), por `get_n
 | Combobox de grupo | `7691` (smtp: `14115`) | `app/src/lib/componentes/ComboboxGrupo.svelte` |
 | `Interruptor` compacto | `6838` | `app/src/lib/componentes/Interruptor.svelte` |
 | `Campo secreto` vazio (10c) | `375` / `18609` | `CampoSecreto.svelte` ganhou `editavel`, `ontrocar`, `mostrarRevelar`, `mostrarCopiar` e `erro`; o revelar do detalhe de Credenciais usa `revelar_campo` (D65 b) |
+
+## Fase 35 — nível de acesso com PIN no código (só leitura do FigCraft)
+
+Lido de uma cópia do `Ward.figcraft` (o original não foi alterado), por `get_node` e
+`screenshot`. Capturas do app (ponte de teste com `--daemon-falso cheio`, Chrome
+headless, 1280×800), PNG dos frames e `qa.json` em `docs/mission/evidence/fase-35/`.
+
+| Frame / componente no FigCraft | Id | No código |
+| --- | --- | --- |
+| `Cartão de nível` (set; `Nível=livre`, `com aprovação`, `bloqueado`) | `18998` (`18986`, `18999`, `19011`) | `app/src/lib/componentes/CartaoDeNivel.svelte` (no detalhe de `Credenciais.svelte`, no lugar do cartão solto) |
+| `Opção de nível` (set; Nível × Selecionado) | `909` (`910`/`920`, `931`/`940`, `950`/`958`) | `app/src/lib/componentes/OpcaoDeNivel.svelte` (`<input type="radio">`) |
+| `Diálogo de nível` (set; Escolher, PIN, PIN errado) | `967` (`968`, `1027`, `1078`) | `app/src/lib/componentes/DialogoDeNivel.svelte` (`<dialog>` nativo, `data-etapa`) |
+| `Campo PIN` (instâncias `1052` e `1103`) | `674` (completo), `690` (erro) | `CampoPin.svelte`: dígito cheio com `borda/padrao` e erro com `perigo/texto` |
+| `Nível de acesso / Escolher` | `5615` (diálogo `5935`) | `nivel-escolher.png` |
+| `Nível de acesso / PIN` | `5994` (diálogo `6314`) | `nivel-pin.png` |
+| `Nível de acesso / PIN errado` | `6373` (diálogo `6693`) | `nivel-pin-errado.png` |
+
+Textos dos níveis (cartão e opção) em `app/src/lib/componentes/niveis.js`.

@@ -16,6 +16,10 @@
   //
   // Fase 33: "Nova credencial" abre `Escolher tipo` e o formulário no painel de
   // detalhe; "Editar" abre o formulário da entrada (tipos da fase, sem anexos).
+  //
+  // Fase 35: o cartão do nível é o `Cartão de nível` (18998) e "Mudar nível" abre o
+  // `Diálogo de nível` (967), que pede o PIN (S9). Mudou: recarrega a lista e o
+  // detalhe. O 5º PIN errado trava o cofre: `ontravado` leva o App à tela de travado.
   import { onMount, tick } from 'svelte';
   import Botao from '../lib/componentes/Botao.svelte';
   import BadgeAmbiente from '../lib/componentes/BadgeAmbiente.svelte';
@@ -23,6 +27,8 @@
   import CabecalhoDeGrupo from '../lib/componentes/CabecalhoDeGrupo.svelte';
   import Campo from '../lib/componentes/Campo.svelte';
   import CampoSecreto from '../lib/componentes/CampoSecreto.svelte';
+  import CartaoDeNivel from '../lib/componentes/CartaoDeNivel.svelte';
+  import DialogoDeNivel from '../lib/componentes/DialogoDeNivel.svelte';
   import Destaque from '../lib/componentes/Destaque.svelte';
   import DialogoFiltros from '../lib/componentes/DialogoFiltros.svelte';
   import EscolherTipo from './EscolherTipo.svelte';
@@ -36,7 +42,6 @@
   import {
     AMBIENTES,
     FILTROS_VAZIOS,
-    NIVEIS,
     agrupar,
     filtrar,
     filtrosLigados,
@@ -44,6 +49,9 @@
     resumoDoTopo,
     resumoDosFiltros,
   } from './credenciais.js';
+
+  /** @type {{ ontravado?: () => void }} */
+  let { ontravado = undefined } = $props();
 
   // Quanto tempo o "Copiado" fica na `Ação de campo`.
   const COPIADO_MS = 2000;
@@ -71,6 +79,7 @@
   let revelado = $state({ id: '', valor: '' });
   let prazoRevelar = 0;
   let prazoSucesso = 0;
+  let nivelAberto = $state(false);
 
   const filtrando = $derived(filtrosLigados(filtros) > 0 || busca.trim() !== '');
   const visiveis = $derived(filtrar(itens, filtros, busca));
@@ -195,6 +204,32 @@
     prazoSucesso = setTimeout(() => (sucesso = ''), SUCESSO_MS);
   }
 
+  function mudarNivel() {
+    if (!detalhe) return;
+    esconder();
+    erro = '';
+    nivelAberto = true;
+  }
+
+  async function nivelMudado() {
+    const nome = detalhe?.nome;
+    nivelAberto = false;
+    if (!nome) return;
+    await carregar();
+    await abrir(nome, false);
+    sucesso = 'Nível de acesso alterado.';
+    clearTimeout(prazoSucesso);
+    prazoSucesso = setTimeout(() => (sucesso = ''), SUCESSO_MS);
+  }
+
+  function cofreTravou() {
+    nivelAberto = false;
+    esconder();
+    detalhe = null;
+    itens = [];
+    ontravado?.();
+  }
+
   function itemDe(nome) {
     return listaEl?.querySelector(`[data-entrada="${CSS.escape(nome)}"]`);
   }
@@ -231,7 +266,7 @@
 
   // Atalho da busca: Ctrl+K em qualquer lugar, ou "/" fora de um campo de texto.
   function teclaGlobal(e) {
-    if (dialogoAberto || vazio) return;
+    if (dialogoAberto || nivelAberto || vazio) return;
     const emCampo = e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement;
     if ((e.ctrlKey && (e.key === 'k' || e.key === 'K')) || (e.key === '/' && !emCampo)) {
       e.preventDefault();
@@ -409,7 +444,6 @@
           </div>
         </div>
       {:else if detalhe}
-        {@const nivel = NIVEIS[detalhe.nivel] ?? NIVEIS['com-aprovacao']}
         <header class="cabecalho">
           <span class="avatar"><Icone nome={tipoDe(detalhe.tipo).icone} tamanho="lg" /></span>
           <div class="identificacao">
@@ -480,15 +514,7 @@
               {/each}
             </div>
           {/if}
-          <div class="nivel">
-            <Icone nome={nivel.icone} />
-            <div class="textos-nivel">
-              <span class="rotulo-nivel">Nível de acesso</span>
-              <span class="nome-nivel">{nivel.rotulo}</span>
-              <span class="explicacao">{nivel.explicacao}</span>
-            </div>
-            <Botao variante="secundario" icone="cadeado">Mudar nível</Botao>
-          </div>
+          <CartaoDeNivel nivel={detalhe.nivel} onmudar={mudarNivel} />
         </div>
         <footer class="rodape">
           <span class="espaco"></span>
@@ -516,6 +542,14 @@
   ambientes={opcoesAmbiente}
   onaplicar={aplicarFiltros}
   onfechar={() => (dialogoAberto = false)}
+/>
+
+<DialogoDeNivel
+  aberto={nivelAberto}
+  entrada={detalhe}
+  onfechar={() => (nivelAberto = false)}
+  onmudado={nivelMudado}
+  ontravado={cofreTravou}
 />
 
 <style>
@@ -713,37 +747,6 @@
   }
   .grade :global(.campo) {
     min-width: 0;
-  }
-  .nivel {
-    display: flex;
-    align-items: center;
-    gap: var(--espaco-16);
-    padding: var(--espaco-20);
-    border-radius: var(--raio-cartao);
-    border: var(--linha-fina) solid var(--cor-borda-sutil);
-    background: var(--cor-superficie-padrao);
-  }
-  .textos-nivel {
-    display: flex;
-    flex-direction: column;
-    gap: var(--espaco-4);
-    flex: 1;
-    min-width: 0;
-  }
-  .rotulo-nivel {
-    font-size: var(--tamanho-xs);
-    line-height: var(--altura-linha-xs);
-    color: var(--cor-texto-secundario);
-  }
-  .nome-nivel {
-    font-weight: var(--peso-medio);
-    font-size: var(--tamanho-base);
-    line-height: var(--altura-linha-base);
-  }
-  .explicacao {
-    font-size: var(--tamanho-sm);
-    line-height: var(--altura-linha-sm);
-    color: var(--cor-texto-secundario);
   }
   .rodape {
     display: flex;

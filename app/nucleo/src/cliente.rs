@@ -1,6 +1,6 @@
 //! Os pedidos do app ao daemon pelo protocolo da Fase 20 (`ward_core::protocolo`), com
-//! o papel app (D5): `estado`, `lista`, `detalhe`, `copiar`, `revelar`, `totp` e
-//! `salvar_entrada`.
+//! o papel app (D5): `estado`, `lista`, `detalhe`, `copiar`, `revelar`, `totp`,
+//! `salvar_entrada` e `mudar_nivel` (Fase 35).
 //!
 //! Aqui o pedido vira o corpo do quadro (`codificar_pedido`) e a resposta é lida com a
 //! leitura estrita do cliente (`decodificar_resposta`), que recusa tipo de outro papel e
@@ -13,7 +13,7 @@
 //! [`crate::servico`]: a área de transferência (D4), o "revelar" no clique (S11) ou o
 //! rascunho que volta ao daemon ao editar (Fase 33).
 
-use ward_core::entrada::Rascunho;
+use ward_core::entrada::{NivelAcesso, Rascunho};
 use ward_core::protocolo::{
     self, Alvo, DetalheEntrada, ErroResposta, ItemLista, Papel, Pedido, Problema, Resposta,
 };
@@ -43,6 +43,7 @@ fn erro_do_daemon(e: &ErroResposta) -> ErroApp {
         ErroResposta::EntradaInexistente => ErroApp::EntradaInexistente,
         ErroResposta::CampoInexistente => ErroApp::CampoInexistente,
         ErroResposta::NaoAutorizado => ErroApp::NaoAutorizado,
+        ErroResposta::PinIncorreto => ErroApp::PinIncorreto,
         _ => ErroApp::Recusado,
     }
 }
@@ -160,6 +161,26 @@ pub fn salvar<D: Daemon + ?Sized>(
         Ok(Resposta::Ok) => Ok(Salvamento::Salvo),
         Ok(Resposta::Erro(ErroResposta::Validacao(p))) => Ok(Salvamento::Problemas(p)),
         Ok(Resposta::Erro(e)) => Err(erro_do_daemon(&e)),
+        _ => Err(ErroApp::RespostaInvalida),
+    }
+}
+
+/// `mudar_nivel` (S9): o PIN vai só neste pedido. O quadro com o PIN é largado (e
+/// zerado: `codificar_pedido` devolve `Zeroizing`) logo depois da troca. PIN errado dá
+/// [`ErroApp::PinIncorreto`]; a contagem e a trava no 5º erro são do daemon.
+pub fn mudar_nivel<D: Daemon + ?Sized>(
+    daemon: &mut D,
+    entrada: &str,
+    nivel: NivelAcesso,
+    pin: &crate::nivel::Pin,
+) -> Result<(), ErroApp> {
+    let pedido = Pedido::MudarNivel {
+        entrada: entrada.to_owned(),
+        nivel,
+        pin: pin.para_o_protocolo(),
+    };
+    match pedir(daemon, &pedido)? {
+        Resposta::Ok => Ok(()),
         _ => Err(ErroApp::RespostaInvalida),
     }
 }

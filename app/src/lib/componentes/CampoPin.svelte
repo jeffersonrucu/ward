@@ -1,6 +1,7 @@
 <script>
   // `Campo PIN` (set 650): vazio, digitando, completo, erro, bloqueado. Dígitos 48×48
-  // (controle/lg), raio controle, gap espaco/12, máscara Mono/PIN.
+  // (controle/lg), raio controle, gap espaco/12, máscara Mono/PIN. Dígito cheio com
+  // borda borda/padrao e erro com perigo/texto (1055 e 1106, conferidos na Fase 35).
   //
   // O PIN é um único <input> (inputmode numérico, sem autocompletar); as caixas são só
   // desenho. O valor fica no estado local do componente e a tela dona o limpa depois de
@@ -101,11 +102,14 @@
     font-size: var(--tamanho-xl);
     line-height: var(--altura-linha-xl);
   }
+  .digito.cheio {
+    border-color: var(--cor-borda-padrao);
+  }
   .caixas:focus-within .atual {
     border-color: var(--cor-borda-foco);
   }
   .com-erro .digito {
-    border-color: var(--cor-perigo-borda);
+    border-color: var(--cor-perigo-texto);
   }
   .bloqueado .digito {
     background: var(--cor-superficie-desabilitada);

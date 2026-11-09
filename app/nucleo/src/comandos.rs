@@ -48,6 +48,9 @@ pub const DESCARTAR_FORMULARIO: &str = "descartar_formulario";
 /// `salvar_credencial { anterior, formulario }`: cria ou edita uma entrada (Fase 33).
 /// Segredo mantido e senha gerada são postos no rascunho pelo lado Rust.
 pub const SALVAR_CREDENCIAL: &str = "salvar_credencial";
+/// `mudar_nivel { entrada, nivel, pin }`: muda o nível de acesso com o PIN (Fase 35,
+/// S9). O PIN vai só ao daemon; a resposta traz o nível novo.
+pub const MUDAR_NIVEL: &str = "mudar_nivel";
 
 /// Todos os comandos, na ordem em que aparecem nas capabilities.
 pub const COMANDOS: &[&str] = &[
@@ -65,6 +68,7 @@ pub const COMANDOS: &[&str] = &[
     USAR_SENHA_GERADA,
     DESCARTAR_FORMULARIO,
     SALVAR_CREDENCIAL,
+    MUDAR_NIVEL,
 ];
 
 /// Nome da permissão gerada pelo Tauri para o comando (`allow-estado-do-cofre`).
@@ -89,6 +93,7 @@ pub enum Comando {
     UsarSenhaGerada,
     DescartarFormulario,
     SalvarCredencial,
+    MudarNivel,
 }
 
 impl Comando {
@@ -108,6 +113,7 @@ impl Comando {
             USAR_SENHA_GERADA => Some(Comando::UsarSenhaGerada),
             DESCARTAR_FORMULARIO => Some(Comando::DescartarFormulario),
             SALVAR_CREDENCIAL => Some(Comando::SalvarCredencial),
+            MUDAR_NIVEL => Some(Comando::MudarNivel),
             _ => None,
         }
     }
@@ -183,6 +189,7 @@ mod testes {
                 "usar_senha_gerada",
                 "descartar_formulario",
                 "salvar_credencial",
+                "mudar_nivel",
             ]
         );
         assert_eq!(permissao(COPIAR_CAMPO), "allow-copiar-campo");

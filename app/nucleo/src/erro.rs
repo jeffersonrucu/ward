@@ -39,6 +39,9 @@ pub enum ErroApp {
     /// Editar uma entrada com anexos: o protocolo não traz o conteúdo dos anexos para
     /// regravar, e salvar sem eles os apagaria (Fase 34).
     AnexosNaoMantidos,
+    /// O PIN não confere (S9). Nada foi alterado; 5 erros seguidos travam o cofre (o
+    /// daemon conta; a resposta não diz quantos faltam).
+    PinIncorreto,
 }
 
 impl ErroApp {
@@ -60,6 +63,7 @@ impl ErroApp {
             ErroApp::AleatorioIndisponivel => "aleatorio-indisponivel",
             ErroApp::SemSenhaGerada => "sem-senha-gerada",
             ErroApp::AnexosNaoMantidos => "anexos-nao-mantidos",
+            ErroApp::PinIncorreto => "pin-incorreto",
         }
     }
 }
@@ -86,6 +90,7 @@ impl fmt::Display for ErroApp {
             ErroApp::AnexosNaoMantidos => {
                 "esta entrada tem anexos; editá-la aqui ainda apagaria os anexos"
             }
+            ErroApp::PinIncorreto => "PIN incorreto. Nada foi alterado.",
         })
     }
 }

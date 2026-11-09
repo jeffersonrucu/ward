@@ -17,6 +17,8 @@
 //! - [`gerador`]: gerador de senha avulso (Fase 37). A senha nasce em
 //!   `ward_core::gerador` e fica aqui; a interface recebe só tamanho, força e símbolos,
 //!   e o valor só no "revelar".
+//! - [`nivel`]: mudar o nível de acesso com PIN (Fase 35, S9); o PIN fica num tipo
+//!   que zera e só vai ao pedido `mudar_nivel`.
 //! - [`partida`]: partida do app setgid antes do GTK (D47, D57): ambiente de D57,
 //!   conexão com o egid do grupo `ward-app`, largar o grupo, não-dumpable, reexecução.
 //! - [`servico`]: o que cada comando faz. Nenhuma resposta leva segredo (S1, S11).
@@ -33,6 +35,7 @@ pub mod daemon_falso;
 mod erro;
 pub mod formulario;
 pub mod gerador;
+pub mod nivel;
 pub mod partida;
 pub mod segredo;
 pub mod servico;
