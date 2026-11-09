@@ -402,6 +402,8 @@ frames que faltaram na 32, Fase 37a.
 
 Pendências da 37a (2026-11-09): contagens no FigCraft ficaram em 21/13, mas a fixture passou a 22 (D59) — atualizar numa próxima fase de design; cartões de nível dos 18 formulários e do gerador no formulário seguem soltos (ícone de check em "Com aprovação", herdado do M0) — trocar por instâncias do `Cartão de nível`.
 
+Pendências da 33 para o planner (2026-11-09): anexos — não há operação para ler o conteúdo de um anexo e `salvar_entrada` substitui a entrada inteira, então editar entrada com anexo é recusado (`AnexosNaoMantidos`) e "Adicionar arquivo" está desabilitado; decidir operação (manter anexos por id no salvar, ou ler/gravar anexo) e fase. Botão Salvar no Novo vazio fica clicável (V5.10) ao contrário do design; placeholder da URL trocado por "Endereço com http ou https" (o `app-dist.py` recusa "https://").
+
 ## Milestone 3 — Daemon e protocolo
 Contrato: V3.1–V3.41
 
@@ -701,7 +703,7 @@ Contrato: V5.1–V5.35
 - [ ] Fase 31 — **(UI)** Destravar, inclusive o estado "Pedido do agente". Consome
   `pedido_de_destrave` da fila da 23a e o leva à tela por evento do Tauri (D65 a). V5.8.
 - [x] Fase 32 — **(UI)** Credenciais (vazia, cheia, filtrada, busca). V5.3, V5.9.
-- [ ] Fase 33 — **(UI)** Formulário, parte 1: `login`, `api`, `aws`, `smtp`,
+- [x] Fase 33 — **(UI)** Formulário, parte 1: `login`, `api`, `aws`, `smtp`,
   `nota segura`, `genérico`, com campo secreto (revelar 30 s, copiar com limpeza em
   30 s), campos extras, TOTP e gerador no formulário (símbolos de D35; `otpauth://`
   fora de SHA1/6/30 recusado, D35). V5.3, V5.5, V5.10, V5.11, V5.13, V5.14.
