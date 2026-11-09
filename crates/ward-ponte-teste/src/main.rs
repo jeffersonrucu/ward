@@ -2,29 +2,51 @@
 //! Chrome de teste abre. Só existe com a feature `modo-teste` (`required-features`).
 //! Fala com o daemon de teste em `/run/user/<uid>/ward-teste/` e nunca lê
 //! `WARD_DEV_DIR` nem outra variável para escolher o caminho.
+//!
+//! `--daemon-falso cheio|vazio` troca o socket pelo daemon falso do núcleo
+//! (`ward_app_nucleo::daemon_falso`, Fase 32), que responde pelo protocolo com as
+//! entradas falsas do cofre de teste (ou com nenhuma), para conferir as telas no Chrome
+//! antes do `wardd` da Fase 22.
 
 #![forbid(unsafe_code)]
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use ward_app_nucleo::area_transferencia::{Copiador, Wayland};
-use ward_app_nucleo::daemon::DaemonSocket;
+use ward_app_nucleo::daemon::{Daemon, DaemonSocket};
+use ward_app_nucleo::daemon_falso::DaemonFalso;
 use ward_app_nucleo::servico::Servico;
 use ward_ponte_teste::http::Ponte;
 
+const USO: &str = "uso: ward-ponte-teste --dist <diretório do build --mode teste> \
+[--daemon-falso cheio|vazio]";
+
 fn main() -> ExitCode {
-    let mut args = std::env::args().skip(1);
-    let dist = match (args.next().as_deref(), args.next(), args.next()) {
-        (Some("--dist"), Some(d), None) => PathBuf::from(d),
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    match args.as_slice() {
+        ["--dist", d] => match DaemonSocket::padrao() {
+            Ok(daemon) => servir(daemon, Path::new(d)),
+            Err(e) => {
+                eprintln!("ward-ponte-teste: {e}");
+                ExitCode::FAILURE
+            }
+        },
+        ["--dist", d, "--daemon-falso", "cheio"] => servir(DaemonFalso::cheio(), Path::new(d)),
+        ["--dist", d, "--daemon-falso", "vazio"] => servir(DaemonFalso::vazio(), Path::new(d)),
         _ => {
-            eprintln!("uso: ward-ponte-teste --dist <diretório do build --mode teste>");
-            return ExitCode::from(2);
+            eprintln!("{USO}");
+            ExitCode::from(2)
         }
-    };
-    let servico = match (DaemonSocket::padrao(), Wayland::novo()) {
-        (Ok(d), Ok(a)) => Servico::novo(d, Copiador::novo(a)),
-        (Err(e), _) | (_, Err(e)) => {
+    }
+}
+
+fn servir<D: Daemon + 'static>(daemon: D, dist: &Path) -> ExitCode {
+    let dist: PathBuf = dist.to_path_buf();
+    let servico = match Wayland::novo() {
+        Ok(a) => Servico::novo(daemon, Copiador::novo(a)),
+        Err(e) => {
             eprintln!("ward-ponte-teste: {e}");
             return ExitCode::FAILURE;
         }

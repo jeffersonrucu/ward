@@ -2,11 +2,11 @@
   // `Badge tipo` (set 478): os 9 tipos. Pílula de 20, fundo selo/neutro/fundo,
   // padding espaco/2 espaco/8 espaco/2 espaco/6, gap espaco/4, ícone 12, Texto/Etiqueta.
   import Icone from './Icone.svelte';
-  import { TIPOS } from './tipos.js';
+  import { tipoDe } from './tipos.js';
 
   /** @type {{ tipo: string }} */
   let { tipo } = $props();
-  const t = $derived(TIPOS[tipo]);
+  const t = $derived(tipoDe(tipo));
 </script>
 
 <span class="badge"><Icone nome={t.icone} tamanho="xs" />{t.rotulo}</span>

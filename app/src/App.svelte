@@ -8,6 +8,7 @@
   import NavegacaoLateral from './lib/componentes/NavegacaoLateral.svelte';
   import Toast from './lib/componentes/Toast.svelte';
   import { chamar } from './lib/ponte/index.js';
+  import Credenciais from './telas/Credenciais.svelte';
   import GeradorSenha from './telas/GeradorSenha.svelte';
 
   const TEXTOS = {
@@ -62,7 +63,9 @@
 {#if destravado}
   <div class="casca">
     <NavegacaoLateral ativo={tela} onnavegar={navegar} />
-    {#if tela === 'gerador'}
+    {#if tela === 'credenciais'}
+      <Credenciais />
+    {:else if tela === 'gerador'}
       <GeradorSenha />
     {:else}
       <main class="vazio"><p class="estado">Esta tela ainda não existe.</p></main>

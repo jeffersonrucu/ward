@@ -36,7 +36,7 @@
           aria-current={item.tela === ativo ? 'page' : undefined}
           onclick={() => onnavegar?.(item.tela)}
         >
-          <Icone nome={item.icone} tom={item.tela === ativo ? 'forte' : undefined} />
+          <Icone nome={item.icone} tom={item.tela === ativo ? 'marca' : undefined} />
           <span>{item.rotulo}</span>
         </button>
       </li>

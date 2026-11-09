@@ -3747,6 +3747,7 @@ name = "ward-app-nucleo"
 version = "0.1.0"
 dependencies = [
  "ctutils",
+ "serde",
  "ward-core",
  "ward-plataforma",
  "zeroize",

@@ -6,6 +6,8 @@
   "permissions": [
     "allow-estado-do-cofre",
     "allow-copiar-campo",
+    "allow-listar-credenciais",
+    "allow-detalhe-credencial",
     "allow-gerar-senha",
     "allow-copiar-senha-gerada",
     "allow-revelar-senha-gerada",
