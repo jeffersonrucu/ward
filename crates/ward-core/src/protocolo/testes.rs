@@ -217,12 +217,13 @@ fn uma_resposta_de_cada() -> Vec<Resposta> {
             entrada: "acme-wp-prod".into(),
         },
         Resposta::Backups(vec![
-            "ward-20261109-153000-1.ward".into(),
-            "ward-20261109-153000.ward".into(),
+            vb("ward-20261109-153000-1.ward", true, true),
+            vb("ward-20261109-153000.ward", false, false),
         ]),
         Resposta::Configuracao {
             minutos_trava: 240,
             backup_externo: false,
+            backup_local: true,
         },
         Resposta::BackupExterno {
             ligado: true,
@@ -1905,7 +1906,7 @@ fn v7_8_restaurar_e_backups_so_pelo_app() {
         }
         assert!(ped(Papel::App, &bom).is_ok());
     }
-    let r = Resposta::Backups(vec!["ward-20261109-153000.ward".into()]);
+    let r = Resposta::Backups(vec![vb("ward-20261109-153000.ward", true, false)]);
     for papel in [Papel::Agente, Papel::Extensao] {
         assert_eq!(
             codificar_resposta(papel, &r).unwrap_err(),
@@ -1915,7 +1916,7 @@ fn v7_8_restaurar_e_backups_so_pelo_app() {
     let bytes = codificar_resposta(Papel::App, &r).unwrap();
     assert!(decodificar_resposta(Papel::Agente, &bytes).is_err());
     match decodificar_resposta(Papel::App, &bytes).unwrap() {
-        Resposta::Backups(l) => assert_eq!(l, ["ward-20261109-153000.ward"]),
+        Resposta::Backups(l) => assert_eq!(l, [vb("ward-20261109-153000.ward", true, false)]),
         outra => panic!("{outra:?}"),
     }
 }
@@ -1976,15 +1977,45 @@ fn ataque_restaurar_com_caminho_no_nome_recusado() {
     );
     // `backups` com nome fora do formato ou além do limite: o daemon não manda e o
     // cliente não aceita.
-    let ruim = Resposta::Backups(vec!["../cofre.ward".into()]);
-    assert_eq!(
-        codificar_resposta(Papel::App, &ruim).unwrap_err(),
-        ErroCodificar::Invalida
-    );
-    let quadro = r#"{"v":1,"tipo":"backups","dados":{"versoes":["../cofre.ward"]}}"#;
-    assert!(decodificar_resposta(Papel::App, quadro.as_bytes()).is_err());
-    let muitos = Resposta::Backups(vec!["ward-20261109-153000.ward".into(); MAX_BACKUPS + 1]);
+    for ruim in [
+        Resposta::Backups(vec![vb("../cofre.ward", true, false)]),
+        // Fase 49a: fora de ordem só com a versão conferida.
+        Resposta::Backups(vec![vb("ward-20261109-153000.ward", false, true)]),
+    ] {
+        assert_eq!(
+            codificar_resposta(Papel::App, &ruim).unwrap_err(),
+            ErroCodificar::Invalida
+        );
+    }
+    for quadro in [
+        r#"{"v":1,"tipo":"backups","dados":{"versoes":[{"nome":"../cofre.ward","conferida":true,"fora_de_ordem":false}]}}"#,
+        // O formato antigo (só nomes) não é aceito.
+        r#"{"v":1,"tipo":"backups","dados":{"versoes":["ward-20261109-153000.ward"]}}"#,
+        // D39: a geração não vem na resposta, nem como campo a mais.
+        r#"{"v":1,"tipo":"backups","dados":{"versoes":[{"nome":"ward-20261109-153000.ward","conferida":true,"fora_de_ordem":false,"geracao":9}]}}"#,
+        r#"{"v":1,"tipo":"backups","dados":{"versoes":[{"nome":"ward-20261109-153000.ward","conferida":false,"fora_de_ordem":true}]}}"#,
+        r#"{"v":1,"tipo":"backups","dados":{"versoes":[{"nome":"ward-20261109-153000.ward","conferida":"sim","fora_de_ordem":false}]}}"#,
+        r#"{"v":1,"tipo":"backups","dados":{"versoes":[{"nome":"ward-20261109-153000.ward","conferida":true,"fora_de_ordem":false,"caminho":"x"}]}}"#,
+        r#"{"v":1,"tipo":"configuracao","dados":{"minutos_trava":240,"backup_externo":false}}"#,
+    ] {
+        assert!(
+            decodificar_resposta(Papel::App, quadro.as_bytes()).is_err(),
+            "{quadro}"
+        );
+    }
+    let muitos = Resposta::Backups(vec![
+        vb("ward-20261109-153000.ward", true, false);
+        MAX_BACKUPS + 1
+    ]);
     assert!(codificar_resposta(Papel::App, &muitos).is_err());
+}
+
+fn vb(nome: &str, conferida: bool, fora_de_ordem: bool) -> VersaoBackup {
+    VersaoBackup {
+        nome: nome.into(),
+        conferida,
+        fora_de_ordem,
+    }
 }
 
 // ---- Fase 22d: D65 d (datas no `detalhe` do app; V3.41) ----

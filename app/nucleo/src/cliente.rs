@@ -326,9 +326,11 @@ pub fn configuracao<D: Daemon + ?Sized>(
         Resposta::Configuracao {
             minutos_trava,
             backup_externo,
+            backup_local,
         } => Ok(crate::configuracoes::Configuracoes {
             minutos_trava,
             backup_externo,
+            backup_local,
         }),
         _ => Err(ErroApp::RespostaInvalida),
     }
@@ -421,10 +423,12 @@ pub fn definir_backup_externo<D: Daemon + ?Sized>(
     }
 }
 
-/// `backups` (Fase 45/47): os nomes das versões do backup local, da mais nova para a
-/// mais antiga. A leitura estrita já recusou nome fora do formato e mais de
-/// `MAX_BACKUPS`.
-pub fn backups<D: Daemon + ?Sized>(daemon: &mut D) -> Result<Vec<String>, ErroApp> {
+/// `backups` (Fase 45/47/49a): as versões do backup local (nome e geração selada), da
+/// mais nova para a mais antiga. A leitura estrita já recusou nome fora do formato,
+/// geração 0, campo a mais e mais de `MAX_BACKUPS`.
+pub fn backups<D: Daemon + ?Sized>(
+    daemon: &mut D,
+) -> Result<Vec<ward_core::protocolo::VersaoBackup>, ErroApp> {
     match pedir(daemon, &Pedido::Backups)? {
         Resposta::Backups(l) => Ok(l),
         _ => Err(ErroApp::RespostaInvalida),

@@ -371,6 +371,15 @@ impl CofreAberto {
     pub(crate) fn autentica(&self, arquivo: &[u8]) -> bool {
         self.chaves.abrir_proprio(arquivo).is_ok()
     }
+
+    /// A geração selada no corpo de `arquivo`, se ele foi selado por este cofre (mesma
+    /// chave de dados) e o corpo é válido inteiro. Sem Argon2; o conteúdo decifrado zera
+    /// ao sair. Para a lista do restaurar (Fase 49a): a geração é autenticada, a data do
+    /// nome do arquivo não.
+    pub(crate) fn geracao_selada(&self, arquivo: &[u8]) -> Option<u64> {
+        let conteudo = self.chaves.abrir_proprio(arquivo).ok()?;
+        crate::corpo::geracao_do_corpo(&conteudo)
+    }
 }
 
 /// Chaves de um arquivo de cofre: a chave de dados (que zera ao sair) e o embrulho dela,

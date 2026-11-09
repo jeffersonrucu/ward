@@ -30,6 +30,9 @@ pub const SENHA_ATUAL_VAZIA: &str = "digite a senha mestra atual";
 pub struct Configuracoes {
     pub minutos_trava: u32,
     pub backup_externo: bool,
+    /// A pasta do backup local abre e é segura (Fase 49a); `false`: o cofre é gravado
+    /// sem backup e a linha "Backup local" avisa.
+    pub backup_local: bool,
 }
 
 /// Resposta das trocas de PIN e de senha: trocado, ou os erros por campo. Sem valor.

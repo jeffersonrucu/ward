@@ -450,6 +450,59 @@ fn pendrive_fica_com_30_versoes() {
     assert!(destino.join("notas.txt").exists());
 }
 
+/// Fase 49a (achado médio do M7): no pendrive (vfat 0777: outro usuário da máquina pode
+/// escrever) e no backup local, arquivos com nome de data futura não fazem a rotação
+/// apagar as cópias reais; as futuras não contam nem são apagadas; do backup local, as
+/// de data depois da margem não vão para o pendrive.
+#[test]
+fn ataque_versoes_com_data_futura_no_pendrive_nao_apagam_as_reais() {
+    let dir = Dir::novo("ext-futuro");
+    let (d, _) = cofre_de_teste(&dir);
+    assert!(ok(&ligar(&d, Papel::App, UUID_A)));
+    let a = montagem(&dir, "pendrive-a");
+    let fonte = Fonte::com(vec![pendrive(UUID_A, &a)]);
+    let c = d.sincronizar_externo(&fonte).unwrap().unwrap();
+    let reais = no_pendrive(&a);
+    assert_eq!(reais.len(), c.copiadas.len());
+    let destino = pasta_externa(&a);
+    // 30 de 2099 no pendrive e uma no backup local, 10 anos à frente.
+    for i in 0..30u32 {
+        fs::write(
+            destino.join(format!("ward-20990101-{:06}.ward", i * 100)),
+            b"plantada",
+        )
+        .unwrap();
+    }
+    let longe = ward_core::backup::Versao::do_instante(
+        std::time::SystemTime::now() + Duration::from_secs(10 * 365 * 86_400),
+    )
+    .unwrap()
+    .nome();
+    let local = dir.0.join("backups").join(&longe);
+    fs::copy(dir.0.join("backups").join(&locais(&dir)[0]), &local).unwrap();
+    fs::set_permissions(&local, fs::Permissions::from_mode(0o600)).unwrap();
+    // Uma gravação nova e a cópia: nenhuma real sai, a plantada local não vai.
+    let r = pedir(
+        &d,
+        Papel::App,
+        "salvar_entrada",
+        &login("t-futuro", SEGREDOS[3]),
+    );
+    assert!(ok(&r), "{r:?}");
+    let c = d.sincronizar_externo(&fonte).unwrap().unwrap();
+    assert_eq!(c.apagadas, 0);
+    assert!(c.copiadas.iter().all(|v| v.nome() != longe));
+    let agora = no_pendrive(&a);
+    for n in &reais {
+        assert!(agora.contains(n), "{n} sumiu do pendrive");
+    }
+    assert!(!agora.contains(&longe));
+    assert_eq!(
+        agora.iter().filter(|n| n.starts_with("ward-2099")).count(),
+        30
+    );
+}
+
 /// Travado ou desligado depois de ligado: nada é consultado nem gravado. Desligar não
 /// apaga o que já está no pendrive.
 #[test]

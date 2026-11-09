@@ -10,11 +10,14 @@
   // Na lista é um `<input type="radio">` de verdade (setas trocam a versão, leitor de tela
   // lê o grupo), com o desenho por cima; com `estatico` (o resumo do `Confirmar`) é só o
   // desenho do selecionado.
+  //
+  // Fase 49a: `alerta` (a gravação é mais antiga do que a data do nome diz) pinta o
+  // detalhe em aviso/texto; o texto já diz o motivo (não depende só da cor).
 
   /**
    * @type {{ id: string, data: string, detalhe: string, quando: string,
    *   nome?: string, valor?: string, marcado?: boolean, estatico?: boolean,
-   *   onescolher?: (v: string) => void }}
+   *   alerta?: boolean, onescolher?: (v: string) => void }}
    */
   let {
     id,
@@ -25,6 +28,7 @@
     valor = '',
     marcado = false,
     estatico = false,
+    alerta = false,
     onescolher = undefined,
   } = $props();
 </script>
@@ -35,7 +39,7 @@
   </span>
   <span class="textos">
     <span class="data">{data}</span>
-    <span class="detalhe">{detalhe}</span>
+    <span class="detalhe" class:alerta>{detalhe}</span>
   </span>
   <span class="quando">{quando}</span>
 {/snippet}
@@ -116,6 +120,9 @@
     font-size: var(--tamanho-sm);
     line-height: var(--altura-linha-sm);
     color: var(--cor-texto-secundario);
+  }
+  .detalhe.alerta {
+    color: var(--cor-aviso-texto);
   }
   .quando {
     flex: none;

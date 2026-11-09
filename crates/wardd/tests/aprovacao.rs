@@ -351,6 +351,44 @@ fn v3_14_sempre_deixa_livre_no_arquivo() {
     );
 }
 
+/// Fase 49a (achado baixo do M7): restaurar com um pedido de aprovação pendente nega o
+/// pedido; o "permitir sempre" que chega depois (com o PIN certo) responde "expirado"
+/// e não muda o nível da entrada de mesmo nome na versão restaurada.
+#[test]
+fn ataque_49a_restaurar_cancela_pedido_pendente() {
+    let c = cena("restaurar-pendente");
+    let rx = assinar(&c.d, 1);
+    let versao = match pedir(&c.d, Papel::App, "backups", "{}") {
+        Resposta::Backups(l) => l[0].nome.clone(),
+        r => panic!("{r:?}"),
+    };
+    let r = std::thread::scope(|s| {
+        let t = s.spawn(|| usar(&c.d, &SemCliente, "t-aprov"));
+        let _g = ExpirarSeCair(&c.relogio);
+        let p = pedido(&rx);
+        let r = pedir(
+            &c.d,
+            Papel::App,
+            "restaurar_backup",
+            &format!(
+                r#"{{"versao":"{versao}","senha":"{}","pin":"{}"}}"#,
+                b64(SENHA.as_bytes()),
+                b64(PIN.as_bytes())
+            ),
+        );
+        assert!(ok(&r), "{r:?}");
+        let resultado = t.join().unwrap();
+        let tarde = responder(&c.d, Papel::App, p.id, "sempre", Some(PIN));
+        assert_eq!(erro(&tarde), Some(ErroResposta::Expirado));
+        resultado
+    });
+    assert_eq!(r, Err(ErroResposta::Negado));
+    assert_eq!(nivel(&c.d, "t-aprov"), Some(NivelAcesso::ComAprovacao));
+    assert!(ok(&pedir(&c.d, Papel::Agente, "travar", "{}")));
+    assert!(ok(&destravar(&c.d, SENHA)));
+    assert_eq!(nivel(&c.d, "t-aprov"), Some(NivelAcesso::ComAprovacao));
+}
+
 /// Ataque (V3.14, S9/S10): os três "Permitir" sem PIN válido não permitem; PIN errado
 /// deixa o pedido pendente; o 5.º erro trava o cofre e nega o pedido.
 #[test]

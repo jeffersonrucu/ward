@@ -19,7 +19,12 @@ fn configuracao(d: &wardd::nucleo::Daemon) -> (u32, bool) {
         Resposta::Configuracao {
             minutos_trava,
             backup_externo,
-        } => (minutos_trava, backup_externo),
+            backup_local,
+        } => {
+            // O cofre de teste tem a pasta de backups 0700 (Fase 49a).
+            assert!(backup_local);
+            (minutos_trava, backup_externo)
+        }
         outra => panic!("{outra:?}"),
     }
 }
@@ -132,7 +137,7 @@ fn ataque_configuracao_com_o_cofre_travado() {
 }
 
 /// Ataque (D30, S1): a resposta `configuracao` não leva o hash do PIN, o sal, o PIN nem
-/// a senha; só os dois campos.
+/// a senha; só os três campos (Fase 49a: `backup_local`).
 #[test]
 fn ataque_resposta_configuracao_sem_hash_nem_pin() {
     let dir = Dir::novo("cfg-hash");
@@ -152,7 +157,9 @@ fn ataque_resposta_configuracao_sem_hash_nem_pin() {
         assert!(!contem(&bytes, agulha.as_bytes()), "{agulha}: {texto}");
     }
     assert!(
-        texto.ends_with(r#""dados":{"minutos_trava":240,"backup_externo":false}}"#),
+        texto.ends_with(
+            r#""dados":{"minutos_trava":240,"backup_externo":false,"backup_local":true}}"#
+        ),
         "{texto}"
     );
 }

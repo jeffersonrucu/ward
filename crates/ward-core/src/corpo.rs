@@ -303,6 +303,18 @@ pub fn desserializar(corpo: &[u8]) -> Result<CorpoLido, ErroCorpo> {
     Ok((configuracao, bruta_cfg.geracao, entradas))
 }
 
+/// Só a geração de um corpo decifrado (Fase 49a), depois de conferir a estrutura
+/// inteira (sem montar entradas nem alocar segredo). `None` em qualquer problema.
+pub(crate) fn geracao_do_corpo(corpo: &[u8]) -> Option<u64> {
+    if corpo.len() > MAX_CORPO {
+        return None;
+    }
+    conferir_estrutura(corpo).ok()?;
+    let mut l = Leitor { resto: corpo };
+    let (cfg, _) = ler_cabecalho(&mut l).ok()?;
+    Some(cfg.geracao)
+}
+
 // ---- Conferência do cofre ----
 
 /// Nomes em ordem estrita (sem repetido) e cada entrada conferida por

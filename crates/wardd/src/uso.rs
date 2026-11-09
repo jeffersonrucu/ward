@@ -238,6 +238,12 @@ impl Daemon {
         // O protocolo já exige o PIN em todo "Permitir"; aqui é a segunda camada.
         let pin = pin.ok_or(ErroResposta::PedidoInvalido)?;
         let mut est = self.estado();
+        // Fase 49a: com o estado preso, o pedido ainda tem de estar pendente. Um
+        // restaurar entre a leitura acima e aqui cancelou o pedido; sem esta conferência,
+        // o "permitir sempre" mudaria a entrada de mesmo nome da versão restaurada.
+        if self.aprovacao.pendente(id).as_ref() != Some(&entradas) {
+            return Err(ErroResposta::Expirado);
+        }
         if let Err(e) = Self::conferir_pin(&mut est, pin) {
             if est.aberto.is_none() {
                 // O 5.º erro travou (ou o cofre travou no meio): o pedido é negado.

@@ -85,3 +85,12 @@ export function cartaoDoPendrive(externo) {
     montado: false,
   };
 }
+
+/**
+ * Fase 49a: a pasta do backup local não abre ou não é segura (tem de ser um diretório
+ * só seu, 0700). O daemon grava o cofre mesmo assim, mas sem versão nova.
+ */
+export const AVISO_BACKUP_LOCAL =
+  'A pasta de backups não é segura (tem de ser só sua, sem acesso para outros usuários), ' +
+  'então as mudanças estão sendo gravadas sem backup. Confira as permissões de ' +
+  '~/.local/share/ward/backups/ (chmod 700).';

@@ -37,7 +37,7 @@ use ward_ponte_teste::simulados::{SeletorDePasta, TerminalDeTeste};
 const USO: &str = "uso: ward-ponte-teste [--dist <diretório do build --mode teste> \
 [--daemon-falso cheio|vazio|travado|travado-com-pedido|travado-com-pedido-ataque|sem-cofre|aprovacao|aprovacao-prod|\
 aprovacao-expirando|aprovacao-ataque|backup-externo-ligado|sem-udisks|sem-backups|\
-backups-indisponiveis]] [--anexos <pasta com um arquivo>]";
+backups-indisponiveis|backup-plantado|backup-local-inseguro]] [--anexos <pasta com um arquivo>]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -126,6 +126,21 @@ fn main() -> ExitCode {
         ),
         ["--dist", d, "--daemon-falso", "backups-indisponiveis"] => servir(
             DaemonFalso::cheio().com_backups(None),
+            None,
+            Path::new(d),
+            anexos,
+            &[],
+        ),
+        // Fase 49a: cópia antiga plantada com data nova e pasta do backup local insegura.
+        ["--dist", d, "--daemon-falso", "backup-plantado"] => servir(
+            DaemonFalso::backup_plantado(),
+            None,
+            Path::new(d),
+            anexos,
+            &[],
+        ),
+        ["--dist", d, "--daemon-falso", "backup-local-inseguro"] => servir(
+            DaemonFalso::backup_local_inseguro(),
             None,
             Path::new(d),
             anexos,

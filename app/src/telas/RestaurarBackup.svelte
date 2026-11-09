@@ -13,8 +13,10 @@
   //   daemon exige o PIN de agora, Fase 45) e o `Destaque` aviso (18684); a legenda e o
   //   rodapé com Voltar à esquerda e "Restaurar esta versão" à direita.
   //
-  // As versões vêm do daemon só com o nome e o instante (sem tamanho, origem nem
-  // conteúdo): a linha de baixo é sempre "Cópia local". A senha da versão e o PIN ficam
+  // As versões vêm do daemon só com o nome, o instante e duas marcas (sem tamanho,
+  // origem, geração nem conteúdo): a linha de baixo é "Cópia local" (Fase 49a: "de outra
+  // senha mestra", ou em aviso "gravação mais antiga do que a data diz" para a cópia
+  // antiga com nome novo). A senha da versão e o PIN ficam
   // só no estado local deste componente, saem dele antes da resposta do pedido e ao
   // fechar ou voltar. Nada vai para armazenamento, URL ou log.
   import { onDestroy, tick } from 'svelte';
@@ -27,7 +29,7 @@
   import { chamar } from '../lib/ponte/index.js';
   import { mensagemDoRust } from './primeiro-uso.js';
   import {
-    DETALHE_DA_VERSAO,
+    detalheDaVersao,
     avisoDaTroca,
     dataDaVersao,
     diaDaVersao,
@@ -246,7 +248,8 @@
             id="restaurar-versao-{i}"
             valor={v.nome}
             data={dataDaVersao(v.instante)}
-            detalhe={DETALHE_DA_VERSAO}
+            detalhe={detalheDaVersao(v)}
+            alerta={v.fora_de_ordem === true}
             quando={quandoFoi(v.instante, agora)}
             marcado={escolhida === v.nome}
             onescolher={(n) => (escolhida = n)}
@@ -266,7 +269,8 @@
         id="restaurar-escolhida"
         estatico
         data={dataDaVersao(versao.instante)}
-        detalhe={DETALHE_DA_VERSAO}
+        detalhe={detalheDaVersao(versao)}
+        alerta={versao.fora_de_ordem === true}
         quando={quandoFoi(versao.instante, agora)}
       />
       <CampoSenha

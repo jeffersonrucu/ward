@@ -1057,10 +1057,11 @@ fn ataque_backup_externo_pela_ponte() {
     let _ = fs::remove_dir_all(base);
 }
 
-/// Fase 47 (V7.7): restaurar backup pela ponte. A lista traz só nome e instante; versão
-/// forjada (caminho, `..`, fora da lista), PIN errado, senha da versão errada, tipo
-/// errado e campo a mais não mudam nada; nenhuma resposta traz segredo, PIN, senha,
-/// caminho ou geração; o restaurar certo troca as entradas pelas da versão.
+/// Fase 47 (V7.7): restaurar backup pela ponte. A lista traz só nome, instante e (Fase
+/// 49a) as marcas conferida/fora de ordem; versão forjada (caminho, `..`, fora da
+/// lista), PIN errado, senha da versão errada, tipo errado e campo a mais não mudam
+/// nada; nenhuma resposta traz segredo, PIN, senha, caminho ou geração; o restaurar
+/// certo troca as entradas pelas da versão.
 #[test]
 fn ataque_restaurar_backup_pela_ponte() {
     let base = dist("restaurar-backup");
@@ -1072,7 +1073,14 @@ fn ataque_restaurar_backup_pela_ponte() {
         for s in SEGREDOS {
             assert!(!texto.contains(s), "{comando}: segredo na resposta");
         }
-        for agulha in ["135790", "/home", ".local", "backups/", "geracao"] {
+        for agulha in [
+            "135790",
+            "falso-mestra-ward-01",
+            "/home",
+            ".local",
+            "backups/",
+            "geracao",
+        ] {
             assert!(!texto.contains(agulha), "{comando}: {agulha} em {texto}");
         }
         r.corpo_json().unwrap()
@@ -1092,7 +1100,11 @@ fn ataque_restaurar_backup_pela_ponte() {
     assert_eq!(lista.len(), 30, "{v}");
     for item in &lista {
         let chaves: Vec<_> = item.as_object().unwrap().keys().cloned().collect();
-        assert_eq!(chaves, ["instante", "nome"], "{item}");
+        assert_eq!(
+            chaves,
+            ["conferida", "fora_de_ordem", "instante", "nome"],
+            "{item}"
+        );
     }
     let alvo = lista[4]["nome"].as_str().unwrap().to_owned();
     assert_eq!(

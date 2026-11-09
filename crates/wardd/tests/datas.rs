@@ -245,7 +245,7 @@ fn restaurar_mantem_as_datas() {
     let d = criar(&dir, &relogio);
     salvar(&d, &login("t-datas", SEGREDOS[0]));
     let versao = match pedir(&d, Papel::App, "backups", "{}") {
-        Resposta::Backups(l) => l[0].clone(),
+        Resposta::Backups(l) => l[0].nome.clone(),
         outra => panic!("{outra:?}"),
     };
     relogio.em(T0 + 3 * DIA);

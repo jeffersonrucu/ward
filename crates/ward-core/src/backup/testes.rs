@@ -488,6 +488,155 @@ fn ataque_guardar_atual_so_aceita_o_arquivo_autentico() {
     assert_eq!(modo(&pasta.caminho(v)), 0o600);
 }
 
+// --- Fase 49a: datas futuras no nome e geração selada ----------------------------------
+
+/// Fase 49a (achado médio do M7): 30 arquivos com nome de data futura plantados na pasta
+/// (qualquer processo do usuário pode) não fazem a rotação apagar as versões reais, nem
+/// as futuras contam para as 30. A lista do restaurar ignora as que passam de agora +
+/// [`MARGEM_FUTURO`]; as dentro da margem aparecem, mas a geração selada as denuncia.
+#[test]
+fn ataque_versoes_com_data_futura_nao_apagam_as_reais() {
+    let d = Dir::novo("futuro");
+    let mut cofre = cofre_novo(SENHA_MESTRA);
+    let pasta = d.pasta();
+    let mut reais = Vec::new();
+    for i in 0..5u64 {
+        let g =
+            gravar_entradas_com_backup(&d.cofre(), &mut cofre, &[], &pasta, em(INSTANTE + i * 60))
+                .unwrap();
+        reais.push(g.backup.unwrap());
+    }
+    // Uma cópia autêntica antiga (geração 1) com nomes do futuro: 30 depois da margem
+    // (2099) e 30 dentro dela (alguns segundos depois da próxima gravação).
+    let antiga = fs::read(pasta.caminho(reais[0])).unwrap();
+    let mut longe = Vec::new();
+    let mut perto = Vec::new();
+    for i in 0..30u64 {
+        let v = Versao::do_instante(em(4_070_908_800 + i * 3600)).unwrap();
+        fs::write(pasta.caminho(v), &antiga).unwrap();
+        longe.push(v);
+        let v = Versao::do_instante(em(INSTANTE + 5 * 60 + 1 + i)).unwrap();
+        fs::write(pasta.caminho(v), &antiga).unwrap();
+        perto.push(v);
+    }
+    let agora = em(INSTANTE + 5 * 60);
+    let g = gravar_entradas_com_backup(&d.cofre(), &mut cofre, &[], &pasta, agora).unwrap();
+    reais.push(g.backup.unwrap());
+    // Nenhuma real apagada, nenhuma plantada apagada.
+    for v in reais.iter().chain(&longe).chain(&perto) {
+        assert!(fs::exists(pasta.caminho(*v)).unwrap(), "{v} sumiu");
+    }
+    // A lista do restaurar: sem as de 2099; as da margem aparecem por cima.
+    let lista = pasta.listar_ate(agora).unwrap();
+    assert!(longe.iter().all(|v| !lista.contains(v)));
+    assert!(reais.iter().all(|v| lista.contains(v)));
+    assert_eq!(lista.len(), reais.len() + perto.len());
+    // A geração selada denuncia as plantadas: geração 1, mais velha que a real mais nova.
+    let mais_nova = fs::read(pasta.caminho(*reais.last().unwrap())).unwrap();
+    assert_eq!(geracao_selada(&cofre, &mais_nova), Some(6));
+    for v in &perto {
+        let b = fs::read(pasta.caminho(*v)).unwrap();
+        assert_eq!(geracao_selada(&cofre, &b), Some(1), "{v}");
+    }
+    // Mais 40 gravações reais: ficam as 30 reais mais novas; as futuras não contam e
+    // continuam lá (e as de 2099, nunca na lista).
+    for i in 0..40u64 {
+        let g = gravar_entradas_com_backup(
+            &d.cofre(),
+            &mut cofre,
+            &[],
+            &pasta,
+            em(INSTANTE + 3600 + i * 60),
+        )
+        .unwrap();
+        reais.push(g.backup.unwrap());
+    }
+    let ate_agora: Vec<Versao> = pasta
+        .listar()
+        .unwrap()
+        .into_iter()
+        .filter(|v| *v <= *reais.last().unwrap())
+        .collect();
+    assert_eq!(ate_agora.len(), VERSOES);
+    let mut esperadas: Vec<Versao> = reais[reais.len() - VERSOES..].to_vec();
+    esperadas.reverse();
+    assert_eq!(ate_agora, esperadas);
+    for v in &longe {
+        assert!(fs::exists(pasta.caminho(*v)).unwrap());
+    }
+}
+
+/// A regra da rotação, sozinha: versões passadas nunca saem por causa das futuras, as
+/// protegidas nunca saem, e sem futuras é a rotação de antes (as mais antigas).
+#[test]
+fn rotacao_conta_so_ate_o_teto() {
+    let v = |s: u64| Versao::do_instante(em(INSTANTE + s)).unwrap();
+    let passadas: Vec<Versao> = (0..35).map(|i| v(i * 10)).collect();
+    let teto = passadas[34];
+    let futuras: Vec<Versao> = (1..=40).map(|i| v(340 + i)).collect();
+    let mut lista = passadas.clone();
+    lista.extend(&futuras);
+    let fora = para_apagar(&lista, teto, &[teto]);
+    assert_eq!(fora, passadas[..5].to_vec());
+    // Só futuras além do teto: nada sai.
+    assert!(para_apagar(&futuras, teto, &[]).is_empty());
+    // 31 passadas e o teto na mais antiga: só ela conta, nada sai.
+    assert!(para_apagar(&passadas[..31], passadas[0], &[passadas[0]]).is_empty());
+    // Protegida entre as mais antigas: pula ela e apaga a seguinte.
+    let fora = para_apagar(&passadas[..31], passadas[30], &[passadas[0]]);
+    assert_eq!(fora, [passadas[1]]);
+    // O teto do segundo cobre os sufixos do mesmo segundo.
+    let base = v(0);
+    assert!(base.com_sufixo(99) <= base.fim_do_segundo());
+    assert!(v(1) > base.fim_do_segundo());
+}
+
+/// A marca de fora de ordem: a cópia antiga (geração 3) com nome novo sai marcada; as
+/// reais em ordem, não; sem geração (outra chave) não conta; o sufixo desempata o
+/// mesmo segundo; a ordem da lista não importa.
+#[test]
+fn ataque_copia_antiga_com_nome_novo_sai_marcada() {
+    let v = |s: u64| Versao::do_instante(em(INSTANTE + s)).unwrap();
+    let lista = [
+        (v(3600), Some(3)),
+        (v(60).com_sufixo(1), Some(12)),
+        (v(60), Some(11)),
+        (v(30), None),
+        (v(0), Some(10)),
+        (v(1), Some(4)),
+    ];
+    assert_eq!(
+        fora_de_ordem(&lista),
+        [true, false, false, false, false, true]
+    );
+    let mesmo = [(v(0), Some(12)), (v(0).com_sufixo(1), Some(11))];
+    assert_eq!(fora_de_ordem(&mesmo), [false, true]);
+    assert!(fora_de_ordem(&[]).is_empty());
+}
+
+/// A geração selada só sai de um arquivo da chave do cofre aberto: outro cofre (outra
+/// senha), um byte trocado ou bytes quaisquer dão `None`.
+#[test]
+fn ataque_geracao_selada_nao_se_forja() {
+    let d = Dir::novo("geracao");
+    let mut cofre = cofre_novo(SENHA_MESTRA);
+    for _ in 0..3 {
+        gravacao::gravar_entradas(&d.cofre(), &mut cofre, entradas()).unwrap();
+    }
+    let bom = fs::read(d.cofre()).unwrap();
+    assert_eq!(geracao_selada(&cofre, &bom), Some(3));
+    let mut outro = cofre_novo(SENHA_MESTRA);
+    let d2 = Dir::novo("geracao-outro");
+    gravacao::gravar_entradas(&d2.cofre(), &mut outro, &[]).unwrap();
+    assert_eq!(geracao_selada(&cofre, &fs::read(d2.cofre()).unwrap()), None);
+    for i in [0, 100, 159, 160, bom.len() - 1] {
+        let mut ruim = bom.clone();
+        ruim[i] ^= 1;
+        assert_eq!(geracao_selada(&cofre, &ruim), None, "byte {i}");
+    }
+    assert_eq!(geracao_selada(&cofre, b"WARDCOFR qualquer"), None);
+}
+
 // --- V7.3: SIGKILL na gravação do backup -------------------------------------------------
 
 /// Pontos da gravação do backup, na ordem; os quatro primeiros vêm antes do link.

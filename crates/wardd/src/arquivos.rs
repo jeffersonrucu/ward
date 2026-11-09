@@ -228,6 +228,53 @@ pub fn gravar_estado_completo(caminho: &Path, e: ArquivoEstado) -> io::Result<()
     r
 }
 
+/// Apaga os temporários do arquivo de estado que uma gravação interrompida deixou
+/// (Fase 49a): `.<nome>.tmp-<pid>-<n>` na pasta do estado, só arquivos comuns do euid
+/// (`DirEntry::file_type` não segue link), com o nome exato (pid e contador só com
+/// dígitos) e de **outro processo** (pid ≠ o nosso: um temporário nosso pode estar sendo
+/// gravado agora). O conteúdo deles é só o texto do estado (gerações e contagem), nada
+/// secreto, mas eles se acumulariam. Devolve quantos apagou; erro de E/S para no meio.
+pub fn limpar_temporarios_estado(caminho: &Path) -> io::Result<usize> {
+    let dir = caminho
+        .parent()
+        .filter(|d| !d.as_os_str().is_empty())
+        .ok_or(io::ErrorKind::InvalidInput)?;
+    let nome = caminho
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or(io::ErrorKind::InvalidInput)?;
+    let prefixo = format!(".{nome}.tmp-");
+    let meu = std::process::id().to_string();
+    let euid = ward_plataforma::uid_efetivo();
+    let mut apagados = 0;
+    for item in fs::read_dir(dir)? {
+        let item = item?;
+        let Some(n) = item.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        let Some(resto) = n.strip_prefix(&prefixo) else {
+            continue;
+        };
+        let Some((pid, cont)) = resto.split_once('-') else {
+            continue;
+        };
+        let so_digitos =
+            |t: &str| !t.is_empty() && t.len() <= 20 && t.bytes().all(|b| b.is_ascii_digit());
+        if !so_digitos(pid) || !so_digitos(cont) || pid == meu {
+            continue;
+        }
+        if !item.file_type()?.is_file() {
+            continue;
+        }
+        if item.metadata()?.uid() != euid {
+            continue;
+        }
+        fs::remove_file(item.path())?;
+        apagados += 1;
+    }
+    Ok(apagados)
+}
+
 /// Pasta de backups aberta pelo fd (Fase 45): o diretório foi aberto com
 /// `O_NOFOLLOW | O_DIRECTORY` e conferido pelo `fstat` (diretório do euid, 0700). Todo
 /// acesso passa por `/proc/self/fd/<n>/…`, então trocar a pasta por um link simbólico

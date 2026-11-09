@@ -65,7 +65,7 @@ use ward_core::gravacao::{self, ErroGravacao, Etapa};
 use ward_core::origem::Origem;
 use ward_core::protocolo::{
     Alvo, DetalheEntrada, ErroResposta, ItemLista, MAX_BACKUPS, MAX_PENDRIVES, Operacao, Papel,
-    Pedido, Pendrive, Problema, Resposta, Sugestao,
+    Pedido, Pendrive, Problema, Resposta, Sugestao, VersaoBackup,
 };
 use ward_core::totp::Totp;
 
@@ -434,6 +434,12 @@ impl Daemon {
             .unwrap_or(0);
         if falhas_agente > 0 {
             aviso!("{falhas_agente} senha(s) errada(s) do agente antes da partida (D20)");
+        }
+        // Fase 49a: temporários do estado de uma gravação interrompida (outro processo).
+        match arquivos::limpar_temporarios_estado(&caminhos.estado) {
+            Ok(0) => {}
+            Ok(n) => aviso!("{n} temporário(s) do arquivo de estado apagado(s) na partida"),
+            Err(_) => aviso!("não deu para limpar os temporários do arquivo de estado"),
         }
         let partida = relogio.agora();
         Self {
@@ -1461,31 +1467,54 @@ impl Daemon {
         let est = self.estado();
         let a = est.aberto.as_ref().ok_or(ErroResposta::Travado)?;
         let c = a.cofre.configuracao();
+        // Fase 49a: a tela avisa quando a pasta do backup local não abre ou não é segura
+        // (o cofre é gravado sem backup). Só um sim/não: nenhum caminho.
+        let backup_local = abrir_pasta(&self.caminhos).is_some_and(|p| p.pasta().listar().is_ok());
         Ok(Resposta::Configuracao {
             minutos_trava: c.minutos_trava(),
             backup_externo: c.backup().ligado(),
+            backup_local,
         })
     }
 
     /// Versões do backup local (Fase 45), da mais nova para a mais antiga. Só com o
     /// cofre destravado e só pelo app (a tabela e o [`Daemon::atender_de`] conferem).
+    ///
+    /// Fase 49a: sem as versões com data depois de agora + margem (a data do nome é de
+    /// quem criou o arquivo), e com a geração selada de cada versão da chave do cofre
+    /// aberto ([`backup::geracao_selada`], autenticada), que vira as marcas `conferida`
+    /// e `fora_de_ordem` ([`backup::fora_de_ordem`]): uma cópia antiga com nome novo sai
+    /// marcada. A geração não vai na resposta (D39).
     fn backups(&self) -> Result<Resposta, ErroResposta> {
         let est = self.estado();
-        if est.aberto.is_none() {
-            return Err(ErroResposta::Travado);
-        }
+        let a = est.aberto.as_ref().ok_or(ErroResposta::Travado)?;
         let pasta = abrir_pasta(&self.caminhos).ok_or(ErroResposta::BackupIndisponivel)?;
-        let versoes = pasta.pasta().listar().map_err(|e| {
+        let versoes = pasta.pasta().listar_ate(SystemTime::now()).map_err(|e| {
             aviso!("backup local: não deu para listar ({})", codigo_backup(&e));
             ErroResposta::BackupIndisponivel
         })?;
-        Ok(Resposta::Backups(
-            versoes
-                .into_iter()
-                .take(MAX_BACKUPS)
-                .map(|v| v.nome())
-                .collect(),
-        ))
+        let com_geracao: Vec<(Versao, Option<u64>)> = versoes
+            .into_iter()
+            .take(MAX_BACKUPS)
+            .map(|v| {
+                let geracao = match arquivos::ler_cofre(&pasta.pasta().caminho(v)) {
+                    Ok(Some((b, _))) => backup::geracao_selada(&a.cofre, &b),
+                    _ => None,
+                };
+                (v, geracao)
+            })
+            .collect();
+        let marcas = backup::fora_de_ordem(&com_geracao);
+        let lista = com_geracao
+            .iter()
+            .zip(marcas)
+            .map(|((v, g), fora)| VersaoBackup {
+                nome: v.nome(),
+                conferida: g.is_some(),
+                fora_de_ordem: fora,
+            })
+            .collect();
+        Ok(Resposta::Backups(lista))
     }
 
     /// Configuração do backup externo (Fase 46): só com o cofre destravado.
@@ -1573,6 +1602,18 @@ impl Daemon {
         let mut est = self.estado();
         Self::conferir_pin(&mut est, pin)?;
         let pasta = abrir_pasta(&self.caminhos).ok_or(ErroResposta::BackupIndisponivel)?;
+        // Fase 49a: a versão tem de estar na lista que o app vê (sem data futura).
+        let na_lista = pasta
+            .pasta()
+            .listar_ate(SystemTime::now())
+            .map_err(|_| ErroResposta::BackupIndisponivel)?
+            .contains(&versao);
+        if !na_lista {
+            aviso!(
+                "restaurar recusado: a versão não está na lista (inexistente ou com data futura)"
+            );
+            return Err(ErroResposta::BackupInexistente);
+        }
         let bytes = match arquivos::ler_cofre(&pasta.pasta().caminho(versao)) {
             Ok(Some((b, _))) => b,
             Ok(None) => return Err(ErroResposta::BackupInexistente),
@@ -1609,6 +1650,19 @@ impl Daemon {
             return Err(ErroResposta::BackupIndisponivel);
         }
         drop(atual);
+        // Fase 49a: o tempo de trava e o backup externo continuam os de agora (a versão
+        // traz os dela; restaurar uma antiga não desliga a cópia para o pendrive sem
+        // aviso). PIN, senha e entradas são os da versão (D17).
+        {
+            let atual = a.cofre.configuracao();
+            let minutos = atual.minutos_trava();
+            let externo = atual.backup().clone();
+            let c = restaurado.configuracao_mut();
+            if c.definir_minutos_trava(minutos).is_err() {
+                aviso!("restaurar: tempo de trava atual fora da faixa; ficou o da versão");
+            }
+            c.definir_backup(externo);
+        }
         // D39: geração = maior queimada + 1, queimada no estado antes de selar (D53).
         let q = a.geracoes.queimada.max(a.cofre.geracao());
         let proxima = q.checked_add(1).ok_or(ErroResposta::GeracaoEsgotada)?;
@@ -1641,6 +1695,13 @@ impl Daemon {
                 a.liberacoes.clear();
                 confirmar(&self.caminhos, a, g.identidade);
                 est.erros_pin = 0;
+                // Fase 49a: um pedido de aprovação aberto era sobre o cofre de antes;
+                // uma resposta que chegasse agora mudaria a entrada de mesmo nome da
+                // versão restaurada. Todos são negados, com o estado ainda preso.
+                let n = self.aprovacao.cancelar_pendentes();
+                if n > 0 {
+                    aviso!("{n} pedido(s) de aprovação cancelado(s) pelo restaurar");
+                }
                 aviso!("backup restaurado; o cofre anterior ficou na pasta de backups");
                 Ok(Resposta::Ok)
             }
