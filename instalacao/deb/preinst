@@ -1,0 +1,70 @@
+#!/bin/bash -p
+# preinst do `.deb` do Ward (Fase 52; D18, D47, D60; V9.9, V9.11). Roda como root antes
+# de o dpkg desempacotar os arquivos. O `deb.sh` troca as duas marcas abaixo pelas
+# funções de `instalacao/grupos.sh` (as mesmas do `make install`) e pelas pastas comuns
+# de `instalacao/arvore.txt`.
+#
+# Falha fechada: grupo fora de D60 ou pasta do sistema fora do lugar aborta antes de
+# qualquer arquivo. Os binários setgid vêm no pacote como 0755 root:root; o modo 2755 e
+# o grupo entram pelo `dpkg-statoverride` registrado aqui, que o dpkg aplica ao
+# desempacotar (nunca existe um `ward-app` setgid com outro grupo, nem setgid root).
+
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export LC_ALL=C
+set -euo pipefail
+umask 022
+
+erro() { printf 'ward (preinst): %s\n' "$*" >&2; exit 1; }
+passo() { printf 'ward: %s\n' "$*"; }
+
+#@GRUPOS@
+
+# Pastas comuns do sistema que o pacote usa: sem link (o dpkg seguiria), do root e sem
+# escrita para grupo e outros.
+PASTAS=(
+#@PASTAS@
+)
+
+conferir_pastas() {
+    local p m
+    for p in "${PASTAS[@]}"; do
+        p="/$p"
+        if [ -L "$p" ]; then
+            erro "$p é um link simbólico; o Ward não instala por cima de link"
+        elif [ -e "$p" ]; then
+            [ -d "$p" ] || erro "$p existe e não é uma pasta"
+            [ "$(stat -c %u -- "$p")" = 0 ] || erro "$p não é do root"
+            m="$(stat -c %a -- "$p")"
+            [ $((8#$m & 8#022)) = 0 ] || erro "$p tem escrita para grupo ou outros ($m)"
+        fi
+    done
+}
+
+# O override do binário setgid: só o esperado. Um override diferente (de uma instalação
+# velha ou feito à mão) é trocado.
+override() {
+    local grupo="$1" caminho="$2" atual
+    atual="$(dpkg-statoverride --list "$caminho" || true)"
+    [ "$atual" = "root $grupo 2755 $caminho" ] && return 0
+    if [ -n "$atual" ]; then
+        dpkg-statoverride --quiet --remove "$caminho"
+    fi
+    dpkg-statoverride --add root "$grupo" 2755 "$caminho"
+}
+
+case "${1:-}" in
+    install | upgrade)
+        conferir_pastas
+        garantir_grupo ward-app
+        garantir_grupo ward-nm
+        override ward-app /usr/local/bin/ward-app
+        override ward-nm /usr/local/lib/ward/ward-nm
+        ptrace="$(cat /proc/sys/kernel/yama/ptrace_scope 2>/dev/null || echo ?)"
+        suid="$(cat /proc/sys/fs/suid_dumpable 2>/dev/null || echo ?)"
+        [ "$ptrace" != 0 ] || printf 'ward: aviso: kernel.yama.ptrace_scope = 0: o daemon recusa os papéis app e extensão (D47)\n' >&2
+        [ "$suid" != 1 ] || printf 'ward: aviso: fs.suid_dumpable = 1: o daemon recusa os papéis app e extensão (D47)\n' >&2
+        ;;
+    abort-upgrade) ;;
+    *) erro "argumento desconhecido: ${1:-}" ;;
+esac
+exit 0

@@ -1,0 +1,71 @@
+#!/bin/bash -p
+# postinst do `.deb` do Ward (Fase 52; D46, D47; V9.7, V9.9). Roda como root depois de
+# os arquivos estarem no lugar: confere os binários setgid (o override do preinst),
+# cria /run/ward (tmpfiles.d) e liga o `wardd@<uid>.socket` do usuário do cofre.
+#
+# O uid vem de WARD_UID ou, com `sudo dpkg -i`/`sudo apt install`, do SUDO_UID. Sem
+# nenhum dos dois (instalação por outra ferramenta), o pacote fica instalado e o
+# usuário liga o socket com `sudo systemctl enable --now wardd@$(id -u).socket`.
+
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export LC_ALL=C
+set -euo pipefail
+umask 022
+
+erro() { printf 'ward (postinst): %s\n' "$*" >&2; exit 1; }
+passo() { printf 'ward: %s\n' "$*"; }
+
+# Binário setgid: root:<grupo> 2755, arquivo regular. Na primeira instalação o dpkg já
+# leu a base de overrides antes do preinst registrar o do Ward, então o arquivo chega
+# 0755 root:root (sem setgid: seguro) e o modo entra aqui, com o mesmo valor do
+# override; nas atualizações o dpkg já o aplica ao desempacotar.
+conferir_setgid() {
+    local grupo="$1" caminho="$2"
+    [ -f "$caminho" ] && [ ! -L "$caminho" ] || erro "$caminho não é um arquivo"
+    [ "$(dpkg-statoverride --list "$caminho" || true)" = "root $grupo 2755 $caminho" ] ||
+        erro "override de $caminho fora do esperado"
+    if [ "$(stat -c '%U %G %a' -- "$caminho")" != "root $grupo 2755" ]; then
+        # chown antes do chmod (o chown tira o setgid).
+        chown -h -- "root:$grupo" "$caminho"
+        chmod -- 2755 "$caminho"
+    fi
+    [ "$(stat -c '%U %G %a' -- "$caminho")" = "root $grupo 2755" ] ||
+        erro "$caminho está $(stat -c '%U:%G %a' -- "$caminho") (esperado root:$grupo 2755)"
+}
+
+uid_do_cofre() {
+    local uid="${WARD_UID:-${SUDO_UID:-}}"
+    [ -n "$uid" ] || return 1
+    if [[ ! "$uid" =~ ^[1-9][0-9]{3,9}$ ]] || [ "$uid" -eq 65534 ] || ! getent passwd "$uid" >/dev/null; then
+        printf 'ward: aviso: uid %s não serve (precisa ser de um usuário, >= 1000, e não o nobody)\n' "$uid" >&2
+        return 1
+    fi
+    printf '%s\n' "$uid"
+}
+
+case "${1:-}" in
+    configure)
+        conferir_setgid ward-app /usr/local/bin/ward-app
+        conferir_setgid ward-nm /usr/local/lib/ward/ward-nm
+        if [ -d /run/systemd/system ]; then
+            systemd-tmpfiles --create /usr/local/lib/tmpfiles.d/ward.conf
+            systemctl daemon-reload
+            if uid="$(uid_do_cofre)"; then
+                systemctl enable --now "wardd@$uid.socket"
+                passo "wardd@$uid.socket ligado: o wardd sobe na primeira conexão; o uso diário não pede sudo"
+            else
+                passo "ligue o socket do seu usuário com: sudo systemctl enable --now wardd@\$(id -u).socket"
+            fi
+            # Atualização: o daemon que já roda passa ao binário novo (o cofre trava).
+            while read -r u _; do
+                [[ "$u" =~ ^wardd@[0-9]+\.service$ ]] || continue
+                systemctl try-restart "$u" || printf 'ward: aviso: não deu para reiniciar %s\n' "$u" >&2
+            done < <(systemctl list-units --plain --no-legend --full --state=active 'wardd@*.service' 2>/dev/null || true)
+        else
+            passo "sem systemd no ar: rode 'systemd-tmpfiles --create' e ligue wardd@<uid>.socket depois"
+        fi
+        ;;
+    abort-upgrade | abort-remove | abort-deconfigure) ;;
+    *) erro "argumento desconhecido: ${1:-}" ;;
+esac
+exit 0
