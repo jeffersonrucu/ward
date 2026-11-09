@@ -44,7 +44,14 @@ fn dados_validos(op: Operacao) -> String {
     let pin = b64(b"135790");
     let senha = b64(b"falso-mestra-ward-01");
     match op {
-        Operacao::Estado | Operacao::Travar | Operacao::Lista | Operacao::AbrirApp => "{}".into(),
+        Operacao::Estado
+        | Operacao::Travar
+        | Operacao::Lista
+        | Operacao::AbrirApp
+        | Operacao::Backups => "{}".into(),
+        Operacao::RestaurarBackup => {
+            format!(r#"{{"versao":"ward-20261109-153000.ward","senha":"{senha}","pin":"{pin}"}}"#)
+        }
         Operacao::Destravar => format!(r#"{{"senha":"{senha}"}}"#),
         Operacao::Executar => format!(
             r#"{{"entrada":"acme-pg-dev","argv":["{}"],"cwd":"{}","ambiente":[{{"nome":"{}","valor":"{}"}}]}}"#,
@@ -186,6 +193,10 @@ fn uma_resposta_de_cada() -> Vec<Resposta> {
             senha: seg("falso-WP-senha-01"),
             totp: Some(zeroize::Zeroizing::new("654321".into())),
         },
+        Resposta::Backups(vec![
+            "ward-20261109-153000-1.ward".into(),
+            "ward-20261109-153000.ward".into(),
+        ]),
     ]
 }
 
@@ -227,6 +238,8 @@ fn v3_15_tabela_operacao_papel() {
         ("trocar_pin", false, true, false),
         ("trocar_senha", false, true, false),
         ("tempo_trava", false, true, false),
+        ("backups", false, true, false),
+        ("restaurar_backup", false, true, false),
         ("sugerir", false, false, true),
         ("preencher", false, false, true),
         ("salvar_login", false, false, true),
@@ -265,6 +278,7 @@ fn v3_15_tabela_operacao_papel() {
         ("codigo_totp", false, true, true, true),
         ("sugestoes", false, false, true, false),
         ("preenchimento", false, false, true, true),
+        ("backups", false, true, false, false),
     ];
     let real: Vec<_> = TipoResposta::TODAS
         .iter()
@@ -1683,3 +1697,117 @@ const CAMPOS_SECRETOS_TESTE: &[&str] = &[
     "session_token",
     "texto",
 ];
+
+// ---- Fase 45: backups e restaurar ----
+
+/// V7.8 (D17): o agente e a extensão pedindo `backups` ou `restaurar_backup` recebem
+/// "não autorizado", com qualquer campo; o app é atendido. A resposta `backups` não vai
+/// a outro papel.
+#[test]
+fn v7_8_restaurar_e_backups_so_pelo_app() {
+    for op in [Operacao::Backups, Operacao::RestaurarBackup] {
+        let bom = quadro_de(op, &dados_validos(op));
+        for papel in [Papel::Agente, Papel::Extensao] {
+            for q in [
+                bom.clone(),
+                quadro_de(op, "{}"),
+                quadro_de(op, r#"{"versao":"../cofre.ward"}"#),
+                quadro_de(op, &com_campo(&dados_validos(op), r#""papel":"app""#)),
+            ] {
+                assert_eq!(
+                    ped(papel, &q).unwrap_err(),
+                    ErroResposta::NaoAutorizado,
+                    "{} pelo {}",
+                    op.nome(),
+                    papel.nome()
+                );
+            }
+            let p = ped(Papel::App, &bom).unwrap();
+            assert_eq!(
+                codificar_pedido(papel, &p).unwrap_err(),
+                ErroCodificar::NaoPermitidaAoPapel
+            );
+        }
+        assert!(ped(Papel::App, &bom).is_ok());
+    }
+    let r = Resposta::Backups(vec!["ward-20261109-153000.ward".into()]);
+    for papel in [Papel::Agente, Papel::Extensao] {
+        assert_eq!(
+            codificar_resposta(papel, &r).unwrap_err(),
+            ErroCodificar::NaoPermitidaAoPapel
+        );
+    }
+    let bytes = codificar_resposta(Papel::App, &r).unwrap();
+    assert!(decodificar_resposta(Papel::Agente, &bytes).is_err());
+    match decodificar_resposta(Papel::App, &bytes).unwrap() {
+        Resposta::Backups(l) => assert_eq!(l, ["ward-20261109-153000.ward"]),
+        outra => panic!("{outra:?}"),
+    }
+}
+
+/// O nome da versão no `restaurar_backup` é só o nome exato do arquivo: caminho, `..`,
+/// barra, sufixo com zero à esquerda e campo a mais são recusados na leitura; senha
+/// vazia e PIN fora do formato também. Uma resposta `backups` com nome fora do formato
+/// é recusada pelo cliente.
+#[test]
+fn ataque_restaurar_com_caminho_no_nome_recusado() {
+    let pin = b64(b"135790");
+    let senha = b64(b"falso-mestra-ward-01");
+    for versao in [
+        "../cofre.ward",
+        "ward-20261109-153000.ward/../../cofre.ward",
+        "/home/usuario/.local/share/ward/cofre.ward",
+        "backups/ward-20261109-153000.ward",
+        "ward-20261109-153000-01.ward",
+        "ward-20261109-153000",
+        "",
+    ] {
+        let q = quadro_de(
+            Operacao::RestaurarBackup,
+            &format!(r#"{{"versao":"{versao}","senha":"{senha}","pin":"{pin}"}}"#),
+        );
+        assert_eq!(
+            ped(Papel::App, &q).unwrap_err(),
+            ErroResposta::PedidoInvalido,
+            "{versao}"
+        );
+    }
+    for dados in [
+        format!(r#"{{"versao":"ward-20261109-153000.ward","senha":"","pin":"{pin}"}}"#),
+        format!(
+            r#"{{"versao":"ward-20261109-153000.ward","senha":"{senha}","pin":"{}"}}"#,
+            b64(b"12ab")
+        ),
+        format!(r#"{{"versao":"ward-20261109-153000.ward","senha":"{senha}"}}"#),
+        format!(
+            r#"{{"versao":"ward-20261109-153000.ward","senha":"{senha}","pin":"{pin}","geracao":9}}"#
+        ),
+    ] {
+        let q = quadro_de(Operacao::RestaurarBackup, &dados);
+        assert_eq!(
+            ped(Papel::App, &q).unwrap_err(),
+            ErroResposta::PedidoInvalido,
+            "{dados}"
+        );
+    }
+    let p = Pedido::RestaurarBackup {
+        versao: "../cofre.ward".into(),
+        senha: seg("falso-mestra-ward-01"),
+        pin: seg("135790"),
+    };
+    assert_eq!(
+        codificar_pedido(Papel::App, &p).unwrap_err(),
+        ErroCodificar::Invalida
+    );
+    // `backups` com nome fora do formato ou além do limite: o daemon não manda e o
+    // cliente não aceita.
+    let ruim = Resposta::Backups(vec!["../cofre.ward".into()]);
+    assert_eq!(
+        codificar_resposta(Papel::App, &ruim).unwrap_err(),
+        ErroCodificar::Invalida
+    );
+    let quadro = r#"{"v":1,"tipo":"backups","dados":{"versoes":["../cofre.ward"]}}"#;
+    assert!(decodificar_resposta(Papel::App, quadro.as_bytes()).is_err());
+    let muitos = Resposta::Backups(vec!["ward-20261109-153000.ward".into(); MAX_BACKUPS + 1]);
+    assert!(codificar_resposta(Papel::App, &muitos).is_err());
+}

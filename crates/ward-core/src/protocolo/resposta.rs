@@ -361,6 +361,9 @@ pub enum Resposta {
         senha: Segredo,
         totp: Option<Zeroizing<String>>,
     },
+    /// Nomes das versões do backup local, da mais nova para a mais antiga (Fase 45). Só
+    /// nomes no formato exato; nenhum caminho, conteúdo ou geração.
+    Backups(Vec<String>),
 }
 
 const OPERACOES_APROVADAS: [Operacao; 4] = [
@@ -393,6 +396,7 @@ impl Resposta {
             Resposta::CodigoTotp { .. } => TipoResposta::CodigoTotp,
             Resposta::Sugestoes(_) => TipoResposta::Sugestoes,
             Resposta::Preenchimento { .. } => TipoResposta::Preenchimento,
+            Resposta::Backups(_) => TipoResposta::Backups,
         }
     }
 
@@ -461,6 +465,7 @@ impl Resposta {
             Resposta::CodigoTotp { codigo, restante } => {
                 ok(digitos_totp(codigo) && (1..=30).contains(restante))
             }
+            Resposta::Backups(l) => ok(l.len() <= MAX_BACKUPS && l.iter().all(|n| backup_ok(n))),
             Resposta::Sugestoes(l) => ok(l.len() <= MAX_ENTRADAS
                 && l.iter()
                     .all(|s| s.nome.len() <= MAX_NOME && s.usuario.len() <= MAX_TEXTO)),
@@ -625,6 +630,10 @@ impl Resposta {
                 e.chave("restante");
                 e.inteiro(*restante);
             }
+            Resposta::Backups(l) => {
+                e.chave("versoes");
+                escrever_textos(e, l);
+            }
             Resposta::Sugestoes(l) => {
                 e.chave("itens");
                 e.lista(|e| {
@@ -659,6 +668,23 @@ impl Resposta {
 
 /// Problemas de validação numa resposta.
 const MAX_PROBLEMAS: usize = 512;
+/// Mais versões numa resposta `backups`: as 30 da rotação e folga para arquivos com
+/// nome válido postos à mão na pasta (a lista sai cortada nas mais novas).
+pub const MAX_BACKUPS: usize = 64;
+
+/// Nome de versão de backup no formato exato (Fase 45).
+fn backup_ok(n: &str) -> bool {
+    #[cfg(unix)]
+    {
+        crate::backup::nome_valido(n)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = n;
+        false
+    }
+}
+
 /// Processos na cadeia mostrada na aprovação.
 const MAX_CADEIA: usize = 64;
 
@@ -939,6 +965,10 @@ pub(crate) fn ler(papel: Papel, tipo: TipoResposta, mut c: Campos) -> R<Resposta
             }
             Resposta::Sugestoes(itens)
         }
+        TipoResposta::Backups => Resposta::Backups(textos_de(
+            c.lista("versoes", MAX_BACKUPS)?,
+            crate::limites::MAX_NOME,
+        )?),
         TipoResposta::Preenchimento => Resposta::Preenchimento {
             usuario: c.texto("usuario", MAX_TEXTO)?,
             senha: segredo_de(c.tirar("senha").ok_or(JsonInvalido)?, MAX_SEGREDO)?,

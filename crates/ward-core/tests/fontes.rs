@@ -96,8 +96,10 @@ fn v2_46_chave_no_heap_e_sem_hash_password() {
 }
 
 /// V2.50 (D44, D27): os únicos `pub fn` que gravam o cofre são `gravar_entradas` e
-/// `gravacao::trocar_senha` (mais `limpar_temporarios`, que só apaga temporários). Só
-/// `gravacao.rs` escreve arquivo, e `selar`/`gravar_cofre`/`gravar` são `pub(crate)`.
+/// `gravacao::trocar_senha` e as variantes com backup da Fase 45 (que gravam os mesmos
+/// bytes já selados por elas na pasta de backups), mais `limpar_temporarios`, que só
+/// apaga temporários. Só `gravacao.rs` escreve arquivo (o `backup.rs` só lista e apaga
+/// versões velhas), e `selar`/`gravar_cofre`/`gravar` são `pub(crate)`.
 #[test]
 fn v2_50_unicas_gravacoes_publicas() {
     let fontes = fontes_de_producao();
@@ -111,6 +113,8 @@ fn v2_50_unicas_gravacoes_publicas() {
                 "OpenOptions",
                 "fs::rename",
                 "renameat",
+                "fs::hard_link",
+                "linkat",
             ] {
                 if l.contains(escrita) {
                     assert_eq!(nome, "gravacao.rs", "{}:{n}: {l}", p.display());
@@ -133,7 +137,13 @@ fn v2_50_unicas_gravacoes_publicas() {
     publicas.sort();
     assert_eq!(
         publicas,
-        ["gravar_entradas", "limpar_temporarios", "trocar_senha"],
+        [
+            "gravar_entradas",
+            "gravar_entradas_com_backup",
+            "limpar_temporarios",
+            "trocar_senha",
+            "trocar_senha_com_backup"
+        ],
         "pub fn de gravacao.rs"
     );
     // Os dois serializam ou desserializam o corpo antes de selar.
@@ -143,13 +153,20 @@ fn v2_50_unicas_gravacoes_publicas() {
         .unwrap()
         .1;
     let corpo_de = |f: &str| {
-        let i = gravacao.find(&format!("pub fn {f}(")).unwrap();
+        let i = gravacao.find(&format!("fn {f}(")).unwrap();
         let fim = gravacao[i..].find("\n}\n").unwrap();
         gravacao[i..i + fim].to_owned()
     };
     assert!(corpo_de("gravar_entradas").contains("gravar_entradas_com_pontos"));
-    assert!(gravacao.contains("corpo::serializar(cofre.configuracao(), geracao, entradas)"));
-    let troca = corpo_de("trocar_senha");
+    assert!(corpo_de("gravar_entradas_com_pontos").contains("gravar_entradas_selado("));
+    assert!(corpo_de("gravar_entradas_com_backup").contains("gravar_entradas_selado("));
+    assert!(
+        corpo_de("gravar_entradas_selado")
+            .contains("corpo::serializar(cofre.configuracao(), geracao, entradas)")
+    );
+    assert!(corpo_de("trocar_senha").contains("trocar_senha_selado("));
+    assert!(corpo_de("trocar_senha_com_backup").contains("trocar_senha_selado("));
+    let troca = corpo_de("trocar_senha_selado");
     assert!(troca.contains("corpo::desserializar(&conteudo)"));
-    assert!(troca.contains("gravar_entradas(destino, &mut cofre, &entradas)"));
+    assert!(troca.contains("gravar_entradas_selado(destino, &mut cofre, &entradas"));
 }

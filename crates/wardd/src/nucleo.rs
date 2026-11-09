@@ -33,21 +33,30 @@
 //!   sair.
 //! - Uso do agente e aprovação (Fase 23): em [`crate::uso`], com o motor de
 //!   [`crate::aprovacao`].
+//! - **Backup local** (Fase 45, D17): cada gravação do cofre que deu certo grava a mesma
+//!   versão selada em `<pasta do cofre>/backups/`, aberta pelo fd com `O_NOFOLLOW`
+//!   ([`arquivos::abrir_pasta_backup`]); 30 versões. Se a pasta não abre ou não é
+//!   segura, o cofre é gravado assim mesmo e o log avisa. **Restaurar** é só do app,
+//!   com o cofre destravado, o PIN atual (S9) e a senha mestra da versão: o cofre atual
+//!   vira backup antes, e a versão é selada de novo com geração = maior queimada + 1
+//!   (D39), com o estado atualizado antes e depois, como numa gravação comum.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Mutex, MutexGuard};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use zeroize::Zeroizing;
 
+use ward_core::backup::{self, ErroBackup, Versao};
 use ward_core::configuracao::{Configuracao, HashPin};
 use ward_core::corpo::{self, ErroAbrir, ErroCorpo};
 use ward_core::entrada::{Entrada, NivelAcesso, Rascunho, Segredo};
 use ward_core::formato::{CofreAberto, SenhaMestra};
 use ward_core::gravacao::{self, ErroGravacao, Etapa};
 use ward_core::protocolo::{
-    Alvo, DetalheEntrada, ErroResposta, ItemLista, Operacao, Papel, Pedido, Problema, Resposta,
+    Alvo, DetalheEntrada, ErroResposta, ItemLista, MAX_BACKUPS, Operacao, Papel, Pedido, Problema,
+    Resposta,
 };
 use ward_core::totp::Totp;
 
@@ -234,7 +243,7 @@ fn gravar(caminhos: &Caminhos, a: &mut Aberto, gancho: Option<&Gancho>) -> Resul
         return Err(FalhaGravar::Resposta(ErroResposta::FalhaAoGravar));
     }
     a.geracoes = antes;
-    let r = gravacao::gravar_entradas(&caminhos.cofre, &mut a.cofre, &a.entradas);
+    let r = gravar_com_backup(caminhos, &mut a.cofre, &a.entradas);
     if let Some(g) = gancho {
         g();
     }
@@ -257,6 +266,65 @@ fn gravar(caminhos: &Caminhos, a: &mut Aberto, gancho: Option<&Gancho>) -> Resul
             aviso!("falha ao gravar o cofre: {}", codigo_gravacao(&e));
             Err(FalhaGravar::Resposta(ErroResposta::from(&e)))
         }
+    }
+}
+
+/// Abre a pasta de backups ao lado do cofre (Fase 45). Falha vai ao log, sem caminho.
+fn abrir_pasta(caminhos: &Caminhos) -> Option<arquivos::PastaAberta> {
+    let dir = arquivos::dir_backups(&caminhos.cofre)?;
+    match arquivos::abrir_pasta_backup(&dir) {
+        Ok(p) => Some(p),
+        Err(_) => {
+            aviso!(
+                "backup local: a pasta de backups não abre ou não é um diretório 0700 do usuário"
+            );
+            None
+        }
+    }
+}
+
+/// Nome fixo do erro do backup para o log (sem caminho nem valor).
+fn codigo_backup(e: &ErroBackup) -> &'static str {
+    match e {
+        ErroBackup::PastaInsegura => "pasta insegura",
+        ErroBackup::NaoAutentico => "cofre atual não autêntico",
+        ErroBackup::Relogio => "relógio fora do intervalo",
+        ErroBackup::NomesEsgotados => "nomes do segundo esgotados",
+        ErroBackup::Gravacao(g) => codigo_gravacao(g),
+        ErroBackup::Io(_) => "e/s na pasta",
+    }
+}
+
+fn registrar_backup(r: &Result<Versao, ErroBackup>) {
+    match r {
+        Ok(_) => depurar!("backup local gravado"),
+        Err(e) => aviso!(
+            "backup local não gravado ({}); o cofre foi gravado",
+            codigo_backup(e)
+        ),
+    }
+}
+
+/// Grava as entradas e, se a pasta de backups abre, o backup da mesma versão (Fase 45).
+/// Sem pasta, grava só o cofre: o backup nunca impede a gravação.
+fn gravar_com_backup(
+    caminhos: &Caminhos,
+    cofre: &mut CofreAberto,
+    entradas: &[Entrada],
+) -> Result<Identidade, ErroGravacao> {
+    match abrir_pasta(caminhos) {
+        Some(p) => {
+            let g = gravacao::gravar_entradas_com_backup(
+                &caminhos.cofre,
+                cofre,
+                entradas,
+                &p.pasta(),
+                SystemTime::now(),
+            )?;
+            registrar_backup(&g.backup);
+            Ok(g.identidade)
+        }
+        None => gravacao::gravar_entradas(&caminhos.cofre, cofre, entradas),
     }
 }
 
@@ -493,6 +561,10 @@ impl Daemon {
                 self.valor_do_app(papel, Operacao::Copiar, &entrada, &alvo)
             }
             Pedido::Totp { entrada } => self.totp_do_app(papel, &entrada),
+            Pedido::Backups => self.backups(),
+            Pedido::RestaurarBackup { versao, senha, pin } => {
+                self.restaurar_backup(&versao, &senha, &pin)
+            }
             // Das fases seguintes (token: 27/34; extensão: 40+). Nada é feito e nada sai.
             Pedido::EmitirToken { .. }
             | Pedido::Sugerir { .. }
@@ -740,7 +812,7 @@ impl Daemon {
             aviso!("criar cofre: não deu para gravar o arquivo de estado");
             return Err(ErroResposta::FalhaAoGravar);
         }
-        let r = gravacao::gravar_entradas(&self.caminhos.cofre, &mut cofre, &[]);
+        let r = gravar_com_backup(&self.caminhos, &mut cofre, &[]);
         if let Some(g) = &self.gancho_gravado {
             g();
         }
@@ -967,13 +1039,30 @@ impl Daemon {
             return Err(ErroResposta::FalhaAoGravar);
         }
         a.geracoes = antes;
-        let r = gravacao::trocar_senha(
-            &self.caminhos.cofre,
-            &senha_de(atual),
-            &senha_de(nova),
-            a.geracoes.vista,
-            geracao,
-        );
+        let (atual, nova) = (senha_de(atual), senha_de(nova));
+        let r = match abrir_pasta(&self.caminhos) {
+            Some(p) => gravacao::trocar_senha_com_backup(
+                &self.caminhos.cofre,
+                &atual,
+                &nova,
+                a.geracoes.vista,
+                geracao,
+                &p.pasta(),
+                SystemTime::now(),
+            )
+            .map(|(novo, g)| {
+                registrar_backup(&g.backup);
+                (novo, g.identidade)
+            }),
+            None => gravacao::trocar_senha(
+                &self.caminhos.cofre,
+                &atual,
+                &nova,
+                a.geracoes.vista,
+                geracao,
+            ),
+        };
+        drop((atual, nova));
         if let Some(g) = &self.gancho_gravado {
             g();
         }
@@ -994,6 +1083,140 @@ impl Daemon {
                     codigo_gravacao(&e)
                 );
                 est.travar_mudou();
+                Err(ErroResposta::from(&e))
+            }
+        }
+    }
+
+    /// Versões do backup local (Fase 45), da mais nova para a mais antiga. Só com o
+    /// cofre destravado e só pelo app (a tabela e o [`Daemon::atender_de`] conferem).
+    fn backups(&self) -> Result<Resposta, ErroResposta> {
+        let est = self.estado();
+        if est.aberto.is_none() {
+            return Err(ErroResposta::Travado);
+        }
+        let pasta = abrir_pasta(&self.caminhos).ok_or(ErroResposta::BackupIndisponivel)?;
+        let versoes = pasta.pasta().listar().map_err(|e| {
+            aviso!("backup local: não deu para listar ({})", codigo_backup(&e));
+            ErroResposta::BackupIndisponivel
+        })?;
+        Ok(Resposta::Backups(
+            versoes
+                .into_iter()
+                .take(MAX_BACKUPS)
+                .map(|v| v.nome())
+                .collect(),
+        ))
+    }
+
+    /// Restaura uma versão do backup local (D17, D39; Fase 45). Exige o cofre
+    /// destravado e o PIN atual (S9: a versão traz outros níveis e outro PIN; o erro
+    /// conta para os 5 que travam) e a senha mestra da versão. Ordem:
+    ///
+    /// 1. abre a versão pelo fd da pasta, sem seguir link, com a senha dela e sem
+    ///    geração mínima (todo backup é mais antigo);
+    /// 2. confere que o arquivo do cofre é o que o Ward gravou por último (identidade) e
+    ///    o guarda como backup, autenticado pela chave do cofre aberto; sem isso, não
+    ///    troca;
+    /// 3. queima no estado a geração nova = maior queimada + 1 e sela a versão com ela
+    ///    pela gravação comum (com o backup da versão nova); depois, `vista` = ela.
+    ///
+    /// Restaurar nunca baixa a geração: a cópia à mão do mesmo backup segue em
+    /// `retrocesso` (V7.11). Erro depois de selar trava o cofre, como na troca de senha.
+    fn restaurar_backup(
+        &self,
+        versao: &str,
+        senha: &Segredo,
+        pin: &Segredo,
+    ) -> Result<Resposta, ErroResposta> {
+        let versao = Versao::de_nome(versao).ok_or(ErroResposta::PedidoInvalido)?;
+        let mut est = self.estado();
+        Self::conferir_pin(&mut est, pin)?;
+        let pasta = abrir_pasta(&self.caminhos).ok_or(ErroResposta::BackupIndisponivel)?;
+        let bytes = match arquivos::ler_cofre(&pasta.pasta().caminho(versao)) {
+            Ok(Some((b, _))) => b,
+            Ok(None) => return Err(ErroResposta::BackupInexistente),
+            Err(_) => {
+                aviso!("restaurar recusado: a versão não é um arquivo comum do usuário");
+                return Err(ErroResposta::BackupIndisponivel);
+            }
+        };
+        let (mut restaurado, entradas, _) =
+            corpo::abrir_entradas_lida(&bytes, &senha_de(senha), 0, 0).map_err(|e| {
+                aviso!("restaurar recusado: a versão não abriu");
+                ErroResposta::from(&e)
+            })?;
+        drop(bytes);
+        let Some(a) = est.aberto.as_mut() else {
+            return Err(ErroResposta::Travado);
+        };
+        // O cofre atual tem de ser o que o Ward gravou por último (D39, D62).
+        let atual = match arquivos::ler_cofre(&self.caminhos.cofre) {
+            Ok(Some((b, id))) if Some(id) == a.identidade => b,
+            _ => {
+                aviso!("restaurar recusado: o arquivo do cofre mudou fora do Ward; travado (D39)");
+                est.travar_mudou();
+                return Err(ErroResposta::CofreMudou);
+            }
+        };
+        let agora = SystemTime::now();
+        // D17: o atual vira backup antes de trocar; sem isso, não troca.
+        if let Err(e) = backup::guardar_atual(&pasta.pasta(), &a.cofre, &atual, agora) {
+            aviso!(
+                "restaurar recusado: o cofre atual não foi guardado ({})",
+                codigo_backup(&e)
+            );
+            return Err(ErroResposta::BackupIndisponivel);
+        }
+        drop(atual);
+        // D39: geração = maior queimada + 1, queimada no estado antes de selar (D53).
+        let q = a.geracoes.queimada.max(a.cofre.geracao());
+        let proxima = q.checked_add(1).ok_or(ErroResposta::GeracaoEsgotada)?;
+        restaurado = restaurado.depois_da_geracao(q);
+        let antes = Geracoes {
+            vista: a.geracoes.vista,
+            queimada: proxima,
+        };
+        if arquivos::gravar_estado(&self.caminhos.estado, antes).is_err() {
+            aviso!("restaurar recusado: não deu para gravar o arquivo de estado");
+            return Err(ErroResposta::FalhaAoGravar);
+        }
+        a.geracoes = antes;
+        let r = gravacao::gravar_entradas_com_backup(
+            &self.caminhos.cofre,
+            &mut restaurado,
+            &entradas,
+            &pasta.pasta(),
+            agora,
+        );
+        if let Some(g) = &self.gancho_gravado {
+            g();
+        }
+        match r {
+            Ok(g) => {
+                registrar_backup(&g.backup);
+                // O cofre de antes (chave, PIN, segredos) zera aqui.
+                a.cofre = restaurado;
+                a.entradas = entradas;
+                a.liberacoes.clear();
+                confirmar(&self.caminhos, a, g.identidade);
+                est.erros_pin = 0;
+                aviso!("backup restaurado; o cofre anterior ficou na pasta de backups");
+                Ok(Resposta::Ok)
+            }
+            Err(e) => {
+                if let ErroGravacao::Io {
+                    etapa: Etapa::FsyncDiretorio,
+                    identidade,
+                    ..
+                } = e
+                {
+                    // A versão restaurada está no lugar (o rename aconteceu).
+                    a.identidade = identidade;
+                }
+                aviso!("restaurar falhou ({}): cofre travado", codigo_gravacao(&e));
+                // A geração queimada está no estado; o destravar reabre com ela (D53).
+                est.travar();
                 Err(ErroResposta::from(&e))
             }
         }
