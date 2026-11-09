@@ -343,7 +343,7 @@ Correções da auditoria de segurança do M2 (Fase 19c, D36–D45). As repros do
 estão em `scratchpad/ataque/src/bin/` (`mascara.rs`, `validacao.rs`, `gravar.rs`); cada
 asserção abaixo vira teste de ataque no `ward-core`.
 
-- [ ] V2.41 — (SEG) Dada a máscara de `acme-ssh-chave-prod` (chave em campo, não
+- [x] V2.41 — (SEG) Dada a máscara de `acme-ssh-chave-prod` (chave em campo, não
   anexo), quando a saída traz a chave inteira com CRLF, `head -n 4` da chave, a chave
   sem as linhas `-----BEGIN`/`-----END` (`grep -v -- -----`) e cada linha da chave
   sozinha, então nenhuma linha da chave com 6 caracteres ou mais sobra, com ou sem `\r`
@@ -352,14 +352,14 @@ asserção abaixo vira teste de ataque no `ward-core`.
   traz o JSON inteiro, a linha `"private_key": "falso-chave-de-conta-de-servico-0123456789"`
   e só o valor (`jq -r .private_key`), então tudo vira `••••`; o mesmo para a linha
   `token: falso-token-kube-01` num anexo YAML (D36) — cobre S4.
-- [ ] V2.42 — (SEG) Dado um `banco` com a senha `Ab3$k&<9>Zq!`, quando a saída traz
+- [x] V2.42 — (SEG) Dado um `banco` com a senha `Ab3$k&<9>Zq!`, quando a saída traz
   `{"Env":["PGPASSWORD=Ab3$k\u0026\u003c9\u003eZq!"]}` (JSON do Go) e
   `declare -x PGPASSWORD="Ab3\$k&<9>Zq!"`, então nenhum pedaço da senha sobra; dada a
   senha `senha-ação-01`, quando a saída traz `{"p": "senha-a\u00e7\u00e3o-01"}`
   (`json.dumps`), então vira `••••`; dada `falso-😀-01`, quando traz
   `falso-\ud83d\ude00-01`, então vira `••••`; e a saída sem segredo que contém
   `\u0026` segue intacta (D37) — cobre S4.
-- [ ] V2.43 — (SEG) Dadas a máscara com D36 e D37 e as mesmas entradas do V2.36 (maior
+- [x] V2.43 — (SEG) Dadas a máscara com D36 e D37 e as mesmas entradas do V2.36 (maior
   entrada aceita de cada tipo com entrega, com chave privada de 64 KiB em várias
   linhas no `servidor` e no `ftp/sftp` e um extra secreto de várias linhas, e o par
   banco + `servidor` de túnel de D19), quando o `Gerador` monta, então não passa de 8
@@ -367,7 +367,7 @@ asserção abaixo vira teste de ataque no `ward-core`.
   entradas de D15 sem mudança; e uma entrada que passou do orçamento só por causa de
   D36/D37 é recusada com "entrada grande demais para a máscara do `ward run`" (D29) —
   cobre S4.
-- [ ] V2.44 — (SEG) Dado o cofre de teste com a geração n, quando grava por
+- [x] V2.44 — (SEG) Dado o cofre de teste com a geração n, quando grava por
   `gravar_entradas` e quando troca a senha, então o arquivo relido tem n+1 e depois
   n+2; quando a gravação falha (injeção do V2.9), então o `CofreAberto` segue com n;
   quando o teste copia o arquivo da geração n por cima do da n+2 (rollback com versão
@@ -377,14 +377,14 @@ asserção abaixo vira teste de ataque no `ward-core`.
   gravar de novo sem tocar no disco; e um crate de fora que tenta mudar a
   geração por `configuracao_mut()` não compila (doctest `compile_fail`) (D39) — cobre
   S7, S9.
-- [ ] V2.45 — (SEG) Dado um `login` com `grupo` = `acme` + c + `prod`, para c em
+- [x] V2.45 — (SEG) Dado um `login` com `grupo` = `acme` + c + `prod`, para c em
   U+0600, U+1D173, U+13430, U+1BCA0, U+3164, U+115F, U+FFA0, U+2800, U+FE0F, U+180B,
   U+E0100, U+034F, U+200B, U+202E, U+00A0, U+3000, `a` + U+0301 e um emoji, quando
   salva e quando o corpo forjado traz o mesmo texto em `projeto`, tag, nome de extra,
   nome de anexo e `usuário` do `login`, então tudo é recusado com "caractere não
   permitido", sem o valor; `São Paulo`, `ação`, `Müller` e `Ñandú` passam; e uma senha
   com U+200B e U+3164 passa, porque segredo não é texto de exibição (D38) — cobre S13.
-- [ ] V2.46 — (SEG) Dado o `ward-core`, quando compila, então uma asserção de
+- [x] V2.46 — (SEG) Dado o `ward-core`, quando compila, então uma asserção de
   compilação prende `size_of::<cripto::Chave>()` a `size_of::<usize>()` (a chave de
   dados e a KEK são `Box<Zeroizing<[u8; 32]>>`); quando o auditor procura por `grep`,
   então nenhuma função nem campo recebe ou guarda `Zeroizing<[u8; 32]>` por valor fora
@@ -392,7 +392,7 @@ asserção abaixo vira teste de ataque no `ward-core`.
   `conferir_pin` fica num `Zeroizing` comparado por `ctutils` e nenhum código de
   produção chama `hash_password`/`verify_password`; e o V2.33 segue com zero achados
   (D40) — cobre S8.
-- [ ] V2.47 — (SEG) Dado um `login` e um `api`, quando a URL é
+- [x] V2.47 — (SEG) Dado um `login` e um `api`, quando a URL é
   `https://cliente.com.br@evil.example/`, `https://evil.example\@cliente.com.br/`,
   `https://evil.example%2f@cliente.com.br`, `http://evil.example`,
   `https://x.example:99999`, `https://x.example:0`, `https://x.example:080`,
@@ -402,7 +402,7 @@ asserção abaixo vira teste de ataque no `ward-core`.
   português; `https://cliente.com.br/wp-login.php?x=1#y`, `https://xn--clente-9ya.com.br`,
   `https://[::1]:8443/`, `http://localhost:8083/login` e `http://127.0.0.1:8081/` passam
   (D41, D9) — cobre S13.
-- [ ] V2.48 — (SEG) Dado um `api`, quando a variável é `GIT_PROXY_COMMAND`,
+- [x] V2.48 — (SEG) Dado um `api`, quando a variável é `GIT_PROXY_COMMAND`,
   `GIT_EXTERNAL_DIFF`, `PAGER`, `GIT_PAGER`, `EDITOR`, `LESSOPEN`, `PS0`,
   `PROMPT_COMMAND`, `BROWSER`, `JAVA_TOOL_OPTIONS`, `OPENSSL_CONF`, `SSLKEYLOGFILE`,
   `HTTPS_PROXY`, `LC_ALL`, `TZ`, `SSHPASS`, `LD_PRELOAD`, `WARD_X_TOKEN` ou
@@ -410,26 +410,26 @@ asserção abaixo vira teste de ataque no `ward-core`.
   `GITHUB_TOKEN`, `GH_TOKEN`, `NPM_TOKEN`, `OPENAI_API_KEY`, `STRIPE_SECRET_KEY`,
   `DOCKER_PASSWORD` e `NPM_CONFIG__AUTH` passam e saem no `ward run` com o token (D42)
   — cobre S3.
-- [ ] V2.49 — (SEG) Dado um `servidor` e um `ftp/sftp`, quando o usuário (ou o do salto)
+- [x] V2.49 — (SEG) Dado um `servidor` e um `ftp/sftp`, quando o usuário (ou o do salto)
   é `u;id`, `u'$(id)'`, `u%h`, `-l`, `-deploy@x`, `u v`, `u\x` ou `usuário`, então a
   validação recusa, e o corpo forjado também; e `deploy`, `app_user`, `j.silva`,
   `www-data` e `deploy@cliente.com.br` passam (D43; `@` aceito por decisão do usuário);
   e, num `banco` e num `smtp`, o usuário `-oProxyCommand=id`, `-l`, `de ploy` ou
   `usuário` é recusado e `app_user` e `alertas@acme.com.br` passam — cobre S3, S13.
-- [ ] V2.50 — (SEG) Dado um crate fora do `ward-core` (doctest `compile_fail`), quando
+- [x] V2.50 — (SEG) Dado um crate fora do `ward-core` (doctest `compile_fail`), quando
   chama `ward_core::gravacao::gravar_cofre(destino, &cofre, corpo)` ou
   `cofre.selar(corpo)` com um corpo sem hash de PIN, então não compila; e o auditor
   confere por `grep` que os únicos `pub fn` do `ward-core` que gravam são
   `gravar_entradas` e `gravacao::trocar_senha`, os dois com corpo serializado ou
   desserializado antes de selar (D44, D27) — cobre S2, S7.
-- [ ] V2.51 — Dadas as escolhas confirmadas em D45, quando os testes rodam, então:
+- [x] V2.51 — Dadas as escolhas confirmadas em D45, quando os testes rodam, então:
   trava 0 e 1441 recusadas e 1 e 1440 aceitas, sem valor que signifique "nunca";
   `HashPin::criar` usa 64 MiB/3/1, e a leitura recusa abaixo disso e acima de 256
   MiB/16/4; UUID vazio, de 37 caracteres ou com `-` na ponta recusado; texto PHC não
   canônico recusado; base `redis` `00` e `03` recusadas e `0` aceita; e uma mutação
   que muda `MAX_CORPO` ou `MAX_ENTRADAS` numa cópia de trabalho faz reprovar o teste da
   mensagem de `ErroCorpo::GrandeDemais` (ou a mensagem acompanha a constante) (D45, D32).
-- [ ] V2.52 — (SEG) Dado o `dev/variacoes.py` (oráculo independente da máscara), quando
+- [x] V2.52 — (SEG) Dado o `dev/variacoes.py` (oráculo independente da máscara), quando
   o teste dele recebe valores falsos montados no próprio teste, então a lista traz: cada
   linha aparada com 6+ caracteres de um segredo de várias linhas e o valor (com e sem
   aspas, 6+) de `CHAVE=valor`, `"chave": "valor"` e `chave: valor` (D36); para

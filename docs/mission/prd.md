@@ -278,7 +278,10 @@ ou com nova resposta do usuário.
   `LD_LIBRARY_PATH` no ambiente. Para o host da extensão, o pai também tem de ser o
   Chrome instalado (`/opt/google/chrome/chrome`). Qualquer outro cliente fica com o
   papel "agente". O mesmo teste vale para a CLI e o app conferirem o `wardd` antes de
-  mandar a senha mestra (S5).
+  mandar a senha mestra (S5). **Revisto pela Fase 21:** contra o `wardd` endurecido
+  (S8) a conferência pelo `/proc` falha fechada, e o app e o host precisam ficar
+  dumpable até serem identificados. Ver D46 (servidor), D47 (app e host) e D48 (`LD_*`),
+  provisórios até a resposta do usuário (RA5, RA6).
 - D6. **`ward playwright`**: o daemon abre o Chrome instalado em headless com
   `--remote-debugging-pipe` (sem porta TCP) e perfil temporário em
   `/run/user/<uid>/ward/pw-<aleatório>/`, confere a origem, preenche, envia, confere
@@ -756,6 +759,142 @@ cabe ao daemon fica anotado nas Fases 22, 27 e 45.
     teste `mensagens_citam_os_limites_atuais`, ou a monta a partir de
     `ward_core::limites`, para que ela não fique desatualizada se a constante mudar.
 
+- D46. **Conferência do servidor pelo socket do sistema** (**provisória**, Fase 21;
+  depende do usuário porque muda "Arquitetura" › "systemd do usuário"; S5, S8, D5). Com
+  o `wardd` não-dumpable (S8), `exe`, `environ` e `maps` dele ficam ilegíveis para o
+  mesmo uid (EACCES), e a conferência de D5 pelo `/proc` falha fechada contra o daemon
+  real. Também não há segredo que o daemon guarde e um processo do mesmo uid não leia.
+  Proposta: o socket deixa de ser criado pelo próprio `wardd`. Um par
+  `wardd@.socket`/`wardd@.service` **do systemd do sistema** cria o socket em
+  `/run/ward/<uid>/wardd.sock`, com o diretório root:root 0755 e o socket do usuário
+  0600 (`SocketUser=`, `SocketMode=0600`), e entrega o fd ao `wardd` (`LISTEN_FDS`),
+  que roda com `User=<uid>`. A CLI e o app conferem, antes de mandar a senha mestra:
+  - toda pasta do caminho é do root e sem escrita para grupo e outros, sem link;
+  - o socket é do próprio uid e 0600;
+  - o `SO_PEERCRED` do servidor tem **uid 0**. Para quem conecta, o kernel devolve a
+    credencial de quem fez o `listen`, que foi o systemd do sistema. Nenhum processo do
+    usuário cria um socket que escuta com uid 0, nem pega o fd do `wardd`
+    (`pidfd_getfd` e `/proc/<pid>/fd` exigem ptrace, negado pelo S8).
+  Custo: a instalação (já com `sudo`, D18) passa a instalar as duas units do sistema e a
+  rodar `systemctl enable --now wardd@<uid>.socket`; o daemon sobe na primeira conexão
+  e não herda o ambiente da sessão, então abre o app pelo barramento do usuário
+  (`systemd-run --user` ou uma unit `ward-app.service`); `systemctl --user
+  set-environment` deixa de alcançar o daemon (V9.4 muda de forma, S8 fica mais forte).
+  O daemon de teste (D7) continua no diretório do usuário e a CLI só pula a conferência
+  do uid 0 no artefato `modo-teste`, que a instalação recusa (V9.2). Resíduo: um
+  processo do mesmo uid ainda mata o `wardd` (negação de serviço; o systemd o sobe de
+  novo), sem passar a receber a senha. Opções descartadas: rótulo do AppArmor por
+  `SO_PEERSEC` (um processo não confinado pode trocar para qualquer perfil carregado,
+  então o rótulo é forjável, e confinar o `wardd` atrapalha o `ward run`, que executa
+  qualquer comando); nome do processo (`Name: wardd` no `status`), que qualquer um
+  forja; aceitar o risco, que entrega a senha mestra, e com ela o arquivo do cofre, a um
+  pacote malicioso (ameaça 2). Se o usuário recusar D46, S5 fica sem a conferência do
+  servidor e isso vai para "Fora do modelo de ameaça" no escopo.
+- D47. **App e host da extensão identificados por grupo setgid** (**provisória**, Fase
+  21; depende do usuário porque cria grupos e binários setgid na instalação e registra
+  um resíduo novo; S1, S8, D5). A identificação de D5 lê o `/proc` do cliente, o que
+  obriga o app e o `ward-nm` a ficarem dumpable até o daemon responder. Nessa janela,
+  qualquer ancestral (inclusive um pacote malicioso que lance ele mesmo o
+  `/usr/local/bin/ward-app`, o que o Yama `ptrace_scope=1` permite) se prende, injeta
+  código, se solta e herda o papel app. O `TracerPid` só pega o depurador preso, e
+  código escrito por `/proc/<pid>/mem` numa biblioteca do root não aparece no `maps`.
+  Proposta:
+  - `ward-app` instalado root:`ward-app` 2755 e `ward-nm` root:`ward-nm` 2755, com dois
+    grupos de sistema sem membros e sem permissão em arquivo nenhum;
+  - o `exec` com setgid deixa o processo não-dumpable desde a primeira instrução (o
+    kernel aplica `fs.suid_dumpable`, que não pode ser 1) e põe o `ld.so` em modo seguro
+    (`AT_SECURE`), que ignora `LD_PRELOAD`, `LD_LIBRARY_PATH`, `LD_AUDIT`,
+    `GLIBC_TUNABLES`, `GCONV_PATH` e o resto da lista insegura da glibc;
+  - o daemon dá o papel pelo **egid do `SO_PEERCRED`** (`ward-app` → app, `ward-nm` →
+    extensão, qualquer outro → agente), que o kernel fixa no `connect` e que o usuário
+    não forja sem root (num namespace de usuário o gid vira 65534);
+  - o app conecta antes de iniciar o GTK, depois larga o grupo (`setresgid` para o gid
+    real, porque o GTK 3 se recusa a iniciar com setgid) e chama `PR_SET_DUMPABLE=0` de
+    novo; se a conexão cair, ele se executa de novo para reconectar;
+  - o app só recebe o papel se o pai for o `systemd --user` do usuário ou o próprio
+    daemon (lido do `PPid` no `status`, que continua legível). Lançado por outro
+    processo, ele pede ao daemon que abra a instância verdadeira e sai. Antes do GTK, o
+    app limpa o próprio ambiente por lista branca (`WAYLAND_DISPLAY`, `DISPLAY`,
+    `XDG_RUNTIME_DIR` igual a `/run/user/<uid>`, `DBUS_SESSION_BUS_ADDRESS`,
+    `XDG_SESSION_TYPE`, `LANG`/`LC_*`, `HOME`, `PATH` fixo), porque os processos do
+    WebKitGTK herdam o ambiente sem `AT_SECURE`; o fd do socket é `CLOEXEC`;
+  - o daemon recusa o papel app e extensão com `kernel.yama.ptrace_scope` = 0 ou
+    `fs.suid_dumpable` = 1 (falha fechada, com aviso);
+  - no `ward-nm`, o daemon continua conferindo o pai Chrome pelo `/proc` (exe, dono
+    root), porque o Chrome não é setgid. Se o processo do navegador for não-dumpable,
+    a conferência passa a usar só o `PPid` e o `Name` do `status` do pai mais o dono do
+    exe instalado; confirmar na Fase 40 com o Chrome real (handoff 21).
+  Custo: dois grupos e dois binários setgid na instalação (Fase 51, `.deb` na 52); o
+  daemon deixa de ler `exe`, `environ` e `maps` do app e do host, e a parte
+  correspondente da Fase 21 fica só para o pai Chrome e para a cadeia exibida. Resíduo
+  (RA6): os processos auxiliares do WebKitGTK e o próprio Chrome não são endurecidos;
+  eles ficam protegidos de quem não é ancestral pelo Yama, e o ancestral é o systemd ou
+  o daemon. Um pacote que mate o Chrome e o lance de novo como filho vira ancestral do
+  Chrome e pode se prender a ele; um Chrome assim pode mentir a origem da aba e
+  receber o preenchimento de qualquer entrada do tipo login. É o mesmo caso de "Fora do
+  modelo de ameaça" › leitura do campo de senha por um script feito para isso, agora
+  dito com o ptrace, e só sai do modelo se o usuário aceitar. Se o
+  usuário recusar D47, vale D5 com a janela de endurecimento registrada em "Fora do
+  modelo de ameaça".
+- D48. **`LD_*` e bibliotecas** (Fase 21; S8, D5, D47).
+  - `wardd`: recusa **qualquer** `LD_*` e também `GLIBC_TUNABLES`, `GCONV_PATH`,
+    `MALLOC_TRACE` e `LOCPATH` (a lista insegura da glibc é o "e similares" de S8). O
+    ambiente do daemon vem da unit, então a regra estrita não custa nada.
+  - App e host com D47: o daemon não confere o ambiente nem o `maps` deles; quem
+    neutraliza `LD_*` é o `AT_SECURE`, e a lista branca de D47 cuida do que o GTK, o GIO
+    e o GStreamer leriam do ambiente. Quem tem `LD_LIBRARY_PATH` na sessão continua
+    usando o app normalmente.
+  - Sem D47 (usuário recusa): fica a regra da Fase 21 (qualquer `LD_*` e toda
+    biblioteca executável do root), com teste na Fase 29 contra o WebKitGTK real
+    (módulos do GTK, plugins do GStreamer em `~/.local/share/gstreamer-1.0`, IBus) e na
+    Fase 40 contra o Chrome real. Se algo legítimo de fora do root for mapeado, o app
+    pré-define o ambiente que desliga essa fonte (ex.: `GST_PLUGIN_SYSTEM_PATH` e
+    `GST_PLUGIN_PATH` vazios) em vez de afrouxar a regra.
+- D49. **V3.2 em Docker** (Fase 21; S5). Sem root não há processo de outro uid no
+  host, e com o diretório 0700 o uid 4242 nem chega ao socket. O teste roda num
+  contêiner `ubuntu:24.04` (mesma glibc do Pop!_OS 24.04 e mesmo kernel do host), que
+  não monta nada do `/run/user` do host. O root do contêiner cria `/run/user/1000`
+  (0700, uid 1000) e sobe o `wardd` de teste com `setpriv --reuid 1000 --regid 1000
+  --clear-groups`. Três clientes em Python:
+  - uid 4242 sem capacidade → `connect` falha com EACCES (primeira camada);
+  - uid 4242 com `CAP_DAC_OVERRIDE` ambiente (`setpriv --reuid 4242 --inh-caps
+    +dac_override --ambient-caps +dac_override`) → passa pelo 0700 e pelo 0600, e o
+    daemon fecha sem mandar nenhum byte e registra `UidRecusado { uid: 4242 }` (segunda
+    camada, `SO_PEERCRED`);
+  - uid 0 → mesma recusa.
+  Ao fim, um cliente do uid 1000 recebe resposta normal. Alvo `make teste-docker-uid`,
+  fora do `make check` (exige Docker), rodado pela Fase 22 e pelo validador do M3.
+- D50. **Operações do app sem PIN e `lista` do agente** (Fase 20, confirmadas pelo
+  planner; "Destravar e travar" › PIN "só aprova usos e mudanças de nível"; "Claude
+  (agente)" › "Comandos").
+  - `remover_entrada` e `tempo_trava` não pedem PIN. São só do papel app, que é o
+    usuário, e o escopo limita o PIN a aprovar usos e mudar nível. O tempo de trava
+    segue de 1 a 1440 minutos (D45).
+  - Entrada criada ou recriada nasce sempre com o nível padrão ("com aprovação"). Criar
+    já com outro nível conta como mudar nível e pede PIN (S9); remover e recriar não
+    serve para fugir do PIN.
+  - A `lista` do papel agente **não leva o nível**. O escopo dá só nome, tipo, grupo,
+    ambiente, projeto e URL/host. Saber quais entradas são "livres" deixaria um agente
+    sob prompt injection escolher as que não abrem janela, e o pedido de uma entrada
+    com aprovação é justamente o que avisa o usuário. A Fase 22 tira o campo da resposta
+    do agente (o app continua vendo o nível). Mudar isso é decisão do usuário no escopo.
+- D51. **Texto do agente na janela de aprovação** (Fase 20; "Claude (agente)" ›
+  "Janela de aprovação"; D38). `comando` e `cadeia` do `PedidoDeAprovacao` chegam
+  exatos, sem filtro, porque a janela mostra o comando exato. Quem exibe (Fase 23 no
+  texto que o daemon monta, Fase 36 na janela) neutraliza sem esconder: caractere de
+  controle (C0, C1, `DEL`) e de formatação Unicode (bidi U+202A–U+202E e
+  U+2066–U+2069, largura zero, tags, BOM) aparecem como escape visível (`‮`,
+  `\x1b`), cada argumento entre aspas e separado, quebra de linha como `\n`, e texto
+  longo cortado com aviso, nunca em silêncio. O que o usuário aprova é o comando que o
+  daemon executa, byte a byte.
+- D52. **Notas de implementação da Fase 20.**
+  - Na troca de senha (Fase 22, D45), `ErroGravacao::Formato` vindo de `trocar_senha`
+    responde `senha_incorreta`; em `gravar_entradas` continua `falha_ao_gravar`.
+  - `MAX_QUADRO_COMUM` (1 MiB) limita argv + ambiente do `ward run` a cerca de 750 KiB
+    depois do base64. A CLI (Fase 26) mede antes de mandar e, se passar, sai ≠ 0 com
+    "o comando e o ambiente passam de 750 KiB; reduza o ambiente (ex.: `env -i`)",
+    sem citar valor; o daemon segue recusando com `quadro_invalido`.
+
 ### Riscos abertos
 
 - **RA1. `/proc/<pid>/environ` do filho** (decidir antes de fechar o M4). Enquanto o
@@ -797,6 +936,14 @@ cabe ao daemon fica anotado nas Fases 22, 27 e 45.
   e o hash antigo do PIN. O PIN antigo só serve a quem também o conhece. A V3.22
   continua cobrindo o que o daemon pega (troca só do cofre, estado apagado, troca com
   o daemon rodando).
+- **RA5. Conferência do servidor (S5)** (Fase 21; **aberto, depende do usuário**). Ver
+  D46. Até a resposta, a Fase 22 aceita o socket por `LISTEN_FDS` e também o criado pelo
+  próprio daemon (só no daemon de teste), e a Fase 25 não fecha V4 sem a conferência.
+- **RA6. Janela de endurecimento do app e do host** (Fase 21; **aberto, depende do
+  usuário**). Ver D47. Com D47, sobra o resíduo dos auxiliares do WebKitGTK e do Chrome
+  (protegidos só pelo Yama contra quem não é ancestral). Sem D47, sobra a janela entre
+  a identificação e o `PR_SET_DUMPABLE=0`, em que um ancestral malicioso injeta código.
+  Qualquer dos dois resíduos vai para "Fora do modelo de ameaça" se o usuário aceitar.
 
 ## Critérios de aceite
 
@@ -819,7 +966,9 @@ cabe ao daemon fica anotado nas Fases 22, 27 e 45.
   `gravar_cofre`/`selar` fora da API pública.
 - [ ] M3: `wardd` endurecido (S5, S8), papéis de D5, destravar/travar, trava
   automática, PIN, níveis e o motor de aprovação (S9, S10) testados em Rust; nenhuma
-  operação do socket devolve segredo a um cliente comum.
+  operação do socket devolve segredo a um cliente comum; V3.2 em Docker (D49);
+  conferência do servidor e papel do app/host por D46/D47 ou risco aceito no escopo
+  (RA5, RA6).
 - [ ] M4: `ward lista/run/ssh/travar/destravar` contra Postgres e SSH de teste (senha,
   chave com agente temporário, salto, túnel de banco), saída mascarada, anexos
   temporários limpos, nada lido ou gravado em `~/.ssh`; RA1 e RA2 resolvidos.
