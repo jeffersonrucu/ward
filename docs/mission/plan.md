@@ -454,6 +454,8 @@ Pendências da 27a (2026-11-09): token por `socketpair` herdado (`--token-fd`); 
 
 Pendências da 44 (2026-11-09): RA1 — processo do mesmo uid pode abrir `/proc/<chrome>/fd/3` e ler o perfil temporário durante a sessão; V6.15 diz "domínio não confere" e o código usa a mensagem de `OrigemDiferente`; TOTP só com `autocomplete="one-time-code"` (login em duas etapas cai em `LoginRecusado`); Playwright do Python fora do repositório (`PW_PYTHONPATH`); Chrome fora do `home-real.sh`; `SIMPLES` agora com 32.
 
+Pendências da 49 (2026-11-09): `window.print()` não conferido no app real (WebKitGTK deve abrir a impressão do GTK; validador do M7 confere, senão comando nativo); pastas da folha são as fixas da instalação; texto "Como restaurar" depende da decisão da Fase 47 (restaurar exige cofre destravado + PIN); barra "Fechar/Imprimir" sem frame no FigCraft; pendrive desconectado com o backup ligado não coberto pelo QA.
+
 ## Milestone 3 — Daemon e protocolo
 Contrato: V3.1–V3.41
 
@@ -850,7 +852,7 @@ Contrato: V7.1–V7.11
   ligado/desligado e UUID ficam na configuração do cofre (D30). V7.4–V7.6, V7.8.
 - [ ] Fase 47 — **(UI)** Restaurar backup. V7.7.
 - [x] Fase 48 — **(UI)** Configurações › backup externo. V7.9.
-- [ ] Fase 49 — **(UI)** Kit de emergência para imprimir. V7.10.
+- [x] Fase 49 — **(UI)** Kit de emergência para imprimir. V7.10.
 
 ## Milestone 8 — Skill `ward`
 Contrato: V8.1–V8.4
