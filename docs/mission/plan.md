@@ -851,6 +851,30 @@ Contrato: V5.1–V5.35
 - [x] Fase 39 — **(UI)** Bandeja; `docs/mission/roteiro-usuario.md` da janela nativa;
   varredura de logs do app. V5.23, V5.27, V5.28.
 
+Correções do scrutiny do M5 (1ª reprovação, 2026-11-09). Do usuário, fora das fases:
+instalar `libwebkit2gtk-4.1-dev` (para `make app-check` e `make teste-webkit-real`
+rodarem) e executar `docs/mission/roteiro-usuario.md` na janela nativa (V5.28; também a
+única prova real de V5.4, V5.5, V5.16, V5.23, V5.25).
+
+- [ ] Fase 39a — Aviso `pedido_de_destrave` com entrada e comando passados por
+  `neutralizar` (D51), em `ward-core`, `wardd` e app; o cartão do `Destravar / Pedido do
+  agente` mostra entrada, comando e contagem. V5.8.
+- [ ] Fase 39b — Anexos na edição: operação no protocolo (ou manter anexos por id em
+  `salvar_entrada`) para adicionar, listar e remover anexo de `servidor` e `genérico`
+  já salvos; decidir se nome começando por `.` (ex.: `.env`) é aceito. V5.12.
+- [ ] Fase 39c — Ponta a ponta do app com o daemon de teste e a ponte: `ward run` real
+  com janela (negar → CLI ≠ 0, "1 hora", "sempre") e "Conectar" abrindo terminal com
+  `ward ssh` real, mais os três ataques de token (V5.16, V5.24); Salvar desabilitado no
+  Novo vazio (V5.10); decisão e registro dos canais pendentes do V5.32 (frei0r, LADSPA,
+  libvisual, `cuda_injection_path_shm`, `~/.nv`, `~/.mfx_trace`) com as variáveis que
+  os fecham; `unsound = "all"` no `deny.toml` da raiz; registro de risco do menu da
+  bandeja no barramento da sessão; mínimo de 12 e NFC da senha mestra também no
+  daemon; `teste-logs-app` na tabela do `CLAUDE.md`. V5.10, V5.16, V5.24, V5.32.
+- [ ] Fase 39d — **(DESIGN)** Contagens do `Ward.figcraft` iguais à fixture (22
+  entradas, D59); instâncias de `Cartão de nível` nos 18 formulários; frames `15242`
+  (PIN, não senha mestra), `3393` e `6373` iguais ao comportamento; diálogos "Trocar
+  senha mestra" e "Trocar PIN". V5.35.
+
 ## Milestone 6 — Extensão, `ward login` e `ward playwright`
 Contrato: V6.1–V6.16
 
