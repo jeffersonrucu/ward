@@ -1021,3 +1021,19 @@ headless), PNG dos frames e `qa.json` em `docs/mission/evidence/fase-36/`.
 | (sem frame: V5.29) | — | `aprovacao-ataque-d51.png`: comando e cadeia com escapes de D51 |
 
 Textos da janela em `app/src/telas/aprovacao.js`.
+
+## Fase 49 — kit de emergência no código (só leitura do FigCraft)
+
+Lido de uma cópia do `Ward.figcraft` (o original não foi alterado), por `get_node` e
+`screenshot`. Capturas (ponte com `--daemon-falso cheio` e `backup-externo-ligado`,
+`&tela=configuracoes`, Chrome headless 1280×800), página do PDF, `qa-falso.json` e
+`qa-backup-externo-ligado.json` em `docs/mission/evidence/fase-49/`.
+
+| Frame / componente no FigCraft | Id | No código |
+| --- | --- | --- |
+| `Kit de emergência / Impressão` | `16773` | `app/src/telas/KitEmergencia.svelte` (folha `.folha`, 794×1123 por `pagina/a4-*`) |
+| cabeçalho / cofre / backups / senha mestra / como restaurar | `16774` / `16775` / `16776` / `16777` / `16778` | seções da folha; textos em `app/src/telas/kit-emergencia.js` |
+| linhas em branco da senha | `16796` (`16805`, `16806`) | `.linhas` / `.linha` (borda `impressao/linha`, sem texto) |
+| `Logo / Horizontal` com o nome em `impressao/texto` | `16781` (`16785`) | `Logo.svelte` com `impressao` |
+| `Linha de opção` botão (Kit de emergência › Imprimir) | `15242` › `10380` | `Configuracoes.svelte` › `config-kit`, agora habilitado |
+| (sem frame) janela de pré-visualização com "Fechar"/"Imprimir" | — | `KitEmergencia.svelte` › `.barra` (`kit-de-emergencia-1280x800-falso.png`) |

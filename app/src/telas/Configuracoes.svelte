@@ -13,7 +13,8 @@
   //   Ligar abre a escolha do pendrive (`EscolherPendrive`); ligado, o cartão do
   //   pendrive (16318) mostra o escolhido e "Trocar". Desligar mantém o UUID guardado e
   //   não apaga nada do pendrive. Lido por `backup_externo` (sem caminho de montagem).
-  //   Restaurar (Fase 47) e o kit de emergência (M7) ainda não abrem nada.
+  //   Restaurar (Fase 47) ainda não abre nada.
+  // - Kit de emergência (Fase 49, V7.10): "Imprimir" abre a folha (`KitEmergencia`).
   //
   // Nenhum valor secreto passa por esta tela: as respostas trazem só os minutos, o
   // backup externo (ligado, UUID do pendrive, rótulo já neutralizado no Rust e se está
@@ -26,6 +27,7 @@
   import Select from '../lib/componentes/Select.svelte';
   import Toast from '../lib/componentes/Toast.svelte';
   import { chamar } from '../lib/ponte/index.js';
+  import KitEmergencia from './KitEmergencia.svelte';
   import TrocarPin from './TrocarPin.svelte';
   import TrocarSenha from './TrocarSenha.svelte';
   import EscolherPendrive from './EscolherPendrive.svelte';
@@ -221,7 +223,9 @@
         {#snippet descricao()}Folha para imprimir com onde ficam o cofre e os backups e um espaço
           para anotar a senha mestra à mão.{/snippet}
         {#snippet controle()}
-          <Botao variante="secundario" desabilitado aria-label="Imprimir kit de emergência">Imprimir</Botao>
+          <Botao variante="secundario" onclick={() => (dialogo = 'kit')} aria-label="Imprimir kit de emergência"
+            >Imprimir</Botao
+          >
         {/snippet}
       </LinhaDeOpcao>
       <div class="nota">
@@ -242,6 +246,14 @@
   </div>
 </section>
 
+<KitEmergencia
+  aberto={dialogo === 'kit'}
+  onfechar={fecharDialogo}
+  ontravado={() => {
+    dialogo = '';
+    ontravado?.();
+  }}
+/>
 <TrocarSenha
   aberto={dialogo === 'senha'}
   onfechar={fecharDialogo}
