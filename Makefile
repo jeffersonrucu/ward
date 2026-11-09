@@ -66,7 +66,8 @@ CARGO_DENY_VERSAO := 0.20.2
 	origens gitleaks-binario teste-ataques-fundacao teste-ataques-servicos teste-iscas-home teste-home-real dev-servicos dev-servicos-subir \
 	dev-servicos-parar dev-servicos-estado dev-servicos-conferir dev-servicos-trocar-chave-host dev-cofre \
 	dev-cofre-conferir dev-variacoes teste-dev-cofre dev-daemon dev-daemon-parar teste-cli teste-docker-uid teste-units \
-	app-front app-check app-ponte teste-docker-plataforma teste-sem-modo-teste
+	app-front app-check app-ponte teste-docker-plataforma teste-sem-modo-teste \
+	teste-webkit-real
 
 ## check: pré-checagem das origens, depois fmt, clippy -D warnings, testes, cargo audit,
 ## cargo deny e gitleaks, nessa ordem (V1.1)
@@ -288,6 +289,14 @@ app-ponte: origens
 	$(CARGO) build --quiet --locked -p ward-ponte-teste --features modo-teste --bin ward-ponte-teste
 	WARD_DEV_APP="$(PONTE_DE_TESTE)" dev/daemon.sh subir
 	dev/ponte.sh
+
+## teste-webkit-real: V5.32 (D48, D57, D64) com o WebKitGTK real sob strace -f: harness do
+## app sem a partida, montado só em .dev/webkit-real; abre uma janela na sessão Wayland
+## por ~20 s. Sai 1 se V5.32 falhar e 2 se um canal pendente no planner carregar código.
+## Exige libwebkit2gtk-4.1-dev (ou PKG_CONFIG_PATH, R32), strace, gcc e `make app-front`;
+## fora do `make check`. `SEM_MPS=1` roda sem CUDA_MPS_PIPE_DIRECTORY (mostra o ataque)
+teste-webkit-real: origens
+	dev/testes/webkit-real.sh "$(CARGO)" $(if $(filter 1,$(SEM_MPS)),--sem-mps)
 
 # --- Plataforma em contêiner (Fase 21b) ---------------------------------------------
 # D46/D47 com root só dentro de um contêiner ubuntu:24.04 descartável, sem rede: grupos
