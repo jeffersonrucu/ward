@@ -10,7 +10,7 @@ use std::sync::Arc;
 use ward_plataforma::{BinarioPermitido, Escuta, Instalacao, Memoria};
 use wardd::aprovacao::{Motor, RelogioMonotonico};
 use wardd::config::Config;
-use wardd::lancamento::{AbridorReal, AppDeTeste};
+use wardd::lancamento::{AbridorReal, AppDeTeste, ExtensaoDeTeste};
 use wardd::nucleo::{Daemon, RelogioReal};
 use wardd::servidor::{self, Papeis};
 use wardd::{aviso, execucao, log, trava, udisks};
@@ -47,6 +47,32 @@ fn abridor_de_teste(config: &Config) -> (Option<AbridorReal>, Option<AppDeTeste>
         }
         None => (None, None),
     }
+}
+
+/// Só no daemon de teste com `WARD_DEV_EXTENSAO=chrome` (Fase 41): o papel extensão
+/// para o filho do Chrome instalado, sem o egid. No release, nunca.
+#[cfg(feature = "modo-teste")]
+fn extensao_de_teste(config: &Config) -> Option<ExtensaoDeTeste> {
+    if !config.extensao_de_teste {
+        return None;
+    }
+    match BinarioPermitido::novo(CHROME) {
+        Ok(c) => {
+            aviso!("daemon de teste: papel extensão para o filho do Chrome instalado, sem o grupo");
+            Some(ExtensaoDeTeste::novo(c))
+        }
+        Err(_) => {
+            aviso!(
+                "daemon de teste: Chrome instalado não achado; papel extensão de teste desligado"
+            );
+            None
+        }
+    }
+}
+
+#[cfg(not(feature = "modo-teste"))]
+fn extensao_de_teste(_: &Config) -> Option<ExtensaoDeTeste> {
+    None
 }
 
 #[cfg(not(feature = "modo-teste"))]
@@ -98,6 +124,7 @@ fn main() -> ExitCode {
     // No daemon de teste com `WARD_DEV_APP`, o lançador abre o binário de teste, e só
     // ele é app (sem o egid).
     let (abridor, app_de_teste) = abridor_de_teste(&config);
+    let extensao_de_teste = extensao_de_teste(&config);
     let (abridor, app) = match abridor {
         Some(a) => (Some(a), None),
         None => {
@@ -179,6 +206,7 @@ fn main() -> ExitCode {
         instalacao,
         app,
         app_de_teste,
+        extensao_de_teste,
     };
     match servidor::servir(&escuta, daemon, Arc::new(papeis)) {
         Ok(()) => ExitCode::SUCCESS,

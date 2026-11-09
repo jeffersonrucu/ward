@@ -1,0 +1,383 @@
+/* Popup da extensão (Fase 41): frames `Extensão / Sugestões do domínio` (17332) e
+ * `Extensão / Cofre travado` (17392) do Ward.figcraft. Só tokens de tokens.css (gerado
+ * das variables do FigCraft): nenhuma cor ou medida solta. Só tema escuro (D1). */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  margin: var(--espaco-0);
+  padding: var(--espaco-0);
+}
+
+body {
+  width: var(--largura-popup);
+  background: var(--cor-fundo-padrao);
+  color: var(--cor-texto-primario);
+  font-family: var(--familia-texto);
+  font-weight: var(--peso-regular);
+  font-size: var(--tamanho-base);
+  line-height: var(--altura-linha-base);
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  margin: var(--espaco-0);
+}
+
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: var(--linha-grossa) solid var(--cor-borda-foco);
+  outline-offset: var(--linha-grossa);
+}
+
+/* Frame 17332/17392: 360 de largura, fundo padrão, borda sutil de 1 por dentro. */
+.popup {
+  display: flex;
+  flex-direction: column;
+  width: var(--largura-popup);
+  background: var(--cor-fundo-padrao);
+  box-shadow: inset var(--espaco-0) var(--espaco-0) var(--espaco-0) var(--linha-fina) var(--cor-borda-sutil);
+  overflow: hidden;
+}
+
+/* `Cabeçalho do popup` (17234): padding 16, gap 8, linha de baixo. */
+.cabecalho {
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-8);
+  padding: var(--espaco-16);
+  border-bottom: var(--linha-fina) solid var(--cor-borda-sutil);
+}
+
+.simbolo {
+  flex: none;
+  width: var(--icone-lg);
+  height: var(--icone-lg);
+  color: var(--cor-marca-simbolo);
+}
+
+.simbolo-botao {
+  flex: none;
+  width: var(--icone-md);
+  height: var(--icone-md);
+  color: var(--cor-icone-forte);
+}
+
+.nome-produto {
+  flex: 1 1 auto;
+  min-width: var(--espaco-0);
+}
+
+/* `estado` (17337/17397): pílula, padding 2×8, gap 6, indicador de 6. */
+.estado {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--espaco-6);
+  padding: var(--espaco-2) var(--espaco-8);
+  border-radius: var(--raio-pilula);
+  white-space: nowrap;
+}
+
+.estado::before {
+  content: "";
+  flex: none;
+  width: var(--espaco-6);
+  height: var(--espaco-6);
+  border-radius: var(--raio-pilula);
+  background: currentColor;
+}
+
+.estado.destravado {
+  background: var(--cor-sucesso-tint);
+  color: var(--cor-sucesso-texto);
+}
+
+.estado.travado {
+  background: var(--cor-selo-neutro-fundo);
+  color: var(--cor-texto-secundario);
+}
+
+.estado.travado::before {
+  background: var(--cor-marca-sobre-cor-inativo);
+}
+
+/* `corpo` (17340): padding 16, gap 12, coluna. */
+.corpo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-12);
+  padding: var(--espaco-16);
+}
+
+/* `origem` (17341): cartão, raio 16, padding 16, gap 12, borda sutil. */
+.origem {
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-12);
+  padding: var(--espaco-16);
+  border-radius: var(--raio-cartao);
+  background: var(--cor-superficie-padrao);
+  border: var(--linha-fina) solid var(--cor-borda-sutil);
+}
+
+.origem-textos {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-2);
+  flex: 1 1 auto;
+  min-width: var(--espaco-0);
+}
+
+.origem-rotulo,
+.secundario {
+  color: var(--cor-texto-secundario);
+}
+
+.origem-valor {
+  color: var(--cor-texto-primario);
+  overflow-wrap: anywhere;
+}
+
+.lista {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-4);
+  margin: var(--espaco-0);
+  padding: var(--espaco-0);
+  list-style: none;
+}
+
+/* `Item de lista` compacto (4002/4028): padding 16, gap 12, raio do item; hover com a
+ * superfície elevada. */
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-12);
+  width: 100%;
+  padding: var(--espaco-16);
+  border: none;
+  border-radius: var(--raio-item);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.item:hover,
+.item:focus-visible {
+  background: var(--cor-superficie-elevada);
+}
+
+.item:disabled {
+  cursor: progress;
+}
+
+/* `avatar` (17349): 40, raio 10, superfície elevada, borda padrão. */
+.avatar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--controle-md);
+  height: var(--controle-md);
+  border-radius: var(--raio-controle);
+  background: var(--cor-superficie-elevada);
+  border: var(--linha-fina) solid var(--cor-borda-padrao);
+}
+
+.item-textos {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-4);
+  flex: 1 1 auto;
+  min-width: var(--espaco-0);
+}
+
+.linha {
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-8);
+  min-width: var(--espaco-0);
+}
+
+.item-nome,
+.item-detalhe {
+  flex: 1 1 auto;
+  min-width: var(--espaco-0);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.item-nome {
+  color: var(--cor-texto-primario);
+}
+
+.item-detalhe {
+  color: var(--cor-texto-secundario);
+}
+
+/* `Badge ambiente` padrão (463/465/467). */
+.badge-ambiente {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: calc(var(--altura-linha-xs) + 2 * var(--espaco-2));
+  padding: var(--espaco-2) var(--espaco-8);
+  border-radius: var(--raio-pilula);
+  white-space: nowrap;
+}
+
+.badge-ambiente.dev {
+  background: var(--cor-ambiente-dev-tint);
+  color: var(--cor-ambiente-dev-texto);
+}
+
+.badge-ambiente.stage {
+  background: var(--cor-ambiente-stage-tint);
+  color: var(--cor-ambiente-stage-texto);
+}
+
+.badge-ambiente.prod {
+  background: var(--cor-ambiente-prod-tint);
+  color: var(--cor-ambiente-prod-texto);
+}
+
+/* `Badge tipo` login (479): padding 2 8 2 6, gap 4, ícone de 12. */
+.badge-tipo {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--espaco-4);
+  height: calc(var(--altura-linha-xs) + 2 * var(--espaco-2));
+  padding: var(--espaco-2) var(--espaco-8) var(--espaco-2) var(--espaco-6);
+  border-radius: var(--raio-pilula);
+  background: var(--cor-selo-neutro-fundo);
+  color: var(--cor-texto-secundario);
+  white-space: nowrap;
+}
+
+/* `Ícone/*`: traço 1,5, cor pelo tom. */
+.icone {
+  flex: none;
+  color: var(--tom-icone);
+}
+
+.icone path {
+  stroke-width: var(--linha-icone);
+}
+
+.icone.xs {
+  width: var(--icone-xs);
+  height: var(--icone-xs);
+}
+
+.icone.md {
+  width: var(--icone-md);
+  height: var(--icone-md);
+}
+
+.nota {
+  margin: var(--espaco-0);
+  color: var(--cor-texto-secundario);
+}
+
+.nota.erro {
+  color: var(--cor-perigo-texto);
+}
+
+/* `rodapé` (17385): padding 16, linha de cima. */
+.rodape {
+  display: flex;
+  padding: var(--espaco-16);
+  border-top: var(--linha-fina) solid var(--cor-borda-sutil);
+}
+
+/* `Botão` (263): altura padrão 44, raio do controle, padding 0×20, gap 8. */
+.botao {
+  display: inline-flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  gap: var(--espaco-8);
+  height: var(--controle-padrao);
+  padding: var(--espaco-0) var(--espaco-20);
+  border-radius: var(--raio-controle);
+  border: var(--linha-fina) solid transparent;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.botao.secundario-botao {
+  background: var(--cor-superficie-elevada);
+  border-color: var(--cor-borda-padrao);
+  color: var(--cor-texto-primario);
+}
+
+.botao.secundario-botao:hover:not(:disabled) {
+  background: var(--cor-superficie-hover);
+}
+
+.botao.primario {
+  background: var(--cor-primaria-padrao);
+  color: var(--cor-primaria-sobre);
+  box-shadow: var(--sombra-brilho-primario);
+}
+
+.botao.primario:hover:not(:disabled) {
+  background: var(--cor-primaria-hover);
+}
+
+.botao:disabled {
+  cursor: progress;
+}
+
+/* `corpo` do travado (17400): padding 24, gap 16, centralizado. */
+.corpo-travado {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--espaco-16);
+  padding: var(--espaco-24);
+  text-align: center;
+}
+
+.corpo-travado > * {
+  width: 100%;
+}
+
+/* `avatar` do travado (17401): 48, pílula. */
+.corpo-travado > .avatar-grande {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--controle-lg);
+  height: var(--controle-lg);
+  border-radius: var(--raio-pilula);
+  background: var(--cor-superficie-elevada);
+  border: var(--linha-fina) solid var(--cor-borda-padrao);
+}
+
+.texto-travado {
+  margin: var(--espaco-0);
+  color: var(--cor-texto-secundario);
+  overflow-wrap: anywhere;
+}
+
+.titulo-travado {
+  margin: var(--espaco-0);
+  color: var(--cor-texto-primario);
+}

@@ -68,7 +68,7 @@ CARGO_DENY_VERSAO := 0.20.2
 	dev-cofre-conferir dev-variacoes teste-dev-cofre dev-daemon dev-daemon-parar teste-cli teste-docker-uid teste-units \
 	app-front app-check app-ponte teste-docker-plataforma teste-sem-modo-teste teste-socket-ataques \
 	teste-webkit-real teste-logs-app teste-nm teste-playwright teste-skill \
-	release install uninstall teste-install
+	release install uninstall teste-install extensao teste-extensao
 
 ## check: pré-checagem das origens, depois fmt, clippy -D warnings, testes, cargo audit,
 ## cargo deny e gitleaks, nessa ordem (V1.1)
@@ -478,6 +478,25 @@ teste-nm: origens
 	$(CARGO) build --quiet --locked -p ward-nm --features modo-teste --bin ward-nm
 	$(CARGO) build --quiet --locked -p ward-plataforma --example pai-chrome
 	dev/testes/nm.sh target/debug/wardd target/debug/ward-nm target/debug/examples/pai-chrome
+
+## extensao: monta a extensão do Chrome em extensao/dist/ (Fase 41) com os tokens, ícones
+## e fontes do app e confere o pacote e o manifesto (id fixo = ward-nm, sem
+## externally_connectable/web_accessible_resources/storage, CSP estrita). Precisa de
+## `make app-front` (fontes)
+extensao:
+	$(PYTHON) dev/extensao/montar.py
+
+## teste-extensao: Fase 41 (V6.2, V6.4–V6.7): a extensão no Chrome real (headless, perfil
+## temporário em .dev/extensao.*) pelo ward-nm de teste e um wardd de teste só dele com
+## WARD_DEV_EXTENSAO=chrome; sugestões, preenchimento, TOTP, phishing, redir, iframe,
+## DOM clobbering, campo escondido, mensagens da página, travado; screenshots em
+## docs/mission/evidence/fase-41/. Precisa de `make dev-cofre`, `make dev-variacoes`,
+## `make dev-servicos-subir` e `make app-front`; fora do `make check`
+teste-extensao: origens extensao
+	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd
+	$(CARGO) build --quiet --locked -p ward-nm --features modo-teste --bin ward-nm
+	$(CARGO) build --quiet --locked -p ward-nm --example chrome-falso
+	dev/testes/extensao.sh target/debug/wardd target/debug/ward-nm target/debug/examples/chrome-falso
 
 ## dev-daemon-parar: para o daemon de teste (confere que o pid é mesmo o wardd daqui)
 dev-daemon-parar:

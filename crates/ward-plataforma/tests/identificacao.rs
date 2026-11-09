@@ -438,3 +438,61 @@ fn app_de_teste_sem_egid_so_com_o_pai_daemon() {
         }
     );
 }
+
+/// Fase 41 (modo-teste): o host de teste da extensão ganha a classe extensão **sem** o
+/// egid do grupo `ward-nm`, mas só com o pai igual ao "Chrome" permitido conferido
+/// pelo `/proc` e com a política do kernel; o mesmo par com outro pai (um Chrome
+/// falso, o próprio teste) ou com a política fraca fica comum.
+#[test]
+fn ataque_host_extensao_de_teste_so_com_o_pai_chrome() {
+    let (_d, escuta) = escutar();
+    let mut filho = iniciar(cliente_com_bash_de_pai(escuta.caminho()));
+    filho.esperar("conectado");
+    let par = escuta.aceitar().unwrap().par;
+    // O pai é o bash: com o "Chrome" = bash, passa; o egid não conta.
+    let bash = permitido(Path::new("/usr/bin/bash"));
+    assert_eq!(
+        par.classificar_host_extensao_de_teste(&bash, &politica_ok()),
+        ClassePar::HostExtensao
+    );
+    // Pelo grupo (release), o mesmo par sem o egid do host é comum.
+    assert_eq!(
+        par.classificar(&inst_host(GID_NENHUM, bash.clone()), &politica_ok()),
+        ClassePar::Comum {
+            motivo: Recusa::GrupoComum
+        }
+    );
+    // Outro "Chrome" (outro exe): pai não permitido.
+    for outro in [permitido(Path::new("/usr/bin/sleep")), inexistente()] {
+        assert_eq!(
+            par.classificar_host_extensao_de_teste(&outro, &politica_ok()),
+            ClassePar::Comum {
+                motivo: Recusa::PaiNaoPermitido
+            }
+        );
+    }
+    // Política do kernel fraca: nem com o pai certo.
+    for politica in [
+        PoliticaKernel::simulada(Some(0), Some(0)),
+        PoliticaKernel::simulada(Some(1), Some(1)),
+    ] {
+        assert_eq!(
+            par.classificar_host_extensao_de_teste(&bash, &politica),
+            ClassePar::Comum {
+                motivo: Recusa::PoliticaKernel
+            }
+        );
+    }
+    filho.encerrar();
+
+    // O pai é este processo de teste (como um `ward-nm` aberto à mão): recusa.
+    let py = python_real();
+    let (filho, par) = conectar(&escuta, cliente_python(&py, escuta.caminho(), None));
+    assert_eq!(
+        par.classificar_host_extensao_de_teste(&bash, &politica_ok()),
+        ClassePar::Comum {
+            motivo: Recusa::PaiNaoPermitido
+        }
+    );
+    drop(filho);
+}

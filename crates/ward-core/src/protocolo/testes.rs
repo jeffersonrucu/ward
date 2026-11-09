@@ -192,6 +192,8 @@ fn uma_resposta_de_cada() -> Vec<Resposta> {
         Resposta::Sugestoes(vec![Sugestao {
             nome: "acme-wp-dev".into(),
             usuario: "wp_admin".into(),
+            ambiente: crate::entrada::Ambiente::Dev,
+            totp: true,
         }]),
         Resposta::Preenchimento {
             usuario: "wp_admin".into(),

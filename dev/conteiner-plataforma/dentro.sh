@@ -438,7 +438,7 @@ printf '{"v":1,"op":"preencher","dados":{"entrada":"acme-wp-dev","origem":"http:
 printf "$(printf '\\x%02x\\x00\\x00\\x00' "$(stat -c %s /tmp/v61.json)")" > /tmp/v61.bin
 cat /tmp/v61.json >> /tmp/v61.bin
 chmod 0644 /tmp/v61.bin
-r="$(como_1000 /usr/bin/bash -c '/usr/local/bin/ward-nm chrome-extension://dkacdineofgfabdognjgeoakekaenaei/ < /tmp/v61.bin | tr -d "\000-\037"; true')"
+r="$(como_1000 /usr/bin/bash -c '/usr/local/bin/ward-nm chrome-extension://nhkehjnmlgkebhmelajfpmpblepaichf/ < /tmp/v61.bin | tr -d "\000-\037"; true')"
 confere "V6.1: ward-nm executado direto: o daemon recusa (nao_autorizado)" "$r" "nao_autorizado"
 nao_tem "V6.1: ward-nm executado direto: nada de senha no stdout" "$r" "senha"
 # Uma cópia do "Chrome" fora do caminho instalado, do usuário: agente.

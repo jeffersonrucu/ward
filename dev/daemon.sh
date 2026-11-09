@@ -19,6 +19,11 @@
 # daemon, recebe o papel app. O valor usado fica em .dev/wardd.app: com o daemon já no
 # ar com outro WARD_DEV_APP (ou sem), o `subir` falha em vez de fingir que trocou.
 #
+# WARD_DEV_EXTENSAO=chrome (Fase 41): só se vier definida; o daemon de teste dá o papel
+# extensão ao `ward-nm` de teste filho do Chrome instalado (pai conferido pelo `/proc`),
+# sem o egid do grupo `ward-nm`, para o QA da extensão no Chrome de teste. Outro valor:
+# o daemon recusa subir.
+#
 # WARD_DEV_SOCKET_DIR (Fase 27a): pasta 0700 do socket no lugar de
 # `$XDG_RUNTIME_DIR/ward-teste` (absoluta), para subir o daemon de uma worktree ao lado
 # do daemon de teste de outro checkout sem derrubá-lo. Vai ao daemon pelo `env -i`; a
@@ -115,6 +120,7 @@ subir() {
         ${WARD_DEV_DBUS_SISTEMA:+"WARD_DEV_DBUS_SISTEMA=$WARD_DEV_DBUS_SISTEMA"} \
         ${PASTA_SOCKET:+"WARD_DEV_SOCKET_DIR=$PASTA_SOCKET"} \
         ${APP:+"WARD_DEV_APP=$APP"} \
+        ${WARD_DEV_EXTENSAO:+"WARD_DEV_EXTENSAO=$WARD_DEV_EXTENSAO"} \
         "$BIN" </dev/null >>"$LOG" 2>&1 &
     local p=$!
     echo "$p" > "$PID"

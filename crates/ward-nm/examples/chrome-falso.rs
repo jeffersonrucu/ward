@@ -10,7 +10,7 @@
 use std::io::{BufRead, Read, Write};
 use std::process::{Command, ExitCode, Stdio};
 
-const ORIGEM: &str = "chrome-extension://dkacdineofgfabdognjgeoakekaenaei/";
+const ORIGEM: &str = "chrome-extension://nhkehjnmlgkebhmelajfpmpblepaichf/";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();

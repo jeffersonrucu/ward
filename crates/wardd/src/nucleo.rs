@@ -978,6 +978,8 @@ impl Daemon {
                     Some(Sugestao {
                         nome: e.nome().to_owned(),
                         usuario: l.usuario.clone(),
+                        ambiente: e.ambiente(),
+                        totp: l.totp_semente.is_some(),
                     })
                 }
                 _ => None,
