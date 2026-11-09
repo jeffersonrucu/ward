@@ -552,7 +552,7 @@ Contrato: V5.1–V5.31
   Notas do handoff 29: o `make app-check` precisa de `libwebkit2gtk-4.1-dev` (R32); os
   advisories RUSTSEC-2024-0370 e RUSTSEC-2024-0429 ficam ignorados só no `deny.toml` do
   app (RA7, provisório, vai ao usuário).
-- [ ] Fase 29a — App com D47 e D57 (depende das Fases 21b e 29; vem antes da 30; pode
+- [x] Fase 29a — App com D47 e D57 (depende das Fases 21b e 29; vem antes da 30; pode
   rodar ao lado da 22, porque não toca em `crates/wardd` nem no protocolo). Arquivos: o
   `main` do `app/src-tauri`, um módulo de partida no `app/nucleo` e, em
   `crates/ward-plataforma`, o lançador e o `processo.rs`.
