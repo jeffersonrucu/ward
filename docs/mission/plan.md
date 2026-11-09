@@ -472,6 +472,8 @@ Pendências da 53 (2026-11-09): guia não testado na máquina (menus do KeePassX
 
 Pendências da 52 (2026-11-09): Depends além do `sshpass`: `openssh-client`, `systemd`, `libwebkit2gtk-4.1-0` (confirmar). `ward-app`/`ward-nm` vão 0755 no pacote e o 2755 com o grupo entra por `dpkg-statoverride` (`preinst` registra, `postinst` aplica). Risco da 51 continua: build como usuário, instalação como root (mesmo uid pode trocar o `.deb` antes do `sudo`; roteiro mitiga com clone limpo e cópia para `/root/ward`; saída: build num contêiner). `file://` no `update_url` com force-install não confirmado no Chrome do Linux (V9.5; alternativa `external_crx`). Sem `conffiles` de propósito. `/usr/local` num `.deb` contra a Debian Policy (R4, D18; D18 do PRD desatualizado). `dpkg -r` apaga grupos mesmo preexistentes. `make extensao-crx` com a chave real não rodou. Roteiro real (V9.5, V9.7, V9.8) é do usuário. App sem `.desktop`.
 
+Pendências da 43 (2026-11-09): **decisão nova para o planner registrar (D-novo em `docs/escopo.md`)** — a extensão pede `host_permissions` exatamente `https://*/*`, `http://localhost/*`, `http://127.0.0.1/*` (sem clique não há `activeTab`; o Chrome recusa a injeção); preço: a extensão pode injetar em qualquer página https sem clique; `montar.py` só aceita essa lista. Service worker mantém porta de native messaging e pergunta `aguardar_login` em laço (daemon segura até 25 s); operações `aguardar_login`/`preencher_login`/`resultado_login` só do papel extensão. Gerenciador de senhas do Chrome pode oferecer guardar a senha enviada pelo `ward login` (S1/S2) — sugestão: `PasswordManagerEnabled=false` na política da Fase 51. 307 da origem certa para outra depois do envio não é barrado (sem `webRequest`). Limpar campos após o envio pode quebrar SPA (QA). Janela de aprovação real do V6.11 e senha recusada pelo WordPress real ficam para o QA do M6. Gancho `com_prazos_login` entrou na lista do V3.15.
+
 ## Milestone 3 — Daemon e protocolo
 Contrato: V3.1–V3.41
 
@@ -851,7 +853,7 @@ Contrato: V6.1–V6.16
   preenche usuário, senha e TOTP só no documento da origem certa, sem
   `externally_connectable`, nada guardado em `chrome.storage`. V6.2, V6.4–V6.7.
 - [x] Fase 42 — **(UI)** Popup "Salvar login novo" e "Cofre travado". V6.8, V6.9.
-- [ ] Fase 43 — `ward login`: daemon → `ward-nm` → aba ativa, confere a origem,
+- [x] Fase 43 — `ward login`: daemon → `ward-nm` → aba ativa, confere a origem,
   preenche, envia e limpa os campos, com nível e aprovação. V6.3, V6.10, V6.11, V6.15.
 - [x] Fase 44 — `ward playwright`: Chrome headless com `--remote-debugging-pipe` e perfil
   temporário (D6), storage state 0600, limpeza ao travar e na partida; logs sem
