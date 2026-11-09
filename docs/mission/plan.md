@@ -947,6 +947,11 @@ rodarem) e executar `docs/mission/roteiro-usuario.md` na janela nativa (V5.28; t
   diálogos de troca não desenhados; nenhum frame do grupo delta; "Mudar nível"
   desabilitado no formulário (segue o app); "(máximo 4 h)" × D45 com o planner.
 
+Roteiro do usuário M5 (2026-11-09): o usuário instalou `libwebkit2gtk-4.1-dev`, abriu
+a janela nativa do app de teste pelo daemon de teste, destravou com a senha de teste e disse
+"está bom, continue". O roteiro inteiro (aprovação em primeiro plano, bandeja, copiar 30 s)
+não foi conferido passo a passo; V5.28 fica parcial até o QA final.
+
 ## Milestone 6 — Extensão, `ward login` e `ward playwright`
 Contrato: V6.1–V6.16
 
