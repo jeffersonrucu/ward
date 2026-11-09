@@ -1123,7 +1123,7 @@ Scrutiny do M6 (2026-11-09): **reprovado** (1ª vez).
     `extensao/pagina.js` linhas 9–13 ficou impreciso.
   - Roteiro do V6.11 em `docs/mission/evidence/M6/roteiro-usuario.md`.
   - O V6.12 com o Playwright do Python segue sem rodar.
-  O scrutiny do M6 conta como aprovado depois da 44a; segue a segurança.
+  Próximo: scrutiny do M6, rodada 2.
 
 ## Milestone 7 — Backup
 Contrato: V7.1–V7.11
