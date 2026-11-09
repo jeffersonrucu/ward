@@ -197,8 +197,10 @@ fn main() -> ExitCode {
                 return ExitCode::FAILURE;
             }
         }
+        // Só o daemon de teste chega aqui (o release sempre tem o barramento do sistema).
+        // A mensagem não cita a variável: o texto `WARD_DEV_*` só existe com `modo-teste`.
         _ => aviso!(
-            "daemon de teste sem WARD_DEV_DBUS_SISTEMA: logind desligado; udisks2 (backup externo) desligado"
+            "daemon sem barramento do sistema: logind desligado; udisks2 (backup externo) desligado"
         ),
     }
     aviso!("pronto");

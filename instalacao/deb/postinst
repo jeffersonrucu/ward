@@ -15,6 +15,9 @@ umask 022
 erro() { printf 'ward (postinst): %s\n' "$*" >&2; exit 1; }
 passo() { printf 'ward: %s\n' "$*"; }
 
+# avisar_manifestos_de_usuario (Fase 51a) e conferir_politicas_chrome, de chrome.sh.
+#@CHROME@
+
 # Binário setgid: root:<grupo> 2755, arquivo regular. Na primeira instalação o dpkg já
 # leu a base de overrides antes do preinst registrar o do Ward, então o arquivo chega
 # 0755 root:root (sem setgid: seguro) e o modo entra aqui, com o mesmo valor do
@@ -53,6 +56,7 @@ case "${1:-}" in
             if uid="$(uid_do_cofre)"; then
                 systemctl enable --now "wardd@$uid.socket"
                 passo "wardd@$uid.socket ligado: o wardd sobe na primeira conexão; o uso diário não pede sudo"
+                avisar_manifestos_de_usuario "$uid"
             else
                 passo "ligue o socket do seu usuário com: sudo systemctl enable --now wardd@\$(id -u).socket"
             fi

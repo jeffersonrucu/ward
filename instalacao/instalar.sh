@@ -79,13 +79,11 @@ done <"$ARVORE"
 [ "${#CAMINHOS[@]}" -gt 0 ] || erro "arvore.txt vazia"
 
 # Marcas de artefato `modo-teste` (D7, D63; V9.2): as variáveis do daemon de teste, a
-# ponte e o app de teste, e o nome da pasta do socket de teste. `WARD_DEV_DBUS_SISTEMA`
-# é a única `WARD_DEV_*` que o release do `wardd` ainda carrega como texto (mensagem de
-# erro de uma função que só o daemon de teste chama; ver handoff 51 › Problemas): ela é
-# lida só no `modo-teste`. Qualquer outra `WARD_DEV_*` recusa.
+# ponte e o app de teste, e o nome da pasta do socket de teste. Qualquer `WARD_DEV_*`
+# recusa, sem exceção (Fase 51a: o release não carrega nenhuma como texto).
 conferir_sem_modo_teste() {
     local arq="$1" nome="$2" achado
-    achado="$(grep -a -o -E 'WARD_DEV_[A-Z0-9_]*' -- "$arq" | grep -v -x -F WARD_DEV_DBUS_SISTEMA | head -n 1 || true)"
+    achado="$(grep -a -o -E 'WARD_DEV_[A-Z0-9_]*' -- "$arq" | head -n 1 || true)"
     [ -z "$achado" ] || erro "$nome foi compilado com modo-teste (contém $achado); use o build de release ('make release')"
     for marca in ward-ponte-teste wardd-app-teste ward-teste; do
         if grep -a -q -F -- "$marca" "$arq"; then
@@ -120,6 +118,9 @@ conferir_elf() {
 # --- grupos (D47, D60; V9.11): conferir_grupo e garantir_grupo, os mesmos do `.deb` ---
 # shellcheck source=instalacao/grupos.sh
 . "$AQUI/grupos.sh"
+# --- políticas do Chrome (Fase 51a): conferir_politicas_chrome, a mesma do `.deb` -----
+# shellcheck source=instalacao/chrome.sh
+. "$AQUI/chrome.sh"
 
 # --- pastas e arquivos ----------------------------------------------------------------
 # Pasta: sem link; no sistema, do root e sem escrita para grupo e outros.
@@ -192,6 +193,7 @@ instalar() {
             conferir_origem "$src" "${ORIGENS[$i]}" $((1024 * 1024))
         fi
     done
+    conferir_politicas_chrome "$RAIZ_ALVO/etc/opt/chrome/policies/managed"
 
     # Gerados (o id e a versão já passaram pelas expressões acima: sem aspas nem '<').
     local ext=/usr/local/share/ward/extensao
@@ -204,8 +206,13 @@ instalar() {
   "allowed_origins": ["chrome-extension://$id/"]
 }
 EOF
+    # NativeMessagingUserLevelHosts: false (Fase 51a): o Chrome só abre host de native
+    # messaging de /etc/opt/chrome/native-messaging-hosts/ (do root). Sem ela, um
+    # br.ward.nm.json plantado no perfil do usuário vence o do sistema, e o script do
+    # atacante faz exec do ward-nm real com o stdin/stdout na mão (auditoria do M9).
     cat >"$TMP/ger-politica" <<EOF
 {
+  "NativeMessagingUserLevelHosts": false,
   "ExtensionSettings": {
     "$id": {
       "installation_mode": "force_installed",
@@ -226,6 +233,10 @@ EOF
 
     if [ "$SISTEMA" = 1 ]; then
         passo "grupos de sistema (D47, D60)"
+        # A marca dos grupos criados fica em /usr/local/lib/ward/ (Fase 51a): as pastas
+        # de cima conferidas antes.
+            local p
+        for p in usr usr/local usr/local/lib; do garantir_pasta "/$p"; done
         garantir_grupo ward-app
         garantir_grupo ward-nm
         local ptrace suid
@@ -261,6 +272,7 @@ EOF
         systemctl enable --now "wardd@$uid.socket"
         # Reinstalação: o daemon que já roda passa ao binário novo (o cofre trava).
         systemctl try-restart "wardd@$uid.service"
+        avisar_manifestos_de_usuario "$uid"
         passo "pronto: o wardd sobe na primeira conexão; o uso diário não pede sudo"
     else
         passo "pronto (DESTDIR: sem grupos, sem dono root e sem systemctl; donos e modos de verdade em instalacao/arvore.txt)"
@@ -301,6 +313,12 @@ desinstalar() {
             printf '    removido /%s\n' "${CAMINHOS[$i]}"
         fi
     done
+    if [ "$SISTEMA" = 1 ]; then
+        # Só os grupos que a instalação criou (marca em /usr/local/lib/ward/, Fase 51a);
+        # antes das pastas, para a marca sair junto.
+        passo "grupos"
+        apagar_grupos_marcados
+    fi
     for ((i = ${#CAMINHOS[@]} - 1; i >= 0; i--)); do
         [ "${TIPOS[$i]}" = d ] || continue
         p="$RAIZ_ALVO/${CAMINHOS[$i]}"
@@ -319,12 +337,6 @@ desinstalar() {
             done
             rmdir /run/ward 2>/dev/null || aviso "/run/ward não está vazia; ficou"
         fi
-        passo "grupos"
-        for p in ward-nm ward-app; do
-            if grep -q -- "^${p}:" /etc/group; then
-                groupdel "$p" || aviso "não deu para apagar o grupo $p"
-            fi
-        done
     fi
     passo "pronto: o cofre e os backups em ~/.local/share/ward/ não foram tocados"
 }

@@ -161,7 +161,9 @@ pub fn evento_do_sinal(msg: &Message) -> Option<Evento> {
 /// Socket do barramento que o daemon vigia, ou `None` (sem logind).
 ///
 /// Release: sempre [`BARRAMENTO_SISTEMA`]. Daemon de teste: só `WARD_DEV_DBUS_SISTEMA`,
-/// conferido por [`caminho_de_teste`]; sem ela, `None`.
+/// conferido por [`caminho_do_barramento`]; sem ela, `None`. O nome da variável só
+/// existe no binário com `modo-teste` (Fase 51a: o `instalar.sh` recusa qualquer
+/// `WARD_DEV_*` no artefato, sem exceção).
 pub fn barramento_do_daemon() -> Result<Option<PathBuf>, String> {
     #[cfg(not(feature = "modo-teste"))]
     {
@@ -171,14 +173,16 @@ pub fn barramento_do_daemon() -> Result<Option<PathBuf>, String> {
     {
         match std::env::var_os("WARD_DEV_DBUS_SISTEMA") {
             None => Ok(None),
-            Some(v) => caminho_de_teste(Path::new(&v)).map(Some),
+            Some(v) => caminho_do_barramento(Path::new(&v)).map(Some).map_err(|_| {
+                "WARD_DEV_DBUS_SISTEMA recusado: caminho absoluto simples de um socket".into()
+            }),
         }
     }
 }
 
 /// Caminho de socket aceito para o barramento: absoluto, sem `.`/`..`/`//`, até 107
 /// bytes e só `[A-Za-z0-9/._-]` (vai para o endereço D-Bus sem escape).
-pub fn caminho_de_teste(p: &Path) -> Result<PathBuf, String> {
+pub fn caminho_do_barramento(p: &Path) -> Result<PathBuf, String> {
     use std::os::unix::ffi::OsStrExt;
     let b = p.as_os_str().as_bytes();
     let ok = b.first() == Some(&b'/')
@@ -192,14 +196,14 @@ pub fn caminho_de_teste(p: &Path) -> Result<PathBuf, String> {
     if ok {
         Ok(p.to_path_buf())
     } else {
-        Err("WARD_DEV_DBUS_SISTEMA recusado: caminho absoluto simples de um socket".into())
+        Err("caminho do barramento recusado: caminho absoluto simples de um socket".into())
     }
 }
 
-/// Conexão ao barramento em `socket` (caminho conferido por [`caminho_de_teste`]), com o
+/// Conexão ao barramento em `socket` (caminho conferido por [`caminho_do_barramento`]), com o
 /// prazo [`PRAZO_CHAMADA`]. Também usada pelo udisks2 (Fase 46).
 pub(crate) async fn conectar(socket: &Path) -> Option<Connection> {
-    let caminho = caminho_de_teste(socket).ok()?;
+    let caminho = caminho_do_barramento(socket).ok()?;
     let endereco = format!("unix:path={}", caminho.display());
     Builder::address(endereco.as_str())
         .method_timeout(PRAZO_CHAMADA)
@@ -391,10 +395,10 @@ mod testes {
             "/a/bus%2c",
             "/",
         ] {
-            assert!(caminho_de_teste(Path::new(ruim)).is_err(), "{ruim}");
+            assert!(caminho_do_barramento(Path::new(ruim)).is_err(), "{ruim}");
         }
         let longo = format!("/{}", "a".repeat(MAX_CAMINHO));
-        assert!(caminho_de_teste(Path::new(&longo)).is_err());
-        assert!(caminho_de_teste(Path::new("/run/user/1000/ward-teste/bus-1")).is_ok());
+        assert!(caminho_do_barramento(Path::new(&longo)).is_err());
+        assert!(caminho_do_barramento(Path::new("/run/user/1000/ward-teste/bus-1")).is_ok());
     }
 }
