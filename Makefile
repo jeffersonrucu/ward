@@ -66,7 +66,7 @@ CARGO_DENY_VERSAO := 0.20.2
 	origens gitleaks-binario teste-ataques-fundacao teste-ataques-servicos teste-iscas-home teste-home-real dev-servicos dev-servicos-subir \
 	dev-servicos-parar dev-servicos-estado dev-servicos-conferir dev-servicos-trocar-chave-host dev-cofre \
 	dev-cofre-conferir dev-variacoes teste-dev-cofre dev-daemon dev-daemon-parar teste-cli teste-docker-uid teste-units \
-	app-front app-check app-ponte teste-docker-plataforma teste-sem-modo-teste \
+	app-front app-check app-ponte teste-docker-plataforma teste-sem-modo-teste teste-socket-ataques \
 	teste-webkit-real
 
 ## check: pré-checagem das origens, depois fmt, clippy -D warnings, testes, cargo audit,
@@ -352,6 +352,17 @@ teste-cli: origens
 ## sem WARD_DEV_APP (compila em target/sem-modo-teste)
 teste-sem-modo-teste: origens
 	dev/testes/sem-modo-teste.sh
+
+## teste-socket-ataques: V3.3 e V3.4 (scrutiny do M3) contra um `wardd` de teste só dele
+## (cópia do cofre de teste em .dev/socket-ataques.*, socket em $XDG_RUNTIME_DIR por
+## WARD_DEV_SOCKET_DIR; nunca o daemon de `make dev-daemon`): quadros ruins, 10 000
+## conexões caladas, matriz operação × entrada × campo e o log sem segredo. Precisa de
+## `make dev-cofre` e `make dev-variacoes`; fora do `make check`. CONEXOES=<n> troca as
+## 10 000
+CONEXOES ?= 10000
+teste-socket-ataques: origens
+	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd
+	dev/testes/socket-ataques.sh target/debug/wardd "$(CONEXOES)"
 
 ## dev-daemon-parar: para o daemon de teste (confere que o pid é mesmo o wardd daqui)
 dev-daemon-parar:

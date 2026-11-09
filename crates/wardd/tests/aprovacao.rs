@@ -433,33 +433,124 @@ fn ataque_agente_responde_a_aprovacao() {
 }
 
 /// V3.15 (D8): o código do daemon não tem aprovador nem variável/argumento que mude a
-/// aprovação. Só `config.rs` e `log.rs` leem o ambiente, e nenhum arquivo do `src/`
-/// tem `cfg(feature` fora o `modo-teste` dos caminhos.
+/// aprovação. Só `config.rs`, `log.rs`, `main.rs` e `trava.rs` (do primeiro nível)
+/// leem o ambiente, e nenhum arquivo do `src/` (subpastas inclusive, scrutiny do M3)
+/// tem `cfg(feature` fora o `modo-teste` dos caminhos e o `ganchos-teste` dos dois
+/// ganchos de teste do núcleo (`com_gancho_depois_de_gravar`, `com_programas_ssh`),
+/// cada um logo antes do próprio `pub fn`.
 #[test]
 fn v3_15_sem_aprovador_no_binario() {
     let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-    for e in std::fs::read_dir(&src).unwrap() {
-        let p = e.unwrap().path();
-        let nome = p.file_name().unwrap().to_string_lossy().into_owned();
-        let texto = std::fs::read_to_string(&p).unwrap();
-        for proibido in ["env::args", "aprovador_teste", "WARD_APROV", "auto_aprov"] {
-            assert!(!texto.contains(proibido), "{nome}: {proibido}");
+    let arquivos = fontes_rs(&src);
+    assert!(arquivos.len() > 10, "poucos arquivos em src/: {arquivos:?}");
+    let mut ganchos = Vec::new();
+    for p in &arquivos {
+        let rel = p.strip_prefix(&src).unwrap().to_string_lossy().into_owned();
+        let texto = std::fs::read_to_string(p).unwrap();
+        conferir_v3_15(&rel, &texto, &mut ganchos);
+    }
+    ganchos.sort();
+    assert_eq!(
+        ganchos, GANCHOS_DE_TESTE,
+        "ganchos de teste fora do esperado"
+    );
+}
+
+/// Todos os `.rs` de `dir`, descendo nas subpastas; link é recusado.
+fn fontes_rs(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut v = Vec::new();
+    for e in std::fs::read_dir(dir).unwrap() {
+        let e = e.unwrap();
+        let tipo = e.file_type().unwrap();
+        let p = e.path();
+        assert!(!tipo.is_symlink(), "link em src/: {}", p.display());
+        if tipo.is_dir() {
+            v.extend(fontes_rs(&p));
+        } else if p.extension().is_some_and(|x| x == "rs") {
+            v.push(p);
         }
-        // trava.rs (Fase 24): só o barramento do logind de teste, fora da aprovação.
-        if !["config.rs", "log.rs", "main.rs", "trava.rs"].contains(&nome.as_str()) {
-            assert!(!texto.contains("env::var"), "{nome} lê o ambiente");
-        }
-        for (i, _) in texto.match_indices("cfg(feature") {
-            let resto = &texto[i..];
+    }
+    v
+}
+
+/// Em ordem alfabética (o teste compara com a lista achada, ordenada).
+const GANCHOS_DE_TESTE: [&str; 2] = ["com_gancho_depois_de_gravar", "com_programas_ssh"];
+const CFG_GANCHOS: &str = "#[cfg(feature = \"ganchos-teste\")]";
+
+fn conferir_v3_15(rel: &str, texto: &str, ganchos: &mut Vec<&'static str>) {
+    let nome = rel.rsplit('/').next().unwrap_or(rel);
+    for proibido in ["env::args", "aprovador_teste", "WARD_APROV", "auto_aprov"] {
+        assert!(!texto.contains(proibido), "{rel}: {proibido}");
+    }
+    // trava.rs (Fase 24): só o barramento do logind de teste, fora da aprovação.
+    if rel.contains('/') || !["config.rs", "log.rs", "main.rs", "trava.rs"].contains(&nome) {
+        assert!(!texto.contains("env::var"), "{rel} lê o ambiente");
+    }
+    for (i, _) in texto.match_indices("cfg(feature") {
+        let resto = &texto[i..];
+        if resto.starts_with("cfg(feature = \"modo-teste\")") {
             assert!(
-                resto.starts_with("cfg(feature = \"modo-teste\")"),
-                "{nome}: feature desconhecida"
+                !["aprovacao.rs", "uso.rs", "servidor.rs", "nucleo.rs"].contains(&rel),
+                "{rel}: modo-teste no caminho da aprovação"
             );
-            assert!(
-                !["aprovacao.rs", "uso.rs", "servidor.rs", "nucleo.rs"].contains(&nome.as_str()),
-                "{nome}: modo-teste no caminho da aprovação"
-            );
+            continue;
         }
+        assert!(
+            resto.starts_with(&CFG_GANCHOS[2..]),
+            "{rel}: feature desconhecida"
+        );
+        assert_eq!(rel, "nucleo.rs", "ganchos-teste fora do núcleo");
+        // A primeira linha depois do atributo que não é atributo nem comentário tem de
+        // ser o `pub fn` de um dos ganchos.
+        let depois = resto.split_once('\n').map(|(_, d)| d).unwrap_or_default();
+        let assinatura = depois
+            .lines()
+            .map(str::trim)
+            .find(|l| !l.starts_with("#[") && !l.starts_with("//"))
+            .unwrap_or_default();
+        let gancho = GANCHOS_DE_TESTE
+            .iter()
+            .find(|g| assinatura.starts_with(&format!("pub fn {g}(")))
+            .unwrap_or_else(|| panic!("{rel}: ganchos-teste em outro item: {assinatura}"));
+        ganchos.push(gancho);
+    }
+    // Toda definição de gancho vem com a feature, numa das 3 linhas de cima.
+    for g in GANCHOS_DE_TESTE {
+        for (i, _) in texto.match_indices(&format!("fn {g}(")) {
+            let com_feature = texto[..i]
+                .lines()
+                .rev()
+                .take(3)
+                .any(|l| l.trim() == CFG_GANCHOS);
+            assert!(com_feature, "{rel}: {g} sem a feature ganchos-teste");
+        }
+    }
+}
+
+/// Ataque ao V3.15: gancho sem a feature, a feature em outro item ou arquivo, feature
+/// desconhecida, `env::var` numa subpasta e `modo-teste` no caminho da aprovação são
+/// recusados.
+#[test]
+fn ataque_v3_15_gancho_sem_feature_ou_fora_do_lugar() {
+    let certo =
+        "#[cfg(feature = \"ganchos-teste\")]\n#[doc(hidden)]\npub fn com_programas_ssh(x) {}\n";
+    let mut g = Vec::new();
+    conferir_v3_15("nucleo.rs", certo, &mut g);
+    assert_eq!(g, ["com_programas_ssh"]);
+    let casos = [
+        ("nucleo.rs", "pub fn com_gancho_depois_de_gravar(x) {}\n"),
+        (
+            "nucleo.rs",
+            "#[cfg(feature = \"ganchos-teste\")]\npub fn aprovar_tudo() {}\n",
+        ),
+        ("servidor.rs", certo),
+        ("nucleo.rs", "#[cfg(feature = \"aprovador\")]\nfn x() {}\n"),
+        ("sub/config.rs", "let _ = std::env::var(\"X\");\n"),
+        ("uso.rs", "#[cfg(feature = \"modo-teste\")]\nfn x() {}\n"),
+    ];
+    for (rel, texto) in casos {
+        let r = std::panic::catch_unwind(|| conferir_v3_15(rel, texto, &mut Vec::new()));
+        assert!(r.is_err(), "aceitou {rel}: {texto:?}");
     }
 }
 

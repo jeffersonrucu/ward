@@ -7,6 +7,11 @@
 //! A sessão roda como no servidor (`wardd::ssh::sessao` numa ponta de um par de
 //! sockets); a outra ponta faz o papel da CLI. O cofre é de teste, criado pelo núcleo
 //! com valores falsos; a chave SSH é gerada aqui, com passphrase aleatória.
+//!
+//! Os programas falsos entram por `Daemon::com_programas_ssh`, que só existe com a
+//! feature `ganchos-teste` (o `make test` liga todas).
+
+#![cfg(feature = "ganchos-teste")]
 
 mod comum;
 

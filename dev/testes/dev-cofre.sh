@@ -20,6 +20,21 @@ MAKE=(/usr/bin/make -s --no-print-directory -C "$RAIZ")
 
 COFRE="$RAIZ/.dev/cofre-teste.ward"
 LISTA="$RAIZ/.dev/variacoes.txt"
+
+# Uma rodada por vez (scrutiny do M3): o teste recria o cofre e a lista e usa nomes
+# fixos em `.dev/` (`teste-ataque-*`); duas rodadas juntas apagavam os links uma da
+# outra. A trava é um `flock` num arquivo de `.dev/` (0600, ignorado); a 2ª rodada
+# espera a 1ª (até 15 min) em vez de pisar nela. A trava sai quando o processo acaba.
+mkdir -p -m 0700 -- "$RAIZ/.dev"
+TRAVA="$RAIZ/.dev/.teste-dev-cofre.trava"
+[ ! -L "$TRAVA" ] || { echo "$TRAVA é link; recusado" >&2; exit 1; }
+exec 9>>"$TRAVA"
+chmod 0600 -- "$TRAVA"
+if ! flock -n 9; then
+    echo "teste-dev-cofre: outra rodada em andamento; esperando a trava" >&2
+    flock -w 900 9 || { echo "teste-dev-cofre: trava ocupada há 15 min; desisti" >&2; exit 1; }
+fi
+
 TMP="$(mktemp -d)"
 chmod 0700 "$TMP"
 limpar() {

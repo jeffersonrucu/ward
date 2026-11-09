@@ -465,7 +465,6 @@ Contrato: V3.1–V3.41
     mesmo uid (V3.23). Basta `cargo test` do `app/nucleo`; o `make app-check` exige
     `libwebkit2gtk-4.1-dev` (R32).
   `ward-plataforma`, ajustes da Fase 21:
-  `ward-plataforma`, ajustes da Fase 21:
   - D46: `escutar_de_listen_fds()` (aceita o fd do systemd e confere que é socket Unix
     em escuta no caminho esperado); `conferir_servidor` passa a exigir pasta do root e
     par de uid 0, com a exceção só no `modo-teste`;
