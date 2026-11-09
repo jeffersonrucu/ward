@@ -22,7 +22,14 @@
 # `make dev-servicos-subir`, `make app-front` (fontes) e do Chrome em
 # /opt/google/chrome/chrome; fora do `make check`.
 #
-# Uso: dev/testes/extensao.sh <wardd modo-teste> <ward-nm modo-teste> <chrome-falso>
+# Fase 42 (V6.8, V6.9): envio de login novo em `localhost:8083/cadastro` oferece salvar
+# (popup aberto pelo service worker), pede tipo, grupo e ambiente e a entrada aparece no
+# `ward lista --json` com o uso pedindo aprovação; ataques: envio forjado pelo script da
+# página, login já cadastrado, envio num iframe de outra origem, cofre travado no
+# envio, mensagens do content script ao service worker; tema claro do sistema nos três
+# estados do popup. Screenshots em docs/mission/evidence/fase-42/.
+#
+# Uso: dev/testes/extensao.sh <wardd modo-teste> <ward-nm modo-teste> <chrome-falso> <ward modo-teste>
 
 export PATH=/usr/bin:/bin
 set -euo pipefail
@@ -32,11 +39,12 @@ RAIZ="$(cd -P -- "${BASH_SOURCE[0]%/*}/../.." && pwd -P)"
 cd "$RAIZ"
 
 abs() { case "$1" in /*) printf '%s' "$1" ;; *) printf '%s/%s' "$RAIZ" "$1" ;; esac; }
-USO="uso: extensao.sh <wardd> <ward-nm> <chrome-falso>"
+USO="uso: extensao.sh <wardd> <ward-nm> <chrome-falso> <ward>"
 WARDD="$(abs "${1:?$USO}")"
 NM="$(abs "${2:?$USO}")"
 FALSO="$(abs "${3:?$USO}")"
-for b in "$WARDD" "$NM" "$FALSO"; do [ -x "$b" ] || { echo "falta $b" >&2; exit 1; }; done
+WARD="$(abs "${4:?$USO}")"
+for b in "$WARDD" "$NM" "$FALSO" "$WARD"; do [ -x "$b" ] || { echo "falta $b" >&2; exit 1; }; done
 CHROME=/opt/google/chrome/chrome
 [ -x "$CHROME" ] || { echo "falta o Chrome em $CHROME" >&2; exit 1; }
 COFRE="$RAIZ/.dev/cofre-teste.ward"
@@ -93,7 +101,7 @@ done
 echo "wardd de teste só deste script (WARD_DEV_EXTENSAO=chrome): pid $PID, socket $SOCKET"
 
 falhas=0
-/usr/bin/python3 -I -B "$RAIZ/dev/testes/extensao.py" "$RAIZ" "$TRAB" "$SOCKDIR" "$NM" "$FALSO" "$CHROME" "$LISTA" "$EXT" \
+/usr/bin/python3 -I -B "$RAIZ/dev/testes/extensao.py" "$RAIZ" "$TRAB" "$SOCKDIR" "$NM" "$FALSO" "$CHROME" "$LISTA" "$EXT" "$WARD" \
     || falhas=$((falhas + 1))
 
 kill -0 "$PID" 2>/dev/null || { echo "FALHA o wardd de teste morreu durante o teste" >&2; falhas=$((falhas + 1)); }

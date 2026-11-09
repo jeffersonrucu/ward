@@ -381,3 +381,182 @@ button {
   margin: var(--espaco-0);
   color: var(--cor-texto-primario);
 }
+
+/* --- Fase 42: `Extensão / Salvar login novo` (17414; 18850 com o conteúdo inteiro) ---
+ * O frame tem 360×600 (o máximo do popup do Chrome): o cabeçalho fica em cima, o rodapé
+ * embaixo e o corpo rola entre os dois. Aqui quem rola é o documento do popup, com o
+ * cabeçalho e o rodapé presos (`sticky`); sem rolagem, fica igual ao 18850. */
+.popup.com-formulario {
+  overflow: visible;
+}
+
+.popup.com-formulario > .cabecalho {
+  position: sticky;
+  top: var(--espaco-0);
+  z-index: 1;
+  background: var(--cor-fundo-padrao);
+}
+
+.popup-salvar {
+  display: flex;
+  flex-direction: column;
+  margin: var(--espaco-0);
+}
+
+/* `corpo` (17422): padding 16, gap 16, coluna. */
+.corpo-salvar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-16);
+  padding: var(--espaco-16);
+}
+
+/* `introdução` (17423): gap 4. */
+.introducao {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-4);
+}
+
+.titulo-salvar {
+  margin: var(--espaco-0);
+  color: var(--cor-texto-primario);
+}
+
+.texto-salvar {
+  margin: var(--espaco-0);
+  color: var(--cor-texto-secundario);
+  overflow-wrap: anywhere;
+}
+
+/* `Campo` (340) e `Select` (422): rótulo, gap 8, entrada de 44. */
+.campo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-8);
+  min-width: var(--espaco-0);
+}
+
+.rotulo {
+  color: var(--cor-texto-primario);
+}
+
+/* `entrada` (17426): 44, raio 10, padding 0 8 0 16, superfície do campo, borda sutil. */
+.entrada {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: var(--controle-padrao);
+  margin: var(--espaco-0);
+  padding: var(--espaco-0) var(--espaco-8) var(--espaco-0) var(--espaco-16);
+  border-radius: var(--raio-controle);
+  border: var(--linha-fina) solid var(--cor-borda-sutil);
+  background: var(--cor-superficie-campo);
+  color: var(--cor-texto-primario);
+  font-family: var(--familia-texto);
+}
+
+input.entrada:focus-visible,
+.select:focus-visible {
+  outline: none;
+  border-color: var(--cor-borda-foco);
+}
+
+.mascara {
+  color: var(--cor-texto-primario);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* `Select` (17465): padding 0 16, chevron de 20 à direita. */
+.entrada-select {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.select {
+  appearance: none;
+  width: 100%;
+  height: var(--controle-padrao);
+  margin: var(--espaco-0);
+  padding: var(--espaco-0) calc(var(--espaco-16) + var(--icone-md) + var(--espaco-8)) var(--espaco-0) var(--espaco-16);
+  border-radius: var(--raio-controle);
+  border: var(--linha-fina) solid var(--cor-borda-sutil);
+  background: var(--cor-superficie-campo);
+  color: var(--cor-texto-primario);
+  cursor: pointer;
+}
+
+.select option {
+  background: var(--cor-superficie-campo);
+  color: var(--cor-texto-primario);
+}
+
+.entrada-select > .icone {
+  position: absolute;
+  right: var(--espaco-16);
+  pointer-events: none;
+}
+
+.ajuda {
+  margin: var(--espaco-0);
+  color: var(--cor-texto-secundario);
+}
+
+.campo.com-erro .entrada,
+.campo.com-erro .select {
+  border-color: var(--cor-perigo-borda);
+}
+
+.campo.com-erro .ajuda {
+  color: var(--cor-perigo-texto);
+}
+
+/* `linha tipo e ambiente` (18669): dois selects lado a lado, gap 8. */
+.linha-dupla {
+  display: flex;
+  gap: var(--espaco-8);
+}
+
+.linha-dupla > .campo {
+  flex: 1 1 var(--espaco-0);
+}
+
+/* `nível inicial` (17483): cartão, raio 16, padding 16, gap 12. */
+.nivel-inicial {
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-12);
+  padding: var(--espaco-16);
+  border-radius: var(--raio-cartao);
+  background: var(--cor-superficie-padrao);
+  border: var(--linha-fina) solid var(--cor-borda-sutil);
+}
+
+.nivel-textos {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-2);
+  min-width: var(--espaco-0);
+}
+
+.nivel-titulo {
+  color: var(--cor-texto-primario);
+}
+
+.nivel-texto {
+  color: var(--cor-texto-secundario);
+}
+
+/* `rodapé` (17484): padding 16, gap 12, dois botões iguais; preso embaixo. */
+.rodape-salvar {
+  position: sticky;
+  bottom: var(--espaco-0);
+  gap: var(--espaco-12);
+  background: var(--cor-fundo-padrao);
+}
+
+.rodape-salvar > .botao {
+  flex: 1 1 var(--espaco-0);
+}

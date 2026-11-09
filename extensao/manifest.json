@@ -2,13 +2,32 @@
   "manifest_version": 3,
   "name": "Ward",
   "version": "0.1.0",
-  "description": "Preenche logins do cofre Ward só na origem certa da aba.",
+  "description": "Preenche logins do cofre Ward só na origem certa da aba e oferece salvar login novo.",
   "minimum_chrome_version": "120",
   "incognito": "not_allowed",
   "permissions": [
     "nativeMessaging",
     "activeTab",
     "scripting"
+  ],
+  "background": {
+    "service_worker": "servico.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "envio.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": false,
+      "match_about_blank": false,
+      "world": "ISOLATED"
+    }
   ],
   "action": {
     "default_title": "Ward",

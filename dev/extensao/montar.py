@@ -14,8 +14,14 @@ Fontes (nada copiado à mão):
 Conferências (sai 1 na primeira que falhar):
 - o id que sai da chave pública do campo `key` é o `ID_EXTENSAO` do `ward-nm`;
 - manifesto sem `externally_connectable`, `web_accessible_resources`,
-  `host_permissions`, `content_scripts`, `background`, `optional_permissions` e sem a
-  permissão `storage`; só `nativeMessaging`, `activeTab` e `scripting`;
+  `host_permissions`, `optional_permissions` e sem a permissão `storage`; só
+  `nativeMessaging`, `activeTab` e `scripting`;
+- Fase 42: `background` só o service worker `servico.js` (módulo) e `content_scripts`
+  só o `envio.js`, no quadro principal (`all_frames: false`), mundo isolado, em
+  http/https, sem CSS;
+- ouvinte de mensagem (`runtime.onMessage`) só no `servico.js`; `envio.js` sem
+  `sendNativeMessage`, `executeScript` nem resposta (`sendResponse`); nenhum
+  `onConnect`; nenhum `prefers-color-scheme` (D1: só tema escuro);
 - CSP das páginas da extensão sem `unsafe-*`, sem origem remota e com `default-src 'none'`;
 - nenhum arquivo com URL remota (só os namespaces XML), `eval`, `new Function`,
   `innerHTML`, `localStorage`/`sessionStorage`/`indexedDB` ou `chrome.storage`;
@@ -40,7 +46,7 @@ DIST = os.path.join(FONTE, "dist")
 APP = os.path.join(RAIZ, "app")
 FONTSOURCE = os.path.join(APP, "node_modules", "@fontsource")
 
-ARQUIVOS = ["manifest.json", "popup.html", "popup.css", "popup.js", "pagina.js"]
+ARQUIVOS = ["manifest.json", "popup.html", "popup.css", "popup.js", "pagina.js", "envio.js", "servico.js"]
 FONTES = [
     ("Inter", 400, "inter", "inter-latin-400-normal.woff2"),
     ("Inter", 500, "inter", "inter-latin-500-normal.woff2"),
@@ -55,8 +61,6 @@ CHAVES_PROIBIDAS = {
     "host_permissions",
     "optional_host_permissions",
     "optional_permissions",
-    "content_scripts",
-    "background",
     "sandbox",
     "chrome_url_overrides",
     "devtools_page",
@@ -65,6 +69,7 @@ CHAVES_PROIBIDAS = {
     "update_url",
 }
 NAMESPACES = {"http://www.w3.org/2000/svg"}
+PADROES_CONTENT = {"http://*/*", "https://*/*"}
 EXTENSOES = {".json", ".html", ".css", ".js", ".woff2", ".png"}
 URL = re.compile(rb"https?://[^\s\"'`)<>]*")
 PROIBIDOS = [
@@ -80,9 +85,28 @@ PROIBIDOS = [
     rb"chrome\.storage",
     rb"onMessageExternal",
     rb"onConnectExternal",
-    rb"runtime\.onMessage",
     rb"addEventListener\(\s*['\"]message['\"]",
+    rb"onConnect\b",
+    rb"prefers-color-scheme",
+    rb"color-scheme:\s*light",
 ]
+# Fase 42: só o service worker escuta mensagens (e confere o `sender`); o content script
+# só avisa o envio, sem falar com o host, injetar nada nem esperar resposta.
+PROIBIDOS_POR_ARQUIVO = {
+    "envio.js": [rb"sendNativeMessage", rb"executeScript", rb"runtime\.onMessage", rb"sendResponse",
+                 rb"\.then\s*\(\s*\(?\s*r"],
+    "popup.js": [rb"runtime\.onMessage"],
+    "pagina.js": [rb"runtime\.onMessage", rb"sendMessage"],
+}
+BACKGROUND = {"service_worker": "servico.js", "type": "module"}
+CONTENT_SCRIPTS = [{
+    "matches": ["http://*/*", "https://*/*"],
+    "js": ["envio.js"],
+    "run_at": "document_start",
+    "all_frames": False,
+    "match_about_blank": False,
+    "world": "ISOLATED",
+}]
 
 
 def falha(msg):
@@ -126,6 +150,10 @@ def conferir_manifesto(m):
     perm = set(m.get("permissions", []))
     if perm != PERMISSOES:
         falha(f"permissões {sorted(perm)} (só {sorted(PERMISSOES)})")
+    if m.get("background") != BACKGROUND:
+        falha("background só o service worker servico.js (módulo)")
+    if m.get("content_scripts") != CONTENT_SCRIPTS:
+        falha("content_scripts só o envio.js, quadro principal, mundo isolado, http/https")
     csp = m.get("content_security_policy", {})
     if set(csp) != {"extension_pages"}:
         falha("CSP só de extension_pages")
@@ -191,12 +219,14 @@ def conferir_pacote():
                 continue
             with open(p, "rb") as f:
                 dados = f.read()
+            # No manifesto, só os padrões do `content_scripts` (conferidos acima).
+            aceitas = NAMESPACES | (PADROES_CONTENT if rel == "manifest.json" else set())
             for u in URL.findall(dados):
-                if u.decode() not in NAMESPACES:
+                if u.decode() not in aceitas:
                     falha(f"{rel}: URL remota {u.decode()!r}")
             if rel in {"icones.js", "marca.js", "tokens.css", "fontes.css", "manifest.json"}:
                 continue
-            for padrao in PROIBIDOS:
+            for padrao in PROIBIDOS + PROIBIDOS_POR_ARQUIVO.get(rel, []):
                 if re.search(padrao, dados):
                     falha(f"{rel}: contém {padrao.decode()!r}")
             if ext == ".html":

@@ -13,6 +13,12 @@
 //     aba navegou, o Chrome recusa) e que confere a origem de novo antes de escrever;
 //  4. a resposta é descartada e o popup fecha (o contexto dele some).
 //
+// Fase 42 (V6.8): se o service worker tem um login novo pendente para esta aba (o
+// content script viu o envio e o daemon disse que ele não está no cofre), o popup
+// mostra "Salvar login novo" no lugar das sugestões. A senha nunca chega ao popup: o
+// service worker devolve só a origem e o usuário, e no "Salvar" o popup manda nome,
+// usuário, grupo e ambiente; quem junta a senha e fala com o daemon é o service worker.
+//
 // Nada é guardado: sem a permissão `storage` (a API de armazenamento da extensão nem
 // existe aqui), sem armazenamento da página, nada no DOM do popup além de nome, usuário
 // e ambiente. Os textos vêm
@@ -276,12 +282,215 @@ async function preencher(aba, origem, nome, botoes, nota) {
   window.close();
 }
 
+// --- Fase 42: "Salvar login novo" (frame 17414) -------------------------------------
+
+/** Mensagem ao service worker da extensão; `null` se não respondeu. */
+async function pedirAoServico(msg) {
+  try {
+    const r = await chrome.runtime.sendMessage(msg);
+    return r === undefined ? null : r;
+  } catch {
+    return null;
+  }
+}
+
+const ROTULOS_HOST = { dev: ['dev', 'desenv', 'local', 'localhost', 'test', 'teste'],
+  stage: ['stage', 'staging', 'hml', 'homolog', 'homologacao', 'qa', 'uat'] };
+
+/**
+ * Sugestões de nome, grupo e ambiente a partir do host (o usuário confere e muda).
+ * `painel.stage.clientex.test` → `clientex-stage-painel`, grupo `clientex`, `stage`;
+ * `localhost:8083` → `localhost-8083`, grupo `localhost`, `dev`. Sem pista no host, o
+ * ambiente sugerido é `prod` (o que mais destaca a aprovação).
+ */
+function sugestoesDoHost(origem) {
+  const u = new URL(origem);
+  const host = u.hostname.toLowerCase();
+  const ip = /^[0-9.]+$/.test(host) || host.startsWith('[');
+  let rotulos = ip ? [host.replace(/[^0-9a-z]+/g, '-')] : host.split('.').filter(Boolean);
+  if (rotulos.length > 1) rotulos = rotulos.slice(0, -1);
+  const invertidos = [...rotulos].reverse();
+  const limpar = (t) => t.replace(/[^a-z0-9._-]+/g, '-').replace(/^[^a-z0-9]+/, '').slice(0, 64);
+  const nome = limpar([...invertidos, ...(u.port ? [u.port] : [])].join('-'));
+  const grupo = limpar(invertidos[0] || '');
+  let ambiente = 'prod';
+  if (ip || rotulos.some((r) => ROTULOS_HOST.dev.includes(r))) ambiente = 'dev';
+  else if (rotulos.some((r) => ROTULOS_HOST.stage.includes(r))) ambiente = 'stage';
+  return { nome, grupo, ambiente };
+}
+
+/** `Campo` (340): rótulo, entrada de texto e a linha de ajuda (oculta até um erro). */
+function campoTexto(id, rotulo, valor) {
+  const entrada = el('input', 'entrada texto-corpo');
+  entrada.id = id;
+  entrada.type = 'text';
+  entrada.value = valor;
+  entrada.autocomplete = 'off';
+  entrada.spellcheck = false;
+  const ajuda = texto('p', 'ajuda texto-legenda', '');
+  ajuda.hidden = true;
+  const r = texto('label', 'rotulo texto-rotulo', rotulo);
+  r.htmlFor = id;
+  return el('div', 'campo', [r, entrada, ajuda]);
+}
+
+/** `Select` (422): rótulo, `<select>` nativo com o chevron do design. */
+function campoSelect(id, rotulo, opcoes, valor) {
+  const sel = el('select', 'select texto-corpo');
+  sel.id = id;
+  for (const o of opcoes) {
+    const op = texto('option', null, o);
+    op.value = o;
+    sel.append(op);
+  }
+  sel.value = valor;
+  const r = texto('label', 'rotulo texto-rotulo', rotulo);
+  r.htmlFor = id;
+  const ajuda = texto('p', 'ajuda texto-legenda', '');
+  ajuda.hidden = true;
+  return el('div', 'campo', [r, el('div', 'entrada-select', [sel, icone('chevron-baixo', 'md')]), ajuda]);
+}
+
+const ROTULO_CAMPO = { nome: 'nome', grupo: 'grupo', ambiente: 'ambiente', usuario: 'usuario', senha: 'senha', url: 'url' };
+
+const FALHAS_SALVAR = {
+  expirou: 'O pedido para salvar expirou. Envie o formulário de novo.',
+  pedido_invalido: 'Confira nome, usuário e ambiente.',
+  sem_resposta: 'O Ward não respondeu. Nada foi salvo.',
+};
+
+/** Frame `Extensão / Salvar login novo` (17414; 18850 com o conteúdo inteiro). */
+function mostrarSalvar(aba, origem, usuario) {
+  const host = new URL(origem).host;
+  const sug = sugestoesDoHost(origem);
+  const nome = campoTexto('nome', 'Nome', sug.nome);
+  const campoUsuario = campoTexto('usuario', 'Usuário', usuario);
+  const senha = el('div', 'campo', [
+    texto('span', 'rotulo texto-rotulo', 'Senha'),
+    // Máscara fixa: nem o valor nem o tamanho da senha chegam ao popup.
+    el('div', 'entrada entrada-mascara', [texto('span', 'mascara texto-corpo', '••••••••••••')]),
+    texto('p', 'ajuda ajuda-fixa texto-legenda', 'Vai direto para o cofre; a extensão não mostra nem guarda.'),
+  ]);
+  const tipo = campoSelect('tipo', 'Tipo', ['login'], 'login');
+  const ambiente = campoSelect('ambiente', 'Ambiente', ['dev', 'stage', 'prod'], sug.ambiente);
+  const grupo = campoTexto('grupo', 'Grupo', sug.grupo);
+  const campos = { nome, usuario: campoUsuario, grupo, ambiente };
+  const nota = texto('p', 'nota erro texto-legenda', '');
+  nota.hidden = true;
+
+  const cancelar = el('button', 'botao secundario-botao', [texto('span', 'texto-corpo-forte', 'Agora não')]);
+  cancelar.type = 'button';
+  const salvarBotao = el('button', 'botao primario', [texto('span', 'texto-corpo-forte', 'Salvar no Ward')]);
+  salvarBotao.type = 'submit';
+
+  const form = el('form', 'popup-salvar', [
+    el('section', 'corpo-salvar', [
+      el('div', 'introducao', [
+        texto('h1', 'titulo-salvar titulo-modal', 'Salvar este login no Ward?'),
+        texto('p', 'texto-salvar texto-pequeno',
+          `O formulário de ${host} foi enviado com um login que ainda não está no cofre.`),
+      ]),
+      nome,
+      campoUsuario,
+      senha,
+      el('div', 'linha-dupla', [tipo, ambiente]),
+      grupo,
+      el('div', 'nivel-inicial', [
+        icone('cadeado', 'md'),
+        el('div', 'nivel-textos', [
+          texto('span', 'nivel-titulo texto-corpo-forte', 'Nível inicial: com aprovação'),
+          texto('span', 'nivel-texto texto-legenda',
+            'O Claude só usa depois que você aprovar. Para mudar, use o app, com PIN.'),
+        ]),
+      ]),
+      nota,
+    ]),
+    el('footer', 'rodape rodape-salvar', [cancelar, salvarBotao]),
+  ]);
+  form.noValidate = true;
+
+  const valor = (c) => c.querySelector('input, select').value;
+  const limparErros = () => {
+    nota.hidden = true;
+    for (const c of Object.values(campos)) {
+      c.classList.remove('com-erro');
+      const a = c.querySelector('.ajuda');
+      a.hidden = true;
+      a.textContent = '';
+    }
+  };
+
+  // O service worker fica vivo enquanto o popup está aberto (ele guarda o pendente).
+  const manter = setInterval(() => pedirAoServico({ t: 'manter', aba: aba.id }), 20000);
+
+  cancelar.addEventListener('click', async () => {
+    clearInterval(manter);
+    await pedirAoServico({ t: 'descartar', aba: aba.id });
+    window.close();
+  });
+
+  form.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    limparErros();
+    salvarBotao.disabled = true;
+    cancelar.disabled = true;
+    const r = await pedirAoServico({
+      t: 'salvar',
+      aba: aba.id,
+      nome: valor(nome).trim(),
+      usuario: valor(campoUsuario).trim(),
+      grupo: valor(grupo).trim(),
+      ambiente: valor(ambiente),
+    });
+    salvarBotao.disabled = false;
+    cancelar.disabled = false;
+    if (r && r.ok === true) {
+      clearInterval(manter);
+      window.close();
+      return;
+    }
+    const codigo = r && typeof r.erro === 'string' ? r.erro : 'sem_resposta';
+    if (codigo === 'travado') {
+      clearInterval(manter);
+      mostrarTravado(host);
+      return;
+    }
+    let geral = codigo === 'validacao' ? '' : (FALHAS_SALVAR[codigo] ?? 'Não deu para salvar. Nada foi gravado.');
+    for (const p of (r && Array.isArray(r.problemas) ? r.problemas : [])) {
+      const c = campos[ROTULO_CAMPO[p.campo]];
+      if (c) {
+        c.classList.add('com-erro');
+        const a = c.querySelector('.ajuda');
+        a.textContent = p.motivo;
+        a.hidden = false;
+      } else if (!geral) {
+        geral = `${p.campo}: ${p.motivo}`;
+      }
+    }
+    if (geral) {
+      nota.textContent = geral;
+      nota.hidden = false;
+    }
+  });
+
+  mostrar(cabecalho('destravado'), form);
+  raiz.classList.add('com-formulario');
+}
+
 async function iniciar() {
   let aba = null;
   try {
     [aba] = await chrome.tabs.query({ active: true, currentWindow: true });
   } catch {
     aba = null;
+  }
+  const pendente = aba ? await pedirAoServico({ t: 'pendente', aba: aba.id }) : null;
+  if (pendente && typeof pendente.origem === 'string' && typeof pendente.usuario === 'string') {
+    const o = origemDa(pendente.origem);
+    if (o) {
+      mostrarSalvar(aba, o, pendente.usuario);
+      return;
+    }
   }
   const origem = aba && aba.url ? origemDa(aba.url) : null;
   if (!aba || !origem) {

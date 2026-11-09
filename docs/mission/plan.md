@@ -466,6 +466,8 @@ Pendências da 51 (2026-11-09): `EXTENSAO_ID`/`EXTENSAO_CRX` obrigatórios no `m
 
 Pendências da 41 (2026-11-09): **decisão nova para o planner registrar** — exceção de `modo-teste` `WARD_DEV_EXTENSAO=chrome` (modelo D63): o daemon de teste dá o papel extensão ao filho direto do `/opt/google/chrome/chrome` conferido pelo `/proc`, sem egid; resíduo só no daemon de teste (qualquer processo do usuário que abra o Chrome instalado com manifesto próprio ganha o papel; mesmo RA6 do release); `teste-sem-modo-teste` confere a ausência no release. Id fixo `nhkehjnmlgkebhmelajfpmpblepaichf`; chave privada em `.dev/extensao/chave.pem` do checkout principal (fora do git; perder muda o id); `ward-nm` só aceita esse id. `Sugestao` ganhou `ambiente` e `totp` (booleano). Estados sem frame: lista vazia, erro e host ausente. Code Cache do Chrome casou padrão de `.dev/variacoes.txt` (provável PIN só dígitos — avaliar padrão). Strings JS não se zeram (só os bytes da senha). Testes de tempo `d34_pty`/`v3_33` instáveis sob carga (d34 corrigido; v3_33 ainda com margem curta).
 
+Pendências da 42 (2026-11-09): **decisão nova para o planner registrar** — a extensão ganhou content script fixo `envio.js` (todo http/https, só quadro principal, só envio com gesto real do usuário) e service worker `servico.js` (remetente conferido pelo `sender` do Chrome; senha só na memória dele, ≤ 3 min; nunca vai ao popup nem volta à página); `montar.py` recusa o que fugir disso. `salvar_login` grava só pelo papel extensão, só entrada nova, nível "com aprovação". Resíduo: `requestSubmit()` da página durante clique do usuário oferece salvar credenciais escolhidas pela página para a própria origem (confirmação do usuário + "com aprovação"; proposta: aceitar e registrar). V6.8 conflita com D50 (lista do agente não leva nível) — reescrever o texto do V6.8. FigCraft: nome de exemplo do node 17430 inválido (`clientex-stage-painel`), Grupo é `Select` no design mas a extensão usa texto (sem inventário), faltam frames de erro no campo e nota de erro geral. Login enviado com o cofre travado é descartado (decidir). Não oferece atualizar senha de login existente. `CLAUDE.md`: linha do `make teste-extensao` deve citar a Fase 42 e o `ward` de teste.
+
 ## Milestone 3 — Daemon e protocolo
 Contrato: V3.1–V3.41
 
@@ -844,7 +846,7 @@ Contrato: V6.1–V6.16
 - [x] Fase 41 — **(UI)** Extensão MV3 e popup "Sugestões do domínio": sugere por origem,
   preenche usuário, senha e TOTP só no documento da origem certa, sem
   `externally_connectable`, nada guardado em `chrome.storage`. V6.2, V6.4–V6.7.
-- [ ] Fase 42 — **(UI)** Popup "Salvar login novo" e "Cofre travado". V6.8, V6.9.
+- [x] Fase 42 — **(UI)** Popup "Salvar login novo" e "Cofre travado". V6.8, V6.9.
 - [ ] Fase 43 — `ward login`: daemon → `ward-nm` → aba ativa, confere a origem,
   preenche, envia e limpa os campos, com nível e aprovação. V6.3, V6.10, V6.11, V6.15.
 - [x] Fase 44 — `ward playwright`: Chrome headless com `--remote-debugging-pipe` e perfil

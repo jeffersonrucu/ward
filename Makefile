@@ -496,7 +496,8 @@ teste-extensao: origens extensao
 	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd
 	$(CARGO) build --quiet --locked -p ward-nm --features modo-teste --bin ward-nm
 	$(CARGO) build --quiet --locked -p ward-nm --example chrome-falso
-	dev/testes/extensao.sh target/debug/wardd target/debug/ward-nm target/debug/examples/chrome-falso
+	$(CARGO) build --quiet --locked -p ward --features modo-teste --bin ward
+	dev/testes/extensao.sh target/debug/wardd target/debug/ward-nm target/debug/examples/chrome-falso target/debug/ward
 
 ## dev-daemon-parar: para o daemon de teste (confere que o pid é mesmo o wardd daqui)
 dev-daemon-parar:

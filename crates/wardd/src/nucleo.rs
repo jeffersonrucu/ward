@@ -59,7 +59,7 @@ use zeroize::Zeroizing;
 use ward_core::backup::{self, ErroBackup, Versao};
 use ward_core::configuracao::{BackupExterno, Configuracao, HashPin};
 use ward_core::corpo::{self, ErroAbrir, ErroCorpo};
-use ward_core::entrada::{Dados, Datas, Entrada, NivelAcesso, Rascunho, Segredo};
+use ward_core::entrada::{Dados, Datas, Entrada, NivelAcesso, Rascunho, RascunhoDados, Segredo};
 use ward_core::formato::{CofreAberto, SenhaMestra};
 use ward_core::gravacao::{self, ErroGravacao, Etapa};
 use ward_core::origem::Origem;
@@ -751,8 +751,8 @@ impl Daemon {
             // Fase 40 (D9): sugerir e preencher pela origem da aba, só para a extensão.
             Pedido::Sugerir { origem } => self.sugerir(papel, &origem),
             Pedido::Preencher { entrada, origem } => self.preencher(papel, &entrada, &origem),
-            // Salvar login novo: Fase 42. Nada é feito e nada sai.
-            Pedido::SalvarLogin { .. } => Err(ErroResposta::Interno),
+            // Fase 42: login novo visto pela extensão, sempre "com aprovação" (D50, S9).
+            Pedido::SalvarLogin { rascunho } => self.salvar_login(papel, rascunho),
         };
         r.unwrap_or_else(Resposta::Erro)
     }
@@ -1217,6 +1217,35 @@ impl Daemon {
                 a.entradas.insert(p, velha);
             }
         })
+    }
+
+    /// `salvar_login` (Fase 42, V6.8): o login novo que a extensão viu ser enviado,
+    /// com nome, grupo e ambiente do popup. Só o papel extensão; só entrada nova (nunca
+    /// substitui uma existente: o nome repetido é erro de validação) e só os campos do
+    /// formulário do popup — URL, usuário e senha. TOTP, extras, anexos, projeto e tags
+    /// são recusados sem gravar nada (o app é o lugar de completar a entrada). O nível é
+    /// sempre "com aprovação" (D50, S9), como no `salvar_entrada` do app. O log não leva
+    /// o nome nem a URL (vieram da página).
+    fn salvar_login(&self, papel: Papel, rascunho: Rascunho) -> Result<Resposta, ErroResposta> {
+        if papel != Papel::Extensao {
+            return Err(ErroResposta::NaoAutorizado);
+        }
+        let RascunhoDados::Login { totp_semente, .. } = &rascunho.dados else {
+            return Err(ErroResposta::PedidoInvalido);
+        };
+        if totp_semente.is_some()
+            || !rascunho.extras.is_empty()
+            || !rascunho.anexos.is_empty()
+            || !rascunho.projeto.is_empty()
+            || !rascunho.tags.is_empty()
+        {
+            return Err(ErroResposta::PedidoInvalido);
+        }
+        let r = self.salvar_entrada(None, rascunho);
+        if r.is_ok() {
+            aviso!("salvar_login: login novo gravado pela extensão (com aprovação)");
+        }
+        r
     }
 
     fn remover_entrada(&self, nome: &str) -> Result<Resposta, ErroResposta> {

@@ -392,3 +392,186 @@ fn ataque_extensao_sem_operacoes_de_app_nem_de_agente() {
         assert!(!t.permitida(Papel::Extensao), "{}", t.nome());
     }
 }
+
+// --- Fase 42: `salvar_login` (V6.8) -------------------------------------------------------
+
+/// Pedido `salvar_login` como o service worker da extensão monta: só nome, grupo,
+/// ambiente, tipo e os campos URL, usuário e senha; `extra` entra cru no objeto
+/// `entrada` (para os ataques).
+fn salvar_login(d: &Daemon, papel: Papel, nome: &str, senha: &str, extra: &str) -> Resposta {
+    pedir(
+        d,
+        papel,
+        "salvar_login",
+        &format!(
+            r#"{{"entrada":{{"nome":"{nome}","grupo":"localhost","ambiente":"dev","tipo":"login","campos":{{"url":"http://localhost:8083/cadastro","usuario":"novo.usuario","senha":"{}"}}{extra}}}}}"#,
+            b64(senha.as_bytes())
+        ),
+    )
+}
+
+/// Nível de uma entrada na lista do app (`None` se ela não existe).
+fn nivel_na_lista(d: &Daemon, nome: &str) -> Option<ward_core::entrada::NivelAcesso> {
+    match pedir(d, Papel::App, "lista", "{}") {
+        Resposta::Lista(l) => l.into_iter().find(|i| i.nome == nome).and_then(|i| i.nivel),
+        outra => panic!("esperava a lista: {:?}", outra.tipo()),
+    }
+}
+
+/// Senha falsa nova, que não está em `SEGREDOS`.
+const SENHA_NOVA: &str = "falso-cadastro-ward-42";
+
+/// V6.8: o login novo da extensão aparece na lista com nível "com aprovação", é
+/// sugerido para a origem e preenche com a senha enviada; a resposta não leva valor.
+#[test]
+fn v6_8_salvar_login_nasce_com_aprovacao() {
+    use ward_core::entrada::NivelAcesso;
+    let dir = Dir::novo("ext-salvar");
+    let d = cofre(&dir);
+    let r = salvar_login(&d, Papel::Extensao, "localhost-8083", SENHA_NOVA, "");
+    assert!(ok(&r), "{r:?}");
+    assert!(!comum::contem(
+        &comum::codificado(Papel::Extensao, &r),
+        SENHA_NOVA.as_bytes()
+    ));
+    assert_eq!(
+        nivel_na_lista(&d, "localhost-8083"),
+        Some(NivelAcesso::ComAprovacao)
+    );
+    assert_eq!(
+        nomes(&sugerir(&d, Papel::Extensao, "http://localhost:8083/")),
+        [
+            ("acme-totp-dev".to_owned(), "wp_admin".to_owned()),
+            ("localhost-8083".to_owned(), "novo.usuario".to_owned()),
+        ]
+    );
+    match preencher(
+        &d,
+        Papel::Extensao,
+        "localhost-8083",
+        "http://localhost:8083",
+    ) {
+        Resposta::Preenchimento { senha, totp, .. } => {
+            assert_eq!(senha.expor(), SENHA_NOVA.as_bytes());
+            assert!(totp.is_none());
+        }
+        outra => panic!("esperava preenchimento: {:?}", outra.tipo()),
+    }
+    // Gravado no disco: depois de travar e destravar, continua lá e com aprovação.
+    assert!(ok(&pedir(&d, Papel::App, "travar", "{}")));
+    assert!(ok(&comum::destravar(&d, comum::SENHA)));
+    assert_eq!(
+        nivel_na_lista(&d, "localhost-8083"),
+        Some(NivelAcesso::ComAprovacao)
+    );
+}
+
+/// Ataque: a extensão tenta sobrescrever uma entrada que já existe (trocar a senha de
+/// `acme-wp-prod`, que está bloqueada, ou de `acme-wp-dev`): o nome repetido é erro de
+/// validação, e a entrada continua com a senha e o nível de antes.
+#[test]
+fn ataque_salvar_login_nao_sobrescreve_entrada() {
+    use ward_core::entrada::NivelAcesso;
+    let dir = Dir::novo("ext-salvar-sobrescrever");
+    let d = cofre(&dir);
+    for nome in ["acme-wp-dev", "acme-wp-prod"] {
+        let r = salvar_login(&d, Papel::Extensao, nome, SENHA_NOVA, "");
+        assert!(
+            matches!(erro(&r), Some(ErroResposta::Validacao(_))),
+            "{nome}: {r:?}"
+        );
+    }
+    assert_eq!(
+        nivel_na_lista(&d, "acme-wp-prod"),
+        Some(NivelAcesso::Bloqueado)
+    );
+    assert_eq!(
+        nivel_na_lista(&d, "acme-wp-dev"),
+        Some(NivelAcesso::ComAprovacao)
+    );
+    match preencher(&d, Papel::Extensao, "acme-wp-dev", "http://localhost:8081") {
+        Resposta::Preenchimento { senha, .. } => assert_eq!(senha.expor(), SEGREDOS[0].as_bytes()),
+        outra => panic!("esperava preenchimento: {:?}", outra.tipo()),
+    }
+}
+
+/// Ataque: o `salvar_login` só aceita o que o popup pede. Nível no pedido (o quadro
+/// não tem esse campo), TOTP, extras, anexos, projeto, tags e outro tipo são recusados
+/// e nada é gravado.
+#[test]
+fn ataque_salvar_login_so_os_campos_do_popup() {
+    let dir = Dir::novo("ext-salvar-campos");
+    let d = cofre(&dir);
+    let semente = b64(SEMENTE.as_bytes());
+    let valor = b64(b"x");
+    let recusados = [
+        (r#","nivel":"livre""#.to_owned(), false),
+        (r#","projeto":"p1""#.to_owned(), true),
+        (r#","tags":["t1"]"#.to_owned(), true),
+        (
+            format!(r#","extras":[{{"nome":"API_KEY","valor":"{valor}","segredo":true}}]"#),
+            true,
+        ),
+        (
+            format!(r#","anexos":[{{"nome":"a.txt","conteudo":"{valor}"}}]"#),
+            true,
+        ),
+    ];
+    for (extra, chega_ao_daemon) in &recusados {
+        let r = salvar_login(&d, Papel::Extensao, "localhost-8083", SENHA_NOVA, extra);
+        let e = erro(&r).unwrap_or_else(|| panic!("{extra}: aceito"));
+        if *chega_ao_daemon {
+            assert_eq!(e, ErroResposta::PedidoInvalido, "{extra}");
+        }
+        assert_eq!(nivel_na_lista(&d, "localhost-8083"), None, "{extra}");
+    }
+    // TOTP dentro dos campos do login.
+    let r = pedir(
+        &d,
+        Papel::Extensao,
+        "salvar_login",
+        &format!(
+            r#"{{"entrada":{{"nome":"localhost-8083","grupo":"g","ambiente":"dev","tipo":"login","campos":{{"url":"http://localhost:8083/","usuario":"u","senha":"{}","totp_semente":"{semente}"}}}}}}"#,
+            b64(SENHA_NOVA.as_bytes())
+        ),
+    );
+    assert_eq!(erro(&r), Some(ErroResposta::PedidoInvalido));
+    // Outro tipo (banco) pelo `salvar_login`: a leitura do pedido recusa.
+    assert!(ped(Papel::Extensao, "salvar_login", &comum::banco("b9", "s1")).is_err());
+    assert_eq!(nivel_na_lista(&d, "localhost-8083"), None);
+    assert_eq!(nivel_na_lista(&d, "b9"), None);
+}
+
+/// Ataque: agente e app não pedem `salvar_login`, nem com o pedido já lido como
+/// extensão; com o cofre travado, nada é gravado.
+#[test]
+fn ataque_salvar_login_so_extensao_e_destravado() {
+    let dir = Dir::novo("ext-salvar-papeis");
+    let d = cofre(&dir);
+    let p = |nome: &str| {
+        format!(
+            r#"{{"entrada":{{"nome":"{nome}","grupo":"g","ambiente":"dev","tipo":"login","campos":{{"url":"http://localhost:8083/","usuario":"u","senha":"{}"}}}}}}"#,
+            b64(SENHA_NOVA.as_bytes())
+        )
+    };
+    for papel in [Papel::Agente, Papel::App] {
+        assert_eq!(
+            erro(&pedir(&d, papel, "salvar_login", &p("x1"))),
+            Some(ErroResposta::NaoAutorizado)
+        );
+        let lido = ped(Papel::Extensao, "salvar_login", &p("x2")).unwrap();
+        assert_eq!(
+            erro(&d.atender(papel, lido)),
+            Some(ErroResposta::NaoAutorizado)
+        );
+    }
+    assert_eq!(nivel_na_lista(&d, "x1"), None);
+    assert_eq!(nivel_na_lista(&d, "x2"), None);
+    assert!(ok(&pedir(&d, Papel::App, "travar", "{}")));
+    assert_eq!(
+        erro(&pedir(&d, Papel::Extensao, "salvar_login", &p("x3"))),
+        Some(ErroResposta::Travado)
+    );
+    assert!(ok(&comum::destravar(&d, comum::SENHA)));
+    assert_eq!(nivel_na_lista(&d, "x3"), None);
+}
