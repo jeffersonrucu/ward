@@ -400,7 +400,7 @@ Contrato: V3.1–V3.28
   processos para exibir, endurecimento do processo (`PR_SET_DUMPABLE=0`,
   `RLIMIT_CORE=0`, recusa de `LD_*` e de depurador, `mlock` dos buffers de segredo,
   D14). V3.1, V3.2, V3.5–V3.7.
-- [ ] Fase 21b — (Liberada: D46 e D47 confirmadas pelo usuário em 2026-11-08; D48 no
+- [x] Fase 21b — (Liberada: D46 e D47 confirmadas pelo usuário em 2026-11-08; D48 no
   ramo de D47; D49 sem mudança.) Pode rodar ao lado da 19e. Arquivos:
   `crates/ward-plataforma/` (código e testes), `app/nucleo/src/daemon.rs` e os testes
   dele, o contêiner de teste e o alvo dele no `Makefile`, e a linha do alvo no
