@@ -60,8 +60,9 @@ pub const PASTA_TEMPORARIOS: &str = "tmp";
 const PRAZO_RESTO_DA_SAIDA: Duration = Duration::from_secs(2);
 /// De quanto em quanto tempo a leitura da saída olha se deve parar.
 const PASSO_LEITURA_MS: i32 = 100;
-/// Pedaço lido da saída do filho.
-const PEDACO: usize = 16 * 1024;
+/// Lote máximo lido da saída do filho antes de mascarar (Fase 28g): a capacidade dos
+/// pipes de saída, para um `write` único que coube no pipe ser mascarado de uma vez.
+pub(crate) const LOTE: usize = filho::CAPACIDADE_PIPE_SAIDA;
 /// Quadros de entrada guardados à espera do filho ler (pressão de volta na CLI).
 const FILA_ENTRADA: usize = 8;
 /// Locale que o filho recebe quando o da CLI não é UTF-8.
@@ -645,8 +646,8 @@ fn ler_saida(
     pronto: mpsc::Sender<()>,
 ) {
     let mut m = mascara.fluxo();
-    let mut buf = Zeroizing::new(vec![0u8; PEDACO]);
-    let mut out = Zeroizing::new(Vec::with_capacity(2 * PEDACO));
+    let mut buf = Zeroizing::new(vec![0u8; LOTE]);
+    let mut out = Zeroizing::new(Vec::with_capacity(LOTE + LOTE / 4));
     let mut cli_ok = true;
     loop {
         match filho::pronto_para_ler(&f, PASSO_LEITURA_MS) {
@@ -654,19 +655,18 @@ fn ler_saida(
             Ok(false) if !parar.load(Ordering::Acquire) => continue,
             _ => break,
         }
-        let n = match f.read(&mut buf) {
-            Ok(0) => break,
-            Ok(n) => n,
-            Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
-            // O mestre do pty dá `EIO` quando o último processo da sessão fecha o
-            // escravo: é o fim da saída.
-            Err(_) => break,
-        };
-        m.mascarar(&buf[..n], &mut out);
-        if cli_ok {
-            cli_ok = cli.enviar_saida(fluxo, &mut out);
-        } else {
-            zeroize::Zeroize::zeroize(&mut *out);
+        let (n, fim) = ler_lote(&mut f, &mut buf);
+        if n > 0 {
+            m.mascarar(&buf[..n], &mut out);
+            zeroize::Zeroize::zeroize(&mut buf[..n]);
+            if cli_ok {
+                cli_ok = cli.enviar_saida(fluxo, &mut out);
+            } else {
+                zeroize::Zeroize::zeroize(&mut *out);
+            }
+        }
+        if fim {
+            break;
         }
     }
     // Nada ficou segurado; só fecha o fluxo (zera).
@@ -675,6 +675,37 @@ fn ler_saida(
         cli.enviar_saida(fluxo, &mut out);
     }
     let _ = pronto.send(());
+}
+
+/// Lê de `f` tudo o que já está lá, até encher `buf` (Fase 28g, 2ª auditoria do M4).
+///
+/// A primeira leitura pode bloquear; as seguintes só acontecem se o `poll` diz, sem
+/// esperar nada, que há mais (nunca espera dado novo: D34 revisto, nada segurado nem
+/// atrasado). Assim o que o filho escreveu de uma vez, e que o kernel entregou em mais
+/// de uma leitura (pipe de 64 KiB, pty de 4 KiB), é mascarado num lote só. O fd fica
+/// bloqueante: o mestre do pty é o mesmo arquivo aberto da escrita da entrada, e
+/// `O_NONBLOCK` nele valeria para os dois.
+///
+/// Devolve os bytes lidos e se a saída acabou (fim, `EIO` do pty quando a sessão fecha
+/// o escravo, ou erro).
+pub(crate) fn ler_lote(f: &mut File, buf: &mut [u8]) -> (usize, bool) {
+    let mut n = 0;
+    loop {
+        match f.read(&mut buf[n..]) {
+            Ok(0) => return (n, true),
+            Ok(k) => n += k,
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+            Err(_) => return (n, true),
+        }
+        if n == buf.len() {
+            return (n, false);
+        }
+        match filho::pronto_para_ler(f, 0) {
+            Ok(true) => {}
+            Ok(false) => return (n, false),
+            Err(_) => return (n, true),
+        }
+    }
 }
 
 /// Passa a entrada da CLI ao filho; `None` (ou a fila fechada) fecha a entrada dele.

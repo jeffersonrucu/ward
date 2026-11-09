@@ -177,6 +177,35 @@ fn apagar_pasta(pasta: &Path) {
     }
 }
 
+/// Partida do daemon (Fase 28g, 2ª auditoria do M4): apaga as pastas `<rt>ssh-*/` que
+/// um `wardd` morto (SIGKILL) deixou. Só têm o socket do agente e a chave pública, mas
+/// não devem se acumular. O que tem o prefixo e não é pasta (link, arquivo) também sai,
+/// sem seguir link (`remove_dir_all` e `remove_file` não seguem). `<rt>` é conferido
+/// antes (0700 do usuário, sem link). Devolve quantas entradas apagou.
+pub fn limpar_pastas(rt: &Path) -> io::Result<usize> {
+    ward_plataforma::preparar_diretorio(rt)
+        .map_err(|_| io::Error::from(io::ErrorKind::PermissionDenied))?;
+    let mut n = 0;
+    for item in fs::read_dir(rt)? {
+        let item = item?;
+        if !item
+            .file_name()
+            .as_encoded_bytes()
+            .starts_with(PREFIXO_PASTA.as_bytes())
+        {
+            continue;
+        }
+        let caminho = item.path();
+        if item.file_type()?.is_dir() {
+            fs::remove_dir_all(&caminho)?;
+        } else {
+            fs::remove_file(&caminho)?;
+        }
+        n += 1;
+    }
+    Ok(n)
+}
+
 impl AgenteSsh {
     /// Lê a chave e cria `<rt>ssh-<aleatório>/` (0700) com `agent.sock` (0600) e
     /// `id.pub`. A chave é conferida antes de qualquer arquivo existir.
@@ -534,6 +563,43 @@ mod testes {
 
     fn ident(blob: &[u8]) -> Vec<u8> {
         responder_mensagem(&[REQUEST_IDENTITIES], blob, &|_| Some(b"sig".to_vec()))
+    }
+
+    /// Fase 28g: na partida, as pastas `ssh-*` que um `wardd` morto deixou somem; um
+    /// `ssh-*` que é link sai sem que o alvo seja tocado; o resto de `<rt>` fica.
+    #[test]
+    fn f28g_partida_apaga_pastas_ssh_que_sobraram() {
+        use std::os::unix::fs::PermissionsExt;
+        let base = ward_plataforma::socket::diretorio_runtime()
+            .join(format!("wardd-agente-28g-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        let rt = base.join("rt");
+        let fora = base.join("fora");
+        fs::create_dir_all(&rt).unwrap();
+        fs::create_dir_all(&fora).unwrap();
+        for d in [&base, &rt, &fora] {
+            fs::set_permissions(d, fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        let sobra = rt.join(format!("{PREFIXO_PASTA}abcdefghijklmnop"));
+        fs::create_dir(&sobra).unwrap();
+        fs::write(sobra.join(NOME_PUBLICA), b"ssh-ed25519 AAAA falso\n").unwrap();
+        std::os::unix::net::UnixListener::bind(sobra.join(NOME_SOCKET)).unwrap();
+        fs::write(fora.join("alvo"), b"nao-apagar").unwrap();
+        std::os::unix::fs::symlink(&fora, rt.join(format!("{PREFIXO_PASTA}link"))).unwrap();
+        fs::write(rt.join("wardd.sock-outro"), b"").unwrap();
+        fs::create_dir(rt.join("tmp")).unwrap();
+        assert_eq!(limpar_pastas(&rt).unwrap(), 2);
+        assert!(!sobra.exists());
+        assert!(fs::symlink_metadata(rt.join(format!("{PREFIXO_PASTA}link"))).is_err());
+        assert_eq!(fs::read(fora.join("alvo")).unwrap(), b"nao-apagar");
+        assert!(rt.join("wardd.sock-outro").exists() && rt.join("tmp").is_dir());
+        assert_eq!(limpar_pastas(&rt).unwrap(), 0);
+        // `<rt>` aberto: recusa sem apagar nada.
+        fs::create_dir(&sobra).unwrap();
+        fs::set_permissions(&rt, fs::Permissions::from_mode(0o777)).unwrap();
+        assert!(limpar_pastas(&rt).is_err());
+        assert!(sobra.exists());
+        fs::remove_dir_all(&base).unwrap();
     }
 
     #[test]

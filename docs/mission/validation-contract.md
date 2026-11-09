@@ -801,7 +801,9 @@ Reauditoria do M2 (Fase 19e, D53–D55). Repros em `scratchpad/ataque/src/bin/`
   base64, com `urllib.parse.quote`, em dois `printf` separados por `sleep 0.2` (corte no
   `:`), e tudo isso também em stderr, então a saída devolvida tem só `••••` no lugar —
   cobre S4. **D34 revisto (Fase 28e):** nos dois `printf`, o começo (até o `:`) sai como
-  saiu e o resto sai `••••`; a senha inteira nunca aparece.
+  saiu e o resto sai `••••`; a senha inteira nunca aparece. **Fase 28g (2ª auditoria
+  do M4):** um `write` único de `n` bytes + a senha, com `n` de 65520 a 65539 (e em
+  volta de 16 KiB), sai com a senha só `••••`, sem o começo em claro.
 - [ ] V4.18 — (SEG) Dado cada subcomando e opção de `ward --help`, quando o auditor os
   roda com cada entrada visível (sem comando que imprima variável), então nenhuma saída,
   erro ou código de saída contém segredo — cobre S1.

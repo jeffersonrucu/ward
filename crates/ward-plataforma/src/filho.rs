@@ -33,6 +33,8 @@ use zeroize::Zeroizing;
 
 use crate::sys;
 
+pub use crate::sys::CAPACIDADE_PIPE_SAIDA;
+
 /// `PATH` do `execvpe` da glibc quando o ambiente não tem um.
 const PATH_PADRAO: &[u8] = b"/bin:/usr/bin";
 
@@ -765,6 +767,68 @@ mod testes {
         p.saida.take().unwrap().read_to_end(&mut out).unwrap();
         assert_eq!(out, b"linha\n");
         assert_eq!(g.colher().unwrap(), Fim::Codigo(0));
+    }
+
+    /// Fase 28g: os pipes de saída e de erro têm a capacidade ampliada (o `write` único
+    /// de até esse tamanho entra inteiro antes de o daemon ler), salvo recusa do kernel
+    /// (limite de páginas do usuário, que fica no padrão de 64 KiB).
+    #[test]
+    fn pipes_de_saida_com_capacidade_ampliada() {
+        let (g, mut p) = sh("cat >/dev/null").lancar().unwrap();
+        for f in [p.saida.as_ref().unwrap(), p.erro.as_ref().unwrap()] {
+            let c = sys::capacidade_pipe(f.as_fd()).unwrap();
+            assert!(
+                c >= CAPACIDADE_PIPE_SAIDA || c == 64 * 1024,
+                "capacidade inesperada: {c}"
+            );
+        }
+        // A entrada não é ampliada (só a saída é mascarada).
+        let e = sys::capacidade_pipe(p.entrada.as_ref().unwrap().as_fd()).unwrap();
+        assert_eq!(e, 64 * 1024);
+        drop(p.entrada.take());
+        assert_eq!(g.colher().unwrap(), Fim::Codigo(0));
+    }
+
+    /// O kernel aceita ampliar um pipe novo agora?
+    fn kernel_amplia_pipe() -> bool {
+        let (r, _w) = std::io::pipe().unwrap();
+        sys::ampliar_pipe(r.as_fd(), CAPACIDADE_PIPE_SAIDA)
+            .is_some_and(|c| c >= CAPACIDADE_PIPE_SAIDA)
+    }
+
+    /// Fase 28g, ataque da 2ª auditoria do M4: um `write` único de `n` bytes de
+    /// enchimento + a senha, com `n` em volta das fronteiras de 16 KiB e 64 KiB, chega
+    /// ao leitor inteiro numa só leitura (com o buffer do tamanho da capacidade).
+    #[test]
+    fn ataque_write_unico_acima_de_64_kib_chega_inteiro() {
+        let mut casos: Vec<usize> = (16_370..16_390).collect();
+        casos.extend(65_520..65_540);
+        casos.extend([131_072 - 5, 200_000, CAPACIDADE_PIPE_SAIDA - 40]);
+        for n in casos {
+            let script =
+                format!("import os\nos.write(1, b'b' * {n} + b'falso-28g-senha-longa\\n')\n");
+            let mut c = Comando::novo(b"/usr/bin/python3", b"/").unwrap();
+            c.argumento(b"-c").unwrap();
+            c.argumento(script.as_bytes()).unwrap();
+            let (g, mut p) = c.lancar().unwrap();
+            drop(p.entrada.take());
+            let saida = p.saida.take().unwrap();
+            if sys::capacidade_pipe(saida.as_fd()).unwrap() < CAPACIDADE_PIPE_SAIDA {
+                // Só aceitável se o kernel recusa a ampliação agora (limite de páginas
+                // do usuário); se aceita num pipe novo, o lançamento não ampliou.
+                let _ = g.colher();
+                assert!(
+                    !kernel_amplia_pipe(),
+                    "o pipe de saída do filho não foi ampliado"
+                );
+                return;
+            }
+            assert!(pronto_para_ler(&saida, 10_000).unwrap());
+            let mut buf = vec![0u8; CAPACIDADE_PIPE_SAIDA];
+            let k = (&saida).read(&mut buf).unwrap();
+            assert_eq!(k, n + 22, "n={n}: o write chegou cortado");
+            assert_eq!(g.colher().unwrap(), Fim::Codigo(0));
+        }
     }
 
     /// O `Debug` não mostra argv nem ambiente.

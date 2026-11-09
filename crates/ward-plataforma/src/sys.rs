@@ -5,7 +5,7 @@
 use std::ffi::CStr;
 use std::io;
 use std::mem::size_of;
-use std::os::fd::{AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
+use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
 use std::ptr::NonNull;
 
 /// `SO_PEERPIDFD` (Linux 6.5): pidfd do processo do outro lado do socket. O valor é o
@@ -850,6 +850,39 @@ fn pipe_cloexec() -> io::Result<(OwnedFd, OwnedFd)> {
     Ok((acima_de_2(r)?, acima_de_2(w)?))
 }
 
+/// Capacidade pedida para os pipes de saída do filho (Fase 28g, 2ª auditoria do M4).
+///
+/// Com a capacidade padrão (64 KiB), um `write` único maior que ela entra no pipe em
+/// duas vezes: o kernel copia 64 KiB, acorda o leitor e espera espaço; o daemon lê e
+/// mascara o que está lá, e um segredo que cruza a fronteira sai com o começo em
+/// claro. Com 256 KiB, o `write` de até esse tamanho é copiado inteiro com a trava do
+/// pipe presa, e o leitor só o vê completo. 256 KiB e não mais: o kernel conta as
+/// páginas de pipe por usuário (`pipe-user-pages-soft`, 64 MiB), e 64 conexões com dois
+/// pipes cada ficam em 32 MiB; acima do limite, os pipes novos de todo programa do
+/// usuário encolhem.
+pub const CAPACIDADE_PIPE_SAIDA: usize = 256 * 1024;
+
+/// `F_SETPIPE_SZ` no pipe de `fd`, sem falhar: o kernel pode recusar (acima de
+/// `pipe-max-size` ou com o usuário no limite de páginas), e então o pipe fica com a
+/// capacidade padrão. Só piora o corte da máscara (D34 revisto), nunca abre segredo.
+#[allow(unsafe_code)]
+pub(crate) fn ampliar_pipe(fd: BorrowedFd<'_>, bytes: usize) -> Option<usize> {
+    let pedido = libc::c_int::try_from(bytes).ok()?;
+    // SAFETY: `F_SETPIPE_SZ` só muda a capacidade do pipe aberto (vivo pelo empréstimo);
+    // não lê nem escreve memória do processo.
+    let r = unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_SETPIPE_SZ, pedido) };
+    usize::try_from(r).ok()
+}
+
+/// Capacidade atual do pipe de `fd` (`F_GETPIPE_SZ`; só nos testes).
+#[cfg(test)]
+#[allow(unsafe_code)]
+pub(crate) fn capacidade_pipe(fd: BorrowedFd<'_>) -> io::Result<usize> {
+    // SAFETY: `F_GETPIPE_SZ` só lê a capacidade do pipe aberto (vivo pelo empréstimo).
+    let r = unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_GETPIPE_SZ) };
+    usize::try_from(r).map_err(|_| erro_os())
+}
+
 /// O mesmo fd, ou uma cópia `CLOEXEC` ≥ 3 se ele for 0, 1 ou 2.
 fn acima_de_2(fd: OwnedFd) -> io::Result<OwnedFd> {
     acima_de(fd, 3)
@@ -975,6 +1008,10 @@ pub(crate) fn fork_exec(p: &PreparoExec<'_>, stdio: Stdio) -> Result<FilhoCru, E
             let (in_r, in_w) = pipe_cloexec().map_err(ErroExec::Sistema)?;
             let (out_r, out_w) = pipe_cloexec().map_err(ErroExec::Sistema)?;
             let (err_r, err_w) = pipe_cloexec().map_err(ErroExec::Sistema)?;
+            // Fase 28g: um `write` único de até `CAPACIDADE_PIPE_SAIDA` entra inteiro no
+            // pipe antes de o leitor acordar, e o daemon o lê e mascara de uma vez.
+            ampliar_pipe(out_r.as_fd(), CAPACIDADE_PIPE_SAIDA);
+            ampliar_pipe(err_r.as_fd(), CAPACIDADE_PIPE_SAIDA);
             (
                 vec![in_r, out_w, err_w],
                 PontasPai::Pipes {

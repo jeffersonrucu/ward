@@ -124,7 +124,8 @@ subir() {
         "$BIN" </dev/null >>"$LOG" 2>&1 &
     local p=$!
     echo "$p" > "$PID"
-    printf '%s\n' "$APP" > "$MARCA_APP"
+    # 1ª linha: o WARD_DEV_APP; 2ª: o socket (o `make teste-cli` confere as duas).
+    printf '%s\n%s\n' "$APP" "$SOCKET" > "$MARCA_APP"
     for _ in $(seq 1 100); do
         if [ -S "$SOCKET" ] && pid_vivo >/dev/null; then
             echo "daemon de teste no ar: pid $p, socket $SOCKET, log $LOG"

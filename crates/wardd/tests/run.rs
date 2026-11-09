@@ -812,3 +812,39 @@ fn v4_21_travado_espera_o_destravar_da_cli() {
     assert_eq!(r.fim, Some(0), "{r:?}");
     assert_eq!(texto(&r.saida).trim(), SENHA_LIVRE.len().to_string());
 }
+
+/// Fase 28g, ataque da 2ª auditoria do M4: um `write` único de `n` bytes + a senha, com
+/// `n` em volta das fronteiras de 16 KiB (buffer antigo) e 64 KiB (pipe padrão), saía
+/// com o começo da senha em claro (o leitor cortava no tamanho do buffer). Agora o
+/// pipe tem 256 KiB e o daemon lê o lote inteiro antes de mascarar: a senha sai só
+/// `••••`, na saída e no erro.
+#[test]
+fn f28g_ataque_write_unico_grande_nao_mostra_o_comeco_da_senha() {
+    let dev = Dir::novo("run-28g");
+    cofre(&dev);
+    let sock = DirSocket::novo("28g");
+    let w = subir(&dev, &sock);
+    destravar_por(&w);
+    let mut casos: Vec<usize> = (16_370..16_390).collect();
+    casos.extend(65_520..65_540);
+    casos.extend([131_067, 200_000]);
+    for fd in [1, 2] {
+        for &n in &casos {
+            let script = format!(
+                "import os\nos.write({fd}, b'b' * {n} + os.environ['WARD_PASS'].encode() + b'\\n')\n"
+            );
+            let r = run(&w, "t-livre", &["/usr/bin/python3", "-c", &script], &[]);
+            assert_eq!(r.fim, Some(0), "fd={fd} n={n}: {:?}", r.falha);
+            let tudo = if fd == 1 { &r.saida } else { &r.erro };
+            assert!(
+                !contem(tudo, b"falso-"),
+                "fd={fd} n={n}: o começo da senha saiu em claro"
+            );
+            let mut esperado = vec![b'b'; n];
+            esperado.extend_from_slice("••••\n".as_bytes());
+            assert!(*tudo == esperado, "fd={fd} n={n}: saída inesperada");
+        }
+    }
+    let log = fs::read(&w.log).unwrap();
+    assert!(!contem(&log, SENHA_LIVRE.as_bytes()));
+}
