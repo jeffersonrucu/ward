@@ -390,6 +390,8 @@ Decisão do usuário em 2026-11-09: limiares de força do gerador (Fase 37) acei
 
 Teste instável (2026-11-09): `ward-plataforma --test identificacao` › `ataque_binario_copiado_para_fora_da_instalacao` falhou uma vez com ETXTBSY ("Text file busy") ao executar o binário copiado — corrida clássica de fd de escrita herdado por fork de outra thread de teste. Corrigir na Fase 22b (fechar e sincronizar a cópia antes, ou repetir o spawn em ETXTBSY).
 
+Pendências das Fases 32 e 25 para o planner (2026-11-09): (a) `DaemonSocket::trocar` do app ainda responde `SemProtocolo` — falta ligar a troca de quadros na conexão única (D47) e separar avisos sem pedido (`pedido_de_aprovacao`, `pedido_de_destrave`) — decidir a fase (23a ou 31); (b) o protocolo não tem operação que leve o valor ao app para "Revelar" (V5.3/V5.11 abertos); (c) N+1 em `listar_credenciais` (lista + 1 detalhe por entrada; a `ItemLista` do papel app pode ganhar usuário/porta); (d) datas criada/alterada não existem no protocolo; (e) V4.2 inteiro só no build de release (no `modo-teste` um falso não depurável passa) — validador roda a 2ª parte sem a feature, no contêiner, ou o texto do V4.2 muda.
+
 ## Milestone 3 — Daemon e protocolo
 Contrato: V3.1–V3.38
 
@@ -574,7 +576,7 @@ Contrato: V3.1–V3.38
 ## Milestone 4 — CLI e integração Claude (run/ssh)
 Contrato: V4.1–V4.38
 
-- [ ] Fase 25 — CLI `ward`: `lista [--json]`, `travar`, `destravar` (senha do TTY, só
+- [x] Fase 25 — CLI `ward`: `lista [--json]`, `travar`, `destravar` (senha do TTY, só
   depois de conferir que o servidor é o `wardd` instalado), mensagens em português.
   A conferência é a de D46 (pasta do root e par de uid 0). V4.1, V4.2, V4.18, V4.22.
   Nota do planner (D62, D63, 2026-11-09), para a fase em andamento: a CLI é papel
