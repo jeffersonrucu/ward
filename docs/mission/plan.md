@@ -470,6 +470,8 @@ Pendências da 42 (2026-11-09): **decisão nova para o planner registrar** — a
 
 Pendências da 53 (2026-11-09): guia não testado na máquina (menus do KeePassXC e `gnome-keyring-daemon --start --components=secrets` com o override ativo vêm da documentação). Ordem do V10.1 (chaveiro antes de desfazer a montagem) obriga o passo 4 a ligar os segredos do gnome-keyring só na sessão e o 5 a tornar permanente — alternativa: passo 5 antes de gravar a chave. Skill `cofre` para de funcionar no passo 4 (escopo diz que segue até o KeePassXC sair); o guia manda fazer 4–7 na mesma sessão. Atributos do "Chrome Safe Storage" são exemplo. Sem `.desktop` do app (pendência da 51): passo 1 não diz como abrir. V10.4 é do usuário.
 
+Pendências da 52 (2026-11-09): Depends além do `sshpass`: `openssh-client`, `systemd`, `libwebkit2gtk-4.1-0` (confirmar). `ward-app`/`ward-nm` vão 0755 no pacote e o 2755 com o grupo entra por `dpkg-statoverride` (`preinst` registra, `postinst` aplica). Risco da 51 continua: build como usuário, instalação como root (mesmo uid pode trocar o `.deb` antes do `sudo`; roteiro mitiga com clone limpo e cópia para `/root/ward`; saída: build num contêiner). `file://` no `update_url` com force-install não confirmado no Chrome do Linux (V9.5; alternativa `external_crx`). Sem `conffiles` de propósito. `/usr/local` num `.deb` contra a Debian Policy (R4, D18; D18 do PRD desatualizado). `dpkg -r` apaga grupos mesmo preexistentes. `make extensao-crx` com a chave real não rodou. Roteiro real (V9.5, V9.7, V9.8) é do usuário. App sem `.desktop`.
+
 ## Milestone 3 — Daemon e protocolo
 Contrato: V3.1–V3.41
 
@@ -889,7 +891,7 @@ Contrato: V9.1–V9.11
   (`-p`, sem `modo-teste`, D63), manifesto de native messaging, política
   do Chrome com force-install e update local, recusa de artefato `modo-teste`. V9.1–V9.4, V9.6,
   V9.7, V9.10, V9.11.
-- [ ] Fase 52 — `.deb` por `dpkg-deb` a partir do staging (dependência `sshpass`), teste
+- [x] Fase 52 — `.deb` por `dpkg-deb` a partir do staging (dependência `sshpass`), teste
   num contêiner `ubuntu:24.04` e roteiro de instalação para o usuário (política do
   Chrome, systemd, `~/.ssh` intacto). V9.5, V9.8, V9.9.
 
