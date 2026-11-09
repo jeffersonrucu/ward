@@ -71,6 +71,11 @@ pub enum ErroResposta {
     OrigemDiferente,
     /// A entrada não passou na validação.
     Validacao(Vec<Problema>),
+    /// `ward run` de um tipo sem entrega (`nota segura`, D10): nada é executado.
+    TipoSemEntrega,
+    /// A entrega da credencial não pôde ser montada (arquivo temporário, código TOTP,
+    /// túnel): nada é executado.
+    EntregaFalhou,
     /// Erro interno do daemon (sem detalhe).
     Interno,
 }
@@ -86,7 +91,7 @@ pub const MSG_GERACAO_ESGOTADA: &str =
 
 impl ErroResposta {
     /// Todos os códigos sem dado (o de validação fica de fora).
-    pub const SIMPLES: [ErroResposta; 24] = [
+    pub const SIMPLES: [ErroResposta; 26] = [
         Self::NaoAutorizado,
         Self::Travado,
         Self::TravadoTempoEsgotado,
@@ -110,6 +115,8 @@ impl ErroResposta {
         Self::Expirado,
         Self::AprovacaoIndisponivel,
         Self::OrigemDiferente,
+        Self::TipoSemEntrega,
+        Self::EntregaFalhou,
         Self::Interno,
     ];
 
@@ -140,6 +147,8 @@ impl ErroResposta {
             Self::AprovacaoIndisponivel => "aprovacao_indisponivel",
             Self::OrigemDiferente => "origem_diferente",
             Self::Validacao(_) => "validacao",
+            Self::TipoSemEntrega => "tipo_sem_entrega",
+            Self::EntregaFalhou => "entrega_falhou",
             Self::Interno => "interno",
         }
     }
@@ -171,6 +180,8 @@ impl ErroResposta {
             Self::AprovacaoIndisponivel => "aprovação indisponível",
             Self::OrigemDiferente => "a origem da página não bate com a da entrada",
             Self::Validacao(_) => "entrada inválida",
+            Self::TipoSemEntrega => "tipo sem entrega",
+            Self::EntregaFalhou => "a entrega da credencial falhou; nada foi executado",
             Self::Interno => "erro interno do Ward",
         }
     }

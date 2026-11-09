@@ -194,3 +194,52 @@ impl Conexao {
             .map_err(|_| ErroConexao::RespostaInvalida)
     }
 }
+
+/// Sessão do `ward run` (Fase 26): depois do `executar`, o daemon manda `saida` e `fim`;
+/// a CLI manda a entrada padrão em `entrada_padrao` (vazio = fim). Sem prazo de leitura
+/// nem de escrita: o comando dura o que durar, e a pressão do pipe volta até o filho.
+#[derive(Debug)]
+pub struct Sessao {
+    leitura: UnixStream,
+}
+
+/// A ponta de escrita da sessão (a thread da entrada padrão).
+#[derive(Debug)]
+pub struct EscritaSessao {
+    escrita: UnixStream,
+}
+
+impl Conexao {
+    /// Manda o pedido que abre a sessão (`executar`) e devolve as duas pontas.
+    pub fn abrir_sessao(self, pedido: &Pedido) -> Result<(Sessao, EscritaSessao), ErroConexao> {
+        let mut stream = self.stream;
+        let corpo = protocolo::codificar_pedido(Papel::Agente, pedido)
+            .map_err(|_| ErroConexao::PedidoInvalido)?;
+        quadro::escrever_quadro(&mut stream, &corpo, MAX_QUADRO_COMUM).map_err(erro_do_quadro)?;
+        drop(corpo);
+        stream
+            .set_read_timeout(None)
+            .and_then(|()| stream.set_write_timeout(None))
+            .map_err(|e| erro_de_io(&e))?;
+        let escrita = stream.try_clone().map_err(|e| erro_de_io(&e))?;
+        Ok((Sessao { leitura: stream }, EscritaSessao { escrita }))
+    }
+}
+
+impl Sessao {
+    /// A próxima resposta do daemon (do papel agente: uma com credencial é recusada).
+    pub fn receber(&mut self) -> Result<Resposta, ErroConexao> {
+        let q = quadro::ler_quadro(&mut self.leitura, LIMITE_RESPOSTA).map_err(erro_do_quadro)?;
+        protocolo::decodificar_resposta(Papel::Agente, &q)
+            .map_err(|_| ErroConexao::RespostaInvalida)
+    }
+}
+
+impl EscritaSessao {
+    /// Manda um pedaço da entrada padrão (vazio = fim da entrada).
+    pub fn entrada(&mut self, dados: ward_core::entrada::Segredo) -> Result<(), ErroConexao> {
+        let corpo = protocolo::codificar_pedido(Papel::Agente, &Pedido::EntradaPadrao { dados })
+            .map_err(|_| ErroConexao::PedidoInvalido)?;
+        quadro::escrever_quadro(&mut self.escrita, &corpo, MAX_QUADRO_COMUM).map_err(erro_do_quadro)
+    }
+}

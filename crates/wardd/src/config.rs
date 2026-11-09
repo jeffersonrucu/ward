@@ -28,6 +28,10 @@ pub struct Config {
     /// O binário que o `abrir_app` do daemon de teste abre (D63).
     #[cfg(feature = "modo-teste")]
     pub app_de_teste: Option<ward_plataforma::BinarioDeTeste>,
+    /// `<rt>` (Fase 26, S2): os temporários do `ward run` ficam em `<rt>tmp/`. Release:
+    /// `/run/user/<uid>/ward/` (pelo uid efetivo, não por `XDG_RUNTIME_DIR`); daemon de
+    /// teste: o diretório do socket de teste.
+    pub rt: PathBuf,
 }
 
 /// `WARD_DEV_APP` (D63): conferido como [`ward_plataforma::BinarioDeTeste`], dentro do
@@ -93,6 +97,8 @@ impl Config {
                 estado: dir.join("estado"),
             },
             diretorio_socket_teste: None,
+            rt: ward_plataforma::socket::diretorio_runtime()
+                .join(ward_plataforma::socket::NOME_DIRETORIO),
         })
     }
 
@@ -117,6 +123,7 @@ impl Config {
         });
         Ok(Config {
             caminhos: caminhos_de_teste(&dev),
+            rt: socket.clone(),
             diretorio_socket_teste: Some(socket),
             app_de_teste,
         })

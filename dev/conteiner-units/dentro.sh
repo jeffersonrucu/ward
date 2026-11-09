@@ -64,6 +64,38 @@ r="$(printf '%s' 'falso-mestra-ward-01' | setpriv --reuid="$UID_T" --regid="$UID
 confere "destrava o cofre de teste" "$r" "resposta: ok"
 r="$(setpriv --reuid="$UID_T" --regid="$UID_T" --init-groups /opt/teste/cliente "/run/ward/$UID_T/wardd.sock" lista)"
 confere "lista com o cofre destravado" "$r" "resposta: lista"
+
+# V4.38 (Fase 26, D63): grupos da instalação e cópias setgid do cliente mínimo. O
+# `wardd` lê os grupos na partida: reinicia para ligar os papéis.
+groupadd --system ward-app
+groupadd --system ward-nm
+install -m 2755 -o root -g ward-app /opt/teste/cliente /usr/local/bin/ward-app
+install -m 2755 -o root -g ward-nm /opt/teste/cliente /usr/local/bin/ward-nm
+install -m 0755 -o root -g root /opt/teste/ward /usr/local/bin/ward
+systemctl stop "wardd@$UID_T.service"
+r="$(printf '%s' 'falso-mestra-ward-01' | setpriv --reuid="$UID_T" --regid="$UID_T" --init-groups /opt/teste/cliente "/run/ward/$UID_T/wardd.sock" destravar)"
+confere "V4.38 destrava de novo, com os grupos" "$r" "resposta: ok"
+pid="$(systemctl show -p MainPID --value "wardd@$UID_T.service")"
+st="/proc/$pid/status"
+# Ambiente de uma sessão (D57), mais o que o `ward run` repassa.
+como_usuario() {
+    setpriv --reuid="$UID_T" --regid="$UID_T" --init-groups \
+        env -i PATH=/usr/local/bin:/usr/bin:/bin HOME="$HOME_T" LANG=C.UTF-8 \
+        XDG_RUNTIME_DIR="/run/user/$UID_T" WAYLAND_DISPLAY=wayland-0 "$@"
+}
+inicio="$(date '+%Y-%m-%d %H:%M:%S')"
+r="$(como_usuario /usr/local/bin/ward run acme-pg-dev -- /usr/local/bin/ward-app "/run/ward/$UID_T/wardd.sock" estado 2>&1)" || true
+confere "V4.38 ward run -- ward-app: papel agente" "$r" "resposta: estado papel=agente"
+r="$(como_usuario /usr/local/bin/ward run acme-pg-dev -- /usr/local/bin/ward-app "/run/ward/$UID_T/wardd.sock" lista 2>&1)" || true
+confere "V4.38 ward run -- ward-app: lista do agente" "$r" "resposta: lista"
+r="$(como_usuario /usr/local/bin/ward run acme-pg-dev -- /usr/local/bin/ward-nm "/run/ward/$UID_T/wardd.sock" estado 2>&1)" || true
+confere "V4.38 ward run -- ward-nm: papel agente" "$r" "resposta: estado papel=agente"
+r="$(como_usuario /usr/local/bin/ward run acme-pg-dev -- /bin/sh -c 'printf %s "$PGPASSWORD"' 2>&1)" || true
+confere "ward run de release: a senha sai mascarada" "$r" "••••"
+sleep 0.5
+jr="$(journalctl -u "wardd@$UID_T.service" --no-pager -q --since "$inicio" 2>/dev/null || true)"
+confere "V4.38 o daemon recusou o papel app ao filho (D63)" "$jr" "papel app recusado"
+if [[ "$jr" == *falso-* ]]; then falhou "valor falso no journal"; else ok "journal sem valor do cofre"; fi
 lck="$(awk '/^VmLck:/{print $2}' "$st")"
 rss="$(awk '/^VmRSS:/{print $2}' "$st")"
 if [[ "$lck" =~ ^[0-9]+$ && "$rss" =~ ^[0-9]+$ && "$lck" -gt 0 && "$lck" -ge "$rss" ]]; then

@@ -4,7 +4,8 @@
 //!
 //! - `connect: <errno>` se o `connect` falhou (ex.: `EACCES`, 13);
 //! - `bytes: 0` se o daemon fechou sem mandar nada;
-//! - `resposta: <tipo>` (ou `resposta: erro <codigo>`) se respondeu.
+//! - `resposta: <tipo>` (ou `resposta: erro <codigo>`) se respondeu; o `estado` leva
+//!   também o papel que o daemon deu à conexão (`resposta: estado papel=agente`; V4.38).
 //!
 //! Uso: `wardd-cliente-teste <socket> <estado|lista|destravar>`. Com `destravar`
 //! (`make teste-units`, V3.34), a senha **de teste** vem do stdin (nunca de argv) e vai
@@ -73,6 +74,7 @@ fn main() -> ExitCode {
         .and_then(|()| protocolo::decodificar_resposta(Papel::Agente, &corpo).ok());
     match r {
         Some(Resposta::Erro(e)) => println!("resposta: erro {}", e.codigo()),
+        Some(Resposta::Estado { papel, .. }) => println!("resposta: estado papel={}", papel.nome()),
         Some(r) => println!("resposta: {}", r.tipo().nome()),
         None => println!("resposta: invalida"),
     }
