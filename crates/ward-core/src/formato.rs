@@ -363,6 +363,14 @@ impl CofreAberto {
     pub(crate) fn selar(&self, conteudo: &[u8]) -> Result<Vec<u8>, ErroFormato> {
         self.chaves.selar(conteudo)
     }
+
+    /// O arquivo foi selado por este cofre (mesmo sal, mesmo embrulho da chave de dados,
+    /// e o corpo abre com a chave de dados)? Sem Argon2. O conteúdo decifrado zera ao
+    /// sair. Para o backup do cofre atual (D17, Fase 45): só um arquivo autêntico vai
+    /// para a pasta de backups.
+    pub(crate) fn autentica(&self, arquivo: &[u8]) -> bool {
+        self.chaves.abrir_proprio(arquivo).is_ok()
+    }
 }
 
 /// Chaves de um arquivo de cofre: a chave de dados (que zera ao sair) e o embrulho dela,
@@ -458,6 +466,29 @@ impl ChavesCofre {
         arquivo.extend_from_slice(&cabecalho);
         arquivo.extend_from_slice(&corpo);
         Ok(arquivo)
+    }
+
+    /// Abre um arquivo selado por estas chaves: estrutura, os 128 primeiros bytes do
+    /// cabeçalho iguais aos destas chaves (parâmetros, sal, nonce e chave embrulhada; são
+    /// públicos, a comparação não precisa de tempo constante) e o corpo pela AEAD com a
+    /// chave de dados. Qualquer diferença dá [`ErroFormato::SenhaOuArquivo`].
+    fn abrir_proprio(&self, arquivo: &[u8]) -> Result<Zeroizing<Vec<u8>>, ErroFormato> {
+        ler_cabecalho(arquivo)?;
+        let prefixo = prefixo_cabecalho(&self.kdf, &self.sal, &self.nonce_chave);
+        if arquivo[..P_EMBRULHADA] != prefixo
+            || arquivo[P_EMBRULHADA..P_NONCE_DADOS] != self.embrulhada
+        {
+            return Err(ErroFormato::SenhaOuArquivo);
+        }
+        let mut nonce_dados = [0u8; TAM_NONCE];
+        nonce_dados.copy_from_slice(&arquivo[P_NONCE_DADOS..P_TAMANHO]);
+        cripto::abrir(
+            &self.chave_dados,
+            &nonce_dados,
+            &arquivo[..TAM_CABECALHO],
+            &arquivo[TAM_CABECALHO..],
+        )
+        .map_err(|_| ErroFormato::SenhaOuArquivo)
     }
 }
 

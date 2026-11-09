@@ -180,6 +180,16 @@ pub enum Pedido {
     },
     /// D57: abrir a instância verdadeira do app (filho do daemon), sem nenhum campo.
     AbrirApp,
+    /// Versões do backup local (Fase 45), sem campo.
+    Backups,
+    /// Restaurar uma versão do backup local (D17, D39; Fase 45): o nome exato do arquivo
+    /// (`ward-AAAAMMDD-HHMMSS[-N].ward`, nunca um caminho), a senha mestra daquela versão
+    /// e o PIN do cofre atual (S9: restaurar volta níveis e PIN).
+    RestaurarBackup {
+        versao: String,
+        senha: Segredo,
+        pin: Segredo,
+    },
 }
 
 impl Pedido {
@@ -213,6 +223,8 @@ impl Pedido {
             Pedido::Preencher { .. } => Operacao::Preencher,
             Pedido::SalvarLogin { .. } => Operacao::SalvarLogin,
             Pedido::AbrirApp => Operacao::AbrirApp,
+            Pedido::Backups => Operacao::Backups,
+            Pedido::RestaurarBackup { .. } => Operacao::RestaurarBackup,
         }
     }
 
@@ -272,14 +284,33 @@ impl Pedido {
             Pedido::SalvarLogin { rascunho } => {
                 ok(matches!(rascunho.dados, RascunhoDados::Login { .. }) && rascunho_ok(rascunho))
             }
-            Pedido::Estado | Pedido::Travar | Pedido::Lista | Pedido::AbrirApp => Ok(()),
+            Pedido::RestaurarBackup { versao, senha, pin } => {
+                ok(versao_ok(versao) && senha_ok(senha) && pin_ok(pin))
+            }
+            Pedido::Estado
+            | Pedido::Travar
+            | Pedido::Lista
+            | Pedido::AbrirApp
+            | Pedido::Backups => Ok(()),
         }
     }
 
     /// Escreve os `dados` do pedido.
     pub(crate) fn escrever(&self, e: &mut Escritor) {
         match self {
-            Pedido::Estado | Pedido::Travar | Pedido::Lista | Pedido::AbrirApp => {}
+            Pedido::Estado
+            | Pedido::Travar
+            | Pedido::Lista
+            | Pedido::AbrirApp
+            | Pedido::Backups => {}
+            Pedido::RestaurarBackup { versao, senha, pin } => {
+                e.chave("versao");
+                e.texto(versao);
+                e.chave("senha");
+                e.base64(senha.expor());
+                e.chave("pin");
+                e.base64(pin.expor());
+            }
             Pedido::Destravar { senha } => {
                 e.chave("senha");
                 e.base64(senha.expor());
@@ -431,6 +462,19 @@ fn nome_ok(n: &str) -> bool {
     !n.is_empty() && n.len() <= MAX_NOME
 }
 
+/// Nome exato de uma versão de backup (Fase 45): sem barra, sem `..`, sem caminho.
+fn versao_ok(v: &str) -> bool {
+    #[cfg(unix)]
+    {
+        crate::backup::nome_valido(v)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = v;
+        false
+    }
+}
+
 fn senha_ok(s: &Segredo) -> bool {
     !s.is_empty() && s.len() <= MAX_SEGREDO
 }
@@ -520,6 +564,12 @@ pub(crate) fn ler(op: Operacao, mut c: Campos) -> R<Pedido> {
         Operacao::Travar => Pedido::Travar,
         Operacao::Lista => Pedido::Lista,
         Operacao::AbrirApp => Pedido::AbrirApp,
+        Operacao::Backups => Pedido::Backups,
+        Operacao::RestaurarBackup => Pedido::RestaurarBackup {
+            versao: c.texto("versao", MAX_NOME)?,
+            senha: c.segredo("senha", MAX_SEGREDO)?,
+            pin: c.segredo("pin", MAX_DIGITOS_PIN)?,
+        },
         Operacao::Destravar => Pedido::Destravar {
             senha: c.segredo("senha", MAX_SEGREDO)?,
         },

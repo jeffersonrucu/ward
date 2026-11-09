@@ -3,6 +3,10 @@
 
 #![forbid(unsafe_code)]
 
+// Backup local automático e a versão para restaurar (D17, D27; Fase 45).
+#[cfg(unix)]
+pub mod backup;
+
 // Configuração do cofre: hash do PIN, tempo de trava, backup (D30, Fase 19b).
 pub mod configuracao;
 // Corpo do cofre: configuração e entradas ↔ bytes (D26, D30; Fases 15a e 19b).
