@@ -13,10 +13,11 @@
 //! entrada nova e mantido na editada) e `mudar_nivel` (Fase 35, a mesma regra do
 //! `wardd`: PIN conferido no hash Argon2id da configuração do cofre de teste, em tempo
 //! constante pela biblioteca; o 5º erro seguido trava, e travado tudo menos `estado`
-//! responde "travado"); o resto responde `interno`. As mudanças ficam só na memória do
-//! processo (travado, só reiniciando a ponte). No [`DaemonFalso::sem_cofre`], atende
-//! `criar_cofre` (Fase 30): guarda só o hash do PIN (D30), que o `mudar_nivel` passa a
-//! conferir no lugar do PIN de teste.
+//! responde "travado"), `destravar` (Fase 31: senha mestra de teste conferida em tempo
+//! constante, espera de D20 antes de olhar a senha); o resto responde `interno`. As
+//! mudanças ficam só na memória do processo (travado, só reiniciando a ponte). No
+//! [`DaemonFalso::sem_cofre`], atende `criar_cofre` (Fase 30): guarda só o hash do PIN
+//! (D30), que o `mudar_nivel` passa a conferir no lugar do PIN de teste.
 //!
 //! Sem a feature `modo-teste` este módulo nem existe no binário (só nos testes).
 
@@ -50,6 +51,11 @@ pub struct DaemonFalso {
     /// Erros de PIN seguidos (S9). Zera no acerto.
     erros_pin: u32,
     travado: bool,
+    /// Senhas mestras erradas seguidas do papel app (D20, D62). Zera no acerto.
+    falhas_destravar: u32,
+    /// Dorme a espera de D20 antes de olhar a senha, como o `wardd` (os testes de
+    /// unidade desligam para não esperar).
+    espera_d20: bool,
 }
 
 /// Erros de PIN seguidos que travam o cofre (o mesmo `MAX_ERROS_PIN` do `wardd`).
@@ -64,6 +70,8 @@ impl DaemonFalso {
             hash_pin: None,
             erros_pin: 0,
             travado: false,
+            falhas_destravar: 0,
+            espera_d20: true,
         }
     }
 
@@ -75,7 +83,55 @@ impl DaemonFalso {
             hash_pin: None,
             erros_pin: 0,
             travado: false,
+            falhas_destravar: 0,
+            espera_d20: true,
         }
+    }
+
+    /// Fase 31: as entradas do cofre de teste com o cofre travado (`Destravar / *`). A
+    /// senha mestra que destrava é a de teste (D15); a conferência é em tempo constante.
+    pub fn travado() -> DaemonFalso {
+        DaemonFalso {
+            travado: true,
+            ..DaemonFalso::cheio()
+        }
+    }
+
+    /// Sem a espera de D20 (só os testes de unidade).
+    #[cfg(test)]
+    pub(crate) fn sem_espera(mut self) -> DaemonFalso {
+        self.espera_d20 = false;
+        self
+    }
+
+    /// A mesma regra do `wardd` (`crates/wardd/src/nucleo.rs` › `destravar`): a espera
+    /// de D20 vem antes de olhar a senha; o acerto zera as falhas (de senha e de PIN).
+    fn destravar(&mut self, senha: &SegredoCore) -> Result<(), ErroResposta> {
+        if !self.travado {
+            return Ok(());
+        }
+        if self.espera_d20 && self.falhas_destravar > 0 {
+            let segundos = 1u64
+                .checked_shl(self.falhas_destravar - 1)
+                .unwrap_or(u64::MAX)
+                .min(30);
+            std::thread::sleep(std::time::Duration::from_secs(segundos));
+        }
+        let certa = {
+            use ctutils::CtEq;
+            senha
+                .expor()
+                .ct_eq(cofre_teste::SENHA_MESTRA.as_bytes())
+                .to_bool()
+        };
+        if !certa {
+            self.falhas_destravar = self.falhas_destravar.saturating_add(1);
+            return Err(ErroResposta::SenhaIncorreta);
+        }
+        self.falhas_destravar = 0;
+        self.erros_pin = 0;
+        self.travado = false;
+        Ok(())
     }
 
     /// Sem cofre ainda (`Primeiro uso / *`, Fase 30): `estado` responde
@@ -88,6 +144,8 @@ impl DaemonFalso {
             hash_pin: None,
             erros_pin: 0,
             travado: false,
+            falhas_destravar: 0,
+            espera_d20: true,
         }
     }
 
@@ -120,7 +178,7 @@ impl DaemonFalso {
                 _ => Resposta::Erro(ErroResposta::CofreInexistente),
             };
         }
-        if self.travado && !matches!(pedido, Pedido::Estado) {
+        if self.travado && !matches!(pedido, Pedido::Estado | Pedido::Destravar { .. }) {
             return Resposta::Erro(ErroResposta::Travado);
         }
         match pedido {
@@ -128,6 +186,10 @@ impl DaemonFalso {
                 travado: self.travado,
                 cofre_existe: true,
                 papel: Papel::App,
+            },
+            Pedido::Destravar { senha } => match self.destravar(&senha) {
+                Ok(()) => Resposta::Ok,
+                Err(e) => Resposta::Erro(e),
             },
             Pedido::CriarCofre { .. } => Resposta::Erro(ErroResposta::CofreJaExiste),
             Pedido::Lista => Resposta::Lista(

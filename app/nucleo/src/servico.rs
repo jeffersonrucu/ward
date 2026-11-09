@@ -3,7 +3,7 @@
 //! e as mesmas respostas. Nenhuma resposta carrega segredo (S1, S11, D4).
 
 use std::collections::BTreeMap;
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use serde::Serialize;
 use ward_core::entrada::{Rascunho, RascunhoAnexo, Segredo as SegredoCore, TipoEntrada};
@@ -16,6 +16,7 @@ use crate::cliente;
 use crate::comandos::{Referencia, validar_nome_entrada};
 use crate::credenciais::{DetalheCredencial, ItemCredencial};
 use crate::daemon::{Daemon, EstadoCofre};
+use crate::destrave::{InfoPedido, PedidoPendente, SenhaMestra};
 use crate::formulario::{self, ErroCampo, Falta, Fontes, Formulario};
 use crate::gerador::{Gerada, Gerador, Opcoes, Revelada};
 use crate::nivel::{NivelMudado, Pin, nivel_de_nome};
@@ -63,6 +64,8 @@ pub struct Servico<D: Daemon, A: AreaTransferencia> {
     seletor: Box<dyn Seletor>,
     /// Quem abre o terminal do "Conectar" (D3).
     terminal: Box<dyn Terminal>,
+    /// O `pedido_de_destrave` do agente que está esperando (Fase 31, D65 a).
+    pedido: Arc<PedidoPendente>,
 }
 
 /// Valores que o formulário pede sem passar pela interface.
@@ -97,7 +100,35 @@ impl<D: Daemon, A: AreaTransferencia> Servico<D, A> {
             anexos: Mutex::new(Anexos::default()),
             seletor: Box::new(SemSeletor),
             terminal: Box::new(SemTerminal),
+            pedido: Arc::new(PedidoPendente::default()),
         }
+    }
+
+    /// O pedido de destrave que a vigia da fila de avisos marca
+    /// ([`crate::destrave::vigiar`]).
+    pub fn pedido_de_destrave(&self) -> Arc<PedidoPendente> {
+        Arc::clone(&self.pedido)
+    }
+
+    /// O pedido do agente que espera o destrave, se o cofre está travado e o pedido
+    /// ainda está no prazo. Sem entrada nem comando (o aviso não os traz).
+    pub fn info_do_pedido(&self, estado: EstadoCofre) -> Option<InfoPedido> {
+        match estado {
+            EstadoCofre::Travado => self.pedido.info(),
+            _ => None,
+        }
+    }
+
+    /// `destravar { senha }` (Fase 31): a senha chega já conferida no formato, num
+    /// [`SenhaMestra`] que zera, e só vai ao daemon. A espera de D20 é do daemon (antes de
+    /// olhar a senha), e a resposta não diz quantas tentativas houve. Destravou: o pedido
+    /// do agente segue sozinho no daemon e sai da tela.
+    pub fn destravar(&self, senha: SenhaMestra) -> Result<(), ErroApp> {
+        let r = cliente::destravar(&mut *self.daemon()?, &senha);
+        drop(senha);
+        r?;
+        self.pedido.limpar();
+        Ok(())
     }
 
     /// Troca o seletor de arquivo (sem ele, `escolher_anexo` responde o erro).
@@ -1427,5 +1458,159 @@ mod testes {
             Err(ErroApp::TerminalIndisponivel)
         );
         assert_eq!(sem.escolher_anexo(), Err(ErroApp::SeletorIndisponivel));
+    }
+}
+
+/// Fase 31: destravar com a senha mestra e o pedido de destrave do agente.
+#[cfg(test)]
+mod testes_destravar {
+    use super::*;
+    use crate::daemon::{Aviso, FilaAvisos};
+    use crate::daemon_falso::DaemonFalso;
+    use std::time::Duration;
+    use zeroize::Zeroizing;
+
+    const SENHA_CERTA: &str = "falso-mestra-ward-01";
+
+    struct SemArea;
+    impl AreaTransferencia for SemArea {
+        fn escrever(&self, _: &[u8]) -> Result<(), ErroApp> {
+            Err(ErroApp::AreaTransferencia)
+        }
+        fn ler(&self) -> Result<Option<Zeroizing<Vec<u8>>>, ErroApp> {
+            Ok(None)
+        }
+        fn limpar(&self) -> Result<(), ErroApp> {
+            Ok(())
+        }
+    }
+
+    fn servico() -> Servico<DaemonFalso, SemArea> {
+        Servico::novo(DaemonFalso::travado().sem_espera(), Copiador::novo(SemArea))
+    }
+
+    fn senha(s: &str) -> SenhaMestra {
+        SenhaMestra::nova(s.to_owned()).unwrap()
+    }
+
+    /// Guarda os quadros que o app manda e responde pelo daemon falso.
+    struct Espiao(DaemonFalso, Arc<Mutex<Vec<Zeroizing<Vec<u8>>>>>);
+    impl Daemon for Espiao {
+        fn trocar(&mut self, pedido: &[u8]) -> Result<Zeroizing<Vec<u8>>, ErroApp> {
+            self.1.lock().unwrap().push(Zeroizing::new(pedido.to_vec()));
+            self.0.trocar(pedido)
+        }
+    }
+
+    #[test]
+    fn senha_errada_nao_destrava_e_a_certa_destrava() {
+        let s = servico();
+        assert_eq!(s.estado_do_cofre(), Ok(EstadoCofre::Travado));
+        assert_eq!(s.listar_credenciais().unwrap_err(), ErroApp::Travado);
+        for errada in [
+            "falso-mestra-ward-02",
+            "135790",
+            "FALSO-MESTRA-WARD-01",
+            " ",
+        ] {
+            assert_eq!(s.destravar(senha(errada)), Err(ErroApp::SenhaIncorreta));
+            assert_eq!(s.estado_do_cofre(), Ok(EstadoCofre::Travado));
+        }
+        s.destravar(senha(SENHA_CERTA)).unwrap();
+        assert_eq!(s.estado_do_cofre(), Ok(EstadoCofre::Destravado));
+        assert!(!s.listar_credenciais().unwrap().is_empty());
+        // Já destravado: `ok` de novo.
+        s.destravar(senha("qualquer")).unwrap();
+    }
+
+    #[test]
+    fn ataque_erro_do_destravar_sem_senha_nem_contagem() {
+        // S13/D20: a mensagem do erro é fixa, sem a senha e sem quantas tentativas
+        // houve (a 1ª e a 5ª dizem a mesma coisa).
+        let s = servico();
+        let primeira = s.destravar(senha("falso-mestra-ward-99")).unwrap_err();
+        for _ in 0..4 {
+            assert_eq!(
+                s.destravar(senha("falso-mestra-ward-99")).unwrap_err(),
+                primeira
+            );
+        }
+        let texto = format!("{primeira} {primeira:?} {}", primeira.codigo());
+        assert!(!texto.contains("falso"), "{texto}");
+        assert!(!texto.chars().any(|c| c.is_ascii_digit()), "{texto}");
+    }
+
+    #[test]
+    fn ataque_a_senha_so_vai_no_pedido_destravar() {
+        // A senha sai do app só no quadro `destravar`; nenhum outro quadro a leva.
+        let quadros = Arc::new(Mutex::new(Vec::new()));
+        let s = Servico::novo(
+            Espiao(DaemonFalso::travado().sem_espera(), quadros.clone()),
+            Copiador::novo(SemArea),
+        );
+        let _ = s.estado_do_cofre();
+        s.destravar(senha(SENHA_CERTA)).unwrap();
+        let _ = s.listar_credenciais();
+        let q = quadros.lock().unwrap();
+        assert!(q.len() >= 3);
+        let textos: Vec<String> = q
+            .iter()
+            .map(|b| String::from_utf8_lossy(b).into_owned())
+            .collect();
+        assert_eq!(
+            textos
+                .iter()
+                .filter(|t| t.contains("\"destravar\""))
+                .count(),
+            1
+        );
+        for t in textos.iter().filter(|t| !t.contains("\"destravar\"")) {
+            assert!(!t.contains("falso-mestra"), "{t}");
+            // base64 de "falso-mestra-ward-01" (como o protocolo leva a senha).
+            assert!(!t.contains("ZmFsc28tbWVzdHJhLXdhcmQtMDE"), "{t}");
+        }
+    }
+
+    #[test]
+    fn pedido_do_agente_aparece_so_travado_e_some_ao_destravar() {
+        let s = servico();
+        let fila = Arc::new(FilaAvisos::default());
+        let (tx, rx) = std::sync::mpsc::channel();
+        crate::destrave::vigiar(fila.clone(), s.pedido_de_destrave(), move || {
+            let _ = tx.send(());
+        })
+        .unwrap();
+        assert_eq!(s.info_do_pedido(EstadoCofre::Travado), None);
+        fila.simular(Aviso::Destrave);
+        rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        let info = s.info_do_pedido(EstadoCofre::Travado).unwrap();
+        assert!(info.restante > 110 && info.restante <= 120, "{info:?}");
+        assert_eq!(s.info_do_pedido(EstadoCofre::Destravado), None);
+        assert_eq!(s.info_do_pedido(EstadoCofre::SemCofre), None);
+        // Senha errada não tira o pedido.
+        let _ = s.destravar(senha("errada"));
+        assert!(s.info_do_pedido(EstadoCofre::Travado).is_some());
+        s.destravar(senha(SENHA_CERTA)).unwrap();
+        assert_eq!(s.info_do_pedido(EstadoCofre::Travado), None);
+        // O JSON que vai à tela tem só id e restante.
+        fila.simular(Aviso::Destrave);
+        rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        let j = serde_json::to_value(s.info_do_pedido(EstadoCofre::Travado).unwrap()).unwrap();
+        let chaves: Vec<&String> = j.as_object().unwrap().keys().collect();
+        assert_eq!(chaves, ["id", "restante"]);
+    }
+
+    #[test]
+    fn daemon_falso_espera_d20_antes_de_olhar_a_senha() {
+        // A 2ª tentativa (depois de 1 erro) espera 1 s mesmo com a senha certa.
+        let s = Servico::novo(DaemonFalso::travado(), Copiador::novo(SemArea));
+        assert_eq!(s.destravar(senha("errada")), Err(ErroApp::SenhaIncorreta));
+        let t = std::time::Instant::now();
+        s.destravar(senha(SENHA_CERTA)).unwrap();
+        assert!(
+            t.elapsed() >= Duration::from_millis(990),
+            "{:?}",
+            t.elapsed()
+        );
     }
 }

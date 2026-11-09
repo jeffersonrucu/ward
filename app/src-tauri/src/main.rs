@@ -14,15 +14,17 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
+use tauri::ipc::Channel;
 use tauri::{Builder, Manager, RunEvent, Runtime, State, WebviewUrl, WebviewWindowBuilder};
 use ward_app_nucleo::ErroApp;
 use ward_app_nucleo::anexos::{Escolha, Seletor};
 use ward_app_nucleo::area_transferencia::{Copiador, Wayland};
 use ward_app_nucleo::credenciais::{DetalheCredencial, ItemCredencial};
 use ward_app_nucleo::daemon::DaemonSocket;
+use ward_app_nucleo::destrave::{self, InfoPedido, SenhaMestra};
 use ward_app_nucleo::formulario::Formulario;
 use ward_app_nucleo::gerador::Opcoes;
 use ward_app_nucleo::nivel::{NivelMudado, Pin};
@@ -49,26 +51,88 @@ impl From<ErroApp> for Falha {
     }
 }
 
+/// Fase 31: com o cofre travado, `pedido` é o pedido do agente que espera o destrave
+/// (só um id e os segundos que faltam; o aviso não traz entrada nem comando).
 #[derive(Serialize)]
 struct RespostaEstado {
     estado: &'static str,
+    pedido: Option<InfoPedido>,
 }
+
+/// O que o canal de avisos leva à tela: só o nome do aviso, sem dado (D65 a).
+#[derive(Clone, Serialize)]
+struct AvisoTela {
+    aviso: &'static str,
+}
+
+/// Canal do Tauri que a tela abriu com `ouvir_avisos` (um por vez: o mais novo vale).
+type CanalAvisos = Arc<Mutex<Option<Channel<AvisoTela>>>>;
 
 /// Serviço montado na partida. Sem `wl-copy`/`wl-paste` confiáveis, os comandos
 /// respondem o erro (o app abre e mostra a falha). `Arc`: a vigia da conexão limpa a
 /// área de transferência antes de reexecutar o app.
-struct Estado(Arc<Result<ServicoApp, ErroApp>>);
+struct Estado {
+    servico: Arc<Result<ServicoApp, ErroApp>>,
+    canal: CanalAvisos,
+}
 
 impl Estado {
+    fn novo(servico: Arc<Result<ServicoApp, ErroApp>>) -> Estado {
+        Estado {
+            servico,
+            canal: Arc::new(Mutex::new(None)),
+        }
+    }
+
     fn servico(&self) -> Result<&ServicoApp, Falha> {
-        self.0.as_ref().as_ref().map_err(|e| Falha::from(*e))
+        self.servico.as_ref().as_ref().map_err(|e| Falha::from(*e))
     }
 }
 
 #[tauri::command]
 fn estado_do_cofre(estado: State<'_, Estado>) -> Result<RespostaEstado, Falha> {
-    let e = estado.servico()?.estado_do_cofre()?;
-    Ok(RespostaEstado { estado: e.codigo() })
+    let s = estado.servico()?;
+    let e = s.estado_do_cofre()?;
+    Ok(RespostaEstado {
+        estado: e.codigo(),
+        pedido: s.info_do_pedido(e),
+    })
+}
+
+/// Destravar (Fase 31). A senha chega num `SenhaMestra` (zera ao sair; vazio ou acima
+/// do limite é recusado na leitura, sem eco) e só vai ao daemon; a resposta não a traz
+/// nem diz quantas tentativas houve (D20).
+#[tauri::command]
+fn destravar(senha: SenhaMestra, estado: State<'_, Estado>) -> Result<(), Falha> {
+    Ok(estado.servico()?.destravar(senha)?)
+}
+
+/// D65 a: a tela passa o canal por onde o lado Rust avisa que chegou um
+/// `pedido_de_destrave`. Canal do Tauri (não `emit`/`listen`): a capability não ganha
+/// permissão do núcleo (`core:event:*`).
+#[tauri::command]
+fn ouvir_avisos(canal: Channel<AvisoTela>, estado: State<'_, Estado>) -> Result<(), Falha> {
+    *estado.canal.lock().unwrap_or_else(|e| e.into_inner()) = Some(canal);
+    Ok(())
+}
+
+/// A vigia da fila de avisos da conexão (D65 a): cada `pedido_de_destrave` marca o
+/// pedido no serviço e avisa a tela pelo canal, se ela já abriu um.
+fn vigiar_avisos(estado: &Estado, fila: Option<Arc<ward_app_nucleo::daemon::FilaAvisos>>) {
+    let (Some(fila), Ok(s)) = (fila, estado.servico()) else {
+        return;
+    };
+    let canal = Arc::clone(&estado.canal);
+    let r = destrave::vigiar(fila, s.pedido_de_destrave(), move || {
+        if let Some(c) = canal.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+            let _ = c.send(AvisoTela {
+                aviso: "pedido-de-destrave",
+            });
+        }
+    });
+    if r.is_err() {
+        eprintln!("ward-app: não foi possível vigiar os avisos do daemon");
+    }
 }
 
 /// D4: o valor vai do daemon para a área de transferência aqui; a resposta não o traz.
@@ -316,7 +380,9 @@ fn com_comandos<R: Runtime>(builder: Builder<R>, estado: Estado) -> Builder<R> {
             escolher_anexo,
             remover_anexo,
             conectar,
-            criar_cofre
+            criar_cofre,
+            destravar,
+            ouvir_avisos
         ])
 }
 
@@ -327,6 +393,7 @@ fn main() {
         std::process::exit(1)
     });
     let daemon = partida.tomar_daemon().ok_or(ErroApp::ConexaoPerdida);
+    let fila = daemon.as_ref().ok().map(DaemonSocket::avisos);
     let servico = Arc::new(montar_servico(daemon));
     let na_vigia = Arc::clone(&servico);
     partida.vigiar(move || {
@@ -335,7 +402,9 @@ fn main() {
         }
     });
 
-    let app = com_comandos(tauri::Builder::default(), Estado(servico))
+    let estado = Estado::novo(servico);
+    vigiar_avisos(&estado, fila);
+    let app = com_comandos(tauri::Builder::default(), estado)
         .setup(|app| {
             WebviewWindowBuilder::new(app, "principal", WebviewUrl::App("index.html".into()))
                 .title("Ward")
@@ -368,7 +437,7 @@ mod testes {
     use tauri::webview::InvokeRequest;
 
     fn app_de_teste() -> tauri::App<MockRuntime> {
-        let estado = Estado(Arc::new(montar_servico(DaemonSocket::padrao())));
+        let estado = Estado::novo(Arc::new(montar_servico(DaemonSocket::padrao())));
         com_comandos(mock_builder(), estado)
             .build(tauri::generate_context!())
             .expect("app de teste")
@@ -691,6 +760,81 @@ mod testes {
             r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
             "campo a mais: {r:?}"
         );
+    }
+
+    /// Fase 31 (S13, D65 a): `destravar` e `ouvir_avisos` só passam pela ACL na janela
+    /// `principal` com a origem local; a senha fora do formato é recusada na leitura dos
+    /// argumentos, sem eco; o canal de avisos não abre `plugin:event|*`.
+    #[test]
+    fn ataque_destravar_so_na_janela_certa_e_senha_sem_eco() {
+        let app = app_de_teste();
+        let principal = WebviewWindowBuilder::new(&app, "principal", Default::default())
+            .build()
+            .unwrap();
+        let outra = WebviewWindowBuilder::new(&app, "outra", Default::default())
+            .build()
+            .unwrap();
+        let pedido = serde_json::json!({"senha": "falso-mestra-ward-01"});
+        for comando in ["destravar", "ouvir_avisos"] {
+            let r = chamar(&outra, comando, ORIGEM, pedido.clone());
+            assert!(
+                r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+                "{comando} em janela sem capability: {r:?}"
+            );
+            let r = chamar(&principal, comando, "https://example.com", pedido.clone());
+            assert!(
+                r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+                "{comando} com origem remota: {r:?}"
+            );
+        }
+        let longa = "x".repeat(ward_core_max_segredo() + 1);
+        for senha in [
+            serde_json::json!(""),
+            serde_json::json!(longa),
+            serde_json::json!(135790),
+            serde_json::Value::Null,
+            serde_json::json!(["falso-mestra-ward-01"]),
+        ] {
+            let r = chamar(
+                &principal,
+                "destravar",
+                ORIGEM,
+                serde_json::json!({"senha": senha}),
+            );
+            let texto = format!("{r:?}");
+            assert!(
+                r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+                "senha fora do formato passou da leitura: {}",
+                texto.len()
+            );
+            assert!(!texto.contains("falso-mestra") && !texto.contains("xxxx"));
+        }
+        // Bem formada, chega ao serviço (sem daemon: erro com código, sem a senha).
+        let r = chamar(&principal, "destravar", ORIGEM, pedido);
+        let texto = format!("{r:?}");
+        assert!(
+            r.as_ref().err().is_some_and(|e| e["codigo"].is_string()),
+            "{texto}"
+        );
+        assert!(!texto.contains("falso-mestra"), "{texto}");
+        // O canal não libera os comandos de evento do núcleo.
+        for comando in [
+            "plugin:event|listen",
+            "plugin:event|emit",
+            "plugin:event|emit_to",
+        ] {
+            let r = chamar(
+                &principal,
+                comando,
+                ORIGEM,
+                serde_json::json!({"event": "pedido-de-destrave", "target": {"kind": "Any"}, "handler": 0}),
+            );
+            assert!(r.is_err(), "{comando} deveria ser negado: {r:?}");
+        }
+    }
+
+    fn ward_core_max_segredo() -> usize {
+        64 * 1024
     }
 
     #[test]

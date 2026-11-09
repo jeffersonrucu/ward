@@ -19,6 +19,8 @@
 //!   e o valor só no "revelar".
 //! - [`nivel`]: mudar o nível de acesso com PIN (Fase 35, S9); o PIN fica num tipo
 //!   que zera e só vai ao pedido `mudar_nivel`.
+//! - [`destrave`]: destravar com a senha mestra (Fase 31; a senha fica num tipo que
+//!   zera e só vai ao pedido `destravar`) e o `pedido_de_destrave` do agente (D65 a).
 //! - [`partida`]: partida do app setgid antes do GTK (D47, D57): ambiente de D57,
 //!   conexão com o egid do grupo `ward-app`, largar o grupo, não-dumpable, reexecução.
 //! - [`anexos`]: anexos do formulário (Fase 34). O arquivo é escolhido e lido no lado
@@ -38,6 +40,7 @@ pub mod credenciais;
 pub mod daemon;
 #[cfg(any(test, feature = "modo-teste"))]
 pub mod daemon_falso;
+pub mod destrave;
 mod erro;
 pub mod formulario;
 pub mod gerador;

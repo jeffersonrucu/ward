@@ -954,3 +954,18 @@ headless, 1280×800), PNG dos frames e `qa.json` em `docs/mission/evidence/fase-
 | `Nível de acesso / PIN errado` | `6373` (diálogo `6693`) | `nivel-pin-errado.png` |
 
 Textos dos níveis (cartão e opção) em `app/src/lib/componentes/niveis.js`.
+
+## Fase 31 — destravar no código (só leitura do FigCraft)
+
+Lido de uma cópia do `Ward.figcraft` (o original não foi alterado), por `get_node` e
+`screenshot`. Capturas do app (ponte de teste com `--daemon-falso travado-com-pedido`,
+Chrome headless, 1280×800), PNG dos frames e `qa.json` em
+`docs/mission/evidence/fase-31/`.
+
+| Frame / componente no FigCraft | Id | No código |
+| --- | --- | --- |
+| `Painel de marca` (instância `3343`) | `717` | `app/src/lib/componentes/PainelDeMarca.svelte` (largura 560 = `largura/dialogo-largo`, sem variable própria) |
+| `Campo senha` (set; vazio, foco, erro) | `17502` (`17503`, `17524`, `17537`) | `app/src/lib/componentes/CampoSenha.svelte` (erro com borda `perigo/texto`) |
+| `Destravar / Padrão` | `3342` (`formulário` `3368`, selo `3389`, `Destaque` `18701`) | `app/src/telas/Destravar.svelte` › `destravar-padrao.png` |
+| `Destravar / Senha errada` | `3393` (`Campo senha` erro `3427`, botão `3435`, `Destaque` `18706`) | `destravar-senha-errada.png` (campo esvaziado, foco nele) |
+| `Destravar / Pedido do agente` | `3450` (`formulário` `3476`, cartão `3501`, contagem `3506`, `ações` `3527`, `Destaque` `18711`) | `destravar-pedido-do-agente.png`; sem nome, tipo, ambiente e comando (o aviso do protocolo não os traz; ver handoff 31) |
