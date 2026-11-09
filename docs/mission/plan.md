@@ -383,7 +383,7 @@ Contrato: V2.1–V2.58
 Decisões do usuário em 2026-11-08 sobre a Fase 19c: RA4 (troca conjunta de cofre e estado com o daemon parado) fica fora do modelo de ameaça — o planner registra isso em `docs/escopo.md` › fora do modelo; D41 (http só em localhost) e D42 (sufixo obrigatório no `api`) confirmados; D43 mudou: usuário de `servidor`/`ftp-sftp` aceita `@` já na v1. Registrado pelo planner depois da 19c: RA4 no escopo e no PRD; D43 confirmado também para `banco`/`smtp` (ASCII visível, sem `-` no começo; V2.49); D37 e V2.42 com os escapes literais; Fase 19d criada; Fases 20 e 22 com a API nova do núcleo.
 
 ## Milestone 3 — Daemon e protocolo
-Contrato: V3.1–V3.28
+Contrato: V3.1–V3.30
 
 - [x] Fase 20 — (Depende da Fase 19c; não depende da 19d.) Protocolo em `ward-core`: quadros com limite de tamanho, mensagens
   versionadas, papéis agente/app/extensão (D5) e a tabela operação × papel, sem
@@ -469,17 +469,46 @@ Contrato: V3.1–V3.28
     como uid 1000 via `setpriv`, clientes uid 4242 sem e com `CAP_DAC_OVERRIDE`
     ambiente e uid 0, e um cliente do uid 1000 no fim; nada do `/run/user` do host é
     montado; o alvo fica fora do `make check`.
-  V3.2, V3.8–V3.13, V3.17, V3.20, V3.22, V3.26–V3.28.
+  Notas da 21b (D57, D60):
+  - `make dev-daemon` sobe o daemon de teste com `env -i` e lista fixa (`HOME`, `PATH`,
+    `XDG_RUNTIME_DIR`, `LANG`, mais as do `modo-teste`): `TMPDIR` está na lista
+    insegura da glibc e o `wardd` recusaria subir (V3.30);
+  - o papel vem de `ProcessoPar::classificar` sem depender do ramo do `systemd --user`,
+    que a Fase 29a tira (D57; a assinatura não muda);
+  - os testes do daemon não fixam o número de entradas do cofre de teste (21 hoje, 22
+    depois da Fase 22a): contam pela fixture;
+  - o daemon não lança processo nesta fase; quando lançar (Fases 23 e 26), nunca passa
+    o próprio ambiente (`LISTEN_*`).
+  V3.2, V3.8–V3.13, V3.17, V3.20, V3.22, V3.26–V3.28, V3.30.
+- [ ] Fase 22a — (Depende da 22: as duas mexem no `Makefile` e nas contagens do cofre de
+  teste.) Fixture com caracteres especiais e Go com `ensure_ascii` (D58, D59).
+  Arquivos: `dev/fixtures/entradas.json`, `crates/ward-core/examples/dev-cofre/`,
+  `crates/ward-core/src/mascara.rs` e testes, `dev/variacoes.py` e testes,
+  `dev/testes/dev-cofre.sh`, allowlist do gitleaks, `Makefile` (só textos de ajuda) e
+  as contagens nos testes que existirem.
+  - entrada `delta-api-simbolos` de D59 no cofre de teste (22 entradas);
+  - variação combinada Go + `ensure_ascii` de D58 na máscara e no oráculo, com o teste
+    cruzado e o V2.36/V2.43 refeitos pela função de custo de D29 (se uma entrada de
+    D15 passar a ser recusada, a fase para e devolve ao planner);
+  - texto de ajuda do `dev-variacoes` no `Makefile` atualizado para a tabela única de
+    D54 (vem da 19d; o da linha no `CLAUDE.md` já foi feito na 19e).
+  V3.29 (e V2.29/V2.30 com 22 entradas).
 - [ ] Fase 23 — Motor de aprovação com relógio injetado e aprovador em processo só nos
   testes (D8): uma vez, 1 hora (D2), sempre, expirar em 2 min, fechar nega, nível
   combinado (D19), aprovação indisponível (D21); espera de até 2 min pelo destrave
   (D16). O texto do pedido (`comando`, `cadeia`) vai exato para o app, e a função que o
   formata para exibir, no `ward-core`, neutraliza controle e bidi por escape visível
-  (D51), com testes. V3.14–V3.16, V3.18.
+  (D51), com testes. Operação `abrir_app` (D57): sem segredo, de qualquer papel, uma
+  instância por vez, que chama o lançador da Fase 29a; o motor abre o app por ela
+  quando precisa da janela, e sem sessão Wayland válida responde "aprovação
+  indisponível" (D21). Se a 29a ainda não tiver fechado, a operação entra com o
+  lançador como dependência e a fase espera. V3.14–V3.16, V3.18.
 - [ ] Fase 24 — Trava automática: `Lock`/`LockedHint` e `PrepareForSleep` do logind,
   4 h sem uso com relógio injetado, lidas do tempo de trava da configuração do cofre
   (D30); units de teste `wardd@.socket`/`wardd@.service` do sistema (D46), com
-  `LimitCORE=0`. V3.19, V3.21.
+  `LimitCORE=0` e **sem** `NoNewPrivileges=`, `RestrictSUIDSGID=`,
+  `MemoryDenyWriteExecute=` nem opção que implique `no_new_privs` com `User=` (D57:
+  senão o setgid do app não vale). V3.19, V3.21.
 
 ## Milestone 4 — CLI e integração Claude (run/ssh)
 Contrato: V4.1–V4.37
@@ -491,7 +520,8 @@ Contrato: V4.1–V4.37
   `LD_*` (D13), entrega de D10, anexos em `<rt>tmp/` 0600 com limpeza em toda saída e
   na partida, saída mascarada, código de saída, espera do destrave. Pesquisa e
   registro de RA1 (environ e anexos lidos por outro processo do mesmo uid), com teste
-  do ataque. A CLI mede argv + ambiente antes de mandar e passa de 750 KiB com
+  do ataque. O ambiente do filho vem só do da CLI, nunca do daemon (sem `LISTEN_*`,
+  D60). A CLI mede argv + ambiente antes de mandar e passa de 750 KiB com
   mensagem clara (D52). V4.3–V4.17, V4.19–V4.21, V4.36.
 - [ ] Fase 27 — `ward ssh` com senha e com chave: `sshpass -e`, agente temporário só do
   `ssh` filho (D12), `-F /dev/null` e `known_hosts` próprio (D13), pty interativo,
@@ -521,17 +551,29 @@ Contrato: V5.1–V5.31
   Notas do handoff 29: o `make app-check` precisa de `libwebkit2gtk-4.1-dev` (R32); os
   advisories RUSTSEC-2024-0370 e RUSTSEC-2024-0429 ficam ignorados só no `deny.toml` do
   app (RA7, provisório, vai ao usuário).
-- [ ] Fase 29a — App com D47 (depende das Fases 21b e 29; vem antes da 30). Arquivos:
-  o `main` do `app/src-tauri` e um módulo de partida no `app/nucleo`. O app conecta ao
-  socket antes de iniciar o GTK, larga o grupo (`setresgid` para o gid real) e chama
-  `PR_SET_DUMPABLE=0` de novo; limpa o próprio ambiente pela lista branca de D47 antes
-  do GTK; fd do socket com `CLOEXEC`; se a conexão cair, se executa de novo; lançado
-  por pai que não é o `systemd --user` nem o daemon, pede ao daemon a instância
-  verdadeira e sai. Confere com o WebKitGTK real que a lista branca basta (módulos do
-  GTK, GStreamer, IBus) e, se algo de fora do root for carregado pelo ambiente, fixa a
-  variável que desliga a fonte (D48). Testes de ataque no contêiner da 21b (binário
-  setgid de teste). Exige `libwebkit2gtk-4.1-dev` (R32). V3.5 (forma de D47), V3.24,
-  V5.31.
+- [ ] Fase 29a — App com D47 e D57 (depende das Fases 21b e 29; vem antes da 30; pode
+  rodar ao lado da 22, porque não toca em `crates/wardd` nem no protocolo). Arquivos: o
+  `main` do `app/src-tauri`, um módulo de partida no `app/nucleo` e, em
+  `crates/ward-plataforma`, o lançador e o `processo.rs`.
+  - `ward-plataforma`: tira o ramo do `systemd --user` do
+    `ProcessoPar::classificar` (o pai do app só pode ser o daemon) e cria o lançador
+    de D57 (`fork` + `execve` do `ward-app` instalado, ambiente montado do zero com
+    os valores fixos, um só `wayland-<n>`, sem `DISPLAY`, fds fechados), que a Fase 23
+    chama pela operação `abrir_app`;
+  - app: conecta ao socket antes do GTK, larga o grupo (`setresgid` para o gid real)
+    e chama `PR_SET_DUMPABLE=0` de novo; confere o ambiente recebido contra D57 antes
+    do GTK e sai se não bate; fd do socket com `CLOEXEC`; se a conexão cair e o
+    `PPid` ainda for o daemon, se executa de novo; com outro pai, não usa o papel e
+    sai com mensagem (o pedido `abrir_app` ao daemon entra na Fase 23);
+  - confere com o WebKitGTK real que o ambiente de D57 basta (módulos do GTK,
+    GStreamer, IBus) e, se algo de fora do root for carregado pelo ambiente, fixa a
+    variável que desliga a fonte (D48) e a acrescenta à lista de D57;
+  - confere, só lendo, quantos `wayland-*` o COSMIC deste host cria em `/run/user/<uid>`
+    e registra no handoff (se forem dois, o "um só" de D57 volta ao planner);
+  - roda o `make app-check` e confirma o lock do Tauri corrigido na 21b (D60, R32).
+  Testes de ataque no contêiner da 21b (binário setgid de teste), incluindo o pai que
+  imita o `systemd --user`. Exige `libwebkit2gtk-4.1-dev` (R32). V3.5 (forma de D47),
+  V3.24, V5.31.
 - [ ] Fase 30 — **(UI)** Primeiro uso (o PIN vai para a seção de configuração do corpo
   v2 como hash, D30). V5.7, V5.25, V5.26.
 - [ ] Fase 31 — **(UI)** Destravar, inclusive o estado "Pedido do agente". V5.8.
@@ -595,14 +637,17 @@ Contrato: V8.1–V8.4
   no `~/.claude` é feita pelo usuário no M10. V8.1–V8.4.
 
 ## Milestone 9 — Instalação
-Contrato: V9.1–V9.10
+Contrato: V9.1–V9.11
 
 - [ ] Fase 51 — `make install`/`uninstall` com `DESTDIR` e `PREFIX=/usr/local` (o
   `sudo` uma vez), units `wardd@.socket`/`wardd@.service` do sistema, `/run/ward/` por
   `tmpfiles.d` e `systemctl enable --now wardd@<uid>.socket` (D46), grupos
-  `ward-app`/`ward-nm` e binários 2755 (D47), manifesto de native messaging, política
+  `ward-app`/`ward-nm` e binários 2755 (D47; grupos com `groupadd --system`, gid < 1000,
+  fora das faixas do `/etc/subgid`, sem membros, senha travada `!` no `gshadow`, e
+  recusa de grupo existente fora disso, D60), units sem `NoNewPrivileges=` nem opção
+  que o implique (D57), manifesto de native messaging, política
   do Chrome com force-install e update local, recusa de artefato `modo-teste`. V9.1–V9.4, V9.6,
-  V9.7, V9.10.
+  V9.7, V9.10, V9.11.
 - [ ] Fase 52 — `.deb` por `dpkg-deb` a partir do staging (dependência `sshpass`), teste
   num contêiner `ubuntu:24.04` e roteiro de instalação para o usuário (política do
   Chrome, systemd, `~/.ssh` intacto). V9.5, V9.8, V9.9.

@@ -378,7 +378,7 @@ ou com nova resposta do usuário.
   Risco residual registrado: swap sem cifra; o Pop!_OS com disco cifrado cifra a swap.
 - D15. **Cofre de teste.** Senha mestra de teste `falso-mestra-ward-01`, PIN de teste
   `135790`, entradas da tabela "Cofre de teste" do contrato (21, com `acme-totp-dev`
-  de D28). Tudo falso, gerado em `.dev/` por `make dev-cofre`; os valores fixos ficam na
+  de D28; 22 a partir da Fase 22a, com `delta-api-simbolos` de D59). Tudo falso, gerado em `.dev/` por `make dev-cofre`; os valores fixos ficam na
   allowlist do gitleaks.
 - D16. **Inatividade e espera.** "Uso" é qualquer operação autenticada (lista, run,
   ssh, login, playwright, ação no app). A espera de 2 min pelo destrave (R22) e a de
@@ -793,8 +793,9 @@ cabe ao daemon fica anotado nas Fases 22, 27 e 45.
     (`pidfd_getfd` e `/proc/<pid>/fd` exigem ptrace, negado pelo S8).
   Custo: a instalação (já com `sudo`, D18) passa a instalar as duas units do sistema e a
   rodar `systemctl enable --now wardd@<uid>.socket`; o daemon sobe na primeira conexão
-  e não herda o ambiente da sessão, então abre o app pelo barramento do usuário
-  (`systemd-run --user` ou uma unit `ward-app.service`); `systemctl --user
+  e não herda o ambiente da sessão, então abre o app ele mesmo, com o ambiente que ele
+  monta (D57; antes era pelo barramento do usuário, que a Fase 21b mostrou forjável);
+  `systemctl --user
   set-environment` deixa de alcançar o daemon (V9.4 muda de forma, S8 fica mais forte).
   O daemon de teste (D7) continua no diretório do usuário e a CLI só pula a conferência
   do uid 0 no artefato `modo-teste`, que a instalação recusa (V9.2). Resíduo: um
@@ -827,13 +828,13 @@ cabe ao daemon fica anotado nas Fases 22, 27 e 45.
   - o app conecta antes de iniciar o GTK, depois larga o grupo (`setresgid` para o gid
     real, porque o GTK 3 se recusa a iniciar com setgid) e chama `PR_SET_DUMPABLE=0` de
     novo; se a conexão cair, ele se executa de novo para reconectar;
-  - o app só recebe o papel se o pai for o `systemd --user` do usuário ou o próprio
-    daemon (lido do `PPid` no `status`, que continua legível). Lançado por outro
-    processo, ele pede ao daemon que abra a instância verdadeira e sai. Antes do GTK, o
-    app limpa o próprio ambiente por lista branca (`WAYLAND_DISPLAY`, `DISPLAY`,
-    `XDG_RUNTIME_DIR` igual a `/run/user/<uid>`, `DBUS_SESSION_BUS_ADDRESS`,
-    `XDG_SESSION_TYPE`, `LANG`/`LC_*`, `HOME`, `PATH` fixo), porque os processos do
-    WebKitGTK herdam o ambiente sem `AT_SECURE`; o fd do socket é `CLOEXEC`;
+  - o app só recebe o papel se o pai for **o próprio daemon** (lido do `PPid` no
+    `status`, que continua legível). **Revisto pela D57 (Fase 21b):** o `systemd --user`
+    saiu como pai aceito. Lançado por outro processo, ele pede ao daemon que abra a
+    instância verdadeira e sai. Antes do GTK, o app confere e limpa o próprio ambiente
+    pela lista branca de D57 (valores fixos montados pelo daemon; `DISPLAY` saiu),
+    porque os processos do WebKitGTK herdam o ambiente sem `AT_SECURE`; o fd do socket
+    é `CLOEXEC`;
   - o daemon recusa o papel app e extensão com `kernel.yama.ptrace_scope` = 0 ou
     `fs.suid_dumpable` = 1 (falha fechada, com aviso);
   - no `ward-nm`, o daemon continua conferindo o pai Chrome pelo `/proc` (exe, dono
@@ -844,8 +845,8 @@ cabe ao daemon fica anotado nas Fases 22, 27 e 45.
   daemon deixa de ler `exe`, `environ` e `maps` do app e do host, e a parte
   correspondente da Fase 21 fica só para o pai Chrome e para a cadeia exibida. Resíduo
   (RA6): os processos auxiliares do WebKitGTK e o próprio Chrome não são endurecidos;
-  eles ficam protegidos de quem não é ancestral pelo Yama, e o ancestral é o systemd ou
-  o daemon. Um pacote que mate o Chrome e o lance de novo como filho vira ancestral do
+  eles ficam protegidos de quem não é ancestral pelo Yama, e o ancestral do app é o daemon (D57).
+  Um pacote que mate o Chrome e o lance de novo como filho vira ancestral do
   Chrome e pode se prender a ele; um Chrome assim pode mentir a origem da aba e
   receber o preenchimento de qualquer entrada do tipo login. É o mesmo caso de "Fora do
   modelo de ameaça" › leitura do campo de senha por um script feito para isso, agora
@@ -960,6 +961,14 @@ em `/tmp/claude-1000/-home-jeffersonoliveira-projetos-cofre/d2e230bd-a662-43be-a
     valor de linha, como hoje. O base64 de uma linha solta vai para RA3, porque com ele
     um anexo de 256 KiB passaria dos 4 MiB de D29. O percent-encoding vale em todo
     padrão, porque o autômato o lê em qualquer forma (D11).
+  - **Só linha de texto (confirmado pelo planner, handoff 19e):** as formas de texto e
+    os campos de tab por linha valem só para linha que é UTF-8 válido. Linha que não é
+    texto (anexo binário) continua mascarada pelo literal, com e sem `\r` e aparada, e
+    pelo percent. Motivo: com as formas em toda linha, um anexo binário de ~200 KiB
+    passava dos 4 MiB de D29 (custo de ~33× o tamanho), e `json.dumps`, `printf %q` e
+    `cut -f` não produzem essas formas a partir de bytes que não são texto. O oráculo
+    (`dev/variacoes.py`) segue a mesma regra. A forma de texto de uma linha binária vai
+    para RA3.
   - **Formas fora de D37, decisão por caso:**
     - `${X@Q}`, `set` e `set -x` (aspas simples do shell, `'` vira `'\''`):
       **variação**, só quando o valor tem `'`;
@@ -1009,6 +1018,101 @@ em `/tmp/claude-1000/-home-jeffersonoliveira-projetos-cofre/d2e230bd-a662-43be-a
   aceito só aqui, porque o conjunto de D43 (`[A-Za-z0-9._@-]`, sem `-` no começo) não
   tem `%`, espaço, aspas, `=` nem `,`, e nada é expandido. No `ssh` continua `-l`. Se o
   conjunto de D43 crescer, D56 é revista antes.
+- D57. **App só como filho do daemon; ambiente montado pelo daemon** (handoff 21b; D46,
+  D47; S1, S8; decisão do planner em 2026-11-08, endurece D47 sem mudar o que o usuário
+  aceitou). A Fase 21b mostrou que o pai `systemd --user` não protege o app: o gerente
+  roda as units de `~/.config/systemd/user/` e aceita `systemctl --user
+  set-environment`, que um pacote malicioso escreve. Uma unit com
+  `ExecStart=/usr/local/bin/ward-app` e `Environment=WAYLAND_DISPLAY=<proxy>` (ou
+  `DBUS_SESSION_BUS_ADDRESS`) dá ao app o papel com o pai "certo", e o proxy vê o PIN,
+  a senha mestra digitada e o valor revelado. A conferência do gerente também é
+  forjável (`cmdline` e cgroup delegado ao usuário; o `exe` dele não se lê), então um
+  processo qualquer com `PPid: 1` no `init.scope` passaria por ele. Decisão:
+  - o daemon é **o único pai aceito** do app. O ramo do `systemd --user` sai do
+    `ProcessoPar::classificar`. O app de menu, do autostart ou da bandeja de outra
+    instância não recebe papel e pede ao daemon a instância verdadeira (operação
+    `abrir_app`, sem segredo, de qualquer papel, no máximo uma instância por vez);
+  - o daemon lança o `ward-app` instalado por `fork` + `execve` (caminho absoluto
+    fixo, sem shell, fds fechados menos 0–2 ligados a `/dev/null`) com um ambiente
+    **montado do zero**, que não herda nada do daemon (sem `LISTEN_*`) nem do pedido:
+    - `XDG_RUNTIME_DIR=/run/user/<uid>`, pasta do uid, 0700, sem link;
+    - `WAYLAND_DISPLAY=wayland-<n>`: nome sem `/`, do único socket `wayland-<n>` do
+      uid nessa pasta (sem link). Nenhum ou mais de um: o daemon não abre o app e
+      responde "aprovação indisponível" (D21), com aviso;
+    - `DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/<uid>/bus`, socket do uid, sem link;
+    - `XDG_SESSION_TYPE=wayland`, `GDK_BACKEND=wayland`; **sem `DISPLAY`** (num cliente
+      X11, qualquer outro cliente lê o teclado e a tela);
+    - `HOME` do `getpwuid`, `PATH=/usr/local/bin:/usr/bin:/bin`, `LANG`/`LC_*` do
+      próprio daemon (que vêm do locale do sistema pela unit);
+    - as variáveis que a Fase 29a fixar para desligar fontes de módulos (D48).
+  - o app confere, antes do GTK, que o ambiente que recebeu tem exatamente essas
+    variáveis nessas formas (pasta, sockets, donos, sem link); fora disso, não usa o
+    papel e sai com mensagem. É defesa em profundidade: o daemon já montou assim;
+  - o app vive no cgroup do `wardd@<uid>.service`. Se o daemon cai, o app cai junto
+    (`KillMode` padrão) e é reaberto por quem pedir. A reexecução de D47 só vale com o
+    `PPid` ainda igual ao daemon;
+  - as units do sistema (Fases 24 e 51) **não** usam `NoNewPrivileges=`,
+    `RestrictSUIDSGID=` nem opção que os implique para serviço com `User=`
+    (`SystemCallFilter=`, `RestrictNamespaces=`, `LockPersonality=`,
+    `MemoryDenyWriteExecute=` etc.): com `no_new_privs` o `execve` não aplica o setgid e
+    o app nunca recebe o papel. `MemoryDenyWriteExecute=` também quebra o JIT do
+    WebKitGTK.
+  Custo: o app deixa de ser aberto pelo `systemd-run --user`; o daemon passa a ter um
+  lançador (`ward-plataforma`, Fase 29a) e a operação `abrir_app` (Fase 23). Opções
+  descartadas: aceitar o risco (entrega o PIN e a senha mestra ao proxy); só fixar e
+  conferir os sockets com o `systemd --user` ainda como pai (fecha a injeção pelo
+  ambiente, mas mantém a conferência forjável do gerente e não fecha mais nada que o
+  daemon-pai não feche). Resíduo: RA8.
+- D58. **Go com `ensure_ascii`** (handoff 19e; D37, D54; S4). O JSON "html-safe" com
+  `ensure_ascii` (`&` e `ç` no mesmo valor) passava. Vira **variação
+  combinada** da tabela de formas de texto de D54, só quando o valor tem `&`, `<`, `>`,
+  U+2028 ou U+2029 **e** caractere fora do ASCII, como a do PHP. Vale no segredo
+  inteiro, no valor de linha e por linha de texto. Escolhido em vez de RA3 porque o
+  custo é uma forma condicional e o caso aparece com o gerador de D35 (`&<>`) em valor
+  com acento. Entra na máscara e no `variacoes.py`, com o teste cruzado e o orçamento
+  de D29 (se uma entrada de D15 passar a ser recusada, a fase para). Fase 22a.
+- D59. **Entrada de teste com caracteres especiais** (handoff 19e; D15, D54, D58). As
+  fixtures não têm caractere especial, e o teste cruzado na lista real exercita pouco
+  de D54. Entra em D15 a 22.ª entrada `delta-api-simbolos` (api, grupo `delta`, `dev`,
+  livre): URL `https://api.teste.invalid`, token `falso-Ab3$k&<9>Zq!'/ç-01`, variável
+  `SIMBOLOS_TOKEN`, e o extra secreto `SEGREDO_ASCII=falso-Ab3$k&<9>Zq!'` (só ASCII,
+  para o `printf %q`). Cobre aspas simples (`${X@Q}`), aspas duplas do shell, JSON do
+  Go, PHP (`/` + fora do ASCII), D58 e percent. Não é usada por nenhum serviço do
+  `docker compose`. Os valores entram na allowlist do gitleaks. Fase 22a, depois da 22
+  (as duas mexem no `Makefile` e nas contagens do cofre de teste); o V2.29 e o V2.30
+  passam a valer com 22 entradas (V3.29).
+- D60. **Notas da Fase 21b** (S5, S8, D46–D48).
+  - **`Dumpable` depois do `exec`:** com `fs.suid_dumpable=2` (padrão do Pop!_OS), o
+    setgid sobe com dumpable 2 (`SUID_DUMP_ROOT`), não 0. O ptrace e o
+    `/proc/<pid>/mem` continuam negados ao mesmo uid. O 0 só vale depois do
+    `PR_SET_DUMPABLE=0` da partida do app (Fase 29a). O contrato confere "≠ 1" antes e
+    "0" depois (V5.31).
+  - **Ptrace no começo do processo (V3.24):** não há como parar um setgid entre o
+    `exec` e o `main` sem ptrace. Vale a forma em duas metades da 21b: preso depois do
+    `exec`, com o filho parado antes de conectar → EPERM; preso antes do `exec`
+    (`PTRACE_TRACEME`) → o kernel não aplica o setgid e o processo fica agente.
+  - **Nome da variável insegura (V3.25):** a mensagem do `wardd` leva o nome
+    higienizado (`[A-Za-z0-9_]`, até 64 caracteres), nunca o valor. A `Recusa::VariavelLd`
+    do pai Chrome continua só com "`LD_*`".
+  - **`TMPDIR` e daemon de teste:** `TMPDIR` está na lista insegura da glibc e o
+    `wardd` recusa subir com ela. O `make dev-daemon` (Fase 22) sobe o daemon de teste
+    com `env -i` e uma lista fixa (`HOME`, `PATH`, `XDG_RUNTIME_DIR`, `LANG`, mais as
+    variáveis do `modo-teste`), para não falhar em quem tem `TMPDIR` na sessão.
+  - **`LISTEN_PID`/`LISTEN_FDS`** ficam no ambiente do `wardd` (o Rust 2024 exige
+    `unsafe` para `remove_var`). Nenhum filho do daemon herda o ambiente dele: o `ward
+    run` monta o do filho a partir do da CLI (D13, Fase 26) e o lançador do app monta o
+    dele do zero (D57). O fd do socket já tem `CLOEXEC`.
+  - **Grupos na instalação (Fase 51):** `ward-app` e `ward-nm` criados com `groupadd
+    --system` (gid < 1000), fora de toda faixa do `/etc/subgid`, sem membros e com a
+    senha travada no `gshadow` (`!`, padrão do `groupadd`). Grupo com senha deixa
+    qualquer um entrar por `newgrp`. O daemon não lê o `gshadow` (é do root), então
+    quem confere é a instalação, que recusa grupo já existente com membros, com senha
+    ou com gid fora dessas regras.
+  - **Namespace de usuário no teste:** onde o userns sem privilégio está bloqueado
+    (`kernel.apparmor_restrict_unprivileged_userns=1`), o caso do V3.24 diz isso na
+    saída e passa, porque o ataque não é possível; no Pop!_OS deste host ele roda.
+  - **Lock do Tauri:** corrigido na 21b sem `make app-check` (R32). A Fase 29a roda o
+    `make app-check` e confirma.
 
 ### Riscos abertos
 
@@ -1041,7 +1145,9 @@ em `/tmp/claude-1000/-home-jeffersonoliveira-projetos-cofre/d2e230bd-a662-43be-a
   com `\n` vira várias linhas, e só as linhas que aparecem iguais no segredo são
   mascaradas). Depois da reauditoria do M2 (D54), entram também: base64 de uma linha
   solta de segredo de várias linhas; `printf %q` e `${X@Q}` de valor com controle ou
-  fora do ASCII (`$'…'`); e o `expand` de linha com tab.
+  fora do ASCII (`$'…'`), o que inclui o `declare -p` de um valor inteiro de várias
+  linhas (`$'…\n…'`, com acento em octal; handoff 19e); o `expand` de linha com tab; e
+  as formas de texto de uma linha de anexo que não é UTF-8 válido (D54).
 - **RA4. Rollback com o daemon parado** (D39; **fechado em 2026-11-08: fora do modelo
   de ameaça por decisão do usuário**, registrado em "Segurança" › "Fora do modelo de
   ameaça"; não há trabalho nem asserção nova). O contador de geração e o arquivo de estado pegam a troca do cofre
@@ -1071,6 +1177,21 @@ em `/tmp/claude-1000/-home-jeffersonoliveira-projetos-cofre/d2e230bd-a662-43be-a
   Tauri passar para gtk-rs ≥ 0.20. Condições: nenhum código do app usa `glib::Variant`
   (o validador confere por `grep`), e uma exceção nova no `deny.toml` do app volta ao
   planner. Se o usuário recusar, o M5 não fecha até o Tauri subir o gtk-rs.
+- **RA8. Canais da sessão controlados pelo mesmo uid** (handoff 21b; D57; **aberto,
+  vai ao usuário antes de fechar o M4**, porque também toca a Fase 25; não bloqueia a
+  29a, cujo código é o mesmo com qualquer resposta). D57 fecha a injeção pelo ambiente,
+  mas `/run/user/<uid>` é do usuário: um pacote malicioso pode apagar o
+  `wayland-<n>` ou o `bus` e pôr no lugar um proxy que repassa ao compositor, e o app
+  aberto depois disso digita o PIN e a senha mestra e mostra o valor revelado por ele.
+  O compositor roda como o usuário, então não há âncora de root para conferir o par
+  (pelo `/proc` é a conferência por nome que D46 descartou). O mesmo vale para o
+  terminal: um `ward` falso antes no `PATH`, ou um alias no `~/.bashrc`, lê a senha
+  mestra do `ward destravar` (Fase 25). Proposta do planner: registrar em "Fora do
+  modelo de ameaça" como "sessão gráfica ou shell do usuário adulterados por um
+  processo do mesmo uid", com o que já reduz o caso (daemon como único pai, ambiente
+  fixo, um só socket Wayland, sem X11, senha mestra nunca no Claude). Alternativa:
+  conferir o compositor pela cadeia de processos até o gerente de login do root, que é
+  específica do COSMIC, frágil e forjável por um compositor aninhado.
 
 ## Critérios de aceite
 
@@ -1098,14 +1219,15 @@ em `/tmp/claude-1000/-home-jeffersonoliveira-projetos-cofre/d2e230bd-a662-43be-a
   automática, PIN, níveis e o motor de aprovação (S9, S10) testados em Rust; nenhuma
   operação do socket devolve segredo a um cliente comum; V3.2 em Docker (D49);
   conferência do servidor por D46 e papel do app/host por D47 (confirmadas); arquivo
-  de estado com `vista` e `queimada` (D53).
+  de estado com `vista` e `queimada` (D53); entrada `delta-api-simbolos` (D59) e
+  variação de D58 no teste cruzado.
 - [ ] M4: `ward lista/run/ssh/travar/destravar` contra Postgres e SSH de teste (senha,
   chave com agente temporário, salto, túnel de banco), saída mascarada, anexos
   temporários limpos, nada lido ou gravado em `~/.ssh`; usuário do `sftp`/`scp` por
-  `-o User=` (D56); RA1 e RA2 resolvidos.
+  `-o User=` (D56); RA1, RA2 e RA8 resolvidos.
 - [ ] M5: app Tauri com todas as telas do M0, janela de aprovação com os 4 botões e PIN,
-  bandeja, "Conectar" do `servidor` (D3), S11 e S12 conferidas; app com D46 e D47
-  (Fases 21b e 29a); RA7 aceito pelo usuário ou resolvido; roteiro da janela nativa
+  bandeja, "Conectar" do `servidor` (D3), S11 e S12 conferidas; app com D46, D47 e
+  D57 (Fases 21b, 29a e 23); RA7 aceito pelo usuário ou resolvido; roteiro da janela nativa
   conferido pelo usuário.
 - [ ] M6: extensão instalada por política, preenchimento por origem, salvar login novo,
   `ward login` e `ward playwright` no WordPress de teste, phishing recusado.

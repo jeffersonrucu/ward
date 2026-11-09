@@ -27,7 +27,10 @@ escolha segurança e registre a decisão.
   que toca em segredo**. CLI, app e extensão são clientes dele, por esse socket. O app
   (`ward-app`) e o host da extensão (`ward-nm`) são instalados setgid para grupos
   próprios (`ward-app`, `ward-nm`), e o daemon reconhece cada um pelo grupo que o
-  kernel informa na conexão (decisão do usuário, 2026-11-08).
+  kernel informa na conexão (decisão do usuário, 2026-11-08). O app só recebe o papel
+  quando é aberto pelo próprio daemon, com um ambiente que o daemon monta (sessão
+  Wayland e barramento do usuário nos caminhos padrão, sem X11); aberto por outro
+  processo, ele pede ao daemon a instância verdadeira (PRD D57, planner, 2026-11-08).
 - **Núcleo em Rust**: formato do arquivo, criptografia, tipos, máscara de saída e
   protocolo. O daemon e a CLI usam o núcleo.
 - **App desktop em Tauri + Svelte**: cliente do daemon. Telas abaixo.
@@ -363,3 +366,7 @@ servidores, Windows e macOS (por enquanto).
 - Conferência do servidor (PRD D46) e identificação do app e do host por grupo setgid
   (PRD D47): **resolvidas** pelo usuário em 2026-11-08 e registradas em "Arquitetura",
   S5 e "Fora do modelo de ameaça".
+- Sessão gráfica ou shell adulterados por um processo do mesmo uid (proxy no lugar
+  do socket Wayland ou do barramento em `/run/user/<uid>`, `ward` falso no `PATH`):
+  **a decidir pelo usuário antes de fechar o M4** (PRD RA8). Proposta: registrar em
+  "Fora do modelo de ameaça".

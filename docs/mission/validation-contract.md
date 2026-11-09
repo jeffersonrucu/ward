@@ -45,6 +45,7 @@ Senha mestra `falso-mestra-ward-01`, PIN `135790`. Todos os valores são falsos.
 | `gama-bloqueada` | login | gama | prod | bloqueado | URL `https://bloqueada.invalid`, usuário `x`, senha `falso-BLOQ-01` |
 | `delta-redir` | login | delta | dev | livre | URL `http://localhost:8084/login` (redireciona para o phishing), usuário `u`, senha `falso-REDIR-01` |
 | `acme-totp-dev` | login | acme | dev | livre | URL `http://localhost:8083/login`, usuário `wp_admin`, senha `falso-WP-senha-01`, TOTP semente `JBSWY3DPEHPK3PXP` (D28; mesma conta que o serviço `totp` já aceita) |
+| `delta-api-simbolos` | api | delta | dev | livre | (a partir da Fase 22a, D59) URL `https://api.teste.invalid`, token `falso-Ab3$k&<9>Zq!'/ç-01`, variável `SIMBOLOS_TOKEN`; extra secreto `SEGREDO_ASCII=falso-Ab3$k&<9>Zq!'`; nenhum serviço do compose a usa |
 
 Serviços do `docker compose` de teste (Fase 12): `postgres` (55432), `ssh-senha`
 (2222; `deploy` por senha, `sftpuser` só sftp), `ssh-chave` (2223; só chave),
@@ -269,9 +270,11 @@ asserção V0.* é conferida nele, exceto a `1:3` em V0.21.
   implementam `Clone` sem zerar; a lista inclui `formato::CofreAberto` e
   `formato::SenhaMestra`, além de `cripto::Chave` e dos tipos de `entrada` — cobre S8.
 - [x] V2.29 — Dado `make dev-cofre`, quando roda duas vezes, então
-  `.dev/cofre-teste.ward` tem as 21 entradas da tabela (com `acme-totp-dev`, D28), abre
+  `.dev/cofre-teste.ward` tem as 21 entradas da tabela (com `acme-totp-dev`, D28; 22
+  a partir da Fase 22a, com `delta-api-simbolos`, conferido no V3.29), abre
   com a senha de teste, e o comando recusa caminho de saída fora de `.dev/`.
-- [x] V2.30 — (SEG) Dadas as 21 entradas do cofre de teste, mais uma de cada tipo com
+- [x] V2.30 — (SEG) Dadas as 21 entradas do cofre de teste (22 a partir da Fase 22a,
+  V3.29), mais uma de cada tipo com
   projeto, 16 tags, 64 extras e anexos que somam 256 KiB (o limite de D29), com bytes de
   0 a 255, dentro do orçamento da máscara (D29), quando
   o núcleo serializa o corpo (D26), sela, grava por `gravar_cofre`, reabre e
@@ -606,14 +609,18 @@ Reauditoria do M2 (Fase 19e, D53–D55). Repros em `scratchpad/ataque/src/bin/`
 - [ ] V3.24 — (SEG) Dado `ward-app` e `ward-nm` de teste instalados no contêiner como
   root:`ward-app`/root:`ward-nm` 2755, quando cada um conecta, então recebe o papel
   pelo grupo; quando o processo que os lançou faz `PTRACE_ATTACH`/`PTRACE_SEIZE` logo
-  depois do `exec` (antes da primeira linha do `main`, com `SIGSTOP` no filho), então
-  recebe EPERM; quando sobem com `LD_PRELOAD=<lib>` que grava um arquivo-marca, então a
+  depois do `exec`, com o filho parado antes de conectar, então recebe EPERM; quando o
+  pai já está preso a ele desde antes do `exec` (`PTRACE_TRACEME`), então o kernel não
+  aplica o setgid e o processo conecta como agente (D60); quando sobem com `LD_PRELOAD=<lib>` que grava um arquivo-marca, então a
   marca não existe; quando um processo do uid de teste com outro gid (ou num namespace
-  de usuário) conecta, então fica agente; e com `ptrace_scope` 0 simulado no teste, o
-  daemon recusa o papel app — cobre S1, S8 (D47).
+  de usuário) conecta, então fica agente (com o userns sem privilégio bloqueado no
+  sistema, o caso diz isso na saída e passa, D60); e com `ptrace_scope` 0 simulado no
+  teste, o daemon recusa o papel app — cobre S1, S8 (D47).
 - [ ] V3.25 — (SEG) Dado o `wardd` subindo com `GLIBC_TUNABLES`, `GCONV_PATH` ou um
-  `LD_` de nome inventado, então sai ≠ 0 com o nome da variável na mensagem e sem o
-  valor (D48) — cobre S8.
+  `LD_` de nome inventado, então sai ≠ 0 com o nome da variável na mensagem,
+  higienizado (`[A-Za-z0-9_]`, até 64 caracteres; um nome com `\n`, `\x1b` ou 200
+  caracteres sai cortado e só com esses caracteres), e sem o valor; o mesmo com
+  `TMPDIR` e `MALLOC_ARENA_MAX` (D48, D60) — cobre S8.
 - [ ] V3.26 — (SEG) Dado o papel agente, quando pede `lista` (texto e `--json`), então
   nenhuma entrada traz o nível; dado o papel app, então traz (D50) — cobre S1.
 - [ ] V3.27 — (SEG) Dado o papel app, quando cria uma entrada sem nível, então ela nasce
@@ -630,6 +637,18 @@ Reauditoria do M2 (Fase 19e, D53–D55). Repros em `scratchpad/ataque/src/bin/`
   grava um número maior que `queimada`; quando a escrita do estado falha, então o cofre
   não é gravado; e quando `trocar_senha` falha depois de selar, então o cofre trava
   (D53) — cobre S7, S9.
+- [ ] V3.29 — (SEG) Dada a Fase 22a, quando `make dev-cofre` e `make teste-dev-cofre`,
+  então o cofre de teste tem 22 entradas, `delta-api-simbolos` abre igual à tabela
+  (D59) e cabe no orçamento de D29; e quando o teste cruzado põe sozinho na saída cada
+  padrão do oráculo dela (literal, base64, percent, aspas simples com `'\''`, aspas
+  duplas do shell, `printf %q` do `SEGREDO_ASCII`, JSON do Go, PHP e o JSON do Go com
+  `ensure_ascii`, `falso-Ab3$k\u0026\u003c9\u003eZq!'/\u00e7-01`, de D58), então cada
+  um sai `••••`; o mesmo para o Go com `ensure_ascii` num segredo de várias linhas,
+  linha a linha; e uma linha binária de anexo continua mascarada pelo literal, sem
+  formas de texto (D54) — cobre S4.
+- [ ] V3.30 — Dado `TMPDIR=/tmp` e `LD_LIBRARY_PATH=/x` na sessão, quando `make
+  dev-daemon`, então o daemon de teste sobe e atende `ward lista` (ambiente limpo por
+  `env -i` e lista fixa, D60; com qualquer uma das duas ele recusaria subir, V3.25).
 
 ## Milestone 4 — CLI e integração Claude (run/ssh)
 
@@ -861,12 +880,27 @@ O QA usa o Chrome em modo de teste (D7) e confere a aparência contra o frame.
   únicos ignorados são RUSTSEC-2024-0370 e RUSTSEC-2024-0429, cada um com motivo; e
   `grep -rn 'Variant' app/` não acha uso de `glib::Variant` — cobre S14.
 - [ ] V5.31 — (SEG) Dado o `ward-app` de teste instalado setgid no contêiner (Fase 29a),
-  quando sobe, então conecta ao socket antes do GTK, o `status` mostra o gid real
-  depois da conexão e `Dumpable`/`TracerPid` seguem 0, o ambiente do processo só tem
-  as variáveis da lista branca de D47 (um `GTK_MODULES`, `GST_PLUGIN_PATH` ou `GIO_EXTRA_MODULES`
-  posto pelo atacante não chega ao WebKitGTK), o fd do socket tem `CLOEXEC`; e lançado
-  por um pai que não é o `systemd --user` nem o daemon, não recebe o papel app e sai
-  (D47, D48) — cobre S1, S8.
+  quando o lançador do daemon (D57) o abre, então ele conecta ao socket antes do GTK,
+  o `status` mostra `Dumpable` ≠ 1 e `TracerPid` 0 desde o `exec` (2 com
+  `suid_dumpable=2`, D60), e depois da partida mostra o gid real, `Dumpable` 0 e
+  `TracerPid` 0; o ambiente do processo tem só as variáveis de D57, com os valores
+  fixos (um `GTK_MODULES`, `GST_PLUGIN_PATH` ou `GIO_EXTRA_MODULES` posto pelo
+  atacante não chega ao WebKitGTK; não há `DISPLAY` nem `LISTEN_*`); o fd do socket
+  tem `CLOEXEC`. Ataques, cada um tem de falhar em dar o papel app:
+  - lançado por um processo qualquer do uid de teste, ele não recebe o papel e sai;
+  - lançado por um processo que imita o gerente (`Name: systemd`, `cmdline`
+    `/usr/lib/systemd/systemd --user`, `PPid: 1`, no `init.scope` de
+    `user@<uid>.service`), como uma unit de `~/.config/systemd/user/` faria, ele não
+    recebe o papel e sai;
+  - aberto pelo daemon, mas com `WAYLAND_DISPLAY=/tmp/proxy.sock`,
+    `WAYLAND_DISPLAY=../x`, `DBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/bus` ou
+    `XDG_RUNTIME_DIR=/tmp/x` postos à força no ambiente (teste do conferidor do app),
+    então o app não usa o papel e sai com mensagem;
+  - com dois sockets `wayland-<n>` em `/run/user/<uid>`, ou um link, então o lançador
+    não abre o app e responde "aprovação indisponível" (D21);
+  - um `systemctl --user set-environment WAYLAND_DISPLAY=<proxy>` (ou o mesmo no
+    ambiente do pedido `abrir_app`) não muda o ambiente do app aberto pelo daemon
+  (D47, D48, D57) — cobre S1, S8.
 
 ## Milestone 6 — Extensão, `ward login` e `ward playwright`
 
@@ -999,6 +1033,14 @@ O QA usa o Chrome em modo de teste (D7) e confere a aparência contra o frame.
   dependência de `sshpass`; instala e desinstala num contêiner `ubuntu:24.04`.
 - [ ] V9.10 — `sudo make uninstall` remove os arquivos instalados e não toca em
   `~/.local/share/ward/`.
+- [ ] V9.11 — (SEG) Dado `make install` num contêiner `ubuntu:24.04`, então `ward-app`
+  e `ward-nm` são grupos de sistema (gid < 1000), fora das faixas do `/etc/subgid`,
+  sem membros, com `!` no `gshadow`; quando o grupo já existe com membro, com senha no
+  `gshadow` ou com gid ≥ 1000, então a instalação recusa e não instala o binário
+  setgid; quando um usuário sem o grupo tenta `newgrp ward-app`, então falha; e as
+  units do sistema não têm `NoNewPrivileges=`, `RestrictSUIDSGID=` nem opção que os
+  implique (`systemd-analyze security` e `systemctl show -p NoNewPrivileges` dão `no`),
+  e o app aberto pelo daemon recebe o papel (D57, D60) — cobre S1, S8.
 
 ## Milestone 10 — Migração e saída do KeePassXC
 
