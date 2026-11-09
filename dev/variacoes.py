@@ -1,5 +1,5 @@
 #!/usr/bin/python3 -IB
-"""Gera a lista de segredos do cofre de teste e das variações de D11 (Fase 19).
+"""Lista de segredos do cofre de teste e das variações de D11, D36 e D37 (Fases 19, 19d).
 
 Uso (da raiz):
     python3 -I -B dev/variacoes.py [--saida .dev/<nome>.txt]      # make dev-variacoes
@@ -10,20 +10,30 @@ contrato). Uma linha por padrão, sem linha vazia, nenhum padrão com menos de 6
 O que entra, para cada valor secreto das fixtures (`segredos`, extras com
 `segredo: true`, anexos, a chave privada de `.dev/servicos/chaves/`, a senha mestra e o
 PIN):
-- o valor literal (segredo de várias linhas: cada linha aparada com 6+ caracteres e, em
-  linha `CHAVE=valor`/`export CHAVE=valor`, o valor com e sem aspas);
+- o valor literal;
+- segredo de várias linhas (chave privada, extra secreto com `\\n`, anexos; D36): cada
+  linha aparada com 6+ caracteres e o valor, com e sem aspas e com 6+ caracteres, das
+  linhas `CHAVE=valor`/`export CHAVE=valor`, `"chave": "valor"` (JSON, com ou sem a
+  vírgula do fim) e `chave: valor` (YAML, também `- chave: valor`); cada linha e cada
+  valor recebem as mesmas codificações abaixo;
 - URL-encoded: `quote` sem nada seguro, com `/` seguro, `quote_plus` (formulário), com
   hexadecimal maiúsculo e minúsculo, e todo byte codificado;
 - base64 padrão e URL-safe, com e sem `=`, e o miolo do base64 do valor dentro de um
   base64 maior (os 3 alinhamentos);
 - Basic auth: base64 de `usuário:segredo` para as entradas com usuário;
 - escape JSON (e o `\\/` do PHP);
+- as formas escapadas de D37, cada uma só quando difere da literal: JSON do Go (`&`,
+  `<`, `>`, U+2028 e U+2029 como `\\u0026`, `\\u003c`, `\\u003e`, `\\u2028`,
+  `\\u2029`), JSON com `ensure_ascii` do Python (`\\uXXXX` minúsculo, com par
+  substituto acima de U+FFFF) e aspas duplas do shell (`\\` antes de `$`, `` ` ``,
+  `"` e `\\`). O hex em maiúsculas fica de fora (RA3);
 - `DATABASE_URL` das entradas `banco` (D10).
 
-Independente do código da máscara (Fase 17) de propósito: é o oráculo de quem confere.
-Só a biblioteca padrão. Nada vai para stdout/stderr além do caminho e da contagem; a
-lista é gravada 0600, de forma atômica, só dentro de `.dev/`. Nunca lê fora do
-repositório.
+Independente do código da máscara (Fases 17 e 19c) de propósito: é o oráculo de quem
+confere; não importa nem chama o `ward-core`. Testes: `dev/testes/variacoes_teste.py`
+(rodado por `make teste-dev-cofre`). Só a biblioteca padrão. Nada vai para
+stdout/stderr além do caminho e da contagem; a lista é gravada 0600, de forma atômica,
+só dentro de `.dev/`. Nunca lê fora do repositório.
 """
 
 from __future__ import annotations
@@ -209,39 +219,100 @@ def url(v: bytes) -> list[bytes]:
     return [f.encode("ascii") for f in formas]
 
 
-def json_escape(v: bytes) -> list[bytes]:
+def texto(v: bytes) -> str | None:
     try:
-        t = v.decode("utf-8")
+        return v.decode("utf-8")
     except UnicodeDecodeError:
+        return None
+
+
+def caracteres(v: bytes) -> int:
+    """Caracteres de UTF-8 válido; bytes se não for texto (o mínimo de D34/D36)."""
+    t = texto(v)
+    return len(v) if t is None else len(t)
+
+
+def json_escape(v: bytes) -> list[bytes]:
+    t = texto(v)
+    if t is None:
         return []
     j = json.dumps(t, ensure_ascii=False)[1:-1]
-    a = json.dumps(t)[1:-1]
-    return [x.encode("utf-8") for x in {j, a, j.replace("/", "\\/")}]
+    return [x.encode("utf-8") for x in {j, j.replace("/", "\\/")}]
+
+
+# D37. Cada forma é escrita aqui a partir da descrição do PRD, não do `mascara.rs`.
+GO_HTML = {"&": "\\u0026", "<": "\\u003c", ">": "\\u003e", "\u2028": "\\u2028", "\u2029": "\\u2029"}
+
+
+def json_go(t: str) -> str:
+    """`json.Marshal` do Go: o escape JSON comum mais `&<>` e U+2028/U+2029 em `\\u`."""
+    j = json.dumps(t, ensure_ascii=False)[1:-1]
+    return "".join(GO_HTML.get(c, c) for c in j)
+
+
+def json_ascii(t: str) -> str:
+    """`json.dumps` do Python (`ensure_ascii`): fora do ASCII vira `\\uXXXX` minúsculo,
+    com par substituto acima de U+FFFF."""
+    return json.dumps(t, ensure_ascii=True)[1:-1]
+
+
+def aspas_duplas(t: str) -> str:
+    """Valor dentro de aspas duplas do shell (`declare -p`, `export -p`)."""
+    return re.sub(r'([$`"\\])', r"\\\1", t)
+
+
+def escapadas(v: bytes) -> set[bytes]:
+    """As formas de D37 que diferem do valor literal (vazio se nenhuma muda nada)."""
+    t = texto(v)
+    if t is None:
+        return set()
+    formas = {json_go(t), json_ascii(t)}
+    if "\n" not in t and "\r" not in t:
+        formas.add(aspas_duplas(t))
+    return {f.encode("utf-8") for f in formas} - {v}
+
+
+CHAVE_IGUAL = re.compile(rb"^(?:export\s+)?[A-Za-z_.-][A-Za-z0-9_.-]*\s*=(.*)$")
+CHAVE_JSON = re.compile(rb'^(?:-\s+)?"[^"]+"\s*:(.*)$')
+CHAVE_YAML = re.compile(rb"^(?:-\s+)?[A-Za-z0-9_.-]+:(?:[ \t](.*))?$")
+
+
+def valores_da_linha(aparada: bytes) -> list[bytes]:
+    """O valor de `CHAVE=valor`, `"chave": "valor"` e `chave: valor` (D11, D36), sem a
+    vírgula do fim no JSON/YAML, com e sem aspas, cada um com 6+ caracteres (D34)."""
+    brutos = []
+    for regex, virgula in ((CHAVE_IGUAL, False), (CHAVE_JSON, True), (CHAVE_YAML, True)):
+        m = regex.match(aparada)
+        if not m or m.group(1) is None:
+            continue
+        valor = m.group(1).strip()
+        if virgula and valor.endswith(b","):
+            valor = valor[:-1].rstrip()
+        brutos.append(valor)
+    saida = []
+    for valor in brutos:
+        formas = [valor]
+        if len(valor) >= 3 and valor[:1] == valor[-1:] and valor[:1] in (b'"', b"'"):
+            formas.append(valor[1:-1])
+        saida += [x for x in formas if caracteres(x) >= MIN_PADRAO]
+    return saida
 
 
 def linhas_de_anexo(v: bytes) -> list[bytes]:
-    """Cada linha aparada com 6+ caracteres e, em `CHAVE=valor`, o valor (D11)."""
+    """Passada por linha de um segredo de várias linhas (D11, D36): cada linha aparada
+    com 6+ caracteres e os valores de `valores_da_linha`."""
     saida = []
     for linha in v.split(b"\n"):
-        linha = linha.rstrip(b"\r")
-        aparada = linha.strip()
-        if len(aparada) >= MIN_PADRAO:
+        aparada = linha.rstrip(b"\r").strip()
+        if caracteres(aparada) >= MIN_PADRAO:
             saida.append(aparada)
-        m = re.match(rb"^\s*(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*=(.*)$", linha)
-        if m:
-            valor = m.group(1).strip()
-            sem_aspas = valor
-            if len(valor) >= 2 and valor[:1] == valor[-1:] and valor[:1] in (b'"', b"'"):
-                sem_aspas = valor[1:-1]
-            for x in (valor, sem_aspas):
-                if len(x) >= MIN_PADRAO:
-                    saida.append(x)
+            saida += valores_da_linha(aparada)
     return saida
 
 
 def todas(x: bytes) -> set[bytes]:
     """Codificações de um valor (o literal fica de fora: pode ter quebra de linha)."""
-    return set(b64(x)) | set(miolos_b64(x)) | set(json_escape(x)) | set(url(x))
+    return set(b64(x)) | set(miolos_b64(x)) | set(json_escape(x)) | escapadas(x) | set(url(x))
 
 
 def variacoes(v: bytes, usuario: str | None) -> set[bytes]:
