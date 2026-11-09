@@ -267,6 +267,10 @@ version = "0.1.0"
 [[package]]
 name = "ward-plataforma"
 version = "0.1.0"
+dependencies = [
+ "libc",
+ "zeroize",
+]
 
 [[package]]
 name = "ward-ponte-teste"
