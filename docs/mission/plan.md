@@ -811,6 +811,14 @@ Auditoria de segurança do M4 (2026-11-09): **reprovada** (1ª vez), com 1 crít
   28d: 160 `ok` e nenhuma falha até `config_do_cargo_home`; faltaram `ambiente_do_make` e
   `git_sem_config_do_usuario` por disco — rodar `make teste-ataques-fundacao` sozinho com
   ~12 GB livres.
+- [ ] Fase 28f — A 28d pôs as cópias do `teste-ataques-fundacao` em `.dev/ataques-fundacao.*`,
+  e o `dev/origens.py` acha os `.cargo/config*` plantados nelas: enquanto o teste roda,
+  todo `make` do checkout falha em `origens`, e o próprio V1.2 (`make check` na raiz)
+  sai 2 por isso, sem citar `vazamento.txt` (falsa falha). Pôr as cópias fora do
+  repositório numa pasta do usuário não gravável por outros (V3.37 recusa `/tmp`), ou
+  fazer o `origens.py` ignorar `.dev/` com justificativa (cargo não lê config de
+  subpastas). Critério: `make teste-ataques-fundacao` inteiro até "Todos os ataques foram
+  barrados" e `make origens` limpo durante a rodada. V1.2, V1.5.
 
 ## Milestone 5 — App desktop
 Contrato: V5.1–V5.35
