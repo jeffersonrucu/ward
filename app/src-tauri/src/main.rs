@@ -25,6 +25,7 @@ use ward_app_nucleo::credenciais::{DetalheCredencial, ItemCredencial};
 use ward_app_nucleo::daemon::DaemonSocket;
 use ward_app_nucleo::formulario::Formulario;
 use ward_app_nucleo::gerador::Opcoes;
+use ward_app_nucleo::nivel::{NivelMudado, Pin};
 use ward_app_nucleo::partida;
 use ward_app_nucleo::primeiro_uso::NovoCofre;
 use ward_app_nucleo::servico::{CodigoTotp, ResultadoCriar, ResultadoSalvar, Servico};
@@ -208,6 +209,18 @@ fn salvar_credencial(
         .salvar_credencial(anterior.as_deref(), formulario)?)
 }
 
+/// Nível de acesso (Fase 35, S9). O PIN chega num `Pin` (zera ao sair; o formato é
+/// conferido na leitura, antes do serviço) e só vai ao daemon; a resposta é o nível novo.
+#[tauri::command]
+fn mudar_nivel(
+    entrada: String,
+    nivel: String,
+    pin: Pin,
+    estado: State<'_, Estado>,
+) -> Result<NivelMudado, Falha> {
+    Ok(estado.servico()?.mudar_nivel(&entrada, &nivel, pin)?)
+}
+
 /// Anexo (Fase 34): o diálogo de arquivo do GTK escolhe o arquivo e o núcleo o lê; a
 /// resposta traz id, nome e tamanho ou o aviso, nunca o conteúdo (S11, V5.12). Comando
 /// síncrono: roda na thread principal, onde o GTK pode abrir o diálogo.
@@ -299,6 +312,7 @@ fn com_comandos<R: Runtime>(builder: Builder<R>, estado: Estado) -> Builder<R> {
             usar_senha_gerada,
             descartar_formulario,
             salvar_credencial,
+            mudar_nivel,
             escolher_anexo,
             remover_anexo,
             conectar,
@@ -566,6 +580,66 @@ mod testes {
             r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
             "campo a mais: {r:?}"
         );
+    }
+
+    /// Fase 35 (S9): `mudar_nivel` só passa pela ACL na janela `principal` com a origem
+    /// local, e um PIN fora do formato (ou um campo a mais) é recusado na leitura dos
+    /// argumentos, antes do serviço, sem ecoar o valor.
+    #[test]
+    fn ataque_mudar_nivel_so_na_janela_certa_e_pin_no_formato() {
+        let app = app_de_teste();
+        let principal = WebviewWindowBuilder::new(&app, "principal", Default::default())
+            .build()
+            .unwrap();
+        let outra = WebviewWindowBuilder::new(&app, "outra", Default::default())
+            .build()
+            .unwrap();
+        let pedido =
+            serde_json::json!({"entrada": "acme-pg-dev", "nivel": "bloqueado", "pin": "135790"});
+        let r = chamar(&outra, "mudar_nivel", ORIGEM, pedido.clone());
+        assert!(
+            r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+            "janela sem capability: {r:?}"
+        );
+        let r = chamar(
+            &principal,
+            "mudar_nivel",
+            "https://example.com",
+            pedido.clone(),
+        );
+        assert!(
+            r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+            "origem remota: {r:?}"
+        );
+        for pin in [
+            serde_json::json!("12"),
+            serde_json::json!("1357901"),
+            serde_json::json!("13579a"),
+            serde_json::json!(135790),
+            serde_json::Value::Null,
+        ] {
+            let corpo =
+                serde_json::json!({"entrada": "acme-pg-dev", "nivel": "bloqueado", "pin": pin});
+            let r = chamar(&principal, "mudar_nivel", ORIGEM, corpo);
+            let texto = format!("{r:?}");
+            assert!(
+                r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+                "PIN fora do formato passou da leitura: {texto}"
+            );
+            assert!(
+                !texto.contains("135790") && !texto.contains("13579a"),
+                "{texto}"
+            );
+        }
+        // Na janela certa, o pedido bem formado chega ao serviço (aqui sem daemon: o
+        // erro é do serviço, com código, e não traz o PIN).
+        let r = chamar(&principal, "mudar_nivel", ORIGEM, pedido);
+        let texto = format!("{r:?}");
+        assert!(
+            r.as_ref().err().is_some_and(|e| e["codigo"].is_string()),
+            "{texto}"
+        );
+        assert!(!texto.contains("135790"), "{texto}");
     }
 
     /// Fase 30: `criar_cofre` só na janela `principal` com a origem local; campo a mais

@@ -17,4 +17,6 @@
 #[cfg(feature = "modo-teste")]
 pub mod http;
 #[cfg(feature = "modo-teste")]
+pub mod partida;
+#[cfg(feature = "modo-teste")]
 pub mod simulados;

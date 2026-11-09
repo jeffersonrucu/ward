@@ -47,6 +47,13 @@
     destravado = true;
   }
 
+  // O cofre travou durante o uso (Fase 35: 5º PIN errado, S9): a casca sai e o estado
+  // do daemon é consultado de novo. A tela `Destravar / Padrão` chega na Fase 31.
+  function travou() {
+    destravado = false;
+    consultar();
+  }
+
   function navegar(nova) {
     if (TELAS.includes(nova)) tela = nova;
   }
@@ -74,7 +81,7 @@
   <div class="casca">
     <NavegacaoLateral ativo={tela} onnavegar={navegar} />
     {#if tela === 'credenciais'}
-      <Credenciais />
+      <Credenciais ontravado={travou} />
     {:else if tela === 'gerador'}
       <GeradorSenha />
     {:else}

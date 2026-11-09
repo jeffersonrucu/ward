@@ -8,7 +8,8 @@
 //! - `servidor --chrome <exe> [--lancar <programa…>]`: o "wardd" de teste: endurece,
 //!   recebe o socket por `LISTEN_FDS`, lê os grupos do `/etc/group` e responde a cada
 //!   conexão uma linha com o papel; com `--lancar`, abre um filho (o app aberto pelo
-//!   daemon);
+//!   daemon). Se o cliente mandar um quadro logo (o app de teste da 23a pede `estado`
+//!   na partida, D63), a resposta é o quadro `estado` com o papel, e a conexão fecha;
 //! - `cliente [--sistema-em <socket>] [--pausar]`: confere o servidor (D46), conecta e
 //!   imprime o papel; instalado como `ward-app` e `ward-nm` (setgid);
 //! - `prender <programa…>`: lança o programa (um `cliente --pausar`) e tenta
@@ -163,11 +164,12 @@ fn servidor(args: &[String]) {
     let inst = Instalacao::do_sistema(chrome).unwrap_or_else(|e| falhar(e));
     let politica = PoliticaKernel::ler();
     println!(
-        "servidor: pronto {} gid_app={} gid_nm={} politica={:?}",
+        "servidor: pronto {} gid_app={} gid_nm={} politica={:?} vmlck={}",
         estado_dos_fds(escuta.listener()),
         inst.gid_app(),
         inst.gid_extensao(),
-        politica.conferir()
+        politica.conferir(),
+        status("VmLck:")
     );
     let _ = std::io::stdout().flush();
     if let Some((programa, resto)) = lancar.split_first() {
@@ -215,8 +217,41 @@ fn servidor(args: &[String]) {
             par.credenciais().gid
         );
         let _ = std::io::stdout().flush();
-        let _ = writeln!(stream, "{linha}");
+        let papel = match classe {
+            ClassePar::App => "app",
+            ClassePar::HostExtensao => "extensao",
+            ClassePar::Comum { .. } => "agente",
+        };
+        if !responder_estado(&mut stream, papel) {
+            let _ = writeln!(stream, "{linha}");
+        }
     }
+}
+
+/// Fase 23a (D63): o app de teste manda `estado` logo depois de conectar e confere o
+/// papel na resposta. Se um quadro chega em 1 s, responde o `estado` (sem segredo, só o
+/// papel) e devolve `true`; senão (o `cliente`, que só lê), `false`.
+fn responder_estado(stream: &mut UnixStream, papel: &str) -> bool {
+    let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(1)));
+    let mut n = [0u8; 4];
+    if stream.read_exact(&mut n).is_err() {
+        return false;
+    }
+    let tamanho = u32::from_be_bytes(n) as usize;
+    if tamanho == 0 || tamanho > 64 * 1024 {
+        return true;
+    }
+    let mut corpo = vec![0u8; tamanho];
+    if stream.read_exact(&mut corpo).is_err() {
+        return true;
+    }
+    let r = format!(
+        r#"{{"v":1,"tipo":"estado","dados":{{"travado":true,"cofre_existe":false,"papel":"{papel}"}}}}"#
+    );
+    let _ = stream
+        .write_all(&(r.len() as u32).to_be_bytes())
+        .and_then(|()| stream.write_all(r.as_bytes()));
+    true
 }
 
 fn status(campo: &str) -> String {

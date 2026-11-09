@@ -11,8 +11,6 @@ pub enum ErroApp {
     /// O diretório ou o socket do daemon não passaram na conferência (dono, permissão,
     /// tipo). O app não conversa com ele.
     DaemonNaoConfiavel,
-    /// O protocolo do daemon ainda não existe (Fase 20).
-    SemProtocolo,
     /// A conexão aberta na partida (D47) não existe mais; o app se executa de novo.
     ConexaoPerdida,
     /// O pedido da interface não passou na validação (tamanho, formato).
@@ -39,6 +37,9 @@ pub enum ErroApp {
     /// Editar uma entrada com anexos: o protocolo não traz o conteúdo dos anexos para
     /// regravar, e salvar sem eles os apagaria (Fase 34).
     AnexosNaoMantidos,
+    /// O PIN não confere (S9). Nada foi alterado; 5 erros seguidos travam o cofre (o
+    /// daemon conta; a resposta não diz quantos faltam).
+    PinIncorreto,
     /// Não há como escolher arquivo neste modo (sem diálogo, sem pasta de teste).
     SeletorIndisponivel,
     /// O terminal do "Conectar" não abriu.
@@ -57,7 +58,6 @@ impl ErroApp {
         match self {
             ErroApp::DaemonIndisponivel => "daemon-indisponivel",
             ErroApp::DaemonNaoConfiavel => "daemon-nao-confiavel",
-            ErroApp::SemProtocolo => "sem-protocolo",
             ErroApp::ConexaoPerdida => "conexao-perdida",
             ErroApp::PedidoInvalido => "pedido-invalido",
             ErroApp::Travado => "travado",
@@ -70,6 +70,7 @@ impl ErroApp {
             ErroApp::AleatorioIndisponivel => "aleatorio-indisponivel",
             ErroApp::SemSenhaGerada => "sem-senha-gerada",
             ErroApp::AnexosNaoMantidos => "anexos-nao-mantidos",
+            ErroApp::PinIncorreto => "pin-incorreto",
             ErroApp::SeletorIndisponivel => "seletor-indisponivel",
             ErroApp::TerminalIndisponivel => "terminal-indisponivel",
             ErroApp::NaoEServidor => "nao-e-servidor",
@@ -86,7 +87,6 @@ impl fmt::Display for ErroApp {
             ErroApp::DaemonNaoConfiavel => {
                 "o socket do daemon não é confiável; o app não se conecta"
             }
-            ErroApp::SemProtocolo => "o protocolo do daemon ainda não está disponível",
             ErroApp::ConexaoPerdida => "a conexão com o daemon caiu; o app vai se reabrir",
             ErroApp::PedidoInvalido => "pedido inválido",
             ErroApp::Travado => "o cofre está travado",
@@ -101,6 +101,7 @@ impl fmt::Display for ErroApp {
             ErroApp::AnexosNaoMantidos => {
                 "esta entrada tem anexos; editá-la aqui ainda apagaria os anexos"
             }
+            ErroApp::PinIncorreto => "PIN incorreto. Nada foi alterado.",
             ErroApp::SeletorIndisponivel => "não foi possível abrir a escolha de arquivo",
             ErroApp::TerminalIndisponivel => "não foi possível abrir o terminal",
             ErroApp::NaoEServidor => "Conectar só vale para entradas servidor",

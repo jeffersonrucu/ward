@@ -16,6 +16,7 @@ use ward_app_nucleo::comandos::Comando;
 use ward_app_nucleo::daemon::Daemon;
 use ward_app_nucleo::formulario::Formulario;
 use ward_app_nucleo::gerador::Opcoes;
+use ward_app_nucleo::nivel::Pin;
 use ward_app_nucleo::primeiro_uso::NovoCofre;
 use ward_app_nucleo::servico::Servico;
 use zeroize::Zeroizing;
@@ -184,6 +185,11 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Ponte<D, A> {
         let Ok(Value::Object(mut args)) = serde_json::from_slice::<Value>(&p.corpo) else {
             return Resposta::erro(400, ErroApp::PedidoInvalido);
         };
+        // Fase 35: o PIN sai do mapa (posse, sem cópia) e vira um `Pin` que zera.
+        let pin = match comando {
+            Comando::MudarNivel => args.remove("pin").map(serde_json::from_value::<Pin>),
+            _ => None,
+        };
         let texto = |chave: &str| args.get(chave).and_then(Value::as_str);
         let marcado = |chave: &str| args.get(chave).and_then(Value::as_bool);
         let resultado = match comando {
@@ -296,6 +302,13 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Ponte<D, A> {
                     _ => Err(ErroApp::PedidoInvalido),
                 }
             }
+            Comando::MudarNivel => match (texto("entrada"), texto("nivel"), pin) {
+                (Some(e), Some(n), Some(Ok(pin))) => self
+                    .servico
+                    .mudar_nivel(e, n, pin)
+                    .and_then(|r| serde_json::to_value(r).map_err(|_| ErroApp::RespostaInvalida)),
+                _ => Err(ErroApp::PedidoInvalido),
+            },
             // Fase 34: o arquivo é escolhido e lido no lado Rust; volta id, nome e
             // tamanho, ou o aviso (S11, V5.12).
             Comando::EscolherAnexo => self

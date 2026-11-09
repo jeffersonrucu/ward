@@ -37,6 +37,25 @@
   (`nucleo.rs` › `criar_cofre`, Fase 22). Esta fase não mexeu no daemon nem no
   `ward-core`.
 
+### Merge com o master (34, 23a, 35)
+- Conflitos resolvidos com os dois lados em `cliente.rs`, `daemon_falso.rs`,
+  `servico.rs`, `main.rs` do Tauri, `App.svelte`, `CampoPin.svelte`, `comandos.js`,
+  `http.rs`, `main.rs` e `ataques.rs` da ponte e `design-nodes.md`.
+  - `cliente.rs`: `criar_cofre` fica junto de `papel`, `tem_papel_app` e `abrir_app`
+    (23a), e os erros `CofreJaExiste` e `CofreNaoGravado` junto de `PinIncorreto` (35).
+  - `daemon_falso`: o `sem_cofre` convive com `erros_pin`/`travado` (35). Depois do
+    `criar_cofre`, o `mudar_nivel` confere o PIN no hash criado, não no PIN de teste.
+  - `CampoPin`: ficaram a borda do dígito cheio (35) e o foco visível com 6 dígitos
+    (30).
+  - Ponte: `--daemon-falso sem-cofre` entra junto de `[]` (ponte aberta pelo daemon,
+    23a) e de `--anexos` (34).
+- **Ponta a ponta com o `wardd` real:** o `wardd` de teste do worktree subiu sem cofre e
+  sem estado em `.dev/`, com a ponte como `WARD_DEV_APP` (mesmo `env -i` do
+  `dev/daemon.sh`, que recusa subir sem cofre), e a ponte foi aberta pelo `dev/ponte.sh`.
+  O QA inteiro (`qa30.py`) passou; o `criar_cofre` real gravou o cofre e o estado
+  (`vista 1`, `queimada 1`), e os logs do daemon e da ponte não têm a senha nem o PIN.
+  Depois parei o daemon e apaguei o cofre e o estado de teste do worktree.
+
 ## Segurança
 - **Invariantes tocadas:**
   - **S9 / D30:** o PIN só vai ao daemon pelo `criar_cofre`, depois de conferido. O app
@@ -94,6 +113,11 @@
 | `make ferramentas`: o download do gitleaks deu 504 do GitHub duas vezes; copiei o binário do `.dev/ferramentas` do repositório principal, e o `make gitleaks-binario` conferiu o sha256 | 2, 2 (sha256 depois: 0) |
 | `make check`: a 1ª rodada falhou no `clippy::type_complexity` de um teste em `primeiro_uso.rs`, corrigido com um `type`. A 2ª, rodando ao lado do `make app-check`, falhou só no `wardd --test socket` › `v3_33_kill_9_entre_as_senhas_erradas`, por tempo (veja Problemas). A 3ª, sozinha, passou limpa | 2, 2, depois 0 |
 | `make app-front` (final) | 0 |
+| Depois do `git merge master` (34, 23a, 35): `make check` | 0 |
+| Depois do merge: criar cofre pela ponte aberta pelo `wardd` real (cofre e estado em `.dev/` sem estado prévio, `qa30.py`), daemon parado e cofre de teste apagado no fim | 0 |
+| Depois do merge: `make app-check` com `PKG_CONFIG_PATH` do scratchpad | 0 |
+| Depois do merge: ponte `--daemon-falso sem-cofre` + `qa30.py` | 0 |
+| Depois do merge: `make app-front` (o `npm audit` mostra 2 de severidade baixa, abaixo do limite do alvo) | 0 |
 
 ## Problemas descobertos
 - **Mínimo de 12 caracteres:** o texto de ajuda do design pede 12, mas o escopo, o
@@ -123,6 +147,12 @@
   máquina carregada (o `make app-check` rodando junto), ela deu 2,28 s e o teste falhou.
   Sozinho, passa. Não mexi; vale folgar o limite ou medir só a espera do D20, sem o
   Argon2 e a subida.
+
+- **`make app-ponte` não cobre o primeiro uso:** o `dev/daemon.sh` recusa subir sem
+  `.dev/cofre-teste.ward` ("rode 'make dev-cofre'"), e o socket de teste
+  (`/run/user/<uid>/ward-teste/`) é um só para todos os worktrees. Testei com um script
+  fora do repositório. Vale um `dev/daemon.sh subir --sem-cofre` (só com `COFRE` em
+  `.dev/`) numa fase de ferramentas.
 
 ## Arquivos criados/alterados
 | Arquivo | Ação |

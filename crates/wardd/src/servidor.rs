@@ -33,7 +33,7 @@ use ward_core::protocolo::{
 use ward_plataforma::{ClassePar, ErroAceitar, Escuta, Instalacao, PoliticaKernel, ProcessoPar};
 
 use crate::aprovacao::{Assinante, Cliente};
-use crate::lancamento::AppLancado;
+use crate::lancamento::{AppDeTeste, AppLancado};
 use crate::nucleo::Daemon;
 use crate::{aviso, depurar};
 
@@ -111,6 +111,9 @@ pub struct Papeis {
     pub instalacao: Option<Instalacao>,
     /// O app que o lançador abriu (D63). `None`: ninguém é app.
     pub app: Option<AppLancado>,
+    /// Só no daemon de teste (D63): o app de teste, app sem o egid. No release é sempre
+    /// `None` (o tipo não se constrói sem a feature).
+    pub app_de_teste: Option<AppDeTeste>,
 }
 
 /// O papel de um par já classificado pelo grupo e pelo pai (D47). Papel app só para o
@@ -130,10 +133,23 @@ pub fn papel_da_classe(classe: ClassePar, pid: u32, e_o_app: impl Fn(u32) -> boo
 
 impl Papeis {
     fn papel(&self, par: &ProcessoPar) -> Papel {
+        let pid = par.credenciais().pid;
+        // D63, daemon de teste: o pid do lançador e o pai = daemon, sem o egid. O papel
+        // sai do mesmo `papel_da_classe`.
+        if let Some(t) = &self.app_de_teste
+            && t.e_o_app(pid)
+        {
+            match t.classificar(par) {
+                c @ ClassePar::App => return papel_da_classe(c, pid, |p| t.e_o_app(p)),
+                ClassePar::Comum { motivo } => {
+                    aviso!("papel app de teste recusado (pid {pid}): {motivo}");
+                }
+                ClassePar::HostExtensao => {}
+            }
+        }
         let Some(inst) = &self.instalacao else {
             return Papel::Agente;
         };
-        let pid = par.credenciais().pid;
         match par.classificar(inst, &PoliticaKernel::ler()) {
             c @ (ClassePar::App | ClassePar::HostExtensao) => {
                 papel_da_classe(c, pid, |p| self.app.as_ref().is_some_and(|a| a.e_o_app(p)))
@@ -336,6 +352,68 @@ mod testes {
     use super::*;
     use ward_core::entrada::Ambiente;
     use ward_core::protocolo::{Operacao, PedidoDeAprovacao};
+
+    /// D63: sem o grupo, o pid do lançador não basta; com o grupo, só o pid do lançador.
+    /// Vale nos dois builds (o `make teste-sem-modo-teste` roda sem a feature).
+    #[test]
+    fn d63_sem_o_grupo_o_pid_do_lancador_nao_da_papel_app() {
+        use ward_plataforma::Recusa;
+        for motivo in [
+            Recusa::GrupoComum,
+            Recusa::PaiDoAppNaoPermitido,
+            Recusa::Depurador,
+        ] {
+            assert_eq!(
+                papel_da_classe(ClassePar::Comum { motivo }, 42, |_| true),
+                Papel::Agente
+            );
+        }
+        assert_eq!(
+            papel_da_classe(ClassePar::App, 42, |_| false),
+            Papel::Agente
+        );
+        assert_eq!(papel_da_classe(ClassePar::App, 42, |p| p == 42), Papel::App);
+    }
+
+    /// D63, pelo socket: um filho deste processo (como o lançador o abriria), sem o
+    /// egid do grupo `ward-app` e sem instalação, fica agente. Sem a feature
+    /// `modo-teste`, o `app_de_teste` nem tem valor possível; com ela, sem `WARD_DEV_APP`
+    /// é `None` e dá o mesmo.
+    #[test]
+    fn d63_par_filho_sem_egid_fica_agente() {
+        use std::os::unix::fs::DirBuilderExt;
+        let dir = std::path::PathBuf::from(format!(
+            "/run/user/{}/wardd-servidor-d63-{}",
+            ward_plataforma::uid_efetivo(),
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::DirBuilder::new().mode(0o700).create(&dir).unwrap();
+        let caminho = dir.join("s.sock");
+        let l = std::os::unix::net::UnixListener::bind(&caminho).unwrap();
+        let mut filho = std::process::Command::new("/usr/bin/python3")
+            .args([
+                "-I",
+                "-c",
+                "import socket,sys,time\ns=socket.socket(socket.AF_UNIX)\ns.connect(sys.argv[1])\ntime.sleep(10)",
+            ])
+            .arg(&caminho)
+            .env_clear()
+            .spawn()
+            .unwrap();
+        let (s, _) = l.accept().unwrap();
+        let par = ward_plataforma::conferir_conexao(&s).unwrap();
+        assert_eq!(par.credenciais().pid, filho.id());
+        let papeis = Papeis {
+            instalacao: None,
+            app: None,
+            app_de_teste: None,
+        };
+        assert_eq!(papeis.papel(&par), Papel::Agente);
+        let _ = filho.kill();
+        let _ = filho.wait();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     /// O que o motor entrega ao app sai como um quadro de resposta do papel app, inteiro;
     /// com a conexão fechada, a entrega falha (o motor trata como janela fechada).

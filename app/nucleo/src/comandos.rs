@@ -48,6 +48,9 @@ pub const DESCARTAR_FORMULARIO: &str = "descartar_formulario";
 /// `salvar_credencial { anterior, formulario }`: cria ou edita uma entrada (Fase 33).
 /// Segredo mantido e senha gerada são postos no rascunho pelo lado Rust.
 pub const SALVAR_CREDENCIAL: &str = "salvar_credencial";
+/// `mudar_nivel { entrada, nivel, pin }`: muda o nível de acesso com o PIN (Fase 35,
+/// S9). O PIN vai só ao daemon; a resposta traz o nível novo.
+pub const MUDAR_NIVEL: &str = "mudar_nivel";
 /// `escolher_anexo`: o lado Rust escolhe e lê o arquivo (Fase 34); a resposta traz id,
 /// nome e tamanho, ou o aviso. Sem argumento: a interface não escolhe caminho.
 pub const ESCOLHER_ANEXO: &str = "escolher_anexo";
@@ -76,6 +79,7 @@ pub const COMANDOS: &[&str] = &[
     USAR_SENHA_GERADA,
     DESCARTAR_FORMULARIO,
     SALVAR_CREDENCIAL,
+    MUDAR_NIVEL,
     ESCOLHER_ANEXO,
     REMOVER_ANEXO,
     CONECTAR,
@@ -104,6 +108,7 @@ pub enum Comando {
     UsarSenhaGerada,
     DescartarFormulario,
     SalvarCredencial,
+    MudarNivel,
     EscolherAnexo,
     RemoverAnexo,
     Conectar,
@@ -127,6 +132,7 @@ impl Comando {
             USAR_SENHA_GERADA => Some(Comando::UsarSenhaGerada),
             DESCARTAR_FORMULARIO => Some(Comando::DescartarFormulario),
             SALVAR_CREDENCIAL => Some(Comando::SalvarCredencial),
+            MUDAR_NIVEL => Some(Comando::MudarNivel),
             ESCOLHER_ANEXO => Some(Comando::EscolherAnexo),
             REMOVER_ANEXO => Some(Comando::RemoverAnexo),
             CONECTAR => Some(Comando::Conectar),
@@ -206,6 +212,7 @@ mod testes {
                 "usar_senha_gerada",
                 "descartar_formulario",
                 "salvar_credencial",
+                "mudar_nivel",
                 "escolher_anexo",
                 "remover_anexo",
                 "conectar",

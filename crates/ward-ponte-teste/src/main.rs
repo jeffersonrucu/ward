@@ -1,7 +1,13 @@
-//! `ward-ponte-teste --dist app/dist-teste`: sobe a ponte (D7) e imprime a URL que o
-//! Chrome de teste abre. Só existe com a feature `modo-teste` (`required-features`).
-//! Fala com o daemon de teste em `/run/user/<uid>/ward-teste/` e nunca lê
-//! `WARD_DEV_DIR` nem outra variável para escolher o caminho.
+//! `ward-ponte-teste`: sobe a ponte (D7) e imprime a URL que o Chrome de teste abre. Só
+//! existe com a feature `modo-teste` (`required-features`). Fala com o daemon de teste
+//! em `/run/user/<uid>/ward-teste/` e nunca lê variável para escolher o socket.
+//!
+//! Com o daemon de verdade (D63, Fase 23a), quem abre a ponte é o daemon de teste
+//! (`make app-ponte` pede `abrir_app` com `WARD_DEV_APP` apontando para ela): sem
+//! argumentos, com o `dist-teste` do repositório de `WARD_DEV_DIR`, e a saída (com a
+//! URL) em `.dev/logs/ward-ponte-teste.log`. Com `--dist <dir>` ela também fala com o
+//! socket, mas executada à mão o daemon dá o papel agente e ela sai na primeira
+//! resposta ([`ward_ponte_teste::partida`]).
 //!
 //! `--daemon-falso cheio|vazio|sem-cofre` troca o socket pelo daemon falso do núcleo
 //! (`ward_app_nucleo::daemon_falso`, Fase 32), que responde pelo protocolo com as
@@ -18,10 +24,11 @@ use ward_app_nucleo::daemon::{Daemon, DaemonSocket};
 use ward_app_nucleo::daemon_falso::DaemonFalso;
 use ward_app_nucleo::servico::Servico;
 use ward_ponte_teste::http::Ponte;
+use ward_ponte_teste::partida;
 use ward_ponte_teste::simulados::{SeletorDePasta, TerminalDeTeste};
 
-const USO: &str = "uso: ward-ponte-teste --dist <diretório do build --mode teste> \
-[--daemon-falso cheio|vazio|sem-cofre] [--anexos <pasta com um arquivo>]";
+const USO: &str = "uso: ward-ponte-teste [--dist <diretório do build --mode teste> \
+[--daemon-falso cheio|vazio|sem-cofre]] [--anexos <pasta com um arquivo>]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -36,13 +43,17 @@ fn main() -> ExitCode {
         _ => None,
     };
     match args.as_slice() {
-        ["--dist", d] => match DaemonSocket::padrao() {
-            Ok(daemon) => servir(daemon, Path::new(d), anexos),
-            Err(e) => {
-                eprintln!("ward-ponte-teste: {e}");
+        // Aberta pelo daemon de teste (D63): sem argumentos.
+        [] => match partida::dist_do_repositorio(std::env::var_os("WARD_DEV_DIR")) {
+            Some(dist) => com_o_daemon(&dist, anexos),
+            None => {
+                eprintln!(
+                    "ward-ponte-teste: WARD_DEV_DIR ausente ou fora da forma <repositório>/.dev"
+                );
                 ExitCode::FAILURE
             }
         },
+        ["--dist", d] => com_o_daemon(Path::new(d), anexos),
         ["--dist", d, "--daemon-falso", "cheio"] => {
             servir(DaemonFalso::cheio(), Path::new(d), anexos)
         }
@@ -56,6 +67,29 @@ fn main() -> ExitCode {
         _ => {
             eprintln!("{USO}");
             ExitCode::from(2)
+        }
+    }
+}
+
+/// O socket do daemon de teste, com o papel conferido na primeira resposta (D63).
+fn com_o_daemon(dist: &Path, anexos: Option<PathBuf>) -> ExitCode {
+    let daemon = DaemonSocket::padrao()
+        .map_err(|e| e.to_string())
+        .and_then(partida::conectar_com_papel_app)
+        .and_then(|d| {
+            // Sem a conexão a ponte não serve para nada (e nunca reconecta): sai.
+            d.vigiar_fechamento(|| {
+                eprintln!("ward-ponte-teste: a conexão com o daemon de teste caiu");
+                std::process::exit(1)
+            })
+            .map(|()| d)
+            .map_err(|e| e.to_string())
+        });
+    match daemon {
+        Ok(d) => servir(d, dist, anexos),
+        Err(e) => {
+            eprintln!("ward-ponte-teste: {e}");
+            ExitCode::FAILURE
         }
     }
 }

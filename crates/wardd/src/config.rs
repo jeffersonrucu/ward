@@ -8,6 +8,10 @@
 //!   `$WARD_DEV_DIR/cofre-teste.estado`; `WARD_DEV_DIR` é obrigatório, então o daemon de
 //!   teste nunca toca em `~/.local/share/ward/`. Sem `LISTEN_FDS`, o socket fica num
 //!   diretório 0700 do usuário: `/run/user/<uid>/ward-teste/` ou `WARD_DEV_SOCKET_DIR`.
+//!   Com `WARD_DEV_APP` (D63, Fase 23a), o `abrir_app` abre esse binário (o `ward-app`
+//!   de teste ou a ponte): caminho absoluto de arquivo regular do uid, sem link, dentro
+//!   do repositório (a pasta acima de `WARD_DEV_DIR`), conferido aqui e a cada
+//!   abertura; a saída vai para `$WARD_DEV_DIR/logs/<binário>.log` (0600).
 //!   O build de release não lê nenhuma variável `WARD_DEV_*`.
 
 use std::ffi::OsString;
@@ -21,6 +25,37 @@ pub struct Config {
     pub caminhos: Caminhos,
     /// Diretório do socket do daemon de teste (`None` no release).
     pub diretorio_socket_teste: Option<PathBuf>,
+    /// O binário que o `abrir_app` do daemon de teste abre (D63).
+    #[cfg(feature = "modo-teste")]
+    pub app_de_teste: Option<ward_plataforma::BinarioDeTeste>,
+}
+
+/// `WARD_DEV_APP` (D63): conferido como [`ward_plataforma::BinarioDeTeste`], dentro do
+/// repositório (a pasta acima de `dev`). O ambiente mínimo da ponte leva `WARD_DEV_DIR`
+/// e, se veio, `WARD_DEV_SOCKET_DIR`: são as variáveis do `modo-teste`, da configuração
+/// do daemon, nunca do pedido.
+#[cfg(feature = "modo-teste")]
+fn app_de_teste(
+    v: OsString,
+    dev: &Path,
+    socket: Option<&Path>,
+) -> Result<ward_plataforma::BinarioDeTeste, &'static str> {
+    let caminho = absoluto_limpo(v).ok_or("daemon de teste: WARD_DEV_APP inválido")?;
+    let raiz = dev
+        .parent()
+        .filter(|r| r.parent().is_some())
+        .ok_or("daemon de teste: WARD_DEV_DIR sem repositório acima")?;
+    let texto = |p: &Path| {
+        p.to_str()
+            .map(str::to_owned)
+            .ok_or("daemon de teste: caminho fora de UTF-8")
+    };
+    let mut extras = vec![("WARD_DEV_DIR", texto(dev)?)];
+    if let Some(s) = socket {
+        extras.push(("WARD_DEV_SOCKET_DIR", texto(s)?));
+    }
+    ward_plataforma::BinarioDeTeste::novo(caminho, raiz.to_path_buf(), dev.join("logs"), extras)
+        .map_err(|e| e.mensagem())
 }
 
 /// Caminho absoluto sem `.`, `..` nem `//`, conferido nos bytes (o `components()` do
@@ -66,14 +101,24 @@ impl Config {
         let dev = var("WARD_DEV_DIR")
             .and_then(absoluto_limpo)
             .ok_or("daemon de teste: WARD_DEV_DIR ausente ou não absoluto")?;
-        let socket = match var("WARD_DEV_SOCKET_DIR") {
-            Some(v) => absoluto_limpo(v).ok_or("daemon de teste: WARD_DEV_SOCKET_DIR inválido")?,
-            None => ward_plataforma::socket::diretorio_runtime()
-                .join(ward_plataforma::socket::NOME_DIRETORIO_TESTE),
+        let socket_do_ambiente = match var("WARD_DEV_SOCKET_DIR") {
+            Some(v) => {
+                Some(absoluto_limpo(v).ok_or("daemon de teste: WARD_DEV_SOCKET_DIR inválido")?)
+            }
+            None => None,
         };
+        let app_de_teste = match var("WARD_DEV_APP") {
+            Some(v) => Some(app_de_teste(v, &dev, socket_do_ambiente.as_deref())?),
+            None => None,
+        };
+        let socket = socket_do_ambiente.unwrap_or_else(|| {
+            ward_plataforma::socket::diretorio_runtime()
+                .join(ward_plataforma::socket::NOME_DIRETORIO_TESTE)
+        });
         Ok(Config {
             caminhos: caminhos_de_teste(&dev),
             diretorio_socket_teste: Some(socket),
+            app_de_teste,
         })
     }
 }

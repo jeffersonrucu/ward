@@ -1,6 +1,6 @@
 //! Os pedidos do app ao daemon pelo protocolo da Fase 20 (`ward_core::protocolo`), com
-//! o papel app (D5): `estado`, `lista`, `detalhe`, `copiar`, `revelar`, `totp` e
-//! `salvar_entrada`.
+//! o papel app (D5): `estado`, `lista`, `detalhe`, `copiar`, `revelar`, `totp`,
+//! `salvar_entrada` e `mudar_nivel` (Fase 35).
 //!
 //! Aqui o pedido vira o corpo do quadro (`codificar_pedido`) e a resposta é lida com a
 //! leitura estrita do cliente (`decodificar_resposta`), que recusa tipo de outro papel e
@@ -13,7 +13,7 @@
 //! [`crate::servico`]: a área de transferência (D4), o "revelar" no clique (S11) ou o
 //! rascunho que volta ao daemon ao editar (Fase 33).
 
-use ward_core::entrada::{Rascunho, Segredo as SegredoCore};
+use ward_core::entrada::{NivelAcesso, Rascunho, Segredo as SegredoCore};
 use ward_core::protocolo::{
     self, Alvo, DetalheEntrada, ErroResposta, ItemLista, Papel, Pedido, Problema, Resposta,
 };
@@ -46,6 +46,7 @@ fn erro_do_daemon(e: &ErroResposta) -> ErroApp {
         ErroResposta::NaoAutorizado => ErroApp::NaoAutorizado,
         ErroResposta::CofreJaExiste => ErroApp::CofreJaExiste,
         ErroResposta::FalhaAoGravar => ErroApp::CofreNaoGravado,
+        ErroResposta::PinIncorreto => ErroApp::PinIncorreto,
         _ => ErroApp::Recusado,
     }
 }
@@ -77,6 +78,30 @@ pub fn criar_cofre<D: Daemon + ?Sized>(
         pin: SegredoCore::de_bytes(pin.to_vec()),
     };
     match pedir(daemon, &pedido)? {
+        Resposta::Ok => Ok(()),
+        _ => Err(ErroApp::RespostaInvalida),
+    }
+}
+
+/// O papel que o daemon deu a esta conexão, pela resposta de `estado` (D63). O app e a
+/// ponte de teste pedem isto **primeiro** e, sem [`Papel::App`], não usam a conexão.
+pub fn papel<D: Daemon + ?Sized>(daemon: &mut D) -> Result<Papel, ErroApp> {
+    match pedir(daemon, &Pedido::Estado)? {
+        Resposta::Estado { papel, .. } => Ok(papel),
+        _ => Err(ErroApp::RespostaInvalida),
+    }
+}
+
+/// O papel desta conexão é o de app? (O mesmo de [`papel`], para quem não depende do
+/// `ward-core`, como a ponte de teste.)
+pub fn tem_papel_app<D: Daemon + ?Sized>(daemon: &mut D) -> Result<bool, ErroApp> {
+    papel(daemon).map(|p| p == Papel::App)
+}
+
+/// `abrir_app` (D57): pede ao daemon que abra a instância verdadeira do app. Sem
+/// campo: nada do pedido chega ao processo que o daemon abre.
+pub fn abrir_app<D: Daemon + ?Sized>(daemon: &mut D) -> Result<(), ErroApp> {
+    match pedir(daemon, &Pedido::AbrirApp)? {
         Resposta::Ok => Ok(()),
         _ => Err(ErroApp::RespostaInvalida),
     }
@@ -194,6 +219,26 @@ pub fn salvar<D: Daemon + ?Sized>(
         Ok(Resposta::Ok) => Ok(Salvamento::Salvo),
         Ok(Resposta::Erro(ErroResposta::Validacao(p))) => Ok(Salvamento::Problemas(p)),
         Ok(Resposta::Erro(e)) => Err(erro_do_daemon(&e)),
+        _ => Err(ErroApp::RespostaInvalida),
+    }
+}
+
+/// `mudar_nivel` (S9): o PIN vai só neste pedido. O quadro com o PIN é largado (e
+/// zerado: `codificar_pedido` devolve `Zeroizing`) logo depois da troca. PIN errado dá
+/// [`ErroApp::PinIncorreto`]; a contagem e a trava no 5º erro são do daemon.
+pub fn mudar_nivel<D: Daemon + ?Sized>(
+    daemon: &mut D,
+    entrada: &str,
+    nivel: NivelAcesso,
+    pin: &crate::nivel::Pin,
+) -> Result<(), ErroApp> {
+    let pedido = Pedido::MudarNivel {
+        entrada: entrada.to_owned(),
+        nivel,
+        pin: pin.para_o_protocolo(),
+    };
+    match pedir(daemon, &pedido)? {
+        Resposta::Ok => Ok(()),
         _ => Err(ErroApp::RespostaInvalida),
     }
 }

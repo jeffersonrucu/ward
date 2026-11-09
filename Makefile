@@ -66,7 +66,7 @@ CARGO_DENY_VERSAO := 0.20.2
 	origens gitleaks-binario teste-ataques-fundacao teste-ataques-servicos teste-iscas-home teste-home-real dev-servicos dev-servicos-subir \
 	dev-servicos-parar dev-servicos-estado dev-servicos-conferir dev-servicos-trocar-chave-host dev-cofre \
 	dev-cofre-conferir dev-variacoes teste-dev-cofre dev-daemon dev-daemon-parar teste-cli teste-docker-uid teste-units \
-	app-front app-check app-ponte teste-docker-plataforma
+	app-front app-check app-ponte teste-docker-plataforma teste-sem-modo-teste
 
 ## check: pré-checagem das origens, depois fmt, clippy -D warnings, testes, cargo audit,
 ## cargo deny e gitleaks, nessa ordem (V1.1)
@@ -279,11 +279,15 @@ app-check: origens app-front
 	cd app/src-tauri && $(CARGO) build --release --locked
 	dev/testes/app-release.sh app/src-tauri/target/release/ward-app
 
-## app-ponte: sobe a ponte de teste (D7) servindo app/dist-teste; imprime a URL com o
-## token para o Chrome de teste. Precisa do daemon de teste (Milestone 3) para responder.
+## app-ponte: a ponte de teste (D7) aberta pelo daemon de teste (D63): sobe o daemon de
+## teste com WARD_DEV_APP = a ponte (ou exige que esteja no ar com ele), pede abrir_app e
+## imprime a URL com o token, lida de .dev/logs/ward-ponte-teste.log
 app-ponte: origens
 	@test -f app/dist-teste/index.html || { echo "rode 'make app-front' antes" >&2; exit 1; }
-	$(CARGO) run --quiet --locked -p ward-ponte-teste --features modo-teste -- --dist app/dist-teste
+	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd
+	$(CARGO) build --quiet --locked -p ward-ponte-teste --features modo-teste --bin ward-ponte-teste
+	WARD_DEV_APP="$(PONTE_DE_TESTE)" dev/daemon.sh subir
+	dev/ponte.sh
 
 # --- Plataforma em contêiner (Fase 21b) ---------------------------------------------
 # D46/D47 com root só dentro de um contêiner ubuntu:24.04 descartável, sem rede: grupos
@@ -318,16 +322,26 @@ teste-units: origens
 # $XDG_RUNTIME_DIR/ward-teste/. Sobe com `env -i` e uma lista fixa (HOME, PATH,
 # XDG_RUNTIME_DIR, LANG, WARD_DEV_DIR): o wardd recusa TMPDIR e LD_* (V3.30).
 
-## dev-daemon: compila e sobe o daemon de teste em segundo plano (log em .dev/logs/)
+## dev-daemon: compila e sobe o daemon de teste em segundo plano (log em .dev/logs/), com
+## WARD_DEV_APP (D63; padrão: a ponte de teste, que o `abrir_app` abre com o papel app)
+PONTE_DE_TESTE := $(CURDIR)/target/debug/ward-ponte-teste
+WARD_DEV_APP ?= $(PONTE_DE_TESTE)
 dev-daemon: origens
 	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd
-	dev/daemon.sh subir
+	$(CARGO) build --quiet --locked -p ward-ponte-teste --features modo-teste --bin ward-ponte-teste
+	WARD_DEV_APP="$(WARD_DEV_APP)" dev/daemon.sh subir
 
 ## teste-cli: CLI `ward` de teste num pty (Fase 25): V4.2 com servidor falso, V4.1 e
 ## V4.22 contra o daemon de teste; precisa de `make dev-daemon` e `make dev-variacoes`
 teste-cli: origens
 	$(CARGO) build --quiet --locked -p ward --features modo-teste --bin ward
 	$(PYTHON) dev/testes/cli.py target/debug/ward "$(CURDIR)"
+
+## teste-sem-modo-teste: D63/V3.37: nenhum membro liga modo-teste em dependência normal,
+## testes de unidade do wardd e do ward-plataforma sem a feature e strings do release
+## sem WARD_DEV_APP (compila em target/sem-modo-teste)
+teste-sem-modo-teste: origens
+	dev/testes/sem-modo-teste.sh
 
 ## dev-daemon-parar: para o daemon de teste (confere que o pid é mesmo o wardd daqui)
 dev-daemon-parar:

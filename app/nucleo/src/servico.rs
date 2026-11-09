@@ -18,6 +18,7 @@ use crate::credenciais::{DetalheCredencial, ItemCredencial};
 use crate::daemon::{Daemon, EstadoCofre};
 use crate::formulario::{self, ErroCampo, Falta, Fontes, Formulario};
 use crate::gerador::{Gerada, Gerador, Opcoes, Revelada};
+use crate::nivel::{NivelMudado, Pin, nivel_de_nome};
 use crate::primeiro_uso::NovoCofre;
 use crate::segredo::Segredo;
 use crate::terminal::{SemTerminal, Terminal, entrada_para_argv};
@@ -412,6 +413,26 @@ impl<D: Daemon, A: AreaTransferencia> Servico<D, A> {
                 erros: formulario::erros_do_daemon(&p),
             }),
         }
+    }
+
+    /// `mudar_nivel { entrada, nivel, pin }` (Fase 35, S9): o nome e o nível vêm da
+    /// interface e são conferidos aqui; o PIN já chega conferido no formato, num [`Pin`]
+    /// que zera. A resposta é o nível novo, sem PIN. PIN errado é
+    /// [`ErroApp::PinIncorreto`] (a tela consulta o estado depois: o 5º erro trava).
+    pub fn mudar_nivel(
+        &self,
+        entrada: &str,
+        nivel: &str,
+        pin: Pin,
+    ) -> Result<NivelMudado, ErroApp> {
+        validar_nome_entrada(entrada)?;
+        let nivel = nivel_de_nome(nivel)?;
+        cliente::mudar_nivel(&mut *self.daemon()?, entrada, nivel, &pin)?;
+        drop(pin);
+        Ok(NivelMudado {
+            entrada: entrada.to_owned(),
+            nivel: nivel.nome(),
+        })
     }
 
     fn usadas_travadas(&self) -> MutexGuard<'_, BTreeMap<String, Segredo>> {
@@ -935,6 +956,122 @@ mod testes {
         let area = Arc::new(Area::default());
         let s = Servico::novo(DaemonFalso::vazio(), Copiador::novo(area));
         assert!(s.listar_credenciais().unwrap().is_empty());
+    }
+
+    const PIN_CERTO: &str = "135790";
+    const PIN_ERRADO: &str = "000000";
+
+    fn pin(p: &str) -> Pin {
+        Pin::novo(p.to_owned()).unwrap()
+    }
+
+    fn nivel_de(s: &Servico<DaemonFalso, Arc<Area>>, entrada: &str) -> &'static str {
+        s.detalhe_credencial(entrada).unwrap().nivel
+    }
+
+    #[test]
+    fn mudar_nivel_com_pin_e_os_tres_niveis_tambem_em_prod() {
+        // V5.15: com o PIN certo o nível muda, na lista e no detalhe; em prod os três
+        // níveis valem igual (o ambiente não muda as regras).
+        let (s, _) = servico();
+        assert_eq!(nivel_de(&s, "acme-pg-prod"), "com-aprovacao");
+        for nivel in ["livre", "bloqueado", "com-aprovacao", "livre"] {
+            let r = s
+                .mudar_nivel("acme-pg-prod", nivel, pin(PIN_CERTO))
+                .unwrap();
+            assert_eq!((r.entrada.as_str(), r.nivel), ("acme-pg-prod", nivel));
+            assert_eq!(nivel_de(&s, "acme-pg-prod"), nivel);
+            let item = s
+                .listar_credenciais()
+                .unwrap()
+                .into_iter()
+                .find(|i| i.nome == "acme-pg-prod")
+                .unwrap();
+            assert_eq!(item.nivel, nivel);
+        }
+        assert_eq!(
+            s.mudar_nivel("nao-existe", "livre", pin(PIN_CERTO))
+                .unwrap_err(),
+            ErroApp::EntradaInexistente
+        );
+    }
+
+    #[test]
+    fn ataque_pin_errado_nao_muda_e_o_quinto_erro_trava() {
+        // S9 / V5.15: PIN errado responde "PIN incorreto" e o nível não muda; 4 erros e
+        // 1 acerto zeram a contagem; o 5º erro seguido trava o cofre, e travado nem o
+        // PIN certo muda o nível.
+        let (s, _) = servico();
+        let errar = || {
+            s.mudar_nivel("acme-pg-dev", "bloqueado", pin(PIN_ERRADO))
+                .unwrap_err()
+        };
+        for _ in 0..4 {
+            assert_eq!(errar(), ErroApp::PinIncorreto);
+            assert_eq!(nivel_de(&s, "acme-pg-dev"), "livre");
+            assert_eq!(s.estado_do_cofre(), Ok(EstadoCofre::Destravado));
+        }
+        s.mudar_nivel("acme-pg-dev", "livre", pin(PIN_CERTO))
+            .unwrap();
+        for _ in 0..4 {
+            assert_eq!(errar(), ErroApp::PinIncorreto);
+        }
+        assert_eq!(s.estado_do_cofre(), Ok(EstadoCofre::Destravado));
+        assert_eq!(nivel_de(&s, "acme-pg-dev"), "livre");
+        assert_eq!(errar(), ErroApp::PinIncorreto);
+        assert_eq!(s.estado_do_cofre(), Ok(EstadoCofre::Travado));
+        assert_eq!(
+            s.mudar_nivel("acme-pg-dev", "bloqueado", pin(PIN_CERTO))
+                .unwrap_err(),
+            ErroApp::Travado
+        );
+        assert_eq!(
+            s.detalhe_credencial("acme-pg-dev").unwrap_err(),
+            ErroApp::Travado
+        );
+    }
+
+    #[test]
+    fn ataque_nome_ou_nivel_forjado_nem_chega_ao_daemon() {
+        // Nome fora do formato ou nível inventado são recusados antes do daemon: não
+        // mudam nada e não contam como erro de PIN (nem com o PIN errado).
+        let (s, _) = servico();
+        for _ in 0..6 {
+            for (entrada, nivel) in [
+                ("acme-pg-dev", "admin"),
+                ("acme-pg-dev", "Livre"),
+                ("acme-pg-dev", ""),
+                ("acme\npg", "bloqueado"),
+                ("", "bloqueado"),
+                (" acme-pg-dev", "bloqueado"),
+            ] {
+                assert_eq!(
+                    s.mudar_nivel(entrada, nivel, pin(PIN_ERRADO)).unwrap_err(),
+                    ErroApp::PedidoInvalido,
+                    "{entrada:?} {nivel:?}"
+                );
+            }
+        }
+        assert_eq!(s.estado_do_cofre(), Ok(EstadoCofre::Destravado));
+        assert_eq!(nivel_de(&s, "acme-pg-dev"), "livre");
+    }
+
+    #[test]
+    fn ataque_resposta_e_erro_do_mudar_nivel_sem_pin() {
+        // A resposta (JSON que vai à interface) e a mensagem do erro não trazem o PIN
+        // nem segredo do cofre.
+        let (s, _) = servico();
+        let r = s
+            .mudar_nivel("acme-wp-dev", "livre", pin(PIN_CERTO))
+            .unwrap();
+        let ok = serde_json::to_string(&r).unwrap();
+        assert!(!ok.contains(PIN_CERTO), "{ok}");
+        sem_segredo(&ok, "mudar_nivel");
+        let e = s
+            .mudar_nivel("acme-wp-dev", "livre", pin(PIN_ERRADO))
+            .unwrap_err();
+        let texto = format!("{e} {e:?} {}", e.codigo());
+        assert!(!texto.chars().any(|c| c.is_ascii_digit()), "{texto}");
     }
 
     // ---- Fase 34: banco, servidor, ftp/sftp, anexos e "Conectar" ----

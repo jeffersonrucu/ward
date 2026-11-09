@@ -4,8 +4,8 @@
 //!   `build.rs` do Tauri, as capabilities e a ponte de teste saem dela (S11).
 //! - [`cliente`]: os pedidos do papel app pelo protocolo da Fase 20 (`estado`,
 //!   `lista`, `detalhe`, `copiar`), com a leitura estrita da resposta.
-//! - [`daemon`]: transporte até o `wardd` (socket conferido). A troca de quadros entra
-//!   com a Fase 22; até lá responde [`ErroApp::SemProtocolo`].
+//! - [`daemon`]: transporte até o `wardd` (socket conferido): quadros na conexão
+//!   única, thread leitora e fila de avisos (D65 a, Fase 23a).
 //! - [`daemon_falso`] (só testes e `modo-teste`): responde pelo protocolo com as
 //!   entradas falsas do cofre de teste, para a ponte de teste.
 //! - [`credenciais`]: lista e detalhe da tela Credenciais (Fase 32), sem segredo.
@@ -17,6 +17,8 @@
 //! - [`gerador`]: gerador de senha avulso (Fase 37). A senha nasce em
 //!   `ward_core::gerador` e fica aqui; a interface recebe só tamanho, força e símbolos,
 //!   e o valor só no "revelar".
+//! - [`nivel`]: mudar o nível de acesso com PIN (Fase 35, S9); o PIN fica num tipo
+//!   que zera e só vai ao pedido `mudar_nivel`.
 //! - [`partida`]: partida do app setgid antes do GTK (D47, D57): ambiente de D57,
 //!   conexão com o egid do grupo `ward-app`, largar o grupo, não-dumpable, reexecução.
 //! - [`anexos`]: anexos do formulário (Fase 34). O arquivo é escolhido e lido no lado
@@ -39,6 +41,7 @@ pub mod daemon_falso;
 mod erro;
 pub mod formulario;
 pub mod gerador;
+pub mod nivel;
 pub mod partida;
 pub mod primeiro_uso;
 pub mod segredo;

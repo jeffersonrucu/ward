@@ -8,9 +8,13 @@
 //! por construção) e devolve o corpo de `codificar_resposta`. Atende `estado`, `lista`,
 //! `detalhe`, `copiar`, `revelar`, `totp`, `emitir_token` (Fase 34) e `salvar_entrada` (Fase 33, com a mesma
 //! regra do `wardd`: `Rascunho::validar`, `conferir_no_cofre`, nível "com aprovação" na
-//! entrada nova e mantido na editada) e, no [`DaemonFalso::sem_cofre`], `criar_cofre`
-//! (Fase 30, guarda só o hash do PIN, D30); o resto responde `interno`. As mudanças ficam
-//! só na memória do processo.
+//! entrada nova e mantido na editada) e `mudar_nivel` (Fase 35, a mesma regra do
+//! `wardd`: PIN conferido no hash Argon2id da configuração do cofre de teste, em tempo
+//! constante pela biblioteca; o 5º erro seguido trava, e travado tudo menos `estado`
+//! responde "travado"); o resto responde `interno`. As mudanças ficam só na memória do
+//! processo (travado, só reiniciando a ponte). No [`DaemonFalso::sem_cofre`], atende
+//! `criar_cofre` (Fase 30): guarda só o hash do PIN (D30), que o `mudar_nivel` passa a
+//! conferir no lugar do PIN de teste.
 //!
 //! Sem a feature `modo-teste` este módulo nem existe no binário (só nos testes).
 
@@ -43,7 +47,13 @@ pub struct DaemonFalso {
     existe: bool,
     /// Hash do PIN do cofre criado pelo `criar_cofre`, como o `wardd` o guarda (D30).
     hash_pin: Option<HashPin>,
+    /// Erros de PIN seguidos (S9). Zera no acerto.
+    erros_pin: u32,
+    travado: bool,
 }
+
+/// Erros de PIN seguidos que travam o cofre (o mesmo `MAX_ERROS_PIN` do `wardd`).
+pub const MAX_ERROS_PIN: u32 = 5;
 
 impl DaemonFalso {
     /// As 21 entradas do cofre de teste.
@@ -52,6 +62,8 @@ impl DaemonFalso {
             entradas: cofre_teste::cofre_de_teste(),
             existe: true,
             hash_pin: None,
+            erros_pin: 0,
+            travado: false,
         }
     }
 
@@ -61,6 +73,8 @@ impl DaemonFalso {
             entradas: Vec::new(),
             existe: true,
             hash_pin: None,
+            erros_pin: 0,
+            travado: false,
         }
     }
 
@@ -72,6 +86,8 @@ impl DaemonFalso {
             entradas: Vec::new(),
             existe: false,
             hash_pin: None,
+            erros_pin: 0,
+            travado: false,
         }
     }
 
@@ -104,9 +120,12 @@ impl DaemonFalso {
                 _ => Resposta::Erro(ErroResposta::CofreInexistente),
             };
         }
+        if self.travado && !matches!(pedido, Pedido::Estado) {
+            return Resposta::Erro(ErroResposta::Travado);
+        }
         match pedido {
             Pedido::Estado => Resposta::Estado {
-                travado: false,
+                travado: self.travado,
                 cofre_existe: true,
                 papel: Papel::App,
             },
@@ -152,6 +171,14 @@ impl DaemonFalso {
                     Err(e) => Resposta::Erro(e),
                 }
             }
+            Pedido::MudarNivel {
+                entrada,
+                nivel,
+                pin,
+            } => match self.mudar_nivel(&entrada, nivel, &pin) {
+                Ok(()) => Resposta::Ok,
+                Err(e) => Resposta::Erro(e),
+            },
             // Fase 34: o token do "Conectar" (D3), só para `servidor`. O falso não abre
             // sessão nenhuma; o token é aleatório e não é guardado.
             Pedido::EmitirToken { entrada } => match self.entrada(&entrada) {
@@ -172,6 +199,35 @@ impl DaemonFalso {
             },
             _ => Resposta::Erro(ErroResposta::Interno),
         }
+    }
+
+    /// A mesma regra do `wardd` (`crates/wardd/src/nucleo.rs` › `conferir_pin` e
+    /// `mudar_nivel`): o PIN primeiro, e só depois a entrada.
+    fn mudar_nivel(
+        &mut self,
+        nome: &str,
+        nivel: NivelAcesso,
+        pin: &SegredoCore,
+    ) -> Result<(), ErroResposta> {
+        let confere = match &self.hash_pin {
+            Some(h) => h.conferir(pin.expor()),
+            None => cofre_teste::configuracao_de_teste().conferir_pin(pin.expor()),
+        };
+        if !confere {
+            self.erros_pin = self.erros_pin.saturating_add(1);
+            if self.erros_pin >= MAX_ERROS_PIN {
+                self.travado = true;
+            }
+            return Err(ErroResposta::PinIncorreto);
+        }
+        self.erros_pin = 0;
+        let e = self
+            .entradas
+            .iter_mut()
+            .find(|e| e.nome() == nome)
+            .ok_or(ErroResposta::EntradaInexistente)?;
+        e.definir_nivel(nivel);
+        Ok(())
     }
 
     /// A mesma regra do `wardd` (`crates/wardd/src/nucleo.rs` › `salvar_entrada`).

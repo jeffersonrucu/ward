@@ -39,6 +39,14 @@ chacha20poly1305 = { version = "0.11.0", default-features = false, features = ["
 # Fase 24: o logind falso dos testes serve o `Inhibit` (`service`, só nos testes).
 zbus = { version = "=6.2.1", default-features = false, features = ["default-rt", "service"] }
 
+# App de teste dos testes do `wardd` (D63, Fase 23a): o binário que o `abrir_app` do
+# daemon de teste abre pelo `WARD_DEV_APP`. Só com `modo-teste`; fora de `src/` (o
+# V3.15 lê os arquivos de `src/`).
+[[bin]]
+name = "wardd-app-teste"
+path = "app-teste/main.rs"
+required-features = ["modo-teste"]
+
 # Cliente mínimo do contêiner de `make teste-docker-uid` (V3.2, D49): o `ubuntu:24.04`
 # não tem Python.
 [[example]]
