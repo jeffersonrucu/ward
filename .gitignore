@@ -12,3 +12,5 @@ dist/
 id_*
 __pycache__/
 *.pyc
+# worktrees dos workers
+.claude/worktrees/

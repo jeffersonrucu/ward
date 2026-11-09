@@ -15,4 +15,5 @@ paths = [
     '''^target/''',
     '''(^|/)node_modules/''',
     '''(^|/)dist/''',
+    '''^\.claude/worktrees/''',   # worktrees dos workers: cada um roda o próprio make check
 ]

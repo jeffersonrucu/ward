@@ -329,7 +329,7 @@ Contrato: V2.1–V2.52
   - Regravar `.dev/cofre-teste.ward` por `make dev-cofre`, refazer V2.29–V2.33 e V2.39
     sobre o corpo v3 e escrever o teste de ataque de cada (SEG). `make check` limpo.
     V2.29–V2.33, V2.36, V2.39, V2.41–V2.51.
-- [ ] Fase 19d — Lista do `make dev-variacoes` atualizada para D36 e D37 (handoff 19c,
+- [x] Fase 19d — Lista do `make dev-variacoes` atualizada para D36 e D37 (handoff 19c,
   "Problemas"). Pequena; só `dev/variacoes.py` e o teste dele (um teste em Python só
   com a biblioteca padrão, rodado por `make teste-dev-cofre`, mais o que couber em
   `dev/testes/dev-cofre.sh`). Não toca em `ward-core`, `wardd`, `Makefile` nem nas
