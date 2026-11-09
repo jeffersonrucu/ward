@@ -418,6 +418,10 @@ Pendências da 30 (2026-11-09): mínimo de 12 caracteres da senha mestra só no 
 
 Pendências da 22c (2026-11-09): lista do app com resumo repete URL/host; perto de 64 MiB de texto a lista passa de `MAX_QUADRO_RESPOSTA` e o daemon responde `interno` (decidir limite); log do `wardd` agora leva nome da entrada e campo em `revelar`/`copiar`/`totp` (D65 b; doc do `log.rs` atualizada); `Alvo::segredo_em` entrou no protocolo; V3.39 simula a extensão só por `argv[0]`. O `v3_33` ganhou margem (1500 ms + checagem relativa).
 
+Pendências da 45 (2026-11-09) — decisão do planner/usuário: restaurar exige cofre destravado + PIN atual + senha da versão (além de D17/V7.7); com o cofre principal corrompido ou senha atual esquecida não há restaurar pelo app — decidir se existe restaurar com o cofre travado e como a 47 pede o PIN. Também: pedidos de aprovação pendentes não são cancelados ao restaurar (26/36); a 46 deve abrir a pasta pelo fd como o `wardd` e não pode usar `link(2)` em vfat; nome do backup em UTC (a 47 mostra no fuso local).
+
+Pendências da 29b (2026-11-09) — canais novos ao planner: `gst-plugin-scanner` carrega `.so` de `~/.frei0r-1/lib`, `~/.ladspa`, `~/.libvisual/actor` (apagar o registry força; `FREI0R_PATH` fecha o frei0r, `GST_PLUGIN_LOADING_WHITELIST` fecha tudo mas o WebKit avisa appsink); `/dev/shm/cuda_injection_path_shm` e socket abstrato `@cuda-uvmfd-…`; `~/.nv/*`, `~/.mfx_trace`, `/dev/shm/GFX_MEDIA_TRACE` (família RA8); pasta de dados do WebKit `~/.local/share/local.ward.app/` (auditoria do M5 confere que nenhum valor revelado vai para lá); alinhar `unsound = "all"` no `deny.toml` da raiz.
+
 ## Milestone 3 — Daemon e protocolo
 Contrato: V3.1–V3.41
 
@@ -771,7 +775,7 @@ Contrato: V6.1–V6.16
 ## Milestone 7 — Backup
 Contrato: V7.1–V7.11
 
-- [ ] Fase 45 — Backup local automático (30 versões, mesmo formato, gravação atômica,
+- [x] Fase 45 — Backup local automático (30 versões, mesmo formato, gravação atômica,
   dentro do `ward-core` pelo `gravar` interno, D27) e restaurar no daemon, só pelo papel
   app (D17); a versão restaurada é selada com `geracao` = maior vista + 1 e o arquivo
   de estado é atualizado (D39). V7.1–V7.3, V7.8, V7.11.
