@@ -106,7 +106,12 @@ cofre não restringe comandos dentro do servidor, nem no banco, nem no painel.
 
 - **bloqueado**: o agente nem vê a entrada.
 - **com aprovação** (padrão): cada uso abre a janela de aprovação.
-- **livre**: o agente usa sem perguntar.
+- **livre**: o agente usa sem perguntar. Isso também quer dizer que o agente
+  **consegue ler o segredo** dessa entrada, se tentar ou errar: um comando que
+  recodifique a variável de um jeito que a máscara não cobre (RA3) mostra o valor, e
+  a skill e as regras de deny só pegam os casos comuns. "Livre" é só para credencial
+  que o usuário aceitaria que o agente visse; para as outras, "com aprovação", em que
+  a janela mostra o comando exato antes da entrega.
 
 **O ambiente não muda as regras.** `prod` tem os mesmos níveis e botões que `dev` e
 `stage`, inclusive "livre" e "Permitir sempre" (decisão do usuário). O ambiente serve

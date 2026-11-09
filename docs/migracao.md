@@ -368,6 +368,13 @@ manteve as senhas" (sem nenhum valor), para o registro do V10.4 no `plan.md`.
       ~/.local/bin/cofre-ssh ~/.local/bin/cofre-run ~/ward-migracao/bin/
    ```
 
+3. Antes de deixar alguma entrada como "livre" (ou de usar "Permitir sempre"),
+   saiba que "livre" quer dizer que o Claude **consegue ler o segredo** dela: um
+   comando que recodifique a variável de um jeito que a máscara não cobre mostra o
+   valor (RA3), e a skill e as regras de deny só pegam os casos comuns. Deixe
+   "livre" só a credencial que você aceitaria que o Claude visse; as outras ficam
+   "com aprovação" (`skill/README.md` › "Nível livre").
+
 ### Conferir
 
 - `ls ~/.claude/skills` tem `ward` e não tem `cofre`.

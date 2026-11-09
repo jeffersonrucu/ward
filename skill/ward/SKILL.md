@@ -59,7 +59,7 @@ variável pelo nome **dentro do comando que precisa dela**, nunca para mostrar o
 
 ```sh
 ward run acme-pg-dev -- /usr/bin/psql -tAc 'select count(*) from pedidos'
-ward run beta-github-api -- /usr/bin/curl -sf -H 'Accept: application/vnd.github+json' https://api.github.com/user
+ward run beta-github-api -- /usr/bin/curl -sf --variable %GITHUB_TOKEN --expand-header 'Authorization: Bearer {{GITHUB_TOKEN}}' https://api.github.com/user
 ward run beta-aws-dev -- /usr/local/bin/aws sts get-caller-identity
 ward run acme-pg-tunel -- /usr/bin/psql -tAc 'select 1'   # túnel SSH aberto pelo Ward
 ```
@@ -92,6 +92,12 @@ ward run acme-pg-tunel -- /usr/bin/psql -tAc 'select 1'   # túnel SSH aberto pe
   Descubra o caminho com `command -v node` **fora** do `ward run`. Variável que o
   comando precisa (fora as da credencial) vai como argumento ou arquivo de
   configuração do projeto, não pelo ambiente.
+- Para pôr o token num cabeçalho do `curl`, use `--variable %VAR` com
+  `--expand-header` (curl 8.3 ou mais novo), como no exemplo acima: o `curl` lê a
+  variável do próprio ambiente, sem shell e sem o valor no argv.
+- Nada de redirecionamento (`>`, `>>`, `2>&1`, `tee`) nem de pós-processar a saída
+  com `cut`, `tr`, `od`, `rev`, `fold` dentro do `ward run`: as regras de deny barram
+  esses comandos. A saída e o stderr do comando já voltam para você, com a máscara.
 - O diretório de trabalho é o seu. O código de saída é o do comando; `125` é erro do
   próprio Ward (veja "Quando der erro").
 - `sh -c '…'` é permitido para encadear comandos, desde que nenhum deles imprima
@@ -132,15 +138,18 @@ ward login acme-wp-prod
 ### `ward playwright`
 
 ```sh
-ward playwright acme-wp-prod
-# imprime: /run/user/<uid>/ward/playwright/acme-wp-prod.json
+WARD_ESTADO="$(ward playwright acme-wp-prod)" /usr/bin/python3 tests/test_painel.py
 ```
 
-- O Ward faz o login num Chrome headless e imprime **só o caminho** do storage state.
-  Use o caminho no teste (`storage_state=` no Python,
-  `storageState:` no `browser.newContext` em JS). A senha nunca vai para o arquivo.
-- Não abra, não imprima e não copie o arquivo: ele tem os cookies da sessão. Passe só
-  o caminho ao Playwright. Travar o cofre apaga as sessões; peça de novo depois.
+- O Ward faz o login num Chrome headless e imprime **só o caminho** do storage state
+  (um arquivo na pasta de execução do Ward). A senha nunca vai para o arquivo.
+- Passe o caminho ao teste **por variável**, como no exemplo, e leia a variável no
+  teste (`storage_state=os.environ["WARD_ESTADO"]` no Python,
+  `storageState: process.env.WARD_ESTADO` no `browser.newContext` em JS). **Não
+  escreva o caminho em comando nenhum**: as regras de deny barram todo comando que
+  cita a pasta de execução do Ward.
+- Não abra, não imprima e não copie o arquivo: ele tem os cookies da sessão. Travar o
+  cofre apaga as sessões; peça de novo depois.
 
 ## Nunca faça
 
@@ -163,12 +172,15 @@ intenção:
   `less`, `base64`, `xxd`, `cp`, `mv` nem `ln` do anexo.
 - **Nunca leia os arquivos do Ward**: `~/.local/share/ward/**` (cofre e estado),
   `~/.config/ward/**`, `/run/user/*/ward/**` (socket, anexos temporários, sessões do
-  Playwright) e `/media/**/ward-backup/**` (backup no pendrive). Também não liste,
-  copie nem calcule hash deles.
+  Playwright), `/media/**/ward-backup/**` e `/run/media/**/ward-backup/**` (backup
+  no pendrive). Também não liste, copie nem calcule hash deles.
 - **Nunca leia `~/.ssh`** (chaves privadas, `config`). O `ssh` do sistema usa as
   chaves sozinho.
 - Nunca peça, aceite ou repita a senha mestra ou o PIN. Se o usuário colar uma senha
   na conversa, avise que ela deve ser trocada e cadastrada no app do Ward.
+- **Comando negado pela permissão do Claude Code** (regras de deny): não reescreva
+  o comando de outro jeito para passar (outro nome de ferramenta, script, caminho
+  com curinga). Diga ao usuário o que queria fazer e por quê, e espere.
 - Nunca tente contornar o Ward: nada de procurar a credencial em outro lugar (código,
   `.env` do projeto, histórico, navegador) quando o Ward recusar.
 
@@ -185,6 +197,7 @@ intenção:
 | `entrada inexistente` | O nome não existe **ou** a entrada está bloqueada para você (o Ward não diferencia). Rode `ward lista` de novo e confira o nome; se não houver outra adequada, pergunte ao usuário. Não tente adivinhar nomes. |
 | `tipo sem entrega` | A entrada (ex.: nota segura) não tem credencial para entregar. Escolha outra ou pergunte. |
 | `domínio não confere` / `a origem da página não bate com a da entrada` | A aba ou a página não é a do site da entrada. Pare e avise o usuário. |
+| `a extensão do Ward no Chrome não respondeu (o Chrome está aberto?)` (`ward login`, código 1) | O Chrome não está aberto ou está sem a extensão do Ward. Peça ao usuário para abrir o Chrome com a extensão (e a aba na página de login) e rode `ward login` de novo depois que ele confirmar. Não tente outro caminho para o login. |
 | `o daemon não está rodando` / `ainda não existe cofre` | O Ward não está no ar ou não foi criado. Avise o usuário; não procure a credencial em outro lugar. |
 | código `125` no `ward run` | Erro do Ward, não do comando: leia a mensagem do `ward:` no stderr. |
 | `127` no `ward run` | Comando não achado no `PATH` fixo: use o caminho absoluto. |
