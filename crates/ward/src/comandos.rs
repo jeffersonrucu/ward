@@ -167,6 +167,7 @@ pub fn executar(cmd: Comando, e: &mut dyn Entorno) -> u8 {
             comando,
         } => ssh(e, entrada, token_fd, comando),
         Comando::Playwright { entrada } => playwright(e, entrada),
+        Comando::Login { entrada } => login(e, entrada),
     }
 }
 
@@ -567,6 +568,59 @@ fn playwright(e: &mut dyn Entorno, entrada: String) -> u8 {
         Ok(Resposta::Erro(erro)) => falhar(e, &mensagem_do_daemon(&erro)),
         Ok(_) => falhar(e, "resposta inesperada do daemon"),
         Err(erro) => falhar(e, &erro.mensagem()),
+    }
+}
+
+/// `ward login <entrada>` (Fase 43): o daemon leva o pedido à extensão do Chrome, que
+/// confere a origem da aba ativa (D9), preenche, envia e limpa os campos. Volta só `ok`
+/// ou o erro; nenhum segredo passa por aqui (S1).
+fn login(e: &mut dyn Entorno, entrada: String) -> u8 {
+    let mut c = match conectar(e) {
+        Ok(c) => c,
+        Err(codigo) => return codigo,
+    };
+    match c.pedir(&Pedido::Estado) {
+        Ok(Resposta::Estado {
+            cofre_existe: false,
+            ..
+        }) => return falhar(e, &mensagem_do_daemon(&ErroResposta::CofreInexistente)),
+        Ok(Resposta::Estado { travado: true, .. }) => {
+            let _ = writeln!(e.erro(), "ward: {MSG_RUN_TRAVADO}");
+        }
+        Ok(Resposta::Estado { .. }) => {}
+        Ok(Resposta::Erro(erro)) => return falhar(e, &mensagem_do_daemon(&erro)),
+        Ok(_) => return falhar(e, "resposta inesperada do daemon"),
+        Err(erro) => return falhar(e, &erro.mensagem()),
+    }
+    match c.pedir_com_prazo(
+        &Pedido::Login {
+            entrada: entrada.clone(),
+        },
+        PRAZO_PLAYWRIGHT,
+    ) {
+        Ok(Resposta::Ok) => {
+            if writeln!(e.saida(), "login enviado: {entrada} (aba ativa do Chrome)").is_err() {
+                return SAIDA_ERRO;
+            }
+            SAIDA_OK
+        }
+        Ok(Resposta::Erro(erro)) => falhar(e, &mensagem_do_login(&erro)),
+        Ok(_) => falhar(e, "resposta inesperada do daemon"),
+        Err(erro) => falhar(e, &erro.mensagem()),
+    }
+}
+
+/// Mensagem de um erro do `ward login`: a origem e a extensão ganham texto próprio.
+pub fn mensagem_do_login(erro: &ErroResposta) -> String {
+    match erro {
+        ErroResposta::OrigemDiferente => {
+            "domínio não confere: a origem da aba ativa não é a da entrada; nada foi preenchido"
+                .to_owned()
+        }
+        ErroResposta::NavegadorFalhou => {
+            "a extensão do Ward no Chrome não respondeu (o Chrome está aberto?)".to_owned()
+        }
+        e => mensagem_do_daemon(e),
     }
 }
 

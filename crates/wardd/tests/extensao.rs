@@ -323,6 +323,10 @@ fn ataque_extensao_sem_operacoes_de_app_nem_de_agente() {
         Operacao::Sugerir,
         Operacao::Preencher,
         Operacao::SalvarLogin,
+        // Fase 43 (`ward login`): só a extensão.
+        Operacao::AguardarLogin,
+        Operacao::PreencherLogin,
+        Operacao::ResultadoLogin,
         Operacao::AbrirApp,
     ];
     for op in Operacao::TODAS {

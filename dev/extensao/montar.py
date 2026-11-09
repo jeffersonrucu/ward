@@ -14,8 +14,11 @@ Fontes (nada copiado à mão):
 Conferências (sai 1 na primeira que falhar):
 - o id que sai da chave pública do campo `key` é o `ID_EXTENSAO` do `ward-nm`;
 - manifesto sem `externally_connectable`, `web_accessible_resources`,
-  `host_permissions`, `optional_permissions` e sem a permissão `storage`; só
+  `optional_host_permissions`, `optional_permissions` e sem a permissão `storage`; só
   `nativeMessaging`, `activeTab` e `scripting`;
+- Fase 43: `host_permissions` exatamente as origens que D9 aceita (`https://*/*`,
+  `http://localhost/*` e `http://127.0.0.1/*`): o `ward login` injeta a sonda e o
+  preenchimento na aba ativa sem o clique do usuário (sem `activeTab`);
 - Fase 42: `background` só o service worker `servico.js` (módulo) e `content_scripts`
   só o `envio.js`, no quadro principal (`all_frames: false`), mundo isolado, em
   http/https, sem CSS;
@@ -46,7 +49,8 @@ DIST = os.path.join(FONTE, "dist")
 APP = os.path.join(RAIZ, "app")
 FONTSOURCE = os.path.join(APP, "node_modules", "@fontsource")
 
-ARQUIVOS = ["manifest.json", "popup.html", "popup.css", "popup.js", "pagina.js", "envio.js", "servico.js"]
+ARQUIVOS = ["manifest.json", "popup.html", "popup.css", "popup.js", "pagina.js", "envio.js", "servico.js",
+            "login.js"]
 FONTES = [
     ("Inter", 400, "inter", "inter-latin-400-normal.woff2"),
     ("Inter", 500, "inter", "inter-latin-500-normal.woff2"),
@@ -58,7 +62,6 @@ PERMISSOES = {"nativeMessaging", "activeTab", "scripting"}
 CHAVES_PROIBIDAS = {
     "externally_connectable",
     "web_accessible_resources",
-    "host_permissions",
     "optional_host_permissions",
     "optional_permissions",
     "sandbox",
@@ -70,6 +73,8 @@ CHAVES_PROIBIDAS = {
 }
 NAMESPACES = {"http://www.w3.org/2000/svg"}
 PADROES_CONTENT = {"http://*/*", "https://*/*"}
+# Fase 43 (D9): `https` em qualquer host; `http` só em localhost e 127.0.0.1.
+HOST_PERMISSIONS = ["https://*/*", "http://localhost/*", "http://127.0.0.1/*"]
 EXTENSOES = {".json", ".html", ".css", ".js", ".woff2", ".png"}
 URL = re.compile(rb"https?://[^\s\"'`)<>]*")
 PROIBIDOS = [
@@ -97,6 +102,9 @@ PROIBIDOS_POR_ARQUIVO = {
                  rb"\.then\s*\(\s*\(?\s*r"],
     "popup.js": [rb"runtime\.onMessage"],
     "pagina.js": [rb"runtime\.onMessage", rb"sendMessage"],
+    # Fase 43: o `ward login` só fala com o `ward-nm` pela porta própria; não escuta nem
+    # manda mensagem a página, content script ou popup.
+    "login.js": [rb"runtime\.onMessage", rb"sendMessage", rb"sendNativeMessage", rb"console\."],
 }
 BACKGROUND = {"service_worker": "servico.js", "type": "module"}
 CONTENT_SCRIPTS = [{
@@ -150,6 +158,8 @@ def conferir_manifesto(m):
     perm = set(m.get("permissions", []))
     if perm != PERMISSOES:
         falha(f"permissões {sorted(perm)} (só {sorted(PERMISSOES)})")
+    if m.get("host_permissions") != HOST_PERMISSIONS:
+        falha(f"host_permissions só {HOST_PERMISSIONS} (D9)")
     if m.get("background") != BACKGROUND:
         falha("background só o service worker servico.js (módulo)")
     if m.get("content_scripts") != CONTENT_SCRIPTS:
@@ -219,8 +229,9 @@ def conferir_pacote():
                 continue
             with open(p, "rb") as f:
                 dados = f.read()
-            # No manifesto, só os padrões do `content_scripts` (conferidos acima).
-            aceitas = NAMESPACES | (PADROES_CONTENT if rel == "manifest.json" else set())
+            # No manifesto, só os padrões do `content_scripts` e das `host_permissions`
+            # (conferidos acima).
+            aceitas = NAMESPACES | (PADROES_CONTENT | set(HOST_PERMISSIONS) if rel == "manifest.json" else set())
             for u in URL.findall(dados):
                 if u.decode() not in aceitas:
                     falha(f"{rel}: URL remota {u.decode()!r}")

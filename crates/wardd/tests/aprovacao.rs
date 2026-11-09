@@ -478,9 +478,12 @@ fn fontes_rs(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
 }
 
 /// Em ordem alfabética (o teste compara com a lista achada, ordenada).
-const GANCHOS_DE_TESTE: [&str; 3] = [
+/// `com_prazos_login` (Fase 43): só encurta as esperas do `ward login` nos testes; não
+/// toca a aprovação nem entrega valor.
+const GANCHOS_DE_TESTE: [&str; 4] = [
     "com_chrome",
     "com_gancho_depois_de_gravar",
+    "com_prazos_login",
     "com_programas_ssh",
 ];
 const CFG_GANCHOS: &str = "#[cfg(feature = \"ganchos-teste\")]";

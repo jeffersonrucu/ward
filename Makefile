@@ -68,7 +68,7 @@ CARGO_DENY_VERSAO := 0.20.2
 	dev-cofre-conferir dev-variacoes teste-dev-cofre dev-daemon dev-daemon-parar teste-cli teste-docker-uid teste-units \
 	app-front app-check app-ponte teste-docker-plataforma teste-sem-modo-teste teste-socket-ataques \
 	teste-webkit-real teste-logs-app teste-nm teste-playwright teste-skill \
-	release install uninstall teste-install extensao teste-extensao
+	release install uninstall teste-install extensao teste-extensao teste-login
 
 ## check: pré-checagem das origens, depois fmt, clippy -D warnings, testes, cargo audit,
 ## cargo deny e gitleaks, nessa ordem (V1.1)
@@ -498,6 +498,15 @@ teste-extensao: origens extensao
 	$(CARGO) build --quiet --locked -p ward-nm --example chrome-falso
 	$(CARGO) build --quiet --locked -p ward --features modo-teste --bin ward
 	dev/testes/extensao.sh target/debug/wardd target/debug/ward-nm target/debug/examples/chrome-falso target/debug/ward
+
+## teste-login: `ward login` de ponta a ponta (Fase 43; V6.3, V6.10, V6.11, V6.15, V6.16):
+## a extensão no Chrome real headless, o `ward-nm` aberto pelo service worker e um `wardd`
+## de teste só dele com `WARD_DEV_EXTENSAO=chrome`; fora do `make check`
+teste-login: origens extensao
+	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd
+	$(CARGO) build --quiet --locked -p ward-nm --features modo-teste --bin ward-nm
+	$(CARGO) build --quiet --locked -p ward --features modo-teste --bin ward
+	dev/testes/login.sh target/debug/wardd target/debug/ward-nm target/debug/ward
 
 ## dev-daemon-parar: para o daemon de teste (confere que o pid é mesmo o wardd daqui)
 dev-daemon-parar:

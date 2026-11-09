@@ -226,6 +226,8 @@ pub struct Daemon {
     programas_ssh: crate::ssh::ProgramasSsh,
     /// O Chrome do `ward playwright` (Fase 44): o instalado, por caminho absoluto.
     chrome: PathBuf,
+    /// Pedidos do `ward login` à extensão (Fase 43).
+    logins: crate::login::Logins,
 }
 
 /// Gancho de teste de [`Daemon::com_gancho_depois_de_gravar`].
@@ -459,6 +461,7 @@ impl Daemon {
             vez_externo: Mutex::new(()),
             programas_ssh: crate::ssh::ProgramasSsh::do_sistema(),
             chrome: PathBuf::from(crate::playwright::CHROME),
+            logins: crate::login::Logins::default(),
         }
     }
 
@@ -536,6 +539,20 @@ impl Daemon {
     pub fn com_chrome(mut self, chrome: PathBuf) -> Self {
         self.chrome = chrome;
         self
+    }
+
+    /// Troca os prazos do `ward login` (Fase 43). Só os testes do crate chamam (prazos
+    /// curtos); o binário usa sempre os padrões, e nenhum pedido do socket chega aqui.
+    /// Só com a feature `ganchos-teste` (V3.15, V9.2).
+    #[cfg(feature = "ganchos-teste")]
+    #[doc(hidden)]
+    pub fn com_prazos_login(mut self, prazos: crate::login::PrazosLogin) -> Self {
+        self.logins = crate::login::Logins::novo(prazos);
+        self
+    }
+
+    pub(crate) fn logins(&self) -> &crate::login::Logins {
+        &self.logins
     }
 
     pub(crate) fn chrome(&self) -> &std::path::Path {
@@ -700,10 +717,15 @@ impl Daemon {
             Pedido::Lista => self.lista(papel),
             // D6 (Fase 44): só o caminho do storage state volta.
             Pedido::Playwright { .. } => self.playwright(cliente, &pedido),
+            // Fase 43: o daemon leva o pedido à extensão; só `ok` ou erro voltam.
+            Pedido::Login { .. } => self.login(cliente, &pedido),
+            Pedido::AguardarLogin => self.aguardar_login(papel),
+            Pedido::PreencherLogin { id, origem } => self.preencher_login(papel, &id, &origem),
+            Pedido::ResultadoLogin { id, resultado } => self.resultado_login(papel, &id, resultado),
             // Fase 23: nível, destrave e aprovação. O `executar` e o `ssh` são atendidos
-            // pela sessão do servidor (Fases 26/27) e o `login` chega na Fase 43; aqui o
-            // uso autorizado responde erro interno.
-            Pedido::Executar(_) | Pedido::Ssh { .. } | Pedido::Login { .. } => self
+            // pela sessão do servidor (Fases 26/27); aqui o uso autorizado responde erro
+            // interno.
+            Pedido::Executar(_) | Pedido::Ssh { .. } => self
                 .autorizar_uso(cliente, &pedido)
                 .and(Err(ErroResposta::Interno)),
             Pedido::ResponderAprovacao {
@@ -995,7 +1017,12 @@ impl Daemon {
     /// entrada que não existe e a que não é `login` respondem igual; a origem diferente
     /// responde `origem_diferente` sem nenhum valor. O log leva o nome da entrada (do
     /// cofre), nunca a origem nem os valores (S13).
-    fn preencher(&self, papel: Papel, nome: &str, origem: &str) -> Result<Resposta, ErroResposta> {
+    pub(crate) fn preencher(
+        &self,
+        papel: Papel,
+        nome: &str,
+        origem: &str,
+    ) -> Result<Resposta, ErroResposta> {
         if papel != Papel::Extensao {
             return Err(ErroResposta::NaoAutorizado);
         }

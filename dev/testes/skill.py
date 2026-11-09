@@ -36,8 +36,9 @@ VARIACOES = os.path.join(RAIZ, ".dev", "variacoes.txt")
 
 # V8.1: os únicos subcomandos que a skill pode usar.
 PERMITIDOS = {"lista", "run", "ssh", "login", "playwright", "travar"}
-# Fase 43 em andamento: aceito fora do `--help` até o merge (remover depois).
-PENDENTES = {"login"}
+# Subcomandos aceitos fora do `--help` enquanto a fase deles não chega (nenhum desde a
+# Fase 43).
+PENDENTES = set()
 
 # V8.2: cada caminho, na sintaxe de regra do Claude Code (`~/` = home, `//` = absoluto).
 CAMINHOS_DENY = {

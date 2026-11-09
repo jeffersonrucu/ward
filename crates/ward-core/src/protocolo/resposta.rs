@@ -381,6 +381,13 @@ pub enum Resposta {
         senha: Segredo,
         totp: Option<Zeroizing<String>>,
     },
+    /// `ward login` (Fase 43): o pedido que a extensão vai atender. Só o id e o nome da
+    /// entrada, nenhum valor: a credencial só sai no `preencher_login`, com a origem
+    /// conferida (D9).
+    PedidoDeLogin {
+        id: String,
+        entrada: String,
+    },
     /// Nomes das versões do backup local, da mais nova para a mais antiga (Fase 45). Só
     /// nomes no formato exato; nenhum caminho, conteúdo ou geração.
     Backups(Vec<String>),
@@ -430,6 +437,7 @@ impl Resposta {
             Resposta::CodigoTotp { .. } => TipoResposta::CodigoTotp,
             Resposta::Sugestoes(_) => TipoResposta::Sugestoes,
             Resposta::Preenchimento { .. } => TipoResposta::Preenchimento,
+            Resposta::PedidoDeLogin { .. } => TipoResposta::PedidoDeLogin,
             Resposta::Backups(_) => TipoResposta::Backups,
             Resposta::Configuracao { .. } => TipoResposta::Configuracao,
             Resposta::BackupExterno { .. } => TipoResposta::BackupExterno,
@@ -525,6 +533,9 @@ impl Resposta {
             } => ok(usuario.len() <= MAX_TEXTO
                 && senha.len() <= MAX_SEGREDO
                 && totp.as_ref().is_none_or(|c| digitos_totp(c))),
+            Resposta::PedidoDeLogin { id, entrada } => {
+                ok(super::id_login_ok(id) && !entrada.is_empty() && entrada.len() <= MAX_NOME)
+            }
         }
     }
 
@@ -758,6 +769,12 @@ impl Resposta {
                     e.chave("totp");
                     e.texto(c);
                 }
+            }
+            Resposta::PedidoDeLogin { id, entrada } => {
+                e.chave("id");
+                e.texto(id);
+                e.chave("entrada");
+                e.texto(entrada);
             }
         }
     }
@@ -1125,6 +1142,10 @@ pub(crate) fn ler(papel: Papel, tipo: TipoResposta, mut c: Campos) -> R<Resposta
             usuario: c.texto("usuario", MAX_TEXTO)?,
             senha: segredo_de(c.tirar("senha").ok_or(JsonInvalido)?, MAX_SEGREDO)?,
             totp: c.texto_opc("totp", 8)?.map(Zeroizing::new),
+        },
+        TipoResposta::PedidoDeLogin => Resposta::PedidoDeLogin {
+            id: c.texto("id", MAX_NOME)?,
+            entrada: c.texto("entrada", MAX_NOME)?,
         },
     };
     c.fim()?;

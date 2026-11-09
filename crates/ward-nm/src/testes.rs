@@ -211,6 +211,17 @@ fn ataque_resposta_do_daemon_fora_do_papel_ou_da_operacao_nao_sai() {
         (r#"{"v":1,"op":"estado"}"#, preenchimento()),
         (r#"{"v":1,"op":"abrir_app"}"#, preenchimento()),
         (PREENCHER, Resposta::Lista(Vec::new())),
+        // Fase 43: o `aguardar_login` e o `resultado_login` nunca levam valor; só o
+        // `preencher_login` recebe o preenchimento.
+        (r#"{"v":1,"op":"aguardar_login"}"#, preenchimento()),
+        (
+            r#"{"v":1,"op":"resultado_login","dados":{"id":"AbCdEfGhIjKlMnOpQrStUvWxYz012345","resultado":"enviado"}}"#,
+            preenchimento(),
+        ),
+        (
+            r#"{"v":1,"op":"preencher_login","dados":{"id":"AbCdEfGhIjKlMnOpQrStUvWxYz012345","origem":"http://localhost:8081"}}"#,
+            Resposta::Segredo(Segredo::de_bytes(SENHA_FALSA.as_bytes().to_vec())),
+        ),
         (
             PREENCHER,
             Resposta::Sugestoes(vec![Sugestao {

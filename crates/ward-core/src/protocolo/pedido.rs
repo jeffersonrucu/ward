@@ -127,6 +127,58 @@ impl Decisao {
     }
 }
 
+/// `ward login` (Fase 43): o que a extensão fez com o pedido de login, dito ao daemon
+/// no `resultado_login`. Nenhum valor, só o desfecho.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResultadoLogin {
+    /// Preencheu, enviou o formulário e limpou os campos; a página seguinte não tem
+    /// mais campo de senha visível.
+    Enviado,
+    /// Enviou, mas a página seguinte (da mesma origem) ainda pede a senha: o site não
+    /// aceitou o login.
+    Recusado,
+    /// A aba não tem um formulário de login que dê para enviar com segurança (nenhum ou
+    /// mais de um campo de senha visível, `GET`, destino ou `target` fora).
+    SemFormulario,
+    /// A aba navegou (ou o documento trocou) entre a sonda e o preenchimento.
+    AbaMudou,
+    /// Qualquer outra falha da extensão (injeção recusada, aba fechada).
+    Falha,
+}
+
+impl ResultadoLogin {
+    /// Todos, na ordem do quadro.
+    pub const TODOS: [ResultadoLogin; 5] = [
+        ResultadoLogin::Enviado,
+        ResultadoLogin::Recusado,
+        ResultadoLogin::SemFormulario,
+        ResultadoLogin::AbaMudou,
+        ResultadoLogin::Falha,
+    ];
+
+    /// Nome no quadro.
+    pub fn nome(self) -> &'static str {
+        match self {
+            ResultadoLogin::Enviado => "enviado",
+            ResultadoLogin::Recusado => "recusado",
+            ResultadoLogin::SemFormulario => "sem_formulario",
+            ResultadoLogin::AbaMudou => "aba_mudou",
+            ResultadoLogin::Falha => "falha",
+        }
+    }
+
+    /// Pelo nome do quadro.
+    pub fn de_nome(n: &str) -> Option<Self> {
+        Self::TODOS.into_iter().find(|r| r.nome() == n)
+    }
+}
+
+/// Id de um pedido de `ward login` (Fase 43): 32 letras e dígitos ASCII, do RNG do
+/// sistema (o mesmo gerador do token do "Conectar").
+pub fn id_login_ok(id: &str) -> bool {
+    id.len() == 32 && id.bytes().all(|b| b.is_ascii_alphanumeric())
+}
+
 /// Pedido do cliente. Segredos em [`Segredo`] (zera ao sair, `Debug` sem valor).
 #[derive(Debug)]
 pub enum Pedido {
@@ -217,6 +269,19 @@ pub enum Pedido {
         /// Sempre `RascunhoDados::Login`.
         rascunho: Rascunho,
     },
+    /// `ward login` (Fase 43): a extensão espera o próximo pedido de login, sem campo.
+    AguardarLogin,
+    /// `ward login` (Fase 43): a extensão pede usuário, senha e TOTP do pedido `id` para
+    /// a origem do documento da aba ativa; o daemon compara a origem (D9).
+    PreencherLogin {
+        id: String,
+        origem: String,
+    },
+    /// `ward login` (Fase 43): o desfecho do pedido `id` na aba.
+    ResultadoLogin {
+        id: String,
+        resultado: ResultadoLogin,
+    },
     /// D57: abrir a instância verdadeira do app (filho do daemon), sem nenhum campo.
     AbrirApp,
     /// Versões do backup local (Fase 45), sem campo.
@@ -274,6 +339,9 @@ impl Pedido {
             Pedido::Sugerir { .. } => Operacao::Sugerir,
             Pedido::Preencher { .. } => Operacao::Preencher,
             Pedido::SalvarLogin { .. } => Operacao::SalvarLogin,
+            Pedido::AguardarLogin => Operacao::AguardarLogin,
+            Pedido::PreencherLogin { .. } => Operacao::PreencherLogin,
+            Pedido::ResultadoLogin { .. } => Operacao::ResultadoLogin,
             Pedido::AbrirApp => Operacao::AbrirApp,
             Pedido::Backups => Operacao::Backups,
             Pedido::Configuracao => Operacao::Configuracao,
@@ -334,6 +402,8 @@ impl Pedido {
             Pedido::Preencher { entrada, origem } => {
                 ok(nome_ok(entrada) && origem.len() <= MAX_URL)
             }
+            Pedido::PreencherLogin { id, origem } => ok(id_login_ok(id) && origem.len() <= MAX_URL),
+            Pedido::ResultadoLogin { id, .. } => ok(id_login_ok(id)),
             Pedido::SalvarEntrada { anterior, rascunho } => {
                 ok(anterior.as_deref().is_none_or(nome_ok) && rascunho_ok(rascunho))
             }
@@ -351,6 +421,7 @@ impl Pedido {
             | Pedido::Backups
             | Pedido::Configuracao
             | Pedido::BackupExterno
+            | Pedido::AguardarLogin
             | Pedido::Pendrives => Ok(()),
         }
     }
@@ -365,6 +436,7 @@ impl Pedido {
             | Pedido::Backups
             | Pedido::Configuracao
             | Pedido::BackupExterno
+            | Pedido::AguardarLogin
             | Pedido::Pendrives => {}
             Pedido::DefinirBackupExterno { ligado, uuid } => {
                 e.chave("ligado");
@@ -523,6 +595,18 @@ impl Pedido {
                 e.chave("origem");
                 e.texto(origem);
             }
+            Pedido::PreencherLogin { id, origem } => {
+                e.chave("id");
+                e.texto(id);
+                e.chave("origem");
+                e.texto(origem);
+            }
+            Pedido::ResultadoLogin { id, resultado } => {
+                e.chave("id");
+                e.texto(id);
+                e.chave("resultado");
+                e.texto(resultado.nome());
+            }
         }
     }
 }
@@ -645,6 +729,16 @@ pub(crate) fn ler(op: Operacao, mut c: Campos) -> R<Pedido> {
         Operacao::Configuracao => Pedido::Configuracao,
         Operacao::BackupExterno => Pedido::BackupExterno,
         Operacao::Pendrives => Pedido::Pendrives,
+        Operacao::AguardarLogin => Pedido::AguardarLogin,
+        Operacao::PreencherLogin => Pedido::PreencherLogin {
+            id: c.texto("id", MAX_NOME)?,
+            origem: c.texto("origem", MAX_URL)?,
+        },
+        Operacao::ResultadoLogin => Pedido::ResultadoLogin {
+            id: c.texto("id", MAX_NOME)?,
+            resultado: ResultadoLogin::de_nome(&c.texto("resultado", MAX_NOME)?)
+                .ok_or(JsonInvalido)?,
+        },
         Operacao::DefinirBackupExterno => Pedido::DefinirBackupExterno {
             ligado: c.logico("ligado")?,
             uuid: c.texto_opc("uuid", MAX_UUID_BACKUP)?,

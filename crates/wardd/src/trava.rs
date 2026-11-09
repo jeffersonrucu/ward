@@ -76,7 +76,8 @@ const MAX_CAMINHO: usize = 107;
 pub fn conta_como_uso(op: Operacao, r: &Resposta) -> bool {
     !matches!(
         op,
-        Operacao::Estado | Operacao::Travar | Operacao::Destravar
+        // `aguardar_login` (Fase 43): a extensão pergunta sozinha a cada 25 s; não é uso.
+        Operacao::Estado | Operacao::Travar | Operacao::Destravar | Operacao::AguardarLogin
     ) && !matches!(r, Resposta::Erro(_))
 }
 

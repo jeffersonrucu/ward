@@ -15,6 +15,10 @@
 // - Só oferece login que o cofre não tem: o daemon responde `sugerir` para a origem, e
 //   o usuário enviado não pode estar entre as sugestões. Com o cofre travado (ou sem o
 //   Ward), o envio é descartado na hora.
+// - Fase 43: o `ward login` mora em `login.js` (porta de native messaging aberta com o
+//   `ward-nm`, que também mantém este service worker vivo).
+
+import { iniciarLogin } from './login.js';
 
 const HOST = 'br.ward.nm';
 const POPUP = chrome.runtime.getURL('popup.html');
@@ -151,6 +155,8 @@ async function salvar(msg) {
 }
 
 chrome.tabs.onRemoved.addListener((aba) => descartar(aba));
+
+iniciarLogin();
 
 chrome.runtime.onMessage.addListener((msg, sender, responder) => {
   if (!msg || typeof msg !== 'object' || typeof msg.t !== 'string') return false;
