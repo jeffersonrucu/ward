@@ -1123,10 +1123,21 @@ Auditoria do M10 (2026-11-09): **reprovada** (1ª vez), achado alto: o passo 2b 
 `/tmp/wl-copy-buffer-XXXXXX/` (ext4, caminho fixo no binário) até o `--clear` — chave
 em claro no disco (S2).
 
-- [ ] Fase 53a — App: botão "Carregar de arquivo" no campo "Chave privada" (`servidor`)
+- [x] Fase 53a — App: botão "Carregar de arquivo" no campo "Chave privada" (`servidor`)
   que lê o arquivo escolhido (tmpfs) direto para o daemon, sem área de transferência;
   limite de tamanho, recusa de link e de arquivo que não é chave OpenSSH/PEM; conteúdo
   nunca volta à webview; testes de ataque e QA pela ponte. S2, S12, V5.13.
+  Feita (2026-11-09): comando `carregar_chave { campo }` (só `chave_privada`), leitura em
+  `app/nucleo/src/chave.rs` com `O_NOFOLLOW|O_NONBLOCK|O_NOCTTY`, 64 KiB, só OpenSSH/PEM;
+  a chave fica no Rust (`Segredo`) até salvar, cancelar, sair ou travar. `make check` 0;
+  QA pela ponte com daemon falso 13/13. Pendências: `make app-check` não rodou no worktree
+  (clippy/ACL/release do Tauri; o host já tem o webkit 2.52.6, rodar no checkout); o
+  diálogo GTK real e o `recently-used.xbel` ficam para o roteiro nativo; teste por tempo
+  `v3_33_kill_9_entre_as_senhas_erradas` (limite 1,5 s) falha com a máquina carregada.
+- [ ] Fase 53c (DESIGN) — Desenhar no `Ward.figcraft` o botão "Carregar de arquivo" e os
+  estados "aviso" e "chave carregada" do campo "Chave privada" (frames `9900`, `8981`,
+  `14743`) e atualizar o `design-nodes.md`. A tela da 53a usa só componentes e tokens
+  existentes.
 - [x] Fase 53b — Guia e lint da migração (achados médios/baixos da auditoria do M10):
   passo 2b usa o "Carregar de arquivo" da 53a e nunca `wl-copy` para chave; chaves que só
   existem no `~/.ssh` também vão para o Ward e, conferido o passo 3, são apagadas (não
