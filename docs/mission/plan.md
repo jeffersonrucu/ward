@@ -1101,7 +1101,7 @@ Scrutiny do M6 (2026-11-09): **reprovado** (1ª vez).
 - Pendências: o V6.11 (UI) nunca abriu a janela real de aprovação. O V6.12 com o
   Playwright do Python não rodou, porque ele não está no host.
 
-- [ ] Fase 44a — Correções do scrutiny do M6.
+- [x] Fase 44a — Correções do scrutiny do M6.
   - `dev/testes/playwright.py`: `posts.log` ausente conta como `b""`, como em
     `dev/testes/login.py:111-118`. `make teste-playwright` precisa passar com os
     serviços recém-subidos.
@@ -1114,6 +1114,16 @@ Scrutiny do M6 (2026-11-09): **reprovado** (1ª vez).
   - Registrar no roteiro do usuário do M6 o V6.11 (UI): `ward login acme-wp-dev` com a
     janela real de aprovação, negar e permitir.
   V6.11, V6.12, V6.15.
+  Feita (2026-11-09): `make check` 0; `teste-playwright SEM_PLAYWRIGHT_PYTHON=1` 0 com os
+  serviços recém-subidos; `teste-extensao` 0.
+  - O achado do Code Cache vem do `zxcvbn.min.js` do WordPress de teste (o PIN de teste é
+    palavra do dicionário dele). Agora é filtrado só com prova.
+  - `PREENCHER`/`LER_PAGINA` agora só pelos protótipos. É defesa em profundidade: no
+    Chrome 156 o `document` do mundo isolado não sofre clobbering. O comentário de
+    `extensao/pagina.js` linhas 9–13 ficou impreciso.
+  - Roteiro do V6.11 em `docs/mission/evidence/M6/roteiro-usuario.md`.
+  - O V6.12 com o Playwright do Python segue sem rodar.
+  O scrutiny do M6 conta como aprovado depois da 44a; segue a segurança.
 
 ## Milestone 7 — Backup
 Contrato: V7.1–V7.11
