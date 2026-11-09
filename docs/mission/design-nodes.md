@@ -1132,3 +1132,27 @@ Telas no Layout (1280×800, cópia de `Configurações / Geral` sob a `sobreposi
 | --- | --- | --- | --- |
 | `Configurações / Trocar senha mestra` | `20085` | x 4080, y 11962 | `sobreposição` `20301`; `Diálogo de troca` senha mestra `20411` |
 | `Configurações / Trocar PIN` | `20193` | x 5440, y 11962 | `sobreposição` `20356`; `Diálogo de troca` PIN `20471` |
+
+## Fase 49b — estados novos da 49a (design)
+
+Editado numa cópia do `Ward.figcraft` aberta pelo MCP `figcraft` headless (a aba
+"Ward" que a sessão já tinha aberta estava velha, sem a 39d; ver handoff) e salvo por
+cima do original com `save_file` depois de conferir que o sha256 do original não tinha
+mudado. Conferido no `document.json` do arquivo salvo (`unzip -t` sem erro; 39d e 49b
+presentes). PNG em `docs/mission/evidence/fase-49b/`. Textos iguais aos do app
+(`restaurar.js`, `configuracoes.js`).
+
+### Componentes (Design System)
+
+| Item | Id | O que mudou |
+| --- | --- | --- |
+| `Item de versão` (set) | `11264` | duas variantes novas: `Estado=fora de ordem` `20534` (cópia do padrão; `detalhe` `20539`) e `Estado=fora de ordem selecionado` `20541` (cópia do selecionado; `detalhe` `20546`). O `detalhe` fica com `aviso/texto` (`6:83`) e o texto "Cópia local · gravação mais antiga do que a data diz" (`ItemDeVersao.svelte` › `alerta`) |
+| `Diálogo de restauração` › `Etapa=confirmar` | `13034` (aviso `18770`) | `Texto` do `Destaque` aviso ganhou "O tempo de trava e o backup externo continuam os de agora. A versão volta como uma gravação nova do cofre." (`avisoDaTroca`); vale para `Restaurar backup / Confirmar` `16512` (aviso `18775`) |
+
+### Telas (Layout, 1280×800)
+
+| Frame | Id | Posição | Principais |
+| --- | --- | --- | --- |
+| `Restaurar backup / Versões com cópia plantada` | `20548` | x 0, y 13300 | diálogo `20657`; itens `20665` (`fora de ordem`, "08/11/2026 às 14:35", "agora"), `20672`, `20679`, `20686`, `20693` (padrão, "Cópia local", sem tamanho nem pendrive, como no app); legenda `20700` ("31 versões, da mais nova para a mais antiga. …"); "Continuar" `20707` desabilitado (nada escolhido) |
+| `Restaurar backup / Confirmar cópia plantada` | `20711` | x 1360, y 13300 | diálogo `20820`; item `20828` (`fora de ordem selecionado`); `Campo senha` `20835` (ajuda "É a senha que valia em 08/11/2026. O PIN não serve aqui."); aviso `20847` com a frase nova e a data da versão |
+| `Configurações / Backup local inseguro` | `20863` | x 2720, y 13300 | cópia de `Configurações / Geral`; coluna `backup` `20939` › `corpo` `20940`; linha "Backup local" `20942` (descrição sem "Último: …", como no app); `Destaque` aviso `20971` ("aviso backup local", `fill`, logo abaixo da linha) com `AVISO_BACKUP_LOCAL` = `#config-backup-local-aviso` |

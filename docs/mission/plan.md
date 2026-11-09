@@ -8,7 +8,7 @@ um assunto, poucos arquivos, verificável sozinha e com testes. **(DESIGN)** des
 FigCraft pelo MCP (`mcp__figcraft__*`) no arquivo
 `/home/jeffersonoliveira/documentos/Ward.figcraft` (páginas Inspirações só leitura,
 Design System, Layout), registra os ids em `docs/mission/design-nodes.md` e termina com
-`save_file` (D22). O Figma `bzu9PxxFur2tU3vlNCHvsY` é só leitura (histórico e
+`save_file` (D22). Regra (Fase 49b, 2026-11-09): o MCP `figcraft` headless é compartilhado e guarda abas velhas; abra sempre uma cópia com caminho próprio, confira o sha256 do original antes de salvar por cima e confira o resultado no `document.json`. O Figma `bzu9PxxFur2tU3vlNCHvsY` é só leitura (histórico e
 Inspirações `1:3`). **(UI)** monta uma tela a partir dos nodes de
 `docs/mission/design-nodes.md`. Direção visual arredondada e premium (D23). Regra de respiro (usuário, 2026-11-08):
 padding vertical simétrico e generoso em todo contêiner (cartões, opções, itens,
@@ -953,7 +953,7 @@ tamanho. Roteiro do usuário: `docs/mission/evidence/M7/roteiro-usuario.md`.
   marcas `conferida`/`fora_de_ordem`); relógio atrasado > 5 min esconde versões até
   alcançar; `backups` decifra até 64 versões com o estado preso; restaurar link dá
   `backup_inexistente`; `make app-check` não rodou.
-- [ ] Fase 49b — **(DESIGN)** Estados novos da 49a no FigCraft: item de versão "gravação
+- [x] Fase 49b — **(DESIGN)** Estados novos da 49a no FigCraft: item de versão "gravação
   mais antiga do que a data diz", aviso de "Backup local" inseguro em Configurações e a
   frase nova da confirmação do restaurar (mantém tempo de trava e backup externo). V7.7,
   V7.9.
