@@ -649,6 +649,71 @@ Reauditoria do M2 (Fase 19e, D53–D55). Repros em `scratchpad/ataque/src/bin/`
 - [ ] V3.30 — Dado `TMPDIR=/tmp` e `LD_LIBRARY_PATH=/x` na sessão, quando `make
   dev-daemon`, então o daemon de teste sobe e atende `ward lista` (ambiente limpo por
   `env -i` e lista fixa, D60; com qualquer uma das duas ele recusaria subir, V3.25).
+- [ ] V3.31 — (SEG) Dadas entradas `genérico` criadas no teste (fora do cofre de D15)
+  com o anexo `client.json` de uma linha
+  `{"installed":{"client_id":"x.apps","client_secret":"falso-GOCSPX-minificado-01"}}`,
+  o extra secreto `{"user":"x","token":"falso-json-uma-linha-01"}` e um extra de várias
+  linhas com `"db": {"senha": "falso-json-aninhado-02"},` e
+  `"a": "x", "b": "falso-json-duas-chaves-03"`, quando a máscara da entrada recebe a
+  saída real de `python3 -I -c 'print(json.loads(...)[...])'` de cada valor (e de um
+  valor com `\u00e7` e `\/` no JSON, impresso decodificado), então nenhum trecho de 6+
+  caracteres de nenhum dos valores sai em claro; e o `dev/variacoes.py` gera os mesmos
+  padrões, que o teste cruzado põe sozinhos na saída e saem `••••` (D61) — cobre S4.
+- [ ] V3.32 — (SEG) Dado um extra secreto de várias linhas com
+  `senha: falso-yaml-coment-01 # comentario`, `private key: falso-yaml-chave-espaco-02`,
+  `aws/secret: falso-yaml-chave-barra-03`, `SENHA_DB="falso-env-coment-05" # dotenv` e
+  `tok: 'falso-it''s-yaml-06'`, quando a máscara recebe cada valor como o `yq` e o
+  `source` do bash o imprimem (`falso-it's-yaml-06` no último), então nenhum sai em
+  claro; dado um anexo com a linha Latin-1
+  `SENHA=falso-latin\xe7-01<TAB>TOKEN=falso-campo-tab-02` e
+  `nome\xe7<TAB>falso-campo-tsv-03<TAB>falso-campo-tsv-04`, quando a saída é a do
+  `cut -f2` e do `cut -f3`, então sai `••••`; e o custo das duas entradas cabe no
+  orçamento de D29, com as 22 de D15 ainda aceitas (V2.36, V2.43). `iconv` e `repr()`
+  ficam em RA3 e não são cobrados aqui (D61) — cobre S4.
+- [ ] V3.33 — (SEG) Dado o daemon de teste travado, quando um cliente do papel agente
+  erra a senha 10 vezes, depois o atacante mata o `wardd` (`kill -9`), o daemon sobe de
+  novo e o agente tenta outra senha, então essa tentativa ainda espera 30 s (contador
+  do agente no arquivo de estado, gravado antes da resposta de erro); com o agente no
+  meio das esperas, o papel app destrava com a senha certa sem esperar; depois do
+  destravar certo, os dois contadores zeram; o arquivo de estado no formato antigo é
+  lido como contador 0; e o arquivo de estado não tem senha, PIN nem segredo (D62) —
+  cobre S9.
+- [ ] V3.34 — (SEG) Dado o `wardd` de release no contêiner com `RLIMIT_MEMLOCK`
+  infinito, quando destrava o cofre de teste e roda uma operação, então `VmLck` no
+  `/proc/<pid>/status` é maior que zero e cobre o `VmRSS` (`MCL_ONFAULT`), e o app
+  lançado tem `VmLck: 0 kB`; dado o mesmo binário com `RLIMIT_MEMLOCK` de 8 MiB, então
+  sai ≠ 0 com mensagem e sem criar socket; com `modo-teste` e 8 MiB, sobe com aviso no
+  log; e as units de teste da Fase 24 têm `LimitMEMLOCK=infinity` (D62) — cobre S8.
+- [ ] V3.35 — (SEG) Dado um estado com `vista` = `queimada` = 7 e nenhum cofre, quando
+  o papel app cria o cofre, então ele nasce na geração 8 e o estado fica 8/8; quando o
+  atacante põe no lugar a cópia de um cofre anterior na geração 5 e destrava, então
+  recusa com "o cofre no disco é mais antigo que o último aberto"; e dado um gancho de
+  teste que troca o arquivo logo depois do rename do `gravar_entradas`, quando o daemon
+  grava de novo, então responde "o arquivo do cofre mudou fora do Ward", trava e não
+  grava (identidade lida do fd do temporário, D62) — cobre S7, S13.
+- [ ] V3.36 — (SEG) Dado o contêiner da 21b com `ward-app` de teste setgid, quando o
+  lançador do daemon o abre, então ele recebe o papel app, e depois de se reexecutar
+  (mesmo pid) continua app; quando um processo com egid `ward-app` e `PPid` igual ao
+  daemon que **não** veio do lançador conecta (no teste do classificador, um pid que
+  não é o do pidfd; na Fase 26, V4.38), então fica agente; e quando o app lançado já
+  morreu e o pidfd não vale mais, então nenhum par com aquele pid é app (D63) — cobre
+  S1.
+- [ ] V3.37 — (SEG) Dado `make dev-daemon` com `WARD_DEV_APP` da ponte, quando `make
+  app-ponte`, então a ponte é aberta pelo daemon, o `estado` dela diz `app` e o QA
+  destrava, cria uma entrada e muda o nível com o PIN de teste pelo Chrome; quando
+  conectam um cliente Python, a `ward-ponte-teste` executada à mão, uma cópia dela ou um
+  `ward-app` de teste aberto fora do lançador, então todos ficam agente e `revelar` e
+  `mudar_nivel` respondem "não autorizado"; quando um cliente manda `abrir_app` com
+  caminho, argumentos ou ambiente no pedido, então o daemon abre só o `WARD_DEV_APP`,
+  com o ambiente fixo; no build sem `modo-teste`, um par sem egid aberto pelo lançador
+  fica agente; e `strings` no `wardd` e no `ward-plataforma` de release não acha
+  `WARD_DEV_APP` (D63, D7, D8) — cobre S1, S10, S11.
+- [ ] V3.38 — (SEG) Dado o daemon de teste, quando um cliente pede `estado`, então a
+  resposta traz o papel (`agente`, `app` ou `extensao`) e nada mais de novo; quando o
+  app de teste ou a ponte recebem `agente` na primeira resposta (aberto fora do
+  lançador ou com o pai trocado), então saem com mensagem antes de mostrar qualquer
+  tela de credencial; e o log do daemon registra o código de saída (ou o sinal) do app
+  que lançou, só o número (D63) — cobre S1.
 
 ## Milestone 4 — CLI e integração Claude (run/ssh)
 
@@ -768,6 +833,11 @@ Reauditoria do M2 (Fase 19e, D53–D55). Repros em `scratchpad/ataque/src/bin/`
   `User=<usuário>` inteiro num só argumento, há `-F /dev/null`, o host vem depois de
   `--`, sem `usuário@host` nem `sh -c`; e `sftpuser` entra no SSH de teste (2222) por
   esse argv; no `ssh` segue o V4.35 (D56, D43) — cobre S3.
+- [ ] V4.38 — (SEG) Dado o contêiner com `ward-app` e `ward-nm` de teste setgid e o
+  daemon destravado, quando o agente roda `ward run <entrada livre> --
+  /usr/local/bin/ward-app` com o ambiente de D57 copiado igual (e o mesmo com o
+  `ward-nm`), então o filho conecta como agente, `revelar` responde "não autorizado" e
+  nenhum segredo sai na saída mascarada (D63) — cobre S1.
 
 ## Milestone 5 — App desktop
 
@@ -877,13 +947,15 @@ O QA usa o Chrome em modo de teste (D7) e confere a aparência contra o frame.
   nada é reordenado nem apagado, e o que executa é o comando exato (D51) — cobre S10.
 - [ ] V5.30 — (SEG) Dado o app (RA7), quando o auditor roda `cargo deny check` e
   `cargo audit` na raiz, então nenhum advisory é ignorado; em `app/src-tauri/`, os
-  únicos ignorados são RUSTSEC-2024-0370 e RUSTSEC-2024-0429, cada um com motivo; e
+  único ignorado é RUSTSEC-2024-0370, com motivo, mais a RUSTSEC-2024-0429 só se o
+  `cargo audit` em `app/src-tauri/` ainda a detectar (D64); e
   `grep -rn 'Variant' app/` não acha uso de `glib::Variant` — cobre S14.
 - [ ] V5.31 — (SEG) Dado o `ward-app` de teste instalado setgid no contêiner (Fase 29a),
   quando o lançador do daemon (D57) o abre, então ele conecta ao socket antes do GTK,
-  o `status` mostra `Dumpable` ≠ 1 e `TracerPid` 0 desde o `exec` (2 com
-  `suid_dumpable=2`, D60), e depois da partida mostra o gid real, `Dumpable` 0 e
-  `TracerPid` 0; o ambiente do processo tem só as variáveis de D57, com os valores
+  `prctl(PR_GET_DUMPABLE)` dentro do processo (impresso pelo app de teste) dá ≠ 1 e o
+  `status` mostra `TracerPid` 0 desde o `exec` (dumpable 2 com `suid_dumpable=2`,
+  D60), e depois da partida o processo tem o gid real, dumpable 0 e `TracerPid` 0
+  (D64); o ambiente do processo tem só as variáveis de D57, com os valores
   fixos (um `GTK_MODULES`, `GST_PLUGIN_PATH` ou `GIO_EXTRA_MODULES` posto pelo
   atacante não chega ao WebKitGTK; não há `DISPLAY` nem `LISTEN_*`); o fd do socket
   tem `CLOEXEC`. Ataques, cada um tem de falhar em dar o papel app:
@@ -901,6 +973,15 @@ O QA usa o Chrome em modo de teste (D7) e confere a aparência contra o frame.
   - um `systemctl --user set-environment WAYLAND_DISPLAY=<proxy>` (ou o mesmo no
     ambiente do pedido `abrir_app`) não muda o ambiente do app aberto pelo daemon
   (D47, D48, D57) — cobre S1, S8.
+- [ ] V5.32 — (SEG) Dado o `ward-app` com o ambiente de D57 sob `strace -f` (WebKitGTK
+  real), quando abre e desenha a janela, então o ambiente tem
+  `GST_PLUGIN_SYSTEM_PATH`, `NO_AT_BRIDGE=1`, `WEBKIT_A11Y_BUS_ADDRESS` e
+  `CUDA_MPS_PIPE_DIRECTORY=/proc/ward-sem-mps`; nenhum processo do app faz `open` nem
+  `connect` em `/tmp/nvidia-mps`; com um listener do atacante em
+  `/tmp/nvidia-mps/control`, ninguém conecta nele; um plugin-marca em
+  `~/.local/share/gstreamer-1.0/plugins` não carrega; e a lista de `open`/`connect` em
+  `/tmp`, `/var/tmp`, `/dev/shm` e `/run/user/<uid>` (fora do `wayland-<n>` e do `bus`)
+  sai vazia ou cada item está registrado com decisão (D64) — cobre S8.
 
 ## Milestone 6 — Extensão, `ward login` e `ward playwright`
 

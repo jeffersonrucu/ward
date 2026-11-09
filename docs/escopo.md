@@ -176,6 +176,10 @@ de aprovação, ícone na bandeja, restaurar backup e kit de emergência.
 Interface toda em português e só em tema escuro (sem modo claro nem alternância
 de tema).
 
+Sem leitor de tela (decisão do usuário, 2026-11-09): a acessibilidade (AT-SPI) fica
+desligada no app, porque por ela qualquer processo do usuário leria o texto da tela,
+inclusive o valor revelado (PRD D64).
+
 ## Extensão do Chrome
 
 - Preenche para o usuário: sugere as entradas do domínio, preenche usuário, senha
@@ -245,7 +249,8 @@ de tema).
   ele por `ptrace` e fazer o navegador mentir a origem da aba; esse Chrome recebe o
   preenchimento de qualquer entrada `login`. É o mesmo limite da leitura do campo de
   senha por um script feito para isso. Também fica fora a negação de serviço de matar
-  o `wardd` (o systemd o sobe de novo, sem que o processo receba a senha).
+  o `wardd` (o systemd o sobe de novo, sem que o processo receba a senha, e a espera
+  das senhas erradas do agente continua de onde parou; PRD D62).
 
 ### Invariantes (o contrato de validação deve cobrir cada uma)
 

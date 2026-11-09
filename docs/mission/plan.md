@@ -384,6 +384,8 @@ Decisões do usuário em 2026-11-08 sobre a Fase 19c: RA4 (troca conjunta de cof
 
 Decisão do usuário em 2026-11-09: acessibilidade (AT-SPI) desligada no app (`NO_AT_BRIDGE=1`, `WEBKIT_A11Y_BUS_ADDRESS=unix:path=/dev/null`); leitor de tela não funciona no Ward. Pendências da 29a para o planner: incluir as 3 variáveis de D48 (GStreamer, AT-SPI) na lista de D57; app conferir o papel na 1ª resposta do protocolo; como o app de teste ganha o papel app (Fases 22/23); log do código de saída do filho no daemon (Fase 23); texto da V5.31 (dumpable por `prctl`); `/tmp/nvidia-mps` (RA8); RA7 — RUSTSEC-2024-0429 talvez já não detectado.
 
+Decisão do usuário em 2026-11-09: limiares de força do gerador (Fase 37) aceitos — fraca <60 bits, razoável <80, forte <128, muito forte ≥128; a Fase 33 usa os mesmos. Pendências da 37 para o planner: faixa de tamanho 8–64 na interface (núcleo 4–128) no PRD; texto dos símbolos no FigCraft diverge de D35 (app segue D35) — corrigir numa fase de design.
+
 ## Milestone 3 — Daemon e protocolo
 Contrato: V3.1–V3.30
 
