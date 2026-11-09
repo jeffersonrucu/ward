@@ -400,6 +400,8 @@ datas no corpo v4, Fase 22d (provisória); (e) V4.2 em duas partes, a 2ª no con
 Fase 28. Pendências da 37: faixa 8–64 e limiares em D65 (f); símbolos do FigCraft e
 frames que faltaram na 32, Fase 37a.
 
+Pendências da 37a (2026-11-09): contagens no FigCraft ficaram em 21/13, mas a fixture passou a 22 (D59) — atualizar numa próxima fase de design; cartões de nível dos 18 formulários e do gerador no formulário seguem soltos (ícone de check em "Com aprovação", herdado do M0) — trocar por instâncias do `Cartão de nível`.
+
 ## Milestone 3 — Daemon e protocolo
 Contrato: V3.1–V3.41
 
@@ -721,7 +723,7 @@ Contrato: V5.1–V5.35
   os cinco estados do M0; comando e cadeia exibidos pela função de D51, nunca como HTML.
   Consome `pedido_de_aprovacao` da fila da 23a (D65 a). V5.16–V5.20, V5.29.
 - [x] Fase 37 — **(UI)** Gerador de senha avulso (símbolos de D35). V5.21.
-- [ ] Fase 37a — **(DESIGN)** Correções do design (D65 f e design pendente; pode rodar a
+- [x] Fase 37a — **(DESIGN)** Correções do design (D65 f e design pendente; pode rodar a
   qualquer momento, só mexe no `Ward.figcraft` e em `docs/mission/design-nodes.md`):
   descrição de "Símbolos" com o conjunto de D35 no avulso e no popover do formulário;
   frame `Credenciais / Sem resultado`; cartão de nível bloqueado no detalhe; contagens
