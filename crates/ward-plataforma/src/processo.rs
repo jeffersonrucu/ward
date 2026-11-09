@@ -400,6 +400,12 @@ impl ProcessoPar {
         Ok(pai)
     }
 
+    /// pid do pai do par, lido pelo pidfd (o mesmo processo, vivo). Para o agente SSH
+    /// do `ward ssh` (D12, Fase 27): o `ssh` que o `sftp` filho do daemon criou.
+    pub fn pid_do_pai(&self) -> Option<u32> {
+        self.pai().ok().map(|a| a.pid)
+    }
+
     /// O pai do par é o `chrome` instalado (host da extensão): exe, dono root,
     /// depurador e `LD_*` lidos do `/proc` do pai. Do Chrome não se conferem as
     /// bibliotecas: ele mapeia componentes baixados para a pasta do usuário (Widevine).

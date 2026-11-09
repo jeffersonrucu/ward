@@ -180,6 +180,13 @@ impl Entorno for Teste {
     fn entrada_padrao(&mut self) -> Box<dyn Read + Send> {
         Box::new(io::empty())
     }
+    fn terminal(&self) -> Option<ward_core::protocolo::Janela> {
+        // Nunca o terminal de quem roda os testes.
+        None
+    }
+    fn modo_cru(&mut self) -> Option<ward_plataforma::ModoCru> {
+        None
+    }
 }
 
 /// D52: argv + ambiente acima de 750 KiB saem ≠ 0 com a mensagem fixa, sem citar valor e
@@ -446,6 +453,51 @@ mod com_daemon_falso {
             assert_eq!(*visto_amb.lock().unwrap(), [b"PATH".to_vec()]);
             assert_eq!(t.err().contains(MSG_RUN_TRAVADO), travado, "{}", t.err());
         }
+    }
+
+    /// `ward ssh` (Fase 27) contra um daemon falso: o pedido leva entrada, comando e
+    /// token (sem janela fora de terminal); a saída e o código vêm do daemon; erro do
+    /// daemon sai 125 com a mensagem fixa.
+    #[test]
+    fn ssh_pedido_token_saida_e_codigo() {
+        use crate::comandos::SAIDA_RUN_ERRO;
+        use ward_core::protocolo::Fluxo;
+        let token = "AbCdEfGhIjKlMnOpQrStUvWxYz012345";
+        let pasta = Pasta::nova();
+        let _v = servidor(
+            &pasta,
+            Some(Arc::new(move |p: &Pedido| match p {
+                Pedido::Estado => codificar(&resposta_estado(false)),
+                Pedido::Ssh { entrada, .. } if entrada == "t-nota" => {
+                    codificar(&Resposta::Erro(ErroResposta::TipoSemEntrega))
+                }
+                Pedido::Ssh {
+                    entrada,
+                    comando,
+                    token: t,
+                    janela,
+                } => {
+                    assert_eq!(entrada, "acme-ssh");
+                    let c: Vec<&[u8]> = comando.iter().map(|x| x.as_slice()).collect();
+                    assert_eq!(c, [b"ls".as_slice(), b"-la"]);
+                    assert_eq!(t.as_ref().map(|t| t.expor().to_vec()), Some(token.into()));
+                    assert!(janela.is_none());
+                    codificar(&Resposta::Saida {
+                        fluxo: Fluxo::Saida,
+                        dados: Zeroizing::new("senha=••••\n".as_bytes().to_vec()),
+                    })
+                }
+                Pedido::EntradaPadrao { .. } => codificar(&Resposta::Fim { codigo: 4 }),
+                _ => codificar(&Resposta::Erro(ErroResposta::NaoAutorizado)),
+            })),
+        );
+        let mut t = teste(&pasta);
+        let codigo = t.rodar(&["ssh", "--token", token, "acme-ssh", "--", "ls", "-la"]);
+        assert_eq!(codigo, 4, "{}", t.err());
+        assert_eq!(t.out(), "senha=••••\n");
+        let mut t = teste(&pasta);
+        assert_eq!(t.rodar(&["ssh", "t-nota", "id"]), SAIDA_RUN_ERRO);
+        assert_eq!(t.err(), "ward: tipo sem entrega\n");
     }
 
     #[test]

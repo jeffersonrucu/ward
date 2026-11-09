@@ -17,6 +17,7 @@
 
 pub mod log;
 
+pub mod agente_ssh;
 pub mod aprovacao;
 pub mod arquivos;
 pub mod config;
@@ -24,5 +25,6 @@ pub mod execucao;
 pub mod lancamento;
 pub mod nucleo;
 pub mod servidor;
+pub mod ssh;
 pub mod trava;
 pub mod uso;

@@ -242,4 +242,11 @@ impl EscritaSessao {
             .map_err(|_| ErroConexao::PedidoInvalido)?;
         quadro::escrever_quadro(&mut self.escrita, &corpo, MAX_QUADRO_COMUM).map_err(erro_do_quadro)
     }
+
+    /// Manda o novo tamanho do terminal (`ward ssh` interativo, Fase 27).
+    pub fn janela(&mut self, j: ward_core::protocolo::Janela) -> Result<(), ErroConexao> {
+        let corpo = protocolo::codificar_pedido(Papel::Agente, &Pedido::Janela(j))
+            .map_err(|_| ErroConexao::PedidoInvalido)?;
+        quadro::escrever_quadro(&mut self.escrita, &corpo, MAX_QUADRO_COMUM).map_err(erro_do_quadro)
+    }
 }

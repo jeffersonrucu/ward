@@ -1297,8 +1297,30 @@ impl Fluxo<'_> {
             .iter()
             .map(|v| v.segurar_desde(lido))
             .min()
-            .unwrap_or(lido);
+            .unwrap_or(lido)
+            // Depois de um [`Fluxo::soltar`], o casamento guardado pode começar antes do
+            // que já saiu: o que já saiu fica como está.
+            .max(self.emitido);
         self.emitir_ate(seguro, saida);
+    }
+
+    /// Há bytes segurados (um fim que pode ser começo de segredo)?
+    pub fn segurando(&self) -> bool {
+        self.lido > self.emitido
+    }
+
+    /// Saída interativa (D34, `ward ssh` com pty): solta o que está segurado **sempre
+    /// como [`MARCA`]**, nunca em claro, e guarda o estado do casamento. Se a
+    /// continuação completa o segredo, nada mais sai (o trecho emenda na marca já
+    /// mandada); se diverge, o resto sai normal. Devolve `true` se soltou alguma coisa.
+    pub fn soltar(&mut self, saida: &mut Vec<u8>) -> bool {
+        if !self.segurando() {
+            return false;
+        }
+        cobrir(&mut self.cobertos, self.emitido, self.lido);
+        let lido = self.lido;
+        self.emitir_ate(lido, saida);
+        true
     }
 
     /// Fim da saída: devolve o que ficou segurado, mascarado.

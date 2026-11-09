@@ -282,6 +282,13 @@ fn atender_conexao(
                     }
                     break;
                 }
+                // `ward ssh` (Fase 27): a mesma forma de sessão.
+                if papel == Papel::Agente && matches!(p, Pedido::Ssh { .. }) {
+                    if crate::ssh::sessao(daemon, &cliente, &stream, p) {
+                        continue;
+                    }
+                    break;
+                }
                 daemon.atender_de(&cliente, papel, p)
             }
             Err(e) => {

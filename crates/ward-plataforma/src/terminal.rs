@@ -145,9 +145,75 @@ pub(crate) fn ler_linha(r: &mut impl Read, max: usize) -> Result<Zeroizing<Vec<u
     Ok(senha)
 }
 
+// --- `ward ssh` interativo (Fase 27) ---------------------------------------------------
+
+/// `fd` é um terminal?
+pub fn e_terminal(fd: impl AsFd) -> bool {
+    sys::tcgetattr(fd.as_fd()).is_ok()
+}
+
+/// (linhas, colunas) do terminal em `fd`; `None` se não é terminal ou não diz.
+pub fn tamanho(fd: impl AsFd) -> Option<(u16, u16)> {
+    sys::ler_janela(fd.as_fd())
+        .ok()
+        .filter(|&(l, c)| l > 0 && c > 0)
+}
+
+/// O terminal da CLI em modo cru enquanto durar (`cfmakeraw`: sem eco, sem modo
+/// canônico, sem sinais; Ctrl+C vai como byte ao `ssh` remoto, como no `ssh`). Volta ao
+/// estado de antes no `Drop`, inclusive por erro ou pânico.
+pub struct ModoCru {
+    fd: std::os::fd::OwnedFd,
+    original: libc::termios,
+}
+
+impl fmt::Debug for ModoCru {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("ModoCru")
+    }
+}
+
+impl ModoCru {
+    /// Liga o modo cru no terminal `fd` (uma cópia do fd fica guardada para voltar).
+    pub fn ligar(fd: impl AsFd) -> io::Result<ModoCru> {
+        let fd = fd.as_fd().try_clone_to_owned()?;
+        let original = sys::tcgetattr(fd.as_fd())?;
+        let mut cru = original;
+        sys::modo_cru(&mut cru);
+        sys::tcsetattr(fd.as_fd(), libc::TCSANOW, &cru)?;
+        Ok(ModoCru { fd, original })
+    }
+}
+
+impl Drop for ModoCru {
+    fn drop(&mut self) {
+        let _ = sys::tcsetattr(self.fd.as_fd(), libc::TCSANOW, &self.original);
+    }
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    #[test]
+    fn modo_cru_liga_e_volta_e_tamanho_do_pty() {
+        let (mestre, escravo) = sys::abrir_pty().unwrap();
+        sys::definir_janela(mestre.as_fd(), 33, 101).unwrap();
+        assert!(e_terminal(&escravo));
+        assert!(!e_terminal(File::open("/dev/null").unwrap()));
+        assert_eq!(tamanho(&escravo), Some((33, 101)));
+        assert_eq!(tamanho(File::open("/dev/null").unwrap()), None);
+        let antes = sys::tcgetattr(escravo.as_fd()).unwrap();
+        assert_ne!(antes.c_lflag & libc::ECHO, 0);
+        {
+            let _cru = ModoCru::ligar(&escravo).unwrap();
+            let agora = sys::tcgetattr(escravo.as_fd()).unwrap();
+            assert_eq!(agora.c_lflag & (libc::ECHO | libc::ICANON | libc::ISIG), 0);
+        }
+        let depois = sys::tcgetattr(escravo.as_fd()).unwrap();
+        assert_eq!(depois.c_lflag, antes.c_lflag);
+        assert_eq!(depois.c_iflag, antes.c_iflag);
+    }
 
     fn linha(bytes: &[u8], max: usize) -> Result<Vec<u8>, ErroTerminal> {
         ler_linha(&mut &bytes[..], max).map(|s| s.to_vec())

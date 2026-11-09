@@ -43,7 +43,8 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Mutex, MutexGuard};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, SystemTime};
 
 use zeroize::Zeroizing;
@@ -125,6 +126,9 @@ pub(crate) struct Aberto {
     /// "Permitir por 1 hora" (D2): entrada → até quando, no relógio do motor. Some ao
     /// travar (vai junto com o `Aberto`), ao mudar o nível e ao remover ou renomear.
     pub(crate) liberacoes: HashMap<String, Duration>,
+    /// Tokens do "Conectar" ainda não usados (D3, Fase 27): somem ao travar, junto com
+    /// o `Aberto`.
+    pub(crate) tokens: Vec<crate::ssh::TokenConectar>,
     /// Identidade do arquivo depois da última leitura ou gravação. `None`: não deu para
     /// ler depois de gravar, e a próxima gravação recusa como "mudou".
     identidade: Option<Identidade>,
@@ -146,11 +150,15 @@ pub(crate) struct Estado {
     /// A próxima tentativa do agente é a primeira desde a partida: a espera conta da
     /// partida (D62).
     primeira_do_agente: bool,
+    /// Quantas vezes o cofre travou (Fase 27): o agente SSH de uma sessão some quando
+    /// o número muda (D12).
+    travas: Arc<AtomicU64>,
 }
 
 impl Estado {
     pub(crate) fn travar(&mut self) {
         if let Some(a) = self.aberto.take() {
+            self.travas.fetch_add(1, Ordering::AcqRel);
             self.identidade_conhecida = a.identidade;
             // `CofreAberto` e `Entrada` zeram ao sair (chave de dados, hash, segredos).
             drop(a);
@@ -188,6 +196,9 @@ pub struct Daemon {
     /// `<rt>` (Fase 26): os anexos do `ward run` ficam em `<rt>tmp/` (S2). `None`: o
     /// `ward run` de entrada com arquivo responde `entrega_falhou`.
     temporarios: Option<PathBuf>,
+    /// `ssh`, `sshpass` e `sftp` do `ward ssh` (Fase 27): os do sistema, por caminho
+    /// absoluto (sem busca no `PATH`).
+    programas_ssh: crate::ssh::ProgramasSsh,
 }
 
 /// Gancho de teste de [`Daemon::com_gancho_depois_de_gravar`].
@@ -386,6 +397,7 @@ impl Daemon {
                 falhas_agente,
                 falhas_app: 0,
                 primeira_do_agente: true,
+                travas: Arc::new(AtomicU64::new(0)),
             }),
             vez_agente: Mutex::new(()),
             vez_app: Mutex::new(()),
@@ -394,7 +406,37 @@ impl Daemon {
             aprovacao: Motor::sem_app(),
             gancho_gravado: None,
             temporarios: None,
+            programas_ssh: crate::ssh::ProgramasSsh::do_sistema(),
         }
+    }
+
+    /// Troca os programas do `ward ssh` (Fase 27). Só os testes do crate chamam (com
+    /// programas falsos que registram o argv); o binário usa sempre os do sistema, e
+    /// nenhum pedido do socket chega aqui.
+    #[doc(hidden)]
+    pub fn com_programas_ssh(mut self, p: crate::ssh::ProgramasSsh) -> Self {
+        self.programas_ssh = p;
+        self
+    }
+
+    pub(crate) fn programas_ssh(&self) -> &crate::ssh::ProgramasSsh {
+        &self.programas_ssh
+    }
+
+    /// `known_hosts` próprio do Ward (D13), ao lado do cofre: no release,
+    /// `~/.local/share/ward/known_hosts`; no daemon de teste, dentro de `WARD_DEV_DIR`.
+    pub(crate) fn known_hosts(&self) -> PathBuf {
+        self.caminhos
+            .cofre
+            .parent()
+            .map(|p| p.join("known_hosts"))
+            .unwrap_or_else(|| PathBuf::from("/nonexistent/ward-known_hosts"))
+    }
+
+    /// A contagem de travas e o valor dela agora, lido com o estado travado (Fase 27,
+    /// D12): o agente SSH de uma sessão some quando o número muda.
+    pub(crate) fn travas_agora(&self, est: &Estado) -> (Arc<AtomicU64>, u64) {
+        (est.travas.clone(), est.travas.load(Ordering::Acquire))
     }
 
     /// Liga o `<rt>` dos temporários do `ward run` (Fase 26, S2): `<rt>tmp/`.
@@ -565,11 +607,12 @@ impl Daemon {
             Pedido::RestaurarBackup { versao, senha, pin } => {
                 self.restaurar_backup(&versao, &senha, &pin)
             }
-            // Das fases seguintes (token: 27/34; extensão: 40+). Nada é feito e nada sai.
-            Pedido::EmitirToken { .. }
-            | Pedido::Sugerir { .. }
-            | Pedido::Preencher { .. }
-            | Pedido::SalvarLogin { .. } => Err(ErroResposta::Interno),
+            // D3 (Fase 27): token de uso único do "Conectar", só para o app.
+            Pedido::EmitirToken { entrada } => self.emitir_token(papel, &entrada),
+            // Das fases seguintes (extensão: 40+). Nada é feito e nada sai.
+            Pedido::Sugerir { .. } | Pedido::Preencher { .. } | Pedido::SalvarLogin { .. } => {
+                Err(ErroResposta::Interno)
+            }
         };
         r.unwrap_or_else(Resposta::Erro)
     }
@@ -675,6 +718,7 @@ impl Daemon {
             cofre,
             entradas,
             liberacoes: HashMap::new(),
+            tokens: Vec::new(),
             identidade: Some(id),
             geracoes: novo,
         });
@@ -827,6 +871,7 @@ impl Daemon {
             cofre,
             entradas: Vec::new(),
             liberacoes: HashMap::new(),
+            tokens: Vec::new(),
             identidade: None,
             geracoes: antes,
         };
