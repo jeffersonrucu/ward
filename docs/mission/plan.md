@@ -1060,7 +1060,7 @@ Decisão do usuário (2026-11-09): corrigir os dois altos, mais os baixos. **RA9
 item novo no menu da bandeja só pode ser ação que não entrega segredo. Depois das fases
 39f e 51c, uma reauditoria só desses pontos, e então o QA do M5.
 
-- [ ] Fase 39f — Área de transferência sem disco e baixos da auditoria do M5.
+- [x] Fase 39f — Área de transferência sem disco e baixos da auditoria do M5.
   - `app/nucleo/src/area_transferencia.rs`: o "copiar" serve o valor da memória do app,
     sem `wl-copy`. Pode ser o `gtk::Clipboard` na thread principal ou o protocolo
     data-control (ex.: `wl-clipboard-rs`, por `cargo deny`/`audit`), com
@@ -1076,6 +1076,20 @@ item novo no menu da bandeja só pode ser ação que não entrega segredo. Depoi
     (hebraico, árabe) ficam isoladas para não reordenar o texto ao redor (pendência da
     36).
   - `make app-check` 0. S2, S12, V5.4, V5.5, V5.12, V5.29.
+  Feita (2026-11-09):
+  - O copiar passa pelo `gtk::Clipboard` (`app/src-tauri/src/area_gtk.rs`), com o valor em
+    `Zeroizing` e a dica `secret`. "Só apaga o que o Ward copiou" agora quer dizer "o Ward
+    ainda é o dono da seleção". O `wl-copy` ficou só na ponte de teste.
+  - Novo `make teste-area-transferencia`: strace e inotify sem arquivo nem programa
+    externo, com V5.4 e V5.5 de verdade (GTK X11 no Xwayland).
+  - Baixos: a trava de fora limpa na hora, o `anexos.rs` usa `O_NOFOLLOW`, U+202E sai
+    com escape e o RTL fica isolado em `<bdi>`.
+  - `make check` e `app-check` 0. Nenhuma dependência nova.
+  Pendências:
+  - O copiar no Wayland do COSMIC, com clique de verdade, fica para o roteiro (seção 4,
+    passos 3–8). O compositor só aceita a seleção de janela com foco.
+  - A linha do `CLAUDE.md` do alvo novo espera autorização do usuário.
+  - Um gerenciador de área de transferência que tome a seleção impede a limpeza.
 - [ ] Fase 51c — Core dump dos auxiliares do WebKitGTK (S2/S8).
   - A instalação (`instalar.sh` e `.deb`) põe na blacklist do apport
     (`/etc/apport/blacklist.d/ward`) o `ward-app` e os binários auxiliares do WebKitGTK
