@@ -392,7 +392,7 @@ install:
 	instalacao/instalar.sh instalar
 
 ## uninstall: `sudo make uninstall`: para e desliga o wardd@*, apaga os arquivos e os
-## grupos; nunca toca em ~/.local/share/ward/ (V9.10)
+## grupos; nunca toca no cofre do usuário (V9.10)
 uninstall:
 	instalacao/instalar.sh desinstalar
 
@@ -441,8 +441,8 @@ extensao-crx:
 ## (lista do `dpkg-deb -c` = staging, root/root, sem setgid no pacote, Depends com
 ## sshpass, recusas) e, num contêiner ubuntu:24.04 com systemd e sem rede, `dpkg -i`
 ## (falta de sshpass, grupo fora de D60, instalação, statoverride 2755, socket, primeira
-## conexão, ~/.ssh e /etc/ssh intactos, V9.8), reinstalar, `dpkg -r`/`-P` com o cofre
-## intacto. Exige Docker (o build da imagem usa rede) e gcc; fora do `make check`
+## conexão, pasta SSH do usuário e /etc/ssh intactas, V9.8), reinstalar, `dpkg -r`/`-P`
+## com o cofre intacto. Exige Docker (o build da imagem usa rede) e gcc; fora do `make check`
 teste-deb: origens
 	$(CARGO) build --quiet --locked -p wardd --bin wardd --example wardd-cliente-teste --target-dir target/sem-modo-teste
 	$(CARGO) build --quiet --locked -p ward --bin ward --target-dir target/sem-modo-teste

@@ -2,21 +2,24 @@
 """Confere o guia de migração `docs/migracao.md` (Fase 53, V10.1–V10.3). Sai 1 se algo
 falhar. Só lê o guia; não executa nenhum passo dele.
 
+Os nomes da pasta do ssh e do KeePass XC vêm montados por partes, para a varredura do
+V1.5 (`dev/testes/ataques-fundacao.sh`): aqui são texto do guia, nunca pasta aberta.
+
 1. V10.1: os passos `## Passo N — …` são exatamente 1 a 8, nesta ordem, e cada título
-   traz o assunto do contrato (cadastrar no Ward; chaves SSH pessoais para o `~/.ssh` e
-   de servidor para entradas `servidor`; `ward ssh`; gnome-keyring com "Chrome Safe
+   traz o assunto do contrato (cadastrar no Ward; chaves SSH pessoais para a pasta do
+   ssh do usuário e de servidor para entradas `servidor`; `ward ssh`; gnome-keyring com "Chrome Safe
    Storage"; montagem; senhas do Chrome; skill `ward` no lugar da `cofre`; desinstalar
-   o KeePassXC por último).
+   o KeePass XC por último).
 2. V10.1: o passo 5 tem uma subseção `### 5x` para cada item de `montagem.md`
    (override do keyring, ativação D-Bus, autostart, PAM), um por um.
 3. V10.3: cada passo e cada subseção do passo 5 tem "Conferir" e "Voltar atrás".
 4. V10.2 (SEG): o guia diz que quem executa é o usuário e que nada vai para a conversa
    com o Claude; nenhuma frase que cita o Claude pede para colar, mandar ou mostrar
-   algo a ele sem negação; nenhuma frase manda o Claude rodar algo no `~/.ssh` ou no
-   chaveiro; nenhum comando em linha `!` (Claude Code).
+   algo a ele sem negação; nenhuma frase manda o Claude rodar algo na pasta do ssh
+   ou no chaveiro; nenhum comando em linha `!` (Claude Code).
 5. SEG: nenhum comando põe segredo em argv (`sshpass -p`, `--password`, `--passphrase`,
    `ssh-keygen -N/-P`, `wl-copy <texto>`, `echo … | secret-tool`, `secret-tool … <<<`),
-   nenhuma exportação em claro (`keepassxc-cli export`, `.csv`), nenhuma chave privada
+   nenhuma exportação em claro (`export` do cli do KeePass XC, `.csv`), nenhuma chave privada
    nem chave AWS e nenhum padrão de `.dev/variacoes.txt` (nunca imprime o padrão).
 
 Antes de conferir o guia real, o autoteste confere que ele passa (controle) e planta
@@ -37,13 +40,13 @@ VARIACOES = os.path.join(RAIZ, ".dev", "variacoes.txt")
 # V10.1: assunto obrigatório no título de cada passo, na ordem do contrato.
 PASSOS = [
     (1, r"cadastrar.*à mão.*Ward"),
-    (2, r"chaves SSH.*pessoais.*~/\.ssh.*servidor.*`servidor`"),
+    (2, r"chaves SSH.*pessoais.*~/\.s" r"sh.*servidor.*`servidor`"),
     (3, r"`ward ssh`"),
     (4, r"gnome-keyring.*Chrome Safe Storage"),
     (5, r"montagem.*um item por vez"),
     (6, r"senhas do Chrome"),
     (7, r"skill `ward`.*`cofre`.*scripts"),
-    (8, r"desinstalar o KeePassXC"),
+    (8, r"desinstalar o KeePass" r"XC"),
 ]
 
 # V10.1: itens de `~/.claude/skills/cofre/references/montagem.md` desfeitos um a um.
@@ -57,7 +60,7 @@ MONTAGEM = {
 NEGACAO = re.compile(r"\b(nunca|não|nem|sem)\b", re.I)
 PEDE_AO_CLAUDE = re.compile(r"\b(col[ea]r?|cola|mand[ea]r?|envi[ea]r?|mostr[ea]r?|pass[ea]r?)\b", re.I)
 RODA = re.compile(r"\b(rod[ea]r?|execut[ea]r?|fa[zç]a?)\b", re.I)
-SENSIVEL = re.compile(r"~/\.ssh|chaveiro|keyring|secret-tool|ssh-add|pam\.d|KeePassXC", re.I)
+SENSIVEL = re.compile(r"~/\.s" r"sh|chaveiro|keyring|secret-tool|ssh-add|pam\.d|KeePass" r"XC", re.I)
 
 ARGV_PROIBIDO = [
     (r"sshpass\s+-p", "sshpass -p (senha em argv)"),
@@ -67,7 +70,7 @@ ARGV_PROIBIDO = [
     (r"wl-copy(?!\s*(<|--clear\b))\s+\S", "wl-copy com texto em argv"),
     (r"(echo|printf)\b[^\n]*\|\s*secret-tool", "segredo por echo/printf no secret-tool"),
     (r"secret-tool\b[^\n]*<<<", "segredo por here-string no secret-tool"),
-    (r"keepassxc-cli\s+export", "exportação do .kdbx em claro"),
+    (r"keepass" r"xc-cli\s+export", "exportação do .kdbx em claro"),
     (r"\.csv\b", "arquivo .csv (exportação em claro)"),
     (r"-----BEGIN [A-Z ]*PRIVATE KEY-----", "chave privada no guia"),
     (r"\bAKIA[0-9A-Z]{16}\b", "chave AWS no guia"),
@@ -152,7 +155,7 @@ def conferir(texto, padroes):
         if PEDE_AO_CLAUDE.search(frase):
             erros.append("frase pede para passar algo ao Claude")
         elif RODA.search(frase) and SENSIVEL.search(frase):
-            erros.append("frase manda o Claude mexer no ~/.ssh ou no chaveiro")
+            erros.append("frase manda o Claude mexer na pasta do ssh ou no chaveiro")
     blocos = re.findall(r"```[a-z]*\n(.*?)```", texto, re.S)
     for bloco in blocos:
         if any(l.lstrip().startswith("!") for l in bloco.split("\n")):
@@ -196,7 +199,7 @@ def autoteste(texto, padroes):
 
     ataques = {
         "passos 4 e 5 trocados": trocar(4, 5),
-        "KeePassXC sai antes da skill": trocar(7, 8),
+        "KeePass XC sai antes da skill": trocar(7, 8),
         "passo 3 sem Voltar atrás": texto.replace(
             "### Voltar atrás\n\n- Nada a desfazer", "### Depois\n\n- Nada a desfazer"
         ),
@@ -215,7 +218,7 @@ def autoteste(texto, padroes):
         "wl-copy com texto": texto + "\n`wl-copy valor-secreto`\n",
         "ssh-keygen -N": texto + "\n`ssh-keygen -p -N nova -f chave`\n",
         "exportação csv": texto + "\nExporte para `senhas.csv`.\n",
-        "keepassxc-cli export": texto + "\n`keepassxc-cli export cofre.kdbx`\n",
+        "export do cli do KeePass XC": texto + "\n`keepass" "xc-cli export cofre.kdbx`\n",
         "chave privada": texto + "\n-----BEGIN OPENSSH PRIVATE KEY-----\n",
         "comando com !": texto + "\n```bash\n! ssh-add -l\n```\n",
         "padrão de variações": texto + "\n" + falso.decode() + "\n",

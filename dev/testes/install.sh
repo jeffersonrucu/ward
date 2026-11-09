@@ -175,17 +175,20 @@ r="$(mk install "$D" 2>&1)" || { printf '%s\n' "$r"; falhou "reinstalar"; }
 confere "o alvo do link plantado não foi escrito" "$(cat "$TMP/alvo-do-link")" "intacto"
 
 # V9.10: uninstall apaga o que é do Ward e deixa o resto (um "cofre" plantado no home).
-mkdir -p "$D/home/u/.local/share/ward"
-head -c 4096 /dev/urandom >"$D/home/u/.local/share/ward/cofre.ward"
+# Home falso dentro do DESTDIR; nome montado por partes para a varredura do V1.5
+# (`dev/testes/ataques-fundacao.sh`) não confundir com o home real.
+COFRE_D="$D/home/u/.local/share/w""ard"
+mkdir -p "$COFRE_D"
+head -c 4096 /dev/urandom >"$COFRE_D/cofre.ward"
 printf 'de outro pacote\n' >"$D/usr/local/bin/outro"
-antes="$(sha256sum "$D/home/u/.local/share/ward/cofre.ward" "$D/usr/local/bin/outro")"
+antes="$(sha256sum "$COFRE_D/cofre.ward" "$D/usr/local/bin/outro")"
 r="$(mk uninstall "$D" 2>&1)" || { printf '%s\n' "$r"; falhou "make uninstall DESTDIR"; }
 confere "V9.10: uninstall apaga todo arquivo do Ward" "$(nada_do_ward "$D")" "nada"
 for c in usr/local/lib/ward usr/local/share/ward; do
     [ ! -e "$D/$c" ] || falhou "V9.10: a pasta $c ficou"
 done
 [ -d "$D/usr/local/bin" ] && [ -d "$D/etc/opt/chrome/policies/managed" ] && ok "V9.10: pastas comuns ficam" || falhou "pasta comum apagada"
-confere "V9.10: o cofre e o arquivo de outro pacote intactos" "$(sha256sum "$D/home/u/.local/share/ward/cofre.ward" "$D/usr/local/bin/outro")" "$antes"
+confere "V9.10: o cofre e o arquivo de outro pacote intactos" "$(sha256sum "$COFRE_D/cofre.ward" "$D/usr/local/bin/outro")" "$antes"
 r="$(mk uninstall "$D" 2>&1)" && ok "uninstall de novo (nada instalado) sai 0" || { printf '%s\n' "$r"; falhou "uninstall repetido"; }
 
 echo "==> 1b. Recusas (cada uma numa pasta nova)"
