@@ -1,0 +1,142 @@
+[
+ [
+  "destravar",
+  true,
+  "rc=0 leak=[]"
+ ],
+ [
+  "V4.1 lista",
+  true,
+  "rc=0 linhas=22"
+ ],
+ [
+  "V4.1 json",
+  true,
+  "n=21 campos=['ambiente', 'endereco', 'grupo', 'nome', 'projeto', 'tipo']"
+ ],
+ [
+  "V4.3",
+  true,
+  "rc=0 bad=[]"
+ ],
+ [
+  "V4.4",
+  true,
+  "bad=[]"
+ ],
+ [
+  "V4.5 senha",
+  true,
+  "bad=[]"
+ ],
+ [
+  "V4.5 chave",
+  true,
+  "mode=600 dir=/run/user/1000/ward-teste/tmp/s1493188-0 hashchave=ok"
+ ],
+ [
+  "V4.6",
+  true,
+  ""
+ ],
+ [
+  "V4.7",
+  true,
+  ""
+ ],
+ [
+  "V4.8",
+  true,
+  ""
+ ],
+ [
+  "V4.9",
+  true,
+  "rc=0 \"Warning: Permanently added '[127.0.0.1]:2222' (ED25519) to the list of known hosts.\\nConnected to 127.0.0.1.\\nsftp> ls\\narq\""
+ ],
+ [
+  "V4.9 hashes",
+  true,
+  ""
+ ],
+ [
+  "V4.10",
+  true,
+  "rc=0 anexo=False"
+ ],
+ [
+  "V4.11",
+  true,
+  "rc=125 msg='ward: tipo sem entrega'"
+ ],
+ [
+  "V4.12 mascara",
+  true,
+  "out='••••'"
+ ],
+ [
+  "V4.17 simples",
+  true,
+  "'••••''••••'"
+ ],
+ [
+  "V4.19 exit7",
+  true,
+  "rc=7"
+ ],
+ [
+  "V4.19 sigterm",
+  true,
+  "rc=143"
+ ],
+ [
+  "V4.20 info",
+  null,
+  "rc=125 ward: aprovação indisponível marca=False"
+ ],
+ [
+  "V4.23",
+  true,
+  "'deploy' ''"
+ ],
+ [
+  "V4.24",
+  true,
+  "'deploy' ''"
+ ],
+ [
+  "V4.25",
+  true,
+  "'ssh-interno' ''"
+ ],
+ [
+  "V4.29 env",
+  true,
+  "'127.0.0.1 43859' ''"
+ ],
+ [
+  "V4.30",
+  true,
+  "rc=125 'ward: aprovação indisponível'"
+ ],
+ [
+  "V4.36",
+  false,
+  "[Errno 7] Argument list too long: '/home/jeffersonoliveira/projetos/cofre/target/debug/ward'"
+ ],
+ [
+  "V4.32 info",
+  null,
+  "rc=125 ward: o canal do token do Conectar não é o do app"
+ ],
+ [
+  "V4.18 sem segredo",
+  true,
+  ""
+ ],
+ [
+  "V4.22",
+  true,
+  "'ward: travado: destrave com `ward destravar` ou pelo app'"
+ ]
+]

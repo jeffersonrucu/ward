@@ -1,0 +1,53 @@
+OK  destravar rc=0 leak=[]
+OK  V4.1 lista rc=0 linhas=22
+NOME                    TIPO         GRUPO  AMBIENTE  PROJETO  URL/HOST
+acme-pg-aprovacao       banco        acme   stage     -        127.0.0.1
+acme-pg-dev             banco        acme   dev       -        127.0.0.1
+acme-pg-prod            banco        acme   prod      -        127.0.0.1
+acme-pg-tunel           banco        acme   stage     -        postgres
+acme-ssh-chave-prod     servidor     acme   prod      -        127.0.0.1
+acme-ssh-interno        servidor     acme   prod      -        ssh-interno
+acme-ssh-interno-aprov  servidor     acme   prod      -        ssh-interno
+acme-ssh-salto          servidor     acme   prod      -        127.0.0.1
+acme-ssh-salto-livre    servidor     acme   prod      -        127.0.0.1
+acme-ssh-senha-stage    servidor     acme   stage     -        127.0.0.1
+acme-totp-dev           login        acme   dev       -        http://localhost:8083/login
+acme-wp-dev             login        acme   dev       -        http://localhost:8081/wp-login.php
+acme-wp-prod            login        acme   prod      -        http://localhost:8081/wp-login.php
+beta-aws-dev            aws          beta   dev       -        -
+beta-github-api         api          beta   dev       -        https://api.github.com
+beta-sftp-dev           ftp-sftp     beta   dev       -        127.0.0.1
+beta-smtp-stage         smtp         beta   stage     -        smtp.teste.invalid
+delta-api-simbolos      api          delta  dev       -        https://api.teste.invalid
+delta-redir             login        delta  dev       -        http://localhost:8084/login
+gama-generico           generico     gama   stage     -        -
+gama-nota               nota-segura  gama   dev       -        -
+
+OK  V4.1 json n=21 campos=['ambiente', 'endereco', 'grupo', 'nome', 'projeto', 'tipo']
+OK  V4.3 rc=0 bad=[]
+OK  V4.4 bad=[]
+OK  V4.5 senha bad=[]
+OK  V4.5 chave mode=600 dir=/run/user/1000/ward-teste/tmp/s1493188-0 hashchave=ok
+OK  V4.6 
+OK  V4.7 
+OK  V4.8 
+OK  V4.9 rc=0 "Warning: Permanently added '[127.0.0.1]:2222' (ED25519) to the list of known hosts.\nConnected to 127.0.0.1.\nsftp> ls\narq"
+OK  V4.9 hashes 
+OK  V4.10 rc=0 anexo=False
+OK  V4.11 rc=125 msg='ward: tipo sem entrega'
+OK  V4.12 mascara out='••••'
+OK  V4.17 simples '••••''••••'
+OK  V4.19 exit7 rc=7
+OK  V4.19 sigterm rc=143
+V4.20 saida: 125 ward: aprovação indisponível False
+OK  V4.23 'deploy' ''
+OK  V4.24 'deploy' ''
+OK  V4.25 'ssh-interno' ''
+OK  V4.29 env '127.0.0.1 43859' ''
+V4.29 pg_select 1  pg_select: uso: pg_select.py '<sql>'
+OK  V4.30 rc=125 'ward: aprovação indisponível'
+FAIL V4.36 [Errno 7] Argument list too long: '/home/jeffersonoliveira/projetos/cofre/target/debug/ward'
+V4.32 125 ward: o canal do token do Conectar não é o do app
+--token argv 2 ward: o token do Conectar não vai na linha de comando; use o botão Conectar do app; veja `ward --help`
+OK  V4.18 sem segredo 
+OK  V4.22 'ward: travado: destrave com `ward destravar` ou pelo app'

@@ -1,0 +1,144 @@
+origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
+/home/jeffersonoliveira/.cargo/bin/cargo build --quiet --locked -p ward --features modo-teste --bin ward
+/usr/bin/python3 -I -B dev/testes/cli.py target/debug/ward "/home/jeffersonoliveira/projetos/cofre"
+ok    V4.2 destravar contra o falso sai ≠ 0 (saiu 1)
+ok    V4.2 mensagem 'servidor não é o wardd'
+ok    V4.2 o prompt da senha não apareceu
+ok    V4.2 lista recusa o falso
+ok    V4.2 travar recusa o falso
+ok    V4.2 o falso recebeu 0 bytes
+ok    V4.2 a senha não está no registro do falso
+ok    travar
+ok    V4.22 lista depois de travar responde 'travado'
+ok    V4.21 travado sem destravar sai ≠ 0 em 120 s ± 2 s (saiu 125 em 120.0 s)
+ok    V4.21 o ward run travado está esperando o destrave
+ok    destravar com senha errada
+ok    a senha errada não ecoou
+ok    destravar mostra o prompt da senha
+ok    destravar com a senha certa (saiu 0)
+ok    a senha não ecoou na tela
+ok    V4.21 destravado em outro terminal, o ward run que esperava segue e sai 0 (saiu 0)
+ok    destravar de novo não pede senha
+ok    V4.1 lista --json sai 0
+ok    V4.1 sem a bloqueada
+ok    V4.1 21 entradas visíveis, todas menos a bloqueada
+ok    V4.1 são 21 entradas visíveis (as 22 do cofre menos a bloqueada; vieram 21)
+ok    V4.1 só nome, tipo, grupo, ambiente, projeto e endereço
+ok    V4.1 lista em texto
+ok    S1 nenhum padrão de .dev/variacoes.txt na saída da lista (0)
+ok    V4.19 o código do comando volta (saiu 5)
+ok    V4.17 a senha impressa sai ••••
+ok    S4 login: nenhum padrão de .dev/variacoes.txt na saída (0)
+ok    V4.10 anexo 0600 entregue
+ok    S2 anexo em <rt>tmp/
+ok    V4.15 anexo apagado no fim
+ok    D60 nada do ambiente do daemon
+ok    S4 genérico + anexo + env: nenhum padrão de .dev/variacoes.txt na saída (0)
+ok    D13 a entrada padrão chega ao comando
+ok    V4.11 nota segura: tipo sem entrega
+ok    bloqueada = inexistente
+ok    V4.36 (D52) ambiente acima de 750 KiB recusado sem citar valor
+ok    D13 LD_* não chega ao filho
+ok    26a `true` sem `/` vem do PATH fixo (saiu 0)
+ok    26a comando só na pasta do atacante não é achado (saiu 127)
+ok    26a bash -c com BASH_ENV da CLI
+ok    26a nada da pasta do atacante rodou
+ok    26a PATH fixo no filho
+ok    26a só PATH/HOME/USER/LOGNAME, locale e a entrega no filho (['HOME', 'LC_CTYPE', 'LOGNAME', 'PATH', 'USER', 'WARD_AMBIENTE', 'WARD_ENTRADA', 'WARD_GRUPO', 'WARD_PASS', 'WARD_TOTP', 'WARD_URL', 'WARD_USER'])
+ok    26a LANG/TZ/TERM válidos passam e o diretório de trabalho é o da CLI
+ok    V4.17 as oito formas saem ••••
+ok    S4 V4.17: nenhum padrão de .dev/variacoes.txt na saída (0)
+ok    V4.3–V4.10 entrega de acme-wp-prod bate com a tabela (7 itens)
+ok    S4 hashes de acme-wp-prod: nenhum padrão de .dev/variacoes.txt na saída (0)
+ok    V4.3–V4.10 entrega de acme-pg-dev bate com a tabela (9 itens)
+ok    S4 hashes de acme-pg-dev: nenhum padrão de .dev/variacoes.txt na saída (0)
+ok    V4.3–V4.10 entrega de acme-ssh-senha-stage bate com a tabela (7 itens)
+ok    S4 hashes de acme-ssh-senha-stage: nenhum padrão de .dev/variacoes.txt na saída (0)
+ok    V4.3–V4.10 entrega de acme-ssh-chave-prod bate com a tabela (8 itens)
+ok    S4 hashes de acme-ssh-chave-prod: nenhum padrão de .dev/variacoes.txt na saída (0)
+ok    V4.3–V4.10 entrega de beta-github-api bate com a tabela (6 itens)
+ok    S4 hashes de beta-github-api: nenhum padrão de .dev/variacoes.txt na saída (0)
+ok    V4.3–V4.10 entrega de beta-aws-dev bate com a tabela (9 itens)
+ok    S4 hashes de beta-aws-dev: nenhum padrão de .dev/variacoes.txt na saída (0)
+ok    V4.3–V4.10 entrega de beta-smtp-stage bate com a tabela (8 itens)
+ok    S4 hashes de beta-smtp-stage: nenhum padrão de .dev/variacoes.txt na saída (0)
+ok    V4.3–V4.10 entrega de beta-sftp-dev bate com a tabela (8 itens)
+ok    S4 hashes de beta-sftp-dev: nenhum padrão de .dev/variacoes.txt na saída (0)
+ok    V4.3–V4.10 entrega de gama-generico bate com a tabela (6 itens)
+ok    S4 hashes de gama-generico: nenhum padrão de .dev/variacoes.txt na saída (0)
+ok    V4.23 ssh por senha: whoami → deploy (0)
+ok    V4.23 o filho é sshpass -e → ssh -F /dev/null com PubkeyAuthentication=no e IdentityAgent=none
+ok    V4.35 usuário só depois de -l, host depois de --, sem usuário@host nem User=
+ok    D13 known_hosts do Ward
+ok    S4 ssh por senha: nenhum padrão de .dev/variacoes.txt na saída (0)
+ok    V4.24 ssh por chave: whoami → deploy (0)
+ok    S4 ssh por chave: nenhum padrão de .dev/variacoes.txt na saída (0)
+ok    D12 o agente some no fim da sessão
+ok    o código do comando remoto volta (saiu 3)
+ok    V4.37 sftp entra no SSH de teste (0)
+ok    S4 sftp: nenhum padrão de .dev/variacoes.txt na saída (0)
+ok    sftp com comando recusado
+ok    nota segura: tipo sem entrega
+ok    bloqueada = inexistente
+ok    V4.32 token inventado ignorado: vale o nível (b'ward: aprova\xc3\xa7\xc3\xa3o indispon\xc3\xadvel\n')
+ok    D12 agente da sessão no ar
+ok    V4.26 ssh-add -L de outro processo recusado
+ok    V4.26 ssh-add <chave> de outro processo recusado
+ok    V4.26 ssh-add -D de outro processo recusado
+ok    a sessão do agente atacado terminou normal (0)
+ok    V4.26 socket e pasta do agente somem no fim
+ok    agente no ar (SIGKILL)
+ok    V4.26 SIGKILL na CLI: o agente some
+ok    agente no ar (travar)
+ok    V4.26 travar o cofre derruba o agente
+ok    destravar de novo
+ok    V4.31 interativo: whoami → deploy e sai 0 (0)
+ok    D34 oráculo de prefixo no pty: nenhum candidato se distingue (0)
+ok    D34 cada candidato sai na hora, um por pausa ([0.4, 0.4, 0.41, 0.4, 0.41, 0.41, 0.4, 0.41, 0.39, 0.4, 0.4, 0.4, 0.41, 0.4, 0.4])
+ok    S4 a senha inteira num pedaço sai ••••
+ok    S4 nenhum padrão de .dev/variacoes.txt no pty
+ok    D34 oráculo por tempo: o candidato nunca espera o Z ({0: 1.51, 1: 1.5, 2: 1.5, 3: 1.5})
+ok    V4.28 chave de host mudada: recusa (255)
+ok    V4.14 nenhum segredo em /proc/*/cmdline durante o ward ssh (102027 lidos)
+ok    ssh e sftp com o argv capturado
+ok    V4.35 ssh: -F /dev/null, -l deploy -- 127.0.0.1, sem usuário@host nem User=
+ok    V4.35 sem sh -c: o wardd executa o sshpass direto (['wardd'])
+ok    V4.37 sftp: -F /dev/null, -o User=sftpuser -P 2222 -- 127.0.0.1, sem -l nem usuário@host
+ok    V4.37 sem sh -c: o wardd executa o sshpass do sftp direto
+ok    S3 nenhum segredo no argv do ssh/sftp
+ok    V4.25 ward ssh acme-ssh-interno hostname → ssh-interno (0 b'')
+ok    S4 ssh com salto: nenhum padrão de .dev/variacoes.txt na saída (0)
+ok    V4.35 dois ssh: o principal e o do salto (1, 1)
+ok    V4.35 sem sh -c nem ProxyJump: todo ssh é filho do wardd ou do sshpass (['wardd', 'sshpass'])
+ok    V4.35 nada de ProxyJump nem ProxyCommand
+ok    V4.35 principal: -F /dev/null, HostKeyAlias=ssh-interno, -l deploy -- 127.0.0.1
+ok    V4.35 salto: -F /dev/null, -W ssh-interno:22, -l salto -- 127.0.0.1, known_hosts do Ward
+ok    S3 nenhum segredo no argv do salto
+ok    D12 o agente do salto some no fim
+ok    V4.30 salto com aprovação: vale o nível mais restritivo (b'ward: aprova\xc3\xa7\xc3\xa3o indispon\xc3\xadvel\n')
+ok    V4.29 select 1 pelo túnel → 1 (0 b'')
+ok    V4.29 PGHOST=127.0.0.1 com a porta local (['ponta', '127.0.0.1', '39663'])
+ok    V4.29 o túnel fecha ao fim
+ok    S4 run com túnel: nenhum padrão de .dev/variacoes.txt na saída (0)
+ok    V4.29 current_user pelo túnel → app
+ok    ataque: a ponte do túnel fecha a conexão de fora da sessão sem byte (b'')
+ok    o comando segue com o túnel depois do ataque (0)
+ok    V4.33 o daemon de teste está com RUST_LOG=trace (linhas [debug] no log)
+ok    V4.33 nenhum padrão de .dev/variacoes.txt no log do daemon (111596 bytes)
+ok    27a ward ssh --token-fd pelo terminal falso: token inventado, vale o nível (125, b'ward: aprova\xc3\xa7\xc3\xa3o indispon\xc3\xadvel\n')
+ok    27a o token chegou ao daemon pelo canal (uma linha 'token inválido' a mais no log)
+ok    27a o leitor varreu 4497 arquivos e viu o ward
+ok    27a token em nenhum /proc/*/cmdline, environ ou fd reaberto ([])
+ok    27a o token não volta na saída
+ok    27a --token em argv recusado sem eco (2)
+ok    27a --token= em argv recusado sem eco (2)
+ok    27a --token em argv não chega ao daemon
+ok    27a canal socket (fora do formato) recusado sem eco (125, b'ward: o token do Conectar veio fora do formato\n')
+ok    27a canal socket (veio vazio) recusado sem eco (125, b'ward: o canal do token do Conectar veio vazio\n')
+ok    27a canal socket (passa do tamanho) recusado sem eco (125, b'ward: o canal do token do Conectar passa do tamanho do token\n')
+ok    27a canal pipe (não é o do app) recusado sem eco (125, b'ward: o canal do token do Conectar n\xc3\xa3o \xc3\xa9 o do app\n')
+ok    27a fd fechado recusado (125)
+ok    27a nenhum canal forjado chegou ao daemon
+
+0 falha(s)
+EXIT 0

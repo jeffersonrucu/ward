@@ -741,11 +741,11 @@ Reauditoria do M2 (Fase 19e, D53–D55). Repros em `scratchpad/ataque/src/bin/`
 
 ## Milestone 4 — CLI e integração Claude (run/ssh)
 
-- [ ] V4.1 — Dado o cofre destravado, quando `ward lista`, então aparecem as 21
+- [x] V4.1 — Dado o cofre destravado, quando `ward lista`, então aparecem as 21
   entradas visíveis (as 22 do cofre de teste menos `gama-bloqueada`) com nome, tipo,
   grupo, ambiente, projeto e URL/host; `ward lista --json` tem só esses campos e nenhum
   segredo.
-- [ ] V4.2 — (SEG) Duas partes (D65). (1) Build de teste: dado o daemon parado e um
+- [x] V4.2 — (SEG) Duas partes (D65). (1) Build de teste: dado o daemon parado e um
   servidor falso em Python no socket de teste que grava tudo o que recebe, quando o
   usuário roda `ward destravar` e digita a senha (via `expect`), então a CLI aborta com
   "servidor não é o wardd" **antes** de ler ou enviar a senha, e o registro do falso não
@@ -756,97 +756,97 @@ Reauditoria do M2 (Fase 19e, D53–D55). Repros em `scratchpad/ataque/src/bin/`
   `ward travar` e digita a senha, então a CLI sai ≠ 0 com "o daemon não está rodando" ou
   "servidor não é o wardd" sem pedir a senha, nenhum dos dois falsos recebe byte algum,
   e o `bind` do uid 1000 em `/run/ward/1000/` falha — cobre S5.
-- [ ] V4.3 — Dado `acme-wp-prod` (livre), quando
+- [x] V4.3 — Dado `acme-wp-prod` (livre), quando
   `ward run acme-wp-prod -- sh -c '<sha256 de cada variável>'`, então os hashes batem
   com "Entrega esperada" e `WARD_TOTP` bate com `oathtool`.
-- [ ] V4.4 — Dado `acme-pg-dev`, quando `ward run` com os hashes, então as seis
+- [x] V4.4 — Dado `acme-pg-dev`, quando `ward run` com os hashes, então as seis
   variáveis batem com "Entrega esperada".
-- [ ] V4.5 — Dado `acme-ssh-senha-stage` e `acme-ssh-chave-prod`, quando `ward run` com
+- [x] V4.5 — Dado `acme-ssh-senha-stage` e `acme-ssh-chave-prod`, quando `ward run` com
   os hashes, então as variáveis batem e `WARD_ARQUIVO_CHAVE` aponta para arquivo 0600
   em `<rt>tmp/` cujo hash é o da chave privada de `.dev/`.
-- [ ] V4.6 — Dado `beta-github-api`, quando `ward run` com os hashes, então
+- [x] V4.6 — Dado `beta-github-api`, quando `ward run` com os hashes, então
   `WARD_TOKEN` e `GITHUB_TOKEN` batem.
-- [ ] V4.7 — Dado `beta-aws-dev`, quando `ward run` com os hashes, então as seis
+- [x] V4.7 — Dado `beta-aws-dev`, quando `ward run` com os hashes, então as seis
   variáveis AWS batem.
-- [ ] V4.8 — Dado `beta-smtp-stage`, quando `ward run` com os hashes, então as cinco
+- [x] V4.8 — Dado `beta-smtp-stage`, quando `ward run` com os hashes, então as cinco
   `SMTP_*` batem.
-- [ ] V4.9 — Dado `beta-sftp-dev`, quando `ward run beta-sftp-dev -- bash -c
+- [x] V4.9 — Dado `beta-sftp-dev`, quando `ward run beta-sftp-dev -- bash -c
   'SSHPASS="$WARD_PASS" sshpass -e sftp -P 2222 sftpuser@127.0.0.1 <<< ls'` (ou `sh -c`
   com `printf 'ls\n' | SSHPASS="$WARD_PASS" sshpass -e sftp …`: o `sh` não tem `<<<`),
   então conecta, e os hashes das `WARD_*` batem.
-- [ ] V4.10 — Dado `gama-generico`, quando `ward run` com os hashes, então `WARD_REGIAO`,
+- [x] V4.10 — Dado `gama-generico`, quando `ward run` com os hashes, então `WARD_REGIAO`,
   `WARD_CHAVE_LICENCA` e o conteúdo do arquivo de `WARD_ARQUIVO_APP_ENV` batem.
-- [ ] V4.11 — Dado `gama-nota`, quando `ward run gama-nota -- touch .dev/marca`, então
+- [x] V4.11 — Dado `gama-nota`, quando `ward run gama-nota -- touch .dev/marca`, então
   sai ≠ 0 com "tipo sem entrega" e `.dev/marca` não existe.
 - [ ] V4.12 — Dado o Postgres de teste, quando `ward run acme-pg-dev -- psql -tAc
   'select current_user'`, então imprime `app` e sai 0; `ward run acme-pg-dev -- sh -c
   'echo $DATABASE_URL'` imprime só `••••`.
-- [ ] V4.13 — (SEG) Dado `ward run acme-pg-dev -- sleep 30` em segundo plano, quando
+- [x] V4.13 — (SEG) Dado `ward run acme-pg-dev -- sleep 30` em segundo plano, quando
   outro processo do usuário lê `/proc/<pid>/environ` e `<rt>tmp/*` de todos os
   processos e arquivos, então nenhum segredo aparece (RA1; reprovar aqui vai para o
   usuário) — cobre S2, S3.
   **Risco aceito pelo usuário (2026-11-09):** RA1 foi para "Fora do modelo de ameaça"
   no escopo; a asserção não bloqueia o M4. O teste `ra1_…` só registra o estado.
-- [ ] V4.14 — (SEG) Dado `ward run` com `sleep 5` de cada entrada visível e `ward ssh` de
+- [x] V4.14 — (SEG) Dado `ward run` com `sleep 5` de cada entrada visível e `ward ssh` de
   `acme-ssh-senha-stage` e `acme-ssh-chave-prod`, quando um laço lê
   `/proc/*/cmdline` a cada 50 ms, então nenhum segredo aparece em argv — cobre S3.
-- [ ] V4.15 — (SEG) Dado `gama-generico`, quando o comando termina com 0, termina com 1,
+- [x] V4.15 — (SEG) Dado `gama-generico`, quando o comando termina com 0, termina com 1,
   quando o filho leva SIGKILL e quando a CLI leva SIGKILL, então o anexo some de
   `<rt>tmp/` em até 1 s; quando o `wardd` leva SIGKILL e sobe de novo, então `<rt>tmp/`
   é esvaziado na partida — cobre S2.
-- [ ] V4.16 — (SEG) Dada uma marca de tempo antes da suíte do M4, quando o auditor roda
+- [x] V4.16 — (SEG) Dada uma marca de tempo antes da suíte do M4, quando o auditor roda
   `find ~ /tmp /var/tmp -newer <marca> -type f` (sem `.dev/` e o repositório) e procura
   segredos, então não acha nenhum arquivo — cobre S2.
-- [ ] V4.17 — (SEG) Dado `acme-pg-dev`, quando o comando imprime `$PGPASSWORD` puro, em
+- [x] V4.17 — (SEG) Dado `acme-pg-dev`, quando o comando imprime `$PGPASSWORD` puro, em
   base64, com `urllib.parse.quote`, em dois `printf` separados por `sleep 0.2` (corte no
   `:`), e tudo isso também em stderr, então a saída devolvida tem só `••••` no lugar —
   cobre S4. **D34 revisto (Fase 28e):** nos dois `printf`, o começo (até o `:`) sai como
   saiu e o resto sai `••••`; a senha inteira nunca aparece.
-- [ ] V4.18 — (SEG) Dado cada subcomando e opção de `ward --help`, quando o auditor os
+- [x] V4.18 — (SEG) Dado cada subcomando e opção de `ward --help`, quando o auditor os
   roda com cada entrada visível (sem comando que imprima variável), então nenhuma saída,
   erro ou código de saída contém segredo — cobre S1.
-- [ ] V4.19 — Dado `ward run acme-pg-dev -- sh -c 'exit 7'`, então a CLI sai 7; dado um
+- [x] V4.19 — Dado `ward run acme-pg-dev -- sh -c 'exit 7'`, então a CLI sai 7; dado um
   filho morto por SIGTERM, então sai 143.
-- [ ] V4.20 — Dado `acme-pg-aprovacao` sem app disponível, quando `ward run
+- [x] V4.20 — Dado `acme-pg-aprovacao` sem app disponível, quando `ward run
   acme-pg-aprovacao -- touch .dev/marca`, então sai ≠ 0 com "aprovação indisponível"
   (D21) e `.dev/marca` não existe.
-- [ ] V4.21 — Dado o cofre travado, quando `ward run acme-pg-dev -- true` e o usuário
+- [x] V4.21 — Dado o cofre travado, quando `ward run acme-pg-dev -- true` e o usuário
   roda `ward destravar` em outro terminal dentro de 2 min, então o pedido segue e sai 0;
   sem destravar, sai ≠ 0 em 120 s ± 2 s.
-- [ ] V4.22 — Dado `ward travar`, então `ward lista` responde "travado".
-- [ ] V4.23 — Dado o SSH de teste por senha, quando `ward ssh acme-ssh-senha-stage
+- [x] V4.22 — Dado `ward travar`, então `ward lista` responde "travado".
+- [x] V4.23 — Dado o SSH de teste por senha, quando `ward ssh acme-ssh-senha-stage
   whoami`, então imprime `deploy`; e o `ssh` filho rodou com `sshpass -e`,
   `PubkeyAuthentication=no` e `IdentityAgent=none` (conferido em `/proc/<pid>/cmdline`).
-- [ ] V4.24 — Dado o SSH de teste só por chave, quando `ward ssh acme-ssh-chave-prod
+- [x] V4.24 — Dado o SSH de teste só por chave, quando `ward ssh acme-ssh-chave-prod
   whoami`, então imprime `deploy`.
-- [ ] V4.25 — Dado o salto, quando `ward ssh acme-ssh-interno hostname`, então imprime o
+- [x] V4.25 — Dado o salto, quando `ward ssh acme-ssh-interno hostname`, então imprime o
   hostname do `ssh-interno`.
-- [ ] V4.26 — (SEG) Dado `ward ssh acme-ssh-chave-prod 'sleep 20'`, quando outro processo
+- [x] V4.26 — (SEG) Dado `ward ssh acme-ssh-chave-prod 'sleep 20'`, quando outro processo
   do usuário acha o socket em `<rt>ssh-*/agent.sock` e roda `SSH_AUTH_SOCK=<sock>
   ssh-add -L`, `ssh-add <chave qualquer>` e `ssh-add -D`, então a conexão é recusada nas
   três; ao fim (normal, e com SIGKILL na CLI) o socket e o diretório somem; travar o
   cofre durante a sessão também os remove (D12) — cobre S1.
-- [ ] V4.27 — (SEG) Dado `HOME` de teste com `~/.ssh/config` contendo `Host *` e
+- [x] V4.27 — (SEG) Dado `HOME` de teste com `~/.ssh/config` contendo `Host *` e
   `ProxyCommand touch /tmp/sentinela-ssh`, um `known_hosts` e um `id_ed25519` de
   sentinela, `inotifywait -m ~/.ssh` rodando e `SSH_AUTH_SOCK` apontando para um agente
   falso que registra conexões, quando roda toda a suíte de `ward ssh` e túnel, então
   `/tmp/sentinela-ssh` não existe, o `inotifywait` não registra nenhum evento e o agente
   falso não recebe conexão (R19).
-- [ ] V4.28 — (SEG) Dado `ward ssh acme-ssh-senha-stage true` já feito uma vez, quando a
+- [x] V4.28 — (SEG) Dado `ward ssh acme-ssh-senha-stage true` já feito uma vez, quando a
   chave de host do `ssh-senha` é trocada, então o próximo `ward ssh` recusa com aviso de
   chave de host mudada (D13).
-- [ ] V4.29 — Dado `acme-pg-tunel`, quando `ward run acme-pg-tunel -- psql -tAc 'select
+- [x] V4.29 — Dado `acme-pg-tunel`, quando `ward run acme-pg-tunel -- psql -tAc 'select
   1'`, então imprime `1`, `PGHOST=127.0.0.1` com porta local, e o túnel fecha ao fim.
-- [ ] V4.30 — Dado `acme-ssh-interno-aprov` (livre, com salto `acme-ssh-salto` com
+- [x] V4.30 — Dado `acme-ssh-interno-aprov` (livre, com salto `acme-ssh-salto` com
   aprovação) sem app, quando `ward ssh acme-ssh-interno-aprov hostname`, então nega
   com "aprovação indisponível" (vale o nível mais restritivo, D19).
-- [ ] V4.31 — Dado `ward ssh acme-ssh-senha-stage` interativo num pty (`expect`), quando
+- [x] V4.31 — Dado `ward ssh acme-ssh-senha-stage` interativo num pty (`expect`), quando
   digita `whoami` e `exit`, então vê `deploy` e a CLI sai 0.
-- [ ] V4.32 — (SEG) Dado `ward ssh --token-fd <n> acme-pg-aprovacao` com um token
+- [x] V4.32 — (SEG) Dado `ward ssh --token-fd <n> acme-pg-aprovacao` com um token
   inventado entregue pelo socket herdado no fd `<n>` (o token nunca vai em argv; D3,
   Fase 27a), quando roda sem app, então o token é ignorado e vale o nível ("aprovação
   indisponível"; com o app de teste que nega, "pedido negado") (D3).
-- [ ] V4.33 — (SEG) Dada a suíte do M4 com `RUST_LOG=trace`, quando o auditor procura
+- [x] V4.33 — (SEG) Dada a suíte do M4 com `RUST_LOG=trace`, quando o auditor procura
   segredos nos logs do daemon e da CLI, então não acha — cobre S13.
 - [x] V4.34 — **Retirada (decisão do usuário, 2026-11-09, D34 revisto): segurar prefixo
   vira oráculo; a máscara cobre só o segredo inteiro.** Texto original: (SEG) Dado `ward ssh acme-ssh-senha-stage` interativo num pty (`expect`),
@@ -854,23 +854,23 @@ Reauditoria do M2 (Fase 19e, D53–D55). Repros em `scratchpad/ataque/src/bin/`
   fica parado, então em até 1 s o pty mostra `••••` no lugar do prefixo, nunca o
   prefixo em claro; e quando em seguida chega o resto da senha, então nenhum pedaço
   dela aparece; com saída que diverge do segredo, o resto sai normal (D34) — cobre S4.
-- [ ] V4.35 — (SEG) Dado `strace -f -e trace=execve` de `ward ssh acme-ssh-senha-stage
+- [x] V4.35 — (SEG) Dado `strace -f -e trace=execve` de `ward ssh acme-ssh-senha-stage
   whoami` e de `ward ssh acme-ssh-interno whoami` (com salto), quando o auditor lê o argv
   do `ssh`, então o usuário vem só como argumento próprio depois de `-l`, o host vem
   depois de `--`, não há `usuário@host` nem `-o User=`, nenhum `sh -c` aparece na cadeia
   e o `ProxyJump` traz só usuário e host validados (D43, D13); o mesmo com uma entrada
   de usuário `deploy@cliente.com.br`, que chega inteiro depois de `-l` — cobre S3.
-- [ ] V4.36 — Dado `ward run acme-pg-dev -- true` com uma variável de 800 KiB no
+- [x] V4.36 — Dado `ward run acme-pg-dev -- true` com uma variável de 800 KiB no
   ambiente, quando roda, então a CLI sai ≠ 0 com a mensagem do limite de 750 KiB, sem
   valor, e nada é executado (D52).
-- [ ] V4.37 — (SEG) Dado `strace -f -e trace=execve` de uma entrega por `sftp` de
+- [x] V4.37 — (SEG) Dado `strace -f -e trace=execve` de uma entrega por `sftp` de
   `beta-sftp-dev` e de uma entrada `ftp/sftp` de teste com usuário
   `deploy@cliente.com.br`, quando o auditor lê o argv do `sftp` (e do `scp`, se a Fase
   27 o usar), então não há `-l`, o usuário vem como `-o` seguido de
   `User=<usuário>` inteiro num só argumento, há `-F /dev/null`, o host vem depois de
   `--`, sem `usuário@host` nem `sh -c`; e `sftpuser` entra no SSH de teste (2222) por
   esse argv; no `ssh` segue o V4.35 (D56, D43) — cobre S3.
-- [ ] V4.38 — (SEG) Dado o contêiner com `ward-app` e `ward-nm` de teste setgid e o
+- [x] V4.38 — (SEG) Dado o contêiner com `ward-app` e `ward-nm` de teste setgid e o
   daemon destravado, quando o agente roda `ward run <entrada livre> --
   /usr/local/bin/ward-app` com o ambiente de D57 copiado igual (e o mesmo com o
   `ward-nm`), então o filho conecta como agente, `revelar` responde "não autorizado" e

@@ -825,6 +825,12 @@ Auditoria de segurança do M4 (2026-11-09): **reprovada** (1ª vez), com 1 crít
   Reauditoria de segurança do M4 (2026-11-09): **aprovada**. Os quatro ataques da 1ª
   auditoria falham agora (oráculo por pty e por tempo, `!cmd` do sftp, grupo do filho,
   `known_hosts` frouxo). Ficaram 1 médio e 2 baixos, levados para a Fase 28g.
+  QA do M4 (2026-11-09): **aprovado**, com evidência em `docs/mission/evidence/M4/`.
+  Itens V4.* marcados no contrato. A exceção é a V4.12: falta o `psql` na máquina, então
+  o túnel foi conferido pelo `pg_select.py`; o `psql` real fica para o QA final.
+  Observação de ambiente: com o `make dev-daemon` padrão (`WARD_DEV_APP` = ponte), o
+  `make teste-cli` falha em V4.30, V4.32 e "27a --token-fd" com "pedido expirado". Com
+  `WARD_DEV_APP=` vazio, passa inteiro (138 ok). Isso entra na 28g.
 - [ ] Fase 28g — Achados da 2ª auditoria do M4 (não bloqueiam o QA).
   - **Médio:** um `write` único acima de 64 KiB mostra o começo do segredo em claro. O
     leitor de pipe/pty do `wardd` corta no tamanho do buffer (`mascara.rs:1285-1300`).
@@ -842,6 +848,8 @@ Auditoria de segurança do M4 (2026-11-09): **reprovada** (1ª vez), com 1 crít
   - Texto: o S4 de `docs/escopo.md` ainda diz "inclusive quando o valor chega quebrado
     entre dois pedaços". Alinhar com D34 revisto ("nunca segurar"; o corte entre leituras
     lentas sai com o começo em claro, risco aceito pelo usuário).
+  - Ambiente (QA do M4): `make teste-cli` exige o daemon sem `WARD_DEV_APP`. Fazer o
+    teste conferir isso e recusar com mensagem clara, ou documentar no CLAUDE.md.
 
 ## Milestone 5 — App desktop
 Contrato: V5.1–V5.35
