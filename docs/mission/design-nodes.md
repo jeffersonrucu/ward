@@ -6,7 +6,7 @@ mantêm o formato `6:xx`; as criadas no FigCraft são `VariableID:n`). O Figma
 `bzu9PxxFur2tU3vlNCHvsY` é só histórico: os ids `n:m` dos handoffs 1–4 **não** valem
 aqui.
 
-Atualizado na Fase 4a (2026-11-08), na Fase 4b (estilos, ícones, coleção `Elevação`), na Fase 4c (componentes base parte 1, `Ação de campo`, brilho e perigo translúcido) na Fase 4d (componentes base parte 2 e de apoio, altura padrão comum `controle/padrao`) na Fase 4g (logo), na Fase 4e (telas de acesso no Layout, logo na navegação) e na Fase 4f (telas de Credenciais e Nível de acesso, campos que esticam, Densidade compacta, Diálogo de filtros, "Cliente" virou "Grupo", selos em minúsculas). Fase 10a: limpeza de tokens e do `Chip de filtro` (seção no fim). Fase 10: conferência final do M0 (seção no fim). Fase 10d: ajustes do scrutiny e do QA do M0 (seção no fim). Fase 37a: correções de D65 (f) e design pendente da Fase 32 (seção no fim). As Fases 5–9a e 10b (feitas em paralelo) foram consolidadas aqui na Fase 10c, que também registra os refinamentos dela (seções no fim do arquivo).
+Atualizado na Fase 4a (2026-11-08), na Fase 4b (estilos, ícones, coleção `Elevação`), na Fase 4c (componentes base parte 1, `Ação de campo`, brilho e perigo translúcido) na Fase 4d (componentes base parte 2 e de apoio, altura padrão comum `controle/padrao`) na Fase 4g (logo), na Fase 4e (telas de acesso no Layout, logo na navegação) e na Fase 4f (telas de Credenciais e Nível de acesso, campos que esticam, Densidade compacta, Diálogo de filtros, "Cliente" virou "Grupo", selos em minúsculas). Fase 10a: limpeza de tokens e do `Chip de filtro` (seção no fim). Fase 10: conferência final do M0 (seção no fim). Fase 10d: ajustes do scrutiny e do QA do M0 (seção no fim). Fase 37a: correções de D65 (f) e design pendente da Fase 32 (seção no fim).  Fase 39d: correções do scrutiny do M5 (contagens de 22, cartões dos formulários, PIN atual, campos esvaziados no erro, diálogos de troca; seção no fim). As Fases 5–9a e 10b (feitas em paralelo) foram consolidadas aqui na Fase 10c, que também registra os refinamentos dela (seções no fim do arquivo).
 
 ## Páginas
 
@@ -1046,3 +1046,89 @@ Lido de uma cópia do `Ward.figcraft` (o original não foi alterado), por `get_n
 | `Restaurar backup / Confirmar` | `16512` (diálogo `16621`, item `16676`, `Campo senha` `16683`, aviso `18775`, legenda `16664`, rodapé `16665`) | `RestaurarBackup.svelte`, etapa `confirmar` (+ `Campo PIN` "PIN atual", que o frame não tem) |
 | `Item de versão` (set) | `11264` (padrão `11243`, selecionado `11265`) | `app/src/lib/componentes/ItemDeVersao.svelte` |
 | `Diálogo de restauração` (set) | `13033` | o `<dialog>` de `RestaurarBackup.svelte` |
+
+## Fase 39d — correções do scrutiny do M5 (design)
+
+Editado no `Ward.figcraft` original pelo MCP `figcraft` headless (cópia de segurança antes,
+no scratchpad da sessão, sha256 `382bafe5…0360`); salvo com `save_file`, reaberto e
+conferido pelo JSON do arquivo (`unzip -t` sem erro). PNG em
+`docs/mission/evidence/fase-39d/`.
+
+### Contagens da fixture (22 entradas, D59)
+
+`dev/fixtures/entradas.json` tem 22 entradas: acme 13, beta 4, gama 3, delta 2. Os 26
+textos "21 entradas · 4 grupos" viraram "22 entradas · 4 grupos" (`4137` `5304` `5660`
+`6039` `6418` `6971` `7495` `7953` `8582` `9026` `9499` `9945` `10434` `10940` `11317`
+`11750` `12215` `12728` `13504` `13912` `14352` `14788` `15444` `15890` `17702` `18100`),
+e os resumos filtrados viraram "2 de 22" (`4475`, Filtrada), "0 de 22" (`19147`, Sem
+resultado) e "3 de 22" (`19404`, Bloqueada). Nenhum frame mostra o grupo delta; os
+grupos acme (13), beta (4) e gama (3) já batiam. Não sobra "21 entradas" nem "de 21" no
+arquivo.
+
+### `Cartão de nível` nos formulários
+
+Os 19 cartões soltos (18 formulários e `Gerador de senha / No formulário`) foram apagados
+e trocados por instâncias do `Cartão de nível` (set `18998`), no mesmo lugar do `corpo`,
+largura `fill`, camada `nível de acesso`. Como no app (`Formulario.svelte`):
+- Novo: `Nível=com aprovação` com a explicação "Toda entrada nova começa assim. Mudar o
+  nível pede o PIN." (override);
+- Edição: a variante do nível da entrada da fixture, com a explicação do componente
+  (a mesma de `NIVEIS` do app; os textos próprios por tipo saíram);
+- o `Botão` "Mudar nível" do cartão fica `Estado=desabilitado` (no formulário o nível
+  muda pelo detalhe de Credenciais).
+
+| Frame | Instância | Variante | Explicação (override) | Botão |
+| --- | --- | --- | --- | --- |
+| `Formulário / login / Novo` `7450` | `19657` (era `7863`) | com aprovação | `19664` | `19665` |
+| `Formulário / banco / Novo` `8537` | `19670` (era `8954`) | com aprovação | `19677` | `19678` |
+| `Formulário / servidor / Novo` `9900` | `19683` (era `10333`) | com aprovação | `19690` | `19691` |
+| `Formulário / api / Novo` `11272` | `19696` (era `11627`) | com aprovação | `19703` | `19704` |
+| `Formulário / aws / Novo` `12170` | `19709` (era `12557`) | com aprovação | `19716` | `19717` |
+| `Formulário / smtp / Novo` `13867` | `19722` (era `14262`) | com aprovação | `19729` | `19730` |
+| `Formulário / ftp/sftp / Novo` `14743` | `19735` (era `15112`) | com aprovação | `19742` | `19743` |
+| `Formulário / nota segura / Novo` `15399` | `19748` (era `15768`) | com aprovação | `19755` | `19756` |
+| `Formulário / genérico / Novo` `15845` | `19761` (era `16155`) | com aprovação | `19768` | `19769` |
+| `Formulário / login / Edição` `6926` (`acme-wp-dev`) | `19774` (era `7221`) | com aprovação | — | `19782` |
+| `Formulário / banco / Edição` `7908` | `19787` (era `8321`) | livre | — | `19794` |
+| `Formulário / servidor / Edição` `8981` | `19799` (era `9398`) | livre | — | `19806` |
+| `Formulário / smtp / Edição` `9454` | `19811` (era `9867`) | livre | — | `19818` |
+| `Formulário / api / Edição` `10389` | `19823` (era `10802`) | livre | — | `19830` |
+| `Formulário / ftp/sftp / Edição` `10895` | `19835` (era `11220`) | livre | — | `19842` |
+| `Formulário / aws / Edição` `11705` | `19847` (era `12060`) | livre | — | `19854` |
+| `Formulário / nota segura / Edição` `12683` | `19859` (era `13008`) | livre | — | `19866` |
+| `Formulário / genérico / Edição` `13459` | `19871` (era `13706`) | livre | — | `19878` |
+| `Gerador de senha / No formulário` `14307` | `19883` (era `14720`) | com aprovação | — | `19891` |
+
+O ícone errado dos cartões "Com aprovação" (check no lugar do cadeado, handoff 37a)
+some com a troca.
+
+### Telas iguais ao comportamento
+
+| Onde | Id | Mudança |
+| --- | --- | --- |
+| `Configurações / Geral` `15242`, linha PIN de aprovação | `15307` (descrição `15310`) | "4 a 6 dígitos. Aprova usos, não destrava. Trocar pede o PIN atual." (era "…pede a senha mestra."); a mesma propriedade `Descrição` em `16236` (`Backup externo ligado`), `16407` (`Restaurar backup / Versões`) e `16570` (`/ Confirmar`) |
+| `Destravar / Senha errada` `3393` | `Campo senha` erro `3427`, texto `valor` `3433` | campo esvaziado: placeholder "Digite a senha mestra" com `texto/secundario` (`6:65`) no lugar dos pontos; contorno de erro e mensagem ficam |
+| `Campo PIN` › `Estado=erro` (componente) | `690` (máscaras `694` `696` `698` `700` `702` `704` ocultas) | erro com as caixas vazias: vale para `Nível de acesso / PIN errado` `6373` (`6779`), `Aprovação / PIN errado` `16885` (`16926`) e `Diálogo de nível` › `Etapa=PIN errado` `1078` (`1103`) — o app esvazia o PIN errado nos dois lugares |
+| `Diálogo de nível` › `Etapa=PIN errado` (componente) | `Botão confirmar` `1125` | `Estado=desabilitado`: com o PIN vazio o app desabilita Confirmar (`pin.length < 4`) |
+
+### Diálogos "Trocar senha mestra" e "Trocar PIN"
+
+Seção `Seção / Diálogos de troca` `19915` (Design System, x 20000, y 0; título `19916`,
+descrição `19917`; fundo `6:56`, raio `VariableID:16`, gap `6:133`, padding `6:136`).
+Componente `Diálogo de troca` (set `19978`), feito a partir do `Modal` `Tipo=padrão`
+(`612`) com os mesmos tokens (largura `VariableID:8`, fundo `6:59`, borda `6:69`, raio
+`VariableID:17`, `Sombra/Modal` `8:21`) e um `corpo` (gap 16) entre o cabeçalho e o
+rodapé. Textos do app (`TrocarSenha.svelte`, `TrocarPin.svelte`).
+
+| Variante | Id | Principais |
+| --- | --- | --- |
+| `Tipo=senha mestra` | `19918` | título "Trocar senha mestra" `19920`; `corpo` `19934`: explicação `19924`, `Campo senha` padrão "Senha mestra atual" `19935`, `Campo senha` foco "Nova senha mestra" (ajuda "Mínimo de 12 caracteres.") `19947`, `força` `19959` (cópia do medidor do primeiro uso), `Campo senha` vazio "Confirmar nova senha" `19966`; rodapé `19925`: "Cancelar" `19926`, "Trocar senha" `19930` |
+| `Tipo=PIN` | `19979` | título "Trocar PIN" `19981`; `corpo` `19985`: explicação `19986`, `Campo PIN` completo "PIN atual" `20039` (ajuda oculta), completo "Novo PIN" `20055` ("4 a 6 dígitos."), digitando "Confirmar novo PIN" `20071` ("Digite o mesmo PIN de novo."), nota "5 erros de PIN seguidos travam o cofre." `20084`; rodapé `20030`: "Cancelar" `20031`, "Trocar PIN" `20035` |
+
+Telas no Layout (1280×800, cópia de `Configurações / Geral` sob a `sobreposição`
+`fundo/sobreposicao`):
+
+| Frame | Id | Posição | Principais |
+| --- | --- | --- | --- |
+| `Configurações / Trocar senha mestra` | `20085` | x 4080, y 11962 | `sobreposição` `20301`; `Diálogo de troca` senha mestra `20411` |
+| `Configurações / Trocar PIN` | `20193` | x 5440, y 11962 | `sobreposição` `20356`; `Diálogo de troca` PIN `20471` |

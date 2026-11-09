@@ -878,10 +878,14 @@ rodarem) e executar `docs/mission/roteiro-usuario.md` na janela nativa (V5.28; t
   os fecham; `unsound = "all"` no `deny.toml` da raiz; registro de risco do menu da
   bandeja no barramento da sessão; mínimo de 12 e NFC da senha mestra também no
   daemon; `teste-logs-app` na tabela do `CLAUDE.md`. V5.10, V5.16, V5.24, V5.32.
-- [ ] Fase 39d — **(DESIGN)** Contagens do `Ward.figcraft` iguais à fixture (22
+- [x] Fase 39d — **(DESIGN)** Contagens do `Ward.figcraft` iguais à fixture (22
   entradas, D59); instâncias de `Cartão de nível` nos 18 formulários; frames `15242`
   (PIN, não senha mestra), `3393` e `6373` iguais ao comportamento; diálogos "Trocar
   senha mestra" e "Trocar PIN". V5.35.
+  Pendências da 39d: `make check` saiu 2 só no `v3_33_kill_9_entre_as_senhas_erradas`
+  por tempo sob carga (load 39) — repetir com a máquina calma; frames de erro dos
+  diálogos de troca não desenhados; nenhum frame do grupo delta; "Mudar nível"
+  desabilitado no formulário (segue o app); "(máximo 4 h)" × D45 com o planner.
 
 ## Milestone 6 — Extensão, `ward login` e `ward playwright`
 Contrato: V6.1–V6.16
