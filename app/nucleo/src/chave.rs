@@ -91,7 +91,7 @@ pub fn ler_chave(caminho: &Path) -> Result<Segredo, String> {
     if meta.len() > MAX_CHAVE as u64 {
         return Err(aviso_grande());
     }
-    let mut conteudo = ler_ate(arquivo, meta.len() as usize)?;
+    let mut conteudo = ler_ate(arquivo)?;
     if conteudo.is_empty() {
         return Err(AVISO_VAZIO.to_owned());
     }
@@ -103,16 +103,26 @@ pub fn ler_chave(caminho: &Path) -> Result<Segredo, String> {
 
 type Lido = zeroize::Zeroizing<Vec<u8>>;
 
-/// Lê no máximo `MAX_CHAVE` bytes (o arquivo pode crescer entre o `fstat` e a leitura).
-fn ler_ate(arquivo: File, tamanho: usize) -> Result<Lido, String> {
-    let mut buf = zeroize::Zeroizing::new(Vec::with_capacity(tamanho.min(MAX_CHAVE) + 1));
-    arquivo
-        .take(MAX_CHAVE as u64 + 1)
-        .read_to_end(&mut buf)
-        .map_err(|_| AVISO_LEITURA.to_owned())?;
-    if buf.len() > MAX_CHAVE {
+/// Lê no máximo `MAX_CHAVE` bytes (o arquivo pode crescer entre o `fstat` e a leitura)
+/// num buffer fixo de `MAX_CHAVE + 1`, alocado uma vez e zerado ao sair (Fase 53d): a
+/// leitura nunca realoca, então nenhum pedaço da chave fica num bloco antigo do heap sem
+/// zerar. O `truncate` só muda o tamanho; a capacidade (e o bloco) continuam os mesmos e
+/// o `Segredo` toma posse dele sem cópia.
+fn ler_ate(mut arquivo: File) -> Result<Lido, String> {
+    let mut buf = zeroize::Zeroizing::new(vec![0u8; MAX_CHAVE + 1]);
+    let mut lidos = 0usize;
+    while lidos < buf.len() {
+        match arquivo.read(&mut buf[lidos..]) {
+            Ok(0) => break,
+            Ok(n) => lidos += n,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(_) => return Err(AVISO_LEITURA.to_owned()),
+        }
+    }
+    if lidos > MAX_CHAVE {
         return Err(aviso_grande());
     }
+    buf.truncate(lidos);
     Ok(buf)
 }
 
@@ -276,6 +286,36 @@ mod testes {
         assert_eq!(
             resposta,
             format!("{{\"resultado\":\"carregada\",\"tamanho\":{}}}", k.len())
+        );
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    /// Fase 53d: a leitura usa um buffer fixo de `MAX_CHAVE + 1` e não realoca; o
+    /// `Segredo` fica com o mesmo bloco (capacidade igual), pequeno, no limite ou acima.
+    #[test]
+    fn ataque_leitura_nao_realoca_o_buffer_da_chave() {
+        let d = pasta("buffer");
+        let k = chave_falsa("OPENSSH PRIVATE KEY", "QUFBQUFBQUFBQUFB");
+        let p = escrever(&d, "pequena", k.as_bytes());
+        let lido = ler_ate(File::open(&p).unwrap()).unwrap();
+        assert_eq!(lido.len(), k.len());
+        assert_eq!(lido.capacity(), MAX_CHAVE + 1);
+        let ptr = lido.as_ptr();
+        let s = Segredo::novo({
+            let mut l = lido;
+            core::mem::take(&mut *l)
+        });
+        assert_eq!(s.expor().as_ptr(), ptr, "o Segredo fica com o mesmo bloco");
+
+        let no_limite = escrever(&d, "limite", &vec![b'Q'; MAX_CHAVE]);
+        let lido = ler_ate(File::open(&no_limite).unwrap()).unwrap();
+        assert_eq!((lido.len(), lido.capacity()), (MAX_CHAVE, MAX_CHAVE + 1));
+
+        // Arquivo maior que o limite (o que cresce depois do `fstat` cai aqui): recusado.
+        let acima = escrever(&d, "acima", &vec![b'Q'; MAX_CHAVE * 2]);
+        assert_eq!(
+            ler_ate(File::open(&acima).unwrap()).err(),
+            Some(aviso_grande())
         );
         let _ = std::fs::remove_dir_all(d);
     }

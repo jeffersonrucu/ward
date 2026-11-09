@@ -132,6 +132,15 @@ pub fn ler_configuracao_na_passagem(antes: EstadoBandeja, depois: EstadoBandeja)
     )
 }
 
+/// Zerar o que o formulário guarda (senhas usadas e chaves carregadas) nesta passagem
+/// de estado? Sempre que o cofre deixa de estar destravado, venha a trava de onde vier
+/// (inatividade, `ward travar`, tela bloqueada, suspensão, daemon fora): sem isso, uma
+/// chave carregada antes da trava ficaria no Rust até o usuário sair do formulário
+/// (Fase 53d, 2ª auditoria do M10).
+pub fn descartar_na_passagem(antes: EstadoBandeja, depois: EstadoBandeja) -> bool {
+    antes == EstadoBandeja::Destravado && depois != EstadoBandeja::Destravado
+}
+
 /// Textos do menu (frames `Bandeja / Destravado` `17269` e `/ Travado` `17300`). O
 /// subtítulo do destravado aqui é o genérico; com o tempo lido, [`subtitulo_destravado`].
 pub fn aparencia(estado: EstadoBandeja) -> Aparencia {
@@ -409,6 +418,26 @@ mod testes {
         }
         assert!(!ler_configuracao_na_passagem(SemDaemon, Destravado));
         assert!(!ler_configuracao_na_passagem(Destravado, Destravado));
+    }
+
+    /// Fase 53d: toda saída de destravado (trava de fora ou daemon fora) descarta o
+    /// formulário; nenhuma outra passagem descarta.
+    #[test]
+    fn ataque_trava_de_fora_descarta_o_formulario() {
+        use EstadoBandeja::*;
+        for depois in [Travado, SemCofre, SemDaemon] {
+            assert!(descartar_na_passagem(Destravado, depois), "{depois:?}");
+        }
+        for antes in TODOS {
+            for depois in TODOS {
+                if antes != Destravado || depois == Destravado {
+                    assert!(
+                        !descartar_na_passagem(antes, depois),
+                        "{antes:?} -> {depois:?}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]

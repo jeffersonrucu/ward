@@ -218,7 +218,7 @@ execute o Chrome instalado ainda consegue se passar por ele (RA10, risco aceito,
 1. Copie o manifesto para uma pasta do root e confira a cópia. Assim nada do seu
    usuário consegue trocá-lo entre a conferência e a instalação. Troque `<nome>` pelo
    nome do arquivo, sem o `.json` (por exemplo, `com.1password.1password`). Rode tudo
-   no mesmo terminal, porque o passo 2 usa a função `conferir_host`:
+   no mesmo terminal, porque o passo 2 usa a função `conferir_host` do bloco seguinte:
 
    ```sh
    nome='<nome>'
@@ -228,57 +228,78 @@ execute o Chrome instalado ainda consegue se passar por ele (RA10, risco aceito,
    cat ~/.config/google-chrome/NativeMessagingHosts/"$nome".json | sudo tee /root/ward-nm-hosts/"$nome".json >/dev/null
    sudo chmod 0600 /root/ward-nm-hosts/"$nome".json
    sudo python3 -I -m json.tool /root/ward-nm-hosts/"$nome".json
-
-   # Confere o `name` e o `path` da cópia: o programa e cada pasta acima dele são do
-   # root, sem escrita para grupo e outros, sem link, e o programa não é script.
-   conferir_host() {
-       sudo python3 -I - /root/ward-nm-hosts/"$nome".json "$nome" <<'PY'
-   import json, os, stat, sys
-   arq, nome = sys.argv[1], sys.argv[2]
-   def nao(motivo):
-       sys.exit("NÃO COPIE: " + motivo)
-   m = json.load(open(arq))
-   if m.get("name") != nome or nome == "br.ward.nm":
-       nao("o name não é %r (ou é br.ward.nm)" % nome)
-   p = m.get("path")
-   if not isinstance(p, str) or not p.startswith("/") or os.path.normpath(p) != p:
-       nao("o path não é um caminho absoluto simples: %r" % (p,))
-   atual = p
-   while True:
-       try:
-           st = os.lstat(atual)
-       except OSError as e:
-           nao("%s: %s" % (atual, e.strerror))
-       if stat.S_ISLNK(st.st_mode):
-           nao("%s é um link" % atual)
-       if st.st_uid != 0:
-           nao("%s não é do root (dono uid %d)" % (atual, st.st_uid))
-       if st.st_mode & 0o022:
-           nao("%s tem escrita para grupo ou outros (%o)" % (atual, stat.S_IMODE(st.st_mode)))
-       if atual == "/":
-           break
-       atual = os.path.dirname(atual)
-   st = os.lstat(p)
-   if not stat.S_ISREG(st.st_mode):
-       nao("%s não é um arquivo comum" % p)
-   with open(p, "rb") as f:
-       if f.read(2) == b"#!":
-           nao("%s é um script (#!): o interpretador e o que ele carrega podem vir do seu home" % p)
-   print("ok: %s e cada pasta acima são do root e sem escrita para grupo e outros" % p)
-   PY
-   }
-   conferir_host
    ```
 
-   Confira na saída:
-   - a última linha começa com `ok:`. Se começar com `NÃO COPIE`, pare aqui, apague a
-     cópia (`sudo rm /root/ward-nm-hosts/"$nome".json`) e deixe esse app sem a ponte
-     com o Chrome;
-   - `"path"` é um caminho absoluto do app que você conhece (por exemplo,
-     `/opt/1Password/…`);
-   - `"allowed_origins"` só tem a extensão desse app.
+Depois, no mesmo terminal, defina e rode a `conferir_host`. Este bloco fica fora da
+lista e sem recuo de propósito: o `PY` que fecha o heredoc só fecha se estiver no
+começo da linha, e o Python não aceita recuo nas linhas de fora. Copie o bloco inteiro
+como está, da página ou do arquivo cru; se o seu editor ou terminal acrescentar
+espaços no começo das linhas, a função não funciona (o shell fica esperando o `PY`).
 
-   Se algo não bater, pare e apague a cópia (`sudo rm /root/ward-nm-hosts/"$nome".json`).
+```sh
+# Confere o `name` e o `path` da cópia: o programa e cada pasta acima dele são do
+# root, sem escrita para grupo e outros, sem link, e o programa não é script.
+conferir_host() {
+    sudo python3 -I - /root/ward-nm-hosts/"$nome".json "$nome" <<'PY'
+import json, os, stat, sys
+arq, nome = sys.argv[1], sys.argv[2]
+def nao(motivo):
+    sys.exit("NÃO COPIE: " + motivo)
+m = json.load(open(arq))
+if m.get("name") != nome or nome == "br.ward.nm":
+    nao("o name não é %r (ou é br.ward.nm)" % nome)
+p = m.get("path")
+if not isinstance(p, str) or not p.startswith("/") or os.path.normpath(p) != p:
+    nao("o path não é um caminho absoluto simples: %r" % (p,))
+atual = p
+while True:
+    try:
+        st = os.lstat(atual)
+    except OSError as e:
+        nao("%s: %s" % (atual, e.strerror))
+    if stat.S_ISLNK(st.st_mode):
+        nao("%s é um link" % atual)
+    if st.st_uid != 0:
+        nao("%s não é do root (dono uid %d)" % (atual, st.st_uid))
+    if st.st_mode & 0o022:
+        nao("%s tem escrita para grupo ou outros (%o)" % (atual, stat.S_IMODE(st.st_mode)))
+    if atual == "/":
+        break
+    atual = os.path.dirname(atual)
+st = os.lstat(p)
+if not stat.S_ISREG(st.st_mode):
+    nao("%s não é um arquivo comum" % p)
+with open(p, "rb") as f:
+    if f.read(2) == b"#!":
+        nao("%s é um script (#!): o interpretador e o que ele carrega podem vir do seu home" % p)
+print("ok: %s e cada pasta acima são do root e sem escrita para grupo e outros" % p)
+PY
+}
+conferir_host
+```
+
+Confira na saída:
+- a última linha começa com `ok:`. Se começar com `NÃO COPIE`, pare aqui, apague a
+  cópia (`sudo rm /root/ward-nm-hosts/"$nome".json`) e deixe esse app sem a ponte
+  com o Chrome;
+- `"path"` é um caminho absoluto do app que você conhece (por exemplo,
+  `/opt/1Password/…`);
+- `"allowed_origins"` só tem a extensão desse app.
+
+Um `path` que começa por `/bin/` (ou `/sbin/`) dá `NÃO COPIE: /bin é um link` (ou
+`/sbin é um link`): no Ubuntu, `/bin` e `/sbin` são links para `/usr/bin` e
+`/usr/sbin`, e a `conferir_host` recusa link em qualquer ponto do caminho. O mesmo
+programa por `/usr/bin/...` (ou `/usr/sbin/...`) passa. Se for esse o único motivo,
+troque o `path` da cópia do root para a forma `/usr/...`, confira a cópia de novo e
+rode a `conferir_host` outra vez:
+
+```sh
+sudo python3 -I -c 'import json, sys; a = sys.argv[1]; m = json.load(open(a)); p = m["path"]; assert p.startswith(("/bin/", "/sbin/")), p; m["path"] = "/usr" + p; json.dump(m, open(a, "w"), indent=2)' /root/ward-nm-hosts/"$nome".json
+sudo python3 -I -m json.tool /root/ward-nm-hosts/"$nome".json
+conferir_host
+```
+
+Se algo não bater, pare e apague a cópia (`sudo rm /root/ward-nm-hosts/"$nome".json`).
 
 2. Instale a cópia conferida na pasta do sistema. O comando roda a conferência do passo
    1 de novo e só instala se ela passar; também não sobrescreve um arquivo que já
