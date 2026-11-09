@@ -1136,6 +1136,26 @@ Decisão do usuário (2026-11-09) sobre o crítico do M9: política com
   - D60 não cobre sudoers com `(:ALL)`/`Runas_Alias` amplo nem outro módulo PAM.
   - O PRD D18 continua desatualizado.
 
+2ª auditoria de segurança do M9 (2026-11-09): **reprovada** (2ª reprovação do M9).
+O vetor da 1ª auditoria está fechado (`teste-politica-chrome` 0) e os baixos também.
+`make check` 0, com 902 testes. Achados novos:
+- **Crítico:** exec com troca de pai, em `processo.rs:412` (`conferir_pai`) e
+  `processo.rs:443-445` (`classificar`). Um processo do uid faz fork do filho, que espera e
+  faz exec do `ward-nm` setgid. O pai então faz exec do `/opt/google/chrome/chrome`
+  instalado. O `ward-nm` vê o Chrome do root como pai e vira extensão. O ataque tirou 4
+  senhas/TOTP do `wardd` de teste, sem manifesto e sem extensão, com uns 60 linhas de
+  Python. Nenhuma conferência local resolve: horário de início não, por causa do subreaper;
+  os fds também não, porque o processo é não-dumpable. S1 quebrada.
+- **Alto:** a extensão force-installed fica no perfil do usuário. Trocar o `sw.js`,
+  recalcular `_metadata/computed_hashes.json` e apagar o `Service Worker` faz o Chrome
+  rodar o código adulterado com o mesmo id. A defesa "extensão em pasta do root" (modelo
+  2 do escopo) não vale no Linux.
+- **Alto:** o guia 4a manda copiar para o sistema o manifesto de outros apps cujo `path`
+  é gravável pelo usuário (Claude in Chrome). Um script nessa posição é filho do Chrome e
+  reabre o ataque original.
+- **Baixo:** o D60 não vê grupo de outra fonte do NSS (`group: files sss`).
+O M9 reprovou duas vezes: a decisão é do usuário.
+
 ## Milestone 10 — Migração e saída do KeePassXC
 Contrato: V10.1–V10.4
 
