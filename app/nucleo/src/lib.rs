@@ -30,6 +30,8 @@
 //!   Rust antes do `criar_cofre`; o daemon grava só o hash do PIN (D30).
 //! - [`aprovacao`]: janela de aprovação (Fase 36): pedidos do daemon com o texto do
 //!   agente neutralizado (D51) e a resposta com PIN, só pela janela `aprovacao`.
+//! - [`bandeja`]: ícone e menu da bandeja (Fase 39): textos por estado, ações (nenhuma
+//!   revela, copia ou aprova) e a pasta 0700 do ícone.
 //! - [`servico`]: o que cada comando faz. Nenhuma resposta leva segredo (S1, S11).
 
 #![forbid(unsafe_code)]
@@ -37,6 +39,7 @@
 pub mod anexos;
 pub mod aprovacao;
 pub mod area_transferencia;
+pub mod bandeja;
 pub mod cliente;
 pub mod comandos;
 pub mod credenciais;

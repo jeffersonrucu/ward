@@ -302,6 +302,15 @@ pub fn destravar<D: Daemon + ?Sized>(
     }
 }
 
+/// `travar` ("Travar agora" da janela e da bandeja, Fase 39): sem campo. O daemon zera a
+/// chave e responde `ok` (travado já, também `ok`).
+pub fn travar<D: Daemon + ?Sized>(daemon: &mut D) -> Result<(), ErroApp> {
+    match pedir(daemon, &Pedido::Travar)? {
+        Resposta::Ok => Ok(()),
+        _ => Err(ErroApp::RespostaInvalida),
+    }
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;

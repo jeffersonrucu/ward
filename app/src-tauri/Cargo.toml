@@ -28,7 +28,10 @@ ward-app-nucleo = { path = "../nucleo" }
 # acrescentado em tempo de execução), `x11`, `dbus` e `common-controls-v6`.
 # `custom-protocol`: a interface vem sempre embutida no binário (`tauri://localhost`),
 # nunca de um servidor de desenvolvimento (S11: nenhum conteúdo remoto).
-tauri = { version = "=2.12.5", default-features = false, features = ["wry", "compression", "custom-protocol"] }
+# `tray-icon` (Fase 39, V5.23): ícone e menu da bandeja pelo AppIndicator. Traz
+# `tray-icon`, `libappindicator(-sys)` e `libloading` (a biblioteca do sistema é aberta
+# na hora; o app confere antes que ela existe, senão o crate entra em pânico).
+tauri = { version = "=2.12.5", default-features = false, features = ["wry", "compression", "custom-protocol", "tray-icon"] }
 serde = { version = "1", features = ["derive"] }
 # Diálogo "Adicionar arquivo" no lado Rust (Fase 34, S11): o mesmo gtk 0.18 que o
 # Tauri/wry já trazem; nenhum crate novo no Cargo.lock.

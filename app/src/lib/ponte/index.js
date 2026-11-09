@@ -41,20 +41,24 @@ export async function chamar(comando, args = {}) {
 }
 
 /** Os avisos que o lado Rust manda pelo canal (D65 a), um por janela. */
-export const AVISOS = Object.freeze(['pedido-de-destrave', 'pedido-de-aprovacao']);
+export const AVISOS = Object.freeze(['pedido-de-destrave', 'pedido-de-aprovacao', 'estado-mudou']);
 
 /**
  * Avisos do lado Rust (D65 a): `aoChegar()` é chamado quando chega o `aviso` — na
  * janela principal, `pedido-de-destrave` (Fase 31); na de aprovação,
- * `pedido-de-aprovacao` (Fase 36). O aviso não traz dado; quem recebe consulta. No app,
+ * `pedido-de-aprovacao` (Fase 36); na principal também `estado-mudou` (Fase 39: o cofre
+ * travou pela bandeja, sozinho ou pela CLI). O aviso não traz dado; quem recebe consulta. No app,
  * pelo canal do Tauri (`ouvir_avisos`, um por janela); na ponte de teste, que não tem
  * canal, por consulta periódica. Devolve a função que para de ouvir.
  * @param {() => Promise<void> | void} aoChegar
- * @param {string} [aviso]
+ * @param {string | string[]} [aviso]
  * @returns {Promise<() => void>}
  */
-export async function ouvirAvisos(aoChegar, aviso = 'pedido-de-destrave') {
-  if (!AVISOS.includes(aviso)) throw falha('aviso-desconhecido', 'aviso desconhecido');
+export async function ouvirAvisos(aoChegar, aviso = ['pedido-de-destrave', 'estado-mudou']) {
+  const avisos = Array.isArray(aviso) ? aviso : [aviso];
+  if (avisos.length === 0 || !avisos.every((a) => AVISOS.includes(a))) {
+    throw falha('aviso-desconhecido', 'aviso desconhecido');
+  }
   if (import.meta.env.MODE === 'teste' && !('__TAURI_INTERNALS__' in window)) {
     const { ouvirPorConsulta } = await import('./ponte-teste.js');
     return ouvirPorConsulta(aoChegar);
@@ -62,7 +66,7 @@ export async function ouvirAvisos(aoChegar, aviso = 'pedido-de-destrave') {
   let ativo = true;
   const canal = new Channel();
   canal.onmessage = (m) => {
-    if (ativo && m && m.aviso === aviso) aoChegar();
+    if (ativo && m && avisos.includes(m.aviso)) aoChegar();
   };
   try {
     await invoke('ouvir_avisos', { canal });

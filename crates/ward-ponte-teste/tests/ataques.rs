@@ -831,3 +831,46 @@ fn ataque_destravar_pela_ponte() {
     assert_eq!(r.corpo_json().unwrap()["codigo"], "pedido-invalido");
     let _ = fs::remove_dir_all(base);
 }
+
+/// Fase 39 (V5.23, S12): "Travar agora" pela ponte. Argumento qualquer é recusado; o
+/// travar limpa a área de transferência que ainda tem o valor copiado e deixa o cofre
+/// travado (revelar responde "travado"); a resposta não traz valor.
+#[test]
+fn ataque_travar_pela_ponte() {
+    let (p, _l, area, base) = ponte("travar");
+    let r = p.responder(&post(&p, "travar", r#"{"x":1}"#, &[]));
+    assert_eq!(r.corpo_json().unwrap()["codigo"], "pedido-invalido");
+    let estado = |p: &Ponte<DaemonFalso, Area>| {
+        p.responder(&post(p, "estado_do_cofre", "{}", &[]))
+            .corpo_json()
+            .unwrap()["valor"]["estado"]
+            .clone()
+    };
+    assert_eq!(estado(&p), "destravado");
+    p.responder(&post(
+        &p,
+        "copiar_campo",
+        r#"{"entrada":"acme-pg-dev","campo":"senha"}"#,
+        &[],
+    ));
+    let copiado = area.0.lock().unwrap().is_some();
+    let r = p.responder(&post(&p, "travar", "{}", &[]));
+    let texto = String::from_utf8_lossy(&r.corpo).into_owned();
+    assert_eq!(
+        r.corpo_json().unwrap(),
+        serde_json::json!({"ok": true, "valor": null})
+    );
+    assert!(!texto.contains("falso-"), "{texto}");
+    if copiado {
+        assert!(area.0.lock().unwrap().is_none(), "área não foi limpa");
+    }
+    assert_eq!(estado(&p), "travado");
+    let r = p.responder(&post(
+        &p,
+        "revelar_campo",
+        r#"{"entrada":"acme-pg-dev","campo":"senha"}"#,
+        &[],
+    ));
+    assert_eq!(r.corpo_json().unwrap()["codigo"], "travado");
+    let _ = fs::remove_dir_all(base);
+}

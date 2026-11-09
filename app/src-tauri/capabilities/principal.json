@@ -24,6 +24,7 @@
     "allow-conectar",
     "allow-criar-cofre",
     "allow-destravar",
-    "allow-ouvir-avisos"
+    "allow-ouvir-avisos",
+    "allow-travar"
   ]
 }
