@@ -68,7 +68,7 @@ pub use pedido::{
 pub use resposta::{
     AnexoDetalhe, DetalheEntrada, ExtraDetalhe, Fluxo, ItemLista, MAX_BACKUPS, MAX_PENDRIVES,
     MAX_RESTANTE_DESTRAVE, MAX_ROTULO, PedidoDeAprovacao, PedidoDeDestrave, Pendrive, Resposta,
-    ResumoItem, Sugestao,
+    ResumoItem, Sugestao, VersaoBackup,
 };
 
 /// Versão do protocolo.
@@ -232,8 +232,8 @@ tabela! {
     Sugestoes = "sugestoes", SO_EXTENSAO, "Entradas sugeridas para a aba.";
     Preenchimento = "preenchimento", SO_EXTENSAO, "Usuário, senha e TOTP para preencher.";
     PedidoDeLogin = "pedido_de_login", SO_EXTENSAO, "`ward login` (Fase 43): id e nome da entrada, sem valor.";
-    Backups = "backups", SO_APP, "Nomes das versões do backup local (D17, Fase 45).";
-    Configuracao = "configuracao", SO_APP, "Tempo de trava em minutos e backup externo ligado ou não (Fase 38).";
+    Backups = "backups", SO_APP, "Nomes das versões do backup local, sem as de data futura, com as marcas conferida e fora de ordem, sem a geração (D17, D39, Fases 45 e 49a).";
+    Configuracao = "configuracao", SO_APP, "Tempo de trava em minutos, backup externo ligado ou não e pasta do backup local segura ou não (Fases 38 e 49a).";
     BackupExterno = "backup_externo", SO_APP, "Configuração do backup externo (D17, D30, Fase 46).";
     Pendrives = "pendrives", SO_APP, "Pendrives vistos pelo udisks2: UUID, rótulo e se está montado (Fase 46).";
 }

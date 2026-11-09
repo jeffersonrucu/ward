@@ -685,8 +685,8 @@ impl<D: Daemon, A: AreaTransferencia> Servico<D, A> {
     /// mais antiga, só com o nome e o instante (do nome). Nenhum conteúdo, tamanho ou
     /// caminho: o protocolo não traz.
     pub fn listar_backups(&self) -> Result<Vec<VersaoVista>, ErroApp> {
-        let nomes = cliente::backups(&mut *self.daemon()?)?;
-        restaurar::versoes_de(&nomes)
+        let lista = cliente::backups(&mut *self.daemon()?)?;
+        restaurar::versoes_de(&lista)
     }
 
     /// `restaurar_backup { versao, senha, pin }` (Fase 47, V7.7; D17, D39, S9). A versão
@@ -698,7 +698,7 @@ impl<D: Daemon, A: AreaTransferencia> Servico<D, A> {
         let Restauracao { versao, senha, pin } = pedido;
         restaurar::versao_pedida(&versao)?;
         let mut d = self.daemon()?;
-        if !cliente::backups(&mut *d)?.contains(&versao) {
+        if !cliente::backups(&mut *d)?.iter().any(|b| b.nome == versao) {
             return Err(ErroApp::BackupInexistente);
         }
         let r = cliente::restaurar_backup(&mut *d, &versao, &senha, &pin);

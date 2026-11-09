@@ -178,3 +178,19 @@ sudo dpkg -r ward          # ou sudo dpkg -P ward; ou sudo make uninstall
 A remoção para e desliga todo `wardd@*`, apaga os arquivos, os overrides, `/run/ward`
 e os grupos. O cofre e os backups em `~/.local/share/ward/` ficam. Os grupos
 `ward-app` e `ward-nm` saem mesmo se já existiam antes da instalação.
+
+## 7. Backup externo: como o Ward reconhece o pendrive
+
+O pendrive do backup externo é reconhecido **só pelo UUID do sistema de arquivos**
+(o que aparece em "Configurações › Backup externo" e no `lsblk -f`). O UUID não é
+segredo: quem já viu o seu pendrive pode formatar outro com o mesmo UUID
+(`mkfs.vfat -i`, `tune2fs -U`) e, se esse outro estiver conectado e montado no lugar
+do seu, recebe as cópias. As cópias são o cofre cifrado com a senha mestra de cada
+versão, então ninguém abre nada sem ela, mas é uma cópia a mais fora da sua mão.
+Por isso:
+
+- só conecte o pendrive escolhido na sua máquina, com o cofre destravado;
+- se aparecerem dois pendrives com o mesmo UUID ao mesmo tempo, o Ward não copia
+  para nenhum (o log do `wardd` diz "mais de um pendrive com o mesmo UUID");
+- se perder o pendrive, troque a senha mestra (as cópias antigas continuam com a
+  senha antiga) e escolha outro pendrive em "Trocar".

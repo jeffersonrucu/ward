@@ -90,12 +90,19 @@ pub struct DaemonFalso {
     /// Versões do backup local (Fase 47), da mais nova para a mais antiga; `None` é a
     /// pasta de backups indisponível.
     backups: Option<Vec<BackupFalso>>,
+    /// Geração do cofre atual (Fase 49a): a que o atual leva ao virar backup.
+    geracao: u64,
+    /// A pasta do backup local é segura (Fase 49a); `false` no modo
+    /// `backup-local-inseguro`.
+    backup_local: bool,
 }
 
 /// Uma versão falsa do backup local (Fase 47): o nome, a senha mestra que valia nela e
 /// as entradas. Só em memória.
 pub struct BackupFalso {
     nome: String,
+    /// A geração selada (Fase 49a); `None` como a de outra senha mestra.
+    geracao: Option<u64>,
     senha: Zeroizing<Vec<u8>>,
     entradas: EntradasDoBackup,
 }
@@ -146,6 +153,7 @@ pub fn backups_de_teste(agora: std::time::SystemTime) -> Vec<BackupFalso> {
             let nome = wc::backup::Versao::do_instante(agora.checked_sub(*idade)?)?.nome();
             Some(BackupFalso {
                 nome,
+                geracao: u64::try_from(VERSOES_FALSAS - i).ok(),
                 senha: Zeroizing::new(cofre_teste::SENHA_MESTRA.as_bytes().to_vec()),
                 entradas: EntradasDoBackup::Teste { menos: i.min(6) },
             })
@@ -257,7 +265,37 @@ impl DaemonFalso {
         DaemonFalso {
             entradas: cofre_teste::cofre_de_teste(),
             backups: Some(backups_de_teste(std::time::SystemTime::now())),
+            geracao: VERSOES_FALSAS as u64 + 1,
             ..DaemonFalso::vazio()
+        }
+    }
+
+    /// Fase 49a: o cheio com uma cópia antiga (geração 3) plantada com o nome de daqui
+    /// a 1 min, dentro da margem do relógio: aparece no topo, marcada pela geração.
+    pub fn backup_plantado() -> DaemonFalso {
+        let mut d = DaemonFalso::cheio();
+        let agora = std::time::SystemTime::now() + std::time::Duration::from_secs(60);
+        if let (Some(lista), Some(v)) = (d.backups.as_mut(), wc::backup::Versao::do_instante(agora))
+        {
+            lista.insert(
+                0,
+                BackupFalso {
+                    nome: v.nome(),
+                    geracao: Some(3),
+                    senha: Zeroizing::new(cofre_teste::SENHA_MESTRA.as_bytes().to_vec()),
+                    entradas: EntradasDoBackup::Teste { menos: 6 },
+                },
+            );
+        }
+        d
+    }
+
+    /// Fase 49a: o cheio com a pasta do backup local insegura (a linha "Backup local"
+    /// de Configurações avisa).
+    pub fn backup_local_inseguro() -> DaemonFalso {
+        DaemonFalso {
+            backup_local: false,
+            ..DaemonFalso::cheio()
         }
     }
 
@@ -277,6 +315,8 @@ impl DaemonFalso {
             backup: wc::configuracao::BackupExterno::desligado(),
             pendrives: Some(pendrives_de_teste()),
             backups: Some(Vec::new()),
+            geracao: 1,
+            backup_local: true,
         }
     }
 
@@ -533,6 +573,7 @@ impl DaemonFalso {
             Pedido::Configuracao => Resposta::Configuracao {
                 minutos_trava: self.minutos_trava,
                 backup_externo: self.backup.ligado(),
+                backup_local: self.backup_local,
             },
             // Fase 48: a mesma regra do `wardd` (Fase 46): só o formato de D45; ligado
             // exige UUID. Nada é copiado (não há pendrive de verdade).
@@ -555,7 +596,24 @@ impl DaemonFalso {
             },
             // Fase 47: a mesma regra do `wardd` (Fase 45).
             Pedido::Backups => match &self.backups {
-                Some(l) => Resposta::Backups(l.iter().map(|b| b.nome.clone()).collect()),
+                // A mesma regra do `wardd` (Fase 49a): a geração fica aqui; só as marcas.
+                Some(l) => {
+                    let com: Vec<_> = l
+                        .iter()
+                        .filter_map(|b| Some((wc::backup::Versao::de_nome(&b.nome)?, b.geracao)))
+                        .collect();
+                    let marcas = wc::backup::fora_de_ordem(&com);
+                    Resposta::Backups(
+                        com.iter()
+                            .zip(marcas)
+                            .map(|((v, g), fora)| wc::protocolo::VersaoBackup {
+                                nome: v.nome(),
+                                conferida: g.is_some(),
+                                fora_de_ordem: fora,
+                            })
+                            .collect(),
+                    )
+                }
                 None => Resposta::Erro(ErroResposta::BackupIndisponivel),
             },
             Pedido::RestaurarBackup { versao, senha, pin } => {
@@ -656,6 +714,7 @@ impl DaemonFalso {
         };
         let atual = BackupFalso {
             nome: agora,
+            geracao: Some(self.geracao),
             senha: senha_atual,
             entradas: EntradasDoBackup::Guardadas(std::mem::replace(&mut self.entradas, entradas)),
         };
@@ -663,6 +722,7 @@ impl DaemonFalso {
         lista.retain(|b| b.nome != atual.nome);
         lista.insert(0, atual);
         lista.truncate(VERSOES_FALSAS);
+        self.geracao = self.geracao.saturating_add(1);
         self.senha = Some(senha_da_versao);
         self.hash_pin = None;
         self.erros_pin = 0;

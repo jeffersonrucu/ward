@@ -363,6 +363,21 @@ pub struct Pendrive {
     pub montado: bool,
 }
 
+/// Uma versão do backup local (Fase 45, Fase 49a): o nome do arquivo e o que o daemon
+/// conferiu nela. A data do nome é só do nome (qualquer processo do usuário pode
+/// escolhê-la); a geração selada no corpo não dá para forjar, mas fica no daemon (D39:
+/// nenhuma resposta leva a geração). Vão só as marcas:
+/// - `conferida`: a versão abre com a chave do cofre aberto (AEAD); `false` para versões
+///   de outra senha mestra;
+/// - `fora_de_ordem`: a geração dela é menor que a de uma versão com data anterior
+///   ([`crate::backup::fora_de_ordem`]); só com `conferida`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VersaoBackup {
+    pub nome: String,
+    pub conferida: bool,
+    pub fora_de_ordem: bool,
+}
+
 /// Resposta do daemon.
 #[derive(Debug)]
 pub enum Resposta {
@@ -409,15 +424,19 @@ pub enum Resposta {
         id: String,
         entrada: String,
     },
-    /// Nomes das versões do backup local, da mais nova para a mais antiga (Fase 45). Só
-    /// nomes no formato exato; nenhum caminho, conteúdo ou geração.
-    Backups(Vec<String>),
+    /// Versões do backup local, da mais nova para a mais antiga pela data do nome
+    /// (Fase 45), sem as do futuro (Fase 49a). Só nomes no formato exato e a geração
+    /// selada de cada uma; nenhum caminho nem conteúdo.
+    Backups(Vec<VersaoBackup>),
     /// A parte da configuração do cofre que a tela Configurações mostra (Fase 38): o
-    /// tempo de trava e se o backup externo está ligado. Nunca o hash do PIN nem o UUID
-    /// do pendrive.
+    /// tempo de trava, se o backup externo está ligado e se a pasta do backup local é
+    /// segura (Fase 49a: `false` quando ela não abre ou não é um diretório 0700 do
+    /// usuário, e então o cofre é gravado sem backup). Nunca o hash do PIN, o UUID do
+    /// pendrive nem caminho.
     Configuracao {
         minutos_trava: u32,
         backup_externo: bool,
+        backup_local: bool,
     },
     /// Configuração do backup externo (Fase 46): ligado ou não e o UUID do pendrive.
     BackupExterno {
@@ -538,7 +557,9 @@ impl Resposta {
             Resposta::CodigoTotp { codigo, restante } => {
                 ok(digitos_totp(codigo) && (1..=30).contains(restante))
             }
-            Resposta::Backups(l) => ok(l.len() <= MAX_BACKUPS && l.iter().all(|n| backup_ok(n))),
+            Resposta::Backups(l) => ok(l.len() <= MAX_BACKUPS
+                && l.iter()
+                    .all(|v| backup_ok(&v.nome) && (v.conferida || !v.fora_de_ordem))),
             Resposta::Configuracao { minutos_trava, .. } => {
                 ok((MIN_MINUTOS_TRAVA..=MAX_MINUTOS_TRAVA).contains(minutos_trava))
             }
@@ -739,16 +760,31 @@ impl Resposta {
             }
             Resposta::Backups(l) => {
                 e.chave("versoes");
-                escrever_textos(e, l);
+                e.lista(|e| {
+                    for v in l {
+                        e.item();
+                        e.objeto(|e| {
+                            e.chave("nome");
+                            e.texto(&v.nome);
+                            e.chave("conferida");
+                            e.logico(v.conferida);
+                            e.chave("fora_de_ordem");
+                            e.logico(v.fora_de_ordem);
+                        });
+                    }
+                });
             }
             Resposta::Configuracao {
                 minutos_trava,
                 backup_externo,
+                backup_local,
             } => {
                 e.chave("minutos_trava");
                 e.inteiro(u64::from(*minutos_trava));
                 e.chave("backup_externo");
                 e.logico(*backup_externo);
+                e.chave("backup_local");
+                e.logico(*backup_local);
             }
             Resposta::BackupExterno { ligado, uuid } => {
                 e.chave("ligado");
@@ -1151,13 +1187,26 @@ pub(crate) fn ler(papel: Papel, tipo: TipoResposta, mut c: Campos) -> R<Resposta
             }
             Resposta::Sugestoes(itens)
         }
-        TipoResposta::Backups => Resposta::Backups(textos_de(
-            c.lista("versoes", MAX_BACKUPS)?,
-            crate::limites::MAX_NOME,
-        )?),
+        TipoResposta::Backups => {
+            let mut versoes = Vec::new();
+            for v in c.lista("versoes", MAX_BACKUPS)? {
+                let mut o = Campos::de(v)?;
+                let nome = o.texto("nome", crate::limites::MAX_NOME)?;
+                let conferida = o.logico("conferida")?;
+                let fora_de_ordem = o.logico("fora_de_ordem")?;
+                o.fim()?;
+                versoes.push(VersaoBackup {
+                    nome,
+                    conferida,
+                    fora_de_ordem,
+                });
+            }
+            Resposta::Backups(versoes)
+        }
         TipoResposta::Configuracao => Resposta::Configuracao {
             minutos_trava: u32::try_from(c.inteiro("minutos_trava")?).map_err(|_| JsonInvalido)?,
             backup_externo: c.logico("backup_externo")?,
+            backup_local: c.logico("backup_local")?,
         },
         TipoResposta::BackupExterno => Resposta::BackupExterno {
             ligado: c.logico("ligado")?,

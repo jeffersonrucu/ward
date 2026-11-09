@@ -29,6 +29,18 @@
 //!   próxima.
 //! - Depois de copiar, o pendrive fica com as [`VERSOES`] mais novas (pela data do
 //!   nome), nunca apagando o que acabou de copiar nem o que não tem nome de versão.
+//!   **Datas futuras** (Fase 49a): só versões com data até agora contam e podem ser
+//!   apagadas ([`ward_core::backup::para_apagar`]); as plantadas com data futura (no
+//!   pendrive ou no backup local) não fazem as reais saírem. Do backup local só vão as
+//!   versões até agora + [`ward_core::backup::MARGEM_FUTURO`].
+//! - **O pendrive é reconhecido só pelo UUID do sistema de arquivos** (Fase 49a). O UUID
+//!   não é segredo nem prova de nada: quem tem um pendrive pode formatar outro com o
+//!   mesmo UUID (`mkfs.vfat -i`, `tune2fs -U`) e, com ele conectado e montado no lugar do
+//!   escolhido, recebe as cópias. Isso não abre nada, porque cada cópia é o arquivo
+//!   cifrado com a senha mestra da versão (S2, S6), mas é uma cópia a mais fora da sua
+//!   mão. Dois pendrives com o mesmo UUID conectados ao mesmo tempo não recebem nada
+//!   (`Ambiguo`). Não há marcador na pasta `ward-backup/`: um arquivo plantado no
+//!   pendrive não seria mais difícil de copiar do que o UUID.
 //!
 //! O log só tem textos fixos ([`ErroExterno::codigo`]): nem UUID, nem rótulo, nem
 //! caminho.
@@ -41,8 +53,9 @@ use std::os::fd::{AsFd, AsRawFd};
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::SystemTime;
 
-use ward_core::backup::{VERSOES, Versao};
+use ward_core::backup::{Versao, para_apagar};
 use ward_core::formato;
 use ward_plataforma::pasta::renomear_sem_sobrescrever;
 
@@ -267,24 +280,17 @@ fn gravar_versao(destino: &File, v: Versao, bytes: &[u8]) -> io::Result<bool> {
     }
 }
 
-/// Apaga as versões mais antigas do pendrive até sobrarem [`VERSOES`], nunca uma das
-/// `novas` e só arquivos comuns.
-fn rodar(destino: &File, novas: &[Versao]) -> Result<usize, ErroExterno> {
+/// Apaga as versões mais antigas do pendrive até sobrarem
+/// [`ward_core::backup::VERSOES`] com data até `teto` (agora), nunca uma das `novas`,
+/// nunca uma com data depois do `teto` e só arquivos comuns (Fase 49a).
+fn rodar(destino: &File, novas: &[Versao], teto: Versao) -> Result<usize, ErroExterno> {
     let dir = pelo_fd(destino);
     let lista = versoes_em(&dir)?;
-    let mut sobra = lista.len().saturating_sub(VERSOES);
     let mut apagadas = 0;
-    for v in lista.iter().rev() {
-        if sobra == 0 {
-            break;
-        }
-        if novas.contains(v) {
-            continue;
-        }
+    for v in para_apagar(&lista, teto, novas) {
         let caminho = dir.join(v.nome());
         if fs::symlink_metadata(&caminho).is_ok_and(|m| m.file_type().is_file()) {
             fs::remove_file(&caminho).map_err(io)?;
-            sobra -= 1;
             apagadas += 1;
         }
     }
@@ -299,6 +305,10 @@ pub fn copiar(
     uuid: &str,
     fonte: &dyn FontePendrives,
 ) -> Result<Copia, ErroExterno> {
+    let agora = SystemTime::now();
+    let teto = Versao::do_instante(agora)
+        .map(Versao::fim_do_segundo)
+        .ok_or(ErroExterno::SemBackupLocal)?;
     let montagem = abrir_montagem(visto, uuid, fonte)?;
     let destino = abrir_destino(&montagem, visto.dispositivo)?;
     drop(montagem);
@@ -306,10 +316,13 @@ pub fn copiar(
     limpar_temporarios(&dir);
     let la: BTreeSet<Versao> = versoes_em(&dir)?.into_iter().collect();
     let pasta = local.pasta();
-    let locais = pasta.listar().map_err(|_| ErroExterno::SemBackupLocal)?;
+    // Sem as versões locais com data futura (Fase 49a).
+    let locais = pasta
+        .listar_ate(agora)
+        .map_err(|_| ErroExterno::SemBackupLocal)?;
     let mut copia = Copia::default();
     // Da mais antiga para a mais nova, só as `VERSOES` mais novas.
-    for v in locais.into_iter().take(VERSOES).rev() {
+    for v in locais.into_iter().take(ward_core::backup::VERSOES).rev() {
         if la.contains(&v) {
             continue;
         }
@@ -326,7 +339,7 @@ pub fn copiar(
             copia.copiadas.push(v);
         }
     }
-    copia.apagadas = rodar(&destino, &copia.copiadas)?;
+    copia.apagadas = rodar(&destino, &copia.copiadas, teto)?;
     // O vfat aceita fsync da pasta; se outro sistema de arquivos não aceitar, os
     // arquivos já foram sincronizados um a um.
     let _ = destino.sync_all();

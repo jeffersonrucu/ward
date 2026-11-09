@@ -386,6 +386,24 @@ impl Motor {
         }
     }
 
+    /// Nega todo pedido de aprovação pendente e ainda sem decisão (Fase 49a: o
+    /// restaurar troca o cofre, e uma resposta atrasada valeria para a versão nova).
+    /// Quem pediu recebe "negado"; a janela que ainda mostra o pedido recebe "expirado"
+    /// ao responder. Devolve quantos foram negados.
+    pub fn cancelar_pendentes(&self) -> usize {
+        let mut g = self.interno.estado();
+        let mut n = 0;
+        for p in g.pendentes.iter_mut() {
+            if p.resultado.is_none() {
+                p.resultado = Some(Err(ErroResposta::Negado));
+                n += 1;
+            }
+        }
+        drop(g);
+        self.interno.mudou.notify_all();
+        n
+    }
+
     /// As entradas do pedido `id`, se ele está pendente e ainda sem decisão.
     pub fn pendente(&self, id: u64) -> Option<Vec<String>> {
         let mut g = self.interno.estado();

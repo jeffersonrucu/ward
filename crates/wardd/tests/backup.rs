@@ -10,11 +10,12 @@ mod comum;
 use std::fs;
 use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
 
 use comum::*;
 use ward_core::backup::Versao;
 use ward_core::entrada::Segredo;
-use ward_core::protocolo::{ErroResposta, MSG_RETROCESSO, Papel, Pedido, Resposta};
+use ward_core::protocolo::{ErroResposta, MSG_RETROCESSO, Papel, Pedido, Resposta, VersaoBackup};
 use wardd::arquivos::Geracoes;
 use wardd::nucleo::Daemon;
 
@@ -28,6 +29,11 @@ fn modo(p: &Path) -> u32 {
 
 /// Os nomes das versões na pasta, da mais nova para a mais antiga (pelo app).
 fn backups(d: &Daemon) -> Vec<String> {
+    versoes(d).into_iter().map(|v| v.nome).collect()
+}
+
+/// As versões com a geração selada (Fase 49a).
+fn versoes(d: &Daemon) -> Vec<VersaoBackup> {
     match pedir(d, Papel::App, "backups", "{}") {
         Resposta::Backups(l) => l,
         outra => panic!("{outra:?}"),
@@ -97,9 +103,13 @@ fn v7_1_cada_gravacao_do_daemon_vai_para_o_backup() {
         .collect();
     g.reverse();
     assert_eq!(g, (1..=8).collect::<Vec<_>>());
-    // A resposta ao app tem só nomes.
-    let bytes = codificado(Papel::App, &Resposta::Backups(lista.clone()));
+    // A resposta ao app tem só nomes e as marcas (Fase 49a): todas conferidas e em
+    // ordem; sem caminho nem geração (D39).
+    let v = versoes(&d);
+    assert!(v.iter().all(|x| x.conferida && !x.fora_de_ordem), "{v:?}");
+    let bytes = codificado(Papel::App, &Resposta::Backups(v));
     assert!(!contem(&bytes, dir.0.to_string_lossy().as_bytes()));
+    assert!(!contem(&bytes, b"geracao"));
 }
 
 /// V7.8 (D17): o agente e a extensão pedindo restaurar ou listar backups recebem "não
@@ -342,9 +352,11 @@ fn ataque_versao_trocada_por_link() {
     symlink(&fora, pasta(&dir).join(&v)).unwrap();
     assert!(!backups(&d).contains(&v));
     let antes = fs::read(&c.cofre).unwrap();
+    // Fase 49a: o restaurar só aceita versão da lista (que ignora links); a leitura com
+    // `O_NOFOLLOW` continua para a troca entre a lista e a abertura.
     assert_eq!(
         erro(&restaurar(&d, &v, SENHA, PIN)),
-        Some(ErroResposta::BackupIndisponivel)
+        Some(ErroResposta::BackupInexistente)
     );
     assert_eq!(fs::read(&c.cofre).unwrap(), antes);
     assert!(!d.travado());
@@ -438,4 +450,200 @@ fn restaurar_pede_a_senha_da_versao() {
     );
     let (d2, _) = daemon_em(dir.caminhos());
     assert!(ok(&destravar(&d2, SENHA)));
+}
+
+// ---------------------------------------------------------------- Fase 49a
+
+fn versao_em(t: SystemTime) -> String {
+    Versao::do_instante(t).unwrap().nome()
+}
+
+fn plantar(dir: &Dir, nome: &str, bytes: &[u8]) {
+    let p = pasta(dir).join(nome);
+    fs::write(&p, bytes).unwrap();
+    fs::set_permissions(&p, fs::Permissions::from_mode(0o600)).unwrap();
+}
+
+/// Fase 49a (achado médio do M7): 30 cópias autênticas antigas plantadas com nome de
+/// data futura (qualquer processo do usuário pode escrever na pasta) não fazem o daemon
+/// apagar as versões reais na próxima gravação; as de depois da margem não aparecem na
+/// lista nem restauram; as dentro da margem aparecem com a geração antiga, que as
+/// denuncia (a data do nome não é confiável, a geração é autenticada).
+#[test]
+fn ataque_versoes_com_data_futura_nao_apagam_as_reais_nem_restauram() {
+    let dir = Dir::novo("bk-futuro");
+    let c = dir.caminhos();
+    let (d, _) = cofre_de_teste(&dir);
+    let reais = backups(&d);
+    assert_eq!(reais.len(), 8);
+    let antiga = fs::read(pasta(&dir).join(reais.last().unwrap())).unwrap();
+    let agora = SystemTime::now();
+    let mut longe = Vec::new();
+    let mut perto = Vec::new();
+    for i in 0..30u64 {
+        let n = versao_em(agora + Duration::from_secs(10 * 365 * 86_400 + i * 3600));
+        plantar(&dir, &n, &antiga);
+        longe.push(n);
+        let n = versao_em(agora + Duration::from_secs(60 + i));
+        plantar(&dir, &n, &antiga);
+        perto.push(n);
+    }
+    // Uma gravação de verdade: a rotação não apaga nenhuma real nem plantada.
+    tempo_trava(&d, 45);
+    for n in reais.iter().chain(&longe).chain(&perto) {
+        assert!(pasta(&dir).join(n).exists(), "{n} sumiu");
+    }
+    let v = versoes(&d);
+    // As de depois da margem não aparecem; as de dentro saem marcadas (geração 1, a
+    // antiga, menor que a das reais de data anterior); as reais, não.
+    assert!(v.iter().all(|x| !longe.contains(&x.nome)));
+    assert_eq!(v.len(), reais.len() + 1 + perto.len());
+    for x in &v {
+        assert!(x.conferida, "{}", x.nome);
+        assert_eq!(x.fora_de_ordem, perto.contains(&x.nome), "{}", x.nome);
+    }
+    // Restaurar uma de depois da margem: inexistente, nada muda.
+    let antes = fs::read(&c.cofre).unwrap();
+    let estado = fs::read(&c.estado).unwrap();
+    assert_eq!(
+        erro(&restaurar(&d, &longe[0], SENHA, PIN)),
+        Some(ErroResposta::BackupInexistente)
+    );
+    assert_eq!(fs::read(&c.cofre).unwrap(), antes);
+    assert_eq!(fs::read(&c.estado).unwrap(), estado);
+    // 40 gravações a mais: ficam 30 com data até agora; as de 2036 continuam lá.
+    for i in 0..40u32 {
+        tempo_trava(&d, 30 + (i % 2));
+    }
+    let ate_agora = fs::read_dir(pasta(&dir))
+        .unwrap()
+        .filter_map(|e| Versao::de_nome(&e.unwrap().file_name().into_string().unwrap()))
+        .filter(|v| {
+            *v <= Versao::do_instante(SystemTime::now())
+                .unwrap()
+                .fim_do_segundo()
+        })
+        .count();
+    assert_eq!(ate_agora, ward_core::backup::VERSOES);
+    for n in &longe {
+        assert!(pasta(&dir).join(n).exists(), "{n} sumiu");
+    }
+}
+
+/// Fase 49a (achado baixo): restaurar uma versão antiga mantém o tempo de trava e o
+/// backup externo de agora (a versão traz os dela; restaurar não desliga a cópia para
+/// o pendrive sem aviso). Entradas, senha e PIN são os da versão.
+#[test]
+fn restaurar_mantem_tempo_de_trava_e_backup_externo_atuais() {
+    let dir = Dir::novo("bk-preserva");
+    let c = dir.caminhos();
+    let (d, _) = cofre_de_teste(&dir);
+    let versao = backups(&d)[0].clone();
+    let entradas = nomes_da_lista(&d);
+    tempo_trava(&d, 30);
+    let r = pedir(
+        &d,
+        Papel::App,
+        "definir_backup_externo",
+        r#"{"ligado":true,"uuid":"ABCD-1234"}"#,
+    );
+    assert!(ok(&r), "{r:?}");
+    assert!(ok(&restaurar(&d, &versao, SENHA, PIN)));
+    assert_eq!(nomes_da_lista(&d), entradas);
+    match pedir(&d, Papel::App, "configuracao", "{}") {
+        Resposta::Configuracao {
+            minutos_trava,
+            backup_externo,
+            backup_local,
+        } => {
+            assert_eq!(minutos_trava, 30);
+            assert!(backup_externo);
+            assert!(backup_local);
+        }
+        r => panic!("{r:?}"),
+    }
+    match pedir(&d, Papel::App, "backup_externo", "{}") {
+        Resposta::BackupExterno { ligado, uuid } => {
+            assert!(ligado);
+            assert_eq!(uuid.as_deref(), Some("ABCD-1234"));
+        }
+        r => panic!("{r:?}"),
+    }
+    // No disco também (o destravar lê a configuração do arquivo).
+    let bytes = fs::read(&c.cofre).unwrap();
+    let s = ward_core::formato::SenhaMestra::nova(SENHA.to_owned());
+    let (aberto, _, _) = ward_core::corpo::abrir_entradas_lida(&bytes, &s, 0, 0).unwrap();
+    assert_eq!(aberto.configuracao().minutos_trava(), 30);
+    assert!(aberto.configuracao().backup().ligado());
+}
+
+/// Fase 49a (achado baixo): a pasta de backups insegura vira aviso na tela
+/// (`configuracao` com `backup_local: false`), sem caminho; segura de novo, volta.
+#[test]
+fn pasta_de_backups_insegura_aparece_na_configuracao() {
+    let dir = Dir::novo("bk-aviso");
+    let (d, _) = cofre_de_teste(&dir);
+    let local = |d: &Daemon| match pedir(d, Papel::App, "configuracao", "{}") {
+        Resposta::Configuracao { backup_local, .. } => backup_local,
+        r => panic!("{r:?}"),
+    };
+    assert!(local(&d));
+    for m in [0o755, 0o750, 0o707] {
+        fs::set_permissions(pasta(&dir), fs::Permissions::from_mode(m)).unwrap();
+        assert!(!local(&d), "{m:o}");
+    }
+    fs::set_permissions(pasta(&dir), fs::Permissions::from_mode(0o700)).unwrap();
+    assert!(local(&d));
+    // Trocada por link para outra pasta 0700: insegura.
+    let outra = dir.0.join("outra");
+    fs::create_dir(&outra).unwrap();
+    fs::set_permissions(&outra, fs::Permissions::from_mode(0o700)).unwrap();
+    fs::rename(pasta(&dir), dir.0.join("verdadeira")).unwrap();
+    symlink(&outra, pasta(&dir)).unwrap();
+    assert!(!local(&d));
+    let bytes = codificado(Papel::App, &pedir(&d, Papel::App, "configuracao", "{}"));
+    assert!(!contem(&bytes, dir.0.to_string_lossy().as_bytes()));
+}
+
+/// Fase 49a (achado baixo): os temporários do arquivo de estado de uma gravação
+/// interrompida somem na partida; o que não é exatamente um deles (link, pasta, nome
+/// parecido, o de outro arquivo) fica.
+#[test]
+fn temporarios_do_estado_somem_na_partida() {
+    let dir = Dir::novo("bk-estado-tmp");
+    let c = dir.caminhos();
+    let (d, _) = cofre_de_teste(&dir);
+    drop(d);
+    let pai = c.estado.parent().unwrap().to_path_buf();
+    let nome = c.estado.file_name().unwrap().to_string_lossy().into_owned();
+    let velho = pai.join(format!(".{nome}.tmp-4194301-7"));
+    let velho2 = pai.join(format!(".{nome}.tmp-12-0"));
+    fs::write(&velho, b"vista 3\nqueimada 3\n").unwrap();
+    fs::write(&velho2, b"x").unwrap();
+    let alvo = dir.0.join("alvo-do-link");
+    fs::write(&alvo, b"nao apagar").unwrap();
+    let link = pai.join(format!(".{nome}.tmp-4194302-1"));
+    symlink(&alvo, &link).unwrap();
+    let pasta_igual = pai.join(format!(".{nome}.tmp-4194303-1"));
+    fs::create_dir(&pasta_igual).unwrap();
+    let parecidos = [
+        pai.join(format!(".{nome}.tmp-abc-1")),
+        pai.join(format!(".{nome}.tmp-1")),
+        pai.join(format!(".{nome}.tmp-1-2-3")),
+        pai.join(format!("{nome}.tmp-1-2")),
+        pai.join(".outro.estado.tmp-1-2"),
+    ];
+    for p in &parecidos {
+        fs::write(p, b"fica").unwrap();
+    }
+    let (d, _) = daemon_em(dir.caminhos());
+    assert!(!velho.exists() && !velho2.exists());
+    assert!(fs::symlink_metadata(&link).unwrap().is_symlink());
+    assert_eq!(fs::read(&alvo).unwrap(), b"nao apagar");
+    assert!(pasta_igual.is_dir());
+    for p in &parecidos {
+        assert!(p.exists(), "{}", p.display());
+    }
+    // O estado de verdade fica e o daemon destrava com ele.
+    assert!(ok(&destravar(&d, SENHA)));
 }

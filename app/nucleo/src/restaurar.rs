@@ -1,9 +1,13 @@
 //! Restaurar backup (Fase 47, V7.7; D17, D39, S9).
 //!
 //! - [`VersaoVista`]: uma versão do backup local como a tela a mostra: o nome exato do
-//!   arquivo (`ward-AAAAMMDD-HHMMSS[-N].ward`, o mesmo que volta no pedido) e o instante
-//!   em segundos UTC, tirado do próprio nome (a tela mostra no fuso local). Nada do
-//!   conteúdo: o protocolo (`backups`, Fase 45) só traz os nomes.
+//!   arquivo (`ward-AAAAMMDD-HHMMSS[-N].ward`, o mesmo que volta no pedido), o instante
+//!   em segundos UTC, tirado do próprio nome (a tela mostra no fuso local), e as marcas
+//!   que o daemon conferiu (Fase 49a). Nada do conteúdo nem da geração (D39).
+//! - **A data do nome não é confiável** (Fase 49a): qualquer processo do usuário pode pôr
+//!   na pasta uma cópia antiga com nome de data nova. O daemon compara as gerações
+//!   seladas (autenticadas) e marca a versão cuja geração é menor que a de uma versão de
+//!   data anterior ([`VersaoVista::fora_de_ordem`]); a tela avisa.
 //! - [`Restauracao`]: o que a tela manda ao confirmar: a versão, a senha mestra daquela
 //!   versão ([`SenhaMestra`], zera ao sair) e o PIN atual ([`Pin`], zera ao sair; o
 //!   daemon exige o PIN do cofre de agora, porque a versão volta com outros níveis e
@@ -17,6 +21,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use ward_core::protocolo::VersaoBackup;
+
 use crate::ErroApp;
 use crate::destrave::SenhaMestra;
 use crate::nivel::Pin;
@@ -28,6 +34,13 @@ pub struct VersaoVista {
     pub nome: String,
     /// Segundos desde 1970 em UTC, do nome (data e hora; o sufixo `-N` não muda).
     pub instante: i64,
+    /// A versão abre com a chave do cofre aberto (Fase 49a); `false`: de outra senha
+    /// mestra (o daemon não conferiu a ordem dela).
+    pub conferida: bool,
+    /// A gravação é mais antiga que a de uma versão com data anterior: a data do nome
+    /// não confere com a ordem das gravações (cópia antiga com nome novo, ou o relógio
+    /// andou para trás). Marcada pelo daemon.
+    pub fora_de_ordem: bool,
 }
 
 impl VersaoVista {
@@ -48,6 +61,8 @@ impl VersaoVista {
         Some(VersaoVista {
             nome: nome.to_owned(),
             instante,
+            conferida: false,
+            fora_de_ordem: false,
         })
     }
 }
@@ -73,12 +88,21 @@ fn nome_ok(_nome: &str) -> bool {
     false
 }
 
-/// Os nomes da resposta `backups` viram versões; um nome fora do formato faz a resposta
-/// inteira ser recusada (o daemon não manda isso).
-pub fn versoes_de(nomes: &[String]) -> Result<Vec<VersaoVista>, ErroApp> {
-    nomes
+/// A resposta `backups` vira versões, com as marcas do daemon; um nome fora do formato
+/// (ou "fora de ordem" sem "conferida") faz a resposta inteira ser recusada (o daemon não
+/// manda isso).
+pub fn versoes_de(lista: &[VersaoBackup]) -> Result<Vec<VersaoVista>, ErroApp> {
+    lista
         .iter()
-        .map(|n| VersaoVista::de_nome(n).ok_or(ErroApp::RespostaInvalida))
+        .map(|b| {
+            if b.fora_de_ordem && !b.conferida {
+                return Err(ErroApp::RespostaInvalida);
+            }
+            let mut v = VersaoVista::de_nome(&b.nome).ok_or(ErroApp::RespostaInvalida)?;
+            v.conferida = b.conferida;
+            v.fora_de_ordem = b.fora_de_ordem;
+            Ok(v)
+        })
         .collect()
 }
 
@@ -171,9 +195,24 @@ mod testes {
         }
         assert!(versao_pedida("ward-20261108-143200-99.ward").is_ok());
         assert_eq!(
-            versoes_de(&["ward-20261108-143200.ward".into(), "../x".into()]),
+            versoes_de(&[
+                vb("ward-20261108-143200.ward", true, false),
+                vb("../x", true, false)
+            ]),
             Err(ErroApp::RespostaInvalida)
         );
+        assert_eq!(
+            versoes_de(&[vb("ward-20261108-143200.ward", false, true)]),
+            Err(ErroApp::RespostaInvalida)
+        );
+    }
+
+    fn vb(nome: &str, conferida: bool, fora_de_ordem: bool) -> VersaoBackup {
+        VersaoBackup {
+            nome: nome.into(),
+            conferida,
+            fora_de_ordem,
+        }
     }
 
     #[test]
@@ -277,12 +316,13 @@ mod testes {
         const SENHA: &str = "falso-mestra-ward-01";
         const PIN: &str = "135790";
 
-        /// Nenhuma resposta ao app traz segredo, senha, PIN, caminho ou geração.
+        /// Nenhuma resposta ao app traz segredo, senha, PIN ou caminho (a geração da
+        /// lista é de propósito, Fase 49a).
         fn sem_segredo(json: &str) {
             for s in SEGREDOS {
                 assert!(!json.contains(s), "segredo em {json}");
             }
-            for agulha in [PIN, "/home", ".local", "backups/", "geracao"] {
+            for agulha in [PIN, SENHA, "/home", ".local", "backups/"] {
                 assert!(!json.contains(agulha), "{agulha} em {json}");
             }
         }
@@ -315,6 +355,28 @@ mod testes {
                 .restaurar_backup(pedido(&depois[0].nome, SENHA, PIN))
                 .unwrap();
             assert_eq!(r.entradas, antes);
+        }
+
+        /// Fase 49a: a cópia antiga plantada com nome de data nova chega ao topo da
+        /// lista, mas marcada; as reais, não. Depois de restaurar, o atual guardado
+        /// não sai marcado. Nenhuma geração chega à interface (D39).
+        #[test]
+        fn ataque_copia_plantada_chega_marcada_pela_geracao() {
+            let (s, _) = servico(DaemonFalso::backup_plantado());
+            let v = s.listar_backups().unwrap();
+            assert_eq!(v.len(), 31);
+            assert!(v[0].fora_de_ordem && v[0].conferida);
+            assert!(v[1..].iter().all(|x| !x.fora_de_ordem && x.conferida));
+            assert!(!serde_json::to_string(&v).unwrap().contains("geracao"));
+            let r = s.restaurar_backup(pedido(&v[2].nome, SENHA, PIN)).unwrap();
+            assert!(r.restaurado);
+            let depois = s.listar_backups().unwrap();
+            let marcadas: Vec<&str> = depois
+                .iter()
+                .filter(|x| x.fora_de_ordem)
+                .map(|x| x.nome.as_str())
+                .collect();
+            assert_eq!(marcadas, [v[0].nome.as_str()]);
         }
 
         #[test]

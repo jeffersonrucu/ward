@@ -14,6 +14,9 @@
   //   pendrive (16318) mostra o escolhido e "Trocar". Desligar mantém o UUID guardado e
   //   não apaga nada do pendrive. Lido por `backup_externo` (sem caminho de montagem).
   //   Restaurar (Fase 47, V7.7) abre `RestaurarBackup` (16349/16512).
+  // - Fase 49a: a pasta do backup local insegura (o daemon grava o cofre sem backup)
+  //   vira um `Destaque` aviso logo abaixo da linha "Backup local"; só um sim/não do
+  //   daemon (`backup_local`), nenhum caminho.
   // - Kit de emergência (Fase 49, V7.10): "Imprimir" abre a folha (`KitEmergencia`).
   //
   // Nenhum valor secreto passa por esta tela: as respostas trazem só os minutos, o
@@ -22,6 +25,7 @@
   import { onDestroy, onMount } from 'svelte';
   import Botao from '../lib/componentes/Botao.svelte';
   import CartaoDePendrive from '../lib/componentes/CartaoDePendrive.svelte';
+  import Destaque from '../lib/componentes/Destaque.svelte';
   import Icone from '../lib/componentes/Icone.svelte';
   import LinhaDeOpcao from '../lib/componentes/LinhaDeOpcao.svelte';
   import Select from '../lib/componentes/Select.svelte';
@@ -33,7 +37,7 @@
   import EscolherPendrive from './EscolherPendrive.svelte';
   import RestaurarBackup from './RestaurarBackup.svelte';
   import { mensagemRestaurado } from './restaurar.js';
-  import { cartaoDoPendrive, opcoesDeTrava } from './configuracoes.js';
+  import { AVISO_BACKUP_LOCAL, cartaoDoPendrive, opcoesDeTrava } from './configuracoes.js';
   import { mensagemDoRust } from './primeiro-uso.js';
 
   /** @type {{ ontravado?: () => void }} */
@@ -63,7 +67,11 @@
   }
 
   function aplicar(c) {
-    config = { minutos_trava: c.minutos_trava, backup_externo: c.backup_externo === true };
+    config = {
+      minutos_trava: c.minutos_trava,
+      backup_externo: c.backup_externo === true,
+      backup_local: c.backup_local !== false,
+    };
     minutos = String(config.minutos_trava);
   }
 
@@ -201,6 +209,11 @@
           >
         {/snippet}
       </LinhaDeOpcao>
+      {#if config && !config.backup_local}
+        <div id="config-backup-local-aviso" role="status">
+          <Destaque tipo="aviso" icone="alerta">{AVISO_BACKUP_LOCAL}</Destaque>
+        </div>
+      {/if}
       <LinhaDeOpcao
         id="config-backup-externo"
         titulo="Backup externo em pendrive"

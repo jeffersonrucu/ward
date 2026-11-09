@@ -44,10 +44,18 @@ export function quandoFoi(instante, agora = new Date()) {
 }
 
 /**
- * Linha de baixo do item. O protocolo só traz o nome das versões do backup local (sem
- * tamanho nem origem), então é sempre "Cópia local".
+ * Linha de baixo do item (Fase 49a). O protocolo traz o nome de cada versão do backup
+ * local e duas marcas do daemon (sem tamanho, origem nem geração). A data vem do nome
+ * do arquivo, que qualquer programa seu pode escolher; o daemon confere a ordem real
+ * das gravações e marca a versão que é mais antiga do que a data diz.
  */
-export const DETALHE_DA_VERSAO = 'Cópia local';
+export function detalheDaVersao(v) {
+  if (v?.conferida !== true) return 'Cópia local · de outra senha mestra';
+  if (v?.fora_de_ordem === true) {
+    return 'Cópia local · gravação mais antiga do que a data diz';
+  }
+  return 'Cópia local';
+}
 
 /** Legenda da lista: quantas versões e como a rotação funciona (D17). */
 export function legendaDasVersoes(quantas) {
@@ -61,7 +69,8 @@ export function avisoDaTroca(instante) {
   return (
     'Antes da troca, o cofre atual é guardado como backup. Depois, valem a senha mestra e o ' +
     `PIN desta versão, e as entradas criadas depois de ${dataDaVersao(instante)} ficam só no ` +
-    'backup. A versão volta como uma gravação nova do cofre.'
+    'backup. O tempo de trava e o backup externo continuam os de agora. A versão volta como ' +
+    'uma gravação nova do cofre.'
   );
 }
 
