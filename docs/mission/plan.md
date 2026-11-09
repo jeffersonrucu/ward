@@ -1056,6 +1056,42 @@ do M5, então a decisão é do usuário.
   pelo menu da bandeja no D-Bus).
 Asserções que passaram: V5.1, V5.2, V5.6, V5.15, V5.16, V5.19, V5.20, V5.27, V5.29–V5.33.
 
+Decisão do usuário (2026-11-09): corrigir os dois altos, mais os baixos. **RA9 aceita**:
+item novo no menu da bandeja só pode ser ação que não entrega segredo. Depois das fases
+39f e 51c, uma reauditoria só desses pontos, e então o QA do M5.
+
+- [ ] Fase 39f — Área de transferência sem disco e baixos da auditoria do M5.
+  - `app/nucleo/src/area_transferencia.rs`: o "copiar" serve o valor da memória do app,
+    sem `wl-copy`. Pode ser o `gtk::Clipboard` na thread principal ou o protocolo
+    data-control (ex.: `wl-clipboard-rs`, por `cargo deny`/`audit`), com
+    `x-kde-passwordManagerHint: secret`. Mantém a limpeza condicional de 30 s e o "só
+    apaga o que o Ward copiou".
+  - Teste de ataque: nenhum arquivo em `/tmp`, `/var/tmp` nem `$XDG_RUNTIME_DIR` recebe o
+    valor (strace ou inotify), e nenhum processo `wl-copy` sobe.
+  - A trava vinda de fora (`na_passagem_da_bandeja`) também limpa a área de
+    transferência se o valor ainda for do Ward.
+  - `app/nucleo/src/anexos.rs:228` abre com `O_NOFOLLOW|O_NONBLOCK|O_NOCTTY`, como o
+    `chave.rs`.
+  - D51: U+202E no nome do processo sai como escape visível, não `?`; letras RTL fortes
+    (hebraico, árabe) ficam isoladas para não reordenar o texto ao redor (pendência da
+    36).
+  - `make app-check` 0. S2, S12, V5.4, V5.5, V5.12, V5.29.
+- [ ] Fase 51c — Core dump dos auxiliares do WebKitGTK (S2/S8).
+  - A instalação (`instalar.sh` e `.deb`) põe na blacklist do apport
+    (`/etc/apport/blacklist.d/ward`) o `ward-app` e os binários auxiliares do WebKitGTK
+    que o app usa (`WebKitWebProcess`, `WebKitNetworkProcess`, `WebKitGPUProcess`, com os
+    caminhos reais do `libwebkit2gtk-4.1-0`).
+  - Faz o equivalente para o systemd-coredump, se estiver presente. Avaliar se dá para
+    impedir o dump só dos processos do app (ex.: `prctl(PR_SET_DUMPABLE, 0)` herdado ou
+    `RLIMIT_CORE` respeitado pelo handler) sem afetar o resto do sistema.
+  - Uninstall remove.
+  - Teste no contêiner do `teste-install`/`teste-deb`. No host, só um processo falso:
+    nunca dar `kill` no app nem em processo do usuário.
+  - Corrigir em `docs/escopo.md` o texto que diz que os auxiliares ficam protegidos só
+    pelo Yama, e citar o apport/coredump.
+  - Guia `docs/instalacao.md`: como conferir.
+  S2, S8, V9.*.
+
 Scrutiny do M6 (2026-11-09): **reprovado** (1ª vez).
 - `make check`, `teste-nm`, `teste-extensao`, `teste-login` e o `cargo test --ignored`
   do Playwright deram 0.
