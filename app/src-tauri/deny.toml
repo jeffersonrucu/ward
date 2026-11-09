@@ -1,0 +1,60 @@
+# cargo-deny do app Tauri (S14). Mesma política do `deny.toml` da raiz; as exceções
+# abaixo existem só por causa da árvore do Tauri/GTK 3 no Linux, com o motivo de cada
+# uma no handoff da Fase 29. Exceção nova precisa de motivo escrito no handoff.
+
+[graph]
+all-features = true
+
+[advisories]
+version = 2
+db-urls = ["https://github.com/rustsec/advisory-db"]
+yanked = "deny"
+unmaintained = "all"
+ignore = [
+    # proc-macro-error 1.0.4: sem manutenção. Só proc-macro de compilação do
+    # glib-macros/gtk3-macros (gtk-rs 0.18, base do Tauri 2 no Linux); não roda no app.
+    { id = "RUSTSEC-2024-0370", reason = "proc-macro de compilação do gtk-rs 0.18 (Tauri 2 no Linux); sem alternativa até o Tauri sair do GTK 3" },
+    # glib 0.18.5: `VariantStrIter` com `Iterator` não sólido. O app não usa
+    # `glib::Variant`; vem do gtk-rs 0.18 que o Tauri 2 exige no Linux.
+    { id = "RUSTSEC-2024-0429", reason = "glib 0.18 do gtk-rs (Tauri 2 no Linux); o app não usa VariantStrIter" },
+]
+
+[licenses]
+version = 2
+confidence-threshold = 0.93
+unused-allowed-license = "allow"
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+]
+# MPL-2.0 (copyleft por arquivo, sem alterar os arquivos): crates do parser de CSS e de
+# HTML que o tauri-utils usa para injetar a CSP na página, e o `option-ext` do `dirs`.
+exceptions = [
+    { allow = ["MPL-2.0"], crate = "cssparser" },
+    { allow = ["MPL-2.0"], crate = "cssparser-macros" },
+    { allow = ["MPL-2.0"], crate = "dtoa-short" },
+    { allow = ["MPL-2.0"], crate = "selectors" },
+    { allow = ["MPL-2.0"], crate = "option-ext" },
+]
+
+[licenses.private]
+ignore = true
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+highlight = "all"
+deny = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

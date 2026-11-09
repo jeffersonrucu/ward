@@ -776,3 +776,13 @@ Alterados no lugar:
 Posições na Design System depois da 10d (a `Seção / Item de lista` cresceu e já
 sobrepunha a `Seção / Modal`): `608` y 3746, `647` y 4160, `716` y 4502, `760` y 5406,
 `3286` y 7038, `5219` y 7860, `6796` y 8488 (x = 640 em todas).
+
+## Fase 29 — tokens e componentes no código (só leitura do FigCraft)
+
+Lidos de uma cópia do `Ward.figcraft` (o original não foi alterado), pelo MCP headless.
+
+| O quê | Origem no FigCraft | No código |
+| --- | --- | --- |
+| Variables (todas as coleções) e estilos de texto/efeito | `variable.export css`, `variable.list`, `style.list` → `app/design/figcraft-export.jsonl` | `app/src/lib/estilo/tokens.css` (gerado por `python3 -I -B app/scripts/gerar_design.py`) |
+| Ícones 20×20, traço 1.5 | frame `178` (filhos `179`–`257` e `5197`) → `app/design/icones/*.svg` | `app/src/lib/componentes/icones.js` (gerado) e `Icone.svelte` |
+| Botão, Campo, Campo secreto, Select, Badge de ambiente/tipo, Toast, Item de lista (`553`), Modal, Campo de PIN | página Design System | `app/src/lib/componentes/*.svelte` (só tokens; conferência pixel a pixel por tela fica para as fases de UI) |

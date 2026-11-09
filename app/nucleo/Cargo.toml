@@ -1,0 +1,31 @@
+[package]
+name = "ward-app-nucleo"
+description = "Lado Rust do app do Ward sem Tauri: comandos próprios, cliente do daemon e copiar (D4)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+# Sem Tauri e sem GTK: compila e testa no `make check` do workspace raiz. O crate do
+# Tauri (`app/src-tauri`, workspace próprio) e a ponte de teste (`ward-ponte-teste`) só
+# chamam o `Servico` daqui, então os dois expõem exatamente os mesmos comandos.
+[features]
+# D7: socket do daemon de teste (`/run/user/<uid>/ward-teste/`). Sem a feature, o
+# caminho de teste nem existe no binário.
+modo-teste = []
+
+[dependencies]
+# Limites de nome de entrada e de campo (D32), numa fonte só.
+ward-core.workspace = true
+# Comparação em tempo constante do valor copiado com o que está na área de
+# transferência (o mesmo crate que o `ward-core` já usa; nada novo no lockfile).
+ctutils = { version = "0.4.8", default-features = false }
+# Segredo em memória zerado ao sair (já no lockfile pelo `ward-core`).
+zeroize = { version = "1.9.1", default-features = false, features = ["alloc"] }
+
+[dev-dependencies]
+# Só nos testes: lê `tauri.conf.json` e as capabilities para os testes de ataque de S11.
+serde_json = { version = "1.0.150", default-features = false, features = ["std"] }
+
+[lints]
+workspace = true

@@ -210,7 +210,7 @@ o cofre de teste ganha `acme-totp-dev` (D28), acrescentada nas fixtures pela Fas
 usada no V6.7.
 
 ## Milestone 2 — Núcleo: formato, cripto, tipos e máscara
-Contrato: V2.1–V2.52
+Contrato: V2.1–V2.58
 
 - [x] Fase 13 — Formato e cripto em `ward-core`: cabeçalho versionado com parâmetros
   Argon2id, chave de dados aleatória embrulhada, XChaCha20-Poly1305 com o cabeçalho
@@ -347,10 +347,43 @@ Contrato: V2.1–V2.52
     `CLAUDE.md`. Testes com os valores falsos da V2.52, mais os de antes (V2.29).
     `make check` e `make teste-dev-cofre` limpos. V2.52, V2.29.
 
+- [ ] Fase 19e — Achados da reauditoria do M2 (D53–D55). Depende da 19d; **a Fase 22
+  só começa depois dela**. Pode rodar ao lado da 21b (arquivos separados). Repros em
+  `/tmp/claude-1000/-home-jeffersonoliveira-projetos-cofre/d2e230bd-a662-43be-afff-2572da5a4e80/scratchpad/ataque/src/bin/`
+  (`geracao.rs`, `desvio.rs`, `url.rs`): ler antes, rodar contra o código novo e
+  transformar cada caso em teste de ataque. Arquivos: `formato.rs`, `corpo.rs`,
+  `gravacao.rs` e os testes deles (geração); `mascara.rs` e `mascara/` (máscara);
+  `entrada/validacao.rs` e testes (URL); `dev/variacoes.py`, o teste dele e
+  `dev/testes/dev-cofre.sh` (oráculo e teste cruzado); se preciso, um exemplo novo do
+  `ward-core` para o teste cruzado e a linha do `make dev-variacoes` no `CLAUDE.md`.
+  Não toca em `ward-plataforma`, `wardd`, protocolo, CLI, `Makefile` nem nas fixtures.
+  - **Geração queimada ao selar** (D53): o contador do `CofreAberto` sobe ao selar e
+    fica lá em qualquer erro seguinte; `u64::MAX` recusa antes de selar, sem queimar;
+    `abrir_entradas_desde(arquivo, senha, geracao_minima, geracao_queimada)` com o
+    contador em max(disco, queimada); `trocar_senha(destino, atual, nova,
+    geracao_minima, geracao_queimada)`; ajustar os chamadores (testes, exemplo
+    `dev-cofre`). V2.44 (reescrita), V2.53.
+  - **Máscara** (D54): `linhas` para todo valor secreto de entrega com `\n`; formas de
+    texto por linha; aspas simples do shell, `printf %q` (ASCII, conferido contra o
+    bash real), PHP `\/` + `ensure_ascii`, parser de linha com `chave : valor`,
+    `chave:\tvalor`, `"k":"v"` e chave JSON com qualquer caractere menos `"`, campos de
+    tab; orçamento de D29 pela mesma função, com o V2.36/V2.43 refeitos. Se uma entrada
+    de D15 for recusada, a fase para e devolve ao planner. V2.54–V2.56.
+  - **Oráculo** (D54): `variacoes.py` com a tabela única (sem base64 e miolos por
+    linha; formas de texto e formas novas), docstring atualizada e teste cruzado
+    oráculo → máscara em `dev/testes/dev-cofre.sh`. O oráculo segue sem importar nem
+    chamar a máscara. V2.57, V2.52.
+  - **URL** (D55): último rótulo do domínio começando por dígito (inclui `0x`) é
+    recusado, ao salvar e na leitura do corpo. V2.58.
+  - Regravar `.dev/cofre-teste.ward` por `make dev-cofre` se o formato do contador
+    mudar, refazer V2.29 e V2.43, escrever o teste de ataque de cada (SEG). `make check`
+    e `make teste-dev-cofre` limpos. V2.29, V2.36, V2.43, V2.44, V2.52–V2.58.
+  - D56 (`sftp -l`) não é desta fase: fica para a Fase 27, que ganhou a nota.
+
 Decisões do usuário em 2026-11-08 sobre a Fase 19c: RA4 (troca conjunta de cofre e estado com o daemon parado) fica fora do modelo de ameaça — o planner registra isso em `docs/escopo.md` › fora do modelo; D41 (http só em localhost) e D42 (sufixo obrigatório no `api`) confirmados; D43 mudou: usuário de `servidor`/`ftp-sftp` aceita `@` já na v1. Registrado pelo planner depois da 19c: RA4 no escopo e no PRD; D43 confirmado também para `banco`/`smtp` (ASCII visível, sem `-` no começo; V2.49); D37 e V2.42 com os escapes literais; Fase 19d criada; Fases 20 e 22 com a API nova do núcleo.
 
 ## Milestone 3 — Daemon e protocolo
-Contrato: V3.1–V3.27
+Contrato: V3.1–V3.28
 
 - [x] Fase 20 — (Depende da Fase 19c; não depende da 19d.) Protocolo em `ward-core`: quadros com limite de tamanho, mensagens
   versionadas, papéis agente/app/extensão (D5) e a tabela operação × papel, sem
@@ -367,7 +400,10 @@ Contrato: V3.1–V3.27
   processos para exibir, endurecimento do processo (`PR_SET_DUMPABLE=0`,
   `RLIMIT_CORE=0`, recusa de `LD_*` e de depurador, `mlock` dos buffers de segredo,
   D14). V3.1, V3.2, V3.5–V3.7.
-- [ ] Fase 21b — (Depende da resposta do usuário a RA5/RA6; sem resposta, não começa.)
+- [ ] Fase 21b — (Liberada: D46 e D47 confirmadas pelo usuário em 2026-11-08; D48 no
+  ramo de D47; D49 sem mudança.) Pode rodar ao lado da 19e. Arquivos:
+  `crates/ward-plataforma/` (código e testes), o contêiner de teste e o alvo dele no
+  `Makefile`, e a linha do alvo no `CLAUDE.md`; não toca em `ward-core`.
   `ward-plataforma`, ajustes da Fase 21:
   - D46: `escutar_de_listen_fds()` (aceita o fd do systemd e confere que é socket Unix
     em escuta no caminho esperado); `conferir_servidor` passa a exigir pasta do root e
@@ -377,30 +413,33 @@ Contrato: V3.1–V3.27
     `ptrace_scope` 0 ou `suid_dumpable` 1; a leitura de `exe`/`environ`/`maps` fica só
     para o pai Chrome e a cadeia exibida;
   - D48: lista insegura da glibc no `conferir_ambiente_proprio`.
-  Testes em contêiner (`ubuntu:24.04`, root só dentro dele). Se o usuário recusar D46
-  ou D47, a fase só registra o risco aceito no escopo e mantém a Fase 21 como está.
-  V3.5 (forma de D47), V3.23–V3.25.
-- [ ] Fase 22 — `wardd`: estado travado/destravado, destravar com espera crescente
+  Testes em contêiner (`ubuntu:24.04`, root só dentro dele). V3.5 (forma de D47),
+  V3.23–V3.25.
+- [ ] Fase 22 — (Depende das Fases 19e e 21b; não começa antes delas.) `wardd`: estado travado/destravado, destravar com espera crescente
   (D20), travar com zeroização, PIN (confere pelo hash da seção de configuração do
   corpo v3 e pela função da Fase 19b, D30; 5 erros travam), mudar nível só do
   papel app com PIN, `lista` sem bloqueadas, logs sem segredo; lê e grava o corpo pela
   Fase 15a (D26) e só por `gravar_entradas` (D27, D44), com `limpar_temporarios` ao abrir.
   API do núcleo depois da 19c (handoff 19c):
-  - abre por `corpo::abrir_entradas_desde(arquivo, senha, geracao_minima)`, com a maior
-    geração lida do arquivo de estado; `ErroAbrir::Retrocesso` mantém travado e mostra
-    o aviso de D39;
+  - abre por `corpo::abrir_entradas_desde(arquivo, senha, geracao_minima,
+    geracao_queimada)` (API da 19e, D53), com `vista` e `queimada` lidas do arquivo de
+    estado; `ErroAbrir::Retrocesso` mantém travado e mostra o aviso de D39; depois de
+    abrir, sobe `vista` para a geração lida, se for maior;
   - grava por `gravar_entradas(destino, &mut cofre, entradas)`: o daemon guarda o
-    `CofreAberto` destravado como `&mut` (um dono só, sem cópia), e a geração só sobe
-    no `CofreAberto` depois da gravação que deu certo; depois dela, o daemon grava
-    `cofre.geracao()` no arquivo de estado. `GeracaoEsgotada` recusa a operação sem
-    tocar no disco, com mensagem sem valor;
+    `CofreAberto` destravado como `&mut` (um dono só, sem cópia). **Antes** de chamar,
+    grava no estado `queimada` = `cofre.geracao()` + 1 (atômico, com fsync), e só
+    então grava o cofre, cujo rename acontece dentro de `gravar_entradas`; se a escrita
+    do estado falhar, o cofre não é gravado. O núcleo queima a geração ao selar, então
+    em erro o `CofreAberto` já subiu e a próxima gravação usa outro número; depois da
+    gravação que deu certo, `vista` = `cofre.geracao()` (D53). `GeracaoEsgotada`
+    recusa a operação sem tocar no disco, com mensagem sem valor;
   - troca a senha mestra por `gravacao::trocar_senha(destino, atual, nova,
-    geracao_minima)`, passando a maior geração vista, e trata
-    `ErroGravacao::Retrocesso` igual à abertura; `formato::trocar_senha` não sela e
-    não é chamada direto pelo daemon;
+    geracao_minima, geracao_queimada)`, com o mesmo registro de `queimada` antes; trata
+    `ErroGravacao::Retrocesso` igual à abertura, e um erro depois de selar trava o
+    cofre (D53); `formato::trocar_senha` não sela e não é chamada direto pelo daemon;
   - `gravar_cofre`, `gravar` e `CofreAberto::selar` são `pub(crate)` e ficam fora do
     daemon.
-  Contra rollback (D39): arquivo de estado com a maior geração vista, abertura com
+  Contra rollback (D39, D53): arquivo de estado com `vista` e `queimada`, abertura com
   `geracao_minima`, recusa sem estado com cofre existente, conferência de `dev`/inode/
   `mtime`/tamanho por `fstat` antes de gravar ou reabrir (mudou → não grava, trava e
   avisa). RA4 (troca conjunta de cofre e estado com o daemon parado) está fora do modelo
@@ -412,14 +451,14 @@ Contrato: V3.1–V3.27
     criada nasce "com aprovação", e criar com outro nível pede PIN (D50);
     `remover_entrada` e `tempo_trava` sem PIN, só do papel app (D50);
   - `main`: `iniciar_endurecido()` antes de tudo (V3.7); socket por `LISTEN_FDS` quando
-    houver (D46, provisório) ou pelo diretório de teste; a cada conexão,
+    houver (D46) ou, só no daemon de teste, pelo diretório de teste; a cada conexão,
     `conferir_conexao` com log da recusa e papel pela classificação vigente
-    (`ClassePar` da Fase 21 ou egid de D47, conforme RA6);
+    (egid de D47, da Fase 21b; `ClassePar` da Fase 21 fica para o pai Chrome);
   - V3.2 por `make teste-docker-uid` (D49): contêiner `ubuntu:24.04`, `wardd` de teste
     como uid 1000 via `setpriv`, clientes uid 4242 sem e com `CAP_DAC_OVERRIDE`
     ambiente e uid 0, e um cliente do uid 1000 no fim; nada do `/run/user` do host é
     montado; o alvo fica fora do `make check`.
-  V3.2, V3.8–V3.13, V3.17, V3.20, V3.22, V3.26, V3.27.
+  V3.2, V3.8–V3.13, V3.17, V3.20, V3.22, V3.26–V3.28.
 - [ ] Fase 23 — Motor de aprovação com relógio injetado e aprovador em processo só nos
   testes (D8): uma vez, 1 hora (D2), sempre, expirar em 2 min, fechar nega, nível
   combinado (D19), aprovação indisponível (D21); espera de até 2 min pelo destrave
@@ -428,15 +467,15 @@ Contrato: V3.1–V3.27
   (D51), com testes. V3.14–V3.16, V3.18.
 - [ ] Fase 24 — Trava automática: `Lock`/`LockedHint` e `PrepareForSleep` do logind,
   4 h sem uso com relógio injetado, lidas do tempo de trava da configuração do cofre
-  (D30); unit `wardd.service` (`LimitCORE=0`), ou as units do sistema de D46 se o
-  usuário aceitar. V3.19, V3.21.
+  (D30); units de teste `wardd@.socket`/`wardd@.service` do sistema (D46), com
+  `LimitCORE=0`. V3.19, V3.21.
 
 ## Milestone 4 — CLI e integração Claude (run/ssh)
-Contrato: V4.1–V4.36
+Contrato: V4.1–V4.37
 
 - [ ] Fase 25 — CLI `ward`: `lista [--json]`, `travar`, `destravar` (senha do TTY, só
   depois de conferir que o servidor é o `wardd` instalado), mensagens em português.
-  A conferência é a de D46 (ou o risco aceito no escopo, RA5). V4.1, V4.2, V4.18, V4.22.
+  A conferência é a de D46 (pasta do root e par de uid 0). V4.1, V4.2, V4.18, V4.22.
 - [ ] Fase 26 — `ward run`: o daemon cria o filho com argv, cwd e ambiente da CLI sem
   `LD_*` (D13), entrega de D10, anexos em `<rt>tmp/` 0600 com limpeza em toda saída e
   na partida, saída mascarada, código de saída, espera do destrave. Pesquisa e
@@ -451,20 +490,23 @@ Contrato: V4.1–V4.36
   `--`, por `execve` sem shell, nunca `usuário@host` nem `-o User=` (D43); como o
   usuário pode ter `@` (`deploy@cliente.com.br`), a fase tem teste de ataque com um
   usuário com `@` conferindo o argv. Confirmar
-  RA2 com o usuário antes de fechar o milestone.
-  V4.14, V4.23, V4.24, V4.26–V4.28, V4.31, V4.32, V4.34, V4.35.
+  RA2 com o usuário antes de fechar o milestone. No `sftp` e no `scp`, onde `-l` é
+  limite de banda, o usuário vai como `-o` + `User=<usuário>`, com `-F /dev/null` e o
+  host depois de `--` (D56), com teste de argv por `strace` e login real no SSH de
+  teste.
+  V4.14, V4.23, V4.24, V4.26–V4.28, V4.31, V4.32, V4.34, V4.35, V4.37.
 - [ ] Fase 28 — Salto (`ProxyJump`) e túnel de `banco` por `servidor`, com nível
   combinado (D19); logs da suíte do M4 sem segredo. V4.25, V4.27, V4.29, V4.30, V4.33.
 
 ## Milestone 5 — App desktop
 Contrato: V5.1–V5.29
 
-- [ ] Fase 29 — Esqueleto Tauri + Svelte: capabilities só com os comandos próprios,
+- [x] Fase 29 — Esqueleto Tauri + Svelte: capabilities só com os comandos próprios,
   CSP estrita, sem conteúdo remoto, devtools fora do release; cliente do socket no lado
   Rust; "copiar" resolvido no Rust (D4); tokens e componentes do M0 em Svelte; ponte de
-  teste só com `modo-teste` (D7). Com D47: conecta antes do GTK, larga o grupo, limpa o
-  ambiente por lista branca e se reexecuta se a conexão cair; sem D47, testa a regra de
-  D48 contra o WebKitGTK real. V5.1, V5.2, V5.4–V5.6.
+  teste só com `modo-teste` (D7). Pela D47: conecta antes do GTK, larga o grupo, limpa
+  o ambiente por lista branca e se reexecuta se a conexão cair; confere com o WebKitGTK
+  real que a lista branca basta (D48). V5.1, V5.2, V5.4–V5.6.
 - [ ] Fase 30 — **(UI)** Primeiro uso (o PIN vai para a seção de configuração do corpo
   v2 como hash, D30). V5.7, V5.25, V5.26.
 - [ ] Fase 31 — **(UI)** Destravar, inclusive o estado "Pedido do agente". V5.8.
@@ -492,7 +534,7 @@ Contrato: V5.1–V5.29
 Contrato: V6.1–V6.16
 
 - [ ] Fase 40 — `ward-nm` (native messaging): mensagens com limite, papel extensão no
-  daemon (D47 se aceito, senão D5; pai Chrome conferido com o Chrome real: lançado
+  daemon (D47; pai Chrome conferido com o Chrome real: lançado
   direto ou por intermediário, navegador dumpable ou não, handoff 21), origem da aba
   comparada no daemon (D9).
   V6.1, V6.2.
@@ -530,11 +572,11 @@ Contrato: V8.1–V8.4
 ## Milestone 9 — Instalação
 Contrato: V9.1–V9.10
 
-- [ ] Fase 51 — `make install`/`uninstall` com `DESTDIR` e `PREFIX=/usr/local`, unit do
-  systemd do usuário, manifesto de native messaging, política do Chrome com
-  force-install e update local, recusa de artefato `modo-teste`; com D46, units
-  `wardd@.socket`/`wardd@.service` do sistema e `/run/ward/` por `tmpfiles.d`; com D47,
-  grupos `ward-app`/`ward-nm` e binários 2755. V9.1–V9.4, V9.6,
+- [ ] Fase 51 — `make install`/`uninstall` com `DESTDIR` e `PREFIX=/usr/local` (o
+  `sudo` uma vez), units `wardd@.socket`/`wardd@.service` do sistema, `/run/ward/` por
+  `tmpfiles.d` e `systemctl enable --now wardd@<uid>.socket` (D46), grupos
+  `ward-app`/`ward-nm` e binários 2755 (D47), manifesto de native messaging, política
+  do Chrome com force-install e update local, recusa de artefato `modo-teste`. V9.1–V9.4, V9.6,
   V9.7, V9.10.
 - [ ] Fase 52 — `.deb` por `dpkg-deb` a partir do staging (dependência `sshpass`), teste
   num contêiner `ubuntu:24.04` e roteiro de instalação para o usuário (política do

@@ -1,0 +1,392 @@
+/* GERADO por app/scripts/gerar_design.py a partir de app/design/figcraft-export.jsonl
+ * (variables e estilos do Ward.figcraft). Não edite à mão: rode o script de novo.
+ * Só tema escuro (D1): não há modo claro nem leitura do tema do sistema. */
+/* Primitivas · Valor */
+:root {
+  --primitiva-neutro-0: #FFFFFF;
+  --primitiva-neutro-50: #F7F8FA;
+  --primitiva-neutro-400: #9AA1AE;
+  --primitiva-neutro-600: #4B5262;
+  --primitiva-neutro-700: #343A46;
+  --primitiva-neutro-800: #24282F;
+  --primitiva-neutro-850: #1C1F25;
+  --primitiva-neutro-900: #16181D;
+  --primitiva-neutro-950: #101114;
+  --primitiva-azul-300: #93A8FB;
+  --primitiva-azul-400: #6E8BF7;
+  --primitiva-azul-500: #4A6CF0;
+  --primitiva-azul-900: #1B2559;
+  --primitiva-vermelho-400: #F26B6B;
+  --primitiva-vermelho-500: #E5484D;
+  --primitiva-vermelho-600: #C93A3F;
+  --primitiva-vermelho-900: #4A1517;
+  --primitiva-ambar-400: #F5B544;
+  --primitiva-ambar-500: #E89B12;
+  --primitiva-ambar-900: #3F2A06;
+  --primitiva-verde-400: #4CC77E;
+  --primitiva-verde-500: #2FAE63;
+  --primitiva-verde-900: #0F3320;
+  --primitiva-ciano-400: #3CC2C2;
+  --primitiva-ciano-500: #14A3A3;
+  --primitiva-ciano-900: #073636;
+  --primitiva-sobreposicao-escuro: rgba(0, 0, 0, 0.60);
+  --primitiva-sombra-preto-24: rgba(0, 0, 0, 0.24);
+  --primitiva-azul-500-40: rgba(74, 108, 240, 0.40);
+  --primitiva-vermelho-500-16: rgba(229, 72, 77, 0.16);
+  --primitiva-vermelho-500-24: rgba(229, 72, 77, 0.24);
+  --primitiva-azul-600: #3550DC;
+  --primitiva-ciano-400-16: rgba(60, 194, 194, 0.16);
+  --primitiva-ambar-400-16: rgba(245, 181, 68, 0.16);
+  --primitiva-vermelho-400-16: rgba(242, 107, 107, 0.16);
+  --primitiva-neutro-400-12: rgba(154, 161, 174, 0.12);
+  --primitiva-violeta-400: #A78BFA;
+  --primitiva-rosa-400: #F472B6;
+  --primitiva-laranja-400: #FB923C;
+  --primitiva-verde-400-16: rgba(76, 199, 126, 0.16);
+  --primitiva-azul-400-32: rgba(110, 139, 247, 0.32);
+  --primitiva-ambar-400-32: rgba(245, 181, 68, 0.32);
+  --primitiva-vermelho-400-32: rgba(242, 107, 107, 0.32);
+  --primitiva-verde-400-32: rgba(76, 199, 126, 0.32);
+  --primitiva-vermelho-300: #F89090;
+  --neutro-900-0: rgba(22, 24, 29, 0.00);
+}
+/* Cores · Escuro */
+:root {
+  --cor-fundo-padrao: var(--primitiva-neutro-950);
+  --cor-fundo-sutil: var(--primitiva-neutro-900);
+  --cor-fundo-sobreposicao: var(--primitiva-sobreposicao-escuro);
+  --cor-superficie-padrao: var(--primitiva-neutro-850);
+  --cor-superficie-elevada: var(--primitiva-neutro-800);
+  --cor-superficie-campo: var(--primitiva-neutro-900);
+  --cor-superficie-hover: var(--primitiva-neutro-700);
+  --cor-superficie-selecionada: var(--primitiva-azul-900);
+  --cor-superficie-desabilitada: var(--primitiva-neutro-800);
+  --cor-texto-primario: var(--primitiva-neutro-50);
+  --cor-texto-secundario: var(--primitiva-neutro-400);
+  --cor-texto-desabilitado: var(--primitiva-neutro-600);
+  --cor-texto-inverso: var(--primitiva-neutro-950);
+  --cor-texto-marca: var(--primitiva-azul-300);
+  --cor-borda-padrao: var(--primitiva-neutro-700);
+  --cor-borda-forte: var(--primitiva-neutro-600);
+  --cor-borda-foco: var(--primitiva-azul-400);
+  --cor-primaria-padrao: var(--primitiva-azul-500);
+  --cor-primaria-hover: var(--primitiva-azul-400);
+  --cor-primaria-sutil: var(--primitiva-azul-900);
+  --cor-primaria-sobre: var(--primitiva-neutro-0);
+  --cor-perigo-padrao: var(--primitiva-vermelho-600);
+  --cor-perigo-hover: var(--primitiva-vermelho-500);
+  --cor-perigo-sutil: var(--primitiva-vermelho-900);
+  --cor-perigo-texto: var(--primitiva-vermelho-400);
+  --cor-perigo-sobre: var(--primitiva-neutro-0);
+  --cor-aviso-padrao: var(--primitiva-ambar-400);
+  --cor-aviso-sutil: var(--primitiva-ambar-900);
+  --cor-aviso-texto: var(--primitiva-ambar-400);
+  --cor-sucesso-padrao: var(--primitiva-verde-500);
+  --cor-sucesso-sutil: var(--primitiva-verde-900);
+  --cor-sucesso-texto: var(--primitiva-verde-400);
+  --cor-ambiente-dev-fundo: var(--primitiva-ciano-900);
+  --cor-ambiente-dev-texto: var(--primitiva-ciano-400);
+  --cor-ambiente-dev-borda: var(--primitiva-ciano-500);
+  --cor-ambiente-stage-fundo: var(--primitiva-ambar-900);
+  --cor-ambiente-stage-texto: var(--primitiva-ambar-400);
+  --cor-ambiente-stage-borda: var(--primitiva-ambar-500);
+  --cor-ambiente-prod-fundo: var(--primitiva-vermelho-900);
+  --cor-ambiente-prod-texto: var(--primitiva-vermelho-300);
+  --cor-ambiente-prod-borda: var(--primitiva-vermelho-500);
+  --cor-ambiente-prod-destaque: var(--primitiva-vermelho-600);
+  --cor-ambiente-prod-sobre: var(--primitiva-neutro-0);
+  --cor-icone-padrao: var(--primitiva-neutro-400);
+  --cor-icone-forte: var(--primitiva-neutro-50);
+  --cor-icone-desabilitado: var(--primitiva-neutro-600);
+  --cor-icone-marca: var(--primitiva-azul-300);
+  --cor-icone-sobre-cor: var(--primitiva-neutro-0);
+  --cor-borda-sutil: var(--primitiva-neutro-800);
+  --cor-sombra-suave: var(--primitiva-sombra-preto-24);
+  --cor-primaria-brilho: var(--primitiva-azul-500-40);
+  --cor-perigo-translucido: var(--primitiva-vermelho-500-16);
+  --cor-perigo-translucido-hover: var(--primitiva-vermelho-500-24);
+  --cor-perigo-borda: var(--primitiva-vermelho-500);
+  --cor-marca-gradiente-inicio: var(--primitiva-azul-400);
+  --cor-marca-gradiente-fim: var(--primitiva-azul-600);
+  --cor-marca-simbolo: var(--cor-primaria-padrao);
+  --cor-marca-sobre-cor: var(--primitiva-neutro-0);
+  --cor-ambiente-dev-tint: var(--primitiva-ciano-400-16);
+  --cor-ambiente-stage-tint: var(--primitiva-ambar-400-16);
+  --cor-ambiente-prod-tint: var(--primitiva-vermelho-400-16);
+  --cor-selo-neutro-fundo: var(--primitiva-neutro-400-12);
+  --cor-grupo-1-cor: var(--primitiva-azul-400);
+  --cor-grupo-2-cor: var(--primitiva-violeta-400);
+  --cor-grupo-3-cor: var(--primitiva-verde-400);
+  --cor-grupo-4-cor: var(--primitiva-rosa-400);
+  --cor-grupo-5-cor: var(--primitiva-laranja-400);
+  --cor-impressao-papel: var(--primitiva-neutro-0);
+  --cor-impressao-texto: var(--primitiva-neutro-950);
+  --cor-impressao-texto-secundario: var(--primitiva-neutro-600);
+  --cor-impressao-linha: var(--primitiva-neutro-400);
+  --cor-marca-sobre-cor-inativo: var(--primitiva-neutro-400);
+  --cor-marca-inativo: var(--primitiva-neutro-600);
+  --cor-sucesso-tint: var(--primitiva-verde-400-16);
+  --cor-info-borda-suave: var(--primitiva-azul-400-32);
+  --cor-aviso-borda-suave: var(--primitiva-ambar-400-32);
+  --cor-perigo-borda-suave: var(--primitiva-vermelho-400-32);
+  --cor-sucesso-borda-suave: var(--primitiva-verde-400-32);
+  --cor-info-sutil: var(--cor-primaria-sutil);
+  --cor-marca-grafite: var(--primitiva-neutro-800);
+  --cor-fundo-sutil-transparente: var(--neutro-900-0);
+}
+/* Tipografia · Valor */
+:root {
+  --familia-texto: "Inter", system-ui, sans-serif;
+  --familia-mono: "JetBrains Mono", ui-monospace, monospace;
+  --peso-regular: 400;
+  --peso-medio: 500;
+  --peso-semibold: 600;
+  --peso-negrito: 700;
+  --tamanho-xs: 12px;
+  --altura-linha-xs: 16px;
+  --tamanho-sm: 13px;
+  --altura-linha-sm: 18px;
+  --tamanho-base: 14px;
+  --altura-linha-base: 20px;
+  --tamanho-md: 16px;
+  --altura-linha-md: 24px;
+  --tamanho-lg: 18px;
+  --altura-linha-lg: 26px;
+  --tamanho-xl: 22px;
+  --altura-linha-xl: 30px;
+  --tamanho-2xl: 28px;
+  --altura-linha-2xl: 36px;
+  --espacamento-letra-normal: 0px;
+  --espacamento-letra-titulo: -0.2px;
+  --tamanho-3xl: 32px;
+  --altura-linha-3xl: 40px;
+  --tamanho-2xs: 11px;
+}
+/* Espaçamento · Valor */
+:root {
+  --espaco-0: 0px;
+  --espaco-2: 2px;
+  --espaco-4: 4px;
+  --espaco-6: 6px;
+  --espaco-8: 8px;
+  --espaco-12: 12px;
+  --espaco-16: 16px;
+  --espaco-20: 20px;
+  --espaco-24: 24px;
+  --espaco-32: 32px;
+  --espaco-40: 40px;
+  --espaco-48: 48px;
+  --espaco-64: 64px;
+  --controle-sm: 32px;
+  --controle-md: 40px;
+  --controle-lg: 48px;
+  --icone-sm: 16px;
+  --icone-md: 20px;
+  --icone-lg: 24px;
+  --linha-fina: 1px;
+  --linha-grossa: 2px;
+  --linha-icone: 1.5px;
+  --espaco-80: 80px;
+  --espaco-96: 96px;
+  --controle-padrao: 44px;
+  --icone-xs: 12px;
+}
+/* Raio · Valor */
+:root {
+  --raio-nenhum: 0px;
+  --raio-sm: 6px;
+  --raio-md: 10px;
+  --raio-lg: 12px;
+  --raio-xl: 16px;
+  --raio-2xl: 20px;
+  --raio-total: 9999px;
+  --raio-3xl: 24px;
+  --raio-controle: var(--raio-md);
+  --raio-item: var(--raio-lg);
+  --raio-cartao: var(--raio-xl);
+  --raio-painel: var(--raio-2xl);
+  --raio-janela: var(--raio-3xl);
+  --raio-pilula: var(--raio-total);
+}
+/* Largura · Valor */
+:root {
+  --largura-janela: 1280px;
+  --largura-barra-lateral: 264px;
+  --largura-conteudo: 960px;
+  --largura-formulario: 640px;
+  --largura-campo: 240px;
+  --largura-select-filtro: 160px;
+  --largura-dialogo: 480px;
+  --largura-dialogo-largo: 560px;
+  --largura-toast: 360px;
+  --largura-popup: 360px;
+  --largura-coluna-tipo: 120px;
+  --largura-coluna-ambiente: 72px;
+  --largura-coluna-nivel: 128px;
+  --largura-coluna-acesso: 440px;
+  --largura-coluna-lista: 392px;
+  --largura-busca: 360px;
+  --largura-interruptor: 36px;
+  --pagina-a4-largura: 794px;
+  --pagina-a4-altura: 1123px;
+  --largura-menu: 272px;
+  --largura-select-compacto: 120px;
+}
+/* Elevação · Valor */
+:root {
+  --elevacao-nenhum: 0px;
+  --elevacao-flutuante-contato-y: 2px;
+  --elevacao-flutuante-contato-desfoque: 6px;
+  --elevacao-flutuante-ambiente-y: 12px;
+  --elevacao-flutuante-ambiente-desfoque: 32px;
+  --elevacao-modal-contato-y: 4px;
+  --elevacao-modal-contato-desfoque: 12px;
+  --elevacao-modal-ambiente-y: 24px;
+  --elevacao-modal-ambiente-desfoque: 64px;
+  --elevacao-brilho-y: 4px;
+  --elevacao-brilho-desfoque: 16px;
+}
+/* Tom do ícone · padrão */
+:root {
+  --tom-icone: var(--cor-icone-padrao);
+}
+/* Tom do ícone · sobre-cor */
+[data-tom-icone="sobre-cor"] {
+  --tom-icone: var(--cor-icone-sobre-cor);
+}
+/* Tom do ícone · forte */
+[data-tom-icone="forte"] {
+  --tom-icone: var(--cor-icone-forte);
+}
+/* Tom do ícone · desabilitado */
+[data-tom-icone="desabilitado"] {
+  --tom-icone: var(--cor-icone-desabilitado);
+}
+/* Tom do ícone · marca */
+[data-tom-icone="marca"] {
+  --tom-icone: var(--cor-icone-marca);
+}
+/* Tom do ícone · perigo */
+[data-tom-icone="perigo"] {
+  --tom-icone: var(--cor-perigo-texto);
+}
+/* Tom do ícone · aviso */
+[data-tom-icone="aviso"] {
+  --tom-icone: var(--cor-aviso-texto);
+}
+/* Tom do ícone · sucesso */
+[data-tom-icone="sucesso"] {
+  --tom-icone: var(--cor-sucesso-texto);
+}
+/* Estilos de efeito */
+:root {
+  --sombra-brilho-primario: var(--elevacao-nenhum) var(--elevacao-brilho-y) var(--elevacao-brilho-desfoque) var(--elevacao-nenhum) var(--cor-primaria-brilho);
+  --sombra-flutuante: var(--elevacao-nenhum) var(--elevacao-flutuante-contato-y) var(--elevacao-flutuante-contato-desfoque) var(--elevacao-nenhum) var(--cor-sombra-suave), var(--elevacao-nenhum) var(--elevacao-flutuante-ambiente-y) var(--elevacao-flutuante-ambiente-desfoque) var(--elevacao-nenhum) var(--cor-sombra-suave);
+  --sombra-modal: var(--elevacao-nenhum) var(--elevacao-modal-contato-y) var(--elevacao-modal-contato-desfoque) var(--elevacao-nenhum) var(--cor-sombra-suave), var(--elevacao-nenhum) var(--elevacao-modal-ambiente-y) var(--elevacao-modal-ambiente-desfoque) var(--elevacao-nenhum) var(--cor-sombra-suave);
+}
+/* Estilos de texto (classes com o nome do estilo) */
+.mono-corpo {
+  font-family: var(--familia-mono);
+  font-weight: var(--peso-regular);
+  font-size: var(--tamanho-base);
+  line-height: var(--altura-linha-base);
+  letter-spacing: var(--espacamento-letra-normal);
+}
+.mono-pin {
+  font-family: var(--familia-mono);
+  font-weight: var(--peso-negrito);
+  font-size: var(--tamanho-xl);
+  line-height: var(--altura-linha-xl);
+  letter-spacing: var(--espacamento-letra-normal);
+}
+.mono-pequeno {
+  font-family: var(--familia-mono);
+  font-weight: var(--peso-regular);
+  font-size: var(--tamanho-sm);
+  line-height: var(--altura-linha-sm);
+  letter-spacing: var(--espacamento-letra-normal);
+}
+.texto-corpo {
+  font-family: var(--familia-texto);
+  font-weight: var(--peso-regular);
+  font-size: var(--tamanho-base);
+  line-height: var(--altura-linha-base);
+  letter-spacing: var(--espacamento-letra-normal);
+}
+.texto-corpo-forte {
+  font-family: var(--familia-texto);
+  font-weight: var(--peso-medio);
+  font-size: var(--tamanho-base);
+  line-height: var(--altura-linha-base);
+  letter-spacing: var(--espacamento-letra-normal);
+}
+.texto-etiqueta {
+  font-family: var(--familia-texto);
+  font-weight: var(--peso-medio);
+  font-size: var(--tamanho-xs);
+  line-height: var(--altura-linha-xs);
+  letter-spacing: var(--espacamento-letra-normal);
+}
+.texto-legenda {
+  font-family: var(--familia-texto);
+  font-weight: var(--peso-regular);
+  font-size: var(--tamanho-xs);
+  line-height: var(--altura-linha-xs);
+  letter-spacing: var(--espacamento-letra-normal);
+}
+.texto-pequeno {
+  font-family: var(--familia-texto);
+  font-weight: var(--peso-regular);
+  font-size: var(--tamanho-sm);
+  line-height: var(--altura-linha-sm);
+  letter-spacing: var(--espacamento-letra-normal);
+}
+.texto-rotulo {
+  font-family: var(--familia-texto);
+  font-weight: var(--peso-medio);
+  font-size: var(--tamanho-sm);
+  line-height: var(--altura-linha-sm);
+  letter-spacing: var(--espacamento-letra-normal);
+}
+.texto-selo {
+  font-family: var(--familia-texto);
+  font-weight: var(--peso-medio);
+  font-size: var(--tamanho-2xs);
+  line-height: var(--altura-linha-xs);
+  letter-spacing: var(--espacamento-letra-normal);
+}
+.texto-selo-grande {
+  font-family: var(--familia-texto);
+  font-weight: var(--peso-semibold);
+  font-size: var(--tamanho-xs);
+  line-height: var(--altura-linha-xs);
+  letter-spacing: var(--espacamento-letra-normal);
+}
+.titulo-destaque {
+  font-family: var(--familia-texto);
+  font-weight: var(--peso-semibold);
+  font-size: var(--tamanho-3xl);
+  line-height: var(--altura-linha-3xl);
+  letter-spacing: var(--espacamento-letra-titulo);
+}
+.titulo-modal {
+  font-family: var(--familia-texto);
+  font-weight: var(--peso-semibold);
+  font-size: var(--tamanho-lg);
+  line-height: var(--altura-linha-lg);
+  letter-spacing: var(--espacamento-letra-titulo);
+}
+.titulo-pagina {
+  font-family: var(--familia-texto);
+  font-weight: var(--peso-semibold);
+  font-size: var(--tamanho-xl);
+  line-height: var(--altura-linha-xl);
+  letter-spacing: var(--espacamento-letra-titulo);
+}
+.titulo-secao {
+  font-family: var(--familia-texto);
+  font-weight: var(--peso-semibold);
+  font-size: var(--tamanho-md);
+  line-height: var(--altura-linha-md);
+  letter-spacing: var(--espacamento-letra-normal);
+}
