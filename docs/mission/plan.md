@@ -424,6 +424,8 @@ Pendências da 29b (2026-11-09) — canais novos ao planner: `gst-plugin-scanner
 
 Pendências da 31 (2026-11-09): V5.8 parcial — o aviso `pedido_de_destrave` não traz entrada nem comando (o cartão mostra só a contagem); fechar exige campo no aviso (entrada + comando neutralizado por D51) em `ward-core`/`wardd`/app — decidir; "Agora não" só esconde (não há como o app negar o destrave; expira em 2 min); espera de D20 em dobro (tela + daemon, até 30+30 s) — UX; senha errada esvazia o campo (ajustar frame `3393`, como o `6373` da 35); variable própria para a largura 560 do `Painel de marca`; com 16 avisos de aprovação parados na fila, destrave novo é descartado (falha fechada) até a 36 consumir.
 
+Pendências da 22d (2026-11-09): relógio ilegível grava sem carimbo novo (entrada nova fica sem datas para sempre) — planner pode inverter para recusar; entrada antiga editada mostra só "Alterada em" (caso parcial fora do V5.34); datas seguem provisórias no escopo/PRD (D65 d).
+
 ## Milestone 3 — Daemon e protocolo
 Contrato: V3.1–V3.41
 
@@ -623,7 +625,7 @@ Contrato: V3.1–V3.41
   - testes de ataque: cliente Python agente pedindo `revelar`/`copiar`/`totp`
     (`acme-pg-dev` e `gama-bloqueada`), quadro forjado com `resumo` no papel agente,
     log contra `.dev/variacoes.txt`. V3.39, V3.40.
-- [ ] Fase 22d — (Depende da 22c e da 22a.) Datas de criação e alteração (D65 d,
+- [x] Fase 22d — (Depende da 22c e da 22a.) Datas de criação e alteração (D65 d,
   provisória). Arquivos: `crates/ward-core` (`entrada`, `corpo` v4, `protocolo` só no
   `DetalheEntrada` e no rascunho), `crates/wardd` (carimbo pelo relógio injetado),
   `crates/ward-core/examples/dev-cofre/`, `app/nucleo/src/credenciais.rs`,
