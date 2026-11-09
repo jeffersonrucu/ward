@@ -1159,6 +1159,25 @@ Scrutiny do M6, rodada 2 (2026-11-09): **aprovado**.
   hora. O `MAX_VALOR` existe no commit da 39f, cujo `make check` deu 0.
 Pendências para o QA ou o usuário: V6.11 (janela real), V6.12 com o Playwright do Python,
 V6.8 e V6.9 visual.
+Auditoria de segurança do M6 (2026-11-09): **reprovada**, com 2 críticos. As asserções
+V6.1–V6.6 e V6.13–V6.16 passam como escritas.
+- **Crítico (localhost por `[::1]`):** D9 aceita `http://localhost`. Um processo do uid
+  abre `[::1]:8081` enquanto o serviço escuta só em `127.0.0.1`; o Chrome prefere
+  `::1`, a origem bate e a senha de `acme-wp-prod` vai ao falso. Vale para o
+  `ward playwright` (agente, sem aprovação), o `ward login` e o popup, e também para
+  `127.0.0.1:<porta>` com o serviço parado. Fica fora do RA10 (ameaça 4).
+- **Crítico (pipe CDP):** o Chrome do `ward playwright` é dumpable. Um processo do uid
+  reabre `/proc/<chrome>/fd/3` e, com `tee(2)`, lê o `Runtime.callFunctionOn` com a senha
+  sem quebrar a sessão; escrevendo ali, injetaria CDP. O mecanismo fica fora do RA1 e do
+  RA10, e o impacto, dentro do RA10. O escopo diz, errado, que o Yama protege os fds.
+- **Alto (dentro do RA10):** o mesmo `tee` no stdout do `ward-nm` no Chrome do usuário
+  lê o quadro `preenchimento`.
+- **Médio:** a política do Chrome não desliga `PasswordManagerEnabled` nem
+  `PasswordLeakDetectionEnabled`. O Chrome pode oferecer guardar a senha e manda um hash
+  dela ao Google.
+- **Baixo:** `apagar_sessoes` (`playwright.rs:172-185`) segue link no `read_dir`.
+Decisão do usuário pendente.
+
 - [ ] Fase 44b — Baixos do scrutiny do M6, sem bloquear:
   - o passo 1.2 do roteiro do M6 cita a mensagem "negado"; conferir a mensagem real do
     `ward login` negado;
