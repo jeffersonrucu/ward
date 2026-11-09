@@ -563,3 +563,58 @@ fn ataque_anexos_e_conectar_pela_ponte() {
     }
     fs::remove_dir_all(base).unwrap();
 }
+
+/// V3.37/V3.38 (D63): a ponte executada à mão (ou uma cópia, ou com outro pai) recebe
+/// `agente` do daemon de teste e sai na primeira resposta, sem abrir a porta HTTP; com
+/// `app`, segue. O "daemon" aqui é um servidor do mesmo uid numa pasta 0700, que
+/// responde `estado` com o papel pedido e anota o que recebeu.
+#[test]
+fn ataque_ponte_sem_papel_app_sai_na_primeira_resposta() {
+    use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
+    use std::os::unix::net::UnixListener;
+    use ward_app_nucleo::daemon::DaemonSocket;
+    use ward_ponte_teste::partida::{SEM_PAPEL_APP, conectar_com_papel_app};
+
+    let uid = fs::metadata("/proc/self").unwrap().uid();
+    for papel in ["agente", "extensao", "app"] {
+        let dir = PathBuf::from(format!(
+            "/run/user/{uid}/ward-ponte-papel-{}-{papel}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::DirBuilder::new().mode(0o700).create(&dir).unwrap();
+        let sock = dir.join("wardd.sock");
+        let l = UnixListener::bind(&sock).unwrap();
+        fs::set_permissions(&sock, fs::Permissions::from_mode(0o600)).unwrap();
+        let servidor = std::thread::spawn(move || {
+            let (mut c, _) = l.accept().unwrap();
+            let mut recebidos = Vec::new();
+            loop {
+                let mut n = [0u8; 4];
+                if c.read_exact(&mut n).is_err() {
+                    break;
+                }
+                let mut b = vec![0u8; u32::from_be_bytes(n) as usize];
+                c.read_exact(&mut b).unwrap();
+                recebidos.push(String::from_utf8(b).unwrap());
+                let r = format!(
+                    r#"{{"v":1,"tipo":"estado","dados":{{"travado":true,"cofre_existe":true,"papel":"{papel}"}}}}"#
+                );
+                c.write_all(&(r.len() as u32).to_be_bytes()).unwrap();
+                c.write_all(r.as_bytes()).unwrap();
+            }
+            recebidos
+        });
+        let r = conectar_com_papel_app(DaemonSocket::teste_em(sock));
+        if papel == "app" {
+            assert!(r.is_ok(), "{:?}", r.err());
+        } else {
+            assert_eq!(r.as_ref().err().map(String::as_str), Some(SEM_PAPEL_APP));
+        }
+        drop(r);
+        let recebidos = servidor.join().unwrap();
+        assert_eq!(recebidos.len(), 1, "{recebidos:?}");
+        assert!(recebidos[0].contains(r#""op":"estado""#), "{recebidos:?}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+}

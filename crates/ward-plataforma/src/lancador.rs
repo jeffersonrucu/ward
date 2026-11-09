@@ -389,8 +389,7 @@ impl std::error::Error for ErroLancador {}
 /// uma instância por vez.
 #[derive(Debug)]
 pub struct Lancador {
-    binario: BinarioPermitido,
-    gid_app: u32,
+    origem: Origem,
     filho: Option<Child>,
     /// pidfd do app aberto (D63), tirado logo depois do `fork`, com o filho ainda sem
     /// colher (o pid não pode ser de outro processo). O papel app exige este processo.
@@ -399,11 +398,37 @@ pub struct Lancador {
     saida: Option<ExitStatus>,
 }
 
+/// O que o lançador abre.
+#[derive(Debug)]
+enum Origem {
+    /// O `ward-app` instalado: do root, setgid do grupo `ward-app`, ambiente de D57.
+    Instalado {
+        binario: BinarioPermitido,
+        gid_app: u32,
+    },
+    /// Só no `modo-teste` (D63): o `WARD_DEV_APP` do daemon de teste.
+    #[cfg(feature = "modo-teste")]
+    Teste(BinarioDeTeste),
+}
+
 impl Lancador {
     pub fn novo(binario: BinarioPermitido, inst: &Instalacao) -> Lancador {
-        Lancador {
+        Lancador::de(Origem::Instalado {
             binario,
             gid_app: inst.gid_app(),
+        })
+    }
+
+    /// Só no `modo-teste` (D63): abre o binário de teste (o `ward-app` de teste ou a
+    /// ponte), conferido de novo a cada abertura, com a saída no log de teste.
+    #[cfg(feature = "modo-teste")]
+    pub fn de_teste(binario: BinarioDeTeste) -> Lancador {
+        Lancador::de(Origem::Teste(binario))
+    }
+
+    fn de(origem: Origem) -> Lancador {
+        Lancador {
+            origem,
             filho: None,
             pidfd: None,
             saida: None,
@@ -457,10 +482,15 @@ impl Lancador {
         if self.aberto() {
             return Err(ErroLancador::JaAberto);
         }
-        conferir_binario_do_app(&self.binario, self.gid_app)?;
-        let ambiente = ambiente_do_app().map_err(ErroLancador::Sessao)?;
-        let mut filho =
-            lancar(self.binario.caminho(), &ambiente).map_err(|e| ErroLancador::Io(e.kind()))?;
+        let mut filho = match &self.origem {
+            Origem::Instalado { binario, gid_app } => {
+                conferir_binario_do_app(binario, *gid_app)?;
+                let ambiente = ambiente_do_app().map_err(ErroLancador::Sessao)?;
+                lancar(binario.caminho(), &ambiente).map_err(|e| ErroLancador::Io(e.kind()))?
+            }
+            #[cfg(feature = "modo-teste")]
+            Origem::Teste(t) => t.lancar()?,
+        };
         let pid = filho.id();
         // O filho ainda não foi colhido: o pid é dele. Sem pidfd, o app não abre (D63).
         let pidfd = match libc::pid_t::try_from(pid)
@@ -522,6 +552,234 @@ pub fn lancar_para_teste(
         .stderr(saida);
     sys::fechar_fds_no_exec(&mut cmd);
     cmd.spawn()
+}
+
+/// Nome do app Tauri de teste: com ele, o lançador de teste monta o ambiente de D57.
+#[cfg(feature = "modo-teste")]
+pub const NOME_APP_DE_TESTE: &str = "ward-app";
+
+/// `PATH` do binário de teste que não é o app Tauri (a ponte).
+#[cfg(feature = "modo-teste")]
+pub const PATH_DE_TESTE: &str = "/usr/bin:/bin";
+
+/// Por que o binário de teste foi recusado. Sem caminho (vai ao log).
+#[cfg(feature = "modo-teste")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ErroBinarioDeTeste {
+    /// Caminho relativo, com `.`, `..`, `//` ou nome fora de `[A-Za-z0-9._-]`.
+    Caminho,
+    /// Fora do repositório (a pasta acima de `WARD_DEV_DIR`).
+    ForaDoRepositorio,
+    /// Link simbólico no caminho, ou algo que não é pasta no meio.
+    Link,
+    /// Não é arquivo regular executável.
+    NaoArquivo,
+    /// O arquivo não é do uid deste processo.
+    OutroDono,
+    /// Arquivo ou pasta do caminho com escrita para outros.
+    Gravavel,
+}
+
+#[cfg(feature = "modo-teste")]
+impl fmt::Display for ErroBinarioDeTeste {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.mensagem())
+    }
+}
+
+#[cfg(feature = "modo-teste")]
+impl ErroBinarioDeTeste {
+    /// A mensagem, sem caminho.
+    pub fn mensagem(&self) -> &'static str {
+        match self {
+            ErroBinarioDeTeste::Caminho => "caminho do app de teste fora da forma absoluta simples",
+            ErroBinarioDeTeste::ForaDoRepositorio => {
+                "o app de teste não está dentro do repositório"
+            }
+            ErroBinarioDeTeste::Link => "link simbólico no caminho do app de teste",
+            ErroBinarioDeTeste::NaoArquivo => "o app de teste não é arquivo regular executável",
+            ErroBinarioDeTeste::OutroDono => "o app de teste não é do usuário do daemon",
+            ErroBinarioDeTeste::Gravavel => {
+                "o app de teste (ou uma pasta dele) tem escrita para outros"
+            }
+        }
+    }
+}
+
+/// Só no `modo-teste` (D63): o binário que o daemon de teste abre pelo `abrir_app`
+/// (`WARD_DEV_APP`: o `ward-app` de teste ou a `ward-ponte-teste`). Nada dele vem do
+/// pedido: caminho, ambiente e saída são da configuração do daemon.
+///
+/// - caminho absoluto simples, dentro de `raiz` (o repositório), arquivo regular
+///   executável do uid deste processo, sem escrita para outros, sem link em nenhuma
+///   parte do caminho (conferido ao criar e de novo a cada abertura);
+/// - o `ward-app` de teste recebe o ambiente de D57 ([`ambiente_do_app`]); qualquer
+///   outro (a ponte, que não abre janela) recebe o ambiente fixo mínimo: `HOME` do
+///   `getpwuid_r`, `PATH=/usr/bin:/bin`, `LANG` do daemon (só nome de locale),
+///   `XDG_RUNTIME_DIR` conferido e as variáveis do `modo-teste` que o daemon passa;
+/// - a saída vai para `<logs>/<nome do binário>.log`, 0600, sem seguir link.
+#[cfg(feature = "modo-teste")]
+#[derive(Clone, Debug)]
+pub struct BinarioDeTeste {
+    caminho: PathBuf,
+    raiz: PathBuf,
+    logs: PathBuf,
+    extras: Vec<(&'static str, String)>,
+}
+
+#[cfg(feature = "modo-teste")]
+impl BinarioDeTeste {
+    /// `extras`: as variáveis do `modo-teste` que vão ao ambiente mínimo (ex.:
+    /// `WARD_DEV_DIR`). Não entram no ambiente do `ward-app` de teste (D57 exato).
+    pub fn novo(
+        caminho: PathBuf,
+        raiz: PathBuf,
+        logs: PathBuf,
+        extras: Vec<(&'static str, String)>,
+    ) -> Result<BinarioDeTeste, ErroBinarioDeTeste> {
+        let b = BinarioDeTeste {
+            caminho,
+            raiz,
+            logs,
+            extras,
+        };
+        b.conferir()?;
+        Ok(b)
+    }
+
+    pub fn caminho(&self) -> &Path {
+        &self.caminho
+    }
+
+    fn nome(&self) -> Result<&str, ErroBinarioDeTeste> {
+        let nome = self
+            .caminho
+            .file_name()
+            .and_then(OsStr::to_str)
+            .ok_or(ErroBinarioDeTeste::Caminho)?;
+        let ok = !nome.is_empty()
+            && nome.len() <= 64
+            && !nome.starts_with(['.', '-'])
+            && nome
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'));
+        if ok {
+            Ok(nome)
+        } else {
+            Err(ErroBinarioDeTeste::Caminho)
+        }
+    }
+
+    /// As conferências do binário (ver o tipo).
+    pub fn conferir(&self) -> Result<(), ErroBinarioDeTeste> {
+        let uid = sys::geteuid();
+        if !caminho_absoluto_simples(&self.caminho) || !caminho_absoluto_simples(&self.raiz) {
+            return Err(ErroBinarioDeTeste::Caminho);
+        }
+        self.nome()?;
+        if self.caminho == self.raiz || !self.caminho.starts_with(&self.raiz) {
+            return Err(ErroBinarioDeTeste::ForaDoRepositorio);
+        }
+        let m =
+            std::fs::symlink_metadata(&self.caminho).map_err(|_| ErroBinarioDeTeste::NaoArquivo)?;
+        if m.file_type().is_symlink() {
+            return Err(ErroBinarioDeTeste::Link);
+        }
+        if !m.file_type().is_file() || m.mode() & 0o100 == 0 {
+            return Err(ErroBinarioDeTeste::NaoArquivo);
+        }
+        if m.uid() != uid {
+            return Err(ErroBinarioDeTeste::OutroDono);
+        }
+        if m.mode() & 0o002 != 0 {
+            return Err(ErroBinarioDeTeste::Gravavel);
+        }
+        let mut atual = self.caminho.parent();
+        while let Some(p) = atual {
+            let m = std::fs::symlink_metadata(p).map_err(|_| ErroBinarioDeTeste::Link)?;
+            if !m.file_type().is_dir() {
+                return Err(ErroBinarioDeTeste::Link);
+            }
+            if m.mode() & 0o002 != 0 {
+                return Err(ErroBinarioDeTeste::Gravavel);
+            }
+            atual = p.parent();
+        }
+        Ok(())
+    }
+
+    /// O ambiente do binário de teste (ver o tipo). Nada do ambiente deste processo
+    /// além do locale.
+    pub fn ambiente(&self) -> Result<AmbienteApp, ErroSessao> {
+        if self.nome() == Ok(NOME_APP_DE_TESTE) {
+            return ambiente_do_app();
+        }
+        let uid = sys::geteuid();
+        let rt = pasta_da_sessao(uid);
+        conferir_pasta_da_sessao(&rt, uid)?;
+        let home = sys::home_do_uid(uid).map_err(|_| ErroSessao::HomeIndisponivel)?;
+        let home = home.to_str().ok_or(ErroSessao::HomeIndisponivel)?;
+        if !caminho_absoluto_simples(Path::new(home)) {
+            return Err(ErroSessao::HomeIndisponivel);
+        }
+        let mut vars: BTreeMap<&'static str, String> = BTreeMap::new();
+        vars.insert("HOME", home.to_owned());
+        vars.insert("PATH", PATH_DE_TESTE.to_owned());
+        vars.insert(
+            "XDG_RUNTIME_DIR",
+            rt.to_str()
+                .ok_or(ErroSessao::RuntimeNaoConfiavel)?
+                .to_owned(),
+        );
+        if let Some(v) = std::env::var_os("LANG")
+            && locale_valido(v.as_bytes())
+        {
+            vars.insert("LANG", v.to_string_lossy().into_owned());
+        }
+        for (k, v) in &self.extras {
+            vars.insert(k, v.clone());
+        }
+        Ok(AmbienteApp { vars })
+    }
+
+    /// `<logs>/<nome>.log`, 0600, do uid, sem seguir link; a pasta é criada 0700.
+    fn abrir_log(&self) -> io::Result<std::fs::File> {
+        use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
+        let uid = sys::geteuid();
+        let nome = self
+            .nome()
+            .map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
+        match std::fs::DirBuilder::new().mode(0o700).create(&self.logs) {
+            Ok(()) => {}
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
+            Err(e) => return Err(e),
+        }
+        let m = std::fs::symlink_metadata(&self.logs)?;
+        if !m.file_type().is_dir() || m.uid() != uid {
+            return Err(io::Error::from(io::ErrorKind::PermissionDenied));
+        }
+        let f = std::fs::OpenOptions::new()
+            .append(true)
+            .create(true)
+            .mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(self.logs.join(format!("{nome}.log")))?;
+        let m = f.metadata()?;
+        if !m.file_type().is_file() || m.uid() != uid {
+            return Err(io::Error::from(io::ErrorKind::PermissionDenied));
+        }
+        f.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+        Ok(f)
+    }
+
+    /// Confere de novo e abre, com a saída no log.
+    fn lancar(&self) -> Result<Child, ErroLancador> {
+        self.conferir()
+            .map_err(|_| ErroLancador::BinarioNaoConfiavel)?;
+        let ambiente = self.ambiente().map_err(ErroLancador::Sessao)?;
+        let log = self.abrir_log().map_err(|e| ErroLancador::Io(e.kind()))?;
+        lancar_para_teste(&self.caminho, &ambiente, log).map_err(|e| ErroLancador::Io(e.kind()))
+    }
 }
 
 #[cfg(test)]
@@ -866,13 +1124,10 @@ mod testes {
     fn saida_do_app_fica_para_o_log() {
         let s = Sessao::nova("saida");
         let amb = s.montar().unwrap();
-        let mut l = Lancador {
+        let mut l = Lancador::de(Origem::Instalado {
             binario: BinarioPermitido::novo("/usr/bin/false").unwrap(),
             gid_app: 4_000_000,
-            filho: None,
-            pidfd: None,
-            saida: None,
-        };
+        });
         assert_eq!(l.tomar_saida(), None);
         l.filho = Some(lancar(Path::new("/usr/bin/false"), &amb).unwrap());
         while l.aberto() {
@@ -907,13 +1162,10 @@ mod testes {
     fn ataque_so_o_pid_do_lancador_e_o_app() {
         let s = Sessao::nova("pidfd");
         let amb = s.montar().unwrap();
-        let mut l = Lancador {
+        let mut l = Lancador::de(Origem::Instalado {
             binario: BinarioPermitido::novo("/usr/bin/yes").unwrap(),
             gid_app: 4_000_000,
-            filho: None,
-            pidfd: None,
-            saida: None,
-        };
+        });
         assert!(!l.e_o_app_lancado(std::process::id()));
         let filho = lancar(Path::new("/usr/bin/yes"), &amb).unwrap();
         let pid = filho.id();
@@ -958,5 +1210,194 @@ mod testes {
         assert!(m.contains("WAYLAND_DISPLAY") && !m.contains("/tmp"));
         let m = ErroLancador::Sessao(ErroSessao::VariosWayland).to_string();
         assert!(m.starts_with("aprovação indisponível"));
+    }
+
+    /// Repositório falso para o binário de teste (D63), em `/run/user/<uid>/` (0700),
+    /// apagado ao sair.
+    #[cfg(feature = "modo-teste")]
+    struct Repo(PathBuf);
+
+    #[cfg(feature = "modo-teste")]
+    impl Repo {
+        fn novo(nome: &str) -> Repo {
+            let p = PathBuf::from(format!(
+                "/run/user/{}/ward-lancador-repo-{}-{nome}",
+                sys::geteuid(),
+                std::process::id()
+            ));
+            let _ = fs::remove_dir_all(&p);
+            fs::DirBuilder::new().mode(0o700).create(&p).unwrap();
+            fs::DirBuilder::new()
+                .mode(0o700)
+                .create(p.join("bin"))
+                .unwrap();
+            fs::DirBuilder::new()
+                .mode(0o700)
+                .create(p.join(".dev"))
+                .unwrap();
+            Repo(p)
+        }
+
+        /// Script executável do uid em `bin/<nome>`, fechado antes de qualquer `exec`.
+        fn script(&self, nome: &str, corpo: &str) -> PathBuf {
+            let c = self.0.join("bin").join(nome);
+            fs::write(&c, format!("#!/bin/sh\n{corpo}\n")).unwrap();
+            fs::set_permissions(&c, fs::Permissions::from_mode(0o700)).unwrap();
+            c
+        }
+
+        fn binario(&self, c: &Path) -> Result<BinarioDeTeste, ErroBinarioDeTeste> {
+            BinarioDeTeste::novo(
+                c.to_path_buf(),
+                self.0.clone(),
+                self.0.join(".dev/logs"),
+                vec![("WARD_DEV_DIR", self.0.join(".dev").display().to_string())],
+            )
+        }
+    }
+
+    #[cfg(feature = "modo-teste")]
+    impl Drop for Repo {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// Abre e espera sair. Outro teste em paralelo que faz `fork` pode segurar por um
+    /// instante o fd de escrita do script (ETXTBSY): tenta de novo.
+    #[cfg(feature = "modo-teste")]
+    fn abrir_e_esperar(l: &mut Lancador) -> (u32, ExitStatus) {
+        let pid = (0..50)
+            .find_map(|_| match l.abrir() {
+                Ok(pid) => Some(pid),
+                Err(ErroLancador::Io(io::ErrorKind::ExecutableFileBusy)) => {
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                    None
+                }
+                Err(e) => panic!("{e}"),
+            })
+            .expect("ETXTBSY o tempo todo");
+        loop {
+            if let Some(st) = l.tomar_saida() {
+                return (pid, st);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "modo-teste")]
+    fn ataque_binario_de_teste_fora_das_regras_e_recusado() {
+        use ErroBinarioDeTeste as E;
+        let r = Repo::novo("regras");
+        let bom = r.script("ward-ponte-teste", "exit 0");
+        assert!(r.binario(&bom).is_ok());
+        // Fora do repositório (a raiz não conta), relativo, com `..`, nome estranho.
+        let fora = BinarioDeTeste::novo(
+            bom.clone(),
+            r.0.join("bin/outra"),
+            r.0.join(".dev/logs"),
+            vec![],
+        );
+        assert_eq!(fora.err(), Some(E::ForaDoRepositorio));
+        assert_eq!(r.binario(&r.0).err(), Some(E::ForaDoRepositorio));
+        assert_eq!(r.binario(Path::new("bin/x")).err(), Some(E::Caminho));
+        assert_eq!(
+            r.binario(&r.0.join("bin/../bin/ward-ponte-teste")).err(),
+            Some(E::Caminho)
+        );
+        let estranho = r.script("-x", "exit 0");
+        assert_eq!(r.binario(&estranho).err(), Some(E::Caminho));
+        // Link para o binário, e link numa pasta do caminho.
+        symlink(&bom, r.0.join("bin/link")).unwrap();
+        assert_eq!(r.binario(&r.0.join("bin/link")).err(), Some(E::Link));
+        symlink(r.0.join("bin"), r.0.join("pasta-link")).unwrap();
+        assert_eq!(
+            r.binario(&r.0.join("pasta-link/ward-ponte-teste")).err(),
+            Some(E::Link)
+        );
+        // De outro dono (o `true` do sistema, com a raiz em `/usr/bin`).
+        let root = BinarioDeTeste::novo(
+            PathBuf::from("/usr/bin/true"),
+            PathBuf::from("/usr/bin"),
+            r.0.join(".dev/logs"),
+            vec![],
+        );
+        assert_eq!(root.err(), Some(E::OutroDono));
+        // Não executável, pasta e escrita para outros.
+        let texto = r.0.join("bin/texto");
+        fs::write(&texto, b"x").unwrap();
+        fs::set_permissions(&texto, fs::Permissions::from_mode(0o600)).unwrap();
+        assert_eq!(r.binario(&texto).err(), Some(E::NaoArquivo));
+        assert_eq!(r.binario(&r.0.join("bin")).err(), Some(E::NaoArquivo));
+        fs::set_permissions(&bom, fs::Permissions::from_mode(0o702)).unwrap();
+        assert_eq!(r.binario(&bom).err(), Some(E::Gravavel));
+        fs::set_permissions(&bom, fs::Permissions::from_mode(0o700)).unwrap();
+        fs::set_permissions(r.0.join("bin"), fs::Permissions::from_mode(0o703)).unwrap();
+        assert_eq!(r.binario(&bom).err(), Some(E::Gravavel));
+        fs::set_permissions(r.0.join("bin"), fs::Permissions::from_mode(0o700)).unwrap();
+        // Conferido também a cada abertura: trocado por link depois de aceito, não abre.
+        let b = r.binario(&bom).unwrap();
+        fs::remove_file(&bom).unwrap();
+        symlink("/usr/bin/true", &bom).unwrap();
+        let mut l = Lancador::de_teste(b);
+        assert_eq!(l.abrir(), Err(ErroLancador::BinarioNaoConfiavel));
+    }
+
+    #[test]
+    #[cfg(feature = "modo-teste")]
+    fn ponte_de_teste_recebe_o_ambiente_minimo_e_o_log_e_0600() {
+        let r = Repo::novo("ambiente");
+        let c = r.script("ward-ponte-teste", "/usr/bin/env; echo argumentos=$#");
+        let b = r.binario(&c).unwrap();
+        let mut l = Lancador::de_teste(b);
+        let (pid, st) = abrir_e_esperar(&mut l);
+        assert!(st.success());
+        assert!(!l.e_o_app_lancado(pid), "o pid morto continua app");
+        let log = r.0.join(".dev/logs/ward-ponte-teste.log");
+        let m = fs::symlink_metadata(&log).unwrap();
+        assert_eq!(m.mode() & 0o777, 0o600);
+        let texto = fs::read_to_string(&log).unwrap();
+        let mut nomes: Vec<&str> = texto
+            .lines()
+            .filter_map(|l| l.split_once('=').map(|(k, _)| k))
+            .filter(|k| *k != "argumentos" && *k != "PWD")
+            .collect();
+        nomes.sort_unstable();
+        let mut esperados = vec!["HOME", "PATH", "WARD_DEV_DIR", "XDG_RUNTIME_DIR"];
+        if std::env::var_os("LANG").is_some_and(|v| locale_valido(v.as_bytes())) {
+            esperados.push("LANG");
+        }
+        esperados.sort_unstable();
+        assert_eq!(nomes, esperados, "{texto}");
+        assert!(texto.contains("PATH=/usr/bin:/bin\n"));
+        assert!(
+            texto.contains("argumentos=0\n"),
+            "argumentos do pedido chegaram"
+        );
+        // O log como link para fora: não abre (nada é escrito lá).
+        fs::remove_file(&log).unwrap();
+        let alvo = r.0.join("alvo.txt");
+        fs::write(&alvo, b"").unwrap();
+        symlink(&alvo, &log).unwrap();
+        assert!(matches!(l.abrir(), Err(ErroLancador::Io(_))));
+        assert_eq!(fs::read(&alvo).unwrap(), b"");
+    }
+
+    #[test]
+    #[cfg(feature = "modo-teste")]
+    fn app_de_teste_recebe_o_ambiente_de_d57() {
+        let r = Repo::novo("d57");
+        let c = r.script(NOME_APP_DE_TESTE, "exit 0");
+        let b = r.binario(&c).unwrap();
+        // Sem sessão Wayland única neste host, os dois recusam igual (D21).
+        match (b.ambiente(), ambiente_do_app()) {
+            (Ok(a), Ok(d57)) => {
+                assert_eq!(a, d57);
+                assert!(a.valor("WARD_DEV_DIR").is_none());
+            }
+            (Err(a), Err(d57)) => assert_eq!(a, d57),
+            (a, d57) => panic!("{a:?} × {d57:?}"),
+        }
     }
 }

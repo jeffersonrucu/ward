@@ -12,9 +12,11 @@
 //!    setgid) e chama `PR_SET_DUMPABLE=0` de novo (trocar de gid volta o dumpable ao
 //!    `fs.suid_dumpable`);
 //! 7. confere de novo gids, dumpable e depurador, e que o pai parece o daemon (`wardd`
-//!    do mesmo uid, não-dumpable). Com outro pai, o app sai com mensagem: quem decide o
-//!    papel é o daemon, e com outro pai ele já deu o papel agente (o pedido
-//!    `abrir_app` ao daemon entra na Fase 23).
+//!    do mesmo uid, não-dumpable);
+//! 8. pede `estado` e confere o papel na primeira resposta (D63): sem `app`, não usa a
+//!    conexão e sai com mensagem, antes de qualquer tela. Com outro pai (o app do menu,
+//!    do autostart), pede antes ao daemon a instância verdadeira (`abrir_app`, D57):
+//!    quem decide o papel é o daemon, e com outro pai ele já deu o papel agente.
 //!
 //! Depois, [`Partida::vigiar`] espera a conexão cair (sem ler nada). Se ela cair e o
 //! pai ainda for o mesmo daemon, o app se executa de novo (`/proc/self/exe`, para o
@@ -28,7 +30,10 @@ use std::os::unix::net::UnixStream;
 use ward_plataforma::app::{self, Pai, PaiDiferente};
 use ward_plataforma::{AmbienteApp, ErroSessao, conferir_ambiente_do_app, endurecer_processo};
 
+use ward_core::protocolo::Papel;
+
 use crate::ErroApp;
+use crate::cliente;
 use crate::daemon::DaemonSocket;
 
 /// Por que o app não abriu. Sem valor de variável nem caminho.
@@ -48,6 +53,8 @@ pub enum ErroPartida {
     SemCloexec,
     /// `setresgid` não deixou os três gids no real.
     Grupo,
+    /// O daemon não deu o papel app a esta conexão (D63).
+    Papel(Papel),
 }
 
 impl fmt::Display for ErroPartida {
@@ -64,6 +71,11 @@ impl fmt::Display for ErroPartida {
             ErroPartida::Daemon(e) => write!(f, "{e}"),
             ErroPartida::SemCloexec => f.write_str("o socket do daemon ficou herdável"),
             ErroPartida::Grupo => f.write_str("não deu para largar o grupo do app"),
+            ErroPartida::Papel(p) => write!(
+                f,
+                "o daemon deu o papel {} a este processo, não o de app; abra o Ward pelo menu ou pela bandeja",
+                p.nome()
+            ),
         }
     }
 }
@@ -127,10 +139,10 @@ where
     if !tracer_zero() {
         return Err(ErroPartida::Depurador);
     }
-    pai.conferir_parece_o_daemon().map_err(ErroPartida::Pai)?;
     if !app::tem_cloexec(&vigia).unwrap_or(false) {
         return Err(ErroPartida::SemCloexec);
     }
+    conferir_papel(&mut daemon, pai.conferir_parece_o_daemon())?;
     Ok(Partida {
         ambiente,
         pai,
@@ -138,6 +150,24 @@ where
         vigia,
         argumentos: std::env::args_os().skip(1).collect(),
     })
+}
+
+/// Passo 8: o papel na primeira resposta (D63). Com outro pai, pede `abrir_app` antes
+/// de sair (D57). Nenhuma tela foi mostrada até aqui.
+fn conferir_papel(
+    daemon: &mut DaemonSocket,
+    pai: Result<(), PaiDiferente>,
+) -> Result<(), ErroPartida> {
+    let papel = cliente::papel(daemon);
+    if let Err(e) = pai {
+        let _ = cliente::abrir_app(daemon);
+        return Err(ErroPartida::Pai(e));
+    }
+    match papel {
+        Ok(Papel::App) => Ok(()),
+        Ok(p) => Err(ErroPartida::Papel(p)),
+        Err(e) => Err(ErroPartida::Daemon(e)),
+    }
 }
 
 impl Partida {
@@ -210,6 +240,66 @@ mod testes {
         }
         assert!(l.accept().is_err(), "o app conectou com o ambiente errado");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// V3.38 (D63): o daemon do outro lado do par responde `estado` com `papel`; o que
+    /// ele recebeu volta para o teste.
+    fn daemon_que_da(papel: Papel) -> (DaemonSocket, std::thread::JoinHandle<Vec<String>>) {
+        use ward_core::protocolo::{self, Resposta, quadro};
+        let (a, mut b) = std::os::unix::net::UnixStream::pair().unwrap();
+        let d = DaemonSocket::de_par(a, std::time::Duration::from_secs(10));
+        let h = std::thread::spawn(move || {
+            let mut ops = Vec::new();
+            while let Ok(q) = quadro::ler_quadro(&mut b, quadro::limite_do_quadro(Papel::App)) {
+                let p = protocolo::decodificar_pedido(Papel::App, &q).unwrap();
+                ops.push(p.operacao().nome().to_owned());
+                let r = match p {
+                    protocolo::Pedido::Estado => Resposta::Estado {
+                        travado: true,
+                        cofre_existe: true,
+                        papel,
+                    },
+                    _ => Resposta::Ok,
+                };
+                // O daemon escreve o `estado` no papel que deu (D63).
+                let q = protocolo::codificar_resposta(papel, &r).unwrap();
+                quadro::escrever_quadro(&mut b, &q, quadro::LIMITE_RESPOSTA).unwrap();
+            }
+            ops
+        });
+        (d, h)
+    }
+
+    #[test]
+    fn ataque_sem_papel_app_na_primeira_resposta_sai_sem_usar_a_conexao() {
+        for papel in [Papel::Agente, Papel::Extensao] {
+            let (mut d, h) = daemon_que_da(papel);
+            let r = conferir_papel(&mut d, Ok(()));
+            assert!(
+                matches!(r, Err(ErroPartida::Papel(p)) if p == papel),
+                "{r:?}"
+            );
+            drop(d);
+            // Só o `estado`: nenhum pedido de tela depois.
+            assert_eq!(h.join().unwrap(), ["estado"]);
+        }
+        let (mut d, h) = daemon_que_da(Papel::App);
+        assert!(conferir_papel(&mut d, Ok(())).is_ok());
+        drop(d);
+        assert_eq!(h.join().unwrap(), ["estado"]);
+    }
+
+    #[test]
+    fn com_outro_pai_pede_a_instancia_verdadeira_e_sai() {
+        // O app do menu (pai qualquer) recebeu `agente`: pede `abrir_app` e sai (D57).
+        let (mut d, h) = daemon_que_da(Papel::Agente);
+        let r = conferir_papel(&mut d, Err(PaiDiferente::NaoEoDaemon));
+        assert!(matches!(
+            r,
+            Err(ErroPartida::Pai(PaiDiferente::NaoEoDaemon))
+        ));
+        drop(d);
+        assert_eq!(h.join().unwrap(), ["estado", "abrir_app"]);
     }
 
     #[test]

@@ -447,6 +447,25 @@ impl ProcessoPar {
         }
     }
 
+    /// Só no `modo-teste` (D63): a classe do app de teste, **sem** o egid do grupo
+    /// `ward-app` (no host de desenvolvimento os grupos não existem e o binário de teste
+    /// não é setgid). Continua exigindo o mesmo uid, nenhum depurador e o pai igual a
+    /// este processo (o daemon); quem confere que o pid é o que o lançador abriu é o
+    /// daemon (`wardd`, Fase 23a). Sem a política do kernel: o app de teste é dumpable
+    /// e não guarda o PIN de verdade (só o cofre de teste existe, D7).
+    #[cfg(feature = "modo-teste")]
+    pub fn classificar_app_de_teste(&self) -> ClassePar {
+        let r = self
+            .conferir_uid()
+            .and_then(|()| self.reconferir_sem_depurador())
+            .and_then(|()| self.conferir_pai_do_app())
+            .and_then(|()| self.reconferir_sem_depurador());
+        match r {
+            Ok(()) => ClassePar::App,
+            Err(motivo) => ClassePar::Comum { motivo },
+        }
+    }
+
     /// Antes de qualquer papel especial: mesmo uid, política do kernel e sem depurador.
     fn conferir_especial(&self, politica: &PoliticaKernel) -> Result<(), Recusa> {
         self.conferir_uid()?;
