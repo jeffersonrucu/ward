@@ -410,6 +410,8 @@ Pendências da 34 (2026-11-09): editar com anexo segue bloqueado (mesma decisão
 
 Pendências da 23a (2026-11-09): `make teste-sem-modo-teste` fica fora do `make check` (o scrutiny do M3 roda); o copiar não funciona na ponte aberta pelo daemon (ambiente mínimo sem `WAYLAND_DISPLAY`); binário de teste aceita g+w (umask 002); token da ponte no log 0600 (resíduo de D63); fila de avisos sem consumidor na interface (31/36); teste da 22b `v3_33_kill_9_entre_as_senhas_erradas` é sensível a tempo (907 ms > 900 ms sob carga) — dar margem.
 
+Pendências da 35 (2026-11-09): 5º PIN errado deve ir a `Destravar / Padrão` (Fase 31); frame `6373` mostra dígitos no PIN errado, app esvazia (ajustar design); textos dos níveis em `credenciais.js` e `niveis.js` (unificar); teste `ataque_comandos_proprios_so_na_janela_e_origem_certas` do `app/src-tauri` falha se houver `wardd` de teste no socket fixo do uid — isolar o socket do teste.
+
 ## Milestone 3 — Daemon e protocolo
 Contrato: V3.1–V3.41
 
@@ -726,7 +728,7 @@ Contrato: V5.1–V5.35
   256 KiB ou soma acima disso, arquivo vazio recusado, recusa do orçamento da máscara
   no campo, números de `ward_core::limites`; D29, D32); base do `banco` com o formato
   de D33. V5.10, V5.12, V5.24.
-- [ ] Fase 35 — **(UI)** Nível de acesso com PIN. V5.15.
+- [x] Fase 35 — **(UI)** Nível de acesso com PIN. V5.15.
 - [ ] Fase 36 — **(UI)** Janela de aprovação em primeiro plano, aberta pelo daemon, com
   os cinco estados do M0; comando e cadeia exibidos pela função de D51, nunca como HTML.
   Consome `pedido_de_aprovacao` da fila da 23a (D65 a). V5.16–V5.20, V5.29.
