@@ -38,7 +38,7 @@ use ward_core::protocolo::{
 use ward_plataforma::{ClassePar, ErroAceitar, Escuta, Instalacao, PoliticaKernel, ProcessoPar};
 
 use crate::aprovacao::{Assinante, Cliente};
-use crate::lancamento::{AppDeTeste, AppLancado};
+use crate::lancamento::{AppDeTeste, AppLancado, ExtensaoDeTeste};
 use crate::nucleo::Daemon;
 use crate::{aviso, depurar};
 
@@ -131,6 +131,10 @@ pub struct Papeis {
     /// Só no daemon de teste (D63): o app de teste, app sem o egid. No release é sempre
     /// `None` (o tipo não se constrói sem a feature).
     pub app_de_teste: Option<AppDeTeste>,
+    /// Só no daemon de teste com `WARD_DEV_EXTENSAO=chrome` (Fase 41): o host de teste
+    /// da extensão, extensão sem o egid. No release é sempre `None` (o tipo não se
+    /// constrói sem a feature).
+    pub extensao_de_teste: Option<ExtensaoDeTeste>,
 }
 
 /// O papel de um par já classificado pelo grupo e pelo pai (D47). Papel app só para o
@@ -163,6 +167,14 @@ impl Papeis {
                 }
                 ClassePar::HostExtensao => {}
             }
+        }
+        // Fase 41, daemon de teste: pai = Chrome instalado pelo `/proc`, sem o egid. Quem
+        // não passa segue o caminho do release (sem os grupos, agente).
+        if let Some(x) = &self.extensao_de_teste
+            && let c @ ClassePar::HostExtensao = x.classificar(par)
+        {
+            aviso!("papel extensão de teste (pid {pid}): pai é o Chrome instalado");
+            return papel_da_classe(c, pid, |_| false);
         }
         let Some(inst) = &self.instalacao else {
             return Papel::Agente;
@@ -440,6 +452,21 @@ mod testes {
             instalacao: None,
             app: None,
             app_de_teste: None,
+            extensao_de_teste: None,
+        };
+        assert_eq!(papeis.papel(&par), Papel::Agente);
+        // Fase 41, só no daemon de teste: com a exceção da extensão ligada e o Chrome
+        // instalado de pai aceito, este par (filho do teste, não do Chrome) continua
+        // agente. Sem a feature, a exceção nem se constrói.
+        let extensao = ExtensaoDeTeste::do_chrome("/opt/google/chrome/chrome");
+        if !cfg!(feature = "modo-teste") {
+            assert!(extensao.is_none());
+        }
+        let papeis = Papeis {
+            instalacao: None,
+            app: None,
+            app_de_teste: None,
+            extensao_de_teste: extensao,
         };
         assert_eq!(papeis.papel(&par), Papel::Agente);
         let _ = filho.kill();

@@ -1,6 +1,7 @@
 #!/bin/bash -p
 # `make teste-sem-modo-teste` (Fase 23a; D63, D7; V3.37). A exceção do app de teste
-# (papel app sem o egid, `WARD_DEV_APP`) não vaza para o release:
+# (papel app sem o egid, `WARD_DEV_APP`; papel extensão sem o egid, `WARD_DEV_EXTENSAO`,
+# Fase 41) não vaza para o release:
 #
 # 1. nenhum membro do workspace liga `wardd/modo-teste` nem `ward-plataforma/modo-teste`
 #    por dependência normal ou de build (`cargo tree -e normal,build`, sem
@@ -75,10 +76,12 @@ conferir() {
         fi
     done
 }
-TEXTOS=(WARD_DEV_APP WARD_DEV_DIR WARD_DEV_SOCKET_DIR wardd-app-teste ward-ponte-teste)
+# Fase 41: a exceção da extensão de teste (`WARD_DEV_EXTENSAO`) também não.
+TEXTOS=(WARD_DEV_APP WARD_DEV_DIR WARD_DEV_SOCKET_DIR WARD_DEV_EXTENSAO wardd-app-teste ward-ponte-teste)
 conferir "$RLIB" "${TEXTOS[@]}"
 conferir "$ALVO/release/ward-nm" "${TEXTOS[@]}"
-conferir "$ALVO/release/wardd" "${TEXTOS[@]}" classificar_app_de_teste BinarioDeTeste lancar_para_teste
+conferir "$ALVO/release/wardd" "${TEXTOS[@]}" classificar_app_de_teste classificar_host_extensao_de_teste \
+    BinarioDeTeste lancar_para_teste
 # O binário conferido é mesmo o daemon (tem o socket do sistema).
 grep -qF -- '/run/ward' "$TMP/textos" || {
     echo "sem-modo-teste: '/run/ward' não achado; o binário conferido é mesmo o wardd?" >&2

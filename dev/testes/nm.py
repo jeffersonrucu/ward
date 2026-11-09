@@ -92,7 +92,12 @@ senha = base64.b64encode(fixtures["senha_mestra"].encode()).decode()
 r = json.loads(req({"v": 1, "op": "destravar", "dados": {"senha": senha}}))
 confere(r.get("tipo") == "ok", "destravou o cofre de teste (cópia) pelo socket")
 
-ORIGEM = "chrome-extension://" + "a" * 32 + "/"
+# Fase 41: o `ward-nm` só aceita o id do Ward; a extensão de teste leva a mesma chave
+# pública (`key`) de `extensao/chave-publica.txt`, então tem o mesmo id.
+with open(os.path.join(RAIZ, "extensao", "chave-publica.txt"), encoding="ascii") as f:
+    CHAVE = "".join(l for l in f.read().split("\n") if l and not l.startswith("-----"))
+eid = "".join(chr(ord("a") + int(c, 16)) for c in hashlib.sha256(base64.b64decode(CHAVE)).hexdigest()[:32])
+ORIGEM = f"chrome-extension://{eid}/"
 PREENCHER = {"v": 1, "op": "preencher", "dados": {"entrada": "acme-wp-dev", "origem": "http://localhost:8081"}}
 SUGERIR = {"v": 1, "op": "sugerir", "dados": {"origem": "http://localhost:8081"}}
 
@@ -133,7 +138,6 @@ hosts = os.path.join(perfil, "NativeMessagingHosts")
 os.makedirs(ext)
 os.makedirs(hosts)
 os.makedirs(home)
-eid = "".join(chr(ord("a") + int(c, 16)) for c in hashlib.sha256(ext.encode()).hexdigest()[:32])
 relato = os.path.join(TRAB, "relato.json")
 host_relato = os.path.join(TRAB, "relato.py")
 with open(host_relato, "w") as f:
@@ -151,7 +155,7 @@ for nome, caminho in (("br.ward.nm", NM), ("br.ward.sonda", SONDA), ("br.ward.re
         json.dump({"name": nome, "description": "teste", "path": caminho, "type": "stdio",
                    "allowed_origins": [f"chrome-extension://{eid}/"]}, f)
 with open(os.path.join(ext, "manifest.json"), "w") as f:
-    json.dump({"manifest_version": 3, "name": "ward-teste-nm", "version": "1",
+    json.dump({"manifest_version": 3, "name": "ward-teste-nm", "version": "1", "key": CHAVE,
                "permissions": ["nativeMessaging"], "background": {"service_worker": "sw.js"}}, f)
 with open(os.path.join(ext, "sw.js"), "w") as f:
     f.write("""

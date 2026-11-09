@@ -63,8 +63,16 @@ pub fn resposta_cabe(op: Operacao, tipo: TipoResposta) -> bool {
         )
 }
 
-/// O argumento que o Chrome passa: `chrome-extension://<id>/`, com o id de 32 letras
-/// de `a` a `p`. Qualquer outra coisa (outro esquema, caminho, id fora da forma) recusa.
+/// Id da extensão do Ward (Fase 41): sai da chave pública do campo `key` do
+/// `extensao/manifest.json` (sha-256 da chave em DER, 32 primeiros dígitos hex em
+/// `a`–`p`). `dev/extensao/montar.py` recusa montar a extensão se o id do manifesto não
+/// for este.
+pub const ID_EXTENSAO: &str = "nhkehjnmlgkebhmelajfpmpblepaichf";
+
+/// O argumento que o Chrome passa: `chrome-extension://<id>/`. Só o id do Ward
+/// ([`ID_EXTENSAO`]) passa: outra extensão que tenha um manifesto de native messaging
+/// apontando para o `ward-nm` (no perfil do usuário, por exemplo) não chega ao daemon.
+/// Qualquer outra coisa (outro esquema, caminho, outro id) recusa.
 pub fn origem_da_extensao_valida(arg: &[u8]) -> bool {
     let Some(resto) = arg.strip_prefix(b"chrome-extension://") else {
         return false;
@@ -72,7 +80,7 @@ pub fn origem_da_extensao_valida(arg: &[u8]) -> bool {
     let Some(id) = resto.strip_suffix(b"/") else {
         return false;
     };
-    id.len() == 32 && id.iter().all(|c| (b'a'..=b'p').contains(c))
+    id.len() == 32 && id.iter().all(|c| (b'a'..=b'p').contains(c)) && id == ID_EXTENSAO.as_bytes()
 }
 
 /// Por que a leitura de uma mensagem da extensão parou.

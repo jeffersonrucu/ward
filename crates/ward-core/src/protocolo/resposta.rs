@@ -319,11 +319,14 @@ pub struct PedidoDeAprovacao {
     pub cadeia: Vec<String>,
 }
 
-/// Entrada sugerida pela extensão.
+/// Entrada sugerida pela extensão. Sem segredo: nome, usuário, ambiente e se a
+/// entrada tem semente TOTP (só o fato, para o popup mostrar "com TOTP"; Fase 41).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Sugestao {
     pub nome: String,
     pub usuario: String,
+    pub ambiente: Ambiente,
+    pub totp: bool,
 }
 
 /// Um pendrive visto pelo udisks2 (Fase 46): o UUID do sistema de arquivos, o rótulo
@@ -728,6 +731,10 @@ impl Resposta {
                             e.texto(&s.nome);
                             e.chave("usuario");
                             e.texto(&s.usuario);
+                            e.chave("ambiente");
+                            e.texto(s.ambiente.nome());
+                            e.chave("totp");
+                            e.logico(s.totp);
                         });
                     }
                 });
@@ -1065,8 +1072,16 @@ pub(crate) fn ler(papel: Papel, tipo: TipoResposta, mut c: Campos) -> R<Resposta
                 let mut o = Campos::de(v)?;
                 let nome = o.texto("nome", MAX_NOME)?;
                 let usuario = o.texto("usuario", MAX_TEXTO)?;
+                let ambiente =
+                    Ambiente::de_nome(&o.texto("ambiente", MAX_NOME)?).ok_or(JsonInvalido)?;
+                let totp = o.logico("totp")?;
                 o.fim()?;
-                itens.push(Sugestao { nome, usuario });
+                itens.push(Sugestao {
+                    nome,
+                    usuario,
+                    ambiente,
+                    totp,
+                });
             }
             Resposta::Sugestoes(itens)
         }

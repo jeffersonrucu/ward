@@ -12,6 +12,8 @@
 //!   de teste ou a ponte): caminho absoluto de arquivo regular do uid, sem link, dentro
 //!   do repositório (a pasta acima de `WARD_DEV_DIR`), conferido aqui e a cada
 //!   abertura; a saída vai para `$WARD_DEV_DIR/logs/<binário>.log` (0600).
+//!   Com `WARD_DEV_EXTENSAO=chrome` (Fase 41), o par filho do Chrome instalado ganha o
+//!   papel extensão sem o egid do grupo `ward-nm` (ver [`crate::lancamento::ExtensaoDeTeste`]).
 //!   O build de release não lê nenhuma variável `WARD_DEV_*`.
 
 use std::ffi::OsString;
@@ -28,6 +30,11 @@ pub struct Config {
     /// O binário que o `abrir_app` do daemon de teste abre (D63).
     #[cfg(feature = "modo-teste")]
     pub app_de_teste: Option<ward_plataforma::BinarioDeTeste>,
+    /// `WARD_DEV_EXTENSAO=chrome` (Fase 41): o daemon de teste dá o papel extensão ao
+    /// par filho do Chrome instalado sem o egid do grupo `ward-nm`. Qualquer outro valor
+    /// é recusado na partida.
+    #[cfg(feature = "modo-teste")]
+    pub extensao_de_teste: bool,
     /// `<rt>` (Fase 26, S2): os temporários do `ward run` ficam em `<rt>tmp/`. Release:
     /// `/run/user/<uid>/ward/` (pelo uid efetivo, não por `XDG_RUNTIME_DIR`); daemon de
     /// teste: o diretório do socket de teste.
@@ -117,6 +124,11 @@ impl Config {
             Some(v) => Some(app_de_teste(v, &dev, socket_do_ambiente.as_deref())?),
             None => None,
         };
+        let extensao_de_teste = match var("WARD_DEV_EXTENSAO") {
+            None => false,
+            Some(v) if v == "chrome" => true,
+            Some(_) => return Err("daemon de teste: WARD_DEV_EXTENSAO só aceita \"chrome\""),
+        };
         let socket = socket_do_ambiente.unwrap_or_else(|| {
             ward_plataforma::socket::diretorio_runtime()
                 .join(ward_plataforma::socket::NOME_DIRETORIO_TESTE)
@@ -126,6 +138,7 @@ impl Config {
             rt: socket.clone(),
             diretorio_socket_teste: Some(socket),
             app_de_teste,
+            extensao_de_teste,
         })
     }
 }
@@ -160,5 +173,23 @@ mod testes {
         assert_eq!(c.caminhos.cofre, Path::new("/x/.dev/cofre-teste.ward"));
         assert_eq!(c.caminhos.estado, Path::new("/x/.dev/cofre-teste.estado"));
         assert!(c.diretorio_socket_teste.unwrap().ends_with("ward-teste"));
+        assert!(!c.extensao_de_teste);
+    }
+
+    /// Fase 41: a exceção da extensão só liga com o valor exato `chrome`.
+    #[test]
+    #[cfg(feature = "modo-teste")]
+    fn extensao_de_teste_so_com_chrome() {
+        let com = |v: &'static str| {
+            Config::de(move |k| match k {
+                "WARD_DEV_DIR" => Some("/x/.dev".into()),
+                "WARD_DEV_EXTENSAO" => Some(v.into()),
+                _ => None,
+            })
+        };
+        assert!(com("chrome").unwrap().extensao_de_teste);
+        for ruim in ["", "1", "Chrome", "chrome ", "/opt/google/chrome/chrome"] {
+            assert!(com(ruim).is_err(), "{ruim:?}");
+        }
     }
 }

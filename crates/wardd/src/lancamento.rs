@@ -114,6 +114,53 @@ impl AppDeTeste {
     }
 }
 
+/// O host de teste da extensão (Fase 41, exceção do tipo de D63): no daemon de teste
+/// com `WARD_DEV_EXTENSAO=chrome`, um par cujo pai é o Chrome instalado (conferido pelo
+/// `/proc`, como no release) ganha o papel extensão **sem** o egid do grupo `ward-nm`.
+/// Sem a feature `modo-teste`, o tipo não tem valor (`Infallible`): o release não tem
+/// como dar o papel extensão sem o grupo.
+pub struct ExtensaoDeTeste {
+    #[cfg(feature = "modo-teste")]
+    chrome: BinarioPermitido,
+    #[cfg(not(feature = "modo-teste"))]
+    nunca: std::convert::Infallible,
+}
+
+impl ExtensaoDeTeste {
+    /// Com o Chrome instalado (o mesmo pai que o release aceita).
+    #[cfg(feature = "modo-teste")]
+    pub fn novo(chrome: BinarioPermitido) -> Self {
+        Self { chrome }
+    }
+
+    /// Com o Chrome instalado em `chrome`, se ele existir; `None` sem a feature (no
+    /// release, nunca há exceção).
+    pub fn do_chrome(chrome: &str) -> Option<Self> {
+        #[cfg(feature = "modo-teste")]
+        return BinarioPermitido::novo(chrome).ok().map(Self::novo);
+        #[cfg(not(feature = "modo-teste"))]
+        {
+            let _ = chrome;
+            None
+        }
+    }
+
+    /// A classe do par sem o egid (mesmo uid, política do kernel, sem depurador, pai =
+    /// Chrome instalado).
+    pub fn classificar(&self, par: &ProcessoPar) -> ClassePar {
+        #[cfg(feature = "modo-teste")]
+        return par.classificar_host_extensao_de_teste(
+            &self.chrome,
+            &ward_plataforma::PoliticaKernel::ler(),
+        );
+        #[cfg(not(feature = "modo-teste"))]
+        {
+            let _ = par;
+            match self.nunca {}
+        }
+    }
+}
+
 /// A linha do log de como o app saiu (sem nada além de números).
 pub fn descrever_saida(pid: u32, st: std::process::ExitStatus) -> String {
     match (st.code(), st.signal()) {

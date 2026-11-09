@@ -472,6 +472,28 @@ impl ProcessoPar {
         }
     }
 
+    /// Só no `modo-teste` (Fase 41, exceção do tipo de D63): a classe do host de teste
+    /// da extensão, **sem** o egid do grupo `ward-nm` (no host de desenvolvimento os
+    /// grupos não existem e o `ward-nm` de teste não é setgid). Tudo o mais do release
+    /// continua exigido: mesmo uid, a política do kernel, nenhum depurador e o pai igual
+    /// ao Chrome instalado conferido pelo `/proc` ([`conferir_pai`](Self::conferir_pai)).
+    /// É "o release menos o egid", como o app de teste.
+    #[cfg(feature = "modo-teste")]
+    pub fn classificar_host_extensao_de_teste(
+        &self,
+        chrome: &BinarioPermitido,
+        politica: &PoliticaKernel,
+    ) -> ClassePar {
+        let r = self
+            .conferir_especial(politica)
+            .and_then(|()| self.conferir_pai(chrome))
+            .and_then(|()| self.reconferir_sem_depurador());
+        match r {
+            Ok(()) => ClassePar::HostExtensao,
+            Err(motivo) => ClassePar::Comum { motivo },
+        }
+    }
+
     /// Antes de qualquer papel especial: mesmo uid, política do kernel e sem depurador.
     fn conferir_especial(&self, politica: &PoliticaKernel) -> Result<(), Recusa> {
         self.conferir_uid()?;

@@ -7,7 +7,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
-const ORIGEM: &str = "chrome-extension://dkacdineofgfabdognjgeoakekaenaei/";
+const ORIGEM: &str = "chrome-extension://nhkehjnmlgkebhmelajfpmpblepaichf/";
 
 fn pasta_vazia() -> PathBuf {
     let p =
@@ -49,7 +49,7 @@ fn ataque_argumentos_fora_da_forma_saem_sem_nada_no_stdout() {
     let m = quadro(br#"{"v":1,"op":"estado"}"#);
     for args in [
         &[][..],
-        &["chrome-extension://dkacdineofgfabdognjgeoakekaenaei"],
+        &["chrome-extension://nhkehjnmlgkebhmelajfpmpblepaichf"],
         &[ORIGEM, "--parent-window=0"],
         &["https://localhost:8081/"],
         &["--help"],

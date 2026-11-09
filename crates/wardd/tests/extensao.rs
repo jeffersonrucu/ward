@@ -135,6 +135,37 @@ fn sem_segredo(bytes: &[u8]) {
     }
 }
 
+/// Fase 41: a sugestão leva o ambiente e se a entrada tem TOTP (só o fato), para o
+/// popup mostrar o selo e "com TOTP"; nada de valor.
+#[test]
+fn sugestao_traz_ambiente_e_se_tem_totp() {
+    use ward_core::entrada::Ambiente;
+    let dir = Dir::novo("ext-sugerir-totp");
+    let d = cofre(&dir);
+    let resumo = |r: &Resposta| match r {
+        Resposta::Sugestoes(l) => l
+            .iter()
+            .map(|s| (s.nome.clone(), s.ambiente, s.totp))
+            .collect::<Vec<_>>(),
+        outra => panic!("esperava sugestões: {:?}", outra.tipo()),
+    };
+    assert_eq!(
+        resumo(&sugerir(&d, Papel::Extensao, "http://localhost:8083/login")),
+        [("acme-totp-dev".to_owned(), Ambiente::Dev, true)]
+    );
+    let r = sugerir(&d, Papel::Extensao, "http://localhost:8081/");
+    assert_eq!(
+        resumo(&r),
+        [
+            ("acme-wp-dev".to_owned(), Ambiente::Dev, false),
+            ("acme-wp-prod".to_owned(), Ambiente::Dev, false),
+        ]
+    );
+    let q = comum::codificado(Papel::Extensao, &r);
+    assert!(comum::contem(&q, br#""ambiente":"dev","totp":false"#));
+    sem_segredo(&q);
+}
+
 #[test]
 fn v6_2_sugerir_so_a_origem_da_aba() {
     let dir = Dir::novo("ext-sugerir");

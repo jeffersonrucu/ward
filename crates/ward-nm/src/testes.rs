@@ -94,15 +94,19 @@ fn operacoes_sao_as_da_extensao() {
 #[test]
 fn origem_da_extensao() {
     assert!(origem_da_extensao_valida(
-        b"chrome-extension://dkacdineofgfabdognjgeoakekaenaei/"
+        b"chrome-extension://nhkehjnmlgkebhmelajfpmpblepaichf/"
     ));
     for ruim in [
-        &b"chrome-extension://dkacdineofgfabdognjgeoakekaenaei"[..],
-        b"chrome-extension://dkacdineofgfabdognjgeoakekaenaeiq/",
+        &b"chrome-extension://nhkehjnmlgkebhmelajfpmpblepaichf"[..],
+        b"chrome-extension://nhkehjnmlgkebhmelajfpmpblepaichfq/",
         b"chrome-extension://dkacdineofgfabdognjgeoakekaenaez/",
-        b"chrome-extension://DKACDINEOFGFABDOGNJGEOAKEKAENAEI/",
-        b"chrome-extension://dkacdineofgfabdognjgeoakekaenaei/x",
-        b"moz-extension://dkacdineofgfabdognjgeoakekaenaei/",
+        b"chrome-extension://NHKEHJNMLGKEBHMELAJFPMPBLEPAICHF/",
+        b"chrome-extension://nhkehjnmlgkebhmelajfpmpblepaichf/x",
+        // Outra extensão com o id bem formado (a que um manifesto do perfil do usuário
+        // pusesse apontando para o `ward-nm`) não passa: só o id do Ward.
+        b"chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/",
+        b"chrome-extension://dkacdineofgfabdognjgeoakekaenaei/",
+        b"moz-extension://nhkehjnmlgkebhmelajfpmpblepaichf/",
         b"https://localhost:8081/",
         b"",
         b"--parent-window=0",
@@ -212,6 +216,8 @@ fn ataque_resposta_do_daemon_fora_do_papel_ou_da_operacao_nao_sai() {
             Resposta::Sugestoes(vec![Sugestao {
                 nome: "x".into(),
                 usuario: "y".into(),
+                ambiente: ward_core::entrada::Ambiente::Dev,
+                totp: false,
             }]),
         ),
     ];
