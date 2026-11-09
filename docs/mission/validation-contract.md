@@ -1116,19 +1116,19 @@ O QA usa o Chrome em modo de teste (D7) e confere a aparência contra o frame.
 
 ## Milestone 8 — Skill `ward`
 
-- [ ] V8.1 — `skill/ward/SKILL.md` usa só `ward lista/run/ssh/login/playwright/travar`,
+- [x] V8.1 — `skill/ward/SKILL.md` usa só `ward lista/run/ssh/login/playwright/travar`,
   segue "listar, cruzar grupo, ambiente e tipo com a tarefa, avisar qual entrada vai
   usar", e não cita KeePassXC nem `cofre-*`.
-- [ ] V8.2 — (SEG) O trecho de deny para `~/.claude/settings.json` cobre
+- [x] V8.2 — (SEG) O trecho de deny para `~/.claude/settings.json` cobre
   `~/.local/share/ward/**`, `~/.config/ward/**`, `/run/user/*/ward/**` e
   `/media/**/ward-backup/**`, e a skill manda nunca ler esses caminhos nem imprimir
   variável de credencial ou conteúdo de anexo, em nenhuma codificação (base64, hex),
   porque a máscara não cobre essas formas (RA3).
-- [ ] V8.3 — Dados três pedidos de exemplo ("conecta no banco de teste do acme", "entra
+- [x] V8.3 — Dados três pedidos de exemplo ("conecta no banco de teste do acme", "entra
   no servidor de stage do acme", "faz login no WordPress de produção"), quando o QA
   segue a skill com o cofre de teste, então ela escolhe `acme-pg-dev`,
   `acme-ssh-senha-stage` e `acme-wp-prod`, avisa antes de usar e usa o comando certo.
-- [ ] V8.4 — A skill diz que SSH com chave do `~/.ssh` (ex.: `git push`) é feito direto,
+- [x] V8.4 — A skill diz que SSH com chave do `~/.ssh` (ex.: `git push`) é feito direto,
   sem o Ward (R18).
 
 ## Milestone 9 — Instalação
