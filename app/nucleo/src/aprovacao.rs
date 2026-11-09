@@ -74,6 +74,9 @@ pub struct PedidoExibido {
     pub operacao: &'static str,
     /// O comando exato, cada argumento entre aspas (D51).
     pub comando: String,
+    /// Onde o comando roda (`executar`, Fase 26a), entre aspas (D51); vazio nas outras
+    /// operações.
+    pub diretorio: String,
     /// Quem pediu, do mais distante ao mais próximo.
     pub cadeia: Vec<String>,
     /// Segundos até expirar (0 quando `estado` é `bloqueado`).
@@ -255,6 +258,7 @@ pub(crate) fn exibir(a: &Atual) -> PedidoExibido {
         ambiente: p.ambiente.nome(),
         operacao: p.operacao.nome(),
         comando: neutralizar(&p.comando),
+        diretorio: neutralizar(&p.diretorio),
         cadeia: p.cadeia.iter().map(|c| exibir_processo(c)).collect(),
         restante: a.restante,
         estado: if a.bloqueado { "bloqueado" } else { "pendente" },
@@ -296,6 +300,7 @@ mod testes {
             ambiente: Ambiente::Stage,
             operacao: Operacao::Executar,
             comando: comando.into(),
+            diretorio: "\"/home/dev/projetos/acme\"".into(),
             cadeia: cadeia.iter().map(|c| (*c).to_owned()).collect(),
         }
     }
@@ -313,6 +318,26 @@ mod testes {
                 "{ruim}"
             );
         }
+    }
+
+    /// Fase 26a: o diretório de trabalho vai à janela e também passa por D51 (o daemon
+    /// já formata, mas a janela não confia).
+    #[test]
+    fn ataque_diretorio_com_bidi_vira_escape_visivel() {
+        let mut p = pedido(1, "\"make\"", &["claude"]);
+        p.diretorio = "\"/home/dev/\u{202E}emca\u{1b}[2J\"".into();
+        let e = exibir(&Atual {
+            pedido: p,
+            restante: 90,
+            bloqueado: false,
+            tipos: None,
+        });
+        assert!(
+            e.diretorio
+                .chars()
+                .all(|c| !ward_core::exibicao::invisivel(c))
+        );
+        assert_eq!(e.diretorio, "\"/home/dev/\\u{202E}emca\\x1b[2J\"");
     }
 
     /// V5.29 (D51): HTML, controle, bidi, largura zero, tags e `\n` falso aparecem como

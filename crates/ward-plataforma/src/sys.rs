@@ -672,8 +672,14 @@ pub(crate) fn fechamento(fd: BorrowedFd<'_>, espera_ms: libc::c_int) -> io::Resu
 
 /// Diretório do usuário `uid` pelo `getpwuid_r` (passwd ou NSS do sistema), nunca pelo
 /// `$HOME`. Sem entrada ou com home vazio é erro.
-#[allow(unsafe_code)]
 pub(crate) fn home_do_uid(uid: u32) -> io::Result<std::ffi::OsString> {
+    conta_do_uid(uid).map(|(_, home)| home)
+}
+
+/// Nome e diretório do usuário `uid` pelo `getpwuid_r` (passwd ou NSS do sistema), nunca
+/// pelo `$USER`/`$HOME`. Sem entrada, com nome ou home vazio é erro.
+#[allow(unsafe_code)]
+pub(crate) fn conta_do_uid(uid: u32) -> io::Result<(std::ffi::OsString, std::ffi::OsString)> {
     use std::os::unix::ffi::OsStrExt;
     let mut tamanho = 4096usize;
     loop {
@@ -701,16 +707,19 @@ pub(crate) fn home_do_uid(uid: u32) -> io::Result<std::ffi::OsString> {
         if rc != 0 {
             return Err(io::Error::from_raw_os_error(rc));
         }
-        if resultado.is_null() || pw.pw_dir.is_null() {
+        if resultado.is_null() || pw.pw_dir.is_null() || pw.pw_name.is_null() {
             return Err(io::ErrorKind::NotFound.into());
         }
-        // SAFETY: `pw_dir` não é nulo e aponta para uma string C dentro de `buf`, que
-        // ainda está vivo; a cópia sai antes de `buf` ser liberado.
-        let dir = unsafe { CStr::from_ptr(pw.pw_dir) };
-        if dir.to_bytes().is_empty() {
+        // SAFETY: `pw_dir` e `pw_name` não são nulos e apontam para strings C dentro de
+        // `buf`, que ainda está vivo; as cópias saem antes de `buf` ser liberado.
+        let (dir, nome) = unsafe { (CStr::from_ptr(pw.pw_dir), CStr::from_ptr(pw.pw_name)) };
+        if dir.to_bytes().is_empty() || nome.to_bytes().is_empty() {
             return Err(io::ErrorKind::NotFound.into());
         }
-        return Ok(std::ffi::OsStr::from_bytes(dir.to_bytes()).to_owned());
+        return Ok((
+            std::ffi::OsStr::from_bytes(nome.to_bytes()).to_owned(),
+            std::ffi::OsStr::from_bytes(dir.to_bytes()).to_owned(),
+        ));
     }
 }
 

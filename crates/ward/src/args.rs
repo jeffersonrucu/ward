@@ -80,7 +80,11 @@ Uso:
   ward run <entrada> -- <comando> [argumentos…]
                         roda o comando com a credencial no ambiente (D10); a
                         saída volta com os segredos trocados por ••••, e o
-                        código de saída é o do comando (125: erro do Ward)
+                        código de saída é o do comando (125: erro do Ward).
+                        Roda no diretório atual, com PATH fixo
+                        (/usr/local/bin:/usr/bin:/bin; comando fora dele vai
+                        com caminho absoluto) e, do seu ambiente, só LANG,
+                        LC_*, TERM, COLORTERM, TZ e NO_COLOR
   ward ssh <entrada> [comando remoto…]
                         conecta no servidor da entrada (senha ou chave, sem o
                         ~/.ssh); sem comando, abre o shell remoto no terminal;

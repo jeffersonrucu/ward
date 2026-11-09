@@ -315,6 +315,9 @@ pub struct PedidoDeAprovacao {
     pub operacao: Operacao,
     /// O comando exato.
     pub comando: String,
+    /// O diretório de trabalho do comando no `executar` (Fase 26a: o da CLI, onde o
+    /// comando roda), já formatado para exibir (D51); vazio nas outras operações.
+    pub diretorio: String,
     /// Quem pediu (ex.: `claude → bash → ward run`).
     pub cadeia: Vec<String>,
 }
@@ -492,6 +495,7 @@ impl Resposta {
                 && p.entradas.iter().all(|n| n.len() <= MAX_NOME)
                 && OPERACOES_APROVADAS.contains(&p.operacao)
                 && p.comando.len() <= MAX_TEXTO_EXIBIDO
+                && p.diretorio.len() <= MAX_TEXTO_EXIBIDO
                 && p.cadeia.len() <= MAX_CADEIA
                 && p.cadeia.iter().all(|c| c.len() <= MAX_TEXTO)),
             Resposta::CodigoTotp { codigo, restante } => {
@@ -672,6 +676,8 @@ impl Resposta {
                 e.texto(p.operacao.nome());
                 e.chave("comando");
                 e.texto(&p.comando);
+                e.chave("diretorio");
+                e.texto(&p.diretorio);
                 e.chave("cadeia");
                 escrever_textos(e, &p.cadeia);
             }
@@ -1042,6 +1048,7 @@ pub(crate) fn ler(papel: Papel, tipo: TipoResposta, mut c: Campos) -> R<Resposta
             let operacao =
                 Operacao::de_nome(&c.texto("operacao", MAX_NOME)?).ok_or(JsonInvalido)?;
             let comando = c.texto("comando", MAX_TEXTO_EXIBIDO)?;
+            let diretorio = c.texto("diretorio", MAX_TEXTO_EXIBIDO)?;
             let cadeia = textos_de(c.lista("cadeia", MAX_CADEIA)?, MAX_TEXTO)?;
             Resposta::PedidoDeAprovacao(PedidoDeAprovacao {
                 id,
@@ -1049,6 +1056,7 @@ pub(crate) fn ler(papel: Papel, tipo: TipoResposta, mut c: Campos) -> R<Resposta
                 ambiente,
                 operacao,
                 comando,
+                diretorio,
                 cadeia,
             })
         }

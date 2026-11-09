@@ -761,6 +761,7 @@ mod testes {
             ambiente: ward_core::entrada::Ambiente::Dev,
             operacao: ward_core::protocolo::Operacao::Executar,
             comando: "\"psql\"".into(),
+            diretorio: "\"/home/dev\"".into(),
             cadeia: vec!["claude".into(), "ward run".into()],
         }
     }

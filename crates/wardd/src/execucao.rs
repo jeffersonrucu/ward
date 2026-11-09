@@ -6,9 +6,12 @@
 //! 3. com o estado travado, a entrega de D10 ([`ward_core::entrega::montar`]): anexos e
 //!    chave em `<rt>tmp/<sessão>/`, 0600, numa pasta 0700 só da sessão (S2); e a
 //!    máscara da entrada e da entrega (D11);
-//! 4. o ambiente do filho vem **só** do pedido da CLI (D13, D60): sem `LD_*`, sem nada
-//!    do ambiente do daemon (`LISTEN_*`); a entrega por cima, com o mesmo nome
-//!    substituindo o da CLI; locale com `LC_CTYPE` UTF-8 (ver [`ajustar_locale`]);
+//! 4. o ambiente do filho é montado do zero (Fase 26a; D13, D60): `PATH` fixo
+//!    ([`PATH_DO_COMANDO`], que também resolve o comando sem `/`), `HOME`, `USER` e
+//!    `LOGNAME` do passwd e, da CLI, só a lista de [`ENTRAM_DA_CLI`] com o valor
+//!    conferido (nada que vire caminho); nada do ambiente do daemon (`LISTEN_*`); a
+//!    entrega por cima; locale com `LC_CTYPE` UTF-8 (ver [`ajustar_locale`]). O
+//!    diretório de trabalho é o da CLI e vai à janela de aprovação;
 //! 5. o filho ([`ward_plataforma::filho`]): grupo de processos próprio, nenhum fd do
 //!    daemon, sem shell (S3), morre com a thread da conexão;
 //! 6. stdout e stderr passam pela máscara, cada um no seu fluxo, e voltam em quadros
@@ -321,10 +324,80 @@ pub(crate) struct AgentePreparado {
     pub(crate) inicial: u64,
 }
 
-/// Nome de variável que o daemon tira do ambiente da CLI (D13): `LD_*` (carregador
-/// dinâmico).
-fn variavel_proibida(nome: &[u8]) -> bool {
-    nome.starts_with(b"LD_")
+/// `PATH` do filho do `ward run` (Fase 26a): fixo, nunca o da CLI. O comando sem `/`
+/// é procurado só aqui; fora dele, vai com caminho absoluto (ou relativo ao diretório
+/// de trabalho, que a janela de aprovação mostra).
+pub(crate) const PATH_DO_COMANDO: &[u8] = b"/usr/local/bin:/usr/bin:/bin";
+
+/// Nomes que o daemon define e que nem a CLI nem a entrega trocam.
+const DO_DAEMON: [&[u8]; 4] = [b"PATH", b"HOME", b"USER", b"LOGNAME"];
+
+/// Como o valor de uma variável da CLI é conferido.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Forma {
+    /// Nome de locale, nunca caminho ([`ward_plataforma::lancador::locale_valido`]).
+    Locale,
+    /// Nome de terminal (`TERM`, `COLORTERM`): sem `/`, sem começar por `.`.
+    Terminal,
+    /// Fuso pelo nome (`UTC`, `America/Sao_Paulo`, `EST5EDT`): sem `.` (nada de `..`
+    /// nem arquivo fora do `zoneinfo`) e sem começar por `/`.
+    Fuso,
+    /// Só um sinal (`NO_COLOR`): letras e dígitos.
+    Sinal,
+}
+
+/// O que passa do ambiente da CLI para o filho (Fase 26a), e como o valor é conferido.
+/// Valor fora da forma faz a variável sair (falha fechada, sem erro).
+pub(crate) const ENTRAM_DA_CLI: &[(&str, Forma)] = &[
+    ("LANG", Forma::Locale),
+    ("LC_ALL", Forma::Locale),
+    ("LC_ADDRESS", Forma::Locale),
+    ("LC_COLLATE", Forma::Locale),
+    ("LC_CTYPE", Forma::Locale),
+    ("LC_IDENTIFICATION", Forma::Locale),
+    ("LC_MEASUREMENT", Forma::Locale),
+    ("LC_MESSAGES", Forma::Locale),
+    ("LC_MONETARY", Forma::Locale),
+    ("LC_NAME", Forma::Locale),
+    ("LC_NUMERIC", Forma::Locale),
+    ("LC_PAPER", Forma::Locale),
+    ("LC_TELEPHONE", Forma::Locale),
+    ("LC_TIME", Forma::Locale),
+    ("TERM", Forma::Terminal),
+    ("COLORTERM", Forma::Terminal),
+    ("TZ", Forma::Fuso),
+    ("NO_COLOR", Forma::Sinal),
+];
+
+/// Maior valor aceito de uma variável da lista.
+const MAX_VALOR_DA_LISTA: usize = 64;
+
+/// O valor da CLI tem a forma da variável?
+fn valor_aceito(forma: Forma, v: &[u8]) -> bool {
+    if v.is_empty() || v.len() > MAX_VALOR_DA_LISTA {
+        return false;
+    }
+    let simples = |b: u8| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'+');
+    match forma {
+        Forma::Locale => ward_plataforma::lancador::locale_valido(v),
+        Forma::Terminal => v[0] != b'.' && v.iter().all(|&b| simples(b) || b == b'.'),
+        Forma::Fuso => {
+            let v = v.strip_prefix(b":").unwrap_or(v);
+            !v.is_empty()
+                && v.split(|&b| b == b'/')
+                    .all(|parte| !parte.is_empty() && parte.iter().all(|&b| simples(b)))
+        }
+        Forma::Sinal => v.iter().all(u8::is_ascii_alphanumeric),
+    }
+}
+
+/// A variável da CLI entra no filho? Só os nomes de [`ENTRAM_DA_CLI`], com o valor na
+/// forma.
+fn entra_da_cli(nome: &[u8], valor: &[u8]) -> bool {
+    ENTRAM_DA_CLI
+        .iter()
+        .find(|(n, _)| n.as_bytes() == nome)
+        .is_some_and(|&(_, forma)| valor_aceito(forma, valor))
 }
 
 fn e_utf8(valor: &[u8]) -> bool {
@@ -362,21 +435,51 @@ pub fn ajustar_locale<'a>(amb: Vec<(&'a [u8], &'a [u8])>) -> Vec<(&'a [u8], &'a 
     amb
 }
 
-/// O ambiente do filho (D13, D60): o da CLI sem `LD_*`, sem nome repetido (fica o
-/// primeiro) e sem os nomes que a entrega traz; o locale ajustado; e a entrega por
-/// cima. Nada vem do ambiente do daemon.
+/// `HOME`, `USER` e `LOGNAME` do filho: os do passwd (nunca os da CLI).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Conta {
+    pub(crate) usuario: Vec<u8>,
+    pub(crate) home: Vec<u8>,
+}
+
+impl Conta {
+    /// A do uid do daemon (o mesmo do cliente, D49).
+    pub(crate) fn do_passwd() -> Result<Conta, ErroResposta> {
+        use std::os::unix::ffi::OsStringExt;
+        let (usuario, home) = ward_plataforma::conta_do_usuario().map_err(|_| {
+            aviso!("executar: usuário sem entrada no passwd");
+            ErroResposta::EntregaFalhou
+        })?;
+        Ok(Conta {
+            usuario: usuario.into_vec(),
+            home: home.into_vec(),
+        })
+    }
+}
+
+/// O ambiente do filho (Fase 26a; D13, D60), montado do zero: `PATH` fixo, `HOME`,
+/// `USER` e `LOGNAME` do passwd, da CLI só [`ENTRAM_DA_CLI`] com o valor na forma (sem
+/// nome repetido: fica o primeiro; sem os nomes que a entrega traz), o locale ajustado
+/// e a entrega por cima. Nada vem do ambiente do daemon. Devolve quantas variáveis da
+/// CLI ficaram de fora.
 fn montar_ambiente(
     cmd: &mut Comando,
     cli: &[Variavel],
+    conta: &Conta,
     entrega: &Entrega,
 ) -> Result<usize, ErroResposta> {
     let da_entrega: HashSet<&[u8]> = entrega.nomes().map(str::as_bytes).collect();
+    // A entrega nunca troca o que o daemon fixa (D42 já recusa; segunda camada).
+    if DO_DAEMON.iter().any(|n| da_entrega.contains(n)) {
+        aviso!("executar: a entrega traz uma variável fixa do daemon; nada foi executado");
+        return Err(ErroResposta::EntregaFalhou);
+    }
     let mut vistos: HashSet<&[u8]> = HashSet::new();
     let mut tirados = 0;
-    let mut amb: Vec<(&[u8], &[u8])> = Vec::with_capacity(cli.len() + 1);
+    let mut amb: Vec<(&[u8], &[u8])> = Vec::with_capacity(ENTRAM_DA_CLI.len() + 1);
     for v in cli {
         let nome: &[u8] = &v.nome;
-        if variavel_proibida(nome) {
+        if !entra_da_cli(nome, v.valor.expor()) {
             tirados += 1;
             continue;
         }
@@ -385,7 +488,13 @@ fn montar_ambiente(
         }
         amb.push((nome, v.valor.expor()));
     }
-    for (k, v) in ajustar_locale(amb) {
+    let fixas: [(&[u8], &[u8]); 4] = [
+        (b"PATH", PATH_DO_COMANDO),
+        (b"HOME", &conta.home),
+        (b"USER", &conta.usuario),
+        (b"LOGNAME", &conta.usuario),
+    ];
+    for (k, v) in fixas.into_iter().chain(ajustar_locale(amb)) {
         cmd.variavel(k, v)
             .map_err(|_| ErroResposta::PedidoInvalido)?;
     }
@@ -472,9 +581,10 @@ impl Daemon {
             temporarios, ponte, ..
         } = recursos;
         drop(est);
-        let tirados = montar_ambiente(&mut comando, &x.ambiente, &entrega)?;
+        let conta = Conta::do_passwd()?;
+        let tirados = montar_ambiente(&mut comando, &x.ambiente, &conta, &entrega)?;
         if tirados > 0 {
-            depurar!("executar: {tirados} variável(is) LD_* tirada(s) do ambiente (D13)");
+            depurar!("executar: {tirados} variável(is) da CLI fora da lista (Fase 26a)");
         }
         if ponte.is_some() {
             depurar!("executar: com túnel (ponte em 127.0.0.1)");
@@ -949,13 +1059,114 @@ mod testes {
         );
     }
 
+    /// Fase 26a: só a lista passa da CLI; o resto (carregador, shell, intérpretes,
+    /// git, ssh, libpq, `PATH`, `HOME`) fica de fora, com qualquer valor.
     #[test]
-    fn ld_e_proibida() {
-        assert!(variavel_proibida(b"LD_PRELOAD"));
-        assert!(variavel_proibida(b"LD_LIBRARY_PATH"));
-        assert!(variavel_proibida(b"LD_AUDIT"));
-        assert!(!variavel_proibida(b"OLD_PWD"));
-        assert!(!variavel_proibida(b"PATH"));
+    fn ataque_so_a_lista_passa_da_cli() {
+        for nome in [
+            "LD_PRELOAD",
+            "LD_LIBRARY_PATH",
+            "LD_AUDIT",
+            "PATH",
+            "HOME",
+            "USER",
+            "LOGNAME",
+            "BASH_ENV",
+            "ENV",
+            "BASH_FUNC_ls%%",
+            "SHELLOPTS",
+            "PS4",
+            "IFS",
+            "NODE_OPTIONS",
+            "NODE_PATH",
+            "PYTHONPATH",
+            "PYTHONSTARTUP",
+            "PYTHONHOME",
+            "PERL5LIB",
+            "PERL5OPT",
+            "RUBYOPT",
+            "GIT_SSH_COMMAND",
+            "GIT_CONFIG_GLOBAL",
+            "GIT_DIR",
+            "SSH_AUTH_SOCK",
+            "SSH_ASKPASS",
+            "PGSERVICEFILE",
+            "PGPASSFILE",
+            "PGHOST",
+            "PSQLRC",
+            "LOCPATH",
+            "GCONV_PATH",
+            "TERMINFO",
+            "TERMINFO_DIRS",
+            "TZDIR",
+            "LANGUAGE",
+            "NLSPATH",
+            "TMPDIR",
+            "XDG_CONFIG_HOME",
+            "PAGER",
+            "EDITOR",
+            "WARD_PASS",
+            "OLD_PWD",
+            "LC_",
+            "LC_TERMINAL",
+        ] {
+            assert!(!entra_da_cli(nome.as_bytes(), b"C"), "{nome} passou");
+        }
+        for (nome, valor) in [
+            ("LANG", "pt_BR.UTF-8"),
+            ("LC_ALL", "C.UTF-8"),
+            ("LC_TIME", "en_US.utf8"),
+            ("TERM", "xterm-256color"),
+            ("TERM", "screen.xterm-256color"),
+            ("COLORTERM", "truecolor"),
+            ("TZ", "UTC"),
+            ("TZ", "America/Sao_Paulo"),
+            ("TZ", ":America/Sao_Paulo"),
+            ("TZ", "Etc/GMT+3"),
+            ("TZ", "EST5EDT"),
+            ("NO_COLOR", "1"),
+        ] {
+            assert!(
+                entra_da_cli(nome.as_bytes(), valor.as_bytes()),
+                "{nome}={valor}"
+            );
+        }
+    }
+
+    /// Fase 26a: o valor que viraria caminho fora das pastas do sistema sai (locale,
+    /// terminfo e fuso carregam arquivo; a glibc aceita caminho absoluto e `..`).
+    #[test]
+    fn ataque_valor_que_vira_caminho_sai() {
+        let longo = "a".repeat(MAX_VALOR_DA_LISTA + 1);
+        for (nome, valor) in [
+            ("LANG", "/tmp/atacante/locale"),
+            ("LC_ALL", "../../../tmp/atacante"),
+            ("LC_MESSAGES", "pt_BR/../../x"),
+            ("LANG", ".."),
+            ("LANG", ""),
+            ("LANG", longo.as_str()),
+            ("TERM", "../../tmp/atacante/x"),
+            ("TERM", "/tmp/atacante/x"),
+            ("TERM", ".x"),
+            ("TERM", "xterm\n"),
+            ("COLORTERM", "a b"),
+            ("TZ", "/tmp/atacante/fuso"),
+            ("TZ", ":/tmp/atacante/fuso"),
+            ("TZ", "../../../tmp/atacante/fuso"),
+            ("TZ", "America/../../tmp/x"),
+            ("TZ", "America//Sao_Paulo"),
+            ("TZ", "America/"),
+            ("TZ", ":"),
+            ("TZ", "BRT3,M10.2.0"),
+            ("TZ", longo.as_str()),
+            ("NO_COLOR", "$(id)"),
+            ("NO_COLOR", ""),
+        ] {
+            assert!(
+                !entra_da_cli(nome.as_bytes(), valor.as_bytes()),
+                "{nome}={valor}"
+            );
+        }
     }
 
     /// S2: o arquivo é 0600 numa pasta 0700 da sessão; ao sair, zerado e apagado; e
