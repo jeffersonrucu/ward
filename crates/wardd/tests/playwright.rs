@@ -512,6 +512,16 @@ fn formulario(atributos: &str, extra: &str, script: &str) -> String {
     )
 }
 
+/// Põe na página elementos com nome que trocam `document.querySelectorAll` e
+/// `document.getElementsByTagName` (propriedades com nome do `document`).
+fn com_clobber(html: &str) -> String {
+    html.replacen(
+        "<body>",
+        r#"<body><img name="querySelectorAll" src="data:,"><img name="getElementsByTagName" src="data:,">"#,
+        1,
+    )
+}
+
 fn login_em(nome: &str, url: &str, senha: &str) -> String {
     format!(
         r#"{{"entrada":{{"nome":"{nome}","grupo":"clientex","ambiente":"dev","tipo":"login","campos":{{"url":"{url}","usuario":"admin","senha":"{}"}}}}}}"#,
@@ -528,8 +538,10 @@ struct CenaReal {
 }
 
 /// Os casos do site e o que o daemon deve responder (`None`: sessão gravada).
-const CASOS: [(&str, Option<ErroResposta>); 11] = [
+const CASOS: [(&str, Option<ErroResposta>); 13] = [
     ("ok", None),
+    ("dom", None),
+    ("dom-recusa", Some(ErroResposta::LoginRecusado)),
     ("iframe", None),
     ("acao-fora", Some(ErroResposta::OrigemDiferente)),
     ("clobber", Some(ErroResposta::OrigemDiferente)),
@@ -555,6 +567,19 @@ fn pagina(caso: &str, fora: &str, pp: u16) -> (u16, Vec<(String, String)>, Strin
             "",
         )
         .replace(r#"action="/entrar" "#, &format!(r#"action="{fora}" "#)),
+        // DOM clobbering (Fase 44a): `<img name="querySelectorAll">` troca o
+        // `document.querySelectorAll` da página (o Chrome de hoje não leva as
+        // propriedades com nome do `document` ao mundo isolado; as do `<form>`, sim) e
+        // campos com o nome de cada propriedade que o script lê trocam as do `<form>`.
+        // O login certo tem de entrar mesmo assim.
+        "dom" => com_clobber(&formulario(
+            "",
+            r#"<input type="hidden" name="elements" value="x"><input type="hidden" name="method" value="get"><input type="hidden" name="target" value="_blank"><input type="hidden" name="requestSubmit" value="x"><input type="hidden" name="querySelectorAll" value="x">"#,
+            "",
+        )),
+        // O site recusa e devolve o login com o mesmo clobbering: a senha visível
+        // tem de ser vista depois do envio (nada gravado).
+        "dom-recusa" => formulario("", r#"<input type="hidden" name="recusa" value="2">"#, ""),
         "get" => f().replace(r#"method="post""#, r#"method="get""#),
         "formaction" => f().replace(
             r#"<button type="submit" id="b">"#,
@@ -595,6 +620,9 @@ fn cena_real(rotulo: &str) -> CenaReal {
         if metodo == "POST" && caminho == "/entrar" {
             if contem(corpo, b"recusa=1") {
                 return (200, vec![], formulario("", "", ""));
+            }
+            if contem(corpo, b"recusa=2") {
+                return (200, vec![], com_clobber(&formulario("", "", "")));
             }
             return (
                 200,
@@ -677,7 +705,8 @@ impl CenaReal {
 /// `GET` (a senha iria na URL), envio para outra janela, dois campos de senha, login
 /// recusado pelo site e site que guarda a senha no `localStorage`: cada um recusado,
 /// nada gravado, o phishing sem `POST` e a senha fora de toda URL. O iframe de outra
-/// origem não recebe nada.
+/// origem não recebe nada. DOM clobbering do `document` (Fase 44a): o login certo entra
+/// e a página de login devolvida depois do envio continua vista (recusado).
 #[test]
 #[ignore = "precisa do Chrome instalado: make teste-playwright"]
 fn chrome_real_login_e_ataques() {
@@ -716,7 +745,7 @@ fn chrome_real_login_e_ataques() {
         .iter()
         .filter(|p| p.metodo == "POST")
         .count();
-    assert_eq!(posts, 4, "ok, iframe, recusa e ls enviam");
+    assert_eq!(posts, 6, "ok, dom, dom-recusa, iframe, recusa e ls enviam");
     // O iframe carregou (o caso testou algo).
     assert!(
         c.phish

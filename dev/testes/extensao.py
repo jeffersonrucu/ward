@@ -15,7 +15,9 @@ próprio CDP (`Fetch.fulfillRequest`): para o Chrome, são documentos dessa orig
 """
 
 import base64
+import codecs
 import json
+import re
 import secrets
 import os
 import shutil
@@ -63,6 +65,75 @@ def tem_segredo(dados):
     if isinstance(dados, str):
         dados = dados.encode()
     return any(p in dados for p in padroes)
+
+
+# --- Dicionário de senhas comuns (zxcvbn) no perfil (Fase 44a) --------------------------
+# O WordPress de teste (8081) serve o `wp-includes/js/zxcvbn.min.js`, medidor de força de
+# senha com uma lista de senhas comuns em rot13; o Chrome guarda o código compilado dele
+# no `Code Cache/js/` do perfil. O Chrome também pode baixar o `ZxcvbnData/<versão>/`
+# (a mesma ideia, para o gerenciador de senhas). Um padrão de `.dev/variacoes.txt` que
+# também é senha comum (o PIN de teste, só dígitos) aparece aí sem ter saído do cofre.
+# Um achado só conta como "dicionário zxcvbn" se (1) o arquivo é do `ZxcvbnData/` ou do
+# `Code Cache/` e, no `Code Cache/`, é o do `zxcvbn.min.js` (a URL está no arquivo);
+# (2) todo padrão achado nele é palavra do dicionário, tirado do próprio `zxcvbn.min.js`
+# do contêiner do WordPress e do `ZxcvbnData/` do perfil; (3) no `Code Cache/`, cada
+# ocorrência está no meio de palavras do dicionário: o trecho em volta é a lista, não um
+# valor solto. Qualquer outro achado continua em `perfil_com_padrao_fora_da_extensao`.
+ZXCVBN_WP = "/var/www/html/wp-includes/js/zxcvbn.min.js"
+
+
+def palavras(dados):
+    return [t for t in re.split(rb"[^0-9A-Za-z]+", dados) if t]
+
+
+def rot13(dados):
+    return codecs.encode(dados.decode("latin-1"), "rot13").encode("latin-1")
+
+
+def dicionario_zxcvbn(raiz):
+    """Palavras do `zxcvbn.min.js` do WordPress de teste e do `ZxcvbnData/` do perfil,
+    em claro e em rot13."""
+    fontes = []
+    p = subprocess.run([f"{RAIZ}/dev/servicos/compose.sh", "exec", "-T", "wordpress", "cat", ZXCVBN_WP],
+                       capture_output=True, timeout=120)
+    if p.returncode == 0:
+        fontes.append(p.stdout)
+    for r, _, ns in os.walk(os.path.join(raiz, "ZxcvbnData")):
+        for n in ns:
+            try:
+                fontes.append(open(os.path.join(r, n), "rb").read())
+            except OSError:
+                pass
+    d = set()
+    for dados in fontes:
+        for t in palavras(dados):
+            d.add(t)
+            d.add(rot13(t))
+    return d
+
+
+def achado_do_dicionario(rel, dados, dic):
+    """(sim/não, índices dos padrões achados) para um arquivo do perfil com padrão."""
+    achados = [i for i, p in enumerate(padroes) if p in dados]
+    if not dic or not achados:
+        return False, achados
+    if not (rel.startswith("ZxcvbnData" + os.sep)
+            or (("Code Cache" + os.sep) in rel and b"zxcvbn.min.js" in dados)):
+        return False, achados
+    if any(padroes[i] not in dic for i in achados):
+        return False, achados
+    if rel.startswith("ZxcvbnData" + os.sep):
+        return True, achados
+    for i in achados:
+        p = padroes[i]
+        j = dados.find(p)
+        while j >= 0:
+            janela = palavras(dados[max(0, j - 60): j + len(p) + 60])
+            meio = janela[1:-1]  # as pontas podem estar cortadas
+            if len(meio) < 5 or any(t not in dic for t in meio):
+                return False, achados
+            j = dados.find(p, j + 1)
+    return True, achados
 
 
 fixtures = json.load(open(f"{RAIZ}/dev/fixtures/entradas.json", encoding="utf-8"))
@@ -1159,6 +1230,47 @@ try:
     # o usuário enviou (o login do 8083); a extensão em si não grava nada.
     da_extensao = [a for a in achou if ID in a or "Extension" in a or "Local Storage" in a or "IndexedDB" in a]
     confere(not da_extensao, "V6.5: nada da extensão no perfil com segredo" + (f" ({da_extensao})" if da_extensao else ""), "v65_perfil")
+    # Fase 44a: separa o dicionário de senhas comuns (zxcvbn; não é vazamento) do resto.
+    dic = dicionario_zxcvbn(perfil)
+    # Autoteste do filtro: segredo do cofre plantado no meio da lista do zxcvbn, padrão
+    # do dicionário fora do arquivo do zxcvbn e padrão solto não passam por dicionário.
+    lista_dic = sorted(t for t in dic if t.isalpha() and len(t) >= 4)[:40]
+    meio = b",".join(lista_dic[:20]) + b","
+    fim = b"," + b",".join(lista_dic[20:])
+    nao_dic = next(p for p in padroes if p not in dic)
+    cc = os.path.join("Default", "Code Cache", "js", "x_0")
+    autoteste = [
+        not achado_do_dicionario(cc, b"zxcvbn.min.js " + meio + nao_dic + fim, dic)[0],
+        not achado_do_dicionario(os.path.join("Default", "History"), meio + nao_dic + fim, dic)[0],
+    ]
+    sim_dic = [p for p in padroes if p in dic]
+    for p_dic in sim_dic:
+        autoteste += [
+            achado_do_dicionario(cc, b"zxcvbn.min.js " + meio + p_dic + fim, dic)[0],
+            not achado_do_dicionario(os.path.join("Default", "Code Cache", "js", "y_0"), meio + p_dic + fim, dic)[0],
+            not achado_do_dicionario(cc, b"zxcvbn.min.js " + b"x" * 80 + p_dic + b"y" * 80, dic)[0],
+            not achado_do_dicionario(os.path.join("Default", "Preferences"), meio + p_dic + fim, dic)[0],
+        ]
+    confere(len(lista_dic) == 40 and all(autoteste),
+            f"Fase 44a: filtro do dicionário zxcvbn recusa segredo plantado ({len(autoteste)} casos)",
+            "f44a_filtro_dicionario_autoteste")
+    do_dicionario = {}
+    for a in list(achou):
+        try:
+            sim, idx = achado_do_dicionario(a, open(os.path.join(perfil, a), "rb").read(), dic)
+        except OSError:
+            continue
+        if sim:
+            do_dicionario[a] = idx
+            achou.remove(a)
+    confere(not any(ID in a or "Extension" in a for a in do_dicionario),
+            "V6.5: achado do dicionário zxcvbn fora de arquivo da extensão", "v65_dicionario_fora_da_extensao")
+    relato["perfil_dicionario_zxcvbn"] = {
+        a: [{"linha_variacoes": i + 1, "bytes": len(padroes[i]), "so_digitos": padroes[i].isdigit()} for i in idx]
+        for a, idx in sorted(do_dicionario.items())}
+    for a, idx in sorted(do_dicionario.items()):
+        print(f"info  {a}: lista de senhas comuns do zxcvbn (linha(s) {[i + 1 for i in idx]} de "
+              ".dev/variacoes.txt; palavra do dicionário no meio da lista); não vem do cofre")
     relato["perfil_com_padrao_fora_da_extensao"] = sorted(achou)
     # Fase 42: a senha do login novo também não fica em nada da extensão (o service
     # worker a tem só em memória até salvar).
