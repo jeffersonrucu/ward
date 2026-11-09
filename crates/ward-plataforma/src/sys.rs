@@ -307,3 +307,105 @@ pub(crate) fn munlock(regiao: &[u8]) -> io::Result<()> {
     }
     Ok(())
 }
+
+#[allow(unsafe_code)]
+pub(crate) fn getegid() -> u32 {
+    // SAFETY: sem argumentos e sem efeito colateral; nunca falha.
+    unsafe { libc::getegid() }
+}
+
+#[allow(unsafe_code)]
+pub(crate) fn getgid() -> u32 {
+    // SAFETY: sem argumentos e sem efeito colateral; nunca falha.
+    unsafe { libc::getgid() }
+}
+
+/// `getsockopt(SOL_SOCKET, opcao)` de uma opção inteira (`SO_ACCEPTCONN`, `SO_DOMAIN`,
+/// `SO_TYPE`).
+#[allow(unsafe_code)]
+pub(crate) fn sockopt_int(fd: BorrowedFd<'_>, opcao: libc::c_int) -> io::Result<libc::c_int> {
+    let mut valor: libc::c_int = -1;
+    let tamanho = size_of::<libc::c_int>();
+    let mut len = libc::socklen_t::try_from(tamanho).map_err(|_| io::ErrorKind::InvalidInput)?;
+    // SAFETY: `fd` está aberto pelo empréstimo; `valor` e `len` são locais e `len` tem
+    // o tamanho de um `c_int`, o que o kernel escreve para essas opções.
+    let r = unsafe {
+        libc::getsockopt(
+            fd.as_raw_fd(),
+            libc::SOL_SOCKET,
+            opcao,
+            (&raw mut valor).cast(),
+            &raw mut len,
+        )
+    };
+    if r != 0 {
+        return Err(erro_os());
+    }
+    if usize::try_from(len).ok() != Some(tamanho) {
+        return Err(io::ErrorKind::InvalidData.into());
+    }
+    Ok(valor)
+}
+
+/// Primeiro fd passado pelo systemd (`SD_LISTEN_FDS_START`).
+pub(crate) const FD_ATIVACAO: libc::c_int = 3;
+
+/// Já houve uma tentativa de pegar o fd 3 neste processo.
+static FD_ATIVACAO_TOMADO: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Duplica o fd 3 (com `O_CLOEXEC`, para nenhum filho herdar o socket que escuta) sem
+/// tomar posse dele. Só uma vez por processo. Quem chama confere a cópia e, se ela for
+/// o socket esperado, fecha o original por [`fechar_fd_ativacao`].
+#[allow(unsafe_code)]
+pub(crate) fn duplicar_fd_ativacao() -> io::Result<OwnedFd> {
+    if FD_ATIVACAO_TOMADO.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "fd de ativação já usado",
+        ));
+    }
+    // SAFETY: `F_GETFD` só consulta a tabela de fds; não recebe ponteiro.
+    if unsafe { libc::fcntl(FD_ATIVACAO, libc::F_GETFD) } < 0 {
+        return Err(erro_os());
+    }
+    // SAFETY: o fd 3 acabou de ser conferido como aberto, e o empréstimo só dura até o
+    // `try_clone_to_owned` abaixo (um `F_DUPFD_CLOEXEC`), dentro desta função. O fd 3
+    // é do systemd (`LISTEN_FDS`): o daemon chama isto no começo do `main`, antes de
+    // abrir qualquer outro arquivo, então nenhum outro código o fecha nesse intervalo.
+    let emprestado = unsafe { BorrowedFd::borrow_raw(FD_ATIVACAO) };
+    emprestado.try_clone_to_owned()
+}
+
+/// Fecha o fd 3 depois que a cópia de [`duplicar_fd_ativacao`] foi conferida.
+#[allow(unsafe_code)]
+pub(crate) fn fechar_fd_ativacao() {
+    // SAFETY: o fd 3 é o socket do systemd, conferido pela cópia; ninguém mais neste
+    // processo o usa (o daemon segue só com a cópia), então o `OwnedFd` passa a ser o
+    // único dono e o fecha ao sair do escopo.
+    drop(unsafe { OwnedFd::from_raw_fd(FD_ATIVACAO) });
+}
+
+/// Só no `modo-teste`: põe `fd` no número 3 sem `O_CLOEXEC`, como o systemd faz, para
+/// o `exec` seguinte receber o socket.
+///
+/// # Safety
+/// Fecha o que estivesse no fd 3 deste processo. Quem chama tem de fazer `exec` (ou
+/// sair) logo em seguida, sem que nenhum outro código use o fd 3.
+#[cfg(feature = "modo-teste")]
+#[allow(unsafe_code)]
+pub(crate) unsafe fn por_no_fd_ativacao(fd: BorrowedFd<'_>) -> io::Result<()> {
+    if fd.as_raw_fd() == FD_ATIVACAO {
+        // SAFETY: `F_SETFD` com 0 só tira o `FD_CLOEXEC` do fd 3, que é `fd`.
+        if unsafe { libc::fcntl(FD_ATIVACAO, libc::F_SETFD, 0) } < 0 {
+            return Err(erro_os());
+        }
+        return Ok(());
+    }
+    // SAFETY: `fd` está aberto pelo empréstimo; o `dup2` troca o fd 3 (o contrato da
+    // função diz que ninguém mais o usa) e o novo não tem `FD_CLOEXEC`.
+    if unsafe { libc::dup2(fd.as_raw_fd(), FD_ATIVACAO) } < 0 {
+        return Err(erro_os());
+    }
+    Ok(())
+}

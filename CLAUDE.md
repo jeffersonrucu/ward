@@ -50,6 +50,7 @@ ferramentas (`override`). Toolchain fixa em `rust-toolchain.toml`.
 | Interface do app (Fase 29): `npm ci --ignore-scripts`, build de produção (`app/dist`) e de teste (`app/dist-teste`, com a ponte e a vitrine), `dev/testes/app-dist.py` (sem URL remota, sem inline, sem código de teste em produção) e `npm audit`. Node do nvm; troque com `NODE_DIR=…/bin` | `make app-front` | pronto |
 | App Tauri inteiro: `app-front` + fmt, clippy, testes de ACL, audit, deny (`app/src-tauri/deny.toml`) e build de release com a checagem de strings (V5.6). Precisa de `libwebkit2gtk-4.1-dev` (ou `PKG_CONFIG_PATH` para os .pc) | `make app-check` | pronto |
 | Ponte de teste (D7): serve `app/dist-teste` em 127.0.0.1 e imprime a URL com o token para o Chrome de teste; precisa de `make app-front` antes | `make app-ponte` | pronto (responde "daemon não está rodando" até o Milestone 3) |
+| D46/D47 num contêiner `ubuntu:24.04` sem rede (root só dentro dele): grupos `ward-app`/`ward-nm`, binários setgid 2755, `/run/ward/1000` root:root 0755 e socket do root entregue por `LISTEN_FDS`; papel pelo egid, `ptrace` e `LD_PRELOAD` contra o setgid, servidor falso do mesmo uid, `bind` em `/run/ward/1000` (V3.5, V3.23, V3.24). Exige Docker e gcc; fora do `make check` | `make teste-docker-plataforma` | pronto |
 | Subir o daemon de teste (cofre de `.dev/`, socket em `/run/user/<uid>/ward-teste/`) | `make dev-daemon` | Milestone 3 |
 | Parar o daemon de teste | `make dev-daemon-parar` | Milestone 3 |
 

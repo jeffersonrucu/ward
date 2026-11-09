@@ -1,34 +1,31 @@
 //! Cliente do socket do `wardd` (lado Rust do app; a webview nunca fala com o socket).
 //!
-//! Pontos de ligação com as fases do daemon (registrados no handoff da Fase 29):
+//! Antes de mandar qualquer byte, o app confere o servidor pela mesma regra da CLI
+//! (`ward_plataforma::conectar_servidor`, S5, D46): o socket é
+//! `/run/ward/<uid>/wardd.sock`, toda pasta do caminho é do root, sem escrita para grupo
+//! e outros e sem link, o socket é do próprio uid e 0600, e o `SO_PEERCRED` do par tem
+//! uid 0 (quem fez o `listen` foi o systemd do sistema). Só no build de teste
+//! (`modo-teste`, D7) o socket é o do daemon de teste, em `/run/user/<uid>/ward-teste/`
+//! (pasta 0700 do usuário e par do mesmo uid); sem a feature, esse caminho e essa
+//! exceção nem existem no binário, e nenhuma variável de ambiente escolhe o caminho.
+//!
+//! Pontos de ligação com as fases seguintes:
 //! - Fase 20 (protocolo): `DaemonSocket::estado` e `DaemonSocket::valor_para_copiar`
 //!   passam a montar o quadro do protocolo; hoje devolvem `ErroApp::SemProtocolo`
 //!   depois de conferir e abrir o socket.
-//! - Fase 21 (plataforma): antes de mandar qualquer pedido (e, em especial, a senha
-//!   mestra), conferir por `SO_PEERCRED` que o outro lado é o `wardd` instalado (D5,
-//!   S5). Aqui só há a conferência do diretório e do socket (dono, 0700, tipo).
-//! - Nome do arquivo do socket: `wardd.sock` é provisório; vale o que a Fase 20/21
-//!   definir.
+//! - Fase 29a: o app setgid conecta antes de iniciar o GTK (D47).
 
-use std::fs;
-use std::io;
-use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
+
+use ward_plataforma::{RecusaServidor, ServidorEsperado, conectar_servidor};
 
 use crate::ErroApp;
 use crate::comandos::Referencia;
 use crate::segredo::Segredo;
 
-/// Diretório do socket dentro de `/run/user/<uid>/`. O build de teste usa outro
-/// diretório (D7) e nunca lê variável de ambiente para escolher.
-#[cfg(not(feature = "modo-teste"))]
-pub const DIRETORIO: &str = "ward";
-#[cfg(feature = "modo-teste")]
-pub const DIRETORIO: &str = "ward-teste";
-
-/// Nome provisório do socket (ver o topo do módulo).
+/// Nome do socket (o mesmo do `wardd`).
 pub const SOCKET: &str = "wardd.sock";
 
 /// Prazo de leitura e escrita no socket.
@@ -61,70 +58,52 @@ pub trait Daemon: Send {
 
 /// Daemon real, pelo socket local.
 pub struct DaemonSocket {
-    caminho: PathBuf,
-    uid: u32,
+    esperado: ServidorEsperado,
 }
 
 impl DaemonSocket {
-    /// `/run/user/<uid>/<DIRETORIO>/wardd.sock`. O uid vem do dono de `/proc/self`
-    /// (o processo atual), não de `XDG_RUNTIME_DIR` nem de outra variável.
+    /// O daemon instalado: `/run/ward/<uid>/wardd.sock`, conferido como socket do
+    /// systemd do sistema. No build de teste, o daemon de teste em
+    /// `/run/user/<uid>/ward-teste/wardd.sock`. O uid é o efetivo do processo, não
+    /// `XDG_RUNTIME_DIR` nem outra variável.
     pub fn padrao() -> Result<DaemonSocket, ErroApp> {
-        let uid = fs::metadata("/proc/self")
-            .map_err(|_| ErroApp::DaemonIndisponivel)?
-            .uid();
-        let caminho = Path::new("/run/user")
-            .join(uid.to_string())
-            .join(DIRETORIO)
-            .join(SOCKET);
-        Ok(DaemonSocket { caminho, uid })
+        #[cfg(not(feature = "modo-teste"))]
+        let esperado = ServidorEsperado::sistema();
+        #[cfg(feature = "modo-teste")]
+        let esperado = ServidorEsperado::teste();
+        Ok(DaemonSocket { esperado })
     }
 
-    /// Para os testes: outro caminho e outro dono esperado.
-    pub fn em(caminho: PathBuf, uid: u32) -> DaemonSocket {
-        DaemonSocket { caminho, uid }
+    /// Outro caminho, com as regras do daemon instalado (pasta do root, par uid 0).
+    pub fn sistema_em(caminho: PathBuf) -> DaemonSocket {
+        DaemonSocket {
+            esperado: ServidorEsperado::sistema_em(caminho),
+        }
+    }
+
+    /// Outro caminho, com as regras do daemon de teste. Só no `modo-teste`.
+    #[cfg(feature = "modo-teste")]
+    pub fn teste_em(caminho: PathBuf) -> DaemonSocket {
+        DaemonSocket {
+            esperado: ServidorEsperado::teste_em(caminho),
+        }
     }
 
     pub fn caminho(&self) -> &Path {
-        &self.caminho
+        self.esperado.caminho()
     }
 
-    /// Confere o diretório e o socket antes de conectar: diretório de verdade (não link),
-    /// do usuário, sem permissão para grupo e outros (S5); socket de verdade, do usuário.
-    pub fn conferir(&self) -> Result<(), ErroApp> {
-        let diretorio = self.caminho.parent().ok_or(ErroApp::DaemonNaoConfiavel)?;
-        let md = match fs::symlink_metadata(diretorio) {
-            Ok(md) => md,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                return Err(ErroApp::DaemonIndisponivel);
-            }
-            Err(_) => return Err(ErroApp::DaemonNaoConfiavel),
-        };
-        if !md.file_type().is_dir() || md.uid() != self.uid || md.permissions().mode() & 0o077 != 0
-        {
-            return Err(ErroApp::DaemonNaoConfiavel);
-        }
-        let md = match fs::symlink_metadata(&self.caminho) {
-            Ok(md) => md,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                return Err(ErroApp::DaemonIndisponivel);
-            }
-            Err(_) => return Err(ErroApp::DaemonNaoConfiavel),
-        };
-        if !md.file_type().is_socket() || md.uid() != self.uid {
-            return Err(ErroApp::DaemonNaoConfiavel);
-        }
-        Ok(())
-    }
-
+    /// Confere o caminho, conecta e confere o par antes de qualquer byte. Nada é
+    /// escrito no socket aqui.
     fn conectar(&self) -> Result<UnixStream, ErroApp> {
-        self.conferir()?;
-        let s = UnixStream::connect(&self.caminho).map_err(|_| ErroApp::DaemonIndisponivel)?;
+        let s = conectar_servidor(&self.esperado).map_err(|r| match r {
+            RecusaServidor::Ausente | RecusaServidor::Io(_) => ErroApp::DaemonIndisponivel,
+            _ => ErroApp::DaemonNaoConfiavel,
+        })?;
         s.set_read_timeout(Some(PRAZO))
             .map_err(|_| ErroApp::DaemonIndisponivel)?;
         s.set_write_timeout(Some(PRAZO))
             .map_err(|_| ErroApp::DaemonIndisponivel)?;
-        // Fase 21: conferir aqui o par por SO_PEERCRED (wardd instalado, D5) antes de
-        // escrever qualquer coisa no socket.
         Ok(s)
     }
 }
@@ -147,25 +126,65 @@ impl Daemon for DaemonSocket {
 #[cfg(test)]
 mod testes {
     use super::*;
-    use std::os::unix::fs::{DirBuilderExt, symlink};
+    use std::fs;
+    use std::io::Read;
+    use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt, symlink};
     use std::os::unix::net::UnixListener;
-
-    fn temporario(nome: &str) -> PathBuf {
-        let base =
-            std::env::temp_dir().join(format!("ward-app-nucleo-{}-{nome}", std::process::id()));
-        let _ = fs::remove_dir_all(&base);
-        fs::DirBuilder::new().mode(0o700).create(&base).unwrap();
-        base
-    }
 
     fn meu_uid() -> u32 {
         fs::metadata("/proc/self").unwrap().uid()
     }
 
+    /// Pasta só deste teste em `/run/user/<uid>/` (tmpfs, 0700 do usuário; o `/tmp` é
+    /// 1777 e não passaria em conferência nenhuma). Apagada ao sair.
+    struct Base(PathBuf);
+
+    impl Base {
+        fn nova(nome: &str) -> Base {
+            let p = PathBuf::from(format!(
+                "/run/user/{}/ward-app-nucleo-{}-{nome}",
+                meu_uid(),
+                std::process::id()
+            ));
+            let _ = fs::remove_dir_all(&p);
+            fs::DirBuilder::new().mode(0o700).create(&p).unwrap();
+            Base(p)
+        }
+    }
+
+    impl Drop for Base {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// Servidor falso do mesmo uid: socket 0600 em `dir`.
+    fn servidor_falso(dir: &Path) -> UnixListener {
+        let l = UnixListener::bind(dir.join(SOCKET)).unwrap();
+        fs::set_permissions(dir.join(SOCKET), fs::Permissions::from_mode(0o600)).unwrap();
+        l.set_nonblocking(true).unwrap();
+        l
+    }
+
+    /// Nenhum byte chegou ao servidor falso (aceita o que houver e lê sem bloquear).
+    fn nada_recebido(l: &UnixListener) {
+        while let Ok((mut c, _)) = l.accept() {
+            c.set_nonblocking(true).unwrap();
+            let mut buf = [0u8; 16];
+            assert!(
+                !matches!(c.read(&mut buf), Ok(n) if n > 0),
+                "o app mandou bytes a um servidor recusado"
+            );
+        }
+    }
+
     #[test]
     fn caminho_padrao_sem_variavel_de_ambiente() {
         let d = DaemonSocket::padrao().unwrap();
-        let esperado = format!("/run/user/{}/{}/wardd.sock", meu_uid(), DIRETORIO);
+        #[cfg(not(feature = "modo-teste"))]
+        let esperado = format!("/run/ward/{}/wardd.sock", meu_uid());
+        #[cfg(feature = "modo-teste")]
+        let esperado = format!("/run/user/{}/ward-teste/wardd.sock", meu_uid());
         assert_eq!(d.caminho(), Path::new(&esperado));
         #[cfg(not(feature = "modo-teste"))]
         assert!(!d.caminho().to_string_lossy().contains("ward-teste"));
@@ -173,67 +192,104 @@ mod testes {
 
     #[test]
     fn socket_ausente_e_indisponivel() {
-        let base = temporario("ausente");
-        let mut d = DaemonSocket::em(base.join("ward").join(SOCKET), meu_uid());
+        let mut d =
+            DaemonSocket::sistema_em(PathBuf::from("/run/ward-nao-existe-falso/1/wardd.sock"));
         assert_eq!(d.estado(), Err(ErroApp::DaemonIndisponivel));
-        fs::DirBuilder::new()
-            .mode(0o700)
-            .create(base.join("ward"))
-            .unwrap();
-        assert_eq!(d.estado(), Err(ErroApp::DaemonIndisponivel));
-        fs::remove_dir_all(base).unwrap();
+        #[cfg(feature = "modo-teste")]
+        {
+            let base = Base::nova("ausente");
+            let dir = base.0.join("ward-teste");
+            fs::DirBuilder::new().mode(0o700).create(&dir).unwrap();
+            let mut t = DaemonSocket::teste_em(dir.join(SOCKET));
+            assert_eq!(t.estado(), Err(ErroApp::DaemonIndisponivel));
+        }
     }
 
     #[test]
-    fn ataque_diretorio_aberto_para_outros_e_recusado() {
-        let base = temporario("aberto");
-        let dir = base.join("ward");
-        fs::DirBuilder::new().mode(0o755).create(&dir).unwrap();
-        fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).unwrap();
-        let _l = UnixListener::bind(dir.join(SOCKET)).unwrap();
-        let mut d = DaemonSocket::em(dir.join(SOCKET), meu_uid());
-        assert_eq!(d.estado(), Err(ErroApp::DaemonNaoConfiavel));
-        fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).unwrap();
-        assert_eq!(d.estado(), Err(ErroApp::SemProtocolo));
-        fs::remove_dir_all(base).unwrap();
-    }
-
-    #[test]
-    fn ataque_diretorio_por_link_simbolico_e_recusado() {
-        let base = temporario("link");
-        let real = base.join("real");
-        fs::DirBuilder::new().mode(0o700).create(&real).unwrap();
-        let _l = UnixListener::bind(real.join(SOCKET)).unwrap();
-        symlink(&real, base.join("ward")).unwrap();
-        let mut d = DaemonSocket::em(base.join("ward").join(SOCKET), meu_uid());
-        assert_eq!(d.estado(), Err(ErroApp::DaemonNaoConfiavel));
-        fs::remove_dir_all(base).unwrap();
-    }
-
-    #[test]
-    fn ataque_arquivo_comum_no_lugar_do_socket_e_recusado() {
-        let base = temporario("arquivo");
-        let dir = base.join("ward");
+    fn ataque_servidor_falso_do_mesmo_uid_e_recusado_sem_receber_nada() {
+        // V3.23: servidor do mesmo uid, socket 0600, pasta 0700 do usuário. Pela regra
+        // do daemon instalado, a pasta não é do root e o par não é uid 0.
+        let base = Base::nova("falso");
+        let dir = base.0.join("ward");
         fs::DirBuilder::new().mode(0o700).create(&dir).unwrap();
-        fs::write(dir.join(SOCKET), b"").unwrap();
-        let mut d = DaemonSocket::em(dir.join(SOCKET), meu_uid());
-        assert_eq!(d.estado(), Err(ErroApp::DaemonNaoConfiavel));
-        fs::remove_dir_all(base).unwrap();
-    }
-
-    #[test]
-    fn ataque_dono_diferente_e_recusado() {
-        let base = temporario("dono");
-        let dir = base.join("ward");
-        fs::DirBuilder::new().mode(0o700).create(&dir).unwrap();
-        let _l = UnixListener::bind(dir.join(SOCKET)).unwrap();
-        let mut d = DaemonSocket::em(dir.join(SOCKET), meu_uid().wrapping_add(1));
+        let l = servidor_falso(&dir);
+        let mut d = DaemonSocket::sistema_em(dir.join(SOCKET));
         assert_eq!(d.estado(), Err(ErroApp::DaemonNaoConfiavel));
         let r = Referencia::nova("acme-pg-dev", "senha").unwrap();
         assert!(matches!(
             d.valor_para_copiar(&r),
             Err(ErroApp::DaemonNaoConfiavel)
         ));
-        fs::remove_dir_all(base).unwrap();
+        nada_recebido(&l);
+    }
+
+    #[test]
+    fn ataque_diretorio_aberto_para_outros_e_recusado() {
+        let base = Base::nova("aberto");
+        let dir = base.0.join("ward");
+        fs::DirBuilder::new().mode(0o755).create(&dir).unwrap();
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).unwrap();
+        let l = servidor_falso(&dir);
+        let mut d = DaemonSocket::sistema_em(dir.join(SOCKET));
+        assert_eq!(d.estado(), Err(ErroApp::DaemonNaoConfiavel));
+        #[cfg(feature = "modo-teste")]
+        {
+            // Nem o build de teste aceita pasta aberta; com 0700 é o daemon de teste.
+            let mut t = DaemonSocket::teste_em(dir.join(SOCKET));
+            assert_eq!(t.estado(), Err(ErroApp::DaemonNaoConfiavel));
+            fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).unwrap();
+            assert_eq!(t.estado(), Err(ErroApp::SemProtocolo));
+        }
+        nada_recebido(&l);
+    }
+
+    #[test]
+    fn ataque_diretorio_por_link_simbolico_e_recusado() {
+        let base = Base::nova("link");
+        let real = base.0.join("real");
+        fs::DirBuilder::new().mode(0o700).create(&real).unwrap();
+        let l = servidor_falso(&real);
+        symlink(&real, base.0.join("ward")).unwrap();
+        let mut d = DaemonSocket::sistema_em(base.0.join("ward").join(SOCKET));
+        assert_eq!(d.estado(), Err(ErroApp::DaemonNaoConfiavel));
+        #[cfg(feature = "modo-teste")]
+        {
+            let mut t = DaemonSocket::teste_em(base.0.join("ward").join(SOCKET));
+            assert_eq!(t.estado(), Err(ErroApp::DaemonNaoConfiavel));
+        }
+        nada_recebido(&l);
+    }
+
+    #[test]
+    fn ataque_arquivo_comum_no_lugar_do_socket_e_recusado() {
+        let base = Base::nova("arquivo");
+        let dir = base.0.join("ward");
+        fs::DirBuilder::new().mode(0o700).create(&dir).unwrap();
+        fs::write(dir.join(SOCKET), b"").unwrap();
+        fs::set_permissions(dir.join(SOCKET), fs::Permissions::from_mode(0o600)).unwrap();
+        let mut d = DaemonSocket::sistema_em(dir.join(SOCKET));
+        assert_eq!(d.estado(), Err(ErroApp::DaemonNaoConfiavel));
+        #[cfg(feature = "modo-teste")]
+        {
+            let mut t = DaemonSocket::teste_em(dir.join(SOCKET));
+            assert_eq!(t.estado(), Err(ErroApp::DaemonNaoConfiavel));
+        }
+    }
+
+    #[test]
+    fn ataque_socket_aberto_para_outros_e_recusado() {
+        let base = Base::nova("socket");
+        let dir = base.0.join("ward");
+        fs::DirBuilder::new().mode(0o700).create(&dir).unwrap();
+        let l = servidor_falso(&dir);
+        fs::set_permissions(dir.join(SOCKET), fs::Permissions::from_mode(0o666)).unwrap();
+        let mut d = DaemonSocket::sistema_em(dir.join(SOCKET));
+        assert_eq!(d.estado(), Err(ErroApp::DaemonNaoConfiavel));
+        #[cfg(feature = "modo-teste")]
+        {
+            let mut t = DaemonSocket::teste_em(dir.join(SOCKET));
+            assert_eq!(t.estado(), Err(ErroApp::DaemonNaoConfiavel));
+        }
+        nada_recebido(&l);
     }
 }
