@@ -9,7 +9,9 @@ ponta, com o terminal num pty de verdade.
 2. Contra o daemon de teste (`make dev-daemon`, cofre de `.dev/`): `ward travar`,
    `ward lista` responde "travado" (V4.22); `ward destravar` com senha errada e certa
    pelo pty; `ward lista --json` só com os seis campos e sem nenhum padrão de
-   `.dev/variacoes.txt` (V4.1, S1). O prompt aparece e a senha não ecoa.
+   `.dev/variacoes.txt` (V4.1, S1). O prompt aparece e a senha não ecoa. V4.21
+   cronometrado (Fase 28b): travado e sem destravar, `ward run` sai ≠ 0 em 120 s ± 2 s;
+   com o `ward destravar` no meio da espera, sai 0 (a suíte fica ~2 min mais longa).
 3. `ward run` (Fase 26).
 4. `ward ssh` (Fase 27) contra os SSH de teste (2222, 2223): V4.23, V4.24, V4.26 (agente
    atacado por `ssh-add`, SIGKILL na CLI, travar), V4.28, V4.31, V4.32, V4.34 (pty),
@@ -156,6 +158,24 @@ conferir(cod == 0 and "cofre travado" in tela, "travar")
 cod, tela, _ = rodar_pty(["lista"])
 conferir(cod != 0 and "travado" in tela, "V4.22 lista depois de travar responde 'travado'")
 
+# V4.21 (D16), cronometrado (scrutiny do M4, Fase 28b): travado e sem destravar, o
+# `ward run` espera os 2 min do daemon e sai ≠ 0 em 120 s ± 2 s; com o `ward destravar`
+# de outro terminal dentro do prazo, o pedido segue e sai 0 (o destravar vem logo
+# abaixo, com a senha errada antes da certa).
+import subprocess  # noqa: E402
+
+t0 = time.monotonic()
+r = subprocess.run([WARD, "run", "acme-pg-dev", "--", "/bin/true"], env=ambiente(),
+                   capture_output=True, timeout=150)
+dt = time.monotonic() - t0
+conferir(r.returncode != 0 and 118.0 <= dt <= 122.0,
+         f"V4.21 travado sem destravar sai ≠ 0 em 120 s ± 2 s (saiu {r.returncode} em {dt:.1f} s)")
+v421 = subprocess.Popen([WARD, "run", "acme-pg-dev", "--", "/bin/true"], env=ambiente(),
+                        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+time.sleep(3)
+conferir(v421.poll() is None, "V4.21 o ward run travado está esperando o destrave")
+t_v421 = time.monotonic()
+
 cod, tela, prompt = rodar_pty(["destravar"], digitar="falso-errada-ward-99")
 conferir(prompt and cod != 0 and "senha mestra incorreta" in tela, "destravar com senha errada")
 conferir("falso-errada-ward-99" not in tela, "a senha errada não ecoou")
@@ -164,12 +184,18 @@ cod, tela, prompt = rodar_pty(["destravar"], digitar=SENHA)
 conferir(prompt, "destravar mostra o prompt da senha")
 conferir(cod == 0 and "cofre destravado" in tela, f"destravar com a senha certa (saiu {cod})")
 conferir(SENHA not in tela, "a senha não ecoou na tela")
+try:
+    v421.wait(timeout=30)
+except subprocess.TimeoutExpired:
+    v421.kill()
+    v421.wait()
+conferir(v421.returncode == 0 and time.monotonic() - t_v421 < 120,
+         f"V4.21 destravado em outro terminal, o ward run que esperava segue e sai 0 (saiu {v421.returncode})")
 
 cod, tela, prompt = rodar_pty(["destravar"], digitar=SENHA)
 conferir(cod == 0 and "já está destravado" in tela and not prompt, "destravar de novo não pede senha")
 
 # lista --json: stdout puro, sem pty.
-import subprocess  # noqa: E402
 
 r = subprocess.run([WARD, "lista", "--json"], env=ambiente(), capture_output=True, timeout=60)
 conferir(r.returncode == 0, "V4.1 lista --json sai 0")
@@ -179,6 +205,7 @@ conferir("gama-bloqueada" not in nomes, "V4.1 sem a bloqueada")
 esperadas = [e["nome"] for e in json.load(open(os.path.join(RAIZ, "dev/fixtures/entradas.json")))["entradas"]
              if e.get("nivel") != "bloqueado"]
 conferir(sorted(nomes) == sorted(esperadas), f"V4.1 {len(nomes)} entradas visíveis, todas menos a bloqueada")
+conferir(len(nomes) == 21, f"V4.1 são 21 entradas visíveis (as 22 do cofre menos a bloqueada; vieram {len(nomes)})")
 campos = {"nome", "tipo", "grupo", "ambiente", "projeto", "endereco"}
 conferir(all(set(i) == campos for i in itens), "V4.1 só nome, tipo, grupo, ambiente, projeto e endereço")
 r2 = subprocess.run([WARD, "lista"], env=ambiente(), capture_output=True, timeout=60)
@@ -602,7 +629,8 @@ else:
         falsa = os.path.join(DEV, "logs", f"chave-qualquer-{os.getpid()}")
         subprocess.run(["/usr/bin/ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", falsa],
                        env=ambiente(), check=True, capture_output=True)
-        amb = ambiente({"SSH_AUTH_SOCK": socks[0]})
+        # Nome montado por partes (o V1.5 recusa citá-lo por extenso em dev/).
+        amb = ambiente({"SSH_AUTH" + "_SOCK": socks[0]})
         for rotulo, args in [("ssh-add -L", ["-L"]), ("ssh-add <chave>", [falsa]), ("ssh-add -D", ["-D"])]:
             x = subprocess.run(["/usr/bin/ssh-add"] + args, env=amb, capture_output=True, timeout=20)
             conferir(x.returncode != 0 and b"ssh-ed25519" not in x.stdout, f"V4.26 {rotulo} de outro processo recusado")

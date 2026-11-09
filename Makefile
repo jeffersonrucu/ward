@@ -68,7 +68,8 @@ CARGO_DENY_VERSAO := 0.20.2
 	dev-cofre-conferir dev-variacoes teste-dev-cofre dev-daemon dev-daemon-parar teste-cli teste-docker-uid teste-units \
 	app-front app-check app-ponte teste-docker-plataforma teste-sem-modo-teste teste-socket-ataques \
 	teste-webkit-real teste-logs-app teste-nm teste-playwright teste-skill teste-migracao \
-	release install uninstall teste-install extensao teste-extensao deb extensao-crx teste-deb teste-login
+	release install uninstall teste-install extensao teste-extensao deb extensao-crx teste-deb teste-login \
+	teste-ssh-home
 
 ## check: pré-checagem das origens, depois fmt, clippy -D warnings, testes, cargo audit,
 ## cargo deny e gitleaks, nessa ordem (V1.1)
@@ -469,6 +470,17 @@ dev-daemon: origens
 teste-cli: origens
 	$(CARGO) build --quiet --locked -p ward --features modo-teste --bin ward
 	$(PYTHON) dev/testes/cli.py target/debug/ward "$(CURDIR)"
+
+## teste-ssh-home: V4.27 (Fase 28b; R19, D13): a suíte de `ward ssh` e túnel num bwrap com
+## o home do passwd e o /tmp em tmpfs, iscas na pasta do ssh do home (config com Host * e
+## ProxyCommand de sentinela, known_hosts, id_ed25519, FIFOs), agente falso, inotify e o
+## ssh/sshpass/sftp do daemon sob strace; controles positivos no fim. `wardd` de teste só
+## dele (WARD_DEV_SOCKET_DIR próprio). Precisa de bwrap, strace, `make dev-cofre`,
+## `make dev-variacoes` e dos serviços de pé; fora do `make check`
+teste-ssh-home: origens
+	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd
+	$(CARGO) build --quiet --locked -p ward --features modo-teste --bin ward
+	dev/testes/ssh-home.sh target/debug/wardd target/debug/ward
 
 ## teste-playwright: `ward playwright` de ponta a ponta (Fase 44; V6.12–V6.16 da parte do
 ## daemon) com o Chrome instalado: os ataques contra sites locais (`cargo test --ignored`)
