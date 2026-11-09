@@ -782,6 +782,25 @@ Contrato: V4.1–V4.38
   (`app/` sem `node_modules`/`dist`) e `make teste-ataques-fundacao` inteiro até "Todos
   os ataques foram barrados". Decisão do usuário: com isso passando, o scrutiny do M4
   conta como aprovado, sem 3ª rodada. V1.2, V1.5.
+Auditoria de segurança do M4 (2026-11-09): **reprovada** (1ª vez), com 1 crítico e 1 alto.
+
+- [ ] Fase 28e — Achados da auditoria do M4. **Crítico:** a máscara (`Fluxo` em
+  `ward-core/src/mascara.rs`, `PAUSA_INTERATIVA` em `wardd/src/execucao.rs`) vira oráculo
+  de prefixo — no pty o prefixo parado sai `••••` e o resto sai em claro; sem pty o
+  prefixo segurado atrasa a saída; o agente recuperou os 18 bytes da senha de
+  `acme-ssh-senha-stage` só pelo `ward ssh` (53 consultas, 314 s). Correção conforme
+  decisão do usuário (ver nota abaixo), mudar D34/V4.34 no PRD e no contrato, e o
+  oráculo da auditoria (pty e por tempo) vira teste de ataque que tem de falhar.
+  **Alto:** no sftp, `par_permitido` (`wardd/src/agente_ssh.rs`) aceita qualquer filho do
+  `sftp`; o `!cmd` do sftp usa o agente temporário (`ssh-add -L`, login com a chave em
+  host/porta à escolha) — prender o agente ao primeiro par aceito (pid exato do `ssh`
+  que o `sftp` cria) e recusar os demais; teste com o `!exec` da auditoria. **Médio:**
+  filhos sem pty ficam na sessão do `wardd` e outro `ward run` entra no grupo pelo
+  `setpgid` e usa a ponte do túnel/salto alheia — `setsid()` no filho e conferir o par
+  por pid exato na ponte; teste com o `entrar_grupo.py`. **Baixo:** `known_hosts` do Ward
+  com pasta 0700 e arquivo 0600 do daemon, recusa se frouxo. V4.14, V4.26, V4.29, V4.34,
+  V4.28. Scripts da auditoria: scratchpad `bin/` (`oraculo_pty.py`, `tempo.py`,
+  `sftp_cmds.txt`, `entrar_grupo.py`).
 
 ## Milestone 5 — App desktop
 Contrato: V5.1–V5.35
