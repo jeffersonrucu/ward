@@ -195,9 +195,55 @@ impl SenhaMestra {
         Self(bytes)
     }
 
+    /// Senha mestra que veio de quem digitou (app, CLI, socket), já em NFC (Fase 39c).
+    ///
+    /// O mesmo texto digitado num método de entrada que compõe ("é" = U+00E9) e noutro
+    /// que decompõe ("e" + U+0301) tem bytes diferentes; sem normalizar, a senha criada
+    /// no app não abriria pelo `ward destravar`. Todo caminho do daemon passa por aqui,
+    /// então o cliente não precisa normalizar. ASCII (o caso comum) já é NFC e não é
+    /// copiado. Bytes que não são UTF-8 ficam como vieram (não há o que normalizar; a
+    /// senha nova recusa, [`SenhaMestra::serve_de_nova`]).
+    ///
+    /// O texto normalizado vai para um buffer `Zeroizing` com a capacidade final
+    /// reservada antes (o NFC cresce no máximo 3× em UTF-8), para não deixar cópia em
+    /// realocação. Resíduo: o iterador do `unicode-normalization` guarda no heap, sem
+    /// zerar, só sequências de mais de 4 marcas combinantes seguidas.
+    pub fn digitada(bytes: Zeroizing<Vec<u8>>) -> Self {
+        Self(nfc(bytes))
+    }
+
+    /// Serve de senha mestra nova? UTF-8 válido e [`MIN_CARACTERES_SENHA_MESTRA`]
+    /// caracteres ou mais (pontos de código, depois do NFC). O tamanho máximo é o do
+    /// protocolo (`MAX_SEGREDO`).
+    ///
+    /// [`MIN_CARACTERES_SENHA_MESTRA`]: crate::limites::MIN_CARACTERES_SENHA_MESTRA
+    pub fn serve_de_nova(&self) -> bool {
+        std::str::from_utf8(self.bytes())
+            .is_ok_and(|t| t.chars().count() >= crate::limites::MIN_CARACTERES_SENHA_MESTRA)
+    }
+
     fn bytes(&self) -> &[u8] {
         &self.0
     }
+}
+
+/// NFC dos bytes, se forem UTF-8 (ver [`SenhaMestra::digitada`]).
+fn nfc(bytes: Zeroizing<Vec<u8>>) -> Zeroizing<Vec<u8>> {
+    use unicode_normalization::{IsNormalized, UnicodeNormalization, is_nfc_quick};
+    let Ok(texto) = std::str::from_utf8(&bytes) else {
+        return bytes;
+    };
+    if texto.is_ascii() || is_nfc_quick(texto.chars()) == IsNormalized::Yes {
+        return bytes;
+    }
+    let mut saida = Zeroizing::new(String::with_capacity(
+        bytes.len().saturating_mul(3).saturating_add(4),
+    ));
+    for c in texto.nfc() {
+        saida.push(c);
+    }
+    // `into_bytes` move o buffer (sem cópia); o `Zeroizing` de fora zera o novo.
+    Zeroizing::new(std::mem::take(&mut *saida).into_bytes())
 }
 
 // O único campo é um `Zeroizing`: a senha zera ao sair (V2.28).

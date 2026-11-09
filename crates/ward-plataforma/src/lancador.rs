@@ -23,6 +23,21 @@
 //!     biblioteca da NVIDIA, no processo web, conecta a `/tmp/nvidia-mps/control`, onde
 //!     um processo do mesmo uid pode escutar. Em `/proc` ninguém cria a pasta, nem o
 //!     root; o efeito é o de uma máquina sem servidor MPS.
+//!   - `GST_PLUGIN_LOADING_WHITELIST` = só o `coreelements` e o `app` da pasta do
+//!     sistema ([`PLUGINS_GST_PERMITIDOS`]; Fase 39c, canais da 29b): sem ela, o
+//!     `gst-plugin-scanner` (filho do processo web) roda o `plugin_init` de todos os
+//!     plugins do sistema, e o `frei0r`, o `ladspa` e o `libvisual` fazem `dlopen` das
+//!     `.so` de `~/.frei0r-1/lib`, `~/.ladspa` e `~/.libvisual/actor` (código do
+//!     atacante); o `nvcodec` carrega o libcuda, que abre
+//!     `/dev/shm/cuda_injection_path_shm` (injeção do Nsight), faz `bind` de um socket
+//!     abstrato e cria `~/.nv/ComputeCache`; os de vídeo da Intel leem `~/.mfx_trace` e
+//!     `/dev/shm/GFX_MEDIA_TRACE`. Com a lista, o `dlopen` dos arquivos do root ainda
+//!     acontece, mas nenhum `plugin_init` fora dela roda. O app não toca mídia;
+//!   - `__GL_APPLICATION_PROFILE=0` (Fase 39c): sem ela, o driver da NVIDIA (EGL, no app
+//!     e no processo web) lê os perfis de aplicação de `~/.nv/nvidia-application-profiles-rc*`,
+//!     que mudam opções do driver. Resta a leitura do
+//!     `~/.nv/nvidia-application-profile-globals-rc` (só a chave `enabled`, que a
+//!     variável vence; RA8).
 //!
 //! Os valores não são segredo; as mensagens de erro levam só o nome da variável.
 
@@ -50,6 +65,15 @@ pub const PLUGINS_GST_DO_SISTEMA: &str = "/usr/lib/x86_64-linux-gnu/gstreamer-1.
 #[cfg(target_arch = "aarch64")]
 pub const PLUGINS_GST_DO_SISTEMA: &str = "/usr/lib/aarch64-linux-gnu/gstreamer-1.0";
 
+/// Plugins do GStreamer que o processo web pode iniciar (Fase 39c): `pacote@arquivo`,
+/// separados por `:` (formato do `GST_PLUGIN_LOADING_WHITELIST`; o arquivo é prefixo do
+/// caminho do plugin). Só os elementos básicos e o `appsink`/`appsrc`, os dois da pasta
+/// do sistema; nenhum dos que carregam código ou abrem canal do HOME ou do `/dev/shm`.
+#[cfg(target_arch = "x86_64")]
+pub const PLUGINS_GST_PERMITIDOS: &str = "gstreamer@/usr/lib/x86_64-linux-gnu/gstreamer-1.0/libgstcoreelements.so:gst-plugins-base@/usr/lib/x86_64-linux-gnu/gstreamer-1.0/libgstapp.so";
+#[cfg(target_arch = "aarch64")]
+pub const PLUGINS_GST_PERMITIDOS: &str = "gstreamer@/usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgstcoreelements.so:gst-plugins-base@/usr/lib/aarch64-linux-gnu/gstreamer-1.0/libgstapp.so";
+
 /// Variáveis de valor fixo.
 pub const VARIAVEIS_FIXAS: &[(&str, &str)] = &[
     ("XDG_SESSION_TYPE", "wayland"),
@@ -59,6 +83,8 @@ pub const VARIAVEIS_FIXAS: &[(&str, &str)] = &[
     ("NO_AT_BRIDGE", "1"),
     ("WEBKIT_A11Y_BUS_ADDRESS", "unix:path=/dev/null"),
     ("CUDA_MPS_PIPE_DIRECTORY", PASTA_MPS_INEXISTENTE),
+    ("GST_PLUGIN_LOADING_WHITELIST", PLUGINS_GST_PERMITIDOS),
+    ("__GL_APPLICATION_PROFILE", "0"),
 ];
 
 /// Pasta do canal do MPS da NVIDIA (D64): dentro de `/proc`, onde nenhum processo, nem
@@ -868,6 +894,31 @@ mod testes {
         v.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect()
     }
 
+    /// Fase 39c: cada item da lista do GStreamer é `pacote@<pasta do sistema>/libgst…`,
+    /// e nenhum é dos plugins que carregam código do HOME ou abrem canal da GPU.
+    #[test]
+    fn ataque_lista_do_gstreamer_so_com_plugins_do_sistema() {
+        let itens: Vec<_> = PLUGINS_GST_PERMITIDOS.split(':').collect();
+        assert_eq!(itens.len(), 2);
+        for item in itens {
+            let (pacote, arquivo) = item.split_once('@').expect(item);
+            assert!(
+                ["gstreamer", "gst-plugins-base"].contains(&pacote),
+                "{item}"
+            );
+            let nome = arquivo
+                .strip_prefix(PLUGINS_GST_DO_SISTEMA)
+                .and_then(|r| r.strip_prefix("/libgst"))
+                .expect(item);
+            assert!(nome.ends_with(".so") && !nome.contains('/'), "{item}");
+            for perigoso in [
+                "frei0r", "ladspa", "visual", "lv2", "nv", "cuda", "va", "qsv", "msdk",
+            ] {
+                assert!(!nome.starts_with(perigoso), "{item}");
+            }
+        }
+    }
+
     #[test]
     fn ambiente_montado_tem_so_as_variaveis_de_d57() {
         let s = Sessao::nova("montar");
@@ -895,6 +946,11 @@ mod testes {
             a.valor("CUDA_MPS_PIPE_DIRECTORY"),
             Some("/proc/ward-sem-mps")
         );
+        assert_eq!(
+            a.valor("GST_PLUGIN_LOADING_WHITELIST"),
+            Some(PLUGINS_GST_PERMITIDOS)
+        );
+        assert_eq!(a.valor("__GL_APPLICATION_PROFILE"), Some("0"));
         assert_eq!(a.valor("LANG"), Some("pt_BR.UTF-8"));
         for proibida in [
             "DISPLAY",
@@ -998,6 +1054,19 @@ mod testes {
             ("CUDA_MPS_PIPE_DIRECTORY", "/tmp/nvidia-mps"),
             ("CUDA_MPS_PIPE_DIRECTORY", "/run/user/1000/mps"),
             ("CUDA_MPS_PIPE_DIRECTORY", ""),
+            // Fase 39c: a lista do GStreamer aberta de novo (os plugins que carregam
+            // código do HOME) ou apontada para uma pasta do uid, e os perfis da NVIDIA.
+            ("GST_PLUGIN_LOADING_WHITELIST", ""),
+            (
+                "GST_PLUGIN_LOADING_WHITELIST",
+                "gstreamer:gst-plugins-base:gst-plugins-bad",
+            ),
+            (
+                "GST_PLUGIN_LOADING_WHITELIST",
+                "gst-plugins-base@/home/teste/.local/share/gstreamer-1.0/plugins",
+            ),
+            ("__GL_APPLICATION_PROFILE", "1"),
+            ("__GL_APPLICATION_PROFILE", ""),
             ("LANG", "../../tmp/locale"),
             ("LANG", "/tmp/locale"),
         ] {
@@ -1039,6 +1108,13 @@ mod testes {
             s.conferir(&pares(&v)),
             Err(ErroSessao::Faltando("NO_AT_BRIDGE"))
         );
+        // Fase 39c: sem a lista, o scanner do GStreamer roda o `plugin_init` do frei0r,
+        // do ladspa e do libvisual (código do HOME); sem a outra, os perfis da NVIDIA.
+        for nome in ["GST_PLUGIN_LOADING_WHITELIST", "__GL_APPLICATION_PROFILE"] {
+            let mut v = certo.clone();
+            v.retain(|(k, _)| k != nome);
+            assert_eq!(s.conferir(&pares(&v)), Err(ErroSessao::Faltando(nome)));
+        }
         // D64: sem a variável do MPS, o cliente da NVIDIA volta ao `/tmp/nvidia-mps`.
         let mut v = certo.clone();
         v.retain(|(k, _)| k != "CUDA_MPS_PIPE_DIRECTORY");

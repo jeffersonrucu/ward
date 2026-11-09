@@ -23,8 +23,9 @@ use zeroize::Zeroizing;
 
 use crate::formulario::ErroCampo;
 
-/// Mínimo de caracteres da senha mestra (texto de ajuda do design).
-pub const MIN_CARACTERES_SENHA: usize = 12;
+/// Mínimo de caracteres da senha mestra (texto de ajuda do design), o mesmo do daemon
+/// (Fase 39c): contado em pontos de código depois do NFC.
+pub const MIN_CARACTERES_SENHA: usize = ward_core::limites::MIN_CARACTERES_SENHA_MESTRA;
 
 pub const SENHA_CURTA: &str = "a senha mestra precisa de 12 caracteres ou mais";
 pub const SENHA_LONGA: &str = "a senha mestra passou do tamanho máximo";
@@ -42,6 +43,13 @@ impl Digitado {
 
     pub(crate) fn bytes(&self) -> &[u8] {
         self.0.as_bytes()
+    }
+
+    /// A regra do daemon para senha mestra nova (12 caracteres depois do NFC), numa
+    /// cópia que zera ao sair. O daemon confere de novo; aqui é para o erro no campo.
+    pub(crate) fn serve_de_nova(&self) -> bool {
+        ward_core::formato::SenhaMestra::digitada(Zeroizing::new(self.bytes().to_vec()))
+            .serve_de_nova()
     }
 
     pub(crate) fn igual(&self, outro: &Digitado) -> bool {
@@ -99,7 +107,7 @@ pub fn erros_da_senha(senha: &Digitado, confirmacao: &Digitado) -> Vec<ErroCampo
     let mut erros = Vec::new();
     if senha.bytes().len() > MAX_SEGREDO {
         erros.push(erro("senha", SENHA_LONGA));
-    } else if senha.0.chars().count() < MIN_CARACTERES_SENHA {
+    } else if !senha.serve_de_nova() {
         erros.push(erro("senha", SENHA_CURTA));
     } else if !senha.igual(confirmacao) {
         erros.push(erro("confirmacao", SENHA_DIFERENTE));

@@ -1,6 +1,7 @@
 //! `ward-ponte-teste`: sobe a ponte (D7) e imprime a URL que o Chrome de teste abre. Só
 //! existe com a feature `modo-teste` (`required-features`). Fala com o daemon de teste
-//! em `/run/user/<uid>/ward-teste/` e nunca lê variável para escolher o socket.
+//! em `/run/user/<uid>/ward-teste/`, ou na pasta de `WARD_DEV_SOCKET_DIR` que o daemon
+//! de teste lhe passa (Fase 39c; `DaemonSocket::padrao`).
 //!
 //! Com o daemon de verdade (D63, Fase 23a), quem abre a ponte é o daemon de teste
 //! (`make app-ponte` pede `abrir_app` com `WARD_DEV_APP` apontando para ela): sem
@@ -29,10 +30,11 @@ use ward_app_nucleo::area_transferencia::{Copiador, Wayland};
 use ward_app_nucleo::daemon::{Aviso, Daemon, DaemonSocket, FilaAvisos};
 use ward_app_nucleo::daemon_falso::{AprovacaoSimulada, DaemonFalso, aprovacoes_simuladas};
 use ward_app_nucleo::servico::Servico;
+use ward_app_nucleo::terminal::Terminal;
 use ward_app_nucleo::{aprovacao, destrave};
 use ward_ponte_teste::http::Ponte;
 use ward_ponte_teste::partida;
-use ward_ponte_teste::simulados::{SeletorDePasta, TerminalDeTeste};
+use ward_ponte_teste::simulados::{SeletorDePasta, TerminalDeTeste, TerminalDoRepositorio};
 
 const USO: &str = "uso: ward-ponte-teste [--dist <diretório do build --mode teste> \
 [--daemon-falso cheio|vazio|travado|travado-com-pedido|travado-com-pedido-ataque|sem-cofre|aprovacao|aprovacao-prod|\
@@ -191,7 +193,20 @@ fn com_o_daemon(dist: &Path, anexos: Option<PathBuf>) -> ExitCode {
     match daemon {
         Ok(d) => {
             let fila = d.avisos();
-            servir(d, Some(fila), dist, anexos, &[])
+            // Fase 39c: com o daemon de teste, o "Conectar" abre o `ward ssh` de verdade.
+            let terminal: Box<dyn Terminal> = match TerminalDoRepositorio::do_repositorio(
+                std::env::var_os("WARD_DEV_DIR"),
+                std::env::var_os("WARD_DEV_SOCKET_DIR"),
+            ) {
+                Some(t) => Box::new(t),
+                None => {
+                    eprintln!(
+                        "ward-ponte-teste: sem dev/testes/terminal-teste.py ou target/debug/ward; o Conectar só registra"
+                    );
+                    Box::new(TerminalDeTeste)
+                }
+            };
+            servir_com(d, Some(fila), dist, anexos, &[], terminal)
         }
         Err(e) => {
             eprintln!("ward-ponte-teste: {e}");
@@ -207,10 +222,28 @@ fn servir<D: Daemon + 'static>(
     anexos: Option<PathBuf>,
     aprovacoes: &[AprovacaoSimulada],
 ) -> ExitCode {
+    servir_com(
+        daemon,
+        avisos,
+        dist,
+        anexos,
+        aprovacoes,
+        Box::new(TerminalDeTeste),
+    )
+}
+
+fn servir_com<D: Daemon + 'static>(
+    daemon: D,
+    avisos: Option<Arc<FilaAvisos>>,
+    dist: &Path,
+    anexos: Option<PathBuf>,
+    aprovacoes: &[AprovacaoSimulada],
+    terminal: Box<dyn Terminal>,
+) -> ExitCode {
     let dist: PathBuf = dist.to_path_buf();
     let servico = match Wayland::novo() {
         Ok(a) => {
-            let s = Servico::novo(daemon, Copiador::novo(a)).com_terminal(TerminalDeTeste);
+            let s = Servico::novo(daemon, Copiador::novo(a)).com_terminal(terminal);
             match anexos {
                 Some(p) => s.com_seletor(SeletorDePasta(p)),
                 None => s,

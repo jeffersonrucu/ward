@@ -213,7 +213,7 @@ confere "V5.31: o socket do daemon tem CLOEXEC" "$r" "socket_cloexec=true/"
 confere "V3.34: o app lançado tem VmLck 0 kB (o mlockall do daemon não passa pelo execve)" "$r" "vmlck=0,kB"
 nao_tem "V3.34: o daemon de teste travou a memória (mlockall com LimitMEMLOCK infinito)" "$(grep '^servidor: pronto' "$LOG2" || true)" "vmlck=0,kB"
 confere "V5.31: o ambiente do app é exatamente o de D57 (sem DISPLAY, LISTEN_*, GTK_MODULES, GST_PLUGIN_PATH, GIO_EXTRA_MODULES, WEBKIT_INJECTED_BUNDLE_PATH)" \
-    "$r" "env=CUDA_MPS_PIPE_DIRECTORY,DBUS_SESSION_BUS_ADDRESS,GDK_BACKEND,GST_PLUGIN_SYSTEM_PATH,HOME,LANG,NO_AT_BRIDGE,PATH,WAYLAND_DISPLAY,WEBKIT_A11Y_BUS_ADDRESS,XDG_RUNTIME_DIR,XDG_SESSION_TYPE"
+    "$r" "env=CUDA_MPS_PIPE_DIRECTORY,DBUS_SESSION_BUS_ADDRESS,GDK_BACKEND,GST_PLUGIN_LOADING_WHITELIST,GST_PLUGIN_SYSTEM_PATH,HOME,LANG,NO_AT_BRIDGE,PATH,WAYLAND_DISPLAY,WEBKIT_A11Y_BUS_ADDRESS,XDG_RUNTIME_DIR,XDG_SESSION_TYPE,__GL_APPLICATION_PROFILE"
 r="$(grep "^servidor: pid=$APID " "$LOG2" || true)"
 confere "V5.31: o app aberto pelo daemon conectou antes de largar o grupo e recebeu o papel app" "$r" "gid=$GID_APP papel=app"
 confere "D47: com a conexão caída e o pai ainda o daemon, o app se executa de novo" "$(linha_app queda "$APID")" "queda pid=$APID"

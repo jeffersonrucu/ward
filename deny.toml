@@ -9,6 +9,9 @@ version = 2
 db-urls = ["https://github.com/rustsec/advisory-db"]
 yanked = "deny"
 unmaintained = "all"
+# O padrão do cargo-deny 0.20 ("workspace") não olha as dependências transitivas; com
+# "all", um advisory "unsound" em qualquer crate do grafo reprova (handoff 29b, Fase 39c).
+unsound = "all"
 ignore = []
 
 [licenses]

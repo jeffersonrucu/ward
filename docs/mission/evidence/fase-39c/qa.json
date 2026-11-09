@@ -1,0 +1,142 @@
+[
+ {
+  "checagem": "destravar pelo app com a senha de teste",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "janela de aprovação aberta sem pedido",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V5.10: Novo vazio com Salvar desabilitado",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V5.10: com o nome preenchido, Salvar habilita",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V5.10: salvar sem grupo e ambiente mostra o erro no campo",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V5.16 (negar): a janela mostra entrada, ambiente e comando",
+  "ok": true,
+  "detalhe": "Pedido de aprovação\n\nClaude Code pediu uma credencial\n\n1:59 restantes\n\nConfira a entrada, o comando exato e quem pediu antes de permitir.\n\nacme-pg-aprovacao\nbanco\nstage\nNível\ncom aprovação\nComando\n\"to"
+ },
+ {
+  "checagem": "V5.16 (negar): a CLI sai ≠ 0 e a marca não existe",
+  "ok": true,
+  "detalhe": "saida=125 ward: pedido negado"
+ },
+ {
+  "checagem": "V5.16 (fechar): a janela mostra entrada, ambiente e comando",
+  "ok": true,
+  "detalhe": "Pedido de aprovação\n\nClaude Code pediu uma credencial\n\n1:59 restantes\n\nConfira a entrada, o comando exato e quem pediu antes de permitir.\n\nacme-pg-aprovacao\nbanco\nstage\nNível\ncom aprovação\nComando\n\"to"
+ },
+ {
+  "checagem": "V5.16 (fechar): a CLI sai ≠ 0 e a marca não existe",
+  "ok": true,
+  "detalhe": "saida=125 ward: pedido negado"
+ },
+ {
+  "checagem": "V5.16 (uma vez): executa com o PIN",
+  "ok": true,
+  "detalhe": "saida=0 "
+ },
+ {
+  "checagem": "V5.16 (uma vez): o pedido seguinte abre a janela de novo",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V5.16 (1 hora): executa com o PIN",
+  "ok": true,
+  "detalhe": "saida=0"
+ },
+ {
+  "checagem": "V5.16 (1 hora): o pedido seguinte roda sem janela",
+  "ok": true,
+  "detalhe": "saida=0 "
+ },
+ {
+  "checagem": "V5.16 (1 hora): ward travar",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V5.16 (1 hora): depois de travar e destravar, a janela abre de novo",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V5.16 (1 hora): negado depois de travar",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V5.24: Conectar abre o terminal com ward ssh e conecta sem janela nem PIN",
+  "ok": true,
+  "detalhe": "16:06:58 uso=1 entrada=acme-ssh-salto saida=0 conectou=sim negado=nao"
+ },
+ {
+  "checagem": "V5.24 (ataque): o token não aparece em /proc/*/cmdline nem environ",
+  "ok": true,
+  "detalhe": "16:07:01 proc=0/869"
+ },
+ {
+  "checagem": "V5.24 (reuso): o primeiro uso conecta",
+  "ok": true,
+  "detalhe": "16:07:01 uso=1 entrada=acme-ssh-salto saida=0 conectou=sim negado=nao"
+ },
+ {
+  "checagem": "V5.24 (ataque): reusar o token vale o nível (a janela abre)",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V5.24 (ataque): reuso negado, não conecta",
+  "ok": true,
+  "detalhe": "16:07:02 uso=2 entrada=acme-ssh-salto saida=125 conectou=nao negado=sim"
+ },
+ {
+  "checagem": "V5.24 (ataque): o token de acme-ssh-salto em acme-ssh-interno-aprov vale o nível",
+  "ok": true,
+  "detalhe": "Pedido de aprovação\n\nClaude Code pediu uma credencial\n\n1:59 restantes\nprod\n\nCredencial de produção. As opções são as mesmas dos outros ambientes; confira o comando com atenção.\n\nConfira a entrada, o c"
+ },
+ {
+  "checagem": "V5.24 (ataque): outra entrada negada",
+  "ok": true,
+  "detalhe": "16:07:12 uso=1 entrada=acme-ssh-interno-aprov saida=125 conectou=nao negado=sim"
+ },
+ {
+  "checagem": "V5.24 (ataque): usar o token depois de 30 s vale o nível",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V5.24 (ataque): token vencido negado",
+  "ok": true,
+  "detalhe": "16:07:52 uso=1 entrada=acme-ssh-salto saida=125 conectou=nao negado=sim"
+ },
+ {
+  "checagem": "V5.16 (sempre): executa com o PIN",
+  "ok": true,
+  "detalhe": "saida=0"
+ },
+ {
+  "checagem": "V5.16 (sempre): a entrada passa a Livre no app",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V5.16 (sempre): o pedido seguinte roda sem janela",
+  "ok": true,
+  "detalhe": "saida=0"
+ }
+]

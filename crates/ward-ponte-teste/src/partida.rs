@@ -34,6 +34,12 @@ pub fn conectar_com_papel_app(mut daemon: DaemonSocket) -> Result<DaemonSocket, 
 /// O `dist-teste` da ponte aberta pelo daemon: `<WARD_DEV_DIR>/../app/dist-teste`.
 /// `WARD_DEV_DIR` tem de ser absoluto, sem `.`/`..`, e terminar em `/.dev`.
 pub fn dist_do_repositorio(dev: Option<OsString>) -> Option<PathBuf> {
+    Some(repositorio(dev)?.join("app").join("dist-teste"))
+}
+
+/// O repositório de `WARD_DEV_DIR` (`<repositório>/.dev`), com a mesma regra do
+/// [`dist_do_repositorio`].
+pub fn repositorio(dev: Option<OsString>) -> Option<PathBuf> {
     use std::path::Component;
     let dev = PathBuf::from(dev?);
     let limpo = dev.is_absolute()
@@ -43,7 +49,7 @@ pub fn dist_do_repositorio(dev: Option<OsString>) -> Option<PathBuf> {
     if !limpo || dev.file_name()? != ".dev" {
         return None;
     }
-    Some(dev.parent()?.join("app").join("dist-teste"))
+    Some(dev.parent()?.to_path_buf())
 }
 
 #[cfg(test)]
@@ -56,8 +62,13 @@ mod testes {
             dist_do_repositorio(Some("/r/x/.dev".into())),
             Some(PathBuf::from("/r/x/app/dist-teste"))
         );
+        assert_eq!(
+            repositorio(Some("/r/x/.dev".into())),
+            Some(PathBuf::from("/r/x"))
+        );
         for ruim in ["", "rel/.dev", "/r/../.dev", "/r/x/dev", "/.dev/.."] {
             assert_eq!(dist_do_repositorio(Some(ruim.into())), None, "{ruim}");
+            assert_eq!(repositorio(Some(ruim.into())), None, "{ruim}");
         }
         assert_eq!(dist_do_repositorio(None), None);
     }

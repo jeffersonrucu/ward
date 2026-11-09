@@ -247,8 +247,26 @@ fn problema(campo: &str, motivo: &str) -> ErroResposta {
     }])
 }
 
+/// Senha mestra do pedido, em NFC (Fase 39c): destravar, criar, trocar e restaurar
+/// passam todos por aqui, então o app e a CLI abrem o mesmo cofre com o mesmo texto
+/// composto ou decomposto, sem depender do cliente.
 fn senha_de(s: &Segredo) -> SenhaMestra {
-    SenhaMestra::de_bytes(Zeroizing::new(s.expor().to_vec()))
+    SenhaMestra::digitada(Zeroizing::new(s.expor().to_vec()))
+}
+
+/// Texto fixo (sem valor) de senha mestra nova abaixo do mínimo, igual ao do app.
+const SENHA_CURTA: &str = "a senha mestra precisa de 12 caracteres ou mais";
+
+/// Senha mestra nova (criar, trocar): o mínimo vale também aqui, não só no app
+/// (Fase 39c; um cliente do papel app que pule a tela não cria cofre com senha curta).
+fn senha_nova(s: &Segredo, campo: &str) -> Result<SenhaMestra, ErroResposta> {
+    let senha = senha_de(s);
+    if senha.serve_de_nova() {
+        Ok(senha)
+    } else {
+        aviso!("senha mestra nova recusada: abaixo do mínimo de caracteres");
+        Err(problema(campo, SENHA_CURTA))
+    }
 }
 
 /// Confere o cofre e grava as entradas e a configuração do `a` (D39, D53).
@@ -1071,6 +1089,7 @@ impl Daemon {
     }
 
     fn criar_cofre(&self, senha: &Segredo, pin: &Segredo) -> Result<Resposta, ErroResposta> {
+        let senha = senha_nova(senha, "senha")?;
         let mut est = self.estado();
         if est.aberto.is_some() || arquivos::cofre_existe(&self.caminhos.cofre) {
             return Err(ErroResposta::CofreJaExiste);
@@ -1091,7 +1110,7 @@ impl Daemon {
         if velho.is_some() {
             aviso!("criar cofre: estado anterior na geração {q}; o cofre novo nasce na {primeira}");
         }
-        let mut cofre = CofreAberto::novo(&senha_de(senha), Configuracao::nova(hash))
+        let mut cofre = CofreAberto::novo(&senha, Configuracao::nova(hash))
             .map_err(|_| ErroResposta::Interno)?
             .depois_da_geracao(q);
         if let Some(dir) = self.caminhos.cofre.parent() {
@@ -1388,6 +1407,8 @@ impl Daemon {
     /// Troca a senha mestra (D53): `queimada` antes, `trocar_senha` do núcleo com
     /// (`vista`, geração atual), e um erro depois da senha conferida trava o cofre.
     fn trocar_senha(&self, atual: &Segredo, nova: &Segredo) -> Result<Resposta, ErroResposta> {
+        // Antes de tudo: senha nova curta não queima geração nem toca no disco.
+        let nova = senha_nova(nova, "nova")?;
         let mut est = self.estado();
         let a = est.aberto.as_mut().ok_or(ErroResposta::Travado)?;
         match arquivos::identidade(&self.caminhos.cofre) {
@@ -1411,7 +1432,7 @@ impl Daemon {
             return Err(ErroResposta::FalhaAoGravar);
         }
         a.geracoes = antes;
-        let (atual, nova) = (senha_de(atual), senha_de(nova));
+        let atual = senha_de(atual);
         let r = match abrir_pasta(&self.caminhos) {
             Some(p) => gravacao::trocar_senha_com_backup(
                 &self.caminhos.cofre,
