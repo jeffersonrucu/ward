@@ -95,25 +95,37 @@ Hoje o KeePassXC carrega chaves no agente do sistema (`gcr-ssh-agent`, em
 
 Para cada chave pessoal no KeePassXC (entrada com a aba **Agente SSH** ligada):
 
-1. Na entrada, aba **Avançado › Anexos**, salve o anexo da chave privada direto em
-   `~/.ssh/<nome>` (ex.: `~/.ssh/id_ed25519_github`). Mantenha a chave cifrada com a
+1. Na entrada, aba **Avançado › Anexos**, salve o anexo da chave privada na pasta em
+   memória: `/run/user/<uid>/migracao/<nome>` (ex.: `id_ed25519_github`), nunca
+   direto no `~/.ssh`. Uma chave sem passphrase gravada no `~/.ssh` (disco) ficaria
+   lá em claro, mesmo que ganhe passphrase depois. Mantenha a chave cifrada com a
    passphrase; não tire a passphrase.
-2. Ajuste a permissão e gere a pública ao lado (pede a passphrase no terminal):
+2. Ajuste a permissão da cópia e gere a pública no `~/.ssh` (pede a passphrase no
+   terminal):
 
    ```bash
-   chmod 600 ~/.ssh/id_ed25519_github
-   ssh-keygen -y -f ~/.ssh/id_ed25519_github > ~/.ssh/id_ed25519_github.pub
+   chmod 600 "/run/user/$(id -u)/migracao/id_ed25519_github"
+   ssh-keygen -y -f "/run/user/$(id -u)/migracao/id_ed25519_github" > ~/.ssh/id_ed25519_github.pub
    ```
 
 3. Se o `ssh-keygen -y` não pediu passphrase, a chave está sem nenhuma: ponha uma
-   agora. O comando pede a passphrase nova duas vezes, no terminal:
+   agora, ainda na pasta em memória. O comando pede a passphrase nova duas vezes, no
+   terminal:
 
    ```bash
-   ssh-keygen -p -f ~/.ssh/id_ed25519_github
+   ssh-keygen -p -f "/run/user/$(id -u)/migracao/id_ed25519_github"
    ```
 
-4. No KeePassXC, desligue nessa entrada "Adicionar ao agente ao abrir/desbloquear".
-5. Se o agente SSH perguntar se deve lembrar a passphrase, **não marque** até o
+4. Com a passphrase posta, leve a chave para o `~/.ssh` (o `install` já a cria
+   0600) e apague a cópia em memória:
+
+   ```bash
+   install -m 600 "/run/user/$(id -u)/migracao/id_ed25519_github" ~/.ssh/id_ed25519_github
+   rm -f "/run/user/$(id -u)/migracao/id_ed25519_github"
+   ```
+
+5. No KeePassXC, desligue nessa entrada "Adicionar ao agente ao abrir/desbloquear".
+6. Se o agente SSH perguntar se deve lembrar a passphrase, **não marque** até o
    passo 5 terminar: hoje "lembrar" grava no KeePassXC, que vai sair.
 
 ### 2b. Chaves de servidor
@@ -193,10 +205,13 @@ Para cada entrada `servidor` (com senha ou chave):
 
    ```bash
    ssh-keygen -F '<host>' -f ~/.ssh/known_hosts | grep -v '^#' >> ~/.local/share/ward/known_hosts
+   chmod 600 ~/.local/share/ward/known_hosts
    ssh-keygen -l -F '<host>' -f ~/.local/share/ward/known_hosts
    ```
 
-   A segunda linha mostra a impressão digital gravada. Se ela não mostrar nada, o
+   O `>>` cria o arquivo com a sua umask (em geral 0644), e o `ward ssh` recusa um
+   `known_hosts` que grupo ou outros leem; o `chmod 600` o acerta. A última linha
+   mostra a impressão digital gravada. Se ela não mostrar nada, o
    host não estava no seu `~/.ssh/known_hosts`: pegue a impressão digital por outro
    canal (painel do provedor, quem administra o servidor) antes de conectar.
 2. Servidor com salto: faça o mesmo para o host do salto e para o host de destino.

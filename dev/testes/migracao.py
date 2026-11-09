@@ -23,7 +23,14 @@ guia, nunca pasta aberta.
    `sudo` só `cp` do PAM; `ssh-keygen` sem `-N`/`-P`; chave da pasta do ssh só para a
    pasta em memória; redirecionamento só para `.pub`, o `known_hosts` do Ward e
    `/dev/null`; pipe só para `grep`; sem heredoc, `<`, crase nem `$(` fora de
-   `$(id -u)`).
+   `$(id -u)`). Fase 53d: nenhum argumento com `..`, `$`, `~` fora de `~/`, curinga,
+   chaves, pasta do ssh fora de `~/.ssh/` nem pasta em memória fora de
+   `/run/user/$(id -u)/migracao/`; chave (da pasta do ssh ou da em memória) só sai por
+   `install -m 600`, da pasta do ssh para a em memória ou da em memória para ela mesma
+   ou para a do ssh; `cp`/`mv`/`install` com opções fixas; `find` só nas duas formas
+   da troca dos `Login Data*`; `chmod` só 600/700; `grep` só filtro de pipe, sem
+   arquivo; `busctl` só `status`, `SearchItems` e `NameHasOwner`; `cd` só nas pastas
+   do Chrome; `diff` só no PAM; `ssh-keygen -F/-l/-R` só nos `known_hosts`.
 5. SEG no texto todo: nenhum segredo em argv (`sshpass -p`, `SSHPASS=`, `-p<senha>` do
    mysql, URI com senha, `curl -u`, `ssh-keygen -N/-P`, `wl-copy` sem `--clear`, pipe
    para `wl-copy`/`secret-tool`, here-string), nenhum `secret-tool lookup/search`, nada
@@ -37,10 +44,13 @@ guia, nunca pasta aberta.
    `ssh-keygen -F` no `known_hosts` do Ward antes do primeiro `ward ssh` e apaga do ssh
    as chaves de servidor; o passo 4 conta os itens com `SearchItems`; o "Voltar atrás"
    do passo 6 devolve todos os `Login Data*`; o passo 8 abre a cópia do `.kdbx` e cita
-   o arquivo-chave antes de desinstalar.
+   o arquivo-chave antes de desinstalar. Fase 53d: o 2a salva a chave pessoal na pasta
+   em memória, põe a passphrase lá e só então a leva ao ssh por `install -m 600`; o
+   passo 3 dá `chmod 600` no `known_hosts` do Ward depois do `>>`.
 
 Antes de conferir o guia real, o autoteste confere que ele passa (controle) e planta
-cada ataque (os da Fase 53 e os 22 da auditoria do M10) numa cópia e exige falha.
+cada ataque (os da Fase 53, os 22 da auditoria do M10, os da 53b e os da 2ª auditoria
+do M10, Fase 53d) numa cópia e exige falha.
 
 Uso: python3 -I -B dev/testes/migracao.py [variacoes.txt]   (ou `make teste-migracao`)
 """
@@ -130,6 +140,7 @@ COMANDOS = {
 SEPARADORES = {"&&", "||", ";", "|", "(", ")"}
 REDIR_OK = re.compile(r"^(" + RX_SSH + r"/[\w.-]+\.pub|" + re.escape(KH_WARD) + r"|/dev/null)$")
 TMPFS = "/run/user/UID/migracao/"
+MEM = '"/run/user/$(id -u)/migracao/'
 
 # Texto todo: segredo em argv, exportação, leitura de segredo, disco.
 PROIBIDO = [
@@ -260,6 +271,7 @@ def conferir_bloco(bloco):
     except ValueError as e:
         return [str(e)]
     for linha, toks in linhas:
+        erros += conferir_tokens(toks, linha)
         # redirecionamentos
         limpos, i = [], 0
         while i < len(toks):
@@ -335,35 +347,145 @@ def regras_do_comando(cmd, antes, anteriores, seps_ant, linha):
         for a in args:
             if re.match(r"^-[A-Za-z]*[NP]", a):
                 erros.append("ssh-keygen -N/-P (passphrase em argv)")
+        # Fase 53d: `-F`/`-l`/`-R` só nos `known_hosts`; `-y`/`-p` só em chave da pasta
+        # em memória ou da do ssh.
+        opcoes = [a for a in args if a.startswith("-")]
+        arquivo = args[args.index("-f") + 1] if "-f" in args[:-1] else ""
+        if not set(opcoes) <= {"-y", "-p", "-f", "-F", "-l", "-R"} or opcoes.count("-f") != 1:
+            erros.append(f"ssh-keygen com opções fora da lista: {linha!r}")
+        elif {"-F", "-l", "-R"} & set(opcoes):
+            if arquivo not in (SSH + "known_hosts", KH_WARD) or {"-y", "-p"} & set(opcoes):
+                erros.append(f"ssh-keygen -F/-l/-R fora dos known_hosts: {linha!r}")
+        elif not arquivo.startswith((TMPFS, SSH)):
+            erros.append(f"ssh-keygen -y/-p fora da pasta em memória e da do ssh: {linha!r}")
     if nome == "rm":
         for a in args:
             if a.startswith("-"):
                 if a != "-f":
                     erros.append(f"rm com opção {a!r}")
-            elif not (a.startswith(TMPFS) or a.startswith(SSH)) or ".." in a:
+            elif not (a.startswith(TMPFS) or a.startswith(SSH)):
                 erros.append(f"rm fora da pasta em memória e da do ssh: {a!r}")
     if nome in ("cp", "mv", "install"):
-        caminhos = [a for i, a in enumerate(args) if not a.startswith("-") and (i == 0 or args[i - 1] != "-m")]
-        if any(a.startswith(SSH) and a not in (SSH + "config", SSH + "known_hosts") for a in caminhos):
-            if not all(a.startswith((SSH, TMPFS)) for a in caminhos):
-                erros.append(f"chave do ssh copiada para fora da pasta em memória: {linha!r}")
+        erros += regras_de_copia(nome, args, linha)
+    if nome == "chmod":
+        # Fase 53d: só 600/700 (chave nunca fica legível para grupo ou outros).
+        if len(args) < 2 or args[0] not in ("600", "700") or any(a.startswith("-") for a in args[1:]):
+            erros.append(f"chmod fora de 600/700: {linha!r}")
+    if nome == "grep":
+        # Fase 53d: só filtro de pipe, sem arquivo (nada de `grep . <chave>`).
+        opcoes = [a for a in args if a.startswith("-")]
+        resto = [a for a in args if not a.startswith("-")]
+        ok = antes == "|" and len(resto) == 1 and (
+            opcoes in (["-x"], ["-qx"], ["-q", "-x"], ["-x", "-q"])
+            or (opcoes == ["-v"] and resto == ["^#"])
+        )
+        if not ok:
+            erros.append(f"grep fora de `| grep -x/-qx <padrão>` (ou `| grep -v '^#'`): {linha!r}")
+    if nome == "busctl":
+        # Fase 53d: só `status`, `SearchItems` e `NameHasOwner` (nada de `Item Delete`).
+        ok = args[:1] == ["--user"] and (
+            args[1:3] == ["status", "org.freedesktop.secrets"] and len(args) == 3
+            or len(args) >= 6 and args[1] == "call" and args[5] in ("SearchItems", "NameHasOwner")
+        )
+        if not ok:
+            erros.append(f"busctl fora de status/SearchItems/NameHasOwner: {linha!r}")
+    if nome == "cd" and args not in (["~/.config/google-chrome"], ["~/ward-migracao/chrome"], ["-"]):
+        erros.append(f"cd para fora das pastas do Chrome: {linha!r}")
+    if nome == "diff" and not (
+        len(args) == 2 and all(a.startswith(("/var/backups/", "/etc/pam.d/")) for a in args)
+    ):
+        erros.append(f"diff fora do PAM: {linha!r}")
     if nome == "find":
-        if "-delete" in args:
-            erros.append("find -delete")
-        execs = [args[i + 1] for i, a in enumerate(args) if a == "-exec" and i + 1 < len(args)]
-        for e in execs:
-            if e not in ("cp", "rm"):
-                erros.append(f"find -exec {e!r} fora de cp/rm")
-            if e == "rm":
-                ok = (
-                    "Login Data*" in args
-                    and "-maxdepth" in args
-                    and anteriores[-1:] == [["cd", "~/.config/google-chrome"]]
-                    and args[args.index("-exec") + 1] == "cp"
-                )
-                if not ok:
-                    erros.append("find -exec rm fora da troca dos Login Data* do Chrome")
+        erros += regras_do_find(args, anteriores, linha)
     return erros
+
+
+def e_da_memoria(a):
+    """O caminho cita a pasta em memória (por qualquer forma)?"""
+    return "/run/" in a or a.startswith("run/") or ("migracao" in a and not a.startswith("~/ward-migracao"))
+
+
+def e_chave(a):
+    """Origem possível de chave: a pasta do ssh (fora do `config` e do `known_hosts`) e
+    a pasta em memória."""
+    return (a.startswith(SSH[:-1]) and a not in (SSH + "config", SSH + "known_hosts")) or e_da_memoria(a)
+
+
+def conferir_tokens(toks, linha):
+    """Fase 53d: regras de todo argumento de bloco, antes de olhar o comando."""
+    erros = []
+    for a in toks:
+        if ".." in a:
+            erros.append(f"`..` em caminho: {linha!r}")
+        if "$" in a:
+            erros.append(f"variável em argumento (só `$(id -u)`): {linha!r}")
+        if "~" in a and not a.startswith("~/"):
+            erros.append(f"`~` fora de `~/`: {linha!r}")
+        if any(c in a for c in "*?[") and a != "Login Data*":
+            erros.append(f"curinga em argumento: {linha!r}")
+        if "{" in a and a not in ("{}", "a{ss}"):
+            erros.append(f"chaves em argumento: {linha!r}")
+        if ".ssh" in a and not (a == SSH[:-1] or a.startswith(SSH)):
+            erros.append(f"pasta do ssh por outro caminho: {a!r}")
+        if e_da_memoria(a) and not (a.startswith(TMPFS) or a == TMPFS[:-1]):
+            erros.append(f"pasta em memória por outro caminho: {a!r}")
+    return erros
+
+
+def regras_de_copia(nome, args, linha):
+    """`cp`/`mv`/`install`. Chave (da pasta do ssh ou da em memória) só sai por
+    `install -m 600`, da pasta do ssh para a em memória ou da em memória para ela mesma
+    ou para a pasta do ssh."""
+    erros = []
+    opcoes, caminhos, i = [], [], 0
+    while i < len(args):
+        a = args[i]
+        if nome == "install" and a == "-m" and i + 1 < len(args):
+            opcoes += [a, args[i + 1]]
+            i += 2
+            continue
+        (opcoes if a.startswith("-") else caminhos).append(a)
+        i += 1
+    permitidas = {"cp": [[], ["-p"]], "mv": [[]], "install": [["-m", "600"], ["-d", "-m", "700"]]}[nome]
+    if opcoes not in permitidas:
+        erros.append(f"{nome} com opções fora da lista {opcoes!r}: {linha!r}")
+        return erros
+    if "-d" in opcoes:
+        return erros
+    if any(e_chave(a) for a in caminhos):
+        origem, destino = (caminhos + ["", ""])[:2]
+        ok = (
+            nome == "install"
+            and opcoes == ["-m", "600"]
+            and len(caminhos) == 2
+            and (
+                (origem.startswith(TMPFS) and destino.startswith((TMPFS, SSH)))
+                or (origem.startswith(SSH) and destino.startswith(TMPFS))
+            )
+        )
+        if not ok:
+            erros.append(f"chave fora de `install -m 600` entre a pasta em memória e a do ssh: {linha!r}")
+    return erros
+
+
+# Fase 53d: as duas formas do `find` do guia (troca dos `Login Data*` do Chrome).
+FIND_BASE = [".", "-maxdepth", "2", "-name", "Login Data*", "-exec", "cp", "--parents", "-p", "{}"]
+FIND_DESTINOS = {
+    "~/ward-migracao/chrome/": ("~/.config/google-chrome", False),
+    "~/ward-migracao/chrome-depois/": ("~/.config/google-chrome", True),
+    "~/.config/google-chrome/": ("~/ward-migracao/chrome", False),
+}
+
+
+def regras_do_find(args, anteriores, linha):
+    if "-delete" in args:
+        return ["find -delete"]
+    destino = args[len(FIND_BASE)] if len(args) > len(FIND_BASE) else ""
+    pasta, com_rm = FIND_DESTINOS.get(destino, (None, False))
+    esperado = FIND_BASE + [destino, "FIMEXEC"] + (["-exec", "rm", "{}", "FIMEXEC"] if com_rm else [])
+    if pasta is None or args != esperado or anteriores[-1:] != [["cd", pasta]]:
+        return [f"find fora da troca dos Login Data* do Chrome: {linha!r}"]
+    return []
 
 
 def antes_de(texto, marca):
@@ -456,13 +578,24 @@ def conferir(texto, padroes):
         a2 = next((c for t, c in sub2.items() if t.startswith("2a.")), "")
         if "**Carregar de arquivo**" not in b2:
             erros.append("passo 2b sem o botão **Carregar de arquivo**")
-        if not re.search(r"ssh-keygen -p -f " + RX_SSH, a2):
-            erros.append("passo 2a sem `ssh-keygen -p` para chave pessoal sem passphrase")
+        mem = re.escape('"/run/user/$(id -u)/migracao/')
+        if not re.search(r"ssh-keygen -p -f " + mem, a2):
+            erros.append("passo 2a sem `ssh-keygen -p` na pasta em memória para chave pessoal sem passphrase")
+        # Fase 53d: a chave pessoal passa pela pasta em memória e só chega ao ssh por
+        # `install -m 600`, depois da passphrase.
+        salva = re.search(r"salve o anexo da chave privada na pasta em\s+memória", a2)
+        leva = re.search(r"^\s*install -m 600 " + mem + r'[\w.-]+" ' + RX_SSH + r"/", a2, re.M)
+        poe = re.search(r"ssh-keygen -p -f ", a2)
+        if not salva or not leva or (poe and poe.start() > leva.start()) or re.search(r"(?i)direto\s+em\s+`" + RX_SSH, a2):
+            erros.append("passo 2a sem salvar a chave pessoal na pasta em memória e levar ao ssh por install -m 600")
         c3 = corpo[3]
         grava = re.search(r"ssh-keygen -F [^\n]*>> " + re.escape(KH_WARD), c3)
         primeiro = re.search(r"`ward ssh <", c3)
         if not grava or (primeiro and primeiro.start() < grava.start()):
             erros.append("passo 3 sem gravar a linha do ssh-keygen -F no known_hosts do Ward antes do ward ssh")
+        modo = re.search(r"^\s*chmod 600 " + re.escape(KH_WARD) + r"$", c3, re.M)
+        if not grava or not modo or modo.start() < grava.start() or (primeiro and primeiro.start() < modo.start()):
+            erros.append("passo 3 sem `chmod 600` no known_hosts do Ward depois do `>>`")
         if not re.search(r"^rm -f " + RX_SSH + r"/<chave>", c3, re.M):
             erros.append("passo 3 sem apagar do ssh as chaves de servidor conferidas")
         if "SearchItems" not in corpo[4]:
@@ -507,6 +640,9 @@ def ataques(texto):
 
     def antes_p2(linha):
         return texto.replace(P2, linha + "\n\n" + P2)
+
+    def bloco(comando):
+        return antes_p2("```bash\n" + comando + "\n```")
 
     guarda = "busctl --user status org.freedesktop.secrets | grep -qx 'Comm=gnome-keyring-d' && "
     clear2b = 'rm -f "/run/user/$(id -u)/migracao/<servidor>"\n   wl-copy --clear\n   ```\n\nPara cada'
@@ -582,7 +718,7 @@ def ataques(texto):
             "rm -f " + SSH + "<chave> " + SSH + "<chave>.pub", "ls -l " + SSH
         ),
         "53b: sem passphrase na chave pessoal": texto.replace(
-            "ssh-keygen -p -f " + SSH + "id_ed25519_github\n", "ls -l " + SSH + "\n"
+            "ssh-keygen -p -f " + MEM + 'id_ed25519_github"\n', "ls -l " + SSH + "\n"
         ),
         "53b: deixar sem passphrase": antes_p2("Se preferir, deixe a chave sem passphrase."),
         "53b: secret-tool search": texto + "\n`secret-tool search --all application chrome 2>&1 >/dev/null`\n",
@@ -609,6 +745,53 @@ def ataques(texto):
         "53b: substituição de comando": antes_p2("```bash\nls $(cat " + SSH + "x)\n```"),
         "53b: find -delete": antes_p2("```bash\nfind " + SSH + " -name 'id_*' -delete\n```"),
         "53b: frase nova citando a missão": antes_p2("Avise na missão quando terminar."),
+        # Fase 53d (2ª auditoria do M10): os 9 casos do auditor
+        "53d: cp com origem na pasta em memória": bloco("cp " + MEM + '<servidor>" ~/ward-migracao/'),
+        "53d: mv com origem na pasta em memória": bloco("mv " + MEM + '<servidor>" ~/chave'),
+        "53d: .. escapa do padrão /tmp": bloco(
+            "install -m 600 " + SSH + "<chave> " + MEM + '../../../tmp/chave"'
+        ),
+        "53d: .. na origem do cp": bloco("cp -p " + SSH + "../.ssh/id_ed25519 ~/ward-migracao/"),
+        "53d: find -exec cp da pasta do ssh": bloco(
+            "find " + SSH + " -name 'id_*' -exec cp {} ~/ward-migracao/ \\;"
+        ),
+        "53d: find -exec cp com destino trocado": texto.replace(
+            "-exec cp --parents -p {} ~/ward-migracao/chrome/ \\;", "-exec cp --parents -p {} ~/.cache/ \\;", 1
+        ),
+        "53d: chmod 644 de chave": bloco("chmod 644 " + SSH + "id_ed25519_github"),
+        "53d: grep . de chave": bloco("grep . " + SSH + "<chave>"),
+        "53d: busctl Item Delete": bloco(
+            "busctl --user call org.freedesktop.secrets /org/freedesktop/secrets/collection/login/1 "
+            "org.freedesktop.Secret.Item Delete"
+        ),
+        # Fase 53d: outras formas da mesma fuga
+        "53d: install da pasta em memória para o home": bloco("install -m 600 " + MEM + '<servidor>" ~/chave'),
+        "53d: mv da pasta do ssh inteira": bloco("mv " + SSH[:-1] + " ~/ward-migracao/ssh-velho"),
+        "53d: pasta do ssh pelo /home": bloco("cp /home/u/." + "ssh/id_ed25519 ~/ward-migracao/"),
+        "53d: curinga no caminho do ssh": bloco("cp ~/.s?h/id_ed25519 ~/ward-migracao/"),
+        "53d: variável no caminho": bloco('cp "$HOME/.' + 'ssh/id_ed25519" ~/ward-migracao/'),
+        "53d: cd para a pasta do ssh": bloco("cd " + SSH + " && cp id_ed25519 ~/ward-migracao/"),
+        "53d: --target-directory": bloco("cp --target-directory=~/ward-migracao " + SSH + "<chave>"),
+        "53d: diff mostra a chave": bloco("diff " + SSH + "<chave> /dev/null"),
+        "53d: ssh-keygen -F na chave": bloco("ssh-keygen -F x -f " + SSH + "<chave>"),
+        "53d: pasta em memória por outro caminho": bloco(
+            "install -m 600 " + SSH + "<chave> /run/user/1000/migracao/x"
+        ),
+        # Fase 53d: passo 2a sem passar pela pasta em memória (médio) e known_hosts (baixo)
+        "53d: 2a salva direto no ssh": texto.replace(
+            "salve o anexo da chave privada na pasta em\n   memória",
+            "salve o anexo da chave privada direto em `" + SSH + "<nome>`, não na pasta em\n   memória",
+        ),
+        "53d: 2a põe passphrase já no ssh": texto.replace(
+            "ssh-keygen -p -f " + MEM + 'id_ed25519_github"', "ssh-keygen -p -f " + SSH + "id_ed25519_github"
+        ),
+        "53d: 2a leva a chave com cp": texto.replace(
+            "install -m 600 " + MEM + 'id_ed25519_github" ' + SSH + "id_ed25519_github",
+            "cp -p " + MEM + 'id_ed25519_github" ' + SSH + "id_ed25519_github",
+        ),
+        "53d: known_hosts do Ward sem chmod 600": texto.replace(
+            "   chmod 600 " + KH_WARD + "\n", ""
+        ),
     }
 
 

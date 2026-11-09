@@ -568,9 +568,11 @@ teste-skill: origens
 	$(CARGO) build --quiet --locked -p ward --bin ward --target-dir target/sem-modo-teste
 	$(PYTHON) dev/testes/skill.py target/sem-modo-teste/debug/ward
 
-## teste-migracao: Fase 53 (V10.1–V10.3): ordem dos passos de docs/migracao.md, os itens
-## de montagem.md um por um, Conferir e Voltar atrás em cada passo, nada para a conversa
-## com o Claude, nenhum segredo em argv nem padrão de .dev/variacoes.txt; antes, o
+## teste-migracao: Fases 53, 53b e 53d (V10.1–V10.3): ordem dos passos de docs/migracao.md,
+## os itens de montagem.md um por um, Conferir e Voltar atrás em cada passo, nada para a
+## conversa com o Claude, nenhum segredo em argv nem padrão de .dev/variacoes.txt, lista
+## positiva de comandos nos blocos (chave só por `install -m 600` entre a pasta em memória
+## e o ~/.ssh, sem `..`, find/chmod/grep/busctl limitados); antes, o
 ## autoteste planta cada ataque numa cópia e exige falha. Só lê o guia; não executa
 ## nenhum passo. Precisa de `make dev-variacoes`; fora do `make check`
 teste-migracao:

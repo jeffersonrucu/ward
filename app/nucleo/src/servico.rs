@@ -835,6 +835,18 @@ impl<D: Daemon, A: AreaTransferencia> Servico<D, A> {
         crate::bandeja::EstadoBandeja::de(self.estado_do_cofre())
     }
 
+    /// A bandeja viu o estado mudar (Fase 53d): se o cofre deixou de estar destravado
+    /// (trava vinda de fora do app), zera o que o formulário guardava.
+    pub fn na_passagem_da_bandeja(
+        &self,
+        antes: crate::bandeja::EstadoBandeja,
+        depois: crate::bandeja::EstadoBandeja,
+    ) {
+        if crate::bandeja::descartar_na_passagem(antes, depois) {
+            self.descartar_formulario();
+        }
+    }
+
     /// Ao travar ou fechar o app: limpa a área se ainda tiver o valor copiado e zera a
     /// senha avulsa.
     pub fn ao_sair(&self) {
@@ -1801,6 +1813,41 @@ mod testes {
             s.salvar_credencial(None, form(servidor_carregado("clientex-ssh-53b"))),
             Err(ErroApp::PedidoInvalido)
         );
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    /// Fase 53d (2ª auditoria do M10): a trava que vem de fora (inatividade, `ward
+    /// travar`, tela bloqueada) chega pela bandeja e descarta a chave carregada; a
+    /// consulta periódica com o cofre destravado não descarta.
+    #[test]
+    fn ataque_trava_de_fora_descarta_a_chave_carregada() {
+        use crate::bandeja::EstadoBandeja::*;
+        let (s, sel, _) = servico_34();
+        let d = pasta_34("chave53d");
+        std::fs::write(d.join("chave"), chave_53a("ZmFsc28tNTNk")).unwrap();
+        *sel.0.lock().unwrap() = Some(d.join("chave"));
+        for depois in [Travado, SemDaemon, SemCofre] {
+            assert!(matches!(
+                s.carregar_chave("chave_privada").unwrap(),
+                Carregamento::Carregada { .. }
+            ));
+            s.na_passagem_da_bandeja(Destravado, depois);
+            assert_eq!(
+                s.salvar_credencial(None, form(servidor_carregado("clientex-ssh-53d"))),
+                Err(ErroApp::PedidoInvalido),
+                "{depois:?}"
+            );
+        }
+        assert!(matches!(
+            s.carregar_chave("chave_privada").unwrap(),
+            Carregamento::Carregada { .. }
+        ));
+        s.na_passagem_da_bandeja(Destravado, Destravado);
+        s.na_passagem_da_bandeja(Travado, Destravado);
+        let r = s
+            .salvar_credencial(None, form(servidor_carregado("clientex-ssh-53d")))
+            .unwrap();
+        assert_eq!(r.salvo.as_deref(), Some("clientex-ssh-53d"), "{r:?}");
         let _ = std::fs::remove_dir_all(d);
     }
 

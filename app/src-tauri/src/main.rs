@@ -599,8 +599,18 @@ impl Seletor for SeletorGtk {
 /// O diálogo de abrir arquivo do GTK, modal, um arquivo só, só local. `Ok(None)`:
 /// cancelado.
 fn dialogo_de_arquivo(titulo: &str, botao: &str) -> Result<Option<PathBuf>, ErroApp> {
-    use gtk::prelude::{DialogExt, FileChooserExt, GtkWindowExt};
+    use gtk::prelude::{DialogExt, FileChooserExt, GtkSettingsExt, GtkWindowExt};
     if !gtk::is_initialized_main_thread() {
+        return Err(ErroApp::SeletorIndisponivel);
+    }
+    // Fase 53d: o diálogo não grava o caminho escolhido (a chave na pasta em memória,
+    // um anexo) no `recently-used.xbel` do usuário. O valor do app vence o do sistema
+    // (XSETTINGS, `settings.ini`); conferido de volta, e sem ele o diálogo não abre.
+    let Some(ajustes) = gtk::Settings::default() else {
+        return Err(ErroApp::SeletorIndisponivel);
+    };
+    ajustes.set_gtk_recent_files_enabled(false);
+    if ajustes.is_gtk_recent_files_enabled() {
         return Err(ErroApp::SeletorIndisponivel);
     }
     let dialogo = gtk::FileChooserDialog::with_buttons(
@@ -734,6 +744,9 @@ fn atualizar_bandeja<R: Runtime>(app: &AppHandle<R>) {
     if *atual == novo {
         return;
     }
+    // Fase 53d: a trava que vem de fora (inatividade, `ward travar`, tela bloqueada)
+    // também zera as senhas usadas e as chaves carregadas do formulário.
+    s.na_passagem_da_bandeja(*atual, novo);
     let a = bandeja::aparencia(novo);
     // `configuracao` conta como uso no daemon: só na passagem que o usuário fez
     // (destravou ou criou o cofre), nunca na consulta periódica nem na partida.
