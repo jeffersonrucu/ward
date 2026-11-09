@@ -432,6 +432,8 @@ Pendências da 36 (2026-11-09): letras RTL fortes (hebraico/árabe) não são es
 
 Pendências da 27 (2026-11-09): dependência nova `ssh-key =0.7.0-rc.12` (versão rc; acompanhar a estável; auditoria do M4 revisa); só Ed25519 (RSA dá `entrega falhou`) — decidir se o escopo exige RSA; protocolo `Ssh` sem cwd nem ambiente (filho com ambiente fixo, cwd = home) — decidir; modo chave usa `IdentityFile=<id.pub do Ward>` + `IdentitiesOnly` (D13 diz `IdentityFile=none` só no modo senha) — alinhar D13; `emitir_token` emite para `servidor` bloqueado (token inútil); caminho do `known_hosts` não fixado no escopo; V4.27 sem `inotifywait` e sem bwrap com home em tmpfs; V4.35/V4.37 por `/proc/<pid>/cmdline`, não por strace; V3.15 só varre o 1º nível de `wardd/src/` (deveria percorrer subpastas); RA2 a confirmar com o usuário; `make teste-ataques-servicos`/`teste-home-real` não rodam em worktree (git abre `.git/worktrees/…`).
 
+Pendências da 38 (2026-11-09): frame `15242` diz "Trocar pede a senha mestra" no PIN, contrato e `wardd` pedem o PIN atual (corrigir FigCraft); máximo do tempo de trava: design 4 h, D45 1440 min — decidir; diálogos "Trocar senha mestra"/"Trocar PIN" sem frame; `trocar_senha` sem espera crescente de D20 na senha atual (só papel app) — decidir; mínimo de 12 e NFC continuam só no app; operação nova `configuracao` (só app) convive com `backup_externo` da 46.
+
 ## Milestone 3 — Daemon e protocolo
 Contrato: V3.1–V3.41
 
@@ -776,7 +778,7 @@ Contrato: V5.1–V5.35
   frame `Credenciais / Sem resultado`; cartão de nível bloqueado no detalhe; contagens
   da fixture nos frames de Credenciais. Inspirações só leitura; termina com
   `save_file` e PNG das telas ao usuário. V5.35.
-- [ ] Fase 38 — **(UI)** Configurações (PIN, senha mestra, tempo de trava gravado na
+- [x] Fase 38 — **(UI)** Configurações (PIN, senha mestra, tempo de trava gravado na
   configuração do cofre, D30; backup externo só exibido desligado). V5.22.
 - [ ] Fase 39 — **(UI)** Bandeja; `docs/mission/roteiro-usuario.md` da janela nativa;
   varredura de logs do app. V5.23, V5.27, V5.28.
