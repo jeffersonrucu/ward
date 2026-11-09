@@ -169,7 +169,9 @@
 | `cargo test -p ward-core` (lib, `corpo_memoria`, `fontes`, doctests) | 0 |
 | `cargo test -p wardd --all-features` (inclui `tests/backup.rs`) | 0 |
 | `cargo clippy --workspace --all-targets --all-features -- -D warnings` | 0 |
-| `make check` (1ª vez: `fmt-check` acusou `tests/backup.rs`; `make fmt` e de novo) | 2 → 0 |
+| `make check` (1ª vez: `fmt-check` acusou `tests/backup.rs`) | 2 |
+| `make fmt` e `make check` (2ª vez: `socket.rs › v3_33_kill_9_entre_as_senhas_erradas` por tempo, ver Problemas) | 2 |
+| `make check` (3ª vez) | 0 |
 
 ## Problemas descobertos
 - **Restaurar exige o cofre destravado e o PIN atual.** Isso é mais que o texto de
@@ -196,6 +198,12 @@
   jeito.
 - **Pendrive da Fase 46.** A publicação por `link(2)` não funciona em vfat. A Fase 46
   precisa de outro modo de publicar sem sobrescrever (ou de checar e renomear).
+- **Teste instável sob carga (fora desta fase).** O
+  `wardd/tests/socket.rs › v3_33_kill_9_entre_as_senhas_erradas` exige a primeira
+  resposta de senha errada em menos de 0,9 s, e isso inclui um Argon2id real de 256 MiB.
+  Com a máquina com load ~22 (vários workers em paralelo), mediu 1,1–1,3 s e falhou de
+  forma consistente. Com load ~14, passou. O caminho do destravar não mudou nesta fase.
+  Sugestão: folga maior ou medir a espera pelo relógio do daemon.
 - **Contrato (V7.1).** Diz `.dev/backups/`. É o que o daemon de teste usa (pasta do
   cofre de teste). Os testes automatizados usam diretórios próprios em `target/`.
 
