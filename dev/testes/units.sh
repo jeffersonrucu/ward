@@ -1,7 +1,7 @@
 #!/bin/bash -p
 # `make teste-units` (Fase 24; V3.21; D46, D57, D62).
 #
-# 1. Sintaxe: `systemd-analyze verify` das units de `dev/systemd/` numa cópia em
+# 1. Sintaxe: `systemd-analyze verify` das units de `instalacao/systemd/` numa cópia em
 #    `.dev/` (instância `wardd@1000`), sem tocar no systemd do host (nada é instalado
 #    nem recarregado; o verify só lê os arquivos passados).
 # 2. Contêiner: uma imagem `ubuntu:24.04` (mesma digest das Fases 21b/22) com o
@@ -46,7 +46,7 @@ TMP="$(mktemp -d "$RAIZ/.dev/conteiner-units.XXXXXX")"
 NOME="ward-units-$$"
 trap 'docker rm -f "$NOME" >/dev/null 2>&1 || true; rm -rf -- "$TMP"' EXIT
 chmod 0755 "$TMP"
-install -m 0644 "$RAIZ/dev/systemd/wardd@.socket" "$RAIZ/dev/systemd/wardd@.service" "$TMP/"
+install -m 0644 "$RAIZ/instalacao/systemd/wardd@.socket" "$RAIZ/instalacao/systemd/wardd@.service" "$TMP/"
 
 echo "==> systemd-analyze verify"
 # O verify reclama do ExecStart que não existe no host; o resto tem de sair limpo.

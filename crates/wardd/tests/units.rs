@@ -1,6 +1,7 @@
-//! V3.21 (leitura do auditor) e D57/D62: as units de teste `dev/systemd/wardd@.socket` e
-//! `wardd@.service`. A sintaxe é conferida pelo `systemd-analyze verify` em
-//! `make teste-units`; aqui ficam as diretivas exigidas e as proibidas.
+//! V3.21 (leitura do auditor) e D57/D62: as units do sistema que o `make install` instala
+//! (Fase 51), `instalacao/systemd/wardd@.socket` e `wardd@.service`. A sintaxe é
+//! conferida pelo `systemd-analyze verify` em `make teste-units` e `make teste-install`;
+//! aqui ficam as diretivas exigidas e as proibidas.
 //!
 //! Ataque coberto: uma diretiva que liga `no_new_privs` (direta ou implícita) num serviço
 //! com `User=` faria o `execve` do `ward-app` perder o setgid, e o app nunca receberia o
@@ -10,7 +11,7 @@ use std::path::PathBuf;
 
 fn unit(nome: &str) -> Vec<(String, String, String)> {
     let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../dev/systemd")
+        .join("../../instalacao/systemd")
         .join(nome);
     let texto = std::fs::read_to_string(&p).unwrap();
     let mut secao = String::new();
