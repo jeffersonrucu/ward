@@ -67,7 +67,7 @@ CARGO_DENY_VERSAO := 0.20.2
 	dev-servicos-parar dev-servicos-estado dev-servicos-conferir dev-servicos-trocar-chave-host dev-cofre \
 	dev-cofre-conferir dev-variacoes teste-dev-cofre dev-daemon dev-daemon-parar teste-cli teste-docker-uid teste-units \
 	app-front app-check app-ponte teste-docker-plataforma teste-sem-modo-teste teste-socket-ataques \
-	teste-webkit-real teste-logs-app teste-nm teste-playwright
+	teste-webkit-real teste-logs-app teste-nm teste-playwright teste-skill
 
 ## check: pré-checagem das origens, depois fmt, clippy -D warnings, testes, cargo audit,
 ## cargo deny e gitleaks, nessa ordem (V1.1)
@@ -400,6 +400,14 @@ teste-socket-ataques: origens
 ## pai e recusa outro, e o host responde pelo Chrome. Daemon de teste só dele (cópia do
 ## cofre, socket próprio). Precisa de `make dev-cofre`, `make dev-variacoes` e do Chrome
 ## em /opt/google/chrome; fora do `make check`
+## teste-skill: Fase 50 (V8.1, V8.2, V8.4): frontmatter da skill `ward`, comandos citados
+## no `ward --help`, nenhum padrão de .dev/variacoes.txt em skill/, JSON do deny válido e
+## com os caminhos do escopo; antes, o autoteste planta cada ataque numa cópia e exige
+## falha. Precisa de `make dev-variacoes`; fora do `make check`
+teste-skill: origens
+	$(CARGO) build --quiet --locked -p ward --bin ward
+	$(PYTHON) dev/testes/skill.py target/debug/ward
+
 teste-nm: origens
 	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd
 	$(CARGO) build --quiet --locked -p ward-nm --features modo-teste --bin ward-nm
