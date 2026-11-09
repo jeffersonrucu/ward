@@ -33,3 +33,55 @@ export function opcoesDeTrava(atual) {
   }
   return lista.map((v) => ({ valor: String(v), rotulo: rotuloMinutos(v) }));
 }
+
+// Backup externo (Fase 48, V7.9). O rótulo do pendrive vem do udisks2 (não confiável):
+// o lado Rust já trocou o invisível por escape (D51); aqui ele é só texto.
+
+/** Nome do pendrive para a tela: o rótulo, ou um texto fixo sem rótulo. */
+export function nomeDoPendrive(p) {
+  const r = typeof p?.rotulo === 'string' ? p.rotulo : '';
+  return r || 'Pendrive sem rótulo';
+}
+
+/** "montado" / "conectado, mas não montado", para a lista da escolha. */
+export function situacaoNaLista(p) {
+  return p?.montado ? 'montado' : 'conectado, mas não montado';
+}
+
+/**
+ * Textos do cartão do pendrive escolhido: nome, situação (depois do UUID), a linha de
+ * estado e se está montado (a cópia só vai para pendrive montado; o Ward não monta).
+ */
+export function cartaoDoPendrive(externo) {
+  const p = externo?.pendrive ?? null;
+  if (p?.montado) {
+    return {
+      nome: nomeDoPendrive(p),
+      situacao: 'conectado e montado',
+      estado: 'O Ward copia as versões que faltam para ward-backup/, até 30.',
+      montado: true,
+    };
+  }
+  if (p) {
+    return {
+      nome: nomeDoPendrive(p),
+      situacao: 'conectado, mas não montado',
+      estado: 'Abra o pendrive no gerenciador de arquivos para montá-lo e receber a cópia.',
+      montado: false,
+    };
+  }
+  if (externo && externo.pendrives_visiveis === false) {
+    return {
+      nome: 'Pendrive escolhido',
+      situacao: 'não deu para ver os pendrives agora',
+      estado: 'O udisks não respondeu. A cópia volta quando ele responder.',
+      montado: false,
+    };
+  }
+  return {
+    nome: 'Pendrive escolhido',
+    situacao: 'não conectado',
+    estado: 'A cópia acontece quando ele for conectado e montado.',
+    montado: false,
+  };
+}

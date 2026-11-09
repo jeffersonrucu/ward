@@ -23,6 +23,10 @@
 //! Configurações (Fase 38): `configuracao`, `tempo_trava` (1 a 1440, D45), `trocar_pin`
 //! (PIN atual conferido como no `mudar_nivel`, com a mesma contagem de erros) e
 //! `trocar_senha` (senha atual conferida em tempo constante; a nova passa a destravar).
+//! Backup externo (Fase 48): `backup_externo`, `definir_backup_externo` (a mesma
+//! conferência do `wardd`: `BackupExterno::novo`) e `pendrives`, com os pendrives falsos
+//! de [`pendrives_de_teste`] (nenhum dispositivo de verdade; rótulos com HTML, direção de
+//! texto e largura zero para a QA da exibição).
 //! As datas de D65 d (Fase 22d) seguem a regra do `wardd`: entrada nova ganha as duas,
 //! edição e `mudar_nivel` só a alteração, pelo relógio do processo; as do cofre de
 //! teste nascem sem datas.
@@ -37,7 +41,7 @@ use ward_core::entrada::{
 };
 use ward_core::protocolo::{
     self, Alvo, Decisao, DetalheEntrada, ErroResposta, ItemLista, Papel, Pedido, PedidoDeAprovacao,
-    Resposta,
+    Pendrive, Resposta,
 };
 use ward_core::totp::Totp;
 
@@ -73,6 +77,31 @@ pub struct DaemonFalso {
     senha: Option<Zeroizing<Vec<u8>>>,
     /// Pedidos de aprovação pendentes (Fase 36): id e entradas.
     aprovacoes: Vec<(u64, Vec<String>)>,
+    /// Backup externo da configuração (Fase 48; D30: desligado e sem UUID por padrão).
+    backup: wc::configuracao::BackupExterno,
+    /// Pendrives que o "udisks2" vê; `None` é o udisks2 sem resposta.
+    pendrives: Option<Vec<Pendrive>>,
+}
+
+/// Os pendrives falsos da ponte de teste (Fase 48). Só dados: nenhum dispositivo, nenhum
+/// caminho. O 3º tem rótulo com HTML, U+202E e largura zero (o udisks2 aceita qualquer
+/// rótulo); o 4º não tem rótulo.
+pub fn pendrives_de_teste() -> Vec<Pendrive> {
+    let p = |uuid: &str, rotulo: &str, montado| Pendrive {
+        uuid: uuid.to_owned(),
+        rotulo: rotulo.to_owned(),
+        montado,
+    };
+    vec![
+        p("7C1E-42A9", "WARD-BACKUP", true),
+        p("3F2A-9B10", "FOTOS 2024", false),
+        p(
+            "a1b2c3d4-0000-4e5f-9a8b-1234567890ab",
+            "<img src=x onerror=alert(1)>\u{202E}gpj.exe\u{200B}",
+            true,
+        ),
+        p("0E9D-55C1", "", true),
+    ]
 }
 
 /// Pedido de aprovação simulado e há quanto tempo "chegou" (Fase 36, ponte de teste).
@@ -173,7 +202,29 @@ impl DaemonFalso {
             minutos_trava: wc::limites::MINUTOS_TRAVA_PADRAO,
             senha: None,
             aprovacoes: Vec::new(),
+            backup: wc::configuracao::BackupExterno::desligado(),
+            pendrives: Some(pendrives_de_teste()),
         }
+    }
+
+    /// Fase 48: o cofre de teste com o backup externo ligado no `WARD-BACKUP`
+    /// (`Configurações / Backup externo ligado`).
+    pub fn backup_externo_ligado() -> DaemonFalso {
+        let mut d = DaemonFalso::cheio();
+        d.backup = wc::configuracao::BackupExterno::novo(true, Some("7C1E-42A9"))
+            .unwrap_or_else(|_| wc::configuracao::BackupExterno::desligado());
+        d
+    }
+
+    /// Fase 48: os pendrives que o falso mostra; `None` é o udisks2 sem resposta.
+    pub fn com_pendrives(mut self, pendrives: Option<Vec<Pendrive>>) -> DaemonFalso {
+        self.pendrives = pendrives;
+        self
+    }
+
+    /// Backup externo da configuração (só para os testes).
+    pub fn backup(&self) -> (bool, Option<String>) {
+        (self.backup.ligado(), self.backup.uuid().map(str::to_owned))
     }
 
     /// Fase 31: as entradas do cofre de teste com o cofre travado (`Destravar / *`). A
@@ -374,7 +425,26 @@ impl DaemonFalso {
             // Fase 38: a configuração e as trocas (sem hash nem UUID na resposta).
             Pedido::Configuracao => Resposta::Configuracao {
                 minutos_trava: self.minutos_trava,
-                backup_externo: false,
+                backup_externo: self.backup.ligado(),
+            },
+            // Fase 48: a mesma regra do `wardd` (Fase 46): só o formato de D45; ligado
+            // exige UUID. Nada é copiado (não há pendrive de verdade).
+            Pedido::BackupExterno => Resposta::BackupExterno {
+                ligado: self.backup.ligado(),
+                uuid: self.backup.uuid().map(str::to_owned),
+            },
+            Pedido::DefinirBackupExterno { ligado, uuid } => {
+                match wc::configuracao::BackupExterno::novo(ligado, uuid.as_deref()) {
+                    Ok(b) => {
+                        self.backup = b;
+                        Resposta::Ok
+                    }
+                    Err(_) => Resposta::Erro(ErroResposta::PedidoInvalido),
+                }
+            }
+            Pedido::Pendrives => match &self.pendrives {
+                Some(l) => Resposta::Pendrives(l.clone()),
+                None => Resposta::Erro(ErroResposta::PendrivesIndisponiveis),
             },
             Pedido::TempoTrava { minutos } => {
                 if (wc::limites::MIN_MINUTOS_TRAVA..=wc::limites::MAX_MINUTOS_TRAVA)

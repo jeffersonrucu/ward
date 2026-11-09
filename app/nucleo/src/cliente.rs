@@ -1,7 +1,8 @@
 //! Os pedidos do app ao daemon pelo protocolo da Fase 20 (`ward_core::protocolo`), com
 //! o papel app (D5): `estado`, `lista`, `detalhe`, `copiar`, `revelar`, `totp`,
 //! `salvar_entrada`, `mudar_nivel` (Fase 35), `destravar` (Fase 31) e, na tela
-//! Configurações (Fase 38), `configuracao`, `trocar_pin`, `trocar_senha` e `tempo_trava`.
+//! Configurações (Fase 38), `configuracao`, `trocar_pin`, `trocar_senha` e `tempo_trava`;
+//! no backup externo (Fase 48), `backup_externo`, `pendrives` e `definir_backup_externo`.
 //!
 //! Aqui o pedido vira o corpo do quadro (`codificar_pedido`) e a resposta é lida com a
 //! leitura estrita do cliente (`decodificar_resposta`), que recusa tipo de outro papel e
@@ -16,7 +17,8 @@
 
 use ward_core::entrada::{NivelAcesso, Rascunho, Segredo as SegredoCore};
 use ward_core::protocolo::{
-    self, Alvo, DetalheEntrada, ErroResposta, ItemLista, Papel, Pedido, Problema, Resposta,
+    self, Alvo, DetalheEntrada, ErroResposta, ItemLista, Papel, Pedido, Pendrive, Problema,
+    Resposta,
 };
 use zeroize::Zeroizing;
 
@@ -50,6 +52,7 @@ fn erro_do_daemon(e: &ErroResposta) -> ErroApp {
         ErroResposta::PinIncorreto => ErroApp::PinIncorreto,
         ErroResposta::SenhaIncorreta => ErroApp::SenhaIncorreta,
         ErroResposta::Retrocesso => ErroApp::CofreRetrocesso,
+        ErroResposta::PendrivesIndisponiveis => ErroApp::PendrivesIndisponiveis,
         _ => ErroApp::Recusado,
     }
 }
@@ -359,6 +362,40 @@ pub fn trocar_senha<D: Daemon + ?Sized>(
 /// `tempo_trava { minutos }` (Fase 38, D30): o daemon grava na configuração do cofre.
 pub fn tempo_trava<D: Daemon + ?Sized>(daemon: &mut D, minutos: u32) -> Result<(), ErroApp> {
     match pedir(daemon, &Pedido::TempoTrava { minutos })? {
+        Resposta::Ok => Ok(()),
+        _ => Err(ErroApp::RespostaInvalida),
+    }
+}
+
+/// `backup_externo` (Fase 46/48): ligado ou não e o UUID escolhido (a leitura estrita já
+/// conferiu o formato de D45 e que ligado tem UUID).
+pub fn backup_externo<D: Daemon + ?Sized>(
+    daemon: &mut D,
+) -> Result<(bool, Option<String>), ErroApp> {
+    match pedir(daemon, &Pedido::BackupExterno)? {
+        Resposta::BackupExterno { ligado, uuid } => Ok((ligado, uuid)),
+        _ => Err(ErroApp::RespostaInvalida),
+    }
+}
+
+/// `pendrives` (Fase 46/48): UUID, rótulo (sem controle, até `MAX_ROTULO`) e montado;
+/// nunca o caminho de montagem. O udisks2 sem resposta é
+/// [`ErroApp::PendrivesIndisponiveis`].
+pub fn pendrives<D: Daemon + ?Sized>(daemon: &mut D) -> Result<Vec<Pendrive>, ErroApp> {
+    match pedir(daemon, &Pedido::Pendrives)? {
+        Resposta::Pendrives(l) => Ok(l),
+        _ => Err(ErroApp::RespostaInvalida),
+    }
+}
+
+/// `definir_backup_externo { ligado, uuid? }` (Fase 46/48): o daemon grava na
+/// configuração do cofre (geração nova, D39).
+pub fn definir_backup_externo<D: Daemon + ?Sized>(
+    daemon: &mut D,
+    ligado: bool,
+    uuid: Option<String>,
+) -> Result<(), ErroApp> {
+    match pedir(daemon, &Pedido::DefinirBackupExterno { ligado, uuid })? {
         Resposta::Ok => Ok(()),
         _ => Err(ErroApp::RespostaInvalida),
     }
