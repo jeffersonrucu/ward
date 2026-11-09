@@ -22,12 +22,22 @@ ward-plataforma = { workspace = true }
 # seguir link simbólico (nenhuma chamada; o crate não tem `unsafe`).
 libc = { version = "0.2.191", default-features = false }
 zeroize = { version = "1.9.1", default-features = false, features = ["alloc"] }
+# Fase 24 (motivo no handoff): cliente D-Bus do logind no barramento do sistema
+# (`Lock`, `LockedHint`, `PrepareForSleep` e o inibidor `delay`). A linha 5.x está
+# marcada sem manutenção (RUSTSEC-2026-0370/0371/0372: o `zvariant` entrou no `zbus` 6).
+# `default-rt`: o runtime interno do zbus (`zbus::block_on`), sem tokio, sem `proxy`,
+# `service`, `p2p` nem `tracing`.
+zbus = { version = "=6.2.1", default-features = false, features = ["default-rt"] }
+# Só o trait `Stream`, para ler o `MessageStream` do zbus (já vem com ele; nenhuma crate nova).
+futures-core = { version = "0.3.34", default-features = false }
 
 [dev-dependencies]
 # V3.8: o teste do observador de memória desembrulha a chave de dados do cofre de teste
 # com as mesmas bibliotecas auditadas do núcleo, para procurá-la nos blocos liberados.
 argon2 = { version = "0.6.0", default-features = false, features = ["alloc", "zeroize"] }
 chacha20poly1305 = { version = "0.11.0", default-features = false, features = ["alloc", "zeroize"] }
+# Fase 24: o logind falso dos testes serve o `Inhibit` (`service`, só nos testes).
+zbus = { version = "=6.2.1", default-features = false, features = ["default-rt", "service"] }
 
 # Cliente mínimo do contêiner de `make teste-docker-uid` (V3.2, D49): o `ubuntu:24.04`
 # não tem Python.

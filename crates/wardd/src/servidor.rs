@@ -13,9 +13,11 @@
 //!   vivo e sem depurador; se não, fecha.
 //! - Papel app (D63): além do grupo e do pai (D47), o par tem de ser o processo que o
 //!   lançador abriu, vivo ([`papel_da_classe`], o único ponto da classificação).
-//! - `receber_pedidos` (só do app): a conexão passa a receber os pedidos de aprovação e
-//!   de destrave do motor entre as respostas (uma trava de escrita por conexão) e fica
-//!   sem prazo de leitura; ao fechar, o que ela recebeu e não respondeu é negado.
+//! - Conexão do papel app (D65 a): recebe os avisos do motor (`pedido_de_aprovacao`,
+//!   `pedido_de_destrave`), cada um num quadro inteiro, nunca no meio de uma resposta
+//!   (uma trava de escrita por conexão); as respostas seguem a ordem dos pedidos. Fica
+//!   sem prazo de leitura; ao fechar, o que ela recebeu e não respondeu é negado. Só a
+//!   conexão do papel app recebe avisos.
 
 use std::io;
 use std::net::Shutdown;
@@ -25,7 +27,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use ward_core::protocolo::{
-    self, ErroResposta, Papel, Pedido, Resposta,
+    self, ErroResposta, Papel, Resposta,
     quadro::{self, ErroQuadro},
 };
 use ward_plataforma::{ClassePar, ErroAceitar, Escuta, Instalacao, PoliticaKernel, ProcessoPar};
@@ -208,7 +210,22 @@ fn atender_conexao(
     let _ = stream.set_write_timeout(Some(PRAZO_ESCRITA));
     let limite = quadro::limite_do_quadro(papel);
     let escrita = Arc::new(Mutex::new(()));
+    // D65 (a): só a conexão do papel app recebe os avisos do motor, e fica sem prazo de
+    // leitura (espera aberta).
     let mut assinou = false;
+    if papel == Papel::App
+        && let Ok(copia) = stream.try_clone()
+    {
+        let _ = stream.set_read_timeout(None);
+        daemon.motor().assinar(
+            id,
+            Box::new(AssinanteSocket {
+                stream: copia,
+                escrita: escrita.clone(),
+            }),
+        );
+        assinou = true;
+    }
     loop {
         vagas.marcar(id, true);
         let bytes = match quadro::ler_quadro(&mut stream, limite) {
@@ -235,30 +252,6 @@ fn atender_conexao(
             break;
         }
         let resposta = match protocolo::decodificar_pedido(papel, &bytes) {
-            // Só o papel app chega aqui (a tabela recusa o resto antes).
-            Ok(Pedido::ReceberPedidos) if papel == Papel::App => {
-                drop(bytes);
-                let Ok(copia) = stream.try_clone() else {
-                    break;
-                };
-                // Sem prazo de leitura: a conexão do app fica aberta esperando.
-                let _ = stream.set_read_timeout(None);
-                {
-                    let _g = escrita.lock().unwrap_or_else(|e| e.into_inner());
-                    if responder(&mut stream, papel, &Resposta::Ok).is_err() {
-                        break;
-                    }
-                }
-                daemon.motor().assinar(
-                    id,
-                    Box::new(AssinanteSocket {
-                        stream: copia,
-                        escrita: escrita.clone(),
-                    }),
-                );
-                assinou = true;
-                continue;
-            }
             Ok(p) => {
                 drop(bytes);
                 let cliente = ClienteSocket {

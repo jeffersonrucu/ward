@@ -1,0 +1,673 @@
+<script>
+  // Tela Credenciais (Fase 32): frames `Credenciais / Vazia` (4780), `/ Cheia` (4063),
+  // `/ Filtrada` (4410) e `/ Filtros` (5259) do Ward.figcraft.
+  //
+  // Dentro da casca do App.svelte (janela 1280×800, padding e gap espaco/16, com a
+  // `Navegação lateral`): `principal` (gap espaco/16) com `topo` (padding espaco/4 espaco/8 0, gap espaco/16: título e resumo,
+  // busca em pílula de largura/busca, "Filtrar") e `colunas` (gap espaco/16): `lista`
+  // (largura/coluna-lista, padding e gap espaco/16 e espaco/12) e `detalhe` (cabeçalho,
+  // corpo e rodapé).
+  //
+  // S11/D4: a lista e o detalhe vêm do Rust sem segredo. O `Campo secreto` só desenha
+  // a máscara; "copiar" pede ao Rust, que põe o valor na área de transferência (a
+  // resposta não traz o valor). Nada daqui vai para armazenamento do navegador ou URL.
+  import { onMount, tick } from 'svelte';
+  import Botao from '../lib/componentes/Botao.svelte';
+  import BadgeAmbiente from '../lib/componentes/BadgeAmbiente.svelte';
+  import BadgeTipo from '../lib/componentes/BadgeTipo.svelte';
+  import CabecalhoDeGrupo from '../lib/componentes/CabecalhoDeGrupo.svelte';
+  import Campo from '../lib/componentes/Campo.svelte';
+  import CampoSecreto from '../lib/componentes/CampoSecreto.svelte';
+  import Destaque from '../lib/componentes/Destaque.svelte';
+  import DialogoFiltros from '../lib/componentes/DialogoFiltros.svelte';
+  import Icone from '../lib/componentes/Icone.svelte';
+  import ItemDeLista from '../lib/componentes/ItemDeLista.svelte';
+  import Toast from '../lib/componentes/Toast.svelte';
+  import { TIPOS, tipoDe } from '../lib/componentes/tipos.js';
+  import { chamar } from '../lib/ponte/index.js';
+  import {
+    AMBIENTES,
+    FILTROS_VAZIOS,
+    NIVEIS,
+    agrupar,
+    filtrar,
+    filtrosLigados,
+    gruposDe,
+    resumoDoTopo,
+    resumoDosFiltros,
+  } from './credenciais.js';
+
+  // Quanto tempo o "Copiado" fica na `Ação de campo`.
+  const COPIADO_MS = 2000;
+
+  let itens = $state([]);
+  let carregado = $state(false);
+  let erro = $state('');
+  let busca = $state('');
+  let filtros = $state({ ...FILTROS_VAZIOS });
+  let dialogoAberto = $state(false);
+  let selecionada = $state('');
+  let detalhe = $state(null);
+  let copiado = $state('');
+  let entradaBusca = $state();
+  let listaEl = $state();
+  let rolagem = $state({ esmaecer: false });
+
+  const filtrando = $derived(filtrosLigados(filtros) > 0 || busca.trim() !== '');
+  const visiveis = $derived(filtrar(itens, filtros, busca));
+  const grupos = $derived(agrupar(itens, visiveis, filtrando));
+  const ordem = $derived(grupos.flatMap((g) => g.itens.map((i) => i.nome)));
+  const vazio = $derived(carregado && itens.length === 0);
+  const resumo = $derived(
+    resumoDoTopo(itens.length, gruposDe(itens).length, visiveis.length, filtrando),
+  );
+  const nFiltros = $derived(filtrosLigados(filtros));
+
+  const opcoesGrupo = $derived([
+    { valor: '', rotulo: 'Todos' },
+    ...gruposDe(itens).map((g) => ({ valor: g.nome, rotulo: g.nome })),
+  ]);
+  const opcoesTipo = [
+    { valor: '', rotulo: 'Todos' },
+    ...Object.entries(TIPOS).map(([valor, t]) => ({ valor, rotulo: t.rotulo })),
+  ];
+  const opcoesAmbiente = [
+    { valor: '', rotulo: 'Todos' },
+    ...AMBIENTES.map((a) => ({ valor: a, rotulo: a })),
+  ];
+
+  async function carregar() {
+    erro = '';
+    try {
+      itens = await chamar('listar_credenciais');
+      carregado = true;
+    } catch (e) {
+      erro = e.mensagem;
+    }
+  }
+
+  // Só a resposta do último pedido de detalhe vale (cliques rápidos).
+  let pedidoDetalhe = 0;
+
+  async function abrir(nome, focar = true) {
+    selecionada = nome;
+    copiado = '';
+    const meu = ++pedidoDetalhe;
+    try {
+      const d = await chamar('detalhe_credencial', { entrada: nome });
+      if (meu === pedidoDetalhe) detalhe = d;
+    } catch (e) {
+      if (meu === pedidoDetalhe) {
+        detalhe = null;
+        erro = e.mensagem;
+      }
+    }
+    if (focar) {
+      await tick();
+      itemDe(nome)?.focus();
+    }
+  }
+
+  let temporizador = null;
+
+  async function copiar(campo) {
+    if (!detalhe) return;
+    erro = '';
+    try {
+      await chamar('copiar_campo', { entrada: detalhe.nome, campo });
+      copiado = campo;
+      clearTimeout(temporizador);
+      temporizador = setTimeout(() => (copiado = ''), COPIADO_MS);
+    } catch (e) {
+      erro = e.mensagem;
+    }
+  }
+
+  function itemDe(nome) {
+    return listaEl?.querySelector(`[data-entrada="${CSS.escape(nome)}"]`);
+  }
+
+  // Setas navegam entre os itens visíveis (só o foco); Enter (ou clique) abre.
+  function teclaNaLista(e) {
+    const atual = e.target?.closest?.('[data-entrada]')?.dataset.entrada;
+    if (atual === undefined) return;
+    const k = ordem.indexOf(atual);
+    let alvo = null;
+    if (e.key === 'ArrowDown') alvo = ordem[Math.min(k + 1, ordem.length - 1)];
+    else if (e.key === 'ArrowUp') alvo = ordem[Math.max(k - 1, 0)];
+    else if (e.key === 'Home') alvo = ordem[0];
+    else if (e.key === 'End') alvo = ordem[ordem.length - 1];
+    if (alvo !== null && alvo !== undefined) {
+      e.preventDefault();
+      itemDe(alvo)?.focus();
+      itemDe(alvo)?.scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  function teclaNaBusca(e) {
+    if (e.key === 'ArrowDown' && ordem.length > 0) {
+      e.preventDefault();
+      itemDe(ordem[0])?.focus();
+    } else if (e.key === 'Enter' && ordem.length > 0) {
+      e.preventDefault();
+      abrir(ordem[0]);
+    } else if (e.key === 'Escape' && busca) {
+      e.preventDefault();
+      busca = '';
+    }
+  }
+
+  // Atalho da busca: Ctrl+K em qualquer lugar, ou "/" fora de um campo de texto.
+  function teclaGlobal(e) {
+    if (dialogoAberto || vazio) return;
+    const emCampo = e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement;
+    if ((e.ctrlKey && (e.key === 'k' || e.key === 'K')) || (e.key === '/' && !emCampo)) {
+      e.preventDefault();
+      entradaBusca?.focus();
+      entradaBusca?.select();
+    }
+  }
+
+  function limparTudo() {
+    filtros = { ...FILTROS_VAZIOS };
+    busca = '';
+  }
+
+  function aplicarFiltros(f) {
+    filtros = { ...f };
+    dialogoAberto = false;
+  }
+
+  function medirRolagem() {
+    if (!listaEl) return;
+    const { scrollTop, scrollHeight, clientHeight } = listaEl;
+    rolagem = { esmaecer: scrollTop + clientHeight < scrollHeight - 1 };
+  }
+
+  // Com filtros novos, abre a primeira entrada visível se a selecionada sumiu.
+  $effect(() => {
+    if (!carregado) return;
+    if (ordem.length === 0) {
+      selecionada = '';
+      detalhe = null;
+    } else if (!ordem.includes(selecionada)) {
+      abrir(ordem[0], false);
+    }
+  });
+
+  $effect(() => {
+    void ordem;
+    tick().then(medirRolagem);
+  });
+
+  onMount(() => {
+    carregar();
+    return () => clearTimeout(temporizador);
+  });
+</script>
+
+<svelte:window onkeydown={teclaGlobal} onresize={medirRolagem} />
+
+<main class="principal" aria-labelledby="titulo-credenciais">
+  <header class="topo">
+    <div class="titulo">
+      <h1 id="titulo-credenciais">Credenciais</h1>
+      <p class="resumo">{resumo}</p>
+    </div>
+    <div class="busca">
+      <Campo
+        id="busca"
+        rotulo="Buscar"
+        rotuloOculto
+        pilula
+        icone="busca"
+        placeholder="Buscar por nome, host ou usuário"
+        bind:valor={busca}
+        bind:entrada={entradaBusca}
+        desabilitado={vazio}
+        tipo="search"
+        aria-keyshortcuts="Control+K /"
+        onkeydown={teclaNaBusca}
+      />
+    </div>
+    <Botao
+      variante="secundario"
+      icone="filtro"
+      desabilitado={vazio}
+      aria-haspopup="dialog"
+      onclick={() => (dialogoAberto = true)}
+    >
+      {nFiltros > 0 ? `Filtros · ${nFiltros}` : 'Filtrar'}
+    </Botao>
+  </header>
+
+  <div class="colunas">
+    <section class="lista" aria-label="Entradas">
+      {#if filtrando && !vazio}
+        <div class="filtros-ativos">
+          <span class="resumo-filtros">{resumoDosFiltros(filtros, busca)}</span>
+          <Botao variante="fantasma" onclick={limparTudo}>Limpar</Botao>
+        </div>
+      {/if}
+      <div class="rolagem">
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div
+          class="itens"
+          class:centro={vazio || (carregado && ordem.length === 0)}
+          bind:this={listaEl}
+          onscroll={medirRolagem}
+          onkeydown={teclaNaLista}
+        >
+          {#if vazio}
+            <p class="lista-vazia">As entradas aparecem aqui, separadas por grupo.</p>
+          {:else if carregado && ordem.length === 0}
+            <p class="lista-vazia">Nenhuma entrada com essa busca ou esses filtros.</p>
+          {:else}
+            {#each grupos as g (g.nome)}
+              <div class="grupo" role="group" aria-labelledby="grupo-{g.cor}-{g.nome}">
+                <CabecalhoDeGrupo
+                  id="grupo-{g.cor}-{g.nome}"
+                  grupo={g.nome}
+                  contagem={g.contagem}
+                  cor={g.cor}
+                />
+                {#each g.itens as item (item.nome)}
+                  <ItemDeLista
+                    compacta
+                    nome={item.nome}
+                    tipo={item.tipo}
+                    ambiente={item.ambiente}
+                    detalhe={item.resumo}
+                    selecionado={item.nome === selecionada}
+                    tabindex={item.nome === selecionada ? 0 : -1}
+                    data-entrada={item.nome}
+                    onclick={() => abrir(item.nome)}
+                  />
+                {/each}
+              </div>
+            {/each}
+          {/if}
+        </div>
+        {#if rolagem.esmaecer}<div class="esmaecer" aria-hidden="true"></div>{/if}
+      </div>
+      {#if erro}<Toast tipo="erro" mensagem={erro} />{/if}
+      <div class="nova">
+        <Botao variante="primario" icone="mais">Nova credencial</Botao>
+      </div>
+    </section>
+
+    <section class="detalhe" aria-label="Detalhe da entrada" aria-live="polite">
+      {#if vazio}
+        <div class="corpo centro">
+          <div class="vazio">
+            <span class="avatar"><Icone nome="chave" tamanho="lg" /></span>
+            <h2 class="titulo-vazio">Nenhuma credencial ainda</h2>
+            <p class="texto-vazio">
+              Crie a primeira entrada em Nova credencial. Cada entrada tem um tipo, um grupo e um
+              ambiente (dev, stage ou prod).
+            </p>
+            <Destaque icone="cadeado">
+              Entradas novas começam com o nível com aprovação: cada uso do Claude abre a janela
+              de aprovação, que pede o seu PIN. Você pode mudar o nível depois, também com o PIN.
+            </Destaque>
+          </div>
+        </div>
+      {:else if detalhe}
+        {@const nivel = NIVEIS[detalhe.nivel] ?? NIVEIS['com-aprovacao']}
+        <header class="cabecalho">
+          <span class="avatar"><Icone nome={tipoDe(detalhe.tipo).icone} tamanho="lg" /></span>
+          <div class="identificacao">
+            <h2 class="nome">{detalhe.nome}</h2>
+            <div class="selos">
+              <BadgeTipo tipo={detalhe.tipo} />
+              <BadgeAmbiente ambiente={detalhe.ambiente} />
+              <span class="subtitulo">{detalhe.subtitulo}</span>
+            </div>
+          </div>
+          <Botao variante="secundario">Editar</Botao>
+        </header>
+        <div class="corpo">
+          {#if detalhe.campos.length > 0}
+            <div class="grade">
+              {#each detalhe.campos as c (c.id)}
+                <Campo
+                  id="campo-{c.id}"
+                  rotulo={c.rotulo}
+                  valor={c.valor}
+                  somenteLeitura
+                  copiado={copiado === c.id}
+                  oncopiar={() => copiar(c.id)}
+                />
+              {/each}
+            </div>
+          {/if}
+          {#each detalhe.segredos as s (s.id)}
+            <CampoSecreto
+              id="segredo-{s.id}"
+              rotulo={s.rotulo}
+              copiado={copiado === s.id}
+              oncopiar={() => copiar(s.id)}
+            />
+          {/each}
+          {#if detalhe.extras.length > 0}
+            <div class="grade">
+              {#each detalhe.extras as x (x.nome)}
+                {#if x.segredo}
+                  <CampoSecreto
+                    id="extra-{x.nome}"
+                    rotulo={x.nome}
+                    ajuda=""
+                    copiado={copiado === x.nome}
+                    oncopiar={() => copiar(x.nome)}
+                  />
+                {:else}
+                  <Campo
+                    id="extra-{x.nome}"
+                    rotulo={x.nome}
+                    valor={x.valor ?? ''}
+                    somenteLeitura
+                    copiado={copiado === x.nome}
+                    oncopiar={() => copiar(x.nome)}
+                  />
+                {/if}
+              {/each}
+            </div>
+          {/if}
+          <div class="nivel">
+            <Icone nome={nivel.icone} />
+            <div class="textos-nivel">
+              <span class="rotulo-nivel">Nível de acesso</span>
+              <span class="nome-nivel">{nivel.rotulo}</span>
+              <span class="explicacao">{nivel.explicacao}</span>
+            </div>
+            <Botao variante="secundario" icone="cadeado">Mudar nível</Botao>
+          </div>
+        </div>
+        <footer class="rodape">
+          <span class="espaco"></span>
+          <Botao variante="secundario" icone="copiar">Duplicar</Botao>
+          <Botao variante="perigo">Excluir</Botao>
+        </footer>
+      {:else if carregado && ordem.length === 0}
+        <div class="corpo centro">
+          <div class="vazio">
+            <span class="avatar"><Icone nome="busca" tamanho="lg" /></span>
+            <h2 class="titulo-vazio">Nenhuma entrada encontrada</h2>
+            <p class="texto-vazio">Limpe a busca ou os filtros para ver todas as entradas.</p>
+          </div>
+        </div>
+      {/if}
+    </section>
+  </div>
+</main>
+
+<DialogoFiltros
+  aberto={dialogoAberto}
+  {filtros}
+  grupos={opcoesGrupo}
+  tipos={opcoesTipo}
+  ambientes={opcoesAmbiente}
+  onaplicar={aplicarFiltros}
+  onfechar={() => (dialogoAberto = false)}
+/>
+
+<style>
+  .principal {
+    display: flex;
+    flex-direction: column;
+    gap: var(--espaco-16);
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+  }
+  .topo {
+    display: flex;
+    align-items: center;
+    gap: var(--espaco-16);
+    padding: var(--espaco-4) var(--espaco-8) var(--espaco-0);
+  }
+  .titulo {
+    display: flex;
+    flex-direction: column;
+    gap: var(--espaco-2);
+    flex: 1;
+    min-width: 0;
+  }
+  h1 {
+    margin: var(--espaco-0);
+    font-weight: var(--peso-semibold);
+    font-size: var(--tamanho-xl);
+    line-height: var(--altura-linha-xl);
+    letter-spacing: var(--espacamento-letra-titulo);
+  }
+  .resumo {
+    margin: var(--espaco-0);
+    font-size: var(--tamanho-sm);
+    line-height: var(--altura-linha-sm);
+    color: var(--cor-texto-secundario);
+  }
+  .busca {
+    width: var(--largura-busca);
+  }
+  .colunas {
+    display: flex;
+    gap: var(--espaco-16);
+    flex: 1;
+    min-height: 0;
+  }
+  .lista {
+    display: flex;
+    flex-direction: column;
+    gap: var(--espaco-12);
+    flex: none;
+    width: var(--largura-coluna-lista);
+    padding: var(--espaco-16);
+    border-radius: var(--raio-painel);
+    border: var(--linha-fina) solid var(--cor-borda-sutil);
+    background: var(--cor-fundo-sutil);
+  }
+  .filtros-ativos {
+    display: flex;
+    align-items: center;
+    gap: var(--espaco-8);
+  }
+  .resumo-filtros {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--tamanho-sm);
+    line-height: var(--altura-linha-sm);
+    color: var(--cor-texto-secundario);
+  }
+  .rolagem {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+  }
+  .itens {
+    display: flex;
+    flex-direction: column;
+    gap: var(--espaco-4);
+    height: 100%;
+    overflow-y: auto;
+    scrollbar-width: none;
+  }
+  .itens.centro {
+    justify-content: center;
+  }
+  .grupo {
+    display: flex;
+    flex-direction: column;
+    gap: var(--espaco-4);
+  }
+  .lista-vazia {
+    margin: var(--espaco-0);
+    text-align: center;
+    font-size: var(--tamanho-sm);
+    line-height: var(--altura-linha-sm);
+    color: var(--cor-texto-secundario);
+  }
+  /* `Esmaecer rolagem` (18948): gradiente fundo/sutil-transparente → fundo/sutil. */
+  .esmaecer {
+    position: absolute;
+    left: var(--espaco-0);
+    right: var(--espaco-0);
+    bottom: var(--espaco-0);
+    height: var(--espaco-48);
+    background: linear-gradient(var(--cor-fundo-sutil-transparente), var(--cor-fundo-sutil));
+    pointer-events: none;
+  }
+  .nova {
+    display: flex;
+  }
+  .nova :global(.botao) {
+    flex: 1;
+  }
+  .detalhe {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+    border-radius: var(--raio-painel);
+    border: var(--linha-fina) solid var(--cor-borda-sutil);
+    background: var(--cor-fundo-sutil);
+    overflow: hidden;
+  }
+  .cabecalho {
+    display: flex;
+    align-items: center;
+    gap: var(--espaco-16);
+    padding: var(--espaco-24);
+    border-bottom: var(--linha-fina) solid var(--cor-borda-sutil);
+  }
+  .avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: var(--controle-lg);
+    height: var(--controle-lg);
+    border-radius: var(--raio-controle);
+    border: var(--linha-fina) solid var(--cor-borda-padrao);
+    background: var(--cor-superficie-elevada);
+  }
+  .identificacao {
+    display: flex;
+    flex-direction: column;
+    gap: var(--espaco-6);
+    flex: 1;
+    min-width: 0;
+  }
+  .nome {
+    margin: var(--espaco-0);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: var(--peso-semibold);
+    font-size: var(--tamanho-lg);
+    line-height: var(--altura-linha-lg);
+    letter-spacing: var(--espacamento-letra-titulo);
+  }
+  .selos {
+    display: flex;
+    align-items: center;
+    gap: var(--espaco-8);
+    min-width: 0;
+  }
+  .subtitulo {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--tamanho-sm);
+    line-height: var(--altura-linha-sm);
+    color: var(--cor-texto-secundario);
+  }
+  .corpo {
+    display: flex;
+    flex-direction: column;
+    gap: var(--espaco-20);
+    flex: 1;
+    min-height: 0;
+    padding: var(--espaco-24);
+    overflow-y: auto;
+  }
+  .corpo.centro {
+    align-items: center;
+    justify-content: center;
+  }
+  .grade {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: var(--espaco-16);
+    row-gap: var(--espaco-20);
+  }
+  .grade :global(.campo) {
+    min-width: 0;
+  }
+  .nivel {
+    display: flex;
+    align-items: center;
+    gap: var(--espaco-16);
+    padding: var(--espaco-20);
+    border-radius: var(--raio-cartao);
+    border: var(--linha-fina) solid var(--cor-borda-sutil);
+    background: var(--cor-superficie-padrao);
+  }
+  .textos-nivel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--espaco-4);
+    flex: 1;
+    min-width: 0;
+  }
+  .rotulo-nivel {
+    font-size: var(--tamanho-xs);
+    line-height: var(--altura-linha-xs);
+    color: var(--cor-texto-secundario);
+  }
+  .nome-nivel {
+    font-weight: var(--peso-medio);
+    font-size: var(--tamanho-base);
+    line-height: var(--altura-linha-base);
+  }
+  .explicacao {
+    font-size: var(--tamanho-sm);
+    line-height: var(--altura-linha-sm);
+    color: var(--cor-texto-secundario);
+  }
+  .rodape {
+    display: flex;
+    align-items: center;
+    gap: var(--espaco-12);
+    padding: var(--espaco-16) var(--espaco-24);
+    border-top: var(--linha-fina) solid var(--cor-borda-sutil);
+  }
+  .espaco {
+    flex: 1;
+  }
+  .vazio {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--espaco-16);
+    width: var(--largura-coluna-acesso);
+    text-align: center;
+  }
+  .titulo-vazio {
+    margin: var(--espaco-0);
+    font-weight: var(--peso-semibold);
+    font-size: var(--tamanho-lg);
+    line-height: var(--altura-linha-lg);
+    letter-spacing: var(--espacamento-letra-titulo);
+  }
+  .texto-vazio {
+    margin: var(--espaco-0);
+    color: var(--cor-texto-secundario);
+  }
+  .vazio :global(.destaque) {
+    align-self: stretch;
+    text-align: left;
+  }
+</style>

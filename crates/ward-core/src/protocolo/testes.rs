@@ -44,11 +44,7 @@ fn dados_validos(op: Operacao) -> String {
     let pin = b64(b"135790");
     let senha = b64(b"falso-mestra-ward-01");
     match op {
-        Operacao::Estado
-        | Operacao::Travar
-        | Operacao::Lista
-        | Operacao::AbrirApp
-        | Operacao::ReceberPedidos => "{}".into(),
+        Operacao::Estado | Operacao::Travar | Operacao::Lista | Operacao::AbrirApp => "{}".into(),
         Operacao::Destravar => format!(r#"{{"senha":"{senha}"}}"#),
         Operacao::Executar => format!(
             r#"{{"entrada":"acme-pg-dev","argv":["{}"],"cwd":"{}","ambiente":[{{"nome":"{}","valor":"{}"}}]}}"#,
@@ -234,7 +230,6 @@ fn v3_15_tabela_operacao_papel() {
         ("preencher", false, false, true),
         ("salvar_login", false, false, true),
         ("abrir_app", true, true, true),
-        ("receber_pedidos", false, true, false),
     ];
     let real: Vec<_> = Operacao::TODAS
         .iter()

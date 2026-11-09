@@ -1,7 +1,7 @@
 //! Motor de aprovação (Fase 23; S9, S10; D2, D8, D16, D19, D21, D57).
 //!
 //! - Um uso "com aprovação" vira um pedido pendente com id. O pedido vai ao app que
-//!   assinou ([`Motor::assinar`], operação `receber_pedidos` do papel app); sem app
+//!   assinou ([`Motor::assinar`]: a conexão do papel app, D65 a); sem app
 //!   assinado, o motor abre o app pelo lançador ([`AbridorApp`]). Sem como abrir
 //!   (sessão Wayland fora de D57, binário não confiável, sem instalação) o pedido é
 //!   negado na hora com "aprovação indisponível" (D21).
@@ -87,7 +87,7 @@ impl AbridorApp for SemApp {
     }
 }
 
-/// Quem recebe os pedidos do motor: a conexão do app que pediu `receber_pedidos`.
+/// Quem recebe os avisos do motor: a conexão do papel app (D65 a).
 pub trait Assinante: Send {
     /// Entrega `pedido_de_aprovacao` ou `pedido_de_destrave`. `false`: não deu (a
     /// conexão caiu); o motor trata como app fechado.
@@ -260,7 +260,7 @@ impl Motor {
             .map_err(|_| ErroResposta::AprovacaoIndisponivel)
     }
 
-    /// A conexão `id` do app passa a receber os pedidos (`receber_pedidos`). Uma por
+    /// A conexão `id` do papel app passa a receber os avisos. Uma por
     /// vez: a nova toma o lugar da anterior, e o que esta tinha recebido sem responder
     /// vai de novo à nova.
     pub fn assinar(&self, id: u64, a: Box<dyn Assinante>) {

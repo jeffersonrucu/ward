@@ -2,8 +2,8 @@
 
 ## Implementado
 - **Motor de aprovação** (`crates/wardd/src/aprovacao.rs`, novo):
-  - pedido pendente com id; vai ao app que assinou (`receber_pedidos`) ou, sem app
-    assinado, o motor abre o app pelo lançador. Sem como abrir: "aprovação
+  - pedido pendente com id; vai à conexão do papel app (D65 a) ou, sem app
+    conectado, o motor abre o app pelo lançador. Sem como abrir: "aprovação
     indisponível" na hora (D21);
   - prazo de 2 min pelo relógio injetado (`RelogioMotor`) → `expirado` (S10);
     conexão do app que cai com o pedido entregue → `negado` ("fechar nega"); app que
@@ -35,9 +35,12 @@
   `PedidoDeAprovacao` com elas.
 - **Protocolo** (`ward-core`):
   - `abrir_app` (todos os papéis, sem campo; campo a mais recusa o pedido);
-  - `receber_pedidos` (só app): a conexão passa a receber `pedido_de_aprovacao` e
-    `pedido_de_destrave` entre as respostas (escrita com uma trava por conexão), sem
-    prazo de leitura; ao fechar, o que ela recebeu é negado;
+  - avisos ao app (D65 a): só a conexão do papel app recebe `pedido_de_aprovacao` e
+    `pedido_de_destrave`, cada um num quadro inteiro, nunca no meio de uma resposta
+    (uma trava de escrita por conexão); as respostas seguem a ordem dos pedidos (uma
+    thread por conexão). Essa conexão fica sem prazo de leitura; ao fechar, o que ela
+    recebeu e não respondeu é negado. Não há operação de assinatura: uma
+    `receber_pedidos` que existiu numa versão intermediária saiu ao alinhar com D65;
   - D63: `estado` traz `papel` (`agente`/`app`/`extensao`), sem outro dado. O daemon
     recusa escrever a um papel o `estado` de outro; o cliente lê o que veio;
   - `Papel::de_nome`.
@@ -81,7 +84,8 @@
     `cliente_que_cai_cancela`, `v3_18_espera_o_destrave_ate_2_min`, `d57_abrir_app`,
     `v3_36_so_o_pid_do_lancador_e_app`, `v3_38_estado_traz_o_papel`;
   - `crates/wardd/tests/socket.rs › v3_20_ciclo_pelo_socket_sem_segredo_no_log`: pelo
-    binário, `receber_pedidos` e `responder_aprovacao` do agente → não autorizado;
+    binário, `responder_aprovacao` do agente → não autorizado, `receber_pedidos` →
+    operação desconhecida;
     `abrir_app` e uso com aprovação → aprovação indisponível; `estado` com `papel`;
   - `crates/wardd/src/servidor.rs › assinante_escreve_quadro_inteiro_e_falha_fechado`;
   - `crates/wardd/src/lancamento.rs › saida_vai_ao_log_so_com_numeros`;
@@ -89,7 +93,7 @@
     `ataque_imitar_escape_ou_separador_nao_engana`, `corte_com_aviso_nunca_em_silencio`,
     `neutralizar_e_idempotente_sobre_a_saida`, mais 4;
   - `crates/ward-core/src/protocolo/testes.rs`: `v3_38_estado_traz_o_papel_e_so_ele`,
-    tabela do V3.15 com as duas operações novas, fuzz ajustado;
+    tabela do V3.15 com `abrir_app`, fuzz ajustado;
   - `crates/ward-plataforma/src/lancador.rs`: `ataque_so_o_pid_do_lancador_e_o_app`
     (outro filho vivo do mesmo pai não é o app; morto e colhido, nem o pid dele),
     `saida_do_app_fica_para_o_log`; `socket.rs › par_fechou_sem_consumir_bytes`.
@@ -105,28 +109,36 @@
   classificador, como a nota do plano pede. `make teste-docker-plataforma` não foi
   rodado (não toquei no contêiner; `classificar` não mudou).
 - Execução de verdade depois da aprovação: Fases 26/27.
-- Lado do app da janela (Fase 36) e do `receber_pedidos` no `app/nucleo`.
+- Lado do app: thread leitora e fila dos avisos (23a, D65 a), janela (Fase 36).
 
 ## Comandos executados
 | Comando | Exit code |
 | --- | --- |
 | `make ferramentas`, `make dev-cofre` | 0 |
 | `git merge master` (D61–D64; fast-forward, sem conflito) | 0 |
+| `git merge master` depois do 1.º commit (D65, Fase 24): conflitos em `wardd/src/lib.rs`, `main.rs` e `nucleo.rs`, resolvidos juntando os dois lados (motor + trava; `atender_de` com o `registrar_uso` da 24) | 1, resolvido |
 | `cargo test -p ward-core --locked` | 0 |
 | `cargo test -p ward-plataforma --lib --locked` (lancador, socket) | 0 |
 | `cargo test -p wardd --all-features --locked --test aprovacao` (1.ª: 2 falhas de teste, nome do nível e limite da cadeia; corrigidas) | 101, 0 |
 | `cargo test -p wardd --all-features --locked --lib --test socket` | 0 |
 | `make fmt` | 0 |
 | `make check` (1.ª: clippy `type_complexity` num teste; 2.ª: teste do assinante instável porque outro teste em paralelo faz `fork` e segura o fd até o `exec`; corrigido com nova tentativa limitada) | 2, 2, 0 |
+| `make check` depois do merge da Fase 24 (1.ª: `v3_15_sem_aprovador_no_binario` pegou o `env::var` do `trava.rs`; lista ajustada) | 2, 0 |
 
 ## Problemas descobertos
-- **Transporte ao app foi decisão minha:** `receber_pedidos` (só app) e os quadros
-  `pedido_de_*` empurrados na conexão do app entre respostas. O app tem uma conexão só
-  (29a: não reconecta), então uma operação de espera bloquearia os outros pedidos; o
-  empurrão é sem ambiguidade porque nenhuma operação responde `pedido_de_*`. O planner
-  confirma; a Fase 36 (ou a 23a) faz o lado do app (separar empurrão de resposta).
-- **Prazo de leitura de 60 s mata a conexão do app ociosa** (servidor da Fase 22): só a
-  conexão que assina fica sem prazo. Um app que não assina cai em 60 s e se reexecuta.
+- **Transporte ao app (D65 a):** o daemon empurra os avisos na conexão do papel app
+  logo que ela é aceita; o lado do app (thread leitora, fila de 16) é da 23a. O app de
+  hoje (29a) não sabe separar aviso de resposta, mas ninguém recebe o papel app antes da
+  23a no teste nem antes da instalação no release.
+- **Conexão do papel app sem prazo de leitura:** era 60 s (Fase 22); a conexão do app
+  agora espera aberta, para receber os avisos.
+- **`v3_15_sem_aprovador_no_binario` aceita `env::var` no `trava.rs`** (Fase 24: só
+  `WARD_DEV_DBUS_SISTEMA` sob `modo-teste`, barramento do logind, fora da aprovação).
+  A proibição de `cfg(feature)` em `aprovacao.rs`, `uso.rs`, `servidor.rs` e `nucleo.rs`
+  continua.
+- **Para o merge:** acrescentei `papel` aos dois construtores de `Resposta::Estado` fora
+  do daemon (`crates/ward/src/testes.rs` da Fase 25 e `app/nucleo/src/daemon_falso.rs`),
+  sem outra mudança neles.
 - **Destrave sem app:** com o cofre travado e sem como abrir o app, o uso responde
   `travado` na hora, em vez de segurar 2 min esperando um `ward destravar` da CLI. Escolhi
   responder logo porque ninguém mostraria nada ao usuário. O planner confirma.
@@ -142,8 +154,6 @@
   expõe `create_pidfd` estável). É equivalente: o filho não colhido não perde o pid.
 - **`pidfd_send_signal(0)` num zumbi** ainda dá "vivo"; não importa (zumbi não conecta),
   e ao colher o lançador solta o pidfd.
-- **Fase 25 em paralelo:** `Resposta::Estado` ganhou o campo `papel`; padrões sem `..`
-  na CLI vão quebrar no merge (só acrescentar o campo).
 - **D51 com limite pequeno:** abaixo de ~128 bytes o aviso de corte não cabe inteiro; o
   daemon usa 64 KiB (comando) e `MAX_TEXTO` (cada nome da cadeia).
 
@@ -166,10 +176,12 @@
 | `crates/wardd/src/lib.rs` | alterado |
 | `crates/wardd/src/main.rs` | alterado |
 | `crates/wardd/src/nucleo.rs` | alterado (campos `pub(crate)`, motor, liberações, ops novas) |
-| `crates/wardd/src/servidor.rs` | alterado (`papel_da_classe`, `receber_pedidos`, cliente) |
+| `crates/wardd/src/servidor.rs` | alterado (`papel_da_classe`, avisos na conexão do app, cliente) |
 | `crates/wardd/tests/aprovacao.rs` | criado |
 | `crates/wardd/tests/nucleo.rs` | alterado (campo `papel`) |
 | `crates/wardd/tests/socket.rs` | alterado |
+| `crates/ward/src/testes.rs` | alterado (só o campo `papel` no `estado` falso) |
+| `app/nucleo/src/daemon_falso.rs` | alterado (só o campo `papel` no `estado` falso) |
 | `docs/mission/handoffs/phase-23.md` | criado |
 
 ## Procedimentos

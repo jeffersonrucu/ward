@@ -388,8 +388,20 @@ Resolvido pelo planner em 2026-11-09: reauditoria da 19e em D61 (Fase 22a); Prob
 
 Decisão do usuário em 2026-11-09: limiares de força do gerador (Fase 37) aceitos — fraca <60 bits, razoável <80, forte <128, muito forte ≥128; a Fase 33 usa os mesmos. Pendências da 37 para o planner: faixa de tamanho 8–64 na interface (núcleo 4–128) no PRD; texto dos símbolos no FigCraft diverge de D35 (app segue D35) — corrigir numa fase de design.
 
+Teste instável (2026-11-09): `ward-plataforma --test identificacao` › `ataque_binario_copiado_para_fora_da_instalacao` falhou uma vez com ETXTBSY ("Text file busy") ao executar o binário copiado — corrida clássica de fd de escrita herdado por fork de outra thread de teste. Corrigir na Fase 22b (fechar e sincronizar a cópia antes, ou repetir o spawn em ETXTBSY).
+
+Pendências das Fases 32 e 25 para o planner (2026-11-09): (a) `DaemonSocket::trocar` do app ainda responde `SemProtocolo` — falta ligar a troca de quadros na conexão única (D47) e separar avisos sem pedido (`pedido_de_aprovacao`, `pedido_de_destrave`) — decidir a fase (23a ou 31); (b) o protocolo não tem operação que leve o valor ao app para "Revelar" (V5.3/V5.11 abertos); (c) N+1 em `listar_credenciais` (lista + 1 detalhe por entrada; a `ItemLista` do papel app pode ganhar usuário/porta); (d) datas criada/alterada não existem no protocolo; (e) V4.2 inteiro só no build de release (no `modo-teste` um falso não depurável passa) — validador roda a 2ª parte sem a feature, no contêiner, ou o texto do V4.2 muda.
+
+Resolvido pelo planner em 2026-11-09 (D65): (a) transporte do app e fila de avisos na
+Fase 23a; a 31 consome `pedido_de_destrave`, a 36, `pedido_de_aprovacao`; (b) "Revelar"
+sem operação nova (a `revelar` já existe, só papel app, sem PIN, aprovação nem nível,
+D4): daemon na Fase 22c, app na 33; (c) `resumo` na `ItemLista` do app, Fase 22c; (d)
+datas no corpo v4, Fase 22d (provisória); (e) V4.2 em duas partes, a 2ª no contêiner,
+Fase 28. Pendências da 37: faixa 8–64 e limiares em D65 (f); símbolos do FigCraft e
+frames que faltaram na 32, Fase 37a.
+
 ## Milestone 3 — Daemon e protocolo
-Contrato: V3.1–V3.38
+Contrato: V3.1–V3.41
 
 - [x] Fase 20 — (Depende da Fase 19c; não depende da 19d.) Protocolo em `ward-core`: quadros com limite de tamanho, mensagens
   versionadas, papéis agente/app/extensão (D5) e a tabela operação × papel, sem
@@ -545,8 +557,15 @@ Contrato: V3.1–V3.38
     `strings` do release sem `WARD_DEV_APP`;
   - ataques do V3.37 (cliente Python, ponte à mão, cópia, app fora do lançador,
     `abrir_app` com caminho/ambiente no pedido).
-  V3.36, V3.37, V3.38.
-- [ ] Fase 24 — Trava automática: `Lock`/`LockedHint` e `PrepareForSleep` do logind,
+  - transporte do app (D65 a), em `app/nucleo/src/daemon.rs` e na ponte:
+    `DaemonSocket::trocar` por `escrever_quadro`/`ler_quadro` na conexão única de D47;
+    thread leitora única, um pedido por vez sob mutex, avisos (`pedido_de_aprovacao`,
+    `pedido_de_destrave`) numa fila limitada a 16 que a 31 e a 36 consomem; resposta
+    sem pedido, quadro acima do limite ou tipo fora do papel app fecham a conexão;
+    prazo de 130 s; testes com daemon falso que intercala avisos. Sem evento do Tauri
+    nesta fase.
+  V3.36, V3.37, V3.38, V5.33.
+- [x] Fase 24 — Trava automática: `Lock`/`LockedHint` e `PrepareForSleep` do logind,
   4 h sem uso com relógio injetado, lidas do tempo de trava da configuração do cofre
   (D30); units de teste `wardd@.socket`/`wardd@.service` do sistema (D46), com
   `LimitCORE=0` e **sem** `NoNewPrivileges=`, `RestrictSUIDSGID=`,
@@ -568,11 +587,33 @@ Contrato: V3.1–V3.38
   - testes de ataque: `kill -9` entre as senhas erradas, agente atrasando o app, cópia
     antiga depois do `criar_cofre`, troca logo depois do rename, `VmLck` no contêiner.
   V3.33–V3.35.
+- [ ] Fase 22c — (Depende da 22b e da 23a: mexe em `crates/wardd`, no protocolo e no
+  `app/nucleo`.) Operações de valor do app e lista do app (D65 b, c). Arquivos:
+  `crates/ward-core/src/protocolo*` (só `ItemLista`/`ResumoItem`), `crates/wardd`,
+  `app/nucleo` (`cliente.rs`, `credenciais.rs`, `daemon_falso.rs`) e os testes.
+  - `wardd` atende `revelar`, `copiar` e `totp` do papel app: cofre destravado, sem PIN,
+    sem aprovação e sem olhar o nível (D4), `Segredo` em `Zeroizing`, log sem valor;
+    agente e extensão seguem "não autorizado";
+  - `ItemLista.resumo`, `Some` só para o papel app, com a recusa nos dois sentidos de
+    D50; o app monta a 2ª linha e a busca pela `lista`, sem um `detalhe` por entrada;
+  - testes de ataque: cliente Python agente pedindo `revelar`/`copiar`/`totp`
+    (`acme-pg-dev` e `gama-bloqueada`), quadro forjado com `resumo` no papel agente,
+    log contra `.dev/variacoes.txt`. V3.39, V3.40.
+- [ ] Fase 22d — (Depende da 22c e da 22a.) Datas de criação e alteração (D65 d,
+  provisória). Arquivos: `crates/ward-core` (`entrada`, `corpo` v4, `protocolo` só no
+  `DetalheEntrada` e no rascunho), `crates/wardd` (carimbo pelo relógio injetado),
+  `crates/ward-core/examples/dev-cofre/`, `app/nucleo/src/credenciais.rs`,
+  `app/src/telas/Credenciais.svelte` (só o rodapé) e os testes.
+  - corpo v4 com `criada_em`/`alterada_em`; v3 recusada; `make dev-cofre` regrava o
+    cofre de teste e o V2.29 é refeito;
+  - nova → as duas; edição e `mudar_nivel` → `alterada_em`; data no rascunho recusada;
+  - testes de formato de V2 (byte alterado, gravação morta) repetidos com o v4.
+  V3.41, V5.34.
 
 ## Milestone 4 — CLI e integração Claude (run/ssh)
 Contrato: V4.1–V4.38
 
-- [ ] Fase 25 — CLI `ward`: `lista [--json]`, `travar`, `destravar` (senha do TTY, só
+- [x] Fase 25 — CLI `ward`: `lista [--json]`, `travar`, `destravar` (senha do TTY, só
   depois de conferir que o servidor é o `wardd` instalado), mensagens em português.
   A conferência é a de D46 (pasta do root e par de uid 0). V4.1, V4.2, V4.18, V4.22.
   Nota do planner (D62, D63, 2026-11-09), para a fase em andamento: a CLI é papel
@@ -603,10 +644,13 @@ Contrato: V4.1–V4.38
   teste.
   V4.14, V4.23, V4.24, V4.26–V4.28, V4.31, V4.32, V4.34, V4.35, V4.37.
 - [ ] Fase 28 — Salto (`ProxyJump`) e túnel de `banco` por `servidor`, com nível
-  combinado (D19); logs da suíte do M4 sem segredo. V4.25, V4.27, V4.29, V4.30, V4.33.
+  combinado (D19); logs da suíte do M4 sem segredo. 2ª parte do V4.2 (D65 e) no
+  contêiner de `make teste-docker-plataforma`: CLI sem `modo-teste`, `wardd` copiado e
+  falso não-dumpable do uid 1000, `bind` em `/run/ward/1000/` recusado.
+  V4.2, V4.25, V4.27, V4.29, V4.30, V4.33.
 
 ## Milestone 5 — App desktop
-Contrato: V5.1–V5.32
+Contrato: V5.1–V5.35
 
 - [x] Fase 29 — Esqueleto Tauri + Svelte: capabilities só com os comandos próprios,
   CSP estrita, sem conteúdo remoto, devtools fora do release; cliente do socket no lado
@@ -652,12 +696,21 @@ Contrato: V5.1–V5.32
   - `make app-check` limpo. V5.30, V5.32.
 - [ ] Fase 30 — **(UI)** Primeiro uso (o PIN vai para a seção de configuração do corpo
   v2 como hash, D30). V5.7, V5.25, V5.26.
-- [ ] Fase 31 — **(UI)** Destravar, inclusive o estado "Pedido do agente". V5.8.
-- [ ] Fase 32 — **(UI)** Credenciais (vazia, cheia, filtrada, busca). V5.3, V5.9.
+- [ ] Fase 31 — **(UI)** Destravar, inclusive o estado "Pedido do agente". Consome
+  `pedido_de_destrave` da fila da 23a e o leva à tela por evento do Tauri (D65 a). V5.8.
+- [x] Fase 32 — **(UI)** Credenciais (vazia, cheia, filtrada, busca). V5.3, V5.9.
 - [ ] Fase 33 — **(UI)** Formulário, parte 1: `login`, `api`, `aws`, `smtp`,
   `nota segura`, `genérico`, com campo secreto (revelar 30 s, copiar com limpeza em
   30 s), campos extras, TOTP e gerador no formulário (símbolos de D35; `otpauth://`
   fora de SHA1/6/30 recusado, D35). V5.3, V5.5, V5.10, V5.11, V5.13, V5.14.
+  Nota do planner (D65, 2026-11-09), para a fase em andamento: "revelar" usa a operação
+  `revelar` que já existe (só papel app; nenhuma operação nova): `cliente::revelar`,
+  resposta no daemon falso, comando `revelar_campo` na capability, valor na webview só
+  no clique e fora dela em 30 s, ao esconder ou ao sair (padrão `Revelada` da 37, sem
+  ligaduras); vale também para o `Campo secreto` do detalhe de Credenciais. O daemon
+  real atende na 22c. Gerador no formulário: tamanho 8–64 e limiares da 37; símbolos de
+  `ward_core::gerador::SIMBOLOS`, não do texto do FigCraft. Datas do rodapé ficam para
+  a 22d.
 - [ ] Fase 34 — **(UI)** Formulário, parte 2: `banco`, `servidor` (com "Conectar" e
   token de uso único, D3), `ftp/sftp`, anexos (aviso ao escolher arquivo acima de
   256 KiB ou soma acima disso, arquivo vazio recusado, recusa do orçamento da máscara
@@ -666,8 +719,14 @@ Contrato: V5.1–V5.32
 - [ ] Fase 35 — **(UI)** Nível de acesso com PIN. V5.15.
 - [ ] Fase 36 — **(UI)** Janela de aprovação em primeiro plano, aberta pelo daemon, com
   os cinco estados do M0; comando e cadeia exibidos pela função de D51, nunca como HTML.
-  V5.16–V5.20, V5.29.
+  Consome `pedido_de_aprovacao` da fila da 23a (D65 a). V5.16–V5.20, V5.29.
 - [x] Fase 37 — **(UI)** Gerador de senha avulso (símbolos de D35). V5.21.
+- [ ] Fase 37a — **(DESIGN)** Correções do design (D65 f e design pendente; pode rodar a
+  qualquer momento, só mexe no `Ward.figcraft` e em `docs/mission/design-nodes.md`):
+  descrição de "Símbolos" com o conjunto de D35 no avulso e no popover do formulário;
+  frame `Credenciais / Sem resultado`; cartão de nível bloqueado no detalhe; contagens
+  da fixture nos frames de Credenciais. Inspirações só leitura; termina com
+  `save_file` e PNG das telas ao usuário. V5.35.
 - [ ] Fase 38 — **(UI)** Configurações (PIN, senha mestra, tempo de trava gravado na
   configuração do cofre, D30; backup externo só exibido desligado). V5.22.
 - [ ] Fase 39 — **(UI)** Bandeja; `docs/mission/roteiro-usuario.md` da janela nativa;

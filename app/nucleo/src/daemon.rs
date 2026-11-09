@@ -9,10 +9,16 @@
 //! (pasta 0700 do usuário e par do mesmo uid); sem a feature, esse caminho e essa
 //! exceção nem existem no binário, e nenhuma variável de ambiente escolhe o caminho.
 //!
-//! Pontos de ligação com as fases seguintes:
-//! - Fase 20 (protocolo): `DaemonSocket::estado` e `DaemonSocket::valor_para_copiar`
-//!   passam a montar o quadro do protocolo; hoje devolvem `ErroApp::SemProtocolo`
-//!   depois de conferir e abrir o socket.
+//! O protocolo (Fase 20) fica em [`crate::cliente`]: lá o pedido vira o corpo do
+//! quadro e a resposta é lida no papel app. Este módulo é só o transporte.
+//!
+//! Ponto de ligação com a Fase 22 (`wardd`): [`DaemonSocket::trocar`] confere e abre o
+//! socket e ainda devolve `ErroApp::SemProtocolo`; com o daemon pronto, o corpo passa a
+//! ser `escrever_quadro(conexão, pedido, limite_do_quadro(Papel::App))` seguido de
+//! `ler_quadro(conexão, LIMITE_RESPOSTA)` (`ward_core::protocolo::quadro`), mais o
+//! tratamento dos avisos que o daemon manda sem pedido na mesma conexão
+//! (`pedido_de_aprovacao`, `pedido_de_destrave`, Fase 23), que não podem ser lidos como
+//! a resposta do pedido em curso.
 //!
 //! Conexão única (D47, Fase 29a): o app setgid conecta **uma vez**, antes do GTK, com o
 //! egid do grupo `ward-app` (o papel vem dele), e depois larga o grupo
@@ -27,9 +33,9 @@ use std::time::Duration;
 
 use ward_plataforma::{RecusaServidor, ServidorEsperado, conectar_servidor};
 
+use zeroize::Zeroizing;
+
 use crate::ErroApp;
-use crate::comandos::Referencia;
-use crate::segredo::Segredo;
 
 /// Nome do socket (o mesmo do `wardd`).
 pub const SOCKET: &str = "wardd.sock";
@@ -55,11 +61,12 @@ impl EstadoCofre {
     }
 }
 
-/// O que o app pede ao daemon. Os testes trocam por um daemon falso.
+/// Transporte até o daemon. Recebe o corpo de um pedido já codificado no papel app e
+/// devolve o corpo da resposta, ainda não lido (quem lê é [`crate::cliente`], com a
+/// leitura estrita do protocolo). Os testes e a ponte de teste trocam o socket pelo
+/// [`crate::daemon_falso`].
 pub trait Daemon: Send {
-    fn estado(&mut self) -> Result<EstadoCofre, ErroApp>;
-    /// Valor de um campo secreto, só para o "copiar" (D4). Nunca sai para a webview.
-    fn valor_para_copiar(&mut self, referencia: &Referencia) -> Result<Segredo, ErroApp>;
+    fn trocar(&mut self, pedido: &[u8]) -> Result<Zeroizing<Vec<u8>>, ErroApp>;
 }
 
 /// Daemon real, pelo socket local.
@@ -146,16 +153,10 @@ impl DaemonSocket {
 }
 
 impl Daemon for DaemonSocket {
-    fn estado(&mut self) -> Result<EstadoCofre, ErroApp> {
+    fn trocar(&mut self, _pedido: &[u8]) -> Result<Zeroizing<Vec<u8>>, ErroApp> {
         let _conexao = self.conexao()?;
-        // Fase 20: pedido "estado" do protocolo.
-        Err(ErroApp::SemProtocolo)
-    }
-
-    fn valor_para_copiar(&mut self, _referencia: &Referencia) -> Result<Segredo, ErroApp> {
-        let _conexao = self.conexao()?;
-        // Fase 20: pedido "copiar" do papel app (D5), resposta com o valor num quadro
-        // que vira `Segredo` direto, sem cópia intermediária em `String`.
+        // Fase 22: `escrever_quadro` + `ler_quadro` na conexão (ver o topo do módulo).
+        // A resposta do `copiar` vem num quadro `Zeroizing` e vira `Segredo` direto.
         Err(ErroApp::SemProtocolo)
     }
 }
@@ -167,6 +168,19 @@ mod testes {
     use std::io::Read;
     use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt, symlink};
     use std::os::unix::net::UnixListener;
+
+    use crate::cliente;
+    use crate::comandos::Referencia;
+    use ward_core::protocolo::Alvo;
+
+    impl DaemonSocket {
+        fn estado(&mut self) -> Result<EstadoCofre, ErroApp> {
+            cliente::estado(self)
+        }
+        fn valor_para_copiar(&mut self, r: &Referencia) -> Result<(), ErroApp> {
+            cliente::copiar(self, r.entrada(), Alvo::Campo(r.campo().to_owned())).map(|_| ())
+        }
+    }
 
     fn meu_uid() -> u32 {
         fs::metadata("/proc/self").unwrap().uid()

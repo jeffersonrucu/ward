@@ -199,7 +199,6 @@ tabela! {
     Preencher = "preencher", SO_EXTENSAO, "Usuário, senha e TOTP para preencher, se a origem bater (D9).";
     SalvarLogin = "salvar_login", SO_EXTENSAO, "Salvar um login novo visto pela extensão.";
     AbrirApp = "abrir_app", TODOS, "Abrir a instância verdadeira do app, filha do daemon (D57); sem campo e sem segredo.";
-    ReceberPedidos = "receber_pedidos", SO_APP, "O app passa a receber nesta conexão os pedidos de aprovação e de destrave (Fase 23).";
 }
 
 tabela! {
@@ -249,8 +248,6 @@ const _: () = {
     assert!(!Operacao::Copiar.papeis().agente);
     assert!(!Operacao::EmitirToken.papeis().agente);
     assert!(!Operacao::Preencher.papeis().agente);
-    assert!(!Operacao::ReceberPedidos.papeis().agente);
-    assert!(!Operacao::ReceberPedidos.papeis().extensao);
     // O quadro do app cabe a maior entrada (D29) em base64 e os textos escapados.
     assert!(
         json::tamanho_base64(limites::MAX_ENTRADA)

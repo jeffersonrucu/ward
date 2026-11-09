@@ -19,6 +19,7 @@ use serde::Serialize;
 use tauri::{Builder, Manager, RunEvent, Runtime, State, WebviewUrl, WebviewWindowBuilder};
 use ward_app_nucleo::ErroApp;
 use ward_app_nucleo::area_transferencia::{Copiador, Wayland};
+use ward_app_nucleo::credenciais::{DetalheCredencial, ItemCredencial};
 use ward_app_nucleo::daemon::DaemonSocket;
 use ward_app_nucleo::gerador::Opcoes;
 use ward_app_nucleo::partida;
@@ -68,6 +69,22 @@ fn estado_do_cofre(estado: State<'_, Estado>) -> Result<RespostaEstado, Falha> {
 #[tauri::command]
 fn copiar_campo(entrada: String, campo: String, estado: State<'_, Estado>) -> Result<(), Falha> {
     Ok(estado.servico()?.copiar_campo(&entrada, &campo)?)
+}
+
+/// Tela Credenciais (Fase 32): a lista, sem segredo.
+#[tauri::command]
+fn listar_credenciais(estado: State<'_, Estado>) -> Result<Vec<ItemCredencial>, Falha> {
+    Ok(estado.servico()?.listar_credenciais()?)
+}
+
+/// Tela Credenciais (Fase 32): o detalhe de uma entrada, sem segredo (só os nomes dos
+/// campos secretos). O nome vem da interface e é validado no núcleo.
+#[tauri::command]
+fn detalhe_credencial(
+    entrada: String,
+    estado: State<'_, Estado>,
+) -> Result<DetalheCredencial, Falha> {
+    Ok(estado.servico()?.detalhe_credencial(&entrada)?)
 }
 
 #[derive(Serialize)]
@@ -150,6 +167,8 @@ fn com_comandos<R: Runtime>(builder: Builder<R>, estado: Estado) -> Builder<R> {
         .invoke_handler(tauri::generate_handler![
             estado_do_cofre,
             copiar_campo,
+            listar_credenciais,
+            detalhe_credencial,
             gerar_senha,
             copiar_senha_gerada,
             revelar_senha_gerada,

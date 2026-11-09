@@ -1280,6 +1280,81 @@ em `/tmp/claude-1000/-home-jeffersonoliveira-projetos-cofre/d2e230bd-a662-43be-a
     do `deny.toml` do app; uma exceção sem advisory só esconderia a volta dele. Fase
     29b; V5.30 ajustada. A 0370 continua com RA7, que vai ao usuário.
   - **Papel na primeira resposta:** D63.
+- D65. **Pendências das Fases 32, 25 e 37** (handoffs 32, 25 e 37; D4, D5, D35, D46,
+  D47, D50, D51, D57, D62, D63; S1, S5, S10, S11, S13; decisão do planner em
+  2026-11-09).
+  - **(a) Transporte do app.** `DaemonSocket::trocar` passa a usar `escrever_quadro` e
+    `ler_quadro` na conexão única de D47 (sem reconectar; a queda segue D57). Uma thread
+    leitora é a única que lê o socket e separa o que chega:
+    - a resposta vai para quem pediu. Um pedido por vez, sob mutex: o protocolo não tem
+      id de pedido e o daemon responde na ordem;
+    - `pedido_de_aprovacao` e `pedido_de_destrave` são avisos e vão para uma fila
+      limitada (16), nunca no lugar de uma resposta. Com a fila cheia, o aviso novo é
+      descartado com log sem conteúdo, e o pedido do agente expira e nega (S10, falha
+      fechada);
+    - resposta sem pedido, ou quadro que não decodifica em `decodificar_resposta(Papel::App)`,
+      fecha a conexão.
+    Prazo da resposta: 130 s (destravar com a espera de D20 mais o Argon2, D62).
+    Buffers em `Zeroizing` e limite de quadro de `ward_core::limites`. O daemon (Fase
+    23) manda os avisos só na conexão do papel app, cada um num quadro inteiro, nunca
+    no meio de uma resposta. Transporte e fila na Fase 23a, junto com a conferência do
+    papel na primeira resposta (D63), que precisa dele; a Fase 31 liga
+    `pedido_de_destrave` a um evento do Tauri e à tela; a 36 liga `pedido_de_aprovacao`.
+    O evento leva só o texto do aviso, que não tem segredo, e quem exibe usa D51.
+  - **(b) Revelar: nenhuma operação nova.** A operação `revelar` já está na tabela da
+    Fase 20 (D5: só papel app, resposta `segredo`), ao lado de `copiar` e `totp`. Falta
+    o daemon atender (hoje responde `interno`) e o app chamar. Regras:
+    - só o papel app (D63), com o cofre destravado;
+    - sem PIN, sem janela de aprovação e sem olhar o nível (D4). Nível e aprovação
+      regulam o uso pelo agente ("Claude (agente)" › "Nível de acesso por entrada": "O
+      nível vale para `run`, `ssh`, `login` e `playwright`"), e o escopo limita o PIN a
+      aprovar usos e mudar nível ("Destravar e travar"). O papel app só existe para o
+      processo que o lançador abriu (D63), então quem pede é o usuário, e pedir o PIN
+      a ele mesmo não acrescenta barreira contra as ameaças do modelo. Entrada
+      bloqueada também é revelável no app;
+    - o daemon registra `revelar <entrada> <campo>` sem valor (S13) e devolve o
+      `Segredo` em `Zeroizing`. `copiar` e o `totp` do app seguem as mesmas regras;
+    - no app, o comando `revelar_campo` leva o valor à webview só no clique e o tira em
+      30 s, ao esconder ou ao sair (D4), no padrão `Revelada` da Fase 37 e sem
+      ligaduras na fonte.
+    Daemon na Fase 22c; app na Fase 33 (formulário e detalhe de Credenciais, que usam o
+    mesmo `Campo secreto`). V5.3 e V5.11 fecham no M5 contra o daemon real, depois das
+    Fases 22c e 23a.
+  - **(c) Lista do app sem N+1.** A `ItemLista` ganha `resumo: Option<ResumoItem>`,
+    `Some` só na lista do papel app, no mesmo padrão do nível (D50): `codificar_resposta`
+    recusa mandar ao agente um item com resumo, e a leitura do agente recusa um item
+    que o traga. `ResumoItem` tem os campos de texto do tipo (os mesmos do `detalhe`,
+    sem segredo), os ids dos segredos preenchidos e o número de extras e de anexos. A
+    tela monta a 2ª linha e a busca por usuário só com a `lista`, numa troca. O agente
+    continua com os seis campos do escopo. Fase 22c.
+  - **(d) Datas de criação e alteração** (provisória: o escopo não lista datas; elas vêm
+    do frame aprovado no M0, cujo rodapé mostra "Criada em … · Alterada em …"). A
+    `Entrada` ganha `criada_em` e `alterada_em` (segundos UTC) dentro do corpo cifrado,
+    que passa a v4. A v3 é recusada como versão não suportada: não há cofre instalado,
+    e o `make dev-cofre` regrava o de teste. O daemon carimba pelo próprio relógio
+    (injetado nos testes). Entrada nova recebe as duas datas; edição e `mudar_nivel`
+    trocam só `alterada_em`; `criada_em` nunca muda, e data vinda do cliente é recusada
+    pelo decodificador. Restaurar um backup mantém as datas. Só o `detalhe` do papel app
+    leva as datas; o agente nunca. Nenhuma decisão de segurança usa essas datas (o
+    rollback é D39, pela geração). Fase 22d. Se o usuário dispensar as datas, a Fase
+    37a tira o texto do rodapé e a 22d sai do plano.
+  - **(e) V4.2 em duas partes.** No `modo-teste` a CLI pula o uid 0 (D46), e a
+    conferência extra (par não-dumpable) só barra um falso ingênuo: um falso que chame
+    `prctl(PR_SET_DUMPABLE, 0)` passa. A garantia de S5 é a do release, pasta do root e
+    par de uid 0. O V4.2 passa a ter duas partes: a 1ª no build de teste, com o falso
+    em Python (já coberta pela Fase 25); a 2ª no build sem `modo-teste`, no contêiner da
+    21b, com o `wardd` verdadeiro copiado e um falso não-dumpable, ambos do uid 1000.
+    Teste e alvo na Fase 28.
+  - **(f) Gerador.** Faixa de tamanho na interface: 8 a 64, no avulso e no formulário
+    (o núcleo segue com 4 a 128, handoff 18; nenhum comando do app aceita fora de 8 a
+    64). Limiares de força aceitos pelo usuário em 2026-11-09: fraca < 60 bits,
+    razoável < 80, forte < 128, muito forte ≥ 128. O texto de "Símbolos" no FigCraft
+    passa a ser o conjunto de D35 (Fase 37a); o app mostra o que vem de
+    `ward_core::gerador::SIMBOLOS`.
+  - **Design pendente** (handoff 32), na Fase 37a: frame `Credenciais / Sem resultado`
+    (busca ou filtros sem resultado), cartão de nível bloqueado no detalhe e contagens
+    do cofre de teste tiradas da fixture (21 entradas hoje, 22 depois da Fase 22a; 13
+    no acme).
 
 ### Riscos abertos
 

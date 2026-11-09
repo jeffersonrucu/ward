@@ -1,11 +1,16 @@
-//! CLI do Ward: cliente do `wardd` pelo socket local; nunca recebe segredo (S1). Vazia na Fase 11.
+//! CLI do Ward: cliente do `wardd` pelo socket local; nunca recebe segredo (S1).
 
 #![forbid(unsafe_code)]
 
 use std::process::ExitCode;
 
+use ward::comandos::Sistema;
+
 fn main() -> ExitCode {
-    // Ainda sem implementação: falha em vez de fingir sucesso.
-    eprintln!("ward: ainda não implementado");
-    ExitCode::FAILURE
+    let mut e = Sistema {
+        esperado: ward::cliente::servidor_esperado(),
+        stdout: std::io::stdout(),
+        stderr: std::io::stderr(),
+    };
+    ExitCode::from(ward::principal(std::env::args_os().skip(1), &mut e))
 }

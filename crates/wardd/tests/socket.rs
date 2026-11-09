@@ -202,11 +202,12 @@ fn v3_20_ciclo_pelo_socket_sem_segredo_no_log() {
         ),
     );
     assert_eq!(protocolo_erro(&r), Some(ErroResposta::NaoAutorizado));
-    // Fase 23: o agente não assina os pedidos do app nem responde aprovação; o
+    // Fase 23: o agente não responde aprovação (e não há operação para receber os
+    // avisos: só a conexão do papel app os recebe, D65); o
     // `abrir_app` sem instalação (daemon de teste, D63 sem a 23a) é "aprovação
     // indisponível", e o uso com aprovação também (D21).
     let (_, r) = pedir_por(&mut s, "receber_pedidos", "{}");
-    assert_eq!(protocolo_erro(&r), Some(ErroResposta::NaoAutorizado));
+    assert_eq!(protocolo_erro(&r), Some(ErroResposta::OperacaoDesconhecida));
     let (_, r) = pedir_por(
         &mut s,
         "responder_aprovacao",

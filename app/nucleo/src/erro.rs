@@ -21,6 +21,17 @@ pub enum ErroApp {
     Travado,
     /// A área de transferência não aceitou o valor.
     AreaTransferencia,
+    /// A entrada não existe (ou o daemon não a mostra a este papel).
+    EntradaInexistente,
+    /// O campo pedido não existe na entrada.
+    CampoInexistente,
+    /// O daemon respondeu "não autorizado": a conexão não tem o papel app (D5, D47).
+    NaoAutorizado,
+    /// O daemon recusou o pedido por outro motivo (o código do protocolo não vem à
+    /// interface).
+    Recusado,
+    /// A resposta do daemon não é a esperada para o pedido (tipo, formato, papel).
+    RespostaInvalida,
     /// O RNG do sistema não respondeu; o gerador não usa fonte reserva.
     AleatorioIndisponivel,
     /// "Copiar" ou "revelar" do gerador avulso sem senha gerada (ou já descartada).
@@ -38,6 +49,11 @@ impl ErroApp {
             ErroApp::PedidoInvalido => "pedido-invalido",
             ErroApp::Travado => "travado",
             ErroApp::AreaTransferencia => "area-transferencia",
+            ErroApp::EntradaInexistente => "entrada-inexistente",
+            ErroApp::CampoInexistente => "campo-inexistente",
+            ErroApp::NaoAutorizado => "nao-autorizado",
+            ErroApp::Recusado => "recusado",
+            ErroApp::RespostaInvalida => "resposta-invalida",
             ErroApp::AleatorioIndisponivel => "aleatorio-indisponivel",
             ErroApp::SemSenhaGerada => "sem-senha-gerada",
         }
@@ -56,6 +72,11 @@ impl fmt::Display for ErroApp {
             ErroApp::PedidoInvalido => "pedido inválido",
             ErroApp::Travado => "o cofre está travado",
             ErroApp::AreaTransferencia => "não foi possível usar a área de transferência",
+            ErroApp::EntradaInexistente => "essa entrada não existe mais",
+            ErroApp::CampoInexistente => "esse campo não existe na entrada",
+            ErroApp::NaoAutorizado => "o daemon não reconheceu este app",
+            ErroApp::Recusado => "o daemon recusou o pedido",
+            ErroApp::RespostaInvalida => "resposta inválida do daemon",
             ErroApp::AleatorioIndisponivel => "o gerador aleatório do sistema não respondeu",
             ErroApp::SemSenhaGerada => "gere uma senha antes",
         })

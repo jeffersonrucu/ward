@@ -65,7 +65,7 @@ CARGO_DENY_VERSAO := 0.20.2
 .PHONY: check build fmt fmt-check clippy test audit deny gitleaks ferramentas \
 	origens gitleaks-binario teste-ataques-fundacao teste-ataques-servicos teste-iscas-home teste-home-real dev-servicos dev-servicos-subir \
 	dev-servicos-parar dev-servicos-estado dev-servicos-conferir dev-servicos-trocar-chave-host dev-cofre \
-	dev-cofre-conferir dev-variacoes teste-dev-cofre dev-daemon dev-daemon-parar teste-docker-uid \
+	dev-cofre-conferir dev-variacoes teste-dev-cofre dev-daemon dev-daemon-parar teste-cli teste-docker-uid teste-units \
 	app-front app-check app-ponte teste-docker-plataforma
 
 ## check: pré-checagem das origens, depois fmt, clippy -D warnings, testes, cargo audit,
@@ -302,6 +302,14 @@ teste-docker-uid: origens
 	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd --example wardd-cliente-teste
 	dev/testes/docker-uid.sh target/debug/wardd target/debug/examples/wardd-cliente-teste
 
+## teste-units: V3.21 (Fase 24; D46, D57, D62): `systemd-analyze verify` das units de
+## `dev/systemd/` e, num contêiner ubuntu:24.04 com systemd e sem rede, a primeira
+## conexão ao `wardd@1000.socket` sobe o `wardd` (sem `modo-teste`) como o uid 1000,
+## com LimitCORE=0, LimitMEMLOCK=infinity e sem no_new_privs
+teste-units: origens
+	$(CARGO) build --quiet --locked -p wardd --bin wardd --example wardd-cliente-teste --target-dir target/sem-modo-teste
+	dev/testes/units.sh target/sem-modo-teste/debug/wardd target/sem-modo-teste/debug/examples/wardd-cliente-teste
+
 # --- Daemon de teste (Fase 22) ------------------------------------------------------
 # `wardd` com a feature `modo-teste`: cofre de `.dev/`, socket em
 # $XDG_RUNTIME_DIR/ward-teste/. Sobe com `env -i` e uma lista fixa (HOME, PATH,
@@ -311,6 +319,12 @@ teste-docker-uid: origens
 dev-daemon: origens
 	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd
 	dev/daemon.sh subir
+
+## teste-cli: CLI `ward` de teste num pty (Fase 25): V4.2 com servidor falso, V4.1 e
+## V4.22 contra o daemon de teste; precisa de `make dev-daemon` e `make dev-variacoes`
+teste-cli: origens
+	$(CARGO) build --quiet --locked -p ward --features modo-teste --bin ward
+	$(PYTHON) dev/testes/cli.py target/debug/ward "$(CURDIR)"
 
 ## dev-daemon-parar: para o daemon de teste (confere que o pid é mesmo o wardd daqui)
 dev-daemon-parar:

@@ -787,6 +787,24 @@ Lidos de uma cópia do `Ward.figcraft` (o original não foi alterado), pelo MCP 
 | Ícones 20×20, traço 1.5 | frame `178` (filhos `179`–`257` e `5197`) → `app/design/icones/*.svg` | `app/src/lib/componentes/icones.js` (gerado) e `Icone.svelte` |
 | Botão, Campo, Campo secreto, Select, Badge de ambiente/tipo, Toast, Item de lista (`553`), Modal, Campo de PIN | página Design System | `app/src/lib/componentes/*.svelte` (só tokens; conferência pixel a pixel por tela fica para as fases de UI) |
 
+## Fase 32 — tela Credenciais no código (só leitura do FigCraft)
+
+Lidos de uma cópia do `Ward.figcraft` (o original não foi alterado). Capturas do app
+(ponte de teste, Chrome headless, 1280×800) e PNG dos frames em
+`docs/mission/evidence/fase-32/`.
+
+| Frame / componente | Id | No código |
+| --- | --- | --- |
+| `Credenciais / Vazia` | `4780` | `app/src/telas/Credenciais.svelte` (cofre sem entradas) |
+| `Credenciais / Cheia` | `4063` | idem, com `acme-pg-dev` selecionada |
+| `Credenciais / Filtrada` | `4410` | idem, tipo banco + ambiente stage + busca "pg" |
+| `Credenciais / Filtros` | `5259` (diálogo `5578`) | `app/src/lib/componentes/DialogoFiltros.svelte` (componente `5222`) |
+| `Navegação lateral` | set `782` (instância `4064`) | `app/src/lib/componentes/NavegacaoLateral.svelte` |
+| `Cabeçalho de grupo` | `901` (instância `4161`) | `app/src/lib/componentes/CabecalhoDeGrupo.svelte` |
+| `Item de lista` compacto | `4002`/`4028`/`4045` | `app/src/lib/componentes/ItemDeLista.svelte` (`compacta`) |
+| `Destaque` | `18673` (instância `18726`) | `app/src/lib/componentes/Destaque.svelte` |
+| `Esmaecer rolagem` | `18948` (instância `18949`) | `.esmaecer` em `Credenciais.svelte` |
+| Busca em pílula | `4128` | `Campo.svelte` com `pilula`, `icone`, `rotuloOculto` |
 ## Fase 37 — gerador de senha avulso no código (só leitura do FigCraft)
 
 Lido de uma cópia do `Ward.figcraft` (o original não foi alterado), por `get_node`,

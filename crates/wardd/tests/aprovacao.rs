@@ -126,7 +126,7 @@ fn cena(rotulo: &str) -> Cena {
     cena_com(rotulo, Ok(()))
 }
 
-/// O app falso assina (como o `receber_pedidos`).
+/// O app falso assina (como a conexão do papel app no servidor).
 fn assinar(d: &Daemon, id: u64) -> Receiver<Recebido> {
     let (tx, rx) = mpsc::channel();
     d.motor().assinar(id, Box::new(AppFalso(tx)));
@@ -425,11 +425,6 @@ fn ataque_agente_responde_a_aprovacao() {
                 erro(&c.d.atender(papel, q)),
                 Some(ErroResposta::NaoAutorizado)
             );
-            // Nem assinar para receber pedidos.
-            assert_eq!(
-                erro(&pedir(&c.d, papel, "receber_pedidos", "{}")),
-                Some(ErroResposta::NaoAutorizado)
-            );
         }
         assert!(c.d.motor().pendente(p.id).is_some());
         assert!(ok(&responder(&c.d, Papel::App, p.id, "negar", None)));
@@ -450,7 +445,8 @@ fn v3_15_sem_aprovador_no_binario() {
         for proibido in ["env::args", "aprovador_teste", "WARD_APROV", "auto_aprov"] {
             assert!(!texto.contains(proibido), "{nome}: {proibido}");
         }
-        if !["config.rs", "log.rs", "main.rs"].contains(&nome.as_str()) {
+        // trava.rs (Fase 24): só o barramento do logind de teste, fora da aprovação.
+        if !["config.rs", "log.rs", "main.rs", "trava.rs"].contains(&nome.as_str()) {
             assert!(!texto.contains("env::var"), "{nome} lê o ambiente");
         }
         for (i, _) in texto.match_indices("cfg(feature") {

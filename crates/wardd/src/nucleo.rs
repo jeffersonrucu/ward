@@ -58,6 +58,12 @@ pub fn espera_destrave(falhas: u32) -> Duration {
 /// Relógio do daemon (injetável nos testes).
 pub trait Relogio: Send + Sync {
     fn dormir(&self, d: Duration);
+
+    /// Tempo monotônico que conta a suspensão (`CLOCK_BOOTTIME`), para a trava por
+    /// inatividade (Fase 24). `None` (não deu para ler) trava: falha fechada.
+    fn agora(&self) -> Option<Duration> {
+        ward_plataforma::tempo_desde_boot().ok()
+    }
 }
 
 /// O relógio do sistema.
@@ -97,6 +103,8 @@ pub(crate) struct Estado {
     /// Identidade do cofre ao travar, para conferir ao reabrir (D39).
     identidade_conhecida: Option<Identidade>,
     erros_pin: u32,
+    /// Último uso com o cofre destravado, no relógio do [`Relogio::agora`] (Fase 24).
+    ultimo_uso: Option<Duration>,
 }
 
 impl Estado {
@@ -107,6 +115,7 @@ impl Estado {
             drop(a);
         }
         self.erros_pin = 0;
+        self.ultimo_uso = None;
     }
 
     /// Trava por causa de uma troca do arquivo: esquece a identidade, para o destravar
@@ -243,6 +252,7 @@ impl Daemon {
                 aberto: None,
                 identidade_conhecida: None,
                 erros_pin: 0,
+                ultimo_uso: None,
             }),
             falhas_senha: Mutex::new(0),
             relogio,
@@ -285,6 +295,32 @@ impl Daemon {
         self.estado().travar();
     }
 
+    /// Trava se o cofre ficou sem uso pelo tempo da configuração (Fase 24, D30). Devolve
+    /// `true` se travou agora. Relógio ilegível ou que voltou também trava.
+    pub fn travar_se_inativo(&self) -> bool {
+        let mut est = self.estado();
+        let Some(a) = est.aberto.as_ref() else {
+            return false;
+        };
+        // Lido com o estado travado: um uso de outra thread não fica "no futuro".
+        let agora = self.relogio.agora();
+        let minutos = a.cofre.configuracao().minutos_trava();
+        if !crate::trava::venceu(est.ultimo_uso, agora, minutos) {
+            return false;
+        }
+        est.travar();
+        aviso!("{minutos} min sem uso: cofre travado");
+        true
+    }
+
+    /// Anota um uso (Fase 24): só com o cofre destravado.
+    fn registrar_uso(&self) {
+        let mut est = self.estado();
+        if est.aberto.is_some() {
+            est.ultimo_uso = self.relogio.agora();
+        }
+    }
+
     /// Atende um pedido já decodificado para o papel da conexão.
     pub fn atender(&self, papel: Papel, pedido: Pedido) -> Resposta {
         self.atender_de(&SemCliente, papel, pedido)
@@ -299,6 +335,9 @@ impl Daemon {
             return Resposta::Erro(ErroResposta::NaoAutorizado);
         }
         let r = self.atender_permitido(cliente, papel, pedido);
+        if crate::trava::conta_como_uso(op, &r) {
+            self.registrar_uso();
+        }
         depurar!(
             "{} ({}): {}",
             op.nome(),
@@ -342,8 +381,6 @@ impl Daemon {
                 pin,
             } => self.responder_aprovacao(pedido, decisao, pin.as_ref()),
             Pedido::AbrirApp => self.aprovacao.abrir_app().map(|()| Resposta::Ok),
-            // Só tem sentido no socket (o servidor assina a conexão antes de chegar aqui).
-            Pedido::ReceberPedidos => Err(ErroResposta::PedidoInvalido),
             // Não há sessão aberta nesta fase (Fases 26/27).
             Pedido::EntradaPadrao { .. } | Pedido::Janela(_) => Err(ErroResposta::PedidoInvalido),
             Pedido::CriarCofre { senha, pin } => self.criar_cofre(&senha, &pin),
@@ -436,6 +473,7 @@ impl Daemon {
         }
         *falhas = 0;
         est.erros_pin = 0;
+        est.ultimo_uso = self.relogio.agora();
         est.aberto = Some(Aberto {
             cofre,
             entradas,
@@ -496,6 +534,7 @@ impl Daemon {
         confirmar(&self.caminhos, &mut a);
         est.identidade_conhecida = None;
         est.erros_pin = 0;
+        est.ultimo_uso = self.relogio.agora();
         est.aberto = Some(a);
         Ok(Resposta::Ok)
     }

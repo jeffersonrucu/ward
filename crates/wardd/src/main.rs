@@ -13,7 +13,7 @@ use wardd::config::Config;
 use wardd::lancamento::AbridorReal;
 use wardd::nucleo::{Daemon, RelogioReal};
 use wardd::servidor::{self, Papeis};
-use wardd::{aviso, log};
+use wardd::{aviso, log, trava};
 
 /// Chrome instalado, pai aceito do host da extensão (D5, D47).
 const CHROME: &str = "/opt/google/chrome/chrome";
@@ -77,6 +77,24 @@ fn main() -> ExitCode {
         ));
     }
     let daemon = Arc::new(daemon);
+    // Fase 24: trava por inatividade e pelo logind (bloqueio de tela, suspensão).
+    if trava::vigiar_inatividade(daemon.clone(), trava::INTERVALO_INATIVIDADE).is_err() {
+        aviso!("não deu para criar a thread da trava por inatividade");
+        return ExitCode::FAILURE;
+    }
+    match trava::barramento_do_daemon() {
+        Ok(Some(socket)) => {
+            if trava::vigiar_logind(daemon.clone(), socket, Box::new(|| {})).is_err() {
+                aviso!("não deu para criar a thread do logind");
+                return ExitCode::FAILURE;
+            }
+        }
+        Ok(None) => aviso!("daemon de teste sem WARD_DEV_DBUS_SISTEMA: logind desligado"),
+        Err(e) => {
+            aviso!("{e}");
+            return ExitCode::FAILURE;
+        }
+    }
     aviso!("pronto");
     match servidor::servir(&escuta, daemon, Arc::new(Papeis { instalacao, app })) {
         Ok(()) => ExitCode::SUCCESS,

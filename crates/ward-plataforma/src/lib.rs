@@ -21,9 +21,11 @@ pub mod lancador;
 pub mod memoria;
 pub mod papel;
 pub mod processo;
+pub mod relogio;
 pub mod servidor;
 pub mod socket;
 mod sys;
+pub mod terminal;
 #[cfg(feature = "modo-teste")]
 pub mod teste;
 
@@ -39,11 +41,13 @@ pub use processo::{
     BinarioPermitido, ClassePar, CredenciaisPar, ElementoCadeia, ProcessoPar, Recusa,
     cadeia_de_processos,
 };
+pub use relogio::tempo_desde_boot;
 pub use servidor::{RecusaServidor, ServidorEsperado, conectar_servidor, conferir_servidor};
 pub use socket::{
     Conexao, DiretorioSocket, ErroAceitar, ErroAtivacao, Escuta, caminho_socket_sistema,
     conferir_conexao, escutar_de_listen_fds, par_fechou, preparar_diretorio,
 };
+pub use terminal::{ErroTerminal, ler_senha};
 
 /// uid efetivo deste processo.
 pub fn uid_efetivo() -> u32 {

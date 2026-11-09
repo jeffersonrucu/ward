@@ -8,6 +8,7 @@
 //! - [`aprovacao`]: motor de aprovação e espera do destrave (Fase 23); [`uso`]: o
 //!   uso do agente (nível combinado, liberação de 1 hora, botões com PIN);
 //!   [`lancamento`]: o daemon abre o app pelo lançador (D57).
+//! - [`trava`]: trava automática por inatividade e pelo logind (Fase 24).
 //!
 //! Sem `unsafe`: o que depende do sistema está no `ward-plataforma`.
 
@@ -21,4 +22,5 @@ pub mod config;
 pub mod lancamento;
 pub mod nucleo;
 pub mod servidor;
+pub mod trava;
 pub mod uso;

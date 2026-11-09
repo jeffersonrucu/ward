@@ -6,7 +6,11 @@
 #
 # Ambiente limpo (V3.30): o `wardd` recusa subir com `TMPDIR` ou `LD_*` no ambiente
 # (V3.25), e a sessão do desenvolvedor costuma ter os dois. Por isso ele sobe por
-# `env -i` com uma lista fixa: HOME, PATH, XDG_RUNTIME_DIR, LANG e WARD_DEV_DIR.
+# `env -i` com uma lista fixa: HOME, PATH, XDG_RUNTIME_DIR, LANG e WARD_DEV_DIR, mais
+# WARD_DEV_DBUS_SISTEMA só se vier definida (Fase 24: socket do barramento que o daemon
+# de teste vigia para o logind; sem ela, o daemon de teste não liga o logind. Para o
+# V3.19 com o `loginctl lock-session` de verdade, passe
+# WARD_DEV_DBUS_SISTEMA=/run/dbus/system_bus_socket; isso trava a tela do usuário).
 #
 # Uso: dev/daemon.sh subir | parar | estado
 
@@ -69,6 +73,7 @@ subir() {
         XDG_RUNTIME_DIR="$RUNTIME" \
         LANG="${LANG:-C.UTF-8}" \
         WARD_DEV_DIR="$DEV" \
+        ${WARD_DEV_DBUS_SISTEMA:+"WARD_DEV_DBUS_SISTEMA=$WARD_DEV_DBUS_SISTEMA"} \
         "$BIN" </dev/null >>"$LOG" 2>&1 &
     local p=$!
     echo "$p" > "$PID"
