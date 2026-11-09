@@ -905,7 +905,7 @@ rodarem) e executar `docs/mission/roteiro-usuario.md` na janela nativa (V5.28; t
   Pendências da 39b: `.env` é anexado como `env` (pontos do começo tirados; `ward-core`
   segue recusando `.`) — registrar no escopo; `v3_33_kill_9_entre_as_senhas_erradas`
   falha sob carga (limite de 1,5 s precisa de margem); `make app-check` não rodou.
-- [ ] Fase 39c — Ponta a ponta do app com o daemon de teste e a ponte: `ward run` real
+- [x] Fase 39c — Ponta a ponta do app com o daemon de teste e a ponte: `ward run` real
   com janela (negar → CLI ≠ 0, "1 hora", "sempre") e "Conectar" abrindo terminal com
   `ward ssh` real, mais os três ataques de token (V5.16, V5.24); Salvar desabilitado no
   Novo vazio (V5.10); decisão e registro dos canais pendentes do V5.32 (frei0r, LADSPA,
@@ -913,6 +913,12 @@ rodarem) e executar `docs/mission/roteiro-usuario.md` na janela nativa (V5.28; t
   os fecham; `unsound = "all"` no `deny.toml` da raiz; registro de risco do menu da
   bandeja no barramento da sessão; mínimo de 12 e NFC da senha mestra também no
   daemon; `teste-logs-app` na tabela do `CLAUDE.md`. V5.10, V5.16, V5.24, V5.32.
+  Pendências da 39c: `make teste-webkit-real`, `make app-check` e
+  `make teste-docker-plataforma` (o `dentro.sh` mudou) não rodaram — validador do M5 e
+  usuário (roteiro 11a); RA9 (menu da bandeja) para o usuário decidir; RA8 ampliado
+  (driver NVIDIA lê `~/.nv/nvidia-application-profile-globals-rc`); a ponte tira o token
+  da URL (recarregar dá 403); dependência nova `unicode-normalization =0.1.25`; linhas
+  do `CLAUDE.md` para `teste-logs-app`, `teste-canais-gst` e `teste-app-e2e` no handoff.
 - [x] Fase 39d — **(DESIGN)** Contagens do `Ward.figcraft` iguais à fixture (22
   entradas, D59); instâncias de `Cartão de nível` nos 18 formulários; frames `15242`
   (PIN, não senha mestra), `3393` e `6373` iguais ao comportamento; diálogos "Trocar
@@ -1036,6 +1042,13 @@ Scrutiny do M9 (2026-11-09): aprovado (V9.5, V9.7 real e V9.8 com `git push` sã
 usuário). Baixo novo: texto `WARD_DEV_DBUS_SISTEMA` no `wardd` de release (`main.rs:201`,
 `trava.rs`) obriga exceção na recusa de `WARD_DEV_*` do `instalar.sh` — pôr atrás de
 `cfg(feature = "modo-teste")`.
+
+Auditoria de segurança do M9 (2026-11-09): **reprovada** (1ª vez), achado crítico: a
+política do Chrome gerada não tem `NativeMessagingUserLevelHosts: false`, então um
+manifesto `br.ward.nm.json` plantado no perfil do usuário vence o do root; o script do
+atacante faz `exec` do `ward-nm` real (mesmo pid, pai = Chrome) e fica com o stdin/stdout
+dele — tirou senhas e TOTP de 4 entradas `login`. Aguarda decisão do usuário (a política
+desliga também os manifestos de usuário de 1Password, Claude Code e KeePassXC).
 
 ## Milestone 10 — Migração e saída do KeePassXC
 Contrato: V10.1–V10.4
