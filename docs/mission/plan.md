@@ -462,6 +462,8 @@ Pendências da 47 (2026-11-09): o frame `16512` não tem PIN e diz "O PIN não s
 
 Pendências da 26a (2026-11-09): lista final no handoff (PATH fixo; HOME/USER/LOGNAME do passwd; LANG/LC_*/TERM/COLORTERM/TZ/NO_COLOR conferidos); `PedidoDeAprovacao` ganhou `diretorio` e a janela mostra "Diretório de trabalho" — frames `Aprovação / *` (16701…17035) sem a caixa; D13/D60 do PRD ainda dizem "ambiente da CLI sem `LD_*`"; sugerida asserção V4.x (SEG) para a lista; risco que fica: o diretório da CLI decide o `.git/config` etc.; workers em paralelo precisam copiar `.dev/servicos/` do checkout principal.
 
+Pendências da 51 (2026-11-09): `EXTENSAO_ID`/`EXTENSAO_CRX` obrigatórios no `make install` (pacote real sai da 41); `make release` com o Tauri não rodou (disco); `wardd` de release carrega o texto `WARD_DEV_DBUS_SISTEMA` (pôr `caminho_de_teste` atrás de `cfg(modo-teste)` e tirar a exceção do `instalar.sh`); `sudo make install` de árvore gravável pelo usuário — pacote malicioso do mesmo uid pode trocar `Makefile`/`instalar.sh` antes do sudo (roteiro da 52: clone limpo e `git status` antes; decisão do usuário); D18 do PRD desatualizado (units do sistema, D46); política do Chrome: `ExtensionSettings` em arquivo próprio não se funde, e `update_url` `file://` em force-install no Linux não confirmado (V9.5; alternativa `external_crx`); sem `.desktop` do app; uninstall apaga os grupos mesmo se já existiam; teste `d34_pty` agora espera o `pty-pronto` do falso (corrida sob carga, corrigida no merge).
+
 ## Milestone 3 — Daemon e protocolo
 Contrato: V3.1–V3.41
 
@@ -871,7 +873,7 @@ Contrato: V8.1–V8.4
 ## Milestone 9 — Instalação
 Contrato: V9.1–V9.11
 
-- [ ] Fase 51 — `make install`/`uninstall` com `DESTDIR` e `PREFIX=/usr/local` (o
+- [x] Fase 51 — `make install`/`uninstall` com `DESTDIR` e `PREFIX=/usr/local` (o
   `sudo` uma vez), units `wardd@.socket`/`wardd@.service` do sistema, `/run/ward/` por
   `tmpfiles.d` e `systemctl enable --now wardd@<uid>.socket` (D46), grupos
   `ward-app`/`ward-nm` e binários 2755 (D47; grupos com `groupadd --system`, gid < 1000,
