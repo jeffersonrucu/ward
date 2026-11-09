@@ -3,18 +3,27 @@
 //! - **Travado / destravado.** Destravado, o daemon guarda um único [`CofreAberto`]
 //!   (dono único, sem cópia) e as entradas. Travar solta os dois: a chave de dados, o
 //!   hash do PIN e os segredos zeram ao sair (S8, V3.8).
-//! - **Destravar** (D20): a tentativa espera 0 s, e cada senha errada seguida dobra a
-//!   espera da próxima a partir de 1 s, até 30 s. A contagem é global (todas as
-//!   conexões) e a resposta não diz quantas houve.
+//! - **Destravar** (D20, revista pela D62): a tentativa espera 0 s, e cada senha errada
+//!   seguida dobra a espera da próxima a partir de 1 s, até 30 s. São dois contadores,
+//!   cada um para todas as conexões do papel: o do agente (inclui o `ward destravar`) e
+//!   o do app. Erro do agente não atrasa o app. O do agente vai para o arquivo de
+//!   estado, com fsync antes da resposta de erro, e volta ao subir: matar o `wardd` não
+//!   zera a espera (a primeira tentativa depois da partida espera o que faltar, contado
+//!   da partida). O do app fica em memória. O destravar certo de qualquer papel zera os
+//!   dois. A resposta não diz quantas tentativas houve.
 //! - **PIN** (S9): confere pelo hash da configuração do cofre (`HashPin`, em tempo
 //!   constante, D30); 5 erros seguidos travam o cofre, mesmo reconectando.
 //! - **Gerações** (D39, D53): o arquivo de estado guarda `vista` e `queimada`. Abre com
 //!   (`vista`, `queimada`); antes de cada gravação grava `queimada` = geração + 1 e só
 //!   então grava o cofre; depois da gravação que deu certo, `vista` = geração. Sem
 //!   estado com o cofre existente, não destrava.
-//! - **Identidade** (D39): `dev`/inode/`mtime`/tamanho do cofre por `fstat` depois de
-//!   cada leitura e gravação; antes de gravar (e ao reabrir) confere. Mudou: não grava,
-//!   trava e responde [`ErroResposta::CofreMudou`].
+//! - **Identidade** (D39, D62): `dev`/inode/`mtime`/tamanho do cofre por `fstat` do fd
+//!   lido e, depois de gravar, do fd do temporário (devolvida pelo `ward_core`), nunca
+//!   por um `stat` do caminho depois do rename; antes de gravar (e ao reabrir) confere.
+//!   Mudou: não grava, trava e responde [`ErroResposta::CofreMudou`].
+//! - **Criar com estado velho** (D62): sem cofre e com um estado de `queimada` q, o
+//!   cofre novo nasce na geração q+1, e uma cópia de um cofre anterior fica abaixo da
+//!   `vista`.
 //! - Nenhuma resposta ao agente tem nível (D50), e uma entrada bloqueada responde igual
 //!   a uma inexistente (V3.17).
 //! - Uso do agente e aprovação (Fase 23): em [`crate::uso`], com o motor de
@@ -37,7 +46,7 @@ use ward_core::protocolo::{
 };
 
 use crate::aprovacao::{Cliente, Motor, SemCliente};
-use crate::arquivos::{self, Geracoes, Identidade};
+use crate::arquivos::{self, ArquivoEstado, Geracoes, Identidade};
 use crate::{aviso, depurar};
 
 /// Erros de PIN seguidos que travam o cofre (S9).
@@ -105,6 +114,14 @@ pub(crate) struct Estado {
     erros_pin: u32,
     /// Último uso com o cofre destravado, no relógio do [`Relogio::agora`] (Fase 24).
     ultimo_uso: Option<Duration>,
+    /// Senhas erradas seguidas do papel agente (D20, D62); espelho do arquivo de
+    /// estado. Travar não mexe nelas.
+    falhas_agente: u32,
+    /// Senhas erradas seguidas do papel app (D62), só em memória.
+    falhas_app: u32,
+    /// A próxima tentativa do agente é a primeira desde a partida: a espera conta da
+    /// partida (D62).
+    primeira_do_agente: bool,
 }
 
 impl Estado {
@@ -130,13 +147,24 @@ impl Estado {
 pub struct Daemon {
     caminhos: Caminhos,
     estado: Mutex<Estado>,
-    /// Senhas erradas seguidas no destravar (D20). Travado durante a tentativa inteira:
-    /// as tentativas são uma de cada vez, de qualquer conexão.
-    falhas_senha: Mutex<u32>,
+    /// Uma tentativa de destravar por vez em cada papel (D20, D62), de qualquer
+    /// conexão, segurado durante a espera e a tentativa. Um mutex por papel: a espera
+    /// do agente não segura o app. Os contadores ficam no [`Estado`].
+    vez_agente: Mutex<()>,
+    vez_app: Mutex<()>,
+    /// Hora da partida no [`Relogio::agora`] (D62).
+    partida: Option<Duration>,
     relogio: Box<dyn Relogio>,
+    /// Gancho chamado logo depois de cada gravação do cofre, antes de o daemon olhar o
+    /// resultado. Só os testes ligam (V3.35: troca do arquivo logo depois do rename); o
+    /// binário nunca.
+    gancho_gravado: Option<Gancho>,
     /// Motor de aprovação (Fase 23).
     pub(crate) aprovacao: Motor,
 }
+
+/// Gancho de teste de [`Daemon::com_gancho_depois_de_gravar`].
+pub type Gancho = Box<dyn Fn() + Send + Sync>;
 
 enum FalhaGravar {
     Resposta(ErroResposta),
@@ -157,7 +185,7 @@ fn senha_de(s: &Segredo) -> SenhaMestra {
 }
 
 /// Confere o cofre e grava as entradas e a configuração do `a` (D39, D53).
-fn gravar(caminhos: &Caminhos, a: &mut Aberto) -> Result<(), FalhaGravar> {
+fn gravar(caminhos: &Caminhos, a: &mut Aberto, gancho: Option<&Gancho>) -> Result<(), FalhaGravar> {
     match arquivos::identidade(&caminhos.cofre) {
         Ok(Some(id)) if Some(id) == a.identidade => {}
         _ => return Err(FalhaGravar::Mudou),
@@ -188,21 +216,25 @@ fn gravar(caminhos: &Caminhos, a: &mut Aberto) -> Result<(), FalhaGravar> {
         return Err(FalhaGravar::Resposta(ErroResposta::FalhaAoGravar));
     }
     a.geracoes = antes;
-    match gravacao::gravar_entradas(&caminhos.cofre, &mut a.cofre, &a.entradas) {
-        Ok(()) => {
-            confirmar(caminhos, a);
+    let r = gravacao::gravar_entradas(&caminhos.cofre, &mut a.cofre, &a.entradas);
+    if let Some(g) = gancho {
+        g();
+    }
+    match r {
+        Ok(id) => {
+            confirmar(caminhos, a, id);
             Ok(())
         }
         Err(e) => {
-            if matches!(
-                e,
-                ErroGravacao::Io {
-                    etapa: Etapa::FsyncDiretorio,
-                    ..
-                }
-            ) {
-                // O rename aconteceu: o arquivo no lugar é o que o Ward acabou de gravar.
-                a.identidade = arquivos::identidade(&caminhos.cofre).ok().flatten();
+            if let ErroGravacao::Io {
+                etapa: Etapa::FsyncDiretorio,
+                identidade,
+                ..
+            } = e
+            {
+                // O rename aconteceu: o arquivo no lugar é o que o Ward acabou de gravar,
+                // com a identidade lida do fd do temporário (D62), sem `stat` do caminho.
+                a.identidade = identidade;
             }
             aviso!("falha ao gravar o cofre: {}", codigo_gravacao(&e));
             Err(FalhaGravar::Resposta(ErroResposta::from(&e)))
@@ -210,8 +242,11 @@ fn gravar(caminhos: &Caminhos, a: &mut Aberto) -> Result<(), FalhaGravar> {
     }
 }
 
-/// Depois de uma gravação que deu certo: `vista` = geração gravada e identidade nova.
-fn confirmar(caminhos: &Caminhos, a: &mut Aberto) {
+/// Depois de uma gravação que deu certo: `vista` = geração gravada e a identidade que a
+/// gravação leu do fd do temporário (D62). Nenhum `stat` do caminho depois do rename:
+/// um arquivo trocado nesse meio-tempo fica com outra identidade, e a próxima gravação
+/// recusa como "mudou".
+fn confirmar(caminhos: &Caminhos, a: &mut Aberto, id: Identidade) {
     let g = a.cofre.geracao();
     a.geracoes = Geracoes {
         vista: g,
@@ -221,7 +256,7 @@ fn confirmar(caminhos: &Caminhos, a: &mut Aberto) {
         // O cofre está no disco; a próxima gravação regrava o estado antes.
         aviso!("não deu para atualizar o arquivo de estado depois de gravar");
     }
-    a.identidade = arquivos::identidade(&caminhos.cofre).ok().flatten();
+    a.identidade = Some(id);
 }
 
 /// Nome fixo do erro de gravação para o log (sem caminho nem valor).
@@ -245,7 +280,16 @@ fn codigo_gravacao(e: &ErroGravacao) -> &'static str {
 }
 
 impl Daemon {
+    /// Daemon travado. Lê do arquivo de estado as senhas erradas do agente (D62): a
+    /// espera de antes do reinício continua valendo.
     pub fn novo(caminhos: Caminhos, relogio: Box<dyn Relogio>) -> Self {
+        let falhas_agente = arquivos::ler_estado_completo(&caminhos.estado)
+            .map(|e| e.falhas_agente)
+            .unwrap_or(0);
+        if falhas_agente > 0 {
+            aviso!("{falhas_agente} senha(s) errada(s) do agente antes da partida (D20)");
+        }
+        let partida = relogio.agora();
         Self {
             caminhos,
             estado: Mutex::new(Estado {
@@ -253,11 +297,25 @@ impl Daemon {
                 identidade_conhecida: None,
                 erros_pin: 0,
                 ultimo_uso: None,
+                falhas_agente,
+                falhas_app: 0,
+                primeira_do_agente: true,
             }),
-            falhas_senha: Mutex::new(0),
+            vez_agente: Mutex::new(()),
+            vez_app: Mutex::new(()),
+            partida,
             relogio,
             aprovacao: Motor::sem_app(),
+            gancho_gravado: None,
         }
+    }
+
+    /// Liga o gancho de teste chamado logo depois de cada gravação do cofre (V3.35). O
+    /// binário não chama, e nenhum pedido do socket chega aqui.
+    #[doc(hidden)]
+    pub fn com_gancho_depois_de_gravar(mut self, gancho: Gancho) -> Self {
+        self.gancho_gravado = Some(gancho);
+        self
     }
 
     /// Troca o motor de aprovação (o do daemon abre o app pelo lançador; os testes
@@ -361,7 +419,7 @@ impl Daemon {
                     papel,
                 })
             }
-            Pedido::Destravar { senha } => self.destravar(&senha),
+            Pedido::Destravar { senha } => self.destravar(papel, &senha),
             Pedido::Travar => {
                 self.travar();
                 Ok(Resposta::Ok)
@@ -410,13 +468,42 @@ impl Daemon {
         r.unwrap_or_else(Resposta::Erro)
     }
 
-    fn destravar(&self, senha: &Segredo) -> Result<Resposta, ErroResposta> {
+    /// Espera da próxima tentativa do papel (D20, D62). A primeira do agente depois da
+    /// partida espera o que faltar da espera das falhas lidas do estado, contado da
+    /// partida (relógio ilegível: a espera inteira).
+    fn espera_de(&self, est: &mut Estado, agente: bool) -> Duration {
+        if !agente {
+            return espera_destrave(est.falhas_app);
+        }
+        let espera = espera_destrave(est.falhas_agente);
+        if !std::mem::take(&mut est.primeira_do_agente) {
+            return espera;
+        }
+        match (self.partida, self.relogio.agora()) {
+            (Some(p), Some(agora)) if agora >= p => espera.saturating_sub(agora - p),
+            _ => espera,
+        }
+    }
+
+    fn destravar(&self, papel: Papel, senha: &Segredo) -> Result<Resposta, ErroResposta> {
         if !self.travado() {
             return Ok(Resposta::Ok);
         }
-        let mut falhas = self.falhas_senha.lock().unwrap_or_else(|e| e.into_inner());
+        // D62: o papel extensão não destrava (o protocolo recusa); qualquer outro que
+        // não seja o app conta como agente.
+        let agente = papel != Papel::App;
+        let vez = if agente {
+            &self.vez_agente
+        } else {
+            &self.vez_app
+        };
+        let _vez = vez.lock().unwrap_or_else(|e| e.into_inner());
         // D20: a espera vem antes de olhar a senha, certa ou errada.
-        self.relogio.dormir(espera_destrave(*falhas));
+        let espera = {
+            let mut est = self.estado();
+            self.espera_de(&mut est, agente)
+        };
+        self.relogio.dormir(espera);
         let mut est = self.estado();
         if est.aberto.is_some() {
             return Ok(Resposta::Ok);
@@ -429,8 +516,8 @@ impl Daemon {
                 return Err(ErroResposta::CofreInvalido);
             }
         };
-        let g = match arquivos::ler_estado(&self.caminhos.estado) {
-            Ok(g) => g,
+        let (g, falhas_no_disco) = match arquivos::ler_estado_completo(&self.caminhos.estado) {
+            Ok(e) => (e.geracoes, e.falhas_agente),
             Err(_) => {
                 aviso!("destravar recusado: arquivo de estado ausente ou inválido (D39)");
                 return Err(ErroResposta::Retrocesso);
@@ -442,7 +529,7 @@ impl Daemon {
                 Ok(x) => x,
                 Err(e) => {
                     match e {
-                        ErroAbrir::Formato(_) => *falhas = falhas.saturating_add(1),
+                        ErroAbrir::Formato(_) => self.contar_falha(&mut est, agente, g),
                         ErroAbrir::Retrocesso => {
                             aviso!("destravar recusado: o cofre no disco é mais antigo (D39)")
                         }
@@ -462,7 +549,10 @@ impl Daemon {
             vista: g.vista.max(lida),
             queimada: g.queimada.max(lida),
         };
-        if novo != g && arquivos::gravar_estado(&self.caminhos.estado, novo).is_err() {
+        // D62: o destravar certo zera as falhas do agente também no disco.
+        if (novo != g || est.falhas_agente != 0 || falhas_no_disco != 0)
+            && arquivos::gravar_estado(&self.caminhos.estado, novo).is_err()
+        {
             aviso!("destravar recusado: não deu para atualizar o arquivo de estado");
             return Err(ErroResposta::FalhaAoGravar);
         }
@@ -471,7 +561,8 @@ impl Daemon {
             Ok(n) => aviso!("{n} temporário(s) de gravação interrompida apagado(s)"),
             Err(_) => aviso!("não deu para limpar os temporários do cofre"),
         }
-        *falhas = 0;
+        est.falhas_agente = 0;
+        est.falhas_app = 0;
         est.erros_pin = 0;
         est.ultimo_uso = self.relogio.agora();
         est.aberto = Some(Aberto {
@@ -482,6 +573,24 @@ impl Daemon {
             geracoes: novo,
         });
         Ok(Resposta::Ok)
+    }
+
+    /// Uma senha errada (D20, D62). A do agente vai para o arquivo de estado, com fsync,
+    /// antes de a resposta de erro sair; se não der para gravar, fica em memória e vai
+    /// ao log.
+    fn contar_falha(&self, est: &mut Estado, agente: bool, g: Geracoes) {
+        if !agente {
+            est.falhas_app = est.falhas_app.saturating_add(1);
+            return;
+        }
+        est.falhas_agente = est.falhas_agente.saturating_add(1);
+        let e = ArquivoEstado {
+            geracoes: g,
+            falhas_agente: est.falhas_agente,
+        };
+        if arquivos::gravar_estado_completo(&self.caminhos.estado, e).is_err() {
+            aviso!("não deu para gravar a senha errada do agente no arquivo de estado (D62)");
+        }
     }
 
     fn lista(&self, papel: Papel) -> Result<Resposta, ErroResposta> {
@@ -502,8 +611,24 @@ impl Daemon {
             return Err(ErroResposta::CofreJaExiste);
         }
         let hash = HashPin::criar(pin.expor()).map_err(|_| ErroResposta::PedidoInvalido)?;
+        // D62: um estado velho (cofre apagado) não desce. O cofre novo nasce na geração
+        // `queimada` + 1, e uma cópia de um cofre anterior fica abaixo da `vista`.
+        let velho = match arquivos::ler_estado(&self.caminhos.estado) {
+            Ok(g) => Some(g),
+            Err(arquivos::ErroEstado::Ausente) => None,
+            Err(arquivos::ErroEstado::Invalido) => {
+                aviso!("criar cofre recusado: arquivo de estado inválido (D62)");
+                return Err(ErroResposta::FalhaAoGravar);
+            }
+        };
+        let q = velho.map_or(0, |g| g.queimada);
+        let primeira = q.checked_add(1).ok_or(ErroResposta::GeracaoEsgotada)?;
+        if velho.is_some() {
+            aviso!("criar cofre: estado anterior na geração {q}; o cofre novo nasce na {primeira}");
+        }
         let mut cofre = CofreAberto::novo(&senha_de(senha), Configuracao::nova(hash))
-            .map_err(|_| ErroResposta::Interno)?;
+            .map_err(|_| ErroResposta::Interno)?
+            .depois_da_geracao(q);
         if let Some(dir) = self.caminhos.cofre.parent() {
             use std::os::unix::fs::DirBuilderExt;
             let _ = std::fs::DirBuilder::new()
@@ -511,19 +636,27 @@ impl Daemon {
                 .mode(0o700)
                 .create(dir);
         }
-        // Primeiro uso: o estado nasce aqui (D39), com a geração 1 queimada antes.
+        // Primeiro uso: o estado nasce (ou continua) aqui (D39), com a primeira geração
+        // queimada antes.
         let antes = Geracoes {
-            vista: 0,
-            queimada: 1,
+            vista: velho.map_or(0, |g| g.vista),
+            queimada: primeira,
         };
         if arquivos::gravar_estado(&self.caminhos.estado, antes).is_err() {
             aviso!("criar cofre: não deu para gravar o arquivo de estado");
             return Err(ErroResposta::FalhaAoGravar);
         }
-        if let Err(e) = gravacao::gravar_entradas(&self.caminhos.cofre, &mut cofre, &[]) {
-            aviso!("criar cofre: falha ao gravar ({})", codigo_gravacao(&e));
-            return Err(ErroResposta::FalhaAoGravar);
+        let r = gravacao::gravar_entradas(&self.caminhos.cofre, &mut cofre, &[]);
+        if let Some(g) = &self.gancho_gravado {
+            g();
         }
+        let id = match r {
+            Ok(id) => id,
+            Err(e) => {
+                aviso!("criar cofre: falha ao gravar ({})", codigo_gravacao(&e));
+                return Err(ErroResposta::FalhaAoGravar);
+            }
+        };
         let mut a = Aberto {
             cofre,
             entradas: Vec::new(),
@@ -531,8 +664,10 @@ impl Daemon {
             identidade: None,
             geracoes: antes,
         };
-        confirmar(&self.caminhos, &mut a);
+        confirmar(&self.caminhos, &mut a, id);
         est.identidade_conhecida = None;
+        est.falhas_agente = 0;
+        est.falhas_app = 0;
         est.erros_pin = 0;
         est.ultimo_uso = self.relogio.agora();
         est.aberto = Some(a);
@@ -559,7 +694,7 @@ impl Daemon {
         let Some(a) = est.aberto.as_mut() else {
             return Err(ErroResposta::Travado);
         };
-        match gravar(&self.caminhos, a) {
+        match gravar(&self.caminhos, a, self.gancho_gravado.as_ref()) {
             Ok(()) => Ok(Resposta::Ok),
             Err(FalhaGravar::Resposta(r)) => {
                 desfazer(a);
@@ -745,11 +880,14 @@ impl Daemon {
             a.geracoes.vista,
             geracao,
         );
+        if let Some(g) = &self.gancho_gravado {
+            g();
+        }
         match r {
-            Ok(novo) => {
+            Ok((novo, id)) => {
                 // O cofre antigo (chave antiga) zera aqui.
                 a.cofre = novo;
-                confirmar(&self.caminhos, a);
+                confirmar(&self.caminhos, a, id);
                 Ok(Resposta::Ok)
             }
             // D52: na troca de senha, `Formato` é a senha atual errada; nada foi selado.

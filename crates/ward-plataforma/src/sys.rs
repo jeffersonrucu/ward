@@ -229,6 +229,34 @@ pub(crate) fn rlimit_core() -> io::Result<(u64, u64)> {
     Ok((lim.rlim_cur, lim.rlim_max))
 }
 
+/// `getrlimit(RLIMIT_MEMLOCK)` como `(atual, máximo)`; `u64::MAX` é `RLIM_INFINITY`.
+#[allow(unsafe_code)]
+pub(crate) fn rlimit_memlock() -> io::Result<(u64, u64)> {
+    let mut lim = libc::rlimit {
+        rlim_cur: 0,
+        rlim_max: 0,
+    };
+    // SAFETY: `lim` é local, do tamanho de `rlimit`, e o kernel só escreve nele.
+    let r = unsafe { libc::getrlimit(libc::RLIMIT_MEMLOCK, &raw mut lim) };
+    if r != 0 {
+        return Err(erro_os());
+    }
+    Ok((lim.rlim_cur, lim.rlim_max))
+}
+
+/// `mlockall(MCL_CURRENT | MCL_FUTURE | MCL_ONFAULT)` (D62): todas as páginas do
+/// processo, as de agora e as que vierem, ficam fora da swap assim que são tocadas. Não
+/// passa por `fork` nem por `execve`.
+#[allow(unsafe_code)]
+pub(crate) fn travar_toda_memoria() -> io::Result<()> {
+    // SAFETY: `mlockall` só recebe as flags; não lê nem escreve memória do processo.
+    let r = unsafe { libc::mlockall(libc::MCL_CURRENT | libc::MCL_FUTURE | libc::MCL_ONFAULT) };
+    if r != 0 {
+        return Err(erro_os());
+    }
+    Ok(())
+}
+
 /// Tamanho da página.
 #[allow(unsafe_code)]
 pub(crate) fn tamanho_pagina() -> usize {

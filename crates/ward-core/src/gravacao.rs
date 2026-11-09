@@ -50,12 +50,18 @@
 //! gravar_entradas(std::path::Path::new("cofre.ward"), &mut cofre, &[]).unwrap();
 //! assert_eq!(cofre.geracao(), 1);
 //! ```
+//!
+//! Identidade (D62): [`gravar_entradas`] e [`trocar_senha`] devolvem a
+//! [`IdentidadeArquivo`] lida por `fstat` do fd do temporário depois do fsync e antes do
+//! rename (o rename não muda dev, inode, `mtime` nem tamanho). Quem chama nunca precisa
+//! de um `stat` do caminho depois do rename, que pegaria um arquivo trocado por outro
+//! processo nesse meio-tempo.
 
 use std::ffi::OsString;
 use std::fmt;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 use crate::corpo::{self, ErroCorpo};
@@ -69,6 +75,29 @@ const MARCA_TEMPORARIO: &str = ".ward-tmp-";
 const MODO: u32 = 0o600;
 /// Tamanho de cada `write` (e de cada ponto de teste no meio da escrita).
 const PEDACO: usize = 1024 * 1024;
+
+/// Identidade de um arquivo (D39, D62): dispositivo, inode, `mtime` com nanossegundos e
+/// tamanho, lidos por `fstat`. Só números; nenhum conteúdo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IdentidadeArquivo {
+    dev: u64,
+    ino: u64,
+    mtime: i64,
+    mtime_nsec: i64,
+    tamanho: u64,
+}
+
+impl From<&fs::Metadata> for IdentidadeArquivo {
+    fn from(m: &fs::Metadata) -> Self {
+        Self {
+            dev: m.dev(),
+            ino: m.ino(),
+            mtime: m.mtime(),
+            mtime_nsec: m.mtime_nsec(),
+            tamanho: m.len(),
+        }
+    }
+}
 
 /// Etapa da gravação em que a falha aconteceu.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -126,6 +155,10 @@ pub enum ErroGravacao {
         etapa: Etapa,
         /// Tipo do erro do sistema.
         tipo: io::ErrorKind,
+        /// `Some` só em [`Etapa::FsyncDiretorio`]: o rename aconteceu, e esta é a
+        /// identidade do arquivo que o Ward pôs no lugar, lida do fd do temporário
+        /// (D62). Nas outras etapas, `None`.
+        identidade: Option<IdentidadeArquivo>,
     },
 }
 
@@ -142,7 +175,7 @@ impl fmt::Display for ErroGravacao {
             Self::Formato(e) => write!(f, "falha ao cifrar o cofre para gravar: {e}"),
             Self::Corpo(e) => write!(f, "recusado gravar: {e}"),
             Self::DestinoInvalido => f.write_str("caminho do cofre inválido"),
-            Self::Io { etapa, tipo } => {
+            Self::Io { etapa, tipo, .. } => {
                 write!(f, "falha ao {} ({tipo})", etapa.nome())
             }
         }
@@ -172,11 +205,13 @@ enum Ponto {
 /// (escrita, fsync, rename, fsync do diretório). A gravação seguinte sela outra, nunca a
 /// mesma. Em `u64::MAX`, recusa com [`ErroGravacao::GeracaoEsgotada`] antes de selar,
 /// sem tocar no disco e sem queimar; um corpo que não serializa também não queima.
+///
+/// Devolve a identidade do arquivo gravado, lida do fd do temporário (D62).
 pub fn gravar_entradas(
     destino: &Path,
     cofre: &mut CofreAberto,
     entradas: &[Entrada],
-) -> Result<(), ErroGravacao> {
+) -> Result<IdentidadeArquivo, ErroGravacao> {
     gravar_entradas_com_pontos(destino, cofre, entradas, &mut |_| Ok(()))
 }
 
@@ -185,7 +220,7 @@ fn gravar_entradas_com_pontos(
     cofre: &mut CofreAberto,
     entradas: &[Entrada],
     ponto: &mut dyn FnMut(Ponto) -> io::Result<()>,
-) -> Result<(), ErroGravacao> {
+) -> Result<IdentidadeArquivo, ErroGravacao> {
     let geracao = cofre
         .proxima_geracao()
         .ok_or(ErroGravacao::GeracaoEsgotada)?;
@@ -212,13 +247,15 @@ fn gravar_entradas_com_pontos(
 /// repete um número que uma gravação que falhou já selou. Corpo inválido, retrocesso
 /// ou geração esgotada: nada é gravado. Um erro depois de selar perde o cofre aberto
 /// devolvido; o chamador trava e reabre com a geração queimada que guardou.
+///
+/// Devolve também a identidade do arquivo gravado (D62, como em [`gravar_entradas`]).
 pub fn trocar_senha(
     destino: &Path,
     atual: &SenhaMestra,
     nova: &SenhaMestra,
     geracao_minima: u64,
     geracao_queimada: u64,
-) -> Result<CofreAberto, ErroGravacao> {
+) -> Result<(CofreAberto, IdentidadeArquivo), ErroGravacao> {
     let arquivo = ler_arquivo(destino)?;
     let (chaves, conteudo) =
         formato::trocar_senha(&arquivo, atual, nova).map_err(ErroGravacao::Formato)?;
@@ -229,8 +266,8 @@ pub fn trocar_senha(
         return Err(ErroGravacao::Retrocesso);
     }
     let mut cofre = CofreAberto::de_partes(chaves, configuracao, geracao.max(geracao_queimada));
-    gravar_entradas(destino, &mut cofre, &entradas)?;
-    Ok(cofre)
+    let identidade = gravar_entradas(destino, &mut cofre, &entradas)?;
+    Ok((cofre, identidade))
 }
 
 /// Lê o arquivo do cofre (já cifrado) sem passar do maior tamanho possível de um cofre.
@@ -255,7 +292,7 @@ pub(crate) fn gravar_cofre(
     destino: &Path,
     cofre: &CofreAberto,
     conteudo: &[u8],
-) -> Result<(), ErroGravacao> {
+) -> Result<IdentidadeArquivo, ErroGravacao> {
     gravar_cofre_com_pontos(destino, cofre, conteudo, &mut |_| Ok(()))
 }
 
@@ -264,7 +301,7 @@ fn gravar_cofre_com_pontos(
     cofre: &CofreAberto,
     conteudo: &[u8],
     ponto: &mut dyn FnMut(Ponto) -> io::Result<()>,
-) -> Result<(), ErroGravacao> {
+) -> Result<IdentidadeArquivo, ErroGravacao> {
     let arquivo = cofre.selar(conteudo).map_err(ErroGravacao::Formato)?;
     gravar_com_pontos(destino, &arquivo, ponto)
 }
@@ -276,7 +313,7 @@ fn gravar_cofre_com_pontos(
 /// Só dentro do crate (D27): confere a estrutura, não a autenticidade. O backup
 /// (Fase 45) também usa esta função por dentro do `ward-core`; hoje, só os testes.
 #[cfg_attr(not(test), allow(dead_code))]
-pub(crate) fn gravar(destino: &Path, arquivo: &[u8]) -> Result<(), ErroGravacao> {
+pub(crate) fn gravar(destino: &Path, arquivo: &[u8]) -> Result<IdentidadeArquivo, ErroGravacao> {
     gravar_com_pontos(destino, arquivo, &mut |_| Ok(()))
 }
 
@@ -318,6 +355,7 @@ fn erro(etapa: Etapa) -> impl FnOnce(io::Error) -> ErroGravacao {
     move |e| ErroGravacao::Io {
         etapa,
         tipo: e.kind(),
+        identidade: None,
     }
 }
 
@@ -352,7 +390,7 @@ fn gravar_com_pontos(
     destino: &Path,
     arquivo: &[u8],
     ponto: &mut dyn FnMut(Ponto) -> io::Result<()>,
-) -> Result<(), ErroGravacao> {
+) -> Result<IdentidadeArquivo, ErroGravacao> {
     // S2: só um cofre cifrado bem formado vai para o disco.
     formato::ler_cabecalho(arquivo).map_err(|_| ErroGravacao::NaoECofre)?;
     let (dir, nome) = separar(destino).ok_or(ErroGravacao::DestinoInvalido)?;
@@ -361,6 +399,7 @@ fn gravar_com_pontos(
     cripto::aleatorio(&mut aleatorio).map_err(|_| ErroGravacao::Io {
         etapa: Etapa::CriarTemporario,
         tipo: io::ErrorKind::Other,
+        identidade: None,
     })?;
     let mut nome_tmp = OsString::from(".");
     nome_tmp.push(&nome);
@@ -388,18 +427,30 @@ fn gravar_com_pontos(
     // `sync_all` é fsync(2): dados e metadados do temporário no disco antes do rename.
     f.sync_all().map_err(erro(Etapa::FsyncTemporario))?;
     ponto(Ponto::DepoisDoFsync).map_err(erro(Etapa::FsyncTemporario))?;
+    // D62: a identidade sai do `fstat` do fd do temporário, já sincronizado. O rename
+    // não muda dev, inode, `mtime` nem tamanho; depois dele, nada mais é lido pelo
+    // caminho (outro processo pode trocar o arquivo logo depois do rename).
+    let identidade = f
+        .metadata()
+        .map(|m| IdentidadeArquivo::from(&m))
+        .map_err(erro(Etapa::FsyncTemporario))?;
     drop(f);
 
     fs::rename(&caminho_tmp, destino).map_err(erro(Etapa::Renomear))?;
     tmp.ativo = false;
-    ponto(Ponto::DepoisDoRename).map_err(erro(Etapa::FsyncDiretorio))?;
+    let depois_do_rename = move |e: io::Error| ErroGravacao::Io {
+        etapa: Etapa::FsyncDiretorio,
+        tipo: e.kind(),
+        identidade: Some(identidade),
+    };
+    ponto(Ponto::DepoisDoRename).map_err(depois_do_rename)?;
 
     // fsync do diretório: a troca de nome também chega ao disco.
     File::open(&dir)
         .and_then(|d| d.sync_all())
-        .map_err(erro(Etapa::FsyncDiretorio))?;
-    ponto(Ponto::DepoisDoFsyncDir).map_err(erro(Etapa::FsyncDiretorio))?;
-    Ok(())
+        .map_err(depois_do_rename)?;
+    ponto(Ponto::DepoisDoFsyncDir).map_err(depois_do_rename)?;
+    Ok(identidade)
 }
 
 #[cfg(test)]

@@ -6,24 +6,44 @@
 //! - `bytes: 0` se o daemon fechou sem mandar nada;
 //! - `resposta: <tipo>` (ou `resposta: erro <codigo>`) se respondeu.
 //!
-//! Uso: `wardd-cliente-teste <socket> <estado|lista>`. Nenhum segredo passa por aqui.
+//! Uso: `wardd-cliente-teste <socket> <estado|lista|destravar>`. Com `destravar`
+//! (`make teste-units`, V3.34), a senha **de teste** vem do stdin (nunca de argv) e vai
+//! num `Segredo`, que zera ao sair; nenhum outro segredo passa por aqui.
 
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::process::ExitCode;
 use std::time::Duration;
 
+use ward_core::entrada::Segredo;
 use ward_core::protocolo::{self, Papel, Pedido, Resposta};
+
+/// Maior senha lida do stdin.
+const MAX_SENHA: u64 = 1024;
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
     let (Some(caminho), Some(op)) = (args.get(1), args.get(2)) else {
-        eprintln!("uso: wardd-cliente-teste <socket> <estado|lista>");
+        eprintln!("uso: wardd-cliente-teste <socket> <estado|lista|destravar>");
         return ExitCode::from(2);
     };
     let pedido = match op.as_str() {
         "estado" => Pedido::Estado,
         "lista" => Pedido::Lista,
+        "destravar" => {
+            // Capacidade fixa: sem realocação, sem cópia solta da senha.
+            let mut senha = Vec::with_capacity(MAX_SENHA as usize);
+            if std::io::stdin()
+                .take(MAX_SENHA)
+                .read_to_end(&mut senha)
+                .is_err()
+            {
+                return ExitCode::from(2);
+            }
+            Pedido::Destravar {
+                senha: Segredo::de_bytes(senha),
+            }
+        }
         _ => return ExitCode::from(2),
     };
     let mut s = match UnixStream::connect(caminho) {

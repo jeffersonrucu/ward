@@ -1,5 +1,5 @@
 #!/bin/bash -p
-# Parte de dentro do `make teste-units` (Fase 24; V3.21; D46, D57, D62). Roda como root
+# Parte de dentro do `make teste-units` (Fase 24; V3.21, V3.34; D46, D57, D62). Roda como root
 # **só dentro** do contêiner descartável com systemd; do host só vêm /opt/teste
 # (somente leitura: `wardd` sem `modo-teste`, o cliente mínimo e as duas units) e este
 # script. Cada conferência imprime "ok:" ou "FALHOU:"; qualquer falha sai ≠ 0.
@@ -48,6 +48,36 @@ confere "LimitCORE=0" "$(awk '/^Max core file size/{print $5, $6}' "/proc/$pid/l
 confere "LimitMEMLOCK=infinity (D62)" "$(awk '/^Max locked memory/{print $4, $5}' "/proc/$pid/limits")" "unlimited unlimited"
 amb="$(tr '\0' '\n' <"/proc/$pid/environ" | cut -d= -f1 | sort | tr '\n' ' ')"
 if [[ "$amb" == *LD_* ]]; then falhou "LD_* no ambiente: $amb"; else ok "sem LD_* no ambiente ($amb)"; fi
+
+# V3.34 (D62): com o cofre de teste (valores falsos) destravado e uma operação, toda a
+# memória do wardd está travada (`MCL_ONFAULT`: `VmLck` conta as regiões inteiras).
+HOME_T="$(getent passwd "$UID_T" | cut -d: -f6)"
+for d in "$HOME_T/.local" "$HOME_T/.local/share" "$HOME_T/.local/share/ward"; do
+    install -d -m 0700 -o "$UID_T" -g "$UID_T" "$d"
+done
+install -m 0600 -o "$UID_T" -g "$UID_T" /opt/teste/cofre.ward "$HOME_T/.local/share/ward/cofre.ward"
+printf 'ward-estado 1\nvista 0\nqueimada 0\n' >"$HOME_T/.local/share/ward/estado"
+chown "$UID_T:$UID_T" "$HOME_T/.local/share/ward/estado"
+chmod 0600 "$HOME_T/.local/share/ward/estado"
+# Senha mestra de teste (D15, falsa) pelo stdin, nunca em argv.
+r="$(printf '%s' 'falso-mestra-ward-01' | setpriv --reuid="$UID_T" --regid="$UID_T" --init-groups /opt/teste/cliente "/run/ward/$UID_T/wardd.sock" destravar)"
+confere "destrava o cofre de teste" "$r" "resposta: ok"
+r="$(setpriv --reuid="$UID_T" --regid="$UID_T" --init-groups /opt/teste/cliente "/run/ward/$UID_T/wardd.sock" lista)"
+confere "lista com o cofre destravado" "$r" "resposta: lista"
+lck="$(awk '/^VmLck:/{print $2}' "$st")"
+rss="$(awk '/^VmRSS:/{print $2}' "$st")"
+if [[ "$lck" =~ ^[0-9]+$ && "$rss" =~ ^[0-9]+$ && "$lck" -gt 0 && "$lck" -ge "$rss" ]]; then
+    ok "VmLck ${lck} kB cobre o VmRSS ${rss} kB (mlockall, D62)"
+else
+    falhou "VmLck '${lck}' kB não cobre o VmRSS '${rss}' kB"
+fi
+# O mesmo binário com RLIMIT_MEMLOCK de 8 MiB: falha fechada, com mensagem.
+codigo=0
+saida="$(prlimit --memlock=8388608:8388608 setpriv --reuid="$UID_T" --regid="$UID_T" --init-groups \
+    env -i PATH=/usr/bin:/bin HOME="$HOME_T" /usr/local/bin/wardd 2>&1)" || codigo=$?
+if [ "$codigo" -ne 0 ]; then ok "8 MiB de memlock: sai $codigo"; else falhou "8 MiB de memlock: saiu 0"; fi
+confere "8 MiB de memlock: mensagem" "$saida" "LimitMEMLOCK=infinity"
+if [[ "$saida" == *pronto* ]]; then falhou "8 MiB de memlock: chegou a subir"; else ok "8 MiB de memlock: não chegou ao socket"; fi
 
 # Matar o wardd: a próxima conexão sobe outro (Restart/ativação).
 kill -9 "$pid"

@@ -102,9 +102,36 @@ pub fn comando_limpo(programa: &Path) -> Command {
 }
 
 pub fn iniciar(mut c: Command) -> Filho {
-    let mut filho = c.spawn().expect("subir filho");
+    let mut filho = subir_com_nova_tentativa(&mut c);
     let saida = BufReader::new(filho.stdout.take().unwrap());
     Filho { filho, saida }
+}
+
+/// `spawn` que repete em `ETXTBSY` ("Text file busy"). Um binário recém-copiado (o
+/// `fs::copy` dos ataques) pode estar com o fd de escrita aberto em um filho que outra
+/// thread de teste criou por `fork` e que ainda não chegou ao `execve` (o `O_CLOEXEC` só
+/// fecha no `execve`); nessa janela, executar a cópia dá `ETXTBSY`. A janela é curta:
+/// até 100 tentativas com 20 ms entre elas. Qualquer outro erro falha na hora.
+pub fn subir_com_nova_tentativa(c: &mut Command) -> Child {
+    let mut tentativas = 0;
+    loop {
+        match c.spawn() {
+            Ok(f) => return f,
+            Err(e) if e.raw_os_error() == Some(libc::ETXTBSY) && tentativas < 100 => {
+                tentativas += 1;
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            Err(e) => panic!("subir filho: {e}"),
+        }
+    }
+}
+
+/// Copia um binário para `destino` e sincroniza a cópia antes de fechar o fd de
+/// escrita (o `ETXTBSY` que sobra vem de fd herdado por `fork`; ver
+/// [`subir_com_nova_tentativa`]).
+pub fn copiar_binario(origem: &Path, destino: &Path) {
+    std::fs::copy(origem, destino).unwrap();
+    std::fs::File::open(destino).unwrap().sync_all().unwrap();
 }
 
 /// `python -I -c CLIENTE_PY <socket> [biblioteca]` pelo `programa` dado.
