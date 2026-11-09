@@ -229,6 +229,12 @@ inclusive o valor revelado (PRD D64).
 ### Fora do modelo de ameaça (dito com honestidade)
 
 - Root comprometido, kernel ou firmware.
+- Leitura, por outro processo do mesmo usuário, do segredo entregue ao filho do
+  `ward run` ou ao `sshpass` do `ward ssh` enquanto ele roda: variáveis em
+  `/proc/<pid>/environ` e anexos 0600 em `/run/user/<uid>/ward/tmp/` (RA1; decisão do
+  usuário, 2026-11-09). O kernel trata processos do mesmo uid como seus e não há
+  mitigação genérica. O Claude continua sem ver o segredo pela conversa; o anexo é
+  apagado no fim e a janela dura só a execução do comando aprovado.
 - Alguém com acesso físico à máquina destravada.
 - Um processo do usuário feito de propósito para driblar a máscara (ex.: inverter a
   senha antes de imprimir). Quem barra é a aprovação, que mostra o comando exato.

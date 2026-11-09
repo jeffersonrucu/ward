@@ -764,7 +764,8 @@ Contrato: V4.1–V4.38
   testes de `crates/wardd/tests/` que dependem da feature; texto do contrato: V4.1 (21
   entradas visíveis) e V4.9 (`bash -c` ou `printf | sftp`); registrar no PRD as
   divergências do salto sem `ProxyJump` (D13/D43), agente SSH só Ed25519 e
-  `--token-fd` no lugar de `--token` (D3). V4.13 (RA1) espera decisão do usuário.
+  `--token-fd` no lugar de `--token` (D3). V4.13 (RA1): risco aceito pelo usuário
+  (2026-11-09), registrado no escopo; registrar também em RA1 do PRD.
   V4.1, V4.9, V4.21, V4.27.
 
 ## Milestone 5 — App desktop

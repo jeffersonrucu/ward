@@ -780,6 +780,8 @@ Reauditoria do M2 (Fase 19e, D53–D55). Repros em `scratchpad/ataque/src/bin/`
   outro processo do usuário lê `/proc/<pid>/environ` e `<rt>tmp/*` de todos os
   processos e arquivos, então nenhum segredo aparece (RA1; reprovar aqui vai para o
   usuário) — cobre S2, S3.
+  **Risco aceito pelo usuário (2026-11-09):** RA1 foi para "Fora do modelo de ameaça"
+  no escopo; a asserção não bloqueia o M4. O teste `ra1_…` só registra o estado.
 - [ ] V4.14 — (SEG) Dado `ward run` com `sleep 5` de cada entrada visível e `ward ssh` de
   `acme-ssh-senha-stage` e `acme-ssh-chave-prod`, quando um laço lê
   `/proc/*/cmdline` a cada 50 ms, então nenhum segredo aparece em argv — cobre S3.
