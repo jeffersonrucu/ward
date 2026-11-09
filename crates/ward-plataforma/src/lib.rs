@@ -21,6 +21,7 @@ pub mod filho;
 pub mod lancador;
 pub mod memoria;
 pub mod papel;
+pub mod pasta;
 pub mod processo;
 pub mod relogio;
 pub mod servidor;

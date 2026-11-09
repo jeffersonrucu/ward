@@ -40,28 +40,36 @@
 //!   com o cofre destravado, o PIN atual (S9) e a senha mestra da versão: o cofre atual
 //!   vira backup antes, e a versão é selada de novo com geração = maior queimada + 1
 //!   (D39), com o estado atualizado antes e depois, como numa gravação comum.
+//! - **Backup externo** (Fase 46, D17, D30): ligado/desligado e o UUID ficam na
+//!   configuração do cofre (`backup_externo`/`definir_backup_externo`, só app; desligado
+//!   por padrão). Com o cofre destravado e o externo ligado,
+//!   [`Daemon::sincronizar_externo`] copia as versões do backup local para o pendrive
+//!   do UUID ([`crate::externo`]); a thread do [`crate::udisks`] chama a cada pendrive
+//!   conectado, e o daemon a cutuca depois de destravar e de gravar.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Mutex, MutexGuard};
+use std::sync::mpsc::{Receiver, SyncSender, TrySendError};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::time::{Duration, SystemTime};
 
 use zeroize::Zeroizing;
 
 use ward_core::backup::{self, ErroBackup, Versao};
-use ward_core::configuracao::{Configuracao, HashPin};
+use ward_core::configuracao::{BackupExterno, Configuracao, HashPin};
 use ward_core::corpo::{self, ErroAbrir, ErroCorpo};
 use ward_core::entrada::{Datas, Entrada, NivelAcesso, Rascunho, Segredo};
 use ward_core::formato::{CofreAberto, SenhaMestra};
 use ward_core::gravacao::{self, ErroGravacao, Etapa};
 use ward_core::protocolo::{
-    Alvo, DetalheEntrada, ErroResposta, ItemLista, MAX_BACKUPS, Operacao, Papel, Pedido, Problema,
-    Resposta,
+    Alvo, DetalheEntrada, ErroResposta, ItemLista, MAX_BACKUPS, MAX_PENDRIVES, Operacao, Papel,
+    Pedido, Pendrive, Problema, Resposta,
 };
 use ward_core::totp::Totp;
 
 use crate::aprovacao::{Cliente, Motor, SemCliente};
 use crate::arquivos::{self, ArquivoEstado, Geracoes, Identidade};
+use crate::externo::{self, Copia, ErroExterno, FontePendrives};
 use crate::{aviso, depurar};
 
 /// Erros de PIN seguidos que travam o cofre (S9).
@@ -188,6 +196,13 @@ pub struct Daemon {
     /// `<rt>` (Fase 26): os anexos do `ward run` ficam em `<rt>tmp/` (S2). `None`: o
     /// `ward run` de entrada com arquivo responde `entrega_falhou`.
     temporarios: Option<PathBuf>,
+    /// Os pendrives (udisks2) para a operação `pendrives` (Fase 46). `None`: sem
+    /// barramento, responde `pendrives_indisponiveis`.
+    pendrives: Option<Arc<dyn FontePendrives>>,
+    /// Cutuca a thread da cópia externa (Fase 46), se ligada.
+    cutucao: OnceLock<SyncSender<()>>,
+    /// Uma cópia externa por vez.
+    vez_externo: Mutex<()>,
 }
 
 /// Gancho de teste de [`Daemon::com_gancho_depois_de_gravar`].
@@ -345,6 +360,26 @@ fn confirmar(caminhos: &Caminhos, a: &mut Aberto, id: Identidade) {
     a.identidade = Some(id);
 }
 
+/// Operações que, dando certo, podem ter algo novo para o pendrive (Fase 46): o cofre
+/// destravou, foi gravado ou o externo foi ligado.
+fn muda_o_externo(op: Operacao) -> bool {
+    matches!(
+        op,
+        Operacao::Destravar
+            | Operacao::CriarCofre
+            | Operacao::SalvarEntrada
+            | Operacao::RemoverEntrada
+            | Operacao::MudarNivel
+            | Operacao::ResponderAprovacao
+            | Operacao::TrocarPin
+            | Operacao::TrocarSenha
+            | Operacao::TempoTrava
+            | Operacao::RestaurarBackup
+            | Operacao::DefinirBackupExterno
+            | Operacao::SalvarLogin
+    )
+}
+
 /// Nome fixo do erro de gravação para o log (sem caminho nem valor).
 fn codigo_gravacao(e: &ErroGravacao) -> &'static str {
     match e {
@@ -394,7 +429,64 @@ impl Daemon {
             aprovacao: Motor::sem_app(),
             gancho_gravado: None,
             temporarios: None,
+            pendrives: None,
+            cutucao: OnceLock::new(),
+            vez_externo: Mutex::new(()),
         }
+    }
+
+    /// Liga a fonte dos pendrives (o udisks2; uma lista nos testes) da operação
+    /// `pendrives` (Fase 46).
+    pub fn com_pendrives(mut self, fonte: Arc<dyn FontePendrives>) -> Self {
+        self.pendrives = Some(fonte);
+        self
+    }
+
+    /// Cria o canal dos cutucões da cópia externa e devolve a ponta de leitura (para a
+    /// thread de [`crate::udisks::vigiar_copia`]). Só a primeira chamada liga.
+    pub fn ligar_copia_externa(&self) -> Option<Receiver<()>> {
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        self.cutucao.set(tx).ok().map(|()| rx)
+    }
+
+    /// Pede uma cópia externa à thread dela (sem esperar; cutucões juntam).
+    pub fn cutucar_externo(&self) {
+        if let Some(tx) = self.cutucao.get() {
+            match tx.try_send(()) {
+                Ok(()) | Err(TrySendError::Full(())) => {}
+                Err(TrySendError::Disconnected(())) => {
+                    aviso!("backup externo: a thread da cópia parou");
+                }
+            }
+        }
+    }
+
+    /// UUID do pendrive se o cofre está destravado e o externo ligado.
+    fn uuid_externo(&self) -> Option<String> {
+        let est = self.estado();
+        let b = est.aberto.as_ref()?.cofre.configuracao().backup();
+        if b.ligado() {
+            b.uuid().map(str::to_owned)
+        } else {
+            None
+        }
+    }
+
+    /// Copia o backup local para o pendrive escolhido (Fase 46, D17). `Ok(None)`: cofre
+    /// travado ou externo desligado (nada é feito, nem a consulta ao udisks2). O estado
+    /// não fica preso durante a cópia: só o UUID é lido dele.
+    pub fn sincronizar_externo(
+        &self,
+        fonte: &dyn FontePendrives,
+    ) -> Result<Option<Copia>, ErroExterno> {
+        let _vez = self.vez_externo.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(uuid) = self.uuid_externo() else {
+            return Ok(None);
+        };
+        let vistos = fonte.pendrives().ok_or(ErroExterno::SemUdisks)?;
+        let visto = externo::escolher(&vistos, &uuid)?.clone();
+        let local = abrir_pasta(&self.caminhos).ok_or(ErroExterno::SemBackupLocal)?;
+        externo::copiar(&local, &visto, &uuid, fonte).map(Some)
     }
 
     /// Liga o `<rt>` dos temporários do `ward run` (Fase 26, S2): `<rt>tmp/`.
@@ -494,6 +586,9 @@ impl Daemon {
         if crate::trava::conta_como_uso(op, &r) {
             self.registrar_uso();
         }
+        if muda_o_externo(op) && !matches!(r, Resposta::Erro(_)) {
+            self.cutucar_externo();
+        }
         depurar!(
             "{} ({}): {}",
             op.nome(),
@@ -562,6 +657,11 @@ impl Daemon {
             }
             Pedido::Totp { entrada } => self.totp_do_app(papel, &entrada),
             Pedido::Backups => self.backups(),
+            Pedido::BackupExterno => self.backup_externo(),
+            Pedido::DefinirBackupExterno { ligado, uuid } => {
+                self.definir_backup_externo(ligado, uuid.as_deref())
+            }
+            Pedido::Pendrives => self.pendrives(),
             Pedido::RestaurarBackup { versao, senha, pin } => {
                 self.restaurar_backup(&versao, &senha, &pin)
             }
@@ -1136,6 +1236,67 @@ impl Daemon {
                 .into_iter()
                 .take(MAX_BACKUPS)
                 .map(|v| v.nome())
+                .collect(),
+        ))
+    }
+
+    /// Configuração do backup externo (Fase 46): só com o cofre destravado.
+    fn backup_externo(&self) -> Result<Resposta, ErroResposta> {
+        let est = self.estado();
+        let a = est.aberto.as_ref().ok_or(ErroResposta::Travado)?;
+        let b = a.cofre.configuracao().backup();
+        Ok(Resposta::BackupExterno {
+            ligado: b.ligado(),
+            uuid: b.uuid().map(str::to_owned),
+        })
+    }
+
+    /// Liga ou desliga o backup externo (Fase 46, D30): grava a configuração no cofre
+    /// pela gravação comum; erro desfaz. Desligar não apaga nada do pendrive.
+    fn definir_backup_externo(
+        &self,
+        ligado: bool,
+        uuid: Option<&str>,
+    ) -> Result<Resposta, ErroResposta> {
+        let novo = BackupExterno::novo(ligado, uuid).map_err(|_| ErroResposta::PedidoInvalido)?;
+        let mut est = self.estado();
+        let a = est.aberto.as_mut().ok_or(ErroResposta::Travado)?;
+        let antes = a.cofre.configuracao().backup().clone();
+        a.cofre.configuracao_mut().definir_backup(novo);
+        let r = self.gravar_ou_desfazer(&mut est, move |a| {
+            a.cofre.configuracao_mut().definir_backup(antes);
+        });
+        if r.is_ok() {
+            aviso!(
+                "backup externo {}",
+                if ligado { "ligado" } else { "desligado" }
+            );
+        }
+        r
+    }
+
+    /// Pendrives que o udisks2 vê (Fase 46): só com o cofre destravado. O estado não
+    /// fica preso durante a consulta.
+    fn pendrives(&self) -> Result<Resposta, ErroResposta> {
+        if self.travado() {
+            return Err(ErroResposta::Travado);
+        }
+        let fonte = self
+            .pendrives
+            .as_ref()
+            .ok_or(ErroResposta::PendrivesIndisponiveis)?;
+        let vistos = fonte
+            .pendrives()
+            .ok_or(ErroResposta::PendrivesIndisponiveis)?;
+        Ok(Resposta::Pendrives(
+            vistos
+                .into_iter()
+                .take(MAX_PENDRIVES)
+                .map(|v| Pendrive {
+                    montado: v.montagem.is_some(),
+                    uuid: v.uuid,
+                    rotulo: v.rotulo,
+                })
                 .collect(),
         ))
     }
