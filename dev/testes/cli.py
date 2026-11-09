@@ -14,7 +14,7 @@ ponta, com o terminal num pty de verdade.
    com o `ward destravar` no meio da espera, sai 0 (a suíte fica ~2 min mais longa).
 3. `ward run` (Fase 26).
 4. `ward ssh` (Fase 27) contra os SSH de teste (2222, 2223): V4.23, V4.24, V4.26 (agente
-   atacado por `ssh-add`, SIGKILL na CLI, travar), V4.28, V4.31, V4.32, V4.34 (pty),
+   atacado por `ssh-add`, SIGKILL na CLI, travar), V4.28, V4.31, V4.32, oráculo de prefixo de D34 revisto (pty e tempo),
    V4.14 e V4.35/V4.37 pelo argv em `/proc/<pid>/cmdline` (o `wardd` recusa subir sob
    `strace`).
 5. Salto e túnel (Fase 28) contra o `ssh-salto`/`ssh-interno` e o Postgres de teste:
@@ -658,30 +658,71 @@ else:
     cod, tela, _ = rodar_pty(["destravar"], digitar=SENHA)
     conferir(cod == 0, "destravar de novo")
 
-    # V4.31 e V4.34 (D34) interativo num pty: prompt, whoami, um prefixo da senha parado
-    # (vira •••• em até 1 s, o resto não aparece) e uma saída que diverge (sai normal).
-    prefixo, resto = SENHA_SSH[:4], SENHA_SSH[4:]
-    diverge = prefixo + "Z"
-    cmd = (f"printf 'P:{octal(prefixo)}'; sleep 2; printf '{octal(resto)}\\n'; "
-           f"printf 'Q:{octal(diverge)}\\n'; echo FIM$((30+4))\r")
+    # V4.31 e o oráculo de prefixo da auditoria do M4 (D34 revisto; V4.34 retirada) num
+    # pty: prompt, whoami e, como o `oraculo_pty.py`, o primeiro nível da busca: um
+    # pedaço `M<n>:` + candidato para cada caractere de um lote que tem o primeiro da
+    # senha, cada um parado 0,4 s. Com a máscara que segurava, só o candidato certo saía
+    # como `••••`. Agora todos saem em claro e na hora: o oráculo não aceita nenhum. Por
+    # fim, a senha inteira num `printf` só sai `••••`.
+    lote = sorted(set("abcdefghijklmnop" + SENHA_SSH[0]))
+    partes = [f"printf '\\nM{i:02d}:{octal(c)}'; sleep 0.4" for i, c in enumerate(lote)]
+    cmd = ("; ".join(partes) + f"; printf '\\nINTEIRA:%s\\n' \"$(printf '{octal(SENHA_SSH)}')\"; "
+           "echo FIM$((30+4))\r")
     cod, tela, pedacos = interativo("acme-ssh-senha-stage", [
         ("$ ", "whoami\r"),
         ("deploy\r\n", cmd),
         ("FIM34\r\n", "exit\r"),
-    ])
+    ], prazo=90)
     conferir(cod == 0 and b"deploy\r\n" in tela, f"V4.31 interativo: whoami → deploy e sai 0 ({cod})")
-    # Depois do eco da linha digitada (o eco não tem a saída: só octais).
     depois = tela.split(b"FIM$((30+4))", 1)[-1]
-    conferir("P:••••".encode() in depois, "V4.34 o prefixo parado vira ••••")
-    t_p = next((t for t, b in pedacos if b"P:" in b and b"printf" not in b), None)
-    t_m = next((t for t, b in pedacos if "••••".encode() in b), None)
-    conferir(t_p is not None and t_m is not None and 0 <= t_m - t_p <= 1.0,
-             f"V4.34 a marca chega em até 1 s ({t_p}, {t_m})")
-    conferir(prefixo.encode() + b"\r" not in depois and ("P:" + prefixo).encode() not in tela
-             and resto.encode() not in tela and SENHA_SSH.encode() not in tela,
-             "V4.34 nenhum pedaço da senha em claro")
-    conferir(("Q:" + diverge).encode() in tela, "V4.34 a saída que diverge sai normal")
+    aceitos = []
+    for i, c in enumerate(lote):
+        m = f"M{i:02d}:".encode()
+        j = depois.find(m)
+        trecho = depois[j + len(m):].split(b"\r")[0].split(b"\n")[0] if j >= 0 else b""
+        if trecho != c.encode():
+            aceitos.append(c)
+    conferir(not aceitos, f"D34 oráculo de prefixo no pty: nenhum candidato se distingue ({len(aceitos)})")
+    # Tempo: cada candidato chega antes do seguinte (nada segurado até a saída nova).
+    # Só a saída depois do eco da linha digitada (o eco também tem os `M<n>:`).
+    fim_eco = tela.find(b"FIM$((30+4))") + len(b"FIM$((30+4))")
+    chegada, pos = {}, 0
+    for t, b in pedacos:
+        ini, pos = pos, pos + len(b)
+        if pos <= fim_eco:
+            continue
+        trecho = tela[max(ini, fim_eco):pos]
+        for i in range(len(lote)):
+            if f"M{i:02d}:".encode() in trecho:
+                chegada.setdefault(i, t)
+    gaps = [chegada[i + 1] - chegada[i] for i in range(len(lote) - 1) if i in chegada and i + 1 in chegada]
+    conferir(len(gaps) == len(lote) - 1 and min(gaps) >= 0.25,
+             f"D34 cada candidato sai na hora, um por pausa ({[round(g, 2) for g in gaps]})")
+    conferir(b"INTEIRA:\xe2\x80\xa2\xe2\x80\xa2\xe2\x80\xa2\xe2\x80\xa2" in depois
+             and SENHA_SSH.encode() not in tela, "S4 a senha inteira num pedaço sai ••••")
     conferir(sum(1 for x in padroes if x in tela) == 0, "S4 nenhum padrão de .dev/variacoes.txt no pty")
+
+    # `tempo.py` da auditoria do M4 (sem pty): `A`, pausa, candidato, pausa, `Z`. O
+    # candidato que é começo da senha chega antes do `Z`, como os outros (antes, ficava
+    # segurado até o `Z`: oráculo por tempo).
+    atrasos = {}
+    for n, cand in enumerate(["qqq", SENHA_SSH[:3], "fax", SENHA_SSH[:7]]):
+        cmd = f"printf A; sleep 1; printf '{octal(cand)}'; sleep 1.5; printf 'Z\\n'"
+        p = subprocess.Popen([WARD, "ssh", "acme-ssh-senha-stage", cmd], env=ambiente(),
+                             stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        chegadas, visto = [], b""
+        while True:
+            d = os.read(p.stdout.fileno(), 4096)
+            if not d:
+                break
+            visto += d
+            chegadas.append((time.time(), visto))
+        p.wait(timeout=60)
+        t_cand = next((t for t, v in chegadas if v.startswith(b"A") and len(v) > 1), None)
+        t_z = next((t for t, v in chegadas if b"Z" in v), None)
+        atrasos[n] = None if t_cand is None or t_z is None else round(t_z - t_cand, 2)
+    conferir(all(x is not None and x >= 1.0 for x in atrasos.values()),
+             f"D34 oráculo por tempo: o candidato nunca espera o Z ({atrasos})")
 
     # V4.28: a chave de host do 2222 mudou (linha falsa no known_hosts do Ward): recusa.
     kh = os.path.join(DEV, "known_hosts")
@@ -695,6 +736,7 @@ else:
     try:
         with open(kh, "w") as f:
             f.write(f"[127.0.0.1]:2222 {pub[0]} {pub[1]}\n")
+        os.chmod(kh, 0o600)  # o daemon recusa known_hosts frouxo (auditoria do M4)
         r = ssh(["acme-ssh-senha-stage", "whoami"])
         conferir(r.returncode != 0 and b"deploy" not in r.stdout
                  and (b"IDENTIFICATION HAS CHANGED" in r.stderr or b"verification failed" in r.stderr),

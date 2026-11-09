@@ -117,21 +117,50 @@ fn mascara(e: &Entrada) -> Mascara {
 }
 
 /// Passa a saída em pedaços (cortes em posições crescentes) e junta o resultado.
+/// Confere, a cada pedaço, que nada ficou segurado (D34 revisto): o fluxo devolveu
+/// tudo o que leu.
 fn em_pedacos(m: &Mascara, saida: &[u8], cortes: &[usize]) -> Vec<u8> {
     let mut f = m.fluxo();
     let mut out = Vec::new();
     let mut ini = 0;
     for &c in cortes.iter().chain(core::iter::once(&saida.len())) {
         f.mascarar(&saida[ini..c], &mut out);
+        nada_segurado(&f);
         ini = c;
     }
     f.terminar(&mut out);
     out
 }
 
-fn byte_a_byte(m: &Mascara, saida: &[u8]) -> Vec<u8> {
-    let cortes: Vec<usize> = (1..saida.len()).collect();
-    em_pedacos(m, saida, &cortes)
+/// O fluxo não guarda nada para depois (D34 revisto: nunca segura nem atrasa).
+fn nada_segurado(f: &Fluxo<'_>) {
+    assert_eq!(f.emitido, f.lido, "o fluxo segurou saída");
+    assert!(f.pendente.is_empty(), "o fluxo segurou saída");
+}
+
+/// A saída num pedaço só (o caso que S4 garante: o segredo inteiro no mesmo bloco).
+/// Também passa a mesma saída byte a byte e confere que nenhum byte ficou segurado e
+/// que cada byte saiu na hora, igual, até o último byte de um padrão (o casamento pela
+/// metade não muda nada: sem oráculo de prefixo).
+fn um_bloco(m: &Mascara, saida: &[u8]) -> Vec<u8> {
+    let mut f = m.fluxo();
+    let mut out = Vec::new();
+    for b in saida {
+        let antes = out.len();
+        let marca_no_fim = out.ends_with(M.as_bytes());
+        f.mascarar(core::slice::from_ref(b), &mut out);
+        nada_segurado(&f);
+        let novo = &out[antes..];
+        // Cada byte sai na hora: ele mesmo, a marca (um padrão terminou aqui) ou nada
+        // (o padrão continua colado na marca que acabou de sair).
+        assert!(
+            novo == core::slice::from_ref(b)
+                || novo == M.as_bytes()
+                || (novo.is_empty() && marca_no_fim),
+            "byte segurado ou trocado"
+        );
+    }
+    m.mascarar_tudo(saida)
 }
 
 fn texto(b: &[u8]) -> String {
@@ -227,28 +256,47 @@ fn v2_17_literal() {
 
 #[test]
 fn v2_18_cada_ponto_de_corte() {
+    // D34 revisto: nada é segurado. O segredo inteiro num pedaço sai `••••`; quebrado
+    // entre pedaços, o que já saiu fica como saiu e o pedaço que completa o segredo sai
+    // marcado a partir do corte (o estado do casamento segue de um pedaço ao outro).
     let m = mascara(&pg_dev());
     let saida = format!("x {SENHA_PG} y");
     let b = saida.as_bytes();
     let esperado = format!("x {M} y");
     let ini = 2;
     let fim = ini + SENHA_PG.len();
-    for k in ini..=fim {
-        assert_eq!(texto(&em_pedacos(&m, b, &[k])), esperado, "corte {k}");
-        for j in k..=fim {
+    // O que sai com os cortes: até o último corte antes do fim do segredo em claro (se
+    // ele cai dentro do segredo), daí a marca.
+    let com_cortes = |cortes: &[usize]| {
+        let c = cortes.iter().copied().filter(|&c| c > ini && c < fim).max();
+        match c {
+            None => esperado.clone(),
+            Some(c) => format!("x {}{M} y", &SENHA_PG[..c - ini]),
+        }
+    };
+    for k in 0..=b.len() {
+        assert_eq!(
+            texto(&em_pedacos(&m, b, &[k])),
+            com_cortes(&[k]),
+            "corte {k}"
+        );
+        for j in k..=b.len() {
             assert_eq!(
                 texto(&em_pedacos(&m, b, &[k, j])),
-                esperado,
+                com_cortes(&[k, j]),
                 "cortes {k},{j}"
             );
         }
     }
-    assert_eq!(texto(&byte_a_byte(&m, b)), esperado);
+    assert_eq!(texto(&um_bloco(&m, b)), esperado);
 }
 
 #[test]
-fn v2_18_prefixo_no_fim_do_pedaco_fica_segurado() {
-    // O que já saiu não pode conter o começo do segredo: o fluxo segura o fim.
+fn d34_ataque_prefixo_no_fim_do_pedaco_sai_na_hora_e_igual() {
+    // Auditoria do M4 (oráculo de prefixo): o começo do segredo no fim de um pedaço
+    // sai na hora, igual a qualquer outro texto; nada fica segurado nem vira marca.
+    // Prefixo certo e prefixo errado do mesmo tamanho dão a mesma resposta (o texto
+    // que entrou), então a saída não diz nada sobre o segredo.
     let m = mascara(&pg_dev());
     let saida = format!("x {SENHA_PG} y");
     let b = saida.as_bytes();
@@ -256,10 +304,19 @@ fn v2_18_prefixo_no_fim_do_pedaco_fica_segurado() {
         let mut f = m.fluxo();
         let mut out = Vec::new();
         f.mascarar(&b[..k], &mut out);
-        assert_eq!(texto(&out), "x ", "corte {k}: devolveu o começo do segredo");
-        // Descartado sem terminar: nada do que estava segurado sai.
-        drop(f);
-        assert_eq!(texto(&out), "x ");
+        nada_segurado(&f);
+        assert_eq!(
+            &out[..],
+            &b[..k],
+            "corte {k}: o prefixo foi segurado ou trocado"
+        );
+        let mut errado = b[..k].to_vec();
+        *errado.last_mut().unwrap() ^= 0x01;
+        let mut g = m.fluxo();
+        let mut out_errado = Vec::new();
+        g.mascarar(&errado, &mut out_errado);
+        nada_segurado(&g);
+        assert_eq!(out_errado, errado);
     }
 }
 
@@ -285,11 +342,7 @@ fn v2_19_percent_encoding() {
             esperado,
             "{forma}"
         );
-        assert_eq!(
-            texto(&byte_a_byte(&m, saida.as_bytes())),
-            esperado,
-            "{forma}"
-        );
+        assert_eq!(texto(&um_bloco(&m, saida.as_bytes())), esperado, "{forma}");
     }
 }
 
@@ -303,10 +356,7 @@ fn v2_19_formulario_com_espaco() {
         t("falso+senha+01%2fx"),
     ] {
         let saida = format!("a={forma}&b=1");
-        assert_eq!(
-            texto(&byte_a_byte(&m, saida.as_bytes())),
-            format!("a={M}&b=1")
-        );
+        assert_eq!(texto(&um_bloco(&m, saida.as_bytes())), format!("a={M}&b=1"));
     }
 }
 
@@ -333,11 +383,7 @@ fn v2_20_base64() {
             esperado,
             "{forma}"
         );
-        assert_eq!(
-            texto(&byte_a_byte(&m, saida.as_bytes())),
-            esperado,
-            "{forma}"
-        );
+        assert_eq!(texto(&um_bloco(&m, saida.as_bytes())), esperado, "{forma}");
     }
 }
 
@@ -355,7 +401,7 @@ fn v2_20_base64_url_safe_difere_do_padrao() {
         &t(padrao.trim_end_matches('=')),
         &t(url.trim_end_matches('=')),
     ] {
-        assert_eq!(texto(&byte_a_byte(&m, forma.as_bytes())), M, "{forma}");
+        assert_eq!(texto(&um_bloco(&m, forma.as_bytes())), M, "{forma}");
     }
 }
 
@@ -391,7 +437,7 @@ fn v2_21_database_url_inteiro() {
     ] {
         for out in [
             m.mascarar_tudo(saida.as_bytes()),
-            byte_a_byte(&m, saida.as_bytes()),
+            um_bloco(&m, saida.as_bytes()),
         ] {
             sem_pedaco(&out, SENHA_PG.as_bytes());
             sem_pedaco(&out, pct(SENHA_PG, false, false).as_bytes());
@@ -450,7 +496,7 @@ fn v2_22_segredo_que_contem_outro() {
         let saida = format!("<{colado}>");
         for out in [
             m.mascarar_tudo(saida.as_bytes()),
-            byte_a_byte(&m, saida.as_bytes()),
+            um_bloco(&m, saida.as_bytes()),
         ] {
             assert_eq!(texto(&out), format!("<{M}>"), "{colado}");
         }
@@ -460,7 +506,7 @@ fn v2_22_segredo_que_contem_outro() {
     let saida = format!("<falso-{menor}-!>");
     for out in [
         m.mascarar_tudo(saida.as_bytes()),
-        byte_a_byte(&m, saida.as_bytes()),
+        um_bloco(&m, saida.as_bytes()),
     ] {
         assert_eq!(texto(&out), format!("<falso-{M}-!>"));
     }
@@ -476,7 +522,7 @@ fn ataque_segredos_sobrepostos() {
         let saida = format!("[{colado}]");
         for out in [
             m.mascarar_tudo(saida.as_bytes()),
-            byte_a_byte(&m, saida.as_bytes()),
+            um_bloco(&m, saida.as_bytes()),
         ] {
             assert_eq!(texto(&out), format!("[{M}]"), "{colado}");
             sem_pedaco(&out, a.as_bytes());
@@ -513,11 +559,7 @@ fn v2_23_anexo_inteiro_linha_e_valor() {
             esperado,
             "{saida}"
         );
-        assert_eq!(
-            texto(&byte_a_byte(&m, saida.as_bytes())),
-            esperado,
-            "{saida}"
-        );
+        assert_eq!(texto(&um_bloco(&m, saida.as_bytes())), esperado, "{saida}");
     }
     let b = b64(b"FALSO_ENV=falso-anexo-01\n", false, true);
     assert_eq!(texto(&m.mascarar_tudo(b.as_bytes())), M);
@@ -542,11 +584,7 @@ fn anexo_com_varias_linhas() {
         (t("A=1"), t("A=1")),
     ];
     for (saida, esperado) in casos {
-        assert_eq!(
-            texto(&byte_a_byte(&m, saida.as_bytes())),
-            esperado,
-            "{saida}"
-        );
+        assert_eq!(texto(&um_bloco(&m, saida.as_bytes())), esperado, "{saida}");
     }
 }
 
@@ -577,7 +615,7 @@ fn v2_24_saida_sem_segredo_sai_igual() {
         let cortes: Vec<usize> = (1..saida.len()).step_by(4093).collect();
         assert_eq!(&em_pedacos(&m, saida, &cortes), saida);
         if saida.len() < 100 {
-            assert_eq!(&byte_a_byte(&m, saida), saida);
+            assert_eq!(&um_bloco(&m, saida), saida);
         }
     }
 }
@@ -611,6 +649,7 @@ fn propriedade_cortes_aleatorios() {
     let mut sorteio = Sorteio(0x0dd_ba11);
     for rodada in 0..300 {
         let mut saida = Vec::new();
+        let mut trechos = Vec::new();
         let mut inseridas = 0;
         for _ in 0..1 + sorteio.ate(8) {
             for _ in 0..sorteio.ate(12) {
@@ -618,13 +657,19 @@ fn propriedade_cortes_aleatorios() {
             }
             // Separador: o ruído não termina a variação de outro jeito.
             saida.push(b' ');
+            let ini = saida.len();
             saida.extend_from_slice(variacoes[sorteio.ate(variacoes.len())].as_bytes());
+            trechos.push((ini, saida.len()));
             saida.push(b' ');
             inseridas += 1;
         }
         let inteira = m.mascarar_tudo(&saida);
+        // D34 revisto: S4 vale para o segredo inteiro dentro de um pedaço; os cortes
+        // caem fora das variações (o ruído entre elas pode ser cortado em qualquer
+        // lugar, inclusive no meio de um `%X` ou de um começo de segredo).
         let mut cortes: Vec<usize> = (0..sorteio.ate(10))
             .map(|_| sorteio.ate(saida.len()))
+            .filter(|&c| !trechos.iter().any(|&(a, b)| a < c && c < b))
             .collect();
         cortes.sort_unstable();
         let pedacos = em_pedacos(&m, &saida, &cortes);
@@ -677,9 +722,13 @@ fn ataque_saida_patologica_continua_linear() {
     let mut out = Vec::new();
     for pedaco in saida.chunks(4096) {
         f.mascarar(pedaco, &mut out);
+        nada_segurado(&f);
     }
     f.terminar(&mut out);
-    assert_eq!(texto(&out), M);
+    // D34 revisto: os 15 pedaços antes do primeiro casamento saíram na hora; daí em
+    // diante cada pedaço completa o segredo de novo e vira uma marca só.
+    assert_eq!(texto(&out), format!("{}{M}", "a".repeat(15 * 4096)));
+    assert_eq!(texto(&m.mascarar_tudo(&saida)), M);
     let codificada = "%61".repeat(128 * 1024);
     assert_eq!(texto(&m.mascarar_tudo(codificada.as_bytes())), M);
     // Saída um pouco menor que o segredo: não é segredo, sai igual.
@@ -697,7 +746,9 @@ fn stdout_e_stderr_em_fluxos_separados() {
     out.mascarar(b"s3nha/01@# o", &mut so);
     out.terminar(&mut so);
     err.terminar(&mut se);
-    assert_eq!(texto(&so), format!("o {M} o"));
+    // O stderr não completa o casamento do stdout; o começo que saiu no stdout fica
+    // como saiu (D34 revisto) e o pedaço que completa o segredo vira marca.
+    assert_eq!(texto(&so), format!("o falso-PG:{M} o"));
     assert_eq!(texto(&se), format!("e {M} e"));
 }
 
@@ -871,7 +922,7 @@ fn v2_38_valor_curto_de_chave_valor_nao_vira_padrao() {
     for (saida, esperado) in casos {
         for out in [
             m.mascarar_tudo(saida.as_bytes()),
-            byte_a_byte(&m, saida.as_bytes()),
+            um_bloco(&m, saida.as_bytes()),
         ] {
             assert_eq!(texto(&out), esperado, "{saida}");
         }
@@ -888,7 +939,7 @@ fn v2_38_valor_curto_de_chave_valor_nao_vira_padrao() {
     let curto = generico(&["ab12"]);
     let m = mascara(&curto);
     assert_eq!(texto(&m.mascarar_tudo(b"x ab12 y")), format!("x {M} y"));
-    assert_eq!(texto(&byte_a_byte(&m, b"x ab12 y")), format!("x {M} y"));
+    assert_eq!(texto(&um_bloco(&m, b"x ab12 y")), format!("x {M} y"));
 }
 
 #[test]
@@ -1009,7 +1060,7 @@ fn v2_41_chave_em_campo_mascarada_por_linha() {
     }
     for (caso, saida) in &casos {
         sem_linha_da_chave(caso, &m.mascarar_tudo(saida.as_bytes()), &chave);
-        sem_linha_da_chave(caso, &byte_a_byte(&m, saida.as_bytes()), &chave);
+        sem_linha_da_chave(caso, &um_bloco(&m, saida.as_bytes()), &chave);
     }
     // A chave inteira continua um `••••` só.
     assert_eq!(texto(&m.mascarar_tudo(chave.as_bytes())), M);
@@ -1041,11 +1092,7 @@ fn v2_41_json_de_varias_linhas_e_yaml() {
             esperado,
             "{caso}"
         );
-        assert_eq!(
-            texto(&byte_a_byte(&m, saida.as_bytes())),
-            esperado,
-            "{caso}"
-        );
+        assert_eq!(texto(&um_bloco(&m, saida.as_bytes())), esperado, "{caso}");
     }
 
     // Anexo YAML (kubeconfig): `token: valor`, com e sem aspas, e item de lista.
@@ -1155,11 +1202,7 @@ fn v2_42_formas_escapadas() {
         let fora = m.mascarar_tudo(saida.as_bytes());
         assert_eq!(texto(&fora), esperado, "{caso}");
         sem_pedaco(&fora, senha.as_bytes());
-        assert_eq!(
-            texto(&byte_a_byte(&m, saida.as_bytes())),
-            esperado,
-            "{caso}"
-        );
+        assert_eq!(texto(&um_bloco(&m, saida.as_bytes())), esperado, "{caso}");
     }
 
     // `json.dumps` com `ensure_ascii` (o padrão do Python): fora do ASCII vira `\uXXXX`.
@@ -2261,71 +2304,208 @@ fn d61_candidatos_so_quando_mudam() {
     );
 }
 
-// ---- D34: saída interativa (`ward ssh` com pty), o fim segurado solto como marca ----
+// ---- D34 revisto (auditoria do M4): sem oráculo de prefixo ----
+//
+// O ataque da auditoria (`oraculo_pty.py`): o comando imprime, em pedaços separados por
+// pausa, `\nQ` + prefixo + candidato, e olha se aquele pedaço saiu diferente do que
+// entrou (marca no lugar, ou segurado até a pausa/até mais saída). Com a máscara que
+// segurava o prefixo, o candidato certo era o único diferente, e a busca em
+// profundidade recuperava a senha. Aqui o mesmo ataque roda contra o fluxo, com a
+// máscara de todas as famílias de padrão (literal, percent, base64 e miolos, Basic,
+// URL, formas de texto, linhas e valor de linha de anexo, JSON e YAML na linha, campo
+// de tab, chave privada por linha), e tem de não achar nada.
 
 const SENHA_SSH: &str = "falso-SSH-senha-01";
 
+/// A máscara com uma entrada de cada família de padrão.
+fn mascara_de_todas_as_familias() -> Mascara {
+    let pg = pg_dev();
+    let g = entrega(&pg);
+    let gama = gama_generico();
+    let mut r = rascunho("anexo-familias", RascunhoDados::Generico);
+    r.extras = vec![
+        extra("S_ASPAS", "falso\"a&b<c>'d$e", true),
+        extra("S_SSH", SENHA_SSH, true),
+    ];
+    r.anexos = vec![anexo(
+        "conf",
+        b"{\"api_token\": \"falso-json-tok-77\"}\nchave yaml: falso-yaml-val-88\ncol1\tfalso-tab-campo-99\nexport DB_PASS=falso-dotenv-55 # nota\n",
+    )];
+    let familias = valida(r);
+    let chave = servidor_com_chave(&chave_de_varias_linhas());
+    ConstrutorMascara::new()
+        .entrada(&pg)
+        .entrega(&g)
+        .entrada(&gama)
+        .entrada(&familias)
+        .entrada(&chave)
+        .construir()
+        .unwrap()
+}
+
+/// O oráculo da auditoria: o pedaço `\nQ` + prefixo + candidato saiu diferente do que
+/// entrou, ou algo ficou segurado (que, no daemon, viraria atraso ou marca depois da
+/// pausa)?
+fn oraculo_responde(f: &mut Fluxo<'_>, prefixo: &[u8], c: u8) -> bool {
+    let mut bloco = b"\nQ".to_vec();
+    bloco.extend_from_slice(prefixo);
+    bloco.push(c);
+    let mut out = Vec::new();
+    f.mascarar(&bloco, &mut out);
+    let segurou = f.emitido != f.lido || !f.pendente.is_empty();
+    segurou || out != bloco
+}
+
 #[test]
-fn d34_prefixo_parado_sai_como_marca_e_o_resto_do_segredo_nao_sai() {
+fn d34_ataque_oraculo_de_prefixo_da_auditoria_nao_recupera_nada() {
+    let m = mascara_de_todas_as_familias();
+    let alfabeto: Vec<u8> = (0x20..0x7f).collect();
+    // Busca em profundidade como a do `oraculo_pty.py`, no mesmo fluxo (a sessão
+    // interativa é um fluxo só), partindo do vazio.
+    let mut f = m.fluxo();
+    let mut pilha: Vec<Vec<u8>> = vec![Vec::new()];
+    let mut consultas = 0usize;
+    let mut aceitos = Vec::new();
+    while let Some(p) = pilha.pop() {
+        // Teto: contra a máscara que segurava, a busca seguia por milhares de consultas.
+        if p.len() >= 40 || consultas > 20_000 {
+            break;
+        }
+        for &c in &alfabeto {
+            consultas += 1;
+            if oraculo_responde(&mut f, &p, c) {
+                let mut q = p.clone();
+                q.push(c);
+                aceitos.push(q.clone());
+                pilha.push(q);
+            }
+        }
+    }
+    assert!(consultas >= alfabeto.len());
+    assert!(
+        aceitos.is_empty(),
+        "o oráculo distinguiu {} prefixo(s)",
+        aceitos.len()
+    );
+}
+
+#[test]
+fn d34_ataque_prefixo_certo_e_errado_dao_a_mesma_resposta() {
+    // O atacante que já sabe k caracteres (de qualquer variação) e testa o próximo: a
+    // resposta é a mesma para o candidato certo e para todos os errados, até o último
+    // caractere do padrão (aí ele já tinha o segredo inteiro, menos um caractere: é o
+    // limite de qualquer máscara, D34). Vale para cada forma do segredo de uma linha.
+    let m = mascara_de_todas_as_familias();
+    let alfabeto: Vec<u8> = (0x20..0x7f).collect();
+    let go = |c: u8| format!("\\u{:04x}", c);
+    // Folga no fim: no base64, o miolo do segredo (padrão próprio) termina até um grupo
+    // de 4 e o `=` antes do fim; nele o atacante já escreveu o segredo menos 1 ou 2
+    // bytes, que é o mesmo limite.
+    let base64 = [
+        b64(SENHA_PG.as_bytes(), false, true),
+        b64(SENHA_PG.as_bytes(), true, false),
+        b64(format!("app:{SENHA_PG}").as_bytes(), false, true),
+    ];
+    let mut formas = vec![
+        t(SENHA_PG),
+        pct(SENHA_PG, false, false),
+        pct(SENHA_PG, true, true),
+        t(SENHA_SSH),
+        // JSON do Go (`&`, `<`, `>` em `\u00XX`) e aspas duplas do shell.
+        format!(r#"falso\"a{}b{}c{}'d$e"#, go(b'&'), go(b'<'), go(b'>')),
+        t(r#"falso\"a&b<c>'d\$e"#),
+        t("falso-json-tok-77"),
+        t("falso-yaml-val-88"),
+        t("falso-tab-campo-99"),
+        t("falso-dotenv-55"),
+        t("falso-licenca-01"),
+    ];
+    formas.dedup();
+    let formas = formas
+        .into_iter()
+        .map(|f| (f, 1))
+        .chain(base64.into_iter().map(|f| (f, 7)));
+    for (forma, folga) in formas {
+        let v = forma.as_bytes();
+        for k in 0..v.len().saturating_sub(folga) {
+            // O caractere certo (que não termina a forma) não muda nada.
+            let mut f = m.fluxo();
+            assert!(
+                !oraculo_responde(&mut f, &v[..k], v[k]),
+                "{forma}: o prefixo de {} bytes mudou a saída ou foi segurado",
+                k + 1
+            );
+            // Um errado só muda a saída quando ele mesmo fecha o segredo inteiro por
+            // outra forma (o `#` cru depois de `%40` no percent): perto do fim, com o
+            // segredo todo já escrito.
+            for &c in alfabeto.iter().filter(|&&c| c != v[k]) {
+                let mut g = m.fluxo();
+                assert!(
+                    !oraculo_responde(&mut g, &v[..k], c) || k + 3 >= v.len(),
+                    "{forma}: o candidato {:?} no caractere {k} mudou a saída",
+                    char::from(c)
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn d34_ataque_tempo_nada_segurado_ate_o_resto_chegar() {
+    // `tempo.py` da auditoria (sem pty): `A`, pausa, candidato, pausa, `Z`. Com a
+    // máscara que segurava, o candidato que era começo da senha só chegava junto com o
+    // `Z`. Aqui cada pedaço sai inteiro na hora em que é lido.
+    let m = mascara_de_todas_as_familias();
+    for cand in [
+        "qqq",
+        "fal",
+        "fax",
+        "falso-S",
+        "falso-X",
+        "falso-PG:s3nha/01@",
+    ] {
+        let mut f = m.fluxo();
+        for pedaco in [&b"A"[..], cand.as_bytes(), b"Z\n"] {
+            let mut out = Vec::new();
+            f.mascarar(pedaco, &mut out);
+            nada_segurado(&f);
+            assert_eq!(out, pedaco, "{cand}: o pedaço não saiu na hora");
+        }
+    }
+}
+
+#[test]
+fn d34_pty_prefixo_parado_sai_em_claro_e_o_resto_vira_marca() {
+    // O prompt que termina num começo de senha sai como veio (nada de marca no lugar
+    // dele, que era o oráculo); se o resto chega depois, o pedaço que completa a senha
+    // sai marcado; se diverge, sai normal.
     let m = mascara(&generico(&[SENHA_SSH]));
     let mut f = m.fluxo();
     let mut out = Vec::new();
     f.mascarar(b"senha? fals", &mut out);
-    assert_eq!(texto(&out), "senha? ");
-    assert!(f.segurando());
-    // 300 ms sem saída nova: sai a marca, nunca o prefixo.
-    assert!(f.soltar(&mut out));
-    assert_eq!(texto(&out), format!("senha? {M}"));
-    assert!(!f.segurando());
-    assert!(!f.soltar(&mut out));
-    // O resto do segredo chega: nenhum pedaço dele sai, nem marca nova.
+    nada_segurado(&f);
+    assert_eq!(texto(&out), "senha? fals");
     f.mascarar(b"o-SSH-senha-01 fim", &mut out);
     f.terminar(&mut out);
-    let s = texto(&out);
-    assert_eq!(s, format!("senha? {M} fim"));
-    for pedaco in ["fals", "o-SSH", "senha-01"] {
-        assert!(!s.contains(pedaco), "{s}");
-    }
-}
+    assert_eq!(texto(&out), format!("senha? fals{M} fim"));
 
-#[test]
-fn d34_continuacao_que_diverge_sai_normal() {
-    let m = mascara(&generico(&[SENHA_SSH]));
     let mut f = m.fluxo();
     let mut out = Vec::new();
     f.mascarar(b"x fals", &mut out);
-    assert!(f.soltar(&mut out));
     f.mascarar(b"e normal", &mut out);
     f.terminar(&mut out);
-    assert_eq!(texto(&out), format!("x {M}e normal"));
+    assert_eq!(texto(&out), "x false normal");
 }
 
 #[test]
-fn d34_soltar_varias_vezes_no_mesmo_segredo_da_uma_marca_so() {
-    let m = mascara(&generico(&[SENHA_SSH]));
-    let mut f = m.fluxo();
-    let mut out = Vec::new();
-    for pedaco in [&b"fals"[..], b"o-SS", b"H-sen", b"ha-01", b" ok"] {
-        f.mascarar(pedaco, &mut out);
-        f.soltar(&mut out);
-    }
-    f.terminar(&mut out);
-    assert_eq!(texto(&out), format!("{M} ok"));
-}
-
-#[test]
-fn d34_ataque_prefixo_em_base64_e_percent_tambem_vira_marca() {
-    let m = mascara(&generico(&[SENHA_SSH]));
-    // Começo da senha em percent-encoding e em base64, parado no meio.
-    let b = b64(SENHA_SSH.as_bytes(), false, true);
-    for (prefixo, resto) in [("falso%2DSS", "H-senha-01"), (&b[..8], &b[8..])] {
+fn d34_escape_percent_pela_metade_no_fim_do_pedaco_sai_na_hora() {
+    // O `%X` pela metade no fim de um pedaço era segurado até o próximo; agora sai.
+    let m = mascara(&pg_dev());
+    for fim in ["%", "%4", "falso-PG%3", "falso%2DP"] {
         let mut f = m.fluxo();
         let mut out = Vec::new();
-        f.mascarar(prefixo.as_bytes(), &mut out);
-        f.soltar(&mut out);
-        assert_eq!(texto(&out), M, "{prefixo}");
-        f.mascarar(resto.as_bytes(), &mut out);
-        f.terminar(&mut out);
-        assert_eq!(texto(&out), M, "{prefixo}");
+        f.mascarar(fim.as_bytes(), &mut out);
+        nada_segurado(&f);
+        assert_eq!(texto(&out), fim);
     }
 }

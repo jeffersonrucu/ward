@@ -9,8 +9,10 @@
 //!   buffers que não zeram;
 //! - **sem shell** (S3): o argv vai direto ao `execve`; a busca no `PATH` (o `PATH` do
 //!   ambiente do filho, como o `execvpe`) é feita antes, sem recurso ao `/bin/sh`;
-//! - **grupo próprio**: o filho é líder de um grupo de processos, e [`Grupo::matar`]
-//!   mata o grupo inteiro (netos inclusive) quando a CLI cai ou o comando termina;
+//! - **sessão e grupo próprios** (`setsid`): o filho é líder de uma sessão e de um grupo
+//!   de processos; nenhum processo de fora entra no grupo (o `setpgid` entre sessões é
+//!   recusado pelo kernel; auditoria do M4), e [`Grupo::matar`] mata o grupo inteiro
+//!   (netos inclusive) quando a CLI cai ou o comando termina;
 //! - **morre junto**: `PR_SET_PDEATHSIG` com `SIGKILL`, ligado à thread do daemon que
 //!   o criou (a da conexão, que vive até o fim do comando);
 //! - **nenhum fd do daemon**: todo fd ≥ 3 fecha no `exec`; o filho recebe só os pipes
@@ -676,6 +678,38 @@ mod testes {
         let out = String::from_utf8(out).unwrap();
         assert!(out.contains("SigBlk:\t0000000000000000"), "{out}");
         assert!(out.contains("SigIgn:\t0000000000000000"), "{out}");
+    }
+
+    /// Auditoria do M4 (`entrar_grupo.py`): o filho sem pty é líder de uma sessão
+    /// própria; outro processo do mesmo usuário não entra no grupo dele por `setpgid`
+    /// (o kernel recusa entre sessões), então não passa pela conferência de grupo da
+    /// ponte do túnel/salto.
+    #[test]
+    fn ataque_outro_processo_nao_entra_no_grupo_do_filho() {
+        let (g, mut p) = sh("echo pronto; sleep 30").lancar().unwrap();
+        let mut linha = [0u8; 16];
+        let _ = p.saida.as_mut().unwrap().read(&mut linha).unwrap();
+        let pid = g.pid();
+        let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).unwrap();
+        let campos: Vec<&str> = stat[stat.rfind(')').unwrap() + 1..]
+            .split_whitespace()
+            .collect();
+        // pgrp e session (4.º e 5.º campos depois do nome) são o pid do filho.
+        assert_eq!(campos[2], pid.to_string(), "{stat}");
+        assert_eq!(campos[3], pid.to_string(), "{stat}");
+        let atacante = std::process::Command::new("/usr/bin/python3")
+            .args([
+                "-I",
+                "-c",
+                "import os,sys\ntry:\n os.setpgid(0, int(sys.argv[1])); print('entrou')\nexcept OSError as e: print('recusado', e.errno)",
+            ])
+            .arg(pid.to_string())
+            .output()
+            .unwrap();
+        let s = String::from_utf8_lossy(&atacante.stdout);
+        assert_eq!(s.trim(), format!("recusado {}", libc::EPERM), "{s}");
+        g.matar();
+        assert_eq!(g.colher().unwrap(), Fim::Sinal(libc::SIGKILL));
     }
 
     /// Matar o grupo mata também o neto que o filho deixou rodando.

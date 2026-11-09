@@ -136,6 +136,14 @@ except OSError:
 """
 
 
+def bang(sock):
+    """Um `!cmd` do sftp: outro processo filho do sftp tenta listar as chaves."""
+    r = subprocess.run(
+        [sys.executable, "-I", "-c", NETO, sock], capture_output=True, text=True, timeout=20
+    )
+    return r.stdout.strip()
+
+
 def esperar_continuar():
     if not os.path.exists(os.path.join(BASE, "esperar")):
         return
@@ -202,7 +210,21 @@ def principal():
             print("sftp> " + l)
         if agente and agente != "none":
             # O sftp de verdade chama o ssh; o falso também.
-            subprocess.run([os.path.join(BASE, "ssh")] + ARGV, timeout=60)
+            ssh = subprocess.Popen([os.path.join(BASE, "ssh")] + ARGV)
+            if modo == "sftp-bang":
+                # Auditoria do M4: `!ssh-add -L` (outro filho do sftp) com o ssh ainda
+                # vivo e depois que ele saiu. Tem de ser recusado nas duas.
+                fim = time.time() + 30
+                while time.time() < fim and not any(
+                    n.startswith("registro-ssh-") for n in os.listdir(BASE)
+                ):
+                    time.sleep(0.02)
+                extra["bang_durante"] = bang(agente)
+                open(os.path.join(BASE, "continuar"), "w").close()
+                ssh.wait(timeout=60)
+                extra["bang_depois"] = bang(agente)
+                registrar(extra)
+            ssh.wait(timeout=60)
         sys.exit(0)
     # ssh
     if "-W" in ARGV:
@@ -227,14 +249,32 @@ def principal():
         registrar(extra)
     else:
         registrar(extra)
+    if modo == "tempo":
+        # `tempo.py` da auditoria do M4: candidato a prefixo parado entre `A` e `Z`.
+        segredo = os.environ.get("SSHPASS", "")
+        for i, cand in enumerate(["qqq", segredo[:3], segredo[:7], segredo[:-1]]):
+            for pedaco, pausa in (("A", 0.2), (f"C{i}=" + cand, 0.6), (f"Z{i}\n", 0.1)):
+                sys.stdout.write(pedaco)
+                sys.stdout.flush()
+                time.sleep(pausa)
+        sys.exit(0)
     if modo == "pty":
-        tam = os.get_terminal_size(1)
+        tam =os.get_terminal_size(1)
         mudou = []
         signal.signal(signal.SIGWINCH, lambda *_: mudou.append(1))
         print(f"tty={os.isatty(0)}/{os.isatty(1)} {tam.lines}x{tam.columns}", flush=True)
         # O teste só manda a janela nova depois deste aviso (sem corrida com a carga).
         open(os.path.join(BASE, "pty-pronto"), "w").close()
         segredo = os.environ.get("SSHPASS", "")
+        time.sleep(0.2)
+        # Oráculo da auditoria do M4: um prefixo errado do mesmo tamanho, parado, e
+        # depois o certo, parado; a máscara não pode tratar um diferente do outro.
+        errado = "".join("X" if a != "X" else "Y" for a in segredo[:10])
+        sys.stdout.write("<" + errado)
+        sys.stdout.flush()
+        time.sleep(1.0)
+        sys.stdout.write(">\n")
+        sys.stdout.flush()
         time.sleep(0.2)
         sys.stdout.write("[" + segredo[:10])
         sys.stdout.flush()

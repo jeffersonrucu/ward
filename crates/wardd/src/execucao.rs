@@ -64,8 +64,6 @@ const PASSO_LEITURA_MS: i32 = 100;
 const PEDACO: usize = 16 * 1024;
 /// Quadros de entrada guardados à espera do filho ler (pressão de volta na CLI).
 const FILA_ENTRADA: usize = 8;
-/// Saída interativa (D34): sem saída nova por este tempo, o fim segurado sai como marca.
-pub const PAUSA_INTERATIVA: Duration = Duration::from_millis(300);
 /// Locale que o filho recebe quando o da CLI não é UTF-8.
 const LOCALE_UTF8: &[u8] = b"C.UTF-8";
 
@@ -285,7 +283,7 @@ impl Recursos for RecursosRun<'_> {
             alvo_host: host,
             alvo_porta: porta,
             programas: ctx.daemon.programas_ssh(),
-            known_hosts: &ctx.daemon.known_hosts(),
+            known_hosts: &ctx.daemon.known_hosts().map_err(ErroRecurso)?,
             rt: ctx.daemon.temporarios(),
             mascara,
             limites: LIMITES_TUNEL,
@@ -635,10 +633,9 @@ impl Cli {
 }
 
 /// Lê a saída do filho, mascara e manda à CLI (D11; um fluxo por saída). Para no fim
-/// do pipe ou quando `parar` liga (um neto fora do grupo segurando o pipe). Com
-/// `interativo` (o pty do `ward ssh`, D34), um fim segurado que fica
-/// [`PAUSA_INTERATIVA`] sem saída nova sai como marca, nunca em claro, e o estado do
-/// casamento continua.
+/// do pipe ou quando `parar` liga (um neto fora do grupo segurando o pipe). Cada pedaço
+/// lido sai na hora, já mascarado (D34 revisto, auditoria do M4): nada é segurado nem
+/// atrasado, com ou sem pty, para a saída não virar oráculo de prefixo.
 fn ler_saida(
     mut f: File,
     fluxo: Fluxo,
@@ -646,27 +643,15 @@ fn ler_saida(
     cli: Cli,
     parar: Arc<AtomicBool>,
     pronto: mpsc::Sender<()>,
-    interativo: bool,
 ) {
     let mut m = mascara.fluxo();
     let mut buf = Zeroizing::new(vec![0u8; PEDACO]);
     let mut out = Zeroizing::new(Vec::with_capacity(2 * PEDACO));
     let mut cli_ok = true;
-    let mut ultimo = Instant::now();
     loop {
         match filho::pronto_para_ler(&f, PASSO_LEITURA_MS) {
             Ok(true) => {}
-            Ok(false) if !parar.load(Ordering::Acquire) => {
-                if interativo && m.segurando() && ultimo.elapsed() >= PAUSA_INTERATIVA {
-                    m.soltar(&mut out);
-                    if cli_ok {
-                        cli_ok = cli.enviar_saida(fluxo, &mut out);
-                    } else {
-                        zeroize::Zeroize::zeroize(&mut *out);
-                    }
-                }
-                continue;
-            }
+            Ok(false) if !parar.load(Ordering::Acquire) => continue,
             _ => break,
         }
         let n = match f.read(&mut buf) {
@@ -677,7 +662,6 @@ fn ler_saida(
             // escravo: é o fim da saída.
             Err(_) => break,
         };
-        ultimo = Instant::now();
         m.mascarar(&buf[..n], &mut out);
         if cli_ok {
             cli_ok = cli.enviar_saida(fluxo, &mut out);
@@ -685,7 +669,7 @@ fn ler_saida(
             zeroize::Zeroize::zeroize(&mut *out);
         }
     }
-    // O que ficou segurado sai mascarado (nunca em claro).
+    // Nada ficou segurado; só fecha o fluxo (zera).
     m.terminar(&mut out);
     if cli_ok {
         cli.enviar_saida(fluxo, &mut out);
@@ -930,7 +914,6 @@ pub(crate) fn sessao_com(
             )
         }
     };
-    let interativo = pty.is_some();
     for (f, fluxo, nome) in saidas {
         let Some(f) = f else { continue };
         let (m, c, p, t) = (
@@ -939,7 +922,7 @@ pub(crate) fn sessao_com(
             parar.clone(),
             pronto_tx.clone(),
         );
-        if thread(nome, move || ler_saida(f, fluxo, m, c, p, t, interativo)) {
+        if thread(nome, move || ler_saida(f, fluxo, m, c, p, t)) {
             leitores += 1;
         }
     }

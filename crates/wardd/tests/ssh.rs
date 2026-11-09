@@ -1,7 +1,7 @@
 //! `ward ssh` no núcleo (Fase 27), com `ssh`, `sshpass` e `sftp` falsos
 //! (`tests/ssh_falso.py`) que registram o argv e nunca conectam: D3 (token do
 //! "Conectar", V5.24, V4.32), D12 (agente só do filho, V4.24), D13 (`-F /dev/null`,
-//! `known_hosts` próprio, ambiente do zero), D34 (pausa no pty), D43 (usuário com `@`,
+//! `known_hosts` próprio, ambiente do zero), D34 revisto (sem oráculo de prefixo), D43 (usuário com `@`,
 //! V4.35) e D56 (`sftp` com `User=`, V4.37).
 //!
 //! A sessão roda como no servidor (`wardd::ssh::sessao` numa ponta de um par de
@@ -742,11 +742,14 @@ fn d12_sftp_com_chave_atende_o_ssh_do_sftp() {
     assert!(rt_sem_agente(&c));
 }
 
-/// D34 (pty): o começo da senha parado vira `••••` 300 ms depois da última saída,
-/// sem esperar o resto; o resto, quando chega, continua escondido (o casamento segue).
-/// O filho tem terminal do tamanho pedido, `TERM` e acompanha a janela nova.
+/// D34 revisto (auditoria do M4, oráculo de prefixo no pty): o filho imprime um
+/// prefixo errado de 10 caracteres e para 1 s, depois o prefixo certo da senha e para
+/// 1 s, depois o resto. Os dois prefixos chegam à CLI do mesmo jeito: em claro e na
+/// hora (nada de `••••` no lugar do certo, nada segurado até a pausa ou até o resto).
+/// O pedaço que completa a senha sai marcado. O filho tem terminal do tamanho pedido,
+/// `TERM` e acompanha a janela nova.
 #[test]
-fn d34_pty_prefixo_parado_vira_marca_e_o_resto_nao_sai() {
+fn d34_ataque_pty_prefixo_certo_e_errado_saem_iguais_e_na_hora() {
     let c = cena("d34");
     c.modo("pty");
     let janela = Janela {
@@ -770,36 +773,161 @@ fn d34_pty_prefixo_parado_vira_marca_e_o_resto_nao_sai() {
     );
     assert_eq!(r.fim, Some(0), "{r:?}");
     let t = r.texto();
-    assert!(t.contains("tty=True/True 30x100"), "{t}");
-    assert!(t.contains("fim 40x120"), "{t}");
-    assert!(t.contains("[••••"), "{t}");
-    let s = SENHA_SSH.as_bytes();
-    for k in 6..=s.len() {
-        for w in s.windows(k) {
-            assert!(!contem(&r.saida, w), "pedaço da senha na saída: {t}");
-        }
-    }
-    // A marca chegou na pausa (≈300 ms depois do prefixo), antes do resto (1 s depois).
-    let (t_tty, _) = r.pedacos.iter().find(|(_, p)| contem(p, b"[")).unwrap();
-    let (t_marca, _) = r
-        .pedacos
-        .iter()
-        .find(|(_, p)| contem(p, "••••".as_bytes()))
-        .unwrap();
-    let dt = t_marca.saturating_sub(*t_tty);
-    assert!(
-        dt >= Duration::from_millis(250) && dt < Duration::from_millis(950),
-        "marca em {dt:?}: {:?}",
+    let linha_do_tempo = || {
         r.pedacos
             .iter()
-            .map(|(t, p)| (t, String::from_utf8_lossy(p)))
+            .map(|(t, p)| (t, String::from_utf8_lossy(p).into_owned()))
             .collect::<Vec<_>>()
-    );
+    };
+    assert!(t.contains("tty=True/True 30x100"), "{t}");
+    assert!(t.contains("fim 40x120"), "{t}");
+    let certo = format!("[{}", &SENHA_SSH[..10]);
+    let errado: String = SENHA_SSH[..10]
+        .chars()
+        .map(|a| if a == 'X' { 'Y' } else { 'X' })
+        .collect();
+    let errado = format!("<{errado}");
+    // Os dois prefixos saem em claro, iguais ao que o filho escreveu.
+    assert!(t.contains(&errado), "{t}");
+    assert!(t.contains(&certo), "o prefixo certo foi trocado: {t}");
+    // A senha inteira nunca sai; o pedaço que a completa vira marca.
+    assert!(!contem(&r.saida, SENHA_SSH.as_bytes()), "{t}");
+    assert!(t.contains(&format!("{certo}••••]")), "{t}");
+    // Tempo: cada prefixo chega à CLI antes da pausa de 1 s acabar (nada segurado até
+    // a saída seguinte); a chegada não depende de ser o prefixo certo.
+    let quando = |marca: &str| {
+        r.pedacos
+            .iter()
+            .find(|(_, p)| contem(p, marca.as_bytes()))
+            .map(|(t, _)| *t)
+            .unwrap_or_else(|| panic!("sem {marca}: {:?}", linha_do_tempo()))
+    };
+    let (t_errado, t_fecha) = (quando(&errado), quando(">"));
+    let (t_certo, t_resto) = (quando(&certo), quando("••••"));
+    for (nome, t0, t1) in [("errado", t_errado, t_fecha), ("certo", t_certo, t_resto)] {
+        assert!(
+            t1.saturating_sub(t0) >= Duration::from_millis(600),
+            "prefixo {nome} segurado até a saída seguinte: {:?}",
+            linha_do_tempo()
+        );
+    }
     let sp = c.registro("sshpass");
     assert!(env(&sp).contains("TERM"));
     // Interativo: sem comando remoto (nada depois do host).
     let a = argv(&sp);
     assert_eq!(a.last().unwrap(), "127.0.0.1");
+}
+
+/// D34 revisto (auditoria do M4, `tempo.py`): sem pty (`ward ssh` com comando), o
+/// filho escreve `A`, para, um candidato a prefixo, para, e `Z`. O candidato chega à
+/// CLI antes do `Z`, seja ou não o começo da senha (antes, o começo da senha ficava
+/// segurado até o `Z`: oráculo por tempo).
+#[test]
+fn d34_ataque_tempo_sem_pty_prefixo_nao_atrasa() {
+    let c = cena("d34tempo");
+    c.modo("tempo");
+    let r = sessao(
+        &c,
+        pedido_ssh("s-livre", &["x"], None, None),
+        fechar_entrada,
+    );
+    assert_eq!(r.fim, Some(0), "{r:?}");
+    let linha_do_tempo: Vec<_> = r
+        .pedacos
+        .iter()
+        .map(|(t, p)| (*t, String::from_utf8_lossy(p).into_owned()))
+        .collect();
+    let quando = |marca: &str| {
+        linha_do_tempo
+            .iter()
+            .find(|(_, p)| p.contains(marca))
+            .map(|(t, _)| *t)
+            .unwrap_or_else(|| panic!("sem {marca}: {linha_do_tempo:?}"))
+    };
+    for i in 0..4 {
+        let (t_cand, t_z) = (quando(&format!("C{i}=")), quando(&format!("Z{i}")));
+        assert!(
+            t_z.saturating_sub(t_cand) >= Duration::from_millis(400),
+            "candidato {i} segurado até o Z: {linha_do_tempo:?}"
+        );
+    }
+    assert!(!contem(&r.saida, SENHA_SSH.as_bytes()));
+}
+
+/// Auditoria do M4 (baixo): `known_hosts` do Ward frouxo (outro usuário poderia ler os
+/// hosts ou, com escrita, plantar uma chave de host) recusa antes de executar qualquer
+/// coisa; se não existe, nasce 0600.
+#[test]
+fn ataque_known_hosts_frouxo_recusa_sem_executar() {
+    let c = cena("khfrouxo");
+    c.modo("normal");
+    let kh = c.dir.0.join("known_hosts");
+    let r = sessao(
+        &c,
+        pedido_ssh("s-livre", &["true"], None, None),
+        fechar_entrada,
+    );
+    assert_eq!(r.fim, Some(7), "{r:?}");
+    assert_eq!(
+        fs::metadata(&kh).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+    let antes = c.registros("ssh").len();
+    for modo in [0o644, 0o660, 0o606] {
+        fs::set_permissions(&kh, fs::Permissions::from_mode(modo)).unwrap();
+        let r = sessao(
+            &c,
+            pedido_ssh("s-livre", &["true"], None, None),
+            fechar_entrada,
+        );
+        assert_eq!(
+            r.falha,
+            Some(ErroResposta::EntregaFalhou),
+            "{modo:o}: {r:?}"
+        );
+    }
+    fs::set_permissions(&kh, fs::Permissions::from_mode(0o600)).unwrap();
+    fs::set_permissions(&c.dir.0, fs::Permissions::from_mode(0o755)).unwrap();
+    let r = sessao(
+        &c,
+        pedido_ssh("s-livre", &["true"], None, None),
+        fechar_entrada,
+    );
+    fs::set_permissions(&c.dir.0, fs::Permissions::from_mode(0o700)).unwrap();
+    assert_eq!(r.falha, Some(ErroResposta::EntregaFalhou), "{r:?}");
+    assert_eq!(
+        c.registros("ssh").len(),
+        antes,
+        "rodou com known_hosts frouxo"
+    );
+}
+
+/// Auditoria do M4 (alto): no `sftp` com chave, o `!cmd` do `sftp` é outro filho dele
+/// e usava o agente (`ssh-add -L`, login com a chave noutro host). O agente fica preso
+/// ao `ssh` que o `sftp` criou: o `!cmd` é recusado com o `ssh` vivo e depois que ele
+/// saiu; o `ssh` continua atendido.
+#[test]
+fn ataque_sftp_bang_nao_usa_o_agente() {
+    let c = cena("sftpbang");
+    c.modo("sftp-bang");
+    fs::write(c.base.join("esperar"), "").unwrap();
+    let r = sessao(
+        &c,
+        pedido_ssh("f-sftp-chave", &[], None, None),
+        fechar_entrada,
+    );
+    assert_eq!(r.fim, Some(0), "{r:?}");
+    let ssh = c.registro("ssh");
+    assert_eq!(ssh.um("agente.lista"), "12", "{ssh:?}");
+    assert_eq!(
+        ssh.um("depois"),
+        "12",
+        "o ssh do sftp perdeu o agente: {ssh:?}"
+    );
+    let sftp = c.registro("sftp");
+    assert_eq!(sftp.um("bang_durante"), "recusada", "{sftp:?}");
+    assert_eq!(sftp.um("bang_depois"), "recusada", "{sftp:?}");
+    assert!(rt_sem_agente(&c));
 }
 
 /// D3 / V5.24 (ataques): o token do "Conectar" é de uso único, vale 30 s, só para a

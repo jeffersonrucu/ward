@@ -3,9 +3,12 @@
 //! - **Só aquela conexão:** socket em `<rt>ssh-<aleatório>/agent.sock`, numa pasta 0700
 //!   criada para a sessão; o `ssh` filho o recebe por `IdentityAgent` (D13).
 //! - **Só o `ssh` filho:** cada conexão passa pelo `SO_PEERCRED` (mesmo uid) e o pid do
-//!   par tem de ser o do filho da sessão (no `sftp`, o `ssh` que o `sftp` filho criou:
-//!   o pai do par é o filho). Qualquer outro processo (um `ssh-add` do mesmo usuário)
-//!   tem a conexão fechada sem nenhum byte.
+//!   par tem de ser o do filho da sessão. No `sftp`, o agente fica **preso ao primeiro
+//!   par aceito** cujo pai é o `sftp` filho (o `ssh` que o `sftp` cria, que conecta antes
+//!   de qualquer comando: com `BatchMode=yes`, sem o agente não há sessão) e, daí em
+//!   diante, só esse pid exato passa. Um `!cmd` do `sftp` (outro filho dele: `ssh-add -L`,
+//!   `ssh` para outro host com a chave) é recusado (auditoria do M4). Qualquer outro
+//!   processo (um `ssh-add` do mesmo usuário) tem a conexão fechada sem nenhum byte.
 //! - **Só lista e assina:** `REQUEST_IDENTITIES` devolve só a chave da entrada e
 //!   `SIGN_REQUEST` assina só com ela. Adicionar, remover, travar, destravar e as
 //!   extensões respondem `FAILURE`.
@@ -293,10 +296,37 @@ fn deve_parar(parar: &AtomicBool, travas: &AtomicU64, inicial: u64) -> bool {
     parar.load(Ordering::Acquire) || travas.load(Ordering::Acquire) != inicial
 }
 
-/// O par é o `ssh` da sessão?
-fn par_permitido(par: &ward_plataforma::ProcessoPar, p: Permitido) -> bool {
-    let pid = par.credenciais().pid;
-    pid == p.pid || (p.filho_do_filho && par.pid_do_pai() == Some(p.pid))
+/// O par é o `ssh` da sessão? No `sftp`, `preso` guarda o pid do primeiro filho do
+/// `sftp` aceito; depois dele, só esse pid passa (nenhum outro filho do `sftp`).
+fn par_permitido(
+    par: &ward_plataforma::ProcessoPar,
+    p: Permitido,
+    preso: &mut Option<u32>,
+) -> bool {
+    par_permitido_pid(par.credenciais().pid, || par.pid_do_pai(), p, preso)
+}
+
+/// [`par_permitido`] com o pid do par e o pai dele já lidos (testável sem processo).
+fn par_permitido_pid(
+    pid: u32,
+    pai: impl FnOnce() -> Option<u32>,
+    p: Permitido,
+    preso: &mut Option<u32>,
+) -> bool {
+    if !p.filho_do_filho {
+        return pid == p.pid;
+    }
+    match *preso {
+        Some(fixo) => pid == fixo,
+        None => {
+            if pid != p.pid && pai() == Some(p.pid) {
+                *preso = Some(pid);
+                true
+            } else {
+                false
+            }
+        }
+    }
 }
 
 fn laco(
@@ -312,6 +342,7 @@ fn laco(
     let abertas = Arc::new(AtomicUsize::new(0));
     let parar_conexoes = Arc::new(AtomicBool::new(false));
     let mut conexoes = Vec::new();
+    let mut preso = None;
     while !deve_parar(parar, travas, inicial) {
         match ward_plataforma::filho::pronto_para_ler_fd(escuta.listener().as_fd(), PASSO_MS) {
             Ok(true) => {}
@@ -336,7 +367,7 @@ fn laco(
             }
         };
         let pid = par.credenciais().pid;
-        if !par_permitido(&par, permitido) {
+        if !par_permitido(&par, permitido, &mut preso) {
             // Fecha sem nenhum byte: só o `ssh` da sessão usa o agente.
             aviso!("agente SSH: conexão do pid {pid} recusada; só o ssh da sessão (D12)");
             continue;
@@ -503,6 +534,38 @@ mod testes {
 
     fn ident(blob: &[u8]) -> Vec<u8> {
         responder_mensagem(&[REQUEST_IDENTITIES], blob, &|_| Some(b"sig".to_vec()))
+    }
+
+    #[test]
+    fn ataque_sftp_bang_outro_filho_do_sftp_e_recusado() {
+        // Auditoria do M4: o `!cmd` do `sftp` é outro filho dele. Preso ao primeiro.
+        let sftp = 500;
+        let p = Permitido {
+            pid: sftp,
+            filho_do_filho: true,
+        };
+        let mut preso = None;
+        // Nem o próprio `sftp` nem um estranho prendem o agente.
+        assert!(!par_permitido_pid(sftp, || Some(1), p, &mut preso));
+        assert!(!par_permitido_pid(77, || Some(1), p, &mut preso));
+        assert_eq!(preso, None);
+        // O `ssh` que o `sftp` criou conecta primeiro e prende.
+        assert!(par_permitido_pid(501, || Some(sftp), p, &mut preso));
+        assert_eq!(preso, Some(501));
+        assert!(par_permitido_pid(501, || Some(sftp), p, &mut preso));
+        // `!ssh-add -L`, `!exec ssh …`: outro filho do `sftp`, recusado.
+        assert!(!par_permitido_pid(502, || Some(sftp), p, &mut preso));
+        assert!(!par_permitido_pid(503, || Some(sftp), p, &mut preso));
+        assert_eq!(preso, Some(501));
+        // Sem `sftp`: só o pid exato do filho.
+        let q = Permitido {
+            pid: 600,
+            filho_do_filho: false,
+        };
+        let mut nada = None;
+        assert!(par_permitido_pid(600, || None, q, &mut nada));
+        assert!(!par_permitido_pid(601, || Some(600), q, &mut nada));
+        assert_eq!(nada, None);
     }
 
     #[test]

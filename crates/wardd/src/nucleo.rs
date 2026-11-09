@@ -589,12 +589,21 @@ impl Daemon {
 
     /// `known_hosts` próprio do Ward (D13), ao lado do cofre: no release,
     /// `~/.local/share/ward/known_hosts`; no daemon de teste, dentro de `WARD_DEV_DIR`.
-    pub(crate) fn known_hosts(&self) -> PathBuf {
-        self.caminhos
+    /// Conferido antes de cada uso (auditoria do M4): a pasta é do daemon e 0700, o
+    /// arquivo é do daemon, regular (sem link) e sem nenhuma permissão de grupo/outros;
+    /// se não existe, nasce vazio e 0600. Frouxo: recusa (o `ssh` não roda).
+    pub(crate) fn known_hosts(&self) -> Result<PathBuf, &'static str> {
+        let caminho = self
+            .caminhos
             .cofre
             .parent()
+            .filter(|p| !p.as_os_str().is_empty())
             .map(|p| p.join("known_hosts"))
-            .unwrap_or_else(|| PathBuf::from("/nonexistent/ward-known_hosts"))
+            .ok_or("known_hosts do Ward sem pasta")?;
+        arquivos::preparar_known_hosts(&caminho).map_err(|_| {
+            "known_hosts do Ward recusado: a pasta tem de ser 0700 e o arquivo 0600, do usuário, sem link"
+        })?;
+        Ok(caminho)
     }
 
     /// A contagem de travas e o valor dela agora, lido com o estado travado (Fase 27,

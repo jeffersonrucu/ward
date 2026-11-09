@@ -21,9 +21,9 @@
 //! - **Chave**: o agente temporário de D12 ([`crate::agente_ssh`]), só para o `ssh`
 //!   filho; a chave privada nunca sai do daemon.
 //! - **Interativo** (sem comando e com janela): o filho roda num pty; a saída passa pela
-//!   máscara com a pausa de D34 (300 ms sem saída nova solta o fim segurado como
-//!   `••••`). Com comando (ou sem terminal), saída e erro em fluxos separados, como no
-//!   `ward run`.
+//!   máscara pedaço a pedaço, sem segurar nem atrasar nada (D34 revisto: segurar o
+//!   prefixo virava oráculo). Com comando (ou sem terminal), saída e erro em fluxos
+//!   separados, como no `ward run`.
 //! - **Salto** (Fase 28, D19): sem `ProxyJump` (que põe um `sh -c` na cadeia e não
 //!   passa as opções de `-o` ao `ssh` do salto). O daemon abre a ponte de
 //!   [`crate::ponte`] (um `ssh -W <host>:<porta>` até a entrada de salto, por `execve`,
@@ -529,6 +529,11 @@ impl Daemon {
                 salto,
             )
         };
+        // `known_hosts` do Ward conferido (0700/0600, sem link) antes de qualquer `ssh`.
+        let known_hosts = self.known_hosts().map_err(|m| {
+            aviso!("ssh: {m}");
+            ErroResposta::EntregaFalhou
+        })?;
         // Salto: a ponte escuta antes do `ssh` principal existir; o par só é aceito
         // depois, quando o pid dele é conhecido.
         let ponte = match salto {
@@ -539,7 +544,7 @@ impl Daemon {
                     alvo_host: &host,
                     alvo_porta: porta,
                     programas: self.programas_ssh(),
-                    known_hosts: &self.known_hosts(),
+                    known_hosts: &known_hosts,
                     rt: self.temporarios(),
                     mascara: mascara_ponte,
                     limites: LIMITES_SALTO,
@@ -598,7 +603,7 @@ impl Daemon {
         };
         let argv = montar_argv_com_alias(
             self.programas_ssh(),
-            &self.known_hosts(),
+            &known_hosts,
             destino,
             autent,
             programa,

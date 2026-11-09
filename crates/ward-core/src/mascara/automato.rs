@@ -2,8 +2,8 @@
 //!
 //! Feito aqui, sem dependência, por dois motivos: (1) o autômato guarda os bytes dos
 //! segredos, e uma biblioteca de busca guardaria cópias que não zeram ao sair (S8); (2)
-//! a máscara precisa do estado entre pedaços da saída (o prefixo de segredo que ficou
-//! no fim do pedaço) e da profundidade do estado, para segurar só o necessário.
+//! a máscara precisa do estado entre pedaços da saída e da profundidade do estado (de
+//! onde começa o trecho a cobrir). Nada é segurado por causa do estado (D34 revisto).
 //! Não é criptografia: é busca de texto, com tempo linear no tamanho da saída mesmo
 //! com padrões repetitivos (`aaaa…` contra `aaaa…`), então a saída de um comando não
 //! consegue travar o daemon.
