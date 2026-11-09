@@ -8,7 +8,9 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use ward_plataforma::{BinarioPermitido, Escuta, Instalacao};
+use wardd::aprovacao::{Motor, RelogioMonotonico};
 use wardd::config::Config;
+use wardd::lancamento::AbridorReal;
 use wardd::nucleo::{Daemon, RelogioReal};
 use wardd::servidor::{self, Papeis};
 use wardd::{aviso, log};
@@ -64,9 +66,19 @@ fn main() -> ExitCode {
     if cfg!(feature = "modo-teste") {
         aviso!("daemon de TESTE (modo-teste): cofre de .dev/, nunca o real");
     }
-    let daemon = Arc::new(Daemon::novo(config.caminhos, Box::new(RelogioReal)));
+    // D57/D63: o app só é aberto pelo lançador, e só o processo que ele abriu é app.
+    let abridor = instalacao.as_ref().and_then(AbridorReal::instalado);
+    let app = abridor.as_ref().map(AbridorReal::app_lancado);
+    let mut daemon = Daemon::novo(config.caminhos, Box::new(RelogioReal));
+    if let Some(a) = abridor {
+        daemon = daemon.com_motor(Motor::novo(
+            Arc::new(RelogioMonotonico::novo()),
+            Box::new(a),
+        ));
+    }
+    let daemon = Arc::new(daemon);
     aviso!("pronto");
-    match servidor::servir(&escuta, daemon, Arc::new(Papeis { instalacao })) {
+    match servidor::servir(&escuta, daemon, Arc::new(Papeis { instalacao, app })) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             aviso!("laço do socket parou ({})", e.kind());

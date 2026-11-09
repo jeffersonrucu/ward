@@ -44,7 +44,11 @@ fn dados_validos(op: Operacao) -> String {
     let pin = b64(b"135790");
     let senha = b64(b"falso-mestra-ward-01");
     match op {
-        Operacao::Estado | Operacao::Travar | Operacao::Lista => "{}".into(),
+        Operacao::Estado
+        | Operacao::Travar
+        | Operacao::Lista
+        | Operacao::AbrirApp
+        | Operacao::ReceberPedidos => "{}".into(),
         Operacao::Destravar => format!(r#"{{"senha":"{senha}"}}"#),
         Operacao::Executar => format!(
             r#"{{"entrada":"acme-pg-dev","argv":["{}"],"cwd":"{}","ambiente":[{{"nome":"{}","valor":"{}"}}]}}"#,
@@ -143,6 +147,7 @@ fn uma_resposta_de_cada() -> Vec<Resposta> {
         Resposta::Estado {
             travado: true,
             cofre_existe: true,
+            papel: Papel::Agente,
         },
         Resposta::Erro(ErroResposta::Retrocesso),
         Resposta::Erro(ErroResposta::Validacao(vec![Problema {
@@ -228,6 +233,8 @@ fn v3_15_tabela_operacao_papel() {
         ("sugerir", false, false, true),
         ("preencher", false, false, true),
         ("salvar_login", false, false, true),
+        ("abrir_app", true, true, true),
+        ("receber_pedidos", false, true, false),
     ];
     let real: Vec<_> = Operacao::TODAS
         .iter()
@@ -441,7 +448,24 @@ fn s1_resposta_com_credencial_nunca_vai_ao_agente() {
             if t == TipoResposta::Lista && papel == Papel::App {
                 continue;
             }
-            let enc = codificar_resposta(papel, &r);
+            // O `estado` leva o papel de quem recebe (D63).
+            let proprio;
+            let r = match &r {
+                Resposta::Estado {
+                    travado,
+                    cofre_existe,
+                    ..
+                } => {
+                    proprio = Resposta::Estado {
+                        travado: *travado,
+                        cofre_existe: *cofre_existe,
+                        papel,
+                    };
+                    &proprio
+                }
+                outra => outra,
+            };
+            let enc = codificar_resposta(papel, r);
             if t.permitida(papel) {
                 let q = enc.unwrap();
                 assert!(decodificar_resposta(papel, &q).is_ok());
@@ -466,6 +490,65 @@ fn s1_resposta_com_credencial_nunca_vai_ao_agente() {
         }
     }
     assert_eq!(vistas, 4); // segredo, token, código TOTP, preenchimento
+}
+
+/// V3.38 (D63): o `estado` traz o papel da conexão e nada mais de novo; o daemon não
+/// consegue mandar a um papel o `estado` de outro, e o cliente lê o papel que veio.
+#[test]
+fn v3_38_estado_traz_o_papel_e_so_ele() {
+    for papel in Papel::TODOS {
+        let r = Resposta::Estado {
+            travado: false,
+            cofre_existe: true,
+            papel,
+        };
+        let q = codificar_resposta(papel, &r).unwrap();
+        assert_eq!(
+            String::from_utf8(q.to_vec()).unwrap(),
+            format!(
+                r#"{{"v":1,"tipo":"estado","dados":{{"travado":false,"cofre_existe":true,"papel":"{}"}}}}"#,
+                papel.nome()
+            )
+        );
+        match decodificar_resposta(papel, &q).unwrap() {
+            Resposta::Estado { papel: lido, .. } => assert_eq!(lido, papel),
+            outra => panic!("{outra:?}"),
+        }
+        for outro in Papel::TODOS {
+            if outro != papel {
+                assert_eq!(
+                    codificar_resposta(outro, &r).unwrap_err(),
+                    ErroCodificar::Invalida
+                );
+                // O app que recebe `agente` lê como veio (e sai, Fase 23a).
+                let q = codificar_resposta(
+                    outro,
+                    &Resposta::Estado {
+                        travado: false,
+                        cofre_existe: true,
+                        papel: outro,
+                    },
+                )
+                .unwrap();
+                assert!(matches!(
+                    decodificar_resposta(papel, &q),
+                    Ok(Resposta::Estado { papel: p, .. }) if p == outro
+                ));
+            }
+        }
+    }
+    // Sem o papel, com outro nome ou com campo a mais, o cliente recusa.
+    for dados in [
+        r#"{"travado":false,"cofre_existe":true}"#,
+        r#"{"travado":false,"cofre_existe":true,"papel":"root"}"#,
+        r#"{"travado":false,"cofre_existe":true,"papel":"app","uid":0}"#,
+    ] {
+        let q = format!(r#"{{"v":1,"tipo":"estado","dados":{dados}}}"#);
+        assert!(
+            decodificar_resposta(Papel::App, q.as_bytes()).is_err(),
+            "{dados}"
+        );
+    }
 }
 
 /// Os valores de um segredo como podem aparecer num quadro: crus, em base64 e com o
@@ -1341,6 +1424,14 @@ fn fuzz_decodificador() {
                                 aceitos += 1;
                                 assert!(r.tipo().permitida(papel));
                                 assert!(!(r.tipo().carrega_credencial() && papel == Papel::Agente));
+                                // O `estado` de outro papel é lido, mas o daemon não o
+                                // escreve a este (D63).
+                                if let Resposta::Estado { papel: p, .. } = &r
+                                    && *p != papel
+                                {
+                                    assert!(codificar_resposta(papel, &r).is_err());
+                                    continue;
+                                }
                                 let w =
                                     codificar_resposta(papel, &r).expect("aceita e não escreve");
                                 let r2 = decodificar_resposta(papel, &w).expect("escrita e não lê");

@@ -42,7 +42,7 @@ pub use processo::{
 pub use servidor::{RecusaServidor, ServidorEsperado, conectar_servidor, conferir_servidor};
 pub use socket::{
     Conexao, DiretorioSocket, ErroAceitar, ErroAtivacao, Escuta, caminho_socket_sistema,
-    conferir_conexao, escutar_de_listen_fds, preparar_diretorio,
+    conferir_conexao, escutar_de_listen_fds, par_fechou, preparar_diretorio,
 };
 
 /// uid efetivo deste processo.

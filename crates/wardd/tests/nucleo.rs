@@ -81,7 +81,8 @@ fn v3_10_travar_e_tudo_responde_travado() {
         Resposta::Estado {
             travado,
             cofre_existe,
-        } => assert!(travado && cofre_existe),
+            papel,
+        } => assert!(travado && cofre_existe && papel == Papel::Agente),
         r => panic!("{r:?}"),
     }
     assert!(ok(&destravar(&d, SENHA)));
@@ -662,6 +663,7 @@ fn primeiro_uso_e_pin_so_como_hash() {
         Resposta::Estado {
             travado,
             cofre_existe,
+            ..
         } => assert!(travado && !cofre_existe),
         r => panic!("{r:?}"),
     }

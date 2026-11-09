@@ -94,6 +94,11 @@ impl Papel {
             Papel::Extensao => "extensao",
         }
     }
+
+    /// Pelo nome (o do `estado`, D63).
+    pub fn de_nome(n: &str) -> Option<Papel> {
+        Papel::TODOS.into_iter().find(|p| p.nome() == n)
+    }
 }
 
 /// Conjunto de papéis (constante, para a tabela).
@@ -193,6 +198,8 @@ tabela! {
     Sugerir = "sugerir", SO_EXTENSAO, "Entradas `login` da origem da aba.";
     Preencher = "preencher", SO_EXTENSAO, "Usuário, senha e TOTP para preencher, se a origem bater (D9).";
     SalvarLogin = "salvar_login", SO_EXTENSAO, "Salvar um login novo visto pela extensão.";
+    AbrirApp = "abrir_app", TODOS, "Abrir a instância verdadeira do app, filha do daemon (D57); sem campo e sem segredo.";
+    ReceberPedidos = "receber_pedidos", SO_APP, "O app passa a receber nesta conexão os pedidos de aprovação e de destrave (Fase 23).";
 }
 
 tabela! {
@@ -242,6 +249,8 @@ const _: () = {
     assert!(!Operacao::Copiar.papeis().agente);
     assert!(!Operacao::EmitirToken.papeis().agente);
     assert!(!Operacao::Preencher.papeis().agente);
+    assert!(!Operacao::ReceberPedidos.papeis().agente);
+    assert!(!Operacao::ReceberPedidos.papeis().extensao);
     // O quadro do app cabe a maior entrada (D29) em base64 e os textos escapados.
     assert!(
         json::tamanho_base64(limites::MAX_ENTRADA)
@@ -376,6 +385,12 @@ pub fn codificar_resposta(papel: Papel, r: &Resposta) -> Result<Zeroizing<Vec<u8
         && itens.iter().any(|i| i.nivel.is_some())
     {
         return Err(ErroCodificar::NaoPermitidaAoPapel);
+    }
+    // D63: o `estado` diz o papel da conexão que recebe, nunca outro.
+    if let Resposta::Estado { papel: p, .. } = r
+        && *p != papel
+    {
+        return Err(ErroCodificar::Invalida);
     }
     r.conferir(papel).map_err(|_| ErroCodificar::Invalida)?;
     json::codificar(quadro::LIMITE_RESPOSTA, |e| {

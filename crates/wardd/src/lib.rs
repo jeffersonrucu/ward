@@ -5,6 +5,9 @@
 //! - [`arquivos`]: leitura do cofre com identidade por `fstat` e o arquivo de estado
 //!   (D39, D53).
 //! - [`config`]: caminhos de release e do daemon de teste (D7).
+//! - [`aprovacao`]: motor de aprovação e espera do destrave (Fase 23); [`uso`]: o
+//!   uso do agente (nível combinado, liberação de 1 hora, botões com PIN);
+//!   [`lancamento`]: o daemon abre o app pelo lançador (D57).
 //!
 //! Sem `unsafe`: o que depende do sistema está no `ward-plataforma`.
 
@@ -12,7 +15,10 @@
 
 pub mod log;
 
+pub mod aprovacao;
 pub mod arquivos;
 pub mod config;
+pub mod lancamento;
 pub mod nucleo;
 pub mod servidor;
+pub mod uso;
