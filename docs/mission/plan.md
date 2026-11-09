@@ -1137,7 +1137,17 @@ Scrutiny do M6 (2026-11-09): **reprovado** (1ª vez).
     `extensao/pagina.js` linhas 9–13 ficou impreciso.
   - Roteiro do V6.11 em `docs/mission/evidence/M6/roteiro-usuario.md`.
   - O V6.12 com o Playwright do Python segue sem rodar.
-  Próximo: scrutiny do M6, rodada 2.
+Scrutiny do M6, rodada 2 (2026-11-09): **aprovado**.
+- `cargo test` (890, duas vezes), clippy, audit, deny, gitleaks, `teste-playwright`,
+  `teste-extensao` e `teste-login` deram 0.
+- O `make check` inteiro saiu 2 por causa do `area_wl.rs` da 39f, ainda em andamento na
+  hora. O `MAX_VALOR` existe no commit da 39f, cujo `make check` deu 0.
+Pendências para o QA ou o usuário: V6.11 (janela real), V6.12 com o Playwright do Python,
+V6.8 e V6.9 visual.
+- [ ] Fase 44b — Baixos do scrutiny do M6, sem bloquear:
+  - o passo 1.2 do roteiro do M6 cita a mensagem "negado"; conferir a mensagem real do
+    `ward login` negado;
+  - corrigir o comentário de `extensao/pagina.js:9-13` sobre clobbering do `document`.
 
 ## Milestone 7 — Backup
 Contrato: V7.1–V7.11
