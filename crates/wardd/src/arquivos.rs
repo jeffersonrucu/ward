@@ -45,6 +45,49 @@ fn conferir_arquivo(m: &fs::Metadata) -> io::Result<()> {
     Ok(())
 }
 
+/// `known_hosts` do Ward (D13; auditoria do M4): a pasta tem de ser do usuário efetivo,
+/// diretório de verdade e sem permissão de grupo/outros (0700); o arquivo, se existe,
+/// regular, sem link, do usuário e sem permissão de grupo/outros (0600). Se não existe,
+/// é criado vazio e 0600 (sem seguir link), para o `ssh` não criá-lo com a `umask`.
+/// Qualquer outra coisa: `PermissionDenied`.
+pub fn preparar_known_hosts(caminho: &Path) -> io::Result<()> {
+    let pasta = caminho
+        .parent()
+        .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidInput))?;
+    let fd = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_DIRECTORY | libc::O_CLOEXEC)
+        .open(pasta)?;
+    let m = fd.metadata()?;
+    if !m.is_dir() || m.uid() != ward_plataforma::uid_efetivo() || m.mode() & 0o077 != 0 {
+        return Err(io::ErrorKind::PermissionDenied.into());
+    }
+    let f = match OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .open(caminho)
+    {
+        Ok(f) => f,
+        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC)
+            .open(caminho)
+            .map_err(|_| io::Error::from(io::ErrorKind::PermissionDenied))?,
+        Err(e) => return Err(e),
+    };
+    let m = f.metadata()?;
+    if !m.file_type().is_file()
+        || m.uid() != ward_plataforma::uid_efetivo()
+        || m.mode() & 0o077 != 0
+        || m.nlink() != 1
+    {
+        return Err(io::ErrorKind::PermissionDenied.into());
+    }
+    Ok(())
+}
+
 /// O cofre existe (qualquer coisa no caminho, inclusive link)?
 pub fn cofre_existe(caminho: &Path) -> bool {
     fs::symlink_metadata(caminho).is_ok()
@@ -331,6 +374,64 @@ mod testes {
 
     fn so_geracoes(texto: &str) -> Option<Geracoes> {
         analisar_estado(texto).map(|e| e.geracoes)
+    }
+
+    /// Auditoria do M4 (baixo): `known_hosts` frouxo ou trocado é recusado.
+    #[test]
+    fn ataque_known_hosts_frouxo_ou_link_e_recusado() {
+        use std::os::unix::fs::{DirBuilderExt, PermissionsExt, symlink};
+        let raiz = std::env::temp_dir().join(format!("ward-kh-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&raiz);
+        fs::DirBuilder::new().mode(0o700).create(&raiz).unwrap();
+        let kh = raiz.join("known_hosts");
+        // Não existe: nasce vazio e 0600.
+        preparar_known_hosts(&kh).unwrap();
+        let m = fs::symlink_metadata(&kh).unwrap();
+        assert!(m.is_file() && m.len() == 0);
+        assert_eq!(m.mode() & 0o777, 0o600);
+        // Existe e certo: aceito de novo, sem mexer.
+        fs::write(&kh, "[127.0.0.1]:2222 ssh-ed25519 AAAAfalso\n").unwrap();
+        preparar_known_hosts(&kh).unwrap();
+        // Arquivo legível ou gravável por outros: recusa.
+        for modo in [0o644, 0o640, 0o602, 0o660] {
+            fs::set_permissions(&kh, fs::Permissions::from_mode(modo)).unwrap();
+            assert!(preparar_known_hosts(&kh).is_err(), "{modo:o}");
+        }
+        fs::set_permissions(&kh, fs::Permissions::from_mode(0o600)).unwrap();
+        // Pasta frouxa: recusa.
+        for modo in [0o755, 0o750, 0o711] {
+            fs::set_permissions(&raiz, fs::Permissions::from_mode(modo)).unwrap();
+            assert!(preparar_known_hosts(&kh).is_err(), "pasta {modo:o}");
+        }
+        fs::set_permissions(&raiz, fs::Permissions::from_mode(0o700)).unwrap();
+        // Link no lugar do arquivo (para um arquivo 0600 de outro lugar): recusa.
+        let alvo = raiz.join("outro");
+        fs::write(&alvo, "").unwrap();
+        fs::set_permissions(&alvo, fs::Permissions::from_mode(0o600)).unwrap();
+        fs::remove_file(&kh).unwrap();
+        symlink(&alvo, &kh).unwrap();
+        assert!(preparar_known_hosts(&kh).is_err());
+        fs::remove_file(&kh).unwrap();
+        // Link quebrado: não cria o arquivo do outro lado.
+        symlink(raiz.join("nao-existe"), &kh).unwrap();
+        assert!(preparar_known_hosts(&kh).is_err());
+        assert!(!raiz.join("nao-existe").exists());
+        fs::remove_file(&kh).unwrap();
+        // Link duro (outro nome para o mesmo arquivo): recusa.
+        fs::hard_link(&alvo, &kh).unwrap();
+        assert!(preparar_known_hosts(&kh).is_err());
+        fs::remove_file(&kh).unwrap();
+        // Diretório no lugar do arquivo: recusa.
+        fs::DirBuilder::new().mode(0o700).create(&kh).unwrap();
+        assert!(preparar_known_hosts(&kh).is_err());
+        fs::remove_dir(&kh).unwrap();
+        // Pasta que é link: recusa.
+        let link_pasta = std::env::temp_dir().join(format!("ward-kh-l-{}", std::process::id()));
+        let _ = fs::remove_file(&link_pasta);
+        symlink(&raiz, &link_pasta).unwrap();
+        assert!(preparar_known_hosts(&link_pasta.join("known_hosts")).is_err());
+        fs::remove_file(&link_pasta).unwrap();
+        fs::remove_dir_all(&raiz).unwrap();
     }
 
     #[test]

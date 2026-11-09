@@ -1,6 +1,6 @@
 //! Máscara de saída (D11, S4): troca por `••••` todo valor secreto que aparecer na
 //! saída do comando (stdout e stderr, cada um no seu [`Fluxo`]), inclusive quando o
-//! valor chega quebrado entre dois pedaços.
+//! valor chega inteiro num pedaço da saída (D34 revisto: nada é segurado; ver "Fluxo").
 //!
 //! O que entra na máscara, para cada segredo da entrada (campos secretos do tipo,
 //! extras secretos, passphrase, semente TOTP) e para cada variável que a
@@ -70,12 +70,24 @@
 //! de percent-encoding escapa, sem multiplicar padrões.
 //!
 //! # Fluxo
-//! O fluxo segura só o fim que ainda pode ser começo de segredo (a profundidade do
-//! estado do autômato em cada visão, mais um `%X` pela metade) e devolve o resto já
-//! mascarado. Tudo o que é segurado fica em memória que zera. Trechos cobertos que se
-//! sobrepõem ou se encostam viram um `••••` só: de dois segredos colados ou sobrepostos
-//! não sobra nada. O que não é segredo sai byte a byte igual (UTF-8 inválido e binário
-//! inclusive). Um fluxo descartado sem [`Fluxo::terminar`] não devolve o que segurava.
+//! O fluxo **nunca segura nem atrasa** saída (D34 revisto, auditoria do M4): cada
+//! pedaço lido do comando sai na hora, inteiro, com `••••` só no lugar do que completou
+//! um padrão (o segredo inteiro, ou uma variação inteira) até o fim daquele pedaço.
+//! Segurar o fim que podia ser começo de segredo virava oráculo: soltar o prefixo como
+//! marca (no pty) ou só depois de mais saída (sem pty) dizia ao comando, por tempo ou
+//! pelo que aparecia, se um prefixo era o começo da senha, e o agente recuperou a senha
+//! caractere a caractere. Agora a saída de um pedaço depende só dos bytes dele e dos
+//! anteriores, nunca de quanto deles casa com um segredo pela metade.
+//!
+//! O estado do autômato continua de um pedaço para o outro: um segredo que chega
+//! quebrado entre dois pedaços tem o pedaço do fim mascarado (o começo, que já saiu,
+//! fica como saiu). A garantia de S4 é o segredo inteiro dentro de um mesmo pedaço
+//! (D34: segredo impresso em pedaços não é cenário de uso). Isso não abre oráculo novo:
+//! a marca só aparece quando a saída já contém o padrão inteiro.
+//!
+//! Trechos cobertos que se sobrepõem ou se encostam viram um `••••` só. O que não é
+//! segredo sai byte a byte igual (UTF-8 inválido e binário inclusive). O pedaço em
+//! trabalho fica em memória que zera.
 //!
 //! Fora do modelo de ameaça (escopo › "Segurança"): um processo feito para driblar a
 //! máscara (inverter a senha, imprimir metade no stdout e metade no stderr). Quem barra
@@ -1141,16 +1153,6 @@ impl Visao {
         }
     }
 
-    /// Desde onde esta visão ainda pode casar no futuro.
-    fn segurar_desde(&self, lido: u64) -> u64 {
-        let mut p = self.posicoes.front().copied().unwrap_or(lido);
-        match self.escape {
-            Escape::Nada => {}
-            Escape::Percent { ini } | Escape::Hex { ini, .. } => p = p.min(ini),
-        }
-        p
-    }
-
     /// Anda um byte decodificado `[ini, fim)` e devolve o trecho original coberto.
     fn andar(&mut self, a: &Automato, b: u8, ini: u64, fim: u64) -> Option<(u64, u64)> {
         self.estado = a.passo(self.estado, b);
@@ -1257,7 +1259,8 @@ fn cobrir(cobertos: &mut Vec<(u64, u64)>, ini: u64, fim: u64) {
 /// A máscara de um fluxo de saída (stdout ou stderr). Sem `Clone`; zera ao sair.
 pub struct Fluxo<'m> {
     mascara: &'m Mascara,
-    /// Bytes originais de `emitido` a `lido`, ainda não devolvidos.
+    /// Bytes originais de `emitido` a `lido`: só o pedaço em trabalho (esvazia ao fim
+    /// de cada [`Fluxo::mascarar`]).
     pendente: Zeroizing<Vec<u8>>,
     emitido: u64,
     lido: u64,
@@ -1291,39 +1294,13 @@ impl Fluxo<'_> {
             }
             self.lido += 1;
         }
-        let lido = self.lido;
-        let seguro = self
-            .visoes
-            .iter()
-            .map(|v| v.segurar_desde(lido))
-            .min()
-            .unwrap_or(lido)
-            // Depois de um [`Fluxo::soltar`], o casamento guardado pode começar antes do
-            // que já saiu: o que já saiu fica como está.
-            .max(self.emitido);
-        self.emitir_ate(seguro, saida);
-    }
-
-    /// Há bytes segurados (um fim que pode ser começo de segredo)?
-    pub fn segurando(&self) -> bool {
-        self.lido > self.emitido
-    }
-
-    /// Saída interativa (D34, `ward ssh` com pty): solta o que está segurado **sempre
-    /// como [`MARCA`]**, nunca em claro, e guarda o estado do casamento. Se a
-    /// continuação completa o segredo, nada mais sai (o trecho emenda na marca já
-    /// mandada); se diverge, o resto sai normal. Devolve `true` se soltou alguma coisa.
-    pub fn soltar(&mut self, saida: &mut Vec<u8>) -> bool {
-        if !self.segurando() {
-            return false;
-        }
-        cobrir(&mut self.cobertos, self.emitido, self.lido);
+        // D34 revisto: nada fica segurado; o pedaço inteiro sai agora.
         let lido = self.lido;
         self.emitir_ate(lido, saida);
-        true
     }
 
-    /// Fim da saída: devolve o que ficou segurado, mascarado.
+    /// Fim da saída. Nada ficou segurado (D34 revisto): um `%X` pela metade no fim já
+    /// saiu como veio; aqui só fecha as visões e zera o fluxo.
     pub fn terminar(mut self, saida: &mut Vec<u8>) {
         let a = &self.mascara.automato;
         let cobertos = &mut self.cobertos;
@@ -1349,8 +1326,8 @@ impl Fluxo<'_> {
             if ini >= seguro {
                 break;
             }
-            // Um trecho coberto nunca começa antes do que já saiu (o fluxo segura
-            // tudo o que ainda pode casar); por garantia, o que já saiu fica como está.
+            // Um trecho que começou num pedaço anterior (segredo quebrado entre pedaços):
+            // o que já saiu fica como saiu; daqui para a frente, marca (D34 revisto).
             let ini = ini.max(cursor);
             if ini > cursor {
                 puxar(cursor, ini, saida, &self.pendente);

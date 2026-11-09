@@ -954,8 +954,11 @@ fn errno() -> i32 {
     unsafe { *libc::__errno_location() }
 }
 
-/// `fork` + `execve` com o `PreparoExec` (Fase 26). No filho, nesta ordem: grupo de
-/// processos próprio (`setpgid`), morte junto com a thread do daemon que o criou
+/// `fork` + `execve` com o `PreparoExec` (Fase 26). No filho, nesta ordem: sessão
+/// própria (`setsid`, que também cria o grupo de processos com o pid do filho; auditoria
+/// do M4: num grupo da sessão do daemon, outro processo do usuário entrava por
+/// `setpgid` e passava pela ponte do túnel/salto alheia; entre sessões o kernel recusa
+/// o `setpgid`), morte junto com a thread do daemon que o criou
 /// (`PR_SET_PDEATHSIG`), sinais no padrão e máscara vazia, os pipes em 0–2, o `chdir`,
 /// todo fd ≥ 3 marcado `CLOEXEC` (`close_range`) e o `execve` de cada caminho. Uma
 /// falha antes do `execve` volta pelo pipe de aviso (5 bytes: etapa e `errno`); o
@@ -1051,14 +1054,10 @@ pub(crate) fn fork_exec(p: &PreparoExec<'_>, stdio: Stdio) -> Result<FilhoCru, E
         unsafe { filho_depois_do_fork(p, pai, &fds[..n_fds], sessao, aviso, &vazio, &padrao) }
     }
     drop((filho_fds, aviso_w));
-    if !sessao {
-        // Também no pai, para o grupo existir já na volta (sem corrida com o `kill`).
-        // Com pty, o filho é líder de sessão (`setsid`): o grupo existe quando o pipe de
-        // aviso fecha no `exec`, antes da volta.
-        // SAFETY: `setpgid` só mexe no grupo do filho; o erro (já trocou de grupo, ou
-        // já fez o `exec`) não importa.
-        unsafe { libc::setpgid(pid, pid) };
-    }
+    // O filho é líder de sessão (`setsid`) antes do `exec`: o grupo existe quando o pipe
+    // de aviso fecha no `exec`, antes da volta (sem corrida com o `kill`). Nada de
+    // `setpgid` aqui: com ele antes do `setsid` do filho, o filho já seria líder de
+    // grupo e o `setsid` falharia.
     let mut buf = [0u8; 5];
     let mut lido = 0;
     let mut f = std::fs::File::from(aviso_r);
@@ -1109,20 +1108,22 @@ unsafe fn filho_depois_do_fork(
         unsafe { libc::write(aviso, msg.as_ptr().cast(), msg.len()) };
     };
     // SAFETY: (todo o bloco) no filho de um `fork`, só chamadas async-signal-safe
-    // (`setpgid`, `setsid`, `ioctl(TIOCSCTTY)`, `prctl`, `getppid`, `sigaction`,
+    // (`setsid`, `ioctl(TIOCSCTTY)`, `prctl`, `getppid`, `sigaction`,
     // `sigprocmask`, `dup2`, `chdir`, `syscall(close_range)`, `execve`, `write`,
     // `_exit`), sobre fds e ponteiros válidos (os do `PreparoExec`, vivos na cópia da
     // memória do pai).
     unsafe {
-        if sessao {
-            // Sessão nova (o grupo tem o pid do filho) com o escravo como terminal de
-            // controle: o `ssh` lê a janela e os sinais do terminal dele.
-            if libc::setsid() < 0 || libc::ioctl(fds[0].0, libc::TIOCSCTTY, 0 as libc::c_int) != 0 {
-                avisar(ETAPA_PREPARO, errno());
-                libc::_exit(127);
-            }
-        } else {
-            libc::setpgid(0, 0);
+        // Sessão nova (o grupo tem o pid do filho), com ou sem pty: nenhum processo de
+        // fora entra no grupo dele.
+        if libc::setsid() < 0 {
+            avisar(ETAPA_PREPARO, errno());
+            libc::_exit(127);
+        }
+        // Com pty, o escravo vira o terminal de controle: o `ssh` lê a janela e os
+        // sinais do terminal dele.
+        if sessao && libc::ioctl(fds[0].0, libc::TIOCSCTTY, 0 as libc::c_int) != 0 {
+            avisar(ETAPA_PREPARO, errno());
+            libc::_exit(127);
         }
         if libc::prctl(
             libc::PR_SET_PDEATHSIG,

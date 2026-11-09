@@ -283,7 +283,9 @@ fn v4_entrega_mascara_codigo_e_recusas() {
     );
     assert_eq!(texto(&r.saida), "t-livre|clientex|dev|admin");
 
-    // V4.17: puro, base64, percent, em dois pedaços com pausa e no stderr.
+    // V4.17: puro, base64, percent, em dois pedaços com pausa e no stderr. Em dois
+    // pedaços (D34 revisto), o começo sai como saiu e o pedaço que completa a senha
+    // vira marca: a senha inteira nunca sai.
     for script in [
         "printf %s \"$WARD_PASS\"",
         "printf %s \"$WARD_PASS\" | base64",

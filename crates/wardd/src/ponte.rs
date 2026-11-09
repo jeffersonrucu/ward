@@ -10,9 +10,13 @@
 //! - o daemon escuta em `127.0.0.1:<porta livre>` (a porta é do kernel, presa pelo
 //!   socket do daemon: ninguém a toma antes);
 //! - cada conexão aceita só passa se o par for do mesmo uid **e** de um processo do grupo
-//!   de processos do filho da sessão (o `ssh` principal, ou o comando do `ward run`),
-//!   conferido em `/proc/net/tcp` e nos fds de `/proc/<pid>/fd`; qualquer outra é fechada
-//!   sem nenhum byte e sem lançar nada;
+//!   de processos **e da sessão** do filho da sessão (o `ssh` principal, ou o comando do
+//!   `ward run`; o filho é líder de sessão por `setsid`), conferido em `/proc/net/tcp` e
+//!   nos fds de `/proc/<pid>/fd`; qualquer outra é fechada sem nenhum byte e sem lançar
+//!   nada. Só o grupo não bastava: outro processo do usuário entrava nele por `setpgid`
+//!   (auditoria do M4); a sessão não se troca por uma que já existe. O pid exato não
+//!   serve: quem conecta é um descendente (`sshpass` → `ssh`, `sftp` → `ssh`, um shell →
+//!   `psql`);
 //! - para a conexão aceita, o daemon lança por `execve` (sem shell) um `ssh -W
 //!   <alvo>:<porta>` até a entrada de salto/túnel, com o mesmo endurecimento do `ward
 //!   ssh` (`-F /dev/null`, `known_hosts` do Ward, ambiente do zero, usuário só por `-l`,
@@ -468,9 +472,10 @@ fn ler_erro(mut f: fs::File, mascara: &Mascara, saida: &SaidaDeErro) {
 
 // --- Quem está do outro lado da conexão ---------------------------------------------
 
-/// A conexão vem de um processo do uid `uid` no grupo de processos `grupo`? O socket do
-/// cliente é achado em `/proc/net/tcp` (endereço local = o par, remoto = a ponte) e o
-/// inode dele, nos fds dos processos do grupo.
+/// A conexão vem de um processo do uid `uid` no grupo de processos `grupo` e na sessão
+/// `grupo` (o filho é líder dos dois)? O socket do cliente é achado em `/proc/net/tcp`
+/// (endereço local = o par, remoto = a ponte) e o inode dele, nos fds dos processos do
+/// grupo.
 pub(crate) fn par_do_grupo(par: SocketAddrV4, ponte: SocketAddrV4, uid: u32, grupo: u32) -> bool {
     let Ok(tabela) = fs::read_to_string("/proc/net/tcp") else {
         return false;
@@ -523,7 +528,8 @@ fn endereco(s: &str) -> Option<SocketAddrV4> {
     Some(SocketAddrV4::new(Ipv4Addr::new(a, b, c, d), porta))
 }
 
-/// Algum processo do grupo `grupo` (em `proc`) tem o socket `inode` aberto?
+/// Algum processo do grupo `grupo` e da sessão `grupo` (em `proc`) tem o socket `inode`
+/// aberto?
 pub(crate) fn processo_do_grupo_com_socket(proc: &Path, grupo: u32, inode: u64) -> bool {
     let Ok(dir) = fs::read_dir(proc) else {
         return false;
@@ -537,7 +543,7 @@ pub(crate) fn processo_do_grupo_com_socket(proc: &Path, grupo: u32, inode: u64) 
         let Ok(stat) = fs::read_to_string(proc.join(pid.to_string()).join("stat")) else {
             continue;
         };
-        if grupo_do_stat(&stat) != Some(grupo) {
+        if grupo_do_stat(&stat) != Some(grupo) || sessao_do_stat(&stat) != Some(grupo) {
             continue;
         }
         let Ok(fds) = fs::read_dir(proc.join(pid.to_string()).join("fd")) else {
@@ -555,8 +561,18 @@ pub(crate) fn processo_do_grupo_com_socket(proc: &Path, grupo: u32, inode: u64) 
 /// O `pgrp` de `/proc/<pid>/stat` (o 5.º campo; o nome do programa, entre parênteses,
 /// pode ter espaço e `)`, então a conta começa depois do último `)`).
 pub(crate) fn grupo_do_stat(stat: &str) -> Option<u32> {
+    campo_do_stat(stat, 2)
+}
+
+/// O `session` de `/proc/<pid>/stat` (o 6.º campo).
+pub(crate) fn sessao_do_stat(stat: &str) -> Option<u32> {
+    campo_do_stat(stat, 3)
+}
+
+/// O campo `n` (0 = o estado) depois do nome do programa em `/proc/<pid>/stat`.
+fn campo_do_stat(stat: &str, n: usize) -> Option<u32> {
     let resto = &stat[stat.rfind(')')? + 1..];
-    resto.split_whitespace().nth(2)?.parse().ok()
+    resto.split_whitespace().nth(n)?.parse().ok()
 }
 
 #[cfg(test)]
@@ -616,6 +632,33 @@ mod testes {
         assert_eq!(grupo_do_stat("123 (ssh) S 1 456 456 0 -1"), Some(456));
         assert_eq!(grupo_do_stat("123 (a) b) c) S 1 789 789 0"), Some(789));
         assert_eq!(grupo_do_stat("123 (ssh"), None);
+        assert_eq!(sessao_do_stat("123 (ssh) S 1 456 789 0 -1"), Some(789));
+        assert_eq!(sessao_do_stat("123 (a) b) c) S 1 789 790 0"), Some(790));
+    }
+
+    /// Auditoria do M4 (`entrar_grupo.py`), na ponte: um processo que está no grupo do
+    /// filho mas em outra sessão é recusado (pela tabela de um `/proc` falso).
+    #[test]
+    fn ataque_processo_no_grupo_de_outra_sessao_e_recusado() {
+        let raiz = std::env::temp_dir().join(format!("ponte-proc-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&raiz);
+        let criar = |pid: u32, grupo: u32, sessao: u32, inode: u64| {
+            let d = raiz.join(pid.to_string());
+            fs::create_dir_all(d.join("fd")).unwrap();
+            fs::write(
+                d.join("stat"),
+                format!("{pid} (python3) S 1 {grupo} {sessao} 0 -1"),
+            )
+            .unwrap();
+            std::os::unix::fs::symlink(format!("socket:[{inode}]"), d.join("fd").join("3"))
+                .unwrap();
+        };
+        // O filho (líder do grupo e da sessão 500) e o atacante no grupo 500, sessão 900.
+        criar(500, 500, 500, 11);
+        criar(901, 500, 900, 22);
+        assert!(processo_do_grupo_com_socket(&raiz, 500, 11));
+        assert!(!processo_do_grupo_com_socket(&raiz, 500, 22));
+        let _ = fs::remove_dir_all(&raiz);
     }
 
     /// De verdade: o socket desta conexão é deste processo, e o grupo deste processo é
@@ -631,8 +674,19 @@ mod testes {
         let SocketAddr::V4(par) = par else { panic!() };
         let stat = fs::read_to_string("/proc/self/stat").unwrap();
         let meu_grupo = grupo_do_stat(&stat).unwrap();
+        let minha_sessao = sessao_do_stat(&stat).unwrap();
         let uid = ward_plataforma::uid_efetivo();
-        assert!(par_do_grupo(par, local, uid, meu_grupo));
+        // Só passa quem está no grupo **e** na sessão com o mesmo número (o filho do
+        // daemon, líder dos dois). Um processo no grupo de outra sessão (o que o
+        // `setpgid` da auditoria do M4 fazia) não passa.
+        assert_eq!(
+            par_do_grupo(par, local, uid, meu_grupo),
+            meu_grupo == minha_sessao
+        );
+        assert_eq!(
+            par_do_grupo(par, local, uid, minha_sessao),
+            meu_grupo == minha_sessao
+        );
         assert!(!par_do_grupo(par, local, uid, meu_grupo.wrapping_add(1)));
         assert!(!par_do_grupo(par, local, uid.wrapping_add(1), meu_grupo));
         drop(c);

@@ -187,7 +187,7 @@ não interfere).
 | S1 | Nenhuma operação do socket devolve segredo à CLI. Revelar e copiar só pelo app; preencher só pela extensão no domínio certo. | M3, M4, M5, M6 |
 | S2 | Segredo nunca vai para disco em claro. Anexo temporário só em `/run/user/<uid>/ward/`, 0600, apagado ao fim (inclusive se o comando falhar ou for morto). | M2, M4, M6, M7 |
 | S3 | Segredo nunca vai em argv (visível em `/proc/<pid>/cmdline`); só no ambiente do processo filho, em arquivo temporário ou em fd. | M4, M6 |
-| S4 | A máscara cobre os valores secretos e as variações declaradas, inclusive quando o valor chega quebrado entre dois pedaços da saída. | M2, M4 |
+| S4 | A máscara cobre os valores secretos e as variações declaradas, inclusive quando o valor chega quebrado entre dois pedaços da saída. **D34 revisto:** a garantia é o segredo inteiro num mesmo pedaço; quebrado, só o pedaço que o completa sai marcado (nada é segurado). | M2, M4 |
 | S5 | Socket 0600 do usuário em pasta do root (`/run/ward/<uid>/`, criada pelo systemd do sistema; o daemon de teste usa um diretório 0700 do usuário), conferência do uid do cliente por `SO_PEERCRED`. A CLI e o app conferem que o servidor é o `wardd` instalado (pasta do root e par com uid 0 no `SO_PEERCRED`) antes de enviar a senha mestra. | M3, M4, M9 |
 | S6 | Criptografia só com bibliotecas auditadas: Argon2id (parâmetros registrados no cabeçalho, mínimo ~256 MiB / 3 passes), XChaCha20-Poly1305 com o cabeçalho como dado autenticado, chave de dados aleatória embrulhada pela chave derivada. Um byte alterado no arquivo faz a abertura falhar. Nada de cripto feita à mão. | M2, M7 |
 | S7 | Gravação atômica (temp + fsync + rename). Uma gravação interrompida nunca corrompe a versão anterior. | M2, M7 |
@@ -358,8 +358,10 @@ ou com nova resposta do usuário.
   JSON (Go e `ensure_ascii`) e `\$` entre aspas duplas de shell (`declare -p`), e a
   tabela única de D54 (formas de texto por linha, aspas simples, `printf %q`, PHP,
   campo de tab). stdout e stderr são mascarados
-  em separado, com buffer que segura o fim de cada pedaço até saber se é começo de
-  segredo. O código TOTP não é mascarado (o agente o recebe, R8).
+  em separado. **D34 revisto (2026-11-09):** nada é segurado nem atrasado; cada pedaço
+  lido sai na hora, mascarado (o segredo inteiro dentro do pedaço; o estado do casamento
+  segue, então o pedaço que completa um segredo quebrado sai marcado, e o começo que já
+  saiu fica como saiu). O código TOTP não é mascarado (o agente o recebe, R8).
   Segredo com menos de 6 caracteres é mascarado do mesmo jeito, e o app avisa que a
   máscara fica pouco confiável.
 - D12. **Agente SSH temporário** do `ward ssh` com chave: socket em
@@ -607,7 +609,8 @@ Fases 19a e 19b (M2) e nas fases pendentes citadas.
     mascarada. Um valor curto que aparece sozinho na saída não é mascarado. Esse risco
     está em RA3 e é aceito. O segredo de campo (senha, token etc.) segue mascarado em
     qualquer tamanho, como manda D11.
-  - **Saída interativa do `ward ssh` (Fase 27)**: no pty, um fim segurado que pode ser
+  - ~~**Saída interativa do `ward ssh` (Fase 27)**~~ (substituído pela revisão acima,
+    Fase 28e: sem pausa nem fim segurado, com ou sem pty): no pty, um fim segurado que pode ser
     começo de segredo é solto depois de 300 ms sem saída nova, sempre como `••••` e
     nunca em claro. O autômato guarda o estado do casamento: se a continuação completa
     o segredo, nada mais sai; se diverge, o resto sai normal. O preço é mascarar a mais

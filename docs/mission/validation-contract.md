@@ -239,6 +239,9 @@ asserção V0.* é conferida nele, exceto a `1:3` em V0.21.
 - [x] V2.18 — (SEG) Dado cada ponto de corte k do segredo, quando a saída chega em dois
   pedaços `[..k]` e `[k..]`, em três pedaços e byte a byte, então sai `••••` e nenhum
   pedaço do segredo — cobre S4.
+  **Revista (D34 revisto, Fase 28e):** nada é segurado; o segredo inteiro num pedaço sai
+  `••••`; quebrado, o começo sai como saiu e o pedaço que o completa sai marcado, e a
+  saída de cada pedaço não depende de um prefixo casar (sem oráculo).
 - [x] V2.19 — (SEG) Dada a saída com o segredo em percent-encoding maiúsculo
   (`falso-PG%3As3nha%2F01%40%23`), minúsculo (`%3a…%2f…`) e em forma de formulário,
   então todos viram `••••` — cobre S4.
@@ -254,7 +257,7 @@ asserção V0.* é conferida nele, exceto a `1:3` em V0.21.
   — cobre S4.
 - [x] V2.24 — Dada uma saída sem segredo (texto, UTF-8 inválido e binário de 1 MiB),
   quando passa pela máscara, então sai byte a byte igual, inclusive o fim que ficou no
-  buffer.
+  buffer (D34 revisto: nenhum fim fica no buffer; sai na hora).
 - [ ] V2.25 — Dados os vetores do RFC 6238 (SHA1, T=59 → `94287082` em 8 dígitos) e a
   semente `JBSWY3DPEHPK3PXP`, quando o núcleo gera o código, então bate com o RFC e com
   `oathtool --totp -b` no mesmo período.
@@ -797,7 +800,8 @@ Reauditoria do M2 (Fase 19e, D53–D55). Repros em `scratchpad/ataque/src/bin/`
 - [ ] V4.17 — (SEG) Dado `acme-pg-dev`, quando o comando imprime `$PGPASSWORD` puro, em
   base64, com `urllib.parse.quote`, em dois `printf` separados por `sleep 0.2` (corte no
   `:`), e tudo isso também em stderr, então a saída devolvida tem só `••••` no lugar —
-  cobre S4.
+  cobre S4. **D34 revisto (Fase 28e):** nos dois `printf`, o começo (até o `:`) sai como
+  saiu e o resto sai `••••`; a senha inteira nunca aparece.
 - [ ] V4.18 — (SEG) Dado cada subcomando e opção de `ward --help`, quando o auditor os
   roda com cada entrada visível (sem comando que imprima variável), então nenhuma saída,
   erro ou código de saída contém segredo — cobre S1.
