@@ -575,3 +575,27 @@ pub(crate) fn fechar_fds_no_exec(cmd: &mut std::process::Command) {
         });
     }
 }
+
+/// `clock_gettime(CLOCK_BOOTTIME)`: relógio monotônico que **conta o tempo suspenso**
+/// (o `Instant` do Rust usa `CLOCK_MONOTONIC`, que para na suspensão). Serve à trava por
+/// inatividade (Fase 24): 4 h com a máquina suspensa contam como 4 h sem uso.
+#[allow(unsafe_code)]
+pub(crate) fn relogio_boot() -> io::Result<std::time::Duration> {
+    let mut ts = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
+    // SAFETY: `ts` é local e do tipo que o `clock_gettime` escreve; `CLOCK_BOOTTIME` é
+    // um relógio válido no Linux (2.6.39+). A chamada só escreve em `ts`.
+    let r = unsafe { libc::clock_gettime(libc::CLOCK_BOOTTIME, &raw mut ts) };
+    if r != 0 {
+        return Err(erro_os());
+    }
+    let seg = u64::try_from(ts.tv_sec).map_err(|_| io::Error::from(io::ErrorKind::InvalidData))?;
+    let nano =
+        u32::try_from(ts.tv_nsec).map_err(|_| io::Error::from(io::ErrorKind::InvalidData))?;
+    if nano >= 1_000_000_000 {
+        return Err(io::ErrorKind::InvalidData.into());
+    }
+    Ok(std::time::Duration::new(seg, nano))
+}

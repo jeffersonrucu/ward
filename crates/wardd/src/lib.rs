@@ -5,6 +5,7 @@
 //! - [`arquivos`]: leitura do cofre com identidade por `fstat` e o arquivo de estado
 //!   (D39, D53).
 //! - [`config`]: caminhos de release e do daemon de teste (D7).
+//! - [`trava`]: trava automática por inatividade e pelo logind (Fase 24).
 //!
 //! Sem `unsafe`: o que depende do sistema está no `ward-plataforma`.
 
@@ -16,3 +17,4 @@ pub mod arquivos;
 pub mod config;
 pub mod nucleo;
 pub mod servidor;
+pub mod trava;

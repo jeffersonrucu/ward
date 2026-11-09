@@ -1,0 +1,25 @@
+# Ward: socket do daemon para o uid %i (D46, Fase 24). Unit do systemd do SISTEMA.
+#
+# O systemd (root) cria /run/ward/ e /run/ward/%i/ root:root 0755, faz o bind e o
+# listen do socket e o entrega ao wardd@%i.service por LISTEN_FDS. O socket fica do
+# uid %i, 0600. Quem conecta vê uid 0 no SO_PEERCRED (quem fez o listen), e é isso que a
+# CLI e o app conferem antes de mandar a senha mestra (S5).
+#
+# Units de teste: a instalação (Fase 51) instala estas mesmas units e roda
+# `systemctl enable --now wardd@<uid>.socket`. Nunca instale no host durante a missão.
+
+[Unit]
+Description=Ward: socket do cofre do uid %i
+Documentation=file:///usr/local/share/doc/ward/README
+
+[Socket]
+ListenStream=/run/ward/%i/wardd.sock
+SocketUser=%i
+SocketGroup=root
+SocketMode=0600
+DirectoryMode=0755
+Accept=no
+RemoveOnStop=yes
+
+[Install]
+WantedBy=sockets.target

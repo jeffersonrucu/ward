@@ -1,0 +1,34 @@
+# Ward: daemon do cofre do uid %i (D46, D57, D62, Fase 24). Unit do systemd do SISTEMA.
+#
+# Sobe na primeira conexão ao wardd@%i.socket e recebe o socket por LISTEN_FDS.
+#
+# Sem NoNewPrivileges=, RestrictSUIDSGID= nem opção que implique no_new_privs num
+# serviço com User= (SystemCallFilter=, SystemCallArchitectures=, RestrictNamespaces=,
+# RestrictAddressFamilies=, LockPersonality=, MemoryDenyWriteExecute=, RestrictRealtime=,
+# PrivateDevices=, ProtectKernel*=, ProtectClock=, DynamicUser=...). Com no_new_privs o
+# execve do ward-app, que o daemon lança, não aplica o setgid e o app nunca recebe o
+# papel (D57); MemoryDenyWriteExecute= também quebra o JIT do WebKitGTK. Também sem
+# ProtectHome=/ProtectSystem=/PrivateTmp=: o cofre fica no home e o `ward run` executa
+# o comando do usuário no cwd dele.
+#
+# Sem Environment=/EnvironmentFile=: o wardd recusa LD_* e a lista insegura da glibc
+# (S8, D48) e monta o ambiente dos filhos do zero (D57).
+
+[Unit]
+Description=Ward: daemon do cofre do uid %i
+Documentation=file:///usr/local/share/doc/ward/README
+Requires=wardd@%i.socket
+After=wardd@%i.socket
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/wardd
+User=%i
+UMask=0077
+# S8: sem core dump.
+LimitCORE=0
+# D62: mlockall(MCL_CURRENT | MCL_FUTURE | MCL_ONFAULT) no iniciar_endurecido; com
+# limite, a alocação do Argon2 falharia.
+LimitMEMLOCK=infinity
+Restart=on-failure
+RestartSec=1
