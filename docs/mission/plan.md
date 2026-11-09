@@ -523,7 +523,7 @@ Contrato: V3.1–V3.41
     D15 passar a ser recusada pelo orçamento, a fase para e devolve ao planner.
     V3.31, V3.32.
   `make teste-dev-cofre` falha em master até a 22a (tabela já pede `delta-api-simbolos`).
-- [ ] Fase 23 — Motor de aprovação com relógio injetado e aprovador em processo só nos
+- [x] Fase 23 — Motor de aprovação com relógio injetado e aprovador em processo só nos
   testes (D8): uma vez, 1 hora (D2), sempre, expirar em 2 min, fechar nega, nível
   combinado (D19), aprovação indisponível (D21); espera de até 2 min pelo destrave
   (D16). O texto do pedido (`comando`, `cadeia`) vai exato para o app, e a função que o
