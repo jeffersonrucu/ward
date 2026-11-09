@@ -10,8 +10,9 @@
 #      arquivo é root:root (`--root-owner-group`) e um 2755 root:root daria o gid do
 #      root a quem rodasse o binário. O 2755 com o grupo certo entra pelo
 #      `dpkg-statoverride` do preinst.
-#   3. DEBIAN/: control (Depends com sshpass), preinst (grupos de `grupos.sh` e as
-#      pastas comuns de `arvore.txt`), postinst, prerm e postrm de `instalacao/deb/`.
+#   3. DEBIAN/: control (Depends com sshpass), preinst (grupos de `grupos.sh`, políticas
+#      do Chrome de `chrome.sh` e as pastas comuns de `arvore.txt`), postinst (aviso de
+#      `chrome.sh`), prerm e postrm (marca dos grupos de `grupos.sh`) de `instalacao/deb/`.
 #   4. `dpkg-deb --build`, e a conferência do resultado: a lista de `dpkg-deb -c` é a do
 #      staging (V9.9), todo caminho é root/root, nenhum bit setuid/setgid nem escrita
 #      para grupo e outros, Depends com sshpass.
@@ -61,12 +62,13 @@ cp -a -- "$STAGING" "$PACOTE"
 find "$PACOTE" -perm /6000 -exec chmod ug-s -- {} +
 find "$PACOTE" -type d -exec chmod 0755 -- {} +
 
-# Scripts do mantenedor. O preinst ganha as funções de grupos.sh e as pastas comuns.
+# Scripts do mantenedor. As marcas `#@GRUPOS@` (grupos.sh), `#@CHROME@` (chrome.sh) e
+# `#@PASTAS@` (pastas comuns de arvore.txt) viram o conteúdo; cada marca que um modelo
+# usa aparece uma vez só, e nenhuma sobra.
 install -d -m 0755 -- "$PACOTE/DEBIAN"
-/usr/bin/python3 -I -B - "$AQUI/deb/preinst" "$AQUI/grupos.sh" "$AQUI/arvore.txt" "$PACOTE/DEBIAN/preinst" <<'EOF'
+/usr/bin/python3 -I -B - "$AQUI/deb" "$AQUI/grupos.sh" "$AQUI/chrome.sh" "$AQUI/arvore.txt" "$PACOTE/DEBIAN" <<'EOF'
 import re, sys
-modelo, grupos, arvore, saida = sys.argv[1:]
-texto = open(modelo, encoding="utf-8").read()
+modelos, grupos, chrome, arvore, saida = sys.argv[1:]
 pastas = []
 for linha in open(arvore, encoding="utf-8"):
     campos = linha.split()
@@ -76,15 +78,23 @@ for linha in open(arvore, encoding="utf-8"):
         if not re.fullmatch(r"[a-z][a-z0-9._/-]*", campos[4]) or ".." in campos[4]:
             sys.exit(f"pasta fora do formato: {campos[4]}")
         pastas.append(f"    {campos[4]}")
-for marca in ("#@GRUPOS@\n", "#@PASTAS@\n"):
-    if texto.count(marca) != 1:
-        sys.exit(f"marca {marca.strip()} não aparece uma vez no preinst")
-texto = texto.replace("#@GRUPOS@\n", open(grupos, encoding="utf-8").read())
-texto = texto.replace("#@PASTAS@\n", "\n".join(pastas) + "\n")
-open(saida, "w", encoding="utf-8").write(texto)
+trocas = {
+    "#@GRUPOS@\n": open(grupos, encoding="utf-8").read(),
+    "#@CHROME@\n": open(chrome, encoding="utf-8").read(),
+    "#@PASTAS@\n": "\n".join(pastas) + "\n",
+}
+for s in ("preinst", "postinst", "prerm", "postrm"):
+    texto = open(f"{modelos}/{s}", encoding="utf-8").read()
+    for marca, conteudo in trocas.items():
+        n = texto.count(marca)
+        if n > 1:
+            sys.exit(f"marca {marca.strip()} aparece {n} vezes no {s}")
+        texto = texto.replace(marca, conteudo)
+    if "#@" in texto:
+        sys.exit(f"marca de modelo desconhecida no {s}")
+    open(f"{saida}/{s}", "w", encoding="utf-8").write(texto)
 EOF
 for s in preinst postinst prerm postrm; do
-    [ "$s" = preinst ] || install -m 0644 -- "$AQUI/deb/$s" "$PACOTE/DEBIAN/$s"
     chmod 0755 -- "$PACOTE/DEBIAN/$s"
     bash -n -- "$PACOTE/DEBIAN/$s" || erro "DEBIAN/$s com erro de sintaxe"
 done

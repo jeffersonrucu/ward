@@ -1,11 +1,13 @@
 #!/bin/bash -p
 # preinst do `.deb` do Ward (Fase 52; D18, D47, D60; V9.9, V9.11). Roda como root antes
-# de o dpkg desempacotar os arquivos. O `deb.sh` troca as duas marcas abaixo pelas
+# de o dpkg desempacotar os arquivos. O `deb.sh` troca as marcas abaixo pelas
 # funções de `instalacao/grupos.sh` (as mesmas do `make install`) e pelas pastas comuns
 # de `instalacao/arvore.txt`.
 #
-# Falha fechada: grupo fora de D60 ou pasta do sistema fora do lugar aborta antes de
-# qualquer arquivo. Os binários setgid vêm no pacote como 0755 root:root; o modo 2755 e
+# Falha fechada: grupo fora de D60, pasta do sistema fora do lugar ou outra política do
+# Chrome com o mesmo nome (Fase 51a) aborta antes de qualquer arquivo. O grupo criado
+# aqui vai para a marca /usr/local/lib/ward/grupos-criados (Fase 51a): o postrm só apaga
+# esses. Os binários setgid vêm no pacote como 0755 root:root; o modo 2755 e
 # o grupo entram pelo `dpkg-statoverride` registrado aqui, que o dpkg aplica ao
 # desempacotar (nunca existe um `ward-app` setgid com outro grupo, nem setgid root).
 
@@ -18,6 +20,8 @@ erro() { printf 'ward (preinst): %s\n' "$*" >&2; exit 1; }
 passo() { printf 'ward: %s\n' "$*"; }
 
 #@GRUPOS@
+
+#@CHROME@
 
 # Pastas comuns do sistema que o pacote usa: sem link (o dpkg seguiria), do root e sem
 # escrita para grupo e outros.
@@ -55,6 +59,15 @@ override() {
 case "${1:-}" in
     install | upgrade)
         conferir_pastas
+        # Fase 51a: outro arquivo de política que cite ExtensionSettings ou
+        # NativeMessagingUserLevelHosts recusa (o Chrome não junta os dois).
+        conferir_politicas_chrome /etc/opt/chrome/policies/managed
+        # A marca dos grupos fica em /usr/local/lib/ward/ (Fase 51a), antes de o dpkg
+        # desempacotar: as pastas de cima (conferidas acima) são criadas se faltarem,
+        # 0755 root:root como no pacote.
+        for p in /usr /usr/local /usr/local/lib; do
+            [ -e "$p" ] || mkdir -m 0755 -- "$p"
+        done
         garantir_grupo ward-app
         garantir_grupo ward-nm
         override ward-app /usr/local/bin/ward-app

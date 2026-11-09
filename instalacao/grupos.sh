@@ -9,8 +9,18 @@
 #   - sem membros no /etc/group nem no /etc/gshadow, sem administradores, e senha
 #     travada no /etc/gshadow (começa por '!'; grupo com senha entra por `newgrp`);
 #   - nenhum usuário com ele de grupo primário (/etc/passwd e NSS);
-#   - fora de toda faixa do /etc/subgid (um namespace de usuário o mapearia);
-#   - o NSS (getent) devolve esse mesmo grupo pelo nome e pelo gid.
+#   - o NSS (getent) devolve esse mesmo grupo pelo nome e pelo gid;
+#   - fora de toda faixa do /etc/subgid (um namespace de usuário o mapearia), e sem
+#     `subid:` no /etc/nsswitch.conf com fonte que não seja `files` (faixas vindas do
+#     NSS, que a instalação não consegue ler; Fase 51a);
+#   - nenhuma linha do pam_group (/etc/security/group.conf e group.conf.d) dá o grupo
+#     no login, e nenhum sudoers (/etc/sudoers, /etc/sudoers.d e os includes deles) cita
+#     o nome nem `#<gid>` (`sudo -g ward-app` daria o gid); com `sudoers:` no
+#     nsswitch.conf vindo de fora de `files`, recusa (Fase 51a).
+#
+# Marca (Fase 51a): o grupo que a instalação cria vai para MARCA_GRUPOS com o gid; o
+# uninstall e o `dpkg -r` só apagam grupo que está na marca com o mesmo gid. Um grupo que
+# o administrador já tinha (e confere com D60) fica.
 conferir_grupo() {
     local nome="$1" linhas n senha gid membros admins
     linhas="$(grep -c -- "^${nome}:" /etc/group || true)"
@@ -34,6 +44,53 @@ conferir_grupo() {
     [[ "$senha" == '!'* ]] || { echo "o grupo $nome tem senha no /etc/gshadow (precisa ser '!')"; return 1; }
     [ -z "$admins" ] || { echo "o grupo $nome tem administradores no /etc/gshadow"; return 1; }
     [ -z "$membros" ] || { echo "o grupo $nome tem membros no /etc/gshadow"; return 1; }
+    # nsswitch.conf: faixas de subgid e regras de sudo vindas de fora dos arquivos.
+    local fonte
+    for fonte in subid sudoers; do
+        if [ -f /etc/nsswitch.conf ] && awk -v k="$fonte:" '
+            { sub(/#.*/, "") }
+            $1 == k { for (i = 2; i <= NF; i++) if ($i !~ /^\[/ && $i != "files") achou = 1 }
+            END { exit !achou }' /etc/nsswitch.conf; then
+            echo "o /etc/nsswitch.conf busca '$fonte' fora de 'files' (a instalação não consegue conferir $nome ali)"
+            return 1
+        fi
+    done
+    # pam_group: `servicos;ttys;usuarios;horarios;grupos` dá os grupos no login.
+    local f
+    for f in /etc/security/group.conf /etc/security/group.conf.d/*; do
+        [ -e "$f" ] || continue
+        if sed -e 's/#.*//' -- "$f" | grep -q -E -- "(^|[^A-Za-z0-9_.-])${nome}([^A-Za-z0-9_.-]|\$)"; then
+            echo "$f dá o grupo $nome no login (pam_group)"
+            return 1
+        fi
+    done
+    # sudoers: o nome ou `#<gid>` em qualquer lugar (comentário também: na dúvida,
+    # recusa), seguindo @include/@includedir e as formas antigas com '#'.
+    local sudoers=() i=0 dir alvo g
+    [ -e /etc/sudoers ] && sudoers+=(/etc/sudoers)
+    for f in /etc/sudoers.d/*; do [ -e "$f" ] && sudoers+=("$f"); done
+    while [ "$i" -lt "${#sudoers[@]}" ] && [ "$i" -lt 512 ]; do
+        f="${sudoers[$i]}"
+        i=$((i + 1))
+        [ -d "$f" ] && continue
+        if grep -a -q -E -- "(^|[^A-Za-z0-9_.-])(${nome}|#${gid})([^A-Za-z0-9_.-]|\$)" "$f"; then
+            echo "o sudoers $f cita $nome (ou #$gid): 'sudo -g' daria o gid do grupo"
+            return 1
+        fi
+        while read -r dir alvo _; do
+            alvo="${alvo%\"}"
+            alvo="${alvo#\"}"
+            [ -n "$alvo" ] || continue
+            [[ "$alvo" == /* ]] || alvo="${f%/*}/$alvo"
+            case "$dir" in
+                @include | '#include') [ -e "$alvo" ] && sudoers+=("$alvo") ;;
+                @includedir | '#includedir')
+                    for g in "$alvo"/*; do [ -e "$g" ] && sudoers+=("$g"); done
+                    ;;
+            esac
+        done < <(grep -a -E '^[[:space:]]*[@#]include(dir)?[[:space:]]' -- "$f" || true)
+    done
+    [ "$i" -ge "${#sudoers[@]}" ] || { echo "sudoers com includes demais (laço?); não deu para conferir $nome"; return 1; }
     if [ -e /etc/subgid ]; then
         local dono inicio qtd
         while IFS=: read -r dono inicio qtd; do
@@ -48,12 +105,77 @@ conferir_grupo() {
     printf '%s\n' "$gid"
 }
 
+# --- marca dos grupos criados (Fase 51a) -----------------------------------------------
+MARCA_GRUPOS=/usr/local/lib/ward/grupos-criados
+
+# Linhas "nome gid" válidas da marca (só ward-app/ward-nm, gid de sistema).
+grupos_marcados() {
+    [ -f "$MARCA_GRUPOS" ] && [ ! -L "$MARCA_GRUPOS" ] || return 0
+    grep -a -x -E 'ward-(app|nm) [1-9][0-9]{0,2}' -- "$MARCA_GRUPOS" || true
+}
+
+# Grava a marca inteira (temporário na mesma pasta e `rename`); vazia, apaga. A pasta do
+# Ward é criada 0755 root:root se faltar; a de cima (/usr/local/lib) quem chama conferiu.
+pasta_da_marca() {
+    local pasta="${MARCA_GRUPOS%/*}"
+    if [ ! -e "$pasta" ] && [ ! -L "$pasta" ]; then
+        mkdir -m 0755 -- "$pasta" || erro "não deu para criar $pasta (a marca dos grupos)"
+    fi
+    [ -d "$pasta" ] && [ ! -L "$pasta" ] && [ "$(stat -c %u -- "$pasta")" = 0 ] ||
+        erro "$pasta não é uma pasta do root"
+}
+
+gravar_marca() {
+    local conteudo="$1" pasta="${MARCA_GRUPOS%/*}" tmp
+    pasta_da_marca
+    if [ -z "$conteudo" ]; then
+        rm -f -- "$MARCA_GRUPOS"
+        return 0
+    fi
+    tmp="$(mktemp -- "$pasta/.grupos.XXXXXXXX")"
+    printf '%s\n' "$conteudo" >"$tmp"
+    chmod 0644 -- "$tmp"
+    mv -f -T -- "$tmp" "$MARCA_GRUPOS"
+}
+
+# Marca de `nome`: criado agora (`criado=1`) grava "nome gid"; já existente, fica a
+# linha só se o gid for o mesmo (outro grupo com o nome não herda a marca).
+marcar_grupo() {
+    local nome="$1" gid="$2" criado="$3" antes linhas
+    antes="$(grupos_marcados)"
+    linhas="$(grep -v -- "^$nome " <<<"$antes" || true)"
+    if [ "$criado" = 1 ] || grep -q -x -F -- "$nome $gid" <<<"$antes"; then
+        linhas="$(printf '%s\n%s\n' "$linhas" "$nome $gid" | grep -v '^$' || true)"
+    fi
+    [ "$linhas" = "$antes" ] || gravar_marca "$linhas"
+}
+
+# Apaga os grupos da marca que ainda têm o gid marcado; os outros ficam (com aviso).
+apagar_grupos_marcados() {
+    local g gid marcados
+    marcados="$(grupos_marcados)"
+    for g in ward-nm ward-app; do
+        grep -q -- "^${g}:" /etc/group || continue
+        gid="$(awk -v g="$g" '$1 == g {print $2; exit}' <<<"$marcados")"
+        if [ -n "$gid" ] && [ "$(grep -- "^${g}:" /etc/group | cut -d: -f3)" = "$gid" ]; then
+            groupdel "$g" || printf 'ward: aviso: não deu para apagar o grupo %s\n' "$g" >&2
+        else
+            printf 'ward: aviso: o grupo %s não foi criado pelo Ward (sem marca em %s); ficou\n' "$g" "$MARCA_GRUPOS" >&2
+        fi
+    done
+    if [ -e "$MARCA_GRUPOS" ] || [ -L "$MARCA_GRUPOS" ]; then
+        rm -f -- "$MARCA_GRUPOS"
+    fi
+}
+
 garantir_grupo() {
     local nome="$1" criado=0 saida
     if ! grep -q -- "^${nome}:" /etc/group; then
         if getent group "$nome" >/dev/null; then
             erro "o grupo $nome vem do NSS (fora do /etc/group); a instalação não o aceita"
         fi
+        # A pasta da marca antes do groupadd: um grupo criado fica sempre marcado.
+        pasta_da_marca
         groupadd --system "$nome"
         criado=1
     fi
@@ -63,6 +185,6 @@ garantir_grupo() {
         fi
         erro "grupo recusado (D60): $saida. Nada foi instalado. Corrija o grupo (ou apague-o com 'groupdel $nome') e rode de novo."
     fi
+    marcar_grupo "$nome" "$saida" "$criado"
     [ "$criado" = 1 ] && passo "grupo $nome criado (gid $saida)" || passo "grupo $nome já existia e confere (gid $saida)"
 }
-

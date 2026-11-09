@@ -69,7 +69,7 @@ CARGO_DENY_VERSAO := 0.20.2
 	app-front app-check app-ponte teste-docker-plataforma teste-sem-modo-teste teste-socket-ataques \
 	teste-webkit-real teste-canais-gst teste-app-e2e teste-logs-app teste-nm teste-playwright teste-skill teste-migracao \
 	release install uninstall teste-install extensao teste-extensao deb extensao-crx teste-deb teste-login \
-	teste-ssh-home
+	teste-ssh-home teste-politica-chrome
 
 ## check: pré-checagem das origens, depois fmt, clippy -D warnings, testes, cargo audit,
 ## cargo deny e gitleaks, nessa ordem (V1.1)
@@ -432,6 +432,24 @@ teste-install: origens
 	$(CARGO) build --quiet --locked -p ward-plataforma --features modo-teste --example ward-plataforma-conteiner
 	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd
 	dev/testes/install.sh
+
+## teste-politica-chrome: Fase 51a (V9.5, V9.6; crítico da auditoria do M9): a política
+## gerada pelo instalar.sh (NativeMessagingUserLevelHosts false) com o Chrome real num
+## bwrap com /etc/opt/chrome trocado por uma pasta em .dev/politica-chrome.*: sem ela o
+## manifesto plantado no perfil vence e o ataque da auditoria tira senhas do wardd de
+## teste (controle); com ela o host do perfil não roda e o do sistema sim. Nunca toca o
+## perfil real do Chrome. Precisa de bwrap, openssl, `make dev-cofre`, `make
+## dev-variacoes` e do Chrome em /opt/google/chrome; fora do `make check`
+teste-politica-chrome: origens
+	$(CARGO) build --quiet --locked -p wardd --bin wardd --target-dir target/sem-modo-teste
+	$(CARGO) build --quiet --locked -p ward --bin ward --target-dir target/sem-modo-teste
+	$(CARGO) build --quiet --locked -p ward-nm --bin ward-nm --target-dir target/sem-modo-teste
+	$(CARGO) build --quiet --locked -p ward-app-nucleo --example partida-conteiner --target-dir target/sem-modo-teste
+	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd
+	$(CARGO) build --quiet --locked -p ward-nm --features modo-teste --bin ward-nm
+	dev/testes/politica-chrome.sh target/debug/wardd target/debug/ward-nm \
+		target/sem-modo-teste/debug/ward target/sem-modo-teste/debug/wardd \
+		target/sem-modo-teste/debug/ward-nm target/sem-modo-teste/debug/examples/partida-conteiner
 
 # --- Pacote .deb (Fase 52; D18; V9.9) ------------------------------------------------
 # `make deb` (como o usuário) monta o staging com o `instalar.sh` (DESTDIR) e o empacota

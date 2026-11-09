@@ -48,7 +48,7 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use ward_core::protocolo::quadro::{self, ErroQuadro};
-use ward_core::protocolo::{self, Operacao, Papel, PedidoDeAprovacao, PedidoDeDestrave, Resposta};
+use ward_core::protocolo::{self, Papel, PedidoDeAprovacao, PedidoDeDestrave, Resposta};
 use ward_plataforma::{RecusaServidor, ServidorEsperado, conectar_servidor};
 
 use zeroize::Zeroizing;
@@ -111,7 +111,7 @@ impl Aviso {
     pub fn destrave_de_teste(entrada: &str) -> Aviso {
         Aviso::Destrave(PedidoDeDestrave {
             entrada: entrada.to_owned(),
-            operacao: Operacao::Executar,
+            operacao: protocolo::Operacao::Executar,
             comando: r#""psql" "-c" "select count(*) from pedidos""#.to_owned(),
             restante: 120,
         })
@@ -125,7 +125,7 @@ impl Aviso {
     pub fn destrave_hostil_de_teste() -> Aviso {
         Aviso::Destrave(PedidoDeDestrave {
             entrada: "acme-pg-\u{202E}vorpa\u{200B}<b>x</b>".to_owned(),
-            operacao: Operacao::Executar,
+            operacao: protocolo::Operacao::Executar,
             comando: "\"psql\" \"-c\" \"select 1\u{1b}[2K\" \"<img src=x onerror=alert(1)>\""
                 .to_owned(),
             restante: 120,

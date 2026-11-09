@@ -136,6 +136,22 @@ caso_grupo "com senha no gshadow" "tem senha"
 groupadd --system ward-app
 useradd -M -N -g ward-app -s /usr/sbin/nologin fulano
 caso_grupo "grupo primário de um usuário" "grupo primário"
+install -d -m 0755 /etc/security
+printf '*;*;*;Al0000-2400;ward-nm\n' >>/etc/security/group.conf
+caso_grupo "pam_group (group.conf, Fase 51a)" "pam_group"
+sed -i '/;ward-nm$/d' /etc/security/group.conf
+
+# --- Fase 51a: outra política do Chrome com os nomes da do Ward -> o preinst recusa -----
+install -d -m 0755 /etc/opt/chrome/policies/managed
+printf '{"ExtensionSettings": {"*": {"installation_mode": "allowed"}}}\n' >/etc/opt/chrome/policies/managed/00-empresa.json
+r="$(SUDO_UID=$UID_T dpkg -i "$DEB" 2>&1; echo "saiu=$?")"
+nao_tem "política conflitante: dpkg -i recusado" "$r" "saiu=0"
+confere "política conflitante: mensagem do preinst" "$r" "ExtensionSettings"
+confere "política conflitante: nenhum arquivo do Ward" "$(nada_do_ward)" "nada"
+confere "política conflitante: nenhum grupo" "$(getent group ward-app ward-nm || echo ausente)" "ausente"
+confere "política conflitante: o outro arquivo intacto" "$(cat /etc/opt/chrome/policies/managed/00-empresa.json)" "allowed"
+rm -f /etc/opt/chrome/policies/managed/00-empresa.json
+dpkg --purge ward >/dev/null 2>&1 || true
 
 # --- instalação ----------------------------------------------------------------------
 r="$(SUDO_UID=$UID_T dpkg -i "$DEB" 2>&1; echo "saiu=$?")"
@@ -159,6 +175,8 @@ done <"$T/arvore.txt"
 [ "$falhas" = "$antes_modos" ] && ok "donos e modos de arvore.txt (ward-app e ward-nm root:<grupo> 2755)"
 igual "overrides registrados" "$(overrides)" "$(printf 'root ward-app 2755 /usr/local/bin/ward-app\nroot ward-nm 2755 /usr/local/lib/ward/ward-nm')"
 confere "manifesto de native messaging com o id" "$(cat /etc/opt/chrome/native-messaging-hosts/br.ward.nm.json)" "chrome-extension://$ID/"
+confere "Fase 51a: política com NativeMessagingUserLevelHosts false" "$(grep -c '^  "NativeMessagingUserLevelHosts": false,$' /etc/opt/chrome/policies/managed/ward.json)" "1"
+confere "Fase 51a: marca dos grupos criados pelo preinst" "$(sort /usr/local/lib/ward/grupos-criados)" "$(for g in ward-app ward-nm; do echo "$g $(getent group "$g" | cut -d: -f3)"; done)"
 for g in ward-app ward-nm; do
     IFS=: read -r _ _ gid membros <<<"$(getent group "$g")"
     if [ "$gid" -gt 0 ] && [ "$gid" -lt 1000 ]; then ok "V9.11 (.deb) $g é de sistema (gid $gid)"; else falhou "V9.11 (.deb) $g gid $gid"; fi
@@ -226,6 +244,21 @@ r="$(dpkg -P ward 2>&1; echo "saiu=$?")"
 confere "dpkg -P depois do -r sai 0" "$r" "saiu=0"
 confere "dpkg -P: pacote fora do banco do dpkg" "$(status ward)" "ausente"
 confere "dpkg -P: o cofre do usuário intacto" "$(sha256sum "$COFRE_T/cofre.ward"; stat -c '%U %a' "$COFRE_T/cofre.ward")" "$antes"
+
+# --- Fase 51a: grupo que já existia (e confere com D60) fica no dpkg -r ---------------
+groupadd --system ward-nm
+gid_admin="$(getent group ward-nm | cut -d: -f3)"
+r="$(SUDO_UID=$UID_T dpkg -i "$DEB" 2>&1; echo "saiu=$?")"
+confere "grupo do administrador: dpkg -i sai 0" "$r" "saiu=0"
+confere "grupo do administrador: aceito pelo preinst" "$r" "ward-nm já existia e confere"
+r="$(dpkg -r ward 2>&1; echo "saiu=$?")"
+confere "grupo do administrador: dpkg -r sai 0" "$r" "saiu=0"
+confere "dpkg -r: ward-nm do administrador fica (mesmo gid)" "$(getent group ward-nm | cut -d: -f3)" "$gid_admin"
+confere "dpkg -r: avisa que ficou" "$r" "não foi criado pelo Ward"
+confere "dpkg -r: ward-app (criado pelo preinst) apagado" "$(getent group ward-app || echo ausente)" "ausente"
+[ ! -e /usr/local/lib/ward ] && ok "dpkg -r: /usr/local/lib/ward (com a marca) apagada" || falhou "/usr/local/lib/ward ficou"
+groupdel ward-nm
+dpkg -P ward >/dev/null 2>&1 || true
 
 usuario unset-environment "$VAR_AGENTE_SSH" >/dev/null 2>&1 || true
 systemctl stop "user@$UID_T.service" "user-runtime-dir@$UID_T.service" || true

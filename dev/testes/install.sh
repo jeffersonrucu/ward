@@ -140,7 +140,10 @@ assert nm == {"name": "br.ward.nm", "description": nm["description"], "path": "/
               "type": "stdio", "allowed_origins": [f"chrome-extension://{ident}/"]}, nm
 print("nm ok")
 pol = json.load(open(d + "/etc/opt/chrome/policies/managed/ward.json"))
-assert list(pol) == ["ExtensionSettings"] and list(pol["ExtensionSettings"]) == [ident], pol
+# Fase 51a: NativeMessagingUserLevelHosts false (só o manifesto do root vale).
+assert sorted(pol) == ["ExtensionSettings", "NativeMessagingUserLevelHosts"], pol
+assert pol["NativeMessagingUserLevelHosts"] is False, pol
+assert list(pol["ExtensionSettings"]) == [ident], pol
 e = pol["ExtensionSettings"][ident]
 assert e["installation_mode"] == "force_installed", e
 assert e["update_url"] == "file:///usr/local/share/ward/extensao/update.xml", e
@@ -156,7 +159,7 @@ print("update ok")
 EOF
 )" || true
 confere "V9.6: manifesto de native messaging (allowed_origins só o id, path do ward-nm)" "$r" "nm ok"
-confere "política do Chrome: só a extensão do Ward, force_installed, update local" "$r" "politica ok"
+confere "política do Chrome: NativeMessagingUserLevelHosts false, só a extensão do Ward, force_installed, update local" "$r" "politica ok"
 confere "update.xml: id, pacote local e versão do pacote" "$r" "update ok"
 # systemd-analyze verify das units instaladas (cópia; o ExecStart não existe no host).
 mkdir "$TMP/verify"
@@ -203,6 +206,29 @@ nova; recusa "V9.2: wardd com modo-teste" "modo-teste" "$d" BIN_WARDD="$WARDD_TE
 nova; recusa "V9.2: ward com WARD_DEV_SOCKET_DIR" "modo-teste" "$d" BIN_WARD="$TMP/ward-marcado"
 nova; recusa "V9.2: ward-nm com WARD_DEV_DIR" "modo-teste" "$d" BIN_NM="$TMP/nm-marcado"
 nova; recusa "V9.2: ward-app com a ponte de teste" "modo-teste" "$d" BIN_APP="$TMP/app-marcado"
+# Fase 51a: a exceção do WARD_DEV_DBUS_SISTEMA saiu (o release não tem o texto).
+cp "$WARDD" "$TMP/wardd-dbus" && printf "x WARD_DEV_DBUS_SISTEMA x" >>"$TMP/wardd-dbus"
+nova; recusa "V9.2: wardd com WARD_DEV_DBUS_SISTEMA (sem exceção)" "WARD_DEV_DBUS_SISTEMA" "$d" BIN_WARDD="$TMP/wardd-dbus"
+confere "o wardd de release não tem nenhum WARD_DEV_" "$(grep -a -c -E "WARD_DEV_[A-Z0-9_]*" "$WARDD" || true)" "0"
+# Fase 51a: outra política em policies/managed com um nome da do Ward recusa antes de
+# qualquer arquivo (o Chrome não junta os dois; a do atacante/administrador venceria).
+politica_outra() {
+    nova
+    mkdir -p "$d/etc/opt/chrome/policies/managed"
+    printf "%s" "$1" >"$d/etc/opt/chrome/policies/managed/$2"
+}
+politica_outra "{\"NativeMessagingUserLevelHosts\": true}" outra.json
+recusa "política: outro arquivo com NativeMessagingUserLevelHosts" "NativeMessagingUserLevelHosts" "$d"
+politica_outra "{\"ExtensionSettings\": {\"*\": {\"installation_mode\": \"blocked\"}}}" 00-empresa.json
+recusa "política: outro arquivo com ExtensionSettings" "ExtensionSettings" "$d"
+politica_outra "{\"\\u004eativeMessagingUserLevelHosts\": true}" zz.json
+recusa "política: nome escondido com escape \\u" "\\u" "$d"
+politica_outra "{\"NativeMessagingUserLevelHosts\": true}" .escondido
+recusa "política: arquivo oculto também conta" "NativeMessagingUserLevelHosts" "$d"
+# Arquivo de política sem esses nomes: instala e fica intacto.
+politica_outra "{\"HomepageLocation\": \"https://exemplo.invalid/\"}" outra.json
+r="$(mk install "$d" 2>&1)" && ok "política: outro arquivo sem os nomes do Ward não impede" || { printf "%s\n" "$r"; falhou "política sem conflito recusada"; }
+confere "política: o outro arquivo ficou intacto" "$(cat "$d/etc/opt/chrome/policies/managed/outra.json")" "HomepageLocation"
 printf '#!/bin/sh\necho falso\n' >"$TMP/script"
 chmod 0755 "$TMP/script"
 nova; recusa "wardd que não é ELF" "não é um executável ELF" "$d" BIN_WARDD="$TMP/script"
@@ -267,7 +293,7 @@ install -m 0644 "$RAIZ/Makefile" "$C/repo/Makefile"
 mkdir -m 0755 "$C/repo/instalacao" "$C/repo/instalacao/systemd" "$C/repo/instalacao/tmpfiles.d"
 install -m 0644 "$RAIZ/instalacao/arvore.txt" "$C/repo/instalacao/"
 install -m 0755 "$RAIZ/instalacao/instalar.sh" "$RAIZ/instalacao/crx.py" "$C/repo/instalacao/"
-install -m 0644 "$RAIZ/instalacao/grupos.sh" "$C/repo/instalacao/"
+install -m 0644 "$RAIZ/instalacao/grupos.sh" "$RAIZ/instalacao/chrome.sh" "$C/repo/instalacao/"
 install -m 0644 "$RAIZ/instalacao/systemd/wardd@.socket" "$RAIZ/instalacao/systemd/wardd@.service" "$C/repo/instalacao/systemd/"
 install -m 0644 "$RAIZ/instalacao/tmpfiles.d/ward.conf" "$C/repo/instalacao/tmpfiles.d/"
 install -m 0755 "$WARD" "$C/bin/ward"

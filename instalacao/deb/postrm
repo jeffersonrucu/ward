@@ -1,15 +1,30 @@
 #!/bin/bash -p
 # postrm do `.deb` do Ward (Fase 52; D47, D60; V9.9, V9.10). Depois de o dpkg apagar os
 # arquivos: tira os overrides dos binários setgid, /run/ward (se vazia), as units do
-# systemd e os grupos `ward-app`/`ward-nm` (como o `make uninstall`). Nunca toca no home:
-# o cofre e os backups em ~/.local/share/ward/ ficam.
+# systemd e os grupos `ward-app`/`ward-nm` que o preinst criou (marca em
+# /usr/local/lib/ward/grupos-criados, Fase 51a; como o `make uninstall`). Um grupo que já
+# existia antes do Ward fica. Nunca toca no home: o cofre e os backups em
+# ~/.local/share/ward/ ficam.
 #
-# Na instalação abortada (preinst recusou) só saem os overrides: um grupo que já existia
-# e foi recusado (D60) é do administrador, não do Ward.
+# Na instalação abortada (preinst recusou) saem os overrides e os grupos da marca (os
+# que esse preinst criou): um grupo que já existia e foi recusado (D60) é do
+# administrador, não do Ward.
 
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export LC_ALL=C
 set -euo pipefail
+
+erro() { printf "ward (postrm): %s\n" "$*" >&2; exit 1; }
+passo() { printf "ward: %s\n" "$*"; }
+
+#@GRUPOS@
+
+# Marca e pasta do Ward (/usr/local/lib/ward): o dpkg não apaga pasta com arquivo que
+# não é do pacote (a marca), então ela sai aqui.
+tirar_grupos() {
+    apagar_grupos_marcados
+    rmdir /usr/local/lib/ward 2>/dev/null || true
+}
 
 tirar_overrides() {
     local c
@@ -33,15 +48,12 @@ case "${1:-}" in
             done
             rmdir /run/ward 2>/dev/null || printf 'ward: aviso: /run/ward não está vazia; ficou\n' >&2
         fi
-        for g in ward-nm ward-app; do
-            if grep -q -- "^${g}:" /etc/group; then
-                groupdel "$g" || printf 'ward: aviso: não deu para apagar o grupo %s\n' "$g" >&2
-            fi
-        done
+        tirar_grupos
         printf 'ward: o cofre e os backups em ~/.local/share/ward/ não foram tocados\n'
         ;;
     abort-install)
         tirar_overrides
+        tirar_grupos
         ;;
     upgrade | failed-upgrade | abort-upgrade | disappear) ;;
     *) printf 'ward (postrm): argumento desconhecido: %s\n' "${1:-}" >&2; exit 1 ;;

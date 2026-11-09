@@ -68,6 +68,9 @@ confere "o systemd lê /usr/local/lib/systemd/system" "$(systemd-analyze unit-pa
 
 # --- V9.11: grupo existente fora das regras de D60 -> recusa, sem binário setgid -------
 cp /etc/subgid /tmp/subgid.orig
+cp /etc/nsswitch.conf /tmp/nsswitch.orig
+install -d -m 0755 /etc/security /etc/sudoers.d
+[ -e /etc/security/group.conf ] && cp /etc/security/group.conf /tmp/group.conf.orig || : >/tmp/group.conf.orig
 caso_grupo() {
     local rotulo="$1" msg="$2" r codigo=0
     r="$(instalar 2>&1)" || codigo=$?
@@ -76,6 +79,9 @@ caso_grupo() {
     confere "V9.11 $rotulo: nenhum arquivo do Ward (nem o setgid)" "$(nada_do_ward)" "nada"
     limpar_grupos
     cp /tmp/subgid.orig /etc/subgid
+    cp /tmp/nsswitch.orig /etc/nsswitch.conf
+    cp /tmp/group.conf.orig /etc/security/group.conf
+    rm -f /etc/sudoers.d/ward-teste /etc/sudoers.d/incluido /etc/sudoers-extra
 }
 groupadd -g 1500 ward-app
 caso_grupo "gid >= 1000" "gid 1500"
@@ -101,6 +107,32 @@ caso_grupo "gid numa faixa do /etc/subgid" "subgid"
 printf 'falso:1:999\n' >>/etc/subgid
 caso_grupo "grupo novo cairia no /etc/subgid" "subgid"
 confere "V9.11 o grupo recém-criado e recusado foi apagado" "$(getent group ward-app || echo ausente)" "ausente"
+cp /tmp/subgid.orig /etc/subgid
+# Fase 51a: outros caminhos para o gid do grupo.
+printf '*;*;*;Al0000-2400;ward-app\n' >>/etc/security/group.conf
+caso_grupo "pam_group (group.conf) dá o grupo no login" "pam_group"
+printf '%s ALL=(:ward-nm) NOPASSWD: /usr/bin/id\n' "$USUARIO" >/etc/sudoers.d/ward-teste
+caso_grupo "sudoers.d com sudo -g ward-nm" "sudoers"
+groupadd --system ward-app
+printf '%s ALL=(:#%s) NOPASSWD: /usr/bin/id\n' "$USUARIO" "$(getent group ward-app | cut -d: -f3)" >/etc/sudoers.d/incluido
+mv /etc/sudoers.d/incluido /etc/sudoers-extra
+printf '@include /etc/sudoers-extra\n' >/etc/sudoers.d/ward-teste
+caso_grupo "sudoers por @include com #<gid>" "sudoers"
+printf 'subid: sss\n' >>/etc/nsswitch.conf
+caso_grupo "nsswitch com subid: sss" "subid"
+printf 'sudoers: files ldap\n' >>/etc/nsswitch.conf
+caso_grupo "nsswitch com sudoers: files ldap" "sudoers"
+confere "V9.11 (51a) os grupos recém-criados e recusados foram apagados" "$(getent group ward-app ward-nm || echo ausente)" "ausente"
+rm -rf /usr/local/lib/ward
+
+# --- Fase 51a: outra política do Chrome com os nomes da do Ward -> recusa ---------------
+install -d -m 0755 /etc/opt/chrome/policies/managed
+printf '{"NativeMessagingUserLevelHosts": true}\n' >/etc/opt/chrome/policies/managed/outra.json
+r="$(instalar 2>&1)" && falhou "política conflitante: instalou" || ok "política conflitante (NativeMessagingUserLevelHosts em outro arquivo): recusada"
+confere "política conflitante: mensagem" "$r" "NativeMessagingUserLevelHosts"
+confere "política conflitante: nenhum arquivo do Ward" "$(nada_do_ward)" "nada"
+confere "política conflitante: nenhum grupo criado" "$(getent group ward-app ward-nm || echo ausente)" "ausente"
+rm -f /etc/opt/chrome/policies/managed/outra.json
 
 # --- V9.2: artefato modo-teste -> recusa antes de grupo e arquivo ---------------------
 r="$(instalar BIN_WARDD="$B/wardd-modo-teste" 2>&1)" && falhou "V9.2: instalou o wardd de teste" || ok "V9.2: wardd com modo-teste recusado"
@@ -122,6 +154,10 @@ done <"$T/repo/instalacao/arvore.txt"
 ok "V9.1: donos e modos de arvore.txt (root:root, ward-app e ward-nm root:<grupo> 2755)"
 confere "V9.6: manifesto de native messaging do root" "$(stat -c '%U %a' /etc/opt/chrome/native-messaging-hosts/br.ward.nm.json)" "root 644"
 confere "V9.6: allowed_origins só com o id" "$(grep allowed_origins /etc/opt/chrome/native-messaging-hosts/br.ward.nm.json)" "[\"chrome-extension://$ID/\"]"
+confere "Fase 51a: política com NativeMessagingUserLevelHosts false" "$(python3 -I -c 'import json,sys; p=json.load(open(sys.argv[1])); print(p["NativeMessagingUserLevelHosts"] is False, sorted(p))' /etc/opt/chrome/policies/managed/ward.json)" "True ['ExtensionSettings', 'NativeMessagingUserLevelHosts']"
+igual_marca="$(for g in ward-app ward-nm; do echo "$g $(getent group "$g" | cut -d: -f3)"; done)"
+confere "Fase 51a: marca dos grupos criados (nome e gid)" "$(sort /usr/local/lib/ward/grupos-criados)" "$igual_marca"
+confere "Fase 51a: marca root 0644" "$(stat -c '%U %a' /usr/local/lib/ward/grupos-criados)" "root 644"
 
 # V9.11: os grupos criados.
 for g in ward-app ward-nm; do
@@ -303,6 +339,19 @@ nao_tem "V9.10 wardd@$UID_T.socket não está mais habilitado" "$(systemctl is-e
 confere "V9.10 nenhum link em sockets.target.wants" "$(ls /etc/systemd/system/sockets.target.wants/ 2>/dev/null | grep -c wardd || true)" "0"
 confere "V9.10 o cofre do usuário intacto" "$(cd "$COFRE_T" && sha256sum cofre.ward estado; stat -c '%U %a' cofre.ward)" "$antes"
 r="$(make -s -C "$T/repo" uninstall 2>&1)" && ok "uninstall de novo sai 0" || { printf '%s\n' "$r"; falhou "uninstall repetido"; }
+
+# --- Fase 51a: grupo que já existia (e confere com D60) não é apagado no uninstall ------
+groupadd --system ward-app
+gid_admin="$(getent group ward-app | cut -d: -f3)"
+r="$(instalar 2>&1)" || { printf '%s\n' "$r"; falhou "instalar com ward-app do administrador"; }
+confere "grupo do administrador: aceito" "$r" "ward-app já existia e confere"
+nao_tem "grupo do administrador: fora da marca" "$(cat /usr/local/lib/ward/grupos-criados)" "ward-app"
+r="$(make -s -C "$T/repo" uninstall 2>&1)" || { printf '%s\n' "$r"; falhou "uninstall"; }
+confere "uninstall: ward-app do administrador fica (mesmo gid)" "$(getent group ward-app | cut -d: -f3)" "$gid_admin"
+confere "uninstall: avisa que ficou" "$r" "não foi criado pelo Ward"
+confere "uninstall: ward-nm (criado pelo Ward) apagado" "$(getent group ward-nm || echo ausente)" "ausente"
+[ ! -e /usr/local/lib/ward ] && ok "uninstall: /usr/local/lib/ward (com a marca) apagada" || falhou "/usr/local/lib/ward ficou"
+groupdel ward-app
 
 if [ "$falhas" -ne 0 ]; then
     echo "teste-install (contêiner): $falhas falha(s)"

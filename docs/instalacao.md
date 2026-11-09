@@ -50,6 +50,29 @@ Não misture as duas. Se já usou uma, desinstale antes de trocar.
    O risco não some: o build ainda roda como o seu usuário. Está anotado no handoff
    da Fase 52.
 
+4. **Native messaging de outros apps.** A política do Ward desliga os hosts de native
+   messaging do seu perfil do Chrome (`NativeMessagingUserLevelHosts: false`, passo 4).
+   Anote quais você usa hoje, para copiá-los depois (passo 4a):
+
+   ```sh
+   ls -l ~/.config/google-chrome/NativeMessagingHosts/ 2>/dev/null
+   ```
+
+   Se aparecer um `br.ward.nm.json` aí, **pare**: o Ward nunca grava no perfil. Esse
+   arquivo é o ataque que a política fecha. Apague-o e descubra quem o pôs antes de
+   seguir.
+
+5. **Outras políticas do Chrome.** A instalação recusa se outro arquivo de
+   `/etc/opt/chrome/policies/managed/` citar `ExtensionSettings` ou
+   `NativeMessagingUserLevelHosts` (ou tiver escape `\u`). Confira antes:
+
+   ```sh
+   ls -l /etc/opt/chrome/policies/managed/ 2>/dev/null
+   grep -l -E 'ExtensionSettings|NativeMessagingUserLevelHosts|\\u' /etc/opt/chrome/policies/managed/* 2>/dev/null
+   ```
+
+   Se o `grep` listar algum arquivo, veja "Outras políticas do Chrome" no passo 4b.
+
 ## 1. Build (como você, sem sudo)
 
 ```sh
@@ -92,8 +115,13 @@ sudo apt install /root/ward/ward_*.deb                         # ou: sudo dpkg -
 Durante a instalação:
 
 - o `preinst` cria `ward-app` e `ward-nm` como grupos de sistema (D60). Se um deles já
-  existir fora das regras (com membro, senha, gid ≥ 1000, no `/etc/subgid` etc.), a
-  instalação para antes de qualquer arquivo e diz qual regra falhou;
+  existir fora das regras (com membro, senha, gid ≥ 1000, no `/etc/subgid`, dado no
+  login pelo `/etc/security/group.conf`, citado num `sudoers`, ou com `subid:`/`sudoers:`
+  do `/etc/nsswitch.conf` fora de `files`), a instalação para antes de qualquer arquivo
+  e diz qual regra falhou. Os grupos que ele cria ficam anotados em
+  `/usr/local/lib/ward/grupos-criados`;
+- o `preinst` também para se outro arquivo de `/etc/opt/chrome/policies/managed/` citar
+  `ExtensionSettings` ou `NativeMessagingUserLevelHosts` (passo 0.5);
 - os binários setgid vêm no pacote como 0755. O 2755 com o grupo certo entra pelo
   `dpkg-statoverride` (confira com `dpkg-statoverride --list | grep ward`);
 - o `postinst` liga `wardd@<seu uid>.socket`. O uid vem do `SUDO_UID`. Se ele faltar,
@@ -137,7 +165,8 @@ systemctl --user unset-environment LD_PRELOAD
 Feche e abra o Chrome.
 
 1. Em `chrome://policy`, `ExtensionSettings` aparece com o id
-   `nhkehjnmlgkebhmelajfpmpblepaichf`, `force_installed`, sem erro.
+   `nhkehjnmlgkebhmelajfpmpblepaichf`, `force_installed`, sem erro, e
+   `NativeMessagingUserLevelHosts` aparece como `false`, também sem erro nem conflito.
 2. Em `chrome://extensions`, a extensão Ward aparece como **instalada pela sua
    organização**. Não há botão de remover e a chave de ativar fica travada.
 3. Ainda em `chrome://extensions`, ligue o modo desenvolvedor e tente "Carregar sem
@@ -152,9 +181,123 @@ que `chrome://policy` e `chrome://extensions` mostram e leve para a missão. A
 alternativa planejada é o `external_crx` em `/opt/google/chrome/extensions/<id>.json`,
 mais a política só para impedir desativar.
 
-Também confira se não há outro arquivo em `/etc/opt/chrome/policies/managed/` com
-`ExtensionSettings`. O Chrome não junta dois `ExtensionSettings` de arquivos
-diferentes.
+## 4a. Outros apps com native messaging (1Password, Claude in Chrome…)
+
+**O que muda.** A política do Ward liga `NativeMessagingUserLevelHosts: false`. Com ela,
+o Chrome só abre hosts de native messaging cujo manifesto esteja em
+`/etc/opt/chrome/native-messaging-hosts/` (pasta do root). Os manifestos do seu perfil,
+em `~/.config/google-chrome/NativeMessagingHosts/`, deixam de valer.
+
+**Por que.** Sem isso, qualquer programa rodando como o seu usuário (um pacote npm, um
+script) pode gravar um `br.ward.nm.json` no seu perfil. Esse manifesto vence o do
+sistema, e o script dele recebe a conexão da extensão do Ward no lugar do `ward-nm`. A
+auditoria do M9 fez isso e tirou senhas e códigos TOTP de 4 entradas `login`. Com a
+política, esse arquivo é ignorado. O teste é o `make teste-politica-chrome`.
+
+**O efeito colateral.** Apps que instalaram o manifesto só no seu perfil param de
+falar com a extensão deles no Chrome. Exemplos: o 1Password (destravar pelo app do
+desktop) e o Claude in Chrome. Para voltarem a funcionar, copie o manifesto de cada um
+para a pasta do sistema. **Você** executa os comandos abaixo, um app por vez.
+
+Antes de copiar, saiba que o manifesto copiado continua apontando (`path`) para o
+mesmo programa de antes. Se esse programa está no seu home, um processo do seu usuário
+ainda pode trocá-lo. Esse risco é do app, não do Ward: o host do Ward é o
+`/usr/local/lib/ward/ward-nm`, do root. Copie só os apps que você usa de fato.
+
+1. Copie o manifesto para uma pasta do root e leia a cópia. Assim nada do seu usuário
+   consegue trocá-lo entre a leitura e a instalação. Troque `<nome>` pelo nome do
+   arquivo, sem o `.json` (por exemplo, `com.1password.1password`):
+
+   ```sh
+   nome='<nome>'
+   [ "$nome" != br.ward.nm ] || echo 'PARE: br.ward.nm no perfil é o ataque; apague-o'
+   sudo install -d -m 0700 -o root -g root /root/ward-nm-hosts
+   # O `cat` roda como você (um link para arquivo do root não é lido); só o `tee` é root.
+   cat ~/.config/google-chrome/NativeMessagingHosts/"$nome".json | sudo tee /root/ward-nm-hosts/"$nome".json >/dev/null
+   sudo chmod 0600 /root/ward-nm-hosts/"$nome".json
+   sudo python3 -I -m json.tool /root/ward-nm-hosts/"$nome".json
+   ```
+
+   Confira na saída:
+   - `"name"` é igual a `<nome>`, e **nunca** `br.ward.nm`;
+   - `"path"` é um caminho absoluto do app que você conhece (por exemplo,
+     `/opt/1Password/…`);
+   - `"allowed_origins"` só tem a extensão desse app.
+
+   Se algo não bater, pare e apague a cópia (`sudo rm /root/ward-nm-hosts/"$nome".json`).
+
+2. Instale a cópia lida na pasta do sistema. O comando só instala se a cópia é um JSON
+   com `name` igual a `<nome>` (e não `br.ward.nm`), e não sobrescreve um arquivo que
+   já esteja lá:
+
+   ```sh
+   sudo python3 -I -c 'import json, sys; m = json.load(open(sys.argv[1])); sys.exit(not (m.get("name") == sys.argv[2] != "br.ward.nm"))' \
+       /root/ward-nm-hosts/"$nome".json "$nome" &&
+     [ ! -e /etc/opt/chrome/native-messaging-hosts/"$nome".json ] &&
+     sudo install -m 0644 -o root -g root /root/ward-nm-hosts/"$nome".json /etc/opt/chrome/native-messaging-hosts/ &&
+     echo instalado
+   ```
+
+3. **Conferir.**
+
+   ```sh
+   ls -l /etc/opt/chrome/native-messaging-hosts/   # root root 644 em cada um; br.ward.nm.json continua lá
+   sudo cmp /root/ward-nm-hosts/"$nome".json /etc/opt/chrome/native-messaging-hosts/"$nome".json && echo igual
+   ```
+
+   Feche e abra o Chrome e use o app (por exemplo, destrave o 1Password pela extensão
+   ou abra o Claude in Chrome). Em `chrome://policy`,
+   `NativeMessagingUserLevelHosts` continua `false`.
+
+4. **Voltar atrás** (só deste app):
+
+   ```sh
+   sudo rm /etc/opt/chrome/native-messaging-hosts/"$nome".json
+   sudo rm /root/ward-nm-hosts/"$nome".json
+   ```
+
+   Nunca apague nem edite o `br.ward.nm.json` da mesma pasta, nem o `ward.json` de
+   `/etc/opt/chrome/policies/managed/`. Editar a política reabre o ataque, e a próxima
+   instalação a sobrescreve de qualquer forma. Para tirar a política, desinstale o Ward
+   (passo 6).
+
+Quando o app se atualizar e regravar o manifesto no seu perfil (com outro `path`, por
+exemplo), refaça os passos 1 a 3, apagando antes a cópia antiga do sistema. A cópia é
+uma foto de quando você a fez. Os manifestos que você copiou não são do Ward: o
+`dpkg -r`/`make uninstall` não os apaga.
+
+## 4b. Outras políticas do Chrome
+
+O Chrome lê todo arquivo de `/etc/opt/chrome/policies/managed/` e não junta o mesmo
+nome vindo de dois arquivos: um deles vence. Por isso a instalação (pelo `.deb` e pelo
+`make install`) recusa se outro arquivo dessa pasta citar `ExtensionSettings` ou
+`NativeMessagingUserLevelHosts`, ou tiver um escape `\u`, que poderia esconder esses
+nomes. A mensagem diz qual arquivo é, e nada é instalado.
+
+O que fazer:
+
+1. Veja o arquivo e de onde ele veio (`dpkg -S <arquivo>` diz se é de um pacote):
+
+   ```sh
+   sudo cat /etc/opt/chrome/policies/managed/<arquivo>
+   dpkg -S /etc/opt/chrome/policies/managed/<arquivo>
+   ```
+
+2. Se você não precisa dele, tire-o da pasta, sem apagar:
+
+   ```sh
+   sudo install -d -m 0700 -o root -g root /root/ward-politicas
+   sudo mv /etc/opt/chrome/policies/managed/<arquivo> /root/ward-politicas/
+   ```
+
+   Se ele também define outras políticas que você quer manter, crie um arquivo novo só
+   com elas, sem os dois nomes acima, e rode a instalação de novo.
+
+3. **Voltar atrás:** `sudo mv /root/ward-politicas/<arquivo> /etc/opt/chrome/policies/managed/`.
+   Com o arquivo de volta, a próxima instalação do Ward recusa de novo.
+
+Se você precisa de `ExtensionSettings` para outra extensão, o Ward ainda não consegue
+conviver com isso: leve o caso para a missão.
 
 ## 5. Conferir o SSH (V9.8)
 
@@ -175,9 +318,11 @@ não usa `SSH_AUTH_SOCK`, `environment.d` nem `ssh_config` (D18).
 sudo dpkg -r ward          # ou sudo dpkg -P ward; ou sudo make uninstall
 ```
 
-A remoção para e desliga todo `wardd@*`, apaga os arquivos, os overrides, `/run/ward`
-e os grupos. O cofre e os backups em `~/.local/share/ward/` ficam. Os grupos
-`ward-app` e `ward-nm` saem mesmo se já existiam antes da instalação.
+A remoção para e desliga todo `wardd@*`, apaga os arquivos, os overrides e `/run/ward`.
+Dos grupos `ward-app` e `ward-nm`, apaga só os que a instalação criou (anotados em
+`/usr/local/lib/ward/grupos-criados`, com o gid). Um grupo que já existia antes fica, e
+a remoção avisa. O cofre e os backups em `~/.local/share/ward/` ficam, e também os
+manifestos de outros apps que você copiou no passo 4a.
 
 ## 7. Backup externo: como o Ward reconhece o pendrive
 

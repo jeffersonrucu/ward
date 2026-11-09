@@ -112,7 +112,14 @@ for s in preinst postinst prerm postrm; do
 done
 grep -q '^garantir_grupo()' "$TMP/control/preinst" && grep -q '^conferir_grupo()' "$TMP/control/preinst" &&
     ok "preinst tem as funções de instalacao/grupos.sh" || falhou "preinst sem as funções de grupos"
-confere "preinst sem marca de modelo" "$(grep -c '#@' "$TMP/control/preinst" || true)" "0"
+grep -q '^conferir_politicas_chrome()' "$TMP/control/preinst" && grep -q '^        conferir_politicas_chrome /etc/opt/chrome/policies/managed$' "$TMP/control/preinst" &&
+    ok "preinst confere as outras políticas do Chrome (Fase 51a)" || falhou "preinst sem conferir_politicas_chrome"
+grep -q '^apagar_grupos_marcados()' "$TMP/control/postrm" && ok "postrm tem a marca dos grupos (Fase 51a)" || falhou "postrm sem apagar_grupos_marcados"
+grep -q '^avisar_manifestos_de_usuario()' "$TMP/control/postinst" && ok "postinst avisa dos manifestos do perfil (Fase 51a)" || falhou "postinst sem o aviso"
+for s in preinst postinst prerm postrm; do
+    confere "$s sem marca de modelo" "$(grep -c '#@' "$TMP/control/$s" || true)" "0"
+done
+confere "política do pacote com NativeMessagingUserLevelHosts false (Fase 51a)" "$(grep -c '^  "NativeMessagingUserLevelHosts": false,$' "$X/etc/opt/chrome/policies/managed/ward.json")" "1"
 confere "preinst confere as pastas do sistema" "$(grep -c '^    usr/local/bin$' "$TMP/control/preinst")" "1"
 [ ! -e "$TMP/control/conffiles" ] && ok "sem conffiles (a política e o manifesto saem com o pacote)" || falhou "conffiles inesperado"
 
