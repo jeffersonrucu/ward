@@ -408,6 +408,8 @@ Pendências da 22b (2026-11-09): V3.34 do lado do app (`VmLck: 0 kB` no app filh
 
 Pendências da 34 (2026-11-09): editar com anexo segue bloqueado (mesma decisão da 33); o `ward-core` recusa nome de anexo começando por `.` (ex.: `.env`, citado no escopo) e a tela não renomeia — decidir; V5.24 ponta a ponta ("Conectar" → `emitir_token` no `wardd` responde `interno`, `ward ssh --token` vem na 27); lista de túnel não sabe quais servidores têm salto (erro só ao salvar); chave privada virou textarea mascarado; dependência direta nova `gtk =0.18.2` no `app/src-tauri` (diálogo de arquivo) — RA7/auditoria do M5 olha; `x-terminal-emulator` no COSMIC não conferido.
 
+Pendências da 23a (2026-11-09): `make teste-sem-modo-teste` fica fora do `make check` (o scrutiny do M3 roda); o copiar não funciona na ponte aberta pelo daemon (ambiente mínimo sem `WAYLAND_DISPLAY`); binário de teste aceita g+w (umask 002); token da ponte no log 0600 (resíduo de D63); fila de avisos sem consumidor na interface (31/36); teste da 22b `v3_33_kill_9_entre_as_senhas_erradas` é sensível a tempo (907 ms > 900 ms sob carga) — dar margem.
+
 ## Milestone 3 — Daemon e protocolo
 Contrato: V3.1–V3.41
 
@@ -549,7 +551,7 @@ Contrato: V3.1–V3.41
   - a resposta de `estado` traz o papel (`agente`/`app`/`extensao`), sem outro dado;
   - o log do daemon registra o código de saída (ou sinal) do app lançado, só o número.
   V3.36 (a parte do classificador), V3.38 (a parte do protocolo e do log).
-- [ ] Fase 23a — (Depende da 23.) App de teste com o papel app (D63). Arquivos:
+- [x] Fase 23a — (Depende da 23.) App de teste com o papel app (D63). Arquivos:
   `crates/wardd` (config e classificação, só atrás de `modo-teste`),
   `crates/ward-plataforma` (`lancar_para_teste`: ambiente fixo mínimo para a ponte,
   saída em `.dev/logs/<binário>.log` 0600), `app/nucleo` e `crates/ward-ponte-teste`
