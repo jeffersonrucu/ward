@@ -985,7 +985,8 @@ Contrato: V8.1–V8.4
   `modo-teste` no `target/` compartilhado (usar target próprio); escopo e roteiro do M10
   dizem explicitamente que nível "livre" = o agente consegue ler o segredo (RA3). V8.2.
 
-Scrutiny do M8 (2026-11-09): aprovado; tipo `ftp-sftp` corrigido na skill. `Bash(*…)` e
+Validação do M8 (2026-11-09): segurança e QA aprovados; contrato V8.* marcado depois da 50a.
+Roteiro: `docs/mission/evidence/M8/roteiro-usuario.md`. Scrutiny do M8 (2026-11-09): aprovado; tipo `ftp-sftp` corrigido na skill. `Bash(*…)` e
 caminhos `//` do `settings-deny.json` só se conferem no Claude Code real (M10).
 
 ## Milestone 9 — Instalação
