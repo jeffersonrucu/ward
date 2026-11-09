@@ -164,6 +164,163 @@ if os.path.exists(variacoes):
     conferir(achados == 0, f"S1 nenhum padrão de .dev/variacoes.txt na saída da lista ({achados})")
 else:
     conferir(False, "falta .dev/variacoes.txt: rode 'make dev-variacoes'")
+    padroes = []
+
+# --- 3. `ward run` (Fase 26) contra o daemon de teste ---------------------------------
+# Só comandos locais (sh, env, cat, sha256sum): nenhum cliente ssh/curl aqui.
+
+
+def run(args, env=None, entrada=b""):
+    return subprocess.run([WARD, "run"] + args, env=env or ambiente(), input=entrada,
+                          capture_output=True, timeout=150)
+
+
+def sem_variacao(r, rotulo):
+    tudo = r.stdout + r.stderr
+    achados = sum(1 for p in padroes if p in tudo)
+    conferir(achados == 0, f"S4 {rotulo}: nenhum padrão de .dev/variacoes.txt na saída ({achados})")
+
+
+r = run(["acme-wp-prod", "--", "/bin/sh", "-c", 'printf "%s|%s" "$WARD_USER" "$WARD_PASS"; exit 5'])
+conferir(r.returncode == 5, f"V4.19 o código do comando volta (saiu {r.returncode})")
+conferir(r.stdout.decode().endswith("|••••"), "V4.17 a senha impressa sai ••••")
+sem_variacao(r, "login")
+
+r = run(["gama-generico", "--", "/bin/sh", "-c",
+         'f="$WARD_ARQUIVO_APP_ENV"; stat -c %a "$f"; cat "$f"; env; echo "$f"'])
+saida = r.stdout.decode(errors="replace")
+conferir(r.returncode == 0 and saida.startswith("600\n"), "V4.10 anexo 0600 entregue")
+caminho = saida.strip().split("\n")[-1]
+conferir(caminho.startswith(f"/run/user/{UID}/") and "/tmp/" in caminho, "S2 anexo em <rt>tmp/")
+conferir(not os.path.exists(caminho), "V4.15 anexo apagado no fim")
+conferir("LISTEN_" not in saida and "WARD_DEV_DIR" not in saida, "D60 nada do ambiente do daemon")
+sem_variacao(r, "genérico + anexo + env")
+
+r = run(["acme-wp-prod", "--", "/bin/cat"], entrada=b"entrada padrao 26\n")
+conferir(r.returncode == 0 and r.stdout == b"entrada padrao 26\n", "D13 a entrada padrão chega ao comando")
+
+r = run(["gama-nota", "--", "/bin/true"])
+conferir(r.returncode != 0 and b"tipo sem entrega" in r.stderr, "V4.11 nota segura: tipo sem entrega")
+
+r = run(["gama-bloqueada", "--", "/bin/true"])
+conferir(r.returncode != 0 and b"entrada" in r.stderr, "bloqueada = inexistente")
+
+grande = ambiente({f"GRANDE_{i}": "x" * (100 * 1024) for i in range(8)})
+r = run(["acme-wp-prod", "--", "/bin/true"], env=grande)
+conferir(r.returncode != 0 and b"passam de 750 KiB" in r.stderr and b"xxxx" not in r.stderr,
+         "V4.36 (D52) ambiente acima de 750 KiB recusado sem citar valor")
+
+r = run(["acme-wp-prod", "--", "/usr/bin/env"], env=ambiente({"LD_PRELOAD": "/nao/existe.so"}))
+conferir(r.returncode == 0 and b"LD_PRELOAD" not in r.stdout, "D13 LD_* não chega ao filho")
+
+# V4.17 (S4): $PGPASSWORD puro, em base64, com urllib.parse.quote, cortado no `:` com
+# `sleep 0.2`, e tudo de novo no stderr.
+V417 = r'''
+p="$PGPASSWORD"
+printf '%s\n' "$p"; printf %s "$p" | base64
+python3 -I -c 'import os, urllib.parse; print(urllib.parse.quote(os.environ["PGPASSWORD"], safe=""))'
+printf '%s' "${p%%:*}:"; sleep 0.2; printf '%s\n' "${p#*:}"
+'''
+r = run(["acme-pg-dev", "--", "/bin/sh", "-c", V417 + "{\n" + V417 + "} >&2"])
+saida = r.stdout + r.stderr
+conferir(r.returncode == 0 and saida.count("••••".encode()) >= 8, "V4.17 as oito formas saem ••••")
+sem_variacao(r, "V4.17")
+
+# V4.3–V4.8, V4.10: o filho imprime só o sha256 de cada variável (e de cada arquivo
+# entregue); o esperado sai da tabela "Entrega esperada", com os valores falsos lidos de
+# dev/fixtures/entradas.json (nenhum segredo escrito aqui).
+import hashlib  # noqa: E402
+import hmac  # noqa: E402
+import struct  # noqa: E402
+import urllib.parse  # noqa: E402
+
+FIX = {e["nome"]: e for e in json.load(open(os.path.join(RAIZ, "dev/fixtures/entradas.json")))["entradas"]}
+
+
+def c(n, k):
+    return str(FIX[n]["campos"][k])
+
+
+def s(n, k):
+    return FIX[n]["segredos"][k]
+
+
+def totp(semente_b32, t):
+    chave = __import__("base64").b32decode(semente_b32)
+    h = hmac.new(chave, struct.pack(">Q", int(t) // 30), hashlib.sha1).digest()
+    o = h[-1] & 15
+    return "%06d" % ((struct.unpack(">I", h[o:o + 4])[0] & 0x7FFFFFFF) % 1000000)
+
+
+def h(v):
+    return hashlib.sha256(v if isinstance(v, bytes) else v.encode()).hexdigest()
+
+
+pg = {"PGHOST": c("acme-pg-dev", "host"), "PGPORT": c("acme-pg-dev", "porta"),
+      "PGDATABASE": c("acme-pg-dev", "base"), "PGUSER": c("acme-pg-dev", "usuario"),
+      "PGPASSWORD": s("acme-pg-dev", "senha")}
+pg["DATABASE_URL"] = "postgresql://%s:%s@%s:%s/%s" % (
+    pg["PGUSER"], urllib.parse.quote(pg["PGPASSWORD"], safe=""), pg["PGHOST"], pg["PGPORT"], pg["PGDATABASE"])
+ESPERADO = {
+    "acme-wp-prod": {"WARD_URL": c("acme-wp-prod", "url"), "WARD_USER": c("acme-wp-prod", "usuario"),
+                     "WARD_PASS": s("acme-wp-prod", "senha")},
+    "acme-pg-dev": pg,
+    "acme-ssh-senha-stage": {"WARD_HOST": "127.0.0.1", "WARD_PORT": "2222", "WARD_USER": "deploy",
+                             "WARD_PASS": s("acme-ssh-senha-stage", "senha")},
+    "acme-ssh-chave-prod": {"WARD_HOST": "127.0.0.1", "WARD_PORT": "2223", "WARD_USER": "deploy",
+                            "WARD_PASSPHRASE": s("acme-ssh-chave-prod", "passphrase")},
+    "beta-github-api": {"WARD_URL": c("beta-github-api", "url"), "WARD_TOKEN": s("beta-github-api", "token"),
+                        "GITHUB_TOKEN": s("beta-github-api", "token")},
+    "beta-aws-dev": {"AWS_ACCESS_KEY_ID": c("beta-aws-dev", "access_key_id"),
+                     "AWS_SECRET_ACCESS_KEY": s("beta-aws-dev", "secret_access_key"),
+                     "AWS_SESSION_TOKEN": s("beta-aws-dev", "session_token"),
+                     "AWS_REGION": c("beta-aws-dev", "regiao"), "AWS_DEFAULT_REGION": c("beta-aws-dev", "regiao"),
+                     "AWS_ROLE_ARN": c("beta-aws-dev", "role_arn")},
+    "beta-smtp-stage": {"SMTP_HOST": c("beta-smtp-stage", "host"), "SMTP_PORT": c("beta-smtp-stage", "porta"),
+                        "SMTP_USER": c("beta-smtp-stage", "usuario"), "SMTP_PASS": s("beta-smtp-stage", "senha"),
+                        "SMTP_SECURITY": c("beta-smtp-stage", "seguranca")},
+    "beta-sftp-dev": {"WARD_PROTOCOLO": "sftp", "WARD_HOST": "127.0.0.1", "WARD_PORT": "2222",
+                      "WARD_USER": "sftpuser", "WARD_PASS": s("beta-sftp-dev", "senha")},
+    "gama-generico": {"WARD_REGIAO": "r-01",
+                      "WARD_CHAVE_LICENCA": [x for x in FIX["gama-generico"]["extras"]
+                                             if x["nome"] == "CHAVE_LICENCA"][0]["valor"]},
+}
+ARQUIVOS = {
+    "acme-ssh-chave-prod": {"WARD_ARQUIVO_CHAVE": s("acme-ssh-chave-prod", "chave_privada_arquivo")},
+    "gama-generico": {"WARD_ARQUIVO_APP_ENV": FIX["gama-generico"]["anexos"][0]["arquivo"]},
+}
+# Para cada nome: "<nome> <sha256 do valor>"; para arquivo: "<nome> <modo> <pasta> <sha256>".
+SCRIPT = r'''
+for n; do
+  case "$n" in
+    arq:*) n="${n#arq:}"; f="$(printenv "$n")"
+           printf '%s %s %s ' "$n" "$(stat -c %a "$f")" "$(dirname "$(dirname "$f")")"
+           sha256sum < "$f" | cut -c1-64 ;;
+    *) printf '%s ' "$n"; printf %s "$(printenv "$n"; echo x)" | head -c -2 | sha256sum | cut -c1-64 ;;
+  esac
+done
+'''
+for nome, vars_ in ESPERADO.items():
+    extra = FIX[nome]
+    tudo = dict(vars_, WARD_ENTRADA=nome, WARD_GRUPO=extra["grupo"], WARD_AMBIENTE=extra["ambiente"])
+    nomes = list(tudo) + ["arq:" + k for k in ARQUIVOS.get(nome, {})]
+    if nome == "acme-wp-prod":
+        nomes.append("WARD_TOTP")
+    antes = time.time()
+    r = run([nome, "--", "/bin/sh", "-c", SCRIPT, "sh"] + nomes)
+    depois = time.time()
+    linhas = dict(l.split(" ", 1) for l in r.stdout.decode().splitlines() if " " in l)
+    bate = r.returncode == 0 and all(linhas.get(k) == h(v) for k, v in tudo.items())
+    for k, caminho in ARQUIVOS.get(nome, {}).items():
+        conteudo = open(os.path.join(RAIZ, caminho), "rb").read()
+        modo, pasta, hash_ = (linhas.get(k) or "  ").split(" ")
+        bate = bate and modo == "600" and pasta.startswith(f"/run/user/{UID}/") \
+            and pasta.endswith("/tmp") and hash_ == h(conteudo)
+    if nome == "acme-wp-prod":
+        semente = s(nome, "totp_semente")
+        bate = bate and linhas.get("WARD_TOTP") in {h(totp(semente, t)) for t in (antes, depois)}
+    conferir(bate, f"V4.3–V4.10 entrega de {nome} bate com a tabela ({len(nomes)} itens)")
+    sem_variacao(r, f"hashes de {nome}")
 
 print(f"\n{len(falhas)} falha(s)")
 sys.exit(1 if falhas else 0)

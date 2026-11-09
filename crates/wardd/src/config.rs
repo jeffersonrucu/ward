@@ -21,6 +21,10 @@ pub struct Config {
     pub caminhos: Caminhos,
     /// Diretório do socket do daemon de teste (`None` no release).
     pub diretorio_socket_teste: Option<PathBuf>,
+    /// `<rt>` (Fase 26, S2): os temporários do `ward run` ficam em `<rt>tmp/`. Release:
+    /// `/run/user/<uid>/ward/` (pelo uid efetivo, não por `XDG_RUNTIME_DIR`); daemon de
+    /// teste: o diretório do socket de teste.
+    pub rt: PathBuf,
 }
 
 /// Caminho absoluto sem `.`, `..` nem `//`, conferido nos bytes (o `components()` do
@@ -58,6 +62,8 @@ impl Config {
                 estado: dir.join("estado"),
             },
             diretorio_socket_teste: None,
+            rt: ward_plataforma::socket::diretorio_runtime()
+                .join(ward_plataforma::socket::NOME_DIRETORIO),
         })
     }
 
@@ -73,6 +79,7 @@ impl Config {
         };
         Ok(Config {
             caminhos: caminhos_de_teste(&dev),
+            rt: socket.clone(),
             diretorio_socket_teste: Some(socket),
         })
     }

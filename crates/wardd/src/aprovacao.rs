@@ -211,6 +211,9 @@ pub struct Motor {
     relogio: Arc<dyn RelogioMotor>,
     abridor: Box<dyn AbridorApp>,
     interno: Arc<Interno>,
+    /// Cofre travado e sem app para mostrar a tela: espera os 2 min mesmo assim (o
+    /// usuário pode destravar pela CLI, V4.21). Desligado, responde `travado` na hora.
+    esperar_sem_app: bool,
 }
 
 impl Motor {
@@ -227,7 +230,16 @@ impl Motor {
                 }),
                 mudou: Condvar::new(),
             }),
+            esperar_sem_app: false,
         }
+    }
+
+    /// Com o cofre travado e sem app, o pedido do agente espera o destrave pela CLI
+    /// (`ward destravar` em outro terminal) até [`PRAZO_DESTRAVE`] (D16, V4.21), em vez
+    /// de responder `travado` na hora. O `wardd` liga; os testes do motor, não.
+    pub fn esperando_sem_app(mut self) -> Self {
+        self.esperar_sem_app = true;
+        self
     }
 
     /// Motor sem app (D21), com o relógio do sistema.
@@ -393,10 +405,14 @@ impl Motor {
             } else {
                 drop(g);
                 if self.abrir().is_err() {
-                    // Ninguém mostraria a tela; quem pediu fica sabendo já.
-                    self.sair_destrave();
-                    aviso!("pedido com o cofre travado: app indisponível");
-                    return Err(ErroResposta::Travado);
+                    if !self.esperar_sem_app {
+                        // Ninguém mostraria a tela; quem pediu fica sabendo já.
+                        self.sair_destrave();
+                        aviso!("pedido com o cofre travado: app indisponível");
+                        return Err(ErroResposta::Travado);
+                    }
+                    // V4.21: o usuário pode destravar pela CLI; a CLI avisa quem pediu.
+                    aviso!("pedido com o cofre travado: app indisponível; esperando a CLI");
                 }
             }
         }

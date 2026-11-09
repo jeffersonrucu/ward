@@ -311,7 +311,8 @@ teste-docker-uid: origens
 ## com LimitCORE=0, LimitMEMLOCK=infinity e sem no_new_privs
 teste-units: origens
 	$(CARGO) build --quiet --locked -p wardd --bin wardd --example wardd-cliente-teste --target-dir target/sem-modo-teste
-	dev/testes/units.sh target/sem-modo-teste/debug/wardd target/sem-modo-teste/debug/examples/wardd-cliente-teste
+	$(CARGO) build --quiet --locked -p ward --bin ward --target-dir target/sem-modo-teste
+	dev/testes/units.sh target/sem-modo-teste/debug/wardd target/sem-modo-teste/debug/examples/wardd-cliente-teste target/sem-modo-teste/debug/ward
 
 # --- Daemon de teste (Fase 22) ------------------------------------------------------
 # `wardd` com a feature `modo-teste`: cofre de `.dev/`, socket em

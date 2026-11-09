@@ -112,6 +112,8 @@ struct Teste {
     senha: Result<&'static str, ErroTerminal>,
     out: Vec<u8>,
     err: Vec<u8>,
+    /// Ambiente do `ward run` (no lugar do do processo de teste).
+    amb: Vec<(std::ffi::OsString, std::ffi::OsString)>,
 }
 
 impl Teste {
@@ -124,6 +126,7 @@ impl Teste {
             senha: Ok(SENHA),
             out: Vec::new(),
             err: Vec::new(),
+            amb: vec![("PATH".into(), "/usr/bin:/bin".into())],
         }
     }
     fn rodar(&mut self, args: &[&str]) -> u8 {
@@ -171,6 +174,49 @@ impl Entorno for Teste {
     fn erro(&mut self) -> &mut dyn Write {
         &mut self.err
     }
+    fn ambiente(&self) -> Vec<(std::ffi::OsString, std::ffi::OsString)> {
+        self.amb.clone()
+    }
+    fn entrada_padrao(&mut self) -> Box<dyn Read + Send> {
+        Box::new(io::empty())
+    }
+}
+
+/// D52: argv + ambiente acima de 750 KiB saem ≠ 0 com a mensagem fixa, sem citar valor e
+/// sem nem conectar; um campo acima de 128 KiB também. Uso errado sai 2.
+#[test]
+fn d52_run_grande_demais_recusado_antes_de_conectar() {
+    use crate::comandos::{MSG_RUN_CAMPO, MSG_RUN_GRANDE, SAIDA_RUN_ERRO};
+    let valor = "falso-grande-".repeat(70 * 1024 / 13);
+    let mut t = Teste::novo(ServidorEsperado::sistema(), true);
+    t.amb = (0..12)
+        .map(|i| (format!("V{i}").into(), valor.clone().into()))
+        .collect();
+    assert_eq!(
+        t.rodar(&["run", "acme-pg-dev", "--", "psql"]),
+        SAIDA_RUN_ERRO
+    );
+    assert_eq!(t.err(), format!("ward: {MSG_RUN_GRANDE}\n"));
+    assert!(t.eventos.is_empty(), "{:?}", t.eventos);
+    assert!(!t.err().contains("falso-grande") && t.out.is_empty());
+
+    let mut t = Teste::novo(ServidorEsperado::sistema(), true);
+    t.amb = vec![("X".into(), "falso-campo-".repeat(12 * 1024).into())];
+    assert_eq!(t.rodar(&["run", "e", "--", "true"]), SAIDA_RUN_ERRO);
+    assert_eq!(t.err(), format!("ward: {MSG_RUN_CAMPO}\n"));
+    assert!(t.eventos.is_empty());
+
+    // Abaixo do limite: passa da medida (aqui, para no daemon ausente).
+    let mut t = Teste::novo(
+        ServidorEsperado::sistema_em(PathBuf::from("/run/ward/4294967294/wardd.sock")),
+        true,
+    );
+    t.amb = vec![("X".into(), "x".repeat(600 * 1024 / 8).into())];
+    assert_eq!(t.rodar(&["run", "e", "--", "true"]), SAIDA_RUN_ERRO);
+    assert_eq!(t.eventos, ["conectar"]);
+    let mut t = Teste::novo(ServidorEsperado::sistema(), true);
+    assert_eq!(t.rodar(&["run", "e", "true"]), SAIDA_USO);
+    assert!(t.eventos.is_empty());
 }
 
 #[cfg(feature = "modo-teste")]
@@ -344,6 +390,61 @@ mod com_daemon_falso {
 
     fn teste(pasta: &Pasta) -> Teste {
         Teste::novo(ServidorEsperado::teste_em(pasta.socket()), false)
+    }
+
+    /// `ward run` contra um daemon falso: o pedido leva argv, cwd e o ambiente sem
+    /// `LD_*` (D13); a saída e o código vêm do daemon; erro do daemon sai 125. O
+    /// cofre travado avisa que espera o destrave (V4.21).
+    #[test]
+    fn run_pedido_saida_e_codigo() {
+        use crate::comandos::{MSG_RUN_TRAVADO, SAIDA_RUN_ERRO};
+        use ward_core::protocolo::Fluxo;
+        for (entrada, travado) in [("t-ok", false), ("t-nota", false), ("t-ok", true)] {
+            let pasta = Pasta::nova();
+            let visto_amb: Arc<Mutex<Vec<Vec<u8>>>> = Arc::default();
+            let va = Arc::clone(&visto_amb);
+            let _v = servidor(
+                &pasta,
+                Some(Arc::new(move |p: &Pedido| match p {
+                    Pedido::Estado => codificar(&resposta_estado(travado)),
+                    Pedido::Executar(x) if x.entrada == "t-nota" => {
+                        codificar(&Resposta::Erro(ErroResposta::TipoSemEntrega))
+                    }
+                    Pedido::Executar(x) => {
+                        assert_eq!(x.argv.len(), 2);
+                        assert_eq!(x.argv[0].as_slice(), b"sh");
+                        assert!(!x.cwd.is_empty());
+                        va.lock()
+                            .unwrap()
+                            .extend(x.ambiente.iter().map(|v| v.nome.to_vec()));
+                        // O falso responde um quadro por pedido: a saída aqui e o fim
+                        // na resposta ao fim da entrada padrão.
+                        codificar(&Resposta::Saida {
+                            fluxo: Fluxo::Saida,
+                            dados: Zeroizing::new("ok ••••\n".as_bytes().to_vec()),
+                        })
+                    }
+                    Pedido::EntradaPadrao { .. } => codificar(&Resposta::Fim { codigo: 3 }),
+                    _ => codificar(&Resposta::Erro(ErroResposta::NaoAutorizado)),
+                })),
+            );
+            let mut t = teste(&pasta);
+            t.amb = vec![
+                ("PATH".into(), "/usr/bin:/bin".into()),
+                ("LD_PRELOAD".into(), "/x.so".into()),
+                ("LD_AUDIT".into(), "/y.so".into()),
+            ];
+            let codigo = t.rodar(&["run", entrada, "--", "sh", "-c"]);
+            if entrada == "t-nota" {
+                assert_eq!(codigo, SAIDA_RUN_ERRO);
+                assert_eq!(t.err(), "ward: tipo sem entrega\n");
+                continue;
+            }
+            assert_eq!(codigo, 3, "{}", t.err());
+            assert_eq!(t.out(), "ok ••••\n");
+            assert_eq!(*visto_amb.lock().unwrap(), [b"PATH".to_vec()]);
+            assert_eq!(t.err().contains(MSG_RUN_TRAVADO), travado, "{}", t.err());
+        }
     }
 
     #[test]

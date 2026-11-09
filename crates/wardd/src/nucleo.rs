@@ -161,6 +161,9 @@ pub struct Daemon {
     gancho_gravado: Option<Gancho>,
     /// Motor de aprovação (Fase 23).
     pub(crate) aprovacao: Motor,
+    /// `<rt>` (Fase 26): os anexos do `ward run` ficam em `<rt>tmp/` (S2). `None`: o
+    /// `ward run` de entrada com arquivo responde `entrega_falhou`.
+    temporarios: Option<PathBuf>,
 }
 
 /// Gancho de teste de [`Daemon::com_gancho_depois_de_gravar`].
@@ -307,7 +310,19 @@ impl Daemon {
             relogio,
             aprovacao: Motor::sem_app(),
             gancho_gravado: None,
+            temporarios: None,
         }
+    }
+
+    /// Liga o `<rt>` dos temporários do `ward run` (Fase 26, S2): `<rt>tmp/`.
+    pub fn com_temporarios(mut self, rt: PathBuf) -> Self {
+        self.temporarios = Some(rt);
+        self
+    }
+
+    /// O `<rt>` dos temporários, se houver.
+    pub(crate) fn temporarios(&self) -> Option<&std::path::Path> {
+        self.temporarios.as_deref()
     }
 
     /// Liga o gancho de teste chamado logo depois de cada gravação do cofre (V3.35). O
@@ -372,7 +387,7 @@ impl Daemon {
     }
 
     /// Anota um uso (Fase 24): só com o cofre destravado.
-    fn registrar_uso(&self) {
+    pub(crate) fn registrar_uso(&self) {
         let mut est = self.estado();
         if est.aberto.is_some() {
             est.ultimo_uso = self.relogio.agora();

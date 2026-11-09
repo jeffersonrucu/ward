@@ -27,7 +27,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use ward_core::protocolo::{
-    self, ErroResposta, Papel, Resposta,
+    self, ErroResposta, Papel, Pedido, Resposta,
     quadro::{self, ErroQuadro},
 };
 use ward_plataforma::{ClassePar, ErroAceitar, Escuta, Instalacao, PoliticaKernel, ProcessoPar};
@@ -258,6 +258,14 @@ fn atender_conexao(
                     stream: &stream,
                     par: &par,
                 };
+                // `ward run` (Fase 26): a sessão escreve as respostas; depois de um
+                // comando lançado, a conexão acaba. Recusado antes, ela segue.
+                if papel == Papel::Agente && matches!(p, Pedido::Executar(_)) {
+                    if crate::execucao::sessao(daemon, &cliente, &stream, p) {
+                        continue;
+                    }
+                    break;
+                }
                 daemon.atender_de(&cliente, papel, p)
             }
             Err(e) => {
