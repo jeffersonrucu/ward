@@ -422,6 +422,8 @@ Pendências da 45 (2026-11-09) — decisão do planner/usuário: restaurar exige
 
 Pendências da 29b (2026-11-09) — canais novos ao planner: `gst-plugin-scanner` carrega `.so` de `~/.frei0r-1/lib`, `~/.ladspa`, `~/.libvisual/actor` (apagar o registry força; `FREI0R_PATH` fecha o frei0r, `GST_PLUGIN_LOADING_WHITELIST` fecha tudo mas o WebKit avisa appsink); `/dev/shm/cuda_injection_path_shm` e socket abstrato `@cuda-uvmfd-…`; `~/.nv/*`, `~/.mfx_trace`, `/dev/shm/GFX_MEDIA_TRACE` (família RA8); pasta de dados do WebKit `~/.local/share/local.ward.app/` (auditoria do M5 confere que nenhum valor revelado vai para lá); alinhar `unsound = "all"` no `deny.toml` da raiz.
 
+Pendências da 31 (2026-11-09): V5.8 parcial — o aviso `pedido_de_destrave` não traz entrada nem comando (o cartão mostra só a contagem); fechar exige campo no aviso (entrada + comando neutralizado por D51) em `ward-core`/`wardd`/app — decidir; "Agora não" só esconde (não há como o app negar o destrave; expira em 2 min); espera de D20 em dobro (tela + daemon, até 30+30 s) — UX; senha errada esvazia o campo (ajustar frame `3393`, como o `6373` da 35); variable própria para a largura 560 do `Painel de marca`; com 16 avisos de aprovação parados na fila, destrave novo é descartado (falha fechada) até a 36 consumir.
+
 ## Milestone 3 — Daemon e protocolo
 Contrato: V3.1–V3.41
 
@@ -718,7 +720,7 @@ Contrato: V5.1–V5.35
   - `make app-check` limpo. V5.30, V5.32.
 - [x] Fase 30 — **(UI)** Primeiro uso (o PIN vai para a seção de configuração do corpo
   v2 como hash, D30). V5.7, V5.25, V5.26.
-- [ ] Fase 31 — **(UI)** Destravar, inclusive o estado "Pedido do agente". Consome
+- [x] Fase 31 — **(UI)** Destravar, inclusive o estado "Pedido do agente". Consome
   `pedido_de_destrave` da fila da 23a e o leva à tela por evento do Tauri (D65 a). V5.8.
 - [x] Fase 32 — **(UI)** Credenciais (vazia, cheia, filtrada, busca). V5.3, V5.9.
 - [x] Fase 33 — **(UI)** Formulário, parte 1: `login`, `api`, `aws`, `smtp`,
