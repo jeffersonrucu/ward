@@ -72,7 +72,13 @@ def ward(args, prazo=200):
 def posts_log():
     p = subprocess.run([os.path.join(RAIZ, "dev/servicos/compose.sh"), "exec", "-T", "phish",
                         "cat", "/registro/posts.log"], capture_output=True, timeout=60)
-    return p.stdout if p.returncode == 0 else None
+    if p.returncode == 0:
+        return p.stdout
+    # Com os serviços recém-subidos o phish ainda não criou o `posts.log` (tmpfs): nada
+    # recebido, como em `dev/testes/login.py`. Outro erro (contêiner fora) continua None.
+    if b"No such file or directory" in p.stderr:
+        return b""
+    return None
 
 
 def pids_do_chrome():

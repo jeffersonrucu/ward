@@ -68,19 +68,39 @@ const PREFERENCIAS: &[u8] = br#"{"credentials_enable_service":false,"profile":{"
 
 /// Preenche e envia, no mundo isolado (os scripts da página não alcançam este código
 /// nem os protótipos dele). Argumentos: usuário, senha, código TOTP (ou `null`) e a
-/// origem da entrada. Volta `"ok"`, `"origem"` ou `"formulario"`. As propriedades do
-/// formulário são lidas pelos getters do protótipo: um `<input name="action">` não
-/// engana a conferência do destino.
+/// origem da entrada. Volta `"ok"`, `"origem"` ou `"formulario"`.
+///
+/// DOM clobbering (como em `extensao/pagina.js`): o `document` e o `<form>` têm
+/// propriedades com nome vindas da página (um `<img name="querySelectorAll">` troca o
+/// `document.querySelectorAll`; um `<input name="action">`, o `form.action`). No Chrome
+/// de hoje as do `<form>` chegam ao mundo isolado e as do `document` não (conferido na
+/// Fase 44a), mas o script não depende disso: busca, getters e métodos saem dos
+/// protótipos do mundo isolado (`Document.prototype.querySelectorAll.call(document, …)`,
+/// descritores de `HTMLFormElement`/`HTMLInputElement`/`HTMLButtonElement`,
+/// `Element.prototype`).
 const PREENCHER: &str = r#"function (usuario, senha, codigo, origem) {
   if (location.origin !== origem) return "origem";
-  const F = HTMLFormElement.prototype;
-  const prop = (o, k) => Object.getOwnPropertyDescriptor(F, k).get.call(o);
-  const B = HTMLButtonElement.prototype, I = HTMLInputElement.prototype;
-  const visivel = c => c.getClientRects().length > 0 && !c.disabled && !c.readOnly;
-  const senhas = Array.from(document.querySelectorAll('input[type="password"]')).filter(visivel);
+  const desc = (P, k) => Object.getOwnPropertyDescriptor(P, k);
+  const pegar = (P, k) => { const g = desc(P, k).get; return o => g.call(o); };
+  const F = HTMLFormElement.prototype, I = HTMLInputElement.prototype, B = HTMLButtonElement.prototype;
+  const E = Element.prototype, H = HTMLElement.prototype, T = EventTarget.prototype;
+  const prop = (o, k) => desc(F, k).get.call(o);
+  const tipoDe = pegar(I, "type"), formDe = pegar(I, "form"), autoDe = pegar(I, "autocomplete");
+  const desabilitado = pegar(I, "disabled"), soLeitura = pegar(I, "readOnly");
+  const botaoTipo = pegar(B, "type"), botaoDesabilitado = pegar(B, "disabled");
+  const entrada = c => c instanceof HTMLInputElement;
+  const ehBotao = c => c instanceof HTMLButtonElement;
+  const visivel = c => {
+    if (E.getClientRects.call(c).length === 0) return false;
+    if (entrada(c)) return !desabilitado(c) && !soLeitura(c);
+    if (ehBotao(c)) return !botaoDesabilitado(c);
+    return false;
+  };
+  const lista = x => Array.prototype.slice.call(x);
+  const senhas = lista(Document.prototype.querySelectorAll.call(document, 'input[type="password"]')).filter(visivel);
   if (senhas.length !== 1) return "formulario";
   const pw = senhas[0];
-  const form = Object.getOwnPropertyDescriptor(I, "form").get.call(pw);
+  const form = formDe(pw);
   if (!form) return "formulario";
   const destino = (acao, metodo, alvo) => {
     let u;
@@ -92,29 +112,28 @@ const PREENCHER: &str = r#"function (usuario, senha, codigo, origem) {
   };
   let r = destino(prop(form, "action"), prop(form, "method"), prop(form, "target"));
   if (r !== "ok") return r;
-  const els = Array.from(prop(form, "elements"));
-  const entrada = c => c instanceof HTMLInputElement;
-  let user = els.find(c => entrada(c) && /\busername\b/.test(c.autocomplete || "") && visivel(c));
+  const els = lista(prop(form, "elements"));
+  let user = els.find(c => entrada(c) && /\busername\b/.test(autoDe(c) || "") && visivel(c));
   if (!user) {
-    const antes = els.slice(0, els.indexOf(pw)).filter(c => entrada(c) && ["text", "email", "tel"].includes(c.type) && visivel(c));
+    const antes = els.slice(0, els.indexOf(pw)).filter(c => entrada(c) && ["text", "email", "tel"].includes(tipoDe(c)) && visivel(c));
     user = antes[antes.length - 1];
   }
   if (!user) return "formulario";
-  const totp = codigo === null ? null : els.find(c => entrada(c) && /\bone-time-code\b/.test(c.autocomplete || "") && visivel(c));
-  const botao = els.find(c => ((c instanceof HTMLButtonElement && c.type === "submit") || (entrada(c) && (c.type === "submit" || c.type === "image"))) && visivel(c));
+  const totp = codigo === null ? null : els.find(c => entrada(c) && /\bone-time-code\b/.test(autoDe(c) || "") && visivel(c));
+  const botao = els.find(c => ((ehBotao(c) && botaoTipo(c) === "submit") || (entrada(c) && (tipoDe(c) === "submit" || tipoDe(c) === "image"))) && visivel(c));
   if (botao) {
-    const P = botao instanceof HTMLButtonElement ? B : I;
-    const g = k => Object.getOwnPropertyDescriptor(P, k).get.call(botao);
-    const temAcao = botao.hasAttribute("formaction"), temMetodo = botao.hasAttribute("formmethod"), temAlvo = botao.hasAttribute("formtarget");
-    r = destino(temAcao ? g("formAction") : prop(form, "action"), temMetodo ? g("formMethod") : prop(form, "method"), temAlvo ? g("formTarget") : prop(form, "target"));
+    const P = ehBotao(botao) ? B : I;
+    const g = k => desc(P, k).get.call(botao);
+    const tem = k => E.hasAttribute.call(botao, k);
+    r = destino(tem("formaction") ? g("formAction") : prop(form, "action"), tem("formmethod") ? g("formMethod") : prop(form, "method"), tem("formtarget") ? g("formTarget") : prop(form, "target"));
     if (r !== "ok") return r;
   }
-  const valor = Object.getOwnPropertyDescriptor(I, "value").set;
+  const valor = desc(I, "value").set;
   const definir = (c, v) => {
-    c.focus();
+    H.focus.call(c);
     valor.call(c, v);
-    c.dispatchEvent(new Event("input", { bubbles: true }));
-    c.dispatchEvent(new Event("change", { bubbles: true }));
+    T.dispatchEvent.call(c, new Event("input", { bubbles: true }));
+    T.dispatchEvent.call(c, new Event("change", { bubbles: true }));
   };
   definir(user, usuario);
   definir(pw, senha);
@@ -124,14 +143,19 @@ const PREENCHER: &str = r#"function (usuario, senha, codigo, origem) {
 }"#;
 
 /// Depois do login: se ainda há campo de senha visível (a página de login voltou) e o
-/// `localStorage` da origem, em JSON.
+/// `localStorage` da origem, em JSON. Também pelos protótipos (DOM clobbering: um
+/// `<img name="querySelectorAll">` na página depois do envio não esconde a senha).
 const LER_PAGINA: &str = r#"function () {
-  const senha = Array.from(document.querySelectorAll('input[type="password"]')).some(c => c.getClientRects().length > 0);
+  const vis = c => Element.prototype.getClientRects.call(c).length > 0;
+  const senha = Array.prototype.slice.call(
+    Document.prototype.querySelectorAll.call(document, 'input[type="password"]')).some(vis);
   const ls = [];
   try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      ls.push([k, localStorage.getItem(k)]);
+    const S = Storage.prototype;
+    const n = Object.getOwnPropertyDescriptor(S, "length").get.call(localStorage);
+    for (let i = 0; i < n; i++) {
+      const k = S.key.call(localStorage, i);
+      ls.push([k, S.getItem.call(localStorage, k)]);
     }
   } catch (e) {}
   return JSON.stringify({ senha: senha, ls: ls });
@@ -886,6 +910,37 @@ mod testes {
         let b = montar_estado(&c, "http://localhost:8081", &[]).unwrap();
         let v: serde_json::Value = serde_json::from_slice(&b).unwrap();
         assert_eq!(v["origins"].as_array().unwrap().len(), 0);
+    }
+
+    /// DOM clobbering (Fase 44a): os scripts do mundo isolado não leem nada pelo
+    /// `document`, pelo `<form>` nem pelo `localStorage` (que têm propriedades com nome
+    /// vindas da página); tudo sai dos protótipos. O ataque com o Chrome de verdade está
+    /// em `tests/playwright.rs` (casos `dom` e `dom-recusa`).
+    #[test]
+    fn ataque_dom_clobbering_scripts_so_pelos_prototipos() {
+        for (nome, js) in [("PREENCHER", PREENCHER), ("LER_PAGINA", LER_PAGINA)] {
+            for proibido in [
+                "document.",
+                "form.",
+                "localStorage.",
+                "pw.",
+                "c.type",
+                "c.autocomplete",
+                "c.disabled",
+                "c.readOnly",
+                "c.getClientRects",
+                "c.focus",
+                "c.dispatchEvent",
+                "botao.",
+                ".elements",
+            ] {
+                assert!(!js.contains(proibido), "{nome} lê `{proibido}` direto");
+            }
+            assert!(
+                js.contains("Document.prototype.querySelectorAll.call(document"),
+                "{nome}"
+            );
+        }
     }
 
     /// Ataque: nome de entrada com `/` ou começando por `.` não sai da pasta.

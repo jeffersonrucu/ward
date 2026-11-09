@@ -8,6 +8,7 @@
   "escondido_visiveis": true,
   "excecao_chrome_falso": true,
   "excecao_so_chrome": true,
+  "f44a_filtro_dicionario_autoteste": true,
   "fontes": true,
   "hover": true,
   "id_fixo": true,
@@ -16,9 +17,16 @@
   "medidas_17332": true,
   "medidas_17392": true,
   "origem_mostrada": true,
-  "perfil_com_padrao_fora_da_extensao": [
-    "Default/Code Cache/js/d2d55ce040efd6a9_0"
-  ],
+  "perfil_com_padrao_fora_da_extensao": [],
+  "perfil_dicionario_zxcvbn": {
+    "Default/Code Cache/js/51000f5b5ef37e17_0": [
+      {
+        "bytes": 6,
+        "linha_variacoes": 81,
+        "so_digitos": true
+      }
+    ]
+  },
   "phish_nada": true,
   "phish_recusa": true,
   "popup_fecha": true,
@@ -34,6 +42,7 @@
   "v64_principal": true,
   "v64_so_iframe": true,
   "v65_armazenamento": true,
+  "v65_dicionario_fora_da_extensao": true,
   "v65_dom_popup": true,
   "v65_perfil": true,
   "v66_detalhe": {
