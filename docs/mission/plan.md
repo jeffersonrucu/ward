@@ -1035,6 +1035,29 @@ Contrato: V6.1–V6.16
   temporário (D6), storage state 0600, limpeza ao travar e na partida; logs sem
   segredo. V6.12–V6.16.
 
+Scrutiny do M6 (2026-11-09): **reprovado** (1ª vez).
+- `make check`, `teste-nm`, `teste-extensao`, `teste-login` e o `cargo test --ignored`
+  do Playwright deram 0.
+- Falha: `make teste-playwright` dá 3 FALHAs num ambiente limpo. O `posts_log()` de
+  `dev/testes/playwright.py:72-75` devolve `None` enquanto o phish não criou o
+  `posts.log`.
+- Pendências: o V6.11 (UI) nunca abriu a janela real de aprovação. O V6.12 com o
+  Playwright do Python não rodou, porque ele não está no host.
+
+- [ ] Fase 44a — Correções do scrutiny do M6.
+  - `dev/testes/playwright.py`: `posts.log` ausente conta como `b""`, como em
+    `dev/testes/login.py:111-118`. `make teste-playwright` precisa passar com os
+    serviços recém-subidos.
+  - `dev/testes/extensao.py`: o achado em `Default/Code Cache/js/…` (dicionário de
+    senhas comuns do próprio Chrome) é filtrado com justificativa ou documentado, para
+    não parecer vazamento. Conferir que não vem do cofre de teste.
+  - `crates/wardd/src/playwright.rs`, script `PREENCHER`: trocar
+    `document.querySelectorAll` pelos protótipos, como em `pagina.js`, contra DOM
+    clobbering. Com teste.
+  - Registrar no roteiro do usuário do M6 o V6.11 (UI): `ward login acme-wp-dev` com a
+    janela real de aprovação, negar e permitir.
+  V6.11, V6.12, V6.15.
+
 ## Milestone 7 — Backup
 Contrato: V7.1–V7.11
 
