@@ -753,16 +753,21 @@ fn d34_pty_prefixo_parado_vira_marca_e_o_resto_nao_sai() {
         linhas: 30,
         colunas: 100,
     };
-    let r = sessao(&c, pedido_ssh("s-livre", &[], None, Some(janela)), |s| {
-        std::thread::sleep(Duration::from_millis(300));
-        mandar(
-            s,
-            &Pedido::Janela(Janela {
-                linhas: 40,
-                colunas: 120,
-            }),
-        );
-    });
+    let pronto = c.base.join("pty-pronto");
+    let r = sessao(
+        &c,
+        pedido_ssh("s-livre", &[], None, Some(janela)),
+        move |s| {
+            assert!(esperar(Duration::from_secs(60), || pronto.exists()));
+            mandar(
+                s,
+                &Pedido::Janela(Janela {
+                    linhas: 40,
+                    colunas: 120,
+                }),
+            );
+        },
+    );
     assert_eq!(r.fim, Some(0), "{r:?}");
     let t = r.texto();
     assert!(t.contains("tty=True/True 30x100"), "{t}");

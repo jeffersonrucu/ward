@@ -232,6 +232,8 @@ def principal():
         mudou = []
         signal.signal(signal.SIGWINCH, lambda *_: mudou.append(1))
         print(f"tty={os.isatty(0)}/{os.isatty(1)} {tam.lines}x{tam.columns}", flush=True)
+        # O teste só manda a janela nova depois deste aviso (sem corrida com a carga).
+        open(os.path.join(BASE, "pty-pronto"), "w").close()
         segredo = os.environ.get("SSHPASS", "")
         time.sleep(0.2)
         sys.stdout.write("[" + segredo[:10])
