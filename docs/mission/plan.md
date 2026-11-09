@@ -1098,7 +1098,7 @@ Decisão do usuário (2026-11-09) sobre o crítico do M9: política com
 `NativeMessagingUserLevelHosts: false` e guia para mover os manifestos de outros apps
 (1Password, Claude in Chrome) para `/etc/opt/chrome/native-messaging-hosts/`.
 
-- [ ] Fase 51a — Achados da auditoria do M9. **Crítico:** `instalar.sh` (e o `.deb`, mesmo
+- [x] Fase 51a — Achados da auditoria do M9. **Crítico:** `instalar.sh` (e o `.deb`, mesmo
   staging) gera a política com `"NativeMessagingUserLevelHosts": false`; `teste-install`
   e `teste-deb` conferem; teste com o Chrome real num bwrap com `/etc/opt/chrome` trocado
   (manifesto plantado no perfil não é chamado; o do sistema é), a partir dos scripts da
@@ -1113,6 +1113,20 @@ Decisão do usuário (2026-11-09) sobre o crítico do M9: política com
   `modo-teste` (`app/nucleo/src/daemon.rs:51`); `WARD_DEV_DBUS_SISTEMA` atrás de
   `cfg(feature = "modo-teste")` e sem a exceção no `instalar.sh`. V9.2, V9.5, V9.6,
   V9.10, V9.11.
+  Feita (2026-11-09): política com `"NativeMessagingUserLevelHosts": false`;
+  `teste-politica-chrome` novo (Chrome real num bwrap: sem política o host plantado no
+  perfil roda e o ataque da auditoria tira 4 preenchimentos; com a política só o do
+  sistema roda e nada sai), `teste-install` 232 ok, `teste-deb` 153 ok; guia 0.4, 0.5,
+  4a e 4b. `instalacao/chrome.sh` recusa outra política em `managed/` que cite
+  `ExtensionSettings`/`NativeMessagingUserLevelHosts` (inclusive em comentário). Grupos
+  criados anotados em `/usr/local/lib/ward/grupos-criados`.
+  Pendências:
+  - `make check` inteiro não rodou por falta de disco: ficaram `cargo test` do workspace,
+    `audit` e `deny`. Passaram fmt, clippy dos crates tocados, origens e gitleaks.
+  - A rodada 3 (controle fora do bwrap) imprime "pulado" depois que o Ward estiver
+    instalado no host.
+  - D60 não cobre sudoers com `(:ALL)`/`Runas_Alias` amplo nem outro módulo PAM.
+  - O PRD D18 continua desatualizado.
 
 ## Milestone 10 — Migração e saída do KeePassXC
 Contrato: V10.1–V10.4
