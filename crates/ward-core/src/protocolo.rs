@@ -64,6 +64,7 @@ mod testes;
 pub use erros::{ErroResposta, MSG_COFRE_MUDOU, MSG_GERACAO_ESGOTADA, MSG_RETROCESSO, Problema};
 pub use pedido::{
     Alvo, Decisao, Janela, Pedido, PedidoExecutar, ResultadoLogin, Variavel, id_login_ok,
+    juntar_anexos_mantidos,
 };
 pub use resposta::{
     AnexoDetalhe, DetalheEntrada, ExtraDetalhe, Fluxo, ItemLista, MAX_BACKUPS, MAX_PENDRIVES,

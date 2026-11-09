@@ -10,7 +10,7 @@ use ward_core::entrada::{Rascunho, RascunhoAnexo, Segredo as SegredoCore, TipoEn
 use ward_core::protocolo::Alvo;
 
 use crate::ErroApp;
-use crate::anexos::{Anexos, Escolha, Seletor, SemSeletor};
+use crate::anexos::{Anexos, Base, EdicaoDosAnexos, Escolha, Seletor, SemSeletor};
 use crate::aprovacao::{self, Aprovacoes, PedidoExibido, ResultadoAprovacao};
 use crate::area_transferencia::{AreaTransferencia, Copiador};
 use crate::backup_externo::{self, BackupExternoVisto, EscolhaDoPendrive, PendriveVisto};
@@ -289,11 +289,41 @@ impl<D: Daemon, A: AreaTransferencia> Servico<D, A> {
     /// `escolher_anexo`: o seletor do lado Rust escolhe o arquivo e ele é lido aqui
     /// (limites de D29/D32). A resposta traz id, nome e tamanho, ou o aviso; nunca o
     /// conteúdo (S11, V5.12).
-    pub fn escolher_anexo(&self) -> Result<Escolha, ErroApp> {
+    ///
+    /// Fase 39b: na edição (`edicao`), os anexos guardados que a tela mantém contam nos
+    /// limites; os nomes são conferidos no detalhe da entrada antes de abrir o seletor
+    /// (nome desconhecido ou repetido é pedido inválido).
+    pub fn escolher_anexo(&self, edicao: Option<&EdicaoDosAnexos>) -> Result<Escolha, ErroApp> {
+        let base = match edicao {
+            None => Base::default(),
+            Some(ed) => self.base_da_edicao(ed)?,
+        };
         match self.seletor.escolher()? {
             None => Ok(Escolha::Cancelado),
-            Some(caminho) => Ok(self.anexos_travados().anexar(&caminho)),
+            Some(caminho) => Ok(self.anexos_travados().anexar_sobre(&caminho, base)),
         }
+    }
+
+    /// Soma e quantidade dos anexos guardados de `ed.entrada` que a tela mantém.
+    fn base_da_edicao(&self, ed: &EdicaoDosAnexos) -> Result<Base, ErroApp> {
+        validar_nome_entrada(&ed.entrada)?;
+        if ed.mantidos.len() > ward_core::limites::MAX_ANEXOS {
+            return Err(ErroApp::PedidoInvalido);
+        }
+        let det = cliente::detalhe(&mut *self.daemon()?, &ed.entrada)?;
+        let mut base = Base::default();
+        for (i, n) in ed.mantidos.iter().enumerate() {
+            let guardado = det.anexos.iter().find(|a| &a.nome == n);
+            match guardado {
+                Some(a) if !ed.mantidos[..i].contains(n) => {
+                    let t = usize::try_from(a.tamanho).map_err(|_| ErroApp::RespostaInvalida)?;
+                    base.soma = base.soma.saturating_add(t);
+                    base.quantidade += 1;
+                }
+                _ => return Err(ErroApp::PedidoInvalido),
+            }
+        }
+        Ok(base)
     }
 
     /// `remover_anexo { id }`: tira um anexo escolhido e ainda não salvo.
@@ -504,13 +534,20 @@ impl<D: Daemon, A: AreaTransferencia> Servico<D, A> {
                 if det.tipo != tipo {
                     return Err(ErroApp::PedidoInvalido);
                 }
-                if !det.anexos.is_empty() {
-                    return Err(ErroApp::AnexosNaoMantidos);
-                }
                 Some(det)
             }
             None => None,
         };
+        // Fase 39b (V5.12): anexos mantidos só na edição, só os que a entrada tem e cada
+        // um uma vez (a interface não é confiável). O conteúdo fica no daemon.
+        let mantidos = std::mem::take(&mut f.anexos_mantidos);
+        let guardados: &[ward_core::protocolo::AnexoDetalhe] =
+            editada.as_ref().map_or(&[], |d| d.anexos.as_slice());
+        for (i, n) in mantidos.iter().enumerate() {
+            if mantidos[..i].contains(n) || !guardados.iter().any(|a| &a.nome == n) {
+                return Err(ErroApp::PedidoInvalido);
+            }
+        }
         let extras_guardados: Vec<String> = editada
             .as_ref()
             .map(|det| {
@@ -563,7 +600,7 @@ impl<D: Daemon, A: AreaTransferencia> Servico<D, A> {
         if let Err(erros) = formulario::validar_local(&rascunho) {
             return Ok(ResultadoSalvar { salvo: None, erros });
         }
-        match cliente::salvar(&mut *d, anterior.map(str::to_owned), rascunho)? {
+        match cliente::salvar(&mut *d, anterior.map(str::to_owned), rascunho, mantidos)? {
             cliente::Salvamento::Salvo => {
                 drop(d);
                 self.descartar_formulario();
@@ -1176,19 +1213,36 @@ mod testes {
                 "{tipo}"
             );
         }
-        // Anexos.
-        let g = serde_json::json!({
-            "tipo": "generico", "nome": "gama-generico", "grupo": "gama", "ambiente": "stage",
-            "projeto": "", "tags": [], "campos": {}, "segredos": {},
-            "extras": [{"nome": "REGIAO", "segredo": false, "valor": {"novo": "r-02"}}]
-        });
-        assert_eq!(
-            s.salvar_credencial(Some("gama-generico"), form(g)),
-            Err(ErroApp::AnexosNaoMantidos)
-        );
+        // Anexos mantidos forjados (Fase 39b): nome que a entrada não tem, repetido ou
+        // numa entrada nova; nada é gravado.
+        for (anterior, mantidos) in [
+            (Some("gama-generico"), serde_json::json!(["outro.env"])),
+            (
+                Some("gama-generico"),
+                serde_json::json!(["app.env", "app.env"]),
+            ),
+            (Some("gama-generico"), serde_json::json!(["../app.env"])),
+            (None, serde_json::json!(["app.env"])),
+        ] {
+            let mut g = serde_json::json!({
+                "tipo": "generico", "nome": "gama-generico-2", "grupo": "gama",
+                "ambiente": "stage", "projeto": "", "tags": [], "campos": {}, "segredos": {},
+                "extras": [{"nome": "REGIAO", "segredo": false, "valor": {"novo": "r-02"}}]
+            });
+            g["anexos_mantidos"] = mantidos;
+            assert_eq!(
+                s.salvar_credencial(anterior, form(g)),
+                Err(ErroApp::PedidoInvalido),
+                "{anterior:?}"
+            );
+        }
         assert_eq!(
             s.detalhe_credencial("gama-generico").unwrap().anexos.len(),
             1
+        );
+        assert_eq!(
+            s.detalhe_credencial("gama-generico-2").unwrap_err(),
+            ErroApp::EntradaInexistente
         );
         // Nome anterior fora do formato nem chega ao daemon.
         assert_eq!(
@@ -1617,7 +1671,7 @@ mod testes {
         let conteudo = "falso-conteudo-do-anexo-34\nLINHA=falso-valor-34\n";
         std::fs::write(d.join("acme-vpn.ovpn"), conteudo).unwrap();
         *sel.0.lock().unwrap() = Some(d.join("acme-vpn.ovpn"));
-        let e = s.escolher_anexo().unwrap();
+        let e = s.escolher_anexo(None).unwrap();
         let json = serde_json::to_string(&e).unwrap();
         assert!(
             !json.contains("falso-conteudo") && !json.contains("falso-valor"),
@@ -1661,7 +1715,7 @@ mod testes {
         let escolher = |nome: &str, tamanho: usize| {
             std::fs::write(d.join(nome), vec![b'a'; tamanho]).unwrap();
             *sel.0.lock().unwrap() = Some(d.join(nome));
-            s.escolher_anexo().unwrap()
+            s.escolher_anexo(None).unwrap()
         };
         assert!(matches!(
             escolher("grande.bin", 300 * 1024),
@@ -1676,7 +1730,7 @@ mod testes {
             Escolha::Aviso { .. }
         ));
         *sel.0.lock().unwrap() = None;
-        assert_eq!(s.escolher_anexo().unwrap(), Escolha::Cancelado);
+        assert_eq!(s.escolher_anexo(None).unwrap(), Escolha::Cancelado);
         for ids in [serde_json::json!([id, id]), serde_json::json!([id + 99])] {
             let mut v = servidor_novo("clientex-ssh-x");
             v["anexos"] = ids;
@@ -1697,6 +1751,121 @@ mod testes {
         // Cancelar o formulário descarta os escolhidos.
         s.descartar_formulario();
         assert_eq!(s.remover_anexo(id), Err(ErroApp::PedidoInvalido));
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    /// Fase 39b (V5.12, S11): editar `gama-generico` mantendo o `app.env`, tirando-o e
+    /// pondo outro. O quadro que o app manda ao daemon leva só o nome do anexo mantido,
+    /// nunca o conteúdo; nenhuma resposta à interface o traz.
+    #[test]
+    fn ataque_edicao_mantem_remove_e_adiciona_anexo_sem_o_conteudo_passar_pelo_app() {
+        struct Espiao(DaemonFalso, Arc<Mutex<Vec<Vec<u8>>>>);
+        impl Daemon for Espiao {
+            fn trocar(&mut self, pedido: &[u8]) -> Result<Zeroizing<Vec<u8>>, ErroApp> {
+                self.1.lock().unwrap().push(pedido.to_vec());
+                let r = self.0.trocar(pedido)?;
+                self.1.lock().unwrap().push(r.to_vec());
+                Ok(r)
+            }
+        }
+        let quadros = Arc::new(Mutex::new(Vec::new()));
+        let sel = SeletorFixo::default();
+        let s = Servico::novo(
+            Espiao(DaemonFalso::cheio(), Arc::clone(&quadros)),
+            Copiador::novo(Arc::new(Area::default())),
+        )
+        .com_seletor(sel.clone());
+        let conteudo = "FALSO_ENV=falso-anexo-01";
+        let edicao = |mantidos: serde_json::Value| {
+            let mut g = serde_json::json!({
+                "tipo": "generico", "nome": "gama-generico", "grupo": "gama",
+                "ambiente": "stage", "projeto": "", "tags": [], "campos": {}, "segredos": {},
+                "extras": [
+                    {"nome": "REGIAO", "segredo": false, "valor": {"novo": "r-02"}},
+                    {"nome": "CHAVE_LICENCA", "segredo": true,
+                     "valor": {"manter": "CHAVE_LICENCA"}}
+                ]
+            });
+            g["anexos_mantidos"] = mantidos;
+            g
+        };
+        // Manter: o anexo continua, com o mesmo tamanho.
+        let antes = s.detalhe_credencial("gama-generico").unwrap().anexos;
+        assert_eq!(antes.len(), 1);
+        let r = s
+            .salvar_credencial(
+                Some("gama-generico"),
+                form(edicao(serde_json::json!(["app.env"]))),
+            )
+            .unwrap();
+        assert_eq!(r.salvo.as_deref(), Some("gama-generico"), "{r:?}");
+        let det = s.detalhe_credencial("gama-generico").unwrap();
+        assert_eq!(det.anexos.len(), 1);
+        assert_eq!(det.anexos[0].nome, "app.env");
+        assert_eq!(det.anexos[0].tamanho, antes[0].tamanho);
+        assert_eq!(
+            det.extras
+                .iter()
+                .find(|x| x.nome == "REGIAO")
+                .unwrap()
+                .valor
+                .as_deref(),
+            Some("r-02")
+        );
+        // Adicionar outro, contando o mantido nos limites.
+        let d = pasta_34("edicao");
+        std::fs::write(d.join(".env"), "OUTRO=falso-outro-39b\n").unwrap();
+        *sel.0.lock().unwrap() = Some(d.join(".env"));
+        let ed = EdicaoDosAnexos {
+            entrada: "gama-generico".into(),
+            mantidos: vec!["app.env".into()],
+        };
+        let Escolha::Anexado { id, nome, .. } = s.escolher_anexo(Some(&ed)).unwrap() else {
+            panic!()
+        };
+        assert_eq!(nome, "env");
+        let mut g = edicao(serde_json::json!(["app.env"]));
+        g["anexos"] = serde_json::json!([id]);
+        let r = s.salvar_credencial(Some("gama-generico"), form(g)).unwrap();
+        assert_eq!(r.salvo.as_deref(), Some("gama-generico"), "{r:?}");
+        let nomes: Vec<String> = s
+            .detalhe_credencial("gama-generico")
+            .unwrap()
+            .anexos
+            .into_iter()
+            .map(|a| a.nome)
+            .collect();
+        assert_eq!(nomes, ["app.env", "env"]);
+        // Remover: o que não está em `anexos_mantidos` sai.
+        let r = s
+            .salvar_credencial(
+                Some("gama-generico"),
+                form(edicao(serde_json::json!(["env"]))),
+            )
+            .unwrap();
+        assert_eq!(r.salvo.as_deref(), Some("gama-generico"), "{r:?}");
+        let det = s.detalhe_credencial("gama-generico").unwrap();
+        assert_eq!(det.anexos.len(), 1);
+        assert_eq!(det.anexos[0].nome, "env");
+        // Nome mantido desconhecido no `escolher_anexo` é pedido inválido.
+        let forjado = EdicaoDosAnexos {
+            entrada: "gama-generico".into(),
+            mantidos: vec!["app.env".into()],
+        };
+        assert_eq!(
+            s.escolher_anexo(Some(&forjado)),
+            Err(ErroApp::PedidoInvalido)
+        );
+        // Nenhum quadro (pedido ou resposta) levou o conteúdo do `app.env`, em claro ou
+        // em base64.
+        // base64 de "FALSO_ENV=falso-anexo-01" (24 bytes: prefixo do base64 de qualquer
+        // conteúdo que comece por ele).
+        let b64 = "RkFMU09fRU5WPWZhbHNvLWFuZXhvLTAx";
+        for q in quadros.lock().unwrap().iter() {
+            let t = String::from_utf8_lossy(q);
+            assert!(!t.contains(conteudo) && !t.contains(b64), "{t}");
+            assert!(!t.contains("falso-anexo-01"), "{t}");
+        }
         let _ = std::fs::remove_dir_all(d);
     }
 
@@ -1723,7 +1892,7 @@ mod testes {
             sem.conectar("acme-ssh-salto"),
             Err(ErroApp::TerminalIndisponivel)
         );
-        assert_eq!(sem.escolher_anexo(), Err(ErroApp::SeletorIndisponivel));
+        assert_eq!(sem.escolher_anexo(None), Err(ErroApp::SeletorIndisponivel));
     }
     /// Fase 39 (V5.23, S12): "Travar agora" limpa a área de transferência que ainda tem
     /// o valor copiado e o formulário, e o cofre fica travado: depois, revelar e copiar

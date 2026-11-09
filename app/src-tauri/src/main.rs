@@ -40,7 +40,7 @@ use tauri::{
     WebviewWindowBuilder, WindowEvent,
 };
 use ward_app_nucleo::ErroApp;
-use ward_app_nucleo::anexos::{Escolha, Seletor};
+use ward_app_nucleo::anexos::{EdicaoDosAnexos, Escolha, Seletor};
 use ward_app_nucleo::aprovacao::{self, PedidoExibido, ResultadoAprovacao};
 use ward_app_nucleo::area_transferencia::{Copiador, Wayland};
 use ward_app_nucleo::backup_externo::{BackupExternoVisto, PendriveVisto};
@@ -363,9 +363,14 @@ fn mudar_nivel(
 /// Anexo (Fase 34): o diálogo de arquivo do GTK escolhe o arquivo e o núcleo o lê; a
 /// resposta traz id, nome e tamanho ou o aviso, nunca o conteúdo (S11, V5.12). Comando
 /// síncrono: roda na thread principal, onde o GTK pode abrir o diálogo.
+/// Fase 39b: na edição, `edicao { entrada, mantidos }` (os anexos guardados que
+/// continuam contam nos limites; o serviço confere os nomes no detalhe).
 #[tauri::command]
-fn escolher_anexo(estado: State<'_, Estado>) -> Result<Escolha, Falha> {
-    Ok(estado.servico()?.escolher_anexo()?)
+fn escolher_anexo(
+    edicao: Option<EdicaoDosAnexos>,
+    estado: State<'_, Estado>,
+) -> Result<Escolha, Falha> {
+    Ok(estado.servico()?.escolher_anexo(edicao.as_ref())?)
 }
 
 #[tauri::command]

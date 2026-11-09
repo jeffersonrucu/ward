@@ -339,6 +339,7 @@ mod testes {
         let antes = agora();
         let novo = Pedido::SalvarEntrada {
             anterior: None,
+            manter_anexos: Vec::new(),
             rascunho: Rascunho {
                 nome: "clientex-stage-wp".to_owned(),
                 grupo: "clientex".to_owned(),

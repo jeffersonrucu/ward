@@ -9,6 +9,7 @@ use zeroize::Zeroizing;
 
 use super::Operacao;
 use super::campos::{Campos, R, bytes_de, segredo_de, texto_de, textos_de};
+use super::erros::ErroResposta;
 use super::json::{Escritor, JsonInvalido, Valor};
 use crate::entrada::{
     Autenticacao, Dados, Entrada, NivelAcesso, Rascunho, RascunhoAnexo, RascunhoDados,
@@ -229,6 +230,11 @@ pub enum Pedido {
         /// Nome atual da entrada editada; `None` cria.
         anterior: Option<String>,
         rascunho: Rascunho,
+        /// Fase 39b (V5.12): nomes dos anexos da entrada editada (`anterior`) que
+        /// continuam nela. O daemon copia o conteúdo deles para o rascunho, à frente dos
+        /// anexos novos; o conteúdo de um anexo guardado nunca sai do daemon. Anexo da
+        /// entrada antiga fora desta lista é removido. Vazio ao criar.
+        manter_anexos: Vec<String>,
     },
     RemoverEntrada {
         entrada: String,
@@ -404,9 +410,13 @@ impl Pedido {
             }
             Pedido::PreencherLogin { id, origem } => ok(id_login_ok(id) && origem.len() <= MAX_URL),
             Pedido::ResultadoLogin { id, .. } => ok(id_login_ok(id)),
-            Pedido::SalvarEntrada { anterior, rascunho } => {
-                ok(anterior.as_deref().is_none_or(nome_ok) && rascunho_ok(rascunho))
-            }
+            Pedido::SalvarEntrada {
+                anterior,
+                rascunho,
+                manter_anexos,
+            } => ok(anterior.as_deref().is_none_or(nome_ok)
+                && rascunho_ok(rascunho)
+                && manter_anexos_ok(anterior.is_some(), manter_anexos, rascunho)),
             Pedido::SalvarLogin { rascunho } => {
                 ok(matches!(rascunho.dados, RascunhoDados::Login { .. }) && rascunho_ok(rascunho))
             }
@@ -531,10 +541,23 @@ impl Pedido {
                     }
                 }
             }
-            Pedido::SalvarEntrada { anterior, rascunho } => {
+            Pedido::SalvarEntrada {
+                anterior,
+                rascunho,
+                manter_anexos,
+            } => {
                 if let Some(a) = anterior {
                     e.chave("anterior");
                     e.texto(a);
+                }
+                if !manter_anexos.is_empty() {
+                    e.chave("manter_anexos");
+                    e.lista(|e| {
+                        for n in manter_anexos {
+                            e.item();
+                            e.texto(n);
+                        }
+                    });
                 }
                 e.chave("entrada");
                 e.objeto(|e| escrever_rascunho(e, rascunho));
@@ -708,6 +731,52 @@ fn rascunho_ok(r: &Rascunho) -> bool {
         })
 }
 
+/// Fase 39b: "manter anexo" só na edição; nomes não vazios, dentro do limite, sem
+/// repetição, e mantidos mais novos cabem em [`MAX_ANEXOS`]. Se o nome existe na
+/// entrada editada é regra do daemon ([`juntar_anexos_mantidos`]).
+fn manter_anexos_ok(editando: bool, nomes: &[String], r: &Rascunho) -> bool {
+    (editando || nomes.is_empty())
+        && nomes.len().saturating_add(r.anexos.len()) <= MAX_ANEXOS
+        && nomes
+            .iter()
+            .enumerate()
+            .all(|(i, n)| !n.is_empty() && n.len() <= MAX_NOME_ANEXO && !nomes[..i].contains(n))
+}
+
+/// Fase 39b (V5.12): põe à frente dos anexos novos do rascunho uma cópia de cada anexo
+/// de `antiga` pedido em `nomes`, na ordem pedida. Nome que a entrada editada não tem, ou
+/// repetido, é [`ErroResposta::PedidoInvalido`] (nada muda no rascunho). Depois disto o
+/// rascunho passa por [`Rascunho::validar`] inteiro: soma de D29, nome repetido com um
+/// anexo novo, orçamento da máscara. O conteúdo é copiado dentro do daemon; não há
+/// operação que o devolva (S1, S11).
+pub fn juntar_anexos_mantidos(
+    rascunho: &mut Rascunho,
+    antiga: &Entrada,
+    nomes: &[String],
+) -> Result<(), ErroResposta> {
+    let mut mantidos = Vec::with_capacity(nomes.len());
+    for (i, nome) in nomes.iter().enumerate() {
+        if nomes[..i].contains(nome) {
+            return Err(ErroResposta::PedidoInvalido);
+        }
+        let a = antiga
+            .anexos()
+            .iter()
+            .find(|a| a.nome() == nome)
+            .ok_or(ErroResposta::PedidoInvalido)?;
+        mantidos.push(RascunhoAnexo {
+            nome: a.nome().to_owned(),
+            conteudo: Segredo::de_bytes(a.conteudo().expor().to_vec()),
+        });
+    }
+    if mantidos.len().saturating_add(rascunho.anexos.len()) > MAX_ANEXOS {
+        return Err(ErroResposta::PedidoInvalido);
+    }
+    mantidos.append(&mut rascunho.anexos);
+    rascunho.anexos = mantidos;
+    Ok(())
+}
+
 fn max_segredo(campo: &str) -> usize {
     if campo == "texto" {
         MAX_NOTA
@@ -823,8 +892,16 @@ pub(crate) fn ler(op: Operacao, mut c: Campos) -> R<Pedido> {
         },
         Operacao::SalvarEntrada => {
             let anterior = c.texto_opc("anterior", MAX_NOME)?;
+            let manter_anexos = textos_de(
+                c.lista_ou_vazia("manter_anexos", MAX_ANEXOS)?,
+                MAX_NOME_ANEXO,
+            )?;
             let rascunho = ler_rascunho(c.objeto("entrada")?)?;
-            Pedido::SalvarEntrada { anterior, rascunho }
+            Pedido::SalvarEntrada {
+                anterior,
+                rascunho,
+                manter_anexos,
+            }
         }
         Operacao::RemoverEntrada => Pedido::RemoverEntrada {
             entrada: c.texto("entrada", MAX_NOME)?,

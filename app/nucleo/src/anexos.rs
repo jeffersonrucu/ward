@@ -9,12 +9,18 @@
 //! Os limites saem de `ward_core::limites` (D32): um arquivo acima de
 //! `MAX_ANEXOS_SOMADOS`, ou que faria a soma passar disso, gera um aviso e não é
 //! guardado (nem enviado ao daemon). Arquivo vazio é recusado (D29).
+//!
+//! Fase 39b (V5.12): na edição, a soma e a contagem partem dos anexos já guardados que
+//! continuam na entrada ([`Base`]); o conteúdo deles fica no daemon. Nome de arquivo
+//! começando por `.` (ex.: `.env`) é anexado sem os pontos do começo (`env`): o
+//! `ward-core` não aceita nome de anexo que comece por `.` (o nome vira arquivo em
+//! `/run/user/<uid>/ward/tmp/` e `WARD_ARQUIVO_<NOME>`), e a tela mostra o nome guardado.
 
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use ward_core::limites;
 
 use crate::ErroApp;
@@ -77,6 +83,32 @@ pub const AVISO_DEMAIS: &str = "anexos demais nesta entrada";
 pub const AVISO_LEITURA: &str = "não foi possível ler o arquivo";
 pub const AVISO_NOME: &str = "o nome do arquivo não é texto válido";
 
+/// O que já conta para os limites antes dos escolhidos agora: na edição, os anexos
+/// guardados que continuam na entrada (tamanho somado e quantidade). Na entrada nova,
+/// zero.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Base {
+    pub soma: usize,
+    pub quantidade: usize,
+}
+
+/// Argumento do `escolher_anexo` na edição (Fase 39b): a entrada editada e os nomes
+/// dos anexos guardados que a tela ainda mantém. Não confiável: o serviço confere os
+/// nomes no detalhe da entrada e tira deles a [`Base`].
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EdicaoDosAnexos {
+    pub entrada: String,
+    pub mantidos: Vec<String>,
+}
+
+/// Nome com que o arquivo é anexado: o do arquivo sem os `.` do começo (Fase 39b; o
+/// `ward-core` recusa nome de anexo que comece por `.`). `None` se não sobrar nada.
+pub fn nome_do_anexo(arquivo: &str) -> Option<&str> {
+    let nome = arquivo.trim_start_matches('.');
+    (!nome.is_empty()).then_some(nome)
+}
+
 /// Os anexos escolhidos no formulário aberto.
 #[derive(Default)]
 pub struct Anexos {
@@ -90,19 +122,30 @@ impl Anexos {
         self.pendentes.iter().map(|p| p.conteudo.len()).sum()
     }
 
-    /// Lê o arquivo escolhido e o guarda, ou devolve o aviso.
+    /// Lê o arquivo escolhido e o guarda, ou devolve o aviso (entrada nova).
     pub fn anexar(&mut self, caminho: &Path) -> Escolha {
+        self.anexar_sobre(caminho, Base::default())
+    }
+
+    /// Como [`Anexos::anexar`], com os limites contados a partir de `base` (os anexos
+    /// guardados que continuam na entrada editada).
+    pub fn anexar_sobre(&mut self, caminho: &Path, base: Base) -> Escolha {
         let aviso = |m: String| Escolha::Aviso { motivo: m };
-        if self.pendentes.len() >= limites::MAX_ANEXOS {
+        if self.pendentes.len().saturating_add(base.quantidade) >= limites::MAX_ANEXOS {
             return aviso(AVISO_DEMAIS.to_owned());
         }
-        let Some(nome) = caminho.file_name().and_then(|n| n.to_str()) else {
+        let Some(nome) = caminho
+            .file_name()
+            .and_then(|n| n.to_str())
+            .and_then(nome_do_anexo)
+        else {
             return aviso(AVISO_NOME.to_owned());
         };
         if nome.is_empty() || nome.len() > limites::MAX_NOME_ANEXO * 4 {
             return aviso(AVISO_NOME.to_owned());
         }
         let nome = nome.to_owned();
+        let livre = limites::MAX_ANEXOS_SOMADOS.saturating_sub(base.soma);
         let conteudo = match ler_limitado(caminho, limites::MAX_ANEXOS_SOMADOS) {
             Ok(Leitura::Conteudo(c)) => c,
             Ok(Leitura::Grande) => return aviso(aviso_grande()),
@@ -111,7 +154,7 @@ impl Anexos {
         if conteudo.is_empty() {
             return aviso(AVISO_VAZIO.to_owned());
         }
-        if self.soma().saturating_add(conteudo.len()) > limites::MAX_ANEXOS_SOMADOS {
+        if self.soma().saturating_add(conteudo.len()) > livre {
             return aviso(aviso_soma());
         }
         let id = self.proximo;
@@ -295,6 +338,69 @@ mod testes {
         assert_eq!(a.escolhidos(&[0, 0]).err(), Some(ErroApp::PedidoInvalido));
         assert_eq!(a.escolhidos(&[7]).err(), Some(ErroApp::PedidoInvalido));
         assert!(a.escolhidos(&[]).unwrap().is_empty());
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    /// Fase 39b (V5.12): na edição, os anexos guardados que continuam contam na soma e
+    /// na quantidade; um arquivo que só caberia sem eles avisa e não é guardado.
+    #[test]
+    fn ataque_soma_com_os_anexos_mantidos() {
+        let d = pasta("base");
+        let mut a = Anexos::default();
+        let base = Base {
+            soma: 200 * limites::KIB,
+            quantidade: 1,
+        };
+        assert_eq!(
+            a.anexar_sobre(&arquivo(&d, "b.bin", 100 * limites::KIB), base),
+            Escolha::Aviso {
+                motivo: aviso_soma()
+            }
+        );
+        assert!(a.is_empty());
+        assert!(matches!(
+            a.anexar_sobre(&arquivo(&d, "c.bin", 56 * limites::KIB), base),
+            Escolha::Anexado { .. }
+        ));
+        let cheia = Base {
+            soma: 0,
+            quantidade: limites::MAX_ANEXOS,
+        };
+        assert_eq!(
+            a.anexar_sobre(&arquivo(&d, "d.bin", 1), cheia),
+            Escolha::Aviso {
+                motivo: AVISO_DEMAIS.into()
+            }
+        );
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    /// Fase 39b: `.env` é anexado como `env` (o `ward-core` recusa `.` no começo); um
+    /// nome só de pontos avisa. O nome guardado nunca começa por `.`.
+    #[test]
+    fn ataque_nome_com_ponto_no_comeco() {
+        let d = pasta("ponto");
+        let mut a = Anexos::default();
+        let e = a.anexar(&arquivo(&d, ".env", 12));
+        assert!(
+            matches!(&e, Escolha::Anexado { nome, .. } if nome == "env"),
+            "{e:?}"
+        );
+        let e = a.anexar(&arquivo(&d, "..kube.cfg", 3));
+        assert!(
+            matches!(&e, Escolha::Anexado { nome, .. } if nome == "kube.cfg"),
+            "{e:?}"
+        );
+        assert_eq!(nome_do_anexo("..."), None);
+        assert_eq!(nome_do_anexo("."), None);
+        assert_eq!(nome_do_anexo(".."), None);
+        assert_eq!(nome_do_anexo("a.pem"), Some("a.pem"));
+        assert!(
+            a.escolhidos(&[0, 1])
+                .unwrap()
+                .iter()
+                .all(|p| !p.nome.starts_with('.'))
+        );
         let _ = std::fs::remove_dir_all(d);
     }
 

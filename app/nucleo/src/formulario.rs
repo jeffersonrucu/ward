@@ -117,6 +117,11 @@ pub struct Formulario {
     /// da tela. O conteúdo nunca passa pela interface (S11, V5.12).
     #[serde(default)]
     pub anexos: Vec<u64>,
+    /// Fase 39b (V5.12): na edição, os nomes dos anexos já guardados que continuam na
+    /// entrada. O daemon copia o conteúdo deles (`manter_anexos` do `salvar_entrada`);
+    /// anexo guardado fora desta lista é removido ao salvar.
+    #[serde(default)]
+    pub anexos_mantidos: Vec<String>,
 }
 
 /// Um problema mostrado no campo: o identificador do campo no formulário (`nome`,
