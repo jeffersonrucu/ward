@@ -1973,6 +1973,7 @@ fn ataque_d65_data_no_rascunho_recusada() {
         ped(Papel::Extensao, &quadro_de(Operacao::SalvarLogin, &login)).unwrap_err(),
         ErroResposta::PedidoInvalido
     );
+}
 
 // ---- Fase 46: backup externo ----
 

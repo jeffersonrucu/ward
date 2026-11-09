@@ -783,7 +783,7 @@ Contrato: V7.1–V7.11
   dentro do `ward-core` pelo `gravar` interno, D27) e restaurar no daemon, só pelo papel
   app (D17); a versão restaurada é selada com `geracao` = maior vista + 1 e o arquivo
   de estado é atualizado (D39). V7.1–V7.3, V7.8, V7.11.
-- [ ] Fase 46 — Backup externo em pendrive por UUID via udisks2, desligado por padrão;
+- [x] Fase 46 — Backup externo em pendrive por UUID via udisks2, desligado por padrão;
   ligado/desligado e UUID ficam na configuração do cofre (D30). V7.4–V7.6, V7.8.
 - [ ] Fase 47 — **(UI)** Restaurar backup. V7.7.
 - [ ] Fase 48 — **(UI)** Configurações › backup externo. V7.9.

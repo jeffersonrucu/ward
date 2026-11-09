@@ -17,6 +17,13 @@ pub enum Comando {
         entrada: String,
         argv: Vec<OsString>,
     },
+    /// `ward ssh [--token <t>] <entrada> [--] [comando…]` (Fase 27): o comando remoto
+    /// em bytes; o token é o do "Conectar" do app (D3).
+    Ssh {
+        entrada: String,
+        token: Option<String>,
+        comando: Vec<OsString>,
+    },
     Ajuda,
     Versao,
 }
@@ -30,6 +37,8 @@ pub enum ErroUso {
     NaoUtf8,
     /// `ward run` sem entrada, sem `--` ou sem comando.
     UsoRun,
+    /// `ward ssh` sem entrada, ou com token fora do formato.
+    UsoSsh,
 }
 
 impl ErroUso {
@@ -40,6 +49,9 @@ impl ErroUso {
             ErroUso::ArgumentoInesperado(cmd) => format!("argumento inesperado para `{cmd}`"),
             ErroUso::NaoUtf8 => "argumento que não é UTF-8".to_owned(),
             ErroUso::UsoRun => "uso: ward run <entrada> -- <comando> [argumentos…]".to_owned(),
+            ErroUso::UsoSsh => {
+                "uso: ward ssh [--token <token>] <entrada> [--] [comando remoto…]".to_owned()
+            }
         }
     }
 }
@@ -56,6 +68,13 @@ Uso:
                         roda o comando com a credencial no ambiente (D10); a
                         saída volta com os segredos trocados por ••••, e o
                         código de saída é o do comando (125: erro do Ward)
+  ward ssh <entrada> [comando remoto…]
+                        conecta no servidor da entrada (senha ou chave, sem o
+                        ~/.ssh); sem comando, abre o shell remoto no terminal;
+                        numa entrada sftp, abre o sftp. A saída volta com os
+                        segredos trocados por ••••
+  ward ssh --token <token> <entrada>
+                        o mesmo, pelo botão Conectar do app (token de uso único)
   ward --help           esta ajuda
   ward --version        versão
 
@@ -83,11 +102,60 @@ fn interpretar_run(resto: Vec<OsString>) -> Result<Comando, ErroUso> {
     Ok(Comando::Run { entrada, argv })
 }
 
+/// Token do "Conectar" (D3): o formato que o daemon emite e o app aceita.
+pub fn token_ok(t: &str) -> bool {
+    (16..=64).contains(&t.len())
+        && !t.starts_with('-')
+        && t.bytes()
+            .all(|c| c.is_ascii_alphanumeric() || c == b'_' || c == b'-')
+}
+
+/// `ssh [--token <t>] <entrada> [--] [comando…]`.
+fn interpretar_ssh(resto: Vec<OsString>) -> Result<Comando, ErroUso> {
+    let mut it = resto.into_iter().peekable();
+    let mut token = None;
+    if it.peek().is_some_and(|a| a == "--token") {
+        it.next();
+        let t = it
+            .next()
+            .ok_or(ErroUso::UsoSsh)?
+            .into_string()
+            .map_err(|_| ErroUso::UsoSsh)?;
+        if !token_ok(&t) {
+            return Err(ErroUso::UsoSsh);
+        }
+        token = Some(t);
+    }
+    let entrada = it
+        .next()
+        .ok_or(ErroUso::UsoSsh)?
+        .into_string()
+        .map_err(|_| ErroUso::NaoUtf8)?;
+    if entrada.is_empty() || entrada.starts_with('-') {
+        return Err(ErroUso::UsoSsh);
+    }
+    if it.peek().is_some_and(|a| a == "--") {
+        it.next();
+    }
+    let comando: Vec<OsString> = it.collect();
+    if comando.first().is_some_and(|a| a.is_empty()) {
+        return Err(ErroUso::UsoSsh);
+    }
+    Ok(Comando::Ssh {
+        entrada,
+        token,
+        comando,
+    })
+}
+
 /// Lê os argumentos (sem o nome do programa).
 pub fn interpretar(args: impl IntoIterator<Item = OsString>) -> Result<Comando, ErroUso> {
     let mut args: Vec<OsString> = args.into_iter().collect();
     if args.first().is_some_and(|a| a == "run") {
         return interpretar_run(args.split_off(1));
+    }
+    if args.first().is_some_and(|a| a == "ssh") {
+        return interpretar_ssh(args.split_off(1));
     }
     let mut textos = Vec::new();
     for a in args {
@@ -200,6 +268,60 @@ mod testes {
         assert!(matches!(r, Ok(Comando::Run { .. })));
         // A mensagem de uso não repete argumento.
         let m = ler(&["run", "falso-PG:s3nha/01@#"]).unwrap_err().mensagem();
+        assert!(!m.contains("falso"), "{m}");
+    }
+
+    #[test]
+    fn ssh() {
+        let t = "AbCdEfGhIjKlMnOpQrStUvWxYz012345";
+        assert_eq!(
+            ler(&["ssh", "acme-ssh-senha-stage"]),
+            Ok(Comando::Ssh {
+                entrada: "acme-ssh-senha-stage".into(),
+                token: None,
+                comando: vec![],
+            })
+        );
+        assert_eq!(
+            ler(&["ssh", "e", "whoami"]),
+            Ok(Comando::Ssh {
+                entrada: "e".into(),
+                token: None,
+                comando: vec!["whoami".into()],
+            })
+        );
+        assert_eq!(
+            ler(&["ssh", "e", "--", "ls", "-la"]),
+            Ok(Comando::Ssh {
+                entrada: "e".into(),
+                token: None,
+                comando: vec!["ls".into(), "-la".into()],
+            })
+        );
+        assert_eq!(
+            ler(&["ssh", "--token", t, "e"]),
+            Ok(Comando::Ssh {
+                entrada: "e".into(),
+                token: Some(t.into()),
+                comando: vec![],
+            })
+        );
+        for ruim in [
+            &["ssh"][..],
+            &["ssh", "--token"],
+            &["ssh", "--token", t],
+            &["ssh", "--token", "curto", "e"],
+            &["ssh", "--token", "-AbCdEfGhIjKlMnOpQr", "e"],
+            &["ssh", "--token", "AbCdEfGhIjKlMnOp$rStUv", "e"],
+            &["ssh", "-x", "e"],
+            &["ssh", "e", ""],
+        ] {
+            assert_eq!(ler(ruim), Err(ErroUso::UsoSsh), "{ruim:?}");
+        }
+        // A mensagem de uso não repete argumento.
+        let m = ler(&["ssh", "--token", "falso-SSH-senha-01!"])
+            .unwrap_err()
+            .mensagem();
         assert!(!m.contains("falso"), "{m}");
     }
 

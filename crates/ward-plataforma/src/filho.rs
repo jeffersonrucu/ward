@@ -187,8 +187,44 @@ impl Comando {
             .collect()
     }
 
-    /// Cria o filho. Volta depois do `execve` (ou da falha dele, com o motivo).
+    /// Cria o filho com três pipes. Volta depois do `execve` (ou da falha dele, com o
+    /// motivo).
     pub fn lancar(&self) -> Result<(Grupo, Pipes), ErroLancar> {
+        let (grupo, pontas) = self.lancar_com(sys::Stdio::Pipes)?;
+        match pontas {
+            sys::PontasPai::Pipes {
+                entrada,
+                saida,
+                erro,
+            } => Ok((
+                grupo,
+                Pipes {
+                    entrada: Some(File::from(entrada)),
+                    saida: Some(File::from(saida)),
+                    erro: Some(File::from(erro)),
+                },
+            )),
+            sys::PontasPai::Pty => Err(ErroLancar::Sistema(io::ErrorKind::InvalidData)),
+        }
+    }
+
+    /// Cria o filho num pty novo (`ward ssh` interativo, Fase 27; D13): o filho é líder
+    /// de uma sessão nova com o escravo como terminal de controle em 0, 1 e 2, e o
+    /// tamanho da janela já vale no `exec`. O daemon fica só com o mestre.
+    pub fn lancar_em_pty(&self, linhas: u16, colunas: u16) -> Result<(Grupo, Pty), ErroLancar> {
+        let (mestre, escravo) = sys::abrir_pty().map_err(|e| ErroLancar::Sistema(e.kind()))?;
+        sys::definir_janela(std::os::fd::AsFd::as_fd(&mestre), linhas, colunas)
+            .map_err(|e| ErroLancar::Sistema(e.kind()))?;
+        let (grupo, _) = self.lancar_com(sys::Stdio::Pty(escravo))?;
+        Ok((
+            grupo,
+            Pty {
+                mestre: File::from(mestre),
+            },
+        ))
+    }
+
+    fn lancar_com(&self, stdio: sys::Stdio) -> Result<(Grupo, sys::PontasPai), ErroLancar> {
         let caminhos = self.caminhos();
         let ptr = |v: &Zeroizing<Vec<u8>>| v.as_ptr().cast::<libc::c_char>();
         let lista_c: Vec<*const libc::c_char> = caminhos.iter().map(ptr).collect();
@@ -204,17 +240,13 @@ impl Comando {
             envp: &envp,
             cwd,
         };
-        match sys::fork_exec(&preparo) {
+        match sys::fork_exec(&preparo, stdio) {
             Ok(f) => Ok((
                 Grupo {
                     pid: f.pid,
                     colhido: Mutex::new(false),
                 },
-                Pipes {
-                    entrada: Some(File::from(f.entrada)),
-                    saida: Some(File::from(f.saida)),
-                    erro: Some(File::from(f.erro)),
-                },
+                f.pontas,
             )),
             Err(sys::ErroExec::Sistema(e)) => Err(ErroLancar::Sistema(e.kind())),
             Err(sys::ErroExec::Filho { etapa, errno }) => Err(match etapa {
@@ -233,6 +265,20 @@ pub struct Pipes {
     pub entrada: Option<File>,
     pub saida: Option<File>,
     pub erro: Option<File>,
+}
+
+/// O mestre do pty do filho: o daemon lê a saída e escreve a entrada nele.
+#[derive(Debug)]
+pub struct Pty {
+    pub mestre: File,
+}
+
+impl Pty {
+    /// Novo tamanho da janela (o kernel avisa o grupo da frente com `SIGWINCH`).
+    pub fn definir_janela(&self, linhas: u16, colunas: u16) -> io::Result<()> {
+        use std::os::fd::AsFd;
+        sys::definir_janela(self.mestre.as_fd(), linhas, colunas)
+    }
 }
 
 /// Como o filho terminou.
@@ -258,6 +304,11 @@ impl Fim {
 pub fn pronto_para_ler(f: &File, espera_ms: i32) -> io::Result<bool> {
     use std::os::fd::AsFd;
     sys::esperar_leitura(f.as_fd(), espera_ms)
+}
+
+/// Como [`pronto_para_ler`], para qualquer fd (o socket do agente SSH, Fase 27).
+pub fn pronto_para_ler_fd(fd: std::os::fd::BorrowedFd<'_>, espera_ms: i32) -> io::Result<bool> {
+    sys::esperar_leitura(fd, espera_ms)
 }
 
 /// O grupo de processos do filho (o filho é o líder). Pode ser usado de várias threads:
@@ -341,6 +392,74 @@ mod testes {
         p.saida.take().unwrap().read_to_end(&mut out).unwrap();
         p.erro.take().unwrap().read_to_end(&mut err).unwrap();
         (g.colher().unwrap(), out, err)
+    }
+
+    /// Lê o mestre do pty até o `EIO` do fim da sessão (ou o prazo).
+    fn ler_pty(p: &mut Pty, prazo: Duration) -> Vec<u8> {
+        let fim = Instant::now() + prazo;
+        let mut out = Vec::new();
+        let mut buf = [0u8; 4096];
+        while Instant::now() < fim {
+            if !pronto_para_ler(&p.mestre, 100).unwrap() {
+                continue;
+            }
+            match p.mestre.read(&mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => out.extend_from_slice(&buf[..n]),
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn pty_terminal_de_controle_janela_e_entrada() {
+        // O filho é líder de sessão, tem o escravo como terminal de controle em 0–2, a
+        // janela pedida vale desde o `exec` e muda depois (com `SIGWINCH`).
+        let c = sh(
+            "tty >/dev/null && echo T; [ \"$(ps -o sid= -p $$ | tr -d ' ')\" = $$ ] && echo S; \
+             stty size; trap 'stty size' WINCH; echo pronto; read x || read x; echo \"lido:$x\"",
+        );
+        let (g, mut p) = c.lancar_em_pty(24, 80).unwrap();
+        let mut visto = Vec::new();
+        let fim = Instant::now() + Duration::from_secs(10);
+        let mut buf = [0u8; 4096];
+        while !String::from_utf8_lossy(&visto).contains("pronto") {
+            assert!(Instant::now() < fim, "{}", String::from_utf8_lossy(&visto));
+            if pronto_para_ler(&p.mestre, 100).unwrap() {
+                let n = p.mestre.read(&mut buf).unwrap();
+                visto.extend_from_slice(&buf[..n]);
+            }
+        }
+        p.definir_janela(40, 132).unwrap();
+        std::thread::sleep(Duration::from_millis(200));
+        p.mestre.write_all(b"oi\n").unwrap();
+        visto.extend(ler_pty(&mut p, Duration::from_secs(10)));
+        let s = String::from_utf8_lossy(&visto);
+        assert!(s.contains("T\r\nS\r\n24 80"), "{s}");
+        assert!(s.contains("40 132"), "{s}");
+        assert!(s.contains("lido:oi"), "{s}");
+        assert_eq!(g.colher().unwrap(), Fim::Codigo(0));
+    }
+
+    #[test]
+    fn pty_matar_o_grupo_leva_a_sessao_e_o_ambiente_e_exato() {
+        let mut c = sh("env; sleep 30 & sleep 30");
+        c.variavel(b"SO", b"isto").unwrap();
+        let (g, mut p) = c.lancar_em_pty(24, 80).unwrap();
+        std::thread::sleep(Duration::from_millis(300));
+        g.matar();
+        let out = ler_pty(&mut p, Duration::from_secs(5));
+        assert_eq!(g.colher().unwrap(), Fim::Sinal(libc::SIGKILL));
+        let s = String::from_utf8_lossy(&out);
+        assert!(s.contains("SO=isto"), "{s}");
+        // D60: nada do ambiente deste processo (o `sh` põe PWD, SHLVL, `_`).
+        for linha in s.lines() {
+            let nome = linha.split('=').next().unwrap();
+            assert!(
+                ["SO", "PWD", "SHLVL", "_", ""].contains(&nome.trim()),
+                "{s}"
+            );
+        }
     }
 
     #[test]
