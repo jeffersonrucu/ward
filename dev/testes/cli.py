@@ -15,6 +15,11 @@ ponta, com o terminal num pty de verdade.
    atacado por `ssh-add`, SIGKILL na CLI, travar), V4.28, V4.31, V4.32, V4.34 (pty),
    V4.14 e V4.35/V4.37 pelo argv em `/proc/<pid>/cmdline` (o `wardd` recusa subir sob
    `strace`).
+5. Salto e túnel (Fase 28) contra o `ssh-salto`/`ssh-interno` e o Postgres de teste:
+   V4.25, V4.29 (cliente `dev/testes/pg_select.py`), V4.30, V4.35 com salto (nenhum
+   `ssh` filho de outro `ssh`: sem `sh -c`/`ProxyJump`), ataque à ponte do túnel e
+   V4.33 (log do daemon, que o `make dev-daemon` sobe com `RUST_LOG=trace`, sem nenhum
+   padrão de `.dev/variacoes.txt`).
 
 Uso: dev/testes/cli.py <binário ward> <raiz do repositório>. Só valores falsos (D15).
 """
@@ -657,6 +662,99 @@ else:
     conferir(len(sp2) == 1 and sp2[0][2] == "wardd", "V4.37 sem sh -c: o wardd executa o sshpass do sftp direto")
     tudo = b"\n".join(b"\0".join(x[0]) for x in list(v1.values()) + list(v2.values()))
     conferir(sum(1 for x in padroes if x in tudo) == 0, "S3 nenhum segredo no argv do ssh/sftp")
+
+# --- 5. Salto e túnel (Fase 28) contra os SSH de teste e o Postgres ---------------------
+# V4.25 (salto), V4.29 (túnel do banco), V4.30 (nível combinado), V4.35 com salto (sem
+# `sh -c` na cadeia: o `ssh` do salto é filho do daemon, nunca do `ssh` principal) e o
+# ataque à ponte (um processo de fora da sessão é fechado sem nenhum byte). O cliente
+# do Postgres é `dev/testes/pg_select.py` (o host não tem `psql`).
+PG_SELECT = os.path.join(RAIZ, "dev/testes/pg_select.py")
+if not (servicos and porta_aberta(2224) and porta_aberta(55432)):
+    conferir(False, "Fase 28: ssh-salto (2224) ou postgres (55432) fora do ar; seção salto/túnel pulada")
+else:
+    amb_trace = ambiente({"RUST_LOG": "trace"})
+    r, vistos = capturar(lambda: ssh(["acme-ssh-interno", "sleep 1; hostname"], env=amb_trace))
+    conferir(r.returncode == 0 and r.stdout.strip() == b"ssh-interno",
+             f"V4.25 ward ssh acme-ssh-interno hostname → ssh-interno ({r.returncode} {r.stderr[-200:]!r})")
+    sem_variacao(r, "ssh com salto")
+    ssh_v = [x for x in vistos.values() if x[0][0] == b"/usr/bin/ssh"]
+    principal = [x for x in ssh_v if b"-W" not in x[0]]
+    salto = [x for x in ssh_v if b"-W" in x[0]]
+    conferir(len(principal) == 1 and len(salto) == 1, f"V4.35 dois ssh: o principal e o do salto ({len(principal)}, {len(salto)})")
+    conferir(all(x[2] in ("wardd", "sshpass") for x in ssh_v),
+             f"V4.35 sem sh -c nem ProxyJump: todo ssh é filho do wardd ou do sshpass ({[x[2] for x in ssh_v]})")
+    conferir(not any(b"ProxyJump" in y or y.startswith(b"ProxyCommand=") and y != b"ProxyCommand=none"
+                     for x in ssh_v for y in x[0]), "V4.35 nada de ProxyJump nem ProxyCommand")
+    if principal:
+        a = principal[0][0]
+        o = [a[i + 1] for i in range(len(a) - 1) if a[i] == b"-o"]
+        i = a.index(b"--") if b"--" in a else -1
+        conferir(a[1:3] == [b"-F", b"/dev/null"] and b"HostKeyAlias=ssh-interno" in o and b"CheckHostIP=no" in o
+                 and i > 2 and a[i - 2:i] == [b"-l", b"deploy"] and a[i + 1] == b"127.0.0.1"
+                 and not any(y.startswith(b"User=") or y.endswith(b"@127.0.0.1") for y in a),
+                 "V4.35 principal: -F /dev/null, HostKeyAlias=ssh-interno, -l deploy -- 127.0.0.1")
+    if salto:
+        a = salto[0][0]
+        i = a.index(b"--") if b"--" in a else -1
+        conferir(a[1:3] == [b"-F", b"/dev/null"]
+                 and a[i - 6:i + 2] == [b"-W", b"ssh-interno:22", b"-p", b"2224", b"-l", b"salto", b"--", b"127.0.0.1"] and a[a.index(b"-W") + 1] == b"ssh-interno:22"
+                 and a[i - 2:i] == [b"-l", b"salto"] and a[i + 1] == b"127.0.0.1"
+                 and f"UserKnownHostsFile={DEV}/known_hosts".encode() in a
+                 and not any(y.startswith(b"User=") or y.endswith(b"@127.0.0.1") for y in a),
+                 "V4.35 salto: -F /dev/null, -W ssh-interno:22, -l salto -- 127.0.0.1, known_hosts do Ward")
+    tudo = b"\n".join(b"\0".join(x[0]) for x in vistos.values())
+    conferir(sum(1 for x in padroes if x in tudo) == 0, "S3 nenhum segredo no argv do salto")
+    conferir(not agentes(), "D12 o agente do salto some no fim")
+
+    # V4.30: livre com salto "com aprovação": vale o mais restritivo.
+    r = ssh(["acme-ssh-interno-aprov", "hostname"], env=amb_trace)
+    conferir(r.returncode == 125 and b"ssh-interno" not in r.stdout
+             and (b"pedido negado" in r.stderr or "aprovação indisponível".encode() in r.stderr),
+             f"V4.30 salto com aprovação: vale o nível mais restritivo ({r.stderr[:80]!r})")
+
+    # V4.29: `ward run acme-pg-tunel -- … select 1` pela ponte; PGHOST=127.0.0.1 e a porta
+    # local; depois do comando, a porta fecha.
+    r = run(["acme-pg-tunel", "--", "/bin/sh", "-c",
+             'echo "ponta $PGHOST $PGPORT"; /usr/bin/python3 -I "$1" "select 1"', "sh", PG_SELECT],
+            env=amb_trace)
+    linhas = r.stdout.decode(errors="replace").split("\n")
+    ponta = next((x.split() for x in linhas if x.startswith("ponta ")), [])
+    conferir(r.returncode == 0 and "1" in linhas, f"V4.29 select 1 pelo túnel → 1 ({r.returncode} {r.stderr[-200:]!r})")
+    conferir(len(ponta) == 3 and ponta[1] == "127.0.0.1" and ponta[2].isdigit() and ponta[2] != "5432",
+             f"V4.29 PGHOST=127.0.0.1 com a porta local ({ponta})")
+    if len(ponta) == 3 and ponta[2].isdigit():
+        conferir(not porta_aberta(int(ponta[2])), "V4.29 o túnel fecha ao fim")
+    sem_variacao(r, "run com túnel")
+    r = run(["acme-pg-tunel", "--", "/bin/sh", "-c", '/usr/bin/python3 -I "$1" "select current_user"', "sh", PG_SELECT])
+    conferir(r.returncode == 0 and r.stdout.strip() == b"app", "V4.29 current_user pelo túnel → app")
+
+    # Ataque: durante o `ward run`, outro processo do usuário (este teste) conecta na
+    # ponte: fechado sem nenhum byte; o comando continua usando o túnel.
+    p = subprocess.Popen([WARD, "run", "acme-pg-tunel", "--", "/bin/sh", "-c",
+                          'echo "$PGPORT"; sleep 3; /usr/bin/python3 -I "$1" "select 2"', "sh", PG_SELECT],
+                         env=ambiente(), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    porta_t = p.stdout.readline().strip()
+    recebido = b"?"
+    if porta_t.isdigit():
+        try:
+            s = socket.create_connection(("127.0.0.1", int(porta_t)), timeout=5)
+            s.settimeout(5)
+            s.sendall(b"\0\0\0\x08\x04\xd2\x16\x2f")
+            recebido = s.recv(64)
+            s.close()
+        except OSError:
+            recebido = b""
+    out, err = p.communicate(timeout=60)
+    conferir(recebido == b"", f"ataque: a ponte do túnel fecha a conexão de fora da sessão sem byte ({recebido!r})")
+    conferir(p.returncode == 0 and out.strip() == b"2", f"o comando segue com o túnel depois do ataque ({p.returncode})")
+
+    # V4.33 (S13): o log do daemon (com RUST_LOG=trace) não tem nenhum padrão de
+    # .dev/variacoes.txt; o stderr da CLI com RUST_LOG=trace também não (sem_variacao).
+    log = os.path.join(DEV, "logs", "wardd.log")
+    texto_log = open(log, "rb").read() if os.path.exists(log) else b""
+    conferir(b"wardd[debug]" in texto_log, "V4.33 o daemon de teste está com RUST_LOG=trace (linhas [debug] no log)")
+    conferir(texto_log and sum(1 for x in padroes if x in texto_log) == 0,
+             f"V4.33 nenhum padrão de .dev/variacoes.txt no log do daemon ({len(texto_log)} bytes)")
 
 print(f"\n{len(falhas)} falha(s)")
 sys.exit(1 if falhas else 0)

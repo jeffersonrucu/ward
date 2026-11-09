@@ -36,6 +36,8 @@ use zeroize::Zeroizing;
 
 /// Senha dos servidores de teste (a de `comum::servidor`, falsa).
 const SENHA_SSH: &str = SEGREDOS[1];
+/// Senha do `banco` do túnel (falsa).
+const SENHA_BANCO: &str = SEGREDOS[2];
 
 #[derive(Clone, Default)]
 struct RelogioManual(Arc<Mutex<Duration>>);
@@ -175,6 +177,51 @@ fn cena(rotulo: &str) -> Cena {
         &d,
         &servidor_json("s-salto", "deploy", &auth_senha(), r#","salto":"s-livre""#),
     );
+    // Fase 28: salto com chave no principal, salto com chave no intermediário, salto com
+    // aprovação ou bloqueado (D19) e o túnel do `banco`.
+    salvar(
+        &d,
+        &servidor_json(
+            "s-salto-chave",
+            "deploy",
+            &auth_chave,
+            r#","salto":"s-livre""#,
+        ),
+    );
+    salvar(
+        &d,
+        &servidor_json(
+            "s-via-chave",
+            "deploy",
+            &auth_senha(),
+            r#","salto":"s-chave""#,
+        ),
+    );
+    salvar(
+        &d,
+        &servidor_json(
+            "s-salto-aprov",
+            "deploy",
+            &auth_senha(),
+            r#","salto":"s-outro""#,
+        ),
+    );
+    salvar(
+        &d,
+        &servidor_json(
+            "s-salto-bloq",
+            "deploy",
+            &auth_senha(),
+            r#","salto":"s-bloq""#,
+        ),
+    );
+    salvar(
+        &d,
+        &format!(
+            r#"{{"entrada":{{"nome":"b-tunel","grupo":"clientex","ambiente":"stage","tipo":"banco","campos":{{"motor":"postgres","host":"db.interno","porta":"5432","base":"app","usuario":"app","senha":"{}","tunel":"s-livre"}}}}}}"#,
+            b64(SENHA_BANCO.as_bytes())
+        ),
+    );
     salvar(&d, &sftp_json("f-sftp", "sftp", &auth_senha()));
     salvar(&d, &sftp_json("f-sftp-chave", "sftp", &auth_chave));
     salvar(&d, &sftp_json("f-ftp", "ftp", &auth_senha()));
@@ -182,6 +229,11 @@ fn cena(rotulo: &str) -> Cena {
         "s-livre",
         "s-chave",
         "s-salto",
+        "s-salto-chave",
+        "s-via-chave",
+        "s-salto-aprov",
+        "s-salto-bloq",
+        "b-tunel",
         "f-sftp",
         "f-sftp-chave",
         "f-ftp",
@@ -288,12 +340,23 @@ fn mandar(s: &mut UnixStream, p: &Pedido) {
 /// Roda a sessão como o servidor rodaria. `cli` recebe a ponta da CLI logo depois do
 /// pedido (manda entrada, janela, mexe no cofre) e a sessão é lida até o fim.
 fn sessao(c: &Cena, pedido: Pedido, cli: impl FnOnce(&mut UnixStream)) -> Sessao {
+    sessao_de(c, pedido, cli, false)
+}
+
+/// Como [`sessao`]; `run`: a sessão do `ward run` (`wardd::execucao::sessao`).
+fn sessao_de(c: &Cena, pedido: Pedido, cli: impl FnOnce(&mut UnixStream), run: bool) -> Sessao {
     let (mut lado_cli, lado_daemon) = UnixStream::pair().unwrap();
     lado_cli
         .set_read_timeout(Some(Duration::from_secs(60)))
         .unwrap();
     let d = c.d.clone();
-    let t = std::thread::spawn(move || wardd::ssh::sessao(&d, &SemCliente, &lado_daemon, pedido));
+    let t = std::thread::spawn(move || {
+        if run {
+            wardd::execucao::sessao(&d, &SemCliente, &lado_daemon, pedido)
+        } else {
+            wardd::ssh::sessao(&d, &SemCliente, &lado_daemon, pedido)
+        }
+    });
     let inicio = Instant::now();
     cli(&mut lado_cli);
     let mut r = Sessao::default();
@@ -326,13 +389,18 @@ fn sessao(c: &Cena, pedido: Pedido, cli: impl FnOnce(&mut UnixStream)) -> Sessao
     r
 }
 
+/// Fecha a entrada do comando. Quando o pedido é recusado antes de lançar (token
+/// inválido, nível), o daemon pode já ter respondido e soltado a ponta: a escrita que
+/// falha aí não é erro do teste (a resposta é conferida depois).
 fn fechar_entrada(s: &mut UnixStream) {
-    mandar(
-        s,
+    let corpo = protocolo::codificar_pedido(
+        Papel::Agente,
         &Pedido::EntradaPadrao {
             dados: Segredo::de_bytes(Vec::new()),
         },
-    );
+    )
+    .unwrap();
+    let _ = quadro::escrever_quadro(s, &corpo, MAX_QUADRO_COMUM);
 }
 
 /// O registro de um programa falso: `campo → valores`, na ordem.
@@ -519,7 +587,9 @@ fn v4_37_d56_sftp_com_user_e_host_depois_de_traco_traco() {
 }
 
 /// Recusas antes de executar: tipo sem `ward ssh`, `ftp` (não `sftp`), bloqueada
-/// (inexistente), com aprovação sem app (vale o nível) e salto (Fase 28).
+/// (inexistente), com aprovação sem app (vale o nível) e o nível combinado de D19
+/// (V4.30): livre com salto "com aprovação" sem app dá `aprovacao_indisponivel`, e
+/// livre com salto bloqueado é negado sem perguntar.
 #[test]
 fn recusas_sem_executar_nada() {
     let c = cena("recusas");
@@ -529,7 +599,8 @@ fn recusas_sem_executar_nada() {
         ("s-bloq", ErroResposta::EntradaInexistente),
         ("nao-existe", ErroResposta::EntradaInexistente),
         ("s-outro", ErroResposta::AprovacaoIndisponivel),
-        ("s-salto", ErroResposta::EntregaFalhou),
+        ("s-salto-aprov", ErroResposta::AprovacaoIndisponivel),
+        ("s-salto-bloq", ErroResposta::Negado),
     ] {
         let r = sessao(&c, pedido_ssh(entrada, &["id"], None, None), |_| {});
         assert_eq!(r.falha, Some(erro), "{entrada}: {r:?}");
@@ -808,4 +879,410 @@ fn v5_24_token_do_conectar() {
         let _ = c.token("s-outro");
     }
     assert_eq!(rodar(Some(&primeiro), "s-outro").falha, indisponivel);
+}
+
+// --- Fase 28: salto e túnel pela ponte (sem `ProxyJump`, sem shell) --------------------
+
+/// Espera o registro do programa falso `nome` cujo argv tem `marca` (inteiro ou como
+/// começo de um argumento).
+fn esperar_registro(c: &Cena, nome: &str, marca: &str) -> Reg {
+    let mut achado = None;
+    assert!(
+        esperar(Duration::from_secs(30), || {
+            achado = c
+                .registros(nome)
+                .into_iter()
+                .find(|r| argv(r).iter().any(|a| a.starts_with(marca)));
+            achado.is_some()
+        }),
+        "sem registro de {nome} com {marca}"
+    );
+    achado.unwrap()
+}
+
+/// O valor depois de `op` no argv.
+fn depois_de(a: &[String], op: &str) -> String {
+    let i = a.iter().position(|x| x == op).unwrap();
+    a[i + 1].clone()
+}
+
+/// Ataque: um processo de fora da sessão (este teste: mesmo uid, outro grupo de
+/// processos) conecta na ponte. É fechado sem nenhum byte e nada é lançado.
+fn estranho_e_recusado(porta: u16) {
+    use std::io::{Read, Write};
+    let mut t = std::net::TcpStream::connect(("127.0.0.1", porta)).unwrap();
+    t.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+    let _ = t.write_all(b"SSH-2.0-estranho\r\n");
+    let mut buf = [0u8; 64];
+    assert_eq!(
+        t.read(&mut buf).unwrap_or(0),
+        0,
+        "a ponte respondeu a um estranho"
+    );
+}
+
+/// O inode do socket que escuta em `127.0.0.1:<porta>` (`/proc/net/tcp`, estado `0A`).
+/// A conferência do fim usa o inode, não a porta: com os testes em paralelo, outra
+/// ponte pode receber do kernel o mesmo número de porta logo depois.
+fn inode_da_escuta(porta: u16) -> u64 {
+    let t = fs::read_to_string("/proc/net/tcp").unwrap();
+    let local = format!("0100007F:{porta:04X}");
+    t.lines()
+        .skip(1)
+        .map(|l| l.split_whitespace().collect::<Vec<_>>())
+        .find(|c| c.len() > 9 && c[1] == local && c[3] == "0A")
+        .and_then(|c| c[9].parse().ok())
+        .unwrap_or_else(|| panic!("ninguém escuta em 127.0.0.1:{porta}"))
+}
+
+/// A escuta da ponte (pelo inode) foi fechada? (O daemon roda neste processo.)
+fn escuta_fechada(inode: u64) -> bool {
+    let alvo = format!("socket:[{inode}]");
+    esperar(Duration::from_secs(5), || {
+        !fs::read_dir("/proc/self/fd")
+            .unwrap()
+            .any(|e| fs::read_link(e.unwrap().path()).is_ok_and(|l| l.as_os_str() == alvo.as_str()))
+    })
+}
+
+fn ninguem_com_w(c: &Cena) -> bool {
+    !c.registros("ssh")
+        .iter()
+        .any(|r| argv(r).contains(&"-W".to_owned()))
+}
+
+/// Confere o `ssh -W` da ponte (D13, D43): `-F /dev/null`, `known_hosts` do Ward,
+/// usuário só depois de `-l`, host depois de `--`, alvo em `-W`, nada de `ProxyJump`,
+/// `User=` ou `usuário@host`.
+fn conferir_argv_da_ponte(c: &Cena, a: &[String], alvo: &str, usuario: &str) {
+    // O registro tem o argv sem o programa (o `ssh` falso de `c.base`).
+    let _ = c;
+    assert_eq!(&a[0..2], ["-F", "/dev/null"], "{a:?}");
+    let o = opcoes(a);
+    for x in [
+        "IdentitiesOnly=yes",
+        "CertificateFile=/dev/null",
+        "GlobalKnownHostsFile=/dev/null",
+        "StrictHostKeyChecking=accept-new",
+        "ProxyCommand=none",
+        "ControlMaster=no",
+        "ForwardAgent=no",
+        "PermitLocalCommand=no",
+        "ExitOnForwardFailure=yes",
+    ] {
+        assert!(o.contains(&x.to_owned()), "{x}: {a:?}");
+    }
+    assert!(o.iter().any(|x| x.starts_with("UserKnownHostsFile=")
+        && x.ends_with("/known_hosts")
+        && !x.contains("/.ssh/")));
+    let fim: Vec<String> = ["-W", alvo, "-p", "2222", "-l", usuario, "--", "127.0.0.1"]
+        .map(String::from)
+        .into();
+    assert_eq!(&a[a.len() - 8..], fim.as_slice(), "{a:?}");
+    assert!(
+        !a.iter().any(|x| x.contains("ProxyJump")
+            || x.starts_with("User=")
+            || x.ends_with("@127.0.0.1"))
+    );
+}
+
+/// Fase 28 / V4.25 / V4.35 (D13, D19, D43; S1, S3, S4): `ward ssh` de um `servidor`
+/// com salto, senha nos dois. A ponte só aceita o `ssh` principal (o teste, de fora,
+/// é recusado sem byte e sem lançar nada; a segunda conexão também); o `ssh` do salto
+/// recebe a senha do salto só em `SSHPASS`; o principal conecta em `127.0.0.1:<porta>`
+/// com `HostKeyAlias` do destino; o `stderr` do salto chega mascarado; no fim a ponte
+/// fecha.
+#[test]
+fn fase28_salto_com_senha_pela_ponte() {
+    let c = cena("salto");
+    c.modo("normal");
+    fs::write(c.base.join("esperar-ponte"), "").unwrap();
+    let porta = std::cell::Cell::new(0u16);
+    let inode = std::cell::Cell::new(0u64);
+    let r = sessao(&c, pedido_ssh("s-salto", &["hostname"], None, None), |s| {
+        fechar_entrada(s);
+        let principal = esperar_registro(&c, "ssh", "HostKeyAlias=");
+        let pt: u16 = depois_de(&argv(&principal), "-p").parse().unwrap();
+        porta.set(pt);
+        inode.set(inode_da_escuta(pt));
+        estranho_e_recusado(pt);
+        assert!(
+            ninguem_com_w(&c),
+            "a conexão do estranho lançou o ssh do salto"
+        );
+        fs::write(c.base.join("continuar-ponte"), "").unwrap();
+    });
+    assert_eq!(r.fim, Some(0), "{r:?}");
+    let t = r.texto();
+    assert!(t.contains("ponte=eco:127.0.0.1:2222:oi"), "{t}");
+    assert!(
+        t.contains("segunda=fechada"),
+        "a ponte do salto aceitou duas: {t}"
+    );
+    let erro = String::from_utf8_lossy(&r.erro).into_owned();
+    assert!(erro.contains("erro-salto ••••"), "{erro}");
+    assert!(!contem(&r.saida, SENHA_SSH.as_bytes()));
+    assert!(!contem(&r.erro, SENHA_SSH.as_bytes()));
+    let pt = porta.get();
+    assert!(
+        escuta_fechada(inode.get()),
+        "a ponte ficou aberta depois da sessão"
+    );
+
+    // O principal: `sshpass -e ssh … -p <ponte> -l deploy -- 127.0.0.1 hostname`.
+    let principal = esperar_registro(&c, "ssh", "HostKeyAlias=");
+    let a = argv(&principal);
+    let o = opcoes(&a);
+    assert!(
+        o.contains(&"HostKeyAlias=[127.0.0.1]:2222".to_owned()),
+        "{a:?}"
+    );
+    assert!(o.contains(&"CheckHostIP=no".to_owned()));
+    assert!(o.contains(&"ProxyCommand=none".to_owned()));
+    let fim: Vec<String> = [
+        "-p",
+        &pt.to_string(),
+        "-l",
+        "deploy",
+        "--",
+        "127.0.0.1",
+        "hostname",
+    ]
+    .map(String::from)
+    .into();
+    assert_eq!(&a[a.len() - 7..], fim.as_slice());
+    assert!(
+        !a.iter()
+            .any(|x| x.contains("ProxyJump") || x.starts_with("User="))
+    );
+
+    // O do salto: usuário com `@` inteiro depois de `-l` (D43), senha só no ambiente.
+    let salto = esperar_registro(&c, "ssh", "-W");
+    let a = argv(&salto);
+    conferir_argv_da_ponte(&c, &a, "127.0.0.1:2222", "deploy@cliente.com.br");
+    let o = opcoes(&a);
+    assert!(o.contains(&"PubkeyAuthentication=no".to_owned()));
+    assert!(o.contains(&"IdentityAgent=none".to_owned()));
+    assert!(o.contains(&"NumberOfPasswordPrompts=1".to_owned()));
+    let esperado: BTreeSet<String> = ["LANG", "PATH", "SSHPASS"].map(String::from).into();
+    assert_eq!(env(&salto), esperado);
+    assert_eq!(salto.um("sshpass_sha256"), sha256(SENHA_SSH.as_bytes()));
+    // Dois `sshpass -e` (o principal e o do salto), nenhum com a senha em argv.
+    let sp = c.registros("sshpass");
+    assert_eq!(sp.len(), 2, "{sp:?}");
+    for r in &sp {
+        assert_eq!(argv(r)[0], "-e");
+        assert!(!argv(r).iter().any(|x| x.contains(SENHA_SSH)));
+    }
+    assert!(rt_sem_agente(&c));
+}
+
+/// Fase 28 / D12: chave no principal (como `acme-ssh-interno`) e chave no salto. Cada
+/// `ssh` tem o seu agente, que só atende a ele (o neto é recusado); tudo some no fim.
+#[test]
+fn fase28_salto_com_chave_agente_de_cada_ssh() {
+    // Principal com chave, salto com senha.
+    let c = cena("saltochave");
+    let r = sessao(
+        &c,
+        pedido_ssh("s-salto-chave", &["hostname"], None, None),
+        fechar_entrada,
+    );
+    assert_eq!(r.fim, Some(0), "{r:?}");
+    assert!(r.texto().contains("ponte=eco:127.0.0.1:2222:oi"), "{r:?}");
+    let principal = esperar_registro(&c, "ssh", "HostKeyAlias=");
+    assert_eq!(principal.um("agente.lista"), "12", "{principal:?}");
+    assert_eq!(principal.um("agente.assina"), "14");
+    assert_eq!(principal.um("agente.neto"), "recusada");
+    let o = opcoes(&argv(&principal));
+    assert!(o.contains(&"PubkeyAuthentication=yes".to_owned()));
+    assert_eq!(c.registros("sshpass").len(), 1, "só o salto usa sshpass");
+    assert!(rt_sem_agente(&c));
+
+    // Principal com senha, salto com chave.
+    let c = cena("viachave");
+    let r = sessao(
+        &c,
+        pedido_ssh("s-via-chave", &["hostname"], None, None),
+        fechar_entrada,
+    );
+    assert_eq!(r.fim, Some(0), "{r:?}");
+    assert!(r.texto().contains("ponte=eco:127.0.0.1:2222:oi"), "{r:?}");
+    let salto = esperar_registro(&c, "ssh", "-W");
+    assert_eq!(salto.um("agente.lista"), "12", "{salto:?}");
+    assert_eq!(salto.um("agente.assina"), "14");
+    for op in ["adiciona", "remove", "trava"] {
+        assert_eq!(salto.um(&format!("agente.{op}")), "5", "{op}");
+    }
+    assert_eq!(salto.um("agente.neto"), "recusada");
+    conferir_argv_da_ponte(&c, &argv(&salto), "127.0.0.1:2222", "deploy");
+    let esperado: BTreeSet<String> = ["LANG", "PATH"].map(String::from).into();
+    assert_eq!(env(&salto), esperado, "sem SSHPASS nem SSH_AUTH_SOCK");
+    assert!(rt_sem_agente(&c));
+}
+
+/// Fase 28 / V4.29 (D10, D19): `ward run` de um `banco` com túnel. O comando recebe
+/// `PGHOST=127.0.0.1` e a porta da ponte e conversa com o alvo pelo `ssh -W` do
+/// `servidor` do túnel (duas conexões); um estranho é recusado sem lançar nada; a
+/// senha do banco e a do servidor do túnel saem mascaradas (D19); a ponte fecha no fim.
+#[test]
+fn fase28_tunel_do_banco_no_run() {
+    let c = cena("tunel");
+    let marca = c.base.join("continuar-tunel");
+    let arq_porta = c.base.join("porta-tunel");
+    let script = format!(
+        r#"
+import os, socket, time
+porta = int(os.environ["PGPORT"])
+open({arq:?}, "w").write(str(porta))
+print("PGHOST=" + os.environ["PGHOST"], flush=True)
+print("PGPORT=" + os.environ["PGPORT"], flush=True)
+print("url=" + os.environ["DATABASE_URL"], flush=True)
+print("senha=" + os.environ["PGPASSWORD"], flush=True)
+print("servidor={servidor}", flush=True)
+fim = time.time() + 30
+while time.time() < fim and not os.path.exists({marca:?}):
+    time.sleep(0.02)
+for i in range(2):
+    s = socket.create_connection(("127.0.0.1", porta), timeout=60)
+    s.sendall(b"select %d\n" % i)
+    d = b""
+    while not d.endswith(b"\n"):
+        x = s.recv(4096)
+        if not x:
+            break
+        d += x
+    print("resposta=" + d.decode().strip(), flush=True)
+    s.close()
+"#,
+        arq = arq_porta.to_str().unwrap(),
+        marca = marca.to_str().unwrap(),
+        servidor = SENHA_SSH,
+    );
+    let pedido = Pedido::Executar(ward_core::protocolo::PedidoExecutar {
+        entrada: "b-tunel".into(),
+        argv: ["/usr/bin/python3", "-I", "-c", script.as_str()]
+            .iter()
+            .map(|x| Zeroizing::new(x.as_bytes().to_vec()))
+            .collect(),
+        cwd: Zeroizing::new(b"/".to_vec()),
+        ambiente: vec![ward_core::protocolo::Variavel {
+            nome: Zeroizing::new(b"PATH".to_vec()),
+            valor: Segredo::de_texto("/usr/bin:/bin".into()),
+        }],
+    });
+    let porta = std::cell::Cell::new(0u16);
+    let inode = std::cell::Cell::new(0u64);
+    let r = sessao_de(
+        &c,
+        pedido,
+        |s| {
+            fechar_entrada(s);
+            assert!(esperar(Duration::from_secs(30), || {
+                fs::read_to_string(&arq_porta).is_ok_and(|t| t.parse::<u16>().is_ok())
+            }));
+            let pt: u16 = fs::read_to_string(&arq_porta).unwrap().parse().unwrap();
+            porta.set(pt);
+            inode.set(inode_da_escuta(pt));
+            estranho_e_recusado(pt);
+            assert!(
+                ninguem_com_w(&c),
+                "a conexão do estranho lançou o ssh do túnel"
+            );
+            fs::write(&marca, "").unwrap();
+        },
+        true,
+    );
+    assert_eq!(r.fim, Some(0), "{r:?}");
+    let t = r.texto();
+    let pt = porta.get();
+    assert!(t.contains("PGHOST=127.0.0.1"), "{t}");
+    assert!(t.contains(&format!("PGPORT={pt}\n")), "{t}");
+    // O `DATABASE_URL` inteiro é segredo (D11): sai mascarado.
+    assert!(t.contains("url=••••"), "{t}");
+    assert!(t.contains("resposta=eco:db.interno:5432:select 0"), "{t}");
+    assert!(t.contains("resposta=eco:db.interno:5432:select 1"), "{t}");
+    assert!(t.contains("senha=••••"), "{t}");
+    assert!(
+        t.contains("servidor=••••"),
+        "D19: a senha do túnel na máscara: {t}"
+    );
+    for segredo in [SENHA_SSH, SENHA_BANCO] {
+        assert!(!contem(&r.saida, segredo.as_bytes()));
+        assert!(!contem(&r.erro, segredo.as_bytes()));
+    }
+    let erro = String::from_utf8_lossy(&r.erro).into_owned();
+    assert!(erro.contains("erro-salto ••••"), "{erro}");
+    assert!(
+        escuta_fechada(inode.get()),
+        "o túnel ficou aberto depois do comando"
+    );
+    let tuneis: Vec<Reg> = c
+        .registros("ssh")
+        .into_iter()
+        .filter(|r| argv(r).contains(&"-W".to_owned()))
+        .collect();
+    assert_eq!(tuneis.len(), 2, "um ssh -W por conexão");
+    for r in &tuneis {
+        conferir_argv_da_ponte(&c, &argv(r), "db.interno:5432", "deploy@cliente.com.br");
+        assert_eq!(r.um("sshpass_sha256"), sha256(SENHA_SSH.as_bytes()));
+    }
+    assert!(rt_sem_agente(&c));
+}
+
+/// Fase 28 (D12 + D19): travar o cofre durante o `ward run` com túnel faz a ponte parar
+/// de aceitar conexões novas.
+#[test]
+fn fase28_travar_fecha_o_tunel_para_conexoes_novas() {
+    let c = cena("tuneltrava");
+    let marca = c.base.join("continuar-tunel");
+    let arq_porta = c.base.join("porta-tunel");
+    let script = format!(
+        r#"
+import os, socket, time
+porta = int(os.environ["PGPORT"])
+open({arq:?}, "w").write(str(porta))
+fim = time.time() + 30
+while time.time() < fim and not os.path.exists({marca:?}):
+    time.sleep(0.02)
+try:
+    s = socket.create_connection(("127.0.0.1", porta), timeout=5)
+    s.sendall(b"x\n")
+    print("depois=" + (s.recv(64).decode() or "fechada"), flush=True)
+except OSError as e:
+    print("depois=" + type(e).__name__, flush=True)
+"#,
+        arq = arq_porta.to_str().unwrap(),
+        marca = marca.to_str().unwrap(),
+    );
+    let pedido = Pedido::Executar(ward_core::protocolo::PedidoExecutar {
+        entrada: "b-tunel".into(),
+        argv: ["/usr/bin/python3", "-I", "-c", script.as_str()]
+            .iter()
+            .map(|x| Zeroizing::new(x.as_bytes().to_vec()))
+            .collect(),
+        cwd: Zeroizing::new(b"/".to_vec()),
+        ambiente: Vec::new(),
+    });
+    let r = sessao_de(
+        &c,
+        pedido,
+        |s| {
+            fechar_entrada(s);
+            assert!(esperar(Duration::from_secs(30), || {
+                fs::read_to_string(&arq_porta).is_ok_and(|t| t.parse::<u16>().is_ok())
+            }));
+            c.d.travar();
+            std::thread::sleep(Duration::from_millis(400));
+            fs::write(&marca, "").unwrap();
+        },
+        true,
+    );
+    assert_eq!(r.fim, Some(0), "{r:?}");
+    let t = r.texto();
+    assert!(
+        !t.contains("depois=eco"),
+        "a ponte aceitou depois de travar: {t}"
+    );
+    assert!(ninguem_com_w(&c));
 }
