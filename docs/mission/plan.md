@@ -446,6 +446,14 @@ Pendências da 28 (2026-11-09): salto não usa `ProxyJump` (o OpenSSH 9.6 roda o
 
 Auditoria de segurança do M3 (aprovada, 2026-11-09; `docs/mission/evidence/M3/seguranca/`): **alto** fora do M3 — token do "Conectar" vai no argv do terminal e do `ward ssh --token` (`app/nucleo/src/terminal.rs:127`, `crates/wardd/src/ssh.rs:355`), legível em `/proc/<pid>/cmdline` por qualquer processo do mesmo uid, que pode usá-lo primeiro e pular nível e aprovação (Fase 27a); **médio** — ambiente da CLI no `executar` (só `LD_*` sai; `PATH`/`BASH_ENV`/config de ferramentas mudam o comando aprovado e a janela não mostra), o auditor recomenda bloquear o M4 — decisão do usuário; **baixo** — recusa de `LD_PRELOAD` roda depois do `ld.so` carregar a biblioteca (V3.7 é defesa em profundidade; a unit do systemd garante ambiente limpo, M9).
 
+M3 aprovado (2026-11-09): scrutiny (2ª rodada), segurança e uso; V3.1–V3.41 marcados. Ressalvas do uso: Destravar com senha errada não mostra o botão desabilitado com contagem do frame `3393`; V4.1 do contrato ainda diz 19 entradas (o cofre tem 22, a CLI lista 21).
+
+Pendências da 40 (2026-11-09): papel extensão no host de desenvolvimento — sem grupos nem setgid o `ward-nm` de teste é sempre agente, então o QA de V6.2 (UI)/V6.7 no Chrome de teste precisa de uma exceção de `modo-teste` como D63 (pai Chrome conferido pelo `/proc`, sem egid) — decisão do planner na Fase 41; host não confere o id da extensão (o `allowed_origins` do manifesto confere; id fixo na 41/51); ramo do pai não-dumpable de D47 não implementado (falha fechada); daemon fora do ar vira `interno`; `--load-extension` não funciona no Chrome 137+ (usar `Extensions.loadUnpacked` pelo CDP).
+
+Pendências da 27a (2026-11-09): token por `socketpair` herdado (`--token-fd`); testado com `cosmic-term` e `xterm`; terminais que entregam o comando a um servidor já aberto (gnome-terminal) não repassam o fd e o `ward ssh` falha fechado; D3 do PRD e V5.24 do contrato ainda falam em `--token <t>` em argv — atualizar o texto.
+
+Pendências da 44 (2026-11-09): RA1 — processo do mesmo uid pode abrir `/proc/<chrome>/fd/3` e ler o perfil temporário durante a sessão; V6.15 diz "domínio não confere" e o código usa a mensagem de `OrigemDiferente`; TOTP só com `autocomplete="one-time-code"` (login em duas etapas cai em `LoginRecusado`); Playwright do Python fora do repositório (`PW_PYTHONPATH`); Chrome fora do `home-real.sh`; `SIMPLES` agora com 32.
+
 ## Milestone 3 — Daemon e protocolo
 Contrato: V3.1–V3.41
 
@@ -711,12 +719,24 @@ Contrato: V4.1–V4.38
   falso não-dumpable do uid 1000, `bind` em `/run/ward/1000/` recusado.
   V4.2, V4.25, V4.27, V4.29, V4.30, V4.33.
 
-- [ ] Fase 27a — Correção do achado alto da auditoria do M3: o token do "Conectar" nunca
+- [x] Fase 27a — Correção do achado alto da auditoria do M3: o token do "Conectar" nunca
   vai em argv. O app entrega o token ao `ward ssh` por um fd herdado (ou outro canal que
   nenhum outro processo do mesmo uid leia), o `x-terminal-emulator` não o recebe em
   argv/ambiente, e o `ward ssh` lê o token desse canal; `--token` em argv é recusado.
   Teste de ataque: leitor de `/proc/*/cmdline` e `/proc/*/environ` em laço durante o
   "Conectar" não acha o token. V5.24, S9, S10.
+- [ ] Fase 26a — Ambiente do `executar` por lista fixa (decisão do usuário, achado médio
+  da auditoria do M3): o daemon monta o ambiente do comando do zero — `PATH` fixo
+  `/usr/local/bin:/usr/bin:/bin`, só variáveis de uma lista permitida (`HOME`, `USER`,
+  `LOGNAME`, `LANG`, `LC_*`, `TERM`, `TZ`, `COLORTERM`, `NO_COLOR` e as que a entrega da
+  credencial define) e nada da CLI fora dela (`BASH_ENV`, `ENV`, `NODE_OPTIONS`,
+  `PYTHONPATH`, `PERL5LIB`, `GIT_*`, `SSH_*`, `PG*` não entregues, `LD_*` etc. somem);
+  o comando com caminho relativo é resolvido pelo `PATH` fixo (nunca pelo da CLI) e o
+  diretório de trabalho continua o da CLI, mostrado na janela de aprovação. Mesmo
+  tratamento no `ward ssh` e no salto/túnel. Testes de ataque: `PATH` com pasta do
+  atacante na frente, `BASH_ENV`, `NODE_OPTIONS=--require`, `GIT_SSH_COMMAND`,
+  `PYTHONSTARTUP`, `PGSERVICEFILE`. Atualizar `teste-cli` e o roteiro da skill (comando
+  fora do `PATH` fixo vai com caminho absoluto). V4.3–V4.8, V4.36.
 
 ## Milestone 5 — App desktop
 Contrato: V5.1–V5.35
@@ -804,7 +824,7 @@ Contrato: V5.1–V5.35
 ## Milestone 6 — Extensão, `ward login` e `ward playwright`
 Contrato: V6.1–V6.16
 
-- [ ] Fase 40 — `ward-nm` (native messaging): mensagens com limite, papel extensão no
+- [x] Fase 40 — `ward-nm` (native messaging): mensagens com limite, papel extensão no
   daemon (D47; pai Chrome conferido com o Chrome real: lançado
   direto ou por intermediário, navegador dumpable ou não, handoff 21), origem da aba
   comparada no daemon (D9).
@@ -815,7 +835,7 @@ Contrato: V6.1–V6.16
 - [ ] Fase 42 — **(UI)** Popup "Salvar login novo" e "Cofre travado". V6.8, V6.9.
 - [ ] Fase 43 — `ward login`: daemon → `ward-nm` → aba ativa, confere a origem,
   preenche, envia e limpa os campos, com nível e aprovação. V6.3, V6.10, V6.11, V6.15.
-- [ ] Fase 44 — `ward playwright`: Chrome headless com `--remote-debugging-pipe` e perfil
+- [x] Fase 44 — `ward playwright`: Chrome headless com `--remote-debugging-pipe` e perfil
   temporário (D6), storage state 0600, limpeza ao travar e na partida; logs sem
   segredo. V6.12–V6.16.
 
