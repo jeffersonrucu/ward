@@ -166,6 +166,7 @@ pub fn executar(cmd: Comando, e: &mut dyn Entorno) -> u8 {
             token_fd,
             comando,
         } => ssh(e, entrada, token_fd, comando),
+        Comando::Playwright { entrada } => playwright(e, entrada),
     }
 }
 
@@ -532,6 +533,46 @@ fn ssh(e: &mut dyn Entorno, entrada: String, token_fd: Option<u32>, comando: Vec
     drop(cru);
     codigo
 }
+
+/// `ward playwright <entrada>` (Fase 44, D6): o daemon faz o login no Chrome e volta só o
+/// caminho do storage state, que vai para a saída. Nenhum segredo passa por aqui (S1).
+fn playwright(e: &mut dyn Entorno, entrada: String) -> u8 {
+    let mut c = match conectar(e) {
+        Ok(c) => c,
+        Err(codigo) => return codigo,
+    };
+    match c.pedir(&Pedido::Estado) {
+        Ok(Resposta::Estado {
+            cofre_existe: false,
+            ..
+        }) => return falhar(e, &mensagem_do_daemon(&ErroResposta::CofreInexistente)),
+        Ok(Resposta::Estado { travado: true, .. }) => {
+            let _ = writeln!(e.erro(), "ward: {MSG_RUN_TRAVADO}");
+        }
+        Ok(Resposta::Estado { .. }) => {}
+        Ok(Resposta::Erro(erro)) => return falhar(e, &mensagem_do_daemon(&erro)),
+        Ok(_) => return falhar(e, "resposta inesperada do daemon"),
+        Err(erro) => return falhar(e, &erro.mensagem()),
+    }
+    // Espera do destrave e da aprovação (2 min cada, D16, S10) mais o navegador.
+    match c.pedir_com_prazo(&Pedido::Playwright { entrada }, PRAZO_PLAYWRIGHT) {
+        Ok(Resposta::SessaoPlaywright { caminho })
+            if caminho.starts_with('/') && !caminho.chars().any(char::is_control) =>
+        {
+            if writeln!(e.saida(), "{caminho}").is_err() {
+                return SAIDA_ERRO;
+            }
+            SAIDA_OK
+        }
+        Ok(Resposta::Erro(erro)) => falhar(e, &mensagem_do_daemon(&erro)),
+        Ok(_) => falhar(e, "resposta inesperada do daemon"),
+        Err(erro) => falhar(e, &erro.mensagem()),
+    }
+}
+
+/// Prazo da resposta do `ward playwright`: destrave (2 min) + aprovação (2 min) + o
+/// navegador (1 min) e folga.
+const PRAZO_PLAYWRIGHT: std::time::Duration = std::time::Duration::from_secs(330);
 
 /// Manda o tamanho novo do terminal quando ele muda (sem tratador de sinal: olha a
 /// cada [`PASSO_JANELA`]).

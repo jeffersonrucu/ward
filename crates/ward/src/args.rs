@@ -25,6 +25,11 @@ pub enum Comando {
         token_fd: Option<u32>,
         comando: Vec<OsString>,
     },
+    /// `ward playwright <entrada>` (Fase 44, D6): o daemon faz o login no Chrome
+    /// headless e a CLI imprime só o caminho do storage state.
+    Playwright {
+        entrada: String,
+    },
     Ajuda,
     Versao,
 }
@@ -43,6 +48,8 @@ pub enum ErroUso {
     /// `ward ssh --token <t>` (Fase 27a): o token no argv fica legível em
     /// `/proc/<pid>/cmdline` por qualquer processo do mesmo usuário. Recusado.
     TokenEmArgv,
+    /// `ward playwright` sem entrada ou com argumento a mais.
+    UsoPlaywright,
 }
 
 impl ErroUso {
@@ -57,6 +64,7 @@ impl ErroUso {
             ErroUso::TokenEmArgv => "o token do Conectar não vai na linha de comando; \
                  use o botão Conectar do app"
                 .to_owned(),
+            ErroUso::UsoPlaywright => "uso: ward playwright <entrada>".to_owned(),
         }
     }
 }
@@ -82,6 +90,11 @@ Uso:
                         o mesmo, aberto pelo botão Conectar do app: o token de
                         uso único chega pelo fd <n> que o app passa ao terminal,
                         nunca pela linha de comando
+  ward playwright <entrada>
+                        faz o login da entrada no Chrome (headless) e imprime o
+                        caminho do storage state para o Playwright
+                        (`storage_state=`); a senha nunca vai para o arquivo.
+                        Travar o cofre apaga as sessões
   ward --help           esta ajuda
   ward --version        versão
 
@@ -199,6 +212,14 @@ pub fn interpretar(args: impl IntoIterator<Item = OsString>) -> Result<Comando, 
         "-V" | "--version" => sem_resto(Comando::Versao, "--version"),
         "travar" => sem_resto(Comando::Travar, "travar"),
         "destravar" => sem_resto(Comando::Destravar, "destravar"),
+        "playwright" => match resto.as_slice() {
+            [entrada] if !entrada.is_empty() && !entrada.starts_with('-') => {
+                Ok(Comando::Playwright {
+                    entrada: (*entrada).to_owned(),
+                })
+            }
+            _ => Err(ErroUso::UsoPlaywright),
+        },
         "lista" => match resto.as_slice() {
             [] => Ok(Comando::Lista { json: false }),
             ["--json"] => Ok(Comando::Lista { json: true }),
@@ -398,6 +419,30 @@ mod testes {
         ] {
             assert!(!token_ok(t), "{t:?}");
         }
+    }
+
+    #[test]
+    fn playwright() {
+        assert_eq!(
+            ler(&["playwright", "acme-wp-prod"]),
+            Ok(Comando::Playwright {
+                entrada: "acme-wp-prod".into()
+            })
+        );
+        for ruim in [
+            &["playwright"][..],
+            &["playwright", ""],
+            &["playwright", "-x"],
+            &["playwright", "a", "b"],
+            &["playwright", "--", "a"],
+        ] {
+            assert_eq!(ler(ruim), Err(ErroUso::UsoPlaywright), "{ruim:?}");
+        }
+        // A mensagem de uso não repete argumento.
+        let m = ler(&["playwright", "e", "falso-WP-senha-02"])
+            .unwrap_err()
+            .mensagem();
+        assert!(!m.contains("falso"), "{m}");
     }
 
     #[test]

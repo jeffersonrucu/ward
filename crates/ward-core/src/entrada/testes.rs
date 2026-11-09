@@ -2024,3 +2024,56 @@ fn v2_58_ultimo_rotulo_com_digito() {
         valida(rascunho("x", "beta", "dev", d));
     }
 }
+
+/// Fase 44 (D9): a origem inteira de uma URL, para o `ward playwright` comparar com a da
+/// página. Ataques: subdomínio, porta, esquema, userinfo disfarçado e `http` fora do
+/// `localhost` dão outra origem ou nenhuma.
+#[test]
+fn d9_origem_da_url() {
+    let o = origem_da_url;
+    assert_eq!(
+        o("http://localhost:8081/wp-login.php").as_deref(),
+        Some("http://localhost:8081")
+    );
+    assert_eq!(
+        o("http://localhost:80/x").as_deref(),
+        Some("http://localhost")
+    );
+    assert_eq!(o("http://localhost").as_deref(), Some("http://localhost"));
+    assert_eq!(
+        o("https://acme.com.br:443/a?b#c").as_deref(),
+        Some("https://acme.com.br")
+    );
+    assert_eq!(
+        o("https://acme.com.br:8443").as_deref(),
+        Some("https://acme.com.br:8443")
+    );
+    assert_eq!(
+        o("http://127.0.0.1:8084/login").as_deref(),
+        Some("http://127.0.0.1:8084")
+    );
+    assert_eq!(o("https://[::1]:9/").as_deref(), Some("https://[::1]:9"));
+    let base = o("https://acme.com.br/login");
+    for outra in [
+        "https://www.acme.com.br/login",
+        "https://acme.com.br.evil.io/login",
+        "https://acme.com.br:444/login",
+        "http://localhost:8082/wp-login.php",
+    ] {
+        assert_ne!(o(outra), base, "{outra}");
+    }
+    for ruim in [
+        "http://acme.com.br/login",
+        "https://user@acme.com.br/",
+        "https://acme.com.br%40evil.io/",
+        "https://ACME.com.br/",
+        "http://evil.io/",
+        "javascript:alert(1)",
+        "about:blank",
+        "https://acme.com.br\\@evil.io/",
+        "https://0x7f000001/",
+        "",
+    ] {
+        assert_eq!(o(ruim), None, "{ruim}");
+    }
+}

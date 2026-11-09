@@ -29,7 +29,7 @@ mod testes;
 pub use segredo::Segredo;
 pub use validacao::{
     ErroValidacao, ErrosValidacao, GRANDE_PARA_MASCARA, Rascunho, RascunhoAnexo, RascunhoDados,
-    RascunhoExtra, nome_variavel,
+    RascunhoExtra, nome_variavel, origem_da_url,
 };
 // Nomes reservados que a entrega (D10) monta; o teste da entrega confere que batem.
 #[cfg(test)]

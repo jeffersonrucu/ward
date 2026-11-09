@@ -115,6 +115,14 @@ fn main() -> ExitCode {
             e.kind()
         ),
     }
+    // D6 (Fase 44): storage states e perfis do `ward playwright` de antes da partida.
+    match wardd::playwright::limpar(&config.rt) {
+        Ok(0) => {}
+        Ok(n) => aviso!(
+            "{n} sessão(ões)/perfil(is) do ward playwright de antes da partida apagado(s) (D6)"
+        ),
+        Err(e) => aviso!("pasta do ward playwright indisponível ({})", e.kind()),
+    }
     let mut daemon =
         Daemon::novo(config.caminhos, Box::new(RelogioReal)).com_temporarios(config.rt);
     // V4.21: travado e sem app, o pedido do agente espera o `ward destravar` (D16).

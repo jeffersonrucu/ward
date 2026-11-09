@@ -181,6 +181,21 @@ impl Conexao {
         Ok(())
     }
 
+    /// Como [`Conexao::pedir`], esperando a resposta até `prazo` (o `ward playwright`
+    /// espera o destrave, a aprovação e o navegador). O prazo volta ao normal depois.
+    pub fn pedir_com_prazo(
+        &mut self,
+        pedido: &Pedido,
+        prazo: Duration,
+    ) -> Result<Resposta, ErroConexao> {
+        self.stream
+            .set_read_timeout(Some(prazo))
+            .map_err(|e| erro_de_io(&e))?;
+        let r = self.pedir(pedido);
+        let _ = self.stream.set_read_timeout(Some(PRAZO_LEITURA));
+        r
+    }
+
     /// Manda um pedido do papel agente e lê uma resposta do papel agente.
     pub fn pedir(&mut self, pedido: &Pedido) -> Result<Resposta, ErroConexao> {
         let corpo = protocolo::codificar_pedido(Papel::Agente, pedido)

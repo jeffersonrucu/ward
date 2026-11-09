@@ -204,7 +204,30 @@ impl Comando {
                     erro: Some(File::from(erro)),
                 },
             )),
-            sys::PontasPai::Pty => Err(ErroLancar::Sistema(io::ErrorKind::InvalidData)),
+            sys::PontasPai::Pty | sys::PontasPai::Depuracao { .. } => {
+                Err(ErroLancar::Sistema(io::ErrorKind::InvalidData))
+            }
+        }
+    }
+
+    /// Cria o filho com o pipe de depuração do Chrome (`ward playwright`, Fase 44, D6):
+    /// `/dev/null` em 0, 1 e 2, os comandos no fd 3 e as respostas no fd 4 do filho
+    /// (`--remote-debugging-pipe`). Nenhuma porta TCP; as pontas do daemon são
+    /// `CLOEXEC`, então nenhum outro filho as herda.
+    pub fn lancar_com_depuracao(&self) -> Result<(Grupo, PipeDepuracao), ErroLancar> {
+        let (grupo, pontas) = self.lancar_com(sys::Stdio::Depuracao)?;
+        match pontas {
+            sys::PontasPai::Depuracao {
+                comandos,
+                respostas,
+            } => Ok((
+                grupo,
+                PipeDepuracao {
+                    comandos: File::from(comandos),
+                    respostas: File::from(respostas),
+                },
+            )),
+            _ => Err(ErroLancar::Sistema(io::ErrorKind::InvalidData)),
         }
     }
 
@@ -265,6 +288,14 @@ pub struct Pipes {
     pub entrada: Option<File>,
     pub saida: Option<File>,
     pub erro: Option<File>,
+}
+
+/// As pontas do daemon do pipe de depuração: escreve os comandos (fd 3 do filho) e lê
+/// as respostas (fd 4 do filho).
+#[derive(Debug)]
+pub struct PipeDepuracao {
+    pub comandos: File,
+    pub respostas: File,
 }
 
 /// O mestre do pty do filho: o daemon lê a saída e escreve a entrada nele.
@@ -494,6 +525,58 @@ mod testes {
                 "variável herdada: {n}"
             );
         }
+    }
+
+    /// Fase 44 (D6, V6.14): o pipe de depuração chega só ao filho, nos fds 3 e 4, com
+    /// `/dev/null` em 0–2 e nenhum outro fd; as pontas do daemon não vão a um segundo
+    /// filho lançado enquanto o primeiro vive (ataque: outro processo herdar o pipe e
+    /// mandar comandos ao Chrome).
+    #[test]
+    fn pipe_de_depuracao_so_no_filho_em_3_e_4() {
+        let c = sh("read -r linha <&3; \
+             printf '%s|%s|%s|' \"$linha\" \"$(readlink /proc/$$/fd/1)\" \"$(readlink /proc/$$/fd/0)\" >&4; \
+             for f in /proc/$$/fd/*; do printf '%s ' \"${f##*/}\" >&4; done; printf '\\n' >&4; \
+             read -r fim <&3");
+        let (g, mut p) = c.lancar_com_depuracao().unwrap();
+        // Um segundo filho, comum, enquanto o primeiro vive: nenhum fd dele é o pipe.
+        use std::os::unix::fs::MetadataExt;
+        let inos = [
+            p.comandos.metadata().unwrap().ino(),
+            p.respostas.metadata().unwrap().ino(),
+        ];
+        let (fim2, out2, _) = rodar(&sh(
+            "for f in /proc/$$/fd/*; do printf '%s=%s ' \"${f##*/}\" \"$(readlink $f)\"; done",
+        ));
+        assert_eq!(fim2, Fim::Codigo(0));
+        let fds2 = String::from_utf8(out2).unwrap();
+        for ino in inos {
+            assert!(!fds2.contains(&format!("pipe:[{ino}]")), "{fds2}");
+        }
+        p.comandos.write_all(b"ola\n").unwrap();
+        let mut linha = Vec::new();
+        let mut b = [0u8; 1];
+        while p.respostas.read(&mut b).unwrap() == 1 && b[0] != b'\n' {
+            linha.push(b[0]);
+        }
+        let s = String::from_utf8(linha).unwrap();
+        let partes: Vec<&str> = s.split('|').collect();
+        assert_eq!(partes[0], "ola");
+        assert_eq!(partes[1], "/dev/null");
+        assert_eq!(partes[2], "/dev/null");
+        // O glob do `for` abre o diretório no menor fd livre (o 5).
+        let fds: Vec<u32> = partes[3]
+            .split_whitespace()
+            .map(|f| f.parse().unwrap())
+            .collect();
+        for f in &fds {
+            assert!(*f <= 5, "fd {f} a mais no filho: {s}");
+        }
+        for f in 0..=4 {
+            assert!(fds.contains(&f), "falta o fd {f}: {s}");
+        }
+        p.comandos.write_all(b"fim\n").unwrap();
+        drop(p);
+        assert_eq!(g.colher().unwrap(), Fim::Codigo(0));
     }
 
     /// D60: nada do ambiente deste processo (HOME, PATH, CARGO_*; no daemon, `LISTEN_*`)

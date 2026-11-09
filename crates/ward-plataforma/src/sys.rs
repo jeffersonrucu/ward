@@ -842,20 +842,40 @@ fn pipe_cloexec() -> io::Result<(OwnedFd, OwnedFd)> {
 }
 
 /// O mesmo fd, ou uma cópia `CLOEXEC` ≥ 3 se ele for 0, 1 ou 2.
-#[allow(unsafe_code)]
 fn acima_de_2(fd: OwnedFd) -> io::Result<OwnedFd> {
-    if fd.as_raw_fd() > 2 {
+    acima_de(fd, 3)
+}
+
+/// O mesmo fd, ou uma cópia `CLOEXEC` ≥ `minimo` se ele for menor (o original fecha).
+#[allow(unsafe_code)]
+fn acima_de(fd: OwnedFd, minimo: libc::c_int) -> io::Result<OwnedFd> {
+    if fd.as_raw_fd() >= minimo {
         return Ok(fd);
     }
     // SAFETY: `F_DUPFD_CLOEXEC` só duplica o fd aberto (vivo pelo `fd`) para o menor
-    // número livre ≥ 3.
-    let novo = unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_DUPFD_CLOEXEC, 3) };
+    // número livre ≥ `minimo`.
+    let novo = unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_DUPFD_CLOEXEC, minimo) };
     if novo < 0 {
         return Err(erro_os());
     }
     // SAFETY: `novo` acabou de ser criado pelo `fcntl` e é só nosso.
     Ok(unsafe { OwnedFd::from_raw_fd(novo) })
 }
+
+/// `/dev/null` para leitura e escrita, `CLOEXEC`, ≥ 5 (a entrada e as saídas do Chrome
+/// do `ward playwright`: nada do que ele escreve chega ao daemon nem ao log).
+fn dev_null_acima_de_4() -> io::Result<OwnedFd> {
+    use std::os::unix::fs::OpenOptionsExt;
+    let f = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .custom_flags(libc::O_CLOEXEC)
+        .open("/dev/null")?;
+    acima_de(OwnedFd::from(f), PRIMEIRO_FD_LIVRE_DEPURACAO)
+}
+
+/// Com o pipe de depuração, o filho recebe 0–4; o resto fecha no `exec`.
+const PRIMEIRO_FD_LIVRE_DEPURACAO: libc::c_int = 5;
 
 /// Tudo que o filho usa, montado antes do `fork`: depois dele, o filho só faz chamadas
 /// async-signal-safe, sem alocar nem tocar em trava (o daemon tem várias threads).
@@ -877,6 +897,10 @@ pub(crate) enum Stdio {
     /// O escravo de um pty nos três, como terminal de controle de uma sessão nova
     /// (`setsid` + `TIOCSCTTY`; o `ward ssh` interativo). O pai fica com o mestre.
     Pty(OwnedFd),
+    /// `ward playwright` (Fase 44, D6): `/dev/null` em 0–2 e o pipe de depuração do
+    /// Chrome (`--remote-debugging-pipe`): o filho lê os comandos no fd 3 e escreve as
+    /// respostas no fd 4. As pontas do pai são `CLOEXEC` e não vão a nenhum outro filho.
+    Depuracao,
 }
 
 /// As pontas do pai.
@@ -888,6 +912,11 @@ pub(crate) enum PontasPai {
     },
     /// O pai não guarda o escravo: o fim da sessão aparece no mestre (`EIO`).
     Pty,
+    /// A escrita dos comandos (fd 3 do filho) e a leitura das respostas (fd 4 do filho).
+    Depuracao {
+        comandos: OwnedFd,
+        respostas: OwnedFd,
+    },
 }
 
 /// O filho lançado: pid e as pontas do pai.
@@ -935,7 +964,7 @@ pub(crate) fn fork_exec(p: &PreparoExec<'_>, stdio: Stdio) -> Result<FilhoCru, E
             let (out_r, out_w) = pipe_cloexec().map_err(ErroExec::Sistema)?;
             let (err_r, err_w) = pipe_cloexec().map_err(ErroExec::Sistema)?;
             (
-                [in_r, out_w, err_w],
+                vec![in_r, out_w, err_w],
                 PontasPai::Pipes {
                     entrada: in_w,
                     saida: out_r,
@@ -952,7 +981,32 @@ pub(crate) fn fork_exec(p: &PreparoExec<'_>, stdio: Stdio) -> Result<FilhoCru, E
                 acima_de_2(e2).map_err(ErroExec::Sistema)?,
                 acima_de_2(e3).map_err(ErroExec::Sistema)?,
             );
-            ([escravo, e2, e3], PontasPai::Pty, true)
+            (vec![escravo, e2, e3], PontasPai::Pty, true)
+        }
+        Stdio::Depuracao => {
+            // Toda origem do `dup2` fica ≥ 5: nenhuma é um dos destinos 0–4 (um `dup2`
+            // de um fd nele mesmo deixaria o `CLOEXEC` ligado, e um destino pisaria numa
+            // origem ainda não copiada).
+            let alto = |fd: OwnedFd| acima_de(fd, PRIMEIRO_FD_LIVRE_DEPURACAO);
+            let nulo = dev_null_acima_de_4().map_err(ErroExec::Sistema)?;
+            let (n1, n2) = (
+                nulo.try_clone().and_then(alto).map_err(ErroExec::Sistema)?,
+                nulo.try_clone().and_then(alto).map_err(ErroExec::Sistema)?,
+            );
+            let (cmd_r, cmd_w) = pipe_cloexec().map_err(ErroExec::Sistema)?;
+            let (resp_r, resp_w) = pipe_cloexec().map_err(ErroExec::Sistema)?;
+            let (cmd_r, resp_w) = (
+                alto(cmd_r).map_err(ErroExec::Sistema)?,
+                alto(resp_w).map_err(ErroExec::Sistema)?,
+            );
+            (
+                vec![nulo, n1, n2, cmd_r, resp_w],
+                PontasPai::Depuracao {
+                    comandos: cmd_w,
+                    respostas: resp_r,
+                },
+                false,
+            )
         }
     };
     let (aviso_r, aviso_w) = pipe_cloexec().map_err(ErroExec::Sistema)?;
@@ -968,11 +1022,13 @@ pub(crate) fn fork_exec(p: &PreparoExec<'_>, stdio: Stdio) -> Result<FilhoCru, E
         libc::sigemptyset(&raw mut padrao.sa_mask);
         (vazio, padrao)
     };
-    let fds = [
-        (filho_fds[0].as_raw_fd(), 0),
-        (filho_fds[1].as_raw_fd(), 1),
-        (filho_fds[2].as_raw_fd(), 2),
-    ];
+    // (origem, destino) de cada `dup2`; o primeiro fd que o `close_range` marca vem
+    // logo depois do último destino.
+    let mut fds = [(-1 as libc::c_int, -1 as libc::c_int); 5];
+    for (i, f) in filho_fds.iter().enumerate().take(fds.len()) {
+        fds[i] = (f.as_raw_fd(), i as libc::c_int);
+    }
+    let n_fds = filho_fds.len().min(fds.len());
     let aviso = aviso_w.as_raw_fd();
     // SAFETY: `fork` não tem pré-condição; no filho só seguem chamadas
     // async-signal-safe (`filho_depois_do_fork`), sem alocar.
@@ -983,7 +1039,7 @@ pub(crate) fn fork_exec(p: &PreparoExec<'_>, stdio: Stdio) -> Result<FilhoCru, E
     if pid == 0 {
         // SAFETY: estamos no filho logo depois do `fork`; os ponteiros do `PreparoExec`
         // apontam para memória do pai copiada no filho, viva até o `execve`/`_exit`.
-        unsafe { filho_depois_do_fork(p, pai, &fds, sessao, aviso, &vazio, &padrao) }
+        unsafe { filho_depois_do_fork(p, pai, &fds[..n_fds], sessao, aviso, &vazio, &padrao) }
     }
     drop((filho_fds, aviso_w));
     if !sessao {
@@ -1030,7 +1086,7 @@ pub(crate) fn fork_exec(p: &PreparoExec<'_>, stdio: Stdio) -> Result<FilhoCru, E
 unsafe fn filho_depois_do_fork(
     p: &PreparoExec<'_>,
     pai: libc::pid_t,
-    fds: &[(libc::c_int, libc::c_int); 3],
+    fds: &[(libc::c_int, libc::c_int)],
     sessao: bool,
     aviso: libc::c_int,
     vazio: &libc::sigset_t,
@@ -1085,7 +1141,8 @@ unsafe fn filho_depois_do_fork(
             libc::_exit(127);
         }
         for &(de, para) in fds {
-            // `de` ≥ 3 (`pipe_cloexec`): nunca é um dos destinos 0–2.
+            // `de` ≥ 3 (`pipe_cloexec`), ou ≥ 5 com o pipe de depuração: nunca é um
+            // dos destinos.
             if libc::dup2(de, para) < 0 {
                 avisar(ETAPA_PREPARO, errno());
                 libc::_exit(127);
@@ -1098,7 +1155,7 @@ unsafe fn filho_depois_do_fork(
         // Nenhum fd do daemon (socket, cofre, conexões) chega ao programa.
         if libc::syscall(
             libc::SYS_close_range,
-            3 as libc::c_uint,
+            fds.len().max(3) as libc::c_uint,
             libc::c_uint::MAX,
             libc::CLOSE_RANGE_CLOEXEC,
         ) != 0
