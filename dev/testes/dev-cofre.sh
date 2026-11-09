@@ -1,6 +1,6 @@
 #!/bin/bash -p
-# V2.29 e ataques ao `make dev-cofre` / `make dev-variacoes` (Fase 19). Cada ataque tem
-# de FALHAR. Uso: dev/testes/dev-cofre.sh  (ou `make teste-dev-cofre`).
+# V2.29, V2.52 e ataques ao `make dev-cofre` / `make dev-variacoes` (Fases 19 e 19d).
+# Cada ataque tem de FALHAR. Uso: dev/testes/dev-cofre.sh  (ou `make teste-dev-cofre`).
 #
 # Nunca imprime segredo: as buscas usam `grep -q`/`-c` e as mensagens só dizem o quê.
 # Não precisa dos serviços de pé (só do `make dev-servicos`, que os alvos já chamam).
@@ -114,6 +114,67 @@ PY
         ok "segredo dentro de base64 maior e de formulário é achado"
     else
         falhou "segredo dentro de base64 maior ou de formulário escapou da lista"
+    fi
+}
+
+# --- V2.52: D36 e D37 no oráculo (Fase 19d) ---------------------------------------------
+variacoes_d36_d37() {
+    # Testes do variacoes.py com valores falsos montados no próprio teste.
+    if python3 -I -B "$RAIZ/dev/testes/variacoes_teste.py" >"$TMP/var-teste.log" 2>&1; then
+        ok "dev/testes/variacoes_teste.py (D36, D37, D11)"
+    else
+        falhou "dev/testes/variacoes_teste.py (saída em $TMP/var-teste.log)"; cat "$TMP/var-teste.log" >&2
+    fi
+    sem_segredo "variacoes_teste.py" "$TMP/var-teste.log"
+
+    # Na lista real: as formas de D37 de cada literal das fixtures, calculadas aqui com
+    # a biblioteca padrão (só as que diferem da literal), e as linhas/valores de D36 do
+    # anexo. Nada é impresso: o script só grava os padrões esperados num arquivo do TMP.
+    python3 -I -B - "$RAIZ/dev/fixtures/entradas.json" "$RAIZ/dev/fixtures/anexos" >"$TMP/d37.txt" <<'PY'
+import json, pathlib, re, sys
+d = json.load(open(sys.argv[1]))
+vals = {d["senha_mestra"], d["pin"]}
+for e in d["entradas"]:
+    for k, v in e.get("segredos", {}).items():
+        if not k.endswith("_arquivo"):
+            vals.add(v)
+    for x in e.get("extras", []):
+        if x.get("segredo"):
+            vals.add(x["valor"])
+for p in sorted(pathlib.Path(sys.argv[2]).rglob("*")):
+    if p.is_file() and not p.is_symlink():
+        for linha in p.read_text(encoding="utf-8").splitlines():
+            linha = linha.strip()
+            if len(linha) >= 6:
+                vals.add(linha)
+saida = set()
+bs = chr(92)
+for v in vals:
+    go = json.dumps(v, ensure_ascii=False)[1:-1]
+    for a, b in (("&", "0026"), ("<", "003c"), (">", "003e"), (chr(0x2028), "2028"), (chr(0x2029), "2029")):
+        go = go.replace(a, bs + "u" + b)
+    formas = {go, json.dumps(v)[1:-1]}
+    if "\n" not in v:
+        formas.add("".join(bs + c if c in "$`\"" + bs else c for c in v))
+    saida |= {f for f in formas if f != v}
+print("\n".join(sorted(saida)))
+PY
+    local faltou=0 v n=0
+    while IFS= read -r v; do
+        [ -n "$v" ] || continue
+        n=$((n + 1))
+        grep -qxF -- "$v" "$LISTA" || { faltou=1; falhou "forma escapada (D37) de segredo das fixtures fora da lista"; }
+    done <"$TMP/d37.txt"
+    if [ "$n" = 0 ]; then
+        ok "D37: nenhum segredo das fixtures tem caractere a escapar (coberto pelo variacoes_teste.py)"
+    elif [ "$faltou" = 0 ]; then
+        ok "formas escapadas de D37 das fixtures na lista ($n)"
+    fi
+    # Linha do anexo e valor de CHAVE=valor do anexo (D36 vale também para eles).
+    if grep -qxF -- 'falso-anexo-01' "$LISTA"; then
+        ok "valor de linha do anexo na lista"
+    else
+        falhou "valor de linha do anexo fora da lista"
     fi
 }
 
@@ -269,6 +330,7 @@ saida_dentro() {
 }
 
 variacoes
+variacoes_d36_d37
 cofre_duas_vezes
 saida_fora dev-cofre COFRE .ward
 saida_fora dev-variacoes VARIACOES .txt
