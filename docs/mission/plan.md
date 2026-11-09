@@ -831,7 +831,7 @@ Auditoria de segurança do M4 (2026-11-09): **reprovada** (1ª vez), com 1 crít
   Observação de ambiente: com o `make dev-daemon` padrão (`WARD_DEV_APP` = ponte), o
   `make teste-cli` falha em V4.30, V4.32 e "27a --token-fd" com "pedido expirado". Com
   `WARD_DEV_APP=` vazio, passa inteiro (138 ok). Isso entra na 28g.
-- [ ] Fase 28g — Achados da 2ª auditoria do M4 (não bloqueiam o QA).
+- [x] Fase 28g — Achados da 2ª auditoria do M4 (não bloqueiam o QA).
   - **Médio:** um `write` único acima de 64 KiB mostra o começo do segredo em claro. O
     leitor de pipe/pty do `wardd` corta no tamanho do buffer (`mascara.rs:1285-1300`).
     Reproduzir: `os.write(1, b'b'*n + PGPASSWORD + b'\n')` com n de 65520 a 65539 sob
@@ -850,6 +850,19 @@ Auditoria de segurança do M4 (2026-11-09): **reprovada** (1ª vez), com 1 crít
     lentas sai com o começo em claro, risco aceito pelo usuário).
   - Ambiente (QA do M4): `make teste-cli` exige o daemon sem `WARD_DEV_APP`. Fazer o
     teste conferir isso e recusar com mensagem clara, ou documentar no CLAUDE.md.
+  Feita (2026-11-09):
+  - **Médio:** o vazamento também acontecia na fronteira de 16 KiB. Agora os pipes de
+    saída têm 256 KiB (`F_SETPIPE_SZ`), e o `execucao::ler_lote` lê enquanto `poll(0)`
+    tiver dado, sem segurar nada. O ataque deu 0 casos ruins nas duas faixas, em stdout e
+    stderr.
+  - **Baixo (sshpass):** a ponte aceita o filho direto do líder que tem sessão própria.
+  - **Baixo (`ssh-*`):** a partida apaga os `ssh-*` que sobraram.
+  - Texto: S4, PRD D11/D13 e V4.17 alinhados.
+  - Ambiente: `cli.py` recusa o daemon com `WARD_DEV_APP`.
+  - `make check` 0; `teste-cli` 0.
+  Ficam como risco aceito (D34): `write` acima de 256 KiB e o pty do `ward ssh`
+  interativo, que entrega a saída em pedaços de cerca de 4 KiB. Um filho direto que faz
+  `setsid` volta a usar o túnel. O lote ocupa até cerca de 32 MiB de mlock no pior caso.
 
 ## Milestone 5 — App desktop
 Contrato: V5.1–V5.35
