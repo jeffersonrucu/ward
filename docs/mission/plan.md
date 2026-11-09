@@ -1020,6 +1020,30 @@ usuário). Baixo novo: texto `WARD_DEV_DBUS_SISTEMA` no `wardd` de release (`mai
 Contrato: V10.1–V10.4
 
 Scrutiny do M10 (2026-11-09): aprovado (V10.1–V10.3); V10.4 é do usuário.
+Auditoria do M10 (2026-11-09): **reprovada** (1ª vez), achado alto: o passo 2b manda
+`wl-copy < arquivo` com a chave privada, e o wl-clipboard 2.2.1 grava a entrada em
+`/tmp/wl-copy-buffer-XXXXXX/` (ext4, caminho fixo no binário) até o `--clear` — chave
+em claro no disco (S2).
+
+- [ ] Fase 53a — App: botão "Carregar de arquivo" no campo "Chave privada" (`servidor`)
+  que lê o arquivo escolhido (tmpfs) direto para o daemon, sem área de transferência;
+  limite de tamanho, recusa de link e de arquivo que não é chave OpenSSH/PEM; conteúdo
+  nunca volta à webview; testes de ataque e QA pela ponte. S2, S12, V5.13.
+- [ ] Fase 53b — Guia e lint da migração (achados médios/baixos da auditoria do M10):
+  passo 2b usa o "Carregar de arquivo" da 53a e nunca `wl-copy` para chave; chaves que só
+  existem no `~/.ssh` também vão para o Ward e, conferido o passo 3, são apagadas (não
+  guardadas em `~/ward-migracao`), e a frase "nenhum deles tem segredo" é corrigida;
+  antes do primeiro `ward ssh`, copiar a linha do host do `~/.ssh/known_hosts`
+  (`ssh-keygen -F`) para o `known_hosts` do Ward; chave pessoal sem passphrase ganha
+  uma (`ssh-keygen -p`); conferir do chaveiro por `busctl … SearchItems` ou contagem de
+  `attribute.application`, sem prometer rótulo/caminho; "Voltar atrás" do passo 6 devolve
+  todos os `Login Data*`; abrir o backup do `.kdbx` (e guardar arquivo-chave) antes do
+  passo 8; caso de mais de um item do Chrome no chaveiro. `dev/testes/migracao.py` com
+  lista positiva de comandos por bloco, `wl-copy` só com `--clear` no mesmo passo, nada
+  de `rm` em `~/cofre`/`.kdbx` antes do passo 8, `secret-tool clear` só depois da guarda
+  do dono, frases "conversa/chat/agente/assistente" + verbo de envio recusadas mesmo com
+  negação, blocos de qualquer linguagem; os 22 ataques do auditor (scratchpad
+  `burla.py`) entram no autoteste. V10.1–V10.3.
 
 - [x] Fase 53 — `docs/migracao.md`: guia da etapa final, executado pelo usuário, com
   conferência e volta atrás em cada passo (chaves pessoais para `~/.ssh`, chaves de
