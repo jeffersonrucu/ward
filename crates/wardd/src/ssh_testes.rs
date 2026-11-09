@@ -163,3 +163,115 @@ fn ataque_valores_fora_do_formato_recusados() {
     };
     assert!(montar_argv(&progs(), &kh(), porta0, Autent::Senha, Programa::Sftp).is_none());
 }
+
+/// Fase 28 (D13, D43; V4.35): o `ssh -W` da ponte do salto/túnel. Sem `ProxyJump`
+/// (que o OpenSSH roda por `sh -c`), usuário do salto com `@` inteiro depois de `-l`,
+/// alvo em `-W` (IPv6 entre colchetes), host do salto depois de `--`.
+#[test]
+fn fase28_argv_da_ponte_sem_proxyjump() {
+    let a = texto(
+        &montar_argv(
+            &progs(),
+            &kh(),
+            destino("salto@cliente.com.br", "127.0.0.1"),
+            Autent::Senha,
+            Programa::Encaminhar {
+                host: "ssh-interno",
+                porta: 22,
+            },
+        )
+        .unwrap(),
+    );
+    assert_eq!(&a[..4], ["/usr/bin/sshpass", "-e", "/usr/bin/ssh", "-F"]);
+    assert_eq!(
+        &a[a.len() - 8..],
+        [
+            "-W",
+            "ssh-interno:22",
+            "-p",
+            "2222",
+            "-l",
+            "salto@cliente.com.br",
+            "--",
+            "127.0.0.1"
+        ]
+    );
+    assert!(
+        !a.iter()
+            .any(|x| x.contains("ProxyJump") || x.starts_with("User="))
+    );
+    let a = texto(
+        &montar_argv(
+            &progs(),
+            &kh(),
+            destino("deploy", "127.0.0.1"),
+            Autent::Senha,
+            Programa::Encaminhar {
+                host: "fd00::5",
+                porta: 5432,
+            },
+        )
+        .unwrap(),
+    );
+    assert!(a.contains(&"[fd00::5]:5432".to_owned()), "{a:?}");
+}
+
+/// Fase 28 (ataque): alvo da ponte ou alias fora do formato não monta argv.
+#[test]
+fn fase28_ataque_alvo_e_alias_fora_do_formato() {
+    for (h, p) in [
+        ("-oProxyCommand=x", 22),
+        ("a b", 22),
+        ("[::1]", 22),
+        ("x%h", 22),
+        ("", 22),
+        ("db", 0),
+    ] {
+        assert!(
+            montar_argv(
+                &progs(),
+                &kh(),
+                destino("deploy", "127.0.0.1"),
+                Autent::Senha,
+                Programa::Encaminhar { host: h, porta: p },
+            )
+            .is_none(),
+            "{h:?}:{p}"
+        );
+        assert!(alias_do_destino(h, p).is_none(), "{h:?}:{p}");
+    }
+    assert_eq!(alias_do_destino("ssh-interno", 22).unwrap(), "ssh-interno");
+    assert_eq!(
+        alias_do_destino("127.0.0.1", 2222).unwrap(),
+        "[127.0.0.1]:2222"
+    );
+    for al in [
+        "a b", "[x]:0", "[x]:022", "[x]", "-x", "[x]:22 y", "[[x]]:22",
+    ] {
+        assert!(
+            montar_argv_com_alias(
+                &progs(),
+                &kh(),
+                destino("deploy", "127.0.0.1"),
+                Autent::Senha,
+                Programa::Ssh { comando: &[] },
+                Some(al),
+            )
+            .is_none(),
+            "{al:?}"
+        );
+    }
+    let a = texto(
+        &montar_argv_com_alias(
+            &progs(),
+            &kh(),
+            destino("deploy", "127.0.0.1"),
+            Autent::Senha,
+            Programa::Ssh { comando: &[] },
+            Some("[127.0.0.1]:2222"),
+        )
+        .unwrap(),
+    );
+    assert!(a.contains(&"HostKeyAlias=[127.0.0.1]:2222".to_owned()));
+    assert!(a.contains(&"CheckHostIP=no".to_owned()));
+}

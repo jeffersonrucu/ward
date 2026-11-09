@@ -832,6 +832,49 @@ fn ataque_destravar_pela_ponte() {
     let _ = fs::remove_dir_all(base);
 }
 
+/// Fase 39 (V5.23, S12): "Travar agora" pela ponte. Argumento qualquer é recusado; o
+/// travar limpa a área de transferência que ainda tem o valor copiado e deixa o cofre
+/// travado (revelar responde "travado"); a resposta não traz valor.
+#[test]
+fn ataque_travar_pela_ponte() {
+    let (p, _l, area, base) = ponte("travar");
+    let r = p.responder(&post(&p, "travar", r#"{"x":1}"#, &[]));
+    assert_eq!(r.corpo_json().unwrap()["codigo"], "pedido-invalido");
+    let estado = |p: &Ponte<DaemonFalso, Area>| {
+        p.responder(&post(p, "estado_do_cofre", "{}", &[]))
+            .corpo_json()
+            .unwrap()["valor"]["estado"]
+            .clone()
+    };
+    assert_eq!(estado(&p), "destravado");
+    p.responder(&post(
+        &p,
+        "copiar_campo",
+        r#"{"entrada":"acme-pg-dev","campo":"senha"}"#,
+        &[],
+    ));
+    let copiado = area.0.lock().unwrap().is_some();
+    let r = p.responder(&post(&p, "travar", "{}", &[]));
+    let texto = String::from_utf8_lossy(&r.corpo).into_owned();
+    assert_eq!(
+        r.corpo_json().unwrap(),
+        serde_json::json!({"ok": true, "valor": null})
+    );
+    assert!(!texto.contains("falso-"), "{texto}");
+    if copiado {
+        assert!(area.0.lock().unwrap().is_none(), "área não foi limpa");
+    }
+    assert_eq!(estado(&p), "travado");
+    let r = p.responder(&post(
+        &p,
+        "revelar_campo",
+        r#"{"entrada":"acme-pg-dev","campo":"senha"}"#,
+        &[],
+    ));
+    assert_eq!(r.corpo_json().unwrap()["codigo"], "travado");
+    let _ = fs::remove_dir_all(base);
+}
+
 /// Fase 38 (V5.22, S9): a tela Configurações pela ponte. Padrão 4 h e backup desligado;
 /// tempo fora de 1 a 1440, campo a mais e tipo errado recusados; trocar o PIN pede o
 /// atual e trocar a senha pede a atual; nenhuma resposta traz PIN, senha ou hash.
@@ -928,5 +971,88 @@ fn ataque_configuracoes_pela_ponte() {
         )["valor"]["trocado"],
         true
     );
+    let _ = fs::remove_dir_all(base);
+}
+
+/// Fase 48 (V7.9): backup externo pela ponte. Ligar com um pendrive da lista, desligar
+/// mantendo o UUID; UUID forjado (fora do formato ou fora da lista), tipo errado e campo
+/// a mais recusados; nenhuma resposta traz caminho de montagem; o rótulo estranho vem
+/// com o invisível em escape.
+#[test]
+fn ataque_backup_externo_pela_ponte() {
+    let base = dist("backup-externo");
+    let servico = Servico::novo(DaemonFalso::cheio(), Copiador::novo(Area::default()));
+    let (p, _l) = Ponte::abrir(servico, &base.join("dist")).unwrap();
+    let pedir = |comando: &str, corpo: &str| {
+        let r = p.responder(&post(&p, comando, corpo, &[]));
+        let texto = String::from_utf8_lossy(&r.corpo).into_owned();
+        for agulha in ["/media", "/run/", "montagem", "\u{202E}", "\u{200B}"] {
+            assert!(!texto.contains(agulha), "{comando}: {texto}");
+        }
+        r.corpo_json().unwrap()
+    };
+    let v = pedir("backup_externo", "{}");
+    assert_eq!(v["valor"]["ligado"], false, "{v}");
+    assert!(v["valor"]["uuid"].is_null(), "{v}");
+    let v = pedir("listar_pendrives", "{}");
+    let lista = v["valor"].as_array().unwrap();
+    assert_eq!(lista.len(), 4, "{v}");
+    assert!(
+        lista
+            .iter()
+            .any(|p| p["rotulo"].as_str().unwrap().contains("\\u{202E}")),
+        "{v}"
+    );
+    for (comando, corpo) in [
+        ("backup_externo", r#"{"uuid":"7C1E-42A9"}"#),
+        ("listar_pendrives", r#"{"todos":true}"#),
+        ("definir_backup_externo", r#"{"ligado":true}"#),
+        (
+            "definir_backup_externo",
+            r#"{"ligado":"true","uuid":"7C1E-42A9"}"#,
+        ),
+        ("definir_backup_externo", r#"{"ligado":true,"uuid":4242}"#),
+        (
+            "definir_backup_externo",
+            r#"{"ligado":true,"uuid":"../etc"}"#,
+        ),
+        (
+            "definir_backup_externo",
+            r#"{"ligado":true,"uuid":"7C1E-42A9","montagem":"/media/x"}"#,
+        ),
+        (
+            "definir_backup_externo",
+            r#"{"ligado":false,"uuid":"DEAD-BEEF"}"#,
+        ),
+        ("definir_backup_externo", r#"{"uuid":"7C1E-42A9"}"#),
+    ] {
+        assert_eq!(
+            pedir(comando, corpo)["codigo"],
+            "pedido-invalido",
+            "{comando} {corpo}"
+        );
+    }
+    assert_eq!(
+        pedir(
+            "definir_backup_externo",
+            r#"{"ligado":true,"uuid":"DEAD-BEEF"}"#
+        )["codigo"],
+        "pendrive-nao-conectado"
+    );
+    assert_eq!(pedir("backup_externo", "{}")["valor"]["ligado"], false);
+    let v = pedir(
+        "definir_backup_externo",
+        r#"{"ligado":true,"uuid":"7C1E-42A9"}"#,
+    );
+    assert_eq!(v["valor"]["ligado"], true, "{v}");
+    assert_eq!(v["valor"]["pendrive"]["rotulo"], "WARD-BACKUP", "{v}");
+    assert_eq!(v["valor"]["pendrive"]["montado"], true, "{v}");
+    assert_eq!(
+        pedir("configuracoes", "{}")["valor"]["backup_externo"],
+        true
+    );
+    let v = pedir("definir_backup_externo", r#"{"ligado":false,"uuid":null}"#);
+    assert_eq!(v["valor"]["ligado"], false, "{v}");
+    assert_eq!(v["valor"]["uuid"], "7C1E-42A9", "{v}");
     let _ = fs::remove_dir_all(base);
 }

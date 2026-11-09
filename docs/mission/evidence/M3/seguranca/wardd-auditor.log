@@ -1,0 +1,11 @@
+wardd: daemon de teste com a memória sem travar: RLIMIT_MEMLOCK de 2053808128 bytes, e não infinito; o processo trava toda a memória (mlockall) e sobe pela unit com LimitMEMLOCK=infinity
+wardd: papéis app e extensão desligados: grupo ward-app ausente ou repetido
+wardd: daemon de TESTE (modo-teste): cofre de .dev/, nunca o real
+wardd: daemon de teste sem WARD_DEV_DBUS_SISTEMA: logind desligado; udisks2 (backup externo) desligado
+wardd: pronto
+wardd: aprovação 1: app indisponível; negado (D21)
+wardd: aprovação 2: app indisponível; negado (D21)
+wardd: executar: entrega falhou: túnel SSH ainda não disponível
+wardd: aprovação 3: app indisponível; negado (D21)
+wardd: aprovação 4: app indisponível; negado (D21)
+wardd: aprovação 5: app indisponível; negado (D21)

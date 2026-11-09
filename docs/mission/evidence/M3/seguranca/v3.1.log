@@ -1,0 +1,8 @@
+== V3.1 stat
+drwx------ jeffersonoliveira /run/user/1000/ward-seg-m3
+srw------- jeffersonoliveira /run/user/1000/ward-seg-m3/wardd.sock
+modo 755 -> exit 1 ; wardd: diretório do socket de teste recusado: o diretório do socket tem permissão 755, não 700
+modo 750 -> exit 1 ; wardd: diretório do socket de teste recusado: o diretório do socket tem permissão 750, não 700
+modo 701 -> exit 1 ; wardd: diretório do socket de teste recusado: o diretório do socket tem permissão 701, não 700
+link -> exit 1; wardd: diretório do socket de teste recusado: o caminho do socket existe e não é diretório
+sob /tmp/claude-1000 -> exit 1; wardd: diretório do socket de teste recusado: pasta acima do socket não confiável (dono ou permissão): /tmp

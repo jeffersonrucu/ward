@@ -37,7 +37,7 @@ use zeroize::Zeroizing;
 use ward_core::entrada::{Dados, Entrada, NivelAcesso, Segredo};
 use ward_core::entrega::{self, Entrega, ErroEntrega, ErroRecurso, Recursos};
 use ward_core::limites::{MAX_QUADRO_COMUM, MAX_TEXTO_EXIBIDO};
-use ward_core::mascara::Mascara;
+use ward_core::mascara::{ConstrutorMascara, Mascara};
 use ward_core::protocolo::{
     self, ErroResposta, Fluxo, Janela, Papel, Pedido, Resposta, Variavel, quadro,
 };
@@ -48,6 +48,7 @@ use crate::agente_ssh::{AgenteSsh, Permitido};
 
 use crate::aprovacao::Cliente;
 use crate::nucleo::Daemon;
+use crate::ponte::{Abertura, LIMITES_TUNEL, Ponte};
 use crate::{aviso, depurar};
 
 /// Pasta dos temporários dentro de `<rt>`.
@@ -217,6 +218,21 @@ pub fn limpar_temporarios(rt: &Path) -> io::Result<usize> {
 struct RecursosRun<'a> {
     rt: Option<&'a Path>,
     temporarios: Option<Temporarios>,
+    /// Para o túnel do `banco` (Fase 28): o daemon, as entradas (com o estado travado),
+    /// a entrada principal e a contagem de travas de quando a sessão foi autorizada.
+    tunel: Option<ContextoTunel<'a>>,
+    /// A ponte do túnel, aberta pela entrega.
+    ponte: Option<Ponte>,
+    /// A entrada `servidor` do túnel (para a máscara das duas, D19).
+    servidor_do_tunel: Option<&'a Entrada>,
+}
+
+/// O que o túnel precisa do daemon.
+struct ContextoTunel<'a> {
+    daemon: &'a Daemon,
+    entradas: &'a [Entrada],
+    principal: &'a Entrada,
+    travas: (Arc<std::sync::atomic::AtomicU64>, u64),
 }
 
 impl Recursos for RecursosRun<'_> {
@@ -243,9 +259,40 @@ impl Recursos for RecursosRun<'_> {
             .map_err(|_| ErroRecurso("arquivo temporário"))
     }
 
-    fn tunel(&mut self, _servidor: &str, _host: &str, _porta: u16) -> Result<u16, ErroRecurso> {
-        // O túnel SSH do `banco` é da Fase 28.
-        Err(ErroRecurso("túnel SSH ainda não disponível"))
+    /// D10/D19 (Fase 28): o túnel do `banco` pelo `servidor` referenciado é a ponte de
+    /// [`crate::ponte`] (`ssh -W <host>:<porta>` por conexão, sem shell), escutando em
+    /// `127.0.0.1:<porta livre>` e aceitando só o grupo de processos do comando.
+    fn tunel(&mut self, servidor: &str, host: &str, porta: u16) -> Result<u16, ErroRecurso> {
+        if self.ponte.is_some() {
+            return Err(ErroRecurso("um túnel só por entrega"));
+        }
+        let ctx = self
+            .tunel
+            .as_ref()
+            .ok_or(ErroRecurso("túnel indisponível"))?;
+        let (es, via) = crate::ssh::intermediario(ctx.entradas, servidor)
+            .map_err(|_| ErroRecurso("servidor do túnel"))?;
+        let mascara = ConstrutorMascara::new()
+            .entrada(ctx.principal)
+            .entrada(es)
+            .construir()
+            .map_err(|_| ErroRecurso("máscara do túnel"))?;
+        let ponte = Ponte::abrir(Abertura {
+            via,
+            alvo_host: host,
+            alvo_porta: porta,
+            programas: ctx.daemon.programas_ssh(),
+            known_hosts: &ctx.daemon.known_hosts(),
+            rt: ctx.daemon.temporarios(),
+            mascara,
+            limites: LIMITES_TUNEL,
+            travas: ctx.travas.clone(),
+        })
+        .map_err(ErroRecurso)?;
+        let p = ponte.porta();
+        self.ponte = Some(ponte);
+        self.servidor_do_tunel = Some(es);
+        Ok(p)
     }
 }
 
@@ -255,6 +302,9 @@ pub(crate) struct Preparo {
     pub(crate) comando: Comando,
     pub(crate) mascara: Mascara,
     pub(crate) temporarios: Option<Temporarios>,
+    /// Salto do `ward ssh` ou túnel do `banco` (Fase 28): a ponte, que começa a aceitar
+    /// quando o pid do filho é conhecido.
+    pub(crate) ponte: Option<Ponte>,
     /// `ward ssh` interativo: o filho num pty deste tamanho (D13, D34).
     pub(crate) pty: Option<Janela>,
     /// `ward ssh` com chave: o agente de D12, que só atende o filho.
@@ -392,6 +442,14 @@ impl Daemon {
         let mut recursos = RecursosRun {
             rt: self.temporarios(),
             temporarios: None,
+            tunel: Some(ContextoTunel {
+                daemon: self,
+                entradas: &a.entradas,
+                principal: e,
+                travas: self.travas_agora(&est),
+            }),
+            ponte: None,
+            servidor_do_tunel: None,
         };
         let entrega = match entrega::montar(e, &mut recursos) {
             Ok(g) => g,
@@ -401,19 +459,31 @@ impl Daemon {
                 return Err(ErroResposta::EntregaFalhou);
             }
         };
-        let mascara = Mascara::da_entrada(e, Some(&entrega)).map_err(|erro| {
+        // D19: com túnel, a máscara cobre também o `servidor` do túnel.
+        let mut construtor = ConstrutorMascara::new().entrada(e).entrega(&entrega);
+        if let Some(s) = recursos.servidor_do_tunel {
+            construtor = construtor.entrada(s);
+        }
+        let mascara = construtor.construir().map_err(|erro| {
             aviso!("executar: {erro}");
             ErroResposta::EntregaFalhou
         })?;
+        let RecursosRun {
+            temporarios, ponte, ..
+        } = recursos;
         drop(est);
         let tirados = montar_ambiente(&mut comando, &x.ambiente, &entrega)?;
         if tirados > 0 {
             depurar!("executar: {tirados} variável(is) LD_* tirada(s) do ambiente (D13)");
         }
+        if ponte.is_some() {
+            depurar!("executar: com túnel (ponte em 127.0.0.1)");
+        }
         Ok(Preparo {
             comando,
             mascara,
-            temporarios: recursos.temporarios,
+            temporarios,
+            ponte,
             pty: None,
             agente: None,
         })
@@ -659,6 +729,7 @@ pub(crate) fn sessao_com(
         comando,
         mascara,
         temporarios,
+        ponte,
         pty,
         agente,
     } = preparo;
@@ -674,6 +745,7 @@ pub(crate) fn sessao_com(
         Ok(g) => g,
         Err(e) => {
             depurar!("executar: o filho não foi criado ({e:?})");
+            drop(ponte);
             drop(temporarios);
             drop(agente);
             let mut msg = Zeroizing::new(Vec::new());
@@ -703,6 +775,17 @@ pub(crate) fn sessao_com(
             },
             a.travas,
             a.inicial,
+        )
+    });
+    // A ponte do salto/túnel aceita só o grupo do filho (Fase 28); o `stderr` do `ssh`
+    // dela chega à CLI já mascarado.
+    let ponte = ponte.map(|p| {
+        let c = cli.clone();
+        p.iniciar(
+            pid,
+            Arc::new(move |out: &mut Zeroizing<Vec<u8>>| {
+                c.enviar_saida(Fluxo::Erro, out);
+            }),
         )
     });
     let grupo = Arc::new(grupo);
@@ -772,6 +855,7 @@ pub(crate) fn sessao_com(
     let _ = grupo.esperar_fim();
     grupo.matar();
     let resultado = grupo.colher();
+    drop(ponte);
     drop(agente);
     drop(temporarios);
     let limite = Instant::now() + PRAZO_RESTO_DA_SAIDA;

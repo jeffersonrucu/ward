@@ -1,0 +1,202 @@
+origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
+dev/testes/sem-modo-teste.sh
+==> 1/3 cargo tree: ninguém liga modo-teste em dependência normal
+==> 2/3 testes de unidade sem a feature
+   Compiling rand_core v0.10.1
+   Compiling semver v1.0.28
+   Compiling cpubits v0.1.1
+   Compiling subtle v2.6.1
+   Compiling pem-rfc7468 v1.0.0
+   Compiling byteorder v1.5.0
+   Compiling signature v3.0.0
+   Compiling ward-plataforma v0.1.0 (/home/jeffersonoliveira/projetos/cofre/crates/ward-plataforma)
+   Compiling syn v2.0.119
+   Compiling ed25519 v3.0.0
+   Compiling crypto-common v0.2.2
+   Compiling rustc_version v0.4.1
+   Compiling curve25519-dalek v5.0.0
+   Compiling digest v0.11.3
+   Compiling cipher v0.5.2
+   Compiling universal-hash v0.6.1
+   Compiling aead v0.6.1
+   Compiling polyval v0.7.3
+   Compiling poly1305 v0.9.1
+   Compiling sha2 v0.11.1
+   Compiling pbkdf2 v0.13.0
+   Compiling ssh-encoding v0.3.0
+   Compiling blake2 v0.11.0
+   Compiling sha1 v0.11.0
+   Compiling hmac v0.13.0
+   Compiling ghash v0.6.0
+   Compiling chacha20 v0.10.2
+   Compiling ctr v0.10.1
+   Compiling aes v0.9.4
+   Compiling blowfish v0.10.0
+   Compiling argon2 v0.6.0
+   Compiling chacha20poly1305 v0.11.0
+   Compiling ward-core v0.1.0 (/home/jeffersonoliveira/projetos/cofre/crates/ward-core)
+   Compiling aes-gcm v0.11.1
+   Compiling bcrypt-pbkdf v0.11.0
+   Compiling ssh-cipher v0.3.0
+   Compiling curve25519-dalek-derive v0.1.1
+   Compiling ed25519-dalek v3.0.0
+   Compiling ssh-key v0.7.0-rc.12
+   Compiling wardd v0.1.0 (/home/jeffersonoliveira/projetos/cofre/crates/wardd)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.39s
+     Running unittests src/lib.rs (target/sem-modo-teste/debug/deps/ward_plataforma-ea684ef4646bb9ff)
+
+running 75 tests
+test app::testes::sem_setgid_largar_grupo_nao_muda_nada ... ok
+test endurecimento::testes::acha_qualquer_variavel_ld ... ok
+test app::testes::ataque_pai_que_nao_e_o_daemon_e_recusado ... ok
+test endurecimento::testes::ataque_lista_insegura_da_glibc ... ok
+test endurecimento::testes::d62_memoria_release_falha_fechado_e_modo_teste_avisa ... ok
+test endurecimento::testes::mensagem_nao_tem_valor ... ok
+test endurecimento::testes::ataque_nome_com_controle_nao_vai_cru_para_a_mensagem ... ok
+test filho::testes::debug_sem_valor ... ok
+test filho::testes::ataque_ambiente_do_daemon_nao_chega_ao_filho ... ok
+test filho::testes::ataque_fd_do_daemon_nao_chega_ao_filho ... ok
+test filho::testes::argv_cwd_e_ambiente_exatos ... ok
+test filho::testes::entrada_chega_ao_filho ... ok
+test filho::testes::codigo_e_sinal ... ok
+test filho::testes::falhas_antes_do_exec ... ok
+test filho::testes::busca_no_path_do_filho_sem_shell ... ok
+test filho::testes::filho_morre_com_a_thread_que_o_criou ... ok
+test filho::testes::matar_grupo_leva_os_netos ... ok
+test lancador::testes::ataque_binario_de_usuario_ou_sem_setgid_e_recusado ... ok
+test lancador::testes::ambiente_montado_tem_so_as_variaveis_de_d57 ... ok
+test lancador::testes::locale_so_nome_de_locale ... ok
+test lancador::testes::mensagens_sem_valor ... ok
+test memoria::testes::debug_nao_mostra_conteudo ... ok
+test filho::testes::sinais_no_padrao ... ok
+test memoria::testes::buffer_travado_le_escreve_e_trava ... ok
+test lancador::testes::lancar_poe_dev_null_e_fecha_fds ... ok
+test memoria::testes::regiao_existente_e_travada ... ok
+test lancador::testes::ataque_lancador_nao_passa_ambiente_nem_fd_do_daemon ... ok
+test lancador::testes::ataque_barramento_ou_pasta_da_sessao_trocados ... ok
+test lancador::testes::ataque_dois_sockets_wayland_ou_link_nao_abre ... ok
+test processo::testes::ambiente_com_qualquer_ld_recusa_sem_valor ... ok
+test papel::testes::ataque_gid_dentro_de_faixa_do_subgid ... ok
+test papel::testes::ataque_grupo_com_membro_repetido_ou_estragado ... ok
+test papel::testes::grupo_do_etc_group ... ok
+test papel::testes::politica_do_kernel ... ok
+test lancador::testes::ataque_ambiente_forcado_no_app_e_recusado ... ok
+test pasta::testes::ataque_nome_que_sai_da_pasta_recusado ... ok
+test processo::testes::linha_de_mapa ... ok
+test processo::testes::mapas_recusam_biblioteca_fora_do_root ... ok
+test processo::testes::caminho_permitido_so_absoluto_e_canonico ... ok
+test processo::testes::nome_da_cadeia_higienizado ... ok
+test memoria::testes::zerar_apaga_a_regiao_inteira ... ok
+test lancador::testes::home_vem_do_passwd ... ok
+test processo::testes::instalacao_recusa_arquivo_de_usuario_e_link ... ok
+test processo::testes::recusa_nao_vaza_detalhe ... ok
+test processo::testes::tracer_pid_e_ppid_do_status ... ok
+test processo::testes::mapas_recusam_inode_diferente_do_caminho ... ok
+test pasta::testes::renomeia_e_nunca_sobrescreve ... ok
+test servidor::testes::mensagens_sem_caminho ... ok
+test servidor::testes::caminho_invalido_recusa ... ok
+test papel::testes::ataque_gid_que_este_processo_ja_tem ... ok
+test socket::testes::caminho_do_diretorio_invalido_recusa ... ok
+test socket::testes::caminho_do_sistema_pelo_euid ... ok
+test processo::testes::cadeia_do_proprio_processo_termina_nele ... ok
+test socket::testes::listen_pid_e_fds_so_decimal_simples ... ok
+test socket::testes::par_fechou_sem_consumir_bytes ... ok
+test socket::testes::pastas_do_root_sao_aceitas_e_link_nao ... ok
+test socket::testes::ataque_pasta_do_usuario_nao_passa_por_pasta_do_sistema ... ok
+test servidor::testes::sistema_so_aceita_uid_0 ... ok
+test socket::testes::pai_gravavel_por_outros_recusa ... ok
+test socket::testes::runtime_pelo_euid ... ok
+test socket::testes::uid_diferente_recusa ... ok
+test terminal::testes::arquivo_comum_nao_e_terminal ... ok
+test terminal::testes::cancelar_e_limite ... ok
+test terminal::testes::capacidade_reservada_sem_realocar ... ok
+test terminal::testes::edicao_da_linha ... ok
+test terminal::testes::modo_cru_liga_e_volta_e_tamanho_do_pty ... ok
+test terminal::testes::ctrl_c_cancela_e_restaura ... ok
+test lancador::testes::ataque_so_o_pid_do_lancador_e_o_app ... ok
+test memoria::testes::tamanho_fora_do_limite_recusa ... ok
+test lancador::testes::saida_do_app_fica_para_o_log ... ok
+test relogio::testes::nao_volta_e_bate_com_o_uptime ... ok
+test app::testes::socket_do_std_tem_cloexec_e_o_fechamento_e_visto ... ok
+test terminal::testes::ataque_senha_nao_ecoa_no_pty ... ok
+test filho::testes::pty_terminal_de_controle_janela_e_entrada ... ok
+test filho::testes::pty_matar_o_grupo_leva_a_sessao_e_o_ambiente_e_exato ... ok
+
+test result: ok. 75 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.31s
+
+     Running unittests src/lib.rs (target/sem-modo-teste/debug/deps/wardd-eff71da85889dd66)
+
+running 25 tests
+test agente_ssh::testes::so_lista_e_assina ... ok
+test agente_ssh::testes::ataque_adicionar_remover_travar_e_lixo_recusados ... ok
+test arquivos::testes::d62_formato_antigo_le_zero_e_novo_tem_a_linha ... ok
+test execucao::testes::ld_e_proibida ... ok
+test arquivos::testes::estado_estrito ... ok
+test config::testes::caminho_relativo_ou_com_ponto_ponto_recusado ... ok
+test execucao::testes::locale_utf8_fica_e_c_vira_c_utf8 ... ok
+test execucao::testes::ataque_rt_aberto_ou_link_recusado ... ok
+test servidor::testes::d63_sem_o_grupo_o_pid_do_lancador_nao_da_papel_app ... ok
+test execucao::testes::partida_limpa_o_que_ficou ... ok
+test servidor::testes::assinante_escreve_quadro_inteiro_e_falha_fechado ... ok
+test ssh::testes::ataque_valores_fora_do_formato_recusados ... ok
+test ssh::testes::chave_usa_o_agente_da_sessao ... ok
+test trava::testes::ataque_caminho_do_barramento_estranho ... ok
+test ssh::testes::d43_usuario_com_arroba_so_depois_de_l ... ok
+test ssh::testes::d56_sftp ... ok
+test trava::testes::estado_travar_e_erro_nao_contam_como_uso ... ok
+test trava::testes::venceu_no_limite_e_falha_fechada ... ok
+test udisks::testes::ataque_montagem_estranha_conta_como_nao_montado ... ok
+test uso::testes::nivel_combinado_e_o_mais_restritivo ... ok
+test udisks::testes::rotulo_sem_controle_e_cortado ... ok
+test execucao::testes::temporarios_0600_zerados_e_apagados ... ok
+test lancamento::testes::saida_vai_ao_log_so_com_numeros ... ok
+test servidor::testes::d63_par_filho_sem_egid_fica_agente ... ok
+test servidor::testes::ataque_conexoes_de_agente_nao_despejam_o_app ... ok
+
+test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+==> 3/3 strings no release
+   Compiling rand_core v0.10.1
+   Compiling semver v1.0.28
+   Compiling cpubits v0.1.1
+   Compiling signature v3.0.0
+   Compiling pem-rfc7468 v1.0.0
+   Compiling subtle v2.6.1
+   Compiling byteorder v1.5.0
+   Compiling ward-plataforma v0.1.0 (/home/jeffersonoliveira/projetos/cofre/crates/ward-plataforma)
+   Compiling syn v2.0.119
+   Compiling ed25519 v3.0.0
+   Compiling crypto-common v0.2.2
+   Compiling rustc_version v0.4.1
+   Compiling curve25519-dalek v5.0.0
+   Compiling digest v0.11.3
+   Compiling cipher v0.5.2
+   Compiling universal-hash v0.6.1
+   Compiling aead v0.6.1
+   Compiling polyval v0.7.3
+   Compiling poly1305 v0.9.1
+   Compiling sha2 v0.11.1
+   Compiling blake2 v0.11.0
+   Compiling pbkdf2 v0.13.0
+   Compiling ssh-encoding v0.3.0
+   Compiling sha1 v0.11.0
+   Compiling hmac v0.13.0
+   Compiling ghash v0.6.0
+   Compiling chacha20 v0.10.2
+   Compiling aes v0.9.4
+   Compiling ctr v0.10.1
+   Compiling blowfish v0.10.0
+   Compiling chacha20poly1305 v0.11.0
+   Compiling argon2 v0.6.0
+   Compiling aes-gcm v0.11.1
+   Compiling ssh-cipher v0.3.0
+   Compiling bcrypt-pbkdf v0.11.0
+   Compiling ward-core v0.1.0 (/home/jeffersonoliveira/projetos/cofre/crates/ward-core)
+   Compiling curve25519-dalek-derive v0.1.1
+   Compiling ed25519-dalek v3.0.0
+   Compiling ssh-key v0.7.0-rc.12
+   Compiling wardd v0.1.0 (/home/jeffersonoliveira/projetos/cofre/crates/wardd)
+    Finished `release` profile [optimized] target(s) in 29.07s
+   Compiling ward-plataforma v0.1.0 (/home/jeffersonoliveira/projetos/cofre/crates/ward-plataforma)
+    Finished `release` profile [optimized] target(s) in 1.16s
+sem-modo-teste: release sem WARD_DEV_APP nem a exceção do app de teste

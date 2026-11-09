@@ -208,6 +208,11 @@ wp() { wp_login wp_admin "$SEG/wp-admin"; }
 git_ignore() { git -C "$RAIZ" check-ignore -q .dev/servicos/segredos/pg-app; }
 compose_ps() { "${COMPOSE[@]}" ps -q postgres; }
 psql_um() { psql_app 'select 1'; }
+# Cliente do Postgres em Python da Fase 28 (V4.29): senha por arquivo, nunca em argv.
+pg_select_um() {
+    cliente PGHOST=127.0.0.1 PGPORT=55432 PGUSER=app PGDATABASE=app_teste \
+        WARD_TESTE_PG_SENHA_ARQUIVO="$SEG/pg-app" python3 -I -B "$RAIZ/dev/testes/pg_select.py" 'select 1'
+}
 
 rastrear_ok senha ssh_senha "$SEG/ssh-deploy" 2222 deploy whoami
 conferir "ssh_senha (2222, deploy)" senha
@@ -235,6 +240,8 @@ rastrear_ok compose compose_ps
 conferir "docker compose ps (DOCKER_CONFIG vazio)" compose
 rastrear_ok psql psql_um
 conferir "docker run do psql_app" psql
+rastrear_ok pg-select pg_select_um
+conferir "dev/testes/pg_select.py (cliente Postgres da Fase 28)" pg-select
 
 # Mutações das opções de OPCOES_SSH (Fase 12b): cada proteção, tirada ou trocada pela
 # forma errada, TEM de ser acusada. Seguro: aqui o home é um tmpfs vazio.

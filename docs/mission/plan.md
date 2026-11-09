@@ -436,6 +436,16 @@ Pendências da 38 (2026-11-09): frame `15242` diz "Trocar pede a senha mestra" n
 
 Pendências da 24a (2026-11-09): 1º `kill -SEGV` cai no tratador de pilha do Rust e só o 2º mata (sem core nos dois; V3.6 fala em um); nesta máquina `suid_dumpable=2` e `core_pattern` é pipe do apport — o que impede o core é `PR_SET_DUMPABLE=0` (levar à instalação, M9); sem `gdb` no host; nome de variável que começa com byte inválido sai vazio na mensagem; extensão divide as 64 vagas com o agente.
 
+Pendências da 39 (2026-11-09): menu da bandeja é acessível a qualquer processo do mesmo uid pelo barramento da sessão (só textos fixos e travar/mostrar/fechar; auditor do M5 confere); dependências novas só no app: `tray-icon 0.25.1`, `libappindicator 0.9.0`, `libappindicator-sys 0.9.0`, `libloading 0.7.4`; `configuracao` conta como uso no `wardd`, então a bandeja só lê o tempo de trava ao destravar/criar; ícone só até 32 px (falta export 64 px); `make teste-logs-app` falta na tabela do CLAUDE.md; bandeja e janela de aprovação no COSMIC ficam para o roteiro (`docs/mission/roteiro-usuario.md`).
+
+Pendências da 48 (2026-11-09): frames `16178`/`16334` mostram caminho de montagem e "última cópia", que o protocolo não traz — corrigir FigCraft ou criar operação de última cópia (só data e contagem); diálogo "Escolher pendrive" sem frame; app só liga com pendrive conectado agora (o `wardd` aceita qualquer UUID no formato); `neutralizar` não escapa `\` (cosmético).
+
+Pendências do scrutiny do M3, 2ª rodada (aprovado, 2026-11-09): `teste-socket-ataques` regrava `target/debug/wardd` (o mesmo do `dev-daemon`) — usar `--target-dir` próprio; vaga do app só com teste de unidade; `ganchos-teste` aceito (só dois ganchos, depende de `modo-teste`).
+
+Pendências da 28 (2026-11-09): salto não usa `ProxyJump` (o OpenSSH 9.6 roda o ProxyJump por `$SHELL -c` e o ssh do salto ignoraria `-o`, lendo `~/.ssh`); o daemon faz a ponte local em `127.0.0.1:0` aceitando só o grupo de processos da sessão — ajustar o texto de D13/D43; túnel só aceita o grupo de processos do `ward run` (contêiner `--network host`/`setsid` não conectam); cada conexão do túnel faz um login SSH novo; `ward run` de `servidor` com salto não abre a ponte.
+
+Auditoria de segurança do M3 (aprovada, 2026-11-09; `docs/mission/evidence/M3/seguranca/`): **alto** fora do M3 — token do "Conectar" vai no argv do terminal e do `ward ssh --token` (`app/nucleo/src/terminal.rs:127`, `crates/wardd/src/ssh.rs:355`), legível em `/proc/<pid>/cmdline` por qualquer processo do mesmo uid, que pode usá-lo primeiro e pular nível e aprovação (Fase 27a); **médio** — ambiente da CLI no `executar` (só `LD_*` sai; `PATH`/`BASH_ENV`/config de ferramentas mudam o comando aprovado e a janela não mostra), o auditor recomenda bloquear o M4 — decisão do usuário; **baixo** — recusa de `LD_PRELOAD` roda depois do `ld.so` carregar a biblioteca (V3.7 é defesa em profundidade; a unit do systemd garante ambiente limpo, M9).
+
 ## Milestone 3 — Daemon e protocolo
 Contrato: V3.1–V3.41
 
@@ -695,11 +705,18 @@ Contrato: V4.1–V4.38
   host depois de `--` (D56), com teste de argv por `strace` e login real no SSH de
   teste.
   V4.14, V4.23, V4.24, V4.26–V4.28, V4.31, V4.32, V4.34, V4.35, V4.37.
-- [ ] Fase 28 — Salto (`ProxyJump`) e túnel de `banco` por `servidor`, com nível
+- [x] Fase 28 — Salto (`ProxyJump`) e túnel de `banco` por `servidor`, com nível
   combinado (D19); logs da suíte do M4 sem segredo. 2ª parte do V4.2 (D65 e) no
   contêiner de `make teste-docker-plataforma`: CLI sem `modo-teste`, `wardd` copiado e
   falso não-dumpable do uid 1000, `bind` em `/run/ward/1000/` recusado.
   V4.2, V4.25, V4.27, V4.29, V4.30, V4.33.
+
+- [ ] Fase 27a — Correção do achado alto da auditoria do M3: o token do "Conectar" nunca
+  vai em argv. O app entrega o token ao `ward ssh` por um fd herdado (ou outro canal que
+  nenhum outro processo do mesmo uid leia), o `x-terminal-emulator` não o recebe em
+  argv/ambiente, e o `ward ssh` lê o token desse canal; `--token` em argv é recusado.
+  Teste de ataque: leitor de `/proc/*/cmdline` e `/proc/*/environ` em laço durante o
+  "Conectar" não acha o token. V5.24, S9, S10.
 
 ## Milestone 5 — App desktop
 Contrato: V5.1–V5.35
@@ -781,7 +798,7 @@ Contrato: V5.1–V5.35
   `save_file` e PNG das telas ao usuário. V5.35.
 - [x] Fase 38 — **(UI)** Configurações (PIN, senha mestra, tempo de trava gravado na
   configuração do cofre, D30; backup externo só exibido desligado). V5.22.
-- [ ] Fase 39 — **(UI)** Bandeja; `docs/mission/roteiro-usuario.md` da janela nativa;
+- [x] Fase 39 — **(UI)** Bandeja; `docs/mission/roteiro-usuario.md` da janela nativa;
   varredura de logs do app. V5.23, V5.27, V5.28.
 
 ## Milestone 6 — Extensão, `ward login` e `ward playwright`
@@ -812,7 +829,7 @@ Contrato: V7.1–V7.11
 - [x] Fase 46 — Backup externo em pendrive por UUID via udisks2, desligado por padrão;
   ligado/desligado e UUID ficam na configuração do cofre (D30). V7.4–V7.6, V7.8.
 - [ ] Fase 47 — **(UI)** Restaurar backup. V7.7.
-- [ ] Fase 48 — **(UI)** Configurações › backup externo. V7.9.
+- [x] Fase 48 — **(UI)** Configurações › backup externo. V7.9.
 - [ ] Fase 49 — **(UI)** Kit de emergência para imprimir. V7.10.
 
 ## Milestone 8 — Skill `ward`

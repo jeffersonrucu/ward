@@ -9,14 +9,18 @@
   //   diálogos guardam o digitado só no estado local deles e o apagam antes da resposta.
   // - Tempo de trava: lido do daemon (`configuracoes`, a configuração do cofre, D30) e
   //   gravado por ele (`definir_tempo_trava`, geração nova, D39). Padrão 4 h.
-  // - Backup externo: só exibido (desligado por padrão, D17); ligar é da Fase 46.
+  // - Backup externo (Fase 48, V7.9; FigCraft 16178): desligado por padrão (D17).
+  //   Ligar abre a escolha do pendrive (`EscolherPendrive`); ligado, o cartão do
+  //   pendrive (16318) mostra o escolhido e "Trocar". Desligar mantém o UUID guardado e
+  //   não apaga nada do pendrive. Lido por `backup_externo` (sem caminho de montagem).
   //   Restaurar (Fase 47) e o kit de emergência (M7) ainda não abrem nada.
   //
-  // Nenhum valor secreto passa por esta tela: a resposta de `configuracoes` traz só os
-  // minutos e o booleano do backup externo. Nada vai para armazenamento, URL ou estado
-  // global.
+  // Nenhum valor secreto passa por esta tela: as respostas trazem só os minutos, o
+  // backup externo (ligado, UUID do pendrive, rótulo já neutralizado no Rust e se está
+  // montado). Nada vai para armazenamento, URL ou estado global.
   import { onDestroy, onMount } from 'svelte';
   import Botao from '../lib/componentes/Botao.svelte';
+  import CartaoDePendrive from '../lib/componentes/CartaoDePendrive.svelte';
   import Icone from '../lib/componentes/Icone.svelte';
   import LinhaDeOpcao from '../lib/componentes/LinhaDeOpcao.svelte';
   import Select from '../lib/componentes/Select.svelte';
@@ -24,7 +28,8 @@
   import { chamar } from '../lib/ponte/index.js';
   import TrocarPin from './TrocarPin.svelte';
   import TrocarSenha from './TrocarSenha.svelte';
-  import { opcoesDeTrava } from './configuracoes.js';
+  import EscolherPendrive from './EscolherPendrive.svelte';
+  import { cartaoDoPendrive, opcoesDeTrava } from './configuracoes.js';
   import { mensagemDoRust } from './primeiro-uso.js';
 
   /** @type {{ ontravado?: () => void }} */
@@ -38,9 +43,13 @@
   let sucesso = $state('');
   let dialogo = $state('');
   let salvando = $state(false);
+  let externo = $state(null);
+  let mudandoExterno = $state(false);
   let prazoSucesso = null;
 
   const opcoes = $derived(opcoesDeTrava(config?.minutos_trava));
+  const ligadoExterno = $derived(externo ? externo.ligado === true : config?.backup_externo === true);
+  const cartao = $derived(cartaoDoPendrive(externo));
 
   function avisar(texto) {
     erro = '';
@@ -79,9 +88,37 @@
   async function carregar() {
     try {
       aplicar(await chamar('configuracoes'));
+      externo = await chamar('backup_externo');
     } catch (e) {
       await falhou(e, 'Não foi possível ler as configurações.');
     }
+  }
+
+  /** Ligar abre a escolha do pendrive; desligar grava na hora (o UUID fica guardado). */
+  async function mudarExterno(ligar) {
+    if (!externo || mudandoExterno) return;
+    if (ligar) {
+      dialogo = 'pendrive';
+      return;
+    }
+    mudandoExterno = true;
+    try {
+      externo = await chamar('definir_backup_externo', { ligado: false, uuid: null });
+      config = config && { ...config, backup_externo: false };
+      avisar('Backup externo desligado. As cópias no pendrive continuam lá.');
+    } catch (e) {
+      await falhou(e, 'Não foi possível desligar o backup externo.');
+    } finally {
+      mudandoExterno = false;
+    }
+  }
+
+  function pendriveEscolhido(novo) {
+    const trocou = externo?.ligado === true;
+    dialogo = '';
+    externo = novo;
+    config = config && { ...config, backup_externo: novo?.ligado === true };
+    avisar(trocou ? 'Pendrive do backup externo trocado.' : 'Backup externo ligado.');
   }
 
   async function mudarTrava(valor) {
@@ -161,13 +198,25 @@
       <LinhaDeOpcao
         id="config-backup-externo"
         titulo="Backup externo em pendrive"
-        ligado={config?.backup_externo === true}
-        desabilitado
+        ligado={ligadoExterno}
+        desabilitado={!externo || mudandoExterno}
+        onmudar={mudarExterno}
       >
-        {#snippet descricao()}{#if config?.backup_externo}Ligado. O Ward copia as versões para o
-            pendrive escolhido sempre que ele for conectado.{:else}Desligado. Ao ligar, escolha o
-            pendrive; o Ward copia as versões sempre que ele for conectado.{/if}{/snippet}
+        {#snippet descricao()}{#if ligadoExterno}Ligado. O Ward copia as versões para o pendrive
+            escolhido sempre que ele for conectado, também com 30 versões.{:else}Desligado. Ao
+            ligar, escolha o pendrive; o Ward copia as versões sempre que ele for conectado.{/if}{/snippet}
       </LinhaDeOpcao>
+      {#if externo?.ligado && externo.uuid}
+        <CartaoDePendrive
+          nome={cartao.nome}
+          uuid={externo.uuid}
+          situacao={cartao.situacao}
+          estado={cartao.estado}
+          montado={cartao.montado}
+          desabilitado={mudandoExterno}
+          ontrocar={() => (dialogo = 'pendrive')}
+        />
+      {/if}
       <LinhaDeOpcao id="config-kit" titulo="Kit de emergência">
         {#snippet descricao()}Folha para imprimir com onde ficam o cofre e os backups e um espaço
           para anotar a senha mestra à mão.{/snippet}
@@ -201,6 +250,17 @@
     avisar('Senha mestra trocada.');
   }}
   onfalha={() => conferirTrava()}
+/>
+<EscolherPendrive
+  aberto={dialogo === 'pendrive'}
+  trocar={externo?.ligado === true}
+  atual={externo?.uuid ?? null}
+  onfechar={fecharDialogo}
+  onescolhido={pendriveEscolhido}
+  ontravado={() => {
+    dialogo = '';
+    ontravado?.();
+  }}
 />
 <TrocarPin
   aberto={dialogo === 'pin'}

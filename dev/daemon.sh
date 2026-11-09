@@ -6,7 +6,8 @@
 #
 # Ambiente limpo (V3.30): o `wardd` recusa subir com `TMPDIR` ou `LD_*` no ambiente
 # (V3.25), e a sessão do desenvolvedor costuma ter os dois. Por isso ele sobe por
-# `env -i` com uma lista fixa: HOME, PATH, XDG_RUNTIME_DIR, LANG e WARD_DEV_DIR, mais
+# `env -i` com uma lista fixa: HOME, PATH, XDG_RUNTIME_DIR, LANG, WARD_DEV_DIR e RUST_LOG
+# (padrão `trace`), mais
 # WARD_DEV_DBUS_SISTEMA só se vier definida (Fase 24: socket do barramento que o daemon
 # de teste vigia para o logind; sem ela, o daemon de teste não liga o logind. Para o
 # V3.19 com o `loginctl lock-session` de verdade, passe
@@ -35,6 +36,14 @@ APP="${WARD_DEV_APP:-}"
 case "$APP" in
     ""|/*) ;;
     *) echo "WARD_DEV_APP não é absoluto" >&2; exit 1 ;;
+esac
+
+# Log do daemon de teste: `trace` por padrão (V4.33: a suíte confere que nem assim sai
+# segredo no log). Só os níveis conhecidos; o valor nunca é impresso pelo daemon.
+NIVEL_LOG="${RUST_LOG:-trace}"
+case "$NIVEL_LOG" in
+    error|warn|info|debug|trace) ;;
+    *) echo "RUST_LOG fora de error|warn|info|debug|trace" >&2; exit 1 ;;
 esac
 
 UID_ATUAL="$(id -u)"
@@ -91,6 +100,7 @@ subir() {
         XDG_RUNTIME_DIR="$RUNTIME" \
         LANG="${LANG:-C.UTF-8}" \
         WARD_DEV_DIR="$DEV" \
+        RUST_LOG="$NIVEL_LOG" \
         ${WARD_DEV_DBUS_SISTEMA:+"WARD_DEV_DBUS_SISTEMA=$WARD_DEV_DBUS_SISTEMA"} \
         ${APP:+"WARD_DEV_APP=$APP"} \
         "$BIN" </dev/null >>"$LOG" 2>&1 &

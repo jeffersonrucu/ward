@@ -85,6 +85,7 @@
 | `make teste-sem-modo-teste` | 0 |
 | `make fmt` | 0 |
 | `make check` | 0 |
+| Depois do merge do `master` (Fases 24a, 28, 38, 39, 46, 48): `make check`, `make teste-docker-plataforma` (Fases 28 e 40 juntas no contêiner), `make teste-nm`, `make teste-sem-modo-teste` | 0 |
 
 ## Problemas descobertos
 - **Disco cheio durante a fase.** O `/` chegou a 380 KB livres, com os `target/` dos worktrees e do checkout principal e o cache do Docker. Não apaguei nada de fora do meu worktree; esperei até o espaço voltar (alguém liberou 22 GB). Com várias fases em paralelo, o orchestrator precisa cuidar do espaço: cada `target/` tem de 3 a 12 GB.
@@ -120,6 +121,12 @@
 | `CLAUDE.md` | alterado (linhas dos alvos) |
 | `Cargo.lock` | alterado (só as ligações do `ward-nm`) |
 | `docs/mission/handoffs/phase-40.md` | criado |
+
+No merge com o `master`, os conflitos em `CLAUDE.md`, `Makefile`, `dev/conteiner-plataforma/dentro.sh` e `dev/testes/docker-plataforma.sh` foram resolvidos mantendo as duas partes.
+
+- **Ordem no contêiner.** A Fase 28 roda antes da 40, porque ela apaga e recria `/run/ward/1000`. A 40 sobe o seu `wardd` com socket novo.
+- **Build sem `modo-teste`.** O `ward-nm` e o `chrome-falso` do contêiner agora são compilados em `target/sem-modo-teste`.
+- **Conferência das strings.** O `docker-plataforma.sh` recusa um `ward-nm` que tenha `WARD_DEV_SOCKET_DIR` nas strings, como já recusava `ward` e `wardd`.
 
 ## Procedimentos
 - [x] `make check` rodado (fmt, clippy, testes, audit, deny, gitleaks)

@@ -8,8 +8,10 @@
 # `.dev/` com o binário de teste (`ward-plataforma-conteiner`, feature `modo-teste`) e a
 # biblioteca de ataque do LD_PRELOAD, mais o script de dentro. Fica fora do `make
 # check` (exige Docker). Uso: dev/testes/docker-plataforma.sh <binário de teste>
-# <app de teste>. O app de teste (Fase 29a) é o `partida-conteiner` do `app/nucleo`: a
-# partida do app real (D47, D57) sem o GTK.
+# <app de teste> <ward de release> <wardd de release>. O app de teste (Fase 29a) é o
+# `partida-conteiner` do `app/nucleo`: a partida do app real (D47, D57) sem o GTK. A CLI
+# e o `wardd` de release (sem `modo-teste`) e o servidor falso não-dumpable (`falso.c`)
+# são da 2ª parte do V4.2 (Fase 28, D65 e).
 
 export PATH=/usr/bin:/bin
 set -euo pipefail
@@ -22,15 +24,26 @@ RAIZ="$(cd -P -- "${BASH_SOURCE[0]%/*}/../.." && pwd -P)"
 
 # Imagem pela digest (a lista multiarquitetura de ubuntu:24.04 conferida na Fase 21b).
 IMAGEM="ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852"
-USO="uso: docker-plataforma.sh <binário de teste> <app de teste> <wardd modo-teste> <ward-nm sem modo-teste> <chrome-falso> <wardd-cliente-teste>"
+USO="uso: docker-plataforma.sh <binário de teste> <app de teste> <ward de release> <wardd de release> <wardd modo-teste> <ward-nm de release> <chrome-falso> <wardd-cliente-teste>"
 BIN="${1:?$USO}"
 APP="${2:?$USO}"
-WARDD="${3:?$USO}"
-NM="${4:?$USO}"
-CHROME_FALSO="${5:?$USO}"
-CLIENTE="${6:?$USO}"
-for b in "$BIN" "$APP" "$WARDD" "$NM" "$CHROME_FALSO" "$CLIENTE"; do
+CLI="${3:?$USO}"
+WARDD="${4:?$USO}"
+WARDD_TESTE="${5:?$USO}"
+NM="${6:?$USO}"
+CHROME_FALSO="${7:?$USO}"
+CLIENTE="${8:?$USO}"
+for b in "$BIN" "$APP" "$CLI" "$WARDD" "$WARDD_TESTE" "$NM" "$CHROME_FALSO" "$CLIENTE"; do
     [ -x "$b" ] || { echo "binário não encontrado: $b" >&2; exit 1; }
+done
+# V4.2 (2ª parte) e a Fase 40 exigem o build sem `modo-teste`: as strings do daemon de
+# teste não podem estar nos binários (o `ward` ou o `ward-nm` de teste aceitariam o
+# socket de `WARD_DEV_SOCKET_DIR`).
+for b in "$CLI" "$WARDD" "$NM"; do
+    if grep -q -a -F 'WARD_DEV_SOCKET_DIR' -- "$b"; then
+        echo "$b foi compilado com modo-teste" >&2
+        exit 1
+    fi
 done
 COFRE="$RAIZ/.dev/cofre-teste.ward"
 [ -f "$COFRE" ] && [ ! -L "$COFRE" ] || { echo "falta o cofre de teste: rode 'make dev-cofre'" >&2; exit 1; }
@@ -44,10 +57,12 @@ trap 'rm -rf -- "$TMP"' EXIT
 chmod 0755 "$TMP"
 install -m 0755 "$BIN" "$TMP/ward-teste"
 install -m 0755 "$APP" "$TMP/ward-app-teste"
+install -m 0755 "$CLI" "$TMP/ward-release"
+install -m 0755 "$WARDD" "$TMP/wardd-release"
 # Fase 40: o wardd de teste real, o ward-nm sem `modo-teste` (o do release: só aceita o
 # socket do sistema com par uid 0), o "Chrome" falso e o cliente mínimo. Uma cópia do
 # cofre de teste e a senha de teste (falsa, D15), lidas das fixtures.
-install -m 0755 "$WARDD" "$TMP/wardd-real"
+install -m 0755 "$WARDD_TESTE" "$TMP/wardd-real"
 install -m 0755 "$NM" "$TMP/ward-nm-real"
 install -m 0755 "$CHROME_FALSO" "$TMP/chrome-falso"
 install -m 0755 "$CLIENTE" "$TMP/wardd-cliente-teste"
@@ -57,6 +72,8 @@ install -m 0644 "$COFRE" "$TMP/cofre-teste.ward"
 chmod 0644 "$TMP/senha"
 gcc -shared -fPIC -O2 -Wall -Werror -o "$TMP/libmarca.so" "$RAIZ/dev/conteiner-plataforma/marca.c"
 chmod 0644 "$TMP/libmarca.so"
+gcc -O2 -Wall -Werror -o "$TMP/falso" "$RAIZ/dev/conteiner-plataforma/falso.c"
+chmod 0755 "$TMP/falso"
 
 docker image inspect "$IMAGEM" >/dev/null 2>&1 || docker pull --quiet "$IMAGEM" >/dev/null
 

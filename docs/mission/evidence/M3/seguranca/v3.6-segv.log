@@ -1,0 +1,8 @@
+ok
+vivo após 1º SEGV
+morto
+status 139
+(eval):6: command not found: coredumpctl
+total 8
+drwxr-xr-x 2 root root 4096 ago 18 03:06 .
+drwxr-xr-x 3 root root 4096 ago 18 03:06 ..
