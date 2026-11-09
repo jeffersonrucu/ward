@@ -594,7 +594,7 @@ Contrato: V5.1–V5.31
 - [ ] Fase 36 — **(UI)** Janela de aprovação em primeiro plano, aberta pelo daemon, com
   os cinco estados do M0; comando e cadeia exibidos pela função de D51, nunca como HTML.
   V5.16–V5.20, V5.29.
-- [ ] Fase 37 — **(UI)** Gerador de senha avulso (símbolos de D35). V5.21.
+- [x] Fase 37 — **(UI)** Gerador de senha avulso (símbolos de D35). V5.21.
 - [ ] Fase 38 — **(UI)** Configurações (PIN, senha mestra, tempo de trava gravado na
   configuração do cofre, D30; backup externo só exibido desligado). V5.22.
 - [ ] Fase 39 — **(UI)** Bandeja; `docs/mission/roteiro-usuario.md` da janela nativa;

@@ -376,6 +376,8 @@ ou com nova resposta do usuário.
 - D14. **Memória.** O daemon trava (`mlock`) os buffers de segredo e a chave de dados;
   a memória de trabalho do Argon2 não é travada (limite de `RLIMIT_MEMLOCK` do usuário).
   Risco residual registrado: swap sem cifra; o Pop!_OS com disco cifrado cifra a swap.
+  **Revista pela D62:** `mlockall` do processo inteiro, com `LimitMEMLOCK=infinity` na
+  unit (inclui a memória do Argon2).
 - D15. **Cofre de teste.** Senha mestra de teste `falso-mestra-ward-01`, PIN de teste
   `135790`, entradas da tabela "Cofre de teste" do contrato (21, com `acme-totp-dev`
   de D28; 22 a partir da Fase 22a, com `delta-api-simbolos` de D59). Tudo falso, gerado em `.dev/` por `make dev-cofre`; os valores fixos ficam na
@@ -402,6 +404,8 @@ ou com nova resposta do usuário.
 - D20. **Senha mestra pelo socket.** Cada tentativa errada de destravar aumenta a
   espera da seguinte (dobra a partir de 1 s, até 30 s); a resposta não diz quantas
   tentativas houve. Protege contra o agente tentar adivinhar pelo socket.
+  **Revista pela D62:** contador por papel (o agente não atrasa o app) e o do agente
+  guardado no arquivo de estado (matar o `wardd` não zera a espera).
 - D21. **Aprovação sem app.** Se o app não pode ser aberto (ainda não existe, ou falhou
   ao subir), o pedido com aprovação é negado na hora com "aprovação indisponível".
 - D22. **Ferramenta de design: FigCraft** (decisão do usuário, 2026-11-08; "Missão 0 —
@@ -1044,7 +1048,10 @@ em `/tmp/claude-1000/-home-jeffersonoliveira-projetos-cofre/d2e230bd-a662-43be-a
       X11, qualquer outro cliente lê o teclado e a tela);
     - `HOME` do `getpwuid`, `PATH=/usr/local/bin:/usr/bin:/bin`, `LANG`/`LC_*` do
       próprio daemon (que vêm do locale do sistema pela unit);
-    - as variáveis que a Fase 29a fixar para desligar fontes de módulos (D48).
+    - as variáveis que desligam fontes de módulos e canais fora do root (D48, fixadas
+      pela Fase 29a e por D64): `GST_PLUGIN_SYSTEM_PATH=/usr/lib/<multiarch>/gstreamer-1.0`,
+      `NO_AT_BRIDGE=1`, `WEBKIT_A11Y_BUS_ADDRESS=unix:path=/dev/null` e
+      `CUDA_MPS_PIPE_DIRECTORY=/proc/ward-sem-mps`.
   - o app confere, antes do GTK, que o ambiente que recebeu tem exatamente essas
     variáveis nessas formas (pasta, sockets, donos, sem link); fora disso, não usa o
     papel e sai com mensagem. É defesa em profundidade: o daemon já montou assim;
@@ -1114,6 +1121,166 @@ em `/tmp/claude-1000/-home-jeffersonoliveira-projetos-cofre/d2e230bd-a662-43be-a
   - **Lock do Tauri:** corrigido na 21b sem `make app-check` (R32). A Fase 29a roda o
     `make app-check` e confirma.
 
+- D61. **Máscara: reauditoria da 19e** (1 achado médio e 3 baixos; D11, D29, D54; RA3;
+  S4; decisão do planner em 2026-11-09). Critério: vira variação o que aparece em
+  arquivo de credencial de uso normal ("Credenciais" › "Anexos": `.env`, `.pem`,
+  kubeconfig, JSON de conta de serviço) lido sem má intenção e custa pouco no
+  orçamento de D29; vai para RA3 o que é impressão de depuração do valor ou
+  recodificação, que a skill proíbe (V8.2).
+  - **JSON numa linha (médio): variação.** Em toda linha de texto (UTF-8 válido) de
+    segredo de várias linhas e de anexo, e no segredo de uma linha só que, aparado,
+    começa por `{` ou `[`, cada par `"chave"` + espaços opcionais + `:` + espaços
+    opcionais + string JSON, **em qualquer posição da linha**, dá um valor: a string
+    decodificada pelos escapes do JSON (`\"`, `\\`, `\/`, `\b\f\n\r\t`, `\uXXXX` com par
+    substituto; escape inválido descarta o par). Com 6+ caracteres depois de decodificado,
+    o valor é **valor de linha** (item 4 da tabela de D54, tratado como segredo inteiro).
+    Cobre o anexo `client_secret_*.json` minificado, o extra `{"token":…}`, o objeto
+    aninhado na linha (`"db": {"senha": "…"}`) e duas chaves na mesma linha. Elemento
+    de array sem chave (`["a","b"]`) e o flow do YAML (`{k: v}`) vão para RA3.
+  - **YAML e dotenv (baixos): variação**, no parser de `chave: valor` e de
+    `CHAVE=valor`, cada candidato a mais só quando difere do que já sai:
+    - comentário: valor sem aspas termina antes do primeiro espaço ou tab seguido de
+      `#`, aparado; valor entre aspas (`"…"` ou `'…'`) seguido de espaços e `# …` dá o
+      miolo das aspas. Vale no YAML e no dotenv (`SENHA="v" # nota`, que o `source`
+      lê como `v`);
+    - chave YAML sem aspas com espaço ou `/` (`private key:`, `aws/secret:`): depois do
+      recuo, a chave vai até o primeiro `:` seguido de espaço, tab ou fim, sem `#` nem
+      aspas, e não começa por `-`, `{` nem `[`;
+    - valor YAML entre aspas simples: `''` vira `'` no valor decodificado (o
+      `'it''s'` que o `yq` imprime como `it's`).
+    Motivo de não ir para RA3, como o handoff sugeria: `.env` com comentário no fim e
+    YAML com chave composta são de uso normal, e cada regra gera no máximo um candidato
+    por linha.
+  - **Campos de tab em linha que não é UTF-8 (baixo): variação só pelo literal**
+    (sugestão do handoff). Cada campo de 6+ bytes da linha com tab vira padrão pelo
+    literal (com e sem `\r`, aparado) e pelo percent, sem formas de texto nem base64,
+    como a própria linha binária em D54. O `iconv` da linha e o valor depois do `=`
+    dentro de um campo desses vão para RA3.
+  - **`repr()` do Python (baixo): RA3**, junto com o `util.inspect` do Node (crase
+    quando o valor tem `'` e `"`). É impressão de depuração do valor, cada linguagem
+    tem a sua forma, e a skill manda nunca imprimir variável de credencial.
+  - **Orçamento:** tudo pela função de custo de D29. O JSON dá no máximo um valor por
+    par, e a soma dos valores de uma linha não passa do tamanho dela; YAML, dotenv e
+    tab dão no máximo um candidato a mais por linha. Um anexo JSON minificado grande
+    pode passar dos 4 MiB e é recusado com a mensagem de D29: é a regra, sem afrouxar.
+    A Fase 22a refaz o V2.36 e o V2.43; se uma entrada de D15 (22 com D59) passar a ser
+    recusada, a fase para e devolve ao planner. O `dev/variacoes.py` implementa as
+    mesmas regras, sem chamar a máscara, e o teste cruzado cobre os padrões novos.
+- D62. **Notas do handoff 22** (S3, S7, S8, S9; D14, D20, D39, D50, D53; decisão do
+  planner em 2026-11-09). Fase 22b, depois das 23 e 24 (as três mexem em `crates/wardd`).
+  - **Espera do D20 por papel e guardada no estado.** São dois contadores: o do
+    papel agente (inclui o `ward destravar` da CLI) e o do papel app; o papel extensão
+    não destrava. Erro do agente não atrasa o app. O contador do agente vai para o
+    arquivo de estado (linha nova; o leitor estrito aceita o formato antigo como 0 e o
+    daemon regrava no novo), com fsync **antes** de responder o erro. Ao subir, o
+    daemon aplica a espera desse número à primeira tentativa do agente, contada da
+    partida. Os dois zeram no destravar certo de qualquer papel. O do app fica em
+    memória. Motivo: o mesmo uid mata o `wardd` (negação de serviço fora do modelo), e
+    o systemd o sobe de novo sem espera; com o contador só em memória, matar e
+    reconectar dá umas 6 tentativas a cada 30 s em vez de 2 por minuto, e D20 deixa de
+    proteger. Resíduo, sem trabalho: quem reescreve o arquivo de estado zera o contador
+    (mesma família de RA4); nenhuma operação passa a devolver segredo.
+  - **Erros de PIN continuam em memória.** Reiniciar trava o cofre, e o PIN só vale
+    no papel app depois da senha mestra: o reinício não dá tentativa de PIN a mais a
+    quem não destravou.
+  - **`mlock` (D14 revista).** O `CofreAberto` não expõe a chave, e expor seria API
+    pior. Em vez de travar buffer a buffer, `iniciar_endurecido` chama
+    `mlockall(MCL_CURRENT | MCL_FUTURE | MCL_ONFAULT)`. As units (teste da Fase 24,
+    instalação da Fase 51) levam `LimitMEMLOCK=infinity`, porque com limite o
+    `MCL_FUTURE` faz a alocação do Argon2 falhar. Release: sem `RLIMIT_MEMLOCK`
+    infinito ou com erro do `mlockall`, o `wardd` sai ≠ 0 com mensagem e sem socket
+    (falha fechada). `modo-teste`: com o limite comum do usuário, aviso no log e segue,
+    para o `make dev-daemon` subir. `fork` e `execve` não herdam o travamento, então os
+    filhos (app, `ward run`) não ficam travados. Cobre também a memória do Argon2.
+  - **`criar_cofre` com estado velho não baixa o estado.** Sem cofre e com estado de
+    `queimada` q, o cofre novo nasce na geração q+1 e o estado vai a `vista` =
+    `queimada` = q+1, com aviso no log. Se o núcleo não cria com geração inicial, ganha
+    o parâmetro (mudança pequena no `ward-core`, com teste). Motivo: apagar o cofre,
+    esperar o usuário recriar e pôr no lugar uma cópia antiga abriria a cópia.
+  - **TOCTOU do `stat`.** `gravar_entradas` passa a devolver a identidade (dev, ino,
+    mtime com ns, tamanho) lida por `fstat` do fd do temporário depois do fsync e antes
+    do rename, que não muda esses campos. O daemon usa essa identidade e nunca um
+    `stat` do caminho depois do rename. Mudança pequena no `ward-core`.
+  - **Mudanças da Fase 22 no `ward-core`** (`ItemLista.nivel` como `Option`, `Some` só
+    no papel app; `corpo::abrir_entradas_lida`): aceitas pelo planner (D50, D53). O
+    scrutiny do M3 as revê como código do núcleo.
+  - **Pilha.** O detector da V3.8 mostrou que resto de pilha volta ao heap pelo
+    enchimento de `enum`. Regra para as fases do daemon: segredo não vai para array na
+    pilha; fica em `Segredo`/`Zeroizing` no heap. O handler de SIGSEGV do runtime do
+    Rust fica registrado para a auditoria (só imprime "stack overflow").
+- D63. **Papel app só ao processo que o lançador abriu; app de teste** (handoffs 22 e
+  29a; D7, D8, D47, D57; S1, S10; decisão do planner em 2026-11-09).
+  - **Release (achado do planner).** Hoje o papel app vale para qualquer par com egid
+    `ward-app` e `PPid` igual ao daemon. A partir da Fase 26 o daemon cria filhos do
+    `ward run`, e `ward run <entrada livre> -- /usr/local/bin/ward-app` daria um
+    `ward-app` setgid filho do daemon, com argv, cwd e fds escolhidos pelo agente e um
+    ambiente que ele consegue montar igual ao de D57. Regra: o lançador guarda o pidfd
+    do processo que abriu (tirado no `fork`, antes do `execve`); o papel app exige
+    egid `ward-app` **e** pid igual ao desse pidfd, ainda vivo, **e** `PPid` igual ao
+    daemon. A reexecução de D47 mantém o pid. Todo outro filho do daemon (`ward run`,
+    `ward ssh`, Playwright) fica agente. Fase 23; ataque do `ward run` na Fase 26
+    (V4.38).
+  - **`modo-teste`.** A única diferença é não exigir o egid; o pid do lançador e o pai
+    continuam exigidos. O daemon de teste lê `WARD_DEV_APP` (caminho absoluto do
+    binário de teste, o `ward-app` de teste ou a `ward-ponte-teste`: arquivo regular do
+    uid, sem link, dentro do repositório) e o `abrir_app` lança esse binário por
+    `lancar_para_teste`. O app Tauri de teste recebe o ambiente de D57; a ponte, que não
+    abre janela, um ambiente fixo mínimo (`HOME`, `PATH`, `LANG`, `XDG_RUNTIME_DIR` e as
+    variáveis do `modo-teste`), sem exigir Wayland. Nenhum dos dois herda o ambiente do
+    daemon (D60) nem o do pedido. A saída vai para `.dev/logs/<binário>.log` (0600).
+    `make app-ponte` passa a subir o daemon de teste com `WARD_DEV_APP` da ponte (ou
+    exigir que esteja no ar com ele), pedir `abrir_app` e imprimir a URL com o token
+    lida desse log. Nenhum cliente escolhe o binário nem ganha o papel pedindo. Quem
+    aprova é o humano na ponte, como no app: D8 e V3.15 continuam valendo.
+  - **Por que não outra forma.** Um token em `.dev/` ou uma variável que o cliente
+    apresenta seria uma porta que o protocolo conhece (V3.15). Uma exceção pelo `exe`
+    do par seria a conferência pelo `/proc` que D47 descartou. Com o pid do lançador, o
+    caminho de teste é o do release menos o egid.
+  - **Contra vazar para o release.** A exceção e `WARD_DEV_APP` ficam atrás de
+    `cfg(feature = "modo-teste")`. Nenhum membro do workspace liga `wardd/modo-teste`
+    nem `ward-plataforma/modo-teste` em dependência normal (só em dev-dependency ou por
+    `--features` explícito). Um teste sem a feature confere que o par sem egid aberto
+    pelo lançador fica agente. O V3.37 procura `WARD_DEV_APP` nos binários de release,
+    como o V5.6 faz com `WARD_DEV_DIR`. O build de release (Fase 51) é por pacote
+    (`-p`), nunca `--workspace --all-features`, e o `make install` recusa artefato
+    `modo-teste` (D7).
+  - **Papel na primeira resposta.** A resposta de `estado` traz o papel (`agente`,
+    `app` ou `extensao`, sem nenhum outro dado). O app e a ponte conferem na primeira
+    resposta. Sem `app`, não usam a conexão: o app sai com mensagem (e pede `abrir_app`
+    se o pai não é o daemon, como em D57); a ponte sai com "o daemon não deu o papel
+    app". Protocolo na Fase 23; lado do app e da ponte na 23a.
+  - **Código de saída do filho.** O daemon registra no log o código de saída (ou o
+    sinal) do app que lançou, só o número (handoff 29a; Fase 23).
+  - Resíduo, só no `modo-teste`: qualquer processo do uid que leia o token da ponte em
+    `.dev/logs/` dirige a ponte. Só existem o cofre de teste e credenciais falsas (D7,
+    D15).
+- D64. **Pendências da 29a** (S8, S11, S14; D48, D57; RA7, RA8; decisão do planner em
+  2026-11-09).
+  - **Lista de D57** com as variáveis da 29a e a do MPS (texto de D57 atualizado). A
+    acessibilidade desligada (`NO_AT_BRIDGE=1`, `WEBKIT_A11Y_BUS_ADDRESS`) é decisão do
+    usuário de 2026-11-09, registrada em "App desktop": pelo AT-SPI qualquer processo
+    do uid leria o texto da tela, inclusive o valor revelado, e leitor de tela não
+    funciona no Ward.
+  - **`/tmp/nvidia-mps`: decidido aqui, não em RA8.** O cliente MPS da biblioteca da
+    NVIDIA, no processo web, conecta a `/tmp/nvidia-mps/control`, e em `/tmp` um
+    processo do mesmo uid cria a pasta e escuta. O lançador fixa
+    `CUDA_MPS_PIPE_DIRECTORY=/proc/ward-sem-mps`, caminho que ninguém cria, nem o
+    root. O efeito é o de uma máquina sem servidor MPS (o cliente não acha o canal e
+    segue sem MPS). O app confere a variável como as outras de D57.
+  - **Varredura de canais graváveis.** Com o WebKitGTK real sob `strace -f`, a Fase 29b
+    lista todo `open`/`connect` em pasta onde o uid ou outros escrevem fora de um
+    caminho do root (`/tmp`, `/var/tmp`, `/dev/shm`, `/run/user/<uid>` fora do
+    `wayland-<n>` e do `bus`). Canal novo volta ao planner. Dado do usuário que o GTK lê
+    (tema em `settings.ini`/`gtk.css`, dconf, caches de fonte) fica em RA8.
+  - **V5.31:** o `Dumpable` é lido por `prctl(PR_GET_DUMPABLE)` dentro do processo (o
+    app de teste o imprime na saída), porque o `status` não tem esse campo; o
+    `TracerPid` continua pelo `status`. Contrato ajustado.
+  - **RA7:** se o `cargo deny` do app der `advisory-not-detected` para
+    RUSTSEC-2024-0429 e o `cargo audit` em `app/src-tauri/` não o achar, a exceção sai
+    do `deny.toml` do app; uma exceção sem advisory só esconderia a volta dele. Fase
+    29b; V5.30 ajustada. A 0370 continua com RA7, que vai ao usuário.
+  - **Papel na primeira resposta:** D63.
+
 ### Riscos abertos
 
 - **RA1. `/proc/<pid>/environ` do filho** (decidir antes de fechar o M4). Enquanto o
@@ -1147,7 +1314,10 @@ em `/tmp/claude-1000/-home-jeffersonoliveira-projetos-cofre/d2e230bd-a662-43be-a
   solta de segredo de várias linhas; `printf %q` e `${X@Q}` de valor com controle ou
   fora do ASCII (`$'…'`), o que inclui o `declare -p` de um valor inteiro de várias
   linhas (`$'…\n…'`, com acento em octal; handoff 19e); o `expand` de linha com tab; e
-  as formas de texto de uma linha de anexo que não é UTF-8 válido (D54).
+  as formas de texto de uma linha de anexo que não é UTF-8 válido (D54). Depois da
+  reauditoria da 19e (D61): `repr()` do Python e `util.inspect` do Node de valor com
+  `'` e `"`; `iconv` de linha que não é UTF-8 e o valor depois do `=` num campo de tab
+  dessa linha; elemento de array JSON sem chave e flow do YAML (`{k: v}`).
 - **RA4. Rollback com o daemon parado** (D39; **fechado em 2026-11-08: fora do modelo
   de ameaça por decisão do usuário**, registrado em "Segurança" › "Fora do modelo de
   ameaça"; não há trabalho nem asserção nova). O contador de geração e o arquivo de estado pegam a troca do cofre
@@ -1176,7 +1346,9 @@ em `/tmp/claude-1000/-home-jeffersonoliveira-projetos-cofre/d2e230bd-a662-43be-a
   app-check`; o `cargo audit`/`cargo deny` da raiz continuam sem exceção. Saem quando o
   Tauri passar para gtk-rs ≥ 0.20. Condições: nenhum código do app usa `glib::Variant`
   (o validador confere por `grep`), e uma exceção nova no `deny.toml` do app volta ao
-  planner. Se o usuário recusar, o M5 não fecha até o Tauri subir o gtk-rs.
+  planner. Se o usuário recusar, o M5 não fecha até o Tauri subir o gtk-rs. A Fase 29a
+  viu `advisory-not-detected` para a 0429: se o `cargo audit` também não a acha, a
+  exceção sai (D64, Fase 29b) e fica só a 0370.
 - **RA8. Canais da sessão controlados pelo mesmo uid** (handoff 21b; D57; **aberto,
   vai ao usuário antes de fechar o M4**, porque também toca a Fase 25; não bloqueia a
   29a, cujo código é o mesmo com qualquer resposta). D57 fecha a injeção pelo ambiente,
@@ -1191,7 +1363,9 @@ em `/tmp/claude-1000/-home-jeffersonoliveira-projetos-cofre/d2e230bd-a662-43be-a
   processo do mesmo uid", com o que já reduz o caso (daemon como único pai, ambiente
   fixo, um só socket Wayland, sem X11, senha mestra nunca no Claude). Alternativa:
   conferir o compositor pela cadeia de processos até o gerente de login do root, que é
-  específica do COSMIC, frágil e forjável por um compositor aninhado.
+  específica do COSMIC, frágil e forjável por um compositor aninhado. O
+  `/tmp/nvidia-mps` saiu daqui por D64; tema do GTK (`settings.ini`, `gtk.css`), dconf e
+  caches de fonte, que o app lê do home, entram aqui (handoff 29a).
 
 ## Critérios de aceite
 
@@ -1220,7 +1394,10 @@ em `/tmp/claude-1000/-home-jeffersonoliveira-projetos-cofre/d2e230bd-a662-43be-a
   operação do socket devolve segredo a um cliente comum; V3.2 em Docker (D49);
   conferência do servidor por D46 e papel do app/host por D47 (confirmadas); arquivo
   de estado com `vista` e `queimada` (D53); entrada `delta-api-simbolos` (D59) e
-  variação de D58 no teste cruzado.
+  variação de D58 no teste cruzado; variações de D61 (JSON numa linha, YAML/dotenv,
+  tab em linha binária); espera de D20 por papel e guardada no estado, `mlockall`,
+  geração do `criar_cofre` e identidade pelo fd (D62); papel app só ao pid do lançador
+  e app de teste pelo lançador do daemon de teste (D63).
 - [ ] M4: `ward lista/run/ssh/travar/destravar` contra Postgres e SSH de teste (senha,
   chave com agente temporário, salto, túnel de banco), saída mascarada, anexos
   temporários limpos, nada lido ou gravado em `~/.ssh`; usuário do `sftp`/`scp` por
