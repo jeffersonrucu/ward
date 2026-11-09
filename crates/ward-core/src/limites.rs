@@ -115,6 +115,36 @@ pub const MAX_MINUTOS_TRAVA: u32 = 24 * 60;
 /// (o UUID de 128 bits com hífens; FAT e exFAT usam `XXXX-XXXX`).
 pub const MAX_UUID_BACKUP: usize = 36;
 
+// ---- Protocolo do socket (Fase 20) ----
+
+/// Soma dos bytes secretos que uma entrada pode ter (nota, dois segredos de campo,
+/// os valores dos extras e os anexos somados). Dimensiona o quadro do app.
+pub const MAX_ENTRADA: usize =
+    MAX_NOTA + 2 * MAX_SEGREDO + MAX_EXTRAS * MAX_VALOR_EXTRA + MAX_ANEXOS_SOMADOS;
+/// Soma dos textos comuns de uma entrada (com folga: 32 campos no limite de texto).
+pub const MAX_TEXTOS_ENTRADA: usize =
+    32 * MAX_TEXTO + MAX_TAGS * MAX_TAG + MAX_EXTRAS * MAX_NOME_EXTRA + MAX_ANEXOS * MAX_NOME_ANEXO;
+/// Maior quadro do cliente comum (agente) e do host da extensão (V3.4). Cabe o
+/// `ward run` com o argv e o ambiente da CLI; um quadro de 2 MiB é recusado.
+pub const MAX_QUADRO_COMUM: usize = MIB;
+/// Maior quadro do app já identificado (D5, D29): a maior entrada que a validação
+/// aceita, com os segredos e os 256 KiB de anexos em base64. O módulo do protocolo
+/// confere na compilação que ela cabe.
+pub const MAX_QUADRO_APP: usize = 8 * MIB;
+/// Maior quadro do daemon para o cliente: a lista de um cofre cheio (o texto das
+/// entradas soma no máximo o corpo, e o escape do JSON no máximo dobra) com folga por
+/// entrada.
+pub const MAX_QUADRO_RESPOSTA: usize = 2 * MAX_CORPO + MAX_ENTRADAS * KIB;
+/// Um argumento ou valor de variável de ambiente do `ward run` (o `MAX_ARG_STRLEN` do
+/// Linux).
+pub const MAX_ARGUMENTO: usize = 128 * KIB;
+/// Argumentos do comando do `ward run`/`ward ssh`.
+pub const MAX_ARGUMENTOS: usize = 2048;
+/// Variáveis do ambiente que a CLI repassa.
+pub const MAX_VARIAVEIS_AMBIENTE: usize = 2048;
+/// Texto mostrado na janela de aprovação (o comando exato) e um pedaço de saída.
+pub const MAX_TEXTO_EXIBIDO: usize = 64 * KIB;
+
 // Coerência entre os limites, conferida na compilação.
 const _: () = {
     assert!(MAX_NOME <= MAX_TEXTO);
@@ -136,6 +166,9 @@ const _: () = {
     assert!(MINUTOS_TRAVA_PADRAO <= MAX_MINUTOS_TRAVA);
     assert!(MAX_HASH_PIN <= MAX_TEXTO);
     assert!(MAX_UUID_BACKUP <= MAX_TEXTO);
+    assert!(MAX_QUADRO_COMUM < MAX_QUADRO_APP);
+    assert!(MAX_QUADRO_RESPOSTA <= u32::MAX as usize);
+    assert!(MAX_ARGUMENTO < MAX_QUADRO_COMUM);
     // O comprimento de todo campo cabe no u32 do corpo.
     assert!(MAX_CORPO <= u32::MAX as usize);
 };

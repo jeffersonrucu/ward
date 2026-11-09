@@ -1,0 +1,999 @@
+//! Pedidos do cliente ao daemon: os campos de cada operação, a leitura estrita e a
+//! escrita (lado do cliente).
+//!
+//! Formato e limite são conferidos aqui; regra de negócio (a entrada existe? o PIN
+//! confere? a origem bate?) fica no daemon. Toda entrada nova ou editada ainda passa por
+//! [`Rascunho::validar`] no daemon.
+
+use zeroize::Zeroizing;
+
+use super::Operacao;
+use super::campos::{Campos, R, bytes_de, segredo_de, texto_de, textos_de};
+use super::json::{Escritor, JsonInvalido, Valor};
+use crate::entrada::{
+    NivelAcesso, Rascunho, RascunhoAnexo, RascunhoDados, RascunhoExtra, Segredo, TipoEntrada,
+};
+use crate::limites::{
+    MAX_ANEXOS, MAX_ANEXOS_SOMADOS, MAX_ARGUMENTO, MAX_ARGUMENTOS, MAX_DIGITOS_PIN, MAX_EXTRAS,
+    MAX_MINUTOS_TRAVA, MAX_NOME, MAX_NOME_ANEXO, MAX_NOME_EXTRA, MAX_NOTA, MAX_SEGREDO, MAX_TAG,
+    MAX_TAGS, MAX_TEXTO, MAX_URL, MAX_VALOR_EXTRA, MAX_VARIAVEIS_AMBIENTE, MIN_DIGITOS_PIN,
+    MIN_MINUTOS_TRAVA,
+};
+
+/// Bytes que zeram ao sair (argumento, diretório, nome de variável).
+pub type Bytes = Zeroizing<Vec<u8>>;
+
+/// Uma variável do ambiente da CLI (D13: o daemon tira `LD_*` e afins na Fase 26).
+#[derive(Debug)]
+pub struct Variavel {
+    pub nome: Bytes,
+    pub valor: Segredo,
+}
+
+/// `ward run`: entrada, comando, diretório e ambiente da CLI, em bytes (podem não ser
+/// UTF-8). Sem NUL em nenhum, sem `=` no nome de variável.
+#[derive(Debug)]
+pub struct PedidoExecutar {
+    pub entrada: String,
+    pub argv: Vec<Bytes>,
+    pub cwd: Bytes,
+    pub ambiente: Vec<Variavel>,
+}
+
+/// Tamanho do terminal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Janela {
+    pub linhas: u16,
+    pub colunas: u16,
+}
+
+/// Qual segredo da entrada revelar ou copiar: um campo do tipo (pelo identificador do
+/// protocolo, ex.: `senha`, `chave_privada`) ou um extra secreto pelo nome.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Alvo {
+    Campo(String),
+    Extra(String),
+}
+
+/// Botão da janela de aprovação. Todos menos "Negar" pedem PIN.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Decisao {
+    Negar,
+    PermitirUmaVez,
+    PermitirUmaHora,
+    PermitirSempre,
+}
+
+impl Decisao {
+    const TODAS: [Decisao; 4] = [
+        Decisao::Negar,
+        Decisao::PermitirUmaVez,
+        Decisao::PermitirUmaHora,
+        Decisao::PermitirSempre,
+    ];
+
+    /// Nome no quadro.
+    pub fn nome(self) -> &'static str {
+        match self {
+            Decisao::Negar => "negar",
+            Decisao::PermitirUmaVez => "uma_vez",
+            Decisao::PermitirUmaHora => "uma_hora",
+            Decisao::PermitirSempre => "sempre",
+        }
+    }
+
+    /// Pede PIN?
+    pub fn pede_pin(self) -> bool {
+        self != Decisao::Negar
+    }
+}
+
+/// Pedido do cliente. Segredos em [`Segredo`] (zera ao sair, `Debug` sem valor).
+#[derive(Debug)]
+pub enum Pedido {
+    Estado,
+    Destravar {
+        senha: Segredo,
+    },
+    Travar,
+    Lista,
+    Executar(PedidoExecutar),
+    Ssh {
+        entrada: String,
+        /// Comando remoto (vazio = shell interativo).
+        comando: Vec<Bytes>,
+        /// Token do "Conectar" (D3); sem token vale o nível.
+        token: Option<Segredo>,
+        janela: Option<Janela>,
+    },
+    Login {
+        entrada: String,
+    },
+    Playwright {
+        entrada: String,
+    },
+    EntradaPadrao {
+        dados: Segredo,
+    },
+    Janela(Janela),
+    CriarCofre {
+        senha: Segredo,
+        pin: Segredo,
+    },
+    Detalhe {
+        entrada: String,
+    },
+    Revelar {
+        entrada: String,
+        alvo: Alvo,
+    },
+    Copiar {
+        entrada: String,
+        alvo: Alvo,
+    },
+    Totp {
+        entrada: String,
+    },
+    SalvarEntrada {
+        /// Nome atual da entrada editada; `None` cria.
+        anterior: Option<String>,
+        rascunho: Rascunho,
+    },
+    RemoverEntrada {
+        entrada: String,
+    },
+    MudarNivel {
+        entrada: String,
+        nivel: NivelAcesso,
+        pin: Segredo,
+    },
+    ResponderAprovacao {
+        pedido: u64,
+        decisao: Decisao,
+        /// Presente se e só se a decisão pede PIN.
+        pin: Option<Segredo>,
+    },
+    EmitirToken {
+        entrada: String,
+    },
+    TrocarPin {
+        atual: Segredo,
+        novo: Segredo,
+    },
+    TrocarSenha {
+        atual: Segredo,
+        nova: Segredo,
+    },
+    TempoTrava {
+        minutos: u32,
+    },
+    Sugerir {
+        origem: String,
+    },
+    Preencher {
+        entrada: String,
+        origem: String,
+    },
+    SalvarLogin {
+        /// Sempre `RascunhoDados::Login`.
+        rascunho: Rascunho,
+    },
+}
+
+impl Pedido {
+    /// A operação deste pedido.
+    pub fn operacao(&self) -> Operacao {
+        match self {
+            Pedido::Estado => Operacao::Estado,
+            Pedido::Destravar { .. } => Operacao::Destravar,
+            Pedido::Travar => Operacao::Travar,
+            Pedido::Lista => Operacao::Lista,
+            Pedido::Executar(_) => Operacao::Executar,
+            Pedido::Ssh { .. } => Operacao::Ssh,
+            Pedido::Login { .. } => Operacao::Login,
+            Pedido::Playwright { .. } => Operacao::Playwright,
+            Pedido::EntradaPadrao { .. } => Operacao::EntradaPadrao,
+            Pedido::Janela(_) => Operacao::Janela,
+            Pedido::CriarCofre { .. } => Operacao::CriarCofre,
+            Pedido::Detalhe { .. } => Operacao::Detalhe,
+            Pedido::Revelar { .. } => Operacao::Revelar,
+            Pedido::Copiar { .. } => Operacao::Copiar,
+            Pedido::Totp { .. } => Operacao::Totp,
+            Pedido::SalvarEntrada { .. } => Operacao::SalvarEntrada,
+            Pedido::RemoverEntrada { .. } => Operacao::RemoverEntrada,
+            Pedido::MudarNivel { .. } => Operacao::MudarNivel,
+            Pedido::ResponderAprovacao { .. } => Operacao::ResponderAprovacao,
+            Pedido::EmitirToken { .. } => Operacao::EmitirToken,
+            Pedido::TrocarPin { .. } => Operacao::TrocarPin,
+            Pedido::TrocarSenha { .. } => Operacao::TrocarSenha,
+            Pedido::TempoTrava { .. } => Operacao::TempoTrava,
+            Pedido::Sugerir { .. } => Operacao::Sugerir,
+            Pedido::Preencher { .. } => Operacao::Preencher,
+            Pedido::SalvarLogin { .. } => Operacao::SalvarLogin,
+        }
+    }
+
+    /// Confere o que a leitura conferiria, antes de escrever (o cliente não manda o que
+    /// o daemon recusaria por formato).
+    pub(crate) fn conferir(&self) -> R<()> {
+        let ok = |c: bool| if c { Ok(()) } else { Err(JsonInvalido) };
+        match self {
+            Pedido::Destravar { senha } => ok(senha_ok(senha)),
+            Pedido::CriarCofre { senha, pin } => ok(senha_ok(senha) && pin_ok(pin)),
+            Pedido::MudarNivel { entrada, pin, .. } => ok(nome_ok(entrada) && pin_ok(pin)),
+            Pedido::TrocarPin { atual, novo } => ok(pin_ok(atual) && pin_ok(novo)),
+            Pedido::TrocarSenha { atual, nova } => ok(senha_ok(atual) && senha_ok(nova)),
+            Pedido::ResponderAprovacao { decisao, pin, .. } => ok(match pin {
+                Some(p) => decisao.pede_pin() && pin_ok(p),
+                None => !decisao.pede_pin(),
+            }),
+            Pedido::TempoTrava { minutos } => {
+                ok((MIN_MINUTOS_TRAVA..=MAX_MINUTOS_TRAVA).contains(minutos))
+            }
+            Pedido::Executar(x) => ok(nome_ok(&x.entrada)
+                && comando_ok(&x.argv, true)
+                && !x.cwd.is_empty()
+                && x.cwd.len() <= MAX_ARGUMENTO
+                && sem_nul(&x.cwd)
+                && x.ambiente.len() <= MAX_VARIAVEIS_AMBIENTE
+                && x.ambiente.iter().all(variavel_ok)),
+            Pedido::Ssh {
+                entrada,
+                comando,
+                token,
+                janela,
+            } => ok(nome_ok(entrada)
+                && comando_ok(comando, false)
+                && token
+                    .as_ref()
+                    .is_none_or(|t| !t.is_empty() && t.len() <= MAX_NOME)
+                && janela.is_none_or(janela_ok)),
+            Pedido::Janela(j) => ok(janela_ok(*j)),
+            Pedido::EntradaPadrao { dados } => ok(dados.len() <= MAX_ARGUMENTO),
+            Pedido::Login { entrada }
+            | Pedido::Playwright { entrada }
+            | Pedido::Detalhe { entrada }
+            | Pedido::Totp { entrada }
+            | Pedido::RemoverEntrada { entrada }
+            | Pedido::EmitirToken { entrada } => ok(nome_ok(entrada)),
+            Pedido::Revelar { entrada, alvo } | Pedido::Copiar { entrada, alvo } => {
+                ok(nome_ok(entrada) && alvo_ok(alvo))
+            }
+            Pedido::Sugerir { origem } => ok(origem.len() <= MAX_URL),
+            Pedido::Preencher { entrada, origem } => {
+                ok(nome_ok(entrada) && origem.len() <= MAX_URL)
+            }
+            Pedido::SalvarEntrada { anterior, rascunho } => {
+                ok(anterior.as_deref().is_none_or(nome_ok) && rascunho_ok(rascunho))
+            }
+            Pedido::SalvarLogin { rascunho } => {
+                ok(matches!(rascunho.dados, RascunhoDados::Login { .. }) && rascunho_ok(rascunho))
+            }
+            Pedido::Estado | Pedido::Travar | Pedido::Lista => Ok(()),
+        }
+    }
+
+    /// Escreve os `dados` do pedido.
+    pub(crate) fn escrever(&self, e: &mut Escritor) {
+        match self {
+            Pedido::Estado | Pedido::Travar | Pedido::Lista => {}
+            Pedido::Destravar { senha } => {
+                e.chave("senha");
+                e.base64(senha.expor());
+            }
+            Pedido::Executar(x) => {
+                e.chave("entrada");
+                e.texto(&x.entrada);
+                e.chave("argv");
+                escrever_bytes(e, &x.argv);
+                e.chave("cwd");
+                e.base64(&x.cwd);
+                e.chave("ambiente");
+                e.lista(|e| {
+                    for v in &x.ambiente {
+                        e.item();
+                        e.objeto(|e| {
+                            e.chave("nome");
+                            e.base64(&v.nome);
+                            e.chave("valor");
+                            e.base64(v.valor.expor());
+                        });
+                    }
+                });
+            }
+            Pedido::Ssh {
+                entrada,
+                comando,
+                token,
+                janela,
+            } => {
+                e.chave("entrada");
+                e.texto(entrada);
+                e.chave("comando");
+                escrever_bytes(e, comando);
+                if let Some(t) = token {
+                    e.chave("token");
+                    e.base64(t.expor());
+                }
+                if let Some(j) = janela {
+                    e.chave("janela");
+                    e.objeto(|e| escrever_janela(e, *j));
+                }
+            }
+            Pedido::Login { entrada }
+            | Pedido::Playwright { entrada }
+            | Pedido::Detalhe { entrada }
+            | Pedido::Totp { entrada }
+            | Pedido::RemoverEntrada { entrada }
+            | Pedido::EmitirToken { entrada } => {
+                e.chave("entrada");
+                e.texto(entrada);
+            }
+            Pedido::EntradaPadrao { dados } => {
+                e.chave("dados");
+                e.base64(dados.expor());
+            }
+            Pedido::Janela(j) => escrever_janela(e, *j),
+            Pedido::CriarCofre { senha, pin } => {
+                e.chave("senha");
+                e.base64(senha.expor());
+                e.chave("pin");
+                e.base64(pin.expor());
+            }
+            Pedido::Revelar { entrada, alvo } | Pedido::Copiar { entrada, alvo } => {
+                e.chave("entrada");
+                e.texto(entrada);
+                match alvo {
+                    Alvo::Campo(c) => {
+                        e.chave("campo");
+                        e.texto(c);
+                    }
+                    Alvo::Extra(x) => {
+                        e.chave("extra");
+                        e.texto(x);
+                    }
+                }
+            }
+            Pedido::SalvarEntrada { anterior, rascunho } => {
+                if let Some(a) = anterior {
+                    e.chave("anterior");
+                    e.texto(a);
+                }
+                e.chave("entrada");
+                e.objeto(|e| escrever_rascunho(e, rascunho));
+            }
+            Pedido::SalvarLogin { rascunho } => {
+                e.chave("entrada");
+                e.objeto(|e| escrever_rascunho(e, rascunho));
+            }
+            Pedido::MudarNivel {
+                entrada,
+                nivel,
+                pin,
+            } => {
+                e.chave("entrada");
+                e.texto(entrada);
+                e.chave("nivel");
+                e.texto(nivel.nome());
+                e.chave("pin");
+                e.base64(pin.expor());
+            }
+            Pedido::ResponderAprovacao {
+                pedido,
+                decisao,
+                pin,
+            } => {
+                e.chave("pedido");
+                e.inteiro(*pedido);
+                e.chave("decisao");
+                e.texto(decisao.nome());
+                if let Some(p) = pin {
+                    e.chave("pin");
+                    e.base64(p.expor());
+                }
+            }
+            Pedido::TrocarPin { atual, novo } => {
+                e.chave("atual");
+                e.base64(atual.expor());
+                e.chave("novo");
+                e.base64(novo.expor());
+            }
+            Pedido::TrocarSenha { atual, nova } => {
+                e.chave("atual");
+                e.base64(atual.expor());
+                e.chave("nova");
+                e.base64(nova.expor());
+            }
+            Pedido::TempoTrava { minutos } => {
+                e.chave("minutos");
+                e.inteiro(u64::from(*minutos));
+            }
+            Pedido::Sugerir { origem } => {
+                e.chave("origem");
+                e.texto(origem);
+            }
+            Pedido::Preencher { entrada, origem } => {
+                e.chave("entrada");
+                e.texto(entrada);
+                e.chave("origem");
+                e.texto(origem);
+            }
+        }
+    }
+}
+
+// ---- Conferências de formato (as mesmas na leitura e na escrita) ----
+
+fn nome_ok(n: &str) -> bool {
+    !n.is_empty() && n.len() <= MAX_NOME
+}
+
+fn senha_ok(s: &Segredo) -> bool {
+    !s.is_empty() && s.len() <= MAX_SEGREDO
+}
+
+/// PIN: de 4 a 6 dígitos ASCII. Quem confere contra o hash é o daemon (S9).
+fn pin_ok(p: &Segredo) -> bool {
+    let b = p.expor();
+    (MIN_DIGITOS_PIN..=MAX_DIGITOS_PIN).contains(&b.len()) && b.iter().all(u8::is_ascii_digit)
+}
+
+fn sem_nul(b: &[u8]) -> bool {
+    !b.contains(&0)
+}
+
+fn comando_ok(argv: &[Bytes], exige: bool) -> bool {
+    (!exige || !argv.is_empty())
+        && argv.len() <= MAX_ARGUMENTOS
+        && argv.iter().all(|a| a.len() <= MAX_ARGUMENTO && sem_nul(a))
+}
+
+fn variavel_ok(v: &Variavel) -> bool {
+    !v.nome.is_empty()
+        && v.nome.len() <= MAX_ARGUMENTO
+        && sem_nul(&v.nome)
+        && !v.nome.contains(&b'=')
+        && v.valor.len() <= MAX_ARGUMENTO
+        && sem_nul(v.valor.expor())
+}
+
+fn janela_ok(j: Janela) -> bool {
+    j.linhas > 0 && j.colunas > 0
+}
+
+fn alvo_ok(a: &Alvo) -> bool {
+    match a {
+        Alvo::Campo(c) => CAMPOS_SECRETOS.contains(&c.as_str()),
+        Alvo::Extra(x) => !x.is_empty() && x.len() <= MAX_NOME_EXTRA,
+    }
+}
+
+/// Identificadores dos campos secretos de todos os tipos (os mesmos do rascunho).
+pub(crate) const CAMPOS_SECRETOS: &[&str] = &[
+    "senha",
+    "totp_semente",
+    "chave_privada",
+    "passphrase",
+    "token",
+    "secret_access_key",
+    "session_token",
+    "texto",
+];
+
+fn rascunho_ok(r: &Rascunho) -> bool {
+    let anexos: usize = r.anexos.iter().map(|a| a.conteudo.len()).sum();
+    let textos = [&r.grupo, &r.ambiente, &r.projeto];
+    nome_ok(&r.nome)
+        && textos.iter().all(|t| t.len() <= MAX_TEXTO)
+        && r.tags.len() <= MAX_TAGS
+        && r.tags.iter().all(|t| t.len() <= MAX_TAG)
+        && r.extras.len() <= MAX_EXTRAS
+        && r.extras
+            .iter()
+            .all(|x| x.nome.len() <= MAX_NOME_EXTRA && x.valor.len() <= MAX_VALOR_EXTRA)
+        && r.anexos.len() <= MAX_ANEXOS
+        && r.anexos.iter().all(|a| a.nome.len() <= MAX_NOME_ANEXO)
+        && anexos <= MAX_ANEXOS_SOMADOS
+        && campos_do_rascunho(&r.dados).iter().all(|c| match c {
+            CampoRascunho::Texto(_, t) => t.len() <= MAX_TEXTO,
+            CampoRascunho::Segredo(k, s) => s.len() <= max_segredo(k),
+        })
+}
+
+fn max_segredo(campo: &str) -> usize {
+    if campo == "texto" {
+        MAX_NOTA
+    } else {
+        MAX_SEGREDO
+    }
+}
+
+// ---- Leitura ----
+
+/// Lê os `dados` da operação (o papel já foi conferido).
+pub(crate) fn ler(op: Operacao, mut c: Campos) -> R<Pedido> {
+    let p = match op {
+        Operacao::Estado => Pedido::Estado,
+        Operacao::Travar => Pedido::Travar,
+        Operacao::Lista => Pedido::Lista,
+        Operacao::Destravar => Pedido::Destravar {
+            senha: c.segredo("senha", MAX_SEGREDO)?,
+        },
+        Operacao::Executar => {
+            let entrada = c.texto("entrada", MAX_NOME)?;
+            let argv = ler_bytes(c.lista("argv", MAX_ARGUMENTOS)?)?;
+            let cwd = c.bytes("cwd", MAX_ARGUMENTO)?;
+            let mut ambiente = Vec::new();
+            for v in c.lista("ambiente", MAX_VARIAVEIS_AMBIENTE)? {
+                let mut o = Campos::de(v)?;
+                let nome = o.bytes("nome", MAX_ARGUMENTO)?;
+                let valor = o.segredo("valor", MAX_ARGUMENTO)?;
+                o.fim()?;
+                ambiente.push(Variavel { nome, valor });
+            }
+            Pedido::Executar(PedidoExecutar {
+                entrada,
+                argv,
+                cwd,
+                ambiente,
+            })
+        }
+        Operacao::Ssh => {
+            let entrada = c.texto("entrada", MAX_NOME)?;
+            let comando = ler_bytes(c.lista_ou_vazia("comando", MAX_ARGUMENTOS)?)?;
+            let token = c.segredo_opc("token", MAX_NOME)?;
+            let janela = match c.tirar("janela") {
+                Some(v) => Some(ler_janela(Campos::de(v)?)?),
+                None => None,
+            };
+            Pedido::Ssh {
+                entrada,
+                comando,
+                token,
+                janela,
+            }
+        }
+        Operacao::Login => Pedido::Login {
+            entrada: c.texto("entrada", MAX_NOME)?,
+        },
+        Operacao::Playwright => Pedido::Playwright {
+            entrada: c.texto("entrada", MAX_NOME)?,
+        },
+        Operacao::EntradaPadrao => Pedido::EntradaPadrao {
+            dados: c.segredo("dados", MAX_ARGUMENTO)?,
+        },
+        Operacao::Janela => {
+            let j = ler_janela(c)?;
+            return conferido(Pedido::Janela(j));
+        }
+        Operacao::CriarCofre => Pedido::CriarCofre {
+            senha: c.segredo("senha", MAX_SEGREDO)?,
+            pin: c.segredo("pin", MAX_DIGITOS_PIN)?,
+        },
+        Operacao::Detalhe => Pedido::Detalhe {
+            entrada: c.texto("entrada", MAX_NOME)?,
+        },
+        Operacao::Revelar | Operacao::Copiar => {
+            let entrada = c.texto("entrada", MAX_NOME)?;
+            let alvo = match (c.tirar("campo"), c.tirar("extra")) {
+                (Some(v), None) => Alvo::Campo(texto_de(v, MAX_NOME)?),
+                (None, Some(v)) => Alvo::Extra(texto_de(v, MAX_NOME_EXTRA)?),
+                _ => return Err(JsonInvalido),
+            };
+            if op == Operacao::Revelar {
+                Pedido::Revelar { entrada, alvo }
+            } else {
+                Pedido::Copiar { entrada, alvo }
+            }
+        }
+        Operacao::Totp => Pedido::Totp {
+            entrada: c.texto("entrada", MAX_NOME)?,
+        },
+        Operacao::SalvarEntrada => {
+            let anterior = c.texto_opc("anterior", MAX_NOME)?;
+            let rascunho = ler_rascunho(c.objeto("entrada")?)?;
+            Pedido::SalvarEntrada { anterior, rascunho }
+        }
+        Operacao::RemoverEntrada => Pedido::RemoverEntrada {
+            entrada: c.texto("entrada", MAX_NOME)?,
+        },
+        Operacao::MudarNivel => {
+            let entrada = c.texto("entrada", MAX_NOME)?;
+            let nivel = NivelAcesso::de_nome(&c.texto("nivel", MAX_NOME)?).ok_or(JsonInvalido)?;
+            let pin = c.segredo("pin", MAX_DIGITOS_PIN)?;
+            Pedido::MudarNivel {
+                entrada,
+                nivel,
+                pin,
+            }
+        }
+        Operacao::ResponderAprovacao => {
+            let pedido = c.inteiro("pedido")?;
+            let nome = c.texto("decisao", MAX_NOME)?;
+            let decisao = Decisao::TODAS
+                .into_iter()
+                .find(|d| d.nome() == nome)
+                .ok_or(JsonInvalido)?;
+            let pin = c.segredo_opc("pin", MAX_DIGITOS_PIN)?;
+            Pedido::ResponderAprovacao {
+                pedido,
+                decisao,
+                pin,
+            }
+        }
+        Operacao::EmitirToken => Pedido::EmitirToken {
+            entrada: c.texto("entrada", MAX_NOME)?,
+        },
+        Operacao::TrocarPin => Pedido::TrocarPin {
+            atual: c.segredo("atual", MAX_DIGITOS_PIN)?,
+            novo: c.segredo("novo", MAX_DIGITOS_PIN)?,
+        },
+        Operacao::TrocarSenha => Pedido::TrocarSenha {
+            atual: c.segredo("atual", MAX_SEGREDO)?,
+            nova: c.segredo("nova", MAX_SEGREDO)?,
+        },
+        Operacao::TempoTrava => Pedido::TempoTrava {
+            minutos: u32::try_from(c.inteiro("minutos")?).map_err(|_| JsonInvalido)?,
+        },
+        Operacao::Sugerir => Pedido::Sugerir {
+            origem: c.texto("origem", MAX_URL)?,
+        },
+        Operacao::Preencher => Pedido::Preencher {
+            entrada: c.texto("entrada", MAX_NOME)?,
+            origem: c.texto("origem", MAX_URL)?,
+        },
+        Operacao::SalvarLogin => Pedido::SalvarLogin {
+            rascunho: ler_rascunho(c.objeto("entrada")?)?,
+        },
+    };
+    c.fim()?;
+    conferido(p)
+}
+
+fn conferido(p: Pedido) -> R<Pedido> {
+    p.conferir()?;
+    Ok(p)
+}
+
+fn ler_bytes(v: Vec<Valor>) -> R<Vec<Bytes>> {
+    v.into_iter().map(|a| bytes_de(a, MAX_ARGUMENTO)).collect()
+}
+
+fn escrever_bytes(e: &mut Escritor, l: &[Bytes]) {
+    e.lista(|e| {
+        for a in l {
+            e.item();
+            e.base64(a);
+        }
+    });
+}
+
+fn ler_janela(mut c: Campos) -> R<Janela> {
+    let linhas = u16::try_from(c.inteiro("linhas")?).map_err(|_| JsonInvalido)?;
+    let colunas = u16::try_from(c.inteiro("colunas")?).map_err(|_| JsonInvalido)?;
+    c.fim()?;
+    Ok(Janela { linhas, colunas })
+}
+
+fn escrever_janela(e: &mut Escritor, j: Janela) {
+    e.chave("linhas");
+    e.inteiro(u64::from(j.linhas));
+    e.chave("colunas");
+    e.inteiro(u64::from(j.colunas));
+}
+
+// ---- Rascunho (formulário da entrada) ----
+//
+// {"nome", "grupo", "ambiente", "projeto"?, "tags"?: [..], "tipo",
+//  "campos"?: {<campo do tipo>: texto | base64}, "extras"?: [{"nome", "valor", "segredo"}],
+//  "anexos"?: [{"nome", "conteudo"}]}
+//
+// Sem "nivel": entrada nova nasce "com aprovação" e editar mantém o nível (S9). Campo
+// do tipo ausente é "não informado" (texto vazio ou segredo `None`).
+
+/// Um campo do tipo como o protocolo o vê.
+enum CampoRascunho<'a> {
+    Texto(&'static str, &'a String),
+    Segredo(&'static str, &'a Segredo),
+}
+
+/// Os campos preenchidos do rascunho, na ordem do tipo.
+fn campos_do_rascunho(d: &RascunhoDados) -> Vec<CampoRascunho<'_>> {
+    use CampoRascunho::{Segredo as S, Texto as T};
+    let mut v = Vec::new();
+    macro_rules! t {
+        ($k:literal, $x:expr) => {
+            if !$x.is_empty() {
+                v.push(T($k, $x));
+            }
+        };
+    }
+    macro_rules! s {
+        ($k:literal, $x:expr) => {
+            if let Some(x) = $x {
+                v.push(S($k, x));
+            }
+        };
+    }
+    match d {
+        RascunhoDados::Login {
+            url,
+            usuario,
+            senha,
+            totp_semente,
+        } => {
+            t!("url", url);
+            t!("usuario", usuario);
+            s!("senha", senha);
+            s!("totp_semente", totp_semente);
+        }
+        RascunhoDados::Banco {
+            motor,
+            host,
+            porta,
+            base,
+            usuario,
+            senha,
+            tunel,
+        } => {
+            t!("motor", motor);
+            t!("host", host);
+            t!("porta", porta);
+            t!("base", base);
+            t!("usuario", usuario);
+            s!("senha", senha);
+            t!("tunel", tunel);
+        }
+        RascunhoDados::Servidor {
+            host,
+            porta,
+            usuario,
+            senha,
+            chave_privada,
+            passphrase,
+            salto,
+        } => {
+            t!("host", host);
+            t!("porta", porta);
+            t!("usuario", usuario);
+            s!("senha", senha);
+            s!("chave_privada", chave_privada);
+            s!("passphrase", passphrase);
+            t!("salto", salto);
+        }
+        RascunhoDados::Api {
+            url,
+            token,
+            variavel,
+        } => {
+            t!("url", url);
+            s!("token", token);
+            t!("variavel", variavel);
+        }
+        RascunhoDados::Aws {
+            access_key_id,
+            secret_access_key,
+            regiao,
+            role_arn,
+            session_token,
+        } => {
+            t!("access_key_id", access_key_id);
+            s!("secret_access_key", secret_access_key);
+            t!("regiao", regiao);
+            t!("role_arn", role_arn);
+            s!("session_token", session_token);
+        }
+        RascunhoDados::Smtp {
+            host,
+            porta,
+            usuario,
+            senha,
+            seguranca,
+        } => {
+            t!("host", host);
+            t!("porta", porta);
+            t!("usuario", usuario);
+            s!("senha", senha);
+            t!("seguranca", seguranca);
+        }
+        RascunhoDados::FtpSftp {
+            protocolo,
+            host,
+            porta,
+            usuario,
+            senha,
+            chave_privada,
+            passphrase,
+        } => {
+            t!("protocolo", protocolo);
+            t!("host", host);
+            t!("porta", porta);
+            t!("usuario", usuario);
+            s!("senha", senha);
+            s!("chave_privada", chave_privada);
+            s!("passphrase", passphrase);
+        }
+        RascunhoDados::NotaSegura { texto } => {
+            s!("texto", texto);
+        }
+        RascunhoDados::Generico => {}
+    }
+    v
+}
+
+fn ler_dados(tipo: TipoEntrada, mut c: Campos) -> R<RascunhoDados> {
+    let t = |c: &mut Campos, k: &str| c.texto_ou_vazio(k, MAX_TEXTO);
+    let s = |c: &mut Campos, k: &str| c.segredo_opc(k, max_segredo(k));
+    let d = match tipo {
+        TipoEntrada::Login => RascunhoDados::Login {
+            url: t(&mut c, "url")?,
+            usuario: t(&mut c, "usuario")?,
+            senha: s(&mut c, "senha")?,
+            totp_semente: s(&mut c, "totp_semente")?,
+        },
+        TipoEntrada::Banco => RascunhoDados::Banco {
+            motor: t(&mut c, "motor")?,
+            host: t(&mut c, "host")?,
+            porta: t(&mut c, "porta")?,
+            base: t(&mut c, "base")?,
+            usuario: t(&mut c, "usuario")?,
+            senha: s(&mut c, "senha")?,
+            tunel: t(&mut c, "tunel")?,
+        },
+        TipoEntrada::Servidor => RascunhoDados::Servidor {
+            host: t(&mut c, "host")?,
+            porta: t(&mut c, "porta")?,
+            usuario: t(&mut c, "usuario")?,
+            senha: s(&mut c, "senha")?,
+            chave_privada: s(&mut c, "chave_privada")?,
+            passphrase: s(&mut c, "passphrase")?,
+            salto: t(&mut c, "salto")?,
+        },
+        TipoEntrada::Api => RascunhoDados::Api {
+            url: t(&mut c, "url")?,
+            token: s(&mut c, "token")?,
+            variavel: t(&mut c, "variavel")?,
+        },
+        TipoEntrada::Aws => RascunhoDados::Aws {
+            access_key_id: t(&mut c, "access_key_id")?,
+            secret_access_key: s(&mut c, "secret_access_key")?,
+            regiao: t(&mut c, "regiao")?,
+            role_arn: t(&mut c, "role_arn")?,
+            session_token: s(&mut c, "session_token")?,
+        },
+        TipoEntrada::Smtp => RascunhoDados::Smtp {
+            host: t(&mut c, "host")?,
+            porta: t(&mut c, "porta")?,
+            usuario: t(&mut c, "usuario")?,
+            senha: s(&mut c, "senha")?,
+            seguranca: t(&mut c, "seguranca")?,
+        },
+        TipoEntrada::FtpSftp => RascunhoDados::FtpSftp {
+            protocolo: t(&mut c, "protocolo")?,
+            host: t(&mut c, "host")?,
+            porta: t(&mut c, "porta")?,
+            usuario: t(&mut c, "usuario")?,
+            senha: s(&mut c, "senha")?,
+            chave_privada: s(&mut c, "chave_privada")?,
+            passphrase: s(&mut c, "passphrase")?,
+        },
+        TipoEntrada::NotaSegura => RascunhoDados::NotaSegura {
+            texto: s(&mut c, "texto")?,
+        },
+        TipoEntrada::Generico => RascunhoDados::Generico,
+    };
+    // Campo de outro tipo (ou inventado, como "nivel") recusa.
+    c.fim()?;
+    Ok(d)
+}
+
+fn ler_rascunho(mut c: Campos) -> R<Rascunho> {
+    let nome = c.texto("nome", MAX_NOME)?;
+    let grupo = c.texto_ou_vazio("grupo", MAX_TEXTO)?;
+    let ambiente = c.texto_ou_vazio("ambiente", MAX_TEXTO)?;
+    let projeto = c.texto_ou_vazio("projeto", MAX_TEXTO)?;
+    let tags = textos_de(c.lista_ou_vazia("tags", MAX_TAGS)?, MAX_TAG)?;
+    let tipo = TipoEntrada::de_nome(&c.texto("tipo", MAX_NOME)?).ok_or(JsonInvalido)?;
+    let dados = ler_dados(tipo, c.objeto_ou_vazio("campos")?)?;
+    let mut extras = Vec::new();
+    for v in c.lista_ou_vazia("extras", MAX_EXTRAS)? {
+        let mut o = Campos::de(v)?;
+        let nome = o.texto("nome", MAX_NOME_EXTRA)?;
+        let valor = o.segredo("valor", MAX_VALOR_EXTRA)?;
+        let segredo = o.logico("segredo")?;
+        o.fim()?;
+        extras.push(RascunhoExtra {
+            nome,
+            valor,
+            segredo,
+        });
+    }
+    let mut anexos = Vec::new();
+    let mut soma = 0usize;
+    for v in c.lista_ou_vazia("anexos", MAX_ANEXOS)? {
+        let mut o = Campos::de(v)?;
+        let nome = o.texto("nome", MAX_NOME_ANEXO)?;
+        // O limite de cada um é o que ainda cabe na soma (D29).
+        let conteudo = segredo_de(
+            o.tirar("conteudo").ok_or(JsonInvalido)?,
+            MAX_ANEXOS_SOMADOS - soma,
+        )?;
+        o.fim()?;
+        soma += conteudo.len();
+        anexos.push(RascunhoAnexo { nome, conteudo });
+    }
+    c.fim()?;
+    Ok(Rascunho {
+        nome,
+        grupo,
+        ambiente,
+        projeto,
+        tags,
+        dados,
+        extras,
+        anexos,
+    })
+}
+
+fn escrever_rascunho(e: &mut Escritor, r: &Rascunho) {
+    e.chave("nome");
+    e.texto(&r.nome);
+    e.chave("grupo");
+    e.texto(&r.grupo);
+    e.chave("ambiente");
+    e.texto(&r.ambiente);
+    if !r.projeto.is_empty() {
+        e.chave("projeto");
+        e.texto(&r.projeto);
+    }
+    e.chave("tags");
+    e.lista(|e| {
+        for t in &r.tags {
+            e.item();
+            e.texto(t);
+        }
+    });
+    e.chave("tipo");
+    e.texto(r.dados.tipo().nome());
+    e.chave("campos");
+    e.objeto(|e| {
+        for c in campos_do_rascunho(&r.dados) {
+            match c {
+                CampoRascunho::Texto(k, t) => {
+                    e.chave(k);
+                    e.texto(t);
+                }
+                CampoRascunho::Segredo(k, s) => {
+                    e.chave(k);
+                    e.base64(s.expor());
+                }
+            }
+        }
+    });
+    e.chave("extras");
+    e.lista(|e| {
+        for x in &r.extras {
+            e.item();
+            e.objeto(|e| {
+                e.chave("nome");
+                e.texto(&x.nome);
+                e.chave("valor");
+                e.base64(x.valor.expor());
+                e.chave("segredo");
+                e.logico(x.segredo);
+            });
+        }
+    });
+    e.chave("anexos");
+    e.lista(|e| {
+        for a in &r.anexos {
+            e.item();
+            e.objeto(|e| {
+                e.chave("nome");
+                e.texto(&a.nome);
+                e.chave("conteudo");
+                e.base64(a.conteudo.expor());
+            });
+        }
+    });
+}

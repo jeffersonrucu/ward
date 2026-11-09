@@ -16,6 +16,10 @@ argon2 = { version = "0.6.0", default-features = false, features = ["alloc", "ze
 # com a guardada, em tempo constante. É o mesmo crate que o `phc` já usa (estava no
 # `Cargo.lock`); nada novo entra na árvore.
 ctutils = { version = "0.4.8", default-features = false }
+# `base64ct` (Fase 20): base64 de tempo constante dos segredos no protocolo do socket
+# (RustCrypto). Já estava no `Cargo.lock` (dependência do `password-hash`/`phc`); nada
+# novo entra na árvore.
+base64ct = { version = "1.8.3", default-features = false }
 chacha20poly1305 = { version = "0.11.0", default-features = false, features = ["alloc", "zeroize"] }
 getrandom = { version = "0.4.3", default-features = false }
 # HMAC-SHA1 do TOTP (RFC 6238, Fase 18), do RustCrypto; `zeroize` zera o estado ao sair.
