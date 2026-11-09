@@ -14,6 +14,7 @@ use ward_app_nucleo::ErroApp;
 use ward_app_nucleo::area_transferencia::AreaTransferencia;
 use ward_app_nucleo::comandos::Comando;
 use ward_app_nucleo::daemon::Daemon;
+use ward_app_nucleo::formulario::Formulario;
 use ward_app_nucleo::gerador::Opcoes;
 use ward_app_nucleo::servico::Servico;
 use zeroize::Zeroizing;
@@ -244,6 +245,55 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Ponte<D, A> {
                 .map(|r| json!({ "valor": r.expor() })),
             Comando::DescartarSenhaGerada => {
                 self.servico.descartar_senha_gerada().map(|()| Value::Null)
+            }
+            // S11 (D65 b): o valor só no "revelar", como no app.
+            Comando::RevelarCampo => match (texto("entrada"), texto("campo")) {
+                (Some(e), Some(c)) => self
+                    .servico
+                    .revelar_campo(e, c)
+                    .map(|r| json!({ "valor": r.expor() })),
+                _ => Err(ErroApp::PedidoInvalido),
+            },
+            Comando::CodigoTotp => match texto("entrada") {
+                Some(e) => self
+                    .servico
+                    .codigo_totp(e)
+                    .and_then(|c| serde_json::to_value(c).map_err(|_| ErroApp::RespostaInvalida)),
+                None => Err(ErroApp::PedidoInvalido),
+            },
+            Comando::CopiarCodigoTotp => match texto("entrada") {
+                Some(e) => self.servico.copiar_codigo_totp(e).map(|()| Value::Null),
+                None => Err(ErroApp::PedidoInvalido),
+            },
+            Comando::UsarSenhaGerada => match texto("campo") {
+                Some(c) => self
+                    .servico
+                    .usar_senha_gerada(c)
+                    .map(|t| json!({ "tamanho": t })),
+                None => Err(ErroApp::PedidoInvalido),
+            },
+            Comando::DescartarFormulario => {
+                self.servico.descartar_formulario();
+                Ok(Value::Null)
+            }
+            Comando::SalvarCredencial => {
+                let anterior = match args.get("anterior") {
+                    None | Some(Value::Null) => Ok(None),
+                    Some(Value::String(a)) => Ok(Some(a.as_str())),
+                    Some(_) => Err(ErroApp::PedidoInvalido),
+                };
+                let formulario = args
+                    .get("formulario")
+                    .cloned()
+                    .map(serde_json::from_value::<Formulario>)
+                    .and_then(Result::ok)
+                    .ok_or(ErroApp::PedidoInvalido);
+                match (anterior, formulario) {
+                    (Ok(a), Ok(f)) => self.servico.salvar_credencial(a, f).and_then(|r| {
+                        serde_json::to_value(r).map_err(|_| ErroApp::RespostaInvalida)
+                    }),
+                    _ => Err(ErroApp::PedidoInvalido),
+                }
             }
         };
         match resultado {

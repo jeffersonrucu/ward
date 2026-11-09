@@ -32,6 +32,22 @@ pub const COPIAR_SENHA_GERADA: &str = "copiar_senha_gerada";
 pub const REVELAR_SENHA_GERADA: &str = "revelar_senha_gerada";
 /// `descartar_senha_gerada`: zera a senha avulsa ao sair da tela.
 pub const DESCARTAR_SENHA_GERADA: &str = "descartar_senha_gerada";
+/// `revelar_campo { entrada, campo }`: o valor de um segredo da entrada, só no clique em
+/// "revelar" (S11, D65 b). A tela o tira em 30 s, ao esconder ou ao sair.
+pub const REVELAR_CAMPO: &str = "revelar_campo";
+/// `codigo_totp { entrada }`: o código TOTP atual e os segundos até trocar (Fase 33).
+/// A semente nunca vai à interface.
+pub const CODIGO_TOTP: &str = "codigo_totp";
+/// `copiar_codigo_totp { entrada }`: o código vai para a área de transferência (D4).
+pub const COPIAR_CODIGO_TOTP: &str = "copiar_codigo_totp";
+/// `usar_senha_gerada { campo }`: "Usar esta senha" do gerador do formulário. A senha
+/// passa ao campo no lado Rust; a resposta traz só o tamanho.
+pub const USAR_SENHA_GERADA: &str = "usar_senha_gerada";
+/// `descartar_formulario`: ao cancelar ou sair do formulário, zera as senhas usadas.
+pub const DESCARTAR_FORMULARIO: &str = "descartar_formulario";
+/// `salvar_credencial { anterior, formulario }`: cria ou edita uma entrada (Fase 33).
+/// Segredo mantido e senha gerada são postos no rascunho pelo lado Rust.
+pub const SALVAR_CREDENCIAL: &str = "salvar_credencial";
 
 /// Todos os comandos, na ordem em que aparecem nas capabilities.
 pub const COMANDOS: &[&str] = &[
@@ -43,6 +59,12 @@ pub const COMANDOS: &[&str] = &[
     COPIAR_SENHA_GERADA,
     REVELAR_SENHA_GERADA,
     DESCARTAR_SENHA_GERADA,
+    REVELAR_CAMPO,
+    CODIGO_TOTP,
+    COPIAR_CODIGO_TOTP,
+    USAR_SENHA_GERADA,
+    DESCARTAR_FORMULARIO,
+    SALVAR_CREDENCIAL,
 ];
 
 /// Nome da permissão gerada pelo Tauri para o comando (`allow-estado-do-cofre`).
@@ -61,6 +83,12 @@ pub enum Comando {
     CopiarSenhaGerada,
     RevelarSenhaGerada,
     DescartarSenhaGerada,
+    RevelarCampo,
+    CodigoTotp,
+    CopiarCodigoTotp,
+    UsarSenhaGerada,
+    DescartarFormulario,
+    SalvarCredencial,
 }
 
 impl Comando {
@@ -74,6 +102,12 @@ impl Comando {
             COPIAR_SENHA_GERADA => Some(Comando::CopiarSenhaGerada),
             REVELAR_SENHA_GERADA => Some(Comando::RevelarSenhaGerada),
             DESCARTAR_SENHA_GERADA => Some(Comando::DescartarSenhaGerada),
+            REVELAR_CAMPO => Some(Comando::RevelarCampo),
+            CODIGO_TOTP => Some(Comando::CodigoTotp),
+            COPIAR_CODIGO_TOTP => Some(Comando::CopiarCodigoTotp),
+            USAR_SENHA_GERADA => Some(Comando::UsarSenhaGerada),
+            DESCARTAR_FORMULARIO => Some(Comando::DescartarFormulario),
+            SALVAR_CREDENCIAL => Some(Comando::SalvarCredencial),
             _ => None,
         }
     }
@@ -143,6 +177,12 @@ mod testes {
                 "copiar_senha_gerada",
                 "revelar_senha_gerada",
                 "descartar_senha_gerada",
+                "revelar_campo",
+                "codigo_totp",
+                "copiar_codigo_totp",
+                "usar_senha_gerada",
+                "descartar_formulario",
+                "salvar_credencial",
             ]
         );
         assert_eq!(permissao(COPIAR_CAMPO), "allow-copiar-campo");

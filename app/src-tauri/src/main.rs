@@ -21,9 +21,10 @@ use ward_app_nucleo::ErroApp;
 use ward_app_nucleo::area_transferencia::{Copiador, Wayland};
 use ward_app_nucleo::credenciais::{DetalheCredencial, ItemCredencial};
 use ward_app_nucleo::daemon::DaemonSocket;
+use ward_app_nucleo::formulario::Formulario;
 use ward_app_nucleo::gerador::Opcoes;
 use ward_app_nucleo::partida;
-use ward_app_nucleo::servico::Servico;
+use ward_app_nucleo::servico::{CodigoTotp, ResultadoSalvar, Servico};
 
 type ServicoApp = Servico<DaemonSocket, Wayland>;
 
@@ -147,6 +148,62 @@ fn descartar_senha_gerada(estado: State<'_, Estado>) -> Result<(), Falha> {
     Ok(estado.servico()?.descartar_senha_gerada()?)
 }
 
+/// S11 (D65 b): o valor de um segredo da entrada, só no clique em "revelar".
+#[tauri::command]
+fn revelar_campo(
+    entrada: String,
+    campo: String,
+    estado: State<'_, Estado>,
+) -> Result<RespostaRevelada, Falha> {
+    let r = estado.servico()?.revelar_campo(&entrada, &campo)?;
+    Ok(RespostaRevelada {
+        valor: r.expor().to_owned(),
+    })
+}
+
+/// Formulário (Fase 33): o código TOTP atual; a semente não sai do daemon.
+#[tauri::command]
+fn codigo_totp(entrada: String, estado: State<'_, Estado>) -> Result<CodigoTotp, Falha> {
+    Ok(estado.servico()?.codigo_totp(&entrada)?)
+}
+
+/// D4: o código TOTP vai para a área de transferência aqui.
+#[tauri::command]
+fn copiar_codigo_totp(entrada: String, estado: State<'_, Estado>) -> Result<(), Falha> {
+    Ok(estado.servico()?.copiar_codigo_totp(&entrada)?)
+}
+
+#[derive(Serialize)]
+struct RespostaUsada {
+    tamanho: usize,
+}
+
+/// "Usar esta senha": a senha gerada passa ao campo no lado Rust; volta só o tamanho.
+#[tauri::command]
+fn usar_senha_gerada(campo: String, estado: State<'_, Estado>) -> Result<RespostaUsada, Falha> {
+    let tamanho = estado.servico()?.usar_senha_gerada(&campo)?;
+    Ok(RespostaUsada { tamanho })
+}
+
+#[tauri::command]
+fn descartar_formulario(estado: State<'_, Estado>) -> Result<(), Falha> {
+    estado.servico()?.descartar_formulario();
+    Ok(())
+}
+
+/// Formulário (Fase 33): cria ou edita. O formulário vem da interface (não confiável)
+/// e é conferido no núcleo; a resposta é o nome salvo ou os erros por campo.
+#[tauri::command]
+fn salvar_credencial(
+    anterior: Option<String>,
+    formulario: Formulario,
+    estado: State<'_, Estado>,
+) -> Result<ResultadoSalvar, Falha> {
+    Ok(estado
+        .servico()?
+        .salvar_credencial(anterior.as_deref(), formulario)?)
+}
+
 fn montar_servico(daemon: Result<DaemonSocket, ErroApp>) -> Result<ServicoApp, ErroApp> {
     let daemon = daemon?;
     let area = Wayland::novo()?;
@@ -172,7 +229,13 @@ fn com_comandos<R: Runtime>(builder: Builder<R>, estado: Estado) -> Builder<R> {
             gerar_senha,
             copiar_senha_gerada,
             revelar_senha_gerada,
-            descartar_senha_gerada
+            descartar_senha_gerada,
+            revelar_campo,
+            codigo_totp,
+            copiar_codigo_totp,
+            usar_senha_gerada,
+            descartar_formulario,
+            salvar_credencial
         ])
 }
 
@@ -378,6 +441,60 @@ mod testes {
                 "{comando} com origem remota: {r:?}"
             );
         }
+    }
+
+    /// Fase 33 (S11): os comandos do formulário e o `revelar_campo` só passam pela ACL
+    /// na janela `principal` com a origem local; formulário fora do formato é recusado
+    /// antes do serviço.
+    #[test]
+    fn ataque_formulario_so_na_janela_certa() {
+        let app = app_de_teste();
+        let principal = WebviewWindowBuilder::new(&app, "principal", Default::default())
+            .build()
+            .unwrap();
+        let outra = WebviewWindowBuilder::new(&app, "outra", Default::default())
+            .build()
+            .unwrap();
+        let formulario = serde_json::json!({
+            "anterior": null,
+            "formulario": {"tipo": "login", "nome": "x", "grupo": "g", "ambiente": "dev",
+                "projeto": "", "tags": [], "campos": {}, "segredos": {}, "extras": []},
+            "entrada": "acme-wp-dev", "campo": "senha"
+        });
+        for comando in [
+            "revelar_campo",
+            "codigo_totp",
+            "copiar_codigo_totp",
+            "usar_senha_gerada",
+            "descartar_formulario",
+            "salvar_credencial",
+        ] {
+            let r = chamar(&outra, comando, ORIGEM, formulario.clone());
+            assert!(
+                r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+                "{comando} em janela sem capability: {r:?}"
+            );
+            let r = chamar(
+                &principal,
+                comando,
+                "https://example.com",
+                formulario.clone(),
+            );
+            assert!(
+                r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+                "{comando} com origem remota: {r:?}"
+            );
+        }
+        let forjado = serde_json::json!({
+            "formulario": {"tipo": "login", "nome": "x", "grupo": "g", "ambiente": "dev",
+                "projeto": "", "tags": [], "campos": {}, "segredos": {}, "extras": [],
+                "nivel": "livre"}
+        });
+        let r = chamar(&principal, "salvar_credencial", ORIGEM, forjado);
+        assert!(
+            r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+            "campo a mais: {r:?}"
+        );
     }
 
     #[test]

@@ -2,8 +2,11 @@
 //! (`ward-ponte-teste`) chamam só isto, então os dois têm o mesmo conjunto de comandos
 //! e as mesmas respostas. Nenhuma resposta carrega segredo (S1, S11, D4).
 
+use std::collections::BTreeMap;
 use std::sync::{Mutex, MutexGuard};
 
+use serde::Serialize;
+use ward_core::entrada::{Rascunho, Segredo as SegredoCore};
 use ward_core::protocolo::Alvo;
 
 use crate::ErroApp;
@@ -12,14 +15,58 @@ use crate::cliente;
 use crate::comandos::{Referencia, validar_nome_entrada};
 use crate::credenciais::{DetalheCredencial, ItemCredencial};
 use crate::daemon::{Daemon, EstadoCofre};
+use crate::formulario::{self, ErroCampo, Falta, Fontes, Formulario};
 use crate::gerador::{Gerada, Gerador, Opcoes, Revelada};
 use crate::segredo::Segredo;
+
+/// Campos do formulário que aceitam "Usar esta senha" (o `Campo secreto` com gerar no
+/// design é só o da senha).
+const CAMPOS_GERAVEIS: &[&str] = &["senha"];
+
+/// Resposta do `salvar_credencial`: o nome salvo, ou os erros por campo. Sem valor.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ResultadoSalvar {
+    pub salvo: Option<String>,
+    pub erros: Vec<ErroCampo>,
+}
+
+/// Código TOTP para a interface (o código é mostrado, a semente nunca).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct CodigoTotp {
+    pub codigo: String,
+    pub restante: u64,
+}
 
 pub struct Servico<D: Daemon, A: AreaTransferencia> {
     daemon: Mutex<D>,
     copiador: Copiador<A>,
     /// Senha avulsa da tela `Gerador de senha` (Fase 37), só em memória.
     gerador: Mutex<Gerador>,
+    /// Senhas que o gerador do formulário passou a um campo ("Usar esta senha"), só em
+    /// memória, até salvar, cancelar ou sair.
+    usadas: Mutex<BTreeMap<String, Segredo>>,
+}
+
+/// Valores que o formulário pede sem passar pela interface.
+struct FontesDoServico<'a, D: Daemon> {
+    daemon: &'a mut D,
+    entrada: Option<&'a str>,
+    usadas: &'a BTreeMap<String, Segredo>,
+}
+
+impl<D: Daemon> Fontes for FontesDoServico<'_, D> {
+    fn guardado(&mut self, alvo: Alvo) -> Result<SegredoCore, ErroApp> {
+        let entrada = self.entrada.ok_or(ErroApp::PedidoInvalido)?;
+        let s = cliente::revelar(self.daemon, entrada, alvo)?;
+        Ok(SegredoCore::de_bytes(s.expor().to_vec()))
+    }
+
+    fn gerada(&mut self, campo: &str) -> Result<SegredoCore, ErroApp> {
+        self.usadas
+            .get(campo)
+            .map(|s| SegredoCore::de_bytes(s.expor().to_vec()))
+            .ok_or(ErroApp::SemSenhaGerada)
+    }
 }
 
 impl<D: Daemon, A: AreaTransferencia> Servico<D, A> {
@@ -28,6 +75,7 @@ impl<D: Daemon, A: AreaTransferencia> Servico<D, A> {
             daemon: Mutex::new(daemon),
             copiador,
             gerador: Mutex::new(Gerador::default()),
+            usadas: Mutex::new(BTreeMap::new()),
         }
     }
 
@@ -118,6 +166,160 @@ impl<D: Daemon, A: AreaTransferencia> Servico<D, A> {
         Ok(())
     }
 
+    /// `revelar_campo`: o valor de um segredo da entrada (campo do tipo ou extra
+    /// secreto), só no clique em "revelar" (S11). Campo de texto não passa por aqui.
+    pub fn revelar_campo(&self, entrada: &str, campo: &str) -> Result<Revelada, ErroApp> {
+        let referencia = Referencia::nova(entrada, campo)?;
+        let mut d = self.daemon()?;
+        let detalhe = cliente::detalhe(&mut *d, referencia.entrada())?;
+        let campo = referencia.campo();
+        let alvo = if detalhe.segredos.iter().any(|s| s == campo) {
+            Alvo::Campo(campo.to_owned())
+        } else if detalhe
+            .extras
+            .iter()
+            .any(|x| x.nome == campo && x.valor.is_none())
+        {
+            Alvo::Extra(campo.to_owned())
+        } else {
+            return Err(ErroApp::CampoInexistente);
+        };
+        let valor = cliente::revelar(&mut *d, referencia.entrada(), alvo)?;
+        Revelada::de_segredo(&valor).ok_or(ErroApp::Recusado)
+    }
+
+    /// `codigo_totp`: o código atual da entrada e os segundos até trocar.
+    pub fn codigo_totp(&self, entrada: &str) -> Result<CodigoTotp, ErroApp> {
+        validar_nome_entrada(entrada)?;
+        let c = cliente::totp(&mut *self.daemon()?, entrada)?;
+        Ok(CodigoTotp {
+            codigo: c.codigo.as_str().to_owned(),
+            restante: c.restante,
+        })
+    }
+
+    /// `copiar_codigo_totp`: o código vai para a área de transferência (D4).
+    pub fn copiar_codigo_totp(&self, entrada: &str) -> Result<(), ErroApp> {
+        validar_nome_entrada(entrada)?;
+        let c = cliente::totp(&mut *self.daemon()?, entrada)?;
+        self.copiador
+            .copiar(Segredo::novo(c.codigo.as_bytes().to_vec()))
+    }
+
+    /// `usar_senha_gerada { campo }`: a senha do gerador passa para o campo do
+    /// formulário, no lado Rust. A interface recebe só o tamanho (para a máscara).
+    pub fn usar_senha_gerada(&self, campo: &str) -> Result<usize, ErroApp> {
+        let campo = CAMPOS_GERAVEIS
+            .iter()
+            .find(|c| **c == campo)
+            .ok_or(ErroApp::PedidoInvalido)?;
+        let senha = self.gerador_travado()?.para_copiar()?;
+        let tamanho = senha.len();
+        self.usadas_travadas().insert((*campo).to_owned(), senha);
+        Ok(tamanho)
+    }
+
+    /// `descartar_formulario`: ao cancelar ou sair do formulário, zera as senhas usadas
+    /// e a do gerador.
+    pub fn descartar_formulario(&self) {
+        self.usadas_travadas().clear();
+        if let Ok(mut g) = self.gerador_travado() {
+            g.descartar();
+        }
+    }
+
+    /// `salvar_credencial { anterior?, formulario }`: monta o rascunho no lado Rust
+    /// (segredos mantidos e senha gerada não passam pela interface) e manda o
+    /// `salvar_entrada`. A resposta é o nome salvo ou os erros por campo.
+    pub fn salvar_credencial(
+        &self,
+        anterior: Option<&str>,
+        mut f: Formulario,
+    ) -> Result<ResultadoSalvar, ErroApp> {
+        let tipo = formulario::tipo_do_formulario(&f.tipo).ok_or(ErroApp::PedidoInvalido)?;
+        if let Some(a) = anterior {
+            validar_nome_entrada(a)?;
+        }
+        let mut d = self.daemon()?;
+        let editada = match anterior {
+            Some(a) => {
+                let det = cliente::detalhe(&mut *d, a)?;
+                if det.tipo != tipo {
+                    return Err(ErroApp::PedidoInvalido);
+                }
+                if !det.anexos.is_empty() {
+                    return Err(ErroApp::AnexosNaoMantidos);
+                }
+                Some(det)
+            }
+            None => None,
+        };
+        let extras_guardados: Vec<String> = editada
+            .as_ref()
+            .map(|det| {
+                det.extras
+                    .iter()
+                    .filter(|x| x.valor.is_none())
+                    .map(|x| x.nome.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
+        let editando = editada
+            .as_ref()
+            .map(|det| (det.segredos.as_slice(), extras_guardados.as_slice()));
+        let usadas = self.usadas_travadas();
+        let mut fontes = FontesDoServico {
+            daemon: &mut *d,
+            entrada: anterior,
+            usadas: &usadas,
+        };
+        let montado = match formulario::montar(&mut f, tipo, editando, &mut fontes) {
+            Ok(m) => m,
+            Err(Falta::App(e)) => return Err(e),
+            Err(Falta::Campos(erros)) => {
+                return Ok(ResultadoSalvar { salvo: None, erros });
+            }
+        };
+        drop(usadas);
+        let nome = f.nome.clone();
+        let rascunho = Rascunho {
+            nome: f.nome,
+            grupo: f.grupo,
+            ambiente: f.ambiente,
+            projeto: f.projeto,
+            tags: f.tags,
+            dados: montado.dados,
+            extras: montado.extras,
+            anexos: Vec::new(),
+        };
+        if let Err(erros) = formulario::validar_local(&rascunho) {
+            return Ok(ResultadoSalvar { salvo: None, erros });
+        }
+        match cliente::salvar(&mut *d, anterior.map(str::to_owned), rascunho)? {
+            cliente::Salvamento::Salvo => {
+                drop(d);
+                self.descartar_formulario();
+                Ok(ResultadoSalvar {
+                    salvo: Some(nome),
+                    erros: Vec::new(),
+                })
+            }
+            cliente::Salvamento::Problemas(p) => Ok(ResultadoSalvar {
+                salvo: None,
+                erros: formulario::erros_do_daemon(&p),
+            }),
+        }
+    }
+
+    fn usadas_travadas(&self) -> MutexGuard<'_, BTreeMap<String, Segredo>> {
+        // Pânico com o lock na mão: as senhas usadas são descartadas.
+        self.usadas.lock().unwrap_or_else(|e| {
+            let mut m = e.into_inner();
+            m.clear();
+            m
+        })
+    }
+
     fn gerador_travado(&self) -> Result<std::sync::MutexGuard<'_, Gerador>, ErroApp> {
         // Um pânico com o lock na mão não deixa a senha presa: o estado é descartado.
         Ok(self.gerador.lock().unwrap_or_else(|e| {
@@ -131,9 +333,7 @@ impl<D: Daemon, A: AreaTransferencia> Servico<D, A> {
     /// senha avulsa.
     pub fn ao_sair(&self) {
         self.copiador.limpar_agora();
-        if let Ok(mut g) = self.gerador_travado() {
-            g.descartar();
-        }
+        self.descartar_formulario();
     }
 }
 
@@ -354,6 +554,277 @@ mod testes {
             s.detalhe_credencial("nao-existe").unwrap_err(),
             ErroApp::EntradaInexistente
         );
+    }
+
+    fn form(json: serde_json::Value) -> Formulario {
+        serde_json::from_value(json).unwrap()
+    }
+
+    fn login_novo(nome: &str) -> serde_json::Value {
+        serde_json::json!({
+            "tipo": "login", "nome": nome, "grupo": "acme", "ambiente": "dev",
+            "projeto": "site", "tags": ["wordpress", "painel"],
+            "campos": {"url": "https://painel.exemplo.com/login", "usuario": "wp_novo"},
+            "segredos": {"senha": {"novo": "falso-nova-senha-77"},
+                          "totp_semente": {"novo": "jbsw y3dp ehpk 3pxp"}},
+            "extras": [{"nome": "SITE_ID", "segredo": false, "valor": {"novo": "acme-site-01"}}]
+        })
+    }
+
+    /// Fase 33 (V5.10): cria um `login` (com a semente normalizada) e o edita mantendo a
+    /// senha guardada, sem que o valor volte à interface.
+    #[test]
+    fn salvar_novo_e_editar_mantendo_segredo() {
+        let (s, _) = servico();
+        let r = s
+            .salvar_credencial(None, form(login_novo("acme-wp-novo")))
+            .unwrap();
+        assert_eq!(r.salvo.as_deref(), Some("acme-wp-novo"), "{r:?}");
+        let d = s.detalhe_credencial("acme-wp-novo").unwrap();
+        assert_eq!(d.nivel, "com-aprovacao");
+        assert_eq!(d.tags, ["wordpress", "painel"]);
+        assert_eq!(
+            s.revelar_campo("acme-wp-novo", "totp_semente")
+                .unwrap()
+                .expor(),
+            "JBSWY3DPEHPK3PXP"
+        );
+        assert_eq!(s.codigo_totp("acme-wp-novo").unwrap().codigo.len(), 6);
+        // Edição de uma entrada `livre`: mantém a senha, renomeia, o nível fica.
+        let edicao = serde_json::json!({
+            "tipo": "login", "nome": "acme-totp-dev2", "grupo": "acme", "ambiente": "dev",
+            "projeto": "", "tags": [],
+            "campos": {"url": "http://localhost:8083/login", "usuario": "wp_admin"},
+            "segredos": {"senha": "manter", "totp_semente": "manter"},
+            "extras": []
+        });
+        let r = s
+            .salvar_credencial(Some("acme-totp-dev"), form(edicao))
+            .unwrap();
+        assert_eq!(r.salvo.as_deref(), Some("acme-totp-dev2"), "{r:?}");
+        assert_eq!(
+            s.detalhe_credencial("acme-totp-dev2").unwrap().nivel,
+            "livre"
+        );
+        assert_eq!(
+            s.revelar_campo("acme-totp-dev2", "senha").unwrap().expor(),
+            "falso-WP-senha-01"
+        );
+        assert_eq!(
+            s.detalhe_credencial("acme-totp-dev").unwrap_err(),
+            ErroApp::EntradaInexistente
+        );
+    }
+
+    /// V5.10: salvar sem obrigatório volta o erro no campo (do `ward-core`), sem valor.
+    #[test]
+    fn salvar_sem_obrigatorio_mostra_erro_no_campo() {
+        let (s, _) = servico();
+        let vazio = serde_json::json!({
+            "tipo": "login", "nome": "", "grupo": "", "ambiente": "", "projeto": "",
+            "tags": [], "campos": {}, "segredos": {"senha": {"novo": "falso-x-123456"}}, "extras": []
+        });
+        let r = s.salvar_credencial(None, form(vazio)).unwrap();
+        assert_eq!(r.salvo, None);
+        let campos: Vec<_> = r.erros.iter().map(|e| e.campo).collect();
+        for c in ["nome", "grupo", "ambiente", "url", "usuario"] {
+            assert!(campos.contains(&c), "{c}: {r:?}");
+        }
+        assert!(!serde_json::to_string(&r).unwrap().contains("falso-x"));
+        // Nome repetido: erro do daemon no campo nome.
+        let r = s
+            .salvar_credencial(None, form(login_novo("acme-wp-dev")))
+            .unwrap();
+        assert!(r.erros.iter().any(|e| e.campo == "nome"), "{r:?}");
+    }
+
+    /// D35/V5.13: `otpauth://` com SHA256, 8 dígitos ou 60 s é recusado ao salvar, com a
+    /// mensagem fixa no campo da semente, e nada é gravado.
+    #[test]
+    fn ataque_otpauth_nao_suportado_nao_e_salvo() {
+        let (s, _) = servico();
+        for uri in [
+            "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&algorithm=SHA256",
+            "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&digits=8",
+            "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&period=60",
+        ] {
+            let mut j = login_novo("acme-otp-novo");
+            j["segredos"]["totp_semente"] = serde_json::json!({ "novo": uri });
+            let r = s.salvar_credencial(None, form(j)).unwrap();
+            assert_eq!(r.salvo, None);
+            assert_eq!(r.erros[0].campo, "totp_semente");
+            assert_eq!(r.erros[0].motivo, "parâmetros de TOTP não suportados");
+            assert_eq!(
+                s.detalhe_credencial("acme-otp-novo").unwrap_err(),
+                ErroApp::EntradaInexistente
+            );
+        }
+        let mut j = login_novo("acme-otp-novo");
+        j["segredos"]["totp_semente"] = serde_json::json!({
+            "novo": "otpauth://totp/Acme?secret=JBSWY3DPEHPK3PXP&algorithm=SHA1&digits=6&period=30"
+        });
+        assert!(s.salvar_credencial(None, form(j)).unwrap().salvo.is_some());
+    }
+
+    /// V5.14: o gerador do formulário preenche a senha no lado Rust: "usar" devolve só o
+    /// tamanho, e o salvo é a senha gerada.
+    #[test]
+    fn gerador_do_formulario_preenche_a_senha_sem_passar_pela_interface() {
+        let (s, _) = servico();
+        assert_eq!(s.usar_senha_gerada("senha"), Err(ErroApp::SemSenhaGerada));
+        s.gerar_senha(crate::gerador::Opcoes {
+            tamanho: 32,
+            ..opcoes()
+        })
+        .unwrap();
+        let gerada = s.revelar_senha_gerada().unwrap().expor().to_owned();
+        assert_eq!(s.usar_senha_gerada("senha"), Ok(32));
+        for campo in ["token", "totp_semente", "", "senha "] {
+            assert_eq!(
+                s.usar_senha_gerada(campo),
+                Err(ErroApp::PedidoInvalido),
+                "{campo:?}"
+            );
+        }
+        let mut j = login_novo("acme-gerada");
+        j["segredos"]["senha"] = serde_json::json!("gerada");
+        let r = s.salvar_credencial(None, form(j)).unwrap();
+        assert_eq!(r.salvo.as_deref(), Some("acme-gerada"));
+        assert_eq!(
+            s.revelar_campo("acme-gerada", "senha").unwrap().expor(),
+            gerada
+        );
+        // Depois de salvar, a senha usada some.
+        let mut j = login_novo("acme-gerada-2");
+        j["segredos"]["senha"] = serde_json::json!("gerada");
+        assert_eq!(
+            s.salvar_credencial(None, form(j)),
+            Err(ErroApp::SemSenhaGerada)
+        );
+    }
+
+    /// S11: "manter" só vale na edição e só para segredo que a entrada editada tem; não
+    /// dá para puxar o segredo de outra entrada para uma nova. Tipo não muda na edição,
+    /// chave de campo de outro tipo é recusada, e entrada com anexos não é editada (os
+    /// anexos seriam apagados).
+    #[test]
+    fn ataque_formulario_forjado_pela_interface() {
+        let (s, _) = servico();
+        let mut j = login_novo("acme-roubo");
+        j["segredos"]["senha"] = serde_json::json!("manter");
+        assert_eq!(
+            s.salvar_credencial(None, form(j)),
+            Err(ErroApp::PedidoInvalido)
+        );
+        let mut j = login_novo("acme-roubo");
+        j["extras"] = serde_json::json!([
+            {"nome": "X", "segredo": false, "valor": {"manter": "CHAVE_LICENCA"}}
+        ]);
+        assert_eq!(
+            s.salvar_credencial(None, form(j)),
+            Err(ErroApp::PedidoInvalido)
+        );
+        // Na edição de outra entrada, o extra que ela não tem também não vale.
+        let mut e = login_novo("acme-wp-dev");
+        e["extras"] = serde_json::json!([
+            {"nome": "X", "segredo": true, "valor": {"manter": "CHAVE_LICENCA"}}
+        ]);
+        assert_eq!(
+            s.salvar_credencial(Some("acme-wp-dev"), form(e)),
+            Err(ErroApp::PedidoInvalido)
+        );
+        // Tipo trocado na edição.
+        let mut t = login_novo("beta-github-api");
+        t["campos"] = serde_json::json!({});
+        assert_eq!(
+            s.salvar_credencial(Some("beta-github-api"), form(t)),
+            Err(ErroApp::PedidoInvalido)
+        );
+        // Campo de outro tipo.
+        let mut c = login_novo("acme-x");
+        c["campos"]["host"] = serde_json::json!("127.0.0.1");
+        assert_eq!(
+            s.salvar_credencial(None, form(c)),
+            Err(ErroApp::PedidoInvalido)
+        );
+        // Tipo da Fase 34 e tipo inventado.
+        for tipo in ["banco", "servidor", "ftp-sftp", "root", ""] {
+            let mut c = login_novo("acme-x");
+            c["tipo"] = serde_json::json!(tipo);
+            assert_eq!(
+                s.salvar_credencial(None, form(c)),
+                Err(ErroApp::PedidoInvalido),
+                "{tipo}"
+            );
+        }
+        // Anexos.
+        let g = serde_json::json!({
+            "tipo": "generico", "nome": "gama-generico", "grupo": "gama", "ambiente": "stage",
+            "projeto": "", "tags": [], "campos": {}, "segredos": {},
+            "extras": [{"nome": "REGIAO", "segredo": false, "valor": {"novo": "r-02"}}]
+        });
+        assert_eq!(
+            s.salvar_credencial(Some("gama-generico"), form(g)),
+            Err(ErroApp::AnexosNaoMantidos)
+        );
+        assert_eq!(
+            s.detalhe_credencial("gama-generico").unwrap().anexos.len(),
+            1
+        );
+        // Nome anterior fora do formato nem chega ao daemon.
+        assert_eq!(
+            s.salvar_credencial(Some("acme\n"), form(login_novo("x"))),
+            Err(ErroApp::PedidoInvalido)
+        );
+    }
+
+    /// V5.3/V5.11 (D65 b): só o `revelar_campo` leva valor; nenhuma outra resposta do
+    /// formulário (salvar, TOTP) carrega segredo do cofre. Campo de texto não é
+    /// "revelado".
+    #[test]
+    fn ataque_revelar_so_de_segredo_e_respostas_sem_segredo() {
+        let (s, area) = servico();
+        assert_eq!(
+            s.revelar_campo("acme-pg-dev", "senha").unwrap().expor(),
+            "falso-PG:s3nha/01@#"
+        );
+        assert_eq!(
+            s.revelar_campo("gama-generico", "CHAVE_LICENCA")
+                .unwrap()
+                .expor(),
+            "falso-licenca-01"
+        );
+        assert_eq!(
+            s.revelar_campo("gama-generico", "REGIAO").unwrap_err(),
+            ErroApp::CampoInexistente
+        );
+        assert_eq!(
+            s.revelar_campo("acme-pg-dev", "host").unwrap_err(),
+            ErroApp::CampoInexistente
+        );
+        assert_eq!(
+            s.revelar_campo("acme-pg-dev\n", "senha").unwrap_err(),
+            ErroApp::PedidoInvalido
+        );
+        assert!(
+            !format!("{:?}", s.revelar_campo("acme-pg-dev", "senha").unwrap()).contains("falso")
+        );
+        let totp = serde_json::to_string(&s.codigo_totp("acme-wp-dev").unwrap()).unwrap();
+        sem_segredo(&totp, "totp");
+        assert_eq!(
+            s.codigo_totp("acme-pg-dev").unwrap_err(),
+            ErroApp::CampoInexistente
+        );
+        s.copiar_codigo_totp("acme-wp-dev").unwrap();
+        assert_eq!(area.0.lock().unwrap().as_ref().map(Vec::len), Some(6));
+        let mut j = login_novo("acme-edit");
+        j["segredos"]["senha"] = serde_json::json!({"novo": "falso-WP-senha-01"});
+        let r = serde_json::to_string(&s.salvar_credencial(None, form(j)).unwrap()).unwrap();
+        sem_segredo(&r, "salvar");
+        for item in s.listar_credenciais().unwrap() {
+            let d = serde_json::to_string(&s.detalhe_credencial(&item.nome).unwrap()).unwrap();
+            sem_segredo(&d, &item.nome);
+        }
     }
 
     #[test]
