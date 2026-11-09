@@ -26,12 +26,38 @@ export PATH="$PATH:$CASA_PASSWD/.cargo/bin"
 # O gitleaks é sempre o de `.dev/` (não uma variável herdada), conferido por sha256.
 GITLEAKS="$RAIZ/.dev/ferramentas/bin/gitleaks"
 (cd "$RAIZ" && make -s gitleaks-binario)
-# Fase 28d: as cópias ficam em `.dev/` (0700, ignorada pelo git e pulada pelos gitleaks da
-# árvore), não no `/tmp`. O `cargo test` da cópia sobe o daemon de teste com
+# Fase 28d: as cópias saíram do `/tmp`. O `cargo test` da cópia sobe o daemon de teste com
 # `WARD_DEV_APP`, e o `BinarioDeTeste` recusa (de propósito) app sob pasta gravável por
 # outros, como o `/tmp` (1777): numa cópia em `/tmp` esse teste falha sempre.
-mkdir -p -m 0700 "$RAIZ/.dev"
-TMP="$(mktemp -d "$RAIZ/.dev/ataques-fundacao.XXXXXX")"
+# Fase 28f: e saíram também do repositório. Em `.dev/`, os `.cargo/config*` plantados nas
+# cópias eram achados pelo `dev/origens.py` da raiz (que varre o repositório inteiro, de
+# propósito): durante a rodada todo `make` do checkout falhava em `origens`, e o próprio
+# V1.2 (`make check` na raiz) saía 2 sem citar `vazamento.txt`. O `origens.py` continua
+# sem exceção para `.dev/`; as cópias vão para `~/.cache/` (home do passwd), numa pasta
+# 0700 do `mktemp`, e a cadeia de pastas até `/` é conferida antes (só do usuário ou do
+# root, sem escrita de grupo/outros, sem link).
+pasta_privada() {
+    local p="$1" dono modo
+    [ "$(realpath -e -- "$p")" = "$p" ] || { echo "pasta das cópias: $p é link ou não existe" >&2; exit 1; }
+    while :; do
+        read -r dono modo < <(stat -c '%u %a' -- "$p")
+        if { [ "$dono" != "$(id -u)" ] && [ "$dono" != 0 ]; } || (( 8#$modo & 8#022 )); then
+            echo "pasta das cópias: $p é de outro dono ou gravável por outros" >&2
+            exit 1
+        fi
+        [ "$p" = / ] && break
+        p="$(dirname -- "$p")"
+    done
+}
+CACHE_COPIAS="$CASA_PASSWD/.cache"
+[ -L "$CACHE_COPIAS" ] && { echo "pasta das cópias: $CACHE_COPIAS é link" >&2; exit 1; }
+mkdir -p -m 0700 "$CACHE_COPIAS"
+pasta_privada "$CACHE_COPIAS"
+TMP="$(mktemp -d "$CACHE_COPIAS/ward-ataques-fundacao.XXXXXX")"
+pasta_privada "$TMP"
+case "$TMP/" in
+    "$RAIZ"/*) echo "pasta das cópias dentro do repositório: $TMP" >&2; exit 1 ;;
+esac
 VAZAMENTO="$RAIZ/vazamento.txt"
 limpar() { rm -rf "$TMP"; rm -f "$VAZAMENTO"; }
 trap limpar EXIT
@@ -53,8 +79,8 @@ copiar_workspace() {
     (cd "$RAIZ" && git ls-files -z --cached) \
         | (cd "$RAIZ" && tar --null --no-recursion -T - -cf -) \
         | tar -C "$destino" -xf -
-    # A cópia fica dentro do repositório (em `.dev/`): um repositório git vazio nela corta
-    # a descoberta, e o `git`/`gitleaks git` da cópia nunca vê o repositório de cima.
+    # Um repositório git vazio na cópia corta a descoberta: o `git`/`gitleaks git` da cópia
+    # nunca vê um repositório de cima (o home pode ser um; antes da 28f era o próprio Ward).
     (cd "$destino" && git init -q)
     local essencial
     for essencial in Cargo.toml Cargo.lock Makefile dev/origens.py app/nucleo/Cargo.toml \
@@ -589,7 +615,7 @@ color = \"never\"" crates/ward-core/.cargo/config.toml)"
 # --- Fase 12b (S14): config do CARGO_HOME só com chaves inofensivas -------------------------
 # Num bwrap com o home do passwd coberto por tmpfs (o ~/.cargo real nunca é tocado): só o
 # rustup e os binários de ~/.cargo/bin voltam, somente leitura, e o `$TMP` deste script
-# (Fase 28d: fica no `.dev/` do repositório, que está no home). O `config.toml` do CARGO_HOME
+# (Fases 28d/28f: fica em `~/.cache/`, no home). O `config.toml` do CARGO_HOME
 # é escrito no tmpfs. Workspace mínimo sem dependências (o cargo metadata não precisa do
 # registro). Também prova a checagem do toolchain ativo com um `rustup override` simulado.
 config_do_cargo_home() {
@@ -736,6 +762,26 @@ git_sem_config_do_usuario() {
     if [ "$rc" -eq 0 ]; then ok "controle: sem o isolamento o ignore global vale"; else falhou "controle: ignore global não valeu nem sem isolamento"; fi
 }
 
+# --- Fase 28f: as cópias com `.cargo/config*` plantado não sujam o `origens` da raiz ------
+# Com as cópias da rodada ainda no disco (só os `target/` saem), o `make origens` do
+# checkout tem de continuar limpo. Antes da 28f elas ficavam em `.dev/` e todo `make` do
+# repositório falhava em `origens` enquanto o teste rodava.
+origens_da_raiz_durante_a_rodada() {
+    local plantados rc=0 saida
+    plantados="$(find "$TMP" -path '*/.cargo/config*' 2>/dev/null | wc -l)"
+    if [ "$plantados" -eq 0 ]; then
+        falhou "28f: nenhuma cópia com .cargo/config* plantado no disco (checagem sem efeito)"
+        return
+    fi
+    saida="$(cd "$RAIZ" && make -s origens 2>&1)" || rc=$?
+    if [ "$rc" -eq 0 ]; then
+        ok "28f: make origens da raiz limpo com $plantados .cargo/config* plantados nas cópias"
+    else
+        falhou "28f: make origens da raiz falhou durante a rodada (exit $rc)"
+        tail -10 <<<"$saida" >&2
+    fi
+}
+
 # Fase 28d: cada cópia compila o workspace inteiro no próprio `target/`; apaga os
 # `target/` das cópias depois de cada ataque para não somar vários GB no disco.
 rodar() {
@@ -755,8 +801,10 @@ rodar origens_do_cargo
 rodar ferramentas_fixas
 rodar origens_lista_permitida
 rodar config_do_cargo_home
+rodar origens_da_raiz_durante_a_rodada
 rodar ambiente_do_make
 rodar git_sem_config_do_usuario
+rodar origens_da_raiz_durante_a_rodada
 
 if [ "$falhas" -ne 0 ]; then
     printf '\n%d ataque(s) passaram: corrigir antes de seguir.\n' "$falhas" >&2
