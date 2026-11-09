@@ -468,6 +468,8 @@ Pendências da 41 (2026-11-09): **decisão nova para o planner registrar** — e
 
 Pendências da 42 (2026-11-09): **decisão nova para o planner registrar** — a extensão ganhou content script fixo `envio.js` (todo http/https, só quadro principal, só envio com gesto real do usuário) e service worker `servico.js` (remetente conferido pelo `sender` do Chrome; senha só na memória dele, ≤ 3 min; nunca vai ao popup nem volta à página); `montar.py` recusa o que fugir disso. `salvar_login` grava só pelo papel extensão, só entrada nova, nível "com aprovação". Resíduo: `requestSubmit()` da página durante clique do usuário oferece salvar credenciais escolhidas pela página para a própria origem (confirmação do usuário + "com aprovação"; proposta: aceitar e registrar). V6.8 conflita com D50 (lista do agente não leva nível) — reescrever o texto do V6.8. FigCraft: nome de exemplo do node 17430 inválido (`clientex-stage-painel`), Grupo é `Select` no design mas a extensão usa texto (sem inventário), faltam frames de erro no campo e nota de erro geral. Login enviado com o cofre travado é descartado (decidir). Não oferece atualizar senha de login existente. `CLAUDE.md`: linha do `make teste-extensao` deve citar a Fase 42 e o `ward` de teste.
 
+Pendências da 53 (2026-11-09): guia não testado na máquina (menus do KeePassXC e `gnome-keyring-daemon --start --components=secrets` com o override ativo vêm da documentação). Ordem do V10.1 (chaveiro antes de desfazer a montagem) obriga o passo 4 a ligar os segredos do gnome-keyring só na sessão e o 5 a tornar permanente — alternativa: passo 5 antes de gravar a chave. Skill `cofre` para de funcionar no passo 4 (escopo diz que segue até o KeePassXC sair); o guia manda fazer 4–7 na mesma sessão. Atributos do "Chrome Safe Storage" são exemplo. Sem `.desktop` do app (pendência da 51): passo 1 não diz como abrir. V10.4 é do usuário.
+
 ## Milestone 3 — Daemon e protocolo
 Contrato: V3.1–V3.41
 
@@ -894,7 +896,7 @@ Contrato: V9.1–V9.11
 ## Milestone 10 — Migração e saída do KeePassXC
 Contrato: V10.1–V10.4
 
-- [ ] Fase 53 — `docs/migracao.md`: guia da etapa final, executado pelo usuário, com
+- [x] Fase 53 — `docs/migracao.md`: guia da etapa final, executado pelo usuário, com
   conferência e volta atrás em cada passo (chaves pessoais para `~/.ssh`, chaves de
   servidor para entradas `servidor`, gnome-keyring e "Chrome Safe Storage", desfazer
   `montagem.md`, senhas do Chrome, troca da skill, desinstalar o KeePassXC por último).
