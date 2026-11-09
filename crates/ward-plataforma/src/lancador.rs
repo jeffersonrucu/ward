@@ -26,10 +26,11 @@ use std::collections::BTreeMap;
 use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::io;
+use std::os::fd::{AsFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{FileTypeExt, MetadataExt};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
 
 use crate::endurecimento::nome_para_mensagem;
 use crate::papel::Instalacao;
@@ -391,6 +392,11 @@ pub struct Lancador {
     binario: BinarioPermitido,
     gid_app: u32,
     filho: Option<Child>,
+    /// pidfd do app aberto (D63), tirado logo depois do `fork`, com o filho ainda sem
+    /// colher (o pid não pode ser de outro processo). O papel app exige este processo.
+    pidfd: Option<OwnedFd>,
+    /// Como saiu o último app colhido, até alguém tomar ([`Lancador::tomar_saida`]).
+    saida: Option<ExitStatus>,
 }
 
 impl Lancador {
@@ -399,19 +405,50 @@ impl Lancador {
             binario,
             gid_app: inst.gid_app(),
             filho: None,
+            pidfd: None,
+            saida: None,
         }
     }
 
-    /// O app aberto por este lançador ainda está vivo (e colhe o que saiu).
+    /// O app aberto por este lançador ainda está vivo (e colhe o que saiu, guardando
+    /// como saiu para [`Lancador::tomar_saida`]).
     pub fn aberto(&mut self) -> bool {
         match self.filho.as_mut().map(Child::try_wait) {
             Some(Ok(None)) => true,
-            Some(_) => {
+            Some(r) => {
+                if let Ok(Some(status)) = r {
+                    self.saida = Some(status);
+                }
                 self.filho = None;
+                self.pidfd = None;
                 false
             }
             None => false,
         }
+    }
+
+    /// O processo `pid` é o app que este lançador abriu e que continua vivo (D63)? Sem
+    /// colher: o pid do filho não colhido não vai para outro processo, e o pidfd
+    /// confere que ele não saiu.
+    pub fn e_o_app_lancado(&self, pid: u32) -> bool {
+        match (&self.filho, &self.pidfd) {
+            (Some(f), Some(fd)) => {
+                f.id() == pid && pid != 0 && sys::pidfd_vivo(fd.as_fd()).unwrap_or(false)
+            }
+            _ => false,
+        }
+    }
+
+    /// Pid do app aberto por este lançador (sem colher).
+    pub fn pid(&self) -> Option<u32> {
+        self.filho.as_ref().map(Child::id)
+    }
+
+    /// Como saiu o último app colhido (código ou sinal), uma vez só. O app liga 0–2 a
+    /// `/dev/null` (D57): o daemon registra isto no log para saber por que não abriu.
+    pub fn tomar_saida(&mut self) -> Option<ExitStatus> {
+        self.aberto();
+        self.saida.take()
     }
 
     /// Confere o binário e a sessão, monta o ambiente do zero e abre o app. Devolve o
@@ -422,10 +459,23 @@ impl Lancador {
         }
         conferir_binario_do_app(&self.binario, self.gid_app)?;
         let ambiente = ambiente_do_app().map_err(ErroLancador::Sessao)?;
-        let filho =
+        let mut filho =
             lancar(self.binario.caminho(), &ambiente).map_err(|e| ErroLancador::Io(e.kind()))?;
         let pid = filho.id();
+        // O filho ainda não foi colhido: o pid é dele. Sem pidfd, o app não abre (D63).
+        let pidfd = match libc::pid_t::try_from(pid)
+            .map_err(|_| io::Error::from(io::ErrorKind::InvalidData))
+            .and_then(sys::pidfd_open)
+        {
+            Ok(fd) => fd,
+            Err(e) => {
+                let _ = filho.kill();
+                let _ = filho.wait();
+                return Err(ErroLancador::Io(e.kind()));
+            }
+        };
         self.filho = Some(filho);
+        self.pidfd = Some(pidfd);
         Ok(pid)
     }
 }
@@ -766,7 +816,6 @@ mod testes {
         // chega ao filho, e um fd aberto sem `O_CLOEXEC` também não.
         let s = Sessao::nova("filho");
         let amb = s.montar().unwrap();
-        use std::os::fd::AsFd;
         let fd_herdavel = fs::File::open("/dev/null").unwrap();
         sys::tirar_cloexec(fd_herdavel.as_fd()).unwrap();
         assert!(!sys::tem_cloexec(fd_herdavel.as_fd()).unwrap());
@@ -809,6 +858,82 @@ mod testes {
         // Programa inexistente: o erro do `exec` chega ao pai (o canal do `std` não
         // foi fechado pelo `close_range`).
         assert!(lancar(Path::new("/usr/bin/ward-nao-existe-falso"), &amb).is_err());
+    }
+
+    /// Pendência da 29a: o código de saída do app (que tem 0–2 em `/dev/null`) fica
+    /// com o lançador até o daemon tomar e registrar; uma vez só. Enquanto vivo, nada.
+    #[test]
+    fn saida_do_app_fica_para_o_log() {
+        let s = Sessao::nova("saida");
+        let amb = s.montar().unwrap();
+        let mut l = Lancador {
+            binario: BinarioPermitido::novo("/usr/bin/false").unwrap(),
+            gid_app: 4_000_000,
+            filho: None,
+            pidfd: None,
+            saida: None,
+        };
+        assert_eq!(l.tomar_saida(), None);
+        l.filho = Some(lancar(Path::new("/usr/bin/false"), &amb).unwrap());
+        while l.aberto() {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let st = l.tomar_saida().expect("saída guardada");
+        assert_eq!(st.code(), Some(1));
+        assert_eq!(l.tomar_saida(), None);
+        // Morto por sinal (`yes` não sai sozinho com a saída em `/dev/null`).
+        use std::os::unix::process::ExitStatusExt;
+        l.filho = Some(
+            lancar(Path::new("/usr/bin/yes"), &amb)
+                .map(|mut c| {
+                    c.kill().unwrap();
+                    c
+                })
+                .unwrap(),
+        );
+        let st = loop {
+            if let Some(st) = l.tomar_saida() {
+                break st;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        };
+        assert_eq!(st.signal(), Some(9));
+    }
+
+    /// V3.36 (D63): só o processo que o lançador abriu, vivo, é "o app lançado". Outro
+    /// pid (outro filho do daemon, mesmo grupo e mesmo pai) não é; depois que o app
+    /// morre, nem o pid dele.
+    #[test]
+    fn ataque_so_o_pid_do_lancador_e_o_app() {
+        let s = Sessao::nova("pidfd");
+        let amb = s.montar().unwrap();
+        let mut l = Lancador {
+            binario: BinarioPermitido::novo("/usr/bin/yes").unwrap(),
+            gid_app: 4_000_000,
+            filho: None,
+            pidfd: None,
+            saida: None,
+        };
+        assert!(!l.e_o_app_lancado(std::process::id()));
+        let filho = lancar(Path::new("/usr/bin/yes"), &amb).unwrap();
+        let pid = filho.id();
+        let fd = sys::pidfd_open(libc::pid_t::try_from(pid).unwrap()).unwrap();
+        l.filho = Some(filho);
+        l.pidfd = Some(fd);
+        // Outro filho deste processo (como um `ward run` seria), vivo ao mesmo tempo.
+        let mut outro = lancar(Path::new("/usr/bin/yes"), &amb).unwrap();
+        assert!(l.e_o_app_lancado(pid));
+        assert!(!l.e_o_app_lancado(outro.id()));
+        assert!(!l.e_o_app_lancado(0));
+        outro.kill().unwrap();
+        outro.wait().unwrap();
+        // O app morre: colhido, o pid deixa de ser o do app.
+        l.filho.as_mut().unwrap().kill().unwrap();
+        while l.aberto() {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(!l.e_o_app_lancado(pid));
+        assert!(l.pidfd.is_none());
     }
 
     #[test]

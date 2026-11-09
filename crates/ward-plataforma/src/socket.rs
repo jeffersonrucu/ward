@@ -593,9 +593,30 @@ pub fn conferir_conexao(stream: &impl AsFd) -> Result<ProcessoPar, ErroAceitar> 
     Ok(par)
 }
 
+/// O cliente do outro lado fechou (ou deu erro)? Não lê nem espera: os bytes de um
+/// pedido seguinte continuam no socket. Para o daemon cancelar uma espera longa
+/// (aprovação, destrave) quando a CLI cai (Fase 23).
+pub fn par_fechou(stream: &impl AsFd) -> bool {
+    sys::fechamento(stream.as_fd(), 0).unwrap_or(true)
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    #[test]
+    fn par_fechou_sem_consumir_bytes() {
+        use std::io::{Read, Write};
+        let (a, mut b) = UnixStream::pair().unwrap();
+        assert!(!par_fechou(&a));
+        b.write_all(b"x").unwrap();
+        assert!(!par_fechou(&a));
+        drop(b);
+        assert!(par_fechou(&a));
+        // O byte não foi consumido.
+        let mut buf = [0u8; 2];
+        assert_eq!((&a).read(&mut buf).unwrap(), 1);
+    }
 
     #[test]
     fn uid_diferente_recusa() {

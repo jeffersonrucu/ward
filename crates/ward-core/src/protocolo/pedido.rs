@@ -178,6 +178,8 @@ pub enum Pedido {
         /// Sempre `RascunhoDados::Login`.
         rascunho: Rascunho,
     },
+    /// D57: abrir a instância verdadeira do app (filho do daemon), sem nenhum campo.
+    AbrirApp,
 }
 
 impl Pedido {
@@ -210,6 +212,7 @@ impl Pedido {
             Pedido::Sugerir { .. } => Operacao::Sugerir,
             Pedido::Preencher { .. } => Operacao::Preencher,
             Pedido::SalvarLogin { .. } => Operacao::SalvarLogin,
+            Pedido::AbrirApp => Operacao::AbrirApp,
         }
     }
 
@@ -269,14 +272,14 @@ impl Pedido {
             Pedido::SalvarLogin { rascunho } => {
                 ok(matches!(rascunho.dados, RascunhoDados::Login { .. }) && rascunho_ok(rascunho))
             }
-            Pedido::Estado | Pedido::Travar | Pedido::Lista => Ok(()),
+            Pedido::Estado | Pedido::Travar | Pedido::Lista | Pedido::AbrirApp => Ok(()),
         }
     }
 
     /// Escreve os `dados` do pedido.
     pub(crate) fn escrever(&self, e: &mut Escritor) {
         match self {
-            Pedido::Estado | Pedido::Travar | Pedido::Lista => {}
+            Pedido::Estado | Pedido::Travar | Pedido::Lista | Pedido::AbrirApp => {}
             Pedido::Destravar { senha } => {
                 e.chave("senha");
                 e.base64(senha.expor());
@@ -516,6 +519,7 @@ pub(crate) fn ler(op: Operacao, mut c: Campos) -> R<Pedido> {
         Operacao::Estado => Pedido::Estado,
         Operacao::Travar => Pedido::Travar,
         Operacao::Lista => Pedido::Lista,
+        Operacao::AbrirApp => Pedido::AbrirApp,
         Operacao::Destravar => Pedido::Destravar {
             senha: c.segredo("senha", MAX_SEGREDO)?,
         },

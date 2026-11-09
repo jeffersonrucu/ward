@@ -11,6 +11,13 @@
 //!   `quadro_invalido` e a conexão fecha.
 //! - Antes de cada pedido de app ou extensão, o daemon reconfere que o cliente segue
 //!   vivo e sem depurador; se não, fecha.
+//! - Papel app (D63): além do grupo e do pai (D47), o par tem de ser o processo que o
+//!   lançador abriu, vivo ([`papel_da_classe`], o único ponto da classificação).
+//! - Conexão do papel app (D65 a): recebe os avisos do motor (`pedido_de_aprovacao`,
+//!   `pedido_de_destrave`), cada um num quadro inteiro, nunca no meio de uma resposta
+//!   (uma trava de escrita por conexão); as respostas seguem a ordem dos pedidos. Fica
+//!   sem prazo de leitura; ao fechar, o que ela recebeu e não respondeu é negado. Só a
+//!   conexão do papel app recebe avisos.
 
 use std::io;
 use std::net::Shutdown;
@@ -25,6 +32,8 @@ use ward_core::protocolo::{
 };
 use ward_plataforma::{ClassePar, ErroAceitar, Escuta, Instalacao, PoliticaKernel, ProcessoPar};
 
+use crate::aprovacao::{Assinante, Cliente};
+use crate::lancamento::AppLancado;
 use crate::nucleo::Daemon;
 use crate::{aviso, depurar};
 
@@ -100,6 +109,23 @@ impl Drop for Soltar {
 pub struct Papeis {
     /// `None`: grupos da instalação ausentes ou recusados; todo cliente é agente.
     pub instalacao: Option<Instalacao>,
+    /// O app que o lançador abriu (D63). `None`: ninguém é app.
+    pub app: Option<AppLancado>,
+}
+
+/// O papel de um par já classificado pelo grupo e pelo pai (D47). Papel app só para o
+/// processo `pid` que o lançador abriu e que continua vivo (D63): outro filho do daemon
+/// com o grupo do app (um `ward run` do `ward-app`, Fase 26) fica agente.
+pub fn papel_da_classe(classe: ClassePar, pid: u32, e_o_app: impl Fn(u32) -> bool) -> Papel {
+    match classe {
+        ClassePar::App if e_o_app(pid) => Papel::App,
+        ClassePar::App => {
+            aviso!("papel app recusado (pid {pid}): não é o app aberto pelo lançador (D63)");
+            Papel::Agente
+        }
+        ClassePar::HostExtensao => Papel::Extensao,
+        ClassePar::Comum { .. } => Papel::Agente,
+    }
 }
 
 impl Papeis {
@@ -107,9 +133,11 @@ impl Papeis {
         let Some(inst) = &self.instalacao else {
             return Papel::Agente;
         };
+        let pid = par.credenciais().pid;
         match par.classificar(inst, &PoliticaKernel::ler()) {
-            ClassePar::App => Papel::App,
-            ClassePar::HostExtensao => Papel::Extensao,
+            c @ (ClassePar::App | ClassePar::HostExtensao) => {
+                papel_da_classe(c, pid, |p| self.app.as_ref().is_some_and(|a| a.e_o_app(p)))
+            }
             ClassePar::Comum { motivo } => {
                 // Só registra quando o cliente tentou um grupo especial.
                 let cred = par.credenciais();
@@ -136,6 +164,40 @@ fn responder(stream: &mut UnixStream, papel: Papel, r: &Resposta) -> Result<(), 
     quadro::escrever_quadro(stream, &q, quadro::LIMITE_RESPOSTA)
 }
 
+/// A conexão do app que assinou: o motor escreve nela com a mesma trava das respostas.
+struct AssinanteSocket {
+    stream: UnixStream,
+    escrita: Arc<Mutex<()>>,
+}
+
+impl Assinante for AssinanteSocket {
+    fn entregar(&mut self, r: &Resposta) -> bool {
+        let _g = self.escrita.lock().unwrap_or_else(|e| e.into_inner());
+        let ok = responder(&mut self.stream, Papel::App, r).is_ok();
+        if !ok {
+            let _ = self.stream.shutdown(Shutdown::Both);
+        }
+        ok
+    }
+}
+
+/// O cliente da conexão, para o motor: cadeia de processos e se ele caiu.
+struct ClienteSocket<'a> {
+    stream: &'a UnixStream,
+    par: &'a ProcessoPar,
+}
+
+impl Cliente for ClienteSocket<'_> {
+    fn cadeia(&self) -> Vec<String> {
+        self.par.cadeia().into_iter().map(|e| e.nome).collect()
+    }
+
+    /// Olha sem ler nem esperar (`poll`): fim de arquivo ou erro é cliente que caiu.
+    fn saiu(&self) -> bool {
+        ward_plataforma::par_fechou(self.stream)
+    }
+}
+
 fn atender_conexao(
     mut stream: UnixStream,
     par: ProcessoPar,
@@ -147,6 +209,23 @@ fn atender_conexao(
     let _ = stream.set_read_timeout(Some(PRAZO_LEITURA));
     let _ = stream.set_write_timeout(Some(PRAZO_ESCRITA));
     let limite = quadro::limite_do_quadro(papel);
+    let escrita = Arc::new(Mutex::new(()));
+    // D65 (a): só a conexão do papel app recebe os avisos do motor, e fica sem prazo de
+    // leitura (espera aberta).
+    let mut assinou = false;
+    if papel == Papel::App
+        && let Ok(copia) = stream.try_clone()
+    {
+        let _ = stream.set_read_timeout(None);
+        daemon.motor().assinar(
+            id,
+            Box::new(AssinanteSocket {
+                stream: copia,
+                escrita: escrita.clone(),
+            }),
+        );
+        assinou = true;
+    }
     loop {
         vagas.marcar(id, true);
         let bytes = match quadro::ler_quadro(&mut stream, limite) {
@@ -175,16 +254,25 @@ fn atender_conexao(
         let resposta = match protocolo::decodificar_pedido(papel, &bytes) {
             Ok(p) => {
                 drop(bytes);
-                daemon.atender(papel, p)
+                let cliente = ClienteSocket {
+                    stream: &stream,
+                    par: &par,
+                };
+                daemon.atender_de(&cliente, papel, p)
             }
             Err(e) => {
                 depurar!("pedido recusado ({}): {}", papel.nome(), e.codigo());
                 Resposta::Erro(e)
             }
         };
+        let _g = escrita.lock().unwrap_or_else(|e| e.into_inner());
         if responder(&mut stream, papel, &resposta).is_err() {
             break;
         }
+    }
+    if assinou {
+        // Fechar a janela (ou o app) nega o que ela recebeu (S10).
+        daemon.motor().desassinar(id);
     }
 }
 
@@ -240,5 +328,56 @@ pub fn servir(escuta: &Escuta, daemon: Arc<Daemon>, papeis: Arc<Papeis>) -> io::
             aviso!("não deu para criar a thread da conexão");
             vagas.soltar(id);
         }
+    }
+}
+
+#[cfg(test)]
+mod testes {
+    use super::*;
+    use ward_core::entrada::Ambiente;
+    use ward_core::protocolo::{Operacao, PedidoDeAprovacao};
+
+    /// O que o motor entrega ao app sai como um quadro de resposta do papel app, inteiro;
+    /// com a conexão fechada, a entrega falha (o motor trata como janela fechada).
+    #[test]
+    fn assinante_escreve_quadro_inteiro_e_falha_fechado() {
+        let (a, mut b) = UnixStream::pair().unwrap();
+        let mut s = AssinanteSocket {
+            stream: a,
+            escrita: Arc::new(Mutex::new(())),
+        };
+        let p = PedidoDeAprovacao {
+            id: 3,
+            entradas: vec!["t-aprov".into()],
+            ambiente: Ambiente::Prod,
+            operacao: Operacao::Executar,
+            comando: "\"true\"".into(),
+            cadeia: vec!["claude".into()],
+        };
+        assert!(s.entregar(&Resposta::PedidoDeAprovacao(p.clone())));
+        assert!(s.entregar(&Resposta::PedidoDeDestrave));
+        let q = quadro::ler_quadro(&mut b, quadro::LIMITE_RESPOSTA).unwrap();
+        match protocolo::decodificar_resposta(Papel::App, &q).unwrap() {
+            Resposta::PedidoDeAprovacao(lido) => assert_eq!(lido, p),
+            r => panic!("{r:?}"),
+        }
+        let q = quadro::ler_quadro(&mut b, quadro::LIMITE_RESPOSTA).unwrap();
+        assert!(matches!(
+            protocolo::decodificar_resposta(Papel::App, &q).unwrap(),
+            Resposta::PedidoDeDestrave
+        ));
+        // O agente não lê esse quadro.
+        assert!(protocolo::decodificar_resposta(Papel::Agente, &q).is_err());
+        drop(b);
+        // Outro teste em paralelo que faz `fork` segura uma cópia do fd até o `exec`
+        // (CLOEXEC): a falha vem logo depois.
+        let falhou = (0..200).any(|_| {
+            let f = !s.entregar(&Resposta::PedidoDeDestrave);
+            if !f {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            f
+        });
+        assert!(falhou);
     }
 }

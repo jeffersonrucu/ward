@@ -292,6 +292,7 @@ mod com_daemon_falso {
         Resposta::Estado {
             travado,
             cofre_existe: true,
+            papel: Papel::Agente,
         }
     }
 

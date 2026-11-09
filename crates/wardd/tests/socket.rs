@@ -162,7 +162,8 @@ fn v3_20_ciclo_pelo_socket_sem_segredo_no_log() {
             r,
             Resposta::Estado {
                 travado: true,
-                cofre_existe: true
+                cofre_existe: true,
+                papel: Papel::Agente,
             }
         ),
         "{r:?}"
@@ -201,6 +202,31 @@ fn v3_20_ciclo_pelo_socket_sem_segredo_no_log() {
         ),
     );
     assert_eq!(protocolo_erro(&r), Some(ErroResposta::NaoAutorizado));
+    // Fase 23: o agente não responde aprovação (e não há operação para receber os
+    // avisos: só a conexão do papel app os recebe, D65); o
+    // `abrir_app` sem instalação (daemon de teste, D63 sem a 23a) é "aprovação
+    // indisponível", e o uso com aprovação também (D21).
+    let (_, r) = pedir_por(&mut s, "receber_pedidos", "{}");
+    assert_eq!(protocolo_erro(&r), Some(ErroResposta::OperacaoDesconhecida));
+    let (_, r) = pedir_por(
+        &mut s,
+        "responder_aprovacao",
+        &format!(
+            r#"{{"pedido":1,"decisao":"uma_vez","pin":"{}"}}"#,
+            b64(PIN.as_bytes())
+        ),
+    );
+    assert_eq!(protocolo_erro(&r), Some(ErroResposta::NaoAutorizado));
+    let (_, r) = pedir_por(&mut s, "abrir_app", "{}");
+    assert_eq!(
+        protocolo_erro(&r),
+        Some(ErroResposta::AprovacaoIndisponivel)
+    );
+    let (_, r) = pedir_por(&mut s, "executar", &exec("t-aprov"));
+    assert_eq!(
+        protocolo_erro(&r),
+        Some(ErroResposta::AprovacaoIndisponivel)
+    );
 
     // V3.4: 70 conexões paradas não tiram o atendimento (a mais antiga parada sai).
     let paradas: Vec<UnixStream> = (0..70).map(|_| conectar(&w)).collect();

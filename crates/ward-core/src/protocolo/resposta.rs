@@ -281,6 +281,9 @@ pub enum Resposta {
     Estado {
         travado: bool,
         cofre_existe: bool,
+        /// O papel que o daemon deu a esta conexão (D63), sem nenhum outro dado. O app e
+        /// a ponte conferem na primeira resposta e, sem `app`, não usam a conexão.
+        papel: Papel,
     },
     Erro(ErroResposta),
     Lista(Vec<ItemLista>),
@@ -358,6 +361,8 @@ impl Resposta {
                 && i.endereco.as_ref().is_none_or(|p| p.len() <= MAX_URL)
         };
         match self {
+            // O papel do `estado` só é conferido na escrita (`codificar_resposta`): o
+            // cliente lê o que veio e decide (D63).
             Resposta::Ok | Resposta::Estado { .. } | Resposta::PedidoDeDestrave => Ok(()),
             Resposta::Fim { .. } => Ok(()),
             Resposta::Erro(e) => ok(match e {
@@ -428,11 +433,14 @@ impl Resposta {
             Resposta::Estado {
                 travado,
                 cofre_existe,
+                papel,
             } => {
                 e.chave("travado");
                 e.logico(*travado);
                 e.chave("cofre_existe");
                 e.logico(*cofre_existe);
+                e.chave("papel");
+                e.texto(papel.nome());
             }
             Resposta::Erro(x) => {
                 e.chave("codigo");
@@ -685,6 +693,8 @@ pub(crate) fn ler(papel: Papel, tipo: TipoResposta, mut c: Campos) -> R<Resposta
         TipoResposta::Estado => Resposta::Estado {
             travado: c.logico("travado")?,
             cofre_existe: c.logico("cofre_existe")?,
+            // Lido como veio: quem recebe confere se é o papel que esperava.
+            papel: Papel::de_nome(&c.texto("papel", MAX_NOME)?).ok_or(JsonInvalido)?,
         },
         TipoResposta::Erro => {
             let codigo = c.texto("codigo", MAX_NOME)?;

@@ -9,6 +9,8 @@ pub mod configuracao;
 pub mod corpo;
 mod cripto;
 pub mod entrada;
+// Texto do agente para exibir na janela de aprovação (D51, Fase 23).
+pub mod exibicao;
 // Entrega por variáveis de ambiente (D10, Fase 16).
 pub mod entrega;
 pub mod formato;

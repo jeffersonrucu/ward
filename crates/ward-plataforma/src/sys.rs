@@ -544,8 +544,15 @@ pub(crate) fn tirar_cloexec(fd: BorrowedFd<'_>) -> io::Result<()> {
 
 /// Espera até o outro lado do socket fechar (`POLLRDHUP`/`POLLHUP`/`POLLERR`), sem ler
 /// nada: não consome os bytes de uma resposta do protocolo.
-#[allow(unsafe_code)]
 pub(crate) fn esperar_fechamento(fd: BorrowedFd<'_>) -> io::Result<()> {
+    while !fechamento(fd, -1)? {}
+    Ok(())
+}
+
+/// O outro lado do socket fechou? Sem ler nada; `espera_ms` é o prazo do `poll` (0 não
+/// espera, -1 espera sem prazo).
+#[allow(unsafe_code)]
+pub(crate) fn fechamento(fd: BorrowedFd<'_>, espera_ms: libc::c_int) -> io::Result<bool> {
     loop {
         let mut pfd = libc::pollfd {
             fd: fd.as_raw_fd(),
@@ -553,8 +560,8 @@ pub(crate) fn esperar_fechamento(fd: BorrowedFd<'_>) -> io::Result<()> {
             revents: 0,
         };
         // SAFETY: `pfd` é um `pollfd` local e válido, e o tamanho passado é 1; o fd
-        // está aberto pelo empréstimo; timeout -1 espera sem prazo.
-        let r = unsafe { libc::poll(&raw mut pfd, 1, -1) };
+        // está aberto pelo empréstimo; o prazo é um inteiro.
+        let r = unsafe { libc::poll(&raw mut pfd, 1, espera_ms) };
         if r < 0 {
             let e = erro_os();
             if e.kind() == io::ErrorKind::Interrupted {
@@ -563,9 +570,7 @@ pub(crate) fn esperar_fechamento(fd: BorrowedFd<'_>) -> io::Result<()> {
             return Err(e);
         }
         let fim = libc::POLLRDHUP | libc::POLLHUP | libc::POLLERR | libc::POLLNVAL;
-        if pfd.revents & fim != 0 {
-            return Ok(());
-        }
+        return Ok(pfd.revents & fim != 0);
     }
 }
 

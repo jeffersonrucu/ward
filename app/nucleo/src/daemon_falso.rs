@@ -57,6 +57,7 @@ impl DaemonFalso {
             Pedido::Estado => Resposta::Estado {
                 travado: false,
                 cofre_existe: true,
+                papel: Papel::App,
             },
             Pedido::Lista => Resposta::Lista(
                 self.entradas

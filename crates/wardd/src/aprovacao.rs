@@ -1,0 +1,425 @@
+//! Motor de aprovação (Fase 23; S9, S10; D2, D8, D16, D19, D21, D57).
+//!
+//! - Um uso "com aprovação" vira um pedido pendente com id. O pedido vai ao app que
+//!   assinou ([`Motor::assinar`]: a conexão do papel app, D65 a); sem app
+//!   assinado, o motor abre o app pelo lançador ([`AbridorApp`]). Sem como abrir
+//!   (sessão Wayland fora de D57, binário não confiável, sem instalação) o pedido é
+//!   negado na hora com "aprovação indisponível" (D21).
+//! - O pedido espera a resposta do app até [`PRAZO_APROVACAO`] (2 min, S10) pelo
+//!   relógio injetado; passou, "expirado". A conexão do app que caiu com o pedido
+//!   entregue nega ("fechar nega"); o app que saiu sem ter recebido o pedido dá
+//!   "aprovação indisponível". O cliente (CLI) que caiu enquanto espera cancela.
+//! - A resposta vem só pelo papel app (a tabela do protocolo, V3.15). O PIN, o efeito de
+//!   cada botão e a liberação de 1 hora ficam no [`crate::nucleo`]; aqui só se decide o
+//!   pedido ([`Motor::decidir`]).
+//! - Cofre travado num uso do agente: o motor pede ao app a tela de destravar e espera
+//!   até [`PRAZO_DESTRAVE`] (D16), contado em separado da aprovação.
+//!
+//! Não há aprovador no binário: os testes (D8) assinam um [`Assinante`] em processo e
+//! respondem por [`crate::nucleo::Daemon::atender`] com o papel app, o mesmo caminho do
+//! socket. Nenhuma feature, variável ou argumento muda isso.
+
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::time::{Duration, Instant};
+
+use ward_core::protocolo::{ErroResposta, PedidoDeAprovacao, Resposta};
+
+use crate::{aviso, depurar};
+
+/// Prazo da resposta da janela de aprovação (S10).
+pub const PRAZO_APROVACAO: Duration = Duration::from_secs(120);
+/// Prazo da espera pelo destrave (D16).
+pub const PRAZO_DESTRAVE: Duration = Duration::from_secs(120);
+/// "Permitir por 1 hora" (D2).
+pub const UMA_HORA: Duration = Duration::from_secs(3600);
+/// De quanto em quanto tempo (real) a espera olha o relógio, o cliente e o cofre.
+const PASSO: Duration = Duration::from_millis(25);
+
+/// Relógio do motor (monotônico; injetável nos testes).
+pub trait RelogioMotor: Send + Sync {
+    /// Tempo desde um ponto fixo qualquer.
+    fn agora(&self) -> Duration;
+}
+
+/// Relógio monotônico do sistema.
+pub struct RelogioMonotonico(Instant);
+
+impl RelogioMonotonico {
+    pub fn novo() -> Self {
+        Self(Instant::now())
+    }
+}
+
+impl Default for RelogioMonotonico {
+    fn default() -> Self {
+        Self::novo()
+    }
+}
+
+impl RelogioMotor for RelogioMonotonico {
+    fn agora(&self) -> Duration {
+        self.0.elapsed()
+    }
+}
+
+/// Por que o app não foi aberto.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ErroAbrirApp {
+    /// Já há uma instância (uma por vez, D57); ela vai assinar.
+    JaAberto,
+    /// Não há como abrir (D21).
+    Indisponivel,
+}
+
+/// Como o motor abre o app (o lançador de D57 no daemon; um falso nos testes).
+pub trait AbridorApp: Send + Sync {
+    /// Abre o app. `ao_sair` é chamado uma vez, quando o app aberto por esta chamada
+    /// sai.
+    fn abrir(&self, ao_sair: Box<dyn FnOnce() + Send>) -> Result<(), ErroAbrirApp>;
+}
+
+/// Sem app: tudo que precisa da janela é "aprovação indisponível" (D21).
+pub struct SemApp;
+
+impl AbridorApp for SemApp {
+    fn abrir(&self, _ao_sair: Box<dyn FnOnce() + Send>) -> Result<(), ErroAbrirApp> {
+        Err(ErroAbrirApp::Indisponivel)
+    }
+}
+
+/// Quem recebe os avisos do motor: a conexão do papel app (D65 a).
+pub trait Assinante: Send {
+    /// Entrega `pedido_de_aprovacao` ou `pedido_de_destrave`. `false`: não deu (a
+    /// conexão caiu); o motor trata como app fechado.
+    fn entregar(&mut self, r: &Resposta) -> bool;
+}
+
+/// O cliente que fez o pedido do agente (a conexão da CLI).
+pub trait Cliente {
+    /// Cadeia de processos para exibir (`claude → bash → ward`), do mais antigo ao mais
+    /// novo.
+    fn cadeia(&self) -> Vec<String>;
+    /// A conexão caiu? (a espera é cancelada.)
+    fn saiu(&self) -> bool;
+}
+
+/// Cliente sem conexão (chamada em processo): sem cadeia, nunca sai.
+pub struct SemCliente;
+
+impl Cliente for SemCliente {
+    fn cadeia(&self) -> Vec<String> {
+        Vec::new()
+    }
+    fn saiu(&self) -> bool {
+        false
+    }
+}
+
+struct Pendente {
+    pedido: PedidoDeAprovacao,
+    /// Id do assinante que recebeu.
+    entregue_a: Option<u64>,
+    resultado: Option<Result<(), ErroResposta>>,
+}
+
+struct Estado {
+    proximo_id: u64,
+    pendentes: Vec<Pendente>,
+    assinante: Option<(u64, Box<dyn Assinante>)>,
+    /// Pedidos do agente esperando o destrave agora.
+    esperando_destrave: u32,
+}
+
+impl Estado {
+    fn pendente(&mut self, id: u64) -> Option<&mut Pendente> {
+        self.pendentes.iter_mut().find(|p| p.pedido.id == id)
+    }
+
+    fn tirar(&mut self, id: u64) -> Option<Pendente> {
+        let i = self.pendentes.iter().position(|p| p.pedido.id == id)?;
+        Some(self.pendentes.remove(i))
+    }
+
+    /// Entrega ao assinante tudo que ainda não foi entregue (e o destrave, se `destrave`).
+    /// Falha na entrega: o assinante sai.
+    fn entregar_pendentes(&mut self, destrave: bool) {
+        let Some((aid, a)) = self.assinante.as_mut() else {
+            return;
+        };
+        let aid = *aid;
+        let mut ok = true;
+        if destrave && self.esperando_destrave > 0 {
+            ok = a.entregar(&Resposta::PedidoDeDestrave);
+        }
+        for p in self.pendentes.iter_mut() {
+            if !ok {
+                break;
+            }
+            if p.entregue_a.is_none() && p.resultado.is_none() {
+                ok = a.entregar(&Resposta::PedidoDeAprovacao(p.pedido.clone()));
+                if ok {
+                    p.entregue_a = Some(aid);
+                }
+            }
+        }
+        if !ok {
+            aviso!("entrega ao app falhou: a janela conta como fechada");
+            self.sair_assinante(aid);
+        }
+    }
+
+    /// O assinante `aid` saiu: o que ele recebeu e não respondeu é negado (fechar nega).
+    fn sair_assinante(&mut self, aid: u64) {
+        if self.assinante.as_ref().is_some_and(|(id, _)| *id == aid) {
+            self.assinante = None;
+        }
+        for p in self.pendentes.iter_mut() {
+            if p.entregue_a == Some(aid) && p.resultado.is_none() {
+                p.resultado = Some(Err(ErroResposta::Negado));
+            }
+        }
+    }
+}
+
+struct Interno {
+    estado: Mutex<Estado>,
+    mudou: Condvar,
+}
+
+impl Interno {
+    fn estado(&self) -> MutexGuard<'_, Estado> {
+        self.estado.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// O app aberto saiu: pedido que ninguém recebeu fica sem janela (D21).
+    fn app_saiu(&self) {
+        let mut g = self.estado();
+        if g.assinante.is_none() {
+            for p in g.pendentes.iter_mut() {
+                if p.entregue_a.is_none() && p.resultado.is_none() {
+                    p.resultado = Some(Err(ErroResposta::AprovacaoIndisponivel));
+                }
+            }
+        }
+        drop(g);
+        self.mudou.notify_all();
+    }
+}
+
+/// O motor de aprovação.
+pub struct Motor {
+    relogio: Arc<dyn RelogioMotor>,
+    abridor: Box<dyn AbridorApp>,
+    interno: Arc<Interno>,
+}
+
+impl Motor {
+    pub fn novo(relogio: Arc<dyn RelogioMotor>, abridor: Box<dyn AbridorApp>) -> Self {
+        Self {
+            relogio,
+            abridor,
+            interno: Arc::new(Interno {
+                estado: Mutex::new(Estado {
+                    proximo_id: 1,
+                    pendentes: Vec::new(),
+                    assinante: None,
+                    esperando_destrave: 0,
+                }),
+                mudou: Condvar::new(),
+            }),
+        }
+    }
+
+    /// Motor sem app (D21), com o relógio do sistema.
+    pub fn sem_app() -> Self {
+        Self::novo(Arc::new(RelogioMonotonico::novo()), Box::new(SemApp))
+    }
+
+    /// Agora, pelo relógio do motor (liberação de 1 hora).
+    pub fn agora(&self) -> Duration {
+        self.relogio.agora()
+    }
+
+    /// Abre o app pelo lançador. Já aberto também é sucesso.
+    fn abrir(&self) -> Result<(), ErroAbrirApp> {
+        let interno = Arc::downgrade(&self.interno);
+        let r = self.abridor.abrir(Box::new(move || {
+            if let Some(i) = interno.upgrade() {
+                i.app_saiu();
+            }
+        }));
+        match r {
+            Ok(()) | Err(ErroAbrirApp::JaAberto) => Ok(()),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Operação `abrir_app` (D57): de qualquer papel, sem campo, sem segredo.
+    pub fn abrir_app(&self) -> Result<(), ErroResposta> {
+        self.abrir()
+            .map_err(|_| ErroResposta::AprovacaoIndisponivel)
+    }
+
+    /// A conexão `id` do papel app passa a receber os avisos. Uma por
+    /// vez: a nova toma o lugar da anterior, e o que esta tinha recebido sem responder
+    /// vai de novo à nova.
+    pub fn assinar(&self, id: u64, a: Box<dyn Assinante>) {
+        let mut g = self.interno.estado();
+        if let Some((velho, _)) = g.assinante.take() {
+            for p in g.pendentes.iter_mut() {
+                if p.entregue_a == Some(velho) {
+                    p.entregue_a = None;
+                }
+            }
+        }
+        g.assinante = Some((id, a));
+        g.entregar_pendentes(true);
+        drop(g);
+        self.interno.mudou.notify_all();
+    }
+
+    /// A conexão `id` do app fechou.
+    pub fn desassinar(&self, id: u64) {
+        let mut g = self.interno.estado();
+        g.sair_assinante(id);
+        drop(g);
+        self.interno.mudou.notify_all();
+    }
+
+    /// Há app assinado?
+    pub fn tem_assinante(&self) -> bool {
+        self.interno.estado().assinante.is_some()
+    }
+
+    /// Pede a aprovação e espera (S10). `Ok`: permitido (por um dos três botões, com o
+    /// PIN conferido pelo núcleo). O `id` do pedido é do motor.
+    pub fn pedir_aprovacao(
+        &self,
+        mut pedido: PedidoDeAprovacao,
+        cliente: &dyn Cliente,
+    ) -> Result<(), ErroResposta> {
+        let mut g = self.interno.estado();
+        let id = g.proximo_id;
+        g.proximo_id = g.proximo_id.saturating_add(1);
+        pedido.id = id;
+        let prazo = self.relogio.agora().saturating_add(PRAZO_APROVACAO);
+        g.pendentes.push(Pendente {
+            pedido,
+            entregue_a: None,
+            resultado: None,
+        });
+        if g.assinante.is_some() {
+            g.entregar_pendentes(false);
+        } else {
+            drop(g);
+            if self.abrir().is_err() {
+                aviso!("aprovação {id}: app indisponível; negado (D21)");
+                self.interno.estado().tirar(id);
+                return Err(ErroResposta::AprovacaoIndisponivel);
+            }
+            g = self.interno.estado();
+        }
+        depurar!("aprovação {id}: pendente");
+        loop {
+            if let Some(r) = g.pendente(id).and_then(|p| p.resultado.take()) {
+                g.tirar(id);
+                match &r {
+                    Ok(()) => depurar!("aprovação {id}: permitida"),
+                    Err(e) => aviso!("aprovação {id}: {}", e.codigo()),
+                }
+                return r;
+            }
+            if self.relogio.agora() >= prazo {
+                g.tirar(id);
+                aviso!("aprovação {id}: expirou em 2 min (S10)");
+                return Err(ErroResposta::Expirado);
+            }
+            if cliente.saiu() {
+                g.tirar(id);
+                aviso!("aprovação {id}: o cliente saiu; cancelada");
+                return Err(ErroResposta::Negado);
+            }
+            g = self
+                .interno
+                .mudou
+                .wait_timeout(g, PASSO)
+                .map(|(g, _)| g)
+                .unwrap_or_else(|e| e.into_inner().0);
+        }
+    }
+
+    /// As entradas do pedido `id`, se ele está pendente e ainda sem decisão.
+    pub fn pendente(&self, id: u64) -> Option<Vec<String>> {
+        let mut g = self.interno.estado();
+        g.pendente(id)
+            .filter(|p| p.resultado.is_none())
+            .map(|p| p.pedido.entradas.clone())
+    }
+
+    /// Decide o pedido `id`. `false`: não está mais pendente (expirou, foi cancelado ou
+    /// já decidido).
+    pub fn decidir(&self, id: u64, r: Result<(), ErroResposta>) -> bool {
+        let mut g = self.interno.estado();
+        let Some(p) = g.pendente(id).filter(|p| p.resultado.is_none()) else {
+            return false;
+        };
+        p.resultado = Some(r);
+        drop(g);
+        self.interno.mudou.notify_all();
+        true
+    }
+
+    /// Cofre travado num uso do agente (D16): pede ao app a tela de destravar e espera
+    /// até 2 min. `travado` é consultado sem nenhuma trava do motor.
+    pub fn esperar_destrave(
+        &self,
+        travado: &dyn Fn() -> bool,
+        cliente: &dyn Cliente,
+    ) -> Result<(), ErroResposta> {
+        let prazo = self.relogio.agora().saturating_add(PRAZO_DESTRAVE);
+        {
+            let mut g = self.interno.estado();
+            g.esperando_destrave = g.esperando_destrave.saturating_add(1);
+            if g.assinante.is_some() {
+                // Só o pedido de destrave (os de aprovação já foram).
+                let ok = g
+                    .assinante
+                    .as_mut()
+                    .is_some_and(|(_, a)| a.entregar(&Resposta::PedidoDeDestrave));
+                if !ok && let Some((aid, _)) = g.assinante.as_ref() {
+                    let aid = *aid;
+                    g.sair_assinante(aid);
+                }
+            } else {
+                drop(g);
+                if self.abrir().is_err() {
+                    // Ninguém mostraria a tela; quem pediu fica sabendo já.
+                    self.sair_destrave();
+                    aviso!("pedido com o cofre travado: app indisponível");
+                    return Err(ErroResposta::Travado);
+                }
+            }
+        }
+        aviso!("pedido com o cofre travado: esperando o destrave (até 2 min, D16)");
+        let r = loop {
+            if !travado() {
+                break Ok(());
+            }
+            if self.relogio.agora() >= prazo {
+                aviso!("pedido com o cofre travado: tempo esgotado");
+                break Err(ErroResposta::TravadoTempoEsgotado);
+            }
+            if cliente.saiu() {
+                break Err(ErroResposta::Travado);
+            }
+            std::thread::sleep(PASSO);
+        };
+        self.sair_destrave();
+        r
+    }
+
+    fn sair_destrave(&self) {
+        let mut g = self.interno.estado();
+        g.esperando_destrave = g.esperando_destrave.saturating_sub(1);
+    }
+}

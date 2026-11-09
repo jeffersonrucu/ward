@@ -17,7 +17,10 @@
 //!   trava e responde [`ErroResposta::CofreMudou`].
 //! - Nenhuma resposta ao agente tem nível (D50), e uma entrada bloqueada responde igual
 //!   a uma inexistente (V3.17).
+//! - Uso do agente e aprovação (Fase 23): em [`crate::uso`], com o motor de
+//!   [`crate::aprovacao`].
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
@@ -33,6 +36,7 @@ use ward_core::protocolo::{
     DetalheEntrada, ErroResposta, ItemLista, Papel, Pedido, Problema, Resposta,
 };
 
+use crate::aprovacao::{Cliente, Motor, SemCliente};
 use crate::arquivos::{self, Geracoes, Identidade};
 use crate::{aviso, depurar};
 
@@ -81,18 +85,21 @@ pub struct Caminhos {
 }
 
 /// Cofre destravado.
-struct Aberto {
+pub(crate) struct Aberto {
     cofre: CofreAberto,
     /// Em ordem de nome.
-    entradas: Vec<Entrada>,
+    pub(crate) entradas: Vec<Entrada>,
+    /// "Permitir por 1 hora" (D2): entrada → até quando, no relógio do motor. Some ao
+    /// travar (vai junto com o `Aberto`), ao mudar o nível e ao remover ou renomear.
+    pub(crate) liberacoes: HashMap<String, Duration>,
     /// Identidade do arquivo depois da última leitura ou gravação. `None`: não deu para
     /// ler depois de gravar, e a próxima gravação recusa como "mudou".
     identidade: Option<Identidade>,
     geracoes: Geracoes,
 }
 
-struct Estado {
-    aberto: Option<Aberto>,
+pub(crate) struct Estado {
+    pub(crate) aberto: Option<Aberto>,
     /// Identidade do cofre ao travar, para conferir ao reabrir (D39).
     identidade_conhecida: Option<Identidade>,
     erros_pin: u32,
@@ -101,7 +108,7 @@ struct Estado {
 }
 
 impl Estado {
-    fn travar(&mut self) {
+    pub(crate) fn travar(&mut self) {
         if let Some(a) = self.aberto.take() {
             self.identidade_conhecida = a.identidade;
             // `CofreAberto` e `Entrada` zeram ao sair (chave de dados, hash, segredos).
@@ -127,6 +134,8 @@ pub struct Daemon {
     /// as tentativas são uma de cada vez, de qualquer conexão.
     falhas_senha: Mutex<u32>,
     relogio: Box<dyn Relogio>,
+    /// Motor de aprovação (Fase 23).
+    pub(crate) aprovacao: Motor,
 }
 
 enum FalhaGravar {
@@ -247,11 +256,24 @@ impl Daemon {
             }),
             falhas_senha: Mutex::new(0),
             relogio,
+            aprovacao: Motor::sem_app(),
         }
     }
 
+    /// Troca o motor de aprovação (o do daemon abre o app pelo lançador; os testes
+    /// usam um relógio e um app falsos).
+    pub fn com_motor(mut self, motor: Motor) -> Self {
+        self.aprovacao = motor;
+        self
+    }
+
+    /// O motor de aprovação (o servidor assina nele a conexão do app).
+    pub fn motor(&self) -> &Motor {
+        &self.aprovacao
+    }
+
     /// O estado; se uma thread caiu no meio de uma operação, trava (falha fechada).
-    fn estado(&self) -> MutexGuard<'_, Estado> {
+    pub(crate) fn estado(&self) -> MutexGuard<'_, Estado> {
         match self.estado.lock() {
             Ok(g) => g,
             Err(envenenado) => {
@@ -301,12 +323,18 @@ impl Daemon {
 
     /// Atende um pedido já decodificado para o papel da conexão.
     pub fn atender(&self, papel: Papel, pedido: Pedido) -> Resposta {
+        self.atender_de(&SemCliente, papel, pedido)
+    }
+
+    /// Como [`Daemon::atender`], com o cliente da conexão (cadeia de processos para a
+    /// janela de aprovação e se ele ainda está lá).
+    pub fn atender_de(&self, cliente: &dyn Cliente, papel: Papel, pedido: Pedido) -> Resposta {
         let op = pedido.operacao();
         // O protocolo já recusou; aqui é a segunda camada.
         if !op.permitida(papel) {
             return Resposta::Erro(ErroResposta::NaoAutorizado);
         }
-        let r = self.atender_permitido(papel, pedido);
+        let r = self.atender_permitido(cliente, papel, pedido);
         if crate::trava::conta_como_uso(op, &r) {
             self.registrar_uso();
         }
@@ -322,13 +350,15 @@ impl Daemon {
         r
     }
 
-    fn atender_permitido(&self, papel: Papel, pedido: Pedido) -> Resposta {
+    fn atender_permitido(&self, cliente: &dyn Cliente, papel: Papel, pedido: Pedido) -> Resposta {
         let r = match pedido {
             Pedido::Estado => {
                 let travado = self.travado();
                 Ok(Resposta::Estado {
                     travado,
                     cofre_existe: !travado || arquivos::cofre_existe(&self.caminhos.cofre),
+                    // D63: o papel desta conexão, sem nenhum outro dado.
+                    papel,
                 })
             }
             Pedido::Destravar { senha } => self.destravar(&senha),
@@ -337,10 +367,20 @@ impl Daemon {
                 Ok(Resposta::Ok)
             }
             Pedido::Lista => self.lista(papel),
-            Pedido::Executar(x) => self.uso_do_agente(&x.entrada),
-            Pedido::Ssh { entrada, .. }
-            | Pedido::Login { entrada }
-            | Pedido::Playwright { entrada } => self.uso_do_agente(&entrada),
+            // Fase 23: nível, destrave e aprovação. A execução chega nas Fases 26/27;
+            // até lá, o uso autorizado responde erro interno.
+            Pedido::Executar(_)
+            | Pedido::Ssh { .. }
+            | Pedido::Login { .. }
+            | Pedido::Playwright { .. } => self
+                .autorizar_uso(cliente, &pedido)
+                .and(Err(ErroResposta::Interno)),
+            Pedido::ResponderAprovacao {
+                pedido,
+                decisao,
+                pin,
+            } => self.responder_aprovacao(pedido, decisao, pin.as_ref()),
+            Pedido::AbrirApp => self.aprovacao.abrir_app().map(|()| Resposta::Ok),
             // Não há sessão aberta nesta fase (Fases 26/27).
             Pedido::EntradaPadrao { .. } | Pedido::Janela(_) => Err(ErroResposta::PedidoInvalido),
             Pedido::CriarCofre { senha, pin } => self.criar_cofre(&senha, &pin),
@@ -357,12 +397,11 @@ impl Daemon {
             Pedido::TrocarPin { atual, novo } => self.trocar_pin(&atual, &novo),
             Pedido::TrocarSenha { atual, nova } => self.trocar_senha(&atual, &nova),
             Pedido::TempoTrava { minutos } => self.tempo_trava(minutos),
-            // Das fases seguintes (revelar/copiar/TOTP: 30+; aprovação: 23; token: 27/34;
+            // Das fases seguintes (revelar/copiar/TOTP: 30+; token: 27/34;
             // extensão: 40+). Nada é feito e nada sai.
             Pedido::Revelar { .. }
             | Pedido::Copiar { .. }
             | Pedido::Totp { .. }
-            | Pedido::ResponderAprovacao { .. }
             | Pedido::EmitirToken { .. }
             | Pedido::Sugerir { .. }
             | Pedido::Preencher { .. }
@@ -438,6 +477,7 @@ impl Daemon {
         est.aberto = Some(Aberto {
             cofre,
             entradas,
+            liberacoes: HashMap::new(),
             identidade: Some(id),
             geracoes: novo,
         });
@@ -454,25 +494,6 @@ impl Daemon {
             .map(|e| ItemLista::de_entrada(e, papel))
             .collect();
         Ok(Resposta::Lista(itens))
-    }
-
-    /// `run`/`ssh`/`login`/`playwright` do agente. A bloqueada responde igual à que não
-    /// existe (V3.17). A execução chega nas Fases 23 e 26: até lá, "com aprovação" é
-    /// negado como aprovação indisponível (D21) e "livre" responde erro interno.
-    fn uso_do_agente(&self, nome: &str) -> Result<Resposta, ErroResposta> {
-        let est = self.estado();
-        let a = est.aberto.as_ref().ok_or(ErroResposta::Travado)?;
-        let nivel = a
-            .entradas
-            .iter()
-            .find(|e| e.nome() == nome)
-            .map(Entrada::nivel)
-            .filter(|n| *n != NivelAcesso::Bloqueado)
-            .ok_or(ErroResposta::EntradaInexistente)?;
-        Err(match nivel {
-            NivelAcesso::ComAprovacao => ErroResposta::AprovacaoIndisponivel,
-            _ => ErroResposta::Interno,
-        })
     }
 
     fn criar_cofre(&self, senha: &Segredo, pin: &Segredo) -> Result<Resposta, ErroResposta> {
@@ -506,6 +527,7 @@ impl Daemon {
         let mut a = Aberto {
             cofre,
             entradas: Vec::new(),
+            liberacoes: HashMap::new(),
             identidade: None,
             geracoes: antes,
         };
@@ -529,7 +551,7 @@ impl Daemon {
     }
 
     /// Grava; em erro desfaz a mudança em memória com `desfazer`. Arquivo trocado: trava.
-    fn gravar_ou_desfazer(
+    pub(crate) fn gravar_ou_desfazer(
         &self,
         est: &mut Estado,
         desfazer: impl FnOnce(&mut Aberto),
@@ -576,8 +598,11 @@ impl Daemon {
                     .iter()
                     .position(|e| e.nome() == nome)
                     .ok_or(ErroResposta::EntradaInexistente)?;
-                // Editar não muda o nível.
+                // Editar não muda o nível. Renomear tira a liberação de 1 hora (D2).
                 nova.definir_nivel(a.entradas[i].nivel());
+                if nova.nome() != nome {
+                    a.liberacoes.remove(nome);
+                }
                 nova.conferir_no_cofre(a.entradas.iter().filter(|e| e.nome() != nome))
                     .map_err(|e| ErroResposta::de_validacao(&e))?;
                 Some(a.entradas.remove(i))
@@ -612,11 +637,12 @@ impl Daemon {
             .position(|e| e.nome() == nome)
             .ok_or(ErroResposta::EntradaInexistente)?;
         let velha = a.entradas.remove(i);
+        a.liberacoes.remove(nome);
         self.gravar_ou_desfazer(&mut est, move |a| a.entradas.insert(i, velha))
     }
 
     /// Confere o PIN (S9): acerto zera a contagem; o 5.º erro seguido trava.
-    fn conferir_pin(est: &mut Estado, pin: &Segredo) -> Result<(), ErroResposta> {
+    pub(crate) fn conferir_pin(est: &mut Estado, pin: &Segredo) -> Result<(), ErroResposta> {
         let a = est.aberto.as_ref().ok_or(ErroResposta::Travado)?;
         if a.cofre.configuracao().conferir_pin(pin.expor()) {
             est.erros_pin = 0;
@@ -646,6 +672,8 @@ impl Daemon {
             .ok_or(ErroResposta::EntradaInexistente)?;
         let antes = e.nivel();
         e.definir_nivel(nivel);
+        // Voltar atrás é mudar o nível: a liberação de 1 hora acaba (D2).
+        a.liberacoes.remove(nome);
         let nome = nome.to_owned();
         self.gravar_ou_desfazer(&mut est, move |a| {
             if let Some(e) = a.entradas.iter_mut().find(|e| e.nome() == nome) {
