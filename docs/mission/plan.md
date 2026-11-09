@@ -757,6 +757,15 @@ Contrato: V4.1–V4.38
   atacante na frente, `BASH_ENV`, `NODE_OPTIONS=--require`, `GIT_SSH_COMMAND`,
   `PYTHONSTARTUP`, `PGSERVICEFILE`. Atualizar `teste-cli` e o roteiro da skill (comando
   fora do `PATH` fixo vai com caminho absoluto). V4.3–V4.8, V4.36.
+- [ ] Fase 28b — Correções do scrutiny do M4 (1ª reprovação, 2026-11-09): teste do V4.27
+  com home em tmpfs (bwrap) e `strace`/`inotifywait` provando que o `ward ssh` não abre
+  nada do home do passwd; teste cronometrado do V4.21 (travado sem destravar sai ≠ 0 em
+  120 s ± 2 s, `--ignored` ou no `teste-cli`); `required-features = ["modo-teste"]` nos
+  testes de `crates/wardd/tests/` que dependem da feature; texto do contrato: V4.1 (21
+  entradas visíveis) e V4.9 (`bash -c` ou `printf | sftp`); registrar no PRD as
+  divergências do salto sem `ProxyJump` (D13/D43), agente SSH só Ed25519 e
+  `--token-fd` no lugar de `--token` (D3). V4.13 (RA1) espera decisão do usuário.
+  V4.1, V4.9, V4.21, V4.27.
 
 ## Milestone 5 — App desktop
 Contrato: V5.1–V5.35
