@@ -919,6 +919,24 @@ depois), por `get_node` e `screenshot`. Capturas do app (ponte de teste com
 | `Anexo` | `6849` (avatar `6850`, nome `6859`, detalhe `6860`, Remover `6852`) | `app/src/lib/componentes/Anexo.svelte` |
 | `Botão` secundário com `Ícone/tipo-servidor` ("Conectar") | `9192` (main `280`, ícone `225`) | `Botao` com `icone="tipo-servidor"` |
 
+## Fase 30 — primeiro uso no código (só leitura do FigCraft)
+
+Lido de uma cópia do `Ward.figcraft` (o original não foi alterado; sha256 igual antes e
+depois), por `get_node` e `screenshot`. Capturas do app (ponte de teste com
+`--daemon-falso sem-cofre`, Chrome headless, 1280×800, sistema em tema claro), as do
+FigCraft (`figcraft-<id>-*.png`) e `qa.json` em `docs/mission/evidence/fase-30/`.
+
+| Frame / componente no FigCraft | Id | No código |
+| --- | --- | --- |
+| `Primeiro uso / Criar cofre` | `3537` (`conteúdo` `3562`, `formulário` `3563`, cartão `3583`, itens `3594` `3602` `3610`) | `app/src/telas/PrimeiroUso.svelte` (passo 1) |
+| `Primeiro uso / Senha mestra` | `3619` (`formulário` `3645`, `força` `3720`, aviso `18716`, `ações` `3692`) | idem (passo 2) + `primeiro-uso.js` (mínimo de 12, força com os limiares de D65 f) |
+| `Primeiro uso / PIN` | `3733` (`formulário` `3759`, `Campo PIN` `3821`/`3831`, info `18721`, `ações` `3811`) | idem (passo 3) |
+| `Painel de marca` | `717` (instância `3538`) | `app/src/lib/componentes/PainelDeMarca.svelte` |
+| `Indicador de passos` | set `741` (`742`, `748`, `754`) | `app/src/lib/componentes/IndicadorDePassos.svelte` |
+| `Campo senha` | foco `17524`, padrão `17511` | `app/src/lib/componentes/CampoSenha.svelte` |
+| `Destaque` aviso e info | `18684` e `18679` | `Destaque.svelte` ganhou `tipo` (`neutro`, `aviso`, `info`) |
+| `Campo PIN` | set `650` | `CampoPin.svelte` (já existia; o foco fica visível com os 6 dígitos cheios) |
+
 ## Fase 35 — nível de acesso com PIN no código (só leitura do FigCraft)
 
 Lido de uma cópia do `Ward.figcraft` (o original não foi alterado), por `get_node` e

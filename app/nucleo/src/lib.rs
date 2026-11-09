@@ -24,6 +24,8 @@
 //! - [`anexos`]: anexos do formulário (Fase 34). O arquivo é escolhido e lido no lado
 //!   Rust; a interface recebe só nome e tamanho (S11).
 //! - [`terminal`]: "Conectar" do `servidor` (D3): token de uso único e o terminal padrão.
+//! - [`primeiro_uso`]: senha mestra e PIN do cofre novo (Fase 30), conferidos no lado
+//!   Rust antes do `criar_cofre`; o daemon grava só o hash do PIN (D30).
 //! - [`servico`]: o que cada comando faz. Nenhuma resposta leva segredo (S1, S11).
 
 #![forbid(unsafe_code)]
@@ -41,6 +43,7 @@ pub mod formulario;
 pub mod gerador;
 pub mod nivel;
 pub mod partida;
+pub mod primeiro_uso;
 pub mod segredo;
 pub mod servico;
 pub mod terminal;

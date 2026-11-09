@@ -9,9 +9,9 @@
 //! socket, mas executada à mão o daemon dá o papel agente e ela sai na primeira
 //! resposta ([`ward_ponte_teste::partida`]).
 //!
-//! `--daemon-falso cheio|vazio` troca o socket pelo daemon falso do núcleo
+//! `--daemon-falso cheio|vazio|sem-cofre` troca o socket pelo daemon falso do núcleo
 //! (`ward_app_nucleo::daemon_falso`, Fase 32), que responde pelo protocolo com as
-//! entradas falsas do cofre de teste (ou com nenhuma), para conferir as telas no Chrome
+//! entradas falsas do cofre de teste (ou com nenhuma, ou sem cofre para o primeiro uso), para conferir as telas no Chrome
 //! antes do `wardd` da Fase 22.
 
 #![forbid(unsafe_code)]
@@ -28,7 +28,7 @@ use ward_ponte_teste::partida;
 use ward_ponte_teste::simulados::{SeletorDePasta, TerminalDeTeste};
 
 const USO: &str = "uso: ward-ponte-teste [--dist <diretório do build --mode teste> \
-[--daemon-falso cheio|vazio]] [--anexos <pasta com um arquivo>]";
+[--daemon-falso cheio|vazio|sem-cofre]] [--anexos <pasta com um arquivo>]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -59,6 +59,10 @@ fn main() -> ExitCode {
         }
         ["--dist", d, "--daemon-falso", "vazio"] => {
             servir(DaemonFalso::vazio(), Path::new(d), anexos)
+        }
+        // Fase 30: sem cofre, para o `Primeiro uso / *`.
+        ["--dist", d, "--daemon-falso", "sem-cofre"] => {
+            servir(DaemonFalso::sem_cofre(), Path::new(d), anexos)
         }
         _ => {
             eprintln!("{USO}");

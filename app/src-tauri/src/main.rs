@@ -27,7 +27,8 @@ use ward_app_nucleo::formulario::Formulario;
 use ward_app_nucleo::gerador::Opcoes;
 use ward_app_nucleo::nivel::{NivelMudado, Pin};
 use ward_app_nucleo::partida;
-use ward_app_nucleo::servico::{CodigoTotp, ResultadoSalvar, Servico};
+use ward_app_nucleo::primeiro_uso::NovoCofre;
+use ward_app_nucleo::servico::{CodigoTotp, ResultadoCriar, ResultadoSalvar, Servico};
 use ward_app_nucleo::terminal::TerminalDoSistema;
 
 type ServicoApp = Servico<DaemonSocket, Wayland>;
@@ -239,6 +240,13 @@ fn conectar(entrada: String, estado: State<'_, Estado>) -> Result<(), Falha> {
     Ok(estado.servico()?.conectar(&entrada)?)
 }
 
+/// Primeiro uso (Fase 30): senha mestra, PIN e as confirmações, conferidos no núcleo;
+/// o daemon grava só o hash do PIN (D30). A resposta não traz valor.
+#[tauri::command]
+fn criar_cofre(dados: NovoCofre, estado: State<'_, Estado>) -> Result<ResultadoCriar, Falha> {
+    Ok(estado.servico()?.criar_cofre(dados)?)
+}
+
 /// O diálogo "Adicionar arquivo" do GTK, na janela do app.
 struct SeletorGtk;
 
@@ -307,7 +315,8 @@ fn com_comandos<R: Runtime>(builder: Builder<R>, estado: Estado) -> Builder<R> {
             mudar_nivel,
             escolher_anexo,
             remover_anexo,
-            conectar
+            conectar,
+            criar_cofre
         ])
 }
 
@@ -631,6 +640,57 @@ mod testes {
             "{texto}"
         );
         assert!(!texto.contains("135790"), "{texto}");
+    }
+
+    /// Fase 30: `criar_cofre` só na janela `principal` com a origem local; campo a mais
+    /// é recusado antes do serviço; PIN fora de 4 a 6 dígitos volta como erro de campo
+    /// sem ir ao daemon (que nem está rodando aqui) e sem valor na resposta.
+    #[test]
+    fn ataque_criar_cofre_so_na_janela_certa_e_conferido_no_rust() {
+        let app = app_de_teste();
+        let principal = WebviewWindowBuilder::new(&app, "principal", Default::default())
+            .build()
+            .unwrap();
+        let outra = WebviewWindowBuilder::new(&app, "outra", Default::default())
+            .build()
+            .unwrap();
+        let dados = |pin: &str| {
+            serde_json::json!({ "dados": {
+                "senha": "falso-mestra-ward-01", "confirmacao": "falso-mestra-ward-01",
+                "pin": pin, "confirmacao_pin": pin } })
+        };
+        let r = chamar(&outra, "criar_cofre", ORIGEM, dados("135790"));
+        assert!(
+            r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+            "janela sem capability: {r:?}"
+        );
+        let r = chamar(
+            &principal,
+            "criar_cofre",
+            "https://example.com",
+            dados("135790"),
+        );
+        assert!(
+            r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+            "origem remota: {r:?}"
+        );
+        for pin in ["135", "1357901", "13579a"] {
+            let r = chamar(&principal, "criar_cofre", ORIGEM, dados(pin)).unwrap();
+            assert_eq!(r["criado"], false, "{pin}");
+            assert_eq!(r["erros"][0]["campo"], "pin", "{pin}");
+            let texto = r.to_string();
+            assert!(
+                !texto.contains("falso-mestra") && !texto.contains(pin),
+                "{texto}"
+            );
+        }
+        let mut forjado = dados("135790");
+        forjado["dados"]["nivel"] = "livre".into();
+        let r = chamar(&principal, "criar_cofre", ORIGEM, forjado);
+        assert!(
+            r.as_ref().err().is_some_and(|e| !e["codigo"].is_string()),
+            "campo a mais: {r:?}"
+        );
     }
 
     #[test]

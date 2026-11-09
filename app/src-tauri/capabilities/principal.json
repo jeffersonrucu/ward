@@ -21,6 +21,7 @@
     "allow-mudar-nivel",
     "allow-escolher-anexo",
     "allow-remover-anexo",
-    "allow-conectar"
+    "allow-conectar",
+    "allow-criar-cofre"
   ]
 }

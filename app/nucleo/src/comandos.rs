@@ -58,6 +58,10 @@ pub const ESCOLHER_ANEXO: &str = "escolher_anexo";
 pub const REMOVER_ANEXO: &str = "remover_anexo";
 /// `conectar { entrada }`: "Conectar" do `servidor` (D3); o token não volta.
 pub const CONECTAR: &str = "conectar";
+/// `criar_cofre { dados: { senha, confirmacao, pin, confirmacao_pin } }`: primeiro uso
+/// (Fase 30). Conferido no lado Rust; o daemon grava só o hash do PIN (D30). A resposta
+/// traz `criado` ou os erros por campo, nunca o valor.
+pub const CRIAR_COFRE: &str = "criar_cofre";
 
 /// Todos os comandos, na ordem em que aparecem nas capabilities.
 pub const COMANDOS: &[&str] = &[
@@ -79,6 +83,7 @@ pub const COMANDOS: &[&str] = &[
     ESCOLHER_ANEXO,
     REMOVER_ANEXO,
     CONECTAR,
+    CRIAR_COFRE,
 ];
 
 /// Nome da permissão gerada pelo Tauri para o comando (`allow-estado-do-cofre`).
@@ -107,6 +112,7 @@ pub enum Comando {
     EscolherAnexo,
     RemoverAnexo,
     Conectar,
+    CriarCofre,
 }
 
 impl Comando {
@@ -130,6 +136,7 @@ impl Comando {
             ESCOLHER_ANEXO => Some(Comando::EscolherAnexo),
             REMOVER_ANEXO => Some(Comando::RemoverAnexo),
             CONECTAR => Some(Comando::Conectar),
+            CRIAR_COFRE => Some(Comando::CriarCofre),
             _ => None,
         }
     }
@@ -209,6 +216,7 @@ mod testes {
                 "escolher_anexo",
                 "remover_anexo",
                 "conectar",
+                "criar_cofre",
             ]
         );
         assert_eq!(permissao(COPIAR_CAMPO), "allow-copiar-campo");

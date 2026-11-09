@@ -10,6 +10,7 @@
   import { chamar } from './lib/ponte/index.js';
   import Credenciais from './telas/Credenciais.svelte';
   import GeradorSenha from './telas/GeradorSenha.svelte';
+  import PrimeiroUso from './telas/PrimeiroUso.svelte';
 
   const TEXTOS = {
     'sem-cofre': 'Nenhum cofre criado ainda.',
@@ -21,6 +22,8 @@
   let mensagem = $state('Conectando ao daemon…');
   let falhou = $state(false);
   let destravado = $state(false);
+  // Fase 30: sem cofre, o primeiro uso; ao criar, o daemon deixa o cofre destravado.
+  let semCofre = $state(false);
   let tela = $state('credenciais');
   let Vitrine = $state(null);
 
@@ -30,11 +33,18 @@
     try {
       const r = await chamar('estado_do_cofre');
       destravado = r?.estado === 'destravado';
+      semCofre = r?.estado === 'sem-cofre';
       mensagem = TEXTOS[r?.estado] ?? 'Estado desconhecido.';
     } catch (e) {
       falhou = true;
       mensagem = e.mensagem;
     }
+  }
+
+  function aoCriar() {
+    semCofre = false;
+    tela = 'credenciais';
+    destravado = true;
   }
 
   // O cofre travou durante o uso (Fase 35: 5º PIN errado, S9): a casca sai e o estado
@@ -78,6 +88,8 @@
       <main class="vazio"><p class="estado">Esta tela ainda não existe.</p></main>
     {/if}
   </div>
+{:else if semCofre}
+  <PrimeiroUso oncriado={aoCriar} />
 {:else}
   <main class="janela">
     <section class="painel">

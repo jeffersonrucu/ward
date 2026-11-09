@@ -12,12 +12,15 @@
 //! `wardd`: PIN conferido no hash Argon2id da configuração do cofre de teste, em tempo
 //! constante pela biblioteca; o 5º erro seguido trava, e travado tudo menos `estado`
 //! responde "travado"); o resto responde `interno`. As mudanças ficam só na memória do
-//! processo (travado, só reiniciando a ponte).
+//! processo (travado, só reiniciando a ponte). No [`DaemonFalso::sem_cofre`], atende
+//! `criar_cofre` (Fase 30): guarda só o hash do PIN (D30), que o `mudar_nivel` passa a
+//! conferir no lugar do PIN de teste.
 //!
 //! Sem a feature `modo-teste` este módulo nem existe no binário (só nos testes).
 
 use zeroize::Zeroizing;
 
+use ward_core::configuracao::HashPin;
 use ward_core::entrada::{
     Entrada, NivelAcesso, OrigemSegredo, Rascunho, Segredo as SegredoCore, TipoEntrada,
 };
@@ -40,6 +43,10 @@ pub use cofre_teste::SEGREDOS;
 /// Daemon falso com as entradas em memória.
 pub struct DaemonFalso {
     entradas: Vec<Entrada>,
+    /// `false` só no [`DaemonFalso::sem_cofre`] até o `criar_cofre` (Fase 30).
+    existe: bool,
+    /// Hash do PIN do cofre criado pelo `criar_cofre`, como o `wardd` o guarda (D30).
+    hash_pin: Option<HashPin>,
     /// Erros de PIN seguidos (S9). Zera no acerto.
     erros_pin: u32,
     travado: bool,
@@ -53,6 +60,8 @@ impl DaemonFalso {
     pub fn cheio() -> DaemonFalso {
         DaemonFalso {
             entradas: cofre_teste::cofre_de_teste(),
+            existe: true,
+            hash_pin: None,
             erros_pin: 0,
             travado: false,
         }
@@ -62,9 +71,29 @@ impl DaemonFalso {
     pub fn vazio() -> DaemonFalso {
         DaemonFalso {
             entradas: Vec::new(),
+            existe: true,
+            hash_pin: None,
             erros_pin: 0,
             travado: false,
         }
+    }
+
+    /// Sem cofre ainda (`Primeiro uso / *`, Fase 30): `estado` responde
+    /// `cofre_existe: false`, o resto responde "ainda não existe cofre" até o
+    /// `criar_cofre`, que deixa o cofre vazio e destravado, como o `wardd`.
+    pub fn sem_cofre() -> DaemonFalso {
+        DaemonFalso {
+            entradas: Vec::new(),
+            existe: false,
+            hash_pin: None,
+            erros_pin: 0,
+            travado: false,
+        }
+    }
+
+    /// O PIN confere com o hash guardado pelo `criar_cofre` (só para os testes).
+    pub fn pin_confere(&self, pin: &[u8]) -> bool {
+        self.hash_pin.as_ref().is_some_and(|h| h.conferir(pin))
     }
 
     fn entrada(&self, nome: &str) -> Option<&Entrada> {
@@ -72,6 +101,25 @@ impl DaemonFalso {
     }
 
     fn atender(&mut self, pedido: Pedido) -> Resposta {
+        if !self.existe {
+            return match pedido {
+                Pedido::Estado => Resposta::Estado {
+                    travado: true,
+                    cofre_existe: false,
+                    papel: Papel::App,
+                },
+                // Como o `wardd` (`nucleo.rs` › `criar_cofre`): só o hash do PIN fica.
+                Pedido::CriarCofre { senha: _, pin } => match HashPin::criar(pin.expor()) {
+                    Ok(h) => {
+                        self.hash_pin = Some(h);
+                        self.existe = true;
+                        Resposta::Ok
+                    }
+                    Err(_) => Resposta::Erro(ErroResposta::PedidoInvalido),
+                },
+                _ => Resposta::Erro(ErroResposta::CofreInexistente),
+            };
+        }
         if self.travado && !matches!(pedido, Pedido::Estado) {
             return Resposta::Erro(ErroResposta::Travado);
         }
@@ -81,6 +129,7 @@ impl DaemonFalso {
                 cofre_existe: true,
                 papel: Papel::App,
             },
+            Pedido::CriarCofre { .. } => Resposta::Erro(ErroResposta::CofreJaExiste),
             Pedido::Lista => Resposta::Lista(
                 self.entradas
                     .iter()
@@ -160,7 +209,11 @@ impl DaemonFalso {
         nivel: NivelAcesso,
         pin: &SegredoCore,
     ) -> Result<(), ErroResposta> {
-        if !cofre_teste::configuracao_de_teste().conferir_pin(pin.expor()) {
+        let confere = match &self.hash_pin {
+            Some(h) => h.conferir(pin.expor()),
+            None => cofre_teste::configuracao_de_teste().conferir_pin(pin.expor()),
+        };
+        if !confere {
             self.erros_pin = self.erros_pin.saturating_add(1);
             if self.erros_pin >= MAX_ERROS_PIN {
                 self.travado = true;

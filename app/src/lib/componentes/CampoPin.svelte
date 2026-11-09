@@ -105,7 +105,9 @@
   .digito.cheio {
     border-color: var(--cor-borda-padrao);
   }
-  .caixas:focus-within .atual {
+  .caixas:focus-within .atual,
+  .caixas:focus-within .cheio:last-of-type {
+    /* V5.25: com todos os dígitos cheios, o foco fica visível no último. */
     border-color: var(--cor-borda-foco);
   }
   .com-erro .digito {
