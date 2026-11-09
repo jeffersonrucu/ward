@@ -385,6 +385,32 @@ fn ataque_subir_com_lista_insegura_da_glibc_recusa() {
     }
 }
 
+/// V3.25 (scrutiny do M3): nome com `\n`, `\x1b` ou 200 caracteres sai cortado no
+/// primeiro byte fora de `[A-Za-z0-9_]` e no 64º, sem `?` nem `…`, e sem o valor.
+#[test]
+fn ataque_v3_25_nome_forjado_sai_cortado() {
+    let longo = format!("LD_{}", "Z".repeat(197));
+    for (nome, esperado) in [
+        ("LD_FORJA\nwardd: destravado", "LD_FORJA"),
+        ("LD_COR\x1b[31mvermelho", "LD_COR"),
+        ("GCONV_PATH", "GCONV_PATH"),
+        (longo.as_str(), &longo[..64]),
+    ] {
+        let (r, codigo) = iniciar_com(Some((nome, "valor-falso-ward")), false);
+        assert_ne!(codigo, Some(0), "{nome:?}");
+        let m = r
+            .strip_prefix("erro:")
+            .unwrap_or_else(|| panic!("{nome:?}: {r}"));
+        assert!(!m.contains("valor-falso-ward"), "valor na mensagem: {r}");
+        assert!(!m.contains('?') && !m.contains('…'), "marca de corte: {r}");
+        assert!(!m.contains('\x1b') && !m.contains('\n'), "controle: {r:?}");
+        let depois = m
+            .strip_prefix(&format!("variável {esperado} "))
+            .unwrap_or_else(|| panic!("{nome:?}: nome cortado errado: {r}"));
+        assert!(depois.starts_with("definida"), "{r}");
+    }
+}
+
 #[test]
 fn ataque_subir_sob_strace_recusa() {
     let (r, codigo) = iniciar_com(None, true);

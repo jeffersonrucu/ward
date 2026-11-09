@@ -1061,7 +1061,7 @@ mod testes {
             sys::geteuid(),
             OsStr::new("/home/teste"),
         );
-        assert_eq!(r, Err(ErroSessao::AMais("X??2J".to_owned())));
+        assert_eq!(r, Err(ErroSessao::AMais("X".to_owned())));
     }
 
     #[test]

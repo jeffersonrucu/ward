@@ -504,7 +504,9 @@ impl Daemon {
 
     /// Troca os programas do `ward ssh` (Fase 27). Só os testes do crate chamam (com
     /// programas falsos que registram o argv); o binário usa sempre os do sistema, e
-    /// nenhum pedido do socket chega aqui.
+    /// nenhum pedido do socket chega aqui. Fora do release (scrutiny do M3): só existe
+    /// com a feature `ganchos-teste`, que liga o `modo-teste` (V3.15, V9.2).
+    #[cfg(feature = "ganchos-teste")]
     #[doc(hidden)]
     pub fn com_programas_ssh(mut self, p: crate::ssh::ProgramasSsh) -> Self {
         self.programas_ssh = p;
@@ -543,7 +545,9 @@ impl Daemon {
     }
 
     /// Liga o gancho de teste chamado logo depois de cada gravação do cofre (V3.35). O
-    /// binário não chama, e nenhum pedido do socket chega aqui.
+    /// binário não chama, e nenhum pedido do socket chega aqui. Fora do release
+    /// (scrutiny do M3): só existe com a feature `ganchos-teste` (V3.15, V9.2).
+    #[cfg(feature = "ganchos-teste")]
     #[doc(hidden)]
     pub fn com_gancho_depois_de_gravar(mut self, gancho: Gancho) -> Self {
         self.gancho_gravado = Some(gancho);
