@@ -1009,6 +1009,8 @@ Contrato: V9.1–V9.11
 ## Milestone 10 — Migração e saída do KeePassXC
 Contrato: V10.1–V10.4
 
+Scrutiny do M10 (2026-11-09): aprovado (V10.1–V10.3); V10.4 é do usuário.
+
 - [x] Fase 53 — `docs/migracao.md`: guia da etapa final, executado pelo usuário, com
   conferência e volta atrás em cada passo (chaves pessoais para `~/.ssh`, chaves de
   servidor para entradas `servidor`, gnome-keyring e "Chrome Safe Storage", desfazer
