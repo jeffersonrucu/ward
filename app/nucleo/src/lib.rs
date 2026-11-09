@@ -28,6 +28,9 @@
 //! - [`terminal`]: "Conectar" do `servidor` (D3): token de uso único e o terminal padrão.
 //! - [`primeiro_uso`]: senha mestra e PIN do cofre novo (Fase 30), conferidos no lado
 //!   Rust antes do `criar_cofre`; o daemon grava só o hash do PIN (D30).
+//! - [`configuracoes`]: tela Configurações (Fase 38): trocar PIN (pede o atual), trocar
+//!   senha mestra (pede a atual; a nova com a regra do primeiro uso) e tempo de trava,
+//!   gravados pelo daemon na configuração do cofre (D30, D39).
 //! - [`aprovacao`]: janela de aprovação (Fase 36): pedidos do daemon com o texto do
 //!   agente neutralizado (D51) e a resposta com PIN, só pela janela `aprovacao`.
 //! - [`servico`]: o que cada comando faz. Nenhuma resposta leva segredo (S1, S11).
@@ -39,6 +42,7 @@ pub mod aprovacao;
 pub mod area_transferencia;
 pub mod cliente;
 pub mod comandos;
+pub mod configuracoes;
 pub mod credenciais;
 pub mod daemon;
 #[cfg(any(test, feature = "modo-teste"))]

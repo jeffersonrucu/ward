@@ -8,16 +8,38 @@
   //
   // É um `<input type="checkbox" role="switch">` de verdade (teclado e leitor), com o
   // desenho do interruptor por cima.
+  //
+  // Fase 38: variantes `Controle=botão` (10380) e `Controle=select` (10825): com o
+  // snippet `controle`, a linha é um `<div>` e o controle (um `Botao` secundário ou um
+  // `Select` compacto) fica à direita, no lugar do interruptor; mesmas medidas.
 
   /**
    * @type {{
-   *   titulo: string, id: string, ligado: boolean, desabilitado?: boolean,
-   *   onmudar?: (ligado: boolean) => void, descricao?: import('svelte').Snippet
+   *   titulo: string, id: string, ligado?: boolean, desabilitado?: boolean,
+   *   onmudar?: (ligado: boolean) => void, descricao?: import('svelte').Snippet,
+   *   controle?: import('svelte').Snippet
    * }}
    */
-  let { titulo, id, ligado, desabilitado = false, onmudar = undefined, descricao } = $props();
+  let {
+    titulo,
+    id,
+    ligado = false,
+    desabilitado = false,
+    onmudar = undefined,
+    descricao,
+    controle,
+  } = $props();
 </script>
 
+{#if controle}
+  <div class="linha com-controle" {id}>
+    <span class="textos">
+      <span class="titulo">{titulo}</span>
+      {#if descricao}<span class="descricao">{@render descricao()}</span>{/if}
+    </span>
+    <span class="controle">{@render controle()}</span>
+  </div>
+{:else}
 <label class="linha" for={id}>
   <span class="textos">
     <span class="titulo">{titulo}</span>
@@ -36,6 +58,7 @@
     <span class="botao"></span>
   </span>
 </label>
+{/if}
 
 <style>
   .linha {
@@ -47,6 +70,13 @@
     border: var(--linha-fina) solid var(--cor-borda-sutil);
     background: var(--cor-superficie-padrao);
     cursor: pointer;
+  }
+  .com-controle {
+    cursor: default;
+  }
+  .controle {
+    display: flex;
+    flex: none;
   }
   .textos {
     display: flex;

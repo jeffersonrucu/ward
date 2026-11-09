@@ -1,20 +1,31 @@
 <script>
   // `Select` (set 421): padrão, foco, aberto, desabilitado. Usa o <select> nativo
   // (teclado e leitor de tela de graça); caixa igual à do `Campo`, largura mínima
-  // largura/select-filtro, chevron-baixo à direita.
+  // largura/select-filtro, chevron-baixo à direita. `compacto` (Fase 38, o `Select`
+  // 10829 da `Linha de opção` 10825): largura largura/select-compacto e rótulo só para
+  // o leitor (o título da linha já diz o que é).
   import Icone from './Icone.svelte';
 
   /**
    * @type {{ rotulo: string, id: string, valor?: string,
-   *   opcoes: Array<{ valor: string, rotulo: string }>, desabilitado?: boolean }}
+   *   opcoes: Array<{ valor: string, rotulo: string }>, desabilitado?: boolean,
+   *   compacto?: boolean, onmudar?: (valor: string) => void }}
    */
-  let { rotulo, id, valor = $bindable(''), opcoes, desabilitado = false } = $props();
+  let {
+    rotulo,
+    id,
+    valor = $bindable(''),
+    opcoes,
+    desabilitado = false,
+    compacto = false,
+    onmudar = undefined,
+  } = $props();
 </script>
 
-<div class="select">
-  <label class="rotulo" for={id}>{rotulo}</label>
+<div class="select" class:compacto>
+  <label class="rotulo" class:visualmente-oculto={compacto} for={id}>{rotulo}</label>
   <div class="caixa">
-    <select {id} bind:value={valor} disabled={desabilitado}>
+    <select {id} bind:value={valor} disabled={desabilitado} onchange={() => onmudar?.(valor)}>
       {#each opcoes as o (o.valor)}
         <option value={o.valor}>{o.rotulo}</option>
       {/each}
@@ -29,6 +40,10 @@
     flex-direction: column;
     gap: var(--espaco-8);
     min-width: var(--largura-select-filtro);
+  }
+  .compacto {
+    width: var(--largura-select-compacto);
+    min-width: var(--largura-select-compacto);
   }
   .rotulo {
     font-weight: var(--peso-medio);

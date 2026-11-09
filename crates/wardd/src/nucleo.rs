@@ -699,6 +699,7 @@ impl Daemon {
             }
             Pedido::Totp { entrada } => self.totp_do_app(papel, &entrada),
             Pedido::Backups => self.backups(),
+            Pedido::Configuracao => self.configuracao(),
             Pedido::BackupExterno => self.backup_externo(),
             Pedido::DefinirBackupExterno { ligado, uuid } => {
                 self.definir_backup_externo(ligado, uuid.as_deref())
@@ -1262,6 +1263,19 @@ impl Daemon {
                 Err(ErroResposta::from(&e))
             }
         }
+    }
+
+    /// Tempo de trava e backup externo ligado ou não (Fase 38), para a tela
+    /// Configurações. Só com o cofre destravado e só pelo app; nunca o hash do PIN nem o
+    /// UUID do pendrive.
+    fn configuracao(&self) -> Result<Resposta, ErroResposta> {
+        let est = self.estado();
+        let a = est.aberto.as_ref().ok_or(ErroResposta::Travado)?;
+        let c = a.cofre.configuracao();
+        Ok(Resposta::Configuracao {
+            minutos_trava: c.minutos_trava(),
+            backup_externo: c.backup().ligado(),
+        })
     }
 
     /// Versões do backup local (Fase 45), da mais nova para a mais antiga. Só com o

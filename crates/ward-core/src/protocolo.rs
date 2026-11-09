@@ -198,6 +198,7 @@ tabela! {
     TempoTrava = "tempo_trava", SO_APP, "Tempo de trava por inatividade, em minutos.";
     Backups = "backups", SO_APP, "Versões do backup local, da mais nova para a mais antiga (D17, Fase 45).";
     RestaurarBackup = "restaurar_backup", SO_APP, "Restaurar uma versão do backup local, com a senha mestra dela e o PIN atual (D17, D39, Fase 45).";
+    Configuracao = "configuracao", SO_APP, "Tempo de trava e backup externo ligado ou não, para a tela Configurações (Fase 38); sem hash de PIN nem UUID.";
     BackupExterno = "backup_externo", SO_APP, "Configuração do backup externo: ligado ou não e o UUID do pendrive (D17, D30, Fase 46).";
     DefinirBackupExterno = "definir_backup_externo", SO_APP, "Ligar ou desligar o backup externo e escolher o pendrive pelo UUID (D17, D30, Fase 46).";
     Pendrives = "pendrives", SO_APP, "Sistemas de arquivos de pendrive que o udisks2 vê, para escolher o do backup externo (Fase 46).";
@@ -225,6 +226,7 @@ tabela! {
     Sugestoes = "sugestoes", SO_EXTENSAO, "Entradas sugeridas para a aba.";
     Preenchimento = "preenchimento", SO_EXTENSAO, "Usuário, senha e TOTP para preencher.";
     Backups = "backups", SO_APP, "Nomes das versões do backup local (D17, Fase 45).";
+    Configuracao = "configuracao", SO_APP, "Tempo de trava em minutos e backup externo ligado ou não (Fase 38).";
     BackupExterno = "backup_externo", SO_APP, "Configuração do backup externo (D17, D30, Fase 46).";
     Pendrives = "pendrives", SO_APP, "Pendrives vistos pelo udisks2: UUID, rótulo e se está montado (Fase 46).";
 }
@@ -262,6 +264,12 @@ const _: () = {
     assert!(!Operacao::RestaurarBackup.papeis().extensao);
     assert!(!Operacao::Backups.papeis().agente);
     assert!(!Operacao::Backups.papeis().extensao);
+    // Fase 38: a configuração do cofre e as trocas de PIN, senha e trava só pelo app.
+    assert!(!Operacao::Configuracao.papeis().agente);
+    assert!(!Operacao::Configuracao.papeis().extensao);
+    assert!(!Operacao::TrocarPin.papeis().agente);
+    assert!(!Operacao::TrocarSenha.papeis().agente);
+    assert!(!Operacao::TempoTrava.papeis().agente);
     // V7.8: ligar, ler o backup externo e ver os pendrives só pelo app (Fase 46).
     assert!(!Operacao::BackupExterno.papeis().agente);
     assert!(!Operacao::BackupExterno.papeis().extensao);
