@@ -1011,6 +1011,11 @@ Contrato: V9.1–V9.11
   num contêiner `ubuntu:24.04` e roteiro de instalação para o usuário (política do
   Chrome, systemd, `~/.ssh` intacto). V9.5, V9.8, V9.9.
 
+Scrutiny do M9 (2026-11-09): aprovado (V9.5, V9.7 real e V9.8 com `git push` são do
+usuário). Baixo novo: texto `WARD_DEV_DBUS_SISTEMA` no `wardd` de release (`main.rs:201`,
+`trava.rs`) obriga exceção na recusa de `WARD_DEV_*` do `instalar.sh` — pôr atrás de
+`cfg(feature = "modo-teste")`.
+
 ## Milestone 10 — Migração e saída do KeePassXC
 Contrato: V10.1–V10.4
 
