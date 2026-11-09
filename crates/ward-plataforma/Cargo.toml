@@ -19,8 +19,9 @@ modo-teste = []
 # `pidfd_send_signal`, `openat`/`readlinkat`, `prctl`, `setrlimit`, `mmap`/`mlock`/
 # `madvise`. A biblioteca padrão não tem nenhuma delas estável.
 libc = { version = "0.2.191", default-features = false }
-# `zeroize`: zera o `BufferTravado` antes de devolver as páginas (S8).
-zeroize = { version = "1.9.1", default-features = false }
+# `zeroize`: zera o `BufferTravado` antes de devolver as páginas e, com `alloc`, a
+# senha lida do terminal (`terminal`, Fase 25) (S8).
+zeroize = { version = "1.9.1", default-features = false, features = ["alloc"] }
 
 # Binário de teste do contêiner (`make teste-docker-plataforma`). Só com `modo-teste`.
 [[example]]

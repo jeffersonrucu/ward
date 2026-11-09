@@ -65,7 +65,7 @@ CARGO_DENY_VERSAO := 0.20.2
 .PHONY: check build fmt fmt-check clippy test audit deny gitleaks ferramentas \
 	origens gitleaks-binario teste-ataques-fundacao teste-ataques-servicos teste-iscas-home teste-home-real dev-servicos dev-servicos-subir \
 	dev-servicos-parar dev-servicos-estado dev-servicos-conferir dev-servicos-trocar-chave-host dev-cofre \
-	dev-cofre-conferir dev-variacoes teste-dev-cofre dev-daemon dev-daemon-parar teste-docker-uid \
+	dev-cofre-conferir dev-variacoes teste-dev-cofre dev-daemon dev-daemon-parar teste-cli teste-docker-uid \
 	app-front app-check app-ponte teste-docker-plataforma
 
 ## check: pré-checagem das origens, depois fmt, clippy -D warnings, testes, cargo audit,
@@ -311,6 +311,12 @@ teste-docker-uid: origens
 dev-daemon: origens
 	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd
 	dev/daemon.sh subir
+
+## teste-cli: CLI `ward` de teste num pty (Fase 25): V4.2 com servidor falso, V4.1 e
+## V4.22 contra o daemon de teste; precisa de `make dev-daemon` e `make dev-variacoes`
+teste-cli: origens
+	$(CARGO) build --quiet --locked -p ward --features modo-teste --bin ward
+	$(PYTHON) dev/testes/cli.py target/debug/ward "$(CURDIR)"
 
 ## dev-daemon-parar: para o daemon de teste (confere que o pid é mesmo o wardd daqui)
 dev-daemon-parar:
