@@ -1173,7 +1173,7 @@ que execute o Chrome instalado se passa pelo navegador, e a extensão no perfil 
 adulterada. A extensão continua preenchendo sem clique. A segurança do M9 conta como
 aprovada depois da Fase 51b; segue o QA.
 
-- [ ] Fase 51b — Registrar o RA10 e fechar o resto da 2ª auditoria do M9.
+- [x] Fase 51b — Registrar o RA10 e fechar o resto da 2ª auditoria do M9.
   - `docs/escopo.md`: em "Fora do modelo de ameaça", acrescentar que um processo do mesmo
     uid que execute o Chrome instalado (exec com troca de pai) ou adultere a extensão no
     perfil se passa pelo navegador para o `ward-nm`. Reescrever o modelo 2 ("extensão em
@@ -1187,6 +1187,15 @@ aprovada depois da Fase 51b; segue o QA.
   - Baixo: `instalacao/grupos.sh` (D60) recusa `group:` do `nsswitch.conf` fora de
     `files`/`systemd`, como já faz com `subid:`/`sudoers:`. Teste em `teste-install`/
     `teste-deb`, ou no autoteste do `grupos.sh` se ele cobrir o caso.
+  Feita (2026-11-09):
+  - RA10 em "Fora do modelo de ameaça"; modelo 2 e D18 reescritos.
+  - Guia 4a: `conferir_host` mostra "NÃO COPIE" para host gravável, link ou script.
+  - `grupos.sh` recusa `group:`/`initgroups:` fora de `files`/`systemd`.
+  Pendências:
+  - `make check`, `teste-install` e `teste-deb` não rodaram (os casos de NSS nos
+    contêineres estão sem rodar); ficam para o QA do M9.
+  - O S1 do escopo não cita a exceção. O V9.11 não lista os casos de NSS.
+  - Um `nsswitch.conf` sem a linha `group:` não é recusado.
 
 ## Milestone 10 — Migração e saída do KeePassXC
 Contrato: V10.1–V10.4
