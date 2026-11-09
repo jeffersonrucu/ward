@@ -764,8 +764,11 @@ O QA usa o Chrome em modo de teste (D7) e confere a aparência contra o frame.
 - [ ] V5.2 — (SEG) Dado o app, quando o auditor injeta `<img
   src="https://example.com/x">`, `<script src="https://example.com/x.js">` e
   `fetch('https://example.com')`, então a CSP bloqueia os três e nenhuma conexão sai
-  (sem requisição no log de rede); `grep -rE 'https?://' dist/` não acha URL remota —
-  cobre S11.
+  (sem requisição no log de rede); `grep -rE 'https?://' dist/` só acha os namespaces
+  XML que o Svelte embute (`http://www.w3.org/2000/svg`, `http://www.w3.org/1999/xhtml`,
+  e outros `http://www.w3.org/…` de namespace, se houver), que são nomes e não
+  endereços; qualquer outra URL reprova, como confere o `dev/testes/app-dist.py`
+  (handoff 29) — cobre S11.
 - [ ] V5.3 — (SEG)(UI) Dado o app destravado, quando o QA passa por todas as telas e
   abre todas as entradas sem clicar em "revelar", então `outerHTML`, os `value` dos
   inputs, `localStorage`, `sessionStorage`, IndexedDB e as respostas da ponte não
@@ -853,6 +856,17 @@ O QA usa o Chrome em modo de teste (D7) e confere a aparência contra o frame.
   e com um processo pai de nome `claude\u202E` na cadeia, quando a janela abre, então
   cada caractere aparece como escape visível, cada argumento separado e entre aspas,
   nada é reordenado nem apagado, e o que executa é o comando exato (D51) — cobre S10.
+- [ ] V5.30 — (SEG) Dado o app (RA7), quando o auditor roda `cargo deny check` e
+  `cargo audit` na raiz, então nenhum advisory é ignorado; em `app/src-tauri/`, os
+  únicos ignorados são RUSTSEC-2024-0370 e RUSTSEC-2024-0429, cada um com motivo; e
+  `grep -rn 'Variant' app/` não acha uso de `glib::Variant` — cobre S14.
+- [ ] V5.31 — (SEG) Dado o `ward-app` de teste instalado setgid no contêiner (Fase 29a),
+  quando sobe, então conecta ao socket antes do GTK, o `status` mostra o gid real
+  depois da conexão e `Dumpable`/`TracerPid` seguem 0, o ambiente do processo só tem
+  as variáveis da lista branca de D47 (um `GTK_MODULES`, `GST_PLUGIN_PATH` ou `GIO_EXTRA_MODULES`
+  posto pelo atacante não chega ao WebKitGTK), o fd do socket tem `CLOEXEC`; e lançado
+  por um pai que não é o `systemd --user` nem o daemon, não recebe o papel app e sai
+  (D47, D48) — cobre S1, S8.
 
 ## Milestone 6 — Extensão, `ward login` e `ward playwright`
 

@@ -157,6 +157,12 @@ escolhe-se segurança e a decisão fica registrada aqui ("Objetivo").
   FigCraft; as fases de UI implementam a partir dos nodes de
   `docs/mission/design-nodes.md`. ("Missão 0 — Design no FigCraft" › "Arquivo de
   design")
+- R32. **Pré-requisito do app** (handoff 29): `make app-check` precisa dos headers do
+  WebKitGTK, instalados uma vez pelo usuário com `sudo apt install
+  libwebkit2gtk-4.1-dev` (traz gtk3, soup3 e javascriptcore). Sem eles, o crate do
+  Tauri não compila, e por isso ele fica fora do `make check`. O `app/nucleo` compila e
+  testa sem eles. Nenhuma fase roda `sudo`: se o pacote faltar, a fase avisa e para no
+  que exige o Tauri. ("Segurança" › "Regras de desenvolvimento")
 
 ## Modelo de ameaça e invariantes (S1–S15, copiadas do escopo, com o milestone que cobre cada uma)
 
@@ -1056,6 +1062,15 @@ em `/tmp/claude-1000/-home-jeffersonoliveira-projetos-cofre/d2e230bd-a662-43be-a
   Chrome (protegidos só pelo Yama contra quem não é ancestral; um Chrome depurado por
   um ancestral malicioso pode mentir a origem da aba), registrado em "Segurança" ›
   "Fora do modelo de ameaça".
+- **RA7. Advisories do gtk-rs 0.18 no app** (Fase 29; **aceito provisoriamente pelo
+  planner, vai ao usuário**; S14). O Tauri 2 exige o gtk-rs 0.18, que traz
+  RUSTSEC-2024-0370 (`proc-macro-error` sem manutenção, só em tempo de build) e
+  RUSTSEC-2024-0429 (`glib::VariantStrIter` unsound; o app não usa `Variant`). Os dois
+  ficam ignorados, com motivo, **só** no `app/src-tauri/deny.toml` e no `make
+  app-check`; o `cargo audit`/`cargo deny` da raiz continuam sem exceção. Saem quando o
+  Tauri passar para gtk-rs ≥ 0.20. Condições: nenhum código do app usa `glib::Variant`
+  (o validador confere por `grep`), e uma exceção nova no `deny.toml` do app volta ao
+  planner. Se o usuário recusar, o M5 não fecha até o Tauri subir o gtk-rs.
 
 ## Critérios de aceite
 
@@ -1089,8 +1104,9 @@ em `/tmp/claude-1000/-home-jeffersonoliveira-projetos-cofre/d2e230bd-a662-43be-a
   temporários limpos, nada lido ou gravado em `~/.ssh`; usuário do `sftp`/`scp` por
   `-o User=` (D56); RA1 e RA2 resolvidos.
 - [ ] M5: app Tauri com todas as telas do M0, janela de aprovação com os 4 botões e PIN,
-  bandeja, "Conectar" do `servidor` (D3), S11 e S12 conferidas; roteiro da janela
-  nativa conferido pelo usuário.
+  bandeja, "Conectar" do `servidor` (D3), S11 e S12 conferidas; app com D46 e D47
+  (Fases 21b e 29a); RA7 aceito pelo usuário ou resolvido; roteiro da janela nativa
+  conferido pelo usuário.
 - [ ] M6: extensão instalada por política, preenchimento por origem, salvar login novo,
   `ward login` e `ward playwright` no WordPress de teste, phishing recusado.
 - [ ] M7: backup local de 30 versões, externo em pendrive desligado por padrão,

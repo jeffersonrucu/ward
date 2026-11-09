@@ -402,8 +402,19 @@ Contrato: V3.1–V3.28
   D14). V3.1, V3.2, V3.5–V3.7.
 - [ ] Fase 21b — (Liberada: D46 e D47 confirmadas pelo usuário em 2026-11-08; D48 no
   ramo de D47; D49 sem mudança.) Pode rodar ao lado da 19e. Arquivos:
-  `crates/ward-plataforma/` (código e testes), o contêiner de teste e o alvo dele no
-  `Makefile`, e a linha do alvo no `CLAUDE.md`; não toca em `ward-core`.
+  `crates/ward-plataforma/` (código e testes), `app/nucleo/src/daemon.rs` e os testes
+  dele, o contêiner de teste e o alvo dele no `Makefile`, e a linha do alvo no
+  `CLAUDE.md`; não toca em `ward-core`.
+  - App (handoff 29): `DaemonSocket` em `app/nucleo/src/daemon.rs` procura hoje o
+    socket em `/run/user/<uid>/ward/wardd.sock`. Passa a usar
+    `/run/ward/<uid>/wardd.sock` e a mesma conferência do `conferir_servidor` (toda
+    pasta do caminho do root, sem escrita para grupo e outros, sem link; socket do
+    próprio uid e 0600; par com uid 0 no `SO_PEERCRED`), antes de mandar qualquer byte;
+    o diretório `ward-teste/` e a exceção do uid 0 ficam só no `modo-teste`. Os
+    ataques que já existem em `daemon.rs` continuam e ganham o do servidor falso do
+    mesmo uid (V3.23). Basta `cargo test` do `app/nucleo`; o `make app-check` exige
+    `libwebkit2gtk-4.1-dev` (R32).
+  `ward-plataforma`, ajustes da Fase 21:
   `ward-plataforma`, ajustes da Fase 21:
   - D46: `escutar_de_listen_fds()` (aceita o fd do systemd e confere que é socket Unix
     em escuta no caminho esperado); `conferir_servidor` passa a exigir pasta do root e
@@ -499,14 +510,28 @@ Contrato: V4.1–V4.37
   combinado (D19); logs da suíte do M4 sem segredo. V4.25, V4.27, V4.29, V4.30, V4.33.
 
 ## Milestone 5 — App desktop
-Contrato: V5.1–V5.29
+Contrato: V5.1–V5.31
 
 - [x] Fase 29 — Esqueleto Tauri + Svelte: capabilities só com os comandos próprios,
   CSP estrita, sem conteúdo remoto, devtools fora do release; cliente do socket no lado
   Rust; "copiar" resolvido no Rust (D4); tokens e componentes do M0 em Svelte; ponte de
-  teste só com `modo-teste` (D7). Pela D47: conecta antes do GTK, larga o grupo, limpa
-  o ambiente por lista branca e se reexecuta se a conexão cair; confere com o WebKitGTK
-  real que a lista branca basta (D48). V5.1, V5.2, V5.4–V5.6.
+  teste só com `modo-teste` (D7). V5.1, V5.2, V5.4–V5.6. O lado do app de D47 não foi
+  feito nesta fase (handoff 29) e foi para a Fase 29a; o caminho e a conferência do
+  socket de D46 no `daemon.rs`, para a 21b.
+  Notas do handoff 29: o `make app-check` precisa de `libwebkit2gtk-4.1-dev` (R32); os
+  advisories RUSTSEC-2024-0370 e RUSTSEC-2024-0429 ficam ignorados só no `deny.toml` do
+  app (RA7, provisório, vai ao usuário).
+- [ ] Fase 29a — App com D47 (depende das Fases 21b e 29; vem antes da 30). Arquivos:
+  o `main` do `app/src-tauri` e um módulo de partida no `app/nucleo`. O app conecta ao
+  socket antes de iniciar o GTK, larga o grupo (`setresgid` para o gid real) e chama
+  `PR_SET_DUMPABLE=0` de novo; limpa o próprio ambiente pela lista branca de D47 antes
+  do GTK; fd do socket com `CLOEXEC`; se a conexão cair, se executa de novo; lançado
+  por pai que não é o `systemd --user` nem o daemon, pede ao daemon a instância
+  verdadeira e sai. Confere com o WebKitGTK real que a lista branca basta (módulos do
+  GTK, GStreamer, IBus) e, se algo de fora do root for carregado pelo ambiente, fixa a
+  variável que desliga a fonte (D48). Testes de ataque no contêiner da 21b (binário
+  setgid de teste). Exige `libwebkit2gtk-4.1-dev` (R32). V3.5 (forma de D47), V3.24,
+  V5.31.
 - [ ] Fase 30 — **(UI)** Primeiro uso (o PIN vai para a seção de configuração do corpo
   v2 como hash, D30). V5.7, V5.25, V5.26.
 - [ ] Fase 31 — **(UI)** Destravar, inclusive o estado "Pedido do agente". V5.8.
