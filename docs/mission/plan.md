@@ -1288,7 +1288,7 @@ habilitado cedo, uma diferença cosmética em relação ao design (V5.10).
   servidor para entradas `servidor`, gnome-keyring e "Chrome Safe Storage", desfazer
   `montagem.md`, senhas do Chrome, troca da skill, desinstalar o KeePassXC por último).
   A fase não executa nenhum passo. V10.1–V10.4.
-- [ ] Fase 53d — Achados da 2ª auditoria do M10 (não bloqueiam o QA).
+- [x] Fase 53d — Achados da 2ª auditoria do M10 (não bloqueiam o QA).
   - **Médio:** o lint do `dev/testes/migracao.py` deixa a chave voltar ao disco:
     - `cp`/`mv` com origem na pasta em memória `/run/user/$(id -u)/migracao/`;
     - `..` nos caminhos de `cp`/`mv`/`install` (`../tmp` escapa do padrão `/tmp`);
@@ -1312,3 +1312,12 @@ habilitado cedo, uma diferença cosmética em relação ao design (V5.10).
     diálogo de arquivo não gravar o caminho em `recently-used.xbel`.
   - **Baixo:** `app/nucleo/src/chave.rs` deve ler num buffer fixo de `MAX_CHAVE + 1` com
     `Zeroizing`, sem realocar.
+  Feita (2026-11-09): os 2 médios e os 4 baixos estão corrigidos, mais os dois baixos de
+  documentação do QA do M9 (4a). `teste-migracao` passa com 85 ataques recusados, sendo
+  23 novos; `app-check` 0; `make check` sem o gitleaks, que rodou à parte limpo.
+  Pendências:
+  - o `recently-used.xbel` com o diálogo real fica para o roteiro nativo;
+  - sem bandeja, a trava vinda de fora só descarta o formulário na próxima consulta de
+    estado;
+  - o `>>` do passo 3 segue link (só chave pública, pasta 0700);
+  - o `docs/escopo.md` não cita o "Carregar de arquivo".
