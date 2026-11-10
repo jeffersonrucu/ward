@@ -3,7 +3,7 @@
 //! O PIN chega da interface (não confiável) e vira um [`Pin`]: zera ao sair, não tem
 //! `Clone`, `Display` nem `Serialize`, e o `Debug` não mostra o valor. A leitura
 //! (`Deserialize`) já recusa o que não é PIN (4 a 6 dígitos ASCII, como o
-//! `ward_core::limites`), então um valor fora do formato nem chega ao daemon. O PIN só
+//! `ward_core::limits`), então um valor fora do formato nem chega ao daemon. O PIN só
 //! sai daqui para o pedido `mudar_nivel` do protocolo; nenhuma resposta o devolve e
 //! nenhum log o escreve.
 
@@ -12,7 +12,7 @@ use std::fmt;
 use serde::de::{self, Deserializer, Visitor};
 use serde::{Deserialize, Serialize};
 use ward_core::entrada::{NivelAcesso, Segredo as SegredoCore};
-use ward_core::limites::{MAX_DIGITOS_PIN, MIN_DIGITOS_PIN};
+use ward_core::limits::{MAX_PIN_DIGITS, MIN_PIN_DIGITS};
 use zeroize::Zeroizing;
 
 use crate::ErroApp;
@@ -38,7 +38,7 @@ impl Pin {
 }
 
 fn formato_ok(t: &str) -> bool {
-    (MIN_DIGITOS_PIN..=MAX_DIGITOS_PIN).contains(&t.len()) && t.bytes().all(|b| b.is_ascii_digit())
+    (MIN_PIN_DIGITS..=MAX_PIN_DIGITS).contains(&t.len()) && t.bytes().all(|b| b.is_ascii_digit())
 }
 
 impl fmt::Debug for Pin {

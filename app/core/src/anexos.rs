@@ -6,8 +6,8 @@
 //! comando). O arquivo é lido aqui, guardado em [`Segredo`] (zera ao sair) e a resposta
 //! traz só o identificador, o nome e o tamanho.
 //!
-//! Os limites saem de `ward_core::limites` (D32): um arquivo acima de
-//! `MAX_ANEXOS_SOMADOS`, ou que faria a soma passar disso, gera um aviso e não é
+//! Os limites saem de `ward_core::limits` (D32): um arquivo acima de
+//! `MAX_ATTACHMENTS_TOTAL`, ou que faria a soma passar disso, gera um aviso e não é
 //! guardado (nem enviado ao daemon). Arquivo vazio é recusado (D29).
 //!
 //! Fase 39b (V5.12): na edição, a soma e a contagem partem dos anexos já guardados que
@@ -22,7 +22,7 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use ward_core::limites;
+use ward_core::limits;
 
 use crate::ErroApp;
 use crate::segredo::Segredo;
@@ -74,14 +74,14 @@ pub enum Escolha {
 pub fn aviso_grande() -> String {
     format!(
         "o arquivo passa de {} KiB e não foi anexado",
-        limites::MAX_ANEXOS_SOMADOS / limites::KIB
+        limits::MAX_ATTACHMENTS_TOTAL / limits::KIB
     )
 }
 
 pub fn aviso_soma() -> String {
     format!(
         "com este arquivo os anexos somariam mais de {} KiB; ele não foi anexado",
-        limites::MAX_ANEXOS_SOMADOS / limites::KIB
+        limits::MAX_ATTACHMENTS_TOTAL / limits::KIB
     )
 }
 
@@ -138,7 +138,7 @@ impl Anexos {
     /// guardados que continuam na entrada editada).
     pub fn anexar_sobre(&mut self, caminho: &Path, base: Base) -> Escolha {
         let aviso = |m: String| Escolha::Aviso { motivo: m };
-        if self.pendentes.len().saturating_add(base.quantidade) >= limites::MAX_ANEXOS {
+        if self.pendentes.len().saturating_add(base.quantidade) >= limits::MAX_ATTACHMENTS {
             return aviso(AVISO_DEMAIS.to_owned());
         }
         let Some(nome) = caminho
@@ -148,12 +148,12 @@ impl Anexos {
         else {
             return aviso(AVISO_NOME.to_owned());
         };
-        if nome.is_empty() || nome.len() > limites::MAX_NOME_ANEXO * 4 {
+        if nome.is_empty() || nome.len() > limits::MAX_ATTACHMENT_NAME * 4 {
             return aviso(AVISO_NOME.to_owned());
         }
         let nome = nome.to_owned();
-        let livre = limites::MAX_ANEXOS_SOMADOS.saturating_sub(base.soma);
-        let conteudo = match ler_limitado(caminho, limites::MAX_ANEXOS_SOMADOS) {
+        let livre = limits::MAX_ATTACHMENTS_TOTAL.saturating_sub(base.soma);
+        let conteudo = match ler_limitado(caminho, limits::MAX_ATTACHMENTS_TOTAL) {
             Ok(Leitura::Conteudo(c)) => c,
             Ok(Leitura::Grande) => return aviso(aviso_grande()),
             Err(()) => return aviso(AVISO_LEITURA.to_owned()),
@@ -403,18 +403,18 @@ mod testes {
         let d = pasta("limites");
         let mut a = Anexos::default();
         assert_eq!(
-            a.anexar(&arquivo(&d, "grande.bin", 300 * limites::KIB)),
+            a.anexar(&arquivo(&d, "grande.bin", 300 * limits::KIB)),
             Escolha::Aviso {
                 motivo: aviso_grande()
             }
         );
         assert!(a.is_empty());
         assert!(matches!(
-            a.anexar(&arquivo(&d, "a.bin", 200 * limites::KIB)),
+            a.anexar(&arquivo(&d, "a.bin", 200 * limits::KIB)),
             Escolha::Anexado { .. }
         ));
         assert_eq!(
-            a.anexar(&arquivo(&d, "b.bin", 100 * limites::KIB)),
+            a.anexar(&arquivo(&d, "b.bin", 100 * limits::KIB)),
             Escolha::Aviso {
                 motivo: aviso_soma()
             }
@@ -426,7 +426,7 @@ mod testes {
             }
         );
         assert_eq!(a.len(), 1);
-        assert_eq!(a.soma(), 200 * limites::KIB);
+        assert_eq!(a.soma(), 200 * limits::KIB);
         assert_eq!(
             a.anexar(&d),
             Escolha::Aviso {
@@ -441,7 +441,7 @@ mod testes {
         );
         // Exatamente no limite somado passa.
         assert!(matches!(
-            a.anexar(&arquivo(&d, "c.bin", 56 * limites::KIB)),
+            a.anexar(&arquivo(&d, "c.bin", 56 * limits::KIB)),
             Escolha::Anexado { .. }
         ));
         let _ = std::fs::remove_dir_all(d);
@@ -465,23 +465,23 @@ mod testes {
         let d = pasta("base");
         let mut a = Anexos::default();
         let base = Base {
-            soma: 200 * limites::KIB,
+            soma: 200 * limits::KIB,
             quantidade: 1,
         };
         assert_eq!(
-            a.anexar_sobre(&arquivo(&d, "b.bin", 100 * limites::KIB), base),
+            a.anexar_sobre(&arquivo(&d, "b.bin", 100 * limits::KIB), base),
             Escolha::Aviso {
                 motivo: aviso_soma()
             }
         );
         assert!(a.is_empty());
         assert!(matches!(
-            a.anexar_sobre(&arquivo(&d, "c.bin", 56 * limites::KIB), base),
+            a.anexar_sobre(&arquivo(&d, "c.bin", 56 * limits::KIB), base),
             Escolha::Anexado { .. }
         ));
         let cheia = Base {
             soma: 0,
-            quantidade: limites::MAX_ANEXOS,
+            quantidade: limits::MAX_ATTACHMENTS,
         };
         assert_eq!(
             a.anexar_sobre(&arquivo(&d, "d.bin", 1), cheia),
@@ -526,7 +526,7 @@ mod testes {
         let d = pasta("demais");
         let mut a = Anexos::default();
         let p = arquivo(&d, "um.txt", 1);
-        for _ in 0..limites::MAX_ANEXOS {
+        for _ in 0..limits::MAX_ATTACHMENTS {
             assert!(matches!(a.anexar(&p), Escolha::Anexado { .. }));
         }
         assert_eq!(

@@ -17,10 +17,10 @@ use super::{Operacao, Papel, TipoResposta};
 use crate::entrada::{
     Ambiente, Autenticacao, Dados, Datas, Entrada, NivelAcesso, Segredo, TipoEntrada, ValorExtra,
 };
-use crate::limites::{
-    MAX_ANEXOS, MAX_ANEXOS_SOMADOS, MAX_ENTRADAS, MAX_EXTRAS, MAX_LINHA, MAX_MINUTOS_TRAVA,
-    MAX_NOME, MAX_NOME_ANEXO, MAX_NOME_EXTRA, MAX_SEGREDO, MAX_TAG, MAX_TAGS, MAX_TEXTO,
-    MAX_TEXTO_EXIBIDO, MAX_URL, MAX_VALOR_EXTRA, MIN_MINUTOS_TRAVA,
+use crate::limits::{
+    MAX_ATTACHMENT_NAME, MAX_ATTACHMENTS, MAX_ATTACHMENTS_TOTAL, MAX_DISPLAYED_TEXT, MAX_ENTRIES,
+    MAX_EXTRA_NAME, MAX_EXTRA_VALUE, MAX_EXTRAS, MAX_LINE, MAX_LOCK_MINUTES, MAX_NAME, MAX_SECRET,
+    MAX_TAG, MAX_TAGS, MAX_TEXT, MAX_URL, MIN_LOCK_MINUTES,
 };
 
 /// Fluxo de um pedaço de saída.
@@ -339,7 +339,7 @@ pub struct PedidoDeAprovacao {
 /// O daemon pede ao app a tela de destravar (D16; Fase 39a): um uso do agente espera
 /// com o cofre travado. Com o cofre travado o daemon não sabe tipo nem ambiente (o
 /// índice é cifrado): o aviso leva só o que o agente pediu, já formatado para exibir
-/// por [`crate::exibicao`] (D51), e o app ainda trata como não confiável
+/// por [`crate::display`] (D51), e o app ainda trata como não confiável
 /// (`neutralizar`). Nenhum segredo: a entrada é o nome que o agente mandou (nem se sabe
 /// se existe) e o comando é o mesmo que a janela de aprovação mostraria.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -504,16 +504,16 @@ impl Resposta {
     pub(crate) fn conferir(&self, papel: Papel) -> R<()> {
         let ok = |c: bool| if c { Ok(()) } else { Err(JsonInvalido) };
         let item_ok = |i: &ItemLista| {
-            i.nome.len() <= MAX_NOME
-                && i.grupo.len() <= MAX_TEXTO
-                && i.projeto.as_ref().is_none_or(|p| p.len() <= MAX_TEXTO)
+            i.nome.len() <= MAX_NAME
+                && i.grupo.len() <= MAX_TEXT
+                && i.projeto.as_ref().is_none_or(|p| p.len() <= MAX_TEXT)
                 && i.tags.len() <= MAX_TAGS
                 && i.tags.iter().all(|t| t.len() <= MAX_TAG)
                 && i.endereco.as_ref().is_none_or(|p| p.len() <= MAX_URL)
                 && i.resumo.as_ref().is_none_or(|r| {
                     campos_ok(&r.campos, &r.segredos)
                         && r.extras <= MAX_EXTRAS as u64
-                        && r.anexos <= MAX_ANEXOS as u64
+                        && r.anexos <= MAX_ATTACHMENTS as u64
                 })
         };
         match self {
@@ -521,50 +521,50 @@ impl Resposta {
             // cliente lê o que veio e decide (D63).
             Resposta::Ok | Resposta::Estado { .. } => Ok(()),
             Resposta::PedidoDeDestrave(p) => ok(!p.entrada.is_empty()
-                && p.entrada.len() <= MAX_TEXTO
+                && p.entrada.len() <= MAX_TEXT
                 && OPERACOES_APROVADAS.contains(&p.operacao)
-                && p.comando.len() <= MAX_TEXTO_EXIBIDO
+                && p.comando.len() <= MAX_DISPLAYED_TEXT
                 && (1..=MAX_RESTANTE_DESTRAVE).contains(&p.restante)),
             Resposta::Fim { .. } => Ok(()),
             Resposta::Erro(e) => ok(match e {
                 ErroResposta::Validacao(p) => {
                     p.len() <= MAX_PROBLEMAS
                         && p.iter()
-                            .all(|p| p.campo.len() <= MAX_LINHA && p.motivo.len() <= MAX_LINHA)
+                            .all(|p| p.campo.len() <= MAX_LINE && p.motivo.len() <= MAX_LINE)
                 }
                 _ => true,
             }),
-            Resposta::Lista(l) => ok(l.len() <= MAX_ENTRADAS
+            Resposta::Lista(l) => ok(l.len() <= MAX_ENTRIES
                 && l.iter().all(item_ok)
                 && l.iter().all(|i| i.nivel.is_some() == (papel == Papel::App))
                 && l.iter()
                     .all(|i| i.resumo.is_some() == (papel == Papel::App))),
-            Resposta::Saida { dados, .. } => ok(dados.len() <= MAX_TEXTO_EXIBIDO),
+            Resposta::Saida { dados, .. } => ok(dados.len() <= MAX_DISPLAYED_TEXT),
             Resposta::SessaoPlaywright { caminho } => {
-                ok(!caminho.is_empty() && caminho.len() <= MAX_TEXTO)
+                ok(!caminho.is_empty() && caminho.len() <= MAX_TEXT)
             }
-            Resposta::Detalhe(d) => ok(d.nome.len() <= MAX_NOME
-                && d.grupo.len() <= MAX_TEXTO
-                && d.projeto.as_ref().is_none_or(|p| p.len() <= MAX_TEXTO)
+            Resposta::Detalhe(d) => ok(d.nome.len() <= MAX_NAME
+                && d.grupo.len() <= MAX_TEXT
+                && d.projeto.as_ref().is_none_or(|p| p.len() <= MAX_TEXT)
                 && d.tags.len() <= MAX_TAGS
                 && d.tags.iter().all(|t| t.len() <= MAX_TAG)
                 && campos_ok(&d.campos, &d.segredos)
                 && d.extras.len() <= MAX_EXTRAS
                 && d.extras.iter().all(|x| {
-                    x.nome.len() <= MAX_NOME_EXTRA
-                        && x.valor.as_ref().is_none_or(|v| v.len() <= MAX_VALOR_EXTRA)
+                    x.nome.len() <= MAX_EXTRA_NAME
+                        && x.valor.as_ref().is_none_or(|v| v.len() <= MAX_EXTRA_VALUE)
                 })
-                && d.anexos.len() <= MAX_ANEXOS
+                && d.anexos.len() <= MAX_ATTACHMENTS
                 && d.anexos.iter().all(|a| {
-                    a.nome.len() <= MAX_NOME_ANEXO && a.tamanho <= MAX_ANEXOS_SOMADOS as u64
+                    a.nome.len() <= MAX_ATTACHMENT_NAME && a.tamanho <= MAX_ATTACHMENTS_TOTAL as u64
                 })
                 && Datas::de_partes(d.datas.criada_em(), d.datas.alterada_em()).is_some()),
-            Resposta::Segredo(s) => ok(s.len() <= crate::limites::MAX_NOTA),
-            Resposta::Token(t) => ok(!t.is_empty() && t.len() <= MAX_NOME),
+            Resposta::Segredo(s) => ok(s.len() <= crate::limits::MAX_NOTE),
+            Resposta::Token(t) => ok(!t.is_empty() && t.len() <= MAX_NAME),
             Resposta::PedidoDeAprovacao(p) => ok((1..=2).contains(&p.entradas.len())
-                && p.entradas.iter().all(|n| n.len() <= MAX_NOME)
+                && p.entradas.iter().all(|n| n.len() <= MAX_NAME)
                 && (OPERACOES_APROVADAS.contains(&p.operacao) || p.operacao == Operacao::Preencher)
-                && p.origem.len() <= MAX_TEXTO
+                && p.origem.len() <= MAX_TEXT
                 // Fase 44c: a origem só existe no preencher, no `login` e no
                 // `playwright`; a confirmação sempre tem origem; o popup só confirma.
                 && (p.origem.is_empty()
@@ -579,10 +579,10 @@ impl Resposta {
                 && (!p.entrada_oculta
                     || (matches!(p.operacao, Operacao::Executar | Operacao::Ssh)
                         && !p.confirmacao))
-                && p.comando.len() <= MAX_TEXTO_EXIBIDO
-                && p.diretorio.len() <= MAX_TEXTO_EXIBIDO
+                && p.comando.len() <= MAX_DISPLAYED_TEXT
+                && p.diretorio.len() <= MAX_DISPLAYED_TEXT
                 && p.cadeia.len() <= MAX_CADEIA
-                && p.cadeia.iter().all(|c| c.len() <= MAX_TEXTO)),
+                && p.cadeia.iter().all(|c| c.len() <= MAX_TEXT)),
             Resposta::CodigoTotp { codigo, restante } => {
                 ok(digitos_totp(codigo) && (1..=30).contains(restante))
             }
@@ -590,7 +590,7 @@ impl Resposta {
                 && l.iter()
                     .all(|v| backup_ok(&v.nome) && (v.conferida || !v.fora_de_ordem))),
             Resposta::Configuracao { minutos_trava, .. } => {
-                ok((MIN_MINUTOS_TRAVA..=MAX_MINUTOS_TRAVA).contains(minutos_trava))
+                ok((MIN_LOCK_MINUTES..=MAX_LOCK_MINUTES).contains(minutos_trava))
             }
             Resposta::BackupExterno { ligado, uuid } => {
                 ok(crate::configuracao::BackupExterno::novo(*ligado, uuid.as_deref()).is_ok())
@@ -599,18 +599,18 @@ impl Resposta {
                 && l.iter().all(|p| {
                     crate::configuracao::uuid_valido(p.uuid.as_bytes()) && rotulo_ok(&p.rotulo)
                 })),
-            Resposta::Sugestoes(l) => ok(l.len() <= MAX_ENTRADAS
+            Resposta::Sugestoes(l) => ok(l.len() <= MAX_ENTRIES
                 && l.iter()
-                    .all(|s| s.nome.len() <= MAX_NOME && s.usuario.len() <= MAX_TEXTO)),
+                    .all(|s| s.nome.len() <= MAX_NAME && s.usuario.len() <= MAX_TEXT)),
             Resposta::Preenchimento {
                 usuario,
                 senha,
                 totp,
-            } => ok(usuario.len() <= MAX_TEXTO
-                && senha.len() <= MAX_SEGREDO
+            } => ok(usuario.len() <= MAX_TEXT
+                && senha.len() <= MAX_SECRET
                 && totp.as_ref().is_none_or(|c| digitos_totp(c))),
             Resposta::PedidoDeLogin { id, entrada } => {
-                ok(super::id_login_ok(id) && !entrada.is_empty() && entrada.len() <= MAX_NOME)
+                ok(super::id_login_ok(id) && !entrada.is_empty() && entrada.len() <= MAX_NAME)
             }
         }
     }
@@ -926,7 +926,7 @@ fn campos_ok(campos: &[(String, String)], segredos: &[String]) -> bool {
     campos.len() <= CAMPOS_TEXTO.len()
         && campos
             .iter()
-            .all(|(k, v)| CAMPOS_TEXTO.contains(&k.as_str()) && v.len() <= MAX_TEXTO)
+            .all(|(k, v)| CAMPOS_TEXTO.contains(&k.as_str()) && v.len() <= MAX_TEXT)
         && segredos.len() <= CAMPOS_SECRETOS.len()
         && segredos
             .iter()
@@ -954,9 +954,9 @@ fn ler_campos(c: &mut Campos) -> R<CamposESegredos> {
         if !CAMPOS_TEXTO.contains(&k.as_str()) {
             return Err(JsonInvalido);
         }
-        campos.push((k, texto_de(v, MAX_TEXTO)?));
+        campos.push((k, texto_de(v, MAX_TEXT)?));
     }
-    let segredos = textos_de(c.lista("segredos", CAMPOS_SECRETOS.len())?, MAX_NOME)?;
+    let segredos = textos_de(c.lista("segredos", CAMPOS_SECRETOS.len())?, MAX_NAME)?;
     Ok((campos, segredos))
 }
 
@@ -1014,13 +1014,13 @@ struct Cabecalho {
 /// proibido (lista do agente, D50).
 fn ler_cabecalho(c: &mut Campos, com_nivel: bool) -> R<Cabecalho> {
     Ok(Cabecalho {
-        nome: c.texto("nome", MAX_NOME)?,
-        tipo: TipoEntrada::de_nome(&c.texto("tipo", MAX_NOME)?).ok_or(JsonInvalido)?,
-        grupo: c.texto("grupo", MAX_TEXTO)?,
-        ambiente: Ambiente::de_nome(&c.texto("ambiente", MAX_NOME)?).ok_or(JsonInvalido)?,
-        projeto: c.texto_opc("projeto", MAX_TEXTO)?,
+        nome: c.texto("nome", MAX_NAME)?,
+        tipo: TipoEntrada::de_nome(&c.texto("tipo", MAX_NAME)?).ok_or(JsonInvalido)?,
+        grupo: c.texto("grupo", MAX_TEXT)?,
+        ambiente: Ambiente::de_nome(&c.texto("ambiente", MAX_NAME)?).ok_or(JsonInvalido)?,
+        projeto: c.texto_opc("projeto", MAX_TEXT)?,
         tags: textos_de(c.lista("tags", MAX_TAGS)?, MAX_TAG)?,
-        nivel: match c.texto_opc("nivel", MAX_NOME)? {
+        nivel: match c.texto_opc("nivel", MAX_NAME)? {
             Some(n) if com_nivel => Some(NivelAcesso::de_nome(&n).ok_or(JsonInvalido)?),
             None if !com_nivel => None,
             _ => return Err(JsonInvalido),
@@ -1033,32 +1033,32 @@ pub(crate) fn ler(papel: Papel, tipo: TipoResposta, mut c: Campos) -> R<Resposta
     let r = match tipo {
         TipoResposta::Ok => Resposta::Ok,
         TipoResposta::PedidoDeDestrave => Resposta::PedidoDeDestrave(PedidoDeDestrave {
-            entrada: c.texto("entrada", MAX_TEXTO)?,
-            operacao: Operacao::de_nome(&c.texto("operacao", MAX_NOME)?).ok_or(JsonInvalido)?,
-            comando: c.texto("comando", MAX_TEXTO_EXIBIDO)?,
+            entrada: c.texto("entrada", MAX_TEXT)?,
+            operacao: Operacao::de_nome(&c.texto("operacao", MAX_NAME)?).ok_or(JsonInvalido)?,
+            comando: c.texto("comando", MAX_DISPLAYED_TEXT)?,
             restante: c.inteiro("restante")?,
         }),
         TipoResposta::Estado => Resposta::Estado {
             travado: c.logico("travado")?,
             cofre_existe: c.logico("cofre_existe")?,
             // Lido como veio: quem recebe confere se é o papel que esperava.
-            papel: Papel::de_nome(&c.texto("papel", MAX_NOME)?).ok_or(JsonInvalido)?,
+            papel: Papel::de_nome(&c.texto("papel", MAX_NAME)?).ok_or(JsonInvalido)?,
         },
         TipoResposta::Erro => {
-            let codigo = c.texto("codigo", MAX_NOME)?;
+            let codigo = c.texto("codigo", MAX_NAME)?;
             // A mensagem do quadro é ignorada: vale a fixa do código.
-            let _ = c.texto("mensagem", MAX_LINHA)?;
+            let _ = c.texto("mensagem", MAX_LINE)?;
             let mut erro = ErroResposta::de_codigo(&codigo).ok_or(JsonInvalido)?;
             if let ErroResposta::Validacao(lista) = &mut erro {
                 for v in c.lista("problemas", MAX_PROBLEMAS)? {
                     let mut o = Campos::de(v)?;
-                    let campo = o.texto("campo", MAX_LINHA)?;
+                    let campo = o.texto("campo", MAX_LINE)?;
                     let posicao = match o.tirar("posicao") {
                         Some(super::json::Valor::Inteiro(n)) => Some(n),
                         Some(_) => return Err(JsonInvalido),
                         None => None,
                     };
-                    let motivo = o.texto("motivo", MAX_LINHA)?;
+                    let motivo = o.texto("motivo", MAX_LINE)?;
                     o.fim()?;
                     lista.push(Problema {
                         campo,
@@ -1071,7 +1071,7 @@ pub(crate) fn ler(papel: Papel, tipo: TipoResposta, mut c: Campos) -> R<Resposta
         }
         TipoResposta::Lista => {
             let mut itens = Vec::new();
-            for v in c.lista("itens", MAX_ENTRADAS)? {
+            for v in c.lista("itens", MAX_ENTRIES)? {
                 let mut o = Campos::de(v)?;
                 let k = ler_cabecalho(&mut o, papel == Papel::App)?;
                 let endereco = o.texto_opc("endereco", MAX_URL)?;
@@ -1109,21 +1109,21 @@ pub(crate) fn ler(papel: Papel, tipo: TipoResposta, mut c: Campos) -> R<Resposta
             Resposta::Lista(itens)
         }
         TipoResposta::Saida => {
-            let fluxo = match c.texto("fluxo", MAX_NOME)?.as_str() {
+            let fluxo = match c.texto("fluxo", MAX_NAME)?.as_str() {
                 "saida" => Fluxo::Saida,
                 "erro" => Fluxo::Erro,
                 _ => return Err(JsonInvalido),
             };
             Resposta::Saida {
                 fluxo,
-                dados: c.bytes("dados", MAX_TEXTO_EXIBIDO)?,
+                dados: c.bytes("dados", MAX_DISPLAYED_TEXT)?,
             }
         }
         TipoResposta::Fim => Resposta::Fim {
             codigo: u8::try_from(c.inteiro("codigo")?).map_err(|_| JsonInvalido)?,
         },
         TipoResposta::SessaoPlaywright => Resposta::SessaoPlaywright {
-            caminho: c.texto("caminho", MAX_TEXTO)?,
+            caminho: c.texto("caminho", MAX_TEXT)?,
         },
         TipoResposta::Detalhe => {
             let k = ler_cabecalho(&mut c, true)?;
@@ -1131,9 +1131,9 @@ pub(crate) fn ler(papel: Papel, tipo: TipoResposta, mut c: Campos) -> R<Resposta
             let mut extras = Vec::new();
             for v in c.lista("extras", MAX_EXTRAS)? {
                 let mut o = Campos::de(v)?;
-                let nome = o.texto("nome", MAX_NOME_EXTRA)?;
+                let nome = o.texto("nome", MAX_EXTRA_NAME)?;
                 let segredo = o.logico("segredo")?;
-                let valor = o.texto_opc("valor", MAX_VALOR_EXTRA)?;
+                let valor = o.texto_opc("valor", MAX_EXTRA_VALUE)?;
                 // Extra secreto nunca leva valor; o comum sempre leva.
                 if segredo == valor.is_some() {
                     return Err(JsonInvalido);
@@ -1142,9 +1142,9 @@ pub(crate) fn ler(papel: Papel, tipo: TipoResposta, mut c: Campos) -> R<Resposta
                 extras.push(ExtraDetalhe { nome, valor });
             }
             let mut anexos = Vec::new();
-            for v in c.lista("anexos", MAX_ANEXOS)? {
+            for v in c.lista("anexos", MAX_ATTACHMENTS)? {
                 let mut o = Campos::de(v)?;
-                let nome = o.texto("nome", MAX_NOME_ANEXO)?;
+                let nome = o.texto("nome", MAX_ATTACHMENT_NAME)?;
                 let tamanho = o.inteiro("tamanho")?;
                 o.fim()?;
                 anexos.push(AnexoDetalhe { nome, tamanho });
@@ -1174,19 +1174,19 @@ pub(crate) fn ler(papel: Papel, tipo: TipoResposta, mut c: Campos) -> R<Resposta
                 datas,
             })
         }
-        TipoResposta::Segredo => Resposta::Segredo(c.segredo("valor", crate::limites::MAX_NOTA)?),
-        TipoResposta::Token => Resposta::Token(c.segredo("token", MAX_NOME)?),
+        TipoResposta::Segredo => Resposta::Segredo(c.segredo("valor", crate::limits::MAX_NOTE)?),
+        TipoResposta::Token => Resposta::Token(c.segredo("token", MAX_NAME)?),
         TipoResposta::PedidoDeAprovacao => {
             let id = c.inteiro("id")?;
-            let entradas = textos_de(c.lista("entradas", 2)?, MAX_NOME)?;
+            let entradas = textos_de(c.lista("entradas", 2)?, MAX_NAME)?;
             let ambiente =
-                Ambiente::de_nome(&c.texto("ambiente", MAX_NOME)?).ok_or(JsonInvalido)?;
+                Ambiente::de_nome(&c.texto("ambiente", MAX_NAME)?).ok_or(JsonInvalido)?;
             let operacao =
-                Operacao::de_nome(&c.texto("operacao", MAX_NOME)?).ok_or(JsonInvalido)?;
-            let comando = c.texto("comando", MAX_TEXTO_EXIBIDO)?;
-            let diretorio = c.texto("diretorio", MAX_TEXTO_EXIBIDO)?;
-            let cadeia = textos_de(c.lista("cadeia", MAX_CADEIA)?, MAX_TEXTO)?;
-            let origem = c.texto("origem", MAX_TEXTO)?;
+                Operacao::de_nome(&c.texto("operacao", MAX_NAME)?).ok_or(JsonInvalido)?;
+            let comando = c.texto("comando", MAX_DISPLAYED_TEXT)?;
+            let diretorio = c.texto("diretorio", MAX_DISPLAYED_TEXT)?;
+            let cadeia = textos_de(c.lista("cadeia", MAX_CADEIA)?, MAX_TEXT)?;
+            let origem = c.texto("origem", MAX_TEXT)?;
             let confirmacao = c.logico("confirmacao")?;
             let entrada_oculta = c.logico("entrada_oculta")?;
             Resposta::PedidoDeAprovacao(PedidoDeAprovacao {
@@ -1211,12 +1211,12 @@ pub(crate) fn ler(papel: Papel, tipo: TipoResposta, mut c: Campos) -> R<Resposta
         }
         TipoResposta::Sugestoes => {
             let mut itens = Vec::new();
-            for v in c.lista("itens", MAX_ENTRADAS)? {
+            for v in c.lista("itens", MAX_ENTRIES)? {
                 let mut o = Campos::de(v)?;
-                let nome = o.texto("nome", MAX_NOME)?;
-                let usuario = o.texto("usuario", MAX_TEXTO)?;
+                let nome = o.texto("nome", MAX_NAME)?;
+                let usuario = o.texto("usuario", MAX_TEXT)?;
                 let ambiente =
-                    Ambiente::de_nome(&o.texto("ambiente", MAX_NOME)?).ok_or(JsonInvalido)?;
+                    Ambiente::de_nome(&o.texto("ambiente", MAX_NAME)?).ok_or(JsonInvalido)?;
                 let totp = o.logico("totp")?;
                 o.fim()?;
                 itens.push(Sugestao {
@@ -1232,7 +1232,7 @@ pub(crate) fn ler(papel: Papel, tipo: TipoResposta, mut c: Campos) -> R<Resposta
             let mut versoes = Vec::new();
             for v in c.lista("versoes", MAX_BACKUPS)? {
                 let mut o = Campos::de(v)?;
-                let nome = o.texto("nome", crate::limites::MAX_NOME)?;
+                let nome = o.texto("nome", crate::limits::MAX_NAME)?;
                 let conferida = o.logico("conferida")?;
                 let fora_de_ordem = o.logico("fora_de_ordem")?;
                 o.fim()?;
@@ -1251,13 +1251,13 @@ pub(crate) fn ler(papel: Papel, tipo: TipoResposta, mut c: Campos) -> R<Resposta
         },
         TipoResposta::BackupExterno => Resposta::BackupExterno {
             ligado: c.logico("ligado")?,
-            uuid: c.texto_opc("uuid", crate::limites::MAX_UUID_BACKUP)?,
+            uuid: c.texto_opc("uuid", crate::limits::MAX_BACKUP_UUID)?,
         },
         TipoResposta::Pendrives => {
             let mut itens = Vec::new();
             for v in c.lista("itens", MAX_PENDRIVES)? {
                 let mut o = Campos::de(v)?;
-                let uuid = o.texto("uuid", crate::limites::MAX_UUID_BACKUP)?;
+                let uuid = o.texto("uuid", crate::limits::MAX_BACKUP_UUID)?;
                 let rotulo = o.texto("rotulo", MAX_ROTULO)?;
                 let montado = o.logico("montado")?;
                 o.fim()?;
@@ -1270,13 +1270,13 @@ pub(crate) fn ler(papel: Papel, tipo: TipoResposta, mut c: Campos) -> R<Resposta
             Resposta::Pendrives(itens)
         }
         TipoResposta::Preenchimento => Resposta::Preenchimento {
-            usuario: c.texto("usuario", MAX_TEXTO)?,
-            senha: segredo_de(c.tirar("senha").ok_or(JsonInvalido)?, MAX_SEGREDO)?,
+            usuario: c.texto("usuario", MAX_TEXT)?,
+            senha: segredo_de(c.tirar("senha").ok_or(JsonInvalido)?, MAX_SECRET)?,
             totp: c.texto_opc("totp", 8)?.map(Zeroizing::new),
         },
         TipoResposta::PedidoDeLogin => Resposta::PedidoDeLogin {
-            id: c.texto("id", MAX_NOME)?,
-            entrada: c.texto("entrada", MAX_NOME)?,
+            id: c.texto("id", MAX_NAME)?,
+            entrada: c.texto("entrada", MAX_NAME)?,
         },
     };
     c.fim()?;

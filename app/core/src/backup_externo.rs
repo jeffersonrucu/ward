@@ -7,7 +7,7 @@
 //! - [`PendriveVisto`]: UUID, rótulo e se está montado. O rótulo vem do udisks2 (o nome
 //!   que qualquer um grava no pendrive), então é **não confiável**: o daemon já tira o
 //!   caractere de controle e corta em `MAX_ROTULO`; aqui o invisível (direção de texto,
-//!   largura zero, tags) vira escape visível por [`ward_core::exibicao::neutralizar`]
+//!   largura zero, tags) vira escape visível por [`ward_core::display::neutralize`]
 //!   (D51), e a tela o mostra como texto. Nenhum caminho de montagem chega à interface.
 //! - [`BackupExternoVisto`]: ligado ou não, o UUID escolhido e, se ele estiver
 //!   conectado, o pendrive visto.
@@ -18,7 +18,7 @@
 
 use serde::Serialize;
 use ward_core::configuracao::BackupExterno;
-use ward_core::limites::MAX_UUID_BACKUP;
+use ward_core::limits::MAX_BACKUP_UUID;
 use ward_core::protocolo::Pendrive;
 
 use crate::ErroApp;
@@ -35,7 +35,7 @@ impl PendriveVisto {
     pub(crate) fn de(p: &Pendrive) -> PendriveVisto {
         PendriveVisto {
             uuid: p.uuid.clone(),
-            rotulo: ward_core::exibicao::neutralizar(p.rotulo.trim()),
+            rotulo: ward_core::display::neutralize(p.rotulo.trim()),
             montado: p.montado,
         }
     }
@@ -74,7 +74,7 @@ impl EscolhaDoPendrive {
 
 /// UUID no formato de D45 (`[0-9A-Fa-f-]`, 1 a 36, sem `-` nas pontas).
 pub fn uuid_valido(uuid: &str) -> bool {
-    uuid.len() <= MAX_UUID_BACKUP && BackupExterno::novo(true, Some(uuid)).is_ok()
+    uuid.len() <= MAX_BACKUP_UUID && BackupExterno::novo(true, Some(uuid)).is_ok()
 }
 
 /// O pendrive com aquele UUID na lista do daemon (sem diferenciar maiúsculas, como a
@@ -130,7 +130,7 @@ mod testes {
                 "{ruim:?}"
             );
         }
-        let longo = "A".repeat(MAX_UUID_BACKUP + 1);
+        let longo = "A".repeat(MAX_BACKUP_UUID + 1);
         assert_eq!(
             EscolhaDoPendrive::nova(true, Some(&longo)),
             Err(ErroApp::PedidoInvalido)
@@ -155,7 +155,7 @@ mod testes {
         assert!(
             !v.rotulo
                 .chars()
-                .any(|c| ward_core::exibicao::invisivel(c) || c.is_control()),
+                .any(|c| ward_core::display::invisible(c) || c.is_control()),
             "{:?}",
             v.rotulo
         );
@@ -395,7 +395,7 @@ mod testes {
                 !estranho
                     .rotulo
                     .chars()
-                    .any(|c| ward_core::exibicao::invisivel(c) || c.is_control()),
+                    .any(|c| ward_core::display::invisible(c) || c.is_control()),
                 "{:?}",
                 estranho.rotulo
             );

@@ -9,7 +9,7 @@
 //!   (D65 a) e avisa quem abre a janela. Os `pedido_de_destrave` ficam na fila para a
 //!   Fase 31.
 //! - [`exibir`]: o que a janela recebe. O texto vem do agente (comando, cadeia de
-//!   processos) e é **não confiável**: passa por `ward_core::exibicao::neutralizar`
+//!   processos) e é **não confiável**: passa por `ward_core::display::neutralize`
 //!   (D51) aqui, no lado Rust, antes de ir à webview; a tela o põe como texto (nunca
 //!   como HTML). Controle, bidi, largura zero e tags viram escape visível; nada é
 //!   tirado nem reordenado. A seta `→` que separa a cadeia na tela é reservada: a que
@@ -26,7 +26,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
-use ward_core::exibicao::neutralizar;
+use ward_core::display::neutralize;
 use ward_core::protocolo::{Decisao, PedidoDeAprovacao};
 
 use crate::ErroApp;
@@ -263,7 +263,7 @@ fn restante(chegada: Instant, agora: Instant) -> u64 {
 
 /// Um nome de processo da cadeia: escape visível (D51) e a seta reservada como escape.
 fn exibir_processo(nome: &str) -> String {
-    neutralizar(nome).replace(SEPARADOR_CADEIA, "\\u{2192}")
+    neutralize(nome).replace(SEPARADOR_CADEIA, "\\u{2192}")
 }
 
 /// O pedido como a janela o mostra (D51 em todo texto que veio do agente ou do daemon).
@@ -274,7 +274,7 @@ pub(crate) fn exibir(a: &Atual) -> PedidoExibido {
         .iter()
         .enumerate()
         .map(|(i, n)| EntradaExibida {
-            nome: neutralizar(n),
+            nome: neutralize(n),
             tipo: a.tipos.as_ref().and_then(|t| t.get(i).copied().flatten()),
         })
         .collect();
@@ -283,10 +283,10 @@ pub(crate) fn exibir(a: &Atual) -> PedidoExibido {
         entradas,
         ambiente: p.ambiente.nome(),
         operacao: p.operacao.nome(),
-        comando: neutralizar(&p.comando),
-        diretorio: neutralizar(&p.diretorio),
+        comando: neutralize(&p.comando),
+        diretorio: neutralize(&p.diretorio),
         cadeia: p.cadeia.iter().map(|c| exibir_processo(c)).collect(),
-        origem: neutralizar(&p.origem),
+        origem: neutralize(&p.origem),
         confirmacao: p.confirmacao,
         entrada_oculta: p.entrada_oculta,
         restante: a.restante,
@@ -368,7 +368,7 @@ mod testes {
         assert!(
             e.diretorio
                 .chars()
-                .all(|c| !ward_core::exibicao::invisivel(c))
+                .all(|c| !ward_core::display::invisible(c))
         );
         assert_eq!(e.diretorio, "\"/home/dev/\\u{202E}emca\\x1b[2J\"");
     }
@@ -392,7 +392,7 @@ mod testes {
             .chain(e.cadeia.iter().flat_map(|c| c.chars()))
         {
             assert!(
-                !ward_core::exibicao::invisivel(c),
+                !ward_core::display::invisible(c),
                 "caractere invisível {:?} passou",
                 c
             );

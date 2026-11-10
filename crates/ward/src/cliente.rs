@@ -8,7 +8,7 @@ use std::io;
 use std::os::unix::net::UnixStream;
 use std::time::Duration;
 
-use ward_core::limites::MAX_QUADRO_COMUM;
+use ward_core::limits::MAX_COMMON_FRAME;
 use ward_core::protocolo::quadro::{self, ErroQuadro, LIMITE_RESPOSTA};
 use ward_core::protocolo::{self, Papel, Pedido, Resposta};
 use ward_platform::{ExpectedServer, ServerRefusal, connect_server, verify_server};
@@ -200,7 +200,7 @@ impl Conexao {
     pub fn pedir(&mut self, pedido: &Pedido) -> Result<Resposta, ErroConexao> {
         let corpo = protocolo::codificar_pedido(Papel::Agente, pedido)
             .map_err(|_| ErroConexao::PedidoInvalido)?;
-        quadro::escrever_quadro(&mut self.stream, &corpo, MAX_QUADRO_COMUM)
+        quadro::escrever_quadro(&mut self.stream, &corpo, MAX_COMMON_FRAME)
             .map_err(erro_do_quadro)?;
         drop(corpo);
         let resposta =
@@ -230,7 +230,7 @@ impl Conexao {
         let mut stream = self.stream;
         let corpo = protocolo::codificar_pedido(Papel::Agente, pedido)
             .map_err(|_| ErroConexao::PedidoInvalido)?;
-        quadro::escrever_quadro(&mut stream, &corpo, MAX_QUADRO_COMUM).map_err(erro_do_quadro)?;
+        quadro::escrever_quadro(&mut stream, &corpo, MAX_COMMON_FRAME).map_err(erro_do_quadro)?;
         drop(corpo);
         stream
             .set_read_timeout(None)
@@ -255,13 +255,13 @@ impl EscritaSessao {
     pub fn entrada(&mut self, dados: ward_core::entrada::Segredo) -> Result<(), ErroConexao> {
         let corpo = protocolo::codificar_pedido(Papel::Agente, &Pedido::EntradaPadrao { dados })
             .map_err(|_| ErroConexao::PedidoInvalido)?;
-        quadro::escrever_quadro(&mut self.escrita, &corpo, MAX_QUADRO_COMUM).map_err(erro_do_quadro)
+        quadro::escrever_quadro(&mut self.escrita, &corpo, MAX_COMMON_FRAME).map_err(erro_do_quadro)
     }
 
     /// Manda o novo tamanho do terminal (`ward ssh` interativo, Fase 27).
     pub fn janela(&mut self, j: ward_core::protocolo::Janela) -> Result<(), ErroConexao> {
         let corpo = protocolo::codificar_pedido(Papel::Agente, &Pedido::Janela(j))
             .map_err(|_| ErroConexao::PedidoInvalido)?;
-        quadro::escrever_quadro(&mut self.escrita, &corpo, MAX_QUADRO_COMUM).map_err(erro_do_quadro)
+        quadro::escrever_quadro(&mut self.escrita, &corpo, MAX_COMMON_FRAME).map_err(erro_do_quadro)
     }
 }

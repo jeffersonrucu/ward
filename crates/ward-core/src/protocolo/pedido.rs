@@ -15,11 +15,11 @@ use crate::entrada::{
     Autenticacao, Dados, Entrada, NivelAcesso, Rascunho, RascunhoAnexo, RascunhoDados,
     RascunhoExtra, Segredo, TipoEntrada, ValorExtra,
 };
-use crate::limites::{
-    MAX_ANEXOS, MAX_ANEXOS_SOMADOS, MAX_ARGUMENTO, MAX_ARGUMENTOS, MAX_DIGITOS_PIN, MAX_EXTRAS,
-    MAX_MINUTOS_TRAVA, MAX_NOME, MAX_NOME_ANEXO, MAX_NOME_EXTRA, MAX_NOTA, MAX_SEGREDO, MAX_TAG,
-    MAX_TAGS, MAX_TEXTO, MAX_URL, MAX_UUID_BACKUP, MAX_VALOR_EXTRA, MAX_VARIAVEIS_AMBIENTE,
-    MIN_DIGITOS_PIN, MIN_MINUTOS_TRAVA,
+use crate::limits::{
+    MAX_ARGUMENT, MAX_ARGUMENTS, MAX_ATTACHMENT_NAME, MAX_ATTACHMENTS, MAX_ATTACHMENTS_TOTAL,
+    MAX_BACKUP_UUID, MAX_ENV_VARIABLES, MAX_EXTRA_NAME, MAX_EXTRA_VALUE, MAX_EXTRAS,
+    MAX_LOCK_MINUTES, MAX_NAME, MAX_NOTE, MAX_PIN_DIGITS, MAX_SECRET, MAX_TAG, MAX_TAGS, MAX_TEXT,
+    MAX_URL, MIN_LOCK_MINUTES, MIN_PIN_DIGITS,
 };
 
 /// Bytes que zeram ao sair (argumento, diretório, nome de variável).
@@ -448,14 +448,14 @@ impl Pedido {
                 None => !decisao.pede_pin(),
             }) && (!entrada_confirmada || decisao.pede_pin())),
             Pedido::TempoTrava { minutos } => {
-                ok((MIN_MINUTOS_TRAVA..=MAX_MINUTOS_TRAVA).contains(minutos))
+                ok((MIN_LOCK_MINUTES..=MAX_LOCK_MINUTES).contains(minutos))
             }
             Pedido::Executar(x) => ok(nome_ok(&x.entrada)
                 && comando_ok(&x.argv, true)
                 && !x.cwd.is_empty()
-                && x.cwd.len() <= MAX_ARGUMENTO
+                && x.cwd.len() <= MAX_ARGUMENT
                 && sem_nul(&x.cwd)
-                && x.ambiente.len() <= MAX_VARIAVEIS_AMBIENTE
+                && x.ambiente.len() <= MAX_ENV_VARIABLES
                 && x.ambiente.iter().all(variavel_ok)),
             Pedido::Ssh {
                 entrada,
@@ -467,10 +467,10 @@ impl Pedido {
                 && comando_ok(comando, false)
                 && token
                     .as_ref()
-                    .is_none_or(|t| !t.is_empty() && t.len() <= MAX_NOME)
+                    .is_none_or(|t| !t.is_empty() && t.len() <= MAX_NAME)
                 && janela.is_none_or(janela_ok)),
             Pedido::Janela(j) => ok(janela_ok(*j)),
-            Pedido::EntradaPadrao { dados } => ok(dados.len() <= MAX_ARGUMENTO),
+            Pedido::EntradaPadrao { dados } => ok(dados.len() <= MAX_ARGUMENT),
             Pedido::Login { entrada }
             | Pedido::Playwright { entrada }
             | Pedido::Detalhe { entrada }
@@ -723,7 +723,7 @@ impl Pedido {
 // ---- Conferências de formato (as mesmas na leitura e na escrita) ----
 
 fn nome_ok(n: &str) -> bool {
-    !n.is_empty() && n.len() <= MAX_NOME
+    !n.is_empty() && n.len() <= MAX_NAME
 }
 
 /// Nome exato de uma versão de backup (Fase 45): sem barra, sem `..`, sem caminho.
@@ -746,13 +746,13 @@ fn backup_externo_ok(ligado: bool, uuid: &Option<String>) -> bool {
 }
 
 fn senha_ok(s: &Segredo) -> bool {
-    !s.is_empty() && s.len() <= MAX_SEGREDO
+    !s.is_empty() && s.len() <= MAX_SECRET
 }
 
 /// PIN: de 4 a 6 dígitos ASCII. Quem confere contra o hash é o daemon (S9).
 fn pin_ok(p: &Segredo) -> bool {
     let b = p.expor();
-    (MIN_DIGITOS_PIN..=MAX_DIGITOS_PIN).contains(&b.len()) && b.iter().all(u8::is_ascii_digit)
+    (MIN_PIN_DIGITS..=MAX_PIN_DIGITS).contains(&b.len()) && b.iter().all(u8::is_ascii_digit)
 }
 
 fn sem_nul(b: &[u8]) -> bool {
@@ -761,16 +761,16 @@ fn sem_nul(b: &[u8]) -> bool {
 
 fn comando_ok(argv: &[Bytes], exige: bool) -> bool {
     (!exige || !argv.is_empty())
-        && argv.len() <= MAX_ARGUMENTOS
-        && argv.iter().all(|a| a.len() <= MAX_ARGUMENTO && sem_nul(a))
+        && argv.len() <= MAX_ARGUMENTS
+        && argv.iter().all(|a| a.len() <= MAX_ARGUMENT && sem_nul(a))
 }
 
 fn variavel_ok(v: &Variavel) -> bool {
     !v.nome.is_empty()
-        && v.nome.len() <= MAX_ARGUMENTO
+        && v.nome.len() <= MAX_ARGUMENT
         && sem_nul(&v.nome)
         && !v.nome.contains(&b'=')
-        && v.valor.len() <= MAX_ARGUMENTO
+        && v.valor.len() <= MAX_ARGUMENT
         && sem_nul(v.valor.expor())
 }
 
@@ -781,7 +781,7 @@ fn janela_ok(j: Janela) -> bool {
 fn alvo_ok(a: &Alvo) -> bool {
     match a {
         Alvo::Campo(c) => CAMPOS_SECRETOS.contains(&c.as_str()),
-        Alvo::Extra(x) => !x.is_empty() && x.len() <= MAX_NOME_EXTRA,
+        Alvo::Extra(x) => !x.is_empty() && x.len() <= MAX_EXTRA_NAME,
     }
 }
 
@@ -801,32 +801,31 @@ fn rascunho_ok(r: &Rascunho) -> bool {
     let anexos: usize = r.anexos.iter().map(|a| a.conteudo.len()).sum();
     let textos = [&r.grupo, &r.ambiente, &r.projeto];
     nome_ok(&r.nome)
-        && textos.iter().all(|t| t.len() <= MAX_TEXTO)
+        && textos.iter().all(|t| t.len() <= MAX_TEXT)
         && r.tags.len() <= MAX_TAGS
         && r.tags.iter().all(|t| t.len() <= MAX_TAG)
         && r.extras.len() <= MAX_EXTRAS
         && r.extras
             .iter()
-            .all(|x| x.nome.len() <= MAX_NOME_EXTRA && x.valor.len() <= MAX_VALOR_EXTRA)
-        && r.anexos.len() <= MAX_ANEXOS
-        && r.anexos.iter().all(|a| a.nome.len() <= MAX_NOME_ANEXO)
-        && anexos <= MAX_ANEXOS_SOMADOS
+            .all(|x| x.nome.len() <= MAX_EXTRA_NAME && x.valor.len() <= MAX_EXTRA_VALUE)
+        && r.anexos.len() <= MAX_ATTACHMENTS
+        && r.anexos.iter().all(|a| a.nome.len() <= MAX_ATTACHMENT_NAME)
+        && anexos <= MAX_ATTACHMENTS_TOTAL
         && campos_do_rascunho(&r.dados).iter().all(|c| match c {
-            CampoRascunho::Texto(_, t) => t.len() <= MAX_TEXTO,
+            CampoRascunho::Texto(_, t) => t.len() <= MAX_TEXT,
             CampoRascunho::Segredo(k, s) => s.len() <= max_segredo(k),
         })
 }
 
 /// Fase 39b: "manter anexo" só na edição; nomes não vazios, dentro do limite, sem
-/// repetição, e mantidos mais novos cabem em [`MAX_ANEXOS`]. Se o nome existe na
+/// repetição, e mantidos mais novos cabem em [`MAX_ATTACHMENTS`]. Se o nome existe na
 /// entrada editada é regra do daemon ([`juntar_anexos_mantidos`]).
 fn manter_anexos_ok(editando: bool, nomes: &[String], r: &Rascunho) -> bool {
     (editando || nomes.is_empty())
-        && nomes.len().saturating_add(r.anexos.len()) <= MAX_ANEXOS
-        && nomes
-            .iter()
-            .enumerate()
-            .all(|(i, n)| !n.is_empty() && n.len() <= MAX_NOME_ANEXO && !nomes[..i].contains(n))
+        && nomes.len().saturating_add(r.anexos.len()) <= MAX_ATTACHMENTS
+        && nomes.iter().enumerate().all(|(i, n)| {
+            !n.is_empty() && n.len() <= MAX_ATTACHMENT_NAME && !nomes[..i].contains(n)
+        })
 }
 
 /// Fase 39b (V5.12): põe à frente dos anexos novos do rascunho uma cópia de cada anexo
@@ -855,7 +854,7 @@ pub fn juntar_anexos_mantidos(
             conteudo: Segredo::de_bytes(a.conteudo().expor().to_vec()),
         });
     }
-    if mantidos.len().saturating_add(rascunho.anexos.len()) > MAX_ANEXOS {
+    if mantidos.len().saturating_add(rascunho.anexos.len()) > MAX_ATTACHMENTS {
         return Err(ErroResposta::PedidoInvalido);
     }
     mantidos.append(&mut rascunho.anexos);
@@ -865,9 +864,9 @@ pub fn juntar_anexos_mantidos(
 
 fn max_segredo(campo: &str) -> usize {
     if campo == "texto" {
-        MAX_NOTA
+        MAX_NOTE
     } else {
-        MAX_SEGREDO
+        MAX_SECRET
     }
 }
 
@@ -886,36 +885,36 @@ pub(crate) fn ler(op: Operacao, mut c: Campos) -> R<Pedido> {
         Operacao::Pendrives => Pedido::Pendrives,
         Operacao::AguardarLogin => Pedido::AguardarLogin,
         Operacao::PreencherLogin => Pedido::PreencherLogin {
-            id: c.texto("id", MAX_NOME)?,
+            id: c.texto("id", MAX_NAME)?,
             origem: c.texto("origem", MAX_URL)?,
         },
         Operacao::ResultadoLogin => Pedido::ResultadoLogin {
-            id: c.texto("id", MAX_NOME)?,
-            resultado: ResultadoLogin::de_nome(&c.texto("resultado", MAX_NOME)?)
+            id: c.texto("id", MAX_NAME)?,
+            resultado: ResultadoLogin::de_nome(&c.texto("resultado", MAX_NAME)?)
                 .ok_or(JsonInvalido)?,
         },
         Operacao::DefinirBackupExterno => Pedido::DefinirBackupExterno {
             ligado: c.logico("ligado")?,
-            uuid: c.texto_opc("uuid", MAX_UUID_BACKUP)?,
+            uuid: c.texto_opc("uuid", MAX_BACKUP_UUID)?,
         },
         Operacao::RestaurarBackup => Pedido::RestaurarBackup {
-            versao: c.texto("versao", MAX_NOME)?,
-            senha: c.segredo("senha", MAX_SEGREDO)?,
-            pin: c.segredo("pin", MAX_DIGITOS_PIN)?,
+            versao: c.texto("versao", MAX_NAME)?,
+            senha: c.segredo("senha", MAX_SECRET)?,
+            pin: c.segredo("pin", MAX_PIN_DIGITS)?,
         },
         Operacao::Destravar => Pedido::Destravar {
-            senha: c.segredo("senha", MAX_SEGREDO)?,
+            senha: c.segredo("senha", MAX_SECRET)?,
         },
         Operacao::Executar => {
-            let entrada = c.texto("entrada", MAX_NOME)?;
-            let argv = ler_bytes(c.lista("argv", MAX_ARGUMENTOS)?)?;
-            let cwd = c.bytes("cwd", MAX_ARGUMENTO)?;
+            let entrada = c.texto("entrada", MAX_NAME)?;
+            let argv = ler_bytes(c.lista("argv", MAX_ARGUMENTS)?)?;
+            let cwd = c.bytes("cwd", MAX_ARGUMENT)?;
             let tipo_entrada = ler_tipo_entrada(&mut c)?;
             let mut ambiente = Vec::new();
-            for v in c.lista("ambiente", MAX_VARIAVEIS_AMBIENTE)? {
+            for v in c.lista("ambiente", MAX_ENV_VARIABLES)? {
                 let mut o = Campos::de(v)?;
-                let nome = o.bytes("nome", MAX_ARGUMENTO)?;
-                let valor = o.segredo("valor", MAX_ARGUMENTO)?;
+                let nome = o.bytes("nome", MAX_ARGUMENT)?;
+                let valor = o.segredo("valor", MAX_ARGUMENT)?;
                 o.fim()?;
                 ambiente.push(Variavel { nome, valor });
             }
@@ -928,9 +927,9 @@ pub(crate) fn ler(op: Operacao, mut c: Campos) -> R<Pedido> {
             })
         }
         Operacao::Ssh => {
-            let entrada = c.texto("entrada", MAX_NOME)?;
-            let comando = ler_bytes(c.lista_ou_vazia("comando", MAX_ARGUMENTOS)?)?;
-            let token = c.segredo_opc("token", MAX_NOME)?;
+            let entrada = c.texto("entrada", MAX_NAME)?;
+            let comando = ler_bytes(c.lista_ou_vazia("comando", MAX_ARGUMENTS)?)?;
+            let token = c.segredo_opc("token", MAX_NAME)?;
             let janela = match c.tirar("janela") {
                 Some(v) => Some(ler_janela(Campos::de(v)?)?),
                 None => None,
@@ -945,30 +944,30 @@ pub(crate) fn ler(op: Operacao, mut c: Campos) -> R<Pedido> {
             }
         }
         Operacao::Login => Pedido::Login {
-            entrada: c.texto("entrada", MAX_NOME)?,
+            entrada: c.texto("entrada", MAX_NAME)?,
         },
         Operacao::Playwright => Pedido::Playwright {
-            entrada: c.texto("entrada", MAX_NOME)?,
+            entrada: c.texto("entrada", MAX_NAME)?,
         },
         Operacao::EntradaPadrao => Pedido::EntradaPadrao {
-            dados: c.segredo("dados", MAX_ARGUMENTO)?,
+            dados: c.segredo("dados", MAX_ARGUMENT)?,
         },
         Operacao::Janela => {
             let j = ler_janela(c)?;
             return conferido(Pedido::Janela(j));
         }
         Operacao::CriarCofre => Pedido::CriarCofre {
-            senha: c.segredo("senha", MAX_SEGREDO)?,
-            pin: c.segredo("pin", MAX_DIGITOS_PIN)?,
+            senha: c.segredo("senha", MAX_SECRET)?,
+            pin: c.segredo("pin", MAX_PIN_DIGITS)?,
         },
         Operacao::Detalhe => Pedido::Detalhe {
-            entrada: c.texto("entrada", MAX_NOME)?,
+            entrada: c.texto("entrada", MAX_NAME)?,
         },
         Operacao::Revelar | Operacao::Copiar => {
-            let entrada = c.texto("entrada", MAX_NOME)?;
+            let entrada = c.texto("entrada", MAX_NAME)?;
             let alvo = match (c.tirar("campo"), c.tirar("extra")) {
-                (Some(v), None) => Alvo::Campo(texto_de(v, MAX_NOME)?),
-                (None, Some(v)) => Alvo::Extra(texto_de(v, MAX_NOME_EXTRA)?),
+                (Some(v), None) => Alvo::Campo(texto_de(v, MAX_NAME)?),
+                (None, Some(v)) => Alvo::Extra(texto_de(v, MAX_EXTRA_NAME)?),
                 _ => return Err(JsonInvalido),
             };
             if op == Operacao::Revelar {
@@ -978,13 +977,13 @@ pub(crate) fn ler(op: Operacao, mut c: Campos) -> R<Pedido> {
             }
         }
         Operacao::Totp => Pedido::Totp {
-            entrada: c.texto("entrada", MAX_NOME)?,
+            entrada: c.texto("entrada", MAX_NAME)?,
         },
         Operacao::SalvarEntrada => {
-            let anterior = c.texto_opc("anterior", MAX_NOME)?;
+            let anterior = c.texto_opc("anterior", MAX_NAME)?;
             let manter_anexos = textos_de(
-                c.lista_ou_vazia("manter_anexos", MAX_ANEXOS)?,
-                MAX_NOME_ANEXO,
+                c.lista_ou_vazia("manter_anexos", MAX_ATTACHMENTS)?,
+                MAX_ATTACHMENT_NAME,
             )?;
             let rascunho = ler_rascunho(c.objeto("entrada")?)?;
             Pedido::SalvarEntrada {
@@ -994,12 +993,12 @@ pub(crate) fn ler(op: Operacao, mut c: Campos) -> R<Pedido> {
             }
         }
         Operacao::RemoverEntrada => Pedido::RemoverEntrada {
-            entrada: c.texto("entrada", MAX_NOME)?,
+            entrada: c.texto("entrada", MAX_NAME)?,
         },
         Operacao::MudarNivel => {
-            let entrada = c.texto("entrada", MAX_NOME)?;
-            let nivel = NivelAcesso::de_nome(&c.texto("nivel", MAX_NOME)?).ok_or(JsonInvalido)?;
-            let pin = c.segredo("pin", MAX_DIGITOS_PIN)?;
+            let entrada = c.texto("entrada", MAX_NAME)?;
+            let nivel = NivelAcesso::de_nome(&c.texto("nivel", MAX_NAME)?).ok_or(JsonInvalido)?;
+            let pin = c.segredo("pin", MAX_PIN_DIGITS)?;
             Pedido::MudarNivel {
                 entrada,
                 nivel,
@@ -1008,12 +1007,12 @@ pub(crate) fn ler(op: Operacao, mut c: Campos) -> R<Pedido> {
         }
         Operacao::ResponderAprovacao => {
             let pedido = c.inteiro("pedido")?;
-            let nome = c.texto("decisao", MAX_NOME)?;
+            let nome = c.texto("decisao", MAX_NAME)?;
             let decisao = Decisao::TODAS
                 .into_iter()
                 .find(|d| d.nome() == nome)
                 .ok_or(JsonInvalido)?;
-            let pin = c.segredo_opc("pin", MAX_DIGITOS_PIN)?;
+            let pin = c.segredo_opc("pin", MAX_PIN_DIGITS)?;
             // Fase 54b: ausente = não marcada; presente só como `true`.
             let entrada_confirmada = match c.tirar("entrada_confirmada") {
                 None => false,
@@ -1028,15 +1027,15 @@ pub(crate) fn ler(op: Operacao, mut c: Campos) -> R<Pedido> {
             }
         }
         Operacao::EmitirToken => Pedido::EmitirToken {
-            entrada: c.texto("entrada", MAX_NOME)?,
+            entrada: c.texto("entrada", MAX_NAME)?,
         },
         Operacao::TrocarPin => Pedido::TrocarPin {
-            atual: c.segredo("atual", MAX_DIGITOS_PIN)?,
-            novo: c.segredo("novo", MAX_DIGITOS_PIN)?,
+            atual: c.segredo("atual", MAX_PIN_DIGITS)?,
+            novo: c.segredo("novo", MAX_PIN_DIGITS)?,
         },
         Operacao::TrocarSenha => Pedido::TrocarSenha {
-            atual: c.segredo("atual", MAX_SEGREDO)?,
-            nova: c.segredo("nova", MAX_SEGREDO)?,
+            atual: c.segredo("atual", MAX_SECRET)?,
+            nova: c.segredo("nova", MAX_SECRET)?,
         },
         Operacao::TempoTrava => Pedido::TempoTrava {
             minutos: u32::try_from(c.inteiro("minutos")?).map_err(|_| JsonInvalido)?,
@@ -1045,7 +1044,7 @@ pub(crate) fn ler(op: Operacao, mut c: Campos) -> R<Pedido> {
             origem: c.texto("origem", MAX_URL)?,
         },
         Operacao::Preencher => Pedido::Preencher {
-            entrada: c.texto("entrada", MAX_NOME)?,
+            entrada: c.texto("entrada", MAX_NAME)?,
             origem: c.texto("origem", MAX_URL)?,
         },
         Operacao::SalvarLogin => Pedido::SalvarLogin {
@@ -1063,11 +1062,11 @@ fn conferido(p: Pedido) -> R<Pedido> {
 
 /// Fase 54b (D68): o tipo da entrada padrão, obrigatório (sem padrão: o cliente diz).
 fn ler_tipo_entrada(c: &mut Campos) -> R<TipoEntradaPadrao> {
-    TipoEntradaPadrao::de_nome(&c.texto("tipo_entrada", MAX_NOME)?).ok_or(JsonInvalido)
+    TipoEntradaPadrao::de_nome(&c.texto("tipo_entrada", MAX_NAME)?).ok_or(JsonInvalido)
 }
 
 fn ler_bytes(v: Vec<Valor>) -> R<Vec<Bytes>> {
-    v.into_iter().map(|a| bytes_de(a, MAX_ARGUMENTO)).collect()
+    v.into_iter().map(|a| bytes_de(a, MAX_ARGUMENT)).collect()
 }
 
 fn escrever_bytes(e: &mut Escritor, l: &[Bytes]) {
@@ -1233,7 +1232,7 @@ fn campos_do_rascunho(d: &RascunhoDados) -> Vec<CampoRascunho<'_>> {
 }
 
 fn ler_dados(tipo: TipoEntrada, mut c: Campos) -> R<RascunhoDados> {
-    let t = |c: &mut Campos, k: &str| c.texto_ou_vazio(k, MAX_TEXTO);
+    let t = |c: &mut Campos, k: &str| c.texto_ou_vazio(k, MAX_TEXT);
     let s = |c: &mut Campos, k: &str| c.segredo_opc(k, max_segredo(k));
     let d = match tipo {
         TipoEntrada::Login => RascunhoDados::Login {
@@ -1299,18 +1298,18 @@ fn ler_dados(tipo: TipoEntrada, mut c: Campos) -> R<RascunhoDados> {
 }
 
 fn ler_rascunho(mut c: Campos) -> R<Rascunho> {
-    let nome = c.texto("nome", MAX_NOME)?;
-    let grupo = c.texto_ou_vazio("grupo", MAX_TEXTO)?;
-    let ambiente = c.texto_ou_vazio("ambiente", MAX_TEXTO)?;
-    let projeto = c.texto_ou_vazio("projeto", MAX_TEXTO)?;
+    let nome = c.texto("nome", MAX_NAME)?;
+    let grupo = c.texto_ou_vazio("grupo", MAX_TEXT)?;
+    let ambiente = c.texto_ou_vazio("ambiente", MAX_TEXT)?;
+    let projeto = c.texto_ou_vazio("projeto", MAX_TEXT)?;
     let tags = textos_de(c.lista_ou_vazia("tags", MAX_TAGS)?, MAX_TAG)?;
-    let tipo = TipoEntrada::de_nome(&c.texto("tipo", MAX_NOME)?).ok_or(JsonInvalido)?;
+    let tipo = TipoEntrada::de_nome(&c.texto("tipo", MAX_NAME)?).ok_or(JsonInvalido)?;
     let dados = ler_dados(tipo, c.objeto_ou_vazio("campos")?)?;
     let mut extras = Vec::new();
     for v in c.lista_ou_vazia("extras", MAX_EXTRAS)? {
         let mut o = Campos::de(v)?;
-        let nome = o.texto("nome", MAX_NOME_EXTRA)?;
-        let valor = o.segredo("valor", MAX_VALOR_EXTRA)?;
+        let nome = o.texto("nome", MAX_EXTRA_NAME)?;
+        let valor = o.segredo("valor", MAX_EXTRA_VALUE)?;
         let segredo = o.logico("segredo")?;
         o.fim()?;
         extras.push(RascunhoExtra {
@@ -1321,13 +1320,13 @@ fn ler_rascunho(mut c: Campos) -> R<Rascunho> {
     }
     let mut anexos = Vec::new();
     let mut soma = 0usize;
-    for v in c.lista_ou_vazia("anexos", MAX_ANEXOS)? {
+    for v in c.lista_ou_vazia("anexos", MAX_ATTACHMENTS)? {
         let mut o = Campos::de(v)?;
-        let nome = o.texto("nome", MAX_NOME_ANEXO)?;
+        let nome = o.texto("nome", MAX_ATTACHMENT_NAME)?;
         // O limite de cada um é o que ainda cabe na soma (D29).
         let conteudo = segredo_de(
             o.tirar("conteudo").ok_or(JsonInvalido)?,
-            MAX_ANEXOS_SOMADOS - soma,
+            MAX_ATTACHMENTS_TOTAL - soma,
         )?;
         o.fim()?;
         soma += conteudo.len();

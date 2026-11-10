@@ -187,12 +187,12 @@ fn v3_39_totp_do_app_pelo_relogio_do_daemon() {
     let dir = Dir::novo("totp-app");
     // RFC 6238: em t = 59 s o período é o 1, faltando 1 s.
     let d = cofre(&dir, Some(59));
-    let esperado = Totp::de_semente(&ward_core::entrada::Segredo::de_texto(SEMENTE.into()))
+    let esperado = Totp::from_seed(&ward_core::entrada::Segredo::de_texto(SEMENTE.into()))
         .unwrap()
-        .codigo_em(59);
+        .code_at(59);
     match pedir(&d, Papel::App, "totp", r#"{"entrada":"t-totp"}"#) {
         Resposta::CodigoTotp { codigo, restante } => {
-            assert_eq!(codigo.as_str(), esperado.codigo());
+            assert_eq!(codigo.as_str(), esperado.code());
             assert_eq!(codigo.len(), 6);
             assert_eq!(restante, 1);
         }

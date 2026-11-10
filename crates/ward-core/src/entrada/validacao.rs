@@ -15,12 +15,13 @@ use super::{
     TipoEntrada, ValorExtra,
 };
 
-// Limites (D25, D29): numa fonte só, `crate::limites` (D32). Tudo o que vem do socket
+// Limites (D25, D29): numa fonte só, `crate::limits` (D32). Tudo o que vem do socket
 // é não confiável (tamanho, formato).
-use crate::limites::{
-    MAX_ACCESS_KEY, MAX_ANEXOS, MAX_ANEXOS_SOMADOS, MAX_BASE, MAX_BASE_REDIS, MAX_EXTRAS, MAX_HOST,
-    MAX_LINHA, MAX_NOME, MAX_NOME_ANEXO, MAX_NOME_EXTRA, MAX_NOTA, MAX_REGIAO, MAX_SEGREDO,
-    MAX_TAG, MAX_TAGS, MAX_TOTP, MAX_URL, MAX_USUARIO, MAX_VALOR_EXTRA, MIN_ACCESS_KEY, MIN_TOTP,
+use crate::limits::{
+    MAX_ACCESS_KEY, MAX_ATTACHMENT_NAME, MAX_ATTACHMENTS, MAX_ATTACHMENTS_TOTAL, MAX_DB_NAME,
+    MAX_EXTRA_NAME, MAX_EXTRA_VALUE, MAX_EXTRAS, MAX_HOST, MAX_LINE, MAX_NAME, MAX_NOTE,
+    MAX_REDIS_DB_NAME, MAX_REGION, MAX_SECRET, MAX_TAG, MAX_TAGS, MAX_TOTP, MAX_URL, MAX_USERNAME,
+    MIN_ACCESS_KEY, MIN_TOTP,
 };
 use crate::mascara::{self, ErroMascara};
 
@@ -463,7 +464,7 @@ impl Coletor {
 
     /// Usuário de `banco` e `smtp`: campo técnico, só ASCII visível (D38).
     fn usuario_estrito(&mut self, valor: String) -> Option<String> {
-        self.formato("usuário", valor, MAX_USUARIO, usuario_valido, USUARIO)
+        self.formato("usuário", valor, MAX_USERNAME, usuario_valido, USUARIO)
     }
 
     /// Usuário de `servidor` e `ftp/sftp` (D43): `[A-Za-z0-9._@-]`, sem `-` no começo.
@@ -472,7 +473,7 @@ impl Coletor {
         self.formato(
             "usuário",
             valor,
-            MAX_USUARIO,
+            MAX_USERNAME,
             usuario_ssh_valido,
             USUARIO_SSH,
         )
@@ -543,9 +544,9 @@ impl Coletor {
         passphrase: Option<Segredo>,
         aceita_chave: bool,
     ) -> Option<Autenticacao> {
-        let senha = self.segredo_opcional("senha", senha, MAX_SEGREDO);
-        let chave = self.segredo_opcional("chave privada", chave, MAX_SEGREDO);
-        let passphrase = self.segredo_opcional("passphrase", passphrase, MAX_SEGREDO);
+        let senha = self.segredo_opcional("senha", senha, MAX_SECRET);
+        let chave = self.segredo_opcional("chave privada", chave, MAX_SECRET);
+        let passphrase = self.segredo_opcional("passphrase", passphrase, MAX_SECRET);
         let (Ok(senha), Ok(chave), Ok(passphrase)) = (senha, chave, passphrase) else {
             return None;
         };
@@ -593,11 +594,11 @@ impl Rascunho {
         let nome = c.formato(
             "nome",
             self.nome,
-            MAX_NOME,
+            MAX_NAME,
             nome_entrada_valido,
             NOME_FORMATO,
         );
-        let grupo = c.linha("grupo", self.grupo, MAX_LINHA);
+        let grupo = c.linha("grupo", self.grupo, MAX_LINE);
         let ambiente = if self.ambiente.is_empty() {
             c.erro("ambiente", OBRIGATORIO);
             None
@@ -608,7 +609,7 @@ impl Rascunho {
             }
             a
         };
-        let projeto = c.linha_opcional("projeto", self.projeto, MAX_LINHA);
+        let projeto = c.linha_opcional("projeto", self.projeto, MAX_LINE);
         let tags = validar_tags(&mut c, self.tags);
         let dados = validar_dados(&mut c, self.dados);
         let extras = validar_extras(&mut c, tipo, self.extras);
@@ -697,8 +698,8 @@ fn validar_dados(c: &mut Coletor, dados: RascunhoDados) -> Option<Dados> {
             totp_semente,
         } => {
             let url = c.url(url);
-            let usuario = c.linha("usuário", usuario, MAX_USUARIO);
-            let senha = c.segredo("senha", senha, MAX_SEGREDO);
+            let usuario = c.linha("usuário", usuario, MAX_USERNAME);
+            let senha = c.segredo("senha", senha, MAX_SECRET);
             let totp = c.segredo_opcional("semente TOTP", totp_semente, MAX_TOTP);
             let totp = match totp {
                 Ok(Some(s)) if !semente_totp_valida(&s) => {
@@ -736,16 +737,16 @@ fn validar_dados(c: &mut Coletor, dados: RascunhoDados) -> Option<Dados> {
             let host = c.host(host);
             let porta = c.porta(&porta, motor.map(Motor::porta_padrao).or(Some(1)));
             let base = if motor == Some(Motor::Redis) {
-                c.formato_opcional("base", base, MAX_BASE, base_redis_valida, BASE_REDIS)
+                c.formato_opcional("base", base, MAX_DB_NAME, base_redis_valida, BASE_REDIS)
             } else {
-                c.formato_opcional("base", base, MAX_BASE, base_valida, BASE)
+                c.formato_opcional("base", base, MAX_DB_NAME, base_valida, BASE)
             };
             let usuario = c.usuario_estrito(usuario);
-            let senha = c.segredo("senha", senha, MAX_SEGREDO);
+            let senha = c.segredo("senha", senha, MAX_SECRET);
             let tunel = c.formato_opcional(
                 "túnel SSH",
                 tunel,
-                MAX_NOME,
+                MAX_NAME,
                 nome_entrada_valido,
                 NOME_FORMATO,
             );
@@ -775,7 +776,7 @@ fn validar_dados(c: &mut Coletor, dados: RascunhoDados) -> Option<Dados> {
             let salto = c.formato_opcional(
                 "servidor de salto",
                 salto,
-                MAX_NOME,
+                MAX_NAME,
                 nome_entrada_valido,
                 NOME_FORMATO,
             );
@@ -797,9 +798,9 @@ fn validar_dados(c: &mut Coletor, dados: RascunhoDados) -> Option<Dados> {
             } else {
                 c.url(url).map(Some).ok_or(())
             };
-            let token = c.segredo("token", token, MAX_SEGREDO);
+            let token = c.segredo("token", token, MAX_SECRET);
             let variavel =
-                c.formato_opcional("variável", variavel, MAX_NOME, variavel_valida, VARIAVEL);
+                c.formato_opcional("variável", variavel, MAX_NAME, variavel_valida, VARIAVEL);
             // D42: lista branca de sufixo primeiro; a lista de recusa de D25 fica como
             // segunda camada.
             let variavel = match variavel {
@@ -833,10 +834,10 @@ fn validar_dados(c: &mut Coletor, dados: RascunhoDados) -> Option<Dados> {
                 access_key_valida,
                 ACCESS_KEY,
             );
-            let secret = c.segredo("secret access key", secret_access_key, MAX_SEGREDO);
-            let regiao = c.formato("região", regiao, MAX_REGIAO, regiao_valida, REGIAO);
+            let secret = c.segredo("secret access key", secret_access_key, MAX_SECRET);
+            let regiao = c.formato("região", regiao, MAX_REGION, regiao_valida, REGIAO);
             let role_arn = c.formato_opcional("role ARN", role_arn, MAX_URL, arn_valido, ARN);
-            let session = c.segredo_opcional("session token", session_token, MAX_SEGREDO);
+            let session = c.segredo_opcional("session token", session_token, MAX_SECRET);
             Some(Dados::Aws(Aws {
                 access_key_id: access_key_id?,
                 secret_access_key: secret?,
@@ -868,7 +869,7 @@ fn validar_dados(c: &mut Coletor, dados: RascunhoDados) -> Option<Dados> {
                 seguranca.map(SegurancaSmtp::porta_padrao).or(Some(1)),
             );
             let usuario = c.usuario_estrito(usuario);
-            let senha = c.segredo("senha", senha, MAX_SEGREDO);
+            let senha = c.segredo("senha", senha, MAX_SECRET);
             Some(Dados::Smtp(Smtp {
                 host: host?,
                 porta: porta?,
@@ -912,7 +913,7 @@ fn validar_dados(c: &mut Coletor, dados: RascunhoDados) -> Option<Dados> {
             }))
         }
         RascunhoDados::NotaSegura { texto } => {
-            let texto = c.segredo("texto", texto, MAX_NOTA);
+            let texto = c.segredo("texto", texto, MAX_NOTE);
             Some(Dados::NotaSegura(NotaSegura { texto: texto? }))
         }
         RascunhoDados::Generico => Some(Dados::Generico),
@@ -938,7 +939,7 @@ fn validar_extras(
             valor,
             segredo,
         } = extra;
-        if let Some(m) = motivo_linha(&nome, MAX_NOME_EXTRA) {
+        if let Some(m) = motivo_linha(&nome, MAX_EXTRA_NAME) {
             c.erro_em(CAMPO, i, m);
             continue;
         }
@@ -964,7 +965,7 @@ fn validar_extras(
             c.erro_em(CAMPO, i, OBRIGATORIO);
             continue;
         }
-        if let Some(m) = motivo_segredo(&valor, MAX_VALOR_EXTRA) {
+        if let Some(m) = motivo_segredo(&valor, MAX_EXTRA_VALUE) {
             c.erro_em(CAMPO, i, m);
             continue;
         }
@@ -973,7 +974,7 @@ fn validar_extras(
         } else {
             // Não é segredo: vira texto comum, de uma linha (aparece na lista e no app).
             let texto = valor.expor_texto().unwrap_or_default();
-            if let Some(m) = motivo_linha(texto, MAX_VALOR_EXTRA) {
+            if let Some(m) = motivo_linha(texto, MAX_EXTRA_VALUE) {
                 c.erro_em(CAMPO, i, m);
                 continue;
             }
@@ -990,7 +991,7 @@ fn validar_anexos(
     anexos: Vec<RascunhoAnexo>,
 ) -> Option<Vec<Anexo>> {
     const CAMPO: &str = "anexos";
-    if anexos.len() > MAX_ANEXOS {
+    if anexos.len() > MAX_ATTACHMENTS {
         c.erro(CAMPO, ITENS_DEMAIS);
         return None;
     }
@@ -1001,7 +1002,7 @@ fn validar_anexos(
     let mut soma: usize = 0;
     for (i, anexo) in anexos.into_iter().enumerate() {
         let RascunhoAnexo { nome, conteudo } = anexo;
-        if let Some(m) = motivo_linha(&nome, MAX_NOME_ANEXO) {
+        if let Some(m) = motivo_linha(&nome, MAX_ATTACHMENT_NAME) {
             c.erro_em(CAMPO, i, m);
             continue;
         }
@@ -1027,14 +1028,14 @@ fn validar_anexos(
             c.erro_em(CAMPO, i, ANEXO_VAZIO);
             continue;
         }
-        if conteudo.len() > MAX_ANEXOS_SOMADOS {
+        if conteudo.len() > MAX_ATTACHMENTS_TOTAL {
             c.erro_em(CAMPO, i, LONGO);
             continue;
         }
         soma = soma.saturating_add(conteudo.len());
         saida.push(Anexo { nome, conteudo });
     }
-    if soma > MAX_ANEXOS_SOMADOS {
+    if soma > MAX_ATTACHMENTS_TOTAL {
         c.erro(CAMPO, ANEXOS_SOMADOS);
     }
     (c.0.len() == antes).then_some(saida)
@@ -1175,7 +1176,7 @@ fn nome_entrada_valido(v: &str) -> bool {
         })
 }
 
-/// Base do `banco` (D33): `[A-Za-z0-9_-]`, de 1 a [`MAX_BASE`] (o comprimento já foi
+/// Base do `banco` (D33): `[A-Za-z0-9_-]`, de 1 a [`MAX_DB_NAME`] (o comprimento já foi
 /// conferido). Sem `?`, `#`, `/`, `.`, espaço nem `%`: `PGDATABASE` e as demais recebem
 /// sempre um nome limpo.
 fn base_valida(v: &str) -> bool {
@@ -1184,13 +1185,13 @@ fn base_valida(v: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'-'))
 }
 
-/// Base do `redis` (D33): número de 0 a [`MAX_BASE_REDIS`], só dígitos ASCII e sem zero
+/// Base do `redis` (D33): número de 0 a [`MAX_REDIS_DB_NAME`], só dígitos ASCII e sem zero
 /// à esquerda (uma forma só para cada número).
 fn base_redis_valida(v: &str) -> bool {
     !v.is_empty()
         && v.bytes().all(|c| c.is_ascii_digit())
         && (v == "0" || !v.starts_with('0'))
-        && v.parse::<u32>().is_ok_and(|n| n <= MAX_BASE_REDIS)
+        && v.parse::<u32>().is_ok_and(|n| n <= MAX_REDIS_DB_NAME)
 }
 
 fn host_valido(v: &str) -> bool {

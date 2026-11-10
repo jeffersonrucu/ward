@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use ward_core::entrada::Segredo;
-use ward_core::limites::{KIB, MAX_ARGUMENTO, MAX_ARGUMENTOS, MAX_SEGREDO, MAX_VARIAVEIS_AMBIENTE};
+use ward_core::limits::{KIB, MAX_ARGUMENT, MAX_ARGUMENTS, MAX_ENV_VARIABLES, MAX_SECRET};
 use ward_core::protocolo::{
     ErroCodificar, ErroResposta, Fluxo, Janela, Papel, Pedido, PedidoExecutar, Resposta,
     TipoEntradaPadrao, Variavel,
@@ -165,7 +165,7 @@ impl Entorno for Sistema {
         ward_platform::harden_process()
     }
     fn ler_senha(&mut self) -> Result<Zeroizing<Vec<u8>>, TerminalError> {
-        ward_platform::read_password("Senha mestra do Ward: ", MAX_SEGREDO)
+        ward_platform::read_password("Senha mestra do Ward: ", MAX_SECRET)
     }
     fn saida(&mut self) -> &mut dyn Write {
         &mut self.stdout
@@ -360,11 +360,11 @@ pub fn pedido_run(
     let campo_grande = argv
         .iter()
         .chain(std::iter::once(&cwd))
-        .any(|a| a.len() > MAX_ARGUMENTO)
+        .any(|a| a.len() > MAX_ARGUMENT)
         || ambiente
             .iter()
-            .any(|(k, v)| k.len() > MAX_ARGUMENTO || v.len() > MAX_ARGUMENTO);
-    if campo_grande || argv.len() > MAX_ARGUMENTOS || ambiente.len() > MAX_VARIAVEIS_AMBIENTE {
+            .any(|(k, v)| k.len() > MAX_ARGUMENT || v.len() > MAX_ARGUMENT);
+    if campo_grande || argv.len() > MAX_ARGUMENTS || ambiente.len() > MAX_ENV_VARIABLES {
         return Err(MSG_RUN_CAMPO);
     }
     let pedido = Pedido::Executar(PedidoExecutar {
@@ -507,7 +507,7 @@ pub fn pedido_ssh(
     if comando.iter().map(Vec::len).sum::<usize>() > MAX_RUN {
         return Err(MSG_RUN_GRANDE);
     }
-    if comando.len() > MAX_ARGUMENTOS || comando.iter().any(|a| a.len() > MAX_ARGUMENTO) {
+    if comando.len() > MAX_ARGUMENTS || comando.iter().any(|a| a.len() > MAX_ARGUMENT) {
         return Err(MSG_RUN_CAMPO);
     }
     let pedido = Pedido::Ssh {

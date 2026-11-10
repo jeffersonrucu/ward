@@ -451,7 +451,7 @@ fn ler_versao_padrao(caminho: &Path, uid: u32) -> Option<Vec<u8>> {
     use std::io::Read;
     let limite = (crate::formato::TAM_CABECALHO
         + crate::formato::MAX_CONTEUDO
-        + crate::cripto::TAM_TAG) as u64;
+        + crate::crypto::TAG_SIZE) as u64;
     let antes = fs::symlink_metadata(caminho).ok()?;
     if !antes.file_type().is_file() || antes.uid() != uid || antes.len() > limite {
         return None;

@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
-use ward_core::limites::MAX_QUADRO_COMUM;
+use ward_core::limits::MAX_COMMON_FRAME;
 use ward_core::protocolo::quadro::{self, LIMITE_RESPOSTA};
 use ward_core::protocolo::{self, Papel, Pedido};
 use ward_platform::{ExpectedServer, TerminalError};
@@ -79,7 +79,7 @@ fn servidor(pasta: &Pasta, responder: Option<Arc<Responder>>) -> Arc<Mutex<Visto
                     v.lock().unwrap().bytes.extend_from_slice(&buf);
                 }
                 Some(r) => loop {
-                    let Ok(corpo) = quadro::ler_quadro(&mut s, MAX_QUADRO_COMUM) else {
+                    let Ok(corpo) = quadro::ler_quadro(&mut s, MAX_COMMON_FRAME) else {
                         break;
                     };
                     let p = protocolo::decodificar_pedido(Papel::Agente, &corpo).unwrap();

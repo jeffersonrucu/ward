@@ -334,7 +334,7 @@ impl Daemon {
         if !matches!(e.dados(), Dados::Servidor(_)) {
             return Err(ErroResposta::PedidoInvalido);
         }
-        let valor = ward_core::gerador::token_conectar().map_err(|_| ErroResposta::Interno)?;
+        let valor = ward_core::generator::connect_token().map_err(|_| ErroResposta::Interno)?;
         a.tokens.retain(|t| agora < t.ate);
         if a.tokens.len() >= MAX_TOKENS {
             a.tokens.remove(0);
@@ -359,7 +359,7 @@ impl Daemon {
         a.tokens.retain(|t| agora < t.ate);
         let mut achado = None;
         for (i, t) in a.tokens.iter().enumerate() {
-            if ward_core::gerador::tokens_iguais(t.valor.expor(), token.expor()) {
+            if ward_core::generator::tokens_equal(t.valor.expor(), token.expor()) {
                 achado = Some(i);
             }
         }

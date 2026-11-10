@@ -249,7 +249,7 @@ struct RespostaGerada {
     simbolos: &'static str,
 }
 
-/// Gerador avulso (Fase 37): a senha nasce no `ward_core::gerador` e fica no Rust; a
+/// Gerador avulso (Fase 37): a senha nasce no `ward_core::generator` e fica no Rust; a
 /// resposta não traz o valor. Os argumentos vêm da interface (não confiável) e são
 /// conferidos no núcleo (tamanho 8–64, pelo menos um conjunto).
 #[tauri::command]

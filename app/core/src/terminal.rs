@@ -72,10 +72,10 @@ impl Token {
 }
 
 /// Nome de entrada que pode ir ao argv: o formato do `ward-core` (começa por letra
-/// minúscula ou dígito; depois `[a-z0-9._-]`), até `MAX_NOME`.
+/// minúscula ou dígito; depois `[a-z0-9._-]`), até `MAX_NAME`.
 pub fn entrada_para_argv(nome: &str) -> bool {
     let mut b = nome.bytes();
-    nome.len() <= ward_core::limites::MAX_NOME
+    nome.len() <= ward_core::limits::MAX_NAME
         && b.next()
             .is_some_and(|p| p.is_ascii_lowercase() || p.is_ascii_digit())
         && b.all(|c| {
@@ -313,7 +313,7 @@ mod testes {
         }
 
         // Token novo a cada rodada, gerado aqui (nunca escrito no repositório).
-        let gerado = ward_core::gerador::token_conectar().unwrap();
+        let gerado = ward_core::generator::connect_token().unwrap();
         let token = Token::de_resposta(gerado.expor()).unwrap();
         let agulha = gerado.expor().to_vec();
 

@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use zeroize::Zeroizing;
 
-use ward_core::limites::MAX_QUADRO_COMUM;
+use ward_core::limits::MAX_COMMON_FRAME;
 use ward_core::protocolo::quadro::{self, LIMITE_RESPOSTA};
 use ward_nm::{Daemon, FalhaDaemon};
 use ward_platform::{ExpectedServer, connect_server};
@@ -78,7 +78,7 @@ fn conferir_extra(_: &UnixStream) -> Result<(), FalhaDaemon> {
 impl Daemon for DaemonSocket {
     fn trocar(&mut self, pedido: &[u8]) -> Result<Zeroizing<Vec<u8>>, FalhaDaemon> {
         let mut s = self.conectar()?;
-        quadro::escrever_quadro(&mut s, pedido, MAX_QUADRO_COMUM)
+        quadro::escrever_quadro(&mut s, pedido, MAX_COMMON_FRAME)
             .map_err(|_| FalhaDaemon::Conversa)?;
         let r = quadro::ler_quadro(&mut s, LIMITE_RESPOSTA).map_err(|_| FalhaDaemon::Conversa)?;
         let _ = s.shutdown(std::net::Shutdown::Both);

@@ -5,8 +5,8 @@
 //! posse do texto lido) e é conferido aqui, no lado Rust, antes de ir ao daemon:
 //!
 //! - senha mestra com [`MIN_CARACTERES_SENHA`] caracteres ou mais (design
-//!   `Primeiro uso / Senha mestra`) e até `MAX_SEGREDO` bytes;
-//! - PIN só com dígitos ASCII, de `MIN_DIGITOS_PIN` a `MAX_DIGITOS_PIN` (R24);
+//!   `Primeiro uso / Senha mestra`) e até `MAX_SECRET` bytes;
+//! - PIN só com dígitos ASCII, de `MIN_PIN_DIGITS` a `MAX_PIN_DIGITS` (R24);
 //! - confirmações iguais, comparadas em tempo constante.
 //!
 //! O daemon recebe só `criar_cofre { senha, pin }` e grava o hash Argon2id do PIN na
@@ -18,14 +18,14 @@ use std::fmt;
 use ctutils::CtEq;
 use serde::Deserialize;
 use serde::de::{self, Deserializer, Visitor};
-use ward_core::limites::{MAX_DIGITOS_PIN, MAX_SEGREDO, MIN_DIGITOS_PIN};
+use ward_core::limits::{MAX_PIN_DIGITS, MAX_SECRET, MIN_PIN_DIGITS};
 use zeroize::Zeroizing;
 
 use crate::formulario::ErroCampo;
 
 /// Mínimo de caracteres da senha mestra (texto de ajuda do design), o mesmo do daemon
 /// (Fase 39c): contado em pontos de código depois do NFC.
-pub const MIN_CARACTERES_SENHA: usize = ward_core::limites::MIN_CARACTERES_SENHA_MESTRA;
+pub const MIN_CARACTERES_SENHA: usize = ward_core::limits::MIN_MASTER_PASSWORD_CHARS;
 
 pub const SENHA_CURTA: &str = "a senha mestra precisa de 12 caracteres ou mais";
 pub const SENHA_LONGA: &str = "a senha mestra passou do tamanho máximo";
@@ -105,7 +105,7 @@ fn erro(campo: &'static str, motivo: &str) -> ErroCampo {
 /// Erros da senha mestra (passo 2), sem olhar o PIN.
 pub fn erros_da_senha(senha: &Digitado, confirmacao: &Digitado) -> Vec<ErroCampo> {
     let mut erros = Vec::new();
-    if senha.bytes().len() > MAX_SEGREDO {
+    if senha.bytes().len() > MAX_SECRET {
         erros.push(erro("senha", SENHA_LONGA));
     } else if !senha.serve_de_nova() {
         erros.push(erro("senha", SENHA_CURTA));
@@ -118,7 +118,7 @@ pub fn erros_da_senha(senha: &Digitado, confirmacao: &Digitado) -> Vec<ErroCampo
 /// PIN de 4 a 6 dígitos ASCII (a mesma regra do protocolo, R24).
 pub fn pin_valido(pin: &Digitado) -> bool {
     let b = pin.bytes();
-    (MIN_DIGITOS_PIN..=MAX_DIGITOS_PIN).contains(&b.len()) && b.iter().all(u8::is_ascii_digit)
+    (MIN_PIN_DIGITS..=MAX_PIN_DIGITS).contains(&b.len()) && b.iter().all(u8::is_ascii_digit)
 }
 
 impl NovoCofre {
@@ -212,7 +212,7 @@ mod testes {
             vec!["senha"]
         );
         assert_eq!(campos(&novo("", "", "1357", "1357")), vec!["senha"]);
-        let grande = "a".repeat(MAX_SEGREDO + 1);
+        let grande = "a".repeat(MAX_SECRET + 1);
         let e = novo(&grande, &grande, "1357", "1357").erros();
         assert_eq!(e[0].motivo, SENHA_LONGA);
     }

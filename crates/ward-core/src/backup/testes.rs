@@ -74,13 +74,13 @@ fn abrir(arquivo: &[u8], s: &str) -> Result<(CofreAberto, Vec<Entrada>, u64), co
 
 fn hex_aleatorio() -> String {
     let mut b = [0u8; 12];
-    crate::cripto::aleatorio(&mut b).unwrap();
+    crate::crypto::random(&mut b).unwrap();
     b.iter().map(|x| format!("{x:02x}")).collect()
 }
 
 fn u64_aleatorio() -> u64 {
     let mut b = [0u8; 8];
-    crate::cripto::aleatorio(&mut b).unwrap();
+    crate::crypto::random(&mut b).unwrap();
     u64::from_le_bytes(b)
 }
 

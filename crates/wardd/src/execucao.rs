@@ -41,7 +41,7 @@ use zeroize::Zeroizing;
 
 use ward_core::entrada::{Dados, Entrada, NivelAcesso, Segredo};
 use ward_core::entrega::{self, Entrega, ErroEntrega, ErroRecurso, Recursos};
-use ward_core::limites::{MAX_QUADRO_COMUM, MAX_TEXTO_EXIBIDO};
+use ward_core::limits::{MAX_COMMON_FRAME, MAX_DISPLAYED_TEXT};
 use ward_core::mascara::{ConstrutorMascara, Mascara};
 use ward_core::protocolo::{
     self, ErroResposta, Fluxo, Janela, Papel, Pedido, Resposta, TipoEntradaPadrao, Variavel, quadro,
@@ -241,11 +241,11 @@ struct ContextoTunel<'a> {
 
 impl Recursos for RecursosRun<'_> {
     fn codigo_totp(&mut self, semente: &Segredo) -> Result<Zeroizing<String>, ErroRecurso> {
-        let c = Totp::de_semente(semente)
-            .and_then(|t| t.codigo_agora())
+        let c = Totp::from_seed(semente)
+            .and_then(|t| t.code_now())
             .map_err(|_| ErroRecurso("código TOTP"))?;
-        let mut s = Zeroizing::new(String::with_capacity(c.codigo().len()));
-        s.push_str(c.codigo());
+        let mut s = Zeroizing::new(String::with_capacity(c.code().len()));
+        s.push_str(c.code());
         Ok(s)
     }
 
@@ -649,10 +649,10 @@ impl Cli {
         quadro::escrever_quadro(&mut *s, &q, quadro::LIMITE_RESPOSTA).is_ok()
     }
 
-    /// Manda a saída já mascarada em quadros de até `MAX_TEXTO_EXIBIDO` e esvazia `out`.
+    /// Manda a saída já mascarada em quadros de até `MAX_DISPLAYED_TEXT` e esvazia `out`.
     fn enviar_saida(&self, fluxo: Fluxo, out: &mut Zeroizing<Vec<u8>>) -> bool {
         let mut ok = true;
-        for pedaco in out.chunks(MAX_TEXTO_EXIBIDO) {
+        for pedaco in out.chunks(MAX_DISPLAYED_TEXT) {
             let mut dados = Zeroizing::new(Vec::with_capacity(pedaco.len()));
             dados.extend_from_slice(pedaco);
             if !self.enviar(&Resposta::Saida { fluxo, dados }) {
@@ -768,7 +768,7 @@ fn ler_da_cli(
 ) {
     let mut entrada_aberta = !entrada_nula;
     loop {
-        let bytes = match quadro::ler_quadro(&mut s, MAX_QUADRO_COMUM) {
+        let bytes = match quadro::ler_quadro(&mut s, MAX_COMMON_FRAME) {
             Ok(b) => b,
             Err(_) => {
                 if !fim.load(Ordering::Acquire) {

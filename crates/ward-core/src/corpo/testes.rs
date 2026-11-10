@@ -434,7 +434,7 @@ fn v2_30_ida_e_volta_do_cofre_de_teste() {
             .alterado(1_762_500_000)
             .unwrap(),
     );
-    originais[2].definir_datas(Datas::NENHUMA.alterado(MAX_DATA).unwrap());
+    originais[2].definir_datas(Datas::NENHUMA.alterado(MAX_DATE).unwrap());
     let corpo = serializar(cfg(), 1, &originais).unwrap();
     let voltaram = ler(&corpo).unwrap();
     conferir_ida_e_volta(&originais, &voltaram);
@@ -516,7 +516,7 @@ impl Dir {
             .join("ward-teste-corpo");
         std::fs::create_dir_all(&base).unwrap();
         let mut aleatorio = [0u8; 8];
-        crate::cripto::aleatorio(&mut aleatorio).unwrap();
+        crate::crypto::random(&mut aleatorio).unwrap();
         let d = base.join(format!(
             "{nome}-{}-{}",
             std::process::id(),
@@ -554,10 +554,12 @@ fn v2_30_ida_e_volta_pelo_disco_com_anexos_no_limite() {
         .filter(|e| e.nome().starts_with("zz-cheio-") && e.nome() != "zz-cheio-api-token")
     {
         let soma: usize = e.anexos().iter().map(|a| a.conteudo().len()).sum();
-        assert_eq!(soma, crate::limites::MAX_ANEXOS_SOMADOS);
+        assert_eq!(soma, crate::limits::MAX_ATTACHMENTS_TOTAL);
     }
     let esperado = serializar(cofre.configuracao(), 1, &originais).unwrap();
-    assert!(esperado.len() > 8 * crate::limites::MAX_ANEXOS_SOMADOS && esperado.len() <= MAX_CORPO);
+    assert!(
+        esperado.len() > 8 * crate::limits::MAX_ATTACHMENTS_TOTAL && esperado.len() <= MAX_BODY
+    );
 
     gravar_entradas(&destino, &mut cofre, &originais).unwrap();
     let arquivo = std::fs::read(&destino).unwrap();
@@ -734,7 +736,7 @@ fn serializar_recusa_cofre_que_nao_reabriria() {
 
 #[test]
 fn serializar_recusa_mais_de_10_000_entradas() {
-    let entradas: Vec<Entrada> = (0..=MAX_ENTRADAS)
+    let entradas: Vec<Entrada> = (0..=MAX_ENTRIES)
         .map(|i| {
             let mut r = Rascunho {
                 nome: format!("e{i:05}"),
@@ -759,8 +761,8 @@ fn serializar_recusa_mais_de_10_000_entradas() {
         ErroCorpo::GrandeDemais
     );
     // 10 000 cabem e voltam.
-    let corpo = serializar(cfg(), 1, &entradas[..MAX_ENTRADAS]).unwrap();
-    assert_eq!(ler(&corpo).unwrap().len(), MAX_ENTRADAS);
+    let corpo = serializar(cfg(), 1, &entradas[..MAX_ENTRIES]).unwrap();
+    assert_eq!(ler(&corpo).unwrap().len(), MAX_ENTRIES);
 }
 
 #[test]
@@ -1066,7 +1068,7 @@ fn erros_sem_dado_do_cofre() {
 #[test]
 fn leitura_no_limite_aceita_e_acima_recusa() {
     // Corpo acima de 64 MiB é recusado antes de qualquer leitura.
-    let mut v = vec![0u8; MAX_CORPO + 1];
+    let mut v = vec![0u8; MAX_BODY + 1];
     v[0] = 2;
     recusado(&v, "acima de 64 MiB", "falso");
     // Os limites de leitura não são menores que os da validação: a entrada cheia
@@ -1082,7 +1084,7 @@ fn leitura_no_limite_aceita_e_acima_recusa() {
 
 #[test]
 fn v2_36_corpo_forjado_com_entrada_grande_demais() {
-    use crate::limites::{MAX_ANEXOS_SOMADOS, MAX_EXTRAS, MAX_VALOR_EXTRA};
+    use crate::limits::{MAX_ATTACHMENTS_TOTAL, MAX_EXTRA_VALUE, MAX_EXTRAS};
 
     let corpo = corpo_de_teste();
     let base = cruas(&corpo);
@@ -1090,7 +1092,10 @@ fn v2_36_corpo_forjado_com_entrada_grande_demais() {
     // Um anexo de 256 KiB + 1 byte (recusado já na 1ª passada).
     let mut c = base.clone();
     let k = indice(&c, "gama-generico");
-    c[k].anexos = vec![(b"grande.bin".to_vec(), vec![0x5a; MAX_ANEXOS_SOMADOS + 1])];
+    c[k].anexos = vec![(
+        b"grande.bin".to_vec(),
+        vec![0x5a; MAX_ATTACHMENTS_TOTAL + 1],
+    )];
     recusado(&forjar(&c), "anexo de 256 KiB + 1", "FALSO_ENV");
 
     // Dois anexos de 200 KiB: cada um cabe, a soma não.
@@ -1110,7 +1115,7 @@ fn v2_36_corpo_forjado_com_entrada_grande_demais() {
             (
                 format!("e{i:02}").into_bytes(),
                 1,
-                vec![b'k'; MAX_VALOR_EXTRA],
+                vec![b'k'; MAX_EXTRA_VALUE],
             )
         })
         .collect();
@@ -1119,14 +1124,14 @@ fn v2_36_corpo_forjado_com_entrada_grande_demais() {
     // Controle: no limite (um anexo de 256 KiB, poucos extras grandes) o corpo abre.
     let mut c = base.clone();
     let k = indice(&c, "gama-generico");
-    c[k].anexos = vec![(b"grande.bin".to_vec(), vec![0x5a; MAX_ANEXOS_SOMADOS])];
+    c[k].anexos = vec![(b"grande.bin".to_vec(), vec![0x5a; MAX_ATTACHMENTS_TOTAL])];
     let k = indice(&c, "beta-github-api");
     c[k].extras = (0..2)
         .map(|i| {
             (
                 format!("e{i:02}").into_bytes(),
                 1,
-                vec![b'k'; MAX_VALOR_EXTRA],
+                vec![b'k'; MAX_EXTRA_VALUE],
             )
         })
         .collect();
@@ -1329,7 +1334,7 @@ fn v2_39_secao_de_configuracao_forjada() {
         ),
         (
             "acima do limite",
-            vec![b'$'; crate::limites::MAX_HASH_PIN + 1],
+            vec![b'$'; crate::limits::MAX_PIN_HASH + 1],
         ),
     ];
     let corpo = corpo_de_teste();
@@ -1458,7 +1463,7 @@ fn v2_39_hash_rebaixado_do_pin_certo_recusado() {
         passes: 1,
         paralelismo: 1,
     };
-    let rebaixado = crate::cripto::hash_pin(PIN_TESTE.as_bytes(), &fraco).unwrap();
+    let rebaixado = crate::crypto::hash_pin(PIN_TESTE.as_bytes(), &fraco).unwrap();
     // O hash rebaixado é PHC válido de Argon2id (a biblioteca o confere)…
     {
         use argon2::password_hash::PasswordVerifier;
@@ -1723,10 +1728,10 @@ fn ataque_corpo_forjado_com_texto_variavel_e_usuario() {
 }
 
 /// V2.51 (D45): a mensagem de `GrandeDemais` sai das constantes de `limites` (mudar
-/// `MAX_CORPO` ou `MAX_ENTRADAS` muda a mensagem, e este teste confere contra elas).
+/// `MAX_BODY` ou `MAX_ENTRIES` muda a mensagem, e este teste confere contra elas).
 #[test]
 fn v2_51_mensagem_de_grande_demais_acompanha_os_limites() {
-    use crate::limites::{MAX_CORPO, MAX_ENTRADAS, MIB};
+    use crate::limits::{MAX_BODY, MAX_ENTRIES, MIB};
     let msg = format!("{}", ErroCorpo::GrandeDemais);
     let milhar = |n: usize| {
         let s = n.to_string();
@@ -1743,13 +1748,13 @@ fn v2_51_mensagem_de_grande_demais_acompanha_os_limites() {
         msg,
         format!(
             "cofre grande demais (limite de {} MiB e {} entradas)",
-            MAX_CORPO / MIB,
-            milhar(MAX_ENTRADAS)
+            MAX_BODY / MIB,
+            milhar(MAX_ENTRIES)
         )
     );
     const {
         assert!(
-            MAX_CORPO.is_multiple_of(MIB),
+            MAX_BODY.is_multiple_of(MIB),
             "o limite do corpo é um número inteiro de MiB"
         )
     };
@@ -1786,12 +1791,12 @@ fn v2_58_corpo_forjado_com_ultimo_rotulo_numerico() {
 
 // ---- Fase 22d: D65 d (datas de criação e alteração, corpo v4; V3.41) ----
 
-/// A regra das datas: faixa de 1 a `MAX_DATA`, criação só com alteração e não depois
+/// A regra das datas: faixa de 1 a `MAX_DATE`, criação só com alteração e não depois
 /// dela; a alteração nunca desce, nem com o relógio voltando.
 #[test]
 fn d65_regra_das_datas() {
     assert_eq!(Datas::carimbo_novo(0), None);
-    assert_eq!(Datas::carimbo_novo(MAX_DATA + 1), None);
+    assert_eq!(Datas::carimbo_novo(MAX_DATE + 1), None);
     assert_eq!(Datas::carimbo_novo(u64::MAX), None);
     let d = Datas::carimbo_novo(1_000).unwrap();
     assert_eq!((d.criada_em(), d.alterada_em()), (Some(1_000), Some(1_000)));
@@ -1807,7 +1812,7 @@ fn d65_regra_das_datas() {
         (Some(1_000), Some(5_000))
     );
     assert_eq!(depois.alterado(0), None);
-    assert_eq!(depois.alterado(MAX_DATA + 1), None);
+    assert_eq!(depois.alterado(MAX_DATE + 1), None);
     // Sem datas: a alteração ganha data, a criação segue desconhecida.
     let so_alterada = Datas::NENHUMA.alterado(77).unwrap();
     assert_eq!(
@@ -1876,14 +1881,14 @@ fn d65_datas_forjadas_no_corpo() {
     for (caso, criada, alterada) in [
         ("criação depois da alteração", 1_762_000_001, 1_762_000_000),
         ("criação sem alteração", 1_762_000_000, 0),
-        ("criação acima do máximo", MAX_DATA + 1, MAX_DATA + 1),
-        ("alteração acima do máximo", 0, MAX_DATA + 1),
+        ("criação acima do máximo", MAX_DATE + 1, MAX_DATE + 1),
+        ("alteração acima do máximo", 0, MAX_DATE + 1),
         ("as duas em u64::MAX", u64::MAX, u64::MAX),
         ("alteração em u64::MAX", 1, u64::MAX),
     ] {
         recusado(&com(criada, alterada), caso, &alterada.to_string());
     }
-    for (criada, alterada) in [(0, 0), (0, 7), (7, 7), (1, MAX_DATA), (MAX_DATA, MAX_DATA)] {
+    for (criada, alterada) in [(0, 0), (0, 7), (7, 7), (1, MAX_DATE), (MAX_DATE, MAX_DATE)] {
         let v = com(criada, alterada);
         let (c, entradas) = ler_tudo(&v).unwrap();
         conferir_aceito(&v, &c, &entradas);

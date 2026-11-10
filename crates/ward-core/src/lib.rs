@@ -1,34 +1,34 @@
-//! Núcleo do Ward: formato do arquivo, criptografia, tipos, máscara de saída e
-//! protocolo. Não depende de Linux (R2, R3).
+//! Ward core: file format, cryptography, types, output mask and protocol. Does not
+//! depend on Linux (R2, R3).
 
 #![forbid(unsafe_code)]
 
-// Backup local automático e a versão para restaurar (D17, D27; Fase 45).
+// Automatic local backup and the version to restore (D17, D27; Phase 45).
 #[cfg(unix)]
 pub mod backup;
 
-// Configuração do cofre: hash do PIN, tempo de trava, backup (D30, Fase 19b).
+// Vault configuration: PIN hash, lock timeout, backup (D30, Phase 19b).
 pub mod configuracao;
-// Corpo do cofre: configuração e entradas ↔ bytes (D26, D30; Fases 15a e 19b).
+// Vault body: configuration and entries ↔ bytes (D26, D30; Phases 15a and 19b).
 pub mod corpo;
-mod cripto;
+mod crypto;
+// Agent text to display in the approval window (D51, Phase 23).
+pub mod display;
 pub mod entrada;
-// Texto do agente para exibir na janela de aprovação (D51, Fase 23).
-pub mod exibicao;
-// Entrega por variáveis de ambiente (D10, Fase 16).
+// Delivery through environment variables (D10, Phase 16).
 pub mod entrega;
 pub mod formato;
-// Limites numa fonte só (D32, Fase 19a).
-pub mod limites;
-// Máscara de saída em fluxo (D11, Fase 17).
+// Limits in a single source (D32, Phase 19a).
+pub mod limits;
+// Streaming output mask (D11, Phase 17).
 pub mod mascara;
-pub mod origem;
-// Protocolo do socket: quadros, mensagens, papéis e a tabela operação × papel (Fase 20).
+pub mod origin;
+// Socket protocol: frames, messages, roles and the operation × role table (Phase 20).
 pub mod protocolo;
-// TOTP (RFC 6238) e gerador de senha (Fase 18).
-pub mod gerador;
+// TOTP (RFC 6238) and password generator (Phase 18).
+pub mod generator;
 pub mod totp;
-// Gravação atômica: usa só a std com as extensões Unix (modo 0600, fsync de diretório).
+// Atomic write: uses only std with the Unix extensions (mode 0600, directory fsync).
 #[cfg(unix)]
 pub mod gravacao;
 

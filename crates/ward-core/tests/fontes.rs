@@ -16,10 +16,14 @@ fn fontes_de_producao() -> Vec<(PathBuf, String)> {
         for p in itens {
             let nome = p.file_name().unwrap().to_string_lossy().into_owned();
             if p.is_dir() {
-                if nome != "testes" {
+                if nome != "testes" && nome != "tests" {
                     andar(&p, saida);
                 }
-            } else if nome.ends_with(".rs") && nome != "testes.rs" && nome != "cofre_teste.rs" {
+            } else if nome.ends_with(".rs")
+                && nome != "testes.rs"
+                && nome != "tests.rs"
+                && nome != "cofre_teste.rs"
+            {
                 let texto = fs::read_to_string(&p).unwrap();
                 saida.push((p, texto));
             }
@@ -48,15 +52,15 @@ fn v2_46_chave_no_heap_e_sem_hash_password() {
     let fontes = fontes_de_producao();
     let cripto = &fontes
         .iter()
-        .find(|(p, _)| p.ends_with("src/cripto.rs"))
-        .expect("cripto.rs")
+        .find(|(p, _)| p.ends_with("src/crypto.rs"))
+        .expect("crypto.rs")
         .1;
     assert!(
-        cripto.contains("assert!(core::mem::size_of::<Chave>() == core::mem::size_of::<usize>())"),
+        cripto.contains("assert!(core::mem::size_of::<Key>() == core::mem::size_of::<usize>())"),
         "falta a asserção de compilação do tamanho da Chave"
     );
-    assert!(cripto.contains("struct Chave(Box<Zeroizing<[u8; TAM_CHAVE]>>)"));
-    assert!(cripto.contains("let mut buf: Zeroizing<[u8; MAX_HASH_PIN]>"));
+    assert!(cripto.contains("struct Key(Box<Zeroizing<[u8; KEY_SIZE]>>)"));
+    assert!(cripto.contains("let mut buf: Zeroizing<[u8; MAX_PIN_HASH]>"));
     assert!(
         cripto.contains(".ct_eq("),
         "conferir_pin compara pelo ctutils"
@@ -73,14 +77,14 @@ fn v2_46_chave_no_heap_e_sem_hash_password() {
                 assert!(!l.contains(proibida), "{}:{n}: {proibida}", p.display());
             }
             // Chave de 32 bytes por valor: só dentro do `Box` da `Chave`.
-            // Por referência (`&[u8; TAM_CHAVE]`) pode; por valor, não.
+            // Por referência (`&[u8; KEY_SIZE]`) pode; por valor, não.
             let sem_ref = l
-                .replace("&[u8; TAM_CHAVE]", "")
-                .replace("&mut [u8; TAM_CHAVE]", "")
-                .replace("Box<Zeroizing<[u8; TAM_CHAVE]>>", "")
+                .replace("&[u8; KEY_SIZE]", "")
+                .replace("&mut [u8; KEY_SIZE]", "")
+                .replace("Box<Zeroizing<[u8; KEY_SIZE]>>", "")
                 // O `Deref` da `Chave` devolve referência.
-                .replace("type Target = [u8; TAM_CHAVE];", "");
-            for chave in ["[u8; TAM_CHAVE]", "Zeroizing<[u8; 32]>"] {
+                .replace("type Target = [u8; KEY_SIZE];", "");
+            for chave in ["[u8; KEY_SIZE]", "Zeroizing<[u8; 32]>"] {
                 assert!(
                     !sem_ref.contains(chave),
                     "{}:{n}: chave por valor fora do Box: {l}",
@@ -88,8 +92,8 @@ fn v2_46_chave_no_heap_e_sem_hash_password() {
                 );
             }
             // Comparação de MAC/hash à mão (`==` em fatia de hash) não existe no cripto.
-            if p.ends_with("src/cripto.rs") {
-                assert!(!l.contains("saida[..] =="), "{}:{n}", p.display());
+            if p.ends_with("src/crypto.rs") {
+                assert!(!l.contains("output[..] =="), "{}:{n}", p.display());
             }
         }
     }
