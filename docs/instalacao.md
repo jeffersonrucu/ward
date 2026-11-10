@@ -144,13 +144,23 @@ systemctl is-enabled wardd@$(id -u).socket     # enabled
 systemctl is-active  wardd@$(id -u).socket     # active
 stat -c '%U:%G %a' /run/ward /run/ward/$(id -u)   # root:root 755 nas duas
 stat -c '%U %a %F' /run/ward/$(id -u)/wardd.sock  # <você> 600 socket
-ward destravar                                  # primeira conexão sobe o wardd, sem sudo
+/usr/local/bin/ward destravar                   # primeira conexão sobe o wardd, sem sudo
 ps -o user=,pid=,cmd= -C wardd                  # roda como você
 stat -c '%U %a' /run/user/$(id -u)/ward         # <você> 700 (temporários)
 systemd-inhibit --list | grep -i ward           # inibidor da suspensão (trava ao suspender)
 ```
 
 O uso diário (`ward lista`, `ward run`, `ward ssh`, app) não pede `sudo`.
+
+**Senha mestra só pelo caminho completo.** Destrave pelo app ou, no terminal, sempre com
+`/usr/local/bin/ward destravar`, nunca o `ward` que o `PATH` acha. Um programa malicioso
+rodando como você pode pôr um `ward` falso antes no `PATH` (em `~/.local/bin`, por
+exemplo): ele mostra o mesmo pedido de senha e guarda o que você digitar. O caminho
+completo pula o `PATH`. Ele não protege de um `~/.bashrc` ou `~/.zshrc` adulterado (uma
+função do shell, ou um alias do zsh, pode ter o nome `/usr/local/bin/ward`): esse caso
+fica fora do que o Ward cobre (escopo › "Fora do modelo de ameaça", RA8). Os outros
+comandos (`ward lista`, `ward run`…) não recebem a senha mestra; o PIN é digitado só na
+janela do app.
 
 ### V9.4 (opcional): o `LD_PRELOAD` do gerente do usuário não chega ao `wardd`
 

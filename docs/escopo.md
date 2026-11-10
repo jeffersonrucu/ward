@@ -311,6 +311,33 @@ inclusive o valor revelado (PRD D64).
   usuário, 2026-11-09). O kernel trata processos do mesmo uid como seus e não há
   mitigação genérica. O Claude continua sem ver o segredo pela conversa; o anexo é
   apagado no fim e a janela dura só a execução do comando aprovado.
+- Sessão gráfica ou shell do usuário adulterados por um processo do mesmo uid (RA8;
+  decisão do usuário, 2026-11-09, auditoria final: "Aceitar e endurecer docs").
+  `/run/user/<uid>` e o home são do usuário. Um pacote malicioso pode:
+  - trocar o `wayland-<n>` ou o `bus` de `/run/user/<uid>` por um proxy que repassa ao
+    compositor; o app aberto depois disso digita a senha mestra e o PIN e mostra o
+    valor revelado através dele;
+  - pôr um `ward` falso antes no `PATH` (`~/.local/bin`, por exemplo), ou um alias ou
+    uma função no `~/.bashrc`/`~/.zshrc`, e ler a senha mestra digitada em
+    `ward destravar`. A auditoria final capturou assim a senha mestra com um `ward`
+    falso no `PATH`;
+  - mexer no que o app lê do home: tema do GTK (`settings.ini`, `gtk.css`), dconf,
+    caches de fonte e o perfil da NVIDIA (`~/.nv/…`, D67).
+  O compositor e o shell rodam como o usuário: não há âncora de root para conferir o
+  par, e conferir o compositor pela cadeia de processos é específico do COSMIC e
+  forjável por um compositor aninhado. O que reduz:
+  - o app só é aberto pelo daemon, com o ambiente montado do zero, um só socket
+    Wayland, sem X11 e sem as variáveis que carregam módulos de fora do root (D57);
+  - a CLI e o app conferem que o servidor é o `wardd` instalado antes de mandar a
+    senha mestra (S5). Isso barra o servidor falso, não o cliente falso;
+  - a senha mestra e o PIN nunca passam pelo Claude: a skill não destrava e o deny
+    nega `ward destravar`;
+  - os guias (`docs/instalacao.md`, `docs/migracao.md`, a skill e o
+    `skill/README.md`) mandam destravar pelo app ou, no terminal, por
+    `/usr/local/bin/ward destravar`, com o caminho completo. O caminho completo fecha
+    o `ward` falso no `PATH` (o caso da auditoria). Não fecha uma função do bash ou do
+    zsh com o nome `/usr/local/bin/ward`, um alias do zsh com esse nome, nem um rc
+    que grave o terminal: o shell adulterado continua fora do modelo.
 - Alguém com acesso físico à máquina destravada.
 - Um processo do usuário feito de propósito para driblar a máscara (ex.: inverter a
   senha antes de imprimir). Quem barra é a aprovação, que mostra o comando exato.
@@ -473,5 +500,6 @@ servidores, Windows e macOS (por enquanto).
   S5 e "Fora do modelo de ameaça".
 - Sessão gráfica ou shell adulterados por um processo do mesmo uid (proxy no lugar
   do socket Wayland ou do barramento em `/run/user/<uid>`, `ward` falso no `PATH`):
-  **a decidir pelo usuário antes de fechar o M4** (PRD RA8). Proposta: registrar em
-  "Fora do modelo de ameaça".
+  **resolvida** pelo usuário em 2026-11-09 (auditoria final, PRD RA8): risco aceito,
+  registrado em "Fora do modelo de ameaça", com os guias destravando por
+  `/usr/local/bin/ward`.

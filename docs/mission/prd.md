@@ -181,7 +181,9 @@ arquivo de estado por cópias antigas com o daemon parado (RA4, decisão do usu�
 que pode mentir a origem da aba, e matar o `wardd` como negação de serviço (RA6, RA5,
 decisão do usuário em 2026-11-08); processo do mesmo uid que se passa pelo Chrome diante
 do `ward-nm` (exec com troca de pai) ou adultera a extensão no perfil (RA10, decisão do
-usuário em 2026-11-09). Também fora, por decisão do escopo: SSH com chaves do `~/.ssh` (o Ward
+usuário em 2026-11-09); sessão gráfica ou shell do usuário adulterados por um processo do
+mesmo uid (proxy no lugar do `wayland-<n>` ou do `bus`, `ward` falso no `PATH`, alias ou
+função no rc do shell; RA8, decisão do usuário em 2026-11-09). Também fora, por decisão do escopo: SSH com chaves do `~/.ssh` (o Ward
 não interfere).
 
 | # | Invariante (texto do escopo) | Milestones |
@@ -227,7 +229,9 @@ pelo app e pelo "salvar login novo" da extensão; D3).
    restaura um backup escolhendo a versão → imprime o kit de emergência. Trava pela
    bandeja, pelo app ou sozinho (bloqueio de tela, suspensão, 4 h sem uso).
 2. **Usuário no terminal.** `ward destravar` pede a senha mestra no TTY (a CLI confere
-   antes que o servidor é o `wardd` instalado). `ward lista`, `ward travar`. O `ssh` e o
+   antes que o servidor é o `wardd` instalado). Os guias o chamam pelo caminho
+   completo, `/usr/local/bin/ward destravar`, para um `ward` falso no `PATH` não ler a
+   senha (RA8). `ward lista`, `ward travar`. O `ssh` e o
    `git` com chaves do `~/.ssh` seguem como hoje, sem o Ward no meio (R18). Os comandos
    `ward run/ssh/login/playwright` digitados no terminal seguem o nível da entrada
    (D3); o atalho do usuário sem PIN para servidor é o "Conectar" do app.
@@ -1560,9 +1564,9 @@ em `/tmp/claude-1000/-home-jeffersonoliveira-projetos-cofre/d2e230bd-a662-43be-a
   planner. Se o usuário recusar, o M5 não fecha até o Tauri subir o gtk-rs. A Fase 29a
   viu `advisory-not-detected` para a 0429: se o `cargo audit` também não a acha, a
   exceção sai (D64, Fase 29b) e fica só a 0370.
-- **RA8. Canais da sessão controlados pelo mesmo uid** (handoff 21b; D57; **aberto,
-  vai ao usuário antes de fechar o M4**, porque também toca a Fase 25; não bloqueia a
-  29a, cujo código é o mesmo com qualquer resposta). D57 fecha a injeção pelo ambiente,
+- **RA8. Canais da sessão controlados pelo mesmo uid** (handoff 21b; D57; **fechado em
+  2026-11-09: risco aceito pelo usuário** na auditoria final, "Aceitar e endurecer
+  docs", registrado na Fase 54a em "Segurança" › "Fora do modelo de ameaça"). D57 fecha a injeção pelo ambiente,
   mas `/run/user/<uid>` é do usuário: um pacote malicioso pode apagar o
   `wayland-<n>` ou o `bus` e pôr no lugar um proxy que repassa ao compositor, e o app
   aberto depois disso digita o PIN e a senha mestra e mostra o valor revelado por ele.
@@ -1579,6 +1583,16 @@ em `/tmp/claude-1000/-home-jeffersonoliveira-projetos-cofre/d2e230bd-a662-43be-a
   caches de fonte, que o app lê do home, entram aqui (handoff 29a), e também o
   `~/.nv/nvidia-application-profile-globals-rc` que o driver da NVIDIA ainda lê com
   `__GL_APPLICATION_PROFILE=0` (D67).
+  **Decisão do usuário (2026-11-09): aceitar e endurecer os docs.** A auditoria final
+  pôs um `ward` falso antes no `PATH` e capturou a senha mestra digitada em
+  `ward destravar`. Consequência (Fase 54a): o escopo registra o caso em "Fora do
+  modelo de ameaça" com as reduções acima; `docs/instalacao.md`, `docs/migracao.md`,
+  `skill/ward/SKILL.md`, `skill/README.md` e o roteiro do usuário mandam destravar
+  pelo app ou por `/usr/local/bin/ward destravar`, com uma nota do porquê. O caminho
+  completo fecha o `ward` falso no `PATH`; função do bash ou do zsh e alias do zsh com
+  o nome `/usr/local/bin/ward`, ou um rc que grave o terminal, continuam abertos (o
+  shell adulterado é o resíduo aceito). Não há código nem asserção nova. Mudança que
+  feche o caso (por exemplo, o destrave só pelo app) volta ao usuário.
 - **RA9. Menu da bandeja no barramento da sessão** (handoff 39; registrado na Fase
   39c; **vai ao usuário com o M5**; S10, S13). A bandeja (V5.23) usa o AppIndicator: o
   menu é exportado pelo `dbusmenu` no barramento da sessão, e qualquer processo do

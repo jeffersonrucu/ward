@@ -188,7 +188,7 @@ intenção:
 
 | Mensagem | O que fazer |
 | --- | --- |
-| `travado` / `cofre travado: o comando espera o destrave por até 2 min` | O cofre está travado. Avise o usuário: "o Ward está travado; destrave pelo app ou no seu terminal com a senha mestra". O `ward run`/`ward ssh` espera até 2 min pelo destrave; se expirar, rode de novo depois que o usuário confirmar. **Você nunca destrava** (a senha mestra não passa por você). |
+| `travado` / `cofre travado: o comando espera o destrave por até 2 min` | O cofre está travado. Avise o usuário: "o Ward está travado; destrave pelo app ou, num terminal seu, com /usr/local/bin/ward destravar (caminho completo)". O caminho completo é para um `ward` falso no `PATH` não ler a senha mestra; nunca sugira que ele digite a senha mestra num comando rodado por você ou com `!` no Claude Code. O `ward run`/`ward ssh` espera até 2 min pelo destrave; se expirar, rode de novo depois que o usuário confirmar. **Você nunca destrava** (a senha mestra não passa por você). |
 | `travado: tempo esgotado` | Passaram os 2 min sem destrave. Peça ao usuário para destravar e rode de novo. |
 | Janela de aprovação aberta (o comando fica esperando) | A entrada é "com aprovação": o usuário vê a entrada, o ambiente e o comando exato e decide com o PIN. Avise "abri um pedido de aprovação para `<entrada>`" e espere (até 2 min). Não repita o pedido em paralelo. |
 | `pedido negado` | O usuário negou (ou fechou a janela). **Não tente de novo nem por outro caminho**; pergunte o que ele quer fazer. |

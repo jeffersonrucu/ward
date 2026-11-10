@@ -8,6 +8,12 @@ não alcança nada disso.
 Use só o cofre de teste e os valores falsos. Senha mestra `falso-mestra-ward-01`, PIN
 `135790`. Nada daqui toca no cofre real, no KeePassXC, no `~/.ssh` ou no `~/.aws`.
 
+A senha mestra só é digitada na janela do app neste roteiro. A CLI de teste vai sempre
+pelo caminho `target/debug/ward`, nunca pelo `ward` que o `PATH` acha. Com o Ward
+instalado, o destrave no terminal é por `/usr/local/bin/ward destravar`, com o caminho
+completo: um `ward` falso antes no `PATH` mostraria o mesmo pedido e guardaria a senha
+(RA8, escopo › "Fora do modelo de ameaça").
+
 Marque cada passo com `[x]` quando o resultado for o esperado. Se algo divergir, anote
 o número do passo e o que apareceu.
 

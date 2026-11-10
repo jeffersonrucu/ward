@@ -47,6 +47,9 @@ guia, nunca pasta aberta.
    o arquivo-chave antes de desinstalar. Fase 53d: o 2a salva a chave pessoal na pasta
    em memória, põe a passphrase lá e só então a leva ao ssh por `install -m 600`; o
    passo 3 dá `chmod 600` no `known_hosts` do Ward depois do `>>`.
+7. Fase 54a (RA8): o guia manda destravar no terminal por `/usr/local/bin/ward destravar`
+   e não cita `ward destravar` por outro caminho (o `ward` do `PATH`, `~/.local/bin/ward`),
+   porque um `ward` falso antes no `PATH` lê a senha mestra.
 
 Antes de conferir o guia real, o autoteste confere que ele passa (controle) e planta
 cada ataque (os da Fase 53, os 22 da auditoria do M10, os da 53b e os da 2ª auditoria
@@ -608,6 +611,12 @@ def conferir(texto, padroes):
         abre = re.search(r"Abra a cópia guardada do `\.kdbx`", c8)
         if remove < 0 or not abre or abre.start() > remove or "arquivo-chave" not in c8[:remove]:
             erros.append("passo 8 sem abrir a cópia do .kdbx e guardar o arquivo-chave antes de desinstalar")
+
+    # 7. Fase 54a (RA8): senha mestra só pelo `ward` instalado, pelo caminho completo.
+    if "`/usr/local/bin/ward destravar`" not in texto:
+        erros.append("falta destravar no terminal por `/usr/local/bin/ward destravar` (RA8)")
+    if re.search(r"(?<!/usr/local/bin/)\bward\s+destravar\b", texto):
+        erros.append("`ward destravar` fora do caminho completo /usr/local/bin/ward (RA8)")
     return erros
 
 
@@ -792,6 +801,14 @@ def ataques(texto):
         "53d: known_hosts do Ward sem chmod 600": texto.replace(
             "   chmod 600 " + KH_WARD + "\n", ""
         ),
+        # Fase 54a (RA8): a senha mestra pelo `ward` que o PATH acha
+        "54a: destravar pelo PATH": texto.replace(
+            "`/usr/local/bin/ward destravar`", "`ward destravar`"
+        ),
+        "54a: destravar por outro ward": texto.replace(
+            "`/usr/local/bin/ward destravar`", "`~/.local/bin/ward destravar`"
+        ),
+        "54a: destravar pelo PATH em outro passo": antes_p2("No terminal, rode `ward  destravar`."),
     }
 
 
