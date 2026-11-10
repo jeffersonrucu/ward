@@ -1686,7 +1686,7 @@ seis baixos.
   recusa Permitir sem `entrada_confirmada` (antes do PIN), "1 hora" não cobre entrada
   oculta, `nula` fechada no filho. D68, RA11 proposto, V4.39/V4.40. `make check`,
   `teste-skill` e `teste-cli` saíram 0; `app-check` (release) não rodou por disco.
-- [ ] Fase 54c — Rotação dos backups contra versões plantadas (achado da Fase 54):
+- [x] Fase 54c — Rotação dos backups contra versões plantadas (achado da Fase 54):
   - A rotação do backup local (`backup.rs`) só conta e só apaga versões que conferem pela
     `geracao_selada`; lixo plantado com data mais nova não apaga versão real. Teste.
   - A rotação do pendrive (`externo.rs`) faz o mesmo: nomes plantados com data passada
@@ -1697,6 +1697,9 @@ seis baixos.
     `ssh`/`sshpass` aberta entra no mesmo registro do `ward run` (`SessoesRun`) e leva
     `SIGKILL` no grupo ao travar; a CLI sai 137 com o aviso. Teste de ataque e ajuste do
     V4.26/escopo › S8.
+  Feita (2026-11-10): `para_apagar_conferidas` (local e pendrive); `ward ssh` sai 137 na trava
+  (`matar_com_sessoes_filhas` pega o `ssh` do `setsid` do `sshpass`); V7.12 novo. `make check`
+  (954) e `teste-cli` 0. Versões de antes de uma troca de senha não saem mais pela rotação.
 - [x] Fase 54d (DESIGN) — Aviso dos backups antigos no FigCraft (achado da Fase 54):
   - `Diálogo de troca` › `Tipo=senha mestra` (19918/19924) e `Configurações / Trocar senha
     mestra` (20085/20411) ganham o aviso da tela, com `--cor-aviso-texto`, igual ao app
@@ -1738,3 +1741,9 @@ seis baixos.
   Comentário "Sem frame próprio" do `TrocarPin.svelte` passa a citar `20193`. Diferenças
   de 1–2 px de largura por fonte não viram fase.
   Feita (2026-11-10): botões de 44 nos componentes `968`/`1027`/`1078`; app e design batem.
+- [ ] Fase 54l — Achados da 54c:
+  - `arquivos::ler_cofre` abre com `O_NOFOLLOW | O_NONBLOCK` e só arquivo comum: um FIFO
+    no lugar de uma versão (restaurar, leitura local da cópia externa) não trava a thread.
+    Teste de ataque.
+  - Fim da sessão do `ward ssh` (CLI caiu, SIGKILL na CLI) usa `matar_com_sessoes_filhas`:
+    nenhum `ssh` com sessão própria sobra. Teste de ataque.
