@@ -7,7 +7,7 @@
 use std::process::ExitCode;
 use std::sync::Arc;
 
-use ward_platform::{AllowedBinary, Escuta, Instalacao, Memoria};
+use ward_platform::{AllowedBinary, Install, Listener, Memory};
 use wardd::aprovacao::{Motor, RelogioMonotonico};
 use wardd::config::Config;
 use wardd::lancamento::{AbridorReal, AppDeTeste, ExtensaoDeTeste};
@@ -18,16 +18,16 @@ use wardd::{aviso, execucao, log, trava, udisks};
 /// Chrome instalado, pai aceito do host da extensão (D5, D47).
 const CHROME: &str = "/opt/google/chrome/chrome";
 
-fn escuta(config: &Config) -> Result<Escuta, String> {
+fn escuta(config: &Config) -> Result<Listener, String> {
     if std::env::var_os("LISTEN_FDS").is_some() {
-        return ward_platform::escutar_de_listen_fds(&ward_platform::caminho_socket_sistema())
+        return ward_platform::listen_from_listen_fds(&ward_platform::system_socket_path())
             .map_err(|e| format!("socket do systemd recusado: {e}"));
     }
     match &config.diretorio_socket_teste {
         Some(dir) => {
-            let d = ward_platform::preparar_diretorio(dir)
+            let d = ward_platform::prepare_dir(dir)
                 .map_err(|e| format!("diretório do socket de teste recusado: {e}"))?;
-            d.escutar(ward_platform::socket::NOME_SOCKET)
+            d.listen(ward_platform::socket::SOCKET_NAME)
                 .map_err(|e| format!("socket de teste recusado: {e}"))
         }
         None => Err("sem o socket do systemd (LISTEN_FDS); o wardd sobe pela unit".into()),
@@ -84,7 +84,7 @@ fn main() -> ExitCode {
     // V3.7, V3.25: antes de qualquer outra coisa (inclusive de abrir arquivo).
     // D62: o release só segue com toda a memória travada (`mlockall`); o `test-mode`
     // com o limite comum do usuário segue com aviso.
-    let memoria = match ward_platform::iniciar_endurecido() {
+    let memoria = match ward_platform::start_hardened() {
         Ok(m) => m,
         Err(e) => {
             eprintln!("wardd: {e}");
@@ -102,7 +102,7 @@ fn main() -> ExitCode {
         );
         return ExitCode::FAILURE;
     }
-    if let Memoria::SemTravar(e) = &memoria {
+    if let Memory::NotLocked(e) = &memoria {
         aviso!("daemon de teste com a memória sem travar: {e}");
     }
     let config = match Config::do_ambiente() {
@@ -119,7 +119,7 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let instalacao = match AllowedBinary::new(CHROME).map(Instalacao::do_sistema) {
+    let instalacao = match AllowedBinary::new(CHROME).map(Install::from_system) {
         Ok(Ok(i)) => Some(i),
         Ok(Err(e)) => {
             aviso!("papéis app e extensão desligados: {e}");

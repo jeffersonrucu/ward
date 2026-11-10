@@ -72,7 +72,7 @@ fn comando(dev: &Path, sock: &Path, log: &Path) -> Command {
 fn subir(dev: &Dir, sock: &DirSocket) -> Wardd {
     let log = dev.0.join("wardd.log");
     let filho = comando(&dev.0, &sock.0, &log).spawn().unwrap();
-    let socket = sock.0.join(ward_platform::socket::NOME_SOCKET);
+    let socket = sock.0.join(ward_platform::socket::SOCKET_NAME);
     let fim = Instant::now() + Duration::from_secs(20);
     while !socket.exists() {
         assert!(Instant::now() < fim, "o wardd não criou o socket");
@@ -128,7 +128,7 @@ fn v3_30_ambiente_com_tmpdir_ou_ld_recusa_subir() {
         let st = comando(&dev.0, &sock.0, &log).env(k, v).status().unwrap();
         assert!(!st.success(), "{k}");
         assert!(
-            !sock.0.join(ward_platform::socket::NOME_SOCKET).exists(),
+            !sock.0.join(ward_platform::socket::SOCKET_NAME).exists(),
             "{k}"
         );
         let texto = fs::read_to_string(&log).unwrap();
@@ -404,7 +404,7 @@ fn v3_6_wardd_no_ar_nega_proc_ptrace_e_core() {
     // Diretório de trabalho do daemon: onde um core em arquivo cairia.
     c.current_dir(&dev.0);
     let filho = c.spawn().unwrap();
-    let socket = sock.0.join(ward_platform::socket::NOME_SOCKET);
+    let socket = sock.0.join(ward_platform::socket::SOCKET_NAME);
     let fim = Instant::now() + Duration::from_secs(20);
     while !socket.exists() {
         assert!(Instant::now() < fim, "o wardd não criou o socket");

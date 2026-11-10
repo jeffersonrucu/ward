@@ -100,9 +100,9 @@ impl std::fmt::Debug for Temporarios {
 /// socket, V3.1).
 pub fn pasta_temporarios(rt: &Path) -> io::Result<PathBuf> {
     let erro = |_| io::Error::from(io::ErrorKind::PermissionDenied);
-    ward_platform::preparar_diretorio(rt).map_err(erro)?;
+    ward_platform::prepare_dir(rt).map_err(erro)?;
     let tmp = rt.join(PASTA_TEMPORARIOS);
-    ward_platform::preparar_diretorio(&tmp).map_err(erro)?;
+    ward_platform::prepare_dir(&tmp).map_err(erro)?;
     Ok(tmp)
 }
 
@@ -836,7 +836,7 @@ fn por_na_fila(
                 if fim.load(Ordering::Acquire) {
                     return false;
                 }
-                if ward_platform::par_fechou(s) {
+                if ward_platform::peer_closed(s) {
                     aviso!("executar: a CLI saiu; o grupo do comando foi morto (D13)");
                     grupo.kill_with_child_sessions();
                     return false;
@@ -1124,7 +1124,7 @@ mod testes {
     /// Pasta de teste em `/run/user/<uid>/` (as pastas acima de `<rt>` têm de ser do
     /// root ou do usuário, sem escrita de grupo).
     fn rt_de_teste(rotulo: &str) -> PathBuf {
-        ward_platform::socket::diretorio_runtime()
+        ward_platform::socket::runtime_dir()
             .join(format!("wardd-exec-{}-{rotulo}", std::process::id()))
     }
 

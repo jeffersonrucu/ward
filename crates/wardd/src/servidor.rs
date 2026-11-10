@@ -35,7 +35,7 @@ use ward_core::protocolo::{
     self, ErroResposta, Papel, Pedido, Resposta,
     quadro::{self, ErroQuadro},
 };
-use ward_platform::{ErroAceitar, Escuta, Instalacao, PeerClass, PeerProcess, PoliticaKernel};
+use ward_platform::{AcceptError, Install, KernelPolicy, Listener, PeerClass, PeerProcess};
 
 use crate::aprovacao::{Assinante, Cliente};
 use crate::lancamento::{AppDeTeste, AppLancado, ExtensaoDeTeste};
@@ -125,7 +125,7 @@ impl Drop for Soltar {
 /// Como o daemon decide o papel de cada conexão.
 pub struct Papeis {
     /// `None`: grupos da instalação ausentes ou recusados; todo cliente é agente.
-    pub instalacao: Option<Instalacao>,
+    pub instalacao: Option<Install>,
     /// O app que o lançador abriu (D63). `None`: ninguém é app.
     pub app: Option<AppLancado>,
     /// Só no daemon de teste (D63): o app de teste, app sem o egid. No release é sempre
@@ -179,14 +179,14 @@ impl Papeis {
         let Some(inst) = &self.instalacao else {
             return Papel::Agente;
         };
-        match par.classify(inst, &PoliticaKernel::ler()) {
+        match par.classify(inst, &KernelPolicy::read()) {
             c @ (PeerClass::App | PeerClass::ExtensionHost) => {
                 papel_da_classe(c, pid, |p| self.app.as_ref().is_some_and(|a| a.e_o_app(p)))
             }
             PeerClass::Common { reason: motivo } => {
                 // Só registra quando o cliente tentou um grupo especial.
                 let cred = par.credentials();
-                if cred.gid == inst.gid_app() || cred.gid == inst.gid_extensao() {
+                if cred.gid == inst.app_gid() || cred.gid == inst.extension_gid() {
                     aviso!("papel especial recusado (pid {}): {motivo}", cred.pid);
                 }
                 Papel::Agente
@@ -239,7 +239,7 @@ impl Cliente for ClienteSocket<'_> {
 
     /// Olha sem ler nem esperar (`poll`): fim de arquivo ou erro é cliente que caiu.
     fn saiu(&self) -> bool {
-        ward_platform::par_fechou(self.stream)
+        ward_platform::peer_closed(self.stream)
     }
 }
 
@@ -337,7 +337,7 @@ fn atender_conexao(
 }
 
 /// Aceita conexões para sempre.
-pub fn servir(escuta: &Escuta, daemon: Arc<Daemon>, papeis: Arc<Papeis>) -> io::Result<()> {
+pub fn servir(escuta: &Listener, daemon: Arc<Daemon>, papeis: Arc<Papeis>) -> io::Result<()> {
     let vagas = Arc::new(Vagas::default());
     loop {
         let stream = match escuta.listener().accept() {
@@ -349,20 +349,20 @@ pub fn servir(escuta: &Escuta, daemon: Arc<Daemon>, papeis: Arc<Papeis>) -> io::
                 continue;
             }
         };
-        let par = match ward_platform::conferir_conexao(&stream) {
+        let par = match ward_platform::verify_connection(&stream) {
             Ok(p) => p,
-            Err(ErroAceitar::UidRecusado { uid, pid }) => {
+            Err(AcceptError::UidRefused { uid, pid }) => {
                 // Fecha sem mandar nenhum byte (V3.2).
                 aviso!("conexão recusada (UidRecusado): uid {uid}, pid {pid}");
                 drop(stream);
                 continue;
             }
-            Err(ErroAceitar::SemIdentidade(e)) => {
+            Err(AcceptError::NoIdentity(e)) => {
                 aviso!("conexão recusada (SemIdentidade): {}", e.kind());
                 drop(stream);
                 continue;
             }
-            Err(ErroAceitar::Io(e)) => {
+            Err(AcceptError::Io(e)) => {
                 aviso!("conexão recusada (Io): {}", e.kind());
                 drop(stream);
                 continue;
@@ -446,7 +446,7 @@ mod testes {
             .spawn()
             .unwrap();
         let (s, _) = l.accept().unwrap();
-        let par = ward_platform::conferir_conexao(&s).unwrap();
+        let par = ward_platform::verify_connection(&s).unwrap();
         assert_eq!(par.credentials().pid, filho.id());
         let papeis = Papeis {
             instalacao: None,
@@ -475,7 +475,7 @@ mod testes {
     }
 
     fn vivo(s: &UnixStream) -> bool {
-        !ward_platform::par_fechou(s)
+        !ward_platform::peer_closed(s)
     }
 
     /// Scrutiny do M3: a conexão do app (assinante, ociosa) não é despejada por 10 000

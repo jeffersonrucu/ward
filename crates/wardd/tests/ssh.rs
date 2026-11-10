@@ -60,7 +60,7 @@ struct Rt(PathBuf);
 
 impl Rt {
     fn novo(rotulo: &str) -> Rt {
-        let p = ward_platform::socket::diretorio_runtime()
+        let p = ward_platform::socket::runtime_dir()
             .join(format!("wsh-{}-{rotulo}", std::process::id()));
         let _ = fs::remove_dir_all(&p);
         Rt(p)

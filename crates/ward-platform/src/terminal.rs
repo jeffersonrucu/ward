@@ -1,16 +1,17 @@
-//! Senha mestra lida do terminal (Fase 25, `ward destravar`; "Destravar e travar":
-//! "pela CLI no terminal do usuário"; S5, S8).
+//! Master password read from the terminal (Phase 25, the unlock subcommand of the CLI;
+//! scope: unlock "through the CLI in the user's terminal"; S5, S8).
 //!
-//! - Lê de `/dev/tty`, nunca de stdin nem de argv (S3): um pipe ou um arquivo não
-//!   servem, e a senha não passa pela linha de comando.
-//! - O terminal fica sem eco, sem modo canônico e sem sinais (`ISIG`) durante a
-//!   leitura, e volta ao estado de antes ao sair, inclusive por erro. Ctrl+C chega como
-//!   byte e cancela; assim o processo não morre com o eco desligado.
-//! - A entrada pendente é descartada antes do prompt (`TCSAFLUSH`): o que foi digitado
-//!   antes de a pergunta aparecer não vira senha.
-//! - O buffer é um `Zeroizing<Vec<u8>>` com a capacidade final reservada antes do
-//!   primeiro byte: nenhuma realocação deixa cópia da senha para trás. O byte apagado
-//!   (Backspace, Ctrl+U) é zerado antes de sair do buffer.
+//! - Reads from `/dev/tty`, never from stdin nor argv (S3): a pipe or a file do not
+//!   work, and the password does not go through the command line.
+//! - The terminal stays without echo, without canonical mode and without signals
+//!   (`ISIG`) during the read, and goes back to the previous state on the way out, also
+//!   on error. Ctrl+C arrives as a byte and cancels; that way the process does not die
+//!   with the echo turned off.
+//! - Pending input is discarded before the prompt (`TCSAFLUSH`): what was typed before
+//!   the question showed up does not become the password.
+//! - The buffer is a `Zeroizing<Vec<u8>>` with the final capacity reserved before the
+//!   first byte: no reallocation leaves a copy of the password behind. The erased byte
+//!   (Backspace, Ctrl+U) is zeroed before leaving the buffer.
 
 use std::fmt;
 use std::fs::{File, OpenOptions};
@@ -22,316 +23,324 @@ use zeroize::{Zeroize, Zeroizing};
 
 use crate::sys;
 
-/// Por que a senha não foi lida. Sem conteúdo: pode ir para a mensagem ao usuário.
+/// Why the password was not read. No content: it can go to the message to the user.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ErroTerminal {
-    /// Sem terminal (`/dev/tty` não abre ou não é terminal).
-    SemTerminal,
-    /// O usuário cancelou (Ctrl+C, Ctrl+D com a linha vazia, fim da entrada).
-    Cancelado,
-    /// Mais bytes que o limite.
-    Longa,
-    /// O eco não desligou, ou outro erro de E/S do terminal.
+pub enum TerminalError {
+    /// No terminal (`/dev/tty` does not open or is not a terminal).
+    NoTerminal,
+    /// The user canceled (Ctrl+C, Ctrl+D with an empty line, end of input).
+    Canceled,
+    /// More bytes than the limit.
+    TooLong,
+    /// The echo did not turn off, or another I/O error of the terminal.
     Io(io::ErrorKind),
 }
 
-impl fmt::Display for ErroTerminal {
+impl fmt::Display for TerminalError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ErroTerminal::SemTerminal => f.write_str("sem terminal para ler a senha"),
-            ErroTerminal::Cancelado => f.write_str("cancelado"),
-            ErroTerminal::Longa => f.write_str("senha longa demais"),
-            ErroTerminal::Io(k) => write!(f, "erro no terminal ({k})"),
+            TerminalError::NoTerminal => f.write_str("sem terminal para ler a senha"),
+            TerminalError::Canceled => f.write_str("cancelado"),
+            TerminalError::TooLong => f.write_str("senha longa demais"),
+            TerminalError::Io(k) => write!(f, "erro no terminal ({k})"),
         }
     }
 }
 
-impl std::error::Error for ErroTerminal {}
+impl std::error::Error for TerminalError {}
 
-/// Abre `/dev/tty` e lê uma senha de até `max` bytes, sem eco, depois de escrever
-/// `prompt` no próprio terminal.
-pub fn ler_senha(prompt: &str, max: usize) -> Result<Zeroizing<Vec<u8>>, ErroTerminal> {
+/// Opens `/dev/tty` and reads a password of up to `max` bytes, without echo, after
+/// writing `prompt` on the terminal itself.
+pub fn read_password(prompt: &str, max: usize) -> Result<Zeroizing<Vec<u8>>, TerminalError> {
     let tty = OpenOptions::new()
         .read(true)
         .write(true)
         .custom_flags(libc::O_NOCTTY | libc::O_CLOEXEC)
         .open("/dev/tty")
-        .map_err(|_| ErroTerminal::SemTerminal)?;
-    ler_senha_em(&tty, prompt, max)
+        .map_err(|_| TerminalError::NoTerminal)?;
+    read_password_on(&tty, prompt, max)
 }
 
-/// Volta o terminal ao estado de antes no `Drop`.
-struct Restaurar<'a> {
+/// Puts the terminal back to the previous state on `Drop`.
+struct Restore<'a> {
     tty: &'a File,
     original: libc::termios,
 }
 
-impl Drop for Restaurar<'_> {
+impl Drop for Restore<'_> {
     fn drop(&mut self) {
         let _ = sys::tcsetattr(self.tty.as_fd(), libc::TCSANOW, &self.original);
     }
 }
 
-/// [`ler_senha`] num terminal já aberto.
-pub(crate) fn ler_senha_em(
+/// [`read_password`] on an already open terminal.
+pub(crate) fn read_password_on(
     tty: &File,
     prompt: &str,
     max: usize,
-) -> Result<Zeroizing<Vec<u8>>, ErroTerminal> {
-    let original = sys::tcgetattr(tty.as_fd()).map_err(|_| ErroTerminal::SemTerminal)?;
-    let mut cru = original;
-    cru.c_lflag &= !(libc::ECHO | libc::ECHONL | libc::ICANON | libc::ISIG | libc::IEXTEN);
-    cru.c_cc[libc::VMIN] = 1;
-    cru.c_cc[libc::VTIME] = 0;
-    let volta = Restaurar { tty, original };
-    sys::tcsetattr(tty.as_fd(), libc::TCSAFLUSH, &cru).map_err(|e| ErroTerminal::Io(e.kind()))?;
-    // Confere de volta: um terminal que aceitou o pedido sem desligar o eco mostraria
-    // a senha na tela.
-    let agora = sys::tcgetattr(tty.as_fd()).map_err(|e| ErroTerminal::Io(e.kind()))?;
-    if agora.c_lflag & (libc::ECHO | libc::ICANON) != 0 {
-        return Err(ErroTerminal::Io(io::ErrorKind::Unsupported));
+) -> Result<Zeroizing<Vec<u8>>, TerminalError> {
+    let original = sys::tcgetattr(tty.as_fd()).map_err(|_| TerminalError::NoTerminal)?;
+    let mut raw = original;
+    raw.c_lflag &= !(libc::ECHO | libc::ECHONL | libc::ICANON | libc::ISIG | libc::IEXTEN);
+    raw.c_cc[libc::VMIN] = 1;
+    raw.c_cc[libc::VTIME] = 0;
+    let restore = Restore { tty, original };
+    sys::tcsetattr(tty.as_fd(), libc::TCSAFLUSH, &raw).map_err(|e| TerminalError::Io(e.kind()))?;
+    // Checks back: a terminal that accepted the request without turning the echo off
+    // would show the password on the screen.
+    let now = sys::tcgetattr(tty.as_fd()).map_err(|e| TerminalError::Io(e.kind()))?;
+    if now.c_lflag & (libc::ECHO | libc::ICANON) != 0 {
+        return Err(TerminalError::Io(io::ErrorKind::Unsupported));
     }
-    let mut escrita = tty;
-    escrita
+    let mut writer = tty;
+    writer
         .write_all(prompt.as_bytes())
-        .and_then(|()| escrita.flush())
-        .map_err(|e| ErroTerminal::Io(e.kind()))?;
-    let mut leitura = tty;
-    let r = ler_linha(&mut leitura, max);
-    let _ = escrita.write_all(b"\n");
-    drop(volta);
+        .and_then(|()| writer.flush())
+        .map_err(|e| TerminalError::Io(e.kind()))?;
+    let mut reader = tty;
+    let r = read_line(&mut reader, max);
+    let _ = writer.write_all(b"\n");
+    drop(restore);
     r
 }
 
-/// Lê bytes até Enter, um por vez, com a edição mínima de um terminal sem modo
-/// canônico: Backspace/DEL apaga o último byte (zerado), Ctrl+U apaga a linha,
-/// Ctrl+C cancela, Ctrl+D cancela com a linha vazia. Outros bytes de controle são
-/// ignorados.
-pub(crate) fn ler_linha(r: &mut impl Read, max: usize) -> Result<Zeroizing<Vec<u8>>, ErroTerminal> {
-    let mut senha = Zeroizing::new(Vec::with_capacity(max));
+/// Reads bytes up to Enter, one at a time, with the minimal editing of a terminal
+/// without canonical mode: Backspace/DEL erases the last byte (zeroed), Ctrl+U erases
+/// the line, Ctrl+C cancels, Ctrl+D cancels with an empty line. Other control bytes are
+/// ignored.
+pub(crate) fn read_line(
+    r: &mut impl Read,
+    max: usize,
+) -> Result<Zeroizing<Vec<u8>>, TerminalError> {
+    let mut password = Zeroizing::new(Vec::with_capacity(max));
     let mut b = Zeroizing::new([0u8; 1]);
     loop {
         match r.read(&mut b[..]) {
-            Ok(0) => return Err(ErroTerminal::Cancelado),
+            Ok(0) => return Err(TerminalError::Canceled),
             Ok(_) => {}
             Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
-            Err(e) => return Err(ErroTerminal::Io(e.kind())),
+            Err(e) => return Err(TerminalError::Io(e.kind())),
         }
         match b[0] {
             b'\r' | b'\n' => break,
-            0x03 => return Err(ErroTerminal::Cancelado),
-            0x04 if senha.is_empty() => return Err(ErroTerminal::Cancelado),
+            0x03 => return Err(TerminalError::Canceled),
+            0x04 if password.is_empty() => return Err(TerminalError::Canceled),
             0x7f | 0x08 => {
-                if let Some(ultimo) = senha.last_mut() {
-                    *ultimo = 0;
-                    let n = senha.len() - 1;
-                    senha.truncate(n);
+                if let Some(last) = password.last_mut() {
+                    *last = 0;
+                    let n = password.len() - 1;
+                    password.truncate(n);
                 }
             }
             0x15 => {
-                senha.zeroize();
-                senha.clear();
+                password.zeroize();
+                password.clear();
             }
             c if c < 0x20 => {}
             c => {
-                if senha.len() >= max {
-                    return Err(ErroTerminal::Longa);
+                if password.len() >= max {
+                    return Err(TerminalError::TooLong);
                 }
-                senha.push(c);
+                password.push(c);
             }
         }
     }
     b.zeroize();
-    Ok(senha)
+    Ok(password)
 }
 
-// --- `ward ssh` interativo (Fase 27) ---------------------------------------------------
+// --- interactive `ward ssh` (Phase 27) -------------------------------------------------
 
-/// `fd` é um terminal?
-pub fn e_terminal(fd: impl AsFd) -> bool {
+/// Is `fd` a terminal?
+pub fn is_terminal(fd: impl AsFd) -> bool {
     sys::tcgetattr(fd.as_fd()).is_ok()
 }
 
-/// (linhas, colunas) do terminal em `fd`; `None` se não é terminal ou não diz.
-pub fn tamanho(fd: impl AsFd) -> Option<(u16, u16)> {
+/// (rows, columns) of the terminal on `fd`; `None` if it is not a terminal or does not
+/// say.
+pub fn size(fd: impl AsFd) -> Option<(u16, u16)> {
     sys::read_window_size(fd.as_fd())
         .ok()
         .filter(|&(l, c)| l > 0 && c > 0)
 }
 
-/// O terminal da CLI em modo cru enquanto durar (`cfmakeraw`: sem eco, sem modo
-/// canônico, sem sinais; Ctrl+C vai como byte ao `ssh` remoto, como no `ssh`). Volta ao
-/// estado de antes no `Drop`, inclusive por erro ou pânico.
-pub struct ModoCru {
+/// The CLI's terminal in raw mode while it lasts (`cfmakeraw`: no echo, no canonical
+/// mode, no signals; Ctrl+C goes as a byte to the remote `ssh`, as in `ssh`). Goes back
+/// to the previous state on `Drop`, also on error or panic.
+pub struct RawMode {
     fd: std::os::fd::OwnedFd,
     original: libc::termios,
 }
 
-impl fmt::Debug for ModoCru {
+impl fmt::Debug for RawMode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("ModoCru")
+        f.write_str("RawMode")
     }
 }
 
-impl ModoCru {
-    /// Liga o modo cru no terminal `fd` (uma cópia do fd fica guardada para voltar).
-    pub fn ligar(fd: impl AsFd) -> io::Result<ModoCru> {
+impl RawMode {
+    /// Turns raw mode on for the terminal `fd` (a copy of the fd is kept to go back).
+    pub fn enable(fd: impl AsFd) -> io::Result<RawMode> {
         let fd = fd.as_fd().try_clone_to_owned()?;
         let original = sys::tcgetattr(fd.as_fd())?;
-        let mut cru = original;
-        sys::make_raw(&mut cru);
-        sys::tcsetattr(fd.as_fd(), libc::TCSANOW, &cru)?;
-        Ok(ModoCru { fd, original })
+        let mut raw = original;
+        sys::make_raw(&mut raw);
+        sys::tcsetattr(fd.as_fd(), libc::TCSANOW, &raw)?;
+        Ok(RawMode { fd, original })
     }
 }
 
-impl Drop for ModoCru {
+impl Drop for RawMode {
     fn drop(&mut self) {
         let _ = sys::tcsetattr(self.fd.as_fd(), libc::TCSANOW, &self.original);
     }
 }
 
 #[cfg(test)]
-mod testes {
+mod tests {
     use super::*;
 
     #[test]
-    fn modo_cru_liga_e_volta_e_tamanho_do_pty() {
-        let (mestre, escravo) = sys::open_pty().unwrap();
-        sys::set_window_size(mestre.as_fd(), 33, 101).unwrap();
-        assert!(e_terminal(&escravo));
-        assert!(!e_terminal(File::open("/dev/null").unwrap()));
-        assert_eq!(tamanho(&escravo), Some((33, 101)));
-        assert_eq!(tamanho(File::open("/dev/null").unwrap()), None);
-        let antes = sys::tcgetattr(escravo.as_fd()).unwrap();
-        assert_ne!(antes.c_lflag & libc::ECHO, 0);
+    fn raw_mode_turns_on_and_back_and_pty_size() {
+        let (master, slave) = sys::open_pty().unwrap();
+        sys::set_window_size(master.as_fd(), 33, 101).unwrap();
+        assert!(is_terminal(&slave));
+        assert!(!is_terminal(File::open("/dev/null").unwrap()));
+        assert_eq!(size(&slave), Some((33, 101)));
+        assert_eq!(size(File::open("/dev/null").unwrap()), None);
+        let before = sys::tcgetattr(slave.as_fd()).unwrap();
+        assert_ne!(before.c_lflag & libc::ECHO, 0);
         {
-            let _cru = ModoCru::ligar(&escravo).unwrap();
-            let agora = sys::tcgetattr(escravo.as_fd()).unwrap();
-            assert_eq!(agora.c_lflag & (libc::ECHO | libc::ICANON | libc::ISIG), 0);
+            let _raw = RawMode::enable(&slave).unwrap();
+            let now = sys::tcgetattr(slave.as_fd()).unwrap();
+            assert_eq!(now.c_lflag & (libc::ECHO | libc::ICANON | libc::ISIG), 0);
         }
-        let depois = sys::tcgetattr(escravo.as_fd()).unwrap();
-        assert_eq!(depois.c_lflag, antes.c_lflag);
-        assert_eq!(depois.c_iflag, antes.c_iflag);
+        let after = sys::tcgetattr(slave.as_fd()).unwrap();
+        assert_eq!(after.c_lflag, before.c_lflag);
+        assert_eq!(after.c_iflag, before.c_iflag);
     }
 
-    fn linha(bytes: &[u8], max: usize) -> Result<Vec<u8>, ErroTerminal> {
-        ler_linha(&mut &bytes[..], max).map(|s| s.to_vec())
-    }
-
-    #[test]
-    fn edicao_da_linha() {
-        assert_eq!(linha(b"abc\n", 64).unwrap(), b"abc");
-        assert_eq!(linha(b"abc\r", 64).unwrap(), b"abc");
-        assert_eq!(linha(b"abx\x7fc\n", 64).unwrap(), b"abc");
-        assert_eq!(linha(b"\x7f\x08ab\x08c\n", 64).unwrap(), b"ac");
-        assert_eq!(linha(b"errada\x15certa\n", 64).unwrap(), b"certa");
-        assert_eq!(linha(b"a\x1bb\x01c\n", 64).unwrap(), b"abc");
-        assert_eq!(linha("ção\n".as_bytes(), 64).unwrap(), "ção".as_bytes());
-        assert_eq!(linha(b"\n", 64).unwrap(), b"");
-        assert_eq!(linha(b"ab\x04c\n", 64).unwrap(), b"abc");
+    fn line(bytes: &[u8], max: usize) -> Result<Vec<u8>, TerminalError> {
+        read_line(&mut &bytes[..], max).map(|s| s.to_vec())
     }
 
     #[test]
-    fn cancelar_e_limite() {
-        assert_eq!(linha(b"abc\x03def\n", 64), Err(ErroTerminal::Cancelado));
-        assert_eq!(linha(b"\x04", 64), Err(ErroTerminal::Cancelado));
-        assert_eq!(linha(b"abc", 64), Err(ErroTerminal::Cancelado));
-        assert_eq!(linha(b"abcd\n", 4).unwrap(), b"abcd");
-        assert_eq!(linha(b"abcde\n", 4), Err(ErroTerminal::Longa));
+    fn line_editing() {
+        assert_eq!(line(b"abc\n", 64).unwrap(), b"abc");
+        assert_eq!(line(b"abc\r", 64).unwrap(), b"abc");
+        assert_eq!(line(b"abx\x7fc\n", 64).unwrap(), b"abc");
+        assert_eq!(line(b"\x7f\x08ab\x08c\n", 64).unwrap(), b"ac");
+        assert_eq!(line(b"errada\x15certa\n", 64).unwrap(), b"certa");
+        assert_eq!(line(b"a\x1bb\x01c\n", 64).unwrap(), b"abc");
+        assert_eq!(line("ção\n".as_bytes(), 64).unwrap(), "ção".as_bytes());
+        assert_eq!(line(b"\n", 64).unwrap(), b"");
+        assert_eq!(line(b"ab\x04c\n", 64).unwrap(), b"abc");
     }
 
     #[test]
-    fn capacidade_reservada_sem_realocar() {
-        let s = ler_linha(&mut &b"0123456789\n"[..], 16).unwrap();
+    fn cancel_and_limit() {
+        assert_eq!(line(b"abc\x03def\n", 64), Err(TerminalError::Canceled));
+        assert_eq!(line(b"\x04", 64), Err(TerminalError::Canceled));
+        assert_eq!(line(b"abc", 64), Err(TerminalError::Canceled));
+        assert_eq!(line(b"abcd\n", 4).unwrap(), b"abcd");
+        assert_eq!(line(b"abcde\n", 4), Err(TerminalError::TooLong));
+    }
+
+    #[test]
+    fn capacity_reserved_without_reallocating() {
+        let s = read_line(&mut &b"0123456789\n"[..], 16).unwrap();
         assert_eq!(s.capacity(), 16);
     }
 
     #[test]
-    fn arquivo_comum_nao_e_terminal() {
+    fn regular_file_is_not_a_terminal() {
         let f = File::open("/dev/null").unwrap();
         assert_eq!(
-            ler_senha_em(&f, "senha: ", 64).unwrap_err(),
-            ErroTerminal::SemTerminal
+            read_password_on(&f, "senha: ", 64).unwrap_err(),
+            TerminalError::NoTerminal
         );
     }
 
-    /// Ataque: alguém olhando a tela (ou o que o terminal devolve) vê a senha? Num pty
-    /// de verdade, o mestre só recebe o prompt e a quebra de linha; a senha digitada
-    /// não ecoa, a entrada pendente antes do prompt é descartada e o terminal volta com
-    /// o eco ligado.
+    /// Attack: does someone looking at the screen (or at what the terminal sends back)
+    /// see the password? On a real pty, the master only gets the prompt and the line
+    /// break; the typed password does not echo, the input pending before the prompt is
+    /// discarded and the terminal comes back with the echo on.
     #[test]
-    fn ataque_senha_nao_ecoa_no_pty() {
-        let (mestre, escravo) = sys::open_pty().unwrap();
-        let mestre = File::from(mestre);
-        let escravo = File::from(escravo);
-        let antes = sys::tcgetattr(escravo.as_fd()).unwrap();
-        assert_ne!(antes.c_lflag & libc::ECHO, 0, "o pty novo começa com eco");
+    fn attack_password_does_not_echo_on_the_pty() {
+        let (master, slave) = sys::open_pty().unwrap();
+        let master = File::from(master);
+        let slave = File::from(slave);
+        let before = sys::tcgetattr(slave.as_fd()).unwrap();
+        assert_ne!(before.c_lflag & libc::ECHO, 0, "o pty novo começa com eco");
 
-        // Digitado antes do prompt: é descartado pelo TCSAFLUSH e não vira senha.
-        (&mestre).write_all(b"antes\n").unwrap();
+        // Typed before the prompt: discarded by TCSAFLUSH and does not become the
+        // password.
+        (&master).write_all(b"antes\n").unwrap();
         std::thread::sleep(std::time::Duration::from_millis(50));
 
-        let leitor = std::thread::spawn(move || {
-            let r = ler_senha_em(&escravo, "senha mestra: ", 64).map(|s| s.to_vec());
-            let depois = sys::tcgetattr(escravo.as_fd()).unwrap();
-            (r, depois.c_lflag)
+        let reader = std::thread::spawn(move || {
+            let r = read_password_on(&slave, "senha mestra: ", 64).map(|s| s.to_vec());
+            let after = sys::tcgetattr(slave.as_fd()).unwrap();
+            (r, after.c_lflag)
         });
-        // Espera o prompt antes de digitar.
-        let mut visto = Vec::new();
+        // Waits for the prompt before typing.
+        let mut seen = Vec::new();
         let mut buf = [0u8; 256];
-        while !visto.ends_with(b"senha mestra: ") {
-            let n = (&mestre).read(&mut buf).unwrap();
+        while !seen.ends_with(b"senha mestra: ") {
+            let n = (&master).read(&mut buf).unwrap();
             assert!(n > 0);
-            visto.extend_from_slice(&buf[..n]);
+            seen.extend_from_slice(&buf[..n]);
         }
-        (&mestre).write_all(b"falso-eco-01\r").unwrap();
-        let (r, lflag) = leitor.join().unwrap();
+        (&master).write_all(b"falso-eco-01\r").unwrap();
+        let (r, lflag) = reader.join().unwrap();
         assert_eq!(r.unwrap(), b"falso-eco-01");
         assert_ne!(lflag & libc::ECHO, 0, "o eco volta ao sair");
         assert_ne!(lflag & libc::ICANON, 0);
         assert_ne!(lflag & libc::ISIG, 0);
 
-        // O que apareceu na "tela": só o prompt e a quebra de linha.
-        let mut resto = Vec::new();
-        let _ = sys::tcsetattr(mestre.as_fd(), libc::TCSANOW, &{
-            let mut t = sys::tcgetattr(mestre.as_fd()).unwrap();
+        // What showed up on the "screen": only the prompt and the line break.
+        let mut rest = Vec::new();
+        let _ = sys::tcsetattr(master.as_fd(), libc::TCSANOW, &{
+            let mut t = sys::tcgetattr(master.as_fd()).unwrap();
             t.c_cc[libc::VMIN] = 0;
             t.c_cc[libc::VTIME] = 2;
             t
         });
         loop {
-            match (&mestre).read(&mut buf) {
+            match (&master).read(&mut buf) {
                 Ok(0) | Err(_) => break,
-                Ok(n) => resto.extend_from_slice(&buf[..n]),
+                Ok(n) => rest.extend_from_slice(&buf[..n]),
             }
         }
-        visto.extend_from_slice(&resto);
-        let tela = String::from_utf8_lossy(&visto);
-        assert!(!tela.contains("falso-eco-01"), "a senha ecoou: {tela:?}");
-        // "antes" ecoou quando foi digitado, com o eco ainda ligado; o que importa é que
-        // não virou senha (conferido acima).
-        assert!(tela.contains("senha mestra: "));
+        seen.extend_from_slice(&rest);
+        let screen = String::from_utf8_lossy(&seen);
+        assert!(
+            !screen.contains("falso-eco-01"),
+            "a senha ecoou: {screen:?}"
+        );
+        // "antes" echoed when it was typed, with the echo still on; what matters is that
+        // it did not become the password (checked above).
+        assert!(screen.contains("senha mestra: "));
     }
 
     #[test]
-    fn ctrl_c_cancela_e_restaura() {
-        let (mestre, escravo) = sys::open_pty().unwrap();
-        let mestre = File::from(mestre);
-        let escravo = File::from(escravo);
-        let leitor = std::thread::spawn(move || {
-            let r = ler_senha_em(&escravo, "senha: ", 64).map(|s| s.to_vec());
-            (r, sys::tcgetattr(escravo.as_fd()).unwrap().c_lflag)
+    fn ctrl_c_cancels_and_restores() {
+        let (master, slave) = sys::open_pty().unwrap();
+        let master = File::from(master);
+        let slave = File::from(slave);
+        let reader = std::thread::spawn(move || {
+            let r = read_password_on(&slave, "senha: ", 64).map(|s| s.to_vec());
+            (r, sys::tcgetattr(slave.as_fd()).unwrap().c_lflag)
         });
         let mut buf = [0u8; 64];
-        let mut visto = Vec::new();
-        while !visto.ends_with(b"senha: ") {
-            let n = (&mestre).read(&mut buf).unwrap();
-            visto.extend_from_slice(&buf[..n]);
+        let mut seen = Vec::new();
+        while !seen.ends_with(b"senha: ") {
+            let n = (&master).read(&mut buf).unwrap();
+            seen.extend_from_slice(&buf[..n]);
         }
-        (&mestre).write_all(b"meia\x03").unwrap();
-        let (r, lflag) = leitor.join().unwrap();
-        assert_eq!(r, Err(ErroTerminal::Cancelado));
+        (&master).write_all(b"meia\x03").unwrap();
+        let (r, lflag) = reader.join().unwrap();
+        assert_eq!(r, Err(TerminalError::Canceled));
         assert_ne!(lflag & libc::ECHO, 0);
     }
 }

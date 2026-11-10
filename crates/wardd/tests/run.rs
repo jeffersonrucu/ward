@@ -29,7 +29,7 @@ struct DirSocket(PathBuf);
 
 impl DirSocket {
     fn novo(rotulo: &str) -> DirSocket {
-        let p = ward_platform::socket::diretorio_runtime()
+        let p = ward_platform::socket::runtime_dir()
             .join(format!("wardd-r-{}-{rotulo}", std::process::id()));
         let _ = fs::remove_dir_all(&p);
         DirSocket(p)
@@ -84,7 +84,7 @@ fn subir_com(dev: &Dir, sock: &DirSocket, extra: &[(&str, &std::ffi::OsStr)]) ->
         )
         .spawn()
         .unwrap();
-    let socket = sock.0.join(ward_platform::socket::NOME_SOCKET);
+    let socket = sock.0.join(ward_platform::socket::SOCKET_NAME);
     let fim = Instant::now() + Duration::from_secs(20);
     while UnixStream::connect(&socket).is_err() {
         assert!(Instant::now() < fim, "o wardd não criou o socket");

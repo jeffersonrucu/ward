@@ -7,7 +7,7 @@
 //! vê-lo (Fase 27a; achado alto da auditoria do M3). Ele **nunca** vai em argv nem em
 //! variável de ambiente (`/proc/<pid>/cmdline` e `/proc/<pid>/environ` são legíveis pelo
 //! mesmo uid), nem à interface, nem a log. Vai por um socket Unix
-//! ([`ward_platform::conectar::CanalConectar`]): o app escreve o token e fecha a ponta
+//! ([`ward_platform::connect::ConnectChannel`]): o app escreve o token e fecha a ponta
 //! dele; a outra ponta é o único fd ≥ 3 que o terminal herda, e o terminal a repassa ao
 //! `ward ssh`, que lê o token e fecha o fd antes de conectar. O número do fd vai em
 //! argv (não é segredo). Um socket não reabre por `/proc/<pid>/fd/<n>`, ao contrário de
@@ -28,7 +28,7 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use ward_platform::conectar::CanalConectar;
+use ward_platform::connect::ConnectChannel;
 use zeroize::Zeroizing;
 
 use crate::ErroApp;
@@ -134,7 +134,7 @@ impl Default for TerminalDoSistema {
 /// voltar ([`Abertura::abrir`] cuida disso).
 pub struct Abertura {
     pub comando: Command,
-    canal: CanalConectar,
+    canal: ConnectChannel,
 }
 
 impl Abertura {
@@ -159,7 +159,7 @@ impl TerminalDoSistema {
         if !entrada_para_argv(entrada) {
             return Err(ErroApp::PedidoInvalido);
         }
-        let canal = CanalConectar::novo(token.expor().as_bytes())
+        let canal = ConnectChannel::new(token.expor().as_bytes())
             .map_err(|_| ErroApp::TerminalIndisponivel)?;
         let mut c = Command::new(&self.emulador);
         c.env_clear()
@@ -170,13 +170,13 @@ impl TerminalDoSistema {
             .stderr(Stdio::null())
             .arg("-e")
             .arg(&self.ward)
-            .args(["ssh", "--token-fd", &canal.numero().to_string(), entrada]);
+            .args(["ssh", "--token-fd", &canal.number().to_string(), entrada]);
         for k in AMBIENTE_DO_TERMINAL {
             if let Some(v) = std::env::var_os(k) {
                 c.env(k, v);
             }
         }
-        canal.preparar(&mut c);
+        canal.prepare(&mut c);
         Ok(Abertura { comando: c, canal })
     }
 }
@@ -241,7 +241,7 @@ mod testes {
         let c = &a.comando;
         assert_eq!(c.get_program(), "/usr/bin/x-terminal-emulator");
         let args: Vec<_> = c.get_args().map(|a| a.to_str().unwrap()).collect();
-        let fd = a.canal.numero().to_string();
+        let fd = a.canal.number().to_string();
         assert_eq!(
             args,
             [

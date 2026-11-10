@@ -32,8 +32,8 @@ use std::ffi::OsString;
 use std::fmt;
 use std::os::unix::net::UnixStream;
 
-use ward_platform::app::{self, Pai, PaiDiferente};
-use ward_platform::{AppEnvironment, SessionError, endurecer_processo, verify_app_environment};
+use ward_platform::app::{self, Parent, ParentMismatch};
+use ward_platform::{AppEnvironment, SessionError, harden_process, verify_app_environment};
 
 use ward_core::protocolo::Papel;
 
@@ -51,7 +51,7 @@ pub enum ErroPartida {
     /// Ambiente fora de D57.
     Ambiente(SessionError),
     /// O pai não é (ou não parece) o daemon.
-    Pai(PaiDiferente),
+    Pai(ParentMismatch),
     /// O daemon não aceitou a conexão ou não é confiável (D46).
     Daemon(ErroApp),
     /// O socket não ficou com `CLOEXEC`.
@@ -94,7 +94,7 @@ impl std::error::Error for ErroPartida {}
 /// conferido e o pai do começo.
 pub struct Partida {
     ambiente: AppEnvironment,
-    pai: Pai,
+    pai: Parent,
     daemon: Option<DaemonSocket>,
     vigia: UnixStream,
     argumentos: Vec<OsString>,
@@ -102,8 +102,8 @@ pub struct Partida {
 
 /// A partida inteira com o ambiente e o daemon padrão deste processo.
 pub fn iniciar() -> Result<Partida, ErroPartida> {
-    let pai_e_o_daemon = Pai::atual()
-        .and_then(|p| p.conferir_parece_o_daemon())
+    let pai_e_o_daemon = Parent::current()
+        .and_then(|p| p.verify_looks_like_daemon())
         .is_ok();
     iniciar_com(std::env::vars_os(), DaemonSocket::padrao, pai_e_o_daemon)
 }
@@ -122,7 +122,7 @@ where
     I: IntoIterator<Item = (OsString, OsString)>,
     F: FnOnce() -> Result<DaemonSocket, ErroApp>,
 {
-    endurecer_processo().map_err(|_| ErroPartida::Endurecer)?;
+    harden_process().map_err(|_| ErroPartida::Endurecer)?;
     if !tracer_zero() {
         return Err(ErroPartida::Depurador);
     }
@@ -130,19 +130,19 @@ where
         return Err(delegar(daemon));
     }
     let ambiente = verify_app_environment(ambiente).map_err(ErroPartida::Ambiente)?;
-    let pai = Pai::atual().map_err(ErroPartida::Pai)?;
+    let pai = Parent::current().map_err(ErroPartida::Pai)?;
 
     let mut daemon = daemon().map_err(ErroPartida::Daemon)?;
     let conexao = daemon.conectar_agora().map_err(ErroPartida::Daemon)?;
-    if !app::tem_cloexec(conexao).unwrap_or(false) {
+    if !app::has_cloexec(conexao).unwrap_or(false) {
         return Err(ErroPartida::SemCloexec);
     }
     let vigia = conexao
         .try_clone()
         .map_err(|_| ErroPartida::Daemon(ErroApp::DaemonIndisponivel))?;
 
-    app::largar_grupo().map_err(|_| ErroPartida::Grupo)?;
-    endurecer_processo().map_err(|_| ErroPartida::Endurecer)?;
+    app::release_group().map_err(|_| ErroPartida::Grupo)?;
+    harden_process().map_err(|_| ErroPartida::Endurecer)?;
     match app::gids() {
         Ok((r, e, s)) if r == e && e == s => {}
         _ => return Err(ErroPartida::Grupo),
@@ -153,10 +153,10 @@ where
     if !tracer_zero() {
         return Err(ErroPartida::Depurador);
     }
-    if !app::tem_cloexec(&vigia).unwrap_or(false) {
+    if !app::has_cloexec(&vigia).unwrap_or(false) {
         return Err(ErroPartida::SemCloexec);
     }
-    conferir_papel(&mut daemon, pai.conferir_parece_o_daemon())?;
+    conferir_papel(&mut daemon, pai.verify_looks_like_daemon())?;
     Ok(Partida {
         ambiente,
         pai,
@@ -172,10 +172,10 @@ fn delegar<F>(daemon: F) -> ErroPartida
 where
     F: FnOnce() -> Result<DaemonSocket, ErroApp>,
 {
-    if app::largar_grupo().is_err() {
+    if app::release_group().is_err() {
         return ErroPartida::Grupo;
     }
-    if endurecer_processo().is_err() {
+    if harden_process().is_err() {
         return ErroPartida::Endurecer;
     }
     match app::gids() {
@@ -204,7 +204,7 @@ fn pedir_instancia(daemon: &mut DaemonSocket) -> ErroPartida {
 /// de sair (D57). Nenhuma tela foi mostrada até aqui.
 fn conferir_papel(
     daemon: &mut DaemonSocket,
-    pai: Result<(), PaiDiferente>,
+    pai: Result<(), ParentMismatch>,
 ) -> Result<(), ErroPartida> {
     let papel = cliente::papel(daemon);
     if let Err(e) = pai {
@@ -233,7 +233,7 @@ impl Partida {
     /// transferência) e depois [`reexecutar_ou_sair`](Self::reexecutar_ou_sair).
     pub fn vigiar(self, ao_cair: impl FnOnce() + Send + 'static) -> std::thread::JoinHandle<()> {
         std::thread::spawn(move || {
-            let _ = app::esperar_fechamento(&self.vigia);
+            let _ = app::wait_for_close(&self.vigia);
             ao_cair();
             self.reexecutar_ou_sair()
         })
@@ -242,8 +242,8 @@ impl Partida {
     /// Com o pai ainda igual ao daemon do começo, executa o app de novo com o mesmo
     /// ambiente conferido; senão, sai com mensagem. Não volta.
     pub fn reexecutar_ou_sair(&self) -> ! {
-        if self.pai.continua_pai() {
-            let e = app::reexecutar(&self.argumentos, &self.ambiente);
+        if self.pai.still_parent() {
+            let e = app::reexec(&self.argumentos, &self.ambiente);
             eprintln!("ward-app: a conexão com o daemon caiu e o app não se reabriu ({e})");
         } else {
             eprintln!("ward-app: a conexão com o daemon caiu e o pai não é mais o daemon");
@@ -342,10 +342,10 @@ mod testes {
     fn com_outro_pai_pede_a_instancia_verdadeira_e_sai() {
         // O app do menu (pai qualquer) recebeu `agente`: pede `abrir_app` e sai (D57).
         let (mut d, h) = daemon_que_da(Papel::Agente);
-        let r = conferir_papel(&mut d, Err(PaiDiferente::NaoEoDaemon));
+        let r = conferir_papel(&mut d, Err(ParentMismatch::NotDaemon));
         assert!(matches!(
             r,
-            Err(ErroPartida::Pai(PaiDiferente::NaoEoDaemon))
+            Err(ErroPartida::Pai(ParentMismatch::NotDaemon))
         ));
         drop(d);
         assert_eq!(h.join().unwrap(), ["estado", "abrir_app"]);
@@ -377,7 +377,7 @@ mod testes {
     fn mensagem_sem_valor() {
         let m = ErroPartida::Ambiente(SessionError::Different("WAYLAND_DISPLAY")).to_string();
         assert!(m.contains("WAYLAND_DISPLAY") && !m.contains("/tmp"));
-        let m = ErroPartida::Pai(PaiDiferente::NaoEoDaemon).to_string();
+        let m = ErroPartida::Pai(ParentMismatch::NotDaemon).to_string();
         assert!(m.starts_with("o app do Ward não abriu"));
     }
 }

@@ -14,7 +14,7 @@
 //!   installed Chrome, verified through the parent's `/proc`;
 //! - the common role (agent) to anyone else;
 //! - and no special role with `kernel.yama.ptrace_scope` 0 or `fs.suid_dumpable` 1
-//!   ([`PoliticaKernel`]).
+//!   ([`KernelPolicy`]).
 //!
 //! Reading `exe`, `environ` and `maps` ([`PeerProcess::identify`]) is only for the
 //! Chrome parent and for tests; it never grants a role on its own:
@@ -43,7 +43,7 @@ use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::{Component, Path, PathBuf};
 
-use crate::papel::{Instalacao, PoliticaKernel};
+use crate::role::{Install, KernelPolicy};
 use crate::sys;
 
 /// Limit for reading `/proc/<pid>/status`.
@@ -439,13 +439,13 @@ impl PeerProcess {
 
     /// Role by the egid from `SO_PEERCRED` (D47). Any failure gives [`PeerClass::Common`]
     /// with the reason for the log.
-    pub fn classify(&self, inst: &Instalacao, policy: &PoliticaKernel) -> PeerClass {
+    pub fn classify(&self, inst: &Install, policy: &KernelPolicy) -> PeerClass {
         let gid = self.cred.gid;
-        let r = if gid == inst.gid_app() {
+        let r = if gid == inst.app_gid() {
             self.verify_special(policy)
                 .and_then(|()| self.verify_app_parent())
                 .map(|()| PeerClass::App)
-        } else if gid == inst.gid_extensao() {
+        } else if gid == inst.extension_gid() {
             self.verify_special(policy)
                 .and_then(|()| self.verify_parent(inst.chrome()))
                 .map(|()| PeerClass::ExtensionHost)
@@ -489,7 +489,7 @@ impl PeerProcess {
     pub fn classify_test_extension_host(
         &self,
         chrome: &AllowedBinary,
-        policy: &PoliticaKernel,
+        policy: &KernelPolicy,
     ) -> PeerClass {
         let r = self
             .verify_special(policy)
@@ -502,9 +502,9 @@ impl PeerProcess {
     }
 
     /// Before any special role: same uid, kernel policy and no debugger.
-    fn verify_special(&self, policy: &PoliticaKernel) -> Result<(), Refusal> {
+    fn verify_special(&self, policy: &KernelPolicy) -> Result<(), Refusal> {
         self.verify_uid()?;
-        policy.conferir()?;
+        policy.verify()?;
         self.reverify_no_debugger()
     }
 

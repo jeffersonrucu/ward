@@ -52,9 +52,9 @@ use std::os::unix::fs::{FileTypeExt, MetadataExt};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 
-use crate::endurecimento::nome_para_mensagem;
-use crate::papel::Instalacao;
+use crate::hardening::name_for_message;
 use crate::process::{AllowedBinary, simple_absolute_path, verify_root_file};
+use crate::role::Install;
 use crate::sys;
 
 /// `PATH` of the app.
@@ -364,7 +364,7 @@ where
     let mut seen: BTreeMap<&'static str, OsString> = BTreeMap::new();
     for (name, value) in received {
         let Some(known) = known_name(name.as_bytes()) else {
-            return Err(SessionError::Extra(nome_para_mensagem(name.as_bytes())));
+            return Err(SessionError::Extra(name_for_message(name.as_bytes())));
         };
         if seen.insert(known, value).is_some() {
             return Err(SessionError::Repeated(known.to_owned()));
@@ -453,10 +453,10 @@ enum Origin {
 }
 
 impl Launcher {
-    pub fn new(binary: AllowedBinary, inst: &Instalacao) -> Launcher {
+    pub fn new(binary: AllowedBinary, inst: &Install) -> Launcher {
         Launcher::from_origin(Origin::Installed {
             binary,
-            app_gid: inst.gid_app(),
+            app_gid: inst.app_gid(),
         })
     }
 

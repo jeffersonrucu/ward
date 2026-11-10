@@ -20,8 +20,8 @@ use ward_core::protocolo::{
     ErroCodificar, ErroResposta, Fluxo, Janela, Papel, Pedido, PedidoExecutar, Resposta,
     TipoEntradaPadrao, Variavel,
 };
-use ward_platform::conectar::ErroCanal;
-use ward_platform::{ErroTerminal, ServidorEsperado};
+use ward_platform::connect::ChannelError;
+use ward_platform::{ExpectedServer, TerminalError};
 use zeroize::Zeroizing;
 
 use crate::args::{AJUDA, Comando};
@@ -59,7 +59,7 @@ pub trait Entorno {
     /// Desliga o dump do processo antes de a senha existir na memória.
     fn endurecer(&mut self) -> io::Result<()>;
     /// Lê a senha mestra do terminal.
-    fn ler_senha(&mut self) -> Result<Zeroizing<Vec<u8>>, ErroTerminal>;
+    fn ler_senha(&mut self) -> Result<Zeroizing<Vec<u8>>, TerminalError>;
     fn saida(&mut self) -> &mut dyn Write;
     fn erro(&mut self) -> &mut dyn Write;
     /// Ambiente da CLI, para o `ward run` (D13).
@@ -82,25 +82,25 @@ pub trait Entorno {
     /// `ward ssh` interativo (Fase 27): o tamanho do terminal, se a entrada e a saída
     /// padrão são terminais; `None` sem terminal (pipe, arquivo).
     fn terminal(&self) -> Option<Janela> {
-        if !ward_platform::terminal::e_terminal(io::stdin())
-            || !ward_platform::terminal::e_terminal(io::stdout())
+        if !ward_platform::terminal::is_terminal(io::stdin())
+            || !ward_platform::terminal::is_terminal(io::stdout())
         {
             return None;
         }
-        Some(janela_de(ward_platform::terminal::tamanho(io::stdin())))
+        Some(janela_de(ward_platform::terminal::size(io::stdin())))
     }
     /// O tamanho do terminal agora (a thread que acompanha a janela pergunta de novo).
     fn tamanho_terminal(&self) -> Box<dyn Fn() -> Option<(u16, u16)> + Send> {
-        Box::new(|| ward_platform::terminal::tamanho(io::stdin()))
+        Box::new(|| ward_platform::terminal::size(io::stdin()))
     }
     /// Põe o terminal de entrada em modo cru; volta quando o valor sai.
-    fn modo_cru(&mut self) -> Option<ward_platform::ModoCru> {
-        ward_platform::ModoCru::ligar(io::stdin()).ok()
+    fn modo_cru(&mut self) -> Option<ward_platform::RawMode> {
+        ward_platform::RawMode::enable(io::stdin()).ok()
     }
     /// `ward ssh --token-fd <n>` (Fase 27a): lê o token do "Conectar" do fd herdado do
     /// app e fecha o fd.
-    fn ler_token(&mut self, fd: u32) -> Result<Zeroizing<Vec<u8>>, ErroCanal> {
-        ward_platform::conectar::ler_token_herdado(fd)
+    fn ler_token(&mut self, fd: u32) -> Result<Zeroizing<Vec<u8>>, ChannelError> {
+        ward_platform::connect::read_inherited_token(fd)
     }
 }
 
@@ -150,9 +150,9 @@ fn janela_de(t: Option<(u16, u16)>) -> Janela {
     }
 }
 
-/// O entorno de verdade: socket do [`ServidorEsperado`], `/dev/tty`, stdout e stderr.
+/// O entorno de verdade: socket do [`ExpectedServer`], `/dev/tty`, stdout e stderr.
 pub struct Sistema {
-    pub esperado: ServidorEsperado,
+    pub esperado: ExpectedServer,
     pub stdout: io::Stdout,
     pub stderr: io::Stderr,
 }
@@ -162,10 +162,10 @@ impl Entorno for Sistema {
         Conexao::conectar(&self.esperado)
     }
     fn endurecer(&mut self) -> io::Result<()> {
-        ward_platform::endurecer_processo()
+        ward_platform::harden_process()
     }
-    fn ler_senha(&mut self) -> Result<Zeroizing<Vec<u8>>, ErroTerminal> {
-        ward_platform::ler_senha("Senha mestra do Ward: ", MAX_SEGREDO)
+    fn ler_senha(&mut self) -> Result<Zeroizing<Vec<u8>>, TerminalError> {
+        ward_platform::read_password("Senha mestra do Ward: ", MAX_SEGREDO)
     }
     fn saida(&mut self) -> &mut dyn Write {
         &mut self.stdout
@@ -295,15 +295,15 @@ fn destravar(e: &mut dyn Entorno) -> u8 {
     }
     let mut lida = match e.ler_senha() {
         Ok(s) => s,
-        Err(ErroTerminal::SemTerminal) => {
+        Err(TerminalError::NoTerminal) => {
             return falhar(
                 e,
                 "`ward destravar` precisa de um terminal para ler a senha",
             );
         }
-        Err(ErroTerminal::Cancelado) => return falhar(e, "cancelado; nada foi enviado"),
-        Err(ErroTerminal::Longa) => return falhar(e, "senha longa demais; nada foi enviado"),
-        Err(ErroTerminal::Io(_)) => return falhar(e, "erro no terminal; nada foi enviado"),
+        Err(TerminalError::Canceled) => return falhar(e, "cancelado; nada foi enviado"),
+        Err(TerminalError::TooLong) => return falhar(e, "senha longa demais; nada foi enviado"),
+        Err(TerminalError::Io(_)) => return falhar(e, "erro no terminal; nada foi enviado"),
     };
     if lida.is_empty() {
         return falhar(e, "senha vazia; nada foi enviado");
@@ -533,7 +533,7 @@ pub const MSG_TOKEN_FORMATO: &str = "o token do Conectar veio fora do formato";
 fn token_do_canal(e: &mut dyn Entorno, fd: u32) -> Result<Segredo, &'static str> {
     e.endurecer()
         .map_err(|_| "não foi possível proteger o processo antes de ler o token")?;
-    let mut bytes = e.ler_token(fd).map_err(ErroCanal::mensagem)?;
+    let mut bytes = e.ler_token(fd).map_err(ChannelError::message)?;
     if !crate::args::token_ok(&bytes) {
         return Err(MSG_TOKEN_FORMATO);
     }

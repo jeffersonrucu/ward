@@ -104,8 +104,7 @@ impl Config {
                 estado: dir.join("estado"),
             },
             diretorio_socket_teste: None,
-            rt: ward_platform::socket::diretorio_runtime()
-                .join(ward_platform::socket::NOME_DIRETORIO),
+            rt: ward_platform::socket::runtime_dir().join(ward_platform::socket::DIR_NAME),
         })
     }
 
@@ -130,8 +129,7 @@ impl Config {
             Some(_) => return Err("daemon de teste: WARD_DEV_EXTENSAO só aceita \"chrome\""),
         };
         let socket = socket_do_ambiente.unwrap_or_else(|| {
-            ward_platform::socket::diretorio_runtime()
-                .join(ward_platform::socket::NOME_DIRETORIO_TESTE)
+            ward_platform::socket::runtime_dir().join(ward_platform::socket::TEST_DIR_NAME)
         });
         Ok(Config {
             caminhos: caminhos_de_teste(&dev),

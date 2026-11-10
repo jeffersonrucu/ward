@@ -37,7 +37,7 @@ use ssh_key::{Algorithm, PrivateKey, SigningKey};
 use zeroize::Zeroizing;
 
 use ward_core::entrada::Segredo;
-use ward_platform::{DiretorioSocket, ErroAceitar, Escuta};
+use ward_platform::{AcceptError, Listener, SocketDir};
 
 use crate::{aviso, depurar};
 
@@ -144,8 +144,8 @@ pub struct Permitido {
 /// Ao sair (sem ter sido iniciado, ou no fim da thread), a chave zera e a pasta some.
 pub struct AgenteSsh {
     pasta: PathBuf,
-    dir: Option<DiretorioSocket>,
-    escuta: Option<Escuta>,
+    dir: Option<SocketDir>,
+    escuta: Option<Listener>,
     chave: Option<Arc<Chave>>,
 }
 
@@ -183,8 +183,7 @@ fn apagar_pasta(pasta: &Path) {
 /// sem seguir link (`remove_dir_all` e `remove_file` não seguem). `<rt>` é conferido
 /// antes (0700 do usuário, sem link). Devolve quantas entradas apagou.
 pub fn limpar_pastas(rt: &Path) -> io::Result<usize> {
-    ward_platform::preparar_diretorio(rt)
-        .map_err(|_| io::Error::from(io::ErrorKind::PermissionDenied))?;
+    ward_platform::prepare_dir(rt).map_err(|_| io::Error::from(io::ErrorKind::PermissionDenied))?;
     let mut n = 0;
     for item in fs::read_dir(rt)? {
         let item = item?;
@@ -216,7 +215,7 @@ impl AgenteSsh {
     ) -> Result<AgenteSsh, ErroAgente> {
         let chave = Chave::ler(chave, passphrase)?;
         let publica = chave.publica_em_texto()?;
-        ward_platform::preparar_diretorio(rt).map_err(|_| ErroAgente::Sistema)?;
+        ward_platform::prepare_dir(rt).map_err(|_| ErroAgente::Sistema)?;
         let sufixo = ward_core::gerador::token_conectar().map_err(|_| ErroAgente::Sistema)?;
         let sufixo = std::str::from_utf8(&sufixo.expor()[..16]).map_err(|_| ErroAgente::Sistema)?;
         let pasta = rt.join(format!("{PREFIXO_PASTA}{sufixo}"));
@@ -225,9 +224,9 @@ impl AgenteSsh {
             .mode(0o700)
             .create(&pasta)
             .map_err(|_| ErroAgente::Sistema)?;
-        let montar = || -> Result<(DiretorioSocket, Escuta), ErroAgente> {
-            let dir = ward_platform::preparar_diretorio(&pasta).map_err(|_| ErroAgente::Sistema)?;
-            let escuta = dir.escutar(NOME_SOCKET).map_err(|_| ErroAgente::Sistema)?;
+        let montar = || -> Result<(SocketDir, Listener), ErroAgente> {
+            let dir = ward_platform::prepare_dir(&pasta).map_err(|_| ErroAgente::Sistema)?;
+            let escuta = dir.listen(NOME_SOCKET).map_err(|_| ErroAgente::Sistema)?;
             escuta
                 .listener()
                 .set_nonblocking(true)
@@ -379,9 +378,9 @@ fn laco(
             Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
             Err(_) => break,
         };
-        let par = match ward_platform::conferir_conexao(&stream) {
+        let par = match ward_platform::verify_connection(&stream) {
             Ok(p) => p,
-            Err(ErroAceitar::UidRecusado { uid, pid }) => {
+            Err(AcceptError::UidRefused { uid, pid }) => {
                 aviso!("agente SSH: conexão recusada (uid {uid}, pid {pid}) (D12)");
                 continue;
             }
@@ -565,7 +564,7 @@ mod testes {
     #[test]
     fn f28g_partida_apaga_pastas_ssh_que_sobraram() {
         use std::os::unix::fs::PermissionsExt;
-        let base = ward_platform::socket::diretorio_runtime()
+        let base = ward_platform::socket::runtime_dir()
             .join(format!("wardd-agente-28g-{}", std::process::id()));
         let _ = fs::remove_dir_all(&base);
         let rt = base.join("rt");

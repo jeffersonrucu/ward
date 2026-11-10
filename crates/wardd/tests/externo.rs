@@ -1131,5 +1131,5 @@ fn externo_nao_usa_link() {
     for proibido in ["hard_link", "linkat", "libc::link", "fs::symlink("] {
         assert!(!fonte.contains(proibido), "{proibido} em externo.rs");
     }
-    assert!(fonte.contains("renomear_sem_sobrescrever(destino.as_fd()"));
+    assert!(fonte.contains("rename_no_replace(destino.as_fd()"));
 }

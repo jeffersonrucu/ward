@@ -1,5 +1,5 @@
 //! Conexão com o `wardd` (S1, S5, D46). Toda conexão passa pela conferência do servidor
-//! de `ward_platform::servidor` antes do primeiro byte: no build de release, pastas
+//! de `ward_platform::server` antes do primeiro byte: no build de release, pastas
 //! do root, socket 0600 do próprio uid, endereço do par igual ao caminho e par com
 //! uid 0. A CLI fala sempre como o papel agente e só aceita resposta desse papel: uma
 //! resposta com credencial é recusada na leitura (S1).
@@ -11,7 +11,7 @@ use std::time::Duration;
 use ward_core::limites::MAX_QUADRO_COMUM;
 use ward_core::protocolo::quadro::{self, ErroQuadro, LIMITE_RESPOSTA};
 use ward_core::protocolo::{self, Papel, Pedido, Resposta};
-use ward_platform::{RecusaServidor, ServidorEsperado, conectar_servidor, conferir_servidor};
+use ward_platform::{ExpectedServer, ServerRefusal, connect_server, verify_server};
 
 /// Prazo para o daemon responder. O destravar pode levar a espera crescente de D20
 /// (até 30 s) mais o Argon2id.
@@ -24,18 +24,18 @@ const PRAZO_ESCRITA: Duration = Duration::from_secs(10);
 ///   variável de ambiente nem argumento troca o caminho ou as regras.
 /// - `test-mode`: o daemon de teste (D7) em `WARD_DEV_SOCKET_DIR` ou
 ///   `/run/user/<uid>/ward-teste/`.
-pub fn servidor_esperado() -> ServidorEsperado {
+pub fn servidor_esperado() -> ExpectedServer {
     #[cfg(feature = "test-mode")]
     {
         if let Some(d) = std::env::var_os("WARD_DEV_SOCKET_DIR") {
             let d = std::path::PathBuf::from(d);
-            return ServidorEsperado::teste_em(d.join(ward_platform::socket::NOME_SOCKET));
+            return ExpectedServer::test_at(d.join(ward_platform::socket::SOCKET_NAME));
         }
-        ServidorEsperado::teste()
+        ExpectedServer::test()
     }
     #[cfg(not(feature = "test-mode"))]
     {
-        ServidorEsperado::sistema()
+        ExpectedServer::system()
     }
 }
 
@@ -74,11 +74,11 @@ impl ErroConexao {
     }
 }
 
-impl From<RecusaServidor> for ErroConexao {
-    fn from(r: RecusaServidor) -> Self {
+impl From<ServerRefusal> for ErroConexao {
+    fn from(r: ServerRefusal) -> Self {
         match r {
-            RecusaServidor::Ausente => ErroConexao::Ausente,
-            RecusaServidor::Io(k) => ErroConexao::Io(k),
+            ServerRefusal::Missing => ErroConexao::Ausente,
+            ServerRefusal::Io(k) => ErroConexao::Io(k),
             outra => ErroConexao::NaoConfiavel(outra.to_string()),
         }
     }
@@ -106,7 +106,7 @@ fn erro_do_quadro(e: ErroQuadro) -> ErroConexao {
 #[derive(Debug)]
 pub struct Conexao {
     stream: UnixStream,
-    esperado: ServidorEsperado,
+    esperado: ExpectedServer,
     /// `test-mode`: exigir que o processo do socket seja não-dumpable (ver
     /// [`Conexao::conferir_extra`]). Só os testes da própria CLI desligam.
     #[cfg(feature = "test-mode")]
@@ -115,15 +115,15 @@ pub struct Conexao {
 
 impl Conexao {
     /// Confere o servidor, conecta e confere de novo; nenhum byte é escrito antes.
-    pub fn conectar(esperado: &ServidorEsperado) -> Result<Conexao, ErroConexao> {
+    pub fn conectar(esperado: &ExpectedServer) -> Result<Conexao, ErroConexao> {
         Conexao::conectar_com(esperado, true)
     }
 
     fn conectar_com(
-        esperado: &ServidorEsperado,
+        esperado: &ExpectedServer,
         _exigir_nao_dumpable: bool,
     ) -> Result<Conexao, ErroConexao> {
-        let stream = conectar_servidor(esperado)?;
+        let stream = connect_server(esperado)?;
         stream
             .set_read_timeout(Some(PRAZO_LEITURA))
             .and_then(|()| stream.set_write_timeout(Some(PRAZO_ESCRITA)))
@@ -141,13 +141,13 @@ impl Conexao {
     /// Só nos testes da CLI: conecta sem a conferência extra do `test-mode` (o
     /// servidor falso honesto do teste roda no próprio processo, que é dumpable).
     #[cfg(all(test, feature = "test-mode"))]
-    pub(crate) fn conectar_sem_extra(esperado: &ServidorEsperado) -> Result<Conexao, ErroConexao> {
+    pub(crate) fn conectar_sem_extra(esperado: &ExpectedServer) -> Result<Conexao, ErroConexao> {
         Conexao::conectar_com(esperado, false)
     }
 
     /// Confere o servidor de novo no socket já aberto, logo antes de mandar a senha.
     pub fn reconferir(&self) -> Result<(), ErroConexao> {
-        conferir_servidor(&self.stream, &self.esperado)?;
+        verify_server(&self.stream, &self.esperado)?;
         self.conferir_extra()
     }
 

@@ -1,18 +1,19 @@
-//! Fase 55 (S8; achado médio da reauditoria final): descendente que sai do grupo do
-//! `ward run` não sobrevive ao fim do comando nem à trava.
+//! Phase 55 (S8; medium finding of the final reaudit): a descendant that leaves the
+//! group of `ward run` survives neither the end of the command nor the lock.
 //!
-//! Binário de teste só deste arquivo (um processo só dele): o processo vira subreaper,
-//! como o `wardd`. Um `#[test]` só, com os cenários em sequência, para nenhum outro
-//! teste em paralelo ter filhos neste processo.
+//! Test binary of this file only (a process of its own): the process becomes a
+//! subreaper, like `wardd`. A single `#[test]`, with the scenarios in sequence, so that
+//! no other test in parallel has children in this process.
 //!
-//! Ataques (os dois passos da reauditoria), primeiro sem o subreaper (controle: o
-//! fugitivo sobrevive) e depois com ele (morre):
-//! 1. `setsid -f`: o comando cria um neto com sessão própria, o pai intermediário sai e
-//!    o comando termina; o neto fica com o ambiente;
-//! 2. `setpgid(0, 0)`: o filho sai do grupo (fica na sessão) e o comando termina.
+//! Attacks (the two steps of the reaudit), first without the subreaper (control: the
+//! runaway survives) and then with it (it dies):
+//! 1. `setsid -f`: the command creates a grandchild with its own session, the middle
+//!    parent exits and the command ends; the grandchild keeps the environment;
+//! 2. `setpgid(0, 0)`: the child leaves the group (stays in the session) and the
+//!    command ends.
 //!
-//! E o que não pode morrer: a árvore de outra sessão em curso e o órfão de um filho
-//! comum deste processo (o app do `wardd`, que não faz `setsid`).
+//! And what must not die: the tree of another session in progress and the orphan of a
+//! plain child of this process (the app of `wardd`, which does no `setsid`).
 
 use std::io::Read;
 use std::process::Stdio;
@@ -21,11 +22,11 @@ use std::time::{Duration, Instant};
 use ward_platform::child::{Command, End, Group, Pipes};
 use ward_platform::descendants;
 
-/// `python3 -I -c` com um modo:
-/// - `setsid`: neto com `setsid` por dois `fork` (o do meio sai), imprime o pid dele e
-///   sai (ou, com `fica`, dorme);
-/// - `setpgid`: filho com `setpgid(0, 0)`, imprime o pid dele e sai;
-/// - `arvore`: filho no mesmo grupo, imprime o pid e dorme.
+/// `python3 -I -c` with a mode:
+/// - `setsid`: grandchild with `setsid` through two `fork`s (the middle one exits),
+///   prints its pid and exits (or, with an extra argument, sleeps);
+/// - `setpgid`: child with `setpgid(0, 0)`, prints its pid and exits;
+/// - otherwise (the tree mode): child in the same group, prints the pid and sleeps.
 const PY: &str = r#"
 import os, sys, time
 modo = sys.argv[1]
@@ -60,19 +61,19 @@ if fica:
     time.sleep(60)
 "#;
 
-fn lancar(modo: &str, fica: bool) -> (Group, Pipes, i32) {
+fn launch(mode: &str, stay: bool) -> (Group, Pipes, i32) {
     let mut c = Command::new(b"/usr/bin/python3", b"/").unwrap();
-    for a in [&b"-I"[..], b"-c", PY.as_bytes(), modo.as_bytes()] {
+    for a in [&b"-I"[..], b"-c", PY.as_bytes(), mode.as_bytes()] {
         c.argument(a).unwrap();
     }
-    if fica {
+    if stay {
         c.argument(b"fica").unwrap();
     }
     c.variable(b"WARD_PASS", b"falso-senha-f55").unwrap();
     let (g, mut p) = c.launch().unwrap();
-    let mut linha = [0u8; 32];
-    let n = p.stdout.as_mut().unwrap().read(&mut linha).unwrap();
-    let pid = std::str::from_utf8(&linha[..n])
+    let mut line = [0u8; 32];
+    let n = p.stdout.as_mut().unwrap().read(&mut line).unwrap();
+    let pid = std::str::from_utf8(&line[..n])
         .unwrap()
         .trim()
         .parse()
@@ -80,8 +81,8 @@ fn lancar(modo: &str, fica: bool) -> (Group, Pipes, i32) {
     (g, p, pid)
 }
 
-/// Fim normal do comando, como o `wardd`: espera, mata a sessão, colhe.
-fn fim_do_comando(g: &Group) -> descendants::Report {
+/// Normal end of the command, like `wardd`: waits, kills the session, collects.
+fn command_end(g: &Group) -> descendants::Report {
     g.wait_for_end().unwrap();
     let r = g.kill_with_child_sessions();
     let _ = g.collect().unwrap();
@@ -92,14 +93,14 @@ fn stat(pid: i32) -> Option<String> {
     std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()
 }
 
-fn vivo(pid: i32) -> bool {
+fn alive(pid: i32) -> bool {
     stat(pid).is_some_and(|s| !s.contains(") Z "))
 }
 
-fn morre(pid: i32) -> bool {
-    let fim = Instant::now() + Duration::from_secs(5);
-    while vivo(pid) {
-        if Instant::now() > fim {
+fn dies(pid: i32) -> bool {
+    let end = Instant::now() + Duration::from_secs(5);
+    while alive(pid) {
+        if Instant::now() > end {
             return false;
         }
         std::thread::sleep(Duration::from_millis(20));
@@ -107,103 +108,109 @@ fn morre(pid: i32) -> bool {
     true
 }
 
-fn matar(pid: i32) {
+fn kill(pid: i32) {
     let _ = std::process::Command::new("/bin/kill")
         .args(["-9", &pid.to_string()])
         .status();
-    assert!(morre(pid));
+    assert!(dies(pid));
 }
 
 #[test]
-fn ataque_f55_descendente_fora_do_grupo_nao_sobrevive() {
-    // Controle, sem o subreaper: os dois fugitivos sobrevivem ao fim do comando.
+fn attack_f55_descendant_outside_the_group_does_not_survive() {
+    // Control, without the subreaper: both runaways survive the end of the command.
     assert!(!descendants::is_subreaper());
-    for modo in ["setsid", "setpgid"] {
-        let (g, _p, fugitivo) = lancar(modo, false);
-        let r = fim_do_comando(&g);
+    for mode in ["setsid", "setpgid"] {
+        let (g, _p, runaway) = launch(mode, false);
+        let r = command_end(&g);
         assert_eq!(r.remaining, 0, "{r:?}");
         std::thread::sleep(Duration::from_millis(300));
-        assert!(vivo(fugitivo), "controle: {modo} não fugiu");
-        matar(fugitivo);
+        assert!(alive(runaway), "controle: {mode} não fugiu");
+        kill(runaway);
     }
 
     descendants::become_subreaper().unwrap();
     assert!(descendants::is_subreaper());
 
-    // 1 e 2: com o subreaper, o fugitivo morre no fim do comando e é colhido.
-    for modo in ["setsid", "setpgid"] {
-        let (g, _p, fugitivo) = lancar(modo, false);
-        let r = fim_do_comando(&g);
+    // 1 and 2: with the subreaper, the runaway dies at the end of the command and is
+    // collected.
+    for mode in ["setsid", "setpgid"] {
+        let (g, _p, runaway) = launch(mode, false);
+        let r = command_end(&g);
         assert_eq!(r.remaining, 0, "{r:?}");
-        assert!(r.killed >= 1, "{modo}: {r:?}");
-        assert!(morre(fugitivo), "{modo}: o fugitivo sobreviveu ao fim");
-        let fim = Instant::now() + Duration::from_secs(5);
-        while stat(fugitivo).is_some() {
-            assert!(Instant::now() < fim, "{modo}: o zumbi não foi colhido");
+        assert!(r.killed >= 1, "{mode}: {r:?}");
+        assert!(dies(runaway), "{mode}: o fugitivo sobreviveu ao fim");
+        let end = Instant::now() + Duration::from_secs(5);
+        while stat(runaway).is_some() {
+            assert!(Instant::now() < end, "{mode}: o zumbi não foi colhido");
             std::thread::sleep(Duration::from_millis(20));
         }
     }
 
-    // A trava com o comando vivo: a sessão inteira morre (o fugitivo com `setsid`
-    // também, pelo grupo e pela varredura dos órfãos).
-    let (g, _p, fugitivo) = lancar("setsid", true);
+    // The lock with the command alive: the whole session dies (the runaway with
+    // `setsid` too, through the group and through the sweep of the orphans).
+    let (g, _p, runaway) = launch("setsid", true);
     let r = g.kill_with_child_sessions();
     assert_eq!(r.remaining, 0, "{r:?}");
     assert_eq!(g.remaining(), 0);
     assert_eq!(g.collect().unwrap(), End::Signal(libc::SIGKILL));
-    assert!(morre(fugitivo), "trava: o fugitivo sobreviveu");
+    assert!(dies(runaway), "trava: o fugitivo sobreviveu");
 
-    // A trava sem sessão (só os órfãos): o fugitivo de uma sessão viva morre; a sessão
-    // em si (líder e o filho no grupo) continua.
-    let (g, _p, fugitivo) = lancar("setsid", true);
-    let (outra, _q, filho_da_outra) = lancar("arvore", true);
+    // The lock without a session (only the orphans): the runaway of a live session
+    // dies; the session itself (leader and the child in the group) goes on.
+    let (g, _p, runaway) = launch("setsid", true);
+    let (other, _q, other_child) = launch("arvore", true);
     let r = descendants::kill_orphans();
     assert_eq!(r.remaining, 0, "{r:?}");
-    assert!(morre(fugitivo), "kill_orphans: o fugitivo sobreviveu");
-    assert!(vivo(g.pid() as i32), "kill_orphans matou o líder");
+    assert!(dies(runaway), "kill_orphans: o fugitivo sobreviveu");
+    assert!(alive(g.pid() as i32), "kill_orphans matou o líder");
     assert!(
-        vivo(filho_da_outra),
+        alive(other_child),
         "kill_orphans matou a árvore de outra sessão"
     );
 
-    // O fim de uma sessão não leva a árvore de outra em curso.
+    // The end of a session does not take the tree of another one in progress.
     let r = g.kill_with_child_sessions();
     assert_eq!(r.remaining, 0, "{r:?}");
     let _ = g.collect();
-    assert!(vivo(filho_da_outra), "o fim de uma sessão matou outra");
-    assert!(vivo(outra.pid() as i32));
+    assert!(alive(other_child), "o fim de uma sessão matou outra");
+    assert!(alive(other.pid() as i32));
 
-    // O órfão de um filho comum deste processo (sem `setsid`: a sessão daqui, como o
-    // app do `wardd`) não é de sessão nenhuma e não leva sinal.
-    let mut comum = std::process::Command::new("/usr/bin/python3")
+    // The orphan of a plain child of this process (without `setsid`: the session of
+    // here, like the app of `wardd`) belongs to no session and gets no signal.
+    let mut plain = std::process::Command::new("/usr/bin/python3")
         .args(["-I", "-c", PY, "arvore"])
         .stdout(Stdio::piped())
         .spawn()
         .unwrap();
-    // Uma linha só: o neto segura a saída aberta.
-    let mut linha = String::new();
+    // A single line: the grandchild holds the output open.
+    let mut line = String::new();
     std::io::BufRead::read_line(
-        &mut std::io::BufReader::new(comum.stdout.take().unwrap()),
-        &mut linha,
+        &mut std::io::BufReader::new(plain.stdout.take().unwrap()),
+        &mut line,
     )
     .unwrap();
-    let neto_comum: i32 = linha.trim().parse().unwrap();
-    let _ = comum.wait();
-    let fim = Instant::now() + Duration::from_secs(5);
-    while !stat(neto_comum).is_some_and(|s| s.contains(&format!(") S {} ", std::process::id()))) {
+    let plain_grandchild: i32 = line.trim().parse().unwrap();
+    let _ = plain.wait();
+    let end = Instant::now() + Duration::from_secs(5);
+    while !stat(plain_grandchild)
+        .is_some_and(|s| s.contains(&format!(") S {} ", std::process::id())))
+    {
         assert!(
-            Instant::now() < fim,
+            Instant::now() < end,
             "o neto comum não virou filho deste processo"
         );
         std::thread::sleep(Duration::from_millis(20));
     }
-    let r = outra.kill_with_child_sessions();
+    let r = other.kill_with_child_sessions();
     assert_eq!(r.remaining, 0, "{r:?}");
-    let _ = outra.collect();
-    assert!(morre(filho_da_outra));
-    assert!(vivo(neto_comum), "o órfão de um filho comum levou o sinal");
+    let _ = other.collect();
+    assert!(dies(other_child));
+    assert!(
+        alive(plain_grandchild),
+        "o órfão de um filho comum levou o sinal"
+    );
     let r = descendants::kill_orphans();
     assert_eq!(r.killed, 0, "{r:?}");
-    assert!(vivo(neto_comum));
-    matar(neto_comum);
+    assert!(alive(plain_grandchild));
+    kill(plain_grandchild);
 }
