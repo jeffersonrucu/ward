@@ -120,9 +120,9 @@ Compilação de cada fase: `make compile`. Checador: os arquivos da fase.
 `ward-platform`:
 - [x] Fase 7 — `launcher` (`lancador.rs`), `child` (`filho.rs`), `relogio.rs`, `teste.rs`,
   `lib.rs`. — V2.1, V2.3
-- [ ] Fase 8 — `sys.rs`, `processo.rs`, `descendentes.rs`, `memoria.rs`. — V2.1, V2.6, V2.7
+- [x] Fase 8 — `sys.rs`, `processo.rs`, `descendentes.rs`, `memoria.rs`. — V2.1, V2.6, V2.7
 - [ ] Fase 9 — `socket.rs`, `papel.rs`, `conectar.rs`, `terminal.rs`, `endurecimento.rs`,
-  `servidor.rs`, `app.rs`, `pasta.rs` e os testes do crate; checador também em `launcher.rs`, `child.rs`, `clock.rs`,
+  `servidor.rs`, `app.rs`, `pasta.rs` e os testes do crate; checador também em `process.rs`, `launcher.rs`, `child.rs`, `clock.rs`,
   `testing.rs` e `lib.rs` (achado da Fase 7). — V2.1, V2.3
 
 `ward-core`:
