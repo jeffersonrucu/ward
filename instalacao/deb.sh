@@ -105,15 +105,21 @@ cat >"$PACOTE/DEBIAN/control" <<EOF
 Package: ward
 Version: $VERSAO
 Architecture: $ARQ
-Maintainer: Ward <ward@localhost>
+Maintainer: Jefferson Oliveira <jefferoidtex7@gmail.com>
 Installed-Size: $TAM
 Depends: sshpass, openssh-client, systemd, libwebkit2gtk-4.1-0
 Section: admin
 Priority: optional
-Description: cofre de credenciais offline, só de trabalho
- Daemon wardd (socket do sistema por usuário), CLI ward, app desktop ward-app,
- host de native messaging ward-nm e a extensão do Chrome (instalada pela
- política). Entrega credenciais ao agente sem que ele veja o segredo.
+Homepage: https://github.com/jeffersonrucu/ward
+Description: offline work-credential vault that lets AI agents use secrets unseen
+ Ward keeps work credentials (databases, SSH servers, web logins, API tokens,
+ AWS) in an encrypted offline vault and hands them to Claude Code and other
+ agents without ever showing the secret: the wardd daemon runs the command with
+ the credential in the child's environment and masks it in the output.
+ .
+ Includes the ward CLI, the wardd daemon (systemd socket per user), the
+ ward-app desktop app, the ward-nm native messaging host and the Chrome
+ extension, installed by policy. Each use can require approval with a PIN.
 EOF
 chmod 0644 -- "$PACOTE/DEBIAN/control"
 

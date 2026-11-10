@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Ward
+GenericName=Cofre de credenciais
+GenericName[en]=Credential vault
+Comment=Cofre de credenciais de trabalho que o Claude usa sem ver o segredo
+Comment[en]=Work-credential vault that AI agents use without seeing the secret
+Exec=/usr/local/bin/ward-app
+Icon=ward
+Terminal=false
+Categories=Utility;Security;
+Keywords=senha;password;cofre;vault;credenciais;credentials;ssh;totp;
+StartupWMClass=ward-app

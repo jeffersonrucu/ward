@@ -31,6 +31,22 @@ D 0755 root root     usr/local/lib/systemd
 D 0755 root root     usr/local/lib/systemd/system
 D 0755 root root     usr/local/lib/tmpfiles.d
 D 0755 root root     usr/local/share
+D 0755 root root     usr/local/share/applications
+D 0755 root root     usr/local/share/metainfo
+D 0755 root root     usr/local/share/icons
+D 0755 root root     usr/local/share/icons/hicolor
+D 0755 root root     usr/local/share/icons/hicolor/48x48
+D 0755 root root     usr/local/share/icons/hicolor/48x48/apps
+D 0755 root root     usr/local/share/icons/hicolor/64x64
+D 0755 root root     usr/local/share/icons/hicolor/64x64/apps
+D 0755 root root     usr/local/share/icons/hicolor/128x128
+D 0755 root root     usr/local/share/icons/hicolor/128x128/apps
+D 0755 root root     usr/local/share/icons/hicolor/256x256
+D 0755 root root     usr/local/share/icons/hicolor/256x256/apps
+D 0755 root root     usr/local/share/icons/hicolor/512x512
+D 0755 root root     usr/local/share/icons/hicolor/512x512/apps
+D 0755 root root     usr/local/share/icons/hicolor/scalable
+D 0755 root root     usr/local/share/icons/hicolor/scalable/apps
 d 0755 root root     usr/local/lib/ward
 d 0755 root root     usr/local/share/ward
 d 0755 root root     usr/local/share/ward/extensao
@@ -59,3 +75,11 @@ f 0644 root root     etc/opt/chrome/policies/managed/ward.json              ger:
 f 0644 root root     etc/apport/report-ignore/ward                          ger:apport
 f 0644 root root     etc/apport/blacklist.d/ward                            ger:apport
 f 0644 root root     etc/systemd/coredump.conf.d/ward.conf                  src:instalacao/coredump.conf.d/ward.conf
+f 0644 root root     usr/local/share/applications/local.ward.app.desktop    src:instalacao/desktop/local.ward.app.desktop
+f 0644 root root     usr/local/share/metainfo/local.ward.app.metainfo.xml   src:instalacao/desktop/local.ward.app.metainfo.xml
+f 0644 root root     usr/local/share/icons/hicolor/48x48/apps/ward.png      src:docs/design/logo/ward-icone-app-48.png
+f 0644 root root     usr/local/share/icons/hicolor/64x64/apps/ward.png      src:docs/design/logo/ward-icone-app-64.png
+f 0644 root root     usr/local/share/icons/hicolor/128x128/apps/ward.png    src:docs/design/logo/ward-icone-app-128.png
+f 0644 root root     usr/local/share/icons/hicolor/256x256/apps/ward.png    src:docs/design/logo/ward-icone-app-256.png
+f 0644 root root     usr/local/share/icons/hicolor/512x512/apps/ward.png    src:docs/design/logo/ward-icone-app-512.png
+f 0644 root root     usr/local/share/icons/hicolor/scalable/apps/ward.svg   src:docs/design/logo/ward-icone-app.svg

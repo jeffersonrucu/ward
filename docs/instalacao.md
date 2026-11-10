@@ -107,7 +107,7 @@ staging, tudo root/root, nenhum bit setgid no pacote e Depends com `sshpass` (V9
 sudo install -d -m 0700 -o root -g root /root/ward
 sudo install -m 0644 -o root -g root target/deb/ward_*.deb /root/ward/
 sudo sha256sum /root/ward/ward_*.deb                           # o mesmo que o make deb imprimiu
-sudo dpkg-deb -c /root/ward/ward_*.deb                         # 28 caminhos, root/root, sem 's'
+sudo dpkg-deb -c /root/ward/ward_*.deb                         # 60 caminhos, root/root, sem 's'
 sudo dpkg-deb -f /root/ward/ward_*.deb Depends                 # sshpass, openssh-client, systemd, libwebkit2gtk-4.1-0
 sudo dpkg-deb -I /root/ward/ward_*.deb preinst | less          # leia os scripts antes de rodar
 sudo apt install /root/ward/ward_*.deb                         # ou: sudo dpkg -i (sem resolver dependências)

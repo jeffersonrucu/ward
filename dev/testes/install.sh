@@ -384,6 +384,11 @@ install -m 0644 "$RAIZ/instalacao/grupos.sh" "$RAIZ/instalacao/chrome.sh" "$RAIZ
 install -m 0644 "$RAIZ/instalacao/coredump.conf.d/ward.conf" "$C/repo/instalacao/coredump.conf.d/"
 install -m 0644 "$RAIZ/instalacao/systemd/wardd@.socket" "$RAIZ/instalacao/systemd/wardd@.service" "$C/repo/instalacao/systemd/"
 install -m 0644 "$RAIZ/instalacao/tmpfiles.d/ward.conf" "$C/repo/instalacao/tmpfiles.d/"
+mkdir -m 0755 "$C/repo/instalacao/desktop" "$C/repo/docs" "$C/repo/docs/design" "$C/repo/docs/design/logo"
+install -m 0644 "$RAIZ/instalacao/desktop/local.ward.app.desktop" "$RAIZ/instalacao/desktop/local.ward.app.metainfo.xml" \
+    "$C/repo/instalacao/desktop/"
+install -m 0644 "$RAIZ"/docs/design/logo/ward-icone-app-{48,64,128,256,512}.png "$RAIZ/docs/design/logo/ward-icone-app.svg" \
+    "$C/repo/docs/design/logo/"
 install -m 0755 "$WARD" "$C/bin/ward"
 install -m 0755 "$WARDD" "$C/bin/wardd"
 install -m 0755 "$NM" "$C/bin/ward-nm"
