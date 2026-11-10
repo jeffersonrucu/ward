@@ -1281,7 +1281,7 @@ recusadas e o aprovador de teste não existe sem `modo-teste`. As políticas apa
 `chrome://policy`. Passaram, todos com 0: `make check`, `app-check`,
 `teste-sem-modo-teste`, `teste-playwright`, `teste-login`, `teste-extensao`,
 `teste-politica-chrome`, `teste-install` e `teste-deb`. Médio e baixos foram para a 44e.
-- [ ] Fase 44e — App alinhado à 44d (`JanelaAprovacao.svelte`, `aprovacao.js`):
+- [x] Fase 44e — App alinhado à 44d (`JanelaAprovacao.svelte`, `aprovacao.js`):
   - `origemDestaque` com `tipo="aviso"`;
   - `prodDestaque` na confirmação com "Credencial de produção. Confira a origem com
     atenção antes de confirmar.";
@@ -1298,6 +1298,19 @@ recusadas e o aprovador de teste não existe sem `modo-teste`. As políticas apa
     fd.
   - **Baixo:** o `teste-politica-chrome` lê o `chrome://policy` em tempo de execução, e o
     `c44_popup_*` inclui o falso `[::1]`.
+  Feita (2026-11-09):
+  - As três telas batem com `22733`/`22817`/`22882` pela ponte, sem diferença.
+  - `origem_local_da_url` (`localhost`, `*.localhost`, `127/8`, `0/8`, `[::1]`, `[::]`,
+    IPv4 mapeado) pede confirmação em qualquer esquema.
+  - `apagar_sessoes` trabalha pelo fd.
+  - A rodada 2b do `teste-politica-chrome` lê o `chrome://policy`.
+  - Popup contra o `[::1]`: o falso recebe 0 bytes.
+  - `make check`, `app-check`, `teste-extensao`, `teste-login`, `teste-playwright` (com o
+    Playwright do Python) e `teste-politica-chrome` deram 0.
+  Pendências:
+  - prod com aprovação e origem local ainda diz "confira o comando" (sem frame);
+  - falta decidir o rótulo "confirmar a origem" do nível;
+  - um domínio público que resolve para 127.0.0.1 não é pego (está no D9).
 - [x] Fase 44b — (juntada à 44c) Baixos do scrutiny do M6, sem bloquear:
   - o passo 1.2 do roteiro do M6 cita a mensagem "negado"; conferir a mensagem real do
     `ward login` negado;
