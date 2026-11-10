@@ -1,0 +1,24 @@
+{
+ "explicacao": {
+  "fontSize": "14px",
+  "lineHeight": "20px",
+  "fontFamily": "Inter, system-ui, sans-serif",
+  "fontWeight": "400",
+  "color": "rgb(154, 161, 174)",
+  "width": 430,
+  "height": 40,
+  "x": 425,
+  "y": 170
+ },
+ "aviso": {
+  "fontSize": "14px",
+  "lineHeight": "20px",
+  "fontFamily": "Inter, system-ui, sans-serif",
+  "fontWeight": "400",
+  "color": "rgb(245, 181, 68)",
+  "width": 430,
+  "height": 60,
+  "x": 425,
+  "y": 226
+ }
+}

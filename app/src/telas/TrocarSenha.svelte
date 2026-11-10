@@ -175,13 +175,13 @@
     margin: var(--espaco-0);
   }
   .explicacao {
-    font-size: var(--tamanho-sm);
-    line-height: var(--altura-linha-sm);
+    font-size: var(--tamanho-base);
+    line-height: var(--altura-linha-base);
     color: var(--cor-texto-secundario);
   }
   .aviso {
-    font-size: var(--tamanho-sm);
-    line-height: var(--altura-linha-sm);
+    font-size: var(--tamanho-base);
+    line-height: var(--altura-linha-base);
     color: var(--cor-aviso-texto);
   }
   .falha {

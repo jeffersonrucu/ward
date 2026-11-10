@@ -1703,11 +1703,19 @@ seis baixos.
     (`docs/mission/evidence/fase-54/trocar-senha-aviso.png`).
   Feita (2026-11-10): explicação `19924` igual à do app e aviso `22962` (`aviso/texto`);
   herdado na tela `20085` (`22963`). Ids em `design-nodes.md` › "Fase 54d".
-- [ ] Fase 54e — Tamanho dos textos da troca de senha (achado da 54d): o design usa 14/20
+- [x] Fase 54e — Tamanho dos textos da troca de senha (achado da 54d): o design usa 14/20
   (`8:12`) na explicação e no aviso; o `TrocarSenha.svelte` usa 13/18. O app passa a
-  `--tamanho-md` com altura de linha 20 nos dois, conferido no Chrome headless contra o
-  frame `20085`.
+  14/20 (`--tamanho-base`/`--altura-linha-base`; o `--tamanho-md` é 16/24) nos dois,
+  conferido no Chrome headless contra o frame `20085`.
+  Feita (2026-11-10): 14/20, 430×40 e 430×60, quebras iguais ao frame; `make app-front` 0.
 - [ ] Fase 54f (DESIGN) — Aprovação com entrada padrão oculta (achado da 54b): frame
   `Aprovação / entrada padrão` no FigCraft com o `Destaque` aviso e o `Interruptor` da
   confirmação, desmarcado e marcado, igual a `docs/mission/evidence/fase-54b/`;
   `docs/escopo.md` › "Janela de aprovação" passa a citar o aviso e a confirmação.
+- [ ] Fase 54g — RA11 aceito (decisão do usuário, 2026-11-10: "Aceitar como risco"): o
+  tipo `terminal` declarado pela CLI do mesmo uid (cliente que mente no socket, pty próprio
+  do agente) entra em `docs/escopo.md` › "Fora do modelo de ameaça", com o que a 54b fecha
+  (pipe, arquivo, erro honesto); RA11 no PRD sai de "proposta". Rodar depois da 54c e 54f.
+- [ ] Fase 54h — `Modal` contra o design (achado da 54e, já existia): o "X" de fechar do
+  cabeçalho e o corpo 3 px acima (y 170 contra 173) no diálogo de troca; conferir no Chrome
+  headless contra o frame `20085`.
