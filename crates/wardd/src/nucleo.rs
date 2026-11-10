@@ -51,7 +51,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender, TrySendError};
-use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, Weak};
 use std::time::{Duration, SystemTime};
 
 use zeroize::Zeroizing;
@@ -73,6 +73,7 @@ use crate::aprovacao::{Cliente, Motor, SemCliente};
 use crate::arquivos::{self, ArquivoEstado, Geracoes, Identidade};
 use crate::externo::{self, Copia, ErroExterno, FontePendrives};
 use crate::{aviso, depurar};
+use ward_plataforma::filho::Grupo;
 
 /// Erros de PIN seguidos que travam o cofre (S9).
 pub const MAX_ERROS_PIN: u32 = 5;
@@ -164,12 +165,57 @@ pub(crate) struct Estado {
     travas: Arc<AtomicU64>,
     /// `<rt>` (Fase 44, D6): ao travar, os storage states do `ward playwright` somem.
     rt_playwright: Option<PathBuf>,
+    /// Grupos dos `ward run` em curso (Fase 54, S8): a trava os mata, como o agente SSH
+    /// e a ponte.
+    sessoes_run: Arc<SessoesRun>,
+}
+
+/// Os grupos de processos dos `ward run` em curso (Fase 54, S8). O comando recebeu o
+/// segredo no ambiente (ou num anexo): travar o cofre mata o grupo dele, para o
+/// segredo não seguir em uso depois da trava. O mutex daqui também ordena a contagem
+/// de travas com o registro: um grupo registrado depois de uma trava que ele não viu
+/// morre no registro.
+#[derive(Default)]
+pub(crate) struct SessoesRun {
+    grupos: Mutex<Vec<Weak<Grupo>>>,
+}
+
+impl SessoesRun {
+    /// Registra o grupo de um `ward run` autorizado com a contagem de travas em
+    /// `inicial`. Se o cofre travou desde então, mata o grupo já e devolve `false`.
+    pub(crate) fn registrar(&self, grupo: &Arc<Grupo>, travas: &AtomicU64, inicial: u64) -> bool {
+        let mut v = self.grupos.lock().unwrap_or_else(|e| e.into_inner());
+        v.retain(|w| w.strong_count() > 0);
+        if travas.load(Ordering::Acquire) != inicial {
+            grupo.matar();
+            return false;
+        }
+        v.push(Arc::downgrade(grupo));
+        true
+    }
+
+    /// Conta a trava e mata os grupos registrados (`SIGKILL` no grupo inteiro; o
+    /// grupo já colhido não leva `kill`).
+    fn travar(&self, travas: &AtomicU64) -> usize {
+        let mut v = self.grupos.lock().unwrap_or_else(|e| e.into_inner());
+        travas.fetch_add(1, Ordering::AcqRel);
+        let vivos: Vec<Arc<Grupo>> = v.drain(..).filter_map(|w| w.upgrade()).collect();
+        drop(v);
+        for g in &vivos {
+            g.matar();
+        }
+        vivos.len()
+    }
 }
 
 impl Estado {
     pub(crate) fn travar(&mut self) {
         if let Some(a) = self.aberto.take() {
-            self.travas.fetch_add(1, Ordering::AcqRel);
+            // Fase 54 (S8): os `ward run` em curso morrem junto com a trava.
+            let mortos = self.sessoes_run.travar(&self.travas);
+            if mortos > 0 {
+                aviso!("{mortos} ward run encerrado(s) ao travar (S8)");
+            }
             self.identidade_conhecida = a.identidade;
             // `CofreAberto` e `Entrada` zeram ao sair (chave de dados, hash, segredos).
             drop(a);
@@ -472,6 +518,7 @@ impl Daemon {
                 primeira_do_agente: true,
                 travas: Arc::new(AtomicU64::new(0)),
                 rt_playwright: None,
+                sessoes_run: Arc::default(),
             }),
             vez_agente: Mutex::new(()),
             vez_app: Mutex::new(()),
@@ -540,7 +587,13 @@ impl Daemon {
         let vistos = fonte.pendrives().ok_or(ErroExterno::SemUdisks)?;
         let visto = externo::escolher(&vistos, &uuid)?.clone();
         let local = abrir_pasta(&self.caminhos).ok_or(ErroExterno::SemBackupLocal)?;
-        externo::copiar(&local, &visto, &uuid, fonte).map(Some)
+        // Fase 54: só versões seladas pela chave do cofre aberto vão (travado no meio:
+        // nenhuma). O estado fica preso só durante a conferência de cada versão.
+        let geracao = |b: &[u8]| {
+            let est = self.estado();
+            backup::geracao_selada(&est.aberto.as_ref()?.cofre, b)
+        };
+        externo::copiar(&local, &visto, &uuid, fonte, &geracao).map(Some)
     }
 
     /// Troca os programas do `ward ssh` (Fase 27). Só os testes do crate chamam (com
@@ -610,6 +663,11 @@ impl Daemon {
     /// D12): o agente SSH de uma sessão some quando o número muda.
     pub(crate) fn travas_agora(&self, est: &Estado) -> (Arc<AtomicU64>, u64) {
         (est.travas.clone(), est.travas.load(Ordering::Acquire))
+    }
+
+    /// Os `ward run` em curso (Fase 54, S8), para registrar o grupo de uma sessão.
+    pub(crate) fn sessoes_run(&self, est: &Estado) -> Arc<SessoesRun> {
+        est.sessoes_run.clone()
     }
 
     /// Liga o `<rt>` dos temporários do `ward run` (Fase 26, S2): `<rt>tmp/`.
@@ -713,7 +771,7 @@ impl Daemon {
             return Resposta::Erro(ErroResposta::NaoAutorizado);
         }
         let r = self.atender_permitido(cliente, papel, pedido);
-        if crate::trava::conta_como_uso(op, &r) {
+        if crate::trava::conta_como_uso(papel, op, &r) {
             self.registrar_uso();
         }
         if muda_o_externo(op) && !matches!(r, Resposta::Erro(_)) {

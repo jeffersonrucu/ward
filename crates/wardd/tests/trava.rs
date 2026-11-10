@@ -102,8 +102,9 @@ fn cofre_com_relogio(dir: &Dir) -> (Daemon, RelogioManual) {
     (d, r)
 }
 
+/// Uma ação do app (a lista da tela Credenciais): conta como uso (Fase 54).
 fn lista_ok(d: &Daemon) {
-    let r = pedir(d, Papel::Agente, "lista", "{}");
+    let r = pedir(d, Papel::App, "lista", "{}");
     assert!(matches!(r, Resposta::Lista(_)), "{r:?}");
 }
 
@@ -206,6 +207,44 @@ fn ataque_agente_nao_segura_o_cofre_aberto_com_estado_ou_erro() {
     );
 }
 
+/// Fase 54 (auditoria final): o agente que roda `ward lista` a cada 10 min (e a
+/// extensão que sugere a cada página) não adia a trava; a 4h00 o cofre trava. Uma ação
+/// do app, sim, zera a contagem.
+#[test]
+fn ataque_lista_periodica_do_agente_nao_adia_a_trava() {
+    let dir = Dir::novo("lista54");
+    let (d, r) = cofre_com_relogio(&dir);
+    let mut t = 0;
+    while t < 4 * H {
+        r.por(t);
+        let l = pedir(&d, Papel::Agente, "lista", "{}");
+        assert!(matches!(l, Resposta::Lista(_)), "{l:?}");
+        let s = pedir(
+            &d,
+            Papel::Extensao,
+            "sugerir",
+            r#"{"origem":"https://wp.acme.test"}"#,
+        );
+        assert!(!matches!(s, Resposta::Erro(ErroResposta::Travado)), "{s:?}");
+        assert!(!d.travar_se_inativo(), "t = {t}");
+        t += 600;
+    }
+    r.por(4 * H);
+    assert!(
+        d.travar_se_inativo(),
+        "a lista do agente e o sugerir seguraram o cofre aberto"
+    );
+
+    // Controle: com uma ação do app às 3h, a 4h00 não trava.
+    let t0 = 10 * H;
+    r.por(t0);
+    assert!(ok(&destravar(&d, SENHA)));
+    r.por(t0 + 3 * H);
+    lista_ok(&d);
+    r.por(t0 + 4 * H);
+    assert!(!d.travar_se_inativo(), "a ação do app zerou");
+}
+
 fn executar(entrada: &str) -> String {
     format!(
         r#"{{"entrada":"{entrada}","argv":["{}"],"cwd":"{}","ambiente":[]}}"#,
@@ -258,7 +297,7 @@ fn ataque_relogio_que_volta_ou_ilegivel_trava() {
     r.por(6 * H);
     assert!(ok(&destravar(&d, SENHA)));
     r.ilegivel();
-    let _ = pedir(&d, Papel::Agente, "lista", "{}");
+    let _ = pedir(&d, Papel::App, "lista", "{}");
     r.por(6 * H + 1);
     assert!(d.travar_se_inativo());
 }

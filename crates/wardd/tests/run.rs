@@ -848,3 +848,74 @@ fn f28g_ataque_write_unico_grande_nao_mostra_o_comeco_da_senha() {
     let log = fs::read(&w.log).unwrap();
     assert!(!contem(&log, SENHA_LIVRE.as_bytes()));
 }
+
+/// Fase 54 (S8), ataque da auditoria final: o comando do `ward run` recebeu a senha no
+/// ambiente e espera a trava para usá-la (`sleep; printenv … > arquivo`, fora da
+/// máscara). Travar no meio mata o grupo inteiro (o `sh` e o neto): o arquivo nunca
+/// nasce, a sessão termina com 137 e o aviso, o anexo some. Um `ward run` depois da
+/// trava espera o destravar, como o V4.21.
+#[test]
+fn f54_ataque_ward_run_morre_na_trava() {
+    let dev = Dir::novo("run-54");
+    cofre(&dev);
+    let sock = DirSocket::novo("54");
+    let w = subir(&dev, &sock);
+    destravar_por(&w);
+    let marca = dev.0.join("marca-f54");
+    let neto = dev.0.join("marca-f54-neto");
+    let script = format!(
+        "echo $$; (sleep 4; printenv WARD_PASS > '{n}') & sleep 4; printenv WARD_PASS > '{m}'; wait",
+        n = neto.display(),
+        m = marca.display()
+    );
+    let mut s = conectar(&w);
+    mandar(&mut s, &pedido_executar("t-livre", &sh(&script), &[]));
+    entrada_padrao(&mut s, b"");
+    let pid: u32 = match receber(&mut s) {
+        Some(Resposta::Saida { dados, .. }) => texto(&dados).trim().parse().unwrap(),
+        r => panic!("{r:?}"),
+    };
+    assert!(vivo(pid));
+    let antes = Instant::now();
+    let mut t = conectar(&w);
+    mandar(&mut t, r#"{"v":1,"op":"travar","dados":{}}"#);
+    assert!(matches!(receber(&mut t), Some(Resposta::Ok)));
+    let r = ler_sessao(&mut s);
+    assert!(
+        antes.elapsed() < Duration::from_secs(3),
+        "a sessão só acabou com o fim do comando"
+    );
+    assert_eq!(r.fim, Some(137), "{r:?}");
+    assert!(
+        texto(&r.erro).contains("o cofre travou"),
+        "sem o aviso: {r:?}"
+    );
+    assert!(!vivo(pid));
+    // Depois do prazo do `sleep`, nada escreveu a senha.
+    std::thread::sleep(Duration::from_secs(5));
+    assert!(!marca.exists(), "o comando usou a senha depois da trava");
+    assert!(!neto.exists(), "o neto usou a senha depois da trava");
+    assert!(tmp_vazio(&sock));
+
+    // Travado, um `ward run` novo não roda até destravar (V4.21): solto pelo destravar,
+    // e uma trava antes do lançamento também o pega (o registro confere a contagem).
+    let mut s = conectar(&w);
+    mandar(
+        &mut s,
+        &pedido_executar("t-livre", &sh("printf %s \"$WARD_PASS\" | wc -c"), &[]),
+    );
+    entrada_padrao(&mut s, b"");
+    std::thread::sleep(Duration::from_millis(500));
+    destravar_por(&w);
+    let r = ler_sessao(&mut s);
+    assert_eq!(r.fim, Some(0), "{r:?}");
+    assert_eq!(texto(&r.saida).trim(), SENHA_LIVRE.len().to_string());
+
+    // Um `ward run` que termina antes da trava não leva aviso nem muda de código.
+    let r = run(&w, "t-livre", &sh("exit 3"), &[]);
+    assert_eq!(r.fim, Some(3), "{r:?}");
+    assert!(r.erro.is_empty(), "{r:?}");
+    let log = fs::read(&w.log).unwrap();
+    assert!(!contem(&log, SENHA_LIVRE.as_bytes()));
+    assert!(contem(&log, "encerrado(s) ao travar".as_bytes()));
+}

@@ -503,6 +503,92 @@ fn ataque_versoes_com_data_futura_no_pendrive_nao_apagam_as_reais() {
     );
 }
 
+/// Fase 54 (baixo da auditoria final): lixo plantado no backup local (cabeçalho válido
+/// com o corpo trocado, versão de outro cofre e a cópia de uma versão antiga real com
+/// nome novo), com datas mais novas que as reais, não vai para o pendrive e não faz a
+/// rotação de lá apagar nada. Uma gravação real depois vai, sozinha.
+#[test]
+fn ataque_lixo_no_backup_local_nao_gira_o_pendrive() {
+    let dir = Dir::novo("ext-lixo");
+    let (d, _) = cofre_de_teste(&dir);
+    assert!(ok(&ligar(&d, Papel::App, UUID_A)));
+    let a = montagem(&dir, "pendrive-a");
+    let destino = pasta_externa(&a);
+    fs::create_dir(&destino).unwrap();
+    // O pendrive já cheio: as reais de agora mais antigas de 2020 até `VERSOES`.
+    let fonte = Fonte::com(vec![pendrive(UUID_A, &a)]);
+    let reais = locais(&dir);
+    for i in 0..(VERSOES - reais.len()) as u32 {
+        fs::write(
+            destino.join(format!("ward-20200101-{:06}.ward", i * 100)),
+            b"antiga",
+        )
+        .unwrap();
+    }
+    let c = d.sincronizar_externo(&fonte).unwrap().unwrap();
+    assert_eq!(c.copiadas.len(), reais.len());
+    assert_eq!(c.apagadas, 0);
+    let antes = arvore(&a);
+    assert_eq!(no_pendrive(&a).len(), VERSOES);
+
+    // O atacante (mesmo uid) planta na pasta local, com data mais nova que as reais.
+    std::thread::sleep(Duration::from_millis(1100));
+    let base = ward_core::backup::Versao::do_instante(std::time::SystemTime::now())
+        .unwrap()
+        .nome();
+    let nome = |i: usize| base.replace(".ward", &format!("-{i}.ward"));
+    let backups = dir.0.join("backups");
+    let real = fs::read(backups.join(&reais[0])).unwrap();
+    let outro = Dir::novo("ext-lixo-outro");
+    let _ = cofre_de_teste(&outro);
+    let de_outro = fs::read(outro.0.join("backups").join(&locais(&outro)[0])).unwrap();
+    let antiga = fs::read(backups.join(reais.last().unwrap())).unwrap();
+    let mut plantados = Vec::new();
+    for i in 1..=VERSOES + 5 {
+        let conteudo = match i % 3 {
+            0 => {
+                // Cabeçalho válido, corpo trocado.
+                let mut b = real.clone();
+                let n = b.len();
+                b[n - 1 - i] ^= 0x5a;
+                b
+            }
+            1 => de_outro.clone(),
+            _ => antiga.clone(),
+        };
+        assert!(ward_core::formato::ler_cabecalho(&conteudo).is_ok());
+        let p = backups.join(nome(i));
+        fs::write(&p, &conteudo).unwrap();
+        fs::set_permissions(&p, fs::Permissions::from_mode(0o600)).unwrap();
+        plantados.push(nome(i));
+    }
+    assert!(ward_core::backup::nome_valido(&plantados[0]));
+    let c = d.sincronizar_externo(&fonte).unwrap().unwrap();
+    assert!(c.copiadas.is_empty(), "{:?}", c.copiadas);
+    assert_eq!(c.apagadas, 0, "o lixo girou o pendrive");
+    assert_eq!(arvore(&a), antes, "o pendrive mudou");
+
+    // Uma gravação real: só ela vai, mesmo com o lixo mais novo em volta.
+    std::thread::sleep(Duration::from_millis(1100));
+    let r = pedir(
+        &d,
+        Papel::App,
+        "salvar_entrada",
+        &login("t-lixo", SEGREDOS[3]),
+    );
+    assert!(ok(&r), "{r:?}");
+    let c = d.sincronizar_externo(&fonte).unwrap().unwrap();
+    assert_eq!(c.copiadas.len(), 1, "{:?}", c.copiadas);
+    assert!(!plantados.contains(&c.copiadas[0].nome()));
+    assert_eq!(c.apagadas, 1);
+    for n in no_pendrive(&a) {
+        assert!(!plantados.contains(&n), "{n} plantado foi para o pendrive");
+    }
+    for n in &reais {
+        assert!(no_pendrive(&a).contains(n), "{n} real sumiu do pendrive");
+    }
+}
+
 /// Travado ou desligado depois de ligado: nada é consultado nem gravado. Desligar não
 /// apaga o que já está no pendrive.
 #[test]

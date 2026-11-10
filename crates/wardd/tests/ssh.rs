@@ -1364,7 +1364,7 @@ for i in range(2):
 }
 
 /// Fase 28 (D12 + D19): travar o cofre durante o `ward run` com túnel faz a ponte parar
-/// de aceitar conexões novas.
+/// de aceitar conexões novas; desde a Fase 54 (S8), o próprio comando morre (137).
 #[test]
 fn fase28_travar_fecha_o_tunel_para_conexoes_novas() {
     let c = cena("tuneltrava");
@@ -1411,7 +1411,8 @@ except OSError as e:
         },
         true,
     );
-    assert_eq!(r.fim, Some(0), "{r:?}");
+    // Fase 54 (S8): a trava mata o `ward run` inteiro (137), além de fechar a ponte.
+    assert_eq!(r.fim, Some(137), "{r:?}");
     let t = r.texto();
     assert!(
         !t.contains("depois=eco"),

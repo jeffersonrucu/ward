@@ -393,10 +393,12 @@ fn cli_que_cai_mata_o_pedido() {
 #[test]
 fn aguardar_nao_conta_como_uso() {
     assert!(!wardd::trava::conta_como_uso(
+        Papel::Extensao,
         Operacao::AguardarLogin,
         &Resposta::Ok
     ));
     assert!(wardd::trava::conta_como_uso(
+        Papel::Extensao,
         Operacao::PreencherLogin,
         &Resposta::Ok
     ));

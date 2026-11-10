@@ -20,8 +20,9 @@
 //!   nada além deles vai para o pendrive.
 //! - **O que vai.** As versões do backup local (Fase 45, já cifradas com a senha mestra
 //!   de cada versão) que o pendrive ainda não tem, até [`VERSOES`]: só arquivos comuns
-//!   do usuário, com o nome exato e o cabeçalho do formato. Nenhum byte é decifrado ou
-//!   selado aqui.
+//!   do usuário, com o nome exato, o cabeçalho do formato e, desde a Fase 54, a geração
+//!   selada pela chave do cofre aberto, fora de ordem não. O daemon confere a geração
+//!   (decifra e zera); nada é selado aqui e os bytes copiados são os do arquivo.
 //! - **Sem `link(2)`** (o vfat não tem): temporário `O_EXCL` 0600 → fsync →
 //!   `renameat2(RENAME_NOREPLACE)` para o nome final ([`renomear_sem_sobrescrever`]) →
 //!   fsync da pasta. Uma versão que já está no pendrive nunca é sobrescrita; uma
@@ -48,7 +49,7 @@
 use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::os::fd::{AsFd, AsRawFd};
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
@@ -221,6 +222,45 @@ fn versoes_em(dir: &Path) -> Result<Vec<Versao>, ErroExterno> {
     Ok(v)
 }
 
+/// As gerações seladas pela chave do cofre aberto das versões que já estão no pendrive
+/// (Fase 54): uma versão local com uma delas é cópia de uma que já foi (com outro
+/// nome) e não vai de novo. Arquivo que não abre (lixo, outro cofre, link, FIFO,
+/// grande demais) só fica de fora.
+fn geracoes_em(
+    dir: &Path,
+    versoes: &BTreeSet<Versao>,
+    geracao: &dyn Fn(&[u8]) -> Option<u64>,
+) -> BTreeSet<u64> {
+    let mut g = BTreeSet::new();
+    for v in versoes {
+        let Ok(f) = OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC)
+            .open(dir.join(v.nome()))
+        else {
+            continue;
+        };
+        let comum = f
+            .metadata()
+            .is_ok_and(|m| m.file_type().is_file() && m.len() <= arquivos::MAX_ARQUIVO_COFRE);
+        if !comum {
+            continue;
+        }
+        let mut bytes = Vec::new();
+        if (&f)
+            .take(arquivos::MAX_ARQUIVO_COFRE + 1)
+            .read_to_end(&mut bytes)
+            .is_err()
+        {
+            continue;
+        }
+        if let Some(n) = geracao(&bytes) {
+            g.insert(n);
+        }
+    }
+    g
+}
+
 /// Apaga os temporários de uma cópia interrompida (só arquivos comuns com o prefixo).
 fn limpar_temporarios(dir: &Path) {
     let Ok(itens) = fs::read_dir(dir) else {
@@ -299,11 +339,19 @@ fn rodar(destino: &File, novas: &[Versao], teto: Versao) -> Result<usize, ErroEx
 
 /// Copia para o pendrive `visto` (o do `uuid`) as versões do backup local que ele ainda
 /// não tem, e gira para [`VERSOES`]. Nada é sobrescrito.
+///
+/// Fase 54 (auditoria final): só vão as versões que `geracao` reconhece (a geração
+/// selada pela chave do cofre aberto, [`ward_core::backup::geracao_selada`]) e que não
+/// estão fora de ordem ([`ward_core::backup::fora_de_ordem`]). Lixo com cabeçalho válido
+/// ou a cópia de uma versão antiga com nome novo, plantados na pasta local, não vão
+/// para o pendrive e, por isso, não fazem a rotação apagar as cópias reais de lá. Sem
+/// cofre aberto (`geracao` devolve `None` para tudo), nada é copiado.
 pub fn copiar(
     local: &PastaAberta,
     visto: &Visto,
     uuid: &str,
     fonte: &dyn FontePendrives,
+    geracao: &dyn Fn(&[u8]) -> Option<u64>,
 ) -> Result<Copia, ErroExterno> {
     let agora = SystemTime::now();
     let teto = Versao::do_instante(agora)
@@ -320,11 +368,12 @@ pub fn copiar(
     let locais = pasta
         .listar_ate(agora)
         .map_err(|_| ErroExterno::SemBackupLocal)?;
-    let mut copia = Copia::default();
-    // Da mais antiga para a mais nova, só as `VERSOES` mais novas.
-    for v in locais.into_iter().take(ward_core::backup::VERSOES).rev() {
-        if la.contains(&v) {
-            continue;
+    // As `VERSOES` mais novas que conferem, lidas uma vez (o que é conferido é o que
+    // vai). Lixo plantado não ocupa lugar das reais.
+    let mut autenticas: Vec<(Versao, u64, Vec<u8>)> = Vec::new();
+    for v in locais {
+        if autenticas.len() == ward_core::backup::VERSOES {
+            break;
         }
         // Arquivo comum do usuário, sem link, do tamanho do formato.
         let bytes = match arquivos::ler_cofre(&pasta.caminho(v)) {
@@ -333,6 +382,37 @@ pub fn copiar(
             Ok(None) | Err(_) => continue,
         };
         if formato::ler_cabecalho(&bytes).is_err() {
+            continue;
+        }
+        // Fase 54: selada pela chave do cofre aberto (a AEAD autentica a geração).
+        let Some(g) = geracao(&bytes) else {
+            continue;
+        };
+        autenticas.push((v, g, bytes));
+    }
+    // Uma geração só uma vez (a versão mais antiga com ela é a original; as outras são
+    // cópias com nome novo).
+    let mut primeiras = BTreeSet::new();
+    let autenticas: Vec<(Versao, u64, Vec<u8>)> = {
+        let mut v: Vec<_> = autenticas
+            .into_iter()
+            .rev()
+            .filter(|(_, g, _)| primeiras.insert(*g))
+            .collect();
+        v.reverse();
+        v
+    };
+    let no_pendrive = geracoes_em(&dir, &la, geracao);
+    let marcas = ward_core::backup::fora_de_ordem(
+        &autenticas
+            .iter()
+            .map(|(v, g, _)| (*v, Some(*g)))
+            .collect::<Vec<_>>(),
+    );
+    let mut copia = Copia::default();
+    // Da mais antiga para a mais nova.
+    for ((v, g, bytes), fora) in autenticas.into_iter().zip(marcas).rev() {
+        if fora || la.contains(&v) || no_pendrive.contains(&g) {
             continue;
         }
         if gravar_versao(&destino, v, &bytes).map_err(io)? {

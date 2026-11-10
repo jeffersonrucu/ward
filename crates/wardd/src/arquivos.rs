@@ -21,7 +21,8 @@ pub use ward_core::gravacao::IdentidadeArquivo as Identidade;
 use ward_core::formato;
 
 /// Maior arquivo de cofre que o formato aceita (cabeçalho + conteúdo + tag).
-const MAX_ARQUIVO_COFRE: u64 = (formato::TAM_CABECALHO + formato::MAX_CONTEUDO + 16) as u64;
+pub(crate) const MAX_ARQUIVO_COFRE: u64 =
+    (formato::TAM_CABECALHO + formato::MAX_CONTEUDO + 16) as u64;
 /// Maior arquivo de estado aceito.
 const MAX_ESTADO: u64 = 256;
 /// Primeira linha do arquivo de estado.

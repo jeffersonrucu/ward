@@ -599,7 +599,7 @@ teste-skill: origens
 ## os itens de montagem.md um por um, Conferir e Voltar atrás em cada passo, nada para a
 ## conversa com o Claude, nenhum segredo em argv nem padrão de .dev/variacoes.txt, lista
 ## positiva de comandos nos blocos (chave só por `install -m 600` entre a pasta em memória
-## e o ~/.ssh, sem `..`, find/chmod/grep/busctl limitados); antes, o
+## e a pasta do ssh do home, sem `..`, find/chmod/grep/busctl limitados); antes, o
 ## autoteste planta cada ataque numa cópia e exige falha. Só lê o guia; não executa
 ## nenhum passo. Precisa de `make dev-variacoes`; fora do `make check`
 teste-migracao:

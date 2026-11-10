@@ -140,6 +140,9 @@ for pid, chamada, resumida, resto, ret in linhas:
         # argv pode citar caminhos do repositório; só o binário conta.
         resto = resto.split(',', 1)[0]
     caminhos = caminho_re.findall(resto)[:2]
+    if chamada in ('readlink', 'readlinkat'):
+        # O 2º texto entre aspas é o buffer de saída (o alvo lido), não um caminho aberto.
+        caminhos = caminhos[:1]
     if chamada == 'chdir' and caminhos and ret == 0:
         c = caminhos[0]
         if atual is None and not c.startswith('/'):
@@ -180,7 +183,7 @@ PY
 conferir() { # descrição nome
     local saida
     saida="$(acusados "$TMP/$2.strace")"
-    if [ ! -s "$TMP/$2.strace" ] || ! grep -q 'execve("/usr/bin/\(ssh\|curl\|ssh-keygen\|git\|docker\)"' "$TMP/$2.strace"; then
+    if [ ! -s "$TMP/$2.strace" ] || ! grep -q 'execve("/usr/bin/\(ssh\|curl\|ssh-keygen\|git\|docker\|python3\)"' "$TMP/$2.strace"; then
         falhou "$1: o trace não pegou o cliente"
     elif [ -n "$saida" ]; then
         falhou "$1 abriu caminho fora do permitido:"

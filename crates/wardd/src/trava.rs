@@ -1,11 +1,12 @@
 //! Trava automática (Fase 24, R23, D30): sem uso pelo tempo da configuração do cofre
 //! (padrão 240 min), bloqueio de tela e suspensão.
 //!
-//! - **Inatividade.** Cada uso zera a contagem ([`conta_como_uso`]): toda operação que
-//!   deu certo, menos `estado` (o app e a CLI consultam o estado sem usar o cofre),
+//! - **Inatividade.** Cada uso zera a contagem ([`conta_como_uso`]): entrega de
+//!   credencial (agente e extensão) e ação do app que deu certo, menos `estado`,
 //!   `travar` e `destravar` (o que abre marca o início; com o cofre aberto ele responde
-//!   `ok` sem olhar a senha). Erro não conta: um agente que manda pedidos inválidos ou PIN errado não
-//!   segura o cofre aberto. O relógio é o [`Relogio::agora`](crate::nucleo::Relogio) do
+//!   `ok` sem olhar a senha). Consulta do agente (`lista`) e da extensão (`sugerir`) não
+//!   conta (Fase 54). Erro não conta: um agente que manda pedidos inválidos ou PIN errado
+//!   não segura o cofre aberto. O relógio é o [`Relogio::agora`](crate::nucleo::Relogio) do
 //!   daemon (`CLOCK_BOOTTIME`, injetado nos testes), que anda durante a suspensão. Um
 //!   relógio que não se lê ou que volta trava (falha fechada, [`venceu`]).
 //! - **logind**, no barramento do **sistema** (o `wardd` é serviço do sistema, D46, e
@@ -39,7 +40,7 @@ use std::time::Duration;
 use std::future::poll_fn;
 use std::num::NonZeroUsize;
 use std::pin::Pin;
-use ward_core::protocolo::{Operacao, Resposta};
+use ward_core::protocolo::{Operacao, Papel, Resposta};
 
 use futures_core::Stream;
 use zbus::connection::Builder;
@@ -69,16 +70,35 @@ const IFACE_PROPRIEDADES: &str = "org.freedesktop.DBus.Properties";
 /// Maior caminho aceito para o socket do barramento (o `sun_path` tem 108 bytes).
 const MAX_CAMINHO: usize = 107;
 
-/// Esta resposta a esta operação conta como uso do cofre?
+/// Esta resposta a esta operação, deste papel, conta como uso do cofre?
+///
+/// Fase 54 (auditoria final): só zera a contagem o uso que entrega credencial (o
+/// `ward run`, `ssh`, `login` e `playwright` do agente, que anotam o uso eles mesmos
+/// depois da autorização; o preencher da extensão) ou uma ação do app. Consulta do
+/// agente (`lista` periódica, `abrir_app`) e da extensão (`sugerir`, a cada página;
+/// `aguardar_login`, a cada 25 s) não adia a trava: um agente que só lista não segura
+/// o cofre aberto.
 ///
 /// `destravar` não entra: o destravar que abre o cofre já marca o início da contagem, e
-/// o que chega com o cofre aberto responde `ok` sem olhar a senha.
-pub fn conta_como_uso(op: Operacao, r: &Resposta) -> bool {
-    !matches!(
-        op,
-        // `aguardar_login` (Fase 43): a extensão pergunta sozinha a cada 25 s; não é uso.
-        Operacao::Estado | Operacao::Travar | Operacao::Destravar | Operacao::AguardarLogin
-    ) && !matches!(r, Resposta::Erro(_))
+/// o que chega com o cofre aberto responde `ok` sem olhar a senha. Erro nunca conta.
+pub fn conta_como_uso(papel: Papel, op: Operacao, r: &Resposta) -> bool {
+    if matches!(r, Resposta::Erro(_)) {
+        return false;
+    }
+    match papel {
+        Papel::App => !matches!(
+            op,
+            Operacao::Estado | Operacao::Travar | Operacao::Destravar | Operacao::AbrirApp
+        ),
+        Papel::Agente => matches!(
+            op,
+            Operacao::Executar | Operacao::Ssh | Operacao::Login | Operacao::Playwright
+        ),
+        Papel::Extensao => matches!(
+            op,
+            Operacao::Preencher | Operacao::PreencherLogin | Operacao::SalvarLogin
+        ),
+    }
 }
 
 /// O tempo sem uso venceu? `ultimo`/`agora` são leituras do mesmo relógio monotônico.
@@ -368,18 +388,72 @@ mod testes {
 
     #[test]
     fn estado_travar_e_erro_nao_contam_como_uso() {
-        assert!(!conta_como_uso(Operacao::Estado, &Resposta::Ok));
-        assert!(!conta_como_uso(Operacao::Travar, &Resposta::Ok));
+        let lista = Resposta::Lista(vec![]);
+        for p in [Papel::Agente, Papel::App, Papel::Extensao] {
+            assert!(!conta_como_uso(p, Operacao::Estado, &Resposta::Ok));
+            assert!(!conta_como_uso(p, Operacao::Travar, &Resposta::Ok));
+            assert!(!conta_como_uso(p, Operacao::Destravar, &Resposta::Ok));
+            assert!(!conta_como_uso(p, Operacao::AbrirApp, &Resposta::Ok));
+        }
         assert!(!conta_como_uso(
+            Papel::App,
             Operacao::Lista,
             &Resposta::Erro(ErroResposta::Travado)
         ));
         assert!(!conta_como_uso(
+            Papel::App,
             Operacao::MudarNivel,
             &Resposta::Erro(ErroResposta::PinIncorreto)
         ));
-        assert!(conta_como_uso(Operacao::Lista, &Resposta::Lista(vec![])));
-        assert!(!conta_como_uso(Operacao::Destravar, &Resposta::Ok));
+        assert!(conta_como_uso(Papel::App, Operacao::Lista, &lista));
+        assert!(conta_como_uso(Papel::App, Operacao::Detalhe, &Resposta::Ok));
+    }
+
+    /// Fase 54: consulta do agente e da extensão não adia a trava; entrega, sim.
+    #[test]
+    fn ataque_lista_e_sugerir_nao_contam_como_uso() {
+        let lista = Resposta::Lista(vec![]);
+        assert!(!conta_como_uso(Papel::Agente, Operacao::Lista, &lista));
+        assert!(!conta_como_uso(
+            Papel::Agente,
+            Operacao::EntradaPadrao,
+            &Resposta::Ok
+        ));
+        assert!(!conta_como_uso(
+            Papel::Agente,
+            Operacao::Janela,
+            &Resposta::Ok
+        ));
+        assert!(!conta_como_uso(
+            Papel::Extensao,
+            Operacao::Sugerir,
+            &Resposta::Ok
+        ));
+        assert!(!conta_como_uso(
+            Papel::Extensao,
+            Operacao::AguardarLogin,
+            &Resposta::Ok
+        ));
+        assert!(!conta_como_uso(
+            Papel::Extensao,
+            Operacao::ResultadoLogin,
+            &Resposta::Ok
+        ));
+        assert!(conta_como_uso(
+            Papel::Agente,
+            Operacao::Executar,
+            &Resposta::Ok
+        ));
+        assert!(conta_como_uso(
+            Papel::Extensao,
+            Operacao::Preencher,
+            &Resposta::Ok
+        ));
+        assert!(conta_como_uso(
+            Papel::Extensao,
+            Operacao::PreencherLogin,
+            &Resposta::Ok
+        ));
     }
 
     #[test]

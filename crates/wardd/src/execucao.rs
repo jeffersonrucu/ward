@@ -311,6 +311,22 @@ pub(crate) struct Preparo {
     pub(crate) pty: Option<Janela>,
     /// `ward ssh` com chave: o agente de D12, que só atende o filho.
     pub(crate) agente: Option<AgentePreparado>,
+    /// `ward run` (Fase 54, S8): o grupo do filho morre se o cofre travar.
+    pub(crate) trava: Option<MorreNaTrava>,
+}
+
+/// O registro dos `ward run` em curso e a contagem de travas de quando a sessão foi
+/// autorizada (Fase 54, S8).
+pub(crate) struct MorreNaTrava {
+    pub(crate) sessoes: Arc<crate::nucleo::SessoesRun>,
+    pub(crate) travas: Arc<AtomicU64>,
+    pub(crate) inicial: u64,
+}
+
+impl MorreNaTrava {
+    fn travou(&self) -> bool {
+        self.travas.load(Ordering::Acquire) != self.inicial
+    }
 }
 
 /// O agente SSH da sessão, pronto para receber o pid do filho (D12).
@@ -547,6 +563,12 @@ impl Daemon {
         let a = est.aberto.as_ref().ok_or(ErroResposta::Travado)?;
         // A entrada pode ter mudado durante a aprovação: confere de novo.
         let e = visivel(&a.entradas, &x.entrada).ok_or(ErroResposta::EntradaInexistente)?;
+        let (travas, inicial) = self.travas_agora(&est);
+        let trava = MorreNaTrava {
+            sessoes: self.sessoes_run(&est),
+            travas,
+            inicial,
+        };
         let mut recursos = RecursosRun {
             rt: self.temporarios(),
             temporarios: None,
@@ -595,6 +617,7 @@ impl Daemon {
             ponte,
             pty: None,
             agente: None,
+            trava: Some(trava),
         })
     }
 }
@@ -857,6 +880,7 @@ pub(crate) fn sessao_com(
         ponte,
         pty,
         agente,
+        trava,
     } = preparo;
     let lancado = match pty {
         Some(j) => comando
@@ -914,6 +938,13 @@ pub(crate) fn sessao_com(
         )
     });
     let grupo = Arc::new(grupo);
+    // Fase 54 (S8): a trava mata o grupo do `ward run`; se ela veio entre a autorização
+    // e aqui, o grupo morre já.
+    if let Some(t) = &trava
+        && !t.sessoes.registrar(&grupo, &t.travas, t.inicial)
+    {
+        depurar!("executar: o cofre travou antes do lançamento; pid {pid} encerrado");
+    }
     let mascara = Arc::new(mascara);
     let parar = Arc::new(AtomicBool::new(false));
     let fim = Arc::new(AtomicBool::new(false));
@@ -991,6 +1022,12 @@ pub(crate) fn sessao_com(
     }
     parar.store(true, Ordering::Release);
     drop(pty);
+    if trava.as_ref().is_some_and(MorreNaTrava::travou) {
+        cli.enviar(&Resposta::Saida {
+            fluxo: Fluxo::Erro,
+            dados: Zeroizing::new(b"ward: o cofre travou; o comando foi encerrado\n".to_vec()),
+        });
+    }
     let codigo = match resultado {
         Ok(f) => {
             match f {

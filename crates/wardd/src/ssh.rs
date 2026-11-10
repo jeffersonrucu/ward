@@ -656,6 +656,8 @@ impl Daemon {
                 travas,
                 inicial,
             }),
+            // A sessão SSH aberta não morre na trava (o agente e a ponte, sim: D12).
+            trava: None,
         })
     }
 }

@@ -7,6 +7,9 @@
   // primeiro uso (12 caracteres ou mais; o Rust confere de novo). Os três valores ficam
   // só no estado local deste componente; saem do estado antes da resposta do pedido e
   // ao fechar. Nada vai para armazenamento, URL ou log.
+  //
+  // Fase 54 (auditoria final): aviso de que os backups antigos seguem abrindo com a
+  // senha antiga (cor `aviso/texto`, como a nota do `TrocarPin`).
   import { onDestroy, tick } from 'svelte';
   import Botao from '../lib/componentes/Botao.svelte';
   import CampoSenha from '../lib/componentes/CampoSenha.svelte';
@@ -111,8 +114,11 @@
 <Modal titulo="Trocar senha mestra" {aberto} onfechar={fechar}>
   <form class="corpo" onsubmit={enviar} novalidate data-teste="trocar-senha">
     <p class="explicacao">
-      A senha atual confirma a troca. Depois dela, o cofre só abre com a nova; os backups
-      antigos continuam com a senha que valia quando foram gravados.
+      A senha atual confirma a troca. Depois dela, o cofre só abre com a nova.
+    </p>
+    <p class="aviso" data-teste="trocar-senha-aviso-backups">
+      Os backups antigos, no computador e no pendrive, continuam abrindo com a senha antiga.
+      Se você troca porque a senha antiga vazou, apague esses backups.
     </p>
     <CampoSenha
       rotulo="Senha mestra atual"
@@ -172,6 +178,11 @@
     font-size: var(--tamanho-sm);
     line-height: var(--altura-linha-sm);
     color: var(--cor-texto-secundario);
+  }
+  .aviso {
+    font-size: var(--tamanho-sm);
+    line-height: var(--altura-linha-sm);
+    color: var(--cor-aviso-texto);
   }
   .falha {
     font-size: var(--tamanho-sm);

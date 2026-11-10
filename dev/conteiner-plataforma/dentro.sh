@@ -425,7 +425,12 @@ r="$(como_1000 /opt/google/chrome/chrome /usr/local/bin/ward-nm "$M")"
 confere "D47: ward-nm setgid aberto pelo Chrome instalado recebe o papel extensão" "$(l 1)" '"papel":"extensao"'
 confere "D9: sugerir em localhost:8081 traz acme-wp-dev" "$(l 2)" '"nome":"acme-wp-dev"'
 confere "D9: sugerir em localhost:8081 traz acme-wp-prod" "$(l 2)" '"nome":"acme-wp-prod"'
-confere "D9: preencher acme-wp-dev na origem certa devolve o preenchimento" "$(l 3)" '"tipo":"preenchimento","dados":{"usuario":"wp_admin","senha":"'
+# Fase 54 (44c/44e): http (mesmo em localhost) pede a confirmação da origem na janela de
+# aprovação; aqui ninguém confirma (o host termina o stdin e sai): o pedido é negado e nada
+# sai. O log do daemon tem de mostrar a confirmação pedida (conferido no fim).
+confere "D9/44c: preencher acme-wp-dev em http://localhost:8081 sem confirmar: negado" "$(l 3)" '"codigo":"negado"'
+nao_tem "D9/44c: sem a confirmação, nada de preenchimento" "$(l 3)" '"preenchimento"'
+nao_tem "D9/44c: sem a confirmação, nada de senha" "$(l 3)" '"senha"'
 confere "V6.2: preencher acme-wp-dev em 127.0.0.1:8081 é recusado pelo daemon" "$(l 4)" '"codigo":"origem_diferente"'
 nao_tem "V6.2: a recusa de origem não leva valor" "$(l 4)" '"senha"'
 confere "V6.2: sugerir em 127.0.0.1:8081 não traz acme-wp-*" "$(l 5)" '"itens":[]'
@@ -468,6 +473,7 @@ wait "$SRV40" 2>/dev/null || true
 n="$(grep -c 'falso-' "$LOG40" || true)"
 confere "S13: o log do wardd (RUST_LOG=trace) não tem valor falso do cofre" "falso=$n" "falso=0"
 confere "D9: o daemon registrou a recusa de origem (só o nome da entrada)" "$(grep 'origem diferente' "$LOG40" || true)" "preencher acme-wp-dev recusado: origem diferente"
+confere "D9/44c: o daemon pediu a confirmação da origem local" "$(grep 'confirmação na janela' "$LOG40" || true)" "preencher acme-wp-dev: origem local, confirmação na janela"
 nao_tem "S13: o log não tem a origem pedida" "$(cat "$LOG40")" "127.0.0.1:8081"
 
 echo

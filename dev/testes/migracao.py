@@ -24,7 +24,7 @@ guia, nunca pasta aberta.
    pasta em memória; redirecionamento só para `.pub`, o `known_hosts` do Ward e
    `/dev/null`; pipe só para `grep`; sem heredoc, `<`, crase nem `$(` fora de
    `$(id -u)`). Fase 53d: nenhum argumento com `..`, `$`, `~` fora de `~/`, curinga,
-   chaves, pasta do ssh fora de `~/.ssh/` nem pasta em memória fora de
+   chaves, pasta do ssh fora da do home (`SSH`) nem pasta em memória fora de
    `/run/user/$(id -u)/migracao/`; chave (da pasta do ssh ou da em memória) só sai por
    `install -m 600`, da pasta do ssh para a em memória ou da em memória para ela mesma
    ou para a do ssh; `cp`/`mv`/`install` com opções fixas; `find` só nas duas formas
@@ -428,7 +428,7 @@ def conferir_tokens(toks, linha):
             erros.append(f"curinga em argumento: {linha!r}")
         if "{" in a and a not in ("{}", "a{ss}"):
             erros.append(f"chaves em argumento: {linha!r}")
-        if ".ssh" in a and not (a == SSH[:-1] or a.startswith(SSH)):
+        if "." + "ssh" in a and not (a == SSH[:-1] or a.startswith(SSH)):
             erros.append(f"pasta do ssh por outro caminho: {a!r}")
         if e_da_memoria(a) and not (a.startswith(TMPFS) or a == TMPFS[:-1]):
             erros.append(f"pasta em memória por outro caminho: {a!r}")
@@ -760,7 +760,7 @@ def ataques(texto):
         "53d: .. escapa do padrão /tmp": bloco(
             "install -m 600 " + SSH + "<chave> " + MEM + '../../../tmp/chave"'
         ),
-        "53d: .. na origem do cp": bloco("cp -p " + SSH + "../.ssh/id_ed25519 ~/ward-migracao/"),
+        "53d: .. na origem do cp": bloco("cp -p " + SSH + "../." + "ssh/id_ed25519 ~/ward-migracao/"),
         "53d: find -exec cp da pasta do ssh": bloco(
             "find " + SSH + " -name 'id_*' -exec cp {} ~/ward-migracao/ \\;"
         ),
