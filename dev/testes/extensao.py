@@ -991,6 +991,61 @@ try:
     confere(r.get("id") == ID, f"extensão carregada com o id fixo do manifesto ({ID})", "id_fixo")
     cdp.cmd("Target.setDiscoverTargets", {"discover": True})
 
+    # --- Fase 44e: o popup contra o falso `[::1]` da auditoria do M6 --------------------
+    # Um processo do uid escuta em [::1]:8081 (o WordPress está só em 127.0.0.1:8081) e
+    # o Chrome carrega a página dele com a origem http://localhost:8081, a da entrada.
+    # Negada a confirmação na janela, nada é preenchido e o falso não recebe nada. Fica
+    # antes de toda outra visita a localhost:8081 (as páginas `ward-teste/` acima são
+    # servidas pelo CDP, sem conexão): depois de uma conexão a 127.0.0.1, o Chrome
+    # reaproveita o endereço e nem tenta o [::1].
+    saida_falso = os.path.join(TRAB, "falso-v6.bin")
+    falso = subprocess.Popen(["/usr/bin/python3", "-I", "-B", os.path.join(RAIZ, "dev", "testes", "falso_v6.py"),
+                              "8081", saida_falso], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
+    try:
+        fim = time.time() + 10
+        while time.time() < fim:
+            try:
+                socket.create_connection(("::1", 8081), 1).close()
+                break
+            except OSError:
+                time.sleep(0.1)
+        t, s = abrir_aba("http://localhost:8081/wp-login.php")
+        titulo = avaliar(cdp, s, "document.title", prazo=10)
+        confere(titulo == "falso-v6", f"ataque [::1]: a aba em localhost:8081 caiu no falso de [::1] (título {titulo!r})",
+                "c44_popup_v6_aba_no_falso")
+        modo_janela("negar")
+        vistos = len(pedidos_da_janela())
+        pt, ps = abrir_popup(t)
+        clicar_entrada(ps, "acme-wp-prod")
+        fim = time.time() + 20
+        nota = ""
+        while time.time() < fim and "negado" not in nota:
+            cdp.bombear(0.3)
+            try:
+                nota = avaliar(cdp, ps, "document.querySelector('.nota.erro') ? document.querySelector('.nota.erro').textContent : ''", prazo=5)
+            except (RuntimeError, TimeoutError):
+                nota = ""
+        v = valores(s, ["user_login", "user_pass"])
+        da_janela = pedidos_da_janela()[vistos:]
+        confere(v == {"user_login": "", "user_pass": ""} and "negado" in nota,
+                f"ataque [::1], popup negado na janela: nada preenchido no falso e o popup avisa ({nota!r})",
+                "c44_popup_v6_negado")
+        confere(da_janela == ["pedido operacao=preencher entradas=acme-wp-prod origem=http://localhost:8081 confirmacao=1 decisao=negar"],
+                f"ataque [::1], popup: o pedido mostra a origem e não pede PIN ({da_janela})", "c44_popup_v6_pedido")
+        fechar_popup(pt)
+        try:
+            recebido = os.path.getsize(saida_falso)
+        except FileNotFoundError:
+            recebido = 0
+        confere(recebido == 0, f"ataque [::1], popup: o falso não recebeu nenhum POST ({recebido} bytes)",
+                "c44_popup_v6_falso_vazio")
+        cdp.cmd("Target.closeTarget", {"targetId": t})
+    finally:
+        falso.terminate()
+        falso.wait(timeout=10)
+        modo_janela("confirmar")
+
     # --- V6.7: localhost:8081 ---------------------------------------------------------
     t, s = abrir_aba("http://localhost:8081/wp-login.php")
     pt, ps = abrir_popup(t)

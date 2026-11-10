@@ -330,10 +330,21 @@ ou com nova resposta do usuário.
     mesmo no nível livre. No livre é só a confirmação (`confirmacao: true` no
     `pedido_de_aprovacao`, decisão `confirmar`, sem PIN); em "com aprovação" e
     "sempre PIN", o pedido de sempre, com a origem. Sem o app: "aprovação
-    indisponível". `https` não muda. O Chrome do `ward playwright` roda com
+    indisponível". O Chrome do `ward playwright` roda com
     `--host-resolver-rules="MAP localhost 127.0.0.1"`. O "preencher" do popup em `http`
     é feito pelo service worker (o popup fecha quando a janela pega o foco); o
     `preencher` do papel extensão em `http` sem confirmação não devolve nada.
+  - **Todo host de loopback, em qualquer esquema** (2ª auditoria de segurança do M6,
+    Fase 44e). Com uma CA local (mkcert, ou uma plantada no `~/.pki` por um processo do
+    uid), o processo em `[::1]` passa no TLS de `https://localhost`. Por isso a regra
+    acima vale para toda origem cujo host é desta máquina, em `http` ou `https`
+    (`ward_core::entrada::origem_local_da_url`): `localhost`, `*.localhost`,
+    `127.0.0.0/8`, `0.0.0.0/8`, `[::1]`, `[::]`, `[::ffff:<IPv4 local>]` e
+    `[::127.x.x.x]`. O popup leva ao service worker toda origem `http`, de host
+    `localhost`/`*.localhost`, IPv4 `127.*`/`0.*` ou IPv6 literal (`pedeJanela`, mais
+    larga que a do daemon; o caminho do service worker serve a qualquer origem). Só
+    `https` de um host de fora segue sem janela no nível livre. Um domínio público cujo
+    DNS responde `127.0.0.1` não é pego (sem DNS no parser).
 - D10. **Variáveis de entrega** (`ward run`). Em todo tipo: `WARD_ENTRADA`,
   `WARD_GRUPO`, `WARD_AMBIENTE`. Campos extras viram `WARD_<CAMPO>` e anexos
   `WARD_ARQUIVO_<NOME>` (nome em maiúsculas; o que não for `[A-Z0-9]` vira `_`; nome

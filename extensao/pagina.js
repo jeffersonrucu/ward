@@ -16,6 +16,32 @@
 // descritores de `HTMLFormElement.prototype` e `HTMLInputElement.prototype`), que a
 // página não alcança.
 
+/**
+ * Fase 44e (D9): o preencher desta origem passa pela janela do Ward? Sim em `http`
+ * e em todo host desta máquina em qualquer esquema (`localhost`, `*.localhost`,
+ * `127.x.x.x`, `0.x.x.x` e todo IPv6 literal). Esta não é injetada: só o popup e o
+ * service worker a usam para escolher o caminho. Quem decide é o daemon
+ * (`ward_core::entrada::origem_local_da_url`); aqui a regra é mais larga de propósito:
+ * o caminho do service worker serve a qualquer origem (só espera mais), e o caminho
+ * direto numa origem que o daemon confirma perderia o preenchimento (o popup fecha
+ * quando a janela pega o foco).
+ */
+export function pedeJanela(origem) {
+  let u;
+  try {
+    u = new URL(origem);
+  } catch {
+    return false;
+  }
+  if (u.protocol === 'http:') return true;
+  if (u.protocol !== 'https:') return false;
+  const h = u.hostname;
+  if (h === 'localhost' || h.endsWith('.localhost')) return true;
+  if (h.startsWith('[')) return true;
+  const m = /^([0-9]{1,3})\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$/.exec(h);
+  return m !== null && (m[1] === '127' || m[1] === '0');
+}
+
 /** Sonda o documento do quadro principal: a origem dele e se é mesmo o topo. */
 export function sondar() {
   try {

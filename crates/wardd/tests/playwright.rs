@@ -810,6 +810,45 @@ fn ataque_playwright_http_livre_so_com_confirmacao() {
 }
 
 /// `https` livre segue sem janela nenhuma.
+/// Fase 44e (Médio da 2ª auditoria do M6): `https` num host de loopback pede a
+/// confirmação como o `http` (uma CA local faz o `[::1]` parecer o serviço). Sem app,
+/// negado: o Chrome nem abre.
+#[test]
+fn ataque_playwright_https_loopback_livre_so_com_confirmacao() {
+    let c = cena("https-loopback", "ok");
+    for (i, (url, origem)) in [
+        (
+            "https://localhost:8443/wp-login.php",
+            "https://localhost:8443",
+        ),
+        ("https://[::1]:8443/wp-login.php", "https://[::1]:8443"),
+        ("https://127.0.0.1/wp-login.php", "https://127.0.0.1"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let nome = format!("l-livre-{i}");
+        let q = format!(
+            r#"{{"entrada":{{"nome":"{nome}","grupo":"acme","ambiente":"prod","tipo":"login","campos":{{"url":"{url}","usuario":"wp_editor","senha":"{}"}}}}}}"#,
+            b64(SENHA_LOGIN.as_bytes())
+        );
+        assert!(ok(&pedir(&c.d, Papel::App, "salvar_entrada", &q)), "{url}");
+        assert!(
+            ok(&mudar_nivel(&c.d, Papel::App, &nome, "livre", PIN)),
+            "{url}"
+        );
+        let r = c.playwright(&nome);
+        assert_eq!(erro(&r), Some(ErroResposta::AprovacaoIndisponivel), "{url}");
+        let (r, vistos) = com_janela(&c.d, "negar", None, || c.playwright(&nome));
+        assert_eq!(erro(&r), Some(ErroResposta::Negado), "{url}");
+        assert!(c.eventos("inicio").is_empty(), "o Chrome abriu: {url}");
+        assert!(!c.sessao(&nome).exists(), "{url}");
+        assert_eq!(vistos.len(), 1, "{url}");
+        assert_eq!(vistos[0].origem, origem, "{url}");
+        assert!(vistos[0].confirmacao, "{url}");
+    }
+}
+
 #[test]
 fn playwright_https_livre_sem_janela() {
     let c = cena("https-livre", "ok");

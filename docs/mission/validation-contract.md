@@ -1096,14 +1096,19 @@ O QA usa o Chrome em modo de teste (D7) e confere a aparência contra o frame.
   vista e só "Negar" e "Confirmar a origem" (sem PIN); negado ou sem resposta, nada é
   preenchido e o Chrome do `ward playwright` nem abre; sem o app, "aprovação
   indisponível". Em "com aprovação" o pedido com PIN mostra a origem. `https` livre
-  segue sem janela — cobre S1, S9 (D9, Fase 44c).
+  segue sem janela — cobre S1, S9 (D9, Fase 44c). O mesmo vale para uma entrada
+  `https` de host de loopback (`https://localhost`, `https://127.0.0.1`,
+  `https://[::1]`, `https://*.localhost`): só `https` de um host de fora segue sem
+  janela (Fase 44e).
 - [ ] V6.18 — (SEG) Dado um processo do uid escutando em `[::1]:8081` (o WordPress de
   teste só em `127.0.0.1:8081`; `dev/testes/falso_v6.py`), com a aba de
   `localhost:8081` caída nele, quando `ward login acme-wp-prod` ou
   `ward playwright acme-wp-prod` é negado na janela, então nada é preenchido e o falso
   não recebe nenhum `POST`; o pedido mostra `http://localhost:8081`. Confirmado, o
   Chrome do `ward playwright` (`--host-resolver-rules="MAP localhost 127.0.0.1"`) vai ao
-  WordPress de `127.0.0.1` e o falso continua sem nada — cobre S1 (D9, Fase 44c).
+  WordPress de `127.0.0.1` e o falso continua sem nada — cobre S1 (D9, Fase 44c). O
+  mesmo com o popup: com a aba no falso, clicar em `acme-wp-prod` e negar na janela não
+  preenche nada e o falso não recebe nada (`teste-extensao`, Fase 44e).
 
 ## Milestone 7 — Backup
 
@@ -1174,7 +1179,10 @@ O QA usa o Chrome em modo de teste (D7) e confere a aparência contra o frame.
   A política tem `PasswordManagerEnabled: false` e `PasswordLeakDetectionEnabled:
   false` (Fase 44c): o Chrome não oferece guardar a senha preenchida e a checagem de
   vazamento não roda; outro arquivo de `policies/managed` que cite esses nomes recusa a
-  instalação (`teste-install`, `teste-deb`, `teste-politica-chrome`).
+  instalação (`teste-install`, `teste-deb`, `teste-politica-chrome`). O
+  `teste-politica-chrome` lê a `chrome://policy` do Chrome em execução: com a política,
+  as três (`NativeMessagingUserLevelHosts` também) aparecem `false`, obrigatórias, da
+  máquina e OK; sem ela (controle), "Not set." (Fase 44e).
 - [x] V9.6 — (SEG) O manifesto de native messaging tem `allowed_origins` só com o ID da
   extensão e `path` para `/usr/local/lib/ward/ward-nm`, dono root.
 - [ ] V9.7 — Dado o boot e o login do usuário, então `wardd@<uid>.socket` está ativo,

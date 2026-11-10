@@ -1282,6 +1282,47 @@ pub fn origem_da_url(v: &str) -> Option<String> {
     })
 }
 
+/// Fase 44e (D9, ameaça 4): a origem de uma URL cujo host aponta para esta máquina, em
+/// qualquer esquema, ou `None` (host de fora, ou URL que o parser recusa). Numa origem
+/// local, qualquer processo do uid pode escutar no lugar do serviço esperado (em
+/// `[::1]`, na porta de um serviço parado, ou com um certificado de uma CA local como a
+/// do mkcert ou uma plantada no `~/.pki`); o `https` não prova quem responde. Quem usa
+/// a entrada (o `login`, o `playwright` e o `preencher` do popup) pede a confirmação na
+/// janela antes de mandar usuário e senha.
+pub fn origem_local_da_url(v: &str) -> Option<String> {
+    let origem = origem_da_url(v)?;
+    let (_, resto) = origem.split_once("://")?;
+    let (host, _) = separar_host_porta(resto)?;
+    host_local(host).then_some(origem)
+}
+
+/// O host (já aceito pelo parser estrito) aponta para esta máquina? Na dúvida, sim:
+/// - `localhost` e todo `*.localhost` (o Chrome resolve os dois para o loopback);
+/// - IPv4 `127.0.0.0/8` e `0.0.0.0/8` (o Linux liga `0.0.0.0` à própria máquina);
+/// - IPv6 `::1`, `::`, a forma mapeada (`::ffff:a.b.c.d`) de um IPv4 local e a
+///   compatível (`::127.x.x.x`).
+///
+/// Um domínio público cujo DNS responde `127.0.0.1` não é pego aqui (não há DNS no
+/// parser); fica no "Fora do modelo" do escopo.
+fn host_local(host: &str) -> bool {
+    fn ipv4_local(ip: std::net::Ipv4Addr) -> bool {
+        ip.is_loopback() || ip.octets()[0] == 0
+    }
+    if host == "localhost" || host.ends_with(".localhost") {
+        return true;
+    }
+    if let Some(dentro) = host.strip_prefix('[').and_then(|h| h.strip_suffix(']')) {
+        return dentro.parse::<std::net::Ipv6Addr>().is_ok_and(|ip| {
+            ip.is_loopback()
+                || ip.is_unspecified()
+                || ip.to_ipv4_mapped().is_some_and(ipv4_local)
+                // A forma compatível (`::a.b.c.d`) só no 127/8: `::2` não é `0.0.0.2`.
+                || ip.to_ipv4().is_some_and(|v4| v4.is_loopback())
+        });
+    }
+    host.parse::<std::net::Ipv4Addr>().is_ok_and(ipv4_local)
+}
+
 /// `host` e `porta` (sem os `:`) da autoridade; IPv6 vem com os colchetes.
 pub(crate) fn separar_host_porta(autoridade: &str) -> Option<(&str, Option<&str>)> {
     if autoridade.starts_with('[') {

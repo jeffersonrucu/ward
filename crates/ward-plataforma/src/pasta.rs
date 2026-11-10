@@ -1,4 +1,5 @@
-//! Renomear sem sobrescrever dentro de uma pasta aberta (Fase 46).
+//! Renomear sem sobrescrever dentro de uma pasta aberta (Fase 46) e apagar o que há
+//! numa pasta aberta pelo fd, sem seguir link (Fase 44e).
 //!
 //! O backup externo vai para pendrive, quase sempre vfat, que não tem `link(2)`: o
 //! "temporário → `link` para o nome final" do backup local (Fase 45) não serve lá.
@@ -29,6 +30,47 @@ fn nome_c(nome: &OsStr) -> io::Result<CString> {
 pub fn renomear_sem_sobrescrever(dir: BorrowedFd<'_>, de: &OsStr, para: &OsStr) -> io::Result<()> {
     let (de, para) = (nome_c(de)?, nome_c(para)?);
     sys::renameat_sem_sobrescrever(dir, &de, &para)
+}
+
+/// Mais fundo que isto, [`apagar_conteudo`] para (as pastas do Ward têm um nível).
+const MAX_PROFUNDIDADE: usize = 16;
+
+/// Apaga tudo o que há dentro da pasta aberta em `dir`, pelo fd (`readdir` no fd,
+/// `unlinkat` relativo a ele): nada é resolvido pelo caminho de novo, então trocar a
+/// pasta por um link depois de aberta não leva a apagar outra. Um link dentro dela é
+/// apagado como ele é (o alvo fica); uma subpasta é aberta com
+/// `O_DIRECTORY | O_NOFOLLOW` relativo ao fd e esvaziada do mesmo jeito. Devolve
+/// quantos itens do primeiro nível sumiram; o que falhar fica (e não para os outros).
+pub fn apagar_conteudo(dir: BorrowedFd<'_>) -> usize {
+    apagar_conteudo_em(dir, 0)
+}
+
+fn apagar_conteudo_em(dir: BorrowedFd<'_>, profundidade: usize) -> usize {
+    let Ok(nomes) = sys::listar_pasta(dir) else {
+        return 0;
+    };
+    nomes
+        .iter()
+        .filter(|nome| apagar_item(dir, nome, profundidade).is_ok())
+        .count()
+}
+
+fn apagar_item(dir: BorrowedFd<'_>, nome: &std::ffi::CStr, profundidade: usize) -> io::Result<()> {
+    match sys::unlinkat(dir, nome, 0) {
+        Err(e) if e.raw_os_error() == Some(libc::EISDIR) => {}
+        r => return r,
+    }
+    if profundidade >= MAX_PROFUNDIDADE {
+        return Err(io::ErrorKind::InvalidInput.into());
+    }
+    let sub = sys::openat(
+        dir,
+        nome,
+        libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW,
+    )?;
+    use std::os::fd::AsFd;
+    apagar_conteudo_em(sub.as_fd(), profundidade + 1);
+    sys::unlinkat(dir, nome, libc::AT_REMOVEDIR)
 }
 
 #[cfg(test)]
@@ -84,6 +126,51 @@ mod testes {
         }
         assert!(d.join("tmp").exists());
         assert!(!d.join("../fora").exists());
+        fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// Fase 44e: o conteúdo some pelo fd; link dentro da pasta é apagado sem seguir, e a
+    /// subpasta também.
+    #[test]
+    fn apaga_o_conteudo_pelo_fd_sem_seguir_link() {
+        let d = dir("apagar");
+        let alvo = d.join("alvo");
+        fs::create_dir_all(alvo.join("sub")).unwrap();
+        fs::write(alvo.join("precioso.txt"), b"x").unwrap();
+        let p = d.join("pasta");
+        fs::create_dir_all(p.join("sub/mais")).unwrap();
+        fs::write(p.join("a.json"), b"{}").unwrap();
+        fs::write(p.join("sub/b.json"), b"{}").unwrap();
+        fs::write(p.join("sub/mais/c.json"), b"{}").unwrap();
+        std::os::unix::fs::symlink(&alvo, p.join("ligacao")).unwrap();
+        std::os::unix::fs::symlink(&alvo, p.join("sub/ligacao")).unwrap();
+        let f = fs::File::open(&p).unwrap();
+        assert_eq!(apagar_conteudo(f.as_fd()), 3);
+        assert_eq!(fs::read_dir(&p).unwrap().count(), 0);
+        assert!(alvo.join("precioso.txt").exists());
+        assert!(alvo.join("sub").is_dir());
+        // De novo, vazia: nada a apagar.
+        assert_eq!(apagar_conteudo(f.as_fd()), 0);
+        fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// Ataque (Fase 44e): a pasta é aberta e depois trocada por um link para outra; o
+    /// fd continua na original (já fora do lugar), e a outra fica intacta.
+    #[test]
+    fn ataque_pasta_trocada_por_link_depois_de_aberta() {
+        let d = dir("trocada");
+        let alvo = d.join("alvo");
+        fs::create_dir_all(&alvo).unwrap();
+        fs::write(alvo.join("precioso.txt"), b"x").unwrap();
+        let p = d.join("pasta");
+        fs::create_dir_all(&p).unwrap();
+        fs::write(p.join("a.json"), b"{}").unwrap();
+        let f = fs::File::open(&p).unwrap();
+        fs::rename(&p, d.join("movida")).unwrap();
+        std::os::unix::fs::symlink(&alvo, &p).unwrap();
+        assert_eq!(apagar_conteudo(f.as_fd()), 1);
+        assert!(alvo.join("precioso.txt").exists());
+        assert!(!d.join("movida/a.json").exists());
         fs::remove_dir_all(&d).unwrap();
     }
 }

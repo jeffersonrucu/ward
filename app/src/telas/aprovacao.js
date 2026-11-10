@@ -53,17 +53,36 @@ export const TEXTOS = Object.freeze({
   bloqueadoNota:
     'Os botões de permitir ficam desligados até o cofre ser destravado. Negar ou fechar a janela só confirma o que já aconteceu: o Claude recebeu “negado”.',
   semPedido: 'Nenhum pedido de aprovação esperando.',
-  // Fase 44c (D9): origem `http` (localhost/127.0.0.1).
+  // Fase 44d/44e: textos da confirmação e do pedido com PIN com a origem (frames
+  // 22733, 22817, 22882): não há comando nesses pedidos.
+  prodDestaqueOrigem: 'Credencial de produção. Confira a origem com atenção antes de confirmar.',
+  resumoOrigem: 'Confira a entrada, a origem e quem pediu antes de permitir.',
+  // Fase 44c (D9): origem `http` (localhost/127.0.0.1). Fase 44e: o mesmo vale para
+  // todo host de loopback em `https` (`origemDestaqueLocal`; sem frame próprio).
   subtituloPopup: 'A extensão do Chrome quer preencher uma senha',
   origem: 'Origem que recebe usuário e senha',
   origemDestaque:
     'Endereço http desta máquina. Qualquer programa seu pode escutar nele, inclusive no lugar do serviço que você espera. Confirme só se foi você quem pediu agora.',
+  origemDestaqueLocal:
+    'Endereço desta máquina. Qualquer programa seu pode escutar nele, inclusive no lugar do serviço que você espera. Confirme só se foi você quem pediu agora.',
   resumoConfirmacao: 'Confira a entrada e a origem antes de confirmar.',
   nivelConfirmacao: 'confirmar a origem',
   confirmar: 'Confirmar a origem',
   notaConfirmacao:
     'Confirmar não pede PIN: a entrada não exige. Fechar a janela nega o pedido. Sem resposta em 2 min, ele expira e também é negado.',
 });
+
+/** O aviso da origem: o do frame para `http`; para `https` de loopback (Fase 44e), o
+ * mesmo texto sem o "http". */
+export function avisoDaOrigem(origem) {
+  let http = false;
+  try {
+    http = new URL(origem).protocol === 'http:';
+  } catch {
+    http = false;
+  }
+  return http ? TEXTOS.origemDestaque : TEXTOS.origemDestaqueLocal;
+}
 
 /** Mensagem no `Campo PIN` para o resultado do `responder_aprovacao`. */
 export function mensagemDoResultado(resultado) {

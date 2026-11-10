@@ -483,8 +483,13 @@ fn v6_11_com_aprovacao_negar_nao_chega_a_extensao_e_permitir_chega() {
 
 /// Entrada `login` em `http://localhost:8081` no nível pedido.
 fn login_http(d: &Daemon, nome: &str, nivel: &str) {
+    login_na_url(d, nome, nivel, "http://localhost:8081/wp-login.php");
+}
+
+/// Entrada `login` na URL e no nível pedidos.
+fn login_na_url(d: &Daemon, nome: &str, nivel: &str, url: &str) {
     let q = format!(
-        r#"{{"entrada":{{"nome":"{nome}","grupo":"acme","ambiente":"prod","tipo":"login","campos":{{"url":"http://localhost:8081/wp-login.php","usuario":"wp_editor","senha":"{}"}}}}}}"#,
+        r#"{{"entrada":{{"nome":"{nome}","grupo":"acme","ambiente":"prod","tipo":"login","campos":{{"url":"{url}","usuario":"wp_editor","senha":"{}"}}}}}}"#,
         b64(SEGREDOS[3].as_bytes())
     );
     let r = pedir(d, Papel::App, "salvar_entrada", &q);
@@ -595,7 +600,44 @@ fn ataque_login_http_com_aprovacao_pede_pin_e_mostra_a_origem() {
     assert_eq!(erro(&r), Some(ErroResposta::AprovacaoIndisponivel));
 }
 
-/// `https` não muda: livre não abre janela nenhuma.
+/// Fase 44e (Médio da 2ª auditoria do M6): `https` num host de loopback também pede a
+/// confirmação. Com uma CA local (mkcert, `~/.pki`), um processo do uid em `[::1]`
+/// apresenta um certificado válido para `localhost`; o `https` não prova quem responde.
+/// Livre: sem app, "aprovação indisponível"; negado, a extensão não vê nada; o pedido
+/// mostra a origem `https` e é só confirmação.
+#[test]
+fn ataque_login_https_loopback_livre_so_com_confirmacao() {
+    let (d, _dir) = cofre("login-https-loopback", 2000);
+    for (i, (url, origem)) in [
+        (
+            "https://localhost:8443/wp-login.php",
+            "https://localhost:8443",
+        ),
+        ("https://127.0.0.1/wp-login.php", "https://127.0.0.1"),
+        ("https://[::1]:8443/wp-login.php", "https://[::1]:8443"),
+        ("https://wp.localhost/wp-login.php", "https://wp.localhost"),
+        ("https://[::ffff:127.0.0.1]/", "https://[::ffff:127.0.0.1]"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let nome = format!("l-livre-{i}");
+        login_na_url(&d, &nome, "livre", url);
+        let r = login_do_agente(&d, &SemCliente, &nome);
+        assert_eq!(erro(&r), Some(ErroResposta::AprovacaoIndisponivel), "{url}");
+        assert_eq!(aguardar(&d), None, "{url}");
+        let (r, vistos) = com_janela(&d, "negar", None, || {
+            login_do_agente(&d, &SemCliente, &nome)
+        });
+        assert_eq!(erro(&r), Some(ErroResposta::Negado), "{url}");
+        assert_eq!(aguardar(&d), None, "{url}");
+        assert_eq!(vistos.len(), 1, "{url}");
+        assert_eq!(vistos[0].origem, origem, "{url}");
+        assert!(vistos[0].confirmacao, "{url}");
+    }
+}
+
+/// `https` de fora não muda: livre não abre janela nenhuma.
 #[test]
 fn login_https_livre_sem_janela() {
     let (d, _dir) = cofre("login-https-livre", 2000);

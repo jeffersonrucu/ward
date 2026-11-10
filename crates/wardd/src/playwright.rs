@@ -169,31 +169,26 @@ pub fn pasta_sessoes(rt: &Path) -> PathBuf {
 }
 
 /// Apaga os storage states (`<rt>playwright/*`). Chamado ao travar. Não segue link: a
-/// pasta é conferida por `symlink_metadata` antes de listar (Fase 44c; um link plantado
-/// no lugar de `<rt>playwright` levaria a apagar os arquivos de outra pasta do uid), e
-/// cada item é apagado como ele é (um link vira só o link apagado).
+/// pasta é aberta com `O_DIRECTORY | O_NOFOLLOW` (um link plantado no lugar de
+/// `<rt>playwright` não abre, e nada é apagado do alvo dele) e o conteúdo é listado e
+/// apagado pelo fd (Fase 44e; `ward_plataforma::pasta::apagar_conteudo`): trocar a pasta
+/// por um link depois de aberta não muda o que é apagado. Cada item é apagado como ele
+/// é (um link vira só o link apagado).
 pub fn apagar_sessoes(rt: &Path) -> usize {
-    let pasta = pasta_sessoes(rt);
-    match fs::symlink_metadata(&pasta) {
-        Ok(m) if m.file_type().is_dir() => {}
-        Ok(_) => {
+    use std::os::fd::AsFd;
+    let pasta = match fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .open(pasta_sessoes(rt))
+    {
+        Ok(f) => f,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return 0,
+        Err(_) => {
             aviso!("playwright: a pasta das sessões não é uma pasta; nada apagado nela");
             return 0;
         }
-        Err(_) => return 0,
-    }
-    let mut n = 0;
-    if let Ok(itens) = fs::read_dir(&pasta) {
-        for item in itens.flatten() {
-            let ok = match item.file_type() {
-                Ok(t) if t.is_dir() => fs::remove_dir_all(item.path()).is_ok(),
-                Ok(_) => fs::remove_file(item.path()).is_ok(),
-                Err(_) => false,
-            };
-            n += usize::from(ok);
-        }
-    }
-    n
+    };
+    ward_plataforma::pasta::apagar_conteudo(pasta.as_fd())
 }
 
 /// Partida do daemon (D6): apaga os storage states e os perfis `pw-*` que um daemon

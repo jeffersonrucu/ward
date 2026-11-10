@@ -28,6 +28,12 @@ Cenários (o mesmo ataque da auditoria: um processo do uid planta um
                Imprime {"atacante_rodou": bool, "sistema_rodou": bool,
                "respostas": {pedido: tipo}, "com_segredo": n} — nunca um valor.
 
+  pagina       (Fase 44e) o Chrome de verdade abre `chrome://policy` e o texto da
+               página (com as shadow roots) é lido pelo CDP: para cada política do
+               Ward, o valor e o estado que o Chrome mostra. Imprime
+               {nome: {"valor": texto, "ok": bool}} (`valor` "Not set." sem a
+               política: o controle prova que a leitura enxerga a diferença).
+
 `<politica>`: o `ward.json` gerado pelo `instalar.sh` (staging), copiado para
 policies/managed/; `-` = sem política (o controle, que mostra o ataque funcionando).
 """
@@ -48,7 +54,7 @@ CHROME = "/opt/google/chrome/chrome"
 
 def main():
     raiz, trab, cenario, politica = sys.argv[1:5]
-    if cenario not in ("precedencia", "roubo"):
+    if cenario not in ("precedencia", "roubo", "pagina"):
         sys.exit(f"cenário desconhecido: {cenario}")
     os.umask(0o077)
     etc = f"{trab}/etc-chrome"
@@ -94,6 +100,9 @@ def main():
 
     env_chrome = {"HOME": home, "PATH": "/usr/bin:/bin"}
     wardd = None
+    if cenario == "pagina":
+        print(json.dumps(ler_pagina_de_politicas(perfil, env_chrome, t)))
+        return
     if cenario == "precedencia":
         for quem in ("sistema", "usuario"):
             host = f"{t}/host-{quem}.py"
@@ -260,6 +269,94 @@ os.execv(NM, ["ward-nm", f"chrome-extension://{ID}/"])
     print(json.dumps({"atacante_rodou": os.path.exists(f"{t}/atacante-rodou"),
                       "sistema_rodou": os.path.exists(f"{t}/sistema-rodou"),
                       "respostas": respostas, "com_segredo": com_segredo}))
+
+
+POLITICAS = ("NativeMessagingUserLevelHosts", "PasswordManagerEnabled", "PasswordLeakDetectionEnabled")
+
+# Folhas de texto da página, atravessando as shadow roots (a `chrome://policy` monta a
+# tabela em componentes). Só leitura; a página é do próprio Chrome.
+FOLHAS = (
+    "(() => { const t = []; const andar = (n) => { if (n.shadowRoot) andar(n.shadowRoot);"
+    " for (const c of n.children || []) andar(c);"
+    " if (n.nodeType === 1 && n.children.length === 0) t.push(n.textContent.trim()); };"
+    " andar(document.documentElement); return t.filter(Boolean); })()"
+)
+
+
+def ler_pagina_de_politicas(perfil, env_chrome, t):
+    """Fase 44e: abre `chrome://policy` num Chrome headless (perfil do teste) e lê, pelo
+    CDP do pipe, o valor e o estado de cada política do Ward como o Chrome mostra."""
+    import select
+
+    r_cmd, w_cmd = os.pipe()
+    r_res, w_res = os.pipe()
+
+    def prep():
+        os.dup2(r_cmd, 3)
+        os.dup2(w_res, 4)
+
+    ch = subprocess.Popen(
+        [CHROME, "--headless=new", f"--user-data-dir={perfil}", "--remote-debugging-pipe",
+         "--no-first-run", "--no-default-browser-check", "--disable-gpu", "--disable-sync",
+         "--disable-background-networking", "about:blank"],
+        preexec_fn=prep, pass_fds=(3, 4), env=env_chrome,
+        stdout=subprocess.DEVNULL, stderr=open(f"{t}/chrome.log", "w"))
+    os.close(r_cmd)
+    os.close(w_res)
+    estado = {"buf": b"", "n": 0}
+
+    def cmd(metodo, params=None, sessao=None, prazo=20):
+        estado["n"] += 1
+        meu = estado["n"]
+        m = {"id": meu, "method": metodo, "params": params or {}}
+        if sessao:
+            m["sessionId"] = sessao
+        os.write(w_cmd, json.dumps(m).encode() + b"\0")
+        fim = time.time() + prazo
+        while True:
+            while b"\0" not in estado["buf"]:
+                pronto, _, _ = select.select([r_res], [], [], max(0, fim - time.time()))
+                if not pronto:
+                    raise TimeoutError(metodo)
+                d = os.read(r_res, 1 << 20)
+                if not d:
+                    raise RuntimeError("o Chrome fechou o pipe")
+                estado["buf"] += d
+            msg, _, estado["buf"] = estado["buf"].partition(b"\0")
+            j = json.loads(msg)
+            if j.get("id") == meu:
+                if "error" in j:
+                    raise RuntimeError(f"{metodo}: {j['error'].get('message')}")
+                return j.get("result", {})
+
+    res = {}
+    try:
+        alvo = cmd("Target.createTarget", {"url": "chrome://policy"})["targetId"]
+        sessao = cmd("Target.attachToTarget", {"targetId": alvo, "flatten": True})["sessionId"]
+        folhas = []
+        fim = time.time() + 20
+        while time.time() < fim:
+            r = cmd("Runtime.evaluate", {"expression": FOLHAS, "returnByValue": True}, sessao)
+            folhas = r.get("result", {}).get("value") or []
+            if all(p in folhas for p in POLITICAS):
+                break
+            time.sleep(0.3)
+        for p in POLITICAS:
+            if p not in folhas:
+                res[p] = {"valor": None, "ok": False}
+                continue
+            i = folhas.index(p)
+            depois = folhas[i + 1:i + 6]
+            res[p] = {"valor": depois[0] if depois else None,
+                      "ok": "Mandatory" in depois and "OK" in depois and "Machine" in depois}
+    finally:
+        ch.terminate()
+        try:
+            ch.wait(timeout=15)
+        except subprocess.TimeoutExpired:
+            ch.kill()
+            ch.wait()
+    return res
 
 
 if __name__ == "__main__":

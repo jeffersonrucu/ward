@@ -1219,3 +1219,16 @@ app; ver o handoff da 44d):
 | Tom do aviso de `http` (`origemDestaque`) | `Destaque` neutro com ícone alerta | `Destaque` **aviso** (`tipo="aviso"`) |
 | `prodDestaque` na confirmação | "…confira o comando com atenção." (não há comando) | "Credencial de produção. Confira a origem com atenção antes de confirmar." |
 | `resumo` no pedido com PIN e origem | "Confira a entrada, o comando exato e quem pediu antes de permitir." | "Confira a entrada, a origem e quem pediu antes de permitir." |
+
+## Fase 44e — app alinhado à 44d (UI)
+
+As três diferenças da tabela acima foram fechadas no app (`JanelaAprovacao.svelte`,
+`aprovacao.js`): aviso da origem em `Destaque` aviso, `prodDestaqueOrigem` na
+confirmação e `resumoOrigem` no pedido com PIN e origem. O daemon falso usa o ambiente
+e a origem reais da entrada (`acme-wp-dev` dev). Conferido pela ponte de teste no Chrome
+headless (Playwright, 1280 de largura) contra `22733`, `22817` e `22882`: largura 560,
+altura (772/790/874), y e altura de cada bloco (cabeçalho, destaques, resumo, pedido,
+PIN, ações, nota), textos, cores do aviso (`#3F2A06`, borda `#F5B544` a 32%) e borda do
+pedido (prod `#E5484D`, dev `#343A46`), sem diferença. PNG e `medidas.json` em
+`docs/mission/evidence/fase-44e/`. Sem frame para o aviso de `https` de loopback
+(`origemDestaqueLocal`, o mesmo texto sem o "http").

@@ -34,6 +34,7 @@
     SEGUNDOS_URGENTE,
     SEPARADOR,
     TEXTOS,
+    avisoDaOrigem,
     mensagemDoResultado,
     pedePin,
     pinSuficiente,
@@ -157,15 +158,24 @@
       {#if bloqueado}
         <Destaque tipo="perigo" icone="cadeado">{TEXTOS.bloqueadoDestaque}</Destaque>
       {:else}
-        {#if prod}<Destaque tipo="prod">{TEXTOS.prodDestaque}</Destaque>{/if}
-        {#if pedido.origem}<Destaque icone="alerta">{TEXTOS.origemDestaque}</Destaque>{/if}
+        {#if prod}<Destaque tipo="prod"
+            >{confirmacao ? TEXTOS.prodDestaqueOrigem : TEXTOS.prodDestaque}</Destaque
+          >{/if}
+        <!-- Fase 44e: o aviso da origem em `Destaque` aviso (frames 22812, 22957). -->
+        {#if pedido.origem}<Destaque tipo="aviso" icone="alerta">{avisoDaOrigem(pedido.origem)}</Destaque>{/if}
         {#if urgente}
           <Destaque tipo="perigo" icone="relogio">{TEXTOS.expirando(pedido.restante)}</Destaque>
         {/if}
       {/if}
 
       <p class="resumo">
-        {bloqueado ? TEXTOS.bloqueadoResumo : confirmacao ? TEXTOS.resumoConfirmacao : TEXTOS.resumo}
+        {bloqueado
+          ? TEXTOS.bloqueadoResumo
+          : confirmacao
+            ? TEXTOS.resumoConfirmacao
+            : pedido.origem
+              ? TEXTOS.resumoOrigem
+              : TEXTOS.resumo}
       </p>
 
       <div class="pedido" class:prod>

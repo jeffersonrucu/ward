@@ -683,3 +683,46 @@ fn ataque_preencher_http_sem_confirmar_nada_sai() {
     assert_eq!(erro(&r), Some(ErroResposta::OrigemDiferente));
     assert!(vistos.is_empty());
 }
+
+/// Fase 44e (Médio da 2ª auditoria do M6): o popup numa entrada `https` de loopback
+/// (`https://localhost`, `https://[::1]`) também só preenche depois da confirmação. Com
+/// uma CA local plantada (mkcert, `~/.pki`), o processo em `[::1]` passa no TLS. Sem
+/// app: "aprovação indisponível"; negado: nenhum valor; o pedido mostra a origem.
+#[test]
+fn ataque_preencher_https_loopback_sem_confirmar_nada_sai() {
+    let dir = Dir::novo("ext-https-loopback");
+    let d = cofre(&dir);
+    for (i, (url, origem)) in [
+        ("https://localhost:8443/login", "https://localhost:8443"),
+        ("https://[::1]:8443/login", "https://[::1]:8443"),
+        ("https://127.0.0.1/login", "https://127.0.0.1"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let nome = format!("l-{i}");
+        let r = pedir(
+            &d,
+            Papel::App,
+            "salvar_entrada",
+            &login(&nome, url, "wp_admin", SEGREDOS[0], None),
+        );
+        assert!(ok(&r), "{r:?}");
+        let r = preencher_cru(&d, Papel::Extensao, &nome, url);
+        assert_eq!(erro(&r), Some(ErroResposta::AprovacaoIndisponivel), "{url}");
+        sem_segredo(&comum::codificado(Papel::Extensao, &r));
+        let (r, vistos) = comum::com_janela(&d, "negar", None, || {
+            preencher_cru(&d, Papel::Extensao, &nome, url)
+        });
+        assert_eq!(erro(&r), Some(ErroResposta::Negado), "{url}");
+        sem_segredo(&comum::codificado(Papel::Extensao, &r));
+        assert_eq!(vistos.len(), 1, "{url}");
+        assert_eq!(vistos[0].operacao, Operacao::Preencher);
+        assert_eq!(vistos[0].origem, origem, "{url}");
+        assert!(vistos[0].confirmacao, "{url}");
+        let (r, _) = comum::com_janela(&d, "confirmar", None, || {
+            preencher_cru(&d, Papel::Extensao, &nome, url)
+        });
+        assert!(matches!(r, Resposta::Preenchimento { .. }), "{url}");
+    }
+}

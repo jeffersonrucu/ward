@@ -13,7 +13,8 @@
 //     aba navegou, o Chrome recusa) e que confere a origem de novo antes de escrever;
 //  4. a resposta é descartada e o popup fecha (o contexto dele some).
 //
-// Fase 44c (D9): numa origem `http` (`localhost`/`127.0.0.1`) o daemon só responde
+// Fase 44c (D9): numa origem `http` (`localhost`/`127.0.0.1`), e desde a Fase 44e em
+// todo host desta máquina em `https` (`pedeJanela`, em `pagina.js`), o daemon só responde
 // depois de o usuário confirmar a origem na janela do Ward, e o popup fecha quando a
 // janela pega o foco. Por isso, nessa origem, os passos 3 e 4 ficam com o service
 // worker (`servico.js`): o popup manda a aba, o `documentId` da sonda, a entrada e a
@@ -32,7 +33,7 @@
 
 import { ICONES } from './icones.js';
 import { SIMBOLO } from './marca.js';
-import { preencherNaPagina, sondar } from './pagina.js';
+import { pedeJanela, preencherNaPagina, sondar } from './pagina.js';
 
 const HOST = 'br.ward.nm';
 const SVG = 'http://www.w3.org/2000/svg';
@@ -176,7 +177,7 @@ const FALHAS = {
 };
 
 const AGUARDANDO_JANELA =
-  'Endereço http desta máquina: confirme a origem na janela do Ward para preencher.';
+  'Endereço desta máquina: confirme a origem na janela do Ward para preencher.';
 const FALHA_PADRAO = 'Não deu para preencher. Nada foi enviado à página.';
 
 /** Frame `Extensão / Sugestões do domínio` (17332). */
@@ -256,8 +257,9 @@ async function preencher(aba, origem, nome, botoes, nota) {
     falhou(nota, botoes, 'origem');
     return;
   }
-  // Fase 44c: origem `http`, com a janela do Ward, pelo service worker.
-  if (new URL(doc.origem).protocol === 'http:') {
+  // Fase 44c: origem `http`, com a janela do Ward, pelo service worker. Fase 44e: o
+  // mesmo para todo host desta máquina em `https` (`pedeJanela`).
+  if (pedeJanela(doc.origem)) {
     nota.textContent = AGUARDANDO_JANELA;
     nota.classList.remove('erro');
     const r = await pedirAoServico({

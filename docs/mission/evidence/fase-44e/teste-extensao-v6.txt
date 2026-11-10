@@ -1,0 +1,4 @@
+ok    ataque [::1]: a aba em localhost:8081 caiu no falso de [::1] (título 'falso-v6')
+ok    ataque [::1], popup negado na janela: nada preenchido no falso e o popup avisa ('O preenchimento foi negado na janela do Ward. Nada foi enviado à página.')
+ok    ataque [::1], popup: o pedido mostra a origem e não pede PIN (['pedido operacao=preencher entradas=acme-wp-prod origem=http://localhost:8081 confirmacao=1 decisao=negar'])
+ok    ataque [::1], popup: o falso não recebeu nenhum POST (0 bytes)

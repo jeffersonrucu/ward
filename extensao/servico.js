@@ -17,15 +17,16 @@
 //   Ward), o envio é descartado na hora.
 // - Fase 43: o `ward login` mora em `login.js` (porta de native messaging aberta com o
 //   `ward-nm`, que também mantém este service worker vivo).
-// - Fase 44c (D9): o preencher do popup numa origem `http` (`localhost`/`127.0.0.1`)
-//   espera o usuário confirmar a origem na janela do Ward (até 2 min). O popup fecha
-//   quando a janela pega o foco, então quem espera e preenche é este service worker: o
-//   popup manda a aba, o `documentId` que a sonda dele achou, a entrada e a origem; a
-//   resposta do daemon vai direto como argumento ao preenchimento naquele documento e é
-//   apagada logo depois. Nada volta ao popup além de "ok" ou o código do erro.
+// - Fase 44c (D9): o preencher do popup numa origem `http` (`localhost`/`127.0.0.1`;
+//   Fase 44e: e de todo host desta máquina em `https`, `pedeJanela`) espera o usuário
+//   confirmar a origem na janela do Ward (até 2 min). O popup fecha quando a janela
+//   pega o foco, então quem espera e preenche é este service worker: o popup manda a
+//   aba, o `documentId` que a sonda dele achou, a entrada e a origem; a resposta do
+//   daemon vai direto como argumento ao preenchimento naquele documento e é apagada
+//   logo depois. Nada volta ao popup além de "ok" ou o código do erro.
 
 import { iniciarLogin } from './login.js';
-import { preencherNaPagina } from './pagina.js';
+import { pedeJanela, preencherNaPagina } from './pagina.js';
 
 const HOST = 'br.ward.nm';
 const POPUP = chrome.runtime.getURL('popup.html');
@@ -154,7 +155,8 @@ function pedirPorPorta(pedido) {
   });
 }
 
-/** Fase 44c: o preencher do popup numa origem `http`, com a janela do Ward. */
+/** Fase 44c: o preencher do popup numa origem `http` (Fase 44e: ou de um host desta
+ * máquina em `https`), com a janela do Ward. */
 async function preencherComJanela(msg) {
   const origem = typeof msg.origem === 'string' ? origemDa(msg.origem) : null;
   if (
@@ -164,7 +166,7 @@ async function preencherComJanela(msg) {
     msg.documento.length > MAX ||
     !origem ||
     origem !== msg.origem ||
-    new URL(origem).protocol !== 'http:'
+    !pedeJanela(origem)
   ) {
     return { erro: 'pedido_invalido' };
   }

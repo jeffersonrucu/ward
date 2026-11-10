@@ -210,16 +210,25 @@ pub fn aprovacoes_simuladas(modo: &str) -> Option<Vec<AprovacaoSimulada>> {
         confirmacao: false,
     };
     // Fase 44c (D9): preenchimento numa origem `http`.
-    let na_origem = |id, entrada: &str, operacao, confirmacao, cadeia: &[&str]| PedidoDeAprovacao {
-        id,
-        entradas: vec![entrada.to_owned()],
-        ambiente: Ambiente::Prod,
-        operacao,
-        comando: String::new(),
-        diretorio: String::new(),
-        cadeia: cadeia.iter().map(|c| (*c).to_owned()).collect(),
-        origem: "http://localhost:8081".to_owned(),
-        confirmacao,
+    // Fase 44e: ambiente e origem da entrada de verdade do cofre de teste
+    // (`acme-wp-dev` é dev, `acme-wp-prod` é prod), como o `wardd` montaria.
+    let na_origem = |id, entrada: &str, operacao, confirmacao, cadeia: &[&str]| {
+        let entradas = cofre_teste::cofre_de_teste();
+        let e = entradas.iter().find(|e| e.nome() == entrada)?;
+        let ward_core::entrada::Dados::Login(l) = e.dados() else {
+            return None;
+        };
+        Some(PedidoDeAprovacao {
+            id,
+            entradas: vec![entrada.to_owned()],
+            ambiente: e.ambiente(),
+            operacao,
+            comando: String::new(),
+            diretorio: String::new(),
+            cadeia: cadeia.iter().map(|c| (*c).to_owned()).collect(),
+            origem: ward_core::entrada::origem_da_url(&l.url)?,
+            confirmacao,
+        })
     };
     let psql = |entrada: &str| {
         ward_core::exibicao::exibir_argumentos(
@@ -265,7 +274,7 @@ pub fn aprovacoes_simuladas(modo: &str) -> Option<Vec<AprovacaoSimulada>> {
                 Operacao::Playwright,
                 true,
                 &["claude", "bash", "ward playwright"],
-            ),
+            )?,
             Duration::ZERO,
         )],
         // Fase 44c: o popup da extensão numa origem `http`.
@@ -276,7 +285,7 @@ pub fn aprovacoes_simuladas(modo: &str) -> Option<Vec<AprovacaoSimulada>> {
                 Operacao::Preencher,
                 true,
                 &["chrome", "ward-nm"],
-            ),
+            )?,
             Duration::ZERO,
         )],
         // Fase 44c: `ward login acme-wp-dev` (com aprovação) numa origem `http`: PIN e
@@ -288,7 +297,7 @@ pub fn aprovacoes_simuladas(modo: &str) -> Option<Vec<AprovacaoSimulada>> {
                 Operacao::Login,
                 false,
                 &["claude", "bash", "ward login"],
-            ),
+            )?,
             Duration::ZERO,
         )],
         "aprovacao-ataque" => vec![(
@@ -965,6 +974,25 @@ mod testes {
         esperado.sort();
         falso.sort();
         assert_eq!(falso, esperado);
+    }
+
+    #[test]
+    fn pedidos_com_origem_usam_a_entrada_de_verdade() {
+        // Fase 44e: o ambiente e a origem dos modos `aprovacao-origem*` vêm da entrada
+        // do cofre de teste (`acme-wp-dev` é dev; `acme-wp-prod`, prod), como no `wardd`.
+        use ward_core::entrada::Ambiente;
+        for (modo, ambiente, confirmacao) in [
+            ("aprovacao-origem", Ambiente::Prod, true),
+            ("aprovacao-origem-popup", Ambiente::Prod, true),
+            ("aprovacao-origem-pin", Ambiente::Dev, false),
+        ] {
+            let v = aprovacoes_simuladas(modo).unwrap();
+            let p = &v[0].0;
+            assert_eq!(p.ambiente, ambiente, "{modo}");
+            assert_eq!(p.confirmacao, confirmacao, "{modo}");
+            assert_eq!(p.origem, "http://localhost:8081", "{modo}");
+            assert!(p.comando.is_empty() && p.diretorio.is_empty(), "{modo}");
+        }
     }
 
     #[test]

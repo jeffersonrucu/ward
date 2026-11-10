@@ -9,7 +9,8 @@
 # muda, nenhum sudo). Perfil, HOME e manifestos do usuário também ficam nela; o perfil
 # real do Chrome e `~/.config/google-chrome/` nunca são tocados.
 #
-# Quatro rodadas (`dev/testes/politica_chrome.py`, a partir dos scripts da auditoria):
+# Quatro rodadas (`dev/testes/politica_chrome.py`, a partir dos scripts da auditoria),
+# mais a 2b (Fase 44e: a `chrome://policy` lida em execução, com e sem a política):
 #   1. precedência sem política (controle): o host do perfil é chamado (o ataque vale;
 #      prova que o teste enxerga o ataque);
 #   2. precedência com o `ward.json` gerado: o host do perfil NÃO é chamado e o do
@@ -107,6 +108,23 @@ echo "    $r"
     falhou "com a política, o host do perfil foi chamado"
 [ "$(campo "$r" sistema)" = True ] && ok "com a política, o manifesto do sistema é chamado" ||
     falhou "com a política, o host do sistema não foi chamado"
+
+# Fase 44e: o que o Chrome aplica de verdade, lido na `chrome://policy` em execução (o
+# JSON gerado só diz o que foi escrito). Sem a política (controle), a página mostra
+# "Not set." e a leitura enxerga a diferença.
+echo "==> 2b. chrome://policy em execução"
+r="$(rodada pagina -)" || falhou "rodada 2b (controle) saiu ≠ 0"
+echo "    sem política: $r"
+r2="$(rodada pagina "$POLITICA")" || falhou "rodada 2b saiu ≠ 0"
+echo "    com a política: $r2"
+for nome in NativeMessagingUserLevelHosts PasswordManagerEnabled PasswordLeakDetectionEnabled; do
+    sem="$(/usr/bin/python3 -I -c 'import json,sys; print(json.loads(sys.argv[1])[sys.argv[2]]["valor"])' "$r" "$nome")"
+    com="$(/usr/bin/python3 -I -c 'import json,sys; d=json.loads(sys.argv[1])[sys.argv[2]]; print(d["valor"], d["ok"])' "$r2" "$nome")"
+    [ "$sem" = "Not set." ] && ok "controle: sem a política, chrome://policy mostra $nome sem valor" ||
+        falhou "controle: sem a política, chrome://policy mostra $nome = $sem"
+    [ "$com" = "false True" ] && ok "chrome://policy mostra $nome = false, obrigatória, da máquina, OK" ||
+        falhou "chrome://policy não aplica $nome ($com)"
+done
 
 echo "==> 3. ataque da auditoria sem política (controle, fora do bwrap)"
 r="$(env -i HOME="$TRAB" PATH=/usr/bin:/bin LANG=C.UTF-8 XDG_RUNTIME_DIR="$RUNTIME" \

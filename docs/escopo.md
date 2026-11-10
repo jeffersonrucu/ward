@@ -242,8 +242,14 @@ inclusive o valor revelado (PRD D64).
    Por isso, em origem `http`, todo preenchimento (`ward login`, `ward playwright` e o
    do popup) passa pela janela de aprovação com a origem à vista, mesmo no nível livre
    (aí só a confirmação, sem PIN; decisão do usuário, 2026-11-09, Fase 44c). Sem o app,
-   "aprovação indisponível". O Chrome do `ward playwright` resolve `localhost` só para
-   `127.0.0.1` (`--host-resolver-rules`). `https` segue sem a janela no nível livre. O
+   "aprovação indisponível". O mesmo vale para todo host desta máquina em `https`
+   (`localhost`, `*.localhost`, `127.0.0.0/8`, `0.0.0.0/8`, `[::1]`, `[::]` e o IPv4
+   local mapeado em IPv6): com uma CA local (a do mkcert ou uma plantada no `~/.pki`),
+   o processo em `[::1]` apresenta um certificado válido, e o `https` não prova quem
+   responde (2ª auditoria do M6, Fase 44e). O Chrome do `ward playwright` resolve
+   `localhost` só para `127.0.0.1` (`--host-resolver-rules`). `https` de um host de
+   fora segue sem a janela no nível livre; um domínio público cujo DNS aponta para
+   `127.0.0.1` não é reconhecido como local (o Ward não consulta DNS). O
    gerenciador de senhas do Chrome e a checagem de vazamento ficam desligados pela
    política (`PasswordManagerEnabled` e `PasswordLeakDetectionEnabled: false`), para a
    senha preenchida não ficar no perfil nem sair para o Google.

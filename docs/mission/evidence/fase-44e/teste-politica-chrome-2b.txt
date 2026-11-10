@@ -1,0 +1,9 @@
+==> 2b. chrome://policy em execução
+    sem política: {"NativeMessagingUserLevelHosts": {"valor": "Not set.", "ok": false}, "PasswordManagerEnabled": {"valor": "Not set.", "ok": false}, "PasswordLeakDetectionEnabled": {"valor": "Not set.", "ok": false}}
+    com a política: {"NativeMessagingUserLevelHosts": {"valor": "false", "ok": true}, "PasswordManagerEnabled": {"valor": "false", "ok": true}, "PasswordLeakDetectionEnabled": {"valor": "false", "ok": true}}
+ok: controle: sem a política, chrome://policy mostra NativeMessagingUserLevelHosts sem valor
+ok: chrome://policy mostra NativeMessagingUserLevelHosts = false, obrigatória, da máquina, OK
+ok: controle: sem a política, chrome://policy mostra PasswordManagerEnabled sem valor
+ok: chrome://policy mostra PasswordManagerEnabled = false, obrigatória, da máquina, OK
+ok: controle: sem a política, chrome://policy mostra PasswordLeakDetectionEnabled sem valor
+ok: chrome://policy mostra PasswordLeakDetectionEnabled = false, obrigatória, da máquina, OK

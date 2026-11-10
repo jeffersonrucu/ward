@@ -2077,3 +2077,52 @@ fn d9_origem_da_url() {
         assert_eq!(o(ruim), None, "{ruim}");
     }
 }
+
+/// Fase 44e (D9, 2ª auditoria do M6): todo host de loopback é origem local, em
+/// qualquer esquema. Ataque: `https://localhost`, `https://127.0.0.1` ou `https://[::1]`
+/// com um certificado de CA local (mkcert, `~/.pki`) iria sem janela; as formas
+/// disfarçadas do loopback também contam.
+#[test]
+fn ataque_origem_local_em_qualquer_esquema() {
+    let o = origem_local_da_url;
+    for (url, origem) in [
+        (
+            "http://localhost:8081/wp-login.php",
+            "http://localhost:8081",
+        ),
+        ("http://127.0.0.1:8084/login", "http://127.0.0.1:8084"),
+        ("https://localhost/", "https://localhost"),
+        ("https://localhost:8443/x", "https://localhost:8443"),
+        ("https://127.0.0.1/", "https://127.0.0.1"),
+        ("https://127.1.2.3:9/", "https://127.1.2.3:9"),
+        ("https://[::1]:8443/", "https://[::1]:8443"),
+        ("https://[0:0:0:0:0:0:0:1]/", "https://[0:0:0:0:0:0:0:1]"),
+        ("https://[::]/", "https://[::]"),
+        ("https://[::ffff:127.0.0.1]/", "https://[::ffff:127.0.0.1]"),
+        ("https://[::ffff:7f00:1]/", "https://[::ffff:7f00:1]"),
+        ("https://[::127.0.0.1]/", "https://[::127.0.0.1]"),
+        ("https://0.0.0.0/", "https://0.0.0.0"),
+        ("https://wp.localhost/", "https://wp.localhost"),
+        ("https://a.b.localhost:8443/", "https://a.b.localhost:8443"),
+    ] {
+        assert_eq!(o(url).as_deref(), Some(origem), "{url}");
+    }
+    for fora in [
+        "https://acme.com.br/login",
+        "https://localhost.acme.com.br/",
+        "https://localhostx/",
+        "https://xlocalhost/",
+        "https://128.0.0.1/",
+        "https://10.0.0.1/",
+        "https://[::2]/",
+        "https://[::ffff:8.8.8.8]/",
+        "https://[2001:db8::1]/",
+        // Recusadas pelo parser: não têm origem nenhuma (e nada é usado).
+        "https://LOCALHOST/",
+        "https://0x7f000001/",
+        "http://evil.io/",
+        "",
+    ] {
+        assert_eq!(o(fora), None, "{fora}");
+    }
+}

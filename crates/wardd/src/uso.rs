@@ -14,12 +14,13 @@
 //! trava o cofre e nega o pedido; antes disso o pedido continua pendente.
 //!
 //! Fase 44c (D9): no `login` e no `playwright` de uma entrada cuja URL é `http`
-//! (`localhost`/`127.0.0.1`), o pedido sempre vai à janela com a origem à vista, mesmo
+//! (`localhost`/`127.0.0.1`), e desde a Fase 44e de toda entrada cujo host é de
+//! loopback em qualquer esquema (`https://localhost`, `https://[::1]`…), o pedido sempre vai à janela com a origem à vista, mesmo
 //! no nível livre ou coberto pela liberação de 1 hora: o Ward não sabe que processo
 //! responde nessa origem (outro processo do uid pode escutar em `[::1]` ou na porta de
 //! um serviço parado). Nível livre: só uma confirmação, sem PIN ("Negar" ou
 //! "Confirmar"). "Com aprovação": a janela de sempre, com o PIN e a origem. Sem app,
-//! "aprovação indisponível". Em `https` nada muda.
+//! "aprovação indisponível". Em `https` de um host de fora nada muda.
 
 use ward_core::entrada::{Ambiente, Dados, Entrada, NivelAcesso, Segredo};
 use ward_core::exibicao;
@@ -73,13 +74,16 @@ fn segunda_entrada(e: &Entrada, op: Operacao) -> Option<&str> {
     }
 }
 
-/// Fase 44c (D9): a origem `http` para onde o uso leva usuário e senha (só no `login` e
-/// no `playwright` de uma entrada `login`), ou `None` (https, outro tipo, outra
-/// operação). O parser estrito só aceita `http` para `localhost` e `127.0.0.1`.
-pub(crate) fn origem_http(e: &Entrada, op: Operacao) -> Option<String> {
+/// Fase 44c (D9): a origem local para onde o uso leva usuário e senha (só no `login`, no
+/// `playwright` e no `preencher` do popup de uma entrada `login`), ou `None` (host de
+/// fora, outro tipo, outra operação). Fase 44e (2ª auditoria do M6): todo host de
+/// loopback conta, em qualquer esquema (`https://localhost`, `https://127.0.0.1`,
+/// `https://[::1]`…): um certificado de uma CA local (mkcert, `~/.pki`) não prova quem
+/// responde ([`ward_core::entrada::origem_local_da_url`]).
+pub(crate) fn origem_a_confirmar(e: &Entrada, op: Operacao) -> Option<String> {
     match (e.dados(), op) {
         (Dados::Login(l), Operacao::Login | Operacao::Playwright | Operacao::Preencher) => {
-            ward_core::entrada::origem_da_url(&l.url).filter(|o| o.starts_with("http://"))
+            ward_core::entrada::origem_local_da_url(&l.url)
         }
         _ => None,
     }
@@ -202,7 +206,7 @@ impl Daemon {
                 .find(|e| e.nome() == nome && e.nivel() != NivelAcesso::Bloqueado)
                 .ok_or(ErroResposta::EntradaInexistente)?;
             let mut nivel = nivel_efetivo(a, e, agora);
-            let origem = origem_http(e, op);
+            let origem = origem_a_confirmar(e, op);
             let mut entradas = vec![e.nome().to_owned()];
             let mut ambiente = e.ambiente();
             if let Some(outra) = segunda_entrada(e, op) {
@@ -231,9 +235,9 @@ impl Daemon {
         match nivel {
             NivelAcesso::Livre => match origem {
                 None => Ok(Autorizacao::SemPerguntar),
-                // Fase 44c: origem `http`, só a confirmação (sem PIN).
+                // Fase 44c/44e: origem local, só a confirmação (sem PIN).
                 Some(o) => {
-                    aviso!("uso numa origem http: confirmação na janela (D9)");
+                    aviso!("uso numa origem local: confirmação na janela (D9)");
                     self.aprovacao
                         .pedir_aprovacao(pedido_da_janela(true, Some(o)), cliente)?;
                     Ok(Autorizacao::Aprovado)

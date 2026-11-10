@@ -1,0 +1,220 @@
+{
+  "aprovacao-origem": {
+    "medidas": {
+      "altura": 772,
+      "largura": 560,
+      "cabecalho": [
+        25,
+        46,
+        25,
+        510
+      ],
+      "prod": [
+        91,
+        70,
+        25,
+        510
+      ],
+      "aviso": [
+        181,
+        88,
+        25,
+        510
+      ],
+      "resumo": [
+        289,
+        20,
+        25,
+        510
+      ],
+      "pedido": [
+        329,
+        264,
+        25,
+        510
+      ],
+      "pin": null,
+      "acoes": [
+        613,
+        44,
+        25,
+        510
+      ],
+      "nota": [
+        677,
+        70,
+        25,
+        510
+      ],
+      "textos": {
+        "prod": "prod\n\nCredencial de produção. Confira a origem com atenção antes de confirmar.",
+        "aviso": "Endereço http desta máquina. Qualquer programa seu pode escutar nele, inclusive no lugar do serviço que você espera. Confirme só se foi você quem pediu agora.",
+        "resumo": "Confira a entrada e a origem antes de confirmar."
+      },
+      "cores": {
+        "avisoFundo": "rgb(63, 42, 6)",
+        "avisoBorda": "rgba(245, 181, 68, 0.32)",
+        "avisoIcone": "rgb(245, 181, 68)",
+        "avisoTexto": "rgb(247, 248, 250)",
+        "pedidoBorda": "rgb(229, 72, 77)"
+      },
+      "selos": [
+        "login",
+        "prod"
+      ],
+      "botoes": [
+        "Negar",
+        "Confirmar a origem"
+      ],
+      "foco": "Negar",
+      "origem": true
+    },
+    "diferencas": []
+  },
+  "aprovacao-origem-popup": {
+    "medidas": {
+      "altura": 790,
+      "largura": 560,
+      "cabecalho": [
+        25,
+        64,
+        25,
+        510
+      ],
+      "prod": [
+        109,
+        70,
+        25,
+        510
+      ],
+      "aviso": [
+        199,
+        88,
+        25,
+        510
+      ],
+      "resumo": [
+        307,
+        20,
+        25,
+        510
+      ],
+      "pedido": [
+        347,
+        264,
+        25,
+        510
+      ],
+      "pin": null,
+      "acoes": [
+        631,
+        44,
+        25,
+        510
+      ],
+      "nota": [
+        695,
+        70,
+        25,
+        510
+      ],
+      "textos": {
+        "prod": "prod\n\nCredencial de produção. Confira a origem com atenção antes de confirmar.",
+        "aviso": "Endereço http desta máquina. Qualquer programa seu pode escutar nele, inclusive no lugar do serviço que você espera. Confirme só se foi você quem pediu agora.",
+        "resumo": "Confira a entrada e a origem antes de confirmar."
+      },
+      "cores": {
+        "avisoFundo": "rgb(63, 42, 6)",
+        "avisoBorda": "rgba(245, 181, 68, 0.32)",
+        "avisoIcone": "rgb(245, 181, 68)",
+        "avisoTexto": "rgb(247, 248, 250)",
+        "pedidoBorda": "rgb(229, 72, 77)"
+      },
+      "selos": [
+        "login",
+        "prod"
+      ],
+      "botoes": [
+        "Negar",
+        "Confirmar a origem"
+      ],
+      "foco": "Negar",
+      "origem": true
+    },
+    "diferencas": []
+  },
+  "aprovacao-origem-pin": {
+    "medidas": {
+      "altura": 874,
+      "largura": 560,
+      "cabecalho": [
+        25,
+        46,
+        25,
+        510
+      ],
+      "prod": null,
+      "aviso": [
+        91,
+        88,
+        25,
+        510
+      ],
+      "resumo": [
+        199,
+        20,
+        25,
+        510
+      ],
+      "pedido": [
+        239,
+        264,
+        25,
+        510
+      ],
+      "pin": [
+        523,
+        98,
+        25,
+        510
+      ],
+      "acoes": [
+        641,
+        100,
+        25,
+        510
+      ],
+      "nota": [
+        761,
+        88,
+        25,
+        510
+      ],
+      "textos": {
+        "prod": null,
+        "aviso": "Endereço http desta máquina. Qualquer programa seu pode escutar nele, inclusive no lugar do serviço que você espera. Confirme só se foi você quem pediu agora.",
+        "resumo": "Confira a entrada, a origem e quem pediu antes de permitir."
+      },
+      "cores": {
+        "avisoFundo": "rgb(63, 42, 6)",
+        "avisoBorda": "rgba(245, 181, 68, 0.32)",
+        "avisoIcone": "rgb(245, 181, 68)",
+        "avisoTexto": "rgb(247, 248, 250)",
+        "pedidoBorda": "rgb(52, 58, 70)"
+      },
+      "selos": [
+        "login",
+        "dev"
+      ],
+      "botoes": [
+        "Negar",
+        "Permitir uma vez",
+        "Permitir por 1 hora",
+        "Permitir sempre"
+      ],
+      "foco": "Negar",
+      "origem": true
+    },
+    "diferencas": []
+  }
+}

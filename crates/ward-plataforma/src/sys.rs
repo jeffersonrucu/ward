@@ -160,6 +160,68 @@ pub(crate) fn openat(dir: BorrowedFd<'_>, nome: &CStr, flags: libc::c_int) -> io
     Ok(unsafe { OwnedFd::from_raw_fd(fd) })
 }
 
+/// `unlinkat(dir, nome, flags)`: apaga `nome` dentro de `dir` (com `AT_REMOVEDIR`, uma
+/// pasta vazia). Nunca segue link: um link simbólico é apagado como ele é.
+#[allow(unsafe_code)]
+pub(crate) fn unlinkat(dir: BorrowedFd<'_>, nome: &CStr, flags: libc::c_int) -> io::Result<()> {
+    // SAFETY: `dir` está aberto pelo empréstimo e `nome` é uma string C válida até o fim
+    // da chamada; o kernel só a lê.
+    let r = unsafe { libc::unlinkat(dir.as_raw_fd(), nome.as_ptr(), flags) };
+    if r != 0 {
+        return Err(erro_os());
+    }
+    Ok(())
+}
+
+/// Os nomes dentro da pasta aberta em `dir` (sem `.` e `..`), lidos pelo próprio fd
+/// (`fdopendir` numa cópia `F_DUPFD_CLOEXEC`, `readdir` e `closedir`): nenhum caminho é
+/// resolvido de novo. A cópia divide a posição de leitura com `dir`; por isso volta ao
+/// começo (`rewinddir`) antes de ler.
+#[allow(unsafe_code)]
+pub(crate) fn listar_pasta(dir: BorrowedFd<'_>) -> io::Result<Vec<std::ffi::CString>> {
+    // SAFETY: `dir` está aberto pelo empréstimo; `F_DUPFD_CLOEXEC` só cria outro fd.
+    let copia = unsafe { libc::fcntl(dir.as_raw_fd(), libc::F_DUPFD_CLOEXEC, 0) };
+    if copia < 0 {
+        return Err(erro_os());
+    }
+    // SAFETY: `copia` é um fd novo, sem outro dono; o `fdopendir` passa a ser o dono
+    // dele (e o `closedir` abaixo o fecha). Se falhar, o fd ainda é nosso e é fechado.
+    let d = unsafe { libc::fdopendir(copia) };
+    if d.is_null() {
+        let e = erro_os();
+        // SAFETY: o `fdopendir` falhou, então `copia` continua só nosso.
+        unsafe { libc::close(copia) };
+        return Err(e);
+    }
+    // SAFETY: `d` é o `DIR*` válido devolvido acima, usado só nesta thread.
+    unsafe { libc::rewinddir(d) };
+    let mut nomes = Vec::new();
+    let resultado = loop {
+        // SAFETY: zera o `errno` desta thread para separar o fim da lista de um erro.
+        unsafe { *libc::__errno_location() = 0 };
+        // SAFETY: `d` é válido até o `closedir`; o ponteiro devolvido vale até a
+        // próxima chamada de `readdir` no mesmo `DIR*`, e o nome é copiado antes dela.
+        let item = unsafe { libc::readdir(d) };
+        if item.is_null() {
+            let e = io::Error::last_os_error();
+            break if e.raw_os_error().unwrap_or(0) == 0 {
+                Ok(())
+            } else {
+                Err(e)
+            };
+        }
+        // SAFETY: `item` aponta para um `dirent` válido, e `d_name` termina em NUL.
+        let nome = unsafe { CStr::from_ptr((*item).d_name.as_ptr()) };
+        let b = nome.to_bytes();
+        if b != b"." && b != b".." {
+            nomes.push(nome.to_owned());
+        }
+    };
+    // SAFETY: `d` é válido e não é usado depois; fecha também a cópia do fd.
+    unsafe { libc::closedir(d) };
+    resultado.map(|()| nomes)
+}
+
 /// `readlinkat(dir, nome)`, com no máximo `PATH_MAX` bytes. Resultado truncado é erro.
 #[allow(unsafe_code)]
 pub(crate) fn readlinkat(dir: BorrowedFd<'_>, nome: &CStr) -> io::Result<Vec<u8>> {

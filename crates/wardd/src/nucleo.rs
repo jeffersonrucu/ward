@@ -1050,11 +1050,13 @@ impl Daemon {
         Ok(Resposta::Sugestoes(itens))
     }
 
-    /// `preencher` do popup da extensão (Fase 44c, D9): numa entrada cuja URL é `http`
-    /// (`localhost`/`127.0.0.1`), os valores só saem depois de o usuário confirmar a
+    /// `preencher` do popup da extensão (Fase 44c, D9): numa entrada cuja URL é local
+    /// (`http` de `localhost`/`127.0.0.1` e, desde a Fase 44e, todo host de loopback em
+    /// `https`), os valores só saem depois de o usuário confirmar a
     /// origem na janela do app (sem PIN: quem clicou no popup é o usuário, e o nível não
     /// conta para a extensão). Sem app, "aprovação indisponível". Origem diferente
-    /// responde antes de perguntar nada. Em `https`, o [`Daemon::preencher`] direto.
+    /// responde antes de perguntar nada. Em `https` de fora, o [`Daemon::preencher`]
+    /// direto.
     fn preencher_do_popup(
         &self,
         cliente: &dyn Cliente,
@@ -1084,7 +1086,7 @@ impl Daemon {
                 aviso!("preencher {} recusado: origem diferente (D9)", e.nome());
                 return Err(ErroResposta::OrigemDiferente);
             }
-            crate::uso::origem_http(e, Operacao::Preencher).map(|o| PedidoDeAprovacao {
+            crate::uso::origem_a_confirmar(e, Operacao::Preencher).map(|o| PedidoDeAprovacao {
                 id: 0,
                 entradas: vec![e.nome().to_owned()],
                 ambiente: e.ambiente(),
@@ -1097,7 +1099,7 @@ impl Daemon {
             })
         };
         if let Some(p) = pedido {
-            aviso!("preencher {nome}: origem http, confirmação na janela (D9)");
+            aviso!("preencher {nome}: origem local, confirmação na janela (D9)");
             self.aprovacao.pedir_aprovacao(p, cliente)?;
         }
         // A entrada pode ter mudado durante a espera: o `preencher` confere tudo de novo.
