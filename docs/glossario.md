@@ -1128,6 +1128,20 @@ Telas `Form`, `Credentials` e `ChooseType` (Fase 36):
 | ficam em `dev/tests/` | `app-dist.py`, `app-e2e.sh`, `app-release.sh`, `app_e2e.py`, `bidi.mjs`, `bidi_icu.py`, `cli.py`, `deb.sh`, `docker-uid.sh`, `install.sh`, `login.py`, `login.sh`, `nm.py`, `nm.sh`, `pg_select.py`, `playwright.py`, `playwright.sh`, `skill.py`, `ssh-home.sh`, `ssh_home.py`, `units.sh`, `webkit-real.sh` |
 | novos (Fases 2 e 3) | `dev/english_check.py`, `dev/syntax_check.py` (sintaxe do `make compile`), `dev/english-check/{pt-words,allow,frozen}.txt`, `dev/fixtures/legacy/` (`vault-0.1.4.ward`, `state-0.1.4`, `backup-0.1.4/`, `protocol-v1.jsonl`, `list-v1.json`, `help-0.1.4.txt`, `strings-0.1.4.txt`, `SHA256SUMS`), `crates/ward-core/src/wire_v1.rs` (testes de fio contra a linha de base) |
 
+Identificadores dos scripts `dev/tests/cli.py` e `extension.py` (Fase 40), pela seção 2:
+`conferir`/`confere` → `verify`, `falhas` → `failures`, `relato` → `report`, `padroes` →
+`patterns`, `ambiente()` → `environment()`, `rodar_pty` → `run_pty`, `sem_variacao` →
+`no_variation`, `tem_segredo` → `has_secret`, `avaliar` → `evaluate`, `bombear` →
+`pump`, `abrir_popup`/`fechar_popup`/`anexar_popup`/`popup_novo` →
+`open_popup`/`close_popup`/`attach_popup`/`new_popup`, `clicar_entrada` →
+`click_entry`, `preencher_forcado` → `forced_fill`, `captura` → `screenshot`,
+`valores` → `values`, `modo_janela` → `set_window_mode`, `pedidos_da_janela` →
+`window_requests`, `Varredor` → `Scanner`, `LeitorDeProc` → `ProcReader`,
+`ssh_com_canal` → `ssh_with_channel`, `TERMINAL_FALSO` → `FAKE_TERMINAL`,
+`interativo` → `interactive`, `capturar` → `capture`, `secao_fase_42` →
+`phase_42_section`, `tema_continua_escuro` → `theme_stays_dark`, `sem_prender` →
+`unstick`. Chaves do `qa.json`, nomes de fio, ids e classes do DOM ficam (literais).
+
 ### Evidência dos scripts (DT1; Fase 5)
 
 `docs/mission/evidence/fase-NN/` → `docs/mission/evidence/<suíte>/`, pelo alvo novo:
