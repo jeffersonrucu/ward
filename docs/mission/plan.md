@@ -1650,7 +1650,7 @@ seis baixos.
   - `make teste-ataques-fundacao` (não rodou na auditoria por falta de disco) roda e sai 0.
   Feita (2026-11-10): `make check` (936 testes), `teste-docker-plataforma`, `teste-cli`,
   `teste-ataques-servicos` e `teste-ataques-fundacao` (167 ok) saíram 0. Achados fora da
-  fase: Fases 54c e 54d; `ward ssh` aberto não cai na trava (decisão do usuário).
+  fase: Fases 54c e 54d; `ward ssh` aberto não cai na trava (decidido: Fase 54c).
 - [x] Fase 54a — RA8 aceito, docs endurecidos (decisão do usuário, 2026-11-09: "Aceitar e
   endurecer docs"):
   - `docs/escopo.md`: RA8 sai de "a decidir" e entra em "Fora do modelo de ameaça" (sessão
@@ -1689,6 +1689,10 @@ seis baixos.
     recente não apagam cópias reais (a 49a só cobriu datas futuras). Teste.
   - Relógio que volta: documentar a falha fechada (versão "fora de ordem" não vai) no
     escopo › backup.
+  - `ward ssh` morre na trava (decisão do usuário, 2026-11-10: "Derrubar também"): a sessão
+    `ssh`/`sshpass` aberta entra no mesmo registro do `ward run` (`SessoesRun`) e leva
+    `SIGKILL` no grupo ao travar; a CLI sai 137 com o aviso. Teste de ataque e ajuste do
+    V4.26/escopo › S8.
 - [ ] Fase 54d (DESIGN) — Aviso dos backups antigos no FigCraft (achado da Fase 54):
   - `Diálogo de troca` › `Tipo=senha mestra` (19918/19924) e `Configurações / Trocar senha
     mestra` (20085/20411) ganham o aviso da tela, com `--cor-aviso-texto`, igual ao app
