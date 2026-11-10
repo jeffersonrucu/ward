@@ -61,13 +61,13 @@ fn abrir_conteudo(arquivo: &[u8]) -> Vec<u8> {
 
 fn hex_aleatorio() -> String {
     let mut b = [0u8; 12];
-    cripto::aleatorio(&mut b).unwrap();
+    crypto::random(&mut b).unwrap();
     b.iter().map(|x| format!("{x:02x}")).collect()
 }
 
 fn u64_aleatorio() -> u64 {
     let mut b = [0u8; 8];
-    cripto::aleatorio(&mut b).unwrap();
+    crypto::random(&mut b).unwrap();
     u64::from_le_bytes(b)
 }
 
@@ -1129,7 +1129,7 @@ fn corpo_v4_com_datas(versao: u64) -> zeroize::Zeroizing<Vec<u8>> {
                 projeto: String::new(),
                 tags: Vec::new(),
                 dados: RascunhoDados::NotaSegura {
-                    texto: Some(Segredo::de_bytes(vec![b'n'; crate::limites::MAX_NOTA])),
+                    texto: Some(Segredo::de_bytes(vec![b'n'; crate::limits::MAX_NOTE])),
                 },
                 extras: Vec::new(),
                 anexos: Vec::new(),

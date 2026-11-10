@@ -2007,6 +2007,34 @@ com `Travada` → `Locked`, `SemTravar` → `NotLocked`; `PaiDiferente` → `Par
 `Depurador` → `Debugger`, `LerStatus` → `ReadStatus`, `LimiteMemlock` → `MemlockLimit`,
 `TravarMemoria` → `LockMemory`.
 
+Fase 10 (`ward-core`: `limits`, `crypto`, `totp`, `generator`, `origin`, `display`):
+`ErroTotp` → `TotpError` com `SementeInvalida` → `InvalidSeed`, `DigitosInvalidos` →
+`InvalidDigits`, `RelogioInvalido` → `InvalidClock`; `CodigoTotp` (o tipo do `totp`,
+não a resposta do protocolo) → `TotpCode` (`codigo()` → `code()`, `restante()` →
+`remaining()`), `Totp::de_semente`/`com_digitos`/`codigo_em`/`codigo_agora` →
+`from_seed`/`with_digits`/`code_at`/`code_now`; `ErroGerador` → `GeneratorError` com
+`TamanhoInvalido` → `InvalidSize`, `NenhumConjunto` → `NoSet`,
+`AleatorioIndisponivel` → `RandomUnavailable`; `OpcoesGerador { tamanho, minusculas,
+maiusculas, digitos, simbolos }` → `GeneratorOptions { size, lowercase, uppercase,
+digits, symbols }`; `gerar`/`gerar_com` → `generate`/`generate_with`,
+`token_conectar` → `connect_token`, `tokens_iguais` → `tokens_equal`; `cripto::Chave`
+→ `crypto::Key` (o `Key` do `chacha20poly1305` entra como `AeadKey`), `FalhaCripto` →
+`CryptoFailure`, `PhcPin` → `PinPhc`, `selar`/`abrir`/`aleatorio`/`chave_aleatoria`/
+`derivar_kek`/`conferir_pin`/`ler_phc_pin`/`iguais_em_tempo_constante` →
+`seal`/`open`/`random`/`random_key`/`derive_kek`/`verify_pin`/`read_pin_phc`/
+`constant_time_eq`, `TAM_CHAVE`/`TAM_NONCE`/`TAM_TAG` → `KEY_SIZE`/`NONCE_SIZE`/
+`TAG_SIZE`; `Origem::da_url` → `Origin::from_url`, `mesma_origem` → `same_origin`;
+`exibir_argumentos`/`exibir_texto`/`neutralizar`/`invisivel`/`AVISO_CORTE` →
+`display_args`/`display_text`/`neutralize`/`invisible`/`CUT_NOTICE`. Constantes de
+`limits` fora da regra direta: `MAX_BASE` → `MAX_DB_NAME`, `MAX_BASE_REDIS` →
+`MAX_REDIS_DB_NAME`, `MAX_ANEXOS_SOMADOS` → `MAX_ATTACHMENTS_TOTAL`, `LIMITE_PADROES`
+→ `PATTERN_LIMIT`, `ORCAMENTO_MASCARA` → `MASK_BUDGET`, `MINIMO_CONFIAVEL` →
+`TRUSTED_MINIMUM`, `MIN_CARACTERES_SENHA_MESTRA` → `MIN_MASTER_PASSWORD_CHARS`,
+`MINUTOS_TRAVA_PADRAO` → `DEFAULT_LOCK_MINUTES`, `MAX_QUADRO_COMUM`/`_APP`/`_RESPOSTA`
+→ `MAX_COMMON_FRAME`/`MAX_APP_FRAME`/`MAX_RESPONSE_FRAME`, `MAX_VARIAVEIS_AMBIENTE` →
+`MAX_ENV_VARIABLES`, `MAX_TEXTO_EXIBIDO` → `MAX_DISPLAYED_TEXT`. O `backup::MAX_NOME`
+(Fase 15) e o `MAX_CORPO` da ponte de teste (Fase 29) são outros itens e não mudaram.
+
 Funções e métodos não estão listados um a um: o nome sai da seção 2 na ordem do inglês
 (`conferir_arquivo` → `verify_file`, `ler_cofre` → `read_vault`, `codificar_resposta` →
 `encode_response`, `exigir_pin` → `require_pin`). Os poucos fixados por outra seção:

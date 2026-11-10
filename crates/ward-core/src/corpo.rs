@@ -29,7 +29,7 @@
 //!   não existe cofre real nas versões antigas.
 //! - **Versão 4** (D65 d, provisória): cada entrada termina com as datas de criação e
 //!   de alteração ([`Datas`]), em segundos UTC; 0 é "sem data". A leitura confere a
-//!   regra de [`Datas`] (faixa de 1 a [`MAX_DATA`], criação só com alteração e não
+//!   regra de [`Datas`] (faixa de 1 a [`MAX_DATE`], criação só com alteração e não
 //!   depois dela). A versão 3 (sem datas) é recusada como versão desconhecida, sem
 //!   migração: não há cofre instalado, e o `make dev-vault` regrava o de teste.
 //! - Tipo, nível, ambiente, motor, segurança e protocolo vão pelos identificadores
@@ -40,13 +40,13 @@
 //!   então todo corpo aceito, serializado de novo, dá os mesmos bytes.
 //! - **Gravar** (S8): o tamanho final é calculado antes, e o buffer é um
 //!   `Zeroizing<Vec<u8>>` com essa capacidade exata; nenhuma realocação deixa cópia em
-//!   claro. Corpo acima de [`MAX_CORPO`] ou com mais de [`MAX_ENTRADAS`] é recusado
+//!   claro. Corpo acima de [`MAX_BODY`] ou com mais de [`MAX_ENTRIES`] é recusado
 //!   antes de alocar. Entradas inconsistentes entre si (nome repetido, túnel ou salto
 //!   inválido) também são recusadas: o que se grava sempre reabre.
 //! - **Ler** (o disco é entrada não confiável, mesmo autenticado): em duas passadas.
 //!   A primeira só percorre o buffer, sem alocar nada, e confere versão, a
 //!   configuração inteira (o texto PHC é lido e escrito de novo numa pilha), contagens,
-//!   cada comprimento contra o que resta e contra os limites de [`crate::limites`]
+//!   cada comprimento contra o que resta e contra os limites de [`crate::limits`]
 //!   (inclusive a soma dos anexos de cada entrada, D29), tipo, nível, ordem dos nomes e
 //!   byte sobrando. A segunda monta a configuração e cada entrada por
 //!   [`Rascunho::validar`], aplica o nível guardado por [`Entrada::definir_nivel`] e
@@ -72,13 +72,13 @@ mod testes;
 /// com as datas de cada entrada).
 pub const VERSAO_CORPO: u16 = 4;
 
-// Os limites estão em `crate::limites` (D32): a leitura recusa acima deles antes de
+// Os limites estão em `crate::limits` (D32): a leitura recusa acima deles antes de
 // alocar, e a validação da entrada confere de novo, com o limite exato de cada campo.
-use crate::limites::{
-    MAX_ANEXOS, MAX_ANEXOS_SOMADOS, MAX_DATA, MAX_EXTRAS, MAX_HASH_PIN, MAX_NOTA, MAX_SEGREDO,
-    MAX_TAGS, MAX_TEXTO, MAX_UUID_BACKUP, MAX_VALOR_EXTRA, MIB,
+use crate::limits::{
+    MAX_ATTACHMENTS, MAX_ATTACHMENTS_TOTAL, MAX_BACKUP_UUID, MAX_DATE, MAX_EXTRA_VALUE, MAX_EXTRAS,
+    MAX_NOTE, MAX_PIN_HASH, MAX_SECRET, MAX_TAGS, MAX_TEXT, MIB,
 };
-pub use crate::limites::{MAX_CORPO, MAX_ENTRADAS};
+pub use crate::limits::{MAX_BODY, MAX_ENTRIES};
 /// Mais campos de um tipo (`banco`, `servidor`, `ftp/sftp`). Estrutural, não é limite.
 const MAX_DADOS: usize = 7;
 
@@ -89,7 +89,7 @@ pub enum ErroCorpo {
     /// tipo ou nível desconhecido, campo fora do limite, entrada inválida, nome
     /// repetido, referência quebrada…). Um erro só, de propósito.
     Invalido,
-    /// Gravação: acima de [`MAX_CORPO`] bytes ou de [`MAX_ENTRADAS`] entradas.
+    /// Gravação: acima de [`MAX_BODY`] bytes ou de [`MAX_ENTRIES`] entradas.
     GrandeDemais,
     /// Gravação: nome repetido ou túnel/salto que não fecha no cofre (não reabriria).
     Inconsistente,
@@ -99,13 +99,13 @@ impl fmt::Display for ErroCorpo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Invalido => f.write_str("conteúdo do cofre inválido ou corrompido"),
-            // Montada a partir de `crate::limites` (D45): a mensagem acompanha a
+            // Montada a partir de `crate::limits` (D45): a mensagem acompanha a
             // constante. O milhar vai com espaço, como no resto do texto.
             Self::GrandeDemais => write!(
                 f,
                 "cofre grande demais (limite de {} MiB e {} entradas)",
-                MAX_CORPO / MIB,
-                Milhar(MAX_ENTRADAS)
+                MAX_BODY / MIB,
+                Milhar(MAX_ENTRIES)
             ),
             Self::Inconsistente => f.write_str(
                 "entradas inconsistentes: nome repetido ou túnel/salto que não aponta para um servidor válido",
@@ -226,7 +226,7 @@ pub fn serializar(
     if geracao == 0 {
         return Err(ErroCorpo::Inconsistente);
     }
-    if entradas.len() > MAX_ENTRADAS {
+    if entradas.len() > MAX_ENTRIES {
         return Err(ErroCorpo::GrandeDemais);
     }
     let mut ordem: Vec<&Entrada> = entradas.iter().collect();
@@ -245,7 +245,7 @@ pub fn serializar(
         return Err(ErroCorpo::Inconsistente);
     }
     let total = conta.total;
-    if total > MAX_CORPO {
+    if total > MAX_BODY {
         return Err(ErroCorpo::GrandeDemais);
     }
 
@@ -270,7 +270,7 @@ pub type CorpoLido = (Configuracao, u64, Vec<Entrada>);
 /// Lê o corpo decifrado: a configuração, a geração e as entradas. Recusa o corpo
 /// inteiro com [`ErroCorpo::Invalido`] em qualquer problema.
 pub fn desserializar(corpo: &[u8]) -> Result<CorpoLido, ErroCorpo> {
-    if corpo.len() > MAX_CORPO {
+    if corpo.len() > MAX_BODY {
         return Err(ErroCorpo::Invalido);
     }
     // 1ª passada: estrutura inteira, sem alocar.
@@ -306,7 +306,7 @@ pub fn desserializar(corpo: &[u8]) -> Result<CorpoLido, ErroCorpo> {
 /// Só a geração de um corpo decifrado (Fase 49a), depois de conferir a estrutura
 /// inteira (sem montar entradas nem alocar segredo). `None` em qualquer problema.
 pub(crate) fn geracao_do_corpo(corpo: &[u8]) -> Option<u64> {
-    if corpo.len() > MAX_CORPO {
+    if corpo.len() > MAX_BODY {
         return None;
     }
     conferir_estrutura(corpo).ok()?;
@@ -377,10 +377,10 @@ enum Campo {
 impl Campo {
     fn max(self) -> usize {
         match self {
-            Campo::Texto => MAX_TEXTO,
+            Campo::Texto => MAX_TEXT,
             Campo::Porta => 2,
-            Campo::Segredo => MAX_SEGREDO,
-            Campo::Nota => MAX_NOTA,
+            Campo::Segredo => MAX_SECRET,
+            Campo::Nota => MAX_NOTE,
         }
     }
 }
@@ -469,14 +469,14 @@ fn escrever_corpo(
 }
 
 fn escrever_configuracao(s: &mut Saida<'_>, c: &Configuracao) {
-    s.campo(c.hash_pin().bytes(), MAX_HASH_PIN);
+    s.campo(c.hash_pin().bytes(), MAX_PIN_HASH);
     let minutos = c.minutos_trava();
     if !configuracao::minutos_validos(minutos) {
         s.erro = true;
     }
     s.por(&minutos.to_le_bytes());
     s.por(&[u8::from(c.backup().ligado())]);
-    s.campo(c.backup().uuid().unwrap_or("").as_bytes(), MAX_UUID_BACKUP);
+    s.campo(c.backup().uuid().unwrap_or("").as_bytes(), MAX_BACKUP_UUID);
 }
 
 fn opcional(s: &Option<Segredo>) -> &[u8] {
@@ -581,15 +581,15 @@ fn campos_dados<'e>(dados: &'e Dados, porta: &'e mut [u8; 2]) -> [&'e [u8]; MAX_
 }
 
 fn escrever_entrada(s: &mut Saida<'_>, e: &Entrada) {
-    s.campo(e.tipo().nome().as_bytes(), MAX_TEXTO);
-    s.campo(e.nivel().nome().as_bytes(), MAX_TEXTO);
-    s.campo(e.nome().as_bytes(), MAX_TEXTO);
-    s.campo(e.grupo().as_bytes(), MAX_TEXTO);
-    s.campo(e.ambiente().nome().as_bytes(), MAX_TEXTO);
-    s.campo(e.projeto().unwrap_or("").as_bytes(), MAX_TEXTO);
+    s.campo(e.tipo().nome().as_bytes(), MAX_TEXT);
+    s.campo(e.nivel().nome().as_bytes(), MAX_TEXT);
+    s.campo(e.nome().as_bytes(), MAX_TEXT);
+    s.campo(e.grupo().as_bytes(), MAX_TEXT);
+    s.campo(e.ambiente().nome().as_bytes(), MAX_TEXT);
+    s.campo(e.projeto().unwrap_or("").as_bytes(), MAX_TEXT);
     s.u32(e.tags().len());
     for tag in e.tags() {
-        s.campo(tag.as_bytes(), MAX_TEXTO);
+        s.campo(tag.as_bytes(), MAX_TEXT);
     }
     let mut porta = [0u8; 2];
     let valores = campos_dados(e.dados(), &mut porta);
@@ -598,29 +598,29 @@ fn escrever_entrada(s: &mut Saida<'_>, e: &Entrada) {
     }
     s.u32(e.extras().len());
     for extra in e.extras() {
-        s.campo(extra.nome().as_bytes(), MAX_TEXTO);
+        s.campo(extra.nome().as_bytes(), MAX_TEXT);
         match extra.valor() {
             ValorExtra::Texto(t) => {
                 s.por(&[0]);
-                s.campo(t.as_bytes(), MAX_VALOR_EXTRA);
+                s.campo(t.as_bytes(), MAX_EXTRA_VALUE);
             }
             ValorExtra::Segredo(v) => {
                 s.por(&[1]);
-                s.campo(v.expor(), MAX_VALOR_EXTRA);
+                s.campo(v.expor(), MAX_EXTRA_VALUE);
             }
         }
     }
     s.u32(e.anexos().len());
     for anexo in e.anexos() {
-        s.campo(anexo.nome().as_bytes(), MAX_TEXTO);
-        s.campo(anexo.conteudo().expor(), MAX_ANEXOS_SOMADOS);
+        s.campo(anexo.nome().as_bytes(), MAX_TEXT);
+        s.campo(anexo.conteudo().expor(), MAX_ATTACHMENTS_TOTAL);
     }
     // D65 d: 0 = sem data. Uma `Datas` só existe dentro da regra; a faixa é conferida
     // de novo para o que se grava sempre reabrir.
     let datas = e.datas();
     for d in [datas.criada_em(), datas.alterada_em()] {
         let d = d.unwrap_or(0);
-        if d > MAX_DATA {
+        if d > MAX_DATE {
             s.erro = true;
         }
         s.por(&d.to_le_bytes());
@@ -725,7 +725,7 @@ fn ler_cabecalho<'a>(l: &mut Leitor<'a>) -> Result<(BrutaConfiguracao<'a>, usize
         return Err(ErroCorpo::Invalido);
     }
     let cfg = ler_configuracao(l)?;
-    Ok((cfg, l.contagem(MAX_ENTRADAS)?))
+    Ok((cfg, l.contagem(MAX_ENTRIES)?))
 }
 
 /// A seção de configuração (D30, D39): geração ≥ 1, hash PHC conferido por inteiro (Argon2id, custo na
@@ -737,7 +737,7 @@ fn ler_configuracao<'a>(l: &mut Leitor<'a>) -> Result<BrutaConfiguracao<'a>, Err
     if geracao == 0 {
         return Err(ErroCorpo::Invalido);
     }
-    let hash_pin = l.campo(MAX_HASH_PIN)?;
+    let hash_pin = l.campo(MAX_PIN_HASH)?;
     if !configuracao::conferir_texto(hash_pin) {
         return Err(ErroCorpo::Invalido);
     }
@@ -751,7 +751,7 @@ fn ler_configuracao<'a>(l: &mut Leitor<'a>) -> Result<BrutaConfiguracao<'a>, Err
         1 => true,
         _ => return Err(ErroCorpo::Invalido),
     };
-    let uuid = l.campo(MAX_UUID_BACKUP)?;
+    let uuid = l.campo(MAX_BACKUP_UUID)?;
     if (!uuid.is_empty() && !configuracao::uuid_valido(uuid)) || (ligado && uuid.is_empty()) {
         return Err(ErroCorpo::Invalido);
     }
@@ -777,37 +777,37 @@ fn montar_configuracao(b: &BrutaConfiguracao<'_>) -> Result<Configuracao, ErroCo
 }
 
 fn ler_tag<'a>(l: &mut Leitor<'a>) -> Result<&'a [u8], ErroCorpo> {
-    l.campo(MAX_TEXTO)
+    l.campo(MAX_TEXT)
 }
 
 fn ler_extra<'a>(l: &mut Leitor<'a>) -> Result<(&'a [u8], bool, &'a [u8]), ErroCorpo> {
-    let nome = l.campo(MAX_TEXTO)?;
+    let nome = l.campo(MAX_TEXT)?;
     let segredo = match l.u8()? {
         0 => false,
         1 => true,
         _ => return Err(ErroCorpo::Invalido),
     };
-    let valor = l.campo(MAX_VALOR_EXTRA)?;
+    let valor = l.campo(MAX_EXTRA_VALUE)?;
     Ok((nome, segredo, valor))
 }
 
 fn ler_anexo<'a>(l: &mut Leitor<'a>) -> Result<(&'a [u8], &'a [u8]), ErroCorpo> {
-    let nome = l.campo(MAX_TEXTO)?;
-    let conteudo = l.campo(MAX_ANEXOS_SOMADOS)?;
+    let nome = l.campo(MAX_TEXT)?;
+    let conteudo = l.campo(MAX_ATTACHMENTS_TOTAL)?;
     Ok((nome, conteudo))
 }
 
-/// Os anexos de uma entrada: até [`MAX_ANEXOS`] itens que somam até
-/// [`MAX_ANEXOS_SOMADOS`] (D29), conferidos antes de alocar.
+/// Os anexos de uma entrada: até [`MAX_ATTACHMENTS`] itens que somam até
+/// [`MAX_ATTACHMENTS_TOTAL`] (D29), conferidos antes de alocar.
 fn ler_anexos<'a>(l: &mut Leitor<'a>) -> Result<Lista<'a>, ErroCorpo> {
-    let n = l.contagem(MAX_ANEXOS)?;
+    let n = l.contagem(MAX_ATTACHMENTS)?;
     let inicio = l.resto;
     let mut soma: usize = 0;
     for _ in 0..n {
         let (_, conteudo) = ler_anexo(l)?;
         soma = soma
             .checked_add(conteudo.len())
-            .filter(|s| *s <= MAX_ANEXOS_SOMADOS)
+            .filter(|s| *s <= MAX_ATTACHMENTS_TOTAL)
             .ok_or(ErroCorpo::Invalido)?;
     }
     let usados = inicio.len() - l.resto.len();
@@ -836,18 +836,18 @@ fn ler_lista<'a, T>(
 }
 
 fn ler_bruta<'a>(l: &mut Leitor<'a>) -> Result<Bruta<'a>, ErroCorpo> {
-    let tipo = core::str::from_utf8(l.campo(MAX_TEXTO)?)
+    let tipo = core::str::from_utf8(l.campo(MAX_TEXT)?)
         .ok()
         .and_then(TipoEntrada::de_nome)
         .ok_or(ErroCorpo::Invalido)?;
-    let nivel = core::str::from_utf8(l.campo(MAX_TEXTO)?)
+    let nivel = core::str::from_utf8(l.campo(MAX_TEXT)?)
         .ok()
         .and_then(NivelAcesso::de_nome)
         .ok_or(ErroCorpo::Invalido)?;
-    let nome = l.campo(MAX_TEXTO)?;
-    let grupo = l.campo(MAX_TEXTO)?;
-    let ambiente = l.campo(MAX_TEXTO)?;
-    let projeto = l.campo(MAX_TEXTO)?;
+    let nome = l.campo(MAX_TEXT)?;
+    let grupo = l.campo(MAX_TEXT)?;
+    let ambiente = l.campo(MAX_TEXT)?;
+    let projeto = l.campo(MAX_TEXT)?;
     let tags = ler_lista(l, MAX_TAGS, ler_tag)?;
     let mut dados: [&[u8]; MAX_DADOS] = [&[]; MAX_DADOS];
     for (i, campo) in esquema(tipo).iter().enumerate() {

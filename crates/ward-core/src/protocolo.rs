@@ -6,8 +6,8 @@
 //! 4 bytes de tamanho (u32 big-endian) e o corpo, um objeto JSON em UTF-8
 //! ([`quadro`]). O limite depende do papel, que o daemon tira da conexão
 //! (`SO_PEERCRED`, Fase 21) **antes** de ler o quadro: 1 MiB para o cliente comum
-//! (agente) e a extensão ([`limites::MAX_QUADRO_COMUM`], V3.4), e um quadro maior só para
-//! o app identificado ([`limites::MAX_QUADRO_APP`]), que cabe a maior entrada que a
+//! (agente) e a extensão ([`limits::MAX_COMMON_FRAME`], V3.4), e um quadro maior só para
+//! o app identificado ([`limits::MAX_APP_FRAME`]), que cabe a maior entrada que a
 //! validação aceita, com os 256 KiB de anexos de D29.
 //!
 //! # Mensagens
@@ -49,7 +49,7 @@
 
 use zeroize::Zeroizing;
 
-use crate::limites;
+use crate::limits;
 
 mod campos;
 mod erros;
@@ -295,12 +295,10 @@ const _: () = {
     assert!(!Operacao::Pendrives.papeis().extensao);
     // O quadro do app cabe a maior entrada (D29) em base64 e os textos escapados.
     assert!(
-        json::tamanho_base64(limites::MAX_ENTRADA)
-            + 2 * limites::MAX_TEXTOS_ENTRADA
-            + 64 * limites::KIB
-            <= limites::MAX_QUADRO_APP
+        json::tamanho_base64(limits::MAX_ENTRY) + 2 * limits::MAX_ENTRY_TEXTS + 64 * limits::KIB
+            <= limits::MAX_APP_FRAME
     );
-    assert!(limites::MAX_QUADRO_COMUM < 2 * limites::MIB);
+    assert!(limits::MAX_COMMON_FRAME < 2 * limits::MIB);
 };
 
 /// Por que não foi possível codificar.

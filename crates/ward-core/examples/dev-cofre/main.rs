@@ -54,7 +54,7 @@ use ward_core::entrada::{
 use ward_core::entrega::{self, ErroEntrega, ErroRecurso, Recursos};
 use ward_core::formato::{CofreAberto, SenhaMestra};
 use ward_core::gravacao::gravar_entradas;
-use ward_core::limites::{MAX_ANEXOS_SOMADOS, MINUTOS_TRAVA_PADRAO};
+use ward_core::limits::{DEFAULT_LOCK_MINUTES, MAX_ATTACHMENTS_TOTAL};
 use ward_core::mascara::{MARCA, Mascara};
 use zeroize::Zeroizing;
 
@@ -75,9 +75,9 @@ const BASE_ANEXOS: &str = "dev/fixtures/attachments";
 
 const MAX_FIXTURES: u64 = 1024 * 1024;
 const MAX_CHAVE: u64 = 64 * 1024;
-/// Limite de leitura de um anexo: o de `ward_core::limites` (D29, D32; a validação
+/// Limite de leitura de um anexo: o de `ward_core::limits` (D29, D32; a validação
 /// confere a soma).
-const MAX_ANEXO: u64 = MAX_ANEXOS_SOMADOS as u64;
+const MAX_ANEXO: u64 = MAX_ATTACHMENTS_TOTAL as u64;
 /// Corpo de 64 MiB (D26) cifrado, com folga para o cabeçalho e a tag.
 const MAX_COFRE: u64 = 65 * 1024 * 1024;
 
@@ -236,7 +236,7 @@ fn executar(args: impl Iterator<Item = OsString>) -> Result<(), Erro> {
 fn imprimir_configuracao(geracao: u64) {
     println!(
         "dev-cofre: configuração: geração {geracao}, hash do PIN Argon2id (m={} KiB, t={}, p={}), trava em {} min, backup externo desligado",
-        KDF_PIN.memoria_kib, KDF_PIN.passes, KDF_PIN.paralelismo, MINUTOS_TRAVA_PADRAO
+        KDF_PIN.memoria_kib, KDF_PIN.passes, KDF_PIN.paralelismo, DEFAULT_LOCK_MINUTES
     );
 }
 
@@ -314,7 +314,7 @@ fn conferir_configuracao(cfg: &Configuracao, pin: &str) -> Result<(), Erro> {
         ));
     }
     if cfg.hash_pin().parametros() != KDF_PIN
-        || cfg.minutos_trava() != MINUTOS_TRAVA_PADRAO
+        || cfg.minutos_trava() != DEFAULT_LOCK_MINUTES
         || cfg.backup().ligado()
         || cfg.backup().uuid().is_some()
     {
@@ -344,7 +344,7 @@ impl Recursos for RecursosFalsos {
 }
 
 /// Maior padrão aceito numa linha do stdin (o maior anexo de D29 em hex, com folga).
-const MAX_LINHA_CRUZADO: usize = 4 * MAX_ANEXOS_SOMADOS + 1024;
+const MAX_LINHA_CRUZADO: usize = 4 * MAX_ATTACHMENTS_TOTAL + 1024;
 
 fn hex_para_bytes(h: &[u8]) -> Option<Zeroizing<Vec<u8>>> {
     if !h.len().is_multiple_of(2) {

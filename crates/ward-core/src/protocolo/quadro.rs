@@ -14,7 +14,7 @@ use std::io::{self, Read, Write};
 
 use zeroize::Zeroizing;
 
-use crate::limites::{KIB, MAX_QUADRO_APP, MAX_QUADRO_COMUM, MAX_QUADRO_RESPOSTA};
+use crate::limits::{KIB, MAX_APP_FRAME, MAX_COMMON_FRAME, MAX_RESPONSE_FRAME};
 use crate::protocolo::Papel;
 
 /// Tamanho do bloco de leitura.
@@ -27,13 +27,13 @@ pub const CABECALHO: usize = 4;
 /// da conexão (`SO_PEERCRED`, Fase 21), nunca do quadro.
 pub const fn limite_do_quadro(papel: Papel) -> usize {
     match papel {
-        Papel::App => MAX_QUADRO_APP,
-        Papel::Agente | Papel::Extensao => MAX_QUADRO_COMUM,
+        Papel::App => MAX_APP_FRAME,
+        Papel::Agente | Papel::Extensao => MAX_COMMON_FRAME,
     }
 }
 
 /// Maior quadro que um cliente lê do daemon.
-pub const LIMITE_RESPOSTA: usize = MAX_QUADRO_RESPOSTA;
+pub const LIMITE_RESPOSTA: usize = MAX_RESPONSE_FRAME;
 
 /// Por que um quadro foi recusado.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

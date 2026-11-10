@@ -69,7 +69,7 @@ use std::time::SystemTime;
 
 use crate::backup::{ErroBackup, PastaBackup, Versao};
 use crate::corpo::{self, ErroCorpo};
-use crate::cripto;
+use crate::crypto;
 use crate::entrada::Entrada;
 use crate::formato::{self, CofreAberto, ErroFormato, SenhaMestra};
 
@@ -397,7 +397,7 @@ fn trocar_senha_selado(
     geracao_minima: u64,
     geracao_queimada: u64,
 ) -> Result<(CofreAberto, IdentidadeArquivo, Vec<u8>), ErroGravacao> {
-    let limite = (formato::TAM_CABECALHO + formato::MAX_CONTEUDO + cripto::TAM_TAG) as u64;
+    let limite = (formato::TAM_CABECALHO + formato::MAX_CONTEUDO + crypto::TAG_SIZE) as u64;
     if arquivo.len() as u64 > limite {
         return Err(ErroGravacao::Formato(ErroFormato::SenhaOuArquivo));
     }
@@ -418,7 +418,7 @@ fn trocar_senha_selado(
 /// Lê o arquivo do cofre (já cifrado) sem passar do maior tamanho possível de um cofre.
 #[cfg(test)]
 fn ler_arquivo(destino: &Path) -> Result<Vec<u8>, ErroGravacao> {
-    let limite = (formato::TAM_CABECALHO + formato::MAX_CONTEUDO + cripto::TAM_TAG) as u64;
+    let limite = (formato::TAM_CABECALHO + formato::MAX_CONTEUDO + crypto::TAG_SIZE) as u64;
     let f = File::open(destino).map_err(erro(Etapa::Ler))?;
     let mut arquivo = Vec::new();
     io::Read::read_to_end(&mut io::Read::take(f, limite + 1), &mut arquivo)
@@ -548,7 +548,7 @@ fn escrever_temporario(
     formato::ler_cabecalho(arquivo).map_err(|_| ErroGravacao::NaoECofre)?;
 
     let mut aleatorio = [0u8; 16];
-    cripto::aleatorio(&mut aleatorio).map_err(|_| ErroGravacao::Io {
+    crypto::random(&mut aleatorio).map_err(|_| ErroGravacao::Io {
         etapa: Etapa::CriarTemporario,
         tipo: io::ErrorKind::Other,
         identidade: None,

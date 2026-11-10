@@ -2,11 +2,11 @@
 //! da parte cifrada.
 //!
 //! - **Hash do PIN** ([`HashPin`]): Argon2id em texto PHC (`$argon2id$v=19$m=…`), com
-//!   parâmetros e sal, calculado por `cripto::argon2id` (memória de trabalho zerada). O
+//!   parâmetros e sal, calculado por `crypto::argon2id` (memória de trabalho zerada). O
 //!   PIN nunca é gravado em claro, nem dentro do corpo. [`HashPin::conferir`] compara em
 //!   tempo constante pela biblioteca; o daemon (Fase 22) só chama.
 //! - **Tempo de trava** por inatividade, em minutos: padrão 240 (R23, D16), de
-//!   [`MIN_MINUTOS_TRAVA`] a [`MAX_MINUTOS_TRAVA`].
+//!   [`MIN_LOCK_MINUTES`] a [`MAX_LOCK_MINUTES`].
 //! - **Backup externo** ([`BackupExterno`]): desligado por padrão, com o UUID opcional do
 //!   pendrive (D17). Ligado exige o UUID.
 //!
@@ -17,11 +17,11 @@ use core::fmt;
 
 use zeroize::{ZeroizeOnDrop, Zeroizing};
 
-use crate::cripto;
+use crate::crypto;
 use crate::formato::ParametrosKdf;
-use crate::limites::{
-    MAX_DIGITOS_PIN, MAX_HASH_PIN, MAX_MINUTOS_TRAVA, MAX_UUID_BACKUP, MIN_DIGITOS_PIN,
-    MIN_MINUTOS_TRAVA, MINUTOS_TRAVA_PADRAO,
+use crate::limits::{
+    DEFAULT_LOCK_MINUTES, MAX_BACKUP_UUID, MAX_LOCK_MINUTES, MAX_PIN_DIGITS, MAX_PIN_HASH,
+    MIN_LOCK_MINUTES, MIN_PIN_DIGITS,
 };
 
 #[cfg(test)]
@@ -76,9 +76,9 @@ impl fmt::Display for ErroConfiguracao {
 
 impl std::error::Error for ErroConfiguracao {}
 
-/// PIN no formato aceito: de [`MIN_DIGITOS_PIN`] a [`MAX_DIGITOS_PIN`] dígitos ASCII.
+/// PIN no formato aceito: de [`MIN_PIN_DIGITS`] a [`MAX_PIN_DIGITS`] dígitos ASCII.
 fn pin_valido(pin: &[u8]) -> bool {
-    (MIN_DIGITOS_PIN..=MAX_DIGITOS_PIN).contains(&pin.len()) && pin.iter().all(u8::is_ascii_digit)
+    (MIN_PIN_DIGITS..=MAX_PIN_DIGITS).contains(&pin.len()) && pin.iter().all(u8::is_ascii_digit)
 }
 
 /// Hash Argon2id do PIN em texto PHC. Zera ao sair; sem `Clone`, sem `Display`, e o
@@ -103,7 +103,7 @@ impl HashPin {
         if !pin_valido(pin) {
             return Err(ErroConfiguracao::PinInvalido);
         }
-        let phc = cripto::hash_pin(pin, &KDF_PIN).map_err(|_| ErroConfiguracao::Hash)?;
+        let phc = crypto::hash_pin(pin, &KDF_PIN).map_err(|_| ErroConfiguracao::Hash)?;
         Ok(Self { phc })
     }
 
@@ -114,7 +114,7 @@ impl HashPin {
             return false;
         }
         match ler(self.phc.as_bytes()) {
-            Some(phc) => cripto::conferir_pin(pin, &phc),
+            Some(phc) => crypto::verify_pin(pin, &phc),
             None => false,
         }
     }
@@ -122,7 +122,7 @@ impl HashPin {
     /// Parâmetros do Argon2id deste hash (não são segredo).
     pub fn parametros(&self) -> ParametrosKdf {
         // O texto foi conferido ao nascer; `KDF_PIN` só se algo muito errado acontecer.
-        ler(self.phc.as_bytes()).map_or(KDF_PIN, |p| p.custo)
+        ler(self.phc.as_bytes()).map_or(KDF_PIN, |p| p.cost)
     }
 
     /// Hash lido do corpo: confere o texto inteiro (ver [`conferir_texto`]) e copia para
@@ -144,24 +144,24 @@ impl HashPin {
     }
 }
 
-fn ler(texto: &[u8]) -> Option<cripto::PhcPin> {
-    cripto::ler_phc_pin(texto, &KDF_PIN_MINIMO, &KDF_PIN_MAXIMO)
+fn ler(texto: &[u8]) -> Option<crypto::PinPhc> {
+    crypto::read_pin_phc(texto, &KDF_PIN_MINIMO, &KDF_PIN_MAXIMO)
 }
 
 /// Confere o texto PHC do hash do PIN sem alocar (a 1ª passada do corpo usa isto).
 pub(crate) fn conferir_texto(texto: &[u8]) -> bool {
-    texto.len() <= MAX_HASH_PIN && ler(texto).is_some()
+    texto.len() <= MAX_PIN_HASH && ler(texto).is_some()
 }
 
 /// Tempo de trava dentro da faixa aceita.
 pub(crate) fn minutos_validos(minutos: u32) -> bool {
-    (MIN_MINUTOS_TRAVA..=MAX_MINUTOS_TRAVA).contains(&minutos)
+    (MIN_LOCK_MINUTES..=MAX_LOCK_MINUTES).contains(&minutos)
 }
 
-/// UUID do pendrive: de 1 a [`MAX_UUID_BACKUP`] caracteres `[0-9A-Fa-f-]`, sem `-` no
+/// UUID do pendrive: de 1 a [`MAX_BACKUP_UUID`] caracteres `[0-9A-Fa-f-]`, sem `-` no
 /// começo nem no fim. Não é segredo, mas vem do disco e da interface.
 pub(crate) fn uuid_valido(uuid: &[u8]) -> bool {
-    (1..=MAX_UUID_BACKUP).contains(&uuid.len())
+    (1..=MAX_BACKUP_UUID).contains(&uuid.len())
         && uuid.iter().all(|b| b.is_ascii_hexdigit() || *b == b'-')
         && uuid.first() != Some(&b'-')
         && uuid.last() != Some(&b'-')
@@ -223,11 +223,11 @@ impl ZeroizeOnDrop for Configuracao {}
 
 impl Configuracao {
     /// Configuração de cofre novo: o hash do PIN dado, trava em
-    /// [`MINUTOS_TRAVA_PADRAO`] minutos e backup externo desligado.
+    /// [`DEFAULT_LOCK_MINUTES`] minutos e backup externo desligado.
     pub fn nova(hash_pin: HashPin) -> Self {
         Self {
             hash_pin,
-            minutos_trava: MINUTOS_TRAVA_PADRAO,
+            minutos_trava: DEFAULT_LOCK_MINUTES,
             backup: BackupExterno::desligado(),
         }
     }
@@ -261,7 +261,7 @@ impl Configuracao {
         self.minutos_trava
     }
 
-    /// Muda o tempo de trava (de [`MIN_MINUTOS_TRAVA`] a [`MAX_MINUTOS_TRAVA`]).
+    /// Muda o tempo de trava (de [`MIN_LOCK_MINUTES`] a [`MAX_LOCK_MINUTES`]).
     pub fn definir_minutos_trava(&mut self, minutos: u32) -> Result<(), ErroConfiguracao> {
         if !minutos_validos(minutos) {
             return Err(ErroConfiguracao::TempoDeTrava);

@@ -80,7 +80,7 @@ fn abrir_varios(arquivos: Vec<Vec<u8>>) -> Vec<(bool, bool)> {
 #[test]
 fn ida_e_volta() {
     let arq = criar(CONTEUDO);
-    assert_eq!(arq.len(), TAM_CABECALHO + CONTEUDO.len() + TAM_TAG);
+    assert_eq!(arq.len(), TAM_CABECALHO + CONTEUDO.len() + TAG_SIZE);
     assert_eq!(&abrir_t(&arq, SENHA).unwrap()[..], CONTEUDO);
 }
 
@@ -293,15 +293,15 @@ fn cabecalho_e_aad_do_corpo() {
     let original = criar(CONTEUDO);
     let (cofre, _) = com_vaga(|| abrir(&original, &s).unwrap());
     let arq = cofre.selar(CONTEUDO).unwrap();
-    let mut nonce = [0u8; TAM_NONCE];
+    let mut nonce = [0u8; NONCE_SIZE];
     nonce.copy_from_slice(&arq[P_NONCE_DADOS..P_TAMANHO]);
     let corpo = &arq[TAM_CABECALHO..];
-    assert!(cripto::abrir(&cofre.chave_dados, &nonce, &arq[..TAM_CABECALHO], corpo).is_ok());
+    assert!(crypto::open(&cofre.chave_dados, &nonce, &arq[..TAM_CABECALHO], corpo).is_ok());
     for i in 0..TAM_CABECALHO {
         let mut cab = arq[..TAM_CABECALHO].to_vec();
         cab[i] ^= 0x01;
         assert!(
-            cripto::abrir(&cofre.chave_dados, &nonce, &cab, corpo).is_err(),
+            crypto::open(&cofre.chave_dados, &nonce, &cab, corpo).is_err(),
             "byte {i} do cabeçalho fora do AAD"
         );
     }
@@ -337,19 +337,19 @@ fn v2_5_composicao_do_formato() {
     let arq = criar(CONTEUDO);
     let cab = ler_cabecalho(&arq).unwrap();
     let kek = com_vaga(|| {
-        cripto::derivar_kek(SENHA.as_bytes(), &arq[P_SAL..P_NONCE_CHAVE], &cab.kdf).unwrap()
+        crypto::derive_kek(SENHA.as_bytes(), &arq[P_SAL..P_NONCE_CHAVE], &cab.kdf).unwrap()
     });
-    let nonce_chave: [u8; TAM_NONCE] = arq[P_NONCE_CHAVE..P_EMBRULHADA].try_into().unwrap();
-    let chave = cripto::abrir(
+    let nonce_chave: [u8; NONCE_SIZE] = arq[P_NONCE_CHAVE..P_EMBRULHADA].try_into().unwrap();
+    let chave = crypto::open(
         &kek,
         &nonce_chave,
         &arq[..P_EMBRULHADA],
         &arq[P_EMBRULHADA..P_NONCE_DADOS],
     )
     .unwrap();
-    let chave: [u8; TAM_CHAVE] = chave[..].try_into().unwrap();
-    let nonce_dados: [u8; TAM_NONCE] = arq[P_NONCE_DADOS..P_TAMANHO].try_into().unwrap();
-    let texto = cripto::abrir(
+    let chave: [u8; KEY_SIZE] = chave[..].try_into().unwrap();
+    let nonce_dados: [u8; NONCE_SIZE] = arq[P_NONCE_DADOS..P_TAMANHO].try_into().unwrap();
+    let texto = crypto::open(
         &chave,
         &nonce_dados,
         &arq[..TAM_CABECALHO],
@@ -460,7 +460,7 @@ fn lixo_nao_abre() {
     for lixo in [
         Vec::new(),
         b"WARDCOFR".to_vec(),
-        vec![0u8; TAM_CABECALHO + TAM_TAG],
+        vec![0u8; TAM_CABECALHO + TAG_SIZE],
         vec![0xffu8; 4096],
     ] {
         assert_eq!(

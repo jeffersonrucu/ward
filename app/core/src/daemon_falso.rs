@@ -237,7 +237,7 @@ pub fn aprovacoes_simuladas(modo: &str) -> Option<Vec<AprovacaoSimulada>> {
         })
     };
     let psql = |entrada: &str| {
-        ward_core::exibicao::exibir_argumentos(
+        ward_core::display::display_args(
             &[
                 "ward",
                 "run",
@@ -278,7 +278,7 @@ pub fn aprovacoes_simuladas(modo: &str) -> Option<Vec<AprovacaoSimulada>> {
                     7,
                     "acme-pg-aprovacao",
                     Ambiente::Stage,
-                    &ward_core::exibicao::exibir_argumentos(&["python3"], 64 * 1024),
+                    &ward_core::display::display_args(&["python3"], 64 * 1024),
                     &cadeia,
                 )
             },
@@ -386,7 +386,7 @@ impl DaemonFalso {
             travado: false,
             falhas_destravar: 0,
             espera_d20: true,
-            minutos_trava: wc::limites::MINUTOS_TRAVA_PADRAO,
+            minutos_trava: wc::limits::DEFAULT_LOCK_MINUTES,
             senha: None,
             aprovacoes: Vec::new(),
             backup: wc::configuracao::BackupExterno::desligado(),
@@ -593,15 +593,13 @@ impl DaemonFalso {
             }
             Pedido::Totp { entrada } => match self.entrada(&entrada) {
                 Some(e) => match Alvo::Campo("totp_semente".to_owned()).segredo_em(e) {
-                    Some(semente) => {
-                        match Totp::de_semente(semente).and_then(|t| t.codigo_agora()) {
-                            Ok(c) => Resposta::CodigoTotp {
-                                codigo: Zeroizing::new(c.codigo().to_owned()),
-                                restante: c.restante(),
-                            },
-                            Err(_) => Resposta::Erro(ErroResposta::Interno),
-                        }
-                    }
+                    Some(semente) => match Totp::from_seed(semente).and_then(|t| t.code_now()) {
+                        Ok(c) => Resposta::CodigoTotp {
+                            codigo: Zeroizing::new(c.code().to_owned()),
+                            restante: c.remaining(),
+                        },
+                        Err(_) => Resposta::Erro(ErroResposta::Interno),
+                    },
                     None => Resposta::Erro(ErroResposta::CampoInexistente),
                 },
                 None => Resposta::Erro(ErroResposta::EntradaInexistente),
@@ -638,12 +636,12 @@ impl DaemonFalso {
             }
             Pedido::EmitirToken { entrada } => match self.entrada(&entrada) {
                 Some(e) if e.tipo() == TipoEntrada::Servidor => {
-                    match ward_core::gerador::gerar(&ward_core::gerador::OpcoesGerador {
-                        tamanho: 32,
-                        minusculas: true,
-                        maiusculas: true,
-                        digitos: true,
-                        simbolos: false,
+                    match ward_core::generator::generate(&ward_core::generator::GeneratorOptions {
+                        size: 32,
+                        lowercase: true,
+                        uppercase: true,
+                        digits: true,
+                        symbols: false,
                     }) {
                         Ok(t) => Resposta::Token(t),
                         Err(_) => Resposta::Erro(ErroResposta::Interno),
@@ -706,8 +704,7 @@ impl DaemonFalso {
                 }
             }
             Pedido::TempoTrava { minutos } => {
-                if (wc::limites::MIN_MINUTOS_TRAVA..=wc::limites::MAX_MINUTOS_TRAVA)
-                    .contains(&minutos)
+                if (wc::limits::MIN_LOCK_MINUTES..=wc::limits::MAX_LOCK_MINUTES).contains(&minutos)
                 {
                     self.minutos_trava = minutos;
                     Resposta::Ok

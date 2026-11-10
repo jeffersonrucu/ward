@@ -29,7 +29,7 @@ use std::io::{self, Read, Write};
 
 use zeroize::Zeroizing;
 
-use ward_core::limites::KIB;
+use ward_core::limits::KIB;
 use ward_core::protocolo::{self, ErroResposta, Operacao, Papel, Resposta, TipoResposta};
 
 /// Maior mensagem aceita da extensão. O maior pedido legítimo é um `salvar_login` com

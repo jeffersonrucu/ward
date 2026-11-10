@@ -13,7 +13,7 @@
 //!   chave, não um atalho que pode apontar para outro lugar;
 //! - o que não é arquivo comum (pasta, FIFO, dispositivo, socket); `O_NONBLOCK` faz uma
 //!   FIFO não prender o app na abertura;
-//! - acima de `MAX_SEGREDO` (64 KiB, o limite do `ward-core` para um segredo de texto),
+//! - acima de `MAX_SECRET` (64 KiB, o limite do `ward-core` para um segredo de texto),
 //!   pelo `fstat` e de novo pelo que foi lido;
 //! - vazio;
 //! - o que não é chave privada OpenSSH ou PEM: só ASCII imprimível, uma linha
@@ -27,7 +27,7 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 
 use serde::Serialize;
-use ward_core::limites;
+use ward_core::limits;
 
 use crate::segredo::Segredo;
 
@@ -35,7 +35,7 @@ use crate::segredo::Segredo;
 pub const CAMPOS_CARREGAVEIS: &[&str] = &["chave_privada"];
 
 /// Maior arquivo aceito: o limite de um segredo de texto do `ward-core`.
-pub const MAX_CHAVE: usize = limites::MAX_SEGREDO;
+pub const MAX_CHAVE: usize = limits::MAX_SECRET;
 
 /// Rótulos PEM/OpenSSH de chave privada.
 const ROTULOS: &[&str] = &[
@@ -56,7 +56,7 @@ pub const AVISO_NAO_E_CHAVE: &str = "o arquivo não é uma chave privada OpenSSH
 pub fn aviso_grande() -> String {
     format!(
         "o arquivo passa de {} KiB e não é uma chave privada",
-        MAX_CHAVE / limites::KIB
+        MAX_CHAVE / limits::KIB
     )
 }
 

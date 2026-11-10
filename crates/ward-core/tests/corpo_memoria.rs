@@ -30,8 +30,8 @@ use ward_core::entrada::{
 };
 use ward_core::formato::{CofreAberto, SenhaMestra};
 use ward_core::gravacao::gravar_entradas;
-use ward_core::limites::{
-    MAX_ANEXOS_SOMADOS, MAX_CORPO, MAX_ENTRADAS, MAX_EXTRAS, MAX_NOTA, MAX_VALOR_EXTRA,
+use ward_core::limits::{
+    MAX_ATTACHMENTS_TOTAL, MAX_BODY, MAX_ENTRIES, MAX_EXTRA_VALUE, MAX_EXTRAS, MAX_NOTE,
 };
 
 #[path = "../src/corpo/cofre_teste.rs"]
@@ -323,7 +323,7 @@ fn forjados() -> Vec<(&'static str, Vec<u8>)> {
     casos.push(("grupo com u32::MAX", v));
     // Anexo declarando 4 GiB (u32::MAX), o limite + 1 e o limite (D29), com só 5 bytes
     // de verdade.
-    let limite = MAX_ANEXOS_SOMADOS as u32;
+    let limite = MAX_ATTACHMENTS_TOTAL as u32;
     for tamanho in [u32::MAX, limite + 1, limite] {
         let mut v = com_contagem(generico_ate_anexos(), 1);
         campo(&mut v, b"a.bin");
@@ -334,7 +334,7 @@ fn forjados() -> Vec<(&'static str, Vec<u8>)> {
     // Anexos que somam 256 KiB + 1 (D29), com os bytes de verdade no buffer: um de
     // metade do limite e outro de metade + 1.
     let mut v = com_contagem(generico_ate_anexos(), 2);
-    let metade = MAX_ANEXOS_SOMADOS / 2;
+    let metade = MAX_ATTACHMENTS_TOTAL / 2;
     campo(&mut v, b"a.bin");
     campo(&mut v, &vec![0x5a; metade]);
     campo(&mut v, b"b.bin");
@@ -343,11 +343,11 @@ fn forjados() -> Vec<(&'static str, Vec<u8>)> {
     // Um anexo só, de verdade, com o limite + 1.
     let mut v = com_contagem(generico_ate_anexos(), 1);
     campo(&mut v, b"a.bin");
-    campo(&mut v, &vec![0x5a; MAX_ANEXOS_SOMADOS + 1]);
+    campo(&mut v, &vec![0x5a; MAX_ATTACHMENTS_TOTAL + 1]);
     casos.push(("anexo com o limite + 1", v));
     // 2^32 − 1 entradas e 10 001.
     let inicio = cabecalho().len() + 4;
-    for n in [u32::MAX, (MAX_ENTRADAS + 1) as u32, 2] {
+    for n in [u32::MAX, (MAX_ENTRIES + 1) as u32, 2] {
         let mut v = cabecalho();
         v.extend_from_slice(&n.to_le_bytes());
         v.extend_from_slice(&generico_ate_anexos()[inicio..]);
@@ -397,7 +397,7 @@ fn v2_32_corpo_forjado_recusado_rapido_sem_alocar() {
     }
 
     // Corpo acima de 64 MiB.
-    let mut grande = vec![0u8; MAX_CORPO + 1];
+    let mut grande = vec![0u8; MAX_BODY + 1];
     grande[0] = 2;
     let inicio = Instant::now();
     let (r, pedidos, _) = contando(|| desserializar(&grande));
@@ -429,7 +429,7 @@ fn nota_cheia(nome: &str) -> Entrada {
         projeto: String::new(),
         tags: Vec::new(),
         dados: RascunhoDados::NotaSegura {
-            texto: Some(Segredo::de_bytes(vec![b'n'; MAX_NOTA])),
+            texto: Some(Segredo::de_bytes(vec![b'n'; MAX_NOTE])),
         },
         extras: Vec::new(),
         anexos: Vec::new(),
@@ -437,13 +437,13 @@ fn nota_cheia(nome: &str) -> Entrada {
     for i in 0..MAX_EXTRAS {
         r.extras.push(RascunhoExtra {
             nome: format!("e{i:02}"),
-            valor: Segredo::de_bytes(vec![b'v'; MAX_VALOR_EXTRA]),
+            valor: Segredo::de_bytes(vec![b'v'; MAX_EXTRA_VALUE]),
             segredo: true,
         });
     }
     r.anexos.push(RascunhoAnexo {
         nome: "a.bin".to_owned(),
-        conteudo: Segredo::de_bytes(vec![0x5a; MAX_ANEXOS_SOMADOS]),
+        conteudo: Segredo::de_bytes(vec![0x5a; MAX_ATTACHMENTS_TOTAL]),
     });
     validada(r, NivelAcesso::Livre)
 }
@@ -454,9 +454,9 @@ fn v2_32_codificador_recusa_acima_do_limite_antes_de_alocar() {
     // não chega perto do limite do corpo).
     let mut entradas: Vec<Entrada> = Vec::new();
     let mut aproximado = 0usize;
-    while aproximado <= MAX_CORPO {
+    while aproximado <= MAX_BODY {
         entradas.push(nota_cheia(&format!("nota-{:03}", entradas.len())));
-        aproximado += MAX_NOTA + MAX_EXTRAS * MAX_VALOR_EXTRA + MAX_ANEXOS_SOMADOS;
+        aproximado += MAX_NOTE + MAX_EXTRAS * MAX_EXTRA_VALUE + MAX_ATTACHMENTS_TOTAL;
     }
     let cfg = configuracao_de_teste();
     let (r, _, maior) =
@@ -469,7 +469,7 @@ fn v2_32_codificador_recusa_acima_do_limite_antes_de_alocar() {
     // Uma a menos cabe e volta.
     entradas.pop();
     let corpo = serializar(cfg, 1, &entradas).unwrap();
-    assert!(corpo.len() <= MAX_CORPO);
+    assert!(corpo.len() <= MAX_BODY);
     assert_eq!(
         desserializar(&corpo).map(|(_, _, e)| e.len()),
         Ok(entradas.len())
@@ -713,9 +713,9 @@ fn s8_protocolo_nenhum_bloco_liberado_tem_segredo() {
             protocolo::decodificar_pedido(Papel::Agente, &q).unwrap_err(),
             ErroResposta::NaoAutorizado
         );
-        let mut grande = Zeroizing::new(String::with_capacity(MAX_ANEXOS_SOMADOS + 1));
+        let mut grande = Zeroizing::new(String::with_capacity(MAX_ATTACHMENTS_TOTAL + 1));
         grande.push_str("falso-anexo-01");
-        while grande.len() <= MAX_ANEXOS_SOMADOS {
+        while grande.len() <= MAX_ATTACHMENTS_TOTAL {
             grande.push('x');
         }
         let acima = Pedido::SalvarEntrada {

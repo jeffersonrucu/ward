@@ -2,7 +2,7 @@
 //!
 //! - [`SenhaMestra`]: a senha que vem da interface (não confiável). Zera ao sair, não
 //!   tem `Clone`, `Display` nem `Serialize`, e o `Debug` não mostra o valor. A leitura
-//!   (`Deserialize`) recusa vazio e acima de `ward_core::limites::MAX_SEGREDO` com uma
+//!   (`Deserialize`) recusa vazio e acima de `ward_core::limits::MAX_SECRET` com uma
 //!   mensagem fixa, sem ecoar o que veio. A senha só sai daqui para o pedido
 //!   `destravar` do protocolo; nenhuma resposta a devolve e nenhum log a escreve.
 //! - [`PedidoPendente`]: o `pedido_de_destrave` que o daemon mandou (um uso do agente
@@ -12,7 +12,7 @@
 //!   entrada que o agente pediu, a operação, o comando exato e os segundos que faltam
 //!   pelo relógio do daemon (no máximo [`PRAZO_PEDIDO`]). Entrada e comando vêm do
 //!   agente: o daemon já os formata com escape visível (D51) e aqui passam de novo por
-//!   `neutralizar` antes de ir à tela, que os mostra como texto, nunca como HTML.
+//!   `neutralize` antes de ir à tela, que os mostra como texto, nunca como HTML.
 //! - [`vigiar`]: a thread que tira os `pedido_de_destrave` da fila de avisos da conexão
 //!   (D65 a), marca o [`PedidoPendente`] e avisa a interface (no app, pelo canal do
 //!   Tauri; na ponte de teste, a tela consulta o estado).
@@ -23,9 +23,9 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use serde::de::{self, Deserialize, Deserializer, Visitor};
+use ward_core::display::neutralize;
 use ward_core::entrada::Segredo as SegredoCore;
-use ward_core::exibicao::neutralizar;
-use ward_core::limites::MAX_SEGREDO;
+use ward_core::limits::MAX_SECRET;
 use ward_core::protocolo::PedidoDeDestrave;
 use zeroize::Zeroizing;
 
@@ -45,7 +45,7 @@ impl SenhaMestra {
     /// Confere o tamanho e toma posse do texto (sem cópia que fique sem zerar).
     pub fn nova(texto: String) -> Result<SenhaMestra, ErroApp> {
         let texto = Zeroizing::new(texto);
-        if !texto.is_empty() && texto.len() <= MAX_SEGREDO {
+        if !texto.is_empty() && texto.len() <= MAX_SECRET {
             Ok(SenhaMestra(texto))
         } else {
             Err(ErroApp::PedidoInvalido)
@@ -73,7 +73,7 @@ impl<'de> Deserialize<'de> for SenhaMestra {
                 f.write_str("senha mestra")
             }
             fn visit_str<E: de::Error>(self, v: &str) -> Result<SenhaMestra, E> {
-                if v.len() > MAX_SEGREDO {
+                if v.len() > MAX_SECRET {
                     return Err(E::custom(FORA_DO_FORMATO));
                 }
                 self.visit_string(v.to_owned())
@@ -150,9 +150,9 @@ impl PedidoPendente {
 
     fn marcar_em(&self, p: &PedidoDeDestrave, agora: Instant) {
         let texto = Texto {
-            entrada: neutralizar(&p.entrada),
+            entrada: neutralize(&p.entrada),
             operacao: p.operacao.nome(),
-            comando: neutralizar(&p.comando),
+            comando: neutralize(&p.comando),
         };
         let falta = Duration::from_secs(p.restante).min(PRAZO_PEDIDO);
         let mut e = self.travar();
@@ -227,7 +227,7 @@ mod testes {
 
     #[test]
     fn ataque_senha_fora_do_formato_e_recusada_sem_eco() {
-        let longa = format!("\"{}\"", "x".repeat(MAX_SEGREDO + 1));
+        let longa = format!("\"{}\"", "x".repeat(MAX_SECRET + 1));
         for corpo in [
             "\"\"",
             longa.as_str(),
@@ -344,7 +344,7 @@ mod testes {
         p.marcar(&a);
         let i = p.info().unwrap();
         for t in [&i.entrada, &i.comando] {
-            assert!(!t.chars().any(ward_core::exibicao::invisivel), "{t:?}");
+            assert!(!t.chars().any(ward_core::display::invisible), "{t:?}");
         }
         assert_eq!(i.entrada, r"acme\u{202E}gp-pg\x1b[2K\u{200B}\u{E0041}\n");
         assert_eq!(i.comando, r#""psql" "-c" "x\u{2066}\u{FEFF}\x9b\x7f""#);

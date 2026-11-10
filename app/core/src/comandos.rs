@@ -9,7 +9,7 @@
 //! credencial nem revela nada.
 //! Fases seguintes acrescentam comandos aqui, um por tela que precisa.
 
-use ward_core::limites;
+use ward_core::limits;
 
 use crate::ErroApp;
 
@@ -286,7 +286,7 @@ impl Comando {
 }
 
 /// Qual campo de qual entrada. Validado antes de chegar ao daemon: nome da entrada até
-/// `MAX_NOME`, nome do campo até `MAX_NOME_EXTRA`, sem controle e sem espaço nas
+/// `MAX_NAME`, nome do campo até `MAX_EXTRA_NAME`, sem controle e sem espaço nas
 /// pontas. O daemon valida de novo (a entrada também não é confiável lá).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Referencia {
@@ -296,8 +296,7 @@ pub struct Referencia {
 
 impl Referencia {
     pub fn nova(entrada: &str, campo: &str) -> Result<Referencia, ErroApp> {
-        if !nome_valido(entrada, limites::MAX_NOME) || !nome_valido(campo, limites::MAX_NOME_EXTRA)
-        {
+        if !nome_valido(entrada, limits::MAX_NAME) || !nome_valido(campo, limits::MAX_EXTRA_NAME) {
             return Err(ErroApp::PedidoInvalido);
         }
         Ok(Referencia {
@@ -318,7 +317,7 @@ impl Referencia {
 /// Nome de entrada vindo da interface (não confiável), com a mesma regra da
 /// [`Referencia`].
 pub fn validar_nome_entrada(nome: &str) -> Result<(), ErroApp> {
-    if nome_valido(nome, limites::MAX_NOME) {
+    if nome_valido(nome, limits::MAX_NAME) {
         Ok(())
     } else {
         Err(ErroApp::PedidoInvalido)
@@ -421,8 +420,8 @@ mod testes {
 
     #[test]
     fn ataque_referencia_fora_do_formato() {
-        let longo = "a".repeat(limites::MAX_NOME + 1);
-        let longo_campo = "a".repeat(limites::MAX_NOME_EXTRA + 1);
+        let longo = "a".repeat(limits::MAX_NAME + 1);
+        let longo_campo = "a".repeat(limits::MAX_EXTRA_NAME + 1);
         for (e, c) in [
             ("", "senha"),
             ("acme-pg-dev", ""),
@@ -442,6 +441,6 @@ mod testes {
         }
         let r = Referencia::nova("acme-pg-dev", "senha").unwrap();
         assert_eq!((r.entrada(), r.campo()), ("acme-pg-dev", "senha"));
-        assert!(Referencia::nova(&"á".repeat(limites::MAX_NOME), "senha").is_ok());
+        assert!(Referencia::nova(&"á".repeat(limits::MAX_NAME), "senha").is_ok());
     }
 }

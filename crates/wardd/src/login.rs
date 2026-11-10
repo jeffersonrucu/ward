@@ -27,7 +27,7 @@ use std::sync::{Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use ward_core::entrada::{Dados, NivelAcesso};
-use ward_core::gerador;
+use ward_core::generator;
 use ward_core::protocolo::{ErroResposta, Papel, Pedido, Resposta, ResultadoLogin};
 
 use crate::aprovacao::Cliente;
@@ -108,7 +108,7 @@ impl Logins {
     fn do_id<'a>(atual: &'a mut Option<Trabalho>, id: &str) -> Option<&'a mut Trabalho> {
         atual
             .as_mut()
-            .filter(|t| gerador::tokens_iguais(t.id.as_bytes(), id.as_bytes()))
+            .filter(|t| generator::tokens_equal(t.id.as_bytes(), id.as_bytes()))
     }
 
     /// Termina o pedido `id` (se ainda é o atual e não terminou) e acorda quem espera.
@@ -172,7 +172,7 @@ impl Daemon {
             e.nome().to_owned()
         };
         let id = {
-            let t = gerador::token_conectar().map_err(|_| ErroResposta::Interno)?;
+            let t = generator::connect_token().map_err(|_| ErroResposta::Interno)?;
             String::from_utf8(t.expor().to_vec()).map_err(|_| ErroResposta::Interno)?
         };
         let logins = self.logins();

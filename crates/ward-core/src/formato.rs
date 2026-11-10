@@ -30,7 +30,7 @@
 //! - Senha errada, arquivo adulterado, truncado ou acrescido dão o mesmo erro
 //!   ([`ErroFormato::SenhaOuArquivo`]).
 //!
-//! Nada de cripto aqui: as primitivas estão em [`crate::cripto`], que só chama
+//! Nada de cripto aqui: as primitivas estão em [`crate::crypto`], que só chama
 //! bibliotecas auditadas.
 
 use core::fmt;
@@ -38,7 +38,7 @@ use core::fmt;
 use zeroize::{ZeroizeOnDrop, Zeroizing};
 
 use crate::configuracao::Configuracao;
-use crate::cripto::{self, Chave, TAM_CHAVE, TAM_NONCE, TAM_TAG};
+use crate::crypto::{self, KEY_SIZE, Key, NONCE_SIZE, TAG_SIZE};
 
 /// Começo de todo arquivo de cofre do Ward.
 pub const MAGIA: [u8; 8] = *b"WARDCOFR";
@@ -55,7 +55,7 @@ pub const TAM_CABECALHO: usize = 160;
 /// Maior conteúdo aceito (em claro), em bytes: 512 MiB.
 pub const MAX_CONTEUDO: usize = 512 * 1024 * 1024;
 
-const TAM_EMBRULHADA: usize = TAM_CHAVE + TAM_TAG;
+const TAM_EMBRULHADA: usize = KEY_SIZE + TAG_SIZE;
 // Posições dos campos (ver o desenho no topo do módulo).
 const P_VERSAO: usize = 8;
 const P_KDF: usize = 10;
@@ -65,9 +65,9 @@ const P_PASSES: usize = 16;
 const P_PARALELISMO: usize = 20;
 const P_SAL: usize = 24;
 const P_NONCE_CHAVE: usize = P_SAL + TAM_SAL; // 56
-const P_EMBRULHADA: usize = P_NONCE_CHAVE + TAM_NONCE; // 80
+const P_EMBRULHADA: usize = P_NONCE_CHAVE + NONCE_SIZE; // 80
 const P_NONCE_DADOS: usize = P_EMBRULHADA + TAM_EMBRULHADA; // 128
-const P_TAMANHO: usize = P_NONCE_DADOS + TAM_NONCE; // 152
+const P_TAMANHO: usize = P_NONCE_DADOS + NONCE_SIZE; // 152
 const _: () = assert!(P_TAMANHO + 8 == TAM_CABECALHO);
 
 /// Parâmetros do Argon2id gravados no cabeçalho.
@@ -212,14 +212,14 @@ impl SenhaMestra {
         Self(nfc(bytes))
     }
 
-    /// Serve de senha mestra nova? UTF-8 válido e [`MIN_CARACTERES_SENHA_MESTRA`]
+    /// Serve de senha mestra nova? UTF-8 válido e [`MIN_MASTER_PASSWORD_CHARS`]
     /// caracteres ou mais (pontos de código, depois do NFC). O tamanho máximo é o do
-    /// protocolo (`MAX_SEGREDO`).
+    /// protocolo (`MAX_SECRET`).
     ///
-    /// [`MIN_CARACTERES_SENHA_MESTRA`]: crate::limites::MIN_CARACTERES_SENHA_MESTRA
+    /// [`MIN_MASTER_PASSWORD_CHARS`]: crate::limits::MIN_MASTER_PASSWORD_CHARS
     pub fn serve_de_nova(&self) -> bool {
         std::str::from_utf8(self.bytes())
-            .is_ok_and(|t| t.chars().count() >= crate::limites::MIN_CARACTERES_SENHA_MESTRA)
+            .is_ok_and(|t| t.chars().count() >= crate::limits::MIN_MASTER_PASSWORD_CHARS)
     }
 
     fn bytes(&self) -> &[u8] {
@@ -434,9 +434,9 @@ impl CofreAberto {
 pub(crate) struct ChavesCofre {
     kdf: ParametrosKdf,
     sal: [u8; TAM_SAL],
-    nonce_chave: [u8; TAM_NONCE],
+    nonce_chave: [u8; NONCE_SIZE],
     embrulhada: [u8; TAM_EMBRULHADA],
-    chave_dados: Chave,
+    chave_dados: Key,
 }
 
 // A chave de dados é `Zeroizing` e zera ao sair; sal, nonce e embrulho não são segredo
@@ -468,14 +468,13 @@ impl ChavesCofre {
         }
         kdf.conferir(minimo)?;
         let mut sal = [0u8; TAM_SAL];
-        let mut nonce_chave = [0u8; TAM_NONCE];
-        cripto::aleatorio(&mut sal).map_err(|_| ErroFormato::Aleatorio)?;
-        cripto::aleatorio(&mut nonce_chave).map_err(|_| ErroFormato::Aleatorio)?;
-        let chave_dados = cripto::chave_aleatoria().map_err(|_| ErroFormato::Aleatorio)?;
-        let kek =
-            cripto::derivar_kek(senha.bytes(), &sal, &kdf).map_err(|_| ErroFormato::Cifrar)?;
+        let mut nonce_chave = [0u8; NONCE_SIZE];
+        crypto::random(&mut sal).map_err(|_| ErroFormato::Aleatorio)?;
+        crypto::random(&mut nonce_chave).map_err(|_| ErroFormato::Aleatorio)?;
+        let chave_dados = crypto::random_key().map_err(|_| ErroFormato::Aleatorio)?;
+        let kek = crypto::derive_kek(senha.bytes(), &sal, &kdf).map_err(|_| ErroFormato::Cifrar)?;
         let prefixo = prefixo_cabecalho(&kdf, &sal, &nonce_chave);
-        let embrulhada = cripto::selar(&kek, &nonce_chave, &prefixo, &chave_dados[..])
+        let embrulhada = crypto::seal(&kek, &nonce_chave, &prefixo, &chave_dados[..])
             .map_err(|_| ErroFormato::Cifrar)?;
         let embrulhada: [u8; TAM_EMBRULHADA] =
             embrulhada.try_into().map_err(|_| ErroFormato::Cifrar)?;
@@ -498,9 +497,9 @@ impl ChavesCofre {
         if conteudo.len() > MAX_CONTEUDO {
             return Err(ErroFormato::ConteudoGrande);
         }
-        let mut nonce_dados = [0u8; TAM_NONCE];
-        cripto::aleatorio(&mut nonce_dados).map_err(|_| ErroFormato::Aleatorio)?;
-        let tamanho_corpo = (conteudo.len() + TAM_TAG) as u64;
+        let mut nonce_dados = [0u8; NONCE_SIZE];
+        crypto::random(&mut nonce_dados).map_err(|_| ErroFormato::Aleatorio)?;
+        let tamanho_corpo = (conteudo.len() + TAG_SIZE) as u64;
 
         let mut cabecalho = [0u8; TAM_CABECALHO];
         cabecalho[..P_EMBRULHADA].copy_from_slice(&prefixo_cabecalho(
@@ -512,7 +511,7 @@ impl ChavesCofre {
         cabecalho[P_NONCE_DADOS..P_TAMANHO].copy_from_slice(&nonce_dados);
         cabecalho[P_TAMANHO..].copy_from_slice(&tamanho_corpo.to_le_bytes());
 
-        let corpo = cripto::selar(&self.chave_dados, &nonce_dados, &cabecalho, conteudo)
+        let corpo = crypto::seal(&self.chave_dados, &nonce_dados, &cabecalho, conteudo)
             .map_err(|_| ErroFormato::Cifrar)?;
         let mut arquivo = Vec::new();
         arquivo
@@ -535,9 +534,9 @@ impl ChavesCofre {
         {
             return Err(ErroFormato::SenhaOuArquivo);
         }
-        let mut nonce_dados = [0u8; TAM_NONCE];
+        let mut nonce_dados = [0u8; NONCE_SIZE];
         nonce_dados.copy_from_slice(&arquivo[P_NONCE_DADOS..P_TAMANHO]);
-        cripto::abrir(
+        crypto::open(
             &self.chave_dados,
             &nonce_dados,
             &arquivo[..TAM_CABECALHO],
@@ -551,7 +550,7 @@ impl ChavesCofre {
 fn prefixo_cabecalho(
     kdf: &ParametrosKdf,
     sal: &[u8; TAM_SAL],
-    nonce_chave: &[u8; TAM_NONCE],
+    nonce_chave: &[u8; NONCE_SIZE],
 ) -> [u8; P_EMBRULHADA] {
     let mut p = [0u8; P_EMBRULHADA];
     p[..P_VERSAO].copy_from_slice(&MAGIA);
@@ -590,8 +589,8 @@ pub fn ler_cabecalho(arquivo: &[u8]) -> Result<Cabecalho, ErroFormato> {
     let tamanho_corpo = u64::from_le_bytes(t);
     let real = (arquivo.len() - TAM_CABECALHO) as u64;
     if tamanho_corpo != real
-        || tamanho_corpo < TAM_TAG as u64
-        || tamanho_corpo > (MAX_CONTEUDO + TAM_TAG) as u64
+        || tamanho_corpo < TAG_SIZE as u64
+        || tamanho_corpo > (MAX_CONTEUDO + TAG_SIZE) as u64
     {
         return Err(ErroFormato::SenhaOuArquivo);
     }
@@ -626,23 +625,23 @@ fn abrir_com_minimo(
 
     let mut sal = [0u8; TAM_SAL];
     sal.copy_from_slice(&arquivo[P_SAL..P_NONCE_CHAVE]);
-    let mut nonce_chave = [0u8; TAM_NONCE];
+    let mut nonce_chave = [0u8; NONCE_SIZE];
     nonce_chave.copy_from_slice(&arquivo[P_NONCE_CHAVE..P_EMBRULHADA]);
     let mut embrulhada = [0u8; TAM_EMBRULHADA];
     embrulhada.copy_from_slice(&arquivo[P_EMBRULHADA..P_NONCE_DADOS]);
-    let mut nonce_dados = [0u8; TAM_NONCE];
+    let mut nonce_dados = [0u8; NONCE_SIZE];
     nonce_dados.copy_from_slice(&arquivo[P_NONCE_DADOS..P_TAMANHO]);
 
-    let kek = cripto::derivar_kek(senha.bytes(), &sal, &cab.kdf)
+    let kek = crypto::derive_kek(senha.bytes(), &sal, &cab.kdf)
         .map_err(|_| ErroFormato::SenhaOuArquivo)?;
-    let chave = cripto::abrir(&kek, &nonce_chave, &arquivo[..P_EMBRULHADA], &embrulhada)
+    let chave = crypto::open(&kek, &nonce_chave, &arquivo[..P_EMBRULHADA], &embrulhada)
         .map_err(|_| ErroFormato::SenhaOuArquivo)?;
     drop(kek);
     // Direto do buffer decifrado (que zera) para o heap (D40).
-    let chave_dados = Chave::de_bytes(&chave).map_err(|_| ErroFormato::SenhaOuArquivo)?;
+    let chave_dados = Key::from_bytes(&chave).map_err(|_| ErroFormato::SenhaOuArquivo)?;
     drop(chave);
 
-    let conteudo = cripto::abrir(
+    let conteudo = crypto::open(
         &chave_dados,
         &nonce_dados,
         &arquivo[..TAM_CABECALHO],

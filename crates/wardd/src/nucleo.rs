@@ -62,7 +62,7 @@ use ward_core::corpo::{self, ErroAbrir, ErroCorpo};
 use ward_core::entrada::{Dados, Datas, Entrada, NivelAcesso, Rascunho, RascunhoDados, Segredo};
 use ward_core::formato::{CofreAberto, SenhaMestra};
 use ward_core::gravacao::{self, ErroGravacao, Etapa};
-use ward_core::origem::Origem;
+use ward_core::origin::Origin;
 use ward_core::protocolo::{
     Alvo, DetalheEntrada, ErroResposta, ItemLista, MAX_BACKUPS, MAX_PENDRIVES, Operacao, Papel,
     Pedido, PedidoDeAprovacao, Pendrive, Problema, Resposta, Sugestao, VersaoBackup,
@@ -1081,18 +1081,18 @@ impl Daemon {
             .segredo_em(e)
             .ok_or(ErroResposta::CampoInexistente)?;
         let agora = self.relogio.segundos_unix().ok_or(ErroResposta::Interno)?;
-        let c = Totp::de_semente(semente)
+        let c = Totp::from_seed(semente)
             .map_err(|_| ErroResposta::Interno)?
-            .codigo_em(agora);
+            .code_at(agora);
         aviso!("totp {}", e.nome());
         Ok(Resposta::CodigoTotp {
-            codigo: Zeroizing::new(c.codigo().to_owned()),
-            restante: c.restante(),
+            codigo: Zeroizing::new(c.code().to_owned()),
+            restante: c.remaining(),
         })
     }
 
     /// `sugerir` (Fase 40, D9): as entradas `login` cuja URL tem a mesma origem da aba
-    /// (esquema, host e porta, [`Origem`]). Só o papel extensão (terceira camada, como
+    /// (esquema, host e porta, [`Origin`]). Só o papel extensão (terceira camada, como
     /// em [`Daemon::valor_do_app`]). Sem segredo: nome e usuário. O nível não conta
     /// (ele regula o agente; quem usa a extensão é o usuário), então a bloqueada também
     /// aparece. Origem que o parser estrito recusa não casa com nada: lista vazia. A
@@ -1103,14 +1103,14 @@ impl Daemon {
         }
         let est = self.estado();
         let a = est.aberto.as_ref().ok_or(ErroResposta::Travado)?;
-        let Some(aba) = Origem::da_url(origem) else {
+        let Some(aba) = Origin::from_url(origem) else {
             return Ok(Resposta::Sugestoes(Vec::new()));
         };
         let mut itens: Vec<Sugestao> = a
             .entradas
             .iter()
             .filter_map(|e| match e.dados() {
-                Dados::Login(l) if Origem::da_url(&l.url).as_ref() == Some(&aba) => {
+                Dados::Login(l) if Origin::from_url(&l.url).as_ref() == Some(&aba) => {
                     Some(Sugestao {
                         nome: e.nome().to_owned(),
                         usuario: l.usuario.clone(),
@@ -1154,7 +1154,7 @@ impl Daemon {
             let Dados::Login(l) = e.dados() else {
                 return Err(ErroResposta::EntradaInexistente);
             };
-            let casa = match (Origem::da_url(&l.url), Origem::da_url(origem)) {
+            let casa = match (Origin::from_url(&l.url), Origin::from_url(origem)) {
                 (Some(x), Some(y)) => x == y,
                 _ => false,
             };
@@ -1207,7 +1207,7 @@ impl Daemon {
         let Dados::Login(l) = e.dados() else {
             return Err(ErroResposta::EntradaInexistente);
         };
-        let casa = match (Origem::da_url(&l.url), Origem::da_url(origem)) {
+        let casa = match (Origin::from_url(&l.url), Origin::from_url(origem)) {
             (Some(x), Some(y)) => x == y,
             _ => false,
         };
@@ -1218,10 +1218,10 @@ impl Daemon {
         let totp = match &l.totp_semente {
             Some(semente) => {
                 let agora = self.relogio.segundos_unix().ok_or(ErroResposta::Interno)?;
-                let c = Totp::de_semente(semente)
+                let c = Totp::from_seed(semente)
                     .map_err(|_| ErroResposta::Interno)?
-                    .codigo_em(agora);
-                Some(Zeroizing::new(c.codigo().to_owned()))
+                    .code_at(agora);
+                Some(Zeroizing::new(c.code().to_owned()))
             }
             None => None,
         };

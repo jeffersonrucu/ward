@@ -57,7 +57,7 @@
 //!
 //! Orçamento (D29): [`custo_da_entrada`] conta os padrões de uma entrada e da entrega
 //! dela pelo mesmo [`Gerador`]; a validação recusa a entrada acima de
-//! [`ORCAMENTO_MASCARA`].
+//! [`MASK_BUDGET`].
 //!
 //! O código TOTP não é mascarado (o agente o recebe, R8): `WARD_TOTP` não é segredo na
 //! entrega. Segredo curto (menos de 6 caracteres) é mascarado do mesmo jeito;
@@ -110,14 +110,14 @@ mod testes;
 /// O que substitui cada trecho secreto.
 pub const MARCA: &str = "••••";
 
-// Os limites estão em `crate::limites` (D32); ficam aqui também pelo nome antigo.
-pub use crate::limites::{LIMITE_PADROES, MINIMO_CONFIAVEL, ORCAMENTO_MASCARA};
+// Os limites estão em `crate::limits` (D32); ficam aqui também pelo nome antigo.
+pub use crate::limits::{MASK_BUDGET, PATTERN_LIMIT, TRUSTED_MINIMUM};
 
 /// Por que a máscara não foi montada. Só texto fixo.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErroMascara {
-    /// Os segredos (em geral, anexos grandes) passam de [`LIMITE_PADROES`] ao montar,
-    /// ou de [`ORCAMENTO_MASCARA`] no [`custo_da_entrada`].
+    /// Os segredos (em geral, anexos grandes) passam de [`PATTERN_LIMIT`] ao montar,
+    /// ou de [`MASK_BUDGET`] no [`custo_da_entrada`].
     GrandeDemais,
     /// [`custo_da_entrada`]: a entrega da entrada não pôde ser montada (defesa em
     /// profundidade; a validação deveria ter barrado antes).
@@ -172,7 +172,7 @@ impl<'a> ConstrutorMascara<'a> {
 
     pub fn construir(self) -> Result<Mascara, ErroMascara> {
         // Primeira passada: só soma, para alocar o autômato uma vez no tamanho certo.
-        let total = somar(&self, LIMITE_PADROES)?;
+        let total = somar(&self, PATTERN_LIMIT)?;
         let mut automato = Automato::com_capacidade(total + 1);
         visitar(&self, &mut |p| {
             automato.inserir(p);
@@ -182,7 +182,7 @@ impl<'a> ConstrutorMascara<'a> {
         let curto = self.entradas.iter().any(|e| {
             e.segredos().iter().any(|s| {
                 !matches!(s.origem, OrigemSegredo::Anexo(_))
-                    && caracteres(s.valor.expor()) < MINIMO_CONFIAVEL
+                    && caracteres(s.valor.expor()) < TRUSTED_MINIMUM
             })
         });
         Ok(Mascara { automato, curto })
@@ -287,10 +287,10 @@ impl Recursos for RecursosDoOrcamento {
 
 /// Custo da entrada na máscara (D29): a soma dos padrões da entrada e da entrega dela,
 /// contada pelo mesmo [`Gerador`] que monta a máscara do `ward run`. Recusa com
-/// [`ErroMascara::GrandeDemais`] acima de [`ORCAMENTO_MASCARA`]. A `nota segura` não
+/// [`ErroMascara::GrandeDemais`] acima de [`MASK_BUDGET`]. A `nota segura` não
 /// tem entrega (D10), então fica fora do orçamento e custa 0.
 ///
-/// Como cada entrada cabe em metade de [`LIMITE_PADROES`], as duas de um uso combinado
+/// Como cada entrada cabe em metade de [`PATTERN_LIMIT`], as duas de um uso combinado
 /// (D19) cabem juntas: nenhuma entrada aceita pelo cofre fica sem `ward run`.
 pub fn custo_da_entrada(entrada: &Entrada) -> Result<usize, ErroMascara> {
     let entrega = match entrega::montar(entrada, &mut RecursosDoOrcamento) {
@@ -299,7 +299,7 @@ pub fn custo_da_entrada(entrada: &Entrada) -> Result<usize, ErroMascara> {
         Err(_) => return Err(ErroMascara::SemEntrega),
     };
     let c = ConstrutorMascara::new().entrada(entrada).entrega(&entrega);
-    somar(&c, ORCAMENTO_MASCARA)
+    somar(&c, MASK_BUDGET)
 }
 
 // ---------------------------------------------------------------------------------
@@ -407,7 +407,7 @@ impl Gerador {
 
     /// Valor de linha (D34): segredo inteiro, se tem o mínimo.
     fn valor_minimo(&mut self, v: &[u8], f: &mut Visitante<'_>) -> Result<(), ErroMascara> {
-        if caracteres(v) >= MINIMO_CONFIAVEL {
+        if caracteres(v) >= TRUSTED_MINIMUM {
             self.segredo(v, f)?;
         }
         Ok(())
@@ -525,7 +525,7 @@ impl Gerador {
         }
         // Miolo do base64 em cada alinhamento: os caracteres que só dependem dos bytes
         // do segredo, para achá-lo dentro de um base64 maior (`usuario:token`, JSON…).
-        if s.len() >= MINIMO_CONFIAVEL {
+        if s.len() >= TRUSTED_MINIMUM {
             for desloc in 0..3usize {
                 self.tmp2.clear();
                 reservar(&mut self.tmp2, desloc + s.len());
@@ -632,7 +632,7 @@ impl Gerador {
     }
 
     /// A passada por linha (D11, D34, D36, D54), dos anexos e de todo segredo de várias
-    /// linhas: cada linha com [`MINIMO_CONFIAVEL`] caracteres ou mais, sem o `\r` do fim
+    /// linhas: cada linha com [`TRUSTED_MINIMUM`] caracteres ou mais, sem o `\r` do fim
     /// e também aparada (a saída com CRLF do pty, `head`, `grep -v`, `sed -n` pegam
     /// linhas soltas), com as formas de texto dela (`json.dumps(linhas)`, `declare -p`
     /// de uma linha), sem base64 nem miolos (D54: o base64 de linha solta fica em RA3);
@@ -642,7 +642,7 @@ impl Gerador {
     fn linhas(&mut self, c: &[u8], f: &mut Visitante<'_>) -> Result<(), ErroMascara> {
         for linha in c.split(|b| *b == b'\n') {
             let linha = linha.strip_suffix(b"\r").unwrap_or(linha);
-            if caracteres(linha) >= MINIMO_CONFIAVEL {
+            if caracteres(linha) >= TRUSTED_MINIMUM {
                 // As formas de texto e os campos de tab só valem para linha que é texto
                 // (UTF-8 válido): uma linha de anexo binário não passa por `json.dumps`,
                 // `printf %q` nem `cut -f` sem virar outra coisa, e com elas um binário
@@ -653,7 +653,7 @@ impl Gerador {
                     self.formas_de_texto(linha, f)?;
                 }
                 let aparada = linha.trim_ascii();
-                if aparada.len() != linha.len() && caracteres(aparada) >= MINIMO_CONFIAVEL {
+                if aparada.len() != linha.len() && caracteres(aparada) >= TRUSTED_MINIMUM {
                     f(aparada)?;
                     if texto {
                         self.formas_de_texto(aparada, f)?;
@@ -673,7 +673,7 @@ impl Gerador {
                         let aparado = campo.trim_ascii();
                         let cru = (aparado.len() != campo.len()).then_some(campo);
                         for c in core::iter::once(aparado).chain(cru) {
-                            if c.len() >= MINIMO_CONFIAVEL && c != linha && c != aparada {
+                            if c.len() >= TRUSTED_MINIMUM && c != linha && c != aparada {
                                 f(c)?;
                             }
                         }
@@ -708,11 +708,11 @@ impl Gerador {
 
     /// O valor de uma linha de chave e valor, com e sem aspas, se tiver o mínimo.
     fn valor_da_linha(&mut self, valor: &[u8], f: &mut Visitante<'_>) -> Result<(), ErroMascara> {
-        if caracteres(valor) >= MINIMO_CONFIAVEL {
+        if caracteres(valor) >= TRUSTED_MINIMUM {
             self.segredo(valor, f)?;
         }
         if let Some(sem_aspas) = sem_aspas(valor)
-            && caracteres(sem_aspas) >= MINIMO_CONFIAVEL
+            && caracteres(sem_aspas) >= TRUSTED_MINIMUM
         {
             self.segredo(sem_aspas, f)?;
         }

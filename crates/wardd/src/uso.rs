@@ -30,9 +30,9 @@
 //! PIN. Nível livre: nada muda. O tipo é dito pelo cliente: `terminal` não se confere
 //! (D68, RA11).
 
+use ward_core::display;
 use ward_core::entrada::{Ambiente, Dados, Entrada, NivelAcesso, Segredo};
-use ward_core::exibicao;
-use ward_core::limites::{MAX_TEXTO, MAX_TEXTO_EXIBIDO};
+use ward_core::limits::{MAX_DISPLAYED_TEXT, MAX_TEXT};
 use ward_core::protocolo::{
     Decisao, ErroResposta, Operacao, Pedido, PedidoDeAprovacao, PedidoDeDestrave, Resposta,
     TipoEntradaPadrao,
@@ -138,8 +138,8 @@ fn descrever(pedido: &Pedido) -> Option<Descricao<'_>> {
         Pedido::Executar(x) => (
             Operacao::Executar,
             x.entrada.as_str(),
-            exibicao::exibir_argumentos(&x.argv, MAX_TEXTO_EXIBIDO),
-            exibicao::exibir_argumentos(&[x.cwd.as_slice()], MAX_TEXTO_EXIBIDO),
+            display::display_args(&x.argv, MAX_DISPLAYED_TEXT),
+            display::display_args(&[x.cwd.as_slice()], MAX_DISPLAYED_TEXT),
             oculta(&x.tipo_entrada),
         ),
         Pedido::Ssh {
@@ -150,7 +150,7 @@ fn descrever(pedido: &Pedido) -> Option<Descricao<'_>> {
         } => (
             Operacao::Ssh,
             entrada.as_str(),
-            exibicao::exibir_argumentos(comando, MAX_TEXTO_EXIBIDO),
+            display::display_args(comando, MAX_DISPLAYED_TEXT),
             String::new(),
             oculta(tipo_entrada),
         ),
@@ -186,7 +186,7 @@ pub(crate) fn cadeia_para_exibir(cliente: &dyn Cliente) -> Vec<String> {
         c.drain(..c.len() - MAX_CADEIA);
     }
     c.iter()
-        .map(|n| exibicao::exibir_texto(n.as_bytes(), MAX_TEXTO))
+        .map(|n| display::display_text(n.as_bytes(), MAX_TEXT))
         .collect()
 }
 
@@ -218,7 +218,7 @@ impl Daemon {
             // visível. Com o cofre travado não se sabe se a entrada existe, nem o tipo e o
             // ambiente; o nome vai como o agente mandou.
             let aviso = PedidoDeDestrave {
-                entrada: exibicao::exibir_texto(nome.as_bytes(), MAX_TEXTO),
+                entrada: display::display_text(nome.as_bytes(), MAX_TEXT),
                 operacao: op,
                 comando: comando.clone(),
                 restante: 0,
