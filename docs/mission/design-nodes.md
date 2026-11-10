@@ -1306,3 +1306,28 @@ altura; o botão sobe 4 px (y 635 no `20085`, y 489 no `20193`, iguais ao app). 
 Trocar PIN: a diferença de 4 px era do app. A explicação (`20478`) é `Texto/Corpo`
 (`8:12`, 14/20, duas linhas, 40 de altura), e o `TrocarPin.svelte` usava 13/18 (36). O
 app passou a 14/20; o diálogo mede 558, como o `20471`. O FigCraft não mudou nesse ponto.
+
+## Fase 54k — rodapé do Diálogo de nível (design)
+
+Editado numa cópia do `Ward.figcraft` aberta numa aba nova do MCP `figcraft` headless
+(índice 14) e salvo por cima do original com `save_file` depois de conferir que o sha256
+do original não tinha mudado (`a6d1c8fa…` → `e52f15bf…`). Os botões do rodapé do
+`Diálogo de nível` voltam a seguir o `Botão` `263` (altura `controle/padrao`
+`VariableID:47`, 44): o override `size` (altura em `controle/md` `6:141`, 40) saiu por
+`component.resetOverride`. O `paddingTop` de 4 (`espaco/4` `6:129`) fica, como no
+`DialogoDeNivel.svelte`: rodapé de 48, diálogo 4 px mais alto (Escolher 648, PIN e PIN
+errado 412), igual ao app medido no Chrome headless (Escolher em y 76, PIN em y 194;
+rodapé em y 575/339 relativo ao diálogo, botões 4 px abaixo). As três instâncias herdam
+sem override. PNG em `docs/mission/evidence/fase-54k/`.
+
+| Item | Id | Rodapé (48) | Botões (44) |
+| --- | --- | --- | --- |
+| `Diálogo de nível` › `Etapa=Escolher` | `968` | `1018` | `1019`, `1023` |
+| `Diálogo de nível` › `Etapa=PIN` | `1027` | `1069` | `1070`, `1074` |
+| `Diálogo de nível` › `Etapa=PIN errado` | `1078` | `1120` | `1121`, `1125` |
+| `Nível de acesso / Escolher` (instância `5935`, herda) | `5615` | `5985` | `5986`, `5990` |
+| `Nível de acesso / PIN` (instância `6314`, herda) | `5994` | `6364` | `6365`, `6369` |
+| `Nível de acesso / PIN errado` (instância `6693`, herda) | `6373` | `6743` | `6744`, `6748` |
+
+O comentário do `TrocarPin.svelte` passou a citar o frame `20193` (instância `20471` do
+`Diálogo de troca` › `Tipo=PIN` `19979`).

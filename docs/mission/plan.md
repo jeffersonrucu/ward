@@ -1733,7 +1733,8 @@ seis baixos.
   (554 no app, 558 em `20471`) é medida e o lado errado é corrigido.
   Feita (2026-11-10): rodapés a 44 nos componentes `612`/`628`/`19918`/`19979`; o
   `TrocarPin.svelte` passou a 14/20 na explicação (558, igual ao `20471`).
-- [ ] Fase 54k (DESIGN) — `Diálogo de nível` (achado da 54j): app 48 de altura (padding 4,
+- [x] Fase 54k (DESIGN) — `Diálogo de nível` (achado da 54j): app 48 de altura (padding 4,
   botões 44), design `967` 44 (botões 40); o design passa a botões de 44, como na 54j.
   Comentário "Sem frame próprio" do `TrocarPin.svelte` passa a citar `20193`. Diferenças
   de 1–2 px de largura por fonte não viram fase.
+  Feita (2026-11-10): botões de 44 nos componentes `968`/`1027`/`1078`; app e design batem.

@@ -1,7 +1,7 @@
 <script>
-  // "Trocar" do PIN de aprovação em `Configurações / Geral` (Fase 38, V5.22, S9). Sem
-  // frame próprio no FigCraft: monta o `Modal` (611) com três `Campo PIN` (650) e o
-  // `Botão` (263).
+  // "Trocar" do PIN de aprovação em `Configurações / Geral` (Fase 38, V5.22, S9). Frame
+  // `Configurações / Trocar PIN` (20193; Fase 39d), com o `Diálogo de troca` › `Tipo=PIN`
+  // (19979, instância 20471): `Modal` (611) com três `Campo PIN` (650) e o `Botão` (263).
   //
   // Pede o PIN atual (o daemon o confere; o 5.º erro seguido trava o cofre) e o novo
   // duas vezes. Os valores ficam só no estado local deste componente; saem do estado
