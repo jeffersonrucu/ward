@@ -1746,9 +1746,11 @@ seis baixos.
   Comentário "Sem frame próprio" do `TrocarPin.svelte` passa a citar `20193`. Diferenças
   de 1–2 px de largura por fonte não viram fase.
   Feita (2026-11-10): botões de 44 nos componentes `968`/`1027`/`1078`; app e design batem.
-- [ ] Fase 54l — Achados da 54c:
+- [x] Fase 54l — Achados da 54c:
   - `arquivos::ler_cofre` abre com `O_NOFOLLOW | O_NONBLOCK` e só arquivo comum: um FIFO
     no lugar de uma versão (restaurar, leitura local da cópia externa) não trava a thread.
     Teste de ataque.
   - Fim da sessão do `ward ssh` (CLI caiu, SIGKILL na CLI) usa `matar_com_sessoes_filhas`:
     nenhum `ssh` com sessão própria sobra. Teste de ataque.
+  Feita (2026-11-10): `abrir_leitura` com `O_NONBLOCK`/`O_NOCTTY`; todo fim de sessão usa
+  `matar_com_sessoes_filhas`. `make check` (957) e `teste-cli` 0.
