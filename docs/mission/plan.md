@@ -1720,7 +1720,9 @@ seis baixos.
 - [ ] Fase 54h — `Modal` contra o design (achado da 54e, já existia): o "X" de fechar do
   cabeçalho e o corpo 3 px acima (y 170 contra 173) no diálogo de troca; conferir no Chrome
   headless contra o frame `20085`.
-- [ ] Fase 54i (DESIGN) — "Diretório de trabalho" nos frames de aprovação (achado da 54f):
+- [x] Fase 54i (DESIGN) — "Diretório de trabalho" nos frames de aprovação (achado da 54f):
   os frames `16701`, `16810`, `16885`, `16960` e `17035` ganham a `Caixa de código` do
   diretório, como o app mostra desde a 26a; o comentário "sem frame" de `aprovacao.js` e
   `JanelaAprovacao.svelte` passa a citar `22964`.
+  Feita (2026-11-10): caixas `23144`–`23156`; comentários atualizados. A propriedade
+  `Conteúdo` das caixas "Comando" antigas ainda diz `clientex-*` (o texto desenhado está certo).

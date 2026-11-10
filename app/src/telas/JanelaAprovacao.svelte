@@ -18,7 +18,8 @@
   // - Fase 54b (D68): com `entrada_oculta` (a entrada padrão do comando é pipe ou
   //   arquivo), aviso em `Destaque` aviso e um `Interruptor` que libera os três
   //   "Permitir"; marcado, a resposta vai com `ciente`. Quem confere é o lado Rust e o
-  //   daemon; a caixa desmarca a cada pedido novo. Sem frame no FigCraft ainda.
+  //   daemon; a caixa desmarca a cada pedido novo. Frames 22964 (desmarcada) e 23051
+  //   (marcada) no FigCraft (Fase 54f).
   import { onDestroy, onMount, tick } from 'svelte';
   import BadgeAmbiente from '../lib/componentes/BadgeAmbiente.svelte';
   import BadgeTipo from '../lib/componentes/BadgeTipo.svelte';
@@ -183,7 +184,7 @@
           >{/if}
         <!-- Fase 44e: o aviso da origem em `Destaque` aviso (frames 22812, 22957). -->
         {#if pedido.origem}<Destaque tipo="aviso" icone="alerta">{avisoDaOrigem(pedido.origem)}</Destaque>{/if}
-        <!-- Fase 54b (D68): a entrada padrão que a janela não mostra. -->
+        <!-- Fase 54b (D68): a entrada padrão que a janela não mostra (frames 22964, 23051). -->
         {#if entradaOculta}<Destaque tipo="aviso" icone="alerta">{TEXTOS.entradaDestaque}</Destaque>{/if}
         {#if urgente}
           <Destaque tipo="perigo" icone="relogio">{TEXTOS.expirando(pedido.restante)}</Destaque>
@@ -227,7 +228,8 @@
         {#if pedido.comando || !pedido.origem}
           <CaixaDeCodigo rotulo={TEXTOS.comando}><TextoDoAgente texto={pedido.comando} /></CaixaDeCodigo>
         {/if}
-        <!-- Fase 26a: o comando roda no diretório da CLI; só o `executar` tem um. -->
+        <!-- Fase 26a: o comando roda no diretório da CLI; só o `executar` tem um
+             (frames 16701, 16810, 16885, 16960, 17035, 22964; Fase 54i). -->
         {#if pedido.diretorio}
           <CaixaDeCodigo rotulo={TEXTOS.diretorio}><TextoDoAgente texto={pedido.diretorio} /></CaixaDeCodigo>
         {/if}

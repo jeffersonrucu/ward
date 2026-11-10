@@ -1262,3 +1262,21 @@ do app). PNG em `docs/mission/evidence/fase-54f/`.
 | --- | --- | --- | --- |
 | `Aprovação / entrada padrão` | `22964` | 12320 | `ward run acme-pg-aprovacao -- python3` com pipe (com aprovação, stage): `Contagem` "1:35 restantes" `22975`; `Destaque entrada padrão` (aviso, `Ícone/alerta`) `23039` (texto `23043`: "O comando recebe dados pela entrada padrão, que esta janela não mostra. Esses dados podem usar a credencial do jeito que quiserem. Permita só se você sabe o que vai por ela."); resumo `22979`; `pedido` `22980` (Comando `22999` `"python3"`, Diretório de trabalho `23048` `"/home/dev/projetos/acme"`, Quem pediu `23002`); `confirmação da entrada` `23044` (gap `espaco/8` `6:131`): `Interruptor` `Ligado=não` `23045` + rótulo `23047` (estilo `8:16`, 12/16, fill `6:64`) "Sei o que vai pela entrada padrão e permito mesmo assim"; `Campo PIN` vazio `23005`; "Negar" `23017` (secundário, foco), "Permitir uma vez" `23021` (primário, desabilitado), "Permitir por 1 hora" `23026` e "Permitir sempre" `23030` (secundário, desabilitado); nota `23034` |
 | `Aprovação / entrada padrão / marcada` | `23051` | 12960 | o mesmo com a caixa ligada: `Destaque entrada padrão` `23066`; Comando `23091`, Diretório `23094`, Quem pediu `23097`; `confirmação da entrada` `23100` com `Interruptor` `Ligado=sim` `23101` e rótulo `23103`; `Campo PIN` completo `23104`; "Negar" `23116` (secundário), "Permitir uma vez" `23120` (primário), "Permitir por 1 hora" `23125`, "Permitir sempre" `23129` (secundário); nota `23133` |
+
+## Fase 54i — "Diretório de trabalho" nos frames de aprovação (design)
+
+Editado numa cópia do `Ward.figcraft` aberta numa aba nova do MCP `figcraft` headless e
+salvo por cima do original com `save_file` depois de conferir que o sha256 do original
+não tinha mudado (`24addb5f…` → `5bec641a…`). Em cada frame, a `pedido` ganhou uma
+`Caixa de código` (instância do `16340`, duplicada de `23048` da 54f) entre "Comando" e
+"Quem pediu", como o app mostra desde a 26a: Rótulo "Diretório de trabalho", Conteúdo
+`"/home/dev/projetos/acme"` (o mesmo do `daemon_falso`). Nada mais mudou; os frames são
+`hug` e cresceram 88 (72 da caixa + 16 do gap). PNG em `docs/mission/evidence/fase-54i/`.
+
+| Frame | Id | `pedido` | Caixa "Diretório de trabalho" | Altura nova |
+| --- | --- | --- | --- | --- |
+| `Aprovação / Normal` | `16701` | `16704` | `23144` | 872 |
+| `Aprovação / prod` | `16810` | `16826` | `23147` | 944 |
+| `Aprovação / PIN errado` | `16885` | `16901` | `23150` | 872 |
+| `Aprovação / PIN bloqueado` | `16960` | `16976` | `23153` | 966 |
+| `Aprovação / Expirando` | `17035` | `17051` | `23156` | 962 |
