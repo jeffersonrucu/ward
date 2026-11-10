@@ -3,9 +3,9 @@
 
 Fontes (nada copiado à mão):
 - `extension/`: manifesto, popup (HTML, CSS, JS) e as funções injetadas na aba;
-- `app/src/lib/estilo/tokens.css`: o arquivo único de tokens, gerado das variables do
+- `app/src/lib/style/tokens.css`: o arquivo único de tokens, gerado das variables do
   Ward.figcraft (Fase 29); a extensão usa o mesmo;
-- `app/src/lib/componentes/icones.js` e `ward-simbolo.svg`: ícones e o símbolo do Ward,
+- `app/src/lib/components/icons.js` e `ward-symbol.svg`: ícones e o símbolo do Ward,
   também gerados do FigCraft;
 - `app/node_modules/@fontsource/*`: Inter e JetBrains Mono (instaladas por
   `make app-front`, com `npm ci --ignore-scripts`);
@@ -204,14 +204,14 @@ def fontes_css():
 
 
 def marca_js():
-    svg = ET.parse(os.path.join(APP, "src", "lib", "componentes", "ward-simbolo.svg")).getroot()
+    svg = ET.parse(os.path.join(APP, "src", "lib", "components", "ward-symbol.svg")).getroot()
     caminhos = [p for p in svg.iter("{http://www.w3.org/2000/svg}path") if p.get("fill")]
     if len(caminhos) != 1:
-        falha("ward-simbolo.svg deveria ter um caminho preenchido")
+        falha("ward-symbol.svg deveria ter um caminho preenchido")
     p = caminhos[0]
     dados = {"caixa": svg.get("viewBox"), "t": p.get("transform", ""), "d": p.get("d")}
     with open(os.path.join(DIST, "marca.js"), "w", encoding="utf-8") as f:
-        f.write("// GERADO por dev/extension/build.py a partir de app/src/lib/componentes/ward-simbolo.svg.\n")
+        f.write("// GERADO por dev/extension/build.py a partir de app/src/lib/components/ward-symbol.svg.\n")
         f.write(f"export const SIMBOLO = Object.freeze({json.dumps(dados, ensure_ascii=False)});\n")
 
 
@@ -235,7 +235,7 @@ def conferir_pacote():
             for u in URL.findall(dados):
                 if u.decode() not in aceitas:
                     falha(f"{rel}: URL remota {u.decode()!r}")
-            if rel in {"icones.js", "marca.js", "tokens.css", "fontes.css", "manifest.json"}:
+            if rel in {"icons.js", "marca.js", "tokens.css", "fontes.css", "manifest.json"}:
                 continue
             for padrao in PROIBIDOS + PROIBIDOS_POR_ARQUIVO.get(rel, []):
                 if re.search(padrao, dados):
@@ -263,8 +263,8 @@ def main():
                 f.write("\n")
             continue
         shutil.copyfile(os.path.join(FONTE, n), os.path.join(DIST, n))
-    shutil.copyfile(os.path.join(APP, "src", "lib", "estilo", "tokens.css"), os.path.join(DIST, "tokens.css"))
-    shutil.copyfile(os.path.join(APP, "src", "lib", "componentes", "icones.js"), os.path.join(DIST, "icones.js"))
+    shutil.copyfile(os.path.join(APP, "src", "lib", "style", "tokens.css"), os.path.join(DIST, "tokens.css"))
+    shutil.copyfile(os.path.join(APP, "src", "lib", "components", "icons.js"), os.path.join(DIST, "icons.js"))
     for t in TAMANHOS_ICONE:
         shutil.copyfile(
             os.path.join(RAIZ, "docs", "design", "icones", f"extensao-destravado-{t}.png"),

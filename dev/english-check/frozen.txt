@@ -3,3 +3,29 @@
 # One per line: <path-glob> <word-or-identifier> <phase> <reason...>
 # Same matching as allow.txt. An entry that matches no finding fails the checker.
 # Phase 60 requires this list empty and removes the file.
+
+# Phase 35 (app/src base): wire fields the shell and the components read or send.
+app/src/App.svelte estado 54 status field of the estado_do_cofre reply
+app/src/App.svelte pedido 54 request field of the estado_do_cofre reply
+app/src/App.svelte restante 54 field of the unlock request in the estado_do_cofre reply
+app/src/App.svelte entrada 54 field of the unlock request in the estado_do_cofre reply
+app/src/App.svelte operacao 54 field of the unlock request in the estado_do_cofre reply
+app/src/App.svelte comando 54 field of the unlock request in the estado_do_cofre reply
+app/src/App.svelte mensagem 54 message field of the command error
+app/src/lib/components/GeneratorPopover.svelte tamanho 54 argument and reply field of gerar_senha, reply field of usar_senha_gerada
+app/src/lib/components/GeneratorPopover.svelte minusculas 54 charset argument of gerar_senha
+app/src/lib/components/GeneratorPopover.svelte maiusculas 54 charset argument of gerar_senha
+app/src/lib/components/GeneratorPopover.svelte digitos 54 charset argument of gerar_senha
+app/src/lib/components/GeneratorPopover.svelte simbolos 54 charset argument and reply field of gerar_senha
+app/src/lib/components/GeneratorPopover.svelte forca 54 strength field of the gerar_senha reply
+app/src/lib/components/GeneratorPopover.svelte valor 54 value field of the revelar_senha_gerada reply
+app/src/lib/components/GeneratorPopover.svelte campo 54 field argument of usar_senha_gerada
+app/src/lib/components/GeneratorPopover.svelte mensagem 54 message field of the command error
+app/src/lib/components/LevelDialog.svelte entrada 54 entry argument of mudar_nivel
+app/src/lib/components/LevelDialog.svelte nivel 54 level argument and reply field of mudar_nivel; level field of the entry
+app/src/lib/components/LevelDialog.svelte nome 54 name field of the entry
+app/src/lib/components/LevelDialog.svelte tipo 54 type field of the entry
+app/src/lib/components/LevelDialog.svelte ambiente 54 environment field of the entry
+app/src/lib/components/LevelDialog.svelte codigo 54 code field of the command error
+app/src/lib/components/LevelDialog.svelte mensagem 54 message field of the command error
+app/src/lib/components/LevelDialog.svelte estado 54 status field of the estado_do_cofre reply

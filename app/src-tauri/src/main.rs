@@ -665,8 +665,8 @@ struct Bandeja<R: Runtime> {
 
 fn icone_da_bandeja(i: Icone) -> Image<'static> {
     match i {
-        Icone::Destravado => tauri::include_image!("icons/bandeja-destravado-32.png"),
-        Icone::Travado => tauri::include_image!("icons/bandeja-travado-32.png"),
+        Icone::Destravado => tauri::include_image!("icons/tray-unlocked-32.png"),
+        Icone::Travado => tauri::include_image!("icons/tray-locked-32.png"),
     }
 }
 
