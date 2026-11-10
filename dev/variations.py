@@ -1,55 +1,56 @@
 #!/usr/bin/python3 -IB
-"""Lista de segredos do cofre de teste e das variações de D11, D36, D37, D54, D58 e D61
-(Fases 19, 19d, 19e e 22a).
+"""List of the test vault's secrets and of the variations of D11, D36, D37, D54, D58 and
+D61 (Phases 19, 19d, 19e and 22a).
 
-Uso (da raiz):
-    python3 -I -B dev/variations.py [--output .dev/<nome>.txt]      # make dev-variations
+Usage (from the root):
+    python3 -I -B dev/variations.py [--output .dev/<name>.txt]      # make dev-variations
 
-Os validadores usam a lista com `grep -F -f .dev/variations.txt` ("contém segredo" do
-contrato). Uma linha por padrão, sem linha vazia, nenhum padrão com menos de 6 bytes;
-forma com quebra de linha ou nulo não cabe numa linha e fica de fora.
+The validators use the list with `grep -F -f .dev/variations.txt` (the contract's
+"contains a secret"). One pattern per line, no empty line, no pattern shorter than 6
+bytes; a form with a newline or a NUL does not fit on a line and is left out.
 
-Para cada valor secreto das fixtures (`segredos`, extras com `segredo: true`, anexos, a
-chave privada de `.dev/services/keys/`, a senha mestra e o PIN), a tabela única de
-D54, a mesma que a máscara implementa (sem uma chamar a outra):
-1. segredo inteiro: o literal; URL-encoded (`quote` sem nada seguro, com `/` seguro,
-   `quote_plus`, hex maiúsculo e minúsculo, todo byte codificado); base64 padrão e
-   URL-safe, com e sem `=`; o miolo do base64 do valor dentro de um base64 maior (3
-   alinhamentos); e as formas de texto;
-2. Basic: base64 de `usuário:segredo`, só para segredo de campo de entrada com usuário;
-3. por linha (segredo com `\\n` e anexo; D36, D54): cada linha com 6+ caracteres, sem o
-   `\\r` do fim e aparada, URL-encoded e com as formas de texto dela, sem base64 nem
-   miolos (o base64 de linha solta fica em RA3); os campos de 6+ de uma linha de texto
-   com tab; numa linha que não é texto, os campos de tab de 6+ bytes só pelo literal e
-   URL-encoded (D61);
-4. valor de linha (`CHAVE=valor`/`export CHAVE=valor`, `"chave": "valor"` com a chave de
-   qualquer caractere menos `"` e também colado, `chave: valor`, `chave : valor`,
-   `chave:\\tvalor`, `- chave: valor`, e o campo de tab), com e sem aspas, 6+: tratado
-   como segredo inteiro (1). Mais (D61): o comentário no fim (`v # x`, `"v" # x`) do
-   YAML e do dotenv; a chave YAML com espaço ou `/` (`private key: v`); o `''` das aspas
-   simples do YAML; e a string decodificada de cada par `"chave": "string"` em qualquer
-   posição de uma linha de texto (também no segredo de uma linha só que começa por `{`
-   ou `[`).
-Anexo inteiro: o conteúdo, sem a quebra de linha final, URL-encoded e base64.
+For each secret value of the fixtures (the secrets map, extras marked secret,
+attachments, the private key in `.dev/services/keys/`, the master password and the
+PIN), the single table of D54, the same one the mask implements (neither calls the
+other):
+1. whole secret: the literal; URL-encoded (`quote` with nothing safe, with `/` safe,
+   `quote_plus`, upper and lower case hex, every byte encoded); standard and URL-safe
+   base64, with and without `=`; the core of the value's base64 inside a larger base64
+   (3 alignments); and the text forms;
+2. Basic: base64 of `username:secret`, only for a secret of an entry field with a
+   username;
+3. per line (secret with `\\n` and attachment; D36, D54): each line with 6+ characters,
+   without the trailing `\\r` and trimmed, URL-encoded and with its text forms, without
+   base64 or cores (the base64 of a loose line stays in RA3); the 6+ fields of a text
+   line with a tab; on a line that is not text, the 6+ byte tab fields only as the
+   literal and URL-encoded (D61);
+4. line value (`KEY=value`/`export KEY=value`, `"key": "value"` with a key of any
+   character but `"` and also without spaces, `key: value`, `key : value`,
+   `key:\\tvalue`, `- key: value`, and the tab field), with and without quotes, 6+:
+   treated as a whole secret (1). Plus (D61): the trailing comment (`v # x`, `"v" # x`)
+   of YAML and dotenv; the YAML key with a space or `/` (`private key: v`); the `''` of
+   YAML single quotes; and the decoded string of each `"key": "string"` pair anywhere
+   on a text line (also in a single-line secret that starts with `{` or `[`).
+Whole attachment: the content, without the final newline, URL-encoded and base64.
 
-Formas de texto (D37, D54), cada uma só quando difere do literal e só para texto
-(UTF-8 válido): escape JSON padrão, com e sem `\\/`; JSON do Go (`&`, `<`, `>`, U+2028 e
-U+2029 como `\\u0026`, `\\u003c`, `\\u003e`, `\\u2028`, `\\u2029`); `ensure_ascii` do
-Python (`\\uXXXX` minúsculo, com par substituto acima de U+FFFF); `json_encode` do PHP
-(`\\/` e `\\uXXXX` juntos, só com `/` e caractere fora do ASCII); Go com `ensure_ascii`
-(D58: `\\uXXXX` de `&<>` e de todo caractere fora do ASCII, só com os dois); aspas duplas do shell
-(`\\` antes de `$`, `` ` ``, `"` e `\\`); aspas simples do shell (`'` vira `'\\''`, só
-com `'`); e `printf %q` do bash 5.2 (só ASCII visível e espaço). O hex em maiúsculas,
-o `$'…'` do bash, o `expand`, o `repr()`, o `iconv`, o elemento de array JSON e o flow
-do YAML ficam de fora (RA3). Mais o `DATABASE_URL` das entradas
-`banco` (D10).
+Text forms (D37, D54), each only when it differs from the literal and only for text
+(valid UTF-8): standard JSON escape, with and without `\\/`; Go JSON (`&`, `<`, `>`,
+U+2028 and U+2029 as `\\u0026`, `\\u003c`, `\\u003e`, `\\u2028`, `\\u2029`); Python's
+`ensure_ascii` (lower case `\\uXXXX`, with a surrogate pair above U+FFFF); PHP's
+`json_encode` (`\\/` and `\\uXXXX` together, only with `/` and a non-ASCII character);
+Go with `ensure_ascii` (D58: `\\uXXXX` for `&<>` and for every non-ASCII character, only
+with both); shell double quotes (`\\` before `$`, `` ` ``, `"` and `\\`); shell single
+quotes (`'` becomes `'\\''`, only with `'`); and bash 5.2 `printf %q` (only visible ASCII
+and space). Upper case hex, bash `$'…'`, `expand`, `repr()`, `iconv`, the JSON array
+element and YAML flow are left out (RA3). Plus the `DATABASE_URL` of database entries
+(D10).
 
-Independente do código da máscara (Fases 17, 19c e 19e) de propósito: é o oráculo de
-quem confere; não importa nem chama o `ward-core`. Testes: `dev/tests/variations_test.py`
-e o teste cruzado oráculo → máscara de `dev/tests/dev-vault.sh` (os dois rodados por
-`make test-dev-vault`). Só a biblioteca padrão. Nada vai para stdout/stderr além do
-caminho e da contagem; a lista é gravada 0600, de forma atômica, só dentro de `.dev/`.
-Nunca lê fora do repositório.
+Independent of the mask code (Phases 17, 19c and 19e) on purpose: it is the oracle of
+whoever verifies; it never imports or calls the core crate. Tests:
+`dev/tests/variations_test.py` and the oracle → mask cross test of
+`dev/tests/dev-vault.sh` (both run by `make test-dev-vault`). Standard library only.
+Nothing goes to stdout/stderr besides the path and the count; the list is written 0600,
+atomically, only inside `.dev/`. Never reads outside the repository.
 """
 
 from __future__ import annotations
@@ -66,15 +67,15 @@ from urllib.parse import quote, quote_plus
 
 os.environ["PATH"] = "/usr/bin:/bin"
 
-RAIZ = Path(__file__).resolve().parents[1]
-FIXTURES = RAIZ / "dev" / "fixtures" / "entries.json"
-DEV = RAIZ / ".dev"
-SAIDA_PADRAO = ".dev/variations.txt"
-BASE_CHAVES = ".dev/services/keys"
-BASE_ANEXOS = "dev/fixtures/attachments"
-MIN_PADRAO = 6
-MAX_ARQUIVO = 16 * 1024 * 1024
-ESQUEMAS = {
+ROOT = Path(__file__).resolve().parents[1]
+FIXTURES = ROOT / "dev" / "fixtures" / "entries.json"
+DEV = ROOT / ".dev"
+DEFAULT_OUTPUT = ".dev/variations.txt"
+KEYS_BASE = ".dev/services/keys"
+ATTACHMENTS_BASE = "dev/fixtures/attachments"
+MIN_PATTERN = 6
+MAX_FILE = 16 * 1024 * 1024
+SCHEMES = {
     "postgres": "postgresql",
     "mysql": "mysql",
     "mongo": "mongodb",
@@ -83,100 +84,102 @@ ESQUEMAS = {
 }
 
 
-class Recusa(Exception):
-    """Erro com texto fixo (nunca com valor de segredo)."""
+class Refusal(Exception):
+    """Error with fixed text (never with a secret value)."""
 
 
-def falhar(msg: str) -> None:
+def fail(msg: str) -> None:
     print(f"dev-variations: {msg}", file=sys.stderr)
     sys.exit(1)
 
 
-# --- Caminhos ------------------------------------------------------------------------
+# --- Paths ---------------------------------------------------------------------------
 
 
-def lexical(pedido: str) -> PurePosixPath:
-    """Caminho absoluto só pelo texto; relativo é relativo à raiz; `..` é recusado."""
-    p = PurePosixPath(pedido)
+def lexical(requested: str) -> PurePosixPath:
+    """Absolute path from the text alone; relative means relative to the root; `..` is
+    refused."""
+    p = PurePosixPath(requested)
     if ".." in p.parts:
-        raise Recusa("não pode ter '..'")
+        raise Refusal("não pode ter '..'")
     if not p.is_absolute():
-        p = PurePosixPath(RAIZ) / p
+        p = PurePosixPath(ROOT) / p
     return PurePosixPath(*[c for c in p.parts if c != "."])
 
 
-def sem_link(ate: PurePosixPath, desde: PurePosixPath) -> None:
-    """Todo diretório entre `desde` (exclusive) e `ate` (exclusive) é diretório real."""
-    atual = Path(desde)
-    for parte in ate.relative_to(desde).parts[:-1]:
-        atual = atual / parte
+def no_links(stop: PurePosixPath, start: PurePosixPath) -> None:
+    """Every directory between `start` (exclusive) and `stop` (exclusive) is a real
+    directory."""
+    current = Path(start)
+    for part in stop.relative_to(start).parts[:-1]:
+        current = current / part
         try:
-            m = os.lstat(atual)
+            m = os.lstat(current)
         except FileNotFoundError:
-            raise Recusa("diretório do caminho não existe") from None
+            raise Refusal("diretório do caminho não existe") from None
         if not stat.S_ISDIR(m.st_mode):
-            raise Recusa("um diretório do caminho é link simbólico")
+            raise Refusal("um diretório do caminho é link simbólico")
 
 
-def validar_saida(pedido: str) -> Path:
-    """Saída só dentro de `<raiz>/.dev/`, nome `*.txt`, sem link simbólico (S15)."""
-    abs_ = lexical(pedido)
+def validate_output(requested: str) -> Path:
+    """Output only inside `<root>/.dev/`, named `*.txt`, without a symbolic link (S15)."""
+    abs_ = lexical(requested)
     dev = PurePosixPath(DEV)
-    # 1) Só texto: nada fora do repositório é consultado no disco.
+    # 1) Text only: nothing outside the repository is looked up on disk.
     try:
         rel = abs_.relative_to(dev)
     except ValueError:
-        raise Recusa("tem de ficar dentro de .dev/ do repositório") from None
+        raise Refusal("tem de ficar dentro de .dev/ do repositório") from None
     if not rel.parts or rel.name.startswith(".") or not rel.name.endswith(".txt") or rel.name == ".txt":
-        raise Recusa("o nome tem de terminar em .txt e não começar com '.'")
-    # 2) Disco.
+        raise Refusal("o nome tem de terminar em .txt e não começar com '.'")
+    # 2) Disk.
     try:
         m = os.lstat(DEV)
     except FileNotFoundError:
         os.mkdir(DEV, 0o700)
         m = os.lstat(DEV)
     if not stat.S_ISDIR(m.st_mode) or Path(os.path.realpath(DEV)) != DEV:
-        raise Recusa(".dev não é um diretório da raiz (link simbólico?)")
-    sem_link(abs_, dev)
+        raise Refusal(".dev não é um diretório da raiz (link simbólico?)")
+    no_links(abs_, dev)
     try:
         m = os.lstat(abs_)
         if not stat.S_ISREG(m.st_mode):
-            raise Recusa("o destino existe e não é arquivo comum")
+            raise Refusal("o destino existe e não é arquivo comum")
     except FileNotFoundError:
         pass
     return Path(abs_)
 
 
-def ler_do_repositorio(caminho: str, base: str) -> bytes:
-    """Arquivo citado nas fixtures: dentro de `base`, sem link, arquivo comum."""
-    if PurePosixPath(caminho).is_absolute():
-        raise Recusa(f"{caminho}: tem de ser relativo à raiz")
-    abs_ = lexical(caminho)
+def read_from_repo(path: str, base_dir: str) -> bytes:
+    """File named in the fixtures: inside `base_dir`, no link, regular file."""
+    if PurePosixPath(path).is_absolute():
+        raise Refusal(f"{path}: tem de ser relativo à raiz")
+    abs_ = lexical(path)
     try:
-        abs_.relative_to(PurePosixPath(RAIZ) / base)
+        abs_.relative_to(PurePosixPath(ROOT) / base_dir)
     except ValueError:
-        raise Recusa(f"{caminho}: fora da pasta permitida") from None
+        raise Refusal(f"{path}: fora da pasta permitida") from None
     try:
-        sem_link(abs_, PurePosixPath(RAIZ))
+        no_links(abs_, PurePosixPath(ROOT))
         fd = os.open(abs_, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
-    except (Recusa, FileNotFoundError):
-        dica = "; rode make dev-services antes" if base == BASE_CHAVES else ""
-        raise Recusa(f"{caminho}: não existe{dica}") from None
+    except (Refusal, FileNotFoundError):
+        hint = "; rode make dev-services antes" if base_dir == KEYS_BASE else ""
+        raise Refusal(f"{path}: não existe{hint}") from None
     except OSError:
-        raise Recusa(f"{caminho}: não é arquivo comum (link simbólico?)") from None
+        raise Refusal(f"{path}: não é arquivo comum (link simbólico?)") from None
     try:
         m = os.fstat(fd)
-        if not stat.S_ISREG(m.st_mode) or m.st_size > MAX_ARQUIVO:
-            raise Recusa(f"{caminho}: não é arquivo comum ou é grande demais")
+        if not stat.S_ISREG(m.st_mode) or m.st_size > MAX_FILE:
+            raise Refusal(f"{path}: não é arquivo comum ou é grande demais")
         with os.fdopen(fd, "rb", closefd=False) as f:
-            return f.read(MAX_ARQUIVO + 1)
+            return f.read(MAX_FILE + 1)
     finally:
         os.close(fd)
 
 
-def gravar(caminho: Path, conteudo: bytes) -> None:
-    """Grava 0600 de forma atômica (temp O_EXCL|O_NOFOLLOW + fsync + rename)."""
-    temp = caminho.with_name(f".{caminho.name}.tmp")
+def write_file(path: Path, content: bytes) -> None:
+    """Writes 0600 atomically (temp O_EXCL|O_NOFOLLOW + fsync + rename)."""
+    temp = path.with_name(f".{path.name}.tmp")
     try:
         if stat.S_ISREG(os.lstat(temp).st_mode):
             os.unlink(temp)
@@ -185,37 +188,38 @@ def gravar(caminho: Path, conteudo: bytes) -> None:
     fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
     try:
         os.fchmod(fd, 0o600)
-        os.write(fd, conteudo)
+        os.write(fd, content)
         os.fsync(fd)
     finally:
         os.close(fd)
-    os.replace(temp, caminho)
-    dfd = os.open(caminho.parent, os.O_RDONLY | os.O_DIRECTORY)
+    os.replace(temp, path)
+    dfd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
     try:
         os.fsync(dfd)
     finally:
         os.close(dfd)
 
 
-# --- Variações -----------------------------------------------------------------------
+# --- Variations ----------------------------------------------------------------------
 #
-# A tabela única de D54. Escrita aqui a partir do texto do PRD (D11, D34, D36, D37,
-# D54), não do `mascara.rs`:
-#   1. segredo inteiro: literal, base64 (padrão e URL-safe, com e sem `=`), miolos de
-#      base64 (3 alinhamentos), percent e as formas de texto;
-#   2. Basic: base64 de `usuário:segredo` (só segredo de campo de entrada com usuário);
-#   3. por linha (segredo de várias linhas e anexo): a linha de 6+ (sem o `\r` do fim e
-#      aparada), percent e as formas de texto dela, sem base64 nem miolos; os campos de
-#      6+ de uma linha com tab;
-#   4. valor de linha (`CHAVE=valor`, `"chave": "valor"`, `chave: valor`, campo de tab),
-#      com e sem aspas, 6+: tratado como segredo inteiro (1).
-# Anexo inteiro: o conteúdo, sem a quebra de linha final, base64 e percent.
-# Formas de texto e campos de tab só para texto (UTF-8 válido).
+# The single table of D54. Written here from the text of the PRD (D11, D34, D36, D37,
+# D54), not from the mask code:
+#   1. whole secret: literal, base64 (standard and URL-safe, with and without `=`),
+#      base64 cores (3 alignments), percent and the text forms;
+#   2. Basic: base64 of `username:secret` (only a secret of an entry field with a
+#      username);
+#   3. per line (multi-line secret and attachment): the 6+ line (without the trailing
+#      `\r` and trimmed), percent and its text forms, without base64 or cores; the 6+
+#      fields of a line with a tab;
+#   4. line value (`KEY=value`, `"key": "value"`, `key: value`, tab field), with and
+#      without quotes, 6+: treated as a whole secret (1).
+# Whole attachment: the content, without the final newline, base64 and percent.
+# Text forms and tab fields only for text (valid UTF-8).
 
-BARRA = chr(92)
-# Espaço em branco ASCII das pontas (o mesmo conjunto nas duas implementações:
-# espaço, tab, LF, FF, CR; o VT fica).
-BRANCO = b" \t\n\x0c\r"
+BACKSLASH = chr(92)
+# ASCII whitespace at the ends (the same set in both implementations: space, tab, LF,
+# FF, CR; VT stays).
+WHITESPACE = b" \t\n\x0c\r"
 
 
 def b64(v: bytes) -> list[bytes]:
@@ -224,453 +228,457 @@ def b64(v: bytes) -> list[bytes]:
     return [p, p.rstrip(b"="), u, u.rstrip(b"=")]
 
 
-def miolos_b64(v: bytes) -> list[bytes]:
-    """Trecho do base64 que só depende de `v` quando `v` está dentro de um base64 maior,
-    com 0, 1 ou 2 bytes antes (e qualquer coisa depois)."""
+def b64_cores(v: bytes) -> list[bytes]:
+    """The part of the base64 that depends only on `v` when `v` is inside a larger
+    base64, with 0, 1 or 2 bytes before it (and anything after)."""
     if len(v) < 6:
         return []
-    saida = []
+    out = []
     for k in (0, 1, 2):
         total = k + len(v)
-        inicio = (8 * k + 5) // 6  # primeiro caractere sem bit do prefixo
-        fim = (8 * total) // 6  # último caractere completo só com bits de `v`
-        for codificar in (base64.b64encode, base64.urlsafe_b64encode):
-            m = codificar(b"\0" * k + v)[inicio:fim]
+        begin = (8 * k + 5) // 6  # first character with no bit of the prefix
+        end = (8 * total) // 6  # last full character with only bits of `v`
+        for encode in (base64.b64encode, base64.urlsafe_b64encode):
+            m = encode(b"\0" * k + v)[begin:end]
             if len(m) >= 8:
-                saida.append(m)
-    return saida
+                out.append(m)
+    return out
 
 
-def minusculo_hex(s: str) -> str:
+def lowercase_hex(s: str) -> str:
     return re.sub(r"%[0-9A-F]{2}", lambda m: m.group(0).lower(), s)
 
 
 def url(v: bytes) -> list[bytes]:
-    formas = [quote(v, safe=""), quote(v, safe="/"), quote_plus(v, safe="")]
-    formas += [minusculo_hex(f) for f in formas]
-    tudo = "".join(f"%{b:02X}" for b in v)
-    formas += [tudo, tudo.lower()]
-    return [f.encode("ascii") for f in formas]
+    forms = [quote(v, safe=""), quote(v, safe="/"), quote_plus(v, safe="")]
+    forms += [lowercase_hex(f) for f in forms]
+    every_byte = "".join(f"%{b:02X}" for b in v)
+    forms += [every_byte, every_byte.lower()]
+    return [f.encode("ascii") for f in forms]
 
 
-def texto(v: bytes) -> str | None:
+def as_text(v: bytes) -> str | None:
     try:
         return v.decode("utf-8")
     except UnicodeDecodeError:
         return None
 
 
-def caracteres(v: bytes) -> int:
-    """Caracteres de UTF-8 válido; bytes se não for texto (o mínimo de D34/D36)."""
-    t = texto(v)
+def char_count(v: bytes) -> int:
+    """Characters of valid UTF-8; bytes if it is not text (the minimum of D34/D36)."""
+    t = as_text(v)
     return len(v) if t is None else len(t)
 
 
 def json_escape(v: bytes) -> list[bytes]:
-    """Escape JSON padrão, com e sem `\\/`."""
-    t = texto(v)
+    """Standard JSON escape, with and without `\\/`."""
+    t = as_text(v)
     if t is None:
         return []
     j = json.dumps(t, ensure_ascii=False)[1:-1]
-    return [x.encode("utf-8") for x in {j, j.replace("/", BARRA + "/")}]
+    return [x.encode("utf-8") for x in {j, j.replace("/", BACKSLASH + "/")}]
 
 
-# D37. Cada forma é escrita aqui a partir da descrição do PRD, não do `mascara.rs`.
+# D37. Each form is written here from the PRD description, not from the mask code.
 GO_HTML = {
-    "&": BARRA + "u0026",
-    "<": BARRA + "u003c",
-    ">": BARRA + "u003e",
-    chr(0x2028): BARRA + "u2028",
-    chr(0x2029): BARRA + "u2029",
+    "&": BACKSLASH + "u0026",
+    "<": BACKSLASH + "u003c",
+    ">": BACKSLASH + "u003e",
+    chr(0x2028): BACKSLASH + "u2028",
+    chr(0x2029): BACKSLASH + "u2029",
 }
 
 
 def json_go(t: str) -> str:
-    """`json.Marshal` do Go: o escape JSON comum mais `&<>` e U+2028/U+2029 em `\\u`."""
+    """Go's `json.Marshal`: the usual JSON escape plus `&<>` and U+2028/U+2029 as `\\u`."""
     j = json.dumps(t, ensure_ascii=False)[1:-1]
     return "".join(GO_HTML.get(c, c) for c in j)
 
 
 def json_ascii(t: str) -> str:
-    """`json.dumps` do Python (`ensure_ascii`): fora do ASCII vira `\\uXXXX` minúsculo,
-    com par substituto acima de U+FFFF."""
+    """Python's `json.dumps` (`ensure_ascii`): non-ASCII becomes lower case `\\uXXXX`,
+    with a surrogate pair above U+FFFF."""
     return json.dumps(t, ensure_ascii=True)[1:-1]
 
 
 def json_php(t: str) -> str | None:
-    """`json_encode` do PHP (D54): `/` como `\\/` e todo caractere fora do ASCII como
-    `\\uXXXX` minúsculo. Só quando o valor tem os dois."""
+    """PHP's `json_encode` (D54): `/` as `\\/` and every non-ASCII character as lower
+    case `\\uXXXX`. Only when the value has both."""
     if "/" not in t or all(ord(c) < 0x80 for c in t):
         return None
-    partes = []
+    parts = []
     for c in t:
         if ord(c) >= 0x80:
-            partes.append(json.dumps(c, ensure_ascii=True)[1:-1])
+            parts.append(json.dumps(c, ensure_ascii=True)[1:-1])
         elif c == "/":
-            partes.append(BARRA + "/")
+            parts.append(BACKSLASH + "/")
         else:
-            partes.append(json.dumps(c, ensure_ascii=False)[1:-1])
-    return "".join(partes)
+            parts.append(json.dumps(c, ensure_ascii=False)[1:-1])
+    return "".join(parts)
 
 
 def json_go_ascii(t: str) -> str | None:
-    """JSON "html-safe" com `ensure_ascii` (D58): o `json.dumps` padrão do Python com `&`,
-    `<`, `>` também em `\\uXXXX`. Só quando o valor tem `&`, `<`, `>`, U+2028 ou U+2029
-    e caractere fora do ASCII."""
+    """"html-safe" JSON with `ensure_ascii` (D58): Python's default `json.dumps` with `&`,
+    `<`, `>` also as `\\uXXXX`. Only when the value has `&`, `<`, `>`, U+2028 or U+2029
+    and a non-ASCII character."""
     if not any(c in GO_HTML for c in t) or all(ord(c) < 0x80 for c in t):
         return None
     j = json.dumps(t, ensure_ascii=True)[1:-1]
     return "".join(GO_HTML.get(c, c) for c in j)
 
 
-def aspas_duplas(t: str) -> str:
-    """Valor dentro de aspas duplas do shell (`declare -p`, `export -p`)."""
+def double_quoted(t: str) -> str:
+    """Value inside shell double quotes (`declare -p`, `export -p`)."""
     return re.sub(r'([$`"\\])', r"\\\1", t)
 
 
-def aspas_simples(t: str) -> str | None:
-    """Valor dentro de aspas simples do shell (`${X@Q}`, `set`, `set -x`, D54): cada `'`
-    vira `'\\''`. Só quando o valor tem `'`."""
+def single_quoted(t: str) -> str | None:
+    """Value inside shell single quotes (`${X@Q}`, `set`, `set -x`, D54): each `'`
+    becomes `'\\''`. Only when the value has `'`."""
     if "'" not in t:
         return None
-    return t.replace("'", "'" + BARRA + "''")
+    return t.replace("'", "'" + BACKSLASH + "''")
 
 
-# `printf %q` do bash 5.2 (D54): barra antes destes sempre; `#` só no começo; `~` no
-# começo ou depois de `=` ou `:`. Só para ASCII visível e espaço (o resto vai para
-# `$'…'`, RA3). Conferido contra o bash real em `dev/tests/variations_test.py`.
-PRINTF_Q_SEMPRE = set(" !\"$&'()*,;<>?[]^`{|}" + BARRA)
+# Bash 5.2 `printf %q` (D54): a backslash before these always; `#` only at the start;
+# `~` at the start or after `=` or `:`. Only for visible ASCII and space (the rest goes
+# to `$'…'`, RA3). Verified against the real bash in `dev/tests/variations_test.py`.
+PRINTF_Q_ALWAYS = set(" !\"$&'()*,;<>?[]^`{|}" + BACKSLASH)
 
 
 def printf_q(t: str) -> str | None:
     if not t or any(not (0x20 <= ord(c) <= 0x7E) for c in t):
         return None
-    saida = []
+    out = []
     for i, c in enumerate(t):
-        if c in PRINTF_Q_SEMPRE or (c == "#" and i == 0) or (c == "~" and (i == 0 or t[i - 1] in "=:")):
-            saida.append(BARRA)
-        saida.append(c)
-    return "".join(saida)
+        if c in PRINTF_Q_ALWAYS or (c == "#" and i == 0) or (c == "~" and (i == 0 or t[i - 1] in "=:")):
+            out.append(BACKSLASH)
+        out.append(c)
+    return "".join(out)
 
 
-def escapadas(v: bytes) -> set[bytes]:
-    """As formas de texto de D37 e D54 que diferem do valor literal (vazio se nenhuma
-    muda nada): escape JSON padrão (com e sem `\\/`), JSON do Go, `ensure_ascii`, PHP,
-    aspas duplas, aspas simples e `printf %q`. Só para texto."""
-    t = texto(v)
+def escaped_forms(v: bytes) -> set[bytes]:
+    """The text forms of D37 and D54 that differ from the literal value (empty if none
+    changes anything): standard JSON escape (with and without `\\/`), Go JSON,
+    `ensure_ascii`, PHP, double quotes, single quotes and `printf %q`. Only for text."""
+    t = as_text(v)
     if t is None:
         return set()
-    formas = {json_go(t), json_ascii(t), aspas_duplas(t)}
-    for extra in (json_php(t), json_go_ascii(t), aspas_simples(t), printf_q(t)):
+    forms = {json_go(t), json_ascii(t), double_quoted(t)}
+    for extra in (json_php(t), json_go_ascii(t), single_quoted(t), printf_q(t)):
         if extra is not None:
-            formas.add(extra)
-    return ({f.encode("utf-8") for f in formas} | set(json_escape(v))) - {v}
+            forms.add(extra)
+    return ({f.encode("utf-8") for f in forms} | set(json_escape(v))) - {v}
 
 
-def inteiro(x: bytes) -> set[bytes]:
-    """Linha 1 da tabela: o segredo inteiro e as variações dele."""
+def whole(x: bytes) -> set[bytes]:
+    """Row 1 of the table: the whole secret and its variations."""
     if not x:
         return set()
-    return {x} | set(b64(x)) | set(miolos_b64(x)) | set(url(x)) | escapadas(x)
+    return {x} | set(b64(x)) | set(b64_cores(x)) | set(url(x)) | escaped_forms(x)
 
 
-def basic(usuario: str, x: bytes) -> set[bytes]:
-    """Linha 2: base64 de `usuário:segredo`."""
-    return set(b64(usuario.encode("utf-8") + b":" + x)) if x else set()
+def basic(username: str, x: bytes) -> set[bytes]:
+    """Row 2: base64 of `username:secret`."""
+    return set(b64(username.encode("utf-8") + b":" + x)) if x else set()
 
 
-def aparar(v: bytes) -> bytes:
-    return v.strip(BRANCO)
+def trim(v: bytes) -> bytes:
+    return v.strip(WHITESPACE)
 
 
-CHAVE_IGUAL = re.compile(rb"^(?:export\s+)?[A-Za-z_.-][A-Za-z0-9_.-]*\s*=(.*)$")
-CHAVE_JSON = re.compile(rb'^(?:- [ \t\n\x0c\r]*)?"[^"]+"[ \t\n\x0c\r]*:(.*)$')
-CHAVE_YAML = re.compile(rb"^(?:- [ \t\n\x0c\r]*)?[A-Za-z0-9_.-]+[ \t\n\x0c\r]*:(?:[ \t](.*))?$")
-# D61: chave YAML com espaço ou `/`; a chave vai até o primeiro `:` seguido de espaço,
-# tab ou fim, sem `#` nem aspas, e não começa por `-`, `{` nem `[`.
-CHAVE_YAML_COMPOSTA = re.compile(rb"""^(?:- [ \t\n\x0c\r]*)?[^#"'{\[\- \t\n\x0c\r][^#"']*?:(?:[ \t](.*))?$""", re.S)
-# D61: comentário no fim. Sem aspas: até antes do primeiro espaço/tab seguido de `#`.
-# Entre aspas: o miolo até a primeira aspa igual seguida de espaços e `#`.
-COMENTARIO = re.compile(rb"[ \t]#")
-ENTRE_ASPAS_COMENTARIO = re.compile(rb"""^(["'])(.*?)\1[ \t]+#""", re.S)
+KEY_EQUALS = re.compile(rb"^(?:export\s+)?[A-Za-z_.-][A-Za-z0-9_.-]*\s*=(.*)$")
+KEY_JSON = re.compile(rb'^(?:- [ \t\n\x0c\r]*)?"[^"]+"[ \t\n\x0c\r]*:(.*)$')
+KEY_YAML = re.compile(rb"^(?:- [ \t\n\x0c\r]*)?[A-Za-z0-9_.-]+[ \t\n\x0c\r]*:(?:[ \t](.*))?$")
+# D61: YAML key with a space or `/`; the key runs up to the first `:` followed by a
+# space, a tab or the end, without `#` or quotes, and does not start with `-`, `{` or
+# `[`.
+KEY_YAML_COMPOSITE = re.compile(rb"""^(?:- [ \t\n\x0c\r]*)?[^#"'{\[\- \t\n\x0c\r][^#"']*?:(?:[ \t](.*))?$""", re.S)
+# D61: trailing comment. Without quotes: up to before the first space/tab followed by
+# `#`. Within quotes: the inside up to the first matching quote followed by spaces and
+# `#`.
+COMMENT = re.compile(rb"[ \t]#")
+QUOTED_COMMENT = re.compile(rb"""^(["'])(.*?)\1[ \t]+#""", re.S)
 
 
-def valores_da_linha(aparada: bytes) -> list[bytes]:
-    """O valor de `CHAVE=valor`, `"chave": "valor"` (também colado `"k":"v"` e com a
-    chave de qualquer caractere menos `"`) e `chave: valor` (também `chave : valor` e
-    `chave:\\tvalor`) (D11, D36, D54), sem a vírgula do fim no JSON/YAML, com e sem
-    aspas, cada um com 6+ caracteres (D34)."""
-    aparada = aparar(aparada)
-    brutos = []
-    for regex, virgula, yaml in (
-        (CHAVE_IGUAL, False, False),
-        (CHAVE_JSON, True, True),
-        (CHAVE_YAML, True, True),
-        (CHAVE_YAML_COMPOSTA, True, True),
+def line_values(trimmed: bytes) -> list[bytes]:
+    """The value of `KEY=value`, `"key": "value"` (also without spaces `"k":"v"` and with
+    a key of any character but `"`) and `key: value` (also `key : value` and
+    `key:\\tvalue`) (D11, D36, D54), without the trailing comma in JSON/YAML, with and
+    without quotes, each with 6+ characters (D34)."""
+    trimmed = trim(trimmed)
+    raws = []
+    for regex, comma, yaml in (
+        (KEY_EQUALS, False, False),
+        (KEY_JSON, True, True),
+        (KEY_YAML, True, True),
+        (KEY_YAML_COMPOSITE, True, True),
     ):
-        m = regex.match(aparada)
+        m = regex.match(trimmed)
         if not m or m.group(1) is None:
             continue
-        valor = aparar(m.group(1))
-        if virgula and valor.endswith(b","):
-            valor = aparar(valor[:-1])
-        brutos.append((valor, yaml))
-    saida = []
-    for valor, yaml in brutos:
-        formas = [valor]
-        if len(valor) >= 3 and valor[:1] == valor[-1:] and valor[:1] in (b'"', b"'"):
-            formas.append(valor[1:-1])
-        formas += comentario_e_aspas(valor, yaml)
-        saida += [x for x in formas if caracteres(x) >= MIN_PADRAO]
-    return saida
+        value = trim(m.group(1))
+        if comma and value.endswith(b","):
+            value = trim(value[:-1])
+        raws.append((value, yaml))
+    out = []
+    for value, yaml in raws:
+        forms = [value]
+        if len(value) >= 3 and value[:1] == value[-1:] and value[:1] in (b'"', b"'"):
+            forms.append(value[1:-1])
+        forms += comment_and_quotes(value, yaml)
+        out += [x for x in forms if char_count(x) >= MIN_PATTERN]
+    return out
 
 
-def comentario_e_aspas(valor: bytes, yaml: bool) -> list[bytes]:
-    """Os candidatos a mais de D61 para um valor de linha: o valor antes do comentário do
-    fim (com ou sem aspas) e, no YAML, `''` trocado por `'` no valor entre aspas
-    simples."""
-    if not valor:
+def comment_and_quotes(value: bytes, yaml: bool) -> list[bytes]:
+    """The extra candidates of D61 for a line value: the value before the trailing
+    comment (with or without quotes) and, in YAML, `''` replaced by `'` in a single
+    quoted value."""
+    if not value:
         return []
-    if valor[:1] not in (b'"', b"'"):
-        m = COMENTARIO.search(valor)
-        return [aparar(valor[: m.start()])] if m else []
-    saida = []
-    m = ENTRE_ASPAS_COMENTARIO.match(valor)
-    miolo = m.group(2) if m else None
-    if miolo is not None:
-        saida.append(miolo)
-    if yaml and valor[:1] == b"'":
-        if miolo is None and len(valor) >= 3 and valor[-1:] == b"'":
-            miolo = valor[1:-1]
-        if miolo is not None and b"''" in miolo:
-            saida.append(miolo.replace(b"''", b"'"))
-    return saida
+    if value[:1] not in (b'"', b"'"):
+        m = COMMENT.search(value)
+        return [trim(value[: m.start()])] if m else []
+    out = []
+    m = QUOTED_COMMENT.match(value)
+    core = m.group(2) if m else None
+    if core is not None:
+        out.append(core)
+    if yaml and value[:1] == b"'":
+        if core is None and len(value) >= 3 and value[-1:] == b"'":
+            core = value[1:-1]
+        if core is not None and b"''" in core:
+            out.append(core.replace(b"''", b"'"))
+    return out
 
 
 STRING_JSON = re.compile(rb'"(?:[^"\\]|\\.)*"', re.S)
 
 
-def valores_json(linha: bytes) -> list[bytes]:
-    """D61: cada par `"chave"` + espaços + `:` + espaços + string JSON, em qualquer posição
-    da linha de texto, dá a string decodificada (escape inválido ou substituto sozinho
-    descarta o par), com 6+ caracteres. A busca anda de string em string: depois de um
-    par, segue do fim do valor; depois de uma string que não é chave, do fim dela."""
-    if texto(linha) is None:
+def json_values(line: bytes) -> list[bytes]:
+    """D61: each `"key"` + spaces + `:` + spaces + JSON string pair, anywhere on the text
+    line, gives the decoded string (an invalid escape or a lone surrogate discards the
+    pair), with 6+ characters. The search walks from string to string: after a pair, it
+    goes on from the end of the value; after a string that is not a key, from its end."""
+    if as_text(line) is None:
         return []
-    saida = []
+    out = []
     i = 0
     while True:
-        i = linha.find(b'"', i)
+        i = line.find(b'"', i)
         if i < 0:
             break
-        chave = STRING_JSON.match(linha, i)
-        if not chave:
+        key = STRING_JSON.match(line, i)
+        if not key:
             break
-        j = chave.end()
-        while linha[j : j + 1] in (b" ", b"\t"):
+        j = key.end()
+        while line[j : j + 1] in (b" ", b"\t"):
             j += 1
-        if linha[j : j + 1] != b":":
-            i = chave.end()
+        if line[j : j + 1] != b":":
+            i = key.end()
             continue
         j += 1
-        while linha[j : j + 1] in (b" ", b"\t"):
+        while line[j : j + 1] in (b" ", b"\t"):
             j += 1
-        if linha[j : j + 1] != b'"':
-            i = chave.end()
+        if line[j : j + 1] != b'"':
+            i = key.end()
             continue
-        valor = STRING_JSON.match(linha, j)
-        if not valor:
+        value = STRING_JSON.match(line, j)
+        if not value:
             break
         try:
-            d = json.loads(valor.group(0).decode("utf-8"), strict=False).encode("utf-8")
+            d = json.loads(value.group(0).decode("utf-8"), strict=False).encode("utf-8")
         except (ValueError, UnicodeEncodeError):
             d = None
-        if d is not None and caracteres(d) >= MIN_PADRAO:
-            saida.append(d)
-        i = valor.end()
-    return saida
+        if d is not None and char_count(d) >= MIN_PATTERN:
+            out.append(d)
+        i = value.end()
+    return out
 
 
-def campos_de_tab_binarios(linha: bytes) -> list[bytes]:
-    """D61: os campos de uma linha com tab que não é texto, aparados e crus, com 6+
-    bytes. Só literal (e URL-encoded): sem formas de texto nem base64."""
-    if b"\t" not in linha or texto(linha) is not None:
+def binary_tab_fields(line: bytes) -> list[bytes]:
+    """D61: the fields of a line with a tab that is not text, trimmed and raw, with 6+
+    bytes. Literal only (and URL-encoded): no text forms and no base64."""
+    if b"\t" not in line or as_text(line) is not None:
         return []
-    saida = []
-    for campo in linha.split(b"\t"):
-        saida += [x for x in (aparar(campo), campo) if len(x) >= MIN_PADRAO]
-    return saida
+    out = []
+    for field in line.split(b"\t"):
+        out += [x for x in (trim(field), field) if len(x) >= MIN_PATTERN]
+    return out
 
 
-def campos_de_tab(linha: bytes) -> list[bytes]:
-    """Os campos de uma linha de texto com tab (`cut -f`, TSV; D54), aparados, com e sem
-    aspas, 6+."""
-    if b"\t" not in linha or texto(linha) is None:
+def tab_fields(line: bytes) -> list[bytes]:
+    """The fields of a text line with a tab (`cut -f`, TSV; D54), trimmed, with and
+    without quotes, 6+."""
+    if b"\t" not in line or as_text(line) is None:
         return []
-    saida = []
-    for campo in linha.split(b"\t"):
-        campo = aparar(campo)
-        formas = [campo]
-        if len(campo) >= 3 and campo[:1] == campo[-1:] and campo[:1] in (b'"', b"'"):
-            formas.append(campo[1:-1])
-        saida += [x for x in formas if caracteres(x) >= MIN_PADRAO]
-    return saida
+    out = []
+    for field in line.split(b"\t"):
+        field = trim(field)
+        forms = [field]
+        if len(field) >= 3 and field[:1] == field[-1:] and field[:1] in (b'"', b"'"):
+            forms.append(field[1:-1])
+        out += [x for x in forms if char_count(x) >= MIN_PATTERN]
+    return out
 
 
-def linhas_de_anexo(v: bytes) -> list[bytes]:
-    """As linhas de 6+ caracteres de um segredo de várias linhas (sem o `\\r` do fim e
-    aparadas; D11, D36) e os valores de linha delas (`valores_da_linha`, campos de tab).
-    A linha entra como linha (formas de texto, sem base64); o valor, como inteiro."""
-    linhas, valores, crus = por_linha(v)
-    return sorted(linhas | valores | crus)
+def attachment_lines(v: bytes) -> list[bytes]:
+    """The 6+ character lines of a multi-line secret (without the trailing `\\r` and
+    trimmed; D11, D36) and their line values (`line_values`, tab fields). The line goes
+    in as a line (text forms, no base64); the value, as a whole secret."""
+    lines, values, raw_fields = per_line(v)
+    return sorted(lines | values | raw_fields)
 
 
-def por_linha(v: bytes) -> tuple[set[bytes], set[bytes], set[bytes]]:
-    """Linha 3 (as linhas), linha 4 (os valores) da tabela e os campos de tab de linha
-    que não é texto (só literal, D61)."""
-    linhas: set[bytes] = set()
-    valores: set[bytes] = set()
-    crus: set[bytes] = set()
-    for linha in v.split(b"\n"):
-        if linha.endswith(b"\r"):
-            linha = linha[:-1]
-        if caracteres(linha) < MIN_PADRAO:
+def per_line(v: bytes) -> tuple[set[bytes], set[bytes], set[bytes]]:
+    """Row 3 (the lines), row 4 (the values) of the table and the tab fields of a line
+    that is not text (literal only, D61)."""
+    lines: set[bytes] = set()
+    values: set[bytes] = set()
+    raw_fields: set[bytes] = set()
+    for line in v.split(b"\n"):
+        if line.endswith(b"\r"):
+            line = line[:-1]
+        if char_count(line) < MIN_PATTERN:
             continue
-        linhas.add(linha)
-        aparada = aparar(linha)
-        if caracteres(aparada) >= MIN_PADRAO:
-            linhas.add(aparada)
-        valores.update(campos_de_tab(linha))
-        valores.update(valores_da_linha(linha))
-        valores.update(valores_json(linha))
-        crus.update(campos_de_tab_binarios(linha))
-    return linhas, valores, crus
+        lines.add(line)
+        trimmed = trim(line)
+        if char_count(trimmed) >= MIN_PATTERN:
+            lines.add(trimmed)
+        values.update(tab_fields(line))
+        values.update(line_values(line))
+        values.update(json_values(line))
+        raw_fields.update(binary_tab_fields(line))
+    return lines, values, raw_fields
 
 
-def de_linha(v: bytes) -> set[bytes]:
-    """As variações da passada por linha (linhas 3 e 4)."""
-    linhas, valores, crus = por_linha(v)
+def line_patterns(v: bytes) -> set[bytes]:
+    """The variations of the per-line pass (rows 3 and 4)."""
+    lines, values, raw_fields = per_line(v)
     pad: set[bytes] = set()
-    for linha in linhas:
-        pad.add(linha)
-        pad |= set(url(linha)) | escapadas(linha)
-    for campo in crus:
-        pad.add(campo)
-        pad |= set(url(campo))
-    for valor in valores:
-        pad |= inteiro(valor)
+    for line in lines:
+        pad.add(line)
+        pad |= set(url(line)) | escaped_forms(line)
+    for field in raw_fields:
+        pad.add(field)
+        pad |= set(url(field))
+    for value in values:
+        pad |= whole(value)
     return pad
 
 
-def variacoes(v: bytes, usuario: str | None, anexo: bool = False) -> set[bytes]:
-    """As variações de um valor secreto que cabem numa linha da lista. `usuario`
-    (segredo de campo de entrada com usuário) acrescenta o Basic; `anexo` troca a linha
-    1 pelo anexo inteiro."""
+def variations(v: bytes, username: str | None, attachment: bool = False) -> set[bytes]:
+    """The variations of a secret value that fit on a line of the list. `username` (a
+    secret of an entry field with a username) adds the Basic; `attachment` replaces row
+    1 by the whole attachment."""
     pad: set[bytes] = set()
-    if anexo:
-        sem_quebra = v[:-1] if v.endswith(b"\n") else v
-        sem_quebra = sem_quebra[:-1] if sem_quebra.endswith(b"\r") else sem_quebra
-        for x in {v, sem_quebra} - {b""}:
+    if attachment:
+        no_newline = v[:-1] if v.endswith(b"\n") else v
+        no_newline = no_newline[:-1] if no_newline.endswith(b"\r") else no_newline
+        for x in {v, no_newline} - {b""}:
             pad.add(x)
             pad |= set(url(x))
         pad |= set(b64(v))
-        pad |= de_linha(v)
+        pad |= line_patterns(v)
     else:
-        pad |= inteiro(v)
-        if usuario:
-            pad |= basic(usuario, v)
+        pad |= whole(v)
+        if username:
+            pad |= basic(username, v)
         if b"\n" in v:
-            pad |= de_linha(v)
-        elif aparar(v)[:1] in (b"{", b"["):
-            # D61: JSON de uma linha só (`{"token": "…"}` num extra).
-            for valor in valores_json(v):
-                pad |= inteiro(valor)
-    return {p for p in pad if listavel(p)}
+            pad |= line_patterns(v)
+        elif trim(v)[:1] in (b"{", b"["):
+            # D61: single-line JSON (`{"token": "…"}` in an extra).
+            for value in json_values(v):
+                pad |= whole(value)
+    return {p for p in pad if listable(p)}
 
 
 def database_url(e: dict) -> list[bytes]:
     c, s = e.get("campos", {}), e.get("segredos", {})
-    esquema = ESQUEMAS.get(c.get("motor", ""))
-    senha = s.get("senha")
-    if not esquema or not senha:
+    scheme = SCHEMES.get(c.get("motor", ""))
+    password = s.get("senha")
+    if not scheme or not password:
         return []
-    usuario = quote(c.get("usuario", ""), safe="")
-    cifrada = quote(senha, safe="")
-    host, porta, base = c.get("host", ""), c.get("porta", ""), c.get("base", "")
-    alvo = f"{esquema}://{usuario}:{cifrada}@{host}:{porta}/{base}"
-    # Sem host/porta (o túnel troca pelos locais): o pedaço com a senha.
-    return [alvo.encode(), f"{esquema}://{usuario}:{cifrada}@".encode()]
+    username = quote(c.get("usuario", ""), safe="")
+    encoded = quote(password, safe="")
+    host, port, db_name = c.get("host", ""), c.get("porta", ""), c.get("base", "")
+    target = f"{scheme}://{username}:{encoded}@{host}:{port}/{db_name}"
+    # Without host/port (the tunnel swaps them for the local ones): the piece with the
+    # password.
+    return [target.encode(), f"{scheme}://{username}:{encoded}@".encode()]
 
 
-def listavel(p: bytes) -> bool:
-    """Padrão que cabe numa linha do `grep -F -f` (sem quebra de linha nem nulo)."""
+def listable(p: bytes) -> bool:
+    """A pattern that fits on a line of `grep -F -f` (no newline and no NUL)."""
     return b"\n" not in p and b"\r" not in p and b"\0" not in p
 
 
-# --- Montagem ------------------------------------------------------------------------
+# --- Assembly ------------------------------------------------------------------------
 
 
-def da_entrada(e: dict) -> set[bytes]:
-    """As variações dos segredos de uma entrada das fixtures, sem o `DATABASE_URL` (que
-    vem da entrega, com host e porta de quem roda) e só as que cabem numa linha."""
+def entry_patterns(e: dict) -> set[bytes]:
+    """The variations of the secrets of a fixtures entry, without the `DATABASE_URL`
+    (which comes from the delivery, with the host and port of whoever runs it) and only
+    the ones that fit on a line."""
     pad: set[bytes] = set()
-    usuario = e.get("campos", {}).get("usuario") or None
-    for campo, valor in e.get("segredos", {}).items():
-        if campo.endswith("_arquivo"):
-            bruto = ler_do_repositorio(valor, BASE_CHAVES)
+    username = e.get("campos", {}).get("usuario") or None
+    for field, value in e.get("segredos", {}).items():
+        if field.endswith("_arquivo"):
+            raw = read_from_repo(value, KEYS_BASE)
         else:
-            bruto = valor.encode("utf-8")
-        pad |= variacoes(bruto, usuario)
+            raw = value.encode("utf-8")
+        pad |= variations(raw, username)
     for x in e.get("extras", []):
         if x.get("segredo") is True:
-            pad |= variacoes(x["valor"].encode("utf-8"), None)
+            pad |= variations(x["valor"].encode("utf-8"), None)
     for a in e.get("anexos", []):
-        pad |= variacoes(ler_do_repositorio(a["arquivo"], BASE_ANEXOS), None, anexo=True)
-    return {p for p in pad if listavel(p)}
+        pad |= variations(read_from_repo(a["arquivo"], ATTACHMENTS_BASE), None, attachment=True)
+    return {p for p in pad if listable(p)}
 
 
-def coletar(dados: dict) -> set[bytes]:
+def collect(data: dict) -> set[bytes]:
     pad: set[bytes] = set()
-    for chave in ("senha_mestra", "pin"):
-        pad |= variacoes(dados[chave].encode("utf-8"), None)
-    for e in dados["entradas"]:
-        pad |= da_entrada(e)
+    for key in ("senha_mestra", "pin"):
+        pad |= variations(data[key].encode("utf-8"), None)
+    for e in data["entradas"]:
+        pad |= entry_patterns(e)
         pad.update(database_url(e))
-    return {p for p in pad if listavel(p)}
+    return {p for p in pad if listable(p)}
 
 
-def conferir_padroes(pad: set[bytes]) -> list[bytes]:
-    lista = sorted(pad)
-    for p in lista:
-        # Linha vazia ou curta faria `grep -F -f` casar com quase tudo; quebra de linha
-        # partiria o padrão em dois.
-        if len(p) < MIN_PADRAO or b"\n" in p or b"\r" in p or b"\0" in p:
-            raise Recusa("padrão curto ou com quebra de linha; confira as fixtures")
-    return lista
+def verify_patterns(pad: set[bytes]) -> list[bytes]:
+    ordered = sorted(pad)
+    for p in ordered:
+        # An empty or short line would make `grep -F -f` match almost anything; a
+        # newline would split the pattern in two.
+        if len(p) < MIN_PATTERN or b"\n" in p or b"\r" in p or b"\0" in p:
+            raise Refusal("padrão curto ou com quebra de linha; confira as fixtures")
+    return ordered
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Lista de segredos e variações do cofre de teste.")
-    ap.add_argument("--output", default=SAIDA_PADRAO)
+    ap.add_argument("--output", default=DEFAULT_OUTPUT)
     args = ap.parse_args()
     try:
-        saida = validar_saida(args.output or SAIDA_PADRAO)
-    except Recusa as e:
-        falhar(f"caminho de saída recusado: {e}")
+        out = validate_output(args.output or DEFAULT_OUTPUT)
+    except Refusal as e:
+        fail(f"caminho de saída recusado: {e}")
     try:
         if os.lstat(FIXTURES).st_size > 1024 * 1024 or not FIXTURES.is_file() or FIXTURES.is_symlink():
-            raise Recusa("fixtures ausentes ou grandes demais")
-        dados = json.loads(FIXTURES.read_text(encoding="utf-8"))
-        if dados.get("versao") != 1:
-            raise Recusa("versão das fixtures desconhecida")
-        lista = conferir_padroes(coletar(dados))
-        gravar(saida, b"\n".join(lista) + b"\n")
-    except Recusa as e:
-        falhar(str(e))
+            raise Refusal("fixtures ausentes ou grandes demais")
+        data = json.loads(FIXTURES.read_text(encoding="utf-8"))
+        if data.get("versao") != 1:
+            raise Refusal("versão das fixtures desconhecida")
+        ordered = verify_patterns(collect(data))
+        write_file(out, b"\n".join(ordered) + b"\n")
+    except Refusal as e:
+        fail(str(e))
     except (KeyError, TypeError, AttributeError, ValueError):
-        falhar("fixtures com forma inesperada")
-    rel = saida.relative_to(RAIZ)
-    print(f"dev-variations: gravado {rel} (0600) com {len(lista)} padrões; uso: grep -F -f {rel}")
+        fail("fixtures com forma inesperada")
+    rel = out.relative_to(ROOT)
+    print(f"dev-variations: gravado {rel} (0600) com {len(ordered)} padrões; uso: grep -F -f {rel}")
 
 
 if __name__ == "__main__":

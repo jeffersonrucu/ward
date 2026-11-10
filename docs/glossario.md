@@ -1179,6 +1179,24 @@ Identificadores dos scripts `dev/tests/cli.py` e `extension.py` (Fase 40), pela 
 `phase_42_section`, `tema_continua_escuro` → `theme_stays_dark`, `sem_prender` →
 `unstick`. Chaves do `qa.json`, nomes de fio, ids e classes do DOM ficam (literais).
 
+Identificadores de `dev/variations.py`, `dev/tests/variations_test.py`, `login.py` e
+`revealed_selection.py` (Fase 42), pela seção 2: `Recusa` → `Refusal`, `variacoes` →
+`variations`, `inteiro` → `whole`, `miolos_b64` → `b64_cores`, `escapadas` →
+`escaped_forms`, `aspas_duplas`/`aspas_simples` → `double_quoted`/`single_quoted`,
+`valores_da_linha` → `line_values`, `valores_json` → `json_values`, `campos_de_tab`
+(`_binarios`) → `tab_fields` (`binary_tab_fields`), `por_linha` → `per_line`,
+`de_linha` → `line_patterns`, `linhas_de_anexo` → `attachment_lines`, `da_entrada` →
+`entry_patterns` (chamada também pelo teste cruzado do `dev-vault.sh`), `coletar` →
+`collect`, `conferir_padroes` → `verify_patterns`, `validar_saida` → `validate_output`,
+`ler_do_repositorio` → `read_from_repo`, `listavel` → `listable`, `caracteres` →
+`char_count`; sentidos próprios: `BRANCO` (espaço em branco ASCII) → `WHITESPACE`,
+`BARRA` (`chr(92)`) → `BACKSLASH`, `ESQUEMAS` (esquema de URL) → `SCHEMES`. No
+`login.py`, como no `extension.py`: `envios` → `submissions`, `servir_paginas` →
+`serve_pages`, `atender_pausa` → `handle_pause`, `ward_nm_vivo` → `ward_nm_alive`. No
+`revealed_selection.py`: `modo_ler`/`modo_webkit` → `read_mode`/`webkit_mode`, `ler` →
+`read_selections` (e a opção interna `--ler` → `--read`), `no_principal` → `on_main`,
+`sem_valor` → `no_value`, `prova` → `proof`, `neutralizar` → `neutralize`.
+
 ### Evidência dos scripts (DT1; Fase 5)
 
 `docs/mission/evidence/fase-NN/` → `docs/mission/evidence/<suíte>/`, pelo alvo novo:
