@@ -86,7 +86,9 @@
 | `make teste-docker-plataforma` (135 ok) | 0 (1ª rodada 2: o daemon responde `negado`, não `aprovacao_indisponivel`; esperado corrigido) |
 | `WARD_DEV_SOCKET_DIR=/run/user/1000/ward-54 make teste-cli` | 0 (1ª rodada 2: `.dev/known_hosts` velho, ver Problemas) |
 | `WARD_DEV_SOCKET_DIR=/run/user/1000/ward-54 make app-ponte` + Playwright (TrocarSenha) | 0 |
-| `make teste-ataques-fundacao` (167 ok, "Todos os ataques foram barrados") | 0 |
+| `make teste-migracao` (depois do ajuste de V1.5) | 0 |
+| `make teste-ataques-fundacao` (167 ok, "Todos os ataques foram barrados") | 0 (1ª rodada 2: só o V1.5) |
+| `make gitleaks` (depois dos últimos ajustes; o `make check` completo rodou antes da troca do comentário do `Makefile` e do `migracao.py`, que não são Rust) | 0 |
 
 ## Problemas descobertos
 - **`ward ssh` aberto não morre na trava.** Só o agente SSH e a ponte do salto caem

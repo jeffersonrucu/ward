@@ -1666,7 +1666,7 @@ seis baixos.
   destravar`. `migracao.py` e `skill.py` têm 7 ataques novos e saíram 0. O `make check`
   e o `make teste-skill` completo não rodaram, por falta de disco; ficam para a
   reauditoria.
-- [ ] Fase 54b — Entrada padrão na aprovação (decisão do usuário, 2026-11-09: "Avisar e
+- [x] Fase 54b — Entrada padrão na aprovação (decisão do usuário, 2026-11-09: "Avisar e
   recusar pipe"):
   - A CLI informa ao daemon o tipo da entrada padrão do `ward run`/`ward ssh` (tty, pipe,
     arquivo, `/dev/null`), por `fstat`, no `PedidoExecutar`.
@@ -1682,6 +1682,10 @@ seis baixos.
     como antes. Atualizar D/RA no PRD e o contrato (V4.*).
   - Da 54a: a mensagem de travado da CLI (`crates/ward/src/comandos.rs:143`) passa a dizer
     `/usr/local/bin/ward destravar`; ajustar o V4.22 e o `teste-cli`.
+  Feita (2026-11-10): `tipo_entrada` (terminal/nula/pipe/arquivo/outra) no pedido; o daemon
+  recusa Permitir sem `entrada_confirmada` (antes do PIN), "1 hora" não cobre entrada
+  oculta, `nula` fechada no filho. D68, RA11 proposto, V4.39/V4.40. `make check`,
+  `teste-skill` e `teste-cli` saíram 0; `app-check` (release) não rodou por disco.
 - [ ] Fase 54c — Rotação dos backups contra versões plantadas (achado da Fase 54):
   - A rotação do backup local (`backup.rs`) só conta e só apaga versões que conferem pela
     `geracao_selada`; lixo plantado com data mais nova não apaga versão real. Teste.
@@ -1703,3 +1707,7 @@ seis baixos.
   (`8:12`) na explicação e no aviso; o `TrocarSenha.svelte` usa 13/18. O app passa a
   `--tamanho-md` com altura de linha 20 nos dois, conferido no Chrome headless contra o
   frame `20085`.
+- [ ] Fase 54f (DESIGN) — Aprovação com entrada padrão oculta (achado da 54b): frame
+  `Aprovação / entrada padrão` no FigCraft com o `Destaque` aviso e o `Interruptor` da
+  confirmação, desmarcado e marcado, igual a `docs/mission/evidence/fase-54b/`;
+  `docs/escopo.md` › "Janela de aprovação" passa a citar o aviso e a confirmação.
