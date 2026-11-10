@@ -1754,3 +1754,22 @@ seis baixos.
     nenhum `ssh` com sessão própria sobra. Teste de ataque.
   Feita (2026-11-10): `abrir_leitura` com `O_NONBLOCK`/`O_NOCTTY`; todo fim de sessão usa
   `matar_com_sessoes_filhas`. `make check` (957) e `teste-cli` 0.
+
+Reauditoria final (2026-11-10): **aprovada**. Nenhum crítico nem alto; um médio e quatro
+baixos. `make check` (957), `teste-skill`, `app-check` e `teste-cli` (157) deram 0;
+`teste-ataques-fundacao` 166/167 (o que falhou foi ENOSPC no build da cópia, precisa de ~5 GB).
+- [ ] Fase 55 — Achados da reauditoria final:
+  - **Médio (S8):** descendente do `ward run` que sai do grupo (`setsid -f`, `setpgid(0,0)`)
+    sobrevive à trava e ao fim do comando com o segredo. O `wardd` vira
+    `PR_SET_CHILD_SUBREAPER` e a sessão mata todo descendente (varredura de `/proc` por
+    ancestralidade sob SIGSTOP, ou cgroup v2 por sessão se o `wardd@` puder delegar);
+    a CLI só diz "encerrado" se nada sobrou. Testes de ataque com os dois passos da
+    auditoria; controle sem a correção.
+  - **Baixo:** o `detalhe` que a janela de aprovação pede para mostrar o pedido e o
+    `codigo_totp` do formulário não contam como uso (`trava.rs`); um `ward run` repetido,
+    negado ou expirado, não adia a trava. Teste.
+  - **Baixo:** `gravacao::trocar_senha` lê o cofre por `arquivos::abrir_leitura` (sem seguir
+    link, sem travar em FIFO). Teste com FIFO.
+  - `make teste-ataques-fundacao` com disco suficiente (apagar `target/debug/incremental`
+    antes) sai 0.
+
