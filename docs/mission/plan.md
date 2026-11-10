@@ -121,7 +121,7 @@ Compilação de cada fase: `make compile`. Checador: os arquivos da fase.
 - [x] Fase 7 — `launcher` (`lancador.rs`), `child` (`filho.rs`), `relogio.rs`, `teste.rs`,
   `lib.rs`. — V2.1, V2.3
 - [x] Fase 8 — `sys.rs`, `processo.rs`, `descendentes.rs`, `memoria.rs`. — V2.1, V2.6, V2.7
-- [ ] Fase 9 — `socket.rs`, `papel.rs`, `conectar.rs`, `terminal.rs`, `endurecimento.rs`,
+- [x] Fase 9 — `socket.rs`, `papel.rs`, `conectar.rs`, `terminal.rs`, `endurecimento.rs`,
   `servidor.rs`, `app.rs`, `pasta.rs` e os testes do crate; checador também em `process.rs`, `launcher.rs`, `child.rs`, `clock.rs`,
   `testing.rs` e `lib.rs` (achado da Fase 7). — V2.1, V2.3
 
@@ -296,7 +296,9 @@ Contrato: V5.1–V5.11. Sequencial.
   novos e antigos; binários `wardd-app-teste`/`wardd-aprovador-teste`, texto de uso e
   mensagens `ward-ponte-teste:` da ponte (com o `dev/ponte.sh` aceitando as duas formas)
   e a mensagem "modo-teste" do `install.sh` (achados da Fase 4); pasta do socket de teste
-  `ward-teste`, logs `wardd-*-teste.log` (achados da Fase 5). Compilação:
+  `ward-teste`, logs `wardd-*-teste.log` (achados da Fase 5). Textos de log
+  `UidRecusado`/`SemIdentidade` do `wardd` com o `dev/container-uid/inside.sh`; variáveis
+  `WARD_ATIVACAO`, `WARD_CAMINHO`, `WARD_ESPERADO`, `WARD_PLATAFORMA_FILHO` (achados da Fase 9). Compilação:
   `make compile`. — V5.4, V5.5
 - [ ] Fase 57 — Caminhos instalados e atualização (DT15, DT16): `install/tree.txt`,
   `install.sh` (apaga `extensao/` e `grupos-criados` da 0.1.x, passa a marca para
