@@ -1190,3 +1190,32 @@ Seção `Seção / Campo chave privada` `20976` (x 21000, y 0; título `20977`, 
 `Formulário / servidor / Novo` `9900` (Autenticação "Senha") e `Formulário / servidor /
 Edição` `8981` (chave salva, `Campo secreto` oculto `9326`) ficam como estavam: nesses
 estados o app não mostra o botão. Os estados novos saem deles nos frames acima.
+
+## Fase 44d — janela de aprovação com origem `http` (design)
+
+Editado numa cópia do `Ward.figcraft` aberta pelo MCP `figcraft` headless, salva com
+`save_file` na cópia e posta no lugar do original depois de conferir que o sha256 do
+original não tinha mudado (`7efbd69b…` → `3a2afbfb…`). Conferido pelo disco (`unzip -t`
+sem erro; frames da 53c e da 44d no `document.json`; PNG exportados do original pela
+CLI). PNG em `docs/mission/evidence/fase-44d/`. Referência: a tela da 44c
+(`JanelaAprovacao.svelte`, `aprovacao.js`) e os modos `aprovacao-origem`,
+`aprovacao-origem-popup` e `aprovacao-origem-pin` do daemon falso. Sem componente nem
+variable nova: tudo por instância (`Destaque` aviso `18684`, `Caixa de código`
+`16340`, `Botão`, `Campo PIN`, `Badge tipo` login, `Ícone/tipo-login` `219`).
+
+Frames na linha y 4000 da Layout, 560 de largura (`largura/dialogo-largo`), altura `hug`.
+
+| Frame | Id | x | Principais |
+| --- | --- | --- | --- |
+| `Aprovação / Origem http / Confirmar` | `22733` | 10400 | `ward playwright acme-wp-prod` (livre, prod): subtítulo `22739`; `Destaque` prod `22748` ("Credencial de produção. Confira a origem com atenção antes de confirmar."); `Destaque origem http` (aviso) `22812`; resumo `22752` ("Confira a entrada e a origem antes de confirmar."); `pedido` `22753` (nome `22760`, `Badge tipo` login `22762`, nível "confirmar a origem" `22771`, `Caixa de código` "Origem que recebe usuário e senha" `http://localhost:8081` `22772`, "Quem pediu" `claude → bash → ward playwright` `22775`); sem `Campo PIN`; `ações` `22788`: "Negar" `22790` (secundário, foco), "Confirmar a origem" `22794` (primário); nota `22807` (`notaConfirmacao`) |
+| `Aprovação / Origem http / Popup` | `22817` | 11040 | o mesmo, com subtítulo `22823` "A extensão do Chrome quer preencher uma senha" (quebra em duas linhas, como no app); `Destaque` prod `22832`; origem `22836`; resumo `22841`; nome `22849`; nível `22860`; origem `22861`; "Quem pediu" `chrome → ward-nm` `22864`; "Negar" `22869`, "Confirmar a origem" `22873`; nota `22877` |
+| `Aprovação / Origem http / PIN` | `22882` | 11680 | `ward login acme-wp-dev` (com aprovação, dev): `Destaque origem http` (aviso) `22957` logo abaixo do cabeçalho; resumo `22897` ("Confira a entrada, a origem e quem pediu antes de permitir."); nome `22905`, `Badge tipo` login `22907`, `Badge ambiente` dev `22912`, nível "com aprovação" `22916`; origem `22917`; "Quem pediu" `claude → bash → ward login` `22920`; `Campo PIN` `22923`; "Negar" `22935`, "Permitir uma vez" `22939`, "Permitir por 1 hora" `22944`, "Permitir sempre" `22948`; nota `22952` |
+
+Diferenças do design para a tela da 44c (a fase de UI que seguir este frame ajusta o
+app; ver o handoff da 44d):
+
+| O quê | App (44c) | Design (44d) |
+| --- | --- | --- |
+| Tom do aviso de `http` (`origemDestaque`) | `Destaque` neutro com ícone alerta | `Destaque` **aviso** (`tipo="aviso"`) |
+| `prodDestaque` na confirmação | "…confira o comando com atenção." (não há comando) | "Credencial de produção. Confira a origem com atenção antes de confirmar." |
+| `resumo` no pedido com PIN e origem | "Confira a entrada, o comando exato e quem pediu antes de permitir." | "Confira a entrada, a origem e quem pediu antes de permitir." |
