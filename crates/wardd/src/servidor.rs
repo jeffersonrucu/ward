@@ -428,7 +428,7 @@ mod testes {
         use std::os::unix::fs::DirBuilderExt;
         let dir = std::path::PathBuf::from(format!(
             "/run/user/{}/wardd-servidor-d63-{}",
-            ward_platform::uid_efetivo(),
+            ward_platform::effective_uid(),
             std::process::id()
         ));
         let _ = std::fs::remove_dir_all(&dir);

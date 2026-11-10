@@ -12,7 +12,7 @@
 //!    conferido (nada que vire caminho); nada do ambiente do daemon (`LISTEN_*`); a
 //!    entrega por cima; locale com `LC_CTYPE` UTF-8 (ver [`ajustar_locale`]). O
 //!    diretório de trabalho é o da CLI e vai à janela de aprovação;
-//! 5. o filho ([`ward_platform::filho`]): grupo de processos próprio, nenhum fd do
+//! 5. o filho ([`ward_platform::child`]): grupo de processos próprio, nenhum fd do
 //!    daemon, sem shell (S3), morre com a thread da conexão;
 //! 6. stdout e stderr passam pela máscara, cada um no seu fluxo, e voltam em quadros
 //!    `saida`; a entrada da CLI chega pelo `entrada_padrao` (vazio = fim);
@@ -47,7 +47,7 @@ use ward_core::protocolo::{
     self, ErroResposta, Fluxo, Janela, Papel, Pedido, Resposta, TipoEntradaPadrao, Variavel, quadro,
 };
 use ward_core::totp::Totp;
-use ward_platform::filho::{self, Comando, Grupo, Pty};
+use ward_platform::child::{self, Command, Group, Pty};
 
 use crate::agente_ssh::{AgenteSsh, Permitido};
 
@@ -64,7 +64,7 @@ const PRAZO_RESTO_DA_SAIDA: Duration = Duration::from_secs(2);
 const PASSO_LEITURA_MS: i32 = 100;
 /// Lote máximo lido da saída do filho antes de mascarar (Fase 28g): a capacidade dos
 /// pipes de saída, para um `write` único que coube no pipe ser mascarado de uma vez.
-pub(crate) const LOTE: usize = filho::CAPACIDADE_PIPE_SAIDA;
+pub(crate) const LOTE: usize = child::CAPACIDADE_PIPE_SAIDA;
 /// Quadros de entrada guardados à espera do filho ler (pressão de volta na CLI).
 const FILA_ENTRADA: usize = 8;
 /// Locale que o filho recebe quando o da CLI não é UTF-8.
@@ -303,7 +303,7 @@ impl Recursos for RecursosRun<'_> {
 /// Tudo pronto para lançar: o comando (com o ambiente, que tem segredo), a máscara, os
 /// temporários (apagados ao sair) e, no `ward ssh` (Fase 27), o pty e o agente SSH.
 pub(crate) struct Preparo {
-    pub(crate) comando: Comando,
+    pub(crate) comando: Command,
     pub(crate) mascara: Mascara,
     pub(crate) temporarios: Option<Temporarios>,
     /// Salto do `ward ssh` ou túnel do `banco` (Fase 28): a ponte, que começa a aceitar
@@ -357,7 +357,7 @@ const DO_DAEMON: [&[u8]; 4] = [b"PATH", b"HOME", b"USER", b"LOGNAME"];
 /// Como o valor de uma variável da CLI é conferido.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Forma {
-    /// Nome de locale, nunca caminho ([`ward_platform::lancador::locale_valido`]).
+    /// Nome de locale, nunca caminho ([`ward_platform::launcher::valid_locale`]).
     Locale,
     /// Nome de terminal (`TERM`, `COLORTERM`): sem `/`, sem começar por `.`.
     Terminal,
@@ -401,7 +401,7 @@ fn valor_aceito(forma: Forma, v: &[u8]) -> bool {
     }
     let simples = |b: u8| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'+');
     match forma {
-        Forma::Locale => ward_platform::lancador::locale_valido(v),
+        Forma::Locale => ward_platform::launcher::valid_locale(v),
         Forma::Terminal => v[0] != b'.' && v.iter().all(|&b| simples(b) || b == b'.'),
         Forma::Fuso => {
             let v = v.strip_prefix(b":").unwrap_or(v);
@@ -468,7 +468,7 @@ impl Conta {
     /// A do uid do daemon (o mesmo do cliente, D49).
     pub(crate) fn do_passwd() -> Result<Conta, ErroResposta> {
         use std::os::unix::ffi::OsStringExt;
-        let (usuario, home) = ward_platform::conta_do_usuario().map_err(|_| {
+        let (usuario, home) = ward_platform::user_account().map_err(|_| {
             aviso!("executar: usuário sem entrada no passwd");
             ErroResposta::EntregaFalhou
         })?;
@@ -485,7 +485,7 @@ impl Conta {
 /// e a entrega por cima. Nada vem do ambiente do daemon. Devolve quantas variáveis da
 /// CLI ficaram de fora.
 fn montar_ambiente(
-    cmd: &mut Comando,
+    cmd: &mut Command,
     cli: &[Variavel],
     conta: &Conta,
     entrega: &Entrega,
@@ -517,11 +517,11 @@ fn montar_ambiente(
         (b"LOGNAME", &conta.usuario),
     ];
     for (k, v) in fixas.into_iter().chain(ajustar_locale(amb)) {
-        cmd.variavel(k, v)
+        cmd.variable(k, v)
             .map_err(|_| ErroResposta::PedidoInvalido)?;
     }
     for v in entrega.variaveis() {
-        cmd.variavel(v.nome().as_bytes(), v.expor().as_bytes())
+        cmd.variable(v.nome().as_bytes(), v.expor().as_bytes())
             .map_err(|_| ErroResposta::EntregaFalhou)?;
     }
     Ok(tirados)
@@ -562,10 +562,10 @@ impl Daemon {
             (Some(a), false) => (a, &x.cwd),
             _ => return Err(ErroResposta::PedidoInvalido),
         };
-        let mut comando = Comando::novo(argv0, cwd).map_err(|_| ErroResposta::PedidoInvalido)?;
+        let mut comando = Command::new(argv0, cwd).map_err(|_| ErroResposta::PedidoInvalido)?;
         for a in &x.argv[1..] {
             comando
-                .argumento(a)
+                .argument(a)
                 .map_err(|_| ErroResposta::PedidoInvalido)?;
         }
         let est = self.estado();
@@ -683,7 +683,7 @@ fn ler_saida(
     let mut out = Zeroizing::new(Vec::with_capacity(LOTE + LOTE / 4));
     let mut cli_ok = true;
     loop {
-        match filho::pronto_para_ler(&f, PASSO_LEITURA_MS) {
+        match child::ready_to_read(&f, PASSO_LEITURA_MS) {
             Ok(true) => {}
             Ok(false) if !parar.load(Ordering::Acquire) => continue,
             _ => break,
@@ -733,7 +733,7 @@ pub(crate) fn ler_lote(f: &mut File, buf: &mut [u8]) -> (usize, bool) {
         if n == buf.len() {
             return (n, false);
         }
-        match filho::pronto_para_ler(f, 0) {
+        match child::ready_to_read(f, 0) {
             Ok(true) => {}
             Ok(false) => return (n, false),
             Err(_) => return (n, true),
@@ -760,7 +760,7 @@ fn escrever_entrada(mut f: File, fila: Receiver<Option<Segredo>>) {
 /// fora da sessão.
 fn ler_da_cli(
     mut s: UnixStream,
-    grupo: Arc<Grupo>,
+    grupo: Arc<Group>,
     fila: SyncSender<Option<Segredo>>,
     fim: Arc<AtomicBool>,
     pty: Option<Arc<Pty>>,
@@ -773,7 +773,7 @@ fn ler_da_cli(
             Err(_) => {
                 if !fim.load(Ordering::Acquire) {
                     aviso!("executar: a CLI saiu; o grupo do comando foi morto (D13)");
-                    grupo.matar_com_sessoes_filhas();
+                    grupo.kill_with_child_sessions();
                 }
                 return;
             }
@@ -784,7 +784,7 @@ fn ler_da_cli(
                     aviso!(
                         "executar: dado na entrada padrão declarada nula; o grupo do comando foi morto (D68)"
                     );
-                    grupo.matar_com_sessoes_filhas();
+                    grupo.kill_with_child_sessions();
                 }
                 return;
             }
@@ -804,13 +804,13 @@ fn ler_da_cli(
             }
             Ok(Pedido::Janela(j)) => {
                 if let Some(p) = &pty {
-                    let _ = p.definir_janela(j.linhas, j.colunas);
+                    let _ = p.set_window_size(j.linhas, j.colunas);
                 }
             }
             _ => {
                 if !fim.load(Ordering::Acquire) {
                     aviso!("executar: quadro fora da sessão; o grupo do comando foi morto");
-                    grupo.matar_com_sessoes_filhas();
+                    grupo.kill_with_child_sessions();
                 }
                 return;
             }
@@ -825,7 +825,7 @@ fn por_na_fila(
     mut item: Option<Segredo>,
     s: &UnixStream,
     fim: &AtomicBool,
-    grupo: &Grupo,
+    grupo: &Group,
 ) -> bool {
     loop {
         match fila.try_send(item) {
@@ -838,7 +838,7 @@ fn por_na_fila(
                 }
                 if ward_platform::par_fechou(s) {
                     aviso!("executar: a CLI saiu; o grupo do comando foi morto (D13)");
-                    grupo.matar_com_sessoes_filhas();
+                    grupo.kill_with_child_sessions();
                     return false;
                 }
                 std::thread::sleep(Duration::from_millis(25));
@@ -874,7 +874,7 @@ pub fn sessao(daemon: &Daemon, cliente: &dyn Cliente, stream: &UnixStream, pedid
 
 /// O lançamento: o filho com pipes ou num pty.
 enum Lancado {
-    Pipes(filho::Pipes),
+    Pipes(child::Pipes),
     Pty(Arc<Pty>),
 }
 
@@ -908,9 +908,9 @@ pub(crate) fn sessao_com(
     } = preparo;
     let lancado = match pty {
         Some(j) => comando
-            .lancar_em_pty(j.linhas, j.colunas)
+            .launch_in_pty(j.linhas, j.colunas)
             .map(|(g, p)| (g, Lancado::Pty(Arc::new(p)))),
-        None => comando.lancar().map(|(g, p)| (g, Lancado::Pipes(p))),
+        None => comando.launch().map(|(g, p)| (g, Lancado::Pipes(p))),
     };
     // O ambiente com segredo zera agora, não no fim do comando.
     drop(comando);
@@ -923,14 +923,14 @@ pub(crate) fn sessao_com(
             drop(agente);
             let mut msg = Zeroizing::new(Vec::new());
             msg.extend_from_slice(b"ward: ");
-            msg.extend_from_slice(e.mensagem().as_bytes());
+            msg.extend_from_slice(e.message().as_bytes());
             msg.extend_from_slice(b"\n");
             cli.enviar(&Resposta::Saida {
                 fluxo: Fluxo::Erro,
                 dados: msg,
             });
             cli.enviar(&Resposta::Fim {
-                codigo: e.codigo_de_saida(),
+                codigo: e.exit_code(),
             });
             let _ = stream.shutdown(std::net::Shutdown::Both);
             return false;
@@ -975,10 +975,10 @@ pub(crate) fn sessao_com(
     let (pronto_tx, pronto_rx) = mpsc::channel();
     let mut leitores = 0;
     let (entrada, saidas, pty) = match lancado {
-        Lancado::Pipes(filho::Pipes {
-            entrada,
-            saida,
-            erro,
+        Lancado::Pipes(child::Pipes {
+            stdin: entrada,
+            stdout: saida,
+            stderr: erro,
         }) => (
             entrada,
             vec![
@@ -988,10 +988,10 @@ pub(crate) fn sessao_com(
             None,
         ),
         Lancado::Pty(p) => {
-            let leitura = p.mestre.try_clone().ok();
-            let escrita = p.mestre.try_clone().ok();
+            let leitura = p.master.try_clone().ok();
+            let escrita = p.master.try_clone().ok();
             if leitura.is_none() || escrita.is_none() {
-                grupo.matar_com_sessoes_filhas();
+                grupo.kill_with_child_sessions();
             }
             (
                 escrita,
@@ -1036,14 +1036,14 @@ pub(crate) fn sessao_com(
     };
     if !leitor_ok {
         // Sem ver a CLI, o comando não roda (D13: a CLI que cai mata o grupo).
-        grupo.matar_com_sessoes_filhas();
+        grupo.kill_with_child_sessions();
     }
 
     // Fim do filho: o grupo inteiro morre, o temporário e o agente somem (V4.15, D12)
     // e a saída que falta é entregue.
-    let _ = grupo.esperar_fim();
-    grupo.matar_com_sessoes_filhas();
-    let resultado = grupo.colher();
+    let _ = grupo.wait_for_end();
+    grupo.kill_with_child_sessions();
+    let resultado = grupo.collect();
     drop(ponte);
     drop(agente);
     drop(temporarios);
@@ -1057,7 +1057,7 @@ pub(crate) fn sessao_com(
     parar.store(true, Ordering::Release);
     drop(pty);
     let travou = trava.as_ref().is_some_and(MorreNaTrava::travou);
-    if let Some(dados) = aviso_do_fim(travou, grupo.sobraram()) {
+    if let Some(dados) = aviso_do_fim(travou, grupo.remaining()) {
         cli.enviar(&Resposta::Saida {
             fluxo: Fluxo::Erro,
             dados,
@@ -1066,10 +1066,10 @@ pub(crate) fn sessao_com(
     let codigo = match resultado {
         Ok(f) => {
             match f {
-                filho::Fim::Codigo(c) => depurar!("executar: pid {pid} saiu com código {c}"),
-                filho::Fim::Sinal(s) => depurar!("executar: pid {pid} encerrado pelo sinal {s}"),
+                child::End::Code(c) => depurar!("executar: pid {pid} saiu com código {c}"),
+                child::End::Signal(s) => depurar!("executar: pid {pid} encerrado pelo sinal {s}"),
             }
-            f.codigo_de_saida()
+            f.exit_code()
         }
         Err(_) => {
             aviso!("executar: não deu para colher o pid {pid}");

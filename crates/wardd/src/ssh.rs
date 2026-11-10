@@ -25,7 +25,7 @@
 //!   cria com sessão própria; a CLI sai 137 com o aviso. O agente de D12 e a ponte do
 //!   salto também caem.
 //! - **Fim da sessão** (Fase 54l): a CLI que cai (fechou, SIGKILL), o quadro fora da
-//!   sessão e o fim do filho usam o mesmo `matar_com_sessoes_filhas` da trava: nenhum
+//!   sessão e o fim do filho usam o mesmo `kill_with_child_sessions` da trava: nenhum
 //!   `ssh` com sessão própria fica para trás esperando o `SIGHUP` do pty do `sshpass`.
 //! - **Interativo** (sem comando e com janela): o filho roda num pty; a saída passa pela
 //!   máscara pedaço a pedaço, sem segurar nem atrasar nada (D34 revisto: segurar o
@@ -44,7 +44,7 @@ use std::time::Duration;
 use ward_core::entrada::{Autenticacao, Dados, Entrada, NivelAcesso, Protocolo, Segredo};
 use ward_core::mascara::{ConstrutorMascara, Mascara};
 use ward_core::protocolo::{ErroResposta, Papel, Pedido, Resposta};
-use ward_platform::filho::Comando;
+use ward_platform::child::Command;
 use zeroize::Zeroizing;
 
 use crate::agente_ssh::{AgenteSsh, ErroAgente};
@@ -626,24 +626,24 @@ impl Daemon {
         })?;
         let cwd = {
             use std::os::unix::ffi::OsStringExt;
-            ward_platform::pasta_pessoal()
+            ward_platform::home_dir()
                 .map(OsStringExt::into_vec)
                 .unwrap_or_else(|_| b"/".to_vec())
         };
         let invalido = |_| ErroResposta::EntregaFalhou;
-        let mut cmd = Comando::novo(&argv[0], &cwd).map_err(invalido)?;
+        let mut cmd = Command::new(&argv[0], &cwd).map_err(invalido)?;
         for x in &argv[1..] {
-            cmd.argumento(x).map_err(invalido)?;
+            cmd.argument(x).map_err(invalido)?;
         }
         // Ambiente do zero (D13, R19): nada do daemon nem da sessão do usuário.
-        cmd.variavel(b"PATH", PATH_FILHO).map_err(invalido)?;
-        cmd.variavel(b"LANG", b"C.UTF-8").map_err(invalido)?;
+        cmd.variable(b"PATH", PATH_FILHO).map_err(invalido)?;
+        cmd.variable(b"LANG", b"C.UTF-8").map_err(invalido)?;
         if janela.is_some() {
-            cmd.variavel(b"TERM", TERM_PTY).map_err(invalido)?;
+            cmd.variable(b"TERM", TERM_PTY).map_err(invalido)?;
         }
         if let Some(s) = &senha {
             // `sshpass -e`: a senha só no ambiente do filho, nunca em argv (S3).
-            cmd.variavel(b"SSHPASS", s.expor()).map_err(invalido)?;
+            cmd.variable(b"SSHPASS", s.expor()).map_err(invalido)?;
         }
         drop(senha);
         depurar!(

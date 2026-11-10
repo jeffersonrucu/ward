@@ -32,7 +32,7 @@ fn nivel_de(d: &wardd::nucleo::Daemon, nome: &str) -> Option<NivelAcesso> {
 }
 
 fn sou_root() -> bool {
-    ward_platform::uid_efetivo() == 0
+    ward_platform::effective_uid() == 0
 }
 
 /// V3.10 e V3.8 (estado): depois de `travar`, toda operação responde "travado" até

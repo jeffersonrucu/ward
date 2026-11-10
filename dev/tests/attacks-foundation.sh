@@ -27,7 +27,7 @@ export PATH="$PATH:$CASA_PASSWD/.cargo/bin"
 GITLEAKS="$RAIZ/.dev/tools/bin/gitleaks"
 (cd "$RAIZ" && make -s gitleaks-binary)
 # Fase 28d: as cópias saíram do `/tmp`. O `cargo test` da cópia sobe o daemon de teste com
-# `WARD_DEV_APP`, e o `BinarioDeTeste` recusa (de propósito) app sob pasta gravável por
+# `WARD_DEV_APP`, e o `TestBinary` recusa (de propósito) app sob pasta gravável por
 # outros, como o `/tmp` (1777): numa cópia em `/tmp` esse teste falha sempre.
 # Fase 28f: e saíram também do repositório. Em `.dev/`, os `.cargo/config*` plantados nas
 # cópias eram achados pelo `dev/origins.py` da raiz (que varre o repositório inteiro, de

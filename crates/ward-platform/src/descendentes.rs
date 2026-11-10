@@ -1,7 +1,7 @@
 //! Fim de sessão sem sobra (Fase 55, S8; achado médio da reauditoria final).
 //!
 //! O `ward run`, o `ward ssh`, a ponte e o Chrome do `ward playwright` rodam num grupo de
-//! processos próprio ([`crate::filho::Grupo`]). Matar só o grupo deixava para trás o
+//! processos próprio ([`crate::child::Group`]). Matar só o grupo deixava para trás o
 //! descendente que saiu dele: `setpgid(0, 0)` (outro grupo na mesma sessão) ou
 //! `setsid -f` (sessão nova, e o pai intermediário sai). Esse processo seguia com o
 //! segredo no ambiente depois da trava e do fim do comando. Aqui:

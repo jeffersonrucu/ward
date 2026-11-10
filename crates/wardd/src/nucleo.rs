@@ -73,7 +73,7 @@ use crate::aprovacao::{Cliente, Motor, SemCliente};
 use crate::arquivos::{self, ArquivoEstado, Geracoes, Identidade};
 use crate::externo::{self, Copia, ErroExterno, FontePendrives};
 use crate::{aviso, depurar};
-use ward_platform::filho::Grupo;
+use ward_platform::child::Group;
 
 /// Erros de PIN seguidos que travam o cofre (S9).
 pub const MAX_ERROS_PIN: u32 = 5;
@@ -97,7 +97,7 @@ pub trait Relogio: Send + Sync {
     /// Tempo monotônico que conta a suspensão (`CLOCK_BOOTTIME`), para a trava por
     /// inatividade (Fase 24). `None` (não deu para ler) trava: falha fechada.
     fn agora(&self) -> Option<Duration> {
-        ward_platform::tempo_desde_boot().ok()
+        ward_platform::time_since_boot().ok()
     }
 
     /// Segundos desde 1970 pelo relógio de parede, para o código TOTP (D65 b). `None`
@@ -178,17 +178,17 @@ pub(crate) struct Estado {
 /// morre no registro.
 #[derive(Default)]
 pub(crate) struct SessoesRun {
-    grupos: Mutex<Vec<Weak<Grupo>>>,
+    grupos: Mutex<Vec<Weak<Group>>>,
 }
 
 impl SessoesRun {
     /// Registra o grupo de um `ward run` autorizado com a contagem de travas em
     /// `inicial`. Se o cofre travou desde então, mata o grupo já e devolve `false`.
-    pub(crate) fn registrar(&self, grupo: &Arc<Grupo>, travas: &AtomicU64, inicial: u64) -> bool {
+    pub(crate) fn registrar(&self, grupo: &Arc<Group>, travas: &AtomicU64, inicial: u64) -> bool {
         let mut v = self.grupos.lock().unwrap_or_else(|e| e.into_inner());
         v.retain(|w| w.strong_count() > 0);
         if travas.load(Ordering::Acquire) != inicial {
-            grupo.matar_com_sessoes_filhas();
+            grupo.kill_with_child_sessions();
             return false;
         }
         v.push(Arc::downgrade(grupo));
@@ -201,10 +201,10 @@ impl SessoesRun {
     fn travar(&self, travas: &AtomicU64) -> usize {
         let mut v = self.grupos.lock().unwrap_or_else(|e| e.into_inner());
         travas.fetch_add(1, Ordering::AcqRel);
-        let vivos: Vec<Arc<Grupo>> = v.drain(..).filter_map(|w| w.upgrade()).collect();
+        let vivos: Vec<Arc<Group>> = v.drain(..).filter_map(|w| w.upgrade()).collect();
         drop(v);
         for g in &vivos {
-            g.matar_com_sessoes_filhas();
+            g.kill_with_child_sessions();
         }
         vivos.len()
     }

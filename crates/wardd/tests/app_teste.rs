@@ -33,7 +33,7 @@ impl DirSocket {
     fn novo(rotulo: &str) -> DirSocket {
         let p = PathBuf::from(format!(
             "/run/user/{}/wardd-app-{}-{rotulo}",
-            ward_platform::uid_efetivo(),
+            ward_platform::effective_uid(),
             std::process::id()
         ));
         let _ = fs::remove_dir_all(&p);

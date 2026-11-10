@@ -657,6 +657,7 @@ a forma composta indicada.
 | produção | production | |
 | profundidade | depth | |
 | programa(s) | program(s) | |
+| pronto (para ler) | ready (to read) | `pronto_para_ler` → `ready_to_read` (m2: Fase 7) |
 | proibido(a)(s) | forbidden | |
 | projeto | project | |
 | próprio(a) | own | |
@@ -717,7 +718,7 @@ a forma composta indicada.
 | rótulo(s) | label(s) | `.texto-rotulo` → `.text-label` |
 | roubo | theft | |
 | ruído | noise | |
-| saída(s) | output(s) | resposta `saida` → `output`; `Fluxo::Saida` → `Stream::Stdout` |
+| saída(s) | output(s) | resposta `saida` → `output`; `Fluxo::Saida` → `Stream::Stdout`; como o processo saiu (`Lancador::saida`) → `exit_status`; pontas do pipe `entrada`/`saida`/`erro` do filho → `stdin`/`stdout`/`stderr` (m2: Fase 7) |
 | sair, sai, saem, saiu | exit, exits, exited | código de saída → exit code |
 | salgado(a) | salted | |
 | salto | jump | servidor de salto → jump host; campo `salto` → `jump` |

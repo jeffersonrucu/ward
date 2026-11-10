@@ -4,7 +4,7 @@
 //!    para o usuário; com `fs.suid_dumpable=2` o valor é 2, e aqui vira 0);
 //! 2. sem depurador (`TracerPid` 0);
 //! 3. o ambiente recebido é exatamente o de D57 (o que o lançador do daemon monta),
-//!    senão o app sai sem conectar ([`ward_platform::conferir_ambiente_do_app`]);
+//!    senão o app sai sem conectar ([`ward_platform::verify_app_environment`]);
 //! 4. guarda o pai (pidfd), para saber depois se ele continua sendo o pai;
 //! 5. conecta ao socket, com a conferência do servidor (D46), ainda com o egid do grupo
 //!    `ward-app`: o daemon dá o papel por ele; o socket tem `CLOEXEC`;
@@ -33,7 +33,7 @@ use std::fmt;
 use std::os::unix::net::UnixStream;
 
 use ward_platform::app::{self, Pai, PaiDiferente};
-use ward_platform::{AmbienteApp, ErroSessao, conferir_ambiente_do_app, endurecer_processo};
+use ward_platform::{AppEnvironment, SessionError, endurecer_processo, verify_app_environment};
 
 use ward_core::protocolo::Papel;
 
@@ -49,7 +49,7 @@ pub enum ErroPartida {
     /// Sob depurador.
     Depurador,
     /// Ambiente fora de D57.
-    Ambiente(ErroSessao),
+    Ambiente(SessionError),
     /// O pai não é (ou não parece) o daemon.
     Pai(PaiDiferente),
     /// O daemon não aceitou a conexão ou não é confiável (D46).
@@ -93,7 +93,7 @@ impl std::error::Error for ErroPartida {}
 /// O app depois da partida: a conexão (dentro do [`DaemonSocket`]), o ambiente
 /// conferido e o pai do começo.
 pub struct Partida {
-    ambiente: AmbienteApp,
+    ambiente: AppEnvironment,
     pai: Pai,
     daemon: Option<DaemonSocket>,
     vigia: UnixStream,
@@ -129,7 +129,7 @@ where
     if !pai_e_o_daemon {
         return Err(delegar(daemon));
     }
-    let ambiente = conferir_ambiente_do_app(ambiente).map_err(ErroPartida::Ambiente)?;
+    let ambiente = verify_app_environment(ambiente).map_err(ErroPartida::Ambiente)?;
     let pai = Pai::atual().map_err(ErroPartida::Pai)?;
 
     let mut daemon = daemon().map_err(ErroPartida::Daemon)?;
@@ -262,7 +262,7 @@ mod testes {
     fn ataque_ambiente_de_fora_nao_chega_a_conectar() {
         // Um processo qualquer abre o app com o próprio ambiente (ou com um proxy em
         // `WAYLAND_DISPLAY`): o app sai antes de conectar, sem usar o papel.
-        let uid = ward_platform::uid_efetivo();
+        let uid = ward_platform::effective_uid();
         let dir = PathBuf::from(format!(
             "/run/user/{uid}/ward-partida-teste-{}",
             std::process::id()
@@ -375,7 +375,7 @@ mod testes {
 
     #[test]
     fn mensagem_sem_valor() {
-        let m = ErroPartida::Ambiente(ErroSessao::Diferente("WAYLAND_DISPLAY")).to_string();
+        let m = ErroPartida::Ambiente(SessionError::Different("WAYLAND_DISPLAY")).to_string();
         assert!(m.contains("WAYLAND_DISPLAY") && !m.contains("/tmp"));
         let m = ErroPartida::Pai(PaiDiferente::NaoEoDaemon).to_string();
         assert!(m.starts_with("o app do Ward não abriu"));

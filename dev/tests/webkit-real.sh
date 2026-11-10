@@ -8,7 +8,7 @@
 # `app/dist`). Nenhum código que pule a partida entra no repositório.
 #
 # O que confere (sai 1 se algo falhar):
-# - o ambiente passado é exatamente o de D57, com os valores do `lancador.rs`;
+# - o ambiente passado é exatamente o de D57, com os valores do `launcher.rs`;
 # - nenhum processo faz `open`/`connect` em `/tmp/nvidia-mps`, e um listener do
 #   "atacante" em `/tmp/nvidia-mps/control` (SOCK_SEQPACKET, o tipo do cliente MPS)
 #   não recebe conexão;
@@ -64,9 +64,9 @@ BASE="$RAIZ/.dev/webkit-real"
 mkdir -p -m 0700 "$BASE"
 chmod 0700 "$BASE"
 
-# --- Valores de D57: os fixos saem do lancador.rs (uma fonte só) -------------------
-LANCADOR="$RAIZ/crates/ward-platform/src/lancador.rs"
-valor_fixo() { # nome da variável em VARIAVEIS_FIXAS
+# --- Valores de D57: os fixos saem do launcher.rs (uma fonte só) -------------------
+LANCADOR="$RAIZ/crates/ward-platform/src/launcher.rs"
+valor_fixo() { # nome da variável em FIXED_VARIABLES
     python3 -I - "$LANCADOR" "$1" "$(uname -m)" <<'PY'
 import re, sys
 s = open(sys.argv[1]).read()
@@ -75,7 +75,7 @@ consts = {}
 for cfg, nome, val in re.findall(r'(?:#\[cfg\(target_arch = "(\w+)"\)\]\s*)?pub const (\w+): &str = "([^"]*)";', s):
     if not cfg or cfg == sys.argv[3]:
         consts[nome] = val
-bloco = s[s.index("pub const VARIAVEIS_FIXAS"):]
+bloco = s[s.index("pub const FIXED_VARIABLES"):]
 bloco = bloco[:bloco.index("];")]
 for nome, val in re.findall(r'\("(\w+)",\s*("[^"]*"|\w+)\)', bloco):
     if nome == sys.argv[2]:

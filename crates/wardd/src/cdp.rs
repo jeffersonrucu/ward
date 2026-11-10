@@ -2,7 +2,7 @@
 //! Fase 44; D6, D9; S1–S3, S8, S13).
 //!
 //! - **Só pipe** (S3, D6): o Chrome recebe `--remote-debugging-pipe` e lê os comandos
-//!   no fd 3 e escreve as respostas no fd 4 ([`ward_platform::filho::Comando::lancar_com_depuracao`]).
+//!   no fd 3 e escreve as respostas no fd 4 ([`ward_platform::child::Command::launch_with_debugging`]).
 //!   Nenhuma porta TCP nem socket: outro processo não acha o navegador para mandar
 //!   comandos. As pontas do daemon são `CLOEXEC`.
 //! - **Mensagens**: JSON terminado em `\0`. Cada mensagem lida fica num buffer
@@ -436,7 +436,7 @@ impl Cdp {
             }
             let ms =
                 i32::try_from(ate.duration_since(agora).as_millis().max(1)).unwrap_or(i32::MAX);
-            match ward_platform::filho::pronto_para_ler(&self.leitura, ms) {
+            match ward_platform::child::ready_to_read(&self.leitura, ms) {
                 Ok(true) => {}
                 Ok(false) => continue,
                 Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,

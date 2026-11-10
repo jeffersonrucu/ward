@@ -368,7 +368,7 @@ fn laco(
     let mut conexoes = Vec::new();
     let mut preso = None;
     while !deve_parar(parar, travas, inicial) {
-        match ward_platform::filho::pronto_para_ler_fd(escuta.listener().as_fd(), PASSO_MS) {
+        match ward_platform::child::ready_to_read_fd(escuta.listener().as_fd(), PASSO_MS) {
             Ok(true) => {}
             Ok(false) => continue,
             Err(_) => break,
@@ -439,7 +439,7 @@ fn ler_exato(s: &mut UnixStream, buf: &mut [u8], parar: &AtomicBool, prazo: bool
         if parar.load(Ordering::Acquire) || (prazo && std::time::Instant::now() > limite) {
             return false;
         }
-        match ward_platform::filho::pronto_para_ler_fd(s.as_fd(), PASSO_MS) {
+        match ward_platform::child::ready_to_read_fd(s.as_fd(), PASSO_MS) {
             Ok(true) => {}
             Ok(false) => continue,
             Err(_) => return false,

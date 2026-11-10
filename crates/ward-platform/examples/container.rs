@@ -39,8 +39,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use ward_platform::{
-    BinarioPermitido, ClassePar, Instalacao, Lancador, PoliticaKernel, ServidorEsperado,
-    ambiente_do_app, caminho_socket_sistema, conectar_servidor, conferir_conexao,
+    BinarioPermitido, ClassePar, Instalacao, Launcher, PoliticaKernel, ServidorEsperado,
+    app_environment, caminho_socket_sistema, conectar_servidor, conferir_conexao,
     escutar_de_listen_fds, iniciar_endurecido,
 };
 
@@ -96,7 +96,7 @@ fn ativar(args: &[String]) {
         .args(programa)
         .env_clear()
         .env("PATH", "/usr/bin:/bin");
-    ward_platform::teste::executar_com_socket(&listener, cmd);
+    ward_platform::testing::run_with_socket(&listener, cmd);
 }
 
 /// fd de `listener` em `/proc/self/fd`, fd 3 ainda aberto e `O_CLOEXEC` do fd.
@@ -117,7 +117,7 @@ fn estado_dos_fds(listener: &UnixListener) -> String {
 /// Como o app será aberto pelo servidor (Fase 29a).
 enum Abertura {
     /// Pelo lançador de D57.
-    Lancador(String),
+    Launcher(String),
     /// Ambiente de D57 com `VAR=valor` posto à força.
     Com(String, String),
 }
@@ -138,7 +138,7 @@ fn servidor(args: &[String]) {
                     .get(i + 1)
                     .cloned()
                     .unwrap_or_else(|| falhar("--abrir-app"));
-                aberturas.push(Abertura::Lancador(bin));
+                aberturas.push(Abertura::Launcher(bin));
                 i += 2;
             }
             "--abrir-app-com" => {
@@ -487,18 +487,18 @@ fn bind(args: &[String]) {
 
 /// Abre os apps pedidos (Fase 29a). Devolve os lançadores, para os filhos não serem
 /// colhidos antes da hora.
-fn abrir_apps(aberturas: &[Abertura], inst: &Instalacao) -> Vec<Lancador> {
+fn abrir_apps(aberturas: &[Abertura], inst: &Instalacao) -> Vec<Launcher> {
     let mut lancadores = Vec::new();
     for a in aberturas {
         match a {
-            Abertura::Lancador(bin) => {
+            Abertura::Launcher(bin) => {
                 let b = BinarioPermitido::novo(bin).unwrap_or_else(|e| falhar(e));
-                let mut l = Lancador::novo(b, inst);
-                match l.abrir() {
+                let mut l = Launcher::new(b, inst);
+                match l.open() {
                     Ok(pid) => println!("lancador: aberto pid={pid}"),
                     Err(e) => println!("lancador: erro {e:?}"),
                 }
-                match l.abrir() {
+                match l.open() {
                     Ok(pid) => println!("lancador: segundo aberto pid={pid}"),
                     Err(e) => println!("lancador: segundo {e:?}"),
                 }
@@ -508,10 +508,10 @@ fn abrir_apps(aberturas: &[Abertura], inst: &Instalacao) -> Vec<Lancador> {
                 let Some((nome, valor)) = var.split_once('=') else {
                     falhar("VAR=valor");
                 };
-                let amb = ambiente_do_app().unwrap_or_else(|e| falhar(e));
+                let amb = app_environment().unwrap_or_else(|e| falhar(e));
                 let filho = Command::new(bin)
                     .env_clear()
-                    .envs(amb.variaveis().filter(|(k, _)| *k != nome))
+                    .envs(amb.variables().filter(|(k, _)| *k != nome))
                     .env(nome, valor)
                     .stdin(Stdio::null())
                     .stdout(Stdio::null())
@@ -536,11 +536,11 @@ fn lancar_app(args: &[String]) {
     let chrome = BinarioPermitido::novo("/usr/bin/bash").unwrap_or_else(|e| falhar(e));
     let inst = Instalacao::do_sistema(chrome).unwrap_or_else(|e| falhar(e));
     let b = BinarioPermitido::novo(bin).unwrap_or_else(|e| falhar(e));
-    match Lancador::novo(b, &inst).abrir() {
+    match Launcher::new(b, &inst).open() {
         Ok(pid) => println!("lancar-app: aberto pid={pid}"),
         Err(e) => println!(
             "lancar-app: {e:?} indisponivel={}",
-            matches!(&e, ward_platform::ErroLancador::Sessao(s) if s.sessao_indisponivel())
+            matches!(&e, ward_platform::LauncherError::Session(s) if s.session_unavailable())
         ),
     }
 }
@@ -559,8 +559,8 @@ fn escutar(args: &[String]) {
 }
 
 fn ambiente() {
-    let amb = ambiente_do_app().unwrap_or_else(|e| falhar(e));
-    for (k, v) in amb.variaveis() {
+    let amb = app_environment().unwrap_or_else(|e| falhar(e));
+    for (k, v) in amb.variables() {
         println!("{k}={v}");
     }
 }
@@ -580,10 +580,10 @@ fn gerente() {
         status("PPid:"),
         String::from_utf8_lossy(&cmdline).replace('\0', " ").trim()
     );
-    let amb = ambiente_do_app().unwrap_or_else(|e| falhar(e));
+    let amb = app_environment().unwrap_or_else(|e| falhar(e));
     let status = Command::new(programa)
         .env_clear()
-        .envs(amb.variaveis())
+        .envs(amb.variables())
         .stdin(Stdio::null())
         .status();
     println!("gerente: {status:?}");

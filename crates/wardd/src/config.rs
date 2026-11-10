@@ -29,7 +29,7 @@ pub struct Config {
     pub diretorio_socket_teste: Option<PathBuf>,
     /// O binário que o `abrir_app` do daemon de teste abre (D63).
     #[cfg(feature = "test-mode")]
-    pub app_de_teste: Option<ward_platform::BinarioDeTeste>,
+    pub app_de_teste: Option<ward_platform::TestBinary>,
     /// `WARD_DEV_EXTENSAO=chrome` (Fase 41): o daemon de teste dá o papel extensão ao
     /// par filho do Chrome instalado sem o egid do grupo `ward-nm`. Qualquer outro valor
     /// é recusado na partida.
@@ -41,7 +41,7 @@ pub struct Config {
     pub rt: PathBuf,
 }
 
-/// `WARD_DEV_APP` (D63): conferido como [`ward_platform::BinarioDeTeste`], dentro do
+/// `WARD_DEV_APP` (D63): conferido como [`ward_platform::TestBinary`], dentro do
 /// repositório (a pasta acima de `dev`). O ambiente mínimo da ponte leva `WARD_DEV_DIR`
 /// e, se veio, `WARD_DEV_SOCKET_DIR`: são as variáveis do `test-mode`, da configuração
 /// do daemon, nunca do pedido.
@@ -50,7 +50,7 @@ fn app_de_teste(
     v: OsString,
     dev: &Path,
     socket: Option<&Path>,
-) -> Result<ward_platform::BinarioDeTeste, &'static str> {
+) -> Result<ward_platform::TestBinary, &'static str> {
     let caminho = absoluto_limpo(v).ok_or("daemon de teste: WARD_DEV_APP inválido")?;
     let raiz = dev
         .parent()
@@ -65,8 +65,8 @@ fn app_de_teste(
     if let Some(s) = socket {
         extras.push(("WARD_DEV_SOCKET_DIR", texto(s)?));
     }
-    ward_platform::BinarioDeTeste::novo(caminho, raiz.to_path_buf(), dev.join("logs"), extras)
-        .map_err(|e| e.mensagem())
+    ward_platform::TestBinary::new(caminho, raiz.to_path_buf(), dev.join("logs"), extras)
+        .map_err(|e| e.message())
 }
 
 /// Caminho absoluto sem `.`, `..` nem `//`, conferido nos bytes (o `components()` do

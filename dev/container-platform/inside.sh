@@ -196,7 +196,7 @@ sleep 0.5
 
 r="$(grep '^lancador:' "$LOG2" || true)"
 confere "D57: o lançador do daemon abriu o ward-app setgid" "$r" "lancador: aberto pid="
-confere "D57: uma instância por vez (o segundo pedido não abre outra)" "$r" "lancador: segundo JaAberto"
+confere "D57: uma instância por vez (o segundo pedido não abre outra)" "$r" "lancador: segundo AlreadyOpen"
 APID="$(grep '^lancador: aberto' "$LOG2" | head -1 | sed -E 's/.*pid=([0-9]+).*/\1/')"
 r="$(linha_app inicio "$APID" | head -1)"
 confere "V5.31: desde o exec, o ward-app está no grupo ward-app" "$r" "gid=1000,$GID_APP,$GID_APP,$GID_APP"
@@ -268,7 +268,7 @@ como_1000 /usr/local/bin/wardd escutar /run/user/1000/wayland-0 >/dev/null &
 W0=$!
 for _ in $(seq 50); do [ -S /run/user/1000/wayland-0 ] && break; sleep 0.1; done
 r="$(como_1000 /usr/local/bin/wardd lancar-app /usr/local/bin/ward-app)"
-confere "V5.31: com dois wayland-<n>, o lançador não abre (aprovação indisponível)" "$r" "Sessao(VariosWayland) indisponivel=true"
+confere "V5.31: com dois wayland-<n>, o lançador não abre (aprovação indisponível)" "$r" "Session(SeveralWayland) indisponivel=true"
 kill "$W0" 2>/dev/null || true; wait "$W0" 2>/dev/null || true
 rm -f /run/user/1000/wayland-0
 como_1000 /usr/local/bin/wardd escutar /run/user/1000/proxy.sock >/dev/null &
@@ -277,14 +277,14 @@ for _ in $(seq 50); do [ -S /run/user/1000/proxy.sock ] && break; sleep 0.1; don
 mv /run/user/1000/wayland-1 /run/user/1000/wayland-1.real
 como_1000 ln -s /run/user/1000/proxy.sock /run/user/1000/wayland-1
 r="$(como_1000 /usr/local/bin/wardd lancar-app /usr/local/bin/ward-app)"
-confere "V5.31: com o wayland-<n> trocado por um link, o lançador não abre" "$r" "Sessao(WaylandNaoConfiavel) indisponivel=true"
+confere "V5.31: com o wayland-<n> trocado por um link, o lançador não abre" "$r" "Session(UntrustedWayland) indisponivel=true"
 rm -f /run/user/1000/wayland-1
 mv /run/user/1000/wayland-1.real /run/user/1000/wayland-1
 kill "$PROXY" 2>/dev/null || true
 # Binário que não é o instalado (cópia do usuário, sem setgid): o lançador não abre.
 como_1000 cp /usr/local/bin/ward-app /run/user/1000/ward-app-29a
 r="$(como_1000 /usr/local/bin/wardd lancar-app /run/user/1000/ward-app-29a)"
-confere "D57: o lançador só abre o ward-app do root, setgid do grupo ward-app" "$r" "BinarioNaoConfiavel"
+confere "D57: o lançador só abre o ward-app do root, setgid do grupo ward-app" "$r" "UntrustedBinary"
 
 kill "$SRV2" "$W1" "$BUS" 2>/dev/null || true
 wait "$SRV2" 2>/dev/null || true

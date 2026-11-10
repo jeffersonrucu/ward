@@ -565,7 +565,7 @@ fn f26a_ataque_ambiente_da_cli_nao_muda_o_comando() {
     let r = run(&w, "t-livre", &["env"], &amb);
     assert_eq!(r.fim, Some(0), "{r:?}");
     let env = texto(&r.saida);
-    let (usuario, pessoal) = ward_platform::conta_do_usuario().unwrap();
+    let (usuario, pessoal) = ward_platform::user_account().unwrap();
     for esperado in [
         "PATH=/usr/local/bin:/usr/bin:/bin\n".to_owned(),
         format!("HOME={}\n", pessoal.to_string_lossy()),

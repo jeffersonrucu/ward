@@ -42,7 +42,7 @@ use ward_core::entrada::{Dados, NivelAcesso, origem_da_url};
 use ward_core::mascara::Mascara;
 use ward_core::protocolo::{ErroResposta, Pedido, Resposta};
 use ward_core::totp::Totp;
-use ward_platform::filho::{Comando, Grupo};
+use ward_platform::child::{Command, Group};
 
 use crate::aprovacao::Cliente;
 use crate::aviso;
@@ -216,15 +216,15 @@ pub fn limpar(rt: &Path) -> io::Result<usize> {
 
 /// O Chrome da sessão e o perfil: ao sair, mata o grupo inteiro, colhe e apaga o perfil.
 struct Navegador {
-    grupo: Option<Grupo>,
+    grupo: Option<Group>,
     perfil: PathBuf,
 }
 
 impl Drop for Navegador {
     fn drop(&mut self) {
         if let Some(g) = self.grupo.take() {
-            g.matar();
-            let _ = g.colher();
+            g.kill();
+            let _ = g.collect();
         }
         // `remove_dir_all` não segue link simbólico.
         if fs::remove_dir_all(&self.perfil).is_err() && self.perfil.exists() {
@@ -305,9 +305,9 @@ fn abrir_navegador(chrome: &Path, rt: &Path) -> Result<(Navegador, Cdp), ErroRes
         .map_err(falhou)?;
     let argv = argv_chrome(chrome, &perfil).ok_or(ErroResposta::NavegadorFalhou)?;
     let p = perfil.as_os_str().as_bytes();
-    let mut c = Comando::novo(&argv[0], p).map_err(|_| ErroResposta::NavegadorFalhou)?;
+    let mut c = Command::new(&argv[0], p).map_err(|_| ErroResposta::NavegadorFalhou)?;
     for a in &argv[1..] {
-        c.argumento(a).map_err(|_| ErroResposta::NavegadorFalhou)?;
+        c.argument(a).map_err(|_| ErroResposta::NavegadorFalhou)?;
     }
     let junto = |s: &[u8]| [p, s].concat();
     let ambiente: [(&[u8], Vec<u8>); 8] = [
@@ -322,15 +322,15 @@ fn abrir_navegador(chrome: &Path, rt: &Path) -> Result<(Navegador, Cdp), ErroRes
         (b"DBUS_SESSION_BUS_ADDRESS", b"disabled:".to_vec()),
     ];
     for (k, v) in &ambiente {
-        c.variavel(k, v)
+        c.variable(k, v)
             .map_err(|_| ErroResposta::NavegadorFalhou)?;
     }
-    let (grupo, pipe) = c.lancar_com_depuracao().map_err(|e| {
-        aviso!("playwright: o Chrome não abriu ({})", e.mensagem());
+    let (grupo, pipe) = c.launch_with_debugging().map_err(|e| {
+        aviso!("playwright: o Chrome não abriu ({})", e.message());
         ErroResposta::NavegadorFalhou
     })?;
     nav.grupo = Some(grupo);
-    let cdp = Cdp::novo(pipe.comandos, pipe.respostas, Instant::now() + PRAZO_SESSAO);
+    let cdp = Cdp::novo(pipe.commands, pipe.responses, Instant::now() + PRAZO_SESSAO);
     Ok((nav, cdp))
 }
 

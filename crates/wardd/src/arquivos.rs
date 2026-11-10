@@ -43,7 +43,9 @@ fn abrir_leitura(caminho: &Path) -> io::Result<File> {
 
 /// Só arquivo comum do próprio usuário, sem escrita para grupo e outros.
 fn conferir_arquivo(m: &fs::Metadata) -> io::Result<()> {
-    if !m.file_type().is_file() || m.uid() != ward_platform::uid_efetivo() || m.mode() & 0o022 != 0
+    if !m.file_type().is_file()
+        || m.uid() != ward_platform::effective_uid()
+        || m.mode() & 0o022 != 0
     {
         return Err(io::ErrorKind::PermissionDenied.into());
     }
@@ -64,7 +66,7 @@ pub fn preparar_known_hosts(caminho: &Path) -> io::Result<()> {
         .custom_flags(libc::O_NOFOLLOW | libc::O_DIRECTORY | libc::O_CLOEXEC)
         .open(pasta)?;
     let m = fd.metadata()?;
-    if !m.is_dir() || m.uid() != ward_platform::uid_efetivo() || m.mode() & 0o077 != 0 {
+    if !m.is_dir() || m.uid() != ward_platform::effective_uid() || m.mode() & 0o077 != 0 {
         return Err(io::ErrorKind::PermissionDenied.into());
     }
     let f = match OpenOptions::new()
@@ -84,7 +86,7 @@ pub fn preparar_known_hosts(caminho: &Path) -> io::Result<()> {
     };
     let m = f.metadata()?;
     if !m.file_type().is_file()
-        || m.uid() != ward_platform::uid_efetivo()
+        || m.uid() != ward_platform::effective_uid()
         || m.mode() & 0o077 != 0
         || m.nlink() != 1
     {
@@ -293,7 +295,7 @@ pub fn limpar_temporarios_estado(caminho: &Path) -> io::Result<usize> {
         .ok_or(io::ErrorKind::InvalidInput)?;
     let prefixo = format!(".{nome}.tmp-");
     let meu = std::process::id().to_string();
-    let euid = ward_platform::uid_efetivo();
+    let euid = ward_platform::effective_uid();
     let mut apagados = 0;
     for item in fs::read_dir(dir)? {
         let item = item?;
@@ -340,7 +342,7 @@ impl PastaAberta {
 
     /// A pasta para o núcleo, com o uid esperado e o leitor da rotação (Fase 54c).
     pub fn pasta(&self) -> ward_core::backup::PastaBackup {
-        ward_core::backup::PastaBackup::nova(self.caminho(), ward_platform::uid_efetivo())
+        ward_core::backup::PastaBackup::nova(self.caminho(), ward_platform::effective_uid())
             .com_leitor(ler_versao_backup)
     }
 }
@@ -389,7 +391,7 @@ pub fn abrir_pasta_backup(dir: &Path) -> io::Result<PastaAberta> {
         .custom_flags(libc::O_NOFOLLOW | libc::O_DIRECTORY | libc::O_CLOEXEC)
         .open(dir)?;
     let m = fd.metadata()?;
-    if !m.is_dir() || m.uid() != ward_platform::uid_efetivo() || m.mode() & 0o077 != 0 {
+    if !m.is_dir() || m.uid() != ward_platform::effective_uid() || m.mode() & 0o077 != 0 {
         return Err(io::ErrorKind::PermissionDenied.into());
     }
     Ok(PastaAberta { fd })

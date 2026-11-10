@@ -210,7 +210,7 @@ fn abrir_destino(montagem: &File, dispositivo: u64) -> Result<File, ErroExterno>
         _ => io(e),
     })?;
     let m = fd.metadata().map_err(io)?;
-    if !m.is_dir() || m.dev() != dispositivo || m.uid() != ward_platform::uid_efetivo() {
+    if !m.is_dir() || m.dev() != dispositivo || m.uid() != ward_platform::effective_uid() {
         return Err(ErroExterno::PastaInsegura);
     }
     Ok(fd)

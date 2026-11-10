@@ -43,7 +43,7 @@ fn filho_auxiliar() {
             if let Some(esperado) = std::env::var_os("WARD_ESPERADO") {
                 cmd.env("WARD_ESPERADO", esperado);
             }
-            ward_platform::teste::executar_com_socket(&listener, cmd);
+            ward_platform::testing::run_with_socket(&listener, cmd);
         }
         "receber" => {
             let esperado = std::env::var_os("WARD_ESPERADO").unwrap_or(caminho);

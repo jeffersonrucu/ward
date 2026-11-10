@@ -16,7 +16,9 @@ use std::os::unix::process::ExitStatusExt;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use ward_platform::{BinarioPermitido, ClassePar, ErroLancador, Instalacao, Lancador, ProcessoPar};
+use ward_platform::{
+    BinarioPermitido, ClassePar, Instalacao, Launcher, LauncherError, ProcessoPar,
+};
 
 use crate::aprovacao::{AbridorApp, ErroAbrirApp};
 use crate::aviso;
@@ -27,9 +29,9 @@ pub const APP_INSTALADO: &str = "/usr/local/bin/ward-app";
 /// De quanto em quanto tempo a vigia olha se o app saiu.
 const PASSO_VIGIA: Duration = Duration::from_millis(250);
 
-/// Abre o `ward-app` instalado pelo [`Lancador`].
+/// Abre o `ward-app` instalado pelo [`Launcher`].
 pub struct AbridorReal {
-    lancador: Arc<Mutex<Lancador>>,
+    lancador: Arc<Mutex<Launcher>>,
 }
 
 impl AbridorReal {
@@ -37,7 +39,7 @@ impl AbridorReal {
     pub fn instalado(inst: &Instalacao) -> Option<Self> {
         let bin = BinarioPermitido::novo(APP_INSTALADO).ok()?;
         Some(Self {
-            lancador: Arc::new(Mutex::new(Lancador::novo(bin, inst))),
+            lancador: Arc::new(Mutex::new(Launcher::new(bin, inst))),
         })
     }
 }
@@ -45,16 +47,16 @@ impl AbridorReal {
 impl AbridorReal {
     /// Só no daemon de teste (D63): abre o binário de teste conferido pela configuração.
     #[cfg(feature = "test-mode")]
-    pub fn de_teste(binario: ward_platform::BinarioDeTeste) -> Self {
+    pub fn de_teste(binario: ward_platform::TestBinary) -> Self {
         Self {
-            lancador: Arc::new(Mutex::new(Lancador::de_teste(binario))),
+            lancador: Arc::new(Mutex::new(Launcher::for_test(binario))),
         }
     }
 }
 
 /// Quem o lançador abriu (D63): o papel app só vale para esse processo, vivo.
 #[derive(Clone)]
-pub struct AppLancado(Arc<Mutex<Lancador>>);
+pub struct AppLancado(Arc<Mutex<Launcher>>);
 
 impl AppLancado {
     /// `pid` é o app que o lançador abriu e que continua vivo?
@@ -62,7 +64,7 @@ impl AppLancado {
         self.0
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .e_o_app_lancado(pid)
+            .is_launched_app(pid)
     }
 }
 
@@ -171,11 +173,11 @@ pub fn descrever_saida(pid: u32, st: std::process::ExitStatus) -> String {
 impl AbridorApp for AbridorReal {
     fn abrir(&self, ao_sair: Box<dyn FnOnce() + Send>) -> Result<(), ErroAbrirApp> {
         let mut l = self.lancador.lock().unwrap_or_else(|e| e.into_inner());
-        let pid = match l.abrir() {
+        let pid = match l.open() {
             Ok(pid) => pid,
-            Err(ErroLancador::JaAberto) => return Err(ErroAbrirApp::JaAberto),
+            Err(LauncherError::AlreadyOpen) => return Err(ErroAbrirApp::JaAberto),
             Err(e) => {
-                // `ErroLancador` não leva caminho nem valor (só nomes de variável).
+                // `LauncherError` não leva caminho nem valor (só nomes de variável).
                 aviso!("app não aberto: {e}");
                 return Err(ErroAbrirApp::Indisponivel);
             }
@@ -190,8 +192,8 @@ impl AbridorApp for AbridorReal {
                     std::thread::sleep(PASSO_VIGIA);
                     let mut l = lancador.lock().unwrap_or_else(|e| e.into_inner());
                     // Outro pid: este app já foi colhido por um `abrir` seguinte.
-                    if !l.aberto() || l.pid() != Some(pid) {
-                        match l.tomar_saida() {
+                    if !l.is_open() || l.pid() != Some(pid) {
+                        match l.take_exit_status() {
                             Some(st) => aviso!("{}", descrever_saida(pid, st)),
                             None => aviso!("app (pid {pid}) saiu"),
                         }

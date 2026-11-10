@@ -24,10 +24,10 @@ fn diretorio_novo_fica_0700_e_socket_0600_do_usuario() {
     let m = std::fs::symlink_metadata(escuta.caminho()).unwrap();
     assert!(m.file_type().is_socket());
     assert_eq!(m.mode() & 0o7777, 0o600);
-    assert_eq!(m.uid(), ward_platform::uid_efetivo());
+    assert_eq!(m.uid(), ward_platform::effective_uid());
     assert_eq!(
         std::fs::symlink_metadata(&d.caminho).unwrap().uid(),
-        ward_platform::uid_efetivo()
+        ward_platform::effective_uid()
     );
     // Preparar de novo um 0700 nosso é aceito.
     preparar_diretorio(&d.caminho).unwrap();
@@ -177,7 +177,7 @@ fn aceitar_traz_pid_e_uid_do_par() {
     let conexao = escuta.aceitar().unwrap();
     let cred = conexao.par.credenciais();
     assert_eq!(cred.pid, std::process::id());
-    assert_eq!(cred.uid, ward_platform::uid_efetivo());
+    assert_eq!(cred.uid, ward_platform::effective_uid());
     // O próprio binário de teste (em target/, do usuário) não é binário instalado.
     let eu = std::env::current_exe().unwrap();
     assert!(conexao.par.identificar(&comum::permitido(&eu)).is_err());

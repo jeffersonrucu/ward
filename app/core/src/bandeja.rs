@@ -238,7 +238,7 @@ pub fn pasta_dos_icones_da_sessao() -> io::Result<PathBuf> {
     let rt = std::env::var_os("XDG_RUNTIME_DIR")
         .map(PathBuf::from)
         .ok_or_else(|| io::Error::other("sem XDG_RUNTIME_DIR"))?;
-    pasta_dos_icones(&rt, ward_platform::uid_efetivo())
+    pasta_dos_icones(&rt, ward_platform::effective_uid())
 }
 
 /// [`biblioteca_disponivel`] nas [`PASTAS_DO_SISTEMA`].
@@ -456,7 +456,7 @@ mod testes {
 
     #[test]
     fn pasta_dos_icones_criada_0700() {
-        let uid = ward_platform::uid_efetivo();
+        let uid = ward_platform::effective_uid();
         let rt = pasta_temporaria("rt-ok");
         let p = pasta_dos_icones(&rt, uid).unwrap();
         let m = std::fs::symlink_metadata(&p).unwrap();
@@ -472,7 +472,7 @@ mod testes {
     /// aberto: tudo recusado, e o app segue sem bandeja.
     #[test]
     fn ataque_pasta_dos_icones_link_aberta_ou_relativa() {
-        let uid = ward_platform::uid_efetivo();
+        let uid = ward_platform::effective_uid();
 
         let rt = pasta_temporaria("rt-link");
         let alvo = pasta_temporaria("rt-alvo");

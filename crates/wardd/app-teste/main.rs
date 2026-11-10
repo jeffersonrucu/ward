@@ -213,7 +213,7 @@ fn main() -> ExitCode {
         .unwrap_or_else(|| {
             PathBuf::from(format!(
                 "/run/user/{}/ward-teste",
-                ward_platform::uid_efetivo()
+                ward_platform::effective_uid()
             ))
         });
     let mut s = match UnixStream::connect(dir.join("wardd.sock")) {

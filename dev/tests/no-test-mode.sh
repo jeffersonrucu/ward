@@ -81,7 +81,7 @@ TEXTOS=(WARD_DEV_APP WARD_DEV_DIR WARD_DEV_SOCKET_DIR WARD_DEV_EXTENSAO wardd-ap
 conferir "$RLIB" "${TEXTOS[@]}"
 conferir "$ALVO/release/ward-nm" "${TEXTOS[@]}"
 conferir "$ALVO/release/wardd" "${TEXTOS[@]}" classificar_app_de_teste classificar_host_extensao_de_teste \
-    BinarioDeTeste lancar_para_teste
+    TestBinary launch_for_test
 # O binário conferido é mesmo o daemon (tem o socket do sistema).
 grep -qF -- '/run/ward' "$TMP/textos" || {
     echo "sem-modo-teste: '/run/ward' não achado; o binário conferido é mesmo o wardd?" >&2

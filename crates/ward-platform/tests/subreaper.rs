@@ -15,11 +15,11 @@
 //! comum deste processo (o app do `wardd`, que não faz `setsid`).
 
 use std::io::Read;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::time::{Duration, Instant};
 
+use ward_platform::child::{Command, End, Group, Pipes};
 use ward_platform::descendentes;
-use ward_platform::filho::{Comando, Fim, Grupo, Pipes};
 
 /// `python3 -I -c` com um modo:
 /// - `setsid`: neto com `setsid` por dois `fork` (o do meio sai), imprime o pid dele e
@@ -60,18 +60,18 @@ if fica:
     time.sleep(60)
 "#;
 
-fn lancar(modo: &str, fica: bool) -> (Grupo, Pipes, i32) {
-    let mut c = Comando::novo(b"/usr/bin/python3", b"/").unwrap();
+fn lancar(modo: &str, fica: bool) -> (Group, Pipes, i32) {
+    let mut c = Command::new(b"/usr/bin/python3", b"/").unwrap();
     for a in [&b"-I"[..], b"-c", PY.as_bytes(), modo.as_bytes()] {
-        c.argumento(a).unwrap();
+        c.argument(a).unwrap();
     }
     if fica {
-        c.argumento(b"fica").unwrap();
+        c.argument(b"fica").unwrap();
     }
-    c.variavel(b"WARD_PASS", b"falso-senha-f55").unwrap();
-    let (g, mut p) = c.lancar().unwrap();
+    c.variable(b"WARD_PASS", b"falso-senha-f55").unwrap();
+    let (g, mut p) = c.launch().unwrap();
     let mut linha = [0u8; 32];
-    let n = p.saida.as_mut().unwrap().read(&mut linha).unwrap();
+    let n = p.stdout.as_mut().unwrap().read(&mut linha).unwrap();
     let pid = std::str::from_utf8(&linha[..n])
         .unwrap()
         .trim()
@@ -81,10 +81,10 @@ fn lancar(modo: &str, fica: bool) -> (Grupo, Pipes, i32) {
 }
 
 /// Fim normal do comando, como o `wardd`: espera, mata a sessão, colhe.
-fn fim_do_comando(g: &Grupo) -> descendentes::Relatorio {
-    g.esperar_fim().unwrap();
-    let r = g.matar_com_sessoes_filhas();
-    let _ = g.colher().unwrap();
+fn fim_do_comando(g: &Group) -> descendentes::Relatorio {
+    g.wait_for_end().unwrap();
+    let r = g.kill_with_child_sessions();
+    let _ = g.collect().unwrap();
     r
 }
 
@@ -108,7 +108,7 @@ fn morre(pid: i32) -> bool {
 }
 
 fn matar(pid: i32) {
-    let _ = Command::new("/bin/kill")
+    let _ = std::process::Command::new("/bin/kill")
         .args(["-9", &pid.to_string()])
         .status();
     assert!(morre(pid));
@@ -147,10 +147,10 @@ fn ataque_f55_descendente_fora_do_grupo_nao_sobrevive() {
     // A trava com o comando vivo: a sessão inteira morre (o fugitivo com `setsid`
     // também, pelo grupo e pela varredura dos órfãos).
     let (g, _p, fugitivo) = lancar("setsid", true);
-    let r = g.matar_com_sessoes_filhas();
+    let r = g.kill_with_child_sessions();
     assert_eq!(r.sobraram, 0, "{r:?}");
-    assert_eq!(g.sobraram(), 0);
-    assert_eq!(g.colher().unwrap(), Fim::Sinal(libc::SIGKILL));
+    assert_eq!(g.remaining(), 0);
+    assert_eq!(g.collect().unwrap(), End::Signal(libc::SIGKILL));
     assert!(morre(fugitivo), "trava: o fugitivo sobreviveu");
 
     // A trava sem sessão (só os órfãos): o fugitivo de uma sessão viva morre; a sessão
@@ -167,15 +167,15 @@ fn ataque_f55_descendente_fora_do_grupo_nao_sobrevive() {
     );
 
     // O fim de uma sessão não leva a árvore de outra em curso.
-    let r = g.matar_com_sessoes_filhas();
+    let r = g.kill_with_child_sessions();
     assert_eq!(r.sobraram, 0, "{r:?}");
-    let _ = g.colher();
+    let _ = g.collect();
     assert!(vivo(filho_da_outra), "o fim de uma sessão matou outra");
     assert!(vivo(outra.pid() as i32));
 
     // O órfão de um filho comum deste processo (sem `setsid`: a sessão daqui, como o
     // app do `wardd`) não é de sessão nenhuma e não leva sinal.
-    let mut comum = Command::new("/usr/bin/python3")
+    let mut comum = std::process::Command::new("/usr/bin/python3")
         .args(["-I", "-c", PY, "arvore"])
         .stdout(Stdio::piped())
         .spawn()
@@ -197,9 +197,9 @@ fn ataque_f55_descendente_fora_do_grupo_nao_sobrevive() {
         );
         std::thread::sleep(Duration::from_millis(20));
     }
-    let r = outra.matar_com_sessoes_filhas();
+    let r = outra.kill_with_child_sessions();
     assert_eq!(r.sobraram, 0, "{r:?}");
-    let _ = outra.colher();
+    let _ = outra.collect();
     assert!(morre(filho_da_outra));
     assert!(vivo(neto_comum), "o órfão de um filho comum levou o sinal");
     let r = descendentes::matar_orfaos();

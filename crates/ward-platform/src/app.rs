@@ -16,7 +16,7 @@ use std::os::fd::{AsFd, OwnedFd};
 use std::os::unix::process::CommandExt;
 use std::process::Command;
 
-use crate::lancador::AmbienteApp;
+use crate::launcher::AppEnvironment;
 use crate::sys;
 
 /// gid real, efetivo e salvo.
@@ -148,11 +148,11 @@ impl Pai {
 
 /// `execve("/proc/self/exe")` com `argumentos` (sem o `argv[0]`), só `ambiente` e
 /// todo fd ≥ 3 fechado. O kernel aplica de novo o setgid do arquivo. Só volta em erro.
-pub fn reexecutar(argumentos: &[OsString], ambiente: &AmbienteApp) -> io::Error {
+pub fn reexecutar(argumentos: &[OsString], ambiente: &AppEnvironment) -> io::Error {
     let mut cmd = Command::new("/proc/self/exe");
     cmd.args(argumentos)
         .env_clear()
-        .envs(ambiente.variaveis())
+        .envs(ambiente.variables())
         .current_dir("/");
     sys::fechar_fds_no_exec(&mut cmd);
     cmd.exec()

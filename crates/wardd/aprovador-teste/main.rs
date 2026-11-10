@@ -32,7 +32,7 @@ fn socket() -> Option<PathBuf> {
         Some(d) => Some(PathBuf::from(d).join("wardd.sock")),
         None => Some(PathBuf::from(format!(
             "/run/user/{}/ward-teste/wardd.sock",
-            ward_platform::uid_efetivo()
+            ward_platform::effective_uid()
         ))),
     }
 }

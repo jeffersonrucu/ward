@@ -302,7 +302,7 @@ fn ataque_namespace_de_usuario_nao_forja_o_grupo() {
     let (filho, par) = conectar(&escuta, cmd);
     let meu_gid = std::fs::metadata("/proc/self").unwrap().gid();
     assert_eq!(par.credenciais().gid, meu_gid);
-    assert_eq!(par.credenciais().uid, ward_platform::uid_efetivo());
+    assert_eq!(par.credenciais().uid, ward_platform::effective_uid());
     assert_eq!(
         par.classificar(&inst_app(GID_NENHUM - 1), &politica_ok()),
         ClassePar::Comum {

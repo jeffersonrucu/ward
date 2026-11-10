@@ -40,7 +40,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use ward_core::mascara::Mascara;
-use ward_platform::filho::{self, Comando, Grupo};
+use ward_platform::child::{self, Command, Group};
 use zeroize::Zeroizing;
 
 use crate::agente_ssh::{AgenteSsh, Permitido};
@@ -179,7 +179,7 @@ impl Ponte {
     /// líder). O `stderr` mascarado de cada `ssh` da ponte vai para `erro`.
     pub(crate) fn iniciar(self, grupo: u32, erro: SaidaDeErro) -> PonteRodando {
         let parar = Arc::new(AtomicBool::new(false));
-        let grupos: Arc<Mutex<Vec<Arc<Grupo>>>> = Arc::new(Mutex::new(Vec::new()));
+        let grupos: Arc<Mutex<Vec<Arc<Group>>>> = Arc::new(Mutex::new(Vec::new()));
         let (p, g) = (parar.clone(), grupos.clone());
         let thread = std::thread::Builder::new()
             .name("wardd-ponte".into())
@@ -198,7 +198,7 @@ impl Ponte {
 /// A ponte aceitando. Ao sair, para de aceitar e mata o `ssh` de cada conexão.
 pub(crate) struct PonteRodando {
     parar: Arc<AtomicBool>,
-    grupos: Arc<Mutex<Vec<Arc<Grupo>>>>,
+    grupos: Arc<Mutex<Vec<Arc<Group>>>>,
     thread: Option<std::thread::JoinHandle<()>>,
 }
 
@@ -215,7 +215,7 @@ impl Drop for PonteRodando {
             let _ = t.join();
         }
         for g in self.grupos.lock().unwrap_or_else(|e| e.into_inner()).iter() {
-            g.matar();
+            g.kill();
         }
     }
 }
@@ -242,13 +242,13 @@ fn escutar(
     ponte: Ponte,
     grupo: u32,
     parar: &AtomicBool,
-    grupos: &Mutex<Vec<Arc<Grupo>>>,
+    grupos: &Mutex<Vec<Arc<Group>>>,
     erro: &SaidaDeErro,
 ) {
     let ponte = Arc::new(ponte);
     let ativas = Arc::new(AtomicUsize::new(0));
     let mut aceitas = 0usize;
-    let uid = ward_platform::uid_efetivo();
+    let uid = ward_platform::effective_uid();
     loop {
         if parar.load(Ordering::Acquire) {
             return;
@@ -257,7 +257,7 @@ fn escutar(
             depurar!("ponte: o cofre travou; a ponte para de aceitar");
             return;
         }
-        match filho::pronto_para_ler_fd(ponte.ouvinte.as_fd(), PASSO_MS) {
+        match child::ready_to_read_fd(ponte.ouvinte.as_fd(), PASSO_MS) {
             Ok(true) => {}
             Ok(false) => continue,
             Err(_) => return,
@@ -304,7 +304,7 @@ fn conectar(
     tcp: TcpStream,
     ativas: Arc<AtomicUsize>,
     erro: SaidaDeErro,
-) -> Option<Arc<Grupo>> {
+) -> Option<Arc<Group>> {
     let _ = tcp.set_nonblocking(false);
     let plano = &ponte.plano;
     let (senha, agente) = match &plano.via.cred {
@@ -332,17 +332,17 @@ fn conectar(
         aviso!("ponte: argv fora do formato; nada foi executado");
         return None;
     };
-    let mut cmd = Comando::novo(&argv[0], b"/").ok()?;
+    let mut cmd = Command::new(&argv[0], b"/").ok()?;
     for x in &argv[1..] {
-        cmd.argumento(x).ok()?;
+        cmd.argument(x).ok()?;
     }
-    cmd.variavel(b"PATH", PATH_FILHO).ok()?;
-    cmd.variavel(b"LANG", b"C.UTF-8").ok()?;
+    cmd.variable(b"PATH", PATH_FILHO).ok()?;
+    cmd.variable(b"LANG", b"C.UTF-8").ok()?;
     if let Some(s) = senha {
         // `sshpass -e`: a senha só no ambiente do filho, nunca em argv (S3).
-        cmd.variavel(b"SSHPASS", s.expor()).ok()?;
+        cmd.variable(b"SSHPASS", s.expor()).ok()?;
     }
-    let lancado = cmd.lancar();
+    let lancado = cmd.launch();
     // O ambiente com segredo zera agora.
     drop(cmd);
     let (grupo, pipes) = match lancado {
@@ -350,7 +350,7 @@ fn conectar(
         Err(e) => {
             aviso!(
                 "ponte: o ssh do salto/túnel não foi criado ({})",
-                e.mensagem()
+                e.message()
             );
             return None;
         }
@@ -367,14 +367,14 @@ fn conectar(
             ponte.inicial,
         )
     });
-    let filho::Pipes {
-        entrada,
-        saida,
-        erro: err,
+    let child::Pipes {
+        stdin: entrada,
+        stdout: saida,
+        stderr: err,
     } = pipes;
     let (Some(entrada), Some(saida), Ok(tcp_leitura)) = (entrada, saida, tcp.try_clone()) else {
-        grupo.matar();
-        let _ = grupo.colher();
+        grupo.kill();
+        let _ = grupo.collect();
         return None;
     };
     let tcp_escrita = tcp;
@@ -394,16 +394,16 @@ fn conectar(
             .spawn(move || ler_erro(e, &m, &erro));
     }
     if ida.is_err() || volta.is_err() {
-        grupo.matar();
+        grupo.kill();
     }
     let g = grupo.clone();
     let vigia = std::thread::Builder::new()
         .name("wardd-ponte-fim".into())
         .spawn(move || {
-            let _ = g.esperar_fim();
-            g.matar();
-            match g.colher() {
-                Ok(f) => depurar!("ponte: ssh do salto/túnel saiu ({})", f.codigo_de_saida()),
+            let _ = g.wait_for_end();
+            g.kill();
+            match g.collect() {
+                Ok(f) => depurar!("ponte: ssh do salto/túnel saiu ({})", f.exit_code()),
                 Err(_) => depurar!("ponte: ssh do salto/túnel já colhido"),
             }
             drop(agente);
@@ -413,7 +413,7 @@ fn conectar(
             ativas.fetch_sub(1, Ordering::AcqRel);
         });
     if vigia.is_err() {
-        grupo.matar();
+        grupo.kill();
     }
     Some(grupo)
 }
@@ -760,7 +760,7 @@ mod testes {
         let stat = fs::read_to_string("/proc/self/stat").unwrap();
         let meu_grupo = grupo_do_stat(&stat).unwrap();
         let minha_sessao = sessao_do_stat(&stat).unwrap();
-        let uid = ward_platform::uid_efetivo();
+        let uid = ward_platform::effective_uid();
         // Só passa quem está no grupo **e** na sessão com o mesmo número (o filho do
         // daemon, líder dos dois). Um processo no grupo de outra sessão (o que o
         // `setpgid` da auditoria do M4 fazia) não passa.

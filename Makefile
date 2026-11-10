@@ -372,7 +372,7 @@ test-revealed-selection: origins
 	WARD_DEV_SOCKET_DIR="$(WARD_DEV_SOCKET_DIR)" dev/tests/revealed-selection.sh
 
 ## test-gst-channels: canais da 29b (Fase 39c) sem o WebKitGTK: o gst-plugin-scanner do
-## sistema e o EGL da GPU com o ambiente de D57 (valores do lancador.rs), HOME falso em
+## sistema e o EGL da GPU com o ambiente de D57 (valores do launcher.rs), HOME falso em
 ## .dev/gst-channels e iscas (frei0r, LADSPA, libvisual, LV2, perfis da NVIDIA). Roda antes
 ## sem as variáveis da 39c e exige que as iscas carreguem (o teste enxerga o ataque);
 ## depois com elas, nada carrega. Exige gst-inspect-1.0, strace e gcc; fora do `make check`

@@ -16,7 +16,7 @@
 #
 # Roda cada parte duas vezes: sem as variáveis da 39c (controle: o ataque tem de
 # aparecer, senão o teste não provaria nada) e com o ambiente de D57 inteiro, com os
-# valores lidos do `lancador.rs`. Sem driver da NVIDIA, a parte do EGL é pulada com
+# valores lidos do `launcher.rs`. Sem driver da NVIDIA, a parte do EGL é pulada com
 # aviso. Nada é escrito fora de `.dev/gst-channels/`; nenhum cofre é tocado.
 # Uso: dev/tests/gst-channels.sh  (ou `make test-gst-channels`)
 
@@ -33,8 +33,8 @@ BASE="$RAIZ/.dev/gst-channels"
 rm -rf "$BASE"
 mkdir -p -m 0700 "$BASE"
 
-LANCADOR="$RAIZ/crates/ward-platform/src/lancador.rs"
-valor_fixo() { # nome da variável em VARIAVEIS_FIXAS (mesmo leitor do webkit-real.sh)
+LANCADOR="$RAIZ/crates/ward-platform/src/launcher.rs"
+valor_fixo() { # nome da variável em FIXED_VARIABLES (mesmo leitor do webkit-real.sh)
     python3 -I - "$LANCADOR" "$1" "$(uname -m)" <<'PY'
 import re, sys
 s = open(sys.argv[1]).read()
@@ -42,7 +42,7 @@ consts = {}
 for cfg, nome, val in re.findall(r'(?:#\[cfg\(target_arch = "(\w+)"\)\]\s*)?pub const (\w+): &str = "([^"]*)";', s):
     if not cfg or cfg == sys.argv[3]:
         consts[nome] = val
-bloco = s[s.index("pub const VARIAVEIS_FIXAS"):]
+bloco = s[s.index("pub const FIXED_VARIABLES"):]
 bloco = bloco[:bloco.index("];")]
 for nome, val in re.findall(r'\("(\w+)",\s*("[^"]*"|\w+)\)', bloco):
     if nome == sys.argv[2]:
@@ -56,7 +56,7 @@ LISTA="$(valor_fixo GST_PLUGIN_LOADING_WHITELIST)"
 GL="$(valor_fixo __GL_APPLICATION_PROFILE)"
 MPS="$(valor_fixo CUDA_MPS_PIPE_DIRECTORY)"
 [[ -d "$GST" ]] || { echo "canais-gst: sem a pasta de plugins $GST" >&2; exit 1; }
-[[ -n "$LISTA" && "$GL" == "0" ]] || { echo "canais-gst: variáveis da 39c ausentes do lancador.rs" >&2; exit 1; }
+[[ -n "$LISTA" && "$GL" == "0" ]] || { echo "canais-gst: variáveis da 39c ausentes do launcher.rs" >&2; exit 1; }
 
 cat > "$BASE/mark.c" <<'EOF'
 #include <fcntl.h>
