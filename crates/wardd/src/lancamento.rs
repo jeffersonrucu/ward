@@ -16,7 +16,7 @@ use std::os::unix::process::ExitStatusExt;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use ward_platform::{AllowedBinary, Instalacao, Launcher, LauncherError, PeerClass, PeerProcess};
+use ward_platform::{AllowedBinary, Install, Launcher, LauncherError, PeerClass, PeerProcess};
 
 use crate::aprovacao::{AbridorApp, ErroAbrirApp};
 use crate::aviso;
@@ -34,7 +34,7 @@ pub struct AbridorReal {
 
 impl AbridorReal {
     /// Com o binário instalado e os grupos da instalação.
-    pub fn instalado(inst: &Instalacao) -> Option<Self> {
+    pub fn instalado(inst: &Install) -> Option<Self> {
         let bin = AllowedBinary::new(APP_INSTALADO).ok()?;
         Some(Self {
             lancador: Arc::new(Mutex::new(Launcher::new(bin, inst))),
@@ -148,7 +148,7 @@ impl ExtensaoDeTeste {
     pub fn classificar(&self, par: &PeerProcess) -> PeerClass {
         #[cfg(feature = "test-mode")]
         return par
-            .classify_test_extension_host(&self.chrome, &ward_platform::PoliticaKernel::ler());
+            .classify_test_extension_host(&self.chrome, &ward_platform::KernelPolicy::read());
         #[cfg(not(feature = "test-mode"))]
         {
             let _ = par;

@@ -39,9 +39,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use ward_platform::{
-    AllowedBinary, Instalacao, Launcher, PeerClass, PoliticaKernel, ServidorEsperado,
-    app_environment, caminho_socket_sistema, conectar_servidor, conferir_conexao,
-    escutar_de_listen_fds, iniciar_endurecido,
+    AllowedBinary, ExpectedServer, Install, KernelPolicy, Launcher, PeerClass, app_environment,
+    connect_server, listen_from_listen_fds, start_hardened, system_socket_path, verify_connection,
 };
 
 fn main() {
@@ -155,20 +154,20 @@ fn servidor(args: &[String]) {
             _ => falhar("argumento"),
         }
     }
-    if let Err(e) = iniciar_endurecido() {
+    if let Err(e) = start_hardened() {
         falhar(e);
     }
-    let escuta = escutar_de_listen_fds(&caminho_socket_sistema()).unwrap_or_else(|e| falhar(e));
+    let escuta = listen_from_listen_fds(&system_socket_path()).unwrap_or_else(|e| falhar(e));
     let chrome = AllowedBinary::new(chrome.unwrap_or_else(|| falhar("--chrome")))
         .unwrap_or_else(|e| falhar(e));
-    let inst = Instalacao::do_sistema(chrome).unwrap_or_else(|e| falhar(e));
-    let politica = PoliticaKernel::ler();
+    let inst = Install::from_system(chrome).unwrap_or_else(|e| falhar(e));
+    let politica = KernelPolicy::read();
     println!(
         "servidor: pronto {} gid_app={} gid_nm={} politica={:?} vmlck={}",
         estado_dos_fds(escuta.listener()),
-        inst.gid_app(),
-        inst.gid_extensao(),
-        politica.conferir(),
+        inst.app_gid(),
+        inst.extension_gid(),
+        politica.verify(),
         status("VmLck:")
     );
     let _ = std::io::stdout().flush();
@@ -197,7 +196,7 @@ fn servidor(args: &[String]) {
     let _lancadores = abrir_apps(&aberturas, &inst);
     for conexao in escuta.listener().incoming() {
         let Ok(mut stream) = conexao else { continue };
-        let par = match conferir_conexao(&stream) {
+        let par = match verify_connection(&stream) {
             Ok(p) => p,
             Err(e) => {
                 println!("servidor: recusado {e:?}");
@@ -289,8 +288,8 @@ fn cliente(args: &[String]) {
         }
     }
     let esperado = match socket {
-        Some(s) => ServidorEsperado::sistema_em(s),
-        None => ServidorEsperado::sistema(),
+        Some(s) => ExpectedServer::system_at(s),
+        None => ExpectedServer::system(),
     };
     let marca = std::env::var_os("LD_PRELOAD").is_some();
     if pausar {
@@ -299,7 +298,7 @@ fn cliente(args: &[String]) {
         let mut linha = String::new();
         let _ = std::io::stdin().read_line(&mut linha);
     }
-    let stream: UnixStream = match conectar_servidor(&esperado) {
+    let stream: UnixStream = match connect_server(&esperado) {
         Ok(s) => s,
         Err(e) => {
             println!("servidor={e:?}");
@@ -487,7 +486,7 @@ fn bind(args: &[String]) {
 
 /// Abre os apps pedidos (Fase 29a). Devolve os lançadores, para os filhos não serem
 /// colhidos antes da hora.
-fn abrir_apps(aberturas: &[Abertura], inst: &Instalacao) -> Vec<Launcher> {
+fn abrir_apps(aberturas: &[Abertura], inst: &Install) -> Vec<Launcher> {
     let mut lancadores = Vec::new();
     for a in aberturas {
         match a {
@@ -534,7 +533,7 @@ fn lancar_app(args: &[String]) {
         falhar("lancar-app <bin>")
     };
     let chrome = AllowedBinary::new("/usr/bin/bash").unwrap_or_else(|e| falhar(e));
-    let inst = Instalacao::do_sistema(chrome).unwrap_or_else(|e| falhar(e));
+    let inst = Install::from_system(chrome).unwrap_or_else(|e| falhar(e));
     let b = AllowedBinary::new(bin).unwrap_or_else(|e| falhar(e));
     match Launcher::new(b, &inst).open() {
         Ok(pid) => println!("lancar-app: aberto pid={pid}"),

@@ -1913,6 +1913,31 @@ Variantes fixadas na m2: Fase 8 (aparecem no `Debug` que os scripts do contêine
 responses }`; `Stdio::Depuracao` → `Stdio::DebugPipe`; `descendentes::Relatorio` →
 `descendants::Report { killed, remaining }`; `registro()` dos líderes → `record()`.
 
+Fase 9 (o `Debug` de `ServerRefusal` e de `ActivationError` aparece no
+`dev/container-platform/inside.sh` e nos testes de ativação): `RecusaServidor` →
+`ServerRefusal` com `Ausente` → `Missing`, `CaminhoInvalido` → `InvalidPath`,
+`PastaNaoConfiavel` → `UntrustedDir`, `SocketNaoConfiavel` → `UntrustedSocket`,
+`ParNaoConfiavel { uid }` → `UntrustedPeer { uid }`, `EnderecoDiferente` →
+`AddressMismatch`; `ErroAtivacao` → `ActivationError` com `SemAtivacao` →
+`NotActivated`, `PidDiferente` → `PidMismatch`, `QuantidadeDeFds` → `FdCount`,
+`FdIndisponivel` → `FdUnavailable`, `NaoEscutaUnix` → `NotUnixListener`,
+`CaminhoDiferente` → `PathMismatch`, `PastaNaoConfiavel` → `UntrustedDir`,
+`SocketNaoConfiavel` → `UntrustedSocket`;
+`ErroDiretorio` → `DirError` com `CaminhoInvalido` → `InvalidPath`, `PaiNaoConfiavel` →
+`UntrustedParent`, `NaoEDiretorio` →
+`NotDirectory`, `DonoErrado { uid }` → `WrongOwner { uid }`, `PermissaoErrada { modo }` →
+`WrongMode { mode }`, `Trocado` → `Swapped`; `ErroEscuta` → `ListenError` com
+`NomeInvalido` → `InvalidName`, `JaEmUso` → `AlreadyInUse`, `CaminhoOcupado` →
+`PathTaken`, `Diretorio` → `Dir`; `ErroAceitar` → `AcceptError` com `UidRecusado` → `UidRefused`,
+`SemIdentidade` → `NoIdentity` (o log do `wardd` mantém o texto `(UidRecusado)` e
+`(SemIdentidade)`, que o `dev/container-uid/inside.sh` procura); `Memoria` → `Memory`
+com `Travada` → `Locked`, `SemTravar` → `NotLocked`; `PaiDiferente` → `ParentMismatch` com `Orfao` →
+`Orphan`, `NaoEoDaemon` → `NotDaemon`, `PaiDumpable` → `DumpableParent`, `Saiu` →
+`Exited`, `Leitura` → `Read`; `ErroInicio` → `StartError` com `Endurecer` → `Harden`, `VariavelInsegura` →
+`InsecureVariable`,
+`Depurador` → `Debugger`, `LerStatus` → `ReadStatus`, `LimiteMemlock` → `MemlockLimit`,
+`TravarMemoria` → `LockMemory`.
+
 Funções e métodos não estão listados um a um: o nome sai da seção 2 na ordem do inglês
 (`conferir_arquivo` → `verify_file`, `ler_cofre` → `read_vault`, `codificar_resposta` →
 `encode_response`, `exigir_pin` → `require_pin`). Os poucos fixados por outra seção:

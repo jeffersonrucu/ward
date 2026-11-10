@@ -24,7 +24,7 @@
 //!   selada pela chave do cofre aberto, fora de ordem não. O daemon confere a geração
 //!   (decifra e zera); nada é selado aqui e os bytes copiados são os do arquivo.
 //! - **Sem `link(2)`** (o vfat não tem): temporário `O_EXCL` 0600 → fsync →
-//!   `renameat2(RENAME_NOREPLACE)` para o nome final ([`renomear_sem_sobrescrever`]) →
+//!   `renameat2(RENAME_NOREPLACE)` para o nome final ([`rename_no_replace`]) →
 //!   fsync da pasta. Uma versão que já está no pendrive nunca é sobrescrita; uma
 //!   cópia interrompida deixa só um temporário com prefixo do cifrado, apagado na
 //!   próxima.
@@ -68,7 +68,7 @@ use std::time::SystemTime;
 
 use ward_core::backup::{Versao, para_apagar_conferidas};
 use ward_core::formato;
-use ward_platform::pasta::renomear_sem_sobrescrever;
+use ward_platform::dir::rename_no_replace;
 
 use crate::arquivos::{self, PastaAberta};
 
@@ -317,8 +317,7 @@ fn gravar_versao(destino: &File, v: Versao, bytes: &[u8]) -> io::Result<bool> {
         .open(&caminho_tmp)?;
     let escrito = f.write_all(bytes).and_then(|()| f.sync_all());
     drop(f);
-    let r =
-        escrito.and_then(|()| renomear_sem_sobrescrever(destino.as_fd(), &tmp, v.nome().as_ref()));
+    let r = escrito.and_then(|()| rename_no_replace(destino.as_fd(), &tmp, v.nome().as_ref()));
     match r {
         Ok(()) => Ok(true),
         Err(e) => {

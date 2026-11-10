@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex};
 use ward_core::limites::MAX_QUADRO_COMUM;
 use ward_core::protocolo::quadro::{self, LIMITE_RESPOSTA};
 use ward_core::protocolo::{self, Papel, Pedido};
-use ward_platform::{ErroTerminal, ServidorEsperado};
+use ward_platform::{ExpectedServer, TerminalError};
 use zeroize::Zeroizing;
 
 use crate::cliente::{Conexao, ErroConexao};
@@ -29,7 +29,7 @@ struct Pasta(PathBuf);
 
 impl Pasta {
     fn nova() -> Pasta {
-        let p = ward_platform::socket::diretorio_runtime().join(format!(
+        let p = ward_platform::socket::runtime_dir().join(format!(
             "ward-cli-t-{}-{}",
             std::process::id(),
             N.fetch_add(1, Ordering::Relaxed)
@@ -104,12 +104,12 @@ fn servidor(pasta: &Pasta, responder: Option<Arc<Responder>>) -> Arc<Mutex<Visto
 
 /// Entorno de teste: registra a ordem dos passos e a saída.
 struct Teste {
-    esperado: ServidorEsperado,
+    esperado: ExpectedServer,
     /// Conferência completa (`Conexao::conectar`) ou sem a extra do `test-mode`.
     completa: bool,
     eventos: Vec<&'static str>,
     antes_da_senha: Option<Box<dyn FnMut()>>,
-    senha: Result<&'static str, ErroTerminal>,
+    senha: Result<&'static str, TerminalError>,
     out: Vec<u8>,
     err: Vec<u8>,
     /// Ambiente do `ward run` (no lugar do do processo de teste).
@@ -122,7 +122,7 @@ struct Teste {
 }
 
 impl Teste {
-    fn novo(esperado: ServidorEsperado, completa: bool) -> Teste {
+    fn novo(esperado: ExpectedServer, completa: bool) -> Teste {
         Teste {
             esperado,
             completa,
@@ -168,7 +168,7 @@ impl Entorno for Teste {
         self.eventos.push("endurecer");
         Ok(())
     }
-    fn ler_senha(&mut self) -> Result<Zeroizing<Vec<u8>>, ErroTerminal> {
+    fn ler_senha(&mut self) -> Result<Zeroizing<Vec<u8>>, TerminalError> {
         self.eventos.push("ler_senha");
         if let Some(f) = self.antes_da_senha.as_mut() {
             f();
@@ -195,7 +195,7 @@ impl Entorno for Teste {
         // Nunca o terminal de quem roda os testes.
         None
     }
-    fn modo_cru(&mut self) -> Option<ward_platform::ModoCru> {
+    fn modo_cru(&mut self) -> Option<ward_platform::RawMode> {
         None
     }
 }
@@ -206,7 +206,7 @@ impl Entorno for Teste {
 fn d52_run_grande_demais_recusado_antes_de_conectar() {
     use crate::comandos::{MSG_RUN_CAMPO, MSG_RUN_GRANDE, SAIDA_RUN_ERRO};
     let valor = "falso-grande-".repeat(70 * 1024 / 13);
-    let mut t = Teste::novo(ServidorEsperado::sistema(), true);
+    let mut t = Teste::novo(ExpectedServer::system(), true);
     t.amb = (0..12)
         .map(|i| (format!("V{i}").into(), valor.clone().into()))
         .collect();
@@ -218,7 +218,7 @@ fn d52_run_grande_demais_recusado_antes_de_conectar() {
     assert!(t.eventos.is_empty(), "{:?}", t.eventos);
     assert!(!t.err().contains("falso-grande") && t.out.is_empty());
 
-    let mut t = Teste::novo(ServidorEsperado::sistema(), true);
+    let mut t = Teste::novo(ExpectedServer::system(), true);
     t.amb = vec![("X".into(), "falso-campo-".repeat(12 * 1024).into())];
     assert_eq!(t.rodar(&["run", "e", "--", "true"]), SAIDA_RUN_ERRO);
     assert_eq!(t.err(), format!("ward: {MSG_RUN_CAMPO}\n"));
@@ -226,13 +226,13 @@ fn d52_run_grande_demais_recusado_antes_de_conectar() {
 
     // Abaixo do limite: passa da medida (aqui, para no daemon ausente).
     let mut t = Teste::novo(
-        ServidorEsperado::sistema_em(PathBuf::from("/run/ward/4294967294/wardd.sock")),
+        ExpectedServer::system_at(PathBuf::from("/run/ward/4294967294/wardd.sock")),
         true,
     );
     t.amb = vec![("X".into(), "x".repeat(600 * 1024 / 8).into())];
     assert_eq!(t.rodar(&["run", "e", "--", "true"]), SAIDA_RUN_ERRO);
     assert_eq!(t.eventos, ["conectar"]);
-    let mut t = Teste::novo(ServidorEsperado::sistema(), true);
+    let mut t = Teste::novo(ExpectedServer::system(), true);
     assert_eq!(t.rodar(&["run", "e", "true"]), SAIDA_USO);
     assert!(t.eventos.is_empty());
 }
@@ -260,7 +260,7 @@ fn v4_2_ataque_servidor_falso_recusado_antes_de_ler_a_senha() {
         &["lista", "--json"],
         &["travar"],
     ] {
-        let mut t = Teste::novo(ServidorEsperado::sistema_em(pasta.socket()), true);
+        let mut t = Teste::novo(ExpectedServer::system_at(pasta.socket()), true);
         assert_eq!(t.rodar(cmd), SAIDA_ERRO, "{cmd:?}");
         assert!(
             t.err().contains("servidor não é o wardd"),
@@ -287,7 +287,7 @@ fn v4_2_ataque_servidor_falso_no_socket_de_teste_recusado() {
     let pasta = Pasta::nova();
     let visto = servidor(&pasta, None);
     for cmd in [&["destravar"][..], &["lista", "--json"], &["travar"]] {
-        let mut t = Teste::novo(ServidorEsperado::teste_em(pasta.socket()), true);
+        let mut t = Teste::novo(ExpectedServer::test_at(pasta.socket()), true);
         assert_eq!(t.rodar(cmd), SAIDA_ERRO);
         assert!(t.err().contains("servidor não é o wardd"), "{}", t.err());
         assert!(t.err().contains("pode ser depurado"), "{}", t.err());
@@ -307,11 +307,11 @@ fn v4_2_ataque_servidor_falso_no_socket_de_teste_recusado() {
 #[test]
 fn daemon_ausente() {
     let pasta = Pasta::nova();
-    let mut t = Teste::novo(ServidorEsperado::sistema_em(pasta.socket()), true);
+    let mut t = Teste::novo(ExpectedServer::system_at(pasta.socket()), true);
     // A pasta é do usuário: recusa antes mesmo de ver que não há socket.
     assert_eq!(t.rodar(&["lista"]), SAIDA_ERRO);
     let mut t = Teste::novo(
-        ServidorEsperado::sistema_em(PathBuf::from("/run/ward/4294967294/wardd.sock")),
+        ExpectedServer::system_at(PathBuf::from("/run/ward/4294967294/wardd.sock")),
         true,
     );
     assert_eq!(t.rodar(&["destravar"]), SAIDA_ERRO);
@@ -321,19 +321,19 @@ fn daemon_ausente() {
 
 #[test]
 fn uso_e_ajuda() {
-    let mut t = Teste::novo(ServidorEsperado::sistema(), true);
+    let mut t = Teste::novo(ExpectedServer::system(), true);
     assert_eq!(t.rodar(&["--help"]), SAIDA_OK);
     assert!(t.out().contains("ward lista [--json]"));
     assert!(t.out().contains("ward destravar"));
     assert!(t.out().contains("ward travar"));
-    let mut t = Teste::novo(ServidorEsperado::sistema(), true);
+    let mut t = Teste::novo(ExpectedServer::system(), true);
     assert_eq!(t.rodar(&[]), SAIDA_USO);
     assert!(t.err().contains("Uso:"));
-    let mut t = Teste::novo(ServidorEsperado::sistema(), true);
+    let mut t = Teste::novo(ExpectedServer::system(), true);
     assert_eq!(t.rodar(&["destravar", SENHA]), SAIDA_USO);
     assert!(!t.err().contains(SENHA));
     assert!(t.eventos.is_empty(), "uso errado não conecta");
-    let mut t = Teste::novo(ServidorEsperado::sistema(), true);
+    let mut t = Teste::novo(ExpectedServer::system(), true);
     assert_eq!(t.rodar(&["--version"]), SAIDA_OK);
     assert!(t.out().starts_with("ward "));
 }
@@ -408,7 +408,7 @@ mod com_daemon_falso {
     }
 
     fn teste(pasta: &Pasta) -> Teste {
-        Teste::novo(ServidorEsperado::teste_em(pasta.socket()), false)
+        Teste::novo(ExpectedServer::test_at(pasta.socket()), false)
     }
 
     /// `ward run` contra um daemon falso: o pedido leva argv, cwd e o ambiente sem
@@ -688,9 +688,9 @@ mod com_daemon_falso {
 
         for (senha, msg) in [
             (Ok(""), "senha vazia"),
-            (Err(ErroTerminal::Cancelado), "cancelado"),
-            (Err(ErroTerminal::SemTerminal), "precisa de um terminal"),
-            (Err(ErroTerminal::Longa), "longa demais"),
+            (Err(TerminalError::Canceled), "cancelado"),
+            (Err(TerminalError::NoTerminal), "precisa de um terminal"),
+            (Err(TerminalError::TooLong), "longa demais"),
         ] {
             let mut t = teste(&pasta);
             t.senha = senha;

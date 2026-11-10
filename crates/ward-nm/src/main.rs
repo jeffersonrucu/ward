@@ -17,7 +17,7 @@ use zeroize::Zeroizing;
 use ward_core::limites::MAX_QUADRO_COMUM;
 use ward_core::protocolo::quadro::{self, LIMITE_RESPOSTA};
 use ward_nm::{Daemon, FalhaDaemon};
-use ward_platform::{ServidorEsperado, conectar_servidor};
+use ward_platform::{ExpectedServer, connect_server};
 
 /// Prazo para o daemon responder (o mesmo da CLI).
 const PRAZO_LEITURA: Duration = Duration::from_secs(130);
@@ -25,30 +25,30 @@ const PRAZO_ESCRITA: Duration = Duration::from_secs(10);
 
 /// O servidor que este host aceita. Release: só o `wardd` instalado (D46), sem
 /// variável nem argumento que troque. `test-mode`: o daemon de teste.
-fn servidor_esperado() -> ServidorEsperado {
+fn servidor_esperado() -> ExpectedServer {
     #[cfg(feature = "test-mode")]
     {
         if let Some(d) = std::env::var_os("WARD_DEV_SOCKET_DIR") {
             let d = std::path::PathBuf::from(d);
-            return ServidorEsperado::teste_em(d.join(ward_platform::socket::NOME_SOCKET));
+            return ExpectedServer::test_at(d.join(ward_platform::socket::SOCKET_NAME));
         }
-        ServidorEsperado::teste()
+        ExpectedServer::test()
     }
     #[cfg(not(feature = "test-mode"))]
     {
-        ServidorEsperado::sistema()
+        ExpectedServer::system()
     }
 }
 
 /// Uma conexão nova por mensagem, conferida antes do primeiro byte (D46). O host não
 /// fica com conexão parada no daemon.
 struct DaemonSocket {
-    esperado: ServidorEsperado,
+    esperado: ExpectedServer,
 }
 
 impl DaemonSocket {
     fn conectar(&self) -> Result<UnixStream, FalhaDaemon> {
-        let s = conectar_servidor(&self.esperado).map_err(|_| FalhaDaemon::Indisponivel)?;
+        let s = connect_server(&self.esperado).map_err(|_| FalhaDaemon::Indisponivel)?;
         s.set_read_timeout(Some(PRAZO_LEITURA))
             .and_then(|()| s.set_write_timeout(Some(PRAZO_ESCRITA)))
             .map_err(|_| FalhaDaemon::Conversa)?;
@@ -89,7 +89,7 @@ impl Daemon for DaemonSocket {
 fn main() -> ExitCode {
     // S8: sem core e sem ptrace do mesmo uid (o exec setgid já deixou o processo
     // não-dumpable; aqui fica 0 também no build sem setgid).
-    if ward_platform::endurecer_processo().is_err() {
+    if ward_platform::harden_process().is_err() {
         eprintln!("ward-nm: não deu para endurecer o processo");
         return ExitCode::FAILURE;
     }

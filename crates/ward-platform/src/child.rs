@@ -397,7 +397,7 @@ impl Group {
     /// every descendant of the leader, including the one that left the group (`setpgid`)
     /// or the session (`setsid`, like the `ssh` that `sshpass` creates), and, in `wardd`
     /// (subreaper), the orphans of the session and the ownerless ones
-    /// ([`crate::descendentes`]). Everything gets `SIGSTOP` before `SIGKILL`; an outside
+    /// ([`crate::descendants`]). Everything gets `SIGSTOP` before `SIGKILL`; an outside
     /// process (another uid, another session that did not come out of a daemon session)
     /// gets nothing. After collected, does nothing. What was left alive goes to
     /// [`Group::remaining`].

@@ -138,7 +138,7 @@ como_1000 /usr/local/bin/ward-servidor ativar /run/user/1000/falso/wardd.sock 10
 FALSO=$!
 sleep 0.5
 r="$(como_1000 /usr/local/bin/ward-servidor cliente --sistema-em /run/user/1000/falso/wardd.sock)"
-confere "V3.23: servidor falso do mesmo uid é recusado antes de qualquer byte" "$r" "servidor=PastaNaoConfiavel"
+confere "V3.23: servidor falso do mesmo uid é recusado antes de qualquer byte" "$r" "servidor=UntrustedDir"
 kill "$FALSO" 2>/dev/null || true
 
 # --- V3.23: atacante mata o wardd e tenta tomar o lugar -------------------------------
@@ -152,7 +152,7 @@ else
     ok "V3.23: o uid 1000 não apaga o socket do systemd"
 fi
 r="$(como_1000 /usr/local/bin/ward-servidor cliente)"
-confere "com o wardd morto, o cliente vê o daemon indisponível" "$r" "servidor=Ausente"
+confere "com o wardd morto, o cliente vê o daemon indisponível" "$r" "servidor=Missing"
 
 # === Fase 29a: lançador do daemon e partida do app (D47, D57; V5.31) ==================
 # O `ward-app` agora é o app de teste do `app/core` (a partida do app real, sem GTK),

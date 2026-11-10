@@ -147,14 +147,14 @@ pub fn token_ok(t: &[u8]) -> bool {
 }
 
 /// Número de `--token-fd`: só dígitos decimais (sem sinal, sem espaço), de 3 a
-/// `MAX_NUMERO_FD` (0–2 são a entrada e as saídas padrão).
+/// `MAX_FD_NUMBER` (0–2 são a entrada e as saídas padrão).
 fn numero_fd(a: &OsString) -> Option<u32> {
     let t = a.to_str()?;
     if t.is_empty() || t.len() > 7 || !t.bytes().all(|b| b.is_ascii_digit()) {
         return None;
     }
     let n: u32 = t.parse().ok()?;
-    (3..=ward_platform::conectar::MAX_NUMERO_FD)
+    (3..=ward_platform::connect::MAX_FD_NUMBER)
         .contains(&n)
         .then_some(n)
 }

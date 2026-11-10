@@ -1,7 +1,7 @@
 //! Cliente do socket do `wardd` (lado Rust do app; a webview nunca fala com o socket).
 //!
 //! Antes de mandar qualquer byte, o app confere o servidor pela mesma regra da CLI
-//! (`ward_platform::conectar_servidor`, S5, D46): o socket é
+//! (`ward_platform::connect_server`, S5, D46): o socket é
 //! `/run/ward/<uid>/wardd.sock`, toda pasta do caminho é do root, sem escrita para grupo
 //! e outros e sem link, o socket é do próprio uid e 0600, e o `SO_PEERCRED` do par tem
 //! uid 0 (quem fez o `listen` foi o systemd do sistema). Só no build de teste
@@ -49,7 +49,7 @@ use std::time::{Duration, Instant};
 
 use ward_core::protocolo::quadro::{self, ErroQuadro};
 use ward_core::protocolo::{self, Papel, PedidoDeAprovacao, PedidoDeDestrave, Resposta};
-use ward_platform::{RecusaServidor, ServidorEsperado, conectar_servidor};
+use ward_platform::{ExpectedServer, ServerRefusal, connect_server};
 
 use zeroize::Zeroizing;
 
@@ -391,7 +391,7 @@ fn ler(
 
 /// Daemon real, pelo socket local.
 pub struct DaemonSocket {
-    esperado: ServidorEsperado,
+    esperado: ExpectedServer,
     transporte: Option<Transporte>,
     /// `false` depois de [`conectar_agora`](Self::conectar_agora): a conexão não se
     /// refaz neste processo.
@@ -414,18 +414,18 @@ impl DaemonSocket {
     /// continua dependendo do pid que o lançador abriu (D63).
     pub fn padrao() -> Result<DaemonSocket, ErroApp> {
         #[cfg(not(feature = "test-mode"))]
-        let esperado = ServidorEsperado::sistema();
+        let esperado = ExpectedServer::system();
         #[cfg(feature = "test-mode")]
         let esperado = match std::env::var_os("WARD_DEV_SOCKET_DIR") {
-            Some(d) => ServidorEsperado::teste_em(
-                std::path::PathBuf::from(d).join(ward_platform::socket::NOME_SOCKET),
+            Some(d) => ExpectedServer::test_at(
+                std::path::PathBuf::from(d).join(ward_platform::socket::SOCKET_NAME),
             ),
-            None => ServidorEsperado::teste(),
+            None => ExpectedServer::test(),
         };
         Ok(DaemonSocket::sem_conexao(esperado))
     }
 
-    fn sem_conexao(esperado: ServidorEsperado) -> DaemonSocket {
+    fn sem_conexao(esperado: ExpectedServer) -> DaemonSocket {
         DaemonSocket {
             esperado,
             transporte: None,
@@ -457,7 +457,7 @@ impl DaemonSocket {
         std::thread::Builder::new()
             .name("ward-app-vigia".into())
             .spawn(move || {
-                let _ = ward_platform::app::esperar_fechamento(&s);
+                let _ = ward_platform::app::wait_for_close(&s);
                 ao_fechar();
             })
             .map(|_| ())
@@ -500,24 +500,24 @@ impl DaemonSocket {
 
     /// Outro caminho, com as regras do daemon instalado (pasta do root, par uid 0).
     pub fn sistema_em(caminho: PathBuf) -> DaemonSocket {
-        DaemonSocket::sem_conexao(ServidorEsperado::sistema_em(caminho))
+        DaemonSocket::sem_conexao(ExpectedServer::system_at(caminho))
     }
 
     /// Outro caminho, com as regras do daemon de teste. Só no `test-mode`.
     #[cfg(feature = "test-mode")]
     pub fn teste_em(caminho: PathBuf) -> DaemonSocket {
-        DaemonSocket::sem_conexao(ServidorEsperado::teste_em(caminho))
+        DaemonSocket::sem_conexao(ExpectedServer::test_at(caminho))
     }
 
     pub fn caminho(&self) -> &Path {
-        self.esperado.caminho()
+        self.esperado.path()
     }
 
     /// Confere o caminho, conecta e confere o par antes de qualquer byte, e liga a
     /// thread leitora. Nada é escrito no socket aqui.
     fn conectar(&self) -> Result<Transporte, ErroApp> {
-        let s = conectar_servidor(&self.esperado).map_err(|r| match r {
-            RecusaServidor::Ausente | RecusaServidor::Io(_) => ErroApp::DaemonIndisponivel,
+        let s = connect_server(&self.esperado).map_err(|r| match r {
+            ServerRefusal::Missing | ServerRefusal::Io(_) => ErroApp::DaemonIndisponivel,
             _ => ErroApp::DaemonNaoConfiavel,
         })?;
         Transporte::novo(s, self.avisos.clone())
@@ -667,7 +667,7 @@ mod testes {
             // de novo.
             let mut t = DaemonSocket::teste_em(dir.join(SOCKET));
             let c = t.conectar_agora().unwrap();
-            assert!(ward_platform::app::tem_cloexec(c).unwrap());
+            assert!(ward_platform::app::has_cloexec(c).unwrap());
             let (mut c, _) = l.accept().unwrap();
             let servidor = std::thread::spawn(move || {
                 for _ in 0..2 {

@@ -171,7 +171,7 @@ pub fn pasta_sessoes(rt: &Path) -> PathBuf {
 /// Apaga os storage states (`<rt>playwright/*`). Chamado ao travar. Não segue link: a
 /// pasta é aberta com `O_DIRECTORY | O_NOFOLLOW` (um link plantado no lugar de
 /// `<rt>playwright` não abre, e nada é apagado do alvo dele) e o conteúdo é listado e
-/// apagado pelo fd (Fase 44e; `ward_platform::pasta::apagar_conteudo`): trocar a pasta
+/// apagado pelo fd (Fase 44e; `ward_platform::dir::delete_contents`): trocar a pasta
 /// por um link depois de aberta não muda o que é apagado. Cada item é apagado como ele
 /// é (um link vira só o link apagado).
 pub fn apagar_sessoes(rt: &Path) -> usize {
@@ -188,7 +188,7 @@ pub fn apagar_sessoes(rt: &Path) -> usize {
             return 0;
         }
     };
-    ward_platform::pasta::apagar_conteudo(pasta.as_fd())
+    ward_platform::dir::delete_contents(pasta.as_fd())
 }
 
 /// Partida do daemon (D6): apaga os storage states e os perfis `pw-*` que um daemon
@@ -274,7 +274,7 @@ pub fn argv_chrome(chrome: &Path, perfil: &Path) -> Option<Vec<Vec<u8>>> {
 fn abrir_navegador(chrome: &Path, rt: &Path) -> Result<(Navegador, Cdp), ErroResposta> {
     use std::os::unix::ffi::OsStrExt;
     let falhou = |_| ErroResposta::NavegadorFalhou;
-    ward_platform::preparar_diretorio(rt).map_err(|_| ErroResposta::EntregaFalhou)?;
+    ward_platform::prepare_dir(rt).map_err(|_| ErroResposta::EntregaFalhou)?;
     let sufixo = ward_core::gerador::token_conectar().map_err(|_| ErroResposta::Interno)?;
     let sufixo = std::str::from_utf8(&sufixo.expor()[..16]).map_err(|_| ErroResposta::Interno)?;
     let perfil = rt.join(format!("{PREFIXO_PERFIL}{sufixo}"));
@@ -757,9 +757,9 @@ fn gravar_estado(rt: &Path, entrada: &str, estado: &[u8]) -> io::Result<PathBuf>
         return Err(io::ErrorKind::InvalidInput.into());
     }
     let erro = |_| io::Error::from(io::ErrorKind::PermissionDenied);
-    ward_platform::preparar_diretorio(rt).map_err(erro)?;
+    ward_platform::prepare_dir(rt).map_err(erro)?;
     let pasta = pasta_sessoes(rt);
-    ward_platform::preparar_diretorio(&pasta).map_err(erro)?;
+    ward_platform::prepare_dir(&pasta).map_err(erro)?;
     let sufixo = ward_core::gerador::token_conectar().map_err(|_| io::Error::other("aleatório"))?;
     let sufixo =
         std::str::from_utf8(&sufixo.expor()[..12]).map_err(|_| io::Error::other("aleatório"))?;

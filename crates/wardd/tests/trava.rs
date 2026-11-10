@@ -733,7 +733,7 @@ fn v3_19_binario_trava_com_lock_session_do_logind_falso() {
         .unwrap();
     assert_eq!(cgt & (1 << (17 - 1)), 0, "SIGCHLD capturado: {cgt:x}");
     let fim = Instant::now() + Duration::from_secs(20);
-    let caminho = sock.join(ward_platform::socket::NOME_SOCKET);
+    let caminho = sock.join(ward_platform::socket::SOCKET_NAME);
     while !caminho.exists() {
         assert!(Instant::now() < fim);
         std::thread::sleep(Duration::from_millis(20));

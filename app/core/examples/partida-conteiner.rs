@@ -31,7 +31,7 @@ fn status(campo: &str) -> String {
 }
 
 fn dumpable() -> String {
-    ward_platform::app::valor_dumpable()
+    ward_platform::app::dumpable_value()
         .map(|v| v.to_string())
         .unwrap_or_else(|_| "?".to_owned())
 }

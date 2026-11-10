@@ -14,7 +14,7 @@ pub fn run_with_socket(listener: &UnixListener, mut cmd: Command) -> ! {
     cmd.env("LISTEN_PID", std::process::id().to_string())
         .env("LISTEN_FDS", "1")
         .env_remove("LISTEN_FDNAMES");
-    // SAFETY: the contract of `por_no_fd_ativacao` requires `exec` or exit right after
+    // SAFETY: the contract of `put_on_activation_fd` requires `exec` or exit right after
     // swapping fd 3: the `exec` comes on the next line and, if it fails, the process
     // exits without using fd 3.
     #[allow(unsafe_code)]
