@@ -1,47 +1,47 @@
 #!/bin/bash -p
-# Testes de ataque da Fundação (Fase 11). Cada ataque tem de FALHAR, isto é, ser pego
-# por `make check`. Cobre V1.2 (S15), V1.3 (S14) e V1.5 (S15), mais os achados da
-# auditoria do M1 (Fase 12a): varredura extra sem allowlist de caminho, origens do
-# cargo (source/patch/registries/path fora) e binário/variáveis das ferramentas; e da
-# 2ª auditoria (Fase 12b): origens como lista de permitidas e pré-checagem (alias,
-# rustc-wrapper, linker, rustflags, build.rustc, runner, [env], variáveis RUSTC*/
-# CARGO_*), config do CARGO_HOME, toolchain, PATH/MAKEFLAGS/BASH_ENV do usuário e git
-# sem a config do usuário.
+# Attack tests of the Foundation (Phase 11). Every attack has to FAIL, that is, be caught
+# by `make check`. Covers V1.2 (S15), V1.3 (S14) and V1.5 (S15), plus the findings of the
+# M1 audit (Phase 12a): extra scan without a path allowlist, cargo origins
+# (source/patch/registries/path outside) and the tools' binary/variables; and of the
+# 2nd audit (Phase 12b): origins as an allowlist and pre-check (alias, rustc-wrapper,
+# linker, rustflags, build.rustc, runner, [env], RUSTC*/CARGO_* variables), the
+# CARGO_HOME config, toolchain, the user's PATH/MAKEFLAGS/BASH_ENV and git without the
+# user's config.
 #
-# Só usa material gerado na hora em diretório temporário: chave ed25519 nova, segredo
-# aleatório, crate de teste. Nada do usuário é lido. O que é criado no repositório
-# (`vazamento.txt`) é apagado ao sair, mesmo em erro.
+# Only uses material generated on the spot in a temporary directory: a new ed25519 key, a
+# random secret, a test crate. Nothing of the user is read. What is created in the
+# repository (`leak.txt`) is removed on exit, even on error.
 #
-# Uso: dev/tests/attacks-foundation.sh   (ou `make test-attacks-foundation`)
+# Usage: dev/tests/attacks-foundation.sh   (or `make test-attacks-foundation`)
 
 set -euo pipefail
 
-# PATH fixo antes de qualquer comando (Fase 12b): nada do PATH do usuário roda aqui.
+# Fixed PATH before any command (Phase 12b): nothing from the user's PATH runs here.
 export PATH=/usr/bin:/bin
-RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck source=dev/env.sh
-. "$RAIZ/dev/env.sh"
-# O cargo do rustup (não há cargo em /usr/bin), no fim do PATH.
+. "$ROOT/dev/env.sh"
+# The rustup cargo (there is no cargo in /usr/bin), at the end of the PATH.
 export PATH="$PATH:$CASA_PASSWD/.cargo/bin"
-# O gitleaks é sempre o de `.dev/` (não uma variável herdada), conferido por sha256.
-GITLEAKS="$RAIZ/.dev/tools/bin/gitleaks"
-(cd "$RAIZ" && make -s gitleaks-binary)
-# Fase 28d: as cópias saíram do `/tmp`. O `cargo test` da cópia sobe o daemon de teste com
-# `WARD_DEV_APP`, e o `TestBinary` recusa (de propósito) app sob pasta gravável por
-# outros, como o `/tmp` (1777): numa cópia em `/tmp` esse teste falha sempre.
-# Fase 28f: e saíram também do repositório. Em `.dev/`, os `.cargo/config*` plantados nas
-# cópias eram achados pelo `dev/origins.py` da raiz (que varre o repositório inteiro, de
-# propósito): durante a rodada todo `make` do checkout falhava em `origens`, e o próprio
-# V1.2 (`make check` na raiz) saía 2 sem citar `vazamento.txt`. O `origins.py` continua
-# sem exceção para `.dev/`; as cópias vão para `~/.cache/` (home do passwd), numa pasta
-# 0700 do `mktemp`, e a cadeia de pastas até `/` é conferida antes (só do usuário ou do
-# root, sem escrita de grupo/outros, sem link).
-pasta_privada() {
-    local p="$1" dono modo
+# gitleaks is always the one in `.dev/` (not an inherited variable), verified by sha256.
+GITLEAKS="$ROOT/.dev/tools/bin/gitleaks"
+(cd "$ROOT" && make -s gitleaks-binary)
+# Phase 28d: the copies left `/tmp`. The `cargo test` of the copy starts the test daemon
+# with `WARD_DEV_APP`, and `TestBinary` refuses (on purpose) an app under a dir writable by
+# others, such as `/tmp` (1777): in a copy under `/tmp` that test always fails.
+# Phase 28f: and they also left the repository. In `.dev/`, the `.cargo/config*` planted in
+# the copies were found by the root's `dev/origins.py` (which scans the whole repository,
+# on purpose): during the run every `make` of the checkout failed in `origins`, and V1.2
+# itself (`make check` at the root) exited 2 without naming `leak.txt`. `origins.py` still
+# has no exception for `.dev/`; the copies go to `~/.cache/` (passwd home), in a 0700
+# `mktemp` dir, and the chain of dirs up to `/` is verified first (only the user's or
+# root's, no group/other write, no link).
+private_dir() {
+    local p="$1" owner mode
     [ "$(realpath -e -- "$p")" = "$p" ] || { echo "pasta das cópias: $p é link ou não existe" >&2; exit 1; }
     while :; do
-        read -r dono modo < <(stat -c '%u %a' -- "$p")
-        if { [ "$dono" != "$(id -u)" ] && [ "$dono" != 0 ]; } || (( 8#$modo & 8#022 )); then
+        read -r owner mode < <(stat -c '%u %a' -- "$p")
+        if { [ "$owner" != "$(id -u)" ] && [ "$owner" != 0 ]; } || (( 8#$mode & 8#022 )); then
             echo "pasta das cópias: $p é de outro dono ou gravável por outros" >&2
             exit 1
         fi
@@ -49,219 +49,219 @@ pasta_privada() {
         p="$(dirname -- "$p")"
     done
 }
-CACHE_COPIAS="$CASA_PASSWD/.cache"
-[ -L "$CACHE_COPIAS" ] && { echo "pasta das cópias: $CACHE_COPIAS é link" >&2; exit 1; }
-mkdir -p -m 0700 "$CACHE_COPIAS"
-pasta_privada "$CACHE_COPIAS"
-TMP="$(mktemp -d "$CACHE_COPIAS/ward-ataques-fundacao.XXXXXX")"
-pasta_privada "$TMP"
+COPIES_CACHE="$CASA_PASSWD/.cache"
+[ -L "$COPIES_CACHE" ] && { echo "pasta das cópias: $COPIES_CACHE é link" >&2; exit 1; }
+mkdir -p -m 0700 "$COPIES_CACHE"
+private_dir "$COPIES_CACHE"
+TMP="$(mktemp -d "$COPIES_CACHE/ward-attacks-foundation.XXXXXX")"
+private_dir "$TMP"
 case "$TMP/" in
-    "$RAIZ"/*) echo "pasta das cópias dentro do repositório: $TMP" >&2; exit 1 ;;
+    "$ROOT"/*) echo "pasta das cópias dentro do repositório: $TMP" >&2; exit 1 ;;
 esac
-VAZAMENTO="$RAIZ/vazamento.txt"
-limpar() { rm -rf "$TMP"; rm -f "$VAZAMENTO"; }
-trap limpar EXIT
+LEAK="$ROOT/leak.txt"
+cleanup() { rm -rf "$TMP"; rm -f "$LEAK"; }
+trap cleanup EXIT
 
-falhas=0
+failures=0
 ok() { printf 'ok    %s\n' "$1"; }
-falhou() { printf 'FALHA %s\n' "$1" >&2; falhas=$((falhas + 1)); }
+failed() { printf 'FALHA %s\n' "$1" >&2; failures=$((failures + 1)); }
 
-# Copia os arquivos que o git rastreia (`git ls-files`, com o conteúdo da árvore de
-# trabalho), sem `.dev/`, `target/` nem `node_modules/`, que o git ignora. Fase 28d: antes
-# copiava só `crates/` e alguns arquivos soltos, mas o workspace tem membro em `app/`
-# (`app/core`) e os testes leem `dev/fixtures/` por `include_str!`; a cópia quebrava no
-# clippy antes dos ataques. Com a lista do git, o que o workspace referencia vai junto.
-# O gitleaks vai para o `.dev/` da cópia: o Makefile só usa o dele (`GITLEAKS :=`) e
-# confere o sha256 do binário.
-copiar_workspace() {
-    local destino="$1"
-    mkdir -p "$destino/.dev/tools/bin"
-    (cd "$RAIZ" && git ls-files -z --cached) \
-        | (cd "$RAIZ" && tar --null --no-recursion -T - -cf -) \
-        | tar -C "$destino" -xf -
-    # Um repositório git vazio na cópia corta a descoberta: o `git`/`gitleaks git` da cópia
-    # nunca vê um repositório de cima (o home pode ser um; antes da 28f era o próprio Ward).
-    (cd "$destino" && git init -q)
-    local essencial
-    for essencial in Cargo.toml Cargo.lock Makefile dev/origins.py app/core/Cargo.toml \
+# Copies the files git tracks (`git ls-files`, with the working tree content), without
+# `.dev/`, `target/` or `node_modules/`, which git ignores. Phase 28d: it used to copy only
+# `crates/` and a few loose files, but the workspace has a member in `app/` (`app/core`)
+# and the tests read `dev/fixtures/` through `include_str!`; the copy broke in clippy before
+# the attacks. With git's list, whatever the workspace references comes along.
+# gitleaks goes into the copy's `.dev/`: the Makefile only uses its own (`GITLEAKS :=`)
+# and verifies the binary's sha256.
+copy_workspace() {
+    local dest="$1"
+    mkdir -p "$dest/.dev/tools/bin"
+    (cd "$ROOT" && git ls-files -z --cached) \
+        | (cd "$ROOT" && tar --null --no-recursion -T - -cf -) \
+        | tar -C "$dest" -xf -
+    # An empty git repository in the copy cuts the discovery: the copy's `git`/`gitleaks git`
+    # never sees a repository above (the home may be one; before 28f it was Ward itself).
+    (cd "$dest" && git init -q)
+    local essential
+    for essential in Cargo.toml Cargo.lock Makefile dev/origins.py app/core/Cargo.toml \
         dev/fixtures/entries.json; do
-        [ -f "$destino/$essencial" ] || { echo "copiar_workspace: falta $essencial" >&2; exit 1; }
+        [ -f "$dest/$essential" ] || { echo "copy_workspace: falta $essential" >&2; exit 1; }
     done
-    cp "$GITLEAKS" "$destino/.dev/tools/bin/gitleaks"
+    cp "$GITLEAKS" "$dest/.dev/tools/bin/gitleaks"
 }
 
-# Acrescenta um crate de teste `crates/ataque` com a dependência dada.
-adicionar_crate_ataque() {
-    local destino="$1" dependencia="$2"
-    mkdir -p "$destino/crates/ataque/src"
-    cat >"$destino/crates/ataque/Cargo.toml" <<EOF
+# Adds a test crate `crates/attack` with the given dependency.
+add_attack_crate() {
+    local dest="$1" dependency="$2"
+    mkdir -p "$dest/crates/attack/src"
+    cat >"$dest/crates/attack/Cargo.toml" <<EOF
 [package]
-name = "ataque"
+name = "attack"
 version = "0.1.0"
 edition = "2024"
 publish = false
 
 [dependencies]
-$dependencia
+$dependency
 EOF
-    printf '//! Crate de teste do ataque de dependência.\n' >"$destino/crates/ataque/src/lib.rs"
-    sed -i 's|^    "crates/ward-test-bridge",$|    "crates/ward-test-bridge",\n    "crates/ataque",|' \
-        "$destino/Cargo.toml"
-    grep -q '"crates/ataque"' "$destino/Cargo.toml"
-    (cd "$destino" && cargo generate-lockfile --quiet)
+    printf '//! Test crate of the dependency attack.\n' >"$dest/crates/attack/src/lib.rs"
+    sed -i 's|^    "crates/ward-test-bridge",$|    "crates/ward-test-bridge",\n    "crates/attack",|' \
+        "$dest/Cargo.toml"
+    grep -q '"crates/attack"' "$dest/Cargo.toml"
+    (cd "$dest" && cargo generate-lockfile --quiet)
 }
 
-# --- V1.2 (S15): chave privada OpenSSH e segredo AWS num arquivo novo ----------------
+# --- V1.2 (S15): OpenSSH private key and AWS secret in a new file --------------------
 v1_2() {
-    ssh-keygen -q -t ed25519 -N '' -C 'ward-teste-vazamento' -f "$TMP/chave" </dev/null
-    local segredo
-    segredo="$(head -c 96 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 40)"
-    [ "${#segredo}" -eq 40 ]
+    ssh-keygen -q -t ed25519 -N '' -C 'ward-test-leak' -f "$TMP/key" </dev/null
+    local secret
+    secret="$(head -c 96 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 40)"
+    [ "${#secret}" -eq 40 ]
     {
-        cat "$TMP/chave"
-        printf 'aws_secret_access_key = %s\n' "$segredo"
-    } >"$VAZAMENTO"
-    rm -f "$TMP/chave" "$TMP/chave.pub"
+        cat "$TMP/key"
+        printf 'aws_secret_access_key = %s\n' "$secret"
+    } >"$LEAK"
+    rm -f "$TMP/key" "$TMP/key.pub"
 
-    local saida rc=0
-    saida="$(cd "$RAIZ" && make check 2>&1)" || rc=$?
-    if [ "$rc" -ne 0 ] && grep -q 'vazamento.txt' <<<"$saida"; then
-        ok "V1.2 make check sai $rc e aponta vazamento.txt"
+    local output rc=0
+    output="$(cd "$ROOT" && make check 2>&1)" || rc=$?
+    if [ "$rc" -ne 0 ] && grep -q 'leak.txt' <<<"$output"; then
+        ok "V1.2 make check sai $rc e aponta leak.txt"
     else
-        falhou "V1.2 make check não pegou vazamento.txt (exit $rc)"
+        failed "V1.2 make check não pegou leak.txt (exit $rc)"
     fi
-    # O relatório não pode repetir o segredo (--redact).
-    if grep -qF "$segredo" <<<"$saida"; then
-        falhou "V1.2 a saída do make check repete o segredo"
+    # The report must not repeat the secret (--redact).
+    if grep -qF "$secret" <<<"$output"; then
+        failed "V1.2 a saída do make check repete o segredo"
     else
         ok "V1.2 a saída do make check não repete o segredo"
     fi
 
-    rm -f "$VAZAMENTO"
-    if (cd "$RAIZ" && make check >"$TMP/v1_2-limpo.log" 2>&1); then
+    rm -f "$LEAK"
+    if (cd "$ROOT" && make check >"$TMP/v1_2-clean.log" 2>&1); then
         ok "V1.2 sem o arquivo, make check volta a 0"
     else
-        falhou "V1.2 sem o arquivo, make check continua falhando (ver $TMP/v1_2-limpo.log)"
-        tail -20 "$TMP/v1_2-limpo.log" >&2
+        failed "V1.2 sem o arquivo, make check continua falhando (ver $TMP/v1_2-clean.log)"
+        tail -20 "$TMP/v1_2-clean.log" >&2
     fi
 }
 
-# --- allowlist de D15 casa o valor inteiro: "falso-…" + segredo real é achado -------
-allowlist_ancorada() {
-    local dir="$TMP/ancora"
-    copiar_workspace "$dir"
+# --- the D15 allowlist matches the whole value: "falso-…" + a real secret is found ----
+anchored_allowlist() {
+    local dir="$TMP/anchor"
+    copy_workspace "$dir"
     printf 'api_secret = "falso-WP-senha-01%s"\n' \
-        "$(head -c 96 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 24)" >"$dir/burla.txt"
+        "$(head -c 96 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 24)" >"$dir/bypass.txt"
     local rc=0
     (cd "$dir" && "$GITLEAKS" dir --config dev/gitleaks-tree.toml --redact --no-banner \
         --exit-code 1 . >/dev/null 2>&1) || rc=$?
     if [ "$rc" -ne 0 ]; then
         ok "allowlist: valor falso com sufixo ainda é achado"
     else
-        falhou "allowlist: 'falso-WP-senha-01<segredo>' passou pelo gitleaks"
+        failed "allowlist: 'falso-WP-senha-01<segredo>' passou pelo gitleaks"
     fi
 }
 
-# --- arquivo de `.dev/` forçado para o índice (git add -f) é achado ----------------
-dev_forcado_no_indice() {
-    local dir="$TMP/indice"
-    copiar_workspace "$dir"
+# --- a `.dev/` file forced into the index (git add -f) is found -----------------------
+dev_forced_into_index() {
+    local dir="$TMP/index"
+    copy_workspace "$dir"
     mkdir -p "$dir/.dev"
-    ssh-keygen -q -t ed25519 -N '' -C 'ward-teste-indice' -f "$dir/.dev/chave" </dev/null
-    (cd "$dir" && git init -q && git add -f .dev/chave)
-    local saida rc=0
-    saida="$(cd "$dir" && make gitleaks 2>&1)" || rc=$?
-    if [ "$rc" -ne 0 ] && grep -q '.dev/chave' <<<"$saida"; then
+    ssh-keygen -q -t ed25519 -N '' -C 'ward-test-index' -f "$dir/.dev/key" </dev/null
+    (cd "$dir" && git init -q && git add -f .dev/key)
+    local output rc=0
+    output="$(cd "$dir" && make gitleaks 2>&1)" || rc=$?
+    if [ "$rc" -ne 0 ] && grep -q '.dev/key' <<<"$output"; then
         ok "índice: chave em .dev/ forçada com git add -f é achada"
     else
-        falhou "índice: chave forçada em .dev/ passou pelo gitleaks (exit $rc)"
+        failed "índice: chave forçada em .dev/ passou pelo gitleaks (exit $rc)"
     fi
 }
 
-# --- V1.3 (S14): dependência com advisory conhecido -------------------------------
+# --- V1.3 (S14): dependency with a known advisory -------------------------------------
 v1_3_advisory() {
     local dir="$TMP/advisory"
-    copiar_workspace "$dir"
-    adicionar_crate_ataque "$dir" 'time = "=0.1.43"'
-    local saida rc=0
-    saida="$(cd "$dir" && make check 2>&1)" || rc=$?
-    if [ "$rc" -ne 0 ] && grep -q '==> 4/6 cargo audit' <<<"$saida" \
-        && grep -q 'RUSTSEC-2020-0071' <<<"$saida"; then
+    copy_workspace "$dir"
+    add_attack_crate "$dir" 'time = "=0.1.43"'
+    local output rc=0
+    output="$(cd "$dir" && make check 2>&1)" || rc=$?
+    if [ "$rc" -ne 0 ] && grep -q '==> 4/6 cargo audit' <<<"$output" \
+        && grep -q 'RUSTSEC-2020-0071' <<<"$output"; then
         ok "V1.3 make check falha em cargo audit com RUSTSEC-2020-0071"
     else
-        falhou "V1.3 make check não falhou em cargo audit pelo advisory (exit $rc)"
-        tail -30 <<<"$saida" >&2
+        failed "V1.3 make check não falhou em cargo audit pelo advisory (exit $rc)"
+        tail -30 <<<"$output" >&2
     fi
-    # Segunda barreira: cargo deny sozinho também recusa.
+    # Second barrier: cargo deny alone also refuses.
     rc=0
-    saida="$(cd "$dir" && make deny 2>&1)" || rc=$?
-    if [ "$rc" -ne 0 ] && grep -q 'RUSTSEC-2020-0071' <<<"$saida"; then
+    output="$(cd "$dir" && make deny 2>&1)" || rc=$?
+    if [ "$rc" -ne 0 ] && grep -q 'RUSTSEC-2020-0071' <<<"$output"; then
         ok "V1.3 cargo deny também recusa RUSTSEC-2020-0071"
     else
-        falhou "V1.3 cargo deny aceitou o advisory (exit $rc)"
+        failed "V1.3 cargo deny aceitou o advisory (exit $rc)"
     fi
 }
 
-# --- V1.3 (S14): dependência vinda de git não permitido ---------------------------
+# --- V1.3 (S14): dependency from a git source that is not allowed ---------------------
 v1_3_git() {
     local repo="$TMP/repo-git"
     mkdir -p "$repo/src"
     cat >"$repo/Cargo.toml" <<'EOF'
 [package]
-name = "falso-git"
+name = "fake-git"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
 EOF
-    printf '//! Crate falso servido por git.\n' >"$repo/src/lib.rs"
+    printf '//! Fake crate served over git.\n' >"$repo/src/lib.rs"
     (cd "$repo" && git init -q && git add -A \
-        && git -c user.name=teste -c user.email=teste@teste.invalid commit -q -m teste)
+        && git -c user.name=test -c user.email=test@test.invalid commit -q -m test)
 
     local dir="$TMP/git"
-    copiar_workspace "$dir"
-    adicionar_crate_ataque "$dir" "falso-git = { git = \"file://$repo\" }"
-    local saida rc=0
-    saida="$(cd "$dir" && make check 2>&1)" || rc=$?
-    # Fase 12b: a origem git já é recusada na pré-checagem (antes de o clippy compilar o
-    # crate, com build.rs, no passo 2); o cargo deny continua recusando também.
-    if [ "$rc" -ne 0 ] && grep -q '==> 0/6 origens' <<<"$saida" && ! grep -q '==> 1/6' <<<"$saida" \
-        && grep -q "origens: pacote falso-git: fonte fora do crates.io" <<<"$saida"; then
+    copy_workspace "$dir"
+    add_attack_crate "$dir" "fake-git = { git = \"file://$repo\" }"
+    local output rc=0
+    output="$(cd "$dir" && make check 2>&1)" || rc=$?
+    # Phase 12b: the git origin is already refused in the pre-check (before clippy compiles
+    # the crate, with build.rs, in step 2); cargo deny keeps refusing it too.
+    if [ "$rc" -ne 0 ] && grep -q '==> 0/6 origens' <<<"$output" && ! grep -q '==> 1/6' <<<"$output" \
+        && grep -q "origens: pacote fake-git: fonte fora do crates.io" <<<"$output"; then
         ok "V1.3 make check recusa a origem git na pré-checagem, antes do passo 1"
     else
-        falhou "V1.3 make check não recusou a dependência de git antes do passo 1 (exit $rc)"
-        tail -30 <<<"$saida" >&2
+        failed "V1.3 make check não recusou a dependência de git antes do passo 1 (exit $rc)"
+        tail -30 <<<"$output" >&2
     fi
     rc=0
-    saida="$(cd "$dir" && "$CASA_PASSWD/.cargo/bin/cargo-deny" --all-features check 2>&1)" || rc=$?
-    if [ "$rc" -ne 0 ] && grep -q "source-not-allowed" <<<"$saida" && grep -q "falso-git" <<<"$saida"; then
+    output="$(cd "$dir" && "$CASA_PASSWD/.cargo/bin/cargo-deny" --all-features check 2>&1)" || rc=$?
+    if [ "$rc" -ne 0 ] && grep -q "source-not-allowed" <<<"$output" && grep -q "fake-git" <<<"$output"; then
         ok "V1.3 cargo deny também recusa a origem git (source-not-allowed)"
     else
-        falhou "V1.3 cargo deny aceitou a dependência de git (exit $rc)"
+        failed "V1.3 cargo deny aceitou a dependência de git (exit $rc)"
     fi
 }
 
-# --- V1.3 (S14): Cargo.lock existe e não é ignorado pelo git -----------------------
+# --- V1.3 (S14): Cargo.lock exists and is not ignored by git --------------------------
 v1_3_lockfile() {
-    if [ -f "$RAIZ/Cargo.lock" ] && ! (cd "$RAIZ" && git check-ignore -q Cargo.lock); then
+    if [ -f "$ROOT/Cargo.lock" ] && ! (cd "$ROOT" && git check-ignore -q Cargo.lock); then
         ok "V1.3 Cargo.lock existe e não é ignorado"
     else
-        falhou "V1.3 Cargo.lock ausente ou ignorado pelo git"
+        failed "V1.3 Cargo.lock ausente ou ignorado pelo git"
     fi
 }
 
-# --- V1.5 (S15): .dev/ ignorado; Makefile e scripts não citam pastas do usuário ----
+# --- V1.5 (S15): .dev/ ignored; Makefile and scripts do not name the user's dirs -------
 v1_5() {
-    local alvo
-    for alvo in .dev/qualquer .dev/test-vault.ward .dev/tools/bin/gitleaks; do
-        if (cd "$RAIZ" && git check-ignore -q "$alvo"); then
-            ok "V1.5 $alvo é ignorado"
+    local target
+    for target in .dev/anything .dev/test-vault.ward .dev/tools/bin/gitleaks; do
+        if (cd "$ROOT" && git check-ignore -q "$target"); then
+            ok "V1.5 $target é ignorado"
         else
-            falhou "V1.5 $alvo NÃO é ignorado pelo git"
+            failed "V1.5 $target NÃO é ignorado pelo git"
         fi
     done
 
-    # Padrões montados por partes para este arquivo não casar consigo mesmo.
-    local padroes=(
+    # Patterns built in pieces so that this file does not match itself.
+    local patterns=(
         '\.local/share/w''ard'
         '\.s''sh(/|\b)'
         '\.a''ws(/|\b)'
@@ -269,405 +269,406 @@ v1_5() {
         'ssh_con''fig'
         'SSH_AUTH''_SOCK'
     )
-    local arquivos=("$RAIZ/Makefile")
-    while IFS= read -r -d '' f; do arquivos+=("$f"); done \
-        < <(find "$RAIZ/dev" -type f -print0)
-    local p achou=0
-    for p in "${padroes[@]}"; do
-        if grep -nEi -- "$p" "${arquivos[@]}" >&2; then
-            achou=1
+    local files=("$ROOT/Makefile")
+    while IFS= read -r -d '' f; do files+=("$f"); done \
+        < <(find "$ROOT/dev" -type f -print0)
+    local p found=0
+    for p in "${patterns[@]}"; do
+        if grep -nEi -- "$p" "${files[@]}" >&2; then
+            found=1
         fi
     done
-    if [ "$achou" -eq 0 ]; then
+    if [ "$found" -eq 0 ]; then
         ok "V1.5 Makefile e dev/ não citam pasta proibida"
     else
-        falhou "V1.5 Makefile ou dev/ cita pasta proibida (linhas acima)"
+        failed "V1.5 Makefile ou dev/ cita pasta proibida (linhas acima)"
     fi
 }
 
-# --- Fase 12a (S15): chave/AWS em caminho que a allowlist global do gitleaks pula --------
-# As regras padrão do gitleaks ignoram lockfiles, imagens, svg, pdf, fontes, vendor e
-# `gitleaks.toml`, e não abrem arquivo compactado. A varredura extra tem de achar em
-# todos, na árvore e no índice.
-extra_sem_allowlist_de_caminho() {
-    local chave segredo akid
-    ssh-keygen -q -t ed25519 -N '' -C 'ward-teste-extra' -f "$TMP/chave-extra" </dev/null
-    chave="$(cat "$TMP/chave-extra")"
-    rm -f "$TMP/chave-extra" "$TMP/chave-extra.pub"
-    segredo="$(head -c 96 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 40)"
+# --- Phase 12a (S15): key/AWS in a path the global gitleaks allowlist skips -------------
+# The default gitleaks rules ignore lockfiles, images, svg, pdf, fonts, vendor and
+# `gitleaks.toml`, and do not open compressed files. The extra scan has to find it in all
+# of them, in the tree and in the index.
+extra_without_path_allowlist() {
+    local key secret akid
+    ssh-keygen -q -t ed25519 -N '' -C 'ward-test-extra' -f "$TMP/key-extra" </dev/null
+    key="$(cat "$TMP/key-extra")"
+    rm -f "$TMP/key-extra" "$TMP/key-extra.pub"
+    secret="$(head -c 96 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 40)"
     akid="AKIA$(head -c 96 /dev/urandom | base64 | tr -dc 'A-Z2-7' | head -c 16)"
     local base="$TMP/extra-base"
-    copiar_workspace "$base"
-    local f tipo conteudo dir rc saida
-    for tipo in chave aws id; do
-        case "$tipo" in
-            chave) conteudo="$chave" ;;
-            aws) conteudo="aws_secret_access_key = $segredo" ;;
-            id) conteudo="aws_access_key_id = $akid" ;;
+    copy_workspace "$base"
+    local f kind content dir rc output
+    for kind in chave aws id; do
+        case "$kind" in
+            chave) content="$key" ;;
+            aws) content="aws_secret_access_key = $secret" ;;
+            id) content="aws_access_key_id = $akid" ;;
         esac
         for f in app/package-lock.json app/pnpm-lock.yaml Cargo.lock.bak go.sum gitleaks.toml \
-            docs/.gitleaks.toml docs/icone.svg docs/foto.png docs/manual.pdf docs/fonte.woff2 \
-            vendor/x/README docs/pacote.txt.gz; do
+            docs/.gitleaks.toml docs/icon.svg docs/photo.png docs/manual.pdf docs/font.woff2 \
+            vendor/x/README docs/package.txt.gz; do
             dir="$TMP/extra"
             rm -rf "$dir"
             cp -a "$base" "$dir"
             mkdir -p "$(dirname "$dir/$f")"
             if [[ "$f" == *.gz ]]; then
-                printf '%s\n' "$conteudo" | gzip >"$dir/$f"
+                printf '%s\n' "$content" | gzip >"$dir/$f"
             else
-                printf '%s\n' "$conteudo" >"$dir/$f"
+                printf '%s\n' "$content" >"$dir/$f"
             fi
             rc=0
-            saida="$(cd "$dir" && make gitleaks 2>&1)" || rc=$?
-            if [ "$rc" -eq 0 ] || ! grep -q "$f" <<<"$saida"; then
-                falhou "extra: $tipo em $f passou pela árvore (exit $rc)"
-            elif grep -qF -e "$segredo" -e "$akid" <<<"$saida"; then
-                falhou "extra: a saída repete o segredo ($f)"
+            output="$(cd "$dir" && make gitleaks 2>&1)" || rc=$?
+            if [ "$rc" -eq 0 ] || ! grep -q "$f" <<<"$output"; then
+                failed "extra: $kind em $f passou pela árvore (exit $rc)"
+            elif grep -qF -e "$secret" -e "$akid" <<<"$output"; then
+                failed "extra: a saída repete o segredo ($f)"
             else
-                ok "extra: $tipo em $f é achado na árvore"
+                ok "extra: $kind em $f é achado na árvore"
             fi
-            # Índice: o mesmo arquivo forçado com git add -f.
+            # Index: the same file forced with git add -f.
             (cd "$dir" && git init -q && git add -f "$f")
             rc=0
             (cd "$dir" && "$GITLEAKS" git --staged --pre-commit --config dev/gitleaks-extra.toml \
                 --redact --no-banner --max-archive-depth 3 --exit-code 1 . >/dev/null 2>&1) || rc=$?
-            if [ "$rc" -ne 0 ]; then ok "extra: $tipo em $f é achado no índice"; else falhou "extra: $tipo em $f passou pelo índice"; fi
+            if [ "$rc" -ne 0 ]; then ok "extra: $kind em $f é achado no índice"; else failed "extra: $kind em $f passou pelo índice"; fi
         done
     done
     rm -rf "$TMP/extra" "$base"
 }
 
-# --- Fase 12a (S14): origens do cargo que o cargo deny não vê ---------------------------
-# origem_recusada <descrição> <diretório da cópia>: `make origins` tem de falhar.
-origem_recusada() {
-    local rc=0 saida
-    saida="$(cd "$2" && env "${@:3}" make origins 2>&1)" || rc=$?
-    if [ "$rc" -ne 0 ] && grep -q '^origens: ' <<<"$saida"; then
+# --- Phase 12a (S14): cargo origins that cargo deny does not see ------------------------
+# refused_origin <description> <copy dir>: `make origins` has to fail.
+refused_origin() {
+    local rc=0 output
+    output="$(cd "$2" && env "${@:3}" make origins 2>&1)" || rc=$?
+    if [ "$rc" -ne 0 ] && grep -q '^origens: ' <<<"$output"; then
         ok "origens: $1 é recusado"
     else
-        falhou "origens: $1 passou (exit $rc)"
+        failed "origens: $1 passou (exit $rc)"
     fi
 }
-origens_do_cargo() {
+cargo_origins() {
     local dir
-    # Substituição de fonte por diretório vendorizado (o ataque da auditoria). Aqui pelo
-    # `make check` inteiro: tem de falhar na pré-checagem, antes do passo 1.
+    # Source replacement by a vendored directory (the audit's attack). Here through the
+    # whole `make check`: it has to fail in the pre-check, before step 1.
     dir="$TMP/vendor"
-    copiar_workspace "$dir"
+    copy_workspace "$dir"
     mkdir -p "$dir/.cargo" "$dir/vendor"
     printf '[source.crates-io]\nreplace-with = "v"\n\n[source.v]\ndirectory = "vendor"\n' >"$dir/.cargo/config.toml"
-    local saida rc=0
-    saida="$(cd "$dir" && make check 2>&1)" || rc=$?
-    if [ "$rc" -ne 0 ] && grep -q '==> 0/6 origens' <<<"$saida" && ! grep -q '==> 1/6' <<<"$saida" \
-        && grep -q '.cargo/config.toml: .cargo/config\* no repositório é proibido' <<<"$saida"; then
+    local output rc=0
+    output="$(cd "$dir" && make check 2>&1)" || rc=$?
+    if [ "$rc" -ne 0 ] && grep -q '==> 0/6 origens' <<<"$output" && ! grep -q '==> 1/6' <<<"$output" \
+        && grep -q '.cargo/config.toml: .cargo/config\* no repositório é proibido' <<<"$output"; then
         ok "origens: make check falha na pré-checagem (antes do passo 1) com replace-with para vendor/"
     else
-        falhou "origens: make check aceitou a substituição de fonte (exit $rc)"
-        tail -20 <<<"$saida" >&2
+        failed "origens: make check aceitou a substituição de fonte (exit $rc)"
+        tail -20 <<<"$output" >&2
     fi
-    # Chave pontilhada (sem cabeçalho de tabela `[source`).
-    dir="$TMP/pontilhada"; copiar_workspace "$dir"; mkdir -p "$dir/.cargo"
+    # Dotted key (no `[source` table header).
+    dir="$TMP/dotted"; copy_workspace "$dir"; mkdir -p "$dir/.cargo"
     printf 'source.crates-io.replace-with = "v"\nsource.v.directory = "vendor"\n' >"$dir/.cargo/config.toml"
-    origem_recusada "source em chave pontilhada" "$dir"
-    # `.cargo/config` sem extensão, com [patch].
-    dir="$TMP/config-antigo"; copiar_workspace "$dir"; mkdir -p "$dir/.cargo"
+    refused_origin "source em chave pontilhada" "$dir"
+    # `.cargo/config` without extension, with [patch].
+    dir="$TMP/old-config"; copy_workspace "$dir"; mkdir -p "$dir/.cargo"
     printf '[patch.crates-io]\nitoa = { path = "x" }\n' >"$dir/.cargo/config"
-    origem_recusada ".cargo/config com [patch]" "$dir"
-    # Registro alternativo.
-    dir="$TMP/registro"; copiar_workspace "$dir"; mkdir -p "$dir/.cargo"
+    refused_origin ".cargo/config com [patch]" "$dir"
+    # Alternative registry.
+    dir="$TMP/registry"; copy_workspace "$dir"; mkdir -p "$dir/.cargo"
     printf '[registries.mau]\nindex = "sparse+https://example.invalid/index/"\n' >"$dir/.cargo/config.toml"
-    origem_recusada "[registries]" "$dir"
-    # Config num diretório pai da raiz (o cargo também lê).
-    mkdir -p "$TMP/pai/.cargo"
-    printf '[source.crates-io]\nreplace-with = "v"\n[source.v]\ndirectory = "/nao/existe"\n' >"$TMP/pai/.cargo/config.toml"
-    dir="$TMP/pai/filho"; copiar_workspace "$dir"
-    origem_recusada "source num .cargo/config.toml de diretório pai" "$dir"
-    # TOML inválido não passa em silêncio.
-    dir="$TMP/invalido"; copiar_workspace "$dir"; mkdir -p "$dir/.cargo"
+    refused_origin "[registries]" "$dir"
+    # Config in a parent directory of the root (cargo reads it too).
+    mkdir -p "$TMP/parent/.cargo"
+    printf '[source.crates-io]\nreplace-with = "v"\n[source.v]\ndirectory = "/does/not/exist"\n' >"$TMP/parent/.cargo/config.toml"
+    dir="$TMP/parent/child"; copy_workspace "$dir"
+    refused_origin "source num .cargo/config.toml de diretório pai" "$dir"
+    # Invalid TOML does not pass silently.
+    dir="$TMP/invalid"; copy_workspace "$dir"; mkdir -p "$dir/.cargo"
     printf '[source\n' >"$dir/.cargo/config.toml"
-    origem_recusada ".cargo/config.toml inválido" "$dir"
-    # Variável de ambiente.
-    dir="$TMP/ambiente"; copiar_workspace "$dir"
-    origem_recusada "CARGO_REGISTRIES_MAU_INDEX no ambiente" "$dir" CARGO_REGISTRIES_MAU_INDEX=sparse+https://example.invalid/
-    # [patch] e [replace] no Cargo.toml do workspace.
-    dir="$TMP/patch"; copiar_workspace "$dir"
-    printf '\n[patch.crates-io]\nward-falso = { path = "crates/ward-core" }\n' >>"$dir/Cargo.toml"
-    origem_recusada "[patch] no Cargo.toml" "$dir"
-    dir="$TMP/replace"; copiar_workspace "$dir"
+    refused_origin ".cargo/config.toml inválido" "$dir"
+    # Environment variable.
+    dir="$TMP/environment"; copy_workspace "$dir"
+    refused_origin "CARGO_REGISTRIES_MAU_INDEX no ambiente" "$dir" CARGO_REGISTRIES_MAU_INDEX=sparse+https://example.invalid/
+    # [patch] and [replace] in the workspace Cargo.toml.
+    dir="$TMP/patch"; copy_workspace "$dir"
+    printf '\n[patch.crates-io]\nward-fake = { path = "crates/ward-core" }\n' >>"$dir/Cargo.toml"
+    refused_origin "[patch] no Cargo.toml" "$dir"
+    dir="$TMP/replace"; copy_workspace "$dir"
     printf '\n[replace]\n"itoa:1.0.15" = { path = "crates/ward-core" }\n' >>"$dir/Cargo.toml"
-    origem_recusada "[replace] no Cargo.toml" "$dir"
-    # Dependência por path fora do repositório.
-    mkdir -p "$TMP/fora/src"
-    printf '[package]\nname = "fora"\nversion = "0.1.0"\nedition = "2024"\nlicense = "MIT"\n' >"$TMP/fora/Cargo.toml"
-    printf '//! Crate fora do repositório.\n' >"$TMP/fora/src/lib.rs"
-    dir="$TMP/path-fora"; copiar_workspace "$dir"
-    adicionar_crate_ataque "$dir" "fora = { path = \"$TMP/fora\" }"
-    origem_recusada "dependência por path fora do repositório" "$dir"
-    # Path relativo que sai da raiz por `..`.
-    dir="$TMP/path-rel"; copiar_workspace "$dir"
-    adicionar_crate_ataque "$dir" 'fora = { path = "../../../fora" }'
-    origem_recusada "path relativo com .. para fora do repositório" "$dir"
-    # Controle: a cópia limpa passa.
-    dir="$TMP/limpa"; copiar_workspace "$dir"
-    if (cd "$dir" && make origins >/dev/null 2>&1); then ok "origens: cópia limpa passa"; else falhou "origens: cópia limpa recusada"; fi
+    refused_origin "[replace] no Cargo.toml" "$dir"
+    # Path dependency outside the repository.
+    mkdir -p "$TMP/outside/src"
+    printf '[package]\nname = "outside"\nversion = "0.1.0"\nedition = "2024"\nlicense = "MIT"\n' >"$TMP/outside/Cargo.toml"
+    printf '//! Crate outside the repository.\n' >"$TMP/outside/src/lib.rs"
+    dir="$TMP/path-outside"; copy_workspace "$dir"
+    add_attack_crate "$dir" "outside = { path = \"$TMP/outside\" }"
+    refused_origin "dependência por path fora do repositório" "$dir"
+    # Relative path that leaves the root through `..`.
+    dir="$TMP/path-rel"; copy_workspace "$dir"
+    add_attack_crate "$dir" 'outside = { path = "../../../outside" }'
+    refused_origin "path relativo com .. para fora do repositório" "$dir"
+    # Control: the clean copy passes.
+    dir="$TMP/clean"; copy_workspace "$dir"
+    if (cd "$dir" && make origins >/dev/null 2>&1); then ok "origens: cópia limpa passa"; else failed "origens: cópia limpa recusada"; fi
 }
 
-# --- Fase 12a: ferramenta trocada (binário do gitleaks e variáveis de ambiente) ----------
-ferramentas_fixas() {
-    local dir="$TMP/ferramentas" rc saida
-    copiar_workspace "$dir"
-    ssh-keygen -q -t ed25519 -N '' -C 'ward-teste-ferr' -f "$dir/vazou" </dev/null
-    rm -f "$dir/vazou.pub"
-    # GITLEAKS no ambiente não troca o gitleaks do Makefile: o vazamento continua achado.
+# --- Phase 12a: swapped tool (gitleaks binary and environment variables) -----------------
+fixed_tools() {
+    local dir="$TMP/tools" rc output
+    copy_workspace "$dir"
+    ssh-keygen -q -t ed25519 -N '' -C 'ward-test-tools' -f "$dir/leaked" </dev/null
+    rm -f "$dir/leaked.pub"
+    # GITLEAKS in the environment does not swap the Makefile's gitleaks: the leak is still found.
     rc=0
     (cd "$dir" && GITLEAKS=/bin/true make gitleaks >/dev/null 2>&1) || rc=$?
-    if [ "$rc" -ne 0 ]; then ok "GITLEAKS=/bin/true no ambiente não desliga o gitleaks"; else falhou "GITLEAKS do ambiente trocou o gitleaks"; fi
-    # CARGO no ambiente não troca o cargo: com CARGO=false o fmt-check ainda roda e passa.
-    if (cd "$dir" && CARGO=false make fmt-check >/dev/null 2>&1); then ok "CARGO=false no ambiente não troca o cargo"; else falhou "CARGO do ambiente trocou o cargo"; fi
-    # Binário do gitleaks adulterado em .dev/: recusado antes de varrer.
-    rm -f "$dir/vazou"
+    if [ "$rc" -ne 0 ]; then ok "GITLEAKS=/bin/true no ambiente não desliga o gitleaks"; else failed "GITLEAKS do ambiente trocou o gitleaks"; fi
+    # CARGO in the environment does not swap cargo: with CARGO=false fmt-check still runs and passes.
+    if (cd "$dir" && CARGO=false make fmt-check >/dev/null 2>&1); then ok "CARGO=false no ambiente não troca o cargo"; else failed "CARGO do ambiente trocou o cargo"; fi
+    # Tampered gitleaks binary in .dev/: refused before scanning.
+    rm -f "$dir/leaked"
     printf '#!/bin/sh\nexit 0\n' >"$dir/.dev/tools/bin/gitleaks"
     rc=0
-    saida="$(cd "$dir" && make gitleaks 2>&1)" || rc=$?
-    if [ "$rc" -ne 0 ] && grep -q 'não é o gitleaks' <<<"$saida"; then
+    output="$(cd "$dir" && make gitleaks 2>&1)" || rc=$?
+    if [ "$rc" -ne 0 ] && grep -q 'não é o gitleaks' <<<"$output"; then
         ok "gitleaks trocado em .dev/ é recusado pelo sha256"
     else
-        falhou "gitleaks trocado em .dev/ rodou (exit $rc)"
+        failed "gitleaks trocado em .dev/ rodou (exit $rc)"
     fi
     cp "$GITLEAKS" "$dir/.dev/tools/bin/gitleaks"
     printf 'x' >>"$dir/.dev/tools/bin/gitleaks"
     rc=0
     (cd "$dir" && make gitleaks >/dev/null 2>&1) || rc=$?
-    if [ "$rc" -ne 0 ]; then ok "gitleaks com um byte a mais é recusado"; else falhou "gitleaks com um byte a mais rodou"; fi
+    if [ "$rc" -ne 0 ]; then ok "gitleaks com um byte a mais é recusado"; else failed "gitleaks com um byte a mais rodou"; fi
 }
 
-# --- Fase 12b (S14): origens como lista de permitidas, antes do passo 1 ---------------------
-# Os vetores da 2ª auditoria (scratchpad/r2: v13-alias.sh, ataque-config.sh, wrap.sh): um
-# `.cargo/config.toml` ou uma variável de ambiente que troca o que o cargo executa. Cada um
-# roda o `make check` inteiro numa cópia e tem de falhar na pré-checagem `0/6`, antes do
-# passo 1, sem que o programa plantado rode (a marca não pode aparecer).
-MARCAS="$TMP/marcas"
-preparar_iscas_cargo() {
-    mkdir -p "$TMP/iscas"
-    # wrap.sh da auditoria: troca o fonte do ward-core que o rustc compila.
-    cat >"$TMP/iscas/wrap.sh" <<EOF
+# --- Phase 12b (S14): origins as an allowlist, before step 1 ---------------------------------
+# The vectors of the 2nd audit (scratchpad/r2: v13-alias.sh, ataque-config.sh, wrap.sh): a
+# `.cargo/config.toml` or an environment variable that swaps what cargo runs. Each one
+# runs the whole `make check` in a copy and has to fail in the `0/6` pre-check, before
+# step 1, without the planted program running (the mark must not show up).
+MARKS="$TMP/marks"
+prepare_cargo_decoys() {
+    mkdir -p "$TMP/decoys"
+    # The audit's wrap.sh: swaps the ward-core source that rustc compiles.
+    cat >"$TMP/decoys/wrap.sh" <<EOF
 #!/bin/bash
-echo "wrapper \$*" | head -c 80 >>"$MARCAS"; echo >>"$MARCAS"
+echo "wrapper \$*" | head -c 80 >>"$MARKS"; echo >>"$MARKS"
 args=()
 for a in "\$@"; do
     if [[ "\$a" == *crates/ward-core/src/lib.rs ]]; then
-        printf '//! adulterado\npub fn porta_dos_fundos() -> u8 { 42 }\n' >"$TMP/iscas/lib.rs"; a="$TMP/iscas/lib.rs"
+        printf '//! tampered\npub fn back_door() -> u8 { 42 }\n' >"$TMP/decoys/lib.rs"; a="$TMP/decoys/lib.rs"
     fi
     args+=("\$a")
 done
 exec "\${args[@]}"
 EOF
-    printf '#!/bin/bash\necho rustc >>"%s"\nexec "%s/.cargo/bin/rustc" "$@"\n' "$MARCAS" "$CASA_PASSWD" >"$TMP/iscas/rustc.sh"
-    printf '#!/bin/bash\necho linker >>"%s"\nexec cc "$@"\n' "$MARCAS" >"$TMP/iscas/linker.sh"
-    printf '#!/bin/bash\necho programa >>"%s"\nexit 0\n' "$MARCAS" >"$TMP/iscas/programa.sh"
-    chmod +x "$TMP/iscas/"*.sh
-    # falso-ok do v13-alias.sh: um "audit"/"deny" que só diz que está tudo limpo.
-    mkdir -p "$TMP/falso-ok/src"
-    printf '[package]\nname = "falso-ok"\nversion = "0.1.0"\nedition = "2021"\n[workspace]\n' >"$TMP/falso-ok/Cargo.toml"
-    printf 'fn main() { println!("audit/deny falsos: tudo limpo"); }\n' >"$TMP/falso-ok/src/main.rs"
+    printf '#!/bin/bash\necho rustc >>"%s"\nexec "%s/.cargo/bin/rustc" "$@"\n' "$MARKS" "$CASA_PASSWD" >"$TMP/decoys/rustc.sh"
+    printf '#!/bin/bash\necho linker >>"%s"\nexec cc "$@"\n' "$MARKS" >"$TMP/decoys/linker.sh"
+    printf '#!/bin/bash\necho program >>"%s"\nexit 0\n' "$MARKS" >"$TMP/decoys/program.sh"
+    chmod +x "$TMP/decoys/"*.sh
+    # fake-ok of v13-alias.sh: an "audit"/"deny" that only says everything is clean.
+    mkdir -p "$TMP/fake-ok/src"
+    printf '[package]\nname = "fake-ok"\nversion = "0.1.0"\nedition = "2021"\n[workspace]\n' >"$TMP/fake-ok/Cargo.toml"
+    printf 'fn main() { println!("audit/deny falsos: tudo limpo"); }\n' >"$TMP/fake-ok/src/main.rs"
 }
 
-# barrado_antes <descrição> <cópia> [VAR=valor...]: `make check` sai ≠ 0 na pré-checagem,
-# antes do passo 1, e nada plantado rodou.
-barrado_antes() {
-    local d="$1" dir="$2" rc=0 saida
+# blocked_before <description> <copy> [VAR=value...]: `make check` exits ≠ 0 in the
+# pre-check, before step 1, and nothing planted ran.
+blocked_before() {
+    local d="$1" dir="$2" rc=0 output
     shift 2
-    rm -f "$MARCAS"
-    saida="$(cd "$dir" && env "$@" make check 2>&1)" || rc=$?
-    if [ "$rc" -ne 0 ] && grep -q '==> 0/6 origens' <<<"$saida" && ! grep -q '==> 1/6' <<<"$saida" \
-        && grep -q '^origens: ' <<<"$saida" && [ ! -e "$MARCAS" ]; then
+    rm -f "$MARKS"
+    output="$(cd "$dir" && env "$@" make check 2>&1)" || rc=$?
+    if [ "$rc" -ne 0 ] && grep -q '==> 0/6 origens' <<<"$output" && ! grep -q '==> 1/6' <<<"$output" \
+        && grep -q '^origens: ' <<<"$output" && [ ! -e "$MARKS" ]; then
         ok "pré-checagem: $d é barrado antes do passo 1"
     else
-        falhou "pré-checagem: $d passou ou rodou o programa plantado (exit $rc, marca: $([ -e "$MARCAS" ] && echo sim || echo não))"
-        grep -E '==>|^origens' <<<"$saida" | tail -5 >&2
+        failed "pré-checagem: $d passou ou rodou o programa plantado (exit $rc, marca: $([ -e "$MARKS" ] && echo sim || echo não))"
+        grep -E '==>|^origens' <<<"$output" | tail -5 >&2
     fi
 }
 
-# config_na_copia <nome> <conteúdo> [arquivo relativo]: cópia com aquele config.
-config_na_copia() {
+# config_in_copy <name> <content> [relative file]: a copy with that config.
+config_in_copy() {
     local dir="$TMP/cfg-$1"
     rm -rf "$dir"
-    copiar_workspace "$dir"
-    local arq="${3:-.cargo/config.toml}"
-    mkdir -p "$(dirname "$dir/$arq")"
-    printf '%s\n' "$2" >"$dir/$arq"
+    copy_workspace "$dir"
+    local file="${3:-.cargo/config.toml}"
+    mkdir -p "$(dirname "$dir/$file")"
+    printf '%s\n' "$2" >"$dir/$file"
     printf '%s' "$dir"
 }
 
-origens_lista_permitida() {
-    preparar_iscas_cargo
-    local dir alvo="x86_64-unknown-linux-gnu"
-    # v13-alias.sh: alias de `audit`/`deny` com uma dependência de advisory conhecido.
-    dir="$(config_na_copia alias-run "[alias]
-audit = [\"run\", \"-q\", \"--manifest-path\", \"$TMP/falso-ok/Cargo.toml\", \"--\"]
-deny = [\"run\", \"-q\", \"--manifest-path\", \"$TMP/falso-ok/Cargo.toml\", \"--\"]")"
-    adicionar_crate_ataque "$dir" 'time = "=0.1.43"'
-    barrado_antes "[alias] audit/deny para um falso-ok (v13-alias), com RUSTSEC-2020-0071" "$dir"
-    # O audit e o deny vão pelo binário: mesmo sem a pré-checagem, o alias não pegaria.
-    local rc=0 saida
-    saida="$(cd "$dir" && "$CASA_PASSWD/.cargo/bin/cargo-audit" audit --deny warnings 2>&1)" || rc=$?
-    if [ "$rc" -ne 0 ] && grep -q 'RUSTSEC-2020-0071' <<<"$saida" && ! grep -q 'falsos' <<<"$saida"; then
+origins_allowlist() {
+    prepare_cargo_decoys
+    local dir triple="x86_64-unknown-linux-gnu"
+    # v13-alias.sh: `audit`/`deny` alias with a dependency of a known advisory.
+    dir="$(config_in_copy alias-run "[alias]
+audit = [\"run\", \"-q\", \"--manifest-path\", \"$TMP/fake-ok/Cargo.toml\", \"--\"]
+deny = [\"run\", \"-q\", \"--manifest-path\", \"$TMP/fake-ok/Cargo.toml\", \"--\"]")"
+    add_attack_crate "$dir" 'time = "=0.1.43"'
+    blocked_before "[alias] audit/deny para um fake-ok (v13-alias), com RUSTSEC-2020-0071" "$dir"
+    # audit and deny go through the binary: even without the pre-check, the alias would not apply.
+    local rc=0 output
+    output="$(cd "$dir" && "$CASA_PASSWD/.cargo/bin/cargo-audit" audit --deny warnings 2>&1)" || rc=$?
+    if [ "$rc" -ne 0 ] && grep -q 'RUSTSEC-2020-0071' <<<"$output" && ! grep -q 'falsos' <<<"$output"; then
         ok "cargo-audit pelo caminho absoluto ignora o [alias] e acha RUSTSEC-2020-0071"
     else
-        falhou "cargo-audit pelo caminho absoluto passou pelo alias (exit $rc)"
+        failed "cargo-audit pelo caminho absoluto passou pelo alias (exit $rc)"
     fi
-    barrado_antes "[alias] audit/deny = version" "$(config_na_copia alias "[alias]
+    blocked_before "[alias] audit/deny = version" "$(config_in_copy alias "[alias]
 audit = \"version\"
 deny = \"version\"")"
-    barrado_antes "build.rustc" "$(config_na_copia build-rustc "[build]
-rustc = \"$TMP/iscas/rustc.sh\"")"
-    barrado_antes "build.rustc-wrapper (wrap.sh)" "$(config_na_copia rustc-wrapper "[build]
-rustc-wrapper = \"$TMP/iscas/wrap.sh\"")"
-    barrado_antes "build.rustc-workspace-wrapper" "$(config_na_copia ws-wrapper "[build]
-rustc-workspace-wrapper = \"$TMP/iscas/wrap.sh\"")"
-    barrado_antes "target.<triplo>.linker" "$(config_na_copia linker "[target.$alvo]
-linker = \"$TMP/iscas/linker.sh\"")"
-    barrado_antes "build.rustflags com -C linker" "$(config_na_copia rustflags "[build]
-rustflags = [\"-C\", \"linker=$TMP/iscas/linker.sh\"]")"
-    barrado_antes "target.<triplo>.runner" "$(config_na_copia runner "[target.$alvo]
-runner = \"$TMP/iscas/programa.sh\"")"
-    barrado_antes "[env]" "$(config_na_copia env "[env]
+    blocked_before "build.rustc" "$(config_in_copy build-rustc "[build]
+rustc = \"$TMP/decoys/rustc.sh\"")"
+    blocked_before "build.rustc-wrapper (wrap.sh)" "$(config_in_copy rustc-wrapper "[build]
+rustc-wrapper = \"$TMP/decoys/wrap.sh\"")"
+    blocked_before "build.rustc-workspace-wrapper" "$(config_in_copy ws-wrapper "[build]
+rustc-workspace-wrapper = \"$TMP/decoys/wrap.sh\"")"
+    blocked_before "target.<triplo>.linker" "$(config_in_copy linker "[target.$triple]
+linker = \"$TMP/decoys/linker.sh\"")"
+    blocked_before "build.rustflags com -C linker" "$(config_in_copy rustflags "[build]
+rustflags = [\"-C\", \"linker=$TMP/decoys/linker.sh\"]")"
+    blocked_before "target.<triplo>.runner" "$(config_in_copy runner "[target.$triple]
+runner = \"$TMP/decoys/program.sh\"")"
+    blocked_before "[env]" "$(config_in_copy env "[env]
 RUSTC_BOOTSTRAP = \"1\"")"
-    barrado_antes "chave pontilhada build.rustc-wrapper" "$(config_na_copia pontilhada "build.rustc-wrapper = \"$TMP/iscas/wrap.sh\"")"
-    # Qualquer `.cargo/config*` no repositório, mesmo com chave inofensiva.
-    barrado_antes ".cargo/config.toml só com [term]" "$(config_na_copia term "[term]
+    blocked_before "chave pontilhada build.rustc-wrapper" "$(config_in_copy dotted "build.rustc-wrapper = \"$TMP/decoys/wrap.sh\"")"
+    # Any `.cargo/config*` in the repository, even with a harmless key.
+    blocked_before ".cargo/config.toml só com [term]" "$(config_in_copy term "[term]
 color = \"never\"")"
-    barrado_antes ".cargo/config sem extensão" "$(config_na_copia antigo "[term]
+    blocked_before ".cargo/config sem extensão" "$(config_in_copy old "[term]
 color = \"never\"" .cargo/config)"
-    barrado_antes ".cargo/config.toml numa subpasta (crates/ward-core)" \
-        "$(config_na_copia sub "[term]
+    blocked_before ".cargo/config.toml numa subpasta (crates/ward-core)" \
+        "$(config_in_copy sub "[term]
 color = \"never\"" crates/ward-core/.cargo/config.toml)"
-    barrado_antes ".cargo/config.bak (qualquer config*)" "$(config_na_copia bak "x" .cargo/config.bak)"
-    dir="$TMP/cfg-link"; rm -rf "$dir"; copiar_workspace "$dir"
-    mkdir -p "$TMP/fora-cargo"; printf '[build]\nrustc-wrapper = "%s"\n' "$TMP/iscas/wrap.sh" >"$TMP/fora-cargo/config.toml"
-    ln -s "$TMP/fora-cargo" "$dir/crates/.cargo"
-    barrado_antes ".cargo como link simbólico para fora" "$dir"
-    # Config num diretório pai, mesmo inofensivo.
-    mkdir -p "$TMP/pai2/.cargo"; printf '[term]\ncolor = "never"\n' >"$TMP/pai2/.cargo/config.toml"
-    dir="$TMP/pai2/filho"; copiar_workspace "$dir"
-    barrado_antes ".cargo/config.toml inofensivo em diretório pai" "$dir"
+    blocked_before ".cargo/config.bak (qualquer config*)" "$(config_in_copy bak "x" .cargo/config.bak)"
+    dir="$TMP/cfg-link"; rm -rf "$dir"; copy_workspace "$dir"
+    mkdir -p "$TMP/outside-cargo"; printf '[build]\nrustc-wrapper = "%s"\n' "$TMP/decoys/wrap.sh" >"$TMP/outside-cargo/config.toml"
+    ln -s "$TMP/outside-cargo" "$dir/crates/.cargo"
+    blocked_before ".cargo como link simbólico para fora" "$dir"
+    # Config in a parent directory, even a harmless one.
+    mkdir -p "$TMP/parent2/.cargo"; printf '[term]\ncolor = "never"\n' >"$TMP/parent2/.cargo/config.toml"
+    dir="$TMP/parent2/child"; copy_workspace "$dir"
+    blocked_before ".cargo/config.toml inofensivo em diretório pai" "$dir"
 
-    # Variáveis de ambiente (ataque-config.sh com VAR=valor).
-    dir="$TMP/env"; rm -rf "$dir"; copiar_workspace "$dir"
+    # Environment variables (ataque-config.sh with VAR=value).
+    dir="$TMP/env"; rm -rf "$dir"; copy_workspace "$dir"
     local v
-    for v in "RUSTC=$TMP/iscas/rustc.sh" "RUSTC_WRAPPER=$TMP/iscas/wrap.sh" \
-        "RUSTC_WORKSPACE_WRAPPER=$TMP/iscas/wrap.sh" "CARGO_BUILD_RUSTC_WRAPPER=$TMP/iscas/wrap.sh" \
-        "CARGO_BUILD_RUSTC=$TMP/iscas/rustc.sh" "RUSTFLAGS=-Clinker=$TMP/iscas/linker.sh" \
-        "CARGO_BUILD_RUSTFLAGS=-Clinker=$TMP/iscas/linker.sh" \
-        "CARGO_ENCODED_RUSTFLAGS=-Clinker=$TMP/iscas/linker.sh" "RUSTDOCFLAGS=-Zunstable-options" \
-        "RUSTDOC=$TMP/iscas/programa.sh" "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=$TMP/iscas/linker.sh" \
-        "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER=$TMP/iscas/programa.sh" "CARGO_ALIAS_AUDIT=version" \
-        "CARGO_TARGET_DIR=$TMP/alvo" "RUSTC_BOOTSTRAP=1" "RUSTUP_TOOLCHAIN=stable" \
+    for v in "RUSTC=$TMP/decoys/rustc.sh" "RUSTC_WRAPPER=$TMP/decoys/wrap.sh" \
+        "RUSTC_WORKSPACE_WRAPPER=$TMP/decoys/wrap.sh" "CARGO_BUILD_RUSTC_WRAPPER=$TMP/decoys/wrap.sh" \
+        "CARGO_BUILD_RUSTC=$TMP/decoys/rustc.sh" "RUSTFLAGS=-Clinker=$TMP/decoys/linker.sh" \
+        "CARGO_BUILD_RUSTFLAGS=-Clinker=$TMP/decoys/linker.sh" \
+        "CARGO_ENCODED_RUSTFLAGS=-Clinker=$TMP/decoys/linker.sh" "RUSTDOCFLAGS=-Zunstable-options" \
+        "RUSTDOC=$TMP/decoys/program.sh" "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=$TMP/decoys/linker.sh" \
+        "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER=$TMP/decoys/program.sh" "CARGO_ALIAS_AUDIT=version" \
+        "CARGO_TARGET_DIR=$TMP/target" "RUSTC_BOOTSTRAP=1" "RUSTUP_TOOLCHAIN=stable" \
         "RUSTUP_DIST_SERVER=https://example.invalid" "CARGO_UNSTABLE_BUILD_STD=true"; do
-        barrado_antes "${v%%=*} no ambiente" "$dir" "$v"
+        blocked_before "${v%%=*} no ambiente" "$dir" "$v"
     done
-    # Neutralizadas pelo Makefile (override + export): não são recusadas, mas não valem.
-    rm -f "$MARCAS"
+    # Neutralized by the Makefile (override + export): not refused, but they have no effect.
+    rm -f "$MARKS"
     mkdir -p "$TMP/home-cargo"
-    printf '[build]\nrustc-wrapper = "%s"\n' "$TMP/iscas/wrap.sh" >"$TMP/home-cargo/config.toml"
+    printf '[build]\nrustc-wrapper = "%s"\n' "$TMP/decoys/wrap.sh" >"$TMP/home-cargo/config.toml"
     rc=0
-    (cd "$dir" && CARGO_HOME="$TMP/home-cargo" RUSTUP_HOME="$TMP/home-rustup" CARGO="$TMP/iscas/programa.sh" \
+    (cd "$dir" && CARGO_HOME="$TMP/home-cargo" RUSTUP_HOME="$TMP/home-rustup" CARGO="$TMP/decoys/program.sh" \
         make build >/dev/null 2>&1) || rc=$?
-    if [ "$rc" -eq 0 ] && [ ! -e "$MARCAS" ]; then
+    if [ "$rc" -eq 0 ] && [ ! -e "$MARKS" ]; then
         ok "CARGO_HOME/RUSTUP_HOME/CARGO do ambiente não valem (o Makefile fixa os do passwd)"
     else
-        falhou "CARGO_HOME/RUSTUP_HOME/CARGO do ambiente mudaram o build (exit $rc)"
+        failed "CARGO_HOME/RUSTUP_HOME/CARGO do ambiente mudaram o build (exit $rc)"
     fi
-    # E o origens recusa o valor diferente quando chamado sem o Makefile.
+    # And origins refuses the different value when called without the Makefile.
     rc=0
     (cd "$dir" && CARGO_HOME="$TMP/home-cargo" /usr/bin/python3 -I -B dev/origins.py >/dev/null 2>&1) || rc=$?
-    if [ "$rc" -ne 0 ]; then ok "origins.py sozinho recusa CARGO_HOME diferente do esperado"; else falhou "origins.py aceitou CARGO_HOME de fora"; fi
-    # Controle: variável inofensiva da lista passa.
+    if [ "$rc" -ne 0 ]; then ok "origins.py sozinho recusa CARGO_HOME diferente do esperado"; else failed "origins.py aceitou CARGO_HOME de fora"; fi
+    # Control: a harmless variable from the list passes.
     if (cd "$dir" && CARGO_TERM_COLOR=never make origins >/dev/null 2>&1); then
         ok "pré-checagem: CARGO_TERM_COLOR (da lista) passa"
     else
-        falhou "pré-checagem: CARGO_TERM_COLOR recusado"
+        failed "pré-checagem: CARGO_TERM_COLOR recusado"
     fi
 
-    # rust-toolchain.toml: `path` aponta o rustc para qualquer pasta; canal tem de ser fixo.
-    dir="$TMP/tc-path"; rm -rf "$dir"; copiar_workspace "$dir"
-    printf '[toolchain]\npath = "%s"\n' "$TMP/iscas" >"$dir/rust-toolchain.toml"
-    barrado_antes "rust-toolchain.toml com path" "$dir"
-    dir="$TMP/tc-canal"; rm -rf "$dir"; copiar_workspace "$dir"
+    # rust-toolchain.toml: `path` points rustc to any dir; the channel has to be fixed.
+    dir="$TMP/tc-path"; rm -rf "$dir"; copy_workspace "$dir"
+    printf '[toolchain]\npath = "%s"\n' "$TMP/decoys" >"$dir/rust-toolchain.toml"
+    blocked_before "rust-toolchain.toml com path" "$dir"
+    dir="$TMP/tc-channel"; rm -rf "$dir"; copy_workspace "$dir"
     sed -i 's/^channel = .*/channel = "nightly"/' "$dir/rust-toolchain.toml"
-    barrado_antes "rust-toolchain.toml com canal móvel (nightly)" "$dir"
-    dir="$TMP/tc-legado"; rm -rf "$dir"; copiar_workspace "$dir"
+    blocked_before "rust-toolchain.toml com canal móvel (nightly)" "$dir"
+    dir="$TMP/tc-legacy"; rm -rf "$dir"; copy_workspace "$dir"
     printf 'nightly\n' >"$dir/rust-toolchain"
-    barrado_antes "rust-toolchain sem extensão" "$dir"
+    blocked_before "rust-toolchain sem extensão" "$dir"
 
-    # Controle: o vetor é real. Sem a pré-checagem, `cargo build` direto na cópia com o
-    # rustc-wrapper roda o wrap.sh (a marca aparece).
-    rm -f "$MARCAS"
+    # Control: the vector is real. Without the pre-check, a direct `cargo build` in the copy
+    # with the rustc-wrapper runs wrap.sh (the mark shows up).
+    rm -f "$MARKS"
     dir="$TMP/cfg-rustc-wrapper"
-    (cd "$dir" && rm -rf crates/ataque && cargo build --quiet --offline >/dev/null 2>&1) || true
-    if [ -s "$MARCAS" ]; then
+    (cd "$dir" && rm -rf crates/attack && cargo build --quiet --offline >/dev/null 2>&1) || true
+    if [ -s "$MARKS" ]; then
         ok "controle: sem a pré-checagem o rustc-wrapper plantado roda (o vetor é real)"
     else
-        falhou "controle: o rustc-wrapper plantado não rodou nem sem a pré-checagem (teste sem efeito)"
+        failed "controle: o rustc-wrapper plantado não rodou nem sem a pré-checagem (teste sem efeito)"
     fi
 }
 
-# --- Fase 12b (S14): config do CARGO_HOME só com chaves inofensivas -------------------------
-# Num bwrap com o home do passwd coberto por tmpfs (o ~/.cargo real nunca é tocado): só o
-# rustup e os binários de ~/.cargo/bin voltam, somente leitura, e o `$TMP` deste script
-# (Fases 28d/28f: fica em `~/.cache/`, no home). O `config.toml` do CARGO_HOME
-# é escrito no tmpfs. Workspace mínimo sem dependências (o cargo metadata não precisa do
-# registro). Também prova a checagem do toolchain ativo com um `rustup override` simulado.
-config_do_cargo_home() {
-    local m="$TMP/minimo"
+# --- Phase 12b (S14): CARGO_HOME config only with harmless keys ---------------------------
+# In a bwrap with the passwd home covered by tmpfs (the real ~/.cargo is never touched):
+# only rustup and the binaries of ~/.cargo/bin come back, read-only, plus this script's
+# `$TMP` (Phases 28d/28f: it lives in `~/.cache/`, in the home). The CARGO_HOME
+# `config.toml` is written to the tmpfs. Minimal workspace without dependencies (cargo
+# metadata does not need the registry). Also proves the active toolchain check with a
+# simulated `rustup override`.
+cargo_home_config() {
+    local m="$TMP/minimal"
     mkdir -p "$m/dev" "$m/a/src"
-    cp "$RAIZ/dev/origins.py" "$m/dev/"
-    cp "$RAIZ/rust-toolchain.toml" "$m/"
+    cp "$ROOT/dev/origins.py" "$m/dev/"
+    cp "$ROOT/rust-toolchain.toml" "$m/"
     printf '[workspace]\nmembers = ["a"]\nresolver = "3"\n' >"$m/Cargo.toml"
     printf '[package]\nname = "a"\nversion = "0.1.0"\nedition = "2024"\n' >"$m/a/Cargo.toml"
     : >"$m/a/src/lib.rs"
     (cd "$m" && cargo generate-lockfile --quiet --offline)
-    cat >"$TMP/no-home.sh" <<'EOF'
+    cat >"$TMP/in-home.sh" <<'EOF'
 #!/bin/bash -p
-# Dentro do bwrap: confere o tmpfs, escreve o config do CARGO_HOME e roda o origens.
+# Inside the bwrap: verifies the tmpfs, writes the CARGO_HOME config and runs origins.
 set -u
-casa="$1" m="$2" conteudo="$3"
-[ "$(stat -f -c %T "$casa")" = tmpfs ] || { echo "home não coberto" >&2; exit 9; }
-mkdir -p "$casa/.cargo"
-[ -n "$conteudo" ] && printf '%s\n' "$conteudo" >"$casa/.cargo/config.toml"
+home="$1" m="$2" content="$3"
+[ "$(stat -f -c %T "$home")" = tmpfs ] || { echo "home não coberto" >&2; exit 9; }
+mkdir -p "$home/.cargo"
+[ -n "$content" ] && printf '%s\n' "$content" >"$home/.cargo/config.toml"
 exec /usr/bin/python3 -I -B "$m/dev/origins.py"
 EOF
-    no_home() { # conteúdo [settings.toml do rustup]
+    in_home() { # content [rustup settings.toml]
         local extra=()
         [ -n "${2:-}" ] && extra=(--ro-bind "$2" "$CASA_PASSWD/.rustup/settings.toml")
         /usr/bin/env -i PATH=/usr/bin:/bin bwrap --die-with-parent --dev-bind / / --tmpfs "$CASA_PASSWD" \
             --ro-bind "$CASA_PASSWD/.rustup" "$CASA_PASSWD/.rustup" "${extra[@]}" \
             --ro-bind "$CASA_PASSWD/.cargo/bin" "$CASA_PASSWD/.cargo/bin" --bind /tmp /tmp \
             --bind "$TMP" "$TMP" \
-            -- /bin/bash -p "$TMP/no-home.sh" "$CASA_PASSWD" "$m" "$1"
+            -- /bin/bash -p "$TMP/in-home.sh" "$CASA_PASSWD" "$m" "$1"
     }
     local c rc
     for c in '[alias]
 audit = "version"' "[build]
-rustc-wrapper = \"$TMP/iscas/wrap.sh\"" "[build]
-rustc = \"$TMP/iscas/rustc.sh\"" "[target.x86_64-unknown-linux-gnu]
-linker = \"$TMP/iscas/linker.sh\"" '[build]
+rustc-wrapper = \"$TMP/decoys/wrap.sh\"" "[build]
+rustc = \"$TMP/decoys/rustc.sh\"" "[target.x86_64-unknown-linux-gnu]
+linker = \"$TMP/decoys/linker.sh\"" '[build]
 rustflags = ["-Cdebuginfo=0"]' '[env]
 RUSTC_BOOTSTRAP = "1"' '[source.crates-io]
 replace-with = "v"' '[registries.mau]
 index = "sparse+https://example.invalid/"' '[http]
 proxy = "http://127.0.0.1:9"' '[net]
-git-fetch-with-cli = true' 'include = "outro.toml"' '[term]
+git-fetch-with-cli = true' 'include = "other.toml"' '[term]
 color = ["never"]' '[source'; do
         rc=0
-        no_home "$c" >"$TMP/no-home.out" 2>&1 || rc=$?
-        if [ "$rc" -eq 1 ] && grep -q '^origens: .*config' "$TMP/no-home.out"; then
+        in_home "$c" >"$TMP/in-home.out" 2>&1 || rc=$?
+        if [ "$rc" -eq 1 ] && grep -q '^origens: .*config' "$TMP/in-home.out"; then
             ok "CARGO_HOME: config com '$(tr '\n' ' ' <<<"$c" | sed 's/ $//')' é recusado"
         else
-            falhou "CARGO_HOME: config com '$(tr '\n' ' ' <<<"$c" | sed 's/ $//')' passou (exit $rc)"
+            failed "CARGO_HOME: config com '$(tr '\n' ' ' <<<"$c" | sed 's/ $//')' passou (exit $rc)"
         fi
     done
-    # Controles: sem config e com chaves da lista, passa.
+    # Controls: without a config and with keys from the list, it passes.
     for c in '' '[term]
 color = "never"
 progress.when = "never"
@@ -676,138 +677,138 @@ retry = 3
 [build]
 jobs = 4'; do
         rc=0
-        no_home "$c" >"$TMP/no-home.out" 2>&1 || rc=$?
+        in_home "$c" >"$TMP/in-home.out" 2>&1 || rc=$?
         local desc="ausente"
         [ -n "$c" ] && desc="só com chaves permitidas (term, net.retry, build.jobs)"
-        if [ "$rc" -eq 0 ]; then ok "CARGO_HOME: config $desc passa"; else falhou "CARGO_HOME: config permitido recusado"; cat "$TMP/no-home.out" >&2; fi
+        if [ "$rc" -eq 0 ]; then ok "CARGO_HOME: config $desc passa"; else failed "CARGO_HOME: config permitido recusado"; cat "$TMP/in-home.out" >&2; fi
     done
-    # `rustup override set` para a pasta: o toolchain ativo deixa de ser o do arquivo.
+    # `rustup override set` for the dir: the active toolchain stops being the file's.
     printf 'version = "12"\ndefault_toolchain = "stable-x86_64-unknown-linux-gnu"\nprofile = "minimal"\n\n[overrides]\n"%s" = "stable-x86_64-unknown-linux-gnu"\n' \
         "$m" >"$TMP/settings.toml"
     rc=0
-    no_home '' "$TMP/settings.toml" >"$TMP/no-home.out" 2>&1 || rc=$?
-    if [ "$rc" -eq 1 ] && grep -q 'toolchain ativo' "$TMP/no-home.out"; then
+    in_home '' "$TMP/settings.toml" >"$TMP/in-home.out" 2>&1 || rc=$?
+    if [ "$rc" -eq 1 ] && grep -q 'toolchain ativo' "$TMP/in-home.out"; then
         ok "rustup override de diretório é recusado"
     else
-        falhou "rustup override de diretório passou (exit $rc)"
+        failed "rustup override de diretório passou (exit $rc)"
     fi
 }
 
-# --- Fase 12b: ambiente do usuário não troca o que o make check executa ---------------------
-# PATH com cargo/python3/git/bash/sha256sum falsos na frente, MAKEFLAGS com CARGO/GITLEAKS
-# trocados (vence `:=`, não vence `override`), BASH_ENV, HOME falso e um ~/.gitconfig com
-# core.fsmonitor (roda programa a cada `git diff`, inclusive no gitleaks). O `make check`
-# inteiro numa cópia tem de passar sem nenhuma marca.
-ambiente_do_make() {
-    local falsos="$TMP/falsos" p
-    mkdir -p "$falsos"
+# --- Phase 12b: the user's environment does not swap what make check runs ---------------------
+# PATH with fake cargo/python3/git/bash/sha256sum in front, MAKEFLAGS with CARGO/GITLEAKS
+# swapped (beats `:=`, does not beat `override`), BASH_ENV, a fake HOME and a ~/.gitconfig
+# with core.fsmonitor (runs a program on every `git diff`, including inside gitleaks). The
+# whole `make check` in a copy has to pass without any mark.
+make_environment() {
+    local fakes="$TMP/fakes" p
+    mkdir -p "$fakes"
     for p in cargo cargo-audit cargo-deny python3 git bash sh sha256sum gitleaks docker rustc make; do
-        printf '#!/bin/sh\necho "%s" >>"%s"\nexit 0\n' "$p" "$MARCAS" >"$falsos/$p"
-        chmod +x "$falsos/$p"
+        printf '#!/bin/sh\necho "%s" >>"%s"\nexit 0\n' "$p" "$MARKS" >"$fakes/$p"
+        chmod +x "$fakes/$p"
     done
-    # o próprio `make` tem de ser o do sistema: chamado pelo caminho absoluto abaixo.
-    printf 'echo bash_env >>"%s"\n' "$MARCAS" >"$TMP/bash_env"
-    printf '[core]\n\tfsmonitor = %s\n' "$TMP/iscas/programa.sh" >"$TMP/gitconfig-mau"
+    # `make` itself has to be the system's: called by the absolute path below.
+    printf 'echo bash_env >>"%s"\n' "$MARKS" >"$TMP/bash_env"
+    printf '[core]\n\tfsmonitor = %s\n' "$TMP/decoys/program.sh" >"$TMP/gitconfig-bad"
     mkdir -p "$TMP/xdg/git"; printf '*\n' >"$TMP/xdg/git/ignore"
-    local dir="$TMP/amb"
-    copiar_workspace "$dir"
+    local dir="$TMP/env-make"
+    copy_workspace "$dir"
     (cd "$dir" && git init -q && git add -A)
-    rm -f "$MARCAS"
-    local rc=0 saida
-    saida="$(cd "$dir" && /usr/bin/env PATH="$falsos:$PATH" BASH_ENV="$TMP/bash_env" ENV="$TMP/bash_env" \
-        MAKEFLAGS="CARGO=$falsos/cargo GITLEAKS=$falsos/gitleaks CARGO_AUDIT=$falsos/cargo-audit PYTHON=$falsos/python3" \
-        HOME="$TMP/home-falso" GIT_CONFIG_GLOBAL="$TMP/gitconfig-mau" XDG_CONFIG_HOME="$TMP/xdg" \
+    rm -f "$MARKS"
+    local rc=0 output
+    output="$(cd "$dir" && /usr/bin/env PATH="$fakes:$PATH" BASH_ENV="$TMP/bash_env" ENV="$TMP/bash_env" \
+        MAKEFLAGS="CARGO=$fakes/cargo GITLEAKS=$fakes/gitleaks CARGO_AUDIT=$fakes/cargo-audit PYTHON=$fakes/python3" \
+        HOME="$TMP/fake-home" GIT_CONFIG_GLOBAL="$TMP/gitconfig-bad" XDG_CONFIG_HOME="$TMP/xdg" \
         /usr/bin/make check 2>&1)" || rc=$?
-    if [ "$rc" -eq 0 ] && [ ! -e "$MARCAS" ] && grep -q '==> make check: tudo limpo' <<<"$saida"; then
+    if [ "$rc" -eq 0 ] && [ ! -e "$MARKS" ] && grep -q '==> make check: tudo limpo' <<<"$output"; then
         ok "PATH/MAKEFLAGS/BASH_ENV/HOME/gitconfig do usuário não trocam nada no make check"
     else
-        falhou "o ambiente do usuário mudou o make check (exit $rc, marcas: $(tr '\n' ' ' <"$MARCAS" 2>/dev/null))"
-        tail -15 <<<"$saida" >&2
+        failed "o ambiente do usuário mudou o make check (exit $rc, marcas: $(tr '\n' ' ' <"$MARKS" 2>/dev/null))"
+        tail -15 <<<"$output" >&2
     fi
-    # Controle: o fsmonitor plantado roda num `git diff` comum (o vetor é real).
-    rm -f "$MARCAS"
-    (cd "$dir" && /usr/bin/env -u GIT_CONFIG_COUNT GIT_CONFIG_GLOBAL="$TMP/gitconfig-mau" /usr/bin/git diff --staged --quiet) >/dev/null 2>&1 || true
-    if [ -s "$MARCAS" ]; then ok "controle: core.fsmonitor do gitconfig roda sem o isolamento"; else falhou "controle: fsmonitor não rodou nem sem isolamento"; fi
-    # O mesmo pelo .git/config local: a linha de comando (GIT_CONFIG_COUNT) vence.
-    rm -f "$MARCAS"
-    (cd "$dir" && /usr/bin/git config core.fsmonitor "$TMP/iscas/programa.sh")
+    # Control: the planted fsmonitor runs on a plain `git diff` (the vector is real).
+    rm -f "$MARKS"
+    (cd "$dir" && /usr/bin/env -u GIT_CONFIG_COUNT GIT_CONFIG_GLOBAL="$TMP/gitconfig-bad" /usr/bin/git diff --staged --quiet) >/dev/null 2>&1 || true
+    if [ -s "$MARKS" ]; then ok "controle: core.fsmonitor do gitconfig roda sem o isolamento"; else failed "controle: fsmonitor não rodou nem sem isolamento"; fi
+    # The same through the local .git/config: the command line (GIT_CONFIG_COUNT) wins.
+    rm -f "$MARKS"
+    (cd "$dir" && /usr/bin/git config core.fsmonitor "$TMP/decoys/program.sh")
     rc=0
     (cd "$dir" && make gitleaks >/dev/null 2>&1) || rc=$?
-    if [ "$rc" -eq 0 ] && [ ! -e "$MARCAS" ]; then
+    if [ "$rc" -eq 0 ] && [ ! -e "$MARKS" ]; then
         ok "core.fsmonitor no .git/config não roda no make gitleaks"
     else
-        falhou "core.fsmonitor do .git/config rodou no make gitleaks (exit $rc)"
+        failed "core.fsmonitor do .git/config rodou no make gitleaks (exit $rc)"
     fi
 }
 
-# --- Fase 12b: git dos testes sem a config do usuário -------------------------------------
-# dev/env.sh: um ignore global (~/.config/git/ignore) faria `git check-ignore` do V1.5
-# passar sem o .gitignore do repositório.
-git_sem_config_do_usuario() {
-    local dir="$TMP/git-isolado" rc=0
+# --- Phase 12b: the tests' git without the user's config -------------------------------------
+# dev/env.sh: a global ignore (~/.config/git/ignore) would make the V1.5 `git check-ignore`
+# pass without the repository's .gitignore.
+git_without_user_config() {
+    local dir="$TMP/git-isolated" rc=0
     mkdir -p "$dir"
     (cd "$dir" && /usr/bin/git init -q)
-    printf '[core]\n\texcludesFile = %s/xdg/git/ignore\n' "$TMP" >"$TMP/gitconfig-ignora"
-    /usr/bin/env GIT_CONFIG_GLOBAL="$TMP/gitconfig-ignora" XDG_CONFIG_HOME="$TMP/xdg" HOME="$TMP" \
-        /bin/bash -p -c '. "$1/dev/env.sh"; cd "$2" && git check-ignore -q qualquer.txt' _ "$RAIZ" "$dir" || rc=$?
+    printf '[core]\n\texcludesFile = %s/xdg/git/ignore\n' "$TMP" >"$TMP/gitconfig-ignore"
+    /usr/bin/env GIT_CONFIG_GLOBAL="$TMP/gitconfig-ignore" XDG_CONFIG_HOME="$TMP/xdg" HOME="$TMP" \
+        /bin/bash -p -c '. "$1/dev/env.sh"; cd "$2" && git check-ignore -q anything.txt' _ "$ROOT" "$dir" || rc=$?
     if [ "$rc" -eq 1 ]; then
         ok "git dos testes ignora o ignore global do usuário (check-ignore depende só do repositório)"
     else
-        falhou "git dos testes leu o ignore global do usuário (exit $rc)"
+        failed "git dos testes leu o ignore global do usuário (exit $rc)"
     fi
-    # Controle: sem o env.sh, o mesmo git diz que está ignorado.
+    # Control: without env.sh, the same git says it is ignored.
     rc=0
     (cd "$dir" && /usr/bin/env -u GIT_CONFIG_COUNT -u GIT_CONFIG_GLOBAL XDG_CONFIG_HOME="$TMP/xdg" HOME="$TMP" \
-        /usr/bin/git check-ignore -q qualquer.txt) || rc=$?
-    if [ "$rc" -eq 0 ]; then ok "controle: sem o isolamento o ignore global vale"; else falhou "controle: ignore global não valeu nem sem isolamento"; fi
+        /usr/bin/git check-ignore -q anything.txt) || rc=$?
+    if [ "$rc" -eq 0 ]; then ok "controle: sem o isolamento o ignore global vale"; else failed "controle: ignore global não valeu nem sem isolamento"; fi
 }
 
-# --- Fase 28f: as cópias com `.cargo/config*` plantado não sujam o `origens` da raiz ------
-# Com as cópias da rodada ainda no disco (só os `target/` saem), o `make origins` do
-# checkout tem de continuar limpo. Antes da 28f elas ficavam em `.dev/` e todo `make` do
-# repositório falhava em `origens` enquanto o teste rodava.
-origens_da_raiz_durante_a_rodada() {
-    local plantados rc=0 saida
-    plantados="$(find "$TMP" -path '*/.cargo/config*' 2>/dev/null | wc -l)"
-    if [ "$plantados" -eq 0 ]; then
-        falhou "28f: nenhuma cópia com .cargo/config* plantado no disco (checagem sem efeito)"
+# --- Phase 28f: the copies with a planted `.cargo/config*` do not taint the root's `origins` ---
+# With the run's copies still on disk (only the `target/` go away), the checkout's
+# `make origins` has to stay clean. Before 28f they lived in `.dev/` and every `make` of the
+# repository failed in `origins` while the test ran.
+root_origins_during_run() {
+    local planted rc=0 output
+    planted="$(find "$TMP" -path '*/.cargo/config*' 2>/dev/null | wc -l)"
+    if [ "$planted" -eq 0 ]; then
+        failed "28f: nenhuma cópia com .cargo/config* plantado no disco (checagem sem efeito)"
         return
     fi
-    saida="$(cd "$RAIZ" && make -s origins 2>&1)" || rc=$?
+    output="$(cd "$ROOT" && make -s origins 2>&1)" || rc=$?
     if [ "$rc" -eq 0 ]; then
-        ok "28f: make origins da raiz limpo com $plantados .cargo/config* plantados nas cópias"
+        ok "28f: make origins da raiz limpo com $planted .cargo/config* plantados nas cópias"
     else
-        falhou "28f: make origins da raiz falhou durante a rodada (exit $rc)"
-        tail -10 <<<"$saida" >&2
+        failed "28f: make origins da raiz falhou durante a rodada (exit $rc)"
+        tail -10 <<<"$output" >&2
     fi
 }
 
-# Fase 28d: cada cópia compila o workspace inteiro no próprio `target/`; apaga os
-# `target/` das cópias depois de cada ataque para não somar vários GB no disco.
-rodar() {
+# Phase 28d: each copy compiles the whole workspace in its own `target/`; removes the
+# copies' `target/` after each attack so as not to add up several GB on disk.
+run() {
     "$1"
     rm -rf "$TMP"/*/target
 }
 
-rodar v1_2
-rodar allowlist_ancorada
-rodar dev_forcado_no_indice
-rodar v1_3_advisory
-rodar v1_3_git
-rodar v1_3_lockfile
-rodar v1_5
-rodar extra_sem_allowlist_de_caminho
-rodar origens_do_cargo
-rodar ferramentas_fixas
-rodar origens_lista_permitida
-rodar config_do_cargo_home
-rodar origens_da_raiz_durante_a_rodada
-rodar ambiente_do_make
-rodar git_sem_config_do_usuario
-rodar origens_da_raiz_durante_a_rodada
+run v1_2
+run anchored_allowlist
+run dev_forced_into_index
+run v1_3_advisory
+run v1_3_git
+run v1_3_lockfile
+run v1_5
+run extra_without_path_allowlist
+run cargo_origins
+run fixed_tools
+run origins_allowlist
+run cargo_home_config
+run root_origins_during_run
+run make_environment
+run git_without_user_config
+run root_origins_during_run
 
-if [ "$falhas" -ne 0 ]; then
-    printf '\n%d ataque(s) passaram: corrigir antes de seguir.\n' "$falhas" >&2
+if [ "$failures" -ne 0 ]; then
+    printf '\n%d ataque(s) passaram: corrigir antes de seguir.\n' "$failures" >&2
     exit 1
 fi
 printf '\nTodos os ataques foram barrados.\n'

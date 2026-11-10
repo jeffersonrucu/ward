@@ -1,43 +1,45 @@
 #!/usr/bin/python3 -IB
-"""Confere a skill `ward` e o trecho de deny (Fase 50, V8.1, V8.2, V8.4). Sai 1 se algo
-falhar.
+"""Verifies the `ward` skill and the deny excerpt (Phase 50, V8.1, V8.2, V8.4). Exits 1
+if anything fails.
 
-1. `skill/ward/SKILL.md` tem frontmatter só com `name: ward` e uma `description` que
-   dispara em pedidos de login, senha, SSH, token e banco.
-2. Todo comando `ward <sub>` citado em código (bloco ou trecho entre crases) em
-   qualquer `.md` de `skill/ward/` está no `ward --help` do binário dado e na lista de
-   V8.1 (lista, run, ssh, login, playwright, travar). `ward login` (Fase 43) é aceito
-   como pendente enquanto não estiver no `--help`, com aviso.
-3. A skill não cita o KeePass XC nem os scripts `cofre-*` (V8.1), nem o `--token-fd`.
-4. Nenhum padrão de `.dev/variations.txt` (segredos do cofre de teste e variações)
-   aparece em nenhum arquivo de `skill/` (nunca imprime o padrão; só o arquivo).
-5. `skill/settings-deny.json` é JSON válido (sem chave repetida), só com
-   `permissions.deny`, e cobre `Read` e `Edit` de cada caminho de V8.2 e da pasta do ssh.
-6. A skill manda nunca ler esses caminhos nem imprimir variável ou anexo em nenhuma
-   codificação (V8.2) e diz que o SSH da pasta do ssh do usuário é direto, sem o Ward
+1. `skill/ward/SKILL.md` has a frontmatter with only `name: ward` and a `description`
+   that triggers on requests for login, password, SSH, token and database.
+2. Every `ward <sub>` command quoted in code (block or excerpt between backticks) in any
+   `.md` of `skill/ward/` is in the `ward --help` of the given binary and in the V8.1
+   list (`ALLOWED`: list, run, ssh, login, playwright, lock). `ward login` (Phase 43) is
+   accepted as pending while it is not in `--help`, with a notice.
+3. The skill does not mention KeePass XC, its old helper scripts (V8.1) or `--token-fd`.
+4. No pattern of `.dev/variations.txt` (secrets of the test vault and variations) shows
+   up in any file of `skill/` (never prints the pattern; only the file).
+5. `skill/settings-deny.json` is valid JSON (no repeated key), with only
+   `permissions.deny`, and covers `Read` and `Edit` of every V8.2 path and of the ssh
+   dir.
+6. The skill says never to read those paths nor print a variable or attachment in any
+   encoding (V8.2) and says that SSH from the user's ssh dir is direct, without Ward
    (V8.4).
-7. (Fase 50a; Fase 54b) As regras `Bash` do deny, lidas como o Claude Code lê (`*` = qualquer
-   texto), negam cada comando de `ATAQUES_BASH` (env, `sh -c`, od, rev, fold, tr,
-   cut, `python3 -c`, `>`, `/usr/local/bin/ward run`, curingas nos caminhos do Ward,
-   `/proc/N/env*`…), olhando o comando inteiro e cada subcomando, e não negam nenhum
-   comando de `LEGITIMOS` nem dos blocos ```sh da skill. Os de `ATAQUES_BASH_INTEIRO`
-   (script por pipe para o `ward run`, Fase 54b) só são exigidos no comando inteiro:
-   separado em subcomandos, o `|` some.
-8. (Fase 54a, RA8) A skill e o `skill/README.md` mandam o usuário destravar no terminal
-   por `/usr/local/bin/ward destravar`, e a skill não manda destravar pelo `ward` do
-   `PATH` (um `ward` falso antes no `PATH` lê a senha mestra).
+7. (Phase 50a; Phase 54b) The deny `Bash` rules, read the way Claude Code reads them
+   (`*` = any text), deny every command of `BASH_ATTACKS` (env, `sh -c`, od, rev, fold,
+   tr, cut, `python3 -c`, `>`, `/usr/local/bin/ward run`, wildcards in Ward's paths,
+   `/proc/N/env*`…), looking at the whole command and at each subcommand, and deny no
+   command of `LEGITIMATE` nor of the skill's ```sh blocks. The ones in
+   `WHOLE_BASH_ATTACKS` (script piped into `ward run`, Phase 54b) are only required on
+   the whole command: split into subcommands, the `|` goes away.
+8. (Phase 54a, RA8) The skill and `skill/README.md` tell the user to unlock in the
+   terminal by the full path of the installed `ward` (`UNLOCK`), and the skill does not
+   say to unlock through the `ward` of the `PATH` (a fake `ward` earlier in the `PATH`
+   reads the master password).
 
-Os nomes da pasta do ssh, do cofre e do KeePass XC vêm montados por partes (`SSH`,
-`COFRE`), para a varredura do V1.5 (`dev/tests/attacks-foundation.sh`): aqui são texto
-da skill e do deny, nunca pasta aberta.
+The names of the ssh dir, of the vault and of KeePass XC are built in pieces (`SSH`,
+`VAULT`), for the V1.5 scan (`dev/tests/attacks-foundation.sh`): here they are text of
+the skill and of the deny, never an opened dir.
 
-Antes de conferir a árvore real, o autoteste confere que ela passa (controle) e planta cada ataque numa cópia de `skill/`
-(segredo, comando inventado, `cofre-run`, JSON inválido, caminho de deny faltando,
-frontmatter errado, regra Bash ancorada ou faltando, regra que nega o uso normal,
-exemplo da skill que o deny nega) e exige que a conferência falhe.
+Before verifying the real tree, the self-test verifies that it passes (control) and plants
+each attack in a copy of `skill/` (secret, made-up command, old helper script, invalid JSON,
+missing deny path, wrong frontmatter, anchored or missing Bash rule, rule that denies the
+normal use, skill example that the deny denies) and requires the verification to fail.
 
-Uso: python3 -I -B dev/tests/skill.py target/no-test-mode/debug/ward
-     (ou `make test-skill`)
+Usage: python3 -I -B dev/tests/skill.py target/no-test-mode/debug/ward
+       (or `make test-skill`)
 """
 
 import json
@@ -48,22 +50,22 @@ import subprocess
 import sys
 import tempfile
 
-RAIZ = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
-VARIACOES = os.path.join(RAIZ, ".dev", "variations.txt")
+ROOT = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+VARIATIONS = os.path.join(ROOT, ".dev", "variations.txt")
 
-# V8.1: os únicos subcomandos que a skill pode usar.
-PERMITIDOS = {"lista", "run", "ssh", "login", "playwright", "travar"}
-# Subcomandos aceitos fora do `--help` enquanto a fase deles não chega (nenhum desde a
-# Fase 43).
-PENDENTES = set()
+# V8.1: the only subcommands the skill may use.
+ALLOWED = {"lista", "run", "ssh", "login", "playwright", "travar"}
+# Subcommands accepted outside `--help` while their phase has not come (none since
+# Phase 43).
+PENDING = set()
 
-# Montados por partes (V1.5, ver o topo).
+# Built in pieces (V1.5, see the top).
 SSH = "~/." + "ssh"
-COFRE = ".local/share/" + "ward"
+VAULT = ".local/share/" + "ward"
 
-# V8.2: cada caminho, na sintaxe de regra do Claude Code (`~/` = home, `//` = absoluto).
-CAMINHOS_DENY = {
-    f"~/{COFRE}/**": f"~/{COFRE}/**",
+# V8.2: each path, in Claude Code rule syntax (`~/` = home, `//` = absolute).
+DENY_PATHS = {
+    f"~/{VAULT}/**": f"~/{VAULT}/**",
     "~/.config/ward/**": "~/.config/ward/**",
     "/run/user/*/ward/**": "//run/user/*/ward/**",
     "/media/**/ward-backup/**": "//media/**/ward-backup/**",
@@ -71,14 +73,14 @@ CAMINHOS_DENY = {
     f"{SSH}/**": f"{SSH}/**",
 }
 
-# Regras `Bash` (cinto de segurança, RA3; Fase 50a): cada comando de ATAQUES_BASH tem
-# de ser negado, e nenhum comando de exemplo da skill (blocos ```sh) nem de LEGITIMOS
-# pode ser. O Claude Code compara o texto da regra com `*` como curinga; não está
-# conferido (M10) se ele olha o comando inteiro ou cada subcomando (`&&`, `;`, `|`),
-# então os dois modelos são exigidos. `{e}` = entrada de banco, `{a}` = entrada com
-# anexo, `{h}` = home (trocados por `str.replace`, sem `format`).
-ATAQUES_BASH = [
-    # Formas que escapavam das regras com âncora `ward run * -- …` (auditoria do M8).
+# `Bash` rules (seat belt, RA3; Phase 50a): every command of BASH_ATTACKS has to be
+# denied, and no example command of the skill (```sh blocks) nor of LEGITIMATE may be.
+# Claude Code compares the rule text with `*` as a wildcard; it is not verified (M10)
+# whether it looks at the whole command or at each subcommand (`&&`, `;`, `|`), so both
+# models are required. `{e}` = database entry, `{a}` = entry with an attachment,
+# `{h}` = home (swapped by `str.replace`, without `format`).
+BASH_ATTACKS = [
+    # Forms that escaped the rules anchored at `ward run * -- …` (M8 audit).
     "ward run {e} -- /usr/bin/env",
     "ward run {e} -- env",
     "/usr/local/bin/ward run {e} -- printenv PGPASSWORD",
@@ -138,10 +140,10 @@ ATAQUES_BASH = [
     "ward run {a} -- sh -c 'base64 \"$WARD_ARQUIVO_CHAVE\"'",
     "ward run {a} -- sh -c 'xxd < \"$WARD_ARQUIVO_CHAVE\"'",
     "ward run {a} -- sh -c 'ln -s \"$WARD_ARQUIVO_CHAVE\" /tmp/k'",
-    # Fase 54b: o `od` sem `<` nem `|` (as regras de entrada padrão pegam os outros).
+    # Phase 54b: `od` without `<` or `|` (the standard input rules catch the others).
     "ward run {a} -- sh -c 'od -c \"$WARD_ARQUIVO_CHAVE\"'",
-    # Caminhos do Ward: por extenso, com curinga, por variável e por `cd`.
-    "cat {h}/" + COFRE + "/cofre.ward",
+    # Ward's paths: spelled out, with a wildcard, through a variable and through `cd`.
+    "cat {h}/" + VAULT + "/cofre.ward",
     "ls ~/.local/share/w*",
     "ls ~/.local/sh*/w*",
     "cp ~/.local/share/w?rd/* /tmp",
@@ -169,8 +171,8 @@ ATAQUES_BASH = [
     "cat " + SSH + "/id*",
     "ward destravar",
     "/usr/local/bin/ward ssh --token-fd 3 acme-ssh-senha-stage id",
-    # Fase 54b (D68): o script pela entrada padrão, que a janela de aprovação não
-    # mostra: arquivo, here-doc e here-string, depois e antes do `ward run`.
+    # Phase 54b (D68): the script through standard input, which the approval window does
+    # not show: file, here-doc and here-string, after and before `ward run`.
     "ward run {e} -- /usr/bin/python3 < /tmp/script.py",
     "ward run {e} -- /usr/bin/python3 -I </tmp/script.py",
     "ward run {e} -- /usr/bin/python3 0< /tmp/script.py",
@@ -184,11 +186,11 @@ ATAQUES_BASH = [
     "ward run {e} -- /usr/bin/python3 <(cat /tmp/script.py)",
 ]
 
-# Fase 54b (D68): o script por pipe para o `ward run`. Só o modelo do comando inteiro
-# vê o `|`: separado em subcomandos (`printf …` e `ward run … -- python3`), nenhum
-# pedaço é ataque. Quem barra de verdade é o daemon (aviso e confirmação na janela);
-# a regra é cinto de segurança. Exigido só no comando inteiro.
-ATAQUES_BASH_INTEIRO = [
+# Phase 54b (D68): the script piped into `ward run`. Only the whole-command model sees
+# the `|`: split into subcommands (`printf …` and `ward run … -- python3`), no piece is
+# an attack. What really blocks it is the daemon (warning and confirmation in the
+# window); the rule is a seat belt. Required only on the whole command.
+WHOLE_BASH_ATTACKS = [
     "printf 'import os\nprint(os.environ[\"PGPASSWORD\"][::-1])\n' | ward run {e} -- /usr/bin/python3",
     "cat /tmp/script.py | ward run {e} -- /usr/bin/python3",
     "echo 'select 1' | ward run {e} -- /usr/bin/psql",
@@ -196,8 +198,8 @@ ATAQUES_BASH_INTEIRO = [
     "printf x |& ward run {e} -- /usr/bin/python3",
 ]
 
-# Comandos de uso normal que nenhuma regra pode negar (além dos blocos ```sh da skill).
-LEGITIMOS = [
+# Normal-use commands that no rule may deny (besides the skill's ```sh blocks).
+LEGITIMATE = [
     "ward lista",
     "ward lista --json",
     "ward travar",
@@ -216,14 +218,14 @@ LEGITIMOS = [
     "ssh git@github.com",
 ]
 
-# Fase 54a (RA8): o destrave do usuário no terminal, pelo caminho completo.
-DESTRAVAR = "/usr/local/bin/ward destravar"
+# Phase 54a (RA8): the user's unlock in the terminal, by the full path.
+UNLOCK = "/usr/local/bin/ward destravar"
 
-# A description tem de disparar nestes pedidos (minúsculas).
-GATILHOS = ["login", "senha", "ssh", "token", "banco"]
+# The description has to trigger on these requests (lowercase).
+TRIGGERS = ["login", "senha", "ssh", "token", "banco"]
 
-# V8.2/RA3/V8.4: o que a skill precisa dizer.
-OBRIGATORIOS_SKILL = [
+# V8.2/RA3/V8.4: what the skill has to say.
+REQUIRED_IN_SKILL = [
     "base64",
     "hex",
     "xxd",
@@ -244,18 +246,18 @@ OBRIGATORIOS_SKILL = [
     "entrada inexistente",
 ]
 
-PROIBIDOS = [
+FORBIDDEN = [
     (re.compile(r"keepass", re.I), "cita o KeePass XC"),
     (re.compile(r"cofre-[a-z]"), "cita script cofre-*"),
     (re.compile(r"--token"), "cita o --token-fd do app"),
 ]
 
 
-class Falha(Exception):
+class Failure(Exception):
     pass
 
 
-def subcomandos_da_ajuda(ward):
+def help_subcommands(ward):
     r = subprocess.run(
         [ward, "--help"],
         env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"},
@@ -265,409 +267,409 @@ def subcomandos_da_ajuda(ward):
         check=False,
     )
     if r.returncode != 0:
-        raise Falha(f"`ward --help` saiu {r.returncode}")
+        raise Failure(f"`ward --help` saiu {r.returncode}")
     subs = set(re.findall(r"^  ward ([a-z][a-z-]*)", r.stdout.decode("utf-8"), re.M))
     if not {"lista", "run", "ssh", "travar"} <= subs:
-        raise Falha("`ward --help` sem os comandos básicos; binário errado?")
+        raise Failure("`ward --help` sem os comandos básicos; binário errado?")
     return subs
 
 
-def ler_frontmatter(texto):
-    if not texto.startswith("---\n"):
-        raise Falha("SKILL.md sem frontmatter na primeira linha")
-    fim = texto.find("\n---\n", 4)
-    if fim < 0:
-        raise Falha("frontmatter sem o `---` de fechamento")
-    campos = {}
-    for linha in texto[4:fim].split("\n"):
-        m = re.fullmatch(r"([a-z-]+): (.+)", linha)
+def read_frontmatter(text):
+    if not text.startswith("---\n"):
+        raise Failure("SKILL.md sem frontmatter na primeira linha")
+    end = text.find("\n---\n", 4)
+    if end < 0:
+        raise Failure("frontmatter sem o `---` de fechamento")
+    fields = {}
+    for line in text[4:end].split("\n"):
+        m = re.fullmatch(r"([a-z-]+): (.+)", line)
         if not m:
-            raise Falha("linha do frontmatter fora do formato `chave: valor`")
-        if m.group(1) in campos:
-            raise Falha(f"chave repetida no frontmatter: {m.group(1)}")
-        campos[m.group(1)] = m.group(2).strip()
-    if set(campos) != {"name", "description"}:
-        raise Falha(f"frontmatter tem de ter só name e description: {sorted(campos)}")
-    if campos["name"] != "ward":
-        raise Falha("name do frontmatter não é `ward`")
-    desc = campos["description"].lower()
+            raise Failure("linha do frontmatter fora do formato `chave: valor`")
+        if m.group(1) in fields:
+            raise Failure(f"chave repetida no frontmatter: {m.group(1)}")
+        fields[m.group(1)] = m.group(2).strip()
+    if set(fields) != {"name", "description"}:
+        raise Failure(f"frontmatter tem de ter só name e description: {sorted(fields)}")
+    if fields["name"] != "ward":
+        raise Failure("name do frontmatter não é `ward`")
+    desc = fields["description"].lower()
     if not 100 <= len(desc) <= 1024:
-        raise Falha("description com tamanho fora de 100–1024")
-    faltam = [g for g in GATILHOS if g not in desc]
-    if faltam:
-        raise Falha(f"description não dispara em: {faltam}")
+        raise Failure("description com tamanho fora de 100–1024")
+    missing = [g for g in TRIGGERS if g not in desc]
+    if missing:
+        raise Failure(f"description não dispara em: {missing}")
 
 
-def trechos_de_codigo(texto):
-    """Blocos ``` e trechos entre crases simples."""
-    blocos = re.findall(r"^```[^\n]*\n(.*?)^```", texto, re.M | re.S)
-    sem_blocos = re.sub(r"^```[^\n]*\n.*?^```", "", texto, flags=re.M | re.S)
-    return blocos + re.findall(r"`([^`\n]+)`", sem_blocos)
+def code_excerpts(text):
+    """``` blocks and excerpts between single backticks."""
+    blocks = re.findall(r"^```[^\n]*\n(.*?)^```", text, re.M | re.S)
+    without_blocks = re.sub(r"^```[^\n]*\n.*?^```", "", text, flags=re.M | re.S)
+    return blocks + re.findall(r"`([^`\n]+)`", without_blocks)
 
 
-def conferir_comandos(texto, ajuda, nome, avisos):
-    for trecho in trechos_de_codigo(texto):
-        for sub in re.findall(r"(?:^|[\s;|&(])ward\s+([^\s`]+)", trecho, re.M):
+def verify_commands(text, help_subs, name, notices):
+    for excerpt in code_excerpts(text):
+        for sub in re.findall(r"(?:^|[\s;|&(])ward\s+([^\s`]+)", excerpt, re.M):
             if sub.startswith("<") or sub in ("[", "--help", "--version"):
                 if sub.startswith("<"):
-                    raise Falha(f"{nome}: `ward <…>` sem subcomando")
+                    raise Failure(f"{name}: `ward <…>` sem subcomando")
                 continue
-            if sub not in PERMITIDOS:
-                raise Falha(f"{nome}: comando fora de V8.1: ward {sub}")
-            if sub not in ajuda:
-                if sub in PENDENTES:
-                    avisos.add(sub)
+            if sub not in ALLOWED:
+                raise Failure(f"{name}: comando fora de V8.1: ward {sub}")
+            if sub not in help_subs:
+                if sub in PENDING:
+                    notices.add(sub)
                     continue
-                raise Falha(f"{nome}: comando que não está no `ward --help`: ward {sub}")
+                raise Failure(f"{name}: comando que não está no `ward --help`: ward {sub}")
 
 
-def ler_padroes():
+def read_patterns():
     try:
-        st = os.stat(VARIACOES, follow_symlinks=False)
+        st = os.stat(VARIATIONS, follow_symlinks=False)
     except FileNotFoundError:
-        raise Falha("falta .dev/variations.txt; rode `make dev-variations`") from None
-    if not os.path.isfile(VARIACOES) or os.path.islink(VARIACOES) or st.st_mode & 0o077:
-        raise Falha(".dev/variations.txt não é arquivo comum 0600")
-    with open(VARIACOES, "rb") as f:
-        padroes = [p for p in f.read().split(b"\n") if p]
-    if len(padroes) < 50 or any(len(p) < 6 for p in padroes):
-        raise Falha(".dev/variations.txt com padrões de menos ou curtos demais")
-    return padroes
+        raise Failure("falta .dev/variations.txt; rode `make dev-variations`") from None
+    if not os.path.isfile(VARIATIONS) or os.path.islink(VARIATIONS) or st.st_mode & 0o077:
+        raise Failure(".dev/variations.txt não é arquivo comum 0600")
+    with open(VARIATIONS, "rb") as f:
+        patterns = [p for p in f.read().split(b"\n") if p]
+    if len(patterns) < 50 or any(len(p) < 6 for p in patterns):
+        raise Failure(".dev/variations.txt com padrões de menos ou curtos demais")
+    return patterns
 
 
-def conferir_segredos(arvore, padroes):
-    for raiz, pastas, arquivos in os.walk(arvore):
-        pastas.sort()
-        for a in sorted(arquivos):
-            caminho = os.path.join(raiz, a)
-            if os.path.islink(caminho):
-                raise Falha(f"link simbólico em skill/: {os.path.relpath(caminho, arvore)}")
-            with open(caminho, "rb") as f:
-                dados = f.read()
-            achados = sum(1 for p in padroes if p in dados)
-            if achados:
-                rel = os.path.relpath(caminho, arvore)
-                raise Falha(f"{rel}: {achados} padrão(ões) de .dev/variations.txt")
+def verify_secrets(tree, patterns):
+    for root, dirs, files in os.walk(tree):
+        dirs.sort()
+        for a in sorted(files):
+            path = os.path.join(root, a)
+            if os.path.islink(path):
+                raise Failure(f"link simbólico em skill/: {os.path.relpath(path, tree)}")
+            with open(path, "rb") as f:
+                data = f.read()
+            found = sum(1 for p in patterns if p in data)
+            if found:
+                rel = os.path.relpath(path, tree)
+                raise Failure(f"{rel}: {found} padrão(ões) de .dev/variations.txt")
 
 
-def sem_chave_repetida(pares):
+def no_repeated_key(pairs):
     obj = {}
-    for k, v in pares:
+    for k, v in pairs:
         if k in obj:
-            raise Falha(f"chave repetida no JSON: {k}")
+            raise Failure(f"chave repetida no JSON: {k}")
         obj[k] = v
     return obj
 
 
-def conferir_deny(caminho):
+def verify_deny(path):
     try:
-        with open(caminho, encoding="utf-8") as f:
-            dados = json.load(f, object_pairs_hook=sem_chave_repetida)
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f, object_pairs_hook=no_repeated_key)
     except (OSError, ValueError) as e:
-        raise Falha(f"settings-deny.json inválido: {type(e).__name__}") from None
-    if not isinstance(dados, dict) or set(dados) != {"permissions"}:
-        raise Falha("settings-deny.json tem de ter só `permissions`")
-    perm = dados["permissions"]
+        raise Failure(f"settings-deny.json inválido: {type(e).__name__}") from None
+    if not isinstance(data, dict) or set(data) != {"permissions"}:
+        raise Failure("settings-deny.json tem de ter só `permissions`")
+    perm = data["permissions"]
     if not isinstance(perm, dict) or set(perm) != {"deny"}:
-        raise Falha("`permissions` tem de ter só `deny` (nada de allow/ask)")
+        raise Failure("`permissions` tem de ter só `deny` (nada de allow/ask)")
     deny = perm["deny"]
     if not isinstance(deny, list) or not all(isinstance(r, str) and r for r in deny):
-        raise Falha("`deny` tem de ser lista de textos")
+        raise Failure("`deny` tem de ser lista de textos")
     if len(set(deny)) != len(deny):
-        raise Falha("regra repetida no deny")
-    for regra in deny:
-        # Sem parêntese dentro: o leitor de regras do Claude Code pode cortar no `)`.
-        if not re.fullmatch(r"(Read|Edit|Bash)\([^()]+\)", regra):
-            raise Falha(f"regra fora do formato: {regra}")
-    for escopo, regra in CAMINHOS_DENY.items():
-        for ferramenta in ("Read", "Edit"):
-            if f"{ferramenta}({regra})" not in deny:
-                raise Falha(f"deny sem {ferramenta}({regra}) (V8.2: {escopo})")
+        raise Failure("regra repetida no deny")
+    for rule in deny:
+        # No parenthesis inside: Claude Code's rule reader may cut at the `)`.
+        if not re.fullmatch(r"(Read|Edit|Bash)\([^()]+\)", rule):
+            raise Failure(f"regra fora do formato: {rule}")
+    for scope, rule in DENY_PATHS.items():
+        for tool in ("Read", "Edit"):
+            if f"{tool}({rule})" not in deny:
+                raise Failure(f"deny sem {tool}({rule}) (V8.2: {scope})")
     return [r[len("Bash(") : -1] for r in deny if r.startswith("Bash(")]
 
 
-def padrao_regex(padrao):
-    """Regra `Bash(...)` do Claude Code: `*` casa qualquer texto; o resto é literal."""
-    return re.compile("".join(".*" if c == "*" else re.escape(c) for c in padrao), re.S)
+def pattern_regex(pattern):
+    """Claude Code `Bash(...)` rule: `*` matches any text; the rest is literal."""
+    return re.compile("".join(".*" if c == "*" else re.escape(c) for c in pattern), re.S)
 
 
-def subcomandos(comando):
-    """Parte o comando em `;`, `&`, `|` e fim de linha fora de aspas (aproximação do
-    que o Claude Code faz com `&&`, `||`, `;` e `|`)."""
-    partes, atual, aspa, i = [], [], None, 0
-    while i < len(comando):
-        c = comando[i]
-        if aspa:
-            if c == "\\" and aspa == '"' and i + 1 < len(comando):
-                atual.append(comando[i : i + 2])
+def subcommands(command):
+    """Splits the command at `;`, `&`, `|` and end of line outside quotes (an
+    approximation of what Claude Code does with `&&`, `||`, `;` and `|`)."""
+    parts, current, quote, i = [], [], None, 0
+    while i < len(command):
+        c = command[i]
+        if quote:
+            if c == "\\" and quote == '"' and i + 1 < len(command):
+                current.append(command[i : i + 2])
                 i += 2
                 continue
-            if c == aspa:
-                aspa = None
+            if c == quote:
+                quote = None
         elif c in "'\"":
-            aspa = c
+            quote = c
         elif c in ";&|\n":
-            partes.append("".join(atual))
-            atual = []
+            parts.append("".join(current))
+            current = []
             i += 1
             continue
-        atual.append(c)
+        current.append(c)
         i += 1
-    partes.append("".join(atual))
-    return [p.strip() for p in partes if p.strip()]
+    parts.append("".join(current))
+    return [p.strip() for p in parts if p.strip()]
 
 
-def negado(regras, comando):
-    """(inteiro, por subcomando): se alguma regra nega, em cada modelo."""
-    inteiro = any(r.fullmatch(comando.strip()) for r in regras)
-    partes = any(r.fullmatch(p) for r in regras for p in subcomandos(comando))
-    return inteiro, partes
+def denied(rules, command):
+    """(whole, per subcommand): whether some rule denies, in each model."""
+    whole = any(r.fullmatch(command.strip()) for r in rules)
+    parts = any(r.fullmatch(p) for r in rules for p in subcommands(command))
+    return whole, parts
 
 
-def comandos_da_skill(texto):
-    """Linhas dos blocos ```sh da skill, sem comentários."""
-    linhas = []
-    for bloco in re.findall(r"^```sh\n(.*?)^```", texto, re.M | re.S):
-        for linha in bloco.split("\n"):
-            linha = re.sub(r"\s+#.*$", "", linha).strip()
-            if linha and not linha.startswith("#"):
-                linhas.append(linha)
-    return linhas
+def skill_commands(text):
+    """Lines of the skill's ```sh blocks, without comments."""
+    lines = []
+    for block in re.findall(r"^```sh\n(.*?)^```", text, re.M | re.S):
+        for line in block.split("\n"):
+            line = re.sub(r"\s+#.*$", "", line).strip()
+            if line and not line.startswith("#"):
+                lines.append(line)
+    return lines
 
 
-def conferir_bash(padroes, texto):
-    regras = [padrao_regex(p) for p in padroes]
-    trocas = {"{e}": "acme-pg-dev", "{a}": "acme-ssh-chave-prod", "{h}": "$HOME"}
-    for modelo in ATAQUES_BASH:
-        comando = modelo
-        for velho, novo in trocas.items():
-            comando = comando.replace(velho, novo)
-        inteiro, partes = negado(regras, comando)
-        if not (inteiro and partes):
-            qual = "inteiro" if not inteiro else "por subcomando"
-            raise Falha(f"deny Bash não nega ({qual}): {comando!r}")
-    for modelo in ATAQUES_BASH_INTEIRO:
-        comando = modelo
-        for velho, novo in trocas.items():
-            comando = comando.replace(velho, novo)
-        inteiro, _partes = negado(regras, comando)
-        if not inteiro:
-            raise Falha(f"deny Bash não nega (inteiro): {comando!r}")
-    comandos = comandos_da_skill(texto)
-    if len(comandos) < 8:
-        raise Falha("SKILL.md com poucos exemplos em blocos ```sh")
-    for comando in LEGITIMOS + comandos:
-        if any(negado(regras, comando)):
-            raise Falha(f"deny Bash nega comando legítimo: {comando!r}")
+def verify_bash(patterns, text):
+    rules = [pattern_regex(p) for p in patterns]
+    swaps = {"{e}": "acme-pg-dev", "{a}": "acme-ssh-chave-prod", "{h}": "$HOME"}
+    for template in BASH_ATTACKS:
+        command = template
+        for old, new in swaps.items():
+            command = command.replace(old, new)
+        whole, parts = denied(rules, command)
+        if not (whole and parts):
+            which = "inteiro" if not whole else "por subcomando"
+            raise Failure(f"deny Bash não nega ({which}): {command!r}")
+    for template in WHOLE_BASH_ATTACKS:
+        command = template
+        for old, new in swaps.items():
+            command = command.replace(old, new)
+        whole, _parts = denied(rules, command)
+        if not whole:
+            raise Failure(f"deny Bash não nega (inteiro): {command!r}")
+    commands = skill_commands(text)
+    if len(commands) < 8:
+        raise Failure("SKILL.md com poucos exemplos em blocos ```sh")
+    for command in LEGITIMATE + commands:
+        if any(denied(rules, command)):
+            raise Failure(f"deny Bash nega comando legítimo: {command!r}")
 
 
-def conferir(arvore, ward):
-    """Confere a árvore `arvore` (cópia de `skill/`). Devolve os pendentes avisados."""
-    # Links primeiro: nada é lido por um link (um link para .dev/ traria segredo).
-    for raiz, pastas, arquivos in os.walk(arvore):
-        for a in pastas + arquivos:
-            if os.path.islink(os.path.join(raiz, a)):
-                raise Falha(f"link simbólico em skill/: {a}")
-    ajuda = subcomandos_da_ajuda(ward)
-    skill_md = os.path.join(arvore, "ward", "SKILL.md")
+def verify(tree, ward):
+    """Verifies the tree `tree` (a copy of `skill/`). Returns the pending ones noticed."""
+    # Links first: nothing is read through a link (a link to .dev/ would bring a secret).
+    for root, dirs, files in os.walk(tree):
+        for a in dirs + files:
+            if os.path.islink(os.path.join(root, a)):
+                raise Failure(f"link simbólico em skill/: {a}")
+    help_subs = help_subcommands(ward)
+    skill_md = os.path.join(tree, "ward", "SKILL.md")
     try:
         with open(skill_md, encoding="utf-8") as f:
-            texto = f.read()
+            text = f.read()
     except (OSError, UnicodeDecodeError):
-        raise Falha("skill/ward/SKILL.md ausente ou não UTF-8") from None
-    ler_frontmatter(texto)
-    avisos = set()
-    # Comandos e citações proibidas: a skill inteira (`skill/ward/`). O README de
-    # `skill/` é do usuário e descreve as regras de deny (cita o que elas barram).
-    for raiz, _pastas, arquivos in os.walk(os.path.join(arvore, "ward")):
-        for a in arquivos:
+        raise Failure("skill/ward/SKILL.md ausente ou não UTF-8") from None
+    read_frontmatter(text)
+    notices = set()
+    # Commands and forbidden mentions: the whole skill (`skill/ward/`). The README of
+    # `skill/` is the user's and describes the deny rules (it mentions what they block).
+    for root, _dirs, files in os.walk(os.path.join(tree, "ward")):
+        for a in files:
             if not a.endswith(".md"):
                 continue
-            caminho = os.path.join(raiz, a)
-            rel = os.path.relpath(caminho, arvore)
+            path = os.path.join(root, a)
+            rel = os.path.relpath(path, tree)
             try:
-                with open(caminho, encoding="utf-8") as f:
-                    conteudo = f.read()
+                with open(path, encoding="utf-8") as f:
+                    content = f.read()
             except UnicodeDecodeError:
-                raise Falha(f"{rel}: não é UTF-8") from None
-            conferir_comandos(conteudo, ajuda, rel, avisos)
-            for padrao, motivo in PROIBIDOS:
-                if padrao.search(conteudo):
-                    raise Falha(f"{rel}: {motivo}")
-    for escopo in CAMINHOS_DENY:
-        if escopo != f"{SSH}/**" and f"`{escopo}`" not in texto:
-            raise Falha(f"SKILL.md não manda evitar {escopo}")
-    for termo in OBRIGATORIOS_SKILL:
-        if termo not in texto:
-            raise Falha(f"SKILL.md não cita {termo!r}")
-    # Fase 54a (RA8): a senha mestra só pelo `ward` instalado, pelo caminho completo.
-    if DESTRAVAR not in texto:
-        raise Falha(f"SKILL.md não manda destravar por {DESTRAVAR} (RA8)")
-    if re.search(r"(?<!/usr/local/bin/)\bward\s+destravar\b", texto):
-        raise Falha("SKILL.md manda destravar pelo `ward` do PATH (RA8)")
+                raise Failure(f"{rel}: não é UTF-8") from None
+            verify_commands(content, help_subs, rel, notices)
+            for pattern, reason in FORBIDDEN:
+                if pattern.search(content):
+                    raise Failure(f"{rel}: {reason}")
+    for scope in DENY_PATHS:
+        if scope != f"{SSH}/**" and f"`{scope}`" not in text:
+            raise Failure(f"SKILL.md não manda evitar {scope}")
+    for term in REQUIRED_IN_SKILL:
+        if term not in text:
+            raise Failure(f"SKILL.md não cita {term!r}")
+    # Phase 54a (RA8): the master password only through the installed `ward`, by the full path.
+    if UNLOCK not in text:
+        raise Failure(f"SKILL.md não manda destravar por {UNLOCK} (RA8)")
+    if re.search(r"(?<!/usr/local/bin/)\bward\s+destravar\b", text):
+        raise Failure("SKILL.md manda destravar pelo `ward` do PATH (RA8)")
     try:
-        with open(os.path.join(arvore, "README.md"), encoding="utf-8") as f:
-            leia = f.read()
+        with open(os.path.join(tree, "README.md"), encoding="utf-8") as f:
+            readme = f.read()
     except (OSError, UnicodeDecodeError):
-        raise Falha("skill/README.md ausente ou não UTF-8") from None
-    if f"`{DESTRAVAR}`" not in leia:
-        raise Falha(f"skill/README.md não manda destravar por `{DESTRAVAR}` (RA8)")
-    conferir_segredos(arvore, ler_padroes())
-    padroes_bash = conferir_deny(os.path.join(arvore, "settings-deny.json"))
-    conferir_bash(padroes_bash, texto)
-    return avisos
+        raise Failure("skill/README.md ausente ou não UTF-8") from None
+    if f"`{UNLOCK}`" not in readme:
+        raise Failure(f"skill/README.md não manda destravar por `{UNLOCK}` (RA8)")
+    verify_secrets(tree, read_patterns())
+    bash_patterns = verify_deny(os.path.join(tree, "settings-deny.json"))
+    verify_bash(bash_patterns, text)
+    return notices
 
 
-def ataque(nome, mudar, ward, base):
-    """Planta o ataque numa cópia e exige que a conferência falhe."""
+def attack(name, change, ward, base):
+    """Plants the attack in a copy and requires the verification to fail."""
     with tempfile.TemporaryDirectory(prefix="skill-ataque-") as tmp:
-        copia = os.path.join(tmp, "skill")
-        shutil.copytree(base, copia, symlinks=True)
-        mudar(copia)
+        copy = os.path.join(tmp, "skill")
+        shutil.copytree(base, copy, symlinks=True)
+        change(copy)
         try:
-            conferir(copia, ward)
-        except Falha as e:
-            # O motivo nunca traz o padrão (só arquivo e contagem).
-            print(f"  ok   ataque recusado: {nome} ({e})", flush=True)
+            verify(copy, ward)
+        except Failure as e:
+            # The reason never carries the pattern (only file and count).
+            print(f"  ok   ataque recusado: {name} ({e})", flush=True)
             return
-    raise Falha(f"ataque passou pela conferência: {nome}")
+    raise Failure(f"ataque passou pela conferência: {name}")
 
 
-def acrescentar(rel, dados):
-    def f(copia):
-        with open(os.path.join(copia, rel), "ab") as arq:
-            arq.write(dados)
-
-    return f
-
-
-def trocar(rel, velho, novo, todos=False):
-    def f(copia):
-        p = os.path.join(copia, rel)
-        with open(p, encoding="utf-8") as arq:
-            t = arq.read()
-        if velho not in t:
-            raise Falha(f"autoteste: trecho não achado em {rel}")
-        with open(p, "w", encoding="utf-8") as arq:
-            arq.write(t.replace(velho, novo) if todos else t.replace(velho, novo, 1))
+def append(rel, data):
+    def f(copy):
+        with open(os.path.join(copy, rel), "ab") as fh:
+            fh.write(data)
 
     return f
 
 
-def tirar_deny(*regras):
-    def f(copia):
-        p = os.path.join(copia, "settings-deny.json")
-        with open(p, encoding="utf-8") as arq:
-            d = json.load(arq)
-        for regra in regras:
-            d["permissions"]["deny"].remove(regra)
-        with open(p, "w", encoding="utf-8") as arq:
-            json.dump(d, arq)
+def replace(rel, old, new, every=False):
+    def f(copy):
+        p = os.path.join(copy, rel)
+        with open(p, encoding="utf-8") as fh:
+            t = fh.read()
+        if old not in t:
+            raise Failure(f"autoteste: trecho não achado em {rel}")
+        with open(p, "w", encoding="utf-8") as fh:
+            fh.write(t.replace(old, new) if every else t.replace(old, new, 1))
 
     return f
 
 
-def acrescentar_deny(regra):
-    def f(copia):
-        p = os.path.join(copia, "settings-deny.json")
-        with open(p, encoding="utf-8") as arq:
-            d = json.load(arq)
-        d["permissions"]["deny"].append(regra)
-        with open(p, "w", encoding="utf-8") as arq:
-            json.dump(d, arq)
+def remove_deny(*rules):
+    def f(copy):
+        p = os.path.join(copy, "settings-deny.json")
+        with open(p, encoding="utf-8") as fh:
+            d = json.load(fh)
+        for rule in rules:
+            d["permissions"]["deny"].remove(rule)
+        with open(p, "w", encoding="utf-8") as fh:
+            json.dump(d, fh)
 
     return f
 
 
-def autoteste(ward, base):
-    # Controle: a árvore real passa; senão todo ataque "falharia" à toa.
-    conferir(base, ward)
-    padroes = ler_padroes()
-    # Um segredo inteiro, uma variação (a do meio da lista) e a última, em lugares
-    # diferentes: o exemplo, um arquivo novo e o JSON.
+def append_deny(rule):
+    def f(copy):
+        p = os.path.join(copy, "settings-deny.json")
+        with open(p, encoding="utf-8") as fh:
+            d = json.load(fh)
+        d["permissions"]["deny"].append(rule)
+        with open(p, "w", encoding="utf-8") as fh:
+            json.dump(d, fh)
+
+    return f
+
+
+def self_test(ward, base):
+    # Control: the real tree passes; otherwise every attack would "fail" for nothing.
+    verify(base, ward)
+    patterns = read_patterns()
+    # A whole secret, a variation (the one in the middle of the list) and the last one,
+    # in different places: the example, a new file and the JSON.
     for i, (rel, p) in enumerate(
         [
-            ("ward/SKILL.md", padroes[0]),
-            ("ward/referencia.md", padroes[len(padroes) // 2]),
-            ("settings-deny.json", padroes[-1]),
+            ("ward/SKILL.md", patterns[0]),
+            ("ward/reference.md", patterns[len(patterns) // 2]),
+            ("settings-deny.json", patterns[-1]),
         ]
     ):
-        ataque(f"segredo de teste plantado ({i + 1}/3)", acrescentar(rel, b"\n" + p + b"\n"),
+        attack(f"segredo de teste plantado ({i + 1}/3)", append(rel, b"\n" + p + b"\n"),
                ward, base)
-    ataque("comando inexistente", acrescentar("ward/SKILL.md", b"\n`ward revelar acme-pg-dev`\n"),
+    attack("comando inexistente", append("ward/SKILL.md", b"\n`ward revelar acme-pg-dev`\n"),
            ward, base)
-    ataque("comando fora de V8.1",
-           acrescentar("ward/SKILL.md", b"\n```sh\nward destravar\n```\n"), ward, base)
-    ataque("script antigo", acrescentar("ward/SKILL.md", b"\nuse `cofre-run`\n"), ward, base)
-    ataque("KeePass XC", acrescentar("ward/SKILL.md", b"\nKeePass" b"XC\n"), ward, base)
-    ataque("comando inexistente em outro arquivo da skill",
-           acrescentar("ward/referencia.md", b"\n```sh\nward exportar --tudo\n```\n"), ward, base)
-    ataque("token no argv", acrescentar("ward/SKILL.md", b"\n`ward ssh --token-fd 3 x`\n"),
+    attack("comando fora de V8.1",
+           append("ward/SKILL.md", b"\n```sh\nward destravar\n```\n"), ward, base)
+    attack("script antigo", append("ward/SKILL.md", b"\nuse `cofre-run`\n"), ward, base)
+    attack("KeePass XC", append("ward/SKILL.md", b"\nKeePass" b"XC\n"), ward, base)
+    attack("comando inexistente em outro arquivo da skill",
+           append("ward/reference.md", b"\n```sh\nward exportar --tudo\n```\n"), ward, base)
+    attack("token no argv", append("ward/SKILL.md", b"\n`ward ssh --token-fd 3 x`\n"),
            ward, base)
-    ataque("frontmatter com outro nome", trocar("ward/SKILL.md", "name: ward", "name: cofre"),
+    attack("frontmatter com outro nome", replace("ward/SKILL.md", "name: ward", "name: cofre"),
            ward, base)
-    ataque("description sem gatilho de banco",
-           trocar("ward/SKILL.md", "banco", "base", todos=True), ward, base)
-    ataque("JSON inválido", acrescentar("settings-deny.json", b",}"), ward, base)
-    ataque("JSON com chave repetida",
-           trocar("settings-deny.json", '"permissions": {', '"permissions": {"deny": [],'),
+    attack("description sem gatilho de banco",
+           replace("ward/SKILL.md", "banco", "base", every=True), ward, base)
+    attack("JSON inválido", append("settings-deny.json", b",}"), ward, base)
+    attack("JSON com chave repetida",
+           replace("settings-deny.json", '"permissions": {', '"permissions": {"deny": [],'),
            ward, base)
-    ataque("JSON com allow", trocar("settings-deny.json", '"deny": [',
+    attack("JSON com allow", replace("settings-deny.json", '"deny": [',
                                     '"allow": ["Bash(*)"], "deny": ['), ward, base)
-    for regra in CAMINHOS_DENY.values():
-        ataque(f"deny sem Read({regra})", tirar_deny(f"Read({regra})"), ward, base)
-    ataque("skill sem a regra de base64", trocar("ward/SKILL.md", "base64", "b64", todos=True),
+    for rule in DENY_PATHS.values():
+        attack(f"deny sem Read({rule})", remove_deny(f"Read({rule})"), ward, base)
+    attack("skill sem a regra de base64", replace("ward/SKILL.md", "base64", "b64", every=True),
            ward, base)
-    ataque("skill sem o caminho do backup",
-           trocar("ward/SKILL.md", "`/media/**/ward-backup/**`", "pendrive"),
+    attack("skill sem o caminho do backup",
+           replace("ward/SKILL.md", "`/media/**/ward-backup/**`", "pendrive"),
            ward, base)
 
-    # Fase 50a: as regras Bash ancoradas no início deixavam passar estas formas.
-    ataque("deny com a regra de env ancorada no início",
-           trocar("settings-deny.json", "Bash(*ward*run*env*)", "Bash(ward run * -- env*)"),
+    # Phase 50a: the Bash rules anchored at the start let these forms through.
+    attack("deny com a regra de env ancorada no início",
+           replace("settings-deny.json", "Bash(*ward*run*env*)", "Bash(ward run * -- env*)"),
            ward, base)
-    ataque("deny sem a regra de env", tirar_deny("Bash(*ward*run*env*)"), ward, base)
-    ataque("deny sem as regras de od",
-           tirar_deny(*(f"Bash(*ward*run*{b}od*)" for b in (" ", "/", "'", "\"", "|"))),
+    attack("deny sem a regra de env", remove_deny("Bash(*ward*run*env*)"), ward, base)
+    attack("deny sem as regras de od",
+           remove_deny(*(f"Bash(*ward*run*{b}od*)" for b in (" ", "/", "'", "\"", "|"))),
            ward, base)
-    ataque("deny sem a regra de redirecionamento", tirar_deny("Bash(*ward*run*>*)"), ward, base)
-    # Fase 54b (D68): a entrada padrão que a janela não mostra.
-    ataque("deny sem a regra de entrada por arquivo", tirar_deny("Bash(*ward*run*<*)"),
+    attack("deny sem a regra de redirecionamento", remove_deny("Bash(*ward*run*>*)"), ward, base)
+    # Phase 54b (D68): the standard input that the window does not show.
+    attack("deny sem a regra de entrada por arquivo", remove_deny("Bash(*ward*run*<*)"),
            ward, base)
-    ataque("deny sem a regra de entrada antes do ward", tirar_deny("Bash(*<*ward*run*)"),
+    attack("deny sem a regra de entrada antes do ward", remove_deny("Bash(*<*ward*run*)"),
            ward, base)
-    ataque("deny sem a regra de pipe para o ward run", tirar_deny("Bash(*|*ward*run*)"),
+    attack("deny sem a regra de pipe para o ward run", remove_deny("Bash(*|*ward*run*)"),
            ward, base)
-    ataque("deny sem a regra de /run/user", tirar_deny("Bash(*/run/user*)"), ward, base)
-    ataque("deny sem a regra de /proc", tirar_deny("Bash(*/proc/*)"), ward, base)
-    ataque("deny que nega o uso normal", acrescentar_deny("Bash(*ward run*)"), ward, base)
-    ataque("deny com parênteses no padrão", acrescentar_deny("Bash(*ward*run*(set*)"), ward, base)
-    ataque("skill com o caminho do storage state num comando",
-           trocar("ward/SKILL.md",
+    attack("deny sem a regra de /run/user", remove_deny("Bash(*/run/user*)"), ward, base)
+    attack("deny sem a regra de /proc", remove_deny("Bash(*/proc/*)"), ward, base)
+    attack("deny que nega o uso normal", append_deny("Bash(*ward run*)"), ward, base)
+    attack("deny com parênteses no padrão", append_deny("Bash(*ward*run*(set*)"), ward, base)
+    attack("skill com o caminho do storage state num comando",
+           replace("ward/SKILL.md",
                   'WARD_ESTADO="$(ward playwright acme-wp-prod)" /usr/bin/python3 tests/test_painel.py',
                   "/usr/bin/python3 tests/test_painel.py /run/user/1000/ward/playwright/x.json"),
            ward, base)
-    ataque("skill com exemplo que imprime o token",
-           acrescentar("ward/SKILL.md",
+    attack("skill com exemplo que imprime o token",
+           append("ward/SKILL.md",
                        b"\n```sh\nward run beta-github-api -- sh -c 'echo $GITHUB_TOKEN'\n```\n"),
            ward, base)
-    ataque("skill sem o backup em /run/media",
-           trocar("ward/SKILL.md", "/run/media/**/ward-backup/**", "pendrive"), ward, base)
+    attack("skill sem o backup em /run/media",
+           replace("ward/SKILL.md", "/run/media/**/ward-backup/**", "pendrive"), ward, base)
 
-    # Fase 54a (RA8): destrave pelo `ward` do PATH, que um `ward` falso imita.
-    ataque("skill manda destravar pelo PATH",
-           trocar("ward/SKILL.md", DESTRAVAR, "ward destravar"), ward, base)
-    ataque("skill manda destravar por outro ward",
-           trocar("ward/SKILL.md", DESTRAVAR, "~/.local/bin/ward destravar"), ward, base)
-    ataque("skill cita destravar pelo PATH além do caminho completo",
-           acrescentar("ward/SKILL.md", b"\nOu rode ward  destravar no terminal.\n"), ward, base)
-    ataque("README sem o caminho completo",
-           trocar("README.md", f"`{DESTRAVAR}`", "`ward destravar`", todos=True), ward, base)
+    # Phase 54a (RA8): unlock through the `ward` of the PATH, which a fake `ward` imitates.
+    attack("skill manda destravar pelo PATH",
+           replace("ward/SKILL.md", UNLOCK, "ward destravar"), ward, base)
+    attack("skill manda destravar por outro ward",
+           replace("ward/SKILL.md", UNLOCK, "~/.local/bin/ward destravar"), ward, base)
+    attack("skill cita destravar pelo PATH além do caminho completo",
+           append("ward/SKILL.md", b"\nOu rode ward  destravar no terminal.\n"), ward, base)
+    attack("README sem o caminho completo",
+           replace("README.md", f"`{UNLOCK}`", "`ward destravar`", every=True), ward, base)
 
-    def link(copia):
-        os.symlink(VARIACOES, os.path.join(copia, "ward", "variacoes.md"))
+    def link(copy):
+        os.symlink(VARIATIONS, os.path.join(copy, "ward", "variations.md"))
 
-    ataque("link para fora de skill/", link, ward, base)
+    attack("link para fora de skill/", link, ward, base)
 
 
 def main():
@@ -675,16 +677,16 @@ def main():
         print("uso: skill.py <binário ward>", file=sys.stderr)
         return 2
     ward = os.path.realpath(sys.argv[1])
-    base = os.path.join(RAIZ, "skill")
+    base = os.path.join(ROOT, "skill")
     try:
         print("test-skill: autoteste (cada ataque tem de falhar)", flush=True)
-        autoteste(ward, base)
+        self_test(ward, base)
         print("test-skill: árvore real", flush=True)
-        avisos = conferir(base, ward)
-    except Falha as e:
+        notices = verify(base, ward)
+    except Failure as e:
         print(f"test-skill: FALHOU: {e}", file=sys.stderr)
         return 1
-    for sub in sorted(avisos):
+    for sub in sorted(notices):
         print(f"  aviso: `ward {sub}` ainda não está no `ward --help` (pendente da Fase 43)")
     print("test-skill: ok (V8.1, V8.2, V8.4)")
     return 0
