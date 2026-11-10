@@ -1228,7 +1228,7 @@ Decisões do usuário (2026-11-09):
 - pipe CDP: aceito no RA10, com o texto ampliado;
 - gerenciador de senhas do Chrome: desligar os dois.
 
-- [ ] Fase 44c — Achados da auditoria do M6 (com a 44b junto).
+- [x] Fase 44c — Achados da auditoria do M6 (com a 44b junto).
   - **Origem `http`** (`localhost`/`127.0.0.1`): `ward playwright`, `ward login` e o
     preencher do popup sempre passam pela janela de aprovação do app, com a origem à
     vista, mesmo no nível "livre". Sem app, "aprovação indisponível". Sem PIN extra no
@@ -1251,6 +1251,27 @@ Decisões do usuário (2026-11-09):
   - **44b:** mensagem real do `ward login` negado no roteiro do M6; comentário de
     `extensao/pagina.js:9-13`.
   S1, S9, S10, V6.*, V9.5.
+  Feita (2026-11-09):
+  - Em `http`, o login só sai depois da confirmação no app: no nível livre é
+    `confirmar` sem PIN; nos outros níveis, o pedido com PIN mostra a origem. O popup
+    preenche pelo service worker. O Chrome do playwright usa `MAP localhost 127.0.0.1`.
+  - Aprovador de teste `wardd-aprovador-teste` (só com `modo-teste`).
+  - Ataque `[::1]` em `login.py`/`playwright.py`: negado, o falso recebe 0 bytes.
+  - Política com `PasswordManagerEnabled` e `PasswordLeakDetectionEnabled` false.
+  - RA10 ampliado (pipes por `/proc/<pid>/fd`). Novos V6.17 e V6.18; V9.5 ampliado.
+  - Verde: `teste-login`, `teste-extensao`, `teste-playwright`,
+    `teste-politica-chrome`, `teste-install`, `teste-deb`, `make check` (gitleaks à
+    parte).
+  Pendências:
+  - `make app-check` e `make teste-sem-modo-teste` não rodaram (disco).
+  - Não há frame no FigCraft para a confirmação `http`.
+  - Risco residual: no `ward login` e no popup, quem confirma sem olhar ainda manda a
+    senha ao `[::1]`.
+  - O popup em `http` pede só confirmação, em qualquer nível.
+- [ ] Fase 44d (DESIGN) — Frame no `Ward.figcraft` para a janela de aprovação com origem
+  `http`: a confirmação (nível livre, "Negar" / "Confirmar a origem", aviso de `http`) e
+  o pedido com PIN com a origem à vista. Atualizar o `design-nodes.md`. A referência é a
+  tela da 44c (`docs/mission/evidence/fase-44c/`).
 - [x] Fase 44b — (juntada à 44c) Baixos do scrutiny do M6, sem bloquear:
   - o passo 1.2 do roteiro do M6 cita a mensagem "negado"; conferir a mensagem real do
     `ward login` negado;
