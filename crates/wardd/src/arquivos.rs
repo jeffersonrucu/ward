@@ -334,10 +334,32 @@ impl PastaAberta {
         PathBuf::from(format!("/proc/self/fd/{}", self.fd.as_raw_fd()))
     }
 
-    /// A pasta para o núcleo, com o uid esperado.
+    /// A pasta para o núcleo, com o uid esperado e o leitor da rotação (Fase 54c).
     pub fn pasta(&self) -> ward_core::backup::PastaBackup {
         ward_core::backup::PastaBackup::nova(self.caminho(), ward_plataforma::uid_efetivo())
+            .com_leitor(ler_versao_backup)
     }
+}
+
+/// Lê uma versão do backup local para a rotação conferir a geração (Fase 54c):
+/// `O_NOFOLLOW | O_NONBLOCK` (um link ou um FIFO trocado no lugar não é seguido nem
+/// prende a gravação), arquivo comum do `uid`, até o tamanho do formato. `None` em
+/// qualquer outro caso.
+fn ler_versao_backup(caminho: &Path, uid: u32) -> Option<Vec<u8>> {
+    let f = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC)
+        .open(caminho)
+        .ok()?;
+    let m = f.metadata().ok()?;
+    if !m.file_type().is_file() || m.uid() != uid || m.len() > MAX_ARQUIVO_COFRE {
+        return None;
+    }
+    let mut bytes = Vec::new();
+    (&f).take(MAX_ARQUIVO_COFRE + 1)
+        .read_to_end(&mut bytes)
+        .ok()?;
+    (bytes.len() as u64 <= MAX_ARQUIVO_COFRE).then_some(bytes)
 }
 
 /// Pasta de backups ao lado do cofre: `<pasta do cofre>/backups` (D17:

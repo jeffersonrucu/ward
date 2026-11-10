@@ -566,29 +566,256 @@ fn ataque_versoes_com_data_futura_nao_apagam_as_reais() {
     }
 }
 
+/// Planta `bytes` na pasta com o nome da versão `v`, 0600 (qualquer processo do
+/// usuário pode).
+fn plantar(pasta: &PastaBackup, v: Versao, bytes: &[u8]) {
+    let p = pasta.caminho(v);
+    fs::write(&p, bytes).unwrap();
+    fs::set_permissions(&p, fs::Permissions::from_mode(0o600)).unwrap();
+}
+
+/// Fase 54c (achado da Fase 54), ataque: um processo do usuário planta na pasta, com
+/// datas mais novas que as versões reais (mas passadas, até a próxima gravação), 36
+/// arquivos com nome de versão: cabeçalho válido com o corpo trocado, versão de outro
+/// cofre, cópias da versão real mais antiga e cópias da mais nova. Antes da correção, a
+/// gravação seguinte apagava as reais (a rotação contava o lixo pela data). Agora
+/// nenhuma real sai; o lixo e o outro cofre nunca saem; as cópias saem só com a geração
+/// delas, quando ela fica abaixo das 30.
+#[test]
+fn f54c_ataque_lixo_com_data_mais_nova_nao_apaga_versoes_reais() {
+    let d = Dir::novo("f54c-lixo");
+    let mut cofre = cofre_novo(SENHA_MESTRA);
+    let pasta = d.pasta();
+    let gravar = |cofre: &mut CofreAberto, t: u64| {
+        gravar_entradas_com_backup(&d.cofre(), cofre, &[], &pasta, em(t))
+            .unwrap()
+            .backup
+            .unwrap()
+    };
+    let mut reais: Vec<Versao> = (0..5u64)
+        .map(|i| gravar(&mut cofre, INSTANTE + i * 60))
+        .collect();
+    let antiga = fs::read(pasta.caminho(reais[0])).unwrap();
+    let recente = fs::read(pasta.caminho(reais[4])).unwrap();
+    let mut adulterada = recente.clone();
+    let n = adulterada.len();
+    adulterada[n - 3] ^= 0x5a;
+    let mut outro = cofre_novo(SENHA_MESTRA);
+    let d2 = Dir::novo("f54c-lixo-outro");
+    gravacao::gravar_entradas(&d2.cofre(), &mut outro, &[]).unwrap();
+    let de_outro = fs::read(d2.cofre()).unwrap();
+    let (mut lixos, mut copias) = (Vec::new(), Vec::new());
+    for i in 0..36u64 {
+        // Entre a última real (INSTANTE + 240) e a próxima gravação (INSTANTE + 600).
+        let v = Versao::do_instante(em(INSTANTE + 300 + i)).unwrap();
+        match i % 4 {
+            0 => {
+                plantar(&pasta, v, &adulterada);
+                lixos.push(v);
+            }
+            1 => {
+                plantar(&pasta, v, &de_outro);
+                lixos.push(v);
+            }
+            2 => {
+                plantar(&pasta, v, &antiga);
+                copias.push(v);
+            }
+            _ => {
+                plantar(&pasta, v, &recente);
+                copias.push(v);
+            }
+        }
+    }
+    assert!(crate::formato::ler_cabecalho(&adulterada).is_ok());
+    // A próxima gravação real: nada sai (6 gerações).
+    reais.push(gravar(&mut cofre, INSTANTE + 600));
+    for v in reais.iter().chain(&lixos).chain(&copias) {
+        assert!(fs::exists(pasta.caminho(*v)).unwrap(), "{v} sumiu");
+    }
+    // Mais 29 reais (35 gerações): ficam as 30 reais mais novas; o lixo e o outro
+    // cofre continuam; as cópias das gerações 1 e 5 saem com elas.
+    for i in 0..29u64 {
+        reais.push(gravar(&mut cofre, INSTANTE + 3600 + i * 60));
+    }
+    for v in &reais[..5] {
+        assert!(!fs::exists(pasta.caminho(*v)).unwrap(), "{v} ficou");
+    }
+    for v in &reais[5..] {
+        assert!(fs::exists(pasta.caminho(*v)).unwrap(), "{v} real sumiu");
+    }
+    for v in &lixos {
+        assert!(fs::exists(pasta.caminho(*v)).unwrap(), "{v}: lixo apagado");
+    }
+    for v in &copias {
+        assert!(!fs::exists(pasta.caminho(*v)).unwrap(), "{v}: cópia ficou");
+    }
+    assert_eq!(pasta.listar().unwrap().len(), VERSOES + lixos.len());
+}
+
+/// Fase 54c: as versões de antes de uma troca de senha mestra (outra chave de dados)
+/// não conferem pela chave nova: não contam para as 30 e a rotação nunca as apaga (o
+/// aviso da tela "Trocar senha" diz para o usuário apagá-las, se a senha vazou).
+#[test]
+fn f54c_versoes_de_antes_da_troca_de_senha_nao_contam_nem_saem() {
+    let d = Dir::novo("f54c-troca");
+    let mut cofre = cofre_novo(SENHA_MESTRA);
+    let pasta = d.pasta();
+    let antigas: Vec<Versao> = (0..3u64)
+        .map(|i| {
+            gravar_entradas_com_backup(&d.cofre(), &mut cofre, &[], &pasta, em(INSTANTE + i))
+                .unwrap()
+                .backup
+                .unwrap()
+        })
+        .collect();
+    let (mut novo, g) = {
+        let _g = ARGON.lock().unwrap_or_else(|e| e.into_inner());
+        trocar_senha_com_backup(
+            &d.cofre(),
+            &senha(SENHA_MESTRA),
+            &senha("falso-mestra-ward-03"),
+            3,
+            3,
+            &pasta,
+            em(INSTANTE + 60),
+        )
+        .unwrap()
+    };
+    let mut novas = vec![g.backup.unwrap()];
+    for i in 0..35u64 {
+        let g = gravar_entradas_com_backup(
+            &d.cofre(),
+            &mut novo,
+            &[],
+            &pasta,
+            em(INSTANTE + 120 + i * 60),
+        )
+        .unwrap();
+        novas.push(g.backup.unwrap());
+    }
+    for v in &antigas {
+        assert!(
+            fs::exists(pasta.caminho(*v)).unwrap(),
+            "{v}: antiga apagada"
+        );
+    }
+    for v in &novas[..novas.len() - VERSOES] {
+        assert!(!fs::exists(pasta.caminho(*v)).unwrap(), "{v} ficou");
+    }
+    for v in &novas[novas.len() - VERSOES..] {
+        assert!(fs::exists(pasta.caminho(*v)).unwrap(), "{v} sumiu");
+    }
+}
+
+/// Fase 54c: relógio que volta. A gravação com o relógio uma hora atrasado não apaga
+/// nenhuma versão (as de data depois dela não contam: falha fechada) e fica; quando o
+/// relógio volta ao certo, a rotação segue pela geração, e a atrasada (geração mais
+/// alta que as de antes) fica entre as 30, mesmo com a data mais antiga da pasta.
+#[test]
+fn f54c_relogio_que_volta_nao_apaga_versao_real() {
+    let d = Dir::novo("f54c-relogio");
+    let mut cofre = cofre_novo(SENHA_MESTRA);
+    let pasta = d.pasta();
+    let mut gravar = |t: u64| {
+        gravar_entradas_com_backup(&d.cofre(), &mut cofre, &[], &pasta, em(t))
+            .unwrap()
+            .backup
+            .unwrap()
+    };
+    let mut reais: Vec<Versao> = (0..30u64).map(|i| gravar(INSTANTE + i * 60)).collect();
+    let atrasada = gravar(INSTANTE - 3600);
+    reais.push(atrasada);
+    for v in &reais {
+        assert!(fs::exists(pasta.caminho(*v)).unwrap(), "{v} sumiu");
+    }
+    // O relógio certo de novo: uma gravação (32 gerações); saem as gerações 1 e 2.
+    reais.push(gravar(INSTANTE + 7200));
+    for v in &reais[..2] {
+        assert!(!fs::exists(pasta.caminho(*v)).unwrap(), "{v} ficou");
+    }
+    for v in &reais[2..] {
+        assert!(fs::exists(pasta.caminho(*v)).unwrap(), "{v} sumiu");
+    }
+    assert_eq!(pasta.listar().unwrap().len(), VERSOES);
+}
+
 /// A regra da rotação, sozinha: versões passadas nunca saem por causa das futuras, as
-/// protegidas nunca saem, e sem futuras é a rotação de antes (as mais antigas).
+/// protegidas nunca saem, e sem futuras é a rotação de antes (as mais antigas). Aqui a
+/// geração anda com a data (a versão `i` tem a geração `i + 1`).
 #[test]
 fn rotacao_conta_so_ate_o_teto() {
     let v = |s: u64| Versao::do_instante(em(INSTANTE + s)).unwrap();
+    let com_g = |l: &[Versao], g0: u64| -> Vec<(Versao, Option<u64>)> {
+        l.iter()
+            .enumerate()
+            .map(|(i, x)| (*x, Some(g0 + i as u64)))
+            .collect()
+    };
     let passadas: Vec<Versao> = (0..35).map(|i| v(i * 10)).collect();
     let teto = passadas[34];
     let futuras: Vec<Versao> = (1..=40).map(|i| v(340 + i)).collect();
-    let mut lista = passadas.clone();
-    lista.extend(&futuras);
-    let fora = para_apagar(&lista, teto, &[teto]);
+    let mut lista = com_g(&passadas, 1);
+    lista.extend(com_g(&futuras, 36));
+    let fora = para_apagar_conferidas(&lista, teto, &[teto]);
     assert_eq!(fora, passadas[..5].to_vec());
     // Só futuras além do teto: nada sai.
-    assert!(para_apagar(&futuras, teto, &[]).is_empty());
+    assert!(para_apagar_conferidas(&com_g(&futuras, 36), teto, &[]).is_empty());
     // 31 passadas e o teto na mais antiga: só ela conta, nada sai.
-    assert!(para_apagar(&passadas[..31], passadas[0], &[passadas[0]]).is_empty());
-    // Protegida entre as mais antigas: pula ela e apaga a seguinte.
-    let fora = para_apagar(&passadas[..31], passadas[30], &[passadas[0]]);
-    assert_eq!(fora, [passadas[1]]);
+    assert!(
+        para_apagar_conferidas(&com_g(&passadas[..31], 1), passadas[0], &[passadas[0]]).is_empty()
+    );
+    // Protegida entre as mais antigas: pula ela e não apaga outra no lugar (a rotação
+    // não tira uma geração que ficaria entre as 30).
+    let fora = para_apagar_conferidas(&com_g(&passadas[..31], 1), passadas[30], &[passadas[0]]);
+    assert!(fora.is_empty(), "{fora:?}");
     // O teto do segundo cobre os sufixos do mesmo segundo.
     let base = v(0);
     assert!(base.com_sufixo(99) <= base.fim_do_segundo());
     assert!(v(1) > base.fim_do_segundo());
+}
+
+/// Fase 54c, a regra sozinha: o que não confere (`None`) nunca conta nem sai; cada
+/// geração conta uma vez (cópias com nomes novos não ocupam lugar) e sai inteira
+/// quando fica abaixo das 30; a data não decide a ordem (a geração decide), então um
+/// relógio que voltou não tira a versão nova.
+#[test]
+fn f54c_rotacao_so_conta_e_so_apaga_o_que_confere() {
+    let v = |s: u64| Versao::do_instante(em(INSTANTE + s)).unwrap();
+    // 30 reais (gerações 1..=30), datas 0..290.
+    let reais: Vec<(Versao, Option<u64>)> = (0..30u64).map(|i| (v(i * 10), Some(i + 1))).collect();
+    let teto = v(10_000);
+    // 40 lixos com datas mais novas: nada sai.
+    let mut lista = reais.clone();
+    lista.extend((0..40u64).map(|i| (v(300 + i), None)));
+    assert!(para_apagar_conferidas(&lista, teto, &[]).is_empty());
+    // 40 cópias da real mais nova (geração 30) com datas mais novas: uma geração só.
+    let mut lista = reais.clone();
+    lista.extend((0..40u64).map(|i| (v(400 + i), Some(30))));
+    assert!(para_apagar_conferidas(&lista, teto, &[]).is_empty());
+    // 40 cópias da real mais antiga com datas mais novas e uma real nova: sai a
+    // geração 1 inteira (a original e as cópias), nenhuma outra real.
+    let mut lista = reais.clone();
+    let copias: Vec<Versao> = (0..40u64).map(|i| v(500 + i)).collect();
+    lista.extend(copias.iter().map(|c| (*c, Some(1))));
+    let nova = v(600);
+    lista.push((nova, Some(31)));
+    let mut esperado = vec![reais[0].0];
+    esperado.extend(&copias);
+    assert_eq!(para_apagar_conferidas(&lista, teto, &[nova]), esperado);
+    // Relógio que voltou: a nova (geração 31) com a data mais antiga de todas fica; sai
+    // a geração 1.
+    let mut lista = reais.clone();
+    let atrasada = Versao::do_instante(em(INSTANTE - 3600)).unwrap();
+    lista.push((atrasada, Some(31)));
+    assert_eq!(
+        para_apagar_conferidas(&lista, teto, &[atrasada]),
+        [reais[0].0]
+    );
+    // Sem nada que confere: nada sai.
+    let lixo: Vec<(Versao, Option<u64>)> = (0..100u64).map(|i| (v(i), None)).collect();
+    assert!(para_apagar_conferidas(&lixo, teto, &[]).is_empty());
+    assert!(para_apagar_conferidas(&[], teto, &[]).is_empty());
 }
 
 /// A marca de fora de ordem: a cópia antiga (geração 3) com nome novo sai marcada; as
@@ -649,7 +876,10 @@ const PONTOS: [Ponto; 5] = [
 ];
 const ANTES_DO_LINK: usize = 3;
 
-/// Processo filho dos testes de morte. Não faz nada sem o modo no ambiente.
+/// Processo filho dos testes de morte. Não faz nada sem o modo no ambiente. Sem o
+/// cofre aberto (o Argon2 por filho seria lento demais), a geração de cada versão vem
+/// da tabela `v0..`: a versão `k` tem a geração `k + 1` (o pai as selou em ordem, com o
+/// mesmo cofre, [`versoes_seladas`]).
 #[test]
 #[ignore = "só roda como processo filho dos testes de backup"]
 fn filho_backup() {
@@ -659,12 +889,18 @@ fn filho_backup() {
     let dir = PathBuf::from(std::env::var_os(ENV_DIR).unwrap());
     let base: u64 = std::env::var(ENV_BASE).unwrap().parse().unwrap();
     let pasta = PastaBackup::nova(dir.join("backups"), uid());
-    let versoes: Vec<Vec<u8>> = (0..3)
-        .map(|k| fs::read(dir.join(format!("v{k}"))).unwrap())
+    let versoes: Vec<Vec<u8>> = (0..)
+        .map_while(|k| fs::read(dir.join(format!("v{k}"))).ok())
         .collect();
+    let geracao = |b: &[u8]| {
+        versoes
+            .iter()
+            .position(|v| v.as_slice() == b)
+            .map(|i| i as u64 + 1)
+    };
     if let Some(i) = modo.strip_prefix("ponto:") {
         let i: usize = i.parse().unwrap();
-        let _ = pasta.guardar_com_pontos(&versoes[1], em(base), &mut |p| {
+        let _ = pasta.guardar_com_pontos(&versoes[1], em(base), &geracao, &mut |p| {
             if p == PONTOS[i] {
                 println!("\nWARD-PONTO");
                 std::thread::sleep(VIDA_FILHO);
@@ -674,10 +910,18 @@ fn filho_backup() {
         });
         println!("\nWARD-FIM");
     } else if modo == "laco" {
+        // `base` é a primeira versão a gravar; cada uma com a data do seu número, para a
+        // data andar com a geração, como na gravação de verdade.
         println!("\nWARD-PRONTO");
         let inicio = Instant::now();
-        for (n, v) in versoes.iter().cycle().enumerate() {
-            pasta.guardar(v, em(base + n as u64)).unwrap();
+        for k in base as usize.. {
+            let Some(v) = versoes.get(k) else {
+                println!("\nWARD-ACABOU");
+                std::process::exit(4);
+            };
+            pasta
+                .guardar_com_pontos(v, em(INSTANTE + k as u64), &geracao, &mut |_| Ok(()))
+                .unwrap();
             if inicio.elapsed() > VIDA_FILHO {
                 std::process::exit(3);
             }
@@ -733,15 +977,29 @@ fn matar(mut f: Child) {
 /// Três versões seladas (com os segredos falsos do cofre de teste) e o cofre que as
 /// selou, gravadas em `v0..v2` no diretório de teste.
 fn tres_versoes(d: &Dir) -> (CofreAberto, Vec<Vec<u8>>) {
+    versoes_seladas(d, 3)
+}
+
+/// `n` versões seladas em ordem por um cofre novo (a `k` com a geração `k + 1`), em
+/// `v0..` no diretório de teste. Sela direto, sem gravar o cofre (sem fsync por versão).
+fn versoes_seladas(d: &Dir, n: usize) -> (CofreAberto, Vec<Vec<u8>>) {
     let mut cofre = cofre_novo(SENHA_MESTRA);
     let mut versoes = Vec::new();
-    for k in 0..3 {
-        gravacao::gravar_entradas(&d.cofre(), &mut cofre, entradas()).unwrap();
-        let b = fs::read(d.cofre()).unwrap();
+    for k in 0..n {
+        let b = selar_proxima(&mut cofre, entradas());
         fs::write(d.0.join(format!("v{k}")), &b).unwrap();
         versoes.push(b);
     }
     (cofre, versoes)
+}
+
+/// Sela a próxima geração do `cofre` com `entradas`, como a gravação faz, sem gravar.
+fn selar_proxima(cofre: &mut CofreAberto, entradas: &[Entrada]) -> Vec<u8> {
+    let g = cofre.proxima_geracao().unwrap();
+    let conteudo = corpo::serializar(cofre.configuracao(), g, entradas).unwrap();
+    let b = cofre.selar(&conteudo).unwrap();
+    cofre.queimar(g);
+    b
 }
 
 /// Confere a pasta depois de uma morte: todo arquivo com nome de versão é uma das
@@ -781,9 +1039,9 @@ fn conferir_pasta(d: &Dir, versoes: &[Vec<u8>]) -> (usize, usize) {
 fn v7_3_sigkill_em_cada_ponto_do_backup() {
     for (i, alvo) in PONTOS.iter().enumerate() {
         let d = Dir::novo("v7-3-ponto");
-        let (_, versoes) = tres_versoes(&d);
+        let (cofre, versoes) = tres_versoes(&d);
         let pasta = d.pasta();
-        let antes = pasta.guardar(&versoes[0], em(INSTANTE)).unwrap();
+        let antes = pasta.guardar(&versoes[0], em(INSTANTE), &cofre).unwrap();
         let mut f = filho(&format!("ponto:{i}"), &d.0, INSTANTE + 60);
         esperar_linha(&mut f, "WARD-PONTO");
         matar(f);
@@ -800,7 +1058,9 @@ fn v7_3_sigkill_em_cada_ponto_do_backup() {
             assert_eq!(n, 2, "{alvo:?}");
             assert_eq!(temps, 0, "{alvo:?}");
         }
-        pasta.guardar(&versoes[2], em(INSTANTE + 120)).unwrap();
+        pasta
+            .guardar(&versoes[2], em(INSTANTE + 120), &cofre)
+            .unwrap();
         assert!(d.temporarios().is_empty(), "{alvo:?}: o temporário ficou");
     }
 }
@@ -811,23 +1071,43 @@ fn v7_3_sigkill_em_cada_ponto_do_backup() {
 #[test]
 fn v7_3_sigkill_em_100_pontos_aleatorios() {
     const MORTES: u64 = 100;
+    /// Versões distintas para os filhos gravarem (cada filho grava poucas antes de
+    /// morrer; a que sobrar não é usada).
+    const TABELA: usize = 5000;
     let d = Dir::novo("v7-3-aleatorio");
-    let (cofre, versoes) = tres_versoes(&d);
+    let (mut cofre, versoes) = versoes_seladas(&d, TABELA);
     let pasta = d.pasta();
-    // Duração de um backup aqui, para espalhar as mortes por várias gravações.
+    // Duração de um backup aqui (com a rotação lendo a pasta cheia), para espalhar as
+    // mortes por várias gravações.
+    for (k, v) in versoes.iter().enumerate().take(VERSOES) {
+        pasta.guardar(v, em(INSTANTE + k as u64), &cofre).unwrap();
+    }
     let t0 = Instant::now();
-    for k in 0..3u64 {
-        pasta
-            .guardar(&versoes[k as usize], em(INSTANTE + k))
-            .unwrap();
+    for (k, v) in versoes.iter().enumerate().skip(VERSOES).take(3) {
+        pasta.guardar(v, em(INSTANTE + k as u64), &cofre).unwrap();
     }
     let uma = (t0.elapsed() / 3).max(Duration::from_millis(1));
     let janela = (uma * 4).as_micros() as u64;
 
     let mut com_temporario = 0;
     let mut antes = pasta.listar().unwrap().len();
+    // A próxima versão a gravar: depois da mais alta que está na pasta.
+    let proxima = |p: &PastaBackup| {
+        p.listar()
+            .unwrap()
+            .iter()
+            .filter_map(|v| {
+                let b = fs::read(p.caminho(*v)).ok()?;
+                versoes.iter().position(|x| *x == b)
+            })
+            .max()
+            .unwrap()
+            + 1
+    };
     for m in 0..MORTES {
-        let mut f = filho("laco", &d.0, INSTANTE + 1_000 * (m + 1));
+        let inicio = proxima(&pasta);
+        assert!(inicio < TABELA, "a tabela acabou na morte {m}");
+        let mut f = filho("laco", &d.0, inicio as u64);
         esperar_linha(&mut f, "WARD-PRONTO");
         std::thread::sleep(Duration::from_micros(u64_aleatorio() % janela));
         matar(f);
@@ -840,20 +1120,26 @@ fn v7_3_sigkill_em_100_pontos_aleatorios() {
         antes = n;
         com_temporario += temps;
     }
-    eprintln!("v7_3: {MORTES} mortes, {com_temporario} no meio de um backup, backup ~{uma:?}");
+    eprintln!(
+        "v7_3: {MORTES} mortes, {com_temporario} no meio de um backup, backup ~{uma:?}, {} versões",
+        proxima(&pasta)
+    );
     assert!(
         com_temporario >= (MORTES / 10) as usize,
         "poucas mortes no meio da gravação"
     );
-    // Todos os que ficaram abrem: os bytes são de uma das 3 versões, e cada versão
+    // Todos os que ficaram abrem: os bytes são de uma das versões da tabela, e cada uma
     // abre com a senha.
     for v in &versoes {
         assert!(cofre.autentica(v));
     }
     let (_, lidas, _) = abrir(&versoes[2], SENHA_MESTRA).unwrap();
     assert_eq!(lidas.len(), entradas().len());
-    // A próxima gravação limpa o temporário e volta às 30.
-    pasta.guardar(&versoes[0], em(INSTANTE + 999_999)).unwrap();
+    // A próxima gravação (geração nova) limpa o temporário e volta às 30.
+    let nova = selar_proxima(&mut cofre, entradas());
+    pasta
+        .guardar(&nova, em(INSTANTE + 999_999), &cofre)
+        .unwrap();
     assert!(d.temporarios().is_empty());
     assert_eq!(pasta.listar().unwrap().len(), VERSOES);
 }

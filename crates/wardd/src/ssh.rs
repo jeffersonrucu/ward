@@ -20,6 +20,10 @@
 //!   argv), com `PubkeyAuthentication=no` e `IdentityAgent=none`.
 //! - **Chave**: o agente temporário de D12 ([`crate::agente_ssh`]), só para o `ssh`
 //!   filho; a chave privada nunca sai do daemon.
+//! - **Trava** (Fase 54c, S8): a sessão aberta morre quando o cofre trava, como o
+//!   `ward run`: `SIGKILL` no grupo do `ssh`/`sshpass` e no do `ssh` que o `sshpass`
+//!   cria com sessão própria; a CLI sai 137 com o aviso. O agente de D12 e a ponte do
+//!   salto também caem.
 //! - **Interativo** (sem comando e com janela): o filho roda num pty; a saída passa pela
 //!   máscara pedaço a pedaço, sem segurar nem atrasar nada (D34 revisto: segurar o
 //!   prefixo virava oráculo). Com comando (ou sem terminal), saída e erro em fluxos
@@ -42,7 +46,7 @@ use zeroize::Zeroizing;
 
 use crate::agente_ssh::{AgenteSsh, ErroAgente};
 use crate::aprovacao::Cliente;
-use crate::execucao::{AgentePreparado, Preparo};
+use crate::execucao::{AgentePreparado, MorreNaTrava, Preparo};
 use crate::nucleo::Daemon;
 use crate::ponte::{Abertura, Intermediario, LIMITES_SALTO, Ponte};
 use crate::{aviso, depurar};
@@ -482,7 +486,7 @@ impl Daemon {
             return Err(ErroResposta::PedidoInvalido);
         };
         // Com o estado travado: a entrada pode ter mudado durante a aprovação.
-        let (host, porta, usuario, cred, sftp, mascara, travas, inicial, salto) = {
+        let (host, porta, usuario, cred, sftp, mascara, travas, inicial, salto, sessoes) = {
             let est = self.estado();
             let a = est.aberto.as_ref().ok_or(ErroResposta::Travado)?;
             let e = visivel(&a.entradas, &nome).ok_or(ErroResposta::EntradaInexistente)?;
@@ -530,6 +534,7 @@ impl Daemon {
                 travas,
                 inicial,
                 salto,
+                self.sessoes_run(&est),
             )
         };
         // `known_hosts` do Ward conferido (0700/0600, sem link) antes de qualquer `ssh`.
@@ -656,11 +661,16 @@ impl Daemon {
             agente: agente.map(|a| AgentePreparado {
                 agente: a,
                 filho_do_filho: sftp,
+                travas: travas.clone(),
+                inicial,
+            }),
+            // Fase 54c (S8; decisão do usuário, 2026-11-10): a sessão SSH aberta morre na
+            // trava, como o `ward run` (o agente e a ponte já caíam: D12).
+            trava: Some(MorreNaTrava {
+                sessoes,
                 travas,
                 inicial,
             }),
-            // A sessão SSH aberta não morre na trava (o agente e a ponte, sim: D12).
-            trava: None,
             entrada_nula,
         })
     }

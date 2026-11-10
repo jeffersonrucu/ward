@@ -14,7 +14,8 @@ ponta, com o terminal num pty de verdade.
    com o `ward destravar` no meio da espera, sai 0 (a suíte fica ~2 min mais longa).
 3. `ward run` (Fase 26).
 4. `ward ssh` (Fase 27) contra os SSH de teste (2222, 2223): V4.23, V4.24, V4.26 (agente
-   atacado por `ssh-add`, SIGKILL na CLI, travar), V4.28, V4.31, V4.32, oráculo de prefixo de D34 revisto (pty e tempo),
+   atacado por `ssh-add`, SIGKILL na CLI, travar; desde a 54c a trava encerra a sessão
+   inteira com 137), V4.28, V4.31, V4.32, oráculo de prefixo de D34 revisto (pty e tempo),
    V4.14 e V4.35/V4.37 pelo argv em `/proc/<pid>/cmdline` (o `wardd` recusa subir sob
    `strace`).
 5. Salto e túnel (Fase 28) contra o `ssh-salto`/`ssh-interno` e o Postgres de teste:
@@ -721,15 +722,45 @@ else:
     p.wait()
     conferir(esperar(lambda: not agentes(), 3), "V4.26 SIGKILL na CLI: o agente some")
 
-    # V4.26: travar no meio da sessão derruba o agente.
-    p = subprocess.Popen([WARD, "ssh", "acme-ssh-chave-prod", "sleep 5"], env=ambiente(),
-                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    conferir(esperar(lambda: agentes(), 20), "agente no ar (travar)")
-    cod, _, _ = rodar_pty(["travar"])
-    conferir(cod == 0 and esperar(lambda: not agentes(), 3), "V4.26 travar o cofre derruba o agente")
-    p.wait(timeout=60)
-    cod, tela, _ = rodar_pty(["destravar"], digitar=SENHA)
-    conferir(cod == 0, "destravar de novo")
+    # V4.26: travar no meio da sessão derruba o agente e, desde a Fase 54c (S8), a sessão
+    # inteira: a CLI sai 137 com o aviso e nenhum ssh/sshpass da sessão sobra (na senha,
+    # o ssh que o sshpass cria com sessão própria também).
+    def da_sessao(marca):
+        achados = []
+        for f in glob.glob("/proc/[0-9]*/cmdline"):
+            try:
+                a = open(f, "rb").read().split(b"\0")
+            except OSError:
+                continue
+            if a and a[0] in (b"/usr/bin/ssh", b"/usr/bin/sshpass") and marca in a:
+                achados.append(f)
+        return achados
+
+    for entrada, marca in [("acme-ssh-chave-prod", "sleep 21"), ("acme-ssh-senha-stage", "sleep 22")]:
+        p = subprocess.Popen([WARD, "ssh", entrada, marca], env=ambiente(),
+                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        no_ar = esperar(lambda: da_sessao(marca.encode()), 20)
+        conferir(no_ar, f"sessão {entrada} no ar (travar)")
+        if entrada == "acme-ssh-chave-prod":
+            conferir(esperar(lambda: agentes(), 20), "agente no ar (travar)")
+        time.sleep(1)
+        cod, _, _ = rodar_pty(["travar"])
+        inicio = time.time()
+        try:
+            _, err = p.communicate(timeout=10)
+        except subprocess.TimeoutExpired:
+            p.kill()
+            _, err = p.communicate()
+        dt = time.time() - inicio
+        if entrada == "acme-ssh-chave-prod":
+            conferir(cod == 0 and esperar(lambda: not agentes(), 3), "V4.26 travar o cofre derruba o agente")
+        conferir(p.returncode == 137 and dt < 5,
+                 f"V4.26 (54c) travar encerra o ward ssh {entrada}: 137 em < 5 s ({p.returncode}, {dt:.1f} s)")
+        conferir(b"o cofre travou; o comando foi encerrado" in err, f"V4.26 (54c) aviso da trava ({err[-120:]!r})")
+        conferir(esperar(lambda: not da_sessao(marca.encode()), 5),
+                 f"V4.26 (54c) nenhum ssh/sshpass da sessão {entrada} sobra depois da trava")
+        cod, tela, _ = rodar_pty(["destravar"], digitar=SENHA)
+        conferir(cod == 0, "destravar de novo")
 
     # V4.31 e o oráculo de prefixo da auditoria do M4 (D34 revisto; V4.34 retirada) num
     # pty: prompt, whoami e, como o `oraculo_pty.py`, o primeiro nível da busca: um

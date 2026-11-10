@@ -419,8 +419,10 @@ fn ataque_versao_existente_no_pendrive_nao_e_sobrescrita() {
     assert_eq!(c.copiadas.len(), locais.len() - 2);
 }
 
-/// Rotação no pendrive: com versões antigas além das 30, ficam as 30 mais novas, sem
-/// apagar o que acabou de copiar nem o que não é versão.
+/// Rotação no pendrive: com mais de 30 gerações reais, ficam as 30 mais novas (as
+/// mesmas do backup local), sem apagar o que acabou de copiar nem o que não é versão.
+/// Desde a Fase 54c, arquivos com nome de versão que não conferem pela chave do cofre
+/// (aqui, `antiga`) não contam e não saem.
 #[test]
 fn pendrive_fica_com_30_versoes() {
     let dir = Dir::novo("ext-rodar");
@@ -429,25 +431,101 @@ fn pendrive_fica_com_30_versoes() {
     let a = montagem(&dir, "pendrive-a");
     let destino = pasta_externa(&a);
     fs::create_dir(&destino).unwrap();
-    for i in 0..35u32 {
-        fs::write(
-            destino.join(format!("ward-20200101-{:06}.ward", i * 100)),
-            b"antiga",
-        )
-        .unwrap();
+    let mut lixo = Vec::new();
+    for i in 0..5u32 {
+        let n = format!("ward-20200101-{:06}.ward", i * 100);
+        fs::write(destino.join(&n), b"antiga").unwrap();
+        lixo.push(n);
     }
     fs::write(destino.join("notas.txt"), b"x").unwrap();
-    let c = d
-        .sincronizar_externo(&Fonte::com(vec![pendrive(UUID_A, &a)]))
-        .unwrap()
-        .unwrap();
-    let todas = no_pendrive(&a);
-    assert_eq!(todas.len(), VERSOES);
-    for v in &c.copiadas {
-        assert!(todas.contains(&v.nome()), "{v}");
+    let fonte = Fonte::com(vec![pendrive(UUID_A, &a)]);
+    let mut apagadas = 0;
+    for i in 0..VERSOES + 5 {
+        let r = pedir(
+            &d,
+            Papel::App,
+            "salvar_entrada",
+            &login(&format!("t-rodar-{i}"), SEGREDOS[3]),
+        );
+        assert!(ok(&r), "{r:?}");
+        let c = d.sincronizar_externo(&fonte).unwrap().unwrap();
+        let todas = no_pendrive(&a);
+        for v in &c.copiadas {
+            assert!(todas.contains(&v.nome()), "{v}");
+        }
+        apagadas += c.apagadas;
     }
-    assert_eq!(c.apagadas, 35 + c.copiadas.len() - VERSOES);
+    let mut reais: Vec<String> = no_pendrive(&a)
+        .into_iter()
+        .filter(|n| !lixo.contains(n))
+        .collect();
+    reais.sort();
+    let mut esperadas = locais(&dir);
+    esperadas.sort();
+    assert_eq!(esperadas.len(), VERSOES);
+    assert_eq!(reais, esperadas, "o pendrive não tem as 30 mais novas");
+    assert!(apagadas > 0);
+    for n in &lixo {
+        assert!(
+            destino.join(n).exists(),
+            "{n}: a rotação apagou o que não confere"
+        );
+    }
     assert!(destino.join("notas.txt").exists());
+}
+
+/// Fase 54c (achado da Fase 54), ataque: quem escreve no pendrive (vfat 0777, outro
+/// usuário da máquina) planta nomes de versão com data passada recente (depois das
+/// cópias reais, antes de agora): lixo, versão de outro cofre e cópias de uma versão
+/// real com nome novo. Antes da correção, a cópia seguinte girava o pendrive pela data
+/// e apagava as cópias reais. Agora nada real sai, e o que não confere fica.
+#[test]
+fn f54c_ataque_nomes_plantados_no_pendrive_nao_apagam_copias_reais() {
+    let dir = Dir::novo("ext-plantados");
+    let (d, _) = cofre_de_teste(&dir);
+    assert!(ok(&ligar(&d, Papel::App, UUID_A)));
+    let a = montagem(&dir, "pendrive-a");
+    let fonte = Fonte::com(vec![pendrive(UUID_A, &a)]);
+    let c = d.sincronizar_externo(&fonte).unwrap().unwrap();
+    let reais = no_pendrive(&a);
+    assert_eq!(reais.len(), c.copiadas.len());
+    assert!(!reais.is_empty());
+    let destino = pasta_externa(&a);
+    let real = fs::read(destino.join(&reais[0])).unwrap();
+    let outro = Dir::novo("ext-plantados-outro");
+    let _ = cofre_de_teste(&outro);
+    let de_outro = fs::read(outro.0.join("backups").join(&locais(&outro)[0])).unwrap();
+    std::thread::sleep(Duration::from_millis(1100));
+    let base = ward_core::backup::Versao::do_instante(std::time::SystemTime::now())
+        .unwrap()
+        .nome();
+    let mut plantados = Vec::new();
+    for i in 1..=VERSOES + 5 {
+        let n = base.replace(".ward", &format!("-{i}.ward"));
+        let conteudo = match i % 3 {
+            0 => b"lixo com nome de versao".to_vec(),
+            1 => de_outro.clone(),
+            _ => real.clone(),
+        };
+        fs::write(destino.join(&n), &conteudo).unwrap();
+        plantados.push(n);
+    }
+    // Uma gravação real e a cópia: só ela vai; nada sai.
+    std::thread::sleep(Duration::from_millis(1100));
+    let r = pedir(
+        &d,
+        Papel::App,
+        "salvar_entrada",
+        &login("t-plantados", SEGREDOS[3]),
+    );
+    assert!(ok(&r), "{r:?}");
+    let c = d.sincronizar_externo(&fonte).unwrap().unwrap();
+    assert_eq!(c.copiadas.len(), 1, "{:?}", c.copiadas);
+    assert_eq!(c.apagadas, 0, "os plantados giraram o pendrive");
+    let agora = no_pendrive(&a);
+    for n in reais.iter().chain(&plantados) {
+        assert!(agora.contains(n), "{n} sumiu do pendrive");
+    }
 }
 
 /// Fase 49a (achado médio do M7): no pendrive (vfat 0777: outro usuário da máquina pode
@@ -580,7 +658,8 @@ fn ataque_lixo_no_backup_local_nao_gira_o_pendrive() {
     let c = d.sincronizar_externo(&fonte).unwrap().unwrap();
     assert_eq!(c.copiadas.len(), 1, "{:?}", c.copiadas);
     assert!(!plantados.contains(&c.copiadas[0].nome()));
-    assert_eq!(c.apagadas, 1);
+    // Fase 54c: o enchimento `antiga` do pendrive não confere: não conta nem sai.
+    assert_eq!(c.apagadas, 0);
     for n in no_pendrive(&a) {
         assert!(!plantados.contains(&n), "{n} plantado foi para o pendrive");
     }

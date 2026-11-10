@@ -699,7 +699,8 @@ fn v4_24_d12_agente_so_do_filho() {
     assert!(!Path::new(sock).exists());
 }
 
-/// D12: travar o cofre derruba o agente no meio da sessão.
+/// D12: travar o cofre derruba o agente no meio da sessão; desde a Fase 54c (S8), a
+/// sessão inteira (o `ssh` morre antes de pedir ao agente de novo, e a CLI recebe 137).
 #[test]
 fn d12_travar_derruba_o_agente() {
     let c = cena("d12trava");
@@ -724,10 +725,64 @@ fn d12_travar_derruba_o_agente() {
         }));
         fs::write(base.join("continuar"), "").unwrap();
     });
-    assert_eq!(r.fim, Some(7), "{r:?}");
+    assert_eq!(r.fim, Some(137), "{r:?}");
     let ssh = c.registro("ssh");
     assert_eq!(ssh.um("agente.lista"), "12");
-    assert_ne!(ssh.um("depois"), "12", "{ssh:?}");
+    assert!(
+        ssh.0.iter().all(|(k, v)| k != "depois" || v != "12"),
+        "{ssh:?}"
+    );
+}
+
+/// Fase 54c (S8; decisão do usuário, 2026-11-10), ataque: o agente abre `ward ssh` e a
+/// sessão fica de pé (o `ssh` falso dorme 30 s, conectado). O usuário trava o cofre: a
+/// sessão morre na hora, por senha (o `ssh` que o `sshpass` cria com `setsid()`, fora
+/// do grupo, também) e por chave; a CLI recebe o aviso e 137, e nada do que o `ssh`
+/// faria depois chega. Antes da correção, a sessão seguia até o fim (código 7, 30 s).
+#[test]
+fn f54c_ataque_ward_ssh_morre_na_trava() {
+    for entrada in ["s-livre", "s-chave"] {
+        let c = cena(&format!("f54c-{entrada}"));
+        c.modo("parado");
+        let travou = std::cell::Cell::new(None);
+        let r = sessao(&c, pedido_ssh(entrada, &["sleep", "20"], None, None), |s| {
+            fechar_entrada(s);
+            assert!(esperar(Duration::from_secs(30), || {
+                !c.registros("ssh").is_empty()
+            }));
+            std::thread::sleep(Duration::from_millis(300));
+            c.d.travar();
+            travou.set(Some(Instant::now()));
+        });
+        let depois = travou.get().unwrap().elapsed();
+        assert_eq!(r.fim, Some(137), "{entrada}: {r:?}");
+        assert!(depois < Duration::from_secs(5), "{entrada}: {depois:?}");
+        let t = format!("{}{}", r.texto(), String::from_utf8_lossy(&r.erro));
+        assert!(t.contains("conectado"), "{entrada}: {t}");
+        assert!(
+            t.contains("ward: o cofre travou; o comando foi encerrado"),
+            "{entrada}: {t}"
+        );
+        assert!(!t.contains("depois-da-trava"), "{entrada}: {t}");
+        // Nenhum processo da sessão sobra: nem o `ssh` (filho do `sshpass` com sessão
+        // própria, na senha), nem o `sshpass`.
+        for nome in ["ssh", "sshpass"] {
+            for reg in c.registros(nome) {
+                let pid = reg.um("pid");
+                assert!(
+                    esperar(Duration::from_secs(5), || {
+                        fs::read_to_string(format!("/proc/{pid}/stat"))
+                            .map_or(true, |s| s.contains(") Z "))
+                    }),
+                    "{entrada}: {nome} {pid} sobreviveu à trava"
+                );
+            }
+        }
+        if entrada == "s-livre" {
+            assert_eq!(c.registros("sshpass").len(), 1);
+        }
+        assert!(rt_sem_agente(&c));
+    }
 }
 
 /// D12 no `sftp` com chave: o `ssh` que o `sftp` chama (filho do filho) é atendido; o

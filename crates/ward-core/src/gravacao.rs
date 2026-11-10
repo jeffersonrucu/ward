@@ -274,7 +274,7 @@ pub fn gravar_entradas_com_backup(
     let (identidade, arquivo) = gravar_entradas_selado(destino, cofre, entradas, &mut |_| Ok(()))?;
     Ok(Gravado {
         identidade,
-        backup: pasta.guardar(&arquivo, instante),
+        backup: pasta.guardar(&arquivo, instante, cofre),
     })
 }
 
@@ -318,7 +318,7 @@ pub fn trocar_senha_com_backup(
 ) -> Result<(CofreAberto, Gravado), ErroGravacao> {
     let (cofre, identidade, arquivo) =
         trocar_senha_selado(destino, atual, nova, geracao_minima, geracao_queimada)?;
-    let backup = pasta.guardar(&arquivo, instante);
+    let backup = pasta.guardar(&arquivo, instante, &cofre);
     Ok((cofre, Gravado { identidade, backup }))
 }
 

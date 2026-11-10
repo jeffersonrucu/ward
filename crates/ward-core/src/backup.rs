@@ -13,11 +13,17 @@
 //!   fsync do diretório. Uma gravação interrompida em qualquer ponto não mexe nos
 //!   backups que já estavam lá (S7, V7.3); o temporário que sobrar é cifrado e é
 //!   apagado no começo da gravação seguinte.
-//! - Mantém [`VERSOES`] versões: depois de gravar, apaga as mais antigas (pela data do
-//!   nome), nunca a que acabou de gravar, e só arquivos comuns com o nome exato.
+//! - Mantém [`VERSOES`] versões: depois de gravar, apaga as de geração mais antiga,
+//!   nunca a que acabou de gravar, e só arquivos comuns com o nome exato.
+//! - **Só o que confere conta e sai** (Fase 54c): a rotação lê cada versão e confere a
+//!   geração selada pela chave do cofre aberto ([`para_apagar_conferidas`]). Ficam as
+//!   [`VERSOES`] gerações mais altas, cada uma contada uma vez; lixo com nome de versão,
+//!   versão de outro cofre, cópia de uma versão real com nome novo e versão de antes de
+//!   uma troca de senha mestra (outra chave) não ocupam lugar das reais. O que não
+//!   confere nunca é apagado pela rotação: só o usuário apaga.
 //! - **Data do nome não é confiável** (Fase 49a): qualquer processo do usuário pode pôr
 //!   na pasta um arquivo com nome de data futura. A rotação só conta e só apaga versões
-//!   com data **até o segundo da versão que acabou de gravar** ([`para_apagar`]): uma versão com
+//!   com data **até o segundo da versão que acabou de gravar**: uma versão com
 //!   data passada nunca é apagada para manter uma futura, e as futuras não são contadas
 //!   nem apagadas. A lista para o restaurar ([`PastaBackup::listar_ate`]) ignora as
 //!   versões com data depois de agora + [`MARGEM_FUTURO`], e o daemon confere a geração
@@ -39,7 +45,7 @@ use std::fmt;
 use std::fs;
 use std::io;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::formato::CofreAberto;
@@ -215,11 +221,17 @@ impl fmt::Display for ErroBackup {
 
 impl std::error::Error for ErroBackup {}
 
+/// Como a rotação lê uma versão da pasta para conferir a geração selada (Fase 54c):
+/// `None` se não é um arquivo comum do usuário do tamanho do formato, ou não deu para
+/// ler. O daemon passa um leitor com `O_NOFOLLOW | O_NONBLOCK` ([`PastaBackup::com_leitor`]).
+pub type LerVersao = fn(&Path, u32) -> Option<Vec<u8>>;
+
 /// A pasta de backups e o uid dono esperado.
 #[derive(Debug, Clone)]
 pub struct PastaBackup {
     dir: PathBuf,
     uid: u32,
+    ler: LerVersao,
 }
 
 impl PastaBackup {
@@ -228,7 +240,19 @@ impl PastaBackup {
     /// não é um link simbólico trocado é quem abriu. Mesmo assim, toda operação confere
     /// que é um diretório do `uid`, sem permissão para grupo e outros.
     pub fn nova(dir: PathBuf, uid: u32) -> Self {
-        Self { dir, uid }
+        Self {
+            dir,
+            uid,
+            ler: ler_versao_padrao,
+        }
+    }
+
+    /// Troca o leitor das versões da rotação (Fase 54c). O núcleo não tem `libc`; o
+    /// daemon passa um que abre com `O_NOFOLLOW | O_NONBLOCK` (um FIFO trocado no lugar
+    /// de uma versão não prende a gravação).
+    pub fn com_leitor(mut self, ler: LerVersao) -> Self {
+        self.ler = ler;
+        self
     }
 
     /// Caminho do arquivo de uma versão.
@@ -280,20 +304,30 @@ impl PastaBackup {
         Ok(v)
     }
 
-    /// Grava `arquivo` (já selado e com a estrutura conferida) como a versão do
-    /// `instante` e apaga as que passarem de [`VERSOES`].
+    /// Grava `arquivo` (já selado por `cofre` e com a estrutura conferida) como a
+    /// versão do `instante` e apaga as que passarem de [`VERSOES`] entre as que conferem
+    /// pela chave de `cofre` (Fase 54c, [`para_apagar_conferidas`]).
     pub(crate) fn guardar(
         &self,
         arquivo: &[u8],
         instante: SystemTime,
+        cofre: &CofreAberto,
     ) -> Result<Versao, ErroBackup> {
-        self.guardar_com_pontos(arquivo, instante, &mut |_| Ok(()))
+        self.guardar_com_pontos(
+            arquivo,
+            instante,
+            &|b: &[u8]| geracao_selada(cofre, b),
+            &mut |_| Ok(()),
+        )
     }
 
+    /// [`PastaBackup::guardar`] com a conferência da geração (`geracao`) e os pontos
+    /// da gravação à parte (os testes do V7.3 os trocam).
     pub(crate) fn guardar_com_pontos(
         &self,
         arquivo: &[u8],
         instante: SystemTime,
+        geracao: &dyn Fn(&[u8]) -> Option<u64>,
         ponto: &mut dyn FnMut(Ponto) -> io::Result<()>,
     ) -> Result<Versao, ErroBackup> {
         self.conferir()?;
@@ -318,17 +352,33 @@ impl PastaBackup {
             e => ErroBackup::Gravacao(e),
         })?;
         let nova = versoes[i];
-        self.rodar(nova)?;
+        self.rodar(nova, geracao)?;
         Ok(nova)
     }
 
-    /// Apaga as versões mais antigas até sobrarem [`VERSOES`] com data até o segundo da
-    /// `nova`, nunca a `nova` e nunca uma com data depois desse segundo
-    /// ([`para_apagar`]). O teto é o fim do segundo (sufixo 99), não a `nova`: a rotação
-    /// pode ter liberado um nome de sufixo menor no mesmo segundo, que a `nova` reusa.
-    fn rodar(&self, nova: Versao) -> Result<(), ErroBackup> {
-        let lista = self.listar()?;
-        for v in para_apagar(&lista, nova.fim_do_segundo(), &[nova]) {
+    /// Apaga as versões de geração mais antiga até sobrarem [`VERSOES`] gerações com
+    /// data até o segundo da `nova`, nunca a `nova`, nunca uma com data depois desse
+    /// segundo e nunca uma que não confere pela chave de `cofre`
+    /// ([`para_apagar_conferidas`], Fase 54c). O teto é o fim do segundo (sufixo 99),
+    /// não a `nova`: a rotação pode ter liberado um nome de sufixo menor no mesmo
+    /// segundo, que a `nova` reusa. Só as versões até o teto são lidas e decifradas (o
+    /// conteúdo zera ao sair; só a geração fica).
+    fn rodar(
+        &self,
+        nova: Versao,
+        geracao: &dyn Fn(&[u8]) -> Option<u64>,
+    ) -> Result<(), ErroBackup> {
+        let teto = nova.fim_do_segundo();
+        let lista: Vec<(Versao, Option<u64>)> = self
+            .listar()?
+            .into_iter()
+            .filter(|v| *v <= teto)
+            .map(|v| {
+                let g = (self.ler)(&self.caminho(v), self.uid).and_then(|b| geracao(&b));
+                (v, g)
+            })
+            .collect();
+        for v in para_apagar_conferidas(&lista, teto, &[nova]) {
             let caminho = self.caminho(v);
             // Só arquivo comum: um link posto no lugar não é seguido nem apagado.
             match fs::symlink_metadata(&caminho) {
@@ -352,29 +402,68 @@ fn teto_de(agora: SystemTime) -> Result<Versao, ErroBackup> {
         .ok_or(ErroBackup::Relogio)
 }
 
-/// A rotação (local e no pendrive, Fase 49a): das versões em `lista`, quais apagar para
-/// sobrarem [`VERSOES`]. Só as com data **até o `teto`** contam e podem ser apagadas;
-/// as do futuro (depois do `teto`) nunca entram na conta nem são apagadas, então
-/// nenhuma versão com data passada sai para dar lugar a uma futura. As `protegidas`
-/// nunca são apagadas (o que acabou de ser gravado ou copiado). Devolve da mais antiga
-/// para a mais nova.
-pub fn para_apagar(lista: &[Versao], teto: Versao, protegidas: &[Versao]) -> Vec<Versao> {
-    let mut ate: Vec<Versao> = lista.iter().copied().filter(|v| *v <= teto).collect();
-    ate.sort_unstable();
-    ate.dedup();
-    let mut sobra = ate.len().saturating_sub(VERSOES);
-    let mut fora = Vec::new();
-    for v in ate {
-        if sobra == 0 {
-            break;
-        }
-        if protegidas.contains(&v) {
-            continue;
-        }
-        fora.push(v);
-        sobra -= 1;
+/// A rotação desde a Fase 54c (local e no pendrive): das versões em `lista`, com a
+/// geração selada de cada uma ([`geracao_selada`]; `None` = não confere pela chave do
+/// cofre aberto), quais apagar. **A data do nome não decide nada além do teto**, e o
+/// que não confere nunca conta nem sai:
+/// - contam só as versões com data até o `teto` (Fase 49a) e geração conhecida;
+/// - ficam as [`VERSOES`] **gerações** mais altas (a geração é autenticada pela AEAD e
+///   nunca se repete, D53); cada geração conta uma vez, então cópias de uma versão real
+///   com nomes novos não ocupam lugar;
+/// - saem as versões (originais e cópias) das gerações mais baixas, menos as
+///   `protegidas` (o que acabou de ser gravado ou copiado);
+/// - lixo, versão de outro cofre e versão de antes de uma troca de senha mestra (outra
+///   chave) não contam e não são apagados: só o usuário os apaga.
+///
+/// Um relógio que voltou não apaga nada a mais: a versão nova, com data mais antiga,
+/// tem a geração mais alta. Devolve da geração mais baixa para a mais alta (e, na mesma
+/// geração, da data mais antiga para a mais nova).
+pub fn para_apagar_conferidas(
+    lista: &[(Versao, Option<u64>)],
+    teto: Versao,
+    protegidas: &[Versao],
+) -> Vec<Versao> {
+    let mut conferidas: Vec<(u64, Versao)> = lista
+        .iter()
+        .filter(|(v, _)| *v <= teto)
+        .filter_map(|(v, g)| g.map(|g| (g, *v)))
+        .collect();
+    conferidas.sort_unstable();
+    conferidas.dedup();
+    let mut geracoes: Vec<u64> = conferidas.iter().map(|(g, _)| *g).collect();
+    geracoes.dedup();
+    let sobra = geracoes.len().saturating_sub(VERSOES);
+    let Some(&ultima_fora) = sobra.checked_sub(1).and_then(|i| geracoes.get(i)) else {
+        return Vec::new();
+    };
+    conferidas
+        .into_iter()
+        .filter(|(g, v)| *g <= ultima_fora && !protegidas.contains(v))
+        .map(|(_, v)| v)
+        .collect()
+}
+
+/// Lê uma versão para a rotação só com a biblioteca padrão (o padrão de
+/// [`PastaBackup::nova`]; o daemon troca por um com `O_NOFOLLOW | O_NONBLOCK`): arquivo
+/// comum do `uid` (sem seguir link), até o tamanho do formato, e o arquivo aberto tem
+/// de ser o mesmo do `lstat`.
+fn ler_versao_padrao(caminho: &Path, uid: u32) -> Option<Vec<u8>> {
+    use std::io::Read;
+    let limite = (crate::formato::TAM_CABECALHO
+        + crate::formato::MAX_CONTEUDO
+        + crate::cripto::TAM_TAG) as u64;
+    let antes = fs::symlink_metadata(caminho).ok()?;
+    if !antes.file_type().is_file() || antes.uid() != uid || antes.len() > limite {
+        return None;
     }
-    fora
+    let f = fs::File::open(caminho).ok()?;
+    let m = f.metadata().ok()?;
+    if !m.file_type().is_file() || m.dev() != antes.dev() || m.ino() != antes.ino() {
+        return None;
+    }
+    let mut bytes = Vec::new();
+    f.take(limite + 1).read_to_end(&mut bytes).ok()?;
+    (bytes.len() as u64 <= limite).then_some(bytes)
 }
 
 /// Quais versões estão fora de ordem (Fase 49a): pela data do nome, da mais antiga para
@@ -418,7 +507,7 @@ pub fn guardar_atual(
     if !cofre.autentica(arquivo) {
         return Err(ErroBackup::NaoAutentico);
     }
-    pasta.guardar(arquivo, instante)
+    pasta.guardar(arquivo, instante, cofre)
 }
 
 /// O nome de uma versão é válido? (Para o protocolo conferir o pedido.)

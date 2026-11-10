@@ -376,6 +376,29 @@ impl Grupo {
         }
     }
 
+    /// Como [`Grupo::matar`] e, antes, `SIGKILL` também no grupo de cada filho
+    /// **direto** do líder que abriu sessão própria (Fase 54c, S8): o `sshpass` cria o
+    /// `ssh` com `setsid()`, fora do grupo, e a trava do cofre tem de derrubar a sessão
+    /// SSH inteira. O grupo é parado (`SIGSTOP`) primeiro: parado, o líder não colhe os
+    /// filhos, então o pid de um filho achado em `/proc` não é reusado antes do `kill`.
+    /// Conta só quem tem o líder como pai e é líder do próprio grupo e da própria sessão
+    /// (pid = grupo = sessão); um processo de fora não vira filho do líder. Um neto que
+    /// saiu da sessão do filho com outro `setsid()` fica de fora. Depois de colhido, não
+    /// faz nada. Devolve quantos grupos filhos levaram o sinal.
+    pub fn matar_com_sessoes_filhas(&self) -> usize {
+        let colhido = self.colhido.lock().unwrap_or_else(|e| e.into_inner());
+        if *colhido {
+            return 0;
+        }
+        let _ = sys::parar_grupo(self.pid);
+        let filhos = filhos_com_sessao_propria(std::path::Path::new("/proc"), self.pid);
+        for f in &filhos {
+            let _ = sys::matar_grupo(*f);
+        }
+        let _ = sys::matar_grupo(self.pid);
+        filhos.len()
+    }
+
     /// Espera o fim e colhe. Uma vez só.
     pub fn colher(&self) -> io::Result<Fim> {
         self.esperar_fim()?;
@@ -403,6 +426,46 @@ impl Drop for Grupo {
             let _ = self.colher();
         }
     }
+}
+
+/// Os pids (em `proc`) dos filhos diretos de `lider` que são líderes do próprio grupo e
+/// da própria sessão (pid = grupo = sessão). O `stat` é lido depois do último `)` (o
+/// nome do programa pode ter espaço e parênteses).
+fn filhos_com_sessao_propria(proc: &std::path::Path, lider: libc::pid_t) -> Vec<libc::pid_t> {
+    let Ok(dir) = std::fs::read_dir(proc) else {
+        return Vec::new();
+    };
+    let mut v = Vec::new();
+    for e in dir.flatten() {
+        let Some(pid) = e
+            .file_name()
+            .to_str()
+            .and_then(|n| n.parse::<libc::pid_t>().ok())
+        else {
+            continue;
+        };
+        if pid <= 1 || pid == lider {
+            continue;
+        }
+        let Ok(stat) = std::fs::read_to_string(e.path().join("stat")) else {
+            continue;
+        };
+        let Some(campos) = campos_do_stat(&stat) else {
+            continue;
+        };
+        if campos == (lider, pid, pid) {
+            v.push(pid);
+        }
+    }
+    v
+}
+
+/// `(ppid, pgrp, session)` de um `/proc/<pid>/stat`.
+fn campos_do_stat(stat: &str) -> Option<(libc::pid_t, libc::pid_t, libc::pid_t)> {
+    let resto = &stat[stat.rfind(')')? + 1..];
+    let mut c = resto.split_whitespace().skip(1);
+    let mut n = || c.next()?.parse::<libc::pid_t>().ok();
+    Some((n()?, n()?, n()?))
 }
 
 #[cfg(test)]
@@ -738,6 +801,86 @@ mod testes {
         }
         // Depois de colhido, matar não faz nada (o pid pode ser de outro).
         g.matar();
+    }
+
+    /// Fase 54c (S8), ataque: o filho cria um processo com `setsid()` (como o `sshpass`
+    /// faz com o `ssh`), fora do grupo. `matar` não o alcança (controle);
+    /// `matar_com_sessoes_filhas` mata os dois. Um processo de fora com o mesmo uid,
+    /// noutra sessão, não leva nada.
+    #[test]
+    fn ataque_filho_com_sessao_propria_morre_com_matar_com_sessoes_filhas() {
+        const FILHO: &str = "import os,sys,time\npid=os.fork()\nif pid==0:\n os.setsid()\n time.sleep(60)\n os._exit(0)\nprint(pid,flush=True)\nos.waitpid(pid,0)\n";
+        let lancar = || {
+            let mut c = Comando::novo(b"/usr/bin/python3", b"/").unwrap();
+            for a in [&b"-I"[..], b"-c", FILHO.as_bytes()] {
+                c.argumento(a).unwrap();
+            }
+            let (g, mut p) = c.lancar().unwrap();
+            let mut linha = [0u8; 32];
+            let n = p.saida.as_mut().unwrap().read(&mut linha).unwrap();
+            let filho: libc::pid_t = std::str::from_utf8(&linha[..n])
+                .unwrap()
+                .trim()
+                .parse()
+                .unwrap();
+            let lider = libc::pid_t::try_from(g.pid()).unwrap();
+            // Espera o `setsid()` do filho.
+            let fim = Instant::now() + Duration::from_secs(5);
+            while filhos_com_sessao_propria(std::path::Path::new("/proc"), lider) != [filho] {
+                assert!(Instant::now() < fim, "o filho não abriu sessão própria");
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            (g, p, filho)
+        };
+        let vivo = |pid: libc::pid_t| {
+            std::fs::read_to_string(format!("/proc/{pid}/stat")).is_ok_and(|s| !s.contains(") Z "))
+        };
+        let morre = |pid: libc::pid_t| {
+            let fim = Instant::now() + Duration::from_secs(5);
+            while vivo(pid) {
+                if Instant::now() > fim {
+                    return false;
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            true
+        };
+        // Um estranho do mesmo uid, noutra sessão, filho deste teste.
+        let mut estranho = std::process::Command::new("/usr/bin/python3")
+            .args(["-I", "-c", "import os,time\nos.setsid()\ntime.sleep(60)"])
+            .spawn()
+            .unwrap();
+        let estranho_pid = libc::pid_t::try_from(estranho.id()).unwrap();
+
+        // Controle: `matar` deixa o filho da sessão própria vivo.
+        let (g, _p, filho) = lancar();
+        g.matar();
+        assert_eq!(g.colher().unwrap(), Fim::Sinal(libc::SIGKILL));
+        std::thread::sleep(Duration::from_millis(300));
+        assert!(vivo(filho), "matar alcançou o filho fora do grupo");
+        let _ = sys::matar_grupo(filho);
+        assert!(morre(filho));
+
+        // Com a correção: os dois morrem; o estranho, não.
+        let (g, _p, filho) = lancar();
+        assert_eq!(g.matar_com_sessoes_filhas(), 1);
+        assert_eq!(g.colher().unwrap(), Fim::Sinal(libc::SIGKILL));
+        assert!(morre(filho), "o filho com sessão própria sobreviveu");
+        assert!(vivo(estranho_pid), "um processo de fora levou o sinal");
+        // Colhido: não faz nada.
+        assert_eq!(g.matar_com_sessoes_filhas(), 0);
+        let _ = estranho.kill();
+        let _ = estranho.wait();
+    }
+
+    #[test]
+    fn campos_do_stat_com_parenteses_no_nome() {
+        assert_eq!(
+            campos_do_stat("42 (a) b) (c) S 7 42 42 0 -1"),
+            Some((7, 42, 42))
+        );
+        assert_eq!(campos_do_stat("42 sem-parenteses"), None);
+        assert_eq!(campos_do_stat("42 (x) S 7"), None);
     }
 
     /// `PR_SET_PDEATHSIG`: a thread que criou o filho morre, o filho leva `SIGKILL`.

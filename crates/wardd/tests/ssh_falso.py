@@ -292,6 +292,12 @@ def principal():
         tam = os.get_terminal_size(1)
         print(f"fim {tam.lines}x{tam.columns}", flush=True)
         sys.exit(0)
+    if modo == "parado":
+        # Fase 54c: a sessão aberta, parada; a trava do cofre tem de derrubá-la antes.
+        print("conectado", flush=True)
+        time.sleep(30)
+        print("depois-da-trava", flush=True)
+        sys.exit(7)
     print("SSHPASS=" + os.environ.get("SSHPASS", "(nada)"), flush=True)
     print("remoto=" + " ".join(ARGV[ARGV.index("--") + 2 :]), flush=True)
     sys.exit(7)

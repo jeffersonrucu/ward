@@ -202,6 +202,19 @@ inclusive o valor revelado (PRD D64).
 ## Backup
 
 - **Local automático**: uma cópia cifrada com data a cada mudança, 30 versões.
+- **Rotação só pelo que confere** (Fase 54c): a data no nome do arquivo não é
+  confiável (qualquer processo do usuário, ou quem escreve no pendrive, planta nomes).
+  A rotação, no computador e no pendrive, lê cada versão e confere a geração selada
+  pela chave do cofre aberto: ficam as 30 gerações mais novas, cada uma contada uma
+  vez. Lixo com nome de versão, versão de outro cofre e cópia de uma versão real com
+  nome novo não ocupam lugar das reais. O que não confere nunca é apagado pela
+  rotação, inclusive as versões de antes de uma troca de senha mestra (outra chave):
+  essas só o usuário apaga, como o aviso da tela "Trocar senha" pede.
+- **Relógio que volta**: no computador, a versão gravada com o relógio atrasado fica
+  (tem a geração mais alta) e não apaga nada naquela gravação. No pendrive ela sai
+  "fora de ordem" (nome mais antigo que versões de geração menor) e **não vai**: falha
+  fechada, nada do pendrive é apagado por ela; com o relógio certo de novo, as
+  versões seguintes vão normalmente.
 - **Externo**: só pendrive, opcional e **desligado por padrão**. Quando ligado,
   copia sempre que o pendrive escolhido for conectado.
 - **Restaurar** pelo app, escolhendo a versão.
@@ -409,7 +422,10 @@ inclusive o valor revelado (PRD D64).
   corrompe a versão anterior.
 - **S8** Daemon com `PR_SET_DUMPABLE=0`, sem core dump, segredos zerados da memória
   ao travar e após o uso (`zeroize`). Daemon recusa iniciar com `LD_PRELOAD` e
-  similares.
+  similares. Travar também encerra o que já recebeu segredo: o `ward run` em curso
+  (Fase 54) e a sessão `ward ssh` aberta (Fase 54c; decisão do usuário, 2026-11-10),
+  com `SIGKILL` no grupo do comando e no do `ssh` que o `sshpass` cria com sessão
+  própria; a CLI sai 137 com "o cofre travou; o comando foi encerrado".
 - **S9** Mudar nível de acesso exige PIN. 5 erros de PIN travam o cofre.
 - **S10** Aprovação expira em 2 min e fechar
   nega.

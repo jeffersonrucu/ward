@@ -313,7 +313,8 @@ pub(crate) struct Preparo {
     pub(crate) pty: Option<Janela>,
     /// `ward ssh` com chave: o agente de D12, que só atende o filho.
     pub(crate) agente: Option<AgentePreparado>,
-    /// `ward run` (Fase 54, S8): o grupo do filho morre se o cofre travar.
+    /// `ward run` e `ward ssh` (Fase 54 e 54c, S8): o grupo do filho morre se o cofre
+    /// travar.
     pub(crate) trava: Option<MorreNaTrava>,
     /// Fase 54b (D68): a CLI disse que a entrada padrão é nula (`/dev/null`). A entrada
     /// do filho fecha no lançamento e um `entrada_padrao` com dados mata o grupo: quem
@@ -321,8 +322,8 @@ pub(crate) struct Preparo {
     pub(crate) entrada_nula: bool,
 }
 
-/// O registro dos `ward run` em curso e a contagem de travas de quando a sessão foi
-/// autorizada (Fase 54, S8).
+/// O registro dos `ward run` e `ward ssh` em curso e a contagem de travas de quando a
+/// sessão foi autorizada (Fase 54 e 54c, S8).
 pub(crate) struct MorreNaTrava {
     pub(crate) sessoes: Arc<crate::nucleo::SessoesRun>,
     pub(crate) travas: Arc<AtomicU64>,

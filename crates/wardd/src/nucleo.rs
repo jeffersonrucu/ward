@@ -165,14 +165,15 @@ pub(crate) struct Estado {
     travas: Arc<AtomicU64>,
     /// `<rt>` (Fase 44, D6): ao travar, os storage states do `ward playwright` somem.
     rt_playwright: Option<PathBuf>,
-    /// Grupos dos `ward run` em curso (Fase 54, S8): a trava os mata, como o agente SSH
-    /// e a ponte.
+    /// Grupos dos `ward run` e `ward ssh` em curso (Fase 54 e 54c, S8): a trava os
+    /// mata, como o agente SSH e a ponte.
     sessoes_run: Arc<SessoesRun>,
 }
 
-/// Os grupos de processos dos `ward run` em curso (Fase 54, S8). O comando recebeu o
-/// segredo no ambiente (ou num anexo): travar o cofre mata o grupo dele, para o
-/// segredo não seguir em uso depois da trava. O mutex daqui também ordena a contagem
+/// Os grupos de processos dos `ward run` e dos `ward ssh` em curso (Fase 54 e 54c, S8).
+/// O comando recebeu o segredo no ambiente (ou num anexo), ou a sessão SSH foi aberta
+/// com ele: travar o cofre mata o grupo, para o segredo não seguir em uso depois da
+/// trava. O mutex daqui também ordena a contagem
 /// de travas com o registro: um grupo registrado depois de uma trava que ele não viu
 /// morre no registro.
 #[derive(Default)]
@@ -187,22 +188,23 @@ impl SessoesRun {
         let mut v = self.grupos.lock().unwrap_or_else(|e| e.into_inner());
         v.retain(|w| w.strong_count() > 0);
         if travas.load(Ordering::Acquire) != inicial {
-            grupo.matar();
+            grupo.matar_com_sessoes_filhas();
             return false;
         }
         v.push(Arc::downgrade(grupo));
         true
     }
 
-    /// Conta a trava e mata os grupos registrados (`SIGKILL` no grupo inteiro; o
-    /// grupo já colhido não leva `kill`).
+    /// Conta a trava e mata os grupos registrados (`SIGKILL` no grupo inteiro e, desde
+    /// a Fase 54c, no grupo de cada filho direto com sessão própria, como o `ssh` que o
+    /// `sshpass` cria; o grupo já colhido não leva `kill`).
     fn travar(&self, travas: &AtomicU64) -> usize {
         let mut v = self.grupos.lock().unwrap_or_else(|e| e.into_inner());
         travas.fetch_add(1, Ordering::AcqRel);
         let vivos: Vec<Arc<Grupo>> = v.drain(..).filter_map(|w| w.upgrade()).collect();
         drop(v);
         for g in &vivos {
-            g.matar();
+            g.matar_com_sessoes_filhas();
         }
         vivos.len()
     }
@@ -214,7 +216,7 @@ impl Estado {
             // Fase 54 (S8): os `ward run` em curso morrem junto com a trava.
             let mortos = self.sessoes_run.travar(&self.travas);
             if mortos > 0 {
-                aviso!("{mortos} ward run encerrado(s) ao travar (S8)");
+                aviso!("{mortos} ward run/ssh encerrado(s) ao travar (S8)");
             }
             self.identidade_conhecida = a.identidade;
             // `CofreAberto` e `Entrada` zeram ao sair (chave de dados, hash, segredos).

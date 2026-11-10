@@ -402,7 +402,10 @@ ou com nova resposta do usuário.
   por `IdentityAgent`. O daemon só atende conexões cujo pid (`SO_PEERCRED`) é o `ssh`
   filho daquela sessão; carrega só a chave da entrada (e a do salto, se houver); só
   lista e assina, e recusa adicionar, remover e travar chaves; some (socket e
-  diretório) quando o `ssh` termina, falha ou é morto, e quando o cofre trava.
+  diretório) quando o `ssh` termina, falha ou é morto, e quando o cofre trava. Desde a
+  Fase 54c (S8; decisão do usuário, 2026-11-10), a trava encerra também a sessão
+  `ward ssh` inteira (`SIGKILL` no grupo e no `ssh` que o `sshpass` cria com sessão
+  própria); a CLI sai 137 com o aviso.
   **Divergência registrada (Fases 27 e 28b):** o agente só aceita chave **Ed25519**
   (assinatura por `ed25519-dalek`, pelo `ssh-key` do RustCrypto). RSA ficaria com
   RUSTSEC-2023-0071 (crate `rsa`), que o `cargo audit` recusa; ECDSA não foi
@@ -452,7 +455,12 @@ ou com nova resposta do usuário.
   formato cifrado. Pendrive escolhido pelo UUID do sistema de arquivos; cópias em
   `<montagem>/ward-backup/`, também com 30 versões. Restaurar pede a senha mestra da
   versão escolhida e grava o atual como backup antes de trocar. As regras de deny da
-  skill passam a cobrir `/media/**/ward-backup/**`.
+  skill passam a cobrir `/media/**/ward-backup/**`. **Fase 54c:** as 30 versões são
+  as 30 gerações mais altas que conferem pela chave do cofre aberto (geração selada,
+  autenticada), no computador e no pendrive; a data do nome só serve de teto (Fase 49a).
+  O que não confere (lixo, outro cofre, versões de antes de uma troca de senha mestra)
+  não conta e a rotação nunca apaga; cópias de uma geração contam uma vez. Relógio que
+  volta: no pendrive a versão "fora de ordem" não vai (falha fechada).
 - D18. **Instalação** (revista por D46/D47 e pelas Fases 51, 51a e 52; texto atualizado
   na Fase 51b). Árvore exata em `instalacao/arvore.txt`, tudo root:root salvo os setgid:
   - binários `/usr/local/bin/ward` e `/usr/local/bin/wardd` (0755),

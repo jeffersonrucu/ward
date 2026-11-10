@@ -828,7 +828,10 @@ Reauditoria do M2 (Fase 19e, D53–D55). Repros em `scratchpad/ataque/src/bin/`
   do usuário acha o socket em `<rt>ssh-*/agent.sock` e roda `SSH_AUTH_SOCK=<sock>
   ssh-add -L`, `ssh-add <chave qualquer>` e `ssh-add -D`, então a conexão é recusada nas
   três; ao fim (normal, e com SIGKILL na CLI) o socket e o diretório somem; travar o
-  cofre durante a sessão também os remove (D12) — cobre S1.
+  cofre durante a sessão também os remove (D12) e, desde a Fase 54c, encerra a sessão
+  inteira: a CLI sai 137 com "o cofre travou; o comando foi encerrado" e nenhum
+  processo da sessão (`ssh`, `sshpass` e o `ssh` que o `sshpass` cria com sessão
+  própria) sobra — cobre S1, S8.
 - [x] V4.27 — (SEG) Dado `HOME` de teste com `~/.ssh/config` contendo `Host *` e
   `ProxyCommand touch /tmp/sentinela-ssh`, um `known_hosts` e um `id_ed25519` de
   sentinela, `inotifywait -m ~/.ssh` rodando e `SSH_AUTH_SOCK` apontando para um agente
@@ -1154,6 +1157,14 @@ O QA usa o Chrome em modo de teste (D7) e confere a aparência contra o frame.
   arquivo de estado também, o daemon destrava com ele e as entradas são as da versão
   n; quando o mesmo backup é copiado à mão por cima do arquivo, então cai no V3.22
   (D39, D17) — cobre S7, S9.
+- [ ] V7.12 — (SEG) Dadas versões reais no backup local e no pendrive, quando um
+  processo do usuário planta, com datas mais novas que as reais e passadas (até a
+  gravação seguinte), arquivos com nome de versão (lixo com cabeçalho válido, versão de
+  outro cofre, cópias de versões reais com nome novo), então a gravação e a cópia
+  seguintes não apagam nenhuma versão real; o que não confere pela chave do cofre
+  aberto nunca é apagado (nem as versões de antes de uma troca de senha mestra); com
+  mais de 30 gerações reais ficam as 30 mais altas; o relógio que volta não apaga
+  versão real (Fase 54c, D17) — cobre S6, S7.
 
 ## Milestone 8 — Skill `ward`
 

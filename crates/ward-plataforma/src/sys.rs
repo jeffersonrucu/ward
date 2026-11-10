@@ -1359,13 +1359,23 @@ pub(crate) fn esperar_leitura(fd: BorrowedFd<'_>, espera_ms: libc::c_int) -> io:
 
 /// `SIGKILL` para o grupo de processos `pgid` inteiro. Grupo que não existe mais não é
 /// erro.
-#[allow(unsafe_code)]
 pub(crate) fn matar_grupo(pgid: libc::pid_t) -> io::Result<()> {
+    sinal_grupo(pgid, libc::SIGKILL)
+}
+
+/// `SIGSTOP` para o grupo `pgid` inteiro (Fase 54c): parado, o líder não colhe os
+/// filhos, então o pid deles não é reusado enquanto o daemon os procura e mata.
+pub(crate) fn parar_grupo(pgid: libc::pid_t) -> io::Result<()> {
+    sinal_grupo(pgid, libc::SIGSTOP)
+}
+
+#[allow(unsafe_code)]
+fn sinal_grupo(pgid: libc::pid_t, sinal: libc::c_int) -> io::Result<()> {
     if pgid <= 1 {
         return Err(io::ErrorKind::InvalidInput.into());
     }
     // SAFETY: `kill` com `-pgid` (> 1) manda o sinal só ao grupo; sem ponteiros.
-    if unsafe { libc::kill(-pgid, libc::SIGKILL) } != 0 {
+    if unsafe { libc::kill(-pgid, sinal) } != 0 {
         let e = erro_os();
         if e.raw_os_error() != Some(libc::ESRCH) {
             return Err(e);
