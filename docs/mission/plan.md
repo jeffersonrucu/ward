@@ -184,7 +184,7 @@ Clientes Rust:
 Contrato: V3.1–V3.7. Pode rodar em paralelo com o Milestone 2 (depois da Fase 6).
 
 Trilha W (a 35 primeiro, depois 36–39 em paralelo):
-- [ ] Fase 35 — **(UI)** Base do `app/src`: pastas `telas` → `screens`,
+- [x] Fase 35 — **(UI)** Base do `app/src`: pastas `telas` → `screens`,
   `lib/componentes` → `lib/components`, `lib/estilo` → `lib/style`, `lib/ponte` →
   `lib/bridge`, `lib/teste` → `lib/test`; nomes dos componentes (`.svelte`) e dos
   módulos JS com todos os imports; tokens CSS (`tokens.css`: propriedades custom e
