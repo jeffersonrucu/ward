@@ -1721,7 +1721,7 @@ seis baixos.
   do agente) entra em `docs/escopo.md` › "Fora do modelo de ameaça", com o que a 54b fecha
   (pipe, arquivo, erro honesto); RA11 no PRD sai de "proposta". Rodar depois da 54c e 54f.
   Feita (2026-11-10): item novo em "Fora do modelo de ameaça"; RA11 fechado no PRD.
-- [ ] Fase 54m — Ordem do RA10 no escopo (achado da 54g): em "Fora do modelo de ameaça", o
+- [x] Fase 54m — Ordem do RA10 no escopo (achado da 54g): em "Fora do modelo de ameaça", o
   parágrafo "Vale também para o próprio agente (ameaça 1)…" e o subitem dos pipes do Chrome
   por `/proc/<pid>/fd` voltam para o item do RA10, antes de "Crash do Chrome com a senha
   preenchida". Só mover, sem mudar texto.

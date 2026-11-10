@@ -295,16 +295,6 @@ inclusive o valor revelado (PRD D64).
     código novo com o mesmo id.
   Os dois dão o que a extensão já pode pedir: sugestão e preenchimento de entradas
   `login` (usuário, senha e TOTP) sem clique, para qualquer origem que o atacante diga.
-- Crash do Chrome com a senha preenchida (2ª auditoria do M5, Fase 39g; parecer do
-  auditor: baixo). O processo da aba guarda na memória a senha que a extensão ou o
-  `ward login` preencheu. Se ele cair, ou se outro processo do uid lhe mandar um
-  `kill -SEGV`, o relatório pode ir ao apport (`/var/crash`, legível pelo usuário) e o
-  crashpad do Chrome pode gravar um minidump no perfil (`~/.config/google-chrome/`,
-  pasta `Crashpad`). O Ward não põe o Chrome na lista do apport nem mexe no crashpad: o
-  navegador é do usuário e serve a tudo, e quem manda o sinal já é um processo do mesmo
-  uid, que tem o caminho mais curto do RA10 (a extensão adulterada no perfil pede o
-  preenchimento direto). Só o Ward e os auxiliares do WebKitGTK ficam fora do apport
-  (Fase 51c).
   Vale também para o próprio agente (ameaça 1), se ele rodar um programa assim, porque
   ele roda como o usuário; as regras de deny da skill não cobrem todo programa. O
   socket continua sem operação que devolva segredo ao papel agente: o ganho vem do
@@ -321,6 +311,16 @@ inclusive o valor revelado (PRD D64).
     usuário (as respostas de `preencher`, com usuário, senha e TOTP), que o atacante lê
     com um `tee` no lugar do Chrome. Esse acesso não é `ptrace`: o Yama não o barra.
     O `ward-nm` setgid e não-dumpable protege os fds dele, não os do Chrome.
+- Crash do Chrome com a senha preenchida (2ª auditoria do M5, Fase 39g; parecer do
+  auditor: baixo). O processo da aba guarda na memória a senha que a extensão ou o
+  `ward login` preencheu. Se ele cair, ou se outro processo do uid lhe mandar um
+  `kill -SEGV`, o relatório pode ir ao apport (`/var/crash`, legível pelo usuário) e o
+  crashpad do Chrome pode gravar um minidump no perfil (`~/.config/google-chrome/`,
+  pasta `Crashpad`). O Ward não põe o Chrome na lista do apport nem mexe no crashpad: o
+  navegador é do usuário e serve a tudo, e quem manda o sinal já é um processo do mesmo
+  uid, que tem o caminho mais curto do RA10 (a extensão adulterada no perfil pede o
+  preenchimento direto). Só o Ward e os auxiliares do WebKitGTK ficam fora do apport
+  (Fase 51c).
 
 - Root comprometido, kernel ou firmware.
 - Leitura, por outro processo do mesmo usuário, do segredo entregue ao filho do
