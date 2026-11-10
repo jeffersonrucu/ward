@@ -126,7 +126,7 @@ Compilação de cada fase: `make compile`. Checador: os arquivos da fase.
   `testing.rs` e `lib.rs` (achado da Fase 7). — V2.1, V2.3
 
 `ward-core`:
-- [ ] Fase 10 — `lib.rs`, `limites` (+ testes), `cripto`, `totp` (+ testes), `gerador`
+- [x] Fase 10 — `lib.rs`, `limites` (+ testes), `cripto`, `totp` (+ testes), `gerador`
   (+ testes), `origem`, `exibicao`. — V2.1
 - [ ] Fase 11 — `formato` (+ testes), `gravacao` (+ testes). Gravação atômica intocada.
   — V2.1
@@ -143,7 +143,8 @@ Compilação de cada fase: `make compile`. Checador: os arquivos da fase.
 - [ ] Fase 17 — `protocolo.rs`, `campos.rs`, `quadro.rs`, `json.rs`, `erros.rs`,
   `pedido.rs` (nomes de operação, campo, erro e papel congelados como literais). —
   V2.1, V2.2
-- [ ] Fase 18 — `protocolo/resposta.rs`, `protocolo/testes.rs`. — V2.1, V2.2
+- [ ] Fase 18 — `protocolo/resposta.rs`, `protocolo/testes.rs`; `crates/ward-core/tests/fontes.rs`
+  e `tests/corpo_memoria.rs` (achado da Fase 10; o `fontes.rs` já exclui `tests`/`tests.rs`). — V2.1, V2.2
 
 `wardd`:
 - [ ] Fase 19 — `main.rs`, `lib.rs`, `config.rs`, `log.rs`, `lancamento.rs`,
