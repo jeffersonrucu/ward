@@ -1,6 +1,6 @@
 # Plano — Ward
 
-Status: aprovado
+Status: concluído
 
 Fontes: `docs/mission/prd.md` (regras R*, decisões D*, riscos RA*) e
 `docs/mission/validation-contract.md` (asserções V*). Cada fase cabe em ~100k tokens:
@@ -1776,3 +1776,14 @@ baixos. `make check` (957), `teste-skill`, `app-check` e `teste-cli` (157) deram
   janela, troca de senha por `ler_cofre`. `make check` (967), `teste-cli` (157) e
   `teste-ataques-fundacao` (167 ok, build do zero) saíram 0.
 
+
+QA final (2026-11-10): **aprovado**. `teste-cli` (157, 0 falhas; as falhas de V4.14 das
+rodadas anteriores vinham de comandos paralelos na máquina: um varredor independente de
+`/proc/*/cmdline` não achou nada), `teste-extensao`, `teste-login` e `teste-playwright`
+saíram 0; interface conferida contra o FigCraft. Evidência em `docs/mission/evidence/final/`.
+Pendências (não bloqueiam): pedido de aprovação fica na janela depois que a CLI morre
+(`kill -9`) e sobrevive a travar/destravar — dá para aprovar ou "Permitir sempre" um pedido
+órfão; "Escolher tipo" não fecha com Esc; 404 do favicon só na ponte de teste; pesos de
+fonte, "24 caracteres" e origem da extensão em mono, quebra em "Símbolos" e "Último: …" do
+backup local diferem do FigCraft. Do usuário: V10.4/migração, V5.28 (janela nativa,
+`roteiro-usuario.md`) e `sudo make install`.

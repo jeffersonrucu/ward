@@ -1,5 +1,11 @@
 {
   "aba_navegou": true,
+  "c44_popup_negado": true,
+  "c44_popup_pedido": true,
+  "c44_popup_v6_aba_no_falso": true,
+  "c44_popup_v6_falso_vazio": true,
+  "c44_popup_v6_negado": true,
+  "c44_popup_v6_pedido": true,
   "clobbering_campos": true,
   "clobbering_prototipos": true,
   "cores_17332": true,
@@ -19,7 +25,7 @@
   "origem_mostrada": true,
   "perfil_com_padrao_fora_da_extensao": [],
   "perfil_dicionario_zxcvbn": {
-    "Default/Code Cache/js/51000f5b5ef37e17_0": [
+    "Default/Code Cache/js/d2d55ce040efd6a9_0": [
       {
         "bytes": 6,
         "linha_variacoes": 81,

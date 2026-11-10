@@ -1,0 +1,102 @@
+[
+ [
+  "destravar: foco inicial no campo senha",
+  true,
+  ""
+ ],
+ [
+  "destravar: erro e foco mantido",
+  true,
+  "Cofre travado |  | Digite a senha mestra para destravar o Ward neste computador. |  | Senha mestra | Senha mestra incorreta. | Destravar |  | Cada tentativa errada aumenta a espera da próxima, até 30 s. O Ward não mo"
+ ],
+ [
+  "credenciais: 22 entradas visíveis",
+  true,
+  "22"
+ ],
+ [
+  "credenciais: resumo",
+  true,
+  "Credenciais |  | 22 entradas · 4 grupos |  | Buscar | Filtrar | acme | 13 entradas | acme-pg-apr"
+ ],
+ [
+  "DOM sem segredo (detalhe sem revelar)",
+  true,
+  "[]"
+ ],
+ [
+  "inputs sem segredo",
+  true,
+  ""
+ ],
+ [
+  "storage sem segredo",
+  true,
+  ""
+ ],
+ [
+  "revelar mostra valor (DOM tem segredo só agora)",
+  true,
+  ""
+ ],
+ [
+  "sair da entrada tira o valor do DOM",
+  true,
+  "[]"
+ ],
+ [
+  "busca 'pg' filtra",
+  true,
+  "4"
+ ],
+ [
+  "busca sem resultado: 0 itens",
+  true,
+  ""
+ ],
+ [
+  "Esc fecha filtros",
+  true,
+  ""
+ ],
+ [
+  "tela Gerador de senha sem segredo no DOM",
+  true,
+  ""
+ ],
+ [
+  "tela Configurações sem segredo no DOM",
+  true,
+  ""
+ ],
+ [
+  "tema escuro com sistema claro",
+  true,
+  "rgb(16, 17, 20)"
+ ],
+ [
+  "sem toggle de tema",
+  true,
+  ""
+ ],
+ [
+  "aprovação abriu com a entrada",
+  true,
+  "ward | Credenciais | Gerador de senha | Configurações | Cofre destravado | Travar agora | Credenciais |  | 22 entradas · 4 grupos |  | Buscar | Filtrar | acme | 13 entradas | acm"
+ ],
+ [
+  "foco inicial em Negar",
+  false,
+  ""
+ ],
+ [
+  "Esc nega: CLI sai != 0 e marca ausente",
+  false,
+  "None"
+ ],
+ [
+  "console sem erro nem segredo",
+  true,
+  "[]"
+ ]
+]
