@@ -40,6 +40,10 @@ Missão 2: código em inglês (PRD `docs/mission/prd.md`; contrato
 - **Testes de fio** (`crates/ward-core/src/wire_v1.rs`, achado da Fase 3): as Fases
   10–18 renomeiam ali só os usos da API atual; fixture e expectativas não mudam (V2.2
   aceita diff só de nomes nesse arquivo).
+- **Captura de `format!`** (achado da Fase 7): renomear variável capturada muda o
+  literal (`{rt_texto}` → `{rt_text}`); o V6.3 aceita diferença só de nome de captura.
+- **Base do worktree**: o worker confere que o worktree parte do master atual
+  (`git reset --hard <hash>` com a árvore limpa, se não).
 - Tamanho: cada fase tem ~2,5–4 mil linhas para ler e reescrever (código + testes).
 
 ## Milestone 0 — Design no FigCraft
@@ -114,11 +118,12 @@ dos arquivos listados, e ajusta os usos nos crates que dependem deles (só os us
 Compilação de cada fase: `make compile`. Checador: os arquivos da fase.
 
 `ward-platform`:
-- [ ] Fase 7 — `launcher` (`lancador.rs`), `child` (`filho.rs`), `relogio.rs`, `teste.rs`,
+- [x] Fase 7 — `launcher` (`lancador.rs`), `child` (`filho.rs`), `relogio.rs`, `teste.rs`,
   `lib.rs`. — V2.1, V2.3
 - [ ] Fase 8 — `sys.rs`, `processo.rs`, `descendentes.rs`, `memoria.rs`. — V2.1, V2.6, V2.7
 - [ ] Fase 9 — `socket.rs`, `papel.rs`, `conectar.rs`, `terminal.rs`, `endurecimento.rs`,
-  `servidor.rs`, `app.rs`, `pasta.rs` e os testes do crate. — V2.1, V2.3
+  `servidor.rs`, `app.rs`, `pasta.rs` e os testes do crate; checador também em `launcher.rs`, `child.rs`, `clock.rs`,
+  `testing.rs` e `lib.rs` (achado da Fase 7). — V2.1, V2.3
 
 `ward-core`:
 - [ ] Fase 10 — `lib.rs`, `limites` (+ testes), `cripto`, `totp` (+ testes), `gerador`
