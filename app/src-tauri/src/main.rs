@@ -856,6 +856,38 @@ fn mostrar_principal<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
+/// A barra de título do GTK (CSD). O app sobe com o ambiente montado pelo daemon (D57),
+/// sem as configurações da sessão: o GTK 3 cai no layout padrão `menu:close` (só o
+/// fechar) e no tema claro. Aqui ficam os três botões, o tema escuro e a cor do fundo
+/// do app (`--primitiva-neutro-950`), para as duas janelas. CSS fixo, sem dado.
+fn ajustar_barra_de_titulo() {
+    use gtk::prelude::{CssProviderExt, GtkSettingsExt};
+    if !gtk::is_initialized_main_thread() {
+        return;
+    }
+    if let Some(ajustes) = gtk::Settings::default() {
+        ajustes.set_gtk_decoration_layout(Some("menu:minimize,maximize,close"));
+        ajustes.set_gtk_application_prefer_dark_theme(true);
+    }
+    let css = gtk::CssProvider::new();
+    let estilo = b"headerbar, .titlebar { background: #101114; background-image: none; \
+color: #F7F8FA; border: none; box-shadow: none; } \
+headerbar .title { color: #F7F8FA; } \
+headerbar button.titlebutton { color: #9AA1AE; background: none; border: none; \
+box-shadow: none; } \
+headerbar button.titlebutton:hover { color: #F7F8FA; background: #24282F; }";
+    if css.load_from_data(estilo).is_err() {
+        return;
+    }
+    if let Some(tela) = gtk::gdk::Screen::default() {
+        gtk::StyleContext::add_provider_for_screen(
+            &tela,
+            &css,
+            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+    }
+}
+
 fn criar_janela_principal<R: Runtime, M: Manager<R>>(app: &M) -> tauri::Result<WebviewWindow<R>> {
     WebviewWindowBuilder::new(app, JANELA_PRINCIPAL, WebviewUrl::App("index.html".into()))
         .title("Ward")
@@ -982,6 +1014,7 @@ fn main() {
                     eprintln!("ward-app: não foi possível vigiar os pedidos de aprovação");
                 }
             }
+            ajustar_barra_de_titulo();
             criar_janela_principal(app)?;
             // Fase 39 (V5.23): a bandeja, com o estado de agora; sem ela o app segue.
             let inicial = app
