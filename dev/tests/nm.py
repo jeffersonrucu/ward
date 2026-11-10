@@ -220,7 +220,7 @@ try:
     linha = srv.communicate(timeout=30)[0].strip()
     print(f"      verificador: {linha}")
     confere(linha.startswith("pai=Ok "),
-            "D47: o host aberto pelo Chrome tem o Chrome instalado de pai (conferir_pai pelo /proc)")
+            "D47: o host aberto pelo Chrome tem o Chrome instalado de pai (verify_parent pelo /proc)")
     confere(f"ppid={ch.pid} " in linha, "D47: o Chrome abre o host como filho direto do navegador (sem intermediário)")
     confere("pai_dumpable=sim" in linha, "D47: o processo do navegador é dumpable (exe legível pelo /proc)")
     try:
@@ -252,7 +252,7 @@ srv = subprocess.Popen([SONDA, "servir", sock_sonda, CHROME], stdout=subprocess.
 srv.stdout.readline()
 subprocess.run([SONDA, ORIGEM], env={"WARD_PAI_CHROME_SOCK": sock_sonda}, capture_output=True, timeout=30)
 linha = srv.communicate(timeout=30)[0].strip()
-confere(linha.startswith("pai=PaiNaoPermitido"), "controle: o host aberto por outro processo é recusado (PaiNaoPermitido)")
+confere(linha.startswith("pai=ParentNotAllowed"), "controle: o host aberto por outro processo é recusado (ParentNotAllowed)")
 shutil.rmtree(perfil, ignore_errors=True)
 
 if falhas:

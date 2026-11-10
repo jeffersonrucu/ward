@@ -78,7 +78,7 @@ impl ServidorEsperado {
     }
 
     fn conferir_caminho(&self) -> Result<(), RecusaServidor> {
-        if !crate::processo::caminho_absoluto_simples(&self.caminho) {
+        if !crate::process::simple_absolute_path(&self.caminho) {
             return Err(RecusaServidor::CaminhoInvalido);
         }
         let r = match self.forma {

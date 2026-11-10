@@ -3,7 +3,7 @@
 //!
 //! - `pai-chrome servir <socket> <chrome>`: escuta no socket (pasta do teste), aceita
 //!   uma conexão e imprime uma linha: `pai=<Ok|motivo> ppid=<n> pai_dumpable=<sim|nao>
-//!   cadeia=<a,b,…>`, com [`ProcessoPar::conferir_pai`] contra o binário dado.
+//!   cadeia=<a,b,…>`, com [`PeerProcess::verify_parent`] contra o binário dado.
 //! - Como host de native messaging (o Chrome passa `chrome-extension://…/`): conecta no
 //!   socket de `WARD_PAI_CHROME_SOCK`, espera o servidor fechar, responde uma mensagem
 //!   `{"ok":true}` ao Chrome e sai. O mesmo vale executado à mão (controle).
@@ -12,7 +12,7 @@ use std::io::{Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::process::ExitCode;
 
-use ward_platform::{BinarioPermitido, ProcessoPar};
+use ward_platform::{AllowedBinary, PeerProcess};
 
 fn servir(sock: &str, chrome: &str) -> ExitCode {
     let _ = std::fs::remove_file(sock);
@@ -28,22 +28,22 @@ fn servir(sock: &str, chrome: &str) -> ExitCode {
     let Ok((s, _)) = l.accept() else {
         return ExitCode::FAILURE;
     };
-    let par = match ProcessoPar::do_socket(&s) {
+    let par = match PeerProcess::from_socket(&s) {
         Ok(p) => p,
         Err(e) => {
             println!("pai=SemIdentidade({})", e.kind());
             return ExitCode::SUCCESS;
         }
     };
-    let chrome = BinarioPermitido::novo(chrome).expect("caminho do chrome");
-    let r = par.conferir_pai(&chrome);
-    let ppid = par.pid_do_pai().unwrap_or(0);
+    let chrome = AllowedBinary::new(chrome).expect("caminho do chrome");
+    let r = par.verify_parent(&chrome);
+    let ppid = par.parent_pid().unwrap_or(0);
     let dump = if std::fs::read_link(format!("/proc/{ppid}/exe")).is_ok() {
         "sim"
     } else {
         "nao"
     };
-    let cadeia: Vec<String> = par.cadeia().into_iter().map(|e| e.nome).collect();
+    let cadeia: Vec<String> = par.chain().into_iter().map(|e| e.name).collect();
     println!(
         "pai={} ppid={ppid} pai_dumpable={dump} cadeia={}",
         match r {

@@ -154,7 +154,7 @@ pub fn e_terminal(fd: impl AsFd) -> bool {
 
 /// (linhas, colunas) do terminal em `fd`; `None` se não é terminal ou não diz.
 pub fn tamanho(fd: impl AsFd) -> Option<(u16, u16)> {
-    sys::ler_janela(fd.as_fd())
+    sys::read_window_size(fd.as_fd())
         .ok()
         .filter(|&(l, c)| l > 0 && c > 0)
 }
@@ -179,7 +179,7 @@ impl ModoCru {
         let fd = fd.as_fd().try_clone_to_owned()?;
         let original = sys::tcgetattr(fd.as_fd())?;
         let mut cru = original;
-        sys::modo_cru(&mut cru);
+        sys::make_raw(&mut cru);
         sys::tcsetattr(fd.as_fd(), libc::TCSANOW, &cru)?;
         Ok(ModoCru { fd, original })
     }
@@ -197,8 +197,8 @@ mod testes {
 
     #[test]
     fn modo_cru_liga_e_volta_e_tamanho_do_pty() {
-        let (mestre, escravo) = sys::abrir_pty().unwrap();
-        sys::definir_janela(mestre.as_fd(), 33, 101).unwrap();
+        let (mestre, escravo) = sys::open_pty().unwrap();
+        sys::set_window_size(mestre.as_fd(), 33, 101).unwrap();
         assert!(e_terminal(&escravo));
         assert!(!e_terminal(File::open("/dev/null").unwrap()));
         assert_eq!(tamanho(&escravo), Some((33, 101)));
@@ -262,7 +262,7 @@ mod testes {
     /// o eco ligado.
     #[test]
     fn ataque_senha_nao_ecoa_no_pty() {
-        let (mestre, escravo) = sys::abrir_pty().unwrap();
+        let (mestre, escravo) = sys::open_pty().unwrap();
         let mestre = File::from(mestre);
         let escravo = File::from(escravo);
         let antes = sys::tcgetattr(escravo.as_fd()).unwrap();
@@ -316,7 +316,7 @@ mod testes {
 
     #[test]
     fn ctrl_c_cancela_e_restaura() {
-        let (mestre, escravo) = sys::abrir_pty().unwrap();
+        let (mestre, escravo) = sys::open_pty().unwrap();
         let mestre = File::from(mestre);
         let escravo = File::from(escravo);
         let leitor = std::thread::spawn(move || {

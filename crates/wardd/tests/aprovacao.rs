@@ -17,7 +17,7 @@ use ward_core::entrada::{Ambiente, NivelAcesso};
 use ward_core::protocolo::{
     ErroResposta, Operacao, Papel, PedidoDeAprovacao, PedidoDeDestrave, Resposta,
 };
-use ward_platform::{ClassePar, Recusa};
+use ward_platform::{PeerClass, Refusal};
 use wardd::aprovacao::{
     AbridorApp, Assinante, Cliente, ErroAbrirApp, Motor, RelogioMotor, SemCliente,
 };
@@ -1088,16 +1088,16 @@ fn d57_abrir_app() {
 fn v3_36_so_o_pid_do_lancador_e_app() {
     let lancado = 4242;
     let e = |p: u32| p == lancado;
-    assert_eq!(papel_da_classe(ClassePar::App, lancado, e), Papel::App);
-    assert_eq!(papel_da_classe(ClassePar::App, 4243, e), Papel::Agente);
+    assert_eq!(papel_da_classe(PeerClass::App, lancado, e), Papel::App);
+    assert_eq!(papel_da_classe(PeerClass::App, 4243, e), Papel::Agente);
     assert_eq!(
-        papel_da_classe(ClassePar::App, lancado, |_| false),
+        papel_da_classe(PeerClass::App, lancado, |_| false),
         Papel::Agente
     );
     assert_eq!(
         papel_da_classe(
-            ClassePar::Comum {
-                motivo: Recusa::GrupoComum
+            PeerClass::Common {
+                reason: Refusal::CommonGroup
             },
             lancado,
             e
@@ -1105,7 +1105,7 @@ fn v3_36_so_o_pid_do_lancador_e_app() {
         Papel::Agente
     );
     assert_eq!(
-        papel_da_classe(ClassePar::HostExtensao, 1, e),
+        papel_da_classe(PeerClass::ExtensionHost, 1, e),
         Papel::Extensao
     );
 }

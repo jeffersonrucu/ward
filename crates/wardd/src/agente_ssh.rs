@@ -326,8 +326,8 @@ fn deve_parar(parar: &AtomicBool, travas: &AtomicU64, inicial: u64) -> bool {
 
 /// O par é o `ssh` da sessão? No `sftp`, `preso` guarda o pid do primeiro filho do
 /// `sftp` aceito; depois dele, só esse pid passa (nenhum outro filho do `sftp`).
-fn par_permitido(par: &ward_platform::ProcessoPar, p: Permitido, preso: &mut Option<u32>) -> bool {
-    par_permitido_pid(par.credenciais().pid, || par.pid_do_pai(), p, preso)
+fn par_permitido(par: &ward_platform::PeerProcess, p: Permitido, preso: &mut Option<u32>) -> bool {
+    par_permitido_pid(par.credentials().pid, || par.parent_pid(), p, preso)
 }
 
 /// [`par_permitido`] com o pid do par e o pai dele já lidos (testável sem processo).
@@ -390,7 +390,7 @@ fn laco(
                 continue;
             }
         };
-        let pid = par.credenciais().pid;
+        let pid = par.credentials().pid;
         if !par_permitido(&par, permitido, &mut preso) {
             // Fecha sem nenhum byte: só o `ssh` da sessão usa o agente.
             aviso!("agente SSH: conexão do pid {pid} recusada; só o ssh da sessão (D12)");

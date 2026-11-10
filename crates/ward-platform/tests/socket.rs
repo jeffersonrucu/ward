@@ -175,10 +175,10 @@ fn aceitar_traz_pid_e_uid_do_par() {
     let escuta = dir.escutar("wardd.sock").unwrap();
     let _cliente = UnixStream::connect(escuta.caminho()).unwrap();
     let conexao = escuta.aceitar().unwrap();
-    let cred = conexao.par.credenciais();
+    let cred = conexao.par.credentials();
     assert_eq!(cred.pid, std::process::id());
     assert_eq!(cred.uid, ward_platform::effective_uid());
     // O próprio binário de teste (em target/, do usuário) não é binário instalado.
     let eu = std::env::current_exe().unwrap();
-    assert!(conexao.par.identificar(&comum::permitido(&eu)).is_err());
+    assert!(conexao.par.identify(&comum::permitido(&eu)).is_err());
 }

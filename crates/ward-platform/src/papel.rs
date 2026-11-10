@@ -5,7 +5,7 @@
 use std::fmt;
 use std::path::Path;
 
-use crate::processo::{BinarioPermitido, Recusa};
+use crate::process::{AllowedBinary, Refusal};
 use crate::sys;
 
 /// Nome do grupo de sistema do app.
@@ -23,7 +23,7 @@ const MAX_ARQUIVO_GRUPOS: u64 = 4 * 1024 * 1024;
 pub struct Instalacao {
     gid_app: u32,
     gid_extensao: u32,
-    chrome: BinarioPermitido,
+    chrome: AllowedBinary,
 }
 
 /// Instalação recusada. Sem dado do usuário: pode ir para o log.
@@ -70,7 +70,7 @@ impl Instalacao {
     pub fn nova(
         gid_app: u32,
         gid_extensao: u32,
-        chrome: BinarioPermitido,
+        chrome: AllowedBinary,
     ) -> Result<Instalacao, ErroInstalacao> {
         let meus = gids_deste_processo()?;
         let subgid = ler_limitado(Path::new("/etc/subgid"))?;
@@ -94,7 +94,7 @@ impl Instalacao {
 
     /// Lê `ward-app` e `ward-nm` do `/etc/group` (uma linha cada, sem membros) e passa
     /// por [`nova`](Self::nova).
-    pub fn do_sistema(chrome: BinarioPermitido) -> Result<Instalacao, ErroInstalacao> {
+    pub fn do_sistema(chrome: AllowedBinary) -> Result<Instalacao, ErroInstalacao> {
         let grupos = ler_limitado(Path::new("/etc/group"))?.ok_or(ErroInstalacao::Leitura)?;
         let gid_app = gid_do_grupo(&grupos, GRUPO_APP)?;
         let gid_extensao = gid_do_grupo(&grupos, GRUPO_EXTENSAO)?;
@@ -104,7 +104,7 @@ impl Instalacao {
     /// Só no `test-mode`: sem as conferências contra este processo, para testes que
     /// usam um grupo suplementar do próprio usuário (com `sg`).
     #[cfg(feature = "test-mode")]
-    pub fn de_teste(gid_app: u32, gid_extensao: u32, chrome: BinarioPermitido) -> Instalacao {
+    pub fn de_teste(gid_app: u32, gid_extensao: u32, chrome: AllowedBinary) -> Instalacao {
         Instalacao {
             gid_app,
             gid_extensao,
@@ -120,7 +120,7 @@ impl Instalacao {
         self.gid_extensao
     }
 
-    pub fn chrome(&self) -> &BinarioPermitido {
+    pub fn chrome(&self) -> &AllowedBinary {
         &self.chrome
     }
 }
@@ -260,13 +260,13 @@ impl PoliticaKernel {
     }
 
     /// `ptrace_scope` ≥ 1 e `suid_dumpable` 0 ou 2.
-    pub fn conferir(&self) -> Result<(), Recusa> {
+    pub fn conferir(&self) -> Result<(), Refusal> {
         let ptrace_ok = matches!(self.ptrace_scope, Some(n) if n >= 1);
         let dumpable_ok = matches!(self.suid_dumpable, Some(0 | 2));
         if ptrace_ok && dumpable_ok {
             Ok(())
         } else {
-            Err(Recusa::PoliticaKernel)
+            Err(Refusal::KernelPolicy)
         }
     }
 }
@@ -324,7 +324,7 @@ mod testes {
 
     #[test]
     fn ataque_gid_que_este_processo_ja_tem() {
-        let chrome = BinarioPermitido::novo("/opt/google/chrome/chrome").unwrap();
+        let chrome = AllowedBinary::new("/opt/google/chrome/chrome").unwrap();
         let meu = sys::getegid();
         assert_eq!(
             Instalacao::nova(meu, 991_999, chrome.clone()),
@@ -369,7 +369,7 @@ mod testes {
         ] {
             assert_eq!(
                 PoliticaKernel::simulada(p, d).conferir(),
-                Err(Recusa::PoliticaKernel),
+                Err(Refusal::KernelPolicy),
                 "{p:?} {d:?}"
             );
         }

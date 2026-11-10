@@ -1,6 +1,7 @@
-//! Chamadas diretas ao kernel pela `libc`. Com `memoria`, é o único lugar do Ward com
-//! `unsafe`: cada bloco leva `// SAFETY:` e cada função é coberta pelos testes do crate. O resto do
-//! crate só usa estas funções, que já devolvem tipos seguros (`OwnedFd`, `io::Result`).
+//! Direct calls to the kernel through `libc`. Together with `memory`, it is the only place
+//! in Ward with `unsafe`: each block carries `// SAFETY:` and each function is covered by
+//! the crate tests. The rest of the crate only uses these functions, which already return
+//! safe types (`OwnedFd`, `io::Result`).
 
 use std::ffi::CStr;
 use std::io;
@@ -8,18 +9,18 @@ use std::mem::size_of;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
 use std::ptr::NonNull;
 
-/// `SO_PEERPIDFD` (Linux 6.5): pidfd do processo do outro lado do socket. O valor é o
-/// do `asm-generic/socket.h` (x86_64 e aarch64, os alvos do Ward); a `libc` 0.2.191
-/// não o exporta para glibc.
+/// `SO_PEERPIDFD` (Linux 6.5): pidfd of the process on the other side of the socket. The
+/// value is the one from `asm-generic/socket.h` (x86_64 and aarch64, the Ward targets);
+/// `libc` 0.2.191 does not export it for glibc.
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 const SO_PEERPIDFD: libc::c_int = 77;
 
-fn erro_os() -> io::Error {
+fn os_error() -> io::Error {
     io::Error::last_os_error()
 }
 
-/// `SO_PEERCRED` do socket: pid, uid e gid do processo do outro lado no momento do
-/// `connect` (ou do `listen`, visto pelo cliente).
+/// `SO_PEERCRED` of the socket: pid, uid and gid of the process on the other side at the
+/// time of the `connect` (or of the `listen`, as seen by the client).
 #[allow(unsafe_code)]
 pub(crate) fn peercred(fd: BorrowedFd<'_>) -> io::Result<libc::ucred> {
     let mut cred = libc::ucred {
@@ -27,11 +28,11 @@ pub(crate) fn peercred(fd: BorrowedFd<'_>) -> io::Result<libc::ucred> {
         uid: u32::MAX,
         gid: u32::MAX,
     };
-    let tamanho = size_of::<libc::ucred>();
-    let mut len = libc::socklen_t::try_from(tamanho).map_err(|_| io::ErrorKind::InvalidInput)?;
-    // SAFETY: `fd` é um descritor aberto (o `BorrowedFd` garante enquanto durar o
-    // empréstimo); `cred` e `len` são locais, `len` tem exatamente o tamanho de
-    // `ucred`, e o kernel escreve no máximo `len` bytes em `cred`.
+    let size = size_of::<libc::ucred>();
+    let mut len = libc::socklen_t::try_from(size).map_err(|_| io::ErrorKind::InvalidInput)?;
+    // SAFETY: `fd` is an open descriptor (the `BorrowedFd` guarantees it for the length
+    // of the borrow); `cred` and `len` are locals, `len` is exactly the size of `ucred`,
+    // and the kernel writes at most `len` bytes into `cred`.
     let r = unsafe {
         libc::getsockopt(
             fd.as_raw_fd(),
@@ -42,23 +43,23 @@ pub(crate) fn peercred(fd: BorrowedFd<'_>) -> io::Result<libc::ucred> {
         )
     };
     if r != 0 {
-        return Err(erro_os());
+        return Err(os_error());
     }
-    if usize::try_from(len).ok() != Some(tamanho) {
+    if usize::try_from(len).ok() != Some(size) {
         return Err(io::ErrorKind::InvalidData.into());
     }
     Ok(cred)
 }
 
-/// `SO_PEERPIDFD`: um pidfd novo, do processo que fez o `connect`. Ao contrário do pid,
-/// o pidfd não passa a apontar para outro processo se o número for reaproveitado.
+/// `SO_PEERPIDFD`: a new pidfd of the process that did the `connect`. Unlike the pid, the
+/// pidfd does not start pointing to another process if the number is reused.
 #[allow(unsafe_code)]
 pub(crate) fn peer_pidfd(fd: BorrowedFd<'_>) -> io::Result<OwnedFd> {
     let mut pidfd: libc::c_int = -1;
-    let tamanho = size_of::<libc::c_int>();
-    let mut len = libc::socklen_t::try_from(tamanho).map_err(|_| io::ErrorKind::InvalidInput)?;
-    // SAFETY: `fd` está aberto pelo empréstimo; `pidfd` e `len` são locais e `len` tem
-    // o tamanho de um `c_int`, que é o que o kernel escreve para `SO_PEERPIDFD`.
+    let size = size_of::<libc::c_int>();
+    let mut len = libc::socklen_t::try_from(size).map_err(|_| io::ErrorKind::InvalidInput)?;
+    // SAFETY: `fd` is open through the borrow; `pidfd` and `len` are locals and `len` has
+    // the size of a `c_int`, which is what the kernel writes for `SO_PEERPIDFD`.
     let r = unsafe {
         libc::getsockopt(
             fd.as_raw_fd(),
@@ -69,13 +70,13 @@ pub(crate) fn peer_pidfd(fd: BorrowedFd<'_>) -> io::Result<OwnedFd> {
         )
     };
     if r != 0 {
-        return Err(erro_os());
+        return Err(os_error());
     }
-    if usize::try_from(len).ok() != Some(tamanho) || pidfd < 0 {
+    if usize::try_from(len).ok() != Some(size) || pidfd < 0 {
         return Err(io::ErrorKind::InvalidData.into());
     }
-    // SAFETY: o `getsockopt` acabou de instalar `pidfd` na tabela deste processo, e
-    // nenhum outro código o conhece; o `OwnedFd` passa a ser o único dono e o fecha.
+    // SAFETY: `getsockopt` has just installed `pidfd` in the table of this process, and
+    // no other code knows it; the `OwnedFd` becomes the only owner and closes it.
     Ok(unsafe { OwnedFd::from_raw_fd(pidfd) })
 }
 
@@ -85,22 +86,22 @@ pub(crate) fn pidfd_open(pid: libc::pid_t) -> io::Result<OwnedFd> {
     if pid <= 0 {
         return Err(io::ErrorKind::InvalidInput.into());
     }
-    // SAFETY: syscall sem ponteiros: só um inteiro (pid) e as flags 0.
+    // SAFETY: syscall without pointers: only an integer (pid) and flags 0.
     let r = unsafe { libc::syscall(libc::SYS_pidfd_open, pid, 0 as libc::c_uint) };
     if r < 0 {
-        return Err(erro_os());
+        return Err(os_error());
     }
     let fd = libc::c_int::try_from(r).map_err(|_| io::ErrorKind::InvalidData)?;
-    // SAFETY: o kernel acabou de criar `fd` para este processo e ninguém mais o conhece.
+    // SAFETY: the kernel has just created `fd` for this process and nobody else knows it.
     Ok(unsafe { OwnedFd::from_raw_fd(fd) })
 }
 
-/// Confere se o processo do pidfd ainda existe (sinal 0 por `pidfd_send_signal`, que
-/// não entrega nada). `Ok(false)` quando ele já saiu.
+/// Checks whether the process of the pidfd still exists (signal 0 through
+/// `pidfd_send_signal`, which delivers nothing). `Ok(false)` when it has already exited.
 #[allow(unsafe_code)]
-pub(crate) fn pidfd_vivo(pidfd: BorrowedFd<'_>) -> io::Result<bool> {
-    // SAFETY: `pidfd` está aberto pelo empréstimo; `info` nulo é permitido e as flags
-    // são 0; o sinal 0 só testa a existência e a permissão.
+pub(crate) fn pidfd_alive(pidfd: BorrowedFd<'_>) -> io::Result<bool> {
+    // SAFETY: `pidfd` is open through the borrow; a null `info` is allowed and the flags
+    // are 0; signal 0 only tests existence and permission.
     let r = unsafe {
         libc::syscall(
             libc::SYS_pidfd_send_signal,
@@ -113,7 +114,7 @@ pub(crate) fn pidfd_vivo(pidfd: BorrowedFd<'_>) -> io::Result<bool> {
     if r == 0 {
         return Ok(true);
     }
-    let e = erro_os();
+    let e = os_error();
     if e.raw_os_error() == Some(libc::ESRCH) {
         Ok(false)
     } else {
@@ -121,88 +122,85 @@ pub(crate) fn pidfd_vivo(pidfd: BorrowedFd<'_>) -> io::Result<bool> {
     }
 }
 
-/// `renameat2(dir, de, dir, para, RENAME_NOREPLACE)`: renomeia dentro de `dir` sem
-/// nunca sobrescrever (`EEXIST` se `para` existe). Funciona em vfat, que não tem
-/// `link(2)` (Fase 46).
+/// `renameat2(dir, from, dir, to, RENAME_NOREPLACE)`: renames inside `dir` without ever
+/// overwriting (`EEXIST` if `to` exists). Works on vfat, which has no `link(2)`
+/// (Phase 46).
 #[allow(unsafe_code)]
-pub(crate) fn renameat_sem_sobrescrever(
-    dir: BorrowedFd<'_>,
-    de: &CStr,
-    para: &CStr,
-) -> io::Result<()> {
-    // SAFETY: `dir` está aberto pelo empréstimo; `de` e `para` são strings C válidas até
-    // o fim da chamada, e o kernel só as lê.
+pub(crate) fn renameat_no_replace(dir: BorrowedFd<'_>, from: &CStr, to: &CStr) -> io::Result<()> {
+    // SAFETY: `dir` is open through the borrow; `from` and `to` are valid C strings until
+    // the end of the call, and the kernel only reads them.
     let r = unsafe {
         libc::renameat2(
             dir.as_raw_fd(),
-            de.as_ptr(),
+            from.as_ptr(),
             dir.as_raw_fd(),
-            para.as_ptr(),
+            to.as_ptr(),
             libc::RENAME_NOREPLACE,
         )
     };
     if r != 0 {
-        return Err(erro_os());
+        return Err(os_error());
     }
     Ok(())
 }
 
-/// `openat(dir, nome, flags | O_CLOEXEC)`. `nome` é relativo a `dir`.
+/// `openat(dir, name, flags | O_CLOEXEC)`. `name` is relative to `dir`.
 #[allow(unsafe_code)]
-pub(crate) fn openat(dir: BorrowedFd<'_>, nome: &CStr, flags: libc::c_int) -> io::Result<OwnedFd> {
-    // SAFETY: `dir` está aberto pelo empréstimo e `nome` é uma string C válida até o
-    // fim da chamada; o modo só vale com O_CREAT, que quem chama não passa.
-    let fd = unsafe { libc::openat(dir.as_raw_fd(), nome.as_ptr(), flags | libc::O_CLOEXEC) };
+pub(crate) fn openat(dir: BorrowedFd<'_>, name: &CStr, flags: libc::c_int) -> io::Result<OwnedFd> {
+    // SAFETY: `dir` is open through the borrow and `name` is a valid C string until the
+    // end of the call; the mode only matters with O_CREAT, which the caller does not pass.
+    let fd = unsafe { libc::openat(dir.as_raw_fd(), name.as_ptr(), flags | libc::O_CLOEXEC) };
     if fd < 0 {
-        return Err(erro_os());
+        return Err(os_error());
     }
-    // SAFETY: descritor novo, criado agora pelo `openat` e sem outro dono.
+    // SAFETY: new descriptor, created now by `openat` and without another owner.
     Ok(unsafe { OwnedFd::from_raw_fd(fd) })
 }
 
-/// `unlinkat(dir, nome, flags)`: apaga `nome` dentro de `dir` (com `AT_REMOVEDIR`, uma
-/// pasta vazia). Nunca segue link: um link simbólico é apagado como ele é.
+/// `unlinkat(dir, name, flags)`: deletes `name` inside `dir` (with `AT_REMOVEDIR`, an
+/// empty directory). Never follows a link: a symbolic link is deleted as it is.
 #[allow(unsafe_code)]
-pub(crate) fn unlinkat(dir: BorrowedFd<'_>, nome: &CStr, flags: libc::c_int) -> io::Result<()> {
-    // SAFETY: `dir` está aberto pelo empréstimo e `nome` é uma string C válida até o fim
-    // da chamada; o kernel só a lê.
-    let r = unsafe { libc::unlinkat(dir.as_raw_fd(), nome.as_ptr(), flags) };
+pub(crate) fn unlinkat(dir: BorrowedFd<'_>, name: &CStr, flags: libc::c_int) -> io::Result<()> {
+    // SAFETY: `dir` is open through the borrow and `name` is a valid C string until the
+    // end of the call; the kernel only reads it.
+    let r = unsafe { libc::unlinkat(dir.as_raw_fd(), name.as_ptr(), flags) };
     if r != 0 {
-        return Err(erro_os());
+        return Err(os_error());
     }
     Ok(())
 }
 
-/// Os nomes dentro da pasta aberta em `dir` (sem `.` e `..`), lidos pelo próprio fd
-/// (`fdopendir` numa cópia `F_DUPFD_CLOEXEC`, `readdir` e `closedir`): nenhum caminho é
-/// resolvido de novo. A cópia divide a posição de leitura com `dir`; por isso volta ao
-/// começo (`rewinddir`) antes de ler.
+/// The names inside the directory open in `dir` (without `.` and `..`), read through the
+/// fd itself (`fdopendir` on an `F_DUPFD_CLOEXEC` copy, `readdir` and `closedir`): no path
+/// is resolved again. The copy shares the read position with `dir`; that is why it goes
+/// back to the start (`rewinddir`) before reading.
 #[allow(unsafe_code)]
-pub(crate) fn listar_pasta(dir: BorrowedFd<'_>) -> io::Result<Vec<std::ffi::CString>> {
-    // SAFETY: `dir` está aberto pelo empréstimo; `F_DUPFD_CLOEXEC` só cria outro fd.
-    let copia = unsafe { libc::fcntl(dir.as_raw_fd(), libc::F_DUPFD_CLOEXEC, 0) };
-    if copia < 0 {
-        return Err(erro_os());
+pub(crate) fn list_dir(dir: BorrowedFd<'_>) -> io::Result<Vec<std::ffi::CString>> {
+    // SAFETY: `dir` is open through the borrow; `F_DUPFD_CLOEXEC` only creates another fd.
+    let copy = unsafe { libc::fcntl(dir.as_raw_fd(), libc::F_DUPFD_CLOEXEC, 0) };
+    if copy < 0 {
+        return Err(os_error());
     }
-    // SAFETY: `copia` é um fd novo, sem outro dono; o `fdopendir` passa a ser o dono
-    // dele (e o `closedir` abaixo o fecha). Se falhar, o fd ainda é nosso e é fechado.
-    let d = unsafe { libc::fdopendir(copia) };
+    // SAFETY: `copy` is a new fd, without another owner; `fdopendir` becomes its owner
+    // (and the `closedir` below closes it). If it fails, the fd is still ours and closed.
+    let d = unsafe { libc::fdopendir(copy) };
     if d.is_null() {
-        let e = erro_os();
-        // SAFETY: o `fdopendir` falhou, então `copia` continua só nosso.
-        unsafe { libc::close(copia) };
+        let e = os_error();
+        // SAFETY: `fdopendir` failed, so `copy` is still only ours.
+        unsafe { libc::close(copy) };
         return Err(e);
     }
-    // SAFETY: `d` é o `DIR*` válido devolvido acima, usado só nesta thread.
+    // SAFETY: `d` is the valid `DIR*` returned above, used only in this thread.
     unsafe { libc::rewinddir(d) };
-    let mut nomes = Vec::new();
-    let resultado = loop {
-        // SAFETY: zera o `errno` desta thread para separar o fim da lista de um erro.
+    let mut names = Vec::new();
+    let result = loop {
+        // SAFETY: zeroes the `errno` of this thread to tell the end of the list from an
+        // error.
         unsafe { *libc::__errno_location() = 0 };
-        // SAFETY: `d` é válido até o `closedir`; o ponteiro devolvido vale até a
-        // próxima chamada de `readdir` no mesmo `DIR*`, e o nome é copiado antes dela.
-        let item = unsafe { libc::readdir(d) };
-        if item.is_null() {
+        // SAFETY: `d` is valid until the `closedir`; the returned pointer is valid until
+        // the next `readdir` call on the same `DIR*`, and the name is copied before it.
+        let entry = unsafe { libc::readdir(d) };
+        if entry.is_null() {
             let e = io::Error::last_os_error();
             break if e.raw_os_error().unwrap_or(0) == 0 {
                 Ok(())
@@ -210,38 +208,38 @@ pub(crate) fn listar_pasta(dir: BorrowedFd<'_>) -> io::Result<Vec<std::ffi::CStr
                 Err(e)
             };
         }
-        // SAFETY: `item` aponta para um `dirent` válido, e `d_name` termina em NUL.
-        let nome = unsafe { CStr::from_ptr((*item).d_name.as_ptr()) };
-        let b = nome.to_bytes();
+        // SAFETY: `entry` points to a valid `dirent`, and `d_name` ends in NUL.
+        let name = unsafe { CStr::from_ptr((*entry).d_name.as_ptr()) };
+        let b = name.to_bytes();
         if b != b"." && b != b".." {
-            nomes.push(nome.to_owned());
+            names.push(name.to_owned());
         }
     };
-    // SAFETY: `d` é válido e não é usado depois; fecha também a cópia do fd.
+    // SAFETY: `d` is valid and not used afterwards; it also closes the fd copy.
     unsafe { libc::closedir(d) };
-    resultado.map(|()| nomes)
+    result.map(|()| names)
 }
 
-/// `readlinkat(dir, nome)`, com no máximo `PATH_MAX` bytes. Resultado truncado é erro.
+/// `readlinkat(dir, name)`, with at most `PATH_MAX` bytes. A truncated result is an error.
 #[allow(unsafe_code)]
-pub(crate) fn readlinkat(dir: BorrowedFd<'_>, nome: &CStr) -> io::Result<Vec<u8>> {
-    let capacidade = usize::try_from(libc::PATH_MAX).map_err(|_| io::ErrorKind::InvalidData)?;
-    let mut buf = vec![0u8; capacidade + 1];
-    // SAFETY: `dir` aberto, `nome` string C válida, e `buf` tem `buf.len()` bytes
-    // graváveis; o kernel escreve no máximo esse tanto e não põe NUL.
+pub(crate) fn readlinkat(dir: BorrowedFd<'_>, name: &CStr) -> io::Result<Vec<u8>> {
+    let capacity = usize::try_from(libc::PATH_MAX).map_err(|_| io::ErrorKind::InvalidData)?;
+    let mut buf = vec![0u8; capacity + 1];
+    // SAFETY: `dir` open, `name` a valid C string, and `buf` has `buf.len()` writable
+    // bytes; the kernel writes at most that much and adds no NUL.
     let r = unsafe {
         libc::readlinkat(
             dir.as_raw_fd(),
-            nome.as_ptr(),
+            name.as_ptr(),
             buf.as_mut_ptr().cast(),
             buf.len(),
         )
     };
     if r < 0 {
-        return Err(erro_os());
+        return Err(os_error());
     }
     let n = usize::try_from(r).map_err(|_| io::ErrorKind::InvalidData)?;
-    if n > capacidade {
+    if n > capacity {
         return Err(io::ErrorKind::InvalidData.into());
     }
     buf.truncate(n);
@@ -250,18 +248,18 @@ pub(crate) fn readlinkat(dir: BorrowedFd<'_>, nome: &CStr) -> io::Result<Vec<u8>
 
 #[allow(unsafe_code)]
 pub(crate) fn geteuid() -> u32 {
-    // SAFETY: sem argumentos e sem efeito colateral; nunca falha.
+    // SAFETY: no arguments and no side effect; never fails.
     unsafe { libc::geteuid() }
 }
 
-/// `prctl(PR_SET_DUMPABLE, 0)` e a leitura de volta por `PR_GET_DUMPABLE`.
+/// `prctl(PR_SET_DUMPABLE, 0)` and reading it back through `PR_GET_DUMPABLE`.
 #[allow(unsafe_code)]
-pub(crate) fn desligar_dumpable() -> io::Result<()> {
+pub(crate) fn disable_dumpable() -> io::Result<()> {
     let zero: libc::c_ulong = 0;
-    // SAFETY: `PR_SET_DUMPABLE` só lê os inteiros passados; os não usados vão em 0.
+    // SAFETY: `PR_SET_DUMPABLE` only reads the integers passed; the unused ones are 0.
     let r = unsafe { libc::prctl(libc::PR_SET_DUMPABLE, zero, zero, zero, zero) };
     if r != 0 {
-        return Err(erro_os());
+        return Err(os_error());
     }
     if dumpable()? {
         return Err(io::Error::other("PR_SET_DUMPABLE não ficou em 0"));
@@ -269,95 +267,95 @@ pub(crate) fn desligar_dumpable() -> io::Result<()> {
     Ok(())
 }
 
-/// `prctl(PR_GET_DUMPABLE)`: `true` quando o processo pode ser depurado ou dar core.
+/// `prctl(PR_GET_DUMPABLE)`: `true` when the process can be debugged or dump core.
 pub(crate) fn dumpable() -> io::Result<bool> {
-    Ok(valor_dumpable()? != 0)
+    Ok(dumpable_value()? != 0)
 }
 
-/// `prctl(PR_GET_DUMPABLE)` como o kernel devolve: 0, 1 ou 2 (`SUID_DUMP_ROOT`).
+/// `prctl(PR_GET_DUMPABLE)` as the kernel returns it: 0, 1 or 2 (`SUID_DUMP_ROOT`).
 #[allow(unsafe_code)]
-pub(crate) fn valor_dumpable() -> io::Result<i32> {
+pub(crate) fn dumpable_value() -> io::Result<i32> {
     let zero: libc::c_ulong = 0;
-    // SAFETY: `PR_GET_DUMPABLE` não recebe ponteiro; devolve o valor no retorno.
+    // SAFETY: `PR_GET_DUMPABLE` takes no pointer; it returns the value as the result.
     let r = unsafe { libc::prctl(libc::PR_GET_DUMPABLE, zero, zero, zero, zero) };
     if r < 0 {
-        return Err(erro_os());
+        return Err(os_error());
     }
     Ok(r)
 }
 
-/// `setrlimit(RLIMIT_CORE, 0, 0)`: o limite rígido também em 0, para o processo não
-/// poder subir de novo.
+/// `setrlimit(RLIMIT_CORE, 0, 0)`: the hard limit at 0 too, so the process cannot raise it
+/// again.
 #[allow(unsafe_code)]
-pub(crate) fn zerar_rlimit_core() -> io::Result<()> {
+pub(crate) fn zero_rlimit_core() -> io::Result<()> {
     let lim = libc::rlimit {
         rlim_cur: 0,
         rlim_max: 0,
     };
-    // SAFETY: `lim` é um `rlimit` local e válido, só lido pelo kernel.
+    // SAFETY: `lim` is a local and valid `rlimit`, only read by the kernel.
     let r = unsafe { libc::setrlimit(libc::RLIMIT_CORE, &raw const lim) };
     if r != 0 {
-        return Err(erro_os());
+        return Err(os_error());
     }
     Ok(())
 }
 
-/// `getrlimit(RLIMIT_CORE)` como `(atual, máximo)`.
+/// `getrlimit(RLIMIT_CORE)` as `(current, maximum)`.
 #[allow(unsafe_code)]
 pub(crate) fn rlimit_core() -> io::Result<(u64, u64)> {
     let mut lim = libc::rlimit {
         rlim_cur: u64::MAX,
         rlim_max: u64::MAX,
     };
-    // SAFETY: `lim` é local, do tamanho de `rlimit`, e o kernel só escreve nele.
+    // SAFETY: `lim` is local, the size of `rlimit`, and the kernel only writes into it.
     let r = unsafe { libc::getrlimit(libc::RLIMIT_CORE, &raw mut lim) };
     if r != 0 {
-        return Err(erro_os());
+        return Err(os_error());
     }
     Ok((lim.rlim_cur, lim.rlim_max))
 }
 
-/// `getrlimit(RLIMIT_MEMLOCK)` como `(atual, máximo)`; `u64::MAX` é `RLIM_INFINITY`.
+/// `getrlimit(RLIMIT_MEMLOCK)` as `(current, maximum)`; `u64::MAX` is `RLIM_INFINITY`.
 #[allow(unsafe_code)]
 pub(crate) fn rlimit_memlock() -> io::Result<(u64, u64)> {
     let mut lim = libc::rlimit {
         rlim_cur: 0,
         rlim_max: 0,
     };
-    // SAFETY: `lim` é local, do tamanho de `rlimit`, e o kernel só escreve nele.
+    // SAFETY: `lim` is local, the size of `rlimit`, and the kernel only writes into it.
     let r = unsafe { libc::getrlimit(libc::RLIMIT_MEMLOCK, &raw mut lim) };
     if r != 0 {
-        return Err(erro_os());
+        return Err(os_error());
     }
     Ok((lim.rlim_cur, lim.rlim_max))
 }
 
-/// `mlockall(MCL_CURRENT | MCL_FUTURE | MCL_ONFAULT)` (D62): todas as páginas do
-/// processo, as de agora e as que vierem, ficam fora da swap assim que são tocadas. Não
-/// passa por `fork` nem por `execve`.
+/// `mlockall(MCL_CURRENT | MCL_FUTURE | MCL_ONFAULT)` (D62): every page of the process,
+/// current and future, stays out of swap as soon as it is touched. Does not survive
+/// `fork` or `execve`.
 #[allow(unsafe_code)]
-pub(crate) fn travar_toda_memoria() -> io::Result<()> {
-    // SAFETY: `mlockall` só recebe as flags; não lê nem escreve memória do processo.
+pub(crate) fn lock_all_memory() -> io::Result<()> {
+    // SAFETY: `mlockall` only takes the flags; it neither reads nor writes process memory.
     let r = unsafe { libc::mlockall(libc::MCL_CURRENT | libc::MCL_FUTURE | libc::MCL_ONFAULT) };
     if r != 0 {
-        return Err(erro_os());
+        return Err(os_error());
     }
     Ok(())
 }
 
-/// Tamanho da página.
+/// Page size.
 #[allow(unsafe_code)]
-pub(crate) fn tamanho_pagina() -> usize {
-    // SAFETY: `sysconf` só lê uma constante do sistema.
+pub(crate) fn page_size() -> usize {
+    // SAFETY: `sysconf` only reads a system constant.
     let r = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
     usize::try_from(r).ok().filter(|&p| p > 0).unwrap_or(4096)
 }
 
-/// Região anônima privada, só deste processo, com `len` bytes (múltiplo da página).
+/// Private anonymous region, only of this process, with `len` bytes (multiple of the page).
 #[allow(unsafe_code)]
-pub(crate) fn mapear_anonimo(len: usize) -> io::Result<NonNull<u8>> {
-    // SAFETY: endereço nulo (o kernel escolhe), sem arquivo (fd -1, offset 0); a região
-    // nova não sobrepõe nada já mapeado.
+pub(crate) fn map_anonymous(len: usize) -> io::Result<NonNull<u8>> {
+    // SAFETY: null address (the kernel chooses), no file (fd -1, offset 0); the new region
+    // does not overlap anything already mapped.
     let p = unsafe {
         libc::mmap(
             std::ptr::null_mut(),
@@ -369,193 +367,194 @@ pub(crate) fn mapear_anonimo(len: usize) -> io::Result<NonNull<u8>> {
         )
     };
     if p == libc::MAP_FAILED {
-        return Err(erro_os());
+        return Err(os_error());
     }
     NonNull::new(p.cast::<u8>()).ok_or_else(|| io::Error::other("mmap devolveu nulo"))
 }
 
-/// `munmap` de uma região criada por [`mapear_anonimo`].
+/// `munmap` of a region created by [`map_anonymous`].
 ///
 /// # Safety
-/// `p` e `len` têm de ser exatamente os de uma região de [`mapear_anonimo`] ainda não
-/// desmapeada, e nenhuma referência a ela pode sobreviver a esta chamada.
+/// `p` and `len` must be exactly those of a region from [`map_anonymous`] not yet
+/// unmapped, and no reference to it may outlive this call.
 #[allow(unsafe_code)]
-pub(crate) unsafe fn desmapear(p: NonNull<u8>, len: usize) {
-    // SAFETY: garantido pelo contrato da função (região própria, sem referências vivas).
+pub(crate) unsafe fn unmap(p: NonNull<u8>, len: usize) {
+    // SAFETY: guaranteed by the function contract (own region, no live references).
     unsafe {
         libc::munmap(p.as_ptr().cast(), len);
     }
 }
 
-/// `madvise` numa região própria. Não lê nem escreve a memória.
+/// `madvise` on an own region. Neither reads nor writes the memory.
 #[allow(unsafe_code)]
-pub(crate) fn aconselhar(p: NonNull<u8>, len: usize, conselho: libc::c_int) -> io::Result<()> {
-    // SAFETY: `MADV_DONTDUMP` e `MADV_WIPEONFORK` só mudam atributos das páginas da
-    // região de `p`, que quem chama mapeou; não tocam no conteúdo.
-    let r = unsafe { libc::madvise(p.as_ptr().cast(), len, conselho) };
+pub(crate) fn advise(p: NonNull<u8>, len: usize, advice: libc::c_int) -> io::Result<()> {
+    // SAFETY: `MADV_DONTDUMP` and `MADV_WIPEONFORK` only change attributes of the pages of
+    // the region of `p`, which the caller mapped; they do not touch the content.
+    let r = unsafe { libc::madvise(p.as_ptr().cast(), len, advice) };
     if r != 0 {
-        return Err(erro_os());
+        return Err(os_error());
     }
     Ok(())
 }
 
-/// `mlock` das páginas que contêm `regiao`. Não lê nem escreve a memória; com faixa
-/// inválida o kernel só devolve erro.
+/// `mlock` of the pages that contain `region`. Neither reads nor writes the memory; with
+/// an invalid range the kernel only returns an error.
 #[allow(unsafe_code)]
-pub(crate) fn mlock(regiao: &[u8]) -> io::Result<()> {
-    if regiao.is_empty() {
+pub(crate) fn mlock(region: &[u8]) -> io::Result<()> {
+    if region.is_empty() {
         return Ok(());
     }
-    // SAFETY: a fatia é memória válida deste processo pelo empréstimo; `mlock` só
-    // marca as páginas como residentes.
-    let r = unsafe { libc::mlock(regiao.as_ptr().cast(), regiao.len()) };
+    // SAFETY: the slice is valid memory of this process through the borrow; `mlock` only
+    // marks the pages as resident.
+    let r = unsafe { libc::mlock(region.as_ptr().cast(), region.len()) };
     if r != 0 {
-        return Err(erro_os());
+        return Err(os_error());
     }
     Ok(())
 }
 
-/// `munlock` das páginas que contêm `regiao`.
+/// `munlock` of the pages that contain `region`.
 #[allow(unsafe_code)]
-pub(crate) fn munlock(regiao: &[u8]) -> io::Result<()> {
-    if regiao.is_empty() {
+pub(crate) fn munlock(region: &[u8]) -> io::Result<()> {
+    if region.is_empty() {
         return Ok(());
     }
-    // SAFETY: como em [`mlock`]: só muda o atributo das páginas, sem acessar o conteúdo.
-    let r = unsafe { libc::munlock(regiao.as_ptr().cast(), regiao.len()) };
+    // SAFETY: as in [`mlock`]: only changes the attribute of the pages, without accessing
+    // the content.
+    let r = unsafe { libc::munlock(region.as_ptr().cast(), region.len()) };
     if r != 0 {
-        return Err(erro_os());
+        return Err(os_error());
     }
     Ok(())
 }
 
 #[allow(unsafe_code)]
 pub(crate) fn getegid() -> u32 {
-    // SAFETY: sem argumentos e sem efeito colateral; nunca falha.
+    // SAFETY: no arguments and no side effect; never fails.
     unsafe { libc::getegid() }
 }
 
 #[allow(unsafe_code)]
 pub(crate) fn getgid() -> u32 {
-    // SAFETY: sem argumentos e sem efeito colateral; nunca falha.
+    // SAFETY: no arguments and no side effect; never fails.
     unsafe { libc::getgid() }
 }
 
-/// `getsockopt(SOL_SOCKET, opcao)` de uma opção inteira (`SO_ACCEPTCONN`, `SO_DOMAIN`,
+/// `getsockopt(SOL_SOCKET, option)` of an integer option (`SO_ACCEPTCONN`, `SO_DOMAIN`,
 /// `SO_TYPE`).
 #[allow(unsafe_code)]
-pub(crate) fn sockopt_int(fd: BorrowedFd<'_>, opcao: libc::c_int) -> io::Result<libc::c_int> {
-    let mut valor: libc::c_int = -1;
-    let tamanho = size_of::<libc::c_int>();
-    let mut len = libc::socklen_t::try_from(tamanho).map_err(|_| io::ErrorKind::InvalidInput)?;
-    // SAFETY: `fd` está aberto pelo empréstimo; `valor` e `len` são locais e `len` tem
-    // o tamanho de um `c_int`, o que o kernel escreve para essas opções.
+pub(crate) fn sockopt_int(fd: BorrowedFd<'_>, option: libc::c_int) -> io::Result<libc::c_int> {
+    let mut value: libc::c_int = -1;
+    let size = size_of::<libc::c_int>();
+    let mut len = libc::socklen_t::try_from(size).map_err(|_| io::ErrorKind::InvalidInput)?;
+    // SAFETY: `fd` is open through the borrow; `value` and `len` are locals and `len` has
+    // the size of a `c_int`, which is what the kernel writes for these options.
     let r = unsafe {
         libc::getsockopt(
             fd.as_raw_fd(),
             libc::SOL_SOCKET,
-            opcao,
-            (&raw mut valor).cast(),
+            option,
+            (&raw mut value).cast(),
             &raw mut len,
         )
     };
     if r != 0 {
-        return Err(erro_os());
+        return Err(os_error());
     }
-    if usize::try_from(len).ok() != Some(tamanho) {
+    if usize::try_from(len).ok() != Some(size) {
         return Err(io::ErrorKind::InvalidData.into());
     }
-    Ok(valor)
+    Ok(value)
 }
 
-/// Primeiro fd passado pelo systemd (`SD_LISTEN_FDS_START`).
-pub(crate) const FD_ATIVACAO: libc::c_int = 3;
+/// First fd passed by systemd (`SD_LISTEN_FDS_START`).
+pub(crate) const ACTIVATION_FD: libc::c_int = 3;
 
-/// Já houve uma tentativa de pegar o fd 3 neste processo.
-static FD_ATIVACAO_TOMADO: std::sync::atomic::AtomicBool =
+/// There has already been an attempt to take fd 3 in this process.
+static ACTIVATION_FD_TAKEN: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
-/// Duplica o fd 3 (com `O_CLOEXEC`, para nenhum filho herdar o socket que escuta) sem
-/// tomar posse dele. Só uma vez por processo. Quem chama confere a cópia e, se ela for
-/// o socket esperado, fecha o original por [`fechar_fd_ativacao`].
+/// Duplicates fd 3 (with `O_CLOEXEC`, so no child inherits the listening socket) without
+/// taking ownership of it. Only once per process. The caller checks the copy and, if it
+/// is the expected socket, closes the original through [`close_activation_fd`].
 #[allow(unsafe_code)]
-pub(crate) fn duplicar_fd_ativacao() -> io::Result<OwnedFd> {
-    if FD_ATIVACAO_TOMADO.swap(true, std::sync::atomic::Ordering::SeqCst) {
+pub(crate) fn dup_activation_fd() -> io::Result<OwnedFd> {
+    if ACTIVATION_FD_TAKEN.swap(true, std::sync::atomic::Ordering::SeqCst) {
         return Err(io::Error::new(
             io::ErrorKind::AlreadyExists,
             "fd de ativação já usado",
         ));
     }
-    // SAFETY: `F_GETFD` só consulta a tabela de fds; não recebe ponteiro.
-    if unsafe { libc::fcntl(FD_ATIVACAO, libc::F_GETFD) } < 0 {
-        return Err(erro_os());
+    // SAFETY: `F_GETFD` only queries the fd table; it takes no pointer.
+    if unsafe { libc::fcntl(ACTIVATION_FD, libc::F_GETFD) } < 0 {
+        return Err(os_error());
     }
-    // SAFETY: o fd 3 acabou de ser conferido como aberto, e o empréstimo só dura até o
-    // `try_clone_to_owned` abaixo (um `F_DUPFD_CLOEXEC`), dentro desta função. O fd 3
-    // é do systemd (`LISTEN_FDS`): o daemon chama isto no começo do `main`, antes de
-    // abrir qualquer outro arquivo, então nenhum outro código o fecha nesse intervalo.
-    let emprestado = unsafe { BorrowedFd::borrow_raw(FD_ATIVACAO) };
-    emprestado.try_clone_to_owned()
+    // SAFETY: fd 3 has just been checked as open, and the borrow only lasts until the
+    // `try_clone_to_owned` below (an `F_DUPFD_CLOEXEC`), inside this function. Fd 3
+    // belongs to systemd (`LISTEN_FDS`): the daemon calls this at the start of `main`,
+    // before opening any other file, so no other code closes it in that interval.
+    let borrowed = unsafe { BorrowedFd::borrow_raw(ACTIVATION_FD) };
+    borrowed.try_clone_to_owned()
 }
 
-/// Fecha o fd 3 depois que a cópia de [`duplicar_fd_ativacao`] foi conferida.
+/// Closes fd 3 after the copy from [`dup_activation_fd`] was checked.
 #[allow(unsafe_code)]
-pub(crate) fn fechar_fd_ativacao() {
-    // SAFETY: o fd 3 é o socket do systemd, conferido pela cópia; ninguém mais neste
-    // processo o usa (o daemon segue só com a cópia), então o `OwnedFd` passa a ser o
-    // único dono e o fecha ao sair do escopo.
-    drop(unsafe { OwnedFd::from_raw_fd(FD_ATIVACAO) });
+pub(crate) fn close_activation_fd() {
+    // SAFETY: fd 3 is the systemd socket, checked through the copy; nobody else in this
+    // process uses it (the daemon goes on with the copy only), so the `OwnedFd` becomes
+    // the only owner and closes it when it goes out of scope.
+    drop(unsafe { OwnedFd::from_raw_fd(ACTIVATION_FD) });
 }
 
-/// Só no `test-mode`: põe `fd` no número 3 sem `O_CLOEXEC`, como o systemd faz, para
-/// o `exec` seguinte receber o socket.
+/// Only in `test-mode`: puts `fd` on number 3 without `O_CLOEXEC`, as systemd does, so the
+/// next `exec` receives the socket.
 ///
 /// # Safety
-/// Fecha o que estivesse no fd 3 deste processo. Quem chama tem de fazer `exec` (ou
-/// sair) logo em seguida, sem que nenhum outro código use o fd 3.
+/// Closes whatever was on fd 3 of this process. The caller must `exec` (or exit) right
+/// afterwards, without any other code using fd 3.
 #[cfg(feature = "test-mode")]
 #[allow(unsafe_code)]
-pub(crate) unsafe fn por_no_fd_ativacao(fd: BorrowedFd<'_>) -> io::Result<()> {
-    if fd.as_raw_fd() == FD_ATIVACAO {
-        // SAFETY: `F_SETFD` com 0 só tira o `FD_CLOEXEC` do fd 3, que é `fd`.
-        if unsafe { libc::fcntl(FD_ATIVACAO, libc::F_SETFD, 0) } < 0 {
-            return Err(erro_os());
+pub(crate) unsafe fn put_on_activation_fd(fd: BorrowedFd<'_>) -> io::Result<()> {
+    if fd.as_raw_fd() == ACTIVATION_FD {
+        // SAFETY: `F_SETFD` with 0 only clears `FD_CLOEXEC` on fd 3, which is `fd`.
+        if unsafe { libc::fcntl(ACTIVATION_FD, libc::F_SETFD, 0) } < 0 {
+            return Err(os_error());
         }
         return Ok(());
     }
-    // SAFETY: `fd` está aberto pelo empréstimo; o `dup2` troca o fd 3 (o contrato da
-    // função diz que ninguém mais o usa) e o novo não tem `FD_CLOEXEC`.
-    if unsafe { libc::dup2(fd.as_raw_fd(), FD_ATIVACAO) } < 0 {
-        return Err(erro_os());
+    // SAFETY: `fd` is open through the borrow; `dup2` replaces fd 3 (the function contract
+    // says nobody else uses it) and the new one has no `FD_CLOEXEC`.
+    if unsafe { libc::dup2(fd.as_raw_fd(), ACTIVATION_FD) } < 0 {
+        return Err(os_error());
     }
     Ok(())
 }
 
-// --- Partida do app e lançador (Fase 29a; D47, D57) -----------------------------------
+// --- App startup and launcher (Phase 29a; D47, D57) -----------------------------------
 
-/// `getresgid`: gid real, efetivo e salvo.
+/// `getresgid`: real, effective and saved gid.
 #[allow(unsafe_code)]
 pub(crate) fn getresgid() -> io::Result<(u32, u32, u32)> {
     let (mut r, mut e, mut s) = (u32::MAX, u32::MAX, u32::MAX);
-    // SAFETY: os três ponteiros são de locais `gid_t` válidos; o kernel só escreve neles.
+    // SAFETY: the three pointers are of valid local `gid_t`s; the kernel only writes them.
     let rc = unsafe { libc::getresgid(&raw mut r, &raw mut e, &raw mut s) };
     if rc != 0 {
-        return Err(erro_os());
+        return Err(os_error());
     }
     Ok((r, e, s))
 }
 
-/// Larga o grupo do setgid: `setresgid(real, real, real)`, conferido por `getresgid`
-/// depois. Com os três iguais ao real, o processo não volta ao grupo do binário (o
-/// salvo também mudou).
+/// Releases the setgid group: `setresgid(real, real, real)`, checked by `getresgid`
+/// afterwards. With all three equal to the real one, the process does not go back to the
+/// binary's group (the saved one changed too).
 #[allow(unsafe_code)]
-pub(crate) fn largar_grupo_efetivo() -> io::Result<()> {
+pub(crate) fn release_effective_group() -> io::Result<()> {
     let (real, _, _) = getresgid()?;
-    // SAFETY: só inteiros; o kernel deixa um processo sem privilégio pôr os três gids
-    // em qualquer um dos que ele já tem (o real é um deles).
+    // SAFETY: integers only; the kernel lets an unprivileged process set the three gids to
+    // any of the ones it already has (the real one is one of them).
     let rc = unsafe { libc::setresgid(real, real, real) };
     if rc != 0 {
-        return Err(erro_os());
+        return Err(os_error());
     }
     if getresgid()? != (real, real, real) {
         return Err(io::Error::other(
@@ -567,235 +566,235 @@ pub(crate) fn largar_grupo_efetivo() -> io::Result<()> {
 
 #[allow(unsafe_code)]
 pub(crate) fn getppid() -> u32 {
-    // SAFETY: sem argumentos e sem efeito colateral; nunca falha.
+    // SAFETY: no arguments and no side effect; never fails.
     let p = unsafe { libc::getppid() };
     u32::try_from(p).unwrap_or(0)
 }
 
-/// O fd tem `FD_CLOEXEC`?
+/// Does the fd have `FD_CLOEXEC`?
 #[allow(unsafe_code)]
-pub(crate) fn tem_cloexec(fd: BorrowedFd<'_>) -> io::Result<bool> {
-    // SAFETY: `F_GETFD` só consulta a tabela de fds; `fd` está aberto pelo empréstimo.
+pub(crate) fn has_cloexec(fd: BorrowedFd<'_>) -> io::Result<bool> {
+    // SAFETY: `F_GETFD` only queries the fd table; `fd` is open through the borrow.
     let r = unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_GETFD) };
     if r < 0 {
-        return Err(erro_os());
+        return Err(os_error());
     }
     Ok(r & libc::FD_CLOEXEC != 0)
 }
 
-/// `tcgetattr`: atributos do terminal em `fd` (Fase 25, senha do `ward destravar`).
-/// `ENOTTY` quando `fd` não é terminal.
+/// `tcgetattr`: attributes of the terminal on `fd` (Phase 25, password of the unlock
+/// command). `ENOTTY` when `fd` is not a terminal.
 #[allow(unsafe_code)]
 pub(crate) fn tcgetattr(fd: BorrowedFd<'_>) -> io::Result<libc::termios> {
-    // SAFETY: `termios` é uma struct C só de inteiros e arrays de inteiros; zerada é um
-    // valor válido, e o `tcgetattr` a preenche inteira.
+    // SAFETY: `termios` is a C struct of integers and integer arrays only; zeroed it is a
+    // valid value, and `tcgetattr` fills it entirely.
     let mut t: libc::termios = unsafe { std::mem::zeroed() };
-    // SAFETY: `t` é local e gravável; `fd` está aberto pelo empréstimo.
+    // SAFETY: `t` is local and writable; `fd` is open through the borrow.
     if unsafe { libc::tcgetattr(fd.as_raw_fd(), &raw mut t) } != 0 {
-        return Err(erro_os());
+        return Err(os_error());
     }
     Ok(t)
 }
 
-/// `tcsetattr(fd, acao, t)` (`TCSANOW`, `TCSAFLUSH`…).
+/// `tcsetattr(fd, action, t)` (`TCSANOW`, `TCSAFLUSH`...).
 #[allow(unsafe_code)]
 pub(crate) fn tcsetattr(
     fd: BorrowedFd<'_>,
-    acao: libc::c_int,
+    action: libc::c_int,
     t: &libc::termios,
 ) -> io::Result<()> {
-    // SAFETY: `t` aponta para um `termios` válido que só é lido; `fd` está aberto pelo
-    // empréstimo.
-    if unsafe { libc::tcsetattr(fd.as_raw_fd(), acao, t) } != 0 {
-        return Err(erro_os());
+    // SAFETY: `t` points to a valid `termios` that is only read; `fd` is open through the
+    // borrow.
+    if unsafe { libc::tcsetattr(fd.as_raw_fd(), action, t) } != 0 {
+        return Err(os_error());
     }
     Ok(())
 }
 
-/// Abre um pseudoterminal novo e devolve (mestre, escravo), os dois com `O_NOCTTY` e
-/// `O_CLOEXEC`: o pty do `ward ssh` interativo (Fase 27) e, nos testes, a leitura da
-/// senha sem um terminal de verdade.
+/// Opens a new pseudoterminal and returns (master, slave), both with `O_NOCTTY` and
+/// `O_CLOEXEC`: the pty of the interactive `ward ssh` (Phase 27) and, in the tests, the
+/// password reading without a real terminal.
 #[allow(unsafe_code)]
-pub(crate) fn abrir_pty() -> io::Result<(OwnedFd, OwnedFd)> {
+pub(crate) fn open_pty() -> io::Result<(OwnedFd, OwnedFd)> {
     let flags = libc::O_RDWR | libc::O_NOCTTY | libc::O_CLOEXEC;
-    // SAFETY: `posix_openpt` só recebe as flags e devolve um fd novo ou -1.
+    // SAFETY: `posix_openpt` only takes the flags and returns a new fd or -1.
     let m = unsafe { libc::posix_openpt(flags) };
     if m < 0 {
-        return Err(erro_os());
+        return Err(os_error());
     }
-    // SAFETY: `m` acabou de ser aberto por `posix_openpt` e só este `OwnedFd` o fecha.
-    let mestre = unsafe { OwnedFd::from_raw_fd(m) };
-    // SAFETY: `grantpt`/`unlockpt` só recebem o fd do mestre, aberto acima.
+    // SAFETY: `m` has just been opened by `posix_openpt` and only this `OwnedFd` closes it.
+    let master = unsafe { OwnedFd::from_raw_fd(m) };
+    // SAFETY: `grantpt`/`unlockpt` only take the master fd, opened above.
     if unsafe { libc::grantpt(m) } != 0 || unsafe { libc::unlockpt(m) } != 0 {
-        return Err(erro_os());
+        return Err(os_error());
     }
-    let mut nome = [0u8; 128];
-    // SAFETY: `nome` é local, com `nome.len()` bytes graváveis; o `ptsname_r` escreve
-    // uma string C terminada em zero dentro desse tamanho ou devolve erro.
-    let rc = unsafe { libc::ptsname_r(m, nome.as_mut_ptr().cast(), nome.len()) };
+    let mut name = [0u8; 128];
+    // SAFETY: `name` is local, with `name.len()` writable bytes; `ptsname_r` writes a
+    // zero-terminated C string within that size or returns an error.
+    let rc = unsafe { libc::ptsname_r(m, name.as_mut_ptr().cast(), name.len()) };
     if rc != 0 {
         return Err(io::Error::from_raw_os_error(rc));
     }
-    let nome = CStr::from_bytes_until_nul(&nome).map_err(|_| io::ErrorKind::InvalidData)?;
-    // SAFETY: `nome` é uma string C válida; `open` devolve um fd novo ou -1.
-    let e = unsafe { libc::open(nome.as_ptr(), flags) };
+    let name = CStr::from_bytes_until_nul(&name).map_err(|_| io::ErrorKind::InvalidData)?;
+    // SAFETY: `name` is a valid C string; `open` returns a new fd or -1.
+    let e = unsafe { libc::open(name.as_ptr(), flags) };
     if e < 0 {
-        return Err(erro_os());
+        return Err(os_error());
     }
-    // SAFETY: `e` acabou de ser aberto e só este `OwnedFd` o fecha.
-    let escravo = unsafe { OwnedFd::from_raw_fd(e) };
-    Ok((mestre, escravo))
+    // SAFETY: `e` has just been opened and only this `OwnedFd` closes it.
+    let slave = unsafe { OwnedFd::from_raw_fd(e) };
+    Ok((master, slave))
 }
 
-/// `TIOCSWINSZ`: tamanho da janela do terminal em `fd` (o mestre do pty do `ward ssh`;
-/// o kernel manda `SIGWINCH` ao grupo da frente).
+/// `TIOCSWINSZ`: window size of the terminal on `fd` (the master of the `ward ssh` pty;
+/// the kernel sends `SIGWINCH` to the foreground group).
 #[allow(unsafe_code)]
-pub(crate) fn definir_janela(fd: BorrowedFd<'_>, linhas: u16, colunas: u16) -> io::Result<()> {
+pub(crate) fn set_window_size(fd: BorrowedFd<'_>, rows: u16, cols: u16) -> io::Result<()> {
     let w = libc::winsize {
-        ws_row: linhas,
-        ws_col: colunas,
+        ws_row: rows,
+        ws_col: cols,
         ws_xpixel: 0,
         ws_ypixel: 0,
     };
-    // SAFETY: `w` é um `winsize` local, só lido pelo kernel; `fd` está aberto pelo
-    // empréstimo.
+    // SAFETY: `w` is a local `winsize`, only read by the kernel; `fd` is open through the
+    // borrow.
     if unsafe { libc::ioctl(fd.as_raw_fd(), libc::TIOCSWINSZ, &raw const w) } != 0 {
-        return Err(erro_os());
+        return Err(os_error());
     }
     Ok(())
 }
 
-/// `TIOCGWINSZ`: (linhas, colunas) do terminal em `fd`. `ENOTTY` se não é terminal.
+/// `TIOCGWINSZ`: (rows, cols) of the terminal on `fd`. `ENOTTY` if it is not a terminal.
 #[allow(unsafe_code)]
-pub(crate) fn ler_janela(fd: BorrowedFd<'_>) -> io::Result<(u16, u16)> {
+pub(crate) fn read_window_size(fd: BorrowedFd<'_>) -> io::Result<(u16, u16)> {
     let mut w = libc::winsize {
         ws_row: 0,
         ws_col: 0,
         ws_xpixel: 0,
         ws_ypixel: 0,
     };
-    // SAFETY: `w` é um `winsize` local e gravável, do tamanho que o `TIOCGWINSZ`
-    // escreve; `fd` está aberto pelo empréstimo.
+    // SAFETY: `w` is a local and writable `winsize`, the size `TIOCGWINSZ` writes; `fd` is
+    // open through the borrow.
     if unsafe { libc::ioctl(fd.as_raw_fd(), libc::TIOCGWINSZ, &raw mut w) } != 0 {
-        return Err(erro_os());
+        return Err(os_error());
     }
     Ok((w.ws_row, w.ws_col))
 }
 
-/// `cfmakeraw` em `t` (modo cru do terminal da CLI no `ward ssh` interativo).
+/// `cfmakeraw` on `t` (raw mode of the CLI terminal in the interactive `ward ssh`).
 #[allow(unsafe_code)]
-pub(crate) fn modo_cru(t: &mut libc::termios) {
-    // SAFETY: `t` é um `termios` válido e gravável; o `cfmakeraw` só mexe nos campos.
+pub(crate) fn make_raw(t: &mut libc::termios) {
+    // SAFETY: `t` is a valid and writable `termios`; `cfmakeraw` only changes the fields.
     unsafe { libc::cfmakeraw(t) };
 }
 
-/// Só nos testes: tira o `FD_CLOEXEC` de `fd`, para simular um fd que o `exec` herdaria.
+/// Tests only: clears `FD_CLOEXEC` on `fd`, to simulate an fd that `exec` would inherit.
 #[cfg(test)]
 #[allow(unsafe_code)]
-pub(crate) fn tirar_cloexec(fd: BorrowedFd<'_>) -> io::Result<()> {
-    // SAFETY: `F_SETFD` com 0 só muda a flag do fd, aberto pelo empréstimo.
+pub(crate) fn clear_cloexec(fd: BorrowedFd<'_>) -> io::Result<()> {
+    // SAFETY: `F_SETFD` with 0 only changes the flag of the fd, open through the borrow.
     if unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_SETFD, 0) } < 0 {
-        return Err(erro_os());
+        return Err(os_error());
     }
     Ok(())
 }
 
-/// Espera até o outro lado do socket fechar (`POLLRDHUP`/`POLLHUP`/`POLLERR`), sem ler
-/// nada: não consome os bytes de uma resposta do protocolo.
-pub(crate) fn esperar_fechamento(fd: BorrowedFd<'_>) -> io::Result<()> {
-    while !fechamento(fd, -1)? {}
+/// Waits until the other side of the socket closes (`POLLRDHUP`/`POLLHUP`/`POLLERR`),
+/// without reading anything: it does not consume the bytes of a protocol response.
+pub(crate) fn wait_for_close(fd: BorrowedFd<'_>) -> io::Result<()> {
+    while !is_closed(fd, -1)? {}
     Ok(())
 }
 
-/// O outro lado do socket fechou? Sem ler nada; `espera_ms` é o prazo do `poll` (0 não
-/// espera, -1 espera sem prazo).
+/// Has the other side of the socket closed? Without reading anything; `wait_ms` is the
+/// `poll` timeout (0 does not wait, -1 waits without a timeout).
 #[allow(unsafe_code)]
-pub(crate) fn fechamento(fd: BorrowedFd<'_>, espera_ms: libc::c_int) -> io::Result<bool> {
+pub(crate) fn is_closed(fd: BorrowedFd<'_>, wait_ms: libc::c_int) -> io::Result<bool> {
     loop {
         let mut pfd = libc::pollfd {
             fd: fd.as_raw_fd(),
             events: libc::POLLRDHUP,
             revents: 0,
         };
-        // SAFETY: `pfd` é um `pollfd` local e válido, e o tamanho passado é 1; o fd
-        // está aberto pelo empréstimo; o prazo é um inteiro.
-        let r = unsafe { libc::poll(&raw mut pfd, 1, espera_ms) };
+        // SAFETY: `pfd` is a local and valid `pollfd`, and the size passed is 1; the fd is
+        // open through the borrow; the timeout is an integer.
+        let r = unsafe { libc::poll(&raw mut pfd, 1, wait_ms) };
         if r < 0 {
-            let e = erro_os();
+            let e = os_error();
             if e.kind() == io::ErrorKind::Interrupted {
                 continue;
             }
             return Err(e);
         }
-        let fim = libc::POLLRDHUP | libc::POLLHUP | libc::POLLERR | libc::POLLNVAL;
-        return Ok(pfd.revents & fim != 0);
+        let end = libc::POLLRDHUP | libc::POLLHUP | libc::POLLERR | libc::POLLNVAL;
+        return Ok(pfd.revents & end != 0);
     }
 }
 
-/// Diretório do usuário `uid` pelo `getpwuid_r` (passwd ou NSS do sistema), nunca pelo
-/// `$HOME`. Sem entrada ou com home vazio é erro.
-pub(crate) fn home_do_uid(uid: u32) -> io::Result<std::ffi::OsString> {
-    conta_do_uid(uid).map(|(_, home)| home)
+/// Home directory of user `uid` through `getpwuid_r` (passwd or the system NSS), never
+/// through `$HOME`. No entry or an empty home is an error.
+pub(crate) fn uid_home(uid: u32) -> io::Result<std::ffi::OsString> {
+    uid_account(uid).map(|(_, home)| home)
 }
 
-/// Nome e diretório do usuário `uid` pelo `getpwuid_r` (passwd ou NSS do sistema), nunca
-/// pelo `$USER`/`$HOME`. Sem entrada, com nome ou home vazio é erro.
+/// Name and home directory of user `uid` through `getpwuid_r` (passwd or the system NSS),
+/// never through `$USER`/`$HOME`. No entry, an empty name or an empty home is an error.
 #[allow(unsafe_code)]
-pub(crate) fn conta_do_uid(uid: u32) -> io::Result<(std::ffi::OsString, std::ffi::OsString)> {
+pub(crate) fn uid_account(uid: u32) -> io::Result<(std::ffi::OsString, std::ffi::OsString)> {
     use std::os::unix::ffi::OsStrExt;
-    let mut tamanho = 4096usize;
+    let mut size = 4096usize;
     loop {
-        let mut buf = vec![0u8; tamanho];
-        // SAFETY: `passwd` é uma struct C só de ponteiros e inteiros; zerada é um valor
-        // válido (ponteiros nulos), e o `getpwuid_r` a preenche.
+        let mut buf = vec![0u8; size];
+        // SAFETY: `passwd` is a C struct of pointers and integers only; zeroed it is a
+        // valid value (null pointers), and `getpwuid_r` fills it.
         let mut pw: libc::passwd = unsafe { std::mem::zeroed() };
-        let mut resultado: *mut libc::passwd = std::ptr::null_mut();
-        // SAFETY: `pw` e `resultado` são locais; `buf` tem `buf.len()` bytes graváveis
-        // e vive até o fim desta volta do laço, enquanto os ponteiros de `pw` apontam
-        // para dentro dele.
+        let mut result: *mut libc::passwd = std::ptr::null_mut();
+        // SAFETY: `pw` and `result` are locals; `buf` has `buf.len()` writable bytes and
+        // lives until the end of this loop iteration, while the pointers of `pw` point
+        // into it.
         let rc = unsafe {
             libc::getpwuid_r(
                 uid,
                 &raw mut pw,
                 buf.as_mut_ptr().cast(),
                 buf.len(),
-                &raw mut resultado,
+                &raw mut result,
             )
         };
-        if rc == libc::ERANGE && tamanho < 1024 * 1024 {
-            tamanho *= 4;
+        if rc == libc::ERANGE && size < 1024 * 1024 {
+            size *= 4;
             continue;
         }
         if rc != 0 {
             return Err(io::Error::from_raw_os_error(rc));
         }
-        if resultado.is_null() || pw.pw_dir.is_null() || pw.pw_name.is_null() {
+        if result.is_null() || pw.pw_dir.is_null() || pw.pw_name.is_null() {
             return Err(io::ErrorKind::NotFound.into());
         }
-        // SAFETY: `pw_dir` e `pw_name` não são nulos e apontam para strings C dentro de
-        // `buf`, que ainda está vivo; as cópias saem antes de `buf` ser liberado.
-        let (dir, nome) = unsafe { (CStr::from_ptr(pw.pw_dir), CStr::from_ptr(pw.pw_name)) };
-        if dir.to_bytes().is_empty() || nome.to_bytes().is_empty() {
+        // SAFETY: `pw_dir` and `pw_name` are not null and point to C strings inside `buf`,
+        // which is still alive; the copies leave before `buf` is freed.
+        let (dir, name) = unsafe { (CStr::from_ptr(pw.pw_dir), CStr::from_ptr(pw.pw_name)) };
+        if dir.to_bytes().is_empty() || name.to_bytes().is_empty() {
             return Err(io::ErrorKind::NotFound.into());
         }
         return Ok((
-            std::ffi::OsStr::from_bytes(nome.to_bytes()).to_owned(),
+            std::ffi::OsStr::from_bytes(name.to_bytes()).to_owned(),
             std::ffi::OsStr::from_bytes(dir.to_bytes()).to_owned(),
         ));
     }
 }
 
-/// Faz o `exec` de `cmd` fechar todo fd ≥ 3: depois do `fork`, marca todos com
-/// `FD_CLOEXEC` (`close_range` com `CLOSE_RANGE_CLOEXEC`), e o `exec` os fecha; o
-/// programa recebe só 0–2. Marcar em vez de fechar mantém o canal do `std` que avisa a
-/// falha do `exec` ao pai. Kernel sem a opção (< 5.11) faz o `spawn`/`exec` falhar
-/// (falha fechada).
+/// Makes the `exec` of `cmd` close every fd ≥ 3: after the `fork`, marks all of them with
+/// `FD_CLOEXEC` (`close_range` with `CLOSE_RANGE_CLOEXEC`), and the `exec` closes them;
+/// the program gets only 0-2. Marking instead of closing keeps the `std` channel that
+/// reports an `exec` failure to the parent. A kernel without the option (< 5.11) makes
+/// the `spawn`/`exec` fail (fail closed).
 #[allow(unsafe_code)]
-pub(crate) fn fechar_fds_no_exec(cmd: &mut std::process::Command) {
+pub(crate) fn close_fds_on_exec(cmd: &mut std::process::Command) {
     use std::os::unix::process::CommandExt;
-    // SAFETY: o fechamento roda no filho entre o `fork` e o `exec` (ou no próprio
-    // processo, logo antes do `exec`) e só faz uma syscall (`close_range`), que é
-    // async-signal-safe: não aloca nem toca em trava.
+    // SAFETY: the closing runs in the child between the `fork` and the `exec` (or in the
+    // process itself, right before the `exec`) and makes a single syscall
+    // (`close_range`), which is async-signal-safe: it neither allocates nor takes a lock.
     unsafe {
         cmd.pre_exec(|| {
             let r = libc::syscall(
@@ -812,16 +811,17 @@ pub(crate) fn fechar_fds_no_exec(cmd: &mut std::process::Command) {
     }
 }
 
-/// Como [`fechar_fds_no_exec`], mas deixa `fd` aberto no programa (Fase 27a, canal do
-/// "Conectar"): depois do `fork`, marca todo fd ≥ 3 com `FD_CLOEXEC` e então tira a
-/// marca só de `fd`. O número não muda (sem `dup2`), então não pisa no canal do `std`
-/// que avisa a falha do `exec`. Quem chama mantém `fd` aberto até o `spawn` voltar.
+/// Like [`close_fds_on_exec`], but leaves `fd` open in the program (Phase 27a, channel of
+/// the connect token): after the `fork`, marks every fd ≥ 3 with `FD_CLOEXEC` and then
+/// clears the mark only on `fd`. The number does not change (no `dup2`), so it does not
+/// step on the `std` channel that reports an `exec` failure. The caller keeps `fd` open
+/// until the `spawn` returns.
 #[allow(unsafe_code)]
-pub(crate) fn herdar_so_no_exec(cmd: &mut std::process::Command, fd: libc::c_int) {
+pub(crate) fn inherit_only_on_exec(cmd: &mut std::process::Command, fd: libc::c_int) {
     use std::os::unix::process::CommandExt;
-    // SAFETY: roda no filho entre o `fork` e o `exec` e só faz duas syscalls
-    // (`close_range` e `fcntl(F_SETFD)`), ambas async-signal-safe: não alocam nem tocam
-    // em trava. `fd` é só um inteiro copiado para o fechamento.
+    // SAFETY: runs in the child between the `fork` and the `exec` and makes only two
+    // syscalls (`close_range` and `fcntl(F_SETFD)`), both async-signal-safe: they neither
+    // allocate nor take a lock. `fd` is only an integer copied into the closure.
     unsafe {
         cmd.pre_exec(move || {
             let r = libc::syscall(
@@ -841,387 +841,403 @@ pub(crate) fn herdar_so_no_exec(cmd: &mut std::process::Command, fd: libc::c_int
     }
 }
 
-/// Toma posse de um fd herdado pelo número (Fase 27a: `ward ssh --token-fd <n>`). Só
-/// aceita `n ≥ 3` (nunca a entrada e as saídas padrão) e um fd aberto que seja socket
-/// (`SO_DOMAIN` responde); qualquer outra coisa é recusada **sem** tomar posse. O fd
-/// fica com `FD_CLOEXEC` antes de voltar.
+/// Takes ownership of an inherited fd by number (Phase 27a: `ward ssh --token-fd <n>`).
+/// Only accepts `n ≥ 3` (never standard input and outputs) and an open fd that is a socket
+/// (`SO_DOMAIN` answers); anything else is refused **without** taking ownership. The fd
+/// gets `FD_CLOEXEC` before returning.
 ///
-/// Quem chama faz isso uma vez, no começo do processo, com o número que o pai passou:
-/// nada deste processo abriu aquele fd, então o `OwnedFd` devolvido é o único dono.
+/// The caller does this once, at the start of the process, with the number the parent
+/// passed: nothing in this process opened that fd, so the returned `OwnedFd` is the only
+/// owner.
 #[allow(unsafe_code)]
-pub(crate) fn tomar_socket_herdado(n: libc::c_int) -> io::Result<OwnedFd> {
+pub(crate) fn take_inherited_socket(n: libc::c_int) -> io::Result<OwnedFd> {
     if n < 3 {
         return Err(io::ErrorKind::InvalidInput.into());
     }
-    // SAFETY: `F_GETFD` só consulta a tabela de fds; não recebe ponteiro.
+    // SAFETY: `F_GETFD` only queries the fd table; it takes no pointer.
     if unsafe { libc::fcntl(n, libc::F_GETFD) } < 0 {
-        return Err(erro_os());
+        return Err(os_error());
     }
-    // SAFETY: o fd `n` acabou de ser conferido como aberto, e o empréstimo só vive nesta
-    // função, que não o fecha.
-    let emprestado = unsafe { BorrowedFd::borrow_raw(n) };
-    sockopt_int(emprestado, libc::SO_DOMAIN)?;
-    // SAFETY: `n` está aberto, é socket, veio do pai deste processo (argv) e nada deste
-    // processo o abriu nem o guarda (contrato acima): o `OwnedFd` passa a ser o único
-    // dono e o fecha ao sair.
-    let dono = unsafe { OwnedFd::from_raw_fd(n) };
-    // SAFETY: `F_SETFD` com `FD_CLOEXEC` só muda a flag do fd, que é nosso.
-    if unsafe { libc::fcntl(dono.as_raw_fd(), libc::F_SETFD, libc::FD_CLOEXEC) } < 0 {
-        return Err(erro_os());
+    // SAFETY: fd `n` has just been checked as open, and the borrow only lives in this
+    // function, which does not close it.
+    let borrowed = unsafe { BorrowedFd::borrow_raw(n) };
+    sockopt_int(borrowed, libc::SO_DOMAIN)?;
+    // SAFETY: `n` is open, is a socket, came from the parent of this process (argv) and
+    // nothing in this process opened or keeps it (contract above): the `OwnedFd` becomes
+    // the only owner and closes it on exit.
+    let owner = unsafe { OwnedFd::from_raw_fd(n) };
+    // SAFETY: `F_SETFD` with `FD_CLOEXEC` only changes the flag of the fd, which is ours.
+    if unsafe { libc::fcntl(owner.as_raw_fd(), libc::F_SETFD, libc::FD_CLOEXEC) } < 0 {
+        return Err(os_error());
     }
-    Ok(dono)
+    Ok(owner)
 }
 
-/// `clock_gettime(CLOCK_BOOTTIME)`: relógio monotônico que **conta o tempo suspenso**
-/// (o `Instant` do Rust usa `CLOCK_MONOTONIC`, que para na suspensão). Serve à trava por
-/// inatividade (Fase 24): 4 h com a máquina suspensa contam como 4 h sem uso.
+/// `clock_gettime(CLOCK_BOOTTIME)`: monotonic clock that **counts suspended time** (the
+/// Rust `Instant` uses `CLOCK_MONOTONIC`, which stops during suspend). Used by the
+/// inactivity lock (Phase 24): 4 h with the machine suspended count as 4 h without use.
 #[allow(unsafe_code)]
-pub(crate) fn relogio_boot() -> io::Result<std::time::Duration> {
+pub(crate) fn boot_clock() -> io::Result<std::time::Duration> {
     let mut ts = libc::timespec {
         tv_sec: 0,
         tv_nsec: 0,
     };
-    // SAFETY: `ts` é local e do tipo que o `clock_gettime` escreve; `CLOCK_BOOTTIME` é
-    // um relógio válido no Linux (2.6.39+). A chamada só escreve em `ts`.
+    // SAFETY: `ts` is local and of the type `clock_gettime` writes; `CLOCK_BOOTTIME` is a
+    // valid clock on Linux (2.6.39+). The call only writes into `ts`.
     let r = unsafe { libc::clock_gettime(libc::CLOCK_BOOTTIME, &raw mut ts) };
     if r != 0 {
-        return Err(erro_os());
+        return Err(os_error());
     }
-    let seg = u64::try_from(ts.tv_sec).map_err(|_| io::Error::from(io::ErrorKind::InvalidData))?;
-    let nano =
+    let secs = u64::try_from(ts.tv_sec).map_err(|_| io::Error::from(io::ErrorKind::InvalidData))?;
+    let nanos =
         u32::try_from(ts.tv_nsec).map_err(|_| io::Error::from(io::ErrorKind::InvalidData))?;
-    if nano >= 1_000_000_000 {
+    if nanos >= 1_000_000_000 {
         return Err(io::ErrorKind::InvalidData.into());
     }
-    Ok(std::time::Duration::new(seg, nano))
+    Ok(std::time::Duration::new(secs, nanos))
 }
 
-// --- Filho do `ward run` (Fase 26; S3, S8, D13, D60) ---------------------------------
+// --- Child of `ward run` (Phase 26; S3, S8, D13, D60) ---------------------------------
 
-/// `pipe2` com `O_CLOEXEC`: (leitura, escrita), os dois ≥ 3 (um fd 0–2 vira cópia ≥ 3),
-/// para o `dup2` do filho nunca pisar num fd que ainda vai usar.
+/// `pipe2` with `O_CLOEXEC`: (read, write), both ≥ 3 (an fd 0-2 becomes a copy ≥ 3), so
+/// the child's `dup2` never steps on an fd it still has to use.
 #[allow(unsafe_code)]
 fn pipe_cloexec() -> io::Result<(OwnedFd, OwnedFd)> {
     let mut fds = [0 as libc::c_int; 2];
-    // SAFETY: `fds` é um array local de dois `c_int`, o que o `pipe2` escreve.
+    // SAFETY: `fds` is a local array of two `c_int`, which is what `pipe2` writes.
     if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) } != 0 {
-        return Err(erro_os());
+        return Err(os_error());
     }
-    // SAFETY: os dois fds acabaram de ser criados pelo `pipe2` e são só nossos.
+    // SAFETY: both fds have just been created by `pipe2` and are only ours.
     let (r, w) = unsafe { (OwnedFd::from_raw_fd(fds[0]), OwnedFd::from_raw_fd(fds[1])) };
-    Ok((acima_de_2(r)?, acima_de_2(w)?))
+    Ok((above_2(r)?, above_2(w)?))
 }
 
-/// Capacidade pedida para os pipes de saída do filho (Fase 28g, 2ª auditoria do M4).
+/// Capacity requested for the child's output pipes (Phase 28g, 2nd audit of M4).
 ///
-/// Com a capacidade padrão (64 KiB), um `write` único maior que ela entra no pipe em
-/// duas vezes: o kernel copia 64 KiB, acorda o leitor e espera espaço; o daemon lê e
-/// mascara o que está lá, e um segredo que cruza a fronteira sai com o começo em
-/// claro. Com 256 KiB, o `write` de até esse tamanho é copiado inteiro com a trava do
-/// pipe presa, e o leitor só o vê completo. 256 KiB e não mais: o kernel conta as
-/// páginas de pipe por usuário (`pipe-user-pages-soft`, 64 MiB), e 64 conexões com dois
-/// pipes cada ficam em 32 MiB; acima do limite, os pipes novos de todo programa do
-/// usuário encolhem.
-pub const CAPACIDADE_PIPE_SAIDA: usize = 256 * 1024;
+/// With the default capacity (64 KiB), a single `write` larger than it enters the pipe in
+/// two steps: the kernel copies 64 KiB, wakes the reader and waits for room; the daemon
+/// reads and masks what is there, and a secret that crosses the boundary leaves with its
+/// beginning in clear. With 256 KiB, a `write` of up to that size is copied whole with the
+/// pipe lock held, and the reader only sees it complete. 256 KiB and no more: the kernel
+/// counts pipe pages per user (`pipe-user-pages-soft`, 64 MiB), and 64 connections with
+/// two pipes each stay at 32 MiB; above the limit, the new pipes of every program of the
+/// user shrink.
+pub const OUTPUT_PIPE_CAPACITY: usize = 256 * 1024;
 
-/// `F_SETPIPE_SZ` no pipe de `fd`, sem falhar: o kernel pode recusar (acima de
-/// `pipe-max-size` ou com o usuário no limite de páginas), e então o pipe fica com a
-/// capacidade padrão. Só piora o corte da máscara (D34 revisto), nunca abre segredo.
+/// `F_SETPIPE_SZ` on the pipe of `fd`, without failing: the kernel may refuse (above
+/// `pipe-max-size` or with the user at the page limit), and then the pipe keeps the
+/// default capacity. It only worsens the mask cut (D34 revised), never exposes a secret.
 #[allow(unsafe_code)]
-pub(crate) fn ampliar_pipe(fd: BorrowedFd<'_>, bytes: usize) -> Option<usize> {
-    let pedido = libc::c_int::try_from(bytes).ok()?;
-    // SAFETY: `F_SETPIPE_SZ` só muda a capacidade do pipe aberto (vivo pelo empréstimo);
-    // não lê nem escreve memória do processo.
-    let r = unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_SETPIPE_SZ, pedido) };
+pub(crate) fn widen_pipe(fd: BorrowedFd<'_>, bytes: usize) -> Option<usize> {
+    let requested = libc::c_int::try_from(bytes).ok()?;
+    // SAFETY: `F_SETPIPE_SZ` only changes the capacity of the open pipe (alive through the
+    // borrow); it neither reads nor writes process memory.
+    let r = unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_SETPIPE_SZ, requested) };
     usize::try_from(r).ok()
 }
 
-/// Capacidade atual do pipe de `fd` (`F_GETPIPE_SZ`; só nos testes).
+/// Current capacity of the pipe of `fd` (`F_GETPIPE_SZ`; tests only).
 #[cfg(test)]
 #[allow(unsafe_code)]
-pub(crate) fn capacidade_pipe(fd: BorrowedFd<'_>) -> io::Result<usize> {
-    // SAFETY: `F_GETPIPE_SZ` só lê a capacidade do pipe aberto (vivo pelo empréstimo).
+pub(crate) fn pipe_capacity(fd: BorrowedFd<'_>) -> io::Result<usize> {
+    // SAFETY: `F_GETPIPE_SZ` only reads the capacity of the open pipe (alive through the
+    // borrow).
     let r = unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_GETPIPE_SZ) };
-    usize::try_from(r).map_err(|_| erro_os())
+    usize::try_from(r).map_err(|_| os_error())
 }
 
-/// O mesmo fd, ou uma cópia `CLOEXEC` ≥ 3 se ele for 0, 1 ou 2.
-fn acima_de_2(fd: OwnedFd) -> io::Result<OwnedFd> {
-    acima_de(fd, 3)
+/// The same fd, or a `CLOEXEC` copy ≥ 3 if it is 0, 1 or 2.
+fn above_2(fd: OwnedFd) -> io::Result<OwnedFd> {
+    above(fd, 3)
 }
 
-/// O mesmo fd, ou uma cópia `CLOEXEC` ≥ `minimo` se ele for menor (o original fecha).
+/// The same fd, or a `CLOEXEC` copy ≥ `minimum` if it is lower (the original closes).
 #[allow(unsafe_code)]
-fn acima_de(fd: OwnedFd, minimo: libc::c_int) -> io::Result<OwnedFd> {
-    if fd.as_raw_fd() >= minimo {
+fn above(fd: OwnedFd, minimum: libc::c_int) -> io::Result<OwnedFd> {
+    if fd.as_raw_fd() >= minimum {
         return Ok(fd);
     }
-    // SAFETY: `F_DUPFD_CLOEXEC` só duplica o fd aberto (vivo pelo `fd`) para o menor
-    // número livre ≥ `minimo`.
-    let novo = unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_DUPFD_CLOEXEC, minimo) };
-    if novo < 0 {
-        return Err(erro_os());
+    // SAFETY: `F_DUPFD_CLOEXEC` only duplicates the open fd (alive through `fd`) to the
+    // lowest free number ≥ `minimum`.
+    let new_fd = unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_DUPFD_CLOEXEC, minimum) };
+    if new_fd < 0 {
+        return Err(os_error());
     }
-    // SAFETY: `novo` acabou de ser criado pelo `fcntl` e é só nosso.
-    Ok(unsafe { OwnedFd::from_raw_fd(novo) })
+    // SAFETY: `new_fd` has just been created by `fcntl` and is only ours.
+    Ok(unsafe { OwnedFd::from_raw_fd(new_fd) })
 }
 
-/// `/dev/null` para leitura e escrita, `CLOEXEC`, ≥ 5 (a entrada e as saídas do Chrome
-/// do `ward playwright`: nada do que ele escreve chega ao daemon nem ao log).
-fn dev_null_acima_de_4() -> io::Result<OwnedFd> {
+/// `/dev/null` for reading and writing, `CLOEXEC`, ≥ 5 (the input and outputs of the
+/// Chrome of `ward playwright`: nothing it writes reaches the daemon or the log).
+fn dev_null_above_4() -> io::Result<OwnedFd> {
     use std::os::unix::fs::OpenOptionsExt;
     let f = std::fs::OpenOptions::new()
         .read(true)
         .write(true)
         .custom_flags(libc::O_CLOEXEC)
         .open("/dev/null")?;
-    acima_de(OwnedFd::from(f), PRIMEIRO_FD_LIVRE_DEPURACAO)
+    above(OwnedFd::from(f), FIRST_FREE_DEBUG_FD)
 }
 
-/// Com o pipe de depuração, o filho recebe 0–4; o resto fecha no `exec`.
-const PRIMEIRO_FD_LIVRE_DEPURACAO: libc::c_int = 5;
+/// With the debugging pipe, the child gets 0-4; the rest closes at `exec`.
+const FIRST_FREE_DEBUG_FD: libc::c_int = 5;
 
-/// Tudo que o filho usa, montado antes do `fork`: depois dele, o filho só faz chamadas
-/// async-signal-safe, sem alocar nem tocar em trava (o daemon tem várias threads).
-pub(crate) struct PreparoExec<'a> {
-    /// Caminhos a tentar no `execve`, na ordem (a busca no `PATH` já feita).
-    pub caminhos: &'a [*const libc::c_char],
-    /// `argv`, terminado por nulo.
+/// Everything the child uses, built before the `fork`: after it, the child only makes
+/// async-signal-safe calls, without allocating or taking a lock (the daemon has several
+/// threads).
+pub(crate) struct ExecPreparation<'a> {
+    /// Paths to try in `execve`, in order (the `PATH` search already done).
+    pub paths: &'a [*const libc::c_char],
+    /// `argv`, null-terminated.
     pub argv: &'a [*const libc::c_char],
-    /// `envp`, terminado por nulo.
+    /// `envp`, null-terminated.
     pub envp: &'a [*const libc::c_char],
-    /// Diretório de trabalho.
+    /// Working directory.
     pub cwd: &'a CStr,
 }
 
-/// Como o filho recebe 0, 1 e 2.
+/// How the child gets 0, 1 and 2.
 pub(crate) enum Stdio {
-    /// Três pipes novos (o `ward run`, o `ward ssh` com comando).
+    /// Three new pipes (`ward run`, `ward ssh` with a command).
     Pipes,
-    /// O escravo de um pty nos três, como terminal de controle de uma sessão nova
-    /// (`setsid` + `TIOCSCTTY`; o `ward ssh` interativo). O pai fica com o mestre.
+    /// The slave of a pty on all three, as the controlling terminal of a new session
+    /// (`setsid` + `TIOCSCTTY`; the interactive `ward ssh`). The parent keeps the master.
     Pty(OwnedFd),
-    /// `ward playwright` (Fase 44, D6): `/dev/null` em 0–2 e o pipe de depuração do
-    /// Chrome (`--remote-debugging-pipe`): o filho lê os comandos no fd 3 e escreve as
-    /// respostas no fd 4. As pontas do pai são `CLOEXEC` e não vão a nenhum outro filho.
-    Depuracao,
+    /// `ward playwright` (Phase 44, D6): `/dev/null` on 0-2 and the Chrome debugging pipe
+    /// (`--remote-debugging-pipe`): the child reads the commands on fd 3 and writes the
+    /// responses on fd 4. The parent's ends are `CLOEXEC` and go to no other child.
+    DebugPipe,
 }
 
-/// As pontas do pai.
-pub(crate) enum PontasPai {
+/// The parent's ends.
+pub(crate) enum ParentEnds {
     Pipes {
-        entrada: OwnedFd,
-        saida: OwnedFd,
-        erro: OwnedFd,
+        stdin: OwnedFd,
+        stdout: OwnedFd,
+        stderr: OwnedFd,
     },
-    /// O pai não guarda o escravo: o fim da sessão aparece no mestre (`EIO`).
+    /// The parent does not keep the slave: the end of the session shows on the master
+    /// (`EIO`).
     Pty,
-    /// A escrita dos comandos (fd 3 do filho) e a leitura das respostas (fd 4 do filho).
-    Depuracao {
-        comandos: OwnedFd,
-        respostas: OwnedFd,
+    /// The writing of the commands (fd 3 of the child) and the reading of the responses
+    /// (fd 4 of the child).
+    DebugPipe {
+        commands: OwnedFd,
+        responses: OwnedFd,
     },
 }
 
-/// O filho lançado: pid e as pontas do pai.
-pub(crate) struct FilhoCru {
+/// The launched child: pid and the parent's ends.
+pub(crate) struct RawChild {
     pub pid: libc::pid_t,
-    pub pontas: PontasPai,
+    pub ends: ParentEnds,
 }
 
-/// Por que o filho não chegou ao `execve`.
+/// Why the child did not reach `execve`.
 #[derive(Debug)]
-pub(crate) enum ErroExec {
-    /// Falha no pai (pipe, fork).
-    Sistema(io::Error),
-    /// O filho avisou pelo pipe: etapa ([`ETAPA_DIRETORIO`]…) e `errno`.
-    Filho { etapa: u8, errno: i32 },
+pub(crate) enum ExecError {
+    /// Failure in the parent (pipe, fork).
+    System(io::Error),
+    /// The child reported through the pipe: step ([`STEP_DIRECTORY`]...) and `errno`.
+    Child { step: u8, errno: i32 },
 }
 
-pub(crate) const ETAPA_PREPARO: u8 = 1;
-pub(crate) const ETAPA_DIRETORIO: u8 = 2;
-pub(crate) const ETAPA_EXEC: u8 = 3;
+pub(crate) const STEP_PREPARATION: u8 = 1;
+pub(crate) const STEP_DIRECTORY: u8 = 2;
+pub(crate) const STEP_EXEC: u8 = 3;
 
-/// `errno` da thread, sem alocar.
+/// `errno` of the thread, without allocating.
 #[allow(unsafe_code)]
 fn errno() -> i32 {
-    // SAFETY: `__errno_location` devolve o ponteiro (válido) para o `errno` da thread.
+    // SAFETY: `__errno_location` returns the (valid) pointer to the thread's `errno`.
     unsafe { *libc::__errno_location() }
 }
 
-/// `fork` + `execve` com o `PreparoExec` (Fase 26). No filho, nesta ordem: sessão
-/// própria (`setsid`, que também cria o grupo de processos com o pid do filho; auditoria
-/// do M4: num grupo da sessão do daemon, outro processo do usuário entrava por
-/// `setpgid` e passava pela ponte do túnel/salto alheia; entre sessões o kernel recusa
-/// o `setpgid`), morte junto com a thread do daemon que o criou
-/// (`PR_SET_PDEATHSIG`), sinais no padrão e máscara vazia, os pipes em 0–2, o `chdir`,
-/// todo fd ≥ 3 marcado `CLOEXEC` (`close_range`) e o `execve` de cada caminho. Uma
-/// falha antes do `execve` volta pelo pipe de aviso (5 bytes: etapa e `errno`); o
-/// sucesso fecha o pipe no `exec`, sem bytes. Nada passa por shell (S3).
+/// `fork` + `execve` with the `ExecPreparation` (Phase 26). In the child, in this order:
+/// own session (`setsid`, which also creates the process group with the child's pid; M4
+/// audit: in a group of the daemon's session, another process of the user got in through
+/// `setpgid` and went through someone else's tunnel/jump bridge; across sessions the
+/// kernel refuses `setpgid`), death together with the daemon thread that created it
+/// (`PR_SET_PDEATHSIG`), default signals and empty mask, the pipes on 0-2, the `chdir`,
+/// every fd ≥ 3 marked `CLOEXEC` (`close_range`) and the `execve` of each path. A failure
+/// before `execve` comes back through the notice pipe (5 bytes: step and `errno`); success
+/// closes the pipe at `exec`, with no bytes. Nothing goes through a shell (S3).
 #[allow(unsafe_code)]
-pub(crate) fn fork_exec(p: &PreparoExec<'_>, stdio: Stdio) -> Result<FilhoCru, ErroExec> {
-    let nulo = |v: &[*const libc::c_char]| v.last().is_some_and(|x| x.is_null());
-    if p.caminhos.is_empty() || !nulo(p.argv) || !nulo(p.envp) {
-        return Err(ErroExec::Sistema(io::ErrorKind::InvalidInput.into()));
+pub(crate) fn fork_exec(p: &ExecPreparation<'_>, stdio: Stdio) -> Result<RawChild, ExecError> {
+    let is_null_terminated = |v: &[*const libc::c_char]| v.last().is_some_and(|x| x.is_null());
+    if p.paths.is_empty() || !is_null_terminated(p.argv) || !is_null_terminated(p.envp) {
+        return Err(ExecError::System(io::ErrorKind::InvalidInput.into()));
     }
-    // (fds do filho, pontas do pai, se é sessão nova com terminal de controle)
-    let (filho_fds, pontas, sessao) = match stdio {
+    // (child fds, parent ends, whether it is a new session with a controlling terminal)
+    let (child_fds, ends, session) = match stdio {
         Stdio::Pipes => {
-            let (in_r, in_w) = pipe_cloexec().map_err(ErroExec::Sistema)?;
-            let (out_r, out_w) = pipe_cloexec().map_err(ErroExec::Sistema)?;
-            let (err_r, err_w) = pipe_cloexec().map_err(ErroExec::Sistema)?;
-            // Fase 28g: um `write` único de até `CAPACIDADE_PIPE_SAIDA` entra inteiro no
-            // pipe antes de o leitor acordar, e o daemon o lê e mascara de uma vez.
-            ampliar_pipe(out_r.as_fd(), CAPACIDADE_PIPE_SAIDA);
-            ampliar_pipe(err_r.as_fd(), CAPACIDADE_PIPE_SAIDA);
+            let (in_r, in_w) = pipe_cloexec().map_err(ExecError::System)?;
+            let (out_r, out_w) = pipe_cloexec().map_err(ExecError::System)?;
+            let (err_r, err_w) = pipe_cloexec().map_err(ExecError::System)?;
+            // Phase 28g: a single `write` of up to `OUTPUT_PIPE_CAPACITY` enters the pipe
+            // whole before the reader wakes up, and the daemon reads and masks it at once.
+            widen_pipe(out_r.as_fd(), OUTPUT_PIPE_CAPACITY);
+            widen_pipe(err_r.as_fd(), OUTPUT_PIPE_CAPACITY);
             (
                 vec![in_r, out_w, err_w],
-                PontasPai::Pipes {
-                    entrada: in_w,
-                    saida: out_r,
-                    erro: err_r,
+                ParentEnds::Pipes {
+                    stdin: in_w,
+                    stdout: out_r,
+                    stderr: err_r,
                 },
                 false,
             )
         }
-        Stdio::Pty(escravo) => {
-            let escravo = acima_de_2(escravo).map_err(ErroExec::Sistema)?;
-            let e2 = escravo.try_clone().map_err(ErroExec::Sistema)?;
-            let e3 = escravo.try_clone().map_err(ErroExec::Sistema)?;
+        Stdio::Pty(slave) => {
+            let slave = above_2(slave).map_err(ExecError::System)?;
+            let e2 = slave.try_clone().map_err(ExecError::System)?;
+            let e3 = slave.try_clone().map_err(ExecError::System)?;
             let (e2, e3) = (
-                acima_de_2(e2).map_err(ErroExec::Sistema)?,
-                acima_de_2(e3).map_err(ErroExec::Sistema)?,
+                above_2(e2).map_err(ExecError::System)?,
+                above_2(e3).map_err(ExecError::System)?,
             );
-            (vec![escravo, e2, e3], PontasPai::Pty, true)
+            (vec![slave, e2, e3], ParentEnds::Pty, true)
         }
-        Stdio::Depuracao => {
-            // Toda origem do `dup2` fica ≥ 5: nenhuma é um dos destinos 0–4 (um `dup2`
-            // de um fd nele mesmo deixaria o `CLOEXEC` ligado, e um destino pisaria numa
-            // origem ainda não copiada).
-            let alto = |fd: OwnedFd| acima_de(fd, PRIMEIRO_FD_LIVRE_DEPURACAO);
-            let nulo = dev_null_acima_de_4().map_err(ErroExec::Sistema)?;
+        Stdio::DebugPipe => {
+            // Every `dup2` source stays ≥ 5: none is one of the targets 0-4 (a `dup2` of
+            // an fd onto itself would leave `CLOEXEC` on, and a target would step on a
+            // source not yet copied).
+            let high = |fd: OwnedFd| above(fd, FIRST_FREE_DEBUG_FD);
+            let null = dev_null_above_4().map_err(ExecError::System)?;
             let (n1, n2) = (
-                nulo.try_clone().and_then(alto).map_err(ErroExec::Sistema)?,
-                nulo.try_clone().and_then(alto).map_err(ErroExec::Sistema)?,
+                null.try_clone().and_then(high).map_err(ExecError::System)?,
+                null.try_clone().and_then(high).map_err(ExecError::System)?,
             );
-            let (cmd_r, cmd_w) = pipe_cloexec().map_err(ErroExec::Sistema)?;
-            let (resp_r, resp_w) = pipe_cloexec().map_err(ErroExec::Sistema)?;
+            let (cmd_r, cmd_w) = pipe_cloexec().map_err(ExecError::System)?;
+            let (resp_r, resp_w) = pipe_cloexec().map_err(ExecError::System)?;
             let (cmd_r, resp_w) = (
-                alto(cmd_r).map_err(ErroExec::Sistema)?,
-                alto(resp_w).map_err(ErroExec::Sistema)?,
+                high(cmd_r).map_err(ExecError::System)?,
+                high(resp_w).map_err(ExecError::System)?,
             );
             (
-                vec![nulo, n1, n2, cmd_r, resp_w],
-                PontasPai::Depuracao {
-                    comandos: cmd_w,
-                    respostas: resp_r,
+                vec![null, n1, n2, cmd_r, resp_w],
+                ParentEnds::DebugPipe {
+                    commands: cmd_w,
+                    responses: resp_r,
                 },
                 false,
             )
         }
     };
-    let (aviso_r, aviso_w) = pipe_cloexec().map_err(ErroExec::Sistema)?;
-    // SAFETY: `getpid` não tem pré-condição.
-    let pai = unsafe { libc::getpid() };
-    // SAFETY: `sigset_t` e `sigaction` são structs C de inteiros; zeradas são valores
-    // válidos, e o `sigemptyset` as deixa no formato certo.
-    let (vazio, padrao) = unsafe {
-        let mut vazio: libc::sigset_t = std::mem::zeroed();
-        libc::sigemptyset(&raw mut vazio);
-        let mut padrao: libc::sigaction = std::mem::zeroed();
-        padrao.sa_sigaction = libc::SIG_DFL;
-        libc::sigemptyset(&raw mut padrao.sa_mask);
-        (vazio, padrao)
+    let (notice_r, notice_w) = pipe_cloexec().map_err(ExecError::System)?;
+    // SAFETY: `getpid` has no precondition.
+    let parent = unsafe { libc::getpid() };
+    // SAFETY: `sigset_t` and `sigaction` are C structs of integers; zeroed they are valid
+    // values, and `sigemptyset` puts them in the right format.
+    let (empty, default_action) = unsafe {
+        let mut empty: libc::sigset_t = std::mem::zeroed();
+        libc::sigemptyset(&raw mut empty);
+        let mut default_action: libc::sigaction = std::mem::zeroed();
+        default_action.sa_sigaction = libc::SIG_DFL;
+        libc::sigemptyset(&raw mut default_action.sa_mask);
+        (empty, default_action)
     };
-    // (origem, destino) de cada `dup2`; o primeiro fd que o `close_range` marca vem
-    // logo depois do último destino.
+    // (source, target) of each `dup2`; the first fd that `close_range` marks comes right
+    // after the last target.
     let mut fds = [(-1 as libc::c_int, -1 as libc::c_int); 5];
-    for (i, f) in filho_fds.iter().enumerate().take(fds.len()) {
+    for (i, f) in child_fds.iter().enumerate().take(fds.len()) {
         fds[i] = (f.as_raw_fd(), i as libc::c_int);
     }
-    let n_fds = filho_fds.len().min(fds.len());
-    let aviso = aviso_w.as_raw_fd();
-    // SAFETY: `fork` não tem pré-condição; no filho só seguem chamadas
-    // async-signal-safe (`filho_depois_do_fork`), sem alocar.
+    let n_fds = child_fds.len().min(fds.len());
+    let notice_fd = notice_w.as_raw_fd();
+    // SAFETY: `fork` has no precondition; in the child only async-signal-safe calls
+    // follow (`child_after_fork`), without allocating.
     let pid = unsafe { libc::fork() };
     if pid < 0 {
-        return Err(ErroExec::Sistema(erro_os()));
+        return Err(ExecError::System(os_error()));
     }
     if pid == 0 {
-        // SAFETY: estamos no filho logo depois do `fork`; os ponteiros do `PreparoExec`
-        // apontam para memória do pai copiada no filho, viva até o `execve`/`_exit`.
-        unsafe { filho_depois_do_fork(p, pai, &fds[..n_fds], sessao, aviso, &vazio, &padrao) }
+        // SAFETY: we are in the child right after the `fork`; the pointers of the
+        // `ExecPreparation` point to parent memory copied into the child, alive until the
+        // `execve`/`_exit`.
+        unsafe {
+            child_after_fork(
+                p,
+                parent,
+                &fds[..n_fds],
+                session,
+                notice_fd,
+                &empty,
+                &default_action,
+            )
+        }
     }
-    drop((filho_fds, aviso_w));
-    // O filho é líder de sessão (`setsid`) antes do `exec`: o grupo existe quando o pipe
-    // de aviso fecha no `exec`, antes da volta (sem corrida com o `kill`). Nada de
-    // `setpgid` aqui: com ele antes do `setsid` do filho, o filho já seria líder de
-    // grupo e o `setsid` falharia.
+    drop((child_fds, notice_w));
+    // The child is a session leader (`setsid`) before the `exec`: the group exists when
+    // the notice pipe closes at `exec`, before the return (no race with the `kill`). No
+    // `setpgid` here: with it before the child's `setsid`, the child would already be a
+    // group leader and the `setsid` would fail.
     let mut buf = [0u8; 5];
-    let mut lido = 0;
-    let mut f = std::fs::File::from(aviso_r);
-    while lido < buf.len() {
-        match io::Read::read(&mut f, &mut buf[lido..]) {
+    let mut read_len = 0;
+    let mut f = std::fs::File::from(notice_r);
+    while read_len < buf.len() {
+        match io::Read::read(&mut f, &mut buf[read_len..]) {
             Ok(0) => break,
-            Ok(n) => lido += n,
+            Ok(n) => read_len += n,
             Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
             Err(_) => break,
         }
     }
-    if lido == 0 {
-        return Ok(FilhoCru { pid, pontas });
+    if read_len == 0 {
+        return Ok(RawChild { pid, ends });
     }
-    // O filho não chegou ao `exec` e já saiu (ou vai sair): colhe.
-    let _ = colher(pid);
-    let errno = if lido == buf.len() {
+    // The child did not reach `exec` and has already exited (or will): collect it.
+    let _ = collect(pid);
+    let errno = if read_len == buf.len() {
         i32::from_ne_bytes([buf[1], buf[2], buf[3], buf[4]])
     } else {
         libc::EIO
     };
-    Err(ErroExec::Filho {
-        etapa: buf[0],
+    Err(ExecError::Child {
+        step: buf[0],
         errno,
     })
 }
 
-/// Parte do filho, entre o `fork` e o `execve`. Nunca volta.
+/// The child's part, between the `fork` and the `execve`. Never returns.
 ///
 /// # Safety
-/// Só no filho recém-criado pelo `fork`, com o `PreparoExec` válido (ponteiros para
-/// strings C terminadas em nulo, listas terminadas em nulo).
+/// Only in the child just created by the `fork`, with a valid `ExecPreparation` (pointers
+/// to null-terminated C strings, null-terminated lists).
 #[allow(unsafe_code)]
-unsafe fn filho_depois_do_fork(
-    p: &PreparoExec<'_>,
-    pai: libc::pid_t,
+unsafe fn child_after_fork(
+    p: &ExecPreparation<'_>,
+    parent: libc::pid_t,
     fds: &[(libc::c_int, libc::c_int)],
-    sessao: bool,
-    aviso: libc::c_int,
-    vazio: &libc::sigset_t,
-    padrao: &libc::sigaction,
+    session: bool,
+    notice_fd: libc::c_int,
+    empty: &libc::sigset_t,
+    default_action: &libc::sigaction,
 ) -> ! {
-    let avisar = |etapa: u8, e: i32| {
+    let report = |step: u8, e: i32| {
         let b = e.to_ne_bytes();
-        let msg = [etapa, b[0], b[1], b[2], b[3]];
-        // SAFETY: `msg` é local; `write` é async-signal-safe; o erro não importa (o pai
-        // vê o pipe fechar sem os 5 bytes).
-        unsafe { libc::write(aviso, msg.as_ptr().cast(), msg.len()) };
+        let msg = [step, b[0], b[1], b[2], b[3]];
+        // SAFETY: `msg` is local; `write` is async-signal-safe; the error does not matter
+        // (the parent sees the pipe close without the 5 bytes).
+        unsafe { libc::write(notice_fd, msg.as_ptr().cast(), msg.len()) };
     };
-    // SAFETY: (todo o bloco) no filho de um `fork`, só chamadas async-signal-safe
-    // (`setsid`, `ioctl(TIOCSCTTY)`, `prctl`, `getppid`, `sigaction`,
-    // `sigprocmask`, `dup2`, `chdir`, `syscall(close_range)`, `execve`, `write`,
-    // `_exit`), sobre fds e ponteiros válidos (os do `PreparoExec`, vivos na cópia da
-    // memória do pai).
+    // SAFETY: (the whole block) in the child of a `fork`, only async-signal-safe calls
+    // (`setsid`, `ioctl(TIOCSCTTY)`, `prctl`, `getppid`, `sigaction`, `sigprocmask`,
+    // `dup2`, `chdir`, `syscall(close_range)`, `execve`, `write`, `_exit`), on valid fds
+    // and pointers (those of the `ExecPreparation`, alive in the copy of the parent
+    // memory).
     unsafe {
-        // Sessão nova (o grupo tem o pid do filho), com ou sem pty: nenhum processo de
-        // fora entra no grupo dele.
+        // New session (the group has the child's pid), with or without a pty: no outside
+        // process joins its group.
         if libc::setsid() < 0 {
-            avisar(ETAPA_PREPARO, errno());
+            report(STEP_PREPARATION, errno());
             libc::_exit(127);
         }
-        // Com pty, o escravo vira o terminal de controle: o `ssh` lê a janela e os
-        // sinais do terminal dele.
-        if sessao && libc::ioctl(fds[0].0, libc::TIOCSCTTY, 0 as libc::c_int) != 0 {
-            avisar(ETAPA_PREPARO, errno());
+        // With a pty, the slave becomes the controlling terminal: `ssh` reads the window
+        // size and the signals from its terminal.
+        if session && libc::ioctl(fds[0].0, libc::TIOCSCTTY, 0 as libc::c_int) != 0 {
+            report(STEP_PREPARATION, errno());
             libc::_exit(127);
         }
         if libc::prctl(
@@ -1232,36 +1248,36 @@ unsafe fn filho_depois_do_fork(
             0,
         ) != 0
         {
-            avisar(ETAPA_PREPARO, errno());
+            report(STEP_PREPARATION, errno());
             libc::_exit(127);
         }
-        // A thread do daemon já morreu antes do `prctl`: não segue órfão.
-        if libc::getppid() != pai {
+        // The daemon thread already died before the `prctl`: do not go on as an orphan.
+        if libc::getppid() != parent {
             libc::_exit(127);
         }
-        // O runtime do Rust ignora o SIGPIPE; o filho começa com tudo no padrão.
-        for sinal in 1..65 {
-            if sinal != libc::SIGKILL && sinal != libc::SIGSTOP {
-                libc::sigaction(sinal, padrao, std::ptr::null_mut());
+        // The Rust runtime ignores SIGPIPE; the child starts with everything at default.
+        for signal in 1..65 {
+            if signal != libc::SIGKILL && signal != libc::SIGSTOP {
+                libc::sigaction(signal, default_action, std::ptr::null_mut());
             }
         }
-        if libc::sigprocmask(libc::SIG_SETMASK, vazio, std::ptr::null_mut()) != 0 {
-            avisar(ETAPA_PREPARO, errno());
+        if libc::sigprocmask(libc::SIG_SETMASK, empty, std::ptr::null_mut()) != 0 {
+            report(STEP_PREPARATION, errno());
             libc::_exit(127);
         }
-        for &(de, para) in fds {
-            // `de` ≥ 3 (`pipe_cloexec`), ou ≥ 5 com o pipe de depuração: nunca é um
-            // dos destinos.
-            if libc::dup2(de, para) < 0 {
-                avisar(ETAPA_PREPARO, errno());
+        for &(from, to) in fds {
+            // `from` ≥ 3 (`pipe_cloexec`), or ≥ 5 with the debugging pipe: never one of
+            // the targets.
+            if libc::dup2(from, to) < 0 {
+                report(STEP_PREPARATION, errno());
                 libc::_exit(127);
             }
         }
         if libc::chdir(p.cwd.as_ptr()) != 0 {
-            avisar(ETAPA_DIRETORIO, errno());
+            report(STEP_DIRECTORY, errno());
             libc::_exit(127);
         }
-        // Nenhum fd do daemon (socket, cofre, conexões) chega ao programa.
+        // No daemon fd (socket, vault, connections) reaches the program.
         if libc::syscall(
             libc::SYS_close_range,
             fds.len().max(3) as libc::c_uint,
@@ -1269,36 +1285,37 @@ unsafe fn filho_depois_do_fork(
             libc::CLOSE_RANGE_CLOEXEC,
         ) != 0
         {
-            avisar(ETAPA_PREPARO, errno());
+            report(STEP_PREPARATION, errno());
             libc::_exit(127);
         }
-        // A busca do `execvpe`: segue nos erros de "não está aqui"; com `EACCES` em
-        // algum, esse é o erro final. Sem o recurso ao `/bin/sh` do `ENOEXEC`.
-        let mut viu_eacces = false;
-        let mut ultimo = libc::ENOENT;
-        for &c in p.caminhos {
+        // The `execvpe` search: goes on through "not here" errors; with `EACCES` on any,
+        // that is the final error. Without the `/bin/sh` fallback of `ENOEXEC`.
+        let mut saw_eacces = false;
+        let mut last = libc::ENOENT;
+        for &c in p.paths {
             libc::execve(c, p.argv.as_ptr(), p.envp.as_ptr());
-            ultimo = errno();
-            match ultimo {
-                libc::EACCES => viu_eacces = true,
+            last = errno();
+            match last {
+                libc::EACCES => saw_eacces = true,
                 libc::ENOENT | libc::ENOTDIR | libc::ESTALE | libc::ENODEV | libc::ETIMEDOUT => {}
                 _ => break,
             }
         }
-        avisar(ETAPA_EXEC, if viu_eacces { libc::EACCES } else { ultimo });
+        report(STEP_EXEC, if saw_eacces { libc::EACCES } else { last });
         libc::_exit(127)
     }
 }
 
-/// Espera o processo `pid` terminar **sem colher** (`waitid` com `WNOWAIT`): o zumbi
-/// segura o pid (e o grupo), e o `kill` do grupo não acerta outro processo.
+/// Waits for process `pid` to end **without collecting it** (`waitid` with `WNOWAIT`): the
+/// zombie holds the pid (and the group), and the group `kill` does not hit another
+/// process.
 #[allow(unsafe_code)]
-pub(crate) fn esperar_sem_colher(pid: libc::pid_t) -> io::Result<()> {
+pub(crate) fn wait_without_collecting(pid: libc::pid_t) -> io::Result<()> {
     let id = libc::id_t::try_from(pid).map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
     loop {
-        // SAFETY: `siginfo_t` é uma struct C; zerada é válida, e o `waitid` a escreve.
+        // SAFETY: `siginfo_t` is a C struct; zeroed it is valid, and `waitid` writes it.
         let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
-        // SAFETY: `info` é local; `P_PID` com um pid nosso; `WNOWAIT` não colhe.
+        // SAFETY: `info` is local; `P_PID` with a pid of ours; `WNOWAIT` does not collect.
         let r = unsafe {
             libc::waitid(
                 libc::P_PID,
@@ -1310,44 +1327,45 @@ pub(crate) fn esperar_sem_colher(pid: libc::pid_t) -> io::Result<()> {
         if r == 0 {
             return Ok(());
         }
-        let e = erro_os();
+        let e = os_error();
         if e.kind() != io::ErrorKind::Interrupted {
             return Err(e);
         }
     }
 }
 
-/// Colhe o filho `pid` (`waitpid`) e devolve o status cru.
+/// Collects child `pid` (`waitpid`) and returns the raw status.
 #[allow(unsafe_code)]
-pub(crate) fn colher(pid: libc::pid_t) -> io::Result<libc::c_int> {
+pub(crate) fn collect(pid: libc::pid_t) -> io::Result<libc::c_int> {
     loop {
         let mut status: libc::c_int = 0;
-        // SAFETY: `status` é local; o pid é de um filho nosso.
+        // SAFETY: `status` is local; the pid is of a child of ours.
         let r = unsafe { libc::waitpid(pid, &raw mut status, 0) };
         if r == pid {
             return Ok(status);
         }
-        let e = erro_os();
+        let e = os_error();
         if e.kind() != io::ErrorKind::Interrupted {
             return Err(e);
         }
     }
 }
 
-/// Há o que ler em `fd` (dados, fim ou erro) dentro de `espera_ms`? Sem ler nada.
+/// Is there something to read on `fd` (data, end or error) within `wait_ms`? Without
+/// reading anything.
 #[allow(unsafe_code)]
-pub(crate) fn esperar_leitura(fd: BorrowedFd<'_>, espera_ms: libc::c_int) -> io::Result<bool> {
+pub(crate) fn wait_readable(fd: BorrowedFd<'_>, wait_ms: libc::c_int) -> io::Result<bool> {
     loop {
         let mut pfd = libc::pollfd {
             fd: fd.as_raw_fd(),
             events: libc::POLLIN,
             revents: 0,
         };
-        // SAFETY: `pfd` é um `pollfd` local e válido, e o tamanho passado é 1; o fd
-        // está aberto pelo empréstimo.
-        let r = unsafe { libc::poll(&raw mut pfd, 1, espera_ms) };
+        // SAFETY: `pfd` is a local and valid `pollfd`, and the size passed is 1; the fd is
+        // open through the borrow.
+        let r = unsafe { libc::poll(&raw mut pfd, 1, wait_ms) };
         if r < 0 {
-            let e = erro_os();
+            let e = os_error();
             if e.kind() == io::ErrorKind::Interrupted {
                 continue;
             }
@@ -1357,26 +1375,27 @@ pub(crate) fn esperar_leitura(fd: BorrowedFd<'_>, espera_ms: libc::c_int) -> io:
     }
 }
 
-/// `SIGKILL` para o grupo de processos `pgid` inteiro. Grupo que não existe mais não é
-/// erro.
-pub(crate) fn matar_grupo(pgid: libc::pid_t) -> io::Result<()> {
-    sinal_grupo(pgid, libc::SIGKILL)
+/// `SIGKILL` to the whole process group `pgid`. A group that no longer exists is not an
+/// error.
+pub(crate) fn kill_group(pgid: libc::pid_t) -> io::Result<()> {
+    signal_group(pgid, libc::SIGKILL)
 }
 
-/// `SIGSTOP` para o grupo `pgid` inteiro (Fase 54c): parado, o líder não colhe os
-/// filhos, então o pid deles não é reusado enquanto o daemon os procura e mata.
-pub(crate) fn parar_grupo(pgid: libc::pid_t) -> io::Result<()> {
-    sinal_grupo(pgid, libc::SIGSTOP)
+/// `SIGSTOP` to the whole group `pgid` (Phase 54c): stopped, the leader does not collect
+/// its children, so their pid is not reused while the daemon looks for them and kills
+/// them.
+pub(crate) fn stop_group(pgid: libc::pid_t) -> io::Result<()> {
+    signal_group(pgid, libc::SIGSTOP)
 }
 
 #[allow(unsafe_code)]
-fn sinal_grupo(pgid: libc::pid_t, sinal: libc::c_int) -> io::Result<()> {
+fn signal_group(pgid: libc::pid_t, signal: libc::c_int) -> io::Result<()> {
     if pgid <= 1 {
         return Err(io::ErrorKind::InvalidInput.into());
     }
-    // SAFETY: `kill` com `-pgid` (> 1) manda o sinal só ao grupo; sem ponteiros.
-    if unsafe { libc::kill(-pgid, sinal) } != 0 {
-        let e = erro_os();
+    // SAFETY: `kill` with `-pgid` (> 1) sends the signal only to the group; no pointers.
+    if unsafe { libc::kill(-pgid, signal) } != 0 {
+        let e = os_error();
         if e.raw_os_error() != Some(libc::ESRCH) {
             return Err(e);
         }
@@ -1384,17 +1403,17 @@ fn sinal_grupo(pgid: libc::pid_t, sinal: libc::c_int) -> io::Result<()> {
     Ok(())
 }
 
-/// `prctl(PR_SET_CHILD_SUBREAPER, 1)` e a leitura de volta (Fase 55, S8): o órfão de
-/// qualquer descendente vira filho deste processo, não do `init`/`systemd --user`.
+/// `prctl(PR_SET_CHILD_SUBREAPER, 1)` and reading it back (Phase 55, S8): the orphan of
+/// any descendant becomes a child of this process, not of `init`/`systemd --user`.
 #[allow(unsafe_code)]
-pub(crate) fn virar_subreaper() -> io::Result<()> {
-    let (um, zero): (libc::c_ulong, libc::c_ulong) = (1, 0);
-    // SAFETY: `PR_SET_CHILD_SUBREAPER` só lê o inteiro passado; os outros vão em 0.
-    if unsafe { libc::prctl(libc::PR_SET_CHILD_SUBREAPER, um, zero, zero, zero) } != 0 {
-        return Err(erro_os());
+pub(crate) fn become_subreaper() -> io::Result<()> {
+    let (one, zero): (libc::c_ulong, libc::c_ulong) = (1, 0);
+    // SAFETY: `PR_SET_CHILD_SUBREAPER` only reads the integer passed; the others are 0.
+    if unsafe { libc::prctl(libc::PR_SET_CHILD_SUBREAPER, one, zero, zero, zero) } != 0 {
+        return Err(os_error());
     }
     let mut v: libc::c_int = 0;
-    // SAFETY: `PR_GET_CHILD_SUBREAPER` escreve um `int` no ponteiro, que é de `v`.
+    // SAFETY: `PR_GET_CHILD_SUBREAPER` writes an `int` through the pointer, which is `v`'s.
     let r = unsafe {
         libc::prctl(
             libc::PR_GET_CHILD_SUBREAPER,
@@ -1405,7 +1424,7 @@ pub(crate) fn virar_subreaper() -> io::Result<()> {
         )
     };
     if r != 0 {
-        return Err(erro_os());
+        return Err(os_error());
     }
     if v != 1 {
         return Err(io::Error::other("PR_SET_CHILD_SUBREAPER não ficou ligado"));
@@ -1413,23 +1432,24 @@ pub(crate) fn virar_subreaper() -> io::Result<()> {
     Ok(())
 }
 
-/// `getpid()` e `getsid(0)`.
+/// `getpid()` and `getsid(0)`.
 #[allow(unsafe_code)]
-pub(crate) fn pid_e_sessao() -> (libc::pid_t, libc::pid_t) {
-    // SAFETY: `getpid` e `getsid(0)` não têm pré-condição nem ponteiros.
+pub(crate) fn pid_and_session() -> (libc::pid_t, libc::pid_t) {
+    // SAFETY: `getpid` and `getsid(0)` have no precondition and no pointers.
     unsafe { (libc::getpid(), libc::getsid(0)) }
 }
 
-/// Manda `sinal` pelo `pidfd` (`pidfd_send_signal`). `Ok(false)`: o processo já saiu.
+/// Sends `signal` through the `pidfd` (`pidfd_send_signal`). `Ok(false)`: the process has
+/// already exited.
 #[allow(unsafe_code)]
-pub(crate) fn pidfd_sinal(pidfd: BorrowedFd<'_>, sinal: libc::c_int) -> io::Result<bool> {
-    // SAFETY: `pidfd` está aberto pelo empréstimo; `info` nulo é permitido e as flags
-    // são 0.
+pub(crate) fn pidfd_signal(pidfd: BorrowedFd<'_>, signal: libc::c_int) -> io::Result<bool> {
+    // SAFETY: `pidfd` is open through the borrow; a null `info` is allowed and the flags
+    // are 0.
     let r = unsafe {
         libc::syscall(
             libc::SYS_pidfd_send_signal,
             pidfd.as_raw_fd(),
-            sinal,
+            signal,
             std::ptr::null::<libc::siginfo_t>(),
             0 as libc::c_uint,
         )
@@ -1437,7 +1457,7 @@ pub(crate) fn pidfd_sinal(pidfd: BorrowedFd<'_>, sinal: libc::c_int) -> io::Resu
     if r == 0 {
         return Ok(true);
     }
-    let e = erro_os();
+    let e = os_error();
     if e.raw_os_error() == Some(libc::ESRCH) {
         Ok(false)
     } else {
@@ -1445,13 +1465,14 @@ pub(crate) fn pidfd_sinal(pidfd: BorrowedFd<'_>, sinal: libc::c_int) -> io::Resu
     }
 }
 
-/// `waitpid(pid, WNOHANG)`: colhe o filho `pid` se ele já saiu. `true` se colheu.
+/// `waitpid(pid, WNOHANG)`: collects child `pid` if it has already exited. `true` if it
+/// collected.
 #[allow(unsafe_code)]
-pub(crate) fn colher_se_saiu(pid: libc::pid_t) -> bool {
+pub(crate) fn collect_if_exited(pid: libc::pid_t) -> bool {
     if pid <= 0 {
         return false;
     }
     let mut status: libc::c_int = 0;
-    // SAFETY: `status` é local; `pid` > 0 só acerta esse filho (ou dá `ECHILD`).
+    // SAFETY: `status` is local; `pid` > 0 only hits that child (or gives `ECHILD`).
     unsafe { libc::waitpid(pid, &raw mut status, libc::WNOHANG) == pid }
 }

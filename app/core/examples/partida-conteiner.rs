@@ -131,7 +131,7 @@ fn main() {
         status("TracerPid:"),
         sockets_com_cloexec(),
         status("VmLck:"),
-        p.pid_do_pai(),
+        p.parent_pid(),
         nomes.join(",")
     ));
     let _daemon = p.tomar_daemon();

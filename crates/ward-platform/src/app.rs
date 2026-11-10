@@ -26,7 +26,7 @@ pub fn gids() -> io::Result<(u32, u32, u32)> {
 
 /// Larga o grupo do binário setgid: os três gids no real. Sem setgid, não muda nada.
 pub fn largar_grupo() -> io::Result<()> {
-    sys::largar_grupo_efetivo()
+    sys::release_effective_group()
 }
 
 /// `true` quando o processo está dumpable (`PR_GET_DUMPABLE` ≠ 0).
@@ -37,17 +37,17 @@ pub fn dumpable() -> io::Result<bool> {
 /// O valor de `PR_GET_DUMPABLE`: 0, 1 ou 2 (2 depois do `exec` setgid com
 /// `fs.suid_dumpable=2`).
 pub fn valor_dumpable() -> io::Result<i32> {
-    sys::valor_dumpable()
+    sys::dumpable_value()
 }
 
 /// O fd tem `FD_CLOEXEC` (o socket do app não pode ir para os processos do WebKitGTK).
 pub fn tem_cloexec(fd: &impl AsFd) -> io::Result<bool> {
-    sys::tem_cloexec(fd.as_fd())
+    sys::has_cloexec(fd.as_fd())
 }
 
 /// Bloqueia até o outro lado do socket fechar, sem ler nada.
 pub fn esperar_fechamento(fd: &impl AsFd) -> io::Result<()> {
-    sys::esperar_fechamento(fd.as_fd())
+    sys::wait_for_close(fd.as_fd())
 }
 
 /// Por que o pai não parece ser o daemon. Sem conteúdo do `/proc`.
@@ -110,7 +110,7 @@ impl Pai {
 
     /// O mesmo processo continua vivo e continua sendo o pai deste.
     pub fn continua_pai(&self) -> bool {
-        matches!(sys::pidfd_vivo(self.pidfd.as_fd()), Ok(true)) && sys::getppid() == self.pid
+        matches!(sys::pidfd_alive(self.pidfd.as_fd()), Ok(true)) && sys::getppid() == self.pid
     }
 
     /// Lado do app, só para não seguir quando o pai claramente não é o daemon: o pai
@@ -154,7 +154,7 @@ pub fn reexecutar(argumentos: &[OsString], ambiente: &AppEnvironment) -> io::Err
         .env_clear()
         .envs(ambiente.variables())
         .current_dir("/");
-    sys::fechar_fds_no_exec(&mut cmd);
+    sys::close_fds_on_exec(&mut cmd);
     cmd.exec()
 }
 

@@ -24,7 +24,7 @@ use std::fmt;
 use std::io;
 use std::os::unix::ffi::OsStrExt;
 
-use crate::processo::ler_tracer_pid;
+use crate::process::read_tracer_pid;
 use crate::sys;
 
 /// Variáveis que a glibc 2.39 (Ubuntu 24.04) ignora em programas setuid/setgid
@@ -115,8 +115,8 @@ impl std::error::Error for ErroInicio {}
 /// aplicar. Com o processo não-dumpable o kernel também não gera core, mesmo com o
 /// `core_pattern` apontando para um programa (apport, systemd-coredump).
 pub fn endurecer_processo() -> io::Result<()> {
-    sys::desligar_dumpable()?;
-    sys::zerar_rlimit_core()?;
+    sys::disable_dumpable()?;
+    sys::zero_rlimit_core()?;
     if sys::rlimit_core()? != (0, 0) {
         return Err(io::Error::other("RLIMIT_CORE não ficou em 0"));
     }
@@ -129,7 +129,7 @@ pub fn conferir_ambiente_proprio() -> Result<(), ErroInicio> {
         return Err(ErroInicio::VariavelInsegura(nome));
     }
     let status = std::fs::read("/proc/self/status").map_err(ErroInicio::LerStatus)?;
-    match ler_tracer_pid(&status) {
+    match read_tracer_pid(&status) {
         Some(0) => Ok(()),
         Some(_) => Err(ErroInicio::Depurador),
         None => Err(ErroInicio::LerStatus(io::ErrorKind::InvalidData.into())),
@@ -143,11 +143,7 @@ pub fn iniciar_endurecido() -> Result<Memoria, ErroInicio> {
     endurecer_processo().map_err(ErroInicio::Endurecer)?;
     conferir_ambiente_proprio()?;
     let limite = sys::rlimit_memlock().map(|(atual, _)| atual);
-    decidir_memoria(
-        limite,
-        cfg!(feature = "test-mode"),
-        sys::travar_toda_memoria,
-    )
+    decidir_memoria(limite, cfg!(feature = "test-mode"), sys::lock_all_memory)
 }
 
 /// A regra do D62, separada das chamadas ao sistema para o teste cobrir os dois builds:

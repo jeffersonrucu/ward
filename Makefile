@@ -603,7 +603,7 @@ test-socket-attacks: origins
 
 ## test-nm: Fase 40 (V6.1; D5, D9, D47): o `ward-nm` de teste aberto à mão fica agente
 ## e não recebe segredo; com o Chrome real (headless, perfil temporário em .dev/nm.*,
-## manifesto só nele) o host é filho direto do navegador, o `conferir_pai` aceita esse
+## manifesto só nele) o host é filho direto do navegador, o `verify_parent` aceita esse
 ## pai e recusa outro, e o host responde pelo Chrome. Daemon de teste só dele (cópia do
 ## cofre, socket próprio). Precisa de `make dev-vault`, `make dev-variations` e do Chrome
 ## em /opt/google/chrome; fora do `make check`

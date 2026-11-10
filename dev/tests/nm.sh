@@ -8,7 +8,7 @@
 # - Chrome real (headless, perfil temporário em `.dev/nm.*`, extensão de teste carregada
 #   pelo `--remote-debugging-pipe`, manifesto de native messaging só dentro do perfil
 #   temporário): o Chrome abre o host como filho direto do processo do navegador, o
-#   `ProcessoPar::conferir_pai` do daemon aceita esse pai contra
+#   `PeerProcess::verify_parent` do daemon aceita esse pai contra
 #   `/opt/google/chrome/chrome` e recusa o mesmo host aberto por outro processo; o
 #   navegador é dumpable (D47: a conferência pelo `/proc` vale); e o `ward-nm` responde
 #   pelo Chrome (estado, preencher recusado ao agente, mensagem grande demais).

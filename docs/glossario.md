@@ -1898,6 +1898,21 @@ a seção 2 (`ErroResposta::NaoAutorizado` → `ResponseError::Unauthorized`).
 | `Visto` | `Seen` | `TipoResposta` | `ResponseType` |
 | `Operacao` | `Operation` | `ErroEnvelope` | `EnvelopeError` |
 
+Variantes fixadas na m2: Fase 8 (aparecem no `Debug` que os scripts do contêiner e do
+`make test-nm` procuram): `Recusa` → `Refusal` com `UidDiferente` → `UidMismatch`,
+`ProcessoSumiu` → `ProcessVanished`, `SemAcesso` → `NoAccess`, `Leitura` → `Read`,
+`ExeNaoPermitido` → `ExeNotAllowed`, `ExeTrocado` → `ExeSwapped`,
+`InstalacaoNaoConfiavel` → `UntrustedInstall`, `Depurador` → `Debugger`, `VariavelLd` →
+`LdVariable`, `AmbienteGrande` → `LargeEnvironment`, `BibliotecaNaoConfiavel` →
+`UntrustedLibrary`, `PaiNaoPermitido` → `ParentNotAllowed`, `GrupoComum` →
+`CommonGroup`, `PoliticaKernel` → `KernelPolicy`, `PaiDoAppNaoPermitido` →
+`AppParentNotAllowed`; `ClassePar` → `PeerClass` com `App`, `HostExtensao` →
+`ExtensionHost`, `Comum { motivo }` → `Common { reason }`; `ErroExec` → `ExecError` com
+`Sistema` → `System`, `Filho { etapa, errno }` → `Child { step, errno }`; `PontasPai` →
+`ParentEnds` com `Pipes { stdin, stdout, stderr }`, `Pty`, `DebugPipe { commands,
+responses }`; `Stdio::Depuracao` → `Stdio::DebugPipe`; `descendentes::Relatorio` →
+`descendants::Report { killed, remaining }`; `registro()` dos líderes → `record()`.
+
 Funções e métodos não estão listados um a um: o nome sai da seção 2 na ordem do inglês
 (`conferir_arquivo` → `verify_file`, `ler_cofre` → `read_vault`, `codificar_resposta` →
 `encode_response`, `exigir_pin` → `require_pin`). Os poucos fixados por outra seção:

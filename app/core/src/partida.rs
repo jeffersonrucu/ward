@@ -225,7 +225,7 @@ impl Partida {
     }
 
     /// pid do pai (o daemon).
-    pub fn pid_do_pai(&self) -> u32 {
+    pub fn parent_pid(&self) -> u32 {
         self.pai.pid()
     }
 

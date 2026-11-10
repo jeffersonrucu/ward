@@ -64,7 +64,7 @@ const PRAZO_RESTO_DA_SAIDA: Duration = Duration::from_secs(2);
 const PASSO_LEITURA_MS: i32 = 100;
 /// Lote máximo lido da saída do filho antes de mascarar (Fase 28g): a capacidade dos
 /// pipes de saída, para um `write` único que coube no pipe ser mascarado de uma vez.
-pub(crate) const LOTE: usize = child::CAPACIDADE_PIPE_SAIDA;
+pub(crate) const LOTE: usize = child::OUTPUT_PIPE_CAPACITY;
 /// Quadros de entrada guardados à espera do filho ler (pressão de volta na CLI).
 const FILA_ENTRADA: usize = 8;
 /// Locale que o filho recebe quando o da CLI não é UTF-8.

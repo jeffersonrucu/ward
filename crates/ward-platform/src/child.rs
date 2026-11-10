@@ -34,9 +34,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use zeroize::Zeroizing;
 
-use crate::{descendentes, sys};
+use crate::{descendants, sys};
 
-pub use crate::sys::CAPACIDADE_PIPE_SAIDA;
+pub use crate::sys::OUTPUT_PIPE_CAPACITY;
 
 /// `PATH` of glibc's `execvpe` when the environment has none.
 const DEFAULT_PATH: &[u8] = b"/bin:/usr/bin";
@@ -200,19 +200,19 @@ impl Command {
     pub fn launch(&self) -> Result<(Group, Pipes), LaunchError> {
         let (group, ends) = self.launch_with(sys::Stdio::Pipes)?;
         match ends {
-            sys::PontasPai::Pipes {
-                entrada,
-                saida,
-                erro,
+            sys::ParentEnds::Pipes {
+                stdin,
+                stdout,
+                stderr,
             } => Ok((
                 group,
                 Pipes {
-                    stdin: Some(File::from(entrada)),
-                    stdout: Some(File::from(saida)),
-                    stderr: Some(File::from(erro)),
+                    stdin: Some(File::from(stdin)),
+                    stdout: Some(File::from(stdout)),
+                    stderr: Some(File::from(stderr)),
                 },
             )),
-            sys::PontasPai::Pty | sys::PontasPai::Depuracao { .. } => {
+            sys::ParentEnds::Pty | sys::ParentEnds::DebugPipe { .. } => {
                 Err(LaunchError::System(io::ErrorKind::InvalidData))
             }
         }
@@ -223,16 +223,16 @@ impl Command {
     /// child (`--remote-debugging-pipe`). No TCP port; the daemon's ends are `CLOEXEC`,
     /// so no other child inherits them.
     pub fn launch_with_debugging(&self) -> Result<(Group, DebugPipe), LaunchError> {
-        let (group, ends) = self.launch_with(sys::Stdio::Depuracao)?;
+        let (group, ends) = self.launch_with(sys::Stdio::DebugPipe)?;
         match ends {
-            sys::PontasPai::Depuracao {
-                comandos,
-                respostas,
+            sys::ParentEnds::DebugPipe {
+                commands,
+                responses,
             } => Ok((
                 group,
                 DebugPipe {
-                    commands: File::from(comandos),
-                    responses: File::from(respostas),
+                    commands: File::from(commands),
+                    responses: File::from(responses),
                 },
             )),
             _ => Err(LaunchError::System(io::ErrorKind::InvalidData)),
@@ -243,8 +243,8 @@ impl Command {
     /// is the leader of a new session with the slave as controlling terminal on 0, 1 and
     /// 2, and the window size already holds at `exec`. The daemon keeps only the master.
     pub fn launch_in_pty(&self, rows: u16, cols: u16) -> Result<(Group, Pty), LaunchError> {
-        let (master, slave) = sys::abrir_pty().map_err(|e| LaunchError::System(e.kind()))?;
-        sys::definir_janela(std::os::fd::AsFd::as_fd(&master), rows, cols)
+        let (master, slave) = sys::open_pty().map_err(|e| LaunchError::System(e.kind()))?;
+        sys::set_window_size(std::os::fd::AsFd::as_fd(&master), rows, cols)
             .map_err(|e| LaunchError::System(e.kind()))?;
         let (group, _) = self.launch_with(sys::Stdio::Pty(slave))?;
         Ok((
@@ -255,7 +255,7 @@ impl Command {
         ))
     }
 
-    fn launch_with(&self, stdio: sys::Stdio) -> Result<(Group, sys::PontasPai), LaunchError> {
+    fn launch_with(&self, stdio: sys::Stdio) -> Result<(Group, sys::ParentEnds), LaunchError> {
         let paths = self.paths();
         let ptr = |v: &Zeroizing<Vec<u8>>| v.as_ptr().cast::<libc::c_char>();
         let c_list: Vec<*const libc::c_char> = paths.iter().map(ptr).collect();
@@ -265,15 +265,15 @@ impl Command {
         envp.push(std::ptr::null());
         let cwd = CStr::from_bytes_with_nul(&self.cwd)
             .map_err(|_| LaunchError::System(io::ErrorKind::InvalidInput))?;
-        let preparation = sys::PreparoExec {
-            caminhos: &c_list,
+        let preparation = sys::ExecPreparation {
+            paths: &c_list,
             argv: &argv,
             envp: &envp,
             cwd,
         };
         // Phase 55: the registry stays locked from the `fork` to the registration, so the
         // sweep at the end of a session never sees the new leader as an ownerless orphan.
-        let mut leaders = descendentes::registro();
+        let mut leaders = descendants::record();
         match sys::fork_exec(&preparation, stdio) {
             Ok(f) => {
                 leaders.push(f.pid);
@@ -284,13 +284,13 @@ impl Command {
                         collected: Mutex::new(false),
                         leftovers: AtomicUsize::new(0),
                     },
-                    f.pontas,
+                    f.ends,
                 ))
             }
-            Err(sys::ErroExec::Sistema(e)) => Err(LaunchError::System(e.kind())),
-            Err(sys::ErroExec::Filho { etapa, errno }) => Err(match etapa {
-                sys::ETAPA_DIRETORIO => LaunchError::Directory(errno),
-                sys::ETAPA_EXEC => LaunchError::Program(errno),
+            Err(sys::ExecError::System(e)) => Err(LaunchError::System(e.kind())),
+            Err(sys::ExecError::Child { step, errno }) => Err(match step {
+                sys::STEP_DIRECTORY => LaunchError::Directory(errno),
+                sys::STEP_EXEC => LaunchError::Program(errno),
                 _ => LaunchError::Preparation(errno),
             }),
         }
@@ -323,7 +323,7 @@ impl Pty {
     /// New window size (the kernel notifies the foreground group with `SIGWINCH`).
     pub fn set_window_size(&self, rows: u16, cols: u16) -> io::Result<()> {
         use std::os::fd::AsFd;
-        sys::definir_janela(self.master.as_fd(), rows, cols)
+        sys::set_window_size(self.master.as_fd(), rows, cols)
     }
 }
 
@@ -349,12 +349,12 @@ impl End {
 /// should stop (a grandchild outside the group can hold the pipe open forever).
 pub fn ready_to_read(f: &File, wait_ms: i32) -> io::Result<bool> {
     use std::os::fd::AsFd;
-    sys::esperar_leitura(f.as_fd(), wait_ms)
+    sys::wait_readable(f.as_fd(), wait_ms)
 }
 
 /// Like [`ready_to_read`], for any fd (the SSH agent socket, Phase 27).
 pub fn ready_to_read_fd(fd: std::os::fd::BorrowedFd<'_>, wait_ms: i32) -> io::Result<bool> {
-    sys::esperar_leitura(fd, wait_ms)
+    sys::wait_readable(fd, wait_ms)
 }
 
 /// The process group of the child (the child is the leader). Can be used from several
@@ -381,7 +381,7 @@ impl Group {
     /// Waits for the child to end, without collecting: until collected, the group keeps
     /// this id.
     pub fn wait_for_end(&self) -> io::Result<()> {
-        sys::esperar_sem_colher(self.pid)
+        sys::wait_without_collecting(self.pid)
     }
 
     /// `SIGKILL` to the whole group (the child and what it created in the same group).
@@ -389,7 +389,7 @@ impl Group {
     pub fn kill(&self) {
         let collected = self.collected.lock().unwrap_or_else(|e| e.into_inner());
         if !*collected {
-            let _ = sys::matar_grupo(self.pid);
+            let _ = sys::kill_group(self.pid);
         }
     }
 
@@ -401,13 +401,13 @@ impl Group {
     /// process (another uid, another session that did not come out of a daemon session)
     /// gets nothing. After collected, does nothing. What was left alive goes to
     /// [`Group::remaining`].
-    pub fn kill_with_child_sessions(&self) -> descendentes::Relatorio {
+    pub fn kill_with_child_sessions(&self) -> descendants::Report {
         let collected = self.collected.lock().unwrap_or_else(|e| e.into_inner());
         if *collected {
-            return descendentes::Relatorio::default();
+            return descendants::Report::default();
         }
-        let r = descendentes::matar_sessao(Some(self.pid));
-        self.leftovers.store(r.sobraram, Ordering::SeqCst);
+        let r = descendants::kill_session(Some(self.pid));
+        self.leftovers.store(r.remaining, Ordering::SeqCst);
         r
     }
 
@@ -426,8 +426,8 @@ impl Group {
         }
         // Phase 55: leaves the leaders registry together with the collection (the pid may
         // go to another process right after).
-        let mut leaders = descendentes::registro();
-        let status = sys::colher(self.pid)?;
+        let mut leaders = descendants::record();
+        let status = sys::collect(self.pid)?;
         leaders.retain(|p| *p != self.pid);
         drop(leaders);
         *collected = true;
@@ -705,7 +705,7 @@ mod tests {
     #[test]
     fn attack_daemon_fd_does_not_reach_the_child() {
         let f = File::open("/etc/hostname").unwrap();
-        sys::tirar_cloexec(f.as_fd()).unwrap();
+        sys::clear_cloexec(f.as_fd()).unwrap();
         let (_, out, _) = run(&sh("ls /proc/self/fd"));
         let fds: Vec<String> = String::from_utf8(out)
             .unwrap()
@@ -842,22 +842,19 @@ mod tests {
         assert_eq!(g.collect().unwrap(), End::Signal(libc::SIGKILL));
         std::thread::sleep(Duration::from_millis(300));
         assert!(alive(child), "matar alcançou o filho fora do grupo");
-        let _ = sys::matar_grupo(child);
+        let _ = sys::kill_group(child);
         assert!(dies(child));
 
         // With the fix: both die; the stranger does not.
         let (g, _p, child) = launch();
         let r = g.kill_with_child_sessions();
-        assert_eq!((r.mortos, r.sobraram), (2, 0), "{r:?}");
+        assert_eq!((r.killed, r.remaining), (2, 0), "{r:?}");
         assert_eq!(g.remaining(), 0);
         assert_eq!(g.collect().unwrap(), End::Signal(libc::SIGKILL));
         assert!(dies(child), "o filho com sessão própria sobreviveu");
         assert!(alive(stranger_pid), "um processo de fora levou o sinal");
         // Collected: does nothing.
-        assert_eq!(
-            g.kill_with_child_sessions(),
-            descendentes::Relatorio::default()
-        );
+        assert_eq!(g.kill_with_child_sessions(), descendants::Report::default());
         let _ = stranger.kill();
         let _ = stranger.wait();
     }
@@ -928,14 +925,14 @@ mod tests {
         std::thread::sleep(Duration::from_millis(300));
         assert!(alive(grandchild), "matar alcançou o neto fora do grupo");
         assert!(alive(great_grandchild));
-        let _ = sys::matar_grupo(grandchild);
-        let _ = sys::matar_grupo(great_grandchild);
+        let _ = sys::kill_group(grandchild);
+        let _ = sys::kill_group(great_grandchild);
         assert!(dies(grandchild) && dies(great_grandchild));
 
         // With the fix: all three die, nothing is left.
         let (g, _p, grandchild, great_grandchild) = launch();
         let r = g.kill_with_child_sessions();
-        assert_eq!((r.mortos, r.sobraram), (3, 0), "{r:?}");
+        assert_eq!((r.killed, r.remaining), (3, 0), "{r:?}");
         assert_eq!(g.collect().unwrap(), End::Signal(libc::SIGKILL));
         assert!(dies(grandchild), "o neto fora do grupo sobreviveu");
         assert!(
@@ -957,7 +954,7 @@ mod tests {
         })
         .join()
         .unwrap();
-        let status = sys::colher(pid).unwrap();
+        let status = sys::collect(pid).unwrap();
         assert!(libc::WIFSIGNALED(status));
         assert_eq!(libc::WTERMSIG(status), libc::SIGKILL);
     }
@@ -981,14 +978,14 @@ mod tests {
     fn output_pipes_with_enlarged_capacity() {
         let (g, mut p) = sh("cat >/dev/null").launch().unwrap();
         for f in [p.stdout.as_ref().unwrap(), p.stderr.as_ref().unwrap()] {
-            let c = sys::capacidade_pipe(f.as_fd()).unwrap();
+            let c = sys::pipe_capacity(f.as_fd()).unwrap();
             assert!(
-                c >= CAPACIDADE_PIPE_SAIDA || c == 64 * 1024,
+                c >= OUTPUT_PIPE_CAPACITY || c == 64 * 1024,
                 "capacidade inesperada: {c}"
             );
         }
         // The input is not enlarged (only the output is masked).
-        let e = sys::capacidade_pipe(p.stdin.as_ref().unwrap().as_fd()).unwrap();
+        let e = sys::pipe_capacity(p.stdin.as_ref().unwrap().as_fd()).unwrap();
         assert_eq!(e, 64 * 1024);
         drop(p.stdin.take());
         assert_eq!(g.collect().unwrap(), End::Code(0));
@@ -997,8 +994,7 @@ mod tests {
     /// Does the kernel accept enlarging a new pipe now?
     fn kernel_enlarges_pipe() -> bool {
         let (r, _w) = std::io::pipe().unwrap();
-        sys::ampliar_pipe(r.as_fd(), CAPACIDADE_PIPE_SAIDA)
-            .is_some_and(|c| c >= CAPACIDADE_PIPE_SAIDA)
+        sys::widen_pipe(r.as_fd(), OUTPUT_PIPE_CAPACITY).is_some_and(|c| c >= OUTPUT_PIPE_CAPACITY)
     }
 
     /// Phase 28g, attack of the 2nd M4 audit: a single `write` of `n` filler bytes + the
@@ -1008,7 +1004,7 @@ mod tests {
     fn attack_single_write_above_64_kib_arrives_whole() {
         let mut cases: Vec<usize> = (16_370..16_390).collect();
         cases.extend(65_520..65_540);
-        cases.extend([131_072 - 5, 200_000, CAPACIDADE_PIPE_SAIDA - 40]);
+        cases.extend([131_072 - 5, 200_000, OUTPUT_PIPE_CAPACITY - 40]);
         for n in cases {
             let script =
                 format!("import os\nos.write(1, b'b' * {n} + b'falso-28g-senha-longa\\n')\n");
@@ -1018,7 +1014,7 @@ mod tests {
             let (g, mut p) = c.launch().unwrap();
             drop(p.stdin.take());
             let stdout = p.stdout.take().unwrap();
-            if sys::capacidade_pipe(stdout.as_fd()).unwrap() < CAPACIDADE_PIPE_SAIDA {
+            if sys::pipe_capacity(stdout.as_fd()).unwrap() < OUTPUT_PIPE_CAPACITY {
                 // Only acceptable if the kernel refuses the enlargement now (the user's
                 // page limit); if it accepts on a new pipe, the launch did not enlarge.
                 let _ = g.collect();
@@ -1029,7 +1025,7 @@ mod tests {
                 return;
             }
             assert!(ready_to_read(&stdout, 10_000).unwrap());
-            let mut buf = vec![0u8; CAPACIDADE_PIPE_SAIDA];
+            let mut buf = vec![0u8; OUTPUT_PIPE_CAPACITY];
             let k = (&stdout).read(&mut buf).unwrap();
             assert_eq!(k, n + 22, "n={n}: o write chegou cortado");
             assert_eq!(g.collect().unwrap(), End::Code(0));

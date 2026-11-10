@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 use comum::{DirTeste, Filho, cliente_python, comando_limpo, iniciar, permitido, python_real};
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use ward_platform::socket::{Escuta, preparar_diretorio};
-use ward_platform::{BinarioPermitido, ClassePar, Instalacao, PoliticaKernel, ProcessoPar, Recusa};
+use ward_platform::{AllowedBinary, Instalacao, PeerClass, PeerProcess, PoliticaKernel, Refusal};
 use ward_platform::{RecusaServidor, ServidorEsperado, conectar_servidor, conferir_servidor};
 
 fn escutar() -> (DirTeste, Escuta) {
@@ -36,16 +36,16 @@ fn escutar() -> (DirTeste, Escuta) {
 }
 
 /// Sobe o cliente, espera conectar e devolve a conexão aceita.
-fn conectar(escuta: &Escuta, cmd: std::process::Command) -> (Filho, ProcessoPar) {
+fn conectar(escuta: &Escuta, cmd: std::process::Command) -> (Filho, PeerProcess) {
     let mut filho = iniciar(cmd);
     filho.esperar("conectado");
     let conexao = escuta.aceitar().unwrap();
-    assert_eq!(conexao.par.credenciais().pid, filho.pid());
+    assert_eq!(conexao.par.credentials().pid, filho.pid());
     (filho, conexao.par)
 }
 
-fn inexistente() -> BinarioPermitido {
-    BinarioPermitido::novo("/usr/local/bin/ward-falso-nao-instalado").unwrap()
+fn inexistente() -> AllowedBinary {
+    AllowedBinary::new("/usr/local/bin/ward-falso-nao-instalado").unwrap()
 }
 
 /// gid que nenhum processo do teste tem.
@@ -61,7 +61,7 @@ fn inst_app(gid: u32) -> Instalacao {
 }
 
 /// "Grupo do host" = `gid`, com o "Chrome" `chrome`.
-fn inst_host(gid: u32, chrome: BinarioPermitido) -> Instalacao {
+fn inst_host(gid: u32, chrome: AllowedBinary) -> Instalacao {
     Instalacao::de_teste(GID_NENHUM, gid, chrome)
 }
 
@@ -84,23 +84,23 @@ fn binario_instalado_e_identificado() {
     let (_d, escuta) = escutar();
     let py = python_real();
     let (filho, par) = conectar(&escuta, cliente_python(&py, escuta.caminho(), None));
-    assert_eq!(par.identificar(&permitido(&py)), Ok(()));
-    assert_eq!(par.reconferir_sem_depurador(), Ok(()));
+    assert_eq!(par.identify(&permitido(&py)), Ok(()));
+    assert_eq!(par.reverify_no_debugger(), Ok(()));
     // D47: o egid do cliente é o "grupo do app" e o pai é este processo (o "daemon").
-    let egid = par.credenciais().gid;
+    let egid = par.credentials().gid;
     assert_eq!(
-        par.classificar(&inst_app(egid), &politica_ok()),
-        ClassePar::App
+        par.classify(&inst_app(egid), &politica_ok()),
+        PeerClass::App
     );
     // Outro gid no grupo do app: comum (agente), mesmo com o exe instalado.
     assert_eq!(
-        par.classificar(&inst_app(egid.wrapping_add(7)), &politica_ok()),
-        ClassePar::Comum {
-            motivo: Recusa::GrupoComum
+        par.classify(&inst_app(egid.wrapping_add(7)), &politica_ok()),
+        PeerClass::Common {
+            reason: Refusal::CommonGroup
         }
     );
     // Cadeia para exibir: termina no cliente, e o teste está antes dele.
-    let cadeia = par.cadeia();
+    let cadeia = par.chain();
     assert_eq!(cadeia.last().unwrap().pid, filho.pid());
     assert!(cadeia.iter().any(|e| e.pid == std::process::id()));
     filho.encerrar();
@@ -114,13 +114,13 @@ fn ataque_binario_copiado_para_fora_da_instalacao() {
     let (_d, escuta) = escutar();
     let (filho, par) = conectar(&escuta, cliente_python(&copia, escuta.caminho(), None));
     assert_eq!(
-        par.identificar(&permitido(&python_real())),
-        Err(Recusa::ExeNaoPermitido)
+        par.identify(&permitido(&python_real())),
+        Err(Refusal::ExeNotAllowed)
     );
     // Nem pondo a cópia como "permitida": ela não é do root.
     assert_eq!(
-        par.identificar(&permitido(&copia)),
-        Err(Recusa::InstalacaoNaoConfiavel)
+        par.identify(&permitido(&copia)),
+        Err(Refusal::UntrustedInstall)
     );
     filho.encerrar();
     let _ = std::fs::remove_file(&copia);
@@ -140,8 +140,8 @@ fn ataque_variaveis_ld_no_ambiente() {
         cmd.env(nome, valor);
         let (filho, par) = conectar(&escuta, cmd);
         assert_eq!(
-            par.identificar(&permitido(&py)),
-            Err(Recusa::VariavelLd(match nome {
+            par.identify(&permitido(&py)),
+            Err(Refusal::LdVariable(match nome {
                 "LD_PRELOAD" => "LD_PRELOAD",
                 "LD_AUDIT" => "LD_AUDIT",
                 _ => "LD_LIBRARY_PATH",
@@ -162,8 +162,8 @@ fn ataque_biblioteca_de_usuario_sem_variavel() {
     let py = python_real();
     let (filho, par) = conectar(&escuta, cliente_python(&py, escuta.caminho(), Some(&lib)));
     assert_eq!(
-        par.identificar(&permitido(&py)),
-        Err(Recusa::BibliotecaNaoConfiavel)
+        par.identify(&permitido(&py)),
+        Err(Refusal::UntrustedLibrary)
     );
     filho.encerrar();
     let _ = std::fs::remove_file(&lib);
@@ -183,13 +183,13 @@ fn ataque_cliente_sob_strace() {
     let mut filho = iniciar(cmd);
     filho.esperar("conectado");
     let par = escuta.aceitar().unwrap().par;
-    assert_eq!(par.identificar(&permitido(&py)), Err(Recusa::Depurador));
-    assert_eq!(par.reconferir_sem_depurador(), Err(Recusa::Depurador));
+    assert_eq!(par.identify(&permitido(&py)), Err(Refusal::Debugger));
+    assert_eq!(par.reverify_no_debugger(), Err(Refusal::Debugger));
     // D47: com o grupo do app, mas sob depurador, fica agente.
     assert_eq!(
-        par.classificar(&inst_app(par.credenciais().gid), &politica_ok()),
-        ClassePar::Comum {
-            motivo: Recusa::Depurador
+        par.classify(&inst_app(par.credentials().gid), &politica_ok()),
+        PeerClass::Common {
+            reason: Refusal::Debugger
         }
     );
     filho.encerrar();
@@ -203,8 +203,8 @@ fn ataque_processo_que_sai_antes_da_conferencia() {
     drop(filho.filho.stdin.take());
     filho.filho.wait().unwrap();
     // O pid pode até ser reaproveitado; o pidfd não.
-    assert_eq!(par.identificar(&permitido(&py)), Err(Recusa::ProcessoSumiu));
-    assert_eq!(par.reconferir_sem_depurador(), Err(Recusa::ProcessoSumiu));
+    assert_eq!(par.identify(&permitido(&py)), Err(Refusal::ProcessVanished));
+    assert_eq!(par.reverify_no_debugger(), Err(Refusal::ProcessVanished));
 }
 
 #[test]
@@ -214,26 +214,26 @@ fn host_da_extensao_exige_o_pai_permitido() {
     filho.esperar("conectado");
     let par = escuta.aceitar().unwrap().par;
     let bash = permitido(Path::new("/usr/bin/bash"));
-    let egid = par.credenciais().gid;
-    assert_eq!(par.conferir_pai(&bash), Ok(()));
+    let egid = par.credentials().gid;
+    assert_eq!(par.verify_parent(&bash), Ok(()));
     assert_eq!(
-        par.classificar(&inst_host(egid, bash.clone()), &politica_ok()),
-        ClassePar::HostExtensao
+        par.classify(&inst_host(egid, bash.clone()), &politica_ok()),
+        PeerClass::ExtensionHost
     );
     // Pai que não é o "Chrome" permitido.
     let sleep = permitido(Path::new("/usr/bin/sleep"));
-    assert_eq!(par.conferir_pai(&sleep), Err(Recusa::PaiNaoPermitido));
+    assert_eq!(par.verify_parent(&sleep), Err(Refusal::ParentNotAllowed));
     assert_eq!(
-        par.classificar(&inst_host(egid, sleep), &politica_ok()),
-        ClassePar::Comum {
-            motivo: Recusa::PaiNaoPermitido
+        par.classify(&inst_host(egid, sleep), &politica_ok()),
+        PeerClass::Common {
+            reason: Refusal::ParentNotAllowed
         }
     );
     // Com o grupo do app e o bash de pai: só o daemon é pai aceito (D57).
     assert_eq!(
-        par.classificar(&inst_app(egid), &politica_ok()),
-        ClassePar::Comum {
-            motivo: Recusa::PaiDoAppNaoPermitido
+        par.classify(&inst_app(egid), &politica_ok()),
+        PeerClass::Common {
+            reason: Refusal::AppParentNotAllowed
         }
     );
     filho.encerrar();
@@ -246,11 +246,11 @@ fn host_da_extensao_sem_pai_permitido_quando_o_pai_e_o_teste() {
     let py = python_real();
     let (filho, par) = conectar(&escuta, cliente_python(&py, escuta.caminho(), None));
     let eu = permitido(&std::env::current_exe().unwrap());
-    assert_eq!(par.conferir_pai(&eu), Err(Recusa::PaiNaoPermitido));
+    assert_eq!(par.verify_parent(&eu), Err(Refusal::ParentNotAllowed));
     assert_eq!(
-        par.classificar(&inst_host(par.credenciais().gid, eu), &politica_ok()),
-        ClassePar::Comum {
-            motivo: Recusa::PaiNaoPermitido
+        par.classify(&inst_host(par.credentials().gid, eu), &politica_ok()),
+        PeerClass::Common {
+            reason: Refusal::ParentNotAllowed
         }
     );
     filho.encerrar();
@@ -262,7 +262,7 @@ fn ataque_ptrace_scope_0_ou_suid_dumpable_1_desliga_os_papeis() {
     let (_d, escuta) = escutar();
     let py = python_real();
     let (filho, par) = conectar(&escuta, cliente_python(&py, escuta.caminho(), None));
-    let egid = par.credenciais().gid;
+    let egid = par.credentials().gid;
     for politica in [
         PoliticaKernel::simulada(Some(0), Some(0)),
         PoliticaKernel::simulada(Some(1), Some(1)),
@@ -273,9 +273,9 @@ fn ataque_ptrace_scope_0_ou_suid_dumpable_1_desliga_os_papeis() {
             inst_host(egid, permitido(Path::new("/usr/bin/bash"))),
         ] {
             assert_eq!(
-                par.classificar(&inst, &politica),
-                ClassePar::Comum {
-                    motivo: Recusa::PoliticaKernel
+                par.classify(&inst, &politica),
+                PeerClass::Common {
+                    reason: Refusal::KernelPolicy
                 },
                 "{politica:?}"
             );
@@ -301,17 +301,17 @@ fn ataque_namespace_de_usuario_nao_forja_o_grupo() {
         .arg(escuta.caminho());
     let (filho, par) = conectar(&escuta, cmd);
     let meu_gid = std::fs::metadata("/proc/self").unwrap().gid();
-    assert_eq!(par.credenciais().gid, meu_gid);
-    assert_eq!(par.credenciais().uid, ward_platform::effective_uid());
+    assert_eq!(par.credentials().gid, meu_gid);
+    assert_eq!(par.credentials().uid, ward_platform::effective_uid());
     assert_eq!(
-        par.classificar(&inst_app(GID_NENHUM - 1), &politica_ok()),
-        ClassePar::Comum {
-            motivo: Recusa::GrupoComum
+        par.classify(&inst_app(GID_NENHUM - 1), &politica_ok()),
+        PeerClass::Common {
+            reason: Refusal::CommonGroup
         }
     );
     assert!(matches!(
-        par.classificar(&inst_host(0, inexistente()), &politica_ok()),
-        ClassePar::Comum { .. }
+        par.classify(&inst_host(0, inexistente()), &politica_ok()),
+        PeerClass::Common { .. }
     ));
     filho.encerrar();
 }
@@ -416,12 +416,12 @@ fn app_de_teste_sem_egid_so_com_o_pai_daemon() {
     let (_d, escuta) = escutar();
     let py = python_real();
     let (filho, par) = conectar(&escuta, cliente_python(&py, escuta.caminho(), None));
-    assert_eq!(par.classificar_app_de_teste(), ClassePar::App);
+    assert_eq!(par.classify_test_app(), PeerClass::App);
     // Pelo grupo (release), o mesmo par sem o egid do app é comum.
     assert_eq!(
-        par.classificar(&inst_app(GID_NENHUM), &politica_ok()),
-        ClassePar::Comum {
-            motivo: Recusa::GrupoComum
+        par.classify(&inst_app(GID_NENHUM), &politica_ok()),
+        PeerClass::Common {
+            reason: Refusal::CommonGroup
         }
     );
     drop(filho);
@@ -430,9 +430,9 @@ fn app_de_teste_sem_egid_so_com_o_pai_daemon() {
     filho.esperar("conectado");
     let par = escuta.aceitar().unwrap().par;
     assert_eq!(
-        par.classificar_app_de_teste(),
-        ClassePar::Comum {
-            motivo: Recusa::PaiDoAppNaoPermitido
+        par.classify_test_app(),
+        PeerClass::Common {
+            reason: Refusal::AppParentNotAllowed
         }
     );
 }
@@ -450,22 +450,22 @@ fn ataque_host_extensao_de_teste_so_com_o_pai_chrome() {
     // O pai é o bash: com o "Chrome" = bash, passa; o egid não conta.
     let bash = permitido(Path::new("/usr/bin/bash"));
     assert_eq!(
-        par.classificar_host_extensao_de_teste(&bash, &politica_ok()),
-        ClassePar::HostExtensao
+        par.classify_test_extension_host(&bash, &politica_ok()),
+        PeerClass::ExtensionHost
     );
     // Pelo grupo (release), o mesmo par sem o egid do host é comum.
     assert_eq!(
-        par.classificar(&inst_host(GID_NENHUM, bash.clone()), &politica_ok()),
-        ClassePar::Comum {
-            motivo: Recusa::GrupoComum
+        par.classify(&inst_host(GID_NENHUM, bash.clone()), &politica_ok()),
+        PeerClass::Common {
+            reason: Refusal::CommonGroup
         }
     );
     // Outro "Chrome" (outro exe): pai não permitido.
     for outro in [permitido(Path::new("/usr/bin/sleep")), inexistente()] {
         assert_eq!(
-            par.classificar_host_extensao_de_teste(&outro, &politica_ok()),
-            ClassePar::Comum {
-                motivo: Recusa::PaiNaoPermitido
+            par.classify_test_extension_host(&outro, &politica_ok()),
+            PeerClass::Common {
+                reason: Refusal::ParentNotAllowed
             }
         );
     }
@@ -475,9 +475,9 @@ fn ataque_host_extensao_de_teste_so_com_o_pai_chrome() {
         PoliticaKernel::simulada(Some(1), Some(1)),
     ] {
         assert_eq!(
-            par.classificar_host_extensao_de_teste(&bash, &politica),
-            ClassePar::Comum {
-                motivo: Recusa::PoliticaKernel
+            par.classify_test_extension_host(&bash, &politica),
+            PeerClass::Common {
+                reason: Refusal::KernelPolicy
             }
         );
     }
@@ -487,9 +487,9 @@ fn ataque_host_extensao_de_teste_so_com_o_pai_chrome() {
     let py = python_real();
     let (filho, par) = conectar(&escuta, cliente_python(&py, escuta.caminho(), None));
     assert_eq!(
-        par.classificar_host_extensao_de_teste(&bash, &politica_ok()),
-        ClassePar::Comum {
-            motivo: Recusa::PaiNaoPermitido
+        par.classify_test_extension_host(&bash, &politica_ok()),
+        PeerClass::Common {
+            reason: Refusal::ParentNotAllowed
         }
     );
     drop(filho);

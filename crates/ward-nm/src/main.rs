@@ -61,12 +61,12 @@ impl DaemonSocket {
 /// tem de ser não-dumpable, como o `wardd` (a mesma regra da CLI de teste).
 #[cfg(feature = "test-mode")]
 fn conferir_extra(s: &UnixStream) -> Result<(), FalhaDaemon> {
-    let par = ward_platform::ProcessoPar::do_socket(s).map_err(|_| FalhaDaemon::Indisponivel)?;
-    match std::fs::read_link(format!("/proc/{}/exe", par.credenciais().pid)) {
+    let par = ward_platform::PeerProcess::from_socket(s).map_err(|_| FalhaDaemon::Indisponivel)?;
+    match std::fs::read_link(format!("/proc/{}/exe", par.credentials().pid)) {
         Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {}
         _ => return Err(FalhaDaemon::Indisponivel),
     }
-    par.reconferir_sem_depurador()
+    par.reverify_no_debugger()
         .map_err(|_| FalhaDaemon::Indisponivel)
 }
 

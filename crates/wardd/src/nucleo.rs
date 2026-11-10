@@ -220,17 +220,17 @@ impl Estado {
             }
             // Fase 55 (S8): o que saiu de uma sessão com `setsid` e ficou filho do
             // daemon morre também, haja sessão em curso ou não.
-            let orfaos = ward_platform::descendentes::matar_orfaos();
-            if orfaos.mortos > 0 {
+            let orfaos = ward_platform::descendants::kill_orphans();
+            if orfaos.killed > 0 {
                 aviso!(
                     "{} processo(s) fora do grupo de um ward run/ssh encerrado(s) ao travar (S8)",
-                    orfaos.mortos
+                    orfaos.killed
                 );
             }
-            if orfaos.sobraram > 0 {
+            if orfaos.remaining > 0 {
                 aviso!(
                     "{} processo(s) fora do grupo continuam vivos depois da trava (S8)",
-                    orfaos.sobraram
+                    orfaos.remaining
                 );
             }
             self.identidade_conhecida = a.identidade;

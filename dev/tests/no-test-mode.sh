@@ -80,7 +80,7 @@ conferir() {
 TEXTOS=(WARD_DEV_APP WARD_DEV_DIR WARD_DEV_SOCKET_DIR WARD_DEV_EXTENSAO wardd-app-teste wardd-aprovador-teste ward-ponte-teste)
 conferir "$RLIB" "${TEXTOS[@]}"
 conferir "$ALVO/release/ward-nm" "${TEXTOS[@]}"
-conferir "$ALVO/release/wardd" "${TEXTOS[@]}" classificar_app_de_teste classificar_host_extensao_de_teste \
+conferir "$ALVO/release/wardd" "${TEXTOS[@]}" classify_test_app classify_test_extension_host \
     TestBinary launch_for_test
 # O binário conferido é mesmo o daemon (tem o socket do sistema).
 grep -qF -- '/run/ward' "$TMP/textos" || {

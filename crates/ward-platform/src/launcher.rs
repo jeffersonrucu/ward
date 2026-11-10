@@ -54,7 +54,7 @@ use std::process::{Child, Command, ExitStatus, Stdio};
 
 use crate::endurecimento::nome_para_mensagem;
 use crate::papel::Instalacao;
-use crate::processo::{BinarioPermitido, caminho_absoluto_simples, conferir_arquivo_do_root};
+use crate::process::{AllowedBinary, simple_absolute_path, verify_root_file};
 use crate::sys;
 
 /// `PATH` of the app.
@@ -210,7 +210,7 @@ fn session_dir(uid: u32) -> PathBuf {
 /// are left out). Nothing else from this process's environment gets in.
 pub fn app_environment() -> Result<AppEnvironment, SessionError> {
     let uid = sys::geteuid();
-    let home = sys::home_do_uid(uid).map_err(|_| SessionError::HomeUnavailable)?;
+    let home = sys::uid_home(uid).map_err(|_| SessionError::HomeUnavailable)?;
     let locale = LOCALE_VARIABLES
         .iter()
         .filter_map(|&name| {
@@ -235,7 +235,7 @@ fn build(
         return Err(SessionError::UntrustedBus);
     }
     let home = home.to_str().ok_or(SessionError::HomeUnavailable)?;
-    if !caminho_absoluto_simples(Path::new(home)) {
+    if !simple_absolute_path(Path::new(home)) {
         return Err(SessionError::HomeUnavailable);
     }
     let rt_text = rt.to_str().ok_or(SessionError::UntrustedRuntime)?;
@@ -272,7 +272,7 @@ pub fn valid_locale(v: &[u8]) -> bool {
 /// root or to the uid and are not writable by group and others.
 fn verify_session_dir(rt: &Path, uid: u32) -> Result<(), SessionError> {
     let bad = SessionError::UntrustedRuntime;
-    if !caminho_absoluto_simples(rt) {
+    if !simple_absolute_path(rt) {
         return Err(bad);
     }
     let m = std::fs::symlink_metadata(rt).map_err(|_| SessionError::UntrustedRuntime)?;
@@ -333,7 +333,7 @@ where
     I: IntoIterator<Item = (OsString, OsString)>,
 {
     let uid = sys::geteuid();
-    let home = sys::home_do_uid(uid).map_err(|_| SessionError::HomeUnavailable)?;
+    let home = sys::uid_home(uid).map_err(|_| SessionError::HomeUnavailable)?;
     verify_in(received, &session_dir(uid), uid, &home)
 }
 
@@ -446,17 +446,14 @@ pub struct Launcher {
 #[derive(Debug)]
 enum Origin {
     /// The installed `ward-app`: root's, setgid of the `ward-app` group, D57 environment.
-    Installed {
-        binary: BinarioPermitido,
-        app_gid: u32,
-    },
+    Installed { binary: AllowedBinary, app_gid: u32 },
     /// Only in `test-mode` (D63): the `WARD_DEV_APP` of the test daemon.
     #[cfg(feature = "test-mode")]
     Test(TestBinary),
 }
 
 impl Launcher {
-    pub fn new(binary: BinarioPermitido, inst: &Instalacao) -> Launcher {
+    pub fn new(binary: AllowedBinary, inst: &Instalacao) -> Launcher {
         Launcher::from_origin(Origin::Installed {
             binary,
             app_gid: inst.gid_app(),
@@ -502,7 +499,7 @@ impl Launcher {
     pub fn is_launched_app(&self, pid: u32) -> bool {
         match (&self.child, &self.pidfd) {
             (Some(f), Some(fd)) => {
-                f.id() == pid && pid != 0 && sys::pidfd_vivo(fd.as_fd()).unwrap_or(false)
+                f.id() == pid && pid != 0 && sys::pidfd_alive(fd.as_fd()).unwrap_or(false)
             }
             _ => false,
         }
@@ -531,7 +528,7 @@ impl Launcher {
             Origin::Installed { binary, app_gid } => {
                 verify_app_binary(binary, *app_gid)?;
                 let env = app_environment().map_err(LauncherError::Session)?;
-                launch(binary.caminho(), &env).map_err(|e| LauncherError::Io(e.kind()))?
+                launch(binary.path(), &env).map_err(|e| LauncherError::Io(e.kind()))?
             }
             #[cfg(feature = "test-mode")]
             Origin::Test(t) => t.launch()?,
@@ -558,9 +555,8 @@ impl Launcher {
 
 /// Binary owned by root, not writable by group/others (the whole path), setgid of the
 /// app group.
-fn verify_app_binary(binary: &BinarioPermitido, app_gid: u32) -> Result<(), LauncherError> {
-    let meta =
-        conferir_arquivo_do_root(binary.caminho()).map_err(|()| LauncherError::UntrustedBinary)?;
+fn verify_app_binary(binary: &AllowedBinary, app_gid: u32) -> Result<(), LauncherError> {
+    let meta = verify_root_file(binary.path()).map_err(|()| LauncherError::UntrustedBinary)?;
     if meta.mode() & 0o2000 == 0 || meta.gid() != app_gid {
         return Err(LauncherError::UntrustedBinary);
     }
@@ -577,7 +573,7 @@ fn launch(path: &Path, env: &AppEnvironment) -> io::Result<Child> {
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-    sys::fechar_fds_no_exec(&mut cmd);
+    sys::close_fds_on_exec(&mut cmd);
     cmd.spawn()
 }
 
@@ -596,7 +592,7 @@ pub fn launch_for_test(
         .stdin(Stdio::null())
         .stdout(output.try_clone()?)
         .stderr(output);
-    sys::fechar_fds_no_exec(&mut cmd);
+    sys::close_fds_on_exec(&mut cmd);
     cmd.spawn()
 }
 
@@ -719,7 +715,7 @@ impl TestBinary {
     /// The checks of the binary (see the type).
     pub fn verify(&self) -> Result<(), TestBinaryError> {
         let uid = sys::geteuid();
-        if !caminho_absoluto_simples(&self.path) || !caminho_absoluto_simples(&self.root) {
+        if !simple_absolute_path(&self.path) || !simple_absolute_path(&self.root) {
             return Err(TestBinaryError::Path);
         }
         self.name()?;
@@ -762,9 +758,9 @@ impl TestBinary {
         let uid = sys::geteuid();
         let rt = session_dir(uid);
         verify_session_dir(&rt, uid)?;
-        let home = sys::home_do_uid(uid).map_err(|_| SessionError::HomeUnavailable)?;
+        let home = sys::uid_home(uid).map_err(|_| SessionError::HomeUnavailable)?;
         let home = home.to_str().ok_or(SessionError::HomeUnavailable)?;
-        if !caminho_absoluto_simples(Path::new(home)) {
+        if !simple_absolute_path(Path::new(home)) {
             return Err(SessionError::HomeUnavailable);
         }
         let mut vars: BTreeMap<&'static str, String> = BTreeMap::new();
@@ -1176,9 +1172,9 @@ mod tests {
 
     #[test]
     fn home_comes_from_passwd() {
-        let h = sys::home_do_uid(sys::geteuid()).unwrap();
+        let h = sys::uid_home(sys::geteuid()).unwrap();
         assert!(h.as_bytes().starts_with(b"/"));
-        assert!(sys::home_do_uid(u32::MAX - 7).is_err());
+        assert!(sys::uid_home(u32::MAX - 7).is_err());
     }
 
     #[test]
@@ -1188,8 +1184,8 @@ mod tests {
         let s = Session::new("filho");
         let env = s.build().unwrap();
         let inheritable_fd = fs::File::open("/dev/null").unwrap();
-        sys::tirar_cloexec(inheritable_fd.as_fd()).unwrap();
-        assert!(!sys::tem_cloexec(inheritable_fd.as_fd()).unwrap());
+        sys::clear_cloexec(inheritable_fd.as_fd()).unwrap();
+        assert!(!sys::has_cloexec(inheritable_fd.as_fd()).unwrap());
         let output = s.rt.join("saida");
         let file = fs::File::create(&output).unwrap();
         let mut cmd = Command::new("/usr/bin/sh");
@@ -1200,7 +1196,7 @@ mod tests {
             .current_dir("/")
             .stdin(Stdio::null())
             .stdout(file);
-        sys::fechar_fds_no_exec(&mut cmd);
+        sys::close_fds_on_exec(&mut cmd);
         assert!(cmd.status().unwrap().success());
         let text = fs::read_to_string(&output).unwrap();
         let parts: Vec<&str> = text.split("---\n").collect();
@@ -1239,7 +1235,7 @@ mod tests {
         let s = Session::new("saida");
         let env = s.build().unwrap();
         let mut l = Launcher::from_origin(Origin::Installed {
-            binary: BinarioPermitido::novo("/usr/bin/false").unwrap(),
+            binary: AllowedBinary::new("/usr/bin/false").unwrap(),
             app_gid: 4_000_000,
         });
         assert_eq!(l.take_exit_status(), None);
@@ -1277,7 +1273,7 @@ mod tests {
         let s = Session::new("pidfd");
         let env = s.build().unwrap();
         let mut l = Launcher::from_origin(Origin::Installed {
-            binary: BinarioPermitido::novo("/usr/bin/yes").unwrap(),
+            binary: AllowedBinary::new("/usr/bin/yes").unwrap(),
             app_gid: 4_000_000,
         });
         assert!(!l.is_launched_app(std::process::id()));
@@ -1305,13 +1301,13 @@ mod tests {
     #[test]
     fn attack_user_binary_or_without_setgid_is_refused() {
         let inst_gid = 4_000_000;
-        let me = BinarioPermitido::novo(std::env::current_exe().unwrap()).unwrap();
+        let me = AllowedBinary::new(std::env::current_exe().unwrap()).unwrap();
         assert_eq!(
             verify_app_binary(&me, inst_gid),
             Err(LauncherError::UntrustedBinary)
         );
         // Root's, but without setgid (`/usr/bin/true`).
-        let t = BinarioPermitido::novo("/usr/bin/true").unwrap();
+        let t = AllowedBinary::new("/usr/bin/true").unwrap();
         assert_eq!(
             verify_app_binary(&t, inst_gid),
             Err(LauncherError::UntrustedBinary)
