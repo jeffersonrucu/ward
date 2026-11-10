@@ -1648,7 +1648,7 @@ seis baixos.
     `make teste-ataques-servicos` voltam a sair 0.
   - Aviso na tela "Trocar senha": os backups antigos continuam abrindo com a senha antiga.
   - `make teste-ataques-fundacao` (não rodou na auditoria por falta de disco) roda e sai 0.
-- [ ] Fase 54a — RA8 aceito, docs endurecidos (decisão do usuário, 2026-11-09: "Aceitar e
+- [x] Fase 54a — RA8 aceito, docs endurecidos (decisão do usuário, 2026-11-09: "Aceitar e
   endurecer docs"):
   - `docs/escopo.md`: RA8 sai de "a decidir" e entra em "Fora do modelo de ameaça" (sessão
     gráfica ou shell adulterados por processo do mesmo uid: `ward` falso no `PATH`, proxy
@@ -1658,6 +1658,11 @@ seis baixos.
     `/usr/local/bin/ward`; uma nota explica o porquê.
   - `make teste-skill` e `make teste-migracao` continuam saindo 0 (ajustar as listas se
     preciso).
+  Feita (2026-11-09): RA8 em "Fora do modelo", com o que o caminho completo não fecha
+  (função do shell, alias do zsh). Guias, skill e README usam `/usr/local/bin/ward
+  destravar`. `migracao.py` e `skill.py` têm 7 ataques novos e saíram 0. O `make check`
+  e o `make teste-skill` completo não rodaram, por falta de disco; ficam para a
+  reauditoria.
 - [ ] Fase 54b — Entrada padrão na aprovação (decisão do usuário, 2026-11-09: "Avisar e
   recusar pipe"):
   - A CLI informa ao daemon o tipo da entrada padrão do `ward run`/`ward ssh` (tty, pipe,
@@ -1672,3 +1677,5 @@ seis baixos.
   - Testes de ataque: o `printf <script> | ward run acme-pg-aprovacao -- python3` da
     auditoria final e o `psql` por pipe não tiram nada sem a confirmação; com tty passa
     como antes. Atualizar D/RA no PRD e o contrato (V4.*).
+  - Da 54a: a mensagem de travado da CLI (`crates/ward/src/comandos.rs:143`) passa a dizer
+    `/usr/local/bin/ward destravar`; ajustar o V4.22 e o `teste-cli`.
