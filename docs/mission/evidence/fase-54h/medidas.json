@@ -1,0 +1,126 @@
+{
+ "senha": {
+  "dialogo": {
+   "x": 400,
+   "y": 96,
+   "w": 480,
+   "h": 608
+  },
+  "cabecalho": {
+   "x": 425,
+   "y": 121,
+   "w": 430,
+   "h": 32
+  },
+  "titulo": {
+   "x": 425,
+   "y": 124,
+   "w": 386,
+   "h": 26
+  },
+  "fechar": {
+   "x": 823,
+   "y": 121,
+   "w": 32,
+   "h": 32
+  },
+  "fecharRaio": "6px",
+  "fecharFundo": "rgba(0, 0, 0, 0)",
+  "fecharRotulo": "Fechar",
+  "icone": {
+   "x": 829,
+   "y": 127,
+   "w": 20,
+   "h": 20
+  },
+  "iconeCor": "rgb(154, 161, 174)",
+  "corpo": {
+   "x": 425,
+   "y": 173,
+   "w": 430,
+   "h": 442
+  },
+  "rodape": {
+   "x": 425,
+   "y": 635,
+   "w": 430,
+   "h": 44
+  },
+  "primeiroBotao": {
+   "x": 611.328125,
+   "y": 635,
+   "w": 101.84375,
+   "h": 44
+  },
+  "foco": "trocar-senha-atual",
+  "fechadoPeloX": true,
+  "fechadoPeloEsc": true,
+  "fechadoPeloCancelar": true,
+  "camposVaziosAoReabrir": true
+ },
+ "pin": {
+  "dialogo": {
+   "x": 400,
+   "y": 123,
+   "w": 480,
+   "h": 554
+  },
+  "cabecalho": {
+   "x": 425,
+   "y": 148,
+   "w": 430,
+   "h": 32
+  },
+  "titulo": {
+   "x": 425,
+   "y": 151,
+   "w": 386,
+   "h": 26
+  },
+  "fechar": {
+   "x": 823,
+   "y": 148,
+   "w": 32,
+   "h": 32
+  },
+  "fecharRaio": "6px",
+  "fecharFundo": "rgba(0, 0, 0, 0)",
+  "fecharRotulo": "Fechar",
+  "icone": {
+   "x": 829,
+   "y": 154,
+   "w": 20,
+   "h": 20
+  },
+  "iconeCor": "rgb(154, 161, 174)",
+  "corpo": {
+   "x": 425,
+   "y": 200,
+   "w": 430,
+   "h": 388
+  },
+  "rodape": {
+   "x": 425,
+   "y": 608,
+   "w": 430,
+   "h": 44
+  },
+  "primeiroBotao": {
+   "x": 628.5,
+   "y": 608,
+   "w": 101.84375,
+   "h": 44
+  },
+  "foco": "trocar-pin-atual",
+  "fechadoPeloX": true,
+  "fechadoPeloEsc": true,
+  "fechadoPeloCancelar": true,
+  "camposVaziosAoReabrir": true
+ },
+ "pendrive": {
+  "erro": "TimeoutError"
+ },
+ "errosConsole": [
+  "Failed to load resource: the server responded with a status of 404 (Not Found)"
+ ]
+}

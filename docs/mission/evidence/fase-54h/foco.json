@@ -1,0 +1,18 @@
+{
+ "interruptorPendriveDesabilitado": false,
+ "focoComTab": [
+  "dialogo: trocar-senha-atual",
+  "dialogo: Mostrar Senha mestra atual",
+  "dialogo: trocar-senha-nova",
+  "dialogo: Mostrar Nova senha mestra",
+  "dialogo: trocar-senha-confirmacao",
+  "dialogo: Mostrar Confirmar nova senha",
+  "dialogo: Cancelar",
+  "dialogo: Trocar senha",
+  "fora: <body> (passagem do <dialog> nativo pela barra do navegador)",
+  "dialogo: Fechar",
+  "dialogo: trocar-senha-atual",
+  "dialogo: Mostrar Senha mestra atual"
+ ],
+ "fechadoComEnterNoX": true
+}

@@ -1,0 +1,42 @@
+{
+ "aberto": {
+  "titulo": "Escolher pendrive",
+  "dialogo": {
+   "x": 400,
+   "y": 273,
+   "w": 480,
+   "h": 254
+  },
+  "cabecalho": {
+   "x": 425,
+   "y": 298,
+   "w": 430,
+   "h": 32
+  },
+  "fechar": {
+   "x": 823,
+   "y": 298,
+   "w": 32,
+   "h": 32
+  },
+  "texto": {
+   "x": 425,
+   "y": 350,
+   "w": 430,
+   "h": 88
+  },
+  "foco": "Fechar"
+ },
+ "x": {
+  "fechado": true,
+  "interruptorLigado": false
+ },
+ "esc": {
+  "fechado": true,
+  "interruptorLigado": false
+ },
+ "cancelar": {
+  "fechado": true,
+  "interruptorLigado": false
+ }
+}
