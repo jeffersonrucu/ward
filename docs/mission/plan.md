@@ -1693,7 +1693,13 @@ seis baixos.
     `ssh`/`sshpass` aberta entra no mesmo registro do `ward run` (`SessoesRun`) e leva
     `SIGKILL` no grupo ao travar; a CLI sai 137 com o aviso. Teste de ataque e ajuste do
     V4.26/escopo › S8.
-- [ ] Fase 54d (DESIGN) — Aviso dos backups antigos no FigCraft (achado da Fase 54):
+- [x] Fase 54d (DESIGN) — Aviso dos backups antigos no FigCraft (achado da Fase 54):
   - `Diálogo de troca` › `Tipo=senha mestra` (19918/19924) e `Configurações / Trocar senha
     mestra` (20085/20411) ganham o aviso da tela, com `--cor-aviso-texto`, igual ao app
     (`docs/mission/evidence/fase-54/trocar-senha-aviso.png`).
+  Feita (2026-11-10): explicação `19924` igual à do app e aviso `22962` (`aviso/texto`);
+  herdado na tela `20085` (`22963`). Ids em `design-nodes.md` › "Fase 54d".
+- [ ] Fase 54e — Tamanho dos textos da troca de senha (achado da 54d): o design usa 14/20
+  (`8:12`) na explicação e no aviso; o `TrocarSenha.svelte` usa 13/18. O app passa a
+  `--tamanho-md` com altura de linha 20 nos dois, conferido no Chrome headless contra o
+  frame `20085`.

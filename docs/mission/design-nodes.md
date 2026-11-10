@@ -1232,3 +1232,17 @@ PIN, ações, nota), textos, cores do aviso (`#3F2A06`, borda `#F5B544` a 32%) e
 pedido (prod `#E5484D`, dev `#343A46`), sem diferença. PNG e `medidas.json` em
 `docs/mission/evidence/fase-44e/`. Sem frame para o aviso de `https` de loopback
 (`origemDestaqueLocal`, o mesmo texto sem o "http").
+
+## Fase 54d — aviso dos backups antigos na troca de senha (design)
+
+Editado numa cópia do `Ward.figcraft` aberta pelo MCP `figcraft` headless (as abas do
+caminho original estavam velhas, uma delas suja com a 39d) e salvo por cima do original
+com `save_file` depois de conferir que o sha256 do original não tinha mudado. Texto e
+cor iguais ao app (`TrocarSenha.svelte` › `.aviso`, `--cor-aviso-texto`). PNG em
+`docs/mission/evidence/fase-54d/`.
+
+| Item | Id | O que mudou |
+| --- | --- | --- |
+| `Diálogo de troca` › `Tipo=senha mestra` (componente) | `19918` › `corpo` `19934` | explicação `19924` igual ao app: "A senha atual confirma a troca. Depois dela, o cofre só abre com a nova."; texto novo `aviso backups` `22962` logo abaixo (estilo `8:12`, 14/20; fill `aviso/texto` `6:83`): "Os backups antigos, no computador e no pendrive, continuam abrindo com a senha antiga. Se você troca porque a senha antiga vazou, apague esses backups." |
+| `Diálogo de troca` (set) | `19978` | `Tipo=PIN` `19979` desceu para y 652 e o set cresceu para 1228 de altura (a variante da senha mestra ficou 56 px mais alta) |
+| `Configurações / Trocar senha mestra` (tela) | `20085` › `20411` › `corpo` `20417` | instância herdou a explicação `20418` e o aviso `22963` |
