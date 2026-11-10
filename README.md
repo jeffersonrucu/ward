@@ -134,10 +134,10 @@ verdade, sempre com um cofre de teste e credenciais falsas.
 O Ward roda no Linux (testado no Pop!_OS 24.04 com Wayland) e precisa do Chrome para a
 extensão. Windows e macOS ficam para depois.
 
-Pela release, com o `.deb`:
+Pela [release](https://github.com/jeffersonrucu/ward/releases/latest), com o `.deb`:
 
 ```sh
-sha256sum -c SHA256SUMS
+sha256sum -c SHA256SUMS --ignore-missing
 sudo apt install ./ward_0.1.0_amd64.deb
 ```
 
