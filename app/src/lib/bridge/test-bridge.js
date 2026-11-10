@@ -1,31 +1,32 @@
-// Transporte da ponte de teste (D7). Só entra no build `--mode teste` (dist-teste/).
+// Transport of the test bridge (D7). Only enters the test-mode build.
 //
-// O `ward-test-bridge` serve esta interface e abre o Chrome em
-// `127.0.0.1:<porta>/#token=<aleatório>` (mesma origem). O token fica só nesta variável de módulo
-// (nunca no armazenamento do navegador, em cookie ou na URL depois de lido) e vai no cabeçalho
-// `Authorization` de cada chamada.
+// `ward-test-bridge` serves this interface and opens Chrome at
+// `127.0.0.1:<port>/#token=<random>` (same origin). The token lives only in this module
+// variable (never in the browser storage, in a cookie or in the URL after it is read) and
+// goes in the `Authorization` header of each call.
 
 let token = null;
-let tela = null;
+let openingScreen = null;
 
-function lerToken() {
+function readToken() {
   if (token !== null) return token;
-  // `&tela=<nome>` (opcional, só no modo de teste): abre direto numa tela para o QA no
-  // Chrome, antes de as telas de destravar existirem. Sai da URL junto com o token.
+  // The optional screen parameter after the token (test mode only): opens straight on a
+  // screen for QA in Chrome, before the unlock screens existed. Leaves the URL together
+  // with the token.
   const m = /^#token=([0-9a-f]{64})(?:&tela=([a-z-]{1,32}))?$/.exec(window.location.hash);
   token = m ? m[1] : '';
-  tela = m && m[2] ? m[2] : null;
-  // Tira o token da barra de endereço e do histórico.
+  openingScreen = m && m[2] ? m[2] : null;
+  // Takes the token out of the address bar and of the history.
   window.history.replaceState(null, '', window.location.pathname);
   return token;
 }
 
-export function criarTransporte() {
-  lerToken();
-  return async (comando, args) => {
-    let resposta;
+export function createTransport() {
+  readToken();
+  return async (command, args) => {
+    let reply;
     try {
-      resposta = await fetch(`/ponte/${comando}`, {
+      reply = await fetch(`/ponte/${command}`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -38,42 +39,43 @@ export function criarTransporte() {
         referrerPolicy: 'no-referrer',
       });
     } catch {
-      throw { codigo: 'ponte-indisponivel', mensagem: 'a ponte de teste não respondeu' };
+      throw { 'codigo': 'ponte-indisponivel', 'mensagem': 'a ponte de teste não respondeu' };
     }
-    let corpo;
+    let body;
     try {
-      corpo = await resposta.json();
+      body = await reply.json();
     } catch {
-      throw { codigo: 'ponte-invalida', mensagem: 'resposta inválida da ponte de teste' };
+      throw { 'codigo': 'ponte-invalida', 'mensagem': 'resposta inválida da ponte de teste' };
     }
-    if (corpo && corpo.ok === true) return corpo.valor ?? null;
+    if (body && body.ok === true) return body.valor ?? null;
     throw {
-      codigo: String(corpo?.codigo ?? 'falha'),
-      mensagem: String(corpo?.mensagem ?? 'falha na ponte de teste'),
+      'codigo': String(body?.codigo ?? 'falha'),
+      'mensagem': String(body?.mensagem ?? 'falha na ponte de teste'),
     };
   };
 }
 
-/** Tela pedida na URL de abertura (`&tela=gerador`), ou `null`. Só no modo de teste. */
+/** Screen asked for by the opening URL (its optional screen parameter), or `null`. Test mode only. */
 export function requestedScreen() {
-  lerToken();
-  return tela;
+  readToken();
+  return openingScreen;
 }
 
 /**
- * A ponte não tem o canal de avisos do Tauri: consulta a cada 2 s, uma consulta por vez
- * (a anterior precisa terminar), e para quando a tela sai. Só no modo de teste.
- * @param {() => Promise<void> | void} aoChegar
+ * The bridge does not have the Tauri notice channel: it polls every 2 s, one poll at a
+ * time (the previous one has to finish), and stops when the screen leaves. Test mode
+ * only.
+ * @param {() => Promise<void> | void} onArrive
  */
-export function ouvirPorConsulta(aoChegar) {
-  let ocupado = false;
+export function listenByPolling(onArrive) {
+  let busy = false;
   const id = setInterval(async () => {
-    if (ocupado) return;
-    ocupado = true;
+    if (busy) return;
+    busy = true;
     try {
-      await aoChegar();
+      await onArrive();
     } finally {
-      ocupado = false;
+      busy = false;
     }
   }, 2000);
   return () => clearInterval(id);

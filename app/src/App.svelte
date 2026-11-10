@@ -10,9 +10,9 @@
   import SideNav from './lib/components/SideNav.svelte';
   import Toast from './lib/components/Toast.svelte';
   import { call, listenNotices } from './lib/bridge/index.js';
-  import Settings from './screens/Configuracoes.svelte';
+  import Settings from './screens/Settings.svelte';
   import Credentials from './screens/Credentials.svelte';
-  import Unlock from './screens/Destravar.svelte';
+  import Unlock from './screens/Unlock.svelte';
   import PasswordGenerator from './screens/PasswordGenerator.svelte';
   import ApprovalWindow from './screens/ApprovalWindow.svelte';
   import FirstUse from './screens/FirstUse.svelte';

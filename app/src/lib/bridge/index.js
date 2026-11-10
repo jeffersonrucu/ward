@@ -1,79 +1,81 @@
-// Única porta da interface para o lado Rust. No app, a IPC do Tauri; no Chrome em modo
-// de teste (D7), a ponte HTTP do `ward-test-bridge`. Nenhuma resposta traz segredo
-// (o "copiar" é resolvido no Rust, D4), e nada daqui guarda resposta em estado global,
-// no armazenamento do navegador ou na URL.
+// The only door of the interface to the Rust side. In the app, the Tauri IPC; in Chrome in
+// test mode (D7), the HTTP bridge of `ward-test-bridge`. No reply carries a secret (the
+// "copy" is resolved in Rust, D4), and nothing here keeps a reply in global state, in the
+// browser storage or in the URL.
 import { Channel, invoke } from '@tauri-apps/api/core';
-import { COMANDOS } from './commands.js';
+import { COMMANDS } from './commands.js';
 
-let transporte = null;
+let transport = null;
 
-async function obterTransporte() {
-  if (transporte) return transporte;
-  // `import.meta.env.MODE` é trocado no build: fora do modo de teste este ramo some do
-  // pacote e o código da ponte nem entra em `dist/` (conferido por `make app-check`).
+async function getTransport() {
+  if (transport) return transport;
+  // `import.meta.env.MODE` is replaced at build time: outside test mode this branch
+  // leaves the bundle and the bridge code does not even enter `dist/` (checked by
+  // `make app-check`).
   if (import.meta.env.MODE === 'teste' && !('__TAURI_INTERNALS__' in window)) {
-    const { criarTransporte } = await import('./test-bridge.js');
-    transporte = criarTransporte();
+    const { createTransport } = await import('./test-bridge.js');
+    transport = createTransport();
   } else {
-    transporte = (comando, args) => invoke(comando, args);
+    transport = (command, args) => invoke(command, args);
   }
-  return transporte;
+  return transport;
 }
 
-/** Erro de comando: `{ codigo, mensagem }`, sem valor de entrada. */
-function falha(codigo, mensagem) {
-  return Object.freeze({ codigo, mensagem });
+/** Command error with the wire fields of code and message, with no input value. */
+function failure(code, message) {
+  return Object.freeze({ 'codigo': code, 'mensagem': message });
 }
 
-export async function call(comando, args = {}) {
-  if (!COMANDOS.includes(comando)) {
-    throw falha('comando-desconhecido', 'comando desconhecido');
+export async function call(command, args = {}) {
+  if (!COMMANDS.includes(command)) {
+    throw failure('comando-desconhecido', 'comando desconhecido');
   }
-  const t = await obterTransporte();
+  const t = await getTransport();
   try {
-    return await t(comando, args);
+    return await t(command, args);
   } catch (e) {
     if (e && typeof e.codigo === 'string' && typeof e.mensagem === 'string') {
-      throw falha(e.codigo, e.mensagem);
+      throw failure(e.codigo, e.mensagem);
     }
-    throw falha('falha', 'não foi possível falar com o app');
+    throw failure('falha', 'não foi possível falar com o app');
   }
 }
 
-/** Os avisos que o lado Rust manda pelo canal (D65 a), um por janela. */
-export const AVISOS = Object.freeze(['pedido-de-destrave', 'pedido-de-aprovacao', 'estado-mudou']);
+/** The notices the Rust side sends through the channel (D65 a), one per window. */
+export const NOTICES = Object.freeze(['pedido-de-destrave', 'pedido-de-aprovacao', 'estado-mudou']);
 
 /**
- * Avisos do lado Rust (D65 a): `aoChegar()` é chamado quando chega o `aviso` — na
- * janela principal, `pedido-de-destrave` (Fase 31); na de aprovação,
- * `pedido-de-aprovacao` (Fase 36); na principal também `estado-mudou` (Fase 39: o cofre
- * travou pela bandeja, sozinho ou pela CLI). O aviso não traz dado; quem recebe consulta. No app,
- * pelo canal do Tauri (`ouvir_avisos`, um por janela); na ponte de teste, que não tem
- * canal, por consulta periódica. Devolve a função que para de ouvir.
- * @param {() => Promise<void> | void} aoChegar
- * @param {string | string[]} [aviso]
+ * Notices from the Rust side (D65 a): `onArrive()` is called when the notice arrives —
+ * in the main window, the unlock request (Phase 31); in the approval window, the
+ * approval request (Phase 36); in the main window also the status change (Phase 39: the
+ * vault locked through the tray, by itself or through the CLI). The notice carries no
+ * data; whoever receives it asks. In the app, through the Tauri channel (the listen
+ * command, one per window); in the test bridge, which has no channel, by periodic
+ * polling. Returns the function that stops listening.
+ * @param {() => Promise<void> | void} onArrive
+ * @param {string | string[]} [notice]
  * @returns {Promise<() => void>}
  */
-export async function listenNotices(aoChegar, aviso = ['pedido-de-destrave', 'estado-mudou']) {
-  const avisos = Array.isArray(aviso) ? aviso : [aviso];
-  if (avisos.length === 0 || !avisos.every((a) => AVISOS.includes(a))) {
-    throw falha('aviso-desconhecido', 'aviso desconhecido');
+export async function listenNotices(onArrive, notice = ['pedido-de-destrave', 'estado-mudou']) {
+  const notices = Array.isArray(notice) ? notice : [notice];
+  if (notices.length === 0 || !notices.every((a) => NOTICES.includes(a))) {
+    throw failure('aviso-desconhecido', 'aviso desconhecido');
   }
   if (import.meta.env.MODE === 'teste' && !('__TAURI_INTERNALS__' in window)) {
-    const { ouvirPorConsulta } = await import('./test-bridge.js');
-    return ouvirPorConsulta(aoChegar);
+    const { listenByPolling } = await import('./test-bridge.js');
+    return listenByPolling(onArrive);
   }
-  let ativo = true;
-  const canal = new Channel();
-  canal.onmessage = (m) => {
-    if (ativo && m && avisos.includes(m.aviso)) aoChegar();
+  let active = true;
+  const channel = new Channel();
+  channel.onmessage = (m) => {
+    if (active && m && notices.includes(m.aviso)) onArrive();
   };
   try {
-    await invoke('ouvir_avisos', { canal });
+    await invoke('ouvir_avisos', { 'canal': channel });
   } catch {
-    // Sem o canal, a tela ainda vê o pedido ao consultar de novo.
+    // Without the channel, the screen still sees the request when it asks again.
   }
   return () => {
-    ativo = false;
+    active = false;
   };
 }

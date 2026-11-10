@@ -1101,6 +1101,26 @@ Telas `ApprovalWindow`, `PasswordGenerator`, `FirstUse`, `RestoreBackup` e `Emer
 | ids do DOM `aprovacao-titulo`, `aprovacao-negar`, `aprovacao-entrada`, `aprovacao-pin`; `gerador-titulo`, `opcoes-titulo`, `resultado-titulo`, `gerador-tamanho`, `gerador-minusculas/maiusculas/digitos/simbolos`, `gerador-senha`; `primeiro-uso-criar/senha/confirmar/pin/confirmar-pin`; `restaurar-titulo/subtitulo/senha/pin/versao-<i>/escolhida`; `kit-titulo` | `approval-title`, `approval-deny`, `approval-stdin`, `approval-pin`; `generator-title`, `options-title`, `result-title`, `generator-length`, `generator-lowercase/uppercase/digits/symbols`, `generator-password`; `first-use-create/password/confirm/pin/confirm-pin`; `restore-title/subtitle/password/pin/version-<i>/chosen`; `kit-title` |
 | `data-teste` `simbolos`, `restaurar-backup`, `folha-kit`, `kit-pendrive` | `data-test` `symbols`, `restore-backup`, `kit-sheet`, `kit-usb-drive` |
 
+Telas `Settings`, `Unlock`, `ChangePassword`, `ChangePin`, `ChooseUsbDrive`, `lib/bridge` e
+`Showcase` (Fase 38):
+
+| Antigo | Novo |
+|---|---|
+| `configuracoes.js` › `MIN_MINUTOS_TRAVA`, `MAX_MINUTOS_TRAVA`, `OPCOES_TRAVA`, `rotuloMinutos`, `opcoesDeTrava`, `nomeDoPendrive`, `situacaoNaLista`, `cartaoDoPendrive` (`{ nome, situacao, estado, montado }`), `AVISO_BACKUP_LOCAL` | `settings.js` › `MIN_LOCK_MINUTES`, `MAX_LOCK_MINUTES`, `LOCK_OPTIONS`, `minutesLabel`, `lockOptions`, `usbDriveName`, `situationInList`, `usbDriveCard` (`{ name, situation, status, mounted }`), `LOCAL_BACKUP_WARNING` |
+| config local da tela Configurações `{ minutos_trava, backup_externo, backup_local }` | `{ lockMinutes, externalBackup, localBackup }` (lida da resposta de `configuracoes`, que fica) |
+| `dialogo` da tela Configurações `senha`/`pin`/`pendrive`/`restaurar`/`kit` | `dialog` `password`/`pin`/`usb-drive`/`restore`/`kit` |
+| props `Configuracoes` `ontravado`; `Destravar` `pedido`, `ondestravado`, `onerro` | `Settings` `onlocked`; `Unlock` `request`, `onunlocked`, `onerror` (sem o alias da Fase 35) |
+| props `TrocarSenha` `aberto`, `onfechar`, `ontrocada`, `onfalha`; `TrocarPin` os mesmos com `ontrocado` e `ontravado` | `ChangePassword` `open`, `onclose`, `onchanged`, `onfailure`; `ChangePin` os mesmos com `onchanged` e `onlocked` |
+| props `EscolherPendrive` `aberto`, `trocar`, `atual`, `onfechar`, `onescolhido`, `ontravado` | `ChooseUsbDrive` `open`, `replace`, `current`, `onclose`, `onchosen`, `onlocked` |
+| `Destravar` › `ESPERA_MAXIMA`, `COMANDO_DA_OPERACAO`, `comandoDaOperacao`, `comPedido`, `errosSeguidos`, `dispensado`, `rotuloBotao` | `Unlock` › `MAX_WAIT`, `OPERATION_COMMAND` (chave do fio `'executar'` entre aspas), `operationCommand`, `withRequest`, `consecutiveErrors`, `dismissed`, `buttonLabel` |
+| erros das trocas `erros` (chaves do fio `atual`, `nova`/`novo`, `confirmacao`), `pinErrado`, `recusa(campo)`, `focar(campo)` | `errors` (as mesmas chaves, entre aspas), `wrongPin`, `refusal(field)`, `focusField(field)` |
+| ids do DOM `senha-mestra`, `configuracoes-titulo`, `acesso-titulo`, `backup-titulo`, `config-senha`, `config-trava`, `config-tempo-trava`, `config-backup-local`, `config-backup-local-aviso`, `config-backup-externo`, `trocar-senha-atual/nova/confirmacao`, `trocar-pin-atual/novo/confirmacao`, `v-grupo`, `v-senha`, `v-ambiente` | `master-password`, `settings-title`, `access-title`, `backup-title`, `config-password`, `config-lock`, `config-lock-timeout`, `config-local-backup`, `config-local-backup-warning`, `config-external-backup`, `change-password-current/new/confirmation`, `change-pin-current/new/confirmation`, `v-group`, `v-password`, `v-environment` (`config-pin`, `config-kit` ficam) |
+| `data-teste="trocar-senha"`, `"trocar-senha-aviso-backups"`, `"trocar-pin"`; `data-tom` do medidor de força | `data-test="change-password"`, `"change-password-backups-notice"`, `"change-pin"`; `data-tone` (os valores vêm do `first-use.js`: `danger`/`warning`/`success`) |
+| `lib/bridge/commands.js` › `COMANDOS` | `COMMANDS` (a lista do fio fica) |
+| `lib/bridge/index.js` › `AVISOS`, `obterTransporte`, `falha(codigo, mensagem)` | `NOTICES`, `getTransport`, `failure(code, message)` (o objeto de erro continua `{ codigo, mensagem }`, do fio) |
+| `lib/bridge/test-bridge.js` › `criarTransporte`, `lerToken`, `ouvirPorConsulta(aoChegar)` | `createTransport`, `readToken`, `listenByPolling(onArrive)` (o caminho `/ponte/<comando>`, o `&tela=` da URL e os campos `ok`/`valor`/`codigo`/`mensagem` da resposta da ponte ficam) |
+| `Vitrine` › `modalAberto`, `.vitrine`, `.linha`, `.lista` | `Showcase` › `modalOpen`, `.showcase`, `.row`, `.list` |
+
 ### Extensão (Fases 5 e 39)
 
 | Antigo | Novo |
