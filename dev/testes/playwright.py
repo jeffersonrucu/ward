@@ -21,6 +21,25 @@ PADROES = [l for l in open(os.path.join(RAIZ, ".dev/variacoes.txt"), "rb").read(
 falhas = []
 
 
+APROVADOR_LOG = os.path.join(TRAB, "logs", "wardd-aprovador-teste.log")
+APROVADOR_MODO = os.path.join(TRAB, "aprovador.modo")
+
+
+def modo_janela(m):
+    """Fase 44c: o que a janela de teste responde ao próximo pedido."""
+    with open(APROVADOR_MODO, "w") as f:
+        f.write(m + "\n")
+
+
+def pedidos_da_janela():
+    """As linhas `pedido …` que a janela de teste viu, em ordem."""
+    try:
+        with open(APROVADOR_LOG, encoding="utf-8", errors="replace") as f:
+            return [l.strip() for l in f if l.startswith("pedido ")]
+    except OSError:
+        return []
+
+
 def conferir(cond, msg):
     print(("ok   " if cond else "FALHA") + " " + msg, flush=True)
     if not cond:
@@ -198,6 +217,9 @@ t0 = time.time()
 cod, out, err = ward(["playwright", "acme-wp-prod"])
 dur = time.time() - t0
 vigia.parar = True
+# Fase 44c (D9): livre numa origem http, então só depois da confirmação da origem.
+conferir(pedidos_da_janela() == ["pedido operacao=playwright entradas=acme-wp-prod origem=http://localhost:8081 confirmacao=1 decisao=confirmar"],
+         f"Fase 44c: acme-wp-prod (livre, http) só depois da confirmação da origem, sem PIN ({pedidos_da_janela()})")
 vigia.join()
 esperado = os.path.join(RT, "playwright", "acme-wp-prod.json")
 conferir(cod == 0, f"V6.12 ward playwright acme-wp-prod sai 0 (saiu {cod}, {dur:.1f} s; erro: {err.decode(errors='replace').strip()})")
@@ -271,6 +293,48 @@ conferir(log_antes is not None and log_depois == log_antes, "V6.15 posts.log do 
 conferir(log_depois is not None and not tem_segredo(log_depois), "V6.15 posts.log sem padrão do cofre")
 conferir(not pids_do_chrome() and not [n for n in os.listdir(RT) if n.startswith("pw-")],
          "V6.15 Chrome e perfil sumiram depois da recusa")
+
+# --- Fase 44c: o ataque `[::1]` da auditoria do M6 -----------------------------------------
+# Um processo do uid escuta em [::1]:8081 (o WordPress está só em 127.0.0.1:8081).
+SAIDA_FALSO = os.path.join(TRAB, "falso-v6.bin")
+falso = subprocess.Popen(["/usr/bin/python3", "-I", "-B", os.path.join(RAIZ, "dev", "testes", "falso_v6.py"),
+                          "8081", SAIDA_FALSO], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL)
+try:
+    import socket
+    fim = time.time() + 10
+    no_ar = False
+    while time.time() < fim and not no_ar:
+        try:
+            socket.create_connection(("::1", 8081), 1).close()
+            no_ar = True
+        except OSError:
+            time.sleep(0.1)
+    conferir(no_ar, "ataque [::1]: o falso escuta em [::1]:8081")
+    # Negado na janela: o Chrome nem abre e nada sai.
+    modo_janela("negar")
+    vistos = len(pedidos_da_janela())
+    cod, out, err = ward(["playwright", "acme-wp-prod"], prazo=60)
+    novos = pedidos_da_janela()[vistos:]
+    conferir(cod != 0 and "negado" in err.decode(errors="replace") and not out,
+             f"ataque [::1], janela negada: `ward playwright acme-wp-prod` sai ≠ 0 com \"negado\" (saiu {cod})")
+    conferir(novos == ["pedido operacao=playwright entradas=acme-wp-prod origem=http://localhost:8081 confirmacao=1 decisao=negar"],
+             f"ataque [::1], janela negada: o pedido mostra a origem ({novos})")
+    # Confirmado: o `--host-resolver-rules` leva `localhost` a 127.0.0.1 (o WordPress
+    # verdadeiro); o falso de [::1] não recebe nada.
+    modo_janela("confirmar")
+    cod, out, err = ward(["playwright", "acme-wp-prod"])
+    conferir(cod == 0 and out.decode(errors="replace").strip() == esperado,
+             f"ataque [::1], confirmado: o login vai ao WordPress de 127.0.0.1 (saiu {cod}: {err.decode(errors='replace').strip()[:120]})")
+    try:
+        recebido = os.path.getsize(SAIDA_FALSO)
+    except FileNotFoundError:
+        recebido = 0
+    conferir(recebido == 0, f"ataque [::1]: o falso de [::1]:8081 não recebeu nenhum POST ({recebido} bytes)")
+finally:
+    falso.terminate()
+    falso.wait(timeout=10)
+    modo_janela("confirmar")
 
 # --- Recusas sem abrir o navegador -----------------------------------------------------
 for entrada, texto in (("gama-bloqueada", "entrada inexistente"), ("nao-existe", "entrada inexistente"),

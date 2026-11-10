@@ -29,7 +29,13 @@
 # envio, mensagens do content script ao service worker; tema claro do sistema nos três
 # estados do popup. Screenshots em docs/mission/evidence/fase-42/.
 #
+# Fase 44c (D9): o preencher do popup numa origem `http` só depois da confirmação da
+# origem na janela; a janela é a de teste (`wardd-aprovador-teste`, aberta pelo daemon
+# por `WARD_DEV_APP`, que responde o que está em `$TRAB/aprovador.modo`): negada, nada é
+# preenchido e o popup avisa; confirmada, preenche.
+#
 # Uso: dev/testes/extensao.sh <wardd modo-teste> <ward-nm modo-teste> <chrome-falso> <ward modo-teste>
+#      <wardd-aprovador-teste>
 
 export PATH=/usr/bin:/bin
 set -euo pipefail
@@ -39,12 +45,13 @@ RAIZ="$(cd -P -- "${BASH_SOURCE[0]%/*}/../.." && pwd -P)"
 cd "$RAIZ"
 
 abs() { case "$1" in /*) printf '%s' "$1" ;; *) printf '%s/%s' "$RAIZ" "$1" ;; esac; }
-USO="uso: extensao.sh <wardd> <ward-nm> <chrome-falso> <ward>"
+USO="uso: extensao.sh <wardd> <ward-nm> <chrome-falso> <ward> <wardd-aprovador-teste>"
 WARDD="$(abs "${1:?$USO}")"
 NM="$(abs "${2:?$USO}")"
 FALSO="$(abs "${3:?$USO}")"
 WARD="$(abs "${4:?$USO}")"
-for b in "$WARDD" "$NM" "$FALSO" "$WARD"; do [ -x "$b" ] || { echo "falta $b" >&2; exit 1; }; done
+APROVADOR="$(abs "${5:?$USO}")"
+for b in "$WARDD" "$NM" "$FALSO" "$WARD" "$APROVADOR"; do [ -x "$b" ] || { echo "falta $b" >&2; exit 1; }; done
 CHROME=/opt/google/chrome/chrome
 [ -x "$CHROME" ] || { echo "falta o Chrome em $CHROME" >&2; exit 1; }
 COFRE="$RAIZ/.dev/cofre-teste.ward"
@@ -78,6 +85,11 @@ limpar() {
 trap limpar EXIT
 
 cp -- "$COFRE" "$TRAB/cofre-teste.ward"
+# Fase 44c: a janela de teste, dentro do "repositório" do daemon (a pasta acima de
+# WARD_DEV_DIR, D63); começa confirmando a origem.
+mkdir -m 0700 "$TRAB/logs"
+cp -- "$APROVADOR" "$TRAB/wardd-aprovador-teste"
+printf 'confirmar\n' > "$TRAB/aprovador.modo"
 printf 'ward-estado 1\nvista 0\nqueimada 0\n' > "$TRAB/cofre-teste.estado"
 LOG="$TRAB/wardd.log"
 env -i \
@@ -88,6 +100,7 @@ env -i \
     WARD_DEV_DIR="$TRAB" \
     WARD_DEV_SOCKET_DIR="$SOCKDIR" \
     WARD_DEV_EXTENSAO=chrome \
+    WARD_DEV_APP="$TRAB/wardd-aprovador-teste" \
     RUST_LOG=trace \
     "$WARDD" </dev/null >"$LOG" 2>&1 &
 PID=$!
@@ -108,7 +121,7 @@ kill -0 "$PID" 2>/dev/null || { echo "FALHA o wardd de teste morreu durante o te
 kill -TERM "$PID" 2>/dev/null || true
 wait "$PID" 2>/dev/null || true
 PID=""
-for f in "$LOG" "$TRAB/chrome.log" "$TRAB/console.log"; do
+for f in "$LOG" "$TRAB/chrome.log" "$TRAB/console.log" "$TRAB/logs/wardd-aprovador-teste.log"; do
     if [ ! -f "$f" ]; then
         echo "FALHA ${f##*/} não existe" >&2
         falhas=$((falhas + 1))

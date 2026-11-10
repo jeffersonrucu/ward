@@ -160,7 +160,7 @@ done <"$T/repo/instalacao/arvore.txt"
 ok "V9.1: donos e modos de arvore.txt (root:root, ward-app e ward-nm root:<grupo> 2755)"
 confere "V9.6: manifesto de native messaging do root" "$(stat -c '%U %a' /etc/opt/chrome/native-messaging-hosts/br.ward.nm.json)" "root 644"
 confere "V9.6: allowed_origins só com o id" "$(grep allowed_origins /etc/opt/chrome/native-messaging-hosts/br.ward.nm.json)" "[\"chrome-extension://$ID/\"]"
-confere "Fase 51a: política com NativeMessagingUserLevelHosts false" "$(python3 -I -c 'import json,sys; p=json.load(open(sys.argv[1])); print(p["NativeMessagingUserLevelHosts"] is False, sorted(p))' /etc/opt/chrome/policies/managed/ward.json)" "True ['ExtensionSettings', 'NativeMessagingUserLevelHosts']"
+confere "Fase 51a/44c: política com NativeMessagingUserLevelHosts, PasswordManagerEnabled e PasswordLeakDetectionEnabled false" "$(python3 -I -c 'import json,sys; p=json.load(open(sys.argv[1])); print(p["NativeMessagingUserLevelHosts"] is False and p["PasswordManagerEnabled"] is False and p["PasswordLeakDetectionEnabled"] is False, sorted(p))' /etc/opt/chrome/policies/managed/ward.json)" "True ['ExtensionSettings', 'NativeMessagingUserLevelHosts', 'PasswordLeakDetectionEnabled', 'PasswordManagerEnabled']"
 igual_marca="$(for g in ward-app ward-nm; do echo "$g $(getent group "$g" | cut -d: -f3)"; done)"
 confere "Fase 51a: marca dos grupos criados (nome e gid)" "$(sort /usr/local/lib/ward/grupos-criados)" "$igual_marca"
 # Fase 51c (S2, S8): sem o apport e o libwebkit2gtk na imagem, as pastas são criadas e a

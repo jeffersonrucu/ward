@@ -21,8 +21,15 @@
 #   4. o mesmo ataque com o `ward.json` gerado, no bwrap: o host do atacante nem roda,
 #      o do sistema roda e nada sai.
 #
+# Fase 44c (D9): as entradas `login` do cofre de teste são `http://localhost`, e o
+# `preencher` em `http` agora espera a confirmação da origem na janela. No controle da
+# rodada 3 a janela de teste (`wardd-aprovador-teste`) confirma tudo, como um usuário que
+# confirma sem olhar: o ataque continua reproduzindo (RA10). A política também desliga o
+# gerenciador de senhas do Chrome e a checagem de vazamento (conferido no `ward.json`).
+#
 # Uso: politica-chrome.sh <wardd modo-teste> <ward-nm modo-teste> <ward> <wardd> <ward-nm> <ward-app>
-#      (os quatro últimos sem `modo-teste`, para o `instalar.sh` gerar a política).
+#      <wardd-aprovador-teste>
+#      (do 3º ao 6º sem `modo-teste`, para o `instalar.sh` gerar a política).
 # Precisa de bwrap, openssl, `make dev-cofre`, `make dev-variacoes` e do Chrome em
 # /opt/google/chrome; fora do `make check`.
 
@@ -34,12 +41,12 @@ RAIZ="$(cd -P -- "${BASH_SOURCE[0]%/*}/../.." && pwd -P)"
 unset MAKEFLAGS MAKELEVEL MFLAGS
 cd "$RAIZ"
 
-uso="uso: politica-chrome.sh <wardd-teste> <ward-nm-teste> <ward> <wardd> <ward-nm> <ward-app>"
-[ $# -eq 6 ] || { echo "$uso" >&2; exit 2; }
+uso="uso: politica-chrome.sh <wardd-teste> <ward-nm-teste> <ward> <wardd> <ward-nm> <ward-app> <wardd-aprovador-teste>"
+[ $# -eq 7 ] || { echo "$uso" >&2; exit 2; }
 abs() { case "$1" in /*) printf '%s' "$1" ;; *) printf '%s/%s' "$RAIZ" "$1" ;; esac; }
-WARDD_T="$(abs "$1")" NM_T="$(abs "$2")"
+WARDD_T="$(abs "$1")" NM_T="$(abs "$2")" APROVADOR="$(abs "$7")"
 B_WARD="$(abs "$3")" B_WARDD="$(abs "$4")" B_NM="$(abs "$5")" B_APP="$(abs "$6")"
-for b in "$WARDD_T" "$NM_T" "$B_WARD" "$B_WARDD" "$B_NM" "$B_APP"; do
+for b in "$WARDD_T" "$NM_T" "$B_WARD" "$B_WARDD" "$B_NM" "$B_APP" "$APROVADOR"; do
     [ -x "$b" ] || { echo "falta $b" >&2; exit 1; }
 done
 CHROME=/opt/google/chrome/chrome
@@ -71,6 +78,12 @@ POLITICA="$TRAB/raiz/etc/opt/chrome/policies/managed/ward.json"
 r="$(/usr/bin/python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1])).get("NativeMessagingUserLevelHosts"))' "$POLITICA")"
 [ "$r" = False ] && ok "a política gerada pelo instalar.sh tem NativeMessagingUserLevelHosts false" ||
     falhou "a política gerada não desliga os manifestos do usuário ($r)"
+# Fase 44c: o gerenciador de senhas do Chrome e a checagem de vazamento desligados.
+for nome in PasswordManagerEnabled PasswordLeakDetectionEnabled; do
+    r="$(/usr/bin/python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1])).get(sys.argv[2]))' "$POLITICA" "$nome")"
+    [ "$r" = False ] && ok "a política gerada pelo instalar.sh tem $nome false" ||
+        falhou "a política gerada não desliga $nome ($r)"
+done
 # Chave da extensão de teste (só para o id; descartada no fim).
 openssl genrsa -out "$TRAB/k.pem" 2048 2>/dev/null
 
@@ -97,7 +110,7 @@ echo "    $r"
 
 echo "==> 3. ataque da auditoria sem política (controle, fora do bwrap)"
 r="$(env -i HOME="$TRAB" PATH=/usr/bin:/bin LANG=C.UTF-8 XDG_RUNTIME_DIR="$RUNTIME" \
-    /usr/bin/python3 -I -B "$RAIZ/dev/testes/politica_chrome.py" "$RAIZ" "$TRAB" roubo - "$WARDD_T" "$NM_T")" ||
+    /usr/bin/python3 -I -B "$RAIZ/dev/testes/politica_chrome.py" "$RAIZ" "$TRAB" roubo - "$WARDD_T" "$NM_T" "$APROVADOR")" ||
     falhou "rodada 3 saiu ≠ 0"
 echo "    $r"
 if [ "$(campo "$r" pulado)" != None ]; then
@@ -106,7 +119,8 @@ else
     [ "$(campo "$r" atacante_rodou)" = True ] && [ "$(campo "$r" com_segredo)" != 0 ] &&
         ok "sem a política, o host do atacante faz exec do ward-nm e tira senhas (controle)" ||
         falhou "controle: o ataque da auditoria não reproduziu"
-    for f in "$TRAB/roubo-sem-politica/wardd.log" "$TRAB/roubo-sem-politica/chrome.log"; do
+    for f in "$TRAB/roubo-sem-politica/wardd.log" "$TRAB/roubo-sem-politica/chrome.log" \
+        "$TRAB/roubo-sem-politica/logs/wardd-aprovador-teste.log"; do
         if [ -f "$f" ] && grep -qaF -f "$LISTA" -- "$f"; then
             falhou "padrão de .dev/variacoes.txt em ${f#"$TRAB"/}"
         else

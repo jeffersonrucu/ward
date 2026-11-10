@@ -3,16 +3,18 @@
 # copiado inteiro para o `preinst` do `.deb` pelo `deb.sh`, como o `grupos.sh`. Quem
 # inclui define `erro` (sai ≠ 0).
 #
-# A política do Ward (`ward.json`) liga `ExtensionSettings` (extensão force-installed) e
+# A política do Ward (`ward.json`) liga `ExtensionSettings` (extensão force-installed),
 # `NativeMessagingUserLevelHosts: false` (o Chrome só abre host de native messaging de
 # /etc/opt/chrome/native-messaging-hosts/; um manifesto `br.ward.nm.json` plantado no
-# perfil do usuário por um processo do mesmo uid não vale mais). O Chrome lê todo arquivo
+# perfil do usuário por um processo do mesmo uid não vale mais) e, desde a Fase 44c,
+# `PasswordManagerEnabled: false` e `PasswordLeakDetectionEnabled: false` (o Chrome não
+# guarda a senha que a extensão preenche nem manda um hash dela ao Google). O Chrome lê todo arquivo
 # de policies/managed/ e não junta o mesmo nome de dois arquivos: o de outro arquivo pode
 # vencer o do Ward. Por isso, outro arquivo que cite um desses nomes (ou use escape
 # `\u`, que esconderia o nome) recusa a instalação, antes de qualquer mudança.
 
 # Nomes que a política do Ward define e que nenhum outro arquivo pode citar.
-POLITICAS_DO_WARD='ExtensionSettings|NativeMessagingUserLevelHosts'
+POLITICAS_DO_WARD='ExtensionSettings|NativeMessagingUserLevelHosts|PasswordManagerEnabled|PasswordLeakDetectionEnabled'
 
 # conferir_politicas_chrome <pasta policies/managed> : sai pelo `erro` se outro arquivo
 # da pasta define um nome da política do Ward. Pasta ausente: nada a conferir.

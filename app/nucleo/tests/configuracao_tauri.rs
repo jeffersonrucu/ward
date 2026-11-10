@@ -55,6 +55,12 @@ fn janela_de_aprovacao_segue_o_rust_e_nao_usa_html() {
     assert!(tela.contains("{pedido.comando}"), "comando como texto");
     assert!(tela.contains("{processo}"), "cadeia como texto");
     assert!(tela.contains("{entrada.nome}"), "entrada como texto");
+    // Fase 44c (D9): a origem `http` também só como texto.
+    assert!(tela.contains("{pedido.origem}"), "origem como texto");
+    assert!(
+        js.contains("return decisao !== 'negar' && decisao !== 'confirmar';"),
+        "só negar e confirmar sem PIN"
+    );
 }
 
 /// S11, Fase 36: duas capabilities, uma por janela; em comum só o `ouvir_avisos` (canal

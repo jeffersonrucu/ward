@@ -821,6 +821,8 @@ mod testes {
             comando: "\"psql\"".into(),
             diretorio: "\"/home/dev\"".into(),
             cadeia: vec!["claude".into(), "ward run".into()],
+            origem: String::new(),
+            confirmacao: false,
         }
     }
 

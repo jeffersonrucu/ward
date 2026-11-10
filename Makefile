@@ -457,11 +457,12 @@ teste-politica-chrome: origens
 	$(CARGO) build --quiet --locked -p ward --bin ward --target-dir target/sem-modo-teste
 	$(CARGO) build --quiet --locked -p ward-nm --bin ward-nm --target-dir target/sem-modo-teste
 	$(CARGO) build --quiet --locked -p ward-app-nucleo --example partida-conteiner --target-dir target/sem-modo-teste
-	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd
+	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd --bin wardd-aprovador-teste
 	$(CARGO) build --quiet --locked -p ward-nm --features modo-teste --bin ward-nm
 	dev/testes/politica-chrome.sh target/debug/wardd target/debug/ward-nm \
 		target/sem-modo-teste/debug/ward target/sem-modo-teste/debug/wardd \
-		target/sem-modo-teste/debug/ward-nm target/sem-modo-teste/debug/examples/partida-conteiner
+		target/sem-modo-teste/debug/ward-nm target/sem-modo-teste/debug/examples/partida-conteiner \
+		target/debug/wardd-aprovador-teste
 
 # --- Pacote .deb (Fase 52; D18; V9.9) ------------------------------------------------
 # `make deb` (como o usuário) monta o staging com o `instalar.sh` (DESTDIR) e o empacota
@@ -541,11 +542,11 @@ teste-ssh-home: origens
 ## (WARD_DEV_SOCKET_DIR próprio). Precisa de `make dev-cofre`, `make dev-variacoes` e do
 ## Playwright do Python em PW_PYTHONPATH (ou SEM_PLAYWRIGHT_PYTHON=1); fora do `make check`
 teste-playwright: origens
-	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd
+	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd --bin wardd-aprovador-teste
 	$(CARGO) build --quiet --locked -p ward --features modo-teste --bin ward
 	$(CARGO) test --quiet --locked -p wardd --all-features --test playwright -- --ignored
 	PW_PYTHONPATH="$(PW_PYTHONPATH)" SEM_PLAYWRIGHT_PYTHON="$(SEM_PLAYWRIGHT_PYTHON)" \
-		dev/testes/playwright.sh target/debug/wardd target/debug/ward
+		dev/testes/playwright.sh target/debug/wardd target/debug/ward target/debug/wardd-aprovador-teste
 
 ## teste-sem-modo-teste: D63/V3.37: nenhum membro liga modo-teste em dependência normal,
 ## testes de unidade do wardd e do ward-plataforma sem a feature e strings do release
@@ -610,20 +611,20 @@ extensao:
 ## docs/mission/evidence/fase-41/. Precisa de `make dev-cofre`, `make dev-variacoes`,
 ## `make dev-servicos-subir` e `make app-front`; fora do `make check`
 teste-extensao: origens extensao
-	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd
+	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd --bin wardd-aprovador-teste
 	$(CARGO) build --quiet --locked -p ward-nm --features modo-teste --bin ward-nm
 	$(CARGO) build --quiet --locked -p ward-nm --example chrome-falso
 	$(CARGO) build --quiet --locked -p ward --features modo-teste --bin ward
-	dev/testes/extensao.sh target/debug/wardd target/debug/ward-nm target/debug/examples/chrome-falso target/debug/ward
+	dev/testes/extensao.sh target/debug/wardd target/debug/ward-nm target/debug/examples/chrome-falso target/debug/ward target/debug/wardd-aprovador-teste
 
 ## teste-login: `ward login` de ponta a ponta (Fase 43; V6.3, V6.10, V6.11, V6.15, V6.16):
 ## a extensão no Chrome real headless, o `ward-nm` aberto pelo service worker e um `wardd`
 ## de teste só dele com `WARD_DEV_EXTENSAO=chrome`; fora do `make check`
 teste-login: origens extensao
-	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd
+	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd --bin wardd-aprovador-teste
 	$(CARGO) build --quiet --locked -p ward-nm --features modo-teste --bin ward-nm
 	$(CARGO) build --quiet --locked -p ward --features modo-teste --bin ward
-	dev/testes/login.sh target/debug/wardd target/debug/ward-nm target/debug/ward
+	dev/testes/login.sh target/debug/wardd target/debug/ward-nm target/debug/ward target/debug/wardd-aprovador-teste
 
 ## dev-daemon-parar: para o daemon de teste (confere que o pid é mesmo o wardd daqui)
 dev-daemon-parar:

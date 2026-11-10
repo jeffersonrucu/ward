@@ -320,6 +320,15 @@ pub struct PedidoDeAprovacao {
     pub diretorio: String,
     /// Quem pediu (ex.: `claude → bash → ward run`).
     pub cadeia: Vec<String>,
+    /// Fase 44c (D9): a origem para onde vão usuário e senha, quando ela é `http`
+    /// (`localhost`/`127.0.0.1`: o Ward não sabe que processo responde ali); vazia nos
+    /// outros casos. Montada pelo daemon a partir da URL da entrada.
+    pub origem: String,
+    /// Fase 44c: o pedido é só uma confirmação da origem (a entrada não pede PIN: nível
+    /// livre, liberação de 1 hora ou o popup da extensão). A janela mostra "Negar" e
+    /// "Confirmar", sem PIN; o daemon recusa os três "Permitir" num pedido assim e
+    /// recusa "Confirmar" num pedido que não é.
+    pub confirmacao: bool,
 }
 
 /// O daemon pede ao app a tela de destravar (D16; Fase 39a): um uso do agente espera
@@ -549,7 +558,17 @@ impl Resposta {
             Resposta::Token(t) => ok(!t.is_empty() && t.len() <= MAX_NOME),
             Resposta::PedidoDeAprovacao(p) => ok((1..=2).contains(&p.entradas.len())
                 && p.entradas.iter().all(|n| n.len() <= MAX_NOME)
-                && OPERACOES_APROVADAS.contains(&p.operacao)
+                && (OPERACOES_APROVADAS.contains(&p.operacao) || p.operacao == Operacao::Preencher)
+                && p.origem.len() <= MAX_TEXTO
+                // Fase 44c: a origem só existe no preencher, no `login` e no
+                // `playwright`; a confirmação sempre tem origem; o popup só confirma.
+                && (p.origem.is_empty()
+                    || matches!(
+                        p.operacao,
+                        Operacao::Login | Operacao::Playwright | Operacao::Preencher
+                    ))
+                && (!p.confirmacao || !p.origem.is_empty())
+                && (p.operacao != Operacao::Preencher || p.confirmacao)
                 && p.comando.len() <= MAX_TEXTO_EXIBIDO
                 && p.diretorio.len() <= MAX_TEXTO_EXIBIDO
                 && p.cadeia.len() <= MAX_CADEIA
@@ -751,6 +770,10 @@ impl Resposta {
                 e.texto(&p.diretorio);
                 e.chave("cadeia");
                 escrever_textos(e, &p.cadeia);
+                e.chave("origem");
+                e.texto(&p.origem);
+                e.chave("confirmacao");
+                e.logico(p.confirmacao);
             }
             Resposta::CodigoTotp { codigo, restante } => {
                 e.chave("codigo");
@@ -1151,6 +1174,8 @@ pub(crate) fn ler(papel: Papel, tipo: TipoResposta, mut c: Campos) -> R<Resposta
             let comando = c.texto("comando", MAX_TEXTO_EXIBIDO)?;
             let diretorio = c.texto("diretorio", MAX_TEXTO_EXIBIDO)?;
             let cadeia = textos_de(c.lista("cadeia", MAX_CADEIA)?, MAX_TEXTO)?;
+            let origem = c.texto("origem", MAX_TEXTO)?;
+            let confirmacao = c.logico("confirmacao")?;
             Resposta::PedidoDeAprovacao(PedidoDeAprovacao {
                 id,
                 entradas,
@@ -1159,6 +1184,8 @@ pub(crate) fn ler(papel: Papel, tipo: TipoResposta, mut c: Campos) -> R<Resposta
                 comando,
                 diretorio,
                 cadeia,
+                origem,
+                confirmacao,
             })
         }
         TipoResposta::CodigoTotp => {

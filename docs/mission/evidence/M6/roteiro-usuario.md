@@ -1,9 +1,12 @@
 # Roteiro do usuário: `ward login` com a janela de aprovação (M6)
 
-Este roteiro cobre o V6.11 (UI), que o QA automático não alcança: o `make teste-login`
-roda sem o app, então nunca abre a janela de aprovação de verdade (scrutiny do M6,
-Fase 44a). Aqui `ward login acme-wp-dev` (nível "com aprovação") abre a janela nativa
-do app; negar não preenche nada, permitir entra no WordPress de teste.
+Este roteiro cobre o V6.11 e o V6.17 (UI), que o QA automático não alcança: o
+`make teste-login` usa uma janela de teste (`wardd-aprovador-teste`, Fase 44c) e nunca
+abre a janela de aprovação de verdade (scrutiny do M6, Fase 44a). Aqui
+`ward login acme-wp-dev` (nível "com aprovação") abre a janela nativa do app; negar não
+preenche nada, permitir entra no WordPress de teste. Como `localhost:8081` é `http`, a
+janela mostra a origem, e mesmo a entrada livre `acme-wp-prod` pede a confirmação dela
+(D9, Fase 44c).
 
 Use só o cofre de teste e os valores falsos. Senha mestra `falso-mestra-ward-01`, PIN
 `135790`. O Chrome roda com perfil e HOME próprios em `.dev/roteiro-m6/`: nada daqui
@@ -59,9 +62,10 @@ Rode tudo da raiz do repositório.
    nela para essa janela ser a última em foco) e, no terminal, rode:
    `target/debug/ward login acme-wp-dev`
    - Esperado: a janela "Pedido de aprovação · Ward" aparece na frente, com
-     `acme-wp-dev`, o pedido de login e o foco em "Negar".
+     `acme-wp-dev`, o pedido de login, a origem `http://localhost:8081` em destaque e o
+     foco em "Negar".
 2. [ ] Clique em "Negar".
-   - Esperado: o `ward login` termina com "negado" e sai ≠ 0.
+   - Esperado: o `ward login` termina com a linha `ward: pedido negado` e sai 1.
    - Esperado: na aba, usuário e senha continuam **vazios** e a página não mudou
      (nenhum envio). Confira também que o popup da extensão não mostrou nada novo.
 3. [ ] Repita o passo 1 e aperte Esc na janela de aprovação.
@@ -80,6 +84,22 @@ Rode tudo da raiz do repositório.
    o `ward login acme-wp-dev` mais uma vez, digitando um PIN errado (`000000`).
    - Esperado: nada é permitido; negue em seguida e confira os campos vazios.
 
+## 2a. Confirmar a origem numa entrada livre (V6.17)
+
+1. [ ] Volte a `wp-login.php` (saia do WordPress, se preciso) e rode
+   `target/debug/ward login acme-wp-prod` (nível livre).
+   - Esperado: a janela abre com `acme-wp-prod`, a origem `http://localhost:8081` e o
+     aviso de que a origem é `http`. Não há campo de PIN; os botões são "Negar" e
+     "Confirmar a origem".
+2. [ ] Clique em "Negar".
+   - Esperado: `ward: pedido negado`, sai 1, campos vazios.
+3. [ ] Rode de novo e clique em "Confirmar a origem".
+   - Esperado: sai 0 e a aba chega ao painel como `wp_editor`.
+4. [ ] Saia do WordPress, volte a `wp-login.php`, abra o popup da extensão e clique em
+   `acme-wp-prod`.
+   - Esperado: o popup diz que espera a janela do Ward e fecha quando ela pega o foco;
+     a janela mostra "A extensão do Chrome quer preencher uma senha", a origem e "Confirmar a origem". Negar:
+     campos vazios. Repetir e confirmar: usuário e senha preenchidos.
 ## 3. Logs sem segredo (V6.16)
 
 1. [ ] `grep -c -F -f .dev/variacoes.txt .dev/logs/wardd.log`

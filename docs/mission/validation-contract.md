@@ -1090,6 +1090,20 @@ O QA usa o Chrome em modo de teste (D7) e confere a aparência contra o frame.
   (D9).
 - [ ] V6.16 — (SEG) Dada a suíte do M6, quando o auditor procura segredos nos logs do
   `ward-nm`, do daemon e no console da extensão, então não acha — cobre S13.
+- [ ] V6.17 — (SEG)(UI) Dada uma entrada `login` numa origem `http` (`localhost` ou
+  `127.0.0.1`) no nível livre, quando o agente pede `ward login` ou `ward playwright`,
+  ou o usuário clica nela no popup, então a janela de aprovação abre com a origem à
+  vista e só "Negar" e "Confirmar a origem" (sem PIN); negado ou sem resposta, nada é
+  preenchido e o Chrome do `ward playwright` nem abre; sem o app, "aprovação
+  indisponível". Em "com aprovação" o pedido com PIN mostra a origem. `https` livre
+  segue sem janela — cobre S1, S9 (D9, Fase 44c).
+- [ ] V6.18 — (SEG) Dado um processo do uid escutando em `[::1]:8081` (o WordPress de
+  teste só em `127.0.0.1:8081`; `dev/testes/falso_v6.py`), com a aba de
+  `localhost:8081` caída nele, quando `ward login acme-wp-prod` ou
+  `ward playwright acme-wp-prod` é negado na janela, então nada é preenchido e o falso
+  não recebe nenhum `POST`; o pedido mostra `http://localhost:8081`. Confirmado, o
+  Chrome do `ward playwright` (`--host-resolver-rules="MAP localhost 127.0.0.1"`) vai ao
+  WordPress de `127.0.0.1` e o falso continua sem nada — cobre S1 (D9, Fase 44c).
 
 ## Milestone 7 — Backup
 
@@ -1157,6 +1171,10 @@ O QA usa o Chrome em modo de teste (D7) e confere a aparência contra o frame.
 - [ ] V9.5 — (SEG) Dada a política do Chrome instalada, então a extensão aparece como
   instalada pela organização e não pode ser desativada nem removida, e carregar outra
   extensão com o mesmo ID pelo modo desenvolvedor é bloqueado (roteiro do usuário).
+  A política tem `PasswordManagerEnabled: false` e `PasswordLeakDetectionEnabled:
+  false` (Fase 44c): o Chrome não oferece guardar a senha preenchida e a checagem de
+  vazamento não roda; outro arquivo de `policies/managed` que cite esses nomes recusa a
+  instalação (`teste-install`, `teste-deb`, `teste-politica-chrome`).
 - [x] V9.6 — (SEG) O manifesto de native messaging tem `allowed_origins` só com o ID da
   extensão e `path` para `/usr/local/lib/ward/ward-nm`, dono root.
 - [ ] V9.7 — Dado o boot e o login do usuário, então `wardd@<uid>.socket` está ativo,

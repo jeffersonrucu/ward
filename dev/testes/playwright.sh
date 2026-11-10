@@ -22,7 +22,15 @@
 # `$XDG_RUNTIME_DIR` (`WARD_DEV_SOCKET_DIR`), e só mata o pid que ele mesmo criou.
 # Precisa de `make dev-cofre`, `make dev-variacoes` e dos serviços de pé.
 #
+# Fase 44c (D9): toda entrada `http` passa pela janela (só a confirmação da origem, no
+# nível livre). A janela é a de teste (`wardd-aprovador-teste`, aberta pelo daemon por
+# `WARD_DEV_APP`, que responde o que está em `$TRAB/aprovador.modo`). O ataque `[::1]` da
+# auditoria do M6 (`dev/testes/falso_v6.py` em `[::1]:8081`, o WordPress só em
+# 127.0.0.1): negado, o Chrome nem abre; confirmado, o `--host-resolver-rules` leva o
+# Chrome a 127.0.0.1 e o falso não recebe nada.
+#
 # Uso: dev/testes/playwright.sh <wardd com modo-teste> <ward com modo-teste>
+#      <wardd-aprovador-teste>
 
 export PATH=/usr/bin:/bin
 set -euo pipefail
@@ -31,11 +39,13 @@ RAIZ="$(cd -P -- "${BASH_SOURCE[0]%/*}/../.." && pwd -P)"
 . "$RAIZ/dev/ambiente.sh"
 cd "$RAIZ"
 
-WARDD="${1:?uso: playwright.sh <wardd> <ward>}"
-WARD="${2:?uso: playwright.sh <wardd> <ward>}"
+WARDD="${1:?uso: playwright.sh <wardd> <ward> <wardd-aprovador-teste>}"
+WARD="${2:?uso: playwright.sh <wardd> <ward> <wardd-aprovador-teste>}"
+APROVADOR="${3:?uso: playwright.sh <wardd> <ward> <wardd-aprovador-teste>}"
 case "$WARDD" in /*) ;; *) WARDD="$RAIZ/$WARDD" ;; esac
 case "$WARD" in /*) ;; *) WARD="$RAIZ/$WARD" ;; esac
-[ -x "$WARDD" ] && [ -x "$WARD" ] || { echo "falta $WARDD ou $WARD" >&2; exit 1; }
+case "$APROVADOR" in /*) ;; *) APROVADOR="$RAIZ/$APROVADOR" ;; esac
+[ -x "$WARDD" ] && [ -x "$WARD" ] && [ -x "$APROVADOR" ] || { echo "falta $WARDD, $WARD ou $APROVADOR" >&2; exit 1; }
 COFRE="$RAIZ/.dev/cofre-teste.ward"
 LISTA="$RAIZ/.dev/variacoes.txt"
 [ -f "$COFRE" ] && [ ! -L "$COFRE" ] || { echo "falta o cofre de teste: rode 'make dev-cofre'" >&2; exit 1; }
@@ -64,6 +74,11 @@ limpar() {
 trap limpar EXIT
 
 cp -- "$COFRE" "$TRAB/cofre-teste.ward"
+# Fase 44c: a janela de teste, dentro do "repositório" do daemon (a pasta acima de
+# WARD_DEV_DIR, D63); começa confirmando a origem.
+mkdir -m 0700 "$TRAB/logs"
+cp -- "$APROVADOR" "$TRAB/wardd-aprovador-teste"
+printf 'confirmar\n' > "$TRAB/aprovador.modo"
 printf 'ward-estado 1\nvista 0\nqueimada 0\n' > "$TRAB/cofre-teste.estado"
 LOG="$TRAB/wardd.log"
 
@@ -74,6 +89,7 @@ env -i \
     LANG=C.UTF-8 \
     WARD_DEV_DIR="$TRAB" \
     WARD_DEV_SOCKET_DIR="$SOCKDIR" \
+    WARD_DEV_APP="$TRAB/wardd-aprovador-teste" \
     RUST_LOG=trace \
     "$WARDD" </dev/null >"$LOG" 2>&1 &
 PID=$!

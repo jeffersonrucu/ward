@@ -17,8 +17,15 @@
 //   Ward), o envio é descartado na hora.
 // - Fase 43: o `ward login` mora em `login.js` (porta de native messaging aberta com o
 //   `ward-nm`, que também mantém este service worker vivo).
+// - Fase 44c (D9): o preencher do popup numa origem `http` (`localhost`/`127.0.0.1`)
+//   espera o usuário confirmar a origem na janela do Ward (até 2 min). O popup fecha
+//   quando a janela pega o foco, então quem espera e preenche é este service worker: o
+//   popup manda a aba, o `documentId` que a sonda dele achou, a entrada e a origem; a
+//   resposta do daemon vai direto como argumento ao preenchimento naquele documento e é
+//   apagada logo depois. Nada volta ao popup além de "ok" ou o código do erro.
 
 import { iniciarLogin } from './login.js';
+import { preencherNaPagina } from './pagina.js';
 
 const HOST = 'br.ward.nm';
 const POPUP = chrome.runtime.getURL('popup.html');
@@ -104,6 +111,92 @@ async function aoEnviar(msg, de) {
   }
 }
 
+/** Quanto esperar a resposta do `preencher` com a janela (o daemon espera 2 min). */
+const PRAZO_JANELA_MS = 130 * 1000;
+
+/**
+ * Um pedido ao host por uma porta própria: o `connectNative` mantém o service worker
+ * vivo enquanto a janela de aprovação espera. `null` se o host não respondeu.
+ */
+function pedirPorPorta(pedido) {
+  return new Promise((ok) => {
+    let p;
+    try {
+      p = chrome.runtime.connectNative(HOST);
+    } catch {
+      ok(null);
+      return;
+    }
+    let feito = false;
+    let prazo = null;
+    const fim = (r) => {
+      if (feito) return;
+      feito = true;
+      clearTimeout(prazo);
+      try {
+        p.disconnect();
+      } catch {
+        // já fechada
+      }
+      ok(r);
+    };
+    prazo = setTimeout(() => fim(null), PRAZO_JANELA_MS);
+    p.onMessage.addListener((m) => fim(m && typeof m === 'object' ? m : null));
+    p.onDisconnect.addListener(() => {
+      void chrome.runtime.lastError;
+      fim(null);
+    });
+    try {
+      p.postMessage(pedido);
+    } catch {
+      fim(null);
+    }
+  });
+}
+
+/** Fase 44c: o preencher do popup numa origem `http`, com a janela do Ward. */
+async function preencherComJanela(msg) {
+  const origem = typeof msg.origem === 'string' ? origemDa(msg.origem) : null;
+  if (
+    !texto(msg.entrada, MAX) ||
+    typeof msg.documento !== 'string' ||
+    msg.documento.length === 0 ||
+    msg.documento.length > MAX ||
+    !origem ||
+    origem !== msg.origem ||
+    new URL(origem).protocol !== 'http:'
+  ) {
+    return { erro: 'pedido_invalido' };
+  }
+  let r = await pedirPorPorta({ v: 1, op: 'preencher', dados: { entrada: msg.entrada, origem } });
+  if (!r || r.tipo !== 'preenchimento' || !r.dados) {
+    const codigo = r && r.tipo === 'erro' && r.dados ? String(r.dados.codigo) : 'sem_resposta';
+    return { erro: codigo };
+  }
+  const d = r.dados;
+  const args = [origem, String(d.usuario ?? ''), String(d.senha ?? ''), String(d.totp ?? '')];
+  d.senha = '';
+  d.totp = '';
+  d.usuario = '';
+  r = null;
+  let feito = null;
+  try {
+    [feito] = await chrome.scripting.executeScript({
+      target: { tabId: msg.aba, documentIds: [msg.documento] },
+      world: 'ISOLATED',
+      func: preencherNaPagina,
+      args,
+    });
+  } catch {
+    feito = null;
+  } finally {
+    args.fill('');
+  }
+  const v = feito && feito.result;
+  if (v && v.ok === true) return { ok: true };
+  return { erro: (v && typeof v.motivo === 'string' && v.motivo) || 'origem' };
+}
+
 /** Base64 dos bytes UTF-8 (como o protocolo leva os segredos). */
 function base64(s) {
   const bytes = new TextEncoder().encode(s);
@@ -183,6 +276,9 @@ chrome.runtime.onMessage.addListener((msg, sender, responder) => {
       return false;
     case 'salvar':
       salvar(msg).then(responder, () => responder({ erro: 'sem_resposta' }));
+      return true;
+    case 'preencher':
+      preencherComJanela(msg).then(responder, () => responder({ erro: 'sem_resposta' }));
       return true;
     default:
       return false;

@@ -168,10 +168,22 @@ pub fn pasta_sessoes(rt: &Path) -> PathBuf {
     rt.join(PASTA_SESSOES)
 }
 
-/// Apaga os storage states (`<rt>playwright/*`). Chamado ao travar. Não segue link.
+/// Apaga os storage states (`<rt>playwright/*`). Chamado ao travar. Não segue link: a
+/// pasta é conferida por `symlink_metadata` antes de listar (Fase 44c; um link plantado
+/// no lugar de `<rt>playwright` levaria a apagar os arquivos de outra pasta do uid), e
+/// cada item é apagado como ele é (um link vira só o link apagado).
 pub fn apagar_sessoes(rt: &Path) -> usize {
+    let pasta = pasta_sessoes(rt);
+    match fs::symlink_metadata(&pasta) {
+        Ok(m) if m.file_type().is_dir() => {}
+        Ok(_) => {
+            aviso!("playwright: a pasta das sessões não é uma pasta; nada apagado nela");
+            return 0;
+        }
+        Err(_) => return 0,
+    }
     let mut n = 0;
-    if let Ok(itens) = fs::read_dir(pasta_sessoes(rt)) {
+    if let Ok(itens) = fs::read_dir(&pasta) {
         for item in itens.flatten() {
             let ok = match item.file_type() {
                 Ok(t) if t.is_dir() => fs::remove_dir_all(item.path()).is_ok(),
@@ -248,6 +260,10 @@ pub fn argv_chrome(chrome: &Path, perfil: &Path) -> Option<Vec<Vec<u8>>> {
         "--disable-client-side-phishing-detection",
         "--disable-features=Translate,MediaRouter,OptimizationHints,AutofillServerCommunication,PasswordManagerOnboarding",
         "--deny-permission-prompts",
+        // Fase 44c (D9): `localhost` sempre em 127.0.0.1. Sem isto o Chrome tenta `[::1]`
+        // antes, e outro processo do uid que escute ali (com o serviço só em 127.0.0.1)
+        // recebe a senha numa origem que confere.
+        "--host-resolver-rules=MAP localhost 127.0.0.1",
         "--no-pings",
         "--metrics-recording-only",
         "--mute-audio",
@@ -884,7 +900,44 @@ mod testes {
         assert!(t.contains(&"--password-store=basic".to_owned()));
         assert!(t.iter().all(|a| !a.contains("remote-debugging-port")));
         assert!(t.iter().all(|a| !a.contains("no-sandbox")));
+        // Fase 44c (D9): `localhost` nunca vai a `[::1]`.
+        assert!(t.contains(&"--host-resolver-rules=MAP localhost 127.0.0.1".to_owned()));
         assert_eq!(t.last().unwrap(), "about:blank");
+    }
+
+    /// Fase 44c (achado baixo da auditoria do M6): `<rt>playwright` trocado por um link
+    /// para outra pasta do uid. Travar não apaga nada do outro lado; um link dentro da
+    /// pasta das sessões some sem levar o alvo.
+    #[test]
+    fn ataque_apagar_sessoes_nao_segue_link() {
+        use std::os::unix::fs::symlink;
+        let base = std::env::temp_dir().join(format!("ward-pw-link-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        let rt = base.join("rt");
+        let alvo = base.join("alvo");
+        fs::create_dir_all(&rt).unwrap();
+        fs::create_dir_all(alvo.join("sub")).unwrap();
+        fs::write(alvo.join("precioso.txt"), b"nao apagar").unwrap();
+        fs::write(alvo.join("sub/outro.txt"), b"nao apagar").unwrap();
+        symlink(&alvo, pasta_sessoes(&rt)).unwrap();
+        assert_eq!(apagar_sessoes(&rt), 0);
+        assert!(alvo.join("precioso.txt").exists());
+        assert!(alvo.join("sub/outro.txt").exists());
+        // O `limpar` da partida também não segue o link.
+        assert_eq!(limpar(&rt).unwrap(), 0);
+        assert!(alvo.join("precioso.txt").exists());
+
+        // Pasta de verdade com um link dentro: o link some, o alvo fica.
+        fs::remove_file(pasta_sessoes(&rt)).unwrap();
+        fs::create_dir(pasta_sessoes(&rt)).unwrap();
+        fs::write(pasta_sessoes(&rt).join("acme-wp-prod.json"), b"{}").unwrap();
+        symlink(&alvo, pasta_sessoes(&rt).join("ligacao")).unwrap();
+        assert_eq!(apagar_sessoes(&rt), 2);
+        assert!(!pasta_sessoes(&rt).join("acme-wp-prod.json").exists());
+        assert!(fs::symlink_metadata(pasta_sessoes(&rt).join("ligacao")).is_err());
+        assert!(alvo.join("precioso.txt").exists());
+        assert!(alvo.join("sub/outro.txt").exists());
+        let _ = fs::remove_dir_all(&base);
     }
 
     #[test]

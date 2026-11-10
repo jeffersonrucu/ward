@@ -6,11 +6,15 @@
 // Cada função é serializada pelo Chrome (`func.toString()`): não pode usar nada de fora
 // dela. Por isso as duas repetem os mesmos auxiliares.
 //
-// DOM clobbering: `document.querySelectorAll`, `form.elements`, `input.form` e cia. podem
-// ser trocados por elementos com `name`/`id` iguais (os getters com nome do `Document` e
-// do `HTMLFormElement` passam na frente dos métodos). Aqui todo acesso ao DOM vai pelos
+// DOM clobbering: elementos da página com `name`/`id` iguais a uma propriedade passam na
+// frente dela. As propriedades com nome do `<form>` chegam ao mundo isolado (um
+// `<input name="action">` troca o `form.action`, um `<input name="elements">` o
+// `form.elements`); as do `document` não chegam no Chrome de hoje (um
+// `<img name="querySelectorAll">` não troca o `document.querySelectorAll` daqui,
+// conferido na Fase 44a). O código não depende disso: todo acesso ao DOM vai pelos
 // protótipos do mundo isolado (`Document.prototype.querySelectorAll.call(...)`,
-// descritores de `HTMLInputElement.prototype`), que a página não alcança.
+// descritores de `HTMLFormElement.prototype` e `HTMLInputElement.prototype`), que a
+// página não alcança.
 
 /** Sonda o documento do quadro principal: a origem dele e se é mesmo o topo. */
 export function sondar() {

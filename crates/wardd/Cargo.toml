@@ -65,6 +65,14 @@ name = "wardd-app-teste"
 path = "app-teste/main.rs"
 required-features = ["modo-teste"]
 
+# Janela de aprovação de teste das suítes de ponta a ponta do M6 (Fase 44c, D9): responde
+# os pedidos com o que a suíte escreveu em `$WARD_DEV_DIR/aprovador.modo`. Só com
+# `modo-teste`, como o app de teste.
+[[bin]]
+name = "wardd-aprovador-teste"
+path = "aprovador-teste/main.rs"
+required-features = ["modo-teste"]
+
 # Scrutiny do M4 (Fase 28b): os testes de integração que sobem o `wardd` de teste
 # (`WARD_DEV_DIR`, `WARD_DEV_SOCKET_DIR`, `WARD_DEV_APP`) ou usam os ganchos só existem
 # com a feature. Sem ela (`cargo test -p wardd`), o cargo os pula em vez de compilá-los

@@ -14,7 +14,13 @@
 # - V6.15: `delta-redir` com a aba no 8084 (que vai ao 8082): o mesmo.
 # - Ataques de formulário na origem certa: `action`/`formaction` para o phishing, `GET`,
 #   `target`, dois campos de senha, `action` mascarado: nada enviado para fora.
-# - V6.11 (lado do daemon, sem o app): `acme-wp-dev` (com aprovação) não preenche nada.
+# - V6.11 (lado do daemon): `acme-wp-dev` (com aprovação) negado na janela não preenche
+#   nada.
+# - Fase 44c (D9): toda entrada `http` passa pela janela, com a origem à vista. A janela é
+#   a de teste (`wardd-aprovador-teste`, aberta pelo daemon por `WARD_DEV_APP`, que
+#   responde o que está em `$TRAB/aprovador.modo`); o ataque `[::1]` da auditoria do M6
+#   (`dev/testes/falso_v6.py` em `[::1]:8081`, o WordPress só em 127.0.0.1) com a
+#   janela negada não leva nada ao falso.
 # - V6.16: logs do daemon, do Chrome e do `ward-nm` e o console da extensão sem padrão de
 #   `.dev/variacoes.txt`; o log do daemon sem as origens.
 #
@@ -24,6 +30,7 @@
 # /opt/google/chrome/chrome; fora do `make check`.
 #
 # Uso: dev/testes/login.sh <wardd modo-teste> <ward-nm modo-teste> <ward modo-teste>
+#      <wardd-aprovador-teste>
 
 export PATH=/usr/bin:/bin
 set -euo pipefail
@@ -33,11 +40,12 @@ RAIZ="$(cd -P -- "${BASH_SOURCE[0]%/*}/../.." && pwd -P)"
 cd "$RAIZ"
 
 abs() { case "$1" in /*) printf '%s' "$1" ;; *) printf '%s/%s' "$RAIZ" "$1" ;; esac; }
-USO="uso: login.sh <wardd> <ward-nm> <ward>"
+USO="uso: login.sh <wardd> <ward-nm> <ward> <wardd-aprovador-teste>"
 WARDD="$(abs "${1:?$USO}")"
 NM="$(abs "${2:?$USO}")"
 WARD="$(abs "${3:?$USO}")"
-for b in "$WARDD" "$NM" "$WARD"; do [ -x "$b" ] || { echo "falta $b" >&2; exit 1; }; done
+APROVADOR="$(abs "${4:?$USO}")"
+for b in "$WARDD" "$NM" "$WARD" "$APROVADOR"; do [ -x "$b" ] || { echo "falta $b" >&2; exit 1; }; done
 CHROME=/opt/google/chrome/chrome
 [ -x "$CHROME" ] || { echo "falta o Chrome em $CHROME" >&2; exit 1; }
 COFRE="$RAIZ/.dev/cofre-teste.ward"
@@ -71,6 +79,11 @@ limpar() {
 trap limpar EXIT
 
 cp -- "$COFRE" "$TRAB/cofre-teste.ward"
+# Fase 44c: a janela de teste, dentro do "repositório" do daemon (a pasta acima de
+# WARD_DEV_DIR, D63); começa confirmando a origem.
+mkdir -m 0700 "$TRAB/logs"
+cp -- "$APROVADOR" "$TRAB/wardd-aprovador-teste"
+printf 'confirmar\n' > "$TRAB/aprovador.modo"
 printf 'ward-estado 1\nvista 0\nqueimada 0\n' > "$TRAB/cofre-teste.estado"
 LOG="$TRAB/wardd.log"
 env -i \
@@ -81,6 +94,7 @@ env -i \
     WARD_DEV_DIR="$TRAB" \
     WARD_DEV_SOCKET_DIR="$SOCKDIR" \
     WARD_DEV_EXTENSAO=chrome \
+    WARD_DEV_APP="$TRAB/wardd-aprovador-teste" \
     RUST_LOG=trace \
     "$WARDD" </dev/null >"$LOG" 2>&1 &
 PID=$!
@@ -101,7 +115,7 @@ kill -0 "$PID" 2>/dev/null || { echo "FALHA o wardd de teste morreu durante o te
 kill -TERM "$PID" 2>/dev/null || true
 wait "$PID" 2>/dev/null || true
 PID=""
-for f in "$LOG" "$TRAB/chrome.log" "$TRAB/console.log" "$TRAB/cli.log"; do
+for f in "$LOG" "$TRAB/chrome.log" "$TRAB/console.log" "$TRAB/cli.log" "$TRAB/logs/wardd-aprovador-teste.log"; do
     if [ ! -f "$f" ]; then
         echo "FALHA ${f##*/} não existe" >&2
         falhas=$((falhas + 1))
