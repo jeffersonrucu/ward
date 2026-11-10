@@ -213,7 +213,7 @@ Trilha S (fases independentes entre si):
 - [x] Fase 40 — `dev/tests/extension.py`, `dev/tests/cli.py`. — V3.1
 - [x] Fase 41 — `dev/tests/migration-guide.py` (`migracao.py`),
   `attacks-foundation.sh`, `skill.py`. — V3.1, V3.7
-- [ ] Fase 42 — `dev/variations.py`, `dev/tests/variations_test.py`, `login.py`,
+- [x] Fase 42 — `dev/variations.py`, `dev/tests/variations_test.py`, `login.py`,
   `revealed_selection.py`. — V3.1
 - [ ] Fase 43 — `dev/container-*` (`inside.sh` de plataforma, install e deb; units, uid;
   `falso.c` → `fake.c`), `dev/tests/clipboard.py`; exemplos `wardd-cliente-teste`,
@@ -274,7 +274,9 @@ Contrato: V4.1–V4.24. Sequencial. A partir daqui o fio muda.
   `chrome_falso.py`, `ssh_falso.py`), servidor falso v1 para o V4.16. Esvazia de
   `frozen.txt` as chaves de mensagem. Compilação: `make compile`. — V4.13, V4.16, V5.10
 - [ ] Fase 53 — Variáveis entregues (DT11) no `ward-core` `delivery` e no `wardd`;
-  `make dev-vault` e `dev-vault-verify` com o `entries.json` novo; oráculo
+  `make dev-vault` e `dev-vault-verify` com o `entries.json` novo (chaves lidas por
+  `dev/variations.py` e `dev/tests/login.py`; heredoc do `dev-vault.sh` chama
+  `entry_patterns`/`database_url`; achado da Fase 42); oráculo
   `dev/variations.py` (formas das variáveis novas); o parser da tabela "Cofre de teste"
   em `dev/tests/dev-vault.sh` com os nomes v5 deste contrato; expectativas de
   `dev/tests/cli.py` e dos testes do `wardd` pela tabela "Entrega esperada". Compilação:
