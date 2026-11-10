@@ -1246,3 +1246,19 @@ cor iguais ao app (`TrocarSenha.svelte` › `.aviso`, `--cor-aviso-texto`). PNG 
 | `Diálogo de troca` › `Tipo=senha mestra` (componente) | `19918` › `corpo` `19934` | explicação `19924` igual ao app: "A senha atual confirma a troca. Depois dela, o cofre só abre com a nova."; texto novo `aviso backups` `22962` logo abaixo (estilo `8:12`, 14/20; fill `aviso/texto` `6:83`): "Os backups antigos, no computador e no pendrive, continuam abrindo com a senha antiga. Se você troca porque a senha antiga vazou, apague esses backups." |
 | `Diálogo de troca` (set) | `19978` | `Tipo=PIN` `19979` desceu para y 652 e o set cresceu para 1228 de altura (a variante da senha mestra ficou 56 px mais alta) |
 | `Configurações / Trocar senha mestra` (tela) | `20085` › `20411` › `corpo` `20417` | instância herdou a explicação `20418` e o aviso `22963` |
+
+## Fase 54f — janela de aprovação com entrada padrão oculta (design)
+
+Editado numa cópia do `Ward.figcraft` aberta pelo MCP `figcraft` headless e salvo por
+cima do original com `save_file` depois de conferir que o sha256 do original não tinha
+mudado (`1f397e4b…` → `24addb5f…`). Referência: `JanelaAprovacao.svelte`/`aprovacao.js`
+da 54b e `docs/mission/evidence/fase-54b/`. Sem componente nem variable nova: tudo por
+instância (`Destaque` aviso `18684`, `Interruptor` `6838`, `Caixa de código` `16340`,
+`Campo PIN` `650`, `Botão`). Os dois frames saíram de uma cópia de `Aprovação / Normal`
+`16701`, na linha y 4000 da Layout, 560 de largura, altura `hug` (1002, igual à captura
+do app). PNG em `docs/mission/evidence/fase-54f/`.
+
+| Frame | Id | x | Principais |
+| --- | --- | --- | --- |
+| `Aprovação / entrada padrão` | `22964` | 12320 | `ward run acme-pg-aprovacao -- python3` com pipe (com aprovação, stage): `Contagem` "1:35 restantes" `22975`; `Destaque entrada padrão` (aviso, `Ícone/alerta`) `23039` (texto `23043`: "O comando recebe dados pela entrada padrão, que esta janela não mostra. Esses dados podem usar a credencial do jeito que quiserem. Permita só se você sabe o que vai por ela."); resumo `22979`; `pedido` `22980` (Comando `22999` `"python3"`, Diretório de trabalho `23048` `"/home/dev/projetos/acme"`, Quem pediu `23002`); `confirmação da entrada` `23044` (gap `espaco/8` `6:131`): `Interruptor` `Ligado=não` `23045` + rótulo `23047` (estilo `8:16`, 12/16, fill `6:64`) "Sei o que vai pela entrada padrão e permito mesmo assim"; `Campo PIN` vazio `23005`; "Negar" `23017` (secundário, foco), "Permitir uma vez" `23021` (primário, desabilitado), "Permitir por 1 hora" `23026` e "Permitir sempre" `23030` (secundário, desabilitado); nota `23034` |
+| `Aprovação / entrada padrão / marcada` | `23051` | 12960 | o mesmo com a caixa ligada: `Destaque entrada padrão` `23066`; Comando `23091`, Diretório `23094`, Quem pediu `23097`; `confirmação da entrada` `23100` com `Interruptor` `Ligado=sim` `23101` e rótulo `23103`; `Campo PIN` completo `23104`; "Negar" `23116` (secundário), "Permitir uma vez" `23120` (primário), "Permitir por 1 hora" `23125`, "Permitir sempre" `23129` (secundário); nota `23133` |

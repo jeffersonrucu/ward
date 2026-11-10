@@ -127,6 +127,11 @@ Mudar o nível exige o PIN. O nível vale para `run`, `ssh`, `login` e `playwrig
 - Botões: **Negar**, **Permitir uma vez**, **Permitir por 1 hora**, **Permitir
   sempre** (a entrada vira "livre").
 - Todos os botões menos "Negar" pedem o **PIN**.
+- Se o comando recebe dados pela entrada padrão (pipe ou arquivo), a janela avisa que
+  não mostra esses dados e só libera os botões de permitir depois de uma confirmação
+  a mais: "Sei o que vai pela entrada padrão e permito mesmo assim". Quem confere é o
+  daemon: sem a confirmação ele recusa, e "Permitir por 1 hora" não vale para esses
+  pedidos.
 - Fechar a janela nega. Sem resposta em 2 minutos, o pedido expira (nega).
 - Não há tela de aprovações, nem de "cortar permissão": voltar atrás é mudar o
   nível na tela da entrada.

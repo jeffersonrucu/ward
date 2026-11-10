@@ -1708,10 +1708,11 @@ seis baixos.
   14/20 (`--tamanho-base`/`--altura-linha-base`; o `--tamanho-md` é 16/24) nos dois,
   conferido no Chrome headless contra o frame `20085`.
   Feita (2026-11-10): 14/20, 430×40 e 430×60, quebras iguais ao frame; `make app-front` 0.
-- [ ] Fase 54f (DESIGN) — Aprovação com entrada padrão oculta (achado da 54b): frame
+- [x] Fase 54f (DESIGN) — Aprovação com entrada padrão oculta (achado da 54b): frame
   `Aprovação / entrada padrão` no FigCraft com o `Destaque` aviso e o `Interruptor` da
   confirmação, desmarcado e marcado, igual a `docs/mission/evidence/fase-54b/`;
   `docs/escopo.md` › "Janela de aprovação" passa a citar o aviso e a confirmação.
+  Feita (2026-11-10): frames `22964` e `23051`; escopo atualizado.
 - [ ] Fase 54g — RA11 aceito (decisão do usuário, 2026-11-10: "Aceitar como risco"): o
   tipo `terminal` declarado pela CLI do mesmo uid (cliente que mente no socket, pty próprio
   do agente) entra em `docs/escopo.md` › "Fora do modelo de ameaça", com o que a 54b fecha
@@ -1719,3 +1720,7 @@ seis baixos.
 - [ ] Fase 54h — `Modal` contra o design (achado da 54e, já existia): o "X" de fechar do
   cabeçalho e o corpo 3 px acima (y 170 contra 173) no diálogo de troca; conferir no Chrome
   headless contra o frame `20085`.
+- [ ] Fase 54i (DESIGN) — "Diretório de trabalho" nos frames de aprovação (achado da 54f):
+  os frames `16701`, `16810`, `16885`, `16960` e `17035` ganham a `Caixa de código` do
+  diretório, como o app mostra desde a 26a; o comentário "sem frame" de `aprovacao.js` e
+  `JanelaAprovacao.svelte` passa a citar `22964`.
