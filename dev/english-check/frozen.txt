@@ -82,3 +82,51 @@ app/src/screens/Form.svelte regiao 54 field id (region) of the aws type
 app/src/screens/Form.svelte tunel 54 field id (tunnel) of the banco type
 app/src/screens/Form.svelte salto 54 field id (jump host) of the servidor type
 app/src/screens/Form.svelte totp_semente 54 field id (TOTP seed) of the login type
+
+# Phase 37 (ApprovalWindow, PasswordGenerator, FirstUse, RestoreBackup, EmergencyKit):
+# wire fields the screens read or send.
+app/src/screens/ApprovalWindow.svelte estado 54 status field of the pedido_de_aprovacao reply
+app/src/screens/ApprovalWindow.svelte ambiente 54 environment field of the pedido_de_aprovacao reply
+app/src/screens/ApprovalWindow.svelte confirmacao 54 confirmation flag of the pedido_de_aprovacao reply
+app/src/screens/ApprovalWindow.svelte operacao 54 operation field of the pedido_de_aprovacao reply
+app/src/screens/ApprovalWindow.svelte entrada_oculta 54 hidden stdin flag of the pedido_de_aprovacao reply
+app/src/screens/ApprovalWindow.svelte restante 54 remaining seconds of the pedido_de_aprovacao reply
+app/src/screens/ApprovalWindow.svelte origem 54 origin field of the pedido_de_aprovacao reply
+app/src/screens/ApprovalWindow.svelte entradas 54 entries of the pedido_de_aprovacao reply
+app/src/screens/ApprovalWindow.svelte tipo 54 type field of an entry in the pedido_de_aprovacao reply
+app/src/screens/ApprovalWindow.svelte nome 54 name field of an entry in the pedido_de_aprovacao reply
+app/src/screens/ApprovalWindow.svelte comando 54 command field of the pedido_de_aprovacao reply
+app/src/screens/ApprovalWindow.svelte diretorio 54 directory field of the pedido_de_aprovacao reply
+app/src/screens/ApprovalWindow.svelte cadeia 54 process chain of the pedido_de_aprovacao reply
+app/src/screens/ApprovalWindow.svelte resultado 54 result field of the responder_aprovacao reply
+app/src/screens/ApprovalWindow.svelte mensagem 54 message field of the command error
+app/src/screens/PasswordGenerator.svelte tamanho 54 argument and reply field of gerar_senha
+app/src/screens/PasswordGenerator.svelte minusculas 54 charset argument of gerar_senha
+app/src/screens/PasswordGenerator.svelte maiusculas 54 charset argument of gerar_senha
+app/src/screens/PasswordGenerator.svelte digitos 54 charset argument of gerar_senha
+app/src/screens/PasswordGenerator.svelte simbolos 54 charset argument and reply field of gerar_senha
+app/src/screens/PasswordGenerator.svelte forca 54 strength field of the gerar_senha reply
+app/src/screens/PasswordGenerator.svelte valor 54 value field of the revelar_senha_gerada reply
+app/src/screens/PasswordGenerator.svelte mensagem 54 message field of the command error
+app/src/screens/FirstUse.svelte senha 54 password field of the criar_cofre data and of its errors
+app/src/screens/FirstUse.svelte confirmacao 54 confirmation fields of the criar_cofre data and of its errors
+app/src/screens/FirstUse.svelte criado 54 created field of the criar_cofre reply
+app/src/screens/FirstUse.svelte erros 54 errors field of the criar_cofre reply
+app/src/screens/FirstUse.svelte campo 54 field of a criar_cofre error
+app/src/screens/FirstUse.svelte motivo 54 reason field of a criar_cofre error
+app/src/screens/FirstUse.svelte mensagem 54 message field of the command error
+app/src/screens/restore.js conferida 54 checked mark of a listar_backups item
+app/src/screens/restore.js fora_de_ordem 54 out-of-order mark of a listar_backups item
+app/src/screens/RestoreBackup.svelte nome 54 name field of a listar_backups item
+app/src/screens/RestoreBackup.svelte instante 54 instant field of a listar_backups item
+app/src/screens/RestoreBackup.svelte fora_de_ordem 54 out-of-order mark of a listar_backups item
+app/src/screens/RestoreBackup.svelte dados 54 data argument of restaurar_backup
+app/src/screens/RestoreBackup.svelte entradas 54 entries field of the restaurar_backup reply
+app/src/screens/RestoreBackup.svelte estado 54 status field of the estado_do_cofre reply
+app/src/screens/RestoreBackup.svelte codigo 54 code field of the command error
+app/src/screens/RestoreBackup.svelte mensagem 54 message field of the command error
+app/src/screens/EmergencyKit.svelte ligado 54 enabled field of the backup_externo reply
+app/src/screens/EmergencyKit.svelte pendrive 54 USB drive field of the backup_externo reply
+app/src/screens/EmergencyKit.svelte rotulo 54 label field of the USB drive in the backup_externo reply
+app/src/screens/EmergencyKit.svelte codigo 54 code field of the command error
+app/src/screens/EmergencyKit.svelte mensagem 54 message field of the command error

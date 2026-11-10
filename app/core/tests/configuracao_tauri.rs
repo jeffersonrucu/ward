@@ -26,11 +26,11 @@ fn conf() -> Value {
 #[test]
 fn limites_do_gerador_na_interface_sao_os_do_rust() {
     use ward_app_core::gerador::{TAMANHO_MAX, TAMANHO_MIN, TAMANHO_PADRAO};
-    let js = fs::read_to_string(app().join("src/screens/GeradorSenha.svelte")).unwrap();
+    let js = fs::read_to_string(app().join("src/screens/PasswordGenerator.svelte")).unwrap();
     for (nome, valor) in [
-        ("TAMANHO_MIN", TAMANHO_MIN),
-        ("TAMANHO_MAX", TAMANHO_MAX),
-        ("TAMANHO_PADRAO", TAMANHO_PADRAO),
+        ("MIN_LENGTH", TAMANHO_MIN),
+        ("MAX_LENGTH", TAMANHO_MAX),
+        ("DEFAULT_LENGTH", TAMANHO_PADRAO),
     ] {
         assert!(
             js.contains(&format!("const {nome} = {valor};")),
@@ -44,21 +44,21 @@ fn limites_do_gerador_na_interface_sao_os_do_rust() {
 #[test]
 fn janela_de_aprovacao_segue_o_rust_e_nao_usa_html() {
     use ward_app_core::aprovacao::SEGUNDOS_URGENTE;
-    let js = fs::read_to_string(app().join("src/screens/aprovacao.js")).unwrap();
+    let js = fs::read_to_string(app().join("src/screens/approval.js")).unwrap();
     assert!(
         js.contains(&format!(
-            "export const SEGUNDOS_URGENTE = {SEGUNDOS_URGENTE};"
+            "export const URGENT_SECONDS = {SEGUNDOS_URGENTE};"
         )),
         "SEGUNDOS_URGENTE diverge do Rust"
     );
-    let tela = fs::read_to_string(app().join("src/screens/JanelaAprovacao.svelte")).unwrap();
-    assert!(tela.contains("{pedido.comando}"), "comando como texto");
-    assert!(tela.contains("{processo}"), "cadeia como texto");
-    assert!(tela.contains("{entrada.nome}"), "entrada como texto");
+    let tela = fs::read_to_string(app().join("src/screens/ApprovalWindow.svelte")).unwrap();
+    assert!(tela.contains("{request.comando}"), "comando como texto");
+    assert!(tela.contains("{process}"), "cadeia como texto");
+    assert!(tela.contains("{entry.nome}"), "entrada como texto");
     // Fase 44c (D9): a origem `http` também só como texto.
-    assert!(tela.contains("{pedido.origem}"), "origem como texto");
+    assert!(tela.contains("{request.origem}"), "origem como texto");
     assert!(
-        js.contains("return decisao !== 'negar' && decisao !== 'confirmar';"),
+        js.contains("return decision !== 'negar' && decision !== 'confirmar';"),
         "só negar e confirmar sem PIN"
     );
 }
