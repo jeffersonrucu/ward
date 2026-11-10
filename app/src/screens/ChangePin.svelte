@@ -13,12 +13,7 @@
   import PinField from '../lib/components/PinField.svelte';
   import Modal from '../lib/components/Modal.svelte';
   import { call } from '../lib/bridge/index.js';
-  import {
-    MAX_DIGITOS_PIN as MAX_PIN_DIGITS,
-    MENSAGENS as MESSAGES,
-    mensagemDoRust as rustMessage,
-    pinValido as validPin,
-  } from './primeiro-uso.js';
+  import { MAX_PIN_DIGITS, MESSAGES, rustMessage, isValidPin } from './first-use.js';
 
   /**
    * @type {{ open?: boolean, onclose?: () => void, onchanged?: () => void,
@@ -84,8 +79,8 @@
       if (!text) return;
       const value = { 'atual': current, 'novo': next, 'confirmacao': confirmation }[field];
       const noSelection = e.target?.selectionStart === e.target?.selectionEnd;
-      if (/\D/.test(text)) errors[field] = MESSAGES.pinComLetra;
-      else if (noSelection && value.length + text.length > MAX_PIN_DIGITS) errors[field] = MESSAGES.pinLongo;
+      if (/\D/.test(text)) errors[field] = MESSAGES.pinWithLetter;
+      else if (noSelection && value.length + text.length > MAX_PIN_DIGITS) errors[field] = MESSAGES.pinLong;
       else errors[field] = '';
     };
   }
@@ -94,16 +89,16 @@
     e?.preventDefault();
     if (sending) return;
     clearErrors();
-    if (!validPin(current)) {
-      errors.atual = MESSAGES.pinInvalido;
+    if (!isValidPin(current)) {
+      errors.atual = MESSAGES.pinInvalid;
       return focusField('atual');
     }
-    if (!validPin(next)) {
-      errors.novo = MESSAGES.pinInvalido;
+    if (!isValidPin(next)) {
+      errors.novo = MESSAGES.pinInvalid;
       return focusField('novo');
     }
     if (confirmation !== next) {
-      errors.confirmacao = MESSAGES.pinDiferente;
+      errors.confirmacao = MESSAGES.pinMismatch;
       return focusField('confirmacao');
     }
     // The PINs leave the state before the reply: the screen keeps them not even in the error.

@@ -13,9 +13,9 @@
   import Settings from './screens/Settings.svelte';
   import Credentials from './screens/Credentials.svelte';
   import Unlock from './screens/Unlock.svelte';
-  import PasswordGenerator from './screens/GeradorSenha.svelte';
-  import ApprovalWindow from './screens/JanelaAprovacao.svelte';
-  import FirstUse from './screens/PrimeiroUso.svelte';
+  import PasswordGenerator from './screens/PasswordGenerator.svelte';
+  import ApprovalWindow from './screens/ApprovalWindow.svelte';
+  import FirstUse from './screens/FirstUse.svelte';
 
   // Keyed by the wire values of the vault status (frozen until Phase 54).
   const TEXTS = {

@@ -15,12 +15,7 @@
   import PasswordField from '../lib/components/PasswordField.svelte';
   import Modal from '../lib/components/Modal.svelte';
   import { call } from '../lib/bridge/index.js';
-  import {
-    MENSAGENS as MESSAGES,
-    erroDaSenha as passwordError,
-    forcaDaSenha as passwordStrength,
-    mensagemDoRust as rustMessage,
-  } from './primeiro-uso.js';
+  import { MESSAGES, passwordError, passwordStrength, rustMessage } from './first-use.js';
 
   /**
    * @type {{ open?: boolean, onclose?: () => void, onchanged?: () => void,
@@ -84,7 +79,7 @@
       return;
     }
     if (confirmation !== next) {
-      errors.confirmacao = MESSAGES.senhaDiferente;
+      errors.confirmacao = MESSAGES.passwordMismatch;
       confirmationField?.focus();
       return;
     }
@@ -145,12 +140,12 @@
     <div class="strength" aria-live="polite">
       <div class="bars" aria-hidden="true">
         {#each [1, 2, 3, 4] as n (n)}
-          <span class="bar" data-tone={strength && n <= strength.segmentos ? strength.tom : undefined}
+          <span class="bar" data-tone={strength && n <= strength.segments ? strength.tone : undefined}
           ></span>
         {/each}
       </div>
-      <span class="caption" data-tone={strength?.tom}>
-        {strength ? `Força: ${strength.rotulo}` : 'Força: digite a senha'}
+      <span class="caption" data-tone={strength?.tone}>
+        {strength ? `Força: ${strength.label}` : 'Força: digite a senha'}
       </span>
     </div>
     <PasswordField
@@ -210,13 +205,13 @@
     border-radius: var(--radius-pill);
     background: var(--color-border-default);
   }
-  .bar[data-tone='perigo'] {
+  .bar[data-tone='danger'] {
     background: var(--color-danger-default);
   }
-  .bar[data-tone='aviso'] {
+  .bar[data-tone='warning'] {
     background: var(--color-warning-default);
   }
-  .bar[data-tone='sucesso'] {
+  .bar[data-tone='success'] {
     background: var(--color-success-default);
   }
   .caption {
@@ -224,13 +219,13 @@
     line-height: var(--line-height-xs);
     color: var(--color-text-secondary);
   }
-  .caption[data-tone='perigo'] {
+  .caption[data-tone='danger'] {
     color: var(--color-danger-text);
   }
-  .caption[data-tone='aviso'] {
+  .caption[data-tone='warning'] {
     color: var(--color-warning-text);
   }
-  .caption[data-tone='sucesso'] {
+  .caption[data-tone='success'] {
     color: var(--color-success-text);
   }
 </style>

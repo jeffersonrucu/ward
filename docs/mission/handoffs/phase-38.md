@@ -96,7 +96,8 @@ Troca 1:1 pelo `docs/glossario.md` (seções 2 e 4, mais a tabela nova "Telas `S
 - `app/src/lib/bridge/test-bridge.js`: `codigo`, `mensagem`, `valor`.
 - `app/src/screens/settings.js`: `rotulo`, `montado`, `pendrive`, `pendrives_visiveis`.
 - `app/src/screens/Settings.svelte`: `minutos_trava`, `backup_externo`, `ligado`,
-  `estado`, `instante`, `entradas`, `codigo`, `mensagem`.
+  `estado`, `codigo`, `mensagem` (as de `instante`/`entradas` saíram no merge com a
+  Fase 37: a resposta do restaurar chega já como `{ instant, entries }`).
 - `app/src/screens/Unlock.svelte`: `restante`, `entrada`, `operacao`, `comando`,
   `codigo`, `mensagem`.
 - `app/src/screens/ChangePassword.svelte`: `dados`, `atual`, `nova`, `confirmacao`,
@@ -162,6 +163,35 @@ Achados que sobram (todos da Fase 37): `ChangePassword.svelte` `MENSAGENS`,
 `aberto`, `onfechar`, `ontravado`, `onrestaurado` (nas instâncias de `KitEmergencia` e
 `RestaurarBackup`). `mensagemDoRust` não aparece porque as entradas `mensagem` do
 `frozen.txt` cobrem a palavra.
+
+## Merge com a Fase 37 (master a51cd7e)
+
+Pedido do coordinator depois do primeiro commit (0b0eb87). `git merge a51cd7e`, com os
+conflitos resolvidos como previsto:
+- `Configuracoes.svelte`, `EscolherPendrive.svelte`, `TrocarPin.svelte`,
+  `TrocarSenha.svelte`, `configuracoes.js` (apagados aqui, alterados pela 37): ficou a
+  versão da 38 (`Settings`, `ChooseUsbDrive`, `ChangePin`, `ChangePassword`,
+  `settings.js`), com os nomes da 37 e sem aliases: imports de `./first-use.js`
+  (`MESSAGES`, `passwordError`, `passwordStrength`, `rustMessage`, `MAX_PIN_DIGITS`,
+  `isValidPin`), `./restore.js` (`restoredMessage`), `./EmergencyKit.svelte`,
+  `./RestoreBackup.svelte`; chaves `MESSAGES.passwordMismatch`, `pinWithLetter`,
+  `pinLong`, `pinInvalid`, `pinMismatch`; força `strength.segments/tone/label` e
+  seletores `[data-tone='danger'|'warning'|'success']`; props `open`, `onclose`,
+  `onlocked`, `onrestored` (`r.instant`, `r.entries`) de `EmergencyKit`/`RestoreBackup`.
+- `App.svelte`: `Unlock.svelte` da 38 com `PasswordGenerator`, `ApprovalWindow` e
+  `FirstUse` da 37.
+- `docs/glossario.md` e `dev/english-check/frozen.txt`: as duas partes (37 e depois 38);
+  a linha do `data-tone` no glossário passou a citar os valores de `first-use.js`; as
+  entradas `instante`/`entradas` de `Settings.svelte` saíram do `frozen.txt` (sem uso).
+- Com isso o `english-check` nos caminhos da fase deu **0 achado e 0 problema** (e 0 em
+  todo `app/src`); o "Ficou de fora" e a lista dos 25 achados acima valiam só antes do
+  merge.
+
+| Comando (depois do merge) | Exit code |
+| --- | --- |
+| `python3 -I dev/english_check.py --paths <caminhos da fase>` | 0 (0 achado, 0 problema) |
+| `python3 -I dev/english_check.py --paths app/src` | 0 |
+| `make compile` (log `compile-fase38-merge.log` na scratchpad) | 0 (0 erro; só os 10 avisos antigos de `Form.svelte`) |
 
 ## Problemas descobertos
 

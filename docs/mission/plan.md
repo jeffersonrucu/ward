@@ -195,7 +195,7 @@ Trilha W (a 35 primeiro, depois 36–39 em paralelo):
   `make compile`. — V3.1, V3.2, V3.6
 - [x] Fase 36 — **(UI)** `screens/Form.svelte` (Formulario), `form.js`,
   `Credentials.svelte`, `credentials.js`, `ChooseType.svelte`. — V3.1, V3.2, V3.4
-- [ ] Fase 37 — **(UI)** `ApprovalWindow.svelte` (JanelaAprovacao), `approval.js`,
+- [x] Fase 37 — **(UI)** `ApprovalWindow.svelte` (JanelaAprovacao), `approval.js`,
   `PasswordGenerator.svelte`, `FirstUse.svelte`, `first-use.js`,
   `RestoreBackup.svelte`, `restore.js`, `EmergencyKit.svelte`, `emergency-kit.js`. —
   V3.1, V3.2, V3.3, V3.4

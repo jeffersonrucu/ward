@@ -98,7 +98,7 @@ def pedido_na_janela(apr, entrada, prazo=40.0):
             t = texto(apr)
         except Exception:
             return None
-        return t if entrada in t and "Negar" in t and apr.locator("#aprovacao-negar").count() else None
+        return t if entrada in t and "Negar" in t and apr.locator("#approval-deny").count() else None
     return esperar(tem, prazo)
 
 
@@ -108,9 +108,9 @@ def sem_pedido(apr):
 
 def responder(apr, botao, pin=None):
     if pin is not None:
-        apr.fill("#aprovacao-pin", pin)
+        apr.fill("#approval-pin", pin)
     if botao == "negar":
-        apr.click("#aprovacao-negar")
+        apr.click("#approval-deny")
     elif botao == "fechar":
         apr.get_by_role("button", name="Fechar e negar").click()
     else:

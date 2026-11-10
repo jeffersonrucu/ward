@@ -13,7 +13,7 @@
   import Modal from '../lib/components/Modal.svelte';
   import { call } from '../lib/bridge/index.js';
   import { usbDriveName, situationInList } from './settings.js';
-  import { mensagemDoRust as rustMessage } from './primeiro-uso.js';
+  import { rustMessage } from './first-use.js';
 
   /**
    * @type {{ open?: boolean, replace?: boolean, current?: string | null,

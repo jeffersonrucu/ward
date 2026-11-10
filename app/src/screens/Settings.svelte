@@ -32,14 +32,14 @@
   import Select from '../lib/components/Select.svelte';
   import Toast from '../lib/components/Toast.svelte';
   import { call } from '../lib/bridge/index.js';
-  import EmergencyKit from './KitEmergencia.svelte';
+  import EmergencyKit from './EmergencyKit.svelte';
   import ChangePin from './ChangePin.svelte';
   import ChangePassword from './ChangePassword.svelte';
   import ChooseUsbDrive from './ChooseUsbDrive.svelte';
-  import RestoreBackup from './RestaurarBackup.svelte';
-  import { mensagemRestaurado as restoredMessage } from './restaurar.js';
+  import RestoreBackup from './RestoreBackup.svelte';
+  import { restoredMessage } from './restore.js';
   import { LOCAL_BACKUP_WARNING, usbDriveCard, lockOptions } from './settings.js';
-  import { mensagemDoRust as rustMessage } from './primeiro-uso.js';
+  import { rustMessage } from './first-use.js';
 
   /** @type {{ onlocked?: () => void }} */
   let { onlocked = undefined } = $props();
@@ -265,9 +265,9 @@
 </section>
 
 <EmergencyKit
-  aberto={dialog === 'kit'}
-  onfechar={closeDialog}
-  ontravado={() => {
+  open={dialog === 'kit'}
+  onclose={closeDialog}
+  onlocked={() => {
     dialog = '';
     onlocked?.();
   }}
@@ -293,14 +293,14 @@
   }}
 />
 <RestoreBackup
-  aberto={dialog === 'restore'}
-  onfechar={closeDialog}
-  onrestaurado={(r) => {
+  open={dialog === 'restore'}
+  onclose={closeDialog}
+  onrestored={(r) => {
     dialog = '';
-    notify(restoredMessage(r.instante, r.entradas));
+    notify(restoredMessage(r.instant, r.entries));
     load();
   }}
-  ontravado={() => {
+  onlocked={() => {
     dialog = '';
     onlocked?.();
   }}
