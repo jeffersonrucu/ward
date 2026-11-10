@@ -221,11 +221,11 @@ def modo_webkit():
         GLib.idle_add(Gtk.main_quit)
 
     def passos():
-        if not esperar("return !!document.querySelector('#senha-mestra')", 40):
+        if not esperar("return !!document.querySelector('#master-password')", 40):
             falha("a tela Destravar não abriu pela ponte")
             return
         js(
-            "const e = document.querySelector('#senha-mestra');"
+            "const e = document.querySelector('#master-password');"
             "const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;"
             f"set.call(e, {json.dumps(SENHA)}); e.dispatchEvent(new Event('input', {{bubbles: true}}));"
             "e.form ? e.form.requestSubmit() : e.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true}));"

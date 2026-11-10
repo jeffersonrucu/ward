@@ -1,22 +1,24 @@
 <script>
-  // Telas `Destravar / Padrão` (3342), `/ Senha errada` (3393) e `/ Pedido do agente`
-  // (3450). Janela com o `Painel de marca` e o painel `conteúdo` (fundo/sutil, borda
-  // borda/sutil, raio painel, padding espaco/48) com a coluna `formulário` centrada
-  // (largura/coluna-acesso; gap espaco/32, ou espaco/24 com o pedido).
+  // Unlock screens: default (FigCraft 3342), wrong password (3393) and agent request
+  // (3450). Window with the brand panel and the content panel (subtle background, subtle
+  // border, panel radius, 48 padding) with the form column centered (access column
+  // width; gap 32, or 24 with the request).
   //
-  // Segurança (Fase 31; S1, S11, S13, D20):
-  // - a senha fica só em `senha` (estado local desta tela) e sai dele no clique, antes
-  //   da resposta; nunca vai a estado global, armazenamento do navegador ou URL. Senha
-  //   errada esvazia o campo e mantém o foco nele (V5.8);
-  // - a espera de D20 é do daemon, antes de olhar a senha. A contagem do botão ("Tente
-  //   de novo em N s") é a mesma regra (dobra a partir de 1 s, até 30 s), contada aqui só
-  //   com os erros desta tela: a resposta não diz quantas tentativas houve;
-  // - o pedido do agente vem do lado Rust (`estado_do_cofre` › `pedido`): id, segundos
-  //   que faltam pelo prazo do daemon e (Fase 39a) a entrada pedida, a operação e o
-  //   comando exato, já com escape visível (D51: o daemon formata e o Rust do app passa
-  //   por `neutralizar`). Vêm do agente: entram só como texto (nunca HTML), isolados da
-  //   direção do texto ao redor e sem ligaduras. Sem tipo nem ambiente: com o cofre
-  //   travado o daemon não os sabe, então o cartão não tem os selos do frame 3450.
+  // Security (Phase 31; S1, S11, S13, D20):
+  // - the password lives only in `password` (local state of this screen) and leaves it
+  //   on the click, before the reply; it never goes to global state, browser storage or
+  //   URL. A wrong password empties the field and keeps the focus on it (V5.8);
+  // - the D20 wait is the daemon's, before it looks at the password. The button
+  //   countdown ("try again in N s") is the same rule (doubles from 1 s, up to 30 s),
+  //   counted here only with the errors of this screen: the reply does not say how many
+  //   attempts there were;
+  // - the agent request comes from the Rust side (the request of the vault status
+  //   reply): id, seconds left by the daemon deadline and (Phase 39a) the requested
+  //   entry, the operation and the exact command, already with visible escapes (D51: the
+  //   daemon formats it and the app Rust neutralizes it). They come from the agent: they
+  //   go in only as text (never HTML), isolated from the surrounding text direction and
+  //   without ligatures. No type or environment: with the vault locked the daemon does
+  //   not know them, so the card does not have the badges of frame 3450.
   import { onDestroy, onMount, tick } from 'svelte';
   import Button from '../lib/components/Button.svelte';
   import CodeBox from '../lib/components/CodeBox.svelte';
@@ -27,18 +29,18 @@
   import BrandPanel from '../lib/components/BrandPanel.svelte';
   import { call } from '../lib/bridge/index.js';
 
-  /** Espera máxima de D20, em segundos. */
-  const ESPERA_MAXIMA = 30;
+  /** Maximum D20 wait, in seconds. */
+  const MAX_WAIT = 30;
 
-  /** Como o agente pediu, pela operação do protocolo (`Operacao::nome`). */
-  const COMANDO_DA_OPERACAO = Object.freeze({
-    executar: 'ward run',
+  /** How the agent asked, by the protocol operation (its wire name). */
+  const OPERATION_COMMAND = Object.freeze({
+    'executar': 'ward run',
     ssh: 'ward ssh',
     login: 'ward login',
     playwright: 'ward playwright',
   });
-  const comandoDaOperacao = (op) =>
-    Object.hasOwn(COMANDO_DA_OPERACAO, op) ? COMANDO_DA_OPERACAO[op] : '';
+  const operationCommand = (op) =>
+    Object.hasOwn(OPERATION_COMMAND, op) ? OPERATION_COMMAND[op] : '';
 
   /**
    * @type {{
@@ -50,161 +52,161 @@
    *     comando: string
    *   } | null,
    *   onunlocked: () => void,
-   *   onerror?: (mensagem: string) => void
+   *   onerror?: (message: string) => void
    * }}
    */
-  let { request: pedido = null, onunlocked: ondestravado, onerror: onerro = undefined } = $props();
+  let { request = null, onunlocked, onerror = undefined } = $props();
 
-  let senha = $state('');
-  let erro = $state('');
-  let errosSeguidos = $state(0);
-  let espera = $state(0);
-  let enviando = $state(false);
+  let password = $state('');
+  let error = $state('');
+  let consecutiveErrors = $state(0);
+  let wait = $state(0);
+  let sending = $state(false);
   /** @type {HTMLInputElement | null} */
-  let entrada = $state(null);
+  let input = $state(null);
 
-  // Pedido do agente: contagem local a partir do `restante` que o Rust mandou; "Agora
-  // não" esconde só aquele pedido (pelo id).
-  let restante = $state(0);
-  let pedidoId = $state(-1);
-  let dispensado = $state(-1);
+  // Agent request: local countdown from the remaining seconds the Rust side sent; "not
+  // now" hides only that request (by id).
+  let remaining = $state(0);
+  let requestId = $state(-1);
+  let dismissed = $state(-1);
   $effect(() => {
-    if (pedido && pedido.id !== pedidoId) {
-      pedidoId = pedido.id;
-      restante = pedido.restante;
-    } else if (pedido && pedido.id === pedidoId && Math.abs(pedido.restante - restante) > 2) {
-      restante = pedido.restante;
+    if (request && request.id !== requestId) {
+      requestId = request.id;
+      remaining = request.restante;
+    } else if (request && request.id === requestId && Math.abs(request.restante - remaining) > 2) {
+      remaining = request.restante;
     }
   });
-  const comPedido = $derived(pedido !== null && restante > 0 && dispensado !== pedidoId);
+  const withRequest = $derived(request !== null && remaining > 0 && dismissed !== requestId);
 
-  let relogio = null;
+  let clock = null;
   onMount(() => {
-    relogio = setInterval(() => {
-      if (espera > 0) espera -= 1;
-      if (restante > 0) restante -= 1;
+    clock = setInterval(() => {
+      if (wait > 0) wait -= 1;
+      if (remaining > 0) remaining -= 1;
     }, 1000);
-    entrada?.focus();
+    input?.focus();
   });
   onDestroy(() => {
-    clearInterval(relogio);
-    senha = '';
+    clearInterval(clock);
+    password = '';
   });
 
-  function contagem(s) {
+  function countdown(s) {
     const m = Math.floor(s / 60);
     const ss = String(s % 60).padStart(2, '0');
     return `${m}:${ss} restantes`;
   }
 
-  async function destravar(ev) {
+  async function unlock(ev) {
     ev?.preventDefault();
-    if (enviando || espera > 0) return;
-    if (!senha) {
-      erro = 'Digite a senha mestra.';
-      entrada?.focus();
+    if (sending || wait > 0) return;
+    if (!password) {
+      error = 'Digite a senha mestra.';
+      input?.focus();
       return;
     }
-    enviando = true;
-    // A senha sai do estado da tela antes da resposta.
-    const enviada = senha;
-    senha = '';
+    sending = true;
+    // The password leaves the screen state before the reply.
+    const sent = password;
+    password = '';
     try {
-      await call('destravar', { senha: enviada });
-      erro = '';
-      errosSeguidos = 0;
-      ondestravado();
+      await call('destravar', { 'senha': sent });
+      error = '';
+      consecutiveErrors = 0;
+      onunlocked();
     } catch (e) {
       if (e.codigo === 'senha-incorreta') {
-        errosSeguidos += 1;
-        espera = Math.min(2 ** (errosSeguidos - 1), ESPERA_MAXIMA);
-        erro = e.mensagem;
+        consecutiveErrors += 1;
+        wait = Math.min(2 ** (consecutiveErrors - 1), MAX_WAIT);
+        error = e.mensagem;
       } else if (e.codigo === 'travado' || e.codigo === 'pedido-invalido') {
-        erro = e.codigo === 'pedido-invalido' ? 'Senha mestra fora do formato.' : e.mensagem;
+        error = e.codigo === 'pedido-invalido' ? 'Senha mestra fora do formato.' : e.mensagem;
       } else {
-        onerro?.(e.mensagem);
+        onerror?.(e.mensagem);
       }
     } finally {
-      enviando = false;
+      sending = false;
       await tick();
-      entrada?.focus();
+      input?.focus();
     }
   }
 
-  function digitou() {
-    if (erro && espera === 0) erro = '';
+  function typed() {
+    if (error && wait === 0) error = '';
   }
 
-  const rotuloBotao = $derived(
-    enviando ? 'Destravando…' : espera > 0 ? `Tente de novo em ${espera} s` : 'Destravar',
+  const buttonLabel = $derived(
+    sending ? 'Destravando…' : wait > 0 ? `Tente de novo em ${wait} s` : 'Destravar',
   );
 </script>
 
-<div class="janela">
+<div class="window">
   <BrandPanel />
-  <main class="conteudo">
-    <form class="formulario" class:com-pedido={comPedido} onsubmit={destravar} novalidate>
-      <header class="cabecalho">
-        {#if !comPedido}
-          <div class="selo"><Icon name="lock" size="lg" tone="brand" /></div>
+  <main class="content">
+    <form class="form" class:with-request={withRequest} onsubmit={unlock} novalidate>
+      <header class="header">
+        {#if !withRequest}
+          <div class="seal"><Icon name="lock" size="lg" tone="brand" /></div>
         {/if}
         <h1>Cofre travado</h1>
-        <p class="descricao">
-          {comPedido
+        <p class="description">
+          {withRequest
             ? 'Um agente está esperando uma entrada. Destrave para continuar.'
             : 'Digite a senha mestra para destravar o Ward neste computador.'}
         </p>
       </header>
 
-      {#if comPedido}
-        <section class="pedido" aria-label="Pedido do agente">
-          <div class="topo">
-            <span class="rotulo-pedido">Pedido do agente</span>
-            <span class="contagem" role="timer" aria-live="off">
-              <Icon name="clock" size="xs" tone="warning" />{contagem(restante)}
+      {#if withRequest}
+        <section class="request" aria-label="Pedido do agente">
+          <div class="top">
+            <span class="request-label">Pedido do agente</span>
+            <span class="countdown" role="timer" aria-live="off">
+              <Icon name="clock" size="xs" tone="warning" />{countdown(remaining)}
             </span>
           </div>
-          <div class="entrada">
+          <div class="entry">
             <span class="avatar"><Icon name="key" /></span>
-            <div class="textos">
-              <span class="nome"><AgentText text={pedido.entrada} /></span>
-              <span class="operacao">{comandoDaOperacao(pedido.operacao)}</span>
+            <div class="texts">
+              <span class="name"><AgentText text={request.entrada} /></span>
+              <span class="operation">{operationCommand(request.operacao)}</span>
             </div>
           </div>
-          {#if pedido.comando}
-            <CodeBox label="Comando"><AgentText text={pedido.comando} /></CodeBox>
+          {#if request.comando}
+            <CodeBox label="Comando"><AgentText text={request.comando} /></CodeBox>
           {/if}
         </section>
       {/if}
 
       <PasswordField
-        id="senha-mestra"
+        id="master-password"
         label="Senha mestra"
         placeholder="Digite a senha mestra"
         help="Só a senha mestra destrava. O PIN não serve aqui."
-        bind:value={senha}
-        bind:input={entrada}
-        error={erro}
-        readonly={enviando}
+        bind:value={password}
+        bind:input={input}
+        error={error}
+        readonly={sending}
         autocomplete="off"
-        oninput={digitou}
+        oninput={typed}
       />
 
-      {#if comPedido}
-        <div class="acoes">
-          <Button variant="secondary" onclick={() => (dispensado = pedidoId)}>Agora não</Button>
-          <Button type="submit" disabled={enviando || espera > 0}>{rotuloBotao}</Button>
+      {#if withRequest}
+        <div class="actions">
+          <Button variant="secondary" onclick={() => (dismissed = requestId)}>Agora não</Button>
+          <Button type="submit" disabled={sending || wait > 0}>{buttonLabel}</Button>
         </div>
       {:else}
-        <Button type="submit" disabled={enviando || espera > 0}>{rotuloBotao}</Button>
+        <Button type="submit" disabled={sending || wait > 0}>{buttonLabel}</Button>
       {/if}
 
-      {#if comPedido}
+      {#if withRequest}
         <Highlight icon="alert">
           Destravar não aprova o pedido. Se a entrada pedir aprovação, a janela de aprovação
           abre em seguida, com PIN. “Agora não”, fechar ou deixar expirar nega o pedido.
         </Highlight>
-      {:else if errosSeguidos > 0}
+      {:else if consecutiveErrors > 0}
         <Highlight icon="clock">
           Cada tentativa errada aumenta a espera da próxima, até 30 s. O Ward não mostra
           quantas tentativas já houve.
@@ -220,14 +222,14 @@
 </div>
 
 <style>
-  .janela {
+  .window {
     display: flex;
     gap: var(--space-16);
     height: 100%;
     padding: var(--space-16);
     background: var(--color-bg-default);
   }
-  .conteudo {
+  .content {
     display: flex;
     flex: 1;
     align-items: center;
@@ -239,25 +241,25 @@
     border: var(--line-thin) solid var(--color-border-subtle);
     background: var(--color-bg-subtle);
   }
-  .formulario {
+  .form {
     display: flex;
     flex-direction: column;
     gap: var(--space-32);
     width: var(--width-column-access);
     margin: auto;
   }
-  .formulario.com-pedido {
+  .form.with-request {
     gap: var(--space-24);
   }
-  .formulario > :global(.button) {
+  .form > :global(.button) {
     width: 100%;
   }
-  .cabecalho {
+  .header {
     display: flex;
     flex-direction: column;
     gap: var(--space-12);
   }
-  .selo {
+  .seal {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -274,11 +276,11 @@
     line-height: var(--line-height-xl);
     letter-spacing: var(--letter-spacing-title);
   }
-  .descricao {
+  .description {
     margin: var(--space-0);
     color: var(--color-text-secondary);
   }
-  .pedido {
+  .request {
     display: flex;
     flex-direction: column;
     gap: var(--space-16);
@@ -287,15 +289,15 @@
     border: var(--line-thin) solid var(--color-border-default);
     background: var(--color-surface-default);
   }
-  .topo {
+  .top {
     display: flex;
     align-items: center;
     justify-content: space-between;
   }
-  .rotulo-pedido {
+  .request-label {
     font-weight: var(--weight-medium);
   }
-  .contagem {
+  .countdown {
     display: inline-flex;
     align-items: center;
     gap: var(--space-4);
@@ -308,7 +310,7 @@
     line-height: var(--line-height-xs);
     font-variant-numeric: tabular-nums;
   }
-  .entrada {
+  .entry {
     display: flex;
     align-items: center;
     gap: var(--space-12);
@@ -325,36 +327,36 @@
     background: var(--color-surface-raised);
     color: var(--color-text-secondary);
   }
-  .textos {
+  .texts {
     display: flex;
     flex: 1;
     flex-direction: column;
     gap: var(--space-6);
     min-width: 0;
   }
-  .nome {
+  .name {
     font-weight: var(--weight-medium);
     font-size: var(--size-base);
     line-height: var(--line-height-base);
     color: var(--color-text-primary);
     overflow-wrap: anywhere;
-    /* D51: o nome vem do agente; cada caractere como é, isolado da direção ao redor. */
+    /* D51: the name comes from the agent; each character as it is, isolated from the surrounding direction. */
     font-variant-ligatures: none;
     font-feature-settings: 'liga' 0, 'calt' 0;
     direction: ltr;
     unicode-bidi: isolate;
   }
-  .operacao {
+  .operation {
     font-family: var(--font-family-mono);
     font-size: var(--size-xs);
     line-height: var(--line-height-xs);
     color: var(--color-text-secondary);
   }
-  .acoes {
+  .actions {
     display: flex;
     gap: var(--space-12);
   }
-  .acoes > :global(.button) {
+  .actions > :global(.button) {
     flex: 1;
   }
 </style>

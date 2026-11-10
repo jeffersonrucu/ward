@@ -137,9 +137,9 @@ def recarregar(pag):
 
 
 def destravar(pag):
-    pag.wait_for_selector("#senha-mestra", timeout=20000)
-    pag.fill("#senha-mestra", SENHA)
-    pag.press("#senha-mestra", "Enter")
+    pag.wait_for_selector("#master-password", timeout=20000)
+    pag.fill("#master-password", SENHA)
+    pag.press("#master-password", "Enter")
     pag.wait_for_selector("[data-entry]", timeout=60000)
 
 

@@ -82,3 +82,53 @@ app/src/screens/Form.svelte regiao 54 field id (region) of the aws type
 app/src/screens/Form.svelte tunel 54 field id (tunnel) of the banco type
 app/src/screens/Form.svelte salto 54 field id (jump host) of the servidor type
 app/src/screens/Form.svelte totp_semente 54 field id (TOTP seed) of the login type
+
+# Phase 38 (Settings, Unlock, ChangePassword, ChangePin, ChooseUsbDrive, lib/bridge):
+# wire fields the screens and the bridge read or send.
+app/src/lib/bridge/index.js codigo 54 code field of the command error
+app/src/lib/bridge/index.js mensagem 54 message field of the command error
+app/src/lib/bridge/index.js aviso 54 notice field of the ouvir_avisos channel message
+app/src/lib/bridge/test-bridge.js codigo 54 code field of the command error and of the test bridge reply
+app/src/lib/bridge/test-bridge.js mensagem 54 message field of the command error and of the test bridge reply
+app/src/lib/bridge/test-bridge.js valor 54 value field of the test bridge reply
+app/src/screens/settings.js rotulo 54 label field of a listar_pendrives item
+app/src/screens/settings.js montado 54 mounted field of a listar_pendrives item
+app/src/screens/settings.js pendrive 54 usb drive field of the backup_externo reply
+app/src/screens/settings.js pendrives_visiveis 54 field of the backup_externo reply
+app/src/screens/Settings.svelte minutos_trava 54 field of the configuracoes reply
+app/src/screens/Settings.svelte backup_externo 54 field of the configuracoes reply
+app/src/screens/Settings.svelte ligado 54 enabled field of the backup_externo reply
+app/src/screens/Settings.svelte estado 54 status field of the estado_do_cofre reply
+app/src/screens/Settings.svelte instante 54 instant field of the restaurar_backup reply
+app/src/screens/Settings.svelte entradas 54 entries field of the restaurar_backup reply
+app/src/screens/Settings.svelte codigo 54 code field of the command error
+app/src/screens/Settings.svelte mensagem 54 message field of the command error
+app/src/screens/Unlock.svelte restante 54 field of the unlock request in the estado_do_cofre reply
+app/src/screens/Unlock.svelte entrada 54 field of the unlock request in the estado_do_cofre reply
+app/src/screens/Unlock.svelte operacao 54 field of the unlock request in the estado_do_cofre reply
+app/src/screens/Unlock.svelte comando 54 field of the unlock request in the estado_do_cofre reply
+app/src/screens/Unlock.svelte codigo 54 code field of the command error
+app/src/screens/Unlock.svelte mensagem 54 message field of the command error
+app/src/screens/ChangePassword.svelte dados 54 data argument of trocar_senha_mestra
+app/src/screens/ChangePassword.svelte atual 54 current field of trocar_senha_mestra and of its errors
+app/src/screens/ChangePassword.svelte nova 54 new field of trocar_senha_mestra and of its errors
+app/src/screens/ChangePassword.svelte confirmacao 54 confirmation field of trocar_senha_mestra and of its errors
+app/src/screens/ChangePassword.svelte trocado 54 changed field of the trocar_senha_mestra reply
+app/src/screens/ChangePassword.svelte erros 54 errors field of the trocar_senha_mestra reply
+app/src/screens/ChangePassword.svelte campo 54 field of a trocar_senha_mestra error
+app/src/screens/ChangePassword.svelte motivo 54 reason field of a trocar_senha_mestra error
+app/src/screens/ChangePassword.svelte codigo 54 code field of the command error
+app/src/screens/ChangePassword.svelte mensagem 54 message field of the command error
+app/src/screens/ChangePin.svelte dados 54 data argument of trocar_pin
+app/src/screens/ChangePin.svelte atual 54 current field of trocar_pin and of its errors
+app/src/screens/ChangePin.svelte novo 54 new field of trocar_pin and of its errors
+app/src/screens/ChangePin.svelte confirmacao 54 confirmation field of trocar_pin and of its errors
+app/src/screens/ChangePin.svelte trocado 54 changed field of the trocar_pin reply
+app/src/screens/ChangePin.svelte erros 54 errors field of the trocar_pin reply
+app/src/screens/ChangePin.svelte campo 54 field of a trocar_pin error
+app/src/screens/ChangePin.svelte motivo 54 reason field of a trocar_pin error
+app/src/screens/ChangePin.svelte estado 54 status field of the estado_do_cofre reply
+app/src/screens/ChangePin.svelte codigo 54 code field of the command error
+app/src/screens/ChangePin.svelte mensagem 54 message field of the command error
+app/src/screens/ChooseUsbDrive.svelte codigo 54 code field of the command error
+app/src/screens/ChooseUsbDrive.svelte mensagem 54 message field of the command error
