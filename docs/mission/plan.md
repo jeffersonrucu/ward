@@ -1268,10 +1268,21 @@ Decisões do usuário (2026-11-09):
   - Risco residual: no `ward login` e no popup, quem confirma sem olhar ainda manda a
     senha ao `[::1]`.
   - O popup em `http` pede só confirmação, em qualquer nível.
-- [ ] Fase 44d (DESIGN) — Frame no `Ward.figcraft` para a janela de aprovação com origem
+- [x] Fase 44d (DESIGN) — Frame no `Ward.figcraft` para a janela de aprovação com origem
   `http`: a confirmação (nível livre, "Negar" / "Confirmar a origem", aviso de `http`) e
   o pedido com PIN com a origem à vista. Atualizar o `design-nodes.md`. A referência é a
   tela da 44c (`docs/mission/evidence/fase-44c/`).
+  Feita (2026-11-09): frames `22733` (confirmar), `22817` (popup) e `22882` (PIN), só
+  com componentes existentes; aviso de `http` em `Destaque` aviso. Ids no
+  `design-nodes.md`, PNG em `docs/mission/evidence/fase-44d/`.
+- [ ] Fase 44e — App alinhado à 44d (`JanelaAprovacao.svelte`, `aprovacao.js`):
+  - `origemDestaque` com `tipo="aviso"`;
+  - `prodDestaque` na confirmação com "Credencial de produção. Confira a origem com
+    atenção antes de confirmar.";
+  - `resumo` do pedido com PIN e origem com "Confira a entrada, a origem e quem pediu
+    antes de permitir.";
+  - `daemon_falso.rs` › `na_origem` usa o ambiente real da entrada (`acme-wp-dev` é dev);
+  - conferir as três telas pela ponte contra `22733`/`22817`/`22882`.
 - [x] Fase 44b — (juntada à 44c) Baixos do scrutiny do M6, sem bloquear:
   - o passo 1.2 do roteiro do M6 cita a mensagem "negado"; conferir a mensagem real do
     `ward login` negado;
