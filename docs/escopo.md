@@ -359,6 +359,29 @@ inclusive o valor revelado (PRD D64).
 - Alguém com acesso físico à máquina destravada.
 - Um processo do usuário feito de propósito para driblar a máscara (ex.: inverter a
   senha antes de imprimir). Quem barra é a aprovação, que mostra o comando exato.
+- Entrada padrão de terminal declarada pelo próprio cliente (PRD RA11, D68; decisão do
+  usuário, 2026-11-10: "Aceitar como risco"). A CLI diz ao daemon o tipo da entrada
+  padrão do comando, e o daemon não tem como conferir quando ela diz "terminal": o
+  cliente é do mesmo uid. Dois caminhos passam sem o aviso e sem a confirmação da
+  janela de aprovação:
+  - um cliente do socket que mente o tipo (diz "terminal" e manda o script pela
+    entrada);
+  - um agente que abre um pty próprio (`script -c`, `pty.spawn` do Python) e escreve o
+    script nele: para a CLI, a entrada é mesmo um terminal.
+  Os dois são o agente que mira o Ward de propósito, e esse mesmo agente pode, de todo
+  modo, gravar o script num arquivo e passar o caminho no comando, que a janela mostra.
+  O que fica fechado:
+  - pipe e arquivo (`printf <script> | ward run …`, `< arquivo`, here-doc) chegam à
+    janela com o aviso e só passam com a confirmação a mais, conferida pelo daemon; o
+    "Permitir por 1 hora" não vale para eles;
+  - entrada vazia (`/dev/null` ou fechada) é cumprida: o daemon fecha a entrada do
+    comando, e dado que chegue depois mata o comando sem chegar a ele;
+  - o erro sem má intenção e o caso da auditoria final (o script por pipe a um
+    `python3` aprovado com a janela mostrando só `python3`);
+  - a skill nega `<` e `|` em volta do `ward run` e manda o script como arquivo no
+    argumento, à vista na janela (cinto: quem barra é o daemon).
+  Avisar em toda entrada que não seja vazia, terminal incluído, fecharia o caso, mas
+  pioraria o uso no terminal do usuário; mudança que feche o caso volta ao usuário.
 - Leitura do campo de senha da página no instante do preenchimento por um script
   feito para isso. Enviar o formulário na hora e limpar os campos reduz essa janela,
   mas não zera.

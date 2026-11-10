@@ -1522,7 +1522,8 @@ em `/tmp/claude-1000/-home-jeffersonoliveira-projetos-cofre/d2e230bd-a662-43be-a
   - `nula` é cumprida: o daemon fecha a entrada do filho no lançamento (sem pty) e um
     `entrada_padrao` com dados depois mata o grupo do comando (código 137), sem o dado
     chegar a ele. A CLI com `/dev/null` não lê nada da entrada.
-  - `terminal` não é conferível pelo daemon: o cliente é o mesmo uid. Fica em RA11.
+  - `terminal` não é conferível pelo daemon: o cliente é o mesmo uid. Fica em RA11
+    (risco aceito, "Fora do modelo de ameaça").
   - `skill/settings-deny.json` nega `<` antes ou depois do `ward run` (`< arquivo`,
     `<<EOF`, `<<<`, `<(…)`) e `|` antes dele (cinto, RA3); a skill manda o script como
     arquivo no argumento, à vista na janela.
@@ -1652,16 +1653,18 @@ em `/tmp/claude-1000/-home-jeffersonoliveira-projetos-cofre/d2e230bd-a662-43be-a
   Proposta: aceitar como está (nada sai do cofre e as ações são as que o mesmo uid já
   tem), com a regra de que item novo no menu que revele, copie, aprove ou mude estado
   além de travar volta ao planner. Alternativa: tirar a bandeja (V5.23 sai do escopo).
-- **RA11. Tipo "terminal" declarado pelo cliente** (Fase 54b, D68; S9; proposta,
-  aguarda o usuário). O daemon não vê o fd 0 da CLI: um cliente do socket que mente
-  `tipo_entrada: terminal`, ou um agente que cria um pty (`script -c`, `python3 -c
-  'import pty…'`) e escreve o script nele, passa sem o aviso e sem a caixa. É o mesmo
+- **RA11. Tipo "terminal" declarado pelo cliente** (Fase 54b, D68; S9; **fechado em
+  2026-11-10: risco aceito pelo usuário**, "Aceitar como risco", registrado na Fase 54g
+  em "Segurança" › "Fora do modelo de ameaça"; não há código nem asserção nova). O
+  daemon não vê o fd 0 da CLI: um cliente do socket que mente `tipo_entrada:
+  terminal`, ou um agente que cria um pty (`script -c`, `python3 -c 'import pty…'`) e
+  escreve o script nele, passa sem o aviso e sem a caixa. É o mesmo
   agente que poderia, de todo modo, escrever o script num arquivo e passar o caminho no
   argv (que a janela mostra). O aviso fecha o erro sem má intenção e o caso da
-  auditoria; não fecha o agente que mira o Ward. Proposta: aceitar e registrar em
-  "Segurança" › "Fora do modelo de ameaça"; alternativa: aviso em todo pedido de
+  auditoria; não fecha o agente que mira o Ward. **Decisão do usuário (2026-11-10):
+  aceitar como risco.** A alternativa descartada era o aviso em todo pedido de
   `ward run` com entrada que não seja `nula`, inclusive tty (pior para o uso no
-  terminal do usuário).
+  terminal do usuário). Mudança que feche o caso volta ao usuário.
 - **RA10. Processo do mesmo uid que se passa pelo Chrome** (2ª auditoria do M9;
   **fechado em 2026-11-09: risco aceito pelo usuário**, registrado na Fase 51b em
   "Segurança" › "Fora do modelo de ameaça"; S1, D47, D5). Dois caminhos dão o papel
