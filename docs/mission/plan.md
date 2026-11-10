@@ -193,7 +193,7 @@ Trilha W (a 35 primeiro, depois 36–39 em paralelo):
   `ICONES`, inclusive as montadas como `tipo-${tipo}`; achado da Fase 5); ícones da bandeja `app/src-tauri/icons/bandeja-*-32.png` com o caminho no Tauri (achado da Fase 2); `bidi.js`, `main.js`, `App.svelte`, `lib/components/*` (identificadores e
   comentários). Nomes dos comandos Tauri e chaves de mensagem congelados. Compilação:
   `make compile`. — V3.1, V3.2, V3.6
-- [ ] Fase 36 — **(UI)** `screens/Form.svelte` (Formulario), `form.js`,
+- [x] Fase 36 — **(UI)** `screens/Form.svelte` (Formulario), `form.js`,
   `Credentials.svelte`, `credentials.js`, `ChooseType.svelte`. — V3.1, V3.2, V3.4
 - [ ] Fase 37 — **(UI)** `ApprovalWindow.svelte` (JanelaAprovacao), `approval.js`,
   `PasswordGenerator.svelte`, `FirstUse.svelte`, `first-use.js`,
@@ -275,7 +275,8 @@ Contrato: V4.1–V4.24. Sequencial. A partir daqui o fio muda.
   em `dev/tests/dev-vault.sh` com os nomes v5 deste contrato; expectativas de
   `dev/tests/cli.py` e dos testes do `wardd` pela tabela "Entrega esperada". Compilação:
   `make compile`. — V4.19, V4.20, V4.21
-- [ ] Fase 54 — **(UI)** Comandos e eventos do Tauri e `serde` da webview: nomes das
+- [ ] Fase 54 — **(UI)** Comandos e eventos do Tauri e `serde` da webview: (procurar nome de fio como chave entre aspas e como acesso por
+  ponto, achado da Fase 36; `frozen.txt` lista os da W) nomes das
   funções `#[tauri::command]` e dos parâmetros, eventos, `capabilities/*.json`,
   `permissions/`, chamadas `invoke`/`listen` no `app/src`, ponte de teste, tira os
   `#[serde(rename = "<antigo>")]`; lista do `strings` do V5.6 (missão 1) com os nomes
