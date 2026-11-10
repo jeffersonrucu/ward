@@ -280,22 +280,49 @@ impl Motor {
 
     /// Abre o app pelo lançador. Já aberto também é sucesso.
     fn abrir(&self) -> Result<(), ErroAbrirApp> {
-        let interno = Arc::downgrade(&self.interno);
-        let r = self.abridor.abrir(Box::new(move || {
-            if let Some(i) = interno.upgrade() {
-                i.app_saiu();
-            }
-        }));
-        match r {
+        match self.abrir_pelo_lancador() {
             Ok(()) | Err(ErroAbrirApp::JaAberto) => Ok(()),
             Err(e) => Err(e),
         }
     }
 
-    /// Operação `abrir_app` (D57): de qualquer papel, sem campo, sem segredo.
+    fn abrir_pelo_lancador(&self) -> Result<(), ErroAbrirApp> {
+        let interno = Arc::downgrade(&self.interno);
+        self.abridor.abrir(Box::new(move || {
+            if let Some(i) = interno.upgrade() {
+                i.app_saiu();
+            }
+        }))
+    }
+
+    /// Operação `abrir_app` (D57): de qualquer papel, sem campo, sem segredo. Com o app
+    /// já de pé (a janela fechada, ele segue na bandeja), pede a ele que mostre a janela
+    /// principal: sem isso, o menu não traria nada de volta.
     pub fn abrir_app(&self) -> Result<(), ErroResposta> {
-        self.abrir()
-            .map_err(|_| ErroResposta::AprovacaoIndisponivel)
+        match self.abrir_pelo_lancador() {
+            Ok(()) => Ok(()),
+            Err(ErroAbrirApp::JaAberto) => {
+                self.mostrar_janela();
+                Ok(())
+            }
+            Err(ErroAbrirApp::Indisponivel) => Err(ErroResposta::AprovacaoIndisponivel),
+        }
+    }
+
+    /// Entrega `mostrar_janela` ao app assinado, se houver. Falha na entrega: o
+    /// assinante sai, como nos outros avisos.
+    fn mostrar_janela(&self) {
+        let mut g = self.interno.estado();
+        let Some((aid, a)) = g.assinante.as_mut() else {
+            return;
+        };
+        let aid = *aid;
+        if !a.entregar(&Resposta::MostrarJanela) {
+            aviso!("entrega ao app falhou: a janela conta como fechada");
+            g.sair_assinante(aid);
+            drop(g);
+            self.interno.mudou.notify_all();
+        }
     }
 
     /// A conexão `id` do papel app passa a receber os avisos. Uma por

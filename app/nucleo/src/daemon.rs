@@ -137,6 +137,9 @@ impl Aviso {
 struct Fila {
     itens: VecDeque<Aviso>,
     descartados: u64,
+    /// O daemon pediu a janela principal (`mostrar_janela`); vários pedidos seguidos são
+    /// um só.
+    mostrar: bool,
 }
 
 /// Fila limitada dos avisos (D65 a). A thread leitora põe; as telas de destrave (Fase
@@ -165,6 +168,32 @@ impl FilaAvisos {
         f.itens.push_back(aviso);
         drop(f);
         self.chegou.notify_all();
+    }
+
+    /// Marca o pedido de mostrar a janela principal.
+    fn pedir_janela(&self) {
+        self.travar().mostrar = true;
+        self.chegou.notify_all();
+    }
+
+    /// Espera até `prazo` pelo pedido de mostrar a janela e o tira. `false`: nenhum
+    /// chegou no prazo.
+    pub fn esperar_mostrar(&self, prazo: Duration) -> bool {
+        let fim = Instant::now() + prazo;
+        let mut f = self.travar();
+        loop {
+            if std::mem::take(&mut f.mostrar) {
+                return true;
+            }
+            let Some(falta) = fim.checked_duration_since(Instant::now()) else {
+                return false;
+            };
+            f = self
+                .chegou
+                .wait_timeout(f, falta)
+                .unwrap_or_else(|e| e.into_inner())
+                .0;
+        }
     }
 
     /// O aviso mais antigo, sem esperar.
@@ -375,6 +404,7 @@ fn ler(
         match protocolo::decodificar_resposta(Papel::App, &q) {
             Ok(Resposta::PedidoDeAprovacao(p)) => avisos.por(Aviso::Aprovacao(p)),
             Ok(Resposta::PedidoDeDestrave(p)) => avisos.por(Aviso::Destrave(p)),
+            Ok(Resposta::MostrarJanela) => avisos.pedir_janela(),
             Ok(_) => {
                 // Resposta sem pedido: sai.
                 if !esperando.swap(false, Ordering::AcqRel) || tx.send(q).is_err() {
@@ -866,6 +896,28 @@ mod testes {
         );
         assert_eq!(avisos.tomar(), None);
         assert_eq!(avisos.descartados(), 0);
+    }
+
+    /// `mostrar_janela` no meio da conversa: marca o pedido (vários seguidos são um só),
+    /// não entra na fila dos avisos e a resposta vai para quem pediu.
+    #[test]
+    fn mostrar_janela_marca_o_pedido_fora_da_fila() {
+        let (a, mut b) = UnixStream::pair().unwrap();
+        let mut d = DaemonSocket::de_par(a, Duration::from_secs(10));
+        let avisos = d.avisos();
+        assert!(!avisos.esperar_mostrar(Duration::from_millis(30)));
+        let servidor = std::thread::spawn(move || {
+            pedido_lido(&mut b);
+            mandar(&mut b, &Resposta::MostrarJanela);
+            mandar(&mut b, &Resposta::MostrarJanela);
+            mandar(&mut b, &estado_app());
+            b
+        });
+        assert_eq!(cliente::estado(&mut d), Ok(EstadoCofre::Destravado));
+        let _b = servidor.join().unwrap();
+        assert!(avisos.esperar_mostrar(Duration::from_millis(50)));
+        assert!(!avisos.esperar_mostrar(Duration::from_millis(30)));
+        assert_eq!(avisos.tamanho(), 0);
     }
 
     #[test]

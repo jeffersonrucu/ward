@@ -421,6 +421,9 @@ pub enum Resposta {
     Token(Segredo),
     PedidoDeAprovacao(PedidoDeAprovacao),
     PedidoDeDestrave(PedidoDeDestrave),
+    /// O app aberto pelo menu achou a instância verdadeira já de pé: o daemon pede a ela
+    /// que mostre a janela principal. Sem dado.
+    MostrarJanela,
     CodigoTotp {
         codigo: Zeroizing<String>,
         restante: u64,
@@ -488,6 +491,7 @@ impl Resposta {
             Resposta::Token(_) => TipoResposta::Token,
             Resposta::PedidoDeAprovacao(_) => TipoResposta::PedidoDeAprovacao,
             Resposta::PedidoDeDestrave(_) => TipoResposta::PedidoDeDestrave,
+            Resposta::MostrarJanela => TipoResposta::MostrarJanela,
             Resposta::CodigoTotp { .. } => TipoResposta::CodigoTotp,
             Resposta::Sugestoes(_) => TipoResposta::Sugestoes,
             Resposta::Preenchimento { .. } => TipoResposta::Preenchimento,
@@ -519,7 +523,7 @@ impl Resposta {
         match self {
             // O papel do `estado` só é conferido na escrita (`codificar_resposta`): o
             // cliente lê o que veio e decide (D63).
-            Resposta::Ok | Resposta::Estado { .. } => Ok(()),
+            Resposta::Ok | Resposta::Estado { .. } | Resposta::MostrarJanela => Ok(()),
             Resposta::PedidoDeDestrave(p) => ok(!p.entrada.is_empty()
                 && p.entrada.len() <= MAX_TEXTO
                 && OPERACOES_APROVADAS.contains(&p.operacao)
@@ -618,7 +622,7 @@ impl Resposta {
     /// Escreve os `dados` da resposta.
     pub(crate) fn escrever(&self, e: &mut Escritor) {
         match self {
-            Resposta::Ok => {}
+            Resposta::Ok | Resposta::MostrarJanela => {}
             Resposta::PedidoDeDestrave(p) => {
                 e.chave("entrada");
                 e.texto(&p.entrada);
@@ -1032,6 +1036,7 @@ fn ler_cabecalho(c: &mut Campos, com_nivel: bool) -> R<Cabecalho> {
 pub(crate) fn ler(papel: Papel, tipo: TipoResposta, mut c: Campos) -> R<Resposta> {
     let r = match tipo {
         TipoResposta::Ok => Resposta::Ok,
+        TipoResposta::MostrarJanela => Resposta::MostrarJanela,
         TipoResposta::PedidoDeDestrave => Resposta::PedidoDeDestrave(PedidoDeDestrave {
             entrada: c.texto("entrada", MAX_TEXTO)?,
             operacao: Operacao::de_nome(&c.texto("operacao", MAX_NOME)?).ok_or(JsonInvalido)?,
