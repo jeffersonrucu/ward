@@ -1,41 +1,42 @@
-// D51 (Fase 39f): texto do agente com letras de escrita da direita para a esquerda
-// (hebraico, árabe, siríaco, thaana, n'ko e outras de classe bidi R/AL).
+// D51 (Phase 39f): agent text with letters of right-to-left scripts (Hebrew, Arabic,
+// Syriac, Thaana, N'Ko and others of bidi class R/AL).
 //
-// O escape visível do Rust (D51) já troca os caracteres invisíveis e de direção
-// (U+202E, U+2066…) por `\u{…}`, mas as letras RTL são visíveis e passam como estão.
-// Num texto da esquerda para a direita, uma letra RTL puxa os vizinhos neutros
-// (espaço, número, pontuação) para a ordem dela: `echo א 1 ב` aparece como
-// `echo ב 1 א`, outro texto que não o comando executado. Aqui o texto é partido em
-// trechos: cada sequência de letras RTL vai isolada (`<bdi dir="rtl">`, em
-// `TextoDoAgente.svelte`), e o resto fica da esquerda para a direita. Um trecho isolado
-// conta como um caractere neutro para o que está em volta: nada fora dele muda de
-// lugar. Juntos, os trechos dão o texto original, sem tirar nem pôr nada.
+// The visible escape of the Rust side (D51) already turns the invisible and direction
+// characters (U+202E, U+2066…) into `\u{…}`, but RTL letters are visible and pass as
+// they are. In a left-to-right text, an RTL letter pulls the neutral neighbors (space,
+// digit, punctuation) into its own order: an `echo` with two Hebrew letters around a digit shows with the letters swapped, a text
+// other than the command that runs. Here the text is split into parts: each run of RTL
+// letters goes isolated (`<bdi dir="rtl">`, in `AgentText.svelte`), and the rest stays
+// left to right. An isolated part counts as one neutral character for what is around
+// it: nothing outside it moves. Together, the parts give the original text, with
+// nothing added or removed.
 
-// Blocos das escritas RTL (letras, marcas e dígitos delas): hebraico até os
-// suplementos do árabe (U+0590–U+08FF), formas de apresentação do hebraico e do árabe
-// (U+FB1D–U+FDFF, U+FE70–U+FEFE) e os blocos RTL dos planos suplementares. U+FEFD e
-// U+FEFE não são atribuídos, mas a ICU (a do WebKitGTK) os trata como AL, como todo
-// o bloco; ficam na faixa (Fase 39g). U+FEFF é o BOM, que o Rust já troca por escape.
-// `dev/tests/bidi_icu.py` confere, contra a ICU do sistema, que nenhum código de
-// classe forte RTL ou de controle bidi fica fora desta faixa e do escape do Rust.
+// Blocks of the RTL scripts (their letters, marks and digits): Hebrew up to the Arabic
+// supplements (U+0590–U+08FF), presentation forms of Hebrew and Arabic (U+FB1D–U+FDFF,
+// U+FE70–U+FEFE) and the RTL blocks of the supplementary planes. U+FEFD and U+FEFE are
+// not assigned, but ICU (the one of WebKitGTK) treats them as AL, like the whole block;
+// they stay in the range (Phase 39g). U+FEFF is the BOM, which the Rust side already
+// escapes. `dev/tests/bidi_icu.py` checks, against the ICU of the system, that no code
+// point of a strong RTL class or of a bidi control is left out of this range and of
+// the Rust escape.
 const RTL = /[֐-ࣿיִ-﷿ﹰ-﻾\u{10800}-\u{10FFF}\u{1E800}-\u{1EFFF}]+/gu;
 
 /**
- * Parte o texto em trechos LTR e RTL, na ordem.
- * @param {string} texto
- * @returns {{ texto: string, rtl: boolean }[]}
+ * Splits the text into LTR and RTL parts, in order.
+ * @param {string} text
+ * @returns {{ text: string, rtl: boolean }[]}
  */
-export function partesBidi(texto) {
-  const partes = [];
-  let fim = 0;
-  const s = String(texto);
+export function bidiParts(text) {
+  const parts = [];
+  let end = 0;
+  const s = String(text);
   for (const m of s.matchAll(RTL)) {
-    if (m.index > fim) partes.push({ texto: s.slice(fim, m.index), rtl: false });
-    partes.push({ texto: m[0], rtl: true });
-    fim = m.index + m[0].length;
+    if (m.index > end) parts.push({ text: s.slice(end, m.index), rtl: false });
+    parts.push({ text: m[0], rtl: true });
+    end = m.index + m[0].length;
   }
-  if (fim < s.length || partes.length === 0) {
-    partes.push({ texto: s.slice(fim), rtl: false });
+  if (end < s.length || parts.length === 0) {
+    parts.push({ text: s.slice(end), rtl: false });
   }
-  return partes;
+  return parts;
 }

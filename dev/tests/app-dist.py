@@ -28,7 +28,7 @@ NAMESPACES = {
     "http://www.w3.org/XML/1998/namespace",
 }
 EXTENSOES = {".html", ".js", ".css", ".svg", ".woff", ".woff2"}
-SO_NO_TESTE = ("/ponte/", "token=", "ponte-teste", "Vitrine", "ward-teste")
+SO_NO_TESTE = ("/ponte/", "token=", "ponte-teste", "test-bridge", "Vitrine", "Showcase", "ward-teste")
 URL = re.compile(rb"https?://[^\s\"'`)<>]*")
 
 erros = []
@@ -73,7 +73,7 @@ def conferir(nome, teste):
     html = arquivos["index.html"].decode("utf-8")
     if re.search(r"<script(?![^>]*\bsrc=)[^>]*>", html) or "<style" in html or re.search(r"\son\w+=", html) or "style=" in html:
         erros.append(f"{nome}/index.html: script, estilo ou evento inline")
-    if teste and not any("ponte-teste" in rel for rel in arquivos):
+    if teste and not any("test-bridge" in rel for rel in arquivos):
         erros.append(f"{nome}: a ponte de teste não está no pacote de teste")
 
 

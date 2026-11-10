@@ -20,7 +20,7 @@ trap 'rm -f "$TEXTOS"' EXIT
 strings -a -n 4 -- "$BINARIO" > "$TEXTOS"
 
 falhou=0
-for marca in ward-ponte-teste ponte-teste /ponte/ WARD_DEV_DIR WARD_DEV_APP ward-teste Vitrine 'token='; do
+for marca in ward-ponte-teste ponte-teste test-bridge /ponte/ WARD_DEV_DIR WARD_DEV_APP ward-teste Vitrine Showcase 'token='; do
     if grep -qF -- "$marca" "$TEXTOS"; then
         echo "app-release: o binário de release contém \"$marca\"" >&2
         falhou=1

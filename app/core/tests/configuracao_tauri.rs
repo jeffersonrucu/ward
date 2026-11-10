@@ -26,7 +26,7 @@ fn conf() -> Value {
 #[test]
 fn limites_do_gerador_na_interface_sao_os_do_rust() {
     use ward_app_core::gerador::{TAMANHO_MAX, TAMANHO_MIN, TAMANHO_PADRAO};
-    let js = fs::read_to_string(app().join("src/telas/GeradorSenha.svelte")).unwrap();
+    let js = fs::read_to_string(app().join("src/screens/GeradorSenha.svelte")).unwrap();
     for (nome, valor) in [
         ("TAMANHO_MIN", TAMANHO_MIN),
         ("TAMANHO_MAX", TAMANHO_MAX),
@@ -44,14 +44,14 @@ fn limites_do_gerador_na_interface_sao_os_do_rust() {
 #[test]
 fn janela_de_aprovacao_segue_o_rust_e_nao_usa_html() {
     use ward_app_core::aprovacao::SEGUNDOS_URGENTE;
-    let js = fs::read_to_string(app().join("src/telas/aprovacao.js")).unwrap();
+    let js = fs::read_to_string(app().join("src/screens/aprovacao.js")).unwrap();
     assert!(
         js.contains(&format!(
             "export const SEGUNDOS_URGENTE = {SEGUNDOS_URGENTE};"
         )),
         "SEGUNDOS_URGENTE diverge do Rust"
     );
-    let tela = fs::read_to_string(app().join("src/telas/JanelaAprovacao.svelte")).unwrap();
+    let tela = fs::read_to_string(app().join("src/screens/JanelaAprovacao.svelte")).unwrap();
     assert!(tela.contains("{pedido.comando}"), "comando como texto");
     assert!(tela.contains("{processo}"), "cadeia como texto");
     assert!(tela.contains("{entrada.nome}"), "entrada como texto");
@@ -233,7 +233,7 @@ fn ataque_devtools_ou_acl_dinamica_no_release() {
 
 #[test]
 fn lista_de_comandos_da_interface_e_a_mesma() {
-    let js = fs::read_to_string(app().join("src/lib/ponte/comandos.js")).unwrap();
+    let js = fs::read_to_string(app().join("src/lib/bridge/commands.js")).unwrap();
     let lista: String = COMANDOS
         .iter()
         .map(|c| format!("'{c}'"))

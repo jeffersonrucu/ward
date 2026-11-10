@@ -31,7 +31,7 @@
 // e ambiente. Os textos vêm
 // do daemon e entram só por `textContent` (nunca HTML).
 
-import { ICONES } from './icones.js';
+import { ICONS } from './icons.js';
 import { SIMBOLO } from './marca.js';
 import { pedeJanela, preencherNaPagina, sondar } from './page.js';
 
@@ -60,8 +60,8 @@ function icone(nome, tamanho, tom) {
   svg.setAttribute('viewBox', '0 0 20 20');
   svg.setAttribute('fill', 'none');
   svg.setAttribute('aria-hidden', 'true');
-  if (tom) svg.setAttribute('data-tom-icone', tom);
-  for (const c of ICONES[nome] ?? []) {
+  if (tom) svg.setAttribute('data-icon-tone', tom);
+  for (const c of ICONS[nome] ?? []) {
     const p = document.createElementNS(SVG, 'path');
     p.setAttribute('transform', c.t);
     p.setAttribute('d', c.d);
@@ -89,8 +89,8 @@ function simbolo(classe) {
 
 /** `Cabeçalho do popup` (17234): destravado ou travado. */
 function cabecalho(estado) {
-  const filhos = [simbolo('simbolo'), texto('span', 'nome-produto titulo-secao', 'ward')];
-  if (estado) filhos.push(texto('span', `estado ${estado} texto-selo`, estado));
+  const filhos = [simbolo('simbolo'), texto('span', 'nome-produto title-section', 'ward')];
+  if (estado) filhos.push(texto('span', `estado ${estado} text-badge`, estado));
   return el('header', 'cabecalho', filhos);
 }
 
@@ -119,7 +119,7 @@ function origemDa(url) {
 
 function botaoAbrirWard(classe, rotulo, comSimbolo) {
   const filhos = comSimbolo ? [simbolo('simbolo-botao')] : [];
-  filhos.push(texto('span', 'texto-corpo-forte', rotulo));
+  filhos.push(texto('span', 'text-body-strong', rotulo));
   const b = el('button', `botao ${classe}`, filhos);
   b.type = 'button';
   b.addEventListener('click', async () => {
@@ -140,11 +140,11 @@ function mostrarTravado(host) {
   mostrar(
     cabecalho('travado'),
     el('section', 'corpo-travado', [
-      el('div', 'avatar-grande', [icone('cadeado', 'md')]),
-      texto('h1', 'titulo-travado titulo-modal', 'O cofre está travado'),
-      texto('p', 'texto-travado texto-corpo', `Destrave no app do Ward para ver ${alvo}.`),
+      el('div', 'avatar-grande', [icone('lock', 'md')]),
+      texto('h1', 'titulo-travado title-modal', 'O cofre está travado'),
+      texto('p', 'texto-travado text-body', `Destrave no app do Ward para ver ${alvo}.`),
       botaoAbrirWard('primario', 'Abrir o Ward para destravar', false),
-      texto('p', 'nota texto-legenda', 'A extensão nunca pede a senha mestra.'),
+      texto('p', 'nota text-caption', 'A extensão nunca pede a senha mestra.'),
     ]),
   );
 }
@@ -152,7 +152,7 @@ function mostrarTravado(host) {
 function mostrarAviso(mensagem) {
   mostrar(
     cabecalho(null),
-    el('section', 'corpo', [texto('p', 'nota texto-pequeno', mensagem)]),
+    el('section', 'corpo', [texto('p', 'nota text-small', mensagem)]),
     el('footer', 'rodape', [botaoAbrirWard('secundario-botao', 'Abrir o Ward', true)]),
   );
 }
@@ -182,7 +182,7 @@ const FALHA_PADRAO = 'Não deu para preencher. Nada foi enviado à página.';
 
 /** Frame `Extensão / Sugestões do domínio` (17332). */
 function mostrarSugestoes(aba, origem, itens) {
-  const nota = texto('p', 'nota texto-legenda', itens.length ? NOTA : NOTA_VAZIA);
+  const nota = texto('p', 'nota text-caption', itens.length ? NOTA : NOTA_VAZIA);
   const n = itens.length;
   const rotulo =
     n === 0
@@ -195,15 +195,15 @@ function mostrarSugestoes(aba, origem, itens) {
     itens.map((s) => {
       const detalhe = s.totp ? `${s.usuario} · com TOTP` : s.usuario;
       const b = el('button', 'item', [
-        el('span', 'avatar', [icone('tipo-login', 'md')]),
+        el('span', 'avatar', [icone('type-login', 'md')]),
         el('span', 'item-textos', [
           el('span', 'linha', [
-            texto('span', 'item-nome texto-corpo-forte', s.nome),
-            texto('span', `badge-ambiente ${s.ambiente} texto-selo`, s.ambiente),
+            texto('span', 'item-nome text-body-strong', s.nome),
+            texto('span', `badge-ambiente ${s.ambiente} text-badge`, s.ambiente),
           ]),
           el('span', 'linha', [
-            el('span', 'badge-tipo texto-etiqueta', [icone('tipo-login', 'xs'), 'login']),
-            texto('span', 'item-detalhe texto-pequeno', detalhe),
+            el('span', 'badge-tipo text-tag', [icone('type-login', 'xs'), 'login']),
+            texto('span', 'item-detalhe text-small', detalhe),
           ]),
         ]),
       ]);
@@ -218,13 +218,13 @@ function mostrarSugestoes(aba, origem, itens) {
     cabecalho('destravado'),
     el('section', 'corpo', [
       el('div', 'origem', [
-        icone('cadeado', 'md'),
+        icone('lock', 'md'),
         el('div', 'origem-textos', [
-          texto('span', 'origem-rotulo texto-legenda', 'Origem da aba'),
-          texto('span', 'origem-valor mono-pequeno', origem),
+          texto('span', 'origem-rotulo text-caption', 'Origem da aba'),
+          texto('span', 'origem-valor mono-small', origem),
         ]),
       ]),
-      texto('p', 'nota secundario texto-rotulo', rotulo),
+      texto('p', 'nota secundario text-label', rotulo),
       ...(n ? [lista] : []),
       nota,
     ]),
@@ -360,22 +360,22 @@ function sugestoesDoHost(origem) {
 
 /** `Campo` (340): rótulo, entrada de texto e a linha de ajuda (oculta até um erro). */
 function campoTexto(id, rotulo, valor) {
-  const entrada = el('input', 'entrada texto-corpo');
+  const entrada = el('input', 'entrada text-body');
   entrada.id = id;
   entrada.type = 'text';
   entrada.value = valor;
   entrada.autocomplete = 'off';
   entrada.spellcheck = false;
-  const ajuda = texto('p', 'ajuda texto-legenda', '');
+  const ajuda = texto('p', 'ajuda text-caption', '');
   ajuda.hidden = true;
-  const r = texto('label', 'rotulo texto-rotulo', rotulo);
+  const r = texto('label', 'rotulo text-label', rotulo);
   r.htmlFor = id;
   return el('div', 'campo', [r, entrada, ajuda]);
 }
 
 /** `Select` (422): rótulo, `<select>` nativo com o chevron do design. */
 function campoSelect(id, rotulo, opcoes, valor) {
-  const sel = el('select', 'select texto-corpo');
+  const sel = el('select', 'select text-body');
   sel.id = id;
   for (const o of opcoes) {
     const op = texto('option', null, o);
@@ -383,11 +383,11 @@ function campoSelect(id, rotulo, opcoes, valor) {
     sel.append(op);
   }
   sel.value = valor;
-  const r = texto('label', 'rotulo texto-rotulo', rotulo);
+  const r = texto('label', 'rotulo text-label', rotulo);
   r.htmlFor = id;
-  const ajuda = texto('p', 'ajuda texto-legenda', '');
+  const ajuda = texto('p', 'ajuda text-caption', '');
   ajuda.hidden = true;
-  return el('div', 'campo', [r, el('div', 'entrada-select', [sel, icone('chevron-baixo', 'md')]), ajuda]);
+  return el('div', 'campo', [r, el('div', 'entrada-select', [sel, icone('chevron-down', 'md')]), ajuda]);
 }
 
 const ROTULO_CAMPO = { nome: 'nome', grupo: 'grupo', ambiente: 'ambiente', usuario: 'usuario', senha: 'senha', url: 'url' };
@@ -405,28 +405,28 @@ function mostrarSalvar(aba, origem, usuario) {
   const nome = campoTexto('nome', 'Nome', sug.nome);
   const campoUsuario = campoTexto('usuario', 'Usuário', usuario);
   const senha = el('div', 'campo', [
-    texto('span', 'rotulo texto-rotulo', 'Senha'),
+    texto('span', 'rotulo text-label', 'Senha'),
     // Máscara fixa: nem o valor nem o tamanho da senha chegam ao popup.
-    el('div', 'entrada entrada-mascara', [texto('span', 'mascara texto-corpo', '••••••••••••')]),
-    texto('p', 'ajuda ajuda-fixa texto-legenda', 'Vai direto para o cofre; a extensão não mostra nem guarda.'),
+    el('div', 'entrada entrada-mascara', [texto('span', 'mascara text-body', '••••••••••••')]),
+    texto('p', 'ajuda ajuda-fixa text-caption', 'Vai direto para o cofre; a extensão não mostra nem guarda.'),
   ]);
   const tipo = campoSelect('tipo', 'Tipo', ['login'], 'login');
   const ambiente = campoSelect('ambiente', 'Ambiente', ['dev', 'stage', 'prod'], sug.ambiente);
   const grupo = campoTexto('grupo', 'Grupo', sug.grupo);
   const campos = { nome, usuario: campoUsuario, grupo, ambiente };
-  const nota = texto('p', 'nota erro texto-legenda', '');
+  const nota = texto('p', 'nota erro text-caption', '');
   nota.hidden = true;
 
-  const cancelar = el('button', 'botao secundario-botao', [texto('span', 'texto-corpo-forte', 'Agora não')]);
+  const cancelar = el('button', 'botao secundario-botao', [texto('span', 'text-body-strong', 'Agora não')]);
   cancelar.type = 'button';
-  const salvarBotao = el('button', 'botao primario', [texto('span', 'texto-corpo-forte', 'Salvar no Ward')]);
+  const salvarBotao = el('button', 'botao primario', [texto('span', 'text-body-strong', 'Salvar no Ward')]);
   salvarBotao.type = 'submit';
 
   const form = el('form', 'popup-salvar', [
     el('section', 'corpo-salvar', [
       el('div', 'introducao', [
-        texto('h1', 'titulo-salvar titulo-modal', 'Salvar este login no Ward?'),
-        texto('p', 'texto-salvar texto-pequeno',
+        texto('h1', 'titulo-salvar title-modal', 'Salvar este login no Ward?'),
+        texto('p', 'texto-salvar text-small',
           `O formulário de ${host} foi enviado com um login que ainda não está no cofre.`),
       ]),
       nome,
@@ -435,10 +435,10 @@ function mostrarSalvar(aba, origem, usuario) {
       el('div', 'linha-dupla', [tipo, ambiente]),
       grupo,
       el('div', 'nivel-inicial', [
-        icone('cadeado', 'md'),
+        icone('lock', 'md'),
         el('div', 'nivel-textos', [
-          texto('span', 'nivel-titulo texto-corpo-forte', 'Nível inicial: com aprovação'),
-          texto('span', 'nivel-texto texto-legenda',
+          texto('span', 'nivel-titulo text-body-strong', 'Nível inicial: com aprovação'),
+          texto('span', 'nivel-texto text-caption',
             'O Claude só usa depois que você aprovar. Para mudar, use o app, com PIN.'),
         ]),
       ]),

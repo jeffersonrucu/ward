@@ -243,7 +243,7 @@ def modo_webkit():
         def revelar():
             # O valor pode estar no atributo (componente atual) ou no texto (o antigo,
             # para o teste mostrar o ataque contra ele).
-            achar = "const e = document.querySelector('.revelado'); return !!(e && (e.dataset.valor || e.textContent))"
+            achar = "const e = document.querySelector('.revealed'); return !!(e && (e.dataset.value || e.textContent))"
             if js(achar):
                 return True
             js("document.querySelector('button[aria-label^=\"Revelar \"]').click(); return true")
@@ -252,11 +252,11 @@ def modo_webkit():
         if not revelar():
             falha("o valor não foi revelado")
             return
-        valor = js("const e = document.querySelector('.revelado'); return e.dataset.valor || e.textContent")
+        valor = js("const e = document.querySelector('.revealed'); return e.dataset.value || e.textContent")
         if not isinstance(valor, str) or len(valor) < 6:
             falha("valor revelado fora da forma")
             return
-        if js("return document.querySelector('.revelado').textContent === ''"):
+        if js("return document.querySelector('.revealed').textContent === ''"):
             ok("valor revelado só no atributo do campo, sem nó de texto (não impresso)")
         else:
             falha("o valor revelado é um nó de texto (selecionável)")
@@ -330,7 +330,7 @@ def modo_webkit():
         revelar()
         neutralizar()
         js(
-            "const r = document.createRange(); r.selectNodeContents(document.querySelector('.revelado'));"
+            "const r = document.createRange(); r.selectNodeContents(document.querySelector('.revealed'));"
             "getSelection().removeAllRanges(); getSelection().addRange(r); return true"
         )
         sem_valor("seleção do campo por script")
@@ -346,9 +346,9 @@ def modo_webkit():
         # 3. Arrasto do mouse do rótulo até o fim do campo, e clique triplo no campo.
         revelar()
         neutralizar()
-        rotulo = caixa(".revelado")
+        rotulo = caixa(".revealed")
         campo = js(
-            "const e = document.querySelector('.revelado').closest('.campo');"
+            "const e = document.querySelector('.revealed').closest('.field');"
             " const r = e.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]"
         )
         if not rotulo or not campo:
@@ -369,7 +369,7 @@ def modo_webkit():
             sem_valor("arrasto do mouse pelo campo", prova=lambda v: not v["primary"][2])
             revelar()
             neutralizar()
-            r = caixa(".revelado")
+            r = caixa(".revealed")
             clique((r[0] + r[2]) / 2, (r[1] + r[3]) / 2, vezes=3)
             sem_valor("clique triplo no campo")
             tecla(Gdk.KEY_c, CTRL)
@@ -380,7 +380,7 @@ def modo_webkit():
         neutralizar()
         js(
             "const r = document.createRange();"
-            "r.setStartBefore(document.querySelector('.revelado').closest('.campo'));"
+            "r.setStartBefore(document.querySelector('.revealed').closest('.field'));"
             "r.setEndAfter(document.getElementById('t39g-controle'));"
             "getSelection().removeAllRanges(); getSelection().addRange(r); return true"
         )
@@ -395,14 +395,14 @@ def modo_webkit():
         else:
             ok("innerText da página sem o valor revelado")
         antes = js(
-            "return getComputedStyle(document.querySelector('.revelado'), '::before').content"
+            "return getComputedStyle(document.querySelector('.revealed'), '::before').content"
         )
         if antes == json.dumps(valor):
             ok("o campo continua mostrando o valor (::before)")
         else:
             falha("o campo revelado não mostra o valor")
         js("document.querySelector('button[aria-label^=\"Ocultar \"]').click(); return true")
-        if esperar("return !document.querySelector('.revelado')", 10) and not js(
+        if esperar("return !document.querySelector('.revealed')", 10) and not js(
             f"return document.documentElement.outerHTML.includes({json.dumps(valor)})"
         ):
             ok("Ocultar tira o valor do documento")

@@ -998,6 +998,74 @@ Os nomes dos componentes e telas no `Ward.figcraft` e em `docs/mission/design-no
 não mudam (PRD regra 2); os comentários que citam o nome do node do FigCraft citam-no
 como está lá.
 
+Fase 35: nos comentários de `app/src`, o node do FigCraft vai pelo id e por uma descrição
+em inglês (`Button (FigCraft set 263)`), porque o nome em português do node é acusado
+pelo checador; o nome no `Ward.figcraft` não muda. Os textos visíveis em pt-BR citados
+nos comentários também viram descrição (o texto fica só no código).
+
+Módulos de `lib/components/` e `lib/bridge/` (Fase 35):
+
+| Antigo | Novo |
+|---|---|
+| `icones.js` › `ICONES` | `icons.js` › `ICONS` (gerado por `generate_design.py`) |
+| `tipos.js` › `TIPOS`, `tipoDe(id)`, `{ rotulo, icone }` | `types.js` › `TYPES`, `entryType(id)`, `{ label, icon }` (chaves do fio entre aspas: `'banco'`…) |
+| `niveis.js` › `NIVEIS_DE_ACESSO`, `ORDEM_DOS_NIVEIS`, `nivelDe(nome)`, `{ rotulo, minusculo, icone, cartao, opcao }` | `levels.js` › `ACCESS_LEVELS`, `LEVEL_ORDER`, `accessLevel(name)`, `{ label, lower, icon, card, option }` |
+| `ward-simbolo.svg` | `ward-symbol.svg` |
+| `ponte/comandos.js`, `ponte/ponte-teste.js` | `bridge/commands.js`, `bridge/test-bridge.js` |
+| `chamar(comando, args)`, `ouvirAvisos(...)`, `telaPedida()` | `call(...)`, `listenNotices(...)`, `requestedScreen()` (só o nome exportado; o resto da ponte é da Fase 38) |
+| `bidi.js` › `partesBidi(texto)` → `{ texto, rtl }` | `bidiParts(text)` → `{ text, rtl }` |
+
+Ícones de `app/design/icons/` (chave de `ICONS`, valor de `icon`/`name`):
+
+| Antigo | Novo | Antigo | Novo |
+|---|---|---|---|
+| `alerta` | `alert` | `mais` | `plus` |
+| `busca` | `search` | `olho` | `eye` |
+| `cadeado` | `lock` | `olho-fechado` | `eye-closed` |
+| `chave` | `key` | `relogio` | `clock` |
+| `chevron-baixo` | `chevron-down` | `sucesso` | `success` |
+| `chevron-direita` | `chevron-right` | `tipo-api`, `tipo-aws`, `tipo-ftp` | `type-api`, `type-aws`, `type-ftp` |
+| `clipe` | `paperclip` | `tipo-banco` | `type-database` |
+| `copiar` | `copy` | `tipo-generico` | `type-generic` |
+| `engrenagem` | `gear` | `tipo-login`, `tipo-nota` | `type-login`, `type-note` |
+| `erro` | `error` | `tipo-servidor`, `tipo-smtp` | `type-server`, `type-smtp` |
+| `fechar` | `close` | `check` | fica |
+| `filtro` | `filter` | `gerador` | `generator` |
+
+Props dos componentes (Fase 35; os mesmos em todos os usos): `rotulo` → `label`,
+`icone` → `icon`, `desabilitado` → `disabled`, `valor` → `value`, `ajuda` → `help`,
+`erro` → `error`, `titulo` → `title`, `descricao` → `description`, `nome` → `name`,
+`detalhe` → `detail`, `aberto` → `open`, `ligado` → `on`, `marcado` → `checked`,
+`selecionado` → `selected`, `copiado` → `copied`, `revelado` → `revealed`, `vazio` →
+`empty`, `mascara` → `mask`, `entrada` (elemento `<input>`) → `input`, `entrada` (a
+entrada do cofre) → `entry`, `nivel` → `level`, `ambiente` → `environment`, `grupo(s)`
+→ `group(s)`, `tamanho` (do ícone) → `size`, `tom` → `tone`, `variante` → `variant`,
+`compacto/compacta` → `compact`, `grande` → `large`, `pilula` → `pill`, `situacao` →
+`situation`, `estado` (do pendrive) → `status`, `montado` → `mounted`, `guardado` →
+`stored`, `estatico` → `staticView`, `impressao` → `print`, `minimo`/`maximo` →
+`min`/`max`, `segundos` → `seconds`, `urgente` → `urgent`, `passo` → `step`, `cor` →
+`color`, `contagem` → `count`, `codigo` → `code`, `restante` → `remaining`, `digitos`
+(do PIN) → `digits`, `bloqueado` → `blocked`, `campo` → `field`. `tipo` vira `kind` (o
+tipo da entrada, o tipo do Toast e do Highlight) ou `type` (o `type` do HTML no `Button`
+e no `Field`). Eventos: `onfechar` → `onclose`, `onmudar`/`ontrocar` → `onchange`,
+`oncopiar` → `oncopy`, `onrevelar` → `onreveal`, `onesconder` → `onhide`, `ongerar` →
+`ongenerate`, `onremover` → `onremove`, `onescolher` → `onchoose`, `onaplicar` →
+`onapply`, `onusar` → `onuse`, `onenviar` → `onsubmit`, `onnavegar` → `onnavigate`,
+`ontravar` → `onlock`, `ontravado` → `onlocked`, `onmudado` → `onchanged`,
+`ondestravado` → `onunlocked`, `oncriado` → `oncreated`. Snippets: `rodape` → `footer`,
+`controle` → `control`, `acao` → `action`.
+
+Valores: `variant` do `Button` `primario`/`secundario`/`perigo`/`fantasma` →
+`primary`/`secondary`/`danger`/`ghost`; `kind` do `Toast` `sucesso`/`erro`/`aviso` →
+`success`/`error`/`warning`; `kind` do `Highlight` `neutro`/`aviso`/`info`/`perigo`/`prod`
+→ `neutral`/`warning`/`info`/`danger`/`prod`; `tone` do `Icon` (e `data-icon-tone`)
+`sobre-cor`/`forte`/`desabilitado`/`marca`/`perigo`/`aviso`/`sucesso` →
+`on-color`/`strong`/`disabled`/`brand`/`danger`/`warning`/`success`. Atributos `data-*`
+dos componentes: `data-teste` → `data-test`, `data-forca` → `data-strength`,
+`data-etapa` → `data-step`, `data-nivel` → `data-level`, `data-anexo` →
+`data-attachment`, `data-tipo` → `data-type`, `data-valor` → `data-value` (os valores
+que vêm do fio ficam).
+
 ### Extensão (Fases 5 e 39)
 
 | Antigo | Novo |
@@ -1543,6 +1611,7 @@ Ficam: `id`, `uuid`, `pin`, `tags`, `bits`.
 ## 14. CSS (Fases 35, 39)
 
 Tokens de `app/src/lib/estilo/tokens.css` (→ `lib/style/tokens.css`) e classes globais.
+Propriedades locais do `Slider`: `--progresso` → `--progress`, `--ponto` → `--point`.
 Mesmos valores, só o nome (V3.6). Atributo `data-tom-icone="sobre-cor"` →
 `data-icon-tone="on-color"`. As classes locais dos componentes seguem a seção 2
 (`.cabecalho` → `.header`, `.rodape` → `.footer`). `extension/popup.css` e o montador
