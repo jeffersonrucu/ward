@@ -16,11 +16,13 @@ falhar.
 6. A skill manda nunca ler esses caminhos nem imprimir variável ou anexo em nenhuma
    codificação (V8.2) e diz que o SSH da pasta do ssh do usuário é direto, sem o Ward
    (V8.4).
-7. (Fase 50a) As regras `Bash` do deny, lidas como o Claude Code lê (`*` = qualquer
+7. (Fase 50a; Fase 54b) As regras `Bash` do deny, lidas como o Claude Code lê (`*` = qualquer
    texto), negam cada comando de `ATAQUES_BASH` (env, `sh -c`, od, rev, fold, tr,
    cut, `python3 -c`, `>`, `/usr/local/bin/ward run`, curingas nos caminhos do Ward,
    `/proc/N/env*`…), olhando o comando inteiro e cada subcomando, e não negam nenhum
-   comando de `LEGITIMOS` nem dos blocos ```sh da skill.
+   comando de `LEGITIMOS` nem dos blocos ```sh da skill. Os de `ATAQUES_BASH_INTEIRO`
+   (script por pipe para o `ward run`, Fase 54b) só são exigidos no comando inteiro:
+   separado em subcomandos, o `|` some.
 8. (Fase 54a, RA8) A skill e o `skill/README.md` mandam o usuário destravar no terminal
    por `/usr/local/bin/ward destravar`, e a skill não manda destravar pelo `ward` do
    `PATH` (um `ward` falso antes no `PATH` lê a senha mestra).
@@ -136,6 +138,8 @@ ATAQUES_BASH = [
     "ward run {a} -- sh -c 'base64 \"$WARD_ARQUIVO_CHAVE\"'",
     "ward run {a} -- sh -c 'xxd < \"$WARD_ARQUIVO_CHAVE\"'",
     "ward run {a} -- sh -c 'ln -s \"$WARD_ARQUIVO_CHAVE\" /tmp/k'",
+    # Fase 54b: o `od` sem `<` nem `|` (as regras de entrada padrão pegam os outros).
+    "ward run {a} -- sh -c 'od -c \"$WARD_ARQUIVO_CHAVE\"'",
     # Caminhos do Ward: por extenso, com curinga, por variável e por `cd`.
     "cat {h}/" + COFRE + "/cofre.ward",
     "ls ~/.local/share/w*",
@@ -165,6 +169,31 @@ ATAQUES_BASH = [
     "cat " + SSH + "/id*",
     "ward destravar",
     "/usr/local/bin/ward ssh --token-fd 3 acme-ssh-senha-stage id",
+    # Fase 54b (D68): o script pela entrada padrão, que a janela de aprovação não
+    # mostra: arquivo, here-doc e here-string, depois e antes do `ward run`.
+    "ward run {e} -- /usr/bin/python3 < /tmp/script.py",
+    "ward run {e} -- /usr/bin/python3 -I </tmp/script.py",
+    "ward run {e} -- /usr/bin/python3 0< /tmp/script.py",
+    "< /tmp/script.py ward run {e} -- /usr/bin/python3",
+    "cd /tmp && <script.py /usr/local/bin/ward run {e} -- python3",
+    "ward run {e} -- /usr/bin/python3 <<EOF\nimport os\nprint(os.environ['PGPASSWORD'][::-1])\nEOF",
+    "ward run {e} -- /usr/bin/python3 <<'EOF'\nimport os\nEOF",
+    "ward run {e} -- /usr/bin/python3 <<< 'import os; print(os.environ)'",
+    "ward run {e} -- /usr/bin/psql <<< 'select 1'",
+    "ward run {e} -- /usr/bin/psql < /tmp/consulta.sql",
+    "ward run {e} -- /usr/bin/python3 <(cat /tmp/script.py)",
+]
+
+# Fase 54b (D68): o script por pipe para o `ward run`. Só o modelo do comando inteiro
+# vê o `|`: separado em subcomandos (`printf …` e `ward run … -- python3`), nenhum
+# pedaço é ataque. Quem barra de verdade é o daemon (aviso e confirmação na janela);
+# a regra é cinto de segurança. Exigido só no comando inteiro.
+ATAQUES_BASH_INTEIRO = [
+    "printf 'import os\nprint(os.environ[\"PGPASSWORD\"][::-1])\n' | ward run {e} -- /usr/bin/python3",
+    "cat /tmp/script.py | ward run {e} -- /usr/bin/python3",
+    "echo 'select 1' | ward run {e} -- /usr/bin/psql",
+    "cat /tmp/consulta.sql|/usr/local/bin/ward run {e} -- /usr/bin/psql",
+    "printf x |& ward run {e} -- /usr/bin/python3",
 ]
 
 # Comandos de uso normal que nenhuma regra pode negar (além dos blocos ```sh da skill).
@@ -417,6 +446,13 @@ def conferir_bash(padroes, texto):
         if not (inteiro and partes):
             qual = "inteiro" if not inteiro else "por subcomando"
             raise Falha(f"deny Bash não nega ({qual}): {comando!r}")
+    for modelo in ATAQUES_BASH_INTEIRO:
+        comando = modelo
+        for velho, novo in trocas.items():
+            comando = comando.replace(velho, novo)
+        inteiro, _partes = negado(regras, comando)
+        if not inteiro:
+            raise Falha(f"deny Bash não nega (inteiro): {comando!r}")
     comandos = comandos_da_skill(texto)
     if len(comandos) < 8:
         raise Falha("SKILL.md com poucos exemplos em blocos ```sh")
@@ -595,6 +631,13 @@ def autoteste(ward, base):
            tirar_deny(*(f"Bash(*ward*run*{b}od*)" for b in (" ", "/", "'", "\"", "|"))),
            ward, base)
     ataque("deny sem a regra de redirecionamento", tirar_deny("Bash(*ward*run*>*)"), ward, base)
+    # Fase 54b (D68): a entrada padrão que a janela não mostra.
+    ataque("deny sem a regra de entrada por arquivo", tirar_deny("Bash(*ward*run*<*)"),
+           ward, base)
+    ataque("deny sem a regra de entrada antes do ward", tirar_deny("Bash(*<*ward*run*)"),
+           ward, base)
+    ataque("deny sem a regra de pipe para o ward run", tirar_deny("Bash(*|*ward*run*)"),
+           ward, base)
     ataque("deny sem a regra de /run/user", tirar_deny("Bash(*/run/user*)"), ward, base)
     ataque("deny sem a regra de /proc", tirar_deny("Bash(*/proc/*)"), ward, base)
     ataque("deny que nega o uso normal", acrescentar_deny("Bash(*ward run*)"), ward, base)

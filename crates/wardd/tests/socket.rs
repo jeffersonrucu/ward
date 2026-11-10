@@ -184,7 +184,7 @@ fn v3_20_ciclo_pelo_socket_sem_segredo_no_log() {
     // Bloqueada = inexistente, byte a byte.
     let exec = |nome: &str| {
         format!(
-            r#"{{"entrada":"{nome}","argv":["{}"],"cwd":"{}","ambiente":[]}}"#,
+            r#"{{"entrada":"{nome}","argv":["{}"],"cwd":"{}","tipo_entrada":"nula","ambiente":[]}}"#,
             b64(b"env"),
             b64(b"/")
         )

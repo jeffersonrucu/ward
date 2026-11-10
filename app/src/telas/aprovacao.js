@@ -68,6 +68,12 @@ export const TEXTOS = Object.freeze({
   resumoConfirmacao: 'Confira a entrada e a origem antes de confirmar.',
   nivelConfirmacao: 'confirmar a origem',
   confirmar: 'Confirmar a origem',
+  // Fase 54b (D68): a entrada padrão do comando é pipe ou arquivo (sem frame no
+  // FigCraft ainda; texto da decisão do usuário, 2026-11-09).
+  entradaDestaque:
+    'O comando recebe dados pela entrada padrão, que esta janela não mostra. Esses dados podem usar a credencial do jeito que quiserem. Permita só se você sabe o que vai por ela.',
+  entradaCiente: 'Sei o que vai pela entrada padrão e permito mesmo assim',
+  entradaFaltando: 'Marque a opção da entrada padrão para permitir. Negar não pede nada.',
   notaConfirmacao:
     'Confirmar não pede PIN: a entrada não exige. Fechar a janela nega o pedido. Sem resposta em 2 min, ele expira e também é negado.',
 });

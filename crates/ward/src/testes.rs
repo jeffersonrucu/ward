@@ -114,6 +114,11 @@ struct Teste {
     err: Vec<u8>,
     /// Ambiente do `ward run` (no lugar do do processo de teste).
     amb: Vec<(std::ffi::OsString, std::ffi::OsString)>,
+    /// Fase 54b: o tipo da entrada padrão que o entorno diz (o do processo de teste não
+    /// conta).
+    tipo: ward_core::protocolo::TipoEntradaPadrao,
+    /// Quantas vezes a entrada padrão foi pedida.
+    leituras: u32,
 }
 
 impl Teste {
@@ -127,6 +132,8 @@ impl Teste {
             out: Vec::new(),
             err: Vec::new(),
             amb: vec![("PATH".into(), "/usr/bin:/bin".into())],
+            tipo: ward_core::protocolo::TipoEntradaPadrao::Nula,
+            leituras: 0,
         }
     }
     fn rodar(&mut self, args: &[&str]) -> u8 {
@@ -178,7 +185,11 @@ impl Entorno for Teste {
         self.amb.clone()
     }
     fn entrada_padrao(&mut self) -> Box<dyn Read + Send> {
+        self.leituras += 1;
         Box::new(io::empty())
+    }
+    fn tipo_entrada(&self) -> ward_core::protocolo::TipoEntradaPadrao {
+        self.tipo
     }
     fn terminal(&self) -> Option<ward_core::protocolo::Janela> {
         // Nunca o terminal de quem roda os testes.
@@ -455,6 +466,55 @@ mod com_daemon_falso {
         }
     }
 
+    /// Fase 54b (D68): o `ward run` e o `ward ssh` mandam o tipo da entrada padrão que
+    /// o entorno diz; com a entrada nula, a CLI nem pede a entrada (só o quadro vazio do
+    /// fim vai).
+    #[test]
+    fn f54b_run_e_ssh_mandam_o_tipo_e_nula_nao_le() {
+        use ward_core::protocolo::TipoEntradaPadrao as T;
+        for (sub, tipo) in T::TODOS.into_iter().flat_map(|t| [("run", t), ("ssh", t)]) {
+            let pasta = Pasta::nova();
+            let visto: Arc<Mutex<Vec<(T, usize)>>> = Arc::default();
+            let v = Arc::clone(&visto);
+            let saida = Resposta::Saida {
+                fluxo: ward_core::protocolo::Fluxo::Saida,
+                dados: Zeroizing::new(b"ok\n".to_vec()),
+            };
+            let _v = servidor(
+                &pasta,
+                Some(Arc::new(move |p: &Pedido| match p {
+                    Pedido::Estado => codificar(&resposta_estado(false)),
+                    Pedido::Executar(x) => {
+                        v.lock().unwrap().push((x.tipo_entrada, 0));
+                        codificar(&saida)
+                    }
+                    Pedido::Ssh { tipo_entrada, .. } => {
+                        v.lock().unwrap().push((*tipo_entrada, 0));
+                        codificar(&saida)
+                    }
+                    Pedido::EntradaPadrao { dados } => {
+                        v.lock().unwrap().push((T::Nula, dados.len() + 1));
+                        codificar(&Resposta::Fim { codigo: 0 })
+                    }
+                    _ => codificar(&Resposta::Erro(ErroResposta::NaoAutorizado)),
+                })),
+            );
+            let mut t = teste(&pasta);
+            t.tipo = tipo;
+            let codigo = if sub == "run" {
+                t.rodar(&["run", "e", "--", "true"])
+            } else {
+                t.rodar(&["ssh", "e", "true"])
+            };
+            assert_eq!(codigo, 0, "{sub} {tipo:?}: {}", t.err());
+            let visto = visto.lock().unwrap().clone();
+            assert_eq!(visto.first().map(|x| x.0), Some(tipo), "{sub}");
+            // Só o quadro vazio do fim (tamanho 0 + 1).
+            assert_eq!(visto.get(1).map(|x| x.1), Some(1), "{sub} {tipo:?}");
+            assert_eq!(t.leituras, u32::from(tipo != T::Nula), "{sub} {tipo:?}");
+        }
+    }
+
     /// Um canal como o do app (Fase 27a): `conteudo` na fila de um socket Unix cuja
     /// outra ponta já fechou. Devolve o número do fd; a posse passa à CLI, que o fecha.
     fn canal(conteudo: &[u8]) -> u32 {
@@ -530,8 +590,10 @@ mod com_daemon_falso {
                     comando,
                     token: t,
                     janela,
+                    tipo_entrada,
                 } => {
                     assert_eq!(entrada, "acme-ssh");
+                    assert_eq!(*tipo_entrada, ward_core::protocolo::TipoEntradaPadrao::Nula);
                     let c: Vec<&[u8]> = comando.iter().map(|x| x.as_slice()).collect();
                     assert_eq!(c, [b"ls".as_slice(), b"-la"]);
                     assert_eq!(t.as_ref().map(|t| t.expor().to_vec()), Some(token.into()));
@@ -677,5 +739,45 @@ mod com_daemon_falso {
             assert_eq!(t.err(), "ward: resposta inválida do daemon\n");
             assert!(t.out.is_empty());
         }
+    }
+}
+
+/// Fase 54b (D68): o tipo da entrada padrão pelo `fstat`: `/dev/null` é nula, pipe e
+/// socket são pipe, arquivo comum é arquivo, `/dev/zero` é outra; terminal só com
+/// `isatty` num dispositivo de caractere (um arquivo que se diz terminal não vira).
+#[test]
+fn f54b_tipo_da_entrada_padrao_pelo_fstat() {
+    use crate::comandos::classificar_entrada;
+    use ward_core::protocolo::TipoEntradaPadrao as T;
+    let meta = |p: &str| std::fs::metadata(p).unwrap();
+    assert_eq!(
+        classificar_entrada(Some(&meta("/dev/null")), false),
+        T::Nula
+    );
+    // `/dev/null` nunca é terminal, nem se o `isatty` mentisse.
+    assert_eq!(classificar_entrada(Some(&meta("/dev/null")), true), T::Nula);
+    assert_eq!(
+        classificar_entrada(Some(&meta("/dev/zero")), false),
+        T::Outra
+    );
+    assert_eq!(classificar_entrada(None, false), T::Nula);
+    let (leitura, _escrita) = std::io::pipe().unwrap();
+    let f = std::fs::File::from(std::os::fd::OwnedFd::from(leitura));
+    assert_eq!(
+        classificar_entrada(Some(&f.metadata().unwrap()), false),
+        T::Pipe
+    );
+    let (a, _b) = std::os::unix::net::UnixStream::pair().unwrap();
+    let f = std::fs::File::from(std::os::fd::OwnedFd::from(a));
+    assert_eq!(
+        classificar_entrada(Some(&f.metadata().unwrap()), false),
+        T::Pipe
+    );
+    let arquivo = std::env::current_exe().unwrap();
+    let m = std::fs::metadata(&arquivo).unwrap();
+    assert_eq!(classificar_entrada(Some(&m), false), T::Arquivo);
+    assert_eq!(classificar_entrada(Some(&m), true), T::Arquivo);
+    if let Ok(m) = std::fs::metadata("/dev/ptmx") {
+        assert_eq!(classificar_entrada(Some(&m), true), T::Terminal);
     }
 }

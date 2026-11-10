@@ -567,6 +567,7 @@ mod testes {
             cadeia: vec!["claude".into()],
             origem: String::new(),
             confirmacao: false,
+            entrada_oculta: true,
         };
         assert!(s.entregar(&Resposta::PedidoDeAprovacao(p.clone())));
         let d = PedidoDeDestrave {

@@ -19,7 +19,9 @@
 //! 7. o filho termina: o grupo inteiro é morto, o temporário é zerado e apagado e a CLI
 //!    recebe `fim` com o código (128 + sinal, como o shell);
 //! 8. a CLI cai (fim da conexão) ou manda um quadro fora da sessão: o grupo do filho
-//!    leva `SIGKILL` (D13) e a limpeza segue igual.
+//!    leva `SIGKILL` (D13) e a limpeza segue igual;
+//! 9. Fase 54b (D68): com a entrada padrão declarada nula, a entrada do filho fecha no
+//!    lançamento e um `entrada_padrao` com dados conta como quadro fora da sessão.
 //!
 //! O log tem só números e textos fixos (S13). Os temporários que um `wardd` morto deixou
 //! são apagados na partida ([`limpar_temporarios`]).
@@ -42,7 +44,7 @@ use ward_core::entrega::{self, Entrega, ErroEntrega, ErroRecurso, Recursos};
 use ward_core::limites::{MAX_QUADRO_COMUM, MAX_TEXTO_EXIBIDO};
 use ward_core::mascara::{ConstrutorMascara, Mascara};
 use ward_core::protocolo::{
-    self, ErroResposta, Fluxo, Janela, Papel, Pedido, Resposta, Variavel, quadro,
+    self, ErroResposta, Fluxo, Janela, Papel, Pedido, Resposta, TipoEntradaPadrao, Variavel, quadro,
 };
 use ward_core::totp::Totp;
 use ward_plataforma::filho::{self, Comando, Grupo, Pty};
@@ -313,6 +315,10 @@ pub(crate) struct Preparo {
     pub(crate) agente: Option<AgentePreparado>,
     /// `ward run` (Fase 54, S8): o grupo do filho morre se o cofre travar.
     pub(crate) trava: Option<MorreNaTrava>,
+    /// Fase 54b (D68): a CLI disse que a entrada padrão é nula (`/dev/null`). A entrada
+    /// do filho fecha no lançamento e um `entrada_padrao` com dados mata o grupo: quem
+    /// diz "nula" não manda nada depois (o aviso da janela não foi mostrado).
+    pub(crate) entrada_nula: bool,
 }
 
 /// O registro dos `ward run` em curso e a contagem de travas de quando a sessão foi
@@ -537,6 +543,8 @@ impl Daemon {
         let Pedido::Executar(x) = &pedido else {
             return Err(ErroResposta::PedidoInvalido);
         };
+        // Fase 54b: só o tipo (texto fixo), para a suíte da CLI conferir o `fstat`.
+        depurar!("executar: entrada padrão {}", x.tipo_entrada.nome());
         // `nota segura` visível: recusa antes de pedir aprovação (V4.11).
         if let Some(a) = self.estado().aberto.as_ref()
             && visivel(&a.entradas, &x.entrada)
@@ -618,6 +626,7 @@ impl Daemon {
             pty: None,
             agente: None,
             trava: Some(trava),
+            entrada_nula: x.tipo_entrada == TipoEntradaPadrao::Nula,
         })
     }
 }
@@ -744,15 +753,17 @@ fn escrever_entrada(mut f: File, fila: Receiver<Option<Segredo>>) {
 /// muda o tamanho do pty (sem pty, como no `ward run`, é ignorada); qualquer outro
 /// quadro, ou a conexão que cai, mata o grupo do filho (D13). Depois do fim normal, a
 /// leitura acaba sem matar nada. No pty, a entrada vazia não fecha nada (o fim da
-/// entrada é o Ctrl+D que o terminal manda como byte).
+/// entrada é o Ctrl+D que o terminal manda como byte). Com `entrada_nula` (Fase 54b),
+/// só o quadro vazio do fim é aceito; dado conta como quadro fora da sessão.
 fn ler_da_cli(
     mut s: UnixStream,
     grupo: Arc<Grupo>,
     fila: SyncSender<Option<Segredo>>,
     fim: Arc<AtomicBool>,
     pty: Option<Arc<Pty>>,
+    entrada_nula: bool,
 ) {
-    let mut entrada_aberta = true;
+    let mut entrada_aberta = !entrada_nula;
     loop {
         let bytes = match quadro::ler_quadro(&mut s, MAX_QUADRO_COMUM) {
             Ok(b) => b,
@@ -765,6 +776,15 @@ fn ler_da_cli(
             }
         };
         match protocolo::decodificar_pedido(Papel::Agente, &bytes) {
+            Ok(Pedido::EntradaPadrao { dados }) if entrada_nula && !dados.is_empty() => {
+                if !fim.load(Ordering::Acquire) {
+                    aviso!(
+                        "executar: dado na entrada padrão declarada nula; o grupo do comando foi morto (D68)"
+                    );
+                    grupo.matar();
+                }
+                return;
+            }
             Ok(Pedido::EntradaPadrao { dados }) => {
                 if !entrada_aberta || (dados.is_empty() && pty.is_some()) {
                     continue;
@@ -881,6 +901,7 @@ pub(crate) fn sessao_com(
         pty,
         agente,
         trava,
+        entrada_nula,
     } = preparo;
     let lancado = match pty {
         Some(j) => comando
@@ -990,13 +1011,23 @@ pub(crate) fn sessao_com(
     }
     drop(pronto_tx);
     let (fila_tx, fila_rx) = mpsc::sync_channel(FILA_ENTRADA);
+    // Fase 54b: entrada nula, a do filho fecha já (fim da entrada, como `/dev/null`). No
+    // pty o mestre é também a saída e fica; o dado que chegar mata o grupo.
+    let entrada = if pty.is_none() && entrada_nula {
+        drop(entrada);
+        None
+    } else {
+        entrada
+    };
     if let Some(f) = entrada {
         thread("wardd-run-entrada", move || escrever_entrada(f, fila_rx));
     }
     let leitor_ok = match stream.try_clone() {
         Ok(s) => {
             let (g, f, p) = (grupo.clone(), fim.clone(), pty.clone());
-            thread("wardd-run-cli", move || ler_da_cli(s, g, fila_tx, f, p))
+            thread("wardd-run-cli", move || {
+                ler_da_cli(s, g, fila_tx, f, p, entrada_nula)
+            })
         }
         Err(_) => false,
     };

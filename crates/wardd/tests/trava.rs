@@ -247,7 +247,7 @@ fn ataque_lista_periodica_do_agente_nao_adia_a_trava() {
 
 fn executar(entrada: &str) -> String {
     format!(
-        r#"{{"entrada":"{entrada}","argv":["{}"],"cwd":"{}","ambiente":[]}}"#,
+        r#"{{"entrada":"{entrada}","argv":["{}"],"cwd":"{}","tipo_entrada":"pipe","ambiente":[]}}"#,
         b64(b"true"),
         b64(b"/")
     )

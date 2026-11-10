@@ -56,9 +56,18 @@ impl Drop for Wardd {
 }
 
 fn subir(dev: &Dir, sock: &DirSocket) -> Wardd {
+    subir_com(dev, sock, &[])
+}
+
+/// O `wardd` de teste com variáveis a mais (Fase 54b: `WARD_DEV_APP`).
+fn subir_com(dev: &Dir, sock: &DirSocket, extra: &[(&str, &std::ffi::OsStr)]) -> Wardd {
     let log = dev.0.join("wardd.log");
-    let filho = Command::new(WARDD)
-        .env_clear()
+    let mut cmd = Command::new(WARDD);
+    cmd.env_clear();
+    for (k, v) in extra {
+        cmd.env(k, v);
+    }
+    let filho = cmd
         .env("PATH", "/usr/bin:/bin")
         .env("WARD_DEV_DIR", &dev.0)
         .env("WARD_DEV_SOCKET_DIR", &sock.0)
@@ -116,6 +125,11 @@ fn destravar_por(w: &Wardd) {
 }
 
 fn pedido_executar(entrada: &str, argv: &[&str], amb: &[(&str, &str)]) -> String {
+    pedido_executar_com(entrada, argv, amb, "pipe")
+}
+
+/// O `executar` com o tipo da entrada padrão (Fase 54b).
+fn pedido_executar_com(entrada: &str, argv: &[&str], amb: &[(&str, &str)], tipo: &str) -> String {
     let argv: Vec<String> = argv
         .iter()
         .map(|a| format!("\"{}\"", b64(a.as_bytes())))
@@ -131,7 +145,7 @@ fn pedido_executar(entrada: &str, argv: &[&str], amb: &[(&str, &str)]) -> String
         })
         .collect();
     format!(
-        r#"{{"v":1,"op":"executar","dados":{{"entrada":"{entrada}","argv":[{}],"cwd":"{}","ambiente":[{}]}}}}"#,
+        r#"{{"v":1,"op":"executar","dados":{{"entrada":"{entrada}","argv":[{}],"cwd":"{}","tipo_entrada":"{tipo}","ambiente":[{}]}}}}"#,
         argv.join(","),
         b64(b"/"),
         amb.join(",")
@@ -918,4 +932,160 @@ fn f54_ataque_ward_run_morre_na_trava() {
     let log = fs::read(&w.log).unwrap();
     assert!(!contem(&log, SENHA_LIVRE.as_bytes()));
     assert!(contem(&log, "encerrado(s) ao travar".as_bytes()));
+}
+
+/// Fase 54b (D68): quem declara a entrada padrão nula não manda nada depois. A entrada
+/// do filho fecha no lançamento (o `cat` acaba na hora, sem esperar o fim da CLI) e um
+/// `entrada_padrao` com dados mata o grupo, sem o dado chegar ao comando.
+#[test]
+fn f54b_ataque_entrada_nula_com_dado_mata_o_comando() {
+    let dev = Dir::novo("run-54b-nula");
+    cofre(&dev);
+    let sock = DirSocket::novo("54b-nula");
+    let w = subir(&dev, &sock);
+    destravar_por(&w);
+    // Sem dado: o `cat` vê o fim já, antes do quadro vazio da CLI.
+    let mut s = conectar(&w);
+    mandar(
+        &mut s,
+        &pedido_executar_com("t-livre", &sh("cat; echo fim"), &[], "nula"),
+    );
+    let r = ler_sessao(&mut s);
+    assert_eq!(r.fim, Some(0), "{r:?}");
+    assert_eq!(texto(&r.saida), "fim\n");
+    // Com dado: o comando morre e o dado não chega.
+    let mut s = conectar(&w);
+    mandar(
+        &mut s,
+        &pedido_executar_com("t-livre", &sh("sleep 3; cat; echo fim"), &[], "nula"),
+    );
+    let antes = Instant::now();
+    entrada_padrao(&mut s, b"falso-script-do-agente-54b\n");
+    let r = ler_sessao(&mut s);
+    assert!(antes.elapsed() < Duration::from_secs(3), "o comando seguiu");
+    assert_eq!(r.fim, Some(137), "{r:?}");
+    let tudo = [r.saida.as_slice(), r.erro.as_slice()].concat();
+    assert!(!contem(&tudo, b"falso-script-do-agente"), "{r:?}");
+    assert!(!contem(&tudo, b"fim"), "{r:?}");
+    let log = fs::read(&w.log).unwrap();
+    assert!(contem(&log, "entrada padrão declarada nula".as_bytes()));
+    assert!(!contem(&log, b"falso-script-do-agente"));
+}
+
+const APROVADOR: &str = env!("CARGO_BIN_EXE_wardd-aprovador-teste");
+
+/// Ataque da auditoria final, de ponta a ponta pelo binário (D68): `printf <script> |
+/// ward run t-aprov -- python3`, com a janela de teste (`wardd-aprovador-teste`, aberta
+/// pelo daemon por `WARD_DEV_APP`) respondendo "Permitir uma vez" com o PIN certo. Sem
+/// a caixa da entrada padrão, o daemon recusa a resposta, o `python3` nunca roda e nada
+/// sai; com a caixa, roda. Com terminal, "Permitir uma vez" passa como antes.
+#[test]
+fn f54b_ataque_script_por_pipe_na_aprovacao() {
+    let dev = Dir::novo("run-54b-aprov");
+    cofre(&dev);
+    let app = dev.0.join("wardd-aprovador-teste");
+    fs::hard_link(APROVADOR, &app).unwrap();
+    let modo = dev.0.join("aprovador.modo");
+    let log_app = dev.0.join("logs/wardd-aprovador-teste.log");
+    let sock = DirSocket::novo("54b-aprov");
+    let w = subir_com(&dev, &sock, &[("WARD_DEV_APP", app.as_os_str())]);
+    destravar_por(&w);
+    // O script mede a senha (nada dela sai, nem mascarado).
+    let script =
+        b"import os, sys\nsys.stdout.write('ENTREGUE:%d' % len(os.environ['WARD_PASS']))\n";
+    let respostas = |m: &str| {
+        fs::read_to_string(&log_app)
+            .unwrap_or_default()
+            .matches(m)
+            .count()
+    };
+
+    // 1. Sem a caixa: recusado; o pedido segue pendente e nada roda. O `python3` da
+    // auditoria e um leitor de comandos pela entrada (o `sh`, no lugar do `psql`, que
+    // lê o SQL do mesmo jeito; a decisão não olha o argv), por pipe e por arquivo.
+    let casos: [(&[&str], &[u8], &str); 3] = [
+        (&["/usr/bin/python3", "-I"], script, "pipe"),
+        (
+            &["/bin/sh"],
+            b"printf 'ENTREGUE:%s' \"${#WARD_PASS}\"\n",
+            "pipe",
+        ),
+        (
+            &["/bin/sh"],
+            b"printf 'ENTREGUE:%s' \"${#WARD_PASS}\"\n",
+            "arquivo",
+        ),
+    ];
+    for (n, (argv, dados, tipo)) in casos.iter().enumerate() {
+        fs::write(&modo, format!("uma_vez {PIN}\n")).unwrap();
+        let mut s = conectar(&w);
+        mandar(&mut s, &pedido_executar_com("t-aprov", argv, &[], tipo));
+        entrada_padrao(&mut s, dados);
+        entrada_padrao(&mut s, b"");
+        assert!(
+            esperar(Duration::from_secs(20), || respostas(
+                "resposta=pedido_invalido"
+            ) > n),
+            "a janela de teste não respondeu: {}",
+            fs::read_to_string(&log_app).unwrap_or_default()
+        );
+        let linhas = fs::read_to_string(&log_app).unwrap();
+        assert!(
+        linhas.contains("pedido operacao=executar entradas=t-aprov origem=- confirmacao=0 entrada_oculta=1 decisao=uma_vez"),
+        "{linhas}"
+    );
+        s.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
+        assert!(
+            receber(&mut s).is_none(),
+            "o comando rodou sem a confirmação"
+        );
+        // A CLI desiste: o pedido é cancelado, nada rodou.
+        drop(s);
+        assert!(esperar(Duration::from_secs(5), || {
+            String::from_utf8_lossy(&fs::read(&w.log).unwrap())
+                .matches("o cliente saiu; cancelada")
+                .count()
+                > n
+        }));
+    }
+
+    // 2. Com a caixa: roda.
+    fs::write(&modo, format!("uma_vez_ciente {PIN}\n")).unwrap();
+    let mut s = conectar(&w);
+    mandar(
+        &mut s,
+        &pedido_executar_com("t-aprov", &["/usr/bin/python3", "-I"], &[], "pipe"),
+    );
+    entrada_padrao(&mut s, script);
+    entrada_padrao(&mut s, b"");
+    let r = ler_sessao(&mut s);
+    assert_eq!(r.fim, Some(0), "{r:?}");
+    assert_eq!(texto(&r.saida), format!("ENTREGUE:{}", SEGREDOS[0].len()));
+
+    // 3. Terminal: "Permitir uma vez" sem a caixa, como antes.
+    fs::write(&modo, format!("uma_vez {PIN}\n")).unwrap();
+    let mut s = conectar(&w);
+    mandar(
+        &mut s,
+        &pedido_executar_com(
+            "t-aprov",
+            &sh("printf %s \"$WARD_PASS\" | wc -c"),
+            &[],
+            "terminal",
+        ),
+    );
+    entrada_padrao(&mut s, b"");
+    let r = ler_sessao(&mut s);
+    assert_eq!(r.fim, Some(0), "{r:?}");
+    assert_eq!(texto(&r.saida).trim(), SEGREDOS[0].len().to_string());
+
+    let log = fs::read(&w.log).unwrap();
+    for segredo in SEGREDOS {
+        assert!(!contem(&log, segredo.as_bytes()));
+        assert!(!contem(&fs::read(&log_app).unwrap(), segredo.as_bytes()));
+    }
+    assert!(contem(
+        &log,
+        b"confirma\xc3\xa7\xc3\xa3o da entrada padr\xc3\xa3o"
+    ));
 }

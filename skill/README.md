@@ -56,7 +56,14 @@ que fica fora do que o Ward cobre (docs/escopo.md › "Fora do modelo de ameaça
     `printf`, `echo … $`, `base64`, `base32`, `xxd`, `od`, `hexdump`, `rev`, `tr`,
     `cut`, `fold`, `head -c`, `tee`, `python… -c`, `node -e`, `perl -e`, `ruby -e`,
     `php -r`, qualquer `>` (redirecionamento), `.pgpass`, `.netrc`, `git config` e
-    `cat`/`head`/`cp`/`mv`/`ln`/`<` de `WARD_ARQUIVO_*`.
+    `cat`/`head`/`cp`/`mv`/`ln`/`<` de `WARD_ARQUIVO_*`;
+  - a entrada padrão do `ward run` (Fase 54b): qualquer `<` antes ou depois dele
+    (`< arquivo`, `<<EOF`, `<<<`, `<(…)`) e um `|` antes dele (script por pipe). A
+    janela de aprovação mostra o comando, não o que entra pela entrada padrão; numa
+    entrada "com aprovação" o daemon já exige a confirmação a mais na janela, e a regra
+    é o cinto. O pipe só aparece olhando o comando inteiro: se o Claude Code olhar cada
+    subcomando, `printf … | ward run …` vira dois comandos inocentes e passa pela
+    regra (não pelo daemon).
 
   `make teste-skill` confere cada forma (o comando inteiro e cada subcomando) e que
   nenhum exemplo da skill é negado. Algumas regras negam comando inocente (um

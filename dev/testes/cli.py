@@ -43,6 +43,7 @@ Uso: dev/testes/cli.py <binário ward> <raiz do repositório>. Só valores falso
 import json
 import os
 import pty
+import re
 import select
 import socket
 import sys
@@ -191,6 +192,9 @@ cod, tela, _ = rodar_pty(["travar"])
 conferir(cod == 0 and "cofre travado" in tela, "travar")
 cod, tela, _ = rodar_pty(["lista"])
 conferir(cod != 0 and "travado" in tela, "V4.22 lista depois de travar responde 'travado'")
+# Fase 54b (RA8, 54a): a dica de destravar usa o caminho completo, não o `ward` do PATH.
+conferir("`/usr/local/bin/ward destravar`" in tela,
+         "V4.22 a dica de destravar é `/usr/local/bin/ward destravar`")
 
 # V4.21 (D16), cronometrado (scrutiny do M4, Fase 28b): travado e sem destravar, o
 # `ward run` espera os 2 min do daemon e sai ≠ 0 em 120 s ± 2 s; com o `ward destravar`
@@ -269,6 +273,41 @@ def sem_variacao(r, rotulo):
     achados = sum(1 for p in padroes if p in tudo)
     conferir(achados == 0, f"S4 {rotulo}: nenhum padrão de .dev/variacoes.txt na saída ({achados})")
 
+
+# Fase 54b (D68): a CLI de verdade diz ao daemon o tipo da entrada padrão pelo `fstat`
+# (o daemon de teste registra só o nome do tipo, com RUST_LOG=trace): `/dev/null` é
+# nula (o `cat` acaba sem esperar), pipe, arquivo, `/dev/zero` é outra e o pty é
+# terminal.
+LOG_54B = os.path.join(RAIZ, ".dev", "logs", "wardd.log")
+
+
+def tipo_no_log(faz):
+    antes = os.path.getsize(LOG_54B) if os.path.exists(LOG_54B) else 0
+    faz()
+    time.sleep(0.3)
+    with open(LOG_54B, "rb") as f:
+        f.seek(antes)
+        novos = re.findall(rb"executar: entrada padr\xc3\xa3o (\w+)", f.read())
+    return [t.decode() for t in novos]
+
+
+with open("/dev/null", "rb") as nulo, open(os.path.join(RAIZ, "Makefile"), "rb") as arq, \
+        open("/dev/zero", "rb") as zero:
+    for rotulo, faz, esperado in [
+        ("/dev/null", lambda: subprocess.run([WARD, "run", "acme-pg-dev", "--", "/bin/cat"],
+                                             env=ambiente(), stdin=nulo, capture_output=True,
+                                             timeout=30), "nula"),
+        ("pipe", lambda: run(["acme-pg-dev", "--", "/bin/true"], entrada=b"x\n"), "pipe"),
+        ("arquivo", lambda: subprocess.run([WARD, "run", "acme-pg-dev", "--", "/bin/true"],
+                                           env=ambiente(), stdin=arq, capture_output=True,
+                                           timeout=30), "arquivo"),
+        ("/dev/zero", lambda: subprocess.run([WARD, "run", "acme-pg-dev", "--", "/bin/true"],
+                                             env=ambiente(), stdin=zero, capture_output=True,
+                                             timeout=30), "outra"),
+        ("pty", lambda: rodar_pty(["run", "acme-pg-dev", "--", "/bin/true"]), "terminal"),
+    ]:
+        vistos = tipo_no_log(faz)
+        conferir(vistos == [esperado], f"Fase 54b: entrada {rotulo} vai ao daemon como {esperado} ({vistos})")
 
 r = run(["acme-wp-prod", "--", "/bin/sh", "-c", 'printf "%s|%s" "$WARD_USER" "$WARD_PASS"; exit 5'])
 conferir(r.returncode == 5, f"V4.19 o código do comando volta (saiu {r.returncode})")

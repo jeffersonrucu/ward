@@ -82,8 +82,10 @@ pub const OUVIR_AVISOS: &str = "ouvir_avisos";
 /// `pedido_de_aprovacao`: o pedido da vez para a janela de aprovação (Fase 36), com o
 /// texto do agente já neutralizado (D51), ou `null`. Só a janela `aprovacao`.
 pub const PEDIDO_DE_APROVACAO: &str = "pedido_de_aprovacao";
-/// `responder_aprovacao { id, decisao, pin }`: Negar (sem PIN) ou um dos três Permitir
-/// (com PIN, S9, S10). Só a janela `aprovacao`; a resposta não traz o PIN.
+/// `responder_aprovacao { id, decisao, pin, ciente }`: Negar (sem PIN) ou um dos três
+/// Permitir (com PIN, S9, S10). Só a janela `aprovacao`; a resposta não traz o PIN.
+/// `ciente` (Fase 54b, D68): a caixa da entrada padrão oculta, obrigatória num Permitir
+/// de um pedido com `entrada_oculta` e recusada nos outros.
 pub const RESPONDER_APROVACAO: &str = "responder_aprovacao";
 
 /// `configuracoes`: tempo de trava e backup externo ligado ou não (Fase 38). Sem

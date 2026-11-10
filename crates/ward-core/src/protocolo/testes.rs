@@ -65,13 +65,13 @@ fn dados_validos(op: Operacao) -> String {
         }
         Operacao::Destravar => format!(r#"{{"senha":"{senha}"}}"#),
         Operacao::Executar => format!(
-            r#"{{"entrada":"acme-pg-dev","argv":["{}"],"cwd":"{}","ambiente":[{{"nome":"{}","valor":"{}"}}]}}"#,
+            r#"{{"entrada":"acme-pg-dev","argv":["{}"],"cwd":"{}","tipo_entrada":"nula","ambiente":[{{"nome":"{}","valor":"{}"}}]}}"#,
             b64(b"psql"),
             b64(b"/tmp"),
             b64(b"LANG"),
             b64(b"C.UTF-8")
         ),
-        Operacao::Ssh => r#"{"entrada":"acme-ssh-dev"}"#.into(),
+        Operacao::Ssh => r#"{"entrada":"acme-ssh-dev","tipo_entrada":"terminal"}"#.into(),
         Operacao::Login | Operacao::Playwright | Operacao::Detalhe | Operacao::Totp => {
             r#"{"entrada":"acme-wp-dev"}"#.into()
         }
@@ -192,6 +192,7 @@ fn uma_resposta_de_cada() -> Vec<Resposta> {
             cadeia: vec!["claude".into(), "bash".into(), "ward run".into()],
             origem: String::new(),
             confirmacao: false,
+            entrada_oculta: true,
         }),
         Resposta::PedidoDeAprovacao(PedidoDeAprovacao {
             id: 43,
@@ -203,6 +204,7 @@ fn uma_resposta_de_cada() -> Vec<Resposta> {
             cadeia: vec!["claude".into(), "ward playwright".into()],
             origem: "http://localhost:8081".into(),
             confirmacao: true,
+            entrada_oculta: false,
         }),
         Resposta::PedidoDeAprovacao(PedidoDeAprovacao {
             id: 44,
@@ -214,6 +216,7 @@ fn uma_resposta_de_cada() -> Vec<Resposta> {
             cadeia: vec!["chrome".into(), "ward-nm".into()],
             origem: "http://localhost:8081".into(),
             confirmacao: true,
+            entrada_oculta: false,
         }),
         Resposta::PedidoDeDestrave(PedidoDeDestrave {
             entrada: "acme-pg-aprovacao".into(),
@@ -902,7 +905,7 @@ fn executar_recusa_nul_igual_e_vazio() {
             &quadro_de(
                 Operacao::Executar,
                 &format!(
-                    r#"{{"entrada":"acme-pg-dev","argv":[{}],"cwd":"{}","ambiente":[{}]}}"#,
+                    r#"{{"entrada":"acme-pg-dev","argv":[{}],"cwd":"{}","tipo_entrada":"pipe","ambiente":[{}]}}"#,
                     argv.join(","),
                     b64(cwd),
                     amb.join(",")
@@ -2534,6 +2537,7 @@ fn ataque_pedido_de_aprovacao_com_origem_fora_da_forma() {
         cadeia: vec![],
         origem: "http://localhost:8081".into(),
         confirmacao: true,
+        entrada_oculta: false,
     };
     let escreve = |p: &PedidoDeAprovacao| {
         codificar_resposta(Papel::App, &Resposta::PedidoDeAprovacao(p.clone())).is_ok()
@@ -2552,4 +2556,99 @@ fn ataque_pedido_de_aprovacao_com_origem_fora_da_forma() {
     let mut p = base.clone();
     p.origem = "x".repeat(crate::limites::MAX_TEXTO + 1);
     assert!(!escreve(&p), "origem grande demais");
+    // Fase 54b: o aviso da entrada padrão só no `executar` e no `ssh`, sem confirmação
+    // de origem.
+    let mut p = base.clone();
+    p.entrada_oculta = true;
+    assert!(!escreve(&p), "entrada oculta numa confirmação de login");
+    let mut p = base.clone();
+    p.operacao = Operacao::Executar;
+    p.origem.clear();
+    p.confirmacao = false;
+    p.entrada_oculta = true;
+    assert!(escreve(&p), "executar com entrada oculta");
+    p.confirmacao = true;
+    assert!(!escreve(&p), "executar com entrada oculta como confirmação");
+}
+
+/// Fase 54b (D68): o tipo da entrada padrão é obrigatório no `executar` e no `ssh`, só
+/// pelos cinco nomes; `entrada_confirmada` só como `true` e só com um "Permitir".
+#[test]
+fn ataque_tipo_da_entrada_padrao_fora_do_formato() {
+    let exec = |tipo: Option<&str>| {
+        let tipo = tipo
+            .map(|t| format!(r#","tipo_entrada":{t}"#))
+            .unwrap_or_default();
+        ped(
+            Papel::Agente,
+            &quadro_de(
+                Operacao::Executar,
+                &format!(
+                    r#"{{"entrada":"acme-pg-dev","argv":["{}"],"cwd":"{}","ambiente":[]{tipo}}}"#,
+                    b64(b"python3"),
+                    b64(b"/tmp")
+                ),
+            ),
+        )
+    };
+    for t in TipoEntradaPadrao::TODOS {
+        match exec(Some(&format!("\"{}\"", t.nome()))) {
+            Ok(Pedido::Executar(x)) => assert_eq!(x.tipo_entrada, t),
+            outro => panic!("{t:?}: {outro:?}"),
+        }
+    }
+    for ruim in [
+        None,
+        Some(r#""tty""#),
+        Some(r#""Terminal""#),
+        Some("true"),
+        Some(r#""""#),
+        Some("null"),
+    ] {
+        assert!(exec(ruim).is_err(), "{ruim:?}");
+    }
+    let ssh = |dados: &str| ped(Papel::Agente, &quadro_de(Operacao::Ssh, dados));
+    assert!(
+        ssh(r#"{"entrada":"acme-ssh-dev"}"#).is_err(),
+        "ssh sem tipo"
+    );
+    assert!(ssh(r#"{"entrada":"acme-ssh-dev","tipo_entrada":"pts"}"#).is_err());
+    match ssh(r#"{"entrada":"acme-ssh-dev","tipo_entrada":"arquivo"}"#) {
+        Ok(Pedido::Ssh { tipo_entrada, .. }) => {
+            assert_eq!(tipo_entrada, TipoEntradaPadrao::Arquivo)
+        }
+        outro => panic!("{outro:?}"),
+    }
+    let pin = b64(b"135790");
+    let resp = |extra: &str, decisao: &str, com_pin: bool| {
+        let pin = if com_pin {
+            format!(r#","pin":"{pin}""#)
+        } else {
+            String::new()
+        };
+        ped(
+            Papel::App,
+            &quadro_de(
+                Operacao::ResponderAprovacao,
+                &format!(r#"{{"pedido":7,"decisao":"{decisao}"{pin}{extra}}}"#),
+            ),
+        )
+    };
+    match resp(r#","entrada_confirmada":true"#, "uma_vez", true) {
+        Ok(Pedido::ResponderAprovacao {
+            entrada_confirmada, ..
+        }) => assert!(entrada_confirmada),
+        outro => panic!("{outro:?}"),
+    }
+    match resp("", "uma_hora", true) {
+        Ok(Pedido::ResponderAprovacao {
+            entrada_confirmada, ..
+        }) => assert!(!entrada_confirmada),
+        outro => panic!("{outro:?}"),
+    }
+    assert!(resp(r#","entrada_confirmada":false"#, "uma_vez", true).is_err());
+    assert!(resp(r#","entrada_confirmada":1"#, "uma_vez", true).is_err());
+    assert!(resp(r#","entrada_confirmada":"sim""#, "uma_vez", true).is_err());
+    assert!(resp(r#","entrada_confirmada":true"#, "negar", false).is_err());
+    assert!(resp(r#","entrada_confirmada":true"#, "confirmar", false).is_err());
 }

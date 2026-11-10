@@ -82,7 +82,8 @@ pub struct DaemonFalso {
     /// Senha mestra trocada pelo `trocar_senha` (Fase 38); sem ela vale a de teste.
     senha: Option<Zeroizing<Vec<u8>>>,
     /// Pedidos de aprovação pendentes (Fase 36): id e entradas.
-    aprovacoes: Vec<(u64, Vec<String>)>,
+    /// Id, entradas e se a entrada padrão é oculta (Fase 54b).
+    aprovacoes: Vec<(u64, Vec<String>, bool)>,
     /// Backup externo da configuração (Fase 48; D30: desligado e sem UUID por padrão).
     backup: wc::configuracao::BackupExterno,
     /// Pendrives que o "udisks2" vê; `None` é o udisks2 sem resposta.
@@ -191,6 +192,9 @@ pub type AprovacaoSimulada = (PedidoDeAprovacao, std::time::Duration);
 /// - `aprovacao`: `acme-pg-aprovacao` (stage), como o `Aprovação / Normal`;
 /// - `aprovacao-prod`: `acme-pg-prod`, para o `Aprovação / prod`;
 /// - `aprovacao-expirando`: o normal chegado há 104 s (faltam 16 s);
+/// - `aprovacao-entrada` (Fase 54b, D68): `printf <script> | ward run acme-pg-aprovacao
+///   -- python3` da auditoria final: a entrada padrão é pipe, a janela avisa e os
+///   "Permitir" esperam a caixa;
 /// - `aprovacao-ataque` (V5.29): `sh -c` com U+202E, U+2066, largura zero, `ESC[2J`,
 ///   `\n` imitando outro comando e HTML, crus (como se o daemon não tivesse
 ///   neutralizado), e um processo `claude\u{202E}` na cadeia.
@@ -208,6 +212,7 @@ pub fn aprovacoes_simuladas(modo: &str) -> Option<Vec<AprovacaoSimulada>> {
         cadeia: cadeia.iter().map(|c| (*c).to_owned()).collect(),
         origem: String::new(),
         confirmacao: false,
+        entrada_oculta: false,
     };
     // Fase 44c (D9): preenchimento numa origem `http`.
     // Fase 44e: ambiente e origem da entrada de verdade do cofre de teste
@@ -228,6 +233,7 @@ pub fn aprovacoes_simuladas(modo: &str) -> Option<Vec<AprovacaoSimulada>> {
             cadeia: cadeia.iter().map(|c| (*c).to_owned()).collect(),
             origem: ward_core::entrada::origem_da_url(&l.url)?,
             confirmacao,
+            entrada_oculta: false,
         })
     };
     let psql = |entrada: &str| {
@@ -265,6 +271,19 @@ pub fn aprovacoes_simuladas(modo: &str) -> Option<Vec<AprovacaoSimulada>> {
             Duration::ZERO,
         )],
         "aprovacao-expirando" => vec![(normal, Duration::from_secs(104))],
+        "aprovacao-entrada" => vec![(
+            PedidoDeAprovacao {
+                entrada_oculta: true,
+                ..pedido(
+                    7,
+                    "acme-pg-aprovacao",
+                    Ambiente::Stage,
+                    &ward_core::exibicao::exibir_argumentos(&["python3"], 64 * 1024),
+                    &cadeia,
+                )
+            },
+            Duration::ZERO,
+        )],
         // Fase 44c: `ward playwright acme-wp-prod` (livre) numa origem `http`: só a
         // confirmação, sem PIN.
         "aprovacao-origem" => vec![(
@@ -486,13 +505,14 @@ impl DaemonFalso {
     /// Fase 36: um pedido de aprovação pendente, como se o `wardd` o tivesse mandado ao
     /// app (o aviso vai à fila do serviço por quem monta a ponte).
     pub fn com_aprovacao(mut self, p: &PedidoDeAprovacao) -> DaemonFalso {
-        self.aprovacoes.push((p.id, p.entradas.clone()));
+        self.aprovacoes
+            .push((p.id, p.entradas.clone(), p.entrada_oculta));
         self
     }
 
     /// Ids dos pedidos de aprovação que ainda esperam (só para os testes).
     pub fn aprovacoes_pendentes(&self) -> Vec<u64> {
-        self.aprovacoes.iter().map(|(id, _)| *id).collect()
+        self.aprovacoes.iter().map(|(id, _, _)| *id).collect()
     }
 
     /// Nível de uma entrada (só para os testes).
@@ -609,10 +629,13 @@ impl DaemonFalso {
                 pedido,
                 decisao,
                 pin,
-            } => match self.responder_aprovacao(pedido, decisao, pin.as_ref()) {
-                Ok(()) => Resposta::Ok,
-                Err(e) => Resposta::Erro(e),
-            },
+                entrada_confirmada,
+            } => {
+                match self.responder_aprovacao(pedido, decisao, pin.as_ref(), entrada_confirmada) {
+                    Ok(()) => Resposta::Ok,
+                    Err(e) => Resposta::Erro(e),
+                }
+            }
             Pedido::EmitirToken { entrada } => match self.entrada(&entrada) {
                 Some(e) if e.tipo() == TipoEntrada::Servidor => {
                     match ward_core::gerador::gerar(&ward_core::gerador::OpcoesGerador {
@@ -806,17 +829,20 @@ impl DaemonFalso {
 
     /// A mesma regra do `wardd` (`uso.rs` › `responder_aprovacao`): pedido desconhecido
     /// é `expirado`; "Negar" sem PIN; PIN errado deixa pendente, e o 5º trava e nega;
-    /// "sempre" deixa livre as entradas do pedido que estão "com aprovação".
+    /// "sempre" deixa livre as entradas do pedido que estão "com aprovação". Fase 54b:
+    /// um "Permitir" de pedido com a entrada padrão oculta só com `entrada_confirmada`
+    /// (antes do PIN), e `entrada_confirmada` só nesse pedido.
     fn responder_aprovacao(
         &mut self,
         id: u64,
         decisao: Decisao,
         pin: Option<&SegredoCore>,
+        entrada_confirmada: bool,
     ) -> Result<(), ErroResposta> {
         let i = self
             .aprovacoes
             .iter()
-            .position(|(p, _)| *p == id)
+            .position(|(p, _, _)| *p == id)
             .ok_or(ErroResposta::Expirado)?;
         if decisao == Decisao::Negar {
             self.aprovacoes.remove(i);
@@ -828,6 +854,9 @@ impl DaemonFalso {
             self.aprovacoes.remove(i);
             return Ok(());
         }
+        if self.aprovacoes[i].2 != entrada_confirmada {
+            return Err(ErroResposta::PedidoInvalido);
+        }
         let pin = pin.ok_or(ErroResposta::PedidoInvalido)?;
         if let Err(e) = self.conferir_pin(pin) {
             if self.travado {
@@ -835,7 +864,7 @@ impl DaemonFalso {
             }
             return Err(e);
         }
-        let (_, entradas) = self.aprovacoes.remove(i);
+        let (_, entradas, _) = self.aprovacoes.remove(i);
         if decisao == Decisao::PermitirSempre {
             for e in self.entradas.iter_mut() {
                 if entradas.iter().any(|n| n == e.nome()) && e.nivel() == NivelAcesso::ComAprovacao

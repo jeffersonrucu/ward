@@ -7,12 +7,14 @@
 //! papel app (D63), conecta ao socket de teste (`$WARD_DEV_SOCKET_DIR/wardd.sock`, ou
 //! `/run/user/<uid>/ward-teste/wardd.sock`) e responde cada `pedido_de_aprovacao` com o
 //! que a suíte escreveu em `$WARD_DEV_DIR/aprovador.modo` (lido a cada pedido):
-//! - `confirmar`, `negar`, `uma_vez <PIN>` (o PIN do cofre de teste), ou
+//! - `confirmar`, `negar`, `uma_vez <PIN>` (o PIN do cofre de teste),
+//!   `uma_vez_ciente <PIN>` (Fase 54b: o mesmo com a caixa da entrada padrão marcada), ou
 //! - `nada` (não responde: o pedido expira, ou o cliente desiste).
 //!
 //! Imprime, uma linha por evento, só o que a suíte confere (nenhum valor do cofre: o
 //! pedido de aprovação não tem nenhum): `papel=<papel>`,
-//! `pedido operacao=<op> entradas=<a,b> origem=<origem> confirmacao=<0|1> decisao=<d>` e
+//! `pedido operacao=<op> entradas=<a,b> origem=<origem> confirmacao=<0|1> decisao=<d>`
+//! (com ` entrada_oculta=1` antes do `decisao` quando a entrada padrão é oculta) e
 //! `resposta=<tipo ou código>`. A saída vai para `$WARD_DEV_DIR/logs/<binário>.log`
 //! (o lançador do daemon de teste). Executada à mão, ela recebe o papel agente, o daemon
 //! recusa o `responder_aprovacao` e ela sai.
@@ -56,19 +58,21 @@ fn ler(s: &mut UnixStream) -> Option<Vec<u8>> {
     Some(corpo)
 }
 
-/// A decisão do arquivo de modo (a suíte troca entre um caso e outro).
-fn modo() -> Option<(Decisao, Option<Segredo>)> {
+/// A decisão do arquivo de modo (a suíte troca entre um caso e outro): decisão, PIN e a
+/// caixa da entrada padrão (Fase 54b).
+fn modo() -> Option<(Decisao, Option<Segredo>, bool)> {
     let dev = PathBuf::from(std::env::var_os("WARD_DEV_DIR")?);
     let texto = std::fs::read_to_string(dev.join("aprovador.modo")).ok()?;
     let linha = texto.lines().next()?.trim();
     match linha.split_once(' ') {
-        Some(("uma_vez", pin)) => Some((
+        Some((m @ ("uma_vez" | "uma_vez_ciente"), pin)) => Some((
             Decisao::PermitirUmaVez,
             Some(Segredo::de_bytes(pin.trim().as_bytes().to_vec())),
+            m == "uma_vez_ciente",
         )),
         _ => match linha {
-            "confirmar" => Some((Decisao::Confirmar, None)),
-            "negar" => Some((Decisao::Negar, None)),
+            "confirmar" => Some((Decisao::Confirmar, None, false)),
+            "negar" => Some((Decisao::Negar, None, false)),
             _ => None,
         },
     }
@@ -91,18 +95,24 @@ fn main() -> ExitCode {
             Ok(Resposta::PedidoDeAprovacao(p)) => {
                 let escolha = modo();
                 println!(
-                    "pedido operacao={} entradas={} origem={} confirmacao={} decisao={}",
+                    "pedido operacao={} entradas={} origem={} confirmacao={}{} decisao={}",
                     p.operacao.nome(),
                     p.entradas.join(","),
                     if p.origem.is_empty() { "-" } else { &p.origem },
                     u8::from(p.confirmacao),
-                    escolha.as_ref().map_or("nada", |(d, _)| d.nome()),
+                    if p.entrada_oculta {
+                        " entrada_oculta=1"
+                    } else {
+                        ""
+                    },
+                    escolha.as_ref().map_or("nada", |(d, _, _)| d.nome()),
                 );
-                if let Some((decisao, pin)) = escolha {
+                if let Some((decisao, pin, entrada_confirmada)) = escolha {
                     let pedido = Pedido::ResponderAprovacao {
                         pedido: p.id,
                         decisao,
                         pin,
+                        entrada_confirmada,
                     };
                     if !mandar(&mut s, &pedido) {
                         break;

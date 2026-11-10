@@ -277,14 +277,16 @@ pub fn responder_aprovacao<D: Daemon + ?Sized>(
     id: u64,
     decisao: protocolo::Decisao,
     pin: Option<&crate::nivel::Pin>,
+    entrada_confirmada: bool,
 ) -> Result<Respondida, ErroApp> {
-    if decisao.pede_pin() != pin.is_some() {
+    if decisao.pede_pin() != pin.is_some() || (entrada_confirmada && !decisao.pede_pin()) {
         return Err(ErroApp::PedidoInvalido);
     }
     let pedido = Pedido::ResponderAprovacao {
         pedido: id,
         decisao,
         pin: pin.map(crate::nivel::Pin::para_o_protocolo),
+        entrada_confirmada,
     };
     let quadro =
         protocolo::codificar_pedido(Papel::App, &pedido).map_err(|_| ErroApp::PedidoInvalido)?;

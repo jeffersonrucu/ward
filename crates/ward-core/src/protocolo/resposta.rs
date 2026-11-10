@@ -329,6 +329,11 @@ pub struct PedidoDeAprovacao {
     /// "Confirmar", sem PIN; o daemon recusa os três "Permitir" num pedido assim e
     /// recusa "Confirmar" num pedido que não é.
     pub confirmacao: bool,
+    /// Fase 54b (D68): a entrada padrão do `executar`/`ssh` não é terminal nem nula
+    /// (pipe, arquivo…): o comando recebe dados que a janela não mostra. A janela
+    /// avisa e só permite com a confirmação a mais; o daemon recusa um "Permitir" sem
+    /// `entrada_confirmada`.
+    pub entrada_oculta: bool,
 }
 
 /// O daemon pede ao app a tela de destravar (D16; Fase 39a): um uso do agente espera
@@ -569,6 +574,11 @@ impl Resposta {
                     ))
                 && (!p.confirmacao || !p.origem.is_empty())
                 && (p.operacao != Operacao::Preencher || p.confirmacao)
+                // Fase 54b: só o `executar` e o `ssh` têm entrada padrão, e nunca numa
+                // confirmação de origem.
+                && (!p.entrada_oculta
+                    || (matches!(p.operacao, Operacao::Executar | Operacao::Ssh)
+                        && !p.confirmacao))
                 && p.comando.len() <= MAX_TEXTO_EXIBIDO
                 && p.diretorio.len() <= MAX_TEXTO_EXIBIDO
                 && p.cadeia.len() <= MAX_CADEIA
@@ -774,6 +784,8 @@ impl Resposta {
                 e.texto(&p.origem);
                 e.chave("confirmacao");
                 e.logico(p.confirmacao);
+                e.chave("entrada_oculta");
+                e.logico(p.entrada_oculta);
             }
             Resposta::CodigoTotp { codigo, restante } => {
                 e.chave("codigo");
@@ -1176,6 +1188,7 @@ pub(crate) fn ler(papel: Papel, tipo: TipoResposta, mut c: Campos) -> R<Resposta
             let cadeia = textos_de(c.lista("cadeia", MAX_CADEIA)?, MAX_TEXTO)?;
             let origem = c.texto("origem", MAX_TEXTO)?;
             let confirmacao = c.logico("confirmacao")?;
+            let entrada_oculta = c.logico("entrada_oculta")?;
             Resposta::PedidoDeAprovacao(PedidoDeAprovacao {
                 id,
                 entradas,
@@ -1186,6 +1199,7 @@ pub(crate) fn ler(papel: Papel, tipo: TipoResposta, mut c: Campos) -> R<Resposta
                 cadeia,
                 origem,
                 confirmacao,
+                entrada_oculta,
             })
         }
         TipoResposta::CodigoTotp => {

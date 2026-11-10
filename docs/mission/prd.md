@@ -1491,6 +1491,36 @@ em `/tmp/claude-1000/-home-jeffersonoliveira-projetos-cofre/d2e230bd-a662-43be-a
     (`~/.local/share/local.ward.app/`, cache HTTP legível pelo uid; handoff 29b) segue
     para a auditoria do M5.
 
+- D68. **Entrada padrão na aprovação** (auditoria final; decisão do usuário,
+  2026-11-09: "Avisar e recusar pipe"; Fase 54b; S9, S1). O
+  `printf <script> | ward run acme-pg-aprovacao -- python3` era aprovado com a janela
+  mostrando só `python3`: o script vinha pela entrada padrão, que a janela não mostra.
+  - A CLI diz o tipo da entrada padrão em todo `executar` e `ssh` (campo obrigatório
+    `tipo_entrada`: `terminal`, `nula`, `pipe`, `arquivo`, `outra`), achado por `fstat`
+    no fd 0: `/dev/null` (char 1:3) ou fd fechado é `nula`, tty é `terminal`, FIFO ou
+    socket é `pipe`, arquivo regular é `arquivo`, o resto (ex.: `/dev/zero`) é `outra`.
+  - `pipe`, `arquivo` e `outra` são **entrada oculta**. Numa entrada "com aprovação", o
+    pedido vai à janela com `entrada_oculta` e ela mostra em `Destaque` aviso "O comando
+    recebe dados pela entrada padrão, que esta janela não mostra…" e um `Interruptor`
+    ("Sei o que vai pela entrada padrão e permito mesmo assim") que libera os três
+    "Permitir". A resposta leva `entrada_confirmada`. **O daemon confere**: num pedido
+    com entrada oculta, "Permitir" sem `entrada_confirmada` é `pedido_invalido` (antes do
+    PIN, sem contar falha) e o pedido segue pendente; a confirmação num pedido sem
+    entrada oculta também é recusada; "Negar" e "Confirmar" (D9, Fase 44c) nunca a levam.
+    O app (`servico.rs`) e a ponte de teste recusam o mesmo antes de ir ao daemon.
+  - A liberação de 1 hora ("Permitir por 1 hora") não vale para entrada oculta: cada
+    pedido com pipe/arquivo pergunta de novo. Entrada "livre" segue sem janela (RA3: o
+    "livre" já entrega o segredo a quem roda).
+  - `nula` é cumprida: o daemon fecha a entrada do filho no lançamento (sem pty) e um
+    `entrada_padrao` com dados depois mata o grupo do comando (código 137), sem o dado
+    chegar a ele. A CLI com `/dev/null` não lê nada da entrada.
+  - `terminal` não é conferível pelo daemon: o cliente é o mesmo uid. Fica em RA11.
+  - `skill/settings-deny.json` nega `<` antes ou depois do `ward run` (`< arquivo`,
+    `<<EOF`, `<<<`, `<(…)`) e `|` antes dele (cinto, RA3); a skill manda o script como
+    arquivo no argumento, à vista na janela.
+  - Design: o aviso e o interruptor usam `Destaque` e `Interruptor` da Design System;
+    o frame próprio da janela com o aviso fica para uma fase de DESIGN.
+
 ### Riscos abertos
 
 - **RA1. `/proc/<pid>/environ` do filho** (decidir antes de fechar o M4). Enquanto o
@@ -1614,6 +1644,16 @@ em `/tmp/claude-1000/-home-jeffersonoliveira-projetos-cofre/d2e230bd-a662-43be-a
   Proposta: aceitar como está (nada sai do cofre e as ações são as que o mesmo uid já
   tem), com a regra de que item novo no menu que revele, copie, aprove ou mude estado
   além de travar volta ao planner. Alternativa: tirar a bandeja (V5.23 sai do escopo).
+- **RA11. Tipo "terminal" declarado pelo cliente** (Fase 54b, D68; S9; proposta,
+  aguarda o usuário). O daemon não vê o fd 0 da CLI: um cliente do socket que mente
+  `tipo_entrada: terminal`, ou um agente que cria um pty (`script -c`, `python3 -c
+  'import pty…'`) e escreve o script nele, passa sem o aviso e sem a caixa. É o mesmo
+  agente que poderia, de todo modo, escrever o script num arquivo e passar o caminho no
+  argv (que a janela mostra). O aviso fecha o erro sem má intenção e o caso da
+  auditoria; não fecha o agente que mira o Ward. Proposta: aceitar e registrar em
+  "Segurança" › "Fora do modelo de ameaça"; alternativa: aviso em todo pedido de
+  `ward run` com entrada que não seja `nula`, inclusive tty (pior para o uso no
+  terminal do usuário).
 - **RA10. Processo do mesmo uid que se passa pelo Chrome** (2ª auditoria do M9;
   **fechado em 2026-11-09: risco aceito pelo usuário**, registrado na Fase 51b em
   "Segurança" › "Fora do modelo de ameaça"; S1, D47, D5). Dois caminhos dão o papel

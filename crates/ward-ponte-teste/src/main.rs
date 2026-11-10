@@ -39,7 +39,7 @@ use ward_ponte_teste::simulados::{SeletorDePasta, TerminalDeTeste, TerminalDoRep
 
 const USO: &str = "uso: ward-ponte-teste [--dist <diretório do build --mode teste> \
 [--daemon-falso cheio|vazio|travado|travado-com-pedido|travado-com-pedido-ataque|sem-cofre|aprovacao|aprovacao-prod|\
-aprovacao-expirando|aprovacao-ataque|aprovacao-origem|aprovacao-origem-popup|aprovacao-origem-pin|backup-externo-ligado|sem-udisks|sem-backups|\
+aprovacao-expirando|aprovacao-ataque|aprovacao-origem|aprovacao-origem-popup|aprovacao-origem-pin|aprovacao-entrada|backup-externo-ligado|sem-udisks|sem-backups|\
 backups-indisponiveis|backup-plantado|backup-local-inseguro]] [--anexos <pasta com um arquivo>]";
 
 fn main() -> ExitCode {

@@ -210,14 +210,18 @@ impl<D: Daemon, A: AreaTransferencia> Servico<D, A> {
     /// - PIN errado: o pedido continua pendente; se o cofre travou (5º erro), o daemon
     ///   já negou e a janela mostra `bloqueado`.
     /// - "Negar" num pedido `bloqueado` só o tira da janela (o daemon já negou).
+    /// - Fase 54b (D68): `ciente` é a caixa da entrada padrão marcada. Num pedido com
+    ///   `entrada_oculta`, um "Permitir" sem ela é recusado aqui (e de novo no daemon);
+    ///   `ciente` só com um "Permitir" de um pedido com o aviso.
     pub fn responder_aprovacao(
         &self,
         id: u64,
         decisao: &str,
         pin: Option<Pin>,
+        ciente: bool,
     ) -> Result<ResultadoAprovacao, ErroApp> {
         let decisao = aprovacao::decisao_de_nome(decisao)?;
-        if decisao.pede_pin() != pin.is_some() {
+        if decisao.pede_pin() != pin.is_some() || (ciente && !decisao.pede_pin()) {
             return Err(ErroApp::PedidoInvalido);
         }
         let resultado = match self.aprovacoes.situacao(id) {
@@ -239,8 +243,19 @@ impl<D: Daemon, A: AreaTransferencia> Servico<D, A> {
                 {
                     return Err(ErroApp::PedidoInvalido);
                 }
-                let r =
-                    cliente::responder_aprovacao(&mut *self.daemon()?, id, decisao, pin.as_ref());
+                // Fase 54b: a caixa da entrada padrão só no pedido que tem o aviso, e
+                // obrigatória num "Permitir" dele.
+                let oculta = self.aprovacoes.entrada_oculta(id).unwrap_or(false);
+                if decisao.pede_pin() && oculta != ciente {
+                    return Err(ErroApp::PedidoInvalido);
+                }
+                let r = cliente::responder_aprovacao(
+                    &mut *self.daemon()?,
+                    id,
+                    decisao,
+                    pin.as_ref(),
+                    ciente,
+                );
                 drop(pin);
                 match r? {
                     cliente::Respondida::Ok => {
@@ -280,6 +295,7 @@ impl<D: Daemon, A: AreaTransferencia> Servico<D, A> {
                     id,
                     ward_core::protocolo::Decisao::Negar,
                     None,
+                    false,
                 );
             }
             self.aprovacoes.remover(id);

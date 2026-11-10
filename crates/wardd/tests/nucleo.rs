@@ -65,7 +65,7 @@ fn v3_10_travar_e_tudo_responde_travado() {
             Papel::Agente,
             "executar",
             format!(
-                r#"{{"entrada":"t-livre","argv":["{}"],"cwd":"{}","ambiente":[]}}"#,
+                r#"{{"entrada":"t-livre","argv":["{}"],"cwd":"{}","tipo_entrada":"nula","ambiente":[]}}"#,
                 b64(b"true"),
                 b64(b"/")
             ),
@@ -262,7 +262,7 @@ fn v3_17_v3_26_lista_do_agente_e_bloqueada_igual_inexistente() {
                 Papel::Agente,
                 "executar",
                 &format!(
-                    r#"{{"entrada":"{nome}","argv":["{}"],"cwd":"{}","ambiente":[]}}"#,
+                    r#"{{"entrada":"{nome}","argv":["{}"],"cwd":"{}","tipo_entrada":"nula","ambiente":[]}}"#,
                     b64(b"env"),
                     b64(b"/")
                 ),
@@ -273,14 +273,31 @@ fn v3_17_v3_26_lista_do_agente_e_bloqueada_igual_inexistente() {
     assert_eq!(bloqueada, executar("nao-existe"));
     assert!(contem(&bloqueada, b"entrada_inexistente"));
     for op in ["ssh", "login", "playwright"] {
+        // Fase 54b: o `ssh` leva o tipo da entrada padrão.
+        let extra = if op == "ssh" {
+            r#","tipo_entrada":"nula""#
+        } else {
+            ""
+        };
         let a = codificado(
             Papel::Agente,
-            &pedir(&d, Papel::Agente, op, r#"{"entrada":"t-bloq"}"#),
+            &pedir(
+                &d,
+                Papel::Agente,
+                op,
+                &format!(r#"{{"entrada":"t-bloq"{extra}}}"#),
+            ),
         );
         let b = codificado(
             Papel::Agente,
-            &pedir(&d, Papel::Agente, op, r#"{"entrada":"nao-existe"}"#),
+            &pedir(
+                &d,
+                Papel::Agente,
+                op,
+                &format!(r#"{{"entrada":"nao-existe"{extra}}}"#),
+            ),
         );
+        assert!(contem(&a, b"entrada_inexistente"), "{op}");
         assert_eq!(a, b, "{op}");
     }
 }

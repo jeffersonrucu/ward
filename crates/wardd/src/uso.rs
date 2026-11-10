@@ -21,12 +21,21 @@
 //! um serviço parado). Nível livre: só uma confirmação, sem PIN ("Negar" ou
 //! "Confirmar"). "Com aprovação": a janela de sempre, com o PIN e a origem. Sem app,
 //! "aprovação indisponível". Em `https` de um host de fora nada muda.
+//!
+//! Fase 54b (D68): o `executar` e o `ssh` trazem o tipo da entrada padrão da CLI. Pipe,
+//! arquivo ou outro (nem terminal, nem `/dev/null`): o comando recebe dados que a janela
+//! não mostra. Numa entrada "com aprovação" o pedido sempre vai à janela, mesmo coberto
+//! pela liberação de 1 hora, com o aviso (`entrada_oculta`), e os três "Permitir" só
+//! valem com `entrada_confirmada` (a caixa marcada na janela); sem ela, recusado antes do
+//! PIN. Nível livre: nada muda. O tipo é dito pelo cliente: `terminal` não se confere
+//! (D68, RA11).
 
 use ward_core::entrada::{Ambiente, Dados, Entrada, NivelAcesso, Segredo};
 use ward_core::exibicao;
 use ward_core::limites::{MAX_TEXTO, MAX_TEXTO_EXIBIDO};
 use ward_core::protocolo::{
     Decisao, ErroResposta, Operacao, Pedido, PedidoDeAprovacao, PedidoDeDestrave, Resposta,
+    TipoEntradaPadrao,
 };
 
 use crate::aprovacao::{Cliente, UMA_HORA};
@@ -89,10 +98,18 @@ pub(crate) fn origem_a_confirmar(e: &Entrada, op: Operacao) -> Option<String> {
     }
 }
 
-/// O nível de uma entrada para este uso, com a liberação de 1 hora (D2).
-fn nivel_efetivo(a: &Aberto, e: &Entrada, agora: std::time::Duration) -> NivelAcesso {
+/// O nível de uma entrada para este uso, com a liberação de 1 hora (D2). Com
+/// `sem_liberacao` (Fase 54b: entrada padrão oculta), a liberação não conta.
+fn nivel_efetivo(
+    a: &Aberto,
+    e: &Entrada,
+    agora: std::time::Duration,
+    sem_liberacao: bool,
+) -> NivelAcesso {
     match e.nivel() {
-        NivelAcesso::ComAprovacao if a.liberacoes.get(e.nome()).is_some_and(|ate| agora < *ate) => {
+        NivelAcesso::ComAprovacao
+            if !sem_liberacao && a.liberacoes.get(e.nome()).is_some_and(|ate| agora < *ate) =>
+        {
             NivelAcesso::Livre
         }
         n => n,
@@ -109,36 +126,47 @@ struct Descricao<'a> {
     /// e com escape visível; vazio nas outras operações (o `ssh` roda na pasta pessoal
     /// do passwd, fixa).
     diretorio: String,
+    /// Fase 54b (D68): o comando recebe pela entrada padrão dados que a janela não
+    /// mostra (só `executar` e `ssh`).
+    entrada_oculta: bool,
 }
 
 /// O que o pedido do agente quer: operação, entrada, o comando exato e o diretório.
 fn descrever(pedido: &Pedido) -> Option<Descricao<'_>> {
-    let (operacao, entrada, comando, diretorio) = match pedido {
+    let oculta = |t: &TipoEntradaPadrao| t.oculta();
+    let (operacao, entrada, comando, diretorio, entrada_oculta) = match pedido {
         Pedido::Executar(x) => (
             Operacao::Executar,
             x.entrada.as_str(),
             exibicao::exibir_argumentos(&x.argv, MAX_TEXTO_EXIBIDO),
             exibicao::exibir_argumentos(&[x.cwd.as_slice()], MAX_TEXTO_EXIBIDO),
+            oculta(&x.tipo_entrada),
         ),
         Pedido::Ssh {
-            entrada, comando, ..
+            entrada,
+            comando,
+            tipo_entrada,
+            ..
         } => (
             Operacao::Ssh,
             entrada.as_str(),
             exibicao::exibir_argumentos(comando, MAX_TEXTO_EXIBIDO),
             String::new(),
+            oculta(tipo_entrada),
         ),
         Pedido::Login { entrada } => (
             Operacao::Login,
             entrada.as_str(),
             String::new(),
             String::new(),
+            false,
         ),
         Pedido::Playwright { entrada } => (
             Operacao::Playwright,
             entrada.as_str(),
             String::new(),
             String::new(),
+            false,
         ),
         _ => return None,
     };
@@ -147,6 +175,7 @@ fn descrever(pedido: &Pedido) -> Option<Descricao<'_>> {
         entrada,
         comando,
         diretorio,
+        entrada_oculta,
     })
 }
 
@@ -175,6 +204,7 @@ impl Daemon {
             entrada: nome,
             comando,
             diretorio,
+            entrada_oculta,
         } = descrever(pedido).ok_or(ErroResposta::PedidoInvalido)?;
         // Nome vazio nunca é de uma entrada (o `ward-core` exige nome não vazio): responde
         // como inexistente antes de qualquer espera. Fase 39a: assim o aviso de destrave
@@ -205,14 +235,15 @@ impl Daemon {
                 .iter()
                 .find(|e| e.nome() == nome && e.nivel() != NivelAcesso::Bloqueado)
                 .ok_or(ErroResposta::EntradaInexistente)?;
-            let mut nivel = nivel_efetivo(a, e, agora);
+            // Fase 54b: com a entrada padrão oculta, a liberação de 1 hora não cobre.
+            let mut nivel = nivel_efetivo(a, e, agora, entrada_oculta);
             let origem = origem_a_confirmar(e, op);
             let mut entradas = vec![e.nome().to_owned()];
             let mut ambiente = e.ambiente();
             if let Some(outra) = segunda_entrada(e, op) {
                 match a.entradas.iter().find(|x| x.nome() == outra) {
                     Some(x) => {
-                        nivel = mais_restritivo(nivel, nivel_efetivo(a, x, agora));
+                        nivel = mais_restritivo(nivel, nivel_efetivo(a, x, agora, entrada_oculta));
                         ambiente = mais_sensivel(ambiente, x.ambiente());
                         entradas.push(x.nome().to_owned());
                     }
@@ -231,6 +262,9 @@ impl Daemon {
             cadeia: cadeia_para_exibir(cliente),
             origem: origem.unwrap_or_default(),
             confirmacao,
+            // Fase 54b: só no pedido com PIN (a confirmação de origem não tem entrada
+            // padrão).
+            entrada_oculta: entrada_oculta && !confirmacao,
         };
         match nivel {
             NivelAcesso::Livre => match origem {
@@ -248,6 +282,11 @@ impl Daemon {
                 Err(ErroResposta::Negado)
             }
             NivelAcesso::ComAprovacao => {
+                if entrada_oculta {
+                    aviso!(
+                        "uso com a entrada padrão que a janela não mostra: aviso e confirmação na janela (D68)"
+                    );
+                }
                 self.aprovacao
                     .pedir_aprovacao(pedido_da_janela(false, origem), cliente)?;
                 Ok(Autorizacao::Aprovado)
@@ -257,17 +296,24 @@ impl Daemon {
 
     /// Resposta da janela (só do papel app, pela tabela do protocolo). "Negar" não pede
     /// PIN; os três "Permitir" pedem (S10). PIN errado deixa o pedido pendente; o 5.º
-    /// erro trava o cofre e nega (S9).
+    /// erro trava o cofre e nega (S9). Fase 54b (D68): num pedido com a entrada padrão
+    /// oculta, um "Permitir" sem `entrada_confirmada` é recusado antes do PIN (o pedido
+    /// segue pendente); `entrada_confirmada` num pedido sem o aviso também.
     pub(crate) fn responder_aprovacao(
         &self,
         id: u64,
         decisao: Decisao,
         pin: Option<&Segredo>,
+        entrada_confirmada: bool,
     ) -> Result<Resposta, ErroResposta> {
         let entradas = self.aprovacao.pendente(id).ok_or(ErroResposta::Expirado)?;
         let confirmacao = self
             .aprovacao
             .e_confirmacao(id)
+            .ok_or(ErroResposta::Expirado)?;
+        let entrada_oculta = self
+            .aprovacao
+            .e_entrada_oculta(id)
             .ok_or(ErroResposta::Expirado)?;
         if decisao == Decisao::Negar {
             return if self.aprovacao.decidir(id, Err(ErroResposta::Negado)) {
@@ -289,6 +335,14 @@ impl Daemon {
             } else {
                 Err(ErroResposta::Expirado)
             };
+        }
+        // Fase 54b (D68): a caixa da entrada padrão, antes do PIN (nada conta como erro
+        // de PIN). O daemon confere; a janela não decide sozinha (S9).
+        if entrada_oculta != entrada_confirmada {
+            aviso!(
+                "aprovação {id}: permitir sem a confirmação da entrada padrão (ou com ela fora do aviso); recusado (D68)"
+            );
+            return Err(ErroResposta::PedidoInvalido);
         }
         // O protocolo já exige o PIN em todo "Permitir"; aqui é a segunda camada.
         let pin = pin.ok_or(ErroResposta::PedidoInvalido)?;

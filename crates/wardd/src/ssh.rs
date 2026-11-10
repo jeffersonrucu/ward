@@ -453,6 +453,7 @@ impl Daemon {
             comando,
             token,
             janela,
+            tipo_entrada,
         } = &pedido
         else {
             return Err(ErroResposta::PedidoInvalido);
@@ -461,6 +462,8 @@ impl Daemon {
         // Pty só no interativo: sem comando e com o tamanho do terminal da CLI.
         let janela = if com_comando { None } else { *janela };
         let nome = entrada.clone();
+        let entrada_nula = *tipo_entrada == ward_core::protocolo::TipoEntradaPadrao::Nula;
+        depurar!("ssh: entrada padrão {}", tipo_entrada.nome());
         // O nível vem antes do tipo (V4.32: o token inventado numa entrada `banco` com
         // aprovação dá "aprovação indisponível"); o tipo é conferido depois, sob a trava.
         let pelo_token = token.as_ref().is_some_and(|t| self.usar_token(t, &nome));
@@ -658,6 +661,7 @@ impl Daemon {
             }),
             // A sessão SSH aberta não morre na trava (o agente e a ponte, sim: D12).
             trava: None,
+            entrada_nula,
         })
     }
 }

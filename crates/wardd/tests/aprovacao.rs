@@ -142,7 +142,7 @@ fn executar_json(nome: &str, argv: &[&[u8]]) -> String {
 fn executar_json_em(nome: &str, argv: &[&[u8]], cwd: &[u8]) -> String {
     let argv: Vec<String> = argv.iter().map(|a| format!("\"{}\"", b64(a))).collect();
     format!(
-        r#"{{"entrada":"{nome}","argv":[{}],"cwd":"{}","ambiente":[]}}"#,
+        r#"{{"entrada":"{nome}","argv":[{}],"cwd":"{}","tipo_entrada":"nula","ambiente":[]}}"#,
         argv.join(","),
         b64(cwd)
     )
@@ -464,6 +464,7 @@ fn ataque_agente_responde_a_aprovacao() {
                 pedido: p.id,
                 decisao: ward_core::protocolo::Decisao::PermitirUmaVez,
                 pin: Some(ward_core::entrada::Segredo::de_texto(PIN.to_owned())),
+                entrada_confirmada: false,
             };
             assert_eq!(
                 erro(&c.d.atender(papel, q)),
@@ -975,7 +976,12 @@ fn ataque_fase_39a_destrave_com_entrada_e_comando_neutralizados() {
         );
         // Um segundo uso esperando: o app recebe o mais novo (ssh, sem argv: comando vazio).
         let t2 = s.spawn(|| {
-            let p = ped(Papel::Agente, "ssh", r#"{"entrada":"t-aprov"}"#).unwrap();
+            let p = ped(
+                Papel::Agente,
+                "ssh",
+                r#"{"entrada":"t-aprov","tipo_entrada":"terminal"}"#,
+            )
+            .unwrap();
             c.d.autorizar_uso(&SemCliente, &p)
         });
         let n = destrave(&rx2);
@@ -1108,4 +1114,201 @@ fn v3_38_estado_traz_o_papel() {
             r => panic!("{r:?}"),
         }
     }
+}
+
+// --- Fase 54b (D68): entrada padrão que a janela não mostra -------------------------
+
+/// O `executar` com a entrada padrão de tipo `tipo` (`argv` = um `python3` só).
+fn usar_com_entrada(d: &Daemon, nome: &str, tipo: &str) -> Result<Autorizacao, ErroResposta> {
+    let q = executar_json(nome, &[b"python3"]).replace(
+        r#""tipo_entrada":"nula""#,
+        &format!(r#""tipo_entrada":"{tipo}""#),
+    );
+    let p = ped(Papel::Agente, "executar", &q).unwrap();
+    d.autorizar_uso(&SemCliente, &p)
+}
+
+/// Um uso com a entrada `tipo` que pergunta: o resultado depois de `responder`.
+fn com_janela_e_entrada(
+    c: &Cena,
+    rx: &Receiver<Recebido>,
+    nome: &str,
+    tipo: &str,
+    responder: impl FnOnce(&PedidoDeAprovacao),
+) -> Result<Autorizacao, ErroResposta> {
+    std::thread::scope(|s| {
+        let t = s.spawn(|| usar_com_entrada(&c.d, nome, tipo));
+        let _g = ExpirarSeCair(&c.relogio);
+        let p = pedido(rx);
+        responder(&p);
+        t.join().unwrap()
+    })
+}
+
+fn responder_ciente(d: &Daemon, id: u64, decisao: &str, pin: &str) -> Resposta {
+    pedir(
+        d,
+        Papel::App,
+        "responder_aprovacao",
+        &format!(
+            r#"{{"pedido":{id},"decisao":"{decisao}","pin":"{}","entrada_confirmada":true}}"#,
+            b64(pin.as_bytes())
+        ),
+    )
+}
+
+/// Ataque da auditoria final (D68): `printf <script> | ward run acme-pg-aprovacao --
+/// python3`. A janela recebe o aviso (`entrada_oculta`); os três "Permitir" com o PIN
+/// certo e sem a caixa marcada são recusados, antes do PIN (seis tentativas não travam o
+/// cofre: nada conta como erro de PIN), e o pedido segue pendente; só com a caixa
+/// passa. Pipe, arquivo e outro valem igual.
+#[test]
+fn f54b_ataque_pipe_na_aprovacao_sem_a_caixa_nao_passa() {
+    let c = cena("f54b-pipe");
+    let rx = assinar(&c.d, 1);
+    for tipo in ["pipe", "arquivo", "outra"] {
+        let r = com_janela_e_entrada(&c, &rx, "t-aprov", tipo, |p| {
+            assert!(p.entrada_oculta, "{tipo}: a janela não recebeu o aviso");
+            assert_eq!(p.comando, "\"python3\"");
+            for _ in 0..2 {
+                for decisao in ["uma_vez", "uma_hora", "sempre"] {
+                    assert_eq!(
+                        erro(&responder(&c.d, Papel::App, p.id, decisao, Some(PIN))),
+                        Some(ErroResposta::PedidoInvalido),
+                        "{tipo} {decisao}"
+                    );
+                }
+            }
+            assert!(c.d.motor().pendente(p.id).is_some(), "{tipo}");
+            // "Confirmar" (sem PIN) também não decide um pedido assim.
+            assert!(erro(&responder(&c.d, Papel::App, p.id, "confirmar", None)).is_some());
+            assert!(ok(&responder_ciente(&c.d, p.id, "uma_vez", PIN)));
+        });
+        assert_eq!(r, Ok(Autorizacao::Aprovado), "{tipo}");
+    }
+    // Nenhum dos "Permitir" sem a caixa contou como PIN errado: o cofre segue aberto.
+    assert!(!c.d.travado());
+    // Negar continua sem PIN e sem caixa.
+    let r = com_janela_e_entrada(&c, &rx, "t-aprov", "pipe", |p| {
+        assert!(ok(&responder(&c.d, Papel::App, p.id, "negar", None)));
+    });
+    assert_eq!(r, Err(ErroResposta::Negado));
+    // A caixa não passa por cima do PIN: errado continua errado.
+    let r = com_janela_e_entrada(&c, &rx, "t-aprov", "pipe", |p| {
+        assert_eq!(
+            erro(&responder_ciente(&c.d, p.id, "uma_vez", "000000")),
+            Some(ErroResposta::PinIncorreto)
+        );
+        assert!(ok(&responder(&c.d, Papel::App, p.id, "negar", None)));
+    });
+    assert_eq!(r, Err(ErroResposta::Negado));
+}
+
+/// D68: com terminal ou `/dev/null` (o caso do Claude), nada muda: sem aviso, o
+/// "Permitir" sem a caixa passa como antes, e a caixa marcada fora do aviso é recusada
+/// (a janela não decide sozinha).
+#[test]
+fn f54b_terminal_e_nula_passam_como_antes() {
+    let c = cena("f54b-tty");
+    let rx = assinar(&c.d, 1);
+    for tipo in ["terminal", "nula"] {
+        let r = com_janela_e_entrada(&c, &rx, "t-aprov", tipo, |p| {
+            assert!(!p.entrada_oculta, "{tipo}");
+            assert_eq!(
+                erro(&responder_ciente(&c.d, p.id, "uma_vez", PIN)),
+                Some(ErroResposta::PedidoInvalido),
+                "{tipo}"
+            );
+            assert!(ok(&responder(&c.d, Papel::App, p.id, "uma_vez", Some(PIN))));
+        });
+        assert_eq!(r, Ok(Autorizacao::Aprovado), "{tipo}");
+    }
+}
+
+/// D68: a liberação de 1 hora não cobre a entrada padrão oculta (a janela volta, com o
+/// aviso e o PIN); o nível livre não muda (nem pergunta); no uso combinado (D19) o
+/// aviso vai junto.
+#[test]
+fn f54b_liberacao_de_1_hora_nao_cobre_pipe() {
+    let c = cena("f54b-hora");
+    let rx = assinar(&c.d, 1);
+    let r = com_janela_e_entrada(&c, &rx, "t-aprov", "terminal", |p| {
+        assert!(ok(&responder(
+            &c.d,
+            Papel::App,
+            p.id,
+            "uma_hora",
+            Some(PIN)
+        )));
+    });
+    assert_eq!(r, Ok(Autorizacao::Aprovado));
+    assert_eq!(
+        usar_com_entrada(&c.d, "t-aprov", "terminal"),
+        Ok(Autorizacao::SemPerguntar)
+    );
+    assert_eq!(
+        usar_com_entrada(&c.d, "t-aprov", "nula"),
+        Ok(Autorizacao::SemPerguntar)
+    );
+    let r = com_janela_e_entrada(&c, &rx, "t-aprov", "pipe", |p| {
+        assert!(p.entrada_oculta);
+        assert_eq!(
+            erro(&responder(&c.d, Papel::App, p.id, "uma_vez", Some(PIN))),
+            Some(ErroResposta::PedidoInvalido)
+        );
+        assert!(ok(&responder(&c.d, Papel::App, p.id, "negar", None)));
+    });
+    assert_eq!(r, Err(ErroResposta::Negado));
+    // Livre: o agente já pode ler o segredo (escopo › nível), então nada muda.
+    assert_eq!(
+        usar_com_entrada(&c.d, "t-livre", "pipe"),
+        Ok(Autorizacao::SemPerguntar)
+    );
+    assert!(rx.try_recv().is_err());
+    // Combinado: b1 + s1, as duas com aprovação.
+    let r = com_janela_e_entrada(&c, &rx, "b1", "arquivo", |p| {
+        assert_eq!(p.entradas, ["b1", "s1"]);
+        assert!(p.entrada_oculta);
+        assert!(ok(&responder_ciente(&c.d, p.id, "uma_hora", PIN)));
+    });
+    assert_eq!(r, Ok(Autorizacao::Aprovado));
+    // A liberação dada com a caixa marcada também não cobre o próximo pipe.
+    let r = com_janela_e_entrada(&c, &rx, "b1", "pipe", |p| {
+        assert!(p.entrada_oculta);
+        assert!(ok(&responder(&c.d, Papel::App, p.id, "negar", None)));
+    });
+    assert_eq!(r, Err(ErroResposta::Negado));
+    assert_eq!(
+        usar_com_entrada(&c.d, "b1", "terminal"),
+        Ok(Autorizacao::SemPerguntar)
+    );
+}
+
+/// D68: o `ssh` leva o mesmo aviso.
+#[test]
+fn f54b_ssh_com_pipe_avisa() {
+    let c = cena("f54b-ssh");
+    let rx = assinar(&c.d, 1);
+    let r = std::thread::scope(|s| {
+        let t = s.spawn(|| {
+            let p = ped(
+                Papel::Agente,
+                "ssh",
+                r#"{"entrada":"s1","tipo_entrada":"pipe"}"#,
+            )
+            .unwrap();
+            c.d.autorizar_uso(&SemCliente, &p)
+        });
+        let _g = ExpirarSeCair(&c.relogio);
+        let p = pedido(&rx);
+        assert_eq!(p.operacao, Operacao::Ssh);
+        assert!(p.entrada_oculta);
+        assert_eq!(
+            erro(&responder(&c.d, Papel::App, p.id, "uma_vez", Some(PIN))),
+            Some(ErroResposta::PedidoInvalido)
+        );
+        assert!(ok(&responder_ciente(&c.d, p.id, "uma_vez", PIN)));
+        t.join().unwrap()
+    });
+    assert_eq!(r, Ok(Autorizacao::Aprovado));
 }

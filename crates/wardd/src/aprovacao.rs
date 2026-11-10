@@ -420,6 +420,15 @@ impl Motor {
             .map(|p| p.pedido.confirmacao)
     }
 
+    /// O pedido `id`, pendente e sem decisão, tem entrada padrão que a janela não mostra
+    /// (Fase 54b, D68)?
+    pub fn e_entrada_oculta(&self, id: u64) -> Option<bool> {
+        let mut g = self.interno.estado();
+        g.pendente(id)
+            .filter(|p| p.resultado.is_none())
+            .map(|p| p.pedido.entrada_oculta)
+    }
+
     /// Decide o pedido `id`. `false`: não está mais pendente (expirou, foi cancelado ou
     /// já decidido).
     pub fn decidir(&self, id: u64, r: Result<(), ErroResposta>) -> bool {

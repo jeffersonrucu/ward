@@ -397,15 +397,19 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Ponte<D, A> {
                 .servico
                 .pedido_de_aprovacao()
                 .and_then(|r| serde_json::to_value(r).map_err(|_| ErroApp::RespostaInvalida)),
+            // Fase 54b: `ciente` (a caixa da entrada padrão) só como `true`/`false`.
             Comando::ResponderAprovacao => match (
                 args.get("id").and_then(Value::as_u64),
                 texto("decisao"),
                 pin,
+                args.get("ciente").map(Value::as_bool),
             ) {
-                (Some(id), Some(d), None) => self.servico.responder_aprovacao(id, d, None),
-                (Some(id), Some(d), Some(Ok(p))) => {
-                    self.servico.responder_aprovacao(id, d, Some(p))
+                (Some(id), Some(d), None, None | Some(Some(false))) => {
+                    self.servico.responder_aprovacao(id, d, None, false)
                 }
+                (Some(id), Some(d), Some(Ok(p)), c @ (None | Some(Some(_)))) => self
+                    .servico
+                    .responder_aprovacao(id, d, Some(p), c == Some(Some(true))),
                 _ => Err(ErroApp::PedidoInvalido),
             }
             .and_then(|r| serde_json::to_value(r).map_err(|_| ErroApp::RespostaInvalida)),

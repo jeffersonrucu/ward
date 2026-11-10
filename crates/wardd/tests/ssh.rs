@@ -313,6 +313,13 @@ fn pedido_ssh(
             .collect(),
         token: token.map(|t| Segredo::de_bytes(t.expor().to_vec())),
         janela,
+        // Fase 54b: os testes mandam a entrada pelo socket (como um pipe), ou digitam
+        // no pty.
+        tipo_entrada: if janela.is_some() {
+            ward_core::protocolo::TipoEntradaPadrao::Terminal
+        } else {
+            ward_core::protocolo::TipoEntradaPadrao::Pipe
+        },
     }
 }
 
@@ -1299,6 +1306,7 @@ for i in range(2):
             .map(|x| Zeroizing::new(x.as_bytes().to_vec()))
             .collect(),
         cwd: Zeroizing::new(b"/".to_vec()),
+        tipo_entrada: ward_core::protocolo::TipoEntradaPadrao::Nula,
         ambiente: vec![ward_core::protocolo::Variavel {
             nome: Zeroizing::new(b"PATH".to_vec()),
             valor: Segredo::de_texto("/usr/bin:/bin".into()),
@@ -1396,6 +1404,7 @@ except OSError as e:
             .collect(),
         cwd: Zeroizing::new(b"/".to_vec()),
         ambiente: Vec::new(),
+        tipo_entrada: ward_core::protocolo::TipoEntradaPadrao::Nula,
     });
     let r = sessao_de(
         &c,

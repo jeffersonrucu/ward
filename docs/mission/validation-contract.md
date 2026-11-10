@@ -815,7 +815,8 @@ Reauditoria do M2 (Fase 19e, D53–D55). Repros em `scratchpad/ataque/src/bin/`
 - [x] V4.21 — Dado o cofre travado, quando `ward run acme-pg-dev -- true` e o usuário
   roda `ward destravar` em outro terminal dentro de 2 min, então o pedido segue e sai 0;
   sem destravar, sai ≠ 0 em 120 s ± 2 s.
-- [x] V4.22 — Dado `ward travar`, então `ward lista` responde "travado".
+- [x] V4.22 — Dado `ward travar`, então `ward lista` responde "travado", com a dica
+  `/usr/local/bin/ward destravar` (caminho completo, Fase 54a/54b).
 - [x] V4.23 — Dado o SSH de teste por senha, quando `ward ssh acme-ssh-senha-stage
   whoami`, então imprime `deploy`; e o `ssh` filho rodou com `sshpass -e`,
   `PubkeyAuthentication=no` e `IdentityAgent=none` (conferido em `/proc/<pid>/cmdline`).
@@ -877,6 +878,20 @@ Reauditoria do M2 (Fase 19e, D53–D55). Repros em `scratchpad/ataque/src/bin/`
   /usr/local/bin/ward-app` com o ambiente de D57 copiado igual (e o mesmo com o
   `ward-nm`), então o filho conecta como agente, `revelar` responde "não autorizado" e
   nenhum segredo sai na saída mascarada (D63) — cobre S1.
+- [ ] V4.39 — (SEG) Dada a entrada `acme-pg-aprovacao` ("com aprovação") e o app de
+  teste respondendo "Permitir uma vez" com o PIN certo, quando o agente roda
+  `printf <script> | ward run acme-pg-aprovacao -- python3` (ou manda o SQL/comandos
+  por pipe ou arquivo a um `psql`/`sh`), então a janela recebe `entrada_oculta`, o
+  daemon recusa a resposta sem a confirmação da entrada padrão (`pedido_invalido`, o
+  pedido segue pendente), o comando não roda e nada sai; com a confirmação, roda; com
+  tty, "Permitir uma vez" passa como antes; "Permitir por 1 hora" não libera o próximo
+  pedido com pipe; a confirmação num pedido sem entrada oculta e no "Negar" é recusada
+  (D68) — cobre S9.
+- [ ] V4.40 — (SEG) Dado `ward run` com a entrada padrão em `/dev/null`, pipe, arquivo,
+  `/dev/zero` e pty, então o daemon recebe `nula`, `pipe`, `arquivo`, `outra` e
+  `terminal`; e um cliente que declara `nula` e manda dados tem o grupo do comando
+  morto (137) sem o dado chegar a ele; `tipo_entrada` ausente ou fora da lista é
+  `json_invalido` (D68) — cobre S9.
 
 ## Milestone 5 — App desktop
 

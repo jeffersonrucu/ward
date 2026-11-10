@@ -183,6 +183,7 @@ for nome in nomes:
             "entrada": nome,
             "argv": [b64("env")],
             "cwd": b64("/"),
+            "tipo_entrada": "nula",
             "ambiente": [],
         },
     }

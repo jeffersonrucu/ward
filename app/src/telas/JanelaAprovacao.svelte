@@ -15,6 +15,10 @@
   //   cada envio.
   // - Só esta janela responde: no app, a capability `aprovacao` (a principal não tem os
   //   dois comandos) e o comando confere o rótulo da janela de novo.
+  // - Fase 54b (D68): com `entrada_oculta` (a entrada padrão do comando é pipe ou
+  //   arquivo), aviso em `Destaque` aviso e um `Interruptor` que libera os três
+  //   "Permitir"; marcado, a resposta vai com `ciente`. Quem confere é o lado Rust e o
+  //   daemon; a caixa desmarca a cada pedido novo. Sem frame no FigCraft ainda.
   import { onDestroy, onMount, tick } from 'svelte';
   import BadgeAmbiente from '../lib/componentes/BadgeAmbiente.svelte';
   import BadgeTipo from '../lib/componentes/BadgeTipo.svelte';
@@ -25,6 +29,7 @@
   import Contagem from '../lib/componentes/Contagem.svelte';
   import Destaque from '../lib/componentes/Destaque.svelte';
   import Icone from '../lib/componentes/Icone.svelte';
+  import Interruptor from '../lib/componentes/Interruptor.svelte';
   import TextoDoAgente from '../lib/componentes/TextoDoAgente.svelte';
   import { tipoDe } from '../lib/componentes/tipos.js';
   import simbolo from '../lib/componentes/ward-simbolo.svg';
@@ -46,12 +51,16 @@
   let erro = $state('');
   let ocupado = $state(false);
   let falha = $state('');
+  let ciente = $state(false);
 
   const bloqueado = $derived(pedido?.estado === 'bloqueado');
   const prod = $derived(pedido?.ambiente === 'prod');
   // Fase 44c (D9): só a confirmação da origem `http` (sem PIN, "Negar" ou "Confirmar").
   const confirmacao = $derived(pedido?.confirmacao === true);
   const popup = $derived(pedido?.operacao === 'preencher');
+  // Fase 54b: a entrada padrão que esta janela não mostra.
+  const entradaOculta = $derived(pedido?.entrada_oculta === true);
+  const semCiencia = $derived(entradaOculta && !ciente);
   const urgente = $derived(!bloqueado && pedido !== null && pedido.restante <= SEGUNDOS_URGENTE);
 
   let consultando = false;
@@ -76,6 +85,7 @@
       if (outro) {
         pin = '';
         erro = '';
+        ciente = false;
         if (novo) focarNegar();
       }
     } catch (e) {
@@ -94,11 +104,21 @@
       erro = TEXTOS.pinFaltando;
       return;
     }
+    if (comPin && semCiencia) {
+      erro = TEXTOS.entradaFaltando;
+      return;
+    }
     const enviado = comPin ? pin : null;
+    const comCiencia = comPin && entradaOculta && ciente;
     pin = '';
     ocupado = true;
     try {
-      const r = await chamar('responder_aprovacao', { id, decisao, pin: enviado });
+      const r = await chamar('responder_aprovacao', {
+        id,
+        decisao,
+        pin: enviado,
+        ciente: comCiencia,
+      });
       erro = mensagemDoResultado(r?.resultado);
     } catch (e) {
       erro = e.mensagem;
@@ -163,6 +183,8 @@
           >{/if}
         <!-- Fase 44e: o aviso da origem em `Destaque` aviso (frames 22812, 22957). -->
         {#if pedido.origem}<Destaque tipo="aviso" icone="alerta">{avisoDaOrigem(pedido.origem)}</Destaque>{/if}
+        <!-- Fase 54b (D68): a entrada padrão que a janela não mostra. -->
+        {#if entradaOculta}<Destaque tipo="aviso" icone="alerta">{TEXTOS.entradaDestaque}</Destaque>{/if}
         {#if urgente}
           <Destaque tipo="perigo" icone="relogio">{TEXTOS.expirando(pedido.restante)}</Destaque>
         {/if}
@@ -231,6 +253,15 @@
           </div>
         </div>
       {:else}
+        {#if entradaOculta && !bloqueado}
+          <Interruptor
+            id="aprovacao-entrada"
+            rotulo={TEXTOS.entradaCiente}
+            ligado={ciente}
+            desabilitado={ocupado}
+            onmudar={(v) => (ciente = v)}
+          />
+        {/if}
         <CampoPin
           id="aprovacao-pin"
           rotulo={TEXTOS.pin}
@@ -245,15 +276,15 @@
             <Botao id={ID_NEGAR} variante="secundario" desabilitado={ocupado} onclick={() => responder('negar')}>
               {TEXTOS.negar}
             </Botao>
-            <Botao variante="primario" desabilitado={ocupado || bloqueado} onclick={() => responder('uma_vez')}>
+            <Botao variante="primario" desabilitado={ocupado || bloqueado || semCiencia} onclick={() => responder('uma_vez')}>
               {TEXTOS.umaVez}
             </Botao>
           </div>
           <div class="linha">
-            <Botao variante="secundario" desabilitado={ocupado || bloqueado} onclick={() => responder('uma_hora')}>
+            <Botao variante="secundario" desabilitado={ocupado || bloqueado || semCiencia} onclick={() => responder('uma_hora')}>
               {TEXTOS.umaHora}
             </Botao>
-            <Botao variante="secundario" desabilitado={ocupado || bloqueado} onclick={() => responder('sempre')}>
+            <Botao variante="secundario" desabilitado={ocupado || bloqueado || semCiencia} onclick={() => responder('sempre')}>
               {TEXTOS.sempre}
             </Botao>
           </div>

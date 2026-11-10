@@ -17,7 +17,8 @@ use std::time::Duration;
 use ward_core::entrada::Segredo;
 use ward_core::limites::{KIB, MAX_ARGUMENTO, MAX_ARGUMENTOS, MAX_SEGREDO, MAX_VARIAVEIS_AMBIENTE};
 use ward_core::protocolo::{
-    ErroCodificar, ErroResposta, Fluxo, Janela, Papel, Pedido, PedidoExecutar, Resposta, Variavel,
+    ErroCodificar, ErroResposta, Fluxo, Janela, Papel, Pedido, PedidoExecutar, Resposta,
+    TipoEntradaPadrao, Variavel,
 };
 use ward_plataforma::conectar::ErroCanal;
 use ward_plataforma::{ErroTerminal, ServidorEsperado};
@@ -47,7 +48,7 @@ pub const MSG_RUN_CAMPO: &str = "um argumento ou uma variável do ambiente passa
      ou há argumentos ou variáveis demais; reduza o ambiente (ex.: `env -i`)";
 /// Aviso de quando o cofre está travado: o pedido espera o destrave (D16).
 pub const MSG_RUN_TRAVADO: &str = "cofre travado: o comando espera o destrave por até 2 min \
-     (`ward destravar` em outro terminal, ou pelo app)";
+     (`/usr/local/bin/ward destravar` em outro terminal, ou pelo app)";
 /// Pedaço da entrada padrão por quadro.
 const PEDACO_ENTRADA: usize = 64 * KIB;
 
@@ -73,6 +74,11 @@ pub trait Entorno {
     fn entrada_padrao(&mut self) -> Box<dyn Read + Send> {
         Box::new(io::stdin())
     }
+    /// Fase 54b (D68): o que é a entrada padrão (`fstat` do fd 0), para o daemon avisar
+    /// na janela quando o comando recebe dados que ela não mostra.
+    fn tipo_entrada(&self) -> TipoEntradaPadrao {
+        tipo_da_entrada_padrao()
+    }
     /// `ward ssh` interativo (Fase 27): o tamanho do terminal, se a entrada e a saída
     /// padrão são terminais; `None` sem terminal (pipe, arquivo).
     fn terminal(&self) -> Option<Janela> {
@@ -95,6 +101,43 @@ pub trait Entorno {
     /// app e fecha o fd.
     fn ler_token(&mut self, fd: u32) -> Result<Zeroizing<Vec<u8>>, ErroCanal> {
         ward_plataforma::conectar::ler_token_herdado(fd)
+    }
+}
+
+/// `/dev/null` (`makedev(1, 3)` no Linux).
+const DEV_NULL: u64 = (1 << 8) | 3;
+
+/// Fase 54b (D68): o tipo da entrada padrão pelo `fstat` do fd 0 (uma cópia do fd, sem
+/// `unsafe`). Fechada (sem fd 0) conta como nula.
+pub fn tipo_da_entrada_padrao() -> TipoEntradaPadrao {
+    use std::io::IsTerminal;
+    use std::os::fd::AsFd;
+    let meta = io::stdin()
+        .as_fd()
+        .try_clone_to_owned()
+        .map(std::fs::File::from)
+        .and_then(|f| f.metadata());
+    classificar_entrada(meta.as_ref().ok(), io::stdin().is_terminal())
+}
+
+/// Fase 54b: a classificação, separada para os testes. `None`: o `fstat` falhou (fd 0
+/// fechado).
+pub fn classificar_entrada(meta: Option<&std::fs::Metadata>, terminal: bool) -> TipoEntradaPadrao {
+    use std::os::unix::fs::{FileTypeExt, MetadataExt};
+    let Some(m) = meta else {
+        return TipoEntradaPadrao::Nula;
+    };
+    let t = m.file_type();
+    if t.is_char_device() && m.rdev() == DEV_NULL {
+        TipoEntradaPadrao::Nula
+    } else if terminal && t.is_char_device() {
+        TipoEntradaPadrao::Terminal
+    } else if t.is_fifo() || t.is_socket() {
+        TipoEntradaPadrao::Pipe
+    } else if t.is_file() {
+        TipoEntradaPadrao::Arquivo
+    } else {
+        TipoEntradaPadrao::Outra
     }
 }
 
@@ -140,7 +183,10 @@ fn falhar(e: &mut dyn Entorno, msg: &str) -> u8 {
 /// Mensagem de um erro do daemon, com a dica do que fazer quando há uma.
 pub fn mensagem_do_daemon(erro: &ErroResposta) -> String {
     match erro {
-        ErroResposta::Travado => "travado: destrave com `ward destravar` ou pelo app".to_owned(),
+        // Fase 54a (RA8): pelo caminho completo, não pelo `ward` do `PATH`.
+        ErroResposta::Travado => {
+            "travado: destrave com `/usr/local/bin/ward destravar` ou pelo app".to_owned()
+        }
         ErroResposta::CofreInexistente => "ainda não existe cofre; crie pelo app".to_owned(),
         e => e.mensagem().to_owned(),
     }
@@ -292,6 +338,7 @@ pub fn pedido_run(
     argv: Vec<OsString>,
     cwd: PathBuf,
     ambiente: Vec<(OsString, OsString)>,
+    tipo_entrada: TipoEntradaPadrao,
 ) -> Result<Pedido, &'static str> {
     use std::os::unix::ffi::OsStringExt;
     let argv: Vec<Vec<u8>> = argv.into_iter().map(OsStringExt::into_vec).collect();
@@ -331,6 +378,7 @@ pub fn pedido_run(
                 valor: Segredo::de_bytes(v),
             })
             .collect(),
+        tipo_entrada,
     });
     // O quadro inteiro (com os nomes do JSON) também cabe no limite.
     match ward_core::protocolo::codificar_pedido(Papel::Agente, &pedido) {
@@ -354,8 +402,9 @@ fn run(e: &mut dyn Entorno, entrada: String, argv: Vec<OsString>) -> u8 {
         Err(_) => return falhar_run(e, "não deu para ler o diretório atual"),
     };
     let ambiente = e.ambiente();
+    let tipo = e.tipo_entrada();
     // D52: medido antes de conectar; nada é executado.
-    let pedido = match pedido_run(entrada, argv, cwd, ambiente) {
+    let pedido = match pedido_run(entrada, argv, cwd, ambiente, tipo) {
         Ok(p) => p,
         Err(msg) => return falhar_run(e, msg),
     };
@@ -382,13 +431,23 @@ fn run(e: &mut dyn Entorno, entrada: String, argv: Vec<OsString>) -> u8 {
     };
     drop(pedido);
     let escrita = Arc::new(Mutex::new(escrita));
-    repassar_entrada(e, escrita);
+    repassar_entrada(e, escrita, tipo);
     receber_sessao(e, sessao)
 }
 
-/// A entrada padrão vai ao comando numa thread; no fim dela, um quadro vazio.
-fn repassar_entrada(e: &mut dyn Entorno, escrita: Arc<Mutex<EscritaSessao>>) {
-    let mut fonte = e.entrada_padrao();
+/// A entrada padrão vai ao comando numa thread; no fim dela, um quadro vazio. Fase 54b:
+/// declarada nula, nada é lido (o fd 0 pode até ser outro arquivo, se estava fechado) e
+/// só o quadro vazio vai.
+fn repassar_entrada(
+    e: &mut dyn Entorno,
+    escrita: Arc<Mutex<EscritaSessao>>,
+    tipo: TipoEntradaPadrao,
+) {
+    let mut fonte = if tipo == TipoEntradaPadrao::Nula {
+        Box::new(io::empty())
+    } else {
+        e.entrada_padrao()
+    };
     let _ = std::thread::Builder::new()
         .name("ward-entrada".into())
         .spawn(move || {
@@ -441,6 +500,7 @@ pub fn pedido_ssh(
     token: Option<Segredo>,
     comando: Vec<OsString>,
     janela: Option<Janela>,
+    tipo_entrada: TipoEntradaPadrao,
 ) -> Result<Pedido, &'static str> {
     use std::os::unix::ffi::OsStringExt;
     let comando: Vec<Vec<u8>> = comando.into_iter().map(OsStringExt::into_vec).collect();
@@ -455,6 +515,7 @@ pub fn pedido_ssh(
         comando: comando.into_iter().map(Zeroizing::new).collect(),
         token,
         janela,
+        tipo_entrada,
     };
     match ward_core::protocolo::codificar_pedido(Papel::Agente, &pedido) {
         Ok(_) => Ok(pedido),
@@ -495,7 +556,8 @@ fn ssh(e: &mut dyn Entorno, entrada: String, token_fd: Option<u32>, comando: Vec
     } else {
         None
     };
-    let pedido = match pedido_ssh(entrada, token, comando, janela) {
+    let tipo = e.tipo_entrada();
+    let pedido = match pedido_ssh(entrada, token, comando, janela, tipo) {
         Ok(p) => p,
         Err(msg) => return falhar_run(e, msg),
     };
@@ -528,7 +590,7 @@ fn ssh(e: &mut dyn Entorno, entrada: String, token_fd: Option<u32>, comando: Vec
     if let Some(inicial) = janela {
         acompanhar_janela(e, inicial, escrita.clone(), fim.clone());
     }
-    repassar_entrada(e, escrita);
+    repassar_entrada(e, escrita, tipo);
     let codigo = receber_sessao(e, sessao);
     fim.store(true, Ordering::Release);
     drop(cru);

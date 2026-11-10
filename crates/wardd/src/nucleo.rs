@@ -823,7 +823,8 @@ impl Daemon {
                 pedido,
                 decisao,
                 pin,
-            } => self.responder_aprovacao(pedido, decisao, pin.as_ref()),
+                entrada_confirmada,
+            } => self.responder_aprovacao(pedido, decisao, pin.as_ref(), entrada_confirmada),
             Pedido::AbrirApp => self.aprovacao.abrir_app().map(|()| Resposta::Ok),
             // Não há sessão aberta nesta fase (Fases 26/27).
             Pedido::EntradaPadrao { .. } | Pedido::Janela(_) => Err(ErroResposta::PedidoInvalido),
@@ -1154,6 +1155,7 @@ impl Daemon {
                 cadeia: crate::uso::cadeia_para_exibir(cliente),
                 origem: o,
                 confirmacao: true,
+                entrada_oculta: false,
             })
         };
         if let Some(p) = pedido {

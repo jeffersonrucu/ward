@@ -533,17 +533,21 @@ fn pedido_de_aprovacao<R: Runtime>(
 
 /// Janela de aprovação (Fase 36, S9, S10): Negar sem PIN, os três Permitir com o PIN
 /// (num `Pin` que zera; fora do formato é recusado na leitura, sem eco). A resposta não
-/// traz o PIN. Sem outro pedido esperando, a janela fecha.
+/// traz o PIN. Sem outro pedido esperando, a janela fecha. Fase 54b (D68): `ciente` é a
+/// caixa da entrada padrão (ausente = desmarcada); o serviço e o daemon conferem.
 #[tauri::command]
 fn responder_aprovacao<R: Runtime>(
     id: u64,
     decisao: String,
     pin: Option<Pin>,
+    ciente: Option<bool>,
     janela: WebviewWindow<R>,
     estado: State<'_, Estado>,
 ) -> Result<ResultadoAprovacao, Falha> {
     na_janela_de_aprovacao(&janela)?;
-    let r = estado.servico()?.responder_aprovacao(id, &decisao, pin)?;
+    let r = estado
+        .servico()?
+        .responder_aprovacao(id, &decisao, pin, ciente == Some(true))?;
     if !r.ha_outro {
         let _ = janela.destroy();
     }

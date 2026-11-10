@@ -98,6 +98,11 @@ ward run acme-pg-tunel -- /usr/bin/psql -tAc 'select 1'   # túnel SSH aberto pe
 - Nada de redirecionamento (`>`, `>>`, `2>&1`, `tee`) nem de pós-processar a saída
   com `cut`, `tr`, `od`, `rev`, `fold` dentro do `ward run`: as regras de deny barram
   esses comandos. A saída e o stderr do comando já voltam para você, com a máscara.
+- **Nada pela entrada padrão do `ward run`** (`… | ward run`, `< arquivo`, `<<EOF`,
+  `<<<`): a janela de aprovação mostra o comando, não o que entra por ela. Numa entrada
+  "com aprovação" a janela avisa e só deixa permitir com uma confirmação a mais, e as
+  regras de deny barram essas formas. Script vai como arquivo do projeto no argumento
+  (`ward run acme-pg-dev -- /usr/bin/python3 scripts/relatorio.py`), à vista na janela.
 - O diretório de trabalho é o seu. O código de saída é o do comando; `125` é erro do
   próprio Ward (veja "Quando der erro").
 - `sh -c '…'` é permitido para encadear comandos, desde que nenhum deles imprima
@@ -118,7 +123,9 @@ printf 'ls\n' | ward ssh beta-sftp-dev         # sftp: comandos pela entrada pad
   o usuário e a porta vêm da entrada.
 - A chave do servidor nunca vira arquivo seu e nunca vai para o `~/.ssh`.
 - Numa entrada `ftp-sftp`, os comandos do sftp vão pela entrada padrão; o diretório
-  local é o home do usuário, então use caminho local absoluto em `get`/`put`.
+  local é o home do usuário, então use caminho local absoluto em `get`/`put`. Numa
+  entrada "com aprovação", a janela avisa que o comando recebe dados pela entrada
+  padrão e pede a confirmação a mais; diga ao usuário quais comandos do sftp vão.
 - Para um banco atrás de SSH, use a entrada `banco` com túnel (ex.: `acme-pg-tunel`)
   no `ward run`; o Ward abre o túnel e ajusta `PGHOST`/`PGPORT`/`DATABASE_URL`.
 

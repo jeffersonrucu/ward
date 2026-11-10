@@ -823,6 +823,7 @@ mod testes {
             cadeia: vec!["claude".into(), "ward run".into()],
             origem: String::new(),
             confirmacao: false,
+            entrada_oculta: false,
         }
     }
 

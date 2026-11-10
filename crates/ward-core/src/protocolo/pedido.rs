@@ -40,6 +40,61 @@ pub struct PedidoExecutar {
     pub argv: Vec<Bytes>,
     pub cwd: Bytes,
     pub ambiente: Vec<Variavel>,
+    /// Fase 54b (D68): o que é a entrada padrão da CLI.
+    pub tipo_entrada: TipoEntradaPadrao,
+}
+
+/// Fase 54b (D68): o que é a entrada padrão do `ward run`/`ward ssh`, pelo `fstat` da
+/// CLI. Quem diz é o cliente: o daemon não tem como conferir `terminal` (um cliente que
+/// mente, ou um pty do próprio agente, passa por terminal); `nula` ele faz valer (a
+/// entrada do filho fecha e dado que chegar mata o comando). Pipe, arquivo e o resto
+/// vão à janela com aviso e, no nível "com aprovação", só passam com a confirmação a
+/// mais ([`Pedido::ResponderAprovacao`] com `entrada_confirmada`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TipoEntradaPadrao {
+    /// Um terminal (`isatty`).
+    Terminal,
+    /// `/dev/null` ou fechada: nenhum dado vai ao comando.
+    Nula,
+    /// Pipe ou socket.
+    Pipe,
+    /// Arquivo comum.
+    Arquivo,
+    /// Outro dispositivo (`/dev/zero`, `/dev/urandom`…) ou o que não deu para ver.
+    Outra,
+}
+
+impl TipoEntradaPadrao {
+    /// Todos, na ordem do quadro.
+    pub const TODOS: [TipoEntradaPadrao; 5] = [
+        TipoEntradaPadrao::Terminal,
+        TipoEntradaPadrao::Nula,
+        TipoEntradaPadrao::Pipe,
+        TipoEntradaPadrao::Arquivo,
+        TipoEntradaPadrao::Outra,
+    ];
+
+    /// Nome no quadro.
+    pub fn nome(self) -> &'static str {
+        match self {
+            TipoEntradaPadrao::Terminal => "terminal",
+            TipoEntradaPadrao::Nula => "nula",
+            TipoEntradaPadrao::Pipe => "pipe",
+            TipoEntradaPadrao::Arquivo => "arquivo",
+            TipoEntradaPadrao::Outra => "outra",
+        }
+    }
+
+    /// Pelo nome do quadro.
+    pub fn de_nome(n: &str) -> Option<Self> {
+        Self::TODOS.into_iter().find(|t| t.nome() == n)
+    }
+
+    /// O comando recebe dados que a janela de aprovação não mostra (nem terminal, nem
+    /// nula).
+    pub fn oculta(self) -> bool {
+        !matches!(self, TipoEntradaPadrao::Terminal | TipoEntradaPadrao::Nula)
+    }
 }
 
 /// Tamanho do terminal.
@@ -206,6 +261,8 @@ pub enum Pedido {
         /// Token do "Conectar" (D3); sem token vale o nível.
         token: Option<Segredo>,
         janela: Option<Janela>,
+        /// Fase 54b (D68): o que é a entrada padrão da CLI.
+        tipo_entrada: TipoEntradaPadrao,
     },
     Login {
         entrada: String,
@@ -258,6 +315,10 @@ pub enum Pedido {
         decisao: Decisao,
         /// Presente se e só se a decisão pede PIN.
         pin: Option<Segredo>,
+        /// Fase 54b (D68): o usuário marcou, na janela, que permite a entrada padrão
+        /// que ela não mostra. Só com um "Permitir"; o daemon exige `true` num pedido
+        /// com `entrada_oculta` e recusa `true` nos outros.
+        entrada_confirmada: bool,
     },
     EmitirToken {
         entrada: String,
@@ -377,10 +438,15 @@ impl Pedido {
             Pedido::MudarNivel { entrada, pin, .. } => ok(nome_ok(entrada) && pin_ok(pin)),
             Pedido::TrocarPin { atual, novo } => ok(pin_ok(atual) && pin_ok(novo)),
             Pedido::TrocarSenha { atual, nova } => ok(senha_ok(atual) && senha_ok(nova)),
-            Pedido::ResponderAprovacao { decisao, pin, .. } => ok(match pin {
+            Pedido::ResponderAprovacao {
+                decisao,
+                pin,
+                entrada_confirmada,
+                ..
+            } => ok((match pin {
                 Some(p) => decisao.pede_pin() && pin_ok(p),
                 None => !decisao.pede_pin(),
-            }),
+            }) && (!entrada_confirmada || decisao.pede_pin())),
             Pedido::TempoTrava { minutos } => {
                 ok((MIN_MINUTOS_TRAVA..=MAX_MINUTOS_TRAVA).contains(minutos))
             }
@@ -396,6 +462,7 @@ impl Pedido {
                 comando,
                 token,
                 janela,
+                ..
             } => ok(nome_ok(entrada)
                 && comando_ok(comando, false)
                 && token
@@ -484,6 +551,8 @@ impl Pedido {
                 escrever_bytes(e, &x.argv);
                 e.chave("cwd");
                 e.base64(&x.cwd);
+                e.chave("tipo_entrada");
+                e.texto(x.tipo_entrada.nome());
                 e.chave("ambiente");
                 e.lista(|e| {
                     for v in &x.ambiente {
@@ -502,11 +571,14 @@ impl Pedido {
                 comando,
                 token,
                 janela,
+                tipo_entrada,
             } => {
                 e.chave("entrada");
                 e.texto(entrada);
                 e.chave("comando");
                 escrever_bytes(e, comando);
+                e.chave("tipo_entrada");
+                e.texto(tipo_entrada.nome());
                 if let Some(t) = token {
                     e.chave("token");
                     e.base64(t.expor());
@@ -591,6 +663,7 @@ impl Pedido {
                 pedido,
                 decisao,
                 pin,
+                entrada_confirmada,
             } => {
                 e.chave("pedido");
                 e.inteiro(*pedido);
@@ -599,6 +672,10 @@ impl Pedido {
                 if let Some(p) = pin {
                     e.chave("pin");
                     e.base64(p.expor());
+                }
+                if *entrada_confirmada {
+                    e.chave("entrada_confirmada");
+                    e.logico(true);
                 }
             }
             Pedido::TrocarPin { atual, novo } => {
@@ -833,6 +910,7 @@ pub(crate) fn ler(op: Operacao, mut c: Campos) -> R<Pedido> {
             let entrada = c.texto("entrada", MAX_NOME)?;
             let argv = ler_bytes(c.lista("argv", MAX_ARGUMENTOS)?)?;
             let cwd = c.bytes("cwd", MAX_ARGUMENTO)?;
+            let tipo_entrada = ler_tipo_entrada(&mut c)?;
             let mut ambiente = Vec::new();
             for v in c.lista("ambiente", MAX_VARIAVEIS_AMBIENTE)? {
                 let mut o = Campos::de(v)?;
@@ -846,6 +924,7 @@ pub(crate) fn ler(op: Operacao, mut c: Campos) -> R<Pedido> {
                 argv,
                 cwd,
                 ambiente,
+                tipo_entrada,
             })
         }
         Operacao::Ssh => {
@@ -856,11 +935,13 @@ pub(crate) fn ler(op: Operacao, mut c: Campos) -> R<Pedido> {
                 Some(v) => Some(ler_janela(Campos::de(v)?)?),
                 None => None,
             };
+            let tipo_entrada = ler_tipo_entrada(&mut c)?;
             Pedido::Ssh {
                 entrada,
                 comando,
                 token,
                 janela,
+                tipo_entrada,
             }
         }
         Operacao::Login => Pedido::Login {
@@ -933,10 +1014,17 @@ pub(crate) fn ler(op: Operacao, mut c: Campos) -> R<Pedido> {
                 .find(|d| d.nome() == nome)
                 .ok_or(JsonInvalido)?;
             let pin = c.segredo_opc("pin", MAX_DIGITOS_PIN)?;
+            // Fase 54b: ausente = não marcada; presente só como `true`.
+            let entrada_confirmada = match c.tirar("entrada_confirmada") {
+                None => false,
+                Some(Valor::Logico(true)) => true,
+                Some(_) => return Err(JsonInvalido),
+            };
             Pedido::ResponderAprovacao {
                 pedido,
                 decisao,
                 pin,
+                entrada_confirmada,
             }
         }
         Operacao::EmitirToken => Pedido::EmitirToken {
@@ -971,6 +1059,11 @@ pub(crate) fn ler(op: Operacao, mut c: Campos) -> R<Pedido> {
 fn conferido(p: Pedido) -> R<Pedido> {
     p.conferir()?;
     Ok(p)
+}
+
+/// Fase 54b (D68): o tipo da entrada padrão, obrigatório (sem padrão: o cliente diz).
+fn ler_tipo_entrada(c: &mut Campos) -> R<TipoEntradaPadrao> {
+    TipoEntradaPadrao::de_nome(&c.texto("tipo_entrada", MAX_NOME)?).ok_or(JsonInvalido)
 }
 
 fn ler_bytes(v: Vec<Valor>) -> R<Vec<Bytes>> {
