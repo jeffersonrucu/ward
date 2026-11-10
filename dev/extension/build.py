@@ -1,37 +1,39 @@
 #!/usr/bin/python3 -IB
-"""Monta a extensão do Chrome em `extension/dist/` (Fase 41) e confere o pacote.
+"""Builds the Chrome extension in `extension/dist/` (Phase 41) and checks the package.
 
-Fontes (nada copiado à mão):
-- `extension/`: manifesto, popup (HTML, CSS, JS) e as funções injetadas na aba;
-- `app/src/lib/style/tokens.css`: o arquivo único de tokens, gerado das variables do
-  Ward.figcraft (Fase 29); a extensão usa o mesmo;
-- `app/src/lib/components/icons.js` e `ward-symbol.svg`: ícones e o símbolo do Ward,
-  também gerados do FigCraft;
-- `app/node_modules/@fontsource/*`: Inter e JetBrains Mono (instaladas por
-  `make app-front`, com `npm ci --ignore-scripts`);
-- `docs/design/icones/extensao-destravado-*.png`: ícone da extensão (Fase 9).
+Sources (nothing copied by hand):
+- `extension/`: manifest, popup (HTML, CSS, JS) and the functions injected into the tab;
+- `app/src/lib/style/tokens.css`: the single tokens file, generated from the
+  Ward.figcraft variables (Phase 29); the extension uses the same one;
+- `app/src/lib/components/icons.js` and `ward-symbol.svg`: icons and the Ward symbol,
+  also generated from FigCraft;
+- `app/node_modules/@fontsource/*`: Inter and JetBrains Mono (installed by
+  `make app-front`, with `npm ci --ignore-scripts`);
+- the unlocked extension icon PNGs in `docs/design/` (Phase 9).
 
-Conferências (sai 1 na primeira que falhar):
-- o id que sai da chave pública do campo `key` é o `ID_EXTENSAO` do `ward-nm`;
-- manifesto sem `externally_connectable`, `web_accessible_resources`,
-  `optional_host_permissions`, `optional_permissions` e sem a permissão `storage`; só
-  `nativeMessaging`, `activeTab` e `scripting`;
-- Fase 43: `host_permissions` exatamente as origens que D9 aceita (`https://*/*`,
-  `http://localhost/*` e `http://127.0.0.1/*`): o `ward login` injeta a sonda e o
-  preenchimento na aba ativa sem o clique do usuário (sem `activeTab`);
-- Fase 42: `background` só o service worker `service.js` (módulo) e `content_scripts`
-  só o `submit.js`, no quadro principal (`all_frames: false`), mundo isolado, em
-  http/https, sem CSS;
-- ouvinte de mensagem (`runtime.onMessage`) só no `service.js`; `submit.js` sem
-  `sendNativeMessage`, `executeScript` nem resposta (`sendResponse`); nenhum
-  `onConnect`; nenhum `prefers-color-scheme` (D1: só tema escuro);
-- CSP das páginas da extensão sem `unsafe-*`, sem origem remota e com `default-src 'none'`;
-- nenhum arquivo com URL remota (só os namespaces XML), `eval`, `new Function`,
-  `innerHTML`, `localStorage`/`sessionStorage`/`indexedDB` ou `chrome.storage`;
-- HTML sem script nem estilo inline;
-- só tipos de arquivo esperados, sem link simbólico.
+Checks (exits 1 on the first one that fails):
+- the id derived from the public key of the `key` field is the extension id constant of
+  `ward-nm`;
+- manifest without `externally_connectable`, `web_accessible_resources`,
+  `optional_host_permissions`, `optional_permissions` and without the `storage`
+  permission; only `nativeMessaging`, `activeTab` and `scripting`;
+- Phase 43: `host_permissions` exactly the origins D9 accepts (`https://*/*`,
+  `http://localhost/*` and `http://127.0.0.1/*`): `ward login` injects the probe and the
+  fill into the active tab without the user's click (without `activeTab`);
+- Phase 42: `background` only the service worker `service.js` (module) and
+  `content_scripts` only `submit.js`, in the main frame (`all_frames: false`), isolated
+  world, on http/https, without CSS;
+- message listener (`runtime.onMessage`) only in `service.js`; `submit.js` without
+  `sendNativeMessage`, `executeScript` or a reply (`sendResponse`); no `onConnect`; no
+  `prefers-color-scheme` (D1: dark theme only);
+- CSP of the extension pages without `unsafe-*`, without a remote origin and with
+  `default-src 'none'`;
+- no file with a remote URL (only the XML namespaces), `eval`, `new Function`,
+  `innerHTML`, `localStorage`/`sessionStorage`/`indexedDB` or `chrome.storage`;
+- HTML without inline script or style;
+- only expected file types, no symbolic link.
 
-Uso (da raiz): python3 -I -B dev/extension/build.py
+Usage (from the root): python3 -I -B dev/extension/build.py
 """
 
 import base64
@@ -43,23 +45,23 @@ import shutil
 import sys
 import xml.etree.ElementTree as ET
 
-RAIZ = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
-FONTE = os.path.join(RAIZ, "extension")
-DIST = os.path.join(FONTE, "dist")
-APP = os.path.join(RAIZ, "app")
+ROOT = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+SOURCE = os.path.join(ROOT, "extension")
+DIST = os.path.join(SOURCE, "dist")
+APP = os.path.join(ROOT, "app")
 FONTSOURCE = os.path.join(APP, "node_modules", "@fontsource")
 
-ARQUIVOS = ["manifest.json", "popup.html", "popup.css", "popup.js", "page.js", "submit.js", "service.js",
-            "login.js"]
-FONTES = [
+FILES = ["manifest.json", "popup.html", "popup.css", "popup.js", "page.js", "submit.js", "service.js",
+         "login.js"]
+FONTS = [
     ("Inter", 400, "inter", "inter-latin-400-normal.woff2"),
     ("Inter", 500, "inter", "inter-latin-500-normal.woff2"),
     ("Inter", 600, "inter", "inter-latin-600-normal.woff2"),
     ("JetBrains Mono", 400, "jetbrains-mono", "jetbrains-mono-latin-400-normal.woff2"),
 ]
-TAMANHOS_ICONE = (16, 32, 48, 128)
-PERMISSOES = {"nativeMessaging", "activeTab", "scripting"}
-CHAVES_PROIBIDAS = {
+ICON_SIZES = (16, 32, 48, 128)
+PERMISSIONS = {"nativeMessaging", "activeTab", "scripting"}
+FORBIDDEN_KEYS = {
     "externally_connectable",
     "web_accessible_resources",
     "optional_host_permissions",
@@ -72,12 +74,12 @@ CHAVES_PROIBIDAS = {
     "update_url",
 }
 NAMESPACES = {"http://www.w3.org/2000/svg"}
-PADROES_CONTENT = {"http://*/*", "https://*/*"}
-# Fase 43 (D9): `https` em qualquer host; `http` só em localhost e 127.0.0.1.
+CONTENT_PATTERNS = {"http://*/*", "https://*/*"}
+# Phase 43 (D9): `https` on any host; `http` only on localhost and 127.0.0.1.
 HOST_PERMISSIONS = ["https://*/*", "http://localhost/*", "http://127.0.0.1/*"]
-EXTENSOES = {".json", ".html", ".css", ".js", ".woff2", ".png"}
+EXTENSIONS = {".json", ".html", ".css", ".js", ".woff2", ".png"}
 URL = re.compile(rb"https?://[^\s\"'`)<>]*")
-PROIBIDOS = [
+FORBIDDEN = [
     rb"\beval\s*\(",
     rb"new\s+Function\b",
     rb"\binnerHTML\b",
@@ -95,15 +97,16 @@ PROIBIDOS = [
     rb"prefers-color-scheme",
     rb"color-scheme:\s*light",
 ]
-# Fase 42: só o service worker escuta mensagens (e confere o `sender`); o content script
-# só avisa o envio, sem falar com o host, injetar nada nem esperar resposta.
-PROIBIDOS_POR_ARQUIVO = {
+# Phase 42: only the service worker listens to messages (and checks the `sender`); the
+# content script only reports the submit, without talking to the host, injecting
+# anything or waiting for a reply.
+FORBIDDEN_PER_FILE = {
     "submit.js": [rb"sendNativeMessage", rb"executeScript", rb"runtime\.onMessage", rb"sendResponse",
-                 rb"\.then\s*\(\s*\(?\s*r"],
+                  rb"\.then\s*\(\s*\(?\s*r"],
     "popup.js": [rb"runtime\.onMessage"],
     "page.js": [rb"runtime\.onMessage", rb"sendMessage"],
-    # Fase 43: o `ward login` só fala com o `ward-nm` pela porta própria; não escuta nem
-    # manda mensagem a página, content script ou popup.
+    # Phase 43: `ward login` only talks to `ward-nm` over its own port; it neither listens
+    # to nor sends messages to the page, content script or popup.
     "login.js": [rb"runtime\.onMessage", rb"sendMessage", rb"sendNativeMessage", rb"console\."],
 }
 BACKGROUND = {"service_worker": "service.js", "type": "module"}
@@ -117,162 +120,162 @@ CONTENT_SCRIPTS = [{
 }]
 
 
-def falha(msg):
-    print(f"montar-extensao: {msg}", file=sys.stderr)
+def fail(msg):
+    print(f"extension-build: {msg}", file=sys.stderr)
     sys.exit(1)
 
 
-def chave_publica():
-    """A chave pública (base64 do DER) de `extension/public-key.txt`. Ela fica fora do
-    manifesto do repositório (o gitleaks lê `"key": <base64>` como segredo) e entra só no
-    `dist/manifest.json`; a privada nunca sai de `.dev/extension/`."""
-    with open(os.path.join(FONTE, "public-key.txt"), encoding="ascii") as f:
-        linhas = f.read().split("\n")
-    if linhas[0] != "-----BEGIN PUBLIC KEY-----" or "-----END PUBLIC KEY-----" not in linhas:
-        falha("public-key.txt não é uma chave pública PEM")
-    corpo = "".join(linhas[1:linhas.index("-----END PUBLIC KEY-----")])
-    if "PRIVATE" in corpo or not re.fullmatch(r"[A-Za-z0-9+/=]+", corpo):
-        falha("public-key.txt inválida")
-    return corpo
+def public_key():
+    """The public key (base64 of the DER) from `extension/public-key.txt`. It stays out
+    of the repository manifest (gitleaks reads `"key": <base64>` as a secret) and goes
+    only into `dist/manifest.json`; the private key never leaves `.dev/extension/`."""
+    with open(os.path.join(SOURCE, "public-key.txt"), encoding="ascii") as f:
+        lines = f.read().split("\n")
+    if lines[0] != "-----BEGIN PUBLIC KEY-----" or "-----END PUBLIC KEY-----" not in lines:
+        fail("public-key.txt não é uma chave pública PEM")
+    body = "".join(lines[1:lines.index("-----END PUBLIC KEY-----")])
+    if "PRIVATE" in body or not re.fullmatch(r"[A-Za-z0-9+/=]+", body):
+        fail("public-key.txt inválida")
+    return body
 
 
-def id_da_chave(chave_b64):
-    der = base64.b64decode(chave_b64, validate=True)
+def key_id(key_b64):
+    der = base64.b64decode(key_b64, validate=True)
     return "".join(chr(ord("a") + int(c, 16)) for c in hashlib.sha256(der).hexdigest()[:32])
 
 
-def id_do_host():
-    with open(os.path.join(RAIZ, "crates", "ward-nm", "src", "lib.rs"), encoding="utf-8") as f:
+def host_id():
+    with open(os.path.join(ROOT, "crates", "ward-nm", "src", "lib.rs"), encoding="utf-8") as f:
         m = re.search(r'pub const ID_EXTENSAO: &str = "([a-p]{32})";', f.read())
     if not m:
-        falha("ID_EXTENSAO não achado em crates/ward-nm/src/lib.rs")
+        fail("ID_EXTENSAO não achado em crates/ward-nm/src/lib.rs")
     return m.group(1)
 
 
-def conferir_manifesto(m):
+def check_manifest(m):
     if m.get("manifest_version") != 3:
-        falha("manifesto não é MV3")
-    proibidas = CHAVES_PROIBIDAS & set(m)
-    if proibidas:
-        falha(f"manifesto com {sorted(proibidas)}")
+        fail("manifesto não é MV3")
+    forbidden = FORBIDDEN_KEYS & set(m)
+    if forbidden:
+        fail(f"manifesto com {sorted(forbidden)}")
     perm = set(m.get("permissions", []))
-    if perm != PERMISSOES:
-        falha(f"permissões {sorted(perm)} (só {sorted(PERMISSOES)})")
+    if perm != PERMISSIONS:
+        fail(f"permissões {sorted(perm)} (só {sorted(PERMISSIONS)})")
     if m.get("host_permissions") != HOST_PERMISSIONS:
-        falha(f"host_permissions só {HOST_PERMISSIONS} (D9)")
+        fail(f"host_permissions só {HOST_PERMISSIONS} (D9)")
     if m.get("background") != BACKGROUND:
-        falha("background só o service worker service.js (módulo)")
+        fail("background só o service worker service.js (módulo)")
     if m.get("content_scripts") != CONTENT_SCRIPTS:
-        falha("content_scripts só o submit.js, quadro principal, mundo isolado, http/https")
+        fail("content_scripts só o submit.js, quadro principal, mundo isolado, http/https")
     csp = m.get("content_security_policy", {})
     if set(csp) != {"extension_pages"}:
-        falha("CSP só de extension_pages")
-    pagina = csp["extension_pages"]
-    if "unsafe-" in pagina or "http" in pagina or "*" in pagina or "default-src 'none'" not in pagina:
-        falha("CSP das páginas da extensão não é estrita")
+        fail("CSP só de extension_pages")
+    page = csp["extension_pages"]
+    if "unsafe-" in page or "http" in page or "*" in page or "default-src 'none'" not in page:
+        fail("CSP das páginas da extensão não é estrita")
     if m.get("incognito") != "not_allowed":
-        falha("a extensão não pode rodar em janela anônima")
+        fail("a extensão não pode rodar em janela anônima")
     if "key" in m:
-        falha("a `key` vem de extension/public-key.txt, não do manifesto do repositório")
-    m["key"] = chave_publica()
-    eid = id_da_chave(m["key"])
-    if eid != id_do_host():
-        falha(f"id da chave do manifesto ({eid}) ≠ ID_EXTENSAO do ward-nm")
+        fail("a `key` vem de extension/public-key.txt, não do manifesto do repositório")
+    m["key"] = public_key()
+    eid = key_id(m["key"])
+    if eid != host_id():
+        fail(f"id da chave do manifesto ({eid}) ≠ ID_EXTENSAO do ward-nm")
     return eid
 
 
-def fontes_css():
-    regras = []
-    os.makedirs(os.path.join(DIST, "fontes"))
-    for familia, peso, pacote, arquivo in FONTES:
-        origem = os.path.join(FONTSOURCE, pacote, "files", arquivo)
-        if not os.path.isfile(origem):
-            falha(f"fonte {arquivo} não achada: rode 'make app-front'")
-        shutil.copyfile(origem, os.path.join(DIST, "fontes", arquivo))
-        regras.append(
+def fonts_css():
+    rules = []
+    os.makedirs(os.path.join(DIST, "fonts"))
+    for family, weight, package, file_name in FONTS:
+        source = os.path.join(FONTSOURCE, package, "files", file_name)
+        if not os.path.isfile(source):
+            fail(f"fonte {file_name} não achada: rode 'make app-front'")
+        shutil.copyfile(source, os.path.join(DIST, "fonts", file_name))
+        rules.append(
             "@font-face {\n"
-            f"  font-family: '{familia}';\n"
+            f"  font-family: '{family}';\n"
             "  font-style: normal;\n"
             "  font-display: block;\n"
-            f"  font-weight: {peso};\n"
-            f"  src: url(fontes/{arquivo}) format('woff2');\n"
+            f"  font-weight: {weight};\n"
+            f"  src: url(fonts/{file_name}) format('woff2');\n"
             "}\n"
         )
-    with open(os.path.join(DIST, "fontes.css"), "w", encoding="utf-8") as f:
-        f.write("/* GERADO por dev/extension/build.py (fontes do @fontsource do app). */\n")
-        f.write("".join(regras))
+    with open(os.path.join(DIST, "fonts.css"), "w", encoding="utf-8") as f:
+        f.write("/* GENERATED by dev/extension/build.py (fonts from the app's @fontsource). */\n")
+        f.write("".join(rules))
 
 
-def marca_js():
+def brand_js():
     svg = ET.parse(os.path.join(APP, "src", "lib", "components", "ward-symbol.svg")).getroot()
-    caminhos = [p for p in svg.iter("{http://www.w3.org/2000/svg}path") if p.get("fill")]
-    if len(caminhos) != 1:
-        falha("ward-symbol.svg deveria ter um caminho preenchido")
-    p = caminhos[0]
-    dados = {"caixa": svg.get("viewBox"), "t": p.get("transform", ""), "d": p.get("d")}
-    with open(os.path.join(DIST, "marca.js"), "w", encoding="utf-8") as f:
-        f.write("// GERADO por dev/extension/build.py a partir de app/src/lib/components/ward-symbol.svg.\n")
-        f.write(f"export const SIMBOLO = Object.freeze({json.dumps(dados, ensure_ascii=False)});\n")
+    paths = [p for p in svg.iter("{http://www.w3.org/2000/svg}path") if p.get("fill")]
+    if len(paths) != 1:
+        fail("ward-symbol.svg deveria ter um caminho preenchido")
+    p = paths[0]
+    data = {"box": svg.get("viewBox"), "t": p.get("transform", ""), "d": p.get("d")}
+    with open(os.path.join(DIST, "brand.js"), "w", encoding="utf-8") as f:
+        f.write("// GENERATED by dev/extension/build.py from app/src/lib/components/ward-symbol.svg.\n")
+        f.write(f"export const SYMBOL = Object.freeze({json.dumps(data, ensure_ascii=False)});\n")
 
 
-def conferir_pacote():
-    for raiz, _, nomes in os.walk(DIST):
-        for n in nomes:
-            p = os.path.join(raiz, n)
+def check_package():
+    for dirpath, _, names in os.walk(DIST):
+        for n in names:
+            p = os.path.join(dirpath, n)
             rel = os.path.relpath(p, DIST)
             if os.path.islink(p):
-                falha(f"{rel}: link simbólico no pacote")
+                fail(f"{rel}: link simbólico no pacote")
             ext = os.path.splitext(n)[1]
-            if ext not in EXTENSOES:
-                falha(f"{rel}: tipo de arquivo inesperado")
+            if ext not in EXTENSIONS:
+                fail(f"{rel}: tipo de arquivo inesperado")
             if ext in {".woff2", ".png"}:
                 continue
             with open(p, "rb") as f:
-                dados = f.read()
-            # No manifesto, só os padrões do `content_scripts` e das `host_permissions`
-            # (conferidos acima).
-            aceitas = NAMESPACES | (PADROES_CONTENT | set(HOST_PERMISSIONS) if rel == "manifest.json" else set())
-            for u in URL.findall(dados):
-                if u.decode() not in aceitas:
-                    falha(f"{rel}: URL remota {u.decode()!r}")
-            if rel in {"icons.js", "marca.js", "tokens.css", "fontes.css", "manifest.json"}:
+                data = f.read()
+            # In the manifest, only the `content_scripts` and `host_permissions` patterns
+            # (checked above).
+            accepted = NAMESPACES | (CONTENT_PATTERNS | set(HOST_PERMISSIONS) if rel == "manifest.json" else set())
+            for u in URL.findall(data):
+                if u.decode() not in accepted:
+                    fail(f"{rel}: URL remota {u.decode()!r}")
+            if rel in {"icons.js", "brand.js", "tokens.css", "fonts.css", "manifest.json"}:
                 continue
-            for padrao in PROIBIDOS + PROIBIDOS_POR_ARQUIVO.get(rel, []):
-                if re.search(padrao, dados):
-                    falha(f"{rel}: contém {padrao.decode()!r}")
+            for pattern in FORBIDDEN + FORBIDDEN_PER_FILE.get(rel, []):
+                if re.search(pattern, data):
+                    fail(f"{rel}: contém {pattern.decode()!r}")
             if ext == ".html":
-                texto = dados.decode()
-                for s in re.findall(r"<script\b[^>]*>(.*?)</script>", texto, re.S):
+                text = data.decode()
+                for s in re.findall(r"<script\b[^>]*>(.*?)</script>", text, re.S):
                     if s.strip():
-                        falha(f"{rel}: script inline")
-                if re.search(r"<style\b|\sstyle\s*=|\son[a-z]+\s*=", texto):
-                    falha(f"{rel}: estilo ou tratador inline")
+                        fail(f"{rel}: script inline")
+                if re.search(r"<style\b|\sstyle\s*=|\son[a-z]+\s*=", text):
+                    fail(f"{rel}: estilo ou tratador inline")
 
 
 def main():
-    with open(os.path.join(FONTE, "manifest.json"), encoding="utf-8") as f:
-        manifesto = json.load(f)
-    eid = conferir_manifesto(manifesto)
+    with open(os.path.join(SOURCE, "manifest.json"), encoding="utf-8") as f:
+        manifest = json.load(f)
+    eid = check_manifest(manifest)
     if os.path.lexists(DIST):
         shutil.rmtree(DIST)
-    os.makedirs(os.path.join(DIST, "icones"))
-    for n in ARQUIVOS:
+    os.makedirs(os.path.join(DIST, "icons"))
+    for n in FILES:
         if n == "manifest.json":
             with open(os.path.join(DIST, n), "w", encoding="utf-8") as f:
-                json.dump(manifesto, f, ensure_ascii=False, indent=2)
+                json.dump(manifest, f, ensure_ascii=False, indent=2)
                 f.write("\n")
             continue
-        shutil.copyfile(os.path.join(FONTE, n), os.path.join(DIST, n))
+        shutil.copyfile(os.path.join(SOURCE, n), os.path.join(DIST, n))
     shutil.copyfile(os.path.join(APP, "src", "lib", "style", "tokens.css"), os.path.join(DIST, "tokens.css"))
     shutil.copyfile(os.path.join(APP, "src", "lib", "components", "icons.js"), os.path.join(DIST, "icons.js"))
-    for t in TAMANHOS_ICONE:
+    for t in ICON_SIZES:
         shutil.copyfile(
-            os.path.join(RAIZ, "docs", "design", "icones", f"extensao-destravado-{t}.png"),
-            os.path.join(DIST, "icones", f"extensao-{t}.png"),
+            os.path.join(ROOT, "docs", "design", "icones", f"extensao-destravado-{t}.png"),
+            os.path.join(DIST, "icons", f"extension-{t}.png"),
         )
-    fontes_css()
-    marca_js()
-    conferir_pacote()
+    fonts_css()
+    brand_js()
+    check_package()
     print(f"extensão montada em extension/dist/ (id {eid})")
 
 

@@ -1132,6 +1132,29 @@ Telas `Settings`, `Unlock`, `ChangePassword`, `ChangePin`, `ChooseUsbDrive`, `li
 | `extensao/dist/` | `extension/dist/` |
 | `target/extensao/ward.crx` (saída do `make extensao-crx`) | `target/extension/ward.crx` (Fase 5) |
 
+Código da extensão e do montador (Fase 39). Os campos do protocolo de native messaging e
+das mensagens internas (`t`, `aba`, `usuario`, `senha`, `origem`, `erro`, `documento`,
+`entrada`, `nome`, `grupo`, `ambiente`, `problemas`…) ficam até a Fase 52 (seção 12;
+chaves entre aspas e `frozen.txt`); os motivos de `fillInPage` (`'origem'`, `'quadro'`,
+`'sem_campo'`, `'formulario'`, `'falha'`) e os desfechos do `ward login` (`'enviado'`,
+`'recusado'`, `'aba_mudou'`…) também, porque viram código de erro do fio.
+
+| Antigo | Novo |
+|---|---|
+| `page.js` › `pedeJanela`, `sondar`, `sondarDepois`, `preencherNaPagina(origemEsperada, usuario, senhaB64, totp, enviar)` | `needsWindow`, `probe`, `probeAfterSubmit`, `fillInPage(expectedOrigin, username, passwordB64, totp, submit)` |
+| resultado de `sondar`/`sondarDepois` `{ origem, topo, pronto, senha }` | `{ origin, top, ready, password }` |
+| resultado de `preencherNaPagina` `{ ok, motivo, enviado, usuario, totp }` | `{ ok, reason, submitted, username, totp }` (os valores de `reason` ficam) |
+| `login.js` › `iniciarLogin`, `porta`, `esperando`, `pedir`, `fechar`, `caiu`, `conectar`, `laco`, `atender`, `injetar`, `depoisDoEnvio`, `dormir` | `startLogin`, `port`, `waiting`, `request`, `close`, `dropped`, `connect`, `loop`, `serve`, `inject`, `afterSubmit`, `sleep` |
+| `service.js` › `pendentes`, `descartar`, `enviar`, `origemDa`, `urlDaEntrada`, `doContentScript`, `doPopup`, `aoEnviar`, `pedirPorPorta`, `preencherComJanela`, `salvar`, `PRAZO_MS`, `PRAZO_JANELA_MS`, `AMBIENTES` | `pendingLogins`, `discard`, `send`, `originOf`, `entryUrl`, `fromContentScript`, `fromPopup`, `onSubmitted`, `requestByPort`, `fillWithWindow`, `save`, `TIMEOUT_MS`, `WINDOW_TIMEOUT_MS`, `ENVIRONMENTS` |
+| `submit.js` › `aoEnviar`, `MINIMO`, `pegar`, `tipoDe`, `valorDe`, `desabilitado`, `atributo`, `dentro`, `retangulo`, `antes`, `ehForm`, `visivel` | `onSubmit`, `MINIMUM`, `getter`, `typeOf`, `valueOf`, `disabled`, `attribute`, `within`, `rect`, `before`, `isForm`, `visible` |
+| `popup.js` › `raiz`, `texto`, `icone`, `simbolo`, `cabecalho`, `botaoAbrirWard`, `mostrar`, `mostrarTravado`, `mostrarAviso`, `mostrarSugestoes`, `mostrarSalvar`, `falhou`, `preencher`, `pedirAoServico`, `sugestoesDoHost`, `campoTexto`, `campoSelect`, `codigoDe`, `iniciar` | `root`, `text`, `icon`, `symbol`, `header`, `openWardButton`, `show`, `showLocked`, `showNotice`, `showSuggestions`, `showSave`, `fail`, `fill`, `askService`, `hostSuggestions`, `textField`, `selectField`, `errorCode`, `start` |
+| `popup.js` › `NOTA`, `NOTA_VAZIA`, `FALHAS`, `AGUARDANDO_JANELA`, `FALHA_PADRAO`, `ROTULOS_HOST`, `ROTULO_CAMPO`, `FALHAS_SALVAR` | `NOTE`, `EMPTY_NOTE`, `FAILURES`, `WAITING_WINDOW`, `DEFAULT_FAILURE`, `HOST_LABELS`, `FIELD_OF_PROBLEM`, `SAVE_FAILURES` (novo: `STATUS_LABEL`, o texto `destravado`/`travado` do selo, que antes vinha da classe) |
+| classes do popup: `cabecalho`, `simbolo`, `simbolo-botao`, `nome-produto`, `estado` (`destravado`, `travado`), `corpo`, `origem`, `origem-textos`, `origem-rotulo`, `origem-valor`, `secundario`, `lista`, `item-textos`, `linha`, `item-nome`, `item-detalhe`, `badge-ambiente`, `badge-tipo`, `icone`, `nota`, `erro`, `rodape`, `botao`, `secundario-botao`, `primario` | `header`, `symbol`, `button-symbol`, `product-name`, `status` (`unlocked`, `locked`), `body`, `origin`, `origin-texts`, `origin-label`, `origin-value`, `secondary`, `list`, `item-texts`, `row`, `item-name`, `item-detail`, `badge-environment`, `badge-type`, `icon`, `note`, `error`, `footer`, `button`, `secondary-button`, `primary` (`item`, `avatar`, `popup`, `select` ficam) |
+| classes do travado e do salvar: `corpo-travado`, `avatar-grande`, `titulo-travado`, `texto-travado`, `com-formulario`, `popup-salvar`, `corpo-salvar`, `introducao`, `titulo-salvar`, `texto-salvar`, `campo`, `rotulo`, `entrada`, `entrada-mascara`, `mascara`, `entrada-select`, `ajuda`, `ajuda-fixa`, `com-erro`, `linha-dupla`, `nivel-inicial`, `nivel-textos`, `nivel-titulo`, `nivel-texto`, `rodape-salvar` | `locked-body`, `avatar-large`, `locked-title`, `locked-text`, `with-form`, `popup-save`, `save-body`, `intro`, `save-title`, `save-text`, `field`, `label`, `field-input`, `field-input-mask`, `mask`, `select-input`, `help`, `help-fixed`, `with-error`, `double-row`, `initial-level`, `level-texts`, `level-title`, `level-text`, `save-footer` |
+| ids do salvar `nome`, `usuario`, `tipo`, `ambiente`, `grupo`; `data-entrada` | `entry-name`, `entry-username`, `entry-type`, `entry-environment`, `entry-group`; `data-entry` |
+| `dist/`: `fontes.css`, `fontes/`, `marca.js` (`SIMBOLO` `{ caixa, t, d }`), `icones/extensao-<n>.png` | `fonts.css`, `fonts/`, `brand.js` (`SYMBOL` `{ box, t, d }`), `icons/extension-<n>.png` (a fonte `docs/design/icones/extensao-destravado-<n>.png` fica) |
+| `dev/extension/build.py` › `RAIZ`, `FONTE`, `ARQUIVOS`, `FONTES`, `TAMANHOS_ICONE`, `PERMISSOES`, `CHAVES_PROIBIDAS`, `PADROES_CONTENT`, `EXTENSOES`, `PROIBIDOS`, `PROIBIDOS_POR_ARQUIVO`, `falha`, `chave_publica`, `id_da_chave`, `id_do_host`, `conferir_manifesto`, `fontes_css`, `marca_js`, `conferir_pacote`; prefixo `montar-extensao:` | `ROOT`, `SOURCE`, `FILES`, `FONTS`, `ICON_SIZES`, `PERMISSIONS`, `FORBIDDEN_KEYS`, `CONTENT_PATTERNS`, `EXTENSIONS`, `FORBIDDEN`, `FORBIDDEN_PER_FILE`, `fail`, `public_key`, `key_id`, `host_id`, `check_manifest`, `fonts_css`, `brand_js`, `check_package`; `extension-build:` |
+
 ### Instalação (Fases 5 e 47)
 
 | Antigo | Novo |
