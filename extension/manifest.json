@@ -38,17 +38,17 @@
     "default_title": "Ward",
     "default_popup": "popup.html",
     "default_icon": {
-      "16": "icones/extensao-16.png",
-      "32": "icones/extensao-32.png",
-      "48": "icones/extensao-48.png",
-      "128": "icones/extensao-128.png"
+      "16": "icons/extension-16.png",
+      "32": "icons/extension-32.png",
+      "48": "icons/extension-48.png",
+      "128": "icons/extension-128.png"
     }
   },
   "icons": {
-    "16": "icones/extensao-16.png",
-    "32": "icones/extensao-32.png",
-    "48": "icones/extensao-48.png",
-    "128": "icones/extensao-128.png"
+    "16": "icons/extension-16.png",
+    "32": "icons/extension-32.png",
+    "48": "icons/extension-48.png",
+    "128": "icons/extension-128.png"
   },
   "content_security_policy": {
     "extension_pages": "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'"

@@ -1,67 +1,69 @@
-// Popup da extensão (Fase 41; D5, D9; V6.2, V6.4–V6.7): "Sugestões do domínio".
+// Extension popup (Phase 41; D5, D9; V6.2, V6.4–V6.7): the domain suggestions.
 //
-// Fluxo, todo dentro do popup (não há service worker, content script fixo nem ouvinte de
-// mensagem; a página não tem com quem falar, V6.6):
-//  1. a origem da aba ativa sai do `tab.url` (permissão `activeTab`, dada pelo clique no
-//     ícone) e vai ao `ward-nm` em `sugerir`; quem compara com a URL das entradas é o
-//     daemon (D9);
-//  2. no clique numa entrada, uma sonda roda no quadro principal (`frameIds: [0]`) e
-//     devolve a origem do documento e o `documentId` dele; a origem tem de ser a mesma
-//     do passo 1;
-//  3. `preencher` vai ao daemon com essa origem; a resposta (senha em base64) segue
-//     direto como argumento para o preenchimento, injetado só naquele `documentId` (se a
-//     aba navegou, o Chrome recusa) e que confere a origem de novo antes de escrever;
-//  4. a resposta é descartada e o popup fecha (o contexto dele some).
+// Flow, all inside the popup (there is no service worker, fixed content script nor
+// message listener in it; the page has no one to talk to, V6.6):
+//  1. the active tab origin comes from `tab.url` (the `activeTab` permission, given by
+//     the click on the icon) and goes to `ward-nm` in the suggest operation; the daemon
+//     is the one that compares it with the entries' URL (D9);
+//  2. on a click on an entry, a probe runs in the main frame (`frameIds: [0]`) and
+//     returns the document origin and its `documentId`; the origin must be the same as
+//     in step 1;
+//  3. the fill operation goes to the daemon with that origin; the reply (password in
+//     base64) goes straight as an argument to the fill, injected only in that
+//     `documentId` (if the tab navigated, Chrome refuses) and which checks the origin
+//     again before writing;
+//  4. the reply is dropped and the popup closes (its context goes away).
 //
-// Fase 44c (D9): numa origem `http` (`localhost`/`127.0.0.1`), e desde a Fase 44e em
-// todo host desta máquina em `https` (`pedeJanela`, em `page.js`), o daemon só responde
-// depois de o usuário confirmar a origem na janela do Ward, e o popup fecha quando a
-// janela pega o foco. Por isso, nessa origem, os passos 3 e 4 ficam com o service
-// worker (`service.js`): o popup manda a aba, o `documentId` da sonda, a entrada e a
-// origem, e a senha nunca passa por aqui.
+// Phase 44c (D9): on an `http` origin (`localhost`/`127.0.0.1`), and since Phase 44e on
+// every host of this machine in `https` (`needsWindow`, in `page.js`), the daemon only
+// replies after the user confirms the origin in the Ward window, and the popup closes
+// when the window takes the focus. So, on that origin, steps 3 and 4 belong to the
+// service worker (`service.js`): the popup sends the tab, the probe's `documentId`, the
+// entry and the origin, and the password never passes through here.
 //
-// Fase 42 (V6.8): se o service worker tem um login novo pendente para esta aba (o
-// content script viu o envio e o daemon disse que ele não está no cofre), o popup
-// mostra "Salvar login novo" no lugar das sugestões. A senha nunca chega ao popup: o
-// service worker devolve só a origem e o usuário, e no "Salvar" o popup manda nome,
-// usuário, grupo e ambiente; quem junta a senha e fala com o daemon é o service worker.
+// Phase 42 (V6.8): if the service worker has a pending new login for this tab (the
+// content script saw the submit and the daemon said it is not in the vault), the popup
+// shows the save-new-login form in place of the suggestions. The password never reaches
+// the popup: the service worker returns only the origin and the username, and on "Save"
+// the popup sends name, username, group and environment; the service worker is the one
+// that adds the password and talks to the daemon.
 //
-// Nada é guardado: sem a permissão `storage` (a API de armazenamento da extensão nem
-// existe aqui), sem armazenamento da página, nada no DOM do popup além de nome, usuário
-// e ambiente. Os textos vêm
-// do daemon e entram só por `textContent` (nunca HTML).
+// Nothing is kept: no `storage` permission (the extension storage API does not even
+// exist here), no page storage, nothing in the popup DOM besides name, username and
+// environment. The texts come from the daemon and go in only through `textContent`
+// (never HTML).
 
 import { ICONS } from './icons.js';
-import { SIMBOLO } from './marca.js';
-import { pedeJanela, preencherNaPagina, sondar } from './page.js';
+import { SYMBOL } from './brand.js';
+import { needsWindow, fillInPage, probe } from './page.js';
 
 const HOST = 'br.ward.nm';
 const SVG = 'http://www.w3.org/2000/svg';
-const raiz = document.getElementById('popup');
+const root = document.getElementById('popup');
 
-/** Elemento com classes e filhos (texto entra como nó de texto, nunca HTML). */
-function el(tag, classes, filhos = []) {
+/** Element with classes and children (text goes in as a text node, never HTML). */
+function el(tag, classes, children = []) {
   const e = document.createElement(tag);
   if (classes) e.className = classes;
-  for (const f of filhos) e.append(f);
+  for (const c of children) e.append(c);
   return e;
 }
 
-function texto(tag, classes, conteudo) {
+function text(tag, classes, content) {
   const e = el(tag, classes);
-  e.textContent = conteudo;
+  e.textContent = content;
   return e;
 }
 
-/** `Ícone/<nome>` (20×20, traço 1,5) no tom pedido. */
-function icone(nome, tamanho, tom) {
+/** Icon `<name>` (20×20, stroke 1.5) in the requested tone. */
+function icon(name, size, tone) {
   const svg = document.createElementNS(SVG, 'svg');
-  svg.setAttribute('class', `icone ${tamanho}`);
+  svg.setAttribute('class', `icon ${size}`);
   svg.setAttribute('viewBox', '0 0 20 20');
   svg.setAttribute('fill', 'none');
   svg.setAttribute('aria-hidden', 'true');
-  if (tom) svg.setAttribute('data-icon-tone', tom);
-  for (const c of ICONS[nome] ?? []) {
+  if (tone) svg.setAttribute('data-icon-tone', tone);
+  for (const c of ICONS[name] ?? []) {
     const p = document.createElementNS(SVG, 'path');
     p.setAttribute('transform', c.t);
     p.setAttribute('d', c.d);
@@ -73,41 +75,44 @@ function icone(nome, tamanho, tom) {
   return svg;
 }
 
-/** Símbolo do Ward (`Logo/símbolo`), na cor do texto do elemento. */
-function simbolo(classe) {
+/** The Ward symbol (logo symbol component), in the element's text color. */
+function symbol(cls) {
   const svg = document.createElementNS(SVG, 'svg');
-  svg.setAttribute('class', classe);
-  svg.setAttribute('viewBox', SIMBOLO.caixa);
+  svg.setAttribute('class', cls);
+  svg.setAttribute('viewBox', SYMBOL.box);
   svg.setAttribute('aria-hidden', 'true');
   const p = document.createElementNS(SVG, 'path');
-  p.setAttribute('transform', SIMBOLO.t);
-  p.setAttribute('d', SIMBOLO.d);
+  p.setAttribute('transform', SYMBOL.t);
+  p.setAttribute('d', SYMBOL.d);
   p.setAttribute('fill', 'currentColor');
   svg.append(p);
   return svg;
 }
 
-/** `Cabeçalho do popup` (17234): destravado ou travado. */
-function cabecalho(estado) {
-  const filhos = [simbolo('simbolo'), texto('span', 'nome-produto title-section', 'ward')];
-  if (estado) filhos.push(texto('span', `estado ${estado} text-badge`, estado));
-  return el('header', 'cabecalho', filhos);
+/** Text of the status badge (shown as is). */
+const STATUS_LABEL = { unlocked: 'destravado', locked: 'travado' };
+
+/** Popup header (node 17234): unlocked or locked. */
+function header(status) {
+  const children = [symbol('symbol'), text('span', 'product-name title-section', 'ward')];
+  if (status) children.push(text('span', `status ${status} text-badge`, STATUS_LABEL[status]));
+  return el('header', 'header', children);
 }
 
-/** Native messaging com o `ward-nm`; `null` se o host não respondeu. */
-async function enviar(pedido) {
+/** Native messaging with `ward-nm`; `null` if the host did not reply. */
+async function send(request) {
   try {
-    const r = await chrome.runtime.sendNativeMessage(HOST, pedido);
+    const r = await chrome.runtime.sendNativeMessage(HOST, request);
     return r && typeof r === 'object' ? r : null;
   } catch {
     return null;
   }
 }
 
-const codigoDe = (r) => (r && r.tipo === 'erro' && r.dados ? r.dados.codigo : null);
+const errorCode = (r) => (r && r.tipo === 'erro' && r.dados ? r.dados.codigo : null);
 
-/** Só `http:`/`https:` têm origem para preencher; o resto (chrome:, file:, about:) não. */
-function origemDa(url) {
+/** Only `http:`/`https:` have an origin to fill; the rest (chrome:, file:, about:) do not. */
+function originOf(url) {
   try {
     const u = new URL(url);
     if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
@@ -117,195 +122,196 @@ function origemDa(url) {
   }
 }
 
-function botaoAbrirWard(classe, rotulo, comSimbolo) {
-  const filhos = comSimbolo ? [simbolo('simbolo-botao')] : [];
-  filhos.push(texto('span', 'text-body-strong', rotulo));
-  const b = el('button', `botao ${classe}`, filhos);
+function openWardButton(cls, label, withSymbol) {
+  const children = withSymbol ? [symbol('button-symbol')] : [];
+  children.push(text('span', 'text-body-strong', label));
+  const b = el('button', `button ${cls}`, children);
   b.type = 'button';
   b.addEventListener('click', async () => {
     b.disabled = true;
-    await enviar({ v: 1, op: 'abrir_app' });
+    await send({ v: 1, op: 'abrir_app' });
     window.close();
   });
   return b;
 }
 
-function mostrar(...filhos) {
-  raiz.replaceChildren(...filhos);
+function show(...children) {
+  root.replaceChildren(...children);
 }
 
-/** Frame `Extensão / Cofre travado` (17392). */
-function mostrarTravado(host) {
-  const alvo = host ? `as entradas de ${host}` : 'as entradas desta aba';
-  mostrar(
-    cabecalho('travado'),
-    el('section', 'corpo-travado', [
-      el('div', 'avatar-grande', [icone('lock', 'md')]),
-      texto('h1', 'titulo-travado title-modal', 'O cofre está travado'),
-      texto('p', 'texto-travado text-body', `Destrave no app do Ward para ver ${alvo}.`),
-      botaoAbrirWard('primario', 'Abrir o Ward para destravar', false),
-      texto('p', 'nota text-caption', 'A extensão nunca pede a senha mestra.'),
+/** Frame of the locked vault (node 17392). */
+function showLocked(host) {
+  const target = host ? `as entradas de ${host}` : 'as entradas desta aba';
+  show(
+    header('locked'),
+    el('section', 'locked-body', [
+      el('div', 'avatar-large', [icon('lock', 'md')]),
+      text('h1', 'locked-title title-modal', 'O cofre está travado'),
+      text('p', 'locked-text text-body', `Destrave no app do Ward para ver ${target}.`),
+      openWardButton('primary', 'Abrir o Ward para destravar', false),
+      text('p', 'note text-caption', 'A extensão nunca pede a senha mestra.'),
     ]),
   );
 }
 
-function mostrarAviso(mensagem) {
-  mostrar(
-    cabecalho(null),
-    el('section', 'corpo', [texto('p', 'nota text-small', mensagem)]),
-    el('footer', 'rodape', [botaoAbrirWard('secundario-botao', 'Abrir o Ward', true)]),
+function showNotice(message) {
+  show(
+    header(null),
+    el('section', 'body', [text('p', 'note text-small', message)]),
+    el('footer', 'footer', [openWardButton('secondary-button', 'Abrir o Ward', true)]),
   );
 }
 
-const NOTA =
+const NOTE =
   'Clique numa entrada para preencher usuário, senha e TOTP nesta aba. Só aparecem entradas desta origem, e nada fica salvo no navegador.';
 
-const NOTA_VAZIA =
+const EMPTY_NOTE =
   'Só aparecem entradas com a mesma origem desta aba (esquema, endereço e porta), e nada fica salvo no navegador.';
 
-const FALHAS = {
-  origem: 'A aba mudou de endereço. Abra o Ward de novo nesta página.',
-  quadro: 'A aba mudou de endereço. Abra o Ward de novo nesta página.',
-  sem_campo: 'Não achei um campo de senha visível nesta página. Nada foi preenchido.',
-  origem_diferente: 'A origem da aba não confere com a da entrada. Nada foi preenchido.',
-  entrada_inexistente: 'Essa entrada não existe mais no cofre.',
-  // Fase 44c: a confirmação da origem `http` na janela do Ward.
-  negado: 'O preenchimento foi negado na janela do Ward. Nada foi enviado à página.',
-  expirado: 'A confirmação na janela do Ward expirou. Nada foi preenchido.',
-  aprovacao_indisponivel:
+// Keys: the fill reasons of `fillInPage` and the daemon error codes (wire names).
+const FAILURES = {
+  'origem': 'A aba mudou de endereço. Abra o Ward de novo nesta página.',
+  'quadro': 'A aba mudou de endereço. Abra o Ward de novo nesta página.',
+  'sem_campo': 'Não achei um campo de senha visível nesta página. Nada foi preenchido.',
+  'origem_diferente': 'A origem da aba não confere com a da entrada. Nada foi preenchido.',
+  'entrada_inexistente': 'Essa entrada não existe mais no cofre.',
+  // Phase 44c: the confirmation of the `http` origin in the Ward window.
+  'negado': 'O preenchimento foi negado na janela do Ward. Nada foi enviado à página.',
+  'expirado': 'A confirmação na janela do Ward expirou. Nada foi preenchido.',
+  'aprovacao_indisponivel':
     'O app do Ward não abriu para confirmar a origem. Nada foi preenchido.',
 };
 
-const AGUARDANDO_JANELA =
+const WAITING_WINDOW =
   'Endereço desta máquina: confirme a origem na janela do Ward para preencher.';
-const FALHA_PADRAO = 'Não deu para preencher. Nada foi enviado à página.';
+const DEFAULT_FAILURE = 'Não deu para preencher. Nada foi enviado à página.';
 
-/** Frame `Extensão / Sugestões do domínio` (17332). */
-function mostrarSugestoes(aba, origem, itens) {
-  const nota = texto('p', 'nota text-caption', itens.length ? NOTA : NOTA_VAZIA);
-  const n = itens.length;
-  const rotulo =
+/** Frame of the domain suggestions (node 17332). */
+function showSuggestions(tab, origin, items) {
+  const note = text('p', 'note text-caption', items.length ? NOTE : EMPTY_NOTE);
+  const n = items.length;
+  const label =
     n === 0
       ? 'Nenhuma entrada para esta origem'
       : `${n} ${n === 1 ? 'entrada' : 'entradas'} para esta origem`;
-  const botoes = [];
-  const lista = el(
+  const buttons = [];
+  const list = el(
     'ul',
-    'lista',
-    itens.map((s) => {
-      const detalhe = s.totp ? `${s.usuario} · com TOTP` : s.usuario;
+    'list',
+    items.map((s) => {
+      const detail = s.totp ? `${s.usuario} · com TOTP` : s.usuario;
       const b = el('button', 'item', [
-        el('span', 'avatar', [icone('type-login', 'md')]),
-        el('span', 'item-textos', [
-          el('span', 'linha', [
-            texto('span', 'item-nome text-body-strong', s.nome),
-            texto('span', `badge-ambiente ${s.ambiente} text-badge`, s.ambiente),
+        el('span', 'avatar', [icon('type-login', 'md')]),
+        el('span', 'item-texts', [
+          el('span', 'row', [
+            text('span', 'item-name text-body-strong', s.nome),
+            text('span', `badge-environment ${s.ambiente} text-badge`, s.ambiente),
           ]),
-          el('span', 'linha', [
-            el('span', 'badge-tipo text-tag', [icone('type-login', 'xs'), 'login']),
-            texto('span', 'item-detalhe text-small', detalhe),
+          el('span', 'row', [
+            el('span', 'badge-type text-tag', [icon('type-login', 'xs'), 'login']),
+            text('span', 'item-detail text-small', detail),
           ]),
         ]),
       ]);
       b.type = 'button';
-      b.dataset.entrada = s.nome;
-      b.addEventListener('click', () => preencher(aba, origem, s.nome, botoes, nota));
-      botoes.push(b);
+      b.dataset.entry = s.nome;
+      b.addEventListener('click', () => fill(tab, origin, s.nome, buttons, note));
+      buttons.push(b);
       return el('li', null, [b]);
     }),
   );
-  mostrar(
-    cabecalho('destravado'),
-    el('section', 'corpo', [
-      el('div', 'origem', [
-        icone('lock', 'md'),
-        el('div', 'origem-textos', [
-          texto('span', 'origem-rotulo text-caption', 'Origem da aba'),
-          texto('span', 'origem-valor mono-small', origem),
+  show(
+    header('unlocked'),
+    el('section', 'body', [
+      el('div', 'origin', [
+        icon('lock', 'md'),
+        el('div', 'origin-texts', [
+          text('span', 'origin-label text-caption', 'Origem da aba'),
+          text('span', 'origin-value mono-small', origin),
         ]),
       ]),
-      texto('p', 'nota secundario text-label', rotulo),
-      ...(n ? [lista] : []),
-      nota,
+      text('p', 'note secondary text-label', label),
+      ...(n ? [list] : []),
+      note,
     ]),
-    el('footer', 'rodape', [botaoAbrirWard('secundario-botao', 'Abrir o Ward', true)]),
+    el('footer', 'footer', [openWardButton('secondary-button', 'Abrir o Ward', true)]),
   );
 }
 
-function falhou(nota, botoes, motivo) {
-  nota.textContent = FALHAS[motivo] ?? FALHA_PADRAO;
-  nota.classList.add('erro');
-  for (const b of botoes) b.disabled = false;
+function fail(note, buttons, reason) {
+  note.textContent = FAILURES[reason] ?? DEFAULT_FAILURE;
+  note.classList.add('error');
+  for (const b of buttons) b.disabled = false;
 }
 
-async function preencher(aba, origem, nome, botoes, nota) {
-  for (const b of botoes) b.disabled = true;
-  // 2. Sonda: o documento do quadro principal, a origem dele e o id do documento.
-  let sonda;
+async function fill(tab, origin, name, buttons, note) {
+  for (const b of buttons) b.disabled = true;
+  // 2. Probe: the main frame document, its origin and the document id.
+  let probed;
   try {
-    [sonda] = await chrome.scripting.executeScript({
-      target: { tabId: aba.id, frameIds: [0] },
+    [probed] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id, frameIds: [0] },
       world: 'ISOLATED',
-      func: sondar,
+      func: probe,
     });
   } catch {
-    falhou(nota, botoes, 'origem');
+    fail(note, buttons, 'origem');
     return;
   }
-  const doc = sonda && sonda.result;
-  if (!doc || doc.topo !== true || doc.origem !== origem || !sonda.documentId) {
-    falhou(nota, botoes, 'origem');
+  const doc = probed && probed.result;
+  if (!doc || doc.top !== true || doc.origin !== origin || !probed.documentId) {
+    fail(note, buttons, 'origem');
     return;
   }
-  // Fase 44c: origem `http`, com a janela do Ward, pelo service worker. Fase 44e: o
-  // mesmo para todo host desta máquina em `https` (`pedeJanela`).
-  if (pedeJanela(doc.origem)) {
-    nota.textContent = AGUARDANDO_JANELA;
-    nota.classList.remove('erro');
-    const r = await pedirAoServico({
+  // Phase 44c: an `http` origin, with the Ward window, through the service worker.
+  // Phase 44e: the same for every host of this machine in `https` (`needsWindow`).
+  if (needsWindow(doc.origin)) {
+    note.textContent = WAITING_WINDOW;
+    note.classList.remove('error');
+    const r = await askService({
       t: 'preencher',
-      aba: aba.id,
-      documento: sonda.documentId,
-      entrada: nome,
-      origem: doc.origem,
+      'aba': tab.id,
+      'documento': probed.documentId,
+      'entrada': name,
+      'origem': doc.origin,
     });
     if (r && r.ok === true) {
       window.close();
       return;
     }
-    const codigo = r && typeof r.erro === 'string' ? r.erro : null;
-    if (codigo === 'travado') {
-      mostrarTravado(new URL(origem).host);
+    const code = r && typeof r.erro === 'string' ? r.erro : null;
+    if (code === 'travado') {
+      showLocked(new URL(origin).host);
       return;
     }
-    falhou(nota, botoes, codigo);
+    fail(note, buttons, code);
     return;
   }
-  // 3. O daemon compara a origem do documento com a da entrada (D9).
-  let r = await enviar({ v: 1, op: 'preencher', dados: { entrada: nome, origem: doc.origem } });
+  // 3. The daemon compares the document origin with the entry's (D9).
+  let r = await send({ v: 1, op: 'preencher', 'dados': { 'entrada': name, 'origem': doc.origin } });
   if (!r || r.tipo !== 'preenchimento' || !r.dados) {
-    const codigo = codigoDe(r);
+    const code = errorCode(r);
     r = null;
-    if (codigo === 'travado') {
-      mostrarTravado(new URL(origem).host);
+    if (code === 'travado') {
+      showLocked(new URL(origin).host);
       return;
     }
-    falhou(nota, botoes, codigo);
+    fail(note, buttons, code);
     return;
   }
-  let resultado = null;
+  let outcome = null;
   try {
     const d = r.dados;
-    [resultado] = await chrome.scripting.executeScript({
-      target: { tabId: aba.id, documentIds: [sonda.documentId] },
+    [outcome] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id, documentIds: [probed.documentId] },
       world: 'ISOLATED',
-      func: preencherNaPagina,
-      args: [doc.origem, String(d.usuario ?? ''), String(d.senha ?? ''), String(d.totp ?? '')],
+      func: fillInPage,
+      args: [doc.origin, String(d.usuario ?? ''), String(d.senha ?? ''), String(d.totp ?? '')],
     });
   } catch {
-    resultado = null;
+    outcome = null;
   } finally {
-    // 4. A resposta com a senha não fica em lugar nenhum do popup.
+    // 4. The reply with the password stays nowhere in the popup.
     if (r.dados) {
       r.dados.senha = '';
       r.dados.totp = '';
@@ -313,18 +319,18 @@ async function preencher(aba, origem, nome, botoes, nota) {
     }
     r = null;
   }
-  const res = resultado && resultado.result;
+  const res = outcome && outcome.result;
   if (!res || res.ok !== true) {
-    falhou(nota, botoes, res && res.motivo);
+    fail(note, buttons, res && res.reason);
     return;
   }
   window.close();
 }
 
-// --- Fase 42: "Salvar login novo" (frame 17414) -------------------------------------
+// --- Phase 42: save new login (frame 17414) ------------------------------------------
 
-/** Mensagem ao service worker da extensão; `null` se não respondeu. */
-async function pedirAoServico(msg) {
+/** Message to the extension service worker; `null` if it did not reply. */
+async function askService(msg) {
   try {
     const r = await chrome.runtime.sendMessage(msg);
     return r === undefined ? null : r;
@@ -333,230 +339,233 @@ async function pedirAoServico(msg) {
   }
 }
 
-const ROTULOS_HOST = { dev: ['dev', 'desenv', 'local', 'localhost', 'test', 'teste'],
+const HOST_LABELS = { dev: ['dev', 'desenv', 'local', 'localhost', 'test', 'teste'],
   stage: ['stage', 'staging', 'hml', 'homolog', 'homologacao', 'qa', 'uat'] };
 
 /**
- * Sugestões de nome, grupo e ambiente a partir do host (o usuário confere e muda).
- * `painel.stage.clientex.test` → `clientex-stage-painel`, grupo `clientex`, `stage`;
- * `localhost:8083` → `localhost-8083`, grupo `localhost`, `dev`. Sem pista no host, o
- * ambiente sugerido é `prod` (o que mais destaca a aprovação).
+ * Name, group and environment suggestions from the host (the user checks and changes).
+ * `admin.stage.clientex.test` → `clientex-stage-admin`, group `clientex`, `stage`;
+ * `localhost:8083` → `localhost-8083`, group `localhost`, `dev`. With no hint in the
+ * host, the suggested environment is `prod` (the one that stresses approval the most).
  */
-function sugestoesDoHost(origem) {
-  const u = new URL(origem);
+function hostSuggestions(origin) {
+  const u = new URL(origin);
   const host = u.hostname.toLowerCase();
   const ip = /^[0-9.]+$/.test(host) || host.startsWith('[');
-  let rotulos = ip ? [host.replace(/[^0-9a-z]+/g, '-')] : host.split('.').filter(Boolean);
-  if (rotulos.length > 1) rotulos = rotulos.slice(0, -1);
-  const invertidos = [...rotulos].reverse();
-  const limpar = (t) => t.replace(/[^a-z0-9._-]+/g, '-').replace(/^[^a-z0-9]+/, '').slice(0, 64);
-  const nome = limpar([...invertidos, ...(u.port ? [u.port] : [])].join('-'));
-  const grupo = limpar(invertidos[0] || '');
-  let ambiente = 'prod';
-  if (ip || rotulos.some((r) => ROTULOS_HOST.dev.includes(r))) ambiente = 'dev';
-  else if (rotulos.some((r) => ROTULOS_HOST.stage.includes(r))) ambiente = 'stage';
-  return { nome, grupo, ambiente };
+  let labels = ip ? [host.replace(/[^0-9a-z]+/g, '-')] : host.split('.').filter(Boolean);
+  if (labels.length > 1) labels = labels.slice(0, -1);
+  const reversed = [...labels].reverse();
+  const clean = (t) => t.replace(/[^a-z0-9._-]+/g, '-').replace(/^[^a-z0-9]+/, '').slice(0, 64);
+  const name = clean([...reversed, ...(u.port ? [u.port] : [])].join('-'));
+  const group = clean(reversed[0] || '');
+  let environment = 'prod';
+  if (ip || labels.some((r) => HOST_LABELS.dev.includes(r))) environment = 'dev';
+  else if (labels.some((r) => HOST_LABELS.stage.includes(r))) environment = 'stage';
+  return { name, group, environment };
 }
 
-/** `Campo` (340): rótulo, entrada de texto e a linha de ajuda (oculta até um erro). */
-function campoTexto(id, rotulo, valor) {
-  const entrada = el('input', 'entrada text-body');
-  entrada.id = id;
-  entrada.type = 'text';
-  entrada.value = valor;
-  entrada.autocomplete = 'off';
-  entrada.spellcheck = false;
-  const ajuda = texto('p', 'ajuda text-caption', '');
-  ajuda.hidden = true;
-  const r = texto('label', 'rotulo text-label', rotulo);
-  r.htmlFor = id;
-  return el('div', 'campo', [r, entrada, ajuda]);
+/** Text field (component 340): label, text input and the help line (hidden until an
+ * error). */
+function textField(id, label, value) {
+  const input = el('input', 'field-input text-body');
+  input.id = id;
+  input.type = 'text';
+  input.value = value;
+  input.autocomplete = 'off';
+  input.spellcheck = false;
+  const help = text('p', 'help text-caption', '');
+  help.hidden = true;
+  const l = text('label', 'label text-label', label);
+  l.htmlFor = id;
+  return el('div', 'field', [l, input, help]);
 }
 
-/** `Select` (422): rótulo, `<select>` nativo com o chevron do design. */
-function campoSelect(id, rotulo, opcoes, valor) {
+/** `Select` (422): label, native `<select>` with the design chevron. */
+function selectField(id, label, options, value) {
   const sel = el('select', 'select text-body');
   sel.id = id;
-  for (const o of opcoes) {
-    const op = texto('option', null, o);
+  for (const o of options) {
+    const op = text('option', null, o);
     op.value = o;
     sel.append(op);
   }
-  sel.value = valor;
-  const r = texto('label', 'rotulo text-label', rotulo);
-  r.htmlFor = id;
-  const ajuda = texto('p', 'ajuda text-caption', '');
-  ajuda.hidden = true;
-  return el('div', 'campo', [r, el('div', 'entrada-select', [sel, icone('chevron-down', 'md')]), ajuda]);
+  sel.value = value;
+  const l = text('label', 'label text-label', label);
+  l.htmlFor = id;
+  const help = text('p', 'help text-caption', '');
+  help.hidden = true;
+  return el('div', 'field', [l, el('div', 'select-input', [sel, icon('chevron-down', 'md')]), help]);
 }
 
-const ROTULO_CAMPO = { nome: 'nome', grupo: 'grupo', ambiente: 'ambiente', usuario: 'usuario', senha: 'senha', url: 'url' };
+/** Field of a daemon validation problem (wire name) → field of the form. */
+const FIELD_OF_PROBLEM = { 'nome': 'name', 'grupo': 'group', 'ambiente': 'environment', 'usuario': 'username', 'senha': 'password', url: 'url' };
 
-const FALHAS_SALVAR = {
-  expirou: 'O pedido para salvar expirou. Envie o formulário de novo.',
-  pedido_invalido: 'Confira nome, usuário e ambiente.',
-  sem_resposta: 'O Ward não respondeu. Nada foi salvo.',
+// Keys: local codes of the service worker (wire names until m2:Phase 52).
+const SAVE_FAILURES = {
+  'expirou': 'O pedido para salvar expirou. Envie o formulário de novo.',
+  'pedido_invalido': 'Confira nome, usuário e ambiente.',
+  'sem_resposta': 'O Ward não respondeu. Nada foi salvo.',
 };
 
-/** Frame `Extensão / Salvar login novo` (17414; 18850 com o conteúdo inteiro). */
-function mostrarSalvar(aba, origem, usuario) {
-  const host = new URL(origem).host;
-  const sug = sugestoesDoHost(origem);
-  const nome = campoTexto('nome', 'Nome', sug.nome);
-  const campoUsuario = campoTexto('usuario', 'Usuário', usuario);
-  const senha = el('div', 'campo', [
-    texto('span', 'rotulo text-label', 'Senha'),
-    // Máscara fixa: nem o valor nem o tamanho da senha chegam ao popup.
-    el('div', 'entrada entrada-mascara', [texto('span', 'mascara text-body', '••••••••••••')]),
-    texto('p', 'ajuda ajuda-fixa text-caption', 'Vai direto para o cofre; a extensão não mostra nem guarda.'),
+/** Frame of the save new login form (node 17414; 18850 with the whole content). */
+function showSave(tab, origin, username) {
+  const host = new URL(origin).host;
+  const sug = hostSuggestions(origin);
+  const name = textField('entry-name', 'Nome', sug.name);
+  const usernameField = textField('entry-username', 'Usuário', username);
+  const password = el('div', 'field', [
+    text('span', 'label text-label', 'Senha'),
+    // Fixed mask: neither the value nor the length of the password reaches the popup.
+    el('div', 'field-input field-input-mask', [text('span', 'mask text-body', '••••••••••••')]),
+    text('p', 'help help-fixed text-caption', 'Vai direto para o cofre; a extensão não mostra nem guarda.'),
   ]);
-  const tipo = campoSelect('tipo', 'Tipo', ['login'], 'login');
-  const ambiente = campoSelect('ambiente', 'Ambiente', ['dev', 'stage', 'prod'], sug.ambiente);
-  const grupo = campoTexto('grupo', 'Grupo', sug.grupo);
-  const campos = { nome, usuario: campoUsuario, grupo, ambiente };
-  const nota = texto('p', 'nota erro text-caption', '');
-  nota.hidden = true;
+  const type = selectField('entry-type', 'Tipo', ['login'], 'login');
+  const environment = selectField('entry-environment', 'Ambiente', ['dev', 'stage', 'prod'], sug.environment);
+  const group = textField('entry-group', 'Grupo', sug.group);
+  const fields = { name, username: usernameField, group, environment };
+  const note = text('p', 'note error text-caption', '');
+  note.hidden = true;
 
-  const cancelar = el('button', 'botao secundario-botao', [texto('span', 'text-body-strong', 'Agora não')]);
-  cancelar.type = 'button';
-  const salvarBotao = el('button', 'botao primario', [texto('span', 'text-body-strong', 'Salvar no Ward')]);
-  salvarBotao.type = 'submit';
+  const cancel = el('button', 'button secondary-button', [text('span', 'text-body-strong', 'Agora não')]);
+  cancel.type = 'button';
+  const saveButton = el('button', 'button primary', [text('span', 'text-body-strong', 'Salvar no Ward')]);
+  saveButton.type = 'submit';
 
-  const form = el('form', 'popup-salvar', [
-    el('section', 'corpo-salvar', [
-      el('div', 'introducao', [
-        texto('h1', 'titulo-salvar title-modal', 'Salvar este login no Ward?'),
-        texto('p', 'texto-salvar text-small',
+  const form = el('form', 'popup-save', [
+    el('section', 'save-body', [
+      el('div', 'intro', [
+        text('h1', 'save-title title-modal', 'Salvar este login no Ward?'),
+        text('p', 'save-text text-small',
           `O formulário de ${host} foi enviado com um login que ainda não está no cofre.`),
       ]),
-      nome,
-      campoUsuario,
-      senha,
-      el('div', 'linha-dupla', [tipo, ambiente]),
-      grupo,
-      el('div', 'nivel-inicial', [
-        icone('lock', 'md'),
-        el('div', 'nivel-textos', [
-          texto('span', 'nivel-titulo text-body-strong', 'Nível inicial: com aprovação'),
-          texto('span', 'nivel-texto text-caption',
+      name,
+      usernameField,
+      password,
+      el('div', 'double-row', [type, environment]),
+      group,
+      el('div', 'initial-level', [
+        icon('lock', 'md'),
+        el('div', 'level-texts', [
+          text('span', 'level-title text-body-strong', 'Nível inicial: com aprovação'),
+          text('span', 'level-text text-caption',
             'O Claude só usa depois que você aprovar. Para mudar, use o app, com PIN.'),
         ]),
       ]),
-      nota,
+      note,
     ]),
-    el('footer', 'rodape rodape-salvar', [cancelar, salvarBotao]),
+    el('footer', 'footer save-footer', [cancel, saveButton]),
   ]);
   form.noValidate = true;
 
-  const valor = (c) => c.querySelector('input, select').value;
-  const limparErros = () => {
-    nota.hidden = true;
-    for (const c of Object.values(campos)) {
-      c.classList.remove('com-erro');
-      const a = c.querySelector('.ajuda');
+  const value = (c) => c.querySelector('input, select').value;
+  const clearErrors = () => {
+    note.hidden = true;
+    for (const c of Object.values(fields)) {
+      c.classList.remove('with-error');
+      const a = c.querySelector('.help');
       a.hidden = true;
       a.textContent = '';
     }
   };
 
-  // O service worker fica vivo enquanto o popup está aberto (ele guarda o pendente).
-  const manter = setInterval(() => pedirAoServico({ t: 'manter', aba: aba.id }), 20000);
+  // The service worker stays alive while the popup is open (it keeps the pending login).
+  const keepAlive = setInterval(() => askService({ t: 'manter', 'aba': tab.id }), 20000);
 
-  cancelar.addEventListener('click', async () => {
-    clearInterval(manter);
-    await pedirAoServico({ t: 'descartar', aba: aba.id });
+  cancel.addEventListener('click', async () => {
+    clearInterval(keepAlive);
+    await askService({ t: 'descartar', 'aba': tab.id });
     window.close();
   });
 
   form.addEventListener('submit', async (ev) => {
     ev.preventDefault();
-    limparErros();
-    salvarBotao.disabled = true;
-    cancelar.disabled = true;
-    const r = await pedirAoServico({
+    clearErrors();
+    saveButton.disabled = true;
+    cancel.disabled = true;
+    const r = await askService({
       t: 'salvar',
-      aba: aba.id,
-      nome: valor(nome).trim(),
-      usuario: valor(campoUsuario).trim(),
-      grupo: valor(grupo).trim(),
-      ambiente: valor(ambiente),
+      'aba': tab.id,
+      'nome': value(name).trim(),
+      'usuario': value(usernameField).trim(),
+      'grupo': value(group).trim(),
+      'ambiente': value(environment),
     });
-    salvarBotao.disabled = false;
-    cancelar.disabled = false;
+    saveButton.disabled = false;
+    cancel.disabled = false;
     if (r && r.ok === true) {
-      clearInterval(manter);
+      clearInterval(keepAlive);
       window.close();
       return;
     }
-    const codigo = r && typeof r.erro === 'string' ? r.erro : 'sem_resposta';
-    if (codigo === 'travado') {
-      clearInterval(manter);
-      mostrarTravado(host);
+    const code = r && typeof r.erro === 'string' ? r.erro : 'sem_resposta';
+    if (code === 'travado') {
+      clearInterval(keepAlive);
+      showLocked(host);
       return;
     }
-    let geral = codigo === 'validacao' ? '' : (FALHAS_SALVAR[codigo] ?? 'Não deu para salvar. Nada foi gravado.');
+    let general = code === 'validacao' ? '' : (SAVE_FAILURES[code] ?? 'Não deu para salvar. Nada foi gravado.');
     for (const p of (r && Array.isArray(r.problemas) ? r.problemas : [])) {
-      const c = campos[ROTULO_CAMPO[p.campo]];
+      const c = fields[FIELD_OF_PROBLEM[p.campo]];
       if (c) {
-        c.classList.add('com-erro');
-        const a = c.querySelector('.ajuda');
+        c.classList.add('with-error');
+        const a = c.querySelector('.help');
         a.textContent = p.motivo;
         a.hidden = false;
-      } else if (!geral) {
-        geral = `${p.campo}: ${p.motivo}`;
+      } else if (!general) {
+        general = `${p.campo}: ${p.motivo}`;
       }
     }
-    if (geral) {
-      nota.textContent = geral;
-      nota.hidden = false;
+    if (general) {
+      note.textContent = general;
+      note.hidden = false;
     }
   });
 
-  mostrar(cabecalho('destravado'), form);
-  raiz.classList.add('com-formulario');
+  show(header('unlocked'), form);
+  root.classList.add('with-form');
 }
 
-async function iniciar() {
-  let aba = null;
+async function start() {
+  let tab = null;
   try {
-    [aba] = await chrome.tabs.query({ active: true, currentWindow: true });
+    [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   } catch {
-    aba = null;
+    tab = null;
   }
-  const pendente = aba ? await pedirAoServico({ t: 'pendente', aba: aba.id }) : null;
-  if (pendente && typeof pendente.origem === 'string' && typeof pendente.usuario === 'string') {
-    const o = origemDa(pendente.origem);
+  const pending = tab ? await askService({ t: 'pendente', 'aba': tab.id }) : null;
+  if (pending && typeof pending.origem === 'string' && typeof pending.usuario === 'string') {
+    const o = originOf(pending.origem);
     if (o) {
-      mostrarSalvar(aba, o, pendente.usuario);
+      showSave(tab, o, pending.usuario);
       return;
     }
   }
-  const origem = aba && aba.url ? origemDa(aba.url) : null;
-  if (!aba || !origem) {
-    mostrarAviso('Esta aba não tem uma origem http ou https para preencher.');
+  const origin = tab && tab.url ? originOf(tab.url) : null;
+  if (!tab || !origin) {
+    showNotice('Esta aba não tem uma origem http ou https para preencher.');
     return;
   }
-  // 1. Sugestões da origem da aba; o daemon compara (D9).
-  const r = await enviar({ v: 1, op: 'sugerir', dados: { origem } });
+  // 1. Suggestions for the tab origin; the daemon compares (D9).
+  const r = await send({ v: 1, op: 'sugerir', 'dados': { 'origem': origin } });
   if (r && r.tipo === 'sugestoes' && r.dados && Array.isArray(r.dados.itens)) {
-    const itens = r.dados.itens.filter(
+    const items = r.dados.itens.filter(
       (s) =>
         s &&
         typeof s.nome === 'string' &&
         typeof s.usuario === 'string' &&
         ['dev', 'stage', 'prod'].includes(s.ambiente),
     );
-    mostrarSugestoes(aba, origem, itens);
+    showSuggestions(tab, origin, items);
     return;
   }
-  const codigo = codigoDe(r);
-  if (codigo === 'travado') {
-    mostrarTravado(new URL(origem).host);
-  } else if (codigo === 'nao_autorizado') {
-    mostrarAviso('O Ward não reconheceu esta extensão. Confira a instalação do Ward.');
+  const code = errorCode(r);
+  if (code === 'travado') {
+    showLocked(new URL(origin).host);
+  } else if (code === 'nao_autorizado') {
+    showNotice('O Ward não reconheceu esta extensão. Confira a instalação do Ward.');
   } else {
-    mostrarAviso('O Ward não respondeu. Confira se o Ward está instalado e rodando.');
+    showNotice('O Ward não respondeu. Confira se o Ward está instalado e rodando.');
   }
 }
 
-iniciar();
+start();

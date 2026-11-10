@@ -498,22 +498,22 @@ GEOMETRY = """(() => {
   const todos = (s) => [...document.querySelectorAll(s)].map((e) => { const b = e.getBoundingClientRect();
     return [Math.round(b.x), Math.round(b.y), Math.round(b.width), Math.round(b.height)]; });
   const cor = (s, p) => { const e = document.querySelector(s); return e ? getComputedStyle(e)[p] : null; };
-  return { popup: r('#popup'), cabecalho: r('.cabecalho'), simbolo: r('.cabecalho .simbolo'), estado: r('.estado'),
-    origem: r('.origem'), rotulo: r('.corpo > p.secundario'), itens: todos('.item'), avatares: todos('.item .avatar'),
-    badges: todos('.item .badge-ambiente'), tipos: todos('.item .badge-tipo'), nota: r('.corpo > p.nota:last-child'),
-    rodape: r('.rodape'), botao: r('.rodape .botao'),
-    travado: { avatar: r('.avatar-grande'), titulo: r('.titulo-travado'), texto: r('.texto-travado'),
-      botao: r('.corpo-travado .botao'), nota: r('.corpo-travado .nota') },
+  return { popup: r('#popup'), cabecalho: r('.header'), simbolo: r('.header .symbol'), estado: r('.status'),
+    origem: r('.origin'), rotulo: r('.body > p.secondary'), itens: todos('.item'), avatares: todos('.item .avatar'),
+    badges: todos('.item .badge-environment'), tipos: todos('.item .badge-type'), nota: r('.body > p.note:last-child'),
+    rodape: r('.footer'), botao: r('.footer .button'),
+    travado: { avatar: r('.avatar-large'), titulo: r('.locked-title'), texto: r('.locked-text'),
+      botao: r('.locked-body .button'), nota: r('.locked-body .note') },
     fonte: document.fonts.check('500 14px Inter') && document.fonts.check('13px "JetBrains Mono"'),
     cores: { fundo: cor('body', 'backgroundColor'), item0: cor('.item', 'backgroundColor'),
-      estado: cor('.estado', 'color'), nome: cor('.item-nome', 'color'), detalhe: cor('.item-detalhe', 'color'),
-      stage: cor('.badge-ambiente', 'color') },
-    textos: [...document.querySelectorAll('.item')].map((b) => ({ nome: b.querySelector('.item-nome').textContent,
-      amb: b.querySelector('.badge-ambiente').textContent, det: b.querySelector('.item-detalhe').textContent })),
-    origemTexto: (document.querySelector('.origem-valor') || {}).textContent || null,
-    rotuloTexto: (document.querySelector('.corpo > p.secundario') || {}).textContent || null,
-    notaTexto: (document.querySelector('.nota') || {}).textContent || null,
-    estadoTexto: (document.querySelector('.estado') || {}).textContent || null,
+      estado: cor('.status', 'color'), nome: cor('.item-name', 'color'), detalhe: cor('.item-detail', 'color'),
+      stage: cor('.badge-environment', 'color') },
+    textos: [...document.querySelectorAll('.item')].map((b) => ({ nome: b.querySelector('.item-name').textContent,
+      amb: b.querySelector('.badge-environment').textContent, det: b.querySelector('.item-detail').textContent })),
+    origemTexto: (document.querySelector('.origin-value') || {}).textContent || null,
+    rotuloTexto: (document.querySelector('.body > p.secondary') || {}).textContent || null,
+    notaTexto: (document.querySelector('.note') || {}).textContent || null,
+    estadoTexto: (document.querySelector('.status') || {}).textContent || null,
     html: document.documentElement.outerHTML };
 })()"""
 
@@ -563,7 +563,7 @@ def activate(t):
     cdp.cmd("Target.activateTarget", {"targetId": t})
 
 
-def open_popup(t, wait_selector=".item, .corpo-travado, .nota"):
+def open_popup(t, wait_selector=".item, .locked-body, .note"):
     """The click on the icon (`Extensions.triggerAction`): opens the popup and grants activeTab."""
     activate(t)
     cdp.cmd("Extensions.triggerAction", {"id": ID, "targetId": tabs[t]})
@@ -627,7 +627,7 @@ def values(s, ids, context=None):
 
 
 def click_entry(ps, name):
-    evaluate(cdp, ps, f"document.querySelector('[data-entrada=\"{name}\"]').click(), true")
+    evaluate(cdp, ps, f"document.querySelector('[data-entry=\"{name}\"]').click(), true")
 
 
 PASSWORD = {n: e["segredos"]["senha"] for n, e in ENTRIES.items() if e["tipo"] == "login"}
@@ -673,8 +673,8 @@ def unstick(ps, on):
     """Header and footer without `sticky` (through the CSSOM, which the CSP allows): the
     layout becomes the one of frame 18850, with the whole content and no scrolling."""
     v = "static" if on else ""
-    evaluate(cdp, ps, f"document.querySelector('.cabecalho').style.position = '{v}';"
-             f" document.querySelector('.rodape-salvar').style.position = '{v}'; true")
+    evaluate(cdp, ps, f"document.querySelector('.header').style.position = '{v}';"
+             f" document.querySelector('.save-footer').style.position = '{v}'; true")
     cdp.pump(0.2)
 
 
@@ -760,20 +760,20 @@ SAVE_GEOMETRY = """(() => {
   const r = (e) => { if (!e) return null; const b = e.getBoundingClientRect();
     return [Math.round(b.x), Math.round(b.y + window.scrollY), Math.round(b.width), Math.round(b.height)]; };
   const q = (s) => document.querySelector(s);
-  const campo = (id) => document.getElementById(id) ? document.getElementById(id).closest('.campo') : null;
+  const campo = (id) => document.getElementById(id) ? document.getElementById(id).closest('.field') : null;
   const cor = (e, p) => e ? getComputedStyle(e)[p] : null;
-  return { vh: window.innerHeight, cabecalho: r(q('.cabecalho')), introducao: r(q('.introducao')),
-    titulo: r(q('.titulo-salvar')), nome: r(campo('nome')), usuario: r(campo('usuario')),
-    senha: r(q('.entrada-mascara').closest('.campo')), entradaNome: r(q('#nome')), entradaSenha: r(q('.entrada-mascara')),
-    linha: r(q('.linha-dupla')), tipo: r(campo('tipo')), ambiente: r(campo('ambiente')), grupo: r(campo('grupo')),
-    nivel: r(q('.nivel-inicial')), rodape: r(q('.rodape-salvar')), botoes: [...document.querySelectorAll('.rodape-salvar .botao')].map(r),
-    textos: { titulo: q('.titulo-salvar').textContent, intro: q('.texto-salvar').textContent,
-      nome: q('#nome').value, usuario: q('#usuario').value, grupo: q('#grupo').value, ambiente: q('#ambiente').value,
-      tipo: q('#tipo').value, tipos: [...q('#tipo').options].map((o) => o.value), mascara: q('.mascara').textContent,
-      nivel: q('.nivel-titulo').textContent, botoes: [...document.querySelectorAll('.rodape-salvar .botao')].map((b) => b.textContent) },
-    cores: { fundo: cor(document.body, 'backgroundColor'), entrada: cor(q('#nome'), 'backgroundColor'),
-      borda: cor(q('#nome'), 'borderTopColor'), nivel: cor(q('.nivel-inicial'), 'backgroundColor'),
-      primario: cor(q('.botao.primario'), 'backgroundColor'), intro: cor(q('.texto-salvar'), 'color') },
+  return { vh: window.innerHeight, cabecalho: r(q('.header')), introducao: r(q('.intro')),
+    titulo: r(q('.save-title')), nome: r(campo('entry-name')), usuario: r(campo('entry-username')),
+    senha: r(q('.field-input-mask').closest('.field')), entradaNome: r(q('#entry-name')), entradaSenha: r(q('.field-input-mask')),
+    linha: r(q('.double-row')), tipo: r(campo('entry-type')), ambiente: r(campo('entry-environment')), grupo: r(campo('entry-group')),
+    nivel: r(q('.initial-level')), rodape: r(q('.save-footer')), botoes: [...document.querySelectorAll('.save-footer .button')].map(r),
+    textos: { titulo: q('.save-title').textContent, intro: q('.save-text').textContent,
+      nome: q('#entry-name').value, usuario: q('#entry-username').value, grupo: q('#entry-group').value, ambiente: q('#entry-environment').value,
+      tipo: q('#entry-type').value, tipos: [...q('#entry-type').options].map((o) => o.value), mascara: q('.mask').textContent,
+      nivel: q('.level-title').textContent, botoes: [...document.querySelectorAll('.save-footer .button')].map((b) => b.textContent) },
+    cores: { fundo: cor(document.body, 'backgroundColor'), entrada: cor(q('#entry-name'), 'backgroundColor'),
+      borda: cor(q('#entry-name'), 'borderTopColor'), nivel: cor(q('.initial-level'), 'backgroundColor'),
+      primario: cor(q('.button.primary'), 'backgroundColor'), intro: cor(q('.save-text'), 'color') },
     fonte: document.fonts.check('600 18px Inter') && document.fonts.check('500 13px Inter'),
     html: document.documentElement.outerHTML };
 })()"""
@@ -790,7 +790,7 @@ def phase_42_section(t, s):
     wait_for_load(s, "location.pathname === '/ward-teste/fim.html'")
     verify(new_popup(3) is None, "ataque: requestSubmit do script da página (sem ativação do usuário) não oferece salvar", "f42_forjado_sem_popup")
     pt, ps = open_popup(t)
-    verify(pending_from_popup(ps) is None and evaluate(cdp, ps, "!document.querySelector('.popup-salvar')"),
+    verify(pending_from_popup(ps) is None and evaluate(cdp, ps, "!document.querySelector('.popup-save')"),
            "ataque: nada pendente depois do envio forjado", "f42_forjado_sem_pendente")
     close_popup(pt)
 
@@ -832,7 +832,7 @@ def phase_42_section(t, s):
     verify(new_popup(3) is None, "cofre travado no envio: não oferece salvar", "f42_travado_sem_popup")
     unlock()
     pt, ps = open_popup(t)
-    verify(pending_from_popup(ps) is None and evaluate(cdp, ps, "!document.querySelector('.popup-salvar')"),
+    verify(pending_from_popup(ps) is None and evaluate(cdp, ps, "!document.querySelector('.popup-save')"),
            "cofre travado no envio: nada ficou pendente para depois do destravar", "f42_travado_descartado")
     # V6.9: suggestions with the light theme stay dark.
     verify(theme_stays_dark(ps), "V6.9: sugestões do domínio continuam escuras com prefers-color-scheme: light", "v69_tema_sugestoes")
@@ -852,9 +852,9 @@ def phase_42_section(t, s):
     account_msg = evaluate(cdp, s, "document.getElementById('mensagem').textContent")
     verify(account_msg == "Conta criada. Já pode entrar.", "o cadastro no localhost:8083 foi aceito pelo site")
     if pt is None:
-        pt, ps = open_popup(t, ".popup-salvar")
+        pt, ps = open_popup(t, ".popup-save")
     else:
-        ps = attach_popup(pt, ".popup-salvar")
+        ps = attach_popup(pt, ".popup-save")
     verify(alone, "V6.8: enviar o login novo abre o popup \"Salvar login novo\" sozinho", "v68_oferece")
     # Chrome's popup window goes up to 600 high (frame 17414); in headless it is born
     # smaller (cannot be changed through CDP): the footer stays stuck at its bottom.
@@ -930,18 +930,18 @@ def phase_42_section(t, s):
     verify(pending_from_popup(ps) is not None, "o pendente continua lá depois do ataque do content script (só o popup descarta)")
 
     # 7. Invalid name: the daemon refuses and the popup shows the reason in the field.
-    evaluate(cdp, ps, "(() => { const n = document.getElementById('nome'); n.value = 'Nome Inválido'; return true; })()")
-    evaluate(cdp, ps, "document.querySelector('.botao.primario').click(), true")
+    evaluate(cdp, ps, "(() => { const n = document.getElementById('entry-name'); n.value = 'Nome Inválido'; return true; })()")
+    evaluate(cdp, ps, "document.querySelector('.button.primary').click(), true")
     cdp.pump(1.5)
-    name_error = evaluate(cdp, ps, "(() => { const c = document.getElementById('nome').closest('.campo');"
-                          " return c.classList.contains('com-erro') ? c.querySelector('.ajuda').textContent : ''; })()")
+    name_error = evaluate(cdp, ps, "(() => { const c = document.getElementById('entry-name').closest('.field');"
+                          " return c.classList.contains('with-error') ? c.querySelector('.help').textContent : ''; })()")
     verify(name_error.startswith("use letras minúsculas"), f"nome inválido: o motivo do daemon aparece no campo ({name_error})", "f42_erro_validacao")
     screenshot(ps, "salvar-login-novo-erro-nome.png", g["vh"], EVIDENCE_POPUP, beyond=False)
 
     # 8. Save in Ward (the user's name, group and environment).
-    evaluate(cdp, ps, """(() => { document.getElementById('nome').value = 'localhost-8083-novo';
-        document.getElementById('grupo').value = 'teste-fase-42'; document.getElementById('ambiente').value = 'dev'; return true; })()""")
-    evaluate(cdp, ps, "document.querySelector('.botao.primario').click(), true")
+    evaluate(cdp, ps, """(() => { document.getElementById('entry-name').value = 'localhost-8083-novo';
+        document.getElementById('entry-group').value = 'teste-fase-42'; document.getElementById('entry-environment').value = 'dev'; return true; })()""")
+    evaluate(cdp, ps, "document.querySelector('.button.primary').click(), true")
     verify(closed(pt), "V6.8: \"Salvar no Ward\" grava e o popup fecha", "v68_salvou")
     p = subprocess.run([WARD, "lista", "--json"], capture_output=True, timeout=60,
                        env={"PATH": "/usr/bin:/bin", "HOME": WORK_DIR, "WARD_DEV_SOCKET_DIR": SOCKDIR, "LANG": "C.UTF-8"})
@@ -982,9 +982,9 @@ def phase_42_section(t, s):
     type_text(s, "senha", "falso-agora-nao-" + secrets.token_hex(6))
     click(s, "#cadastro button")
     pt = new_popup(15)
-    ps = attach_popup(pt, ".popup-salvar") if pt else None
+    ps = attach_popup(pt, ".popup-save") if pt else None
     if ps:
-        evaluate(cdp, ps, "document.querySelector('.botao.secundario-botao').click(), true")
+        evaluate(cdp, ps, "document.querySelector('.button.secondary-button').click(), true")
     verify(pt is not None and closed(pt), "\"Agora não\" fecha o popup", "f42_agora_nao")
     pt, ps = open_popup(t)
     verify(pending_from_popup(ps) is None, "\"Agora não\": nada fica pendente", "f42_agora_nao_descarta")
@@ -1032,7 +1032,7 @@ try:
         while time.time() < end and "negado" not in note:
             cdp.pump(0.3)
             try:
-                note = evaluate(cdp, ps, "document.querySelector('.nota.erro') ? document.querySelector('.nota.erro').textContent : ''", deadline=5)
+                note = evaluate(cdp, ps, "document.querySelector('.note.error') ? document.querySelector('.note.error').textContent : ''", deadline=5)
             except (RuntimeError, TimeoutError):
                 note = ""
         v = values(s, ["user_login", "user_pass"])
@@ -1115,7 +1115,7 @@ try:
     while time.time() < end and "negado" not in note:
         cdp.pump(0.3)
         try:
-            note = evaluate(cdp, ps, "document.querySelector('.nota.erro') ? document.querySelector('.nota.erro').textContent : ''", deadline=5)
+            note = evaluate(cdp, ps, "document.querySelector('.note.error') ? document.querySelector('.note.error').textContent : ''", deadline=5)
         except (RuntimeError, TimeoutError):
             note = ""
     v = values(s, ["user_login", "user_pass"])
@@ -1172,10 +1172,10 @@ try:
     res = evaluate(cdp, ps, """(async () => { const m = await import('./page.js');
         const [aba] = await chrome.tabs.query({active: true, currentWindow: true});
         const [r] = await chrome.scripting.executeScript({target: {tabId: aba.id, frameIds: [0]}, world: 'ISOLATED',
-          func: m.preencherNaPagina, args: ['http://localhost:8081', 'x', btoa('nao-e-segredo'), '']});
+          func: m.fillInPage, args: ['http://localhost:8081', 'x', btoa('nao-e-segredo'), '']});
         return r.result; })()""")
     v = values(s, ["user_login", "user_pass"])
-    verify(res == {"ok": False, "motivo": "origem"} and v == {"user_login": "", "user_pass": ""},
+    verify(res == {"ok": False, "reason": "origem"} and v == {"user_login": "", "user_pass": ""},
            "injeção com origem esperada diferente da do documento: nada escrito", "injecao_confere_origem")
     close_popup(pt)
 
@@ -1203,7 +1203,7 @@ try:
     navigate(t, "http://localhost:8082/wp-login.php")
     click_entry(ps, "acme-wp-prod")
     cdp.pump(1.5)
-    note = evaluate(cdp, ps, "document.querySelector('.nota.erro') ? document.querySelector('.nota.erro').textContent : ''")
+    note = evaluate(cdp, ps, "document.querySelector('.note.error') ? document.querySelector('.note.error').textContent : ''")
     v = values(s, ["user_login", "user_pass"])
     verify(note.startswith("A aba mudou") and v == {"user_login": "", "user_pass": ""},
            "aba que navegou para o phishing com o popup aberto: nada preenchido", "aba_navegou")
@@ -1240,7 +1240,7 @@ try:
     pt, ps = open_popup(t)
     click_entry(ps, "acme-wp-prod")
     cdp.pump(1.5)
-    note = evaluate(cdp, ps, "document.querySelector('.nota.erro') ? document.querySelector('.nota.erro').textContent : ''")
+    note = evaluate(cdp, ps, "document.querySelector('.note.error') ? document.querySelector('.note.error').textContent : ''")
     children = cdp.cmd("Page.getFrameTree", {}, s)["frameTree"].get("childFrames", [])
     ctx = cdp.cmd("Page.createIsolatedWorld", {"frameId": children[0]["frame"]["id"], "worldName": "conferencia"}, s)["executionContextId"] if children else None
     vi = values(s, ["user_login", "user_pass"], context=ctx) if ctx else None
@@ -1275,7 +1275,7 @@ try:
     pt, ps = open_popup(t)
     click_entry(ps, "acme-wp-prod")
     cdp.pump(1.5)
-    note = evaluate(cdp, ps, "document.querySelector('.nota.erro') ? document.querySelector('.nota.erro').textContent : ''")
+    note = evaluate(cdp, ps, "document.querySelector('.note.error') ? document.querySelector('.note.error').textContent : ''")
     v = values(s, ["isca_user", "isca_pw"])
     verify(note.startswith("Não achei um campo de senha visível") and v == {"isca_user": "", "isca_pw": ""},
            "só campos escondidos: nada preenchido e o popup avisa", "so_escondido")
@@ -1301,7 +1301,7 @@ try:
     # --- locked vault --------------------------------------------------------------------
     verify(req({"v": 1, "op": "travar"}).get("tipo") == "ok", "cofre travado pelo socket")
     navigate(t, "http://localhost:8081/wp-login.php")
-    pt, ps = open_popup(t, ".corpo-travado")
+    pt, ps = open_popup(t, ".locked-body")
     g = evaluate(cdp, ps, GEOMETRY)
     verify(g["estadoTexto"] == "travado" and g["itens"] == [], "travado: o popup mostra o estado e nenhuma entrada", "travado")
     # Measurements of frame 17392 (360×343).
@@ -1323,7 +1323,7 @@ try:
     evaluate(cdp, ps, """(() => { const orig = chrome.runtime.sendNativeMessage.bind(chrome.runtime);
         window.__ops = []; chrome.runtime.sendNativeMessage = async (h, m) => { window.__ops.push(m && m.op);
         await new Promise((r) => setTimeout(r, 1500)); return orig(h, m); };
-        document.querySelector('.corpo-travado .botao').click(); return true; })()""")
+        document.querySelector('.locked-body .button').click(); return true; })()""")
     cdp.pump(0.5)
     ops = evaluate(cdp, ps, "window.__ops")
     verify(ops == ["abrir_app"] and closed(pt), f"V6.9: o botão do travado pede abrir_app ao daemon e o popup fecha ({ops})", "v69_botao_abre_app")
