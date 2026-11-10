@@ -23,6 +23,17 @@ Nada aqui é instalado por `make`: a instalação é manual, feita pelo usuário
    Code: avise antes de seguir a migração.
 4. Tire a skill `cofre` antiga só quando o KeePassXC sair (docs/escopo.md › "Skill `ward`").
 
+## Destravar: só você, pelo caminho completo
+
+A skill nunca destrava (a regra `*ward*destravar*` nega). Quando o Claude avisar que o
+Ward está travado, destrave pelo app ou, num terminal seu (fora do Claude Code, sem
+`!`), com `/usr/local/bin/ward destravar`, nunca com o `ward` que o `PATH` acha. Um
+programa malicioso rodando como você pode pôr um `ward` falso antes no `PATH` (em
+`~/.local/bin`, por exemplo), que mostra o mesmo pedido e guarda a senha mestra. O
+caminho completo pula o `PATH`; não protege de um `~/.bashrc` ou `~/.zshrc` adulterado
+(uma função do shell, ou um alias do zsh, pode ter o nome `/usr/local/bin/ward`), caso
+que fica fora do que o Ward cobre (docs/escopo.md › "Fora do modelo de ameaça", RA8).
+
 ## O que as regras cobrem
 
 - `Read`/`Edit` (valem para todas as ferramentas internas que leem ou editam

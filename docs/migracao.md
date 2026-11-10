@@ -16,6 +16,12 @@ volta.
 - O Ward já está instalado (`sudo make install` ou o `.deb`), o cofre real foi
   criado no app (primeiro uso: senha mestra e PIN) e o kit de emergência está
   impresso, com a senha mestra anotada à mão.
+- Destrave o Ward pelo app. No terminal, use sempre o caminho completo,
+  `/usr/local/bin/ward destravar`, nunca o `ward` que o `PATH` acha: um programa malicioso
+  rodando como você pode pôr um `ward` falso antes no `PATH` (em `~/.local/bin`, por
+  exemplo), que mostra o mesmo pedido e guarda a senha mestra. O caminho completo pula
+  o `PATH`, mas não um `~/.bashrc` ou `~/.zshrc` adulterado (escopo › "Fora do modelo
+  de ameaça", RA8). Os outros comandos `ward` deste guia não pedem a senha mestra.
 - O app do Ward tem o botão **Carregar de arquivo** no campo "Chave privada" das
   entradas `servidor` (Fase 53a). Sem ele, não faça o passo 2b: nenhuma chave
   privada passa pela área de transferência.

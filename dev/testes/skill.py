@@ -21,6 +21,9 @@ falhar.
    cut, `python3 -c`, `>`, `/usr/local/bin/ward run`, curingas nos caminhos do Ward,
    `/proc/N/env*`…), olhando o comando inteiro e cada subcomando, e não negam nenhum
    comando de `LEGITIMOS` nem dos blocos ```sh da skill.
+8. (Fase 54a, RA8) A skill e o `skill/README.md` mandam o usuário destravar no terminal
+   por `/usr/local/bin/ward destravar`, e a skill não manda destravar pelo `ward` do
+   `PATH` (um `ward` falso antes no `PATH` lê a senha mestra).
 
 Os nomes da pasta do ssh, do cofre e do KeePass XC vêm montados por partes (`SSH`,
 `COFRE`), para a varredura do V1.5 (`dev/testes/ataques-fundacao.sh`): aqui são texto
@@ -183,6 +186,9 @@ LEGITIMOS = [
     "git push",
     "ssh git@github.com",
 ]
+
+# Fase 54a (RA8): o destrave do usuário no terminal, pelo caminho completo.
+DESTRAVAR = "/usr/local/bin/ward destravar"
 
 # A description tem de disparar nestes pedidos (minúsculas).
 GATILHOS = ["login", "senha", "ssh", "token", "banco"]
@@ -458,6 +464,18 @@ def conferir(arvore, ward):
     for termo in OBRIGATORIOS_SKILL:
         if termo not in texto:
             raise Falha(f"SKILL.md não cita {termo!r}")
+    # Fase 54a (RA8): a senha mestra só pelo `ward` instalado, pelo caminho completo.
+    if DESTRAVAR not in texto:
+        raise Falha(f"SKILL.md não manda destravar por {DESTRAVAR} (RA8)")
+    if re.search(r"(?<!/usr/local/bin/)\bward\s+destravar\b", texto):
+        raise Falha("SKILL.md manda destravar pelo `ward` do PATH (RA8)")
+    try:
+        with open(os.path.join(arvore, "README.md"), encoding="utf-8") as f:
+            leia = f.read()
+    except (OSError, UnicodeDecodeError):
+        raise Falha("skill/README.md ausente ou não UTF-8") from None
+    if f"`{DESTRAVAR}`" not in leia:
+        raise Falha(f"skill/README.md não manda destravar por `{DESTRAVAR}` (RA8)")
     conferir_segredos(arvore, ler_padroes())
     padroes_bash = conferir_deny(os.path.join(arvore, "settings-deny.json"))
     conferir_bash(padroes_bash, texto)
@@ -592,6 +610,16 @@ def autoteste(ward, base):
            ward, base)
     ataque("skill sem o backup em /run/media",
            trocar("ward/SKILL.md", "/run/media/**/ward-backup/**", "pendrive"), ward, base)
+
+    # Fase 54a (RA8): destrave pelo `ward` do PATH, que um `ward` falso imita.
+    ataque("skill manda destravar pelo PATH",
+           trocar("ward/SKILL.md", DESTRAVAR, "ward destravar"), ward, base)
+    ataque("skill manda destravar por outro ward",
+           trocar("ward/SKILL.md", DESTRAVAR, "~/.local/bin/ward destravar"), ward, base)
+    ataque("skill cita destravar pelo PATH além do caminho completo",
+           acrescentar("ward/SKILL.md", b"\nOu rode ward  destravar no terminal.\n"), ward, base)
+    ataque("README sem o caminho completo",
+           trocar("README.md", f"`{DESTRAVAR}`", "`ward destravar`", todos=True), ward, base)
 
     def link(copia):
         os.symlink(VARIACOES, os.path.join(copia, "ward", "variacoes.md"))
