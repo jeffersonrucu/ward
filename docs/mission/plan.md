@@ -1311,6 +1311,14 @@ recusadas e o aprovador de teste não existe sem `modo-teste`. As políticas apa
   - prod com aprovação e origem local ainda diz "confira o comando" (sem frame);
   - falta decidir o rótulo "confirmar a origem" do nível;
   - um domínio público que resolve para 127.0.0.1 não é pego (está no D9).
+QA do M6 (2026-11-09): **aprovado**, com evidência em `docs/mission/evidence/M6/`.
+`teste-extensao` deu 102 ok, `teste-login` 48 ok e `teste-playwright` 37 ok, este com o
+Playwright do Python (V6.12). A janela com origem local bate com a 44d. Os V6.* estão
+marcados; o V6.11 com a janela nativa fica para o roteiro do usuário.
+- O "frames da 44d não existem" do QA foi a aba velha do FigCraft headless. O arquivo
+  em disco (`3a2afbfb…`) tem os três frames, conferido pelo `document.json`.
+- `make dev-servicos-conferir` falha: o `pg_select.py` diz "o trace não pegou o cliente".
+  Não é do M6; fica para a auditoria final e o QA final.
 - [x] Fase 44b — (juntada à 44c) Baixos do scrutiny do M6, sem bloquear:
   - o passo 1.2 do roteiro do M6 cita a mensagem "negado"; conferir a mensagem real do
     `ward login` negado;

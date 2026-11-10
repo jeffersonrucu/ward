@@ -1,0 +1,79 @@
+{
+ "confirmar-prod": {
+  "janela": true,
+  "texto": "Pedido de aprovação\n\nClaude Code pediu uma credencial\n\n1:59 restantes\nprod\n\nCredencial de produção. Confira a origem com atenção antes de confirmar.\n\nEndereço http desta máquina. Qualquer programa seu pode escutar nele, inclusive no lugar do serviço que você espera. Confirme só se foi você quem pediu agora.\n\nConfira a entrada e a origem antes de confirmar.\n\nacme-wp-prod\nlogin\nprod\nNível\nconfirmar a origem\nOrigem que recebe usuário e senha\nhttp://localhost:8081\nQuem pediu\nsystemd → cosmic-term → zsh → herdr → herdr → zsh → claude → zsh → timeout → python3 → ward\nNegar\nConfirmar a origem\n\nConfirmar não pede PIN: a entrada não exige. Fechar a janela nega o pedido. Sem resposta em 2 min, ele expira e também é negado.",
+  "pin": false,
+  "botoes": [
+   "",
+   "Negar",
+   "Confirmar a origem"
+  ],
+  "foco": "aprovacao-negar",
+  "segredo_no_dom": null,
+  "tab": [
+   "Confirmar a origem",
+   "Pedido de aprovação\n\nClaude Co",
+   "",
+   "aprovacao-negar",
+   "Confirmar a origem",
+   "Pedido de aprovação\n\nClaude Co"
+  ],
+  "saida": 1,
+  "stdout": "",
+  "stderr": "ward: pedido negado\n"
+ },
+ "pin-dev": {
+  "janela": true,
+  "texto": "Pedido de aprovação\n\nClaude Code pediu uma credencial\n\n2:00 restantes\n\nEndereço http desta máquina. Qualquer programa seu pode escutar nele, inclusive no lugar do serviço que você espera. Confirme só se foi você quem pediu agora.\n\nConfira a entrada, a origem e quem pediu antes de permitir.\n\nacme-wp-dev\nlogin\ndev\nNível\ncom aprovação\nOrigem que recebe usuário e senha\nhttp://localhost:8081\nQuem pediu\nsystemd → cosmic-term → zsh → herdr → herdr → zsh → claude → zsh → timeout → python3 → ward\nPIN\nPara permitir, digite o PIN. Negar não pede PIN.\nNegar\nPermitir uma vez\nPermitir por 1 hora\nPermitir sempre\n\nFechar a janela nega o pedido. Sem resposta em 2 min, ele expira e também é negado. “Permitir sempre” deixa a entrada livre; para voltar atrás, mude o nível na entrada.",
+  "pin": true,
+  "botoes": [
+   "",
+   "Negar",
+   "Permitir uma vez",
+   "Permitir por 1 hora",
+   "Permitir sempre"
+  ],
+  "foco": "aprovacao-negar",
+  "segredo_no_dom": null,
+  "tab": [
+   "Permitir uma vez",
+   "Permitir por 1 hora",
+   "Permitir sempre",
+   "Pedido de aprovação\n\nClaude Co",
+   "",
+   "aprovacao-pin"
+  ],
+  "saida": 1,
+  "stdout": "",
+  "stderr": "ward: pedido negado\n"
+ },
+ "login-dev": {
+  "janela": true,
+  "texto": "Pedido de aprovação\n\nClaude Code pediu uma credencial\n\n2:00 restantes\n\nEndereço http desta máquina. Qualquer programa seu pode escutar nele, inclusive no lugar do serviço que você espera. Confirme só se foi você quem pediu agora.\n\nConfira a entrada, a origem e quem pediu antes de permitir.\n\nacme-wp-dev\nlogin\ndev\nNível\ncom aprovação\nOrigem que recebe usuário e senha\nhttp://localhost:8081\nQuem pediu\nsystemd → cosmic-term → zsh → herdr → herdr → zsh → claude → zsh → timeout → python3 → ward\nPIN\nPara permitir, digite o PIN. Negar não pede PIN.\nNegar\nPermitir uma vez\nPermitir por 1 hora\nPermitir sempre\n\nFechar a janela nega o pedido. Sem resposta em 2 min, ele expira e também é negado. “Permitir sempre” deixa a entrada livre; para voltar atrás, mude o nível na entrada.",
+  "pin": true,
+  "botoes": [
+   "",
+   "Negar",
+   "Permitir uma vez",
+   "Permitir por 1 hora",
+   "Permitir sempre"
+  ],
+  "foco": "aprovacao-negar",
+  "segredo_no_dom": null,
+  "tab": [
+   "Permitir uma vez",
+   "Permitir por 1 hora",
+   "Permitir sempre",
+   "Pedido de aprovação\n\nClaude Co",
+   "",
+   "aprovacao-pin"
+  ],
+  "saida": 1,
+  "stdout": "",
+  "stderr": "ward: pedido negado\n"
+ },
+ "console": [
+  "verbose:[DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o",
+  "verbose:[DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o"
+ ]
+}

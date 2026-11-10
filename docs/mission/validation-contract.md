@@ -1041,56 +1041,56 @@ O QA usa o Chrome em modo de teste (D7) e confere a aparência contra o frame.
 
 ## Milestone 6 — Extensão, `ward login` e `ward playwright`
 
-- [ ] V6.1 — (SEG) Dado `ward-nm` executado direto por um processo do usuário (`printf
+- [x] V6.1 — (SEG) Dado `ward-nm` executado direto por um processo do usuário (`printf
   '<mensagem preencher acme-wp-dev origem http://localhost:8081>' | ward-nm
   chrome-extension://<id>/`), quando pede preencher, então o daemon recusa (pai não é
   o Chrome) e nada de segredo sai no stdout — cobre S1 (D5).
-- [ ] V6.2 — (SEG)(UI) Dada a aba em `http://127.0.0.1:8081/wp-login.php` (origem
+- [x] V6.2 — (SEG)(UI) Dada a aba em `http://127.0.0.1:8081/wp-login.php` (origem
   diferente), quando o QA abre o popup, então `acme-wp-*` não é sugerida; quando o
   content script força a mensagem de preencher para essa aba, então o daemon recusa —
   cobre S1 (D9).
-- [ ] V6.3 — (SEG) Dada a aba ativa no phishing `http://localhost:8082`, quando `ward
+- [x] V6.3 — (SEG) Dada a aba ativa no phishing `http://localhost:8082`, quando `ward
   login acme-wp-prod`, então sai ≠ 0 com "domínio não confere" e `posts.log` fica vazio.
-- [ ] V6.4 — (SEG) Dada uma página da origem certa com um iframe do phishing, quando
+- [x] V6.4 — (SEG) Dada uma página da origem certa com um iframe do phishing, quando
   preenche, então só os campos do documento da origem certa recebem valor e o iframe
   não recebe nada.
-- [ ] V6.5 — (SEG) Dado o uso da extensão na suíte, quando o auditor inspeciona
+- [x] V6.5 — (SEG) Dado o uso da extensão na suíte, quando o auditor inspeciona
   `chrome.storage`, o DOM do popup e as mensagens trocadas, então segredo só aparece na
   resposta de preencher para a origem certa, e nunca fica guardado — cobre S1.
-- [ ] V6.6 — (SEG) Dada uma página qualquer, quando chama
+- [x] V6.6 — (SEG) Dada uma página qualquer, quando chama
   `chrome.runtime.sendMessage('<id>', …)` ou faz `postMessage` para o content script
   pedindo preencher, então nada acontece (sem `externally_connectable`, mensagens da
   página ignoradas).
-- [ ] V6.7 — (UI) `Extensão / Sugestões do domínio`: em `localhost:8081` aparecem
+- [x] V6.7 — (UI) `Extensão / Sugestões do domínio`: em `localhost:8081` aparecem
   `acme-wp-dev` e `acme-wp-prod`; clicar em `acme-wp-prod` preenche usuário e senha; em
   `localhost:8083` com campo de código, `acme-totp-dev` (D28) preenche usuário, senha e
   TOTP, e o login entra.
-- [ ] V6.8 — (UI) `Extensão / Salvar login novo`: enviar um login novo em
+- [x] V6.8 — (UI) `Extensão / Salvar login novo`: enviar um login novo em
   `localhost:8083` oferece salvar, pede tipo, grupo e ambiente, e a entrada aparece no
   `ward lista` com nível "com aprovação".
-- [ ] V6.9 — (UI) `Extensão / Cofre travado`: com o cofre travado, o popup mostra o
+- [x] V6.9 — (UI) `Extensão / Cofre travado`: com o cofre travado, o popup mostra o
   estado e o botão abre o app no destravar. Com o Chrome e o sistema em tema claro, os
   três estados do popup continuam escuros e não há alternância de tema (D1).
-- [ ] V6.10 — Dada a aba em `localhost:8081/wp-login.php`, quando `ward login
+- [x] V6.10 — Dada a aba em `localhost:8081/wp-login.php`, quando `ward login
   acme-wp-prod`, então a aba chega ao painel do WordPress logado; numa tentativa com
   senha recusada pelo site, os campos ficam vazios depois do envio.
-- [ ] V6.11 — (UI) Dado `ward login acme-wp-dev` (com aprovação), então abre a janela de
+- [x] V6.11 — (UI) Dado `ward login acme-wp-dev` (com aprovação), então abre a janela de
   aprovação; negar → nada é preenchido.
-- [ ] V6.12 — Dado `ward playwright acme-wp-prod`, então imprime um caminho em
+- [x] V6.12 — Dado `ward playwright acme-wp-prod`, então imprime um caminho em
   `<rt>playwright/acme-wp-prod.json` (0600), e um teste Playwright em Python com esse
   `storage_state` abre `/wp-admin/` já logado.
-- [ ] V6.13 — (SEG) Dado o storage state e o perfil temporário, quando o auditor procura a
+- [x] V6.13 — (SEG) Dado o storage state e o perfil temporário, quando o auditor procura a
   senha de `acme-wp-prod` e suas variações, então não acha; o perfil some ao fim e
   `ward travar` apaga os storage states (D6) — cobre S2.
-- [ ] V6.14 — (SEG) Durante `ward playwright`, `ss -ltnp` não mostra o Chrome escutando
+- [x] V6.14 — (SEG) Durante `ward playwright`, `ss -ltnp` não mostra o Chrome escutando
   em porta, o Chrome tem `--remote-debugging-pipe`, e nenhum argv tem segredo — cobre
   S3.
-- [ ] V6.15 — (SEG) Dado `ward playwright delta-redir` e `ward login delta-redir` (8084
+- [x] V6.15 — (SEG) Dado `ward playwright delta-redir` e `ward login delta-redir` (8084
   redireciona para 8082), então os dois recusam por origem e `posts.log` fica vazio
   (D9).
-- [ ] V6.16 — (SEG) Dada a suíte do M6, quando o auditor procura segredos nos logs do
+- [x] V6.16 — (SEG) Dada a suíte do M6, quando o auditor procura segredos nos logs do
   `ward-nm`, do daemon e no console da extensão, então não acha — cobre S13.
-- [ ] V6.17 — (SEG)(UI) Dada uma entrada `login` numa origem `http` (`localhost` ou
+- [x] V6.17 — (SEG)(UI) Dada uma entrada `login` numa origem `http` (`localhost` ou
   `127.0.0.1`) no nível livre, quando o agente pede `ward login` ou `ward playwright`,
   ou o usuário clica nela no popup, então a janela de aprovação abre com a origem à
   vista e só "Negar" e "Confirmar a origem" (sem PIN); negado ou sem resposta, nada é
@@ -1100,7 +1100,7 @@ O QA usa o Chrome em modo de teste (D7) e confere a aparência contra o frame.
   `https` de host de loopback (`https://localhost`, `https://127.0.0.1`,
   `https://[::1]`, `https://*.localhost`): só `https` de um host de fora segue sem
   janela (Fase 44e).
-- [ ] V6.18 — (SEG) Dado um processo do uid escutando em `[::1]:8081` (o WordPress de
+- [x] V6.18 — (SEG) Dado um processo do uid escutando em `[::1]:8081` (o WordPress de
   teste só em `127.0.0.1:8081`; `dev/testes/falso_v6.py`), com a aba de
   `localhost:8081` caída nele, quando `ward login acme-wp-prod` ou
   `ward playwright acme-wp-prod` é negado na janela, então nada é preenchido e o falso
