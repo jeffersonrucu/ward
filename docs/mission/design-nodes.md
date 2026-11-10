@@ -1280,3 +1280,29 @@ não tinha mudado (`24addb5f…` → `5bec641a…`). Em cada frame, a `pedido` g
 | `Aprovação / PIN errado` | `16885` | `16901` | `23150` | 872 |
 | `Aprovação / PIN bloqueado` | `16960` | `16976` | `23153` | 966 |
 | `Aprovação / Expirando` | `17035` | `17051` | `23156` | 962 |
+
+## Fase 54j — rodapé dos modais e Trocar PIN (design)
+
+Editado numa cópia do `Ward.figcraft` aberta numa aba nova do MCP `figcraft` headless
+(índice 13) e salvo por cima do original com `save_file` depois de conferir que o sha256
+do original não tinha mudado (`5bec641a…` → `a6d1c8fa…`). Os botões do rodapé voltam a
+seguir o `Botão` `263` (altura `controle/padrao` `VariableID:47`, 44): o override de
+tamanho (`size`, altura ligada a `controle/md` `6:141`, 40) saiu por
+`component.resetOverride` (nos dois "Cancelar" do `Diálogo de troca`, sem override
+registrado, a altura foi religada a `VariableID:47`). O `paddingTop` de 4 px
+(`espaco/4` `6:129`) saiu dos rodapés. O rodapé continua com 44 e os diálogos com a mesma
+altura; o botão sobe 4 px (y 635 no `20085`, y 489 no `20193`, iguais ao app). PNG em
+`docs/mission/evidence/fase-54j/`.
+
+| Item | Id | Rodapé | Botões (44) |
+| --- | --- | --- | --- |
+| `Modal` › `Tipo=padrão` | `612` | `619` | `620`, `624` |
+| `Modal` › `Tipo=perigo` | `628` | `638` | `639`, `643` |
+| `Diálogo de troca` › `Tipo=senha mestra` | `19918` | `19925` | `19926`, `19930` |
+| `Diálogo de troca` › `Tipo=PIN` | `19979` | `20030` | `20031`, `20035` |
+| `Configurações / Trocar senha mestra` (instância `20411`, herda) | `20085` | `20462` | `20463`, `20467` |
+| `Configurações / Trocar PIN` (instância `20471`, herda) | `20193` | `20525` | `20526`, `20530` |
+
+Trocar PIN: a diferença de 4 px era do app. A explicação (`20478`) é `Texto/Corpo`
+(`8:12`, 14/20, duas linhas, 40 de altura), e o `TrocarPin.svelte` usava 13/18 (36). O
+app passou a 14/20; o diálogo mede 558, como o `20471`. O FigCraft não mudou nesse ponto.

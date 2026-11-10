@@ -1,0 +1,209 @@
+{
+ "senha": {
+  "dialogo": {
+   "x": 400,
+   "y": 96,
+   "w": 480,
+   "h": 608
+  },
+  "cabecalho": {
+   "x": 25,
+   "y": 25,
+   "w": 430,
+   "h": 32
+  },
+  "corpo": {
+   "x": 25,
+   "y": 77,
+   "w": 430,
+   "h": 442
+  },
+  "filhos": [
+   {
+    "tag": "P",
+    "cls": "explicacao svelte-156sd81",
+    "x": 25,
+    "y": 77,
+    "w": 430,
+    "h": 40,
+    "fonte": "14px/20px"
+   },
+   {
+    "tag": "P",
+    "cls": "aviso svelte-156sd81",
+    "x": 25,
+    "y": 133,
+    "w": 430,
+    "h": 60,
+    "fonte": "14px/20px"
+   },
+   {
+    "tag": "DIV",
+    "cls": "campo svelte-53tdeo",
+    "x": 25,
+    "y": 209,
+    "w": 430,
+    "h": 70,
+    "fonte": "14px/20px"
+   },
+   {
+    "tag": "DIV",
+    "cls": "campo svelte-53tdeo",
+    "x": 25,
+    "y": 295,
+    "w": 430,
+    "h": 94,
+    "fonte": "14px/20px"
+   },
+   {
+    "tag": "DIV",
+    "cls": "forca svelte-156sd81",
+    "x": 25,
+    "y": 405,
+    "w": 430,
+    "h": 28,
+    "fonte": "14px/20px"
+   },
+   {
+    "tag": "DIV",
+    "cls": "campo svelte-53tdeo",
+    "x": 25,
+    "y": 449,
+    "w": 430,
+    "h": 70,
+    "fonte": "14px/20px"
+   },
+   {
+    "tag": "BUTTON",
+    "cls": "visualmente-oculto",
+    "x": 25,
+    "y": 77,
+    "w": 16,
+    "h": 6,
+    "fonte": "14px/20px"
+   }
+  ],
+  "rodape": {
+   "x": 25,
+   "y": 539,
+   "w": 430,
+   "h": 44
+  },
+  "botoes": [
+   {
+    "texto": "Cancelar",
+    "x": 211.328125,
+    "y": 539,
+    "w": 101.84375,
+    "h": 44
+   },
+   {
+    "texto": "Trocar senha",
+    "x": 325.171875,
+    "y": 539,
+    "w": 129.828125,
+    "h": 44
+   }
+  ],
+  "paddingTopRodape": "0px"
+ },
+ "pin": {
+  "dialogo": {
+   "x": 400,
+   "y": 121,
+   "w": 480,
+   "h": 558
+  },
+  "cabecalho": {
+   "x": 25,
+   "y": 25,
+   "w": 430,
+   "h": 32
+  },
+  "corpo": {
+   "x": 25,
+   "y": 77,
+   "w": 430,
+   "h": 392
+  },
+  "filhos": [
+   {
+    "tag": "P",
+    "cls": "explicacao svelte-1ws95in",
+    "x": 25,
+    "y": 77,
+    "w": 430,
+    "h": 40,
+    "fonte": "14px/20px"
+   },
+   {
+    "tag": "DIV",
+    "cls": "pin",
+    "x": 25,
+    "y": 133,
+    "w": 430,
+    "h": 74,
+    "fonte": "14px/20px"
+   },
+   {
+    "tag": "DIV",
+    "cls": "pin",
+    "x": 25,
+    "y": 223,
+    "w": 430,
+    "h": 98,
+    "fonte": "14px/20px"
+   },
+   {
+    "tag": "DIV",
+    "cls": "pin",
+    "x": 25,
+    "y": 337,
+    "w": 430,
+    "h": 98,
+    "fonte": "14px/20px"
+   },
+   {
+    "tag": "P",
+    "cls": "nota svelte-1ws95in",
+    "x": 25,
+    "y": 451,
+    "w": 430,
+    "h": 18,
+    "fonte": "13px/18px"
+   },
+   {
+    "tag": "BUTTON",
+    "cls": "visualmente-oculto",
+    "x": 25,
+    "y": 77,
+    "w": 16,
+    "h": 6,
+    "fonte": "14px/20px"
+   }
+  ],
+  "rodape": {
+   "x": 25,
+   "y": 489,
+   "w": 430,
+   "h": 44
+  },
+  "botoes": [
+   {
+    "texto": "Cancelar",
+    "x": 228.5,
+    "y": 489,
+    "w": 101.84375,
+    "h": 44
+   },
+   {
+    "texto": "Trocar PIN",
+    "x": 342.34375,
+    "y": 489,
+    "w": 112.65625,
+    "h": 44
+   }
+  ],
+  "paddingTopRodape": "0px"
+ }
+}

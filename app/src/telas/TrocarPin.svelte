@@ -195,7 +195,13 @@
   p {
     margin: var(--espaco-0);
   }
-  .explicacao,
+  /* Fase 54j: a explicação é `Texto/Corpo` (`8:12`, 14/20) como no frame `20193` ›
+     `20478`; a nota é `8:14` (13/18). */
+  .explicacao {
+    font-size: var(--tamanho-base);
+    line-height: var(--altura-linha-base);
+    color: var(--cor-texto-secundario);
+  }
   .nota {
     font-size: var(--tamanho-sm);
     line-height: var(--altura-linha-sm);
