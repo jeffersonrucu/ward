@@ -96,7 +96,8 @@ fn v2_46_chave_no_heap_e_sem_hash_password() {
 }
 
 /// V2.50 (D44, D27): os únicos `pub fn` que gravam o cofre são `gravar_entradas` e
-/// `gravacao::trocar_senha` e as variantes com backup da Fase 45 (que gravam os mesmos
+/// `gravacao::trocar_senha_lido` (Fase 55: com os bytes que o daemon leu) e as
+/// variantes com backup da Fase 45 (que gravam os mesmos
 /// bytes já selados por elas na pasta de backups), mais `limpar_temporarios`, que só
 /// apaga temporários. Só `gravacao.rs` escreve arquivo (o `backup.rs` só lista e apaga
 /// versões velhas), e `selar`/`gravar_cofre`/`gravar` são `pub(crate)`.
@@ -141,8 +142,8 @@ fn v2_50_unicas_gravacoes_publicas() {
             "gravar_entradas",
             "gravar_entradas_com_backup",
             "limpar_temporarios",
-            "trocar_senha",
-            "trocar_senha_com_backup"
+            "trocar_senha_com_backup_lido",
+            "trocar_senha_lido"
         ],
         "pub fn de gravacao.rs"
     );
@@ -164,8 +165,8 @@ fn v2_50_unicas_gravacoes_publicas() {
         corpo_de("gravar_entradas_selado")
             .contains("corpo::serializar(cofre.configuracao(), geracao, entradas)")
     );
-    assert!(corpo_de("trocar_senha").contains("trocar_senha_selado("));
-    assert!(corpo_de("trocar_senha_com_backup").contains("trocar_senha_selado("));
+    assert!(corpo_de("trocar_senha_lido").contains("trocar_senha_selado("));
+    assert!(corpo_de("trocar_senha_com_backup_lido").contains("trocar_senha_selado("));
     let troca = corpo_de("trocar_senha_selado");
     assert!(troca.contains("corpo::desserializar(&conteudo)"));
     assert!(troca.contains("gravar_entradas_selado(destino, &mut cofre, &entradas"));

@@ -934,6 +934,82 @@ fn f54_ataque_ward_run_morre_na_trava() {
     assert!(contem(&log, "encerrado(s) ao travar".as_bytes()));
 }
 
+/// Fase 55 (S8), os dois passos da reauditoria final contra o `wardd` de verdade:
+/// 1. `setsid -f`: o comando deixa um neto com sessão própria e termina; o neto
+///    escreveria a senha 3 s depois;
+/// 2. `setpgid(0, 0)`: o filho sai do grupo, o comando dorme e o cofre trava; o filho
+///    escreveria a senha 3 s depois.
+///
+/// Antes da correção, os dois escreviam (o grupo morria, eles não). Agora: nada
+/// escreve, nenhum processo sobra, a CLI ouve "encerrado" na trava. O controle sem a
+/// correção (o fugitivo sobrevive) está em `ward-plataforma/tests/subreaper.rs`.
+#[test]
+fn f55_ataque_descendente_fora_do_grupo_morre_no_fim_e_na_trava() {
+    let dev = Dir::novo("run-55");
+    cofre(&dev);
+    let sock = DirSocket::novo("55");
+    let w = subir(&dev, &sock);
+    destravar_por(&w);
+
+    // 1. `setsid -f` e o comando termina.
+    let marca1 = dev.0.join("marca-f55-setsid");
+    let script = format!(
+        "setsid -f /bin/sh -c 'echo $$ > \"{p}\"; sleep 3; printenv WARD_PASS > \"{m}\"'; \
+         i=0; while [ ! -s \"{p}\" ] && [ $i -lt 100 ]; do sleep 0.05; i=$((i+1)); done; cat \"{p}\"",
+        p = dev.0.join("pid-f55-setsid").display(),
+        m = marca1.display()
+    );
+    let r = run(&w, "t-livre", &sh(&script), &[]);
+    assert_eq!(r.fim, Some(0), "{r:?}");
+    let fugitivo: u32 = texto(&r.saida).trim().parse().unwrap();
+    assert!(
+        esperar(Duration::from_secs(3), || !vivo(fugitivo)),
+        "o neto com setsid sobreviveu ao fim do comando"
+    );
+    assert!(r.erro.is_empty(), "{r:?}");
+
+    // 2. `setpgid(0, 0)` e a trava com o comando vivo.
+    let marca2 = dev.0.join("marca-f55-setpgid");
+    let py = format!(
+        "import os,time\npid=os.fork()\nif pid==0:\n os.setpgid(0,0)\n time.sleep(3)\n open({m:?},'w').write(os.environ.get('WARD_PASS',''))\n os._exit(0)\nprint(pid,flush=True)\ntime.sleep(30)\n",
+        m = marca2.display().to_string()
+    );
+    let mut s = conectar(&w);
+    mandar(
+        &mut s,
+        &pedido_executar("t-livre", &["/usr/bin/python3", "-I", "-c", &py], &[]),
+    );
+    entrada_padrao(&mut s, b"");
+    let filho: u32 = match receber(&mut s) {
+        Some(Resposta::Saida { dados, .. }) => texto(&dados).trim().parse().unwrap(),
+        r => panic!("{r:?}"),
+    };
+    assert!(vivo(filho));
+    let mut t = conectar(&w);
+    mandar(&mut t, r#"{"v":1,"op":"travar","dados":{}}"#);
+    assert!(matches!(receber(&mut t), Some(Resposta::Ok)));
+    let r = ler_sessao(&mut s);
+    assert_eq!(r.fim, Some(137), "{r:?}");
+    assert!(
+        texto(&r.erro).contains("o comando foi encerrado"),
+        "sem o aviso de encerrado: {r:?}"
+    );
+    assert!(!vivo(filho), "o filho fora do grupo sobreviveu à trava");
+
+    // Depois do prazo dos dois, nada escreveu a senha.
+    std::thread::sleep(Duration::from_secs(4));
+    assert!(
+        !marca1.exists(),
+        "o neto com setsid usou a senha depois do fim"
+    );
+    assert!(
+        !marca2.exists(),
+        "o filho com setpgid usou a senha depois da trava"
+    );
+    let log = fs::read(&w.log).unwrap();
+    assert!(!contem(&log, SENHA_LIVRE.as_bytes()));
+}
+
 /// Fase 54b (D68): quem declara a entrada padrão nula não manda nada depois. A entrada
 /// do filho fecha no lançamento (o `cat` acaba na hora, sem esperar o fim da CLI) e um
 /// `entrada_padrao` com dados mata o grupo, sem o dado chegar ao comando.

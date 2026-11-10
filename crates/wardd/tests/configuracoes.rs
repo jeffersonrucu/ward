@@ -329,3 +329,131 @@ fn senha_mestra_composta_abre_decomposta_pelo_daemon() {
     assert!(ok(&destravar(&d, decomposta)));
     assert!(ok(&trocar_senha(&d, Papel::App, composta, SENHA)));
 }
+
+/// Fase 55 (reauditoria final, baixo): a troca de senha lia o cofre de novo pela
+/// biblioteca padrão (`File::open`, segue link e espera o outro lado de um FIFO),
+/// depois de conferir a identidade por outro `open`. Um FIFO trocado no lugar do
+/// arquivo entre as duas aberturas prendia a thread com o estado do daemon travado.
+/// Agora a troca usa os bytes do mesmo fd da conferência (`O_NOFOLLOW | O_NONBLOCK`).
+/// Ataque: um FIFO entra e sai do lugar do cofre sem parar enquanto o app pede a troca
+/// (com a senha atual errada, para nada ser gravado); cada pedido volta logo.
+#[test]
+fn f55_ataque_fifo_no_lugar_do_cofre_nao_prende_a_troca_de_senha() {
+    use std::fs;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::time::{Duration, Instant};
+
+    let dir = Dir::novo("troca-fifo");
+    let (d, _) = cofre_de_teste(&dir);
+    let d = Arc::new(d);
+    let cofre = dir.caminhos().cofre;
+    let real = dir.0.join("x-real");
+    fs::hard_link(&cofre, &real).unwrap();
+
+    // FIFO parado no lugar: recusa na hora e trava (o arquivo mudou fora do Ward).
+    let fifo = dir.0.join("x-fifo");
+    let st = std::process::Command::new("/usr/bin/mkfifo")
+        .args(["-m", "600"])
+        .arg(&fifo)
+        .status()
+        .unwrap();
+    assert!(st.success());
+    fs::rename(&fifo, &cofre).unwrap();
+    let (tx, rx) = std::sync::mpsc::channel();
+    {
+        let d = d.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send(trocar_senha(&d, Papel::App, SENHA, "falso-nova-mestra-55"));
+        });
+    }
+    let r = rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("a troca de senha ficou presa no FIFO");
+    assert_eq!(erro(&r), Some(ErroResposta::CofreMudou), "{r:?}");
+    assert!(d.travado());
+    let volta = dir.0.join("x-volta");
+    fs::hard_link(&real, &volta).unwrap();
+    fs::rename(&volta, &cofre).unwrap();
+    assert!(ok(&destravar(&d, SENHA)));
+
+    // FIFO entrando e saindo do lugar durante os pedidos.
+    let parar = Arc::new(AtomicBool::new(false));
+    let trocador = {
+        let (dir0, cofre, real, parar) =
+            (dir.0.clone(), cofre.clone(), real.clone(), parar.clone());
+        std::thread::spawn(move || {
+            let mut n = 0u64;
+            while !parar.load(Ordering::Acquire) {
+                let fifo = dir0.join(format!("x-fifo-{n}"));
+                let st = std::process::Command::new("/usr/bin/mkfifo")
+                    .args(["-m", "600"])
+                    .arg(&fifo)
+                    .status()
+                    .unwrap();
+                assert!(st.success());
+                fs::rename(&fifo, &cofre).unwrap();
+                std::thread::sleep(Duration::from_millis(3));
+                let volta = dir0.join(format!("x-volta-{n}"));
+                fs::hard_link(&real, &volta).unwrap();
+                fs::rename(&volta, &cofre).unwrap();
+                std::thread::sleep(Duration::from_millis(3));
+                n += 1;
+            }
+            n
+        })
+    };
+    let fim = Instant::now() + Duration::from_secs(6);
+    let mut pedidos = 0;
+    let mut lidos = 0;
+    while Instant::now() < fim {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let d2 = d.clone();
+        std::thread::spawn(move || {
+            let r = trocar_senha(
+                &d2,
+                Papel::App,
+                "falso-senha-errada-55",
+                "falso-nova-mestra-55",
+            );
+            if erro(&r) != Some(ErroResposta::SenhaIncorreta) {
+                // Travou (o arquivo mudou ou erros demais): destrava de novo (o
+                // destravar também lê sem seguir FIFO; tenta até pegar o real).
+                for _ in 0..50 {
+                    if ok(&destravar(&d2, SENHA)) {
+                        break;
+                    }
+                }
+            }
+            let _ = tx.send(r);
+        });
+        let r = rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("a troca de senha ficou presa num FIFO (o daemon parou)");
+        assert!(
+            matches!(
+                erro(&r),
+                Some(
+                    ErroResposta::SenhaIncorreta | ErroResposta::CofreMudou | ErroResposta::Travado
+                )
+            ),
+            "{r:?}"
+        );
+        if erro(&r) == Some(ErroResposta::SenhaIncorreta) {
+            lidos += 1;
+        }
+        pedidos += 1;
+    }
+    parar.store(true, Ordering::Release);
+    let trocas = trocador.join().unwrap();
+    assert!(
+        trocas > 50 && pedidos > 5 && lidos >= 3,
+        "{trocas} trocas, {pedidos} pedidos, {lidos} lidos"
+    );
+    // O arquivo real no lugar: a troca com a senha certa funciona.
+    if d.travado() {
+        assert!(ok(&destravar(&d, SENHA)));
+    }
+    let r = trocar_senha(&d, Papel::App, SENHA, "falso-nova-mestra-55");
+    assert!(ok(&r), "{r:?}");
+}

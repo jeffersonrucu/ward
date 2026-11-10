@@ -18,6 +18,7 @@
 
 pub mod app;
 pub mod conectar;
+pub mod descendentes;
 pub mod endurecimento;
 pub mod filho;
 pub mod lancador;

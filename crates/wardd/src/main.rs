@@ -92,6 +92,16 @@ fn main() -> ExitCode {
         }
     };
     log::configurar();
+    // Fase 55 (S8): o órfão de um `ward run`/`ward ssh` (quem saiu do grupo com
+    // `setsid -f` ou `setpgid`) vira filho do daemon, que o mata no fim da sessão e na
+    // trava. Sem isso, o daemon não sobe.
+    if let Err(e) = ward_plataforma::descendentes::virar_subreaper() {
+        aviso!(
+            "não deu para virar subreaper (PR_SET_CHILD_SUBREAPER): {}",
+            e.kind()
+        );
+        return ExitCode::FAILURE;
+    }
     if let Memoria::SemTravar(e) = &memoria {
         aviso!("daemon de teste com a memória sem travar: {e}");
     }

@@ -4,7 +4,8 @@
 //! - **Inatividade.** Cada uso zera a contagem ([`conta_como_uso`]): entrega de
 //!   credencial (agente e extensão) e ação do app que deu certo, menos `estado`,
 //!   `travar` e `destravar` (o que abre marca o início; com o cofre aberto ele responde
-//!   `ok` sem olhar a senha). Consulta do agente (`lista`) e da extensão (`sugerir`) não
+//!   `ok` sem olhar a senha) e, desde a Fase 55, o `detalhe` e o `totp` que a janela de
+//!   aprovação e o formulário pedem sozinhos e a resposta da janela. Consulta do agente (`lista`) e da extensão (`sugerir`) não
 //!   conta (Fase 54). Erro não conta: um agente que manda pedidos inválidos ou PIN errado
 //!   não segura o cofre aberto. O relógio é o [`Relogio::agora`](crate::nucleo::Relogio) do
 //!   daemon (`CLOCK_BOOTTIME`, injetado nos testes), que anda durante a suspensão. Um
@@ -86,9 +87,19 @@ pub fn conta_como_uso(papel: Papel, op: Operacao, r: &Resposta) -> bool {
         return false;
     }
     match papel {
+        // Fase 55 (reauditoria final): o `detalhe` que a janela de aprovação pede para
+        // mostrar o pedido, o `totp` que o formulário renova sozinho e a resposta da
+        // janela (um "Negar" a um `ward run` repetido do agente) também não: o pedido
+        // permitido anota o uso ele mesmo, depois da autorização.
         Papel::App => !matches!(
             op,
-            Operacao::Estado | Operacao::Travar | Operacao::Destravar | Operacao::AbrirApp
+            Operacao::Estado
+                | Operacao::Travar
+                | Operacao::Destravar
+                | Operacao::AbrirApp
+                | Operacao::Detalhe
+                | Operacao::Totp
+                | Operacao::ResponderAprovacao
         ),
         Papel::Agente => matches!(
             op,
@@ -406,7 +417,7 @@ mod testes {
             &Resposta::Erro(ErroResposta::PinIncorreto)
         ));
         assert!(conta_como_uso(Papel::App, Operacao::Lista, &lista));
-        assert!(conta_como_uso(Papel::App, Operacao::Detalhe, &Resposta::Ok));
+        assert!(conta_como_uso(Papel::App, Operacao::Revelar, &Resposta::Ok));
     }
 
     /// Fase 54: consulta do agente e da extensão não adia a trava; entrega, sim.
@@ -452,6 +463,24 @@ mod testes {
         assert!(conta_como_uso(
             Papel::Extensao,
             Operacao::PreencherLogin,
+            &Resposta::Ok
+        ));
+    }
+
+    /// Fase 55: o que a janela de aprovação e o formulário pedem sozinhos não conta.
+    #[test]
+    fn ataque_f55_detalhe_totp_e_resposta_da_janela_nao_contam() {
+        for op in [
+            Operacao::Detalhe,
+            Operacao::Totp,
+            Operacao::ResponderAprovacao,
+        ] {
+            assert!(!conta_como_uso(Papel::App, op, &Resposta::Ok), "{op:?}");
+        }
+        assert!(conta_como_uso(Papel::App, Operacao::Copiar, &Resposta::Ok));
+        assert!(conta_como_uso(
+            Papel::App,
+            Operacao::SalvarEntrada,
             &Resposta::Ok
         ));
     }

@@ -28,10 +28,11 @@ use std::ffi::CStr;
 use std::fs::File;
 use std::io;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use zeroize::Zeroizing;
 
-use crate::sys;
+use crate::{descendentes, sys};
 
 pub use crate::sys::CAPACIDADE_PIPE_SAIDA;
 
@@ -267,14 +268,22 @@ impl Comando {
             envp: &envp,
             cwd,
         };
+        // Fase 55: o registro fica travado do `fork` ao registro, para a varredura de
+        // um fim de sessão nunca ver o líder novo como órfão sem dono.
+        let mut lideres = descendentes::registro();
         match sys::fork_exec(&preparo, stdio) {
-            Ok(f) => Ok((
-                Grupo {
-                    pid: f.pid,
-                    colhido: Mutex::new(false),
-                },
-                f.pontas,
-            )),
+            Ok(f) => {
+                lideres.push(f.pid);
+                drop(lideres);
+                Ok((
+                    Grupo {
+                        pid: f.pid,
+                        colhido: Mutex::new(false),
+                        sobras: AtomicUsize::new(0),
+                    },
+                    f.pontas,
+                ))
+            }
             Err(sys::ErroExec::Sistema(e)) => Err(ErroLancar::Sistema(e.kind())),
             Err(sys::ErroExec::Filho { etapa, errno }) => Err(match etapa {
                 sys::ETAPA_DIRETORIO => ErroLancar::Diretorio(errno),
@@ -355,6 +364,8 @@ pub struct Grupo {
     pid: libc::pid_t,
     /// Já colhido: o pid (e o grupo) pode ser de outro processo; nada de `kill`.
     colhido: Mutex<bool>,
+    /// Vivos depois do último fim de sessão (Fase 55).
+    sobras: AtomicUsize,
 }
 
 impl Grupo {
@@ -377,27 +388,27 @@ impl Grupo {
         }
     }
 
-    /// Como [`Grupo::matar`] e, antes, `SIGKILL` também no grupo de cada filho
-    /// **direto** do líder que abriu sessão própria (Fase 54c, S8): o `sshpass` cria o
-    /// `ssh` com `setsid()`, fora do grupo, e a trava do cofre tem de derrubar a sessão
-    /// SSH inteira. O grupo é parado (`SIGSTOP`) primeiro: parado, o líder não colhe os
-    /// filhos, então o pid de um filho achado em `/proc` não é reusado antes do `kill`.
-    /// Conta só quem tem o líder como pai e é líder do próprio grupo e da própria sessão
-    /// (pid = grupo = sessão); um processo de fora não vira filho do líder. Um neto que
-    /// saiu da sessão do filho com outro `setsid()` fica de fora. Depois de colhido, não
-    /// faz nada. Devolve quantos grupos filhos levaram o sinal.
-    pub fn matar_com_sessoes_filhas(&self) -> usize {
+    /// Como [`Grupo::matar`], para a sessão inteira (Fase 55, S8; antes, Fase 54c):
+    /// todo descendente do líder, inclusive o que saiu do grupo (`setpgid`) ou da
+    /// sessão (`setsid`, como o `ssh` que o `sshpass` cria), e, no `wardd` (subreaper),
+    /// os órfãos da sessão e os sem dono ([`crate::descendentes`]). Tudo leva `SIGSTOP`
+    /// antes do `SIGKILL`; um processo de fora (outro uid, outra sessão que não saiu de
+    /// uma sessão do daemon) não leva nada. Depois de colhido, não faz nada. O que
+    /// sobrou vivo fica em [`Grupo::sobraram`].
+    pub fn matar_com_sessoes_filhas(&self) -> descendentes::Relatorio {
         let colhido = self.colhido.lock().unwrap_or_else(|e| e.into_inner());
         if *colhido {
-            return 0;
+            return descendentes::Relatorio::default();
         }
-        let _ = sys::parar_grupo(self.pid);
-        let filhos = filhos_com_sessao_propria(std::path::Path::new("/proc"), self.pid);
-        for f in &filhos {
-            let _ = sys::matar_grupo(*f);
-        }
-        let _ = sys::matar_grupo(self.pid);
-        filhos.len()
+        let r = descendentes::matar_sessao(Some(self.pid));
+        self.sobras.store(r.sobraram, Ordering::SeqCst);
+        r
+    }
+
+    /// Quantos processos da sessão continuavam vivos depois do último
+    /// [`Grupo::matar_com_sessoes_filhas`]. A CLI só ouve "encerrado" com 0.
+    pub fn sobraram(&self) -> usize {
+        self.sobras.load(Ordering::SeqCst)
     }
 
     /// Espera o fim e colhe. Uma vez só.
@@ -407,7 +418,12 @@ impl Grupo {
         if *colhido {
             return Err(io::ErrorKind::InvalidInput.into());
         }
+        // Fase 55: sai do registro dos líderes junto com a colheita (o pid pode ir
+        // para outro processo logo depois).
+        let mut lideres = descendentes::registro();
         let status = sys::colher(self.pid)?;
+        lideres.retain(|p| *p != self.pid);
+        drop(lideres);
         *colhido = true;
         if libc::WIFSIGNALED(status) {
             Ok(Fim::Sinal(libc::WTERMSIG(status)))
@@ -423,51 +439,11 @@ impl Drop for Grupo {
     fn drop(&mut self) {
         let colhido = *self.colhido.lock().unwrap_or_else(|e| e.into_inner());
         if !colhido {
-            // Fase 54l: também o filho direto com sessão própria (`sshpass` → `ssh`).
+            // Fase 54l/55: a sessão inteira, não só o grupo.
             self.matar_com_sessoes_filhas();
             let _ = self.colher();
         }
     }
-}
-
-/// Os pids (em `proc`) dos filhos diretos de `lider` que são líderes do próprio grupo e
-/// da própria sessão (pid = grupo = sessão). O `stat` é lido depois do último `)` (o
-/// nome do programa pode ter espaço e parênteses).
-fn filhos_com_sessao_propria(proc: &std::path::Path, lider: libc::pid_t) -> Vec<libc::pid_t> {
-    let Ok(dir) = std::fs::read_dir(proc) else {
-        return Vec::new();
-    };
-    let mut v = Vec::new();
-    for e in dir.flatten() {
-        let Some(pid) = e
-            .file_name()
-            .to_str()
-            .and_then(|n| n.parse::<libc::pid_t>().ok())
-        else {
-            continue;
-        };
-        if pid <= 1 || pid == lider {
-            continue;
-        }
-        let Ok(stat) = std::fs::read_to_string(e.path().join("stat")) else {
-            continue;
-        };
-        let Some(campos) = campos_do_stat(&stat) else {
-            continue;
-        };
-        if campos == (lider, pid, pid) {
-            v.push(pid);
-        }
-    }
-    v
-}
-
-/// `(ppid, pgrp, session)` de um `/proc/<pid>/stat`.
-fn campos_do_stat(stat: &str) -> Option<(libc::pid_t, libc::pid_t, libc::pid_t)> {
-    let resto = &stat[stat.rfind(')')? + 1..];
-    let mut c = resto.split_whitespace().skip(1);
-    let mut n = || c.next()?.parse::<libc::pid_t>().ok();
-    Some((n()?, n()?, n()?))
 }
 
 #[cfg(test)]
@@ -828,7 +804,7 @@ mod testes {
             let lider = libc::pid_t::try_from(g.pid()).unwrap();
             // Espera o `setsid()` do filho.
             let fim = Instant::now() + Duration::from_secs(5);
-            while filhos_com_sessao_propria(std::path::Path::new("/proc"), lider) != [filho] {
+            while sid_de(filho) != Some(filho) || ppid_de(filho) != Some(lider) {
                 assert!(Instant::now() < fim, "o filho não abriu sessão própria");
                 std::thread::sleep(Duration::from_millis(20));
             }
@@ -865,24 +841,97 @@ mod testes {
 
         // Com a correção: os dois morrem; o estranho, não.
         let (g, _p, filho) = lancar();
-        assert_eq!(g.matar_com_sessoes_filhas(), 1);
+        let r = g.matar_com_sessoes_filhas();
+        assert_eq!((r.mortos, r.sobraram), (2, 0), "{r:?}");
+        assert_eq!(g.sobraram(), 0);
         assert_eq!(g.colher().unwrap(), Fim::Sinal(libc::SIGKILL));
         assert!(morre(filho), "o filho com sessão própria sobreviveu");
         assert!(vivo(estranho_pid), "um processo de fora levou o sinal");
         // Colhido: não faz nada.
-        assert_eq!(g.matar_com_sessoes_filhas(), 0);
+        assert_eq!(
+            g.matar_com_sessoes_filhas(),
+            descendentes::Relatorio::default()
+        );
         let _ = estranho.kill();
         let _ = estranho.wait();
     }
 
+    fn campo_do_stat(pid: libc::pid_t, i: usize) -> Option<libc::pid_t> {
+        let s = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+        s[s.rfind(')')? + 1..]
+            .split_whitespace()
+            .nth(i)?
+            .parse()
+            .ok()
+    }
+
+    fn ppid_de(pid: libc::pid_t) -> Option<libc::pid_t> {
+        campo_do_stat(pid, 1)
+    }
+
+    fn sid_de(pid: libc::pid_t) -> Option<libc::pid_t> {
+        campo_do_stat(pid, 3)
+    }
+
+    /// Fase 55 (S8), 2.º passo da reauditoria final: o neto sai do grupo com
+    /// `setpgid(0, 0)` (fica na sessão) e também um bisneto com `setsid` cujo pai
+    /// continua vivo. Com o líder vivo (a trava), `matar` não os alcança (controle);
+    /// `matar_com_sessoes_filhas` leva a árvore inteira.
     #[test]
-    fn campos_do_stat_com_parenteses_no_nome() {
-        assert_eq!(
-            campos_do_stat("42 (a) b) (c) S 7 42 42 0 -1"),
-            Some((7, 42, 42))
-        );
-        assert_eq!(campos_do_stat("42 sem-parenteses"), None);
-        assert_eq!(campos_do_stat("42 (x) S 7"), None);
+    fn ataque_f55_neto_fora_do_grupo_morre_na_trava() {
+        const FILHO: &str = "import os,time\nr,w=os.pipe()\npid=os.fork()\nif pid==0:\n os.setpgid(0,0)\n q=os.fork()\n if q==0:\n  os.setsid(); time.sleep(60); os._exit(0)\n os.write(w,(str(os.getpid())+' '+str(q)+'\\n').encode()); time.sleep(60); os._exit(0)\nprint(os.read(r,64).decode().strip(),flush=True)\ntime.sleep(60)\n";
+        let lancar = || {
+            let mut c = Comando::novo(b"/usr/bin/python3", b"/").unwrap();
+            for a in [&b"-I"[..], b"-c", FILHO.as_bytes()] {
+                c.argumento(a).unwrap();
+            }
+            let (g, mut p) = c.lancar().unwrap();
+            let mut linha = [0u8; 64];
+            let n = p.saida.as_mut().unwrap().read(&mut linha).unwrap();
+            let v: Vec<libc::pid_t> = std::str::from_utf8(&linha[..n])
+                .unwrap()
+                .split_whitespace()
+                .map(|x| x.parse().unwrap())
+                .collect();
+            let (neto, bisneto) = (v[0], v[1]);
+            let fim = Instant::now() + Duration::from_secs(5);
+            while sid_de(bisneto) != Some(bisneto) {
+                assert!(Instant::now() < fim, "o bisneto não abriu sessão");
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            (g, p, neto, bisneto)
+        };
+        let vivo = |pid: libc::pid_t| {
+            std::fs::read_to_string(format!("/proc/{pid}/stat")).is_ok_and(|s| !s.contains(") Z "))
+        };
+        let morre = |pid: libc::pid_t| {
+            let fim = Instant::now() + Duration::from_secs(5);
+            while vivo(pid) {
+                if Instant::now() > fim {
+                    return false;
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            true
+        };
+        // Controle: o grupo morre, o neto (outro grupo) e o bisneto (outra sessão), não.
+        let (g, _p, neto, bisneto) = lancar();
+        g.matar();
+        assert_eq!(g.colher().unwrap(), Fim::Sinal(libc::SIGKILL));
+        std::thread::sleep(Duration::from_millis(300));
+        assert!(vivo(neto), "matar alcançou o neto fora do grupo");
+        assert!(vivo(bisneto));
+        let _ = sys::matar_grupo(neto);
+        let _ = sys::matar_grupo(bisneto);
+        assert!(morre(neto) && morre(bisneto));
+
+        // Com a correção: os três morrem, nada sobra.
+        let (g, _p, neto, bisneto) = lancar();
+        let r = g.matar_com_sessoes_filhas();
+        assert_eq!((r.mortos, r.sobraram), (3, 0), "{r:?}");
+        assert_eq!(g.colher().unwrap(), Fim::Sinal(libc::SIGKILL));
+        assert!(morre(neto), "o neto fora do grupo sobreviveu");
+        assert!(morre(bisneto), "o bisneto com sessão própria sobreviveu");
     }
 
     /// `PR_SET_PDEATHSIG`: a thread que criou o filho morre, o filho leva `SIGKILL`.

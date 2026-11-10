@@ -245,6 +245,43 @@ fn ataque_lista_periodica_do_agente_nao_adia_a_trava() {
     assert!(!d.travar_se_inativo(), "a ação do app zerou");
 }
 
+/// Fase 55 (reauditoria final): um `ward run` do agente repetido a cada 10 min numa
+/// entrada que pede aprovação, negado na janela, com o `detalhe` que a janela pede e o
+/// `totp` que o formulário renova, não adia a trava: a 4h00 o cofre trava.
+#[test]
+fn ataque_f55_ward_run_negado_e_janela_nao_adiam_a_trava() {
+    let dir = Dir::novo("negado55");
+    let (d, r) = cofre_com_relogio(&dir);
+    let totp = format!(
+        r#"{{"entrada":{{"nome":"t-totp","grupo":"clientex","ambiente":"dev","tipo":"login","campos":{{"url":"https://clientex.invalid/login","usuario":"admin","senha":"{}","totp_semente":"{}"}}}}}}"#,
+        b64(SEGREDOS[1].as_bytes()),
+        b64(b"JBSWY3DPEHPK3PXP")
+    );
+    assert!(ok(&pedir(&d, Papel::App, "salvar_entrada", &totp)));
+    let mut t = 0;
+    while t < 4 * H {
+        r.por(t);
+        let (negado, vistos) = com_janela(&d, "negar", None, || {
+            let p = ped(Papel::Agente, "executar", &executar("t-aprov")).unwrap();
+            d.autorizar_uso(&wardd::aprovacao::SemCliente, &p)
+        });
+        assert_eq!(negado.err(), Some(ErroResposta::Negado));
+        assert_eq!(vistos.len(), 1);
+        // O que a janela pede para mostrar o pedido e o formulário aberto.
+        let det = pedir(&d, Papel::App, "detalhe", r#"{"entrada":"t-aprov"}"#);
+        assert!(matches!(det, Resposta::Detalhe(_)), "{det:?}");
+        let c = pedir(&d, Papel::App, "totp", r#"{"entrada":"t-totp"}"#);
+        assert!(matches!(c, Resposta::CodigoTotp { .. }), "{c:?}");
+        assert!(!d.travar_se_inativo(), "t = {t}");
+        t += 600;
+    }
+    r.por(4 * H);
+    assert!(
+        d.travar_se_inativo(),
+        "o ward run negado, o detalhe ou o totp seguraram o cofre aberto"
+    );
+}
+
 fn executar(entrada: &str) -> String {
     format!(
         r#"{{"entrada":"{entrada}","argv":["{}"],"cwd":"{}","tipo_entrada":"pipe","ambiente":[]}}"#,

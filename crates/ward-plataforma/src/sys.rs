@@ -1383,3 +1383,75 @@ fn sinal_grupo(pgid: libc::pid_t, sinal: libc::c_int) -> io::Result<()> {
     }
     Ok(())
 }
+
+/// `prctl(PR_SET_CHILD_SUBREAPER, 1)` e a leitura de volta (Fase 55, S8): o órfão de
+/// qualquer descendente vira filho deste processo, não do `init`/`systemd --user`.
+#[allow(unsafe_code)]
+pub(crate) fn virar_subreaper() -> io::Result<()> {
+    let (um, zero): (libc::c_ulong, libc::c_ulong) = (1, 0);
+    // SAFETY: `PR_SET_CHILD_SUBREAPER` só lê o inteiro passado; os outros vão em 0.
+    if unsafe { libc::prctl(libc::PR_SET_CHILD_SUBREAPER, um, zero, zero, zero) } != 0 {
+        return Err(erro_os());
+    }
+    let mut v: libc::c_int = 0;
+    // SAFETY: `PR_GET_CHILD_SUBREAPER` escreve um `int` no ponteiro, que é de `v`.
+    let r = unsafe {
+        libc::prctl(
+            libc::PR_GET_CHILD_SUBREAPER,
+            &raw mut v as libc::c_ulong,
+            zero,
+            zero,
+            zero,
+        )
+    };
+    if r != 0 {
+        return Err(erro_os());
+    }
+    if v != 1 {
+        return Err(io::Error::other("PR_SET_CHILD_SUBREAPER não ficou ligado"));
+    }
+    Ok(())
+}
+
+/// `getpid()` e `getsid(0)`.
+#[allow(unsafe_code)]
+pub(crate) fn pid_e_sessao() -> (libc::pid_t, libc::pid_t) {
+    // SAFETY: `getpid` e `getsid(0)` não têm pré-condição nem ponteiros.
+    unsafe { (libc::getpid(), libc::getsid(0)) }
+}
+
+/// Manda `sinal` pelo `pidfd` (`pidfd_send_signal`). `Ok(false)`: o processo já saiu.
+#[allow(unsafe_code)]
+pub(crate) fn pidfd_sinal(pidfd: BorrowedFd<'_>, sinal: libc::c_int) -> io::Result<bool> {
+    // SAFETY: `pidfd` está aberto pelo empréstimo; `info` nulo é permitido e as flags
+    // são 0.
+    let r = unsafe {
+        libc::syscall(
+            libc::SYS_pidfd_send_signal,
+            pidfd.as_raw_fd(),
+            sinal,
+            std::ptr::null::<libc::siginfo_t>(),
+            0 as libc::c_uint,
+        )
+    };
+    if r == 0 {
+        return Ok(true);
+    }
+    let e = erro_os();
+    if e.raw_os_error() == Some(libc::ESRCH) {
+        Ok(false)
+    } else {
+        Err(e)
+    }
+}
+
+/// `waitpid(pid, WNOHANG)`: colhe o filho `pid` se ele já saiu. `true` se colheu.
+#[allow(unsafe_code)]
+pub(crate) fn colher_se_saiu(pid: libc::pid_t) -> bool {
+    if pid <= 0 {
+        return false;
+    }
+    let mut status: libc::c_int = 0;
+    // SAFETY: `status` é local; `pid` > 0 só acerta esse filho (ou dá `ECHILD`).
+    unsafe { libc::waitpid(pid, &raw mut status, libc::WNOHANG) == pid }
+}

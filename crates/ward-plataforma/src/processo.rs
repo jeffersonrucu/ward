@@ -865,7 +865,18 @@ mod testes {
         // `comm` = nome do executável (até 15 bytes).
         let exe = dir.join("cl\u{202E}edua");
         std::fs::copy("/usr/bin/sleep", &exe).unwrap();
-        let mut filho = std::process::Command::new(&exe).arg("5").spawn().unwrap();
+        // `ETXTBSY`: um `fork` de outro teste em paralelo pode segurar o fd da cópia
+        // até o `exec` dele; tenta de novo (Fase 55: mais testes com `fork`).
+        let mut tentativas = 0;
+        let mut filho = loop {
+            match std::process::Command::new(&exe).arg("5").spawn() {
+                Err(e) if e.raw_os_error() == Some(libc::ETXTBSY) && tentativas < 50 => {
+                    tentativas += 1;
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                }
+                r => break r.unwrap(),
+            }
+        };
         let cadeia = cadeia_de_processos(filho.id());
         let _ = filho.kill();
         let _ = filho.wait();

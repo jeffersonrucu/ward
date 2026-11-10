@@ -278,10 +278,15 @@ pub fn gravar_entradas_com_backup(
     })
 }
 
-/// Troca a senha mestra do cofre em `destino` (V2.8): lê o arquivo, exige a senha
-/// atual, confere que o corpo é válido e lê a configuração e as entradas dele (D30),
-/// sela de novo com sal, chave de dados e nonces novos e grava de forma atômica.
-/// Devolve o cofre aberto com a senha nova, a mesma configuração e a geração nova.
+/// Troca a senha mestra do cofre em `destino` (V2.8): com o `arquivo` já lido pelo
+/// chamador, exige a senha atual, confere que o corpo é válido e lê a configuração e
+/// as entradas dele (D30), sela de novo com sal, chave de dados e nonces novos e grava
+/// de forma atômica. Devolve o cofre aberto com a senha nova, a mesma configuração e a
+/// geração nova.
+///
+/// Fase 55: o núcleo não abre o cofre para ler (não tem `libc`). O daemon lê com
+/// `O_NOFOLLOW | O_NONBLOCK`, só arquivo comum do usuário, e confere a identidade do
+/// mesmo fd: um link ou um FIFO trocado no lugar não segue nem prende a thread.
 ///
 /// `geracao_minima` (D39): um arquivo com geração menor (trocado por uma versão
 /// autêntica mais antiga) é recusado com [`ErroGravacao::Retrocesso`]. O daemon passa
@@ -294,20 +299,75 @@ pub fn gravar_entradas_com_backup(
 /// devolvido; o chamador trava e reabre com a geração queimada que guardou.
 ///
 /// Devolve também a identidade do arquivo gravado (D62, como em [`gravar_entradas`]).
-pub fn trocar_senha(
+pub fn trocar_senha_lido(
+    destino: &Path,
+    arquivo: &[u8],
+    atual: &SenhaMestra,
+    nova: &SenhaMestra,
+    geracao_minima: u64,
+    geracao_queimada: u64,
+) -> Result<(CofreAberto, IdentidadeArquivo), ErroGravacao> {
+    trocar_senha_selado(
+        destino,
+        arquivo,
+        atual,
+        nova,
+        geracao_minima,
+        geracao_queimada,
+    )
+    .map(|(cofre, id, _)| (cofre, id))
+}
+
+/// [`trocar_senha_lido`] e, depois que ela deu certo inteira, o backup da versão nova
+/// (com a senha nova) na `pasta`, como em [`gravar_entradas_com_backup`] (Fase 45).
+#[allow(clippy::too_many_arguments)]
+pub fn trocar_senha_com_backup_lido(
+    destino: &Path,
+    arquivo: &[u8],
+    atual: &SenhaMestra,
+    nova: &SenhaMestra,
+    geracao_minima: u64,
+    geracao_queimada: u64,
+    pasta: &PastaBackup,
+    instante: SystemTime,
+) -> Result<(CofreAberto, Gravado), ErroGravacao> {
+    let (cofre, identidade, arquivo) = trocar_senha_selado(
+        destino,
+        arquivo,
+        atual,
+        nova,
+        geracao_minima,
+        geracao_queimada,
+    )?;
+    let backup = pasta.guardar(&arquivo, instante, &cofre);
+    Ok((cofre, Gravado { identidade, backup }))
+}
+
+/// Só nos testes do núcleo: [`trocar_senha_lido`] lendo o arquivo pela biblioteca
+/// padrão.
+#[cfg(test)]
+pub(crate) fn trocar_senha(
     destino: &Path,
     atual: &SenhaMestra,
     nova: &SenhaMestra,
     geracao_minima: u64,
     geracao_queimada: u64,
 ) -> Result<(CofreAberto, IdentidadeArquivo), ErroGravacao> {
-    trocar_senha_selado(destino, atual, nova, geracao_minima, geracao_queimada)
-        .map(|(cofre, id, _)| (cofre, id))
+    let arquivo = ler_arquivo(destino)?;
+    trocar_senha_lido(
+        destino,
+        &arquivo,
+        atual,
+        nova,
+        geracao_minima,
+        geracao_queimada,
+    )
 }
 
-/// [`trocar_senha`] e, depois que ela deu certo inteira, o backup da versão nova (com
-/// a senha nova) na `pasta`, como em [`gravar_entradas_com_backup`] (Fase 45).
-pub fn trocar_senha_com_backup(
+/// Só nos testes do núcleo: [`trocar_senha_com_backup_lido`] lendo o arquivo pela
+/// biblioteca padrão.
+#[cfg(test)]
+pub(crate) fn trocar_senha_com_backup(
     destino: &Path,
     atual: &SenhaMestra,
     nova: &SenhaMestra,
@@ -316,22 +376,33 @@ pub fn trocar_senha_com_backup(
     pasta: &PastaBackup,
     instante: SystemTime,
 ) -> Result<(CofreAberto, Gravado), ErroGravacao> {
-    let (cofre, identidade, arquivo) =
-        trocar_senha_selado(destino, atual, nova, geracao_minima, geracao_queimada)?;
-    let backup = pasta.guardar(&arquivo, instante, &cofre);
-    Ok((cofre, Gravado { identidade, backup }))
+    let arquivo = ler_arquivo(destino)?;
+    trocar_senha_com_backup_lido(
+        destino,
+        &arquivo,
+        atual,
+        nova,
+        geracao_minima,
+        geracao_queimada,
+        pasta,
+        instante,
+    )
 }
 
 fn trocar_senha_selado(
     destino: &Path,
+    arquivo: &[u8],
     atual: &SenhaMestra,
     nova: &SenhaMestra,
     geracao_minima: u64,
     geracao_queimada: u64,
 ) -> Result<(CofreAberto, IdentidadeArquivo, Vec<u8>), ErroGravacao> {
-    let arquivo = ler_arquivo(destino)?;
+    let limite = (formato::TAM_CABECALHO + formato::MAX_CONTEUDO + cripto::TAM_TAG) as u64;
+    if arquivo.len() as u64 > limite {
+        return Err(ErroGravacao::Formato(ErroFormato::SenhaOuArquivo));
+    }
     let (chaves, conteudo) =
-        formato::trocar_senha(&arquivo, atual, nova).map_err(ErroGravacao::Formato)?;
+        formato::trocar_senha(arquivo, atual, nova).map_err(ErroGravacao::Formato)?;
     let (configuracao, geracao, entradas) =
         corpo::desserializar(&conteudo).map_err(ErroGravacao::Corpo)?;
     drop(conteudo);
@@ -345,6 +416,7 @@ fn trocar_senha_selado(
 }
 
 /// Lê o arquivo do cofre (já cifrado) sem passar do maior tamanho possível de um cofre.
+#[cfg(test)]
 fn ler_arquivo(destino: &Path) -> Result<Vec<u8>, ErroGravacao> {
     let limite = (formato::TAM_CABECALHO + formato::MAX_CONTEUDO + cripto::TAM_TAG) as u64;
     let f = File::open(destino).map_err(erro(Etapa::Ler))?;

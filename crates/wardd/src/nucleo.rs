@@ -218,6 +218,21 @@ impl Estado {
             if mortos > 0 {
                 aviso!("{mortos} ward run/ssh encerrado(s) ao travar (S8)");
             }
+            // Fase 55 (S8): o que saiu de uma sessão com `setsid` e ficou filho do
+            // daemon morre também, haja sessão em curso ou não.
+            let orfaos = ward_plataforma::descendentes::matar_orfaos();
+            if orfaos.mortos > 0 {
+                aviso!(
+                    "{} processo(s) fora do grupo de um ward run/ssh encerrado(s) ao travar (S8)",
+                    orfaos.mortos
+                );
+            }
+            if orfaos.sobraram > 0 {
+                aviso!(
+                    "{} processo(s) fora do grupo continuam vivos depois da trava (S8)",
+                    orfaos.sobraram
+                );
+            }
             self.identidade_conhecida = a.identidade;
             // `CofreAberto` e `Entrada` zeram ao sair (chave de dados, hash, segredos).
             drop(a);
@@ -1541,14 +1556,17 @@ impl Daemon {
         let nova = senha_nova(nova, "nova")?;
         let mut est = self.estado();
         let a = est.aberto.as_mut().ok_or(ErroResposta::Travado)?;
-        match arquivos::identidade(&self.caminhos.cofre) {
-            Ok(Some(id)) if Some(id) == a.identidade => {}
+        // Fase 55: o arquivo lido para a troca é o da identidade conferida, pelo mesmo
+        // fd (`O_NOFOLLOW | O_NONBLOCK`, só arquivo comum do usuário): um link ou um
+        // FIFO trocado no lugar não segue nem prende a thread (e o estado do daemon).
+        let arquivo = match arquivos::ler_cofre(&self.caminhos.cofre) {
+            Ok(Some((bytes, id))) if Some(id) == a.identidade => bytes,
             _ => {
                 aviso!("troca de senha recusada: o arquivo do cofre mudou fora do Ward; travado");
                 est.travar_mudou();
                 return Err(ErroResposta::CofreMudou);
             }
-        }
+        };
         let geracao = a.cofre.geracao();
         let proxima = geracao
             .checked_add(1)
@@ -1564,8 +1582,9 @@ impl Daemon {
         a.geracoes = antes;
         let atual = senha_de(atual);
         let r = match abrir_pasta(&self.caminhos) {
-            Some(p) => gravacao::trocar_senha_com_backup(
+            Some(p) => gravacao::trocar_senha_com_backup_lido(
                 &self.caminhos.cofre,
+                &arquivo,
                 &atual,
                 &nova,
                 a.geracoes.vista,
@@ -1577,8 +1596,9 @@ impl Daemon {
                 registrar_backup(&g.backup);
                 (novo, g.identidade)
             }),
-            None => gravacao::trocar_senha(
+            None => gravacao::trocar_senha_lido(
                 &self.caminhos.cofre,
+                &arquivo,
                 &atual,
                 &nova,
                 a.geracoes.vista,

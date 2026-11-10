@@ -1056,10 +1056,11 @@ pub(crate) fn sessao_com(
     }
     parar.store(true, Ordering::Release);
     drop(pty);
-    if trava.as_ref().is_some_and(MorreNaTrava::travou) {
+    let travou = trava.as_ref().is_some_and(MorreNaTrava::travou);
+    if let Some(dados) = aviso_do_fim(travou, grupo.sobraram()) {
         cli.enviar(&Resposta::Saida {
             fluxo: Fluxo::Erro,
-            dados: Zeroizing::new(b"ward: o cofre travou; o comando foi encerrado\n".to_vec()),
+            dados,
         });
     }
     let codigo = match resultado {
@@ -1081,9 +1082,44 @@ pub(crate) fn sessao_com(
     false
 }
 
+/// O aviso do fim da sessão para a CLI (Fase 54 e 55, S8): "encerrado" só quando nada
+/// da sessão (o comando e o que saiu do grupo dele) continua vivo.
+fn aviso_do_fim(travou: bool, sobraram: usize) -> Option<Zeroizing<Vec<u8>>> {
+    let texto = match (travou, sobraram) {
+        (true, 0) => "ward: o cofre travou; o comando foi encerrado\n".to_owned(),
+        (true, n) => {
+            format!("ward: o cofre travou, mas {n} processo(s) do comando continuam vivos\n")
+        }
+        (false, 0) => return None,
+        (false, n) => format!("ward: {n} processo(s) do comando continuam vivos depois do fim\n"),
+    };
+    Some(Zeroizing::new(texto.into_bytes()))
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    /// Fase 55: a CLI só ouve "encerrado" se nada sobrou.
+    #[test]
+    fn aviso_do_fim_so_diz_encerrado_sem_sobra() {
+        let t = |a: Option<Zeroizing<Vec<u8>>>| a.map(|v| String::from_utf8(v.to_vec()).unwrap());
+        assert_eq!(
+            t(aviso_do_fim(true, 0)).as_deref(),
+            Some("ward: o cofre travou; o comando foi encerrado\n")
+        );
+        let um = t(aviso_do_fim(true, 1)).unwrap();
+        assert!(
+            !um.contains("encerrado") && um.contains("1 processo(s)"),
+            "{um}"
+        );
+        assert_eq!(t(aviso_do_fim(false, 0)), None);
+        let dois = t(aviso_do_fim(false, 2)).unwrap();
+        assert!(
+            !dois.contains("encerrado") && dois.contains("2 processo(s)"),
+            "{dois}"
+        );
+    }
 
     /// Pasta de teste em `/run/user/<uid>/` (as pastas acima de `<rt>` têm de ser do
     /// root ou do usuário, sem escrita de grupo).
