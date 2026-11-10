@@ -1758,7 +1758,7 @@ seis baixos.
 Reauditoria final (2026-11-10): **aprovada**. Nenhum crítico nem alto; um médio e quatro
 baixos. `make check` (957), `teste-skill`, `app-check` e `teste-cli` (157) deram 0;
 `teste-ataques-fundacao` 166/167 (o que falhou foi ENOSPC no build da cópia, precisa de ~5 GB).
-- [ ] Fase 55 — Achados da reauditoria final:
+- [x] Fase 55 — Achados da reauditoria final:
   - **Médio (S8):** descendente do `ward run` que sai do grupo (`setsid -f`, `setpgid(0,0)`)
     sobrevive à trava e ao fim do comando com o segredo. O `wardd` vira
     `PR_SET_CHILD_SUBREAPER` e a sessão mata todo descendente (varredura de `/proc` por
@@ -1772,4 +1772,7 @@ baixos. `make check` (957), `teste-skill`, `app-check` e `teste-cli` (157) deram
     link, sem travar em FIFO). Teste com FIFO.
   - `make teste-ataques-fundacao` com disco suficiente (apagar `target/debug/incremental`
     antes) sai 0.
+  Feita (2026-11-10): subreaper e varredura de descendentes (D69), trava sem detalhe/TOTP/
+  janela, troca de senha por `ler_cofre`. `make check` (967), `teste-cli` (157) e
+  `teste-ataques-fundacao` (167 ok, build do zero) saíram 0.
 

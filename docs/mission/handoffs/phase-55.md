@@ -83,8 +83,7 @@
   `virar_subreaper` no `main.rs`); no repositório, o controle automático está no
   `subreaper.rs` (a mesma varredura sem o subreaper). Não pus variável `WARD_DEV_*` para
   desligar o subreaper: seria mais uma porta no daemon de teste.
-- `docs/escopo.md`/PRD/contrato não foram editados (só a fase de código foi pedida); ver
-  Problemas.
+- Docs atualizados depois do código (2.ª rodada, sem mudar código): ver "Docs".
 
 ## Comandos executados
 | Comando | Exit code |
@@ -95,7 +94,7 @@
 | `make teste-cli WARD_DEV_SOCKET_DIR=/run/user/1000/ward-55` (157 ok, 0 falhas) | 0 |
 | `make dev-daemon-parar WARD_DEV_SOCKET_DIR=/run/user/1000/ward-55` | 0 |
 | `make dev-servicos-parar` | 0 |
-| `make teste-ataques-fundacao` | ver abaixo |
+| `make teste-ataques-fundacao` (2.ª rodada, `target/` limpo, build do zero; 167 `ok`, "Todos os ataques foram barrados") | 0 |
 
 ## Problemas descobertos
 - **Órfão sem dono morre no fim de qualquer sessão** (decisão por segurança): quem sai de
@@ -111,11 +110,24 @@
 - `detalhe`/`totp` do app não contam mais como uso também quando o usuário clica numa
   entrada ou copia o TOTP (o daemon não distingue o clique do pedido automático); só
   `revelar`, `copiar` e as gravações contam. Segurança antes de conveniência.
-- `docs/mission/validation-contract.md` (linha ~433, V2.50) e o comentário do PRD citam
-  `gravacao::trocar_senha`; o nome público agora é `trocar_senha_lido` (o teste V2.50 em
-  `ward-core/tests/fontes.rs` foi atualizado). O orchestrator decide se ajusta o texto.
-- `docs/escopo.md` › "Segurança" (S8) não cita o subreaper nem o órfão sem dono; vale
-  registrar lá a regra nova.
+- **Disco (resolvido pelo usuário):** na 1.ª rodada o `teste-ataques-fundacao` não
+  terminou por falta de espaço. O usuário liberou espaço e rodou `cargo clean`; na 2.ª
+  rodada havia 51 GB livres e o alvo saiu 0. No fim, `target/debug/incremental` apagado;
+  `df -h /` final: 104G, 59G usados, **41G livres** (60%). Nenhuma `~/.cache/ward-*`
+  sobrou; nenhum processo auxiliar (daemon de teste, strace) ficou vivo.
+- Docs (antes atrasados, agora em dia):
+  - `docs/mission/validation-contract.md` › V2.50: os `pub fn` que gravam passam a ser
+    `gravar_entradas`/`gravar_entradas_com_backup` e `gravacao::trocar_senha_lido`/
+    `trocar_senha_com_backup_lido`.
+  - `docs/escopo.md` › S8: subreaper, varredura de descendentes (árvore do líder, órfãos
+    da sessão, órfão sem dono), `SIGSTOP`→`SIGKILL` por `pidfd`, "encerrado" só sem
+    sobra e o efeito aceito no `chrome_crashpad_handler` e em descendente do app.
+  - `docs/escopo.md` › "Destravar e travar": `detalhe`, TOTP e resposta da janela do app
+    e `ward run` negado/expirado não contam como uso.
+  - `docs/mission/prd.md`: D69 nova (os três achados) e nota em D44 com o nome novo.
+  - Ficaram com o nome antigo, por serem histórico de fases já feitas: `plan.md`
+    (Fases 19e/22 e o item da Fase 55) e as menções de D45/Fase 22 no PRD
+    (`trocar_senha(destino, …)`); o orchestrator decide se reescreve.
 
 ## Arquivos criados/alterados
 | Arquivo | Ação |
@@ -136,6 +148,9 @@
 | `crates/ward-core/src/gravacao.rs` | alterado |
 | `crates/ward-core/tests/fontes.rs` | alterado |
 | `docs/mission/handoffs/phase-55.md` | criado |
+| `docs/mission/validation-contract.md` | alterado (V2.50) |
+| `docs/escopo.md` | alterado (S8, trava por inatividade) |
+| `docs/mission/prd.md` | alterado (D69, nota em D44) |
 
 ## Procedimentos
 - [x] `make check` rodado (fmt, clippy, testes, audit, deny, gitleaks)

@@ -858,7 +858,8 @@ cabe ao daemon fica anotado nas Fases 22, 27 e 45.
 - D44. **Gravação pública só a partir de entradas** (achado baixo 9; D27). `gravar_cofre`
   era público e selava qualquer corpo, inclusive um sem hash de PIN. Ele passa a ser
   `pub(crate)`, e `CofreAberto::selar` também. Fora do `ward-core`, as únicas
-  gravações públicas ficam sendo `gravar_entradas` e `gravacao::trocar_senha`, que
+  gravações públicas ficam sendo `gravar_entradas` e `gravacao::trocar_senha` (desde a
+  Fase 55, `trocar_senha_lido`/`trocar_senha_com_backup_lido`; D69), que
   serializam ou validam o corpo antes de selar. O teste `tests/corpo_memoria.rs`, que
   usava `selar`, passa a gravar por `gravar_entradas` num diretório temporário.
   Doctests `compile_fail` cobrem os dois.
@@ -1529,6 +1530,30 @@ em `/tmp/claude-1000/-home-jeffersonoliveira-projetos-cofre/d2e230bd-a662-43be-a
     arquivo no argumento, à vista na janela.
   - Design: o aviso e o interruptor usam `Destaque` e `Interruptor` da Design System;
     o frame próprio da janela com o aviso fica para uma fase de DESIGN.
+- D69. **Achados da reauditoria final** (Fase 55; S8, S2, S7; D30, D39, D44, D62).
+  - **Descendente fora do grupo (S8, médio).** Um neto com `setpgid` ou `setsid`
+    escapava do `SIGKILL` no grupo e seguia com o segredo depois do fim ou da trava. O
+    `wardd` liga `PR_SET_CHILD_SUBREAPER` na partida (sem ele, não sobe). O fim de uma
+    sessão (`Grupo::matar_com_sessoes_filhas`: fim do comando, CLI que cai, `Drop`,
+    trava) varre `/proc` (`ward-plataforma/src/descendentes.rs`): a árvore do líder pela
+    cadeia de `ppid`, os órfãos com `sid` = líder e os órfãos sem dono (filho do daemon
+    fora do registro de líderes, com sessão que não é de líder vivo nem a do daemon),
+    mais os descendentes; `SIGSTOP` em rodadas até nada novo aparecer, depois `SIGKILL`,
+    todo sinal por `pidfd` conferido pelo `starttime`; órfão zumbi colhido. A trava
+    também chama `descendentes::matar_orfaos()`. A CLI só ouve "o comando foi encerrado"
+    quando nada sobrou. Efeito aceito por segurança: órfão sem dono morre no fim de
+    qualquer sessão (ex.: `chrome_crashpad_handler` do `ward playwright`; descendente do
+    app com `setsid` depois que o app fecha). cgroup v2 por sessão fica como reforço
+    possível (o `wardd@` não tem `Delegate=`).
+  - **Trava por inatividade (D30, baixo).** `conta_como_uso` não conta, do papel app,
+    `detalhe`, `totp` nem `responder_aprovacao`; um `ward run` negado ou expirado não
+    adia a trava. O pedido permitido anota o uso depois da autorização. O daemon não
+    distingue o clique numa entrada do pedido automático, então o clique também não conta.
+  - **Troca de senha (D39/D62, baixo).** O daemon lê o cofre por `arquivos::ler_cofre`
+    (`O_NOFOLLOW | O_NONBLOCK | O_NOCTTY`, só arquivo comum, identidade do fd conferida)
+    e passa os bytes a `gravacao::trocar_senha_lido`/`trocar_senha_com_backup_lido`, que
+    substituem `gravacao::trocar_senha` na lista de D44; a versão por caminho ficou só
+    nos testes do núcleo.
 
 ### Riscos abertos
 

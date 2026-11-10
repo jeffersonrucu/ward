@@ -168,6 +168,10 @@ backups. Os scripts antigos (`cofre-lista`, `cofre-run`, `cofre-ssh`,
 - Pedido do agente com o cofre travado: o app abre e pede a senha mestra ao
   usuário. O pedido espera até 2 minutos.
 - Trava sozinho: bloqueio de tela, suspensão e **4 horas sem uso** (cada uso zera).
+  Não conta como uso o tráfego automático do app: o `detalhe` (inclusive o que a janela
+  de aprovação pede e o clique numa entrada), o código TOTP do formulário e a resposta
+  da janela de aprovação; nem um `ward run` negado ou expirado. Contam revelar, copiar,
+  as gravações e o pedido permitido (Fase 55, D69).
 - "Travar agora" no app, na bandeja e em `ward travar`.
 - **PIN** separado da senha mestra, de 4 a 6 dígitos. Só aprova usos e mudanças de
   nível; não destrava. Depois de 5 erros seguidos, o cofre trava.
@@ -449,6 +453,18 @@ inclusive o valor revelado (PRD D64).
   (Fase 54) e a sessão `ward ssh` aberta (Fase 54c; decisão do usuário, 2026-11-10),
   com `SIGKILL` no grupo do comando e no do `ssh` que o `sshpass` cria com sessão
   própria; a CLI sai 137 com "o cofre travou; o comando foi encerrado".
+  Descendente que sai do grupo também morre (Fase 55, D69): o daemon é
+  `PR_SET_CHILD_SUBREAPER` (sem ele não sobe), e o fim de uma sessão (fim do comando,
+  CLI que cai, trava) para com `SIGSTOP` e depois mata com `SIGKILL`, por `pidfd`
+  conferido pelo horário de início, a árvore inteira do líder, os órfãos da sessão dele
+  e os **órfãos sem dono** (filho do daemon fora do registro, numa sessão que não é de
+  líder vivo nem a do daemon: quem fez `setsid`), com os descendentes deles. A trava
+  varre os órfãos mesmo sem sessão em curso. A CLI só diz "encerrado" se nada sobrou.
+  Efeito aceito: o órfão sem dono não diz de qual sessão veio, então morre no fim de
+  qualquer sessão; o `chrome_crashpad_handler` do Chrome do `ward playwright` (`fork`
+  duplo com `setsid`) morre quando qualquer `ward run` termina (o Chrome segue, só
+  perde o relatório de crash), e um descendente do app com `setsid` que fique órfão
+  (o app fechou) também.
 - **S9** Mudar nível de acesso exige PIN. 5 erros de PIN travam o cofre.
 - **S10** Aprovação expira em 2 min e fechar
   nega.

@@ -430,8 +430,10 @@ asserção abaixo vira teste de ataque no `ward-core`.
   chama `ward_core::gravacao::gravar_cofre(destino, &cofre, corpo)` ou
   `cofre.selar(corpo)` com um corpo sem hash de PIN, então não compila; e o auditor
   confere por `grep` que os únicos `pub fn` do `ward-core` que gravam são
-  `gravar_entradas` e `gravacao::trocar_senha`, os dois com corpo serializado ou
-  desserializado antes de selar (D44, D27) — cobre S2, S7.
+  `gravar_entradas`/`gravar_entradas_com_backup` e `gravacao::trocar_senha_lido`/
+  `trocar_senha_com_backup_lido` (Fase 55: recebem os bytes do cofre que o daemon leu
+  por `arquivos::ler_cofre`; a versão por caminho ficou só nos testes do núcleo), todos
+  com corpo serializado ou desserializado antes de selar (D44, D27, D69) — cobre S2, S7.
 - [x] V2.51 — Dadas as escolhas confirmadas em D45, quando os testes rodam, então:
   trava 0 e 1441 recusadas e 1 e 1440 aceitas, sem valor que signifique "nunca";
   `HashPin::criar` usa 64 MiB/3/1, e a leitura recusa abaixo disso e acima de 256
