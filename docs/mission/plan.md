@@ -1616,3 +1616,35 @@ habilitado cedo, uma diferença cosmética em relação ao design (V5.10).
     estado;
   - o `>>` do passo 3 segue link (só chave pública, pasta 0700);
   - o `docs/escopo.md` não cita o "Carregar de arquivo".
+
+## Auditoria final
+
+Auditoria final de segurança (2026-11-09): **reprovada**. Nenhum crítico; um alto, um médio e
+seis baixos.
+- `make check` (932 testes), `app-check`, `teste-socket-ataques`, `teste-cli`,
+  `teste-ssh-home`, `teste-nm`, `teste-extensao`, `teste-login`, `teste-playwright`,
+  `teste-skill`, `teste-migracao`, `teste-install`, `teste-units`, `teste-docker-uid` e
+  `teste-deb` deram 0.
+- V2.25 (TOTP por um oráculo HMAC em Python) e V4.12 (`pg_select.py` pelo `ward run`)
+  conferidos sem o `oathtool` e sem o `psql`.
+- **Alto:** RA8 nunca foi decidido (`docs/escopo.md:474-477`). Um `ward` falso no `PATH`
+  capturou a senha mestra digitada em `ward destravar`. Decisão do usuário.
+- **Médio:** a janela de aprovação não mostra a entrada padrão. `printf <script> | ward run
+  acme-pg-aprovacao -- python3` aprovado com PIN tirou o `PGPASSWORD`, e a janela só
+  mostrou `"python3"`. Decisão do usuário (RA3 ou correção).
+
+- [ ] Fase 54 — Baixos da auditoria final:
+  - `ward run` morre na trava: `Estado::travar` (`nucleo.rs:170-186`) mata o grupo da
+    sessão, como o agente SSH e a ponte (S8). Teste de ataque: `travar` no meio de
+    `sh -c 'sleep 4; printenv …'`.
+  - A trava por tempo sem uso (`trava.rs:76-82`) só zera com uso que entrega credencial
+    ou com ação do app; `lista` periódica do agente não adia a trava. Teste.
+  - Cópia externa (`externo.rs:320-342`) só copia versões com `geracao_selada` pela
+    chave aberta; lixo plantado na pasta local não gira as versões do pendrive. Teste.
+  - `dev/conteiner-plataforma/dentro.sh:428`: preencher em `http://localhost:8081`
+    agora exige confirmação (44c/44e); `make teste-docker-plataforma` volta a sair 0.
+  - `dev/testes/home-real.sh:183`: `python3` na regex do trace e ignorar o 2º argumento
+    de `readlink`/`readlinkat` no analisador; `make dev-servicos-conferir` e
+    `make teste-ataques-servicos` voltam a sair 0.
+  - Aviso na tela "Trocar senha": os backups antigos continuam abrindo com a senha antiga.
+  - `make teste-ataques-fundacao` (não rodou na auditoria por falta de disco) roda e sai 0.
