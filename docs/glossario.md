@@ -1066,6 +1066,24 @@ dos componentes: `data-teste` → `data-test`, `data-forca` → `data-strength`,
 `data-attachment`, `data-tipo` → `data-type`, `data-valor` → `data-value` (os valores
 que vêm do fio ficam).
 
+Telas `Form`, `Credentials` e `ChooseType` (Fase 36):
+
+| Antigo | Novo |
+|---|---|
+| `formulario.js` › `AMBIENTES_FORM`, `REGIOES_AWS`, `SEGURANCAS`, `MOTORES`, `PROTOCOLOS`, `AUTENTICACOES` | `form.js` › `FORM_ENVIRONMENTS`, `AWS_REGIONS`, `SECURITY_OPTIONS`, `ENGINES`, `PROTOCOLS`, `AUTHENTICATIONS` |
+| `TIPOS_FORM` (`{ acesso, tituloAcesso, exemplo, linhas }`), `TEXTOS_EXTRAS`, `TEXTOS_ANEXOS` (chave `padrao`), `CARTOES_TIPO` (`{ tipo, nome, descricao, depois }`) | `FORM_TYPES` (`{ access, accessTitle, example, rows }`), `EXTRAS_TEXTS`, `ATTACHMENTS_TEXTS` (chave `default`), `TYPE_CARDS` (`{ kind, name, description, later }`); chaves do fio entre aspas |
+| campo do formulário `{ id, rotulo, tipo, opcoes, local, gerar, auth, multilinha, porta, modo, ajuda, placeholder, url }` | `{ id, label, kind, options, local, generate, auth, multiline, port, inputMode, help, placeholder, url }` |
+| `tipo` do campo `texto`/`segredo`/`select`/`totp`/`nota`; `auth` `senha`/`chave`; select local `autenticacao` | `text`/`secret`/`select`/`totp`/`note`; `password`/`key`; `authentication` (o `id` dos outros campos é do fio e fica) |
+| chaves de `opcoesSelect` `regioes`, `segurancas`, `motores`, `protocolos`, `autenticacoes`, `servidores`, `saltos` | `regions`, `security`, `engines`, `protocols`, `authentications`, `servers`, `jumps` |
+| `acessoDoBanco`, `portaPadrao`, `camposDoTipo`, `campoVisivel`, `tamanhoLegivel`, `variavelDoAnexo`, `urlComPunycode`, `tagsDe`, `novoVazio`, `montarFormulario`, `errosPorCampo` (`nfc` fica) | `databaseAccess`, `defaultPort`, `fieldsOfType`, `fieldVisible`, `readableSize`, `attachmentVariable`, `urlWithPunycode`, `tagsOf`, `newIsEmpty`, `buildForm`, `errorsByField` |
+| estado do segredo `{ modo, digitado, tamanho }`, `modo` `salvo`/`digitando`/`gerada`/`carregada` | `{ mode, typed, length }`, `saved`/`typing`/`generated`/`loaded` (o valor que vai ao fio continua `manter`/`gerada`/`carregada`/`vazio`/`{ novo }`) |
+| extra `{ chave, nome, valor, segredo, guardado, original }`; anexo `{ id, nome, tamanho }`; `guardados` | `{ key, name, value, secret, stored, original }`; `{ id, name, size }`; `stored` |
+| `credenciais.js` › `AMBIENTES`, `FILTROS_VAZIOS` (`{ grupo, tipo, ambiente }`), `normalizar`, `contarEntradas`, `filtrosLigados`, `casaBusca`, `filtrar`, `gruposDe` (`{ nome, cor }`), `agrupar` (`{ itens, contagem }`), `resumoDoTopo`, `resumoDosFiltros`, `NIVEIS` (`{ rotulo, icone, explicacao }`) | `credentials.js` › `ENVIRONMENTS`, `EMPTY_FILTERS` (`{ group, kind, environment }`, o mesmo do `FiltersDialog`), `normalize`, `countEntries`, `activeFilters`, `matchesSearch`, `filterItems`, `groupsOf` (`{ name, color }`), `groupItems` (`{ items, count }`), `topSummary`, `filtersSummary`, `LEVELS` (`{ label, icon, explanation }`) |
+| props `Formulario` `tipo`, `detalhe`, `grupos`, `servidores`, `oncancelar`, `onsalvo`; `EscolherTipo` `onescolher`, `oncancelar` | `Form` `kind`, `detail`, `groups`, `servers`, `oncancel`, `onsaved`; `ChooseType` `onchoose`, `oncancel` |
+| `modo` da tela Credenciais `detalhe`/`escolher`/`formulario` | `detail`/`choose`/`form` |
+| ids do DOM `form-nome`, `form-tipo`, `form-grupo`, `form-ambiente`, `form-projeto`, `form-codigo`, `formulario-credencial`, `aviso-anexo`, `erro-anexos`, `secao-acesso/extras/anexos`, `titulo-credenciais`, `busca`, `campo-<id>`, `segredo-<id>`, `grupo-<cor>-<nome>` | `form-name`, `form-kind`, `form-group`, `form-environment`, `form-project`, `form-code`, `credential-form`, `attachment-notice`, `attachments-error`, `section-access/extras/attachments`, `credentials-title`, `search`, `field-<id>`, `secret-<id>`, `group-<color>-<name>` (`form-<id do fio>` e `extra-<…>` ficam) |
+| `data-entrada`, `data-acao="carregar-chave"`, `data-conectado="sim"` (app) | `data-entry`, `data-action="load-key"`, `data-connected="yes"` (o `data-entrada` do popup da extensão é da Fase 39) |
+
 ### Extensão (Fases 5 e 39)
 
 | Antigo | Novo |

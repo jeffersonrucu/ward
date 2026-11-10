@@ -11,7 +11,7 @@
   import Toast from './lib/components/Toast.svelte';
   import { call, listenNotices } from './lib/bridge/index.js';
   import Settings from './screens/Configuracoes.svelte';
-  import Credentials from './screens/Credenciais.svelte';
+  import Credentials from './screens/Credentials.svelte';
   import Unlock from './screens/Destravar.svelte';
   import PasswordGenerator from './screens/GeradorSenha.svelte';
   import ApprovalWindow from './screens/JanelaAprovacao.svelte';

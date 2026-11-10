@@ -29,3 +29,56 @@ app/src/lib/components/LevelDialog.svelte ambiente 54 environment field of the e
 app/src/lib/components/LevelDialog.svelte codigo 54 code field of the command error
 app/src/lib/components/LevelDialog.svelte mensagem 54 message field of the command error
 app/src/lib/components/LevelDialog.svelte estado 54 status field of the estado_do_cofre reply
+
+# Phase 36 (Form, Credentials, ChooseType): wire fields the screens read or send.
+app/src/screens/credentials.js nome 54 name field of the listar_credenciais item
+app/src/screens/credentials.js tipo 54 type field of the listar_credenciais item
+app/src/screens/credentials.js grupo 54 group field of the listar_credenciais item
+app/src/screens/credentials.js ambiente 54 environment field of the listar_credenciais item
+app/src/screens/credentials.js endereco 54 address field of the listar_credenciais item
+app/src/screens/credentials.js usuario 54 user field of the listar_credenciais item
+app/src/screens/Credentials.svelte nome 54 name field of the listar_credenciais item and of the detalhe_credencial reply; name of an extra
+app/src/screens/Credentials.svelte tipo 54 type field of the listar_credenciais item and of the detalhe_credencial reply
+app/src/screens/Credentials.svelte ambiente 54 environment field of the listar_credenciais item and of the detalhe_credencial reply
+app/src/screens/Credentials.svelte resumo 54 summary field of the listar_credenciais item
+app/src/screens/Credentials.svelte subtitulo 54 subtitle field of the detalhe_credencial reply
+app/src/screens/Credentials.svelte campos 54 fields of the detalhe_credencial reply
+app/src/screens/Credentials.svelte segredos 54 secrets of the detalhe_credencial reply
+app/src/screens/Credentials.svelte segredo 54 secret flag of an extra in the detalhe_credencial reply
+app/src/screens/Credentials.svelte rotulo 54 label of a field in the detalhe_credencial reply
+app/src/screens/Credentials.svelte valor 54 value of a field in the detalhe_credencial reply; value field of the revelar_campo reply
+app/src/screens/Credentials.svelte nivel 54 level field of the detalhe_credencial reply
+app/src/screens/Credentials.svelte criada_em 54 created-at field of the detalhe_credencial reply
+app/src/screens/Credentials.svelte alterada_em 54 changed-at field of the detalhe_credencial reply
+app/src/screens/Credentials.svelte mensagem 54 message field of the command error
+app/src/screens/form.js motor 54 field id (engine) of the banco type
+app/src/screens/form.js protocolo 54 field id (protocol) of the ftp-sftp type
+app/src/screens/form.js seguranca 54 field id (security) of the smtp type
+app/src/screens/form.js campo 54 field of a salvar_credencial error
+app/src/screens/form.js posicao 54 position field of a salvar_credencial error
+app/src/screens/form.js motivo 54 reason field of a salvar_credencial error
+app/src/screens/Form.svelte nome 54 name field of the detalhe_credencial reply, of an extra and of an attachment; name field of the escolher_anexo reply
+app/src/screens/Form.svelte grupo 54 group field of the detalhe_credencial reply
+app/src/screens/Form.svelte ambiente 54 environment field of the detalhe_credencial reply
+app/src/screens/Form.svelte projeto 54 project field of the detalhe_credencial reply
+app/src/screens/Form.svelte campos 54 fields of the detalhe_credencial reply
+app/src/screens/Form.svelte segredos 54 secrets of the detalhe_credencial reply
+app/src/screens/Form.svelte segredo 54 secret flag of an extra in the detalhe_credencial reply
+app/src/screens/Form.svelte valor 54 value of a field or extra in the detalhe_credencial reply; value field of the revelar_campo reply
+app/src/screens/Form.svelte anexos 54 attachments of the detalhe_credencial reply; error key of the attachments
+app/src/screens/Form.svelte tamanho 54 size field of an attachment and of the escolher_anexo and carregar_chave replies
+app/src/screens/Form.svelte nivel 54 level field of the detalhe_credencial reply
+app/src/screens/Form.svelte resultado 54 result tag of the escolher_anexo and carregar_chave replies
+app/src/screens/Form.svelte motivo 54 reason field of the escolher_anexo and carregar_chave notices
+app/src/screens/Form.svelte restante 54 remaining field of the codigo_totp reply
+app/src/screens/Form.svelte codigo 54 code field of the codigo_totp reply
+app/src/screens/Form.svelte salvo 54 saved field of the salvar_credencial reply
+app/src/screens/Form.svelte erros 54 errors field of the salvar_credencial reply
+app/src/screens/Form.svelte formulario 54 error key of the whole form in the salvar_credencial reply
+app/src/screens/Form.svelte mensagem 54 message field of the command error
+app/src/screens/Form.svelte motor 54 field id (engine) of the banco type
+app/src/screens/Form.svelte protocolo 54 field id (protocol) of the ftp-sftp type
+app/src/screens/Form.svelte regiao 54 field id (region) of the aws type
+app/src/screens/Form.svelte tunel 54 field id (tunnel) of the banco type
+app/src/screens/Form.svelte salto 54 field id (jump host) of the servidor type
+app/src/screens/Form.svelte totp_semente 54 field id (TOTP seed) of the login type
