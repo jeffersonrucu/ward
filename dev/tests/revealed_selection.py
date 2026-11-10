@@ -231,11 +231,11 @@ def modo_webkit():
             "e.form ? e.form.requestSubmit() : e.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true}));"
             "return true"
         )
-        if not esperar(f"return !!document.querySelector('[data-entrada=\"{ENTRADA}\"]')", 60):
+        if not esperar(f"return !!document.querySelector('[data-entry=\"{ENTRADA}\"]')", 60):
             falha("destravar pela ponte com a senha de teste")
             return
         ok("destravado pela ponte com a senha de teste")
-        js(f"document.querySelector('[data-entrada=\"{ENTRADA}\"]').click(); return true")
+        js(f"document.querySelector('[data-entry=\"{ENTRADA}\"]').click(); return true")
         if not esperar("return !!document.querySelector('button[aria-label^=\"Revelar \"]')", 15):
             falha(f"o detalhe de {ENTRADA} não mostrou o botão Revelar")
             return

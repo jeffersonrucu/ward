@@ -140,11 +140,11 @@ def destravar(pag):
     pag.wait_for_selector("#senha-mestra", timeout=20000)
     pag.fill("#senha-mestra", SENHA)
     pag.press("#senha-mestra", "Enter")
-    pag.wait_for_selector("[data-entrada]", timeout=60000)
+    pag.wait_for_selector("[data-entry]", timeout=60000)
 
 
 def abrir_entrada(pag, nome):
-    pag.locator(f'[data-entrada="{nome}"]').first.click()
+    pag.locator(f'[data-entry="{nome}"]').first.click()
     pag.wait_for_selector(f'h2:has-text("{nome}")', timeout=10000)
 
 
@@ -221,7 +221,7 @@ def passos(ctx):
         salvar.wait_for(timeout=10000)
         checar("V5.10: Novo vazio com Salvar desabilitado", salvar.is_disabled())
         pag.screenshot(path=EVID + "/formulario-novo-vazio.png")
-        pag.fill("#form-nome", "acme-e2e-novo")
+        pag.fill("#form-name", "acme-e2e-novo")
         checar("V5.10: com o nome preenchido, Salvar habilita", esperar(lambda: salvar.is_enabled(), 5))
         salvar.click()
         erro_campo = esperar(lambda: "obrigat" in texto(pag).lower() or "preencha" in texto(pag).lower(), 10)
@@ -344,7 +344,7 @@ def passos(ctx):
         codigo, err = fim_do_run(proc)
         checar("V5.16 (sempre): executa com o PIN", codigo == 0 and os.path.exists(MARCA), f"saida={codigo}")
         recarregar(pag)
-        pag.wait_for_selector("[data-entrada]", timeout=30000)
+        pag.wait_for_selector("[data-entry]", timeout=30000)
         abrir_entrada(pag, "acme-pg-aprovacao")
         cartao = esperar(lambda: "Livre" in texto(pag), 10)
         checar("V5.16 (sempre): a entrada passa a Livre no app", cartao)
