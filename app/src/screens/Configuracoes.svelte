@@ -13,11 +13,11 @@
   //   Ligar abre a escolha do pendrive (`EscolherPendrive`); ligado, o cartão do
   //   pendrive (16318) mostra o escolhido e "Trocar". Desligar mantém o UUID guardado e
   //   não apaga nada do pendrive. Lido por `backup_externo` (sem caminho de montagem).
-  //   Restaurar (Fase 47, V7.7) abre `RestaurarBackup` (16349/16512).
+  //   Restaurar (Fase 47, V7.7) abre `RestoreBackup` (16349/16512).
   // - Fase 49a: a pasta do backup local insegura (o daemon grava o cofre sem backup)
   //   vira um `Destaque` aviso logo abaixo da linha "Backup local"; só um sim/não do
   //   daemon (`backup_local`), nenhum caminho.
-  // - Kit de emergência (Fase 49, V7.10): "Imprimir" abre a folha (`KitEmergencia`).
+  // - Kit de emergência (Fase 49, V7.10): "Imprimir" abre a folha (`EmergencyKit`).
   //
   // Nenhum valor secreto passa por esta tela: as respostas trazem só os minutos, o
   // backup externo (ligado, UUID do pendrive, rótulo já neutralizado no Rust e se está
@@ -31,14 +31,14 @@
   import Select from '../lib/components/Select.svelte';
   import Toast from '../lib/components/Toast.svelte';
   import { call } from '../lib/bridge/index.js';
-  import KitEmergencia from './KitEmergencia.svelte';
+  import EmergencyKit from './EmergencyKit.svelte';
   import TrocarPin from './TrocarPin.svelte';
   import TrocarSenha from './TrocarSenha.svelte';
   import EscolherPendrive from './EscolherPendrive.svelte';
-  import RestaurarBackup from './RestaurarBackup.svelte';
-  import { mensagemRestaurado } from './restaurar.js';
+  import RestoreBackup from './RestoreBackup.svelte';
+  import { restoredMessage } from './restore.js';
   import { AVISO_BACKUP_LOCAL, cartaoDoPendrive, opcoesDeTrava } from './configuracoes.js';
-  import { mensagemDoRust } from './primeiro-uso.js';
+  import { rustMessage } from './first-use.js';
 
   /** @type {{ onlocked?: () => void }} */
   let { onlocked: ontravado = undefined } = $props();
@@ -82,7 +82,7 @@
       return;
     }
     sucesso = '';
-    erro = mensagemDoRust(e?.mensagem) || padrao;
+    erro = rustMessage(e?.mensagem) || padrao;
     await conferirTrava();
   }
 
@@ -263,10 +263,10 @@
   </div>
 </section>
 
-<KitEmergencia
-  aberto={dialogo === 'kit'}
-  onfechar={fecharDialogo}
-  ontravado={() => {
+<EmergencyKit
+  open={dialogo === 'kit'}
+  onclose={fecharDialogo}
+  onlocked={() => {
     dialogo = '';
     ontravado?.();
   }}
@@ -291,15 +291,15 @@
     ontravado?.();
   }}
 />
-<RestaurarBackup
-  aberto={dialogo === 'restaurar'}
-  onfechar={fecharDialogo}
-  onrestaurado={(r) => {
+<RestoreBackup
+  open={dialogo === 'restaurar'}
+  onclose={fecharDialogo}
+  onrestored={(r) => {
     dialogo = '';
-    avisar(mensagemRestaurado(r.instante, r.entradas));
+    avisar(restoredMessage(r.instant, r.entries));
     carregar();
   }}
-  ontravado={() => {
+  onlocked={() => {
     dialogo = '';
     ontravado?.();
   }}

@@ -11,7 +11,7 @@
   import PinField from '../lib/components/PinField.svelte';
   import Modal from '../lib/components/Modal.svelte';
   import { call } from '../lib/bridge/index.js';
-  import { MAX_DIGITOS_PIN, MENSAGENS, mensagemDoRust, pinValido } from './primeiro-uso.js';
+  import { MAX_PIN_DIGITS, MESSAGES, rustMessage, isValidPin } from './first-use.js';
 
   /**
    * @type {{ aberto?: boolean, onfechar?: () => void, ontrocado?: () => void,
@@ -76,8 +76,8 @@
       if (!texto) return;
       const valor = { atual, novo, confirmacao }[campo];
       const semSelecao = e.target?.selectionStart === e.target?.selectionEnd;
-      if (/\D/.test(texto)) erros[campo] = MENSAGENS.pinComLetra;
-      else if (semSelecao && valor.length + texto.length > MAX_DIGITOS_PIN) erros[campo] = MENSAGENS.pinLongo;
+      if (/\D/.test(texto)) erros[campo] = MESSAGES.pinWithLetter;
+      else if (semSelecao && valor.length + texto.length > MAX_PIN_DIGITS) erros[campo] = MESSAGES.pinLong;
       else erros[campo] = '';
     };
   }
@@ -86,16 +86,16 @@
     e?.preventDefault();
     if (enviando) return;
     limparErros();
-    if (!pinValido(atual)) {
-      erros.atual = MENSAGENS.pinInvalido;
+    if (!isValidPin(atual)) {
+      erros.atual = MESSAGES.pinInvalid;
       return focar('atual');
     }
-    if (!pinValido(novo)) {
-      erros.novo = MENSAGENS.pinInvalido;
+    if (!isValidPin(novo)) {
+      erros.novo = MESSAGES.pinInvalid;
       return focar('novo');
     }
     if (confirmacao !== novo) {
-      erros.confirmacao = MENSAGENS.pinDiferente;
+      erros.confirmacao = MESSAGES.pinMismatch;
       return focar('confirmacao');
     }
     // Os PINs saem do estado antes da resposta: a tela não os guarda nem no erro.
@@ -109,7 +109,7 @@
         return;
       }
       for (const erro of r?.erros ?? []) {
-        if (erro.campo in erros) erros[erro.campo] = mensagemDoRust(erro.motivo);
+        if (erro.campo in erros) erros[erro.campo] = rustMessage(erro.motivo);
       }
     } catch (err) {
       if (err?.codigo === 'pin-incorreto') {
@@ -120,7 +120,7 @@
         ontravado?.();
         return;
       } else {
-        falha = mensagemDoRust(err?.mensagem) || 'Não foi possível trocar o PIN.';
+        falha = rustMessage(err?.mensagem) || 'Não foi possível trocar o PIN.';
         onfalha?.(err?.codigo ?? '');
       }
     } finally {

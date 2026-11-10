@@ -12,7 +12,7 @@
   import Modal from '../lib/components/Modal.svelte';
   import { call } from '../lib/bridge/index.js';
   import { nomeDoPendrive, situacaoNaLista } from './configuracoes.js';
-  import { mensagemDoRust } from './primeiro-uso.js';
+  import { rustMessage } from './first-use.js';
 
   /**
    * @type {{ aberto?: boolean, trocar?: boolean, atual?: string | null,
@@ -51,7 +51,7 @@
         ontravado?.();
         return;
       }
-      falha = mensagemDoRust(e?.mensagem) || 'Não deu para ver os pendrives.';
+      falha = rustMessage(e?.mensagem) || 'Não deu para ver os pendrives.';
     } finally {
       carregando = false;
     }
@@ -77,7 +77,7 @@
         ontravado?.();
         return;
       }
-      const msg = mensagemDoRust(e?.mensagem) || 'Não foi possível ligar o backup externo.';
+      const msg = rustMessage(e?.mensagem) || 'Não foi possível ligar o backup externo.';
       // O pendrive saiu (ou o pedido não bateu com a lista): a lista volta atualizada.
       if (e?.codigo === 'pendrive-nao-conectado') await carregar();
       falha = msg;

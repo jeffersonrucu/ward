@@ -15,7 +15,7 @@
   import PasswordField from '../lib/components/PasswordField.svelte';
   import Modal from '../lib/components/Modal.svelte';
   import { call } from '../lib/bridge/index.js';
-  import { MENSAGENS, erroDaSenha, forcaDaSenha, mensagemDoRust } from './primeiro-uso.js';
+  import { MESSAGES, passwordError, passwordStrength, rustMessage } from './first-use.js';
 
   /**
    * @type {{ aberto?: boolean, onfechar?: () => void, ontrocada?: () => void,
@@ -33,7 +33,7 @@
   let campoNova = $state();
   let campoConfirmacao = $state();
 
-  const forca = $derived(forcaDaSenha(nova));
+  const forca = $derived(passwordStrength(nova));
 
   function apagar() {
     atual = '';
@@ -71,14 +71,14 @@
       campoAtual?.focus();
       return;
     }
-    const curta = erroDaSenha(nova);
+    const curta = passwordError(nova);
     if (curta) {
       erros.nova = curta;
       campoNova?.focus();
       return;
     }
     if (confirmacao !== nova) {
-      erros.confirmacao = MENSAGENS.senhaDiferente;
+      erros.confirmacao = MESSAGES.passwordMismatch;
       campoConfirmacao?.focus();
       return;
     }
@@ -93,13 +93,13 @@
         return;
       }
       for (const erro of r?.erros ?? []) {
-        if (erro.campo in erros) erros[erro.campo] = mensagemDoRust(erro.motivo);
+        if (erro.campo in erros) erros[erro.campo] = rustMessage(erro.motivo);
       }
     } catch (err) {
       if (err?.codigo === 'senha-incorreta') {
         erros.atual = 'Senha mestra incorreta. Nada foi alterado.';
       } else {
-        falha = mensagemDoRust(err?.mensagem) || 'Não foi possível trocar a senha mestra.';
+        falha = rustMessage(err?.mensagem) || 'Não foi possível trocar a senha mestra.';
         onfalha?.(err?.codigo ?? '');
       }
     } finally {
@@ -139,12 +139,12 @@
     <div class="forca" aria-live="polite">
       <div class="barras" aria-hidden="true">
         {#each [1, 2, 3, 4] as n (n)}
-          <span class="barra" data-tom={forca && n <= forca.segmentos ? forca.tom : undefined}
+          <span class="barra" data-tone={forca && n <= forca.segments ? forca.tone : undefined}
           ></span>
         {/each}
       </div>
-      <span class="legenda" data-tom={forca?.tom}>
-        {forca ? `Força: ${forca.rotulo}` : 'Força: digite a senha'}
+      <span class="legenda" data-tone={forca?.tone}>
+        {forca ? `Força: ${forca.label}` : 'Força: digite a senha'}
       </span>
     </div>
     <PasswordField
@@ -204,13 +204,13 @@
     border-radius: var(--radius-pill);
     background: var(--color-border-default);
   }
-  .barra[data-tom='perigo'] {
+  .barra[data-tone='danger'] {
     background: var(--color-danger-default);
   }
-  .barra[data-tom='aviso'] {
+  .barra[data-tone='warning'] {
     background: var(--color-warning-default);
   }
-  .barra[data-tom='sucesso'] {
+  .barra[data-tone='success'] {
     background: var(--color-success-default);
   }
   .legenda {
@@ -218,13 +218,13 @@
     line-height: var(--line-height-xs);
     color: var(--color-text-secondary);
   }
-  .legenda[data-tom='perigo'] {
+  .legenda[data-tone='danger'] {
     color: var(--color-danger-text);
   }
-  .legenda[data-tom='aviso'] {
+  .legenda[data-tone='warning'] {
     color: var(--color-warning-text);
   }
-  .legenda[data-tom='sucesso'] {
+  .legenda[data-tone='success'] {
     color: var(--color-success-text);
   }
 </style>
