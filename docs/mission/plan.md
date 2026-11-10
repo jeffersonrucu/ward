@@ -1275,6 +1275,12 @@ Decisões do usuário (2026-11-09):
   Feita (2026-11-09): frames `22733` (confirmar), `22817` (popup) e `22882` (PIN), só
   com componentes existentes; aviso de `http` em `Destaque` aviso. Ids no
   `design-nodes.md`, PNG em `docs/mission/evidence/fase-44d/`.
+2ª auditoria de segurança do M6, focada (2026-11-09): **aprovada**. O `[::1]` foi negado
+no login e no playwright, com o falso recebendo 0 bytes. Decisões fora do pedido são
+recusadas e o aprovador de teste não existe sem `modo-teste`. As políticas aparecem no
+`chrome://policy`. Passaram, todos com 0: `make check`, `app-check`,
+`teste-sem-modo-teste`, `teste-playwright`, `teste-login`, `teste-extensao`,
+`teste-politica-chrome`, `teste-install` e `teste-deb`. Médio e baixos foram para a 44e.
 - [ ] Fase 44e — App alinhado à 44d (`JanelaAprovacao.svelte`, `aprovacao.js`):
   - `origemDestaque` com `tipo="aviso"`;
   - `prodDestaque` na confirmação com "Credencial de produção. Confira a origem com
@@ -1283,6 +1289,15 @@ Decisões do usuário (2026-11-09):
     antes de permitir.";
   - `daemon_falso.rs` › `na_origem` usa o ambiente real da entrada (`acme-wp-dev` é dev);
   - conferir as três telas pela ponte contra `22733`/`22817`/`22882`.
+  - **Médio (2ª auditoria):** `uso.rs:79-86` (`origem_http`) só confirma o esquema `http`.
+    Uma entrada `https://localhost`, `https://127.0.0.1` ou `https://[::1]` vai sem janela
+    ao `ward login` e ao popup. Com uma CA mkcert ou uma CA plantada no `~/.pki`, o
+    `[::1]` pega a senha. Correção: todo host de loopback pede confirmação, em qualquer
+    esquema. Teste e atualização de D9 e da ameaça 4.
+  - **Baixo:** `apagar_sessoes` abre com `O_DIRECTORY|O_NOFOLLOW` e lista e apaga pelo
+    fd.
+  - **Baixo:** o `teste-politica-chrome` lê o `chrome://policy` em tempo de execução, e o
+    `c44_popup_*` inclui o falso `[::1]`.
 - [x] Fase 44b — (juntada à 44c) Baixos do scrutiny do M6, sem bloquear:
   - o passo 1.2 do roteiro do M6 cita a mensagem "negado"; conferir a mensagem real do
     `ward login` negado;
