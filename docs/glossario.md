@@ -291,7 +291,7 @@ a forma composta indicada.
 | deslocamento (desloc) | offset | |
 | desserializar | deserialize | |
 | destaque | highlight | `Destaque.svelte` → `Highlight.svelte`; `--cor-ambiente-prod-destaque` → `--color-environment-prod-highlight` |
-| destino | destination | `WARD_DESTINO_REDIR` → `WARD_REDIR_TARGET` |
+| destino | destination; recipient | `WARD_DESTINO_REDIR` → `WARD_REDIR_TARGET`; quem recebe algo do guia de migração (`DESTINO`, `FRASES_DESTINO` no `migration-guide.py`, Fase 41) → recipient |
 | destravar, destrava, destravado | unlock, unlocks, unlocked | subcomando `destravar` → `unlock` |
 | destrave | unlock | `pedido_de_destrave` → `unlock_request` |
 | detalhe(s), detalhado | detail(s), detailed | |
@@ -440,7 +440,7 @@ a forma composta indicada.
 | gravação, gravações | write, writes | gravação atômica → atomic write |
 | grosso(a) | thick | `--linha-grossa` → `--line-thick` |
 | grupo(s) | group(s) | |
-| guardar, guarda, guardado(s), guardadas | keep, keeps, kept | |
+| guardar, guarda, guardado(s), guardadas | keep, keeps, kept | o substantivo "guarda" (conferência antes de um comando, `migration-guide.py`, Fase 41) → guard |
 | habilitado(a) | enabled | |
 | herdar, herdado(a), herdável | inherit, inherited, inheritable | |
 | hora | hour | `uma_hora` → `one_hour` |
@@ -548,7 +548,7 @@ a forma composta indicada.
 | modelo | model / template | |
 | modo(s) | mode(s) | modo de teste → test mode; `WARD_MODO` → `WARD_MODE` |
 | monotônico | monotonic | |
-| montar, monta, montado(a)(s), montagem | build, builds, built, assembly | montar a entrega/o comando → build; pendrive montado → mounted |
+| montar, monta, montado(a)(s), montagem | build, builds, built, assembly | montar a entrega/o comando → build; pendrive montado → mounted; "montado por partes" → built in pieces; a montagem da skill antiga (`montagem.md`, `MONTAGEM` no `migration-guide.py`, Fase 41) → setup |
 | mostrar, mostra, mostrado | show, shows, shown | |
 | motivo | reason | |
 | motor, motores | engine, engines | campo `motor` → `engine` |
@@ -806,7 +806,7 @@ a forma composta indicada.
 | trazer, traz | bring, brings | |
 | trecho(s) | excerpt(s) | |
 | três | three | |
-| trocar, troca(s), trocado(s), trocada, trocou | change, change(s), changed | `trocar_pin` → `change_pin`; "trocar chave de host" → rotate host key |
+| trocar, troca(s), trocado(s), trocada, trocou | change, change(s), changed | `trocar_pin` → `change_pin`; "trocar chave de host" → rotate host key; nos autotestes da Fase 41: trocar dois passos de lugar → swap, trocar um trecho do texto → replace (`trocas` → `swaps`) |
 | trocador | swapper | |
 | truncado | truncated | |
 | túnel, túneis | tunnel(s) | |
@@ -848,7 +848,7 @@ a forma composta indicada.
 | vitrine | showcase | `Vitrine.svelte` → `Showcase.svelte` |
 | vivo(s) | alive | |
 | vizinho(a)(s) | neighbor(s) | |
-| voltar, voltou, voltaram, volta | return, returned, return | |
+| voltar, voltou, voltaram, volta | return, returned, return | a parte "Voltar atrás" do guia de migração → go back (`tem_conferir_e_voltar` → `has_verify_and_go_back`, Fase 41) |
 | zerar, zera, zerado(a) | zero, zeroes, zeroed | `zeroize` |
 | zumbi | zombie | |
 | tomar | take | |

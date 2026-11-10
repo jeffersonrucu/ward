@@ -1,61 +1,65 @@
 #!/usr/bin/python3 -IB
-"""Confere o guia de migração `docs/migracao.md` (Fases 53 e 53b, V10.1–V10.3). Sai 1 se
-algo falhar. Só lê o guia; não executa nenhum passo dele.
+"""Verifies the migration guide (`GUIDE`) (Phases 53 and 53b, V10.1–V10.3).
+Exits 1 if anything fails. Only reads the guide; runs none of its steps.
 
-Os nomes da pasta do ssh, da pasta de dados do Ward e do KeePass XC vêm montados por
-partes, para a varredura do V1.5 (`dev/tests/attacks-foundation.sh`): aqui são texto do
-guia, nunca pasta aberta.
+The names of the ssh dir, of Ward's data dir and of KeePass XC are built in pieces, for
+the V1.5 scan (`dev/tests/attacks-foundation.sh`): here they are text of the guide,
+never an opened dir.
 
-1. V10.1: os passos `## Passo N — …` são exatamente 1 a 8, nesta ordem, e cada título
-   traz o assunto do contrato; o passo 5 tem uma subseção `### 5x` para cada item de
-   `montagem.md` (override do keyring, ativação D-Bus, autostart, PAM).
-2. V10.3: cada passo e cada subseção do passo 5 tem "Conferir" e "Voltar atrás".
-3. V10.2 (SEG), conversa: o guia diz que quem executa é o usuário e traz a regra de
-   nunca colar na conversa; toda frase que cita Claude, conversa, chat, agente (fora de
-   "agente SSH"/"agente do sistema"), assistente, IA ou missão está numa lista fechada
-   (`FRASES_DESTINO`), e frase dessas com verbo de envio é recusada mesmo com negação,
-   salvo a regra e o aviso do V10.4; nenhum `!` (Claude Code) em linha, em código em
-   linha ou em bloco; nenhum bloco indentado.
-4. Blocos de código (cercados por ``` ou ~~~, de qualquer linguagem): todo comando está
-   na lista positiva `COMANDOS`, com regras de argumento (`wl-copy` só `--clear`;
-   `secret-tool` só `store` e `clear`, e o `clear` só depois da guarda
-   `grep -qx 'Comm=gnome-keyring-d' &&`; `rm` só na pasta em memória e na do ssh;
-   `sudo` só `cp` do PAM; `ssh-keygen` sem `-N`/`-P`; chave da pasta do ssh só para a
-   pasta em memória; redirecionamento só para `.pub`, o `known_hosts` do Ward e
-   `/dev/null`; pipe só para `grep`; sem heredoc, `<`, crase nem `$(` fora de
-   `$(id -u)`). Fase 53d: nenhum argumento com `..`, `$`, `~` fora de `~/`, curinga,
-   chaves, pasta do ssh fora da do home (`SSH`) nem pasta em memória fora de
-   `/run/user/$(id -u)/migracao/`; chave (da pasta do ssh ou da em memória) só sai por
-   `install -m 600`, da pasta do ssh para a em memória ou da em memória para ela mesma
-   ou para a do ssh; `cp`/`mv`/`install` com opções fixas; `find` só nas duas formas
-   da troca dos `Login Data*`; `chmod` só 600/700; `grep` só filtro de pipe, sem
-   arquivo; `busctl` só `status`, `SearchItems` e `NameHasOwner`; `cd` só nas pastas
-   do Chrome; `diff` só no PAM; `ssh-keygen -F/-l/-R` só nos `known_hosts`.
-5. SEG no texto todo: nenhum segredo em argv (`sshpass -p`, `SSHPASS=`, `-p<senha>` do
-   mysql, URI com senha, `curl -u`, `ssh-keygen -N/-P`, `wl-copy` sem `--clear`, pipe
-   para `wl-copy`/`secret-tool`, here-string), nenhum `secret-tool lookup/search`, nada
-   do cli do KeePass XC, nenhuma exportação (`export`, CSV, HTML, XML), nada em `/tmp`,
-   nenhuma chave em `~/ward-migracao`, nenhuma instrução de tirar a passphrase, nenhum
-   apagar/mover do `~/cofre` ou do `.kdbx` antes do passo 8, nenhuma chave privada,
-   chave AWS ou padrão de `.dev/variations.txt`.
-6. Fase 53b: o passo 2b usa o "Carregar de arquivo"; o 2a põe passphrase com
-   `ssh-keygen -p`; parte do guia que manda copiar no KeePass XC ou na área de
-   transferência tem `wl-copy --clear` na mesma parte; o passo 3 grava a linha do
-   `ssh-keygen -F` no `known_hosts` do Ward antes do primeiro `ward ssh` e apaga do ssh
-   as chaves de servidor; o passo 4 conta os itens com `SearchItems`; o "Voltar atrás"
-   do passo 6 devolve todos os `Login Data*`; o passo 8 abre a cópia do `.kdbx` e cita
-   o arquivo-chave antes de desinstalar. Fase 53d: o 2a salva a chave pessoal na pasta
-   em memória, põe a passphrase lá e só então a leva ao ssh por `install -m 600`; o
-   passo 3 dá `chmod 600` no `known_hosts` do Ward depois do `>>`.
-7. Fase 54a (RA8): o guia manda destravar no terminal por `/usr/local/bin/ward destravar`
-   e não cita `ward destravar` por outro caminho (o `ward` do `PATH`, `~/.local/bin/ward`),
-   porque um `ward` falso antes no `PATH` lê a senha mestra.
+1. V10.1: the level-2 step headings are exactly 1 to 8, in this order, and each title
+   carries the contract's subject; step 5 has a `### 5x` subsection for each item of
+   the old setup notes (keyring override, D-Bus activation, autostart, PAM).
+2. V10.3: each step and each subsection of step 5 has the verify and go-back parts.
+3. V10.2 (SEG), conversation: the guide says the user is the one who runs it and carries
+   the rule of never pasting into the conversation; every sentence that mentions
+   Claude, the conversation, chat, agent (other than the SSH agent or the system's
+   agent), assistant, AI or the mission is in a closed list (`RECIPIENT_SENTENCES`), and
+   such a sentence with a sending verb is refused even when negated, except the rule
+   and the V10.4 notice; no `!` (Claude Code) in a line, in inline code or in a block;
+   no indented block.
+4. Code blocks (fenced by ``` or ~~~, any language): every command is in the allowlist
+   `COMMANDS`, with argument rules (`wl-copy` only `--clear`; `secret-tool` only
+   `store` and `clear`, and `clear` only after the guard
+   `grep -qx 'Comm=gnome-keyring-d' &&`; `rm` only in the in-memory dir and in the ssh
+   one; `sudo` only the PAM `cp`; `ssh-keygen` without `-N`/`-P`; a key of the ssh dir
+   only to the in-memory dir; redirection only to `.pub`, Ward's `known_hosts` and
+   `/dev/null`; pipe only into `grep`; no heredoc, `<`, backtick nor `$(` other than
+   `$(id -u)`). Phase 53d: no argument with `..`, `$`, `~` other than `~/`, wildcard,
+   braces, an ssh dir other than the home one (`SSH`) nor an in-memory dir other than
+   `/run/user/$(id -u)/<in-memory dir>/`; a key (of the ssh dir or of the in-memory one)
+   only leaves through `install -m 600`, from the ssh dir to the in-memory one or from
+   the in-memory one to itself or to the ssh one; `cp`/`mv`/`install` with fixed
+   options; `find` only in the two forms of the `Login Data*` swap; `chmod` only
+   600/700; `grep` only as a pipe filter, without a file; `busctl` only `status`,
+   `SearchItems` and `NameHasOwner`; `cd` only into the Chrome dirs; `diff` only on PAM;
+   `ssh-keygen -F/-l/-R` only on the `known_hosts`.
+5. SEG in the whole text: no secret in argv (`sshpass -p`, `SSHPASS=`, mysql's
+   `-p<password>`, URI with a password, `curl -u`, `ssh-keygen -N/-P`, `wl-copy` without
+   `--clear`, pipe into `wl-copy`/`secret-tool`, here-string), no
+   `secret-tool lookup/search`, nothing of the KeePass XC cli, no export (`export`, CSV,
+   HTML, XML), nothing in `/tmp`, no key in the guide's home work dir, no instruction to
+   remove the passphrase, no deleting/moving of the old vault dir or of the `.kdbx`
+   before step 8, no private key, AWS key or pattern of `.dev/variations.txt`.
+6. Phase 53b: step 2b uses the load-from-file button; 2a sets a passphrase with
+   `ssh-keygen -p`; a part of the guide that says to copy into KeePass XC or into the
+   clipboard has `wl-copy --clear` in the same part; step 3 writes the `ssh-keygen -F`
+   line into Ward's `known_hosts` before the first `ward ssh` and deletes the server
+   keys from ssh; step 4 counts the items with `SearchItems`; the go-back part of
+   step 6 brings back every `Login Data*`; step 8 opens the copy of the `.kdbx` and
+   mentions the key file before uninstalling. Phase 53d: 2a saves the personal key in
+   the in-memory dir, sets the passphrase there and only then takes it to ssh through
+   `install -m 600`; step 3 runs `chmod 600` on Ward's `known_hosts` after the `>>`.
+7. Phase 54a (RA8): the guide says to unlock in the terminal by the full path of the
+   installed `ward` and does not mention unlocking by another path (the `ward` of the
+   `PATH`, `~/.local/bin/ward`), because a fake `ward` earlier in the `PATH` reads the
+   master password.
 
-Antes de conferir o guia real, o autoteste confere que ele passa (controle) e planta
-cada ataque (os da Fase 53, os 22 da auditoria do M10, os da 53b e os da 2ª auditoria
-do M10, Fase 53d) numa cópia e exige falha.
+Before verifying the real guide, the self-test verifies that it passes (control) and
+plants each attack (the ones of Phase 53, the 22 of the M10 audit, the ones of 53b and
+the ones of the 2nd M10 audit, Phase 53d) in a copy and requires a failure.
 
-Uso: python3 -I -B dev/tests/migration-guide.py [variations.txt]   (ou `make test-migration-guide`)
+Usage: python3 -I -B dev/tests/migration-guide.py [variations.txt]
+       (or `make test-migration-guide`)
 """
 
 import os
@@ -63,19 +67,21 @@ import re
 import shlex
 import sys
 
-RAIZ = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
-GUIA = os.path.join(RAIZ, "docs", "migracao.md")
-VARIACOES = os.path.join(RAIZ, ".dev", "variations.txt")
+ROOT = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+GUIDE = os.path.join(ROOT, "docs", "migracao.md")
+# Printed on a wrong call; it was the last line of the module docstring until Phase 41.
+USAGE = "Uso: python3 -I -B dev/tests/migration-guide.py [variations.txt]   (ou `make test-migration-guide`)"
+VARIATIONS = os.path.join(ROOT, ".dev", "variations.txt")
 
-# Nomes montados por partes (V1.5).
+# Names built in pieces (V1.5).
 SSH = "~/." + "ssh/"
 KPX = "KeePass" + "XC"
 KH_WARD = "~/.local/share/" + "ward/known_hosts"
 RX_SSH = r"~/\.s" r"sh"
 RX_KPX = r"keepass" r"xc"
 
-# V10.1: assunto obrigatório no título de cada passo, na ordem do contrato.
-PASSOS = [
+# V10.1: subject required in the title of each step, in the contract's order.
+STEPS = [
     (1, r"cadastrar.*à mão.*Ward"),
     (2, r"chaves SSH.*pessoais.*" + RX_SSH + r".*servidor.*`servidor`"),
     (3, r"`ward ssh`"),
@@ -86,46 +92,48 @@ PASSOS = [
     (8, r"desinstalar o " + RX_KPX),
 ]
 
-# V10.1: itens de `~/.claude/skills/cofre/references/montagem.md` desfeitos um a um.
-MONTAGEM = {
+# V10.1: items of the old skill's setup notes (`references/` of the old skill), undone
+# one by one.
+SETUP = {
     "override do keyring": r"gnome-keyring-daemon\.service\.d/override\.conf",
     "ativação D-Bus": r"dbus-1/services/org\.freedesktop\.secrets\.service",
     "autostart": r"autostart/gnome-keyring-secrets\.desktop",
     "PAM": r"/etc/pam\.d/cosmic-greeter",
 }
 
-# V10.2: quem pode receber algo do guia. "agente SSH"/"agente do sistema" é o ssh-agent.
-DESTINO = re.compile(
+# V10.2: who may receive something from the guide. The SSH agent and the system's agent
+# are the ssh-agent.
+RECIPIENT = re.compile(
     r"(?<![\w./-])claude\b|\bconversa|\bchat\b|\bassistente|\bmiss[ãa]o\b|\bIA\b|\bLLM\b"
     r"|\bbot\b|\bagente\b(?!\s+(ssh|do sistema)\b)",
     re.I,
 )
-ENVIO = re.compile(
+SENDING = re.compile(
     r"\b(col[ae]r?|cole|mand[ae]r?|mande|envi[ae]r?|mostr[ae]r?|pass[ae]r?|compartilh[ae]r?"
     r"|copi[ae]r?|digit[ae]r?|inform[ae]r?|escrev[ae]r?|entreg(ar|ue)|lev[ae]r?|repass[ae]r?"
     r"|respond[ae]r?|diga|dizer|cit[ae]r?|pe[çc]a|pedir|avis[ae]r?|jog[ae]r?|rod[ae]r?"
     r"|execut[ae]r?|liste|listar)\b",
     re.I,
 )
-REGRA = (
+RULE = (
     "**Nunca cole senha, chave, passphrase, token, código TOTP nem a saída de um comando "
     "deste guia na conversa com o Claude.**"
 )
-# Frases com destino e verbo de envio aceitas: a regra, a proibição do `!` e o aviso do
-# V10.4 (texto fixo, sem valor).
-EXCECOES_ENVIO = {
-    REGRA,
+# Accepted sentences with a recipient and a sending verb: the rule, the ban on `!` and
+# the V10.4 notice (fixed text, no value).
+SEND_EXCEPTIONS = {
+    RULE,
     "Não rode estes comandos pelo Claude Code (nem com `!`, que joga a saída na conversa).",
     "A missão não executa nenhum passo deste guia e o Claude não roda nenhum destes comandos:",
     "Para o registro do V10.4 no `plan.md`, escreva na missão só a frase \"Chrome manteve as "
     "senhas\", sem nenhum valor.",
     "Num pedido como \"liste as credenciais do Ward\", o Claude usa `ward lista`.",
-    # aviso do RA3 ("quer dizer" não é envio)
+    # RA3 notice (the "means" phrasing is not sending)
     "Antes de deixar alguma entrada como \"livre\" (ou de usar \"Permitir sempre\"), saiba "
     "que \"livre\" quer dizer que o Claude **consegue ler o segredo** dela:",
 }
-# Toda frase do guia que cita um destino; frase nova com destino é recusada.
-FRASES_DESTINO = EXCECOES_ENVIO | {
+# Every sentence of the guide that mentions a recipient; a new one is refused.
+RECIPIENT_SENTENCES = SEND_EXCEPTIONS | {
     "\"bloqueado\" para o que o Claude nunca deve usar).",
     "No " + KPX + ", desligue nessa entrada \"Adicionar ao agente ao abrir/desbloquear\".",
     "`rm " + SSH + "id_ed25519_github " + SSH + "id_ed25519_github.pub`, "
@@ -135,18 +143,18 @@ FRASES_DESTINO = EXCECOES_ENVIO | {
     "As regras novas aparecem em \"Deny\" no `/permissions` do Claude Code.",
 }
 
-# Blocos: lista positiva de comandos.
-COMANDOS = {
+# Blocks: allowlist of commands.
+COMMANDS = {
     "install", "chmod", "ssh-keygen", "grep", "cd", "find", "cp", "mv", "rm", "busctl",
     "gnome-keyring-daemon", "secret-tool", "wl-copy", "systemctl", "diff", "sudo", "ls",
 }
-SEPARADORES = {"&&", "||", ";", "|", "(", ")"}
+SEPARATORS = {"&&", "||", ";", "|", "(", ")"}
 REDIR_OK = re.compile(r"^(" + RX_SSH + r"/[\w.-]+\.pub|" + re.escape(KH_WARD) + r"|/dev/null)$")
 TMPFS = "/run/user/UID/migracao/"
 MEM = '"/run/user/$(id -u)/migracao/'
 
-# Texto todo: segredo em argv, exportação, leitura de segredo, disco.
-PROIBIDO = [
+# Whole text: secret in argv, export, secret reading, disk.
+FORBIDDEN = [
     (r"sshpass\s+-p", "sshpass -p (senha em argv)"),
     (r"\b[A-Z_]*(PASS|SENHA|TOKEN|SECRET|KEY)[A-Z_]*=", "segredo em variável na linha de comando"),
     (r"--password\b", "--password em argv"),
@@ -171,681 +179,682 @@ PROIBIDO = [
     (r"-----BEGIN [A-Z ]*PRIVATE KEY-----", "chave privada no guia"),
     (r"\bAKIA[0-9A-Z]{16}\b", "chave AWS no guia"),
 ]
-APAGAR = re.compile(r"(?i)\b(rm|mv|shred|unlink|apag\w*|exclu\w*|delet\w*|remov\w*|mov\w*)\b|-delete")
+DELETE = re.compile(r"(?i)\b(rm|mv|shred|unlink|apag\w*|exclu\w*|delet\w*|remov\w*|mov\w*)\b|-delete")
 KDBX = re.compile(r"~/cofre|\.kdbx")
 
 
-class Falha(Exception):
+class Failure(Exception):
     pass
 
 
-def secoes(texto, nivel):
-    """Divide o texto pelos títulos do nível dado: [(título, corpo)]."""
-    marca = "#" * nivel + " "
-    partes, titulo, corpo = [], None, []
-    for linha in texto.split("\n"):
-        if linha.startswith(marca):
-            if titulo is not None:
-                partes.append((titulo, "\n".join(corpo)))
-            titulo, corpo = linha[len(marca):].strip(), []
-        elif titulo is not None:
-            if re.match(r"#{1,%d} " % (nivel - 1), linha):
-                partes.append((titulo, "\n".join(corpo)))
-                titulo, corpo = None, []
+def sections(text, level):
+    """Splits the text by the titles of the given level: [(title, body)]."""
+    marker = "#" * level + " "
+    parts, title, body = [], None, []
+    for line in text.split("\n"):
+        if line.startswith(marker):
+            if title is not None:
+                parts.append((title, "\n".join(body)))
+            title, body = line[len(marker):].strip(), []
+        elif title is not None:
+            if re.match(r"#{1,%d} " % (level - 1), line):
+                parts.append((title, "\n".join(body)))
+                title, body = None, []
             else:
-                corpo.append(linha)
-    if titulo is not None:
-        partes.append((titulo, "\n".join(corpo)))
-    return partes
+                body.append(line)
+    if title is not None:
+        parts.append((title, "\n".join(body)))
+    return parts
 
 
-def tem_conferir_e_voltar(corpo):
-    conferir = re.search(r"(^###+ Conferir\s*$|\*\*Conferir:\*\*)", corpo, re.M)
-    voltar = re.search(r"(^###+ Voltar atrás\s*$|\*\*Voltar atrás:\*\*)", corpo, re.M)
-    return bool(conferir) and bool(voltar)
+def has_verify_and_go_back(body):
+    verify_heading = re.search(r"(^###+ Conferir\s*$|\*\*Conferir:\*\*)", body, re.M)
+    go_back = re.search(r"(^###+ Voltar atrás\s*$|\*\*Voltar atrás:\*\*)", body, re.M)
+    return bool(verify_heading) and bool(go_back)
 
 
-def separar_blocos(texto):
-    """Devolve (prosa, blocos): a prosa sem os blocos cercados (``` ou ~~~, qualquer
-    linguagem, qualquer recuo) e a lista de blocos. Bloco sem fim vai inteiro."""
-    prosa, blocos, atual, cerca = [], [], None, None
-    for linha in texto.split("\n"):
-        m = re.match(r"^\s*(`{3,}|~{3,})", linha)
-        if atual is None:
+def split_blocks(text):
+    """Returns (prose, blocks): the prose without the fenced blocks (``` or ~~~, any
+    language, any indentation) and the list of blocks. A block without an end goes in
+    whole."""
+    prose, blocks, current, fence = [], [], None, None
+    for line in text.split("\n"):
+        m = re.match(r"^\s*(`{3,}|~{3,})", line)
+        if current is None:
             if m:
-                atual, cerca = [], m.group(1)
+                current, fence = [], m.group(1)
             else:
-                prosa.append(linha)
-        elif m and m.group(1)[0] == cerca[0] and len(m.group(1)) >= len(cerca) \
-                and linha.strip() == m.group(1):
-            blocos.append("\n".join(atual))
-            atual = None
+                prose.append(line)
+        elif m and m.group(1)[0] == fence[0] and len(m.group(1)) >= len(fence) \
+                and line.strip() == m.group(1):
+            blocks.append("\n".join(current))
+            current = None
         else:
-            atual.append(linha)
-    if atual is not None:
-        blocos.append("\n".join(atual))
-    return "\n".join(prosa), blocos
+            current.append(line)
+    if current is not None:
+        blocks.append("\n".join(current))
+    return "\n".join(prose), blocks
 
 
-def frases(prosa):
-    """Frases da prosa: cada parágrafo, item de lista e título à parte."""
-    unidades, atual = [], []
-    for linha in prosa.split("\n"):
-        if not linha.strip() or re.match(r"^\s*(#+ |[-*] |\d+\. )", linha):
-            if atual:
-                unidades.append(" ".join(atual))
-            atual = []
-            linha = re.sub(r"^\s*(#+ |[-*] |\d+\. )", "", linha)
-        if linha.strip():
-            atual.append(linha.strip())
-    if atual:
-        unidades.append(" ".join(atual))
-    saida = []
-    for u in unidades:
-        saida += [f for f in re.split(r"(?:(?<=[.!?:;])|(?<=[.!?:;]\*\*))\s+", re.sub(r"\s+", " ", u)) if f]
-    return saida
+def sentences(prose):
+    """Sentences of the prose: each paragraph, list item and title on its own."""
+    units, current = [], []
+    for line in prose.split("\n"):
+        if not line.strip() or re.match(r"^\s*(#+ |[-*] |\d+\. )", line):
+            if current:
+                units.append(" ".join(current))
+            current = []
+            line = re.sub(r"^\s*(#+ |[-*] |\d+\. )", "", line)
+        if line.strip():
+            current.append(line.strip())
+    if current:
+        units.append(" ".join(current))
+    output = []
+    for u in units:
+        output += [f for f in re.split(r"(?:(?<=[.!?:;])|(?<=[.!?:;]\*\*))\s+", re.sub(r"\s+", " ", u)) if f]
+    return output
 
 
-def comandos_do_bloco(bloco):
-    """[(linha, [tokens])] de cada linha lógica do bloco, ou levanta ValueError."""
-    texto = re.sub(r"\\\n", " ", bloco)
-    saida = []
-    for linha in texto.split("\n"):
-        linha = linha.strip()
-        if not linha or linha.startswith("#"):
+def block_commands(block):
+    """[(line, [tokens])] of each logical line of the block, or raises ValueError."""
+    text = re.sub(r"\\\n", " ", block)
+    output = []
+    for line in text.split("\n"):
+        line = line.strip()
+        if not line or line.startswith("#"):
             continue
-        if linha.startswith("!"):
+        if line.startswith("!"):
             raise ValueError("comando com `!` (roda pelo Claude Code)")
-        trab = linha.replace("$(id -u)", "UID")
-        if "$(" in trab or "`" in trab or "<<" in trab:
-            raise ValueError(f"substituição de comando, crase ou heredoc: {linha!r}")
-        trab = re.sub(r"<([a-zçãéíõ-]+)>", r"X\1X", trab)
-        trab = trab.replace("\\;", " FIMEXEC ")
-        lx = shlex.shlex(trab, posix=True, punctuation_chars=True)
+        work = line.replace("$(id -u)", "UID")
+        if "$(" in work or "`" in work or "<<" in work:
+            raise ValueError(f"substituição de comando, crase ou heredoc: {line!r}")
+        work = re.sub(r"<([a-zçãéíõ-]+)>", r"X\1X", work)
+        work = work.replace("\\;", " FIMEXEC ")
+        lx = shlex.shlex(work, posix=True, punctuation_chars=True)
         lx.whitespace_split = True
-        saida.append((linha, list(lx)))
-    return saida
+        output.append((line, list(lx)))
+    return output
 
 
-def conferir_bloco(bloco):
-    erros = []
+def verify_block(block):
+    errors = []
     try:
-        linhas = comandos_do_bloco(bloco)
+        lines = block_commands(block)
     except ValueError as e:
         return [str(e)]
-    for linha, toks in linhas:
-        erros += conferir_tokens(toks, linha)
-        # redirecionamentos
-        limpos, i = [], 0
+    for line, toks in lines:
+        errors += verify_tokens(toks, line)
+        # redirections
+        clean, i = [], 0
         while i < len(toks):
             t = toks[i]
-            if t == ">&" and limpos and limpos[-1].isdigit() and i + 1 < len(toks) and toks[i + 1].isdigit():
-                limpos.pop()
+            if t == ">&" and clean and clean[-1].isdigit() and i + 1 < len(toks) and toks[i + 1].isdigit():
+                clean.pop()
                 i += 2
                 continue
             if t in (">", ">>"):
-                if limpos and limpos[-1].isdigit():
-                    limpos.pop()
-                alvo = toks[i + 1] if i + 1 < len(toks) else ""
-                if not REDIR_OK.match(alvo):
-                    erros.append(f"redirecionamento para fora da lista: {linha!r}")
+                if clean and clean[-1].isdigit():
+                    clean.pop()
+                target = toks[i + 1] if i + 1 < len(toks) else ""
+                if not REDIR_OK.match(target):
+                    errors.append(f"redirecionamento para fora da lista: {line!r}")
                 i += 2
                 continue
             if t in ("<", "<&", ">&", "&", "&>", ">|"):
-                erros.append(f"redirecionamento proibido {t!r}: {linha!r}")
+                errors.append(f"redirecionamento proibido {t!r}: {line!r}")
                 i += 1
                 continue
-            limpos.append(t)
+            clean.append(t)
             i += 1
-        # comandos e separadores
-        cmds, atual, seps = [], [], []
-        for t in limpos:
-            if t in SEPARADORES:
-                if atual:
-                    cmds.append(atual)
+        # commands and separators
+        cmds, current, seps = [], [], []
+        for t in clean:
+            if t in SEPARATORS:
+                if current:
+                    cmds.append(current)
                     seps.append(t)
-                atual = []
+                current = []
             else:
-                atual.append(t)
-        if atual:
-            cmds.append(atual)
+                current.append(t)
+        if current:
+            cmds.append(current)
         for n, cmd in enumerate(cmds):
-            antes = seps[n - 1] if n > 0 else None
-            erros += regras_do_comando(cmd, antes, cmds[:n], seps[: max(n - 1, 0)], linha)
-    return erros
+            before = seps[n - 1] if n > 0 else None
+            errors += command_rules(cmd, before, cmds[:n], seps[: max(n - 1, 0)], line)
+    return errors
 
 
-def regras_do_comando(cmd, antes, anteriores, seps_ant, linha):
-    nome, args = cmd[0], cmd[1:]
-    erros = []
-    if nome not in COMANDOS:
-        return [f"comando fora da lista positiva: {nome!r}"]
-    if antes == "|" and nome != "grep":
-        erros.append(f"pipe para {nome!r} (só grep)")
+def command_rules(cmd, before, previous, prev_seps, line):
+    name, args = cmd[0], cmd[1:]
+    errors = []
+    if name not in COMMANDS:
+        return [f"comando fora da lista positiva: {name!r}"]
+    if before == "|" and name != "grep":
+        errors.append(f"pipe para {name!r} (só grep)")
     if any(KDBX.search(a) for a in args):
-        erros.append(f"comando de bloco no ~/cofre ou no .kdbx: {linha!r}")
-    if nome == "wl-copy" and args != ["--clear"]:
-        erros.append("wl-copy sem ser `wl-copy --clear`")
-    if nome == "secret-tool":
+        errors.append(f"comando de bloco no ~/cofre ou no .kdbx: {line!r}")
+    if name == "wl-copy" and args != ["--clear"]:
+        errors.append("wl-copy sem ser `wl-copy --clear`")
+    if name == "secret-tool":
         if not args or args[0] not in ("store", "clear"):
-            erros.append(f"secret-tool {args[:1]} fora de store/clear")
+            errors.append(f"secret-tool {args[:1]} fora de store/clear")
         elif args[0] == "store" and not any(a.startswith("--label=") for a in args):
-            erros.append("secret-tool store sem --label")
+            errors.append("secret-tool store sem --label")
         elif args[0] == "clear":
-            guarda = (
-                antes == "&&"
-                and len(anteriores) >= 2
-                and anteriores[-1] == ["grep", "-qx", "Comm=gnome-keyring-d"]
-                and anteriores[-2][:3] == ["busctl", "--user", "status"]
-                and seps_ant[-1:] == ["|"]
+            guard = (
+                before == "&&"
+                and len(previous) >= 2
+                and previous[-1] == ["grep", "-qx", "Comm=gnome-keyring-d"]
+                and previous[-2][:3] == ["busctl", "--user", "status"]
+                and prev_seps[-1:] == ["|"]
             )
-            if not guarda:
-                erros.append("secret-tool clear sem a guarda do dono (grep -qx Comm=gnome-keyring-d &&)")
-    if nome == "sudo":
+            if not guard:
+                errors.append("secret-tool clear sem a guarda do dono (grep -qx Comm=gnome-keyring-d &&)")
+    if name == "sudo":
         if not args or args[0] != "cp" or not all(
             a.startswith(("-", "/etc/pam.d/", "/var/backups/")) for a in args[1:]
         ):
-            erros.append(f"sudo fora de `cp` do PAM: {linha!r}")
-    if nome == "ssh-keygen":
+            errors.append(f"sudo fora de `cp` do PAM: {line!r}")
+    if name == "ssh-keygen":
         for a in args:
             if re.match(r"^-[A-Za-z]*[NP]", a):
-                erros.append("ssh-keygen -N/-P (passphrase em argv)")
-        # Fase 53d: `-F`/`-l`/`-R` só nos `known_hosts`; `-y`/`-p` só em chave da pasta
-        # em memória ou da do ssh.
-        opcoes = [a for a in args if a.startswith("-")]
-        arquivo = args[args.index("-f") + 1] if "-f" in args[:-1] else ""
-        if not set(opcoes) <= {"-y", "-p", "-f", "-F", "-l", "-R"} or opcoes.count("-f") != 1:
-            erros.append(f"ssh-keygen com opções fora da lista: {linha!r}")
-        elif {"-F", "-l", "-R"} & set(opcoes):
-            if arquivo not in (SSH + "known_hosts", KH_WARD) or {"-y", "-p"} & set(opcoes):
-                erros.append(f"ssh-keygen -F/-l/-R fora dos known_hosts: {linha!r}")
-        elif not arquivo.startswith((TMPFS, SSH)):
-            erros.append(f"ssh-keygen -y/-p fora da pasta em memória e da do ssh: {linha!r}")
-    if nome == "rm":
+                errors.append("ssh-keygen -N/-P (passphrase em argv)")
+        # Phase 53d: `-F`/`-l`/`-R` only on the `known_hosts`; `-y`/`-p` only on a key of
+        # the in-memory dir or of the ssh one.
+        options = [a for a in args if a.startswith("-")]
+        file = args[args.index("-f") + 1] if "-f" in args[:-1] else ""
+        if not set(options) <= {"-y", "-p", "-f", "-F", "-l", "-R"} or options.count("-f") != 1:
+            errors.append(f"ssh-keygen com opções fora da lista: {line!r}")
+        elif {"-F", "-l", "-R"} & set(options):
+            if file not in (SSH + "known_hosts", KH_WARD) or {"-y", "-p"} & set(options):
+                errors.append(f"ssh-keygen -F/-l/-R fora dos known_hosts: {line!r}")
+        elif not file.startswith((TMPFS, SSH)):
+            errors.append(f"ssh-keygen -y/-p fora da pasta em memória e da do ssh: {line!r}")
+    if name == "rm":
         for a in args:
             if a.startswith("-"):
                 if a != "-f":
-                    erros.append(f"rm com opção {a!r}")
+                    errors.append(f"rm com opção {a!r}")
             elif not (a.startswith(TMPFS) or a.startswith(SSH)):
-                erros.append(f"rm fora da pasta em memória e da do ssh: {a!r}")
-    if nome in ("cp", "mv", "install"):
-        erros += regras_de_copia(nome, args, linha)
-    if nome == "chmod":
-        # Fase 53d: só 600/700 (chave nunca fica legível para grupo ou outros).
+                errors.append(f"rm fora da pasta em memória e da do ssh: {a!r}")
+    if name in ("cp", "mv", "install"):
+        errors += copy_rules(name, args, line)
+    if name == "chmod":
+        # Phase 53d: only 600/700 (a key never becomes readable by group or others).
         if len(args) < 2 or args[0] not in ("600", "700") or any(a.startswith("-") for a in args[1:]):
-            erros.append(f"chmod fora de 600/700: {linha!r}")
-    if nome == "grep":
-        # Fase 53d: só filtro de pipe, sem arquivo (nada de `grep . <chave>`).
-        opcoes = [a for a in args if a.startswith("-")]
-        resto = [a for a in args if not a.startswith("-")]
-        ok = antes == "|" and len(resto) == 1 and (
-            opcoes in (["-x"], ["-qx"], ["-q", "-x"], ["-x", "-q"])
-            or (opcoes == ["-v"] and resto == ["^#"])
+            errors.append(f"chmod fora de 600/700: {line!r}")
+    if name == "grep":
+        # Phase 53d: only a pipe filter, without a file (no `grep . <key>`).
+        options = [a for a in args if a.startswith("-")]
+        rest = [a for a in args if not a.startswith("-")]
+        ok = before == "|" and len(rest) == 1 and (
+            options in (["-x"], ["-qx"], ["-q", "-x"], ["-x", "-q"])
+            or (options == ["-v"] and rest == ["^#"])
         )
         if not ok:
-            erros.append(f"grep fora de `| grep -x/-qx <padrão>` (ou `| grep -v '^#'`): {linha!r}")
-    if nome == "busctl":
-        # Fase 53d: só `status`, `SearchItems` e `NameHasOwner` (nada de `Item Delete`).
+            errors.append(f"grep fora de `| grep -x/-qx <padrão>` (ou `| grep -v '^#'`): {line!r}")
+    if name == "busctl":
+        # Phase 53d: only `status`, `SearchItems` and `NameHasOwner` (no `Item Delete`).
         ok = args[:1] == ["--user"] and (
             args[1:3] == ["status", "org.freedesktop.secrets"] and len(args) == 3
             or len(args) >= 6 and args[1] == "call" and args[5] in ("SearchItems", "NameHasOwner")
         )
         if not ok:
-            erros.append(f"busctl fora de status/SearchItems/NameHasOwner: {linha!r}")
-    if nome == "cd" and args not in (["~/.config/google-chrome"], ["~/ward-migracao/chrome"], ["-"]):
-        erros.append(f"cd para fora das pastas do Chrome: {linha!r}")
-    if nome == "diff" and not (
+            errors.append(f"busctl fora de status/SearchItems/NameHasOwner: {line!r}")
+    if name == "cd" and args not in (["~/.config/google-chrome"], ["~/ward-migracao/chrome"], ["-"]):
+        errors.append(f"cd para fora das pastas do Chrome: {line!r}")
+    if name == "diff" and not (
         len(args) == 2 and all(a.startswith(("/var/backups/", "/etc/pam.d/")) for a in args)
     ):
-        erros.append(f"diff fora do PAM: {linha!r}")
-    if nome == "find":
-        erros += regras_do_find(args, anteriores, linha)
-    return erros
+        errors.append(f"diff fora do PAM: {line!r}")
+    if name == "find":
+        errors += find_rules(args, previous, line)
+    return errors
 
 
-def e_da_memoria(a):
-    """O caminho cita a pasta em memória (por qualquer forma)?"""
+def is_in_memory(a):
+    """Does the path mention the in-memory dir (in any form)?"""
     return "/run/" in a or a.startswith("run/") or ("migracao" in a and not a.startswith("~/ward-migracao"))
 
 
-def e_chave(a):
-    """Origem possível de chave: a pasta do ssh (fora do `config` e do `known_hosts`) e
-    a pasta em memória."""
-    return (a.startswith(SSH[:-1]) and a not in (SSH + "config", SSH + "known_hosts")) or e_da_memoria(a)
+def is_key(a):
+    """Possible source of a key: the ssh dir (other than `config` and `known_hosts`) and
+    the in-memory dir."""
+    return (a.startswith(SSH[:-1]) and a not in (SSH + "config", SSH + "known_hosts")) or is_in_memory(a)
 
 
-def conferir_tokens(toks, linha):
-    """Fase 53d: regras de todo argumento de bloco, antes de olhar o comando."""
-    erros = []
+def verify_tokens(toks, line):
+    """Phase 53d: rules for every block argument, before looking at the command."""
+    errors = []
     for a in toks:
         if ".." in a:
-            erros.append(f"`..` em caminho: {linha!r}")
+            errors.append(f"`..` em caminho: {line!r}")
         if "$" in a:
-            erros.append(f"variável em argumento (só `$(id -u)`): {linha!r}")
+            errors.append(f"variável em argumento (só `$(id -u)`): {line!r}")
         if "~" in a and not a.startswith("~/"):
-            erros.append(f"`~` fora de `~/`: {linha!r}")
+            errors.append(f"`~` fora de `~/`: {line!r}")
         if any(c in a for c in "*?[") and a != "Login Data*":
-            erros.append(f"curinga em argumento: {linha!r}")
+            errors.append(f"curinga em argumento: {line!r}")
         if "{" in a and a not in ("{}", "a{ss}"):
-            erros.append(f"chaves em argumento: {linha!r}")
+            errors.append(f"chaves em argumento: {line!r}")
         if "." + "ssh" in a and not (a == SSH[:-1] or a.startswith(SSH)):
-            erros.append(f"pasta do ssh por outro caminho: {a!r}")
-        if e_da_memoria(a) and not (a.startswith(TMPFS) or a == TMPFS[:-1]):
-            erros.append(f"pasta em memória por outro caminho: {a!r}")
-    return erros
+            errors.append(f"pasta do ssh por outro caminho: {a!r}")
+        if is_in_memory(a) and not (a.startswith(TMPFS) or a == TMPFS[:-1]):
+            errors.append(f"pasta em memória por outro caminho: {a!r}")
+    return errors
 
 
-def regras_de_copia(nome, args, linha):
-    """`cp`/`mv`/`install`. Chave (da pasta do ssh ou da em memória) só sai por
-    `install -m 600`, da pasta do ssh para a em memória ou da em memória para ela mesma
-    ou para a pasta do ssh."""
-    erros = []
-    opcoes, caminhos, i = [], [], 0
+def copy_rules(name, args, line):
+    """`cp`/`mv`/`install`. A key (of the ssh dir or of the in-memory one) only leaves
+    through `install -m 600`, from the ssh dir to the in-memory one or from the
+    in-memory one to itself or to the ssh dir."""
+    errors = []
+    options, paths, i = [], [], 0
     while i < len(args):
         a = args[i]
-        if nome == "install" and a == "-m" and i + 1 < len(args):
-            opcoes += [a, args[i + 1]]
+        if name == "install" and a == "-m" and i + 1 < len(args):
+            options += [a, args[i + 1]]
             i += 2
             continue
-        (opcoes if a.startswith("-") else caminhos).append(a)
+        (options if a.startswith("-") else paths).append(a)
         i += 1
-    permitidas = {"cp": [[], ["-p"]], "mv": [[]], "install": [["-m", "600"], ["-d", "-m", "700"]]}[nome]
-    if opcoes not in permitidas:
-        erros.append(f"{nome} com opções fora da lista {opcoes!r}: {linha!r}")
-        return erros
-    if "-d" in opcoes:
-        return erros
-    if any(e_chave(a) for a in caminhos):
-        origem, destino = (caminhos + ["", ""])[:2]
+    allowed = {"cp": [[], ["-p"]], "mv": [[]], "install": [["-m", "600"], ["-d", "-m", "700"]]}[name]
+    if options not in allowed:
+        errors.append(f"{name} com opções fora da lista {options!r}: {line!r}")
+        return errors
+    if "-d" in options:
+        return errors
+    if any(is_key(a) for a in paths):
+        source, dest = (paths + ["", ""])[:2]
         ok = (
-            nome == "install"
-            and opcoes == ["-m", "600"]
-            and len(caminhos) == 2
+            name == "install"
+            and options == ["-m", "600"]
+            and len(paths) == 2
             and (
-                (origem.startswith(TMPFS) and destino.startswith((TMPFS, SSH)))
-                or (origem.startswith(SSH) and destino.startswith(TMPFS))
+                (source.startswith(TMPFS) and dest.startswith((TMPFS, SSH)))
+                or (source.startswith(SSH) and dest.startswith(TMPFS))
             )
         )
         if not ok:
-            erros.append(f"chave fora de `install -m 600` entre a pasta em memória e a do ssh: {linha!r}")
-    return erros
+            errors.append(f"chave fora de `install -m 600` entre a pasta em memória e a do ssh: {line!r}")
+    return errors
 
 
-# Fase 53d: as duas formas do `find` do guia (troca dos `Login Data*` do Chrome).
+# Phase 53d: the two forms of the guide's `find` (swap of Chrome's `Login Data*`).
 FIND_BASE = [".", "-maxdepth", "2", "-name", "Login Data*", "-exec", "cp", "--parents", "-p", "{}"]
-FIND_DESTINOS = {
+FIND_DESTINATIONS = {
     "~/ward-migracao/chrome/": ("~/.config/google-chrome", False),
     "~/ward-migracao/chrome-depois/": ("~/.config/google-chrome", True),
     "~/.config/google-chrome/": ("~/ward-migracao/chrome", False),
 }
 
 
-def regras_do_find(args, anteriores, linha):
+def find_rules(args, previous, line):
     if "-delete" in args:
         return ["find -delete"]
-    destino = args[len(FIND_BASE)] if len(args) > len(FIND_BASE) else ""
-    pasta, com_rm = FIND_DESTINOS.get(destino, (None, False))
-    esperado = FIND_BASE + [destino, "FIMEXEC"] + (["-exec", "rm", "{}", "FIMEXEC"] if com_rm else [])
-    if pasta is None or args != esperado or anteriores[-1:] != [["cd", pasta]]:
-        return [f"find fora da troca dos Login Data* do Chrome: {linha!r}"]
+    dest = args[len(FIND_BASE)] if len(args) > len(FIND_BASE) else ""
+    cd_dir, with_rm = FIND_DESTINATIONS.get(dest, (None, False))
+    expected = FIND_BASE + [dest, "FIMEXEC"] + (["-exec", "rm", "{}", "FIMEXEC"] if with_rm else [])
+    if cd_dir is None or args != expected or previous[-1:] != [["cd", cd_dir]]:
+        return [f"find fora da troca dos Login Data* do Chrome: {line!r}"]
     return []
 
 
-def antes_de(texto, marca):
-    """Texto antes do título `marca` (ou o texto todo se não houver)."""
-    i = texto.find(marca)
-    return texto if i < 0 else texto[:i]
+def before_heading(text, marker):
+    """Text before the title `marker` (or the whole text if there is none)."""
+    i = text.find(marker)
+    return text if i < 0 else text[:i]
 
 
-def conferir(texto, padroes):
-    erros = []
+def verify(text, patterns):
+    errors = []
 
-    # 1. passos na ordem do contrato
-    passos = [(t, c) for t, c in secoes(texto, 2) if t.startswith("Passo ")]
-    numeros = []
-    for titulo, _ in passos:
-        m = re.match(r"Passo (\d+) — (.+)$", titulo)
+    # 1. steps in the contract's order
+    steps = [(t, c) for t, c in sections(text, 2) if t.startswith("Passo ")]
+    numbers = []
+    for title, _ in steps:
+        m = re.match(r"Passo (\d+) — (.+)$", title)
         if not m:
-            erros.append(f"título de passo fora do formato: {titulo!r}")
+            errors.append(f"título de passo fora do formato: {title!r}")
             continue
-        numeros.append(int(m.group(1)))
-    ordem_ok = numeros == [n for n, _ in PASSOS]
-    if not ordem_ok:
-        erros.append(f"passos fora da ordem 1–8: {numeros}")
+        numbers.append(int(m.group(1)))
+    order_ok = numbers == [n for n, _ in STEPS]
+    if not order_ok:
+        errors.append(f"passos fora da ordem 1–8: {numbers}")
     else:
-        for (n, assunto), (titulo, corpo) in zip(PASSOS, passos):
-            if not re.search(assunto, titulo, re.I):
-                erros.append(f"passo {n} sem o assunto do contrato: {titulo!r}")
+        for (n, subject), (title, body) in zip(STEPS, steps):
+            if not re.search(subject, title, re.I):
+                errors.append(f"passo {n} sem o assunto do contrato: {title!r}")
             # 2. V10.3
-            if not tem_conferir_e_voltar(corpo):
-                erros.append(f"passo {n} sem Conferir e Voltar atrás")
-        corpo5 = passos[4][1]
-        subs = [(t, c) for t, c in secoes("## x\n" + corpo5, 3) if re.match(r"5[a-z]\.", t)]
-        for item, rx in MONTAGEM.items():
-            achadas = [(t, c) for t, c in subs if re.search(rx, c)]
-            if len(achadas) != 1:
-                erros.append(f"passo 5: item {item!r} não está numa subseção própria")
+            if not has_verify_and_go_back(body):
+                errors.append(f"passo {n} sem Conferir e Voltar atrás")
+        body5 = steps[4][1]
+        subs = [(t, c) for t, c in sections("## x\n" + body5, 3) if re.match(r"5[a-z]\.", t)]
+        for item, rx in SETUP.items():
+            matches = [(t, c) for t, c in subs if re.search(rx, c)]
+            if len(matches) != 1:
+                errors.append(f"passo 5: item {item!r} não está numa subseção própria")
                 continue
-            if not tem_conferir_e_voltar(achadas[0][1]):
-                erros.append(f"passo 5: item {item!r} sem Conferir e Voltar atrás")
+            if not has_verify_and_go_back(matches[0][1]):
+                errors.append(f"passo 5: item {item!r} sem Conferir e Voltar atrás")
 
-    # 3. V10.2: conversa com o Claude
-    prosa, blocos = separar_blocos(texto)
-    if not re.search(r"\*\*Quem executa é você\*\*", texto):
-        erros.append("falta dizer que quem executa é o usuário (R19)")
-    lista = frases(prosa)
-    if REGRA not in lista:
-        erros.append("falta a regra de nunca colar segredo na conversa com o Claude")
-    for frase in lista:
-        if not DESTINO.search(frase):
+    # 3. V10.2: conversation with Claude
+    prose, blocks = split_blocks(text)
+    if not re.search(r"\*\*Quem executa é você\*\*", text):
+        errors.append("falta dizer que quem executa é o usuário (R19)")
+    all_sentences = sentences(prose)
+    if RULE not in all_sentences:
+        errors.append("falta a regra de nunca colar segredo na conversa com o Claude")
+    for sentence in all_sentences:
+        if not RECIPIENT.search(sentence):
             continue
-        if ENVIO.search(frase) and frase not in EXCECOES_ENVIO:
-            erros.append(f"frase com destino e verbo de envio (mesmo com negação): {frase[:80]!r}")
-        elif frase not in FRASES_DESTINO:
-            erros.append(f"frase nova que cita Claude/conversa/agente/missão: {frase[:80]!r}")
-    for linha in prosa.split("\n"):
-        if linha.lstrip().startswith("!"):
-            erros.append("linha começando com `!` (roda pelo Claude Code)")
-        if re.match(r"^( {4,}|\t)\S", linha):
-            erros.append(f"bloco indentado (use bloco cercado): {linha.strip()[:60]!r}")
-    for span in re.findall(r"`([^`\n]+)`", prosa):
+        if SENDING.search(sentence) and sentence not in SEND_EXCEPTIONS:
+            errors.append(f"frase com destino e verbo de envio (mesmo com negação): {sentence[:80]!r}")
+        elif sentence not in RECIPIENT_SENTENCES:
+            errors.append(f"frase nova que cita Claude/conversa/agente/missão: {sentence[:80]!r}")
+    for line in prose.split("\n"):
+        if line.lstrip().startswith("!"):
+            errors.append("linha começando com `!` (roda pelo Claude Code)")
+        if re.match(r"^( {4,}|\t)\S", line):
+            errors.append(f"bloco indentado (use bloco cercado): {line.strip()[:60]!r}")
+    for span in re.findall(r"`([^`\n]+)`", prose):
         if span.lstrip().startswith("!") and span.strip() != "!":
-            erros.append("código em linha com `!` (roda pelo Claude Code)")
+            errors.append("código em linha com `!` (roda pelo Claude Code)")
 
-    # 4. blocos: lista positiva
-    for bloco in blocos:
-        erros += conferir_bloco(bloco)
+    # 4. blocks: allowlist
+    for block in blocks:
+        errors += verify_block(block)
 
-    # 5. texto todo
-    for rx, motivo in PROIBIDO:
-        if re.search(rx, texto):
-            erros.append(motivo)
-    ate8 = antes_de(texto, "## Passo 8 —")
-    for frase in frases(separar_blocos(ate8)[0]) + separar_blocos(ate8)[1]:
-        if KDBX.search(frase) and APAGAR.search(frase):
-            erros.append(f"apagar ou mover o ~/cofre/.kdbx antes do passo 8: {frase[:60]!r}")
-    dados = texto.encode()
-    if any(p in dados for p in padroes):
-        erros.append("padrão de .dev/variations.txt no guia")
+    # 5. whole text
+    for rx, reason in FORBIDDEN:
+        if re.search(rx, text):
+            errors.append(reason)
+    up_to_8 = before_heading(text, "## Passo 8 —")
+    for sentence in sentences(split_blocks(up_to_8)[0]) + split_blocks(up_to_8)[1]:
+        if KDBX.search(sentence) and DELETE.search(sentence):
+            errors.append(f"apagar ou mover o ~/cofre/.kdbx antes do passo 8: {sentence[:60]!r}")
+    data = text.encode()
+    if any(p in data for p in patterns):
+        errors.append("padrão de .dev/variations.txt no guia")
 
-    # 6. Fase 53b
-    partes = re.split(r"(?=^##+ )", texto, flags=re.M)
-    for parte in partes:
-        if re.search(r"(?i)\bcopi\w*[^.\n]*(" + RX_KPX + r"|área de transferência)", parte.replace("\n", " ")) \
-                and "wl-copy --clear" not in parte:
-            erros.append(f"parte copia para a área de transferência sem `wl-copy --clear`: {parte[:50]!r}")
-    if ordem_ok:
-        corpo = {n: c for (n, _), (_, c) in zip(PASSOS, passos)}
-        sub2 = dict(secoes("## x\n" + corpo[2], 3))
+    # 6. Phase 53b
+    parts = re.split(r"(?=^##+ )", text, flags=re.M)
+    for part in parts:
+        if re.search(r"(?i)\bcopi\w*[^.\n]*(" + RX_KPX + r"|área de transferência)", part.replace("\n", " ")) \
+                and "wl-copy --clear" not in part:
+            errors.append(f"parte copia para a área de transferência sem `wl-copy --clear`: {part[:50]!r}")
+    if order_ok:
+        body = {n: c for (n, _), (_, c) in zip(STEPS, steps)}
+        sub2 = dict(sections("## x\n" + body[2], 3))
         b2 = next((c for t, c in sub2.items() if t.startswith("2b.")), "")
         a2 = next((c for t, c in sub2.items() if t.startswith("2a.")), "")
         if "**Carregar de arquivo**" not in b2:
-            erros.append("passo 2b sem o botão **Carregar de arquivo**")
-        mem = re.escape('"/run/user/$(id -u)/migracao/')
-        if not re.search(r"ssh-keygen -p -f " + mem, a2):
-            erros.append("passo 2a sem `ssh-keygen -p` na pasta em memória para chave pessoal sem passphrase")
-        # Fase 53d: a chave pessoal passa pela pasta em memória e só chega ao ssh por
-        # `install -m 600`, depois da passphrase.
-        salva = re.search(r"salve o anexo da chave privada na pasta em\s+memória", a2)
-        leva = re.search(r"^\s*install -m 600 " + mem + r'[\w.-]+" ' + RX_SSH + r"/", a2, re.M)
-        poe = re.search(r"ssh-keygen -p -f ", a2)
-        if not salva or not leva or (poe and poe.start() > leva.start()) or re.search(r"(?i)direto\s+em\s+`" + RX_SSH, a2):
-            erros.append("passo 2a sem salvar a chave pessoal na pasta em memória e levar ao ssh por install -m 600")
-        c3 = corpo[3]
-        grava = re.search(r"ssh-keygen -F [^\n]*>> " + re.escape(KH_WARD), c3)
-        primeiro = re.search(r"`ward ssh <", c3)
-        if not grava or (primeiro and primeiro.start() < grava.start()):
-            erros.append("passo 3 sem gravar a linha do ssh-keygen -F no known_hosts do Ward antes do ward ssh")
-        modo = re.search(r"^\s*chmod 600 " + re.escape(KH_WARD) + r"$", c3, re.M)
-        if not grava or not modo or modo.start() < grava.start() or (primeiro and primeiro.start() < modo.start()):
-            erros.append("passo 3 sem `chmod 600` no known_hosts do Ward depois do `>>`")
+            errors.append("passo 2b sem o botão **Carregar de arquivo**")
+        mem_rx = re.escape('"/run/user/$(id -u)/migracao/')
+        if not re.search(r"ssh-keygen -p -f " + mem_rx, a2):
+            errors.append("passo 2a sem `ssh-keygen -p` na pasta em memória para chave pessoal sem passphrase")
+        # Phase 53d: the personal key goes through the in-memory dir and only reaches ssh
+        # through `install -m 600`, after the passphrase.
+        saves = re.search(r"salve o anexo da chave privada na pasta em\s+memória", a2)
+        carries = re.search(r"^\s*install -m 600 " + mem_rx + r'[\w.-]+" ' + RX_SSH + r"/", a2, re.M)
+        sets = re.search(r"ssh-keygen -p -f ", a2)
+        if not saves or not carries or (sets and sets.start() > carries.start()) or re.search(r"(?i)direto\s+em\s+`" + RX_SSH, a2):
+            errors.append("passo 2a sem salvar a chave pessoal na pasta em memória e levar ao ssh por install -m 600")
+        c3 = body[3]
+        writes = re.search(r"ssh-keygen -F [^\n]*>> " + re.escape(KH_WARD), c3)
+        first = re.search(r"`ward ssh <", c3)
+        if not writes or (first and first.start() < writes.start()):
+            errors.append("passo 3 sem gravar a linha do ssh-keygen -F no known_hosts do Ward antes do ward ssh")
+        mode = re.search(r"^\s*chmod 600 " + re.escape(KH_WARD) + r"$", c3, re.M)
+        if not writes or not mode or mode.start() < writes.start() or (first and first.start() < mode.start()):
+            errors.append("passo 3 sem `chmod 600` no known_hosts do Ward depois do `>>`")
         if not re.search(r"^rm -f " + RX_SSH + r"/<chave>", c3, re.M):
-            erros.append("passo 3 sem apagar do ssh as chaves de servidor conferidas")
-        if "SearchItems" not in corpo[4]:
-            erros.append("passo 4 sem contar os itens por SearchItems")
-        v6 = dict(secoes("## x\n" + corpo[6], 3)).get("Voltar atrás", "")
+            errors.append("passo 3 sem apagar do ssh as chaves de servidor conferidas")
+        if "SearchItems" not in body[4]:
+            errors.append("passo 4 sem contar os itens por SearchItems")
+        v6 = dict(sections("## x\n" + body[6], 3)).get("Voltar atrás", "")
         if not re.search(r"\.config/google-chrome/ \\; ", v6) or "'Login Data*'" not in v6:
-            erros.append("Voltar atrás do passo 6 sem devolver todos os Login Data*")
-        c8 = corpo[8]
-        remove = c8.find("apt remove")
-        abre = re.search(r"Abra a cópia guardada do `\.kdbx`", c8)
-        if remove < 0 or not abre or abre.start() > remove or "arquivo-chave" not in c8[:remove]:
-            erros.append("passo 8 sem abrir a cópia do .kdbx e guardar o arquivo-chave antes de desinstalar")
+            errors.append("Voltar atrás do passo 6 sem devolver todos os Login Data*")
+        c8 = body[8]
+        removal = c8.find("apt remove")
+        opens = re.search(r"Abra a cópia guardada do `\.kdbx`", c8)
+        if removal < 0 or not opens or opens.start() > removal or "arquivo-chave" not in c8[:removal]:
+            errors.append("passo 8 sem abrir a cópia do .kdbx e guardar o arquivo-chave antes de desinstalar")
 
-    # 7. Fase 54a (RA8): senha mestra só pelo `ward` instalado, pelo caminho completo.
-    if "`/usr/local/bin/ward destravar`" not in texto:
-        erros.append("falta destravar no terminal por `/usr/local/bin/ward destravar` (RA8)")
-    if re.search(r"(?<!/usr/local/bin/)\bward\s+destravar\b", texto):
-        erros.append("`ward destravar` fora do caminho completo /usr/local/bin/ward (RA8)")
-    return erros
+    # 7. Phase 54a (RA8): master password only through the installed `ward`, by the full path.
+    if "`/usr/local/bin/ward destravar`" not in text:
+        errors.append("falta destravar no terminal por `/usr/local/bin/ward destravar` (RA8)")
+    if re.search(r"(?<!/usr/local/bin/)\bward\s+destravar\b", text):
+        errors.append("`ward destravar` fora do caminho completo /usr/local/bin/ward (RA8)")
+    return errors
 
 
-def ler_variacoes(caminho):
+def read_variations(path):
     try:
-        st = os.stat(caminho, follow_symlinks=False)
+        st = os.stat(path, follow_symlinks=False)
     except FileNotFoundError:
-        raise Falha(f"falta {caminho}; rode `make dev-variations`") from None
-    if not os.path.isfile(caminho) or os.path.islink(caminho) or st.st_mode & 0o077:
-        raise Falha("variations.txt não é arquivo comum 0600")
-    with open(caminho, "rb") as f:
-        padroes = [p for p in f.read().split(b"\n") if p]
-    if len(padroes) < 50 or any(len(p) < 6 for p in padroes):
-        raise Falha("variations.txt com padrões de menos ou curtos demais")
-    return padroes
+        raise Failure(f"falta {path}; rode `make dev-variations`") from None
+    if not os.path.isfile(path) or os.path.islink(path) or st.st_mode & 0o077:
+        raise Failure("variations.txt não é arquivo comum 0600")
+    with open(path, "rb") as f:
+        patterns = [p for p in f.read().split(b"\n") if p]
+    if len(patterns) < 50 or any(len(p) < 6 for p in patterns):
+        raise Failure("variations.txt com padrões de menos ou curtos demais")
+    return patterns
 
 
-def ataques(texto):
-    """Cópias do guia com um ataque cada: os da Fase 53 e os 22 da auditoria do M10
-    (adaptados ao texto novo quando o trecho de origem mudou)."""
-    falso = "padrao-falso-autoteste-53"
-    passos = re.split(r"(?=^## Passo )", texto, flags=re.M)
+def attacks(text):
+    """Copies of the guide with one attack each: the ones of Phase 53 and the 22 of the
+    M10 audit (adapted to the new text when the source excerpt changed)."""
+    fake = "padrao-falso-autoteste-53"
+    steps = re.split(r"(?=^## Passo )", text, flags=re.M)
     P2 = "## Passo 2 —"
     ID = SSH + "id_ed25519"
 
-    def trocar(a, b):
-        p = list(passos)
+    def swap(a, b):
+        p = list(steps)
         p[a], p[b] = p[b], p[a]
         return "".join(p)
 
-    def antes_p2(linha):
-        return texto.replace(P2, linha + "\n\n" + P2)
+    def before_p2(line):
+        return text.replace(P2, line + "\n\n" + P2)
 
-    def bloco(comando):
-        return antes_p2("```bash\n" + comando + "\n```")
+    def block(command):
+        return before_p2("```bash\n" + command + "\n```")
 
-    guarda = "busctl --user status org.freedesktop.secrets | grep -qx 'Comm=gnome-keyring-d' && "
+    guard = "busctl --user status org.freedesktop.secrets | grep -qx 'Comm=gnome-keyring-d' && "
     clear2b = 'rm -f "/run/user/$(id -u)/migracao/<servidor>"\n   wl-copy --clear\n   ```\n\nPara cada'
     return {
-        # Fase 53
-        "passos 4 e 5 trocados": trocar(4, 5),
-        "KeePass XC sai antes da skill": trocar(7, 8),
-        "passo 3 sem Voltar atrás": texto.replace(
+        # Phase 53
+        "passos 4 e 5 trocados": swap(4, 5),
+        "KeePass XC sai antes da skill": swap(7, 8),
+        "passo 3 sem Voltar atrás": text.replace(
             "### Voltar atrás\n\n- Nada a desfazer", "### Depois\n\n- Nada a desfazer"
         ),
-        "PAM fora do passo 5": re.sub(r"### 5d\..*?(?=### 5e\.)", "", texto, flags=re.S),
-        "pede para colar ao Claude": antes_p2("Cole a passphrase aqui na conversa com o Claude."),
-        "Claude roda ssh-add": antes_p2("Peça para o Claude rodar `ssh-add -l`."),
-        "regra de não colar removida": texto.replace("Nunca cole", "Evite colar"),
-        "quem executa removido": texto.replace("**Quem executa é você**", "Quem executa"),
-        "sshpass -p": texto + "\n`sshpass -p senha ssh host`\n",
-        "echo no secret-tool": texto + "\n`echo valor | secret-tool store --label=x a b`\n",
-        "here-string no secret-tool": texto + "\n`secret-tool store --label=x a b <<< valor`\n",
-        "wl-copy com texto": texto + "\n`wl-copy valor-secreto`\n",
-        "ssh-keygen -N": texto + "\n`ssh-keygen -p -N nova -f chave`\n",
-        "exportação csv": texto + "\nExporte para `senhas.csv`.\n",
-        "export do cli do KeePass XC": texto + "\n`keepass" "xc-cli export cofre.kdbx`\n",
-        "chave privada": texto + "\n-----BEGIN OPENSSH PRIVATE KEY-----\n",
-        "comando com !": texto + "\n```bash\n! ssh-add -l\n```\n",
-        "padrão de variações": texto + "\n" + falso + "\n",
-        # Auditoria do M10 (burla-m10.py), na ordem do auditor
-        "M10: colar ao Claude com 'não' na frase": antes_p2(
+        "PAM fora do passo 5": re.sub(r"### 5d\..*?(?=### 5e\.)", "", text, flags=re.S),
+        "pede para colar ao Claude": before_p2("Cole a passphrase aqui na conversa com o Claude."),
+        "Claude roda ssh-add": before_p2("Peça para o Claude rodar `ssh-add -l`."),
+        "regra de não colar removida": text.replace("Nunca cole", "Evite colar"),
+        "quem executa removido": text.replace("**Quem executa é você**", "Quem executa"),
+        "sshpass -p": text + "\n`sshpass -p senha ssh host`\n",
+        "echo no secret-tool": text + "\n`echo valor | secret-tool store --label=x a b`\n",
+        "here-string no secret-tool": text + "\n`secret-tool store --label=x a b <<< valor`\n",
+        "wl-copy com texto": text + "\n`wl-copy valor-secreto`\n",
+        "ssh-keygen -N": text + "\n`ssh-keygen -p -N nova -f chave`\n",
+        "exportação csv": text + "\nExporte para `senhas.csv`.\n",
+        "export do cli do KeePass XC": text + "\n`keepass" "xc-cli export cofre.kdbx`\n",
+        "chave privada": text + "\n-----BEGIN OPENSSH PRIVATE KEY-----\n",
+        "comando com !": text + "\n```bash\n! ssh-add -l\n```\n",
+        "padrão de variações": text + "\n" + fake + "\n",
+        # M10 audit (the auditor's bypass script), in the auditor's order
+        "M10: colar ao Claude com 'não' na frase": before_p2(
             "Cole a passphrase na conversa com o Claude, não no terminal."
         ),
-        "M10: colar no chat sem a palavra Claude": antes_p2("Cole a senha mestra aqui no chat do assistente."),
-        "M10: mande a saída ao agente": antes_p2(
+        "M10: colar no chat sem a palavra Claude": before_p2("Cole a senha mestra aqui no chat do assistente."),
+        "M10: mande a saída ao agente": before_p2(
             "Mande a saída de `secret-tool lookup application chrome` para o agente."
         ),
-        "M10: ! inline": antes_p2("Rode `!cat " + ID + "` no Claude Code."),
-        "M10: ! em bloco sh-session": texto + "\n```sh-session\n! ssh-add -l\n```\n",
-        "M10: ! em bloco indentado": texto + "\n\n    ! cat " + ID + "\n",
-        "M10: SSHPASS= no argv": texto + "\n`SSHPASS=senha sshpass -e ssh host`\n",
-        "M10: mysql -pSenha": texto + "\n`mysql -u app -pSenhaReal host`\n",
-        "M10: psql URI com senha": texto + "\n`psql postgresql://app:senha@host/db`\n",
-        # montado por partes para o gitleaks (curl-auth-user) não casar com o ataque
-        "M10: curl -u": texto + "\n`curl -u " + "admin" + ":" + "senha https://x`\n",
-        "M10: printf | wl-copy": texto + "\n`printf %s senha | wl-copy`\n",
-        "M10: ssh-keygen -N'' colado": texto + "\n`ssh-keygen -p -f k -N''`\n",
-        "M10: tirar passphrase interativa": texto.replace(
+        "M10: ! inline": before_p2("Rode `!cat " + ID + "` no Claude Code."),
+        "M10: ! em bloco sh-session": text + "\n```sh-session\n! ssh-add -l\n```\n",
+        "M10: ! em bloco indentado": text + "\n\n    ! cat " + ID + "\n",
+        "M10: SSHPASS= no argv": text + "\n`SSHPASS=senha sshpass -e ssh host`\n",
+        "M10: mysql -pSenha": text + "\n`mysql -u app -pSenhaReal host`\n",
+        "M10: psql URI com senha": text + "\n`psql postgresql://app:senha@host/db`\n",
+        # built in pieces so that gitleaks (curl-auth-user) does not match the attack
+        "M10: curl -u": text + "\n`curl -u " + "admin" + ":" + "senha https://x`\n",
+        "M10: printf | wl-copy": text + "\n`printf %s senha | wl-copy`\n",
+        "M10: ssh-keygen -N'' colado": text + "\n`ssh-keygen -p -f k -N''`\n",
+        "M10: tirar passphrase interativa": text.replace(
             "não tire a passphrase", "tire a passphrase com `ssh-keygen -p` (Enter vazio)"
         ),
-        "M10: chave colada em heredoc no disco": texto + "\n```bash\ncat > ~/chave.txt\n```\n",
-        "M10: cli do KeePass XC show -s": texto + "\n`keepass" "xc-cli show -s ~/cofre/c.kdbx entrada`\n",
-        "M10: exportar HTML pela GUI": texto + "\nNo " + KPX + ", Banco de dados › Exportar › HTML.\n",
-        "M10: apagar kdbx no passo 2": antes_p2("```bash\nrm -rf ~/cofre\n```"),
-        # adaptado: a guarda agora é o `grep -qx … &&` na frente do clear
-        "M10: Voltar atrás destrutivo (clear sem guarda)": texto.replace(guarda, ""),
-        # adaptado: o 2b não tem mais wl-copy de chave; tira o --clear depois da passphrase
-        "M10: wl-copy sem --clear": texto.replace(clear2b, 'rm -f "/run/user/$(id -u)/migracao/<servidor>"\n   ```\n\nPara cada', 1),
-        "M10: chave de servidor salva em /tmp": texto.replace(
+        "M10: chave colada em heredoc no disco": text + "\n```bash\ncat > ~/chave.txt\n```\n",
+        "M10: cli do KeePass XC show -s": text + "\n`keepass" "xc-cli show -s ~/cofre/c.kdbx entrada`\n",
+        "M10: exportar HTML pela GUI": text + "\nNo " + KPX + ", Banco de dados › Exportar › HTML.\n",
+        "M10: apagar kdbx no passo 2": before_p2("```bash\nrm -rf ~/cofre\n```"),
+        # adapted: the guard is now the `grep -qx … &&` in front of clear
+        "M10: Voltar atrás destrutivo (clear sem guarda)": text.replace(guard, ""),
+        # adapted: 2b no longer has a key wl-copy; removes the --clear after the passphrase
+        "M10: wl-copy sem --clear": text.replace(clear2b, 'rm -f "/run/user/$(id -u)/migracao/<servidor>"\n   ```\n\nPara cada', 1),
+        "M10: chave de servidor salva em /tmp": text.replace(
             "na pasta em memória:\n   `/run/user/<uid>/migracao/<servidor>` (nunca no disco)", "em `/tmp/<servidor>`"
         ),
-        "M10: secret-tool lookup imprime segredo": texto + "\n`secret-tool lookup application chrome`\n",
-        "M10: Claude, execute (verbo fora da lista)": antes_p2("Peça ao Claude: liste o " + SSH + " com ls."),
-        # Fase 53b
-        "53b: wl-copy < chave (achado alto do M10)": antes_p2(
+        "M10: secret-tool lookup imprime segredo": text + "\n`secret-tool lookup application chrome`\n",
+        "M10: Claude, execute (verbo fora da lista)": before_p2("Peça ao Claude: liste o " + SSH + " com ls."),
+        # Phase 53b
+        "53b: wl-copy < chave (achado alto do M10)": before_p2(
             "```bash\nwl-copy < \"/run/user/$(id -u)/migracao/<servidor>\"\n```"
         ),
-        "53b: 2b sem Carregar de arquivo": texto.replace("**Carregar de arquivo**", "colar o conteúdo"),
-        "53b: chave do ssh guardada em ~/ward-migracao": antes_p2(
+        "53b: 2b sem Carregar de arquivo": text.replace("**Carregar de arquivo**", "colar o conteúdo"),
+        "53b: chave do ssh guardada em ~/ward-migracao": before_p2(
             "```bash\nmv " + SSH + "<chave> ~/ward-migracao/\n```"
         ),
-        "53b: ssh-servidores de volta": texto + "\nMova para `~/ward-migracao/ssh-servidores/`.\n",
-        "53b: ward ssh antes do known_hosts": texto.replace(
+        "53b: ssh-servidores de volta": text + "\nMova para `~/ward-migracao/ssh-servidores/`.\n",
+        "53b: ward ssh antes do known_hosts": text.replace(
             "1. Antes do primeiro `ward ssh` da entrada,", "1. Rode `ward ssh <entrada> hostname`. Depois,"
         ),
-        "53b: sem apagar a chave do ssh no passo 3": texto.replace(
+        "53b: sem apagar a chave do ssh no passo 3": text.replace(
             "rm -f " + SSH + "<chave> " + SSH + "<chave>.pub", "ls -l " + SSH
         ),
-        "53b: sem passphrase na chave pessoal": texto.replace(
+        "53b: sem passphrase na chave pessoal": text.replace(
             "ssh-keygen -p -f " + MEM + 'id_ed25519_github"\n', "ls -l " + SSH + "\n"
         ),
-        "53b: deixar sem passphrase": antes_p2("Se preferir, deixe a chave sem passphrase."),
-        "53b: secret-tool search": texto + "\n`secret-tool search --all application chrome 2>&1 >/dev/null`\n",
-        "53b: passo 4 sem SearchItems": texto.replace("SearchItems", "GetItems"),
-        "53b: só um Login Data no Voltar atrás": texto.replace(
+        "53b: deixar sem passphrase": before_p2("Se preferir, deixe a chave sem passphrase."),
+        "53b: secret-tool search": text + "\n`secret-tool search --all application chrome 2>&1 >/dev/null`\n",
+        "53b: passo 4 sem SearchItems": text.replace("SearchItems", "GetItems"),
+        "53b: só um Login Data no Voltar atrás": text.replace(
             "cd ~/ward-migracao/chrome && find . -maxdepth 2 -name 'Login Data*' \\\n"
             "     -exec cp --parents -p {} ~/.config/google-chrome/ \\; ; cd -",
             "cp -p ~/ward-migracao/chrome/Default/'Login Data' ~/.config/google-chrome/Default/",
         ),
-        "53b: passo 8 sem abrir a cópia": texto.replace("1. Abra a cópia guardada do `.kdbx`", "1. Ache a cópia do `.kdbx`"),
-        "53b: passo 8 sem arquivo-chave": texto.replace(
+        "53b: passo 8 sem abrir a cópia": text.replace("1. Abra a cópia guardada do `.kdbx`", "1. Ache a cópia do `.kdbx`"),
+        "53b: passo 8 sem arquivo-chave": text.replace(
             "Se o banco usa arquivo-chave, guarde uma cópia\n   do arquivo-chave também", "Se precisar, guarde"
         ),
-        "53b: apagar ~/cofre no passo 4": texto.replace(
+        "53b: apagar ~/cofre no passo 4": text.replace(
             "8. Mantenha o Chrome fechado", "8. Apague o `~/cofre/` (já tem cópia).\n9. Mantenha o Chrome fechado"
         ),
-        "53b: rm fora da lista": antes_p2("```bash\nrm -f ~/ward-migracao/chrome/x\n```"),
-        "53b: cat no bloco": antes_p2("```bash\ncat " + SSH + "config\n```"),
-        "53b: redirecionamento para o home": antes_p2(
+        "53b: rm fora da lista": before_p2("```bash\nrm -f ~/ward-migracao/chrome/x\n```"),
+        "53b: cat no bloco": before_p2("```bash\ncat " + SSH + "config\n```"),
+        "53b: redirecionamento para o home": before_p2(
             "```bash\nssh-keygen -y -f " + SSH + "x > ~/x.txt\n```"
         ),
-        "53b: sudo fora do PAM": antes_p2("```bash\nsudo cp " + SSH + "x /root/\n```"),
-        "53b: bloco ~~~": texto + "\n~~~\ntee ~/x\n~~~\n",
-        "53b: substituição de comando": antes_p2("```bash\nls $(cat " + SSH + "x)\n```"),
-        "53b: find -delete": antes_p2("```bash\nfind " + SSH + " -name 'id_*' -delete\n```"),
-        "53b: frase nova citando a missão": antes_p2("Avise na missão quando terminar."),
-        # Fase 53d (2ª auditoria do M10): os 9 casos do auditor
-        "53d: cp com origem na pasta em memória": bloco("cp " + MEM + '<servidor>" ~/ward-migracao/'),
-        "53d: mv com origem na pasta em memória": bloco("mv " + MEM + '<servidor>" ~/chave'),
-        "53d: .. escapa do padrão /tmp": bloco(
+        "53b: sudo fora do PAM": before_p2("```bash\nsudo cp " + SSH + "x /root/\n```"),
+        "53b: bloco ~~~": text + "\n~~~\ntee ~/x\n~~~\n",
+        "53b: substituição de comando": before_p2("```bash\nls $(cat " + SSH + "x)\n```"),
+        "53b: find -delete": before_p2("```bash\nfind " + SSH + " -name 'id_*' -delete\n```"),
+        "53b: frase nova citando a missão": before_p2("Avise na missão quando terminar."),
+        # Phase 53d (2nd M10 audit): the auditor's 9 cases
+        "53d: cp com origem na pasta em memória": block("cp " + MEM + '<servidor>" ~/ward-migracao/'),
+        "53d: mv com origem na pasta em memória": block("mv " + MEM + '<servidor>" ~/chave'),
+        "53d: .. escapa do padrão /tmp": block(
             "install -m 600 " + SSH + "<chave> " + MEM + '../../../tmp/chave"'
         ),
-        "53d: .. na origem do cp": bloco("cp -p " + SSH + "../." + "ssh/id_ed25519 ~/ward-migracao/"),
-        "53d: find -exec cp da pasta do ssh": bloco(
+        "53d: .. na origem do cp": block("cp -p " + SSH + "../." + "ssh/id_ed25519 ~/ward-migracao/"),
+        "53d: find -exec cp da pasta do ssh": block(
             "find " + SSH + " -name 'id_*' -exec cp {} ~/ward-migracao/ \\;"
         ),
-        "53d: find -exec cp com destino trocado": texto.replace(
+        "53d: find -exec cp com destino trocado": text.replace(
             "-exec cp --parents -p {} ~/ward-migracao/chrome/ \\;", "-exec cp --parents -p {} ~/.cache/ \\;", 1
         ),
-        "53d: chmod 644 de chave": bloco("chmod 644 " + SSH + "id_ed25519_github"),
-        "53d: grep . de chave": bloco("grep . " + SSH + "<chave>"),
-        "53d: busctl Item Delete": bloco(
+        "53d: chmod 644 de chave": block("chmod 644 " + SSH + "id_ed25519_github"),
+        "53d: grep . de chave": block("grep . " + SSH + "<chave>"),
+        "53d: busctl Item Delete": block(
             "busctl --user call org.freedesktop.secrets /org/freedesktop/secrets/collection/login/1 "
             "org.freedesktop.Secret.Item Delete"
         ),
-        # Fase 53d: outras formas da mesma fuga
-        "53d: install da pasta em memória para o home": bloco("install -m 600 " + MEM + '<servidor>" ~/chave'),
-        "53d: mv da pasta do ssh inteira": bloco("mv " + SSH[:-1] + " ~/ward-migracao/ssh-velho"),
-        "53d: pasta do ssh pelo /home": bloco("cp /home/u/." + "ssh/id_ed25519 ~/ward-migracao/"),
-        "53d: curinga no caminho do ssh": bloco("cp ~/.s?h/id_ed25519 ~/ward-migracao/"),
-        "53d: variável no caminho": bloco('cp "$HOME/.' + 'ssh/id_ed25519" ~/ward-migracao/'),
-        "53d: cd para a pasta do ssh": bloco("cd " + SSH + " && cp id_ed25519 ~/ward-migracao/"),
-        "53d: --target-directory": bloco("cp --target-directory=~/ward-migracao " + SSH + "<chave>"),
-        "53d: diff mostra a chave": bloco("diff " + SSH + "<chave> /dev/null"),
-        "53d: ssh-keygen -F na chave": bloco("ssh-keygen -F x -f " + SSH + "<chave>"),
-        "53d: pasta em memória por outro caminho": bloco(
+        # Phase 53d: other forms of the same escape
+        "53d: install da pasta em memória para o home": block("install -m 600 " + MEM + '<servidor>" ~/chave'),
+        "53d: mv da pasta do ssh inteira": block("mv " + SSH[:-1] + " ~/ward-migracao/ssh-velho"),
+        "53d: pasta do ssh pelo /home": block("cp /home/u/." + "ssh/id_ed25519 ~/ward-migracao/"),
+        "53d: curinga no caminho do ssh": block("cp ~/.s?h/id_ed25519 ~/ward-migracao/"),
+        "53d: variável no caminho": block('cp "$HOME/.' + 'ssh/id_ed25519" ~/ward-migracao/'),
+        "53d: cd para a pasta do ssh": block("cd " + SSH + " && cp id_ed25519 ~/ward-migracao/"),
+        "53d: --target-directory": block("cp --target-directory=~/ward-migracao " + SSH + "<chave>"),
+        "53d: diff mostra a chave": block("diff " + SSH + "<chave> /dev/null"),
+        "53d: ssh-keygen -F na chave": block("ssh-keygen -F x -f " + SSH + "<chave>"),
+        "53d: pasta em memória por outro caminho": block(
             "install -m 600 " + SSH + "<chave> /run/user/1000/migracao/x"
         ),
-        # Fase 53d: passo 2a sem passar pela pasta em memória (médio) e known_hosts (baixo)
-        "53d: 2a salva direto no ssh": texto.replace(
+        # Phase 53d: step 2a without going through the in-memory dir (medium) and known_hosts (low)
+        "53d: 2a salva direto no ssh": text.replace(
             "salve o anexo da chave privada na pasta em\n   memória",
             "salve o anexo da chave privada direto em `" + SSH + "<nome>`, não na pasta em\n   memória",
         ),
-        "53d: 2a põe passphrase já no ssh": texto.replace(
+        "53d: 2a põe passphrase já no ssh": text.replace(
             "ssh-keygen -p -f " + MEM + 'id_ed25519_github"', "ssh-keygen -p -f " + SSH + "id_ed25519_github"
         ),
-        "53d: 2a leva a chave com cp": texto.replace(
+        "53d: 2a leva a chave com cp": text.replace(
             "install -m 600 " + MEM + 'id_ed25519_github" ' + SSH + "id_ed25519_github",
             "cp -p " + MEM + 'id_ed25519_github" ' + SSH + "id_ed25519_github",
         ),
-        "53d: known_hosts do Ward sem chmod 600": texto.replace(
+        "53d: known_hosts do Ward sem chmod 600": text.replace(
             "   chmod 600 " + KH_WARD + "\n", ""
         ),
-        # Fase 54a (RA8): a senha mestra pelo `ward` que o PATH acha
-        "54a: destravar pelo PATH": texto.replace(
+        # Phase 54a (RA8): the master password through the `ward` that the PATH finds
+        "54a: destravar pelo PATH": text.replace(
             "`/usr/local/bin/ward destravar`", "`ward destravar`"
         ),
-        "54a: destravar por outro ward": texto.replace(
+        "54a: destravar por outro ward": text.replace(
             "`/usr/local/bin/ward destravar`", "`~/.local/bin/ward destravar`"
         ),
-        "54a: destravar pelo PATH em outro passo": antes_p2("No terminal, rode `ward  destravar`."),
+        "54a: destravar pelo PATH em outro passo": before_p2("No terminal, rode `ward  destravar`."),
     }
 
 
-def autoteste(texto, padroes):
-    """Controle e ataques plantados numa cópia em memória do guia."""
-    erros = conferir(texto, padroes)
-    if erros:
-        for e in erros:
+def self_test(text, patterns):
+    """Control and attacks planted in an in-memory copy of the guide."""
+    errors = verify(text, patterns)
+    if errors:
+        for e in errors:
             print(f"  FALHA controle: {e}")
-        raise Falha("controle: o guia real não passa")
-    falso = b"padrao-falso-autoteste-53"
-    for nome, copia in ataques(texto).items():
-        if copia == texto:
-            raise Falha(f"autoteste: ataque {nome!r} não mudou a cópia")
-        if not conferir(copia, padroes + [falso]):
-            raise Falha(f"autoteste: ataque {nome!r} passou")
-        print(f"  ok  ataque recusado: {nome}")
+        raise Failure("controle: o guia real não passa")
+    fake = b"padrao-falso-autoteste-53"
+    for name, copy in attacks(text).items():
+        if copy == text:
+            raise Failure(f"autoteste: ataque {name!r} não mudou a cópia")
+        if not verify(copy, patterns + [fake]):
+            raise Failure(f"autoteste: ataque {name!r} passou")
+        print(f"  ok  ataque recusado: {name}")
 
 
 def main():
     if len(sys.argv) > 2:
-        print(__doc__.strip().split("\n")[-1], file=sys.stderr)
+        print(USAGE, file=sys.stderr)
         return 2
     try:
-        padroes = ler_variacoes(sys.argv[1] if len(sys.argv) == 2 else VARIACOES)
-        with open(GUIA, encoding="utf-8") as f:
-            texto = f.read()
+        patterns = read_variations(sys.argv[1] if len(sys.argv) == 2 else VARIATIONS)
+        with open(GUIDE, encoding="utf-8") as f:
+            text = f.read()
         print("==> autoteste")
-        autoteste(texto, padroes)
+        self_test(text, patterns)
         print("==> docs/migracao.md")
-        erros = conferir(texto, padroes)
-        if erros:
-            for e in erros:
+        errors = verify(text, patterns)
+        if errors:
+            for e in errors:
                 print(f"  FALHA {e}")
             return 1
         print("  ok  V10.1, V10.2 e V10.3")
-    except Falha as e:
+    except Failure as e:
         print(f"FALHA {e}", file=sys.stderr)
         return 1
     return 0
