@@ -160,9 +160,9 @@ impl Conexao {
     fn conferir_extra(&self) -> Result<(), ErroConexao> {
         #[cfg(feature = "test-mode")]
         if self.exigir_nao_dumpable {
-            let par =
-                ward_platform::ProcessoPar::do_socket(&self.stream).map_err(|e| erro_de_io(&e))?;
-            let pid = par.credenciais().pid;
+            let par = ward_platform::PeerProcess::from_socket(&self.stream)
+                .map_err(|e| erro_de_io(&e))?;
+            let pid = par.credentials().pid;
             match std::fs::read_link(format!("/proc/{pid}/exe")) {
                 Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {}
                 _ => {
@@ -172,7 +172,7 @@ impl Conexao {
                 }
             }
             // O mesmo processo, vivo e sem depurador.
-            par.reconferir_sem_depurador().map_err(|_| {
+            par.reverify_no_debugger().map_err(|_| {
                 ErroConexao::NaoConfiavel(
                     "o processo do socket mudou ou está sob depurador".to_owned(),
                 )

@@ -7,7 +7,7 @@
 use std::process::ExitCode;
 use std::sync::Arc;
 
-use ward_platform::{BinarioPermitido, Escuta, Instalacao, Memoria};
+use ward_platform::{AllowedBinary, Escuta, Instalacao, Memoria};
 use wardd::aprovacao::{Motor, RelogioMonotonico};
 use wardd::config::Config;
 use wardd::lancamento::{AbridorReal, AppDeTeste, ExtensaoDeTeste};
@@ -56,7 +56,7 @@ fn extensao_de_teste(config: &Config) -> Option<ExtensaoDeTeste> {
     if !config.extensao_de_teste {
         return None;
     }
-    match BinarioPermitido::novo(CHROME) {
+    match AllowedBinary::new(CHROME) {
         Ok(c) => {
             aviso!("daemon de teste: papel extensão para o filho do Chrome instalado, sem o grupo");
             Some(ExtensaoDeTeste::novo(c))
@@ -95,7 +95,7 @@ fn main() -> ExitCode {
     // Fase 55 (S8): o órfão de um `ward run`/`ward ssh` (quem saiu do grupo com
     // `setsid -f` ou `setpgid`) vira filho do daemon, que o mata no fim da sessão e na
     // trava. Sem isso, o daemon não sobe.
-    if let Err(e) = ward_platform::descendentes::virar_subreaper() {
+    if let Err(e) = ward_platform::descendants::become_subreaper() {
         aviso!(
             "não deu para virar subreaper (PR_SET_CHILD_SUBREAPER): {}",
             e.kind()
@@ -119,7 +119,7 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let instalacao = match BinarioPermitido::novo(CHROME).map(Instalacao::do_sistema) {
+    let instalacao = match AllowedBinary::new(CHROME).map(Instalacao::do_sistema) {
         Ok(Ok(i)) => Some(i),
         Ok(Err(e)) => {
             aviso!("papéis app e extensão desligados: {e}");

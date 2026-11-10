@@ -22,7 +22,7 @@ use std::os::unix::fs::{DirBuilderExt, FileTypeExt, MetadataExt, OpenOptionsExt,
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 
-use crate::processo::{ProcessoPar, caminho_absoluto_simples};
+use crate::process::{PeerProcess, simple_absolute_path};
 use crate::sys;
 
 /// Pasta do Ward dentro de `/run/user/<uid>/`, com socket e temporários (S2).
@@ -117,7 +117,7 @@ pub struct DiretorioSocket {
 /// Prepara o diretório do socket: cria com 0700 se não existe; se existe, só aceita
 /// diretório do usuário com 0700 exato.
 pub fn preparar_diretorio(caminho: &Path) -> Result<DiretorioSocket, ErroDiretorio> {
-    if !caminho_absoluto_simples(caminho) {
+    if !simple_absolute_path(caminho) {
         return Err(ErroDiretorio::CaminhoInvalido);
     }
     let euid = sys::geteuid();
@@ -401,7 +401,7 @@ fn decimal(valor: &std::ffi::OsStr) -> Option<u32> {
 /// não apaga o socket ao sair (ele é do systemd). As variáveis `LISTEN_*` continuam no
 /// ambiente: o daemon monta o ambiente de cada filho sem elas.
 pub fn escutar_de_listen_fds(caminho_esperado: &Path) -> Result<Escuta, ErroAtivacao> {
-    if !caminho_absoluto_simples(caminho_esperado) {
+    if !simple_absolute_path(caminho_esperado) {
         return Err(ErroAtivacao::CaminhoDiferente);
     }
     let pid = std::env::var_os("LISTEN_PID").ok_or(ErroAtivacao::SemAtivacao)?;
@@ -412,7 +412,7 @@ pub fn escutar_de_listen_fds(caminho_esperado: &Path) -> Result<Escuta, ErroAtiv
     if decimal(&fds) != Some(1) {
         return Err(ErroAtivacao::QuantidadeDeFds);
     }
-    let copia = sys::duplicar_fd_ativacao().map_err(ErroAtivacao::FdIndisponivel)?;
+    let copia = sys::dup_activation_fd().map_err(ErroAtivacao::FdIndisponivel)?;
     conferir_fd_de_escuta(copia.as_fd())?;
     let listener = UnixListener::from(copia);
     let nome = listener.local_addr().map_err(ErroAtivacao::Io)?;
@@ -424,7 +424,7 @@ pub fn escutar_de_listen_fds(caminho_esperado: &Path) -> Result<Escuta, ErroAtiv
         RecusaCaminho::Socket | RecusaCaminho::Ausente => ErroAtivacao::SocketNaoConfiavel,
     })?;
     // A cópia é o mesmo socket do fd 3, então o original pode fechar.
-    sys::fechar_fd_ativacao();
+    sys::close_activation_fd();
     Ok(Escuta {
         listener,
         caminho: caminho_esperado.to_path_buf(),
@@ -502,7 +502,7 @@ fn conferir_pastas(
     pasta: &Path,
     dono_ok: impl Fn(&std::fs::Metadata) -> bool,
 ) -> Result<(), RecusaCaminho> {
-    if !caminho_absoluto_simples(pasta) && pasta != Path::new("/") {
+    if !simple_absolute_path(pasta) && pasta != Path::new("/") {
         return Err(RecusaCaminho::Pasta(pasta.to_path_buf()));
     }
     let mut atual = Some(pasta);
@@ -532,7 +532,7 @@ fn conferir_arquivo_socket(socket: &Path) -> Result<(), RecusaCaminho> {
 #[derive(Debug)]
 pub struct Conexao {
     pub stream: UnixStream,
-    pub par: ProcessoPar,
+    pub par: PeerProcess,
 }
 
 /// Conexão recusada no `accept`. Só uid e pid (não são segredo) para o log.
@@ -573,8 +573,8 @@ fn uid_aceito(uid_par: u32, euid: u32) -> bool {
 /// Confere uma conexão recém-aceita (de qualquer laço, síncrono ou não): uid do par
 /// igual ao do daemon e identidade do processo por pidfd. Em erro, quem chama fecha a
 /// conexão sem responder (o `stream` é solto). O papel (D5) sai de
-/// [`ProcessoPar::classificar`].
-pub fn conferir_conexao(stream: &impl AsFd) -> Result<ProcessoPar, ErroAceitar> {
+/// [`PeerProcess::classificar`].
+pub fn conferir_conexao(stream: &impl AsFd) -> Result<PeerProcess, ErroAceitar> {
     let cred = sys::peercred(stream.as_fd()).map_err(ErroAceitar::SemIdentidade)?;
     if !uid_aceito(cred.uid, sys::geteuid()) {
         return Err(ErroAceitar::UidRecusado {
@@ -582,11 +582,11 @@ pub fn conferir_conexao(stream: &impl AsFd) -> Result<ProcessoPar, ErroAceitar> 
             pid: cred.pid,
         });
     }
-    let par = ProcessoPar::do_socket(stream).map_err(ErroAceitar::SemIdentidade)?;
+    let par = PeerProcess::from_socket(stream).map_err(ErroAceitar::SemIdentidade)?;
     // O `SO_PEERCRED` é fixo no `connect`; as duas leituras têm de bater.
-    if par.credenciais().uid != cred.uid {
+    if par.credentials().uid != cred.uid {
         return Err(ErroAceitar::UidRecusado {
-            uid: par.credenciais().uid,
+            uid: par.credentials().uid,
             pid: cred.pid,
         });
     }
@@ -597,7 +597,7 @@ pub fn conferir_conexao(stream: &impl AsFd) -> Result<ProcessoPar, ErroAceitar> 
 /// pedido seguinte continuam no socket. Para o daemon cancelar uma espera longa
 /// (aprovação, destrave) quando a CLI cai (Fase 23).
 pub fn par_fechou(stream: &impl AsFd) -> bool {
-    sys::fechamento(stream.as_fd(), 0).unwrap_or(true)
+    sys::is_closed(stream.as_fd(), 0).unwrap_or(true)
 }
 
 #[cfg(test)]

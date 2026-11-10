@@ -12,7 +12,7 @@ use crate::sys;
 
 /// Time since boot, counting suspend.
 pub fn time_since_boot() -> io::Result<Duration> {
-    sys::relogio_boot()
+    sys::boot_clock()
 }
 
 #[cfg(test)]

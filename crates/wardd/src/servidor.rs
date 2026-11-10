@@ -35,7 +35,7 @@ use ward_core::protocolo::{
     self, ErroResposta, Papel, Pedido, Resposta,
     quadro::{self, ErroQuadro},
 };
-use ward_platform::{ClassePar, ErroAceitar, Escuta, Instalacao, PoliticaKernel, ProcessoPar};
+use ward_platform::{ErroAceitar, Escuta, Instalacao, PeerClass, PeerProcess, PoliticaKernel};
 
 use crate::aprovacao::{Assinante, Cliente};
 use crate::lancamento::{AppDeTeste, AppLancado, ExtensaoDeTeste};
@@ -140,38 +140,38 @@ pub struct Papeis {
 /// O papel de um par já classificado pelo grupo e pelo pai (D47). Papel app só para o
 /// processo `pid` que o lançador abriu e que continua vivo (D63): outro filho do daemon
 /// com o grupo do app (um `ward run` do `ward-app`, Fase 26) fica agente.
-pub fn papel_da_classe(classe: ClassePar, pid: u32, e_o_app: impl Fn(u32) -> bool) -> Papel {
+pub fn papel_da_classe(classe: PeerClass, pid: u32, e_o_app: impl Fn(u32) -> bool) -> Papel {
     match classe {
-        ClassePar::App if e_o_app(pid) => Papel::App,
-        ClassePar::App => {
+        PeerClass::App if e_o_app(pid) => Papel::App,
+        PeerClass::App => {
             aviso!("papel app recusado (pid {pid}): não é o app aberto pelo lançador (D63)");
             Papel::Agente
         }
-        ClassePar::HostExtensao => Papel::Extensao,
-        ClassePar::Comum { .. } => Papel::Agente,
+        PeerClass::ExtensionHost => Papel::Extensao,
+        PeerClass::Common { .. } => Papel::Agente,
     }
 }
 
 impl Papeis {
-    fn papel(&self, par: &ProcessoPar) -> Papel {
-        let pid = par.credenciais().pid;
+    fn papel(&self, par: &PeerProcess) -> Papel {
+        let pid = par.credentials().pid;
         // D63, daemon de teste: o pid do lançador e o pai = daemon, sem o egid. O papel
         // sai do mesmo `papel_da_classe`.
         if let Some(t) = &self.app_de_teste
             && t.e_o_app(pid)
         {
             match t.classificar(par) {
-                c @ ClassePar::App => return papel_da_classe(c, pid, |p| t.e_o_app(p)),
-                ClassePar::Comum { motivo } => {
+                c @ PeerClass::App => return papel_da_classe(c, pid, |p| t.e_o_app(p)),
+                PeerClass::Common { reason: motivo } => {
                     aviso!("papel app de teste recusado (pid {pid}): {motivo}");
                 }
-                ClassePar::HostExtensao => {}
+                PeerClass::ExtensionHost => {}
             }
         }
         // Fase 41, daemon de teste: pai = Chrome instalado pelo `/proc`, sem o egid. Quem
         // não passa segue o caminho do release (sem os grupos, agente).
         if let Some(x) = &self.extensao_de_teste
-            && let c @ ClassePar::HostExtensao = x.classificar(par)
+            && let c @ PeerClass::ExtensionHost = x.classificar(par)
         {
             aviso!("papel extensão de teste (pid {pid}): pai é o Chrome instalado");
             return papel_da_classe(c, pid, |_| false);
@@ -179,13 +179,13 @@ impl Papeis {
         let Some(inst) = &self.instalacao else {
             return Papel::Agente;
         };
-        match par.classificar(inst, &PoliticaKernel::ler()) {
-            c @ (ClassePar::App | ClassePar::HostExtensao) => {
+        match par.classify(inst, &PoliticaKernel::ler()) {
+            c @ (PeerClass::App | PeerClass::ExtensionHost) => {
                 papel_da_classe(c, pid, |p| self.app.as_ref().is_some_and(|a| a.e_o_app(p)))
             }
-            ClassePar::Comum { motivo } => {
+            PeerClass::Common { reason: motivo } => {
                 // Só registra quando o cliente tentou um grupo especial.
-                let cred = par.credenciais();
+                let cred = par.credentials();
                 if cred.gid == inst.gid_app() || cred.gid == inst.gid_extensao() {
                     aviso!("papel especial recusado (pid {}): {motivo}", cred.pid);
                 }
@@ -229,12 +229,12 @@ impl Assinante for AssinanteSocket {
 /// O cliente da conexão, para o motor: cadeia de processos e se ele caiu.
 struct ClienteSocket<'a> {
     stream: &'a UnixStream,
-    par: &'a ProcessoPar,
+    par: &'a PeerProcess,
 }
 
 impl Cliente for ClienteSocket<'_> {
     fn cadeia(&self) -> Vec<String> {
-        self.par.cadeia().into_iter().map(|e| e.nome).collect()
+        self.par.chain().into_iter().map(|e| e.name).collect()
     }
 
     /// Olha sem ler nem esperar (`poll`): fim de arquivo ou erro é cliente que caiu.
@@ -245,7 +245,7 @@ impl Cliente for ClienteSocket<'_> {
 
 fn atender_conexao(
     mut stream: UnixStream,
-    par: ProcessoPar,
+    par: PeerProcess,
     papel: Papel,
     daemon: &Daemon,
     vagas: &Vagas,
@@ -289,7 +289,7 @@ fn atender_conexao(
             }
         };
         vagas.marcar(id, false);
-        if papel != Papel::Agente && par.reconferir_sem_depurador().is_err() {
+        if papel != Papel::Agente && par.reverify_no_debugger().is_err() {
             aviso!(
                 "cliente {} sob depurador ou encerrado: conexão fechada",
                 papel.nome()
@@ -401,22 +401,22 @@ mod testes {
     /// Vale nos dois builds (o `make test-no-test-mode` roda sem a feature).
     #[test]
     fn d63_sem_o_grupo_o_pid_do_lancador_nao_da_papel_app() {
-        use ward_platform::Recusa;
+        use ward_platform::Refusal;
         for motivo in [
-            Recusa::GrupoComum,
-            Recusa::PaiDoAppNaoPermitido,
-            Recusa::Depurador,
+            Refusal::CommonGroup,
+            Refusal::AppParentNotAllowed,
+            Refusal::Debugger,
         ] {
             assert_eq!(
-                papel_da_classe(ClassePar::Comum { motivo }, 42, |_| true),
+                papel_da_classe(PeerClass::Common { reason: motivo }, 42, |_| true),
                 Papel::Agente
             );
         }
         assert_eq!(
-            papel_da_classe(ClassePar::App, 42, |_| false),
+            papel_da_classe(PeerClass::App, 42, |_| false),
             Papel::Agente
         );
-        assert_eq!(papel_da_classe(ClassePar::App, 42, |p| p == 42), Papel::App);
+        assert_eq!(papel_da_classe(PeerClass::App, 42, |p| p == 42), Papel::App);
     }
 
     /// D63, pelo socket: um filho deste processo (como o lançador o abriria), sem o
@@ -447,7 +447,7 @@ mod testes {
             .unwrap();
         let (s, _) = l.accept().unwrap();
         let par = ward_platform::conferir_conexao(&s).unwrap();
-        assert_eq!(par.credenciais().pid, filho.id());
+        assert_eq!(par.credentials().pid, filho.id());
         let papeis = Papeis {
             instalacao: None,
             app: None,

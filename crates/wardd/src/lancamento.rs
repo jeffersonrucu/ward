@@ -16,9 +16,7 @@ use std::os::unix::process::ExitStatusExt;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use ward_platform::{
-    BinarioPermitido, ClassePar, Instalacao, Launcher, LauncherError, ProcessoPar,
-};
+use ward_platform::{AllowedBinary, Instalacao, Launcher, LauncherError, PeerClass, PeerProcess};
 
 use crate::aprovacao::{AbridorApp, ErroAbrirApp};
 use crate::aviso;
@@ -37,7 +35,7 @@ pub struct AbridorReal {
 impl AbridorReal {
     /// Com o binário instalado e os grupos da instalação.
     pub fn instalado(inst: &Instalacao) -> Option<Self> {
-        let bin = BinarioPermitido::novo(APP_INSTALADO).ok()?;
+        let bin = AllowedBinary::new(APP_INSTALADO).ok()?;
         Some(Self {
             lancador: Arc::new(Mutex::new(Launcher::new(bin, inst))),
         })
@@ -103,9 +101,9 @@ impl AppDeTeste {
     }
 
     /// A classe do par sem o egid (mesmo uid, sem depurador, pai = daemon).
-    pub fn classificar(&self, par: &ProcessoPar) -> ClassePar {
+    pub fn classificar(&self, par: &PeerProcess) -> PeerClass {
         #[cfg(feature = "test-mode")]
-        return par.classificar_app_de_teste();
+        return par.classify_test_app();
         #[cfg(not(feature = "test-mode"))]
         {
             let _ = par;
@@ -121,7 +119,7 @@ impl AppDeTeste {
 /// como dar o papel extensão sem o grupo.
 pub struct ExtensaoDeTeste {
     #[cfg(feature = "test-mode")]
-    chrome: BinarioPermitido,
+    chrome: AllowedBinary,
     #[cfg(not(feature = "test-mode"))]
     nunca: std::convert::Infallible,
 }
@@ -129,7 +127,7 @@ pub struct ExtensaoDeTeste {
 impl ExtensaoDeTeste {
     /// Com o Chrome instalado (o mesmo pai que o release aceita).
     #[cfg(feature = "test-mode")]
-    pub fn novo(chrome: BinarioPermitido) -> Self {
+    pub fn novo(chrome: AllowedBinary) -> Self {
         Self { chrome }
     }
 
@@ -137,7 +135,7 @@ impl ExtensaoDeTeste {
     /// release, nunca há exceção).
     pub fn do_chrome(chrome: &str) -> Option<Self> {
         #[cfg(feature = "test-mode")]
-        return BinarioPermitido::novo(chrome).ok().map(Self::novo);
+        return AllowedBinary::new(chrome).ok().map(Self::novo);
         #[cfg(not(feature = "test-mode"))]
         {
             let _ = chrome;
@@ -147,12 +145,10 @@ impl ExtensaoDeTeste {
 
     /// A classe do par sem o egid (mesmo uid, política do kernel, sem depurador, pai =
     /// Chrome instalado).
-    pub fn classificar(&self, par: &ProcessoPar) -> ClassePar {
+    pub fn classificar(&self, par: &PeerProcess) -> PeerClass {
         #[cfg(feature = "test-mode")]
-        return par.classificar_host_extensao_de_teste(
-            &self.chrome,
-            &ward_platform::PoliticaKernel::ler(),
-        );
+        return par
+            .classify_test_extension_host(&self.chrome, &ward_platform::PoliticaKernel::ler());
         #[cfg(not(feature = "test-mode"))]
         {
             let _ = par;

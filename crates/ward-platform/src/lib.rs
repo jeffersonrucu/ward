@@ -6,7 +6,7 @@
 //! Starting with the session, screen lock and SSH agent come in later phases.
 //!
 //! The only crate where `unsafe` may appear: only in `sys` (calls to `libc`), in
-//! `memoria` (the mapped region) and in `testing` (only in `test-mode`), always with
+//! `memory` (the mapped region) and in `testing` (only in `test-mode`), always with
 //! `#[allow(unsafe_code)]` on the item, a `// SAFETY:` comment and a test. The other
 //! modules use only the safe functions of `sys`.
 //!
@@ -19,13 +19,13 @@ pub mod app;
 pub mod child;
 pub mod clock;
 pub mod conectar;
-pub mod descendentes;
+pub mod descendants;
 pub mod endurecimento;
 pub mod launcher;
-pub mod memoria;
+pub mod memory;
 pub mod papel;
 pub mod pasta;
-pub mod processo;
+pub mod process;
 pub mod servidor;
 pub mod socket;
 mod sys;
@@ -42,11 +42,10 @@ pub use launcher::{
 };
 #[cfg(feature = "test-mode")]
 pub use launcher::{TestBinary, TestBinaryError};
-pub use memoria::{BufferTravado, travar_regiao};
+pub use memory::{LockedBuffer, lock_region};
 pub use papel::{ErroInstalacao, GRUPO_APP, GRUPO_EXTENSAO, Instalacao, PoliticaKernel};
-pub use processo::{
-    BinarioPermitido, ClassePar, CredenciaisPar, ElementoCadeia, ProcessoPar, Recusa,
-    cadeia_de_processos,
+pub use process::{
+    AllowedBinary, ChainElement, PeerClass, PeerCredentials, PeerProcess, Refusal, process_chain,
 };
 pub use servidor::{RecusaServidor, ServidorEsperado, conectar_servidor, conferir_servidor};
 pub use socket::{
@@ -63,11 +62,11 @@ pub fn effective_uid() -> u32 {
 /// Home directory of the effective uid through `getpwuid_r` (never through `$HOME`): the
 /// working directory of the `ssh`/`sftp` child of the daemon (Phase 27).
 pub fn home_dir() -> std::io::Result<std::ffi::OsString> {
-    sys::home_do_uid(sys::geteuid())
+    sys::uid_home(sys::geteuid())
 }
 
 /// Name and home directory of the effective uid through `getpwuid_r` (never through
 /// `$USER`/`$HOME`): `USER`, `LOGNAME` and `HOME` of the `ward run` child (Phase 26a).
 pub fn user_account() -> std::io::Result<(std::ffi::OsString, std::ffi::OsString)> {
-    sys::conta_do_uid(sys::geteuid())
+    sys::uid_account(sys::geteuid())
 }

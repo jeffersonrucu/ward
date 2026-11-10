@@ -18,7 +18,7 @@ pub fn run_with_socket(listener: &UnixListener, mut cmd: Command) -> ! {
     // swapping fd 3: the `exec` comes on the next line and, if it fails, the process
     // exits without using fd 3.
     #[allow(unsafe_code)]
-    let r = unsafe { sys::por_no_fd_ativacao(listener.as_fd()) };
+    let r = unsafe { sys::put_on_activation_fd(listener.as_fd()) };
     let error = match r {
         Ok(()) => cmd.exec(),
         Err(e) => e,

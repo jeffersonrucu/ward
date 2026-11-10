@@ -19,7 +19,7 @@ use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 use ward_platform::child::{Command, End, Group, Pipes};
-use ward_platform::descendentes;
+use ward_platform::descendants;
 
 /// `python3 -I -c` com um modo:
 /// - `setsid`: neto com `setsid` por dois `fork` (o do meio sai), imprime o pid dele e
@@ -81,7 +81,7 @@ fn lancar(modo: &str, fica: bool) -> (Group, Pipes, i32) {
 }
 
 /// Fim normal do comando, como o `wardd`: espera, mata a sessão, colhe.
-fn fim_do_comando(g: &Group) -> descendentes::Relatorio {
+fn fim_do_comando(g: &Group) -> descendants::Report {
     g.wait_for_end().unwrap();
     let r = g.kill_with_child_sessions();
     let _ = g.collect().unwrap();
@@ -117,25 +117,25 @@ fn matar(pid: i32) {
 #[test]
 fn ataque_f55_descendente_fora_do_grupo_nao_sobrevive() {
     // Controle, sem o subreaper: os dois fugitivos sobrevivem ao fim do comando.
-    assert!(!descendentes::e_subreaper());
+    assert!(!descendants::is_subreaper());
     for modo in ["setsid", "setpgid"] {
         let (g, _p, fugitivo) = lancar(modo, false);
         let r = fim_do_comando(&g);
-        assert_eq!(r.sobraram, 0, "{r:?}");
+        assert_eq!(r.remaining, 0, "{r:?}");
         std::thread::sleep(Duration::from_millis(300));
         assert!(vivo(fugitivo), "controle: {modo} não fugiu");
         matar(fugitivo);
     }
 
-    descendentes::virar_subreaper().unwrap();
-    assert!(descendentes::e_subreaper());
+    descendants::become_subreaper().unwrap();
+    assert!(descendants::is_subreaper());
 
     // 1 e 2: com o subreaper, o fugitivo morre no fim do comando e é colhido.
     for modo in ["setsid", "setpgid"] {
         let (g, _p, fugitivo) = lancar(modo, false);
         let r = fim_do_comando(&g);
-        assert_eq!(r.sobraram, 0, "{r:?}");
-        assert!(r.mortos >= 1, "{modo}: {r:?}");
+        assert_eq!(r.remaining, 0, "{r:?}");
+        assert!(r.killed >= 1, "{modo}: {r:?}");
         assert!(morre(fugitivo), "{modo}: o fugitivo sobreviveu ao fim");
         let fim = Instant::now() + Duration::from_secs(5);
         while stat(fugitivo).is_some() {
@@ -148,7 +148,7 @@ fn ataque_f55_descendente_fora_do_grupo_nao_sobrevive() {
     // também, pelo grupo e pela varredura dos órfãos).
     let (g, _p, fugitivo) = lancar("setsid", true);
     let r = g.kill_with_child_sessions();
-    assert_eq!(r.sobraram, 0, "{r:?}");
+    assert_eq!(r.remaining, 0, "{r:?}");
     assert_eq!(g.remaining(), 0);
     assert_eq!(g.collect().unwrap(), End::Signal(libc::SIGKILL));
     assert!(morre(fugitivo), "trava: o fugitivo sobreviveu");
@@ -157,18 +157,18 @@ fn ataque_f55_descendente_fora_do_grupo_nao_sobrevive() {
     // em si (líder e o filho no grupo) continua.
     let (g, _p, fugitivo) = lancar("setsid", true);
     let (outra, _q, filho_da_outra) = lancar("arvore", true);
-    let r = descendentes::matar_orfaos();
-    assert_eq!(r.sobraram, 0, "{r:?}");
-    assert!(morre(fugitivo), "matar_orfaos: o fugitivo sobreviveu");
-    assert!(vivo(g.pid() as i32), "matar_orfaos matou o líder");
+    let r = descendants::kill_orphans();
+    assert_eq!(r.remaining, 0, "{r:?}");
+    assert!(morre(fugitivo), "kill_orphans: o fugitivo sobreviveu");
+    assert!(vivo(g.pid() as i32), "kill_orphans matou o líder");
     assert!(
         vivo(filho_da_outra),
-        "matar_orfaos matou a árvore de outra sessão"
+        "kill_orphans matou a árvore de outra sessão"
     );
 
     // O fim de uma sessão não leva a árvore de outra em curso.
     let r = g.kill_with_child_sessions();
-    assert_eq!(r.sobraram, 0, "{r:?}");
+    assert_eq!(r.remaining, 0, "{r:?}");
     let _ = g.collect();
     assert!(vivo(filho_da_outra), "o fim de uma sessão matou outra");
     assert!(vivo(outra.pid() as i32));
@@ -198,12 +198,12 @@ fn ataque_f55_descendente_fora_do_grupo_nao_sobrevive() {
         std::thread::sleep(Duration::from_millis(20));
     }
     let r = outra.kill_with_child_sessions();
-    assert_eq!(r.sobraram, 0, "{r:?}");
+    assert_eq!(r.remaining, 0, "{r:?}");
     let _ = outra.collect();
     assert!(morre(filho_da_outra));
     assert!(vivo(neto_comum), "o órfão de um filho comum levou o sinal");
-    let r = descendentes::matar_orfaos();
-    assert_eq!(r.mortos, 0, "{r:?}");
+    let r = descendants::kill_orphans();
+    assert_eq!(r.killed, 0, "{r:?}");
     assert!(vivo(neto_comum));
     matar(neto_comum);
 }

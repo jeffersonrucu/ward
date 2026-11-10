@@ -68,7 +68,7 @@ confere "D46: pasta root:root 0755 e socket 0600 do uid 1000" "$modo" "root:root
 # --- Cliente comum: conferência do servidor (uid 0 do par) e papel agente ------------
 r="$(como_1000 /usr/local/bin/ward-servidor cliente)"
 confere "V3.23: a conferência do cliente aceita o par uid 0 em pasta do root" "$r" "servidor=ok"
-confere "D47: cliente sem grupo especial fica agente" "$r" "papel=agente motivo=GrupoComum"
+confere "D47: cliente sem grupo especial fica agente" "$r" "papel=agente motivo=CommonGroup"
 
 # --- App aberto pelo daemon: papel app -----------------------------------------------
 for _ in $(seq 50); do grep -q "app-filho:" "$LOG" && break; sleep 0.1; done
@@ -82,19 +82,19 @@ confere "V3.24: o egid do ward-app é o grupo ward-app" "$r" "gid=1000,$GID_APP"
 # --- ward-app lançado por outro processo: agente --------------------------------------
 r="$(como_1000 /usr/local/bin/ward-app cliente)"
 confere "D47, D57: ward-app lançado por quem não é o daemon fica agente" \
-    "$r" "papel=agente motivo=PaiDoAppNaoPermitido"
+    "$r" "papel=agente motivo=AppParentNotAllowed"
 
 # --- ward-nm com o "Chrome" de pai: papel extensão ----------------------------------
 # O "Chrome" do teste é o /usr/bin/bash (root, do sistema); o `; true` mantém o bash pai.
 r="$(como_1000 /usr/bin/bash -c '/usr/local/bin/ward-nm cliente; true')"
 confere "V3.24: ward-nm setgid com o Chrome de pai recebe o papel extensão" "$r" "papel=extensao"
 r="$(como_1000 /usr/local/bin/ward-nm cliente)"
-confere "D47: ward-nm sem o Chrome de pai fica agente" "$r" "papel=agente motivo=PaiNaoPermitido"
+confere "D47: ward-nm sem o Chrome de pai fica agente" "$r" "papel=agente motivo=ParentNotAllowed"
 
 # --- V3.5 (forma de D47): cópia do binário perde o setgid ----------------------------
 como_1000 cp /usr/local/bin/ward-app /run/user/1000/ward-app-copia
 r="$(como_1000 /run/user/1000/ward-app-copia cliente)"
-confere "V3.5: a cópia do ward-app perde o setgid e fica agente" "$r" "papel=agente motivo=GrupoComum"
+confere "V3.5: a cópia do ward-app perde o setgid e fica agente" "$r" "papel=agente motivo=CommonGroup"
 
 # --- V3.24: LD_PRELOAD com marca ------------------------------------------------------
 rm -f /tmp/ward-marca
@@ -123,11 +123,11 @@ r="$(como_1000 /usr/local/bin/ward-servidor prender /run/user/1000/ward-app-copi
 confere "controle: sem setgid o pai consegue PTRACE_ATTACH" "$r" "attach=ok"
 r="$(como_1000 /usr/local/bin/ward-servidor traceme /usr/local/bin/ward-nm cliente)"
 confere "V3.24: preso antes do exec, o kernel não aplica o setgid" "$r" "gid_no_exec=1000,1000,1000,1000"
-confere "V3.24: preso antes do exec, o ward-nm fica agente" "$r" "papel=agente motivo=GrupoComum"
+confere "V3.24: preso antes do exec, o ward-nm fica agente" "$r" "papel=agente motivo=CommonGroup"
 
 # --- V3.24: outro gid do mesmo uid fica agente ---------------------------------------
 r="$(setpriv --reuid=1000 --regid=4242 --clear-groups -- /usr/local/bin/ward-servidor cliente)"
-confere "V3.24: uid de teste com outro gid fica agente" "$r" "papel=agente motivo=GrupoComum"
+confere "V3.24: uid de teste com outro gid fica agente" "$r" "papel=agente motivo=CommonGroup"
 
 # --- V3.23: servidor falso do mesmo uid -----------------------------------------------
 install -d -o 1000 -g 1000 -m 0700 /run/user/1000/falso
@@ -238,7 +238,7 @@ PPID_MENU="$(ultimo_erro_pid)"
 r="$(linha_app erro "$PPID_MENU")"
 confere "V5.31: o ward-app aberto por outro processo, com o ambiente dele, pede ao daemon e sai" "$r" "pedido ao daemon"
 confere "V5.31: o ward-app aberto por outro processo conecta sem o grupo do app" \
-    "$(grep "^servidor: pid=$PPID_MENU " "$LOG2" || true)" "papel=agente motivo=GrupoComum"
+    "$(grep "^servidor: pid=$PPID_MENU " "$LOG2" || true)" "papel=agente motivo=CommonGroup"
 # Lançado por um processo qualquer com o ambiente de D57 copiado: mesmo caminho (o pai
 # não é o daemon), sem o papel app.
 amb="$(como_1000 /usr/local/bin/wardd ambiente)"
@@ -248,7 +248,7 @@ como_1000 /usr/bin/bash -c "/usr/bin/env -i $(echo $amb) /usr/local/bin/ward-app
 QPID="$(ultimo_erro_pid)"
 confere "V5.31: o ward-app aberto por outro processo sai com mensagem" "$(linha_app erro "$QPID")" "pedido ao daemon"
 confere "V5.31: o ward-app aberto por outro processo não recebe o papel app" \
-    "$(grep "^servidor: pid=$QPID " "$LOG2" || true)" "papel=agente motivo=GrupoComum"
+    "$(grep "^servidor: pid=$QPID " "$LOG2" || true)" "papel=agente motivo=CommonGroup"
 # Lançado por quem imita o `systemd --user` (como uma unit de ~/.config/systemd/user/).
 install -d -o 1000 -g 1000 -m 0755 /tmp/gerente
 install -o 1000 -g 1000 -m 0755 "$BIN" /tmp/gerente/systemd
@@ -261,7 +261,7 @@ confere "V5.31: o pai falso imita o gerente (Name, PPid 1 e cmdline)" "$r" "gere
 GPID="$(ultimo_erro_pid)"
 confere "V5.31: o ward-app aberto pelo gerente falso sai com mensagem" "$(linha_app erro "$GPID")" "pedido ao daemon"
 confere "V5.31: o ward-app aberto pelo gerente falso não recebe o papel app" \
-    "$(grep "^servidor: pid=$GPID " "$LOG2" || true)" "papel=agente motivo=GrupoComum"
+    "$(grep "^servidor: pid=$GPID " "$LOG2" || true)" "papel=agente motivo=CommonGroup"
 
 # Sessão errada: o lançador não abre e responde "aprovação indisponível" (D21).
 como_1000 /usr/local/bin/wardd escutar /run/user/1000/wayland-0 >/dev/null &

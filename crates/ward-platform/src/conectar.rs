@@ -78,7 +78,7 @@ impl CanalConectar {
     /// Faz o `exec` de `cmd` levar só este fd além de 0–2 (todo outro fd ≥ 3 fecha).
     /// O canal tem de continuar vivo até o `spawn` de `cmd` voltar.
     pub fn preparar(&self, cmd: &mut Command) {
-        sys::herdar_so_no_exec(cmd, self.filho.as_raw_fd());
+        sys::inherit_only_on_exec(cmd, self.filho.as_raw_fd());
     }
 }
 
@@ -134,7 +134,7 @@ pub fn ler_token_herdado(numero: u32) -> Result<Zeroizing<Vec<u8>>, ErroCanal> {
         return Err(ErroCanal::Numero);
     }
     let n = RawFd::try_from(numero).map_err(|_| ErroCanal::Numero)?;
-    let fd = sys::tomar_socket_herdado(n).map_err(|e| match e.raw_os_error() {
+    let fd = sys::take_inherited_socket(n).map_err(|e| match e.raw_os_error() {
         Some(libc::ENOTSOCK) => ErroCanal::NaoSocket,
         _ => ErroCanal::Numero,
     })?;
@@ -227,7 +227,7 @@ mod testes {
     #[test]
     fn as_pontas_nascem_com_cloexec() {
         let c = CanalConectar::novo(TOKEN).unwrap();
-        assert!(sys::tem_cloexec(c.filho.as_fd()).unwrap());
+        assert!(sys::has_cloexec(c.filho.as_fd()).unwrap());
         assert!(!format!("{c:?}").contains("AbCd"));
     }
 
@@ -323,7 +323,7 @@ mod testes {
     fn exec_leva_so_o_canal() {
         let c = CanalConectar::novo(TOKEN).unwrap();
         let (solto, _w) = std::io::pipe().unwrap();
-        sys::tirar_cloexec(solto.as_fd()).unwrap();
+        sys::clear_cloexec(solto.as_fd()).unwrap();
         let alvo_solto = alvo(u32::try_from(solto.as_raw_fd()).unwrap()).unwrap();
         let alvo_canal = alvo(u32::try_from(c.numero()).unwrap()).unwrap();
         let mut cmd = Command::new("/bin/ls");
@@ -341,7 +341,7 @@ mod testes {
             saida.lines().filter(|l| l.contains(" -> ")).count() <= 5,
             "{saida}"
         );
-        assert!(sys::tem_cloexec(c.filho.as_fd()).unwrap());
+        assert!(sys::has_cloexec(c.filho.as_fd()).unwrap());
     }
 
     #[test]

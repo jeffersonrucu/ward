@@ -39,7 +39,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use ward_platform::{
-    BinarioPermitido, ClassePar, Instalacao, Launcher, PoliticaKernel, ServidorEsperado,
+    AllowedBinary, Instalacao, Launcher, PeerClass, PoliticaKernel, ServidorEsperado,
     app_environment, caminho_socket_sistema, conectar_servidor, conferir_conexao,
     escutar_de_listen_fds, iniciar_endurecido,
 };
@@ -159,7 +159,7 @@ fn servidor(args: &[String]) {
         falhar(e);
     }
     let escuta = escutar_de_listen_fds(&caminho_socket_sistema()).unwrap_or_else(|e| falhar(e));
-    let chrome = BinarioPermitido::novo(chrome.unwrap_or_else(|| falhar("--chrome")))
+    let chrome = AllowedBinary::new(chrome.unwrap_or_else(|| falhar("--chrome")))
         .unwrap_or_else(|e| falhar(e));
     let inst = Instalacao::do_sistema(chrome).unwrap_or_else(|e| falhar(e));
     let politica = PoliticaKernel::ler();
@@ -205,22 +205,22 @@ fn servidor(args: &[String]) {
                 continue;
             }
         };
-        let classe = par.classificar(&inst, &politica);
+        let classe = par.classify(&inst, &politica);
         let linha = match classe {
-            ClassePar::App => "papel=app".to_owned(),
-            ClassePar::HostExtensao => "papel=extensao".to_owned(),
-            ClassePar::Comum { motivo } => format!("papel=agente motivo={motivo:?}"),
+            PeerClass::App => "papel=app".to_owned(),
+            PeerClass::ExtensionHost => "papel=extensao".to_owned(),
+            PeerClass::Common { reason: motivo } => format!("papel=agente motivo={motivo:?}"),
         };
         println!(
             "servidor: pid={} gid={} {linha}",
-            par.credenciais().pid,
-            par.credenciais().gid
+            par.credentials().pid,
+            par.credentials().gid
         );
         let _ = std::io::stdout().flush();
         let papel = match classe {
-            ClassePar::App => "app",
-            ClassePar::HostExtensao => "extensao",
-            ClassePar::Comum { .. } => "agente",
+            PeerClass::App => "app",
+            PeerClass::ExtensionHost => "extensao",
+            PeerClass::Common { .. } => "agente",
         };
         if !responder_estado(&mut stream, papel) {
             let _ = writeln!(stream, "{linha}");
@@ -492,7 +492,7 @@ fn abrir_apps(aberturas: &[Abertura], inst: &Instalacao) -> Vec<Launcher> {
     for a in aberturas {
         match a {
             Abertura::Launcher(bin) => {
-                let b = BinarioPermitido::novo(bin).unwrap_or_else(|e| falhar(e));
+                let b = AllowedBinary::new(bin).unwrap_or_else(|e| falhar(e));
                 let mut l = Launcher::new(b, inst);
                 match l.open() {
                     Ok(pid) => println!("lancador: aberto pid={pid}"),
@@ -533,9 +533,9 @@ fn lancar_app(args: &[String]) {
     let [bin] = args else {
         falhar("lancar-app <bin>")
     };
-    let chrome = BinarioPermitido::novo("/usr/bin/bash").unwrap_or_else(|e| falhar(e));
+    let chrome = AllowedBinary::new("/usr/bin/bash").unwrap_or_else(|e| falhar(e));
     let inst = Instalacao::do_sistema(chrome).unwrap_or_else(|e| falhar(e));
-    let b = BinarioPermitido::novo(bin).unwrap_or_else(|e| falhar(e));
+    let b = AllowedBinary::new(bin).unwrap_or_else(|e| falhar(e));
     match Launcher::new(b, &inst).open() {
         Ok(pid) => println!("lancar-app: aberto pid={pid}"),
         Err(e) => println!(

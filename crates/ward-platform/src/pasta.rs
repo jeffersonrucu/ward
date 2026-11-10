@@ -29,7 +29,7 @@ fn nome_c(nome: &OsStr) -> io::Result<CString> {
 /// operação nunca sai da pasta.
 pub fn renomear_sem_sobrescrever(dir: BorrowedFd<'_>, de: &OsStr, para: &OsStr) -> io::Result<()> {
     let (de, para) = (nome_c(de)?, nome_c(para)?);
-    sys::renameat_sem_sobrescrever(dir, &de, &para)
+    sys::renameat_no_replace(dir, &de, &para)
 }
 
 /// Mais fundo que isto, [`apagar_conteudo`] para (as pastas do Ward têm um nível).
@@ -46,7 +46,7 @@ pub fn apagar_conteudo(dir: BorrowedFd<'_>) -> usize {
 }
 
 fn apagar_conteudo_em(dir: BorrowedFd<'_>, profundidade: usize) -> usize {
-    let Ok(nomes) = sys::listar_pasta(dir) else {
+    let Ok(nomes) = sys::list_dir(dir) else {
         return 0;
     };
     nomes

@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use ward_platform::BinarioPermitido;
+use ward_platform::AllowedBinary;
 
 static CONTADOR: AtomicU32 = AtomicU32::new(0);
 
@@ -41,8 +41,8 @@ pub fn python_real() -> PathBuf {
     std::fs::canonicalize("/usr/bin/python3").expect("python3 do sistema")
 }
 
-pub fn permitido(caminho: &Path) -> BinarioPermitido {
-    BinarioPermitido::novo(caminho.to_path_buf()).unwrap()
+pub fn permitido(caminho: &Path) -> AllowedBinary {
+    AllowedBinary::new(caminho.to_path_buf()).unwrap()
 }
 
 /// Cliente python que conecta em `socket`, escreve "conectado" e espera o stdin fechar.
