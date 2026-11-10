@@ -117,6 +117,20 @@ pub fn abrir_app<D: Daemon + ?Sized>(daemon: &mut D) -> Result<(), ErroApp> {
     }
 }
 
+/// `abrir_app` pela conexão de um cliente comum (o app aberto pelo menu, que largou o
+/// grupo antes de conectar): o daemon escreve a resposta no papel que deu, o de agente
+/// (D63), e é nele que ela é lida.
+pub fn abrir_app_como_agente<D: Daemon + ?Sized>(daemon: &mut D) -> Result<(), ErroApp> {
+    let quadro = protocolo::codificar_pedido(Papel::Agente, &Pedido::AbrirApp)
+        .map_err(|_| ErroApp::PedidoInvalido)?;
+    let corpo = daemon.trocar(&quadro)?;
+    match protocolo::decodificar_resposta(Papel::Agente, &corpo) {
+        Ok(Resposta::Ok) => Ok(()),
+        Ok(Resposta::Erro(e)) => Err(erro_do_daemon(&e)),
+        _ => Err(ErroApp::RespostaInvalida),
+    }
+}
+
 /// `lista`: todas as entradas (o app vê também as bloqueadas), sem segredo.
 pub fn lista<D: Daemon + ?Sized>(daemon: &mut D) -> Result<Vec<ItemLista>, ErroApp> {
     match pedir(daemon, &Pedido::Lista)? {

@@ -245,9 +245,15 @@ fn responder_estado(stream: &mut UnixStream, papel: &str) -> bool {
     if stream.read_exact(&mut corpo).is_err() {
         return true;
     }
-    let r = format!(
-        r#"{{"v":1,"tipo":"estado","dados":{{"travado":true,"cofre_existe":false,"papel":"{papel}"}}}}"#
-    );
+    // O app aberto fora do daemon (o do menu) só pede `abrir_app`: "ok", como o daemon.
+    let abrir_app = corpo.windows(9).any(|j| j == b"abrir_app");
+    let r = if abrir_app {
+        r#"{"v":1,"tipo":"ok","dados":{}}"#.to_owned()
+    } else {
+        format!(
+            r#"{{"v":1,"tipo":"estado","dados":{{"travado":true,"cofre_existe":false,"papel":"{papel}"}}}}"#
+        )
+    };
     let _ = stream
         .write_all(&(r.len() as u32).to_be_bytes())
         .and_then(|()| stream.write_all(r.as_bytes()));

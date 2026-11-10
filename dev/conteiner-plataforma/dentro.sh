@@ -231,20 +231,24 @@ while read -r fpid nome; do
 done < <(grep '^forcado: aberto' "$LOG2" | sed -E 's/^forcado: aberto pid=([0-9]+) (.*)$/\1 \2/')
 confere "V5.31: os cinco ambientes forçados foram tentados" "forcados=$n_forcados" "forcados=5"
 
-# Lançado por um processo qualquer, com o próprio ambiente: sai antes de conectar.
+# Lançado por um processo qualquer (o menu, com o ambiente da sessão): larga o grupo
+# antes de conectar, pede `abrir_app` como cliente comum e sai.
 como_1000 /usr/local/bin/ward-app || true
-r="$(linha_app erro "$(ultimo_erro_pid)")"
-confere "V5.31: o ward-app aberto por outro processo, com o ambiente dele, sai" "$r" "não é do ambiente do app"
-# Lançado por um processo qualquer com o ambiente de D57 copiado: conecta, o daemon dá
-# o papel agente (o pai não é ele) e o app sai.
+PPID_MENU="$(ultimo_erro_pid)"
+r="$(linha_app erro "$PPID_MENU")"
+confere "V5.31: o ward-app aberto por outro processo, com o ambiente dele, pede ao daemon e sai" "$r" "pedido ao daemon"
+confere "V5.31: o ward-app aberto por outro processo conecta sem o grupo do app" \
+    "$(grep "^servidor: pid=$PPID_MENU " "$LOG2" || true)" "papel=agente motivo=GrupoComum"
+# Lançado por um processo qualquer com o ambiente de D57 copiado: mesmo caminho (o pai
+# não é o daemon), sem o papel app.
 amb="$(como_1000 /usr/local/bin/wardd ambiente)"
 # O `bash -c '…; true'` fica de pai (sem ele, o pai seria o pid 1 do contêiner).
 # shellcheck disable=SC2086
 como_1000 /usr/bin/bash -c "/usr/bin/env -i $(echo $amb) /usr/local/bin/ward-app; true"
 QPID="$(ultimo_erro_pid)"
-confere "V5.31: o ward-app aberto por outro processo sai com mensagem" "$(linha_app erro "$QPID")" "não foi aberto pelo daemon"
+confere "V5.31: o ward-app aberto por outro processo sai com mensagem" "$(linha_app erro "$QPID")" "pedido ao daemon"
 confere "V5.31: o ward-app aberto por outro processo não recebe o papel app" \
-    "$(grep "^servidor: pid=$QPID " "$LOG2" || true)" "papel=agente motivo=PaiDoAppNaoPermitido"
+    "$(grep "^servidor: pid=$QPID " "$LOG2" || true)" "papel=agente motivo=GrupoComum"
 # Lançado por quem imita o `systemd --user` (como uma unit de ~/.config/systemd/user/).
 install -d -o 1000 -g 1000 -m 0755 /tmp/gerente
 install -o 1000 -g 1000 -m 0755 "$BIN" /tmp/gerente/systemd
@@ -255,9 +259,9 @@ for _ in $(seq 50); do grep -q "gerente: Ok" /tmp/gerente.log 2>/dev/null && bre
 r="$(cat /tmp/gerente.log 2>/dev/null || true)"
 confere "V5.31: o pai falso imita o gerente (Name, PPid 1 e cmdline)" "$r" "gerente: nome=systemd ppid=1 cmdline=/usr/lib/systemd/systemd --user"
 GPID="$(ultimo_erro_pid)"
-confere "V5.31: o ward-app aberto pelo gerente falso sai com mensagem" "$(linha_app erro "$GPID")" "não foi aberto pelo daemon"
+confere "V5.31: o ward-app aberto pelo gerente falso sai com mensagem" "$(linha_app erro "$GPID")" "pedido ao daemon"
 confere "V5.31: o ward-app aberto pelo gerente falso não recebe o papel app" \
-    "$(grep "^servidor: pid=$GPID " "$LOG2" || true)" "papel=agente motivo=PaiDoAppNaoPermitido"
+    "$(grep "^servidor: pid=$GPID " "$LOG2" || true)" "papel=agente motivo=GrupoComum"
 
 # Sessão errada: o lançador não abre e responde "aprovação indisponível" (D21).
 como_1000 /usr/local/bin/wardd escutar /run/user/1000/wayland-0 >/dev/null &
@@ -428,7 +432,12 @@ confere "D9: sugerir em localhost:8081 traz acme-wp-prod" "$(l 2)" '"nome":"acme
 # Fase 54 (44c/44e): http (mesmo em localhost) pede a confirmação da origem na janela de
 # aprovação; aqui ninguém confirma (o host termina o stdin e sai): o pedido é negado e nada
 # sai. O log do daemon tem de mostrar a confirmação pedida (conferido no fim).
-confere "D9/44c: preencher acme-wp-dev em http://localhost:8081 sem confirmar: negado" "$(l 3)" '"codigo":"negado"'
+# Sem app nem sessão no contêiner, a janela não abre: o daemon nega ou responde
+# "aprovação indisponível"; os dois recusam o preenchimento (conferido logo abaixo).
+case "$(l 3)" in
+    *'"codigo":"negado"'* | *'"codigo":"aprovacao_indisponivel"'*) ok "D9/44c: preencher acme-wp-dev em http://localhost:8081 sem confirmar: recusado" ;;
+    *) falhou "D9/44c: preencher acme-wp-dev em http://localhost:8081 sem confirmar: recusado (veio '$(l 3)')" ;;
+esac
 nao_tem "D9/44c: sem a confirmação, nada de preenchimento" "$(l 3)" '"preenchimento"'
 nao_tem "D9/44c: sem a confirmação, nada de senha" "$(l 3)" '"senha"'
 confere "V6.2: preencher acme-wp-dev em 127.0.0.1:8081 é recusado pelo daemon" "$(l 4)" '"codigo":"origem_diferente"'

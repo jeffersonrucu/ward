@@ -287,7 +287,7 @@ como_1000 /usr/bin/bash -c "/usr/bin/env -i $(echo $amb) /usr/local/bin/ward-app
 for _ in $(seq 100); do grep -q '^depois ' "$REL" 2>/dev/null && break; sleep 0.1; done
 pid="$(systemctl show -p MainPID --value "wardd@$UID_T.service")"
 r="$(grep '^erro ' "$REL" | head -n 1 || true)"
-confere "o ward-app aberto pelo usuário sai (pai não é o daemon)" "$r" "não foi aberto pelo daemon"
+confere "o ward-app aberto pelo usuário pede ao daemon e sai (pai não é o daemon)" "$r" "pedido ao daemon"
 r="$(grep '^depois ' "$REL" | head -n 1 || true)"
 confere "V9.11 o daemon abriu o ward-app setgid e ele recebeu o papel app" "$r" "pai=$pid"
 confere "V9.11 o app largou o grupo depois de conectar" "$r" "gid=$UID_T,$UID_T,$UID_T,$UID_T"

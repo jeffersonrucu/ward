@@ -929,6 +929,10 @@ fn com_comandos<R: Runtime>(builder: Builder<R>, estado: Estado) -> Builder<R> {
 fn main() {
     // Antes do GTK (D47, D57).
     let mut partida = partida::iniciar().unwrap_or_else(|e| {
+        if matches!(e, partida::ErroPartida::Delegado) {
+            // Aberto pelo menu: o daemon abre a instância verdadeira (D57).
+            std::process::exit(0)
+        }
         eprintln!("ward-app: {e}");
         std::process::exit(1)
     });

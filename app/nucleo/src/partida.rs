@@ -18,6 +18,11 @@
 //!    do autostart), pede antes ao daemon a instância verdadeira (`abrir_app`, D57):
 //!    quem decide o papel é o daemon, e com outro pai ele já deu o papel agente.
 //!
+//! Antes do passo 3: aberto pelo menu ou pelo autostart (o pai não é o daemon), o
+//! ambiente nunca é o de D57. O app então larga o grupo `ward-app` antes de conectar,
+//! pede `abrir_app` como um cliente comum (o daemon aceita de qualquer papel) e sai: a
+//! instância verdadeira é a que o daemon abre, com o ambiente que ele monta.
+//!
 //! Depois, [`Partida::vigiar`] espera a conexão cair (sem ler nada). Se ela cair e o
 //! pai ainda for o mesmo daemon, o app se executa de novo (`/proc/self/exe`, para o
 //! kernel aplicar o setgid outra vez e o daemon dar o papel de novo); com outro pai,
@@ -55,6 +60,8 @@ pub enum ErroPartida {
     Grupo,
     /// O daemon não deu o papel app a esta conexão (D63).
     Papel(Papel),
+    /// Aberto fora do daemon: pediu a instância verdadeira (`abrir_app`) e sai.
+    Delegado,
 }
 
 impl fmt::Display for ErroPartida {
@@ -76,6 +83,7 @@ impl fmt::Display for ErroPartida {
                 "o daemon deu o papel {} a este processo, não o de app; abra o Ward pelo menu ou pela bandeja",
                 p.nome()
             ),
+            ErroPartida::Delegado => f.write_str("pedido ao daemon; ele abre o app"),
         }
     }
 }
@@ -94,7 +102,10 @@ pub struct Partida {
 
 /// A partida inteira com o ambiente e o daemon padrão deste processo.
 pub fn iniciar() -> Result<Partida, ErroPartida> {
-    iniciar_com(std::env::vars_os(), DaemonSocket::padrao)
+    let pai_e_o_daemon = Pai::atual()
+        .and_then(|p| p.conferir_parece_o_daemon())
+        .is_ok();
+    iniciar_com(std::env::vars_os(), DaemonSocket::padrao, pai_e_o_daemon)
 }
 
 fn tracer_zero() -> bool {
@@ -106,7 +117,7 @@ fn tracer_zero() -> bool {
     }) == Some(0)
 }
 
-fn iniciar_com<I, F>(ambiente: I, daemon: F) -> Result<Partida, ErroPartida>
+fn iniciar_com<I, F>(ambiente: I, daemon: F, pai_e_o_daemon: bool) -> Result<Partida, ErroPartida>
 where
     I: IntoIterator<Item = (OsString, OsString)>,
     F: FnOnce() -> Result<DaemonSocket, ErroApp>,
@@ -114,6 +125,9 @@ where
     endurecer_processo().map_err(|_| ErroPartida::Endurecer)?;
     if !tracer_zero() {
         return Err(ErroPartida::Depurador);
+    }
+    if !pai_e_o_daemon {
+        return Err(delegar(daemon));
     }
     let ambiente = conferir_ambiente_do_app(ambiente).map_err(ErroPartida::Ambiente)?;
     let pai = Pai::atual().map_err(ErroPartida::Pai)?;
@@ -150,6 +164,40 @@ where
         vigia,
         argumentos: std::env::args_os().skip(1).collect(),
     })
+}
+
+/// Aberto fora do daemon (menu, autostart, terminal): larga o grupo `ward-app` antes de
+/// conectar, para a conexão não levar o egid do app, e pede a instância verdadeira.
+fn delegar<F>(daemon: F) -> ErroPartida
+where
+    F: FnOnce() -> Result<DaemonSocket, ErroApp>,
+{
+    if app::largar_grupo().is_err() {
+        return ErroPartida::Grupo;
+    }
+    if endurecer_processo().is_err() {
+        return ErroPartida::Endurecer;
+    }
+    match app::gids() {
+        Ok((r, e, s)) if r == e && e == s => {}
+        _ => return ErroPartida::Grupo,
+    }
+    let mut daemon = match daemon() {
+        Ok(d) => d,
+        Err(e) => return ErroPartida::Daemon(e),
+    };
+    if let Err(e) = daemon.conectar_agora() {
+        return ErroPartida::Daemon(e);
+    }
+    pedir_instancia(&mut daemon)
+}
+
+/// `abrir_app` e nada mais: nenhum outro pedido nesta conexão.
+fn pedir_instancia(daemon: &mut DaemonSocket) -> ErroPartida {
+    match cliente::abrir_app_como_agente(daemon) {
+        Ok(()) => ErroPartida::Delegado,
+        Err(e) => ErroPartida::Daemon(e),
+    }
 }
 
 /// Passo 8: o papel na primeira resposta (D63). Com outro pai, pede `abrir_app` antes
@@ -235,6 +283,7 @@ mod testes {
                     .into_iter()
                     .map(|(k, v)| (OsString::from(k), OsString::from(v))),
                 move || Ok(DaemonSocket::sistema_em(c)),
+                true,
             );
             assert!(matches!(r, Err(ErroPartida::Ambiente(_))), "{:?}", r.err());
         }
@@ -300,6 +349,28 @@ mod testes {
         ));
         drop(d);
         assert_eq!(h.join().unwrap(), ["estado", "abrir_app"]);
+    }
+
+    #[test]
+    fn aberto_pelo_menu_so_pede_abrir_app() {
+        // O launcher do COSMIC passa o ambiente da sessão inteira: o app não confere o
+        // ambiente nem pede `estado`; só `abrir_app`, e sai sem tela.
+        let (mut d, h) = daemon_que_da(Papel::Agente);
+        assert!(matches!(pedir_instancia(&mut d), ErroPartida::Delegado));
+        drop(d);
+        assert_eq!(h.join().unwrap(), ["abrir_app"]);
+    }
+
+    #[test]
+    fn aberto_pelo_menu_com_ambiente_qualquer_nao_confere_o_ambiente() {
+        // Pai que não é o daemon e ambiente de fora: vai para o pedido ao daemon, que
+        // aqui falha na conferência do servidor (D46), e não para o erro de ambiente.
+        let r = iniciar_com(
+            vec![(OsString::from("ALACRITTY_WINDOW_ID"), OsString::from("1"))],
+            || Err(ErroApp::DaemonIndisponivel),
+            false,
+        );
+        assert!(matches!(r, Err(ErroPartida::Daemon(_))), "{:?}", r.err());
     }
 
     #[test]

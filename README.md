@@ -138,7 +138,7 @@ Pela [release](https://github.com/jeffersonrucu/ward/releases/latest), com o `.d
 
 ```sh
 sha256sum -c SHA256SUMS --ignore-missing
-sudo apt install ./ward_0.1.2_amd64.deb
+sudo apt install ./ward_0.1.3_amd64.deb
 ```
 
 Ou a partir do código:

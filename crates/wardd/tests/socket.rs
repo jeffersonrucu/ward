@@ -218,9 +218,13 @@ fn v3_20_ciclo_pelo_socket_sem_segredo_no_log() {
     );
     assert_eq!(protocolo_erro(&r), Some(ErroResposta::NaoAutorizado));
     let (_, r) = pedir_por(&mut s, "abrir_app", "{}");
-    assert_eq!(
-        protocolo_erro(&r),
-        Some(ErroResposta::AprovacaoIndisponivel)
+    // Sem `WARD_DEV_APP`, o daemon de teste usa o lançador do `ward-app` instalado: numa
+    // máquina sem o Ward é "aprovação indisponível"; com ele instalado, abre (Ok).
+    let instalado = std::path::Path::new("/usr/local/bin/ward-app").exists();
+    let e = protocolo_erro(&r);
+    assert!(
+        e == Some(ErroResposta::AprovacaoIndisponivel) || (instalado && e.is_none()),
+        "abrir_app: {e:?}"
     );
     let (_, r) = pedir_por(&mut s, "executar", &exec("t-aprov"));
     assert_eq!(
