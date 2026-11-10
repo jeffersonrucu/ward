@@ -1,6 +1,6 @@
 {
   "productName": "Ward",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "identifier": "local.ward.app",
   "build": {
     "frontendDist": "../dist"

@@ -207,6 +207,22 @@ fn vigiar_avisos<R: Runtime>(
     let (Some(fila), Ok(s)) = (fila, estado.servico()) else {
         return;
     };
+    // O menu achou o app já de pé (janela fechada, na bandeja): o daemon pede a janela.
+    let h = app.clone();
+    let na_vigia = Arc::clone(&fila);
+    let r = std::thread::Builder::new()
+        .name("ward-app-mostrar".into())
+        .spawn(move || {
+            loop {
+                if na_vigia.esperar_mostrar(Duration::from_secs(3600)) {
+                    let h2 = h.clone();
+                    let _ = h.run_on_main_thread(move || mostrar_principal(&h2));
+                }
+            }
+        });
+    if r.is_err() {
+        eprintln!("ward-app: não foi possível vigiar o pedido de mostrar a janela");
+    }
     let canais = Arc::clone(&estado.canal);
     let h = app.clone();
     let r = destrave::vigiar(fila, s.pedido_de_destrave(), move || {

@@ -229,6 +229,7 @@ tabela! {
     Token = "token", SO_APP, "Token do \"Conectar\".";
     PedidoDeAprovacao = "pedido_de_aprovacao", SO_APP, "O daemon pede ao app a janela de aprovação.";
     PedidoDeDestrave = "pedido_de_destrave", SO_APP, "O daemon pede ao app a tela de destravar (D16): entrada, operação, comando com escape visível (D51) e segundos que faltam (Fase 39a).";
+    MostrarJanela = "mostrar_janela", SO_APP, "O daemon pede ao app aberto que mostre a janela principal (o menu achou a instância já de pé). Sem dado.";
     CodigoTotp = "codigo_totp", APP_E_EXTENSAO, "Código TOTP atual.";
     Sugestoes = "sugestoes", SO_EXTENSAO, "Entradas sugeridas para a aba.";
     Preenchimento = "preenchimento", SO_EXTENSAO, "Usuário, senha e TOTP para preencher.";

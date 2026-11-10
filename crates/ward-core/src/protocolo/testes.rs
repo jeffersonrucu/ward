@@ -346,6 +346,7 @@ fn v3_15_tabela_operacao_papel() {
         ("token", false, true, false, true),
         ("pedido_de_aprovacao", false, true, false, false),
         ("pedido_de_destrave", false, true, false, false),
+        ("mostrar_janela", false, true, false, false),
         ("codigo_totp", false, true, true, true),
         ("sugestoes", false, false, true, false),
         ("preenchimento", false, false, true, true),

@@ -50,6 +50,7 @@ impl RelogioMotor for RelogioManual {
 enum Recebido {
     Aprovacao(PedidoDeAprovacao),
     Destrave(PedidoDeDestrave),
+    MostrarJanela,
 }
 
 struct AppFalso(Sender<Recebido>);
@@ -59,6 +60,7 @@ impl Assinante for AppFalso {
         let x = match r {
             Resposta::PedidoDeAprovacao(p) => Recebido::Aprovacao(p.clone()),
             Resposta::PedidoDeDestrave(p) => Recebido::Destrave(p.clone()),
+            Resposta::MostrarJanela => Recebido::MostrarJanela,
             outra => panic!("o motor mandou ao app {outra:?}"),
         };
         self.0.send(x).is_ok()
@@ -1074,6 +1076,19 @@ fn d57_abrir_app() {
     );
     let s = cena_com("abrir-app-ja", Err(ErroAbrirApp::JaAberto));
     assert!(ok(&pedir(&s.d, Papel::Agente, "abrir_app", "{}")));
+    // Já aberto (janela fechada, na bandeja): o app assinado recebe `mostrar_janela`, sem
+    // dado; o menu traz a janela de volta.
+    let rx = assinar(&s.d, 7);
+    assert!(ok(&pedir(&s.d, Papel::Agente, "abrir_app", "{}")));
+    assert!(matches!(
+        rx.recv_timeout(Duration::from_secs(5)),
+        Ok(Recebido::MostrarJanela)
+    ));
+    // Aberto agora pelo lançador: nada vai ao assinante.
+    let c = cena("abrir-app-novo");
+    let rx = assinar(&c.d, 8);
+    assert!(ok(&pedir(&c.d, Papel::Agente, "abrir_app", "{}")));
+    assert!(rx.try_recv().is_err());
 }
 
 /// V3.36 (D63, a parte do classificador): com o grupo do app e o pai certo, só o pid que
