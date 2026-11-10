@@ -304,7 +304,7 @@ spec.loader.exec_module(v)
 dados = json.loads((raiz / "dev" / "fixtures" / "entries.json").read_text(encoding="utf-8"))
 saida = sys.stdout.buffer
 for e in dados["entradas"]:
-    for tipo, padroes in (("inteiro", v.da_entrada(e)), ("url", v.database_url(e))):
+    for tipo, padroes in (("inteiro", v.entry_patterns(e)), ("url", v.database_url(e))):
         for p in sorted(padroes):
             saida.write(e["nome"].encode() + b"\t" + tipo.encode() + b"\t" + p.hex().encode() + b"\n")
 PY
