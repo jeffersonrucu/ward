@@ -1126,6 +1126,16 @@ fechados: `teste-area-transferencia` 0 (sem disco nem programa externo), `teste-
 (apport e systemd-coredump reais) e `make check` 0. No Wayland sem foco, o
 `gtk_clipboard_clear` destrói a fonte antiga, então nada continua sendo servido. Segue o
 QA do M5.
+QA do M5 (2026-11-09): **aprovado**, pela ponte com o Playwright do Python em
+`.dev/pw-lib`; evidência em `docs/mission/evidence/M5/`. Os V5.* estão marcados, menos o
+V5.28 (janela nativa). Não exercitados pela ponte, com cobertura em teste ou no roteiro:
+V5.4/V5.5 (`teste-area-transferencia`), V5.7, V5.12, V5.24 e V5.34. Observações:
+- depois de 5 PINs errados, o aviso "bloqueado" fica aberto e esconde o pedido seguinte;
+  conferir no roteiro, passo 10;
+- o 1º Tab da aprovação cai num contêiner;
+- `favicon.ico` 404 na ponte.
+O M5 está fechado, faltando só o roteiro nativo do usuário
+(`docs/mission/evidence/M5/roteiro-usuario.md`).
 - [ ] Fase 39g — Restos da 2ª auditoria do M5 (não bloqueiam o QA).
   - **Médio:** com o valor revelado, selecionar com o mouse ou dar Ctrl+C o leva à
     PRIMARY ou à CLIPBOARD pelo WebKit, sem prazo nem dica `secret`

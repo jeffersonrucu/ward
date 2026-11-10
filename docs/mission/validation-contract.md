@@ -884,12 +884,12 @@ Cada asserção (UI) cita o frame do Layout; o id do FigCraft está em
 `docs/mission/design-nodes.md`.
 O QA usa o Chrome em modo de teste (D7) e confere a aparência contra o frame.
 
-- [ ] V5.1 — (SEG) Dado o app de teste com devtools, quando o auditor chama
+- [x] V5.1 — (SEG) Dado o app de teste com devtools, quando o auditor chama
   `__TAURI__.core.invoke('plugin:fs|read_text_file', …)`,
   `invoke('plugin:shell|execute', …)`, `invoke('plugin:http|fetch', …)` e um comando
   inventado, então todos são negados; o arquivo de capabilities lista só os comandos
   próprios do app — cobre S11.
-- [ ] V5.2 — (SEG) Dado o app, quando o auditor injeta `<img
+- [x] V5.2 — (SEG) Dado o app, quando o auditor injeta `<img
   src="https://example.com/x">`, `<script src="https://example.com/x.js">` e
   `fetch('https://example.com')`, então a CSP bloqueia os três e nenhuma conexão sai
   (sem requisição no log de rede); `grep -rE 'https?://' dist/` só acha os namespaces
@@ -897,100 +897,100 @@ O QA usa o Chrome em modo de teste (D7) e confere a aparência contra o frame.
   e outros `http://www.w3.org/…` de namespace, se houver), que são nomes e não
   endereços; qualquer outra URL reprova, como confere o `dev/testes/app-dist.py`
   (handoff 29) — cobre S11.
-- [ ] V5.3 — (SEG)(UI) Dado o app destravado, quando o QA passa por todas as telas e
+- [x] V5.3 — (SEG)(UI) Dado o app destravado, quando o QA passa por todas as telas e
   abre todas as entradas sem clicar em "revelar", então `outerHTML`, os `value` dos
   inputs, `localStorage`, `sessionStorage`, IndexedDB e as respostas da ponte não
   contêm segredo; depois de revelar, passados 30 s ou ao sair da tela, o valor sai do
   DOM — cobre S11 (D4).
-- [ ] V5.4 — (SEG) Dado "copiar" na senha de `acme-pg-dev`, quando o auditor registra a
+- [x] V5.4 — (SEG) Dado "copiar" na senha de `acme-pg-dev`, quando o auditor registra a
   IPC/ponte, então nenhuma resposta ao frontend contém o valor, e `wl-paste` devolve o
   valor — cobre S11 (D4).
-- [ ] V5.5 — (SEG) Dado "copiar", quando passam 30 s, então `wl-paste` não devolve mais o
+- [x] V5.5 — (SEG) Dado "copiar", quando passam 30 s, então `wl-paste` não devolve mais o
   valor; quando o usuário copia outro texto antes dos 30 s, então esse texto continua lá
   — cobre S12.
-- [ ] V5.6 — (SEG) Dado o build de release, quando o auditor procura, então
+- [x] V5.6 — (SEG) Dado o build de release, quando o auditor procura, então
   `strings` nos binários não acha a ponte nem `WARD_DEV_DIR`, e `WARD_DEV_DIR=.dev
   wardd` ignora a variável (D7) — cobre S11.
-- [ ] V5.7 — (UI) `Primeiro uso / *`: cria o cofre, senha mestra com confirmação, PIN
+- [x] V5.7 — (UI) `Primeiro uso / *`: cria o cofre, senha mestra com confirmação, PIN
   com 3 ou 7 dígitos e com letras recusados; Tab segue a ordem visual e Enter avança.
-- [ ] V5.8 — (UI) `Destravar / Padrão`, `/ Senha errada` e `/ Pedido do agente`: senha
+- [x] V5.8 — (UI) `Destravar / Padrão`, `/ Senha errada` e `/ Pedido do agente`: senha
   errada mostra o erro sem limpar o foco; com um `ward run` travado esperando, a tela
   mostra entrada, comando e contagem; destravar libera o pedido.
-- [ ] V5.9 — (UI) `Credenciais / Vazia`, `/ Cheia` e `/ Filtrada`: agrupada por grupo
+- [x] V5.9 — (UI) `Credenciais / Vazia`, `/ Cheia` e `/ Filtrada`: agrupada por grupo
   (acme, beta, delta, gama), filtros de tipo e ambiente e busca combinados; setas
   navegam, Enter abre, a busca tem atalho de teclado.
-- [ ] V5.10 — (UI) `Formulário / <tipo> / Novo` e `/ Edição` dos 9 tipos: campos do
+- [x] V5.10 — (UI) `Formulário / <tipo> / Novo` e `/ Edição` dos 9 tipos: campos do
   tipo, `grupo` com autocompletar, `ambiente` obrigatório, extras com "segredo
   sim/não"; salvar sem obrigatório mostra o erro no campo.
-- [ ] V5.11 — (UI) `Campo secreto`: revelar mostra o valor, oculta de novo em 30 s ou ao
+- [x] V5.11 — (UI) `Campo secreto`: revelar mostra o valor, oculta de novo em 30 s ou ao
   sair; copiar mostra o `Toast` de sucesso; nenhum segredo aparece nos frames sem
   revelar.
-- [ ] V5.12 — (UI)(SEG) Anexos em `servidor` e `genérico`: adicionar, listar com nome e
+- [x] V5.12 — (UI)(SEG) Anexos em `servidor` e `genérico`: adicionar, listar com nome e
   tamanho, remover; o conteúdo do anexo nunca vai para o DOM; escolher um arquivo de
   300 KiB (ou passar de 256 KiB somados) avisa antes de salvar, e o arquivo não é
   enviado; arquivo vazio é recusado; a recusa do orçamento da máscara aparece no campo
   (D29) — cobre S11.
-- [ ] V5.13 — (UI) TOTP em `acme-wp-dev`: o código bate com `oathtool` e a contagem
+- [x] V5.13 — (UI) TOTP em `acme-wp-dev`: o código bate com `oathtool` e a contagem
   reinicia a cada 30 s; a semente só aparece com revelar; colar um `otpauth://` com
   `algorithm=SHA256`, `digits=8` ou `period=60` é recusado ao salvar com "parâmetros de
   TOTP não suportados" (D35).
-- [ ] V5.14 — (UI) `Gerador de senha / No formulário`: gera, respeita tamanho e
+- [x] V5.14 — (UI) `Gerador de senha / No formulário`: gera, respeita tamanho e
   conjuntos, e preenche o campo de senha.
-- [ ] V5.15 — (UI)(SEG) `Nível de acesso / *`: mudar o nível pede PIN; PIN errado mostra o
+- [x] V5.15 — (UI)(SEG) `Nível de acesso / *`: mudar o nível pede PIN; PIN errado mostra o
   erro e o nível não muda; o 5º erro seguido leva ao `Destravar / Padrão` com o cofre
   travado; os três níveis aparecem também em `prod` — cobre S9.
-- [ ] V5.16 — (UI)(SEG) `Aprovação / Normal`: `ward run acme-pg-aprovacao -- touch
+- [x] V5.16 — (UI)(SEG) `Aprovação / Normal`: `ward run acme-pg-aprovacao -- touch
   .dev/marca` abre a janela com entrada, ambiente, comando exato e cadeia de processos.
   Negar → a CLI sai ≠ 0 e a marca não existe. Fechar → igual. Sem resposta 120 s →
   `Aprovação / Expirando` nos últimos segundos e depois negado. "Permitir uma vez" com
   PIN 135790 → executa; o pedido seguinte abre a janela de novo. "Permitir por 1 hora"
   → o segundo pedido não abre janela; `ward travar` e destravar → abre de novo.
   "Permitir sempre" → a entrada passa a "livre" no formulário — cobre S10.
-- [ ] V5.17 — (UI) `Aprovação / prod`: com `acme-pg-prod`, o ambiente aparece em destaque
+- [x] V5.17 — (UI) `Aprovação / prod`: com `acme-pg-prod`, o ambiente aparece em destaque
   e os quatro botões estão lá, inclusive "Permitir sempre" (R16).
-- [ ] V5.18 — (UI)(SEG) `Aprovação / PIN errado` e `/ PIN bloqueado`: PIN errado mostra
+- [x] V5.18 — (UI)(SEG) `Aprovação / PIN errado` e `/ PIN bloqueado`: PIN errado mostra
   erro e o pedido continua pendente; o 5º erro trava o cofre, nega o pedido e mostra
   bloqueado — cobre S9.
-- [ ] V5.19 — (UI)(SEG) Na janela de aprovação o foco inicial está em "Negar", Enter sem
+- [x] V5.19 — (UI)(SEG) Na janela de aprovação o foco inicial está em "Negar", Enter sem
   PIN não permite nada, e Esc nega — cobre S10.
-- [ ] V5.20 — (SEG) Dado um pedido pendente, quando o cliente Python do papel agente
+- [x] V5.20 — (SEG) Dado um pedido pendente, quando o cliente Python do papel agente
   manda "responder aprovação: permitir uma vez" com o PIN certo, então recebe "não
   autorizado" e o pedido continua pendente — cobre S10.
-- [ ] V5.21 — (UI) `Gerador de senha / Avulso`: tamanho, conjuntos, sem símbolos, gerar
+- [x] V5.21 — (UI) `Gerador de senha / Avulso`: tamanho, conjuntos, sem símbolos, gerar
   de novo e copiar (o copiar respeita V5.5); os símbolos mostrados são os de D35, sem
   espaço, aspas, crase e `\`; o tamanho vai de 8 a 64 e o comando recusa 7 e 65, no
   avulso e no formulário; a força segue os limiares de D65.
-- [ ] V5.22 — (UI) `Configurações / Geral`: trocar PIN pede o PIN atual; trocar senha
+- [x] V5.22 — (UI) `Configurações / Geral`: trocar PIN pede o PIN atual; trocar senha
   mestra pede a atual; tempo de trava padrão 4 h e alterável; backup externo aparece
   desligado.
-- [ ] V5.23 — (UI) `Bandeja / Destravado` e `/ Travado`: "Travar agora" trava (o app vai
+- [x] V5.23 — (UI) `Bandeja / Destravado` e `/ Travado`: "Travar agora" trava (o app vai
   para destravar e `ward lista` responde "travado"); "Abrir" mostra a janela.
-- [ ] V5.24 — (UI)(SEG) "Conectar" em `Formulário / servidor / Edição` de
+- [x] V5.24 — (UI)(SEG) "Conectar" em `Formulário / servidor / Edição` de
   `acme-ssh-salto` (com aprovação): abre o terminal já conectado, sem janela nem PIN.
   Ataques: reusar o token visto em `/proc/<pid>/cmdline` → nega; usar depois de 30 s →
   vale o nível; usar o token de `acme-ssh-salto` em `acme-pg-aprovacao` → vale o nível
   (D3).
-- [ ] V5.25 — (UI) Teclado e foco em todas as telas: foco visível, Tab na ordem visual,
+- [x] V5.25 — (UI) Teclado e foco em todas as telas: foco visível, Tab na ordem visual,
   Esc fecha modal, nenhum trecho só alcançável por mouse.
-- [ ] V5.26 — (UI) Nenhum texto em inglês na interface; só tema escuro: com o sistema em
+- [x] V5.26 — (UI) Nenhum texto em inglês na interface; só tema escuro: com o sistema em
   tema claro, o app continua escuro, e nenhuma tela (inclusive Configurações) oferece
   alternância de tema (D1).
-- [ ] V5.27 — (SEG) Dado o app em uso pela suíte do M5, quando o auditor procura segredos
+- [x] V5.27 — (SEG) Dado o app em uso pela suíte do M5, quando o auditor procura segredos
   nos logs do app, do daemon e no console da webview, então não acha — cobre S13.
 - [ ] V5.28 — `docs/mission/roteiro-usuario.md` traz os passos da janela nativa (app
   abre, janela de aprovação aparece em primeiro plano no COSMIC, bandeja funciona,
   copiar limpa em 30 s) e o usuário confirmou.
-- [ ] V5.29 — (UI)(SEG) Dado `ward run acme-pg-aprovacao -- sh -c` com argumento que
+- [x] V5.29 — (UI)(SEG) Dado `ward run acme-pg-aprovacao -- sh -c` com argumento que
   traz U+202E, U+2066, largura zero, `\x1b[2J` e `\n` falso imitando outro comando,
   e com um processo pai de nome `claude\u202E` na cadeia, quando a janela abre, então
   cada caractere aparece como escape visível, cada argumento separado e entre aspas,
   nada é reordenado nem apagado, e o que executa é o comando exato (D51) — cobre S10.
-- [ ] V5.30 — (SEG) Dado o app (RA7), quando o auditor roda `cargo deny check` e
+- [x] V5.30 — (SEG) Dado o app (RA7), quando o auditor roda `cargo deny check` e
   `cargo audit` na raiz, então nenhum advisory é ignorado; em `app/src-tauri/`, os
   único ignorado é RUSTSEC-2024-0370, com motivo, mais a RUSTSEC-2024-0429 só se o
   `cargo audit` em `app/src-tauri/` ainda a detectar (D64); e
   `grep -rn 'Variant' app/` não acha uso de `glib::Variant` — cobre S14.
-- [ ] V5.31 — (SEG) Dado o `ward-app` de teste instalado setgid no contêiner (Fase 29a),
+- [x] V5.31 — (SEG) Dado o `ward-app` de teste instalado setgid no contêiner (Fase 29a),
   quando o lançador do daemon (D57) o abre, então ele conecta ao socket antes do GTK,
   `prctl(PR_GET_DUMPABLE)` dentro do processo (impresso pelo app de teste) dá ≠ 1 e o
   `status` mostra `TracerPid` 0 desde o `exec` (dumpable 2 com `suid_dumpable=2`,
@@ -1013,7 +1013,7 @@ O QA usa o Chrome em modo de teste (D7) e confere a aparência contra o frame.
   - um `systemctl --user set-environment WAYLAND_DISPLAY=<proxy>` (ou o mesmo no
     ambiente do pedido `abrir_app`) não muda o ambiente do app aberto pelo daemon
   (D47, D48, D57) — cobre S1, S8.
-- [ ] V5.32 — (SEG) Dado o `ward-app` com o ambiente de D57 sob `strace -f` (WebKitGTK
+- [x] V5.32 — (SEG) Dado o `ward-app` com o ambiente de D57 sob `strace -f` (WebKitGTK
   real), quando abre e desenha a janela, então o ambiente tem
   `GST_PLUGIN_SYSTEM_PATH`, `NO_AT_BRIDGE=1`, `WEBKIT_A11Y_BUS_ADDRESS` e
   `CUDA_MPS_PIPE_DIRECTORY=/proc/ward-sem-mps`; nenhum processo do app faz `open` nem
@@ -1023,17 +1023,17 @@ O QA usa o Chrome em modo de teste (D7) e confere a aparência contra o frame.
   `/tmp`, `/var/tmp`, `/dev/shm` e `/run/user/<uid>` (fora do `wayland-<n>` e do `bus`)
   sai vazia ou cada item está registrado com decisão (D64) — cobre S8.
 
-- [ ] V5.33 — (SEG) Dado o app de teste contra um daemon falso que intercala avisos,
+- [x] V5.33 — (SEG) Dado o app de teste contra um daemon falso que intercala avisos,
   quando o daemon manda `pedido_de_aprovacao` e `pedido_de_destrave` entre um pedido e a
   resposta, então a resposta chega a quem pediu e os avisos vão para a fila, nunca no
   lugar dela; quando manda 1000 avisos seguidos, então a fila não passa de 16, o
   excedente é descartado com log sem conteúdo e o app continua respondendo; quando manda
   uma resposta sem pedido, um quadro acima do limite ou um tipo do papel agente, então o
   app fecha a conexão sem mostrar nada (D65, D47) — cobre S1, S11.
-- [ ] V5.34 — (UI) Rodapé do detalhe em `Credenciais / Cheia`: "Criada em … · Alterada em
+- [x] V5.34 — (UI) Rodapé do detalhe em `Credenciais / Cheia`: "Criada em … · Alterada em
   …" de uma entrada criada pelo app, com as datas do daemon; uma entrada sem datas não
   mostra o texto (D65).
-- [ ] V5.35 — (UI) Design (Fase 37a): no `Ward.figcraft`, a descrição de "Símbolos" em
+- [x] V5.35 — (UI) Design (Fase 37a): no `Ward.figcraft`, a descrição de "Símbolos" em
   `Gerador de senha / Avulso` e no popover do formulário é o conjunto de D35; existem o
   frame `Credenciais / Sem resultado` e o cartão de nível bloqueado do detalhe, com
   instâncias dos componentes e tokens como variables; as contagens batem com a fixture
