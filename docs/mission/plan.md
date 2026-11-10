@@ -163,8 +163,8 @@ Compilação de cada fase: `make compile`. Checador: os arquivos da fase.
 
 Clientes Rust:
 - [ ] Fase 28 — `crates/ward` (`args`, `cliente`, `comandos`, `texto`, testes;
-  subcomandos e textos congelados) e `crates/ward-nm` (`ID_EXTENSAO` → `EXTENSION_ID`;
-  mensagens congeladas). — V2.1
+  subcomandos e textos congelados) e `crates/ward-nm` (`ID_EXTENSAO` → `EXTENSION_ID`, com a leitura do
+  `pub const` em `dev/tests/extension.py`; mensagens congeladas). — V2.1
 - [ ] Fase 29 — `crates/ward-test-bridge` (`http.rs`, `main.rs`, `simulados.rs`,
   `tests/ataques.rs`). — V2.1
 - [ ] Fase 30 — `app/core`: `servico.rs`, `segredo.rs`, `erro.rs`, `lib.rs`. — V2.1
@@ -199,17 +199,18 @@ Trilha W (a 35 primeiro, depois 36–39 em paralelo):
   `PasswordGenerator.svelte`, `FirstUse.svelte`, `first-use.js`,
   `RestoreBackup.svelte`, `restore.js`, `EmergencyKit.svelte`, `emergency-kit.js`. —
   V3.1, V3.2, V3.3, V3.4
-- [ ] Fase 38 — **(UI)** `Settings.svelte`, `settings.js`, `Unlock.svelte`,
+- [x] Fase 38 — **(UI)** `Settings.svelte`, `settings.js`, `Unlock.svelte`,
   `ChangePassword.svelte`, `ChangePin.svelte`, `ChooseUsbDrive.svelte`,
   `lib/bridge/*`, `lib/test/Showcase.svelte`. — V3.1, V3.2, V3.3
 - [ ] Fase 39 — **(UI)** Extensão: `extension/*.js`, `popup.html`, `popup.css` (classes),
   `manifest.json` (só comentários do montador; campos do Chrome não mudam), montador
   `dev/extension/` (`montar.py` → `build.py`). Mensagens de native messaging
-  congeladas. Compilação: `make compile`. — V3.1, V3.5
+  congeladas. Ajusta os literais de `dev/tests/extension.py` (`data-entrada`, classes do
+  popup, `preencherNaPagina`; achado da Fase 40). Compilação: `make compile`. — V3.1, V3.5
 
 Trilha S (fases independentes entre si):
-- [ ] Fase 40 — `dev/tests/extension.py`, `dev/tests/cli.py`. — V3.1
-- [ ] Fase 41 — `dev/tests/migration-guide.py` (`migracao.py`),
+- [x] Fase 40 — `dev/tests/extension.py`, `dev/tests/cli.py`. — V3.1
+- [x] Fase 41 — `dev/tests/migration-guide.py` (`migracao.py`),
   `attacks-foundation.sh`, `skill.py`. — V3.1, V3.7
 - [ ] Fase 42 — `dev/variations.py`, `dev/tests/variations_test.py`, `login.py`,
   `revealed_selection.py`. — V3.1
@@ -226,13 +227,15 @@ Trilha S (fases independentes entre si):
   NO_39C=1` passa `--no-mps--no-39c` grudado (achado da Fase 6). — V3.1, V3.7
 - [ ] Fase 46 — o resto de `dev/` (scripts com menos de 150 linhas, `daemon.sh`,
   `bridge.sh`, `open-app.py`, `dev/services/*`, Dockerfiles, `entrypoint.sh`,
-  `pg_select.py`, `bidi*`, `gst-channels.sh`, `terminal-test.py`, `log-scan.py` …). —
+  `pg_select.py`, `bidi*`, `gst-channels.sh`, `terminal-test.py`, `log-scan.py` …); `CASA_PASSWD` → `PASSWD_HOME` em todos os usos
+  (achado da Fase 41). —
   V3.1, V3.7
 - [ ] Fase 47 — `install/` (`install.sh`, `groups.sh`, `dump.sh`, `chrome.sh`,
   `crx.py`, `deb.sh`, `deb/*`, `systemd/*`, `tmpfiles.d`, `coredump.conf.d`; caminhos
   instalados congelados até a Fase 57), comentários do `Makefile`, `deny.toml`,
   `app/src-tauri/deny.toml`, `.gitleaks.toml`, `dev/gitleaks-*.toml`,
-  `rust-toolchain.toml`, `Cargo.toml` raiz. — V3.1
+  `rust-toolchain.toml`, `Cargo.toml` raiz. Textos do Makefile/`origins.py` que o
+  `attacks-foundation.sh` procura mudam junto com o `grep` (achado da Fase 41). — V3.1
 
 ## Milestone 4 — Formato e protocolo novos
 
