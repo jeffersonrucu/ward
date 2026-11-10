@@ -13,8 +13,12 @@
 
 // Blocos das escritas RTL (letras, marcas e dígitos delas): hebraico até os
 // suplementos do árabe (U+0590–U+08FF), formas de apresentação do hebraico e do árabe
-// (U+FB1D–U+FDFF, U+FE70–U+FEFC) e os blocos RTL dos planos suplementares.
-const RTL = /[֐-ࣿיִ-﷿ﹰ-ﻼ\u{10800}-\u{10FFF}\u{1E800}-\u{1EFFF}]+/gu;
+// (U+FB1D–U+FDFF, U+FE70–U+FEFE) e os blocos RTL dos planos suplementares. U+FEFD e
+// U+FEFE não são atribuídos, mas a ICU (a do WebKitGTK) os trata como AL, como todo
+// o bloco; ficam na faixa (Fase 39g). U+FEFF é o BOM, que o Rust já troca por escape.
+// `dev/testes/bidi_icu.py` confere, contra a ICU do sistema, que nenhum código de
+// classe forte RTL ou de controle bidi fica fora desta faixa e do escape do Rust.
+const RTL = /[֐-ࣿיִ-﷿ﹰ-﻾\u{10800}-\u{10FFF}\u{1E800}-\u{1EFFF}]+/gu;
 
 /**
  * Parte o texto em trechos LTR e RTL, na ordem.

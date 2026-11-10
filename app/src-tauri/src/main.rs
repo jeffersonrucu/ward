@@ -128,6 +128,10 @@ fn avisar(canais: &CanalAvisos, janela: &str, aviso: &'static str) {
 struct Estado {
     servico: Arc<Result<ServicoApp, ErroApp>>,
     canal: CanalAvisos,
+    /// O último estado do cofre que a vigia viu (Fase 39g), com ou sem bandeja: é por
+    /// ele que a trava vinda de fora limpa a área de transferência e o formulário na
+    /// hora. Antes ele só existia dentro da `Bandeja`, e sem bandeja nada limpava.
+    visto: Mutex<EstadoBandeja>,
 }
 
 impl Estado {
@@ -135,6 +139,7 @@ impl Estado {
         Estado {
             servico,
             canal: Arc::new(Mutex::new(Canais::default())),
+            visto: Mutex::new(EstadoBandeja::SemDaemon),
         }
     }
 
@@ -735,21 +740,25 @@ fn estado_mostrado<R: Runtime>(b: &Bandeja<R>) -> std::sync::MutexGuard<'_, Esta
 
 /// Consulta o estado e, se mudou, troca textos e ícone da bandeja e avisa a janela
 /// principal (que relê o estado e vai para `Destravar` se travou). Sem bandeja, só avisa.
+///
+/// Fase 53d e 39g: a trava que vem de fora (inatividade, `ward travar`, tela bloqueada)
+/// limpa a área de transferência e zera as senhas usadas e as chaves carregadas do
+/// formulário na hora, com ou sem bandeja: a passagem é medida pelo `Estado::visto`,
+/// antes de olhar se há bandeja.
 fn atualizar_bandeja<R: Runtime>(app: &AppHandle<R>) {
     let estado = app.state::<Estado>();
     let Ok(s) = estado.servico() else { return };
-    let novo = s.estado_da_bandeja();
+    let (antes, novo) = s.ver_passagem(&estado.visto);
     let Some(b) = app.try_state::<Bandeja<R>>() else {
-        avisar(&estado.canal, JANELA_PRINCIPAL, "estado-mudou");
+        if antes != novo {
+            avisar(&estado.canal, JANELA_PRINCIPAL, "estado-mudou");
+        }
         return;
     };
     let mut atual = estado_mostrado(&b);
     if *atual == novo {
         return;
     }
-    // Fase 53d: a trava que vem de fora (inatividade, `ward travar`, tela bloqueada)
-    // também zera as senhas usadas e as chaves carregadas do formulário.
-    s.na_passagem_da_bandeja(*atual, novo);
     let a = bandeja::aparencia(novo);
     // `configuracao` conta como uso no daemon: só na passagem que o usuário fez
     // (destravou ou criou o cofre), nunca na consulta periódica nem na partida.
@@ -972,10 +981,16 @@ fn main() {
                 .servico()
                 .map(|s| s.estado_da_bandeja())
                 .unwrap_or(EstadoBandeja::SemDaemon);
-            match criar_bandeja(app.handle(), inicial) {
-                Ok(()) => vigiar_bandeja(app.handle().clone()),
-                Err(motivo) => eprintln!("ward-app: sem bandeja ({motivo})"),
+            *app.state::<Estado>()
+                .visto
+                .lock()
+                .unwrap_or_else(|e| e.into_inner()) = inicial;
+            if let Err(motivo) = criar_bandeja(app.handle(), inicial) {
+                eprintln!("ward-app: sem bandeja ({motivo})");
             }
+            // Fase 39g: a vigia roda mesmo sem bandeja, para a trava de fora limpar a
+            // área de transferência na hora.
+            vigiar_bandeja(app.handle().clone());
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -1876,5 +1891,19 @@ mod testes {
         ao_clicar_na_bandeja(app.handle(), bandeja::ID_SAIR);
         ao_clicar_na_bandeja(app.handle(), "inventado");
         assert!(app.try_state::<Bandeja<MockRuntime>>().is_none());
+    }
+
+    /// Ataque (Fase 39g): sem bandeja, a vigia ainda mede a passagem pelo
+    /// `Estado::visto` (a limpeza da área nessa passagem é testada no núcleo,
+    /// `ataque_trava_de_fora_sem_bandeja_limpa_a_area_na_hora`). Aqui o daemon some com
+    /// o cofre destravado: o `visto` passa a `SemDaemon`, sem bandeja nenhuma.
+    #[test]
+    fn sem_bandeja_a_vigia_mede_a_passagem() {
+        let app = app_de_teste();
+        assert!(app.try_state::<Bandeja<MockRuntime>>().is_none());
+        let estado = app.state::<Estado>();
+        *estado.visto.lock().unwrap() = EstadoBandeja::Destravado;
+        atualizar_bandeja(app.handle());
+        assert_eq!(*estado.visto.lock().unwrap(), EstadoBandeja::SemDaemon);
     }
 }

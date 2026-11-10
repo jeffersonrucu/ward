@@ -260,6 +260,16 @@ inclusive o valor revelado (PRD D64).
     código novo com o mesmo id.
   Os dois dão o que a extensão já pode pedir: sugestão e preenchimento de entradas
   `login` (usuário, senha e TOTP) sem clique, para qualquer origem que o atacante diga.
+- Crash do Chrome com a senha preenchida (2ª auditoria do M5, Fase 39g; parecer do
+  auditor: baixo). O processo da aba guarda na memória a senha que a extensão ou o
+  `ward login` preencheu. Se ele cair, ou se outro processo do uid lhe mandar um
+  `kill -SEGV`, o relatório pode ir ao apport (`/var/crash`, legível pelo usuário) e o
+  crashpad do Chrome pode gravar um minidump no perfil (`~/.config/google-chrome/`,
+  pasta `Crashpad`). O Ward não põe o Chrome na lista do apport nem mexe no crashpad: o
+  navegador é do usuário e serve a tudo, e quem manda o sinal já é um processo do mesmo
+  uid, que tem o caminho mais curto do RA10 (a extensão adulterada no perfil pede o
+  preenchimento direto). Só o Ward e os auxiliares do WebKitGTK ficam fora do apport
+  (Fase 51c).
   Vale também para o próprio agente (ameaça 1), se ele rodar um programa assim, porque
   ele roda como o usuário; as regras de deny da skill não cobrem todo programa. O
   socket continua sem operação que devolva segredo ao papel agente: o ganho vem do
@@ -300,8 +310,9 @@ inclusive o valor revelado (PRD D64).
   `blacklist.d`) e desliga o armazenamento do systemd-coredump
   (`/etc/systemd/coredump.conf.d/ward.conf`, para o sistema inteiro: ele não tem lista
   por programa); outro programa no `kernel.core_pattern` só recebe aviso (Fase 51c). O
-  crash do Chrome continua indo para o apport, como o de qualquer navegador. Um
-  pacote malicioso que feche o Chrome e o abra de novo como filho pode se prender a
+  crash do Chrome continua indo para o apport, como o de qualquer navegador ("Crash
+  do Chrome com a senha preenchida", acima). Um pacote malicioso que feche o Chrome e
+  o abra de novo como filho pode se prender a
   ele por `ptrace` e fazer o navegador mentir a origem da aba; esse Chrome recebe o
   preenchimento de qualquer entrada `login`. É o mesmo limite da leitura do campo de
   senha por um script feito para isso. Também fica fora a negação de serviço de matar

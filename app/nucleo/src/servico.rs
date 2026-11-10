@@ -849,6 +849,23 @@ impl<D: Daemon, A: AreaTransferencia> Servico<D, A> {
         }
     }
 
+    /// A vigia do app consulta o estado (Fase 39g): troca o último estado visto pelo de
+    /// agora e, na passagem de destravado para outro, limpa a área de transferência e o
+    /// formulário ([`Self::na_passagem_da_bandeja`]). Vale com ou sem bandeja: o
+    /// `visto` é do app, não do menu. Devolve `(antes, agora)`.
+    pub fn ver_passagem(
+        &self,
+        visto: &Mutex<crate::bandeja::EstadoBandeja>,
+    ) -> (crate::bandeja::EstadoBandeja, crate::bandeja::EstadoBandeja) {
+        let agora = self.estado_da_bandeja();
+        let antes = {
+            let mut v = visto.lock().unwrap_or_else(|e| e.into_inner());
+            core::mem::replace(&mut *v, agora)
+        };
+        self.na_passagem_da_bandeja(antes, agora);
+        (antes, agora)
+    }
+
     /// Ao travar ou fechar o app: limpa a área se ainda tiver o valor copiado e zera a
     /// senha avulsa.
     pub fn ao_sair(&self) {
@@ -1064,6 +1081,27 @@ mod testes {
                 "{depois:?}"
             );
         }
+    }
+
+    /// Ataque (Fase 39g): o cofre trava por fora (`ward travar`, inatividade) com o
+    /// valor copiado, num app **sem bandeja**. A vigia vê a passagem pelo `visto` do app
+    /// e limpa a área na hora; antes, sem bandeja, nada limpava até o prazo de 30 s.
+    #[test]
+    fn ataque_trava_de_fora_sem_bandeja_limpa_a_area_na_hora() {
+        use crate::bandeja::EstadoBandeja::*;
+        let (s, area) = servico();
+        let visto = Mutex::new(SemDaemon);
+        assert_eq!(s.ver_passagem(&visto), (SemDaemon, Destravado));
+        s.copiar_campo("acme-pg-dev", "senha").unwrap();
+        // Consulta sem mudança não limpa.
+        assert_eq!(s.ver_passagem(&visto), (Destravado, Destravado));
+        assert!(area.0.lock().unwrap().is_some());
+        // A trava vem de fora do app: direto no daemon, sem passar pelo `travar` dele.
+        cliente::travar(&mut *s.daemon().unwrap()).unwrap();
+        assert!(area.0.lock().unwrap().is_some());
+        assert_eq!(s.ver_passagem(&visto), (Destravado, Travado));
+        assert_eq!(*area.0.lock().unwrap(), None);
+        assert_eq!(*visto.lock().unwrap(), Travado);
     }
 
     #[test]

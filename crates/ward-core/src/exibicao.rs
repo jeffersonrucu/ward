@@ -51,6 +51,7 @@ pub fn invisivel(c: char) -> bool {
             | 0x2060..=0x206F       // word joiner, invisíveis, isolates bidi
             | 0x3164                // preenchedor do Hangul
             | 0xFE00..=0xFE0F       // seletores de variação
+            | 0xFEFD | 0xFEFE      // não atribuídos; a ICU os dá como AL (Fase 39g)
             | 0xFEFF                // BOM / largura zero sem quebra
             | 0xFFA0
             | 0xFFF9..=0xFFFB       // anotação interlinear
@@ -218,6 +219,8 @@ mod testes {
             ("\u{2066}x\u{2069}", r#""\u{2066}x\u{2069}""#),
             ("a\u{200B}b\u{200D}c", r#""a\u{200B}b\u{200D}c""#),
             ("\u{FEFF}bom", r#""\u{FEFF}bom""#),
+            // Fase 39g: não atribuídos que a ICU trata como AL (letra árabe).
+            ("ls \u{FEFD}1\u{FEFE}", r#""ls \u{FEFD}1\u{FEFE}""#),
             ("x\u{E0041}\u{E007F}", r#""x\u{E0041}\u{E007F}""#),
             ("l\u{2028}p\u{2029}", r#""l\u{2028}p\u{2029}""#),
             (

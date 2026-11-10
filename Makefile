@@ -67,7 +67,7 @@ CARGO_DENY_VERSAO := 0.20.2
 	dev-servicos-parar dev-servicos-estado dev-servicos-conferir dev-servicos-trocar-chave-host dev-cofre \
 	dev-cofre-conferir dev-variacoes teste-dev-cofre dev-daemon dev-daemon-parar teste-cli teste-docker-uid teste-units \
 	app-front app-check app-ponte teste-docker-plataforma teste-sem-modo-teste teste-socket-ataques \
-	teste-webkit-real teste-area-transferencia teste-canais-gst teste-app-e2e teste-logs-app teste-nm teste-playwright teste-skill teste-migracao \
+	teste-webkit-real teste-area-transferencia teste-selecao-revelado teste-canais-gst teste-app-e2e teste-logs-app teste-nm teste-playwright teste-skill teste-migracao \
 	release install uninstall teste-install extensao teste-extensao deb extensao-crx teste-deb teste-login \
 	teste-ssh-home teste-politica-chrome
 
@@ -270,6 +270,7 @@ app-front:
 	$(APP_NPM) run build:teste
 	$(PYTHON) dev/testes/app-dist.py
 	PATH="$(NODE_DIR):/usr/bin:/bin" "$(NODE_DIR)/node" dev/testes/bidi.mjs
+	$(PYTHON) dev/testes/bidi_icu.py
 	$(APP_NPM) audit --omit=dev
 	$(APP_NPM) audit --audit-level=moderate
 
@@ -334,6 +335,19 @@ teste-app-e2e: origens
 	$(CARGO) build --quiet --locked -p ward-ponte-teste --features modo-teste --bin ward-ponte-teste
 	$(CARGO) build --quiet --locked -p ward --features modo-teste --bin ward
 	PW_PYTHONPATH="$(PW_PYTHONPATH)" WARD_DEV_SOCKET_DIR="$(WARD_DEV_SOCKET_DIR)" dev/testes/app-e2e.sh
+
+## teste-selecao-revelado: Fase 39g (S2, S12): o valor revelado no `Campo secreto` não vai
+## à PRIMARY nem à CLIPBOARD por seleção, Ctrl+A, Ctrl+C, arrasto ou clique triplo, no
+## WebKitGTK 4.1 de verdade (python3-gi) num Xwayland privado com cookie (a área de
+## transferência da sessão não é tocada); autoteste com o valor como texto (o ataque da
+## auditoria é achado). `wardd` de teste só dele (WARD_DEV_SOCKET_DIR, padrão
+## /run/user/<uid>/ward-teste-selecao) com a ponte; varredura de logs no fim. Precisa de
+## `make dev-cofre`, `make dev-variacoes`, `make app-front`, Xwayland, xauth e da sessão
+## Wayland; fora do `make check`
+teste-selecao-revelado: origens
+	$(CARGO) build --quiet --locked -p wardd --features modo-teste --bin wardd
+	$(CARGO) build --quiet --locked -p ward-ponte-teste --features modo-teste --bin ward-ponte-teste
+	WARD_DEV_SOCKET_DIR="$(WARD_DEV_SOCKET_DIR)" dev/testes/selecao-revelado.sh
 
 ## teste-canais-gst: canais da 29b (Fase 39c) sem o WebKitGTK: o gst-plugin-scanner do
 ## sistema e o EGL da GPU com o ambiente de D57 (valores do lancador.rs), HOME falso em

@@ -72,6 +72,10 @@ seção por enquanto.
    - Esperado: não cola mais nada. A trava vista pela bandeja limpou a área na hora.
 8. [ ] (Fase 39f) Copie a senha e feche o app pelo "Sair" da bandeja. Cole.
    - Esperado: não cola mais nada.
+9. [ ] (Fase 39g) Revele a senha e tente selecioná-la com o mouse (arrastar, clique
+   triplo), depois Ctrl+A e Ctrl+C. Cole com o botão do meio num editor e com Ctrl+V.
+   - Esperado: o valor nunca aparece selecionado e nenhuma das duas colagens traz a
+     senha. Só o botão copiar põe a senha na área de transferência.
 
 ## 5. Formulários
 

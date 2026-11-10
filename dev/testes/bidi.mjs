@@ -30,6 +30,8 @@ igual(
 // Árabe com dígitos arábico-índicos e formas de apresentação.
 igual(partesBidi('rm مرحبا١٢ -rf'), [L('rm '), R('مرحبا١٢'), L(' -rf')], 'árabe');
 igual(partesBidi('aיִbﹰc'), [L('a'), R('יִ'), L('b'), R('ﹰ'), L('c')], 'apresentação');
+// Fase 39g: U+FEFD e U+FEFE não são atribuídos, mas a ICU os dá como AL.
+igual(partesBidi('a\u{FEFD} 1 \u{FEFE}b'), [L('a'), R('\u{FEFD}'), L(' 1 '), R('\u{FEFE}'), L('b')], 'FEFD/FEFE');
 // Plano suplementar (fenício, adlam).
 igual(partesBidi('x\u{10900}\u{1E900}y'), [L('x'), R('\u{10900}\u{1E900}'), L('y')], 'suplementar');
 // Nome de processo só RTL.

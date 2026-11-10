@@ -12,6 +12,17 @@
   // `editavel` (formulário, Fase 33): no estado vazio a caixa é um campo de senha onde o
   // usuário digita (`bind:digitado`); o olho alterna a digitação visível só no próprio
   // campo. Com valor salvo, "Trocar valor" (`ontrocar`) passa a caixa a digitação.
+  //
+  // Fase 39g (S2, S12; 2ª auditoria do M5): o valor revelado não pode ir à área de
+  // transferência por fora do botão copiar (que põe prazo e a dica `secret`). No
+  // WebKitGTK, selecionar texto o põe na PRIMARY na hora, e Ctrl+C na CLIPBOARD, sem
+  // prazo. `user-select: none` só não basta: Ctrl+A, ou uma seleção que começa fora e
+  // atravessa o campo, ainda levam o texto à PRIMARY. Por isso o valor não é um nó de
+  // texto: vai no atributo `data-valor` e é desenhado pelo `::before` (`content:
+  // attr(...)`), que nenhuma seleção, cópia nem arrasto pega. `copy`, `cut` e
+  // `selectstart` no campo também são cancelados (no campo de digitação visível, `copy`,
+  // `cut` e `dragstart`). Conferido no WebKitGTK
+  // real por `dev/testes/selecao_revelado.py` (`make teste-selecao-revelado`).
   import AcaoDeCampo from './AcaoDeCampo.svelte';
   import Icone from './Icone.svelte';
 
@@ -53,6 +64,11 @@
   // Digitação visível só no campo (o valor já está na caixa, digitado pelo usuário).
   let visivel = $state(false);
   const descricao = $derived(erro || ajuda ? `${id}-ajuda` : undefined);
+
+  /** @param {Event} e */
+  function semCopia(e) {
+    e.preventDefault();
+  }
 </script>
 
 <div class="campo" class:com-erro={erro}>
@@ -78,11 +94,20 @@
         spellcheck="false"
         aria-invalid={erro ? 'true' : undefined}
         aria-describedby={descricao}
+        oncopy={visivel ? semCopia : undefined}
+        oncut={visivel ? semCopia : undefined}
+        ondragstart={semCopia}
       />
     {:else if vazio}
       <span class="valor placeholder">{placeholder}</span>
     {:else if aberto}
-      <span class="valor revelado">{revelado}</span>
+      <span
+        class="valor revelado"
+        data-valor={revelado}
+        oncopy={semCopia}
+        oncut={semCopia}
+        onselectstart={semCopia}
+      ></span>
     {:else if ontrocar}
       <button
         type="button"
@@ -201,10 +226,17 @@
     outline: var(--linha-grossa) solid var(--cor-borda-foco);
     outline-offset: var(--linha-grossa);
   }
+  /* Fase 39g: o valor revelado só existe no `::before`, fora de qualquer seleção. */
+  .revelado {
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .revelado::before {
+    content: attr(data-valor);
+  }
   .revelado,
   .mono {
     font-family: var(--familia-mono);
-    user-select: text;
     /* O valor aparece caractere a caractere: sem ligaduras (`<=` ou `->` virariam um
        glifo só e a senha lida não seria a copiada). */
     font-variant-ligatures: none;

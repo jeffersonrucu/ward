@@ -243,15 +243,34 @@ fn ler_limitado(caminho: &Path, max: usize) -> Result<Leitura, ()> {
     if meta.len() > max as u64 {
         return Ok(Leitura::Grande);
     }
-    let mut buf = zeroize::Zeroizing::new(Vec::with_capacity(meta.len() as usize + 1));
-    arquivo
-        .take(max as u64 + 1)
-        .read_to_end(&mut buf)
-        .map_err(|_| ())?;
-    if buf.len() > max {
-        return Ok(Leitura::Grande);
+    match ler_ate(arquivo, max)? {
+        Some(mut buf) => Ok(Leitura::Conteudo(Segredo::novo(core::mem::take(&mut *buf)))),
+        None => Ok(Leitura::Grande),
     }
-    Ok(Leitura::Conteudo(Segredo::novo(core::mem::take(&mut *buf))))
+}
+
+/// Lê no máximo `max` bytes num buffer fixo de `max + 1`, alocado uma vez e zerado ao
+/// sair, como o `ler_ate` do `chave.rs` (Fase 39g, auditoria do M5): a leitura nunca
+/// realoca, então nenhum pedaço do anexo fica num bloco antigo do heap sem zerar (o
+/// `read_to_end` num `Vec` com a capacidade do `fstat` realocava se o arquivo crescesse
+/// entre o `fstat` e a leitura). `None` quando passou de `max`. O `truncate` só muda o
+/// tamanho; o `Segredo` toma posse do mesmo bloco, sem cópia.
+fn ler_ate(mut arquivo: impl Read, max: usize) -> Result<Option<zeroize::Zeroizing<Vec<u8>>>, ()> {
+    let mut buf = zeroize::Zeroizing::new(vec![0u8; max + 1]);
+    let mut lidos = 0usize;
+    while lidos < buf.len() {
+        match arquivo.read(&mut buf[lidos..]) {
+            Ok(0) => break,
+            Ok(n) => lidos += n,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(_) => return Err(()),
+        }
+    }
+    if lidos > max {
+        return Ok(None);
+    }
+    buf.truncate(lidos);
+    Ok(Some(buf))
 }
 
 #[cfg(test)]
@@ -301,6 +320,47 @@ mod testes {
     /// Fase 39f (baixo da auditoria do M5): link simbólico escolhido como anexo é
     /// recusado (não segue para o alvo), e uma FIFO não prende o app: volta o aviso
     /// fixo na hora, sem guardar nada.
+    /// Ataque (Fase 39g): o arquivo cresce entre o `fstat` e a leitura. A leitura usa
+    /// um bloco só, de `max + 1`, que nunca realoca (nada do anexo fica num bloco antigo
+    /// sem zerar), e o que passa de `max` é recusado.
+    #[test]
+    fn ataque_arquivo_que_cresce_nao_realoca_o_buffer() {
+        /// Leitor que entrega 7 bytes por vez, sem fim conhecido (o arquivo "crescendo").
+        struct Crescendo(usize);
+        impl Read for Crescendo {
+            fn read(&mut self, b: &mut [u8]) -> std::io::Result<usize> {
+                let n = b.len().min(7).min(self.0);
+                b[..n].fill(b'k');
+                self.0 -= n;
+                Ok(n)
+            }
+        }
+        // Passou de `max`: recusado. Coube: o bloco é o mesmo de `max + 1`.
+        let buf = ler_ate(Crescendo(100), 64).unwrap();
+        assert!(buf.is_none(), "passou de max e não foi recusado");
+        let buf = ler_ate(Crescendo(50), 64).unwrap().unwrap();
+        assert_eq!(buf.len(), 50);
+        assert_eq!(buf.capacity(), 65);
+        let p = buf.as_ptr();
+        let s = Segredo::novo({
+            let mut b = buf;
+            core::mem::take(&mut *b)
+        });
+        assert_eq!(
+            s.expor().as_ptr(),
+            p,
+            "o Segredo não tomou posse do mesmo bloco"
+        );
+        // Erro de leitura não devolve nada.
+        struct Quebrado;
+        impl Read for Quebrado {
+            fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::other("x"))
+            }
+        }
+        assert!(ler_ate(Quebrado, 64).is_err());
+    }
+
     #[test]
     fn ataque_link_e_fifo_sao_recusados_sem_prender() {
         let d = pasta("link-fifo");
