@@ -29,6 +29,7 @@
     <category>Security</category>
   </categories>
   <releases>
+    <release version="0.1.2" date="2026-11-10"/>
     <release version="0.1.1" date="2026-11-10"/>
     <release version="0.1.0" date="2026-11-10"/>
   </releases>

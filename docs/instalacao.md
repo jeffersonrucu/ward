@@ -126,8 +126,11 @@ Durante a instalação:
   `PasswordManagerEnabled` ou `PasswordLeakDetectionEnabled`; passo 0.5);
 - os binários setgid vêm no pacote como 0755. O 2755 com o grupo certo entra pelo
   `dpkg-statoverride` (confira com `dpkg-statoverride --list | grep ward`);
-- o `postinst` liga `wardd@<seu uid>.socket`. O uid vem do `SUDO_UID`. Se ele faltar,
-  o `postinst` imprime o comando, que é `sudo systemctl enable --now wardd@$(id -u).socket`.
+- o `postinst` liga `wardd@<seu uid>.socket`. O uid vem do `SUDO_UID` (`sudo apt
+  install`/`sudo dpkg -i`). Instalado pela loja de apps (PackageKit), sem `SUDO_UID`, ele
+  liga o socket de cada usuário humano do `/etc/passwd` (uid entre `UID_MIN` e `UID_MAX`
+  do `/etc/login.defs`, com shell de login). Cada `wardd` roda com o uid do dono e só sobe
+  na primeira conexão. `WARD_UID=<uid>` escolhe um só.
 
 ## 2b. Ou instalar por `sudo make install`
 

@@ -282,10 +282,23 @@ confere "reinstalar: ward-nm continua root:ward-nm 2755" "$(stat -c '%U:%G %a' /
 confere "reinstalar: socket ativo" "$(systemctl is-active "wardd@$UID_T.socket" || true)" "active"
 r="$(como_1000 "$T/bin/cliente" "$SOCK" estado)"
 confere "reinstalar: o wardd responde" "$r" "resposta: estado"
-# Sem SUDO_UID nem WARD_UID (outra ferramenta): instala e explica como ligar o socket.
+# Sem SUDO_UID nem WARD_UID (loja de apps/PackageKit): liga o socket de cada usuário
+# humano (uid na faixa do login.defs, com shell de login) e de mais nenhum.
+systemctl disable --now "wardd@$UID_T.socket" "wardd@$UID_T.service" >/dev/null 2>&1 || true
+useradd -M -N -u 1500 -s /usr/sbin/nologin semshell
+useradd -M -N -u 999 -s /bin/bash sistema
 r="$(env -u SUDO_UID -u WARD_UID dpkg -i "$DEB" 2>&1; echo "saiu=$?")"
 confere "sem SUDO_UID: dpkg -i sai 0" "$r" "saiu=0"
-confere "sem SUDO_UID: o postinst diz como ligar o socket" "$r" "systemctl enable --now wardd@"
+confere "sem SUDO_UID: o postinst liga o socket do usuário humano" "$r" "wardd@$UID_T.socket ligado"
+confere "sem SUDO_UID: socket do usuário humano ligado" "$(systemctl is-enabled "wardd@$UID_T.socket" 2>&1 || true)" "enabled"
+confere "sem SUDO_UID: socket do usuário humano ativo" "$(systemctl is-active "wardd@$UID_T.socket" || true)" "active"
+for u in 1500 999 65534 0; do
+    nao_tem "sem SUDO_UID: wardd@$u.socket não ligado" "$(systemctl is-enabled "wardd@$u.socket" 2>&1 || true)" "enabled"
+done
+r="$(como_1000 "$T/bin/cliente" "$SOCK" estado)"
+confere "sem SUDO_UID: o wardd responde" "$r" "resposta: estado"
+userdel semshell
+userdel sistema
 # WARD_UID inválido não liga nada.
 r="$(WARD_UID=0 dpkg -i "$DEB" 2>&1; echo "saiu=$?")"
 confere "WARD_UID=0: dpkg -i sai 0" "$r" "saiu=0"

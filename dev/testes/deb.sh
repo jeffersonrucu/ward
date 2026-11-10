@@ -75,7 +75,7 @@ echo "==> 1. make deb (host, sem root)"
 D="$TMP/deb"
 r="$(mk "$D" 2>&1)" || { printf '%s\n' "$r"; falhou "make deb"; }
 DEB="$(find "$D" -maxdepth 1 -name 'ward_*.deb' -print)"
-confere "make deb gera ward_<versão>_<arq>.deb" "$DEB" "/ward_0.1.1_$(dpkg --print-architecture).deb"
+confere "make deb gera ward_<versão>_<arq>.deb" "$DEB" "/ward_0.1.2_$(dpkg --print-architecture).deb"
 [ -f "$DEB" ] || { echo "teste-deb: sem pacote, nada mais a conferir" >&2; exit 1; }
 confere "make deb imprime o sha256" "$r" "$(sha256sum "$DEB" | cut -d' ' -f1)"
 
@@ -99,7 +99,7 @@ confere "staging tem ward-app 2755 (o modo da árvore)" "$(stat -c %a "$D/raiz/u
 dep="$(dpkg-deb -f "$DEB" Depends)"
 confere "V9.9: Depends declara sshpass" ", $dep," ", sshpass,"
 confere "Depends declara openssh-client e systemd" "$dep" "openssh-client, systemd"
-confere "Package e Version" "$(dpkg-deb -f "$DEB" Package Version)" $'Package: ward\nVersion: 0.1.1'
+confere "Package e Version" "$(dpkg-deb -f "$DEB" Package Version)" $'Package: ward\nVersion: 0.1.2'
 
 X="$TMP/extraido"
 dpkg-deb -x "$DEB" "$X"
