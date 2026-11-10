@@ -28,10 +28,16 @@ const MAX_ESTADO: u64 = 256;
 /// Primeira linha do arquivo de estado.
 const CABECALHO_ESTADO: &str = "ward-estado 1";
 
+/// Abre para ler sem seguir link (`O_NOFOLLOW`) e sem esperar (Fase 54l): com
+/// `O_NONBLOCK`, um FIFO posto no lugar do cofre, do estado ou de uma versão do backup
+/// (entre o `readdir` da lista e o `open`) abre na hora e é recusado pelo `fstat` em
+/// [`conferir_arquivo`], em vez de prender a thread (e o estado do daemon) até alguém
+/// abrir o outro lado. `O_NOCTTY`: um terminal no lugar não vira o terminal do daemon.
+/// Num arquivo comum o `O_NONBLOCK` não muda a leitura.
 fn abrir_leitura(caminho: &Path) -> io::Result<File> {
     OpenOptions::new()
         .read(true)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_NOCTTY | libc::O_CLOEXEC)
         .open(caminho)
 }
 
@@ -394,6 +400,57 @@ pub fn abrir_pasta_backup(dir: &Path) -> io::Result<PastaAberta> {
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    /// Roda `f` numa thread e espera no máximo `prazo`; `None` se não voltou (a thread
+    /// presa fica para trás: o teste falha).
+    fn com_prazo<T: Send + 'static>(
+        prazo: std::time::Duration,
+        f: impl FnOnce() -> T + Send + 'static,
+    ) -> Option<T> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(f());
+        });
+        rx.recv_timeout(prazo).ok()
+    }
+
+    /// Fase 54l (achado da 54c), ataque: o mesmo uid põe um FIFO no lugar do cofre, do
+    /// estado ou de uma versão do backup. Antes, o `open` sem `O_NONBLOCK` ficava preso
+    /// até alguém abrir o outro lado (a lista do restaurar e a cópia externa seguravam o
+    /// estado do daemon). Agora a leitura volta na hora com recusa.
+    #[test]
+    fn f54l_ataque_fifo_no_lugar_nao_prende_a_leitura() {
+        use std::os::unix::fs::DirBuilderExt;
+        let raiz = std::env::temp_dir().join(format!("ward-fifo-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&raiz);
+        fs::DirBuilder::new().mode(0o700).create(&raiz).unwrap();
+        let fifo = raiz.join("versao.ward");
+        let st = std::process::Command::new("/usr/bin/mkfifo")
+            .arg("-m")
+            .arg("600")
+            .arg(&fifo)
+            .status()
+            .unwrap();
+        assert!(st.success());
+        let prazo = std::time::Duration::from_secs(3);
+        let f = fifo.clone();
+        let r = com_prazo(prazo, move || ler_cofre(&f).map(|o| o.is_some()));
+        let r = r.expect("ler_cofre ficou preso no FIFO");
+        assert_eq!(r.unwrap_err().kind(), io::ErrorKind::PermissionDenied);
+        let f = fifo.clone();
+        let r = com_prazo(prazo, move || identidade(&f).map(|o| o.is_some()));
+        assert!(r.expect("identidade ficou presa no FIFO").is_err());
+        let f = fifo.clone();
+        let r = com_prazo(prazo, move || ler_estado_completo(&f).is_err());
+        assert!(r.expect("ler_estado ficou preso no FIFO"));
+        // Controle: um arquivo comum continua sendo lido inteiro.
+        let comum = raiz.join("comum.ward");
+        fs::write(&comum, b"bytes-falsos").unwrap();
+        fs::set_permissions(&comum, std::os::unix::fs::PermissionsExt::from_mode(0o600)).unwrap();
+        let (bytes, _) = ler_cofre(&comum).unwrap().unwrap();
+        assert_eq!(bytes, b"bytes-falsos");
+        let _ = fs::remove_dir_all(&raiz);
+    }
 
     fn so_geracoes(texto: &str) -> Option<Geracoes> {
         analisar_estado(texto).map(|e| e.geracoes)

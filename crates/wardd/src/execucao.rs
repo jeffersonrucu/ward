@@ -752,10 +752,12 @@ fn escrever_entrada(mut f: File, fila: Receiver<Option<Segredo>>) {
 
 /// Lê os quadros da CLI durante a sessão: `entrada_padrao` vai para o filho; `janela`
 /// muda o tamanho do pty (sem pty, como no `ward run`, é ignorada); qualquer outro
-/// quadro, ou a conexão que cai, mata o grupo do filho (D13). Depois do fim normal, a
-/// leitura acaba sem matar nada. No pty, a entrada vazia não fecha nada (o fim da
-/// entrada é o Ctrl+D que o terminal manda como byte). Com `entrada_nula` (Fase 54b),
-/// só o quadro vazio do fim é aceito; dado conta como quadro fora da sessão.
+/// quadro, ou a conexão que cai, mata o grupo do filho (D13) e, desde a Fase 54l, o
+/// grupo de cada filho direto com sessão própria (o `ssh` que o `sshpass` cria). Depois
+/// do fim normal, a leitura acaba sem matar nada. No pty, a entrada vazia não fecha
+/// nada (o fim da entrada é o Ctrl+D que o terminal manda como byte). Com
+/// `entrada_nula` (Fase 54b), só o quadro vazio do fim é aceito; dado conta como quadro
+/// fora da sessão.
 fn ler_da_cli(
     mut s: UnixStream,
     grupo: Arc<Grupo>,
@@ -771,7 +773,7 @@ fn ler_da_cli(
             Err(_) => {
                 if !fim.load(Ordering::Acquire) {
                     aviso!("executar: a CLI saiu; o grupo do comando foi morto (D13)");
-                    grupo.matar();
+                    grupo.matar_com_sessoes_filhas();
                 }
                 return;
             }
@@ -782,7 +784,7 @@ fn ler_da_cli(
                     aviso!(
                         "executar: dado na entrada padrão declarada nula; o grupo do comando foi morto (D68)"
                     );
-                    grupo.matar();
+                    grupo.matar_com_sessoes_filhas();
                 }
                 return;
             }
@@ -808,7 +810,7 @@ fn ler_da_cli(
             _ => {
                 if !fim.load(Ordering::Acquire) {
                     aviso!("executar: quadro fora da sessão; o grupo do comando foi morto");
-                    grupo.matar();
+                    grupo.matar_com_sessoes_filhas();
                 }
                 return;
             }
@@ -836,7 +838,7 @@ fn por_na_fila(
                 }
                 if ward_plataforma::par_fechou(s) {
                     aviso!("executar: a CLI saiu; o grupo do comando foi morto (D13)");
-                    grupo.matar();
+                    grupo.matar_com_sessoes_filhas();
                     return false;
                 }
                 std::thread::sleep(Duration::from_millis(25));
@@ -989,7 +991,7 @@ pub(crate) fn sessao_com(
             let leitura = p.mestre.try_clone().ok();
             let escrita = p.mestre.try_clone().ok();
             if leitura.is_none() || escrita.is_none() {
-                grupo.matar();
+                grupo.matar_com_sessoes_filhas();
             }
             (
                 escrita,
@@ -1034,13 +1036,13 @@ pub(crate) fn sessao_com(
     };
     if !leitor_ok {
         // Sem ver a CLI, o comando não roda (D13: a CLI que cai mata o grupo).
-        grupo.matar();
+        grupo.matar_com_sessoes_filhas();
     }
 
     // Fim do filho: o grupo inteiro morre, o temporário e o agente somem (V4.15, D12)
     // e a saída que falta é entregue.
     let _ = grupo.esperar_fim();
-    grupo.matar();
+    grupo.matar_com_sessoes_filhas();
     let resultado = grupo.colher();
     drop(ponte);
     drop(agente);

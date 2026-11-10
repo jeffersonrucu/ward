@@ -24,6 +24,9 @@
 //!   `ward run`: `SIGKILL` no grupo do `ssh`/`sshpass` e no do `ssh` que o `sshpass`
 //!   cria com sessão própria; a CLI sai 137 com o aviso. O agente de D12 e a ponte do
 //!   salto também caem.
+//! - **Fim da sessão** (Fase 54l): a CLI que cai (fechou, SIGKILL), o quadro fora da
+//!   sessão e o fim do filho usam o mesmo `matar_com_sessoes_filhas` da trava: nenhum
+//!   `ssh` com sessão própria fica para trás esperando o `SIGHUP` do pty do `sshpass`.
 //! - **Interativo** (sem comando e com janela): o filho roda num pty; a saída passa pela
 //!   máscara pedaço a pedaço, sem segurar nem atrasar nada (D34 revisto: segurar o
 //!   prefixo virava oráculo). Com comando (ou sem terminal), saída e erro em fluxos

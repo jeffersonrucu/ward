@@ -15,7 +15,7 @@ ponta, com o terminal num pty de verdade.
 3. `ward run` (Fase 26).
 4. `ward ssh` (Fase 27) contra os SSH de teste (2222, 2223): V4.23, V4.24, V4.26 (agente
    atacado por `ssh-add`, SIGKILL na CLI, travar; desde a 54c a trava encerra a sessão
-   inteira com 137), V4.28, V4.31, V4.32, oráculo de prefixo de D34 revisto (pty e tempo),
+   inteira com 137; desde a 54l o SIGKILL na CLI por senha não deixa ssh), V4.28, V4.31, V4.32, oráculo de prefixo de D34 revisto (pty e tempo),
    V4.14 e V4.35/V4.37 pelo argv em `/proc/<pid>/cmdline` (o `wardd` recusa subir sob
    `strace`).
 5. Salto e túnel (Fase 28) contra o `ssh-salto`/`ssh-interno` e o Postgres de teste:
@@ -714,17 +714,6 @@ else:
     conferir(p.returncode == 0, f"a sessão do agente atacado terminou normal ({p.returncode})")
     conferir(esperar(lambda: not agentes(), 3), "V4.26 socket e pasta do agente somem no fim")
 
-    # V4.26: SIGKILL na CLI derruba a sessão e o agente.
-    p = subprocess.Popen([WARD, "ssh", "acme-ssh-chave-prod", "sleep 20"], env=ambiente(),
-                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    conferir(esperar(lambda: agentes(), 20), "agente no ar (SIGKILL)")
-    p.kill()
-    p.wait()
-    conferir(esperar(lambda: not agentes(), 3), "V4.26 SIGKILL na CLI: o agente some")
-
-    # V4.26: travar no meio da sessão derruba o agente e, desde a Fase 54c (S8), a sessão
-    # inteira: a CLI sai 137 com o aviso e nenhum ssh/sshpass da sessão sobra (na senha,
-    # o ssh que o sshpass cria com sessão própria também).
     def da_sessao(marca):
         achados = []
         for f in glob.glob("/proc/[0-9]*/cmdline"):
@@ -735,6 +724,27 @@ else:
             if a and a[0] in (b"/usr/bin/ssh", b"/usr/bin/sshpass") and marca in a:
                 achados.append(f)
         return achados
+
+    # V4.26: SIGKILL na CLI derruba a sessão e o agente; desde a Fase 54l, por senha
+    # também, nenhum ssh/sshpass da sessão sobra (o ssh que o sshpass cria com sessão
+    # própria morre pelo daemon, sem depender do SIGHUP do pty do sshpass).
+    for entrada, marca in [("acme-ssh-chave-prod", "sleep 20"), ("acme-ssh-senha-stage", "sleep 23")]:
+        p = subprocess.Popen([WARD, "ssh", entrada, marca], env=ambiente(),
+                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        conferir(esperar(lambda: da_sessao(marca.encode()), 20), f"sessão {entrada} no ar (SIGKILL)")
+        if entrada == "acme-ssh-chave-prod":
+            conferir(esperar(lambda: agentes(), 20), "agente no ar (SIGKILL)")
+        time.sleep(1)
+        p.kill()
+        p.wait()
+        if entrada == "acme-ssh-chave-prod":
+            conferir(esperar(lambda: not agentes(), 3), "V4.26 SIGKILL na CLI: o agente some")
+        conferir(esperar(lambda: not da_sessao(marca.encode()), 5),
+                 f"V4.26 (54l) SIGKILL na CLI: nenhum ssh/sshpass da sessão {entrada} sobra")
+
+    # V4.26: travar no meio da sessão derruba o agente e, desde a Fase 54c (S8), a sessão
+    # inteira: a CLI sai 137 com o aviso e nenhum ssh/sshpass da sessão sobra (na senha,
+    # o ssh que o sshpass cria com sessão própria também).
 
     for entrada, marca in [("acme-ssh-chave-prod", "sleep 21"), ("acme-ssh-senha-stage", "sleep 22")]:
         p = subprocess.Popen([WARD, "ssh", entrada, marca], env=ambiente(),

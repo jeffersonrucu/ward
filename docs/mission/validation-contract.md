@@ -831,7 +831,8 @@ Reauditoria do M2 (Fase 19e, D53–D55). Repros em `scratchpad/ataque/src/bin/`
   cofre durante a sessão também os remove (D12) e, desde a Fase 54c, encerra a sessão
   inteira: a CLI sai 137 com "o cofre travou; o comando foi encerrado" e nenhum
   processo da sessão (`ssh`, `sshpass` e o `ssh` que o `sshpass` cria com sessão
-  própria) sobra — cobre S1, S8.
+  própria) sobra; desde a Fase 54l, o mesmo vale para a CLI que cai (SIGKILL) em
+  `acme-ssh-senha-stage` — cobre S1, S8.
 - [x] V4.27 — (SEG) Dado `HOME` de teste com `~/.ssh/config` contendo `Host *` e
   `ProxyCommand touch /tmp/sentinela-ssh`, um `known_hosts` e um `id_ed25519` de
   sentinela, `inotifywait -m ~/.ssh` rodando e `SSH_AUTH_SOCK` apontando para um agente

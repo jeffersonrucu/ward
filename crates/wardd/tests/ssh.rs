@@ -785,6 +785,64 @@ fn f54c_ataque_ward_ssh_morre_na_trava() {
     }
 }
 
+/// Fase 54l (achado da 54c; S8, D13), ataque: a CLI do `ward ssh` cai no meio da
+/// sessão aberta (fecha o socket, como um SIGKILL nela). Por senha, o `sshpass` cria o
+/// `ssh` com `setsid()`, fora do grupo; o falso não morre por `SIGHUP`. Antes, o fim da
+/// sessão matava só o grupo do `sshpass` e esse `ssh` seguia vivo, com a sessão
+/// autenticada, até o fim do comando. Agora nenhum processo da sessão sobra, com pipes
+/// e com pty, por senha e por chave, e o daemon solta a sessão logo.
+#[test]
+fn f54l_ataque_cli_cai_no_ward_ssh_nenhum_ssh_sobra() {
+    let janela = Janela {
+        linhas: 30,
+        colunas: 100,
+    };
+    for (entrada, pty) in [("s-livre", false), ("s-livre", true), ("s-chave", false)] {
+        let rotulo = format!("{entrada}{}", if pty { "-pty" } else { "" });
+        let c = cena(&format!("f54l-{rotulo}"));
+        c.modo("parado");
+        let pedido = if pty {
+            pedido_ssh(entrada, &[], None, Some(janela))
+        } else {
+            pedido_ssh(entrada, &["sleep", "20"], None, None)
+        };
+        let (mut lado_cli, lado_daemon) = UnixStream::pair().unwrap();
+        let d = c.d.clone();
+        let t = std::thread::spawn(move || {
+            let _ = wardd::ssh::sessao(&d, &SemCliente, &lado_daemon, pedido);
+        });
+        fechar_entrada(&mut lado_cli);
+        assert!(
+            esperar(Duration::from_secs(30), || !c.registros("ssh").is_empty()),
+            "{rotulo}: o ssh falso não subiu"
+        );
+        std::thread::sleep(Duration::from_millis(300));
+        let caiu = Instant::now();
+        drop(lado_cli);
+        // Nenhum processo da sessão sobra: nem o `ssh` (com sessão própria, na senha),
+        // nem o `sshpass`.
+        for nome in ["ssh", "sshpass"] {
+            for reg in c.registros(nome) {
+                let pid = reg.um("pid");
+                assert!(
+                    esperar(Duration::from_secs(5), || {
+                        fs::read_to_string(format!("/proc/{pid}/stat"))
+                            .map_or(true, |s| s.contains(") Z "))
+                    }),
+                    "{rotulo}: {nome} {pid} sobreviveu à CLI que caiu"
+                );
+            }
+        }
+        t.join().unwrap();
+        let dt = caiu.elapsed();
+        assert!(dt < Duration::from_secs(10), "{rotulo}: {dt:?}");
+        if entrada == "s-livre" {
+            assert_eq!(c.registros("sshpass").len(), 1, "{rotulo}");
+        }
+        assert!(rt_sem_agente(&c), "{rotulo}");
+    }
+}
+
 /// D12 no `sftp` com chave: o `ssh` que o `sftp` chama (filho do filho) é atendido; o
 /// neto dele não.
 #[test]

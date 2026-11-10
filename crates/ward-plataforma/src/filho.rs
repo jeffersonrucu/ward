@@ -348,7 +348,8 @@ pub fn pronto_para_ler_fd(fd: std::os::fd::BorrowedFd<'_>, espera_ms: i32) -> io
 
 /// O grupo de processos do filho (o filho é o líder). Pode ser usado de várias threads:
 /// uma espera o fim, outra mata o grupo quando a CLI cai. Ao sair sem ter colhido, mata
-/// o grupo e colhe (nenhum processo com segredo no ambiente fica para trás).
+/// o grupo (e os filhos diretos com sessão própria, Fase 54l) e colhe (nenhum processo
+/// com segredo no ambiente fica para trás).
 #[derive(Debug)]
 pub struct Grupo {
     pid: libc::pid_t,
@@ -422,7 +423,8 @@ impl Drop for Grupo {
     fn drop(&mut self) {
         let colhido = *self.colhido.lock().unwrap_or_else(|e| e.into_inner());
         if !colhido {
-            self.matar();
+            // Fase 54l: também o filho direto com sessão própria (`sshpass` → `ssh`).
+            self.matar_com_sessoes_filhas();
             let _ = self.colher();
         }
     }

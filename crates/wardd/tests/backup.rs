@@ -647,3 +647,74 @@ fn temporarios_do_estado_somem_na_partida() {
     // O estado de verdade fica e o daemon destrava com ele.
     assert!(ok(&destravar(&d, SENHA)));
 }
+
+/// Fase 54l (achado da 54c), ataque: o mesmo uid troca uma versão do backup por um FIFO
+/// sem parar, entre o `readdir` da lista (que só aceita arquivo comum) e o `open` de
+/// cada versão (lista do restaurar, `nucleo::backups`). Antes, o `open` sem
+/// `O_NONBLOCK` caía no FIFO e ficava preso com o estado do daemon na mão (nenhum pedido
+/// era mais atendido). Agora cada lista volta logo, a versão some ou aparece sem
+/// conferir enquanto é FIFO, e o daemon segue atendendo.
+#[test]
+fn f54l_ataque_fifo_trocado_no_lugar_da_versao_nao_prende_o_daemon() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let dir = Dir::novo("bk-fifo");
+    let (d, _) = cofre_de_teste(&dir);
+    let d = Arc::new(d);
+    let todas = backups(&d);
+    let total = todas.len();
+    let v = todas.last().unwrap().clone();
+    let p = pasta(&dir);
+    let real = p.join("x-real");
+    fs::hard_link(p.join(&v), &real).unwrap();
+    let parar = Arc::new(AtomicBool::new(false));
+    let trocador = {
+        let (p, v, real, parar) = (p.clone(), v.clone(), real.clone(), parar.clone());
+        std::thread::spawn(move || {
+            let mut n = 0u64;
+            while !parar.load(Ordering::Acquire) {
+                let fifo = p.join(format!("x-fifo-{n}"));
+                let st = std::process::Command::new("/usr/bin/mkfifo")
+                    .arg("-m")
+                    .arg("600")
+                    .arg(&fifo)
+                    .status()
+                    .unwrap();
+                assert!(st.success());
+                fs::rename(&fifo, p.join(&v)).unwrap();
+                std::thread::sleep(Duration::from_micros(500));
+                let volta = p.join(format!("x-volta-{n}"));
+                fs::hard_link(&real, &volta).unwrap();
+                fs::rename(&volta, p.join(&v)).unwrap();
+                std::thread::sleep(Duration::from_micros(500));
+                n += 1;
+            }
+            // No fim, a versão real no lugar.
+            n
+        })
+    };
+    let fim = std::time::Instant::now() + Duration::from_secs(3);
+    let mut listas = 0;
+    while std::time::Instant::now() < fim {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let d2 = d.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send(versoes(&d2).len());
+        });
+        let n = rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("a lista dos backups ficou presa num FIFO (o daemon parou)");
+        assert!(n <= total, "{n} > {total}");
+        listas += 1;
+    }
+    parar.store(true, Ordering::Release);
+    let trocas = trocador.join().unwrap();
+    assert!(
+        trocas > 100 && listas > 100,
+        "{trocas} trocas, {listas} listas"
+    );
+    // A versão real volta a conferir; o daemon segue destravado.
+    let l = versoes(&d);
+    assert!(l.iter().any(|x| x.nome == v && x.conferida), "{l:?}");
+    assert!(!d.travado());
+}
