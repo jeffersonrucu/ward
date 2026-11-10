@@ -1717,12 +1717,17 @@ seis baixos.
   tipo `terminal` declarado pela CLI do mesmo uid (cliente que mente no socket, pty próprio
   do agente) entra em `docs/escopo.md` › "Fora do modelo de ameaça", com o que a 54b fecha
   (pipe, arquivo, erro honesto); RA11 no PRD sai de "proposta". Rodar depois da 54c e 54f.
-- [ ] Fase 54h — `Modal` contra o design (achado da 54e, já existia): o "X" de fechar do
+- [x] Fase 54h — `Modal` contra o design (achado da 54e, já existia): o "X" de fechar do
   cabeçalho e o corpo 3 px acima (y 170 contra 173) no diálogo de troca; conferir no Chrome
   headless contra o frame `20085`.
+  Feita (2026-11-10): "X" no `Modal` (fecha como o Esc), corpo em y 173; `make app-front` 0.
 - [x] Fase 54i (DESIGN) — "Diretório de trabalho" nos frames de aprovação (achado da 54f):
   os frames `16701`, `16810`, `16885`, `16960` e `17035` ganham a `Caixa de código` do
   diretório, como o app mostra desde a 26a; o comentário "sem frame" de `aprovacao.js` e
   `JanelaAprovacao.svelte` passa a citar `22964`.
   Feita (2026-11-10): caixas `23144`–`23156`; comentários atualizados. A propriedade
   `Conteúdo` das caixas "Comando" antigas ainda diz `clientex-*` (o texto desenhado está certo).
+- [ ] Fase 54j (DESIGN) — Rodapé dos modais e Trocar PIN (achados da 54h): no FigCraft,
+  os botões do rodapé das instâncias do `Modal` (`612`/`628`, `20463`/`20467`) voltam a 44
+  px como o `Botão` `263`, sem o espaço de 4 px no topo; a diferença de 4 px do Trocar PIN
+  (554 no app, 558 em `20471`) é medida e o lado errado é corrigido.
