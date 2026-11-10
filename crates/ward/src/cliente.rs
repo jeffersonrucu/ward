@@ -1,5 +1,5 @@
 //! Conexão com o `wardd` (S1, S5, D46). Toda conexão passa pela conferência do servidor
-//! de `ward_plataforma::servidor` antes do primeiro byte: no build de release, pastas
+//! de `ward_platform::servidor` antes do primeiro byte: no build de release, pastas
 //! do root, socket 0600 do próprio uid, endereço do par igual ao caminho e par com
 //! uid 0. A CLI fala sempre como o papel agente e só aceita resposta desse papel: uma
 //! resposta com credencial é recusada na leitura (S1).
@@ -11,7 +11,7 @@ use std::time::Duration;
 use ward_core::limites::MAX_QUADRO_COMUM;
 use ward_core::protocolo::quadro::{self, ErroQuadro, LIMITE_RESPOSTA};
 use ward_core::protocolo::{self, Papel, Pedido, Resposta};
-use ward_plataforma::{RecusaServidor, ServidorEsperado, conectar_servidor, conferir_servidor};
+use ward_platform::{RecusaServidor, ServidorEsperado, conectar_servidor, conferir_servidor};
 
 /// Prazo para o daemon responder. O destravar pode levar a espera crescente de D20
 /// (até 30 s) mais o Argon2id.
@@ -22,18 +22,18 @@ const PRAZO_ESCRITA: Duration = Duration::from_secs(10);
 ///
 /// - Release: só o `wardd` instalado, `/run/ward/<uid>/wardd.sock` (D46). Nenhuma
 ///   variável de ambiente nem argumento troca o caminho ou as regras.
-/// - `modo-teste`: o daemon de teste (D7) em `WARD_DEV_SOCKET_DIR` ou
+/// - `test-mode`: o daemon de teste (D7) em `WARD_DEV_SOCKET_DIR` ou
 ///   `/run/user/<uid>/ward-teste/`.
 pub fn servidor_esperado() -> ServidorEsperado {
-    #[cfg(feature = "modo-teste")]
+    #[cfg(feature = "test-mode")]
     {
         if let Some(d) = std::env::var_os("WARD_DEV_SOCKET_DIR") {
             let d = std::path::PathBuf::from(d);
-            return ServidorEsperado::teste_em(d.join(ward_plataforma::socket::NOME_SOCKET));
+            return ServidorEsperado::teste_em(d.join(ward_platform::socket::NOME_SOCKET));
         }
         ServidorEsperado::teste()
     }
-    #[cfg(not(feature = "modo-teste"))]
+    #[cfg(not(feature = "test-mode"))]
     {
         ServidorEsperado::sistema()
     }
@@ -107,9 +107,9 @@ fn erro_do_quadro(e: ErroQuadro) -> ErroConexao {
 pub struct Conexao {
     stream: UnixStream,
     esperado: ServidorEsperado,
-    /// `modo-teste`: exigir que o processo do socket seja não-dumpable (ver
+    /// `test-mode`: exigir que o processo do socket seja não-dumpable (ver
     /// [`Conexao::conferir_extra`]). Só os testes da própria CLI desligam.
-    #[cfg(feature = "modo-teste")]
+    #[cfg(feature = "test-mode")]
     exigir_nao_dumpable: bool,
 }
 
@@ -131,16 +131,16 @@ impl Conexao {
         let c = Conexao {
             stream,
             esperado: esperado.clone(),
-            #[cfg(feature = "modo-teste")]
+            #[cfg(feature = "test-mode")]
             exigir_nao_dumpable: _exigir_nao_dumpable,
         };
         c.conferir_extra()?;
         Ok(c)
     }
 
-    /// Só nos testes da CLI: conecta sem a conferência extra do `modo-teste` (o
+    /// Só nos testes da CLI: conecta sem a conferência extra do `test-mode` (o
     /// servidor falso honesto do teste roda no próprio processo, que é dumpable).
-    #[cfg(all(test, feature = "modo-teste"))]
+    #[cfg(all(test, feature = "test-mode"))]
     pub(crate) fn conectar_sem_extra(esperado: &ServidorEsperado) -> Result<Conexao, ErroConexao> {
         Conexao::conectar_com(esperado, false)
     }
@@ -151,17 +151,17 @@ impl Conexao {
         self.conferir_extra()
     }
 
-    /// `modo-teste`: sem a conferência do uid 0 (o daemon de teste é do próprio
+    /// `test-mode`: sem a conferência do uid 0 (o daemon de teste é do próprio
     /// usuário, D46), a CLI exige pelo menos que o processo do outro lado seja
     /// não-dumpable, como o `wardd` (S8): `/proc/<pid>/exe` dele dá `EACCES`. Um
     /// servidor falso comum (um script Python, um `socat`) é dumpable e é recusado. Não
     /// é garantia: um falso feito para isso pode se marcar não-dumpable. A garantia é a
     /// do release (uid 0).
     fn conferir_extra(&self) -> Result<(), ErroConexao> {
-        #[cfg(feature = "modo-teste")]
+        #[cfg(feature = "test-mode")]
         if self.exigir_nao_dumpable {
-            let par = ward_plataforma::ProcessoPar::do_socket(&self.stream)
-                .map_err(|e| erro_de_io(&e))?;
+            let par =
+                ward_platform::ProcessoPar::do_socket(&self.stream).map_err(|e| erro_de_io(&e))?;
             let pid = par.credenciais().pid;
             match std::fs::read_link(format!("/proc/{pid}/exe")) {
                 Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {}

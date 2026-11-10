@@ -1,5 +1,5 @@
 // Regras locais da tela `Primeiro uso` (Fase 30). São as mesmas de
-// `app/nucleo/src/primeiro_uso.rs`, que confere tudo de novo antes do `criar_cofre`:
+// `app/core/src/primeiro_uso.rs`, que confere tudo de novo antes do `criar_cofre`:
 // aqui servem só para o erro aparecer no campo sem ida ao Rust. Nada daqui guarda o
 // valor: as funções recebem o texto e devolvem só mensagem ou nível.
 

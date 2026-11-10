@@ -35,7 +35,7 @@ use ward_core::protocolo::{
     self, ErroResposta, Papel, Pedido, Resposta,
     quadro::{self, ErroQuadro},
 };
-use ward_plataforma::{ClassePar, ErroAceitar, Escuta, Instalacao, PoliticaKernel, ProcessoPar};
+use ward_platform::{ClassePar, ErroAceitar, Escuta, Instalacao, PoliticaKernel, ProcessoPar};
 
 use crate::aprovacao::{Assinante, Cliente};
 use crate::lancamento::{AppDeTeste, AppLancado, ExtensaoDeTeste};
@@ -239,7 +239,7 @@ impl Cliente for ClienteSocket<'_> {
 
     /// Olha sem ler nem esperar (`poll`): fim de arquivo ou erro é cliente que caiu.
     fn saiu(&self) -> bool {
-        ward_plataforma::par_fechou(self.stream)
+        ward_platform::par_fechou(self.stream)
     }
 }
 
@@ -349,7 +349,7 @@ pub fn servir(escuta: &Escuta, daemon: Arc<Daemon>, papeis: Arc<Papeis>) -> io::
                 continue;
             }
         };
-        let par = match ward_plataforma::conferir_conexao(&stream) {
+        let par = match ward_platform::conferir_conexao(&stream) {
             Ok(p) => p,
             Err(ErroAceitar::UidRecusado { uid, pid }) => {
                 // Fecha sem mandar nenhum byte (V3.2).
@@ -398,10 +398,10 @@ mod testes {
     use ward_core::protocolo::{Operacao, PedidoDeAprovacao, PedidoDeDestrave};
 
     /// D63: sem o grupo, o pid do lançador não basta; com o grupo, só o pid do lançador.
-    /// Vale nos dois builds (o `make teste-sem-modo-teste` roda sem a feature).
+    /// Vale nos dois builds (o `make test-no-test-mode` roda sem a feature).
     #[test]
     fn d63_sem_o_grupo_o_pid_do_lancador_nao_da_papel_app() {
-        use ward_plataforma::Recusa;
+        use ward_platform::Recusa;
         for motivo in [
             Recusa::GrupoComum,
             Recusa::PaiDoAppNaoPermitido,
@@ -421,14 +421,14 @@ mod testes {
 
     /// D63, pelo socket: um filho deste processo (como o lançador o abriria), sem o
     /// egid do grupo `ward-app` e sem instalação, fica agente. Sem a feature
-    /// `modo-teste`, o `app_de_teste` nem tem valor possível; com ela, sem `WARD_DEV_APP`
+    /// `test-mode`, o `app_de_teste` nem tem valor possível; com ela, sem `WARD_DEV_APP`
     /// é `None` e dá o mesmo.
     #[test]
     fn d63_par_filho_sem_egid_fica_agente() {
         use std::os::unix::fs::DirBuilderExt;
         let dir = std::path::PathBuf::from(format!(
             "/run/user/{}/wardd-servidor-d63-{}",
-            ward_plataforma::uid_efetivo(),
+            ward_platform::uid_efetivo(),
             std::process::id()
         ));
         let _ = std::fs::remove_dir_all(&dir);
@@ -446,7 +446,7 @@ mod testes {
             .spawn()
             .unwrap();
         let (s, _) = l.accept().unwrap();
-        let par = ward_plataforma::conferir_conexao(&s).unwrap();
+        let par = ward_platform::conferir_conexao(&s).unwrap();
         assert_eq!(par.credenciais().pid, filho.id());
         let papeis = Papeis {
             instalacao: None,
@@ -459,7 +459,7 @@ mod testes {
         // instalado de pai aceito, este par (filho do teste, não do Chrome) continua
         // agente. Sem a feature, a exceção nem se constrói.
         let extensao = ExtensaoDeTeste::do_chrome("/opt/google/chrome/chrome");
-        if !cfg!(feature = "modo-teste") {
+        if !cfg!(feature = "test-mode") {
             assert!(extensao.is_none());
         }
         let papeis = Papeis {
@@ -475,7 +475,7 @@ mod testes {
     }
 
     fn vivo(s: &UnixStream) -> bool {
-        !ward_plataforma::par_fechou(s)
+        !ward_platform::par_fechou(s)
     }
 
     /// Scrutiny do M3: a conexão do app (assinante, ociosa) não é despejada por 10 000

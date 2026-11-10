@@ -544,6 +544,45 @@ leitura e é a referência visual quando o `Ward.figcraft` não tiver as imagens
 O milestone 0 fecha com a **aprovação do usuário** no FigCraft. As fases de UI dos
 milestones seguintes implementam a partir desses nodes.
 
+## Missão 2 — Código em inglês
+
+Decisões do usuário de 2026-11-10 (a missão 1, concluída nas releases 0.1.0–0.1.4,
+fica arquivada em `docs/mission/arquivo/m1/`). PRD, plano e contrato em `docs/mission/`.
+
+- **O que vira inglês:** identificadores (funções, métodos, tipos, variáveis,
+  constantes, módulos, crates, arquivos e pastas) e todos os comentários do código
+  (Rust, TS/JS, Svelte, shell, Python, Makefile, systemd etc.).
+- **O que fica em pt-BR:** textos exibidos ao usuário (mensagens da CLI, interface do
+  app, extensão, notificações), `docs/` e o README (que só acompanham os nomes novos).
+  A interface continua toda em português (seção "App desktop").
+- **Nomes externos em inglês, sem alias:** subcomandos da CLI (`ward list`,
+  `ward unlock`, `ward lock`) e alvos e variáveis do Makefile (`make dev-vault`,
+  `make test-cli`…). A skill `ward`, as regras de deny, o README, o `CLAUDE.md` e os
+  docs acompanham.
+- **Nomes gravados e de protocolo em inglês:** tipos, níveis e opções no cofre, no
+  protocolo e no `ward list --json` (`database`, `server`, `generic`, `secure-note`,
+  `blocked`, `approval`, `free`, SMTP `none`…); a tabela da CLI e o app mostram os
+  rótulos em pt-BR.
+- **Variáveis entregues pelo `ward run`:** `WARD_ENTRY`, `WARD_GROUP`,
+  `WARD_ENVIRONMENT`, `WARD_PROTOCOL`, `WARD_FILE_<NAME>` e `WARD_FILE_KEY`, sem alias.
+- **Migração do cofre:** o daemon lê o formato da 0.1.x e regrava no novo na primeira
+  abertura, sem perder dados e sem segredo em claro no disco; backups e versões antigas
+  continuam legíveis. Os nomes do cofre real no disco não mudam
+  (`~/.local/share/ward/cofre.ward`, `estado`, versões do backup, pasta `ward-backup` do
+  pendrive): só o conteúdo migra.
+- **Protocolo com versão nova.** Daemon, CLI, app e extensão saem juntos na 0.2.0
+  (inclusive `.deb` e `.crx`).
+- **Caminhos instalados:** `/usr/local/share/ward/extension/` e
+  `/usr/local/lib/ward/created-groups`; `make install` e o `.deb` apagam os caminhos da
+  0.1.x, e o uninstall ainda lê a marca antiga.
+- **Sem Milestone 0 de design:** nenhuma tela muda; `Ward.figcraft` e
+  `docs/mission/design-nodes.md` ficam como estão.
+- **Testes só no fim:** as fases fazem as trocas 1:1 (renomear num lugar e ajustar todos
+  os usos) e rodam no máximo uma compilação rápida. A bateria inteira roda numa
+  validação única no fim, com fases de correção depois.
+- Nenhuma invariante S1–S15 pode regredir; todas as suítes continuam passando com os
+  nomes novos.
+
 ## Fora do escopo
 
 Serviço Secreto e chaveiro da máquina (ficam com o gnome-keyring), contas pessoais,

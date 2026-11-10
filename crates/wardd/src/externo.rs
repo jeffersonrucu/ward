@@ -68,7 +68,7 @@ use std::time::SystemTime;
 
 use ward_core::backup::{Versao, para_apagar_conferidas};
 use ward_core::formato;
-use ward_plataforma::pasta::renomear_sem_sobrescrever;
+use ward_platform::pasta::renomear_sem_sobrescrever;
 
 use crate::arquivos::{self, PastaAberta};
 
@@ -210,7 +210,7 @@ fn abrir_destino(montagem: &File, dispositivo: u64) -> Result<File, ErroExterno>
         _ => io(e),
     })?;
     let m = fd.metadata().map_err(io)?;
-    if !m.is_dir() || m.dev() != dispositivo || m.uid() != ward_plataforma::uid_efetivo() {
+    if !m.is_dir() || m.dev() != dispositivo || m.uid() != ward_platform::uid_efetivo() {
         return Err(ErroExterno::PastaInsegura);
     }
     Ok(fd)

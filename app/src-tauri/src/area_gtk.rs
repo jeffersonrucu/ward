@@ -26,8 +26,8 @@
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use gtk::{gdk, glib};
-use ward_app_nucleo::ErroApp;
-use ward_app_nucleo::area_transferencia::{AreaTransferencia, Zeroizing};
+use ward_app_core::ErroApp;
+use ward_app_core::area_transferencia::{AreaTransferencia, Zeroizing};
 
 /// Tipos de texto oferecidos (`info` 0).
 const TIPOS_TEXTO: [&str; 3] = ["text/plain;charset=utf-8", "UTF8_STRING", "text/plain"];
@@ -231,19 +231,19 @@ mod testes {
         drop(guarda);
     }
 
-    /// Teste na sessão gráfica de verdade (Fase 39f): `make teste-area-transferencia`
+    /// Teste na sessão gráfica de verdade (Fase 39f): `make test-clipboard`
     /// roda este teste sob `strace -f`, com o GTK iniciado aqui, e o guia pela entrada
-    /// padrão (`dev/testes/area_transferencia.py`). Só valores falsos. Linhas:
+    /// padrão (`dev/tests/clipboard.py`). Só valores falsos. Linhas:
     /// `prazo <ms>`, `copiar <valor>`, `copiar-fora <valor>`, `limpar-fora`, `sair`.
     /// Cada resposta sai numa linha `ward39f: …`.
     #[test]
-    #[ignore = "precisa da sessão gráfica; rode por `make teste-area-transferencia`"]
+    #[ignore = "precisa da sessão gráfica; rode por `make test-clipboard`"]
     fn sessao_real() {
         use std::io::BufRead;
         use std::sync::mpsc;
         use std::time::Duration;
-        use ward_app_nucleo::area_transferencia::Copiador;
-        use ward_app_nucleo::segredo::Segredo;
+        use ward_app_core::area_transferencia::Copiador;
+        use ward_app_core::segredo::Segredo;
 
         gtk::init().expect("GTK");
         let (tx, rx) = mpsc::channel::<String>();

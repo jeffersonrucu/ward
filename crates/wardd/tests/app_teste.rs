@@ -9,7 +9,7 @@
 //! app de teste ligado por link físico (o mesmo arquivo, sem fd de escrita). Nenhum
 //! cofre: os pedidos não precisam de um.
 
-#![cfg(feature = "modo-teste")]
+#![cfg(feature = "test-mode")]
 
 mod comum;
 
@@ -33,7 +33,7 @@ impl DirSocket {
     fn novo(rotulo: &str) -> DirSocket {
         let p = PathBuf::from(format!(
             "/run/user/{}/wardd-app-{}-{rotulo}",
-            ward_plataforma::uid_efetivo(),
+            ward_platform::uid_efetivo(),
             std::process::id()
         ));
         let _ = fs::remove_dir_all(&p);

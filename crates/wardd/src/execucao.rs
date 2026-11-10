@@ -12,7 +12,7 @@
 //!    conferido (nada que vire caminho); nada do ambiente do daemon (`LISTEN_*`); a
 //!    entrega por cima; locale com `LC_CTYPE` UTF-8 (ver [`ajustar_locale`]). O
 //!    diretório de trabalho é o da CLI e vai à janela de aprovação;
-//! 5. o filho ([`ward_plataforma::filho`]): grupo de processos próprio, nenhum fd do
+//! 5. o filho ([`ward_platform::filho`]): grupo de processos próprio, nenhum fd do
 //!    daemon, sem shell (S3), morre com a thread da conexão;
 //! 6. stdout e stderr passam pela máscara, cada um no seu fluxo, e voltam em quadros
 //!    `saida`; a entrada da CLI chega pelo `entrada_padrao` (vazio = fim);
@@ -47,7 +47,7 @@ use ward_core::protocolo::{
     self, ErroResposta, Fluxo, Janela, Papel, Pedido, Resposta, TipoEntradaPadrao, Variavel, quadro,
 };
 use ward_core::totp::Totp;
-use ward_plataforma::filho::{self, Comando, Grupo, Pty};
+use ward_platform::filho::{self, Comando, Grupo, Pty};
 
 use crate::agente_ssh::{AgenteSsh, Permitido};
 
@@ -100,9 +100,9 @@ impl std::fmt::Debug for Temporarios {
 /// socket, V3.1).
 pub fn pasta_temporarios(rt: &Path) -> io::Result<PathBuf> {
     let erro = |_| io::Error::from(io::ErrorKind::PermissionDenied);
-    ward_plataforma::preparar_diretorio(rt).map_err(erro)?;
+    ward_platform::preparar_diretorio(rt).map_err(erro)?;
     let tmp = rt.join(PASTA_TEMPORARIOS);
-    ward_plataforma::preparar_diretorio(&tmp).map_err(erro)?;
+    ward_platform::preparar_diretorio(&tmp).map_err(erro)?;
     Ok(tmp)
 }
 
@@ -357,7 +357,7 @@ const DO_DAEMON: [&[u8]; 4] = [b"PATH", b"HOME", b"USER", b"LOGNAME"];
 /// Como o valor de uma variável da CLI é conferido.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Forma {
-    /// Nome de locale, nunca caminho ([`ward_plataforma::lancador::locale_valido`]).
+    /// Nome de locale, nunca caminho ([`ward_platform::lancador::locale_valido`]).
     Locale,
     /// Nome de terminal (`TERM`, `COLORTERM`): sem `/`, sem começar por `.`.
     Terminal,
@@ -401,7 +401,7 @@ fn valor_aceito(forma: Forma, v: &[u8]) -> bool {
     }
     let simples = |b: u8| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'+');
     match forma {
-        Forma::Locale => ward_plataforma::lancador::locale_valido(v),
+        Forma::Locale => ward_platform::lancador::locale_valido(v),
         Forma::Terminal => v[0] != b'.' && v.iter().all(|&b| simples(b) || b == b'.'),
         Forma::Fuso => {
             let v = v.strip_prefix(b":").unwrap_or(v);
@@ -468,7 +468,7 @@ impl Conta {
     /// A do uid do daemon (o mesmo do cliente, D49).
     pub(crate) fn do_passwd() -> Result<Conta, ErroResposta> {
         use std::os::unix::ffi::OsStringExt;
-        let (usuario, home) = ward_plataforma::conta_do_usuario().map_err(|_| {
+        let (usuario, home) = ward_platform::conta_do_usuario().map_err(|_| {
             aviso!("executar: usuário sem entrada no passwd");
             ErroResposta::EntregaFalhou
         })?;
@@ -836,7 +836,7 @@ fn por_na_fila(
                 if fim.load(Ordering::Acquire) {
                     return false;
                 }
-                if ward_plataforma::par_fechou(s) {
+                if ward_platform::par_fechou(s) {
                     aviso!("executar: a CLI saiu; o grupo do comando foi morto (D13)");
                     grupo.matar_com_sessoes_filhas();
                     return false;
@@ -1124,7 +1124,7 @@ mod testes {
     /// Pasta de teste em `/run/user/<uid>/` (as pastas acima de `<rt>` têm de ser do
     /// root ou do usuário, sem escrita de grupo).
     fn rt_de_teste(rotulo: &str) -> PathBuf {
-        ward_plataforma::socket::diretorio_runtime()
+        ward_platform::socket::diretorio_runtime()
             .join(format!("wardd-exec-{}-{rotulo}", std::process::id()))
     }
 

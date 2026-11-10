@@ -1,5 +1,5 @@
 // Única porta da interface para o lado Rust. No app, a IPC do Tauri; no Chrome em modo
-// de teste (D7), a ponte HTTP do `ward-ponte-teste`. Nenhuma resposta traz segredo
+// de teste (D7), a ponte HTTP do `ward-test-bridge`. Nenhuma resposta traz segredo
 // (o "copiar" é resolvido no Rust, D4), e nada daqui guarda resposta em estado global,
 // no armazenamento do navegador ou na URL.
 import { Channel, invoke } from '@tauri-apps/api/core';

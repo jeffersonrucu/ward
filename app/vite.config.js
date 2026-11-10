@@ -8,7 +8,7 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 // `semLinksDeErro`: as mensagens de erro do runtime do Svelte terminam com um link de
 // documentação (`https://svelte.dev/e/<código>`). Nunca é buscado, mas deixaria uma URL
 // remota no pacote (V5.2); vira só o código. O que sobra de `http://` são os namespaces
-// XML (`http://www.w3.org/...`), que são nomes e não endereços (ver `dev/testes/app-dist.py`).
+// XML (`http://www.w3.org/...`), que são nomes e não endereços (ver `dev/tests/app-dist.py`).
 function semLinksDeErro() {
   return {
     name: 'ward-sem-links-de-erro',

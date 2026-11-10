@@ -9,9 +9,9 @@
 //! com valores falsos; a chave SSH é gerada aqui, com passphrase aleatória.
 //!
 //! Os programas falsos entram por `Daemon::com_programas_ssh`, que só existe com a
-//! feature `ganchos-teste` (o `make test` liga todas).
+//! feature `test-hooks` (o `make test` liga todas).
 
-#![cfg(feature = "ganchos-teste")]
+#![cfg(feature = "test-hooks")]
 
 mod comum;
 
@@ -60,7 +60,7 @@ struct Rt(PathBuf);
 
 impl Rt {
     fn novo(rotulo: &str) -> Rt {
-        let p = ward_plataforma::socket::diretorio_runtime()
+        let p = ward_platform::socket::diretorio_runtime()
             .join(format!("wsh-{}-{rotulo}", std::process::id()));
         let _ = fs::remove_dir_all(&p);
         Rt(p)

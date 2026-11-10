@@ -7,7 +7,7 @@
 mod comum;
 
 use std::fs;
-#[cfg(feature = "ganchos-teste")]
+#[cfg(feature = "test-hooks")]
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
@@ -361,7 +361,7 @@ fn v3_35_criar_cofre_sem_estado_e_com_estado_invalido() {
 
 /// Troca o arquivo do cofre por uma cópia de bytes iguais em outro inode (o que um
 /// processo do mesmo usuário faria logo depois do rename).
-#[cfg(feature = "ganchos-teste")]
+#[cfg(feature = "test-hooks")]
 fn trocar_por_copia(c: &Caminhos) {
     let bytes = fs::read(&c.cofre).unwrap();
     let tmp = c.cofre.with_extension("troca");
@@ -373,7 +373,7 @@ fn trocar_por_copia(c: &Caminhos) {
 /// `gravar_entradas`. A identidade que o daemon guarda é a do fd do temporário, então
 /// a gravação seguinte responde "o arquivo do cofre mudou fora do Ward", trava e não
 /// grava. Com o `stat` depois do rename, a troca passaria como sendo do Ward.
-#[cfg(feature = "ganchos-teste")]
+#[cfg(feature = "test-hooks")]
 #[test]
 fn v3_35_troca_logo_depois_do_rename_e_recusada() {
     let dir = Dir::novo("d62-rename");

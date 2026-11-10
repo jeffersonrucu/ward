@@ -17,7 +17,7 @@
 //! - [`externo`]: backup externo em pendrive (Fase 46); [`udisks`]: os pendrives pelo
 //!   udisks2 no barramento do sistema.
 //!
-//! Sem `unsafe`: o que depende do sistema está no `ward-plataforma`.
+//! Sem `unsafe`: o que depende do sistema está no `ward-platform`.
 
 #![forbid(unsafe_code)]
 

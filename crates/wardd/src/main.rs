@@ -7,7 +7,7 @@
 use std::process::ExitCode;
 use std::sync::Arc;
 
-use ward_plataforma::{BinarioPermitido, Escuta, Instalacao, Memoria};
+use ward_platform::{BinarioPermitido, Escuta, Instalacao, Memoria};
 use wardd::aprovacao::{Motor, RelogioMonotonico};
 use wardd::config::Config;
 use wardd::lancamento::{AbridorReal, AppDeTeste, ExtensaoDeTeste};
@@ -20,14 +20,14 @@ const CHROME: &str = "/opt/google/chrome/chrome";
 
 fn escuta(config: &Config) -> Result<Escuta, String> {
     if std::env::var_os("LISTEN_FDS").is_some() {
-        return ward_plataforma::escutar_de_listen_fds(&ward_plataforma::caminho_socket_sistema())
+        return ward_platform::escutar_de_listen_fds(&ward_platform::caminho_socket_sistema())
             .map_err(|e| format!("socket do systemd recusado: {e}"));
     }
     match &config.diretorio_socket_teste {
         Some(dir) => {
-            let d = ward_plataforma::preparar_diretorio(dir)
+            let d = ward_platform::preparar_diretorio(dir)
                 .map_err(|e| format!("diretório do socket de teste recusado: {e}"))?;
-            d.escutar(ward_plataforma::socket::NOME_SOCKET)
+            d.escutar(ward_platform::socket::NOME_SOCKET)
                 .map_err(|e| format!("socket de teste recusado: {e}"))
         }
         None => Err("sem o socket do systemd (LISTEN_FDS); o wardd sobe pela unit".into()),
@@ -36,7 +36,7 @@ fn escuta(config: &Config) -> Result<Escuta, String> {
 
 /// Só no daemon de teste (D63): o abridor do `WARD_DEV_APP` e o papel app do processo
 /// que ele abrir. No release, nenhum dos dois existe.
-#[cfg(feature = "modo-teste")]
+#[cfg(feature = "test-mode")]
 fn abridor_de_teste(config: &Config) -> (Option<AbridorReal>, Option<AppDeTeste>) {
     match &config.app_de_teste {
         Some(b) => {
@@ -51,7 +51,7 @@ fn abridor_de_teste(config: &Config) -> (Option<AbridorReal>, Option<AppDeTeste>
 
 /// Só no daemon de teste com `WARD_DEV_EXTENSAO=chrome` (Fase 41): o papel extensão
 /// para o filho do Chrome instalado, sem o egid. No release, nunca.
-#[cfg(feature = "modo-teste")]
+#[cfg(feature = "test-mode")]
 fn extensao_de_teste(config: &Config) -> Option<ExtensaoDeTeste> {
     if !config.extensao_de_teste {
         return None;
@@ -70,21 +70,21 @@ fn extensao_de_teste(config: &Config) -> Option<ExtensaoDeTeste> {
     }
 }
 
-#[cfg(not(feature = "modo-teste"))]
+#[cfg(not(feature = "test-mode"))]
 fn extensao_de_teste(_: &Config) -> Option<ExtensaoDeTeste> {
     None
 }
 
-#[cfg(not(feature = "modo-teste"))]
+#[cfg(not(feature = "test-mode"))]
 fn abridor_de_teste(_: &Config) -> (Option<AbridorReal>, Option<AppDeTeste>) {
     (None, None)
 }
 
 fn main() -> ExitCode {
     // V3.7, V3.25: antes de qualquer outra coisa (inclusive de abrir arquivo).
-    // D62: o release só segue com toda a memória travada (`mlockall`); o `modo-teste`
+    // D62: o release só segue com toda a memória travada (`mlockall`); o `test-mode`
     // com o limite comum do usuário segue com aviso.
-    let memoria = match ward_plataforma::iniciar_endurecido() {
+    let memoria = match ward_platform::iniciar_endurecido() {
         Ok(m) => m,
         Err(e) => {
             eprintln!("wardd: {e}");
@@ -95,7 +95,7 @@ fn main() -> ExitCode {
     // Fase 55 (S8): o órfão de um `ward run`/`ward ssh` (quem saiu do grupo com
     // `setsid -f` ou `setpgid`) vira filho do daemon, que o mata no fim da sessão e na
     // trava. Sem isso, o daemon não sobe.
-    if let Err(e) = ward_plataforma::descendentes::virar_subreaper() {
+    if let Err(e) = ward_platform::descendentes::virar_subreaper() {
         aviso!(
             "não deu para virar subreaper (PR_SET_CHILD_SUBREAPER): {}",
             e.kind()
@@ -127,8 +127,8 @@ fn main() -> ExitCode {
         }
         Err(_) => None,
     };
-    if cfg!(feature = "modo-teste") {
-        aviso!("daemon de TESTE (modo-teste): cofre de .dev/, nunca o real");
+    if cfg!(feature = "test-mode") {
+        aviso!("daemon de TESTE (test-mode): cofre de .dev/, nunca o real");
     }
     // D57/D63: o app só é aberto pelo lançador, e só o processo que ele abriu é app.
     // No daemon de teste com `WARD_DEV_APP`, o lançador abre o binário de teste, e só
@@ -214,7 +214,7 @@ fn main() -> ExitCode {
             }
         }
         // Só o daemon de teste chega aqui (o release sempre tem o barramento do sistema).
-        // A mensagem não cita a variável: o texto `WARD_DEV_*` só existe com `modo-teste`.
+        // A mensagem não cita a variável: o texto `WARD_DEV_*` só existe com `test-mode`.
         _ => aviso!(
             "daemon sem barramento do sistema: logind desligado; udisks2 (backup externo) desligado"
         ),

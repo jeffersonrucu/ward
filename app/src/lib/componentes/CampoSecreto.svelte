@@ -22,7 +22,7 @@
   // attr(...)`), que nenhuma seleção, cópia nem arrasto pega. `copy`, `cut` e
   // `selectstart` no campo também são cancelados (no campo de digitação visível, `copy`,
   // `cut` e `dragstart`). Conferido no WebKitGTK
-  // real por `dev/testes/selecao_revelado.py` (`make teste-selecao-revelado`).
+  // real por `dev/tests/revealed_selection.py` (`make test-revealed-selection`).
   import AcaoDeCampo from './AcaoDeCampo.svelte';
   import Icone from './Icone.svelte';
 

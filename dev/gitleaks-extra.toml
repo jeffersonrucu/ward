@@ -5,7 +5,7 @@
 # passar uma chave privada num `package-lock.json`, num `.svg` ou num `gitleaks.toml`.
 # Só três regras, de falso positivo raro, e NENHUMA allowlist de caminho ou de valor:
 # não há valor falso de D15 que case com elas. Usada direto no índice e no histórico;
-# a árvore usa `dev/gitleaks-extra-arvore.toml`, que só tira os diretórios ignorados.
+# a árvore usa `dev/gitleaks-extra-tree.toml`, que só tira os diretórios ignorados.
 # O Makefile roda com `--max-archive-depth`, para entrar em .gz/.zip/.tar.
 
 title = "Ward (extra: chave privada e AWS, sem allowlist de caminho)"

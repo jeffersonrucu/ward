@@ -1,4 +1,4 @@
-//! O daemon abre o app (D57) pelo lançador do `ward-plataforma` (Fase 29a): `fork` +
+//! O daemon abre o app (D57) pelo lançador do `ward-platform` (Fase 29a): `fork` +
 //! `execve` do `ward-app` instalado, ambiente montado do zero, uma instância por vez.
 //!
 //! O app tem 0–2 em `/dev/null`, então a mensagem dele de "não abri" não aparece em
@@ -10,15 +10,13 @@
 //! (o `ward-app` de teste ou a ponte) pelo mesmo lançador, e [`AppDeTeste`] dá a esse
 //! processo o papel app **sem** o egid do grupo (o pid do lançador e o pai = daemon
 //! continuam exigidos). No release, [`AppDeTeste`] não tem valor possível: o tipo só se
-//! constrói com a feature `modo-teste`.
+//! constrói com a feature `test-mode`.
 
 use std::os::unix::process::ExitStatusExt;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use ward_plataforma::{
-    BinarioPermitido, ClassePar, ErroLancador, Instalacao, Lancador, ProcessoPar,
-};
+use ward_platform::{BinarioPermitido, ClassePar, ErroLancador, Instalacao, Lancador, ProcessoPar};
 
 use crate::aprovacao::{AbridorApp, ErroAbrirApp};
 use crate::aviso;
@@ -46,8 +44,8 @@ impl AbridorReal {
 
 impl AbridorReal {
     /// Só no daemon de teste (D63): abre o binário de teste conferido pela configuração.
-    #[cfg(feature = "modo-teste")]
-    pub fn de_teste(binario: ward_plataforma::BinarioDeTeste) -> Self {
+    #[cfg(feature = "test-mode")]
+    pub fn de_teste(binario: ward_platform::BinarioDeTeste) -> Self {
         Self {
             lancador: Arc::new(Mutex::new(Lancador::de_teste(binario))),
         }
@@ -76,26 +74,26 @@ impl AbridorReal {
 }
 
 /// O app de teste (D63): o processo que o lançador de teste abriu ganha o papel app sem
-/// o egid do grupo `ward-app`. Sem a feature `modo-teste`, o tipo não tem valor
+/// o egid do grupo `ward-app`. Sem a feature `test-mode`, o tipo não tem valor
 /// (`Infallible`): o release não tem como dar o papel app sem o grupo.
 pub struct AppDeTeste {
-    #[cfg(feature = "modo-teste")]
+    #[cfg(feature = "test-mode")]
     app: AppLancado,
-    #[cfg(not(feature = "modo-teste"))]
+    #[cfg(not(feature = "test-mode"))]
     nunca: std::convert::Infallible,
 }
 
 impl AppDeTeste {
-    #[cfg(feature = "modo-teste")]
+    #[cfg(feature = "test-mode")]
     pub fn novo(app: AppLancado) -> Self {
         Self { app }
     }
 
     /// `pid` é o app que o lançador de teste abriu, vivo?
     pub fn e_o_app(&self, pid: u32) -> bool {
-        #[cfg(feature = "modo-teste")]
+        #[cfg(feature = "test-mode")]
         return self.app.e_o_app(pid);
-        #[cfg(not(feature = "modo-teste"))]
+        #[cfg(not(feature = "test-mode"))]
         {
             let _ = pid;
             match self.nunca {}
@@ -104,9 +102,9 @@ impl AppDeTeste {
 
     /// A classe do par sem o egid (mesmo uid, sem depurador, pai = daemon).
     pub fn classificar(&self, par: &ProcessoPar) -> ClassePar {
-        #[cfg(feature = "modo-teste")]
+        #[cfg(feature = "test-mode")]
         return par.classificar_app_de_teste();
-        #[cfg(not(feature = "modo-teste"))]
+        #[cfg(not(feature = "test-mode"))]
         {
             let _ = par;
             match self.nunca {}
@@ -117,18 +115,18 @@ impl AppDeTeste {
 /// O host de teste da extensão (Fase 41, exceção do tipo de D63): no daemon de teste
 /// com `WARD_DEV_EXTENSAO=chrome`, um par cujo pai é o Chrome instalado (conferido pelo
 /// `/proc`, como no release) ganha o papel extensão **sem** o egid do grupo `ward-nm`.
-/// Sem a feature `modo-teste`, o tipo não tem valor (`Infallible`): o release não tem
+/// Sem a feature `test-mode`, o tipo não tem valor (`Infallible`): o release não tem
 /// como dar o papel extensão sem o grupo.
 pub struct ExtensaoDeTeste {
-    #[cfg(feature = "modo-teste")]
+    #[cfg(feature = "test-mode")]
     chrome: BinarioPermitido,
-    #[cfg(not(feature = "modo-teste"))]
+    #[cfg(not(feature = "test-mode"))]
     nunca: std::convert::Infallible,
 }
 
 impl ExtensaoDeTeste {
     /// Com o Chrome instalado (o mesmo pai que o release aceita).
-    #[cfg(feature = "modo-teste")]
+    #[cfg(feature = "test-mode")]
     pub fn novo(chrome: BinarioPermitido) -> Self {
         Self { chrome }
     }
@@ -136,9 +134,9 @@ impl ExtensaoDeTeste {
     /// Com o Chrome instalado em `chrome`, se ele existir; `None` sem a feature (no
     /// release, nunca há exceção).
     pub fn do_chrome(chrome: &str) -> Option<Self> {
-        #[cfg(feature = "modo-teste")]
+        #[cfg(feature = "test-mode")]
         return BinarioPermitido::novo(chrome).ok().map(Self::novo);
-        #[cfg(not(feature = "modo-teste"))]
+        #[cfg(not(feature = "test-mode"))]
         {
             let _ = chrome;
             None
@@ -148,12 +146,12 @@ impl ExtensaoDeTeste {
     /// A classe do par sem o egid (mesmo uid, política do kernel, sem depurador, pai =
     /// Chrome instalado).
     pub fn classificar(&self, par: &ProcessoPar) -> ClassePar {
-        #[cfg(feature = "modo-teste")]
+        #[cfg(feature = "test-mode")]
         return par.classificar_host_extensao_de_teste(
             &self.chrome,
-            &ward_plataforma::PoliticaKernel::ler(),
+            &ward_platform::PoliticaKernel::ler(),
         );
-        #[cfg(not(feature = "modo-teste"))]
+        #[cfg(not(feature = "test-mode"))]
         {
             let _ = par;
             match self.nunca {}

@@ -268,7 +268,7 @@ fn ataque_restaurar_sem_pin_senha_errada_e_travado() {
     assert_eq!(erro(&r), Some(ErroResposta::SenhaIncorreta));
     let r = restaurar(&d, "ward-20000101-000000.ward", SENHA, PIN);
     assert_eq!(erro(&r), Some(ErroResposta::BackupInexistente));
-    let r = restaurar(&d, "../cofre-teste.ward", SENHA, PIN);
+    let r = restaurar(&d, "../test-vault.ward", SENHA, PIN);
     assert_eq!(erro(&r), Some(ErroResposta::PedidoInvalido));
     assert_eq!(fs::read(&c.cofre).unwrap(), antes);
     assert_eq!(fs::read(&c.estado).unwrap(), estado);

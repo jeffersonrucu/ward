@@ -11,10 +11,10 @@
 //!   TOTP, recebe "campo inexistente", a lista com resumo e, depois de travar,
 //!   "travado" (o app compara os valores e só imprime `igual`);
 //! - o log do daemon tem `revelar <entrada> <campo>`, `copiar …` e `totp …` e nenhum
-//!   segredo do cofre de teste (nem em base64), nem padrão de `.dev/variacoes.txt`
-//!   quando o arquivo existe (`make dev-variacoes`).
+//!   segredo do cofre de teste (nem em base64), nem padrão de `.dev/variations.txt`
+//!   quando o arquivo existe (`make dev-variations`).
 
-#![cfg(feature = "modo-teste")]
+#![cfg(feature = "test-mode")]
 
 mod comum;
 
@@ -81,7 +81,7 @@ impl DirSocket {
             .map(PathBuf::from)
             .filter(|p| p.is_absolute())
             .unwrap_or_else(|| {
-                PathBuf::from(format!("/run/user/{}", ward_plataforma::uid_efetivo()))
+                PathBuf::from(format!("/run/user/{}", ward_platform::uid_efetivo()))
             });
         let p = base.join(format!("wardd-v-{}-{rotulo}", std::process::id()));
         let _ = fs::remove_dir_all(&p);
@@ -124,8 +124,8 @@ fn agulhas() -> Vec<String> {
         v.push(b64(s.as_bytes()));
     }
     v.push(cofre_teste::chave_falsa());
-    // A lista de variações de `make dev-variacoes`, se existe (o oráculo de D54).
-    let variacoes = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.dev/variacoes.txt");
+    // A lista de variações de `make dev-variations`, se existe (o oráculo de D54).
+    let variacoes = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.dev/variations.txt");
     if let Ok(t) = fs::read_to_string(variacoes) {
         v.extend(t.lines().filter(|l| l.len() >= 6).map(str::to_owned));
     }
@@ -194,7 +194,7 @@ fn v3_39_v3_40_valores_e_lista_do_app_pelo_daemon_de_teste() {
 
     // O cofre de teste e o estado na geração 0 (como o `dev/daemon.sh` faz, D39).
     wardd::arquivos::gravar_estado(
-        &dev.join("cofre-teste.estado"),
+        &dev.join("test-vault.state"),
         wardd::arquivos::Geracoes {
             vista: 0,
             queimada: 0,
@@ -205,7 +205,7 @@ fn v3_39_v3_40_valores_e_lista_do_app_pelo_daemon_de_teste() {
     entradas.sort_by(|a, b| a.nome().cmp(b.nome()));
     let senha = SenhaMestra::nova(cofre_teste::SENHA_MESTRA.to_owned());
     let mut cofre = CofreAberto::novo(&senha, cofre_teste::configuracao_nova()).unwrap();
-    gravar_entradas(&dev.join("cofre-teste.ward"), &mut cofre, &entradas).unwrap();
+    gravar_entradas(&dev.join("test-vault.ward"), &mut cofre, &entradas).unwrap();
     drop(cofre);
 
     let sock = DirSocket::novo("v339");

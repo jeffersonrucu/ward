@@ -19,11 +19,11 @@ path = "src/main.rs"
 # D7, V5.1: só o app de teste tem devtools e fala com o daemon de teste
 # (`/run/user/<uid>/ward-teste/`). O build de release não liga esta feature e
 # `make install` recusa artefatos com ela.
-modo-teste = ["tauri/devtools", "ward-app-nucleo/modo-teste"]
+test-mode = ["tauri/devtools", "ward-app-core/test-mode"]
 
 # Motivo de cada dependência no handoff da Fase 29 (S14).
 [dependencies]
-ward-app-nucleo = { path = "../nucleo" }
+ward-app-core = { path = "../core" }
 # Sem as features padrão: fora `dynamic-acl` (capabilities só as do build, nada
 # acrescentado em tempo de execução), `x11`, `dbus` e `common-controls-v6`.
 # `custom-protocol`: a interface vem sempre embutida no binário (`tauri://localhost`),
@@ -44,7 +44,7 @@ serde_json = "1"
 
 [build-dependencies]
 # A lista de comandos do manifesto do app sai do núcleo (uma fonte só, S11).
-ward-app-nucleo = { path = "../nucleo" }
+ward-app-core = { path = "../core" }
 tauri-build = { version = "=2.7.4", default-features = false, features = ["config-json"] }
 
 [lints.rust]

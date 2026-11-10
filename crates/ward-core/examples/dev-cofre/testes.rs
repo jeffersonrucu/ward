@@ -1,4 +1,4 @@
-//! Testes do `make dev-cofre` (V2.29, S15): fixtures iguais à tabela do contrato,
+//! Testes do `make dev-vault` (V2.29, S15): fixtures iguais à tabela do contrato,
 //! caminho de saída só dentro de `.dev/`, arquivos de entrada só das pastas permitidas,
 //! JSON estrito e erros sem segredo. Rodam no `cargo test` (`test = true` no
 //! `Cargo.toml`); os diretórios temporários ficam no diretório temporário do sistema,
@@ -60,12 +60,12 @@ fn texto_do_erro(e: &Erro) -> String {
 }
 
 /// Leitura dos arquivos das fixtures para os testes: a chave falsa do teste do corpo no
-/// lugar da chave gerada em `.dev/` (o teste não depende de `make dev-servicos`) e o
+/// lugar da chave gerada em `.dev/` (o teste não depende de `make dev-services`) e o
 /// anexo de verdade, pelo mesmo caminho do programa.
 fn ler_de_teste(raiz: &Path) -> impl FnMut(Origem, &str) -> Result<Segredo, Erro> + '_ {
     move |origem, caminho| match origem {
         Origem::Chave => {
-            assert_eq!(caminho, ".dev/servicos/chaves/acme-deploy_ed25519");
+            assert_eq!(caminho, ".dev/services/keys/acme-deploy_ed25519");
             Ok(Segredo::de_texto(chave_falsa()))
         }
         Origem::Anexo => ler_do_repositorio(raiz, origem, caminho),
@@ -94,7 +94,7 @@ fn montar_texto(json_txt: &str) -> Result<Montado, Erro> {
 
 // --- V2.29: as fixtures são a tabela do contrato -----------------------------------
 
-/// As 22 entradas das fixtures, montadas pelo caminho do `make dev-cofre`, dão o mesmo
+/// As 22 entradas das fixtures, montadas pelo caminho do `make dev-vault`, dão o mesmo
 /// corpo canônico que o cofre de teste da Fase 15a (escrito a partir da tabela do
 /// contrato, com `acme-totp-dev` de D28 e `delta-api-simbolos` de D59): mesmos nomes, tipos, campos, segredos e níveis.
 #[test]
@@ -195,12 +195,12 @@ fn v2_29_grava_reabre_e_confere() {
 #[test]
 fn v2_29_saida_dentro_de_dev_aceita() {
     let t = raiz_falsa("aceita");
-    let esperado = t.p(".dev/cofre-teste.ward");
+    let esperado = t.p(".dev/test-vault.ward");
     for pedido in [
-        ".dev/cofre-teste.ward",
-        "./.dev/cofre-teste.ward",
-        ".dev/./cofre-teste.ward",
-        ".dev//cofre-teste.ward",
+        ".dev/test-vault.ward",
+        "./.dev/test-vault.ward",
+        ".dev/./test-vault.ward",
+        ".dev//test-vault.ward",
     ] {
         assert_eq!(
             validar_saida(&t.0, OsStr::new(pedido)).unwrap(),
@@ -220,7 +220,7 @@ fn v2_29_saida_dentro_de_dev_aceita() {
     );
     // Arquivo comum já existente (segunda rodada) é aceito.
     fs::write(&esperado, b"x").unwrap();
-    assert!(validar_saida(&t.0, OsStr::new(".dev/cofre-teste.ward")).is_ok());
+    assert!(validar_saida(&t.0, OsStr::new(".dev/test-vault.ward")).is_ok());
 }
 
 #[test]
@@ -231,13 +231,13 @@ fn ataque_saida_fora_de_dev_recusada() {
     for pedido in [
         alvo_fora.to_str().unwrap(),
         "/tmp/ward-teste-dev-cofre-fora.ward",
-        "cofre-teste.ward",
-        "dev/cofre-teste.ward",
-        ".dev/../cofre-teste.ward",
-        ".dev/sub/../../cofre-teste.ward",
-        "../cofre-teste.ward",
-        ".devx/cofre-teste.ward",
-        ".dev-mau/cofre-teste.ward",
+        "test-vault.ward",
+        "dev/test-vault.ward",
+        ".dev/../test-vault.ward",
+        ".dev/sub/../../test-vault.ward",
+        "../test-vault.ward",
+        ".devx/test-vault.ward",
+        ".dev-mau/test-vault.ward",
         ".dev",
         ".dev/",
         ".dev/.ward",
@@ -250,9 +250,9 @@ fn ataque_saida_fora_de_dev_recusada() {
     }
     // Caminho absoluto que só lembra o repositório (outra raiz com `.dev`).
     let outra = raiz_falsa("outra");
-    recusa_saida(&t.0, outra.p(".dev/cofre-teste.ward").to_str().unwrap());
+    recusa_saida(&t.0, outra.p(".dev/test-vault.ward").to_str().unwrap());
     assert!(!alvo_fora.exists());
-    assert!(!outra.p(".dev/cofre-teste.ward").exists());
+    assert!(!outra.p(".dev/test-vault.ward").exists());
 }
 
 #[test]
@@ -264,8 +264,8 @@ fn ataque_link_simbolico_no_caminho_recusado() {
     recusa_saida(&t.0, ".dev/escape/cofre.ward");
     // Destino que é link para um arquivo de fora: o arquivo de fora não muda.
     fs::write(fora.p("vitima.ward"), b"original").unwrap();
-    symlink(fora.p("vitima.ward"), t.p(".dev/cofre-teste.ward")).unwrap();
-    recusa_saida(&t.0, ".dev/cofre-teste.ward");
+    symlink(fora.p("vitima.ward"), t.p(".dev/test-vault.ward")).unwrap();
+    recusa_saida(&t.0, ".dev/test-vault.ward");
     // Link quebrado também (seria criado fora por quem seguisse o link).
     symlink(fora.p("nao-existe.ward"), t.p(".dev/quebrado.ward")).unwrap();
     recusa_saida(&t.0, ".dev/quebrado.ward");
@@ -285,19 +285,19 @@ fn ataque_dev_que_e_link_recusado() {
     let t = Temp::novo("dev-link");
     let fora = Temp::novo("dev-link-alvo");
     symlink(&fora.0, t.p(".dev")).unwrap();
-    recusa_saida(&t.0, ".dev/cofre-teste.ward");
+    recusa_saida(&t.0, ".dev/test-vault.ward");
     assert!(fs::read_dir(&fora.0).unwrap().next().is_none());
     // `.dev` que é arquivo.
     let t2 = Temp::novo("dev-arquivo");
     fs::write(t2.p(".dev"), b"").unwrap();
-    recusa_saida(&t2.0, ".dev/cofre-teste.ward");
+    recusa_saida(&t2.0, ".dev/test-vault.ward");
 }
 
 #[test]
 fn dev_ausente_e_criado_0700() {
     let t = Temp::novo("dev-ausente");
     let s = validar_saida(&t.0, OsStr::new(SAIDA_PADRAO)).unwrap();
-    assert_eq!(s, t.p(".dev/cofre-teste.ward"));
+    assert_eq!(s, t.p(".dev/test-vault.ward"));
     let m = fs::symlink_metadata(t.p(".dev")).unwrap();
     assert!(m.file_type().is_dir());
     assert_eq!(m.permissions().mode() & 0o777, 0o700);
@@ -308,36 +308,36 @@ fn dev_ausente_e_criado_0700() {
 #[test]
 fn ataque_arquivo_de_entrada_fora_da_pasta_recusado() {
     let t = raiz_falsa("entrada");
-    fs::create_dir_all(t.p(".dev/servicos/chaves")).unwrap();
-    fs::create_dir_all(t.p("dev/fixtures/anexos")).unwrap();
-    fs::write(t.p(".dev/servicos/chaves/ok"), b"conteudo").unwrap();
-    fs::write(t.p("dev/fixtures/anexos/ok.env"), b"A=1\n").unwrap();
+    fs::create_dir_all(t.p(".dev/services/keys")).unwrap();
+    fs::create_dir_all(t.p("dev/fixtures/attachments")).unwrap();
+    fs::write(t.p(".dev/services/keys/ok"), b"conteudo").unwrap();
+    fs::write(t.p("dev/fixtures/attachments/ok.env"), b"A=1\n").unwrap();
     fs::write(t.p(".dev/outro"), b"x").unwrap();
     let fora = Temp::novo("entrada-alvo");
     fs::write(fora.p("alvo"), b"de fora").unwrap();
-    symlink(fora.p("alvo"), t.p(".dev/servicos/chaves/link")).unwrap();
-    symlink(&fora.0, t.p("dev/fixtures/anexos/dir")).unwrap();
+    symlink(fora.p("alvo"), t.p(".dev/services/keys/link")).unwrap();
+    symlink(&fora.0, t.p("dev/fixtures/attachments/dir")).unwrap();
 
     assert_eq!(
-        ler_do_repositorio(&t.0, Origem::Chave, ".dev/servicos/chaves/ok")
+        ler_do_repositorio(&t.0, Origem::Chave, ".dev/services/keys/ok")
             .unwrap()
             .expor(),
         b"conteudo"
     );
-    assert!(ler_do_repositorio(&t.0, Origem::Anexo, "dev/fixtures/anexos/ok.env").is_ok());
+    assert!(ler_do_repositorio(&t.0, Origem::Anexo, "dev/fixtures/attachments/ok.env").is_ok());
 
     let alvo = fora.p("alvo");
     for (origem, caminho) in [
         (Origem::Chave, alvo.to_str().unwrap()),
-        (Origem::Chave, ".dev/servicos/chaves/../../outro"),
+        (Origem::Chave, ".dev/services/keys/../../outro"),
         (Origem::Chave, ".dev/outro"),
-        (Origem::Chave, "dev/fixtures/anexos/ok.env"),
-        (Origem::Chave, ".dev/servicos/chaves/link"),
-        (Origem::Chave, ".dev/servicos/chaves"),
-        (Origem::Chave, ".dev/servicos/chaves/nao-existe"),
-        (Origem::Anexo, ".dev/servicos/chaves/ok"),
-        (Origem::Anexo, "dev/fixtures/anexos/dir/alvo"),
-        (Origem::Anexo, "dev/fixtures/entradas.json"),
+        (Origem::Chave, "dev/fixtures/attachments/ok.env"),
+        (Origem::Chave, ".dev/services/keys/link"),
+        (Origem::Chave, ".dev/services/keys"),
+        (Origem::Chave, ".dev/services/keys/nao-existe"),
+        (Origem::Anexo, ".dev/services/keys/ok"),
+        (Origem::Anexo, "dev/fixtures/attachments/dir/alvo"),
+        (Origem::Anexo, "dev/fixtures/entries.json"),
         (Origem::Anexo, "/etc/hostname"),
     ] {
         assert!(
@@ -348,19 +348,19 @@ fn ataque_arquivo_de_entrada_fora_da_pasta_recusado() {
             "{origem:?} {caminho} devia ser recusado"
         );
     }
-    // Chave que falta pede `make dev-servicos`.
-    let e = ler_do_repositorio(&t.0, Origem::Chave, ".dev/servicos/chaves/nao-existe").unwrap_err();
-    assert!(e.to_string().contains("make dev-servicos"));
+    // Chave que falta pede `make dev-services`.
+    let e = ler_do_repositorio(&t.0, Origem::Chave, ".dev/services/keys/nao-existe").unwrap_err();
+    assert!(e.to_string().contains("make dev-services"));
 }
 
 #[test]
 fn ataque_arquivo_de_entrada_grande_demais_recusado() {
     let t = raiz_falsa("grande");
-    fs::create_dir_all(t.p(".dev/servicos/chaves")).unwrap();
-    let f = File::create(t.p(".dev/servicos/chaves/grande")).unwrap();
+    fs::create_dir_all(t.p(".dev/services/keys")).unwrap();
+    let f = File::create(t.p(".dev/services/keys/grande")).unwrap();
     f.set_len(MAX_CHAVE + 1).unwrap();
     assert!(matches!(
-        ler_do_repositorio(&t.0, Origem::Chave, ".dev/servicos/chaves/grande"),
+        ler_do_repositorio(&t.0, Origem::Chave, ".dev/services/keys/grande"),
         Err(Erro::Arquivo {
             motivo: "grande demais",
             ..
@@ -550,11 +550,11 @@ fn opcoes_da_linha_de_comando() {
     let o = |a: &[&str]| ler_opcoes(a.iter().map(OsString::from));
     assert!(o(&[]).is_ok());
     assert!(o(&["--conferir", "--senha-stdin"]).is_ok());
-    assert!(o(&["--saida", ".dev/x.ward"]).unwrap().saida.is_some());
+    assert!(o(&["--output", ".dev/x.ward"]).unwrap().saida.is_some());
     assert!(matches!(o(&["--senha-stdin"]), Err(Erro::Uso(_))));
-    assert!(matches!(o(&["--saida"]), Err(Erro::Uso(_))));
+    assert!(matches!(o(&["--output"]), Err(Erro::Uso(_))));
     assert!(matches!(
-        o(&["--saida", "a.ward", "--saida", "b.ward"]),
+        o(&["--output", "a.ward", "--output", "b.ward"]),
         Err(Erro::Uso(_))
     ));
     // Senha em argv não existe como opção.
@@ -566,7 +566,7 @@ fn opcoes_da_linha_de_comando() {
 
 // --- V2.39 (D30): a configuração do corpo v2 no cofre gerado --------------------------
 
-/// O cofre gerado pelo caminho do `make dev-cofre`, decifrado com a senha de teste, tem
+/// O cofre gerado pelo caminho do `make dev-vault`, decifrado com a senha de teste, tem
 /// a seção de configuração com um hash PHC `$argon2id$` (sal e parâmetros), a trava em
 /// 240 minutos e o backup desligado; o PIN de teste não aparece em claro nem no arquivo
 /// nem no corpo decifrado (só o hash, que o confere).

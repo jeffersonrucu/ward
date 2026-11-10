@@ -73,7 +73,7 @@ use crate::aprovacao::{Cliente, Motor, SemCliente};
 use crate::arquivos::{self, ArquivoEstado, Geracoes, Identidade};
 use crate::externo::{self, Copia, ErroExterno, FontePendrives};
 use crate::{aviso, depurar};
-use ward_plataforma::filho::Grupo;
+use ward_platform::filho::Grupo;
 
 /// Erros de PIN seguidos que travam o cofre (S9).
 pub const MAX_ERROS_PIN: u32 = 5;
@@ -97,7 +97,7 @@ pub trait Relogio: Send + Sync {
     /// Tempo monotônico que conta a suspensão (`CLOCK_BOOTTIME`), para a trava por
     /// inatividade (Fase 24). `None` (não deu para ler) trava: falha fechada.
     fn agora(&self) -> Option<Duration> {
-        ward_plataforma::tempo_desde_boot().ok()
+        ward_platform::tempo_desde_boot().ok()
     }
 
     /// Segundos desde 1970 pelo relógio de parede, para o código TOTP (D65 b). `None`
@@ -220,7 +220,7 @@ impl Estado {
             }
             // Fase 55 (S8): o que saiu de uma sessão com `setsid` e ficou filho do
             // daemon morre também, haja sessão em curso ou não.
-            let orfaos = ward_plataforma::descendentes::matar_orfaos();
+            let orfaos = ward_platform::descendentes::matar_orfaos();
             if orfaos.mortos > 0 {
                 aviso!(
                     "{} processo(s) fora do grupo de um ward run/ssh encerrado(s) ao travar (S8)",
@@ -616,8 +616,8 @@ impl Daemon {
     /// Troca os programas do `ward ssh` (Fase 27). Só os testes do crate chamam (com
     /// programas falsos que registram o argv); o binário usa sempre os do sistema, e
     /// nenhum pedido do socket chega aqui. Fora do release (scrutiny do M3): só existe
-    /// com a feature `ganchos-teste`, que liga o `modo-teste` (V3.15, V9.2).
-    #[cfg(feature = "ganchos-teste")]
+    /// com a feature `test-hooks`, que liga o `test-mode` (V3.15, V9.2).
+    #[cfg(feature = "test-hooks")]
     #[doc(hidden)]
     pub fn com_programas_ssh(mut self, p: crate::ssh::ProgramasSsh) -> Self {
         self.programas_ssh = p;
@@ -626,9 +626,9 @@ impl Daemon {
 
     /// Troca o Chrome do `ward playwright` (Fase 44). Só os testes do crate chamam (com
     /// um navegador falso que fala o protocolo pelo pipe); o binário usa sempre o
-    /// instalado, e nenhum pedido do socket chega aqui. Só com a feature `ganchos-teste`
+    /// instalado, e nenhum pedido do socket chega aqui. Só com a feature `test-hooks`
     /// (V3.15, V9.2).
-    #[cfg(feature = "ganchos-teste")]
+    #[cfg(feature = "test-hooks")]
     #[doc(hidden)]
     pub fn com_chrome(mut self, chrome: PathBuf) -> Self {
         self.chrome = chrome;
@@ -637,8 +637,8 @@ impl Daemon {
 
     /// Troca os prazos do `ward login` (Fase 43). Só os testes do crate chamam (prazos
     /// curtos); o binário usa sempre os padrões, e nenhum pedido do socket chega aqui.
-    /// Só com a feature `ganchos-teste` (V3.15, V9.2).
-    #[cfg(feature = "ganchos-teste")]
+    /// Só com a feature `test-hooks` (V3.15, V9.2).
+    #[cfg(feature = "test-hooks")]
     #[doc(hidden)]
     pub fn com_prazos_login(mut self, prazos: crate::login::PrazosLogin) -> Self {
         self.logins = crate::login::Logins::novo(prazos);
@@ -705,8 +705,8 @@ impl Daemon {
 
     /// Liga o gancho de teste chamado logo depois de cada gravação do cofre (V3.35). O
     /// binário não chama, e nenhum pedido do socket chega aqui. Fora do release
-    /// (scrutiny do M3): só existe com a feature `ganchos-teste` (V3.15, V9.2).
-    #[cfg(feature = "ganchos-teste")]
+    /// (scrutiny do M3): só existe com a feature `test-hooks` (V3.15, V9.2).
+    #[cfg(feature = "test-hooks")]
     #[doc(hidden)]
     pub fn com_gancho_depois_de_gravar(mut self, gancho: Gancho) -> Self {
         self.gancho_gravado = Some(gancho);

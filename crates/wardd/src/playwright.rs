@@ -42,7 +42,7 @@ use ward_core::entrada::{Dados, NivelAcesso, origem_da_url};
 use ward_core::mascara::Mascara;
 use ward_core::protocolo::{ErroResposta, Pedido, Resposta};
 use ward_core::totp::Totp;
-use ward_plataforma::filho::{Comando, Grupo};
+use ward_platform::filho::{Comando, Grupo};
 
 use crate::aprovacao::Cliente;
 use crate::aviso;
@@ -70,7 +70,7 @@ const PREFERENCIAS: &[u8] = br#"{"credentials_enable_service":false,"profile":{"
 /// nem os protótipos dele). Argumentos: usuário, senha, código TOTP (ou `null`) e a
 /// origem da entrada. Volta `"ok"`, `"origem"` ou `"formulario"`.
 ///
-/// DOM clobbering (como em `extensao/pagina.js`): o `document` e o `<form>` têm
+/// DOM clobbering (como em `extension/page.js`): o `document` e o `<form>` têm
 /// propriedades com nome vindas da página (um `<img name="querySelectorAll">` troca o
 /// `document.querySelectorAll`; um `<input name="action">`, o `form.action`). No Chrome
 /// de hoje as do `<form>` chegam ao mundo isolado e as do `document` não (conferido na
@@ -171,7 +171,7 @@ pub fn pasta_sessoes(rt: &Path) -> PathBuf {
 /// Apaga os storage states (`<rt>playwright/*`). Chamado ao travar. Não segue link: a
 /// pasta é aberta com `O_DIRECTORY | O_NOFOLLOW` (um link plantado no lugar de
 /// `<rt>playwright` não abre, e nada é apagado do alvo dele) e o conteúdo é listado e
-/// apagado pelo fd (Fase 44e; `ward_plataforma::pasta::apagar_conteudo`): trocar a pasta
+/// apagado pelo fd (Fase 44e; `ward_platform::pasta::apagar_conteudo`): trocar a pasta
 /// por um link depois de aberta não muda o que é apagado. Cada item é apagado como ele
 /// é (um link vira só o link apagado).
 pub fn apagar_sessoes(rt: &Path) -> usize {
@@ -188,7 +188,7 @@ pub fn apagar_sessoes(rt: &Path) -> usize {
             return 0;
         }
     };
-    ward_plataforma::pasta::apagar_conteudo(pasta.as_fd())
+    ward_platform::pasta::apagar_conteudo(pasta.as_fd())
 }
 
 /// Partida do daemon (D6): apaga os storage states e os perfis `pw-*` que um daemon
@@ -274,7 +274,7 @@ pub fn argv_chrome(chrome: &Path, perfil: &Path) -> Option<Vec<Vec<u8>>> {
 fn abrir_navegador(chrome: &Path, rt: &Path) -> Result<(Navegador, Cdp), ErroResposta> {
     use std::os::unix::ffi::OsStrExt;
     let falhou = |_| ErroResposta::NavegadorFalhou;
-    ward_plataforma::preparar_diretorio(rt).map_err(|_| ErroResposta::EntregaFalhou)?;
+    ward_platform::preparar_diretorio(rt).map_err(|_| ErroResposta::EntregaFalhou)?;
     let sufixo = ward_core::gerador::token_conectar().map_err(|_| ErroResposta::Interno)?;
     let sufixo = std::str::from_utf8(&sufixo.expor()[..16]).map_err(|_| ErroResposta::Interno)?;
     let perfil = rt.join(format!("{PREFIXO_PERFIL}{sufixo}"));
@@ -757,9 +757,9 @@ fn gravar_estado(rt: &Path, entrada: &str, estado: &[u8]) -> io::Result<PathBuf>
         return Err(io::ErrorKind::InvalidInput.into());
     }
     let erro = |_| io::Error::from(io::ErrorKind::PermissionDenied);
-    ward_plataforma::preparar_diretorio(rt).map_err(erro)?;
+    ward_platform::preparar_diretorio(rt).map_err(erro)?;
     let pasta = pasta_sessoes(rt);
-    ward_plataforma::preparar_diretorio(&pasta).map_err(erro)?;
+    ward_platform::preparar_diretorio(&pasta).map_err(erro)?;
     let sufixo = ward_core::gerador::token_conectar().map_err(|_| io::Error::other("aleatório"))?;
     let sufixo =
         std::str::from_utf8(&sufixo.expor()[..12]).map_err(|_| io::Error::other("aleatório"))?;

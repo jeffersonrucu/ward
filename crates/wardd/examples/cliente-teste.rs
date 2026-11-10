@@ -1,4 +1,4 @@
-//! Cliente mínimo do contêiner de `make teste-docker-uid` (V3.2, D49): o `ubuntu:24.04`
+//! Cliente mínimo do contêiner de `make test-docker-uid` (V3.2, D49): o `ubuntu:24.04`
 //! não tem Python. Conecta no socket, manda um pedido sem segredo (`estado` ou `lista`)
 //! e imprime uma linha só, para o script conferir:
 //!
@@ -8,7 +8,7 @@
 //!   também o papel que o daemon deu à conexão (`resposta: estado papel=agente`; V4.38).
 //!
 //! Uso: `wardd-cliente-teste <socket> <estado|lista|destravar>`. Com `destravar`
-//! (`make teste-units`, V3.34), a senha **de teste** vem do stdin (nunca de argv) e vai
+//! (`make test-units`, V3.34), a senha **de teste** vem do stdin (nunca de argv) e vai
 //! num `Segredo`, que zera ao sair; nenhum outro segredo passa por aqui.
 
 use std::io::{Read, Write};

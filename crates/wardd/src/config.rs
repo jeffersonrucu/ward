@@ -4,8 +4,8 @@
 //!   `$HOME/.local/share/ward/estado` (D39). O `HOME` vem da unit do systemd do sistema
 //!   (`User=`), não da sessão (D46); tem de ser absoluto e sem `..`. Socket só pelo
 //!   `LISTEN_FDS` do systemd, em `/run/ward/<uid>/wardd.sock`.
-//! - **`modo-teste`** (D7): cofre `$WARD_DEV_DIR/cofre-teste.ward` e estado
-//!   `$WARD_DEV_DIR/cofre-teste.estado`; `WARD_DEV_DIR` é obrigatório, então o daemon de
+//! - **`test-mode`** (D7): cofre `$WARD_DEV_DIR/test-vault.ward` e estado
+//!   `$WARD_DEV_DIR/test-vault.state`; `WARD_DEV_DIR` é obrigatório, então o daemon de
 //!   teste nunca toca em `~/.local/share/ward/`. Sem `LISTEN_FDS`, o socket fica num
 //!   diretório 0700 do usuário: `/run/user/<uid>/ward-teste/` ou `WARD_DEV_SOCKET_DIR`.
 //!   Com `WARD_DEV_APP` (D63, Fase 23a), o `abrir_app` abre esse binário (o `ward-app`
@@ -28,12 +28,12 @@ pub struct Config {
     /// Diretório do socket do daemon de teste (`None` no release).
     pub diretorio_socket_teste: Option<PathBuf>,
     /// O binário que o `abrir_app` do daemon de teste abre (D63).
-    #[cfg(feature = "modo-teste")]
-    pub app_de_teste: Option<ward_plataforma::BinarioDeTeste>,
+    #[cfg(feature = "test-mode")]
+    pub app_de_teste: Option<ward_platform::BinarioDeTeste>,
     /// `WARD_DEV_EXTENSAO=chrome` (Fase 41): o daemon de teste dá o papel extensão ao
     /// par filho do Chrome instalado sem o egid do grupo `ward-nm`. Qualquer outro valor
     /// é recusado na partida.
-    #[cfg(feature = "modo-teste")]
+    #[cfg(feature = "test-mode")]
     pub extensao_de_teste: bool,
     /// `<rt>` (Fase 26, S2): os temporários do `ward run` ficam em `<rt>tmp/`. Release:
     /// `/run/user/<uid>/ward/` (pelo uid efetivo, não por `XDG_RUNTIME_DIR`); daemon de
@@ -41,16 +41,16 @@ pub struct Config {
     pub rt: PathBuf,
 }
 
-/// `WARD_DEV_APP` (D63): conferido como [`ward_plataforma::BinarioDeTeste`], dentro do
+/// `WARD_DEV_APP` (D63): conferido como [`ward_platform::BinarioDeTeste`], dentro do
 /// repositório (a pasta acima de `dev`). O ambiente mínimo da ponte leva `WARD_DEV_DIR`
-/// e, se veio, `WARD_DEV_SOCKET_DIR`: são as variáveis do `modo-teste`, da configuração
+/// e, se veio, `WARD_DEV_SOCKET_DIR`: são as variáveis do `test-mode`, da configuração
 /// do daemon, nunca do pedido.
-#[cfg(feature = "modo-teste")]
+#[cfg(feature = "test-mode")]
 fn app_de_teste(
     v: OsString,
     dev: &Path,
     socket: Option<&Path>,
-) -> Result<ward_plataforma::BinarioDeTeste, &'static str> {
+) -> Result<ward_platform::BinarioDeTeste, &'static str> {
     let caminho = absoluto_limpo(v).ok_or("daemon de teste: WARD_DEV_APP inválido")?;
     let raiz = dev
         .parent()
@@ -65,7 +65,7 @@ fn app_de_teste(
     if let Some(s) = socket {
         extras.push(("WARD_DEV_SOCKET_DIR", texto(s)?));
     }
-    ward_plataforma::BinarioDeTeste::novo(caminho, raiz.to_path_buf(), dev.join("logs"), extras)
+    ward_platform::BinarioDeTeste::novo(caminho, raiz.to_path_buf(), dev.join("logs"), extras)
         .map_err(|e| e.mensagem())
 }
 
@@ -92,7 +92,7 @@ impl Config {
         Self::de(|k| std::env::var_os(k))
     }
 
-    #[cfg(not(feature = "modo-teste"))]
+    #[cfg(not(feature = "test-mode"))]
     fn de(var: impl Fn(&str) -> Option<OsString>) -> Result<Config, &'static str> {
         let home = var("HOME")
             .and_then(absoluto_limpo)
@@ -104,12 +104,12 @@ impl Config {
                 estado: dir.join("estado"),
             },
             diretorio_socket_teste: None,
-            rt: ward_plataforma::socket::diretorio_runtime()
-                .join(ward_plataforma::socket::NOME_DIRETORIO),
+            rt: ward_platform::socket::diretorio_runtime()
+                .join(ward_platform::socket::NOME_DIRETORIO),
         })
     }
 
-    #[cfg(feature = "modo-teste")]
+    #[cfg(feature = "test-mode")]
     fn de(var: impl Fn(&str) -> Option<OsString>) -> Result<Config, &'static str> {
         let dev = var("WARD_DEV_DIR")
             .and_then(absoluto_limpo)
@@ -130,8 +130,8 @@ impl Config {
             Some(_) => return Err("daemon de teste: WARD_DEV_EXTENSAO só aceita \"chrome\""),
         };
         let socket = socket_do_ambiente.unwrap_or_else(|| {
-            ward_plataforma::socket::diretorio_runtime()
-                .join(ward_plataforma::socket::NOME_DIRETORIO_TESTE)
+            ward_platform::socket::diretorio_runtime()
+                .join(ward_platform::socket::NOME_DIRETORIO_TESTE)
         });
         Ok(Config {
             caminhos: caminhos_de_teste(&dev),
@@ -146,8 +146,8 @@ impl Config {
 /// Cofre e estado do daemon de teste dentro de `dev` (D7).
 pub fn caminhos_de_teste(dev: &Path) -> Caminhos {
     Caminhos {
-        cofre: dev.join("cofre-teste.ward"),
-        estado: dev.join("cofre-teste.estado"),
+        cofre: dev.join("test-vault.ward"),
+        estado: dev.join("test-vault.state"),
     }
 }
 
@@ -166,19 +166,19 @@ mod testes {
     }
 
     #[test]
-    #[cfg(feature = "modo-teste")]
+    #[cfg(feature = "test-mode")]
     fn modo_teste_exige_dev_dir() {
         assert!(Config::de(|_| None).is_err());
         let c = Config::de(|k| (k == "WARD_DEV_DIR").then(|| "/x/.dev".into())).unwrap();
-        assert_eq!(c.caminhos.cofre, Path::new("/x/.dev/cofre-teste.ward"));
-        assert_eq!(c.caminhos.estado, Path::new("/x/.dev/cofre-teste.estado"));
+        assert_eq!(c.caminhos.cofre, Path::new("/x/.dev/test-vault.ward"));
+        assert_eq!(c.caminhos.estado, Path::new("/x/.dev/test-vault.state"));
         assert!(c.diretorio_socket_teste.unwrap().ends_with("ward-teste"));
         assert!(!c.extensao_de_teste);
     }
 
     /// Fase 41: a exceção da extensão só liga com o valor exato `chrome`.
     #[test]
-    #[cfg(feature = "modo-teste")]
+    #[cfg(feature = "test-mode")]
     fn extensao_de_teste_so_com_chrome() {
         let com = |v: &'static str| {
             Config::de(move |k| match k {

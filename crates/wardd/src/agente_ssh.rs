@@ -37,7 +37,7 @@ use ssh_key::{Algorithm, PrivateKey, SigningKey};
 use zeroize::Zeroizing;
 
 use ward_core::entrada::Segredo;
-use ward_plataforma::{DiretorioSocket, ErroAceitar, Escuta};
+use ward_platform::{DiretorioSocket, ErroAceitar, Escuta};
 
 use crate::{aviso, depurar};
 
@@ -183,7 +183,7 @@ fn apagar_pasta(pasta: &Path) {
 /// sem seguir link (`remove_dir_all` e `remove_file` não seguem). `<rt>` é conferido
 /// antes (0700 do usuário, sem link). Devolve quantas entradas apagou.
 pub fn limpar_pastas(rt: &Path) -> io::Result<usize> {
-    ward_plataforma::preparar_diretorio(rt)
+    ward_platform::preparar_diretorio(rt)
         .map_err(|_| io::Error::from(io::ErrorKind::PermissionDenied))?;
     let mut n = 0;
     for item in fs::read_dir(rt)? {
@@ -216,7 +216,7 @@ impl AgenteSsh {
     ) -> Result<AgenteSsh, ErroAgente> {
         let chave = Chave::ler(chave, passphrase)?;
         let publica = chave.publica_em_texto()?;
-        ward_plataforma::preparar_diretorio(rt).map_err(|_| ErroAgente::Sistema)?;
+        ward_platform::preparar_diretorio(rt).map_err(|_| ErroAgente::Sistema)?;
         let sufixo = ward_core::gerador::token_conectar().map_err(|_| ErroAgente::Sistema)?;
         let sufixo = std::str::from_utf8(&sufixo.expor()[..16]).map_err(|_| ErroAgente::Sistema)?;
         let pasta = rt.join(format!("{PREFIXO_PASTA}{sufixo}"));
@@ -226,8 +226,7 @@ impl AgenteSsh {
             .create(&pasta)
             .map_err(|_| ErroAgente::Sistema)?;
         let montar = || -> Result<(DiretorioSocket, Escuta), ErroAgente> {
-            let dir =
-                ward_plataforma::preparar_diretorio(&pasta).map_err(|_| ErroAgente::Sistema)?;
+            let dir = ward_platform::preparar_diretorio(&pasta).map_err(|_| ErroAgente::Sistema)?;
             let escuta = dir.escutar(NOME_SOCKET).map_err(|_| ErroAgente::Sistema)?;
             escuta
                 .listener()
@@ -327,11 +326,7 @@ fn deve_parar(parar: &AtomicBool, travas: &AtomicU64, inicial: u64) -> bool {
 
 /// O par é o `ssh` da sessão? No `sftp`, `preso` guarda o pid do primeiro filho do
 /// `sftp` aceito; depois dele, só esse pid passa (nenhum outro filho do `sftp`).
-fn par_permitido(
-    par: &ward_plataforma::ProcessoPar,
-    p: Permitido,
-    preso: &mut Option<u32>,
-) -> bool {
+fn par_permitido(par: &ward_platform::ProcessoPar, p: Permitido, preso: &mut Option<u32>) -> bool {
     par_permitido_pid(par.credenciais().pid, || par.pid_do_pai(), p, preso)
 }
 
@@ -373,7 +368,7 @@ fn laco(
     let mut conexoes = Vec::new();
     let mut preso = None;
     while !deve_parar(parar, travas, inicial) {
-        match ward_plataforma::filho::pronto_para_ler_fd(escuta.listener().as_fd(), PASSO_MS) {
+        match ward_platform::filho::pronto_para_ler_fd(escuta.listener().as_fd(), PASSO_MS) {
             Ok(true) => {}
             Ok(false) => continue,
             Err(_) => break,
@@ -384,7 +379,7 @@ fn laco(
             Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
             Err(_) => break,
         };
-        let par = match ward_plataforma::conferir_conexao(&stream) {
+        let par = match ward_platform::conferir_conexao(&stream) {
             Ok(p) => p,
             Err(ErroAceitar::UidRecusado { uid, pid }) => {
                 aviso!("agente SSH: conexão recusada (uid {uid}, pid {pid}) (D12)");
@@ -444,7 +439,7 @@ fn ler_exato(s: &mut UnixStream, buf: &mut [u8], parar: &AtomicBool, prazo: bool
         if parar.load(Ordering::Acquire) || (prazo && std::time::Instant::now() > limite) {
             return false;
         }
-        match ward_plataforma::filho::pronto_para_ler_fd(s.as_fd(), PASSO_MS) {
+        match ward_platform::filho::pronto_para_ler_fd(s.as_fd(), PASSO_MS) {
             Ok(true) => {}
             Ok(false) => continue,
             Err(_) => return false,
@@ -570,7 +565,7 @@ mod testes {
     #[test]
     fn f28g_partida_apaga_pastas_ssh_que_sobraram() {
         use std::os::unix::fs::PermissionsExt;
-        let base = ward_plataforma::socket::diretorio_runtime()
+        let base = ward_platform::socket::diretorio_runtime()
             .join(format!("wardd-agente-28g-{}", std::process::id()));
         let _ = fs::remove_dir_all(&base);
         let rt = base.join("rt");

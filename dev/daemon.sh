@@ -1,7 +1,7 @@
 #!/bin/bash -p
-# `make dev-daemon` / `make dev-daemon-parar` (Fase 22; D7, V3.30).
+# `make dev-daemon` / `make dev-daemon-stop` (Fase 22; D7, V3.30).
 #
-# Sobe o `wardd` de TESTE (feature `modo-teste`) com o cofre de teste de `.dev/` e o
+# Sobe o `wardd` de TESTE (feature `test-mode`) com o cofre de teste de `.dev/` e o
 # socket em `$XDG_RUNTIME_DIR/ward-teste/wardd.sock`. Nunca o cofre real.
 #
 # Ambiente limpo (V3.30): o `wardd` recusa subir com `TMPDIR` ou `LD_*` no ambiente
@@ -14,10 +14,10 @@
 # WARD_DEV_DBUS_SISTEMA=/run/dbus/system_bus_socket; isso trava a tela do usuário).
 #
 # WARD_DEV_APP (Fase 23a, D63): caminho absoluto do binário que o `abrir_app` do daemon
-# de teste abre (a `ward-ponte-teste` ou o `ward-app` de teste), dentro do repositório;
+# de teste abre (a `ward-test-bridge` ou o `ward-app` de teste), dentro do repositório;
 # o daemon confere o resto e recusa subir fora da regra. Só esse processo, filho do
 # daemon, recebe o papel app. O valor usado fica em .dev/wardd.app: com o daemon já no
-# ar com outro WARD_DEV_APP (ou sem), o `subir` falha em vez de fingir que trocou.
+# ar com outro WARD_DEV_APP (ou sem), o `up` falha em vez de fingir que trocou.
 #
 # WARD_DEV_EXTENSAO=chrome (Fase 41): só se vier definida; o daemon de teste dá o papel
 # extensão ao `ward-nm` de teste filho do Chrome instalado (pai conferido pelo `/proc`),
@@ -27,17 +27,17 @@
 # WARD_DEV_SOCKET_DIR (Fase 27a): pasta 0700 do socket no lugar de
 # `$XDG_RUNTIME_DIR/ward-teste` (absoluta), para subir o daemon de uma worktree ao lado
 # do daemon de teste de outro checkout sem derrubá-lo. Vai ao daemon pelo `env -i`; a
-# CLI de teste e o `dev/testes/cli.py` usam a mesma variável.
+# CLI de teste e o `dev/tests/cli.py` usam a mesma variável.
 #
-# Uso: dev/daemon.sh subir | parar | estado
+# Uso: dev/daemon.sh up | stop | status
 
 export PATH=/usr/bin:/bin
 set -euo pipefail
 RAIZ="$(cd -P -- "${BASH_SOURCE[0]%/*}/.." && pwd -P)"
 DEV="$RAIZ/.dev"
 BIN="$RAIZ/target/debug/wardd"
-COFRE="$DEV/cofre-teste.ward"
-ESTADO="$DEV/cofre-teste.estado"
+COFRE="$DEV/test-vault.ward"
+ESTADO="$DEV/test-vault.state"
 LOGS="$DEV/logs"
 LOG="$LOGS/wardd.log"
 PID="$DEV/wardd.pid"
@@ -90,12 +90,12 @@ pid_vivo() {
 
 subir() {
     [ -x "$BIN" ] || { echo "falta $BIN (o make compila antes)" >&2; exit 1; }
-    [ -f "$COFRE" ] || { echo "falta o cofre de teste: rode 'make dev-cofre'" >&2; exit 1; }
+    [ -f "$COFRE" ] || { echo "falta o cofre de teste: rode 'make dev-vault'" >&2; exit 1; }
     if p="$(pid_vivo)"; then
         local atual=""
         [ -f "$MARCA_APP" ] && atual="$(head -n 1 -- "$MARCA_APP")"
         if [ "$atual" != "$APP" ]; then
-            echo "o daemon de teste já está no ar (pid $p) com outro WARD_DEV_APP; rode 'make dev-daemon-parar' antes" >&2
+            echo "o daemon de teste já está no ar (pid $p) com outro WARD_DEV_APP; rode 'make dev-daemon-stop' antes" >&2
             exit 1
         fi
         echo "o daemon de teste já está no ar (pid $p, socket $SOCKET)"
@@ -103,7 +103,7 @@ subir() {
     fi
     umask 077
     mkdir -p -- "$LOGS"
-    # Primeiro uso do cofre de teste (ou recém-recriado pelo `make dev-cofre`, que
+    # Primeiro uso do cofre de teste (ou recém-recriado pelo `make dev-vault`, que
     # apaga o estado velho): sem estado, o daemon recusa abrir (D39). O de teste começa
     # em 0 e sobe para a geração do arquivo no primeiro destravar. Só aqui, só no
     # cofre de teste: o daemon real nunca cria esse arquivo sozinho.
@@ -124,7 +124,7 @@ subir() {
         "$BIN" </dev/null >>"$LOG" 2>&1 &
     local p=$!
     echo "$p" > "$PID"
-    # 1ª linha: o WARD_DEV_APP; 2ª: o socket (o `make teste-cli` confere as duas).
+    # 1ª linha: o WARD_DEV_APP; 2ª: o socket (o `make test-cli` confere as duas).
     printf '%s\n%s\n' "$APP" "$SOCKET" > "$MARCA_APP"
     for _ in $(seq 1 100); do
         if [ -S "$SOCKET" ] && pid_vivo >/dev/null; then
@@ -162,10 +162,10 @@ parar() {
 }
 
 case "${1:-}" in
-    subir) subir ;;
-    parar) parar ;;
-    estado)
+    up) subir ;;
+    stop) parar ;;
+    status)
         if p="$(pid_vivo)"; then echo "no ar (pid $p)"; else echo "parado"; fi
         ;;
-    *) echo "uso: dev/daemon.sh subir|parar|estado" >&2; exit 2 ;;
+    *) echo "uso: dev/daemon.sh up|stop|status" >&2; exit 2 ;;
 esac

@@ -1,0 +1,56 @@
+{
+  "manifest_version": 3,
+  "name": "Ward",
+  "version": "0.1.0",
+  "description": "Preenche logins do cofre Ward só na origem certa da aba e oferece salvar login novo.",
+  "minimum_chrome_version": "120",
+  "incognito": "not_allowed",
+  "permissions": [
+    "nativeMessaging",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://*/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
+  "background": {
+    "service_worker": "service.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "submit.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": false,
+      "match_about_blank": false,
+      "world": "ISOLATED"
+    }
+  ],
+  "action": {
+    "default_title": "Ward",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icones/extensao-16.png",
+      "32": "icones/extensao-32.png",
+      "48": "icones/extensao-48.png",
+      "128": "icones/extensao-128.png"
+    }
+  },
+  "icons": {
+    "16": "icones/extensao-16.png",
+    "32": "icones/extensao-32.png",
+    "48": "icones/extensao-48.png",
+    "128": "icones/extensao-128.png"
+  },
+  "content_security_policy": {
+    "extension_pages": "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'"
+  }
+}

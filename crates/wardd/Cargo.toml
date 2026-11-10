@@ -11,19 +11,19 @@ publish.workspace = true
 # diretório 0700 do usuário (`/run/user/<uid>/ward-teste/` ou `WARD_DEV_SOCKET_DIR`).
 # Só muda caminhos: nenhuma operação, papel ou aprovador a mais (D8, V3.15). A
 # instalação recusa artefato com esta feature (V9.2).
-modo-teste = ["ward-plataforma/modo-teste"]
+test-mode = ["ward-platform/test-mode"]
 # Scrutiny do M3: os ganchos dos testes de integração (`Daemon::com_gancho_depois_de_gravar`,
 # V3.35, e `Daemon::com_programas_ssh`, Fase 27) só existem com esta feature. Liga o
-# `modo-teste`, então o artefato com ela é recusado pela instalação como o de teste
-# (V9.2) e o `make teste-sem-modo-teste` acusa quem a ligar por dependência normal.
+# `test-mode`, então o artefato com ela é recusado pela instalação como o de teste
+# (V9.2) e o `make test-no-test-mode` acusa quem a ligar por dependência normal.
 # Nenhum pedido do socket chega a esses ganchos; o V3.15 aceita a feature só neles.
-ganchos-teste = ["modo-teste"]
+test-hooks = ["test-mode"]
 
 # Motivo de cada dependência no handoff da Fase 22 (S14). Nenhuma traz crate nova ao
 # `Cargo.lock`.
 [dependencies]
 ward-core = { workspace = true }
-ward-plataforma = { workspace = true }
+ward-platform = { workspace = true }
 # `libc`: só as constantes `O_NOFOLLOW`/`O_CLOEXEC` para abrir o cofre e o estado sem
 # seguir link simbólico (nenhuma chamada; o crate não tem `unsafe`).
 libc = { version = "0.2.191", default-features = false }
@@ -45,7 +45,7 @@ ssh-key = { version = "=0.7.0-rc.12", default-features = false, features = ["all
 # Protocol (JSON com números de ponto flutuante e negativos, que o leitor estrito do
 # protocolo recusa). Só structs próprias com os campos usados (o resto é pulado sem cópia)
 # e o storage state no formato do Playwright. Os dois já estão no `Cargo.lock` (pelo
-# `ward-app-nucleo`); nenhuma crate nova entra na árvore.
+# `ward-app-core`); nenhuma crate nova entra na árvore.
 serde = { version = "1.0.229", default-features = false, features = ["std", "derive"] }
 serde_json = { version = "1.0.154", default-features = false, features = ["std"] }
 
@@ -58,20 +58,20 @@ chacha20poly1305 = { version = "0.11.0", default-features = false, features = ["
 zbus = { version = "=6.2.1", default-features = false, features = ["default-rt", "service"] }
 
 # App de teste dos testes do `wardd` (D63, Fase 23a): o binário que o `abrir_app` do
-# daemon de teste abre pelo `WARD_DEV_APP`. Só com `modo-teste`; fora de `src/` (o
+# daemon de teste abre pelo `WARD_DEV_APP`. Só com `test-mode`; fora de `src/` (o
 # V3.15 lê os arquivos de `src/`).
 [[bin]]
 name = "wardd-app-teste"
 path = "app-teste/main.rs"
-required-features = ["modo-teste"]
+required-features = ["test-mode"]
 
 # Janela de aprovação de teste das suítes de ponta a ponta do M6 (Fase 44c, D9): responde
 # os pedidos com o que a suíte escreveu em `$WARD_DEV_DIR/aprovador.modo`. Só com
-# `modo-teste`, como o app de teste.
+# `test-mode`, como o app de teste.
 [[bin]]
 name = "wardd-aprovador-teste"
 path = "aprovador-teste/main.rs"
-required-features = ["modo-teste"]
+required-features = ["test-mode"]
 
 # Scrutiny do M4 (Fase 28b): os testes de integração que sobem o `wardd` de teste
 # (`WARD_DEV_DIR`, `WARD_DEV_SOCKET_DIR`, `WARD_DEV_APP`) ou usam os ganchos só existem
@@ -79,37 +79,37 @@ required-features = ["modo-teste"]
 # e falhar em tempo de execução contra um `wardd` de release.
 [[test]]
 name = "run"
-required-features = ["modo-teste"]
+required-features = ["test-mode"]
 
 [[test]]
 name = "socket"
-required-features = ["modo-teste"]
+required-features = ["test-mode"]
 
 [[test]]
 name = "trava"
-required-features = ["modo-teste"]
+required-features = ["test-mode"]
 
 [[test]]
 name = "app_teste"
-required-features = ["modo-teste"]
+required-features = ["test-mode"]
 
 [[test]]
 name = "app_valor"
-required-features = ["modo-teste"]
+required-features = ["test-mode"]
 
 [[test]]
 name = "ssh"
-required-features = ["ganchos-teste"]
+required-features = ["test-hooks"]
 
 [[test]]
 name = "login"
-required-features = ["ganchos-teste"]
+required-features = ["test-hooks"]
 
 [[test]]
 name = "playwright"
-required-features = ["ganchos-teste"]
+required-features = ["test-hooks"]
 
-# Cliente mínimo do contêiner de `make teste-docker-uid` (V3.2, D49): o `ubuntu:24.04`
+# Cliente mínimo do contêiner de `make test-docker-uid` (V3.2, D49): o `ubuntu:24.04`
 # não tem Python.
 [[example]]
 name = "wardd-cliente-teste"

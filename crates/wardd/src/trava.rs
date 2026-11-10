@@ -193,14 +193,14 @@ pub fn evento_do_sinal(msg: &Message) -> Option<Evento> {
 ///
 /// Release: sempre [`BARRAMENTO_SISTEMA`]. Daemon de teste: só `WARD_DEV_DBUS_SISTEMA`,
 /// conferido por [`caminho_do_barramento`]; sem ela, `None`. O nome da variável só
-/// existe no binário com `modo-teste` (Fase 51a: o `instalar.sh` recusa qualquer
+/// existe no binário com `test-mode` (Fase 51a: o `install.sh` recusa qualquer
 /// `WARD_DEV_*` no artefato, sem exceção).
 pub fn barramento_do_daemon() -> Result<Option<PathBuf>, String> {
-    #[cfg(not(feature = "modo-teste"))]
+    #[cfg(not(feature = "test-mode"))]
     {
         Ok(Some(PathBuf::from(BARRAMENTO_SISTEMA)))
     }
-    #[cfg(feature = "modo-teste")]
+    #[cfg(feature = "test-mode")]
     {
         match std::env::var_os("WARD_DEV_DBUS_SISTEMA") {
             None => Ok(None),

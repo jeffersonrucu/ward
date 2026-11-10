@@ -17,24 +17,24 @@ use zeroize::Zeroizing;
 use ward_core::limites::MAX_QUADRO_COMUM;
 use ward_core::protocolo::quadro::{self, LIMITE_RESPOSTA};
 use ward_nm::{Daemon, FalhaDaemon};
-use ward_plataforma::{ServidorEsperado, conectar_servidor};
+use ward_platform::{ServidorEsperado, conectar_servidor};
 
 /// Prazo para o daemon responder (o mesmo da CLI).
 const PRAZO_LEITURA: Duration = Duration::from_secs(130);
 const PRAZO_ESCRITA: Duration = Duration::from_secs(10);
 
 /// O servidor que este host aceita. Release: só o `wardd` instalado (D46), sem
-/// variável nem argumento que troque. `modo-teste`: o daemon de teste.
+/// variável nem argumento que troque. `test-mode`: o daemon de teste.
 fn servidor_esperado() -> ServidorEsperado {
-    #[cfg(feature = "modo-teste")]
+    #[cfg(feature = "test-mode")]
     {
         if let Some(d) = std::env::var_os("WARD_DEV_SOCKET_DIR") {
             let d = std::path::PathBuf::from(d);
-            return ServidorEsperado::teste_em(d.join(ward_plataforma::socket::NOME_SOCKET));
+            return ServidorEsperado::teste_em(d.join(ward_platform::socket::NOME_SOCKET));
         }
         ServidorEsperado::teste()
     }
-    #[cfg(not(feature = "modo-teste"))]
+    #[cfg(not(feature = "test-mode"))]
     {
         ServidorEsperado::sistema()
     }
@@ -57,11 +57,11 @@ impl DaemonSocket {
     }
 }
 
-/// `modo-teste`: sem o uid 0 (o daemon de teste é do usuário), o processo do socket
+/// `test-mode`: sem o uid 0 (o daemon de teste é do usuário), o processo do socket
 /// tem de ser não-dumpable, como o `wardd` (a mesma regra da CLI de teste).
-#[cfg(feature = "modo-teste")]
+#[cfg(feature = "test-mode")]
 fn conferir_extra(s: &UnixStream) -> Result<(), FalhaDaemon> {
-    let par = ward_plataforma::ProcessoPar::do_socket(s).map_err(|_| FalhaDaemon::Indisponivel)?;
+    let par = ward_platform::ProcessoPar::do_socket(s).map_err(|_| FalhaDaemon::Indisponivel)?;
     match std::fs::read_link(format!("/proc/{}/exe", par.credenciais().pid)) {
         Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {}
         _ => return Err(FalhaDaemon::Indisponivel),
@@ -70,7 +70,7 @@ fn conferir_extra(s: &UnixStream) -> Result<(), FalhaDaemon> {
         .map_err(|_| FalhaDaemon::Indisponivel)
 }
 
-#[cfg(not(feature = "modo-teste"))]
+#[cfg(not(feature = "test-mode"))]
 fn conferir_extra(_: &UnixStream) -> Result<(), FalhaDaemon> {
     Ok(())
 }
@@ -89,7 +89,7 @@ impl Daemon for DaemonSocket {
 fn main() -> ExitCode {
     // S8: sem core e sem ptrace do mesmo uid (o exec setgid já deixou o processo
     // não-dumpable; aqui fica 0 também no build sem setgid).
-    if ward_plataforma::endurecer_processo().is_err() {
+    if ward_platform::endurecer_processo().is_err() {
         eprintln!("ward-nm: não deu para endurecer o processo");
         return ExitCode::FAILURE;
     }

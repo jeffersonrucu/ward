@@ -1,0 +1,14 @@
+# Permanent exceptions of dev/english_check.py (m2:DT17).
+#
+# One per line: <path-glob> <word-or-identifier> <reason...>
+# The glob follows fnmatch (`*` also crosses `/`). The word is compared lowercased and
+# without accents with the flagged word (or with the whole flagged identifier). An entry
+# that matches no finding fails the checker, so remove it together with its last use.
+#
+# Portuguese words that are also English (`responder`, `mascara`, `motor`, `pasta`...)
+# get an entry here only where the code uses them in their English sense.
+
+# User data: entry names and the attachment of the test vault keep their names
+# (m2:PRD, "Cofre de teste").
+dev/fixtures/*/gama-generico generico entry name of the test vault (user data)
+dev/fixtures/*/gama-generico/app.env falso content of a test vault attachment (user data, m2:V4.19)

@@ -29,7 +29,7 @@ struct DirSocket(PathBuf);
 
 impl DirSocket {
     fn novo(rotulo: &str) -> DirSocket {
-        let p = ward_plataforma::socket::diretorio_runtime()
+        let p = ward_platform::socket::diretorio_runtime()
             .join(format!("wardd-r-{}-{rotulo}", std::process::id()));
         let _ = fs::remove_dir_all(&p);
         DirSocket(p)
@@ -84,7 +84,7 @@ fn subir_com(dev: &Dir, sock: &DirSocket, extra: &[(&str, &std::ffi::OsStr)]) ->
         )
         .spawn()
         .unwrap();
-    let socket = sock.0.join(ward_plataforma::socket::NOME_SOCKET);
+    let socket = sock.0.join(ward_platform::socket::NOME_SOCKET);
     let fim = Instant::now() + Duration::from_secs(20);
     while UnixStream::connect(&socket).is_err() {
         assert!(Instant::now() < fim, "o wardd não criou o socket");
@@ -565,7 +565,7 @@ fn f26a_ataque_ambiente_da_cli_nao_muda_o_comando() {
     let r = run(&w, "t-livre", &["env"], &amb);
     assert_eq!(r.fim, Some(0), "{r:?}");
     let env = texto(&r.saida);
-    let (usuario, pessoal) = ward_plataforma::conta_do_usuario().unwrap();
+    let (usuario, pessoal) = ward_platform::conta_do_usuario().unwrap();
     for esperado in [
         "PATH=/usr/local/bin:/usr/bin:/bin\n".to_owned(),
         format!("HOME={}\n", pessoal.to_string_lossy()),
@@ -942,7 +942,7 @@ fn f54_ataque_ward_run_morre_na_trava() {
 ///
 /// Antes da correção, os dois escreviam (o grupo morria, eles não). Agora: nada
 /// escreve, nenhum processo sobra, a CLI ouve "encerrado" na trava. O controle sem a
-/// correção (o fugitivo sobrevive) está em `ward-plataforma/tests/subreaper.rs`.
+/// correção (o fugitivo sobrevive) está em `ward-platform/tests/subreaper.rs`.
 #[test]
 fn f55_ataque_descendente_fora_do_grupo_morre_no_fim_e_na_trava() {
     let dev = Dir::novo("run-55");

@@ -20,7 +20,7 @@
   import Toast from './Toast.svelte';
   import { chamar } from '../ponte/index.js';
 
-  // Espelho de `ward_app_nucleo::gerador::{TAMANHO_MIN, TAMANHO_MAX, TAMANHO_PADRAO}`.
+  // Espelho de `ward_app_core::gerador::{TAMANHO_MIN, TAMANHO_MAX, TAMANHO_PADRAO}`.
   const TAMANHO_MIN = 8;
   const TAMANHO_MAX = 64;
   const TAMANHO_PADRAO = 24;

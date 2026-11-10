@@ -1,15 +1,15 @@
 # Serviços de teste do Ward (Fase 12). Só credenciais FALSAS (D15).
 #
-#   make dev-servicos                          # gera .dev/servicos/ (rodar antes)
+#   make dev-services                          # gera .dev/services/ (rodar antes)
 #   docker compose -f dev/compose.yml up -d --build
-#   make dev-servicos-conferir                 # confere V1.4
+#   make dev-services-verify                 # confere V1.4
 #   docker compose -f dev/compose.yml down
 #
 # Segurança:
 # - Toda porta publicada só em 127.0.0.1: nada de senha conhecida exposta na rede.
-# - Segredos montados de .dev/servicos/ (0700) como arquivo somente leitura em
+# - Segredos montados de .dev/services/ (0700) como arquivo somente leitura em
 #   /run/ward/; nada de senha em `environment` (sairia no `docker inspect`) nem em argv.
-#   Bind sem `create_host_path`: sem `make dev-servicos`, o `up` falha em vez de subir
+#   Bind sem `create_host_path`: sem `make dev-services`, o `up` falha em vez de subir
 #   com diretório vazio.
 # - Estado em tmpfs: cada `up` depois de `down` começa limpo (posts.log vazio, banco e
 #   WordPress reinstalados das fixtures). A única exceção é o volume `wp-html`, com o
@@ -29,7 +29,7 @@ x-seguranca: &seguranca
 x-ssh: &ssh
   <<: *seguranca
   build:
-    context: ./servicos/ssh
+    context: ./services/ssh
   image: ward-teste/ssh:1
   pull_policy: build
 
@@ -55,7 +55,7 @@ services:
       POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256 --auth-local=trust
     volumes:
       - type: bind
-        source: ../.dev/servicos/segredos/pg-app
+        source: ../.dev/services/secrets/pg-app
         target: /run/ward/pg-app
         read_only: true
         bind: { create_host_path: false }
@@ -76,9 +76,9 @@ services:
     environment:
       WARD_MODO: senha
     volumes:
-      - { type: bind, source: ../.dev/servicos/ssh-host/ssh-senha/ssh_host_ed25519_key, target: /run/ward/ssh_host_ed25519_key, read_only: true, bind: { create_host_path: false } }
-      - { type: bind, source: ../.dev/servicos/segredos/ssh-deploy, target: /run/ward/senha-deploy, read_only: true, bind: { create_host_path: false } }
-      - { type: bind, source: ../.dev/servicos/segredos/ssh-sftpuser, target: /run/ward/senha-sftpuser, read_only: true, bind: { create_host_path: false } }
+      - { type: bind, source: ../.dev/services/ssh-host/ssh-senha/ssh_host_ed25519_key, target: /run/ward/ssh_host_ed25519_key, read_only: true, bind: { create_host_path: false } }
+      - { type: bind, source: ../.dev/services/secrets/ssh-deploy, target: /run/ward/senha-deploy, read_only: true, bind: { create_host_path: false } }
+      - { type: bind, source: ../.dev/services/secrets/ssh-sftpuser, target: /run/ward/senha-sftpuser, read_only: true, bind: { create_host_path: false } }
     ports:
       - "127.0.0.1:2222:22"
 
@@ -88,8 +88,8 @@ services:
     environment:
       WARD_MODO: chave
     volumes:
-      - { type: bind, source: ../.dev/servicos/ssh-host/ssh-chave/ssh_host_ed25519_key, target: /run/ward/ssh_host_ed25519_key, read_only: true, bind: { create_host_path: false } }
-      - { type: bind, source: ../.dev/servicos/chaves/acme-deploy_ed25519.pub, target: /run/ward/autorizada.pub, read_only: true, bind: { create_host_path: false } }
+      - { type: bind, source: ../.dev/services/ssh-host/ssh-chave/ssh_host_ed25519_key, target: /run/ward/ssh_host_ed25519_key, read_only: true, bind: { create_host_path: false } }
+      - { type: bind, source: ../.dev/services/keys/acme-deploy_ed25519.pub, target: /run/ward/autorizada.pub, read_only: true, bind: { create_host_path: false } }
     ports:
       - "127.0.0.1:2223:22"
 
@@ -99,8 +99,8 @@ services:
     environment:
       WARD_MODO: salto
     volumes:
-      - { type: bind, source: ../.dev/servicos/ssh-host/ssh-salto/ssh_host_ed25519_key, target: /run/ward/ssh_host_ed25519_key, read_only: true, bind: { create_host_path: false } }
-      - { type: bind, source: ../.dev/servicos/segredos/ssh-salto, target: /run/ward/senha-salto, read_only: true, bind: { create_host_path: false } }
+      - { type: bind, source: ../.dev/services/ssh-host/ssh-salto/ssh_host_ed25519_key, target: /run/ward/ssh_host_ed25519_key, read_only: true, bind: { create_host_path: false } }
+      - { type: bind, source: ../.dev/services/secrets/ssh-salto, target: /run/ward/senha-salto, read_only: true, bind: { create_host_path: false } }
     ports:
       - "127.0.0.1:2224:22"
     networks:
@@ -114,8 +114,8 @@ services:
     environment:
       WARD_MODO: interno
     volumes:
-      - { type: bind, source: ../.dev/servicos/ssh-host/ssh-interno/ssh_host_ed25519_key, target: /run/ward/ssh_host_ed25519_key, read_only: true, bind: { create_host_path: false } }
-      - { type: bind, source: ../.dev/servicos/chaves/acme-deploy_ed25519.pub, target: /run/ward/autorizada.pub, read_only: true, bind: { create_host_path: false } }
+      - { type: bind, source: ../.dev/services/ssh-host/ssh-interno/ssh_host_ed25519_key, target: /run/ward/ssh_host_ed25519_key, read_only: true, bind: { create_host_path: false } }
+      - { type: bind, source: ../.dev/services/keys/acme-deploy_ed25519.pub, target: /run/ward/autorizada.pub, read_only: true, bind: { create_host_path: false } }
     networks:
       - interno
 
@@ -128,8 +128,8 @@ services:
       MARIADB_USER: wp
       MARIADB_PASSWORD_FILE: /run/ward/mariadb-wp
     volumes:
-      - { type: bind, source: ../.dev/servicos/segredos/mariadb-root, target: /run/ward/mariadb-root, read_only: true, bind: { create_host_path: false } }
-      - { type: bind, source: ../.dev/servicos/segredos/mariadb-wp, target: /run/ward/mariadb-wp, read_only: true, bind: { create_host_path: false } }
+      - { type: bind, source: ../.dev/services/secrets/mariadb-root, target: /run/ward/mariadb-root, read_only: true, bind: { create_host_path: false } }
+      - { type: bind, source: ../.dev/services/secrets/mariadb-wp, target: /run/ward/mariadb-wp, read_only: true, bind: { create_host_path: false } }
     tmpfs:
       - /var/lib/mysql:size=512m,mode=0700,uid=999,gid=999
     healthcheck:
@@ -154,7 +154,7 @@ services:
         define('DISALLOW_FILE_EDIT', true);
         define('AUTOMATIC_UPDATER_DISABLED', true);
     volumes:
-      - { type: bind, source: ../.dev/servicos/segredos/mariadb-wp, target: /run/ward/mariadb-wp, read_only: true, bind: { create_host_path: false } }
+      - { type: bind, source: ../.dev/services/secrets/mariadb-wp, target: /run/ward/mariadb-wp, read_only: true, bind: { create_host_path: false } }
       - wp-html:/var/www/html
     ports:
       - "127.0.0.1:8081:80"
@@ -171,19 +171,19 @@ services:
       HOME: /tmp
     volumes:
       - wp-html:/var/www/html
-      - { type: bind, source: ../.dev/servicos/segredos/mariadb-wp, target: /run/ward/mariadb-wp, read_only: true, bind: { create_host_path: false } }
-      - { type: bind, source: ../.dev/servicos/segredos/wp-admin, target: /run/ward/wp-admin, read_only: true, bind: { create_host_path: false } }
-      - { type: bind, source: ../.dev/servicos/segredos/wp-editor, target: /run/ward/wp-editor, read_only: true, bind: { create_host_path: false } }
-      - { type: bind, source: ./servicos/wordpress/instalar.sh, target: /usr/local/bin/ward-instalar-wp, read_only: true, bind: { create_host_path: false } }
+      - { type: bind, source: ../.dev/services/secrets/mariadb-wp, target: /run/ward/mariadb-wp, read_only: true, bind: { create_host_path: false } }
+      - { type: bind, source: ../.dev/services/secrets/wp-admin, target: /run/ward/wp-admin, read_only: true, bind: { create_host_path: false } }
+      - { type: bind, source: ../.dev/services/secrets/wp-editor, target: /run/ward/wp-editor, read_only: true, bind: { create_host_path: false } }
+      - { type: bind, source: ./services/wordpress/install.sh, target: /usr/local/bin/ward-instalar-wp, read_only: true, bind: { create_host_path: false } }
     entrypoint: ["/bin/sh", "/usr/local/bin/ward-instalar-wp"]
 
   # 8082: phishing. Grava todo POST em /registro/posts.log (tmpfs; ler com
   # `docker compose -f dev/compose.yml exec phish cat /registro/posts.log`).
   phish:
     <<: *web
-    command: ["python3", "-I", "-B", "/app/servidor.py", "phish"]
+    command: ["python3", "-I", "-B", "/app/server.py", "phish"]
     volumes:
-      - { type: bind, source: ./servicos/web/servidor.py, target: /app/servidor.py, read_only: true, bind: { create_host_path: false } }
+      - { type: bind, source: ./services/web/server.py, target: /app/server.py, read_only: true, bind: { create_host_path: false } }
     tmpfs:
       - /tmp:size=8m,mode=0700,uid=65534,gid=65534
       - /registro:size=8m,mode=0700,uid=65534,gid=65534
@@ -193,19 +193,19 @@ services:
   # 8083: login com usuário, senha e código TOTP; cadastro novo em /cadastro.
   totp:
     <<: *web
-    command: ["python3", "-I", "-B", "/app/servidor.py", "totp"]
+    command: ["python3", "-I", "-B", "/app/server.py", "totp"]
     volumes:
-      - { type: bind, source: ./servicos/web/servidor.py, target: /app/servidor.py, read_only: true, bind: { create_host_path: false } }
-      - { type: bind, source: ../.dev/servicos/segredos/totp-contas.json, target: /run/ward/totp-contas.json, read_only: true, bind: { create_host_path: false } }
+      - { type: bind, source: ./services/web/server.py, target: /app/server.py, read_only: true, bind: { create_host_path: false } }
+      - { type: bind, source: ../.dev/services/secrets/totp-contas.json, target: /run/ward/totp-contas.json, read_only: true, bind: { create_host_path: false } }
     ports:
       - "127.0.0.1:8083:8080"
 
   # 8084: redireciona tudo para o phishing em 8082.
   redir:
     <<: *web
-    command: ["python3", "-I", "-B", "/app/servidor.py", "redir"]
+    command: ["python3", "-I", "-B", "/app/server.py", "redir"]
     volumes:
-      - { type: bind, source: ./servicos/web/servidor.py, target: /app/servidor.py, read_only: true, bind: { create_host_path: false } }
+      - { type: bind, source: ./services/web/server.py, target: /app/server.py, read_only: true, bind: { create_host_path: false } }
     ports:
       - "127.0.0.1:8084:8080"
 

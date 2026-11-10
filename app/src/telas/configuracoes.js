@@ -1,5 +1,5 @@
 // Regras locais da tela `Configurações` (Fase 38). As de PIN e senha mestra são as do
-// primeiro uso (`primeiro-uso.js`); o Rust (`app/nucleo/src/configuracoes.rs`) confere
+// primeiro uso (`primeiro-uso.js`); o Rust (`app/core/src/configuracoes.rs`) confere
 // tudo de novo antes de pedir ao daemon. Nada daqui guarda valor digitado.
 
 // Espelho de `ward_core::limites::{MIN_MINUTOS_TRAVA, MAX_MINUTOS_TRAVA}` (D45).

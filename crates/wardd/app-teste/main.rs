@@ -1,5 +1,5 @@
 //! `wardd-app-teste`: app de teste mínimo dos testes do `wardd` (D63, Fase 23a). Só
-//! existe com a feature `modo-teste` (`required-features`), nunca no release.
+//! existe com a feature `test-mode` (`required-features`), nunca no release.
 //!
 //! Conecta ao daemon de teste (`$WARD_DEV_SOCKET_DIR/wardd.sock`, ou
 //! `/run/user/<uid>/ward-teste/wardd.sock`), pede `estado` e `revelar` e imprime, uma
@@ -213,7 +213,7 @@ fn main() -> ExitCode {
         .unwrap_or_else(|| {
             PathBuf::from(format!(
                 "/run/user/{}/ward-teste",
-                ward_plataforma::uid_efetivo()
+                ward_platform::uid_efetivo()
             ))
         });
     let mut s = match UnixStream::connect(dir.join("wardd.sock")) {

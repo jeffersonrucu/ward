@@ -1,0 +1,33 @@
+[package]
+name = "ward-platform"
+description = "Módulos de plataforma do Ward (Linux): socket, peer credentials, endurecimento do processo."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[features]
+# D7/D46: forma de teste do servidor (pasta 0700 do usuário, par do mesmo uid), os
+# construtores de teste e o ativador de socket dos testes. Sem a feature, o binário só
+# aceita o socket do systemd do sistema.
+test-mode = []
+
+# Motivo de cada uma no handoff da Fase 21. Nenhuma traz crate nova ao `Cargo.lock`
+# (as duas já estavam lá, pelo `ward-core`).
+[dependencies]
+# `libc`: `getsockopt` (`SO_PEERCRED`, `SO_PEERPIDFD`), `pidfd_open`/
+# `pidfd_send_signal`, `openat`/`readlinkat`, `prctl`, `setrlimit`, `mmap`/`mlock`/
+# `madvise`. A biblioteca padrão não tem nenhuma delas estável.
+libc = { version = "0.2.191", default-features = false }
+# `zeroize`: zera o `BufferTravado` antes de devolver as páginas e, com `alloc`, a
+# senha lida do terminal (`terminal`, Fase 25) (S8).
+zeroize = { version = "1.9.1", default-features = false, features = ["alloc"] }
+
+# Binário de teste do contêiner (`make test-docker-platform`). Só com `test-mode`.
+[[example]]
+name = "ward-platform-container"
+path = "examples/container.rs"
+required-features = ["test-mode"]
+
+[lints]
+workspace = true

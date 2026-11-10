@@ -65,7 +65,7 @@ que fica fora do que o Ward cobre (docs/escopo.md › "Fora do modelo de ameaça
     subcomando, `printf … | ward run …` vira dois comandos inocentes e passa pela
     regra (não pelo daemon).
 
-  `make teste-skill` confere cada forma (o comando inteiro e cada subcomando) e que
+  `make test-skill` confere cada forma (o comando inteiro e cada subcomando) e que
   nenhum exemplo da skill é negado. Algumas regras negam comando inocente (um
   `update … set` do `psql` dentro do `ward run`, um `2>&1`, um pipe para `cut` depois
   do `ward run`, um `ls ~/.local/share/fonts`). É de propósito: na dúvida, nega. A

@@ -1,178 +1,112 @@
-# Fase 5 — (DESIGN) Formulários, parte 1: login, banco, servidor, api, aws
+# Fase 5 — Pastas e arquivos fora dos crates e do `app/src` (DT13, DT1) (Missão 2, Milestone 1)
 
 ## Implementado
-- Trabalhei no app FigCraft aberto (`mcp__figcraft-app__*`), no arquivo
-  `/home/jeffersonoliveira/documentos/Ward.figcraft`, sem abrir outro arquivo. Antes, li a
-  skill `figcraft`, PRD, plano, contrato, `design-nodes.md`, os handoffs 4a–4g e a
-  referência-alvo (só estilo). Fiz `save_file` no mesmo caminho várias vezes (depois de
-  cada frame) e no fim; o arquivo salvo foi auditado por script.
-- Desde o pedido do coordinator, outros workers editam o mesmo documento. Por isso usei
-  sempre `ids` explícitos e não alterei componentes de outras fases. Fiquei em
-  y 4000–7199 no Layout e na `Seção / Formulário` na Design System.
-- **Componentes novos** em `Seção / Formulário` (`6796`, x = 640, y = 8124), ligados às
-  variables (auditoria: 0 valores soltos). Os outros workers vão reutilizar esses
-  componentes, então os nomes ficam como estão:
-  - `Interruptor` (set `6838`): `Ligado=sim` `6836`, `Ligado=não` `6839`. Pílula de 36×20
-    com `primaria/padrao` ou `superficie/hover` e botão de 16.
-  - `Título de seção` (`6841`): props `Título`, `Descrição`, `Mostrar descrição`,
-    `Mostrar ação`, com um `Botão` fantasma dentro (rótulo e ícone por override).
-  - `Anexo` (`6849`): props `Nome` e `Detalhe` (tamanho · `WARD_ARQUIVO_<NOME>`), com
-    `Ação de campo` "Remover". O conteúdo do arquivo nunca aparece.
-  - `Campo extra` (set `6878`): `Segredo=não` `6861` e `Segredo=sim` `6879`; props
-    `Nome`, `Valor` e `Variável`, mais `Interruptor` "segredo" e "Remover". A variante sim
-    mostra só `••••••••`, e o valor não é propriedade dela.
-  - `Código TOTP` (set `6909`): `Estado=ativo` `6894` (código, contagem em pílula com
-    relógio e Copiar; ajuda "Novo código a cada 30 s.") e `Estado=vazio` `6910` ("Sem
-    semente"). A semente fica num `Campo secreto` ao lado.
-  - Variable nova `largura/interruptor` = 36 (`VariableID:84`, coleção `Largura`).
-- **10 frames de formulário** no Layout. O formulário abre no painel de detalhe da tela
-  de Credenciais, que continua em três colunas (navegação, lista, detalhe), com a entrada
-  editada selecionada na lista. Cada frame tem largura 1280, e a altura mostra o
-  formulário inteiro (opção (a) aprovada pelo usuário). No app, o corpo do detalhe rola e
-  o cabeçalho e o rodapé ficam fixos. Os frames só usam instâncias para campos, selects,
-  campos secretos, botões, badges, itens, cabeçalhos de grupo e as peças novas.
-  - **Estrutura comum do corpo:**
-    - Nome | Tipo; na Edição, o Tipo fica desabilitado, porque o tipo não muda depois de
-      criado.
-    - Grupo (select com autocompletar) | Ambiente.
-    - Projeto | Tags.
-    - `Título de seção` "Acesso" com as variáveis de entrega, seguido dos campos do tipo.
-    - "Campos extras" com Adicionar campo.
-    - "Anexos" com Adicionar arquivo.
-    - Cartão do nível de acesso com "Mudar nível", que pede o PIN.
-  - **Rodapé:**
-    - Novo: "Obrigatórios: nome, grupo e ambiente.", Cancelar e Salvar (desabilitado).
-    - Edição: data da alteração, Cancelar e Salvar alterações.
-  - **Toda entrada nova começa com aprovação**, e mudar isso pede o PIN.
-  - **Segredos:** só no `Campo secreto` oculto (`••••••••`). No Novo, o campo secreto
-    aparece vazio, com revelar/gerar e copiar.
+- **Pastas e arquivos, por `git mv`** (glossário, seções 4 e 5):
 
-| Frame | Id | Conteúdo |
-| --- | --- | --- |
-| `Formulário / login / Novo` | `7450` | grupo com **autocompletar aberto** ("ac" → acme, Criar grupo "ac"; `Select` aberto `7691` sobreposto ao `Select` foco `7902`); URL, usuário, senha com gerar, semente TOTP, `Código TOTP` vazio; extras e anexos vazios |
-| `Formulário / login / Edição` | `6926` | `acme-wp-dev` (acme, dev, com aprovação): URL, usuário com Copiar, senha e **semente TOTP mascaradas**, **código TOTP 482 913 com contagem 18 s**; extra `SITE_ID`; anexos vazio |
-| `Formulário / banco / Novo` | `8537` | motor postgres, host, porta, base, usuário, senha com gerar, túnel SSH "Nenhum" |
-| `Formulário / banco / Edição` | `7908` | `acme-pg-tunel` (stage, livre): postgres, host `postgres`, 5432, `app_teste`, `app`, senha mascarada, túnel `acme-ssh-senha-stage` (nível do servidor também vale, D19); extra `PGSSLMODE`; anexo `ca-teste.pem` |
-| `Formulário / servidor / Novo` | `9900` | host em foco, porta, usuário, autenticação Senha, senha com gerar, servidor de salto "Nenhum" |
-| `Formulário / servidor / Edição` | `8981` | `acme-ssh-chave-prod` (prod, livre): **botão `Conectar` no cabeçalho** (`9192`, D3); host 127.0.0.1, 2223, `deploy`, autenticação Chave, **chave privada e passphrase mascaradas**, salto "Nenhum"; extra `DIR_DEPLOY`; **anexo `acme-vpn.ovpn`** |
-| `Formulário / api / Novo` | `11272` | nome em foco, URL base, token, nome da variável (`Ex.: GITLAB_TOKEN`) |
-| `Formulário / api / Edição` | `10389` | `beta-github-api` (beta, dev, livre): URL `https://api.github.com`, token mascarado, variável `GITHUB_TOKEN` ("vai nesta variável e em WARD_TOKEN"); extra `GITHUB_ORG` |
-| `Formulário / aws / Novo` | `12170` | access key ID, secret access key, região, session token, role ARN |
-| `Formulário / aws / Edição` | `11705` | `beta-aws-dev`: `FALSOACCESSKEY01` (identificador, não segredo), secret e session token mascarados, `sa-east-1`, role `arn:aws:iam::000000000000:role/teste`; **extra secreto `EXTERNAL_ID`** (`Segredo=sim`, interruptor ligado) |
+  | Antigo | Novo |
+  |---|---|
+  | `instalacao/` | `install/` |
+  | `instalacao/{arvore.txt,instalar.sh,grupos.sh,despejo.sh,empacotar-extensao.sh}` | `install/{tree.txt,install.sh,groups.sh,dump.sh,pack-extension.sh}` |
+  | `extensao/` | `extension/` |
+  | `extensao/{chave-publica.txt,servico.js,pagina.js,envio.js}` | `extension/{public-key.txt,service.js,page.js,submit.js}` |
+  | `dev/extensao/montar.py` | `dev/extension/build.py` |
+  | `dev/{ambiente.sh,origens.py,variacoes.py,ponte.sh,abrir-app.py}` | `dev/{env.sh,origins.py,variations.py,bridge.sh,open-app.py}` |
+  | `dev/gitleaks-arvore.toml`, `dev/gitleaks-extra-arvore.toml` | `dev/gitleaks-tree.toml`, `dev/gitleaks-extra-tree.toml` |
+  | `dev/fixtures/entradas.json`, `dev/fixtures/anexos/` | `dev/fixtures/entries.json`, `dev/fixtures/attachments/` |
+  | `dev/conteiner-{deb,install,plataforma,uid,units}/` | `dev/container-{deb,install,platform,uid,units}/` |
+  | `dev/conteiner-*/dentro.sh`, `conteiner-units/iniciar.sh` | `inside.sh`, `start.sh` |
+  | `dev/conteiner-plataforma/{falso,marca}.c` | `dev/container-platform/{fake,mark}.c` |
+  | `dev/servicos/` (`comum.sh`, `conferir.sh`, `gerar.py`, `ssh/entrada.sh`, `web/servidor.py`, `wordpress/instalar.sh`) | `dev/services/` (`common.sh`, `verify.sh`, `generate.py`, `ssh/entrypoint.sh`, `web/server.py`, `wordpress/install.sh`) |
+  | `dev/testes/` e os 26 arquivos da tabela do glossário (`ataques-fundacao.sh` → `attacks-foundation.sh`, `sem-modo-teste.sh` → `no-test-mode.sh`, `socket_ataque.py` → `socket_attack.py`, `migracao.py` → `migration-guide.py` …) | `dev/tests/` |
+  | `app/design/icones/` | `app/design/icons/` (só a pasta; ver "Ficou de fora") |
 
-- **Grade no Layout:** linha y = 4000 (Novo) e y = 5600 (Edição); colunas x = 0 (login),
-  1360 (banco), 2720 (servidor), 4080 (api) e 5440 (aws).
-- **Lista em cada frame:**
-  - nos frames do grupo beta, o cabeçalho de grupo é "beta · 4 entradas", com marcador
-    `grupo/2/cor`;
-  - na lista do login, os itens `acme-ssh-*` e `acme-wp-*` substituem os do grupo acme;
-  - nos frames de banco e servidor, a lista é a mesma de Credenciais / Cheia.
-- **Conferência:**
-  - screenshot de cada frame inteiro e zoom de 1,3–2x no corpo do servidor e na seção de
-    componentes; o texto não encosta na borda, os cartões, anexos e extras têm padding 16
-    e o nível tem 20;
-  - auditoria no `.figcraft` salvo (script em
-    `/tmp/claude-1000/-home-jeffersonoliveira-projetos-cofre/d2e230bd-a662-43be-afff-2572da5a4e80/scratchpad/f5/audit.py`),
-    feita nos 10 frames e na seção: **0** preenchimentos, bordas, espessuras, raios, gaps
-    ou paddings soltos e 0 textos sem text style fora de instâncias;
-  - varredura dos valores secretos do contrato (senhas, tokens, sementes, passphrase)
-    em todos os textos e propriedades do arquivo: **0 ocorrências**;
-  - todos os ids desta fase existem no arquivo salvo.
+- **Usos ajustados** (script de substituição com regras fechadas, mais correções à mão e revisão linha a linha das ocorrências):
+  - Makefile (só caminhos: receitas e comentários; nomes de alvo e de variável ficam para a Fase 6), `CLAUDE.md`, `README.md`, `docs/instalacao.md`.
+  - Todos os scripts de `dev/`, `install/`, `extension/` (imports `./page.js`, `service_worker: service.js`, `content_scripts: submit.js` do manifesto), Dockerfiles, `dev/compose.yml` (`./services/…` e `../.dev/services/{secrets,keys}/…`).
+  - Rust: `include_str!`/`concat!` de `dev/fixtures/entries.json` e `dev/variations.py`, `crates/wardd/tests/units.rs` (`install/systemd`), `ward-test-bridge` (`dev/tests/terminal-test.py`), comentários.
+  - `dev/english_check.py`: plantio JS do autoteste em `extension/` (o glob antigo não casaria mais).
+  - `app/scripts/gerar_design.py` e o comentário gerado em `app/src/lib/componentes/icones.js` (`app/design/icons/`).
+  - Formas compostas que não têm o caminho inteiro: `os.path.join(RAIZ, "extension", …)`, `"dev", "tests", "fake_v6.py"`, `RAIZ / ".dev" / "services"`, `DESTINO / "keys"|"secrets"|"client-home"`, `"$DS/keys"`, `SEG="$DS/secrets"`, `"$C/repo/install"`.
+- **Caminhos de `.dev/`** (glossário, seção 5) em scripts, Makefile, `CLAUDE.md` e no `config.rs` de teste do `wardd` (`$WARD_DEV_DIR/test-vault.ward` e `test-vault.state`; o da release não muda): `test-vault.ward`/`.state`, `variations.txt`, `services/{keys,secrets,client-home}`, `extension/key.pem`, `tools/`, `clipboard/`, `revealed-selection/`, `gst-channels/`, `log-scan-self-test/`, `.test-dev-vault.lock`, prefixos `chrome-policy.`, `socket-attacks.`, `test-deb.`, `test-install.`, `container-*.`, `extension.`, `test-attack-*`, `e2e-mark`.
+- **`mv` dos arquivos existentes em `.dev/`** (nada copiado, nada recriado): `cofre-teste.ward` → `test-vault.ward`, `cofre-teste.estado` → `test-vault.state`, `variacoes.txt` → `variations.txt`, `servicos/` → `services/` (com `chaves` → `keys`, `segredos` → `secrets`, `home-cliente` → `client-home`), `ferramentas/` → `tools/`, `area-transferencia/` → `clipboard/`, `.teste-dev-cofre.trava` → `.test-dev-vault.lock`, `logs/ward-ponte-teste.log` → `logs/ward-test-bridge.log` (não havia log novo). Modos e donos mantidos.
+- **Chave da extensão (V1.9):** `mv -n .dev/extensao/chave.pem .dev/extension/key.pem` (pasta nova 0700), `.dev/extensao/` removida (vazia). Conferido sem imprimir a chave: arquivo comum, 0600, do usuário, não é link; id calculado (sha-256 do DER da pública, 32 dígitos `a`–`p`) = `nhkehjnmlgkebhmelajfpmpblepaichf` antes e depois do `mv`, igual ao `ID_EXTENSAO` do `ward-nm`, ao id de `extension/public-key.txt` e ao da `key` do manifesto 0.1.4 em `.dev/baseline/extension-0.1.4/`. Nenhuma chave gerada.
+- **Evidência dos scripts (DT1):** `docs/mission/evidence/fase-41` → `evidence/test-extension`, `fase-42` (estados do popup, outro `qa.json`) → `evidence/test-extension/popup`, `fase-43` → `evidence/test-login`, `fase-39c` → `evidence/test-app-e2e` (`extension.py`, `extension.sh`, `login.py`, `app_e2e.py`, Makefile, `CLAUDE.md`). Nenhum script lê referência das pastas antigas.
+- **Limpeza da Fase 4:** apagados `target/debug/ward-ponte-teste` e os `libward_ponte_teste.*` de `target/debug`.
+- **Glossário:** linhas novas para `app/design/icons/`, `target/extension/ward.crx`, `mark.c` gerado pelos testes, evidência `fase-42`/`fase-39c`; nota de que a pasta do socket de teste e os logs `wardd-app-teste`/`wardd-aprovador-teste` mudam na Fase 56.
+- **Literais alterados (PRD regra 5).** Todos são caminho ou nome de arquivo:
+  - Rust: `crates/wardd/src/config.rs` (`"test-vault.ward"`, `"test-vault.state"`, só com `test-mode`, e o teste); `crates/ward-core/examples/dev-cofre/{main,testes}.rs` (`.dev/test-vault.ward`, `.dev/services/keys`, `dev/fixtures/{entries.json,attachments}` e os casos de recusa); `crates/ward-core/src/mascara/testes.rs` (`dev/variations.py`); `crates/wardd/tests/{app_valor,backup,units}.rs`; `crates/ward-test-bridge/src/simulados.rs`, `tests/ataques.rs` e a mensagem `"ward-ponte-teste: sem dev/tests/terminal-test.py …"` de `main.rs` (prefixo da marca mantido); `app/core/src/{cliente,servico,daemon_falso}.rs` (`dev/fixtures/entries.json`).
+  - `install/install.sh`: mensagens que citam o arquivo da árvore (`"tree.txt vazia"`, `"tree.txt: linha inválida …"` …) e o uso `"uso: install.sh instalar|desinstalar"`; `install/dump.sh` (`install/dump.sh` na mensagem); `install/pack-extension.sh` (`target/extension/ward.crx`, `extension/dist`, `.dev/extension/key.pem`, uso). O texto da recusa de `modo-teste` e as marcas não mudaram.
+  - `extension/manifest.json`: `"service_worker": "service.js"`, `content_scripts` `"submit.js"`; imports `./page.js` (campos do Chrome iguais; o id não depende dos nomes dos arquivos).
+  - `dev/`: mensagens de uso e de erro que citam o próprio script (`uso: clipboard.sh <cargo>`, `fake_crx.py não deu um id`, `inside.sh roda como root…`, `server.py phish|totp|redir` …), caminhos e prefixos de `.dev/`, `.dev/<pasta>/mark.c` gerado por `gst-channels.sh` e `webkit-real.sh`, os casos de recusa do `variations_test.py` (`/tmp/variations.txt` …).
+- **Exceções:** nenhuma entrada nova em `allow.txt` nem em `frozen.txt` (as duas de `dev/fixtures/*/gama-generico` continuam casando em `attachments/`).
 
 ## Segurança
-- Invariantes: a fase é só de design e não toca código. O desenho segue o escopo:
-  - **S1 e R6:** valores secretos (senha, semente TOTP, token, secret key, session
-    token, chave privada, passphrase e extra secreto) aparecem só mascarados. O valor
-    revelado nunca entra numa tela (V0.20). Copiar e Revelar ficam só no app, e a ajuda
-    diz que eles não pedem PIN, como na 4f.
-  - **R8:** a tela mostra o código TOTP e a semente fica mascarada. A ajuda do componente
-    diz que o código muda a cada 30 s.
-  - **R9:** o anexo mostra só nome, tamanho e `WARD_ARQUIVO_<NOME>`, nunca o conteúdo.
-  - **S9:** o nível vem "com aprovação" em toda entrada nova, e mudar o nível pede o PIN.
-    Nem na criação dá para escolher "livre" sem PIN.
-  - **D3:** `Conectar` só aparece no servidor salvo (Edição). No Novo ele fica oculto,
-    porque ainda não existe entrada para o token de uso único.
-- Exemplos só falsos, do cofre de teste do contrato. Não toquei em cofre, credencial,
-  `~/.ssh`, `~/.aws` nem no Figma.
-- Testes de ataque: não se aplicam, porque o M0 não tem asserção (SEG).
-- Dependências novas: nenhuma. Os scripts de leitura usam só a biblioteca padrão do
-  Python e ficaram no scratchpad.
+- **Invariantes tocadas:**
+  - **S15 / V1.9:** chave da extensão só por `mv`, 0600, id conferido igual (acima). Nunca impressa.
+  - **S2:** os `.dev/` movidos continuam 0600/0700 (`services/` 0700, segredos 0600). Nada em claro saiu de `.dev/`.
+  - **S8 / V9.2 (marcas de `test-mode`):** a pasta do socket de teste **não** mudou (`ward-teste`, `NOME_DIRETORIO_TESTE`). O nome é a marca `ward-teste` que `install/install.sh` e `app-release.sh` procuram nos binários; trocar agora deixaria um binário `test-mode` sem essa marca até a Fase 56. Ficou de propósito (PRD regra 7).
+  - **S14:** nenhuma dependência nova.
+  - Lógica de segurança intocada: diff só de caminhos e comentários nos scripts de recusa (`install.sh`, `pack-extension.sh`, `no-test-mode.sh`, `dev-vault.sh`, `origins.py`).
+- **Testes de ataque:** nenhum novo nesta fase (renomes de caminho). Os ataques existentes que dependem dos caminhos foram ajustados junto: `attacks-foundation.sh` (gitleaks em `.dev/tools/`, `dev/origins.py`, `.dev/test-vault.ward`), `dev-vault.sh` (saída fora de `.dev/`, links `.dev/test-attack-*`, flock `.dev/.test-dev-vault.lock`), `attacks-services.sh` (modos de `.dev/services/{keys,secrets}`), os casos de recusa do `dev-cofre` (`testes.rs`). Escritos, não rodados (regra 6).
+- **Dependências novas:** nenhuma.
 
 ## Ficou de fora
-- `smtp`, `ftp/sftp`, `nota segura` e `genérico`: são da Fase 6.
-- O gerador aberto no formulário é da Fase 8. Aqui só aparece a ação "gerar" no campo de
-  senha do Novo.
-- O formulário de adicionar campo extra aberto (nome, valor e segredo antes de salvar)
-  ficou de fora. O Novo mostra o estado vazio com "Adicionar campo", e a Edição mostra
-  os extras salvos com o interruptor "segredo".
+- **Nomes dos `.svg` em `app/design/icons/`** (`cadeado.svg`, `tipo-banco.svg` …): são as chaves de `ICONES` em `icones.js`, usadas em 78 lugares do `app/src` e da extensão, algumas montadas do nome gravado do tipo (`tipo-${tipo}`); `ICONES[nome] ?? []` some com o ícone sem erro se uma chave faltar. Vão com a Fase 35 (chaves) e a 48 (nomes de tipo). Únicos achados de nome do `english-check` nos caminhos da fase.
+- **Pasta do socket de teste `$XDG_RUNTIME_DIR/ward-teste/`** (e `ward-teste-e2e`, `ward-teste-selecao`): Fase 56, com a marca (ver Segurança).
+- **`.dev/logs/wardd-aprovador-teste.log`** (e `wardd-app-teste.log`): saem do nome do binário; mudam com ele na Fase 56. Não movidos.
+- **`target/sem-modo-teste/`**: não está no glossário; é usado por Makefile, `CLAUDE.md` e scripts. Fica para a Fase 6 (Makefile) ou 56.
+- **`.dev/logs/terminal-teste.{log,saida}`, `.dev/terminal-teste.modo`, `.dev/e2e-guarda`, `.dev/selecao-guarda`, `atacante-26a-`**: não estão no glossário; conteúdo das Fases 40–46.
+- **`icones/` dentro da extensão montada** (`manifest.json` → `icones/extensao-*.png`, copiados de `docs/design/icones/`): campo do manifesto, Fase 39.
+- **Nomes de alvo e de variável do Makefile** (`teste-…`, `FERRAMENTAS_DIR`, `COFRE`, `CHAVE_EXTENSAO` …): Fase 6. Só os valores de caminho mudaram.
+- **`docs/mission/design-nodes.md`**: os caminhos citados mudam na Fase 59 (PRD regra 2).
+- Conteúdo (comentários e identificadores) dos arquivos renomeados: Fases 39, 40–47.
 
 ## Comandos executados
 | Comando | Exit code |
 | --- | --- |
-| `make check` | não executado: o `Makefile` só existe a partir da Fase 11 |
-| `inspect_document`, `get_node`, `screenshot` (1x a 2x) | ok |
-| `instance.create`/`setProperties`/`swap`, `component.addProperty`/`editProperty`/`combineVariants`/`addVariant`, `variable.create`/`bind`, `style.apply`, `node.set`/`reparent`/`reorder`, `edit.duplicate`/`delete` | ok |
-| `python3 -I f5/audit.py` (10 frames e a seção) no `.figcraft` salvo | 0 pendências |
-| `save_file` (várias vezes, mesmo caminho) | ok |
+| `git mv` (pastas e arquivos da tabela) | 0 |
+| script de substituição (117 arquivos) + correções à mão; grep dos nomes antigos sem sobra fora do que está em "Ficou de fora" | 0 |
+| `mv -n` dos arquivos de `.dev/`; id da chave antes/depois (`openssl pkey -pubout -outform DER \| sha256sum`) = `ID_EXTENSAO` = id 0.1.4 | 0 |
+| `make compile`: origens, `cargo check` do workspace, Vite, `cargo check` do `app/src-tauri`, sintaxe de 48 shell, 35 Python, 7 JS | 0 |
+| `make english-check PATHS="install extension dev/tests dev/services dev/container-* dev/fixtures/entries.json dev/fixtures/attachments dev/extension dev/{env.sh,origins.py,variations.py,bridge.sh,open-app.py,gitleaks-*.toml,daemon.sh,compose.yml} app/design"`: nenhum achado de nome além dos 32 `.svg` dos ícones; os de comentário/identificador são do conteúdo (Fases 39–47) | 1 (relatório, esperado) |
+| `make english-check PATHS=dev/fixtures/attachments` (as entradas de `allow.txt` continuam em uso) | 0 |
+| `python3 -I -B dev/english_check.py --self-test` (plantio JS movido para `extension/`) 91/91 | 0 |
+| `make -n install`, `make -n extensao` (a pasta `install/` não esconde o alvo `install`, que é `.PHONY`) | 0 |
+| `make check` | não rodado (regra 6 do PRD) |
 
 ## Problemas descobertos
-- **App travado no meio da fase:** por um tempo, toda chamada voltou "timed out waiting
-  for the UI", porque a janela estava sem foco ou fora da tela. Depois a sessão voltou ao
-  normal, e encontrei o frame `login / Edição` deslocado para (-97, 4103). Coloquei de
-  volta em (0, 5600).
-- **Componente compartilhado não alterado:** o `Campo secreto` não tem estado vazio nem
-  placeholder. No Novo, deixei a máscara vazia por override no texto `máscara`. Em
-  campos de meia largura, usei 8 pontos para a máscara não ser cortada. Um estado
-  `vazio` com placeholder no `Campo secreto` cabe na 10b/10c.
-- **Componente compartilhado não alterado:** a ajuda do `Campo secreto` é um texto fixo,
-  sem propriedade. Em "Chave privada" e "Senha" do servidor, mudei o texto por override.
-- **Autocompletar de grupo:** é um `Select` aberto (absoluto) sobre um `Select` em foco.
-  Para isso, o corpo do `login / Novo` (`7669`) ficou com `reverseZ`, para o menu ficar
-  por cima das linhas de baixo. O `Select` não tem uma variante de combobox com texto
-  digitado.
-- **Medidas sem token:** a largura do `Select` absoluto (246) e as alturas dos frames de
-  formulário (1370–1502), como as telas anteriores, que também não têm token de altura.
-- **`Item de lista` escondidos:** nas listas de api e aws, 3 itens do grupo acme ficaram
-  ocultos (`visible: false`) em vez de apagados, para mostrar só o grupo beta.
-- **Access key ID da AWS:** tratei como identificador (visível, com Copiar), como a
-  própria AWS trata. Só o secret e o session token ficam mascarados. Se o usuário
-  quiser, dá para mascarar o ID também.
-
-## Ids para design-nodes
-- Seção `Seção / Formulário` `6796` (título `6797`, descrição `6798`) na Design System,
-  x = 640, y = 8124.
-- `Interruptor` set `6838`: sim `6836` (botão `6837`), não `6839` (botão `6840`).
-- `Título de seção` `6841`: textos `6842` (título `6847`, descrição `6848`), botão `6843`.
-- `Anexo` `6849`: avatar `6850`, textos `6851` (nome `6859`, detalhe `6860`), ação
-  `6852`.
-- `Campo extra` set `6878`: não `6861`, sim `6879` (máscara `6893`).
-- `Código TOTP` set `6909`: ativo `6894` (código `6898`, contagem `6899`, ajuda
-  `6897`), vazio `6910` (texto `6925`, ajuda `6924`).
-- Variable `largura/interruptor` `VariableID:84` = 36 (`Largura`, WIDTH_HEIGHT).
-- Frames no Layout (`2796`):
-
-| Frame | Id | Detalhe | Corpo | Notas |
-| --- | --- | --- | --- | --- |
-| `Formulário / login / Novo` | `7450` | `7648` | `7669` | `Select` foco `7902` + aberto `7691` (autocompletar); extras vazio `7900`; anexos vazio `7861` |
-| `Formulário / login / Edição` | `6926` | `7120` | `7141` | `Código TOTP` `7421`; `Campo extra` `7278`; nível `7221` |
-| `Formulário / banco / Novo` | `8537` | `8731` | `8752` | — |
-| `Formulário / banco / Edição` | `7908` | `8106` | `8127` | túnel `8475`; anexo `8507` |
-| `Formulário / servidor / Novo` | `9900` | `10094` | `10119` | `Conectar` oculto `10113` |
-| `Formulário / servidor / Edição` | `8981` | `9175` | `9196` | **`Conectar` `9192`**; anexo `9387`; extra `9365` |
-| `Formulário / api / Novo` | `11272` | `11456` | `11475` | — |
-| `Formulário / api / Edição` | `10389` | `10587` | `10608` | token `10857`; variável `10882` |
-| `Formulário / aws / Novo` | `12170` | `12354` | `12373` | — |
-| `Formulário / aws / Edição` | `11705` | `11889` | `11908` | extra secreto `12036` |
+1. **Glossário em conflito sobre o socket de teste:** a seção 5 põe `ward-teste/` → `ward-test/` na Fase 5, e a seção 9 trata o mesmo nome como marca da Fase 56. Segui a 9 e anotei no glossário. A Fase 56 precisa trocar `NOME_DIRETORIO_TESTE`, os scripts e as duas recusas (nova e antiga) juntos.
+2. **Fase 6:** com a pasta `extension/` na raiz, o alvo novo `extension` tem de ficar no `.PHONY` (como `install` já está), senão o make o dá como "atualizado".
+3. **Ícones (`app/design/icons/*.svg`)**: precisam de dono explícito no plano (sugestão: Fase 35, trocando as chaves de `ICONES` e o `tipo-${tipo}` junto com o nome v5 dos tipos, ou entrada em `allow.txt` com motivo).
+4. **`.dev/auditor55.sn9p86/`**: pasta antiga de outro trabalho em `.dev/`; não mexi.
+5. Estado do repositório: as mudanças da Fase 4 continuam não commitadas (renomes indexados e conteúdo no worktree). Os `git mv` desta fase também ficaram indexados.
 
 ## Arquivos criados/alterados
 | Arquivo | Ação |
 | --- | --- |
-| `/home/jeffersonoliveira/documentos/Ward.figcraft` | alterado (seção `Seção / Formulário` com 5 componentes, 1 variable, 10 frames de formulário) |
+| `instalacao/**` → `install/**` (5 arquivos com nome novo) | movido (`git mv`) e alterado |
+| `extensao/**` → `extension/**` (4 arquivos com nome novo) | movido e alterado |
+| `dev/extensao/montar.py` → `dev/extension/build.py` | movido e alterado |
+| `dev/{ambiente.sh,origens.py,variacoes.py,ponte.sh,abrir-app.py,gitleaks-arvore.toml,gitleaks-extra-arvore.toml}` → nomes novos | movido e alterado |
+| `dev/fixtures/entradas.json` → `entries.json`, `dev/fixtures/anexos/` → `attachments/` | movido (e alterado o `entries.json`) |
+| `dev/conteiner-*/**` → `dev/container-*/**` | movido e alterado |
+| `dev/servicos/**` → `dev/services/**` | movido e alterado |
+| `dev/testes/**` → `dev/tests/**` | movido e alterado |
+| `app/design/icones/` → `app/design/icons/` | movido |
+| `dev/compose.yml`, `dev/daemon.sh`, `dev/gitleaks-extra.toml`, `dev/english_check.py` | alterado |
+| `Makefile`, `CLAUDE.md`, `README.md`, `docs/instalacao.md`, `docs/glossario.md` | alterado |
+| `app/scripts/gerar_design.py`, `app/vite.config.js`, `app/src/lib/bidi.js`, `app/src/lib/componentes/{CampoSecreto.svelte,icones.js}` (só comentário/caminho), `app/src-tauri/src/area_gtk.rs` (comentário) | alterado |
+| `app/core/src/{cliente,daemon_falso,servico}.rs` | alterado |
+| `crates/ward-core/examples/dev-cofre/{main,testes}.rs`, `crates/ward-core/src/{entrada.rs,mascara/testes.rs}` | alterado |
+| `crates/ward-nm/src/lib.rs`, `crates/ward-test-bridge/src/{main,simulados}.rs`, `crates/ward-test-bridge/tests/ataques.rs` | alterado |
+| `crates/wardd/src/{config,playwright,trava}.rs`, `crates/wardd/tests/{app_valor,backup,playwright,units}.rs` | alterado |
+| `.dev/` (fora do git): `test-vault.ward`, `test-vault.state`, `variations.txt`, `services/{keys,secrets,client-home}`, `tools/`, `clipboard/`, `.test-dev-vault.lock`, `extension/key.pem`, `logs/ward-test-bridge.log` | movido (`mv`) |
+| `target/debug/ward-ponte-teste`, `libward_ponte_teste.*` | apagado |
 | `docs/mission/handoffs/phase-5.md` | criado |
 
 ## Procedimentos
-- [ ] `make check` rodado (fmt, clippy, testes, audit, deny, gitleaks): não existe antes da Fase 11
-- [x] Só cofre de teste e credenciais falsas usados (nenhum cofre tocado)
-- [x] Teste de ataque para cada (SEG) tocado (nenhum (SEG) no M0)
-- [x] (UI/DESIGN) Conferido contra o FigCraft (screenshots com zoom; arquivo salvo auditado; `save_file` feito)
-- [x] Ficou dentro do escopo da fase (só a seção nova na Design System; nenhum componente compartilhado alterado)
+- [ ] `make check` rodado: não, pela regra 6 do PRD. Rodaram `make compile` (0), o `english-check` nos caminhos da fase (só os `.svg` dos ícones como achado de nome) e o autoteste do checador (91/91).
+- [x] Só cofre de teste e credenciais falsas usados (nenhum cofre aberto, nenhum daemon de teste iniciado; o `wardd` do usuário em `/usr/local/bin` não foi tocado).
+- [x] Teste de ataque para cada (SEG) tocado: V1.9 conferido à mão (id, modo, link); os ataques existentes seguem os caminhos novos. Nenhum novo.
+- [x] (UI/DESIGN) não se aplica.
+- [x] Ficou dentro do escopo da fase (os pontos adiados estão em "Ficou de fora" e "Problemas").

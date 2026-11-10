@@ -9,7 +9,7 @@
 //! travado e CLI que cai no meio, aprovação negada (nada chega à extensão), nenhuma
 //! extensão no ar. Só valores falsos, num cofre de teste próprio.
 
-#![cfg(feature = "ganchos-teste")]
+#![cfg(feature = "test-hooks")]
 
 mod comum;
 

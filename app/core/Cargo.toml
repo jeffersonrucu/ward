@@ -1,0 +1,43 @@
+[package]
+name = "ward-app-core"
+description = "Lado Rust do app do Ward sem Tauri: comandos próprios, cliente do daemon e copiar (D4)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+# Sem Tauri e sem GTK: compila e testa no `make check` do workspace raiz. O crate do
+# Tauri (`app/src-tauri`, workspace próprio) e a ponte de teste (`ward-test-bridge`) só
+# chamam o `Servico` daqui, então os dois expõem exatamente os mesmos comandos.
+[features]
+# D7: socket do daemon de teste (`/run/user/<uid>/ward-teste/`, pasta 0700 do usuário
+# e par do mesmo uid). Sem a feature, o caminho de teste e essa exceção nem existem no
+# binário: só o socket do systemd do sistema (D46).
+test-mode = ["ward-platform/test-mode"]
+
+[dependencies]
+# Limites de nome de entrada e de campo (D32), numa fonte só.
+ward-core.workspace = true
+# Conferência do servidor antes de qualquer byte (S5, D46): a mesma da CLI, numa fonte
+# só. Crate do workspace; a `libc` que ele usa já está no lockfile.
+ward-platform.workspace = true
+# Comparação em tempo constante do valor copiado com o que está na área de
+# transferência (o mesmo crate que o `ward-core` já usa; nada novo no lockfile).
+ctutils = { version = "0.4.8", default-features = false }
+# Respostas da tela Credenciais (Fase 32) serializadas uma vez só, para o Tauri e para a
+# ponte de teste. Só tipos sem segredo derivam `Serialize` (o `Segredo` não). Já no
+# lockfile (serde_json, dev-dependência, puxa `serde`; `serde_derive` também está).
+serde = { version = "1.0.229", default-features = false, features = ["std", "derive"] }
+# Fase 53a: só as constantes `O_NOFOLLOW`/`O_NONBLOCK`/`O_NOCTTY` e `ELOOP` para ler o
+# arquivo da chave privada sem seguir link nem prender numa FIFO (a mesma versão que o
+# `ward-platform` e o `wardd` já usam; nada novo no lockfile).
+libc = { version = "0.2.191", default-features = false }
+# Segredo em memória zerado ao sair (já no lockfile pelo `ward-core`).
+zeroize = { version = "1.9.1", default-features = false, features = ["alloc"] }
+
+[dev-dependencies]
+# Só nos testes: lê `tauri.conf.json` e as capabilities para os testes de ataque de S11.
+serde_json = { version = "1.0.150", default-features = false, features = ["std"] }
+
+[lints]
+workspace = true

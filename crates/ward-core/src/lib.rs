@@ -31,3 +31,7 @@ pub mod totp;
 // Gravação atômica: usa só a std com as extensões Unix (modo 0600, fsync de diretório).
 #[cfg(unix)]
 pub mod gravacao;
+
+// Wire tests against the 0.1.4 baseline in `dev/fixtures/legacy/` (m2:DT18, m2:V2.2).
+#[cfg(all(test, unix))]
+mod wire_v1;

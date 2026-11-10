@@ -1,12 +1,12 @@
 //! `ward playwright` no núcleo (Fase 44; D6, D9; S1–S3, S13), com um Chrome falso
 //! (`tests/chrome_falso.py`) que fala o DevTools Protocol pelo pipe de depuração (fds 3
 //! e 4) e nunca abre rede. O teste de ponta a ponta com o Chrome de verdade e os
-//! serviços de teste é o `make teste-playwright` (`dev/testes/playwright.sh`).
+//! serviços de teste é o `make test-playwright` (`dev/tests/playwright.sh`).
 //!
 //! O Chrome falso entra por `Daemon::com_chrome`, que só existe com a feature
-//! `ganchos-teste` (o `make test` liga todas).
+//! `test-hooks` (o `make test` liga todas).
 
-#![cfg(feature = "ganchos-teste")]
+#![cfg(feature = "test-hooks")]
 
 mod comum;
 
@@ -29,7 +29,7 @@ struct Rt(PathBuf);
 
 impl Rt {
     fn novo(rotulo: &str) -> Rt {
-        let p = ward_plataforma::socket::diretorio_runtime()
+        let p = ward_platform::socket::diretorio_runtime()
             .join(format!("wpw-{}-{rotulo}", std::process::id()));
         let _ = fs::remove_dir_all(&p);
         Rt(p)
@@ -400,12 +400,12 @@ fn d6_partida_limpa_sessoes_e_perfis() {
     assert_eq!(wardd::playwright::limpar(&nada.0).unwrap(), 0);
 }
 
-// --- Chrome de verdade (`make teste-playwright`) ---------------------------------------
+// --- Chrome de verdade (`make test-playwright`) ---------------------------------------
 //
 // Os testes abaixo usam o Chrome instalado contra dois sites locais em 127.0.0.1 (porta
 // aleatória): o "site" da entrada e um "phishing" que registra tudo o que recebe. Ficam
 // fora do `cargo test` comum (`#[ignore]`: precisam do Chrome) e rodam no
-// `make teste-playwright` com `--ignored`.
+// `make test-playwright` com `--ignored`.
 
 mod site {
     use std::io::{BufRead, BufReader, Read, Write};
@@ -708,7 +708,7 @@ impl CenaReal {
 /// origem não recebe nada. DOM clobbering do `document` (Fase 44a): o login certo entra
 /// e a página de login devolvida depois do envio continua vista (recusado).
 #[test]
-#[ignore = "precisa do Chrome instalado: make teste-playwright"]
+#[ignore = "precisa do Chrome instalado: make test-playwright"]
 fn chrome_real_login_e_ataques() {
     let c = cena_real("real");
     for (caso, esperado) in CASOS {

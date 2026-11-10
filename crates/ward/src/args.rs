@@ -154,7 +154,7 @@ fn numero_fd(a: &OsString) -> Option<u32> {
         return None;
     }
     let n: u32 = t.parse().ok()?;
-    (3..=ward_plataforma::conectar::MAX_NUMERO_FD)
+    (3..=ward_platform::conectar::MAX_NUMERO_FD)
         .contains(&n)
         .then_some(n)
 }

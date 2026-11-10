@@ -1,14 +1,14 @@
 //! App desktop do Ward (Tauri 2). Só a janela e a ligação dos comandos: o que cada
-//! comando faz está em `ward_app_nucleo::servico` (o mesmo que a ponte de teste usa).
+//! comando faz está em `ward_app_core::servico` (o mesmo que a ponte de teste usa).
 //!
 //! S11: capabilities só com os comandos próprios (`capabilities/principal.json` para a
 //! janela principal, `capabilities/aprovacao.json` para a janela de aprovação; manifesto
 //! no `build.rs`), CSP estrita no `tauri.conf.json`, interface embutida
 //! (`custom-protocol`), navegação só dentro do app, sem arrastar arquivo para a
-//! janela, devtools só com a feature `modo-teste`.
+//! janela, devtools só com a feature `test-mode`.
 //!
 //! D47/D57: a primeira coisa do `main` é a partida do app setgid
-//! (`ward_app_nucleo::partida`), antes do GTK: ambiente de D57 conferido, conexão ao
+//! (`ward_app_core::partida`), antes do GTK: ambiente de D57 conferido, conexão ao
 //! daemon com o egid do grupo `ward-app`, grupo largado, não-dumpable de novo e o pai
 //! conferido. Fora disso o app sai com a mensagem, sem abrir janela.
 //!
@@ -17,7 +17,7 @@
 //! (capability própria, e o comando confere o rótulo de novo); fechar a janela nega
 //! todo pedido pendente.
 //!
-//! Fase 39 (V5.23): ícone e menu na bandeja (AppIndicator, `ward_app_nucleo::bandeja`):
+//! Fase 39 (V5.23): ícone e menu na bandeja (AppIndicator, `ward_app_core::bandeja`):
 //! "Abrir o Ward", "Travar agora"/"Destravar…" e "Sair". Com a bandeja ativa, fechar a
 //! janela principal a destrói (a webview e o que a tela tinha somem) e o app fica na
 //! bandeja; "Abrir o Ward" ou um `pedido_de_destrave` a criam de novo. Sem a biblioteca
@@ -42,25 +42,25 @@ use tauri::{
     AppHandle, Builder, Manager, RunEvent, Runtime, State, WebviewUrl, WebviewWindow,
     WebviewWindowBuilder, WindowEvent,
 };
-use ward_app_nucleo::ErroApp;
-use ward_app_nucleo::anexos::{EdicaoDosAnexos, Escolha, Seletor};
-use ward_app_nucleo::aprovacao::{self, PedidoExibido, ResultadoAprovacao};
-use ward_app_nucleo::area_transferencia::Copiador;
-use ward_app_nucleo::backup_externo::{BackupExternoVisto, PendriveVisto};
-use ward_app_nucleo::bandeja::{self, Acao, EstadoBandeja, Icone};
-use ward_app_nucleo::chave::Carregamento;
-use ward_app_nucleo::configuracoes::{Configuracoes, ResultadoTroca, TrocaPin, TrocaSenha};
-use ward_app_nucleo::credenciais::{DetalheCredencial, ItemCredencial};
-use ward_app_nucleo::daemon::DaemonSocket;
-use ward_app_nucleo::destrave::{self, InfoPedido, SenhaMestra};
-use ward_app_nucleo::formulario::Formulario;
-use ward_app_nucleo::gerador::Opcoes;
-use ward_app_nucleo::nivel::{NivelMudado, Pin};
-use ward_app_nucleo::partida;
-use ward_app_nucleo::primeiro_uso::NovoCofre;
-use ward_app_nucleo::restaurar::{Restauracao, Restaurado, VersaoVista};
-use ward_app_nucleo::servico::{CodigoTotp, ResultadoCriar, ResultadoSalvar, Servico};
-use ward_app_nucleo::terminal::TerminalDoSistema;
+use ward_app_core::ErroApp;
+use ward_app_core::anexos::{EdicaoDosAnexos, Escolha, Seletor};
+use ward_app_core::aprovacao::{self, PedidoExibido, ResultadoAprovacao};
+use ward_app_core::area_transferencia::Copiador;
+use ward_app_core::backup_externo::{BackupExternoVisto, PendriveVisto};
+use ward_app_core::bandeja::{self, Acao, EstadoBandeja, Icone};
+use ward_app_core::chave::Carregamento;
+use ward_app_core::configuracoes::{Configuracoes, ResultadoTroca, TrocaPin, TrocaSenha};
+use ward_app_core::credenciais::{DetalheCredencial, ItemCredencial};
+use ward_app_core::daemon::DaemonSocket;
+use ward_app_core::destrave::{self, InfoPedido, SenhaMestra};
+use ward_app_core::formulario::Formulario;
+use ward_app_core::gerador::Opcoes;
+use ward_app_core::nivel::{NivelMudado, Pin};
+use ward_app_core::partida;
+use ward_app_core::primeiro_uso::NovoCofre;
+use ward_app_core::restaurar::{Restauracao, Restaurado, VersaoVista};
+use ward_app_core::servico::{CodigoTotp, ResultadoCriar, ResultadoSalvar, Servico};
+use ward_app_core::terminal::TerminalDoSistema;
 
 type ServicoApp = Servico<DaemonSocket, AreaGtk>;
 
@@ -202,7 +202,7 @@ fn ouvir_avisos<R: Runtime>(
 fn vigiar_avisos<R: Runtime>(
     app: &AppHandle<R>,
     estado: &Estado,
-    fila: Option<Arc<ward_app_nucleo::daemon::FilaAvisos>>,
+    fila: Option<Arc<ward_app_core::daemon::FilaAvisos>>,
 ) {
     let (Some(fila), Ok(s)) = (fila, estado.servico()) else {
         return;
@@ -573,7 +573,7 @@ fn abrir_janela_de_aprovacao<R: Runtime>(app: &AppHandle<R>) {
         .focused(true)
         .theme(Some(tauri::Theme::Dark))
         .disable_drag_drop_handler()
-        .devtools(cfg!(feature = "modo-teste"))
+        .devtools(cfg!(feature = "test-mode"))
         .on_navigation(navegacao_permitida)
         .build();
     if r.is_err() {
@@ -895,7 +895,7 @@ fn criar_janela_principal<R: Runtime, M: Manager<R>>(app: &M) -> tauri::Result<W
         .min_inner_size(1024.0, 640.0)
         .theme(Some(tauri::Theme::Dark))
         .disable_drag_drop_handler()
-        .devtools(cfg!(feature = "modo-teste"))
+        .devtools(cfg!(feature = "test-mode"))
         .on_navigation(navegacao_permitida)
         .focused(true)
         .build()
@@ -1060,7 +1060,7 @@ mod testes {
     use tauri::webview::InvokeRequest;
 
     /// Sem daemon: um socket num caminho que não existe, com as regras do daemon
-    /// instalado (pasta do root). Nunca o `DaemonSocket::padrao()`: no `modo-teste` ele
+    /// instalado (pasta do root). Nunca o `DaemonSocket::padrao()`: no `test-mode` ele
     /// é o socket de teste do uid, `/run/user/<uid>/ward-teste/`, que pode ter um
     /// `wardd` de teste de outro worktree no ar (e o teste falaria com ele).
     fn sem_daemon() -> DaemonSocket {

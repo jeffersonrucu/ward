@@ -847,12 +847,12 @@ name = "ward"
 version = "0.1.4"
 dependencies = [
  "ward-core",
- "ward-plataforma",
+ "ward-platform",
  "zeroize",
 ]
 
 [[package]]
-name = "ward-app-nucleo"
+name = "ward-app-core"
 version = "0.1.4"
 dependencies = [
  "ctutils",
@@ -860,7 +860,7 @@ dependencies = [
  "serde",
  "serde_json",
  "ward-core",
- "ward-plataforma",
+ "ward-platform",
  "zeroize",
 ]
 
@@ -884,12 +884,12 @@ name = "ward-nm"
 version = "0.1.4"
 dependencies = [
  "ward-core",
- "ward-plataforma",
+ "ward-platform",
  "zeroize",
 ]
 
 [[package]]
-name = "ward-plataforma"
+name = "ward-platform"
 version = "0.1.4"
 dependencies = [
  "libc",
@@ -897,13 +897,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "ward-ponte-teste"
+name = "ward-test-bridge"
 version = "0.1.4"
 dependencies = [
  "ctutils",
  "getrandom",
  "serde_json",
- "ward-app-nucleo",
+ "ward-app-core",
  "zeroize",
 ]
 
@@ -919,7 +919,7 @@ dependencies = [
  "serde_json",
  "ssh-key",
  "ward-core",
- "ward-plataforma",
+ "ward-platform",
  "zbus",
  "zeroize",
 ]

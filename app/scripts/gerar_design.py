@@ -5,7 +5,7 @@ Entrada (versionada em `app/design/`, nunca editada à mão):
 - `figcraft-export.jsonl`: saída de `FigCraft.AppImage cli run` com os passos
   `variable.export {"format":"css"}`, `style.list {}` e `variable.list {}`, rodados
   numa CÓPIA de `~/documentos/Ward.figcraft` (o arquivo de design não é alterado);
-- `icones/*.svg`: `export` de cada `Ícone/*` (frame `178`) em SVG com
+- `icons/*.svg`: `export` de cada `Ícone/*` (frame `178`) em SVG com
   `includeBoundingBox` (caixa 20×20 do componente).
 
 Saída:
@@ -24,7 +24,7 @@ import xml.etree.ElementTree as ET
 
 APP = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 EXPORT = os.path.join(APP, "design", "figcraft-export.jsonl")
-ICONES = os.path.join(APP, "design", "icones")
+ICONES = os.path.join(APP, "design", "icons")
 SAIDA_TOKENS = os.path.join(APP, "src", "lib", "estilo", "tokens.css")
 SAIDA_ICONES = os.path.join(APP, "src", "lib", "componentes", "icones.js")
 
@@ -159,7 +159,7 @@ def icones():
             caminhos.append({"t": p.get("transform", ""), "d": p.get("d")})
         saida[arq[:-4]] = caminhos
     return (
-        "// GERADO por app/scripts/gerar_design.py a partir de app/design/icones/ (export\n"
+        "// GERADO por app/scripts/gerar_design.py a partir de app/design/icons/ (export\n"
         "// SVG dos componentes Ícone/* do Ward.figcraft, frame 178). Não edite à mão.\n"
         "// Cada ícone: caixa 20×20, traço linha/icone (1,5), pontas e cantos arredondados.\n"
         f"export const ICONES = Object.freeze({json.dumps(saida, ensure_ascii=False, indent=2)});\n"

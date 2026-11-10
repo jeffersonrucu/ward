@@ -71,8 +71,8 @@ pub fn resposta_cabe(op: Operacao, tipo: TipoResposta) -> bool {
 }
 
 /// Id da extensão do Ward (Fase 41): sai da chave pública do campo `key` do
-/// `extensao/manifest.json` (sha-256 da chave em DER, 32 primeiros dígitos hex em
-/// `a`–`p`). `dev/extensao/montar.py` recusa montar a extensão se o id do manifesto não
+/// `extension/manifest.json` (sha-256 da chave em DER, 32 primeiros dígitos hex em
+/// `a`–`p`). `dev/extension/build.py` recusa montar a extensão se o id do manifesto não
 /// for este.
 pub const ID_EXTENSAO: &str = "nhkehjnmlgkebhmelajfpmpblepaichf";
 

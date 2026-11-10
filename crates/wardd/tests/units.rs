@@ -1,6 +1,6 @@
 //! V3.21 (leitura do auditor) e D57/D62: as units do sistema que o `make install` instala
-//! (Fase 51), `instalacao/systemd/wardd@.socket` e `wardd@.service`. A sintaxe é
-//! conferida pelo `systemd-analyze verify` em `make teste-units` e `make teste-install`;
+//! (Fase 51), `install/systemd/wardd@.socket` e `wardd@.service`. A sintaxe é
+//! conferida pelo `systemd-analyze verify` em `make test-units` e `make test-install`;
 //! aqui ficam as diretivas exigidas e as proibidas.
 //!
 //! Ataque coberto: uma diretiva que liga `no_new_privs` (direta ou implícita) num serviço
@@ -11,7 +11,7 @@ use std::path::PathBuf;
 
 fn unit(nome: &str) -> Vec<(String, String, String)> {
     let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../instalacao/systemd")
+        .join("../../install/systemd")
         .join(nome);
     let texto = std::fs::read_to_string(&p).unwrap();
     let mut secao = String::new();

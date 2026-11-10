@@ -162,7 +162,7 @@ impl TipoEntrada {
         TipoEntrada::Generico,
     ];
 
-    /// Identificador estável, sem espaço nem acento (o de `dev/fixtures/entradas.json`).
+    /// Identificador estável, sem espaço nem acento (o de `dev/fixtures/entries.json`).
     pub fn nome(self) -> &'static str {
         match self {
             TipoEntrada::Login => "login",
@@ -515,7 +515,7 @@ pub struct SegredoDaEntrada<'a> {
 ///   pela geração).
 /// - Regra (conferida na construção e na leitura do corpo): cada data vai de 1 a
 ///   [`crate::limites::MAX_DATA`]; com `criada_em`, `alterada_em` existe e não é menor.
-///   Uma entrada sem datas (a do `make dev-cofre`, por exemplo) pode ganhar só a de
+///   Uma entrada sem datas (a do `make dev-vault`, por exemplo) pode ganhar só a de
 ///   alteração quando é editada: a criação continua desconhecida.
 /// - Fora do crate só se lê: o valor nasce de uma [`Entrada`] ou de [`Datas::carimbo`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

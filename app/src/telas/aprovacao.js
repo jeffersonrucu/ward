@@ -1,7 +1,7 @@
 // Textos e regras da janela de aprovação (Fase 36), com os textos dos frames
 // `Aprovação / *` do FigCraft (16701, 16810, 16885, 16960, 17035).
 
-// Mesmo valor de `ward_app_nucleo::aprovacao::SEGUNDOS_URGENTE` (o teste
+// Mesmo valor de `ward_app_core::aprovacao::SEGUNDOS_URGENTE` (o teste
 // `configuracao_tauri` confere).
 export const SEGUNDOS_URGENTE = 20;
 

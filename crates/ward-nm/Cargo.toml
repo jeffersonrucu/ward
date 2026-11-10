@@ -11,7 +11,7 @@ publish.workspace = true
 # `/run/user/<uid>/ward-teste/` ou `WARD_DEV_SOCKET_DIR`) e, no lugar da conferência do
 # uid 0, exige que o processo do socket seja não-dumpable, como a CLI de teste. A
 # instalação recusa artefato com esta feature (V9.2).
-modo-teste = ["ward-plataforma/modo-teste"]
+test-mode = ["ward-platform/test-mode"]
 
 # Motivo de cada dependência no handoff da Fase 40 (S14). Nenhuma traz crate nova ao
 # `Cargo.lock`.
@@ -19,7 +19,7 @@ modo-teste = ["ward-plataforma/modo-teste"]
 # Protocolo do socket (pedido, resposta, quadro): a mesma leitura estrita do daemon.
 ward-core = { workspace = true }
 # Conferência do servidor (D46) e endurecimento do processo (dumpable 0, sem core).
-ward-plataforma = { workspace = true }
+ward-platform = { workspace = true }
 # Mensagens e quadros com credencial em `Zeroizing` (S8).
 zeroize = { version = "1.9.1", default-features = false, features = ["alloc"] }
 

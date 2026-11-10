@@ -3,7 +3,7 @@
 Roteiro da Fase 52 (D18, D46, D47, D60; V9.5, V9.7, V9.8). Quem roda é você, uma vez,
 na sua máquina. A missão nunca roda `sudo` nem instala nada no host.
 
-Duas formas de instalar a mesma árvore (`instalacao/arvore.txt`). Escolha uma:
+Duas formas de instalar a mesma árvore (`install/tree.txt`). Escolha uma:
 
 - **`.deb`** (recomendada): `make deb` e depois `sudo dpkg -i`. O `dpkg` registra os
   arquivos, a dependência de `sshpass` e a remoção.
@@ -31,7 +31,7 @@ Não misture as duas. Se já usou uma, desinstale antes de trocar.
    ssh -G github.com | sort > ~/ward-antes/ssh-G.txt
    ```
 
-3. **Código de confiança.** O `sudo` roda os scripts do repositório (`instalar.sh`,
+3. **Código de confiança.** O `sudo` roda os scripts do repositório (`install.sh`,
    `Makefile`) ou os do pacote (`preinst`/`postinst`) como root. Um programa malicioso
    rodando como o seu usuário poderia trocá-los antes do `sudo`. Para diminuir esse
    risco:
@@ -78,28 +78,28 @@ Não misture as duas. Se já usou uma, desinstale antes de trocar.
 
 ```sh
 make release          # ward, wardd, ward-nm e o app (precisa de libwebkit2gtk-4.1-dev)
-make extensao         # extensao/dist/
-make extensao-crx     # target/extensao/ward.crx, assinado com .dev/extensao/chave.pem
+make extension         # extension/dist/
+make extension-crx     # target/extension/ward.crx, assinado com .dev/extension/key.pem
 ```
 
-O `make extensao-crx` usa o Chrome (`--pack-extension`) com perfil e HOME temporários
+O `make extension-crx` usa o Chrome (`--pack-extension`) com perfil e HOME temporários
 em `target/`, e não mexe no seu perfil. Ele recusa o pacote se o id não for o
-`ID_EXTENSAO` do `ward-nm`. No fim imprime a linha `EXTENSAO_ID=… EXTENSAO_CRX=…` do
+`ID_EXTENSAO` do `ward-nm`. No fim imprime a linha `EXTENSION_ID=… EXTENSION_CRX=…` do
 próximo passo.
 
-A chave privada tem de estar em `.dev/extensao/chave.pem` (0600) no clone de
+A chave privada tem de estar em `.dev/extension/key.pem` (0600) no clone de
 instalação. Copie do checkout principal com `install -m 0600`. Sem ela, o id muda e
 nada casa.
 
 ## 2a. Instalar pelo `.deb`
 
 ```sh
-make deb EXTENSAO_ID=nhkehjnmlgkebhmelajfpmpblepaichf EXTENSAO_CRX=$PWD/target/extensao/ward.crx
+make deb EXTENSION_ID=nhkehjnmlgkebhmelajfpmpblepaichf EXTENSION_CRX=$PWD/target/extension/ward.crx
 ```
 
 O comando gera `target/deb/ward_<versão>_<arq>.deb` e imprime o sha256 dele. O
 `make deb` passa pelas mesmas conferências do `make install`: recusa artefato
-`modo-teste` (V9.2), binário que não é ELF, link e pacote da extensão com outro id.
+`test-mode` (V9.2), binário que não é ELF, link e pacote da extensão com outro id.
 Depois confere o próprio `.deb`: a lista do `dpkg-deb -c` tem de ser igual à do
 staging, tudo root/root, nenhum bit setgid no pacote e Depends com `sshpass` (V9.9).
 
@@ -135,7 +135,7 @@ Durante a instalação:
 ## 2b. Ou instalar por `sudo make install`
 
 ```sh
-sudo make install EXTENSAO_ID=nhkehjnmlgkebhmelajfpmpblepaichf EXTENSAO_CRX=$PWD/target/extensao/ward.crx
+sudo make install EXTENSION_ID=nhkehjnmlgkebhmelajfpmpblepaichf EXTENSION_CRX=$PWD/target/extension/ward.crx
 ```
 
 ## 3. Conferir o systemd (V9.7)
@@ -214,7 +214,7 @@ ls /var/crash | grep -i -E 'webkit|ward'                # nada
 Se um crash do app acontecer, `/var/log/apport.log` (com `sudo`) mostra "executable
 version is in denylist" no lugar de "wrote report". A atualização do WebKitGTK que
 trouxer um auxiliar novo faz a reinstalação do Ward recusar com o nome dele, até a lista
-do Ward (`instalacao/despejo.sh`) ser atualizada.
+do Ward (`install/dump.sh`) ser atualizada.
 
 ## 4. Conferir o Chrome (V9.5)
 
@@ -227,7 +227,7 @@ Feche e abra o Chrome.
 2. Em `chrome://extensions`, a extensão Ward aparece como **instalada pela sua
    organização**. Não há botão de remover e a chave de ativar fica travada.
 3. Ainda em `chrome://extensions`, ligue o modo desenvolvedor e tente "Carregar sem
-   compactação" com `extensao/dist/`, que tem a mesma `key` e portanto o mesmo id. O
+   compactação" com `extension/dist/`, que tem a mesma `key` e portanto o mesmo id. O
    Chrome tem de recusar.
 4. O ícone fica fixado na barra. Num site de teste, o popup lista as sugestões.
 
@@ -249,7 +249,7 @@ em `~/.config/google-chrome/NativeMessagingHosts/`, deixam de valer.
 script) pode gravar um `br.ward.nm.json` no seu perfil. Esse manifesto vence o do
 sistema, e o script dele recebe a conexão da extensão do Ward no lugar do `ward-nm`. A
 auditoria do M9 fez isso e tirou senhas e códigos TOTP de 4 entradas `login`. Com a
-política, esse arquivo é ignorado. O teste é o `make teste-politica-chrome`.
+política, esse arquivo é ignorado. O teste é o `make test-chrome-policy`.
 
 **O efeito colateral.** Apps que instalaram o manifesto só no seu perfil param de
 falar com a extensão deles no Chrome. Exemplos: o 1Password (destravar pelo app do

@@ -399,6 +399,8 @@ fn v3_15_sem_porta_dos_fundos_no_codigo() {
             "env::var",
             "env!(",
             "option_env!",
+            "test-mode",
+            "test_mode",
             "modo-teste",
             "modo_teste",
         ] {

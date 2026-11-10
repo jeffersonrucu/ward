@@ -1,151 +1,138 @@
-# Fase 6 — (DESIGN) Formulários, parte 2: smtp, ftp/sftp, nota segura, genérico
+# Fase 6 — Makefile e `CLAUDE.md` (DT14, DT2) (Missão 2, Milestone 1)
 
 ## Implementado
-- Trabalhei no app FigCraft aberto (`mcp__figcraft-app__*`), em
-  `/home/jeffersonoliveira/documentos/Ward.figcraft`, sem abrir outro arquivo e com `ids`
-  explícitos em todo comando, em paralelo com as Fases 5 e 8. Antes, li a skill `figcraft`,
-  o PRD, o plano, o contrato, o `design-nodes.md`, os handoffs 4a–4g e o escopo ("Tipos
-  prontos", "App desktop", "Missão 0"). Fiz 9 `save_file` no mesmo caminho e conferi o
-  arquivo salvo lendo o `document.json` do disco.
-- **Oito telas** no Layout (página `2796`, modo `Escuro` herdado da página), no padrão de
-  três colunas da 4f/Fase 5: navegação, lista e formulário no painel de detalhe. Usei como
-  modelo os frames da Fase 5 (`Formulário / login / Novo` `7450` e `/ Edição` `6926`),
-  duplicando-os sem alterar os originais. Só há instâncias de `Campo`, `Campo secreto`,
-  `Select`, `Botão`, `Badge *`, `Item de lista`, `Cabeçalho de grupo`, `Título de seção`,
-  `Campo extra`, `Anexo` e `Campo nota segura`. Todos os campos da tabela "Tipos prontos
-  (v1)" estão lá, mais `grupo` (o autocompletar aparece aberto em `smtp / Novo`) e
-  `ambiente`, que são obrigatórios, além de `projeto`, tags, campos extras com o
-  interruptor "segredo", anexos, nível de acesso e a descrição de entrega (D10) de cada
-  tipo.
-  - `smtp`: host e porta, usuário e segurança (`starttls`), senha (`Campo secreto`; no
-    Novo, com gerar). A Edição é a `beta-smtp-stage`, com o extra `TIMEOUT`.
-  - `ftp/sftp`: protocolo, host e porta, usuário e autenticação. A Edição é a
-    `beta-sftp-dev` (sftp, autenticação **senha**, senha mascarada, extra `PASTA_REMOTA`).
-    O Novo mostra a autenticação **chave**, com `Chave privada` e `Passphrase (opcional)`
-    como `Campo secreto` vazios, no mesmo arranjo do `servidor` da Fase 5.
-  - `nota segura`: seção "Conteúdo" ("Sem entrega: o ward run recusa este tipo...") com o
-    componente novo `Campo nota segura`. Na Edição ele fica oculto (texto só em `••••`, com
-    revelar e copiar); no Novo, vazio, com placeholder. Extras e anexos dizem que ficam com
-    a nota, sem entrega.
-  - `genérico`: só campos extras e anexos. A Edição é a `gama-generico`, com `REGIAO` /
-    `r-01` (sem segredo), `CHAVE_LICENCA` (segredo, `••••••••`) e o anexo `app.env`
-    (`WARD_ARQUIVO_APP_ENV`, com Remover e "Adicionar arquivo": adicionar, listar e
-    remover, V0.9). O Novo tem os mesmos dois extras e os anexos vazios.
-- **Listas da Edição** com os grupos certos do cofre de teste. A `beta` (marcador
-  `grupo/2/cor`) tem 4 entradas: aws, github-api, sftp e smtp. A `gama` (`grupo/3/cor`) tem
-  3: `gama-bloqueada`, `gama-generico` e `gama-nota`. Em cada tela, a entrada editada aparece
-  selecionada. As telas Novo mantêm a lista `acme` do modelo, sem seleção, como a Fase 5.
-- **Componente novo** em `Seção / Nota segura` (Design System, x = 4600, y = 0):
-  `Campo nota segura` (set) com `Estado=oculto` e `Estado=vazio`, e as propriedades
-  `Rótulo`, `Ajuda` e `Resumo`. Tudo está ligado a variables e text styles: entrada com
-  `superficie/campo`, `borda/sutil`, `raio/controle`, `espaco/16`/`12`; máscara em
-  `Texto/Corpo`; revelar 32 (`controle/sm`) e `Ação de campo` Copiar. Precisei dele porque
-  o `Campo secreto` só tem uma linha, e a nota é um texto longo e secreto.
-- **Respiro:** reaproveitei os paddings dos componentes (cartões 16–20, painéis 24). Conferi
-  por screenshot de cada frame em 1x e do painel de detalhe com zoom. Os textos longos de
-  extras foram encurtados para a variável `WARD_*` não quebrar.
+- **Alvos do Makefile** pelo glossário (seção 6), sem alias. São 43 renomes, entre eles: `ferramentas` → `tools`, `origens` → `origins`, `gitleaks-binario` → `gitleaks-binary`, `dev-cofre` → `dev-vault`, `dev-cofre-conferir` → `dev-vault-verify`, `dev-variacoes` → `dev-variations`, `dev-servicos*` → `dev-services*` (`-up`, `-down`, `-status`, `-verify`, `-rotate-host-key`), `teste-*` → `test-*` (`test-no-test-mode`, `test-migration-guide`, `test-chrome-policy`, `test-clipboard`, `test-revealed-selection`…), `app-ponte` → `app-bridge`, `extensao`/`extensao-crx` → `extension`/`extension-crx`, `dev-daemon-parar` → `dev-daemon-stop`.
+  - Foram renomeados também os pré-requisitos e o `.PHONY`. O `extension` entrou no `.PHONY`, como pedia o achado da Fase 5.
+  - Conferido pela base do make (`make -pRrq`): nenhum alvo antigo existe e todos os novos existem. `LC_ALL=C make -n <antigo>` dá `No rule to make target` para os 43.
+- **Variáveis do Makefile**:
 
-### Ids para design-nodes
+  | Antiga | Nova |
+  |---|---|
+  | `CASA` | `PASSWD_HOME` |
+  | `FERRAMENTAS_DIR` | `TOOLS_DIR` |
+  | `GITLEAKS_VERSAO` | `GITLEAKS_VERSION` |
+  | `CARGO_AUDIT_VERSAO` | `CARGO_AUDIT_VERSION` |
+  | `CARGO_DENY_VERSAO` | `CARGO_DENY_VERSION` |
+  | `GITLEAKS_OPCOES` | `GITLEAKS_OPTIONS` |
+  | `COMPOSE_TESTE` | `COMPOSE_TEST` |
+  | `SERVICO` | `SERVICE` |
+  | `COFRE` | `VAULT` |
+  | `VARIACOES` | `VARIATIONS` |
+  | `WARD_DEV_SAIDA` | `WARD_DEV_OUTPUT` |
+  | `APP_AUDIT_IGNORAR` | `APP_AUDIT_IGNORE` |
+  | `PONTE_DE_TESTE` | `TEST_BRIDGE` |
+  | `SEM_MPS` | `NO_MPS` |
+  | `SEM_39C` | `NO_39C` |
+  | `CONEXOES` | `CONNECTIONS` |
+  | `EXTENSAO_ID` | `EXTENSION_ID` |
+  | `EXTENSAO_CRX` | `EXTENSION_CRX` |
+  | `CHAVE_EXTENSAO` | `EXTENSION_KEY` |
+  | `SEM_PLAYWRIGHT_PYTHON` | `NO_PLAYWRIGHT_PYTHON` |
 
-Frames de tela (página Layout `2796`; Novo em y = 7200, Edição em y = 8800; colunas x = 0,
-1360, 2720, 4080):
-
-| Frame | Id | Tamanho | Principais |
-| --- | --- | --- | --- |
-| `Formulário / smtp / Novo` | `13867` | 1280×1370 | detalhe `14065`, corpo `14086`; Grupo foco `14103` + aberto `14115` ("be" → beta / Criar grupo); `linha host` `14201` (Host `14285`, Porta `14293`); `linha usuário` `14167` (Usuário `14168`, Segurança `14301`); Senha com gerar `14176` |
-| `Formulário / ftp/sftp / Novo` | `14743` | 1280×1462 | corpo `14962`; Protocolo `15236`; Host `15036`, Porta `15044`; Usuário `15053`, Autenticação "Chave" `15061`; `linha chave` `15210` (Chave privada `15067`, Passphrase `15211`) |
-| `Formulário / nota segura / Novo` | `15399` | 1280×1240 | corpo `15618`; "Conteúdo" `15683`; `Campo nota segura` vazio `15828` |
-| `Formulário / genérico / Novo` | `15845` | 1280×1296 | corpo `16064`; Campos extras `16135`; `Campo extra` não `16290`, sim `16304`; anexos vazio `16153` |
-| `Formulário / smtp / Edição` | `9454` | 1280×1392 | lista beta `9514` (selecionado `9614`); detalhe `9652`, corpo `9673`; `linha host` `9794` (Host `9742`, Porta `10833`); `linha usuário` `9755` (Usuário `9756`, Segurança `10846`); Senha `9769`; extra `9843`; nível `9867` |
-| `Formulário / ftp/sftp / Edição` | `10895` | 1280×1488 | lista beta `10955` (selecionado `10990`); corpo `11047`; Protocolo `11143`; `linha host` `11149` (Host `11116`, Porta `11658`); `linha usuário` `11129` (Usuário `11150`, Autenticação "Senha" `11652`); Senha `11163`; extra `11196` |
-| `Formulário / nota segura / Edição` | `12683` | 1280×1296 | lista gama `12743` (selecionado `12793`); corpo `12835`; "Conteúdo" `12896`; `Campo nota segura` oculto `13122`; extras vazio `13139`; anexos vazio `13006` |
-| `Formulário / genérico / Edição` | `13459` | 1280×1296 | lista gama (selecionado `13541`); corpo `13600`; extras `13739` (REGIAO), `13753` (CHAVE_LICENCA, segredo); `Anexo` app.env `13767` |
-
-Design System (página `2`):
-
-| Nó | Id | Notas |
-| --- | --- | --- |
-| `Seção / Nota segura` | `12580` | x = 4600, y = 0; título `12581` (`Título/Seção`), descrição `12582` (`Texto/Pequeno`, largura `largura/formulario`); raio `raio/painel`, fundo `fundo/sutil`, padding `espaco/32`, gap `espaco/16` |
-| `Campo nota segura` (set) | `12613` | raio `raio/cartao`, padding `espaco/32`, gap `espaco/24` |
-| `Estado=oculto` | `12583` | largura mínima `largura/campo`, gap `espaco/8`; rótulo `12584`, entrada `12585`, máscara `12587`, rodapé `12588` (resumo `12589`, ações `12594`: revelar `12595`/ícone `12596`, `Ação de campo` `12599`), ajuda `12586` |
-| `Estado=vazio` | `12614` | igual, com placeholder `12617` (`texto/secundario`) e ações ocultas (`12620`) |
+  Os `override` continuam como estavam.
+- **Variáveis que o Makefile exporta e o script lê**: trocaram nos dois lados, no mesmo passo.
+  - `EXTENSION_ID` e `EXTENSION_CRX`: em `install/install.sh` (a leitura e as mensagens de recusa), `install/deb.sh`, `install/crx.py`, `install/tree.txt` (comentários), `install/pack-extension.sh` (a linha impressa `EXTENSION_ID=… EXTENSION_CRX=…`) e nos testes que chamam `make install`/`deb` (`dev/tests/install.sh`, `deb.sh` e `chrome-policy.sh`, e `dev/container-install/inside.sh`), junto com as mensagens esperadas.
+  - `EXTENSION_KEY`: em `install/pack-extension.sh` e `dev/tests/deb.sh`.
+  - `NO_PLAYWRIGHT_PYTHON`: em `dev/tests/playwright.sh` e `playwright.py`.
+- **Argumentos dos scripts chamados pelo Makefile** (glossário, seção 6):
+  - `dev/daemon.sh`: `subir`, `parar` e `estado` viraram `up`, `stop` e `status`. Os chamadores mudaram junto: Makefile, `dev/tests/app-e2e.sh` e `revealed-selection.sh`.
+  - `--sem-mps`/`--sem-39c` viraram `--no-mps`/`--no-39c` (`webkit-real.sh`).
+  - `--trocar-chave-host` virou `--rotate-host-key`: em `dev/services/generate.py`, com o `args.rotate_host_key`, e em `attacks-services.sh`.
+  - `--saida` virou `--output`: no exemplo `dev-cofre` (`main.rs` e os testes de `ler_opcoes` em `testes.rs`) e em `dev/variations.py`.
+  - `--autoteste` virou `--self-test`, só no `dev/tests/log-scan.py`.
+- **Pasta de build**: `target/sem-modo-teste` virou `target/no-test-mode`. Mudou no Makefile, no `CLAUDE.md` e em `dev/tests/{deb.sh,install.sh,no-test-mode.sh,skill.py}`. A pasta existente foi movida com `mv -n`, o que evita recompilar 3,1 GB.
+- **Usos dos nomes de alvo no repositório**: comentários, mensagens "rode `make …`", rótulos de saída que são o nome do alvo (`test-deb: tudo ok`, `dev-services: …`, `dev-variations: …`) e `#[ignore = "… make test-…"]`. Entram aí Rust, scripts, Dockerfiles, `install/systemd/wardd@.socket` (comentário), `dev/compose.yml`, `dev/fixtures/entries.json` (`_sobre`), `README.md`, `docs/instalacao.md` e `skill/README.md`. A troca foi feita por um script com fronteira de token, e os nomes ambíguos (`dev-cofre`, `origens`, `ferramentas`, `extensao`) só mudaram depois de `make`, `make -s`, `"${MAKE[@]}"` ou `saida_fora`.
+- **`dev/tests/dev-vault.sh`**: os ataques V2.29 passam as variáveis novas (`saida_fora dev-vault VAULT .ward`, `saida_fora dev-variations VARIATIONS .txt`, `saida_dentro` com `VARIATIONS=`).
+- **`CLAUDE.md`**:
+  - a tabela de comandos tem só os nomes novos (`VAULT=`, `VARIATIONS=`, `SERVICE=`, `CONNECTIONS=`, `NO_MPS=1`, `NO_PLAYWRIGHT_PYTHON=1`, `EXTENSION_ID`/`EXTENSION_CRX`, `target/no-test-mode`);
+  - seção nova "IDs nos comentários e na documentação" (DT2): sem prefixo é da missão 1, em `docs/mission/arquivo/m1/`, e `m2:` marca a missão 2.
+- **`.claude/agents/*.md` e `.claude/skills/mission/SKILL.md`**: nenhum cita alvo, variável ou caminho renomeado. Só aparece `make check`, que não muda. Nada foi alterado.
+- **Glossário** (seção 6): diz quais argumentos já foram trocados nesta fase e quais ficam para as fases dos scripts, e registra a pasta `target/no-test-mode/`.
+- **Literais alterados** (PRD regra 5). Todos são nome de alvo, de variável, de argumento ou de caminho:
+  - Rust, exemplo `dev-cofre`:
+    - `"--output"` e as mensagens `"--output sem caminho"` e `"--output repetido"`, mais a linha de uso;
+    - `"… rode make dev-vault"` (4 mensagens) e `"não existe; rode make dev-services antes"`;
+    - `testes.rs`: `"--output"` e `contains("make dev-services")`.
+  - Rust, testes:
+    - `app/src-tauri/src/area_gtk.rs`: `#[ignore = "…make test-clipboard"]`. A linha está em `strings-0.1.4.txt`, portanto entra na diferença do V6.3;
+    - `crates/wardd/tests/playwright.rs`: `#[ignore = "…make test-playwright"]`.
+  - `install/install.sh`:
+    - `erro "EXTENSION_ID tem de ser…"`, `"EXTENSION_CRX recusado"` e `"o pacote EXTENSION_CRX é da extensão …, não de EXTENSION_ID=…"`;
+    - o nome da variável em `conferir_origem`/`copiar_para`.
+  - `install/pack-extension.sh`: `printf 'EXTENSION_ID=%s EXTENSION_CRX=%s'`, `EXTENSION_KEY` e `mktemp target/extension-crx.XXXXXX`.
+  - Scripts de `dev/`:
+    - mensagens e rótulos com o nome do alvo (DT20);
+    - o `case` do `daemon.sh` e a linha de uso;
+    - `argparse` `--rotate-host-key` e `--output`, e `--self-test` do `log-scan.py`;
+    - as flags do `webkit-real.sh`;
+    - `os.environ.get("NO_PLAYWRIGHT_PYTHON")`;
+    - `SEM=…/target/no-test-mode/debug` e `ALVO=…/target/no-test-mode`.
+  - `dev/fixtures/entries.json`: só o texto do `_sobre`, que cita os alvos. Nenhum valor nem entrada mudou.
+- **Exceções:** nenhuma entrada nova em `allow.txt` nem em `frozen.txt`.
 
 ## Segurança
-- Invariantes: a fase é só de design e não toca código. O desenho segue S1, S11, R6 e
-  V0.20:
-  - todo valor secreto aparece só mascarado: senha do smtp e do sftp, chave privada,
-    passphrase, extra `CHAVE_LICENCA` e o texto da nota (`••••`). Nos Novo, os campos
-    secretos ficam vazios. Nenhum valor revelado entra em tela;
-  - o conteúdo do anexo nunca aparece. O `Anexo` mostra só nome, tamanho e a variável;
-  - `Copiar` aparece só em campos não secretos (host, usuário) ou dentro do `Campo secreto`
-    e do `Campo nota segura`, cujo copiar é resolvido no app (D4). A ajuda diz que revelar e
-    copiar não pedem PIN, como nas Fases 4f e 5;
-  - a nota segura diz em dois lugares que não tem entrega e que o Claude nunca recebe o
-    texto (D10, "tipo sem entrega");
-  - o nível de acesso das Edições é "Livre", como no cofre de teste (`beta-smtp-stage`,
-    `beta-sftp-dev`, `gama-nota`, `gama-generico`), com "Mudar nível" pedindo PIN. Nos
-    Novo fica "Com aprovação" (toda entrada nova começa assim).
-- Exemplos só falsos, tirados do cofre de teste do contrato (`smtp.teste.invalid`,
-  `127.0.0.1:2222`, `sftpuser`, `mailer`, `r-01`, `app.env`). Os valores secretos
-  (`falso-SMTP-01` etc.) **não** foram escritos em nenhum texto. Fiz uma varredura no
-  `.figcraft` salvo e não encontrei `falso-SMTP`, `falso-SFTP`, `falso-nota`,
-  `falso-licenca`, `falso-anexo` nem semente TOTP nos 8 frames. A propriedade oculta
-  `Valor revelado` do `Campo secreto` ficou com o valor que veio do modelo
-  (`falso-exemplo-9f3k`, obviamente falso).
-- Não toquei em cofre, credencial, `~/.ssh` ou `~/.aws`, e não usei o Figma.
-- Testes de ataque: não se aplicam (o M0 não tem asserção (SEG)).
-- Dependências novas: nenhuma. Os scripts de leitura do `.figcraft` (só biblioteca padrão
-  do Python) ficaram no scratchpad.
+- **Invariantes tocadas e como ficaram:**
+  - **S14 e S15 (V1.2, V1.3, V1.5):** as ferramentas continuam fixas por `override`. `PASSWD_HOME`, `TOOLS_DIR`, `CARGO*`, `PYTHON` e `GIT_CONFIG_*` mantêm o mesmo `override`/`export`, e o sha256 do gitleaks não mudou. `origins` continua pré-requisito de todo alvo que chama o cargo.
+  - **V9.2 e D60 (instalação):** a conferência do id da extensão (`^[a-p]{32}$`), a do pacote CRX e a origem dos arquivos não mudaram. Só o nome da variável mudou, nos dois lados do mesmo passo. Quem usar o nome antigo (`sudo make install EXTENSAO_ID=…`) recebe a recusa "EXTENSION_ID tem de ser…": falha fechada, sem alias.
+  - **V2.29:** os ataques de saída fora de `.dev/` passam as variáveis novas. Se ficassem com as antigas, o make as ignoraria e o ataque viraria um falso "aceitou". Por isso os dois lados mudaram juntos.
+  - **S2 (Fase 5):** `make dev-vault` voltou a apagar o estado velho do daemon de teste. Ver "Problemas", item 1.
+- **Testes de ataque:**
+  - Nenhum novo: a fase só renomeia.
+  - Os ataques existentes seguem os nomes novos: `dev-vault.sh` (V2.29), `install.sh`/`deb.sh` (recusas de `EXTENSION_ID`/`EXTENSION_CRX`/`EXTENSION_KEY`), `attacks-foundation.sh` (`make -s gitleaks-binary`, `make origins`), `attacks-services.sh` (`make -s dev-services-status` com ambiente hostil, `--rotate-host-key`).
+  - Foram escritos e não rodaram (regra 6).
+- **Dependências novas:** nenhuma.
 
 ## Ficou de fora
-- Ids no `docs/mission/design-nodes.md`: estão acima, como pediu o orchestrator.
-- Variante "revelado" do `Campo nota segura`: não fiz para não pôr nem um texto falso
-  revelado em tela. A Fase 33 (UI) define o comportamento de revelar por 30 s.
-- O `ftp/sftp` Edição com chave e o Novo com senha: mostrei uma autenticação em cada
-  frame (senha na Edição, como o `beta-sftp-dev`; chave no Novo).
+- **Argumentos que o Makefile não passa:**
+  - `--adulterado`/`--versao` (`fake_crx.py`), `--ler` (`revealed_selection.py`) e `WARD_MODO` (`compose.yml`, `ssh/entrypoint.sh`): vão com os scripts, nas Fases 40–46. O glossário registra isso.
+  - `--conferir`, `--senha-stdin` e `--cruzado` do exemplo `dev-cofre`: vão com o exemplo, na Fase 43. Até lá, o Makefile chama `--output … --conferir`.
+- **Variáveis locais dos scripts com o mesmo nome:** `COFRE=`, `CONEXOES=`, `SEM_MPS`/`SEM_39C` no `webkit-real.sh`, `CASA` no `origins.py` e outros, e `EXTENSAO_DIST`/`CRX_SAIDA` no `pack-extension.sh`. São identificadores dos próprios scripts (Fases 40–47), não variáveis do make.
+- **Rótulos `sem-modo-teste:` do `no-test-mode.sh`:** não são nome de alvo; vão com o script.
+- **Comentários e eco do Makefile em pt-BR** (`==> 0/6 origens do cargo`, que o `attacks-foundation.sh` procura): a tradução dos comentários do Makefile é da Fase 47. O `english-check` do Makefile só acusa comentários, 1029 achados e nenhum de nome.
+- **`/usr/local/share/ward/extensao/` no `CLAUDE.md`:** é caminho instalado, da Fase 57.
+- **`docs/escopo.md`, `docs/mission/design-nodes.md` e os docs da missão** (PRD, plano, contrato, handoffs): `escopo.md` não cita nenhum nome antigo. Os outros ficam com as Fases 59 e o histórico.
 
 ## Comandos executados
 | Comando | Exit code |
 | --- | --- |
-| `make check` | não executado: o `Makefile` só existe a partir da Fase 11 |
-| `get_node`, `inspect_document`, `screenshot` (8 frames em 1x, detalhe com zoom, seção nova) | ok |
-| `edit.duplicate`, `object.rename`, `instance.create`/`setProperties`/`swap`, `node.set`/`reparent`/`reorder`, `edit.delete`, `variable.bind`, `style.apply`, `component.addProperty`/`combineVariants`/`addVariant` | ok |
-| `python3 -I scripts/tree.py` e auditoria no `.figcraft` salvo (ids, nomes, posições, segredos, text styles, ligações) | 0 pendências |
-| `save_file` (9×, mesmo caminho) | ok |
+| script de troca por token, com revisão das ocorrências; grep final dos nomes antigos: só sobram as variáveis locais dos scripts | 0 |
+| `make -pRrq` (base de alvos): 0 antigos e todos os 43 novos presentes; `LC_ALL=C make -n <antigo>` dá "No rule to make target" | 0 |
+| `mv -n target/sem-modo-teste target/no-test-mode` | 0 |
+| `make compile`: origens, `cargo check` do workspace, Vite, `cargo check` do `app/src-tauri`, sintaxe de 48 shell, 35 Python e 7 JS | 0 |
+| `make fmt-check` | 0 |
+| `make english-check PATHS="CLAUDE.md dev/english-check"` | 0 |
+| `make english-check PATHS=Makefile`: só achados de comentário (Fase 47), nenhum de nome de alvo nem de variável | 1 (esperado) |
+| `python3 -I -B dev/english_check.py --self-test`: 91/91 | 0 |
+| `make check` | não rodado (regra 6 do PRD) |
 
 ## Problemas descobertos
-- **Modelo da Fase 5 (`Formulário / login / Novo` `7450`):** a `Navegação lateral`
-  (`7451`) e a `lista` (`7509`) têm altura fixa (1358 e 1288), e o corpo da `colunas` tem
-  1266. Ao mudar a altura do frame, elas não acompanham (a lista passa 22 do painel). Nas
-  minhas cópias, pus as duas em `fill`. Não alterei o `7450`; vale a Fase 5 ou a 10
-  ajustar.
-- **Grupo do Novo:** a Fase 5 deixa o `Select` de Grupo aberto com o autocompletar só no
-  `login / Novo`, e eu fiz o mesmo só no `smtp / Novo`. Nos outros Novo, o grupo aparece
-  preenchido.
-- **`Campo extra` › `Segredo=sim`:** a máscara do valor é texto fixo, e a propriedade
-  `Valor` não muda o que aparece. Isso é bom para a segurança, mas o nome da propriedade
-  engana. Mesmo assim, defini `Valor` como `••••••••`. Fica para a Fase 5 ou a 10 decidir.
-- **Componente novo fora da `Seção / Formulário`:** o `Campo nota segura` ficou numa seção
-  própria (x = 4600), como mandava a regra de trabalho em paralelo. A Fase 10 pode
-  movê-lo para junto dos componentes de formulário.
-- **Larguras do mestre sem token** (como na 4f): o `Campo nota segura` mestre tem 480 de
-  largura de apresentação; só o mínimo (`largura/campo`) é ligado. Nas telas ele fica em
-  `fill`.
-- **Altura dos frames sem token**, como já registrado na 4f: 1240–1488, porque cada
-  formulário aparece inteiro.
-- **"cliente" x "grupo"** nos documentos continua como registrado na 4f. As telas usam
-  "grupo".
-- JetBrains Mono continua sem estar instalada (fallback), mas esta fase não usa mono.
+1. **Regressão da Fase 5, corrigida aqui.**
+   - A receita do `dev-cofre` apagava `${COFRE%.ward}.estado`, mas o estado do daemon de teste passou a ser `.dev/test-vault.state` (`config.rs`, `daemon.sh`). Com isso, `make dev-vault` não apagava mais o estado velho.
+   - A linha agora apaga `.state`. Ela está dentro do arquivo desta fase e é caminho.
+   - Era uma falha fechada (o daemon recusaria a geração), não um vazamento.
+2. **`make test-webkit-real NO_MPS=1 NO_39C=1` passa `--no-mps--no-39c` grudado.** A falta de espaço já existia antes. O script só reconhece um dos dois flags de cada vez. A fase não corrigiu, porque é comportamento e não nome; fica para a Fase 45 ou 46.
+3. **Locale:** em pt-BR o make diz "Sem regra para processar o alvo". O validador do V1.10 precisa de `LC_ALL=C` para achar "No rule to make target".
+4. As mudanças das Fases 4 e 5 continuam não commitadas. Esta fase também não commitou.
 
 ## Arquivos criados/alterados
 | Arquivo | Ação |
 | --- | --- |
-| `/home/jeffersonoliveira/documentos/Ward.figcraft` | alterado (8 telas no Layout; `Seção / Nota segura` com o set `Campo nota segura` na Design System) |
+| `Makefile`, `CLAUDE.md`, `README.md`, `docs/instalacao.md`, `docs/glossario.md`, `skill/README.md` | alterado |
+| `install/install.sh`, `install/deb.sh`, `install/crx.py`, `install/pack-extension.sh`, `install/tree.txt`, `install/systemd/wardd@.socket` | alterado |
+| `dev/daemon.sh`, `dev/bridge.sh`, `dev/open-app.py`, `dev/origins.py`, `dev/variations.py`, `dev/compose.yml`, `dev/fixtures/entries.json` | alterado |
+| `dev/services/{common.sh,generate.py,verify.sh}` | alterado |
+| `dev/container-{deb,install,units}/Dockerfile`, `dev/container-{deb,install,platform,uid,units}/inside.sh`, `dev/container-units/start.sh`, `dev/container-platform/fake.c` | alterado |
+| `dev/tests/`: `app-e2e.sh`, `app_e2e.py`, `attacks-foundation.sh`, `attacks-services.sh`, `chrome-policy.sh`, `chrome_policy.py`, `cli.py`, `clipboard.{py,sh}`, `deb.sh`, `dev-vault.sh`, `docker-{platform,uid}.sh`, `extension.{py,sh}`, `fake_crx.py`, `gst-channels.sh`, `home-decoys.sh`, `install.sh`, `log-scan.py`, `login.{py,sh}`, `migration-guide.py`, `nm.{py,sh}`, `no-test-mode.sh`, `playwright.{py,sh}`, `real-home.sh`, `revealed-selection.sh`, `revealed_selection.py`, `skill.py`, `socket-attacks.sh`, `socket_attack.py`, `socket_matrix.py`, `ssh-home.sh`, `ssh_home.py`, `terminal-test.py`, `units.sh`, `variations_test.py`, `webkit-real.sh` | alterado |
+| `crates/ward-core/{Cargo.toml,examples/dev-cofre/main.rs,examples/dev-cofre/testes.rs,src/corpo.rs,src/entrada.rs}` | alterado |
+| `crates/ward-platform/{Cargo.toml,examples/container.rs,examples/pai-chrome.rs,tests/ativacao.rs,tests/identificacao.rs}`, `crates/ward-nm/examples/chrome-falso.rs`, `crates/ward-test-bridge/src/main.rs` | alterado (comentários) |
+| `crates/wardd/{Cargo.toml,examples/cliente-teste.rs,src/servidor.rs,tests/app_valor.rs,tests/playwright.rs,tests/units.rs}` | alterado |
+| `app/core/{examples/partida-conteiner.rs,src/credenciais.rs}`, `app/src-tauri/src/area_gtk.rs`, `app/src/lib/componentes/CampoSecreto.svelte` | alterado (comentário/`ignore`) |
+| `target/sem-modo-teste/` → `target/no-test-mode/` (fora do git) | movido |
 | `docs/mission/handoffs/phase-6.md` | criado |
 
 ## Procedimentos
-- [ ] `make check` rodado (fmt, clippy, testes, audit, deny, gitleaks): não existe antes da Fase 11
-- [x] Só cofre de teste e credenciais falsas usados (nenhum cofre tocado; segredos do contrato não escritos)
-- [x] Teste de ataque para cada (SEG) tocado (nenhum (SEG) tocado)
-- [x] (UI/DESIGN) Conferido contra o FigCraft (screenshots 1x e com zoom; arquivo salvo auditado; `save_file` feito)
-- [x] Ficou dentro do escopo da fase (componentes compartilhados não alterados; componente novo em seção própria)
+- [ ] `make check`: não rodou, pela regra 6 do PRD. Rodaram `make compile` (0), `make fmt-check` (0), o `english-check` nos arquivos da fase e o autoteste do checador.
+- [x] Só cofre de teste e credenciais falsas usados (nenhum cofre aberto, nenhum daemon iniciado).
+- [x] Teste de ataque para cada (SEG) tocado: os ataques existentes seguem os nomes novos nos dois lados. Nenhum novo, porque a fase só renomeia.
+- [x] (UI/DESIGN) não se aplica.
+- [x] Ficou dentro do escopo da fase. A exceção é a correção do `.estado`/`.state` (item 1 de "Problemas").

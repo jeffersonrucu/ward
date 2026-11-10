@@ -1,4 +1,4 @@
-//! "Chrome" do contêiner de `make teste-docker-plataforma` (Fase 40): instalado como
+//! "Chrome" do contêiner de `make test-docker-platform` (Fase 40): instalado como
 //! `/opt/google/chrome/chrome` (root, 0755) só dentro do contêiner, faz o que o Chrome
 //! faz com um host de native messaging: executa o host como filho direto, com a origem
 //! da extensão de argumento, manda as mensagens e lê as respostas.

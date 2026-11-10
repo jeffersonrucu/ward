@@ -1,5 +1,5 @@
-//! `make dev-cofre` (Fase 19, V2.29): monta o cofre de teste a partir de
-//! `dev/fixtures/entradas.json` (D15 + `acme-totp-dev` de D28) pela API pública do
+//! `make dev-vault` (Fase 19, V2.29): monta o cofre de teste a partir de
+//! `dev/fixtures/entries.json` (D15 + `acme-totp-dev` de D28) pela API pública do
 //! `ward-core` (validação da Fase 15, corpo v4 com a configuração de D30 e a geração de
 //! D39, `gravar_entradas` de D27/D44) e o reabre com a senha de teste para conferir. O
 //! cofre recém-criado está sempre na geração 1, e as entradas nascem sem as datas de
@@ -9,13 +9,13 @@
 //! Uso (da raiz; o `make` passa os argumentos):
 //!
 //! ```text
-//! dev-cofre [--saida .dev/<nome>.ward]               cria (ou recria) o cofre
-//! dev-cofre [--saida …] --conferir [--senha-stdin]   só abre e confere
-//! dev-cofre [--saida …] --cruzado < padroes.tsv       teste cruzado (V2.57)
+//! dev-cofre [--output .dev/<nome>.ward]              cria (ou recria) o cofre
+//! dev-cofre [--output …] --conferir [--senha-stdin]  só abre e confere
+//! dev-cofre [--output …] --cruzado < padroes.tsv     teste cruzado (V2.57)
 //! ```
 //!
 //! `--cruzado` (Fase 19e, D54, V2.57): lê do stdin, uma por linha, `entrada<TAB>tipo<TAB>
-//! padrão em hex` (gerado por `dev/testes/dev-cofre.sh` a partir do `dev/variacoes.py`),
+//! padrão em hex` (gerado por `dev/tests/dev-vault.sh` a partir do `dev/variations.py`),
 //! abre o cofre de teste e passa cada padrão, sozinho, pela máscara da entrada de onde
 //! ele veio (com a entrega dela, montada com recursos falsos). `tipo` `inteiro`: a saída
 //! tem de ser `••••`. `tipo` `url` (o `DATABASE_URL`, que depende do host e da porta de
@@ -28,8 +28,8 @@
 //!   depois no disco: nenhum componente pode ser link simbólico, e o destino, se
 //!   existir, tem de ser arquivo comum.
 //! - Entradas lidas só de dentro do repositório: a chave privada em
-//!   `.dev/servicos/chaves/` (gerada por `make dev-servicos`) e os anexos em
-//!   `dev/fixtures/anexos/`, sem link simbólico.
+//!   `.dev/services/keys/` (gerada por `make dev-services`) e os anexos em
+//!   `dev/fixtures/attachments/`, sem link simbólico.
 //! - Nenhum segredo vai para argv, stdout, stderr ou mensagem de erro: só nomes de
 //!   entrada, de campo e níveis, e da configuração só os parâmetros do hash do PIN (não
 //!   o hash), o tempo de trava e o estado do backup.
@@ -65,13 +65,13 @@ use ward_core as wc;
 #[path = "../../src/corpo/cofre_teste.rs"]
 mod cofre_teste;
 
-const FIXTURES: &str = "dev/fixtures/entradas.json";
+const FIXTURES: &str = "dev/fixtures/entries.json";
 /// Geração de um cofre recém-gravado (D39): a primeira gravação de um `CofreAberto` novo.
 const GERACAO_NOVA: u64 = 1;
-const SAIDA_PADRAO: &str = ".dev/cofre-teste.ward";
+const SAIDA_PADRAO: &str = ".dev/test-vault.ward";
 const DIR_DEV: &str = ".dev";
-const BASE_CHAVES: &str = ".dev/servicos/chaves";
-const BASE_ANEXOS: &str = "dev/fixtures/anexos";
+const BASE_CHAVES: &str = ".dev/services/keys";
+const BASE_ANEXOS: &str = "dev/fixtures/attachments";
 
 const MAX_FIXTURES: u64 = 1024 * 1024;
 const MAX_CHAVE: u64 = 64 * 1024;
@@ -120,7 +120,7 @@ impl fmt::Display for Erro {
         match self {
             Erro::Uso(m) => write!(
                 f,
-                "{m}\nuso: dev-cofre [--saida .dev/<nome>.ward] [--conferir [--senha-stdin] | --cruzado]"
+                "{m}\nuso: dev-cofre [--output .dev/<nome>.ward] [--conferir [--senha-stdin] | --cruzado]"
             ),
             Erro::Saida(m) => write!(f, "caminho de saída recusado: {m}"),
             Erro::Arquivo { qual, motivo } => write!(f, "{qual}: {motivo}"),
@@ -153,10 +153,10 @@ fn ler_opcoes(args: impl Iterator<Item = OsString>) -> Result<Opcoes, Erro> {
     let mut args = args;
     while let Some(a) = args.next() {
         match a.to_str() {
-            Some("--saida") => {
-                let v = args.next().ok_or(Erro::Uso("--saida sem caminho"))?;
+            Some("--output") => {
+                let v = args.next().ok_or(Erro::Uso("--output sem caminho"))?;
                 if o.saida.replace(v).is_some() {
-                    return Err(Erro::Uso("--saida repetido"));
+                    return Err(Erro::Uso("--output repetido"));
                 }
             }
             Some("--conferir") => o.conferir = true,
@@ -276,7 +276,7 @@ fn conferir(
     esperadas: &[Entrada],
 ) -> Result<(usize, u64), Erro> {
     let meta = fs::symlink_metadata(saida)
-        .map_err(|_| Erro::Cofre("o cofre não existe; rode make dev-cofre".into()))?;
+        .map_err(|_| Erro::Cofre("o cofre não existe; rode make dev-vault".into()))?;
     if !meta.file_type().is_file() {
         return Err(Erro::Cofre("o cofre não é um arquivo comum".into()));
     }
@@ -298,7 +298,7 @@ fn conferir(
     let b = serializar(cfg, geracao, esperadas).map_err(|e| Erro::Cofre(format!("{e}")))?;
     if *a != *b {
         return Err(Erro::Cofre(
-            "o cofre abre, mas as entradas diferem das fixtures; rode make dev-cofre".into(),
+            "o cofre abre, mas as entradas diferem das fixtures; rode make dev-vault".into(),
         ));
     }
     conferir_configuracao(cfg, pin)?;
@@ -310,7 +310,7 @@ fn conferir_configuracao(cfg: &Configuracao, pin: &str) -> Result<(), Erro> {
     let errado = Zeroizing::new(pin_vizinho(pin));
     if !cfg.conferir_pin(pin.as_bytes()) || cfg.conferir_pin(errado.as_bytes()) {
         return Err(Erro::Cofre(
-            "o hash do PIN do cofre não é o do PIN das fixtures; rode make dev-cofre".into(),
+            "o hash do PIN do cofre não é o do PIN das fixtures; rode make dev-vault".into(),
         ));
     }
     if cfg.hash_pin().parametros() != KDF_PIN
@@ -319,7 +319,7 @@ fn conferir_configuracao(cfg: &Configuracao, pin: &str) -> Result<(), Erro> {
         || cfg.backup().uuid().is_some()
     {
         return Err(Erro::Cofre(
-            "a configuração do cofre não é a padrão; rode make dev-cofre".into(),
+            "a configuração do cofre não é a padrão; rode make dev-vault".into(),
         ));
     }
     Ok(())
@@ -564,7 +564,7 @@ fn ler_do_repositorio(raiz: &Path, origem: Origem, caminho: &str) -> Result<Segr
         Origem::Chave => (
             BASE_CHAVES,
             MAX_CHAVE,
-            "não existe; rode make dev-servicos antes",
+            "não existe; rode make dev-services antes",
         ),
         Origem::Anexo => (BASE_ANEXOS, MAX_ANEXO, "não existe"),
     };

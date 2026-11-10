@@ -20,8 +20,8 @@ use ward_core::protocolo::{
     ErroCodificar, ErroResposta, Fluxo, Janela, Papel, Pedido, PedidoExecutar, Resposta,
     TipoEntradaPadrao, Variavel,
 };
-use ward_plataforma::conectar::ErroCanal;
-use ward_plataforma::{ErroTerminal, ServidorEsperado};
+use ward_platform::conectar::ErroCanal;
+use ward_platform::{ErroTerminal, ServidorEsperado};
 use zeroize::Zeroizing;
 
 use crate::args::{AJUDA, Comando};
@@ -82,25 +82,25 @@ pub trait Entorno {
     /// `ward ssh` interativo (Fase 27): o tamanho do terminal, se a entrada e a saída
     /// padrão são terminais; `None` sem terminal (pipe, arquivo).
     fn terminal(&self) -> Option<Janela> {
-        if !ward_plataforma::terminal::e_terminal(io::stdin())
-            || !ward_plataforma::terminal::e_terminal(io::stdout())
+        if !ward_platform::terminal::e_terminal(io::stdin())
+            || !ward_platform::terminal::e_terminal(io::stdout())
         {
             return None;
         }
-        Some(janela_de(ward_plataforma::terminal::tamanho(io::stdin())))
+        Some(janela_de(ward_platform::terminal::tamanho(io::stdin())))
     }
     /// O tamanho do terminal agora (a thread que acompanha a janela pergunta de novo).
     fn tamanho_terminal(&self) -> Box<dyn Fn() -> Option<(u16, u16)> + Send> {
-        Box::new(|| ward_plataforma::terminal::tamanho(io::stdin()))
+        Box::new(|| ward_platform::terminal::tamanho(io::stdin()))
     }
     /// Põe o terminal de entrada em modo cru; volta quando o valor sai.
-    fn modo_cru(&mut self) -> Option<ward_plataforma::ModoCru> {
-        ward_plataforma::ModoCru::ligar(io::stdin()).ok()
+    fn modo_cru(&mut self) -> Option<ward_platform::ModoCru> {
+        ward_platform::ModoCru::ligar(io::stdin()).ok()
     }
     /// `ward ssh --token-fd <n>` (Fase 27a): lê o token do "Conectar" do fd herdado do
     /// app e fecha o fd.
     fn ler_token(&mut self, fd: u32) -> Result<Zeroizing<Vec<u8>>, ErroCanal> {
-        ward_plataforma::conectar::ler_token_herdado(fd)
+        ward_platform::conectar::ler_token_herdado(fd)
     }
 }
 
@@ -162,10 +162,10 @@ impl Entorno for Sistema {
         Conexao::conectar(&self.esperado)
     }
     fn endurecer(&mut self) -> io::Result<()> {
-        ward_plataforma::endurecer_processo()
+        ward_platform::endurecer_processo()
     }
     fn ler_senha(&mut self) -> Result<Zeroizing<Vec<u8>>, ErroTerminal> {
-        ward_plataforma::ler_senha("Senha mestra do Ward: ", MAX_SEGREDO)
+        ward_platform::ler_senha("Senha mestra do Ward: ", MAX_SEGREDO)
     }
     fn saida(&mut self) -> &mut dyn Write {
         &mut self.stdout

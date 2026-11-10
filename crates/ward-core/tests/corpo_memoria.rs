@@ -8,7 +8,7 @@
 //!
 //! `unsafe` só aqui, no alocador de teste (implementar `GlobalAlloc` exige): nenhum
 //! código do Ward roda com ele fora deste binário de teste. É a única exceção aceita à
-//! regra "`unsafe` só no `ward-plataforma`" (D31, V2.40).
+//! regra "`unsafe` só no `ward-platform`" (D31, V2.40).
 //!
 //! Todo bloco nasce zerado (`alloc` usa `alloc_zeroed`, D31) e a realocação é a padrão
 //! do `GlobalAlloc` (bloco novo pelo `alloc` daqui, cópia e `dealloc` do antigo). Assim

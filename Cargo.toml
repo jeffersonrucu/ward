@@ -2,12 +2,12 @@
 resolver = "3"
 members = [
     "crates/ward-core",
-    "crates/ward-plataforma",
+    "crates/ward-platform",
     "crates/wardd",
     "crates/ward",
     "crates/ward-nm",
-    "crates/ward-ponte-teste",
-    "app/nucleo",
+    "crates/ward-test-bridge",
+    "app/core",
 ]
 # O crate do Tauri tem workspace e lockfile próprios (`app/src-tauri/Cargo.lock`): ele
 # precisa das bibliotecas de desenvolvimento do WebKitGTK para compilar e traz a árvore do
@@ -23,11 +23,11 @@ publish = false
 # Dependências novas só com motivo escrito no handoff da fase (S14).
 [workspace.dependencies]
 ward-core = { path = "crates/ward-core" }
-ward-plataforma = { path = "crates/ward-plataforma" }
-ward-app-nucleo = { path = "app/nucleo" }
+ward-platform = { path = "crates/ward-platform" }
+ward-app-core = { path = "app/core" }
 
 [workspace.lints.rust]
-# `unsafe` só em `ward-plataforma`, com `// SAFETY:` e teste; os outros crates usam
+# `unsafe` só em `ward-platform`, com `// SAFETY:` e teste; os outros crates usam
 # `#![forbid(unsafe_code)]`.
 unsafe_code = "deny"
 unsafe_op_in_unsafe_fn = "deny"

@@ -145,8 +145,8 @@ Ou a partir do código:
 
 ```sh
 make release
-make extensao && make extensao-crx
-sudo make install EXTENSAO_ID=<id impresso pelo extensao-crx> EXTENSAO_CRX=$PWD/target/extensao/ward.crx
+make extension && make extension-crx
+sudo make install EXTENSION_ID=<id impresso pelo extension-crx> EXTENSION_CRX=$PWD/target/extension/ward.crx
 ```
 
 O `sudo` só aparece uma vez, na instalação: ela cria os grupos, instala as units do

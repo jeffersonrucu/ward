@@ -1,4 +1,4 @@
-// GERADO por app/scripts/gerar_design.py a partir de app/design/icones/ (export
+// GERADO por app/scripts/gerar_design.py a partir de app/design/icons/ (export
 // SVG dos componentes Ícone/* do Ward.figcraft, frame 178). Não edite à mão.
 // Cada ícone: caixa 20×20, traço linha/icone (1,5), pontas e cantos arredondados.
 export const ICONES = Object.freeze({

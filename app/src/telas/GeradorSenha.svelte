@@ -17,7 +17,7 @@
   import Toast from '../lib/componentes/Toast.svelte';
   import { chamar } from '../lib/ponte/index.js';
 
-  // Espelho de `ward_app_nucleo::gerador::{TAMANHO_MIN, TAMANHO_MAX, TAMANHO_PADRAO}`
+  // Espelho de `ward_app_core::gerador::{TAMANHO_MIN, TAMANHO_MAX, TAMANHO_PADRAO}`
   // (o teste `configuracao_tauri` confere). O Rust recusa qualquer outro tamanho.
   const TAMANHO_MIN = 8;
   const TAMANHO_MAX = 64;

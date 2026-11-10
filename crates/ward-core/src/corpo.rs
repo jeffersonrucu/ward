@@ -31,7 +31,7 @@
 //!   de alteração ([`Datas`]), em segundos UTC; 0 é "sem data". A leitura confere a
 //!   regra de [`Datas`] (faixa de 1 a [`MAX_DATA`], criação só com alteração e não
 //!   depois dela). A versão 3 (sem datas) é recusada como versão desconhecida, sem
-//!   migração: não há cofre instalado, e o `make dev-cofre` regrava o de teste.
+//!   migração: não há cofre instalado, e o `make dev-vault` regrava o de teste.
 //! - Tipo, nível, ambiente, motor, segurança e protocolo vão pelos identificadores
 //!   estáveis da Fase 15 (`login`, `com-aprovacao`…). A porta vai em 2 bytes (u16).
 //!   Campo opcional ausente é um campo vazio.
@@ -156,7 +156,7 @@ impl fmt::Display for ErroAbrir {
 impl std::error::Error for ErroAbrir {}
 
 /// Abre o arquivo do cofre e lê a configuração, a geração e as entradas (o caminho do
-/// `make dev-cofre`). O [`CofreAberto`] devolvido leva a configuração e a geração lidas
+/// `make dev-vault`). O [`CofreAberto`] devolvido leva a configuração e a geração lidas
 /// (D30, D39). O conteúdo decifrado zera ao sair; as entradas voltam em ordem de nome.
 ///
 /// Aceita qualquer geração. O daemon (Fase 22) abre por [`abrir_entradas_desde`], com

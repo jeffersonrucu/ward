@@ -3806,18 +3806,18 @@ dependencies = [
  "serde_json",
  "tauri",
  "tauri-build",
- "ward-app-nucleo",
+ "ward-app-core",
 ]
 
 [[package]]
-name = "ward-app-nucleo"
+name = "ward-app-core"
 version = "0.1.4"
 dependencies = [
  "ctutils",
  "libc",
  "serde",
  "ward-core",
- "ward-plataforma",
+ "ward-platform",
  "zeroize",
 ]
 
@@ -3837,7 +3837,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "ward-plataforma"
+name = "ward-platform"
 version = "0.1.4"
 dependencies = [
  "libc",

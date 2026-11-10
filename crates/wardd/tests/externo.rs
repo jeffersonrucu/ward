@@ -810,7 +810,7 @@ impl BarramentoFalso {
             .map(PathBuf::from)
             .filter(|p| p.is_absolute())
             .unwrap_or_else(|| {
-                PathBuf::from(format!("/run/user/{}", ward_plataforma::uid_efetivo()))
+                PathBuf::from(format!("/run/user/{}", ward_platform::uid_efetivo()))
             });
         let dir = base.join(format!(
             "wardd-udisks-{}-{}",

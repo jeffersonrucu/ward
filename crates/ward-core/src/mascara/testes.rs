@@ -1710,13 +1710,13 @@ fn d54_formas_novas_so_quando_mudam_e_linha_sem_base64() {
     );
 }
 
-/// V2.57 (D54), com valores que as fixtures não têm: o oráculo (`dev/variacoes.py`,
+/// V2.57 (D54), com valores que as fixtures não têm: o oráculo (`dev/variations.py`,
 /// rodado pelo python, sem chamar nada da máscara) gera os padrões de valores com `$`,
 /// `&`, `<`, `'`, `/`, acento, tab e linhas de chave e valor, e cada padrão, sozinho,
 /// sai `••••` pela máscara da entrada dele. A tabela de D54 é a mesma nas duas pontas.
 #[test]
 fn v2_57_oraculo_e_mascara_com_valores_de_d54() {
-    let fonte = concat!(env!("CARGO_MANIFEST_DIR"), "/../../dev/variacoes.py");
+    let fonte = concat!(env!("CARGO_MANIFEST_DIR"), "/../../dev/variations.py");
     if !std::path::Path::new(PYTHON).exists() {
         eprintln!("{PYTHON} não existe aqui: teste cruzado pulado");
         return;
@@ -1838,11 +1838,11 @@ fn bash_bytes(script: &str, env: &[(&str, &[u8])]) -> Option<Vec<u8>> {
     Some(saida.stdout)
 }
 
-/// O oráculo (`dev/variacoes.py`, pelo python, sem a máscara) gera os padrões de cada
+/// O oráculo (`dev/variations.py`, pelo python, sem a máscara) gera os padrões de cada
 /// pedido (máscara, usuário, anexo, valor) e cada padrão, sozinho, tem de sair `••••`
 /// pela máscara do pedido. Devolve quantos padrões conferiu (0 sem python).
 fn oraculo_cobre(pedidos: &[(&Mascara, Option<&str>, bool, &[u8])]) -> usize {
-    let fonte = concat!(env!("CARGO_MANIFEST_DIR"), "/../../dev/variacoes.py");
+    let fonte = concat!(env!("CARGO_MANIFEST_DIR"), "/../../dev/variations.py");
     if !std::path::Path::new(PYTHON).exists() {
         eprintln!("{PYTHON} não existe aqui: teste cruzado pulado");
         return 0;

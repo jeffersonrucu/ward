@@ -1,6 +1,6 @@
 // Transporte da ponte de teste (D7). Só entra no build `--mode teste` (dist-teste/).
 //
-// O `ward-ponte-teste` serve esta interface e abre o Chrome em
+// O `ward-test-bridge` serve esta interface e abre o Chrome em
 // `127.0.0.1:<porta>/#token=<aleatório>` (mesma origem). O token fica só nesta variável de módulo
 // (nunca no armazenamento do navegador, em cookie ou na URL depois de lido) e vai no cabeçalho
 // `Authorization` de cada chamada.

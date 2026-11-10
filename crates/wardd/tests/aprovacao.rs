@@ -17,7 +17,7 @@ use ward_core::entrada::{Ambiente, NivelAcesso};
 use ward_core::protocolo::{
     ErroResposta, Operacao, Papel, PedidoDeAprovacao, PedidoDeDestrave, Resposta,
 };
-use ward_plataforma::{ClassePar, Recusa};
+use ward_platform::{ClassePar, Recusa};
 use wardd::aprovacao::{
     AbridorApp, Assinante, Cliente, ErroAbrirApp, Motor, RelogioMotor, SemCliente,
 };
@@ -480,7 +480,7 @@ fn ataque_agente_responde_a_aprovacao() {
 /// V3.15 (D8): o código do daemon não tem aprovador nem variável/argumento que mude a
 /// aprovação. Só `config.rs`, `log.rs`, `main.rs` e `trava.rs` (do primeiro nível)
 /// leem o ambiente, e nenhum arquivo do `src/` (subpastas inclusive, scrutiny do M3)
-/// tem `cfg(feature` fora o `modo-teste` dos caminhos e o `ganchos-teste` dos dois
+/// tem `cfg(feature` fora o `test-mode` dos caminhos e o `test-hooks` dos dois
 /// ganchos de teste do núcleo (`com_gancho_depois_de_gravar`, `com_programas_ssh`),
 /// cada um logo antes do próprio `pub fn`.
 #[test]
@@ -527,7 +527,7 @@ const GANCHOS_DE_TESTE: [&str; 4] = [
     "com_prazos_login",
     "com_programas_ssh",
 ];
-const CFG_GANCHOS: &str = "#[cfg(feature = \"ganchos-teste\")]";
+const CFG_GANCHOS: &str = "#[cfg(feature = \"test-hooks\")]";
 
 fn conferir_v3_15(rel: &str, texto: &str, ganchos: &mut Vec<&'static str>) {
     let nome = rel.rsplit('/').next().unwrap_or(rel);
@@ -540,10 +540,10 @@ fn conferir_v3_15(rel: &str, texto: &str, ganchos: &mut Vec<&'static str>) {
     }
     for (i, _) in texto.match_indices("cfg(feature") {
         let resto = &texto[i..];
-        if resto.starts_with("cfg(feature = \"modo-teste\")") {
+        if resto.starts_with("cfg(feature = \"test-mode\")") {
             assert!(
                 !["aprovacao.rs", "uso.rs", "servidor.rs", "nucleo.rs"].contains(&rel),
-                "{rel}: modo-teste no caminho da aprovação"
+                "{rel}: test-mode no caminho da aprovação"
             );
             continue;
         }
@@ -551,7 +551,7 @@ fn conferir_v3_15(rel: &str, texto: &str, ganchos: &mut Vec<&'static str>) {
             resto.starts_with(&CFG_GANCHOS[2..]),
             "{rel}: feature desconhecida"
         );
-        assert_eq!(rel, "nucleo.rs", "ganchos-teste fora do núcleo");
+        assert_eq!(rel, "nucleo.rs", "test-hooks fora do núcleo");
         // A primeira linha depois do atributo que não é atributo nem comentário tem de
         // ser o `pub fn` de um dos ganchos.
         let depois = resto.split_once('\n').map(|(_, d)| d).unwrap_or_default();
@@ -563,7 +563,7 @@ fn conferir_v3_15(rel: &str, texto: &str, ganchos: &mut Vec<&'static str>) {
         let gancho = GANCHOS_DE_TESTE
             .iter()
             .find(|g| assinatura.starts_with(&format!("pub fn {g}(")))
-            .unwrap_or_else(|| panic!("{rel}: ganchos-teste em outro item: {assinatura}"));
+            .unwrap_or_else(|| panic!("{rel}: test-hooks em outro item: {assinatura}"));
         ganchos.push(gancho);
     }
     // Toda definição de gancho vem com a feature, numa das 3 linhas de cima.
@@ -574,18 +574,18 @@ fn conferir_v3_15(rel: &str, texto: &str, ganchos: &mut Vec<&'static str>) {
                 .rev()
                 .take(3)
                 .any(|l| l.trim() == CFG_GANCHOS);
-            assert!(com_feature, "{rel}: {g} sem a feature ganchos-teste");
+            assert!(com_feature, "{rel}: {g} sem a feature test-hooks");
         }
     }
 }
 
 /// Ataque ao V3.15: gancho sem a feature, a feature em outro item ou arquivo, feature
-/// desconhecida, `env::var` numa subpasta e `modo-teste` no caminho da aprovação são
+/// desconhecida, `env::var` numa subpasta e `test-mode` no caminho da aprovação são
 /// recusados.
 #[test]
 fn ataque_v3_15_gancho_sem_feature_ou_fora_do_lugar() {
     let certo =
-        "#[cfg(feature = \"ganchos-teste\")]\n#[doc(hidden)]\npub fn com_programas_ssh(x) {}\n";
+        "#[cfg(feature = \"test-hooks\")]\n#[doc(hidden)]\npub fn com_programas_ssh(x) {}\n";
     let mut g = Vec::new();
     conferir_v3_15("nucleo.rs", certo, &mut g);
     assert_eq!(g, ["com_programas_ssh"]);
@@ -593,12 +593,18 @@ fn ataque_v3_15_gancho_sem_feature_ou_fora_do_lugar() {
         ("nucleo.rs", "pub fn com_gancho_depois_de_gravar(x) {}\n"),
         (
             "nucleo.rs",
-            "#[cfg(feature = \"ganchos-teste\")]\npub fn aprovar_tudo() {}\n",
+            "#[cfg(feature = \"test-hooks\")]\npub fn aprovar_tudo() {}\n",
         ),
         ("servidor.rs", certo),
         ("nucleo.rs", "#[cfg(feature = \"aprovador\")]\nfn x() {}\n"),
         ("sub/config.rs", "let _ = std::env::var(\"X\");\n"),
-        ("uso.rs", "#[cfg(feature = \"modo-teste\")]\nfn x() {}\n"),
+        ("uso.rs", "#[cfg(feature = \"test-mode\")]\nfn x() {}\n"),
+        // m2:V1.8: the pre-rename feature names are unknown features now.
+        ("config.rs", "#[cfg(feature = \"modo-teste\")]\nfn x() {}\n"),
+        (
+            "nucleo.rs",
+            "#[cfg(feature = \"ganchos-teste\")]\n#[doc(hidden)]\npub fn com_programas_ssh(x) {}\n",
+        ),
     ];
     for (rel, texto) in casos {
         let r = std::panic::catch_unwind(|| conferir_v3_15(rel, texto, &mut Vec::new()));

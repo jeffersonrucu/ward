@@ -40,7 +40,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use ward_core::mascara::Mascara;
-use ward_plataforma::filho::{self, Comando, Grupo};
+use ward_platform::filho::{self, Comando, Grupo};
 use zeroize::Zeroizing;
 
 use crate::agente_ssh::{AgenteSsh, Permitido};
@@ -248,7 +248,7 @@ fn escutar(
     let ponte = Arc::new(ponte);
     let ativas = Arc::new(AtomicUsize::new(0));
     let mut aceitas = 0usize;
-    let uid = ward_plataforma::uid_efetivo();
+    let uid = ward_platform::uid_efetivo();
     loop {
         if parar.load(Ordering::Acquire) {
             return;
@@ -760,7 +760,7 @@ mod testes {
         let stat = fs::read_to_string("/proc/self/stat").unwrap();
         let meu_grupo = grupo_do_stat(&stat).unwrap();
         let minha_sessao = sessao_do_stat(&stat).unwrap();
-        let uid = ward_plataforma::uid_efetivo();
+        let uid = ward_platform::uid_efetivo();
         // Só passa quem está no grupo **e** na sessão com o mesmo número (o filho do
         // daemon, líder dos dois). Um processo no grupo de outra sessão (o que o
         // `setpgid` da auditoria do M4 fazia) não passa.

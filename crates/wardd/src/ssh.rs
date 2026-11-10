@@ -44,7 +44,7 @@ use std::time::Duration;
 use ward_core::entrada::{Autenticacao, Dados, Entrada, NivelAcesso, Protocolo, Segredo};
 use ward_core::mascara::{ConstrutorMascara, Mascara};
 use ward_core::protocolo::{ErroResposta, Papel, Pedido, Resposta};
-use ward_plataforma::filho::Comando;
+use ward_platform::filho::Comando;
 use zeroize::Zeroizing;
 
 use crate::agente_ssh::{AgenteSsh, ErroAgente};
@@ -626,7 +626,7 @@ impl Daemon {
         })?;
         let cwd = {
             use std::os::unix::ffi::OsStringExt;
-            ward_plataforma::pasta_pessoal()
+            ward_platform::pasta_pessoal()
                 .map(OsStringExt::into_vec)
                 .unwrap_or_else(|_| b"/".to_vec())
         };

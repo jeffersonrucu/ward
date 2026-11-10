@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex};
 use ward_core::limites::MAX_QUADRO_COMUM;
 use ward_core::protocolo::quadro::{self, LIMITE_RESPOSTA};
 use ward_core::protocolo::{self, Papel, Pedido};
-use ward_plataforma::{ErroTerminal, ServidorEsperado};
+use ward_platform::{ErroTerminal, ServidorEsperado};
 use zeroize::Zeroizing;
 
 use crate::cliente::{Conexao, ErroConexao};
@@ -29,7 +29,7 @@ struct Pasta(PathBuf);
 
 impl Pasta {
     fn nova() -> Pasta {
-        let p = ward_plataforma::socket::diretorio_runtime().join(format!(
+        let p = ward_platform::socket::diretorio_runtime().join(format!(
             "ward-cli-t-{}-{}",
             std::process::id(),
             N.fetch_add(1, Ordering::Relaxed)
@@ -105,7 +105,7 @@ fn servidor(pasta: &Pasta, responder: Option<Arc<Responder>>) -> Arc<Mutex<Visto
 /// Entorno de teste: registra a ordem dos passos e a saída.
 struct Teste {
     esperado: ServidorEsperado,
-    /// Conferência completa (`Conexao::conectar`) ou sem a extra do `modo-teste`.
+    /// Conferência completa (`Conexao::conectar`) ou sem a extra do `test-mode`.
     completa: bool,
     eventos: Vec<&'static str>,
     antes_da_senha: Option<Box<dyn FnMut()>>,
@@ -153,11 +153,11 @@ impl Entorno for Teste {
         if self.completa {
             Conexao::conectar(&self.esperado)
         } else {
-            #[cfg(feature = "modo-teste")]
+            #[cfg(feature = "test-mode")]
             {
                 Conexao::conectar_sem_extra(&self.esperado)
             }
-            #[cfg(not(feature = "modo-teste"))]
+            #[cfg(not(feature = "test-mode"))]
             {
                 Conexao::conectar(&self.esperado)
             }
@@ -195,7 +195,7 @@ impl Entorno for Teste {
         // Nunca o terminal de quem roda os testes.
         None
     }
-    fn modo_cru(&mut self) -> Option<ward_plataforma::ModoCru> {
+    fn modo_cru(&mut self) -> Option<ward_platform::ModoCru> {
         None
     }
 }
@@ -237,7 +237,7 @@ fn d52_run_grande_demais_recusado_antes_de_conectar() {
     assert!(t.eventos.is_empty());
 }
 
-#[cfg(feature = "modo-teste")]
+#[cfg(feature = "test-mode")]
 fn esperar_conexoes(visto: &Arc<Mutex<Visto>>, n: u32) {
     for _ in 0..200 {
         if visto.lock().unwrap().conexoes >= n {
@@ -277,11 +277,11 @@ fn v4_2_ataque_servidor_falso_recusado_antes_de_ler_a_senha() {
     assert!(v.bytes.is_empty());
 }
 
-/// Ataque (V4.2 no `modo-teste`): o falso fica no caminho do socket de teste, que passa
+/// Ataque (V4.2 no `test-mode`): o falso fica no caminho do socket de teste, que passa
 /// na regra de teste (pasta 0700 do usuário, par do mesmo uid). A conferência extra
 /// recusa porque o processo do falso é dumpable; o falso vê a conexão e zero bytes, e
 /// a senha não é lida.
-#[cfg(feature = "modo-teste")]
+#[cfg(feature = "test-mode")]
 #[test]
 fn v4_2_ataque_servidor_falso_no_socket_de_teste_recusado() {
     let pasta = Pasta::nova();
@@ -338,7 +338,7 @@ fn uso_e_ajuda() {
     assert!(t.out().starts_with("ward "));
 }
 
-#[cfg(feature = "modo-teste")]
+#[cfg(feature = "test-mode")]
 mod com_daemon_falso {
     use super::*;
     use ward_core::entrada::{Ambiente, TipoEntrada};

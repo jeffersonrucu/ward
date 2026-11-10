@@ -1,5 +1,5 @@
 //! `wardd-aprovador-teste`: janela de aprovação de teste das suítes de ponta a ponta do M6
-//! (Fase 44c; D8, D9, D63). Só existe com a feature `modo-teste` (`required-features`),
+//! (Fase 44c; D8, D9, D63). Só existe com a feature `test-mode` (`required-features`),
 //! nunca no release.
 //!
 //! O daemon de teste a abre pelo `abrir_app` quando um pedido precisa da janela (com
@@ -32,7 +32,7 @@ fn socket() -> Option<PathBuf> {
         Some(d) => Some(PathBuf::from(d).join("wardd.sock")),
         None => Some(PathBuf::from(format!(
             "/run/user/{}/ward-teste/wardd.sock",
-            ward_plataforma::uid_efetivo()
+            ward_platform::uid_efetivo()
         ))),
     }
 }
