@@ -105,13 +105,23 @@ fn sugerir(d: &Daemon, papel: Papel, origem: &str) -> Resposta {
     pedir(d, papel, "sugerir", &format!(r#"{{"origem":"{origem}"}}"#))
 }
 
-fn preencher(d: &Daemon, papel: Papel, entrada: &str, origem: &str) -> Resposta {
+/// `preencher` do popup sem janela nenhuma (o motor do daemon de teste não tem app).
+fn preencher_cru(d: &Daemon, papel: Papel, entrada: &str, origem: &str) -> Resposta {
     pedir(
         d,
         papel,
         "preencher",
         &format!(r#"{{"entrada":"{entrada}","origem":"{origem}"}}"#),
     )
+}
+
+/// `preencher` do popup com o usuário confirmando a origem na janela (Fase 44c: as
+/// entradas `http` só preenchem depois disso).
+fn preencher(d: &Daemon, papel: Papel, entrada: &str, origem: &str) -> Resposta {
+    comum::com_janela(d, "confirmar", None, || {
+        preencher_cru(d, papel, entrada, origem)
+    })
+    .0
 }
 
 fn nomes(r: &Resposta) -> Vec<(String, String)> {
@@ -578,4 +588,98 @@ fn ataque_salvar_login_so_extensao_e_destravado() {
     );
     assert!(ok(&comum::destravar(&d, comum::SENHA)));
     assert_eq!(nivel_na_lista(&d, "x3"), None);
+}
+
+// --- Fase 44c (D9): origem `http` só com a confirmação na janela ---------------------------
+
+/// Ataque (auditoria do M6, `[::1]`): outro processo do uid escuta em
+/// `[::1]:8081` com o WordPress só em `127.0.0.1`, e o Chrome manda a aba
+/// `http://localhost:8081` para ele. A origem confere, então o daemon não tem como saber;
+/// por isso o popup só preenche uma entrada `http` depois de o usuário confirmar a origem
+/// na janela. Sem app: "aprovação indisponível"; negado: nada; o pedido mostra a origem,
+/// é do popup (`preencher`) e não pede PIN. `https` segue sem janela.
+#[test]
+fn ataque_preencher_http_sem_confirmar_nada_sai() {
+    let dir = Dir::novo("ext-http-confirma");
+    let d = cofre(&dir);
+    let aba = "http://localhost:8081/wp-login.php";
+    // Sem app nenhum.
+    let r = preencher_cru(&d, Papel::Extensao, "acme-wp-dev", aba);
+    assert_eq!(erro(&r), Some(ErroResposta::AprovacaoIndisponivel));
+    sem_segredo(&comum::codificado(Papel::Extensao, &r));
+    // Negado na janela.
+    let (r, vistos) = comum::com_janela(&d, "negar", None, || {
+        preencher_cru(&d, Papel::Extensao, "acme-wp-dev", aba)
+    });
+    assert_eq!(erro(&r), Some(ErroResposta::Negado));
+    sem_segredo(&comum::codificado(Papel::Extensao, &r));
+    assert_eq!(vistos.len(), 1);
+    let p = &vistos[0];
+    assert_eq!(p.operacao, Operacao::Preencher);
+    assert_eq!(p.entradas, ["acme-wp-dev".to_owned()]);
+    assert_eq!(p.origem, "http://localhost:8081");
+    assert!(p.confirmacao);
+    sem_segredo(&comum::codificado(
+        Papel::App,
+        &Resposta::PedidoDeAprovacao(p.clone()),
+    ));
+    // Os "Permitir" com PIN não decidem uma confirmação (a janela forjada não pula o
+    // formato): o pedido segue pendente e expira; aqui o laço da janela só tenta.
+    let (r, _) = comum::com_janela(&d, "uma_vez", Some(PIN), || {
+        // Sem decisão aceita, o pedido ficaria pendente até expirar (2 min): o teste
+        // encerra pelo cliente que sai.
+        struct SaiLogo(std::sync::atomic::AtomicU32);
+        impl wardd::aprovacao::Cliente for SaiLogo {
+            fn cadeia(&self) -> Vec<String> {
+                vec!["chrome".into(), "ward-nm".into()]
+            }
+            fn saiu(&self) -> bool {
+                self.0.fetch_add(1, std::sync::atomic::Ordering::AcqRel) > 40
+            }
+        }
+        let p = ped(
+            Papel::Extensao,
+            "preencher",
+            &format!(r#"{{"entrada":"acme-wp-dev","origem":"{aba}"}}"#),
+        )
+        .unwrap();
+        d.atender_de(&SaiLogo(Default::default()), Papel::Extensao, p)
+    });
+    assert_eq!(
+        erro(&r),
+        Some(ErroResposta::Negado),
+        "uma_vez decidiu uma confirmação"
+    );
+    sem_segredo(&comum::codificado(Papel::Extensao, &r));
+    // Confirmado: preenche.
+    let (r, vistos) = comum::com_janela(&d, "confirmar", None, || {
+        preencher_cru(&d, Papel::Extensao, "acme-wp-dev", aba)
+    });
+    assert!(
+        matches!(r, Resposta::Preenchimento { .. }),
+        "{:?}",
+        r.tipo()
+    );
+    assert_eq!(vistos.len(), 1);
+    // `https`: nenhuma janela.
+    let (r, vistos) = comum::com_janela(&d, "negar", None, || {
+        preencher_cru(
+            &d,
+            Papel::Extensao,
+            "clientex-portal",
+            "https://app.clientex.com.br/login",
+        )
+    });
+    assert!(
+        matches!(r, Resposta::Preenchimento { .. }),
+        "{:?}",
+        r.tipo()
+    );
+    assert!(vistos.is_empty(), "janela num preencher https");
+    // Origem diferente: recusa antes de perguntar.
+    let (r, vistos) = comum::com_janela(&d, "confirmar", None, || {
+        preencher_cru(&d, Papel::Extensao, "acme-wp-dev", "http://127.0.0.1:8081/")
+    });
+    assert_eq!(erro(&r), Some(ErroResposta::OrigemDiferente));
+    assert!(vistos.is_empty());
 }

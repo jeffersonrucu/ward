@@ -5,7 +5,7 @@ auditoria do M9). Roda **dentro** do bwrap do `politica-chrome.sh`, em que
 nada gravável novo). Nunca toca o perfil real do Chrome: perfil, HOME e manifestos ficam
 em `<trab>/<cenario>/`.
 
-Uso: politica_chrome.py <raiz> <trab> <cenario> <politica|-> [<wardd> <ward-nm>]
+Uso: politica_chrome.py <raiz> <trab> <cenario> <politica|-> [<wardd> <ward-nm> [<wardd-aprovador-teste>]]
 
 Cenários (o mesmo ataque da auditoria: um processo do uid planta um
 `br.ward.nm.json` no perfil, `<perfil>/NativeMessagingHosts/`):
@@ -119,11 +119,18 @@ sys.stdout.buffer.flush()
     if cenario == "roubo" and fora:
         shutil.copyfile(f"{raiz}/.dev/cofre-teste.ward", f"{t}/cofre-teste.ward")
         open(f"{t}/cofre-teste.estado", "w").write("ward-estado 1\nvista 0\nqueimada 0\n")
+        env_wardd = {"HOME": t, "PATH": "/usr/bin:/bin", "XDG_RUNTIME_DIR": rt, "LANG": "C.UTF-8",
+                     "WARD_DEV_DIR": t, "WARD_DEV_SOCKET_DIR": sockdir, "WARD_DEV_EXTENSAO": "chrome",
+                     "RUST_LOG": "info"}
+        # Fase 44c: a janela de teste confirma a origem `http` (o usuário que confirma).
+        if len(sys.argv) > 7:
+            os.makedirs(f"{t}/logs", mode=0o700, exist_ok=True)
+            shutil.copy2(sys.argv[7], f"{t}/wardd-aprovador-teste")
+            open(f"{t}/aprovador.modo", "w").write("confirmar\n")
+            env_wardd["WARD_DEV_APP"] = f"{t}/wardd-aprovador-teste"
         wardd = subprocess.Popen(
             [wardd_bin], stdin=subprocess.DEVNULL, stdout=open(f"{t}/wardd.log", "w"), stderr=subprocess.STDOUT,
-            env={"HOME": t, "PATH": "/usr/bin:/bin", "XDG_RUNTIME_DIR": rt, "LANG": "C.UTF-8",
-                 "WARD_DEV_DIR": t, "WARD_DEV_SOCKET_DIR": sockdir, "WARD_DEV_EXTENSAO": "chrome",
-                 "RUST_LOG": "info"})
+            env=env_wardd)
         for _ in range(200):
             if os.path.exists(f"{sockdir}/wardd.sock"):
                 break

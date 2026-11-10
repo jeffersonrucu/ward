@@ -146,6 +146,26 @@ with open(os.path.join(RAIZ, "crates", "ward-nm", "src", "lib.rs"), encoding="ut
 assert ID and len(ID) == 32
 
 
+# --- Fase 44c: a janela de teste (`wardd-aprovador-teste`) ------------------------------
+APROVADOR_LOG = os.path.join(TRAB, "logs", "wardd-aprovador-teste.log")
+APROVADOR_MODO = os.path.join(TRAB, "aprovador.modo")
+
+
+def modo_janela(m):
+    """O que a janela de teste responde ao próximo pedido (`confirmar`, `negar`…)."""
+    with open(APROVADOR_MODO, "w") as f:
+        f.write(m + "\n")
+
+
+def pedidos_da_janela():
+    """As linhas `pedido …` que a janela de teste viu, em ordem."""
+    try:
+        with open(APROVADOR_LOG, encoding="utf-8", errors="replace") as f:
+            return [l.strip() for l in f if l.startswith("pedido ")]
+    except OSError:
+        return []
+
+
 # --- socket do daemon ---------------------------------------------------------------
 def req(obj):
     s = socket.socket(socket.AF_UNIX)
@@ -925,11 +945,16 @@ def secao_fase_42(t, s):
     confere(p.returncode == 0 and item is not None and item.get("grupo") == "teste-fase-42" and item.get("ambiente") == "dev"
             and item.get("tipo") == "login" and "nivel" not in item and senha.encode() not in p.stdout,
             f"V6.8: a entrada aparece no `ward lista --json` (login, grupo e ambiente escolhidos; sem nível, D50) ({item})", "v68_ward_lista")
-    # Nível "com aprovação": o uso pelo agente pede aprovação (sem o app no daemon de
-    # teste, "app indisponível"); uma entrada livre seguiria sem perguntar.
+    # Nível "com aprovação": o uso pelo agente pede aprovação com PIN (a janela de teste
+    # nega); uma entrada livre só pediria a confirmação da origem (Fase 44c).
+    modo_janela("negar")
+    vistos = len(pedidos_da_janela())
     r = req({"v": 1, "op": "login", "dados": {"entrada": "localhost-8083-novo"}})
     codigo = (r.get("dados") or {}).get("codigo")
-    confere(codigo == "aprovacao_indisponivel", f"V6.8: nível inicial \"com aprovação\" (o uso pelo agente pede aprovação: {codigo})", "v68_com_aprovacao")
+    da_janela = pedidos_da_janela()[vistos:]
+    modo_janela("confirmar")
+    confere(codigo == "negado" and len(da_janela) == 1 and " confirmacao=0 " in da_janela[0],
+            f"V6.8: nível inicial \"com aprovação\" (o uso pelo agente pede aprovação com PIN: {codigo}, {da_janela})", "v68_com_aprovacao")
     # O preenchimento da entrada nova devolve a senha enviada (comparada sem imprimir).
     navegar(t, "http://localhost:8083/login")
     pt, ps = abrir_popup(t)
@@ -1014,12 +1039,35 @@ try:
     item0 = avaliar(cdp, ps, "getComputedStyle(document.querySelector('.item')).backgroundColor")
     confere(item0 == "rgb(36, 40, 47)", "hover do item com a superfície elevada (#24282F)", "hover")
     captura(ps, "sugestoes-do-dominio-localhost-8081.png", 494)
-    # Clicar em acme-wp-prod preenche usuário e senha (e o popup fecha).
+    # Fase 44c (D9): origem http, então a janela pede a confirmação da origem. Negada,
+    # nada é preenchido e o popup diz por quê.
+    modo_janela("negar")
+    vistos = len(pedidos_da_janela())
     clicar_entrada(ps, "acme-wp-prod")
-    confere(fechou(pt), "o popup fecha depois de preencher (o contexto com a resposta some)", "popup_fecha")
+    fim = time.time() + 20
+    nota = ""
+    while time.time() < fim and "negado" not in nota:
+        cdp.bombear(0.3)
+        try:
+            nota = avaliar(cdp, ps, "document.querySelector('.nota.erro') ? document.querySelector('.nota.erro').textContent : ''", prazo=5)
+        except (RuntimeError, TimeoutError):
+            nota = ""
+    v = valores(s, ["user_login", "user_pass"])
+    da_janela = pedidos_da_janela()[vistos:]
+    confere(v == {"user_login": "", "user_pass": ""} and "negado" in nota,
+            f"Fase 44c: preencher do popup em http negado na janela: nada preenchido e o popup avisa ({nota!r})", "c44_popup_negado")
+    confere(da_janela == ["pedido operacao=preencher entradas=acme-wp-prod origem=http://localhost:8081 confirmacao=1 decisao=negar"],
+            f"Fase 44c: o pedido do popup mostra a origem http e não pede PIN ({da_janela})", "c44_popup_pedido")
+    fechar_popup(pt)
+    modo_janela("confirmar")
+    pt, ps = abrir_popup(t)
+    # Clicar em acme-wp-prod preenche usuário e senha (e o popup fecha) depois da
+    # confirmação da origem.
+    clicar_entrada(ps, "acme-wp-prod")
+    confere(fechou(pt, 30), "o popup fecha depois de preencher (o contexto com a resposta some)", "popup_fecha")
     v = valores(s, ["user_login", "user_pass"])
     confere(v["user_login"] == USUARIO["acme-wp-prod"] and v["user_pass"] == SENHA["acme-wp-prod"],
-            "V6.7: clicar em acme-wp-prod preenche usuário e senha em localhost:8081", "v67_preenche_8081")
+            "V6.7: clicar em acme-wp-prod preenche usuário e senha em localhost:8081 (origem confirmada)", "v67_preenche_8081")
     registrar_console(cdp)
 
     # --- V6.7: localhost:8083 com TOTP -------------------------------------------------

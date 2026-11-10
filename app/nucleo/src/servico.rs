@@ -230,6 +230,15 @@ impl<D: Daemon, A: AreaTransferencia> Servico<D, A> {
                 "respondido"
             }
             Some(false) => {
+                // Fase 44c: a confirmação da origem só se decide por "Negar" ou
+                // "Confirmar"; os outros pedidos nunca por "Confirmar" (o daemon confere
+                // de novo).
+                let confirmacao = self.aprovacoes.confirmacao(id).unwrap_or(false);
+                if decisao != ward_core::protocolo::Decisao::Negar
+                    && confirmacao != (decisao == ward_core::protocolo::Decisao::Confirmar)
+                {
+                    return Err(ErroApp::PedidoInvalido);
+                }
                 let r =
                     cliente::responder_aprovacao(&mut *self.daemon()?, id, decisao, pin.as_ref());
                 drop(pin);

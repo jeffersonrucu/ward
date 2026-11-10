@@ -95,21 +95,29 @@ fn segredo_do_campo<'a>(d: &'a Dados, id: &str) -> Option<&'a Segredo> {
     }
 }
 
-/// Botão da janela de aprovação. Todos menos "Negar" pedem PIN.
+/// Botão da janela de aprovação. Os três "Permitir" pedem PIN; "Negar" e "Confirmar"
+/// não.
+///
+/// "Confirmar" (Fase 44c, D9) só vale num pedido que o daemon marcou como
+/// [`crate::protocolo::PedidoDeAprovacao::confirmacao`]: o preenchimento numa origem
+/// `http` (`localhost`/`127.0.0.1`) de uma entrada que não pede PIN (nível livre, ou o
+/// popup da extensão). Quem confere isso é o daemon; aqui é só o formato.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Decisao {
     Negar,
     PermitirUmaVez,
     PermitirUmaHora,
     PermitirSempre,
+    Confirmar,
 }
 
 impl Decisao {
-    const TODAS: [Decisao; 4] = [
+    const TODAS: [Decisao; 5] = [
         Decisao::Negar,
         Decisao::PermitirUmaVez,
         Decisao::PermitirUmaHora,
         Decisao::PermitirSempre,
+        Decisao::Confirmar,
     ];
 
     /// Nome no quadro.
@@ -119,12 +127,13 @@ impl Decisao {
             Decisao::PermitirUmaVez => "uma_vez",
             Decisao::PermitirUmaHora => "uma_hora",
             Decisao::PermitirSempre => "sempre",
+            Decisao::Confirmar => "confirmar",
         }
     }
 
     /// Pede PIN?
     pub fn pede_pin(self) -> bool {
-        self != Decisao::Negar
+        !matches!(self, Decisao::Negar | Decisao::Confirmar)
     }
 }
 

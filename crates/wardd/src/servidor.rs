@@ -565,6 +565,8 @@ mod testes {
             comando: "\"true\"".into(),
             diretorio: "\"/\"".into(),
             cadeia: vec!["claude".into()],
+            origem: String::new(),
+            confirmacao: false,
         };
         assert!(s.entregar(&Resposta::PedidoDeAprovacao(p.clone())));
         let d = PedidoDeDestrave {

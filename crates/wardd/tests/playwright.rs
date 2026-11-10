@@ -713,7 +713,15 @@ fn chrome_real_login_e_ataques() {
     let c = cena_real("real");
     for (caso, esperado) in CASOS {
         let entrada = format!("w-{caso}");
-        let r = c.playwright(&entrada);
+        // Fase 44c: os sites são `http://127.0.0.1:<porta>`, então cada uso passa pela
+        // confirmação da origem (a janela falsa confirma).
+        let (r, vistos) = com_janela(&c.d, "confirmar", None, || c.playwright(&entrada));
+        assert!(
+            vistos.len() == 1
+                && vistos[0].confirmacao
+                && vistos[0].origem.starts_with("http://127.0.0.1:"),
+            "{caso}: {vistos:?}"
+        );
         let caminho = c.rt.0.join(format!("playwright/{entrada}.json"));
         match &esperado {
             None => {
@@ -755,4 +763,57 @@ fn chrome_real_login_e_ataques() {
             .iter()
             .any(|p| p.caminho == "/frame")
     );
+}
+
+/// Fase 44c (D9), ataque da auditoria do M6: outro processo do uid escuta na origem
+/// `http://localhost:<porta>` (em `[::1]`, ou na porta de um serviço parado). Numa
+/// entrada `http` **livre**, o `ward playwright` só abre o Chrome depois da confirmação
+/// da origem na janela: sem app, "aprovação indisponível"; negado, nada; o Chrome nem
+/// começa. O pedido mostra a origem e não pede PIN. Confirmado, o Chrome abre.
+#[test]
+fn ataque_playwright_http_livre_so_com_confirmacao() {
+    let c = cena("http", "ok");
+    let q = format!(
+        r#"{{"entrada":{{"nome":"h-livre","grupo":"acme","ambiente":"prod","tipo":"login","campos":{{"url":"http://localhost:8081/wp-login.php","usuario":"wp_editor","senha":"{}"}}}}}}"#,
+        b64(SENHA_LOGIN.as_bytes())
+    );
+    assert!(ok(&pedir(&c.d, Papel::App, "salvar_entrada", &q)));
+    assert!(ok(&mudar_nivel(&c.d, Papel::App, "h-livre", "livre", PIN)));
+    let r = c.playwright("h-livre");
+    assert_eq!(erro(&r), Some(ErroResposta::AprovacaoIndisponivel));
+    assert!(
+        c.eventos("inicio").is_empty(),
+        "o Chrome abriu sem a janela"
+    );
+    let (r, vistos) = com_janela(&c.d, "negar", None, || c.playwright("h-livre"));
+    assert_eq!(erro(&r), Some(ErroResposta::Negado));
+    assert!(
+        c.eventos("inicio").is_empty(),
+        "o Chrome abriu com a janela negada"
+    );
+    assert!(!c.sessao("h-livre").exists());
+    let p = &vistos[0];
+    assert_eq!(p.operacao, ward_core::protocolo::Operacao::Playwright);
+    assert_eq!(p.origem, "http://localhost:8081");
+    assert!(p.confirmacao);
+    let cod = codificado(Papel::App, &Resposta::PedidoDeAprovacao(p.clone()));
+    for f in formas_da_senha() {
+        assert!(!contem(&cod, &f), "o pedido da janela tem a senha");
+    }
+    let (_, vistos) = com_janela(&c.d, "confirmar", None, || c.playwright("h-livre"));
+    assert_eq!(vistos.len(), 1);
+    assert!(
+        !c.eventos("inicio").is_empty(),
+        "confirmado, o Chrome não abriu"
+    );
+    assert!(c.sem_perfil());
+}
+
+/// `https` livre segue sem janela nenhuma.
+#[test]
+fn playwright_https_livre_sem_janela() {
+    let c = cena("https-livre", "ok");
+    let (r, vistos) = com_janela(&c.d, "negar", None, || c.playwright("t-livre"));
+    assert!(matches!(r, Resposta::SessaoPlaywright { .. }), "{r:?}");
+    assert!(vistos.is_empty());
 }

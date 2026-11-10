@@ -209,3 +209,61 @@ pub fn geracao_no_disco(caminho: &Path, senha: &str) -> u64 {
         .unwrap()
         .2
 }
+
+/// Fase 44c (D9): janela de aprovação falsa, em processo (D8: o mesmo caminho do
+/// socket, `responder_aprovacao` com o papel app). Durante `f`, cada
+/// `pedido_de_aprovacao` que o motor entrega é guardado e respondido com `decisao`
+/// (`confirmar`, `negar`…; com `pin` quando a decisão pede). Devolve o resultado de `f`
+/// e os pedidos vistos. O motor do daemon não abre app nenhum: com a janela assinada,
+/// ele entrega direto.
+pub fn com_janela<R>(
+    d: &Daemon,
+    decisao: &str,
+    pin: Option<&str>,
+    f: impl FnOnce() -> R,
+) -> (R, Vec<protocolo::PedidoDeAprovacao>) {
+    use std::sync::atomic::AtomicBool;
+    use std::sync::mpsc;
+    use wardd::aprovacao::Assinante;
+
+    struct JanelaFalsa(mpsc::Sender<protocolo::PedidoDeAprovacao>);
+    impl Assinante for JanelaFalsa {
+        fn entregar(&mut self, r: &Resposta) -> bool {
+            if let Resposta::PedidoDeAprovacao(p) = r {
+                return self.0.send(p.clone()).is_ok();
+            }
+            true
+        }
+    }
+
+    const ID_JANELA: u64 = 9_999;
+    let (tx, rx) = mpsc::channel();
+    d.motor().assinar(ID_JANELA, Box::new(JanelaFalsa(tx)));
+    let parar = AtomicBool::new(false);
+    let vistos = Mutex::new(Vec::new());
+    let r = std::thread::scope(|s| {
+        let (parar, vistos) = (&parar, &vistos);
+        s.spawn(move || {
+            while !parar.load(Ordering::Acquire) {
+                let Ok(p) = rx.recv_timeout(Duration::from_millis(20)) else {
+                    continue;
+                };
+                let pin = pin
+                    .map(|p| format!(r#","pin":"{}""#, b64(p.as_bytes())))
+                    .unwrap_or_default();
+                let _ = pedir(
+                    d,
+                    Papel::App,
+                    "responder_aprovacao",
+                    &format!(r#"{{"pedido":{},"decisao":"{decisao}"{pin}}}"#, p.id),
+                );
+                vistos.lock().unwrap().push(p);
+            }
+        });
+        let r = f();
+        parar.store(true, Ordering::Release);
+        r
+    });
+    d.motor().desassinar(ID_JANELA);
+    (r, vistos.into_inner().unwrap())
+}

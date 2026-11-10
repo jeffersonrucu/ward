@@ -12,6 +12,14 @@
 //!
 //! Os três "Permitir" exigem o PIN, com a contagem de erros do núcleo (S9): o 5.º erro
 //! trava o cofre e nega o pedido; antes disso o pedido continua pendente.
+//!
+//! Fase 44c (D9): no `login` e no `playwright` de uma entrada cuja URL é `http`
+//! (`localhost`/`127.0.0.1`), o pedido sempre vai à janela com a origem à vista, mesmo
+//! no nível livre ou coberto pela liberação de 1 hora: o Ward não sabe que processo
+//! responde nessa origem (outro processo do uid pode escutar em `[::1]` ou na porta de
+//! um serviço parado). Nível livre: só uma confirmação, sem PIN ("Negar" ou
+//! "Confirmar"). "Com aprovação": a janela de sempre, com o PIN e a origem. Sem app,
+//! "aprovação indisponível". Em `https` nada muda.
 
 use ward_core::entrada::{Ambiente, Dados, Entrada, NivelAcesso, Segredo};
 use ward_core::exibicao;
@@ -61,6 +69,18 @@ fn segunda_entrada(e: &Entrada, op: Operacao) -> Option<&str> {
     match (e.dados(), op) {
         (Dados::Banco(b), Operacao::Executar) => b.tunel.as_deref(),
         (Dados::Servidor(s), Operacao::Executar | Operacao::Ssh) => s.salto.as_deref(),
+        _ => None,
+    }
+}
+
+/// Fase 44c (D9): a origem `http` para onde o uso leva usuário e senha (só no `login` e
+/// no `playwright` de uma entrada `login`), ou `None` (https, outro tipo, outra
+/// operação). O parser estrito só aceita `http` para `localhost` e `127.0.0.1`.
+pub(crate) fn origem_http(e: &Entrada, op: Operacao) -> Option<String> {
+    match (e.dados(), op) {
+        (Dados::Login(l), Operacao::Login | Operacao::Playwright | Operacao::Preencher) => {
+            ward_core::entrada::origem_da_url(&l.url).filter(|o| o.starts_with("http://"))
+        }
         _ => None,
     }
 }
@@ -127,7 +147,7 @@ fn descrever(pedido: &Pedido) -> Option<Descricao<'_>> {
 }
 
 /// Cadeia para exibir (D51): nomes com escape visível, no limite do protocolo.
-fn cadeia_para_exibir(cliente: &dyn Cliente) -> Vec<String> {
+pub(crate) fn cadeia_para_exibir(cliente: &dyn Cliente) -> Vec<String> {
     let mut c = cliente.cadeia();
     if c.len() > MAX_CADEIA {
         c.drain(..c.len() - MAX_CADEIA);
@@ -173,7 +193,7 @@ impl Daemon {
                 .esperar_destrave(aviso, &|| self.travado(), cliente)?;
         }
         let agora = self.aprovacao.agora();
-        let (nivel, entradas, ambiente) = {
+        let (nivel, entradas, ambiente, origem) = {
             let est = self.estado();
             let a = est.aberto.as_ref().ok_or(ErroResposta::Travado)?;
             let e = a
@@ -182,6 +202,7 @@ impl Daemon {
                 .find(|e| e.nome() == nome && e.nivel() != NivelAcesso::Bloqueado)
                 .ok_or(ErroResposta::EntradaInexistente)?;
             let mut nivel = nivel_efetivo(a, e, agora);
+            let origem = origem_http(e, op);
             let mut entradas = vec![e.nome().to_owned()];
             let mut ambiente = e.ambiente();
             if let Some(outra) = segunda_entrada(e, op) {
@@ -194,25 +215,37 @@ impl Daemon {
                     None => nivel = NivelAcesso::Bloqueado,
                 }
             }
-            (nivel, entradas, ambiente)
+            (nivel, entradas, ambiente, origem)
+        };
+        let pedido_da_janela = |confirmacao: bool, origem: Option<String>| PedidoDeAprovacao {
+            id: 0,
+            entradas: entradas.clone(),
+            ambiente,
+            operacao: op,
+            comando: comando.clone(),
+            diretorio: diretorio.clone(),
+            cadeia: cadeia_para_exibir(cliente),
+            origem: origem.unwrap_or_default(),
+            confirmacao,
         };
         match nivel {
-            NivelAcesso::Livre => Ok(Autorizacao::SemPerguntar),
+            NivelAcesso::Livre => match origem {
+                None => Ok(Autorizacao::SemPerguntar),
+                // Fase 44c: origem `http`, só a confirmação (sem PIN).
+                Some(o) => {
+                    aviso!("uso numa origem http: confirmação na janela (D9)");
+                    self.aprovacao
+                        .pedir_aprovacao(pedido_da_janela(true, Some(o)), cliente)?;
+                    Ok(Autorizacao::Aprovado)
+                }
+            },
             NivelAcesso::Bloqueado => {
                 aviso!("uso combinado com entrada bloqueada: negado sem perguntar (D19)");
                 Err(ErroResposta::Negado)
             }
             NivelAcesso::ComAprovacao => {
-                let p = PedidoDeAprovacao {
-                    id: 0,
-                    entradas,
-                    ambiente,
-                    operacao: op,
-                    comando,
-                    diretorio,
-                    cadeia: cadeia_para_exibir(cliente),
-                };
-                self.aprovacao.pedir_aprovacao(p, cliente)?;
+                self.aprovacao
+                    .pedir_aprovacao(pedido_da_janela(false, origem), cliente)?;
                 Ok(Autorizacao::Aprovado)
             }
         }
@@ -228,8 +261,26 @@ impl Daemon {
         pin: Option<&Segredo>,
     ) -> Result<Resposta, ErroResposta> {
         let entradas = self.aprovacao.pendente(id).ok_or(ErroResposta::Expirado)?;
+        let confirmacao = self
+            .aprovacao
+            .e_confirmacao(id)
+            .ok_or(ErroResposta::Expirado)?;
         if decisao == Decisao::Negar {
             return if self.aprovacao.decidir(id, Err(ErroResposta::Negado)) {
+                Ok(Resposta::Ok)
+            } else {
+                Err(ErroResposta::Expirado)
+            };
+        }
+        // Fase 44c: a confirmação de origem só aceita "Negar" e "Confirmar"; um pedido
+        // que pede PIN nunca é decidido por "Confirmar" (sem PIN).
+        if confirmacao != (decisao == Decisao::Confirmar) {
+            aviso!("aprovação {id}: decisão que não cabe no pedido; recusada");
+            return Err(ErroResposta::PedidoInvalido);
+        }
+        if decisao == Decisao::Confirmar {
+            return if self.aprovacao.decidir(id, Ok(())) {
+                aviso!("aprovação {id}: origem confirmada");
                 Ok(Resposta::Ok)
             } else {
                 Err(ErroResposta::Expirado)
@@ -252,7 +303,7 @@ impl Daemon {
             return Err(e);
         }
         match decisao {
-            Decisao::Negar | Decisao::PermitirUmaVez => {}
+            Decisao::Negar | Decisao::PermitirUmaVez | Decisao::Confirmar => {}
             Decisao::PermitirUmaHora => {
                 if !self.aprovacao.decidir(id, Ok(())) {
                     return Err(ErroResposta::Expirado);

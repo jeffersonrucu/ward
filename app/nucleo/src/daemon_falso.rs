@@ -206,6 +206,20 @@ pub fn aprovacoes_simuladas(modo: &str) -> Option<Vec<AprovacaoSimulada>> {
         comando: comando.to_owned(),
         diretorio: "\"/home/dev/projetos/acme\"".to_owned(),
         cadeia: cadeia.iter().map(|c| (*c).to_owned()).collect(),
+        origem: String::new(),
+        confirmacao: false,
+    };
+    // Fase 44c (D9): preenchimento numa origem `http`.
+    let na_origem = |id, entrada: &str, operacao, confirmacao, cadeia: &[&str]| PedidoDeAprovacao {
+        id,
+        entradas: vec![entrada.to_owned()],
+        ambiente: Ambiente::Prod,
+        operacao,
+        comando: String::new(),
+        diretorio: String::new(),
+        cadeia: cadeia.iter().map(|c| (*c).to_owned()).collect(),
+        origem: "http://localhost:8081".to_owned(),
+        confirmacao,
     };
     let psql = |entrada: &str| {
         ward_core::exibicao::exibir_argumentos(
@@ -242,6 +256,41 @@ pub fn aprovacoes_simuladas(modo: &str) -> Option<Vec<AprovacaoSimulada>> {
             Duration::ZERO,
         )],
         "aprovacao-expirando" => vec![(normal, Duration::from_secs(104))],
+        // Fase 44c: `ward playwright acme-wp-prod` (livre) numa origem `http`: só a
+        // confirmação, sem PIN.
+        "aprovacao-origem" => vec![(
+            na_origem(
+                4,
+                "acme-wp-prod",
+                Operacao::Playwright,
+                true,
+                &["claude", "bash", "ward playwright"],
+            ),
+            Duration::ZERO,
+        )],
+        // Fase 44c: o popup da extensão numa origem `http`.
+        "aprovacao-origem-popup" => vec![(
+            na_origem(
+                5,
+                "acme-wp-prod",
+                Operacao::Preencher,
+                true,
+                &["chrome", "ward-nm"],
+            ),
+            Duration::ZERO,
+        )],
+        // Fase 44c: `ward login acme-wp-dev` (com aprovação) numa origem `http`: PIN e
+        // origem.
+        "aprovacao-origem-pin" => vec![(
+            na_origem(
+                6,
+                "acme-wp-dev",
+                Operacao::Login,
+                false,
+                &["claude", "bash", "ward login"],
+            ),
+            Duration::ZERO,
+        )],
         "aprovacao-ataque" => vec![(
             pedido(
                 3,
@@ -761,6 +810,12 @@ impl DaemonFalso {
             .position(|(p, _)| *p == id)
             .ok_or(ErroResposta::Expirado)?;
         if decisao == Decisao::Negar {
+            self.aprovacoes.remove(i);
+            return Ok(());
+        }
+        // Fase 44c: a confirmação da origem não tem PIN (o falso não sabe que pedido é;
+        // quem confere é o `wardd` e o serviço do app).
+        if decisao == Decisao::Confirmar {
             self.aprovacoes.remove(i);
             return Ok(());
         }

@@ -190,6 +190,30 @@ fn uma_resposta_de_cada() -> Vec<Resposta> {
             comando: "psql -c 'select 1'".into(),
             diretorio: "\"/home/usuario/projetos/acme\"".into(),
             cadeia: vec!["claude".into(), "bash".into(), "ward run".into()],
+            origem: String::new(),
+            confirmacao: false,
+        }),
+        Resposta::PedidoDeAprovacao(PedidoDeAprovacao {
+            id: 43,
+            entradas: vec!["acme-wp-prod".into()],
+            ambiente: Ambiente::Prod,
+            operacao: Operacao::Playwright,
+            comando: String::new(),
+            diretorio: String::new(),
+            cadeia: vec!["claude".into(), "ward playwright".into()],
+            origem: "http://localhost:8081".into(),
+            confirmacao: true,
+        }),
+        Resposta::PedidoDeAprovacao(PedidoDeAprovacao {
+            id: 44,
+            entradas: vec!["acme-wp-dev".into()],
+            ambiente: Ambiente::Dev,
+            operacao: Operacao::Preencher,
+            comando: String::new(),
+            diretorio: String::new(),
+            cadeia: vec!["chrome".into(), "ward-nm".into()],
+            origem: "http://localhost:8081".into(),
+            confirmacao: true,
         }),
         Resposta::PedidoDeDestrave(PedidoDeDestrave {
             entrada: "acme-pg-aprovacao".into(),
@@ -841,6 +865,15 @@ fn pin_e_decisao_da_aprovacao() {
         );
         assert!(ped(Papel::App, &quadro_de(Operacao::MudarNivel, &m)).is_err());
     }
+    // Fase 44c: "confirmar" não leva PIN (quem confere que o pedido é uma confirmação
+    // é o daemon).
+    assert!(q(r#"{"pedido":1,"decisao":"confirmar"}"#).is_ok());
+    assert!(
+        q(&format!(
+            r#"{{"pedido":1,"decisao":"confirmar","pin":"{pin}"}}"#
+        ))
+        .is_err()
+    );
     // PIN em texto, sem base64, é recusado.
     assert!(q(r#"{"pedido":1,"decisao":"uma_vez","pin":"135790"}"#).is_err());
     assert!(q(r#"{"pedido":1,"decisao":"admin","pin":"MTM1Nzkw"}"#).is_err());
@@ -2484,4 +2517,39 @@ fn ataque_fase_39a_pedido_de_destrave_so_app_e_formato_estrito() {
     ] {
         assert!(codificar_resposta(Papel::App, &Resposta::PedidoDeDestrave(ruim)).is_err());
     }
+}
+
+/// Fase 44c (D9): o pedido de aprovação com origem só nas operações que levam senha a
+/// uma página; a confirmação sempre com origem; o preencher do popup só como
+/// confirmação. Um daemon (ou app) que montasse outra forma não escreve o quadro.
+#[test]
+fn ataque_pedido_de_aprovacao_com_origem_fora_da_forma() {
+    let base = PedidoDeAprovacao {
+        id: 1,
+        entradas: vec!["acme-wp-dev".into()],
+        ambiente: Ambiente::Dev,
+        operacao: Operacao::Login,
+        comando: String::new(),
+        diretorio: String::new(),
+        cadeia: vec![],
+        origem: "http://localhost:8081".into(),
+        confirmacao: true,
+    };
+    let escreve = |p: &PedidoDeAprovacao| {
+        codificar_resposta(Papel::App, &Resposta::PedidoDeAprovacao(p.clone())).is_ok()
+    };
+    assert!(escreve(&base));
+    let mut p = base.clone();
+    p.operacao = Operacao::Executar;
+    assert!(!escreve(&p), "origem no executar");
+    let mut p = base.clone();
+    p.origem.clear();
+    assert!(!escreve(&p), "confirmação sem origem");
+    let mut p = base.clone();
+    p.operacao = Operacao::Preencher;
+    p.confirmacao = false;
+    assert!(!escreve(&p), "preencher com PIN");
+    let mut p = base.clone();
+    p.origem = "x".repeat(crate::limites::MAX_TEXTO + 1);
+    assert!(!escreve(&p), "origem grande demais");
 }

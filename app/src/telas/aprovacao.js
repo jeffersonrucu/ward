@@ -12,6 +12,12 @@ export function pinSuficiente(pin) {
 
 export const ID_NEGAR = 'aprovacao-negar';
 
+// Fase 44c (D9): decisões que não levam PIN. "confirmar" só vale na confirmação da
+// origem `http` (o lado Rust e o daemon conferem de novo).
+export function pedePin(decisao) {
+  return decisao !== 'negar' && decisao !== 'confirmar';
+}
+
 // Separador da cadeia ("claude → bash → ward run"). A seta que vier dentro de um nome
 // de processo chega do lado Rust como `\u{2192}` (`SEPARADOR_CADEIA`).
 export const SEPARADOR = ' \u2192 ';
@@ -47,6 +53,16 @@ export const TEXTOS = Object.freeze({
   bloqueadoNota:
     'Os botões de permitir ficam desligados até o cofre ser destravado. Negar ou fechar a janela só confirma o que já aconteceu: o Claude recebeu “negado”.',
   semPedido: 'Nenhum pedido de aprovação esperando.',
+  // Fase 44c (D9): origem `http` (localhost/127.0.0.1).
+  subtituloPopup: 'A extensão do Chrome quer preencher uma senha',
+  origem: 'Origem que recebe usuário e senha',
+  origemDestaque:
+    'Endereço http desta máquina. Qualquer programa seu pode escutar nele, inclusive no lugar do serviço que você espera. Confirme só se foi você quem pediu agora.',
+  resumoConfirmacao: 'Confira a entrada e a origem antes de confirmar.',
+  nivelConfirmacao: 'confirmar a origem',
+  confirmar: 'Confirmar a origem',
+  notaConfirmacao:
+    'Confirmar não pede PIN: a entrada não exige. Fechar a janela nega o pedido. Sem resposta em 2 min, ele expira e também é negado.',
 });
 
 /** Mensagem no `Campo PIN` para o resultado do `responder_aprovacao`. */

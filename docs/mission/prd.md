@@ -321,6 +321,19 @@ ou com nova resposta do usuário.
   origem inteira (esquema, host em minúsculas e punycode, porta) da aba com a URL da
   entrada. Subdomínio não conta como igual. `http` só é aceito para `localhost` e
   `127.0.0.1`. A mesma regra já vale ao salvar, pelo parser estrito de URL de D41.
+  - **Origem `http` com a janela** (auditoria de segurança do M6; decisão do usuário,
+    2026-11-09; Fase 44c). Em `http://localhost` e `http://127.0.0.1`, a origem
+    conferir não prova o servidor: um processo do uid que escute em `[::1]:<porta>` (o
+    Chrome tenta `::1` antes) ou na porta de um serviço parado recebe a senha com a
+    mesma origem. Por isso `ward login`, `ward playwright` e o "preencher" do popup, numa
+    origem `http`, passam sempre pela janela de aprovação do app com a origem à vista,
+    mesmo no nível livre. No livre é só a confirmação (`confirmacao: true` no
+    `pedido_de_aprovacao`, decisão `confirmar`, sem PIN); em "com aprovação" e
+    "sempre PIN", o pedido de sempre, com a origem. Sem o app: "aprovação
+    indisponível". `https` não muda. O Chrome do `ward playwright` roda com
+    `--host-resolver-rules="MAP localhost 127.0.0.1"`. O "preencher" do popup em `http`
+    é feito pelo service worker (o popup fecha quando a janela pega o foco); o
+    `preencher` do papel extensão em `http` sem confirmação não devolve nada.
 - D10. **Variáveis de entrega** (`ward run`). Em todo tipo: `WARD_ENTRADA`,
   `WARD_GRUPO`, `WARD_AMBIENTE`. Campos extras viram `WARD_<CAMPO>` e anexos
   `WARD_ARQUIVO_<NOME>` (nome em maiúsculas; o que não for `[A-Z0-9]` vira `_`; nome
@@ -1590,6 +1603,14 @@ em `/tmp/claude-1000/-home-jeffersonoliveira-projetos-cofre/d2e230bd-a662-43be-a
     recalcular `_metadata/computed_hashes.json` e apagar o `Service Worker` faz o
     Chrome rodar o código novo com o mesmo id. A defesa "extensão em pasta do root" do
     modelo 2 não vale no Linux (o escopo foi reescrito).
+  - **pipes do Chrome por `/proc/<pid>/fd`** (auditoria de segurança do M6; ampliado
+    em 2026-11-09, Fase 44c, risco aceito pelo usuário): o Chrome não é setgid nem
+    não-dumpable, então um processo do uid abre `/proc/<pid>/fd/<n>` dele e lê e escreve
+    os pipes. Alcança o pipe CDP do Chrome do `ward playwright` (o comando que preenche a
+    senha passa por ali, e o atacante pode mandar qualquer comando enquanto ele roda) e o
+    stdout do `ward-nm` no Chrome do usuário (respostas de `preencher` com usuário, senha
+    e TOTP). O Yama protege contra `ptrace` de não-ancestral, não contra a leitura dos
+    fds; o texto de "Fora do modelo" foi corrigido.
   A extensão continua preenchendo sem clique. A segurança do M9 conta como aprovada
   depois da Fase 51b. Mudança que feche o caso volta ao usuário.
 

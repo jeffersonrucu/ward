@@ -35,6 +35,7 @@
     SEPARADOR,
     TEXTOS,
     mensagemDoResultado,
+    pedePin,
     pinSuficiente,
   } from './aprovacao.js';
 
@@ -47,6 +48,9 @@
 
   const bloqueado = $derived(pedido?.estado === 'bloqueado');
   const prod = $derived(pedido?.ambiente === 'prod');
+  // Fase 44c (D9): só a confirmação da origem `http` (sem PIN, "Negar" ou "Confirmar").
+  const confirmacao = $derived(pedido?.confirmacao === true);
+  const popup = $derived(pedido?.operacao === 'preencher');
   const urgente = $derived(!bloqueado && pedido !== null && pedido.restante <= SEGUNDOS_URGENTE);
 
   let consultando = false;
@@ -84,7 +88,7 @@
   async function responder(decisao) {
     if (!pedido || ocupado) return;
     const id = pedido.id;
-    const comPin = decisao !== 'negar';
+    const comPin = pedePin(decisao);
     if (comPin && !pinSuficiente(pin)) {
       erro = TEXTOS.pinFaltando;
       return;
@@ -144,7 +148,7 @@
         <img class="simbolo" src={simbolo} alt="" />
         <div class="titulos">
           <h1 id="aprovacao-titulo">{TEXTOS.titulo}</h1>
-          <p class="subtitulo">{TEXTOS.subtitulo}</p>
+          <p class="subtitulo">{popup ? TEXTOS.subtituloPopup : TEXTOS.subtitulo}</p>
         </div>
         {#if !bloqueado}<Contagem segundos={pedido.restante} {urgente} />{/if}
         <BotaoIcone icone="fechar" rotulo={TEXTOS.fecharENegar} onclick={() => responder('negar')} />
@@ -154,12 +158,15 @@
         <Destaque tipo="perigo" icone="cadeado">{TEXTOS.bloqueadoDestaque}</Destaque>
       {:else}
         {#if prod}<Destaque tipo="prod">{TEXTOS.prodDestaque}</Destaque>{/if}
+        {#if pedido.origem}<Destaque icone="alerta">{TEXTOS.origemDestaque}</Destaque>{/if}
         {#if urgente}
           <Destaque tipo="perigo" icone="relogio">{TEXTOS.expirando(pedido.restante)}</Destaque>
         {/if}
       {/if}
 
-      <p class="resumo">{bloqueado ? TEXTOS.bloqueadoResumo : TEXTOS.resumo}</p>
+      <p class="resumo">
+        {bloqueado ? TEXTOS.bloqueadoResumo : confirmacao ? TEXTOS.resumoConfirmacao : TEXTOS.resumo}
+      </p>
 
       <div class="pedido" class:prod>
         {#each pedido.entradas as entrada, i (i)}
@@ -175,12 +182,19 @@
             {#if i === 0}
               <div class="nivel">
                 <span class="rotulo-nivel">{TEXTOS.nivel}</span>
-                <span class="valor-nivel">{TEXTOS.nivelValor}</span>
+                <span class="valor-nivel">{confirmacao ? TEXTOS.nivelConfirmacao : TEXTOS.nivelValor}</span>
               </div>
             {/if}
           </div>
         {/each}
-        <CaixaDeCodigo rotulo={TEXTOS.comando}><TextoDoAgente texto={pedido.comando} /></CaixaDeCodigo>
+        <!-- Fase 44c: a origem `http` para onde vão usuário e senha (o `login`, o
+             `playwright` e o popup não têm comando). -->
+        {#if pedido.origem}
+          <CaixaDeCodigo rotulo={TEXTOS.origem}><TextoDoAgente texto={pedido.origem} /></CaixaDeCodigo>
+        {/if}
+        {#if pedido.comando || !pedido.origem}
+          <CaixaDeCodigo rotulo={TEXTOS.comando}><TextoDoAgente texto={pedido.comando} /></CaixaDeCodigo>
+        {/if}
         <!-- Fase 26a: o comando roda no diretório da CLI; só o `executar` tem um. -->
         {#if pedido.diretorio}
           <CaixaDeCodigo rotulo={TEXTOS.diretorio}><TextoDoAgente texto={pedido.diretorio} /></CaixaDeCodigo>
@@ -194,35 +208,51 @@
         >
       </div>
 
-      <CampoPin
-        id="aprovacao-pin"
-        rotulo={TEXTOS.pin}
-        bind:valor={pin}
-        ajuda={TEXTOS.pinAjuda}
-        {erro}
-        {bloqueado}
-      />
-
-      <div class="acoes">
-        <div class="linha">
-          <Botao id={ID_NEGAR} variante="secundario" desabilitado={ocupado} onclick={() => responder('negar')}>
-            {TEXTOS.negar}
-          </Botao>
-          <Botao variante="primario" desabilitado={ocupado || bloqueado} onclick={() => responder('uma_vez')}>
-            {TEXTOS.umaVez}
-          </Botao>
+      {#if confirmacao}
+        {#if erro}<p class="falha" role="alert">{erro}</p>{/if}
+        <div class="acoes">
+          <div class="linha">
+            <Botao id={ID_NEGAR} variante="secundario" desabilitado={ocupado} onclick={() => responder('negar')}>
+              {TEXTOS.negar}
+            </Botao>
+            <Botao variante="primario" desabilitado={ocupado || bloqueado} onclick={() => responder('confirmar')}>
+              {TEXTOS.confirmar}
+            </Botao>
+          </div>
         </div>
-        <div class="linha">
-          <Botao variante="secundario" desabilitado={ocupado || bloqueado} onclick={() => responder('uma_hora')}>
-            {TEXTOS.umaHora}
-          </Botao>
-          <Botao variante="secundario" desabilitado={ocupado || bloqueado} onclick={() => responder('sempre')}>
-            {TEXTOS.sempre}
-          </Botao>
-        </div>
-      </div>
+      {:else}
+        <CampoPin
+          id="aprovacao-pin"
+          rotulo={TEXTOS.pin}
+          bind:valor={pin}
+          ajuda={TEXTOS.pinAjuda}
+          {erro}
+          {bloqueado}
+        />
 
-      <Destaque icone="alerta">{bloqueado ? TEXTOS.bloqueadoNota : TEXTOS.nota}</Destaque>
+        <div class="acoes">
+          <div class="linha">
+            <Botao id={ID_NEGAR} variante="secundario" desabilitado={ocupado} onclick={() => responder('negar')}>
+              {TEXTOS.negar}
+            </Botao>
+            <Botao variante="primario" desabilitado={ocupado || bloqueado} onclick={() => responder('uma_vez')}>
+              {TEXTOS.umaVez}
+            </Botao>
+          </div>
+          <div class="linha">
+            <Botao variante="secundario" desabilitado={ocupado || bloqueado} onclick={() => responder('uma_hora')}>
+              {TEXTOS.umaHora}
+            </Botao>
+            <Botao variante="secundario" desabilitado={ocupado || bloqueado} onclick={() => responder('sempre')}>
+              {TEXTOS.sempre}
+            </Botao>
+          </div>
+        </div>
+      {/if}
+
+      <Destaque icone="alerta"
+        >{bloqueado ? TEXTOS.bloqueadoNota : confirmacao ? TEXTOS.notaConfirmacao : TEXTOS.nota}</Destaque
+      >
       {#if falha}<p class="falha" role="alert">{falha}</p>{/if}
     </section>
   {:else if carregado}

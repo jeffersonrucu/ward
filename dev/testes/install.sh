@@ -210,8 +210,12 @@ assert nm == {"name": "br.ward.nm", "description": nm["description"], "path": "/
 print("nm ok")
 pol = json.load(open(d + "/etc/opt/chrome/policies/managed/ward.json"))
 # Fase 51a: NativeMessagingUserLevelHosts false (só o manifesto do root vale).
-assert sorted(pol) == ["ExtensionSettings", "NativeMessagingUserLevelHosts"], pol
+# Fase 44c: o gerenciador de senhas do Chrome e a checagem de vazamento desligados.
+assert sorted(pol) == ["ExtensionSettings", "NativeMessagingUserLevelHosts", "PasswordLeakDetectionEnabled",
+                       "PasswordManagerEnabled"], pol
 assert pol["NativeMessagingUserLevelHosts"] is False, pol
+assert pol["PasswordManagerEnabled"] is False, pol
+assert pol["PasswordLeakDetectionEnabled"] is False, pol
 assert list(pol["ExtensionSettings"]) == [ident], pol
 e = pol["ExtensionSettings"][ident]
 assert e["installation_mode"] == "force_installed", e
@@ -228,7 +232,7 @@ print("update ok")
 EOF
 )" || true
 confere "V9.6: manifesto de native messaging (allowed_origins só o id, path do ward-nm)" "$r" "nm ok"
-confere "política do Chrome: NativeMessagingUserLevelHosts false, só a extensão do Ward, force_installed, update local" "$r" "politica ok"
+confere "política do Chrome: NativeMessagingUserLevelHosts, PasswordManagerEnabled e PasswordLeakDetectionEnabled false, só a extensão do Ward, force_installed, update local" "$r" "politica ok"
 confere "update.xml: id, pacote local e versão do pacote" "$r" "update ok"
 # systemd-analyze verify das units instaladas (cópia; o ExecStart não existe no host).
 mkdir "$TMP/verify"
@@ -294,6 +298,11 @@ politica_outra "{\"\\u004eativeMessagingUserLevelHosts\": true}" zz.json
 recusa "política: nome escondido com escape \\u" "\\u" "$d"
 politica_outra "{\"NativeMessagingUserLevelHosts\": true}" .escondido
 recusa "política: arquivo oculto também conta" "NativeMessagingUserLevelHosts" "$d"
+# Fase 44c: outro arquivo que religue o gerenciador de senhas ou a checagem de vazamento.
+politica_outra "{\"PasswordManagerEnabled\": true}" senhas.json
+recusa "política: outro arquivo com PasswordManagerEnabled" "PasswordManagerEnabled" "$d"
+politica_outra "{\"PasswordLeakDetectionEnabled\": true}" vazamento.json
+recusa "política: outro arquivo com PasswordLeakDetectionEnabled" "PasswordLeakDetectionEnabled" "$d"
 # Arquivo de política sem esses nomes: instala e fica intacto.
 politica_outra "{\"HomepageLocation\": \"https://exemplo.invalid/\"}" outra.json
 r="$(mk install "$d" 2>&1)" && ok "política: outro arquivo sem os nomes do Ward não impede" || { printf "%s\n" "$r"; falhou "política sem conflito recusada"; }

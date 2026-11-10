@@ -235,7 +235,18 @@ inclusive o valor revelado (PRD D64).
 3. **Disco, backup ou pendrive roubados.** Defesa: tudo cifrado em repouso, com
    Argon2id e AEAD.
 4. **Página de phishing** recebendo a senha pelo preenchimento. Defesa: checagem de
-   domínio na extensão e no `ward login`.
+   domínio na extensão, no `ward login` e no `ward playwright`. Numa origem `http`
+   (`localhost` e `127.0.0.1`), a origem conferir não prova o servidor: outro processo
+   do uid pode escutar em `[::1]:<porta>` (o Chrome tenta `::1` antes para
+   `localhost`) ou na porta de um serviço parado, e recebe a senha com a mesma origem.
+   Por isso, em origem `http`, todo preenchimento (`ward login`, `ward playwright` e o
+   do popup) passa pela janela de aprovação com a origem à vista, mesmo no nível livre
+   (aí só a confirmação, sem PIN; decisão do usuário, 2026-11-09, Fase 44c). Sem o app,
+   "aprovação indisponível". O Chrome do `ward playwright` resolve `localhost` só para
+   `127.0.0.1` (`--host-resolver-rules`). `https` segue sem a janela no nível livre. O
+   gerenciador de senhas do Chrome e a checagem de vazamento ficam desligados pela
+   política (`PasswordManagerEnabled` e `PasswordLeakDetectionEnabled: false`), para a
+   senha preenchida não ficar no perfil nem sair para o Google.
 
 ### Fora do modelo de ameaça (dito com honestidade)
 
@@ -277,6 +288,15 @@ inclusive o valor revelado (PRD D64).
   de valer contra esse processo. O que reduz: a política do Chrome com
   `NativeMessagingUserLevelHosts: false` (manifesto de host no perfil não vale) e o
   `ward-nm` setgid e não-dumpable.
+  - **pipes do Chrome por `/proc/<pid>/fd`** (auditoria de segurança do M6; decisão do
+    usuário, 2026-11-09, Fase 44c): o Chrome não é endurecido, então um processo do
+    mesmo uid abre `/proc/<pid do Chrome>/fd/<n>` e lê e escreve os pipes dele. Isso
+    alcança o pipe de depuração (`--remote-debugging-pipe`) do Chrome do
+    `ward playwright`, por onde passa o comando que preenche a senha e de onde se pode
+    mandar qualquer comando CDP enquanto ele roda, e o stdout do `ward-nm` no Chrome do
+    usuário (as respostas de `preencher`, com usuário, senha e TOTP), que o atacante lê
+    com um `tee` no lugar do Chrome. Esse acesso não é `ptrace`: o Yama não o barra.
+    O `ward-nm` setgid e não-dumpable protege os fds dele, não os do Chrome.
 
 - Root comprometido, kernel ou firmware.
 - Leitura, por outro processo do mesmo usuário, do segredo entregue ao filho do
@@ -302,7 +322,8 @@ inclusive o valor revelado (PRD D64).
   `exec`, mas o Chrome e os processos auxiliares do WebKitGTK (`WebKitWebProcess`,
   `WebKitNetworkProcess`, `WebKitGPUProcess`) não são endurecidos: o `exec` os deixa
   dumpable. Contra o `ptrace` de quem não é ancestral, protege o Yama
-  (`ptrace_scope=1`). Contra o core dump (um `kill -SEGV` de outro processo do uid), o
+  (`ptrace_scope=1`). O Yama não cobre os fds: `/proc/<pid>/fd` do Chrome continua
+  aberto a qualquer processo do uid (RA10, pipes do Chrome, acima). Contra o core dump (um `kill -SEGV` de outro processo do uid), o
   RLIMIT_CORE 0 que o app passa aos auxiliares não basta: o apport grava o relatório em
   `/var/crash`, legível pelo usuário, mesmo com o limite em 0, e o systemd-coredump do
   Ubuntu recebe um limite fixo. Por isso a instalação põe o Ward e os auxiliares do

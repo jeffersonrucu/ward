@@ -108,6 +108,26 @@ def destravar():
     return req({"v": 1, "op": "destravar", "dados": {"senha": senha}}).get("tipo") == "ok"
 
 
+# --- Fase 44c: a janela de teste (`wardd-aprovador-teste`) ------------------------------
+APROVADOR_LOG = os.path.join(TRAB, "logs", "wardd-aprovador-teste.log")
+APROVADOR_MODO = os.path.join(TRAB, "aprovador.modo")
+
+
+def modo_janela(m):
+    """O que a janela de teste responde ao próximo pedido (`confirmar`, `negar`…)."""
+    with open(APROVADOR_MODO, "w") as f:
+        f.write(m + "\n")
+
+
+def pedidos_da_janela():
+    """As linhas `pedido …` que a janela de teste viu, em ordem."""
+    try:
+        with open(APROVADOR_LOG, encoding="utf-8", errors="replace") as f:
+            return [l.strip() for l in f if l.startswith("pedido ")]
+    except OSError:
+        return []
+
+
 def posts_phish():
     p = subprocess.run([f"{RAIZ}/dev/servicos/compose.sh", "exec", "-T", "phish", "cat", "/registro/posts.log"],
                        capture_output=True, timeout=120)
@@ -407,19 +427,77 @@ try:
         cdp.bombear(0.3)
     confere(ward_nm_vivo(), "o service worker abriu o ward-nm (filho direto do Chrome) e espera o pedido", "porta_aberta")
 
-    # --- V6.11 (lado do daemon): com aprovação e sem app, nada é preenchido -------------------
+    # --- Fase 44c: o ataque `[::1]` da auditoria do M6 --------------------------------------
+    # Um processo do uid escuta em [::1]:8081 (o WordPress está só em 127.0.0.1:8081). O
+    # Chrome do usuário carrega o falso com a origem http://localhost:8081, a da entrada.
+    # Sem a confirmação, nada sai; o pedido mostra a origem. Fica antes de toda outra
+    # visita a localhost:8081: depois de uma conexão a 127.0.0.1, o Chrome reaproveita o
+    # endereço e nem tenta o [::1].
+    saida_falso = os.path.join(TRAB, "falso-v6.bin")
+    falso = subprocess.Popen(["/usr/bin/python3", "-I", "-B", os.path.join(RAIZ, "dev", "testes", "falso_v6.py"),
+                              "8081", saida_falso], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
+    try:
+        fim = time.time() + 10
+        while time.time() < fim:
+            try:
+                socket.create_connection(("::1", 8081), 1).close()
+                break
+            except OSError:
+                time.sleep(0.1)
+        t, s = abrir_aba("http://localhost:8081/wp-login.php")
+        titulo = avaliar(cdp, s, "document.title", prazo=10)
+        confere(titulo == "falso-v6", f"ataque [::1]: a aba em localhost:8081 caiu no falso de [::1] (título {titulo!r})",
+                "c44_v6_aba_no_falso")
+        for m in ("negar",):
+            modo_janela(m)
+            vistos = len(pedidos_da_janela())
+            codigo, out, err = ward_login("acme-wp-prod", t)
+            novos = pedidos_da_janela()[vistos:]
+            v = valores(s)
+            confere(codigo != 0 and v is not None and not v["u"] and not v["p"],
+                    f"ataque [::1], janela {m}: `ward login acme-wp-prod` sai ≠ 0 e nada é preenchido (saiu {codigo};"
+                    f" {err.strip()[:80]})", f"c44_v6_{m}_nada")
+            confere(novos == [f"pedido operacao=login entradas=acme-wp-prod origem=http://localhost:8081 confirmacao=1 decisao={m}"],
+                    f"ataque [::1], janela {m}: o pedido mostra a origem ({novos})", f"c44_v6_{m}_origem")
+        try:
+            recebido = os.path.getsize(saida_falso)
+        except FileNotFoundError:
+            recebido = 0
+        confere(recebido == 0, f"ataque [::1]: o falso não recebeu nenhum POST ({recebido} bytes)", "c44_v6_falso_vazio")
+    finally:
+        falso.terminate()
+        falso.wait(timeout=10)
+        modo_janela("confirmar")
+
+    # --- V6.11 (lado do daemon): com aprovação e negado na janela, nada é preenchido ---------
+    modo_janela("negar")
     t, s = abrir_aba("http://localhost:8081/wp-login.php")
+    vistos = len(pedidos_da_janela())
     codigo, out, err = ward_login("acme-wp-dev", t)
     v = valores(s)
     confere(codigo != 0 and v is not None and not v["u"] and not v["p"],
-            f"V6.11: acme-wp-dev (com aprovação) sem a janela aprovada: sai ≠ 0 e nada é preenchido (saiu {codigo};"
+            f"V6.11: acme-wp-dev (com aprovação) negado na janela: sai ≠ 0 e nada é preenchido (saiu {codigo};"
             f" {err.strip()[:100]}; campos {None if v is None else (bool(v['u']), bool(v['p']), v['url'][:60])})",
             "v611_sem_aprovacao")
+    # 44b: a mensagem real do `ward login` negado (vai ao roteiro do usuário do M6).
+    print(f"info  mensagem do `ward login` negado: {err.strip()[:120]!r}")
+    relato["v611_mensagem_negado"] = err.strip()[:120]
+    novos = pedidos_da_janela()[vistos:]
+    confere(novos == ["pedido operacao=login entradas=acme-wp-dev origem=http://localhost:8081 confirmacao=0 decisao=negar"],
+            f"Fase 44c: o pedido de acme-wp-dev (com aprovação) mostra a origem http e pede o PIN ({novos})",
+            "c44_com_aprovacao_origem")
+    modo_janela("confirmar")
 
     # --- V6.10: login de verdade no WordPress -----------------------------------------
     t, s = abrir_aba("http://localhost:8081/wp-login.php")
+    vistos = len(pedidos_da_janela())
     codigo, out, err = ward_login("acme-wp-prod", t)
     confere(codigo == 0, f"V6.10: `ward login acme-wp-prod` sai 0 (saiu {codigo}: {err.strip()[:120]})", "v610_sai_0")
+    novos = pedidos_da_janela()[vistos:]
+    confere(novos == ["pedido operacao=login entradas=acme-wp-prod origem=http://localhost:8081 confirmacao=1 decisao=confirmar"],
+            f"Fase 44c: acme-wp-prod (livre, http) só depois da confirmação da origem, sem PIN ({novos})",
+            "c44_livre_confirmacao")
     confere(not tem_segredo(out + err), "V6.10: a saída da CLI não tem padrão de .dev/variacoes.txt", "v610_saida_sem_segredo")
     fim = time.time() + 15
     painel = False

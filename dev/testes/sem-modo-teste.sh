@@ -77,7 +77,7 @@ conferir() {
     done
 }
 # Fase 41: a exceção da extensão de teste (`WARD_DEV_EXTENSAO`) também não.
-TEXTOS=(WARD_DEV_APP WARD_DEV_DIR WARD_DEV_SOCKET_DIR WARD_DEV_EXTENSAO wardd-app-teste ward-ponte-teste)
+TEXTOS=(WARD_DEV_APP WARD_DEV_DIR WARD_DEV_SOCKET_DIR WARD_DEV_EXTENSAO wardd-app-teste wardd-aprovador-teste ward-ponte-teste)
 conferir "$RLIB" "${TEXTOS[@]}"
 conferir "$ALVO/release/ward-nm" "${TEXTOS[@]}"
 conferir "$ALVO/release/wardd" "${TEXTOS[@]}" classificar_app_de_teste classificar_host_extensao_de_teste \

@@ -63,15 +63,16 @@ Não misture as duas. Se já usou uma, desinstale antes de trocar.
    seguir.
 
 5. **Outras políticas do Chrome.** A instalação recusa se outro arquivo de
-   `/etc/opt/chrome/policies/managed/` citar `ExtensionSettings` ou
-   `NativeMessagingUserLevelHosts` (ou tiver escape `\u`). Confira antes:
+   `/etc/opt/chrome/policies/managed/` citar `ExtensionSettings`,
+   `NativeMessagingUserLevelHosts`, `PasswordManagerEnabled` ou
+   `PasswordLeakDetectionEnabled` (ou tiver escape `\u`). Confira antes:
 
    ```sh
    ls -l /etc/opt/chrome/policies/managed/ 2>/dev/null
-   grep -l -E 'ExtensionSettings|NativeMessagingUserLevelHosts|\\u' /etc/opt/chrome/policies/managed/* 2>/dev/null
+   grep -l -E 'ExtensionSettings|NativeMessagingUserLevelHosts|PasswordManagerEnabled|PasswordLeakDetectionEnabled|\\u' /etc/opt/chrome/policies/managed/* 2>/dev/null
    ```
 
-   Se o `grep` listar algum arquivo, veja "Outras políticas do Chrome" no passo 4b.
+   Se o `grep` listar algum arquivo, veja "Outras políticas do Chrome" no passo 4c.
 
 ## 1. Build (como você, sem sudo)
 
@@ -121,7 +122,8 @@ Durante a instalação:
   e diz qual regra falhou. Os grupos que ele cria ficam anotados em
   `/usr/local/lib/ward/grupos-criados`;
 - o `preinst` também para se outro arquivo de `/etc/opt/chrome/policies/managed/` citar
-  `ExtensionSettings` ou `NativeMessagingUserLevelHosts` (passo 0.5);
+  um nome da política do Ward (`ExtensionSettings`, `NativeMessagingUserLevelHosts`,
+  `PasswordManagerEnabled` ou `PasswordLeakDetectionEnabled`; passo 0.5);
 - os binários setgid vêm no pacote como 0755. O 2755 com o grupo certo entra pelo
   `dpkg-statoverride` (confira com `dpkg-statoverride --list | grep ward`);
 - o `postinst` liga `wardd@<seu uid>.socket`. O uid vem do `SUDO_UID`. Se ele faltar,
@@ -207,7 +209,8 @@ Feche e abra o Chrome.
 
 1. Em `chrome://policy`, `ExtensionSettings` aparece com o id
    `nhkehjnmlgkebhmelajfpmpblepaichf`, `force_installed`, sem erro, e
-   `NativeMessagingUserLevelHosts` aparece como `false`, também sem erro nem conflito.
+   `NativeMessagingUserLevelHosts`, `PasswordManagerEnabled` e
+   `PasswordLeakDetectionEnabled` aparecem como `false`, também sem erro nem conflito.
 2. Em `chrome://extensions`, a extensão Ward aparece como **instalada pela sua
    organização**. Não há botão de remover e a chave de ativar fica travada.
 3. Ainda em `chrome://extensions`, ligue o modo desenvolvedor e tente "Carregar sem
@@ -381,12 +384,34 @@ exemplo), refaça os passos 1 a 3, apagando antes a cópia antiga do sistema. A 
 uma foto de quando você a fez. Os manifestos que você copiou não são do Ward: o
 `dpkg -r`/`make uninstall` não os apaga.
 
-## 4b. Outras políticas do Chrome
+## 4b. O gerenciador de senhas do Chrome fica desligado
+
+**O que muda.** A política do Ward liga `PasswordManagerEnabled: false` e
+`PasswordLeakDetectionEnabled: false` para o Chrome inteiro, em todos os perfis. O
+Chrome deixa de oferecer "Salvar senha?", não preenche mais senhas que ele mesmo tenha
+guardado e não confere senhas contra vazamentos. Em `chrome://settings/passwords` as
+opções aparecem travadas pela organização. As senhas que você já tinha guardado no
+Chrome continuam lá (`chrome://password-manager`) e podem ser exportadas, mas o
+Chrome não as usa enquanto a política estiver ligada.
+
+**Por que.** Quando a extensão do Ward preenche um login, o Chrome vê o formulário
+enviado e oferece guardar a senha no seu perfil (`~/.config/google-chrome/`), fora do
+cofre, onde qualquer processo do seu usuário lê. A checagem de vazamento manda um hash
+da senha para o Google. As duas coisas tiram a senha do lugar onde ela deveria ficar
+(auditoria de segurança do M6, Fase 44c).
+
+**Se você usa o gerenciador do Chrome para outras senhas:** passe-as para o Ward ou
+para outro gerenciador antes de instalar. Não há como desligar só para os sites do
+Ward. Voltar atrás é desinstalar o Ward (`sudo make uninstall` ou `sudo dpkg -r ward`),
+que tira a política.
+
+## 4c. Outras políticas do Chrome
 
 O Chrome lê todo arquivo de `/etc/opt/chrome/policies/managed/` e não junta o mesmo
 nome vindo de dois arquivos: um deles vence. Por isso a instalação (pelo `.deb` e pelo
-`make install`) recusa se outro arquivo dessa pasta citar `ExtensionSettings` ou
-`NativeMessagingUserLevelHosts`, ou tiver um escape `\u`, que poderia esconder esses
+`make install`) recusa se outro arquivo dessa pasta citar `ExtensionSettings`,
+`NativeMessagingUserLevelHosts`, `PasswordManagerEnabled` ou
+`PasswordLeakDetectionEnabled`, ou tiver um escape `\u`, que poderia esconder esses
 nomes. A mensagem diz qual arquivo é, e nada é instalado.
 
 O que fazer:
@@ -406,7 +431,7 @@ O que fazer:
    ```
 
    Se ele também define outras políticas que você quer manter, crie um arquivo novo só
-   com elas, sem os dois nomes acima, e rode a instalação de novo.
+   com elas, sem os nomes acima, e rode a instalação de novo.
 
 3. **Voltar atrás:** `sudo mv /root/ward-politicas/<arquivo> /etc/opt/chrome/policies/managed/`.
    Com o arquivo de volta, a próxima instalação do Ward recusa de novo.

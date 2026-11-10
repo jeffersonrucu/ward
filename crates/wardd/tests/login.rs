@@ -478,3 +478,139 @@ fn v6_11_com_aprovacao_negar_nao_chega_a_extensao_e_permitir_chega() {
         assert!(ok(&t.join().unwrap()));
     });
 }
+
+// ---- Fase 44c (D9): origem `http` sempre pela janela ----
+
+/// Entrada `login` em `http://localhost:8081` no nível pedido.
+fn login_http(d: &Daemon, nome: &str, nivel: &str) {
+    let q = format!(
+        r#"{{"entrada":{{"nome":"{nome}","grupo":"acme","ambiente":"prod","tipo":"login","campos":{{"url":"http://localhost:8081/wp-login.php","usuario":"wp_editor","senha":"{}"}}}}}}"#,
+        b64(SEGREDOS[3].as_bytes())
+    );
+    let r = pedir(d, Papel::App, "salvar_entrada", &q);
+    assert!(ok(&r), "{r:?}");
+    // Entrada nova já nasce "com aprovação" (D50).
+    if nivel != "com-aprovacao" {
+        let r = mudar_nivel(d, Papel::App, nome, nivel, PIN);
+        assert!(ok(&r), "{r:?}");
+    }
+}
+
+/// Cliente que cai depois de umas voltas da espera (para encerrar um pedido que ninguém
+/// decide sem esperar os 2 min).
+struct CaiDepois(std::sync::atomic::AtomicU32);
+
+impl Cliente for CaiDepois {
+    fn cadeia(&self) -> Vec<String> {
+        vec!["claude".into(), "ward login".into()]
+    }
+    fn saiu(&self) -> bool {
+        self.0.fetch_add(1, Ordering::AcqRel) > 40
+    }
+}
+
+/// O agente pede `login`, a extensão pega, preenche na origem `http` e diz "enviado".
+fn login_http_completo(d: &Daemon, nome: &str) -> Resposta {
+    std::thread::scope(|s| {
+        let t = s.spawn(|| login_do_agente(d, &SemCliente, nome));
+        let (id, _) = pegar(d);
+        assert!(matches!(
+            preencher(d, &id, "http://localhost:8081"),
+            Resposta::Preenchimento { .. }
+        ));
+        assert!(ok(&resultado(d, &id, "enviado")));
+        t.join().unwrap()
+    })
+}
+
+/// Ataque da auditoria do M6 (`[::1]:8081` com o WordPress só em `127.0.0.1`): a origem
+/// da aba confere, então o daemon não distingue. `ward login` numa entrada `http`
+/// **livre** não vai à extensão sem a confirmação na janela: sem app, "aprovação
+/// indisponível"; negado, nada; o pedido leva a origem, é só confirmação (sem PIN), e
+/// um "Permitir" com PIN não o decide. Confirmado, segue como antes.
+#[test]
+fn ataque_login_http_livre_so_com_confirmacao() {
+    let (d, _dir) = cofre("login-http-livre", 2000);
+    login_http(&d, "h-livre", "livre");
+    // Sem app.
+    let r = login_do_agente(&d, &SemCliente, "h-livre");
+    assert_eq!(erro(&r), Some(ErroResposta::AprovacaoIndisponivel));
+    assert_eq!(aguardar(&d), None);
+    // Negado: a extensão não vê nada.
+    let (r, vistos) = com_janela(&d, "negar", None, || {
+        login_do_agente(&d, &SemCliente, "h-livre")
+    });
+    assert_eq!(erro(&r), Some(ErroResposta::Negado));
+    assert_eq!(aguardar(&d), None);
+    let p = &vistos[0];
+    assert_eq!(p.operacao, Operacao::Login);
+    assert_eq!(p.entradas, ["h-livre".to_owned()]);
+    assert_eq!(p.origem, "http://localhost:8081");
+    assert!(p.confirmacao);
+    // "Permitir uma vez" com PIN numa confirmação: recusado, e o pedido nunca chega.
+    let cliente = CaiDepois(std::sync::atomic::AtomicU32::new(0));
+    let (r, _) = com_janela(&d, "uma_vez", Some(PIN), || {
+        login_do_agente(&d, &cliente, "h-livre")
+    });
+    assert_eq!(erro(&r), Some(ErroResposta::Negado));
+    assert_eq!(aguardar(&d), None);
+    // Confirmado: o pedido vai à extensão e preenche na origem certa.
+    let (r, vistos) = com_janela(&d, "confirmar", None, || login_http_completo(&d, "h-livre"));
+    assert!(ok(&r), "{r:?}");
+    assert_eq!(vistos.len(), 1);
+}
+
+/// "Com aprovação" numa origem `http`: a janela de sempre (com PIN), agora com a origem;
+/// "Confirmar" (sem PIN) não a decide. A liberação de 1 hora não pula a confirmação da
+/// origem: o próximo uso ainda abre a janela (só a confirmação).
+#[test]
+fn ataque_login_http_com_aprovacao_pede_pin_e_mostra_a_origem() {
+    let (d, _dir) = cofre("login-http-aprov", 2000);
+    login_http(&d, "h-aprov", "com-aprovacao");
+    let cliente = CaiDepois(std::sync::atomic::AtomicU32::new(0));
+    let (r, vistos) = com_janela(&d, "confirmar", None, || {
+        login_do_agente(&d, &cliente, "h-aprov")
+    });
+    assert_eq!(
+        erro(&r),
+        Some(ErroResposta::Negado),
+        "confirmar sem PIN decidiu"
+    );
+    assert_eq!(aguardar(&d), None);
+    assert!(!vistos[0].confirmacao);
+    assert_eq!(vistos[0].origem, "http://localhost:8081");
+    // Permitir por 1 hora (com PIN): segue.
+    let (r, vistos) = com_janela(&d, "uma_hora", Some(PIN), || {
+        login_http_completo(&d, "h-aprov")
+    });
+    assert!(ok(&r), "{r:?}");
+    assert!(!vistos[0].confirmacao);
+    // Dentro da liberação: ainda a confirmação da origem (sem PIN).
+    let (r, vistos) = com_janela(&d, "confirmar", None, || login_http_completo(&d, "h-aprov"));
+    assert!(ok(&r), "{r:?}");
+    assert_eq!(vistos.len(), 1);
+    assert!(vistos[0].confirmacao);
+    // Sem app, nada.
+    let r = login_do_agente(&d, &SemCliente, "h-aprov");
+    assert_eq!(erro(&r), Some(ErroResposta::AprovacaoIndisponivel));
+}
+
+/// `https` não muda: livre não abre janela nenhuma.
+#[test]
+fn login_https_livre_sem_janela() {
+    let (d, _dir) = cofre("login-https-livre", 2000);
+    let (r, vistos) = com_janela(&d, "negar", None, || {
+        std::thread::scope(|s| {
+            let t = s.spawn(|| login_do_agente(&d, &SemCliente, "t-livre"));
+            let (id, _) = pegar(&d);
+            assert!(matches!(
+                preencher(&d, &id, ORIGEM),
+                Resposta::Preenchimento { .. }
+            ));
+            assert!(ok(&resultado(&d, &id, "enviado")));
+            t.join().unwrap()
+        })
+    });
+    assert!(ok(&r), "{r:?}");
+    assert!(vistos.is_empty());
+}

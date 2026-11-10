@@ -51,6 +51,8 @@ pub fn decisao_de_nome(nome: &str) -> Result<Decisao, ErroApp> {
         "uma_vez" => Ok(Decisao::PermitirUmaVez),
         "uma_hora" => Ok(Decisao::PermitirUmaHora),
         "sempre" => Ok(Decisao::PermitirSempre),
+        // Fase 44c: só a confirmação da origem `http` (sem PIN).
+        "confirmar" => Ok(Decisao::Confirmar),
         _ => Err(ErroApp::PedidoInvalido),
     }
 }
@@ -79,6 +81,11 @@ pub struct PedidoExibido {
     pub diretorio: String,
     /// Quem pediu, do mais distante ao mais próximo.
     pub cadeia: Vec<String>,
+    /// Fase 44c (D9): a origem `http` para onde vão usuário e senha, com escape visível
+    /// (D51); vazia quando não há.
+    pub origem: String,
+    /// Fase 44c: só a confirmação da origem ("Negar" e "Confirmar", sem PIN).
+    pub confirmacao: bool,
     /// Segundos até expirar (0 quando `estado` é `bloqueado`).
     pub restante: u64,
     /// `pendente` ou `bloqueado` (o 5º PIN errado travou o cofre e o daemon negou; a
@@ -186,6 +193,14 @@ impl Aprovacoes {
         }
     }
 
+    /// O pedido `id` é só a confirmação da origem (Fase 44c)? `None` se não está aqui.
+    pub(crate) fn confirmacao(&self, id: u64) -> Option<bool> {
+        self.travar()
+            .iter()
+            .find(|i| i.pedido.id == id)
+            .map(|i| i.pedido.confirmacao)
+    }
+
     /// Estado do pedido `id` aqui: `Some(false)` pendente, `Some(true)` bloqueado,
     /// `None` desconhecido ou expirado.
     pub(crate) fn situacao(&self, id: u64) -> Option<bool> {
@@ -260,6 +275,8 @@ pub(crate) fn exibir(a: &Atual) -> PedidoExibido {
         comando: neutralizar(&p.comando),
         diretorio: neutralizar(&p.diretorio),
         cadeia: p.cadeia.iter().map(|c| exibir_processo(c)).collect(),
+        origem: neutralizar(&p.origem),
+        confirmacao: p.confirmacao,
         restante: a.restante,
         estado: if a.bloqueado { "bloqueado" } else { "pendente" },
     }
@@ -302,15 +319,18 @@ mod testes {
             comando: comando.into(),
             diretorio: "\"/home/dev/projetos/acme\"".into(),
             cadeia: cadeia.iter().map(|c| (*c).to_owned()).collect(),
+            origem: String::new(),
+            confirmacao: false,
         }
     }
 
     #[test]
-    fn decisao_so_pelos_quatro_nomes() {
+    fn decisao_so_pelos_cinco_nomes() {
         assert_eq!(decisao_de_nome("negar"), Ok(Decisao::Negar));
         assert_eq!(decisao_de_nome("uma_vez"), Ok(Decisao::PermitirUmaVez));
         assert_eq!(decisao_de_nome("uma_hora"), Ok(Decisao::PermitirUmaHora));
         assert_eq!(decisao_de_nome("sempre"), Ok(Decisao::PermitirSempre));
+        assert_eq!(decisao_de_nome("confirmar"), Ok(Decisao::Confirmar));
         for ruim in ["", "Negar", "permitir", "uma-vez", "sempre ", "livre"] {
             assert_eq!(
                 decisao_de_nome(ruim),
@@ -579,6 +599,44 @@ mod testes_servico {
         }
         assert_eq!(pendentes_no_daemon(&f), [3]);
         assert_eq!(s.aprovacoes().pendentes(), [3]);
+    }
+
+    /// Fase 44c (D9): a confirmação da origem `http` vai à janela com a origem (escape
+    /// visível) e só se decide por "Negar" ou "Confirmar" (sem PIN); um pedido com PIN
+    /// nunca é decidido por "Confirmar". A interface forjada não chega ao daemon.
+    #[test]
+    fn ataque_confirmacao_so_por_confirmar_e_pedido_com_pin_nunca() {
+        let mut c = pedido(11, "", &["claude", "ward playwright"]);
+        c.operacao = ward_core::protocolo::Operacao::Playwright;
+        c.diretorio.clear();
+        c.origem = "http://localhost:8081\u{202E}".into();
+        c.confirmacao = true;
+        let n = pedido(12, "\"ls\"", &["claude"]);
+        let (s, f) = montar(&[c, n]);
+        let e = s.pedido_de_aprovacao().unwrap().unwrap();
+        assert_eq!(e.id, 11);
+        assert!(e.confirmacao);
+        assert_eq!(e.origem, "http://localhost:8081\\u{202E}");
+        for d in ["uma_vez", "uma_hora", "sempre"] {
+            assert_eq!(
+                s.responder_aprovacao(11, d, pin(PIN_CERTO)),
+                Err(ErroApp::PedidoInvalido),
+                "{d} numa confirmação"
+            );
+        }
+        assert_eq!(
+            s.responder_aprovacao(11, "confirmar", pin(PIN_CERTO)),
+            Err(ErroApp::PedidoInvalido)
+        );
+        assert_eq!(
+            s.responder_aprovacao(12, "confirmar", None),
+            Err(ErroApp::PedidoInvalido),
+            "confirmar num pedido com PIN"
+        );
+        assert_eq!(pendentes_no_daemon(&f), [11, 12]);
+        let r = s.responder_aprovacao(11, "confirmar", None).unwrap();
+        assert_eq!(r.resultado, "respondido");
+        assert_eq!(pendentes_no_daemon(&f), [12]);
     }
 
     /// V5.16: "Permitir sempre" deixa a entrada livre; com dois pedidos, "fechar" nega

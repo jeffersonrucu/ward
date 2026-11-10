@@ -65,7 +65,7 @@ use ward_core::gravacao::{self, ErroGravacao, Etapa};
 use ward_core::origem::Origem;
 use ward_core::protocolo::{
     Alvo, DetalheEntrada, ErroResposta, ItemLista, MAX_BACKUPS, MAX_PENDRIVES, Operacao, Papel,
-    Pedido, Pendrive, Problema, Resposta, Sugestao, VersaoBackup,
+    Pedido, PedidoDeAprovacao, Pendrive, Problema, Resposta, Sugestao, VersaoBackup,
 };
 use ward_core::totp::Totp;
 
@@ -807,7 +807,10 @@ impl Daemon {
             Pedido::EmitirToken { entrada } => self.emitir_token(papel, &entrada),
             // Fase 40 (D9): sugerir e preencher pela origem da aba, só para a extensão.
             Pedido::Sugerir { origem } => self.sugerir(papel, &origem),
-            Pedido::Preencher { entrada, origem } => self.preencher(papel, &entrada, &origem),
+            // Fase 44c: numa origem `http`, só depois da confirmação na janela.
+            Pedido::Preencher { entrada, origem } => {
+                self.preencher_do_popup(cliente, papel, &entrada, &origem)
+            }
             // Fase 42: login novo visto pela extensão, sempre "com aprovação" (D50, S9).
             Pedido::SalvarLogin { rascunho } => self.salvar_login(papel, rascunho),
         };
@@ -1045,6 +1048,60 @@ impl Daemon {
         itens.sort_by(|x, y| x.nome.cmp(&y.nome));
         depurar!("sugerir: {} entrada(s)", itens.len());
         Ok(Resposta::Sugestoes(itens))
+    }
+
+    /// `preencher` do popup da extensão (Fase 44c, D9): numa entrada cuja URL é `http`
+    /// (`localhost`/`127.0.0.1`), os valores só saem depois de o usuário confirmar a
+    /// origem na janela do app (sem PIN: quem clicou no popup é o usuário, e o nível não
+    /// conta para a extensão). Sem app, "aprovação indisponível". Origem diferente
+    /// responde antes de perguntar nada. Em `https`, o [`Daemon::preencher`] direto.
+    fn preencher_do_popup(
+        &self,
+        cliente: &dyn Cliente,
+        papel: Papel,
+        nome: &str,
+        origem: &str,
+    ) -> Result<Resposta, ErroResposta> {
+        if papel != Papel::Extensao {
+            return Err(ErroResposta::NaoAutorizado);
+        }
+        let pedido = {
+            let est = self.estado();
+            let a = est.aberto.as_ref().ok_or(ErroResposta::Travado)?;
+            let e = a
+                .entradas
+                .iter()
+                .find(|e| e.nome() == nome)
+                .ok_or(ErroResposta::EntradaInexistente)?;
+            let Dados::Login(l) = e.dados() else {
+                return Err(ErroResposta::EntradaInexistente);
+            };
+            let casa = match (Origem::da_url(&l.url), Origem::da_url(origem)) {
+                (Some(x), Some(y)) => x == y,
+                _ => false,
+            };
+            if !casa {
+                aviso!("preencher {} recusado: origem diferente (D9)", e.nome());
+                return Err(ErroResposta::OrigemDiferente);
+            }
+            crate::uso::origem_http(e, Operacao::Preencher).map(|o| PedidoDeAprovacao {
+                id: 0,
+                entradas: vec![e.nome().to_owned()],
+                ambiente: e.ambiente(),
+                operacao: Operacao::Preencher,
+                comando: String::new(),
+                diretorio: String::new(),
+                cadeia: crate::uso::cadeia_para_exibir(cliente),
+                origem: o,
+                confirmacao: true,
+            })
+        };
+        if let Some(p) = pedido {
+            aviso!("preencher {nome}: origem http, confirmação na janela (D9)");
+            self.aprovacao.pedir_aprovacao(p, cliente)?;
+        }
+        // A entrada pode ter mudado durante a espera: o `preencher` confere tudo de novo.
+        self.preencher(papel, nome, origem)
     }
 
     /// `preencher` (Fase 40, D9): usuário, senha e o código TOTP atual da entrada

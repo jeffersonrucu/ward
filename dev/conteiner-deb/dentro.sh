@@ -232,6 +232,8 @@ done <"$T/arvore.txt"
 igual "overrides registrados" "$(overrides)" "$(printf 'root ward-app 2755 /usr/local/bin/ward-app\nroot ward-nm 2755 /usr/local/lib/ward/ward-nm')"
 confere "manifesto de native messaging com o id" "$(cat /etc/opt/chrome/native-messaging-hosts/br.ward.nm.json)" "chrome-extension://$ID/"
 confere "Fase 51a: política com NativeMessagingUserLevelHosts false" "$(grep -c '^  "NativeMessagingUserLevelHosts": false,$' /etc/opt/chrome/policies/managed/ward.json)" "1"
+confere "Fase 44c: política com PasswordManagerEnabled false" "$(grep -c '^  "PasswordManagerEnabled": false,$' /etc/opt/chrome/policies/managed/ward.json)" "1"
+confere "Fase 44c: política com PasswordLeakDetectionEnabled false" "$(grep -c '^  "PasswordLeakDetectionEnabled": false,$' /etc/opt/chrome/policies/managed/ward.json)" "1"
 confere "Fase 51a: marca dos grupos criados pelo preinst" "$(sort /usr/local/lib/ward/grupos-criados)" "$(for g in ward-app ward-nm; do echo "$g $(getent group "$g" | cut -d: -f3)"; done)"
 # Fase 51c: a lista cobre cada auxiliar do pacote (caminho real do dpkg -L), e o apport
 # e o systemd-coredump de verdade não gravam nada; controles mostram que não calou tudo.

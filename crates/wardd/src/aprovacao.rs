@@ -412,6 +412,14 @@ impl Motor {
             .map(|p| p.pedido.entradas.clone())
     }
 
+    /// O pedido `id`, pendente e sem decisão, é só uma confirmação de origem (Fase 44c)?
+    pub fn e_confirmacao(&self, id: u64) -> Option<bool> {
+        let mut g = self.interno.estado();
+        g.pendente(id)
+            .filter(|p| p.resultado.is_none())
+            .map(|p| p.pedido.confirmacao)
+    }
+
     /// Decide o pedido `id`. `false`: não está mais pendente (expirou, foi cancelado ou
     /// já decidido).
     pub fn decidir(&self, id: u64, r: Result<(), ErroResposta>) -> bool {

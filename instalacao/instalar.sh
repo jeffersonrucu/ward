@@ -217,9 +217,15 @@ EOF
     # messaging de /etc/opt/chrome/native-messaging-hosts/ (do root). Sem ela, um
     # br.ward.nm.json plantado no perfil do usuário vence o do sistema, e o script do
     # atacante faz exec do ward-nm real com o stdin/stdout na mão (auditoria do M9).
+    # PasswordManagerEnabled e PasswordLeakDetectionEnabled: false (Fase 44c, auditoria
+    # do M6): o gerenciador de senhas do Chrome não oferece guardar a senha que a
+    # extensão preenche (ela iria para o perfil do usuário) nem manda um hash dela ao
+    # Google para a checagem de vazamento.
     cat >"$TMP/ger-politica" <<EOF
 {
   "NativeMessagingUserLevelHosts": false,
+  "PasswordManagerEnabled": false,
+  "PasswordLeakDetectionEnabled": false,
   "ExtensionSettings": {
     "$id": {
       "installation_mode": "force_installed",
