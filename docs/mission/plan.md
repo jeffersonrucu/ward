@@ -1648,3 +1648,27 @@ seis baixos.
     `make teste-ataques-servicos` voltam a sair 0.
   - Aviso na tela "Trocar senha": os backups antigos continuam abrindo com a senha antiga.
   - `make teste-ataques-fundacao` (não rodou na auditoria por falta de disco) roda e sai 0.
+- [ ] Fase 54a — RA8 aceito, docs endurecidos (decisão do usuário, 2026-11-09: "Aceitar e
+  endurecer docs"):
+  - `docs/escopo.md`: RA8 sai de "a decidir" e entra em "Fora do modelo de ameaça" (sessão
+    gráfica ou shell adulterados por processo do mesmo uid: `ward` falso no `PATH`, proxy
+    Wayland ou de barramento), com as reduções; PRD RA8 atualizado.
+  - `docs/instalacao.md`, `docs/migracao.md`, `skill/ward/SKILL.md`, `skill/README.md` e o
+    roteiro do usuário: `ward destravar` e todo comando que digita a senha mestra usam
+    `/usr/local/bin/ward`; uma nota explica o porquê.
+  - `make teste-skill` e `make teste-migracao` continuam saindo 0 (ajustar as listas se
+    preciso).
+- [ ] Fase 54b — Entrada padrão na aprovação (decisão do usuário, 2026-11-09: "Avisar e
+  recusar pipe"):
+  - A CLI informa ao daemon o tipo da entrada padrão do `ward run`/`ward ssh` (tty, pipe,
+    arquivo, `/dev/null`), por `fstat`, no `PedidoExecutar`.
+  - A janela de aprovação mostra em `Destaque` aviso quando a entrada não é tty nem
+    `/dev/null` ("O comando recebe dados pela entrada padrão, que esta janela não mostra").
+  - No nível "com aprovação", entrada pipe/arquivo só passa com uma confirmação explícita
+    a mais na janela (caixa marcada antes de "Permitir"); sem ela o daemon recusa. O
+    daemon confere, a janela não decide sozinha (S9).
+  - `skill/settings-deny.json`: regras para `| ward run`, `ward run … <` e `<<<`, e
+    `make teste-skill` com os ataques novos.
+  - Testes de ataque: o `printf <script> | ward run acme-pg-aprovacao -- python3` da
+    auditoria final e o `psql` por pipe não tiram nada sem a confirmação; com tty passa
+    como antes. Atualizar D/RA no PRD e o contrato (V4.*).
