@@ -1136,7 +1136,7 @@ V5.4/V5.5 (`teste-area-transferencia`), V5.7, V5.12, V5.24 e V5.34. Observaçõe
 - `favicon.ico` 404 na ponte.
 O M5 está fechado, faltando só o roteiro nativo do usuário
 (`docs/mission/evidence/M5/roteiro-usuario.md`).
-- [ ] Fase 39g — Restos da 2ª auditoria do M5 (não bloqueiam o QA).
+- [x] Fase 39g — Restos da 2ª auditoria do M5 (não bloqueiam o QA).
   - **Médio:** com o valor revelado, selecionar com o mouse ou dar Ctrl+C o leva à
     PRIMARY ou à CLIPBOARD pelo WebKit, sem prazo nem dica `secret`
     (`CampoSecreto.svelte:204-207`, `.revelado { user-select: text }`). Usar
@@ -1152,6 +1152,21 @@ O M5 está fechado, faltando só o roteiro nativo do usuário
     entra no "Fora do modelo", junto do RA10; o Chrome não vai para a lista do apport
     (parecer do auditor: baixo).
   S2, S12, D51.
+  Feita (2026-11-09):
+  - O valor revelado vai em `data-valor`, desenhado por `::before`. `user-select: none`
+    sozinho não bastava: Ctrl+A e o arrasto de fora ainda levavam o valor à PRIMARY.
+  - Novo `make teste-selecao-revelado` (WebKitGTK real num Xwayland privado). No HEAD
+    antigo dá 11 FALHAs, e 0 agora.
+  - Baixos: U+FEFD/FEFE com `bidi_icu.py` no `app-front`, trava sem bandeja e `anexos.rs`
+    com buffer fixo.
+  - Item novo no escopo: "Crash do Chrome com a senha preenchida".
+  - `make check` e `app-check` 0.
+  Pendências:
+  - o QA lê o revelado por `data-valor`;
+  - a seleção dentro do campo de digitação com o olho aberto ainda vai à PRIMARY;
+  - falta o usuário confirmar o item do escopo (parecer do auditor: baixo);
+  - as listas de invisíveis em `ward/src/texto.rs`, `nucleo/formulario.rs` e
+    `nucleo/comandos.rs` não foram estendidas.
 
 Scrutiny do M6 (2026-11-09): **reprovado** (1ª vez).
 - `make check`, `teste-nm`, `teste-extensao`, `teste-login` e o `cargo test --ignored`
