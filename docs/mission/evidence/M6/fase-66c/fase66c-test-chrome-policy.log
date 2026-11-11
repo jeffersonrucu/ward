@@ -1,0 +1,48 @@
+origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
+<home>/.cargo/bin/cargo build --quiet --locked -p wardd --bin wardd --target-dir target/no-test-mode
+<home>/.cargo/bin/cargo build --quiet --locked -p ward --bin ward --target-dir target/no-test-mode
+<home>/.cargo/bin/cargo build --quiet --locked -p ward-nm --bin ward-nm --target-dir target/no-test-mode
+<home>/.cargo/bin/cargo build --quiet --locked -p ward-app-core --example startup-container --target-dir target/no-test-mode
+<home>/.cargo/bin/cargo build --quiet --locked -p wardd --features test-mode --bin wardd --bin wardd-test-approver
+<home>/.cargo/bin/cargo build --quiet --locked -p ward-nm --features test-mode --bin ward-nm
+dev/tests/chrome-policy.sh target/debug/wardd target/debug/ward-nm \
+	target/no-test-mode/debug/ward target/no-test-mode/debug/wardd \
+	target/no-test-mode/debug/ward-nm target/no-test-mode/debug/examples/startup-container \
+	target/debug/wardd-test-approver
+ok: a política gerada pelo install.sh tem NativeMessagingUserLevelHosts false
+ok: a política gerada pelo install.sh tem PasswordManagerEnabled false
+ok: a política gerada pelo install.sh tem PasswordLeakDetectionEnabled false
+==> imagem ward-teste/browser:1 (o build usa a rede; o teste não)
+==> make test-chrome-policy no contêiner (sem rede; Chrome sem política nem host do Ward)
+chrome-guard: ok, o Chrome não vê política nem host do Ward
+[1111/202735.734187:WARNING:chrome/app/chrome_main_linux.cc:84] Read channel stable from /opt/google/chrome/CHROME_VERSION_EXTRA
+contêiner: Google Chrome 157.0.8103.50 , uid 1000, sem rede
+==> 1. precedência sem política (controle)
+    {"sistema": false, "usuario": true}
+ok: sem a política, o manifesto plantado no perfil vence (o ataque da auditoria)
+==> 2. precedência com a política do Ward
+    {"sistema": true, "usuario": false}
+ok: com a política, o manifesto plantado no perfil não é chamado
+ok: com a política, o manifesto do sistema é chamado
+==> 2b. chrome://policy em execução
+    sem política: {"NativeMessagingUserLevelHosts": {"valor": "Not set.", "ok": false}, "PasswordManagerEnabled": {"valor": "Not set.", "ok": false}, "PasswordLeakDetectionEnabled": {"valor": "Not set.", "ok": false}}
+    com a política: {"NativeMessagingUserLevelHosts": {"valor": "false", "ok": true}, "PasswordManagerEnabled": {"valor": "false", "ok": true}, "PasswordLeakDetectionEnabled": {"valor": "false", "ok": true}}
+ok: controle: sem a política, chrome://policy mostra NativeMessagingUserLevelHosts sem valor
+ok: chrome://policy mostra NativeMessagingUserLevelHosts = false, obrigatória, da máquina, OK
+ok: controle: sem a política, chrome://policy mostra PasswordManagerEnabled sem valor
+ok: chrome://policy mostra PasswordManagerEnabled = false, obrigatória, da máquina, OK
+ok: controle: sem a política, chrome://policy mostra PasswordLeakDetectionEnabled sem valor
+ok: chrome://policy mostra PasswordLeakDetectionEnabled = false, obrigatória, da máquina, OK
+==> 3. ataque da auditoria sem política (controle, pasta do Chrome vazia)
+    {"atacante_rodou": true, "sistema_rodou": false, "respostas": {"suggest http://localhost:8081": "suggestions", "fill acme-wp-dev": "fill", "fill acme-wp-prod": "fill", "suggest http://localhost:8083": "suggestions", "fill acme-totp-dev": "fill", "suggest http://localhost:8084": "suggestions", "fill delta-redir": "fill"}, "com_segredo": 4}
+ok: sem a política, o host do atacante faz exec do ward-nm e tira senhas (controle)
+ok: roubo-sem-politica/wardd.log sem padrão de .dev/variations.txt
+ok: roubo-sem-politica/chrome.log sem padrão de .dev/variations.txt
+ok: roubo-sem-politica/logs/wardd-test-approver.log sem padrão de .dev/variations.txt
+==> 4. ataque da auditoria com a política do Ward
+    {"atacante_rodou": false, "sistema_rodou": true, "respostas": {}, "com_segredo": 0}
+ok: com a política, o host do atacante (no perfil) nem roda
+ok: com a política, o Chrome abre o host do sistema
+ok: com a política, nenhuma senha sai
+chrome-policy (contêiner): rodadas ok
+test-chrome-policy: tudo ok

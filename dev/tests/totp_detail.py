@@ -5,6 +5,9 @@ current code, never the seed.
 Starts the test bridge with the fake daemon of the app core (`--fake-daemon full`, the
 fake entries of the test vault; no `wardd`, no socket) and opens the test build in the
 installed Chrome, headless, through Python Playwright (temporary profile, extensions off).
+m2:Phase 66c: Chrome runs through `dev/tests/chrome-isolated.sh` (the bwrap of Phase 65a,
+without the Ward policy, the host manifest nor /usr/local, with the guard inside), and no
+extension target may exist before the first page (exit 3 otherwise).
 Every call of the interface to the bridge is recorded (command, arguments and reply).
 
 Checks:
@@ -23,7 +26,7 @@ Checks:
 
 Usage: PW_PYTHONPATH=<site-packages> python3 -I dev/tests/totp_detail.py \\
     <ward-test-bridge> <test build dir>
-Exit: 0 all ok, 1 a check failed, 2 usage or setup.
+Exit: 0 all ok, 1 a check failed, 2 usage or setup, 3 Chrome with an extension.
 """
 
 import json
@@ -34,6 +37,8 @@ import sys
 import time
 
 CHROME = "/opt/google/chrome/chrome"
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ISOLATED_CHROME = os.path.join(ROOT, "dev", "tests", "chrome-isolated.sh")
 SEED = "JBSWY3DPEHPK3PXP"
 # Forms of the seed that a leak could take: as saved, lowercase, in groups of 4, the
 # otpauth URI and the decoded bytes ("Hello!" + 0xdeadbeef).
@@ -103,11 +108,23 @@ def main():
             print("totp-detail: a ponte não deu a URL", file=sys.stderr)
             return 2
         with sync_playwright() as p:
+            # m2:Phase 66c: the Chrome of chrome-isolated.sh (no Ward policy, host
+            # manifest nor /usr/local; the guard runs inside the bwrap first) and, before
+            # any page, no extension target (the forced one of an installed Ward included).
             browser = p.chromium.launch(
-                executable_path=CHROME,
+                executable_path=ISOLATED_CHROME,
                 headless=True,
                 args=["--disable-extensions", "--no-first-run", "--disable-sync"],
             )
+            cdp = browser.new_browser_cdp_session()
+            targets = cdp.send("Target.getTargets")["targetInfos"]
+            cdp.detach()
+            extensions = [t for t in targets if t.get("url", "").startswith("chrome-extension://")]
+            check("Chrome isolado e sem nenhuma extensão (guarda da Fase 65a)", not extensions,
+                  f"{len(extensions)} alvo(s) de extensão")
+            if extensions:
+                browser.close()
+                return 3
             try:
                 run(browser, url)
             finally:

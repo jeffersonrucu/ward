@@ -1,0 +1,757 @@
+[
+ {
+  "checagem": "Chrome sem nenhuma extensão (guarda da Fase 65a)",
+  "ok": true,
+  "detalhe": "0 alvo(s) de extensão"
+ },
+ {
+  "checagem": "V3.3 destravar: foco inicial no campo da senha mestra",
+  "ok": true,
+  "detalhe": "{'id': 'master-password', 'tag': 'input', 'name': '', 'visible': True}"
+ },
+ {
+  "checagem": "V3.4 destravar-padrao: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.2 destravar: 'Senha mestra incorreta.'",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.4 destravar-senha-errada: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.3 destravar: o foco volta ao campo depois do erro",
+  "ok": true,
+  "detalhe": "{'id': 'master-password', 'tag': 'input', 'name': '', 'visible': True}"
+ },
+ {
+  "checagem": "destravar pelo app com a senha de teste",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "janela de aprovação aberta sem pedido",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.4 aprovacao-sem-pedido: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.2 credenciais: 22 entradas visíveis",
+  "ok": true,
+  "detalhe": "22"
+ },
+ {
+  "checagem": "V3.2 credenciais: resumo '22 entradas · 4 grupos'",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.2 tema escuro (rgb(16, 17, 20))",
+  "ok": true,
+  "detalhe": "rgb(16, 17, 20)"
+ },
+ {
+  "checagem": "V3.4 credenciais-cheia: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.3 Tab: a navegação na ordem Credenciais, Gerador de senha, Configurações",
+  "ok": true,
+  "detalhe": "['Credenciais', 'Gerador de senha', 'Configurações', 'Travar agora', '', 'Filtrar', 'acme-pg-aprovacao\\nstage\\nbanco\\npostgres ·']"
+ },
+ {
+  "checagem": "V3.3 Tab: foco visível em cada parada",
+  "ok": true,
+  "detalhe": "[True, True, True, True, True, True, True]"
+ },
+ {
+  "checagem": "V3.3 Tab: a busca depois da navegação",
+  "ok": true,
+  "detalhe": "['Credenciais', 'Gerador de senha', 'Configurações', 'Travar agora', '', 'Filtrar', 'acme-pg-aprovacao\\nstage\\nbanco\\npostgres ·']"
+ },
+ {
+  "checagem": "V3.3 Shift+Tab volta uma parada",
+  "ok": true,
+  "detalhe": " → {'id': '', 'tag': 'button', 'name': 'Filtrar', 'visible': True}"
+ },
+ {
+  "checagem": "V3.2 busca 'pg' filtra 4 itens",
+  "ok": true,
+  "detalhe": "4"
+ },
+ {
+  "checagem": "V3.4 credenciais-busca: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.2 busca sem resultado: 0 itens",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.4 credenciais-sem-resultado: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.2 filtros abertos",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.4 credenciais-filtros: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.3 Esc fecha os filtros",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.4 credenciais-detalhe: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.4 controle: revelar põe o valor na página (o detector vê)",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.4 ocultar tira o valor do DOM",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.4 sair da entrada: nada do valor no DOM",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.2 nível: diálogo aberto",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.4 nivel-escolher: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.3 setas mudam a opção de nível",
+  "ok": true,
+  "detalhe": "free → approval"
+ },
+ {
+  "checagem": "V3.3 Esc fecha o diálogo de nível sem mudar nada",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.2 nova credencial: os 9 tipos",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.4 nova-credencial: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.4 formulario-novo-login: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.4 formulario-novo-database: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.4 formulario-novo-server: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.4 formulario-novo-api: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.4 formulario-novo-aws: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.4 formulario-novo-smtp: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.4 formulario-novo-ftp-sftp: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.4 formulario-novo-secure-note: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.4 formulario-novo-generic: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.4 formulario-edicao-login: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.4 formulario-edicao-database: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.4 formulario-edicao-server: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.4 formulario-edicao-api: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.4 formulario-edicao-aws: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.4 formulario-edicao-smtp: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.4 formulario-edicao-ftp-sftp: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.4 formulario-edicao-secure-note: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.4 formulario-edicao-generic: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.2 gerador aberto",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.4 configuracoes-geral: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.2 trocar-senha: diálogo aberto",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.4 trocar-senha: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.3 Esc fecha trocar-senha",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.2 trocar-pin: diálogo aberto",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.4 trocar-pin: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.3 Esc fecha trocar-pin",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.2 restaurar-backup: diálogo aberto",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.4 restaurar-backup: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.3 Esc fecha restaurar-backup",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.2 kit-de-emergencia: diálogo aberto",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.4 kit-de-emergencia: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.3 Esc fecha kit-de-emergencia",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V5.10: Novo vazio com Salvar desabilitado",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V5.10: com o nome preenchido, Salvar habilita",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V5.10: salvar sem grupo e ambiente mostra o erro no campo",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V5.16 (negar): a janela mostra entrada, ambiente e comando",
+  "ok": true,
+  "detalhe": "Pedido de aprovação\n\nClaude Code pediu uma credencial\n\n2:00 restantes\n\nConfira a entrada, o comando exato e quem pediu antes de permitir.\n\nacme-pg-aprovacao\nbanco\nstage\nNível\ncom aprovação\nComando\n\"to"
+ },
+ {
+  "checagem": "V5.16 (negar): a CLI sai ≠ 0 e a marca não existe",
+  "ok": true,
+  "detalhe": "saida=125 ward: pedido negado"
+ },
+ {
+  "checagem": "V5.16 (fechar): a janela mostra entrada, ambiente e comando",
+  "ok": true,
+  "detalhe": "Pedido de aprovação\n\nClaude Code pediu uma credencial\n\n1:59 restantes\n\nConfira a entrada, o comando exato e quem pediu antes de permitir.\n\nacme-pg-aprovacao\nbanco\nstage\nNível\ncom aprovação\nComando\n\"to"
+ },
+ {
+  "checagem": "V5.16 (fechar): a CLI sai ≠ 0 e a marca não existe",
+  "ok": true,
+  "detalhe": "saida=125 ward: pedido negado"
+ },
+ {
+  "checagem": "V5.16 (uma vez): executa com o PIN",
+  "ok": true,
+  "detalhe": "saida=0 "
+ },
+ {
+  "checagem": "V5.16 (uma vez): o pedido seguinte abre a janela de novo",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V5.16 (1 hora): executa com o PIN",
+  "ok": true,
+  "detalhe": "saida=0"
+ },
+ {
+  "checagem": "V5.16 (1 hora): o pedido seguinte roda sem janela",
+  "ok": true,
+  "detalhe": "saida=0 "
+ },
+ {
+  "checagem": "V5.16 (1 hora): ward lock",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V5.16 (1 hora): depois de travar e destravar, a janela abre de novo",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V5.16 (1 hora): negado depois de travar",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V5.24: Conectar abre o terminal com ward ssh e conecta sem janela nem PIN",
+  "ok": true,
+  "detalhe": "17:39:48 uso=1 entrada=acme-ssh-salto saida=0 conectou=sim negado=nao"
+ },
+ {
+  "checagem": "V5.24 (ataque): o token não aparece em /proc/*/cmdline nem environ",
+  "ok": true,
+  "detalhe": "17:39:49 proc=0/905"
+ },
+ {
+  "checagem": "V5.24 (reuso): o primeiro uso conecta",
+  "ok": true,
+  "detalhe": "17:39:49 uso=1 entrada=acme-ssh-salto saida=0 conectou=sim negado=nao"
+ },
+ {
+  "checagem": "V5.24 (ataque): reusar o token vale o nível (a janela abre)",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V5.24 (ataque): reuso negado, não conecta",
+  "ok": true,
+  "detalhe": "17:39:52 uso=2 entrada=acme-ssh-salto saida=125 conectou=nao negado=sim"
+ },
+ {
+  "checagem": "V5.24 (ataque): o token de acme-ssh-salto em acme-ssh-interno-aprov vale o nível",
+  "ok": true,
+  "detalhe": "Pedido de aprovação\n\nClaude Code pediu uma credencial\n\n1:59 restantes\nprod\n\nCredencial de produção. As opções são as mesmas dos outros ambientes; confira o comando com atenção.\n\nConfira a entrada, o c"
+ },
+ {
+  "checagem": "V5.24 (ataque): outra entrada negada",
+  "ok": true,
+  "detalhe": "17:39:55 uso=1 entrada=acme-ssh-interno-aprov saida=125 conectou=nao negado=sim"
+ },
+ {
+  "checagem": "V5.24 (ataque): usar o token depois de 30 s vale o nível",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V5.24 (ataque): token vencido negado",
+  "ok": true,
+  "detalhe": "17:40:30 uso=1 entrada=acme-ssh-salto saida=125 conectou=nao negado=sim"
+ },
+ {
+  "checagem": "V5.16 (sempre): executa com o PIN",
+  "ok": true,
+  "detalhe": "saida=0"
+ },
+ {
+  "checagem": "V5.16 (sempre): a entrada passa a Livre no app",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V5.16 (sempre): o pedido seguinte roda sem janela",
+  "ok": true,
+  "detalhe": "saida=0"
+ },
+ {
+  "checagem": "V6.8 prod: entrada, ambiente prod, comando exato, diretório e cadeia",
+  "ok": true,
+  "detalhe": "Pedido de aprovação\n\nClaude Code pediu uma credencial\n\n1:59 restantes\nprod\n\nCredencial de produção. As opções são as mesmas dos outros ambientes; confira o comando com atenção.\n\nConfira a entrada, o comando exato e quem pediu antes de permitir.\n\nacme-pg-prod\nbanco\nprod\nNível\ncom aprovação\nComando\n\"t"
+ },
+ {
+  "checagem": "V6.8 prod: botão Negar",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V6.8 prod: botão Permitir uma vez",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V6.8 prod: botão Permitir por 1 hora",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V6.8 prod: botão Permitir sempre",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.3 aprovação: foco inicial em Negar",
+  "ok": true,
+  "detalhe": "{'id': 'approval-deny', 'tag': 'button', 'name': 'Negar', 'visible': True}"
+ },
+ {
+  "checagem": "V3.4 aprovacao-prod: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.4 aprovacao-prod-inteira: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.3 aprovação: Tab de Negar vai a Permitir uma vez",
+  "ok": true,
+  "detalhe": "{'id': '', 'tag': 'button', 'name': 'Permitir uma vez', 'visible': True}"
+ },
+ {
+  "checagem": "V3.3 aprovação: Shift+Tab de Negar vai ao PIN",
+  "ok": true,
+  "detalhe": "{'id': 'approval-pin', 'tag': 'input', 'name': '', 'visible': True}"
+ },
+ {
+  "checagem": "V6.8 Permitir uma vez sem PIN pede o PIN e o pedido continua",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V6.8 Permitir por 1 hora sem PIN pede o PIN e o pedido continua",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V6.8 Permitir sempre sem PIN pede o PIN e o pedido continua",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V6.8 PIN errado: 'PIN incorreto. Nada foi permitido.'",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V6.8 PIN errado: o pedido continua",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.4 aprovacao-pin-errado: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.3 Esc na janela nega: a CLI sai ≠ 0 e a marca não existe",
+  "ok": true,
+  "detalhe": "saida=125 ward: pedido negado"
+ },
+ {
+  "checagem": "V6.8 pipe: o aviso da entrada padrão",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V6.8 pipe: os três de permitir desligados sem a confirmação a mais",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V6.8 pipe: com o PIN e sem a confirmação, continuam desligados",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.4 aprovacao-orfao: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V6.8 pipe: com a confirmação, os três ligam",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.4 aprovacao-orfao-confirmado: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V6.8 ataque: sem a confirmação no pedido, a resposta é recusada e nada roda",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V6.8 pipe: com a confirmação e o PIN, o comando roda",
+  "ok": true,
+  "detalhe": "saida=0 "
+ },
+ {
+  "checagem": "V6.8 aviso 'O pedido expira em N s' nos últimos segundos",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.4 aprovacao-expirando: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V6.8 sem resposta em 2 min o pedido expira e a CLI diz 'expirado'",
+  "ok": true,
+  "detalhe": "saida=125 119 s ward: pedido expirado"
+ },
+ {
+  "checagem": "V6.8 a janela fica sem pedido depois de expirar",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V6.9 acme-pg-dev começa Livre",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V6.9 mudar o nível pede o PIN",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.4 nivel-pin: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V6.9 PIN errado: 'PIN incorreto. Nada foi alterado.'",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.4 nivel-pin-errado: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V6.9 com o PIN certo, o nível muda para Com aprovação",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.4 nivel-mudou: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V6.9 com aprovação, o ward run de acme-pg-dev abre a janela",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V6.9 de volta a Livre com o PIN",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V6.9 4 PINs errados no nível: recusados, o cofre segue aberto",
+  "ok": true,
+  "detalhe": "4 recusado(s)"
+ },
+ {
+  "checagem": "V6.9 o nível não mudou com PIN errado",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V6.9 o 5º PIN errado (na janela) trava o cofre: PIN bloqueado na janela",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V6.9 PIN bloqueado: os três de permitir desligados",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.4 aprovacao-pin-bloqueado: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V6.9 o pedido do 5º erro é negado: CLI ≠ 0 e a marca não existe",
+  "ok": true,
+  "detalhe": "saida=125 ward: pedido negado"
+ },
+ {
+  "checagem": "V6.9 o app mostra o cofre travado (destravar)",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.4 travado-pelos-pins: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V6.9 5 PINs errados no nível: o app vai para o destravar (cofre travado)",
+  "ok": true,
+  "detalhe": "4 recusado(s) antes"
+ },
+ {
+  "checagem": "V6.9 o log do daemon registra as duas travas por PIN (S9)",
+  "ok": true,
+  "detalhe": "2 trava(s)"
+ },
+ {
+  "checagem": "V6.9 destravar de novo com a senha mestra",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.2 primeiro-uso: a ponte com o daemon falso deu a URL",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.2 primeiro uso: 'Criar seu cofre'",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.4 primeiro-uso: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.2 credenciais-vazia: a ponte com o daemon falso deu a URL",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.2 credenciais vazia: o convite para a primeira entrada",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.4 credenciais-vazia: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.2 escolher-pendrive: a ponte com o daemon falso deu a URL",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.2 escolher pendrive: diálogo aberto",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V3.4 escolher-pendrive: DOM, campos, title e armazenamento sem padrão",
+  "ok": true,
+  "detalhe": "0 padrão(ões)"
+ },
+ {
+  "checagem": "V3.3 Esc fecha escolher pendrive",
+  "ok": true,
+  "detalhe": ""
+ }
+]

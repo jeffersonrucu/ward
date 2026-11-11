@@ -3,12 +3,15 @@
 # user's uid, without network: starts the in-container side of the service relay
 # (127.0.0.1:8081–8084 → the Unix sockets in /relay), checks the guard (this Chrome sees no
 # Ward) and runs the suite as on the host.
-# Usage: inside.sh <nm|extension|login> <root> <suite arguments...>
+# m2:Phase 66c: also `playwright` (first argument: the test binary of
+# `crates/wardd/tests/playwright.rs`, run with `--ignored`, then `dev/tests/playwright.sh`
+# with the rest) and `chrome-policy` (`dev/tests/chrome-policy.sh --rounds`).
+# Usage: inside.sh <nm|extension|login|playwright|chrome-policy> <root> <suite arguments...>
 export PATH=/usr/bin:/bin
 set -euo pipefail
 [ -f /.dockerenv ] || { echo "inside.sh: só no contêiner" >&2; exit 2; }
-SUITE="${1:?uso: inside.sh <nm|extension|login> <raiz> <argumentos>}"
-ROOT="${2:?uso: inside.sh <nm|extension|login> <raiz> <argumentos>}"
+SUITE="${1:?uso: inside.sh <suíte> <raiz> <argumentos>}"
+ROOT="${2:?uso: inside.sh <suíte> <raiz> <argumentos>}"
 shift 2
 cd "$ROOT"
 /usr/bin/python3 -I -B "$ROOT/dev/tests/chrome_guard.py" check
@@ -23,5 +26,13 @@ case "$SUITE" in
     nm) dev/tests/nm.sh "$@" ;;
     extension) dev/tests/extension.sh "$@" ;;
     login) dev/tests/login.sh "$@" ;;
+    playwright)
+        TESTBIN="${1:?uso: inside.sh playwright <raiz> <binário do teste> <wardd> <ward> <wardd-test-approver>}"
+        shift
+        case "$TESTBIN" in "$ROOT"/target/debug/deps/playwright-*) ;; *) echo "inside.sh: binário de teste inesperado: $TESTBIN" >&2; exit 2 ;; esac
+        "$TESTBIN" --ignored --test-threads=1
+        dev/tests/playwright.sh "$@"
+        ;;
+    chrome-policy) dev/tests/chrome-policy.sh --rounds "$@" ;;
     *) echo "inside.sh: suíte desconhecida: $SUITE" >&2; exit 2 ;;
 esac

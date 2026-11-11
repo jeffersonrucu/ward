@@ -1,0 +1,12 @@
+[
+ {
+  "checagem": "Chrome sem nenhuma extensão (guarda da Fase 65a)",
+  "ok": true,
+  "detalhe": "0 alvo(s) de extensão"
+ },
+ {
+  "checagem": "passo sem exceção",
+  "ok": false,
+  "detalhe": "TimeoutError: Page.wait_for_selector: Timeout 20000ms exceeded.\nCall log:\n  - waiting for locator(\"#master-password\") to be visible\n"
+ }
+]

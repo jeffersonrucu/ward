@@ -403,14 +403,39 @@ Comandos do Tauri e capabilities:
   existe; `make check` passa inteiro (fmt, clippy `-D warnings`, testes, `cargo audit`,
   `cargo deny`, gitleaks, origens).
 - [ ] V6.2 — Dado o repositório final, quando o validador procura cada nome antigo das
-  tabelas DT8–DT15 do PRD (como palavra inteira, em todos os arquivos do git), então
-  só acha em `docs/mission/arquivo/`, `dev/fixtures/legacy/`, na tabela de conversão
-  v4/v1 do núcleo, nas regras de deny das formas antigas, na recusa da marca antiga do
-  instalador e nas notas de atualização da documentação.
+  tabelas DT8–DT15 do PRD (como palavra inteira, em todos os arquivos do git; as
+  palavras pt-BR comuns que também eram nome de fio, como `estado`, `lista`, `erro`,
+  `banco` e `livre`, só como literal exato entre aspas, e os subcomandos como
+  `ward <nome>`, para não contar a prosa pt-BR; a procura da Fase 60), então só acha
+  nestes lugares (ajuste da Fase 66c, ressalva do scrutiny do M6; a tabela com os
+  arquivos está no handoff da Fase 60):
+  - `docs/mission/arquivo/` e os documentos da missão (`docs/mission/*`, handoffs,
+    evidências, `design-nodes.md`), as notas de atualização e as tabelas antigo → novo
+    de `docs/` (`instalacao.md`, `glossario.md`, `escopo.md`) e o `CLAUDE.md`;
+  - `dev/fixtures/legacy/`;
+  - a tabela de conversão v4/v1 do núcleo (`ward-core/src/body/legacy_v4.rs`,
+    `wire_v1.rs` e a tabela v1 → v2 dos testes de protocolo);
+  - os testes de recusa em que o nome antigo é o ataque: subcomando, operação, campo,
+    comando Tauri, nível ou variável da 0.1.x que tem de ser recusado ou que não pode
+    aparecer na saída nem no ambiente;
+  - as regras de deny e o `skill/README.md` com as formas da 0.1.x (DT10);
+  - a recusa da marca antiga de `test-mode` (instalador, `no-test-mode.sh`, testes de
+    instalação e de release, `dev/bridge.sh`) e os caminhos da 0.1.x que a atualização
+    apaga, com a marca antiga que o uninstall lê (`install/upgrade.sh`, `groups.sh`,
+    `deb.sh`; DT15);
+  - os rótulos pt-BR exibidos ("banco", "servidor", "livre", "bloqueado"), que não são o
+    nome gravado, e o nome do arquivo de estado no disco (`estado`, DT6);
+  - o protocolo de linhas do teste da área de transferência (glossário §9), chaves
+    internas e nomes de pasta de teste que não são fio do Ward, e a prosa pt-BR dos logs
+    e dos textos (prefixos `executar:`, "ferramentas", "origens").
 - [ ] V6.3 — Dados os literais do produto (`english_check.py --literals`), quando o
   validador compara com `dev/fixtures/legacy/strings-0.1.4.txt`, então a diferença é
   só de nomes trocados por esta missão (subcomandos, operações, variáveis, caminhos),
-  cada um listado no handoff da Fase 60. Nenhum texto exibido mudou.
+  cada um listado no handoff da Fase 60. Nenhum texto exibido mudou, fora as mensagens
+  novas de propósito, que são comportamento novo desta missão e não tradução (ressalva
+  da Fase 66c; lista no handoff da Fase 60): as da migração do cofre para o corpo v5, as
+  de versão do protocolo (DT8), a de nome reservado de campo extra ou anexo (Fase 54b)
+  e o estado `ward-state 2` (DT6).
 - [ ] V6.4 — (SEG) Dada a bateria de ataques da missão 1 com os nomes novos (`make
   test-attacks-foundation`, `test-attacks-services`, `test-home-decoys`,
   `test-real-home`, `test-socket-attacks`, `test-cli`, `test-ssh-home`,
@@ -456,10 +481,15 @@ Comandos do Tauri e capabilities:
   Cobre S8 ("Destravar e travar").
 - [ ] V6.11 — (SEG) Dada a árvore final, quando o gitleaks varre árvore, índice e
   histórico, então nada é acusado; o `.gitleaks.toml` só tem a allowlist dos valores
-  falsos de D15 (nenhum padrão novo, nenhum caminho novo além dos já existentes com o
-  nome novo); `cargo audit`, `cargo deny` (workspace e `app/src-tauri`) e `npm audit`
-  estão limpos, e os lockfiles não têm dependência nova em relação à 0.1.4. Cobre S14 e
-  S15.
+  falsos de D15, cada um casado inteiro (nenhum padrão genérico, nenhum caminho novo
+  além dos já existentes com o nome novo), com uma exceção registrada: a forma base64
+  de dois desses valores (a senha mestra de teste e a do WordPress), que a fixture do
+  protocolo v2 (`dev/fixtures/protocol-v2.jsonl`, m2:DT8) carrega na chave `password`,
+  também casada inteira (ajuste da Fase 66c); `cargo audit` e `cargo deny` (workspace e
+  `app/src-tauri`) estão limpos; o `npm audit` não tem aviso de severidade moderate ou
+  superior, e cada aviso low sem correção publicada fica registrado no handoff (hoje,
+  os 2 de `deepmerge`, por `@sveltejs/vite-plugin-svelte`, dependência de build); e os
+  lockfiles não têm dependência nova em relação à 0.1.4. Cobre S14 e S15.
 - [ ] V6.12 — (UI) Dado o app nativo (Tauri) de release, quando o usuário segue
   `docs/mission/roteiro-usuario.md`, então a janela, a bandeja ("Travar agora") e a
   janela de aprovação são as da 0.1.4.

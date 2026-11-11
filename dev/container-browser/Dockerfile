@@ -5,6 +5,8 @@
 # used in the build (Ubuntu apt and Google's Chrome repository, by HTTPS and with the
 # repository key checked by fingerprint); the container runs with `--network none` and
 # reaches the test services through `dev/tests/service_relay.py`.
+# m2:Phase 66c: also `make test-playwright` and `make test-chrome-policy`
+# (`dev/tests/browser-container.sh`).
 FROM ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
 # Fingerprint of the Google Linux Package Signing Key (primary key of dl.google.com/linux).
 ARG GOOGLE_REPO_FINGERPRINT=EB4C1BFD4F042F6DDDCCEC917721F63BD38B4796
@@ -23,5 +25,12 @@ RUN apt-get update \
     && apt-get purge -y curl gnupg && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/* /tmp/google.asc /etc/cron.daily/google-chrome \
     && test -x /opt/google/chrome/chrome \
+    && test ! -e /etc/opt/chrome/policies && test ! -e /etc/opt/chrome/native-messaging-hosts \
+    && test ! -e /etc/chromium && test ! -e /usr/local/bin/ward-nm
+# m2:Phase 66c: libatomic1, which the node of the Python Playwright needs (V6.12 in
+# `make test-playwright`); a layer of its own, on top of the Chrome one.
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends libatomic1 \
+    && rm -rf /var/lib/apt/lists/* \
     && test ! -e /etc/opt/chrome/policies && test ! -e /etc/opt/chrome/native-messaging-hosts \
     && test ! -e /etc/chromium && test ! -e /usr/local/bin/ward-nm

@@ -10,6 +10,12 @@
 # always) and the Connect button with `ward ssh --token-fd` against the jump server (2224),
 # plus the attacks on the token. At the end, the log scan (V5.27) of .dev/logs, and the
 # test vault goes back to what it was before (the "always" changes it).
+# m2:Phase 66c: also the screens of m2:V3.2 with the DOM scan of m2:V3.4 (and, with the fake
+# daemon of the bridge, first use, empty Credentials and choose a USB drive), the
+# keyboard of m2:V3.3, the approval window of `acme-pg-prod` (m2:V6.8: PIN on the three
+# "Allow", the standard input in a pipe, 2 min expiry) and the level with the PIN and the
+# 5 wrong PINs that lock the vault (m2:V6.9); about 5 minutes more. The screenshots go to
+# E2E_EVIDENCE (inside docs/mission/evidence/), or docs/mission/evidence/test-app-e2e/.
 #
 # Needs: `make dev-vault`, `make dev-variations`, `make app-front`, the test services up
 # (`make dev-services-up`), Chrome in /opt/google/chrome and Python Playwright in
