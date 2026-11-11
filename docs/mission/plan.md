@@ -161,7 +161,7 @@ Compilação de cada fase: `make compile`. Checador: os arquivos da fase.
   `memoria.rs`, `socket.rs`, `datas.rs`. — V2.1, V2.4
 - [x] Fase 24 — testes `ssh.rs`, `run.rs`, `ssh_falso.py`. — V2.1
 - [x] Fase 25 — testes `aprovacao.rs`, `trava.rs`, `nucleo.rs` (com o `[[test]]` `trava` no `Cargo.toml`, achado da Fase 4). — V2.1
-- [ ] Fase 26 — testes `externo.rs`, `backup.rs`, `configuracoes.rs`, `d62.rs` (o
+- [x] Fase 26 — testes `externo.rs`, `backup.rs`, `configuracoes.rs`, `d62.rs` (o
   `externo_nao_usa_link` procura `rename_no_replace(destination.as_fd()` em `src/external.rs`;
   achado da Fase 23). — V2.1
 - [x] Fase 27 — testes `playwright.rs`, `extensao.rs`, `login.rs`, `chrome_falso.py`,
