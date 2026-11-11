@@ -295,7 +295,7 @@ Contrato: V4.1–V4.24. Sequencial. A partir daqui o fio muda.
   linhas de `protocol-v1.jsonl` recusadas) escritos. Compilação: só `cargo check` do
   `ward-core` (os clientes quebram até a Fase 51; o handoff diz isso). — V4.13, V4.14,
   V4.15
-- [ ] Fase 51 — (achados da Fase 50: o `server.rs` responde ao erro de leitura e segue na conexão, e o V4.13 pede fechar depois de `unknown_version`; a CLI e o app usam `protocol::frame_version` para parar antes da senha (V4.16); `app/core` `credentials.rs` (`"usuario"`/`"senha"`/`"chave_privada"`) e `key.rs` (`LOADABLE_FIELDS`), o erro pronto do `ward-nm` (`{"v":1,"tipo":"erro",…}`) e o JSON montado à mão nos testes Rust passam à v2; gitleaks pode acusar `"password":"<base64>"`: só a forma base64 exata de um valor de D15 entra na allowlist) (achado da Fase 48: testes Rust que montam JSON com `banco`/`servidor`/`nota-segura`/`generico`/`bloqueado`/`com-aprovacao`/`livre`/`nenhuma` em `crates/wardd/tests/*`, `app/core`, `app/src-tauri/src/main.rs`, ponte, `ward-nm` e `ward` passam aos nomes v5; coluna TIPO do `ward list` por `label()`) Protocolo v2 nos clientes Rust: `wardd` (servidor, sessões, extensão,
+- [x] Fase 51 — (achados da Fase 50: o `server.rs` responde ao erro de leitura e segue na conexão, e o V4.13 pede fechar depois de `unknown_version`; a CLI e o app usam `protocol::frame_version` para parar antes da senha (V4.16); `app/core` `credentials.rs` (`"usuario"`/`"senha"`/`"chave_privada"`) e `key.rs` (`LOADABLE_FIELDS`), o erro pronto do `ward-nm` (`{"v":1,"tipo":"erro",…}`) e o JSON montado à mão nos testes Rust passam à v2; gitleaks pode acusar `"password":"<base64>"`: só a forma base64 exata de um valor de D15 entra na allowlist) (achado da Fase 48: testes Rust que montam JSON com `banco`/`servidor`/`nota-segura`/`generico`/`bloqueado`/`com-aprovacao`/`livre`/`nenhuma` em `crates/wardd/tests/*`, `app/core`, `app/src-tauri/src/main.rs`, ponte, `ward-nm` e `ward` passam aos nomes v5; coluna TIPO do `ward list` por `label()`) Protocolo v2 nos clientes Rust: `wardd` (servidor, sessões, extensão,
   ponte), `ward` (conferência da versão antes da senha; `list --json` com chaves e
   valores em inglês e tabela com rótulos pt-BR: imprime `label()`, não `nome()`, achado da Fase 1), `ward-nm`, `ward-test-bridge`,
   `app/core` (com o `daemon_falso`), testes Rust que montam JSON à mão. Compilação:
@@ -314,12 +314,22 @@ Contrato: V4.1–V4.24. Sequencial. A partir daqui o fio muda.
   em `dev/tests/dev-vault.sh` com os nomes v5 deste contrato; expectativas de
   `dev/tests/cli.py` e dos testes do `wardd` pela tabela "Entrega esperada". Compilação:
   `make compile`. — V4.19, V4.20, V4.21
-- [ ] Fase 54 — **(UI)** Comandos e eventos do Tauri e `serde` da webview: (tirar do `dev/english-check/frozen.txt` as 52 entradas da Fase 54 que a Fase 34 pôs para os comandos e parâmetros do `main.rs`; e as dos `#[serde(rename)]` de app/core das Fases 32–34) (procurar nome de fio como chave entre aspas e como acesso por
+- [ ] Fase 54 — (achado da Fase 51: o `app/src` tem de usar os ids de formulário v2 — `password`, `username`, `totp_seed`, `private_key`… — e o código `versao-incompativel` do app não tem tela própria) **(UI)** Comandos e eventos do Tauri e `serde` da webview: (tirar do `dev/english-check/frozen.txt` as 52 entradas da Fase 54 que a Fase 34 pôs para os comandos e parâmetros do `main.rs`; e as dos `#[serde(rename)]` de app/core das Fases 32–34) (procurar nome de fio como chave entre aspas e como acesso por
   ponto, achado da Fase 36; `frozen.txt` lista os da W) nomes das
   funções `#[tauri::command]` e dos parâmetros, eventos, `capabilities/*.json`,
   `permissions/`, chamadas `invoke`/`listen` no `app/src`, ponte de teste, tira os
   `#[serde(rename = "<antigo>")]`; lista do `strings` do V5.6 (missão 1) com os nomes
   novos. `frozen.txt` vazio e apagado. Compilação: `make compile`. — V4.22, V4.23, V4.24
+
+- [ ] Fase 54a — Correção (achados da Fase 51): (1) `crates/ward-nm/tests/binary.rs` › `no_daemon_answers_internal`, rodado com
+  `cargo test -p ward -p ward-nm -p ward-test-bridge`, compilou o `ward-nm` sem `test-mode` e alcançou o `wardd` 0.1.4
+  instalado na máquina pelo socket do sistema (pedido `fill` sem segredo, recusado). Nenhum teste pode alcançar o socket do
+  sistema: todo teste que fala com um daemon exige `test-mode` (falha alta sem ele, nunca cai no socket real) e um socket
+  dentro de `.dev/` ou do `WARD_DEV_SOCKET_DIR`; procurar no workspace todo teste com o mesmo risco (binário compilado por
+  unificação de features) e um teste de ataque que planta um socket "do sistema" falso e exige que nenhum teste o toque.
+  (2) gitleaks acusa 9 `generic-api-key` na árvore e outros no histórico (senhas falsas novas de testes e o handoff da
+  Fase 50): segredo de teste novo é gerado em `.dev/` ou é um valor de D15; o handoff não leva o valor; nada de padrão
+  genérico na allowlist. — S1, S3, V2.1
 
 ## Milestone 5 — Nomes externos e documentação
 
