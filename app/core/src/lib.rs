@@ -9,17 +9,17 @@
 //! - [`fake_daemon`] (tests and `test-mode` only): answers over the protocol with the
 //!   fake entries of the test vault, for the test bridge.
 //! - [`credentials`]: list and detail of the Credentials screen (Phase 32), no secret.
-//! - [`area_transferencia`]: "copy" resolved here (D4). The value goes from the daemon to
+//! - [`clipboard`]: "copy" resolved here (D4). The value goes from the daemon to
 //!   the clipboard without passing through the webview, and the cleanup in 30 s only
 //!   erases if the clipboard still holds the copied value (S12).
 //! - [`form`]: entry form (Phase 33). A kept secret and a generated password stay on the
 //!   Rust side; the TOTP seed and the `otpauth://` are normalized here (D35).
-//! - [`gerador`]: standalone password generator (Phase 37). The password is born in
+//! - [`generator`]: standalone password generator (Phase 37). The password is born in
 //!   `ward_core::generator` and stays here; the interface receives only size, strength
 //!   and symbols, and the value only on "reveal".
-//! - [`nivel`]: change the access level with PIN (Phase 35, S9); the PIN stays in a type
+//! - [`level`]: change the access level with PIN (Phase 35, S9); the PIN stays in a type
 //!   that zeroes and only goes to the set level request.
-//! - [`destrave`]: unlock with the master password (Phase 31; the password stays in a
+//! - [`unlock`]: unlock with the master password (Phase 31; the password stays in a
 //!   type that zeroes and only goes to the unlock request) and the agent's unlock
 //!   request (D65 a).
 //! - [`startup`]: startup of the setgid app before GTK (D47, D57): D57 environment,
@@ -29,7 +29,7 @@
 //!   Rust side; the interface receives only name and size (S11).
 //! - [`terminal`]: "Connect" of a server entry (D3): single-use token and the default
 //!   terminal.
-//! - [`primeiro_uso`]: master password and PIN of the new vault (Phase 30), checked on
+//! - [`first_use`]: master password and PIN of the new vault (Phase 30), checked on
 //!   the Rust side before the vault creation request; the daemon stores only the PIN
 //!   hash (D30).
 //! - [`settings`]: Settings screen (Phase 38): change PIN (asks for the current
@@ -50,22 +50,21 @@
 #![forbid(unsafe_code)]
 
 pub mod approval;
-pub mod area_transferencia;
 pub mod attachments;
 pub mod client;
+pub mod clipboard;
 pub mod commands;
 pub mod credentials;
 pub mod daemon;
-pub mod destrave;
 mod error;
 pub mod external_backup;
 #[cfg(any(test, feature = "test-mode"))]
 pub mod fake_daemon;
+pub mod first_use;
 pub mod form;
-pub mod gerador;
+pub mod generator;
 pub mod key;
-pub mod nivel;
-pub mod primeiro_uso;
+pub mod level;
 pub mod restore;
 pub mod secret;
 pub mod service;
@@ -73,5 +72,6 @@ pub mod settings;
 pub mod startup;
 pub mod terminal;
 pub mod tray;
+pub mod unlock;
 
 pub use error::AppError;

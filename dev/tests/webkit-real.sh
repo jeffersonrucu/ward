@@ -118,22 +118,22 @@ def once(t):
     assert s.count(t) == 1, "main.rs do app mudou: %r" % t
     return s.index(t)
 # 1) the startup call with its error closure, up to the closing `});`
-a = once("    let mut partida = startup::start()")
+a = once("    let mut app_startup = startup::start()")
 b = s.index("\n    });\n", a) + len("\n    });\n")
 s = s[:a] + "    // webkit-real.sh: sem a partida (só em .dev).\n" + s[b:]
 # 2) daemon: none, as if the startup had not handed over the connection
-t = "partida.take_daemon().ok_or(AppError::ConnectionLost)"
+t = "app_startup.take_daemon().ok_or(AppError::ConnectionLost)"
 once(t)
 s = s.replace(t, "Err::<DaemonSocket, AppError>(AppError::ConnectionLost)")
 # 3) the startup watch call with its closure, up to the closing `});`
-a = once("    partida.watch(move || {")
+a = once("    app_startup.watch(move || {")
 b = s.index("\n    });\n", a) + len("\n    });\n")
-assert "na_vigia" in s[a:b], "main.rs do app mudou: watch"
-s = s[:a] + "    drop(na_vigia);\n" + s[b:]
+assert "for_watcher" in s[a:b], "main.rs do app mudou: watch"
+s = s[:a] + "    drop(for_watcher);\n" + s[b:]
 once("use ward_app_core::startup;\n")
 s = s.replace("use ward_app_core::startup;\n", "")
 import re
-assert not re.search(r"\b(partida|startup)\s*[.:(]", re.sub(r"//[^\n]*", "", s)), "main.rs do app mudou: partida restante"
+assert not re.search(r"\b(partida|app_startup|startup)\s*[.:(]", re.sub(r"//[^\n]*", "", s)), "main.rs do app mudou: partida restante"
 open(p, "w").write(s)
 PY
 echo "==> compilando o harness em .dev/webkit-real (release, sem LTO)"

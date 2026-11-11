@@ -1403,8 +1403,8 @@ Feitos na Fase 43 (exemplos e scripts de contêiner, sem alias para o nome velho
 Os marcadores impressos pelos exemplos (`servidor: pronto`, `papel=…`, `lancador:`,
 `gerente:`, `inicio`/`depois`/`erro`/`queda` do relatório do app, `saida=`,
 `resposta:`), os subcomandos do `wardd-test-client` (`estado`, `lista`, `destravar`, nomes
-de operação do protocolo, Fase 51), o nome do teste `area_gtk::testes::sessao_real` e o
-protocolo de linhas do `clipboard.py` (vão com o teste do `app/src-tauri`) e os outros
+de operação do protocolo, Fase 51), o protocolo de linhas do `clipboard.py` (vai com o teste
+`gtk_clipboard::tests::real_session` do `app/src-tauri`, renomeado na Fase 34) e os outros
 nomes de dentro do contêiner (`/opt/teste`, `cliente`, `plataforma`, `falso`,
 `ward-servidor`, `libmarca.so`) ficam.
 
@@ -2473,6 +2473,78 @@ segredos, anexos, criada_em, alterada_em }` → `CredentialDetail { …, project
 fields, secrets, attachments, created_at, modified_at }`, todos com `rename` (`novo` →
 `new`); `rotulo_do_campo` → `field_label`, privados `campo`/`conexao`/`juntar`/`resumo` →
 `field`/`connection`/`join`/`summary`.
+Fase 34 (`app/core`: `unlock`, `first_use`, `generator`, `clipboard`, `level`; `app/src-tauri`:
+`main.rs`, `gtk_clipboard.rs`, `build.rs`): módulos `destrave` → `unlock`, `primeiro_uso` →
+`first_use`, `gerador` → `generator`, `area_transferencia` → `clipboard`, `nivel` → `level`,
+`area_gtk` → `gtk_clipboard` (teste `area_gtk::testes::sessao_real` →
+`gtk_clipboard::tests::real_session`, que o `dev/tests/clipboard.py` chama pelo nome).
+Destrave: `SenhaMestra` → `MasterPassword` (`nova`/`para_o_protocolo` → `new`/
+`to_protocol`; `Debug` `"SenhaMestra(••••)"` → `"MasterPassword(••••)"`), `FORA_DO_FORMATO` →
+`OUT_OF_FORMAT`, `PRAZO_PEDIDO` → `REQUEST_TIMEOUT`, `InfoPedido { id, restante, entrada,
+operacao, comando }` → `RequestInfo { id, remaining, entry, operation, command }` (com
+`rename`), `PedidoPendente` → `PendingRequest` (`travar`/`marcar`/`marcar_em`/`info`/
+`info_em`/`limpar` → `lock_state`/`mark`/`mark_at`/`info`/`info_at`/`clear`), privados
+`Texto`/`Estado` → `Text`/`State`, `vigiar` → `watch` (`ao_chegar` → `on_arrival`).
+Primeiro uso: `Digitado` → `Typed` (`novo`/`serve_de_nova`/`igual` → `new`/`valid_as_new`/
+`equals`; `Debug` `"Digitado(••••)"` → `"Typed(••••)"`), `MIN_CARACTERES_SENHA` →
+`MIN_PASSWORD_CHARS`, `SENHA_CURTA`/`SENHA_LONGA`/`SENHA_DIFERENTE`/`PIN_INVALIDO`/
+`PIN_DIFERENTE` → `PASSWORD_SHORT`/`PASSWORD_LONG`/`PASSWORD_MISMATCH`/`PIN_INVALID`/
+`PIN_MISMATCH`, `NovoCofre { senha, confirmacao, pin, confirmacao_pin }` → `NewVault {
+password, confirmation, pin, pin_confirmation }` (com `rename`; `erros` → `errors`),
+`erro` (privado) → `field_error`, `erros_da_senha` → `password_errors`, `pin_valido` →
+`valid_pin`; testes `pelo_servico`/`SemArea`/`Espiao`/`Quadros` → `through_service`/
+`NoClipboard`/`Spy`/`Frames`. Gerador: `TAMANHO_MIN`/`TAMANHO_MAX`/`TAMANHO_PADRAO` →
+`MIN_LENGTH`/`MAX_LENGTH`/`DEFAULT_LENGTH`, `Opcoes { tamanho, minusculas, maiusculas,
+digitos, simbolos }` → `Options { size, lowercase, uppercase, digits, symbols }`
+(`validar` → `validate`), `Forca { Fraca, Razoavel, Forte, MuitoForte }` → `Strength {
+Weak, Fair, Strong, VeryStrong }` (`de_bits`/`codigo` → `from_bits`/`code`; os códigos
+`fraca`…`muito-forte` ficam), `Gerada { tamanho, bits, forca, simbolos }` → `Generated {
+size, bits, strength, symbols }`, `Revelada` → `Revealed` (`de_segredo`/`expor` →
+`from_secret`/`expose`; `Debug` `"Revelada(••••)"` → `"Revealed(••••)"`), `Gerador { atual
+}` → `Generator { current }` (`gerar`/`para_copiar`/`revelar`/`descartar`/`tem_senha` →
+`generate`/`for_copy`/`reveal`/`discard`/`has_password`). Área de transferência:
+`PRAZO_LIMPEZA` → `CLEAR_DELAY`, `MAX_VALOR` → `MAX_VALUE`, `AreaTransferencia { escrever,
+ler, limpar }` → `Clipboard { write, read, clear }`, `Pendente { geracao, valor }` →
+`Pending { generation, value }`, `Copiador` → `Copier` (`com_prazo`/`copiar`/
+`limpar_agora` → `with_delay`/`copy`/`clear_now`), `limpar_se_ainda_for` →
+`clear_if_still`, `iguais` → `equal`; teste `AreaFalsa { conteudo, limpezas }` →
+`FakeClipboard { content, clears }`. Nível: `NivelMudado { entrada, nivel }` →
+`LevelChanged { entry, level }` (com `rename`), `Pin::para_o_protocolo` → `to_protocol`,
+`formato_ok` fica, `nivel_de_nome` → `level_from_name`. Área do GTK: `AreaGtk` →
+`GtkClipboard`, `Dono { ultima, atual }` → `Owner { last, current }`, `Guarda` → `Guard`,
+`TIPOS_TEXTO`/`TIPO_DICA`/`DICA`/`INFO_TEXTO`/`INFO_DICA` → `TEXT_TYPES`/`HINT_TYPE`/`HINT`/
+`TEXT_INFO`/`HINT_INFO`, `Valor` → `Value`, `travar`/`soltar`/`na_thread_principal` →
+`lock_owner`/`release`/`on_main_thread`. `main.rs` do Tauri (comandos e argumentos do
+JSON ficam até a Fase 54, seção 13; os `State`/`WebviewWindow` não vêm do JSON e mudam:
+`estado` → `state`, `janela` → `window`): `ServicoApp` → `AppService`, `Falha { codigo,
+mensagem }` → `Failure { code, message }`, `RespostaEstado { estado, pedido }` →
+`StatusResponse { status, request }`, `AvisoTela { aviso }` → `ScreenNotice { notice }`,
+`RespostaGerada { tamanho, bits, forca, simbolos }` → `GeneratedResponse { size, bits,
+strength, symbols }`, `RespostaRevelada { valor }` → `RevealedResponse { value }`,
+`RespostaUsada { tamanho }` → `UsedResponse { size }` (todas com `rename`), `Canais {
+principal, aprovacao }` → `Channels { main, approval }`, `CanalAvisos` →
+`NoticeChannels`, `travar_canais` → `lock_channels`, `avisar` → `notify`, `Estado {
+servico, canal, visto }` → `AppState { service, channels, seen }`,
+`JANELA_PRINCIPAL`/`JANELA_APROVACAO` → `MAIN_WINDOW`/`APPROVAL_WINDOW` (os rótulos
+`principal`/`aprovacao` ficam), `na_janela_de_aprovacao` → `in_approval_window`,
+`abrir_janela_de_aprovacao` → `open_approval_window`, `ao_fechar_a_aprovacao` →
+`on_approval_closed`, `SeletorGtk` → `GtkPicker`, `dialogo_de_arquivo` → `file_dialog`,
+`INTERVALO_DA_BANDEJA` → `TRAY_INTERVAL`, `Bandeja { estado, minutos, titulo, subtitulo,
+acao, icone }` → `Tray { state, minutes, title, subtitle, action, icon }`,
+`icone_da_bandeja` → `tray_icon_image`, `criar_bandeja` → `create_tray`,
+`estado_mostrado` → `shown_state`, `atualizar_bandeja` → `update_tray`,
+`tempo_da_bandeja` → `tray_lock_time`, `vigiar_bandeja` → `watch_tray`,
+`ao_clicar_na_bandeja` → `on_tray_click`, `mostrar_principal` → `show_main`,
+`ajustar_barra_de_titulo` → `adjust_title_bar`, `criar_janela_principal` →
+`create_main_window`, `montar_servico` → `build_service`, `navegacao_permitida` →
+`navigation_allowed`, `com_comandos` → `with_commands`, `vigiar_avisos` →
+`watch_notices`; locais de `main` `partida`/`na_aprovacao`/`na_vigia` → `app_startup`/
+`for_approval`/`for_watcher` (o heredoc do `dev/tests/webkit-real.sh` e o padrão
+`.on_navigation(navigation_allowed)` do `app/core/tests/configuracao_tauri.rs`
+acompanham); testes `sem_daemon`/`app_de_teste`/`chamar`/`ORIGEM` → `no_daemon`/
+`test_app`/`call`/`ORIGIN`. `build.rs`: `manifesto` → `manifest`. Os nomes de thread
+(`ward-app-destrave`, `ward-app-negar`, `ward-app-bandeja`, `ward-app-travar`,
+`ward-limpeza`), os avisos da tela e os textos mostrados ficam.
 Fase 28 (clientes `ward` e `ward-nm`; nomes próprios deles, os de `ward-core`/
 `ward-platform` ficam para as fases desses crates): módulos `cliente`/`comandos`/
 `texto`/`testes` → `client`/`commands`/`text`/`tests`; `principal` → `main`;
