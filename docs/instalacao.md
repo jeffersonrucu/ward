@@ -84,7 +84,7 @@ make extension-crx     # target/extension/ward.crx, assinado com .dev/extension/
 
 O `make extension-crx` usa o Chrome (`--pack-extension`) com perfil e HOME temporários
 em `target/`, e não mexe no seu perfil. Ele recusa o pacote se o id não for o
-`ID_EXTENSAO` do `ward-nm`. No fim imprime a linha `EXTENSION_ID=… EXTENSION_CRX=…` do
+`EXTENSION_ID` do `ward-nm`. No fim imprime a linha `EXTENSION_ID=… EXTENSION_CRX=…` do
 próximo passo.
 
 A chave privada tem de estar em `.dev/extension/key.pem` (0600) no clone de

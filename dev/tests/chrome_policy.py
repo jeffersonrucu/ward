@@ -126,7 +126,7 @@ sys.stdout.buffer.flush()
         wardd_bin, nm_bin = sys.argv[5:7]
         fx = json.load(open(f"{root}/dev/fixtures/entries.json"))
         ward_id = [ln.split('"')[1] for ln in open(f"{root}/crates/ward-nm/src/lib.rs")
-                   if ln.startswith("pub const ID_EXTENSAO")][0]
+                   if ln.startswith("pub const EXTENSION_ID")][0]
         rt = os.environ["XDG_RUNTIME_DIR"]
         sockdir = f"{rt}/ward-politica-chrome-{os.getpid()}"
     if scenario == "roubo" and outside:

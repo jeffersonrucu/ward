@@ -37,8 +37,8 @@ done
 [ ! -L "$DIST" ] && [ -f "$DIST/manifest.json" ] || error "$DIST/manifest.json não existe (rode 'make extension')"
 [ -z "$(find "$DIST" -type l -print -quit)" ] || error "$DIST tem link simbólico"
 [ -x "$CHROME" ] || error "Chrome não encontrado em $CHROME"
-EXPECTED="$(sed -n -E 's/^pub const ID_EXTENSAO: &str = "([a-p]{32})";$/\1/p' "$ROOT/crates/ward-nm/src/lib.rs")"
-[[ "$EXPECTED" =~ ^[a-p]{32}$ ]] || error "ID_EXTENSAO não achado em crates/ward-nm/src/lib.rs"
+EXPECTED="$(sed -n -E 's/^pub const EXTENSION_ID: &str = "([a-p]{32})";$/\1/p' "$ROOT/crates/ward-nm/src/lib.rs")"
+[[ "$EXPECTED" =~ ^[a-p]{32}$ ]] || error "EXTENSION_ID não achado em crates/ward-nm/src/lib.rs"
 
 mkdir -p -m 0755 -- "$ROOT/target"
 TMP="$(mktemp -d "$ROOT/target/extension-crx.XXXXXX")"
@@ -55,7 +55,7 @@ env -i HOME="$TMP/home" PATH=/usr/bin:/bin LANG=C.UTF-8 /usr/bin/timeout 120 "$C
 
 parsed="$(/usr/bin/python3 -I -B "$HERE/crx.py" "$TMP/ward.crx")" || error "pacote recusado pelo crx.py"
 read -r id version <<<"$parsed"
-[ "$id" = "$EXPECTED" ] || error "o pacote é da extensão $id, não do ID_EXTENSAO $EXPECTED (chave errada?)"
+[ "$id" = "$EXPECTED" ] || error "o pacote é da extensão $id, não do EXTENSION_ID $EXPECTED (chave errada?)"
 
 mkdir -p -m 0755 -- "${OUTPUT%/*}"
 install -m 0644 -- "$TMP/ward.crx" "$OUTPUT"

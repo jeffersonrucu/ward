@@ -2323,6 +2323,43 @@ com os variantes pelos códigos da seção 13: `DaemonUnavailable`, `DaemonUntru
 `UsbDrivesUnavailable`, `UsbDriveNotConnected`, `BackupNotFound`, `BackupUnavailable`,
 `VaultChanged`. Os homônimos `cliente::CodigoTotp`, `Comando::CodigoTotp` e
 `Resposta::CodigoTotp` são outros e não mudaram.
+Fase 28 (clientes `ward` e `ward-nm`; nomes próprios deles, os de `ward-core`/
+`ward-platform` ficam para as fases desses crates): módulos `cliente`/`comandos`/
+`texto`/`testes` → `client`/`commands`/`text`/`tests`; `principal` → `main`;
+`Comando` → `Command` (`Lista`/`Travar`/`Destravar`/`Ajuda`/`Versao` → `List`/`Lock`/
+`Unlock`/`Help`/`Version`; campos `entrada`/`comando` → `entry`/`command`); `ErroUso` →
+`UsageError` (`SemComando`/`ComandoDesconhecido`/`ArgumentoInesperado`/`NaoUtf8`/
+`UsoRun`/`UsoSsh`/`TokenEmArgv`/`UsoPlaywright`/`UsoLogin` → `NoCommand`/
+`UnknownCommand`/`UnexpectedArgument`/`NotUtf8`/`RunUsage`/`SshUsage`/`TokenInArgv`/
+`PlaywrightUsage`/`LoginUsage`; `mensagem()` → `message()`); `AJUDA` → `HELP`;
+`interpretar` → `parse`; `ErroConexao` → `ConnectionError` (`Ausente`/`NaoConfiavel`/
+`SemResposta`/`Fechada`/`RespostaInvalida`/`PedidoInvalido` → `Missing`/`Untrusted`/
+`NoResponse`/`Closed`/`InvalidResponse`/`InvalidRequest`); `Conexao` → `Connection`
+(`conectar`/`reconferir`/`pedir`/`pedir_com_prazo`/`abrir_sessao` → `connect`/`reverify`/
+`request`/`request_with_timeout`/`open_session`); `Sessao`/`EscritaSessao` → `Session`/
+`SessionWriter` (`receber`/`entrada`/`janela` → `receive`/`send_stdin`/`send_window`);
+`servidor_esperado` → `expected_server`; `Entorno` → `Env` (`endurecer`/`ler_senha`/
+`saida`/`erro`/`ambiente`/`diretorio`/`entrada_padrao`/`tipo_entrada`/
+`tamanho_terminal`/`modo_cru`/`ler_token` → `harden`/`read_password`/`stdout`/`stderr`/
+`environment`/`current_dir`/`stdin`/`stdin_kind`/`terminal_size`/`raw_mode`/
+`read_token`); `Sistema` → `System`; `executar` (despacho dos comandos) → `execute`
+(não `run`, que é o `ward run`); `SAIDA_OK`/`SAIDA_ERRO`/`SAIDA_USO`/`SAIDA_RUN_ERRO` →
+`EXIT_OK`/`EXIT_ERROR`/`EXIT_USAGE`/`EXIT_RUN_ERROR`; `MSG_RUN_GRANDE`/`MSG_RUN_CAMPO`/
+`MSG_RUN_TRAVADO`/`MSG_TOKEN_FORMATO` → `MSG_RUN_TOO_LARGE`/`MSG_RUN_FIELD`/
+`MSG_RUN_LOCKED`/`MSG_TOKEN_FORMAT`; `mensagem_do_daemon`/`mensagem_do_login` →
+`daemon_message`/`login_message`; `pedido_run`/`pedido_ssh` → `run_request`/
+`ssh_request`; `classificar_entrada`/`tipo_da_entrada_padrao` → `classify_stdin`/
+`detect_stdin_kind`; `lista_json`/`lista_tabela`/`neutralizar`/`invisivel`/`json_texto` →
+`list_json`/`list_table`/`neutralize`/`invisible`/`json_text`. `ward-nm`: `ID_EXTENSAO` →
+`EXTENSION_ID` (com a leitura em `dev/extension/build.py`, `dev/tests/extension.py`,
+`dev/tests/login.py`, `dev/tests/chrome_policy.py`, `install/pack-extension.sh` e a
+mensagem que o `dev/tests/deb.sh` procura); `MAX_MENSAGEM_ENTRADA`/`SAIDA` →
+`MAX_MESSAGE_IN`/`OUT`; `OPERACOES` → `OPERATIONS`; `resposta_cabe` → `response_fits`;
+`origem_da_extensao_valida` → `valid_extension_origin`; `ErroMensagem` → `MessageError`
+(`Fim`/`Cortada`/`Vazia`/`GrandeDemais` → `End`/`Truncated`/`Empty`/`TooLarge`);
+`ler_mensagem`/`escrever_mensagem` → `read_message`/`write_message`; `FalhaDaemon` →
+`DaemonFailure` (`Indisponivel`/`Conversa` → `Unavailable`/`Conversation`; `texto()` →
+`text()`); `Daemon::trocar` → `exchange`; `atender`/`servir` → `handle`/`serve`.
 
 Funções e métodos não estão listados um a um: o nome sai da seção 2 na ordem do inglês
 (`conferir_arquivo` → `verify_file`, `ler_cofre` → `read_vault`, `codificar_resposta` →
