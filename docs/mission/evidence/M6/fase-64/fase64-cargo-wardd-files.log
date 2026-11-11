@@ -1,0 +1,100 @@
+   Compiling typenum v1.20.1
+   Compiling rand_core v0.10.1
+   Compiling zeroize v1.9.1
+   Compiling cmov v0.5.4
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.27
+   Compiling cpufeatures v0.3.1
+   Compiling cfg-if v1.0.5
+   Compiling serde_core v1.0.229
+   Compiling libc v0.2.191
+   Compiling base64ct v1.8.3
+   Compiling serde v1.0.229
+   Compiling cpubits v0.1.1
+   Compiling semver v1.0.28
+   Compiling rustix v1.1.6
+   Compiling winnow v1.0.5
+   Compiling subtle v2.6.1
+   Compiling futures-core v0.3.34
+   Compiling getrandom v0.4.3
+   Compiling zmij v1.0.23
+   Compiling signature v3.0.0
+   Compiling byteorder v1.5.0
+   Compiling bitflags v2.13.2
+   Compiling linux-raw-sys v0.12.1
+   Compiling tinyvec v1.13.3
+   Compiling pin-project-lite v0.2.17
+   Compiling ed25519 v3.0.0
+   Compiling futures-io v0.3.34
+   Compiling serde_json v1.0.154
+   Compiling itoa v1.0.18
+   Compiling ctutils v0.4.8
+   Compiling rustc_version v0.4.1
+   Compiling ordered-stream v0.2.0
+   Compiling pem-rfc7468 v1.0.0
+   Compiling endi v1.1.1
+   Compiling memchr v2.8.3
+   Compiling hex v0.4.3
+   Compiling phc v0.6.1
+   Compiling curve25519-dalek v5.0.0
+   Compiling unicode-normalization v0.1.25
+   Compiling password-hash v0.6.1
+   Compiling hybrid-array v0.4.15
+   Compiling syn v3.0.9
+   Compiling syn v2.0.119
+   Compiling crypto-common v0.2.2
+   Compiling block-buffer v0.12.1
+   Compiling inout v0.2.6
+   Compiling socket2 v0.6.5
+   Compiling ward-platform v0.2.0 (<repo>/crates/ward-platform)
+   Compiling digest v0.11.3
+   Compiling cipher v0.5.2
+   Compiling universal-hash v0.6.1
+   Compiling aead v0.6.1
+   Compiling polyval v0.7.3
+   Compiling poly1305 v0.9.1
+   Compiling sha2 v0.11.1
+   Compiling ssh-encoding v0.3.0
+   Compiling pbkdf2 v0.13.0
+   Compiling blake2 v0.11.0
+   Compiling hmac v0.13.0
+   Compiling sha1 v0.11.0
+   Compiling ghash v0.6.0
+   Compiling uuid v1.29.2
+   Compiling chacha20 v0.10.2
+   Compiling ctr v0.10.1
+   Compiling aes v0.9.4
+   Compiling blowfish v0.10.0
+   Compiling argon2 v0.6.0
+   Compiling chacha20poly1305 v0.11.0
+   Compiling aes-gcm v0.11.1
+   Compiling ssh-cipher v0.3.0
+   Compiling ward-core v0.2.0 (<repo>/crates/ward-core)
+   Compiling bcrypt-pbkdf v0.11.0
+   Compiling curve25519-dalek-derive v0.1.1
+   Compiling serde_derive v1.0.229
+   Compiling async-trait v0.1.92
+   Compiling serde_repr v0.1.21
+   Compiling ed25519-dalek v3.0.0
+   Compiling ssh-key v0.7.0-rc.12
+   Compiling zruntime v0.2.2
+   Compiling zbus_utils v6.1.0
+   Compiling zcheapstr v1.2.0
+   Compiling zbus_macros v6.2.1
+   Compiling zbus v6.2.1
+   Compiling wardd v0.2.0 (<repo>/crates/wardd)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 10.52s
+     Running unittests src/lib.rs (target/debug/deps/wardd-82a75d23d3e6c6dc)
+
+running 7 tests
+test files::tests::d62_old_format_reads_zero_and_new_has_the_line ... ok
+test files::tests::dt6_attack_mixed_or_forged_state_refused ... ok
+test files::tests::dt6_v1_and_v2_read_the_same_and_the_write_is_v2 ... ok
+test files::tests::strict_state ... ok
+test files::tests::f54l_attack_fifo_in_place_does_not_block_the_read ... ok
+test files::tests::attack_loose_or_linked_known_hosts_is_refused ... ok
+test files::tests::dt6_v1_state_on_disk_becomes_v2_and_strange_files_are_refused ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 47 filtered out; finished in 0.02s
+

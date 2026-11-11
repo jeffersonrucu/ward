@@ -1,0 +1,52 @@
+   Compiling ward v0.2.0 (<repo>/crates/ward)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.55s
+     Running unittests src/lib.rs (target/debug/deps/ward-1594339f2fd6ad71)
+
+running 32 tests
+test args::tests::commands ... ok
+test args::tests::login ... ok
+test args::tests::not_utf8 ... ok
+test args::tests::attack_token_in_argv_refused_without_echo ... ok
+test args::tests::attack_argument_not_echoed_in_message ... ok
+test args::tests::old_names_are_unknown_commands ... ok
+test args::tests::playwright ... ok
+test args::tests::run ... ok
+test args::tests::token_format ... ok
+test args::tests::ssh ... ok
+test tests::f54b_stdin_kind_by_fstat ... ok
+test tests::daemon_missing ... ok
+test tests::usage_and_help ... ok
+test tests::with_fake_daemon::attack_forged_token_channel_does_not_connect ... ok
+test tests::with_fake_daemon::m2_v4_16_unknown_version_error_stops_before_the_password ... ok
+test tests::with_fake_daemon::attack_socket_swapped_while_typing ... ok
+test text::tests::table ... ok
+test tests::with_fake_daemon::v4_1_list_as_text_and_json ... ok
+test text::tests::attack_text_with_control_bidi_and_quotes ... ok
+test text::tests::json_only_with_the_list_fields ... ok
+test tests::with_fake_daemon::unlock_in_order ... ok
+test tests::with_fake_daemon::v4_22_lock_then_list_answers_locked ... ok
+test tests::with_fake_daemon::attack_response_with_credential_or_level_refused ... ok
+test tests::with_fake_daemon::ssh_request_token_output_and_code ... ok
+test tests::with_fake_daemon::unlock_wrong_empty_or_canceled_password ... ok
+test tests::with_fake_daemon::run_request_output_and_code ... ok
+test tests::with_fake_daemon::attack_m2_v4_16_server_of_another_version_stops_before_the_password ... ok
+test tests::d52_run_too_large_refused_before_connecting ... ok
+test tests::with_fake_daemon::f54b_run_and_ssh_send_the_kind_and_null_does_not_read ... ok
+test tests::attack_old_subcommands_unknown_without_talking_to_the_daemon ... ok
+test tests::v4_2_attack_fake_server_refused_before_reading_the_password ... ok
+test tests::v4_2_attack_fake_server_on_the_test_socket_refused ... ok
+
+test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running unittests src/main.rs (target/debug/deps/ward-a604aeca418d1451)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests ward
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

@@ -1,0 +1,23 @@
+   Compiling zbus_macros v6.2.1
+   Compiling zbus v6.2.1
+   Compiling wardd v0.2.0 (<repo>/crates/wardd)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.40s
+     Running tests/migration.rs (target/debug/deps/migration-b899e0cbd1446cce)
+
+running 12 tests
+test death::dt5_child_migration ... ignored, só roda como processo filho dos testes de morte da migração
+test v4_11_old_state_with_failures_and_mixed_state ... ok
+test v4_1_wrong_password_on_the_v4_writes_no_vault ... ok
+test v4_7_attack_v4_copy_after_the_migration ... ok
+test v4_3_state_failure_keeps_the_v4_and_the_old_state ... ok
+test v4_10_restoring_a_v4_version_writes_the_v5 ... ok
+test v4_6_migrated_vault_is_not_written_again ... ok
+test v4_3_write_failure_keeps_the_v4_and_answers_the_error ... ok
+test v4_3_first_unlock_writes_the_v5_with_the_same_data ... ok
+test death::v4_3_sigkill_at_each_migration_point ... ok
+test v4_10_local_rotation_counts_v4_and_v5 ... ok
+test v4_10_usb_drive_rotation_counts_v4_and_v5 has been running for over 60 seconds
+test v4_10_usb_drive_rotation_counts_v4_and_v5 ... ok
+
+test result: ok. 11 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 227.53s
+
