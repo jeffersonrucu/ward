@@ -44,7 +44,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use ward_core::entry::{AccessLevel, Auth, Data, Entry, Protocol, Secret};
-use ward_core::mascara::{ConstrutorMascara, Mascara};
+use ward_core::mask::{Mask, MaskBuilder};
 use ward_core::protocolo::{ErroResposta, Papel, Pedido, Resposta};
 use ward_platform::child::Command;
 use zeroize::Zeroizing;
@@ -517,21 +517,21 @@ impl Daemon {
                 Data::FtpSftp(f) => (&f.host, f.port, &f.username, &f.auth, true, None),
                 _ => return Err(ErroResposta::TipoSemEntrega),
             };
-            let failed = |err: ward_core::mascara::ErroMascara| {
+            let failed = |err: ward_core::mask::MaskError| {
                 aviso!("ssh: {err}");
                 ErroResposta::EntregaFalhou
             };
             // D19: with a jump, the mask covers both entries (one for the main `ssh`'s
             // output, another for the `stderr` of the bridge's `ssh`).
             let (mask, jump) = match jump_name {
-                None => (Mascara::da_entrada(e, None).map_err(failed)?, None),
+                None => (Mask::from_entry(e, None).map_err(failed)?, None),
                 Some(jn) => {
                     let (es, via) = intermediate(&a.entradas, jn)?;
                     let both = || {
-                        ConstrutorMascara::new()
-                            .entrada(e)
-                            .entrada(es)
-                            .construir()
+                        MaskBuilder::new()
+                            .entry(e)
+                            .entry(es)
+                            .build()
                             .map_err(failed)
                     };
                     (both()?, Some((via, both()?)))

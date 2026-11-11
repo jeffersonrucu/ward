@@ -138,7 +138,7 @@ Compilação de cada fase: `make compile`. Checador: os arquivos da fase.
   continua 4). — V2.1, V2.2
 - [x] Fase 15 — `backup` (+ testes), `entrega` (+ testes; nomes das variáveis entregues
   congelados). — V2.1
-- [ ] Fase 16 — `mascara.rs`, `mascara/automato.rs`, `mascara/testes.rs`. Lógica da
+- [x] Fase 16 — `mascara.rs`, `mascara/automato.rs`, `mascara/testes.rs`. Lógica da
   máscara intocada. — V2.1, V2.5
 - [ ] Fase 17 — `protocolo.rs`, `campos.rs`, `quadro.rs`, `json.rs`, `erros.rs`,
   `pedido.rs` (nomes de operação, campo, erro e papel congelados como literais; o
@@ -157,10 +157,10 @@ Compilação de cada fase: `make compile`. Checador: os arquivos da fase.
   do Chrome não mudam). — V2.1
 - [ ] Fase 23 — `servidor.rs`, `externo.rs`, `udisks.rs`; testes `comum/`, `units.rs`,
   `memoria.rs`, `socket.rs`, `datas.rs`. — V2.1, V2.4
-- [ ] Fase 24 — testes `ssh.rs`, `run.rs`, `ssh_falso.py`. — V2.1
+- [x] Fase 24 — testes `ssh.rs`, `run.rs`, `ssh_falso.py`. — V2.1
 - [ ] Fase 25 — testes `aprovacao.rs`, `trava.rs`, `nucleo.rs` (com o `[[test]]` `trava` no `Cargo.toml`, achado da Fase 4). — V2.1
 - [ ] Fase 26 — testes `externo.rs`, `backup.rs`, `configuracoes.rs`, `d62.rs`. — V2.1
-- [ ] Fase 27 — testes `playwright.rs`, `extensao.rs`, `login.rs`, `chrome_falso.py`,
+- [x] Fase 27 — testes `playwright.rs`, `extensao.rs`, `login.rs`, `chrome_falso.py`,
   `app_valor.rs`, `valor_app.rs`, `app_teste.rs`, `anexos_edicao.rs` (com os `[[test]]` `app_teste` e `app_valor` no
   `Cargo.toml`, achado da Fase 4). — V2.1
 
@@ -173,7 +173,7 @@ Clientes Rust:
   `tests/ataques.rs`). — V2.1
 - [x] Fase 30 — `app/core`: `servico.rs`, `segredo.rs`, `erro.rs`, `lib.rs`. — V2.1
 - [x] Fase 31 — `app/core`: `daemon_falso.rs` (com o reexport `SECRETS as SEGREDOS` e os usos, achado da Fase 14), `daemon.rs`, `cliente.rs`. — V2.1
-- [ ] Fase 32 — `app/core`: `formulario.rs`, `aprovacao.rs`, `anexos.rs`,
+- [x] Fase 32 — `app/core`: `formulario.rs`, `aprovacao.rs`, `anexos.rs`,
   `restaurar.rs`, `bandeja.rs` (`serde` para a webview com `rename`). — V2.1
 - [ ] Fase 33 — `app/core`: `comandos.rs`, `configuracoes.rs`, `backup_externo.rs`,
   `terminal.rs`, `chave.rs`, `partida.rs`, `credenciais.rs`. — V2.1
@@ -283,7 +283,7 @@ Contrato: V4.1–V4.24. Sequencial. A partir daqui o fio muda.
   `app/src/lib/bridge`, ponte de teste do front-end, `dev/tests/*.py` que falam com o
   socket ou com o `ward-nm` (`socket_matrix.py`, `socket_attack.py`, `nm.py`,
   `extension.py`, `login.py`, `cli.py`, `chrome_policy.py`, `open-app.py`,
-  `chrome_falso.py`, `ssh_falso.py`), servidor falso v1 para o V4.16. Esvazia de
+  `fake_chrome.py`, `fake_ssh.py`), servidor falso v1 para o V4.16. Esvazia de
   `frozen.txt` as chaves de mensagem. Compilação: `make compile`. — V4.13, V4.16, V5.10
 - [ ] Fase 53 — Variáveis entregues (DT11) no `ward-core` `delivery` e no `wardd`;
   `make dev-vault` e `dev-vault-verify` com o `entries.json` novo (chaves lidas por

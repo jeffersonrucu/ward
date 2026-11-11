@@ -24,7 +24,7 @@ use crate::limits::{
     MAX_REDIS_DB_NAME, MAX_REGION, MAX_SECRET, MAX_TAG, MAX_TAGS, MAX_TOTP, MAX_URL, MAX_USERNAME,
     MIN_ACCESS_KEY, MIN_TOTP,
 };
-use crate::mascara::{self, ErroMascara};
+use crate::mask::{self, MaskError};
 
 // Messages (fixed texts, without user values).
 const REQUIRED: &str = "obrigatório";
@@ -647,12 +647,12 @@ impl Draft {
                 // Mask budget (D29), by the same function that builds the automaton: no
                 // accepted entry is left without `ward run`. If it refuses, the entry is
                 // discarded here and the secrets are zeroed.
-                match mascara::custo_da_entrada(&entry) {
+                match mask::entry_cost(&entry) {
                     Ok(_) => Ok(entry),
                     Err(e) => {
                         let reason = match e {
-                            ErroMascara::GrandeDemais => TOO_LARGE_FOR_MASK,
-                            ErroMascara::SemEntrega => NO_DELIVERY,
+                            MaskError::TooLarge => TOO_LARGE_FOR_MASK,
+                            MaskError::NoDelivery => NO_DELIVERY,
                         };
                         c.error("entrada", reason);
                         Err(ValidationErrors(c.0))

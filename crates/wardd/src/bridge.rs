@@ -41,7 +41,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use ward_core::mascara::Mascara;
+use ward_core::mask::Mask;
 use ward_platform::child::{self, Command, Group};
 use zeroize::Zeroizing;
 
@@ -100,7 +100,7 @@ pub(crate) struct Bridge {
     listener: TcpListener,
     port: u16,
     plan: Plan,
-    mask: Arc<Mascara>,
+    mask: Arc<Mask>,
     limits: Limits,
     locks: Arc<AtomicU64>,
     initial: u64,
@@ -123,7 +123,7 @@ pub(crate) struct Opening<'a> {
     pub(crate) programs: &'a SshPrograms,
     pub(crate) known_hosts: &'a Path,
     pub(crate) rt: Option<&'a Path>,
-    pub(crate) mask: Mascara,
+    pub(crate) mask: Mask,
     pub(crate) limits: Limits,
     pub(crate) locks: (Arc<AtomicU64>, u64),
 }
@@ -457,8 +457,8 @@ impl WriteShutdown for TcpStream {
 impl WriteShutdown for fs::File {}
 
 /// The `stderr` of the bridge's `ssh`: masked (both entries, D19) and delivered.
-fn read_stderr(mut f: fs::File, mask: &Mascara, sink: &Stderr) {
-    let mut m = mask.fluxo();
+fn read_stderr(mut f: fs::File, mask: &Mask, sink: &Stderr) {
+    let mut m = mask.stream();
     // Phase 28g: what is already in the pipe goes in a single batch (like the `ward run`
     // output).
     let mut buf = Zeroizing::new(vec![0u8; execution::BATCH]);
@@ -466,7 +466,7 @@ fn read_stderr(mut f: fs::File, mask: &Mascara, sink: &Stderr) {
     loop {
         let (n, end) = execution::read_batch(&mut f, &mut buf);
         if n > 0 {
-            m.mascarar(&buf[..n], &mut out);
+            m.mask(&buf[..n], &mut out);
             zeroize::Zeroize::zeroize(&mut buf[..n]);
             sink(&mut out);
         }
@@ -474,7 +474,7 @@ fn read_stderr(mut f: fs::File, mask: &Mascara, sink: &Stderr) {
             break;
         }
     }
-    m.terminar(&mut out);
+    m.finish(&mut out);
     sink(&mut out);
 }
 

@@ -2036,7 +2036,7 @@ a seção 2 (`ErroResposta::NaoAutorizado` → `ResponseError::Unauthorized`).
 | `LerVersao` | `ReadVersion` | `Limites` | `Limits` |
 | `Logins` | `Logins` | `Mascara` | `Mask` |
 | `Memoria` | `Memory` | `ModoCru` | `RawMode` |
-| `Montado` | `Mounted` | `MorreNaTrava` | `DiesOnLock` |
+| `Montado` (`app/core/form.rs`: as partes montadas do rascunho) | `Built` | `MorreNaTrava` | `DiesOnLock` |
 | `Motor` | `Engine` | `NivelAcesso` | `AccessLevel` |
 | `NivelMudado` | `LevelChanged` | `NotaSegura` | `SecureNote` |
 | `NovoCofre` | `NewVault` | `Objetos` | `Objects` |
@@ -2362,6 +2362,60 @@ PinIncorreto, Expirado }` → `Answered { Ok, WrongPin, Expired }`. Daemon falso
 `MAX_ERROS_PIN` → `MAX_PIN_ERRORS`, `VERSOES_FALSAS` → `FAKE_VERSIONS`; o re-export
 `daemon_falso::SEGREDOS` (achado da Fase 14) vira `fake_daemon::SECRETS`. Os modos da ponte
 (`aprovacao`, `aprovacao-prod`…, `--daemon-falso`) ficam (fio da ponte; Fase 56).
+Fase 32 (`app/core`: `form`, `approval`, `attachments`, `restore`, `tray`): módulos
+`formulario` → `form`, `aprovacao` → `approval`, `anexos` → `attachments`, `restaurar` →
+`restore`, `bandeja` → `tray`. Formulário: `TextoSecreto` → `SecretText` (`Debug`
+`"SecretText(••••)"`), `ValorSecreto { Vazio, Manter, Gerada, Carregada, Novo }` →
+`SecretValue { Empty, Keep, Generated, Loaded, New }`, `ValorExtra { Novo, Manter }` (o do
+`app/core`) → `ExtraValue { New, Keep }`, `ExtraFormulario { nome, segredo, valor }` →
+`FormExtra { name, secret, value }`, `Formulario { tipo, nome, grupo, ambiente, projeto,
+campos, segredos, anexos, anexos_mantidos }` → `Form { kind, name, group, environment,
+project, fields, secrets, attachments, kept_attachments }`, `ErroCampo { campo, posicao,
+motivo }` → `FieldError { field, position, reason }`, todos com `#[serde(rename =
+"<antigo>")]` até a Fase 54; `Fontes` → `Sources` (`guardado`/`gerada`/`carregada` →
+`stored`/`generated`/`loaded`), `Falta { App, Campos }` → `Missing { App, Fields }`,
+`Montado { dados }` → `Built { data }`, `SegredoMontado` → `BuiltSecret`;
+`TOTP_NAO_SUPORTADO`/`TOTP_URI_INVALIDA` → `TOTP_UNSUPPORTED`/`TOTP_INVALID_URI`,
+`tipo_do_formulario` → `form_kind`, `campos_do_tipo` → `fields_of_kind`,
+`campo_do_problema` → `problem_field`, `erros_do_daemon` → `daemon_errors`,
+`normalizar_semente` → `normalize_seed`, `montar` → `build`, `copiar_rascunho` →
+`copy_draft`, `validar_local` → `validate_local`. Aprovação: `PRAZO_APROVACAO` →
+`APPROVAL_TIMEOUT`, `SEGUNDOS_URGENTE` → `URGENT_SECONDS` (o mesmo nome do `approval.js`),
+`MAX_PENDENTES` → `MAX_PENDING`, `SEPARADOR_CADEIA` → `CHAIN_SEPARATOR`,
+`decisao_de_nome` → `decision_from_name`, `EntradaExibida { nome, tipo }` →
+`DisplayedEntry { name, kind }`, `PedidoExibido` → `DisplayedRequest` (campos pela seção
+13: `entries`, `environment`, `operation`, `command`, `directory`, `chain`, `origin`,
+`confirmation`, `hidden_entry`, `remaining`, `status`), `ResultadoAprovacao { resultado,
+ha_outro }` → `ApprovalResult { result, has_other }` (com `rename`), `Atual` → `Current`,
+`Aprovacoes` → `Approvals` (`chegou`/`chegou_ha`/`atual`/`guardar_tipos`/`confirmacao`/
+`entrada_oculta`/`situacao`/`remover`/`marcar_bloqueado`/`pendentes`/`ha_pedido`/
+`esvaziar` → `arrived`/`arrived_ago`/`current`/`store_kinds`/`confirmation`/
+`hidden_entry`/`state_of`/`remove`/`mark_blocked`/`pending`/`has_request`/`clear`),
+`exibir` → `display`, `vigiar` → `watch` (o `partida.vigiar` da Fase 34 é outro). Anexos:
+`Seletor` → `Picker` (`escolher`/`escolher_chave` → `choose`/`choose_key`), `SemSeletor` →
+`NoPicker`, `Pendente { nome, conteudo }` → `Pending { name, content }`, `Escolha {
+Anexado { nome, tamanho }, Cancelado, Aviso { motivo } }` → `Choice { Attached { name,
+size }, Canceled, Notice { reason } }` (tag `resultado` e valores com `rename`),
+`EdicaoDosAnexos { entrada, mantidos }` → `AttachmentEdit { entry, kept }` (com `rename`),
+`Base { soma, quantidade }` → `Base { total, count }`, `Anexos` → `Attachments`
+(`anexar`/`anexar_sobre`/`escolhidos`/`remover`/`limpar`/`soma` → `attach`/`attach_over`/
+`chosen`/`remove`/`clear`/`total`), `AVISO_*` → `*_NOTICE`, `nome_do_anexo` →
+`attachment_name`. Restaurar: `VersaoVista` → `VersionView` (`de_nome` → `from_name`),
+`Restauracao { versao, senha, pin }` → `Restore { version, password, pin }`, `Restaurado {
+restaurado, entradas }` → `Restored { restored, entries }` (todos com `rename`),
+`versoes_de` → `versions_from`, `versao_pedida` → `requested_version`. Bandeja:
+`EstadoBandeja { Destravado, Travado, SemCofre, SemDaemon }` → `TrayState { Unlocked,
+Locked, NoVault, NoDaemon }` (`de` → `from_status`), `Icone` → `Icon`, `Aparencia` →
+`Appearance`, `Acao { Abrir, Travar, Destravar, Sair }` → `Action { Open, Lock, Unlock,
+Quit }`, `ID_TITULO`/`ID_SUBTITULO`/`ID_ABRIR`/`ID_ACAO`/`ID_SAIR` → `ID_TITLE`/
+`ID_SUBTITLE`/`ID_OPEN`/`ID_ACTION`/`ID_QUIT` (os valores `bandeja-*` ficam até a Fase 54),
+`TEXTO_ABRIR`/`TEXTO_SAIR` → `OPEN_TEXT`/`QUIT_TEXT`, `BIBLIOTECAS` → `LIBRARIES`,
+`PASTAS_DO_SISTEMA` → `SYSTEM_DIRS`, `PASTA_DOS_ICONES` → `ICONS_DIR` (valor
+`ward-bandeja` fica), `ler_configuracao_na_passagem` → `read_settings_on_transition`,
+`descartar_na_passagem` → `discard_on_transition`, `subtitulo_destravado` →
+`unlocked_subtitle`, `pasta_dos_icones(_da_sessao)` → `(session_)icons_dir`,
+`biblioteca_disponivel`/`biblioteca_do_sistema` → `library_available`/`system_library`.
+O auxiliar de teste `trocar` do `credenciais.rs` → `exchange` (como o `Daemon::exchange`).
 Fase 28 (clientes `ward` e `ward-nm`; nomes próprios deles, os de `ward-core`/
 `ward-platform` ficam para as fases desses crates): módulos `cliente`/`comandos`/
 `texto`/`testes` → `client`/`commands`/`text`/`tests`; `principal` → `main`;
@@ -2550,6 +2604,110 @@ entrega) → `Variable` (`nome`/`expor`/`e_segredo` → `name`/`expose`/`is_secr
 `protocolo::Variavel` (Fase 17), `VersaoBackup` (Fase 18), `ErroMascara::SemEntrega`
 (Fase 16), `RunResources` (Fase 21) e `RecursosDoOrcamento` (Fase 16) são outros e não
 mudaram.
+Fase 24 (testes do `wardd`: `tests/ssh.rs`, `tests/run.rs`, `tests/ssh_falso.py` →
+`tests/fake_ssh.py`): em `ssh.rs`, `SENHA_SSH`/`SENHA_BANCO` → `SSH_PASSWORD`/
+`DB_PASSWORD`, `RelogioManual` → `ManualClock` (`avancar` → `advance`), `Rt::novo` →
+`Rt::new`, `Cena { relogio }` → `Scene { clock }` (`cena` → `scene`; `modo`/`registros`/
+`registro`/`nada_executado` → `set_mode`/`records`/`record`/`nothing_ran`), `Reg` → `Rec`
+(`todos`/`um` → `all`/`one`), `Sessao { saida, erro, pedacos, fim, falha }` → `Session {
+stdout, stderr, chunks, end, failure }` (`texto` → `text`), `salvar` → `save`,
+`servidor_json` → `server_json`, `auth_senha` → `password_auth`, `gerar_chave` →
+`generate_key`, `pedido_ssh` → `ssh_request`, `mandar` → `send`, `sessao`/`sessao_de` →
+`session`/`session_of`, `fechar_entrada` → `close_stdin`, `opcoes` → `options`,
+`esperar` → `wait_for`, `rt_sem_agente` → `rt_without_agent`, `esperar_registro` →
+`wait_record`, `depois_de` → `after`, `estranho_e_recusado` → `stranger_is_refused`
+("estranho" aqui é o processo de fora da sessão, `stranger`, não `odd`),
+`inode_da_escuta`/`escuta_fechada` → `listener_inode`/`listener_closed`, `ninguem_com_w`
+→ `nobody_with_w`, `conferir_argv_da_ponte` → `verify_bridge_argv`. Em `run.rs`,
+`SENHA_LIVRE`/`LICENCA`/`ANEXO`/`APROVADOR` → `FREE_PASSWORD`/`LICENSE`/`ATTACHMENT`/
+`APPROVER`, `DirSocket::novo` → `SocketDir::new`, `Wardd { filho }` → `Wardd { child }`,
+`subir`/`subir_com` → `start`/`start_with`, `receber` → `receive`, `conectar` →
+`connect`, `destravar_por` → `unlock_through`, `pedido_executar(_com)` →
+`run_request(_with)`, `entrada_padrao` → `send_stdin`, `ler_sessao` → `read_session`,
+`cofre` → `vault`, `tmp_vazio` → `tmp_empty`, `vivo` → `alive`. Em `fake_ssh.py`, `NOME`
+→ `NAME`, `ler` → `read_file`, `registrar` → `record`, `opcao` → `option`, `pedir` →
+`ask`, `cliente_do_agente` → `agent_client`, `NETO` → `GRANDCHILD`, `esperar_continuar`/
+`esperar_arquivo` → `wait_continue`/`wait_file`, `valor` → `value`,
+`ponte_do_lado_do_salto` → `bridge_on_the_jump_side`, `conversar` → `talk`, `principal`
+→ `main`. Os arquivos que o falso grava e lê (`registro-<nome>-<pid>.txt`, `modo`,
+`esperar`, `continuar`, `pty-pronto`…) e as chaves do registro (`agente.lista`, `neto`,
+`depois`…) são literais e ficam. Os nomes do `comum` (Fase 23), do `nucleo`/`aprovacao`
+(Fase 20) e do `ward-core` (`protocolo`, Fases 17–18) ficam como estão até as fases deles.
+Fase 27 (testes do `wardd`: `playwright.rs`, `login.rs` ficam; `extensao.rs` →
+`extension.rs`, `app_teste.rs` → `test_app.rs`, `app_valor.rs` → `app_value_binary.rs`,
+`valor_app.rs` → `app_value_core.rs`, `anexos_edicao.rs` → `attachment_edit.rs`,
+`chrome_falso.py` → `fake_chrome.py`; `[[test]]` `app_teste`/`app_valor` →
+`test_app`/`app_value_binary`): em `playwright.rs`, `SENHA_LOGIN` → `LOGIN_PASSWORD`,
+`Rt::novo` → `Rt::new`, `Cena`/`cena` → `Scene`/`scene` (`registro`/`eventos`/`sessao`/
+`sem_perfil` → `records`/`events`/`session`/`no_profile`), `formas_da_senha` →
+`password_forms`, `site::{Pedido { metodo, caminho, corpo }, porta, pedidos, Rota, subir,
+atender}` → `site::{Request { method, path, body }, port, requests, Route, start,
+serve}`, `formulario` → `form`, `com_clobber` → `with_clobber`, `login_em` → `login_at`,
+`CenaReal`/`cena_real` → `RealScene`/`real_scene` (`phish_limpo`/`senha_fora_da_url` →
+`phish_clean`/`password_out_of_url`), `CASOS` → `CASES`, `pagina` → `page`. Em
+`extension.rs`, `SEMENTE`/`AGORA` → `SEED`/`NOW`, `RelogioFixo` → `FixedClock`, `cofre`
+→ `vault`, `sugerir` → `suggest`, `preencher_cru`/`preencher` → `fill_raw`/`fill`,
+`nomes` → `names`, `sem_segredo` → `no_secret`, `salvar_login` → `save_login`,
+`nivel_na_lista` → `level_in_list`, `SENHA_NOVA` → `NEW_PASSWORD`, `SaiLogo` →
+`LeavesSoon`. Em `login.rs`, `ORIGEM` → `ORIGIN`, `prazos` → `deadlines` (`retirada_ms` →
+`pickup_ms`), `cofre` → `vault`, `login_do_agente` → `agent_login`, `aguardar` →
+`await_login`, `pegar` → `take`, `preencher` → `fill`, `resultado` → `outcome`,
+`sem_valor` → `no_value`, `ClienteQueSai` → `LeavingClient`, `RelogioParado` →
+`StoppedClock`, `AppFalso` → `FakeApp`, `SemAbrir` → `NoOpen`, `responder` → `answer`,
+`login_http`/`login_na_url`/`login_http_completo` → `http_login`/`login_at_url`/
+`full_http_login`, `CaiDepois` → `DropsLater`. Em `app_value_binary.rs` e
+`test_app.rs`, `APP_TESTE` → `TEST_APP`, `CLIENTE` → `CLIENT`, `DirSocket::novo` →
+`SocketDir::new`, `esperar` → `wait_for`, `ler` → `read`, `agulhas` → `needles`,
+`sem_segredo` → `no_secret`, `cliente_python` → `python_client`, `mandar` → `send`,
+`pedir` (local) → `request`, `a_mao` → `by_hand`. Em `app_value_core.rs`, `RelogioFixo`
+→ `FixedClock`, `com_totp` → `with_totp`, `alvo_campo` → `field_target`, `valor` →
+`value`, `pedido_valor` → `value_request`. Em `attachment_edit.rs`, `ANEXO_A`/`ANEXO_B`
+→ `ATTACHMENT_A`/`ATTACHMENT_B`, `generico` → `generic`, `editar` → `edit`, `no_disco`/
+`anexos_no_disco` → `on_disk`/`attachments_on_disk`. Em `fake_chrome.py`, `PASTA`/`MODO`
+→ `FOLDER`/`MODE`, `registrar` → `record` (recebe um dict; as chaves ficam), `origem` →
+`origin`, `ler`/`escrever` → `read_message`/`write_message`, `responder` → `reply`,
+`evento` → `event`, `pendentes`/`contador` → `pending`/`counter`, `pausar` → `pause`,
+`url_atual` → `current_url`, `usuario_senha` → `credentials`, `proximo` →
+`next_command`. Os arquivos `modo`/`registro`, os modos (`mente`, `morre`…) e as chaves
+do registro (`evento`, `inicio`, `preencher`, `decisao`, `seguiu`, `ambiente`, `alvos`…)
+são literais e ficam, como o código `"usuario, senha"` que o falso procura no script do
+daemon. O código Python embutido no `CLIENT` de `app_value_binary.rs` é literal e fica.
+
+Fase 16 (`ward-core`: `mask`): módulo `mascara` → `mask` (`automato` → `automaton`,
+`testes` → `tests`). `MARCA` → `MARK`; `ErroMascara` → `MaskError` com `GrandeDemais` →
+`TooLarge` e `SemEntrega` → `NoDelivery`; `ConstrutorMascara` → `MaskBuilder` (`entrada`/
+`entrega`/`construir` → `entry`/`delivery`/`build`); `Mascara` → `Mask` (`da_entrada`/
+`tem_segredo_curto`/`fluxo`/`mascarar_tudo` → `from_entry`/`has_short_secret`/`stream`/
+`mask_all`); `Fluxo` → `Stream` (`mascarar`/`terminar` → `mask`/`finish`; campos
+`pendente`/`emitido`/`lido`/`visoes`/`cobertos`/`em_marca` → `pending`/`emitted`/
+`consumed`/`views`/`covered`/`in_mark`; `emitir_ate` → `emit_until`: aqui "emitir" é soltar
+saída, `emit`, e não o `issue` do token); `custo_da_entrada` → `entry_cost`; `somar`
+(`pub(crate)`) → `sum_patterns`. Privados: `RecursosDoOrcamento` → `BudgetResources`,
+`visitar`/`Visitante` → `visit`/`Visitor`, `Gerador` → `Generator` (`segredo_de_campo`/
+`valor_minimo`/`json_da_linha`/`comentario_e_aspas`/`segredo`/`formas_de_texto`/`anexo`/
+`linhas`/`valor_da_linha` → `field_secret`/`min_value`/`line_json`/`comment_and_quotes`/
+`secret`/`text_forms`/`attachment`/`lines`/`line_value`), `B64_PADRAO` → `B64_STD`,
+`caracteres` → `char_count`, `sem_quebra_final` → `without_final_newline`,
+`valor_de_chave`/`valor_de_dois_pontos`/`valor_de_chave_composta` → `key_value`/
+`colon_value`/`compound_key_value`, `antes_de_comentario`/`miolo_antes_de_comentario` →
+`before_comment`/`core_before_comment`, `pular_branco_json`/`fim_string_json`/
+`decodificar_string_json` → `skip_json_blank`/`json_string_end`/`decode_json_string`,
+`sem_aspas` → `unquoted`, `json_escapa`/`json_muda` → `json_escapes`/`json_changes`,
+`JsonEscapado` → `EscapedJson` (`json_escapado`/`_u`/`_muda` → `escaped_json`/`_u`/
+`_changes`), `aspas_duplas(_escapa)`/`aspas_simples` → `double_quotes(_escapes)`/
+`single_quotes`, `printf_q_escapa`/`printf_q_muda` → `printf_q_escapes`/`printf_q_changes`,
+`Modo { Cru, Percent, Formulario }` → `Mode { Raw, Percent, Form }`, `Escape { Nada,
+Percent { ini }, Hex { ini, alto, char_alto } }` → `Escape { Nothing, Percent { start },
+Hex { start, high, high_char } }`, `Visao` → `View` (`andar`/`ler`/`fechar` → `walk`/
+`read`/`close`), `cobrir` → `cover`. Autômato: `Automato` → `Automaton` (campos `filho`/
+`irmao`/`falha`/`saida`/`prof`/`raiz` → `child`/`sibling`/`fail`/`output`/`depth`/`root`;
+`com_capacidade`/`novo_no`/`nos`/`filho_de`/`inserir`/`finalizar`/`passo`/`saida`/
+`profundidade` → `with_capacity`/`new_node`/`nodes`/`child_of`/`insert`/`finalize`/`step`/
+`output`/`depth`), `NENHUM`/`RAIZ` → `NO_NODE`/`ROOT`, `reservar`/`empurrar`/`indice` →
+`reserve`/`push`/`index`. O `Debug` dos tipos acompanha o nome (`"Mask(••••)"`,
+`"MaskBuilder(••••)"`, `"Stream(••••)"`, como o `"Secret(••••)"` da Fase 12). Os
+homônimos `ErroCodificar::GrandeDemais`, `ErroQuadro::GrandeDemais` e
+`ErroResposta::TipoSemEntrega` (Fase 17) são outros e não mudaram.
 
 Funções e métodos não estão listados um a um: o nome sai da seção 2 na ordem do inglês
 (`conferir_arquivo` → `verify_file`, `ler_cofre` → `read_vault`, `codificar_resposta` →

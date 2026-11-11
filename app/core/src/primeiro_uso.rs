@@ -21,7 +21,7 @@ use serde::de::{self, Deserializer, Visitor};
 use ward_core::limits::{MAX_PIN_DIGITS, MAX_SECRET, MIN_PIN_DIGITS};
 use zeroize::Zeroizing;
 
-use crate::formulario::ErroCampo;
+use crate::form::FieldError;
 
 /// Mínimo de caracteres da senha mestra (texto de ajuda do design), o mesmo do daemon
 /// (Fase 39c): contado em pontos de código depois do NFC.
@@ -94,16 +94,16 @@ pub struct NovoCofre {
     pub confirmacao_pin: Digitado,
 }
 
-fn erro(campo: &'static str, motivo: &str) -> ErroCampo {
-    ErroCampo {
-        campo,
-        posicao: None,
-        motivo: motivo.to_owned(),
+fn erro(campo: &'static str, motivo: &str) -> FieldError {
+    FieldError {
+        field: campo,
+        position: None,
+        reason: motivo.to_owned(),
     }
 }
 
 /// Erros da senha mestra (passo 2), sem olhar o PIN.
-pub fn erros_da_senha(senha: &Digitado, confirmacao: &Digitado) -> Vec<ErroCampo> {
+pub fn erros_da_senha(senha: &Digitado, confirmacao: &Digitado) -> Vec<FieldError> {
     let mut erros = Vec::new();
     if senha.bytes().len() > MAX_SECRET {
         erros.push(erro("senha", SENHA_LONGA));
@@ -123,7 +123,7 @@ pub fn pin_valido(pin: &Digitado) -> bool {
 
 impl NovoCofre {
     /// Todos os erros por campo; vazio se pode ir ao daemon.
-    pub fn erros(&self) -> Vec<ErroCampo> {
+    pub fn erros(&self) -> Vec<FieldError> {
         let mut erros = erros_da_senha(&self.senha, &self.confirmacao);
         if !pin_valido(&self.pin) {
             erros.push(erro("pin", PIN_INVALIDO));
@@ -152,7 +152,7 @@ mod testes {
     }
 
     fn campos(n: &NovoCofre) -> Vec<&'static str> {
-        n.erros().iter().map(|e| e.campo).collect()
+        n.erros().iter().map(|e| e.field).collect()
     }
 
     const SENHA: &str = "falso-mestra-ward-01";
@@ -214,7 +214,7 @@ mod testes {
         assert_eq!(campos(&novo("", "", "1357", "1357")), vec!["senha"]);
         let grande = "a".repeat(MAX_SECRET + 1);
         let e = novo(&grande, &grande, "1357", "1357").erros();
-        assert_eq!(e[0].motivo, SENHA_LONGA);
+        assert_eq!(e[0].reason, SENHA_LONGA);
     }
 
     #[test]

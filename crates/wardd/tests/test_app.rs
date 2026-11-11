@@ -1,13 +1,14 @@
-//! D63 (Fase 23a), pelo binário: o daemon de teste com `WARD_DEV_APP` abre o app de
-//! teste pelo `abrir_app` e só esse processo, filho dele, recebe o papel app (sem o
-//! egid do grupo); o mesmo binário executado à mão, uma cópia dele e um cliente
-//! qualquer ficam agente; `abrir_app` com campo no pedido não abre nada; o ambiente do
-//! app é o fixo mínimo; a saída vai para `.dev/logs/<binário>.log` (0600) e o log do
-//! daemon registra o código de saída, só o número (V3.36, V3.37, V3.38).
+//! D63 (Phase 23a), through the binary: the test daemon with `WARD_DEV_APP` opens the
+//! test app through the open-app operation and only that process, its child, gets the app role
+//! (without the group's egid); the same binary run by hand, a copy of it and any client
+//! stay agent; the open-app operation with a field in the request opens nothing; the app's
+//! environment is the minimal fixed one; the output goes to `.dev/logs/<binary>.log`
+//! (0600) and the daemon log records the exit code, only the number (V3.36, V3.37,
+//! V3.38).
 //!
-//! O "repositório" é uma pasta só deste teste em `target/tmp`, com `.dev/` dentro e o
-//! app de teste ligado por link físico (o mesmo arquivo, sem fd de escrita). Nenhum
-//! cofre: os pedidos não precisam de um.
+//! The "repository" is a folder of this test only in `target/tmp`, with `.dev/` inside
+//! and the test app linked by a hard link (the same file, with no write fd). No vault:
+//! the requests do not need one.
 
 #![cfg(feature = "test-mode")]
 
@@ -25,23 +26,23 @@ use common::Dir;
 use ward_core::protocolo::{self, ErroResposta, Papel, Resposta};
 
 const WARDD: &str = env!("CARGO_BIN_EXE_wardd");
-const APP_TESTE: &str = env!("CARGO_BIN_EXE_wardd-app-teste");
+const TEST_APP: &str = env!("CARGO_BIN_EXE_wardd-app-teste");
 
-struct DirSocket(PathBuf);
+struct SocketDir(PathBuf);
 
-impl DirSocket {
-    fn novo(rotulo: &str) -> DirSocket {
+impl SocketDir {
+    fn new(label: &str) -> SocketDir {
         let p = PathBuf::from(format!(
-            "/run/user/{}/wardd-app-{}-{rotulo}",
+            "/run/user/{}/wardd-app-{}-{label}",
             ward_platform::effective_uid(),
             std::process::id()
         ));
         let _ = fs::remove_dir_all(&p);
-        DirSocket(p)
+        SocketDir(p)
     }
 }
 
-impl Drop for DirSocket {
+impl Drop for SocketDir {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);
     }
@@ -56,14 +57,14 @@ impl Drop for Wardd {
     }
 }
 
-fn mandar(s: &mut UnixStream, json: &str) {
+fn send(s: &mut UnixStream, json: &str) {
     s.write_all(&(json.len() as u32).to_be_bytes())
         .and_then(|()| s.write_all(json.as_bytes()))
         .unwrap();
 }
 
-fn pedir(s: &mut UnixStream, op: &str, dados: &str) -> Resposta {
-    mandar(s, &format!(r#"{{"v":1,"op":"{op}","dados":{dados}}}"#));
+fn request(s: &mut UnixStream, op: &str, data: &str) -> Resposta {
+    send(s, &format!(r#"{{"v":1,"op":"{op}","dados":{data}}}"#));
     let mut n = [0u8; 4];
     s.read_exact(&mut n).unwrap();
     let mut b = vec![0u8; u32::from_be_bytes(n) as usize];
@@ -71,23 +72,23 @@ fn pedir(s: &mut UnixStream, op: &str, dados: &str) -> Resposta {
     protocolo::decodificar_resposta(Papel::Agente, &b).unwrap()
 }
 
-fn esperar(mut f: impl FnMut() -> bool, o_que: &str) {
-    let fim = Instant::now() + Duration::from_secs(20);
+fn wait_for(mut f: impl FnMut() -> bool, what: &str) {
+    let end = Instant::now() + Duration::from_secs(20);
     while !f() {
-        assert!(Instant::now() < fim, "esperando {o_que}");
+        assert!(Instant::now() < end, "esperando {what}");
         std::thread::sleep(Duration::from_millis(20));
     }
 }
 
-fn ler(p: &Path) -> String {
+fn read(p: &Path) -> String {
     fs::read_to_string(p).unwrap_or_default()
 }
 
-/// O app de teste executado à mão (filho deste teste, não do daemon). Uma cópia recém
-/// escrita pode dar ETXTBSY se outro teste fizer `fork` nesse instante: tenta de novo.
-fn a_mao(binario: &Path, sock: &Path) -> String {
+/// The test app run by hand (child of this test, not of the daemon). A freshly written
+/// copy can give ETXTBSY if another test forks at that instant: it tries again.
+fn by_hand(binary: &Path, sock: &Path) -> String {
     for _ in 0..50 {
-        match Command::new(binario)
+        match Command::new(binary)
             .env_clear()
             .env("WARD_DEV_SOCKET_DIR", sock)
             .stdin(Stdio::null())
@@ -104,7 +105,7 @@ fn a_mao(binario: &Path, sock: &Path) -> String {
 }
 
 #[test]
-fn v3_37_so_o_app_aberto_pelo_daemon_de_teste_e_app() {
+fn v3_37_only_the_app_opened_by_the_test_daemon_is_app() {
     let repo = Dir::new("repo-app");
     let dev = repo.0.join(".dev");
     fs::DirBuilder::new().mode(0o700).create(&dev).unwrap();
@@ -113,11 +114,11 @@ fn v3_37_so_o_app_aberto_pelo_daemon_de_teste_e_app() {
         .create(repo.0.join("bin"))
         .unwrap();
     let app = repo.0.join("bin/wardd-app-teste");
-    fs::hard_link(APP_TESTE, &app).unwrap();
-    let sock = DirSocket::novo("v337");
+    fs::hard_link(TEST_APP, &app).unwrap();
+    let sock = SocketDir::new("v337");
     let log = dev.join("wardd.log");
 
-    // Fora do repositório, o daemon nem sobe.
+    // Outside the repository, the daemon does not even start.
     let st = Command::new(WARDD)
         .env_clear()
         .env("PATH", "/usr/bin:/bin")
@@ -147,66 +148,70 @@ fn v3_37_so_o_app_aberto_pelo_daemon_de_teste_e_app() {
             .unwrap(),
     );
     let socket = sock.0.join("wardd.sock");
-    esperar(|| socket.exists(), "o socket do daemon");
+    wait_for(|| socket.exists(), "o socket do daemon");
     let mut c = UnixStream::connect(&socket).unwrap();
     c.set_read_timeout(Some(Duration::from_secs(30))).unwrap();
 
-    // Um cliente qualquer (este teste): agente.
+    // Any client (this test): agent.
     assert!(matches!(
-        pedir(&mut c, "estado", "{}"),
+        request(&mut c, "estado", "{}"),
         Resposta::Estado {
             papel: Papel::Agente,
             ..
         }
     ));
-    // `abrir_app` com caminho, argumentos ou ambiente no pedido: recusado, nada abre.
-    let saida_app = dev.join("logs/wardd-app-teste.log");
-    for dados in [
+    // Open-app with a path, arguments or environment in the request: refused,
+    // nothing opens.
+    let app_output = dev.join("logs/wardd-app-teste.log");
+    for data in [
         r#"{"caminho":"/usr/bin/sh"}"#,
         r#"{"argumentos":["-c","id"]}"#,
         r#"{"ambiente":{"LD_PRELOAD":"/tmp/x.so"}}"#,
     ] {
-        let r = pedir(&mut c, "abrir_app", dados);
-        assert!(matches!(r, Resposta::Erro(_)), "{dados}: {r:?}");
+        let r = request(&mut c, "abrir_app", data);
+        assert!(matches!(r, Resposta::Erro(_)), "{data}: {r:?}");
     }
     std::thread::sleep(Duration::from_millis(300));
-    assert!(!saida_app.exists(), "abrir_app com campo abriu o app");
+    assert!(!app_output.exists(), "abrir_app com campo abriu o app");
 
-    // Sem campo: abre o `WARD_DEV_APP`, que recebe o papel app.
-    assert!(matches!(pedir(&mut c, "abrir_app", "{}"), Resposta::Ok));
-    esperar(|| ler(&saida_app).contains("revelar="), "a saída do app");
-    let texto = ler(&saida_app);
-    assert!(texto.contains("papel=app\n"), "{texto}");
-    assert!(texto.contains("argumentos=0\n"), "{texto}");
+    // Without a field: opens `WARD_DEV_APP`, which gets the app role.
+    assert!(matches!(request(&mut c, "abrir_app", "{}"), Resposta::Ok));
+    wait_for(|| read(&app_output).contains("revelar="), "a saída do app");
+    let text = read(&app_output);
+    assert!(text.contains("papel=app\n"), "{text}");
+    assert!(text.contains("argumentos=0\n"), "{text}");
     assert!(
-        texto
-            .contains("ambiente=HOME,LANG,PATH,WARD_DEV_DIR,WARD_DEV_SOCKET_DIR,XDG_RUNTIME_DIR\n"),
-        "{texto}"
+        text.contains("ambiente=HOME,LANG,PATH,WARD_DEV_DIR,WARD_DEV_SOCKET_DIR,XDG_RUNTIME_DIR\n"),
+        "{text}"
     );
     assert_eq!(
-        fs::symlink_metadata(&saida_app).unwrap().mode() & 0o777,
+        fs::symlink_metadata(&app_output).unwrap().mode() & 0o777,
         0o600
     );
-    // V3.38: o log do daemon tem o código de saída, só o número.
-    esperar(
-        || ler(&log).contains(") saiu com código 0"),
+    // V3.38: the daemon log has the exit code, only the number.
+    wait_for(
+        || read(&log).contains(") saiu com código 0"),
         "o código de saída no log",
     );
 
-    // À mão (o mesmo arquivo) e uma cópia: agente, e `revelar` não autorizado.
-    let nao = ErroResposta::NaoAutorizado.codigo();
-    let copia = repo.0.join("bin/copia-do-app");
-    fs::copy(&app, &copia).unwrap();
-    for b in [&app, &copia] {
-        let saida = a_mao(b, &sock.0);
-        assert!(saida.contains("papel=agente\n"), "{}: {saida}", b.display());
+    // By hand (the same file) and a copy: agent, and reveal not authorized.
+    let not_authorized = ErroResposta::NaoAutorizado.codigo();
+    let copy = repo.0.join("bin/copia-do-app");
+    fs::copy(&app, &copy).unwrap();
+    for b in [&app, &copy] {
+        let output = by_hand(b, &sock.0);
         assert!(
-            saida.contains(&format!("revelar={nao}\n")),
-            "{}: {saida}",
+            output.contains("papel=agente\n"),
+            "{}: {output}",
+            b.display()
+        );
+        assert!(
+            output.contains(&format!("revelar={not_authorized}\n")),
+            "{}: {output}",
             b.display()
         );
     }
-    let r = pedir(
+    let r = request(
         &mut c,
         "revelar",
         r#"{"entrada":"acme-pg-dev","alvo":{"campo":"senha"}}"#,
@@ -216,12 +221,12 @@ fn v3_37_so_o_app_aberto_pelo_daemon_de_teste_e_app() {
         "{r:?}"
     );
 
-    // O app saiu: aberto de novo, é app de novo (o pid novo é o do lançador).
-    assert!(matches!(pedir(&mut c, "abrir_app", "{}"), Resposta::Ok));
-    esperar(
-        || ler(&saida_app).matches("papel=app\n").count() == 2,
+    // The app exited: opened again, it is app again (the new pid is the launcher's).
+    assert!(matches!(request(&mut c, "abrir_app", "{}"), Resposta::Ok));
+    wait_for(
+        || read(&app_output).matches("papel=app\n").count() == 2,
         "a segunda abertura",
     );
-    let daemon = ler(&log);
+    let daemon = read(&log);
     assert!(!daemon.contains("falso-"), "valor no log do daemon");
 }

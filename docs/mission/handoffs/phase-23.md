@@ -236,3 +236,16 @@ com `make compile` e o checador; a bateria fica para o Milestone 6.
   (regra 6)
 - [ ] (UI/DESIGN) Conferido contra o FigCraft — não se aplica
 - [x] Ficou dentro do escopo da fase
+
+## Merge com o master `a8262a8` (Fases 16, 24, 27 e 32)
+- Conflitos em `tests/{app_value_binary,app_value_core,extension,login,playwright,run,ssh,test_app}.rs`
+  resolvidos com a versão do master (Fases 24/27) e os nomes do `common` reaplicados pelo
+  mesmo script (só identificadores fora de string e comentário; a função local
+  `test_app.rs::request` ficou de fora). `anexos_edicao.rs` (apagado no master) removido; o
+  `attachment_edit.rs` novo recebeu os nomes do `common`. Em `aprovacao.rs`, `trava.rs` e
+  `nucleo.rs` (Fase 25, em paralelo) só usos do `common` e o literal `"server.rs"` do V3.15.
+- Literais conferidos por script contra `a8262a8`: só mudam `"server.rs"` (V3.15) e os três
+  de `tests/externo.rs` (`../src/external.rs`, mensagem, `destination.as_fd()`); nenhum
+  `\u{…}` virou caractere, nenhum caractere de controle cru em `crates/wardd/`.
+- Glossário com as partes das Fases 16, 23, 24, 27 e 32, sem marcador de conflito.
+- `make compile` depois do merge: 0 (log `scratchpad/f23/compile-merge-fase23.log`).
