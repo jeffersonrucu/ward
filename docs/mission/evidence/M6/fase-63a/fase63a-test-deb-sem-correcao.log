@@ -1,0 +1,307 @@
+origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
+<home>/.cargo/bin/cargo build --quiet --locked -p wardd --bin wardd --example wardd-test-client --target-dir target/no-test-mode
+<home>/.cargo/bin/cargo build --quiet --locked -p ward --bin ward --target-dir target/no-test-mode
+<home>/.cargo/bin/cargo build --quiet --locked -p ward-nm --bin ward-nm --target-dir target/no-test-mode
+<home>/.cargo/bin/cargo build --quiet --locked -p ward-app-core --example startup-container --target-dir target/no-test-mode
+<home>/.cargo/bin/cargo build --quiet --locked -p wardd --features test-mode --bin wardd
+dev/tests/deb.sh
+==> 1. make deb (host, sem root)
+ok: make deb gera ward_<versão>_<arq>.deb
+ok: make deb imprime o sha256
+ok: V9.9: dpkg -c tem a mesma lista do staging
+ok: V9.9: e a mesma de install/tree.txt (60 caminhos)
+ok: todo caminho do pacote é root/root
+ok: nenhum bit setuid/setgid/sticky no pacote
+ok: nada com escrita para grupo e outros
+ok: nenhum link no pacote
+ok: ward-app vai 0755 no pacote (2755 só pelo statoverride)
+ok: ward-nm vai 0755 no pacote
+ok: staging tem ward-app 2755 (o modo da árvore)
+ok: V9.9: Depends declara sshpass
+ok: Depends declara openssh-client e systemd
+ok: Package e Version
+ok: m2:V5.9: dpkg -c sem caminho da 0.1.x
+ok: m2:V5.9: dpkg -c com usr/local/share/ward/extension/update.xml
+ok: binários do pacote iguais aos artefatos
+ok: conteúdo do pacote igual ao staging
+ok: manifesto de native messaging com o id
+ok: DEBIAN/preinst executável e sem erro de sintaxe
+ok: DEBIAN/postinst executável e sem erro de sintaxe
+ok: DEBIAN/prerm executável e sem erro de sintaxe
+ok: DEBIAN/postrm executável e sem erro de sintaxe
+ok: preinst tem as funções de install/groups.sh
+ok: preinst confere as outras políticas do Chrome (Fase 51a)
+ok: postrm tem a marca dos grupos (Fase 51a)
+ok: postinst avisa dos manifestos do perfil (Fase 51a)
+ok: postinst avisa de core_pattern fora do apport/systemd-coredump (Fase 51c)
+ok: Fase 51c: pacote com a lista do apport (WebKitWebProcess)
+ok: Fase 51c: pacote com o drop-in do systemd-coredump
+ok: preinst sem marca de modelo
+ok: postinst sem marca de modelo
+ok: prerm sem marca de modelo
+ok: postrm sem marca de modelo
+ok: política do pacote com NativeMessagingUserLevelHosts false (Fase 51a)
+ok: política do pacote com PasswordManagerEnabled false (Fase 44c)
+ok: política do pacote com PasswordLeakDetectionEnabled false (Fase 44c)
+ok: preinst confere as pastas do sistema
+FALHOU: preinst sem stop_running_daemons
+ok: m2:DT15: o preinst passa a marca da 0.1.x para created-groups
+ok: m2:DT15: o preinst confere a pasta da 0.1.x antes de tudo
+ok: m2:DT15: o postinst confere (e apaga) caminho da 0.1.x
+ok: m2:DT16: o postinst religa os sockets
+FALHOU: postrm sem restart_stopped_sockets
+FALHOU: m2:DT16 (Fase 63a): postinst abort-upgrade sem start_enabled_sockets (esperado '0', veio '1')
+FALHOU: m2:DT16 (Fase 63a): postinst abort-upgrade com restart_stopped_sockets (esperado '1', veio '0')
+FALHOU: m2:DT16 (Fase 63a): postrm abort-upgrade sem start_enabled_sockets (esperado '0', veio '1')
+FALHOU: m2:DT16 (Fase 63a): postrm abort-upgrade com restart_stopped_sockets (esperado '1', veio '0')
+FALHOU: preinst sem clear_stop_mark
+ok: m2:V5.9: a marca do pacote é created-groups
+ok: m2:V5.9: a política do pacote aponta para o caminho novo
+ok: sem conffiles (a política e o manifesto saem com o pacote)
+==> 1b. Recusas (nenhuma deixa .deb)
+ok: V9.2: wardd com test-mode: recusado (saiu 2)
+ok: V9.2: wardd com test-mode: mensagem
+ok: V9.2: wardd com test-mode: nenhum .deb
+ok: EXTENSION_ID de outra extensão: recusado (saiu 2)
+ok: EXTENSION_ID de outra extensão: mensagem
+ok: EXTENSION_ID de outra extensão: nenhum .deb
+ok: EXTENSION_ID vazio: recusado (saiu 2)
+ok: EXTENSION_ID vazio: mensagem
+ok: EXTENSION_ID vazio: nenhum .deb
+ok: DEB_DIR por link: recusado (saiu 2)
+ok: DEB_DIR por link: mensagem
+ok: DEB_DIR por link: nenhum .deb
+ok: DEB_DIR por link: nada no alvo
+ok: DEB_DIR relativo: recusado
+ok: DEB_DIR relativo: não sai 0
+==> 1c. make extension-crx: chave errada, chave aberta e chave por link são recusadas
+ok: extension-crx: outra chave (outro id) recusada
+ok: extension-crx: outra chave não sai 0
+ok: extension-crx: nenhum pacote com a chave errada
+ok: extension-crx: chave 0644 recusada
+ok: extension-crx: chave por link recusada
+ok: extension-crx: link dentro do dist recusado
+==> 2. Contêiner com systemd (root só dentro dele)
+ok: systemd de pé
+ok: 51c: /proc/sys só leitura (o core_pattern do host fica intacto)
+ok: 51c: 3 auxiliares no libwebkit2gtk-4.1-0 (WebKitGPUProcess WebKitNetworkProcess WebKitWebProcess)
+ok: 51c controle sem o Ward: o apport grava o crash do WebKitWebProcess (legível pelo usuário)
+ok: 51c controle sem o Ward: o systemd-coredump guarda o core
+ok: V9.8 retrato inicial com o agente SSH do usuário
+ok: sshpass ausente no começo
+ok: V9.9 dpkg -i sem sshpass não sai 0
+ok: V9.9 a falha cita a dependência de sshpass
+ok: V9.9 o pacote não fica configurado
+ok: desempacotado e não configurado: ward-app sem setgid (0755 root:root)
+ok: desempacotado e não configurado: ward-nm sem setgid (0755 root:root)
+ok: dpkg -r do pacote não configurado
+ok: dpkg -r: nenhum arquivo do Ward
+ok: dpkg -r: nenhum override
+ok: dpkg -r: grupos apagados
+ok: sshpass instalado do pacote local
+ok: V9.11 (.deb) gid >= 1000: recusado
+ok: V9.11 (.deb) gid >= 1000: mensagem do preinst
+ok: V9.11 (.deb) gid >= 1000: nenhum arquivo do Ward (nem o setgid)
+ok: V9.11 (.deb) gid >= 1000: pacote não instalado
+ok: V9.11 (.deb) gid >= 1000: nenhum override
+ok: V9.11 (.deb) com membro: recusado
+ok: V9.11 (.deb) com membro: mensagem do preinst
+ok: V9.11 (.deb) com membro: nenhum arquivo do Ward (nem o setgid)
+ok: V9.11 (.deb) com membro: pacote não instalado
+ok: V9.11 (.deb) com membro: nenhum override
+ok: V9.11 (.deb) com senha no gshadow: recusado
+ok: V9.11 (.deb) com senha no gshadow: mensagem do preinst
+ok: V9.11 (.deb) com senha no gshadow: nenhum arquivo do Ward (nem o setgid)
+ok: V9.11 (.deb) com senha no gshadow: pacote não instalado
+ok: V9.11 (.deb) com senha no gshadow: nenhum override
+ok: V9.11 (.deb) grupo primário de um usuário: recusado
+ok: V9.11 (.deb) grupo primário de um usuário: mensagem do preinst
+ok: V9.11 (.deb) grupo primário de um usuário: nenhum arquivo do Ward (nem o setgid)
+ok: V9.11 (.deb) grupo primário de um usuário: pacote não instalado
+ok: V9.11 (.deb) grupo primário de um usuário: nenhum override
+ok: V9.11 (.deb) pam_group (group.conf, Fase 51a): recusado
+ok: V9.11 (.deb) pam_group (group.conf, Fase 51a): mensagem do preinst
+ok: V9.11 (.deb) pam_group (group.conf, Fase 51a): nenhum arquivo do Ward (nem o setgid)
+ok: V9.11 (.deb) pam_group (group.conf, Fase 51a): pacote não instalado
+ok: V9.11 (.deb) pam_group (group.conf, Fase 51a): nenhum override
+ok: V9.11 (.deb) nsswitch com group: files sss (Fase 51b): recusado
+ok: V9.11 (.deb) nsswitch com group: files sss (Fase 51b): mensagem do preinst
+ok: V9.11 (.deb) nsswitch com group: files sss (Fase 51b): nenhum arquivo do Ward (nem o setgid)
+ok: V9.11 (.deb) nsswitch com group: files sss (Fase 51b): pacote não instalado
+ok: V9.11 (.deb) nsswitch com group: files sss (Fase 51b): nenhum override
+ok: política conflitante: dpkg -i recusado
+ok: política conflitante: mensagem do preinst
+ok: política conflitante: nenhum arquivo do Ward
+ok: política conflitante: nenhum grupo
+ok: política conflitante: o outro arquivo intacto
+ok: V9.9 dpkg -i (com SUDO_UID) sai 0
+ok: V9.9 pacote instalado
+ok: postinst liga o socket do SUDO_UID
+ok: dpkg -L tem os 22 arquivos de tree.txt
+ok: donos e modos de tree.txt (ward-app e ward-nm root:<grupo> 2755)
+ok: overrides registrados
+ok: manifesto de native messaging com o id
+ok: Fase 51a: política com NativeMessagingUserLevelHosts false
+ok: Fase 44c: política com PasswordManagerEnabled false
+ok: Fase 44c: política com PasswordLeakDetectionEnabled false
+ok: Fase 51a: marca dos grupos criados pelo preinst
+ok: 51c: /etc/apport/{report-ignore,blacklist.d}/ward com os auxiliares do dpkg -L e os binários do Ward
+ok: 51c com o Ward: o apport não grava o crash de WebKitGPUProcess
+ok: 51c com o Ward: o apport não grava o crash de WebKitNetworkProcess
+ok: 51c com o Ward: o apport não grava o crash de WebKitWebProcess
+ok: 51c com o Ward: crash do ward-app sem relatório
+ok: 51c controle com o Ward: o apport ainda grava o crash de outro programa (/usr/bin/sleep)
+ok: 51c com o Ward: o systemd-coredump não guarda core
+ok: V9.11 (.deb) ward-app é de sistema (gid 996)
+ok: V9.11 (.deb) ward-app sem membros
+ok: V9.11 (.deb) ward-app com '!' no gshadow
+ok: V9.11 (.deb) ward-nm é de sistema (gid 995)
+ok: V9.11 (.deb) ward-nm sem membros
+ok: V9.11 (.deb) ward-nm com '!' no gshadow
+ok: V9.11 (.deb) sg ward-app pelo uid 1000 falha
+ok: V9.7 wardd@1000.socket habilitado
+ok: V9.7 wardd@1000.socket ativo
+ok: V9.7 /run/ward root:root 0755
+ok: V9.7 /run/ward/1000 root:root 0755
+ok: V9.7 socket do uid, 0600
+ok: V9.7 a primeira conexão sobe o wardd instalado pelo .deb
+ok: V9.7 wardd roda com o uid
+ok: D57 wardd sem no_new_privs
+ok: V9.4 wardd não-dumpable (/proc do root)
+ok: V9.8 pasta do ssh do usuário, /etc/ssh, ssh -G e o ambiente do usuário iguais depois de instalar
+ok: reinstalar o .deb sai 0
+ok: reinstalar: ward-app continua root:ward-app 2755
+ok: reinstalar: ward-nm continua root:ward-nm 2755
+ok: reinstalar: socket ativo
+ok: reinstalar: o wardd responde
+useradd warning: sistema's uid 999 outside of the UID_MIN 1000 and UID_MAX 60000 range.
+ok: sem SUDO_UID: dpkg -i sai 0
+ok: sem SUDO_UID: o postinst liga o socket do usuário humano
+ok: sem SUDO_UID: socket do usuário humano ligado
+ok: sem SUDO_UID: socket do usuário humano ativo
+ok: sem SUDO_UID: wardd@1500.socket não ligado
+ok: sem SUDO_UID: wardd@999.socket não ligado
+ok: sem SUDO_UID: wardd@65534.socket não ligado
+ok: sem SUDO_UID: wardd@0.socket não ligado
+ok: sem SUDO_UID: o wardd responde
+ok: WARD_UID=0: dpkg -i sai 0
+ok: WARD_UID=0: recusado pelo postinst
+ok: WARD_UID=0: wardd@0.socket não ligado
+ok: V9.10 dpkg -r sai 0
+ok: V9.10 nenhum arquivo do Ward
+ok: V9.10 /usr/local/lib/ward apagada
+ok: V9.10 /usr/local/share/ward apagada
+ok: V9.10 /run/ward apagada
+ok: V9.10 grupos apagados
+ok: V9.10 nenhum override
+ok: V9.10 nenhuma unit wardd@ carregada
+ok: V9.10 nenhum link em sockets.target.wants
+ok: V9.10 o cofre do usuário intacto
+ok: V9.8 SSH igual depois de remover
+ok: 51c dpkg -r: /etc/apport/report-ignore/ward apagado
+ok: 51c dpkg -r: /etc/apport/blacklist.d/ward apagado
+ok: 51c dpkg -r: /etc/systemd/coredump.conf.d/ward.conf apagado
+ok: 51c dpkg -r: o README do pacote apport fica
+ok: 51c dpkg -r: o apport volta a gravar o crash do WebKitWebProcess
+ok: 51c dpkg -r: o systemd-coredump volta a guardar
+ok: dpkg -P depois do -r sai 0
+ok: dpkg -P: pacote fora do banco do dpkg
+ok: dpkg -P: o cofre do usuário intacto
+ok: grupo do administrador: dpkg -i sai 0
+ok: grupo do administrador: aceito pelo preinst
+ok: grupo do administrador: dpkg -r sai 0
+ok: dpkg -r: ward-nm do administrador fica (mesmo gid)
+ok: dpkg -r: avisa que ficou
+ok: dpkg -r: ward-app (criado pelo preinst) apagado
+ok: dpkg -r: /usr/local/lib/ward (com a marca) apagada
+ok: m2:V5.7 controle: o processo vigiado é do usuário e não-dumpable (/proc/<pid> do usuário, environ do root)
+ok: m2:V5.7 controle: o vigia vê um binário trocado com o processo no ar
+ok: m2:V5.9: o .deb 0.1.4 instala
+ok: m2:V5.9: dpkg -L da 0.1.4 tem a pasta antiga da extensão (controle)
+ok: m2:V5.7: o preinst 0.1.4 gravou a marca no nome dela
+ok: m2:V5.7: o wardd 0.1.4 responde ao cliente v1 (cofre travado)
+ok: m2:V5.7: o wardd 0.1.4 destrava o cofre 0.1.4
+ok: m2:V5.7: wardd 0.1.4 no ar
+ok: m2:V5.9: o .deb 0.2.0 por cima do 0.1.4 sai 0
+ok: m2:V5.9: pacote configurado
+ok: m2:V5.7 (DT16): o wardd 0.1.4 terminou
+ok: m2:V5.7 (DT16): o dpkg não trocou o binário com o wardd 0.1.4 no ar
+FALHOU: m2:V5.7 (DT16): o preinst parou o wardd@1000 (esperado 'parando wardd@1000.service antes de trocar os binários', veio '(Reading database ... 25011 files and directories currently installed.)
+Preparing to unpack /opt/teste/ward.deb ...
+ward: marca dos grupos criados movida para /usr/local/lib/ward/created-groups (m2:DT15)
+ward: grupo ward-app já existia e confere (gid 996)
+ward: grupo ward-nm já existia e confere (gid 995)
+Unpacking ward (0.2.0) over (0.1.4) ...
+Setting up ward (0.2.0) ...
+ward: wardd@1000.socket ligado: o wardd sobe na primeira conexão; o uso diário não pede sudo
+saiu=0')
+ok: m2:V5.9: dpkg -L depois da atualização sem caminho da 0.1.x
+ok: m2:V5.9: dpkg -L com a pasta nova da extensão
+ok: m2:V5.7 (DT15): a pasta da extensão da 0.1.4 sumiu
+ok: m2:V5.7 (DT15): a marca no nome da 0.1.4 sumiu
+ok: m2:V5.7 (DT15): created-groups com os grupos que a 0.1.4 criou
+ok: m2:V5.7: os grupos não mudam de gid
+ok: m2:V5.9: statoverride 2755 dos binários novos
+ok: m2:V5.9: ward-app root:ward-app 2755
+ok: m2:V5.9: ward-nm root:ward-nm 2755
+ok: m2:V5.6: a política aponta para o caminho novo
+ok: m2:V5.7: o socket religou
+ok: m2:DT16 (Fase 63a): o postinst configure apaga a marca de parada
+ok: m2:V5.7: o cofre não foi tocado pela atualização
+ok: m2:V5.7: a primeira conexão sobe o wardd 0.2.0
+ok: m2:V5.7: o wardd no ar é o 0.2.0
+ok: m2:V5.7: o wardd 0.2.0 não atende o cliente v1
+ok: m2:V5.7: `ward unlock`: a senha não aparece na saída
+ok: m2:V5.7: `ward unlock` 0.2.0 destrava o cofre 0.1.4
+ok: m2:V5.7: `ward unlock` sai 0
+ok: m2:V5.7: o destrave migra o cofre (arquivo regravado)
+ok: m2:V5.7: estado no formato novo depois do destrave
+ok: m2:V5.9: dpkg -r depois da atualização sai 0
+ok: m2:V5.9: dpkg -r apaga os grupos que a 0.1.4 criou
+ok: m2:V5.9: dpkg -r apaga as marcas e /usr/local/lib/ward
+ok: m2:V5.9: dpkg -P sai 0
+ok: m2:V5.9: dpkg -r/-P deixam o cofre migrado intacto
+ok: m2:DT15: instalar o .deb 0.2.0
+ok: m2:DT15: reinstalar por cima das sobras da 0.1.x sai 0
+ok: m2:DT15: o postinst apaga a sobra que nenhum pacote tem
+ok: m2:DT15: a pasta da 0.1.x sumiu
+ok: m2:DT15: o preinst passou a marca antiga para created-groups
+ok: m2:DT15: a marca antiga sumiu
+ok: m2:DT16 (Fase 63a): o cliente destrava o cofre antes do ataque
+ok: m2:DT16 (Fase 63a): cofre destravado antes do ataque
+ok: m2:DT15 ataque: pasta da 0.1.x por link: dpkg -i recusado
+ok: m2:DT15 ataque: mensagem do preinst
+ok: m2:DT16 ataque (Fase 63a): o preinst recusado não parou nada
+ok: m2:DT15 ataque: o alvo do link intacto
+FALHOU: m2:DT16 ataque (Fase 63a): dpkg -i recusado: o wardd mudou (4343 -> 4457)
+FALHOU: m2:DT16 ataque (Fase 63a): dpkg -i recusado: o cofre continua destravado (esperado 'resposta: list', veio 'resposta: erro locked')
+ok: m2:DT16 ataque (Fase 63a): dpkg -i recusado: nenhuma marca de parada
+ok: m2:DT16 ataque (Fase 63a): dpkg -i recusado: a versão instalada continua configurada
+ok: m2:DT16 ataque (Fase 63a): marca por link: dpkg -i recusado
+FALHOU: m2:DT16: /run/ward-upgrade-stopped ficou
+ok: m2:DT16 ataque (Fase 63a): o alvo do link da marca intacto
+FALHOU: m2:DT16 ataque (Fase 63a): marca por link: o wardd mudou (4343 -> 4571)
+FALHOU: m2:DT16 ataque (Fase 63a): marca por link: o cofre continua destravado (esperado 'resposta: list', veio 'resposta: erro locked')
+ok: m2:DT16 controle (Fase 63a): falha depois do stop: dpkg -i falha
+ok: m2:DT16 controle (Fase 63a): a falha é o conflito, no desempacotamento
+FALHOU: m2:DT16 controle (Fase 63a): o preinst parou o wardd (esperado 'parando wardd@1000.service antes de trocar os binários', veio '(Reading database ... 25011 files and directories currently installed.)
+Preparing to unpack /opt/teste/ward.deb ...
+ward: grupo ward-app já existia e confere (gid 996)
+ward: grupo ward-nm já existia e confere (gid 995)
+Unpacking ward (0.2.0) over (0.2.0) ...
+dpkg: error processing archive /opt/teste/ward.deb (--install):
+ trying to overwrite '/usr/local/share/ward/extension/update.xml', which is also in package fase63a-conflito 1
+Errors were encountered while processing:
+ /opt/teste/ward.deb
+saiu=1')
+ok: m2:DT16 controle (Fase 63a): o abort-upgrade religou o socket parado
+ok: m2:DT16 controle (Fase 63a): nenhum wardd reiniciado pelo abort
+FALHOU: m2:DT16: /run/ward-upgrade-stopped ficou depois do abort
+ok: m2:DT16 controle (Fase 63a): a versão instalada continua configurada
+FALHOU: m2:DT16 controle (Fase 63a): a próxima conexão sobe o wardd (esperado 'resposta: status', veio 'bytes: 0')
+FALHOU: m2:DT16 controle (Fase 63a): o cofre travou com o stop (esperado 'resposta: erro', veio 'connect: 2')
+test-deb (contêiner): 10 falha(s)
+FALHOU: contêiner: inside.sh saiu 1
+test-deb: 8 falha(s)
+make: *** [Makefile:573: test-deb] Erro 1
+exit=2

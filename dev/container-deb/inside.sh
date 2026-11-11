@@ -364,17 +364,42 @@ legacy_name() { awk -v k="$1" '$1 == k {print $2; exit}' "$L/install-0.1.4.txt";
 OLD_EXT_DIR="/$(legacy_name extension_dir)"
 OLD_MARK="/$(legacy_name groups_mark)"
 MARK=/usr/local/lib/ward/created-groups
+# The preinst's stop mark (Phase 63a; install/upgrade.sh).
+STOP_MARK=/run/ward-upgrade-stopped
 # Lines of protocol-v1.jsonl (0.1.4 baseline): the agent's status and unlock requests, the
 # `ok` reply and the status reply of a locked vault.
 REQ_STATUS=1 REQ_UNLOCK=2 RESP_OK=37 RESP_LOCKED=38
 legacy_call() { as_1000 /usr/bin/python3 -I "$L/legacy_client.py" "$SOCK" "$L/protocol-v1.jsonl" "$1" "$2"; }
 PASSWORD="$(cat "$T/senha")"
-# The installed `ward unlock` (0.2.0 name, Phase 55) in a pty, as the user, with the test
-# password (fake, D15) typed on its stdin.
+# The installed `ward unlock` (0.2.0 name, Phase 55) in a pty, as the user. The test
+# password (fake, D15) is typed only after the prompt shows up (Phase 63a): the CLI turns
+# the echo off before writing the prompt, so the password never goes back into the
+# output; without a prompt in 10 s nothing is typed. Prints the output and "saiu=<code>".
 unlock_with_cli() {
-    printf '%s\n' "$PASSWORD" | as_1000 /usr/bin/env -i HOME="$HOME_T" PATH=/usr/bin:/bin LANG=C.UTF-8 \
-        XDG_RUNTIME_DIR="/run/user/$UID_T" /usr/bin/script -qec "/usr/local/bin/ward unlock" /dev/null 2>&1
-    echo "saiu=$?"
+    local d w pid code=0
+    d="$(mktemp -d /tmp/unlock.XXXXXX)"
+    mkfifo -m 0600 "$d/in"
+    as_1000 /usr/bin/env -i HOME="$HOME_T" PATH=/usr/bin:/bin LANG=C.UTF-8 XDG_RUNTIME_DIR="/run/user/$UID_T" \
+        /usr/bin/script -qec "/usr/local/bin/ward unlock" /dev/null <"$d/in" >"$d/out" 2>&1 &
+    pid=$!
+    exec {w}>"$d/in"
+    for _ in $(seq 100); do
+        grep -q "Senha mestra" "$d/out" 2>/dev/null && break
+        kill -0 "$pid" 2>/dev/null || break
+        sleep 0.1
+    done
+    if grep -q "Senha mestra" "$d/out" 2>/dev/null; then
+        printf '%s\n' "$PASSWORD" >&"$w"
+    fi
+    exec {w}>&-
+    wait "$pid" || code=$?
+    cat "$d/out"
+    echo "saiu=$code"
+    rm -rf -- "$d"
+}
+# The password never in the output (the label only; the output is not printed).
+no_password() {
+    if [[ "$2" != *"$PASSWORD"* ]]; then ok "$1"; else failed "$1 (a senha de teste apareceu na saída)"; fi
 }
 plant_old_vault() {
     rm -rf -- "$VAULT_T"
@@ -402,19 +427,29 @@ watch_swap() {
     echo "parado" >>"$out"
 }
 install -d -m 0700 /tmp/v57
-# Control: the watcher sees a binary swapped under a live process (dpkg also swaps by rename).
-cp /usr/bin/sleep /tmp/v57/sleep
-/tmp/v57/sleep 30 &
+# Control: the watcher sees a binary swapped under a live process (dpkg also swaps by
+# rename) that, like the wardd, is not dumpable and runs as another uid (a setgid copy run
+# by the user; Phase 63a). The copy lives in /var/tmp: the container's /tmp is noexec.
+CTL_BIN=/var/tmp/v57-sleep
+rm -f -- "$CTL_BIN" "$CTL_BIN.new"
+install -m 0755 /usr/bin/sleep "$CTL_BIN"
+chown root:nogroup "$CTL_BIN"
+chmod 2755 "$CTL_BIN"
+# setpriv straight (not the as_1000 function): `$!` is then the sleep itself, not a subshell.
+setpriv --reuid="$UID_T" --regid="$UID_T" --init-groups "$CTL_BIN" 30 &
 CTL=$!
 sleep 0.2
+check "m2:V5.7 controle: o processo vigiado é do usuário e não-dumpable (/proc/<pid> do usuário, environ do root)" \
+    "$(stat -c %U "/proc/$CTL" "/proc/$CTL/environ" 2>&1 | tr '\n' ' ')" "$TEST_USER root "
 watch_swap "$CTL" /tmp/v57/control &
 CTL_WATCH=$!
 sleep 0.2
-cp /usr/bin/sleep /tmp/v57/sleep.new && mv -f /tmp/v57/sleep.new /tmp/v57/sleep
+cp /usr/bin/sleep "$CTL_BIN.new" && mv -f "$CTL_BIN.new" "$CTL_BIN"
 sleep 0.2
 kill "$CTL" 2>/dev/null || true
 wait "$CTL" 2>/dev/null || true
 wait "$CTL_WATCH" || true
+rm -f -- "$CTL_BIN"
 check "m2:V5.7 controle: o vigia vê um binário trocado com o processo no ar" "$(cat /tmp/v57/control)" "trocado com o processo no ar"
 
 clean_groups
@@ -452,6 +487,7 @@ check "m2:V5.9: ward-app root:ward-app 2755" "$(stat -c '%U:%G %a' /usr/local/bi
 check "m2:V5.9: ward-nm root:ward-nm 2755" "$(stat -c '%U:%G %a' /usr/local/lib/ward/ward-nm)" "root:ward-nm 2755"
 check "m2:V5.6: a política aponta para o caminho novo" "$(grep update_url /etc/opt/chrome/policies/managed/ward.json)" "file:///usr/local/share/ward/extension/update.xml"
 check "m2:V5.7: o socket religou" "$(systemctl is-active "wardd@$UID_T.socket" || true)" "active"
+[ ! -e "$STOP_MARK" ] && [ ! -L "$STOP_MARK" ] && ok "m2:DT16 (Fase 63a): o postinst configure apaga a marca de parada" || failed "m2:DT16: $STOP_MARK ficou depois da atualização"
 check "m2:V5.7: o cofre não foi tocado pela atualização" "$(vault_sums)" "$VAULT_BEFORE"
 r="$(as_1000 "$T/bin/cliente" "$SOCK" status)"
 check "m2:V5.7: a primeira conexão sobe o wardd 0.2.0" "$r" "resposta: status"
@@ -461,6 +497,7 @@ NEW_WARDD_SUM="$(sha256sum </usr/local/bin/wardd)"
     ok "m2:V5.7: o wardd no ar é o 0.2.0" || failed "m2:V5.7: o wardd no ar não é o 0.2.0"
 lacks "m2:V5.7: o wardd 0.2.0 não atende o cliente v1" "$(legacy_call "$REQ_STATUS" "$RESP_LOCKED")" "same"
 r="$(unlock_with_cli)"
+no_password "m2:V5.7: \`ward unlock\`: a senha não aparece na saída" "$r"
 check "m2:V5.7: \`ward unlock\` 0.2.0 destrava o cofre 0.1.4" "$r" "cofre destravado"
 check "m2:V5.7: \`ward unlock\` sai 0" "$r" "saiu=0"
 lacks "m2:V5.7: o destrave migra o cofre (arquivo regravado)" "$(vault_sums)" "$(head -n 1 <<<"$VAULT_BEFORE")"
@@ -489,18 +526,66 @@ check "m2:DT15: o postinst apaga a sobra que nenhum pacote tem" "$r" "removido $
 check "m2:DT15: o preinst passou a marca antiga para created-groups" "$(sort "$MARK" 2>&1)" "$MARK_LINES"
 [ ! -e "$OLD_MARK" ] && ok "m2:DT15: a marca antiga sumiu" || failed "m2:DT15: $OLD_MARK ficou"
 # Attack: the 0.1.x extension dir by link to another dir: the preinst refuses before any
-# change (no stop, no file), and the link target stays.
+# change (no stop, no file), and the link target stays. Phase 63a (m2:DT16): dpkg then
+# runs the abort-upgrade of the postrm and of the postinst; with no stop mark they start
+# and restart nothing: the same wardd stays up with the vault unlocked.
+same_wardd() {
+    local now
+    now="$(systemctl show -p MainPID --value "wardd@$UID_T.service")"
+    [ -n "$live_pid" ] && [ "$live_pid" != 0 ] && [ "$now" = "$live_pid" ] &&
+        ok "$1: mesmo wardd no ar (pid $live_pid)" || failed "$1: o wardd mudou ($live_pid -> $now)"
+}
 install -d -m 0755 /tmp/v57/victim
 printf 'da vítima\n' >/tmp/v57/victim/ward.crx
 ln -s /tmp/v57/victim "$OLD_EXT_DIR"
 as_1000 "$T/bin/cliente" "$SOCK" status >/dev/null
+r="$(printf '%s' "$PASSWORD" | as_1000 "$T/bin/cliente" "$SOCK" unlock)"
+check "m2:DT16 (Fase 63a): o cliente destrava o cofre antes do ataque" "$r" "resposta: ok"
+check "m2:DT16 (Fase 63a): cofre destravado antes do ataque" "$(as_1000 "$T/bin/cliente" "$SOCK" list)" "resposta: list"
 live_pid="$(systemctl show -p MainPID --value "wardd@$UID_T.service")"
 r="$(SUDO_UID=$UID_T dpkg -i "$DEB" 2>&1; echo "saiu=$?")"
 lacks "m2:DT15 ataque: pasta da 0.1.x por link: dpkg -i recusado" "$r" "saiu=0"
 check "m2:DT15 ataque: mensagem do preinst" "$r" "link simbólico"
+lacks "m2:DT16 ataque (Fase 63a): o preinst recusado não parou nada" "$r" "parando"
 check "m2:DT15 ataque: o alvo do link intacto" "$(cat /tmp/v57/victim/ward.crx)" "da vítima"
-check "m2:DT15 ataque: recusado antes de parar o wardd" "$(systemctl show -p MainPID --value "wardd@$UID_T.service")" "$live_pid"
+same_wardd "m2:DT16 ataque (Fase 63a): dpkg -i recusado"
+check "m2:DT16 ataque (Fase 63a): dpkg -i recusado: o cofre continua destravado" "$(as_1000 "$T/bin/cliente" "$SOCK" list)" "resposta: list"
+[ ! -e "$STOP_MARK" ] && [ ! -L "$STOP_MARK" ] && ok "m2:DT16 ataque (Fase 63a): dpkg -i recusado: nenhuma marca de parada" || failed "m2:DT16: $STOP_MARK depois da recusa"
+check "m2:DT16 ataque (Fase 63a): dpkg -i recusado: a versão instalada continua configurada" "$(status ward)" "ii"
+# Attack: a stop mark planted by link (to a dir that lists the socket) before a refused
+# dpkg -i: the preinst deletes the link (never what it points to) and nothing restarts.
+install -d -m 0700 /tmp/v57/fake-mark
+printf 'wardd@%s.socket\n' "$UID_T" >/tmp/v57/fake-mark/sockets
+ln -s /tmp/v57/fake-mark "$STOP_MARK"
+r="$(SUDO_UID=$UID_T dpkg -i "$DEB" 2>&1; echo "saiu=$?")"
+lacks "m2:DT16 ataque (Fase 63a): marca por link: dpkg -i recusado" "$r" "saiu=0"
+[ ! -e "$STOP_MARK" ] && [ ! -L "$STOP_MARK" ] && ok "m2:DT16 ataque (Fase 63a): o link da marca foi apagado" || failed "m2:DT16: $STOP_MARK ficou"
+check "m2:DT16 ataque (Fase 63a): o alvo do link da marca intacto" "$(cat /tmp/v57/fake-mark/sockets 2>&1)" "wardd@$UID_T.socket"
+same_wardd "m2:DT16 ataque (Fase 63a): marca por link"
+check "m2:DT16 ataque (Fase 63a): marca por link: o cofre continua destravado" "$(as_1000 "$T/bin/cliente" "$SOCK" list)" "resposta: list"
 rm -f "$OLD_EXT_DIR"
+# Control (Phase 63a): an upgrade that fails after the stop (a file conflict with another
+# package, which dpkg only finds while unpacking, after the preinst; it rolls back and runs
+# the abort-upgrade scripts): the preinst stopped the wardd (the vault locks) and the
+# abort-upgrade starts again only the socket it stopped; no daemon restarts, and the next
+# connection starts one.
+CONFLICT=/tmp/v57/conflito
+install -d "$CONFLICT/DEBIAN" "$CONFLICT/usr/local/share/ward/extension"
+printf 'Package: fase63a-conflito\nVersion: 1\nArchitecture: all\nMaintainer: teste <teste@exemplo.invalid>\nDescription: conflito de arquivo do teste da Fase 63a\n' >"$CONFLICT/DEBIAN/control"
+printf 'conflito\n' >"$CONFLICT/usr/local/share/ward/extension/update.xml"
+dpkg-deb --root-owner-group -b "$CONFLICT" /tmp/v57/conflito.deb >/dev/null
+dpkg -i --force-overwrite /tmp/v57/conflito.deb >/dev/null 2>&1
+r="$(SUDO_UID=$UID_T dpkg -i "$DEB" 2>&1; echo "saiu=$?")"
+lacks "m2:DT16 controle (Fase 63a): falha depois do stop: dpkg -i falha" "$r" "saiu=0"
+check "m2:DT16 controle (Fase 63a): a falha é o conflito, no desempacotamento" "$r" "fase63a-conflito"
+check "m2:DT16 controle (Fase 63a): o preinst parou o wardd" "$r" "parando wardd@$UID_T.service antes de trocar os binários"
+equal "m2:DT16 controle (Fase 63a): o abort-upgrade religou o socket parado" "$(systemctl is-active "wardd@$UID_T.socket" || true)" "active"
+equal "m2:DT16 controle (Fase 63a): nenhum wardd reiniciado pelo abort" "$(systemctl is-active "wardd@$UID_T.service" || true)" "inactive"
+[ ! -e "$STOP_MARK" ] && [ ! -L "$STOP_MARK" ] && ok "m2:DT16 controle (Fase 63a): o abort apagou a marca" || failed "m2:DT16: $STOP_MARK ficou depois do abort"
+check "m2:DT16 controle (Fase 63a): a versão instalada continua configurada" "$(status ward)" "ii"
+check "m2:DT16 controle (Fase 63a): a próxima conexão sobe o wardd" "$(as_1000 "$T/bin/cliente" "$SOCK" status)" "resposta: status"
+check "m2:DT16 controle (Fase 63a): o cofre travou com o stop" "$(as_1000 "$T/bin/cliente" "$SOCK" list)" "resposta: erro"
+dpkg -P fase63a-conflito >/dev/null 2>&1 || true
 dpkg -r ward >/dev/null 2>&1 || true
 dpkg -P ward >/dev/null 2>&1 || true
 clean_groups

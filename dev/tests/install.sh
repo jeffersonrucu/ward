@@ -226,6 +226,7 @@ upgrade_inside() {
         step() { printf "PASSO: %s\n" "$*"; }
         . "$1"; . "$2"; M="$3"; code="$4"
         GROUPS_MARK="$M/created-groups" LEGACY_GROUPS_MARK="$M/legacy-mark"
+        UPGRADE_MARK="$M/upgrade-stopped" UPGRADE_MARK_OWNER="$(id -u)"
         mark_dir() { :; }
         groupdel() { printf "groupdel %s\n" "$*"; }
         # Fake systemd: active units in $M/active; a unit listed in $M/stuck does not stop.
@@ -305,6 +306,58 @@ printf 'wardd@1000.socket\n' >"$M/active"
 r="$(upgrade_inside 'stop_running_daemons; echo trocou')"
 verify "m2:DT16: stop que falha recusa" "$r" "não deu para parar wardd@1000.socket"
 lacks "m2:DT16: stop que falha: nada depois" "$r" "trocou"
+lacks "m2:DT16 (Fase 63a): stop que falha não deixa marca" "$(ls -A "$M")" "upgrade-stopped"
+reset_marks
+# Phase 63a (m2:DT16): the `.deb` preinst writes the stop mark after the stop; the
+# abort-upgrade only starts the sockets in it and never restarts a daemon.
+printf 'wardd@1000.socket\nwardd@1000.service\nwardd@1001.socket\n' >"$M/active"
+r="$(upgrade_inside 'stop_running_daemons mark; stat -c "modo=%a" "$UPGRADE_MARK"; cat "$UPGRADE_MARK/sockets"')"
+verify "m2:DT16 (Fase 63a): stop com marca sai 0" "$r" "saiu=0"
+verify "m2:DT16 (Fase 63a): marca 0700" "$r" "modo=700"
+verify "m2:DT16 (Fase 63a): marca com os sockets parados" "$r" $'wardd@1000.socket\nwardd@1001.socket\n'
+lacks "m2:DT16 (Fase 63a): marca sem o serviço" "$(cat "$M/upgrade-stopped/sockets")" "service"
+: >"$M/log"
+r="$(upgrade_inside 'restart_stopped_sockets; [ -e "$UPGRADE_MARK" ] || echo marca-apagada')"
+verify "m2:DT16 (Fase 63a): abort religa só os sockets da marca" "$(grep -E '^(start|try-restart|restart) ' "$M/log" | tr '\n' ' ')" "start wardd@1000.socket start wardd@1001.socket "
+verify "m2:DT16 (Fase 63a): abort apaga a marca" "$r" "marca-apagada"
+reset_marks
+r="$(upgrade_inside 'stop_running_daemons mark; [ -e "$UPGRADE_MARK" ] || echo sem-marca')"
+verify "m2:DT16 (Fase 63a): nada parado, nenhuma marca" "$r" "sem-marca"
+reset_marks
+printf 'wardd@1000.socket\nwardd@1000.service\n' >"$M/active"
+r="$(upgrade_inside 'restart_stopped_sockets; echo fim')"
+verify "m2:DT16 ataque (Fase 63a): sem marca (preinst recusado), o abort sai 0" "$r" "saiu=0"
+verify "m2:DT16 ataque (Fase 63a): sem marca, o abort não religa nem reinicia nada" "[$(grep -E '^(start|stop|try-restart|restart|reload)' "$M/log" 2>/dev/null || true)]" "[]"
+reset_marks
+install -d -m 0700 "$TMP/planted-stop"
+printf 'wardd@1000.socket\n' >"$TMP/planted-stop/sockets"
+ln -s "$TMP/planted-stop" "$M/upgrade-stopped"
+r="$(upgrade_inside 'restart_stopped_sockets; [ -L "$UPGRADE_MARK" ] || echo link-apagado')"
+verify "m2:DT16 ataque (Fase 63a): marca por link não é seguida" "[$(grep -E '^(start|try-restart|restart) ' "$M/log" 2>/dev/null || true)]" "[]"
+verify "m2:DT16 ataque (Fase 63a): o link da marca é apagado" "$r" "link-apagado"
+verify "m2:DT16 ataque (Fase 63a): o alvo do link intacto" "$(cat "$TMP/planted-stop/sockets")" "wardd@1000.socket"
+reset_marks
+printf 'wardd@1000.socket\n' >"$M/active"
+ln -s "$TMP/planted-stop" "$M/upgrade-stopped"
+r="$(upgrade_inside 'stop_running_daemons mark; echo trocou')"
+verify "m2:DT16 ataque (Fase 63a): link no lugar da marca recusa" "$r" "não deu para criar"
+lacks "m2:DT16 ataque (Fase 63a): link no lugar da marca: nada depois" "$r" "trocou"
+verify "m2:DT16 ataque (Fase 63a): link no lugar da marca: alvo intacto" "$(ls -A "$TMP/planted-stop")" "sockets"
+rm -rf -- "$TMP/planted-stop"
+reset_marks
+install -d -m 0755 "$M/upgrade-stopped"
+printf 'wardd@1000.socket\n' >"$M/upgrade-stopped/sockets"
+r="$(upgrade_inside 'restart_stopped_sockets')"
+verify "m2:DT16 ataque (Fase 63a): marca 0755 não é lida" "[$(grep -E '^start ' "$M/log" 2>/dev/null || true)]" "[]"
+reset_marks
+install -d -m 0700 "$M/upgrade-stopped"
+printf 'wardd@1000.service\nwardd@x.socket\n../wardd@1.socket\nwardd@1001.socket; reboot\nwardd@1002.socket\n' >"$M/upgrade-stopped/sockets"
+r="$(upgrade_inside 'restart_stopped_sockets')"
+verify "m2:DT16 ataque (Fase 63a): da marca só sai wardd@<uid>.socket" "$(grep -E '^(start|try-restart|restart) ' "$M/log" | tr '\n' ' ')" "start wardd@1002.socket "
+reset_marks
+printf 'wardd@1000.socket\nwardd@1000.service\n' >"$M/active"
+r="$(upgrade_inside 'start_enabled_sockets; [ -e "$UPGRADE_MARK" ] || echo marca-apagada')"
+verify "m2:DT16 (Fase 63a): depois da troca (configure), o daemon ainda no ar vai para o binário novo" "$(grep -E '^try-restart ' "$M/log" | tr '\n' ' ')" "try-restart wardd@1000.service "
 reset_marks
 
 # V9.6, the policy and update.xml.
@@ -601,9 +654,12 @@ stage_legacy_fixtures "$C/legacy"
 
 IMAGE="ward-teste/install-systemd:1"
 docker build --quiet -t "$IMAGE" -f "$ROOT/dev/container-install/Dockerfile" "$ROOT/dev/container-units" >/dev/null
+# SYS_PTRACE (Phase 63a, like test-deb): the watcher of m2:V5.7 reads /proc/<pid>/exe of
+# the wardd 0.1.4, which is not dumpable; without it the readlink fails and the watcher
+# sees nothing (its control runs on a non-dumpable process).
 docker run -d --name "$CONTAINER_NAME" --network none --pull never \
     --tmpfs /run --tmpfs /run/lock --tmpfs /tmp \
-    --cgroupns=private --cap-add SYS_ADMIN --security-opt apparmor=unconfined \
+    --cgroupns=private --cap-add SYS_ADMIN --cap-add SYS_PTRACE --security-opt apparmor=unconfined \
     --ulimit memlock=-1:-1 \
     -v "$C:/opt/teste:ro" \
     -v "$ROOT/dev/container-install/inside.sh:/opt/inside.sh:ro" \
