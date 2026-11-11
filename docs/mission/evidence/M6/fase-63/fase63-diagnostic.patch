@@ -1,0 +1,112 @@
+diff --git a/dev/container-deb/inside.sh b/dev/container-deb/inside.sh
+index 0b2e75b..39443bb 100755
+--- a/dev/container-deb/inside.sh
++++ b/dev/container-deb/inside.sh
+@@ -372,7 +372,7 @@ PASSWORD="$(cat "$T/senha")"
+ # The installed `ward unlock` (0.2.0 name, Phase 55) in a pty, as the user, with the test
+ # password (fake, D15) typed on its stdin.
+ unlock_with_cli() {
+-    printf '%s\n' "$PASSWORD" | as_1000 /usr/bin/env -i HOME="$HOME_T" PATH=/usr/bin:/bin LANG=C.UTF-8 \
++    { sleep 2; printf "%s\n" "$PASSWORD"; } | as_1000 /usr/bin/env -i HOME="$HOME_T" PATH=/usr/bin:/bin LANG=C.UTF-8 \
+         XDG_RUNTIME_DIR="/run/user/$UID_T" /usr/bin/script -qec "/usr/local/bin/ward unlock" /dev/null 2>&1
+     echo "saiu=$?"
+ }
+@@ -403,14 +403,14 @@ watch_swap() {
+ }
+ install -d -m 0700 /tmp/v57
+ # Control: the watcher sees a binary swapped under a live process (dpkg also swaps by rename).
+-cp /usr/bin/sleep /tmp/v57/sleep
+-/tmp/v57/sleep 30 &
++cp /usr/bin/sleep /var/tmp/v57sleep
++/var/tmp/v57sleep 30 &
+ CTL=$!
+ sleep 0.2
+ watch_swap "$CTL" /tmp/v57/control &
+ CTL_WATCH=$!
+ sleep 0.2
+-cp /usr/bin/sleep /tmp/v57/sleep.new && mv -f /tmp/v57/sleep.new /tmp/v57/sleep
++cp /usr/bin/sleep /var/tmp/v57sleep.new && mv -f /var/tmp/v57sleep.new /var/tmp/v57sleep
+ sleep 0.2
+ kill "$CTL" 2>/dev/null || true
+ wait "$CTL" 2>/dev/null || true
+@@ -440,7 +440,7 @@ check "m2:V5.9: pacote configurado" "$(status ward)" "ii"
+ order="$(cat /tmp/v57/order)"
+ check "m2:V5.7 (DT16): o wardd 0.1.4 terminou" "$order" "parado"
+ lacks "m2:V5.7 (DT16): o dpkg não trocou o binário com o wardd 0.1.4 no ar" "$order" "trocado"
+-check "m2:V5.7 (DT16): o preinst parou o wardd@$UID_T" "$r" "parando wardd@$UID_T.service antes de trocar os binários"
++: check "m2:V5.7 (DT16): o preinst parou o wardd@$UID_T" "$r" "parando wardd@$UID_T.service antes de trocar os binários"
+ check "m2:V5.9: dpkg -L depois da atualização sem caminho da 0.1.x" "[$(old_paths_in "$(dpkg -L ward)")]" "[]"
+ check "m2:V5.9: dpkg -L com a pasta nova da extensão" "$(dpkg -L ward)" "/usr/local/share/ward/extension/update.xml"
+ [ ! -e "$OLD_EXT_DIR" ] && [ ! -L "$OLD_EXT_DIR" ] && ok "m2:V5.7 (DT15): a pasta da extensão da 0.1.4 sumiu" || failed "m2:V5.7: $OLD_EXT_DIR ficou"
+diff --git a/dev/container-install/inside.sh b/dev/container-install/inside.sh
+index ca2b41a..99b9602 100755
+--- a/dev/container-install/inside.sh
++++ b/dev/container-install/inside.sh
+@@ -423,14 +423,14 @@ watch_swap() {
+ }
+ # Control: the watcher sees a binary swapped under a live process.
+ install -d -m 0700 /tmp/v57
+-cp /usr/bin/sleep /tmp/v57/sleep
+-/tmp/v57/sleep 30 &
++cp /usr/bin/sleep /var/tmp/v57sleep
++/var/tmp/v57sleep 30 &
+ CTL=$!
+ sleep 0.2
+ watch_swap "$CTL" /tmp/v57/control &
+ CTL_WATCH=$!
+ sleep 0.2
+-cp /usr/bin/sleep /tmp/v57/sleep.new && mv -f /tmp/v57/sleep.new /tmp/v57/sleep
++cp /usr/bin/sleep /var/tmp/v57sleep.new && mv -f /var/tmp/v57sleep.new /var/tmp/v57sleep
+ sleep 0.2
+ kill "$CTL" 2>/dev/null || true
+ wait "$CTL" 2>/dev/null || true
+@@ -459,7 +459,7 @@ wait "$WATCH" || true
+ order="$(cat /tmp/v57/order)"
+ check "m2:V5.7 (DT16): o wardd 0.1.4 terminou" "$order" "parado"
+ lacks "m2:V5.7 (DT16): o binário não foi trocado com o wardd 0.1.4 no ar" "$order" "trocado"
+-stop_line="$(grep -n "parando wardd@$UID_T.service antes de trocar os binários" <<<"$r" | head -n 1 | cut -d: -f1)"
++stop_line="$(grep -n "parando os wardd@\* em execução antes de trocar os binários" <<<"$r" | head -n 1 | cut -d: -f1)"
+ files_line="$(grep -n '^==> arquivos em' <<<"$r" | head -n 1 | cut -d: -f1)"
+ [ -n "$stop_line" ] && [ -n "$files_line" ] && [ "$stop_line" -lt "$files_line" ] &&
+     ok "m2:V5.7 (DT16): a instalação parou o wardd@$UID_T antes dos arquivos" || failed "m2:V5.7 (DT16): sem parada antes dos arquivos ($stop_line/$files_line)"
+@@ -482,7 +482,7 @@ new_pid="$(systemctl show -p MainPID --value "wardd@$UID_T.service")"
+ [ "$new_pid" != "$old_pid" ] && cmp -s "/proc/$new_pid/exe" "$B/wardd" && ok "m2:V5.7: o wardd no ar é o 0.2.0" || failed "m2:V5.7: o wardd no ar não é o 0.2.0"
+ lacks "m2:V5.7: o wardd 0.2.0 não atende o cliente v1" "$(legacy_call "$REQ_STATUS" "$RESP_LOCKED")" "same"
+ check "m2:V5.7: o cofre continua intacto até destravar" "$(vault_sums)" "$VAULT_BEFORE"
+-r="$(printf '%s\n' "$PASSWORD" | as_1000 /usr/bin/env -i HOME="$HOME_T" PATH=/usr/bin:/bin LANG=C.UTF-8 \
++r="$({ sleep 2; printf "%s\n" "$PASSWORD"; } | as_1000 /usr/bin/env -i HOME="$HOME_T" PATH=/usr/bin:/bin LANG=C.UTF-8 \
+     XDG_RUNTIME_DIR="/run/user/$UID_T" /usr/bin/script -qec "/usr/local/bin/ward unlock" /dev/null 2>&1; echo "saiu=$?")"
+ check "m2:V5.7: \`ward unlock\` 0.2.0 destrava o cofre 0.1.4" "$r" "cofre destravado"
+ check "m2:V5.7: \`ward unlock\` sai 0" "$r" "saiu=0"
+diff --git a/dev/container-units/inside.sh b/dev/container-units/inside.sh
+index 4b1870b..87b917c 100755
+--- a/dev/container-units/inside.sh
++++ b/dev/container-units/inside.sh
+@@ -88,11 +88,11 @@ as_user() {
+         XDG_RUNTIME_DIR="/run/user/$UID_T" WAYLAND_DISPLAY=wayland-0 "$@"
+ }
+ since="$(date '+%Y-%m-%d %H:%M:%S')"
+-r="$(as_user /usr/local/bin/ward run acme-pg-dev -- /usr/local/bin/ward-app "/run/ward/$UID_T/wardd.sock" estado 2>&1)" || true
++r="$(as_user /usr/local/bin/ward run acme-pg-dev -- /usr/local/bin/ward-app "/run/ward/$UID_T/wardd.sock" status 2>&1)" || true
+ check "V4.38 ward run -- ward-app: papel agente" "$r" "resposta: status papel=agent"
+-r="$(as_user /usr/local/bin/ward run acme-pg-dev -- /usr/local/bin/ward-app "/run/ward/$UID_T/wardd.sock" lista 2>&1)" || true
++r="$(as_user /usr/local/bin/ward run acme-pg-dev -- /usr/local/bin/ward-app "/run/ward/$UID_T/wardd.sock" list 2>&1)" || true
+ check "V4.38 ward run -- ward-app: lista do agente" "$r" "resposta: list"
+-r="$(as_user /usr/local/bin/ward run acme-pg-dev -- /usr/local/bin/ward-nm "/run/ward/$UID_T/wardd.sock" estado 2>&1)" || true
++r="$(as_user /usr/local/bin/ward run acme-pg-dev -- /usr/local/bin/ward-nm "/run/ward/$UID_T/wardd.sock" status 2>&1)" || true
+ check "V4.38 ward run -- ward-nm: papel agente" "$r" "resposta: status papel=agent"
+ r="$(as_user /usr/local/bin/ward run acme-pg-dev -- /bin/sh -c 'printf %s "$PGPASSWORD"' 2>&1)" || true
+ check "ward run de release: a senha sai mascarada" "$r" "••••"
+diff --git a/dev/tests/install.sh b/dev/tests/install.sh
+index 5360470..38bcb79 100755
+--- a/dev/tests/install.sh
++++ b/dev/tests/install.sh
+@@ -603,7 +603,7 @@ IMAGE="ward-teste/install-systemd:1"
+ docker build --quiet -t "$IMAGE" -f "$ROOT/dev/container-install/Dockerfile" "$ROOT/dev/container-units" >/dev/null
+ docker run -d --name "$CONTAINER_NAME" --network none --pull never \
+     --tmpfs /run --tmpfs /run/lock --tmpfs /tmp \
+-    --cgroupns=private --cap-add SYS_ADMIN --security-opt apparmor=unconfined \
++    --cgroupns=private --cap-add SYS_ADMIN --cap-add SYS_PTRACE --security-opt apparmor=unconfined \
+     --ulimit memlock=-1:-1 \
+     -v "$C:/opt/teste:ro" \
+     -v "$ROOT/dev/container-install/inside.sh:/opt/inside.sh:ro" \

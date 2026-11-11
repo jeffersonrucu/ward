@@ -1,0 +1,379 @@
+=== ward-plataforma/src/papel.rs -> ward-platform/src/role.rs
+lógica igual (estrutura idêntica; só nomes, literais e comentários): 2349 tokens
+nomes: 146 antigos, 0 viraram mais de um nome, 5 nomes novos juntam mais de um antigo
+  novo path <- ['caminho', 'path']
+  novo Read <- ['Leitura', 'Read']
+  novo new <- ['new', 'nova', 'novo']
+  novo mine <- ['meu', 'meus']
+  novo read <- ['ler', 'read']
+literais diferentes: 2
+  "modo-teste"  ->  "test-mode"
+  "modo-teste"  ->  "test-mode"
+=== ward-plataforma/src/servidor.rs -> ward-platform/src/server.rs
+DIFERENTE na estrutura: 1183 x 1182 tokens, 1 trecho(s)
+  delete: antes  : & UnixStream , esperado : & ServidorEsperado , ) -> Result <
+        depois : & UnixStream , expected : & ExpectedServer ) -> Result <
+nomes: 103 antigos, 0 viraram mais de um nome, 3 nomes novos juntam mais de um antigo
+  novo path <- ['caminho', 'path']
+  novo kind <- ['forma', 'kind']
+  novo test <- ['test', 'teste']
+literais diferentes: 8
+  "modo-teste"  ->  "test-mode"
+  "modo-teste"  ->  "test-mode"
+  "modo-teste"  ->  "test-mode"
+  "modo-teste"  ->  "test-mode"
+  "modo-teste"  ->  "test-mode"
+  "modo-teste"  ->  "test-mode"
+  "/run/user/{}/ward-teste/wardd.sock"  ->  "/run/user/{}/ward-test/wardd.sock"
+  "{ruim}"  ->  "{bad}"
+=== ward-plataforma/src/conectar.rs -> ward-platform/src/connect.rs
+lógica igual (estrutura idêntica; só nomes, literais e comentários): 2435 tokens
+nomes: 190 antigos, 0 viraram mais de um nome, 5 nomes novos juntam mais de um antigo
+  novo new <- ['new', 'novo']
+  novo kind <- ['kind', 'tipo']
+  novo read <- ['lido', 'lidos', 'read']
+  novo path <- ['caminho', 'path']
+  novo output <- ['output', 'saida']
+literais diferentes: 4
+  "CanalConectar(fd {})"  ->  "ConnectChannel(fd {})"
+  "{saida}"  ->  "{output}"
+  "{saida}"  ->  "{output}"
+  "{saida}"  ->  "{output}"
+=== ward-plataforma/src/socket.rs -> ward-platform/src/socket.rs
+DIFERENTE na estrutura: 4353 x 4352 tokens, 6 trecho(s)
+  delete: antes  { match self { ErroDiretorio :: CaminhoInvalido => { f . write_str (
+        depois { match self { DirError :: InvalidPath => f . write_str (
+  replace: antes  => { f . write_str ( "caminho do diretório do socket inválido" ) } ErroDiretorio :: PaiNaoConfiavel (
+        depois InvalidPath => f . write_str ( "caminho do diretório do socket inválido" ) , DirError :: UntrustedParent (
+  delete: antes  ( ) ) , ErroDiretorio :: NaoEDiretorio => { f . write_str (
+        depois ( ) ) , DirError :: NotDirectory => f . write_str (
+  replace: antes  => { f . write_str ( "o caminho do socket existe e não é diretório" ) } ErroDiretorio :: DonoErrado {
+        depois NotDirectory => f . write_str ( "o caminho do socket existe e não é diretório" ) , DirError :: WrongOwner {
+  insert: antes  , ErroAtivacao :: FdIndisponivel ( e ) => write ! ( f
+        depois , ActivationError :: FdUnavailable ( e ) => { write ! ( f
+  replace: antes  => write ! ( f , "fd 3 do systemd indisponível: {e}" ) , ErroAtivacao :: NaoEscutaUnix =>
+        depois { write ! ( f , "fd 3 do systemd indisponível: {e}" ) } ActivationError :: NotUnixListener =>
+nomes: 238 antigos, 2 viraram mais de um nome, 10 nomes novos juntam mais de um antigo
+  antigo pasta -> ['dir', 'dir_path']
+  antigo escuta -> ['listener', 'listening']
+  novo path <- ['caminho', 'path']
+  novo process <- ['process', 'processo']
+  novo mode <- ['mode', 'modo']
+  novo parent <- ['pai', 'parent']
+  novo kind <- ['kind', 'tipo']
+  novo dir <- ['dir', 'pasta']
+  novo is_socket <- ['e_socket', 'is_socket']
+  novo listener <- ['escuta', 'listener']
+  novo Dir <- ['Diretorio', 'Pasta']
+  novo accept <- ['accept', 'aceitar']
+literais diferentes: 8
+  "ward-teste"  ->  "ward-test"
+  "{DIRETORIO_SISTEMA}/{}/{NOME_SOCKET}"  ->  "{SYSTEM_DIR}/{}/{SOCKET_NAME}"
+  "o diretório do socket tem permissão {modo:o}, não 700"  ->  "o diretório do socket tem permissão {mode:o}, não 700"
+  "modo-teste"  ->  "test-mode"
+  "/tmp/ward-plataforma-falso-nao-criar"  ->  "/tmp/ward-platform-falso-nao-criar"
+  "/tmp/ward-plataforma-falso-nao-criar"  ->  "/tmp/ward-platform-falso-nao-criar"
+  "{ruim:?}"  ->  "{bad:?}"
+  "ward-plataforma-u-{}"  ->  "ward-platform-u-{}"
+=== ward-plataforma/src/sys.rs -> ward-platform/src/sys.rs
+DIFERENTE na estrutura: 8533 x 8533 tokens, 2 trecho(s)
+  delete: antes  : & CStr , para : & CStr , ) -> io ::
+        depois : & CStr , to : & CStr ) -> io ::
+  insert: antes  , aviso , & vazio , & padrao ) } } drop
+        depois , notice_fd , & empty , & default_action , ) } } drop
+nomes: 440 antigos, 1 viraram mais de um nome, 3 nomes novos juntam mais de um antigo
+  antigo nulo -> ['is_null_terminated', 'null']
+  novo null <- ['null', 'nulo']
+  novo from <- ['de', 'from']
+  novo last <- ['last', 'ultimo']
+literais diferentes: 1
+  "modo-teste"  ->  "test-mode"
+=== ward-plataforma/src/processo.rs -> ward-platform/src/process.rs
+DIFERENTE na estrutura: 5565 x 5683 tokens, 2 trecho(s)
+  insert: antes  , } } ; let cadeia = cadeia_de_processos ( filho . id
+        depois , } } ; let thread = std :: thread :: current ( ) ; let forker = thread . name ( ) . unwrap_or_default ( ) ; let forker : String = forker . chars ( ) . take ( 15 ) . collect ( ) ; let mut chain = process_chain ( child . id
+  insert: antes  ( filho . id ( ) ) ; let _ = filho
+        depois ( child . id ( ) ) ; for _ in 0 . . 100 { match chain . last ( ) { Some ( l ) if l . pid == child . id ( ) && l . name != forker => break , _ => { } } std :: thread :: sleep ( std :: time :: Duration :: from_millis ( 20 ) ) ; chain = proces
+nomes: 317 antigos, 2 viraram mais de um nome, 11 nomes novos juntam mais de um antigo
+  antigo cadeia -> ['chain', 'thread']
+  antigo cadeia_de_processos -> ['process_chain', 'std']
+  novo std <- ['cadeia_de_processos', 'std']
+  novo Read <- ['Leitura', 'Read']
+  novo path <- ['caminho', 'path']
+  novo components <- ['componentes', 'components']
+  novo new <- ['new', 'novo']
+  novo parent <- ['pai', 'parent']
+  novo dir <- ['dir', 'pasta']
+  novo read <- ['ler', 'read']
+  novo map <- ['map', 'mapa']
+  novo thread <- ['cadeia', 'thread']
+  novo last <- ['last', 'ultimo']
+literais diferentes: 7
+  "variável {nome} no ambiente"  ->  "variável {name} no ambiente"
+  "modo-teste"  ->  "test-mode"
+  "modo-teste"  ->  "test-mode"
+  "/proc/{atual}/status"  ->  "/proc/{current}/status"
+  "{ruim}"  ->  "{bad}"
+  "1-2 r-xp 0 00:01 {} {caminho}\n"  ->  "1-2 r-xp 0 00:01 {} {path}\n"
+  "1-2 r-xp 0 00:01 {} {caminho}\n"  ->  "1-2 r-xp 0 00:01 {} {path}\n"
+=== ward-plataforma/src/endurecimento.rs -> ward-platform/src/hardening.rs
+lógica igual (estrutura idêntica; só nomes, literais e comentários): 539 tokens
+nomes: 122 antigos, 1 viraram mais de um nome, 0 nomes novos juntam mais de um antigo
+  antigo processo -> ['process', 'processo']
+literais diferentes: 29
+  "
+            ),
+            ErroInicio::Depurador => {
+                write!(f, "  ->  "
+            ),
+            StartError::Debugger => {
+                write!(f, "
+  ")
+            }
+            ErroInicio::LerStatus(e) => write!(f, "  ->  ")
+            }
+            StartError::ReadStatus(e) => write!(f, "
+  "),
+            ErroInicio::LimiteMemlock(atual) => write!(
+                f,
+                "  ->  "),
+            StartError::MemlockLimit(current) => write!(
+                f,
+                "
+  "
+            ),
+            ErroInicio::TravarMemoria(e) => {
+                write!(
+               ->  "
+            ),
+            StartError::LockMemory(e) => {
+                write!(
+                
+  "
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for ErroInicio {}
+
+/// `  ->  "
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for StartError {}
+
+/// `
+  "));
+    }
+    Ok(())
+}
+
+/// Confere o próprio ambiente: nenhuma variável insegura (D48) e nenhum de  ->  "));
+    }
+    Ok(())
+}
+
+/// Verifies its own environment: no insecure variable (D48) and no debugge
+  ").map_err(ErroInicio::LerStatus)?;
+    match ler_tracer_pid(&status) {
+        Some(0) => Ok(()),
+   ->  ").map_err(StartError::ReadStatus)?;
+    match read_tracer_pid(&status) {
+        Some(0) => Ok(()),
+  "),
+        sys::travar_toda_memoria,
+    )
+}
+
+/// A regra do D62, separada das chamadas ao sistema   ->  "), sys::lock_all_memory)
+}
+
+/// The rule of D62, apart from the system calls so the test covers bot
+  "]), None);
+        for nome in ["  ->  "]), None);
+        for name in ["
+  "] {
+            assert_eq!(
+                primeira_variavel_insegura(["  ->  "] {
+            assert_eq!(
+                first_insecure_variable(["
+  ", nome]).as_deref(),
+                Some(nome)
+            );
+        }
+        // Nome inventado   ->  ", name]).as_deref(),
+                Some(name)
+            );
+        }
+        // A made-up name 
+  ")
+        );
+        // Só o prefixo exato: `OLD_PWD` e `ld_preload` não são do carregador.
+         ->  ")
+        );
+        // Only the exact prefix: `OLD_PWD` and `ld_preload` are not the loader's.
+   
+  "]), None);
+    }
+
+    #[test]
+    fn ataque_lista_insegura_da_glibc() {
+        for nome in VARIAVE  ->  "]), None);
+    }
+
+    #[test]
+    fn attack_glibc_insecure_list() {
+        for name in INSECURE_VA
+  "
+            );
+        }
+        for nome in ["  ->  "
+            );
+        }
+        for name in ["
+  "] {
+            assert_eq!(primeira_variavel_insegura([nome]).as_deref(), Some(nome));
+        }
+    ->  "] {
+            assert_eq!(first_insecure_variable([name]).as_deref(), Some(name));
+        }
+     
+  "]),
+            None
+        );
+    }
+
+    #[test]
+    fn ataque_nome_com_controle_nao_vai_cru_para  ->  "]),
+            None
+        );
+    }
+
+    #[test]
+    fn attack_name_with_control_does_not_go_raw_
+  ");
+        let n = primeira_variavel_insegura([OsStr::from_bytes(b"  ->  ");
+        let n = first_insecure_variable([OsStr::from_bytes(b"
+  ");
+        let n = primeira_variavel_insegura([OsStr::from_bytes(b"  ->  ");
+        let n = first_insecure_variable([OsStr::from_bytes(b"
+  ");
+        let n = primeira_variavel_insegura([OsStr::from_bytes(b"  ->  ");
+        let n = first_insecure_variable([OsStr::from_bytes(b"
+  ");
+        // 200 caracteres: os 64 primeiros, sem `…`.
+        let longo = format!("  ->  ");
+        // 200 characters: the first 64, with no `…`.
+        let long = format!("
+  ".repeat(200));
+        let n = primeira_variavel_insegura([longo.as_str()]).unwrap();
+        asser  ->  ".repeat(200));
+        let n = first_insecure_variable([long.as_str()]).unwrap();
+        assert_eq
+  ".repeat(MAX_NOME_VARIAVEL - 3));
+        assert_eq!(nome_para_mensagem(exato.as_bytes()), exato);
+   ->  ".repeat(MAX_VARIABLE_NAME - 3));
+        assert_eq!(name_for_message(exact.as_bytes()), exact);
+   
+  ",
+        ] {
+            let m = nome_para_mensagem(nome);
+            assert!(m.len() <= MAX_NOME  ->  ",
+        ] {
+            let m = name_for_message(name);
+            assert!(m.len() <= MAX_VARIAB
+  "
+            );
+            assert!(nome.starts_with(m.as_bytes()), "  ->  "
+            );
+            assert!(name.starts_with(m.as_bytes()), "
+  ");
+        }
+    }
+
+    /// D62 (V3.34): release falha fechado sem limite infinito ou com erro do
+   ->  ");
+        }
+    }
+
+    /// D62 (V3.34): release fails closed without an infinite limit or with an
+
+  ");
+            match (modo_teste, r) {
+                (false, Err(ErroInicio::LimiteMemlock(n))) =  ->  ");
+            match (test_mode, r) {
+                (false, Err(StartError::MemlockLimit(n))) => 
+  "),
+            }
+            let r = decidir_memoria(Ok(libc::RLIM_INFINITY), modo_teste, || {
+      ->  "),
+            }
+            let r = decide_memory(Ok(libc::RLIM_INFINITY), test_mode, || {
+       
+  "),
+            }
+            let r = decidir_memoria(Err(io::ErrorKind::Other.into()), modo_teste,   ->  "),
+            }
+            let r = decide_memory(Err(io::ErrorKind::Other.into()), test_mode, || 
+  "
+        );
+    }
+
+    #[test]
+    fn mensagem_nao_tem_valor() {
+        let m = ErroInicio::Variav  ->  "
+        );
+    }
+
+    #[test]
+    fn message_has_no_value() {
+        let m = StartError::Insecure
+=== ward-nm/src/main.rs -> ward-nm/src/main.rs
+lógica igual (estrutura idêntica; só nomes, literais e comentários): 765 tokens
+nomes: 101 antigos, 0 viraram mais de um nome, 0 nomes novos juntam mais de um antigo
+literais diferentes: 4
+  "modo-teste"  ->  "test-mode"
+  "modo-teste"  ->  "test-mode"
+  "modo-teste"  ->  "test-mode"
+  "modo-teste"  ->  "test-mode"
+=== ward-nm/src/lib.rs -> ward-nm/src/lib.rs
+DIFERENTE na estrutura: 1461 x 1503 tokens, 3 trecho(s)
+  insert: antes  { Zeroizing :: new ( br#"{" v ":1," tipo ":" erro ","
+        depois { Zeroizing :: new ( br#"{" v ":2," type ":" error "," data ":{"
+  replace: antes  "," dados ":{" codigo ":" interno "," mensagem ":" erro interno "}}" #
+        depois ":{" code ":" internal "," message ":" erro interno do Ward "}}" #
+  insert: antes  . tipo ( ) ) => r , _ => { log
+        depois . kind ( ) ) => r , Err ( _ ) if protocol :: frame_version ( & body ) . is_some_and ( | v | v != protocol :: VERSION ) => { log ( "o daemon fala outra versão do protocolo" ) ; return error_body ( ResponseError :: UnknownVersion ) ; } _ => {
+nomes: 136 antigos, 9 viraram mais de um nome, 11 nomes novos juntam mais de um antigo
+  antigo ErroResposta -> ['Operation', 'ResponseError']
+  antigo Operacao -> ['Operation', 'Response']
+  antigo Papel -> ['ResponseError', 'Role']
+  antigo Resposta -> ['Response', 'ResponseType']
+  antigo TipoResposta -> ['ResponseType', 'Role']
+  antigo tipo -> ['error', 'kind']
+  antigo erro -> ['data', 'do', 'error_body']
+  antigo interno -> ['Ward', 'message']
+  antigo mensagem -> ['erro', 'message']
+  novo Operation <- ['ErroResposta', 'Operacao']
+  novo Response <- ['Operacao', 'Resposta']
+  novo ResponseError <- ['ErroResposta', 'Papel']
+  novo ResponseType <- ['Resposta', 'TipoResposta']
+  novo Role <- ['Papel', 'TipoResposta']
+  novo Fill <- ['Preencher', 'Preenchimento']
+  novo kind <- ['kind', 'tipo']
+  novo Error <- ['Erro', 'Error']
+  novo all <- ['all', 'tudo']
+  novo read <- ['lidos', 'read']
+  novo message <- ['interno', 'mensagem']
+literais diferentes: 6
+  ":1,"  ->  ":2,"
+  ":"  ->  ","
+  ","  ->  ":{"
+  ":{"  ->  ":"
+  ":"  ->  ","
+  ","  ->  ":"

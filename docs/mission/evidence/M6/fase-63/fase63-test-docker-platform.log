@@ -1,0 +1,163 @@
+origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
+<home>/.cargo/bin/cargo build --quiet --locked -p ward-platform --features test-mode --example ward-platform-container
+<home>/.cargo/bin/cargo build --quiet --locked -p ward-app-core --example startup-container
+<home>/.cargo/bin/cargo build --quiet --locked -p ward --bin ward --target-dir target/no-test-mode
+<home>/.cargo/bin/cargo build --quiet --locked -p wardd --bin wardd --target-dir target/no-test-mode
+<home>/.cargo/bin/cargo build --quiet --locked -p ward-nm --bin ward-nm --example fake-chrome --target-dir target/no-test-mode
+<home>/.cargo/bin/cargo build --quiet --locked -p wardd --features test-mode --bin wardd --example wardd-test-client
+dev/tests/docker-platform.sh target/debug/examples/ward-platform-container target/debug/examples/startup-container \
+	target/no-test-mode/debug/ward target/no-test-mode/debug/wardd \
+	target/debug/wardd target/no-test-mode/debug/ward-nm target/no-test-mode/debug/examples/fake-chrome \
+	target/debug/examples/wardd-test-client
+ok: V3.23: o wardd de teste aceitou o socket do systemd (LISTEN_FDS)
+ok: D46: o fd 3 original foi fechado
+ok: D46: o socket que escuta tem O_CLOEXEC (o ward run não herda)
+ok: D47: grupos lidos do /etc/group
+ok: D47: política do kernel aceita (ptrace_scope ≥ 1, suid_dumpable ≠ 1)
+ok: D46: pasta root:root 0755 e socket 0600 do uid 1000
+ok: V3.23: a conferência do cliente aceita o par uid 0 em pasta do root
+ok: D47: cliente sem grupo especial fica agente
+ok: V3.24: ward-app setgid aberto pelo daemon recebe o papel app
+ok: V3.24: ward-app setgid não é dumpable para o usuário desde o exec
+ok: V3.24: o egid do ward-app é o grupo ward-app
+ok: D47, D57: ward-app lançado por quem não é o daemon fica agente
+ok: V3.24: ward-nm setgid com o Chrome de pai recebe o papel extensão
+ok: D47: ward-nm sem o Chrome de pai fica agente
+ok: V3.5: a cópia do ward-app perde o setgid e fica agente
+ok: controle: sem setgid o LD_PRELOAD carrega
+ok: V3.24: no ward-nm setgid o LD_PRELOAD é ignorado (sem marca)
+ok: V3.24: o ward-nm com LD_PRELOAD no ambiente segue com o papel
+ok: V3.24: no ward-app setgid o LD_PRELOAD é ignorado (sem marca)
+ok: V3.24: PTRACE_ATTACH no ward-app logo depois do exec dá EPERM
+ok: V3.24: PTRACE_SEIZE no ward-app dá EPERM
+ok: V3.24: /proc/<pid>/mem do ward-app dá EACCES
+ok: V3.24: o ward-app pausado já está no grupo ward-app
+ok: V3.24: PTRACE_ATTACH no ward-nm dá EPERM
+ok: V3.24: PTRACE_SEIZE no ward-nm dá EPERM
+ok: controle: sem setgid o pai consegue PTRACE_ATTACH
+ok: V3.24: preso antes do exec, o kernel não aplica o setgid
+ok: V3.24: preso antes do exec, o ward-nm fica agente
+ok: V3.24: uid de teste com outro gid fica agente
+ok: controle: o uid 1000 cria socket na pasta dele
+ok: V3.23: servidor falso do mesmo uid é recusado antes de qualquer byte
+ok: V3.23: o uid 1000 não cria socket em /run/ward/1000 (EACCES)
+ok: V3.23: o uid 1000 não apaga o socket do systemd
+ok: com o wardd morto, o cliente vê o daemon indisponível
+ok: D57: o lançador do daemon abriu o ward-app setgid
+ok: D57: uma instância por vez (o segundo pedido não abre outra)
+ok: V5.31: desde o exec, o ward-app está no grupo ward-app
+ok: V5.31: desde o exec, Dumpable ≠ 1 (2 com suid_dumpable=2)
+ok: V5.31: desde o exec, TracerPid 0
+ok: D57: o app recebe só 0–2, ligados a /dev/null (fds ≥ 3 fechados)
+ok: V5.31: depois da partida, os gids voltam ao real
+ok: V5.31: depois da partida, Dumpable 0
+ok: V5.31: depois da partida, TracerPid 0
+ok: V5.31: o socket do daemon tem CLOEXEC
+ok: V3.34: o app lançado tem VmLck 0 kB (o mlockall do daemon não passa pelo execve)
+ok: V3.34: o daemon de teste travou a memória (mlockall com LimitMEMLOCK infinito)
+ok: V5.31: o ambiente do app é exatamente o de D57 (sem DISPLAY, LISTEN_*, GTK_MODULES, GST_PLUGIN_PATH, GIO_EXTRA_MODULES, WEBKIT_INJECTED_BUNDLE_PATH)
+ok: V5.31: o app aberto pelo daemon conectou antes de largar o grupo e recebeu o papel app
+ok: D47: com a conexão caída e o pai ainda o daemon, o app se executa de novo
+ok: D47: depois de se executar de novo, o app reconecta com o papel app
+ok: V5.31: app aberto pelo daemon com WAYLAND_DISPLAY forçado sai com mensagem
+ok: V5.31: com WAYLAND_DISPLAY forçado, o app nem conecta
+ok: V5.31: app aberto pelo daemon com WAYLAND_DISPLAY forçado sai com mensagem
+ok: V5.31: com WAYLAND_DISPLAY forçado, o app nem conecta
+ok: V5.31: app aberto pelo daemon com DBUS_SESSION_BUS_ADDRESS forçado sai com mensagem
+ok: V5.31: com DBUS_SESSION_BUS_ADDRESS forçado, o app nem conecta
+ok: V5.31: app aberto pelo daemon com XDG_RUNTIME_DIR forçado sai com mensagem
+ok: V5.31: com XDG_RUNTIME_DIR forçado, o app nem conecta
+ok: V5.31: app aberto pelo daemon com GTK_MODULES forçado sai com mensagem
+ok: V5.31: com GTK_MODULES forçado, o app nem conecta
+ok: V5.31: os cinco ambientes forçados foram tentados
+ok: V5.31: o ward-app aberto por outro processo, com o ambiente dele, pede ao daemon e sai
+ok: V5.31: o ward-app aberto por outro processo conecta sem o grupo do app
+ok: V5.31: o ward-app aberto por outro processo sai com mensagem
+ok: V5.31: o ward-app aberto por outro processo não recebe o papel app
+ok: V5.31: o pai falso imita o gerente (Name, PPid 1 e cmdline)
+ok: V5.31: o ward-app aberto pelo gerente falso sai com mensagem
+ok: V5.31: o ward-app aberto pelo gerente falso não recebe o papel app
+ok: V5.31: com dois wayland-<n>, o lançador não abre (aprovação indisponível)
+ok: V5.31: com o wayland-<n> trocado por um link, o lançador não abre
+ok: D57: o lançador só abre o ward-app do root, setgid do grupo ward-app
+ok: V4.2: o wardd copiado não fica escutando numa pasta do uid 1000
+ok: V4.2: o wardd copiado não fica no ar com o socket de uma pasta do uid 1000
+   (wardd copiado com LISTEN_FDS de /run/user/1000/copia: wardd: socket do systemd recusado: o socket do systemd não está no caminho esperado saiu=1 )
+ok: V4.2: o wardd copiado sem o systemd não sobe
+ok: V4.2: o wardd copiado sem o systemd não fica no ar
+   (wardd copiado sem LISTEN_FDS: wardd: sem o socket do systemd (LISTEN_FDS); o wardd sobe pela unit saiu=1 )
+ok: V4.2: falso não-dumpable do uid 1000 escutando em /run/user/1000/ward
+ok: V4.2: falso não-dumpable do uid 1000 escutando em /run/user/1000/ward-test
+ok: V4.2: falso não-dumpable do uid 1000 escutando em /run/user/1000/copia
+ok: controle: o falso registra conexão e bytes
+ok: V4.2: o falso do uid 1000 não faz bind em /run/ward/1000/ (EACCES)
+ok: V4.2: com o socket velho do root, o falso não toma o caminho do wardd
+ok: V4.2: o socket velho continua lá, na pasta do root
+ok: V4.2 (socket-velho, ward unlock): a CLI de release não sai 0
+ok: V4.2 (socket-velho, ward unlock): a CLI de release recusa ('o daemon não está rodando' ou 'servidor não é o wardd')
+ok: V4.2 (socket-velho, ward unlock): a CLI não pede a senha
+ok: V4.2 (socket-velho, ward list): a CLI de release não sai 0
+ok: V4.2 (socket-velho, ward list): a CLI de release recusa ('o daemon não está rodando' ou 'servidor não é o wardd')
+ok: V4.2 (socket-velho, ward list): a CLI não pede a senha
+ok: V4.2 (socket-velho, ward lock): a CLI de release não sai 0
+ok: V4.2 (socket-velho, ward lock): a CLI de release recusa ('o daemon não está rodando' ou 'servidor não é o wardd')
+ok: V4.2 (socket-velho, ward lock): a CLI não pede a senha
+ok: V4.2: sem o socket, o falso do uid 1000 não faz bind em /run/ward/1000/wardd.sock (EACCES)
+ok: V4.2: nem o binário de teste (bind em /run/ward/1000/wardd.sock)
+ok: V4.2 (sem-socket, ward unlock): a CLI de release não sai 0
+ok: V4.2 (sem-socket, ward unlock): a CLI de release recusa ('o daemon não está rodando' ou 'servidor não é o wardd')
+ok: V4.2 (sem-socket, ward unlock): a CLI não pede a senha
+ok: V4.2 (sem-socket, ward list): a CLI de release não sai 0
+ok: V4.2 (sem-socket, ward list): a CLI de release recusa ('o daemon não está rodando' ou 'servidor não é o wardd')
+ok: V4.2 (sem-socket, ward list): a CLI não pede a senha
+ok: V4.2 (sem-socket, ward lock): a CLI de release não sai 0
+ok: V4.2 (sem-socket, ward lock): a CLI de release recusa ('o daemon não está rodando' ou 'servidor não é o wardd')
+ok: V4.2 (sem-socket, ward lock): a CLI não pede a senha
+ok: V4.2: o uid 1000 não cria /run/ward/1000
+ok: V4.2 (sem a pasta, ward unlock): a CLI de release não sai 0
+ok: V4.2 (sem a pasta, ward unlock): a CLI de release recusa ('o daemon não está rodando' ou 'servidor não é o wardd')
+ok: V4.2 (sem a pasta, ward unlock): a CLI não pede a senha
+ok: V4.2: nenhum dos falsos recebeu conexão nem byte
+ok: Fase 40: o wardd de teste real subiu com o socket do systemd
+ok: Fase 40: destravou a cópia do cofre de teste
+ward-nm: mensagem da extensão recusada pela leitura do protocolo
+ward-nm: mensagem da extensão recusada pela leitura do protocolo
+ok: D47: ward-nm setgid aberto pelo Chrome instalado recebe o papel extensão
+ok: D9: suggest em localhost:8081 traz acme-wp-dev
+ok: D9: suggest em localhost:8081 traz acme-wp-prod
+ok: D9/44c: fill acme-wp-dev em http://localhost:8081 sem confirmar: recusado
+ok: D9/44c: sem a confirmação, nada de preenchimento
+ok: D9/44c: sem a confirmação, nada de senha
+ok: V6.2: fill acme-wp-dev em 127.0.0.1:8081 é recusado pelo daemon
+ok: V6.2: a recusa de origem não leva valor
+ok: V6.2: suggest em 127.0.0.1:8081 não traz acme-wp-*
+ok: papel extensão: reveal (operação do app) recusado
+ok: papel extensão: list (operação do agente e do app) recusada
+ok: o host sai 0 no fim do stdin
+ok: V6.1: ward-nm executado direto: o daemon recusa (unauthorized)
+ok: V6.1: ward-nm executado direto: nada de senha no stdout
+ward-nm: o daemon não deu o papel extensão a este host
+ward-nm: mensagem da extensão recusada pela leitura do protocolo
+ward-nm: mensagem da extensão recusada pela leitura do protocolo
+ok: V6.1: pai que é cópia do Chrome fora de /opt/google/chrome: status unauthorized
+ok: V6.1: pai que é cópia do Chrome: fill recusado
+ok: V6.1: pai que é cópia do Chrome: nada de preenchimento
+ward-nm: o daemon não deu o papel extensão a este host
+ward-nm: mensagem da extensão recusada pela leitura do protocolo
+ward-nm: mensagem da extensão recusada pela leitura do protocolo
+ok: D5: Chrome com LD_PRELOAD de pai: fill recusado
+ok: D5: Chrome com LD_PRELOAD de pai: nada de preenchimento
+ward-nm: o daemon não deu o papel extensão a este host
+ward-nm: mensagem da extensão recusada pela leitura do protocolo
+ward-nm: mensagem da extensão recusada pela leitura do protocolo
+ok: V3.5/D47: cópia do ward-nm sem setgid, com o Chrome de pai: fill recusado
+ok: V3.5/D47: cópia do ward-nm: nada de preenchimento
+ward-nm: mensagem da extensão vazia, grande demais ou cortada
+ok: mensagem de mais de 64 KiB: invalid_frame
+ok: mensagem de mais de 64 KiB: o host sai ≠ 0
+ok: S13: o log do wardd (RUST_LOG=trace) não tem valor falso do cofre
+ok: D9: o daemon registrou a recusa de origem (só o nome da entrada)
+ok: D9/44c: o daemon pediu a confirmação da origem local
+ok: S13: o log não tem a origem pedida
+
+test-docker-platform: tudo certo
