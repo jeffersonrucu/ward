@@ -1,0 +1,41 @@
+origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
+<home>/.cargo/bin/cargo build --quiet --locked -p wardd --features test-mode --bin wardd
+<home>/.cargo/bin/cargo build --quiet --locked -p ward-nm --features test-mode --bin ward-nm
+<home>/.cargo/bin/cargo build --quiet --locked -p ward-platform --example chrome-parent
+dev/tests/nm.sh target/debug/wardd target/debug/ward-nm target/debug/examples/chrome-parent
+wardd de teste só deste script: pid 2191434, socket <rt>/ward-nm-test-2191419-DqcUj1/wardd.sock
+FALHA extensão de teste carregada no Chrome real (perfil temporário)
+ok    destravou o cofre de teste (cópia) pelo socket
+ok    V6.1: o ward-nm respondeu as três mensagens
+ok    V6.1: aberto por um processo do usuário (sem setgid, pai não é o Chrome), o daemon não dá o papel extensão
+ok    V6.1: fill do ward-nm aberto à mão: o daemon recusa (unauthorized)
+ok    V6.1: suggest do ward-nm aberto à mão: o daemon recusa (unauthorized)
+ok    V6.1: stdout do ward-nm: nenhum padrão de .dev/variations.txt
+ok    V6.1: stderr do ward-nm: nenhum padrão de .dev/variations.txt
+ok    mensagem de 70 000 bytes: invalid_frame e o host sai ≠ 0
+ok    JSON malformado e reveal (operação do app): recusados no host
+ok    mensagens ruins: stdout do ward-nm: nenhum padrão de .dev/variations.txt
+ok    m2:V5.10: estado, preencher e sugerir v1 (extensão 0.1.x): só unknown_version
+ok    m2:V5.10: stdout do ward-nm com os pedidos v1: nenhum padrão de .dev/variations.txt
+ok    m2:V5.10: nada de password na resposta aos pedidos v1
+ok    m2:V5.10: nada de senha na resposta aos pedidos v1
+ok    m2:V5.10: nada de username na resposta aos pedidos v1
+ok    m2:V5.10: nada de usuario na resposta aos pedidos v1
+ok    m2:V5.10: nada de totp na resposta aos pedidos v1
+ok    verificador do pai pronto
+Traceback (most recent call last):
+  File "<repo>/dev/tests/nm.py", line 254, in <module>
+    line = srv.communicate(timeout=30)[0].strip()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/subprocess.py", line 1209, in communicate
+    stdout, stderr = self._communicate(input, endtime, timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/subprocess.py", line 2116, in _communicate
+    self._check_timeout(endtime, orig_timeout, stdout, stderr)
+  File "/usr/lib/python3.12/subprocess.py", line 1253, in _check_timeout
+    raise TimeoutExpired(
+subprocess.TimeoutExpired: Command '['<repo>/target/debug/examples/chrome-parent', 'serve', '<repo>/.dev/nm.DqcUj1/sonda.sock', '/opt/google/chrome/chrome']' timed out after 30 seconds
+ok    wardd.log sem padrão de .dev/variations.txt
+ok    chrome.log sem padrão de .dev/variations.txt
+test-nm: 1 parte(s) com falha
+make: *** [Makefile:671: test-nm] Erro 1

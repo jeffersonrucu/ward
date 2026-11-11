@@ -1,0 +1,19 @@
+dev/tests/gst-channels.sh
+==> GStreamer sem as variáveis da 39c (controle)
+  marcas: frei0r ladspa libvisual 
+ok - controle: a isca 'frei0r' carregou sem a lista (o teste enxerga o ataque)
+ok - controle: a isca 'ladspa' carregou sem a lista (o teste enxerga o ataque)
+ok - controle: a isca 'libvisual' carregou sem a lista (o teste enxerga o ataque)
+ok - controle: o scanner varreu a pasta do sistema
+==> GStreamer com o ambiente de D57 (GST_PLUGIN_LOADING_WHITELIST)
+ok - nenhuma isca carregou (frei0r, LADSPA, libvisual, LV2, plugin do HOME)
+ok - o scanner não abriu /dev/shm/cuda_injection_path_shm
+ok - o scanner não abriu /dev/shm/GFX_MEDIA_TRACE
+ok - o scanner não abriu ~/.mfx_trace
+ok - o scanner não abriu ~/.nv/ComputeCache
+ok - nenhum bind de @cuda-uvmfd (o libcuda não carregou)
+ok - o appsink/appsrc e os elementos básicos continuam lá
+==> EGL com perfis da NVIDIA plantados no HOME
+ok - controle: sem a variável o driver leu ~/.nv/nvidia-application-profiles-rc
+ok - com __GL_APPLICATION_PROFILE=0 o driver não lê os perfis (mesmo com enabled: true plantado)
+canais-gst: canais da 29b fechados

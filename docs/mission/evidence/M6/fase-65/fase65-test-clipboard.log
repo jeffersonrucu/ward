@@ -1,0 +1,18 @@
+origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
+dev/tests/clipboard.sh "<home>/.cargo/bin/cargo"
+ok: autoteste: o vigia acha o valor que o wl-copy grava em /tmp
+ok: V5.4: o wl-paste devolve o valor copiado
+ok: x-kde-passwordManagerHint = secret oferecido
+   tipos vistos pelo wl-paste: MULTIPLE text/plain;charset=utf-8 text/plain;charset=utf-8 text/plain x-kde-passwordManagerHint
+ok: V5.5: o valor sai depois do prazo
+ok: V5.5: o texto que o usuário copiou depois continua lá
+ok: trava de fora (limpar fora da thread principal) tira o valor na hora
+ok: copiar fora da thread principal é recusado
+ok: ao sair do app o valor some (não fica guardado em lugar nenhum)
+ok: x11: nenhum programa executado (nada de wl-copy)
+ok: x11: nenhum arquivo aberto para escrita em /tmp, /var/tmp nem <rt>
+   wayland: copiar respondeu ok; compositor recusou (sem foco de teclado) a seleção
+ok: wayland: nenhum programa executado (nada de wl-copy)
+ok: wayland: nenhum arquivo aberto para escrita em /tmp, /var/tmp nem <rt>
+ok: nenhum arquivo em /tmp, /var/tmp nem <rt> recebeu o valor (inotify e varredura)
+area-transferencia: ok

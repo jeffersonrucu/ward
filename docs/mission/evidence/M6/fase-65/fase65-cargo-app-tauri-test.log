@@ -1,0 +1,32 @@
+   Compiling ward-app v0.2.0 (<repo>/app/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.98s
+     Running unittests src/main.rs (target/debug/deps/ward_app-9d18829cce5ce7ce)
+
+running 24 tests
+test gtk_clipboard::tests::real_session ... ignored, precisa da sessão gráfica; rode por `make test-clipboard`
+test gtk_clipboard::tests::attack_old_guard_does_not_release_the_new_copy ... ok
+test gtk_clipboard::tests::attack_copy_outside_the_main_thread_is_refused ... ok
+test gtk_clipboard::tests::clear_outside_the_main_thread_does_not_touch_gtk ... ok
+test gtk_clipboard::tests::attack_text_copied_by_another_program_stops_being_wards ... ok
+test tests::attack_failure_carries_no_value ... ok
+test tests::attack_navigation_out_of_the_app_is_refused ... ok
+test tests::attack_notice_of_one_window_does_not_go_to_the_other ... ok
+test tests::webview_keys_are_the_english_ones ... ok
+test tests::attack_external_backup_only_in_the_right_window_and_uuid_checked_in_rust ... ok
+test tests::attack_create_vault_only_in_the_right_window_and_checked_in_rust ... ok
+test tests::missing_tray_does_not_break ... ok
+test tests::attack_own_commands_only_in_the_right_window_and_origin ... ok
+test tests::without_tray_the_watcher_measures_the_transition ... ok
+test tests::attack_lock_only_in_the_main_window ... ok
+test tests::attack_unlock_only_in_the_right_window_and_password_without_echo ... ok
+test tests::attack_set_level_only_in_the_right_window_and_pin_in_format ... ok
+test tests::attack_plugins_and_made_up_command_are_denied ... ok
+test tests::attack_restore_backup_only_in_the_right_window_and_version_checked_in_rust ... ok
+test tests::attack_form_only_in_the_right_window ... ok
+test tests::attack_generator_only_in_the_right_window_and_no_value_on_generate ... ok
+test tests::attack_old_command_names_and_window_labels_are_denied ... ok
+test tests::attack_approval_only_through_the_right_window ... ok
+test tests::attack_settings_only_in_the_right_window_and_checked_in_rust ... ok
+
+test result: ok. 23 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
