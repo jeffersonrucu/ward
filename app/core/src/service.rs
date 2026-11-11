@@ -688,7 +688,7 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
             tags: f.tags,
             data: built.dados,
             extras: built.extras,
-            attachments: attachments,
+            attachments,
         };
         if let Err(errors) = formulario::validar_local(&draft) {
             return Ok(SaveResult {

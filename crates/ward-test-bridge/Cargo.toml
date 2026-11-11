@@ -7,20 +7,20 @@ rust-version.workspace = true
 publish.workspace = true
 
 [features]
-# D7: a ponte só existe com esta feature. Sem ela o crate compila vazio e o binário
-# nem é gerado (`required-features`).
+# D7: the bridge only exists with this feature. Without it the crate builds empty and the
+# binary is not even produced (`required-features`).
 test-mode = ["dep:ward-app-core", "dep:serde_json", "dep:getrandom", "dep:ctutils", "dep:zeroize", "ward-app-core/test-mode"]
 
-# Motivo de cada dependência no handoff da Fase 29 (S14). Todas opcionais: só entram
-# com `test-mode`.
+# Reason for each dependency in the Phase 29 handoff (S14). All optional: they only come
+# in with `test-mode`.
 [dependencies]
-# Os mesmos comandos e o mesmo serviço do app Tauri.
+# The same commands and the same service as the Tauri app.
 ward-app-core = { workspace = true, optional = true }
-# Corpo JSON das chamadas da interface (sem derive: só `Value`).
+# JSON body of the interface calls (no derive: only `Value`).
 serde_json = { version = "1.0.150", optional = true, default-features = false, features = ["std"] }
-# Token aleatório da ponte (já no lockfile pelo `ward-core`).
+# Random token of the bridge (already in the lockfile through `ward-core`).
 getrandom = { version = "0.4.3", optional = true, default-features = false }
-# Comparação do token em tempo constante (já no lockfile pelo `ward-core`).
+# Constant-time comparison of the token (already in the lockfile through `ward-core`).
 ctutils = { version = "0.4.8", optional = true, default-features = false }
 zeroize = { version = "1.9.1", optional = true, default-features = false, features = ["alloc"] }
 

@@ -2263,6 +2263,22 @@ e `minutos_validos` do `app/core/configuracoes.rs` (Fase 33) são outros e não 
 Nos testes de `entry`: `rascunho` → `draft`, `sem` → `without`, `NaoClone` → `NotClone`,
 `zera_ao_sair` → `zeroes_on_drop`.
 
+Fase 29 (`ward-test-bridge`): módulos `area_wl`/`partida`/`simulados` →
+`wl_clipboard`/`startup`/`simulated`, `tests/ataques.rs` → `tests/attacks.rs`; `Ponte` →
+`Bridge` (`abrir`/`url_de_abertura`/`origem`/`token_para_teste`/`servir`/`responder` →
+`open`/`opening_url`/`origin`/`token_for_test`/`serve`/`respond`); `Pedido { metodo,
+caminho, corpo }` → `Request { method, path, body }` (`novo`/`cabecalho` → `new`/
+`header`); `Resposta { status, corpo }` → `Response { status, body }` (`corpo_json` →
+`body_json`); `ler_pedido` → `read_request`; `MAX_CABECALHO`/`MAX_CORPO`/`MAX_CONEXOES`
+→ `MAX_HEADER`/`MAX_BODY`/`MAX_CONNECTIONS`; `SEM_PAPEL_APP` → `NO_APP_ROLE`,
+`conectar_com_papel_app` → `connect_with_app_role`, `dist_do_repositorio`/`repositorio`
+→ `repository_dist`/`repository`; `SeletorDePasta`/`TerminalDeTeste`/
+`TerminalDoRepositorio` → `DirPicker`/`TestTerminal`/`RepoTerminal` (`do_repositorio` →
+`from_repository`); `WlCopy::novo` → `WlCopy::new`. O caminho `/ponte/<comando>`, o
+prefixo `ward-ponte-teste:` das mensagens, o `USAGE` (antes `USO`) e as opções
+`--daemon-falso`/`--anexos` com os modos ficam (fio e marca; Fase 56). Os nomes que vêm do
+`ward_app_core` (`Servico`, `ErroApp`, `Comando`, os métodos dos traits…) mudam nas Fases
+30–34.
 Fase 30 (`app/core`: `service`, `secret`, `error`, `lib`): módulos `servico` → `service`,
 `segredo` → `secret`, `erro` → `error`. `Servico` → `Service` (`novo` → `new`; os métodos
 seguem os comandos da seção 13: `estado_do_cofre` → `vault_status`, `listar_credenciais`

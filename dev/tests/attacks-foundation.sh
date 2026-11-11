@@ -260,29 +260,121 @@ v1_5() {
         fi
     done
 
-    # Patterns built in pieces so that this file does not match itself.
-    local patterns=(
-        '\.local/share/w''ard'
-        '\.s''sh(/|\b)'
-        '\.a''ws(/|\b)'
-        'keepass''xc'
-        'ssh_con''fig'
-        'SSH_AUTH''_SOCK'
-    )
-    local files=("$ROOT/Makefile")
-    while IFS= read -r -d '' f; do files+=("$f"); done \
-        < <(find "$ROOT/dev" -type f -print0)
-    local p found=0
-    for p in "${patterns[@]}"; do
-        if grep -nEi -- "$p" "${files[@]}" >&2; then
-            found=1
-        fi
-    done
-    if [ "$found" -eq 0 ]; then
+    if forbidden_dirs_scan "$ROOT" >&2; then
         ok "V1.5 Makefile e dev/ não citam pasta proibida"
     else
         failed "V1.5 Makefile ou dev/ cita pasta proibida (linhas acima)"
     fi
+    v1_5_baseline_controls
+}
+
+# Patterns built in pieces so that this file does not match itself.
+FORBIDDEN_DIR_PATTERNS=(
+    '\.local/share/w''ard'
+    '\.s''sh(/|\b)'
+    '\.a''ws(/|\b)'
+    'keepass''xc'
+    'ssh_con''fig'
+    'SSH_AUTH''_SOCK'
+)
+
+# Phase 47a: the 0.1.4 baseline (Phase 3) in `dev/fixtures/legacy/` holds literals of the old
+# binary (`strings` and `--help`) that name the real vault path, the SSH agent variable and
+# the ssh dir. They are recorded output, not access, so they are skipped; but only exactly:
+# a file directly listed in `dev/fixtures/legacy/SHA256SUMS` whose content still has that
+# sha256. Anything else in that dir (new file, edited file, file in a subdir not listed), a
+# sibling like `dev/fixtures/legacy-x/` and the rest of `dev/` are still scanned.
+# Prints the findings (`grep -n`) and returns 1 if there is any.
+forbidden_dirs_scan() {
+    local root="$1" legacy="$1/dev/fixtures/legacy"
+    local -A baseline=()
+    local sum name
+    if [ -f "$legacy/SHA256SUMS" ] && [ ! -L "$legacy" ] && [ ! -L "$legacy/SHA256SUMS" ]; then
+        while read -r sum name; do
+            # Only a plain relative name: no `..`, no absolute path, no empty part.
+            [[ "$sum" =~ ^[0-9a-f]{64}$ ]] || continue
+            [[ "$name" =~ ^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$ ]] || continue
+            [[ "/$name/" == */../* || "/$name/" == */./* ]] && continue
+            baseline["$legacy/$name"]="$sum"
+        done <"$legacy/SHA256SUMS"
+    fi
+    local files=("$root/Makefile") f
+    while IFS= read -r -d '' f; do
+        if [ -n "${baseline[$f]:-}" ] && [ ! -L "$f" ] \
+            && [ "$(sha256sum -- "$f" | cut -d' ' -f1)" = "${baseline[$f]}" ]; then
+            continue
+        fi
+        files+=("$f")
+    done < <(find "$root/dev" -type f -print0)
+    local p found=0
+    for p in "${FORBIDDEN_DIR_PATTERNS[@]}"; do
+        if grep -nEi -- "$p" "${files[@]}"; then
+            found=1
+        fi
+    done
+    [ "$found" -eq 0 ]
+}
+
+# Phase 47a: the exclusion above does not hide the same pattern anywhere else. In a copy of
+# the tracked files (no build), one plant per case; every one has to be found.
+v1_5_baseline_controls() {
+    local base="$TMP/v1_5-base" dir rc
+    copy_workspace "$base"
+    # The line planted: the real vault path, built in pieces like the patterns.
+    local line='vault = ~/.local/share/w''ard/vault.ward'
+
+    # Control: the baseline really has the patterns (otherwise the exclusion proves nothing).
+    rc=0
+    grep -qEi -- "${FORBIDDEN_DIR_PATTERNS[0]}|${FORBIDDEN_DIR_PATTERNS[5]}" \
+        "$base/dev/fixtures/legacy/strings-0.1.4.txt" || rc=$?
+    if [ "$rc" -eq 0 ]; then
+        ok "47a controle: a linha de base 0.1.4 tem os padrões (a exclusão tem efeito)"
+    else
+        failed "47a controle: a linha de base 0.1.4 não tem os padrões (exclusão sem efeito)"
+    fi
+    # Control: the untouched copy is clean, like the repository.
+    if forbidden_dirs_scan "$base" >/dev/null; then
+        ok "47a controle: cópia sem mudança limpa (só a linha de base é pulada)"
+    else
+        failed "47a controle: cópia sem mudança acusada"
+    fi
+
+    # Each plant on a fresh copy of the base; the scan has to find it.
+    plant_found() {
+        local what="$1" rel="$2" mode="$3"
+        dir="$TMP/v1_5-plant"; rm -rf "$dir"; cp -a "$base" "$dir"
+        mkdir -p "$(dirname -- "$dir/$rel")"
+        case "$mode" in
+            new) printf '%s\n' "$line" >"$dir/$rel" ;;
+            append) printf '%s\n' "$line" >>"$dir/$rel" ;;
+        esac
+        if forbidden_dirs_scan "$dir" >/dev/null; then
+            failed "47a padrão plantado em $what não foi acusado"
+        else
+            ok "47a padrão plantado em $what é acusado"
+        fi
+    }
+    plant_found "dev/ fora da linha de base" dev/tests/plant-47a.sh new
+    plant_found "dev/fixtures/ (vizinho de legacy/)" dev/fixtures/plant-47a.txt new
+    plant_found "pasta com prefixo legacy (dev/fixtures/legacy-x/)" dev/fixtures/legacy-x/help-0.1.4.txt new
+    plant_found "pasta legacy/ aninhada (dev/tests/fixtures/legacy/)" dev/tests/fixtures/legacy/strings-0.1.4.txt new
+    plant_found "arquivo novo em legacy/ (fora do SHA256SUMS)" dev/fixtures/legacy/notes.txt new
+    plant_found "subpasta de legacy/ fora do SHA256SUMS" dev/fixtures/legacy/backup-0.1.4/notes.txt new
+    plant_found "arquivo da linha de base alterado (sha256 não bate)" dev/fixtures/legacy/help-0.1.4.txt append
+    plant_found "Makefile" Makefile append
+    # A changed baseline file with its SHA256SUMS line updated too would be skipped here;
+    # catching that is V1.6 (SHA256SUMS against the Phase 3 hashes), not this scan. What this
+    # scan guarantees is that SHA256SUMS never reaches outside legacy/: a `../` name is ignored.
+    dir="$TMP/v1_5-plant"; rm -rf "$dir"; cp -a "$base" "$dir"
+    printf '%s\n' "$line" >"$dir/dev/tests/plant-47a.sh"
+    printf '%s  ../../tests/plant-47a.sh\n' "$(sha256sum -- "$dir/dev/tests/plant-47a.sh" | cut -d' ' -f1)" \
+        >>"$dir/dev/fixtures/legacy/SHA256SUMS"
+    if forbidden_dirs_scan "$dir" >/dev/null; then
+        failed "47a SHA256SUMS com ../ tirou da varredura um arquivo fora de legacy/"
+    else
+        ok "47a SHA256SUMS com ../ não tira da varredura um arquivo fora de legacy/"
+    fi
+    rm -rf "$base" "$TMP/v1_5-plant"
 }
 
 # --- Phase 12a (S15): key/AWS in a path the global gitleaks allowlist skips -------------

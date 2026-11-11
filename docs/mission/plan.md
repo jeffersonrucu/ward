@@ -169,7 +169,7 @@ Clientes Rust:
   subcomandos e textos congelados) e `crates/ward-nm` (`ID_EXTENSAO` → `EXTENSION_ID`, com a leitura do
   `pub const` em `dev/tests/extension.py` e o regex e as mensagens de
   `dev/extension/build.py` (achado da Fase 39); mensagens congeladas). — V2.1
-- [ ] Fase 29 — `crates/ward-test-bridge` (`http.rs`, `main.rs`, `simulados.rs`,
+- [x] Fase 29 — `crates/ward-test-bridge` (`http.rs`, `main.rs`, `simulados.rs`,
   `tests/ataques.rs`). — V2.1
 - [ ] Fase 30 — `app/core`: `servico.rs`, `segredo.rs`, `erro.rs`, `lib.rs`. — V2.1
 - [ ] Fase 31 — `app/core`: `daemon_falso.rs`, `daemon.rs`, `cliente.rs`. — V2.1
@@ -244,7 +244,7 @@ Trilha S (fases independentes entre si):
   `rust-toolchain.toml`, `Cargo.toml` raiz. Textos do Makefile/`origins.py` que o
   `attacks-foundation.sh` procura mudam junto com o `grep` (achado da Fase 41). — V3.1
 
-- [ ] Fase 47a — Correção (achado da Fase 47): a varredura do V1.5 em
+- [x] Fase 47a — Correção (achado da Fase 47): a varredura do V1.5 em
   `dev/tests/attacks-foundation.sh` exclui `dev/fixtures/legacy/` (linha de base da Fase 3:
   caminho do cofre real, variável do agente SSH e pasta do ssh na ajuda 0.1.4), com
   controle de que a varredura ainda acusa o mesmo padrão plantado fora dessa pasta.
