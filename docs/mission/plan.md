@@ -370,7 +370,7 @@ Contrato: V5.1–V5.11. Sequencial.
   `dev/container-deb`, `dev/tests/install.sh`, `deb.sh`) com os cenários de atualização a
   partir dos artefatos 0.1.4 de `.dev/baseline/`. Compilação: `make compile`. — V5.6,
   V5.7, V5.8, V5.9
-- [ ] Fase 58 — (achado da Fase 55: skill, README e deny negam `ward unlock` em todas as formas e mantêm `destravar` para a 0.1.x; `dev/tests/skill.py` (`ALLOWED`, `UNLOCK`, exemplos, ataques) junto; até aqui o `make test-skill` falha) (achado da Fase 53: o deny nega `WARD_FILE_KEY` nas mesmas formas e mantém `WARD_ARQUIVO_CHAVE` para a 0.1.x; `dev/tests/skill.py` junto) Skill e deny (DT10): `skill/ward/SKILL.md` e `skill/README.md` com os
+- [x] Fase 58 — (achado da Fase 55: skill, README e deny negam `ward unlock` em todas as formas e mantêm `destravar` para a 0.1.x; `dev/tests/skill.py` (`ALLOWED`, `UNLOCK`, exemplos, ataques) junto; até aqui o `make test-skill` falha) (achado da Fase 53: o deny nega `WARD_FILE_KEY` nas mesmas formas e mantém `WARD_ARQUIVO_CHAVE` para a 0.1.x; `dev/tests/skill.py` junto) Skill e deny (DT10): `skill/ward/SKILL.md` e `skill/README.md` com os
   comandos novos e `ward list --json` em inglês; `skill/settings-deny.json` negando
   `ward unlock` em todas as formas e mantendo `destravar`; `dev/tests/skill.py` (lista
   de ataques com as duas formas; autoteste). Compilação: `make compile`. — V5.3
