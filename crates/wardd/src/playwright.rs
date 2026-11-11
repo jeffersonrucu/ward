@@ -45,9 +45,9 @@ use ward_core::totp::Totp;
 use ward_platform::child::{Command, Group};
 
 use crate::aprovacao::Cliente;
-use crate::aviso;
 use crate::cdp::{Cdp, CdpError, Rule, Writer, worst_case};
 use crate::nucleo::Daemon;
+use crate::warning;
 
 /// The installed Chrome (the same as the extension role, D47).
 pub const CHROME: &str = "/opt/google/chrome/chrome";
@@ -188,7 +188,7 @@ pub fn delete_sessions(rt: &Path) -> usize {
         Ok(f) => f,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return 0,
         Err(_) => {
-            aviso!("playwright: a pasta das sessões não é uma pasta; nada apagado nela");
+            warning!("playwright: a pasta das sessões não é uma pasta; nada apagado nela");
             return 0;
         }
     };
@@ -233,7 +233,7 @@ impl Drop for Browser {
         }
         // `remove_dir_all` does not follow symbolic links.
         if fs::remove_dir_all(&self.profile).is_err() && self.profile.exists() {
-            aviso!("playwright: não deu para apagar o perfil temporário");
+            warning!("playwright: não deu para apagar o perfil temporário");
         }
     }
 }
@@ -331,7 +331,7 @@ fn open_browser(chrome: &Path, rt: &Path) -> Result<(Browser, Cdp), ResponseErro
         c.variable(k, v).map_err(|_| ResponseError::BrowserFailed)?;
     }
     let (group, pipe) = c.launch_with_debugging().map_err(|e| {
-        aviso!("playwright: o Chrome não abriu ({})", e.message());
+        warning!("playwright: o Chrome não abriu ({})", e.message());
         ResponseError::BrowserFailed
     })?;
     browser.group = Some(group);
@@ -477,7 +477,7 @@ fn cdp_error(cdp: &Cdp, e: CdpError) -> ResponseError {
     if cdp.blocked {
         return ResponseError::OriginMismatch;
     }
-    aviso!(
+    warning!(
         "playwright: a conversa com o navegador acabou ({})",
         match e {
             CdpError::Deadline => "prazo",
@@ -631,7 +631,7 @@ fn log_in(
         return Err(ResponseError::OriginMismatch);
     }
     if nav.error_text.is_some() {
-        aviso!("playwright: a página da entrada não abriu");
+        warning!("playwright: a página da entrada não abriu");
         return Err(ResponseError::BrowserFailed);
     }
     let loaded = cdp
@@ -645,7 +645,7 @@ fn log_in(
     }
     let (f, ok) = origin_matches(cdp, origin)?;
     if !ok || f != frame {
-        aviso!("playwright: a página não é da origem da entrada (D9)");
+        warning!("playwright: a página não é da origem da entrada (D9)");
         return Err(ResponseError::OriginMismatch);
     }
     // Fills and submits.
@@ -664,11 +664,11 @@ fn log_in(
     match r.as_str() {
         "ok" => {}
         "origem" => {
-            aviso!("playwright: o formulário envia para outra origem (D9)");
+            warning!("playwright: o formulário envia para outra origem (D9)");
             return Err(ResponseError::OriginMismatch);
         }
         _ => {
-            aviso!("playwright: a página não tem um formulário de login seguro");
+            warning!("playwright: a página não tem um formulário de login seguro");
             return Err(ResponseError::LoginRefused);
         }
     }
@@ -679,19 +679,19 @@ fn log_in(
         return Err(ResponseError::OriginMismatch);
     }
     if !loaded {
-        aviso!("playwright: nenhuma página nova depois do envio");
+        warning!("playwright: nenhuma página nova depois do envio");
         return Err(ResponseError::LoginRefused);
     }
     // D6: the final origin is still the entry's.
     let (f, ok) = origin_matches(cdp, origin)?;
     if !ok {
-        aviso!("playwright: a página final não é da origem da entrada (D9)");
+        warning!("playwright: a página final não é da origem da entrada (D9)");
         return Err(ResponseError::OriginMismatch);
     }
     let page = in_isolated_world(cdp, &f, READ_PAGE_SCRIPT, &[])?;
     let page: PageState = serde_json::from_str(&page).map_err(|_| ResponseError::BrowserFailed)?;
     if page.password {
-        aviso!("playwright: a página de login continua aberta (login recusado)");
+        warning!("playwright: a página de login continua aberta (login recusado)");
         return Err(ResponseError::LoginRefused);
     }
     let p = params(&[("browserContextId", &ctx.id)])?;
@@ -813,7 +813,7 @@ impl Daemon {
         {
             return Err(ResponseError::TypeWithoutDelivery);
         }
-        self.autorizar_uso(client, request)?;
+        self.authorize_use(client, request)?;
         self.registrar_uso();
         let rt = self
             .temporarios()
@@ -863,7 +863,7 @@ impl Daemon {
             )
         };
         let origin = url_origin(&url).ok_or(ResponseError::DeliveryFailed)?;
-        aviso!("playwright: abrindo o navegador");
+        warning!("playwright: abrindo o navegador");
         let (browser, mut cdp) = open_browser(self.chrome(), &rt)?;
         let result = log_in(&mut cdp, &url, &origin, &cred);
         drop(cred);
@@ -872,7 +872,7 @@ impl Daemon {
         drop(browser);
         let state = result?;
         if has_secret(&mask, &state) {
-            aviso!("playwright: a sessão do site guarda a senha; nada foi gravado (S1)");
+            warning!("playwright: a sessão do site guarda a senha; nada foi gravado (S1)");
             return Err(ResponseError::SessionHasSecret);
         }
         // Writes with the vault unlocked and no lock since the start; locking afterwards
@@ -882,7 +882,7 @@ impl Daemon {
             return Err(ResponseError::Locked);
         }
         let path = write_state(&rt, entry, &state).map_err(|e| {
-            aviso!("playwright: não deu para gravar a sessão ({})", e.kind());
+            warning!("playwright: não deu para gravar a sessão ({})", e.kind());
             ResponseError::DeliveryFailed
         })?;
         drop(st);
@@ -890,7 +890,7 @@ impl Daemon {
             .into_os_string()
             .into_string()
             .map_err(|_| ResponseError::Internal)?;
-        aviso!("playwright: sessão gravada");
+        warning!("playwright: sessão gravada");
         Ok(Resposta::SessaoPlaywright { caminho: path })
     }
 }

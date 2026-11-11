@@ -198,12 +198,9 @@ fn v3_39_v3_40_app_values_and_list_through_the_test_daemon() {
     fs::hard_link(TEST_APP, &app).unwrap();
 
     // The test vault and the state at generation 0 (as `dev/daemon.sh` does, D39).
-    wardd::arquivos::gravar_estado(
+    wardd::files::write_state(
         &dev.join("test-vault.state"),
-        wardd::arquivos::Geracoes {
-            vista: 0,
-            queimada: 0,
-        },
+        wardd::files::Generations { seen: 0, burned: 0 },
     )
     .unwrap();
     let mut entries = test_vault::test_vault_entries();

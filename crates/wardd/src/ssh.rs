@@ -54,7 +54,7 @@ use crate::bridge::{Bridge, Intermediate, JUMP_LIMITS, Opening};
 use crate::execution::{DiesOnLock, Preparation, PreparedAgent};
 use crate::nucleo::Daemon;
 use crate::ssh_agent::{AgentError, SshAgent};
-use crate::{aviso, depurar};
+use crate::{debug, warning};
 
 /// Validity of the "Connect" token (D3).
 pub const TOKEN_DEADLINE: Duration = Duration::from_secs(30);
@@ -352,7 +352,7 @@ impl Daemon {
             entry: name.to_owned(),
             until: now.saturating_add(TOKEN_DEADLINE),
         });
-        aviso!("token do Conectar emitido para uma entrada servidor (D3)");
+        warning!("token do Conectar emitido para uma entrada servidor (D3)");
         Ok(Resposta::Token(value))
     }
 
@@ -413,7 +413,7 @@ pub(crate) fn intermediate<'a>(
     name: &str,
 ) -> Result<(&'a Entry, Intermediate), ResponseError> {
     let Some(e) = visible(entries, name) else {
-        aviso!("salto ou túnel: a outra entrada sumiu ou foi bloqueada; negado (D19)");
+        warning!("salto ou túnel: a outra entrada sumiu ou foi bloqueada; negado (D19)");
         return Err(ResponseError::Denied);
     };
     match e.data() {
@@ -427,7 +427,7 @@ pub(crate) fn intermediate<'a>(
             },
         )),
         _ => {
-            aviso!("salto ou túnel: a outra entrada não é um servidor sem salto");
+            warning!("salto ou túnel: a outra entrada não é um servidor sem salto");
             Err(ResponseError::DeliveryFailed)
         }
     }
@@ -480,20 +480,20 @@ impl Daemon {
         let window = if with_command { None } else { *janela };
         let name = entrada.clone();
         let null_stdin = *tipo_entrada == ward_core::protocol::StdinKind::Null;
-        depurar!("ssh: entrada padrão {}", tipo_entrada.name());
+        debug!("ssh: entrada padrão {}", tipo_entrada.name());
         // The level comes before the kind (V4.32: the made-up token on a database entry
         // with approval gives "approval unavailable"); the kind is verified afterwards,
         // under the lock.
         let by_token = token.as_ref().is_some_and(|t| self.use_token(t, &name));
         if by_token {
-            aviso!("ssh: token do Conectar aceito; sem nível nem aprovação (D3)");
+            warning!("ssh: token do Conectar aceito; sem nível nem aprovação (D3)");
         } else {
             if token.is_some() {
-                aviso!(
+                warning!(
                     "ssh: token inválido, vencido, já usado ou de outra entrada; vale o nível (D3)"
                 );
             }
-            self.autorizar_uso(client, &request)?;
+            self.authorize_use(client, &request)?;
         }
         self.registrar_uso();
         let Request::Ssh {
@@ -521,7 +521,7 @@ impl Daemon {
                 _ => return Err(ResponseError::TypeWithoutDelivery),
             };
             let failed = |err: ward_core::mask::MaskError| {
-                aviso!("ssh: {err}");
+                warning!("ssh: {err}");
                 ResponseError::DeliveryFailed
             };
             // D19: with a jump, the mask covers both entries (one for the main `ssh`'s
@@ -556,7 +556,7 @@ impl Daemon {
         };
         // Ward's `known_hosts` verified (0700/0600, no link) before any `ssh`.
         let known_hosts = self.known_hosts().map_err(|m| {
-            aviso!("ssh: {m}");
+            warning!("ssh: {m}");
             ResponseError::DeliveryFailed
         })?;
         // Jump: the bridge listens before the main `ssh` exists; the peer is only
@@ -576,7 +576,7 @@ impl Daemon {
                     locks: (locks.clone(), initial),
                 })
                 .map_err(|m| {
-                    aviso!("ssh: {m}");
+                    warning!("ssh: {m}");
                     ResponseError::DeliveryFailed
                 })?,
             ),
@@ -584,7 +584,7 @@ impl Daemon {
         let alias = match &bridge {
             None => None,
             Some(_) => Some(destination_alias(&host, port).ok_or_else(|| {
-                aviso!("ssh: host fora do formato; nada foi executado");
+                warning!("ssh: host fora do formato; nada foi executado");
                 ResponseError::DeliveryFailed
             })?),
         };
@@ -594,7 +594,7 @@ impl Daemon {
                 let rt = self.temporarios().ok_or(ResponseError::DeliveryFailed)?;
                 let ag =
                     SshAgent::create(rt, &key, passphrase.as_ref()).map_err(|e: AgentError| {
-                        aviso!("ssh: {e}");
+                        warning!("ssh: {e}");
                         ResponseError::DeliveryFailed
                     })?;
                 (None, Some(ag))
@@ -634,7 +634,7 @@ impl Daemon {
             alias.as_deref(),
         )
         .ok_or_else(|| {
-            aviso!("ssh: host, usuário ou caminho fora do formato; nada foi executado");
+            warning!("ssh: host, usuário ou caminho fora do formato; nada foi executado");
             ResponseError::DeliveryFailed
         })?;
         let cwd = {
@@ -661,14 +661,14 @@ impl Daemon {
             cmd.variable(b"SSHPASS", s.expose()).map_err(invalid)?;
         }
         drop(password);
-        depurar!(
+        debug!(
             "ssh: {} argumento(s), {}, {}",
             argv.len(),
             if sftp { "sftp" } else { "ssh" },
             if window.is_some() { "pty" } else { "sem pty" }
         );
         if bridge.is_some() {
-            depurar!("ssh: com salto (ponte em 127.0.0.1)");
+            debug!("ssh: com salto (ponte em 127.0.0.1)");
         }
         Ok(Preparation {
             command: cmd,
@@ -707,7 +707,7 @@ pub fn session(
         |c| {
             let r = daemon.prepare_ssh(c, request);
             if let Err(e) = &r {
-                depurar!("ssh (agente): {}", e.code());
+                debug!("ssh (agente): {}", e.code());
             }
             r
         },

@@ -253,6 +253,14 @@ app/core/src/service.rs livre 48 v4 vault name of AccessLevel::Free
 app/core/src/service.rs carregada 54 "loaded" value of a form secret sent by the webview
 app/core/src/service.rs chave 53 reserved attachment name CHAVE (delivered variable WARD_ARQUIVO_CHAVE)
 
+# Phase 19 (wardd main, config, launch, lock): test variables and the test socket dir
+# quoted in comments.
+crates/wardd/src/config.rs teste 56 test socket dir name ward-teste
+crates/wardd/src/config.rs extensao 56 variable WARD_DEV_EXTENSAO
+crates/wardd/src/launch.rs extensao 56 variable WARD_DEV_EXTENSAO
+crates/wardd/src/main.rs extensao 56 variable WARD_DEV_EXTENSAO
+crates/wardd/src/lock.rs sistema 56 variable WARD_DEV_DBUS_SISTEMA
+
 # Phase 17 (ward-core protocol): v1 envelope keys and the error type quoted in the doc.
 crates/ward-core/src/protocol.rs dados 50 data key of the v1 envelope (v2: data)
 crates/ward-core/src/protocol.rs tipo 50 type key of the v1 response envelope (v2: type)
