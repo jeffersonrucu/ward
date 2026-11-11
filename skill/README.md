@@ -23,11 +23,21 @@ Nada aqui é instalado por `make`: a instalação é manual, feita pelo usuário
    Code: avise antes de seguir a migração.
 4. Tire a skill `cofre` antiga só quando o KeePassXC sair (docs/escopo.md › "Skill `ward`").
 
+### Atualizar da 0.1.x para a 0.2.0
+
+A 0.2.0 troca os nomes: `ward list`, `ward lock`, `ward unlock` (no lugar de `lista`,
+`travar` e `destravar`), as chaves do `ward list --json` em inglês e as variáveis
+`WARD_ENTRY`, `WARD_GROUP`, `WARD_ENVIRONMENT`, `WARD_PROTOCOL`, `WARD_FILE_<NOME>` e
+`WARD_FILE_KEY`. Copie de novo a pasta `ward/` por cima da antiga e acrescente ao
+`~/.claude/settings.json` as regras de `settings-deny.json` que faltam (passo 2). A regra
+antiga `*ward*destravar*` pode ficar: as novas cobrem o nome antigo também.
+
 ## Destravar: só você, pelo caminho completo
 
-A skill nunca destrava (a regra `*ward*destravar*` nega). Quando o Claude avisar que o
-Ward está travado, destrave pelo app ou, num terminal seu (fora do Claude Code, sem
-`!`), com `/usr/local/bin/ward destravar`, nunca com o `ward` que o `PATH` acha. Um
+A skill nunca destrava (as regras `*unlock*` e `*ward*unl*` negam; `*destravar*` e
+`*ward*destr*` negam o nome da 0.1.x). Quando o Claude avisar que o Ward está travado,
+destrave pelo app ou, num terminal seu (fora do Claude Code, sem `!`), com
+`/usr/local/bin/ward unlock`, nunca com o `ward` que o `PATH` acha. Um
 programa malicioso rodando como você pode pôr um `ward` falso antes no `PATH` (em
 `~/.local/bin`, por exemplo), que mostra o mesmo pedido e guarda a senha mestra. O
 caminho completo pula o `PATH`; não protege de um `~/.bashrc` ou `~/.zshrc` adulterado
@@ -50,13 +60,19 @@ que fica fora do que o Ward cobre (docs/escopo.md › "Fora do modelo de ameaça
     `~/.local/*/w?rd`), por variável (`$XDG_DATA_HOME`, `$XDG_RUNTIME_DIR`) ou depois
     de `cd`; qualquer comando com `/run/user`, `/run/media` ou `/proc/` e qualquer
     texto com `environ`;
-  - `ward destravar` (a senha mestra nunca passa pelo agente) e `ward ssh --token-fd`
-    (só o botão Conectar do app usa);
+  - `ward unlock` (a senha mestra nunca passa pelo agente): qualquer comando com
+    `unlock` (pega o `ward` por caminho com curinga, como `/usr/local/bin/w?rd unlock`,
+    e por `env`, `sh -c` ou `python3 -c`) e o `ward` seguido de `unl` (pega o
+    subcomando com curinga, como `ward unl*`). O nome da 0.1.x, `ward destravar`,
+    continua negado do mesmo jeito (`*destravar*` e `*ward*destr*`), para quem ainda
+    tem a 0.1.x instalada enquanto troca;
+  - `ward ssh --token-fd` (só o botão Conectar do app usa);
   - dentro de `ward run`: `env`/`printenv`, `set`, `export`, `declare`, `sh -x`,
     `printf`, `echo … $`, `base64`, `base32`, `xxd`, `od`, `hexdump`, `rev`, `tr`,
     `cut`, `fold`, `head -c`, `tee`, `python… -c`, `node -e`, `perl -e`, `ruby -e`,
     `php -r`, qualquer `>` (redirecionamento), `.pgpass`, `.netrc`, `git config` e
-    `cat`/`head`/`cp`/`mv`/`ln`/`<` de `WARD_ARQUIVO_*`;
+    `cat`/`head`/`cp`/`mv`/`ln`/`<` de `WARD_FILE_*` (e de `WARD_ARQUIVO_*`, o nome
+    da 0.1.x);
   - a entrada padrão do `ward run` (Fase 54b): qualquer `<` antes ou depois dele
     (`< arquivo`, `<<EOF`, `<<<`, `<(…)`) e um `|` antes dele (script por pipe). A
     janela de aprovação mostra o comando, não o que entra pela entrada padrão; numa
@@ -68,7 +84,8 @@ que fica fora do que o Ward cobre (docs/escopo.md › "Fora do modelo de ameaça
   `make test-skill` confere cada forma (o comando inteiro e cada subcomando) e que
   nenhum exemplo da skill é negado. Algumas regras negam comando inocente (um
   `update … set` do `psql` dentro do `ward run`, um `2>&1`, um pipe para `cut` depois
-  do `ward run`, um `ls ~/.local/share/fonts`). É de propósito: na dúvida, nega. A
+  do `ward run`, um `ls ~/.local/share/fonts`, um `grep unlock` no código, um
+  `terraform destroy` dentro do `ward run`). É de propósito: na dúvida, nega. A
   skill manda o Claude parar e avisar quando um comando for negado, sem reescrever
   para passar.
 

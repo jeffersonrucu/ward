@@ -6,8 +6,8 @@ if anything fails.
    that triggers on requests for login, password, SSH, token and database.
 2. Every `ward <sub>` command quoted in code (block or excerpt between backticks) in any
    `.md` of `skill/ward/` is in the `ward --help` of the given binary and in the V8.1
-   list (`ALLOWED`: list, run, ssh, login, playwright, lock). `ward login` (Phase 43) is
-   accepted as pending while it is not in `--help`, with a notice.
+   list (`ALLOWED`: list, run, ssh, login, playwright, lock; m2:DT10). `ward login`
+   (Phase 43) is accepted as pending while it is not in `--help`, with a notice.
 3. The skill does not mention KeePass XC, its old helper scripts (V8.1) or `--token-fd`.
 4. No pattern of `.dev/variations.txt` (secrets of the test vault and variations) shows
    up in any file of `skill/` (never prints the pattern; only the file).
@@ -28,6 +28,13 @@ if anything fails.
    terminal by the full path of the installed `ward` (`UNLOCK`), and the skill does not
    say to unlock through the `ward` of the `PATH` (a fake `ward` earlier in the `PATH`
    reads the master password).
+9. (m2:DT10, m2:DT11, m2:V5.3; m2:Phase 58) The skill cites no 0.1.x name (see
+   `FORBIDDEN`): no old subcommand, no old delivered variable and no old key of
+   `ward list --json`. The deny denies `ward unlock` and the 0.1.x unlock subcommand
+   in every form of `unlock_attacks` (full path, `env`, `sh -c`, `python3 -c`,
+   wildcards in the binary and in the subcommand), and the attachment rules cover
+   `WARD_FILE_*` and the 0.1.x attachment variables (`ATTACHMENT_VARIABLES`), for
+   whoever still has the 0.1.x installed while switching.
 
 The names of the ssh dir, of the vault and of KeePass XC are built in pieces (`SSH`,
 `VAULT`), for the V1.5 scan (`dev/tests/attacks-foundation.sh`): here they are text of
@@ -54,7 +61,7 @@ ROOT = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
 VARIATIONS = os.path.join(ROOT, ".dev", "variations.txt")
 
 # V8.1: the only subcommands the skill may use.
-ALLOWED = {"lista", "run", "ssh", "login", "playwright", "travar"}
+ALLOWED = {"list", "run", "ssh", "login", "playwright", "lock"}
 # Subcommands accepted outside `--help` while their phase has not come (none since
 # Phase 43).
 PENDING = set()
@@ -134,14 +141,20 @@ BASH_ATTACKS = [
     "ward run {e} -- sh -c 'tee /tmp/x <<X\n$PGPASSWORD\nX'",
     "ward run {e} -- sh -c 'cp {h}/.pgpass /tmp'",
     "ward run {e} -- sh -c 'git config --global user.senha \"$PGPASSWORD\"'",
-    "ward run {a} -- sh -c 'cat \"$WARD_ARQUIVO_CHAVE\"'",
-    "ward run {a} -- sh -c 'head -n 3 \"$WARD_ARQUIVO_CHAVE\"'",
-    "ward run {a} -- sh -c 'cp \"$WARD_ARQUIVO_CHAVE\" /tmp/k'",
-    "ward run {a} -- sh -c 'base64 \"$WARD_ARQUIVO_CHAVE\"'",
-    "ward run {a} -- sh -c 'xxd < \"$WARD_ARQUIVO_CHAVE\"'",
-    "ward run {a} -- sh -c 'ln -s \"$WARD_ARQUIVO_CHAVE\" /tmp/k'",
+    # The attachment, by the 0.2.0 name and by the 0.1.x one (m2:DT11; `{k}`, see
+    # `ATTACHMENT_VARIABLES`).
+    "ward run {a} -- sh -c 'cat \"${k}\"'",
+    "ward run {a} -- sh -c 'head -n 3 \"${k}\"'",
+    "ward run {a} -- sh -c 'tail -n 3 \"${k}\"'",
+    "ward run {a} -- sh -c 'less \"${k}\"'",
+    "ward run {a} -- sh -c 'more \"${k}\"'",
+    "ward run {a} -- sh -c 'cp \"${k}\" /tmp/k'",
+    "ward run {a} -- sh -c 'mv \"${k}\" /tmp/k'",
+    "ward run {a} -- sh -c 'base64 \"${k}\"'",
+    "ward run {a} -- sh -c 'xxd < \"${k}\"'",
+    "ward run {a} -- sh -c 'ln -s \"${k}\" /tmp/k'",
     # Phase 54b: `od` without `<` or `|` (the standard input rules catch the others).
-    "ward run {a} -- sh -c 'od -c \"$WARD_ARQUIVO_CHAVE\"'",
+    "ward run {a} -- sh -c 'od -c \"${k}\"'",
     # Ward's paths: spelled out, with a wildcard, through a variable and through `cd`.
     "cat {h}/" + VAULT + "/cofre.ward",
     "ls ~/.local/share/w*",
@@ -169,7 +182,6 @@ BASH_ATTACKS = [
     "cd / && cat proc/1234/env*",
     "cat " + SSH + "/id_ed25519",
     "cat " + SSH + "/id*",
-    "ward destravar",
     "/usr/local/bin/ward ssh --token-fd 3 acme-ssh-senha-stage id",
     # Phase 54b (D68): the script through standard input, which the approval window does
     # not show: file, here-doc and here-string, after and before `ward run`.
@@ -186,6 +198,52 @@ BASH_ATTACKS = [
     "ward run {e} -- /usr/bin/python3 <(cat /tmp/script.py)",
 ]
 
+# Attachment variables (`{k}` in BASH_ATTACKS): the 0.2.0 one and the 0.1.x one (m2:DT11).
+ATTACHMENT_VARIABLES = ["WARD_FILE_KEY", "WARD_ARQUIVO_CHAVE"]
+
+
+def unlock_attacks(word, wildcard_subcommands):
+    """Every form of `ward <word>` that the deny has to deny (m2:V5.3): whole and next to
+    other subcommands, full path, `env`, `sh -c`, a pty, `python3 -c`, wildcards in the
+    binary path and, in `wildcard_subcommands`, in the subcommand. Both wildcarded at
+    once (`w?rd unl*`) and a subcommand split by quotes (`un''lock`) stay out: the rules
+    compare text (skill/README.md); the barrier is that the master password never goes
+    through the agent and `unlock` needs a terminal."""
+    return [
+        f"ward {word}",
+        f"/usr/local/bin/ward {word}",
+        f"cd /tmp && /usr/local/bin/ward {word}",
+        f"ward list && ward {word}",
+        f"ward  {word}",
+        f'"ward" {word}',
+        f"ward '{word}'",
+        f"env ward {word}",
+        f"/usr/bin/env /usr/local/bin/ward {word}",
+        f"env -i PATH=/usr/bin:/bin /usr/local/bin/ward {word}",
+        f"sh -c 'ward {word}'",
+        f'bash -c "/usr/local/bin/ward {word}"',
+        f"sh -c 'true; ward {word}'",
+        f"script -qc '/usr/local/bin/ward {word}' /dev/null",
+        f"python3 -c 'import subprocess; subprocess.run([\"ward\", \"{word}\"])'",
+        f"/usr/bin/python3 -c \"import os; os.execv('/usr/local/bin/ward', ['ward', '{word}'])\"",
+        f"/usr/local/bin/w?rd {word}",
+        f"/usr/local/bin/[w]ard {word}",
+        f"/usr/local/bin/wa* {word}",
+        f"/usr/local/*/ward {word}",
+        f"/usr/*/bin/w*d {word}",
+        f"cd /usr/local/bin && ./w?rd {word}",
+    ] + wildcard_subcommands
+
+
+# m2:DT10: the 0.2.0 name and the 0.1.x one, which the deny keeps.
+BASH_ATTACKS += unlock_attacks(
+    "unlock", ["ward unl*", "/usr/local/bin/ward unlo?k", "ward unl[o]ck", "env ward unl*"]
+)
+BASH_ATTACKS += unlock_attacks(
+    "destravar",
+    ["ward destr*", "/usr/local/bin/ward destrav?r", "ward destr[a]var", "env ward destr*"],
+)
+
 # Phase 54b (D68): the script piped into `ward run`. Only the whole-command model sees
 # the `|`: split into subcommands (`printf …` and `ward run … -- python3`), no piece is
 # an attack. What really blocks it is the daemon (warning and confirmation in the
@@ -200,9 +258,12 @@ WHOLE_BASH_ATTACKS = [
 
 # Normal-use commands that no rule may deny (besides the skill's ```sh blocks).
 LEGITIMATE = [
-    "ward lista",
-    "ward lista --json",
-    "ward travar",
+    "ward list",
+    "ward list --json",
+    "ward lock",
+    "/usr/local/bin/ward lock",
+    "ward help",
+    "ward --help",
     "ward ssh acme-ssh-senha-stage -- uname -a",
     "ward run acme-pg-dev -- /usr/bin/psql -tAc 'select count(*) from pedidos'",
     "ward run beta-aws-dev -- /usr/local/bin/aws s3 ls",
@@ -210,7 +271,7 @@ LEGITIMATE = [
     " --expand-header 'Authorization: Bearer {{GITHUB_TOKEN}}' https://api.github.com/user",
     "ward run acme-wp-dev -- /bin/sh -c '/usr/bin/curl -sf -u \"$WARD_USER:$WARD_PASS\""
     " \"$WARD_URL/wp-json/wp/v2/users/me\"'",
-    'WARD_ESTADO="$(ward playwright acme-wp-prod)" /usr/bin/python3 tests/test_painel.py',
+    'WARD_STATE="$(ward playwright acme-wp-prod)" /usr/bin/python3 tests/test_painel.py',
     "ls ~/.local/bin",
     "~/.local/bin/uv run pytest -q",
     "/usr/bin/env python3 scripts/x.py",
@@ -219,7 +280,7 @@ LEGITIMATE = [
 ]
 
 # Phase 54a (RA8): the user's unlock in the terminal, by the full path.
-UNLOCK = "/usr/local/bin/ward destravar"
+UNLOCK = "/usr/local/bin/ward unlock"
 
 # The description has to trigger on these requests (lowercase).
 TRIGGERS = ["login", "senha", "ssh", "token", "banco"]
@@ -244,12 +305,23 @@ REQUIRED_IN_SKILL = [
     "pedido negado",
     "pedido expirado",
     "entrada inexistente",
+    # m2:DT10, m2:DT11: the 0.2.0 names.
+    "`ward list --json`",
+    "`database`",
+    "`WARD_FILE_KEY`",
+    "`WARD_ENTRY`",
 ]
 
 FORBIDDEN = [
     (re.compile(r"keepass", re.I), "cita o KeePass XC"),
     (re.compile(r"cofre-[a-z]"), "cita script cofre-*"),
     (re.compile(r"--token"), "cita o --token-fd do app"),
+    # m2:DT10, m2:DT11, m2:V5.3: no 0.1.x name, even outside code.
+    (re.compile(r"\bward\s+(lista|travar|destravar|ajuda)\b"), "cita subcomando da 0.1.x"),
+    (re.compile(r"\bWARD_(ARQUIVO|ENTRADA|GRUPO|AMBIENTE|PROTOCOLO|ESTADO)"),
+     "cita variável da 0.1.x"),
+    (re.compile(r"`(nome|tipo|grupo|ambiente|projeto|endereco)`"),
+     "cita chave da 0.1.x do `ward list --json`"),
 ]
 
 
@@ -269,7 +341,7 @@ def help_subcommands(ward):
     if r.returncode != 0:
         raise Failure(f"`ward --help` saiu {r.returncode}")
     subs = set(re.findall(r"^  ward ([a-z][a-z-]*)", r.stdout.decode("utf-8"), re.M))
-    if not {"lista", "run", "ssh", "travar"} <= subs:
+    if not {"list", "run", "ssh", "lock"} <= subs:
         raise Failure("`ward --help` sem os comandos básicos; binário errado?")
     return subs
 
@@ -440,7 +512,13 @@ def skill_commands(text):
 def verify_bash(patterns, text):
     rules = [pattern_regex(p) for p in patterns]
     swaps = {"{e}": "acme-pg-dev", "{a}": "acme-ssh-chave-prod", "{h}": "$HOME"}
+    templates = []
     for template in BASH_ATTACKS:
+        if "{k}" in template:
+            templates += [template.replace("{k}", k) for k in ATTACHMENT_VARIABLES]
+        else:
+            templates.append(template)
+    for template in templates:
         command = template
         for old, new in swaps.items():
             command = command.replace(old, new)
@@ -505,7 +583,7 @@ def verify(tree, ward):
     # Phase 54a (RA8): the master password only through the installed `ward`, by the full path.
     if UNLOCK not in text:
         raise Failure(f"SKILL.md não manda destravar por {UNLOCK} (RA8)")
-    if re.search(r"(?<!/usr/local/bin/)\bward\s+destravar\b", text):
+    if re.search(r"(?<!/usr/local/bin/)\bward\s+(unlock|destravar)\b", text):
         raise Failure("SKILL.md manda destravar pelo `ward` do PATH (RA8)")
     try:
         with open(os.path.join(tree, "README.md"), encoding="utf-8") as f:
@@ -599,7 +677,21 @@ def self_test(ward, base):
     attack("comando inexistente", append("ward/SKILL.md", b"\n`ward revelar acme-pg-dev`\n"),
            ward, base)
     attack("comando fora de V8.1",
-           append("ward/SKILL.md", b"\n```sh\nward destravar\n```\n"), ward, base)
+           append("ward/SKILL.md", b"\n```sh\nward unlock\n```\n"), ward, base)
+    # m2:DT10/m2:DT11 (m2:Phase 58): the 0.1.x names in the skill.
+    for old in (b"ward lista", b"ward travar", b"ward destravar", b"ward ajuda"):
+        attack(f"skill com o subcomando da 0.1.x em código: {old.decode()}",
+               append("ward/SKILL.md", b"\n`" + old + b"`\n"), ward, base)
+    attack("skill com o subcomando da 0.1.x no texto",
+           append("ward/SKILL.md", b"\nRode ward lista para ver.\n"), ward, base)
+    attack("skill com a variável de anexo da 0.1.x",
+           append("ward/SKILL.md", b"\nO anexo vem em `WARD_ARQUIVO_CHAVE`.\n"), ward, base)
+    attack("skill com a variável de entrada da 0.1.x",
+           replace("ward/SKILL.md", "`WARD_ENTRY`", "`WARD_ENTRADA`"), ward, base)
+    attack("skill com a chave da 0.1.x do JSON",
+           replace("ward/SKILL.md", "`address`", "`endereco`"), ward, base)
+    attack("skill sem o ward list --json",
+           replace("ward/SKILL.md", "`ward list --json`", "`ward list`", every=True), ward, base)
     attack("script antigo", append("ward/SKILL.md", b"\nuse `cofre-run`\n"), ward, base)
     attack("KeePass XC", append("ward/SKILL.md", b"\nKeePass" b"XC\n"), ward, base)
     attack("comando inexistente em outro arquivo da skill",
@@ -642,11 +734,25 @@ def self_test(ward, base):
            ward, base)
     attack("deny sem a regra de /run/user", remove_deny("Bash(*/run/user*)"), ward, base)
     attack("deny sem a regra de /proc", remove_deny("Bash(*/proc/*)"), ward, base)
+    # m2:V5.3 (m2:Phase 58): each unlock rule, for the 0.2.0 name and the 0.1.x one.
+    for rule in ("*unlock*", "*ward*unl*", "*destravar*", "*ward*destr*"):
+        attack(f"deny sem a regra {rule}", remove_deny(f"Bash({rule})"), ward, base)
+    attack("deny só com o nome da 0.1.x",
+           remove_deny("Bash(*unlock*)", "Bash(*ward*unl*)"), ward, base)
+    attack("deny só com o nome da 0.2.0",
+           remove_deny("Bash(*destravar*)", "Bash(*ward*destr*)"), ward, base)
+    attack("deny com a regra de unlock ancorada no início",
+           replace("settings-deny.json", "Bash(*unlock*)", "Bash(ward unlock*)"), ward, base)
+    # (`<*{name}` is not here: the standard input rule `*ward*run*<*` covers it too.)
+    for name in ("WARD_FILE", "WARD_ARQUIVO"):
+        for verb in ("cat*", "head*", "tail*", "less*", "more*", "cp *", "mv *", "ln *"):
+            attack(f"deny sem a regra {verb}{name}",
+                   remove_deny(f"Bash(*ward*run*{verb}{name}*)"), ward, base)
     attack("deny que nega o uso normal", append_deny("Bash(*ward run*)"), ward, base)
     attack("deny com parênteses no padrão", append_deny("Bash(*ward*run*(set*)"), ward, base)
     attack("skill com o caminho do storage state num comando",
            replace("ward/SKILL.md",
-                  'WARD_ESTADO="$(ward playwright acme-wp-prod)" /usr/bin/python3 tests/test_painel.py',
+                  'WARD_STATE="$(ward playwright acme-wp-prod)" /usr/bin/python3 tests/test_painel.py',
                   "/usr/bin/python3 tests/test_painel.py /run/user/1000/ward/playwright/x.json"),
            ward, base)
     attack("skill com exemplo que imprime o token",
@@ -658,13 +764,18 @@ def self_test(ward, base):
 
     # Phase 54a (RA8): unlock through the `ward` of the PATH, which a fake `ward` imitates.
     attack("skill manda destravar pelo PATH",
-           replace("ward/SKILL.md", UNLOCK, "ward destravar"), ward, base)
+           replace("ward/SKILL.md", UNLOCK, "ward unlock"), ward, base)
     attack("skill manda destravar por outro ward",
-           replace("ward/SKILL.md", UNLOCK, "~/.local/bin/ward destravar"), ward, base)
+           replace("ward/SKILL.md", UNLOCK, "~/.local/bin/ward unlock"), ward, base)
     attack("skill cita destravar pelo PATH além do caminho completo",
-           append("ward/SKILL.md", b"\nOu rode ward  destravar no terminal.\n"), ward, base)
+           append("ward/SKILL.md", b"\nOu rode ward  unlock no terminal.\n"), ward, base)
+    attack("skill manda destravar pelo nome da 0.1.x",
+           replace("ward/SKILL.md", UNLOCK, "/usr/local/bin/ward destravar"), ward, base)
     attack("README sem o caminho completo",
-           replace("README.md", f"`{UNLOCK}`", "`ward destravar`", every=True), ward, base)
+           replace("README.md", f"`{UNLOCK}`", "`ward unlock`", every=True), ward, base)
+    attack("README com o caminho completo do nome da 0.1.x",
+           replace("README.md", f"`{UNLOCK}`", "`/usr/local/bin/ward destravar`", every=True),
+           ward, base)
 
     def link(copy):
         os.symlink(VARIATIONS, os.path.join(copy, "ward", "variations.md"))

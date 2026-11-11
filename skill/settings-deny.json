@@ -45,7 +45,10 @@
       "Bash(*proc/*/e*)",
       "Bash(*proc/*/?*)",
       "Bash(*proc/*/[*)",
-      "Bash(*ward*destravar*)",
+      "Bash(*unlock*)",
+      "Bash(*ward*unl*)",
+      "Bash(*destravar*)",
+      "Bash(*ward*destr*)",
       "Bash(*ward*--token*)",
       "Bash(*ward*run*env*)",
       "Bash(*ward*run*export*)",
@@ -120,7 +123,16 @@
       "Bash(*ward*run*cp *WARD_ARQUIVO*)",
       "Bash(*ward*run*mv *WARD_ARQUIVO*)",
       "Bash(*ward*run*ln *WARD_ARQUIVO*)",
-      "Bash(*ward*run*<*WARD_ARQUIVO*)"
+      "Bash(*ward*run*<*WARD_ARQUIVO*)",
+      "Bash(*ward*run*cat*WARD_FILE*)",
+      "Bash(*ward*run*head*WARD_FILE*)",
+      "Bash(*ward*run*tail*WARD_FILE*)",
+      "Bash(*ward*run*less*WARD_FILE*)",
+      "Bash(*ward*run*more*WARD_FILE*)",
+      "Bash(*ward*run*cp *WARD_FILE*)",
+      "Bash(*ward*run*mv *WARD_FILE*)",
+      "Bash(*ward*run*ln *WARD_FILE*)",
+      "Bash(*ward*run*<*WARD_FILE*)"
     ]
   }
 }
