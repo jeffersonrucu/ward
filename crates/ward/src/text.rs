@@ -112,7 +112,7 @@ pub fn list_json(items: &[ListItem]) -> String {
 }
 
 /// List as text: aligned table, with `-` in the empty field. The type column shows the
-/// pt-BR label ("banco", "servidor"), not the stored name (m2:V4.18).
+/// pt-BR label of `EntryType::label()`, not the stored name (m2:V4.18).
 pub fn list_table(items: &[ListItem]) -> String {
     if items.is_empty() {
         return "nenhuma entrada visível\n".to_owned();

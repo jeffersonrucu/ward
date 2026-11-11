@@ -783,7 +783,7 @@ mod with_fake_daemon {
                 );
             }
             let v = seen.lock().unwrap();
-            // `destravar` and `run` ask for the state; the list asks for the list.
+            // The unlock and run commands ask for the status; the list asks for the list.
             assert_eq!(v.operations, ["status", "list", "status"], "{status}");
             assert!(v.passwords.is_empty());
             assert!(!String::from_utf8_lossy(&v.bytes).contains("ZmFsc28tbWVzdHJh"));

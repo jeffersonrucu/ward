@@ -1424,8 +1424,8 @@ Sem alias: os nomes antigos dão "comando desconhecido" (saída 2, mensagem pt-B
 `ward list --json` (Fase 51): chaves `name`, `type`, `group`, `environment`, `project`,
 `address`, com os valores do corpo v5 (`database`, `secure-note`…). A tabela de texto
 continua com o cabeçalho `NOME TIPO GRUPO AMBIENTE PROJETO URL/HOST` e mostra os rótulos
-pt-BR do tipo (hoje ela imprime `TipoEntrada::nome()`, o nome gravado: na Fase 51 passa a
-imprimir o rótulo, para continuar "banco", e não "database").
+pt-BR do tipo por `EntryType::label()` desde a Fase 51 ("banco", e não "database"); antes
+ela imprimia o nome gravado.
 
 ## 8. Variáveis de ambiente
 
@@ -1497,7 +1497,8 @@ Ficam (PRD "Fora do escopo"): `/run/ward/<uid>/wardd.sock`, `wardd@.socket`,
 
 ## 10. Protocolo v2 (DT8; Fases 50–52)
 
-Em vigor no `ward-core` desde a Fase 50 (`VERSION` 2); os clientes passam nas Fases 51–52.
+Em vigor no `ward-core` desde a Fase 50 (`VERSION` 2); os clientes Rust desde a Fase 51 e os
+de JS/Python desde a Fase 52.
 As tabelas abaixo completam a de DT8 com todos os nomes lidos em
 `crates/ward-core/src/protocol*`. Todo nome é `snake_case`.
 

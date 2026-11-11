@@ -2428,10 +2428,7 @@ mod unlock_tests {
             .iter()
             .map(|b| String::from_utf8_lossy(b).into_owned())
             .collect();
-        assert_eq!(
-            texts.iter().filter(|t| t.contains("\"unlock\"")).count(),
-            1
-        );
+        assert_eq!(texts.iter().filter(|t| t.contains("\"unlock\"")).count(), 1);
         for t in texts.iter().filter(|t| !t.contains("\"unlock\"")) {
             assert!(!t.contains("falso-mestra"), "{t}");
             // base64 of "falso-mestra-ward-01" (as the protocol carries the password).
