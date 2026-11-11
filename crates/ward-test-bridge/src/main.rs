@@ -27,8 +27,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use ward_app_core::area_transferencia::Copiador;
 
-use ward_app_core::daemon::{Aviso, Daemon, DaemonSocket, FilaAvisos};
-use ward_app_core::daemon_falso::{AprovacaoSimulada, DaemonFalso, aprovacoes_simuladas};
+use ward_app_core::daemon::{Daemon, DaemonSocket, Notice, NoticeQueue};
+use ward_app_core::fake_daemon::{FakeDaemon, SimulatedApproval, simulated_approvals};
 use ward_app_core::service::Service;
 use ward_app_core::terminal::Terminal;
 use ward_app_core::{aprovacao, destrave};
@@ -68,15 +68,15 @@ fn main() -> ExitCode {
         },
         ["--dist", d] => with_daemon(Path::new(d), attachments),
         ["--dist", d, "--daemon-falso", "cheio"] => {
-            serve(DaemonFalso::cheio(), None, Path::new(d), attachments, &[])
+            serve(FakeDaemon::full(), None, Path::new(d), attachments, &[])
         }
         ["--dist", d, "--daemon-falso", "vazio"] => {
-            serve(DaemonFalso::vazio(), None, Path::new(d), attachments, &[])
+            serve(FakeDaemon::empty(), None, Path::new(d), attachments, &[])
         }
         // Phase 31: the unlock screens with the fake one locked; with the request mode, an
         // unlock request arrives 3 s after starting, as if a `ward run` were waiting.
         ["--dist", d, "--daemon-falso", "travado"] => {
-            serve(DaemonFalso::travado(), None, Path::new(d), attachments, &[])
+            serve(FakeDaemon::locked(), None, Path::new(d), attachments, &[])
         }
         // Phase 39a: the notice carries entry and command; the attack mode sends both raw,
         // with control, bidi, zero-width and HTML (D51).
@@ -87,18 +87,18 @@ fn main() -> ExitCode {
             mode @ ("travado-com-pedido" | "travado-com-pedido-ataque"),
         ] => {
             let notice = if *mode == "travado-com-pedido" {
-                Aviso::destrave_de_teste("acme-pg-aprovacao")
+                Notice::test_unlock("acme-pg-aprovacao")
             } else {
-                Aviso::destrave_hostil_de_teste()
+                Notice::hostile_test_unlock()
             };
-            let queue = Arc::new(FilaAvisos::default());
+            let queue = Arc::new(NoticeQueue::default());
             let q = Arc::clone(&queue);
             let _ = std::thread::Builder::new().spawn(move || {
                 std::thread::sleep(Duration::from_secs(3));
-                q.simular(notice);
+                q.simulate(notice);
             });
             serve(
-                DaemonFalso::travado(),
+                FakeDaemon::locked(),
                 Some(queue),
                 Path::new(d),
                 attachments,
@@ -108,14 +108,14 @@ fn main() -> ExitCode {
         // Phase 48: the settings screen with the external backup enabled, and udisks2 not
         // answering.
         ["--dist", d, "--daemon-falso", "backup-externo-ligado"] => serve(
-            DaemonFalso::backup_externo_ligado(),
+            FakeDaemon::external_backup_enabled(),
             None,
             Path::new(d),
             attachments,
             &[],
         ),
         ["--dist", d, "--daemon-falso", "sem-udisks"] => serve(
-            DaemonFalso::backup_externo_ligado().com_pendrives(None),
+            FakeDaemon::external_backup_enabled().with_usb_drives(None),
             None,
             Path::new(d),
             attachments,
@@ -123,14 +123,14 @@ fn main() -> ExitCode {
         ),
         // Phase 47: restore with no version and with the backup folder unavailable.
         ["--dist", d, "--daemon-falso", "sem-backups"] => serve(
-            DaemonFalso::cheio().com_backups(Some(Vec::new())),
+            FakeDaemon::full().with_backups(Some(Vec::new())),
             None,
             Path::new(d),
             attachments,
             &[],
         ),
         ["--dist", d, "--daemon-falso", "backups-indisponiveis"] => serve(
-            DaemonFalso::cheio().com_backups(None),
+            FakeDaemon::full().with_backups(None),
             None,
             Path::new(d),
             attachments,
@@ -138,35 +138,31 @@ fn main() -> ExitCode {
         ),
         // Phase 49a: old copy planted with a new date, and an unsafe local backup folder.
         ["--dist", d, "--daemon-falso", "backup-plantado"] => serve(
-            DaemonFalso::backup_plantado(),
+            FakeDaemon::planted_backup(),
             None,
             Path::new(d),
             attachments,
             &[],
         ),
         ["--dist", d, "--daemon-falso", "backup-local-inseguro"] => serve(
-            DaemonFalso::backup_local_inseguro(),
+            FakeDaemon::insecure_local_backup(),
             None,
             Path::new(d),
             attachments,
             &[],
         ),
         // Phase 30: no vault, for the first-use screens.
-        ["--dist", d, "--daemon-falso", "sem-cofre"] => serve(
-            DaemonFalso::sem_cofre(),
-            None,
-            Path::new(d),
-            attachments,
-            &[],
-        ),
+        ["--dist", d, "--daemon-falso", "sem-cofre"] => {
+            serve(FakeDaemon::no_vault(), None, Path::new(d), attachments, &[])
+        }
         // Phase 36: full vault with an approval request waiting for the window (the
         // approval screen of the opening URL).
         ["--dist", d, "--daemon-falso", mode] if mode.starts_with("aprovacao") => {
-            match aprovacoes_simuladas(mode) {
+            match simulated_approvals(mode) {
                 Some(requests) => {
-                    let mut fake = DaemonFalso::cheio();
+                    let mut fake = FakeDaemon::full();
                     for (p, _) in &requests {
-                        fake = fake.com_aprovacao(p);
+                        fake = fake.with_approval(p);
                     }
                     serve(fake, None, Path::new(d), attachments, &requests)
                 }
@@ -185,12 +181,12 @@ fn main() -> ExitCode {
 
 /// The socket of the test daemon, with the role checked on the first reply (D63).
 fn with_daemon(dist: &Path, attachments: Option<PathBuf>) -> ExitCode {
-    let daemon = DaemonSocket::padrao()
+    let daemon = DaemonSocket::standard()
         .map_err(|e| e.to_string())
         .and_then(startup::connect_with_app_role)
         .and_then(|d| {
             // Without the connection the bridge is useless (and never reconnects): exit.
-            d.vigiar_fechamento(|| {
+            d.watch_close(|| {
                 eprintln!("ward-ponte-teste: a conexão com o daemon de teste caiu");
                 std::process::exit(1)
             })
@@ -199,7 +195,7 @@ fn with_daemon(dist: &Path, attachments: Option<PathBuf>) -> ExitCode {
         });
     match daemon {
         Ok(d) => {
-            let queue = d.avisos();
+            let queue = d.notices();
             // Phase 39c: with the test daemon, "Connect" opens the real `ward ssh`.
             let terminal: Box<dyn Terminal> = match RepoTerminal::from_repository(
                 std::env::var_os("WARD_DEV_DIR"),
@@ -224,10 +220,10 @@ fn with_daemon(dist: &Path, attachments: Option<PathBuf>) -> ExitCode {
 
 fn serve<D: Daemon + 'static>(
     daemon: D,
-    notices: Option<Arc<FilaAvisos>>,
+    notices: Option<Arc<NoticeQueue>>,
     dist: &Path,
     attachments: Option<PathBuf>,
-    approvals: &[AprovacaoSimulada],
+    approvals: &[SimulatedApproval],
 ) -> ExitCode {
     serve_with(
         daemon,
@@ -241,10 +237,10 @@ fn serve<D: Daemon + 'static>(
 
 fn serve_with<D: Daemon + 'static>(
     daemon: D,
-    notices: Option<Arc<FilaAvisos>>,
+    notices: Option<Arc<NoticeQueue>>,
     dist: &Path,
     attachments: Option<PathBuf>,
-    approvals: &[AprovacaoSimulada],
+    approvals: &[SimulatedApproval],
     terminal: Box<dyn Terminal>,
 ) -> ExitCode {
     let dist: PathBuf = dist.to_path_buf();

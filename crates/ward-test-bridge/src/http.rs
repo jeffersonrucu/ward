@@ -234,7 +234,7 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Bridge<D, A> {
             Comando::EstadoDoCofre => self
                 .service
                 .vault_status()
-                .map(|e| json!({ "estado": e.codigo(), "pedido": self.service.request_info(e) })),
+                .map(|e| json!({ "estado": e.code(), "pedido": self.service.request_info(e) })),
             Comando::CopiarCampo => match (text("entrada"), text("campo")) {
                 (Some(e), Some(c)) => self.service.copy_field(e, c).map(|()| Value::Null),
                 _ => Err(AppError::InvalidRequest),

@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 
 use ward_app_core::AppError;
 use ward_app_core::area_transferencia::{AreaTransferencia, Copiador};
-use ward_app_core::daemon_falso::{DaemonFalso, SEGREDOS};
+use ward_app_core::fake_daemon::{FakeDaemon, SECRETS};
 use ward_app_core::service::Service;
 use ward_test_bridge::http::{Bridge, MAX_BODY, MAX_HEADER, Request, read_request};
 use zeroize::Zeroizing;
@@ -51,20 +51,20 @@ fn dist(name: &str) -> PathBuf {
 fn bridge(
     name: &str,
 ) -> (
-    Arc<Bridge<DaemonFalso, FakeClipboard>>,
+    Arc<Bridge<FakeDaemon, FakeClipboard>>,
     std::net::TcpListener,
     FakeClipboard,
     PathBuf,
 ) {
     let base = dist(name);
     let clipboard = FakeClipboard::default();
-    let service = Service::new(DaemonFalso::cheio(), Copiador::novo(clipboard.clone()));
+    let service = Service::new(FakeDaemon::full(), Copiador::novo(clipboard.clone()));
     let (p, l) = Bridge::open(service, &base.join("dist")).unwrap();
     (p, l, clipboard, base)
 }
 
 fn post(
-    p: &Bridge<DaemonFalso, FakeClipboard>,
+    p: &Bridge<FakeDaemon, FakeClipboard>,
     command: &str,
     body: &str,
     changes: &[(&str, Option<&str>)],
@@ -115,7 +115,7 @@ fn copy_works_and_the_response_has_no_value() {
 /// line)?
 fn has_secret(body: &[u8]) -> bool {
     let text = String::from_utf8_lossy(body);
-    SEGREDOS.iter().any(|s| {
+    SECRETS.iter().any(|s| {
         let json = serde_json::to_string(s).unwrap();
         text.contains(s)
             || text.contains(&json[1..json.len() - 1])
@@ -235,7 +235,7 @@ fn attack_form_through_the_bridge() {
 #[test]
 fn attack_set_level_through_the_bridge() {
     let (p, _l, _a, base) = bridge("nivel");
-    let level = |p: &Bridge<DaemonFalso, FakeClipboard>| {
+    let level = |p: &Bridge<FakeDaemon, FakeClipboard>| {
         let r = p.respond(&post(
             p,
             "detalhe_credencial",
@@ -244,7 +244,7 @@ fn attack_set_level_through_the_bridge() {
         ));
         r.body_json().unwrap()["valor"]["nivel"].clone()
     };
-    let set_level = |p: &Bridge<DaemonFalso, FakeClipboard>, body: &str| {
+    let set_level = |p: &Bridge<FakeDaemon, FakeClipboard>, body: &str| {
         let r = p.respond(&post(p, "mudar_nivel", body, &[]));
         assert!(
             !String::from_utf8_lossy(&r.body).contains("135790"),
@@ -577,12 +577,9 @@ fn attack_attachments_and_connect_through_the_bridge() {
     let folder = base.join("anexos");
     fs::create_dir_all(&folder).unwrap();
     fs::write(folder.join("deploy.pem"), "falso-anexo-ponte-34\n").unwrap();
-    let service = Service::new(
-        DaemonFalso::cheio(),
-        Copiador::novo(FakeClipboard::default()),
-    )
-    .with_picker(DirPicker(folder.clone()))
-    .with_terminal(TestTerminal);
+    let service = Service::new(FakeDaemon::full(), Copiador::novo(FakeClipboard::default()))
+        .with_picker(DirPicker(folder.clone()))
+        .with_terminal(TestTerminal);
     let (p, _l) = Bridge::open(service, &base.join("dist")).unwrap();
     let r = p.respond(&post(&p, "escolher_anexo", "{}", &[]));
     let v = r.body_json().unwrap();
@@ -653,11 +650,8 @@ fn attack_load_key_through_the_bridge() {
     let label = ["OPENSSH", " PRIVATE", " KEY"].concat();
     let key = format!("-----BEGIN {label}-----\n{key_body}\n-----END {label}-----\n");
     fs::write(folder.join("deploy_ed25519"), &key).unwrap();
-    let service = Service::new(
-        DaemonFalso::cheio(),
-        Copiador::novo(FakeClipboard::default()),
-    )
-    .with_picker(DirPicker(folder.clone()));
+    let service = Service::new(FakeDaemon::full(), Copiador::novo(FakeClipboard::default()))
+        .with_picker(DirPicker(folder.clone()));
     let (p, _l) = Bridge::open(service, &base.join("dist")).unwrap();
     for body in [
         r#"{}"#,
@@ -756,7 +750,7 @@ fn attack_load_key_through_the_bridge() {
 fn attack_first_use_through_the_bridge() {
     let base = dist("primeiro-uso");
     let service = Service::new(
-        DaemonFalso::sem_cofre(),
+        FakeDaemon::no_vault(),
         Copiador::novo(FakeClipboard::default()),
     );
     let (p, _l) = Bridge::open(service, &base.join("dist")).unwrap();
@@ -875,7 +869,7 @@ fn attack_bridge_without_app_role_exits_on_first_reply() {
             }
             received
         });
-        let r = connect_with_app_role(DaemonSocket::teste_em(sock));
+        let r = connect_with_app_role(DaemonSocket::test_at(sock));
         if role == "app" {
             assert!(r.is_ok(), "{:?}", r.err());
         } else {
@@ -896,7 +890,7 @@ fn attack_bridge_without_app_role_exits_on_first_reply() {
 #[test]
 fn attack_unlock_through_the_bridge() {
     let (p, _l, _a, base) = bridge("destravar");
-    let vault_status = |p: &Bridge<DaemonFalso, FakeClipboard>| {
+    let vault_status = |p: &Bridge<FakeDaemon, FakeClipboard>| {
         p.respond(&post(p, "estado_do_cofre", "{}", &[]))
             .body_json()
             .unwrap()["valor"]
@@ -915,7 +909,7 @@ fn attack_unlock_through_the_bridge() {
         vault_status(&p),
         serde_json::json!({"estado": "travado", "pedido": null})
     );
-    let unlock = |p: &Bridge<DaemonFalso, FakeClipboard>, body: &str| {
+    let unlock = |p: &Bridge<FakeDaemon, FakeClipboard>, body: &str| {
         let r = p.respond(&post(p, "destravar", body, &[]));
         let text = String::from_utf8_lossy(&r.body).into_owned();
         assert!(!text.contains("falso-mestra"), "senha na resposta: {text}");
@@ -959,7 +953,7 @@ fn attack_lock_through_the_bridge() {
     let (p, _l, clipboard, base) = bridge("travar");
     let r = p.respond(&post(&p, "travar", r#"{"x":1}"#, &[]));
     assert_eq!(r.body_json().unwrap()["codigo"], "pedido-invalido");
-    let vault_status = |p: &Bridge<DaemonFalso, FakeClipboard>| {
+    let vault_status = |p: &Bridge<FakeDaemon, FakeClipboard>| {
         p.respond(&post(p, "estado_do_cofre", "{}", &[]))
             .body_json()
             .unwrap()["valor"]["estado"]
@@ -1001,10 +995,7 @@ fn attack_lock_through_the_bridge() {
 #[test]
 fn attack_settings_through_the_bridge() {
     let base = dist("configuracoes");
-    let service = Service::new(
-        DaemonFalso::cheio(),
-        Copiador::novo(FakeClipboard::default()),
-    );
+    let service = Service::new(FakeDaemon::full(), Copiador::novo(FakeClipboard::default()));
     let (p, _l) = Bridge::open(service, &base.join("dist")).unwrap();
     let ask = |command: &str, body: &str| {
         let r = p.respond(&post(&p, command, body, &[]));
@@ -1104,10 +1095,7 @@ fn attack_settings_through_the_bridge() {
 #[test]
 fn attack_external_backup_through_the_bridge() {
     let base = dist("backup-externo");
-    let service = Service::new(
-        DaemonFalso::cheio(),
-        Copiador::novo(FakeClipboard::default()),
-    );
+    let service = Service::new(FakeDaemon::full(), Copiador::novo(FakeClipboard::default()));
     let (p, _l) = Bridge::open(service, &base.join("dist")).unwrap();
     let ask = |command: &str, body: &str| {
         let r = p.respond(&post(&p, command, body, &[]));
@@ -1187,15 +1175,12 @@ fn attack_external_backup_through_the_bridge() {
 #[test]
 fn attack_restore_backup_through_the_bridge() {
     let base = dist("restaurar-backup");
-    let service = Service::new(
-        DaemonFalso::cheio(),
-        Copiador::novo(FakeClipboard::default()),
-    );
+    let service = Service::new(FakeDaemon::full(), Copiador::novo(FakeClipboard::default()));
     let (p, _l) = Bridge::open(service, &base.join("dist")).unwrap();
     let ask = |command: &str, body: &str| {
         let r = p.respond(&post(&p, command, body, &[]));
         let text = String::from_utf8_lossy(&r.body).into_owned();
-        for s in SEGREDOS {
+        for s in SECRETS {
             assert!(!text.contains(s), "{command}: segredo na resposta");
         }
         for needle in [

@@ -2323,6 +2323,45 @@ com os variantes pelos códigos da seção 13: `DaemonUnavailable`, `DaemonUntru
 `UsbDrivesUnavailable`, `UsbDriveNotConnected`, `BackupNotFound`, `BackupUnavailable`,
 `VaultChanged`. Os homônimos `cliente::CodigoTotp`, `Comando::CodigoTotp` e
 `Resposta::CodigoTotp` são outros e não mudaram.
+Fase 31 (`app/core`: `client`, `daemon`, `fake_daemon`): módulos `cliente` → `client`,
+`daemon_falso` → `fake_daemon` (`daemon` fica). `Daemon::trocar` → `Daemon::exchange` (troca
+de pedido e resposta: "exchange", não "change"); `EstadoCofre` → `VaultStatus` (`SemCofre`/
+`Travado`/`Destravado` → `NoVault`/`Locked`/`Unlocked`; `codigo()` → `code()`, os códigos
+`sem-cofre`/`travado`/`destravado` ficam até a Fase 54); `Aviso` → `Notice` (`Aprovacao`/
+`Destrave` → `Approval`/`Unlock`; `destrave_de_teste`/`destrave_hostil_de_teste` →
+`test_unlock`/`hostile_test_unlock`); `FilaAvisos` → `NoticeQueue` (`tomar`/`esperar`/
+`esperar_destrave`/`esperar_aprovacao`/`simular`/`tamanho`/`descartados` → `take`/`wait`/
+`wait_unlock`/`wait_approval`/`simulate`/`size`/`dropped`); `PRAZO_RESPOSTA` →
+`RESPONSE_TIMEOUT`, `MAX_AVISOS` → `MAX_NOTICES`; `DaemonSocket` fica (`padrao` →
+`standard`, `conectar_agora` → `connect_now`, `vigiar_fechamento` → `watch_close`, `avisos`
+→ `notices`, `sistema_em`/`teste_em`/`de_par` → `system_at`/`test_at`/`from_pair`,
+`caminho` → `path`); privados `Fila` → `Queue`, `Pedinte` → `Requester`, `Transporte` →
+`Transport`, `ler` → `read_loop`, `PRAZO_ESCRITA` → `WRITE_TIMEOUT`. Funções do `client`
+pelas operações: `estado` → `status`, `criar_cofre` → `create_vault`, `papel` → `role`,
+`tem_papel_app` → `has_app_role`, `abrir_app`/`abrir_app_como_agente` →
+`open_app`/`open_app_as_agent`, `lista` → `list`, `detalhe` → `detail`, `copiar` → `copy`,
+`revelar` → `reveal`, `emitir_token` → `issue_token`, `salvar` → `save`, `mudar_nivel` →
+`set_level`, `responder_aprovacao` → `answer_approval`, `destravar` → `unlock`,
+`configuracao` → `settings`, `trocar_pin`/`trocar_senha` → `change_pin`/`change_password`,
+`tempo_trava` → `set_lock_timeout`, `travar` → `lock`, `backup_externo` →
+`external_backup`, `pendrives` → `usb_drives`, `definir_backup_externo` →
+`set_external_backup`, `restaurar_backup` → `restore_backup` (`totp`, `backups` ficam);
+`cliente::CodigoTotp { codigo, restante }` → `client::TotpCode { code, remaining }` (sem
+`serde`), `Salvamento { Salvo, Problemas }` → `Save { Saved, Problems }`, `Respondida { Ok,
+PinIncorreto, Expirado }` → `Answered { Ok, WrongPin, Expired }`. Daemon falso: `DaemonFalso`
+→ `FakeDaemon` (`cheio`/`vazio`/`travado`/`sem_cofre`/`backup_plantado`/
+`backup_local_inseguro`/`backup_externo_ligado` → `full`/`empty`/`locked`/`no_vault`/
+`planted_backup`/`insecure_local_backup`/`external_backup_enabled`; `com_pendrives`/
+`com_backups`/`com_aprovacao`/`sem_espera` → `with_usb_drives`/`with_backups`/
+`with_approval`/`without_wait`; `nomes_dos_backups`/`quantas_entradas`/`erros_de_pin`/
+`aprovacoes_pendentes`/`nivel_de`/`pin_confere` → `backup_names`/`entry_count`/
+`pin_errors`/`pending_approvals`/`level_of`/`pin_matches`), `BackupFalso` → `FakeBackup`,
+`EntradasDoBackup { Teste, Guardadas }` → `BackupEntries { Test, Stored }`,
+`AprovacaoSimulada` → `SimulatedApproval`, `aprovacoes_simuladas` → `simulated_approvals`,
+`backups_de_teste`/`pendrives_de_teste` → `test_backups`/`test_usb_drives`,
+`MAX_ERROS_PIN` → `MAX_PIN_ERRORS`, `VERSOES_FALSAS` → `FAKE_VERSIONS`; o re-export
+`daemon_falso::SEGREDOS` (achado da Fase 14) vira `fake_daemon::SECRETS`. Os modos da ponte
+(`aprovacao`, `aprovacao-prod`…, `--daemon-falso`) ficam (fio da ponte; Fase 56).
 Fase 28 (clientes `ward` e `ward-nm`; nomes próprios deles, os de `ward-core`/
 `ward-platform` ficam para as fases desses crates): módulos `cliente`/`comandos`/
 `texto`/`testes` → `client`/`commands`/`text`/`tests`; `principal` → `main`;

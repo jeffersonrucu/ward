@@ -2,11 +2,11 @@
 //!
 //! - [`comandos`]: the closed list of the commands the interface may call. The Tauri
 //!   `build.rs`, the capabilities and the test bridge come from it (S11).
-//! - [`cliente`]: the app role requests over the Phase 20 protocol (status, list, detail,
+//! - [`client`]: the app role requests over the Phase 20 protocol (status, list, detail,
 //!   copy), with the strict reading of the response.
 //! - [`daemon`]: transport to `wardd` (checked socket): frames on the single connection,
 //!   reader thread and notice queue (D65 a, Phase 23a).
-//! - [`daemon_falso`] (tests and `test-mode` only): answers over the protocol with the
+//! - [`fake_daemon`] (tests and `test-mode` only): answers over the protocol with the
 //!   fake entries of the test vault, for the test bridge.
 //! - [`credenciais`]: list and detail of the Credentials screen (Phase 32), no secret.
 //! - [`area_transferencia`]: "copy" resolved here (D4). The value goes from the daemon to
@@ -55,15 +55,15 @@ pub mod area_transferencia;
 pub mod backup_externo;
 pub mod bandeja;
 pub mod chave;
-pub mod cliente;
+pub mod client;
 pub mod comandos;
 pub mod configuracoes;
 pub mod credenciais;
 pub mod daemon;
-#[cfg(any(test, feature = "test-mode"))]
-pub mod daemon_falso;
 pub mod destrave;
 mod error;
+#[cfg(any(test, feature = "test-mode"))]
+pub mod fake_daemon;
 pub mod formulario;
 pub mod gerador;
 pub mod nivel;

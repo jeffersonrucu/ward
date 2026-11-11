@@ -15,11 +15,11 @@ use crate::aprovacao::{self, Aprovacoes, PedidoExibido, ResultadoAprovacao};
 use crate::area_transferencia::{AreaTransferencia, Copiador};
 use crate::backup_externo::{self, BackupExternoVisto, EscolhaDoPendrive, PendriveVisto};
 use crate::chave::{self, CAMPOS_CARREGAVEIS, Carregamento};
-use crate::cliente;
+use crate::client;
 use crate::comandos::{Referencia, validar_nome_entrada};
 use crate::configuracoes::{Configuracoes, ResultadoTroca, TrocaPin, TrocaSenha, minutos_validos};
 use crate::credenciais::{DetalheCredencial, ItemCredencial};
-use crate::daemon::{Daemon, EstadoCofre};
+use crate::daemon::{Daemon, VaultStatus};
 use crate::destrave::{InfoPedido, PedidoPendente, SenhaMestra};
 use crate::formulario::{self, ErroCampo, Falta, Fontes, Formulario};
 use crate::gerador::{Gerada, Gerador, Opcoes, Revelada};
@@ -88,10 +88,10 @@ pub struct Service<D: Daemon, A: AreaTransferencia> {
 /// among the USB drives seen. udisks2 without an answer is not an error here: the card
 /// says it could not see them.
 fn external_backup_of<D: Daemon + ?Sized>(d: &mut D) -> Result<BackupExternoVisto, AppError> {
-    let (enabled, uuid) = cliente::backup_externo(d)?;
+    let (enabled, uuid) = client::external_backup(d)?;
     let (usb_drive, drives_visible) = match &uuid {
         None => (None, true),
-        Some(u) => match cliente::pendrives(d) {
+        Some(u) => match client::usb_drives(d) {
             Ok(list) => (backup_externo::achar(&list, u).map(PendriveVisto::de), true),
             Err(AppError::UsbDrivesUnavailable) => (None, false),
             Err(e) => return Err(e),
@@ -116,7 +116,7 @@ struct ServiceSources<'a, D: Daemon> {
 impl<D: Daemon> Fontes for ServiceSources<'_, D> {
     fn guardado(&mut self, target: Alvo) -> Result<CoreSecret, AppError> {
         let entry = self.entry.ok_or(AppError::InvalidRequest)?;
-        let s = cliente::revelar(self.daemon, entry, target)?;
+        let s = client::reveal(self.daemon, entry, target)?;
         Ok(CoreSecret::from_bytes(s.expose().to_vec()))
     }
 
@@ -160,9 +160,9 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
     /// The agent request waiting for the unlock, if the vault is locked and the request
     /// is still within its deadline. No entry nor command (the notice does not carry
     /// them).
-    pub fn request_info(&self, status: EstadoCofre) -> Option<InfoPedido> {
+    pub fn request_info(&self, status: VaultStatus) -> Option<InfoPedido> {
         match status {
-            EstadoCofre::Travado => self.pending_unlock.info(),
+            VaultStatus::Locked => self.pending_unlock.info(),
             _ => None,
         }
     }
@@ -173,7 +173,7 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
     /// attempts there were. Once unlocked, the agent request proceeds on its own in the
     /// daemon and leaves the screen.
     pub fn unlock(&self, password: SenhaMestra) -> Result<(), AppError> {
-        let r = cliente::destravar(&mut *self.daemon()?, &password);
+        let r = client::unlock(&mut *self.daemon()?, &password);
         drop(password);
         r?;
         self.pending_unlock.limpar();
@@ -199,7 +199,7 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
                 .pedido
                 .entradas
                 .iter()
-                .map(|n| cliente::detalhe(&mut *d, n).ok().map(|x| x.tipo.name()))
+                .map(|n| client::detail(&mut *d, n).ok().map(|x| x.tipo.name()))
                 .collect();
             drop(d);
             self.approvals
@@ -255,7 +255,7 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
                 if decision.pede_pin() && hidden != acknowledged {
                     return Err(AppError::InvalidRequest);
                 }
-                let r = cliente::responder_aprovacao(
+                let r = client::answer_approval(
                     &mut *self.daemon()?,
                     id,
                     decision,
@@ -264,16 +264,16 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
                 );
                 drop(pin);
                 match r? {
-                    cliente::Respondida::Ok => {
+                    client::Answered::Ok => {
                         self.approvals.remover(id);
                         "respondido"
                     }
-                    cliente::Respondida::Expirado => {
+                    client::Answered::Expired => {
                         self.approvals.remover(id);
                         "expirado"
                     }
-                    cliente::Respondida::PinIncorreto => {
-                        if self.vault_status()? == EstadoCofre::Destravado {
+                    client::Answered::WrongPin => {
+                        if self.vault_status()? == VaultStatus::Unlocked {
                             "pin-incorreto"
                         } else {
                             // The 5th error locked the vault: the daemon denied the request (S9).
@@ -297,7 +297,7 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
     pub fn deny_pending_approvals(&self) {
         for id in self.approvals.pendentes() {
             if let Ok(mut d) = self.daemon() {
-                let _ = cliente::responder_aprovacao(
+                let _ = client::answer_approval(
                     &mut *d,
                     id,
                     ward_core::protocolo::Decisao::Negar,
@@ -355,7 +355,7 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
         if ed.mantidos.len() > ward_core::limits::MAX_ATTACHMENTS {
             return Err(AppError::InvalidRequest);
         }
-        let det = cliente::detalhe(&mut *self.daemon()?, &ed.entrada)?;
+        let det = client::detail(&mut *self.daemon()?, &ed.entrada)?;
         let mut base = Base::default();
         for (i, n) in ed.mantidos.iter().enumerate() {
             let stored = det.anexos.iter().find(|a| &a.nome == n);
@@ -419,10 +419,10 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
         }
         let token = {
             let mut d = self.daemon()?;
-            if cliente::detalhe(&mut *d, entry)?.tipo != EntryType::Server {
+            if client::detail(&mut *d, entry)?.tipo != EntryType::Server {
                 return Err(AppError::NotAServer);
             }
-            cliente::emitir_token(&mut *d, entry)?
+            client::issue_token(&mut *d, entry)?
         };
         self.terminal.abrir(entry, &token)
     }
@@ -432,8 +432,8 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
     }
 
     /// Vault status.
-    pub fn vault_status(&self) -> Result<EstadoCofre, AppError> {
-        cliente::estado(&mut *self.daemon()?)
+    pub fn vault_status(&self) -> Result<VaultStatus, AppError> {
+        client::status(&mut *self.daemon()?)
     }
 
     /// Create vault (first use, Phase 30): checks master password, PIN and the two
@@ -448,7 +448,7 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
                 errors,
             });
         }
-        cliente::criar_cofre(
+        client::create_vault(
             &mut *self.daemon()?,
             new_vault.senha.bytes(),
             new_vault.pin.bytes(),
@@ -464,7 +464,7 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
     /// summary (D65 c), without one detail request per entry. No secret. An item without
     /// summary or without level refuses the whole response.
     pub fn list_credentials(&self) -> Result<Vec<ItemCredencial>, AppError> {
-        let items = cliente::lista(&mut *self.daemon()?)?;
+        let items = client::list(&mut *self.daemon()?)?;
         items
             .iter()
             .map(|item| ItemCredencial::novo(item).ok_or(AppError::InvalidResponse))
@@ -475,7 +475,7 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
     /// validated before going to the daemon.
     pub fn credential_detail(&self, entry: &str) -> Result<DetalheCredencial, AppError> {
         validar_nome_entrada(entry)?;
-        let d = cliente::detalhe(&mut *self.daemon()?, entry)?;
+        let d = client::detail(&mut *self.daemon()?, entry)?;
         Ok(DetalheCredencial::novo(&d))
     }
 
@@ -489,20 +489,18 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
         let reference = Referencia::nova(entry, field)?;
         let value = {
             let mut d = self.daemon()?;
-            let detail = cliente::detalhe(&mut *d, reference.entrada())?;
+            let detail = client::detail(&mut *d, reference.entrada())?;
             let field = reference.campo();
             if detail.segredos.iter().any(|s| s == field) {
-                cliente::copiar(&mut *d, reference.entrada(), Alvo::Campo(field.to_owned()))?
+                client::copy(&mut *d, reference.entrada(), Alvo::Campo(field.to_owned()))?
             } else if let Some((_, v)) = detail.campos.iter().find(|(k, _)| k == field) {
                 Secret::new(v.as_bytes().to_vec())
             } else if let Some(x) = detail.extras.iter().find(|x| x.nome == field) {
                 match &x.valor {
                     Some(v) => Secret::new(v.as_bytes().to_vec()),
-                    None => cliente::copiar(
-                        &mut *d,
-                        reference.entrada(),
-                        Alvo::Extra(field.to_owned()),
-                    )?,
+                    None => {
+                        client::copy(&mut *d, reference.entrada(), Alvo::Extra(field.to_owned()))?
+                    }
                 }
             } else {
                 return Err(AppError::FieldNotFound);
@@ -542,7 +540,7 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
     pub fn reveal_field(&self, entry: &str, field: &str) -> Result<Revelada, AppError> {
         let reference = Referencia::nova(entry, field)?;
         let mut d = self.daemon()?;
-        let detail = cliente::detalhe(&mut *d, reference.entrada())?;
+        let detail = client::detail(&mut *d, reference.entrada())?;
         let field = reference.campo();
         let target = if detail.segredos.iter().any(|s| s == field) {
             Alvo::Campo(field.to_owned())
@@ -555,26 +553,25 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
         } else {
             return Err(AppError::FieldNotFound);
         };
-        let value = cliente::revelar(&mut *d, reference.entrada(), target)?;
+        let value = client::reveal(&mut *d, reference.entrada(), target)?;
         Revelada::de_segredo(&value).ok_or(AppError::Refused)
     }
 
     /// TOTP code: the current code of the entry and the seconds until it changes.
     pub fn totp_code(&self, entry: &str) -> Result<TotpCode, AppError> {
         validar_nome_entrada(entry)?;
-        let c = cliente::totp(&mut *self.daemon()?, entry)?;
+        let c = client::totp(&mut *self.daemon()?, entry)?;
         Ok(TotpCode {
-            code: c.codigo.as_str().to_owned(),
-            remaining: c.restante,
+            code: c.code.as_str().to_owned(),
+            remaining: c.remaining,
         })
     }
 
     /// Copy the TOTP code: the code goes to the clipboard (D4).
     pub fn copy_totp_code(&self, entry: &str) -> Result<(), AppError> {
         validar_nome_entrada(entry)?;
-        let c = cliente::totp(&mut *self.daemon()?, entry)?;
-        self.copier
-            .copiar(Secret::new(c.codigo.as_bytes().to_vec()))
+        let c = client::totp(&mut *self.daemon()?, entry)?;
+        self.copier.copiar(Secret::new(c.code.as_bytes().to_vec()))
     }
 
     /// Use the generated password: the generator password goes to the form field, on the
@@ -616,7 +613,7 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
         let mut d = self.daemon()?;
         let edited = match previous {
             Some(a) => {
-                let det = cliente::detalhe(&mut *d, a)?;
+                let det = client::detail(&mut *d, a)?;
                 if det.tipo != kind {
                     return Err(AppError::InvalidRequest);
                 }
@@ -696,8 +693,8 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
                 errors,
             });
         }
-        match cliente::salvar(&mut *d, previous.map(str::to_owned), draft, kept)? {
-            cliente::Salvamento::Salvo => {
+        match client::save(&mut *d, previous.map(str::to_owned), draft, kept)? {
+            client::Save::Saved => {
                 drop(d);
                 self.discard_form();
                 Ok(SaveResult {
@@ -705,7 +702,7 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
                     errors: Vec::new(),
                 })
             }
-            cliente::Salvamento::Problemas(p) => Ok(SaveResult {
+            client::Save::Problems(p) => Ok(SaveResult {
                 saved: None,
                 errors: formulario::erros_do_daemon(&p),
             }),
@@ -719,7 +716,7 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
     pub fn set_level(&self, entry: &str, level: &str, pin: Pin) -> Result<NivelMudado, AppError> {
         validar_nome_entrada(entry)?;
         let level = nivel_de_nome(level)?;
-        cliente::mudar_nivel(&mut *self.daemon()?, entry, level, &pin)?;
+        client::set_level(&mut *self.daemon()?, entry, level, &pin)?;
         drop(pin);
         Ok(NivelMudado {
             entrada: entry.to_owned(),
@@ -729,7 +726,7 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
 
     /// Settings (Phase 38): lock timeout and external backup, no hash nor UUID.
     pub fn settings(&self) -> Result<Configuracoes, AppError> {
-        cliente::configuracao(&mut *self.daemon()?)
+        client::settings(&mut *self.daemon()?)
     }
 
     /// Change PIN (Phase 38, V5.22, S9): checks the format of the three fields and the
@@ -741,7 +738,7 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
         if !errors.is_empty() {
             return Ok(ResultadoTroca::com_erros(errors));
         }
-        cliente::trocar_pin(
+        client::change_pin(
             &mut *self.daemon()?,
             change.atual.bytes(),
             change.novo.bytes(),
@@ -756,7 +753,7 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
         if !errors.is_empty() {
             return Ok(ResultadoTroca::com_erros(errors));
         }
-        cliente::trocar_senha(
+        client::change_password(
             &mut *self.daemon()?,
             change.atual.bytes(),
             change.nova.bytes(),
@@ -769,8 +766,8 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
     pub fn set_lock_timeout(&self, minutes: u64) -> Result<Configuracoes, AppError> {
         let minutes = minutos_validos(minutes)?;
         let mut d = self.daemon()?;
-        cliente::tempo_trava(&mut *d, minutes)?;
-        cliente::configuracao(&mut *d)
+        client::set_lock_timeout(&mut *d, minutes)?;
+        client::settings(&mut *d)
     }
 
     /// External backup (Phase 48, V7.9): enabled or not, the chosen UUID and, if it is
@@ -781,7 +778,7 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
 
     /// List USB drives (Phase 48): the USB drives the daemon sees, to choose from.
     pub fn list_usb_drives(&self) -> Result<Vec<PendriveVisto>, AppError> {
-        let list = cliente::pendrives(&mut *self.daemon()?)?;
+        let list = client::usb_drives(&mut *self.daemon()?)?;
         Ok(list.iter().map(PendriveVisto::de).collect())
     }
 
@@ -798,13 +795,13 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
         let mut d = self.daemon()?;
         match choice {
             EscolhaDoPendrive::Ligar(u) => {
-                let list = cliente::pendrives(&mut *d)?;
+                let list = client::usb_drives(&mut *d)?;
                 let p = backup_externo::achar(&list, &u).ok_or(AppError::UsbDriveNotConnected)?;
-                cliente::definir_backup_externo(&mut *d, true, Some(p.uuid.clone()))?;
+                client::set_external_backup(&mut *d, true, Some(p.uuid.clone()))?;
             }
             EscolhaDoPendrive::Desligar => {
-                let (_, current) = cliente::backup_externo(&mut *d)?;
-                cliente::definir_backup_externo(&mut *d, false, current)?;
+                let (_, current) = client::external_backup(&mut *d)?;
+                client::set_external_backup(&mut *d, false, current)?;
             }
         }
         external_backup_of(&mut *d)
@@ -814,7 +811,7 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
     /// oldest, only with the name and the instant (from the name). No content, size nor
     /// path: the protocol does not carry them.
     pub fn list_backups(&self) -> Result<Vec<VersaoVista>, AppError> {
-        let list = cliente::backups(&mut *self.daemon()?)?;
+        let list = client::backups(&mut *self.daemon()?)?;
         restaurar::versoes_de(&list)
     }
 
@@ -832,14 +829,14 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
         } = request;
         restaurar::versao_pedida(&version)?;
         let mut d = self.daemon()?;
-        if !cliente::backups(&mut *d)?.iter().any(|b| b.nome == version) {
+        if !client::backups(&mut *d)?.iter().any(|b| b.nome == version) {
             return Err(AppError::BackupNotFound);
         }
-        let r = cliente::restaurar_backup(&mut *d, &version, &password, &pin);
+        let r = client::restore_backup(&mut *d, &version, &password, &pin);
         drop(password);
         drop(pin);
         r?;
-        let entries = cliente::lista(&mut *d)?.len();
+        let entries = client::list(&mut *d)?.len();
         drop(d);
         self.discard_form();
         Ok(Restaurado {
@@ -873,7 +870,7 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
     /// with the daemon down, what is local is cleared.
     pub fn lock(&self) -> Result<(), AppError> {
         self.on_exit();
-        let r = cliente::travar(&mut *self.daemon()?);
+        let r = client::lock(&mut *self.daemon()?);
         self.on_exit();
         r
     }
@@ -926,7 +923,7 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::daemon_falso::{DaemonFalso, SEGREDOS};
+    use crate::fake_daemon::{FakeDaemon, SECRETS};
     use std::sync::Arc;
     use zeroize::Zeroizing;
 
@@ -947,9 +944,9 @@ mod tests {
         }
     }
 
-    fn service() -> (Service<DaemonFalso, Arc<Area>>, Arc<Area>) {
+    fn service() -> (Service<FakeDaemon, Arc<Area>>, Arc<Area>) {
         let area = Arc::new(Area::default());
-        let s = Service::new(DaemonFalso::cheio(), Copiador::novo(Arc::clone(&area)));
+        let s = Service::new(FakeDaemon::full(), Copiador::novo(Arc::clone(&area)));
         (s, area)
     }
 
@@ -963,7 +960,7 @@ mod tests {
     }
 
     fn assert_no_secret(json: &str, place: &str) {
-        for s in SEGREDOS {
+        for s in SECRETS {
             for f in forms(s) {
                 assert!(!json.contains(&f), "segredo em {place}");
             }
@@ -1057,7 +1054,7 @@ mod tests {
     #[test]
     fn attack_generator_copies_without_returning_the_value() {
         let area = Arc::new(Area::default());
-        let s = Service::new(DaemonFalso::cheio(), Copiador::novo(Arc::clone(&area)));
+        let s = Service::new(FakeDaemon::full(), Copiador::novo(Arc::clone(&area)));
         assert_eq!(
             s.copy_generated_password(),
             Err(AppError::NoGeneratedPassword)
@@ -1100,7 +1097,7 @@ mod tests {
     fn attack_generator_cleanup_does_not_erase_user_text() {
         let area = Arc::new(Area::default());
         let s = Service::new(
-            DaemonFalso::cheio(),
+            FakeDaemon::full(),
             Copiador::com_prazo(Arc::clone(&area), std::time::Duration::from_millis(50)),
         );
         s.generate_password(options()).unwrap();
@@ -1160,7 +1157,7 @@ mod tests {
         assert!(area.0.lock().unwrap().is_some());
         // The lock comes from outside the app: straight in the daemon, without going
         // through its `lock`.
-        cliente::travar(&mut *s.daemon().unwrap()).unwrap();
+        client::lock(&mut *s.daemon().unwrap()).unwrap();
         assert!(area.0.lock().unwrap().is_some());
         assert_eq!(s.check_transition(&seen), (Destravado, Travado));
         assert_eq!(*area.0.lock().unwrap(), None);
@@ -1177,7 +1174,7 @@ mod tests {
             s.copy_field("acme-pg-dev", "inventado").unwrap_err(),
             AppError::FieldNotFound
         );
-        assert_eq!(s.vault_status(), Ok(EstadoCofre::Destravado));
+        assert_eq!(s.vault_status(), Ok(VaultStatus::Unlocked));
     }
 
     #[test]
@@ -1499,16 +1496,16 @@ mod tests {
     /// per entry), with the 2nd line and the search username taken from the summary.
     #[test]
     fn d65_list_in_a_single_exchange_with_summary_and_username() {
-        struct Counter(DaemonFalso, Arc<std::sync::atomic::AtomicUsize>);
+        struct Counter(FakeDaemon, Arc<std::sync::atomic::AtomicUsize>);
         impl Daemon for Counter {
-            fn trocar(&mut self, p: &[u8]) -> Result<Zeroizing<Vec<u8>>, AppError> {
+            fn exchange(&mut self, p: &[u8]) -> Result<Zeroizing<Vec<u8>>, AppError> {
                 self.1.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                self.0.trocar(p)
+                self.0.exchange(p)
             }
         }
         let n = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let s = Service::new(
-            Counter(DaemonFalso::cheio(), Arc::clone(&n)),
+            Counter(FakeDaemon::full(), Arc::clone(&n)),
             Copiador::novo(Arc::new(Area::default())),
         );
         let list = s.list_credentials().unwrap();
@@ -1526,7 +1523,7 @@ mod tests {
     #[test]
     fn empty_vault() {
         let area = Arc::new(Area::default());
-        let s = Service::new(DaemonFalso::vazio(), Copiador::novo(area));
+        let s = Service::new(FakeDaemon::empty(), Copiador::novo(area));
         assert!(s.list_credentials().unwrap().is_empty());
     }
 
@@ -1537,7 +1534,7 @@ mod tests {
         Pin::novo(p.to_owned()).unwrap()
     }
 
-    fn level_of(s: &Service<DaemonFalso, Arc<Area>>, entry: &str) -> &'static str {
+    fn level_of(s: &Service<FakeDaemon, Arc<Area>>, entry: &str) -> &'static str {
         s.credential_detail(entry).unwrap().nivel
     }
 
@@ -1580,16 +1577,16 @@ mod tests {
         for _ in 0..4 {
             assert_eq!(fail(), AppError::WrongPin);
             assert_eq!(level_of(&s, "acme-pg-dev"), "livre");
-            assert_eq!(s.vault_status(), Ok(EstadoCofre::Destravado));
+            assert_eq!(s.vault_status(), Ok(VaultStatus::Unlocked));
         }
         s.set_level("acme-pg-dev", "livre", pin(RIGHT_PIN)).unwrap();
         for _ in 0..4 {
             assert_eq!(fail(), AppError::WrongPin);
         }
-        assert_eq!(s.vault_status(), Ok(EstadoCofre::Destravado));
+        assert_eq!(s.vault_status(), Ok(VaultStatus::Unlocked));
         assert_eq!(level_of(&s, "acme-pg-dev"), "livre");
         assert_eq!(fail(), AppError::WrongPin);
-        assert_eq!(s.vault_status(), Ok(EstadoCofre::Travado));
+        assert_eq!(s.vault_status(), Ok(VaultStatus::Locked));
         assert_eq!(
             s.set_level("acme-pg-dev", "bloqueado", pin(RIGHT_PIN))
                 .unwrap_err(),
@@ -1622,7 +1619,7 @@ mod tests {
                 );
             }
         }
-        assert_eq!(s.vault_status(), Ok(EstadoCofre::Destravado));
+        assert_eq!(s.vault_status(), Ok(VaultStatus::Unlocked));
         assert_eq!(level_of(&s, "acme-pg-dev"), "livre");
     }
 
@@ -1674,7 +1671,7 @@ mod tests {
         }
     }
 
-    fn service_34() -> (Service<DaemonFalso, Arc<Area>>, FixedPicker, FixedTerminal) {
+    fn service_34() -> (Service<FakeDaemon, Arc<Area>>, FixedPicker, FixedTerminal) {
         let (s, _) = service();
         let sel = FixedPicker::default();
         let term = FixedTerminal::default();
@@ -2125,11 +2122,11 @@ mod tests {
     /// the kept attachment, never the content; no response to the interface carries it.
     #[test]
     fn attack_edit_keeps_removes_and_adds_attachment_without_the_content_passing_through_the_app() {
-        struct Spy(DaemonFalso, Arc<Mutex<Vec<Vec<u8>>>>);
+        struct Spy(FakeDaemon, Arc<Mutex<Vec<Vec<u8>>>>);
         impl Daemon for Spy {
-            fn trocar(&mut self, request: &[u8]) -> Result<Zeroizing<Vec<u8>>, AppError> {
+            fn exchange(&mut self, request: &[u8]) -> Result<Zeroizing<Vec<u8>>, AppError> {
                 self.1.lock().unwrap().push(request.to_vec());
-                let r = self.0.trocar(request)?;
+                let r = self.0.exchange(request)?;
                 self.1.lock().unwrap().push(r.to_vec());
                 Ok(r)
             }
@@ -2137,7 +2134,7 @@ mod tests {
         let frames = Arc::new(Mutex::new(Vec::new()));
         let sel = FixedPicker::default();
         let s = Service::new(
-            Spy(DaemonFalso::cheio(), Arc::clone(&frames)),
+            Spy(FakeDaemon::full(), Arc::clone(&frames)),
             Copiador::novo(Arc::new(Area::default())),
         )
         .with_picker(sel.clone());
@@ -2276,7 +2273,7 @@ mod tests {
         assert_eq!(s.tray_state(), crate::bandeja::EstadoBandeja::Destravado);
         s.lock().unwrap();
         assert!(area.0.lock().unwrap().is_none(), "área não foi limpa");
-        assert_eq!(s.vault_status(), Ok(EstadoCofre::Travado));
+        assert_eq!(s.vault_status(), Ok(VaultStatus::Locked));
         assert_eq!(s.tray_state(), crate::bandeja::EstadoBandeja::Travado);
         assert_eq!(
             s.reveal_field("acme-pg-dev", "senha").map(|_| ()),
@@ -2288,16 +2285,16 @@ mod tests {
     }
 
     /// Daemon that records the operation of each request (for the tray poll test).
-    struct Recorder(DaemonFalso, Arc<Mutex<Vec<String>>>);
+    struct Recorder(FakeDaemon, Arc<Mutex<Vec<String>>>);
 
     impl Daemon for Recorder {
-        fn trocar(&mut self, request: &[u8]) -> Result<Zeroizing<Vec<u8>>, AppError> {
+        fn exchange(&mut self, request: &[u8]) -> Result<Zeroizing<Vec<u8>>, AppError> {
             let v: serde_json::Value = serde_json::from_slice(request).unwrap();
             self.1
                 .lock()
                 .unwrap()
                 .push(v["op"].as_str().unwrap_or("?").to_owned());
-            self.0.trocar(request)
+            self.0.exchange(request)
         }
     }
 
@@ -2308,7 +2305,7 @@ mod tests {
     fn attack_tray_poll_only_asks_status() {
         let ops = Arc::new(Mutex::new(Vec::new()));
         let s = Service::new(
-            Recorder(DaemonFalso::cheio(), Arc::clone(&ops)),
+            Recorder(FakeDaemon::full(), Arc::clone(&ops)),
             Copiador::novo(Arc::new(Area::default())),
         );
         for _ in 0..5 {
@@ -2322,7 +2319,7 @@ mod tests {
     fn lock_without_daemon_clears_and_answers_error() {
         struct Down;
         impl Daemon for Down {
-            fn trocar(&mut self, _: &[u8]) -> Result<Zeroizing<Vec<u8>>, AppError> {
+            fn exchange(&mut self, _: &[u8]) -> Result<Zeroizing<Vec<u8>>, AppError> {
                 Err(AppError::DaemonUnavailable)
             }
         }
@@ -2338,8 +2335,8 @@ mod tests {
 #[cfg(test)]
 mod unlock_tests {
     use super::*;
-    use crate::daemon::{Aviso, FilaAvisos};
-    use crate::daemon_falso::DaemonFalso;
+    use crate::daemon::{Notice, NoticeQueue};
+    use crate::fake_daemon::FakeDaemon;
     use std::time::Duration;
     use zeroize::Zeroizing;
 
@@ -2358,9 +2355,9 @@ mod unlock_tests {
         }
     }
 
-    fn service() -> Service<DaemonFalso, NoClipboard> {
+    fn service() -> Service<FakeDaemon, NoClipboard> {
         Service::new(
-            DaemonFalso::travado().sem_espera(),
+            FakeDaemon::locked().without_wait(),
             Copiador::novo(NoClipboard),
         )
     }
@@ -2370,21 +2367,21 @@ mod unlock_tests {
     }
 
     /// Keeps the frames the app sends and answers through the fake daemon.
-    struct Spy(DaemonFalso, Arc<Mutex<Vec<Zeroizing<Vec<u8>>>>>);
+    struct Spy(FakeDaemon, Arc<Mutex<Vec<Zeroizing<Vec<u8>>>>>);
     impl Daemon for Spy {
-        fn trocar(&mut self, request: &[u8]) -> Result<Zeroizing<Vec<u8>>, AppError> {
+        fn exchange(&mut self, request: &[u8]) -> Result<Zeroizing<Vec<u8>>, AppError> {
             self.1
                 .lock()
                 .unwrap()
                 .push(Zeroizing::new(request.to_vec()));
-            self.0.trocar(request)
+            self.0.exchange(request)
         }
     }
 
     #[test]
     fn wrong_password_does_not_unlock_and_the_right_one_unlocks() {
         let s = service();
-        assert_eq!(s.vault_status(), Ok(EstadoCofre::Travado));
+        assert_eq!(s.vault_status(), Ok(VaultStatus::Locked));
         assert_eq!(s.list_credentials().unwrap_err(), AppError::Locked);
         for wrong in [
             "falso-mestra-ward-02",
@@ -2393,10 +2390,10 @@ mod unlock_tests {
             " ",
         ] {
             assert_eq!(s.unlock(password(wrong)), Err(AppError::WrongPassword));
-            assert_eq!(s.vault_status(), Ok(EstadoCofre::Travado));
+            assert_eq!(s.vault_status(), Ok(VaultStatus::Locked));
         }
         s.unlock(password(RIGHT_PASSWORD)).unwrap();
-        assert_eq!(s.vault_status(), Ok(EstadoCofre::Destravado));
+        assert_eq!(s.vault_status(), Ok(VaultStatus::Unlocked));
         assert!(!s.list_credentials().unwrap().is_empty());
         // Already unlocked: `ok` again.
         s.unlock(password("qualquer")).unwrap();
@@ -2425,7 +2422,7 @@ mod unlock_tests {
         // it.
         let frames = Arc::new(Mutex::new(Vec::new()));
         let s = Service::new(
-            Spy(DaemonFalso::travado().sem_espera(), frames.clone()),
+            Spy(FakeDaemon::locked().without_wait(), frames.clone()),
             Copiador::novo(NoClipboard),
         );
         let _ = s.vault_status();
@@ -2451,29 +2448,29 @@ mod unlock_tests {
     #[test]
     fn agent_request_shows_only_locked_and_goes_away_on_unlock() {
         let s = service();
-        let queue = Arc::new(FilaAvisos::default());
+        let queue = Arc::new(NoticeQueue::default());
         let (tx, rx) = std::sync::mpsc::channel();
         crate::destrave::vigiar(queue.clone(), s.unlock_request(), move || {
             let _ = tx.send(());
         })
         .unwrap();
-        assert_eq!(s.request_info(EstadoCofre::Travado), None);
-        queue.simular(Aviso::destrave_de_teste("acme-pg-aprovacao"));
+        assert_eq!(s.request_info(VaultStatus::Locked), None);
+        queue.simulate(Notice::test_unlock("acme-pg-aprovacao"));
         rx.recv_timeout(Duration::from_secs(5)).unwrap();
-        let info = s.request_info(EstadoCofre::Travado).unwrap();
+        let info = s.request_info(VaultStatus::Locked).unwrap();
         assert!(info.restante > 110 && info.restante <= 120, "{info:?}");
-        assert_eq!(s.request_info(EstadoCofre::Destravado), None);
-        assert_eq!(s.request_info(EstadoCofre::SemCofre), None);
+        assert_eq!(s.request_info(VaultStatus::Unlocked), None);
+        assert_eq!(s.request_info(VaultStatus::NoVault), None);
         // A wrong password does not remove the request.
         let _ = s.unlock(password("errada"));
-        assert!(s.request_info(EstadoCofre::Travado).is_some());
+        assert!(s.request_info(VaultStatus::Locked).is_some());
         s.unlock(password(RIGHT_PASSWORD)).unwrap();
-        assert_eq!(s.request_info(EstadoCofre::Travado), None);
+        assert_eq!(s.request_info(VaultStatus::Locked), None);
         // The JSON that goes to the screen: id, remaining and the request text (Phase
         // 39a), nothing else.
-        queue.simular(Aviso::destrave_de_teste("acme-pg-aprovacao"));
+        queue.simulate(Notice::test_unlock("acme-pg-aprovacao"));
         rx.recv_timeout(Duration::from_secs(5)).unwrap();
-        let j = serde_json::to_value(s.request_info(EstadoCofre::Travado).unwrap()).unwrap();
+        let j = serde_json::to_value(s.request_info(VaultStatus::Locked).unwrap()).unwrap();
         let mut keys: Vec<&String> = j.as_object().unwrap().keys().collect();
         keys.sort();
         assert_eq!(keys, ["comando", "entrada", "id", "operacao", "restante"]);
@@ -2482,7 +2479,7 @@ mod unlock_tests {
     #[test]
     fn fake_daemon_waits_d20_before_looking_at_the_password() {
         // The 2nd attempt (after 1 error) waits 1 s even with the right password.
-        let s = Service::new(DaemonFalso::travado(), Copiador::novo(NoClipboard));
+        let s = Service::new(FakeDaemon::locked(), Copiador::novo(NoClipboard));
         assert_eq!(s.unlock(password("errada")), Err(AppError::WrongPassword));
         let t = std::time::Instant::now();
         s.unlock(password(RIGHT_PASSWORD)).unwrap();
