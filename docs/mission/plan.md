@@ -342,7 +342,7 @@ Contrato: V4.1–V4.24. Sequencial. A partir daqui o fio muda.
 
 Contrato: V5.1–V5.11. Sequencial.
 
-- [ ] Fase 55 — Subcomandos da CLI (DT10): `list`, `lock`, `unlock`, `help`; sem alias;
+- [x] Fase 55 — Subcomandos da CLI (DT10): `list`, `lock`, `unlock`, `help`; sem alias;
   `ward --help` (texto pt-BR igual, só os nomes); mensagens que citam subcomando (CLI,
   daemon, app: "rode `ward unlock`"); `dev/tests/cli.py` e testes Rust. Compilação:
   `make compile`. — V5.1, V5.2
@@ -370,11 +370,11 @@ Contrato: V5.1–V5.11. Sequencial.
   `dev/container-deb`, `dev/tests/install.sh`, `deb.sh`) com os cenários de atualização a
   partir dos artefatos 0.1.4 de `.dev/baseline/`. Compilação: `make compile`. — V5.6,
   V5.7, V5.8, V5.9
-- [ ] Fase 58 — (achado da Fase 53: o deny nega `WARD_FILE_KEY` nas mesmas formas e mantém `WARD_ARQUIVO_CHAVE` para a 0.1.x; `dev/tests/skill.py` junto) Skill e deny (DT10): `skill/ward/SKILL.md` e `skill/README.md` com os
+- [ ] Fase 58 — (achado da Fase 55: skill, README e deny negam `ward unlock` em todas as formas e mantêm `destravar` para a 0.1.x; `dev/tests/skill.py` (`ALLOWED`, `UNLOCK`, exemplos, ataques) junto; até aqui o `make test-skill` falha) (achado da Fase 53: o deny nega `WARD_FILE_KEY` nas mesmas formas e mantém `WARD_ARQUIVO_CHAVE` para a 0.1.x; `dev/tests/skill.py` junto) Skill e deny (DT10): `skill/ward/SKILL.md` e `skill/README.md` com os
   comandos novos e `ward list --json` em inglês; `skill/settings-deny.json` negando
   `ward unlock` em todas as formas e mantendo `destravar`; `dev/tests/skill.py` (lista
   de ataques com as duas formas; autoteste). Compilação: `make compile`. — V5.3
-- [ ] Fase 59 — (achado da Fase 54b: `docs/instalacao.md` avisa que, depois de atualizar, extras `ENTRY`/`GROUP`/`ENVIRONMENT`/`FILE`/`FILE_*`/`PROTOCOL` e anexo `key` vindos da 0.1.x têm de ser renomeados no app: até lá o `ward run` dessa entrada só dá erro genérico, e o motivo fica no log do daemon) (achado da Fase 53: `docs/escopo.md` linha 79 e o glossário com as variáveis novas) (achado da Fase 49: a migração não guarda a v4 atual no backup antes de gravar e a rotação tira as v4 depois de 30 gravações; `docs/instalacao.md` manda copiar o cofre antes de atualizar, para a volta de DT7) Documentação: `docs/escopo.md` (nomes novos: comandos, variáveis,
+- [ ] Fase 59 — (achado da Fase 55: `docs/migracao.md` com `dev/tests/migration-guide.py`, `docs/instalacao.md`, `docs/escopo.md`, `README.md`, `.claude/agents/planner.md` e `user-testing-validator.md` citam `lista`/`travar`/`destravar`; o texto do nível bloqueado no app virou "ward list" e `docs/mission/design-nodes.md` (linha 854) e o `Ward.figcraft` acompanham) (achado da Fase 54b: `docs/instalacao.md` avisa que, depois de atualizar, extras `ENTRY`/`GROUP`/`ENVIRONMENT`/`FILE`/`FILE_*`/`PROTOCOL` e anexo `key` vindos da 0.1.x têm de ser renomeados no app: até lá o `ward run` dessa entrada só dá erro genérico, e o motivo fica no log do daemon) (achado da Fase 53: `docs/escopo.md` linha 79 e o glossário com as variáveis novas) (achado da Fase 49: a migração não guarda a v4 atual no backup antes de gravar e a rotação tira as v4 depois de 30 gravações; `docs/instalacao.md` manda copiar o cofre antes de atualizar, para a volta de DT7) Documentação: `docs/escopo.md` (nomes novos: comandos, variáveis,
   tipos, caminhos; o histórico das decisões fica), `docs/instalacao.md` (atualização
   0.1.x → 0.2.0, volta pelo backup v4, DT7), `docs/migracao.md` (comandos novos;
   `make test-migration-guide` com as expectativas novas), caminhos de arquivo em
@@ -391,7 +391,7 @@ limpeza de `target/` velho. Rajadas de processos com teto (`systemd-run --user
 -p TasksMax=…`). No fim de cada fase: serviços de teste parados e worktrees limpos.
 Depois das Fases 61–66 (e das correções), o orchestrator chama os três validadores.
 
-- [ ] Fase 60 — (achado da Fase 52: o V4.18 do contrato lista `level` nas chaves do `ward list --json`, mas D50 tira o nível da lista do agente; as Fases 51–52 seguem D50; o contrato precisa tirar `level` do V4.18 antes da validação) Gate e versão: `english-check` (com o autoteste) dentro do `make check`;
+- [ ] Fase 60 — (achado da Fase 55: `ward --version` ainda diz 0.1.4; o `wardd-test-client` mantém os argumentos `estado|lista|destravar`, chamados por scripts de contêiner, `units.sh` e `deb.sh` — traduzir com todos os chamadores) (achado da Fase 52: o V4.18 do contrato lista `level` nas chaves do `ward list --json`, mas D50 tira o nível da lista do agente; as Fases 51–52 seguem D50; o contrato precisa tirar `level` do V4.18 antes da validação) Gate e versão: `english-check` (com o autoteste) dentro do `make check`;
   achados restantes no repositório inteiro corrigidos ou em `allow.txt` com motivo;
   versão 0.2.0 (DT19); comparação dos literais com `strings-0.1.4.txt` e lista da
   diferença no handoff; procura dos nomes antigos (V6.2). Compilação: `make compile`. —
