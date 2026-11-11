@@ -244,7 +244,7 @@ Trilha S (fases independentes entre si):
   `rust-toolchain.toml`, `Cargo.toml` raiz. Textos do Makefile/`origins.py` que o
   `attacks-foundation.sh` procura mudam junto com o `grep` (achado da Fase 41). — V3.1
 
-- [ ] Fase 47a — Correção (achado da Fase 47): a varredura do V1.5 em
+- [x] Fase 47a — Correção (achado da Fase 47): a varredura do V1.5 em
   `dev/tests/attacks-foundation.sh` exclui `dev/fixtures/legacy/` (linha de base da Fase 3:
   caminho do cofre real, variável do agente SSH e pasta do ssh na ajuda 0.1.4), com
   controle de que a varredura ainda acusa o mesmo padrão plantado fora dessa pasta.
