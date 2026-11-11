@@ -21,7 +21,9 @@
 //!   [`Resources`] is verified too (TOTP code with digits only, path without null, port
 //!   other than 0).
 //! - The secure note has no delivery: the refusal comes before any call to
-//!   [`Resources`], so no file is created.
+//!   [`Resources`], so no file is created. The same for an entry with an extra or
+//!   attachment named like a variable of the type (m2 Phase 54b: possible only in an
+//!   entry read from a vault of 0.1.x).
 //!
 //! If the build fails after [`Resources::file`] created files, the caller deletes what it
 //! created (`ward run` already cleans up on every exit, S2).
@@ -30,7 +32,9 @@ use core::fmt;
 
 use zeroize::{ZeroizeOnDrop, Zeroizing};
 
-use crate::entry::{Auth, Data, Database, Engine, Entry, ExtraValue, Secret, variable_name};
+use crate::entry::{
+    Auth, Data, Database, Engine, Entry, ExtraValue, Secret, has_reserved_name, variable_name,
+};
 
 #[cfg(test)]
 mod tests;
@@ -66,6 +70,12 @@ pub enum DeliveryError {
     InvalidResource(&'static str),
     /// Defense in depth: a value or name that the validation should have stopped.
     Invalid(&'static str),
+    /// An extra or attachment named like a variable that the type delivers (or may
+    /// deliver): the delivery is refused whole, before any call to [`Resources`], so no
+    /// extra or attachment replaces or impersonates a `WARD_*` variable. Validation
+    /// refuses the name when the entry is saved; an entry read from a vault of 0.1.x may
+    /// still carry one that only 0.2.0 reserves (m2 Phase 54b).
+    ReservedName,
 }
 
 impl fmt::Display for DeliveryError {
@@ -75,6 +85,9 @@ impl fmt::Display for DeliveryError {
             DeliveryError::Resource(ResourceError(m)) => write!(f, "entrega falhou: {m}"),
             DeliveryError::InvalidResource(m) => write!(f, "entrega falhou: {m}"),
             DeliveryError::Invalid(m) => write!(f, "entrada sem entrega válida: {m}"),
+            DeliveryError::ReservedName => {
+                f.write_str("entrada sem entrega válida: campo extra ou anexo com nome reservado")
+            }
         }
     }
 }
@@ -159,6 +172,9 @@ impl fmt::Debug for Delivery {
 pub fn build(entry: &Entry, resources: &mut dyn Resources) -> Result<Delivery, DeliveryError> {
     if matches!(entry.data(), Data::SecureNote(_)) {
         return Err(DeliveryError::TypeWithoutDelivery);
+    }
+    if has_reserved_name(entry) {
+        return Err(DeliveryError::ReservedName);
     }
     let mut m = Builder::default();
     m.text("WARD_ENTRY", entry.name());

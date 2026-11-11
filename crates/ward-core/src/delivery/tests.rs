@@ -1263,3 +1263,118 @@ fn v2_48_accepted_variable_comes_out_with_the_token() {
         no_secret(&format!("{delivery:?}"), var);
     }
 }
+
+/// m2 Phase 54b (S1): an entry read from a vault of 0.1.x with an extra or attachment
+/// named like a variable that only 0.2.0 delivers. `ward run` refuses the whole delivery
+/// before any resource (no temp file of the key or of an attachment, no TOTP, no
+/// tunnel): no extra replaces `WARD_ENTRY`/`WARD_GROUP`/`WARD_ENVIRONMENT`/
+/// `WARD_PROTOCOL`/`WARD_FILE_*` and no attachment replaces or impersonates
+/// `WARD_FILE_KEY`, even when the type does not deliver that variable (server with
+/// password). The error carries no value.
+#[test]
+fn attack_m2_54b_stored_reserved_name_does_not_replace_a_variable() {
+    let key_server = || DataDraft::Server {
+        host: t("127.0.0.1"),
+        port: t("2223"),
+        username: t("deploy"),
+        password: None,
+        private_key: Some(Secret::from_text(fake_key())),
+        passphrase: s("falso-passphrase-01"),
+        jump: String::new(),
+    };
+    let password_server = || DataDraft::Server {
+        host: t("127.0.0.1"),
+        port: t("2222"),
+        username: t("deploy"),
+        password: s("falso-SSH-senha-01"),
+        private_key: None,
+        passphrase: None,
+        jump: String::new(),
+    };
+    let sftp_data = || DataDraft::FtpSftp {
+        protocol: t("sftp"),
+        host: t("127.0.0.1"),
+        port: t("2222"),
+        username: t("sftpuser"),
+        password: s("falso-SFTP-01"),
+        private_key: None,
+        passphrase: None,
+    };
+    let login_data = || DataDraft::Login {
+        url: t("http://localhost:8081/wp-login.php"),
+        username: t("wp_admin"),
+        password: s("falso-WP-senha-01"),
+        totp_seed: s("JBSWY3DPEHPK3PXP"),
+    };
+    let pg = || {
+        database(
+            "postgres",
+            "127.0.0.1",
+            "55432",
+            "app_teste",
+            "app",
+            "falso-PG:s3nha/01@#",
+        )
+    };
+
+    let mut drafts: Vec<Draft> = Vec::new();
+    for name in [
+        "ENTRY",
+        "group",
+        "Environment",
+        "FILE",
+        "File-Key",
+        "file_x",
+    ] {
+        let mut r = draft("x", "acme", "dev", login_data());
+        r.extras = vec![extra(name, "valor-de-teste", false)];
+        drafts.push(r);
+        let mut r = draft("x", "acme", "dev", pg());
+        r.extras = vec![extra(name, "valor-de-teste", true)];
+        drafts.push(r);
+    }
+    let mut r = draft("x", "beta", "dev", sftp_data());
+    r.extras = vec![extra("protocol", "ftp", false)];
+    drafts.push(r);
+    for data in [key_server(), password_server(), sftp_data()] {
+        let mut r = draft("x", "acme", "prod", data);
+        r.attachments = vec![attachment("key", b"conteudo-de-teste")];
+        drafts.push(r);
+    }
+    let mut r = draft("gama-generico", "gama", "stage", DataDraft::Generic);
+    r.extras = vec![extra("FILE_APP_ENV", "/tmp/outro", false)];
+    r.attachments = vec![attachment("app.env", b"FALSO_ENV=falso-anexo-01\n")];
+    drafts.push(r);
+
+    for r in drafts {
+        let e = r
+            .validate_stored()
+            .unwrap_or_else(|errors| panic!("leitura recusou: {errors}"));
+        let mut fakes = Fakes::default();
+        let error = match build(&e, &mut fakes) {
+            Ok(g) => panic!("{e}: entregue {:?}", g.names().collect::<Vec<_>>()),
+            Err(error) => error,
+        };
+        assert_eq!(error, DeliveryError::ReservedName, "{e}");
+        assert_eq!(fakes.calls(), 0, "{e}: recurso pedido");
+        no_secret(&format!("{error} {error:?}"), "erro");
+        assert!(!format!("{error}").contains("valor-de-teste"));
+        // The mask budget of the save refuses it; the one of the read counts the entry
+        // alone (`ward ssh`, the tunnel and the jump use only the entry).
+        assert_eq!(
+            crate::mask::entry_cost(&e),
+            Err(crate::mask::MaskError::NoDelivery)
+        );
+        assert!(crate::mask::stored_entry_cost(&e).is_ok());
+    }
+}
+
+/// m2 Phase 54b: every entry that the save accepts has no reserved name, so the new
+/// refusal of the delivery never touches them.
+#[test]
+fn m2_54b_saved_entries_have_no_reserved_name() {
+    for e in all_with_delivery() {
+        assert!(!crate::entry::has_reserved_name(&e), "{e}");
+        assert!(build(&e, &mut Fakes::default()).is_ok(), "{e}");
+    }
+}

@@ -2228,3 +2228,103 @@ fn attack_local_origin_in_any_scheme() {
         assert_eq!(o(outside), None, "{outside}");
     }
 }
+
+/// m2 Phase 54b: the extra and attachment names that only 0.2.0 reserves (free in 0.1.x)
+/// are accepted when the entry is read from the vault body (`validate_stored`), and still
+/// refused when the entry is saved without renaming them (`validate`, the path of the app,
+/// of the CLI and of the protocol). The names that 0.1.x already reserved, and repeated
+/// names, are refused on both paths.
+#[test]
+fn m2_54b_reserved_since_v5_accepted_on_read_refused_on_save() {
+    const RESERVED: &str = "vira uma variável que o tipo já entrega";
+    let with_extras = |data: MakeData, names: &[&str]| {
+        let mut r = draft("x", "acme", "dev", data());
+        r.extras = names.iter().map(|n| extra(n, "v", false)).collect();
+        r
+    };
+    let with_attachments = |data: MakeData, names: &[&str]| {
+        let mut r = draft("x", "acme", "dev", data());
+        r.attachments = names.iter().map(|n| attachment(n, b"x")).collect();
+        r
+    };
+
+    let lenient_extras: Vec<(MakeData, &str)> = vec![
+        (login, "ENTRY"),
+        (login, "group"),
+        (database, "Environment"),
+        (server_key, "file"),
+        (api, "FILE_X"),
+        (aws, "file-key"),
+        (smtp, "File App Env"),
+        (sftp, "PROTOCOL"),
+        (sftp, "protocol"),
+        (note, "entry"),
+    ];
+    for (data, name) in lenient_extras {
+        let stored = with_extras(data, &[name]).validate_stored();
+        assert!(stored.is_ok(), "{name}: recusado na leitura");
+        assert!(
+            errors(with_extras(data, &[name])).has_reason("campos extras", RESERVED),
+            "{name}"
+        );
+    }
+    let generic_with = || {
+        let mut r = generic();
+        r.extras.push(extra("Group", "v", true));
+        r.extras.push(extra("file_app_env", "v", false));
+        r
+    };
+    assert!(generic_with().validate_stored().is_ok());
+    assert!(errors(generic_with()).has_reason("campos extras", RESERVED));
+
+    for (data, name) in [
+        (server_password as MakeData, "key"),
+        (server_key, "KEY"),
+        (sftp, "Key"),
+    ] {
+        assert!(
+            with_attachments(data, &[name]).validate_stored().is_ok(),
+            "{name}"
+        );
+        assert!(
+            errors(with_attachments(data, &[name])).has_reason("anexos", RESERVED),
+            "{name}"
+        );
+    }
+
+    // Already reserved in 0.1.x: refused on read too.
+    let strict: Vec<(MakeData, &str)> = vec![
+        (login, "pass"),
+        (login, "TOTP"),
+        (login, "url"),
+        (server_password, "host"),
+        (server_key, "passphrase"),
+        (sftp, "user"),
+        (api, "token"),
+    ];
+    for (data, name) in strict {
+        assert!(
+            with_extras(data, &[name]).validate_stored().is_err(),
+            "{name}"
+        );
+        assert!(
+            errors(with_extras(data, &[name])).has_reason("campos extras", RESERVED),
+            "{name}"
+        );
+    }
+    // Repeated names: refused on read too.
+    assert!(
+        with_extras(login, &["ENTRY", "entry"])
+            .validate_stored()
+            .is_err()
+    );
+    assert!(
+        with_attachments(server_key, &["key", "KEY"])
+            .validate_stored()
+            .is_err()
+    );
+    // The other rules of the extra are the same on read.
+    let mut r = generic();
+    r.extras.push(extra("ENTRY", "", false));
+    assert!(r.validate_stored().is_err());
+}

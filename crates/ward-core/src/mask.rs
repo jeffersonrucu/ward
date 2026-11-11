@@ -296,9 +296,26 @@ impl Resources for BudgetResources {
 /// Since each entry fits in half of [`PATTERN_LIMIT`], the two of a combined use (D19)
 /// fit together: no entry accepted by the vault is left without `ward run`.
 pub fn entry_cost(entry: &Entry) -> Result<usize, MaskError> {
+    cost(entry, false)
+}
+
+/// [`entry_cost`] of an entry read from the vault body (m2 Phase 54b). The only
+/// difference: an entry with an extra or attachment of 0.1.x named like a variable that
+/// only 0.2.0 delivers is accepted with the cost of the entry alone. `ward run` refuses
+/// it ([`DeliveryError::ReservedName`]), so no
+/// mask with its delivery is ever built; the masks of `ward ssh`, of the tunnel and of
+/// the jump take the entry alone, and that cost stays under [`MASK_BUDGET`] too.
+pub(crate) fn stored_entry_cost(entry: &Entry) -> Result<usize, MaskError> {
+    cost(entry, true)
+}
+
+fn cost(entry: &Entry, stored: bool) -> Result<usize, MaskError> {
     let delivery = match delivery::build(entry, &mut BudgetResources) {
         Ok(g) => g,
         Err(DeliveryError::TypeWithoutDelivery) => return Ok(0),
+        Err(DeliveryError::ReservedName) if stored => {
+            return sum_patterns(&MaskBuilder::new().entry(entry), MASK_BUDGET);
+        }
         Err(_) => return Err(MaskError::NoDelivery),
     };
     let c = MaskBuilder::new().entry(entry).delivery(&delivery);
