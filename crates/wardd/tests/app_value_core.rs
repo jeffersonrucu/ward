@@ -4,11 +4,11 @@
 //! (V3.39); the agent's list stays without level or summary (V3.40). Only fake values,
 //! in a test vault of its own.
 
-mod comum;
+mod common;
 
 use std::time::Duration;
 
-use comum::{Dir, PIN, SEGREDOS, b64, erro, ok, pedir};
+use common::{Dir, PIN, SECRETS, b64, error, ok, request};
 use ward_core::protocolo::{self, Alvo, ErroResposta, Papel, Pedido, Resposta};
 use ward_core::totp::Totp;
 use wardd::nucleo::{Daemon, Relogio};
@@ -36,7 +36,7 @@ impl Relogio for FixedClock {
 fn with_totp(name: &str) -> String {
     format!(
         r#"{{"entrada":{{"nome":"{name}","grupo":"clientex","ambiente":"dev","tipo":"login","campos":{{"url":"https://clientex.invalid/login","usuario":"admin","senha":"{}","totp_semente":"{}"}},"extras":[{{"nome":"CHAVE","segredo":true,"valor":"{}"}},{{"nome":"REGIAO","segredo":false,"valor":"{}"}}]}}}}"#,
-        b64(SEGREDOS[0].as_bytes()),
+        b64(SECRETS[0].as_bytes()),
         b64(SEED.as_bytes()),
         b64(EXTRA.as_bytes()),
         b64(b"r-01"),
@@ -46,29 +46,29 @@ fn with_totp(name: &str) -> String {
 /// The common test vault in a daemon with the given clock, plus
 /// `t-totp` (login with seed and extras), blocked.
 fn vault(dir: &Dir, unix: Option<u64>) -> Daemon {
-    let d = Daemon::novo(dir.caminhos(), Box::new(FixedClock(unix)));
-    let create = pedir(
+    let d = Daemon::novo(dir.paths(), Box::new(FixedClock(unix)));
+    let create = request(
         &d,
         Papel::App,
         "criar_cofre",
         &format!(
             r#"{{"senha":"{}","pin":"{}"}}"#,
-            b64(comum::SENHA.as_bytes()),
+            b64(common::PASSWORD.as_bytes()),
             b64(PIN.as_bytes())
         ),
     );
     assert!(ok(&create), "{create:?}");
     for q in [
-        comum::login("t-aprov", SEGREDOS[0]),
-        comum::login("t-bloq", SEGREDOS[3]),
-        comum::servidor("s1"),
+        common::login("t-aprov", SECRETS[0]),
+        common::login("t-bloq", SECRETS[3]),
+        common::server("s1"),
         with_totp("t-totp"),
     ] {
-        let r = pedir(&d, Papel::App, "salvar_entrada", &q);
+        let r = request(&d, Papel::App, "salvar_entrada", &q);
         assert!(ok(&r), "{r:?}");
     }
     for n in ["t-bloq", "t-totp"] {
-        assert!(ok(&comum::mudar_nivel(&d, Papel::App, n, "bloqueado", PIN)));
+        assert!(ok(&common::set_level(&d, Papel::App, n, "bloqueado", PIN)));
     }
     d
 }
@@ -90,48 +90,48 @@ fn value_request(entry: &str, target: &str) -> String {
 
 #[test]
 fn v3_39_app_reveals_and_copies_without_pin_or_approval_even_the_blocked_one() {
-    let dir = Dir::novo("valor-app");
+    let dir = Dir::new("valor-app");
     let d = vault(&dir, Some(59));
     for op in ["revelar", "copiar"] {
         // Approval and blocked: the app gets the value, without a PIN in the request
         // (the protocol does not even accept one) and without a window (no approval
         // engine turned on).
-        let r = pedir(
+        let r = request(
             &d,
             Papel::App,
             op,
             &value_request("t-aprov", &field_target("senha")),
         );
-        assert_eq!(value(&r), SEGREDOS[0].as_bytes(), "{op}");
-        let r = pedir(
+        assert_eq!(value(&r), SECRETS[0].as_bytes(), "{op}");
+        let r = request(
             &d,
             Papel::App,
             op,
             &value_request("t-bloq", &field_target("senha")),
         );
-        assert_eq!(value(&r), SEGREDOS[3].as_bytes(), "{op}");
+        assert_eq!(value(&r), SECRETS[3].as_bytes(), "{op}");
         // The TOTP seed and the secret extra are secrets of the entry too.
-        let r = pedir(
+        let r = request(
             &d,
             Papel::App,
             op,
             &value_request("t-totp", &field_target("totp_semente")),
         );
         assert_eq!(value(&r), SEED.as_bytes());
-        let r = pedir(
+        let r = request(
             &d,
             Papel::App,
             op,
             &value_request("t-totp", r#""extra":"CHAVE""#),
         );
         assert_eq!(value(&r), EXTRA.as_bytes());
-        let r = pedir(
+        let r = request(
             &d,
             Papel::App,
             op,
             &value_request("s1", &field_target("senha")),
         );
-        assert_eq!(value(&r), SEGREDOS[1].as_bytes());
+        assert_eq!(value(&r), SECRETS[1].as_bytes());
 
         // Field the type does not have, plain extra, extra that does not exist: "field
         // does not exist"; entry that does not exist: "entry does not exist".
@@ -143,24 +143,24 @@ fn v3_39_app_reveals_and_copies_without_pin_or_approval_even_the_blocked_one() {
             ("t-totp", r#""extra":"REGIAO""#.to_owned()),
             ("t-totp", r#""extra":"NAO_EXISTE""#.to_owned()),
         ] {
-            let r = pedir(&d, Papel::App, op, &value_request(entry, &target));
+            let r = request(&d, Papel::App, op, &value_request(entry, &target));
             assert_eq!(
-                erro(&r),
+                error(&r),
                 Some(ErroResposta::CampoInexistente),
                 "{op} {entry} {target}"
             );
         }
-        let r = pedir(
+        let r = request(
             &d,
             Papel::App,
             op,
             &value_request("nao-existe", &field_target("senha")),
         );
-        assert_eq!(erro(&r), Some(ErroResposta::EntradaInexistente));
+        assert_eq!(error(&r), Some(ErroResposta::EntradaInexistente));
     }
     // The answer encoded for the app carries the value in base64; for the agent, it
     // does not go out.
-    let r = pedir(
+    let r = request(
         &d,
         Papel::App,
         "revelar",
@@ -173,27 +173,27 @@ fn v3_39_app_reveals_and_copies_without_pin_or_approval_even_the_blocked_one() {
     // Locked: "locked", without a value.
     d.travar();
     for op in ["revelar", "copiar"] {
-        let r = pedir(
+        let r = request(
             &d,
             Papel::App,
             op,
             &value_request("t-aprov", &field_target("senha")),
         );
-        assert_eq!(erro(&r), Some(ErroResposta::Travado), "{op}");
+        assert_eq!(error(&r), Some(ErroResposta::Travado), "{op}");
     }
-    let r = pedir(&d, Papel::App, "totp", r#"{"entrada":"t-totp"}"#);
-    assert_eq!(erro(&r), Some(ErroResposta::Travado));
+    let r = request(&d, Papel::App, "totp", r#"{"entrada":"t-totp"}"#);
+    assert_eq!(error(&r), Some(ErroResposta::Travado));
 }
 
 #[test]
 fn v3_39_app_totp_by_the_daemon_clock() {
-    let dir = Dir::novo("totp-app");
+    let dir = Dir::new("totp-app");
     // RFC 6238: at t = 59 s the period is 1, with 1 s left.
     let d = vault(&dir, Some(59));
     let expected = Totp::from_seed(&ward_core::entry::Secret::from_text(SEED.into()))
         .unwrap()
         .code_at(59);
-    match pedir(&d, Papel::App, "totp", r#"{"entrada":"t-totp"}"#) {
+    match request(&d, Papel::App, "totp", r#"{"entrada":"t-totp"}"#) {
         Resposta::CodigoTotp { codigo, restante } => {
             assert_eq!(codigo.as_str(), expected.code());
             assert_eq!(codigo.len(), 6);
@@ -202,21 +202,21 @@ fn v3_39_app_totp_by_the_daemon_clock() {
         other => panic!("esperava código: {:?}", other.tipo()),
     }
     // No seed: "field does not exist"; no entry: "entry does not exist".
-    let r = pedir(&d, Papel::App, "totp", r#"{"entrada":"t-aprov"}"#);
-    assert_eq!(erro(&r), Some(ErroResposta::CampoInexistente));
-    let r = pedir(&d, Papel::App, "totp", r#"{"entrada":"nao-existe"}"#);
-    assert_eq!(erro(&r), Some(ErroResposta::EntradaInexistente));
+    let r = request(&d, Papel::App, "totp", r#"{"entrada":"t-aprov"}"#);
+    assert_eq!(error(&r), Some(ErroResposta::CampoInexistente));
+    let r = request(&d, Papel::App, "totp", r#"{"entrada":"nao-existe"}"#);
+    assert_eq!(error(&r), Some(ErroResposta::EntradaInexistente));
 
     // Unreadable wall clock: error, never a code (fails closed).
-    let dir2 = Dir::novo("totp-sem-relogio");
+    let dir2 = Dir::new("totp-sem-relogio");
     let d2 = vault(&dir2, None);
-    let r = pedir(&d2, Papel::App, "totp", r#"{"entrada":"t-totp"}"#);
-    assert_eq!(erro(&r), Some(ErroResposta::Interno));
+    let r = request(&d2, Papel::App, "totp", r#"{"entrada":"t-totp"}"#);
+    assert_eq!(error(&r), Some(ErroResposta::Interno));
 }
 
 #[test]
 fn attack_v3_39_agent_and_extension_neither_reveal_nor_copy_nor_take_totp() {
-    let dir = Dir::novo("valor-agente");
+    let dir = Dir::new("valor-agente");
     let d = vault(&dir, Some(59));
     let requests = [
         ("revelar", value_request("t-aprov", &field_target("senha"))),
@@ -237,17 +237,17 @@ fn attack_v3_39_agent_and_extension_neither_reveal_nor_copy_nor_take_totp() {
     for role in [Papel::Agente, Papel::Extensao] {
         for (op, data) in &requests {
             // Through the protocol (as the socket reads it).
-            let r = pedir(&d, role, op, data);
+            let r = request(&d, role, op, data);
             assert_eq!(
-                erro(&r),
+                error(&r),
                 Some(ErroResposta::NaoAutorizado),
                 "{} {op}",
                 role.nome()
             );
-            let q = comum::codificado(role, &r);
-            for s in SEGREDOS.iter().chain([&SEED, &EXTRA]) {
-                assert!(!comum::contem(&q, s.as_bytes()));
-                assert!(!comum::contem(&q, b64(s.as_bytes()).as_bytes()));
+            let q = common::encoded(role, &r);
+            for s in SECRETS.iter().chain([&SEED, &EXTRA]) {
+                assert!(!common::contains(&q, s.as_bytes()));
+                assert!(!common::contains(&q, b64(s.as_bytes()).as_bytes()));
             }
         }
         // Request already decoded, handed straight to the core (second layer).
@@ -265,25 +265,25 @@ fn attack_v3_39_agent_and_extension_neither_reveal_nor_copy_nor_take_totp() {
             },
         ] {
             let r = d.atender(role, p);
-            assert_eq!(erro(&r), Some(ErroResposta::NaoAutorizado));
+            assert_eq!(error(&r), Some(ErroResposta::NaoAutorizado));
         }
     }
     // The vault stays unlocked and the app still gets values (nothing locked or used
     // up a PIN).
-    let r = pedir(
+    let r = request(
         &d,
         Papel::App,
         "revelar",
         &value_request("t-aprov", &field_target("senha")),
     );
-    assert_eq!(value(&r), SEGREDOS[0].as_bytes());
+    assert_eq!(value(&r), SECRETS[0].as_bytes());
 }
 
 #[test]
 fn v3_40_app_list_with_summary_and_agent_list_without_level_or_summary() {
-    let dir = Dir::novo("lista-resumo");
+    let dir = Dir::new("lista-resumo");
     let d = vault(&dir, Some(59));
-    let Resposta::Lista(items) = pedir(&d, Papel::App, "lista", "{}") else {
+    let Resposta::Lista(items) = request(&d, Papel::App, "lista", "{}") else {
         panic!("não é lista")
     };
     assert_eq!(items.len(), 4);
@@ -298,14 +298,17 @@ fn v3_40_app_list_with_summary_and_agent_list_without_level_or_summary() {
         vec!["senha".to_owned(), "totp_semente".to_owned()]
     );
     assert_eq!((r.extras, r.anexos), (2, 0));
-    let q = comum::codificado(Papel::App, &Resposta::Lista(items));
-    for s in SEGREDOS.iter().chain([&SEED, &EXTRA]) {
-        assert!(!comum::contem(&q, s.as_bytes()), "segredo na lista do app");
-        assert!(!comum::contem(&q, b64(s.as_bytes()).as_bytes()));
+    let q = common::encoded(Papel::App, &Resposta::Lista(items));
+    for s in SECRETS.iter().chain([&SEED, &EXTRA]) {
+        assert!(
+            !common::contains(&q, s.as_bytes()),
+            "segredo na lista do app"
+        );
+        assert!(!common::contains(&q, b64(s.as_bytes()).as_bytes()));
     }
     // Agent: the non-blocked ones, without level, summary or user.
-    let r = pedir(&d, Papel::Agente, "lista", "{}");
-    let q = comum::codificado(Papel::Agente, &r);
+    let r = request(&d, Papel::Agente, "lista", "{}");
+    let q = common::encoded(Papel::Agente, &r);
     let Resposta::Lista(items) = r else {
         panic!("não é lista")
     };
@@ -317,6 +320,6 @@ fn v3_40_app_list_with_summary_and_agent_list_without_level_or_summary() {
             .all(|i| i.nivel.is_none() && i.resumo.is_none())
     );
     for needle in [&b"\"resumo\""[..], b"\"nivel\"", b"\"usuario\"", b"deploy"] {
-        assert!(!comum::contem(&q, needle));
+        assert!(!common::contains(&q, needle));
     }
 }

@@ -5,14 +5,14 @@
 //! app e a resposta volta por `Daemon::atender` com o papel app, o mesmo caminho do
 //! socket (o pedido passa pela leitura do protocolo). O relógio do motor é manual.
 
-mod comum;
+mod common;
 
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use comum::*;
+use common::*;
 use ward_core::entry::{AccessLevel, Environment};
 use ward_core::protocolo::{
     ErroResposta, Operacao, Papel, PedidoDeAprovacao, PedidoDeDestrave, Resposta,
@@ -22,7 +22,7 @@ use wardd::aprovacao::{
     AbridorApp, Assinante, Cliente, ErroAbrirApp, Motor, RelogioMotor, SemCliente,
 };
 use wardd::nucleo::Daemon;
-use wardd::servidor::papel_da_classe;
+use wardd::server::role_from_class;
 use wardd::uso::Autorizacao;
 
 const PRAZO: Duration = Duration::from_secs(5);
@@ -108,8 +108,8 @@ struct Cena {
 }
 
 fn cena_com(rotulo: &str, abrir: Result<(), ErroAbrirApp>) -> Cena {
-    let dir = Dir::novo(rotulo);
-    let (d, _) = cofre_de_teste(&dir);
+    let dir = Dir::new(rotulo);
+    let (d, _) = test_vault(&dir);
     let relogio = RelogioManual::default();
     let abridor = AbridorFalso::novo(abrir);
     let d = d.com_motor(Motor::novo(
@@ -149,7 +149,7 @@ fn executar_json_em(nome: &str, argv: &[&[u8]], cwd: &[u8]) -> String {
 }
 
 fn usar(d: &Daemon, cliente: &dyn Cliente, nome: &str) -> Result<Autorizacao, ErroResposta> {
-    let p = ped(Papel::Agente, "executar", &executar_json(nome, &[b"true"])).unwrap();
+    let p = req(Papel::Agente, "executar", &executar_json(nome, &[b"true"])).unwrap();
     d.autorizar_uso(cliente, &p)
 }
 
@@ -164,7 +164,7 @@ fn responder(d: &Daemon, papel: Papel, id: u64, decisao: &str, pin: Option<&str>
     let pin = pin
         .map(|p| format!(r#","pin":"{}""#, b64(p.as_bytes())))
         .unwrap_or_default();
-    pedir(
+    request(
         d,
         papel,
         "responder_aprovacao",
@@ -173,7 +173,7 @@ fn responder(d: &Daemon, papel: Papel, id: u64, decisao: &str, pin: Option<&str>
 }
 
 fn nivel(d: &Daemon, nome: &str) -> Option<AccessLevel> {
-    match pedir(d, Papel::App, "lista", "{}") {
+    match request(d, Papel::App, "lista", "{}") {
         Resposta::Lista(l) => l.into_iter().find(|i| i.nome == nome).and_then(|i| i.nivel),
         r => panic!("{r:?}"),
     }
@@ -225,7 +225,7 @@ fn v3_14_sem_resposta_expira_em_2_min() {
     // Responder depois de expirado não permite nada.
     c.relogio.ir(Duration::ZERO);
     assert_eq!(
-        erro(&responder(&c.d, Papel::App, 1, "uma_vez", Some(PIN))),
+        error(&responder(&c.d, Papel::App, 1, "uma_vez", Some(PIN))),
         Some(ErroResposta::Expirado)
     );
 }
@@ -306,8 +306,8 @@ fn v3_14_uma_hora_ate_59_59_e_travar_encerra() {
         Ok(Autorizacao::SemPerguntar)
     );
     // Travar e destravar: pergunta de novo.
-    assert!(ok(&pedir(&c.d, Papel::Agente, "travar", "{}")));
-    assert!(ok(&destravar(&c.d, SENHA)));
+    assert!(ok(&request(&c.d, Papel::Agente, "travar", "{}")));
+    assert!(ok(&unlock(&c.d, PASSWORD)));
     let r = com_janela(&c, &rx, "t-aprov", |p| {
         assert!(ok(&responder(
             &c.d,
@@ -319,8 +319,8 @@ fn v3_14_uma_hora_ate_59_59_e_travar_encerra() {
     });
     assert_eq!(r, Ok(Autorizacao::Aprovado));
     // Mudar o nível (voltar atrás) também acaba com ela.
-    assert!(ok(&mudar_nivel(&c.d, Papel::App, "t-aprov", "livre", PIN)));
-    assert!(ok(&mudar_nivel(
+    assert!(ok(&set_level(&c.d, Papel::App, "t-aprov", "livre", PIN)));
+    assert!(ok(&set_level(
         &c.d,
         Papel::App,
         "t-aprov",
@@ -342,8 +342,8 @@ fn v3_14_sempre_deixa_livre_no_arquivo() {
         assert!(ok(&responder(&c.d, Papel::App, p.id, "sempre", Some(PIN))));
     });
     assert_eq!(r, Ok(Autorizacao::Aprovado));
-    assert!(ok(&pedir(&c.d, Papel::Agente, "travar", "{}")));
-    assert!(ok(&destravar(&c.d, SENHA)));
+    assert!(ok(&request(&c.d, Papel::Agente, "travar", "{}")));
+    assert!(ok(&unlock(&c.d, PASSWORD)));
     assert_eq!(nivel(&c.d, "t-aprov"), Some(AccessLevel::Free));
     assert_eq!(
         usar(&c.d, &SemCliente, "t-aprov"),
@@ -358,7 +358,7 @@ fn v3_14_sempre_deixa_livre_no_arquivo() {
 fn ataque_49a_restaurar_cancela_pedido_pendente() {
     let c = cena("restaurar-pendente");
     let rx = assinar(&c.d, 1);
-    let versao = match pedir(&c.d, Papel::App, "backups", "{}") {
+    let versao = match request(&c.d, Papel::App, "backups", "{}") {
         Resposta::Backups(l) => l[0].nome.clone(),
         r => panic!("{r:?}"),
     };
@@ -366,26 +366,26 @@ fn ataque_49a_restaurar_cancela_pedido_pendente() {
         let t = s.spawn(|| usar(&c.d, &SemCliente, "t-aprov"));
         let _g = ExpirarSeCair(&c.relogio);
         let p = pedido(&rx);
-        let r = pedir(
+        let r = request(
             &c.d,
             Papel::App,
             "restaurar_backup",
             &format!(
                 r#"{{"versao":"{versao}","senha":"{}","pin":"{}"}}"#,
-                b64(SENHA.as_bytes()),
+                b64(PASSWORD.as_bytes()),
                 b64(PIN.as_bytes())
             ),
         );
         assert!(ok(&r), "{r:?}");
         let resultado = t.join().unwrap();
         let tarde = responder(&c.d, Papel::App, p.id, "sempre", Some(PIN));
-        assert_eq!(erro(&tarde), Some(ErroResposta::Expirado));
+        assert_eq!(error(&tarde), Some(ErroResposta::Expirado));
         resultado
     });
     assert_eq!(r, Err(ErroResposta::Negado));
     assert_eq!(nivel(&c.d, "t-aprov"), Some(AccessLevel::Approval));
-    assert!(ok(&pedir(&c.d, Papel::Agente, "travar", "{}")));
-    assert!(ok(&destravar(&c.d, SENHA)));
+    assert!(ok(&request(&c.d, Papel::Agente, "travar", "{}")));
+    assert!(ok(&unlock(&c.d, PASSWORD)));
     assert_eq!(nivel(&c.d, "t-aprov"), Some(AccessLevel::Approval));
 }
 
@@ -399,12 +399,12 @@ fn ataque_permitir_sem_pin_valido() {
         for decisao in ["uma_vez", "uma_hora", "sempre"] {
             // Sem PIN: o protocolo recusa o pedido inteiro.
             assert_eq!(
-                erro(&responder(&c.d, Papel::App, p.id, decisao, None)),
+                error(&responder(&c.d, Papel::App, p.id, decisao, None)),
                 Some(ErroResposta::PedidoInvalido)
             );
             // PIN fora do formato.
             assert_eq!(
-                erro(&responder(&c.d, Papel::App, p.id, decisao, Some("12"))),
+                error(&responder(&c.d, Papel::App, p.id, decisao, Some("12"))),
                 Some(ErroResposta::PedidoInvalido)
             );
         }
@@ -413,13 +413,7 @@ fn ataque_permitir_sem_pin_valido() {
             .enumerate()
         {
             assert_eq!(
-                erro(&responder(
-                    &c.d,
-                    Papel::App,
-                    p.id,
-                    decisao,
-                    Some(PIN_ERRADO)
-                )),
+                error(&responder(&c.d, Papel::App, p.id, decisao, Some(WRONG_PIN))),
                 Some(ErroResposta::PinIncorreto),
                 "{i}"
             );
@@ -429,19 +423,19 @@ fn ataque_permitir_sem_pin_valido() {
             );
         }
         assert_eq!(
-            erro(&responder(
+            error(&responder(
                 &c.d,
                 Papel::App,
                 p.id,
                 "sempre",
-                Some(PIN_ERRADO)
+                Some(WRONG_PIN)
             )),
             Some(ErroResposta::PinIncorreto)
         );
     });
     assert_eq!(r, Err(ErroResposta::Negado));
     assert!(c.d.travado());
-    assert!(ok(&destravar(&c.d, SENHA)));
+    assert!(ok(&unlock(&c.d, PASSWORD)));
     assert_eq!(nivel(&c.d, "t-aprov"), Some(AccessLevel::Approval));
 }
 
@@ -455,7 +449,7 @@ fn ataque_agente_responde_a_aprovacao() {
         for papel in [Papel::Agente, Papel::Extensao] {
             for decisao in ["uma_vez", "uma_hora", "sempre"] {
                 assert_eq!(
-                    erro(&responder(&c.d, papel, p.id, decisao, Some(PIN))),
+                    error(&responder(&c.d, papel, p.id, decisao, Some(PIN))),
                     Some(ErroResposta::NaoAutorizado)
                 );
             }
@@ -467,7 +461,7 @@ fn ataque_agente_responde_a_aprovacao() {
                 entrada_confirmada: false,
             };
             assert_eq!(
-                erro(&c.d.atender(papel, q)),
+                error(&c.d.atender(papel, q)),
                 Some(ErroResposta::NaoAutorizado)
             );
         }
@@ -542,7 +536,7 @@ fn conferir_v3_15(rel: &str, texto: &str, ganchos: &mut Vec<&'static str>) {
         let resto = &texto[i..];
         if resto.starts_with("cfg(feature = \"test-mode\")") {
             assert!(
-                !["aprovacao.rs", "uso.rs", "servidor.rs", "nucleo.rs"].contains(&rel),
+                !["aprovacao.rs", "uso.rs", "server.rs", "nucleo.rs"].contains(&rel),
                 "{rel}: test-mode no caminho da aprovação"
             );
             continue;
@@ -595,7 +589,7 @@ fn ataque_v3_15_gancho_sem_feature_ou_fora_do_lugar() {
             "nucleo.rs",
             "#[cfg(feature = \"test-hooks\")]\npub fn aprovar_tudo() {}\n",
         ),
-        ("servidor.rs", certo),
+        ("server.rs", certo),
         ("nucleo.rs", "#[cfg(feature = \"aprovador\")]\nfn x() {}\n"),
         ("sub/config.rs", "let _ = std::env::var(\"X\");\n"),
         ("uso.rs", "#[cfg(feature = \"test-mode\")]\nfn x() {}\n"),
@@ -618,10 +612,10 @@ fn ataque_v3_15_gancho_sem_feature_ou_fora_do_lugar() {
 fn v3_16_prod_tem_os_mesmos_niveis_e_botoes() {
     let c = cena("prod");
     for nome in ["p-livre", "p-aprov"] {
-        let q = login(nome, SEGREDOS[0]).replace(r#""ambiente":"dev""#, r#""ambiente":"prod""#);
-        assert!(ok(&pedir(&c.d, Papel::App, "salvar_entrada", &q)));
+        let q = login(nome, SECRETS[0]).replace(r#""ambiente":"dev""#, r#""ambiente":"prod""#);
+        assert!(ok(&request(&c.d, Papel::App, "salvar_entrada", &q)));
     }
-    assert!(ok(&mudar_nivel(&c.d, Papel::App, "p-livre", "livre", PIN)));
+    assert!(ok(&set_level(&c.d, Papel::App, "p-livre", "livre", PIN)));
     let rx = assinar(&c.d, 1);
     assert_eq!(
         usar(&c.d, &SemCliente, "p-livre"),
@@ -645,8 +639,8 @@ fn v3_16_prod_tem_os_mesmos_niveis_e_botoes() {
         }
         if decisao == "uma_hora" {
             // Para o "sempre" ainda perguntar.
-            assert!(ok(&pedir(&c.d, Papel::Agente, "travar", "{}")));
-            assert!(ok(&destravar(&c.d, SENHA)));
+            assert!(ok(&request(&c.d, Papel::Agente, "travar", "{}")));
+            assert!(ok(&unlock(&c.d, PASSWORD)));
         }
     }
     assert_eq!(nivel(&c.d, "p-aprov"), Some(AccessLevel::Free));
@@ -673,20 +667,20 @@ fn d19_nivel_combinado() {
     assert_eq!(r, Ok(Autorizacao::Aprovado));
     // A liberação vale para as duas.
     assert_eq!(usar(&c.d, &SemCliente, "b1"), Ok(Autorizacao::SemPerguntar));
-    assert!(ok(&pedir(&c.d, Papel::Agente, "travar", "{}")));
-    assert!(ok(&destravar(&c.d, SENHA)));
+    assert!(ok(&request(&c.d, Papel::Agente, "travar", "{}")));
+    assert!(ok(&unlock(&c.d, PASSWORD)));
     // b1 livre, s1 com aprovação: pergunta.
-    assert!(ok(&mudar_nivel(&c.d, Papel::App, "b1", "livre", PIN)));
+    assert!(ok(&set_level(&c.d, Papel::App, "b1", "livre", PIN)));
     let r = com_janela(&c, &rx, "b1", |p| {
         assert_eq!(p.entradas, ["b1", "s1"]);
         assert!(ok(&responder(&c.d, Papel::App, p.id, "negar", None)));
     });
     assert_eq!(r, Err(ErroResposta::Negado));
     // As duas livres: passa.
-    assert!(ok(&mudar_nivel(&c.d, Papel::App, "s1", "livre", PIN)));
+    assert!(ok(&set_level(&c.d, Papel::App, "s1", "livre", PIN)));
     assert_eq!(usar(&c.d, &SemCliente, "b1"), Ok(Autorizacao::SemPerguntar));
     // A outra bloqueada: nega sem abrir janela.
-    assert!(ok(&mudar_nivel(&c.d, Papel::App, "s1", "bloqueado", PIN)));
+    assert!(ok(&set_level(&c.d, Papel::App, "s1", "bloqueado", PIN)));
     assert_eq!(usar(&c.d, &SemCliente, "b1"), Err(ErroResposta::Negado));
     assert!(rx.try_recv().is_err());
     // A própria bloqueada continua igual a inexistente (V3.17).
@@ -695,20 +689,8 @@ fn d19_nivel_combinado() {
         usar(&c.d, &SemCliente, "nao-existe")
     );
     // "Sempre" no combinado deixa livres as duas que pediam aprovação.
-    assert!(ok(&mudar_nivel(
-        &c.d,
-        Papel::App,
-        "s1",
-        "com-aprovacao",
-        PIN
-    )));
-    assert!(ok(&mudar_nivel(
-        &c.d,
-        Papel::App,
-        "b1",
-        "com-aprovacao",
-        PIN
-    )));
+    assert!(ok(&set_level(&c.d, Papel::App, "s1", "com-aprovacao", PIN)));
+    assert!(ok(&set_level(&c.d, Papel::App, "b1", "com-aprovacao", PIN)));
     let r = com_janela(&c, &rx, "b1", |p| {
         assert!(ok(&responder(&c.d, Papel::App, p.id, "sempre", Some(PIN))));
     });
@@ -733,8 +715,8 @@ fn d21_aprovacao_indisponivel() {
         Ok(Autorizacao::SemPerguntar)
     );
     // O daemon sem motor (Daemon::novo) também.
-    let dir = Dir::novo("sem-motor");
-    let (d, _) = cofre_de_teste(&dir);
+    let dir = Dir::new("sem-motor");
+    let (d, _) = test_vault(&dir);
     assert_eq!(
         usar(&d, &SemCliente, "t-aprov"),
         Err(ErroResposta::AprovacaoIndisponivel)
@@ -791,7 +773,7 @@ fn d51_comando_e_cadeia_com_escape_visivel() {
                 "t-aprov",
                 &[b"rm", "-rf /\x1b[2K\rls \u{202E}".as_bytes(), b"\xff"],
             );
-            let p = ped(Papel::Agente, "executar", &q).unwrap();
+            let p = req(Papel::Agente, "executar", &q).unwrap();
             c.d.autorizar_uso(&ClienteForjado, &p)
         });
         let _g = ExpirarSeCair(&c.relogio);
@@ -820,7 +802,7 @@ fn f26a_diretorio_de_trabalho_vai_a_janela_com_escape_visivel() {
                 &[b"./deploy.sh"],
                 "/tmp/atacante/\u{202E}hs.yolped\x1b[2K /home/dev".as_bytes(),
             );
-            let p = ped(Papel::Agente, "executar", &q).unwrap();
+            let p = req(Papel::Agente, "executar", &q).unwrap();
             c.d.autorizar_uso(&SemCliente, &p)
         });
         let _g = ExpirarSeCair(&c.relogio);
@@ -869,7 +851,7 @@ fn cliente_que_cai_cancela() {
 fn v3_18_espera_o_destrave_ate_2_min() {
     let c = cena("destrave");
     let rx = assinar(&c.d, 1);
-    assert!(ok(&pedir(&c.d, Papel::Agente, "travar", "{}")));
+    assert!(ok(&request(&c.d, Papel::Agente, "travar", "{}")));
     let r = std::thread::scope(|s| {
         let t = s.spawn(|| usar(&c.d, &SemCliente, "t-livre"));
         assert!(matches!(
@@ -879,13 +861,13 @@ fn v3_18_espera_o_destrave_ate_2_min() {
         c.relogio.ir(Duration::from_secs(60));
         std::thread::sleep(Duration::from_millis(100));
         assert!(!t.is_finished());
-        assert!(ok(&destravar(&c.d, SENHA)));
+        assert!(ok(&unlock(&c.d, PASSWORD)));
         t.join().unwrap()
     });
     assert_eq!(r, Ok(Autorizacao::SemPerguntar));
 
     // Destrave e depois aprovação: os dois prazos em separado.
-    assert!(ok(&pedir(&c.d, Papel::Agente, "travar", "{}")));
+    assert!(ok(&request(&c.d, Papel::Agente, "travar", "{}")));
     let r = std::thread::scope(|s| {
         let t = s.spawn(|| usar(&c.d, &SemCliente, "t-aprov"));
         assert!(matches!(
@@ -893,7 +875,7 @@ fn v3_18_espera_o_destrave_ate_2_min() {
             Recebido::Destrave(_)
         ));
         c.relogio.avancar(Duration::from_secs(110));
-        assert!(ok(&destravar(&c.d, SENHA)));
+        assert!(ok(&unlock(&c.d, PASSWORD)));
         let p = pedido(&rx);
         c.relogio.avancar(Duration::from_secs(100));
         std::thread::sleep(Duration::from_millis(100));
@@ -903,7 +885,7 @@ fn v3_18_espera_o_destrave_ate_2_min() {
     });
     assert_eq!(r, Ok(Autorizacao::Aprovado));
 
-    assert!(ok(&pedir(&c.d, Papel::Agente, "travar", "{}")));
+    assert!(ok(&request(&c.d, Papel::Agente, "travar", "{}")));
     let r = std::thread::scope(|s| {
         let t = s.spawn(|| usar(&c.d, &SemCliente, "t-livre"));
         assert!(matches!(
@@ -916,9 +898,9 @@ fn v3_18_espera_o_destrave_ate_2_min() {
     assert_eq!(r, Err(ErroResposta::TravadoTempoEsgotado));
     // Pelo protocolo, a mesma resposta.
     let s2 = cena_com("destrave-sem-app", Err(ErroAbrirApp::Indisponivel));
-    assert!(ok(&pedir(&s2.d, Papel::Agente, "travar", "{}")));
+    assert!(ok(&request(&s2.d, Papel::Agente, "travar", "{}")));
     assert_eq!(
-        erro(&pedir(
+        error(&request(
             &s2.d,
             Papel::Agente,
             "executar",
@@ -947,7 +929,7 @@ fn destrave(rx: &Receiver<Recebido>) -> PedidoDeDestrave {
 fn ataque_fase_39a_destrave_com_entrada_e_comando_neutralizados() {
     let c = cena("destrave-39a");
     let rx = assinar(&c.d, 1);
-    assert!(ok(&pedir(&c.d, Papel::Agente, "travar", "{}")));
+    assert!(ok(&request(&c.d, Papel::Agente, "travar", "{}")));
     let invisivel = |t: &str| t.chars().any(ward_core::display::invisible);
     let nome_json = "t-livre\\u202e\\u001b[2K\\u200b\\udb40\\udc41";
     let argv: [&[u8]; 3] = [
@@ -957,7 +939,7 @@ fn ataque_fase_39a_destrave_com_entrada_e_comando_neutralizados() {
     ];
     let r = std::thread::scope(|s| {
         let t = s.spawn(|| {
-            let p = ped(Papel::Agente, "executar", &executar_json(nome_json, &argv)).unwrap();
+            let p = req(Papel::Agente, "executar", &executar_json(nome_json, &argv)).unwrap();
             c.d.autorizar_uso(&SemCliente, &p)
         });
         let p = destrave(&rx);
@@ -982,7 +964,7 @@ fn ataque_fase_39a_destrave_com_entrada_e_comando_neutralizados() {
         );
         // Um segundo uso esperando: o app recebe o mais novo (ssh, sem argv: comando vazio).
         let t2 = s.spawn(|| {
-            let p = ped(
+            let p = req(
                 Papel::Agente,
                 "ssh",
                 r#"{"entrada":"t-aprov","tipo_entrada":"terminal"}"#,
@@ -1018,9 +1000,9 @@ fn ataque_fase_39a_destrave_com_entrada_e_comando_neutralizados() {
 fn ataque_fase_39a_entrada_vazia_nao_derruba_o_app() {
     let c = cena("destrave-vazia");
     let rx = assinar(&c.d, 1);
-    assert!(ok(&pedir(&c.d, Papel::Agente, "travar", "{}")));
+    assert!(ok(&request(&c.d, Papel::Agente, "travar", "{}")));
     assert_eq!(
-        erro(&pedir(
+        error(&request(
             &c.d,
             Papel::Agente,
             "executar",
@@ -1047,7 +1029,7 @@ fn ataque_fase_39a_entrada_vazia_nao_derruba_o_app() {
     let r = std::thread::scope(|s| {
         let t = s.spawn(|| usar(&c.d, &SemCliente, "t-livre"));
         assert_eq!(destrave(&rx).entrada, "t-livre");
-        assert!(ok(&destravar(&c.d, SENHA)));
+        assert!(ok(&unlock(&c.d, PASSWORD)));
         t.join().unwrap()
     });
     assert_eq!(r, Ok(Autorizacao::SemPerguntar));
@@ -1059,7 +1041,7 @@ fn ataque_fase_39a_entrada_vazia_nao_derruba_o_app() {
 fn d57_abrir_app() {
     let c = cena("abrir-app");
     for papel in Papel::TODOS {
-        assert!(ok(&pedir(&c.d, papel, "abrir_app", "{}")), "{papel:?}");
+        assert!(ok(&request(&c.d, papel, "abrir_app", "{}")), "{papel:?}");
     }
     assert_eq!(c.abridor.aberturas.load(Ordering::SeqCst), 3);
     for dados in [
@@ -1068,18 +1050,18 @@ fn d57_abrir_app() {
         r#"{"argv":[]}"#,
     ] {
         assert_eq!(
-            erro(&pedir(&c.d, Papel::Agente, "abrir_app", dados)),
+            error(&request(&c.d, Papel::Agente, "abrir_app", dados)),
             Some(ErroResposta::PedidoInvalido)
         );
     }
     assert_eq!(c.abridor.aberturas.load(Ordering::SeqCst), 3);
     let s = cena_com("abrir-app-sem", Err(ErroAbrirApp::Indisponivel));
     assert_eq!(
-        erro(&pedir(&s.d, Papel::Agente, "abrir_app", "{}")),
+        error(&request(&s.d, Papel::Agente, "abrir_app", "{}")),
         Some(ErroResposta::AprovacaoIndisponivel)
     );
     let s = cena_com("abrir-app-ja", Err(ErroAbrirApp::JaAberto));
-    assert!(ok(&pedir(&s.d, Papel::Agente, "abrir_app", "{}")));
+    assert!(ok(&request(&s.d, Papel::Agente, "abrir_app", "{}")));
 }
 
 /// V3.36 (D63, a parte do classificador): com o grupo do app e o pai certo, só o pid que
@@ -1088,14 +1070,14 @@ fn d57_abrir_app() {
 fn v3_36_so_o_pid_do_lancador_e_app() {
     let lancado = 4242;
     let e = |p: u32| p == lancado;
-    assert_eq!(papel_da_classe(PeerClass::App, lancado, e), Papel::App);
-    assert_eq!(papel_da_classe(PeerClass::App, 4243, e), Papel::Agente);
+    assert_eq!(role_from_class(PeerClass::App, lancado, e), Papel::App);
+    assert_eq!(role_from_class(PeerClass::App, 4243, e), Papel::Agente);
     assert_eq!(
-        papel_da_classe(PeerClass::App, lancado, |_| false),
+        role_from_class(PeerClass::App, lancado, |_| false),
         Papel::Agente
     );
     assert_eq!(
-        papel_da_classe(
+        role_from_class(
             PeerClass::Common {
                 reason: Refusal::CommonGroup
             },
@@ -1105,7 +1087,7 @@ fn v3_36_so_o_pid_do_lancador_e_app() {
         Papel::Agente
     );
     assert_eq!(
-        papel_da_classe(PeerClass::ExtensionHost, 1, e),
+        role_from_class(PeerClass::ExtensionHost, 1, e),
         Papel::Extensao
     );
 }
@@ -1115,7 +1097,7 @@ fn v3_36_so_o_pid_do_lancador_e_app() {
 fn v3_38_estado_traz_o_papel() {
     let c = cena("estado-papel");
     for papel in Papel::TODOS {
-        match pedir(&c.d, papel, "estado", "{}") {
+        match request(&c.d, papel, "estado", "{}") {
             Resposta::Estado { papel: p, .. } => assert_eq!(p, papel),
             r => panic!("{r:?}"),
         }
@@ -1130,7 +1112,7 @@ fn usar_com_entrada(d: &Daemon, nome: &str, tipo: &str) -> Result<Autorizacao, E
         r#""tipo_entrada":"nula""#,
         &format!(r#""tipo_entrada":"{tipo}""#),
     );
-    let p = ped(Papel::Agente, "executar", &q).unwrap();
+    let p = req(Papel::Agente, "executar", &q).unwrap();
     d.autorizar_uso(&SemCliente, &p)
 }
 
@@ -1152,7 +1134,7 @@ fn com_janela_e_entrada(
 }
 
 fn responder_ciente(d: &Daemon, id: u64, decisao: &str, pin: &str) -> Resposta {
-    pedir(
+    request(
         d,
         Papel::App,
         "responder_aprovacao",
@@ -1179,7 +1161,7 @@ fn f54b_ataque_pipe_na_aprovacao_sem_a_caixa_nao_passa() {
             for _ in 0..2 {
                 for decisao in ["uma_vez", "uma_hora", "sempre"] {
                     assert_eq!(
-                        erro(&responder(&c.d, Papel::App, p.id, decisao, Some(PIN))),
+                        error(&responder(&c.d, Papel::App, p.id, decisao, Some(PIN))),
                         Some(ErroResposta::PedidoInvalido),
                         "{tipo} {decisao}"
                     );
@@ -1187,7 +1169,7 @@ fn f54b_ataque_pipe_na_aprovacao_sem_a_caixa_nao_passa() {
             }
             assert!(c.d.motor().pendente(p.id).is_some(), "{tipo}");
             // "Confirmar" (sem PIN) também não decide um pedido assim.
-            assert!(erro(&responder(&c.d, Papel::App, p.id, "confirmar", None)).is_some());
+            assert!(error(&responder(&c.d, Papel::App, p.id, "confirmar", None)).is_some());
             assert!(ok(&responder_ciente(&c.d, p.id, "uma_vez", PIN)));
         });
         assert_eq!(r, Ok(Autorizacao::Aprovado), "{tipo}");
@@ -1202,7 +1184,7 @@ fn f54b_ataque_pipe_na_aprovacao_sem_a_caixa_nao_passa() {
     // A caixa não passa por cima do PIN: errado continua errado.
     let r = com_janela_e_entrada(&c, &rx, "t-aprov", "pipe", |p| {
         assert_eq!(
-            erro(&responder_ciente(&c.d, p.id, "uma_vez", "000000")),
+            error(&responder_ciente(&c.d, p.id, "uma_vez", "000000")),
             Some(ErroResposta::PinIncorreto)
         );
         assert!(ok(&responder(&c.d, Papel::App, p.id, "negar", None)));
@@ -1221,7 +1203,7 @@ fn f54b_terminal_e_nula_passam_como_antes() {
         let r = com_janela_e_entrada(&c, &rx, "t-aprov", tipo, |p| {
             assert!(!p.entrada_oculta, "{tipo}");
             assert_eq!(
-                erro(&responder_ciente(&c.d, p.id, "uma_vez", PIN)),
+                error(&responder_ciente(&c.d, p.id, "uma_vez", PIN)),
                 Some(ErroResposta::PedidoInvalido),
                 "{tipo}"
             );
@@ -1259,7 +1241,7 @@ fn f54b_liberacao_de_1_hora_nao_cobre_pipe() {
     let r = com_janela_e_entrada(&c, &rx, "t-aprov", "pipe", |p| {
         assert!(p.entrada_oculta);
         assert_eq!(
-            erro(&responder(&c.d, Papel::App, p.id, "uma_vez", Some(PIN))),
+            error(&responder(&c.d, Papel::App, p.id, "uma_vez", Some(PIN))),
             Some(ErroResposta::PedidoInvalido)
         );
         assert!(ok(&responder(&c.d, Papel::App, p.id, "negar", None)));
@@ -1297,7 +1279,7 @@ fn f54b_ssh_com_pipe_avisa() {
     let rx = assinar(&c.d, 1);
     let r = std::thread::scope(|s| {
         let t = s.spawn(|| {
-            let p = ped(
+            let p = req(
                 Papel::Agente,
                 "ssh",
                 r#"{"entrada":"s1","tipo_entrada":"pipe"}"#,
@@ -1310,7 +1292,7 @@ fn f54b_ssh_com_pipe_avisa() {
         assert_eq!(p.operacao, Operacao::Ssh);
         assert!(p.entrada_oculta);
         assert_eq!(
-            erro(&responder(&c.d, Papel::App, p.id, "uma_vez", Some(PIN))),
+            error(&responder(&c.d, Papel::App, p.id, "uma_vez", Some(PIN))),
             Some(ErroResposta::PedidoInvalido)
         );
         assert!(ok(&responder_ciente(&c.d, p.id, "uma_vez", PIN)));

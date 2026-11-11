@@ -12,7 +12,7 @@
 
 #![cfg(feature = "test-mode")]
 
-mod comum;
+mod common;
 
 use std::fs;
 use std::io::{Read, Write};
@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
-use comum::Dir;
+use common::Dir;
 use ward_core::protocolo::{self, ErroResposta, Papel, Resposta};
 
 const WARDD: &str = env!("CARGO_BIN_EXE_wardd");
@@ -106,7 +106,7 @@ fn by_hand(binary: &Path, sock: &Path) -> String {
 
 #[test]
 fn v3_37_only_the_app_opened_by_the_test_daemon_is_app() {
-    let repo = Dir::novo("repo-app");
+    let repo = Dir::new("repo-app");
     let dev = repo.0.join(".dev");
     fs::DirBuilder::new().mode(0o700).create(&dev).unwrap();
     fs::DirBuilder::new()

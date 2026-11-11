@@ -19,7 +19,7 @@
 
 #![cfg(feature = "test-mode")]
 
-mod comum;
+mod common;
 
 use std::fs;
 use std::io::{Read, Write};
@@ -30,7 +30,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
-use comum::{Dir, b64};
+use common::{Dir, b64};
 use ward_core::atomic_write::write_entries;
 use ward_core::format::{MasterPassword, OpenVault};
 use ward_core::protocolo::{self, ErroResposta, Papel, Resposta};
@@ -187,7 +187,7 @@ fn send(s: &mut UnixStream, json: &str) -> Resposta {
 
 #[test]
 fn v3_39_v3_40_app_values_and_list_through_the_test_daemon() {
-    let repo = Dir::novo("repo-valor");
+    let repo = Dir::new("repo-valor");
     let dev = repo.0.join(".dev");
     fs::DirBuilder::new().mode(0o700).create(&dev).unwrap();
     fs::DirBuilder::new()

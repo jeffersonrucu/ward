@@ -12,7 +12,7 @@ use wardd::aprovacao::{Motor, RelogioMonotonico};
 use wardd::config::Config;
 use wardd::lancamento::{AbridorReal, AppDeTeste, ExtensaoDeTeste};
 use wardd::nucleo::{Daemon, RelogioReal};
-use wardd::servidor::{self, Papeis};
+use wardd::server::{self, Roles};
 use wardd::{aviso, execution, log, trava, udisks};
 
 /// Chrome instalado, pai aceito do host da extensão (D5, D47).
@@ -184,7 +184,7 @@ fn main() -> ExitCode {
     };
     let udisks: Option<Arc<udisks::Udisks>> = barramento
         .as_ref()
-        .map(|s| Arc::new(udisks::Udisks::novo(s.clone())));
+        .map(|s| Arc::new(udisks::Udisks::new(s.clone())));
     if let Some(u) = &udisks {
         daemon = daemon.com_pendrives(u.clone());
     }
@@ -206,8 +206,8 @@ fn main() -> ExitCode {
                 aviso!("cópia externa já ligada");
                 return ExitCode::FAILURE;
             };
-            if udisks::vigiar_copia(daemon.clone(), fonte, cutucoes).is_err()
-                || udisks::vigiar_udisks(daemon.clone(), socket, Box::new(|| {})).is_err()
+            if udisks::watch_copy(daemon.clone(), fonte, cutucoes).is_err()
+                || udisks::watch_udisks(daemon.clone(), socket, Box::new(|| {})).is_err()
             {
                 aviso!("não deu para criar as threads do backup externo");
                 return ExitCode::FAILURE;
@@ -220,13 +220,13 @@ fn main() -> ExitCode {
         ),
     }
     aviso!("pronto");
-    let papeis = Papeis {
-        instalacao,
+    let papeis = Roles {
+        install: instalacao,
         app,
-        app_de_teste,
-        extensao_de_teste,
+        test_app: app_de_teste,
+        test_extension: extensao_de_teste,
     };
-    match servidor::servir(&escuta, daemon, Arc::new(papeis)) {
+    match server::serve(&escuta, daemon, Arc::new(papeis)) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             aviso!("laço do socket parou ({})", e.kind());

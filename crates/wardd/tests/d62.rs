@@ -4,7 +4,7 @@
 //!
 //! Cofre de teste próprio, só com valores falsos (nunca o cofre real nem o de `.dev/`).
 
-mod comum;
+mod common;
 
 use std::fs;
 #[cfg(feature = "test-hooks")]
@@ -13,7 +13,7 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use comum::*;
+use common::*;
 use ward_core::config::{PinHash, VaultConfig};
 use ward_core::format::{MasterPassword, OpenVault};
 use ward_core::protocolo::{ErroResposta, MSG_RETROCESSO, Papel, Resposta};
@@ -52,7 +52,7 @@ fn daemon_movel(c: Caminhos, r: &RelogioMovel) -> Daemon {
 }
 
 fn destravar_como(d: &Daemon, papel: Papel, senha: &str) -> Resposta {
-    pedir(
+    request(
         d,
         papel,
         "destravar",
@@ -61,18 +61,18 @@ fn destravar_como(d: &Daemon, papel: Papel, senha: &str) -> Resposta {
 }
 
 fn texto_estado(dir: &Dir) -> String {
-    fs::read_to_string(dir.caminhos().estado).unwrap()
+    fs::read_to_string(dir.paths().estado).unwrap()
 }
 
 fn falhas_no_disco(dir: &Dir) -> u32 {
-    arquivos::ler_estado_completo(&dir.caminhos().estado)
+    arquivos::ler_estado_completo(&dir.paths().estado)
         .unwrap()
         .falhas_agente
 }
 
 /// Cofre de teste criado e travado; o daemon que o criou é descartado.
 fn cofre_travado(dir: &Dir) {
-    let (d, _) = cofre_de_teste(dir);
+    let (d, _) = test_vault(dir);
     d.travar();
 }
 
@@ -81,13 +81,13 @@ fn cofre_travado(dir: &Dir) {
 /// resposta de erro sair.
 #[test]
 fn v3_33_espera_do_agente_sobrevive_ao_reinicio() {
-    let dir = Dir::novo("d62-reinicio");
+    let dir = Dir::new("d62-reinicio");
     cofre_travado(&dir);
     let r = RelogioMovel::default();
-    let d = daemon_movel(dir.caminhos(), &r);
+    let d = daemon_movel(dir.paths(), &r);
     for i in 0..10u32 {
         let resp = destravar_como(&d, Papel::Agente, &format!("falso-errada-{i:02}"));
-        assert_eq!(erro(&resp), Some(ErroResposta::SenhaIncorreta));
+        assert_eq!(error(&resp), Some(ErroResposta::SenhaIncorreta));
         // Já no disco quando a resposta sai (fsync antes da resposta).
         assert_eq!(falhas_no_disco(&dir), i + 1);
     }
@@ -97,9 +97,9 @@ fn v3_33_espera_do_agente_sobrevive_ao_reinicio() {
     // "kill -9": o daemon some sem nada além do que já foi para o disco.
     drop(d);
     let r = RelogioMovel::default();
-    let d = daemon_movel(dir.caminhos(), &r);
+    let d = daemon_movel(dir.paths(), &r);
     assert_eq!(
-        erro(&destravar_como(&d, Papel::Agente, "falso-errada-xx")),
+        error(&destravar_como(&d, Papel::Agente, "falso-errada-xx")),
         Some(ErroResposta::SenhaIncorreta)
     );
     assert_eq!(r.esperas(), [ESPERA_MAXIMA]);
@@ -108,7 +108,7 @@ fn v3_33_espera_do_agente_sobrevive_ao_reinicio() {
     // Contada da partida: o daemon novo subiu há 20 s, a primeira espera é de 10 s.
     drop(d);
     let r = RelogioMovel::default();
-    let d = daemon_movel(dir.caminhos(), &r);
+    let d = daemon_movel(dir.paths(), &r);
     r.andar(Duration::from_secs(20));
     let _ = destravar_como(&d, Papel::Agente, "falso-errada-yy");
     // A seguinte já espera a inteira.
@@ -121,14 +121,14 @@ fn v3_33_espera_do_agente_sobrevive_ao_reinicio() {
     // Subiu há mais de 30 s: a primeira não espera, mas o contador continua.
     drop(d);
     let r = RelogioMovel::default();
-    let d = daemon_movel(dir.caminhos(), &r);
+    let d = daemon_movel(dir.paths(), &r);
     r.andar(Duration::from_secs(45));
     let _ = destravar_como(&d, Papel::Agente, "falso-errada-ww");
     let _ = destravar_como(&d, Papel::Agente, "falso-errada-vv");
     assert_eq!(r.esperas(), [Duration::ZERO, ESPERA_MAXIMA]);
 
     // O destravar certo zera os dois, no disco também.
-    assert!(ok(&destravar_como(&d, Papel::Agente, SENHA)));
+    assert!(ok(&destravar_como(&d, Papel::Agente, PASSWORD)));
     assert_eq!(falhas_no_disco(&dir), 0);
     d.travar();
     let _ = destravar_como(&d, Papel::Agente, "falso-errada-uu");
@@ -140,7 +140,7 @@ fn v3_33_espera_do_agente_sobrevive_ao_reinicio() {
 /// certa sem esperar; depois do destravar certo do app, os dois contadores zeram.
 #[test]
 fn ataque_agente_no_meio_da_espera_nao_atrasa_o_app() {
-    let dir = Dir::novo("d62-papel");
+    let dir = Dir::new("d62-papel");
     cofre_travado(&dir);
 
     /// Relógio cujo `dormir` de 4 s ou mais (a espera do agente) fica preso até o teste
@@ -164,7 +164,7 @@ fn ataque_agente_no_meio_da_espera_nao_atrasa_o_app() {
     let (tx_soltar, rx_soltar) = mpsc::channel();
     let esperas = Arc::new(Mutex::new(Vec::new()));
     let d = Arc::new(Daemon::novo(
-        dir.caminhos(),
+        dir.paths(),
         Box::new(Preso {
             entrou: Mutex::new(tx_entrou),
             soltar: Mutex::new(rx_soltar),
@@ -174,7 +174,7 @@ fn ataque_agente_no_meio_da_espera_nao_atrasa_o_app() {
     // Três erradas do agente: a próxima dele espera 4 s.
     for i in 0..3 {
         let resp = destravar_como(&d, Papel::Agente, &format!("falso-errada-{i}"));
-        assert_eq!(erro(&resp), Some(ErroResposta::SenhaIncorreta));
+        assert_eq!(error(&resp), Some(ErroResposta::SenhaIncorreta));
     }
     let agente = {
         let d = d.clone();
@@ -186,7 +186,7 @@ fn ataque_agente_no_meio_da_espera_nao_atrasa_o_app() {
         Duration::from_secs(4)
     );
     // O app acerta sem esperar: o contador dele é outro, e a vez do agente não o segura.
-    assert!(ok(&destravar_como(&d, Papel::App, SENHA)));
+    assert!(ok(&destravar_como(&d, Papel::App, PASSWORD)));
     assert!(!d.travado());
     tx_soltar.send(()).unwrap();
     // O agente acorda com o cofre já aberto.
@@ -222,11 +222,11 @@ fn ataque_agente_no_meio_da_espera_nao_atrasa_o_app() {
 /// segredo, só números.
 #[test]
 fn v3_33_formato_antigo_e_estado_sem_segredo() {
-    let dir = Dir::novo("d62-antigo");
+    let dir = Dir::new("d62-antigo");
     cofre_travado(&dir);
-    let g = geracoes(&dir);
+    let g = generations(&dir);
     fs::write(
-        dir.caminhos().estado,
+        dir.paths().estado,
         format!(
             "ward-estado 1\nvista {}\nqueimada {}\n",
             g.vista, g.queimada
@@ -234,7 +234,7 @@ fn v3_33_formato_antigo_e_estado_sem_segredo() {
     )
     .unwrap();
     let r = RelogioMovel::default();
-    let d = daemon_movel(dir.caminhos(), &r);
+    let d = daemon_movel(dir.paths(), &r);
     let _ = destravar_como(&d, Papel::Agente, "falso-errada-01");
     assert_eq!(r.esperas(), [Duration::ZERO]);
     assert_eq!(
@@ -247,14 +247,14 @@ fn v3_33_formato_antigo_e_estado_sem_segredo() {
     // O app não vai para o disco.
     let _ = destravar_como(&d, Papel::App, "falso-errada-02");
     assert_eq!(falhas_no_disco(&dir), 1);
-    let texto = fs::read(dir.caminhos().estado).unwrap();
-    for s in SEGREDOS
+    let texto = fs::read(dir.paths().estado).unwrap();
+    for s in SECRETS
         .iter()
-        .chain([&SENHA, &PIN, &"falso-errada-01", &"falso-errada-02"])
+        .chain([&PASSWORD, &PIN, &"falso-errada-01", &"falso-errada-02"])
     {
-        assert!(!contem(&texto, s.as_bytes()), "{s}");
+        assert!(!contains(&texto, s.as_bytes()), "{s}");
         assert!(
-            !contem(&texto, b64(s.as_bytes()).as_bytes()),
+            !contains(&texto, b64(s.as_bytes()).as_bytes()),
             "{s} em base64"
         );
     }
@@ -273,11 +273,11 @@ fn v3_33_formato_antigo_e_estado_sem_segredo() {
 /// posta no lugar, é recusada como retrocesso.
 #[test]
 fn v3_35_criar_cofre_com_estado_velho_e_copia_antiga() {
-    let dir = Dir::novo("d62-criar");
-    let c = dir.caminhos();
+    let dir = Dir::new("d62-criar");
+    let c = dir.paths();
     // Um cofre anterior, na geração 5, com a mesma senha de teste (o atacante guardou).
     let antigo = dir.0.join("antigo.ward");
-    let senha = MasterPassword::new(SENHA.to_owned());
+    let senha = MasterPassword::new(PASSWORD.to_owned());
     let mut velho = OpenVault::new(
         &senha,
         VaultConfig::new(PinHash::create(PIN.as_bytes()).unwrap()),
@@ -285,7 +285,7 @@ fn v3_35_criar_cofre_com_estado_velho_e_copia_antiga() {
     .unwrap()
     .after_generation(4);
     ward_core::atomic_write::write_entries(&antigo, &mut velho, &[]).unwrap();
-    assert_eq!(geracao_no_disco(&antigo, SENHA), 5);
+    assert_eq!(generation_on_disk(&antigo, PASSWORD), 5);
     arquivos::gravar_estado(
         &c.estado,
         Geracoes {
@@ -296,21 +296,21 @@ fn v3_35_criar_cofre_com_estado_velho_e_copia_antiga() {
     .unwrap();
     assert!(!c.cofre.exists());
 
-    let (d, _) = daemon_em(c.clone());
-    let criar = pedir(
+    let (d, _) = daemon_at(c.clone());
+    let criar = request(
         &d,
         Papel::App,
         "criar_cofre",
         &format!(
             r#"{{"senha":"{}","pin":"{}"}}"#,
-            b64(SENHA.as_bytes()),
+            b64(PASSWORD.as_bytes()),
             b64(PIN.as_bytes())
         ),
     );
     assert!(ok(&criar), "{criar:?}");
-    assert_eq!(geracao_no_disco(&c.cofre, SENHA), 8);
+    assert_eq!(generation_on_disk(&c.cofre, PASSWORD), 8);
     assert_eq!(
-        geracoes(&dir),
+        generations(&dir),
         Geracoes {
             vista: 8,
             queimada: 8
@@ -320,38 +320,41 @@ fn v3_35_criar_cofre_com_estado_velho_e_copia_antiga() {
     // O atacante põe a cópia antiga no lugar e destrava.
     d.travar();
     fs::copy(&antigo, &c.cofre).unwrap();
-    let r = destravar(&d, SENHA);
-    assert_eq!(erro(&r), Some(ErroResposta::Retrocesso));
+    let r = unlock(&d, PASSWORD);
+    assert_eq!(error(&r), Some(ErroResposta::Retrocesso));
     assert_eq!(ErroResposta::Retrocesso.mensagem(), MSG_RETROCESSO);
     assert!(d.travado());
     // Nem um daemon novo abre.
-    let (d2, _) = daemon_em(c.clone());
-    assert_eq!(erro(&destravar(&d2, SENHA)), Some(ErroResposta::Retrocesso));
+    let (d2, _) = daemon_at(c.clone());
+    assert_eq!(
+        error(&unlock(&d2, PASSWORD)),
+        Some(ErroResposta::Retrocesso)
+    );
 }
 
 /// V3.35 (D62): sem estado, o cofre nasce na geração 1 (primeiro uso de sempre); com
 /// estado ilegível e sem cofre, o `criar_cofre` recusa em vez de começar do zero.
 #[test]
 fn v3_35_criar_cofre_sem_estado_e_com_estado_invalido() {
-    let dir = Dir::novo("d62-criar-sem");
-    let c = dir.caminhos();
+    let dir = Dir::new("d62-criar-sem");
+    let c = dir.paths();
     let criar = format!(
         r#"{{"senha":"{}","pin":"{}"}}"#,
-        b64(SENHA.as_bytes()),
+        b64(PASSWORD.as_bytes()),
         b64(PIN.as_bytes())
     );
     fs::write(&c.estado, "ward-estado 1\nvista 9\n").unwrap();
-    let (d, _) = daemon_em(c.clone());
+    let (d, _) = daemon_at(c.clone());
     assert_eq!(
-        erro(&pedir(&d, Papel::App, "criar_cofre", &criar)),
+        error(&request(&d, Papel::App, "criar_cofre", &criar)),
         Some(ErroResposta::FalhaAoGravar)
     );
     assert!(!c.cofre.exists());
     fs::remove_file(&c.estado).unwrap();
-    assert!(ok(&pedir(&d, Papel::App, "criar_cofre", &criar)));
-    assert_eq!(geracao_no_disco(&c.cofre, SENHA), 1);
+    assert!(ok(&request(&d, Papel::App, "criar_cofre", &criar)));
+    assert_eq!(generation_on_disk(&c.cofre, PASSWORD), 1);
     assert_eq!(
-        geracoes(&dir),
+        generations(&dir),
         Geracoes {
             vista: 1,
             queimada: 1
@@ -376,14 +379,14 @@ fn trocar_por_copia(c: &Caminhos) {
 #[cfg(feature = "test-hooks")]
 #[test]
 fn v3_35_troca_logo_depois_do_rename_e_recusada() {
-    let dir = Dir::novo("d62-rename");
+    let dir = Dir::new("d62-rename");
     cofre_travado(&dir);
-    let c = dir.caminhos();
+    let c = dir.paths();
     let armado = Arc::new(AtomicBool::new(false));
     let trocou = Arc::new(AtomicBool::new(false));
     let d = {
         let (armado, trocou, c) = (armado.clone(), trocou.clone(), c.clone());
-        Daemon::novo(c.clone(), Box::new(RelogioFalso::default())).com_gancho_depois_de_gravar(
+        Daemon::novo(c.clone(), Box::new(FakeClock::default())).com_gancho_depois_de_gravar(
             Box::new(move || {
                 if armado.swap(false, Ordering::SeqCst) {
                     trocar_por_copia(&c);
@@ -392,16 +395,16 @@ fn v3_35_troca_logo_depois_do_rename_e_recusada() {
             }),
         )
     };
-    assert!(ok(&destravar(&d, SENHA)));
+    assert!(ok(&unlock(&d, PASSWORD)));
     // Sem troca, gravar duas vezes funciona.
-    assert!(ok(&pedir(
+    assert!(ok(&request(
         &d,
         Papel::App,
         "tempo_trava",
         r#"{"minutos":30}"#
     )));
     armado.store(true, Ordering::SeqCst);
-    assert!(ok(&pedir(
+    assert!(ok(&request(
         &d,
         Papel::App,
         "tempo_trava",
@@ -409,8 +412,8 @@ fn v3_35_troca_logo_depois_do_rename_e_recusada() {
     )));
     assert!(trocou.load(Ordering::SeqCst), "o gancho não rodou");
     let trocado = fs::read(&c.cofre).unwrap();
-    let r = pedir(&d, Papel::App, "tempo_trava", r#"{"minutos":32}"#);
-    assert_eq!(erro(&r), Some(ErroResposta::CofreMudou));
+    let r = request(&d, Papel::App, "tempo_trava", r#"{"minutos":32}"#);
+    assert_eq!(error(&r), Some(ErroResposta::CofreMudou));
     assert_eq!(
         ErroResposta::CofreMudou.mensagem(),
         ward_core::protocolo::MSG_COFRE_MUDOU
@@ -423,13 +426,13 @@ fn v3_35_troca_logo_depois_do_rename_e_recusada() {
     );
 
     // O mesmo na troca de senha: a identidade vem do fd da gravação dela.
-    let dir2 = Dir::novo("d62-rename-senha");
+    let dir2 = Dir::new("d62-rename-senha");
     cofre_travado(&dir2);
-    let c2 = dir2.caminhos();
+    let c2 = dir2.paths();
     let armado2 = Arc::new(AtomicBool::new(false));
     let d2 = {
         let (armado2, c2) = (armado2.clone(), c2.clone());
-        Daemon::novo(c2.clone(), Box::new(RelogioFalso::default())).com_gancho_depois_de_gravar(
+        Daemon::novo(c2.clone(), Box::new(FakeClock::default())).com_gancho_depois_de_gravar(
             Box::new(move || {
                 if armado2.swap(false, Ordering::SeqCst) {
                     trocar_por_copia(&c2);
@@ -437,22 +440,22 @@ fn v3_35_troca_logo_depois_do_rename_e_recusada() {
             }),
         )
     };
-    assert!(ok(&destravar(&d2, SENHA)));
+    assert!(ok(&unlock(&d2, PASSWORD)));
     armado2.store(true, Ordering::SeqCst);
     let nova = "falso-nova-ward-03";
-    assert!(ok(&pedir(
+    assert!(ok(&request(
         &d2,
         Papel::App,
         "trocar_senha",
         &format!(
             r#"{{"atual":"{}","nova":"{}"}}"#,
-            b64(SENHA.as_bytes()),
+            b64(PASSWORD.as_bytes()),
             b64(nova.as_bytes())
         ),
     )));
     let trocado = fs::read(&c2.cofre).unwrap();
-    let r = pedir(&d2, Papel::App, "tempo_trava", r#"{"minutos":33}"#);
-    assert_eq!(erro(&r), Some(ErroResposta::CofreMudou));
+    let r = request(&d2, Papel::App, "tempo_trava", r#"{"minutos":33}"#);
+    assert_eq!(error(&r), Some(ErroResposta::CofreMudou));
     assert!(d2.travado());
     assert_eq!(fs::read(&c2.cofre).unwrap(), trocado);
 }

@@ -13,7 +13,7 @@
 
 #![cfg(feature = "test-hooks")]
 
-mod comum;
+mod common;
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -24,7 +24,7 @@ use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use comum::*;
+use common::*;
 use ward_core::entry::Secret;
 use ward_core::limits::MAX_COMMON_FRAME;
 use ward_core::protocolo::quadro::{self, LIMITE_RESPOSTA};
@@ -35,9 +35,9 @@ use wardd::ssh::SshPrograms;
 use zeroize::Zeroizing;
 
 /// Password of the test servers (the one of the shared server fixture, fake).
-const SSH_PASSWORD: &str = SEGREDOS[1];
+const SSH_PASSWORD: &str = SECRETS[1];
 /// Password of the tunnel database (fake).
-const DB_PASSWORD: &str = SEGREDOS[2];
+const DB_PASSWORD: &str = SECRETS[2];
 
 #[derive(Clone, Default)]
 struct ManualClock(Arc<Mutex<Duration>>);
@@ -83,7 +83,7 @@ struct Scene {
 }
 
 fn save(d: &Daemon, json: &str) {
-    let r = pedir(d, Papel::App, "salvar_entrada", json);
+    let r = request(d, Papel::App, "salvar_entrada", json);
     assert!(ok(&r), "{r:?}");
 }
 
@@ -132,8 +132,8 @@ fn generate_key(dir: &Path) -> (Vec<u8>, String) {
 }
 
 fn scene(label: &str) -> Scene {
-    let dir = Dir::novo(label);
-    let (d, _) = cofre_de_teste(&dir);
+    let dir = Dir::new(label);
+    let (d, _) = test_vault(&dir);
     let base = dir.0.join("falsos");
     fs::create_dir(&base).unwrap();
     let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fake_ssh.py");
@@ -243,9 +243,9 @@ fn scene(label: &str) -> Scene {
         "f-sftp-chave",
         "f-ftp",
     ] {
-        assert!(ok(&mudar_nivel(&d, Papel::App, n, "livre", PIN)));
+        assert!(ok(&set_level(&d, Papel::App, n, "livre", PIN)));
     }
-    assert!(ok(&mudar_nivel(&d, Papel::App, "s-bloq", "bloqueado", PIN)));
+    assert!(ok(&set_level(&d, Papel::App, "s-bloq", "bloqueado", PIN)));
     Scene {
         d: Arc::new(d),
         dir,
@@ -561,7 +561,8 @@ fn v4_35_d43_user_with_at_sign_and_password_only_in_env() {
     let t = r.text();
     assert!(t.contains("SSHPASS=••••"), "{t}");
     assert!(
-        !contem(&r.stdout, SSH_PASSWORD.as_bytes()) && !contem(&r.stderr, SSH_PASSWORD.as_bytes())
+        !contains(&r.stdout, SSH_PASSWORD.as_bytes())
+            && !contains(&r.stderr, SSH_PASSWORD.as_bytes())
     );
     assert!(t.contains("remoto=whoami -- -l x@y"), "{t}");
 }
@@ -928,14 +929,14 @@ fn d34_attack_pty_right_and_wrong_prefix_come_out_alike_and_at_once() {
     assert!(t.contains(&wrong), "{t}");
     assert!(t.contains(&right), "o prefixo certo foi trocado: {t}");
     // The whole password never comes out; the chunk that completes it becomes a mark.
-    assert!(!contem(&r.stdout, SSH_PASSWORD.as_bytes()), "{t}");
+    assert!(!contains(&r.stdout, SSH_PASSWORD.as_bytes()), "{t}");
     assert!(t.contains(&format!("{right}••••]")), "{t}");
     // Timing: each prefix reaches the CLI before the 1 s pause ends (nothing held until
     // the next output); the arrival does not depend on it being the right prefix.
     let when = |mark: &str| {
         r.chunks
             .iter()
-            .find(|(_, p)| contem(p, mark.as_bytes()))
+            .find(|(_, p)| contains(p, mark.as_bytes()))
             .map(|(t, _)| *t)
             .unwrap_or_else(|| panic!("sem {mark}: {:?}", timeline()))
     };
@@ -984,7 +985,7 @@ fn d34_attack_timing_without_pty_prefix_not_delayed() {
             "candidato {i} segurado até o Z: {timeline:?}"
         );
     }
-    assert!(!contem(&r.stdout, SSH_PASSWORD.as_bytes()));
+    assert!(!contains(&r.stdout, SSH_PASSWORD.as_bytes()));
 }
 
 /// M4 audit (low): a loose Ward `known_hosts` (another user could read the hosts or,
@@ -1084,7 +1085,7 @@ fn v5_24_connect_token() {
                 entrada: "s-outro".into(),
             },
         );
-        assert_eq!(erro(&r), Some(ErroResposta::NaoAutorizado), "{role:?}");
+        assert_eq!(error(&r), Some(ErroResposta::NaoAutorizado), "{role:?}");
     }
     let r = c.d.atender(
         Papel::App,
@@ -1092,7 +1093,7 @@ fn v5_24_connect_token() {
             entrada: "t-livre".into(),
         },
     );
-    assert_eq!(erro(&r), Some(ErroResposta::PedidoInvalido));
+    assert_eq!(error(&r), Some(ErroResposta::PedidoInvalido));
 
     // Valid: skips the approval once.
     let t = c.token("s-outro");
@@ -1126,7 +1127,7 @@ fn v5_24_connect_token() {
     // Locking erases the tokens.
     let t = c.token("s-outro");
     c.d.travar();
-    assert!(ok(&destravar(&c.d, SENHA)));
+    assert!(ok(&unlock(&c.d, PASSWORD)));
     assert_eq!(run(Some(&t), "s-outro").failure, unavailable);
 
     // Blocked is still nonexistent, even with a valid token.
@@ -1284,8 +1285,8 @@ fn phase28_jump_with_password_through_the_bridge() {
     );
     let stderr = String::from_utf8_lossy(&r.stderr).into_owned();
     assert!(stderr.contains("erro-salto ••••"), "{stderr}");
-    assert!(!contem(&r.stdout, SSH_PASSWORD.as_bytes()));
-    assert!(!contem(&r.stderr, SSH_PASSWORD.as_bytes()));
+    assert!(!contains(&r.stdout, SSH_PASSWORD.as_bytes()));
+    assert!(!contains(&r.stderr, SSH_PASSWORD.as_bytes()));
     let pt = port.get();
     assert!(
         listener_closed(inode.get()),
@@ -1475,8 +1476,8 @@ for i in range(2):
         "D19: a senha do túnel na máscara: {t}"
     );
     for secret in [SSH_PASSWORD, DB_PASSWORD] {
-        assert!(!contem(&r.stdout, secret.as_bytes()));
-        assert!(!contem(&r.stderr, secret.as_bytes()));
+        assert!(!contains(&r.stdout, secret.as_bytes()));
+        assert!(!contains(&r.stderr, secret.as_bytes()));
     }
     let stderr = String::from_utf8_lossy(&r.stderr).into_owned();
     assert!(stderr.contains("erro-salto ••••"), "{stderr}");

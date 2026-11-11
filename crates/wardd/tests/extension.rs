@@ -4,11 +4,11 @@
 //! extension's operations, and the extension asking for those of the app and the agent.
 //! Only fake values, in a test vault of its own.
 
-mod comum;
+mod common;
 
 use std::time::Duration;
 
-use comum::{Dir, PIN, SEGREDOS, b64, erro, ok, ped, pedir};
+use common::{Dir, PIN, SECRETS, b64, error, ok, req, request};
 use ward_core::protocolo::{self, ErroResposta, Operacao, Papel, Resposta};
 use ward_core::totp::Totp;
 use wardd::nucleo::{Daemon, Relogio};
@@ -44,14 +44,14 @@ fn login(name: &str, url: &str, user: &str, password: &str, seed: Option<&str>) 
 /// Test vault with logins on `localhost:8081` (one of them blocked), one with TOTP on
 /// `localhost:8083`, one on `https`, a server and a database.
 fn vault(dir: &Dir) -> Daemon {
-    let d = Daemon::novo(dir.caminhos(), Box::new(FixedClock));
-    let create = pedir(
+    let d = Daemon::novo(dir.paths(), Box::new(FixedClock));
+    let create = request(
         &d,
         Papel::App,
         "criar_cofre",
         &format!(
             r#"{{"senha":"{}","pin":"{}"}}"#,
-            b64(comum::SENHA.as_bytes()),
+            b64(common::PASSWORD.as_bytes()),
             b64(PIN.as_bytes())
         ),
     );
@@ -61,37 +61,37 @@ fn vault(dir: &Dir) -> Daemon {
             "acme-wp-dev",
             "http://localhost:8081/wp-login.php",
             "wp_admin",
-            SEGREDOS[0],
+            SECRETS[0],
             None,
         ),
         login(
             "acme-wp-prod",
             "http://localhost:8081/wp-login.php",
             "wp_editor",
-            SEGREDOS[3],
+            SECRETS[3],
             None,
         ),
         login(
             "acme-totp-dev",
             "http://localhost:8083/login",
             "wp_admin",
-            SEGREDOS[0],
+            SECRETS[0],
             Some(SEED),
         ),
         login(
             "clientex-portal",
             "https://app.clientex.com.br/login",
             "admin",
-            SEGREDOS[1],
+            SECRETS[1],
             None,
         ),
-        comum::servidor("s1"),
-        comum::banco("b1", "s1"),
+        common::server("s1"),
+        common::database("b1", "s1"),
     ] {
-        let r = pedir(&d, Papel::App, "salvar_entrada", &q);
+        let r = request(&d, Papel::App, "salvar_entrada", &q);
         assert!(ok(&r), "{r:?}");
     }
-    assert!(ok(&comum::mudar_nivel(
+    assert!(ok(&common::set_level(
         &d,
         Papel::App,
         "acme-wp-prod",
@@ -102,12 +102,12 @@ fn vault(dir: &Dir) -> Daemon {
 }
 
 fn suggest(d: &Daemon, role: Papel, origin: &str) -> Resposta {
-    pedir(d, role, "sugerir", &format!(r#"{{"origem":"{origin}"}}"#))
+    request(d, role, "sugerir", &format!(r#"{{"origem":"{origin}"}}"#))
 }
 
 /// The popup's fill with no window at all (the test daemon's engine has no app).
 fn fill_raw(d: &Daemon, role: Papel, entry: &str, origin: &str) -> Resposta {
-    pedir(
+    request(
         d,
         role,
         "preencher",
@@ -118,7 +118,7 @@ fn fill_raw(d: &Daemon, role: Papel, entry: &str, origin: &str) -> Resposta {
 /// The popup's fill with the user confirming the origin in the window (Phase
 /// 44c: `http` entries only fill after that).
 fn fill(d: &Daemon, role: Papel, entry: &str, origin: &str) -> Resposta {
-    comum::com_janela(d, "confirmar", None, || fill_raw(d, role, entry, origin)).0
+    common::with_window(d, "confirmar", None, || fill_raw(d, role, entry, origin)).0
 }
 
 fn names(r: &Resposta) -> Vec<(String, String)> {
@@ -133,10 +133,10 @@ fn names(r: &Resposta) -> Vec<(String, String)> {
 
 /// No secret of the test vault in the bytes (in clear or in base64).
 fn no_secret(bytes: &[u8]) {
-    for s in SEGREDOS.iter().chain([&SEED]) {
-        assert!(!comum::contem(bytes, s.as_bytes()), "segredo em claro");
+    for s in SECRETS.iter().chain([&SEED]) {
+        assert!(!common::contains(bytes, s.as_bytes()), "segredo em claro");
         assert!(
-            !comum::contem(bytes, b64(s.as_bytes()).as_bytes()),
+            !common::contains(bytes, b64(s.as_bytes()).as_bytes()),
             "segredo em base64"
         );
     }
@@ -147,7 +147,7 @@ fn no_secret(bytes: &[u8]) {
 #[test]
 fn suggestion_carries_environment_and_whether_it_has_totp() {
     use ward_core::entry::Environment;
-    let dir = Dir::novo("ext-sugerir-totp");
+    let dir = Dir::new("ext-sugerir-totp");
     let d = vault(&dir);
     let summary = |r: &Resposta| match r {
         Resposta::Sugestoes(l) => l
@@ -168,14 +168,14 @@ fn suggestion_carries_environment_and_whether_it_has_totp() {
             ("acme-wp-prod".to_owned(), Environment::Dev, false),
         ]
     );
-    let q = comum::codificado(Papel::Extensao, &r);
-    assert!(comum::contem(&q, br#""ambiente":"dev","totp":false"#));
+    let q = common::encoded(Papel::Extensao, &r);
+    assert!(common::contains(&q, br#""ambiente":"dev","totp":false"#));
     no_secret(&q);
 }
 
 #[test]
 fn v6_2_suggest_only_the_tab_origin() {
-    let dir = Dir::novo("ext-sugerir");
+    let dir = Dir::new("ext-sugerir");
     let d = vault(&dir);
     let r = suggest(&d, Papel::Extensao, "http://localhost:8081/wp-login.php");
     assert_eq!(
@@ -187,7 +187,7 @@ fn v6_2_suggest_only_the_tab_origin() {
         ]
     );
     // The suggestion answer has no secret at all.
-    no_secret(&comum::codificado(Papel::Extensao, &r));
+    no_secret(&common::encoded(Papel::Extensao, &r));
     assert_eq!(
         names(&suggest(&d, Papel::Extensao, "http://localhost:8083/login")),
         [("acme-totp-dev".to_owned(), "wp_admin".to_owned())]
@@ -219,7 +219,7 @@ fn v6_2_suggest_only_the_tab_origin() {
 
 #[test]
 fn v6_2_fill_only_on_the_right_origin() {
-    let dir = Dir::novo("ext-preencher");
+    let dir = Dir::new("ext-preencher");
     let d = vault(&dir);
     let r = fill(
         &d,
@@ -234,7 +234,7 @@ fn v6_2_fill_only_on_the_right_origin() {
             totp,
         } => {
             assert_eq!(usuario, "wp_admin");
-            assert_eq!(senha.expose(), SEGREDOS[0].as_bytes());
+            assert_eq!(senha.expose(), SECRETS[0].as_bytes());
             assert!(totp.is_none());
         }
         other => panic!("esperava preenchimento: {:?}", other.tipo()),
@@ -267,13 +267,13 @@ fn v6_2_fill_only_on_the_right_origin() {
         "",
     ] {
         let r = fill(&d, Papel::Extensao, "acme-wp-dev", tab);
-        assert_eq!(erro(&r), Some(ErroResposta::OrigemDiferente), "{tab:?}");
-        no_secret(&comum::codificado(Papel::Extensao, &r));
+        assert_eq!(error(&r), Some(ErroResposta::OrigemDiferente), "{tab:?}");
+        no_secret(&common::encoded(Papel::Extensao, &r));
     }
     // An entry that does not exist and an entry of another type answer the same.
     for name in ["nao-existe", "s1", "b1"] {
         let r = fill(&d, Papel::Extensao, name, "http://localhost:8081/");
-        assert_eq!(erro(&r), Some(ErroResposta::EntradaInexistente), "{name}");
+        assert_eq!(error(&r), Some(ErroResposta::EntradaInexistente), "{name}");
     }
     // Locked: nothing.
     d.travar();
@@ -283,19 +283,19 @@ fn v6_2_fill_only_on_the_right_origin() {
         "acme-wp-dev",
         "http://localhost:8081/wp-login.php",
     );
-    assert_eq!(erro(&r), Some(ErroResposta::Travado));
+    assert_eq!(error(&r), Some(ErroResposta::Travado));
     let r = suggest(&d, Papel::Extensao, "http://localhost:8081/wp-login.php");
-    assert_eq!(erro(&r), Some(ErroResposta::Travado));
+    assert_eq!(error(&r), Some(ErroResposta::Travado));
 }
 
 #[test]
 fn v6_1_agent_and_app_neither_suggest_nor_fill() {
-    let dir = Dir::novo("ext-papeis");
+    let dir = Dir::new("ext-papeis");
     let d = vault(&dir);
     for role in [Papel::Agente, Papel::App] {
         // First layer: reading the request.
         assert_eq!(
-            erro(&fill(
+            error(&fill(
                 &d,
                 role,
                 "acme-wp-dev",
@@ -304,26 +304,26 @@ fn v6_1_agent_and_app_neither_suggest_nor_fill() {
             Some(ErroResposta::NaoAutorizado)
         );
         assert_eq!(
-            erro(&suggest(&d, role, "http://localhost:8081/")),
+            error(&suggest(&d, role, "http://localhost:8081/")),
             Some(ErroResposta::NaoAutorizado)
         );
         // Second and third layers: the request already read as the extension, served
         // with another role (the role comes from the connection, never from the frame).
-        let p = ped(
+        let p = req(
             Papel::Extensao,
             "preencher",
             r#"{"entrada":"acme-wp-dev","origem":"http://localhost:8081/"}"#,
         )
         .unwrap();
         let r = d.atender(role, p);
-        assert_eq!(erro(&r), Some(ErroResposta::NaoAutorizado));
-        no_secret(&comum::codificado(role, &r));
+        assert_eq!(error(&r), Some(ErroResposta::NaoAutorizado));
+        no_secret(&common::encoded(role, &r));
     }
 }
 
 #[test]
 fn attack_extension_without_app_or_agent_operations() {
-    let dir = Dir::novo("ext-tabela");
+    let dir = Dir::new("ext-tabela");
     let d = vault(&dir);
     let allowed = [
         Operacao::Estado,
@@ -347,7 +347,7 @@ fn attack_extension_without_app_or_agent_operations() {
             // Whatever the rest of the frame is.
             for data in ["{}", r#"{"entrada":"acme-wp-dev","campo":"senha"}"#] {
                 assert_eq!(
-                    ped(Papel::Extensao, op.nome(), data).unwrap_err(),
+                    req(Papel::Extensao, op.nome(), data).unwrap_err(),
                     ErroResposta::NaoAutorizado,
                     "{}",
                     op.nome()
@@ -375,13 +375,13 @@ fn attack_extension_without_app_or_agent_operations() {
         (Papel::Agente, "login", r#"{"entrada":"acme-wp-dev"}"#),
         (Papel::Agente, "playwright", r#"{"entrada":"acme-wp-dev"}"#),
     ] {
-        let p = ped(role, op, data).unwrap_or_else(|e| panic!("{op}: {e:?}"));
+        let p = req(role, op, data).unwrap_or_else(|e| panic!("{op}: {e:?}"));
         let r = d.atender(Papel::Extensao, p);
-        assert_eq!(erro(&r), Some(ErroResposta::NaoAutorizado), "{op}");
+        assert_eq!(error(&r), Some(ErroResposta::NaoAutorizado), "{op}");
     }
     let r = d.atender(
         Papel::Extensao,
-        ped(
+        req(
             Papel::App,
             "mudar_nivel",
             &format!(
@@ -391,7 +391,7 @@ fn attack_extension_without_app_or_agent_operations() {
         )
         .unwrap(),
     );
-    assert_eq!(erro(&r), Some(ErroResposta::NaoAutorizado));
+    assert_eq!(error(&r), Some(ErroResposta::NaoAutorizado));
     // What the extension receives: no secret, token or app list answer.
     for t in [
         protocolo::TipoResposta::Segredo,
@@ -410,7 +410,7 @@ fn attack_extension_without_app_or_agent_operations() {
 /// environment, type and the URL, user and password fields; `extra` goes raw into the
 /// entry object (for the attacks).
 fn save_login(d: &Daemon, role: Papel, name: &str, password: &str, extra: &str) -> Resposta {
-    pedir(
+    request(
         d,
         role,
         "salvar_login",
@@ -423,7 +423,7 @@ fn save_login(d: &Daemon, role: Papel, name: &str, password: &str, extra: &str) 
 
 /// Level of an entry in the app's list (`None` if it does not exist).
 fn level_in_list(d: &Daemon, name: &str) -> Option<ward_core::entry::AccessLevel> {
-    match pedir(d, Papel::App, "lista", "{}") {
+    match request(d, Papel::App, "lista", "{}") {
         Resposta::Lista(l) => l.into_iter().find(|i| i.nome == name).and_then(|i| i.nivel),
         other => panic!("esperava a lista: {:?}", other.tipo()),
     }
@@ -438,12 +438,12 @@ const NEW_PASSWORD: &str = "falso-cadastro-ward-42";
 #[test]
 fn v6_8_save_login_starts_with_approval() {
     use ward_core::entry::AccessLevel;
-    let dir = Dir::novo("ext-salvar");
+    let dir = Dir::new("ext-salvar");
     let d = vault(&dir);
     let r = save_login(&d, Papel::Extensao, "localhost-8083", NEW_PASSWORD, "");
     assert!(ok(&r), "{r:?}");
-    assert!(!comum::contem(
-        &comum::codificado(Papel::Extensao, &r),
+    assert!(!common::contains(
+        &common::encoded(Papel::Extensao, &r),
         NEW_PASSWORD.as_bytes()
     ));
     assert_eq!(
@@ -470,8 +470,8 @@ fn v6_8_save_login_starts_with_approval() {
         other => panic!("esperava preenchimento: {:?}", other.tipo()),
     }
     // Saved on disk: after locking and unlocking, it is still there and with approval.
-    assert!(ok(&pedir(&d, Papel::App, "travar", "{}")));
-    assert!(ok(&comum::destravar(&d, comum::SENHA)));
+    assert!(ok(&request(&d, Papel::App, "travar", "{}")));
+    assert!(ok(&common::unlock(&d, common::PASSWORD)));
     assert_eq!(
         level_in_list(&d, "localhost-8083"),
         Some(AccessLevel::Approval)
@@ -484,12 +484,12 @@ fn v6_8_save_login_starts_with_approval() {
 #[test]
 fn attack_save_login_does_not_overwrite_entry() {
     use ward_core::entry::AccessLevel;
-    let dir = Dir::novo("ext-salvar-sobrescrever");
+    let dir = Dir::new("ext-salvar-sobrescrever");
     let d = vault(&dir);
     for name in ["acme-wp-dev", "acme-wp-prod"] {
         let r = save_login(&d, Papel::Extensao, name, NEW_PASSWORD, "");
         assert!(
-            matches!(erro(&r), Some(ErroResposta::Validacao(_))),
+            matches!(error(&r), Some(ErroResposta::Validacao(_))),
             "{name}: {r:?}"
         );
     }
@@ -502,7 +502,7 @@ fn attack_save_login_does_not_overwrite_entry() {
         Some(AccessLevel::Approval)
     );
     match fill(&d, Papel::Extensao, "acme-wp-dev", "http://localhost:8081") {
-        Resposta::Preenchimento { senha, .. } => assert_eq!(senha.expose(), SEGREDOS[0].as_bytes()),
+        Resposta::Preenchimento { senha, .. } => assert_eq!(senha.expose(), SECRETS[0].as_bytes()),
         other => panic!("esperava preenchimento: {:?}", other.tipo()),
     }
 }
@@ -512,7 +512,7 @@ fn attack_save_login_does_not_overwrite_entry() {
 /// type are refused and nothing is saved.
 #[test]
 fn attack_save_login_only_the_popup_fields() {
-    let dir = Dir::novo("ext-salvar-campos");
+    let dir = Dir::new("ext-salvar-campos");
     let d = vault(&dir);
     let seed = b64(SEED.as_bytes());
     let value = b64(b"x");
@@ -531,14 +531,14 @@ fn attack_save_login_only_the_popup_fields() {
     ];
     for (extra, reaches_daemon) in &refused {
         let r = save_login(&d, Papel::Extensao, "localhost-8083", NEW_PASSWORD, extra);
-        let e = erro(&r).unwrap_or_else(|| panic!("{extra}: aceito"));
+        let e = error(&r).unwrap_or_else(|| panic!("{extra}: aceito"));
         if *reaches_daemon {
             assert_eq!(e, ErroResposta::PedidoInvalido, "{extra}");
         }
         assert_eq!(level_in_list(&d, "localhost-8083"), None, "{extra}");
     }
     // TOTP inside the login fields.
-    let r = pedir(
+    let r = request(
         &d,
         Papel::Extensao,
         "salvar_login",
@@ -547,9 +547,16 @@ fn attack_save_login_only_the_popup_fields() {
             b64(NEW_PASSWORD.as_bytes())
         ),
     );
-    assert_eq!(erro(&r), Some(ErroResposta::PedidoInvalido));
+    assert_eq!(error(&r), Some(ErroResposta::PedidoInvalido));
     // Another type (database) through save login: reading the request refuses it.
-    assert!(ped(Papel::Extensao, "salvar_login", &comum::banco("b9", "s1")).is_err());
+    assert!(
+        req(
+            Papel::Extensao,
+            "salvar_login",
+            &common::database("b9", "s1")
+        )
+        .is_err()
+    );
     assert_eq!(level_in_list(&d, "localhost-8083"), None);
     assert_eq!(level_in_list(&d, "b9"), None);
 }
@@ -558,7 +565,7 @@ fn attack_save_login_only_the_popup_fields() {
 /// already read as the extension; with the vault locked, nothing is saved.
 #[test]
 fn attack_save_login_extension_only_and_unlocked() {
-    let dir = Dir::novo("ext-salvar-papeis");
+    let dir = Dir::new("ext-salvar-papeis");
     let d = vault(&dir);
     let p = |name: &str| {
         format!(
@@ -568,23 +575,23 @@ fn attack_save_login_extension_only_and_unlocked() {
     };
     for role in [Papel::Agente, Papel::App] {
         assert_eq!(
-            erro(&pedir(&d, role, "salvar_login", &p("x1"))),
+            error(&request(&d, role, "salvar_login", &p("x1"))),
             Some(ErroResposta::NaoAutorizado)
         );
-        let read = ped(Papel::Extensao, "salvar_login", &p("x2")).unwrap();
+        let read = req(Papel::Extensao, "salvar_login", &p("x2")).unwrap();
         assert_eq!(
-            erro(&d.atender(role, read)),
+            error(&d.atender(role, read)),
             Some(ErroResposta::NaoAutorizado)
         );
     }
     assert_eq!(level_in_list(&d, "x1"), None);
     assert_eq!(level_in_list(&d, "x2"), None);
-    assert!(ok(&pedir(&d, Papel::App, "travar", "{}")));
+    assert!(ok(&request(&d, Papel::App, "travar", "{}")));
     assert_eq!(
-        erro(&pedir(&d, Papel::Extensao, "salvar_login", &p("x3"))),
+        error(&request(&d, Papel::Extensao, "salvar_login", &p("x3"))),
         Some(ErroResposta::Travado)
     );
-    assert!(ok(&comum::destravar(&d, comum::SENHA)));
+    assert!(ok(&common::unlock(&d, common::PASSWORD)));
     assert_eq!(level_in_list(&d, "x3"), None);
 }
 
@@ -599,33 +606,33 @@ fn attack_save_login_extension_only_and_unlocked() {
 /// window.
 #[test]
 fn attack_fill_http_without_confirming_nothing_leaves() {
-    let dir = Dir::novo("ext-http-confirma");
+    let dir = Dir::new("ext-http-confirma");
     let d = vault(&dir);
     let tab = "http://localhost:8081/wp-login.php";
     // No app at all.
     let r = fill_raw(&d, Papel::Extensao, "acme-wp-dev", tab);
-    assert_eq!(erro(&r), Some(ErroResposta::AprovacaoIndisponivel));
-    no_secret(&comum::codificado(Papel::Extensao, &r));
+    assert_eq!(error(&r), Some(ErroResposta::AprovacaoIndisponivel));
+    no_secret(&common::encoded(Papel::Extensao, &r));
     // Denied in the window.
-    let (r, seen) = comum::com_janela(&d, "negar", None, || {
+    let (r, seen) = common::with_window(&d, "negar", None, || {
         fill_raw(&d, Papel::Extensao, "acme-wp-dev", tab)
     });
-    assert_eq!(erro(&r), Some(ErroResposta::Negado));
-    no_secret(&comum::codificado(Papel::Extensao, &r));
+    assert_eq!(error(&r), Some(ErroResposta::Negado));
+    no_secret(&common::encoded(Papel::Extensao, &r));
     assert_eq!(seen.len(), 1);
     let p = &seen[0];
     assert_eq!(p.operacao, Operacao::Preencher);
     assert_eq!(p.entradas, ["acme-wp-dev".to_owned()]);
     assert_eq!(p.origem, "http://localhost:8081");
     assert!(p.confirmacao);
-    no_secret(&comum::codificado(
+    no_secret(&common::encoded(
         Papel::App,
         &Resposta::PedidoDeAprovacao(p.clone()),
     ));
     // The "Allow" answers with a PIN do not decide a confirmation (the forged window
     // does not skip the format): the request stays pending and expires; here the
     // window loop only tries.
-    let (r, _) = comum::com_janela(&d, "uma_vez", Some(PIN), || {
+    let (r, _) = common::with_window(&d, "uma_vez", Some(PIN), || {
         // With no accepted decision, the request would stay pending until it expired
         // (2 min): the test ends it through the client that leaves.
         struct LeavesSoon(std::sync::atomic::AtomicU32);
@@ -637,7 +644,7 @@ fn attack_fill_http_without_confirming_nothing_leaves() {
                 self.0.fetch_add(1, std::sync::atomic::Ordering::AcqRel) > 40
             }
         }
-        let p = ped(
+        let p = req(
             Papel::Extensao,
             "preencher",
             &format!(r#"{{"entrada":"acme-wp-dev","origem":"{tab}"}}"#),
@@ -646,13 +653,13 @@ fn attack_fill_http_without_confirming_nothing_leaves() {
         d.atender_de(&LeavesSoon(Default::default()), Papel::Extensao, p)
     });
     assert_eq!(
-        erro(&r),
+        error(&r),
         Some(ErroResposta::Negado),
         "uma_vez decidiu uma confirmação"
     );
-    no_secret(&comum::codificado(Papel::Extensao, &r));
+    no_secret(&common::encoded(Papel::Extensao, &r));
     // Confirmed: it fills.
-    let (r, seen) = comum::com_janela(&d, "confirmar", None, || {
+    let (r, seen) = common::with_window(&d, "confirmar", None, || {
         fill_raw(&d, Papel::Extensao, "acme-wp-dev", tab)
     });
     assert!(
@@ -662,7 +669,7 @@ fn attack_fill_http_without_confirming_nothing_leaves() {
     );
     assert_eq!(seen.len(), 1);
     // `https`: no window.
-    let (r, seen) = comum::com_janela(&d, "negar", None, || {
+    let (r, seen) = common::with_window(&d, "negar", None, || {
         fill_raw(
             &d,
             Papel::Extensao,
@@ -677,10 +684,10 @@ fn attack_fill_http_without_confirming_nothing_leaves() {
     );
     assert!(seen.is_empty(), "janela num preencher https");
     // Different origin: refused before asking.
-    let (r, seen) = comum::com_janela(&d, "confirmar", None, || {
+    let (r, seen) = common::with_window(&d, "confirmar", None, || {
         fill_raw(&d, Papel::Extensao, "acme-wp-dev", "http://127.0.0.1:8081/")
     });
-    assert_eq!(erro(&r), Some(ErroResposta::OrigemDiferente));
+    assert_eq!(error(&r), Some(ErroResposta::OrigemDiferente));
     assert!(seen.is_empty());
 }
 
@@ -690,7 +697,7 @@ fn attack_fill_http_without_confirming_nothing_leaves() {
 /// app: "approval unavailable"; denied: no value; the request shows the origin.
 #[test]
 fn attack_fill_https_loopback_without_confirming_nothing_leaves() {
-    let dir = Dir::novo("ext-https-loopback");
+    let dir = Dir::new("ext-https-loopback");
     let d = vault(&dir);
     for (i, (url, origin)) in [
         ("https://localhost:8443/login", "https://localhost:8443"),
@@ -701,26 +708,30 @@ fn attack_fill_https_loopback_without_confirming_nothing_leaves() {
     .enumerate()
     {
         let name = format!("l-{i}");
-        let r = pedir(
+        let r = request(
             &d,
             Papel::App,
             "salvar_entrada",
-            &login(&name, url, "wp_admin", SEGREDOS[0], None),
+            &login(&name, url, "wp_admin", SECRETS[0], None),
         );
         assert!(ok(&r), "{r:?}");
         let r = fill_raw(&d, Papel::Extensao, &name, url);
-        assert_eq!(erro(&r), Some(ErroResposta::AprovacaoIndisponivel), "{url}");
-        no_secret(&comum::codificado(Papel::Extensao, &r));
-        let (r, seen) = comum::com_janela(&d, "negar", None, || {
+        assert_eq!(
+            error(&r),
+            Some(ErroResposta::AprovacaoIndisponivel),
+            "{url}"
+        );
+        no_secret(&common::encoded(Papel::Extensao, &r));
+        let (r, seen) = common::with_window(&d, "negar", None, || {
             fill_raw(&d, Papel::Extensao, &name, url)
         });
-        assert_eq!(erro(&r), Some(ErroResposta::Negado), "{url}");
-        no_secret(&comum::codificado(Papel::Extensao, &r));
+        assert_eq!(error(&r), Some(ErroResposta::Negado), "{url}");
+        no_secret(&common::encoded(Papel::Extensao, &r));
         assert_eq!(seen.len(), 1, "{url}");
         assert_eq!(seen[0].operacao, Operacao::Preencher);
         assert_eq!(seen[0].origem, origin, "{url}");
         assert!(seen[0].confirmacao, "{url}");
-        let (r, _) = comum::com_janela(&d, "confirmar", None, || {
+        let (r, _) = common::with_window(&d, "confirmar", None, || {
             fill_raw(&d, Papel::Extensao, &name, url)
         });
         assert!(matches!(r, Resposta::Preenchimento { .. }), "{url}");

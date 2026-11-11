@@ -3,9 +3,9 @@
 //! edited entry; the content never goes over or comes back through the socket.
 //! In-process daemon, test vault of its own in `target/tmp`, fake values.
 
-mod comum;
+mod common;
 
-use comum::*;
+use common::*;
 use ward_core::entry::Entry;
 use ward_core::protocolo::{ErroResposta, Papel, Resposta};
 
@@ -39,8 +39,8 @@ fn edit(previous: &str, keep: &[&str], new: &[(&str, &[u8])]) -> String {
 
 /// The entries as they are on disk (opens with the test password).
 fn on_disk(dir: &Dir) -> Vec<Entry> {
-    let bytes = std::fs::read(dir.caminhos().cofre).unwrap();
-    let s = ward_core::format::MasterPassword::new(SENHA.to_owned());
+    let bytes = std::fs::read(dir.paths().cofre).unwrap();
+    let s = ward_core::format::MasterPassword::new(PASSWORD.to_owned());
     ward_core::body::open_entries_with_generation(&bytes, &s, 0, 0)
         .unwrap()
         .1
@@ -61,9 +61,9 @@ fn attachments_on_disk(dir: &Dir, name: &str) -> Vec<(String, Vec<u8>)> {
 /// content is the same byte for byte on disk, and no daemon answer carries it.
 #[test]
 fn v5_12_edit_keeps_adds_and_removes_attachment() {
-    let dir = Dir::novo("anexos-edicao");
-    let (d, _) = cofre_de_teste(&dir);
-    let r = pedir(
+    let dir = Dir::new("anexos-edicao");
+    let (d, _) = test_vault(&dir);
+    let r = request(
         &d,
         Papel::App,
         "salvar_entrada",
@@ -72,7 +72,7 @@ fn v5_12_edit_keeps_adds_and_removes_attachment() {
     assert!(ok(&r), "{r:?}");
 
     // Keep `a.env` and add `b.env`.
-    let r = pedir(
+    let r = request(
         &d,
         Papel::App,
         "salvar_entrada",
@@ -86,20 +86,20 @@ fn v5_12_edit_keeps_adds_and_removes_attachment() {
             ("b.env".to_owned(), ATTACHMENT_B.to_vec())
         ]
     );
-    let det = pedir(&d, Papel::App, "detalhe", r#"{"entrada":"g1"}"#);
+    let det = request(&d, Papel::App, "detalhe", r#"{"entrada":"g1"}"#);
     let Resposta::Detalhe(x) = &det else {
         panic!("{det:?}")
     };
     assert_eq!(x.anexos.len(), 2);
-    let bytes = codificado(Papel::App, &det);
+    let bytes = encoded(Papel::App, &det);
     for c in [ATTACHMENT_A, ATTACHMENT_B] {
-        assert!(!contem(&bytes, c) && !contem(&bytes, b64(c).as_bytes()));
+        assert!(!contains(&bytes, c) && !contains(&bytes, b64(c).as_bytes()));
     }
 
     // Rename keeping both: the content goes along.
     let rename =
         edit("g1", &["b.env", "a.env"], &[]).replacen(r#""nome":"g1""#, r#""nome":"g2""#, 1);
-    let r = pedir(&d, Papel::App, "salvar_entrada", &rename);
+    let r = request(&d, Papel::App, "salvar_entrada", &rename);
     assert!(ok(&r), "{r:?}");
     assert_eq!(
         attachments_on_disk(&dir, "g2"),
@@ -110,7 +110,7 @@ fn v5_12_edit_keeps_adds_and_removes_attachment() {
     );
 
     // Remove: what is not in the keep list goes away.
-    let r = pedir(
+    let r = request(
         &d,
         Papel::App,
         "salvar_entrada",
@@ -122,7 +122,7 @@ fn v5_12_edit_keeps_adds_and_removes_attachment() {
         [("a.env".to_owned(), ATTACHMENT_A.to_vec())]
     );
     // Without the keep list (the request from before Phase 39b): all go away.
-    let r = pedir(&d, Papel::App, "salvar_entrada", &edit("g2", &[], &[]));
+    let r = request(&d, Papel::App, "salvar_entrada", &edit("g2", &[], &[]));
     assert!(ok(&r), "{r:?}");
     assert!(attachments_on_disk(&dir, "g2").is_empty());
 }
@@ -132,16 +132,16 @@ fn v5_12_edit_keeps_adds_and_removes_attachment() {
 /// changes on disk.
 #[test]
 fn v5_12_attack_forged_keep_attachments() {
-    let dir = Dir::novo("anexos-ataque");
-    let (d, _) = cofre_de_teste(&dir);
+    let dir = Dir::new("anexos-ataque");
+    let (d, _) = test_vault(&dir);
     for q in [
         generic("g1", &[("a.env", ATTACHMENT_A)]),
         generic("g2", &[("b.env", ATTACHMENT_B)]),
     ] {
-        assert!(ok(&pedir(&d, Papel::App, "salvar_entrada", &q)));
+        assert!(ok(&request(&d, Papel::App, "salvar_entrada", &q)));
     }
     let large = vec![b'x'; 200 * 1024];
-    assert!(ok(&pedir(
+    assert!(ok(&request(
         &d,
         Papel::App,
         "salvar_entrada",
@@ -150,59 +150,59 @@ fn v5_12_attack_forged_keep_attachments() {
     let before = on_disk(&dir).len();
 
     // The attachment of `g2` cannot be reached by editing `g1`.
-    let r = pedir(
+    let r = request(
         &d,
         Papel::App,
         "salvar_entrada",
         &edit("g1", &["b.env"], &[]),
     );
-    assert_eq!(erro(&r), Some(ErroResposta::PedidoInvalido), "{r:?}");
+    assert_eq!(error(&r), Some(ErroResposta::PedidoInvalido), "{r:?}");
     // Not even with a path.
-    let r = pedir(
+    let r = request(
         &d,
         Papel::App,
         "salvar_entrada",
         &edit("g1", &["../g2/b.env"], &[]),
     );
-    assert_eq!(erro(&r), Some(ErroResposta::PedidoInvalido), "{r:?}");
+    assert_eq!(error(&r), Some(ErroResposta::PedidoInvalido), "{r:?}");
     // Edited entry that does not exist.
-    let r = pedir(
+    let r = request(
         &d,
         Papel::App,
         "salvar_entrada",
         &edit("nao-existe", &["a.env"], &[]),
     );
-    assert_eq!(erro(&r), Some(ErroResposta::EntradaInexistente), "{r:?}");
+    assert_eq!(error(&r), Some(ErroResposta::EntradaInexistente), "{r:?}");
     // New entry "copying" the attachment of `g1`: reading the request refuses it.
     let new = generic("g9", &[]).replacen('{', r#"{"manter_anexos":["a.env"],"#, 1);
-    let r = pedir(&d, Papel::App, "salvar_entrada", &new);
-    assert_eq!(erro(&r), Some(ErroResposta::PedidoInvalido), "{r:?}");
+    let r = request(&d, Papel::App, "salvar_entrada", &new);
+    assert_eq!(error(&r), Some(ErroResposta::PedidoInvalido), "{r:?}");
     // Agent and extension do not have the operation.
     for role in [Papel::Agente, Papel::Extensao] {
-        let r = pedir(&d, role, "salvar_entrada", &edit("g1", &["a.env"], &[]));
-        assert_eq!(erro(&r), Some(ErroResposta::NaoAutorizado), "{role:?}");
+        let r = request(&d, role, "salvar_entrada", &edit("g1", &["a.env"], &[]));
+        assert_eq!(error(&r), Some(ErroResposta::NaoAutorizado), "{role:?}");
     }
     // 200 KiB kept + 60 KiB new go over the sum: validation error.
     let new60 = vec![b'y'; 60 * 1024];
-    let r = pedir(
+    let r = request(
         &d,
         Papel::App,
         "salvar_entrada",
         &edit("g3", &["grande.bin"], &[("mais.bin", &new60)]),
     );
     assert!(
-        matches!(erro(&r), Some(ErroResposta::Validacao(_))),
+        matches!(error(&r), Some(ErroResposta::Validacao(_))),
         "{r:?}"
     );
     // Kept name equal to that of a new attachment: validation error (repeated name).
-    let r = pedir(
+    let r = request(
         &d,
         Papel::App,
         "salvar_entrada",
         &edit("g1", &["a.env"], &[("a.env", ATTACHMENT_B)]),
     );
     assert!(
-        matches!(erro(&r), Some(ErroResposta::Validacao(_))),
+        matches!(error(&r), Some(ErroResposta::Validacao(_))),
         "{r:?}"
     );
 

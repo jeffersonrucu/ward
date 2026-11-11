@@ -8,14 +8,14 @@
 //!
 //! Cofre de teste próprio, só com valores falsos (nunca o cofre real nem o de `.dev/`).
 
-mod comum;
+mod common;
 
-use comum::*;
+use common::*;
 use ward_core::limits::{DEFAULT_LOCK_MINUTES, MAX_LOCK_MINUTES, MIN_LOCK_MINUTES};
 use ward_core::protocolo::{ErroResposta, Papel, Resposta};
 
 fn configuracao(d: &wardd::nucleo::Daemon) -> (u32, bool) {
-    match pedir(d, Papel::App, "configuracao", "{}") {
+    match request(d, Papel::App, "configuracao", "{}") {
         Resposta::Configuracao {
             minutos_trava,
             backup_externo,
@@ -30,7 +30,7 @@ fn configuracao(d: &wardd::nucleo::Daemon) -> (u32, bool) {
 }
 
 fn tempo_trava(d: &wardd::nucleo::Daemon, papel: Papel, minutos: u32) -> Resposta {
-    pedir(
+    request(
         d,
         papel,
         "tempo_trava",
@@ -39,7 +39,7 @@ fn tempo_trava(d: &wardd::nucleo::Daemon, papel: Papel, minutos: u32) -> Respost
 }
 
 fn trocar_pin(d: &wardd::nucleo::Daemon, papel: Papel, atual: &str, novo: &str) -> Resposta {
-    pedir(
+    request(
         d,
         papel,
         "trocar_pin",
@@ -52,7 +52,7 @@ fn trocar_pin(d: &wardd::nucleo::Daemon, papel: Papel, atual: &str, novo: &str) 
 }
 
 fn trocar_senha(d: &wardd::nucleo::Daemon, papel: Papel, atual: &str, nova: &str) -> Resposta {
-    pedir(
+    request(
         d,
         papel,
         "trocar_senha",
@@ -68,23 +68,23 @@ fn trocar_senha(d: &wardd::nucleo::Daemon, papel: Papel, atual: &str, nova: &str
 /// travar e destravar (está no corpo cifrado, não só na memória) e grava geração nova.
 #[test]
 fn v5_22_padrao_4h_desligado_e_tempo_alteravel_gravado_no_cofre() {
-    let dir = Dir::novo("cfg-padrao");
-    let (d, _) = cofre_de_teste(&dir);
+    let dir = Dir::new("cfg-padrao");
+    let (d, _) = test_vault(&dir);
     assert_eq!(configuracao(&d), (DEFAULT_LOCK_MINUTES, false));
     assert_eq!(DEFAULT_LOCK_MINUTES, 240);
-    let antes = geracao_no_disco(&dir.caminhos().cofre, SENHA);
+    let antes = generation_on_disk(&dir.paths().cofre, PASSWORD);
     assert!(ok(&tempo_trava(&d, Papel::App, 30)));
     assert_eq!(configuracao(&d), (30, false));
-    assert_eq!(geracao_no_disco(&dir.caminhos().cofre, SENHA), antes + 1);
+    assert_eq!(generation_on_disk(&dir.paths().cofre, PASSWORD), antes + 1);
     d.travar();
-    assert!(ok(&destravar(&d, SENHA)));
+    assert!(ok(&unlock(&d, PASSWORD)));
     assert_eq!(configuracao(&d), (30, false));
     // Os extremos de D45 passam; fora deles nem chega ao daemon.
     assert!(ok(&tempo_trava(&d, Papel::App, MIN_LOCK_MINUTES)));
     assert!(ok(&tempo_trava(&d, Papel::App, MAX_LOCK_MINUTES)));
     for fora in [0, MAX_LOCK_MINUTES + 1, u32::MAX] {
         assert_eq!(
-            erro(&tempo_trava(&d, Papel::App, fora)),
+            error(&tempo_trava(&d, Papel::App, fora)),
             Some(ErroResposta::PedidoInvalido),
             "{fora}"
         );
@@ -96,42 +96,42 @@ fn v5_22_padrao_4h_desligado_e_tempo_alteravel_gravado_no_cofre() {
 /// ou trava. Nada muda.
 #[test]
 fn ataque_agente_e_extensao_nao_leem_nem_mudam_a_configuracao() {
-    let dir = Dir::novo("cfg-papel");
-    let (d, _) = cofre_de_teste(&dir);
-    let geracao = geracao_no_disco(&dir.caminhos().cofre, SENHA);
+    let dir = Dir::new("cfg-papel");
+    let (d, _) = test_vault(&dir);
+    let geracao = generation_on_disk(&dir.paths().cofre, PASSWORD);
     for papel in [Papel::Agente, Papel::Extensao] {
-        let r = pedir(&d, papel, "configuracao", "{}");
-        assert_eq!(erro(&r), Some(ErroResposta::NaoAutorizado), "{papel:?}");
+        let r = request(&d, papel, "configuracao", "{}");
+        assert_eq!(error(&r), Some(ErroResposta::NaoAutorizado), "{papel:?}");
         let r = tempo_trava(&d, papel, 1);
-        assert_eq!(erro(&r), Some(ErroResposta::NaoAutorizado), "{papel:?}");
+        assert_eq!(error(&r), Some(ErroResposta::NaoAutorizado), "{papel:?}");
         let r = trocar_pin(&d, papel, PIN, "2468");
-        assert_eq!(erro(&r), Some(ErroResposta::NaoAutorizado), "{papel:?}");
-        let r = trocar_senha(&d, papel, SENHA, "falso-nova-mestra-02");
-        assert_eq!(erro(&r), Some(ErroResposta::NaoAutorizado), "{papel:?}");
+        assert_eq!(error(&r), Some(ErroResposta::NaoAutorizado), "{papel:?}");
+        let r = trocar_senha(&d, papel, PASSWORD, "falso-nova-mestra-02");
+        assert_eq!(error(&r), Some(ErroResposta::NaoAutorizado), "{papel:?}");
     }
     assert_eq!(configuracao(&d), (DEFAULT_LOCK_MINUTES, false));
-    assert_eq!(geracao_no_disco(&dir.caminhos().cofre, SENHA), geracao);
+    assert_eq!(generation_on_disk(&dir.paths().cofre, PASSWORD), geracao);
     // O PIN e a senha continuam os mesmos.
-    assert!(ok(&mudar_nivel(&d, Papel::App, "t-aprov", "livre", PIN)));
+    assert!(ok(&set_level(&d, Papel::App, "t-aprov", "livre", PIN)));
     d.travar();
-    assert!(ok(&destravar(&d, SENHA)));
+    assert!(ok(&unlock(&d, PASSWORD)));
 }
 
 /// Ataque: travado, a configuração não sai (nem para o app).
 #[test]
 fn ataque_configuracao_com_o_cofre_travado() {
-    let dir = Dir::novo("cfg-travado");
-    let (d, _) = cofre_de_teste(&dir);
+    let dir = Dir::new("cfg-travado");
+    let (d, _) = test_vault(&dir);
     d.travar();
     for (op, dados) in [
         ("configuracao", "{}".to_owned()),
         ("tempo_trava", r#"{"minutos":30}"#.to_owned()),
     ] {
-        let r = pedir(&d, Papel::App, op, &dados);
-        assert_eq!(erro(&r), Some(ErroResposta::Travado), "{op}");
+        let r = request(&d, Papel::App, op, &dados);
+        assert_eq!(error(&r), Some(ErroResposta::Travado), "{op}");
     }
     assert_eq!(
-        erro(&trocar_pin(&d, Papel::App, PIN, "2468")),
+        error(&trocar_pin(&d, Papel::App, PIN, "2468")),
         Some(ErroResposta::Travado)
     );
 }
@@ -140,10 +140,10 @@ fn ataque_configuracao_com_o_cofre_travado() {
 /// a senha; só os três campos (Fase 49a: `backup_local`).
 #[test]
 fn ataque_resposta_configuracao_sem_hash_nem_pin() {
-    let dir = Dir::novo("cfg-hash");
-    let (d, _) = cofre_de_teste(&dir);
-    let r = pedir(&d, Papel::App, "configuracao", "{}");
-    let bytes = codificado(Papel::App, &r);
+    let dir = Dir::new("cfg-hash");
+    let (d, _) = test_vault(&dir);
+    let r = request(&d, Papel::App, "configuracao", "{}");
+    let bytes = encoded(Papel::App, &r);
     let texto = String::from_utf8(bytes.clone()).unwrap();
     for agulha in [
         "argon2",
@@ -151,10 +151,10 @@ fn ataque_resposta_configuracao_sem_hash_nem_pin() {
         "hash",
         "uuid",
         PIN,
-        SENHA,
+        PASSWORD,
         &b64(PIN.as_bytes()),
     ] {
-        assert!(!contem(&bytes, agulha.as_bytes()), "{agulha}: {texto}");
+        assert!(!contains(&bytes, agulha.as_bytes()), "{agulha}: {texto}");
     }
     assert!(
         texto.ends_with(
@@ -168,32 +168,26 @@ fn ataque_resposta_configuracao_sem_hash_nem_pin() {
 /// do 5.º erro; certo grava geração nova, e daí só o PIN novo aprova.
 #[test]
 fn v5_22_trocar_pin_pede_o_pin_atual() {
-    let dir = Dir::novo("cfg-pin");
-    let (d, _) = cofre_de_teste(&dir);
-    let geracao = geracao_no_disco(&dir.caminhos().cofre, SENHA);
+    let dir = Dir::new("cfg-pin");
+    let (d, _) = test_vault(&dir);
+    let geracao = generation_on_disk(&dir.paths().cofre, PASSWORD);
     assert_eq!(
-        erro(&trocar_pin(&d, Papel::App, PIN_ERRADO, "2468")),
+        error(&trocar_pin(&d, Papel::App, WRONG_PIN, "2468")),
         Some(ErroResposta::PinIncorreto)
     );
-    assert_eq!(geracao_no_disco(&dir.caminhos().cofre, SENHA), geracao);
-    assert!(ok(&mudar_nivel(&d, Papel::App, "t-aprov", "livre", PIN)));
+    assert_eq!(generation_on_disk(&dir.paths().cofre, PASSWORD), geracao);
+    assert!(ok(&set_level(&d, Papel::App, "t-aprov", "livre", PIN)));
     assert!(ok(&trocar_pin(&d, Papel::App, PIN, "2468")));
     assert_eq!(
-        geracao_no_disco(&dir.caminhos().cofre, SENHA),
+        generation_on_disk(&dir.paths().cofre, PASSWORD),
         geracao + 2,
         "mudar_nivel e trocar_pin gravam"
     );
     assert_eq!(
-        erro(&mudar_nivel(
-            &d,
-            Papel::App,
-            "t-aprov",
-            "com-aprovacao",
-            PIN
-        )),
+        error(&set_level(&d, Papel::App, "t-aprov", "com-aprovacao", PIN)),
         Some(ErroResposta::PinIncorreto)
     );
-    assert!(ok(&mudar_nivel(
+    assert!(ok(&set_level(
         &d,
         Papel::App,
         "t-aprov",
@@ -202,12 +196,12 @@ fn v5_22_trocar_pin_pede_o_pin_atual() {
     )));
     // O PIN novo está no disco: vale depois de travar e destravar.
     d.travar();
-    assert!(ok(&destravar(&d, SENHA)));
-    assert!(ok(&mudar_nivel(&d, Papel::App, "t-aprov", "livre", "2468")));
+    assert!(ok(&unlock(&d, PASSWORD)));
+    assert!(ok(&set_level(&d, Papel::App, "t-aprov", "livre", "2468")));
     // PIN novo fora do formato nem chega ao daemon.
     for novo in ["135", "1357901", "13579a", ""] {
         assert_eq!(
-            erro(&trocar_pin(&d, Papel::App, "2468", novo)),
+            error(&trocar_pin(&d, Papel::App, "2468", novo)),
             Some(ErroResposta::PedidoInvalido),
             "{novo:?}"
         );
@@ -218,28 +212,28 @@ fn v5_22_trocar_pin_pede_o_pin_atual() {
 /// `mudar_nivel`.
 #[test]
 fn ataque_adivinhar_pin_pela_troca_trava_no_quinto_erro() {
-    let dir = Dir::novo("cfg-pin5");
-    let (d, _) = cofre_de_teste(&dir);
+    let dir = Dir::new("cfg-pin5");
+    let (d, _) = test_vault(&dir);
     for i in 0..5 {
         let r = trocar_pin(&d, Papel::App, &format!("00{i:02}"), "2468");
-        assert_eq!(erro(&r), Some(ErroResposta::PinIncorreto));
+        assert_eq!(error(&r), Some(ErroResposta::PinIncorreto));
     }
     assert!(d.travado());
-    assert!(ok(&destravar(&d, SENHA)));
+    assert!(ok(&unlock(&d, PASSWORD)));
     // Nada mudou: o PIN é o antigo.
-    assert!(ok(&mudar_nivel(&d, Papel::App, "t-aprov", "livre", PIN)));
+    assert!(ok(&set_level(&d, Papel::App, "t-aprov", "livre", PIN)));
 }
 
 /// V5.22: trocar a senha mestra pede a atual. Errada não muda nada; certa grava geração
 /// nova e o cofre abre só com a nova; o tempo de trava e o PIN continuam.
 #[test]
 fn v5_22_trocar_senha_pede_a_atual_e_mantem_a_configuracao() {
-    let dir = Dir::novo("cfg-senha");
-    let (d, _) = cofre_de_teste(&dir);
+    let dir = Dir::new("cfg-senha");
+    let (d, _) = test_vault(&dir);
     assert!(ok(&tempo_trava(&d, Papel::App, 60)));
-    let geracao = geracao_no_disco(&dir.caminhos().cofre, SENHA);
+    let geracao = generation_on_disk(&dir.paths().cofre, PASSWORD);
     assert_eq!(
-        erro(&trocar_senha(
+        error(&trocar_senha(
             &d,
             Papel::App,
             "falso-errada-mestra-01",
@@ -248,22 +242,22 @@ fn v5_22_trocar_senha_pede_a_atual_e_mantem_a_configuracao() {
         Some(ErroResposta::SenhaIncorreta)
     );
     assert!(!d.travado());
-    assert_eq!(geracao_no_disco(&dir.caminhos().cofre, SENHA), geracao);
+    assert_eq!(generation_on_disk(&dir.paths().cofre, PASSWORD), geracao);
     assert!(ok(&trocar_senha(
         &d,
         Papel::App,
-        SENHA,
+        PASSWORD,
         "falso-nova-mestra-02"
     )));
-    assert!(geracao_no_disco(&dir.caminhos().cofre, "falso-nova-mestra-02") > geracao);
+    assert!(generation_on_disk(&dir.paths().cofre, "falso-nova-mestra-02") > geracao);
     d.travar();
     assert_eq!(
-        erro(&destravar(&d, SENHA)),
+        error(&unlock(&d, PASSWORD)),
         Some(ErroResposta::SenhaIncorreta)
     );
-    assert!(ok(&destravar(&d, "falso-nova-mestra-02")));
+    assert!(ok(&unlock(&d, "falso-nova-mestra-02")));
     assert_eq!(configuracao(&d), (60, false));
-    assert!(ok(&mudar_nivel(&d, Papel::App, "t-aprov", "livre", PIN)));
+    assert!(ok(&set_level(&d, Papel::App, "t-aprov", "livre", PIN)));
 }
 
 /// Fase 39c: o mínimo de 12 caracteres da senha mestra vale também no daemon, contado
@@ -282,12 +276,12 @@ fn ataque_senha_mestra_nova_curta_recusada_pelo_daemon() {
     let disfarcada = "e\u{301}".repeat(11);
 
     // Criar o cofre.
-    let dir = Dir::novo("cfg-senha-curta");
-    let c = dir.caminhos();
-    let (d, _) = daemon_em(c.clone());
+    let dir = Dir::new("cfg-senha-curta");
+    let c = dir.paths();
+    let (d, _) = daemon_at(c.clone());
     // (Vazia nem passa do protocolo: `pedido_invalido`.)
     for curta in ["falso-mest1", disfarcada.as_str()] {
-        let r = pedir(
+        let r = request(
             &d,
             Papel::App,
             "criar_cofre",
@@ -303,15 +297,18 @@ fn ataque_senha_mestra_nova_curta_recusada_pelo_daemon() {
     }
 
     // Trocar a senha.
-    let dir = Dir::novo("cfg-senha-curta-troca");
-    let (d, _) = cofre_de_teste(&dir);
-    let antes = geracoes(&dir);
+    let dir = Dir::new("cfg-senha-curta-troca");
+    let (d, _) = test_vault(&dir);
+    let antes = generations(&dir);
     for curta in ["falso-mest1", disfarcada.as_str()] {
-        assert_eq!(campo(&trocar_senha(&d, Papel::App, SENHA, curta)), ["nova"]);
+        assert_eq!(
+            campo(&trocar_senha(&d, Papel::App, PASSWORD, curta)),
+            ["nova"]
+        );
     }
-    assert_eq!(geracoes(&dir), antes);
+    assert_eq!(generations(&dir), antes);
     d.travar();
-    assert!(ok(&destravar(&d, SENHA)));
+    assert!(ok(&unlock(&d, PASSWORD)));
 }
 
 /// Fase 39c: a senha mestra criada composta abre decomposta (e o contrário), pelo
@@ -320,14 +317,14 @@ fn ataque_senha_mestra_nova_curta_recusada_pelo_daemon() {
 fn senha_mestra_composta_abre_decomposta_pelo_daemon() {
     let composta = "falso-mestra-\u{e9}\u{e7}\u{e3}o-01";
     let decomposta = "falso-mestra-e\u{301}c\u{327}a\u{303}o-01";
-    let dir = Dir::novo("cfg-senha-nfc");
-    let (d, _) = cofre_de_teste(&dir);
-    assert!(ok(&trocar_senha(&d, Papel::App, SENHA, decomposta)));
+    let dir = Dir::new("cfg-senha-nfc");
+    let (d, _) = test_vault(&dir);
+    assert!(ok(&trocar_senha(&d, Papel::App, PASSWORD, decomposta)));
     d.travar();
-    assert!(ok(&destravar(&d, composta)));
+    assert!(ok(&unlock(&d, composta)));
     d.travar();
-    assert!(ok(&destravar(&d, decomposta)));
-    assert!(ok(&trocar_senha(&d, Papel::App, composta, SENHA)));
+    assert!(ok(&unlock(&d, decomposta)));
+    assert!(ok(&trocar_senha(&d, Papel::App, composta, PASSWORD)));
 }
 
 /// Fase 55 (reauditoria final, baixo): a troca de senha lia o cofre de novo pela
@@ -344,10 +341,10 @@ fn f55_ataque_fifo_no_lugar_do_cofre_nao_prende_a_troca_de_senha() {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::{Duration, Instant};
 
-    let dir = Dir::novo("troca-fifo");
-    let (d, _) = cofre_de_teste(&dir);
+    let dir = Dir::new("troca-fifo");
+    let (d, _) = test_vault(&dir);
     let d = Arc::new(d);
-    let cofre = dir.caminhos().cofre;
+    let cofre = dir.paths().cofre;
     let real = dir.0.join("x-real");
     fs::hard_link(&cofre, &real).unwrap();
 
@@ -364,18 +361,23 @@ fn f55_ataque_fifo_no_lugar_do_cofre_nao_prende_a_troca_de_senha() {
     {
         let d = d.clone();
         std::thread::spawn(move || {
-            let _ = tx.send(trocar_senha(&d, Papel::App, SENHA, "falso-nova-mestra-55"));
+            let _ = tx.send(trocar_senha(
+                &d,
+                Papel::App,
+                PASSWORD,
+                "falso-nova-mestra-55",
+            ));
         });
     }
     let r = rx
         .recv_timeout(Duration::from_secs(5))
         .expect("a troca de senha ficou presa no FIFO");
-    assert_eq!(erro(&r), Some(ErroResposta::CofreMudou), "{r:?}");
+    assert_eq!(error(&r), Some(ErroResposta::CofreMudou), "{r:?}");
     assert!(d.travado());
     let volta = dir.0.join("x-volta");
     fs::hard_link(&real, &volta).unwrap();
     fs::rename(&volta, &cofre).unwrap();
-    assert!(ok(&destravar(&d, SENHA)));
+    assert!(ok(&unlock(&d, PASSWORD)));
 
     // FIFO entrando e saindo do lugar durante os pedidos.
     let parar = Arc::new(AtomicBool::new(false));
@@ -416,11 +418,11 @@ fn f55_ataque_fifo_no_lugar_do_cofre_nao_prende_a_troca_de_senha() {
                 "falso-senha-errada-55",
                 "falso-nova-mestra-55",
             );
-            if erro(&r) != Some(ErroResposta::SenhaIncorreta) {
+            if error(&r) != Some(ErroResposta::SenhaIncorreta) {
                 // Travou (o arquivo mudou ou erros demais): destrava de novo (o
                 // destravar também lê sem seguir FIFO; tenta até pegar o real).
                 for _ in 0..50 {
-                    if ok(&destravar(&d2, SENHA)) {
+                    if ok(&unlock(&d2, PASSWORD)) {
                         break;
                     }
                 }
@@ -432,14 +434,14 @@ fn f55_ataque_fifo_no_lugar_do_cofre_nao_prende_a_troca_de_senha() {
             .expect("a troca de senha ficou presa num FIFO (o daemon parou)");
         assert!(
             matches!(
-                erro(&r),
+                error(&r),
                 Some(
                     ErroResposta::SenhaIncorreta | ErroResposta::CofreMudou | ErroResposta::Travado
                 )
             ),
             "{r:?}"
         );
-        if erro(&r) == Some(ErroResposta::SenhaIncorreta) {
+        if error(&r) == Some(ErroResposta::SenhaIncorreta) {
             lidos += 1;
         }
         pedidos += 1;
@@ -452,8 +454,8 @@ fn f55_ataque_fifo_no_lugar_do_cofre_nao_prende_a_troca_de_senha() {
     );
     // O arquivo real no lugar: a troca com a senha certa funciona.
     if d.travado() {
-        assert!(ok(&destravar(&d, SENHA)));
+        assert!(ok(&unlock(&d, PASSWORD)));
     }
-    let r = trocar_senha(&d, Papel::App, SENHA, "falso-nova-mestra-55");
+    let r = trocar_senha(&d, Papel::App, PASSWORD, "falso-nova-mestra-55");
     assert!(ok(&r), "{r:?}");
 }

@@ -8,7 +8,7 @@
 
 #![cfg(feature = "test-hooks")]
 
-mod comum;
+mod common;
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -16,13 +16,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use comum::*;
+use common::*;
 use ward_core::protocolo::{ErroResposta, Papel, Resposta};
 use wardd::aprovacao::SemCliente;
 use wardd::nucleo::Daemon;
 
 /// Password of the free login entry of the common test vault (fake).
-const LOGIN_PASSWORD: &str = SEGREDOS[3];
+const LOGIN_PASSWORD: &str = SECRETS[3];
 
 /// `<rt>` of this test only, in `/run/user/<uid>/`.
 struct Rt(PathBuf);
@@ -50,8 +50,8 @@ struct Scene {
 }
 
 fn scene(label: &str, mode: &str) -> Scene {
-    let dir = Dir::novo(label);
-    let (d, _) = cofre_de_teste(&dir);
+    let dir = Dir::new(label);
+    let (d, _) = test_vault(&dir);
     let base = dir.0.join("chrome");
     fs::create_dir(&base).unwrap();
     let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fake_chrome.py");
@@ -79,7 +79,7 @@ fn scene(label: &str, mode: &str) -> Scene {
 
 impl Scene {
     fn playwright(&self, entry: &str) -> Resposta {
-        let p = ped(
+        let p = req(
             Papel::Agente,
             "playwright",
             &format!(r#"{{"entrada":"{entry}"}}"#),
@@ -155,9 +155,9 @@ fn v6_12_session_saved_only_the_path_comes_back() {
         }
         other => panic!("{other:?}"),
     }
-    let enc = codificado(Papel::Agente, &r);
+    let enc = encoded(Papel::Agente, &r);
     for f in password_forms() {
-        assert!(!contem(&enc, &f), "a resposta tem a senha");
+        assert!(!contains(&enc, &f), "a resposta tem a senha");
     }
     let m = fs::symlink_metadata(&expected).unwrap();
     assert!(m.file_type().is_file());
@@ -166,7 +166,7 @@ fn v6_12_session_saved_only_the_path_comes_back() {
     assert_eq!(folder.permissions().mode() & 0o777, 0o700);
     let state = fs::read(&expected).unwrap();
     for f in password_forms() {
-        assert!(!contem(&state, &f), "o storage state tem a senha");
+        assert!(!contains(&state, &f), "o storage state tem a senha");
     }
     let v: serde_json::Value = serde_json::from_slice(&state).unwrap();
     assert_eq!(v["cookies"][0]["name"], "sessao");
@@ -190,7 +190,7 @@ fn v6_12_session_saved_only_the_path_comes_back() {
     );
     let all = serde_json::to_vec(start).unwrap();
     for f in password_forms() {
-        assert!(!contem(&all, &f), "argv ou ambiente com a senha");
+        assert!(!contains(&all, &f), "argv ou ambiente com a senha");
     }
     let env: Vec<&str> = start["ambiente"]
         .as_array()
@@ -254,7 +254,7 @@ fn v6_12_session_saved_only_the_path_comes_back() {
 fn v6_15_redirect_to_another_origin_refused() {
     let c = scene("redir", "redir");
     let r = c.playwright("t-livre");
-    assert_eq!(erro(&r), Some(ErroResposta::OrigemDiferente), "{r:?}");
+    assert_eq!(error(&r), Some(ErroResposta::OrigemDiferente), "{r:?}");
     let d = c.events("decisao");
     assert_eq!(d.len(), 2, "{d:?}");
     assert_eq!(d[0]["seguiu"], true);
@@ -272,7 +272,7 @@ fn v6_15_redirect_to_another_origin_refused() {
 fn d9_origin_of_the_page_and_of_the_submission() {
     let c = scene("mente", "mente");
     assert_eq!(
-        erro(&c.playwright("t-livre")),
+        error(&c.playwright("t-livre")),
         Some(ErroResposta::OrigemDiferente)
     );
     assert!(c.events("preencher").is_empty(), "a senha foi ao Chrome");
@@ -280,7 +280,7 @@ fn d9_origin_of_the_page_and_of_the_submission() {
 
     let c = scene("posoutra", "pos_outra");
     assert_eq!(
-        erro(&c.playwright("t-livre")),
+        error(&c.playwright("t-livre")),
         Some(ErroResposta::OrigemDiferente)
     );
     let d = c.events("decisao");
@@ -297,7 +297,7 @@ fn d9_origin_of_the_page_and_of_the_submission() {
 
     let c = scene("formoutra", "form_outra");
     assert_eq!(
-        erro(&c.playwright("t-livre")),
+        error(&c.playwright("t-livre")),
         Some(ErroResposta::OrigemDiferente)
     );
     assert!(!c.session("t-livre").exists());
@@ -311,7 +311,7 @@ fn s1_session_with_the_password_is_not_saved() {
     for mode in ["cookie_senha", "ls_senha"] {
         let c = scene(mode, mode);
         assert_eq!(
-            erro(&c.playwright("t-livre")),
+            error(&c.playwright("t-livre")),
             Some(ErroResposta::SessaoComSegredo),
             "{mode}"
         );
@@ -332,7 +332,7 @@ fn browser_that_crashes_or_sends_garbage() {
     for mode in ["morre", "grande"] {
         let c = scene(mode, mode);
         assert_eq!(
-            erro(&c.playwright("t-livre")),
+            error(&c.playwright("t-livre")),
             Some(ErroResposta::NavegadorFalhou),
             "{mode}"
         );
@@ -352,7 +352,7 @@ fn d6_lock_during_the_session_nothing_saved() {
     });
     let r = c.playwright("t-livre");
     t.join().unwrap();
-    assert_eq!(erro(&r), Some(ErroResposta::Travado), "{r:?}");
+    assert_eq!(error(&r), Some(ErroResposta::Travado), "{r:?}");
     assert!(!c.session("t-livre").exists());
     assert!(c.no_profile());
 }
@@ -367,17 +367,17 @@ fn refusals_without_opening_the_browser() {
         ("nao-existe", ErroResposta::EntradaInexistente),
         ("s1", ErroResposta::TipoSemEntrega),
     ] {
-        assert_eq!(erro(&c.playwright(entry)), Some(expected), "{entry}");
+        assert_eq!(error(&c.playwright(entry)), Some(expected), "{entry}");
     }
     assert!(
-        erro(&c.playwright("t-aprov")).is_some(),
+        error(&c.playwright("t-aprov")).is_some(),
         "com aprovação sem app"
     );
     assert!(c.events("inicio").is_empty(), "o navegador abriu");
     // The app role does not ask for `playwright`.
-    let p = ped(Papel::Agente, "playwright", r#"{"entrada":"t-livre"}"#).unwrap();
+    let p = req(Papel::Agente, "playwright", r#"{"entrada":"t-livre"}"#).unwrap();
     assert_eq!(
-        erro(&c.d.atender_de(&SemCliente, Papel::App, p)),
+        error(&c.d.atender_de(&SemCliente, Papel::App, p)),
         Some(ErroResposta::NaoAutorizado)
     );
     assert!(c.events("inicio").is_empty());
@@ -623,10 +623,10 @@ fn real_scene(label: &str) -> RealScene {
     let site = site::start(Box::new(move |method, path, body| {
         let outside = format!("http://127.0.0.1:{pp}/x");
         if method == "POST" && path == "/entrar" {
-            if contem(body, b"recusa=1") {
+            if contains(body, b"recusa=1") {
                 return (200, vec![], form("", "", ""));
             }
-            if contem(body, b"recusa=2") {
+            if contains(body, b"recusa=2") {
                 return (200, vec![], with_clobber(&form("", "", "")));
             }
             return (
@@ -640,21 +640,21 @@ fn real_scene(label: &str) -> RealScene {
         }
         page(path.trim_start_matches('/'), &outside, pp)
     }));
-    let dir = Dir::novo(label);
-    let (d, _) = cofre_de_teste(&dir);
+    let dir = Dir::new(label);
+    let (d, _) = test_vault(&dir);
     let rt = Rt::new(label);
     let d = d.com_temporarios(rt.0.clone());
     for (case, _) in CASES {
         let url = format!("http://127.0.0.1:{}/{case}", site.port);
         let name = format!("w-{case}");
-        let r = pedir(
+        let r = request(
             &d,
             Papel::App,
             "salvar_entrada",
             &login_at(&name, &url, LOGIN_PASSWORD),
         );
         assert!(ok(&r), "{r:?}");
-        assert!(ok(&mudar_nivel(&d, Papel::App, &name, "livre", PIN)));
+        assert!(ok(&set_level(&d, Papel::App, &name, "livre", PIN)));
     }
     RealScene {
         d: Arc::new(d),
@@ -667,7 +667,7 @@ fn real_scene(label: &str) -> RealScene {
 
 impl RealScene {
     fn playwright(&self, entry: &str) -> Resposta {
-        let p = ped(
+        let p = req(
             Papel::Agente,
             "playwright",
             &format!(r#"{{"entrada":"{entry}"}}"#),
@@ -682,7 +682,7 @@ impl RealScene {
             p.method != "POST"
                 && password_forms()
                     .iter()
-                    .all(|f| !contem(&p.body, f) && !contem(p.path.as_bytes(), f))
+                    .all(|f| !contains(&p.body, f) && !contains(p.path.as_bytes(), f))
         })
     }
 
@@ -691,7 +691,7 @@ impl RealScene {
         self.site.requests.lock().unwrap().iter().all(|p| {
             password_forms()
                 .iter()
-                .all(|f| !contem(p.path.as_bytes(), f))
+                .all(|f| !contains(p.path.as_bytes(), f))
         })
     }
 
@@ -721,7 +721,7 @@ fn real_chrome_login_and_attacks() {
         let entry = format!("w-{case}");
         // Phase 44c: the sites are `http://127.0.0.1:<port>`, so every use goes through
         // the origin confirmation (the fake window confirms).
-        let (r, seen) = com_janela(&c.d, "confirmar", None, || c.playwright(&entry));
+        let (r, seen) = with_window(&c.d, "confirmar", None, || c.playwright(&entry));
         assert!(
             seen.len() == 1
                 && seen[0].confirmacao
@@ -736,13 +736,13 @@ fn real_chrome_login_and_attacks() {
                     "{case}: {r:?}"
                 );
                 let state = fs::read(&path).unwrap();
-                assert!(contem(&state, b"token-falso-da-sessao"), "{case}");
+                assert!(contains(&state, b"token-falso-da-sessao"), "{case}");
                 for f in password_forms() {
-                    assert!(!contem(&state, &f), "{case}");
+                    assert!(!contains(&state, &f), "{case}");
                 }
             }
             Some(e) => {
-                assert_eq!(erro(&r).as_ref(), Some(e), "{case}: {r:?}");
+                assert_eq!(error(&r).as_ref(), Some(e), "{case}: {r:?}");
                 assert!(!path.exists(), "{case}");
             }
         }
@@ -784,13 +784,13 @@ fn attack_playwright_http_free_only_with_confirmation() {
         r#"{{"entrada":{{"nome":"h-livre","grupo":"acme","ambiente":"prod","tipo":"login","campos":{{"url":"http://localhost:8081/wp-login.php","usuario":"wp_editor","senha":"{}"}}}}}}"#,
         b64(LOGIN_PASSWORD.as_bytes())
     );
-    assert!(ok(&pedir(&c.d, Papel::App, "salvar_entrada", &q)));
-    assert!(ok(&mudar_nivel(&c.d, Papel::App, "h-livre", "livre", PIN)));
+    assert!(ok(&request(&c.d, Papel::App, "salvar_entrada", &q)));
+    assert!(ok(&set_level(&c.d, Papel::App, "h-livre", "livre", PIN)));
     let r = c.playwright("h-livre");
-    assert_eq!(erro(&r), Some(ErroResposta::AprovacaoIndisponivel));
+    assert_eq!(error(&r), Some(ErroResposta::AprovacaoIndisponivel));
     assert!(c.events("inicio").is_empty(), "o Chrome abriu sem a janela");
-    let (r, seen) = com_janela(&c.d, "negar", None, || c.playwright("h-livre"));
-    assert_eq!(erro(&r), Some(ErroResposta::Negado));
+    let (r, seen) = with_window(&c.d, "negar", None, || c.playwright("h-livre"));
+    assert_eq!(error(&r), Some(ErroResposta::Negado));
     assert!(
         c.events("inicio").is_empty(),
         "o Chrome abriu com a janela negada"
@@ -800,11 +800,11 @@ fn attack_playwright_http_free_only_with_confirmation() {
     assert_eq!(p.operacao, ward_core::protocolo::Operacao::Playwright);
     assert_eq!(p.origem, "http://localhost:8081");
     assert!(p.confirmacao);
-    let enc = codificado(Papel::App, &Resposta::PedidoDeAprovacao(p.clone()));
+    let enc = encoded(Papel::App, &Resposta::PedidoDeAprovacao(p.clone()));
     for f in password_forms() {
-        assert!(!contem(&enc, &f), "o pedido da janela tem a senha");
+        assert!(!contains(&enc, &f), "o pedido da janela tem a senha");
     }
-    let (_, seen) = com_janela(&c.d, "confirmar", None, || c.playwright("h-livre"));
+    let (_, seen) = with_window(&c.d, "confirmar", None, || c.playwright("h-livre"));
     assert_eq!(seen.len(), 1);
     assert!(
         !c.events("inicio").is_empty(),
@@ -835,15 +835,22 @@ fn attack_playwright_https_loopback_free_only_with_confirmation() {
             r#"{{"entrada":{{"nome":"{name}","grupo":"acme","ambiente":"prod","tipo":"login","campos":{{"url":"{url}","usuario":"wp_editor","senha":"{}"}}}}}}"#,
             b64(LOGIN_PASSWORD.as_bytes())
         );
-        assert!(ok(&pedir(&c.d, Papel::App, "salvar_entrada", &q)), "{url}");
         assert!(
-            ok(&mudar_nivel(&c.d, Papel::App, &name, "livre", PIN)),
+            ok(&request(&c.d, Papel::App, "salvar_entrada", &q)),
+            "{url}"
+        );
+        assert!(
+            ok(&set_level(&c.d, Papel::App, &name, "livre", PIN)),
             "{url}"
         );
         let r = c.playwright(&name);
-        assert_eq!(erro(&r), Some(ErroResposta::AprovacaoIndisponivel), "{url}");
-        let (r, seen) = com_janela(&c.d, "negar", None, || c.playwright(&name));
-        assert_eq!(erro(&r), Some(ErroResposta::Negado), "{url}");
+        assert_eq!(
+            error(&r),
+            Some(ErroResposta::AprovacaoIndisponivel),
+            "{url}"
+        );
+        let (r, seen) = with_window(&c.d, "negar", None, || c.playwright(&name));
+        assert_eq!(error(&r), Some(ErroResposta::Negado), "{url}");
         assert!(c.events("inicio").is_empty(), "o Chrome abriu: {url}");
         assert!(!c.session(&name).exists(), "{url}");
         assert_eq!(seen.len(), 1, "{url}");
@@ -856,7 +863,7 @@ fn attack_playwright_https_loopback_free_only_with_confirmation() {
 #[test]
 fn playwright_https_free_without_window() {
     let c = scene("https-livre", "ok");
-    let (r, seen) = com_janela(&c.d, "negar", None, || c.playwright("t-livre"));
+    let (r, seen) = with_window(&c.d, "negar", None, || c.playwright("t-livre"));
     assert!(matches!(r, Resposta::SessaoPlaywright { .. }), "{r:?}");
     assert!(seen.is_empty());
 }
