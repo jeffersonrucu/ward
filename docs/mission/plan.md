@@ -138,7 +138,7 @@ Compilação de cada fase: `make compile`. Checador: os arquivos da fase.
   continua 4). — V2.1, V2.2
 - [x] Fase 15 — `backup` (+ testes), `entrega` (+ testes; nomes das variáveis entregues
   congelados). — V2.1
-- [ ] Fase 16 — `mascara.rs`, `mascara/automato.rs`, `mascara/testes.rs`. Lógica da
+- [x] Fase 16 — `mascara.rs`, `mascara/automato.rs`, `mascara/testes.rs`. Lógica da
   máscara intocada. — V2.1, V2.5
 - [ ] Fase 17 — `protocolo.rs`, `campos.rs`, `quadro.rs`, `json.rs`, `erros.rs`,
   `pedido.rs` (nomes de operação, campo, erro e papel congelados como literais; o
