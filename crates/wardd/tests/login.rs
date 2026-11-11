@@ -25,16 +25,16 @@ use ward_core::protocolo::{
 use wardd::aprovacao::{
     AbridorApp, Assinante, Cliente, ErroAbrirApp, Motor, RelogioMotor, SemCliente,
 };
-use wardd::login::PrazosLogin;
+use wardd::login::LoginDeadlines;
 use wardd::nucleo::Daemon;
 
 /// A URL das entradas `login` do cofre de teste comum (`t-livre`, `t-aprov`, `t-bloq`).
 const ORIGEM: &str = "https://clientex.invalid";
 
-fn prazos(retirada_ms: u64) -> PrazosLogin {
-    PrazosLogin {
-        aguardar: Duration::from_millis(300),
-        retirada: Duration::from_millis(retirada_ms),
+fn prazos(retirada_ms: u64) -> LoginDeadlines {
+    LoginDeadlines {
+        wait: Duration::from_millis(300),
+        pickup: Duration::from_millis(retirada_ms),
         total: Duration::from_secs(5),
     }
 }

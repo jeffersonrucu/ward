@@ -1,33 +1,33 @@
-//! `ward playwright <entrada>` (Fase 44; D6, D9; S1–S3, S8, S13).
+//! `ward playwright <entry>` (Phase 44; D6, D9; S1–S3, S8, S13).
 //!
-//! O daemon faz o login numa entrada `login` com o Chrome instalado e devolve só o
-//! caminho do storage state (sessão, nunca a senha):
+//! The daemon logs in to a `login` entry with the installed Chrome and returns only the
+//! path of the storage state (session, never the password):
 //!
-//! 1. nível e aprovação ([`Daemon::autorizar_uso`]); bloqueada = inexistente;
-//! 2. perfil temporário novo em `<rt>pw-<aleatório>/` (0700, tmpfs), e o Chrome em
-//!    headless com `--remote-debugging-pipe` (comandos no fd 3, respostas no fd 4; sem
-//!    porta TCP), ambiente montado do zero (`HOME` e `XDG_*` dentro do perfil,
-//!    `--password-store=basic`: nada do chaveiro nem do home do usuário), argv sem
-//!    segredo (S3);
-//! 3. contexto de navegação sem disco (`Target.createBrowserContext`, como o anônimo):
-//!    cookies, cache e sessão ficam na memória do Chrome;
-//! 4. navega até a URL da entrada; todo documento do quadro principal de outra origem
-//!    é recusado no navegador (redirecionamento para o phishing não carrega, D9);
-//!    confere a origem da página (esquema, host e porta) contra a da entrada;
-//! 5. preenche num mundo isolado (os scripts da página não veem nem trocam o código
-//!    do Ward): só com um campo de senha visível, formulário `POST` cujo destino é da
-//!    mesma origem e sem janela nova; envia;
-//! 6. depois da carga, confere de novo a origem (D6) e que a página de login sumiu;
-//! 7. lê os cookies do contexto e o `localStorage` da origem, monta o storage state no
-//!    formato do Playwright e confere com a máscara da entrada: se a senha (ou uma
-//!    variação dela) estiver lá, nada é gravado;
-//! 8. grava `<rt>playwright/<entrada>.json` (0600, temporário + `rename`) com o cofre
-//!    destravado e sem trava no meio (contagem de travas igual à do começo);
-//! 9. mata o Chrome (grupo inteiro) e apaga o perfil **antes** de responder.
+//! 1. level and approval (the daemon's usage authorization); blocked = nonexistent;
+//! 2. new temporary profile in `<rt>pw-<random>/` (0700, tmpfs), and Chrome in headless
+//!    mode with `--remote-debugging-pipe` (commands on fd 3, responses on fd 4; no TCP
+//!    port), environment built from scratch (`HOME` and `XDG_*` inside the profile,
+//!    `--password-store=basic`: nothing from the keyring nor from the user's home), argv
+//!    without secrets (S3);
+//! 3. browsing context without disk (`Target.createBrowserContext`, like incognito):
+//!    cookies, cache and session stay in Chrome's memory;
+//! 4. navigates to the entry URL; every main frame document from another origin is
+//!    refused in the browser (a redirect to the phishing site does not load, D9);
+//!    checks the page origin (scheme, host and port) against the entry's;
+//! 5. fills in an isolated world (the page scripts neither see nor change Ward's code):
+//!    only with one visible password field, a `POST` form whose destination is the same
+//!    origin, and no new window; submits;
+//! 6. after the load, checks the origin again (D6) and that the login page is gone;
+//! 7. reads the context cookies and the origin's `localStorage`, builds the storage
+//!    state in Playwright's format and checks it with the entry's mask: if the password
+//!    (or a variation of it) is there, nothing is written;
+//! 8. writes `<rt>playwright/<entry>.json` (0600, temporary + `rename`) with the vault
+//!    unlocked and no lock in the middle (lock count equal to the one at the start);
+//! 9. kills Chrome (whole group) and deletes the profile **before** answering.
 //!
-//! Os storage states são apagados ao travar ([`apagar_sessoes`], chamado pelo
-//! `Estado::travar`) e na partida do daemon ([`limpar`]), com os perfis que um daemon
-//! morto deixou.
+//! The storage states are deleted on lock ([`delete_sessions`], called by the vault
+//! lock) and at daemon startup ([`clean_up`]), together with the profiles a
+//! dead daemon left behind.
 
 use std::fs;
 use std::io::{self, Write};
@@ -46,39 +46,41 @@ use ward_platform::child::{Command, Group};
 
 use crate::aprovacao::Cliente;
 use crate::aviso;
-use crate::cdp::{Cdp, ErroCdp, Escritor, Regra, pior_caso};
+use crate::cdp::{Cdp, CdpError, Rule, Writer, worst_case};
 use crate::nucleo::Daemon;
 
-/// O Chrome instalado (o mesmo do papel extensão, D47).
+/// The installed Chrome (the same as the extension role, D47).
 pub const CHROME: &str = "/opt/google/chrome/chrome";
-/// `<rt>playwright/`: os storage states.
-pub const PASTA_SESSOES: &str = "playwright";
-/// `<rt>pw-<aleatório>/`: o perfil temporário de uma sessão.
-pub const PREFIXO_PERFIL: &str = "pw-";
-/// Prazo da sessão inteira do navegador (abrir, entrar e ler a sessão).
-pub const PRAZO_SESSAO: Duration = Duration::from_secs(60);
-/// Prazo de cada carga de página.
-const PRAZO_CARGA: Duration = Duration::from_secs(20);
-/// `PATH` do Chrome (ele se acha pelo caminho absoluto; isto é para o que ele chama).
-const PATH_FILHO: &[u8] = b"/usr/bin:/bin";
+/// `<rt>playwright/`: the storage states.
+pub const SESSIONS_DIR: &str = "playwright";
+/// `<rt>pw-<random>/`: the temporary profile of a session.
+pub const PROFILE_PREFIX: &str = "pw-";
+/// Deadline of the whole browser session (open, log in and read the session).
+pub const SESSION_DEADLINE: Duration = Duration::from_secs(60);
+/// Deadline of each page load.
+const LOAD_DEADLINE: Duration = Duration::from_secs(20);
+/// Chrome's `PATH` (it finds itself by the absolute path; this is for what it calls).
+const CHILD_PATH: &[u8] = b"/usr/bin:/bin";
 
-/// Preferências do perfil novo: sem gerenciador de senhas e sem preenchimento
-/// automático (nada da página vai para os arquivos do perfil).
-const PREFERENCIAS: &[u8] = br#"{"credentials_enable_service":false,"profile":{"password_manager_enabled":false},"autofill":{"enabled":false,"profile_enabled":false,"credit_card_enabled":false}}"#;
+/// Preferences of the new profile: no password manager and no autofill (nothing from
+/// the page goes to the profile files).
+const PREFERENCES: &[u8] = br#"{"credentials_enable_service":false,"profile":{"password_manager_enabled":false},"autofill":{"enabled":false,"profile_enabled":false,"credit_card_enabled":false}}"#;
 
-/// Preenche e envia, no mundo isolado (os scripts da página não alcançam este código
-/// nem os protótipos dele). Argumentos: usuário, senha, código TOTP (ou `null`) e a
-/// origem da entrada. Volta `"ok"`, `"origem"` ou `"formulario"`.
+/// Fills and submits, in the isolated world (the page scripts reach neither this code
+/// nor its prototypes). Arguments: username, password, TOTP code (or `null`) and the
+/// entry's origin. Returns `"ok"`, or one of two refusal codes: other origin, or no
+/// safe form (checked in [`log_in`]). The JavaScript is a literal and keeps its pt-BR
+/// names (m2: PRD rule 5).
 ///
-/// DOM clobbering (como em `extension/page.js`): o `document` e o `<form>` têm
-/// propriedades com nome vindas da página (um `<img name="querySelectorAll">` troca o
-/// `document.querySelectorAll`; um `<input name="action">`, o `form.action`). No Chrome
-/// de hoje as do `<form>` chegam ao mundo isolado e as do `document` não (conferido na
-/// Fase 44a), mas o script não depende disso: busca, getters e métodos saem dos
-/// protótipos do mundo isolado (`Document.prototype.querySelectorAll.call(document, …)`,
-/// descritores de `HTMLFormElement`/`HTMLInputElement`/`HTMLButtonElement`,
-/// `Element.prototype`).
-const PREENCHER: &str = r#"function (usuario, senha, codigo, origem) {
+/// DOM clobbering (as in `extension/page.js`): `document` and the `<form>` have named
+/// properties coming from the page (an `<img name="querySelectorAll">` replaces
+/// `document.querySelectorAll`; an `<input name="action">`, `form.action`). In today's
+/// Chrome the `<form>` ones reach the isolated world and the `document` ones do not
+/// (checked in Phase 44a), but the script does not depend on that: lookup, getters and
+/// methods come from the isolated world's prototypes
+/// (`Document.prototype.querySelectorAll.call(document, …)`, descriptors of
+/// `HTMLFormElement`/`HTMLInputElement`/`HTMLButtonElement`, `Element.prototype`).
+const FILL_SCRIPT: &str = r#"function (usuario, senha, codigo, origem) {
   if (location.origin !== origem) return "origem";
   const desc = (P, k) => Object.getOwnPropertyDescriptor(P, k);
   const pegar = (P, k) => { const g = desc(P, k).get; return o => g.call(o); };
@@ -142,10 +144,11 @@ const PREENCHER: &str = r#"function (usuario, senha, codigo, origem) {
   return "ok";
 }"#;
 
-/// Depois do login: se ainda há campo de senha visível (a página de login voltou) e o
-/// `localStorage` da origem, em JSON. Também pelos protótipos (DOM clobbering: um
-/// `<img name="querySelectorAll">` na página depois do envio não esconde a senha).
-const LER_PAGINA: &str = r#"function () {
+/// After the login: whether there is still a visible password field (the login page
+/// came back) and the origin's `localStorage`, in JSON. Also through the prototypes (DOM
+/// clobbering: an `<img name="querySelectorAll">` on the page after the submission does
+/// not hide the password).
+const READ_PAGE_SCRIPT: &str = r#"function () {
   const vis = c => Element.prototype.getClientRects.call(c).length > 0;
   const senha = Array.prototype.slice.call(
     Document.prototype.querySelectorAll.call(document, 'input[type="password"]')).some(vis);
@@ -161,25 +164,26 @@ const LER_PAGINA: &str = r#"function () {
   return JSON.stringify({ senha: senha, ls: ls });
 }"#;
 
-// --- Arquivos (S2) -----------------------------------------------------------------------
+// --- Files (S2) -------------------------------------------------------------------------
 
 /// `<rt>playwright/`.
-pub fn pasta_sessoes(rt: &Path) -> PathBuf {
-    rt.join(PASTA_SESSOES)
+pub fn sessions_dir(rt: &Path) -> PathBuf {
+    rt.join(SESSIONS_DIR)
 }
 
-/// Apaga os storage states (`<rt>playwright/*`). Chamado ao travar. Não segue link: a
-/// pasta é aberta com `O_DIRECTORY | O_NOFOLLOW` (um link plantado no lugar de
-/// `<rt>playwright` não abre, e nada é apagado do alvo dele) e o conteúdo é listado e
-/// apagado pelo fd (Fase 44e; `ward_platform::dir::delete_contents`): trocar a pasta
-/// por um link depois de aberta não muda o que é apagado. Cada item é apagado como ele
-/// é (um link vira só o link apagado).
-pub fn apagar_sessoes(rt: &Path) -> usize {
+/// Deletes the storage states (`<rt>playwright/*`). Called on lock. Does not follow
+/// links: the directory is opened with `O_DIRECTORY | O_NOFOLLOW` (a link planted in
+/// place of `<rt>playwright` does not open, and nothing is deleted from its target) and
+/// the content is listed and deleted through the fd (Phase 44e;
+/// `ward_platform::dir::delete_contents`): swapping the directory for a link after it
+/// was opened does not change what is deleted. Each item is deleted as it is (a link
+/// becomes just the deleted link).
+pub fn delete_sessions(rt: &Path) -> usize {
     use std::os::fd::AsFd;
-    let pasta = match fs::OpenOptions::new()
+    let dir = match fs::OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC)
-        .open(pasta_sessoes(rt))
+        .open(sessions_dir(rt))
     {
         Ok(f) => f,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return 0,
@@ -188,23 +192,23 @@ pub fn apagar_sessoes(rt: &Path) -> usize {
             return 0;
         }
     };
-    ward_platform::dir::delete_contents(pasta.as_fd())
+    ward_platform::dir::delete_contents(dir.as_fd())
 }
 
-/// Partida do daemon (D6): apaga os storage states e os perfis `pw-*` que um daemon
-/// morto deixou. Devolve quantos itens apagou.
-pub fn limpar(rt: &Path) -> io::Result<usize> {
-    let mut n = apagar_sessoes(rt);
-    let itens = match fs::read_dir(rt) {
+/// Daemon startup (D6): deletes the storage states and the `pw-*` profiles a dead
+/// daemon left behind. Returns how many items it deleted.
+pub fn clean_up(rt: &Path) -> io::Result<usize> {
+    let mut n = delete_sessions(rt);
+    let items = match fs::read_dir(rt) {
         Ok(i) => i,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(n),
         Err(e) => return Err(e),
     };
-    for item in itens.flatten() {
-        let nome = item.file_name();
-        if nome
+    for item in items.flatten() {
+        let name = item.file_name();
+        if name
             .as_encoded_bytes()
-            .starts_with(PREFIXO_PERFIL.as_bytes())
+            .starts_with(PROFILE_PREFIX.as_bytes())
             && item.file_type().is_ok_and(|t| t.is_dir())
         {
             fs::remove_dir_all(item.path())?;
@@ -214,30 +218,31 @@ pub fn limpar(rt: &Path) -> io::Result<usize> {
     Ok(n)
 }
 
-/// O Chrome da sessão e o perfil: ao sair, mata o grupo inteiro, colhe e apaga o perfil.
-struct Navegador {
-    grupo: Option<Group>,
-    perfil: PathBuf,
+/// The session's Chrome and profile: on drop, kills the whole group, reaps it and
+/// deletes the profile.
+struct Browser {
+    group: Option<Group>,
+    profile: PathBuf,
 }
 
-impl Drop for Navegador {
+impl Drop for Browser {
     fn drop(&mut self) {
-        if let Some(g) = self.grupo.take() {
+        if let Some(g) = self.group.take() {
             g.kill();
             let _ = g.collect();
         }
-        // `remove_dir_all` não segue link simbólico.
-        if fs::remove_dir_all(&self.perfil).is_err() && self.perfil.exists() {
+        // `remove_dir_all` does not follow symbolic links.
+        if fs::remove_dir_all(&self.profile).is_err() && self.profile.exists() {
             aviso!("playwright: não deu para apagar o perfil temporário");
         }
     }
 }
 
-/// O argv do Chrome: só opções fixas e o caminho do perfil (nunca segredo, S3).
-pub fn argv_chrome(chrome: &Path, perfil: &Path) -> Option<Vec<Vec<u8>>> {
+/// Chrome's argv: only fixed options and the profile path (never a secret, S3).
+pub fn chrome_argv(chrome: &Path, profile: &Path) -> Option<Vec<Vec<u8>>> {
     use std::os::unix::ffi::OsStrExt;
     let mut dir = b"--user-data-dir=".to_vec();
-    dir.extend_from_slice(perfil.as_os_str().as_bytes());
+    dir.extend_from_slice(profile.as_os_str().as_bytes());
     let mut v = vec![chrome.as_os_str().as_bytes().to_vec()];
     for a in [
         "--headless",
@@ -255,9 +260,9 @@ pub fn argv_chrome(chrome: &Path, perfil: &Path) -> Option<Vec<Vec<u8>>> {
         "--disable-client-side-phishing-detection",
         "--disable-features=Translate,MediaRouter,OptimizationHints,AutofillServerCommunication,PasswordManagerOnboarding",
         "--deny-permission-prompts",
-        // Fase 44c (D9): `localhost` sempre em 127.0.0.1. Sem isto o Chrome tenta `[::1]`
-        // antes, e outro processo do uid que escute ali (com o serviço só em 127.0.0.1)
-        // recebe a senha numa origem que confere.
+        // Phase 44c (D9): `localhost` always at 127.0.0.1. Without this Chrome tries
+        // `[::1]` first, and another process of the uid listening there (with the
+        // service only on 127.0.0.1) gets the password on an origin that matches.
         "--host-resolver-rules=MAP localhost 127.0.0.1",
         "--no-pings",
         "--metrics-recording-only",
@@ -270,143 +275,149 @@ pub fn argv_chrome(chrome: &Path, perfil: &Path) -> Option<Vec<Vec<u8>>> {
     v.iter().all(|a| !a.contains(&0)).then_some(v)
 }
 
-/// Cria o perfil e abre o Chrome com o pipe de depuração.
-fn abrir_navegador(chrome: &Path, rt: &Path) -> Result<(Navegador, Cdp), ErroResposta> {
+/// Creates the profile and opens Chrome with the debugging pipe.
+fn open_browser(chrome: &Path, rt: &Path) -> Result<(Browser, Cdp), ErroResposta> {
     use std::os::unix::ffi::OsStrExt;
-    let falhou = |_| ErroResposta::NavegadorFalhou;
+    let failed = |_| ErroResposta::NavegadorFalhou;
     ward_platform::prepare_dir(rt).map_err(|_| ErroResposta::EntregaFalhou)?;
-    let sufixo = ward_core::generator::connect_token().map_err(|_| ErroResposta::Interno)?;
-    let sufixo = std::str::from_utf8(&sufixo.expose()[..16]).map_err(|_| ErroResposta::Interno)?;
-    let perfil = rt.join(format!("{PREFIXO_PERFIL}{sufixo}"));
-    // Pasta nova: nunca reaproveita uma que já existe.
+    let suffix = ward_core::generator::connect_token().map_err(|_| ErroResposta::Interno)?;
+    let suffix = std::str::from_utf8(&suffix.expose()[..16]).map_err(|_| ErroResposta::Interno)?;
+    let profile = rt.join(format!("{PROFILE_PREFIX}{suffix}"));
+    // New directory: never reuses one that already exists.
     fs::DirBuilder::new()
         .mode(0o700)
-        .create(&perfil)
-        .map_err(falhou)?;
-    let mut nav = Navegador {
-        grupo: None,
-        perfil: perfil.clone(),
+        .create(&profile)
+        .map_err(failed)?;
+    let mut browser = Browser {
+        group: None,
+        profile: profile.clone(),
     };
-    // Nomes curtos: o Chrome cria o `SingletonSocket` dentro do `TMPDIR`, e o caminho de
-    // um socket Unix tem no máximo 107 bytes.
+    // Short names: Chrome creates the `SingletonSocket` inside `TMPDIR`, and the path of
+    // a Unix socket has at most 107 bytes.
     for sub in ["h", "c", "k", "d", "t", "Default"] {
         fs::DirBuilder::new()
             .mode(0o700)
-            .create(perfil.join(sub))
-            .map_err(falhou)?;
+            .create(profile.join(sub))
+            .map_err(failed)?;
     }
     fs::OpenOptions::new()
         .write(true)
         .create_new(true)
         .mode(0o600)
         .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
-        .open(perfil.join("Default/Preferences"))
-        .and_then(|mut f| f.write_all(PREFERENCIAS))
-        .map_err(falhou)?;
-    let argv = argv_chrome(chrome, &perfil).ok_or(ErroResposta::NavegadorFalhou)?;
-    let p = perfil.as_os_str().as_bytes();
+        .open(profile.join("Default/Preferences"))
+        .and_then(|mut f| f.write_all(PREFERENCES))
+        .map_err(failed)?;
+    let argv = chrome_argv(chrome, &profile).ok_or(ErroResposta::NavegadorFalhou)?;
+    let p = profile.as_os_str().as_bytes();
     let mut c = Command::new(&argv[0], p).map_err(|_| ErroResposta::NavegadorFalhou)?;
     for a in &argv[1..] {
         c.argument(a).map_err(|_| ErroResposta::NavegadorFalhou)?;
     }
-    let junto = |s: &[u8]| [p, s].concat();
-    let ambiente: [(&[u8], Vec<u8>); 8] = [
-        (b"PATH", PATH_FILHO.to_vec()),
-        (b"HOME", junto(b"/h")),
-        (b"XDG_CONFIG_HOME", junto(b"/c")),
-        (b"XDG_CACHE_HOME", junto(b"/k")),
-        (b"XDG_DATA_HOME", junto(b"/d")),
-        (b"TMPDIR", junto(b"/t")),
+    let joined = |s: &[u8]| [p, s].concat();
+    let environment: [(&[u8], Vec<u8>); 8] = [
+        (b"PATH", CHILD_PATH.to_vec()),
+        (b"HOME", joined(b"/h")),
+        (b"XDG_CONFIG_HOME", joined(b"/c")),
+        (b"XDG_CACHE_HOME", joined(b"/k")),
+        (b"XDG_DATA_HOME", joined(b"/d")),
+        (b"TMPDIR", joined(b"/t")),
         (b"LANG", b"C.UTF-8".to_vec()),
-        // Sem barramento de sessão: nada do chaveiro nem de serviços do usuário.
+        // No session bus: nothing from the keyring nor from the user's services.
         (b"DBUS_SESSION_BUS_ADDRESS", b"disabled:".to_vec()),
     ];
-    for (k, v) in &ambiente {
+    for (k, v) in &environment {
         c.variable(k, v)
             .map_err(|_| ErroResposta::NavegadorFalhou)?;
     }
-    let (grupo, pipe) = c.launch_with_debugging().map_err(|e| {
+    let (group, pipe) = c.launch_with_debugging().map_err(|e| {
         aviso!("playwright: o Chrome não abriu ({})", e.message());
         ErroResposta::NavegadorFalhou
     })?;
-    nav.grupo = Some(grupo);
-    let cdp = Cdp::novo(pipe.commands, pipe.responses, Instant::now() + PRAZO_SESSAO);
-    Ok((nav, cdp))
+    browser.group = Some(group);
+    let cdp = Cdp::new(
+        pipe.commands,
+        pipe.responses,
+        Instant::now() + SESSION_DEADLINE,
+    );
+    Ok((browser, cdp))
 }
 
-// --- Sessão no navegador (D6, D9) -------------------------------------------------------
+// --- Session in the browser (D6, D9) ----------------------------------------------------
 
-/// O que vai à página: usuário, senha e código TOTP (se a entrada tem semente).
-struct Credencial {
-    usuario: String,
-    senha: Zeroizing<String>,
-    codigo: Option<Zeroizing<String>>,
+/// What goes to the page: username, password and TOTP code (if the entry has a seed).
+struct Credential {
+    username: String,
+    password: Zeroizing<String>,
+    code: Option<Zeroizing<String>>,
 }
 
 #[derive(Deserialize)]
-struct Contexto {
+struct Context {
     #[serde(rename = "browserContextId")]
     id: String,
 }
 
 #[derive(Deserialize)]
-struct Alvo {
+struct Target {
     #[serde(rename = "targetId")]
     id: String,
 }
 
 #[derive(Deserialize)]
-struct Anexo {
+struct Attached {
     #[serde(rename = "sessionId")]
-    sessao: String,
+    session: String,
 }
 
 #[derive(Deserialize)]
-struct Arvore {
+struct FrameTree {
     #[serde(rename = "frameTree")]
-    arvore: NoQuadro,
+    tree: FrameNode,
 }
 
 #[derive(Deserialize)]
-struct NoQuadro {
-    frame: Quadro,
+struct FrameNode {
+    frame: Frame,
 }
 
 #[derive(Deserialize)]
-struct Quadro {
+struct Frame {
     id: String,
     url: String,
     #[serde(rename = "securityOrigin", default)]
-    origem: String,
+    security_origin: String,
 }
 
 #[derive(Deserialize)]
-struct Navegacao {
+struct Navigation {
     #[serde(rename = "errorText")]
-    erro: Option<serde::de::IgnoredAny>,
+    error_text: Option<serde::de::IgnoredAny>,
 }
 
 #[derive(Deserialize)]
-struct Mundo {
+struct World {
     #[serde(rename = "executionContextId")]
     id: u64,
 }
 
 #[derive(Deserialize)]
-struct Avaliacao {
-    result: ValorRemoto,
+struct Evaluation {
+    result: RemoteValue,
     #[serde(rename = "exceptionDetails")]
-    excecao: Option<serde::de::IgnoredAny>,
+    exception: Option<serde::de::IgnoredAny>,
 }
 
 #[derive(Deserialize)]
-struct ValorRemoto {
+struct RemoteValue {
     value: Option<String>,
 }
 
+/// What [`READ_PAGE_SCRIPT`] returns (keys of the JavaScript literal).
 #[derive(Deserialize)]
-struct Pagina {
-    senha: bool,
+struct PageState {
+    #[serde(rename = "senha")]
+    password: bool,
     ls: Vec<(String, String)>,
 }
 
@@ -429,11 +440,11 @@ struct CookieCdp {
     same_site: Option<String>,
 }
 
-/// Storage state no formato do Playwright (`browser.new_context(storage_state=…)`).
+/// Storage state in Playwright's format (`browser.new_context(storage_state=…)`).
 #[derive(Serialize)]
-struct EstadoArmazenado<'a> {
+struct StorageState<'a> {
     cookies: Vec<CookiePw<'a>>,
-    origins: Vec<OrigemPw<'a>>,
+    origins: Vec<OriginPw<'a>>,
 }
 
 #[derive(Serialize)]
@@ -451,7 +462,7 @@ struct CookiePw<'a> {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct OrigemPw<'a> {
+struct OriginPw<'a> {
     origin: &'a str,
     local_storage: Vec<ItemPw<'a>>,
 }
@@ -462,101 +473,101 @@ struct ItemPw<'a> {
     value: &'a str,
 }
 
-fn erro_cdp(cdp: &Cdp, e: ErroCdp) -> ErroResposta {
-    if cdp.bloqueou {
+fn cdp_error(cdp: &Cdp, e: CdpError) -> ErroResposta {
+    if cdp.blocked {
         return ErroResposta::OrigemDiferente;
     }
     aviso!(
         "playwright: a conversa com o navegador acabou ({})",
         match e {
-            ErroCdp::Prazo => "prazo",
-            ErroCdp::Fechado => "fechado",
-            ErroCdp::Protocolo => "protocolo",
-            ErroCdp::Comando => "comando recusado",
-            ErroCdp::Io => "leitura ou escrita",
+            CdpError::Deadline => "prazo",
+            CdpError::Closed => "fechado",
+            CdpError::Protocol => "protocolo",
+            CdpError::Command => "comando recusado",
+            CdpError::Io => "leitura ou escrita",
         }
     );
     ErroResposta::NavegadorFalhou
 }
 
-/// Um objeto JSON de parâmetros com pares de texto.
-fn params(pares: &[(&str, &str)]) -> Result<Zeroizing<Vec<u8>>, ErroResposta> {
-    let cap = 2 + pares
+/// A JSON object of parameters with text pairs.
+fn params(pairs: &[(&str, &str)]) -> Result<Zeroizing<Vec<u8>>, ErroResposta> {
+    let cap = 2 + pairs
         .iter()
-        .map(|(k, v)| pior_caso(k) + pior_caso(v) + 2)
+        .map(|(k, v)| worst_case(k) + worst_case(v) + 2)
         .sum::<usize>();
-    let mut e = Escritor::novo(cap);
-    e.abre_objeto();
-    for (k, v) in pares {
-        e.chave(k);
-        e.texto(v);
+    let mut e = Writer::new(cap);
+    e.open_object();
+    for (k, v) in pairs {
+        e.key(k);
+        e.text(v);
     }
-    e.fecha_objeto();
-    e.fim().ok_or(ErroResposta::Interno)
+    e.close_object();
+    e.finish().ok_or(ErroResposta::Interno)
 }
 
-/// O quadro principal: id, e se a URL e a origem dele são as da entrada.
-fn origem_confere(cdp: &mut Cdp, origem: &str) -> Result<(String, bool), ErroResposta> {
-    let a: Arvore = cdp
-        .comando_de("Page.getFrameTree", b"{}", true)
-        .map_err(|e| erro_cdp(cdp, e))?;
-    let q = a.arvore.frame;
-    let url = Zeroizing::new(q.url);
-    let ok = url_origin(&url).is_some_and(|o| o == origem) && q.origem == origem;
-    Ok((q.id, ok))
+/// The main frame: its id, and whether its URL and origin are the entry's.
+fn origin_matches(cdp: &mut Cdp, origin: &str) -> Result<(String, bool), ErroResposta> {
+    let a: FrameTree = cdp
+        .command_as("Page.getFrameTree", b"{}", true)
+        .map_err(|e| cdp_error(cdp, e))?;
+    let f = a.tree.frame;
+    let url = Zeroizing::new(f.url);
+    let ok = url_origin(&url).is_some_and(|o| o == origin) && f.security_origin == origin;
+    Ok((f.id, ok))
 }
 
-/// Uma função no mundo isolado do quadro principal; volta o texto que ela devolveu.
-fn no_mundo_isolado(
+/// A function in the isolated world of the main frame; returns the text it returned.
+fn in_isolated_world(
     cdp: &mut Cdp,
-    quadro: &str,
-    funcao: &str,
-    argumentos: &[Option<&str>],
+    frame: &str,
+    function: &str,
+    arguments: &[Option<&str>],
 ) -> Result<Zeroizing<String>, ErroResposta> {
-    let p = params(&[("frameId", quadro), ("worldName", "ward")])?;
-    let m: Mundo = cdp
-        .comando_de("Page.createIsolatedWorld", &p, true)
-        .map_err(|e| erro_cdp(cdp, e))?;
+    let p = params(&[("frameId", frame), ("worldName", "ward")])?;
+    let w: World = cdp
+        .command_as("Page.createIsolatedWorld", &p, true)
+        .map_err(|e| cdp_error(cdp, e))?;
     let cap = 256
-        + pior_caso(funcao)
-        + argumentos
+        + worst_case(function)
+        + arguments
             .iter()
-            .map(|a| a.map_or(16, pior_caso) + 16)
+            .map(|a| a.map_or(16, worst_case) + 16)
             .sum::<usize>();
-    let mut e = Escritor::novo(cap);
-    e.abre_objeto();
-    e.chave("functionDeclaration");
-    e.texto(funcao);
-    e.chave("executionContextId");
-    e.inteiro(m.id);
-    e.chave("arguments");
-    e.abre_lista();
-    for a in argumentos {
-        e.abre_objeto();
-        e.chave("value");
+    let mut e = Writer::new(cap);
+    e.open_object();
+    e.key("functionDeclaration");
+    e.text(function);
+    e.key("executionContextId");
+    e.integer(w.id);
+    e.key("arguments");
+    e.open_list();
+    for a in arguments {
+        e.open_object();
+        e.key("value");
         match a {
-            Some(v) => e.texto(v),
-            None => e.nulo(),
+            Some(v) => e.text(v),
+            None => e.null(),
         }
-        e.fecha_objeto();
+        e.close_object();
     }
-    e.fecha_lista();
-    e.chave("returnByValue");
-    e.logico(true);
-    e.chave("silent");
-    e.logico(true);
-    e.fecha_objeto();
-    let p = e.fim().ok_or(ErroResposta::Interno)?;
+    e.close_list();
+    e.key("returnByValue");
+    e.boolean(true);
+    e.key("silent");
+    e.boolean(true);
+    e.close_object();
+    let p = e.finish().ok_or(ErroResposta::Interno)?;
     let msg = cdp
-        .comando("Runtime.callFunctionOn", &p, true)
-        .map_err(|e| erro_cdp(cdp, e))?;
+        .command("Runtime.callFunctionOn", &p, true)
+        .map_err(|e| cdp_error(cdp, e))?;
     drop(p);
     #[derive(Deserialize)]
     struct R {
-        result: Avaliacao,
+        result: Evaluation,
     }
     let r: R = serde_json::from_slice(&msg).map_err(|_| ErroResposta::NavegadorFalhou)?;
-    if r.result.excecao.is_some() {
+    if r.result.exception.is_some() {
         return Err(ErroResposta::LoginRecusado);
     }
     Ok(Zeroizing::new(
@@ -564,90 +575,90 @@ fn no_mundo_isolado(
     ))
 }
 
-/// Os passos 3 a 7 do módulo: entra e devolve o storage state em JSON.
-fn entrar(
+/// Steps 3 to 7 of the module: logs in and returns the storage state in JSON.
+fn log_in(
     cdp: &mut Cdp,
     url: &str,
-    origem: &str,
-    cred: &Credencial,
+    origin: &str,
+    cred: &Credential,
 ) -> Result<Zeroizing<Vec<u8>>, ErroResposta> {
-    let ctx: Contexto = cdp
-        .comando_de(
+    let ctx: Context = cdp
+        .command_as(
             "Target.createBrowserContext",
             b"{\"disposeOnDetach\":true}",
             false,
         )
-        .map_err(|e| erro_cdp(cdp, e))?;
+        .map_err(|e| cdp_error(cdp, e))?;
     let p = params(&[("url", "about:blank"), ("browserContextId", &ctx.id)])?;
-    let alvo: Alvo = cdp
-        .comando_de("Target.createTarget", &p, false)
-        .map_err(|e| erro_cdp(cdp, e))?;
-    let mut e = Escritor::novo(64 + pior_caso(&alvo.id));
-    e.abre_objeto();
-    e.chave("targetId");
-    e.texto(&alvo.id);
-    e.chave("flatten");
-    e.logico(true);
-    e.fecha_objeto();
-    let p = e.fim().ok_or(ErroResposta::Interno)?;
-    let anexo: Anexo = cdp
-        .comando_de("Target.attachToTarget", &p, false)
-        .map_err(|e| erro_cdp(cdp, e))?;
-    cdp.sessao = Some(anexo.sessao);
+    let target: Target = cdp
+        .command_as("Target.createTarget", &p, false)
+        .map_err(|e| cdp_error(cdp, e))?;
+    let mut e = Writer::new(64 + worst_case(&target.id));
+    e.open_object();
+    e.key("targetId");
+    e.text(&target.id);
+    e.key("flatten");
+    e.boolean(true);
+    e.close_object();
+    let p = e.finish().ok_or(ErroResposta::Interno)?;
+    let attached: Attached = cdp
+        .command_as("Target.attachToTarget", &p, false)
+        .map_err(|e| cdp_error(cdp, e))?;
+    cdp.session = Some(attached.session);
     let p = params(&[("behavior", "deny"), ("browserContextId", &ctx.id)])?;
-    cdp.comando("Browser.setDownloadBehavior", &p, false)
-        .map_err(|e| erro_cdp(cdp, e))?;
-    cdp.comando("Page.enable", b"{}", true)
-        .map_err(|e| erro_cdp(cdp, e))?;
-    let (quadro, _) = origem_confere(cdp, origem)?;
-    cdp.regra = Some(Regra {
-        origem: origem.to_owned(),
-        quadro: quadro.clone(),
+    cdp.command("Browser.setDownloadBehavior", &p, false)
+        .map_err(|e| cdp_error(cdp, e))?;
+    cdp.command("Page.enable", b"{}", true)
+        .map_err(|e| cdp_error(cdp, e))?;
+    let (frame, _) = origin_matches(cdp, origin)?;
+    cdp.rule = Some(Rule {
+        origin: origin.to_owned(),
+        frame: frame.clone(),
     });
-    cdp.comando(
+    cdp.command(
         "Fetch.enable",
         br#"{"patterns":[{"urlPattern":"*","resourceType":"Document","requestStage":"Request"}]}"#,
         true,
     )
-    .map_err(|e| erro_cdp(cdp, e))?;
-    // Página de login.
-    let antes = cdp.cargas;
+    .map_err(|e| cdp_error(cdp, e))?;
+    // Login page.
+    let before = cdp.loads;
     let p = params(&[("url", url)])?;
-    let nav: Navegacao = cdp
-        .comando_de("Page.navigate", &p, true)
-        .map_err(|e| erro_cdp(cdp, e))?;
-    if cdp.bloqueou {
+    let nav: Navigation = cdp
+        .command_as("Page.navigate", &p, true)
+        .map_err(|e| cdp_error(cdp, e))?;
+    if cdp.blocked {
         return Err(ErroResposta::OrigemDiferente);
     }
-    if nav.erro.is_some() {
+    if nav.error_text.is_some() {
         aviso!("playwright: a página da entrada não abriu");
         return Err(ErroResposta::NavegadorFalhou);
     }
-    let carregou = cdp
-        .esperar_carga(antes, Instant::now() + PRAZO_CARGA)
-        .map_err(|e| erro_cdp(cdp, e))?;
-    if cdp.bloqueou {
+    let loaded = cdp
+        .wait_load(before, Instant::now() + LOAD_DEADLINE)
+        .map_err(|e| cdp_error(cdp, e))?;
+    if cdp.blocked {
         return Err(ErroResposta::OrigemDiferente);
     }
-    if !carregou {
+    if !loaded {
         return Err(ErroResposta::NavegadorFalhou);
     }
-    let (q, ok) = origem_confere(cdp, origem)?;
-    if !ok || q != quadro {
+    let (f, ok) = origin_matches(cdp, origin)?;
+    if !ok || f != frame {
         aviso!("playwright: a página não é da origem da entrada (D9)");
         return Err(ErroResposta::OrigemDiferente);
     }
-    // Preenche e envia.
-    let antes = cdp.cargas;
-    let r = no_mundo_isolado(
+    // Fills and submits.
+    let before = cdp.loads;
+    let r = in_isolated_world(
         cdp,
-        &quadro,
-        PREENCHER,
+        &frame,
+        FILL_SCRIPT,
         &[
-            Some(cred.usuario.as_str()),
-            Some(cred.senha.as_str()),
-            cred.codigo.as_deref().map(String::as_str),
-            Some(origem),
+            Some(cred.username.as_str()),
+            Some(cred.password.as_str()),
+            cred.code.as_deref().map(String::as_str),
+            Some(origin),
         ],
     )?;
     match r.as_str() {
@@ -661,43 +672,42 @@ fn entrar(
             return Err(ErroResposta::LoginRecusado);
         }
     }
-    let carregou = cdp
-        .esperar_carga(antes, Instant::now() + PRAZO_CARGA)
-        .map_err(|e| erro_cdp(cdp, e))?;
-    if cdp.bloqueou {
+    let loaded = cdp
+        .wait_load(before, Instant::now() + LOAD_DEADLINE)
+        .map_err(|e| cdp_error(cdp, e))?;
+    if cdp.blocked {
         return Err(ErroResposta::OrigemDiferente);
     }
-    if !carregou {
+    if !loaded {
         aviso!("playwright: nenhuma página nova depois do envio");
         return Err(ErroResposta::LoginRecusado);
     }
-    // D6: a origem final continua a da entrada.
-    let (q, ok) = origem_confere(cdp, origem)?;
+    // D6: the final origin is still the entry's.
+    let (f, ok) = origin_matches(cdp, origin)?;
     if !ok {
         aviso!("playwright: a página final não é da origem da entrada (D9)");
         return Err(ErroResposta::OrigemDiferente);
     }
-    let pagina = no_mundo_isolado(cdp, &q, LER_PAGINA, &[])?;
-    let pagina: Pagina =
-        serde_json::from_str(&pagina).map_err(|_| ErroResposta::NavegadorFalhou)?;
-    if pagina.senha {
+    let page = in_isolated_world(cdp, &f, READ_PAGE_SCRIPT, &[])?;
+    let page: PageState = serde_json::from_str(&page).map_err(|_| ErroResposta::NavegadorFalhou)?;
+    if page.password {
         aviso!("playwright: a página de login continua aberta (login recusado)");
         return Err(ErroResposta::LoginRecusado);
     }
     let p = params(&[("browserContextId", &ctx.id)])?;
     let c: Cookies = cdp
-        .comando_de("Storage.getCookies", &p, false)
-        .map_err(|e| erro_cdp(cdp, e))?;
-    montar_estado(&c.cookies, origem, &pagina.ls)
+        .command_as("Storage.getCookies", &p, false)
+        .map_err(|e| cdp_error(cdp, e))?;
+    build_state(&c.cookies, origin, &page.ls)
 }
 
-/// O storage state em JSON (formato do Playwright).
-fn montar_estado(
+/// The storage state in JSON (Playwright's format).
+fn build_state(
     cookies: &[CookieCdp],
-    origem: &str,
+    origin: &str,
     ls: &[(String, String)],
 ) -> Result<Zeroizing<Vec<u8>>, ErroResposta> {
-    let mut lista = Vec::with_capacity(cookies.len());
+    let mut list = Vec::with_capacity(cookies.len());
     for c in cookies {
         let same_site = match c.same_site.as_deref() {
             Some("Strict") => "Strict",
@@ -709,7 +719,7 @@ fn montar_estado(
         } else {
             -1.0
         };
-        lista.push(CookiePw {
+        list.push(CookiePw {
             name: &c.name,
             value: &c.value,
             domain: &c.domain,
@@ -722,50 +732,50 @@ fn montar_estado(
     }
     let mut origins = Vec::new();
     if !ls.is_empty() {
-        origins.push(OrigemPw {
-            origin: origem,
+        origins.push(OriginPw {
+            origin,
             local_storage: ls
                 .iter()
                 .map(|(k, v)| ItemPw { name: k, value: v })
                 .collect(),
         });
     }
-    let estado = EstadoArmazenado {
-        cookies: lista,
+    let state = StorageState {
+        cookies: list,
         origins,
     };
-    serde_json::to_vec_pretty(&estado)
+    serde_json::to_vec_pretty(&state)
         .map(Zeroizing::new)
         .map_err(|_| ErroResposta::Interno)
 }
 
-/// S1/V6.13: o storage state não pode ter a senha nem variação dela (pela máscara da
-/// entrada: literal, URL, base64, formas de texto).
-pub fn tem_segredo(mascara: &Mascara, estado: &[u8]) -> bool {
-    let mascarado = Zeroizing::new(mascara.mascarar_tudo(estado));
-    mascarado.as_slice() != estado
+/// S1/V6.13: the storage state must not have the password nor a variation of it
+/// (through the entry's mask: literal, URL, base64, text forms).
+pub fn has_secret(mask: &Mascara, state: &[u8]) -> bool {
+    let masked = Zeroizing::new(mask.mascarar_tudo(state));
+    masked.as_slice() != state
 }
 
-/// Grava `<rt>playwright/<entrada>.json` (0600) por temporário + `rename`.
-fn gravar_estado(rt: &Path, entrada: &str, estado: &[u8]) -> io::Result<PathBuf> {
-    let nome_ok = !entrada.is_empty()
-        && !entrada.starts_with('.')
-        && entrada.bytes().all(|c| {
+/// Writes `<rt>playwright/<entry>.json` (0600) through temporary + `rename`.
+fn write_state(rt: &Path, entry: &str, state: &[u8]) -> io::Result<PathBuf> {
+    let name_ok = !entry.is_empty()
+        && !entry.starts_with('.')
+        && entry.bytes().all(|c| {
             c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, b'.' | b'_' | b'-')
         });
-    if !nome_ok {
+    if !name_ok {
         return Err(io::ErrorKind::InvalidInput.into());
     }
-    let erro = |_| io::Error::from(io::ErrorKind::PermissionDenied);
-    ward_platform::prepare_dir(rt).map_err(erro)?;
-    let pasta = pasta_sessoes(rt);
-    ward_platform::prepare_dir(&pasta).map_err(erro)?;
-    let sufixo =
+    let error = |_| io::Error::from(io::ErrorKind::PermissionDenied);
+    ward_platform::prepare_dir(rt).map_err(error)?;
+    let dir = sessions_dir(rt);
+    ward_platform::prepare_dir(&dir).map_err(error)?;
+    let suffix =
         ward_core::generator::connect_token().map_err(|_| io::Error::other("aleatório"))?;
-    let sufixo =
-        std::str::from_utf8(&sufixo.expose()[..12]).map_err(|_| io::Error::other("aleatório"))?;
-    let tmp = pasta.join(format!(".{entrada}.{sufixo}.tmp"));
-    let destino = pasta.join(format!("{entrada}.json"));
+    let suffix =
+        std::str::from_utf8(&suffix.expose()[..12]).map_err(|_| io::Error::other("aleatório"))?;
+    let tmp = dir.join(format!(".{entry}.{suffix}.tmp"));
+    let destination = dir.join(format!("{entry}.json"));
     let r = (|| {
         let mut f = fs::OpenOptions::new()
             .write(true)
@@ -773,62 +783,63 @@ fn gravar_estado(rt: &Path, entrada: &str, estado: &[u8]) -> io::Result<PathBuf>
             .mode(0o600)
             .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
             .open(&tmp)?;
-        f.write_all(estado)?;
+        f.write_all(state)?;
         f.sync_all()?;
-        fs::rename(&tmp, &destino)
+        fs::rename(&tmp, &destination)
     })();
     if r.is_err() {
         let _ = fs::remove_file(&tmp);
     }
-    r.map(|()| destino)
+    r.map(|()| destination)
 }
 
 impl Daemon {
-    /// `ward playwright <entrada>` (D6): a resposta é só o caminho do storage state.
+    /// `ward playwright <entry>` (D6): the response is only the path of the storage
+    /// state.
     pub(crate) fn playwright(
         &self,
-        cliente: &dyn Cliente,
-        pedido: &Pedido,
+        client: &dyn Cliente,
+        request: &Pedido,
     ) -> Result<Resposta, ErroResposta> {
-        let Pedido::Playwright { entrada } = pedido else {
+        let Pedido::Playwright { entrada: entry } = request else {
             return Err(ErroResposta::PedidoInvalido);
         };
-        // Tipo sem login visível: recusa antes de pedir aprovação.
+        // Type without a visible login: refuse before asking for approval.
         if let Some(a) = self.estado().aberto.as_ref()
             && a.entradas
                 .iter()
-                .find(|e| e.name() == entrada && e.level() != AccessLevel::Blocked)
+                .find(|e| e.name() == entry && e.level() != AccessLevel::Blocked)
                 .is_some_and(|e| !matches!(e.data(), Data::Login(_)))
         {
             return Err(ErroResposta::TipoSemEntrega);
         }
-        self.autorizar_uso(cliente, pedido)?;
+        self.autorizar_uso(client, request)?;
         self.registrar_uso();
         let rt = self
             .temporarios()
             .ok_or(ErroResposta::EntregaFalhou)?
             .to_path_buf();
-        let (url, cred, mascara, travas, inicial) = {
-            let est = self.estado();
-            let a = est.aberto.as_ref().ok_or(ErroResposta::Travado)?;
-            // A entrada pode ter mudado durante a aprovação: confere de novo.
+        let (url, cred, mask, locks, initial) = {
+            let st = self.estado();
+            let a = st.aberto.as_ref().ok_or(ErroResposta::Travado)?;
+            // The entry may have changed during the approval: check again.
             let e = a
                 .entradas
                 .iter()
-                .find(|e| e.name() == entrada && e.level() != AccessLevel::Blocked)
+                .find(|e| e.name() == entry && e.level() != AccessLevel::Blocked)
                 .ok_or(ErroResposta::EntradaInexistente)?;
             let Data::Login(l) = e.data() else {
                 return Err(ErroResposta::TipoSemEntrega);
             };
-            let senha = l
+            let password = l
                 .password
                 .expose_text()
                 .ok_or(ErroResposta::EntregaFalhou)?;
-            let mut s = Zeroizing::new(String::with_capacity(senha.len()));
-            s.push_str(senha);
-            let codigo = match &l.totp_seed {
-                Some(semente) => {
-                    let c = Totp::from_seed(semente)
+            let mut s = Zeroizing::new(String::with_capacity(password.len()));
+            s.push_str(password);
+            let code = match &l.totp_seed {
+                Some(seed) => {
+                    let c = Totp::from_seed(seed)
                         .and_then(|t| t.code_now())
                         .map_err(|_| ErroResposta::EntregaFalhou)?;
                     let mut z = Zeroizing::new(String::with_capacity(c.code().len()));
@@ -837,59 +848,60 @@ impl Daemon {
                 }
                 None => None,
             };
-            let mascara = Mascara::da_entrada(e, None).map_err(|_| ErroResposta::EntregaFalhou)?;
-            let (travas, inicial) = self.travas_agora(&est);
+            let mask = Mascara::da_entrada(e, None).map_err(|_| ErroResposta::EntregaFalhou)?;
+            let (locks, initial) = self.travas_agora(&st);
             (
                 l.url.clone(),
-                Credencial {
-                    usuario: l.username.clone(),
-                    senha: s,
-                    codigo,
+                Credential {
+                    username: l.username.clone(),
+                    password: s,
+                    code,
                 },
-                mascara,
-                travas,
-                inicial,
+                mask,
+                locks,
+                initial,
             )
         };
-        let origem = url_origin(&url).ok_or(ErroResposta::EntregaFalhou)?;
+        let origin = url_origin(&url).ok_or(ErroResposta::EntregaFalhou)?;
         aviso!("playwright: abrindo o navegador");
-        let (navegador, mut cdp) = abrir_navegador(self.chrome(), &rt)?;
-        let resultado = entrar(&mut cdp, &url, &origem, &cred);
+        let (browser, mut cdp) = open_browser(self.chrome(), &rt)?;
+        let result = log_in(&mut cdp, &url, &origin, &cred);
         drop(cred);
-        // O Chrome morre e o perfil some antes da resposta (D6).
+        // Chrome dies and the profile is gone before the response (D6).
         drop(cdp);
-        drop(navegador);
-        let estado = resultado?;
-        if tem_segredo(&mascara, &estado) {
+        drop(browser);
+        let state = result?;
+        if has_secret(&mask, &state) {
             aviso!("playwright: a sessão do site guarda a senha; nada foi gravado (S1)");
             return Err(ErroResposta::SessaoComSegredo);
         }
-        // Grava com o cofre destravado e sem trava desde o começo; travar depois apaga.
-        let est = self.estado();
-        if est.aberto.is_none() || travas.load(std::sync::atomic::Ordering::Acquire) != inicial {
+        // Writes with the vault unlocked and no lock since the start; locking afterwards
+        // deletes it.
+        let st = self.estado();
+        if st.aberto.is_none() || locks.load(std::sync::atomic::Ordering::Acquire) != initial {
             return Err(ErroResposta::Travado);
         }
-        let caminho = gravar_estado(&rt, entrada, &estado).map_err(|e| {
+        let path = write_state(&rt, entry, &state).map_err(|e| {
             aviso!("playwright: não deu para gravar a sessão ({})", e.kind());
             ErroResposta::EntregaFalhou
         })?;
-        drop(est);
-        let caminho = caminho
+        drop(st);
+        let path = path
             .into_os_string()
             .into_string()
             .map_err(|_| ErroResposta::Interno)?;
         aviso!("playwright: sessão gravada");
-        Ok(Resposta::SessaoPlaywright { caminho })
+        Ok(Resposta::SessaoPlaywright { caminho: path })
     }
 }
 
 #[cfg(test)]
-mod testes {
+mod tests {
     use super::*;
 
     #[test]
-    fn argv_so_fixo_com_pipe_e_sem_porta() {
-        let v = argv_chrome(Path::new(CHROME), Path::new("/run/user/1000/ward/pw-x")).unwrap();
+    fn argv_only_fixed_with_pipe_and_no_port() {
+        let v = chrome_argv(Path::new(CHROME), Path::new("/run/user/1000/ward/pw-x")).unwrap();
         let t: Vec<String> = v
             .iter()
             .map(|a| String::from_utf8(a.clone()).unwrap())
@@ -899,48 +911,48 @@ mod testes {
         assert!(t.contains(&"--password-store=basic".to_owned()));
         assert!(t.iter().all(|a| !a.contains("remote-debugging-port")));
         assert!(t.iter().all(|a| !a.contains("no-sandbox")));
-        // Fase 44c (D9): `localhost` nunca vai a `[::1]`.
+        // Phase 44c (D9): `localhost` never goes to `[::1]`.
         assert!(t.contains(&"--host-resolver-rules=MAP localhost 127.0.0.1".to_owned()));
         assert_eq!(t.last().unwrap(), "about:blank");
     }
 
-    /// Fase 44c (achado baixo da auditoria do M6): `<rt>playwright` trocado por um link
-    /// para outra pasta do uid. Travar não apaga nada do outro lado; um link dentro da
-    /// pasta das sessões some sem levar o alvo.
+    /// Phase 44c (low finding of the M6 audit): `<rt>playwright` swapped for a link to
+    /// another directory of the uid. Locking deletes nothing on the other side; a link
+    /// inside the sessions directory goes away without taking the target with it.
     #[test]
-    fn ataque_apagar_sessoes_nao_segue_link() {
+    fn attack_delete_sessions_does_not_follow_link() {
         use std::os::unix::fs::symlink;
         let base = std::env::temp_dir().join(format!("ward-pw-link-{}", std::process::id()));
         let _ = fs::remove_dir_all(&base);
         let rt = base.join("rt");
-        let alvo = base.join("alvo");
+        let target = base.join("target");
         fs::create_dir_all(&rt).unwrap();
-        fs::create_dir_all(alvo.join("sub")).unwrap();
-        fs::write(alvo.join("precioso.txt"), b"nao apagar").unwrap();
-        fs::write(alvo.join("sub/outro.txt"), b"nao apagar").unwrap();
-        symlink(&alvo, pasta_sessoes(&rt)).unwrap();
-        assert_eq!(apagar_sessoes(&rt), 0);
-        assert!(alvo.join("precioso.txt").exists());
-        assert!(alvo.join("sub/outro.txt").exists());
-        // O `limpar` da partida também não segue o link.
-        assert_eq!(limpar(&rt).unwrap(), 0);
-        assert!(alvo.join("precioso.txt").exists());
+        fs::create_dir_all(target.join("sub")).unwrap();
+        fs::write(target.join("precious.txt"), b"nao apagar").unwrap();
+        fs::write(target.join("sub/other.txt"), b"nao apagar").unwrap();
+        symlink(&target, sessions_dir(&rt)).unwrap();
+        assert_eq!(delete_sessions(&rt), 0);
+        assert!(target.join("precious.txt").exists());
+        assert!(target.join("sub/other.txt").exists());
+        // The startup `clean_up` does not follow the link either.
+        assert_eq!(clean_up(&rt).unwrap(), 0);
+        assert!(target.join("precious.txt").exists());
 
-        // Pasta de verdade com um link dentro: o link some, o alvo fica.
-        fs::remove_file(pasta_sessoes(&rt)).unwrap();
-        fs::create_dir(pasta_sessoes(&rt)).unwrap();
-        fs::write(pasta_sessoes(&rt).join("acme-wp-prod.json"), b"{}").unwrap();
-        symlink(&alvo, pasta_sessoes(&rt).join("ligacao")).unwrap();
-        assert_eq!(apagar_sessoes(&rt), 2);
-        assert!(!pasta_sessoes(&rt).join("acme-wp-prod.json").exists());
-        assert!(fs::symlink_metadata(pasta_sessoes(&rt).join("ligacao")).is_err());
-        assert!(alvo.join("precioso.txt").exists());
-        assert!(alvo.join("sub/outro.txt").exists());
+        // A real directory with a link inside: the link goes away, the target stays.
+        fs::remove_file(sessions_dir(&rt)).unwrap();
+        fs::create_dir(sessions_dir(&rt)).unwrap();
+        fs::write(sessions_dir(&rt).join("acme-wp-prod.json"), b"{}").unwrap();
+        symlink(&target, sessions_dir(&rt).join("link")).unwrap();
+        assert_eq!(delete_sessions(&rt), 2);
+        assert!(!sessions_dir(&rt).join("acme-wp-prod.json").exists());
+        assert!(fs::symlink_metadata(sessions_dir(&rt).join("link")).is_err());
+        assert!(target.join("precious.txt").exists());
+        assert!(target.join("sub/other.txt").exists());
         let _ = fs::remove_dir_all(&base);
     }
 
     #[test]
-    fn estado_no_formato_do_playwright() {
+    fn state_in_playwright_format() {
         let c = vec![CookieCdp {
             name: "wordpress_logged_in_x".into(),
             value: "wp_editor|123|abc".into(),
@@ -952,26 +964,29 @@ mod testes {
             same_site: None,
         }];
         let ls = vec![("k".to_owned(), "v".to_owned())];
-        let b = montar_estado(&c, "http://localhost:8081", &ls).unwrap();
+        let b = build_state(&c, "http://localhost:8081", &ls).unwrap();
         let v: serde_json::Value = serde_json::from_slice(&b).unwrap();
         assert_eq!(v["cookies"][0]["httpOnly"], true);
         assert_eq!(v["cookies"][0]["sameSite"], "Lax");
         assert_eq!(v["cookies"][0]["expires"], -1.0);
         assert_eq!(v["origins"][0]["origin"], "http://localhost:8081");
         assert_eq!(v["origins"][0]["localStorage"][0]["name"], "k");
-        let b = montar_estado(&c, "http://localhost:8081", &[]).unwrap();
+        let b = build_state(&c, "http://localhost:8081", &[]).unwrap();
         let v: serde_json::Value = serde_json::from_slice(&b).unwrap();
         assert_eq!(v["origins"].as_array().unwrap().len(), 0);
     }
 
-    /// DOM clobbering (Fase 44a): os scripts do mundo isolado não leem nada pelo
-    /// `document`, pelo `<form>` nem pelo `localStorage` (que têm propriedades com nome
-    /// vindas da página); tudo sai dos protótipos. O ataque com o Chrome de verdade está
-    /// em `tests/playwright.rs` (casos `dom` e `dom-recusa`).
+    /// DOM clobbering (Phase 44a): the isolated world scripts read nothing through
+    /// `document`, the `<form>` nor `localStorage` (which have named properties coming
+    /// from the page); everything comes from the prototypes. The attack with the real
+    /// Chrome is in `tests/playwright.rs` (the two DOM clobbering cases).
     #[test]
-    fn ataque_dom_clobbering_scripts_so_pelos_prototipos() {
-        for (nome, js) in [("PREENCHER", PREENCHER), ("LER_PAGINA", LER_PAGINA)] {
-            for proibido in [
+    fn attack_dom_clobbering_scripts_only_through_prototypes() {
+        for (name, js) in [
+            ("FILL_SCRIPT", FILL_SCRIPT),
+            ("READ_PAGE_SCRIPT", READ_PAGE_SCRIPT),
+        ] {
+            for forbidden in [
                 "document.",
                 "form.",
                 "localStorage.",
@@ -986,21 +1001,21 @@ mod testes {
                 "botao.",
                 ".elements",
             ] {
-                assert!(!js.contains(proibido), "{nome} lê `{proibido}` direto");
+                assert!(!js.contains(forbidden), "{name} lê `{forbidden}` direto");
             }
             assert!(
                 js.contains("Document.prototype.querySelectorAll.call(document"),
-                "{nome}"
+                "{name}"
             );
         }
     }
 
-    /// Ataque: nome de entrada com `/` ou começando por `.` não sai da pasta.
+    /// Attack: an entry name with `/` or starting with `.` does not leave the directory.
     #[test]
-    fn ataque_nome_fora_da_pasta_recusado() {
-        let d = std::env::temp_dir().join(format!("ward-pw-teste-{}", std::process::id()));
-        for ruim in ["../x", "a/b", ".x", "", "A"] {
-            assert!(gravar_estado(&d, ruim, b"{}").is_err(), "{ruim}");
+    fn attack_name_outside_dir_refused() {
+        let d = std::env::temp_dir().join(format!("ward-pw-test-{}", std::process::id()));
+        for bad in ["../x", "a/b", ".x", "", "A"] {
+            assert!(write_state(&d, bad, b"{}").is_err(), "{bad}");
         }
         let _ = fs::remove_dir_all(&d);
     }

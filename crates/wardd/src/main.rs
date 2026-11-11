@@ -159,7 +159,7 @@ fn main() -> ExitCode {
         Err(e) => aviso!("pastas do agente SSH indisponíveis ({})", e.kind()),
     }
     // D6 (Fase 44): storage states e perfis do `ward playwright` de antes da partida.
-    match wardd::playwright::limpar(&config.rt) {
+    match wardd::playwright::clean_up(&config.rt) {
         Ok(0) => {}
         Ok(n) => aviso!(
             "{n} sessão(ões)/perfil(is) do ward playwright de antes da partida apagado(s) (D6)"

@@ -33,7 +33,7 @@
 //!   separados, como no `ward run`.
 //! - **Salto** (Fase 28, D19): sem `ProxyJump` (que põe um `sh -c` na cadeia e não
 //!   passa as opções de `-o` ao `ssh` do salto). O daemon abre a ponte de
-//!   [`crate::ponte`] (um `ssh -W <host>:<porta>` até a entrada de salto, por `execve`,
+//!   [`crate::bridge`] (um `ssh -W <host>:<porta>` até a entrada de salto, por `execve`,
 //!   só para o `ssh` principal) e o `ssh` principal conecta em `127.0.0.1:<porta da
 //!   ponte>` com `HostKeyAlias` igual ao nome do destino no `known_hosts`. A máscara
 //!   cobre as duas entradas.
@@ -49,9 +49,9 @@ use zeroize::Zeroizing;
 
 use crate::agente_ssh::{AgenteSsh, ErroAgente};
 use crate::aprovacao::Cliente;
+use crate::bridge::{Bridge, Intermediate, JUMP_LIMITS, Opening};
 use crate::execucao::{AgentePreparado, MorreNaTrava, Preparo};
 use crate::nucleo::Daemon;
-use crate::ponte::{Abertura, Intermediario, LIMITES_SALTO, Ponte};
 use crate::{aviso, depurar};
 
 /// Validade do token do "Conectar" (D3).
@@ -403,7 +403,7 @@ pub(crate) fn cred_de(a: &Auth) -> Cred {
 pub(crate) fn intermediario<'a>(
     entradas: &'a [Entry],
     nome: &str,
-) -> Result<(&'a Entry, Intermediario), ErroResposta> {
+) -> Result<(&'a Entry, Intermediate), ErroResposta> {
     let Some(e) = visivel(entradas, nome) else {
         aviso!("salto ou túnel: a outra entrada sumiu ou foi bloqueada; negado (D19)");
         return Err(ErroResposta::Negado);
@@ -411,10 +411,10 @@ pub(crate) fn intermediario<'a>(
     match e.data() {
         Data::Server(s) if s.jump.is_none() => Ok((
             e,
-            Intermediario {
+            Intermediate {
                 host: s.host.clone(),
-                porta: s.port,
-                usuario: s.username.clone(),
+                port: s.port,
+                username: s.username.clone(),
                 cred: cred_de(&s.auth),
             },
         )),
@@ -550,16 +550,16 @@ impl Daemon {
         let ponte = match salto {
             None => None,
             Some((via, mascara_ponte)) => Some(
-                Ponte::abrir(Abertura {
+                Bridge::open(Opening {
                     via,
-                    alvo_host: &host,
-                    alvo_porta: porta,
-                    programas: self.programas_ssh(),
+                    target_host: &host,
+                    target_port: porta,
+                    programs: self.programas_ssh(),
                     known_hosts: &known_hosts,
                     rt: self.temporarios(),
-                    mascara: mascara_ponte,
-                    limites: LIMITES_SALTO,
-                    travas: (travas.clone(), inicial),
+                    mask: mascara_ponte,
+                    limits: JUMP_LIMITS,
+                    locks: (travas.clone(), inicial),
                 })
                 .map_err(|m| {
                     aviso!("ssh: {m}");
@@ -608,7 +608,7 @@ impl Daemon {
             },
             Some(p) => Destino {
                 host: "127.0.0.1",
-                porta: p.porta(),
+                porta: p.port(),
                 usuario: &usuario,
             },
         };

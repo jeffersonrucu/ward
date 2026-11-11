@@ -52,8 +52,8 @@ use ward_platform::child::{self, Command, Group, Pty};
 use crate::agente_ssh::{AgenteSsh, Permitido};
 
 use crate::aprovacao::Cliente;
+use crate::bridge::{Bridge, Opening, TUNNEL_LIMITS};
 use crate::nucleo::Daemon;
-use crate::ponte::{Abertura, LIMITES_TUNEL, Ponte};
 use crate::{aviso, depurar};
 
 /// Pasta dos temporários dentro de `<rt>`.
@@ -226,7 +226,7 @@ struct RecursosRun<'a> {
     /// a entrada principal e a contagem de travas de quando a sessão foi autorizada.
     tunel: Option<ContextoTunel<'a>>,
     /// A ponte do túnel, aberta pela entrega.
-    ponte: Option<Ponte>,
+    ponte: Option<Bridge>,
     /// A entrada `servidor` do túnel (para a máscara das duas, D19).
     servidor_do_tunel: Option<&'a Entry>,
 }
@@ -264,7 +264,7 @@ impl Recursos for RecursosRun<'_> {
     }
 
     /// D10/D19 (Fase 28): o túnel do `banco` pelo `servidor` referenciado é a ponte de
-    /// [`crate::ponte`] (`ssh -W <host>:<porta>` por conexão, sem shell), escutando em
+    /// [`crate::bridge`] (`ssh -W <host>:<porta>` por conexão, sem shell), escutando em
     /// `127.0.0.1:<porta livre>` e aceitando só o grupo de processos do comando.
     fn tunel(&mut self, servidor: &str, host: &str, porta: u16) -> Result<u16, ErroRecurso> {
         if self.ponte.is_some() {
@@ -281,19 +281,19 @@ impl Recursos for RecursosRun<'_> {
             .entrada(es)
             .construir()
             .map_err(|_| ErroRecurso("máscara do túnel"))?;
-        let ponte = Ponte::abrir(Abertura {
+        let ponte = Bridge::open(Opening {
             via,
-            alvo_host: host,
-            alvo_porta: porta,
-            programas: ctx.daemon.programas_ssh(),
+            target_host: host,
+            target_port: porta,
+            programs: ctx.daemon.programas_ssh(),
             known_hosts: &ctx.daemon.known_hosts().map_err(ErroRecurso)?,
             rt: ctx.daemon.temporarios(),
-            mascara,
-            limites: LIMITES_TUNEL,
-            travas: ctx.travas.clone(),
+            mask: mascara,
+            limits: TUNNEL_LIMITS,
+            locks: ctx.travas.clone(),
         })
         .map_err(ErroRecurso)?;
-        let p = ponte.porta();
+        let p = ponte.port();
         self.ponte = Some(ponte);
         self.servidor_do_tunel = Some(es);
         Ok(p)
@@ -308,7 +308,7 @@ pub(crate) struct Preparo {
     pub(crate) temporarios: Option<Temporarios>,
     /// Salto do `ward ssh` ou túnel do `banco` (Fase 28): a ponte, que começa a aceitar
     /// quando o pid do filho é conhecido.
-    pub(crate) ponte: Option<Ponte>,
+    pub(crate) ponte: Option<Bridge>,
     /// `ward ssh` interativo: o filho num pty deste tamanho (D13, D34).
     pub(crate) pty: Option<Janela>,
     /// `ward ssh` com chave: o agente de D12, que só atende o filho.
@@ -954,7 +954,7 @@ pub(crate) fn sessao_com(
     // dela chega à CLI já mascarado.
     let ponte = ponte.map(|p| {
         let c = cli.clone();
-        p.iniciar(
+        p.start(
             pid,
             Arc::new(move |out: &mut Zeroizing<Vec<u8>>| {
                 c.enviar_saida(Fluxo::Erro, out);

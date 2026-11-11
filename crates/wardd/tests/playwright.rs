@@ -388,7 +388,7 @@ fn d6_partida_limpa_sessoes_e_perfis() {
     fs::write(rt.0.join("playwright/x.json"), b"{}").unwrap();
     fs::write(rt.0.join("pw-abc/Default/Cookies"), b"x").unwrap();
     fs::create_dir_all(rt.0.join("tmp")).unwrap();
-    assert_eq!(wardd::playwright::limpar(&rt.0).unwrap(), 2);
+    assert_eq!(wardd::playwright::clean_up(&rt.0).unwrap(), 2);
     assert!(!rt.0.join("playwright/x.json").exists());
     assert!(!rt.0.join("pw-abc").exists());
     assert!(
@@ -397,7 +397,7 @@ fn d6_partida_limpa_sessoes_e_perfis() {
     );
     // Sem `<rt>`: nada a fazer.
     let nada = Rt::novo("nada");
-    assert_eq!(wardd::playwright::limpar(&nada.0).unwrap(), 0);
+    assert_eq!(wardd::playwright::clean_up(&nada.0).unwrap(), 0);
 }
 
 // --- Chrome de verdade (`make test-playwright`) ---------------------------------------

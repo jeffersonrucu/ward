@@ -1,27 +1,32 @@
-//! `ward login` (Fase 43; R14, D9; S1, S13): o daemon leva o pedido à extensão do Chrome,
-//! que confere a origem da aba ativa, preenche, envia e limpa os campos.
+//! `ward login` (Phase 43; R14, D9; S1, S13): the daemon takes the request to the Chrome
+//! extension, which checks the origin of the active tab, fills, submits and clears the
+//! fields.
 //!
-//! O daemon não fala com a extensão por conta própria: o service worker dela mantém o
-//! `ward-nm` aberto e pergunta `aguardar_login` (espera longa, até
-//! [`PrazosLogin::aguardar`]). O caminho de um pedido:
+//! The daemon does not talk to the extension on its own: the extension's service worker
+//! keeps `ward-nm` open and asks for the next login request (long wait, up to
+//! [`LoginDeadlines::wait`]; [`Daemon::await_login`]). The path of a request:
 //!
-//! 1. o agente pede `login <entrada>`: tipo `login` conferido antes da aprovação, depois
-//!    o nível e a aprovação ([`Daemon::autorizar_uso`]: bloqueada = inexistente, V3.17);
-//! 2. o daemon cria um pedido com id aleatório (32 letras e dígitos, do RNG do sistema)
-//!    e o entrega à primeira extensão que perguntar: `pedido_de_login` leva só o id e o
-//!    nome da entrada, nenhum valor;
-//! 3. a extensão manda `preencher_login` com o id e a origem do documento do quadro
-//!    principal da aba ativa. O daemon compara a origem com a URL da entrada pelo mesmo
-//!    `preencher` da Fase 40 (D9): diferente, o pedido acaba em `origem_diferente` e
-//!    nenhum valor sai; igual, sai o `preenchimento` (só para o papel extensão). Um id
-//!    só preenche uma vez;
-//! 4. a extensão diz o desfecho (`resultado_login`) e o agente recebe `ok` ou o erro.
+//! 1. the agent asks `login <entry>`: type `login` checked before the approval, then
+//!    the level and the approval (the daemon's usage authorization: blocked =
+//!    nonexistent, V3.17);
+//! 2. the daemon creates a request with a random id (32 letters and digits, from the
+//!    system RNG) and hands it to the first extension that asks: the login request
+//!    response carries only the id and the entry name, no value;
+//! 3. the extension sends the fill operation ([`Daemon::fill_login`]) with the id and the
+//!    origin of the main frame document of the active tab. The daemon compares the
+//!    origin with the entry URL through the same fill of Phase 40 (D9): if different, the
+//!    request ends in the "different origin" error and no value leaves; if equal, the
+//!    fill response leaves (only for the extension role). An id fills only once;
+//! 4. the extension reports the outcome ([`Daemon::login_result`]) and the agent gets
+//!    `ok` or the error.
 //!
-//! Um pedido por vez (o segundo agente recebe `ocupado`). Ninguém pegou o pedido em
-//! [`PrazosLogin::retirada`], ou a extensão não terminou em [`PrazosLogin::total`]: o
-//! agente recebe `navegador_falhou` e o id morre. Cofre travado no meio, ou a CLI que
-//! caiu: o pedido morre e nada mais é preenchido. O log leva só o nome da entrada e o
-//! desfecho, nunca a origem nem valores (S13).
+//! One request at a time (the second agent gets the "busy" error). Nobody took the
+//! request within [`LoginDeadlines::pickup`], or the extension did not finish within
+//! [`LoginDeadlines::total`]: the agent gets the "browser failed" error and the id
+//! dies. Vault
+//! locked in the middle, or the CLI dropped: the request dies and nothing else is
+//! filled. The log carries only the entry name and the outcome, never the origin nor
+//! values (S13).
 
 use std::sync::{Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
@@ -34,137 +39,139 @@ use crate::aprovacao::Cliente;
 use crate::aviso;
 use crate::nucleo::Daemon;
 
-/// Prazos do `ward login`.
+/// Deadlines of `ward login`.
 #[derive(Debug, Clone, Copy)]
-pub struct PrazosLogin {
-    /// Quanto o `aguardar_login` da extensão espera um pedido antes de responder `ok`
-    /// (vazio) e perguntar de novo.
-    pub aguardar: Duration,
-    /// Quanto o pedido espera uma extensão pegá-lo.
-    pub retirada: Duration,
-    /// Quanto o pedido espera o desfecho, contado de quando a extensão o pegou (o envio
-    /// e a página seguinte carregar).
+pub struct LoginDeadlines {
+    /// How long the extension's wait ([`Daemon::await_login`]) waits for a request before answering
+    /// `ok` (empty) and asking again.
+    pub wait: Duration,
+    /// How long the request waits for an extension to take it.
+    pub pickup: Duration,
+    /// How long the request waits for the outcome, counted from when the extension took
+    /// it (the submission and the next page loading).
     pub total: Duration,
 }
 
-impl Default for PrazosLogin {
+impl Default for LoginDeadlines {
     fn default() -> Self {
         Self {
-            aguardar: Duration::from_secs(25),
-            retirada: Duration::from_secs(10),
+            wait: Duration::from_secs(25),
+            pickup: Duration::from_secs(10),
             total: Duration::from_secs(60),
         }
     }
 }
 
-/// De quanto em quanto o agente que espera olha se a CLI caiu ou o cofre travou.
-const PASSO: Duration = Duration::from_millis(200);
+/// How often the waiting agent checks whether the CLI dropped or the vault locked.
+const STEP: Duration = Duration::from_millis(200);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Fase {
-    /// Esperando uma extensão pegar.
-    Esperando,
-    /// Uma extensão pegou; ainda não preencheu.
-    Entregue,
-    /// O preenchimento saiu; falta o desfecho.
-    Preenchido,
+enum Phase {
+    /// Waiting for an extension to take it.
+    Waiting,
+    /// An extension took it; not filled yet.
+    Delivered,
+    /// The fill went out; the outcome is missing.
+    Filled,
 }
 
-struct Trabalho {
-    /// Id aleatório do pedido (comparado em tempo constante).
+struct Job {
+    /// Random id of the request (compared in constant time).
     id: String,
-    entrada: String,
-    fase: Fase,
-    resultado: Option<Result<(), ErroResposta>>,
+    entry: String,
+    phase: Phase,
+    result: Option<Result<(), ErroResposta>>,
 }
 
-/// Fila de um lugar dos pedidos de `ward login`.
+/// One-slot queue of the `ward login` requests.
 pub struct Logins {
-    atual: Mutex<Option<Trabalho>>,
-    sinal: Condvar,
-    prazos: PrazosLogin,
+    current: Mutex<Option<Job>>,
+    signal: Condvar,
+    deadlines: LoginDeadlines,
 }
 
 impl Default for Logins {
     fn default() -> Self {
-        Self::novo(PrazosLogin::default())
+        Self::new(LoginDeadlines::default())
     }
 }
 
 impl Logins {
-    pub fn novo(prazos: PrazosLogin) -> Self {
+    pub fn new(deadlines: LoginDeadlines) -> Self {
         Self {
-            atual: Mutex::new(None),
-            sinal: Condvar::new(),
-            prazos,
+            current: Mutex::new(None),
+            signal: Condvar::new(),
+            deadlines,
         }
     }
 
-    fn trava(&self) -> MutexGuard<'_, Option<Trabalho>> {
-        self.atual.lock().unwrap_or_else(|e| e.into_inner())
+    fn lock(&self) -> MutexGuard<'_, Option<Job>> {
+        self.current.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    /// O pedido atual, se o id é o dele.
-    fn do_id<'a>(atual: &'a mut Option<Trabalho>, id: &str) -> Option<&'a mut Trabalho> {
-        atual
+    /// The current request, if the id is its id.
+    fn by_id<'a>(current: &'a mut Option<Job>, id: &str) -> Option<&'a mut Job> {
+        current
             .as_mut()
             .filter(|t| generator::tokens_equal(t.id.as_bytes(), id.as_bytes()))
     }
 
-    /// Termina o pedido `id` (se ainda é o atual e não terminou) e acorda quem espera.
-    fn terminar(&self, id: &str, r: Result<(), ErroResposta>) -> bool {
-        let mut g = self.trava();
-        let Some(t) = Self::do_id(&mut g, id) else {
+    /// Finishes the request `id` (if it is still the current one and has not finished)
+    /// and wakes up whoever waits.
+    fn finish(&self, id: &str, r: Result<(), ErroResposta>) -> bool {
+        let mut g = self.lock();
+        let Some(t) = Self::by_id(&mut g, id) else {
             return false;
         };
-        if t.resultado.is_some() {
+        if t.result.is_some() {
             return false;
         }
-        t.resultado = Some(r);
-        self.sinal.notify_all();
+        t.result = Some(r);
+        self.signal.notify_all();
         true
     }
 }
 
-/// Apaga o pedido ao sair do `login` (inclusive por erro ou pânico).
-struct Apagar<'a>(&'a Logins);
+/// Deletes the request when leaving `login` (also on error or panic).
+struct DeleteOnDrop<'a>(&'a Logins);
 
-impl Drop for Apagar<'_> {
+impl Drop for DeleteOnDrop<'_> {
     fn drop(&mut self) {
-        *self.0.trava() = None;
-        self.0.sinal.notify_all();
+        *self.0.lock() = None;
+        self.0.signal.notify_all();
     }
 }
 
 impl Daemon {
-    /// `login <entrada>` do agente (Fase 43). Só `ok` ou erro voltam; nenhum valor.
+    /// The agent's `login <entry>` (Phase 43). Only `ok` or an error come back; no
+    /// value.
     pub(crate) fn login(
         &self,
-        cliente: &dyn Cliente,
-        pedido: &Pedido,
+        client: &dyn Cliente,
+        request: &Pedido,
     ) -> Result<Resposta, ErroResposta> {
-        let Pedido::Login { entrada } = pedido else {
+        let Pedido::Login { entrada: entry } = request else {
             return Err(ErroResposta::PedidoInvalido);
         };
-        // Tipo sem login: recusa antes de pedir aprovação (como o `playwright`).
+        // Type without login: refuse before asking for approval (like `playwright`).
         if let Some(a) = self.estado().aberto.as_ref()
             && a.entradas
                 .iter()
-                .find(|e| e.name() == entrada && e.level() != AccessLevel::Blocked)
+                .find(|e| e.name() == entry && e.level() != AccessLevel::Blocked)
                 .is_some_and(|e| !matches!(e.data(), Data::Login(_)))
         {
             return Err(ErroResposta::TipoSemEntrega);
         }
-        self.autorizar_uso(cliente, pedido)?;
+        self.autorizar_uso(client, request)?;
         self.registrar_uso();
-        // A entrada pode ter mudado durante a aprovação: confere de novo.
-        let nome = {
-            let est = self.estado();
-            let a = est.aberto.as_ref().ok_or(ErroResposta::Travado)?;
+        // The entry may have changed during the approval: check again.
+        let name = {
+            let st = self.estado();
+            let a = st.aberto.as_ref().ok_or(ErroResposta::Travado)?;
             let e = a
                 .entradas
                 .iter()
-                .find(|e| e.name() == entrada && e.level() != AccessLevel::Blocked)
+                .find(|e| e.name() == entry && e.level() != AccessLevel::Blocked)
                 .ok_or(ErroResposta::EntradaInexistente)?;
             if !matches!(e.data(), Data::Login(_)) {
                 return Err(ErroResposta::TipoSemEntrega);
@@ -177,176 +184,176 @@ impl Daemon {
         };
         let logins = self.logins();
         {
-            let mut g = logins.trava();
+            let mut g = logins.lock();
             if g.is_some() {
                 return Err(ErroResposta::Ocupado);
             }
-            *g = Some(Trabalho {
+            *g = Some(Job {
                 id: id.clone(),
-                entrada: nome.clone(),
-                fase: Fase::Esperando,
-                resultado: None,
+                entry: name.clone(),
+                phase: Phase::Waiting,
+                result: None,
             });
-            logins.sinal.notify_all();
+            logins.signal.notify_all();
         }
-        let _apagar = Apagar(logins);
-        aviso!("login {nome}: pedido à extensão");
-        let r = self.esperar_desfecho(logins, &id, cliente);
+        let _delete = DeleteOnDrop(logins);
+        aviso!("login {name}: pedido à extensão");
+        let r = self.wait_outcome(logins, &id, client);
         match &r {
-            Ok(()) => aviso!("login {nome}: formulário enviado"),
-            Err(e) => aviso!("login {nome}: {}", e.codigo()),
+            Ok(()) => aviso!("login {name}: formulário enviado"),
+            Err(e) => aviso!("login {name}: {}", e.codigo()),
         }
         r.map(|()| Resposta::Ok)
     }
 
-    fn esperar_desfecho(
+    fn wait_outcome(
         &self,
         logins: &Logins,
         id: &str,
-        cliente: &dyn Cliente,
+        client: &dyn Cliente,
     ) -> Result<(), ErroResposta> {
-        let inicio = Instant::now();
-        let mut pegou: Option<Instant> = None;
-        let mut g = logins.trava();
+        let start = Instant::now();
+        let mut taken: Option<Instant> = None;
+        let mut g = logins.lock();
         loop {
-            let Some(t) = Logins::do_id(&mut g, id) else {
+            let Some(t) = Logins::by_id(&mut g, id) else {
                 return Err(ErroResposta::Interno);
             };
-            if let Some(r) = t.resultado.clone() {
+            if let Some(r) = t.result.clone() {
                 return r;
             }
-            if t.fase != Fase::Esperando && pegou.is_none() {
-                pegou = Some(Instant::now());
+            if t.phase != Phase::Waiting && taken.is_none() {
+                taken = Some(Instant::now());
             }
-            let vencido = match pegou {
-                None => inicio.elapsed() >= logins.prazos.retirada,
-                Some(p) => p.elapsed() >= logins.prazos.total,
+            let expired = match taken {
+                None => start.elapsed() >= logins.deadlines.pickup,
+                Some(p) => p.elapsed() >= logins.deadlines.total,
             };
-            if vencido {
-                // Ninguém mais preenche com este id.
-                t.resultado = Some(Err(ErroResposta::NavegadorFalhou));
+            if expired {
+                // Nobody fills with this id anymore.
+                t.result = Some(Err(ErroResposta::NavegadorFalhou));
                 return Err(ErroResposta::NavegadorFalhou);
             }
             drop(g);
-            // Fora da trava dos pedidos: o estado do cofre tem a trava dele.
-            if cliente.saiu() {
-                logins.terminar(id, Err(ErroResposta::Negado));
+            // Outside the requests lock: the vault state has its own lock.
+            if client.saiu() {
+                logins.finish(id, Err(ErroResposta::Negado));
                 return Err(ErroResposta::Negado);
             }
             if self.travado() {
-                logins.terminar(id, Err(ErroResposta::Travado));
+                logins.finish(id, Err(ErroResposta::Travado));
                 return Err(ErroResposta::Travado);
             }
-            g = logins.trava();
-            if Logins::do_id(&mut g, id).is_some_and(|t| t.resultado.is_none()) {
+            g = logins.lock();
+            if Logins::by_id(&mut g, id).is_some_and(|t| t.result.is_none()) {
                 g = logins
-                    .sinal
-                    .wait_timeout(g, PASSO)
+                    .signal
+                    .wait_timeout(g, STEP)
                     .unwrap_or_else(|e| e.into_inner())
                     .0;
             }
         }
     }
 
-    /// `aguardar_login` (só extensão): o próximo pedido ainda não entregue, ou `ok`
-    /// depois de [`PrazosLogin::aguardar`].
-    pub(crate) fn aguardar_login(&self, papel: Papel) -> Result<Resposta, ErroResposta> {
-        if papel != Papel::Extensao {
+    /// The extension's wait for a login request (extension only): the next request not
+    /// yet delivered, or `ok`
+    /// after [`LoginDeadlines::wait`].
+    pub(crate) fn await_login(&self, role: Papel) -> Result<Resposta, ErroResposta> {
+        if role != Papel::Extensao {
             return Err(ErroResposta::NaoAutorizado);
         }
         let logins = self.logins();
-        let fim = Instant::now() + logins.prazos.aguardar;
-        let mut g = logins.trava();
+        let end = Instant::now() + logins.deadlines.wait;
+        let mut g = logins.lock();
         loop {
             if let Some(t) = g.as_mut()
-                && t.fase == Fase::Esperando
-                && t.resultado.is_none()
+                && t.phase == Phase::Waiting
+                && t.result.is_none()
             {
-                t.fase = Fase::Entregue;
-                logins.sinal.notify_all();
+                t.phase = Phase::Delivered;
+                logins.signal.notify_all();
                 return Ok(Resposta::PedidoDeLogin {
                     id: t.id.clone(),
-                    entrada: t.entrada.clone(),
+                    entrada: t.entry.clone(),
                 });
             }
-            let agora = Instant::now();
-            if agora >= fim {
+            let now = Instant::now();
+            if now >= end {
                 return Ok(Resposta::Ok);
             }
             g = logins
-                .sinal
-                .wait_timeout(g, fim - agora)
+                .signal
+                .wait_timeout(g, end - now)
                 .unwrap_or_else(|e| e.into_inner())
                 .0;
         }
     }
 
-    /// `preencher_login` (só extensão): os valores do pedido `id`, uma vez, se a origem
-    /// da aba for a da entrada (D9, pelo `preencher` da Fase 40).
-    pub(crate) fn preencher_login(
+    /// The fill of a login request (extension only): the values of the request `id`,
+    /// once, if the tab's origin is the entry's (D9, through the fill of Phase 40).
+    pub(crate) fn fill_login(
         &self,
-        papel: Papel,
+        role: Papel,
         id: &str,
-        origem: &str,
+        origin: &str,
     ) -> Result<Resposta, ErroResposta> {
-        if papel != Papel::Extensao {
+        if role != Papel::Extensao {
             return Err(ErroResposta::NaoAutorizado);
         }
         let logins = self.logins();
-        let entrada = {
-            let mut g = logins.trava();
-            let t = Logins::do_id(&mut g, id).ok_or(ErroResposta::Expirado)?;
-            if t.fase != Fase::Entregue || t.resultado.is_some() {
+        let entry = {
+            let mut g = logins.lock();
+            let t = Logins::by_id(&mut g, id).ok_or(ErroResposta::Expirado)?;
+            if t.phase != Phase::Delivered || t.result.is_some() {
                 return Err(ErroResposta::Expirado);
             }
-            // Um id preenche uma vez só, dê certo ou não.
-            t.fase = Fase::Preenchido;
-            t.entrada.clone()
+            // An id fills only once, whether it works or not.
+            t.phase = Phase::Filled;
+            t.entry.clone()
         };
-        match self.preencher(papel, &entrada, origem) {
+        match self.preencher(role, &entry, origin) {
             Ok(r) => {
-                // O pedido pode ter morrido (prazo, trava, CLI) enquanto o valor saía do
-                // cofre: aí nada sai.
-                let mut g = logins.trava();
-                match Logins::do_id(&mut g, id) {
-                    Some(t) if t.resultado.is_none() => Ok(r),
+                // The request may have died (deadline, lock, CLI) while the value was
+                // leaving the vault: then nothing leaves.
+                let mut g = logins.lock();
+                match Logins::by_id(&mut g, id) {
+                    Some(t) if t.result.is_none() => Ok(r),
                     _ => Err(ErroResposta::Expirado),
                 }
             }
             Err(e) => {
-                logins.terminar(id, Err(e.clone()));
+                logins.finish(id, Err(e.clone()));
                 Err(e)
             }
         }
     }
 
-    /// `resultado_login` (só extensão): o desfecho do pedido `id`.
-    pub(crate) fn resultado_login(
+    /// The outcome of a login request (extension only): the outcome of the request
+    /// `id`.
+    pub(crate) fn login_result(
         &self,
-        papel: Papel,
+        role: Papel,
         id: &str,
-        resultado: ResultadoLogin,
+        outcome: ResultadoLogin,
     ) -> Result<Resposta, ErroResposta> {
-        if papel != Papel::Extensao {
+        if role != Papel::Extensao {
             return Err(ErroResposta::NaoAutorizado);
         }
         let logins = self.logins();
         {
-            let mut g = logins.trava();
-            let t = Logins::do_id(&mut g, id).ok_or(ErroResposta::Expirado)?;
-            if t.resultado.is_some() || t.fase == Fase::Esperando {
+            let mut g = logins.lock();
+            let t = Logins::by_id(&mut g, id).ok_or(ErroResposta::Expirado)?;
+            if t.result.is_some() || t.phase == Phase::Waiting {
                 return Err(ErroResposta::Expirado);
             }
-            // "Enviado" e "recusado" só depois do preenchimento.
-            if matches!(
-                resultado,
-                ResultadoLogin::Enviado | ResultadoLogin::Recusado
-            ) && t.fase != Fase::Preenchido
+            // "Submitted" and "refused" only after the fill.
+            if matches!(outcome, ResultadoLogin::Enviado | ResultadoLogin::Recusado)
+                && t.phase != Phase::Filled
             {
                 return Err(ErroResposta::PedidoInvalido);
             }
         }
-        let r = match resultado {
+        let r = match outcome {
             ResultadoLogin::Enviado => Ok(()),
             ResultadoLogin::Recusado | ResultadoLogin::SemFormulario => {
                 Err(ErroResposta::LoginRecusado)
@@ -354,7 +361,7 @@ impl Daemon {
             ResultadoLogin::AbaMudou => Err(ErroResposta::OrigemDiferente),
             ResultadoLogin::Falha => Err(ErroResposta::NavegadorFalhou),
         };
-        if logins.terminar(id, r) {
+        if logins.finish(id, r) {
             Ok(Resposta::Ok)
         } else {
             Err(ErroResposta::Expirado)
@@ -363,22 +370,22 @@ impl Daemon {
 }
 
 #[cfg(test)]
-mod testes {
+mod tests {
     use super::*;
 
     #[test]
-    fn id_de_outro_pedido_nao_casa() {
+    fn id_of_another_request_does_not_match() {
         let l = Logins::default();
-        *l.trava() = Some(Trabalho {
+        *l.lock() = Some(Job {
             id: "a".repeat(32),
-            entrada: "acme-wp-dev".into(),
-            fase: Fase::Entregue,
-            resultado: None,
+            entry: "acme-wp-dev".into(),
+            phase: Phase::Delivered,
+            result: None,
         });
-        let mut g = l.trava();
-        assert!(Logins::do_id(&mut g, &"a".repeat(32)).is_some());
-        assert!(Logins::do_id(&mut g, &"b".repeat(32)).is_none());
-        assert!(Logins::do_id(&mut g, &"a".repeat(31)).is_none());
-        assert!(Logins::do_id(&mut g, "").is_none());
+        let mut g = l.lock();
+        assert!(Logins::by_id(&mut g, &"a".repeat(32)).is_some());
+        assert!(Logins::by_id(&mut g, &"b".repeat(32)).is_none());
+        assert!(Logins::by_id(&mut g, &"a".repeat(31)).is_none());
+        assert!(Logins::by_id(&mut g, "").is_none());
     }
 }
