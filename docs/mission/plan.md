@@ -331,7 +331,7 @@ Contrato: V4.1–V4.24. Sequencial. A partir daqui o fio muda.
   Fase 50): segredo de teste novo é gerado em `.dev/` ou é um valor de D15; o handoff não leva o valor; nada de padrão
   genérico na allowlist. — S1, S3, V2.1
 
-- [ ] Fase 54b — Nomes reservados na leitura (achado da Fase 53; decisão do usuário 2026-11-11: aceitar na leitura). Um
+- [x] Fase 54b — Nomes reservados na leitura (achado da Fase 53; decisão do usuário 2026-11-11: aceitar na leitura). Um
   cofre v4 ou v5 com extra `ENTRY`/`GROUP`/`ENVIRONMENT`/`FILE`/`FILE_*` (ou `PROTOCOL` em ftp/sftp) ou anexo `key` em
   server/ftp/sftp abre e migra; o nome reservado só é recusado ao salvar a entrada (`Draft::validate` no caminho de
   gravação), e a entrega continua recusando nome repetido na conferência final (nenhuma variável entregue é trocada
@@ -374,7 +374,7 @@ Contrato: V5.1–V5.11. Sequencial.
   comandos novos e `ward list --json` em inglês; `skill/settings-deny.json` negando
   `ward unlock` em todas as formas e mantendo `destravar`; `dev/tests/skill.py` (lista
   de ataques com as duas formas; autoteste). Compilação: `make compile`. — V5.3
-- [ ] Fase 59 — (achado da Fase 53: `docs/escopo.md` linha 79 e o glossário com as variáveis novas) (achado da Fase 49: a migração não guarda a v4 atual no backup antes de gravar e a rotação tira as v4 depois de 30 gravações; `docs/instalacao.md` manda copiar o cofre antes de atualizar, para a volta de DT7) Documentação: `docs/escopo.md` (nomes novos: comandos, variáveis,
+- [ ] Fase 59 — (achado da Fase 54b: `docs/instalacao.md` avisa que, depois de atualizar, extras `ENTRY`/`GROUP`/`ENVIRONMENT`/`FILE`/`FILE_*`/`PROTOCOL` e anexo `key` vindos da 0.1.x têm de ser renomeados no app: até lá o `ward run` dessa entrada só dá erro genérico, e o motivo fica no log do daemon) (achado da Fase 53: `docs/escopo.md` linha 79 e o glossário com as variáveis novas) (achado da Fase 49: a migração não guarda a v4 atual no backup antes de gravar e a rotação tira as v4 depois de 30 gravações; `docs/instalacao.md` manda copiar o cofre antes de atualizar, para a volta de DT7) Documentação: `docs/escopo.md` (nomes novos: comandos, variáveis,
   tipos, caminhos; o histórico das decisões fica), `docs/instalacao.md` (atualização
   0.1.x → 0.2.0, volta pelo backup v4, DT7), `docs/migracao.md` (comandos novos;
   `make test-migration-guide` com as expectativas novas), caminhos de arquivo em
