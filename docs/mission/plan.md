@@ -152,7 +152,7 @@ Compilação de cada fase: `make compile`. Checador: os arquivos da fase.
 - [x] Fase 19 — `main.rs`, `lib.rs`, `config.rs`, `log.rs`, `lancamento.rs`,
   `arquivos.rs`, `uso.rs`, `trava.rs` (formato do estado congelado; o V3.15 em
   `tests/approval.rs` lista `uso.rs` pelo nome e muda junto, achado da Fase 23). — V2.1, V2.7
-- [ ] Fase 20 — `nucleo.rs`, `aprovacao.rs` (o V3.15 em `tests/approval.rs` lista os dois
+- [x] Fase 20 — `nucleo.rs`, `aprovacao.rs` (o V3.15 em `tests/approval.rs` lista os dois
   pelo nome e muda junto, achado da Fase 23). — V2.1
 - [x] Fase 21 — `execucao.rs`, `agente_ssh.rs`, `ssh.rs`, `ssh_testes.rs`. — V2.1, V2.7
 - [x] Fase 22 — `playwright.rs`, `cdp.rs`, `login.rs`, `ponte.rs` (`serde` do CDP: campos
