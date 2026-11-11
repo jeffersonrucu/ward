@@ -306,7 +306,7 @@ Contrato: V4.1–V4.24. Sequencial. A partir daqui o fio muda.
   `extension.py`, `login.py`, `cli.py`, `chrome_policy.py`, `open-app.py`,
   `fake_chrome.py`, `fake_ssh.py`), servidor falso v1 para o V4.16. Esvazia de
   `frozen.txt` as chaves de mensagem. Compilação: `make compile`. — V4.13, V4.16, V5.10
-- [ ] Fase 53 — (achado da Fase 48: o `SMTP_SECURITY` entregue passa de `nenhuma` a `none`; registrar na tabela "Entrega esperada") Variáveis entregues (DT11) no `ward-core` `delivery` e no `wardd`;
+- [x] Fase 53 — (achado da Fase 48: o `SMTP_SECURITY` entregue passa de `nenhuma` a `none`; registrar na tabela "Entrega esperada") Variáveis entregues (DT11) no `ward-core` `delivery` e no `wardd`;
   `make dev-vault` e `dev-vault-verify` com o `entries.json` novo (chaves lidas por
   `dev/variations.py` e `dev/tests/login.py`; heredoc do `dev-vault.sh` chama
   `entry_patterns`/`database_url`; achado da Fase 42); oráculo
@@ -363,11 +363,11 @@ Contrato: V5.1–V5.11. Sequencial.
   `dev/container-deb`, `dev/tests/install.sh`, `deb.sh`) com os cenários de atualização a
   partir dos artefatos 0.1.4 de `.dev/baseline/`. Compilação: `make compile`. — V5.6,
   V5.7, V5.8, V5.9
-- [ ] Fase 58 — Skill e deny (DT10): `skill/ward/SKILL.md` e `skill/README.md` com os
+- [ ] Fase 58 — (achado da Fase 53: o deny nega `WARD_FILE_KEY` nas mesmas formas e mantém `WARD_ARQUIVO_CHAVE` para a 0.1.x; `dev/tests/skill.py` junto) Skill e deny (DT10): `skill/ward/SKILL.md` e `skill/README.md` com os
   comandos novos e `ward list --json` em inglês; `skill/settings-deny.json` negando
   `ward unlock` em todas as formas e mantendo `destravar`; `dev/tests/skill.py` (lista
   de ataques com as duas formas; autoteste). Compilação: `make compile`. — V5.3
-- [ ] Fase 59 — (achado da Fase 49: a migração não guarda a v4 atual no backup antes de gravar e a rotação tira as v4 depois de 30 gravações; `docs/instalacao.md` manda copiar o cofre antes de atualizar, para a volta de DT7) Documentação: `docs/escopo.md` (nomes novos: comandos, variáveis,
+- [ ] Fase 59 — (achado da Fase 53: `docs/escopo.md` linha 79 e o glossário com as variáveis novas) (achado da Fase 49: a migração não guarda a v4 atual no backup antes de gravar e a rotação tira as v4 depois de 30 gravações; `docs/instalacao.md` manda copiar o cofre antes de atualizar, para a volta de DT7) Documentação: `docs/escopo.md` (nomes novos: comandos, variáveis,
   tipos, caminhos; o histórico das decisões fica), `docs/instalacao.md` (atualização
   0.1.x → 0.2.0, volta pelo backup v4, DT7), `docs/migracao.md` (comandos novos;
   `make test-migration-guide` com as expectativas novas), caminhos de arquivo em
