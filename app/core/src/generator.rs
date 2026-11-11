@@ -1,18 +1,18 @@
-//! Standalone password generator (Phase 37, screen `Gerador de senha / Avulso`).
+//! Standalone password generator (Phase 37, standalone password generator screen).
 //!
 //! The password is born only in `ward_core::generator` (system RNG, no bias, D35
 //! symbols), never in JavaScript. It stays here, on the Rust side, in a [`Secret`] that
 //! is zeroed on drop:
 //!
-//! - `gerar_senha` returns to the interface only what is not secret: the size, the
+//! - the generate command returns to the interface only what is not secret: the size, the
 //!   strength estimated from the options and the D35 symbol set (so the screen shows the
 //!   same set the generator uses);
-//! - `copiar_senha_gerada` sends the password to the clipboard through the same
+//! - the copy generated password command sends the password to the clipboard through the same
 //!   [`crate::clipboard::Copier`] as the "copy" (S12, D4): the response is `()`;
-//! - `revelar_senha_gerada` is the only path of the value to the webview, and only on the
+//! - the reveal generated password command is the only path of the value to the webview, and only on the
 //!   "reveal" click the design shows (S11). The screen hides it again in 30 s or on
 //!   leaving;
-//! - `descartar_senha_gerada` zeroes the password on leaving the screen. Nothing is
+//! - the discard generated password command zeroes the password on leaving the screen. Nothing is
 //!   stored: the standalone password stays neither in the vault nor on disk.
 
 use std::fmt;
@@ -28,7 +28,7 @@ use crate::secret::Secret;
 pub const MIN_LENGTH: usize = 8;
 /// Largest size on the screen.
 pub const MAX_LENGTH: usize = 64;
-/// Initial size (the same as the core generator and the design: "24 caracteres").
+/// Initial size (the same as the core generator and the design: 24 characters).
 pub const DEFAULT_LENGTH: usize = core_generator::DEFAULT_SIZE;
 
 /// Options that came from the interface (untrusted): the size is checked here and again
@@ -92,11 +92,11 @@ impl Strength {
     }
 }
 
-/// What `gerar_senha` returns: nothing of the value (not a single character).
+/// What the generate command returns: nothing of the value (not a single character).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Generated {
     pub size: usize,
-    /// Entropy rounded down, in steps of 10 ("cerca de 150 bits").
+    /// Entropy rounded down, in steps of 10 ("about 150 bits" on the screen).
     pub bits: u32,
     pub strength: Strength,
     /// D35 symbols, from `ward_core::generator::SYMBOLS`.
@@ -130,7 +130,7 @@ fn bits(o: &GeneratorOptions) -> u32 {
 }
 
 /// Revealed value. Zeroed on drop; the `Debug` does not show the value. Only the
-/// `revelar_senha_gerada` command creates it.
+/// reveal generated password command creates it.
 pub struct Revealed(Zeroizing<String>);
 
 impl Revealed {
@@ -242,10 +242,13 @@ mod tests {
 
     #[test]
     fn design_strength() {
-        // Design: 24 characters, four sets → "muito forte · cerca de 150 bits".
+        // Design: 24 characters, four sets → "very strong, about 150 bits".
         let mut g = Generator::default();
         let r = g.generate(options(24)).unwrap();
-        assert_eq!((r.size, r.bits, r.strength), (24, 150, Strength::VeryStrong));
+        assert_eq!(
+            (r.size, r.bits, r.strength),
+            (24, 150, Strength::VeryStrong)
+        );
         let digits_only = Options {
             size: 8,
             lowercase: false,

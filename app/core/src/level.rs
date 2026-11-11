@@ -4,7 +4,7 @@
 //! no `Clone`, `Display` or `Serialize`, and the `Debug` does not show the value. Reading
 //! it (`Deserialize`) already refuses what is not a PIN (4 to 6 ASCII digits, like
 //! `ward_core::limits`), so a value out of format never reaches the daemon. The PIN only
-//! leaves here for the protocol's `mudar_nivel` request; no response returns it and no
+//! leaves here for the protocol's set level request; no response returns it and no
 //! log writes it.
 
 use std::fmt;
@@ -79,13 +79,13 @@ impl<'de> Deserialize<'de> for Pin {
     }
 }
 
-/// Level requested by the interface, by the protocol name (`livre`, `com-aprovacao`,
-/// `bloqueado`).
+/// Level requested by the interface, by one of the three protocol names (free, with
+/// approval, blocked).
 pub fn level_from_name(name: &str) -> Result<AccessLevel, AppError> {
     AccessLevel::from_name(name).ok_or(AppError::InvalidRequest)
 }
 
-/// Response of `mudar_nivel`: the level the entry now has. No PIN.
+/// Response of the set level command: the level the entry now has. No PIN.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct LevelChanged {
     #[serde(rename = "entrada")]
@@ -168,6 +168,9 @@ mod tests {
             level: "livre",
         })
         .unwrap();
-        assert_eq!(v, serde_json::json!({"entrada": "acme-pg-dev", "nivel": "livre"}));
+        assert_eq!(
+            v,
+            serde_json::json!({"entrada": "acme-pg-dev", "nivel": "livre"})
+        );
     }
 }

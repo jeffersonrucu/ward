@@ -22,8 +22,8 @@ use serde::{Deserialize, Serialize};
 use ward_core::limits::{MAX_LOCK_MINUTES, MAX_SECRET, MIN_LOCK_MINUTES};
 
 use crate::AppError;
+use crate::first_use::{PIN_INVALID, PIN_MISMATCH, Typed, password_errors, valid_pin};
 use crate::form::FieldError;
-use crate::first_use::{Typed, PIN_MISMATCH, PIN_INVALID, password_errors, valid_pin};
 
 pub const CURRENT_PIN_INVALID: &str = "o PIN atual tem de 4 a 6 dígitos, só números";
 pub const CURRENT_PASSWORD_EMPTY: &str = "digite a senha mestra atual";
@@ -318,9 +318,9 @@ mod tests {
         use super::*;
         use crate::clipboard::{Clipboard, Copier};
         use crate::daemon::{Daemon, VaultStatus};
-        use crate::unlock::MasterPassword;
         use crate::fake_daemon::{FakeDaemon, SECRETS};
         use crate::service::Service;
+        use crate::unlock::MasterPassword;
 
         type Frames = Arc<Mutex<Vec<Vec<u8>>>>;
 

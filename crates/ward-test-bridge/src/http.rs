@@ -11,18 +11,18 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 use ward_app_core::AppError;
-use ward_app_core::clipboard::Clipboard;
 use ward_app_core::attachments::AttachmentEdit;
+use ward_app_core::clipboard::Clipboard;
 use ward_app_core::commands::Command;
 use ward_app_core::daemon::Daemon;
-use ward_app_core::unlock::MasterPassword;
+use ward_app_core::first_use::NewVault;
 use ward_app_core::form::Form;
 use ward_app_core::generator::Options;
 use ward_app_core::level::Pin;
-use ward_app_core::first_use::NewVault;
 use ward_app_core::restore::Restore;
 use ward_app_core::service::Service;
 use ward_app_core::settings::{PasswordChange, PinChange};
+use ward_app_core::unlock::MasterPassword;
 use zeroize::Zeroizing;
 
 /// Request head (line + headers).
@@ -416,16 +416,14 @@ impl<D: Daemon + 'static, A: Clipboard> Bridge<D, A> {
             // Phase 30: master password and PIN checked on the Rust side; the response carries
             // no value. The data field leaves the object through `remove`, without copying
             // the text.
-            Command::CreateVault => match args
-                .remove("dados")
-                .map(serde_json::from_value::<NewVault>)
-            {
-                Some(Ok(n)) => self
-                    .service
-                    .create_vault(n)
-                    .and_then(|r| serde_json::to_value(r).map_err(|_| AppError::InvalidResponse)),
-                _ => Err(AppError::InvalidRequest),
-            },
+            Command::CreateVault => {
+                match args.remove("dados").map(serde_json::from_value::<NewVault>) {
+                    Some(Ok(n)) => self.service.create_vault(n).and_then(|r| {
+                        serde_json::to_value(r).map_err(|_| AppError::InvalidResponse)
+                    }),
+                    _ => Err(AppError::InvalidRequest),
+                }
+            }
             // Phase 38 (V5.22): no response carries a PIN, a password or a hash.
             Command::Settings if args.is_empty() => self
                 .service

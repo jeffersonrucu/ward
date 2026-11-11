@@ -6,11 +6,11 @@
 //! the Rust side, before going to the daemon:
 //!
 //! - master password with [`MIN_PASSWORD_CHARS`] characters or more (design
-//!   `Primeiro uso / Senha mestra`) and up to `MAX_SECRET` bytes;
+//!   of the first use master password screen) and up to `MAX_SECRET` bytes;
 //! - PIN with ASCII digits only, from `MIN_PIN_DIGITS` to `MAX_PIN_DIGITS` (R24);
 //! - equal confirmations, compared in constant time.
 //!
-//! The daemon gets only `criar_cofre { senha, pin }` and stores the Argon2id hash of the
+//! The daemon gets only the create vault request (password and PIN) and stores the Argon2id hash of the
 //! PIN in the config section of the body (D30); the PIN is never stored in the clear. The
 //! errors come back per field, with fixed text, without any value.
 
@@ -86,7 +86,7 @@ impl<'de> Deserialize<'de> for Typed {
     }
 }
 
-/// What the `Primeiro uso` screen sends. An extra field is refused.
+/// What the first use screen sends. An extra field is refused.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NewVault {
@@ -196,7 +196,12 @@ mod tests {
     #[test]
     fn attack_different_confirmation_is_refused() {
         assert_eq!(
-            fields(&new_vault(PASSWORD, "falso-mestra-ward-02", "135790", "135790")),
+            fields(&new_vault(
+                PASSWORD,
+                "falso-mestra-ward-02",
+                "135790",
+                "135790"
+            )),
             vec!["confirmacao"]
         );
         assert_eq!(

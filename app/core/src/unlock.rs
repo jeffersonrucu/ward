@@ -4,18 +4,18 @@
 //!   on drop, no `Clone`, `Display` or `Serialize`, and the `Debug` does not show the
 //!   value. Reading it (`Deserialize`) refuses empty and above
 //!   `ward_core::limits::MAX_SECRET` with a fixed message, without echoing what came in.
-//!   The password only leaves here for the protocol's `destravar` request; no response
+//!   The password only leaves here for the protocol's unlock request; no response
 //!   returns it and no log writes it.
-//! - [`PendingRequest`]: the `pedido_de_destrave` the daemon sent (an agent use waits for
+//! - [`PendingRequest`]: the unlock request notice the daemon sent (an agent use waits for
 //!   the unlock, D16). The notice may arrive before the interface exists (the daemon
 //!   opens the app because of it and delivers it as soon as the connection subscribes),
-//!   so the Rust side keeps the deadline and the screen reads it in `estado_do_cofre`.
+//!   so the Rust side keeps the deadline and the screen reads it in the vault status reply.
 //!   Phase 39a: the notice carries the entry the agent asked for, the operation, the exact
 //!   command and the seconds left by the daemon's clock (at most [`REQUEST_TIMEOUT`]).
 //!   Entry and command come from the agent: the daemon already formats them with a
 //!   visible escape (D51) and here they go through `neutralize` again before reaching the
 //!   screen, which shows them as text, never as HTML.
-//! - [`watch`]: the thread that takes the `pedido_de_destrave` notices out of the
+//! - [`watch`]: the thread that takes the unlock request notices out of the
 //!   connection's notice queue (D65 a), marks the [`PendingRequest`] and tells the
 //!   interface (in the app, through the Tauri channel; in the test bridge, the screen
 //!   polls the status).
@@ -35,8 +35,8 @@ use zeroize::Zeroizing;
 use crate::AppError;
 use crate::daemon::NoticeQueue;
 
-/// How long the agent's request waits for the unlock (D16; the `wardd`'s
-/// `PRAZO_DESTRAVE`).
+/// How long the agent's request waits for the unlock (D16; the same timeout as the
+/// `wardd` one).
 pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// Fixed message of a refused read (does not echo the value).
@@ -108,7 +108,7 @@ impl<'de> Deserialize<'de> for MasterPassword {
 }
 
 /// What the screen gets about the agent's request: a number that changes on each notice
-/// (so "Agora não" applies only to that one), the seconds left and, with a visible escape
+/// (so the screen's "not now" applies only to that one), the seconds left and, with a visible escape
 /// (D51), the requested entry, the operation and the exact command (Phase 39a). No type
 /// or environment: with the vault locked the daemon does not know them. No secret.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -150,7 +150,7 @@ impl PendingRequest {
         self.state.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    /// A `pedido_de_destrave` arrived now: the shown request becomes this one (the
+    /// An unlock request notice arrived now: the shown request becomes this one (the
     /// newest), with the deadline the daemon sent (never above [`REQUEST_TIMEOUT`]).
     pub fn mark(&self, p: &PedidoDeDestrave) {
         self.mark_at(p, Instant::now());
@@ -206,9 +206,9 @@ impl PendingRequest {
     }
 }
 
-/// Starts the thread that takes the `pedido_de_destrave` notices out of the `queue`
+/// Starts the thread that takes the unlock request notices out of the `queue`
 /// (D65 a): the newest marks the `request` and calls `on_arrival` (which gets nothing
-/// from the notice: the screen reads the request in `estado_do_cofre`). The approval
+/// from the notice: the screen reads the request in the vault status reply). The approval
 /// notices stay in the queue for the approval window (Phase 36).
 pub fn watch(
     queue: Arc<NoticeQueue>,

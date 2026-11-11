@@ -80,7 +80,10 @@ impl Drop for Guard {
 
 fn release(owner: &Mutex<Owner>, id: u64) {
     let mut d = lock_owner(owner);
-    if d.current.as_ref().is_some_and(|(current, _)| *current == id) {
+    if d.current
+        .as_ref()
+        .is_some_and(|(current, _)| *current == id)
+    {
         d.current = None;
     }
 }
@@ -233,9 +236,10 @@ mod tests {
 
     /// Test in the real graphical session (Phase 39f): `make test-clipboard` runs this
     /// test under `strace -f`, with GTK started here, and drives it through stdin
-    /// (`dev/tests/clipboard.py`). Fake values only. Lines:
-    /// `prazo <ms>`, `copiar <valor>`, `copiar-fora <valor>`, `limpar-fora`, `sair`.
-    /// Each answer goes out on a `ward39f: …` line.
+    /// (`dev/tests/clipboard.py`). Fake values only. One command per line (set the delay,
+    /// copy on the main thread, copy from another thread, clear from another thread,
+    /// quit; the words are in the `match` below). Each answer goes out on a `ward39f: …`
+    /// line.
     #[test]
     #[ignore = "precisa da sessão gráfica; rode por `make test-clipboard`"]
     fn real_session() {

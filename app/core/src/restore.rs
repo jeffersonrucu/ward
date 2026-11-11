@@ -27,8 +27,8 @@ use serde::{Deserialize, Serialize};
 use ward_core::protocol::VersaoBackup;
 
 use crate::AppError;
-use crate::unlock::MasterPassword;
 use crate::level::Pin;
+use crate::unlock::MasterPassword;
 
 /// A version of the local backup, without content.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

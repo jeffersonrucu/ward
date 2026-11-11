@@ -11,23 +11,23 @@ use ward_core::protocol::Target;
 
 use crate::AppError;
 use crate::approval::{self, ApprovalResult, Approvals, DisplayedRequest};
-use crate::clipboard::{Clipboard, Copier};
 use crate::attachments::{AttachmentEdit, Attachments, Base, Choice, NoPicker, Picker};
 use crate::client;
+use crate::clipboard::{Clipboard, Copier};
 use crate::commands::{Reference, validate_entry_name};
 use crate::credentials::{CredentialDetail, CredentialItem};
 use crate::daemon::{Daemon, VaultStatus};
-use crate::unlock::{RequestInfo, PendingRequest, MasterPassword};
 use crate::external_backup::{self, ExternalBackupView, UsbDriveChoice, UsbDriveView};
+use crate::first_use::NewVault;
 use crate::form::{self, FieldError, Form, Missing, Sources};
 use crate::generator::{Generated, Generator, Options, Revealed};
 use crate::key::{self, LOADABLE_FIELDS, Loading};
 use crate::level::{LevelChanged, Pin, level_from_name};
-use crate::first_use::NewVault;
 use crate::restore::{self, Restore, Restored, VersionView};
 use crate::secret::Secret;
 use crate::settings::{ChangeResult, PasswordChange, PinChange, Settings, valid_minutes};
 use crate::terminal::{NoTerminal, Terminal, entry_for_argv};
+use crate::unlock::{MasterPassword, PendingRequest, RequestInfo};
 
 /// Form fields that accept "Use this password" (in the design, the secret field with
 /// generate is only the password one).
@@ -1556,7 +1556,7 @@ mod tests {
         assert_eq!(level_of(&s, "acme-pg-prod"), "com-aprovacao");
         for level in ["livre", "bloqueado", "com-aprovacao", "livre"] {
             let r = s.set_level("acme-pg-prod", level, pin(RIGHT_PIN)).unwrap();
-            assert_eq!((r.entrada.as_str(), r.nivel), ("acme-pg-prod", level));
+            assert_eq!((r.entry.as_str(), r.level), ("acme-pg-prod", level));
             assert_eq!(level_of(&s, "acme-pg-prod"), level);
             let item = s
                 .list_credentials()
@@ -2457,7 +2457,7 @@ mod unlock_tests {
         queue.simulate(Notice::test_unlock("acme-pg-aprovacao"));
         rx.recv_timeout(Duration::from_secs(5)).unwrap();
         let info = s.request_info(VaultStatus::Locked).unwrap();
-        assert!(info.restante > 110 && info.restante <= 120, "{info:?}");
+        assert!(info.remaining > 110 && info.remaining <= 120, "{info:?}");
         assert_eq!(s.request_info(VaultStatus::Unlocked), None);
         assert_eq!(s.request_info(VaultStatus::NoVault), None);
         // A wrong password does not remove the request.
