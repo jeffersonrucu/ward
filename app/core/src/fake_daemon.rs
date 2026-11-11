@@ -43,9 +43,9 @@ use zeroize::Zeroizing;
 
 use ward_core::config::PinHash;
 use ward_core::entry::{AccessLevel, Dates, Draft, Entry, EntryType, Secret as CoreSecret};
-use ward_core::protocolo::{
-    self, Alvo, Decisao, DetalheEntrada, ErroResposta, ItemLista, Papel, Pedido, PedidoDeAprovacao,
-    Pendrive, Resposta,
+use ward_core::protocol::{
+    self, Decision, DetalheEntrada, ItemLista, PedidoDeAprovacao, Pendrive, Request, ResponseError,
+    Resposta, Role, Target,
 };
 use ward_core::totp::Totp;
 
@@ -200,12 +200,12 @@ pub type SimulatedApproval = (PedidoDeAprovacao, std::time::Duration);
 pub fn simulated_approvals(mode: &str) -> Option<Vec<SimulatedApproval>> {
     use std::time::Duration;
     use ward_core::entry::Environment;
-    use ward_core::protocolo::Operacao;
+    use ward_core::protocol::Operation;
     let request = |id, entry: &str, environment, command: &str, chain: &[&str]| PedidoDeAprovacao {
         id,
         entradas: vec![entry.to_owned()],
         ambiente: environment,
-        operacao: Operacao::Executar,
+        operacao: Operation::Run,
         comando: command.to_owned(),
         diretorio: "\"/home/dev/projetos/acme\"".to_owned(),
         cadeia: chain.iter().map(|c| (*c).to_owned()).collect(),
@@ -289,7 +289,7 @@ pub fn simulated_approvals(mode: &str) -> Option<Vec<SimulatedApproval>> {
             at_origin(
                 4,
                 "acme-wp-prod",
-                Operacao::Playwright,
+                Operation::Playwright,
                 true,
                 &["claude", "bash", "ward playwright"],
             )?,
@@ -300,7 +300,7 @@ pub fn simulated_approvals(mode: &str) -> Option<Vec<SimulatedApproval>> {
             at_origin(
                 5,
                 "acme-wp-prod",
-                Operacao::Preencher,
+                Operation::Fill,
                 true,
                 &["chrome", "ward-nm"],
             )?,
@@ -312,7 +312,7 @@ pub fn simulated_approvals(mode: &str) -> Option<Vec<SimulatedApproval>> {
             at_origin(
                 6,
                 "acme-wp-dev",
-                Operacao::Login,
+                Operation::Login,
                 false,
                 &["claude", "bash", "ward login"],
             )?,
@@ -461,7 +461,7 @@ impl FakeDaemon {
     /// The same rule as `wardd` (the `wardd` core, unlock): the D20 wait
     /// comes before looking at the password; a hit resets the failures (password and
     /// PIN).
-    fn unlock(&mut self, password: &CoreSecret) -> Result<(), ErroResposta> {
+    fn unlock(&mut self, password: &CoreSecret) -> Result<(), ResponseError> {
         if !self.locked {
             return Ok(());
         }
@@ -474,7 +474,7 @@ impl FakeDaemon {
         }
         if !self.password_matches(password) {
             self.unlock_failures = self.unlock_failures.saturating_add(1);
-            return Err(ErroResposta::SenhaIncorreta);
+            return Err(ResponseError::WrongPassword);
         }
         self.unlock_failures = 0;
         self.pin_errors = 0;
@@ -530,92 +530,97 @@ impl FakeDaemon {
         self.entries.iter().find(|e| e.name() == name)
     }
 
-    fn handle(&mut self, request: Pedido) -> Resposta {
+    fn handle(&mut self, request: Request) -> Resposta {
         if !self.exists {
             return match request {
-                Pedido::Estado => Resposta::Estado {
+                Request::Status => Resposta::Estado {
                     travado: true,
                     cofre_existe: false,
-                    papel: Papel::App,
+                    papel: Role::App,
                 },
                 // Like `wardd` (its core, create vault): only the PIN hash stays.
-                Pedido::CriarCofre { senha: _, pin } => match PinHash::create(pin.expose()) {
+                Request::CreateVault { password: _, pin } => match PinHash::create(pin.expose()) {
                     Ok(h) => {
                         self.pin_hash = Some(h);
                         self.exists = true;
                         Resposta::Ok
                     }
-                    Err(_) => Resposta::Erro(ErroResposta::PedidoInvalido),
+                    Err(_) => Resposta::Erro(ResponseError::InvalidRequest),
                 },
-                _ => Resposta::Erro(ErroResposta::CofreInexistente),
+                _ => Resposta::Erro(ResponseError::VaultNotFound),
             };
         }
         if self.locked
             && !matches!(
                 request,
-                Pedido::Estado | Pedido::Destravar { .. } | Pedido::Travar
+                Request::Status | Request::Unlock { .. } | Request::Lock
             )
         {
-            return Resposta::Erro(ErroResposta::Travado);
+            return Resposta::Erro(ResponseError::Locked);
         }
         match request {
-            Pedido::Estado => Resposta::Estado {
+            Request::Status => Resposta::Estado {
                 travado: self.locked,
                 cofre_existe: true,
-                papel: Papel::App,
+                papel: Role::App,
             },
-            Pedido::Destravar { senha } => match self.unlock(&senha) {
+            Request::Unlock { password: senha } => match self.unlock(&senha) {
                 Ok(()) => Resposta::Ok,
                 Err(e) => Resposta::Erro(e),
             },
-            Pedido::Travar => {
+            Request::Lock => {
                 self.locked = true;
                 Resposta::Ok
             }
-            Pedido::CriarCofre { .. } => Resposta::Erro(ErroResposta::CofreJaExiste),
-            Pedido::Lista => Resposta::Lista(
+            Request::CreateVault { .. } => Resposta::Erro(ResponseError::VaultAlreadyExists),
+            Request::List => Resposta::Lista(
                 self.entries
                     .iter()
-                    .map(|e| ItemLista::de_entrada(e, Papel::App))
+                    .map(|e| ItemLista::de_entrada(e, Role::App))
                     .collect(),
             ),
-            Pedido::Detalhe { entrada } => match self.entry(&entrada) {
+            Request::Detail { entry: entrada } => match self.entry(&entrada) {
                 Some(e) => Resposta::Detalhe(DetalheEntrada::de_entrada(e)),
-                None => Resposta::Erro(ErroResposta::EntradaInexistente),
+                None => Resposta::Erro(ResponseError::EntryNotFound),
             },
-            Pedido::Copiar { entrada, alvo } | Pedido::Revelar { entrada, alvo } => {
-                match self.entry(&entrada) {
-                    Some(e) => match alvo.segredo_em(e) {
-                        Some(v) => Resposta::Segredo(CoreSecret::from_bytes(v.expose().to_vec())),
-                        None => Resposta::Erro(ErroResposta::CampoInexistente),
-                    },
-                    None => Resposta::Erro(ErroResposta::EntradaInexistente),
-                }
+            Request::Copy {
+                entry: entrada,
+                target: alvo,
             }
-            Pedido::Totp { entrada } => match self.entry(&entrada) {
-                Some(e) => match Alvo::Campo("totp_semente".to_owned()).segredo_em(e) {
+            | Request::Reveal {
+                entry: entrada,
+                target: alvo,
+            } => match self.entry(&entrada) {
+                Some(e) => match alvo.secret_in(e) {
+                    Some(v) => Resposta::Segredo(CoreSecret::from_bytes(v.expose().to_vec())),
+                    None => Resposta::Erro(ResponseError::FieldNotFound),
+                },
+                None => Resposta::Erro(ResponseError::EntryNotFound),
+            },
+            Request::Totp { entry: entrada } => match self.entry(&entrada) {
+                Some(e) => match Target::Field("totp_semente".to_owned()).secret_in(e) {
                     Some(seed) => match Totp::from_seed(seed).and_then(|t| t.code_now()) {
                         Ok(c) => Resposta::CodigoTotp {
                             codigo: Zeroizing::new(c.code().to_owned()),
                             restante: c.remaining(),
                         },
-                        Err(_) => Resposta::Erro(ErroResposta::Interno),
+                        Err(_) => Resposta::Erro(ResponseError::Internal),
                     },
-                    None => Resposta::Erro(ErroResposta::CampoInexistente),
+                    None => Resposta::Erro(ResponseError::FieldNotFound),
                 },
-                None => Resposta::Erro(ErroResposta::EntradaInexistente),
+                None => Resposta::Erro(ResponseError::EntryNotFound),
             },
-            Pedido::SalvarEntrada {
-                anterior,
-                rascunho,
-                manter_anexos,
+            Request::SaveEntry {
+                previous: anterior,
+                draft: rascunho,
+                keep_attachments: manter_anexos,
             } => match self.save(anterior.as_deref(), rascunho, &manter_anexos) {
                 Ok(()) => Resposta::Ok,
                 Err(e) => Resposta::Erro(e),
             },
-            Pedido::MudarNivel {
-                entrada,
-                nivel,
+            Request::SetLevel {
+                entry: entrada,
+                level: nivel,
                 pin,
             } => match self.set_level(&entrada, nivel, &pin) {
                 Ok(()) => Resposta::Ok,
@@ -624,16 +629,16 @@ impl FakeDaemon {
             // Phase 34: the "Connect" token (D3), only for a server. The fake one opens
             // no session; the token is random and not kept.
             // Phase 36: the same rule as `wardd` (its use module, answer approval).
-            Pedido::ResponderAprovacao {
-                pedido,
-                decisao,
+            Request::AnswerApproval {
+                request: pedido,
+                decision: decisao,
                 pin,
-                entrada_confirmada,
+                confirmed_entry: entrada_confirmada,
             } => match self.answer_approval(pedido, decisao, pin.as_ref(), entrada_confirmada) {
                 Ok(()) => Resposta::Ok,
                 Err(e) => Resposta::Erro(e),
             },
-            Pedido::EmitirToken { entrada } => match self.entry(&entrada) {
+            Request::IssueToken { entry: entrada } => match self.entry(&entrada) {
                 Some(e) if e.kind() == EntryType::Server => {
                     match ward_core::generator::generate(&ward_core::generator::GeneratorOptions {
                         size: 32,
@@ -643,39 +648,40 @@ impl FakeDaemon {
                         symbols: false,
                     }) {
                         Ok(t) => Resposta::Token(t),
-                        Err(_) => Resposta::Erro(ErroResposta::Interno),
+                        Err(_) => Resposta::Erro(ResponseError::Internal),
                     }
                 }
-                Some(_) => Resposta::Erro(ErroResposta::PedidoInvalido),
-                None => Resposta::Erro(ErroResposta::EntradaInexistente),
+                Some(_) => Resposta::Erro(ResponseError::InvalidRequest),
+                None => Resposta::Erro(ResponseError::EntryNotFound),
             },
             // Phase 38: the config and the changes (no hash nor UUID in the response).
-            Pedido::Configuracao => Resposta::Configuracao {
+            Request::Config => Resposta::Configuracao {
                 minutos_trava: self.lock_minutes,
                 backup_externo: self.backup.enabled(),
                 backup_local: self.local_backup,
             },
             // Phase 48: the same rule as `wardd` (Phase 46): only the D45 format; "on"
             // requires a UUID. Nothing is copied (there is no real USB drive).
-            Pedido::BackupExterno => Resposta::BackupExterno {
+            Request::ExternalBackup => Resposta::BackupExterno {
                 ligado: self.backup.enabled(),
                 uuid: self.backup.uuid().map(str::to_owned),
             },
-            Pedido::DefinirBackupExterno { ligado, uuid } => {
-                match wc::config::ExternalBackup::new(ligado, uuid.as_deref()) {
-                    Ok(b) => {
-                        self.backup = b;
-                        Resposta::Ok
-                    }
-                    Err(_) => Resposta::Erro(ErroResposta::PedidoInvalido),
+            Request::SetExternalBackup {
+                enabled: ligado,
+                uuid,
+            } => match wc::config::ExternalBackup::new(ligado, uuid.as_deref()) {
+                Ok(b) => {
+                    self.backup = b;
+                    Resposta::Ok
                 }
-            }
-            Pedido::Pendrives => match &self.usb_drives {
+                Err(_) => Resposta::Erro(ResponseError::InvalidRequest),
+            },
+            Request::UsbDrives => match &self.usb_drives {
                 Some(l) => Resposta::Pendrives(l.clone()),
-                None => Resposta::Erro(ErroResposta::PendrivesIndisponiveis),
+                None => Resposta::Erro(ResponseError::UsbDrivesUnavailable),
             },
             // Phase 47: the same rule as `wardd` (Phase 45).
-            Pedido::Backups => match &self.backups {
+            Request::Backups => match &self.backups {
                 // The same rule as `wardd` (Phase 49a): the generation stays here; only
                 // the flags go out.
                 Some(l) => {
@@ -689,7 +695,7 @@ impl FakeDaemon {
                     Resposta::Backups(
                         with.iter()
                             .zip(flags)
-                            .map(|((v, g), out)| wc::protocolo::VersaoBackup {
+                            .map(|((v, g), out)| wc::protocol::VersaoBackup {
                                 nome: v.name(),
                                 conferida: g.is_some(),
                                 fora_de_ordem: out,
@@ -697,38 +703,46 @@ impl FakeDaemon {
                             .collect(),
                     )
                 }
-                None => Resposta::Erro(ErroResposta::BackupIndisponivel),
+                None => Resposta::Erro(ResponseError::BackupUnavailable),
             },
-            Pedido::RestaurarBackup { versao, senha, pin } => {
-                match self.restore(&versao, &senha, &pin) {
-                    Ok(()) => Resposta::Ok,
-                    Err(e) => Resposta::Erro(e),
-                }
-            }
-            Pedido::TempoTrava { minutos } => {
+            Request::RestoreBackup {
+                version: versao,
+                password: senha,
+                pin,
+            } => match self.restore(&versao, &senha, &pin) {
+                Ok(()) => Resposta::Ok,
+                Err(e) => Resposta::Erro(e),
+            },
+            Request::LockTimeout { minutes: minutos } => {
                 if (wc::limits::MIN_LOCK_MINUTES..=wc::limits::MAX_LOCK_MINUTES).contains(&minutos)
                 {
                     self.lock_minutes = minutos;
                     Resposta::Ok
                 } else {
-                    Resposta::Erro(ErroResposta::PedidoInvalido)
+                    Resposta::Erro(ResponseError::InvalidRequest)
                 }
             }
-            Pedido::TrocarPin { atual, novo } => match self.change_pin(&atual, &novo) {
+            Request::ChangePin {
+                current: atual,
+                new: novo,
+            } => match self.change_pin(&atual, &novo) {
                 Ok(()) => Resposta::Ok,
                 Err(e) => Resposta::Erro(e),
             },
-            Pedido::TrocarSenha { atual, nova } => match self.change_password(&atual, &nova) {
+            Request::ChangePassword {
+                current: atual,
+                new: nova,
+            } => match self.change_password(&atual, &nova) {
                 Ok(()) => Resposta::Ok,
                 Err(e) => Resposta::Erro(e),
             },
-            _ => Resposta::Erro(ErroResposta::Interno),
+            _ => Resposta::Erro(ResponseError::Internal),
         }
     }
 
     /// The same rule as `wardd` (the `wardd` core, check PIN): the library's
     /// Argon2id hash (constant time); the 5th error in a row locks.
-    fn check_pin(&mut self, pin: &CoreSecret) -> Result<(), ErroResposta> {
+    fn check_pin(&mut self, pin: &CoreSecret) -> Result<(), ResponseError> {
         let matches = match &self.pin_hash {
             Some(h) => h.verify(pin.expose()),
             None => test_vault::test_config().verify_pin(pin.expose()),
@@ -738,7 +752,7 @@ impl FakeDaemon {
             if self.pin_errors >= MAX_PIN_ERRORS {
                 self.locked = true;
             }
-            return Err(ErroResposta::PinIncorreto);
+            return Err(ResponseError::WrongPin);
         }
         self.pin_errors = 0;
         Ok(())
@@ -746,10 +760,10 @@ impl FakeDaemon {
 
     /// The same rule as `wardd` (its core, change PIN): the current PIN first; the new
     /// one becomes only the hash (D30).
-    fn change_pin(&mut self, current: &CoreSecret, new: &CoreSecret) -> Result<(), ErroResposta> {
+    fn change_pin(&mut self, current: &CoreSecret, new: &CoreSecret) -> Result<(), ResponseError> {
         self.check_pin(current)?;
         self.pin_hash =
-            Some(PinHash::create(new.expose()).map_err(|_| ErroResposta::PedidoInvalido)?);
+            Some(PinHash::create(new.expose()).map_err(|_| ResponseError::InvalidRequest)?);
         Ok(())
     }
 
@@ -763,22 +777,22 @@ impl FakeDaemon {
         version: &str,
         password: &CoreSecret,
         pin: &CoreSecret,
-    ) -> Result<(), ErroResposta> {
+    ) -> Result<(), ResponseError> {
         use ctutils::CtEq;
         if !wc::backup::valid_name(version) {
-            return Err(ErroResposta::PedidoInvalido);
+            return Err(ResponseError::InvalidRequest);
         }
         self.check_pin(pin)?;
         let Some(list) = self.backups.as_mut() else {
-            return Err(ErroResposta::BackupIndisponivel);
+            return Err(ResponseError::BackupUnavailable);
         };
         let Some(i) = list.iter().position(|b| b.name == version) else {
-            return Err(ErroResposta::BackupInexistente);
+            return Err(ResponseError::BackupNotFound);
         };
         let s = password.expose();
         let right = &list[i].password;
         if s.len() != right.len() || !s.ct_eq(&right[..]).to_bool() {
-            return Err(ErroResposta::SenhaIncorreta);
+            return Err(ResponseError::WrongPassword);
         }
         let version_password = right.clone();
         let entries = match &list[i].entries {
@@ -789,7 +803,7 @@ impl FakeDaemon {
             },
         };
         let now_name = wc::backup::Version::from_instant(std::time::SystemTime::now())
-            .ok_or(ErroResposta::Interno)?
+            .ok_or(ResponseError::Internal)?
             .name();
         let current_password = match &self.password {
             Some(s) => s.clone(),
@@ -819,9 +833,9 @@ impl FakeDaemon {
         &mut self,
         current: &CoreSecret,
         new: &CoreSecret,
-    ) -> Result<(), ErroResposta> {
+    ) -> Result<(), ResponseError> {
         if !self.password_matches(current) {
-            return Err(ErroResposta::SenhaIncorreta);
+            return Err(ResponseError::WrongPassword);
         }
         self.password = Some(Zeroizing::new(new.expose().to_vec()));
         Ok(())
@@ -835,29 +849,29 @@ impl FakeDaemon {
     fn answer_approval(
         &mut self,
         id: u64,
-        decision: Decisao,
+        decision: Decision,
         pin: Option<&CoreSecret>,
         stdin_confirmed: bool,
-    ) -> Result<(), ErroResposta> {
+    ) -> Result<(), ResponseError> {
         let i = self
             .approvals
             .iter()
             .position(|(p, _, _)| *p == id)
-            .ok_or(ErroResposta::Expirado)?;
-        if decision == Decisao::Negar {
+            .ok_or(ResponseError::Expired)?;
+        if decision == Decision::Deny {
             self.approvals.remove(i);
             return Ok(());
         }
         // Phase 44c: the origin confirmation has no PIN (the fake one does not know which
         // request it is; `wardd` and the app service check that).
-        if decision == Decisao::Confirmar {
+        if decision == Decision::Confirm {
             self.approvals.remove(i);
             return Ok(());
         }
         if self.approvals[i].2 != stdin_confirmed {
-            return Err(ErroResposta::PedidoInvalido);
+            return Err(ResponseError::InvalidRequest);
         }
-        let pin = pin.ok_or(ErroResposta::PedidoInvalido)?;
+        let pin = pin.ok_or(ResponseError::InvalidRequest)?;
         if let Err(e) = self.check_pin(pin) {
             if self.locked {
                 self.approvals.remove(i);
@@ -865,7 +879,7 @@ impl FakeDaemon {
             return Err(e);
         }
         let (_, entries, _) = self.approvals.remove(i);
-        if decision == Decisao::PermitirSempre {
+        if decision == Decision::AllowAlways {
             for e in self.entries.iter_mut() {
                 if entries.iter().any(|n| n == e.name()) && e.level() == AccessLevel::Approval {
                     e.set_level(AccessLevel::Free);
@@ -882,13 +896,13 @@ impl FakeDaemon {
         name: &str,
         level: AccessLevel,
         pin: &CoreSecret,
-    ) -> Result<(), ErroResposta> {
+    ) -> Result<(), ResponseError> {
         self.check_pin(pin)?;
         let e = self
             .entries
             .iter_mut()
             .find(|e| e.name() == name)
-            .ok_or(ErroResposta::EntradaInexistente)?;
+            .ok_or(ResponseError::EntryNotFound)?;
         e.set_level(level);
         e.set_dates(modified(e.dates()));
         Ok(())
@@ -900,33 +914,33 @@ impl FakeDaemon {
         previous: Option<&str>,
         mut draft: Draft,
         kept_attachments: &[String],
-    ) -> Result<(), ErroResposta> {
+    ) -> Result<(), ResponseError> {
         // Phase 39b: the same rule as `wardd` (its core, save entry).
         if !kept_attachments.is_empty() {
-            let name = previous.ok_or(ErroResposta::PedidoInvalido)?;
-            let old = self.entry(name).ok_or(ErroResposta::EntradaInexistente)?;
-            protocolo::juntar_anexos_mantidos(&mut draft, old, kept_attachments)?;
+            let name = previous.ok_or(ResponseError::InvalidRequest)?;
+            let old = self.entry(name).ok_or(ResponseError::EntryNotFound)?;
+            protocol::merge_kept_attachments(&mut draft, old, kept_attachments)?;
         }
         let mut new = draft
             .validate()
-            .map_err(|e| ErroResposta::de_validacao(&e))?;
+            .map_err(|e| ResponseError::from_validation(&e))?;
         match previous {
             None => {
                 new.set_level(AccessLevel::Approval);
                 new.set_dates(now_secs().and_then(Dates::new_stamp).unwrap_or(Dates::NONE));
                 new.verify_in_vault(self.entries.iter())
-                    .map_err(|e| ErroResposta::de_validacao(&e))?;
+                    .map_err(|e| ResponseError::from_validation(&e))?;
             }
             Some(name) => {
                 let i = self
                     .entries
                     .iter()
                     .position(|e| e.name() == name)
-                    .ok_or(ErroResposta::EntradaInexistente)?;
+                    .ok_or(ResponseError::EntryNotFound)?;
                 new.set_level(self.entries[i].level());
                 new.set_dates(modified(self.entries[i].dates()));
                 new.verify_in_vault(self.entries.iter().filter(|e| e.name() != name))
-                    .map_err(|e| ErroResposta::de_validacao(&e))?;
+                    .map_err(|e| ResponseError::from_validation(&e))?;
                 drop(self.entries.remove(i));
             }
         }
@@ -938,11 +952,11 @@ impl FakeDaemon {
 
 impl Daemon for FakeDaemon {
     fn exchange(&mut self, request: &[u8]) -> Result<Zeroizing<Vec<u8>>, AppError> {
-        let response = match protocolo::decodificar_pedido(Papel::App, request) {
+        let response = match protocol::decode_request(Role::App, request) {
             Ok(p) => self.handle(p),
             Err(e) => Resposta::Erro(e),
         };
-        protocolo::codificar_resposta(Papel::App, &response).map_err(|_| AppError::InvalidResponse)
+        protocol::encode_response(Role::App, &response).map_err(|_| AppError::InvalidResponse)
     }
 }
 
@@ -1028,7 +1042,7 @@ mod tests {
         let mut d = FakeDaemon::full();
         for junk in [&b""[..], b"{}", b"{\"v\":1,\"op\":\"revelar\"}", b"\xff"] {
             let r = d.exchange(junk).unwrap();
-            let r = protocolo::decodificar_resposta(Papel::App, &r).unwrap();
+            let r = protocol::decode_response(Role::App, &r).unwrap();
             assert!(matches!(r, Resposta::Erro(_)));
         }
     }

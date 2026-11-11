@@ -18,7 +18,7 @@ use std::cell::{Cell, RefCell};
 use chacha20poly1305::aead::AeadInOut;
 use chacha20poly1305::{Key, KeyInit, Tag, XChaCha20Poly1305, XNonce};
 use comum::*;
-use ward_core::protocolo::Papel;
+use ward_core::protocol::Role;
 
 const MAX_MARCAS: usize = 8;
 const TAM_MARCA: usize = 64;
@@ -145,22 +145,22 @@ fn v3_8_travar_zera_a_chave_e_os_segredos_antes_de_liberar() {
     let achados = procurando(|| {
         assert!(ok(&destravar(&d, SENHA)));
         assert!(!d.travado());
-        let _ = pedir(&d, Papel::Agente, "lista", "{}");
-        let _ = pedir(&d, Papel::App, "detalhe", r#"{"entrada":"t-aprov"}"#);
-        assert!(ok(&mudar_nivel(&d, Papel::App, "t-aprov", "livre", PIN)));
+        let _ = pedir(&d, Role::Agent, "lista", "{}");
+        let _ = pedir(&d, Role::App, "detalhe", r#"{"entrada":"t-aprov"}"#);
+        assert!(ok(&mudar_nivel(&d, Role::App, "t-aprov", "livre", PIN)));
         assert!(ok(&pedir(
             &d,
-            Papel::App,
+            Role::App,
             "salvar_entrada",
             &login("t-memoria", SEGREDOS[3])
         )));
-        let _ = mudar_nivel(&d, Papel::App, "t-aprov", "livre", PIN_ERRADO);
+        let _ = mudar_nivel(&d, Role::App, "t-aprov", "livre", PIN_ERRADO);
         // V3.8: travar solta o cofre aberto e as entradas.
         d.travar();
         assert!(d.travado());
         assert_eq!(
-            erro(&pedir(&d, Papel::App, "lista", "{}")),
-            Some(ward_core::protocolo::ErroResposta::Travado)
+            erro(&pedir(&d, Role::App, "lista", "{}")),
+            Some(ward_core::protocol::ResponseError::Locked)
         );
     });
     assert_eq!(

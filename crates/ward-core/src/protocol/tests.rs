@@ -6,7 +6,7 @@ use std::io::{self, Read};
 
 use base64ct::{Base64, Encoding};
 
-use super::quadro::{self, ErroQuadro, ler_quadro, limite_do_quadro};
+use super::frame::{self, FrameError, frame_limit, read_frame};
 use super::*;
 use crate as wc;
 use crate::atomic_write::WriteError;
@@ -29,8 +29,8 @@ fn b64(b: &[u8]) -> String {
     Base64::encode_string(b)
 }
 
-fn ped(papel: Papel, json: &str) -> Result<Pedido, ErroResposta> {
-    decodificar_pedido(papel, json.as_bytes())
+fn ped(papel: Role, json: &str) -> Result<Request, ResponseError> {
+    decode_request(papel, json.as_bytes())
 }
 
 fn seg(s: &str) -> Secret {
@@ -38,70 +38,68 @@ fn seg(s: &str) -> Secret {
 }
 
 /// Os `dados` mínimos válidos de cada operação (valores falsos).
-fn dados_validos(op: Operacao) -> String {
+fn dados_validos(op: Operation) -> String {
     let pin = b64(b"135790");
     let senha = b64(b"falso-mestra-ward-01");
     match op {
-        Operacao::Estado
-        | Operacao::Travar
-        | Operacao::Lista
-        | Operacao::AbrirApp
-        | Operacao::Backups
-        | Operacao::Configuracao
-        | Operacao::BackupExterno
-        | Operacao::AguardarLogin
-        | Operacao::Pendrives => "{}".into(),
-        Operacao::PreencherLogin => {
+        Operation::Status
+        | Operation::Lock
+        | Operation::List
+        | Operation::OpenApp
+        | Operation::Backups
+        | Operation::Config
+        | Operation::ExternalBackup
+        | Operation::AwaitLogin
+        | Operation::UsbDrives => "{}".into(),
+        Operation::FillLogin => {
             r#"{"id":"AbCdEfGhIjKlMnOpQrStUvWxYz012345","origem":"http://localhost:8081"}"#.into()
         }
-        Operacao::ResultadoLogin => {
+        Operation::LoginResult => {
             r#"{"id":"AbCdEfGhIjKlMnOpQrStUvWxYz012345","resultado":"enviado"}"#.into()
         }
-        Operacao::DefinirBackupExterno => r#"{"ligado":true,"uuid":"ABCD-1234"}"#.into(),
-        Operacao::RestaurarBackup => {
+        Operation::SetExternalBackup => r#"{"ligado":true,"uuid":"ABCD-1234"}"#.into(),
+        Operation::RestoreBackup => {
             format!(r#"{{"versao":"ward-20261109-153000.ward","senha":"{senha}","pin":"{pin}"}}"#)
         }
-        Operacao::Destravar => format!(r#"{{"senha":"{senha}"}}"#),
-        Operacao::Executar => format!(
+        Operation::Unlock => format!(r#"{{"senha":"{senha}"}}"#),
+        Operation::Run => format!(
             r#"{{"entrada":"acme-pg-dev","argv":["{}"],"cwd":"{}","tipo_entrada":"nula","ambiente":[{{"nome":"{}","valor":"{}"}}]}}"#,
             b64(b"psql"),
             b64(b"/tmp"),
             b64(b"LANG"),
             b64(b"C.UTF-8")
         ),
-        Operacao::Ssh => r#"{"entrada":"acme-ssh-dev","tipo_entrada":"terminal"}"#.into(),
-        Operacao::Login | Operacao::Playwright | Operacao::Detalhe | Operacao::Totp => {
+        Operation::Ssh => r#"{"entrada":"acme-ssh-dev","tipo_entrada":"terminal"}"#.into(),
+        Operation::Login | Operation::Playwright | Operation::Detail | Operation::Totp => {
             r#"{"entrada":"acme-wp-dev"}"#.into()
         }
-        Operacao::RemoverEntrada | Operacao::EmitirToken => r#"{"entrada":"acme-ssh-dev"}"#.into(),
-        Operacao::EntradaPadrao => format!(r#"{{"dados":"{}"}}"#, b64(b"ls\n")),
-        Operacao::Janela => r#"{"linhas":24,"colunas":80}"#.into(),
-        Operacao::CriarCofre => format!(r#"{{"senha":"{senha}","pin":"{pin}"}}"#),
-        Operacao::Revelar | Operacao::Copiar => {
+        Operation::RemoveEntry | Operation::IssueToken => r#"{"entrada":"acme-ssh-dev"}"#.into(),
+        Operation::Stdin => format!(r#"{{"dados":"{}"}}"#, b64(b"ls\n")),
+        Operation::Resize => r#"{"linhas":24,"colunas":80}"#.into(),
+        Operation::CreateVault => format!(r#"{{"senha":"{senha}","pin":"{pin}"}}"#),
+        Operation::Reveal | Operation::Copy => {
             r#"{"entrada":"acme-wp-dev","campo":"senha"}"#.into()
         }
-        Operacao::SalvarEntrada | Operacao::SalvarLogin => format!(
+        Operation::SaveEntry | Operation::SaveLogin => format!(
             r#"{{"entrada":{{"nome":"clientex-stage-wp","grupo":"clientex","ambiente":"stage","tipo":"login","campos":{{"url":"https://clientex.invalid/login","usuario":"admin","senha":"{}"}}}}}}"#,
             b64(b"falso-clientex-01")
         ),
-        Operacao::MudarNivel => {
+        Operation::SetLevel => {
             format!(r#"{{"entrada":"acme-pg-dev","nivel":"bloqueado","pin":"{pin}"}}"#)
         }
-        Operacao::ResponderAprovacao => {
+        Operation::AnswerApproval => {
             format!(r#"{{"pedido":7,"decisao":"uma_vez","pin":"{pin}"}}"#)
         }
-        Operacao::TrocarPin => format!(r#"{{"atual":"{pin}","novo":"{}"}}"#, b64(b"2468")),
-        Operacao::TrocarSenha => {
+        Operation::ChangePin => format!(r#"{{"atual":"{pin}","novo":"{}"}}"#, b64(b"2468")),
+        Operation::ChangePassword => {
             format!(
                 r#"{{"atual":"{senha}","nova":"{}"}}"#,
                 b64(b"falso-nova-02")
             )
         }
-        Operacao::TempoTrava => r#"{"minutos":240}"#.into(),
-        Operacao::Sugerir => r#"{"origem":"http://localhost:8081"}"#.into(),
-        Operacao::Preencher => {
-            r#"{"entrada":"acme-wp-dev","origem":"http://localhost:8081"}"#.into()
-        }
+        Operation::LockTimeout => r#"{"minutos":240}"#.into(),
+        Operation::Suggest => r#"{"origem":"http://localhost:8081"}"#.into(),
+        Operation::Fill => r#"{"entrada":"acme-wp-dev","origem":"http://localhost:8081"}"#.into(),
     }
 }
 
@@ -114,21 +112,21 @@ fn com_campo(dados: &str, campo: &str) -> String {
     }
 }
 
-fn quadro_de(op: Operacao, dados: &str) -> String {
-    format!(r#"{{"v":1,"op":"{}","dados":{dados}}}"#, op.nome())
+fn quadro_de(op: Operation, dados: &str) -> String {
+    format!(r#"{{"v":1,"op":"{}","dados":{dados}}}"#, op.name())
 }
 
 /// Um papel que pode pedir a operação.
-fn papel_de(op: Operacao) -> Papel {
-    Papel::TODOS
+fn papel_de(op: Operation) -> Role {
+    Role::ALL
         .into_iter()
-        .find(|p| op.permitida(*p))
+        .find(|p| op.allowed(*p))
         .expect("operação sem papel")
 }
 
 /// Um pedido de cada operação, montado em memória.
-fn um_pedido_de_cada() -> Vec<Pedido> {
-    Operacao::TODAS
+fn um_pedido_de_cada() -> Vec<Request> {
+    Operation::ALL
         .iter()
         .map(|&op| ped(papel_de(op), &quadro_de(op, &dados_validos(op))).unwrap())
         .collect()
@@ -160,13 +158,13 @@ fn uma_resposta_de_cada() -> Vec<Resposta> {
         Resposta::Estado {
             travado: true,
             cofre_existe: true,
-            papel: Papel::Agente,
+            papel: Role::Agent,
         },
-        Resposta::Erro(ErroResposta::Retrocesso),
-        Resposta::Erro(ErroResposta::Validacao(vec![Problema {
-            campo: "senha".into(),
-            posicao: Some(2),
-            motivo: "caractere não permitido".into(),
+        Resposta::Erro(ResponseError::Rollback),
+        Resposta::Erro(ResponseError::Validation(vec![Problem {
+            field: "senha".into(),
+            position: Some(2),
+            reason: "caractere não permitido".into(),
         }])),
         Resposta::Lista(vec![item("clientex-stage-wp"), item("clientex-stage-api")]),
         Resposta::Saida {
@@ -184,7 +182,7 @@ fn uma_resposta_de_cada() -> Vec<Resposta> {
             id: 42,
             entradas: vec!["acme-pg-prod".into(), "acme-ssh-prod".into()],
             ambiente: Environment::Prod,
-            operacao: Operacao::Executar,
+            operacao: Operation::Run,
             comando: "psql -c 'select 1'".into(),
             diretorio: "\"/home/usuario/projetos/acme\"".into(),
             cadeia: vec!["claude".into(), "bash".into(), "ward run".into()],
@@ -196,7 +194,7 @@ fn uma_resposta_de_cada() -> Vec<Resposta> {
             id: 43,
             entradas: vec!["acme-wp-prod".into()],
             ambiente: Environment::Prod,
-            operacao: Operacao::Playwright,
+            operacao: Operation::Playwright,
             comando: String::new(),
             diretorio: String::new(),
             cadeia: vec!["claude".into(), "ward playwright".into()],
@@ -208,7 +206,7 @@ fn uma_resposta_de_cada() -> Vec<Resposta> {
             id: 44,
             entradas: vec!["acme-wp-dev".into()],
             ambiente: Environment::Dev,
-            operacao: Operacao::Preencher,
+            operacao: Operation::Fill,
             comando: String::new(),
             diretorio: String::new(),
             cadeia: vec!["chrome".into(), "ward-nm".into()],
@@ -218,7 +216,7 @@ fn uma_resposta_de_cada() -> Vec<Resposta> {
         }),
         Resposta::PedidoDeDestrave(PedidoDeDestrave {
             entrada: "acme-pg-aprovacao".into(),
-            operacao: Operacao::Executar,
+            operacao: Operation::Run,
             comando: r#""psql" "-c" "select 1""#.into(),
             restante: 102,
         }),
@@ -263,10 +261,10 @@ fn uma_resposta_de_cada() -> Vec<Resposta> {
 }
 
 /// O papel que pode receber o tipo.
-fn papel_da_resposta(t: TipoResposta) -> Papel {
-    Papel::TODOS
+fn papel_da_resposta(t: ResponseType) -> Role {
+    Role::ALL
         .into_iter()
-        .find(|p| t.permitida(*p))
+        .find(|p| t.allowed(*p))
         .expect("tipo sem papel")
 }
 
@@ -314,19 +312,19 @@ fn v3_15_tabela_operacao_papel() {
         ("resultado_login", false, false, true),
         ("abrir_app", true, true, true),
     ];
-    let real: Vec<_> = Operacao::TODAS
+    let real: Vec<_> = Operation::ALL
         .iter()
         .map(|o| {
-            let p = o.papeis();
-            (o.nome(), p.agente, p.app, p.extensao)
+            let p = o.roles();
+            (o.name(), p.agent, p.app, p.extension)
         })
         .collect();
     assert_eq!(real, esperada);
     // Nenhuma operação de aprovar, responder aprovação ou mudar nível do agente.
-    for o in Operacao::TODAS {
-        let n = o.nome();
+    for o in Operation::ALL {
+        let n = o.name();
         if n.contains("aprov") || n.contains("nivel") || n.contains("token") {
-            assert!(!o.permitida(Papel::Agente), "{n} aceita do agente");
+            assert!(!o.allowed(Role::Agent), "{n} aceita do agente");
         }
     }
 
@@ -353,25 +351,25 @@ fn v3_15_tabela_operacao_papel() {
         ("backup_externo", false, true, false, false),
         ("pendrives", false, true, false, false),
     ];
-    let real: Vec<_> = TipoResposta::TODAS
+    let real: Vec<_> = ResponseType::ALL
         .iter()
         .map(|t| {
-            let p = t.papeis();
+            let p = t.roles();
             (
-                t.nome(),
-                p.agente,
+                t.name(),
+                p.agent,
                 p.app,
-                p.extensao,
-                t.carrega_credencial(),
+                p.extension,
+                t.carries_credential(),
             )
         })
         .collect();
     assert_eq!(real, respostas);
-    for t in TipoResposta::TODAS {
+    for t in ResponseType::ALL {
         assert!(
-            !(t.carrega_credencial() && t.permitida(Papel::Agente)),
+            !(t.carries_credential() && t.allowed(Role::Agent)),
             "{} com credencial para o agente",
-            t.nome()
+            t.name()
         );
     }
 }
@@ -381,13 +379,13 @@ fn v3_15_tabela_operacao_papel() {
 #[test]
 fn v3_15_sem_porta_dos_fundos_no_codigo() {
     let fontes = [
-        include_str!("../protocolo.rs"),
+        include_str!("../protocol.rs"),
         include_str!("json.rs"),
-        include_str!("quadro.rs"),
-        include_str!("campos.rs"),
-        include_str!("pedido.rs"),
-        include_str!("resposta.rs"),
-        include_str!("erros.rs"),
+        include_str!("frame.rs"),
+        include_str!("fields.rs"),
+        include_str!("request.rs"),
+        include_str!("response.rs"),
+        include_str!("errors.rs"),
     ];
     for f in fontes {
         for proibido in [
@@ -415,20 +413,20 @@ fn v3_15_sem_porta_dos_fundos_no_codigo() {
 #[test]
 fn v3_3_operacoes_de_app_e_extensao_do_agente_sao_nao_autorizadas() {
     let mut testadas = 0;
-    for &op in Operacao::TODAS {
-        for papel in Papel::TODOS {
-            if op.permitida(papel) {
+    for &op in Operation::ALL {
+        for papel in Role::ALL {
+            if op.allowed(papel) {
                 continue;
             }
             let validos = dados_validos(op);
             let comextra = com_campo(&validos, r#""revelar":true,"campo":"senha""#);
             let quadros = [
                 quadro_de(op, &validos),
-                format!(r#"{{"v":1,"op":"{}"}}"#, op.nome()),
+                format!(r#"{{"v":1,"op":"{}"}}"#, op.name()),
                 quadro_de(op, &comextra),
                 format!(
                     r#"{{"v":1,"op":"{}","revelar":true,"campo":"senha","dados":{validos}}}"#,
-                    op.nome()
+                    op.name()
                 ),
                 quadro_de(op, "5"),
                 quadro_de(op, r#"{"geracao":1}"#),
@@ -436,10 +434,10 @@ fn v3_3_operacoes_de_app_e_extensao_do_agente_sao_nao_autorizadas() {
             for q in &quadros {
                 assert_eq!(
                     ped(papel, q).unwrap_err(),
-                    ErroResposta::NaoAutorizado,
+                    ResponseError::Unauthorized,
                     "{} pelo {}: {q}",
-                    op.nome(),
-                    papel.nome()
+                    op.name(),
+                    papel.name()
                 );
                 testadas += 1;
             }
@@ -452,13 +450,13 @@ fn v3_3_operacoes_de_app_e_extensao_do_agente_sao_nao_autorizadas() {
 /// estrita): `"revelar": true` ou `"campo": "senha"` não viram nada.
 #[test]
 fn v3_3_campos_inventados_recusam_o_pedido() {
-    for &op in Operacao::TODAS {
+    for &op in Operation::ALL {
         let papel = papel_de(op);
         let validos = dados_validos(op);
         assert!(
             ped(papel, &quadro_de(op, &validos)).is_ok(),
             "{}",
-            op.nome()
+            op.name()
         );
         for extra in [
             r#""revelar":true"#,
@@ -472,16 +470,19 @@ fn v3_3_campos_inventados_recusam_o_pedido() {
             let d = com_campo(&validos, extra);
             assert_eq!(
                 ped(papel, &quadro_de(op, &d)).unwrap_err(),
-                ErroResposta::PedidoInvalido,
+                ResponseError::InvalidRequest,
                 "{} com {extra}",
-                op.nome()
+                op.name()
             );
         }
         let topo = format!(
             r#"{{"v":1,"op":"{}","revelar":true,"dados":{validos}}}"#,
-            op.nome()
+            op.name()
         );
-        assert_eq!(ped(papel, &topo).unwrap_err(), ErroResposta::PedidoInvalido);
+        assert_eq!(
+            ped(papel, &topo).unwrap_err(),
+            ResponseError::InvalidRequest
+        );
     }
 }
 
@@ -489,32 +490,32 @@ fn v3_3_campos_inventados_recusam_o_pedido() {
 /// e nenhuma resposta leva a geração.
 #[test]
 fn d39_geracao_nunca_vem_do_cliente_nem_vai_para_ele() {
-    for &op in Operacao::TODAS {
+    for &op in Operation::ALL {
         let papel = papel_de(op);
         let validos = dados_validos(op);
         let nos_dados = com_campo(&validos, r#""geracao":1"#);
         assert_eq!(
             ped(papel, &quadro_de(op, &nos_dados)).unwrap_err(),
-            ErroResposta::PedidoInvalido
+            ResponseError::InvalidRequest
         );
         let no_topo = format!(
             r#"{{"v":1,"op":"{}","geracao":99,"dados":{validos}}}"#,
-            op.nome()
+            op.name()
         );
         assert_eq!(
             ped(papel, &no_topo).unwrap_err(),
-            ErroResposta::PedidoInvalido
+            ResponseError::InvalidRequest
         );
     }
     let rascunho =
-        dados_validos(Operacao::SalvarEntrada).replacen(r#""nome":"#, r#""geracao":2,"nome":"#, 1);
+        dados_validos(Operation::SaveEntry).replacen(r#""nome":"#, r#""geracao":2,"nome":"#, 1);
     assert_eq!(
-        ped(Papel::App, &quadro_de(Operacao::SalvarEntrada, &rascunho)).unwrap_err(),
-        ErroResposta::PedidoInvalido
+        ped(Role::App, &quadro_de(Operation::SaveEntry, &rascunho)).unwrap_err(),
+        ResponseError::InvalidRequest
     );
     for r in uma_resposta_de_cada() {
         let papel = papel_da_resposta(r.tipo());
-        let q = codificar_resposta(papel, &r).unwrap();
+        let q = encode_response(papel, &r).unwrap();
         let s = String::from_utf8_lossy(&q);
         assert!(!s.contains("\"geracao\"") && !s.contains("geração"), "{s}");
     }
@@ -527,10 +528,10 @@ fn s1_resposta_com_credencial_nunca_vai_ao_agente() {
     let mut vistas = 0;
     for r in uma_resposta_de_cada() {
         let t = r.tipo();
-        for papel in Papel::TODOS {
+        for papel in Role::ALL {
             // A lista do exemplo é a do agente (sem nível); a do app, com nível, está no
             // `d50_lista_do_agente_sem_nivel_e_do_app_com_nivel`.
-            if t == TipoResposta::Lista && papel == Papel::App {
+            if t == ResponseType::List && papel == Role::App {
                 continue;
             }
             // O `estado` leva o papel de quem recebe (D63).
@@ -550,26 +551,23 @@ fn s1_resposta_com_credencial_nunca_vai_ao_agente() {
                 }
                 outra => outra,
             };
-            let enc = codificar_resposta(papel, r);
-            if t.permitida(papel) {
+            let enc = encode_response(papel, r);
+            if t.allowed(papel) {
                 let q = enc.unwrap();
-                assert!(decodificar_resposta(papel, &q).is_ok());
-                for outro in Papel::TODOS {
-                    if !t.permitida(outro) {
-                        assert_eq!(
-                            decodificar_resposta(outro, &q).unwrap_err(),
-                            RespostaInvalida
-                        );
+                assert!(decode_response(papel, &q).is_ok());
+                for outro in Role::ALL {
+                    if !t.allowed(outro) {
+                        assert_eq!(decode_response(outro, &q).unwrap_err(), InvalidResponse);
                     }
                 }
             } else {
-                assert_eq!(enc.unwrap_err(), ErroCodificar::NaoPermitidaAoPapel);
+                assert_eq!(enc.unwrap_err(), EncodeError::NotAllowedForRole);
             }
         }
-        if t.carrega_credencial() {
+        if t.carries_credential() {
             assert_eq!(
-                codificar_resposta(Papel::Agente, &r).unwrap_err(),
-                ErroCodificar::NaoPermitidaAoPapel
+                encode_response(Role::Agent, &r).unwrap_err(),
+                EncodeError::NotAllowedForRole
             );
             vistas += 1;
         }
@@ -581,32 +579,32 @@ fn s1_resposta_com_credencial_nunca_vai_ao_agente() {
 /// consegue mandar a um papel o `estado` de outro, e o cliente lê o papel que veio.
 #[test]
 fn v3_38_estado_traz_o_papel_e_so_ele() {
-    for papel in Papel::TODOS {
+    for papel in Role::ALL {
         let r = Resposta::Estado {
             travado: false,
             cofre_existe: true,
             papel,
         };
-        let q = codificar_resposta(papel, &r).unwrap();
+        let q = encode_response(papel, &r).unwrap();
         assert_eq!(
             String::from_utf8(q.to_vec()).unwrap(),
             format!(
                 r#"{{"v":1,"tipo":"estado","dados":{{"travado":false,"cofre_existe":true,"papel":"{}"}}}}"#,
-                papel.nome()
+                papel.name()
             )
         );
-        match decodificar_resposta(papel, &q).unwrap() {
+        match decode_response(papel, &q).unwrap() {
             Resposta::Estado { papel: lido, .. } => assert_eq!(lido, papel),
             outra => panic!("{outra:?}"),
         }
-        for outro in Papel::TODOS {
+        for outro in Role::ALL {
             if outro != papel {
                 assert_eq!(
-                    codificar_resposta(outro, &r).unwrap_err(),
-                    ErroCodificar::Invalida
+                    encode_response(outro, &r).unwrap_err(),
+                    EncodeError::Invalid
                 );
                 // O app que recebe `agente` lê como veio (e sai, Fase 23a).
-                let q = codificar_resposta(
+                let q = encode_response(
                     outro,
                     &Resposta::Estado {
                         travado: false,
@@ -616,7 +614,7 @@ fn v3_38_estado_traz_o_papel_e_so_ele() {
                 )
                 .unwrap();
                 assert!(matches!(
-                    decodificar_resposta(papel, &q),
+                    decode_response(papel, &q),
                     Ok(Resposta::Estado { papel: p, .. }) if p == outro
                 ));
             }
@@ -629,10 +627,7 @@ fn v3_38_estado_traz_o_papel_e_so_ele() {
         r#"{"travado":false,"cofre_existe":true,"papel":"app","uid":0}"#,
     ] {
         let q = format!(r#"{{"v":1,"tipo":"estado","dados":{dados}}}"#);
-        assert!(
-            decodificar_resposta(Papel::App, q.as_bytes()).is_err(),
-            "{dados}"
-        );
+        assert!(decode_response(Role::App, q.as_bytes()).is_err(), "{dados}");
     }
 }
 
@@ -668,18 +663,14 @@ fn v3_3_lista_e_detalhe_do_cofre_de_teste_sem_segredo() {
     let lista = Resposta::Lista(
         entradas
             .iter()
-            .map(|e| ItemLista::de_entrada(e, Papel::Agente))
+            .map(|e| ItemLista::de_entrada(e, Role::Agent))
             .collect(),
     );
-    let q_lista = codificar_resposta(Papel::Agente, &lista).unwrap();
+    let q_lista = encode_response(Role::Agent, &lista).unwrap();
     let detalhes: Vec<_> = entradas
         .iter()
         .map(|e| {
-            codificar_resposta(
-                Papel::App,
-                &Resposta::Detalhe(DetalheEntrada::de_entrada(e)),
-            )
-            .unwrap()
+            encode_response(Role::App, &Resposta::Detalhe(DetalheEntrada::de_entrada(e))).unwrap()
         })
         .collect();
     let mut agulhas = 0;
@@ -699,7 +690,7 @@ fn v3_3_lista_e_detalhe_do_cofre_de_teste_sem_segredo() {
     }
     assert!(agulhas > 40);
     // E a lista volta inteira pela leitura da CLI.
-    let Resposta::Lista(itens) = decodificar_resposta(Papel::Agente, &q_lista).unwrap() else {
+    let Resposta::Lista(itens) = decode_response(Role::Agent, &q_lista).unwrap() else {
         panic!("não é lista")
     };
     assert_eq!(itens.len(), 22);
@@ -711,9 +702,9 @@ fn v3_3_lista_e_detalhe_do_cofre_de_teste_sem_segredo() {
 fn debug_sem_segredo() {
     let senha = "falso-mestra-debug-01";
     let p = ped(
-        Papel::Agente,
+        Role::Agent,
         &quadro_de(
-            Operacao::Destravar,
+            Operation::Unlock,
             &format!(r#"{{"senha":"{}"}}"#, b64(senha.as_bytes())),
         ),
     )
@@ -740,47 +731,46 @@ fn debug_sem_segredo() {
 #[test]
 fn ida_e_volta_de_todo_pedido_e_resposta() {
     for p in um_pedido_de_cada() {
-        let papel = papel_de(p.operacao());
-        let q = codificar_pedido(papel, &p).unwrap();
-        let de_novo = decodificar_pedido(papel, &q).unwrap();
-        assert_eq!(*codificar_pedido(papel, &de_novo).unwrap(), *q);
+        let papel = papel_de(p.operation());
+        let q = encode_request(papel, &p).unwrap();
+        let de_novo = decode_request(papel, &q).unwrap();
+        assert_eq!(*encode_request(papel, &de_novo).unwrap(), *q);
         // O cliente não codifica pedido de outro papel.
-        for outro in Papel::TODOS {
-            if !p.operacao().permitida(outro) {
+        for outro in Role::ALL {
+            if !p.operation().allowed(outro) {
                 assert_eq!(
-                    codificar_pedido(outro, &p).unwrap_err(),
-                    ErroCodificar::NaoPermitidaAoPapel
+                    encode_request(outro, &p).unwrap_err(),
+                    EncodeError::NotAllowedForRole
                 );
             }
         }
     }
     for r in uma_resposta_de_cada() {
         let papel = papel_da_resposta(r.tipo());
-        let q = codificar_resposta(papel, &r).unwrap();
-        let de_novo = decodificar_resposta(papel, &q).unwrap();
-        assert_eq!(*codificar_resposta(papel, &de_novo).unwrap(), *q);
+        let q = encode_response(papel, &r).unwrap();
+        let de_novo = decode_response(papel, &q).unwrap();
+        assert_eq!(*encode_response(papel, &de_novo).unwrap(), *q);
     }
 }
 
 #[test]
 fn formato_conhecido_do_quadro() {
-    let q = codificar_pedido(Papel::Agente, &Pedido::Lista).unwrap();
+    let q = encode_request(Role::Agent, &Request::List).unwrap();
     assert_eq!(&q[..], br#"{"v":1,"op":"lista","dados":{}}"#);
-    let q =
-        codificar_resposta(Papel::Agente, &Resposta::Erro(ErroResposta::NaoAutorizado)).unwrap();
+    let q = encode_response(Role::Agent, &Resposta::Erro(ResponseError::Unauthorized)).unwrap();
     assert_eq!(
         &q[..],
         r#"{"v":1,"tipo":"erro","dados":{"codigo":"nao_autorizado","mensagem":"não autorizado"}}"#
             .as_bytes()
     );
     let mut saida = Vec::new();
-    quadro::escrever_quadro(&mut saida, &q, MAX_COMMON_FRAME).unwrap();
+    frame::write_frame(&mut saida, &q, MAX_COMMON_FRAME).unwrap();
     assert_eq!(&saida[..4], &(q.len() as u32).to_be_bytes());
     assert_eq!(&saida[4..], &q[..]);
     // `dados` ausente vale vazio.
     assert!(matches!(
-        ped(Papel::Agente, r#"{"op":"lista","v":1}"#),
-        Ok(Pedido::Lista)
+        ped(Role::Agent, r#"{"op":"lista","v":1}"#),
+        Ok(Request::List)
     ));
 }
 
@@ -788,51 +778,48 @@ fn formato_conhecido_do_quadro() {
 
 #[test]
 fn envelope_recusado() {
-    let casos: &[(&str, ErroResposta)] = &[
-        ("", ErroResposta::PedidoInvalido),
-        ("nada", ErroResposta::PedidoInvalido),
-        ("[]", ErroResposta::PedidoInvalido),
-        (r#"{"op":"lista"}"#, ErroResposta::PedidoInvalido),
-        (r#"{"v":"1","op":"lista"}"#, ErroResposta::PedidoInvalido),
-        (r#"{"v":2,"op":"lista"}"#, ErroResposta::VersaoDesconhecida),
-        (r#"{"v":0,"op":"lista"}"#, ErroResposta::VersaoDesconhecida),
-        (r#"{"v":1}"#, ErroResposta::PedidoInvalido),
+    let casos: &[(&str, ResponseError)] = &[
+        ("", ResponseError::InvalidRequest),
+        ("nada", ResponseError::InvalidRequest),
+        ("[]", ResponseError::InvalidRequest),
+        (r#"{"op":"lista"}"#, ResponseError::InvalidRequest),
+        (r#"{"v":"1","op":"lista"}"#, ResponseError::InvalidRequest),
+        (r#"{"v":2,"op":"lista"}"#, ResponseError::UnknownVersion),
+        (r#"{"v":0,"op":"lista"}"#, ResponseError::UnknownVersion),
+        (r#"{"v":1}"#, ResponseError::InvalidRequest),
         (
             r#"{"v":1,"op":"apagar_tudo"}"#,
-            ErroResposta::OperacaoDesconhecida,
+            ResponseError::UnknownOperation,
         ),
-        (
-            r#"{"v":1,"op":"Lista"}"#,
-            ErroResposta::OperacaoDesconhecida,
-        ),
+        (r#"{"v":1,"op":"Lista"}"#, ResponseError::UnknownOperation),
         (
             r#"{"v":1,"op":"lista","dados":[]}"#,
-            ErroResposta::PedidoInvalido,
+            ResponseError::InvalidRequest,
         ),
         (
             r#"{"v":1,"op":"lista","op":"lista"}"#,
-            ErroResposta::PedidoInvalido,
+            ResponseError::InvalidRequest,
         ),
         (
             r#"{"v":1,"op":"lista","op":"revelar"}"#,
-            ErroResposta::PedidoInvalido,
+            ResponseError::InvalidRequest,
         ),
         (
             r#"{"v":1,"v":1,"op":"lista"}"#,
-            ErroResposta::PedidoInvalido,
+            ResponseError::InvalidRequest,
         ),
         (
             r#"{"v":1,"op":"lista","dados":{},"dados":{}}"#,
-            ErroResposta::PedidoInvalido,
+            ResponseError::InvalidRequest,
         ),
-        (r#"{"v":1,"op":"lista"} {}"#, ErroResposta::PedidoInvalido),
+        (r#"{"v":1,"op":"lista"} {}"#, ResponseError::InvalidRequest),
         (
             r#"{"v":1,"op":"lista","dados":{"x":1}}"#,
-            ErroResposta::PedidoInvalido,
+            ResponseError::InvalidRequest,
         ),
     ];
     for (q, e) in casos {
-        assert_eq!(ped(Papel::Agente, q).unwrap_err(), *e, "{q}");
+        assert_eq!(ped(Role::Agent, q).unwrap_err(), *e, "{q}");
     }
 }
 
@@ -840,7 +827,7 @@ fn envelope_recusado() {
 
 #[test]
 fn pin_e_decisao_da_aprovacao() {
-    let q = |d: &str| ped(Papel::App, &quadro_de(Operacao::ResponderAprovacao, d));
+    let q = |d: &str| ped(Role::App, &quadro_de(Operation::AnswerApproval, d));
     let pin = b64(b"135790");
     assert!(q(r#"{"pedido":1,"decisao":"negar"}"#).is_ok());
     assert!(
@@ -866,7 +853,7 @@ fn pin_e_decisao_da_aprovacao() {
             r#"{{"entrada":"acme-pg-dev","nivel":"livre","pin":"{}"}}"#,
             b64(ruim.as_bytes())
         );
-        assert!(ped(Papel::App, &quadro_de(Operacao::MudarNivel, &m)).is_err());
+        assert!(ped(Role::App, &quadro_de(Operation::SetLevel, &m)).is_err());
     }
     // Fase 44c: "confirmar" não leva PIN (quem confere que o pedido é uma confirmação
     // é o daemon).
@@ -882,9 +869,9 @@ fn pin_e_decisao_da_aprovacao() {
     assert!(q(r#"{"pedido":1,"decisao":"admin","pin":"MTM1Nzkw"}"#).is_err());
     assert!(
         ped(
-            Papel::App,
+            Role::App,
             &quadro_de(
-                Operacao::MudarNivel,
+                Operation::SetLevel,
                 &format!(r#"{{"entrada":"acme-pg-dev","nivel":"admin","pin":"{pin}"}}"#)
             )
         )
@@ -901,9 +888,9 @@ fn executar_recusa_nul_igual_e_vazio() {
             .map(|(n, v)| format!(r#"{{"nome":"{}","valor":"{}"}}"#, b64(n), b64(v)))
             .collect();
         ped(
-            Papel::Agente,
+            Role::Agent,
             &quadro_de(
-                Operacao::Executar,
+                Operation::Run,
                 &format!(
                     r#"{{"entrada":"acme-pg-dev","argv":[{}],"cwd":"{}","tipo_entrada":"pipe","ambiente":[{}]}}"#,
                     argv.join(","),
@@ -927,7 +914,7 @@ fn executar_recusa_nul_igual_e_vazio() {
 
 #[test]
 fn revelar_exige_um_alvo_conhecido() {
-    let q = |d: &str| ped(Papel::App, &quadro_de(Operacao::Revelar, d));
+    let q = |d: &str| ped(Role::App, &quadro_de(Operation::Reveal, d));
     assert!(q(r#"{"entrada":"acme-wp-dev","campo":"senha"}"#).is_ok());
     assert!(q(r#"{"entrada":"acme-wp-dev","extra":"PIN_BANCO"}"#).is_ok());
     assert!(q(r#"{"entrada":"acme-wp-dev"}"#).is_err());
@@ -939,28 +926,31 @@ fn revelar_exige_um_alvo_conhecido() {
 /// S9: a entrada que chega do app não tem nível, e campo de outro tipo recusa.
 #[test]
 fn s9_rascunho_sem_nivel_e_sem_campo_de_outro_tipo() {
-    let base = dados_validos(Operacao::SalvarEntrada);
-    let q = |d: &str| ped(Papel::App, &quadro_de(Operacao::SalvarEntrada, d));
+    let base = dados_validos(Operation::SaveEntry);
+    let q = |d: &str| ped(Role::App, &quadro_de(Operation::SaveEntry, d));
     assert!(q(&base).is_ok());
     let com_nivel = base.replacen(r#""nome":"#, r#""nivel":"livre","nome":"#, 1);
-    assert_eq!(q(&com_nivel).unwrap_err(), ErroResposta::PedidoInvalido);
+    assert_eq!(q(&com_nivel).unwrap_err(), ResponseError::InvalidRequest);
     let nivel_nos_campos = base.replacen(r#""url":"#, r#""nivel":"livre","url":"#, 1);
     assert_eq!(
         q(&nivel_nos_campos).unwrap_err(),
-        ErroResposta::PedidoInvalido
+        ResponseError::InvalidRequest
     );
     let de_outro_tipo = base.replacen(r#""url":"#, r#""host":"x","url":"#, 1);
-    assert_eq!(q(&de_outro_tipo).unwrap_err(), ErroResposta::PedidoInvalido);
+    assert_eq!(
+        q(&de_outro_tipo).unwrap_err(),
+        ResponseError::InvalidRequest
+    );
     // Segredo em texto, sem base64, recusa.
     let em_texto = base.replace(&b64(b"falso-clientex-01"), "falso-clientex-01");
-    assert_eq!(q(&em_texto).unwrap_err(), ErroResposta::PedidoInvalido);
+    assert_eq!(q(&em_texto).unwrap_err(), ResponseError::InvalidRequest);
     // A extensão só salva `login`.
     let api = format!(
         r#"{{"entrada":{{"nome":"x-api","grupo":"x","ambiente":"dev","tipo":"api","campos":{{"token":"{}"}}}}}}"#,
         b64(b"falso-token-01")
     );
-    assert!(ped(Papel::Extensao, &quadro_de(Operacao::SalvarLogin, &api)).is_err());
-    assert!(ped(Papel::App, &quadro_de(Operacao::SalvarEntrada, &api)).is_ok());
+    assert!(ped(Role::Extension, &quadro_de(Operation::SaveLogin, &api)).is_err());
+    assert!(ped(Role::App, &quadro_de(Operation::SaveEntry, &api)).is_ok());
 }
 
 // ---- D29: anexos pelo app ----
@@ -993,14 +983,17 @@ fn rascunho_com_anexos(tamanhos: &[usize]) -> Draft {
 /// tem a operação.
 #[test]
 fn d29_anexos_ate_256_kib_somados_pelo_app() {
-    let no_limite = Pedido::SalvarEntrada {
-        anterior: None,
-        rascunho: rascunho_com_anexos(&[MAX_ATTACHMENTS_TOTAL - 10 * KIB, 10 * KIB]),
-        manter_anexos: Vec::new(),
+    let no_limite = Request::SaveEntry {
+        previous: None,
+        draft: rascunho_com_anexos(&[MAX_ATTACHMENTS_TOTAL - 10 * KIB, 10 * KIB]),
+        keep_attachments: Vec::new(),
     };
-    let q = codificar_pedido(Papel::App, &no_limite).unwrap();
+    let q = encode_request(Role::App, &no_limite).unwrap();
     assert!(q.len() > MAX_ATTACHMENTS_TOTAL && q.len() < MAX_APP_FRAME);
-    let Pedido::SalvarEntrada { rascunho, .. } = decodificar_pedido(Papel::App, &q).unwrap() else {
+    let Request::SaveEntry {
+        draft: rascunho, ..
+    } = decode_request(Role::App, &q).unwrap()
+    else {
         panic!()
     };
     assert_eq!(
@@ -1009,27 +1002,27 @@ fn d29_anexos_ate_256_kib_somados_pelo_app() {
     );
     rascunho.validate().expect("entrada com anexos no limite");
     assert_eq!(
-        decodificar_pedido(Papel::Agente, &q).unwrap_err(),
-        ErroResposta::NaoAutorizado
+        decode_request(Role::Agent, &q).unwrap_err(),
+        ResponseError::Unauthorized
     );
 
     // Um byte acima da soma: o cliente não codifica e o daemon não aceita.
-    let acima = Pedido::SalvarEntrada {
-        anterior: Some("clientex-stage-vpn".into()),
-        rascunho: rascunho_com_anexos(&[MAX_ATTACHMENTS_TOTAL - 10 * KIB, 10 * KIB + 1]),
-        manter_anexos: Vec::new(),
+    let acima = Request::SaveEntry {
+        previous: Some("clientex-stage-vpn".into()),
+        draft: rascunho_com_anexos(&[MAX_ATTACHMENTS_TOTAL - 10 * KIB, 10 * KIB + 1]),
+        keep_attachments: Vec::new(),
     };
     assert_eq!(
-        codificar_pedido(Papel::App, &acima).unwrap_err(),
-        ErroCodificar::Invalida
+        encode_request(Role::App, &acima).unwrap_err(),
+        EncodeError::Invalid
     );
     let forjado = String::from_utf8(q.to_vec()).unwrap().replace(
         &b64(&test_vault::bytes_0_to_255(10 * KIB)),
         &b64(&test_vault::bytes_0_to_255(10 * KIB + 1)),
     );
     assert_eq!(
-        ped(Papel::App, &forjado).unwrap_err(),
-        ErroResposta::PedidoInvalido
+        ped(Role::App, &forjado).unwrap_err(),
+        ResponseError::InvalidRequest
     );
 }
 
@@ -1038,27 +1031,30 @@ fn d29_anexos_ate_256_kib_somados_pelo_app() {
 /// `manter_anexos` vai e volta; ausente quando vazio (o quadro de hoje não muda).
 #[test]
 fn fase39b_manter_anexos_vai_e_volta() {
-    let p = Pedido::SalvarEntrada {
-        anterior: Some("clientex-stage-vpn".into()),
-        rascunho: rascunho_com_anexos(&[10]),
-        manter_anexos: vec!["cliente-0.ovpn".into(), "app.env".into()],
+    let p = Request::SaveEntry {
+        previous: Some("clientex-stage-vpn".into()),
+        draft: rascunho_com_anexos(&[10]),
+        keep_attachments: vec!["cliente-0.ovpn".into(), "app.env".into()],
     };
-    let q = codificar_pedido(Papel::App, &p).unwrap();
-    let Pedido::SalvarEntrada { manter_anexos, .. } = decodificar_pedido(Papel::App, &q).unwrap()
+    let q = encode_request(Role::App, &p).unwrap();
+    let Request::SaveEntry {
+        keep_attachments: manter_anexos,
+        ..
+    } = decode_request(Role::App, &q).unwrap()
     else {
         panic!()
     };
     assert_eq!(manter_anexos, ["cliente-0.ovpn", "app.env"]);
-    let sem = Pedido::SalvarEntrada {
-        anterior: Some("clientex-stage-vpn".into()),
-        rascunho: rascunho_com_anexos(&[10]),
-        manter_anexos: Vec::new(),
+    let sem = Request::SaveEntry {
+        previous: Some("clientex-stage-vpn".into()),
+        draft: rascunho_com_anexos(&[10]),
+        keep_attachments: Vec::new(),
     };
-    let q = codificar_pedido(Papel::App, &sem).unwrap();
+    let q = encode_request(Role::App, &sem).unwrap();
     assert!(!String::from_utf8_lossy(&q).contains("manter_anexos"));
     assert_eq!(
-        decodificar_pedido(Papel::Agente, &q).unwrap_err(),
-        ErroResposta::NaoAutorizado
+        decode_request(Role::Agent, &q).unwrap_err(),
+        ResponseError::Unauthorized
     );
 }
 
@@ -1066,8 +1062,8 @@ fn fase39b_manter_anexos_vai_e_volta() {
 /// fora de lista de textos, e mantidos mais novos acima de `MAX_ATTACHMENTS`.
 #[test]
 fn fase39b_ataque_manter_anexos_forjado() {
-    let base = dados_validos(Operacao::SalvarEntrada);
-    let q = |d: &str| ped(Papel::App, &quadro_de(Operacao::SalvarEntrada, d));
+    let base = dados_validos(Operation::SaveEntry);
+    let q = |d: &str| ped(Role::App, &quadro_de(Operation::SaveEntry, d));
     let editar = |campo: &str| {
         base.replacen(
             '{',
@@ -1079,7 +1075,7 @@ fn fase39b_ataque_manter_anexos_forjado() {
     assert!(q(&editar(r#""manter_anexos":[]"#)).is_ok());
     // Sem `anterior`: não há de onde manter.
     let novo = base.replacen('{', r#"{"manter_anexos":["app.env"],"#, 1);
-    assert_eq!(q(&novo).unwrap_err(), ErroResposta::PedidoInvalido);
+    assert_eq!(q(&novo).unwrap_err(), ResponseError::InvalidRequest);
     let longo = format!(
         r#""manter_anexos":["{}"]"#,
         "a".repeat(MAX_ATTACHMENT_NAME + 1)
@@ -1102,19 +1098,19 @@ fn fase39b_ataque_manter_anexos_forjado() {
     ] {
         assert_eq!(
             q(&editar(&forjado)).unwrap_err(),
-            ErroResposta::PedidoInvalido,
+            ResponseError::InvalidRequest,
             "{forjado}"
         );
     }
     // Mantidos mais novos acima de `MAX_ATTACHMENTS`: o cliente não codifica.
-    let p = Pedido::SalvarEntrada {
-        anterior: Some("clientex-stage-vpn".into()),
-        rascunho: rascunho_com_anexos(&[1; MAX_ATTACHMENTS]),
-        manter_anexos: vec!["app.env".into()],
+    let p = Request::SaveEntry {
+        previous: Some("clientex-stage-vpn".into()),
+        draft: rascunho_com_anexos(&[1; MAX_ATTACHMENTS]),
+        keep_attachments: vec!["app.env".into()],
     };
     assert_eq!(
-        codificar_pedido(Papel::App, &p).unwrap_err(),
-        ErroCodificar::Invalida
+        encode_request(Role::App, &p).unwrap_err(),
+        EncodeError::Invalid
     );
 }
 
@@ -1133,13 +1129,13 @@ fn fase39b_ataque_juntar_anexos_mantidos() {
         vec!["CLIENTE-0.OVPN".to_owned()],
     ] {
         assert_eq!(
-            juntar_anexos_mantidos(&mut r, &antiga, &nomes).unwrap_err(),
-            ErroResposta::PedidoInvalido,
+            merge_kept_attachments(&mut r, &antiga, &nomes).unwrap_err(),
+            ResponseError::InvalidRequest,
             "{nomes:?}"
         );
         assert_eq!(r.attachments.len(), 1);
     }
-    juntar_anexos_mantidos(&mut r, &antiga, &["cliente-1.ovpn".to_owned()]).unwrap();
+    merge_kept_attachments(&mut r, &antiga, &["cliente-1.ovpn".to_owned()]).unwrap();
     let nomes: Vec<&str> = r.attachments.iter().map(|a| a.name.as_str()).collect();
     assert_eq!(nomes, ["cliente-1.ovpn", "novo.env"]);
     assert_eq!(
@@ -1152,12 +1148,12 @@ fn fase39b_ataque_juntar_anexos_mantidos() {
     // Mantido de 200 KiB + novo de 60 KiB passa da soma: a validação recusa.
     let mut r = rascunho_com_anexos(&[60 * KIB]);
     r.attachments[0].name = "novo.env".into();
-    juntar_anexos_mantidos(&mut r, &antiga, &["cliente-0.ovpn".to_owned()]).unwrap();
+    merge_kept_attachments(&mut r, &antiga, &["cliente-0.ovpn".to_owned()]).unwrap();
     assert!(r.validate().is_err());
 
     // Nome mantido igual ao de um anexo novo: a validação acusa a repetição.
     let mut r = rascunho_com_anexos(&[5]);
-    juntar_anexos_mantidos(&mut r, &antiga, &["cliente-0.ovpn".to_owned()]).unwrap();
+    merge_kept_attachments(&mut r, &antiga, &["cliente-0.ovpn".to_owned()]).unwrap();
     assert!(r.validate().is_err());
 }
 
@@ -1187,32 +1183,35 @@ fn maior_entrada_cabe_no_quadro_do_app() {
             content: Secret::from_bytes(test_vault::bytes_0_to_255(MAX_ATTACHMENTS_TOTAL)),
         }],
     };
-    let p = Pedido::SalvarEntrada {
-        anterior: None,
-        rascunho: r,
-        manter_anexos: Vec::new(),
+    let p = Request::SaveEntry {
+        previous: None,
+        draft: r,
+        keep_attachments: Vec::new(),
     };
-    let q = codificar_pedido(Papel::App, &p).unwrap();
+    let q = encode_request(Role::App, &p).unwrap();
     assert!(q.len() > MAX_COMMON_FRAME, "{}", q.len());
     assert!(q.len() <= MAX_APP_FRAME, "{}", q.len());
-    let Pedido::SalvarEntrada { rascunho, .. } = decodificar_pedido(Papel::App, &q).unwrap() else {
+    let Request::SaveEntry {
+        draft: rascunho, ..
+    } = decode_request(Role::App, &q).unwrap()
+    else {
         panic!()
     };
     let e = rascunho.validate().expect("maior entrada válida");
     assert_eq!(e.extras().len(), MAX_EXTRAS);
     // O mesmo quadro, pelo leitor de quadros: cabe no do app e não no comum.
     let mut bruto = Vec::new();
-    quadro::escrever_quadro(&mut bruto, &q, MAX_APP_FRAME).unwrap();
+    frame::write_frame(&mut bruto, &q, MAX_APP_FRAME).unwrap();
     assert_eq!(
-        ler_quadro(&mut &bruto[..], limite_do_quadro(Papel::Agente)).unwrap_err(),
-        ErroQuadro::GrandeDemais
+        read_frame(&mut &bruto[..], frame_limit(Role::Agent)).unwrap_err(),
+        FrameError::TooLarge
     );
     assert_eq!(
-        ler_quadro(&mut &bruto[..], limite_do_quadro(Papel::Extensao)).unwrap_err(),
-        ErroQuadro::GrandeDemais
+        read_frame(&mut &bruto[..], frame_limit(Role::Extension)).unwrap_err(),
+        FrameError::TooLarge
     );
     assert_eq!(
-        *ler_quadro(&mut &bruto[..], limite_do_quadro(Papel::App)).unwrap(),
+        *read_frame(&mut &bruto[..], frame_limit(Role::App)).unwrap(),
         *q
     );
 }
@@ -1238,11 +1237,11 @@ impl Read for Contador<'_> {
 fn v3_4_quadros_recusados_antes_de_ler_o_corpo() {
     let mut corpo = Vec::new();
     for (cab, erro) in [
-        ((2 * MIB) as u32, ErroQuadro::GrandeDemais),
-        ((MAX_COMMON_FRAME + 1) as u32, ErroQuadro::GrandeDemais),
-        (u32::MAX, ErroQuadro::GrandeDemais), // o -1 de 32 bits
-        ((-2i32) as u32, ErroQuadro::GrandeDemais),
-        (0, ErroQuadro::Vazio),
+        ((2 * MIB) as u32, FrameError::TooLarge),
+        ((MAX_COMMON_FRAME + 1) as u32, FrameError::TooLarge),
+        (u32::MAX, FrameError::TooLarge), // o -1 de 32 bits
+        ((-2i32) as u32, FrameError::TooLarge),
+        (0, FrameError::Empty),
     ] {
         corpo.clear();
         corpo.extend_from_slice(&cab.to_be_bytes());
@@ -1251,17 +1250,17 @@ fn v3_4_quadros_recusados_antes_de_ler_o_corpo() {
             dados: &corpo,
             lidos: 0,
         };
-        assert_eq!(ler_quadro(&mut r, MAX_COMMON_FRAME).unwrap_err(), erro);
+        assert_eq!(read_frame(&mut r, MAX_COMMON_FRAME).unwrap_err(), erro);
         assert_eq!(r.lidos, 4, "leu o corpo de um quadro recusado");
     }
     // 2 MiB também passa do quadro do cliente comum pelos dois papéis.
-    assert!(2 * MIB > limite_do_quadro(Papel::Agente));
-    assert!(2 * MIB > limite_do_quadro(Papel::Extensao));
+    assert!(2 * MIB > frame_limit(Role::Agent));
+    assert!(2 * MIB > frame_limit(Role::Extension));
     // No limite exato passa.
     let mut q = (MAX_COMMON_FRAME as u32).to_be_bytes().to_vec();
     q.extend(std::iter::repeat_n(b' ', MAX_COMMON_FRAME));
     assert_eq!(
-        ler_quadro(&mut &q[..], MAX_COMMON_FRAME).unwrap().len(),
+        read_frame(&mut &q[..], MAX_COMMON_FRAME).unwrap().len(),
         MAX_COMMON_FRAME
     );
 }
@@ -1269,33 +1268,33 @@ fn v3_4_quadros_recusados_antes_de_ler_o_corpo() {
 #[test]
 fn v3_4_quadro_truncado_e_fechado() {
     assert_eq!(
-        ler_quadro(&mut &b""[..], 100).unwrap_err(),
-        ErroQuadro::Fechado
+        read_frame(&mut &b""[..], 100).unwrap_err(),
+        FrameError::Closed
     );
     assert_eq!(
-        ler_quadro(&mut &b"\0\0"[..], 100).unwrap_err(),
-        ErroQuadro::Truncado
+        read_frame(&mut &b"\0\0"[..], 100).unwrap_err(),
+        FrameError::Truncated
     );
     assert_eq!(
-        ler_quadro(&mut &b"\0\0\0\x0a{}"[..], 100).unwrap_err(),
-        ErroQuadro::Truncado
+        read_frame(&mut &b"\0\0\0\x0a{}"[..], 100).unwrap_err(),
+        FrameError::Truncated
     );
     // Declarou 1 MiB e mandou 10 bytes: truncado, sem esperar o resto.
     let mut q = (MAX_COMMON_FRAME as u32).to_be_bytes().to_vec();
     q.extend_from_slice(b"0123456789");
     assert_eq!(
-        ler_quadro(&mut &q[..], MAX_COMMON_FRAME).unwrap_err(),
-        ErroQuadro::Truncado
+        read_frame(&mut &q[..], MAX_COMMON_FRAME).unwrap_err(),
+        FrameError::Truncated
     );
     // Escrever também recusa vazio e acima do limite, sem escrever nada.
     let mut saida = Vec::new();
     assert_eq!(
-        quadro::escrever_quadro(&mut saida, b"", 10).unwrap_err(),
-        ErroQuadro::Vazio
+        frame::write_frame(&mut saida, b"", 10).unwrap_err(),
+        FrameError::Empty
     );
     assert_eq!(
-        quadro::escrever_quadro(&mut saida, &[b' '; 11], 10).unwrap_err(),
-        ErroQuadro::GrandeDemais
+        frame::write_frame(&mut saida, &[b' '; 11], 10).unwrap_err(),
+        FrameError::TooLarge
     );
     assert!(saida.is_empty());
 }
@@ -1312,13 +1311,13 @@ fn v3_4_json_invalido_e_operacao_desconhecida_respondem_erro() {
         b"{\"v\":1,\"op\":\"desconhecida\"}",
         b"\xef\xbb\xbf{\"v\":1,\"op\":\"lista\"}",
     ] {
-        let e = decodificar_pedido(Papel::Agente, q).unwrap_err();
-        let r = codificar_resposta(Papel::Agente, &Resposta::Erro(e)).unwrap();
-        assert!(decodificar_resposta(Papel::Agente, &r).is_ok());
+        let e = decode_request(Role::Agent, q).unwrap_err();
+        let r = encode_response(Role::Agent, &Resposta::Erro(e)).unwrap();
+        assert!(decode_response(Role::Agent, &r).is_ok());
     }
     assert_eq!(
-        erro_do_quadro(ErroQuadro::GrandeDemais),
-        ErroResposta::QuadroInvalido
+        frame_error(FrameError::TooLarge),
+        ResponseError::InvalidFrame
     );
 }
 
@@ -1334,7 +1333,7 @@ fn json_estrito() {
         "{\"a\":\"ação\"}",
     ];
     for a in aceitos {
-        assert!(json::ler(a.as_bytes(), json::MAX_NOS).is_ok(), "{a}");
+        assert!(json::read(a.as_bytes(), json::MAX_NODES).is_ok(), "{a}");
     }
     let recusados: &[&[u8]] = &[
         b"",
@@ -1370,7 +1369,7 @@ fn json_estrito() {
     ];
     for r in recusados {
         assert!(
-            json::ler(r, json::MAX_NOS).is_err(),
+            json::read(r, json::MAX_NODES).is_err(),
             "{}",
             String::from_utf8_lossy(r)
         );
@@ -1380,44 +1379,44 @@ fn json_estrito() {
 #[test]
 fn json_limites_de_profundidade_nos_e_chaves() {
     let fundo = |n: usize| format!("{}1{}", "{\"a\":".repeat(n), "}".repeat(n));
-    assert!(json::ler(fundo(json::MAX_PROFUNDIDADE - 1).as_bytes(), json::MAX_NOS).is_ok());
-    assert!(json::ler(fundo(json::MAX_PROFUNDIDADE).as_bytes(), json::MAX_NOS).is_err());
+    assert!(json::read(fundo(json::MAX_DEPTH - 1).as_bytes(), json::MAX_NODES).is_ok());
+    assert!(json::read(fundo(json::MAX_DEPTH).as_bytes(), json::MAX_NODES).is_err());
     // Muito fundo não estoura a pilha.
-    assert!(json::ler(fundo(100_000).as_bytes(), json::MAX_NOS).is_err());
+    assert!(json::read(fundo(100_000).as_bytes(), json::MAX_NODES).is_err());
     let lista = |n: usize| format!("{{\"a\":[{}]}}", vec!["0"; n].join(","));
-    assert!(json::ler(lista(json::MAX_NOS - 2).as_bytes(), json::MAX_NOS).is_ok());
-    assert!(json::ler(lista(json::MAX_NOS).as_bytes(), json::MAX_NOS).is_err());
+    assert!(json::read(lista(json::MAX_NODES - 2).as_bytes(), json::MAX_NODES).is_ok());
+    assert!(json::read(lista(json::MAX_NODES).as_bytes(), json::MAX_NODES).is_err());
     let chaves = |n: usize| {
         let v: Vec<_> = (0..n).map(|i| format!("\"k{i}\":0")).collect();
         format!("{{{}}}", v.join(","))
     };
-    assert!(json::ler(chaves(json::MAX_CHAVES).as_bytes(), json::MAX_NOS).is_ok());
-    assert!(json::ler(chaves(json::MAX_CHAVES + 1).as_bytes(), json::MAX_NOS).is_err());
+    assert!(json::read(chaves(json::MAX_KEYS).as_bytes(), json::MAX_NODES).is_ok());
+    assert!(json::read(chaves(json::MAX_KEYS + 1).as_bytes(), json::MAX_NODES).is_err());
 }
 
 #[test]
 fn base64_estrito() {
-    assert_eq!(&json::de_base64("", 0).unwrap()[..], b"");
-    assert_eq!(&json::de_base64("YWJj", 3).unwrap()[..], b"abc");
-    assert_eq!(&json::de_base64("YQ==", 1).unwrap()[..], b"a");
+    assert_eq!(&json::from_base64("", 0).unwrap()[..], b"");
+    assert_eq!(&json::from_base64("YWJj", 3).unwrap()[..], b"abc");
+    assert_eq!(&json::from_base64("YQ==", 1).unwrap()[..], b"a");
     for r in [
         "YQ", "YQ=", "Y===", "YR==", "YWJj\n", "YW Jj", "YWJ-", "YWJ_", "=YWJ",
     ] {
-        assert!(json::de_base64(r, 100).is_err(), "{r}");
+        assert!(json::from_base64(r, 100).is_err(), "{r}");
     }
     // Acima do máximo recusa antes de alocar.
-    assert!(json::de_base64("YWJj", 2).is_err());
-    assert!(json::de_base64(&"A".repeat(4 * MIB), 1024).is_err());
+    assert!(json::from_base64("YWJj", 2).is_err());
+    assert!(json::from_base64(&"A".repeat(4 * MIB), 1024).is_err());
 }
 
 #[test]
 fn texto_com_escape_vai_e_volta() {
     let dificil = "aspas \" barra \\ nova\nlinha\ttab \u{1} \u{1f} ação 😀 \u{2028}";
-    let p = Pedido::Sugerir {
-        origem: dificil.into(),
+    let p = Request::Suggest {
+        origin: dificil.into(),
     };
-    let q = codificar_pedido(Papel::Extensao, &p).unwrap();
-    let Pedido::Sugerir { origem } = decodificar_pedido(Papel::Extensao, &q).unwrap() else {
+    let q = encode_request(Role::Extension, &p).unwrap();
+    let Request::Suggest { origin: origem } = decode_request(Role::Extension, &q).unwrap() else {
         panic!()
     };
     assert_eq!(origem, dificil);
@@ -1427,36 +1426,36 @@ fn texto_com_escape_vai_e_volta() {
 
 #[test]
 fn d39_erros_do_destravar_e_das_gravacoes() {
-    assert_eq!(MSG_RETROCESSO, OpenError::Rollback.to_string());
+    assert_eq!(MSG_ROLLBACK, OpenError::Rollback.to_string());
     assert_eq!(
-        MSG_GERACAO_ESGOTADA,
+        MSG_GENERATION_EXHAUSTED,
         WriteError::GenerationExhausted.to_string()
     );
-    assert_eq!(MSG_COFRE_MUDOU, "o arquivo do cofre mudou fora do Ward");
+    assert_eq!(MSG_VAULT_CHANGED, "o arquivo do cofre mudou fora do Ward");
     assert_eq!(
-        ErroResposta::from(&OpenError::Rollback),
-        ErroResposta::Retrocesso
+        ResponseError::from(&OpenError::Rollback),
+        ResponseError::Rollback
     );
     assert_eq!(
-        ErroResposta::from(&WriteError::GenerationExhausted),
-        ErroResposta::GeracaoEsgotada
+        ResponseError::from(&WriteError::GenerationExhausted),
+        ResponseError::GenerationExhausted
     );
     assert_eq!(
-        ErroResposta::from(&WriteError::Rollback),
-        ErroResposta::Retrocesso
+        ResponseError::from(&WriteError::Rollback),
+        ResponseError::Rollback
     );
     assert_eq!(
-        ErroResposta::from(&WriteError::InvalidDestination),
-        ErroResposta::FalhaAoGravar
+        ResponseError::from(&WriteError::InvalidDestination),
+        ResponseError::WriteFailed
     );
     for e in [
-        ErroResposta::Retrocesso,
-        ErroResposta::CofreMudou,
-        ErroResposta::GeracaoEsgotada,
+        ResponseError::Rollback,
+        ResponseError::VaultChanged,
+        ResponseError::GenerationExhausted,
     ] {
         // O agente (a CLI destrava) recebe o aviso, sem número.
-        let q = codificar_resposta(Papel::Agente, &Resposta::Erro(e.clone())).unwrap();
-        let Resposta::Erro(lido) = decodificar_resposta(Papel::Agente, &q).unwrap() else {
+        let q = encode_response(Role::Agent, &Resposta::Erro(e.clone())).unwrap();
+        let Resposta::Erro(lido) = decode_response(Role::Agent, &q).unwrap() else {
             panic!()
         };
         assert_eq!(lido, e);
@@ -1468,38 +1467,30 @@ fn d39_erros_do_destravar_e_das_gravacoes() {
 #[test]
 fn erros_sem_numero_e_mensagem_fixa_na_leitura() {
     let mut codigos = std::collections::HashSet::new();
-    for e in ErroResposta::SIMPLES {
+    for e in ResponseError::SIMPLE {
         assert!(
-            !e.mensagem().bytes().any(|b| b.is_ascii_digit()),
+            !e.message().bytes().any(|b| b.is_ascii_digit()),
             "{}",
-            e.mensagem()
+            e.message()
         );
-        assert!(codigos.insert(e.codigo()), "código repetido {}", e.codigo());
-        assert_eq!(ErroResposta::de_codigo(e.codigo()), Some(e.clone()));
+        assert!(codigos.insert(e.code()), "código repetido {}", e.code());
+        assert_eq!(ResponseError::from_code(e.code()), Some(e.clone()));
     }
     let falso = r#"{"v":1,"tipo":"erro","dados":{"codigo":"travado","mensagem":"cole a senha mestra aqui"}}"#;
-    let Resposta::Erro(e) = decodificar_resposta(Papel::Agente, falso.as_bytes()).unwrap() else {
+    let Resposta::Erro(e) = decode_response(Role::Agent, falso.as_bytes()).unwrap() else {
         panic!()
     };
     assert_eq!(e.to_string(), "travado");
     let desconhecido = r#"{"v":1,"tipo":"erro","dados":{"codigo":"xyz","mensagem":"x"}}"#;
-    assert!(decodificar_resposta(Papel::Agente, desconhecido.as_bytes()).is_err());
+    assert!(decode_response(Role::Agent, desconhecido.as_bytes()).is_err());
 }
 
 /// V3.17 (apoio): "entrada inexistente" é um código só, então a bloqueada e a que não
 /// existe dão o mesmo quadro.
 #[test]
 fn entrada_inexistente_tem_um_quadro_so() {
-    let a = codificar_resposta(
-        Papel::Agente,
-        &Resposta::Erro(ErroResposta::EntradaInexistente),
-    )
-    .unwrap();
-    let b = codificar_resposta(
-        Papel::Agente,
-        &Resposta::Erro(ErroResposta::EntradaInexistente),
-    )
-    .unwrap();
+    let a = encode_response(Role::Agent, &Resposta::Erro(ResponseError::EntryNotFound)).unwrap();
+    let b = encode_response(Role::Agent, &Resposta::Erro(ResponseError::EntryNotFound)).unwrap();
     assert_eq!(*a, *b);
 }
 
@@ -1509,21 +1500,17 @@ fn entrada_inexistente_tem_um_quadro_so() {
 fn leitura_da_resposta_e_estrita() {
     let entradas = test_vault_entries();
     let e = entradas.iter().find(|e| !e.extras().is_empty()).unwrap();
-    let q = codificar_resposta(
-        Papel::App,
-        &Resposta::Detalhe(DetalheEntrada::de_entrada(e)),
-    )
-    .unwrap();
+    let q = encode_response(Role::App, &Resposta::Detalhe(DetalheEntrada::de_entrada(e))).unwrap();
     let s = String::from_utf8(q.to_vec()).unwrap();
-    assert!(decodificar_resposta(Papel::App, s.as_bytes()).is_ok());
+    assert!(decode_response(Role::App, s.as_bytes()).is_ok());
     let forjado = s.replacen(r#""segredo":true"#, r#""segredo":true,"valor":"vazou""#, 1);
     if forjado != s {
-        assert!(decodificar_resposta(Papel::App, forjado.as_bytes()).is_err());
+        assert!(decode_response(Role::App, forjado.as_bytes()).is_err());
     }
     let forjado = s.replacen(r#""campos":{"#, r#""campos":{"senha":"vazou","#, 1);
-    assert!(decodificar_resposta(Papel::App, forjado.as_bytes()).is_err());
+    assert!(decode_response(Role::App, forjado.as_bytes()).is_err());
     let totp = r#"{"v":1,"tipo":"codigo_totp","dados":{"codigo":"12a456","restante":3}}"#;
-    assert!(decodificar_resposta(Papel::App, totp.as_bytes()).is_err());
+    assert!(decode_response(Role::App, totp.as_bytes()).is_err());
 }
 
 // ---- Fuzz do decodificador ----
@@ -1608,16 +1595,12 @@ fn fuzz_decodificador() {
     const FIOS: usize = 4;
     let pedidos: Vec<Vec<u8>> = um_pedido_de_cada()
         .iter()
-        .map(|p| {
-            codificar_pedido(papel_de(p.operacao()), p)
-                .unwrap()
-                .to_vec()
-        })
+        .map(|p| encode_request(papel_de(p.operation()), p).unwrap().to_vec())
         .collect();
     let respostas: Vec<Vec<u8>> = uma_resposta_de_cada()
         .iter()
         .map(|r| {
-            codificar_resposta(papel_da_resposta(r.tipo()), r)
+            encode_response(papel_da_resposta(r.tipo()), r)
                 .unwrap()
                 .to_vec()
         })
@@ -1631,36 +1614,35 @@ fn fuzz_decodificador() {
                     let mut rng = SplitMix(0x5741_5244_0020_0000 + f as u64);
                     let mut aceitos = 0;
                     for i in 0..TOTAL / FIOS {
-                        let papel = Papel::TODOS[rng.ate(3)];
+                        let papel = Role::ALL[rng.ate(3)];
                         if i % 2 == 0 {
                             let base = &pedidos[rng.ate(pedidos.len())];
                             let q = mutar(&mut rng, base);
-                            if let Ok(p) = decodificar_pedido(papel, &q) {
+                            if let Ok(p) = decode_request(papel, &q) {
                                 aceitos += 1;
-                                assert!(p.operacao().permitida(papel));
-                                let w = codificar_pedido(papel, &p).expect("aceito e não escreve");
-                                let p2 = decodificar_pedido(papel, &w).expect("escrito e não lê");
-                                assert_eq!(*codificar_pedido(papel, &p2).unwrap(), *w);
+                                assert!(p.operation().allowed(papel));
+                                let w = encode_request(papel, &p).expect("aceito e não escreve");
+                                let p2 = decode_request(papel, &w).expect("escrito e não lê");
+                                assert_eq!(*encode_request(papel, &p2).unwrap(), *w);
                             }
                         } else {
                             let base = &respostas[rng.ate(respostas.len())];
                             let q = mutar(&mut rng, base);
-                            if let Ok(r) = decodificar_resposta(papel, &q) {
+                            if let Ok(r) = decode_response(papel, &q) {
                                 aceitos += 1;
-                                assert!(r.tipo().permitida(papel));
-                                assert!(!(r.tipo().carrega_credencial() && papel == Papel::Agente));
+                                assert!(r.tipo().allowed(papel));
+                                assert!(!(r.tipo().carries_credential() && papel == Role::Agent));
                                 // O `estado` de outro papel é lido, mas o daemon não o
                                 // escreve a este (D63).
                                 if let Resposta::Estado { papel: p, .. } = &r
                                     && *p != papel
                                 {
-                                    assert!(codificar_resposta(papel, &r).is_err());
+                                    assert!(encode_response(papel, &r).is_err());
                                     continue;
                                 }
-                                let w =
-                                    codificar_resposta(papel, &r).expect("aceita e não escreve");
-                                let r2 = decodificar_resposta(papel, &w).expect("escrita e não lê");
-                                assert_eq!(*codificar_resposta(papel, &r2).unwrap(), *w);
+                                let w = encode_response(papel, &r).expect("aceita e não escreve");
+                                let r2 = decode_response(papel, &w).expect("escrita e não lê");
+                                assert_eq!(*encode_response(papel, &r2).unwrap(), *w);
                             }
                         }
                     }
@@ -1682,13 +1664,13 @@ fn fuzz_quadro_e_json_aleatorios() {
     for _ in 0..20_000 {
         let n = rng.ate(64);
         let v: Vec<u8> = (0..n).map(|_| rng.proximo() as u8).collect();
-        let _ = json::ler(&v, json::MAX_NOS);
-        let _ = decodificar_pedido(Papel::App, &v);
+        let _ = json::read(&v, json::MAX_NODES);
+        let _ = decode_request(Role::App, &v);
         let mut r = Contador {
             dados: &v,
             lidos: 0,
         };
-        if let Ok(q) = ler_quadro(&mut r, 32) {
+        if let Ok(q) = read_frame(&mut r, 32) {
             assert_eq!(q.len() + 4, r.lidos);
         }
     }
@@ -1701,7 +1683,7 @@ fn fuzz_quadro_e_json_aleatorios() {
 #[test]
 fn d50_lista_do_agente_sem_nivel_e_do_app_com_nivel() {
     let entradas = test_vault_entries();
-    let do_papel = |p: Papel| {
+    let do_papel = |p: Role| {
         Resposta::Lista(
             entradas
                 .iter()
@@ -1710,15 +1692,15 @@ fn d50_lista_do_agente_sem_nivel_e_do_app_com_nivel() {
         )
     };
     // Agente: nenhum `"nivel"` no quadro, e a leitura devolve `None`.
-    let q = codificar_resposta(Papel::Agente, &do_papel(Papel::Agente)).unwrap();
+    let q = encode_response(Role::Agent, &do_papel(Role::Agent)).unwrap();
     assert!(!contem(&q, b"\"nivel\""));
-    let Resposta::Lista(itens) = decodificar_resposta(Papel::Agente, &q).unwrap() else {
+    let Resposta::Lista(itens) = decode_response(Role::Agent, &q).unwrap() else {
         panic!("não é lista")
     };
     assert!(itens.iter().all(|i| i.nivel.is_none()));
     // App: todo item com nível, igual ao da entrada.
-    let q_app = codificar_resposta(Papel::App, &do_papel(Papel::App)).unwrap();
-    let Resposta::Lista(itens) = decodificar_resposta(Papel::App, &q_app).unwrap() else {
+    let q_app = encode_response(Role::App, &do_papel(Role::App)).unwrap();
+    let Resposta::Lista(itens) = decode_response(Role::App, &q_app).unwrap() else {
         panic!("não é lista")
     };
     for (i, e) in itens.iter().zip(&entradas) {
@@ -1727,15 +1709,15 @@ fn d50_lista_do_agente_sem_nivel_e_do_app_com_nivel() {
     // Ataques: o item do app mandado ao agente é recusado na escrita; o quadro do app
     // lido como agente é recusado; o do agente lido como app também.
     assert_eq!(
-        codificar_resposta(Papel::Agente, &do_papel(Papel::App)).unwrap_err(),
-        ErroCodificar::NaoPermitidaAoPapel
+        encode_response(Role::Agent, &do_papel(Role::App)).unwrap_err(),
+        EncodeError::NotAllowedForRole
     );
     assert_eq!(
-        codificar_resposta(Papel::App, &do_papel(Papel::Agente)).unwrap_err(),
-        ErroCodificar::Invalida
+        encode_response(Role::App, &do_papel(Role::Agent)).unwrap_err(),
+        EncodeError::Invalid
     );
-    assert!(decodificar_resposta(Papel::Agente, &q_app).is_err());
-    assert!(decodificar_resposta(Papel::App, &q).is_err());
+    assert!(decode_response(Role::Agent, &q_app).is_err());
+    assert!(decode_response(Role::App, &q).is_err());
 }
 
 /// D65 c (V3.40): a lista do app leva o resumo de cada entrada (campos de texto, ids
@@ -1746,7 +1728,7 @@ fn d50_lista_do_agente_sem_nivel_e_do_app_com_nivel() {
 #[test]
 fn d65_lista_do_app_com_resumo_e_do_agente_sem() {
     let entradas = test_vault_entries();
-    let do_papel = |p: Papel| {
+    let do_papel = |p: Role| {
         Resposta::Lista(
             entradas
                 .iter()
@@ -1754,8 +1736,8 @@ fn d65_lista_do_app_com_resumo_e_do_agente_sem() {
                 .collect(),
         )
     };
-    let q_app = codificar_resposta(Papel::App, &do_papel(Papel::App)).unwrap();
-    let Resposta::Lista(itens) = decodificar_resposta(Papel::App, &q_app).unwrap() else {
+    let q_app = encode_response(Role::App, &do_papel(Role::App)).unwrap();
+    let Resposta::Lista(itens) = decode_response(Role::App, &q_app).unwrap() else {
         panic!("não é lista")
     };
     assert_eq!(itens.len(), entradas.len());
@@ -1782,11 +1764,11 @@ fn d65_lista_do_app_com_resumo_e_do_agente_sem() {
     assert!(!contem(&q_app, b"falso-licenca-01"));
 
     // Agente: sem resumo e sem usuário.
-    let q = codificar_resposta(Papel::Agente, &do_papel(Papel::Agente)).unwrap();
+    let q = encode_response(Role::Agent, &do_papel(Role::Agent)).unwrap();
     assert!(!contem(&q, b"\"resumo\""));
     assert!(!contem(&q, b"\"usuario\""));
     assert!(!contem(&q, b"wp_admin"));
-    let Resposta::Lista(itens) = decodificar_resposta(Papel::Agente, &q).unwrap() else {
+    let Resposta::Lista(itens) = decode_response(Role::Agent, &q).unwrap() else {
         panic!("não é lista")
     };
     assert!(itens.iter().all(|i| i.resumo.is_none()));
@@ -1794,24 +1776,24 @@ fn d65_lista_do_app_com_resumo_e_do_agente_sem() {
     // Ataque: item com resumo (sem nível) mandado ao agente é recusado na escrita.
     let mut so_resumo: Vec<ItemLista> = entradas
         .iter()
-        .map(|e| ItemLista::de_entrada(e, Papel::App))
+        .map(|e| ItemLista::de_entrada(e, Role::App))
         .collect();
     for i in &mut so_resumo {
         i.nivel = None;
     }
     assert_eq!(
-        codificar_resposta(Papel::Agente, &Resposta::Lista(so_resumo)).unwrap_err(),
-        ErroCodificar::NaoPermitidaAoPapel
+        encode_response(Role::Agent, &Resposta::Lista(so_resumo)).unwrap_err(),
+        EncodeError::NotAllowedForRole
     );
     // Ataque: item do app sem resumo (só o nível) não sai.
     let mut sem_resumo: Vec<ItemLista> = entradas
         .iter()
-        .map(|e| ItemLista::de_entrada(e, Papel::App))
+        .map(|e| ItemLista::de_entrada(e, Role::App))
         .collect();
     sem_resumo[0].resumo = None;
     assert_eq!(
-        codificar_resposta(Papel::App, &Resposta::Lista(sem_resumo)).unwrap_err(),
-        ErroCodificar::Invalida
+        encode_response(Role::App, &Resposta::Lista(sem_resumo)).unwrap_err(),
+        EncodeError::Invalid
     );
 
     // Ataque: quadro do agente forjado com um resumo é recusado pela leitura do agente.
@@ -1819,9 +1801,9 @@ fn d65_lista_do_app_com_resumo_e_do_agente_sem() {
     let resumo = r#""resumo":{"campos":{"usuario":"app"},"segredos":["senha"],"extras":0,"anexos":0},"nome":"#;
     let forjado = texto.replacen(r#""nome":"#, resumo, 1);
     assert_ne!(forjado, texto);
-    assert!(decodificar_resposta(Papel::Agente, forjado.as_bytes()).is_err());
+    assert!(decode_response(Role::Agent, forjado.as_bytes()).is_err());
     // E o quadro do app inteiro, lido como agente.
-    assert!(decodificar_resposta(Papel::Agente, &q_app).is_err());
+    assert!(decode_response(Role::Agent, &q_app).is_err());
 
     // Ataques do lado do app: item sem resumo, resumo com campo secreto em `campos`,
     // com id de segredo desconhecido, com chave a mais ou com valor de segredo.
@@ -1837,21 +1819,18 @@ fn d65_lista_do_app_com_resumo_e_do_agente_sem() {
         format!("{}{}", &app[..i - 1], &app[fim..])
     };
     // JSON válido: a recusa é pela falta do resumo, não pela sintaxe.
-    assert!(json::ler(sem.as_bytes(), json::MAX_NOS_RESPOSTA).is_ok());
-    assert!(decodificar_resposta(Papel::App, sem.as_bytes()).is_err());
+    assert!(json::read(sem.as_bytes(), json::MAX_RESPONSE_NODES).is_ok());
+    assert!(decode_response(Role::App, sem.as_bytes()).is_err());
     for troca in [
         r#""resumo":{"campos":{"senha":"falso-PG:s3nha/01@#"},"#,
         r#""resumo":{"x":1,"#,
         r#""resumo":{"valor":"ZmFsc28tUEc=","#,
     ] {
         let f = app.replacen(alvo, troca, 1);
-        assert!(
-            decodificar_resposta(Papel::App, f.as_bytes()).is_err(),
-            "{troca}"
-        );
+        assert!(decode_response(Role::App, f.as_bytes()).is_err(), "{troca}");
     }
     let f = app.replacen(r#""segredos":["#, r#""segredos":["chave_mestra","#, 1);
-    assert!(decodificar_resposta(Papel::App, f.as_bytes()).is_err());
+    assert!(decode_response(Role::App, f.as_bytes()).is_err());
 }
 
 /// D65 b: `Alvo::segredo_em` acha cada segredo preenchido pelo identificador do
@@ -1864,7 +1843,7 @@ fn d65_alvo_acha_so_os_segredos_da_entrada() {
         let d = DetalheEntrada::de_entrada(e);
         let todos: Vec<&[u8]> = e.secrets().iter().map(|s| s.value.expose()).collect();
         for id in CAMPOS_SECRETOS_TESTE {
-            let achado = Alvo::Campo((*id).to_owned()).segredo_em(e);
+            let achado = Target::Field((*id).to_owned()).secret_in(e);
             assert_eq!(
                 achado.is_some(),
                 d.segredos.iter().any(|s| s == id),
@@ -1876,7 +1855,7 @@ fn d65_alvo_acha_so_os_segredos_da_entrada() {
             }
         }
         for x in &d.extras {
-            let achado = Alvo::Extra(x.nome.clone()).segredo_em(e);
+            let achado = Target::Extra(x.nome.clone()).secret_in(e);
             assert_eq!(
                 achado.is_some(),
                 x.valor.is_none(),
@@ -1885,21 +1864,21 @@ fn d65_alvo_acha_so_os_segredos_da_entrada() {
                 x.nome
             );
         }
-        assert!(Alvo::Extra("nao-existe".into()).segredo_em(e).is_none());
-        assert!(Alvo::Campo("usuario".into()).segredo_em(e).is_none());
+        assert!(Target::Extra("nao-existe".into()).secret_in(e).is_none());
+        assert!(Target::Field("usuario".into()).secret_in(e).is_none());
     }
     let generico = entradas
         .iter()
         .find(|e| e.name() == "gama-generico")
         .unwrap();
     assert_eq!(
-        Alvo::Extra("CHAVE_LICENCA".into())
-            .segredo_em(generico)
+        Target::Extra("CHAVE_LICENCA".into())
+            .secret_in(generico)
             .unwrap()
             .expose(),
         b"falso-licenca-01"
     );
-    assert!(Alvo::Extra("REGIAO".into()).segredo_em(generico).is_none());
+    assert!(Target::Extra("REGIAO".into()).secret_in(generico).is_none());
 }
 
 const CAMPOS_SECRETOS_TESTE: &[&str] = &[
@@ -1920,9 +1899,9 @@ const CAMPOS_SECRETOS_TESTE: &[&str] = &[
 /// a outro papel.
 #[test]
 fn v7_8_restaurar_e_backups_so_pelo_app() {
-    for op in [Operacao::Backups, Operacao::RestaurarBackup] {
+    for op in [Operation::Backups, Operation::RestoreBackup] {
         let bom = quadro_de(op, &dados_validos(op));
-        for papel in [Papel::Agente, Papel::Extensao] {
+        for papel in [Role::Agent, Role::Extension] {
             for q in [
                 bom.clone(),
                 quadro_de(op, "{}"),
@@ -1931,30 +1910,30 @@ fn v7_8_restaurar_e_backups_so_pelo_app() {
             ] {
                 assert_eq!(
                     ped(papel, &q).unwrap_err(),
-                    ErroResposta::NaoAutorizado,
+                    ResponseError::Unauthorized,
                     "{} pelo {}",
-                    op.nome(),
-                    papel.nome()
+                    op.name(),
+                    papel.name()
                 );
             }
-            let p = ped(Papel::App, &bom).unwrap();
+            let p = ped(Role::App, &bom).unwrap();
             assert_eq!(
-                codificar_pedido(papel, &p).unwrap_err(),
-                ErroCodificar::NaoPermitidaAoPapel
+                encode_request(papel, &p).unwrap_err(),
+                EncodeError::NotAllowedForRole
             );
         }
-        assert!(ped(Papel::App, &bom).is_ok());
+        assert!(ped(Role::App, &bom).is_ok());
     }
     let r = Resposta::Backups(vec![vb("ward-20261109-153000.ward", true, false)]);
-    for papel in [Papel::Agente, Papel::Extensao] {
+    for papel in [Role::Agent, Role::Extension] {
         assert_eq!(
-            codificar_resposta(papel, &r).unwrap_err(),
-            ErroCodificar::NaoPermitidaAoPapel
+            encode_response(papel, &r).unwrap_err(),
+            EncodeError::NotAllowedForRole
         );
     }
-    let bytes = codificar_resposta(Papel::App, &r).unwrap();
-    assert!(decodificar_resposta(Papel::Agente, &bytes).is_err());
-    match decodificar_resposta(Papel::App, &bytes).unwrap() {
+    let bytes = encode_response(Role::App, &r).unwrap();
+    assert!(decode_response(Role::Agent, &bytes).is_err());
+    match decode_response(Role::App, &bytes).unwrap() {
         Resposta::Backups(l) => assert_eq!(l, [vb("ward-20261109-153000.ward", true, false)]),
         outra => panic!("{outra:?}"),
     }
@@ -1978,12 +1957,12 @@ fn ataque_restaurar_com_caminho_no_nome_recusado() {
         "",
     ] {
         let q = quadro_de(
-            Operacao::RestaurarBackup,
+            Operation::RestoreBackup,
             &format!(r#"{{"versao":"{versao}","senha":"{senha}","pin":"{pin}"}}"#),
         );
         assert_eq!(
-            ped(Papel::App, &q).unwrap_err(),
-            ErroResposta::PedidoInvalido,
+            ped(Role::App, &q).unwrap_err(),
+            ResponseError::InvalidRequest,
             "{versao}"
         );
     }
@@ -1998,21 +1977,21 @@ fn ataque_restaurar_com_caminho_no_nome_recusado() {
             r#"{{"versao":"ward-20261109-153000.ward","senha":"{senha}","pin":"{pin}","geracao":9}}"#
         ),
     ] {
-        let q = quadro_de(Operacao::RestaurarBackup, &dados);
+        let q = quadro_de(Operation::RestoreBackup, &dados);
         assert_eq!(
-            ped(Papel::App, &q).unwrap_err(),
-            ErroResposta::PedidoInvalido,
+            ped(Role::App, &q).unwrap_err(),
+            ResponseError::InvalidRequest,
             "{dados}"
         );
     }
-    let p = Pedido::RestaurarBackup {
-        versao: "../cofre.ward".into(),
-        senha: seg("falso-mestra-ward-01"),
+    let p = Request::RestoreBackup {
+        version: "../cofre.ward".into(),
+        password: seg("falso-mestra-ward-01"),
         pin: seg("135790"),
     };
     assert_eq!(
-        codificar_pedido(Papel::App, &p).unwrap_err(),
-        ErroCodificar::Invalida
+        encode_request(Role::App, &p).unwrap_err(),
+        EncodeError::Invalid
     );
     // `backups` com nome fora do formato ou além do limite: o daemon não manda e o
     // cliente não aceita.
@@ -2022,8 +2001,8 @@ fn ataque_restaurar_com_caminho_no_nome_recusado() {
         Resposta::Backups(vec![vb("ward-20261109-153000.ward", false, true)]),
     ] {
         assert_eq!(
-            codificar_resposta(Papel::App, &ruim).unwrap_err(),
-            ErroCodificar::Invalida
+            encode_response(Role::App, &ruim).unwrap_err(),
+            EncodeError::Invalid
         );
     }
     for quadro in [
@@ -2038,7 +2017,7 @@ fn ataque_restaurar_com_caminho_no_nome_recusado() {
         r#"{"v":1,"tipo":"configuracao","dados":{"minutos_trava":240,"backup_externo":false}}"#,
     ] {
         assert!(
-            decodificar_resposta(Papel::App, quadro.as_bytes()).is_err(),
+            decode_response(Role::App, quadro.as_bytes()).is_err(),
             "{quadro}"
         );
     }
@@ -2046,7 +2025,7 @@ fn ataque_restaurar_com_caminho_no_nome_recusado() {
         vb("ward-20261109-153000.ward", true, false);
         MAX_BACKUPS + 1
     ]);
-    assert!(codificar_resposta(Papel::App, &muitos).is_err());
+    assert!(encode_response(Role::App, &muitos).is_err());
 }
 
 fn vb(nome: &str, conferida: bool, fora_de_ordem: bool) -> VersaoBackup {
@@ -2076,27 +2055,27 @@ fn d65_datas_so_no_detalhe_do_app() {
             .unwrap(),
     );
     let d = DetalheEntrada::de_entrada(&entradas[i]);
-    let q = codificar_resposta(Papel::App, &Resposta::Detalhe(d.clone())).unwrap();
+    let q = encode_response(Role::App, &Resposta::Detalhe(d.clone())).unwrap();
     let s = String::from_utf8(q.to_vec()).unwrap();
     assert!(s.contains(r#""criada_em":1762041600"#), "{s}");
     assert!(s.contains(r#""alterada_em":1762473600"#), "{s}");
-    match decodificar_resposta(Papel::App, &q).unwrap() {
+    match decode_response(Role::App, &q).unwrap() {
         Resposta::Detalhe(lido) => assert_eq!(lido, d),
         outra => panic!("{:?}", outra.tipo()),
     }
     // O detalhe nunca vai ao agente nem à extensão (D5), com ou sem data.
-    for papel in [Papel::Agente, Papel::Extensao] {
-        assert!(codificar_resposta(papel, &Resposta::Detalhe(d.clone())).is_err());
-        assert!(decodificar_resposta(papel, &q).is_err());
+    for papel in [Role::Agent, Role::Extension] {
+        assert!(encode_response(papel, &Resposta::Detalhe(d.clone())).is_err());
+        assert!(decode_response(papel, &q).is_err());
     }
     // A lista não leva data para ninguém.
-    for papel in [Papel::App, Papel::Agente] {
+    for papel in [Role::App, Role::Agent] {
         let itens = entradas
             .iter()
-            .filter(|e| papel == Papel::App || e.level() != AccessLevel::Blocked)
+            .filter(|e| papel == Role::App || e.level() != AccessLevel::Blocked)
             .map(|e| ItemLista::de_entrada(e, papel))
             .collect();
-        let q = codificar_resposta(papel, &Resposta::Lista(itens)).unwrap();
+        let q = encode_response(papel, &Resposta::Lista(itens)).unwrap();
         let s = String::from_utf8_lossy(&q);
         assert!(!s.contains("criada_em") && !s.contains("alterada_em"));
         assert!(!s.contains("1762041600") && !s.contains("1762473600"));
@@ -2106,8 +2085,8 @@ fn d65_datas_so_no_detalhe_do_app() {
         .iter()
         .find(|e| e.name() == "gama-bloqueada")
         .unwrap();
-    let q = codificar_resposta(
-        Papel::App,
+    let q = encode_response(
+        Role::App,
         &Resposta::Detalhe(DetalheEntrada::de_entrada(sem)),
     )
     .unwrap();
@@ -2122,17 +2101,13 @@ fn d65_datas_so_no_detalhe_do_app() {
 fn ataque_d65_detalhe_com_data_forjada_recusado() {
     let entradas = test_vault_entries();
     let e = entradas.iter().find(|e| e.name() == "acme-pg-dev").unwrap();
-    let q = codificar_resposta(
-        Papel::App,
-        &Resposta::Detalhe(DetalheEntrada::de_entrada(e)),
-    )
-    .unwrap();
+    let q = encode_response(Role::App, &Resposta::Detalhe(DetalheEntrada::de_entrada(e))).unwrap();
     let s = String::from_utf8(q.to_vec()).unwrap();
     let com = |extra: &str| s.replacen(r#""nome":"#, &format!(r#"{extra},"nome":"#), 1);
-    assert!(decodificar_resposta(Papel::App, com(r#""alterada_em":5"#).as_bytes()).is_ok());
+    assert!(decode_response(Role::App, com(r#""alterada_em":5"#).as_bytes()).is_ok());
     assert!(
-        decodificar_resposta(
-            Papel::App,
+        decode_response(
+            Role::App,
             com(r#""criada_em":5,"alterada_em":5"#).as_bytes()
         )
         .is_ok()
@@ -2152,7 +2127,7 @@ fn ataque_d65_detalhe_com_data_forjada_recusado() {
         r#""criado_em":5"#,
     ] {
         assert!(
-            decodificar_resposta(Papel::App, com(forjado).as_bytes()).is_err(),
+            decode_response(Role::App, com(forjado).as_bytes()).is_err(),
             "aceitou {forjado}"
         );
     }
@@ -2163,8 +2138,8 @@ fn ataque_d65_detalhe_com_data_forjada_recusado() {
 /// `mudar_nivel`.
 #[test]
 fn ataque_d65_data_no_rascunho_recusada() {
-    let base = dados_validos(Operacao::SalvarEntrada);
-    let q = |d: &str| ped(Papel::App, &quadro_de(Operacao::SalvarEntrada, d));
+    let base = dados_validos(Operation::SaveEntry);
+    let q = |d: &str| ped(Role::App, &quadro_de(Operation::SaveEntry, d));
     assert!(q(&base).is_ok());
     for chave in ["criada_em", "alterada_em", "datas"] {
         for valor in ["1762041600", "\"2026-11-02\"", "{}"] {
@@ -2172,34 +2147,38 @@ fn ataque_d65_data_no_rascunho_recusada() {
             let no_topo = base.replacen(r#""nome":"#, &format!(r#"{par},"nome":"#), 1);
             assert_eq!(
                 q(&no_topo).unwrap_err(),
-                ErroResposta::PedidoInvalido,
+                ResponseError::InvalidRequest,
                 "{par}"
             );
             let nos_campos = base.replacen(r#""url":"#, &format!(r#"{par},"url":"#), 1);
             assert_eq!(
                 q(&nos_campos).unwrap_err(),
-                ErroResposta::PedidoInvalido,
+                ResponseError::InvalidRequest,
                 "{par}"
             );
             let fora = com_campo(&base, &par);
-            assert_eq!(q(&fora).unwrap_err(), ErroResposta::PedidoInvalido, "{par}");
+            assert_eq!(
+                q(&fora).unwrap_err(),
+                ResponseError::InvalidRequest,
+                "{par}"
+            );
         }
     }
-    for op in [Operacao::SalvarLogin, Operacao::MudarNivel] {
+    for op in [Operation::SaveLogin, Operation::SetLevel] {
         let validos = dados_validos(op);
         let papel = papel_de(op);
         assert!(ped(papel, &quadro_de(op, &validos)).is_ok());
         let com = com_campo(&validos, r#""alterada_em":1762041600"#);
         assert_eq!(
             ped(papel, &quadro_de(op, &com)).unwrap_err(),
-            ErroResposta::PedidoInvalido
+            ResponseError::InvalidRequest
         );
     }
     let login =
-        dados_validos(Operacao::SalvarLogin).replacen(r#""nome":"#, r#""criada_em":1,"nome":"#, 1);
+        dados_validos(Operation::SaveLogin).replacen(r#""nome":"#, r#""criada_em":1,"nome":"#, 1);
     assert_eq!(
-        ped(Papel::Extensao, &quadro_de(Operacao::SalvarLogin, &login)).unwrap_err(),
-        ErroResposta::PedidoInvalido
+        ped(Role::Extension, &quadro_de(Operation::SaveLogin, &login)).unwrap_err(),
+        ResponseError::InvalidRequest
     );
 }
 
@@ -2211,12 +2190,12 @@ fn ataque_d65_data_no_rascunho_recusada() {
 #[test]
 fn v7_8_backup_externo_so_pelo_app() {
     for op in [
-        Operacao::BackupExterno,
-        Operacao::DefinirBackupExterno,
-        Operacao::Pendrives,
+        Operation::ExternalBackup,
+        Operation::SetExternalBackup,
+        Operation::UsbDrives,
     ] {
         let bom = quadro_de(op, &dados_validos(op));
-        for papel in [Papel::Agente, Papel::Extensao] {
+        for papel in [Role::Agent, Role::Extension] {
             for q in [
                 bom.clone(),
                 quadro_de(op, "{}"),
@@ -2226,19 +2205,19 @@ fn v7_8_backup_externo_so_pelo_app() {
             ] {
                 assert_eq!(
                     ped(papel, &q).unwrap_err(),
-                    ErroResposta::NaoAutorizado,
+                    ResponseError::Unauthorized,
                     "{} pelo {}",
-                    op.nome(),
-                    papel.nome()
+                    op.name(),
+                    papel.name()
                 );
             }
-            let p = ped(Papel::App, &bom).unwrap();
+            let p = ped(Role::App, &bom).unwrap();
             assert_eq!(
-                codificar_pedido(papel, &p).unwrap_err(),
-                ErroCodificar::NaoPermitidaAoPapel
+                encode_request(papel, &p).unwrap_err(),
+                EncodeError::NotAllowedForRole
             );
         }
-        assert!(ped(Papel::App, &bom).is_ok());
+        assert!(ped(Role::App, &bom).is_ok());
     }
     for r in [
         Resposta::BackupExterno {
@@ -2251,16 +2230,16 @@ fn v7_8_backup_externo_so_pelo_app() {
             montado: true,
         }]),
     ] {
-        for papel in [Papel::Agente, Papel::Extensao] {
+        for papel in [Role::Agent, Role::Extension] {
             assert_eq!(
-                codificar_resposta(papel, &r).unwrap_err(),
-                ErroCodificar::NaoPermitidaAoPapel
+                encode_response(papel, &r).unwrap_err(),
+                EncodeError::NotAllowedForRole
             );
         }
-        let bytes = codificar_resposta(Papel::App, &r).unwrap();
-        assert!(decodificar_resposta(Papel::Agente, &bytes).is_err());
-        assert!(decodificar_resposta(Papel::Extensao, &bytes).is_err());
-        assert!(decodificar_resposta(Papel::App, &bytes).is_ok());
+        let bytes = encode_response(Role::App, &r).unwrap();
+        assert!(decode_response(Role::Agent, &bytes).is_err());
+        assert!(decode_response(Role::Extension, &bytes).is_err());
+        assert!(decode_response(Role::App, &bytes).is_ok());
     }
 }
 
@@ -2283,10 +2262,10 @@ fn ataque_definir_backup_externo_fora_do_formato() {
         r#"{"uuid":"ABCD-1234"}"#.to_owned(),
         r#"{"ligado":true,"uuid":"ABCD-1234","caminho":"/tmp"}"#.to_owned(),
     ] {
-        let q = quadro_de(Operacao::DefinirBackupExterno, &dados);
+        let q = quadro_de(Operation::SetExternalBackup, &dados);
         assert_eq!(
-            ped(Papel::App, &q).unwrap_err(),
-            ErroResposta::PedidoInvalido,
+            ped(Role::App, &q).unwrap_err(),
+            ResponseError::InvalidRequest,
             "{dados}"
         );
     }
@@ -2296,16 +2275,16 @@ fn ataque_definir_backup_externo_fora_do_formato() {
         r#"{"ligado":false,"uuid":"ABCD-1234"}"#,
         r#"{"ligado":true,"uuid":"0f3c2b7e-9a51-4c1e-8d2f-5b6a7c8d9e01"}"#,
     ] {
-        let q = quadro_de(Operacao::DefinirBackupExterno, dados);
-        assert!(ped(Papel::App, &q).is_ok(), "{dados}");
+        let q = quadro_de(Operation::SetExternalBackup, dados);
+        assert!(ped(Role::App, &q).is_ok(), "{dados}");
     }
-    let p = Pedido::DefinirBackupExterno {
-        ligado: true,
+    let p = Request::SetExternalBackup {
+        enabled: true,
         uuid: None,
     };
     assert_eq!(
-        codificar_pedido(Papel::App, &p).unwrap_err(),
-        ErroCodificar::Invalida
+        encode_request(Role::App, &p).unwrap_err(),
+        EncodeError::Invalid
     );
     for ruim in [
         Resposta::Pendrives(vec![Pendrive {
@@ -2332,13 +2311,13 @@ fn ataque_definir_backup_externo_fora_do_formato() {
         },
     ] {
         assert_eq!(
-            codificar_resposta(Papel::App, &ruim).unwrap_err(),
-            ErroCodificar::Invalida,
+            encode_response(Role::App, &ruim).unwrap_err(),
+            EncodeError::Invalid,
             "{ruim:?}"
         );
     }
     let quadro = r#"{"v":1,"tipo":"pendrives","dados":{"itens":[{"uuid":"ABCD-1234","rotulo":"a\u0007b","montado":true}]}}"#;
-    assert!(decodificar_resposta(Papel::App, quadro.as_bytes()).is_err());
+    assert!(decode_response(Role::App, quadro.as_bytes()).is_err());
 }
 
 /// Fase 43 (`ward login`): as três operações e o `pedido_de_login` são só da extensão;
@@ -2359,14 +2338,14 @@ fn ataque_fase_43_login_so_extensao_e_formato_estrito() {
         ),
     ] {
         let q = format!(r#"{{"v":1,"op":"{op}","dados":{dados}}}"#);
-        for papel in [Papel::Agente, Papel::App] {
+        for papel in [Role::Agent, Role::App] {
             assert_eq!(
                 ped(papel, &q).unwrap_err(),
-                ErroResposta::NaoAutorizado,
+                ResponseError::Unauthorized,
                 "{op}"
             );
         }
-        assert!(ped(Papel::Extensao, &q).is_ok(), "{op}");
+        assert!(ped(Role::Extension, &q).is_ok(), "{op}");
     }
     for ruim in [
         r#"{"id":"curto","origem":"http://localhost:8081"}"#.to_owned(),
@@ -2384,8 +2363,8 @@ fn ataque_fase_43_login_so_extensao_e_formato_estrito() {
     ] {
         let q = format!(r#"{{"v":1,"op":"preencher_login","dados":{ruim}}}"#);
         assert_eq!(
-            ped(Papel::Extensao, &q).unwrap_err(),
-            ErroResposta::PedidoInvalido,
+            ped(Role::Extension, &q).unwrap_err(),
+            ResponseError::InvalidRequest,
             "{ruim}"
         );
     }
@@ -2394,21 +2373,21 @@ fn ataque_fase_43_login_so_extensao_e_formato_estrito() {
             r#"{{"v":1,"op":"resultado_login","dados":{{"id":"{ID}","resultado":"{ruim}"}}}}"#
         );
         assert_eq!(
-            ped(Papel::Extensao, &q).unwrap_err(),
-            ErroResposta::PedidoInvalido,
+            ped(Role::Extension, &q).unwrap_err(),
+            ResponseError::InvalidRequest,
             "{ruim}"
         );
     }
     assert_eq!(
         ped(
-            Papel::Extensao,
+            Role::Extension,
             r#"{"v":1,"op":"aguardar_login","dados":{"entrada":"x"}}"#
         )
         .unwrap_err(),
-        ErroResposta::PedidoInvalido
+        ResponseError::InvalidRequest
     );
-    for r in ResultadoLogin::TODOS {
-        assert_eq!(ResultadoLogin::de_nome(r.nome()), Some(r));
+    for r in LoginResult::ALL {
+        assert_eq!(LoginResult::from_name(r.name()), Some(r));
     }
     // O `pedido_de_login` não vai ao agente nem ao app, e não aceita campo a mais (um
     // valor da entrada, por exemplo) nem id fora do formato.
@@ -2416,25 +2395,25 @@ fn ataque_fase_43_login_so_extensao_e_formato_estrito() {
         id: ID.into(),
         entrada: "acme-wp-prod".into(),
     };
-    for papel in [Papel::Agente, Papel::App] {
+    for papel in [Role::Agent, Role::App] {
         assert_eq!(
-            codificar_resposta(papel, &p).unwrap_err(),
-            ErroCodificar::NaoPermitidaAoPapel
+            encode_response(papel, &p).unwrap_err(),
+            EncodeError::NotAllowedForRole
         );
     }
-    let q = codificar_resposta(Papel::Extensao, &p).unwrap();
+    let q = encode_response(Role::Extension, &p).unwrap();
     assert!(!String::from_utf8_lossy(&q).contains("falso"));
     let com_senha = format!(
         r#"{{"v":1,"tipo":"pedido_de_login","dados":{{"id":"{ID}","entrada":"acme-wp-prod","senha":"{}"}}}}"#,
         b64(b"falso-WP-senha-02")
     );
-    assert!(decodificar_resposta(Papel::Extensao, com_senha.as_bytes()).is_err());
+    assert!(decode_response(Role::Extension, com_senha.as_bytes()).is_err());
     let id_ruim = r#"{"v":1,"tipo":"pedido_de_login","dados":{"id":"x","entrada":"acme-wp-prod"}}"#;
-    assert!(decodificar_resposta(Papel::Extensao, id_ruim.as_bytes()).is_err());
-    for papel in [Papel::Agente, Papel::App] {
+    assert!(decode_response(Role::Extension, id_ruim.as_bytes()).is_err());
+    for papel in [Role::Agent, Role::App] {
         let bom =
             format!(r#"{{"v":1,"tipo":"pedido_de_login","dados":{{"id":"{ID}","entrada":"e"}}}}"#);
-        assert!(decodificar_resposta(papel, bom.as_bytes()).is_err());
+        assert!(decode_response(papel, bom.as_bytes()).is_err());
     }
 }
 
@@ -2446,38 +2425,36 @@ fn ataque_fase_43_login_so_extensao_e_formato_estrito() {
 fn ataque_fase_39a_pedido_de_destrave_so_app_e_formato_estrito() {
     let p = Resposta::PedidoDeDestrave(PedidoDeDestrave {
         entrada: "acme-pg-aprovacao".into(),
-        operacao: Operacao::Ssh,
+        operacao: Operation::Ssh,
         comando: r#""uptime""#.into(),
         restante: 120,
     });
-    for papel in [Papel::Agente, Papel::Extensao] {
+    for papel in [Role::Agent, Role::Extension] {
         assert_eq!(
-            codificar_resposta(papel, &p).unwrap_err(),
-            ErroCodificar::NaoPermitidaAoPapel
+            encode_response(papel, &p).unwrap_err(),
+            EncodeError::NotAllowedForRole
         );
     }
-    let q = codificar_resposta(Papel::App, &p).unwrap();
+    let q = encode_response(Role::App, &p).unwrap();
     let s = String::from_utf8(q.to_vec()).unwrap();
-    match decodificar_resposta(Papel::App, s.as_bytes()).unwrap() {
+    match decode_response(Role::App, s.as_bytes()).unwrap() {
         Resposta::PedidoDeDestrave(d) => {
             assert_eq!(d.entrada, "acme-pg-aprovacao");
-            assert_eq!(d.operacao, Operacao::Ssh);
+            assert_eq!(d.operacao, Operation::Ssh);
             assert_eq!(d.comando, r#""uptime""#);
             assert_eq!(d.restante, 120);
         }
         r => panic!("{:?}", r.tipo()),
     }
-    for papel in [Papel::Agente, Papel::Extensao] {
-        assert!(decodificar_resposta(papel, s.as_bytes()).is_err());
+    for papel in [Role::Agent, Role::Extension] {
+        assert!(decode_response(papel, s.as_bytes()).is_err());
     }
     let dados = |entrada: &str, op: &str, restante: &str, extra: &str| {
         format!(
             r#"{{"v":1,"tipo":"pedido_de_destrave","dados":{{"entrada":{entrada},"operacao":"{op}","comando":"\"uptime\"","restante":{restante}{extra}}}}}"#
         )
     };
-    assert!(
-        decodificar_resposta(Papel::App, dados(r#""a""#, "executar", "1", "").as_bytes()).is_ok()
-    );
+    assert!(decode_response(Role::App, dados(r#""a""#, "executar", "1", "").as_bytes()).is_ok());
     let grande = format!("\"{}\"", "a".repeat(wc::limits::MAX_TEXT + 1));
     for ruim in [
         dados(r#""a""#, "executar", "0", ""),
@@ -2496,7 +2473,7 @@ fn ataque_fase_39a_pedido_de_destrave_so_app_e_formato_estrito() {
         r#"{"v":1,"tipo":"pedido_de_destrave","dados":{"entrada":"a","operacao":"ssh","restante":5}}"#.to_owned(),
     ] {
         assert!(
-            decodificar_resposta(Papel::App, ruim.as_bytes()).is_err(),
+            decode_response(Role::App, ruim.as_bytes()).is_err(),
             "aceitou {ruim}"
         );
     }
@@ -2504,24 +2481,24 @@ fn ataque_fase_39a_pedido_de_destrave_so_app_e_formato_estrito() {
     for ruim in [
         PedidoDeDestrave {
             entrada: String::new(),
-            operacao: Operacao::Executar,
+            operacao: Operation::Run,
             comando: String::new(),
             restante: 5,
         },
         PedidoDeDestrave {
             entrada: "a".into(),
-            operacao: Operacao::Lista,
+            operacao: Operation::List,
             comando: String::new(),
             restante: 5,
         },
         PedidoDeDestrave {
             entrada: "a".into(),
-            operacao: Operacao::Login,
+            operacao: Operation::Login,
             comando: String::new(),
             restante: 0,
         },
     ] {
-        assert!(codificar_resposta(Papel::App, &Resposta::PedidoDeDestrave(ruim)).is_err());
+        assert!(encode_response(Role::App, &Resposta::PedidoDeDestrave(ruim)).is_err());
     }
 }
 
@@ -2534,7 +2511,7 @@ fn ataque_pedido_de_aprovacao_com_origem_fora_da_forma() {
         id: 1,
         entradas: vec!["acme-wp-dev".into()],
         ambiente: Environment::Dev,
-        operacao: Operacao::Login,
+        operacao: Operation::Login,
         comando: String::new(),
         diretorio: String::new(),
         cadeia: vec![],
@@ -2543,17 +2520,17 @@ fn ataque_pedido_de_aprovacao_com_origem_fora_da_forma() {
         entrada_oculta: false,
     };
     let escreve = |p: &PedidoDeAprovacao| {
-        codificar_resposta(Papel::App, &Resposta::PedidoDeAprovacao(p.clone())).is_ok()
+        encode_response(Role::App, &Resposta::PedidoDeAprovacao(p.clone())).is_ok()
     };
     assert!(escreve(&base));
     let mut p = base.clone();
-    p.operacao = Operacao::Executar;
+    p.operacao = Operation::Run;
     assert!(!escreve(&p), "origem no executar");
     let mut p = base.clone();
     p.origem.clear();
     assert!(!escreve(&p), "confirmação sem origem");
     let mut p = base.clone();
-    p.operacao = Operacao::Preencher;
+    p.operacao = Operation::Fill;
     p.confirmacao = false;
     assert!(!escreve(&p), "preencher com PIN");
     let mut p = base.clone();
@@ -2565,7 +2542,7 @@ fn ataque_pedido_de_aprovacao_com_origem_fora_da_forma() {
     p.entrada_oculta = true;
     assert!(!escreve(&p), "entrada oculta numa confirmação de login");
     let mut p = base.clone();
-    p.operacao = Operacao::Executar;
+    p.operacao = Operation::Run;
     p.origem.clear();
     p.confirmacao = false;
     p.entrada_oculta = true;
@@ -2583,9 +2560,9 @@ fn ataque_tipo_da_entrada_padrao_fora_do_formato() {
             .map(|t| format!(r#","tipo_entrada":{t}"#))
             .unwrap_or_default();
         ped(
-            Papel::Agente,
+            Role::Agent,
             &quadro_de(
-                Operacao::Executar,
+                Operation::Run,
                 &format!(
                     r#"{{"entrada":"acme-pg-dev","argv":["{}"],"cwd":"{}","ambiente":[]{tipo}}}"#,
                     b64(b"python3"),
@@ -2594,9 +2571,9 @@ fn ataque_tipo_da_entrada_padrao_fora_do_formato() {
             ),
         )
     };
-    for t in TipoEntradaPadrao::TODOS {
-        match exec(Some(&format!("\"{}\"", t.nome()))) {
-            Ok(Pedido::Executar(x)) => assert_eq!(x.tipo_entrada, t),
+    for t in StdinKind::ALL {
+        match exec(Some(&format!("\"{}\"", t.name()))) {
+            Ok(Request::Run(x)) => assert_eq!(x.stdin_kind, t),
             outro => panic!("{t:?}: {outro:?}"),
         }
     }
@@ -2610,15 +2587,18 @@ fn ataque_tipo_da_entrada_padrao_fora_do_formato() {
     ] {
         assert!(exec(ruim).is_err(), "{ruim:?}");
     }
-    let ssh = |dados: &str| ped(Papel::Agente, &quadro_de(Operacao::Ssh, dados));
+    let ssh = |dados: &str| ped(Role::Agent, &quadro_de(Operation::Ssh, dados));
     assert!(
         ssh(r#"{"entrada":"acme-ssh-dev"}"#).is_err(),
         "ssh sem tipo"
     );
     assert!(ssh(r#"{"entrada":"acme-ssh-dev","tipo_entrada":"pts"}"#).is_err());
     match ssh(r#"{"entrada":"acme-ssh-dev","tipo_entrada":"arquivo"}"#) {
-        Ok(Pedido::Ssh { tipo_entrada, .. }) => {
-            assert_eq!(tipo_entrada, TipoEntradaPadrao::Arquivo)
+        Ok(Request::Ssh {
+            stdin_kind: tipo_entrada,
+            ..
+        }) => {
+            assert_eq!(tipo_entrada, StdinKind::File)
         }
         outro => panic!("{outro:?}"),
     }
@@ -2630,22 +2610,24 @@ fn ataque_tipo_da_entrada_padrao_fora_do_formato() {
             String::new()
         };
         ped(
-            Papel::App,
+            Role::App,
             &quadro_de(
-                Operacao::ResponderAprovacao,
+                Operation::AnswerApproval,
                 &format!(r#"{{"pedido":7,"decisao":"{decisao}"{pin}{extra}}}"#),
             ),
         )
     };
     match resp(r#","entrada_confirmada":true"#, "uma_vez", true) {
-        Ok(Pedido::ResponderAprovacao {
-            entrada_confirmada, ..
+        Ok(Request::AnswerApproval {
+            confirmed_entry: entrada_confirmada,
+            ..
         }) => assert!(entrada_confirmada),
         outro => panic!("{outro:?}"),
     }
     match resp("", "uma_hora", true) {
-        Ok(Pedido::ResponderAprovacao {
-            entrada_confirmada, ..
+        Ok(Request::AnswerApproval {
+            confirmed_entry: entrada_confirmada,
+            ..
         }) => assert!(!entrada_confirmada),
         outro => panic!("{outro:?}"),
     }

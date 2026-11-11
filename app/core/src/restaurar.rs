@@ -21,7 +21,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use ward_core::protocolo::VersaoBackup;
+use ward_core::protocol::VersaoBackup;
 
 use crate::AppError;
 use crate::destrave::SenhaMestra;
@@ -256,7 +256,7 @@ mod testes {
     mod pelo_servico {
         use std::sync::{Arc, Mutex};
 
-        use ward_core::protocolo::{self, ErroResposta, Papel, Resposta};
+        use ward_core::protocol::{self, ResponseError, Resposta, Role};
         use zeroize::Zeroizing;
 
         use super::super::*;
@@ -487,12 +487,11 @@ mod testes {
         impl Daemon for ComoAgente {
             fn exchange(&mut self, pedido: &[u8]) -> Result<Zeroizing<Vec<u8>>, AppError> {
                 self.0.lock().unwrap().push(pedido.to_vec());
-                let r = match protocolo::decodificar_pedido(Papel::Agente, pedido) {
-                    Ok(_) => Resposta::Erro(ErroResposta::Interno),
+                let r = match protocol::decode_request(Role::Agent, pedido) {
+                    Ok(_) => Resposta::Erro(ResponseError::Internal),
                     Err(e) => Resposta::Erro(e),
                 };
-                protocolo::codificar_resposta(Papel::Agente, &r)
-                    .map_err(|_| AppError::InvalidResponse)
+                protocol::encode_response(Role::Agent, &r).map_err(|_| AppError::InvalidResponse)
             }
         }
 

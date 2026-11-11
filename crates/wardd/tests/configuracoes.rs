@@ -12,10 +12,10 @@ mod comum;
 
 use comum::*;
 use ward_core::limits::{DEFAULT_LOCK_MINUTES, MAX_LOCK_MINUTES, MIN_LOCK_MINUTES};
-use ward_core::protocolo::{ErroResposta, Papel, Resposta};
+use ward_core::protocol::{ResponseError, Resposta, Role};
 
 fn configuracao(d: &wardd::nucleo::Daemon) -> (u32, bool) {
-    match pedir(d, Papel::App, "configuracao", "{}") {
+    match pedir(d, Role::App, "configuracao", "{}") {
         Resposta::Configuracao {
             minutos_trava,
             backup_externo,
@@ -29,7 +29,7 @@ fn configuracao(d: &wardd::nucleo::Daemon) -> (u32, bool) {
     }
 }
 
-fn tempo_trava(d: &wardd::nucleo::Daemon, papel: Papel, minutos: u32) -> Resposta {
+fn tempo_trava(d: &wardd::nucleo::Daemon, papel: Role, minutos: u32) -> Resposta {
     pedir(
         d,
         papel,
@@ -38,7 +38,7 @@ fn tempo_trava(d: &wardd::nucleo::Daemon, papel: Papel, minutos: u32) -> Respost
     )
 }
 
-fn trocar_pin(d: &wardd::nucleo::Daemon, papel: Papel, atual: &str, novo: &str) -> Resposta {
+fn trocar_pin(d: &wardd::nucleo::Daemon, papel: Role, atual: &str, novo: &str) -> Resposta {
     pedir(
         d,
         papel,
@@ -51,7 +51,7 @@ fn trocar_pin(d: &wardd::nucleo::Daemon, papel: Papel, atual: &str, novo: &str) 
     )
 }
 
-fn trocar_senha(d: &wardd::nucleo::Daemon, papel: Papel, atual: &str, nova: &str) -> Resposta {
+fn trocar_senha(d: &wardd::nucleo::Daemon, papel: Role, atual: &str, nova: &str) -> Resposta {
     pedir(
         d,
         papel,
@@ -73,19 +73,19 @@ fn v5_22_padrao_4h_desligado_e_tempo_alteravel_gravado_no_cofre() {
     assert_eq!(configuracao(&d), (DEFAULT_LOCK_MINUTES, false));
     assert_eq!(DEFAULT_LOCK_MINUTES, 240);
     let antes = geracao_no_disco(&dir.caminhos().cofre, SENHA);
-    assert!(ok(&tempo_trava(&d, Papel::App, 30)));
+    assert!(ok(&tempo_trava(&d, Role::App, 30)));
     assert_eq!(configuracao(&d), (30, false));
     assert_eq!(geracao_no_disco(&dir.caminhos().cofre, SENHA), antes + 1);
     d.travar();
     assert!(ok(&destravar(&d, SENHA)));
     assert_eq!(configuracao(&d), (30, false));
     // Os extremos de D45 passam; fora deles nem chega ao daemon.
-    assert!(ok(&tempo_trava(&d, Papel::App, MIN_LOCK_MINUTES)));
-    assert!(ok(&tempo_trava(&d, Papel::App, MAX_LOCK_MINUTES)));
+    assert!(ok(&tempo_trava(&d, Role::App, MIN_LOCK_MINUTES)));
+    assert!(ok(&tempo_trava(&d, Role::App, MAX_LOCK_MINUTES)));
     for fora in [0, MAX_LOCK_MINUTES + 1, u32::MAX] {
         assert_eq!(
-            erro(&tempo_trava(&d, Papel::App, fora)),
-            Some(ErroResposta::PedidoInvalido),
+            erro(&tempo_trava(&d, Role::App, fora)),
+            Some(ResponseError::InvalidRequest),
             "{fora}"
         );
     }
@@ -99,20 +99,20 @@ fn ataque_agente_e_extensao_nao_leem_nem_mudam_a_configuracao() {
     let dir = Dir::novo("cfg-papel");
     let (d, _) = cofre_de_teste(&dir);
     let geracao = geracao_no_disco(&dir.caminhos().cofre, SENHA);
-    for papel in [Papel::Agente, Papel::Extensao] {
+    for papel in [Role::Agent, Role::Extension] {
         let r = pedir(&d, papel, "configuracao", "{}");
-        assert_eq!(erro(&r), Some(ErroResposta::NaoAutorizado), "{papel:?}");
+        assert_eq!(erro(&r), Some(ResponseError::Unauthorized), "{papel:?}");
         let r = tempo_trava(&d, papel, 1);
-        assert_eq!(erro(&r), Some(ErroResposta::NaoAutorizado), "{papel:?}");
+        assert_eq!(erro(&r), Some(ResponseError::Unauthorized), "{papel:?}");
         let r = trocar_pin(&d, papel, PIN, "2468");
-        assert_eq!(erro(&r), Some(ErroResposta::NaoAutorizado), "{papel:?}");
+        assert_eq!(erro(&r), Some(ResponseError::Unauthorized), "{papel:?}");
         let r = trocar_senha(&d, papel, SENHA, "falso-nova-mestra-02");
-        assert_eq!(erro(&r), Some(ErroResposta::NaoAutorizado), "{papel:?}");
+        assert_eq!(erro(&r), Some(ResponseError::Unauthorized), "{papel:?}");
     }
     assert_eq!(configuracao(&d), (DEFAULT_LOCK_MINUTES, false));
     assert_eq!(geracao_no_disco(&dir.caminhos().cofre, SENHA), geracao);
     // O PIN e a senha continuam os mesmos.
-    assert!(ok(&mudar_nivel(&d, Papel::App, "t-aprov", "livre", PIN)));
+    assert!(ok(&mudar_nivel(&d, Role::App, "t-aprov", "livre", PIN)));
     d.travar();
     assert!(ok(&destravar(&d, SENHA)));
 }
@@ -127,12 +127,12 @@ fn ataque_configuracao_com_o_cofre_travado() {
         ("configuracao", "{}".to_owned()),
         ("tempo_trava", r#"{"minutos":30}"#.to_owned()),
     ] {
-        let r = pedir(&d, Papel::App, op, &dados);
-        assert_eq!(erro(&r), Some(ErroResposta::Travado), "{op}");
+        let r = pedir(&d, Role::App, op, &dados);
+        assert_eq!(erro(&r), Some(ResponseError::Locked), "{op}");
     }
     assert_eq!(
-        erro(&trocar_pin(&d, Papel::App, PIN, "2468")),
-        Some(ErroResposta::Travado)
+        erro(&trocar_pin(&d, Role::App, PIN, "2468")),
+        Some(ResponseError::Locked)
     );
 }
 
@@ -142,8 +142,8 @@ fn ataque_configuracao_com_o_cofre_travado() {
 fn ataque_resposta_configuracao_sem_hash_nem_pin() {
     let dir = Dir::novo("cfg-hash");
     let (d, _) = cofre_de_teste(&dir);
-    let r = pedir(&d, Papel::App, "configuracao", "{}");
-    let bytes = codificado(Papel::App, &r);
+    let r = pedir(&d, Role::App, "configuracao", "{}");
+    let bytes = codificado(Role::App, &r);
     let texto = String::from_utf8(bytes.clone()).unwrap();
     for agulha in [
         "argon2",
@@ -172,30 +172,24 @@ fn v5_22_trocar_pin_pede_o_pin_atual() {
     let (d, _) = cofre_de_teste(&dir);
     let geracao = geracao_no_disco(&dir.caminhos().cofre, SENHA);
     assert_eq!(
-        erro(&trocar_pin(&d, Papel::App, PIN_ERRADO, "2468")),
-        Some(ErroResposta::PinIncorreto)
+        erro(&trocar_pin(&d, Role::App, PIN_ERRADO, "2468")),
+        Some(ResponseError::WrongPin)
     );
     assert_eq!(geracao_no_disco(&dir.caminhos().cofre, SENHA), geracao);
-    assert!(ok(&mudar_nivel(&d, Papel::App, "t-aprov", "livre", PIN)));
-    assert!(ok(&trocar_pin(&d, Papel::App, PIN, "2468")));
+    assert!(ok(&mudar_nivel(&d, Role::App, "t-aprov", "livre", PIN)));
+    assert!(ok(&trocar_pin(&d, Role::App, PIN, "2468")));
     assert_eq!(
         geracao_no_disco(&dir.caminhos().cofre, SENHA),
         geracao + 2,
         "mudar_nivel e trocar_pin gravam"
     );
     assert_eq!(
-        erro(&mudar_nivel(
-            &d,
-            Papel::App,
-            "t-aprov",
-            "com-aprovacao",
-            PIN
-        )),
-        Some(ErroResposta::PinIncorreto)
+        erro(&mudar_nivel(&d, Role::App, "t-aprov", "com-aprovacao", PIN)),
+        Some(ResponseError::WrongPin)
     );
     assert!(ok(&mudar_nivel(
         &d,
-        Papel::App,
+        Role::App,
         "t-aprov",
         "com-aprovacao",
         "2468"
@@ -203,12 +197,12 @@ fn v5_22_trocar_pin_pede_o_pin_atual() {
     // O PIN novo está no disco: vale depois de travar e destravar.
     d.travar();
     assert!(ok(&destravar(&d, SENHA)));
-    assert!(ok(&mudar_nivel(&d, Papel::App, "t-aprov", "livre", "2468")));
+    assert!(ok(&mudar_nivel(&d, Role::App, "t-aprov", "livre", "2468")));
     // PIN novo fora do formato nem chega ao daemon.
     for novo in ["135", "1357901", "13579a", ""] {
         assert_eq!(
-            erro(&trocar_pin(&d, Papel::App, "2468", novo)),
-            Some(ErroResposta::PedidoInvalido),
+            erro(&trocar_pin(&d, Role::App, "2468", novo)),
+            Some(ResponseError::InvalidRequest),
             "{novo:?}"
         );
     }
@@ -221,13 +215,13 @@ fn ataque_adivinhar_pin_pela_troca_trava_no_quinto_erro() {
     let dir = Dir::novo("cfg-pin5");
     let (d, _) = cofre_de_teste(&dir);
     for i in 0..5 {
-        let r = trocar_pin(&d, Papel::App, &format!("00{i:02}"), "2468");
-        assert_eq!(erro(&r), Some(ErroResposta::PinIncorreto));
+        let r = trocar_pin(&d, Role::App, &format!("00{i:02}"), "2468");
+        assert_eq!(erro(&r), Some(ResponseError::WrongPin));
     }
     assert!(d.travado());
     assert!(ok(&destravar(&d, SENHA)));
     // Nada mudou: o PIN é o antigo.
-    assert!(ok(&mudar_nivel(&d, Papel::App, "t-aprov", "livre", PIN)));
+    assert!(ok(&mudar_nivel(&d, Role::App, "t-aprov", "livre", PIN)));
 }
 
 /// V5.22: trocar a senha mestra pede a atual. Errada não muda nada; certa grava geração
@@ -236,22 +230,22 @@ fn ataque_adivinhar_pin_pela_troca_trava_no_quinto_erro() {
 fn v5_22_trocar_senha_pede_a_atual_e_mantem_a_configuracao() {
     let dir = Dir::novo("cfg-senha");
     let (d, _) = cofre_de_teste(&dir);
-    assert!(ok(&tempo_trava(&d, Papel::App, 60)));
+    assert!(ok(&tempo_trava(&d, Role::App, 60)));
     let geracao = geracao_no_disco(&dir.caminhos().cofre, SENHA);
     assert_eq!(
         erro(&trocar_senha(
             &d,
-            Papel::App,
+            Role::App,
             "falso-errada-mestra-01",
             "falso-nova-mestra-02"
         )),
-        Some(ErroResposta::SenhaIncorreta)
+        Some(ResponseError::WrongPassword)
     );
     assert!(!d.travado());
     assert_eq!(geracao_no_disco(&dir.caminhos().cofre, SENHA), geracao);
     assert!(ok(&trocar_senha(
         &d,
-        Papel::App,
+        Role::App,
         SENHA,
         "falso-nova-mestra-02"
     )));
@@ -259,11 +253,11 @@ fn v5_22_trocar_senha_pede_a_atual_e_mantem_a_configuracao() {
     d.travar();
     assert_eq!(
         erro(&destravar(&d, SENHA)),
-        Some(ErroResposta::SenhaIncorreta)
+        Some(ResponseError::WrongPassword)
     );
     assert!(ok(&destravar(&d, "falso-nova-mestra-02")));
     assert_eq!(configuracao(&d), (60, false));
-    assert!(ok(&mudar_nivel(&d, Papel::App, "t-aprov", "livre", PIN)));
+    assert!(ok(&mudar_nivel(&d, Role::App, "t-aprov", "livre", PIN)));
 }
 
 /// Fase 39c: o mínimo de 12 caracteres da senha mestra vale também no daemon, contado
@@ -273,9 +267,9 @@ fn v5_22_trocar_senha_pede_a_atual_e_mantem_a_configuracao() {
 #[test]
 fn ataque_senha_mestra_nova_curta_recusada_pelo_daemon() {
     let campo = |r: &Resposta| match r {
-        Resposta::Erro(ErroResposta::Validacao(p)) => {
-            assert!(p.iter().all(|p| p.motivo.contains("12 caracteres")));
-            p.iter().map(|p| p.campo.clone()).collect::<Vec<_>>()
+        Resposta::Erro(ResponseError::Validation(p)) => {
+            assert!(p.iter().all(|p| p.reason.contains("12 caracteres")));
+            p.iter().map(|p| p.field.clone()).collect::<Vec<_>>()
         }
         outra => panic!("{outra:?}"),
     };
@@ -289,7 +283,7 @@ fn ataque_senha_mestra_nova_curta_recusada_pelo_daemon() {
     for curta in ["falso-mest1", disfarcada.as_str()] {
         let r = pedir(
             &d,
-            Papel::App,
+            Role::App,
             "criar_cofre",
             &format!(
                 r#"{{"senha":"{}","pin":"{}"}}"#,
@@ -307,7 +301,7 @@ fn ataque_senha_mestra_nova_curta_recusada_pelo_daemon() {
     let (d, _) = cofre_de_teste(&dir);
     let antes = geracoes(&dir);
     for curta in ["falso-mest1", disfarcada.as_str()] {
-        assert_eq!(campo(&trocar_senha(&d, Papel::App, SENHA, curta)), ["nova"]);
+        assert_eq!(campo(&trocar_senha(&d, Role::App, SENHA, curta)), ["nova"]);
     }
     assert_eq!(geracoes(&dir), antes);
     d.travar();
@@ -322,12 +316,12 @@ fn senha_mestra_composta_abre_decomposta_pelo_daemon() {
     let decomposta = "falso-mestra-e\u{301}c\u{327}a\u{303}o-01";
     let dir = Dir::novo("cfg-senha-nfc");
     let (d, _) = cofre_de_teste(&dir);
-    assert!(ok(&trocar_senha(&d, Papel::App, SENHA, decomposta)));
+    assert!(ok(&trocar_senha(&d, Role::App, SENHA, decomposta)));
     d.travar();
     assert!(ok(&destravar(&d, composta)));
     d.travar();
     assert!(ok(&destravar(&d, decomposta)));
-    assert!(ok(&trocar_senha(&d, Papel::App, composta, SENHA)));
+    assert!(ok(&trocar_senha(&d, Role::App, composta, SENHA)));
 }
 
 /// Fase 55 (reauditoria final, baixo): a troca de senha lia o cofre de novo pela
@@ -364,13 +358,13 @@ fn f55_ataque_fifo_no_lugar_do_cofre_nao_prende_a_troca_de_senha() {
     {
         let d = d.clone();
         std::thread::spawn(move || {
-            let _ = tx.send(trocar_senha(&d, Papel::App, SENHA, "falso-nova-mestra-55"));
+            let _ = tx.send(trocar_senha(&d, Role::App, SENHA, "falso-nova-mestra-55"));
         });
     }
     let r = rx
         .recv_timeout(Duration::from_secs(5))
         .expect("a troca de senha ficou presa no FIFO");
-    assert_eq!(erro(&r), Some(ErroResposta::CofreMudou), "{r:?}");
+    assert_eq!(erro(&r), Some(ResponseError::VaultChanged), "{r:?}");
     assert!(d.travado());
     let volta = dir.0.join("x-volta");
     fs::hard_link(&real, &volta).unwrap();
@@ -412,11 +406,11 @@ fn f55_ataque_fifo_no_lugar_do_cofre_nao_prende_a_troca_de_senha() {
         std::thread::spawn(move || {
             let r = trocar_senha(
                 &d2,
-                Papel::App,
+                Role::App,
                 "falso-senha-errada-55",
                 "falso-nova-mestra-55",
             );
-            if erro(&r) != Some(ErroResposta::SenhaIncorreta) {
+            if erro(&r) != Some(ResponseError::WrongPassword) {
                 // Travou (o arquivo mudou ou erros demais): destrava de novo (o
                 // destravar também lê sem seguir FIFO; tenta até pegar o real).
                 for _ in 0..50 {
@@ -434,12 +428,14 @@ fn f55_ataque_fifo_no_lugar_do_cofre_nao_prende_a_troca_de_senha() {
             matches!(
                 erro(&r),
                 Some(
-                    ErroResposta::SenhaIncorreta | ErroResposta::CofreMudou | ErroResposta::Travado
+                    ResponseError::WrongPassword
+                        | ResponseError::VaultChanged
+                        | ResponseError::Locked
                 )
             ),
             "{r:?}"
         );
-        if erro(&r) == Some(ErroResposta::SenhaIncorreta) {
+        if erro(&r) == Some(ResponseError::WrongPassword) {
             lidos += 1;
         }
         pedidos += 1;
@@ -454,6 +450,6 @@ fn f55_ataque_fifo_no_lugar_do_cofre_nao_prende_a_troca_de_senha() {
     if d.travado() {
         assert!(ok(&destravar(&d, SENHA)));
     }
-    let r = trocar_senha(&d, Papel::App, SENHA, "falso-nova-mestra-55");
+    let r = trocar_senha(&d, Role::App, SENHA, "falso-nova-mestra-55");
     assert!(ok(&r), "{r:?}");
 }

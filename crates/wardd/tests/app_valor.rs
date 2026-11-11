@@ -30,7 +30,7 @@ use std::time::{Duration, Instant};
 use comum::{Dir, b64};
 use ward_core::atomic_write::write_entries;
 use ward_core::format::{MasterPassword, OpenVault};
-use ward_core::protocolo::{self, ErroResposta, Papel, Resposta};
+use ward_core::protocol::{self, ResponseError, Resposta, Role};
 
 // O cofre de teste pela API pública (o mesmo do app de teste e do daemon falso).
 use ward_core as wc;
@@ -177,7 +177,7 @@ fn mandar(s: &mut UnixStream, json: &str) -> Resposta {
     s.read_exact(&mut n).unwrap();
     let mut b = vec![0u8; u32::from_be_bytes(n) as usize];
     s.read_exact(&mut b).unwrap();
-    protocolo::decodificar_resposta(Papel::Agente, &b).unwrap()
+    protocol::decode_response(Role::Agent, &b).unwrap()
 }
 
 #[test]
@@ -252,9 +252,9 @@ fn v3_39_v3_40_valores_e_lista_do_app_pelo_daemon_de_teste() {
         assert_eq!(ataques.len(), 8, "{nome}");
         for l in ataques {
             let (pedido, resposta) = l.split_at(l.find('{').unwrap());
-            let r = protocolo::decodificar_resposta(Papel::Agente, resposta.as_bytes());
+            let r = protocol::decode_response(Role::Agent, resposta.as_bytes());
             assert!(
-                matches!(r, Ok(Resposta::Erro(ErroResposta::NaoAutorizado))),
+                matches!(r, Ok(Resposta::Erro(ResponseError::Unauthorized))),
                 "{nome} {pedido}"
             );
         }

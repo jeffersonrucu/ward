@@ -17,7 +17,7 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use comum::*;
-use ward_core::protocolo::{self, ErroResposta, Papel, Resposta};
+use ward_core::protocol::{self, ResponseError, Resposta, Role};
 
 const WARDD: &str = env!("CARGO_BIN_EXE_wardd");
 
@@ -107,7 +107,7 @@ fn receber(s: &mut UnixStream) -> Option<Vec<u8>> {
 fn pedir_por(s: &mut UnixStream, op: &str, dados: &str) -> (Vec<u8>, Resposta) {
     mandar(s, &format!(r#"{{"v":1,"op":"{op}","dados":{dados}}}"#));
     let b = receber(s).expect("sem resposta");
-    let r = protocolo::decodificar_resposta(Papel::Agente, &b).unwrap();
+    let r = protocol::decode_response(Role::Agent, &b).unwrap();
     (b, r)
 }
 
@@ -163,14 +163,14 @@ fn v3_20_ciclo_pelo_socket_sem_segredo_no_log() {
             Resposta::Estado {
                 travado: true,
                 cofre_existe: true,
-                papel: Papel::Agente,
+                papel: Role::Agent,
             }
         ),
         "{r:?}"
     );
     // Senha errada: mesma resposta, sem contagem; a certa (que espera 1 s) destrava.
     let (q1, r) = pedir_por(&mut s, "destravar", &senha_json("falso-errada-01"));
-    assert_eq!(protocolo_erro(&r), Some(ErroResposta::SenhaIncorreta));
+    assert_eq!(protocolo_erro(&r), Some(ResponseError::WrongPassword));
     let (_, r) = pedir_por(&mut s, "destravar", &senha_json(SENHA));
     assert!(ok(&r), "{r:?}");
 
@@ -201,13 +201,13 @@ fn v3_20_ciclo_pelo_socket_sem_segredo_no_log() {
             b64(PIN.as_bytes())
         ),
     );
-    assert_eq!(protocolo_erro(&r), Some(ErroResposta::NaoAutorizado));
+    assert_eq!(protocolo_erro(&r), Some(ResponseError::Unauthorized));
     // Fase 23: o agente não responde aprovação (e não há operação para receber os
     // avisos: só a conexão do papel app os recebe, D65); o
     // `abrir_app` sem instalação (daemon de teste, D63 sem a 23a) é "aprovação
     // indisponível", e o uso com aprovação também (D21).
     let (_, r) = pedir_por(&mut s, "receber_pedidos", "{}");
-    assert_eq!(protocolo_erro(&r), Some(ErroResposta::OperacaoDesconhecida));
+    assert_eq!(protocolo_erro(&r), Some(ResponseError::UnknownOperation));
     let (_, r) = pedir_por(
         &mut s,
         "responder_aprovacao",
@@ -216,21 +216,18 @@ fn v3_20_ciclo_pelo_socket_sem_segredo_no_log() {
             b64(PIN.as_bytes())
         ),
     );
-    assert_eq!(protocolo_erro(&r), Some(ErroResposta::NaoAutorizado));
+    assert_eq!(protocolo_erro(&r), Some(ResponseError::Unauthorized));
     let (_, r) = pedir_por(&mut s, "abrir_app", "{}");
     // Sem `WARD_DEV_APP`, o daemon de teste usa o lançador do `ward-app` instalado: numa
     // máquina sem o Ward é "aprovação indisponível"; com ele instalado, abre (Ok).
     let instalado = std::path::Path::new("/usr/local/bin/ward-app").exists();
     let e = protocolo_erro(&r);
     assert!(
-        e == Some(ErroResposta::AprovacaoIndisponivel) || (instalado && e.is_none()),
+        e == Some(ResponseError::ApprovalUnavailable) || (instalado && e.is_none()),
         "abrir_app: {e:?}"
     );
     let (_, r) = pedir_por(&mut s, "executar", &exec("t-aprov"));
-    assert_eq!(
-        protocolo_erro(&r),
-        Some(ErroResposta::AprovacaoIndisponivel)
-    );
+    assert_eq!(protocolo_erro(&r), Some(ResponseError::ApprovalUnavailable));
 
     // V3.4: 70 conexões paradas não tiram o atendimento (a mais antiga parada sai).
     let paradas: Vec<UnixStream> = (0..70).map(|_| conectar(&w)).collect();
@@ -265,7 +262,7 @@ fn v3_20_ciclo_pelo_socket_sem_segredo_no_log() {
     let (_, r) = pedir_por(&mut s, "travar", "{}");
     assert!(ok(&r));
     let (_, r) = pedir_por(&mut s, "lista", "{}");
-    assert_eq!(protocolo_erro(&r), Some(ErroResposta::Travado));
+    assert_eq!(protocolo_erro(&r), Some(ResponseError::Locked));
     drop(s);
     drop(nova);
 
@@ -288,7 +285,7 @@ fn v3_20_ciclo_pelo_socket_sem_segredo_no_log() {
     assert!(!contem(&q1, b"falso"));
 }
 
-fn protocolo_erro(r: &Resposta) -> Option<ErroResposta> {
+fn protocolo_erro(r: &Resposta) -> Option<ResponseError> {
     erro(r)
 }
 
@@ -316,7 +313,7 @@ fn v3_33_kill_9_entre_as_senhas_erradas() {
         let t = Instant::now();
         let (_, r) = pedir_por(&mut s, "destravar", &senha_json("falso-errada-k9"));
         esperas.push(t.elapsed());
-        assert_eq!(protocolo_erro(&r), Some(ErroResposta::SenhaIncorreta));
+        assert_eq!(protocolo_erro(&r), Some(ResponseError::WrongPassword));
         // Gravado (com fsync) antes da resposta: o `kill -9` logo depois não perde.
         w.filho.kill().unwrap();
         let _ = w.filho.wait();

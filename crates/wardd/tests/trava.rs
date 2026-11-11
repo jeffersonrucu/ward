@@ -27,7 +27,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use comum::*;
-use ward_core::protocolo::{self, ErroResposta, Papel, Resposta};
+use ward_core::protocol::{self, ResponseError, Resposta, Role};
 use wardd::nucleo::{Daemon, Relogio};
 use zbus::Connection;
 use zbus::Variant as Value;
@@ -83,7 +83,7 @@ fn cofre_com_relogio(dir: &Dir) -> (Daemon, RelogioManual) {
     let d = Daemon::novo(dir.caminhos(), Box::new(r.clone()));
     let criar = pedir(
         &d,
-        Papel::App,
+        Role::App,
         "criar_cofre",
         &format!(
             r#"{{"senha":"{}","pin":"{}"}}"#,
@@ -94,7 +94,7 @@ fn cofre_com_relogio(dir: &Dir) -> (Daemon, RelogioManual) {
     assert!(ok(&criar), "{criar:?}");
     let s = pedir(
         &d,
-        Papel::App,
+        Role::App,
         "salvar_entrada",
         &login("t-aprov", SEGREDOS[0]),
     );
@@ -104,7 +104,7 @@ fn cofre_com_relogio(dir: &Dir) -> (Daemon, RelogioManual) {
 
 /// Uma ação do app (a lista da tela Credenciais): conta como uso (Fase 54).
 fn lista_ok(d: &Daemon) {
-    let r = pedir(d, Papel::App, "lista", "{}");
+    let r = pedir(d, Role::App, "lista", "{}");
     assert!(matches!(r, Resposta::Lista(_)), "{r:?}");
 }
 
@@ -120,8 +120,8 @@ fn v3_19_inatividade_com_relogio_injetado() {
     assert!(d.travar_se_inativo(), "4h00 sem uso trava");
     assert!(d.travado());
     assert_eq!(
-        erro(&pedir(&d, Papel::Agente, "lista", "{}")),
-        Some(ErroResposta::Travado)
+        erro(&pedir(&d, Role::Agent, "lista", "{}")),
+        Some(ResponseError::Locked)
     );
     // Travado, nada mais a fazer.
     assert!(!d.travar_se_inativo());
@@ -144,7 +144,7 @@ fn v3_19_inatividade_com_relogio_injetado() {
 fn v3_19_tempo_lido_da_configuracao_do_cofre() {
     let dir = Dir::novo("cfg");
     let (d, r) = cofre_com_relogio(&dir);
-    let t = pedir(&d, Papel::App, "tempo_trava", r#"{"minutos":30}"#);
+    let t = pedir(&d, Role::App, "tempo_trava", r#"{"minutos":30}"#);
     assert!(ok(&t), "{t:?}");
     r.por(30 * 60 - 1);
     assert!(!d.travar_se_inativo());
@@ -170,32 +170,27 @@ fn ataque_agente_nao_segura_o_cofre_aberto_com_estado_ou_erro() {
     while t < 4 * H {
         r.por(t);
         assert!(matches!(
-            pedir(&d, Papel::Agente, "estado", "{}"),
+            pedir(&d, Role::Agent, "estado", "{}"),
             Resposta::Estado { travado: false, .. }
         ));
         assert_eq!(
-            erro(&pedir(
-                &d,
-                Papel::Agente,
-                "executar",
-                &executar("nao-existe")
-            )),
-            Some(ErroResposta::EntradaInexistente)
+            erro(&pedir(&d, Role::Agent, "executar", &executar("nao-existe"))),
+            Some(ResponseError::EntryNotFound)
         );
         // `destravar` com o cofre já aberto (qualquer senha) não é uso.
         assert!(ok(&destravar(&d, "qualquer-coisa")));
         assert!(
             erro(&pedir(
                 &d,
-                Papel::Agente,
+                Role::Agent,
                 "detalhe",
                 r#"{"entrada":"t-aprov"}"#
             ))
             .is_some()
         );
         if t % 2400 == 0 && t / 2400 < 4 {
-            let m = mudar_nivel(&d, Papel::App, "t-aprov", "livre", PIN_ERRADO);
-            assert_eq!(erro(&m), Some(ErroResposta::PinIncorreto));
+            let m = mudar_nivel(&d, Role::App, "t-aprov", "livre", PIN_ERRADO);
+            assert_eq!(erro(&m), Some(ResponseError::WrongPin));
         }
         assert!(!d.travar_se_inativo(), "t = {t}");
         t += 600;
@@ -217,15 +212,15 @@ fn ataque_lista_periodica_do_agente_nao_adia_a_trava() {
     let mut t = 0;
     while t < 4 * H {
         r.por(t);
-        let l = pedir(&d, Papel::Agente, "lista", "{}");
+        let l = pedir(&d, Role::Agent, "lista", "{}");
         assert!(matches!(l, Resposta::Lista(_)), "{l:?}");
         let s = pedir(
             &d,
-            Papel::Extensao,
+            Role::Extension,
             "sugerir",
             r#"{"origem":"https://wp.acme.test"}"#,
         );
-        assert!(!matches!(s, Resposta::Erro(ErroResposta::Travado)), "{s:?}");
+        assert!(!matches!(s, Resposta::Erro(ResponseError::Locked)), "{s:?}");
         assert!(!d.travar_se_inativo(), "t = {t}");
         t += 600;
     }
@@ -257,20 +252,20 @@ fn ataque_f55_ward_run_negado_e_janela_nao_adiam_a_trava() {
         b64(SEGREDOS[1].as_bytes()),
         b64(b"JBSWY3DPEHPK3PXP")
     );
-    assert!(ok(&pedir(&d, Papel::App, "salvar_entrada", &totp)));
+    assert!(ok(&pedir(&d, Role::App, "salvar_entrada", &totp)));
     let mut t = 0;
     while t < 4 * H {
         r.por(t);
         let (negado, vistos) = com_janela(&d, "negar", None, || {
-            let p = ped(Papel::Agente, "executar", &executar("t-aprov")).unwrap();
+            let p = ped(Role::Agent, "executar", &executar("t-aprov")).unwrap();
             d.autorizar_uso(&wardd::aprovacao::SemCliente, &p)
         });
-        assert_eq!(negado.err(), Some(ErroResposta::Negado));
+        assert_eq!(negado.err(), Some(ResponseError::Denied));
         assert_eq!(vistos.len(), 1);
         // O que a janela pede para mostrar o pedido e o formulário aberto.
-        let det = pedir(&d, Papel::App, "detalhe", r#"{"entrada":"t-aprov"}"#);
+        let det = pedir(&d, Role::App, "detalhe", r#"{"entrada":"t-aprov"}"#);
         assert!(matches!(det, Resposta::Detalhe(_)), "{det:?}");
-        let c = pedir(&d, Papel::App, "totp", r#"{"entrada":"t-totp"}"#);
+        let c = pedir(&d, Role::App, "totp", r#"{"entrada":"t-totp"}"#);
         assert!(matches!(c, Resposta::CodigoTotp { .. }), "{c:?}");
         assert!(!d.travar_se_inativo(), "t = {t}");
         t += 600;
@@ -302,11 +297,11 @@ fn d62_trava_automatica_nao_mexe_na_espera_do_d20() {
     // Depois da trava automática, a primeira tentativa não espera.
     assert_eq!(
         erro(&destravar(&d, "senha-errada")),
-        Some(ErroResposta::SenhaIncorreta)
+        Some(ResponseError::WrongPassword)
     );
     assert_eq!(
         erro(&destravar(&d, "senha-errada")),
-        Some(ErroResposta::SenhaIncorreta)
+        Some(ResponseError::WrongPassword)
     );
     assert_eq!(r.esperas(), [Duration::ZERO, Duration::from_secs(1)]);
     // Travado, a conferência de inatividade não zera as duas falhas: a próxima espera 2 s.
@@ -334,7 +329,7 @@ fn ataque_relogio_que_volta_ou_ilegivel_trava() {
     r.por(6 * H);
     assert!(ok(&destravar(&d, SENHA)));
     r.ilegivel();
-    let _ = pedir(&d, Papel::App, "lista", "{}");
+    let _ = pedir(&d, Role::App, "lista", "{}");
     r.por(6 * H + 1);
     assert!(d.travar_se_inativo());
 }
@@ -658,8 +653,8 @@ fn ataque_sinal_forjado_nao_destrava_nem_segura() {
     std::thread::sleep(Duration::from_millis(300));
     assert!(d.travado(), "nada do barramento destrava");
     assert_eq!(
-        erro(&pedir(&d, Papel::Agente, "lista", "{}")),
-        Some(ErroResposta::Travado)
+        erro(&pedir(&d, Role::Agent, "lista", "{}")),
+        Some(ResponseError::Locked)
     );
 }
 
@@ -676,7 +671,7 @@ fn pedir_por(s: &mut UnixStream, op: &str, dados: &str) -> Resposta {
     s.read_exact(&mut n).unwrap();
     let mut q = vec![0u8; u32::from_be_bytes(n) as usize];
     s.read_exact(&mut q).unwrap();
-    protocolo::decodificar_resposta(Papel::Agente, &q).unwrap()
+    protocol::decode_response(Role::Agent, &q).unwrap()
 }
 
 struct Filho(Child);

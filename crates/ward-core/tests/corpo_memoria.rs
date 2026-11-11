@@ -606,8 +606,8 @@ fn saida_vec(cfg: &VaultConfig) -> Vec<u8> {
 #[test]
 fn s8_protocolo_nenhum_bloco_liberado_tem_segredo() {
     use std::io::Cursor;
-    use ward_core::protocolo::quadro::{escrever_quadro, ler_quadro, limite_do_quadro};
-    use ward_core::protocolo::{self, ErroResposta, Papel, Pedido, Resposta};
+    use ward_core::protocol::frame::{frame_limit, read_frame, write_frame};
+    use ward_core::protocol::{self, Request, ResponseError, Resposta, Role};
     use zeroize::Zeroizing;
 
     fn s(v: &str) -> Secret {
@@ -640,15 +640,15 @@ fn s8_protocolo_nenhum_bloco_liberado_tem_segredo() {
     /// Escreve o quadro num buffer que zera e lê de volta pelo leitor de quadros.
     fn pelo_socket(q: &[u8], limite: usize) -> Zeroizing<Vec<u8>> {
         let mut buf = Zeroizing::new(vec![0u8; q.len() + 4]);
-        escrever_quadro(&mut Cursor::new(&mut buf[..]), q, limite).unwrap();
-        ler_quadro(&mut &buf[..], limite).unwrap()
+        write_frame(&mut Cursor::new(&mut buf[..]), q, limite).unwrap();
+        read_frame(&mut &buf[..], limite).unwrap()
     }
 
     // A marca extra é o base64 da senha mestra, como vai no quadro.
-    let destravar = Pedido::Destravar {
-        senha: s(MASTER_PASSWORD),
+    let destravar = Request::Unlock {
+        password: s(MASTER_PASSWORD),
     };
-    let q = protocolo::codificar_pedido(Papel::Agente, &destravar).unwrap();
+    let q = protocol::encode_request(Role::Agent, &destravar).unwrap();
     let texto = core::str::from_utf8(&q).unwrap();
     let ini = texto.find(r#""senha":""#).unwrap() + 9;
     let fim = ini + texto[ini..].find('"').unwrap();
@@ -661,15 +661,15 @@ fn s8_protocolo_nenhum_bloco_liberado_tem_segredo() {
     drop((q, destravar));
 
     let achados = procurando(|| {
-        let limite_comum = limite_do_quadro(Papel::Agente);
-        let limite_app = limite_do_quadro(Papel::App);
+        let limite_comum = frame_limit(Role::Agent);
+        let limite_app = frame_limit(Role::App);
         // Destravar pela CLI.
-        let p = Pedido::Destravar {
-            senha: s(MASTER_PASSWORD),
+        let p = Request::Unlock {
+            password: s(MASTER_PASSWORD),
         };
-        let q = protocolo::codificar_pedido(Papel::Agente, &p).unwrap();
+        let q = protocol::encode_request(Role::Agent, &p).unwrap();
         let lido = pelo_socket(&q, limite_comum);
-        let Ok(Pedido::Destravar { senha }) = protocolo::decodificar_pedido(Papel::Agente, &lido)
+        let Ok(Request::Unlock { password: senha }) = protocol::decode_request(Role::Agent, &lido)
         else {
             panic!("destravar não voltou")
         };
@@ -677,48 +677,47 @@ fn s8_protocolo_nenhum_bloco_liberado_tem_segredo() {
         drop((p, q, lido, senha));
 
         // Salvar pelo app, validar o que chegou e responder um segredo ao app.
-        let p = Pedido::SalvarEntrada {
-            anterior: None,
-            rascunho: rascunho("falso-anexo-01"),
-            manter_anexos: Vec::new(),
+        let p = Request::SaveEntry {
+            previous: None,
+            draft: rascunho("falso-anexo-01"),
+            keep_attachments: Vec::new(),
         };
-        let q = protocolo::codificar_pedido(Papel::App, &p).unwrap();
+        let q = protocol::encode_request(Role::App, &p).unwrap();
         let lido = pelo_socket(&q, limite_app);
-        let Ok(Pedido::SalvarEntrada { rascunho: r, .. }) =
-            protocolo::decodificar_pedido(Papel::App, &lido)
+        let Ok(Request::SaveEntry { draft: r, .. }) = protocol::decode_request(Role::App, &lido)
         else {
             panic!("salvar não voltou")
         };
         let entrada = r.validate().unwrap();
         let resposta = Resposta::Segredo(s("falso-REDIR-01"));
-        let qr = protocolo::codificar_resposta(Papel::App, &resposta).unwrap();
-        let lida = protocolo::decodificar_resposta(Papel::App, &qr).unwrap();
+        let qr = protocol::encode_response(Role::App, &resposta).unwrap();
+        let lida = protocol::decode_response(Role::App, &qr).unwrap();
         // O agente não lê esse quadro (S1).
-        assert!(protocolo::decodificar_resposta(Papel::Agente, &qr).is_err());
+        assert!(protocol::decode_response(Role::Agent, &qr).is_err());
         drop((p, q, lido, entrada, resposta, qr, lida));
 
         // Recusas: a mesma operação pelo agente e um anexo acima da soma de D29.
-        let p = Pedido::SalvarEntrada {
-            anterior: None,
-            rascunho: rascunho("falso-anexo-01"),
-            manter_anexos: Vec::new(),
+        let p = Request::SaveEntry {
+            previous: None,
+            draft: rascunho("falso-anexo-01"),
+            keep_attachments: Vec::new(),
         };
-        let q = protocolo::codificar_pedido(Papel::App, &p).unwrap();
+        let q = protocol::encode_request(Role::App, &p).unwrap();
         assert_eq!(
-            protocolo::decodificar_pedido(Papel::Agente, &q).unwrap_err(),
-            ErroResposta::NaoAutorizado
+            protocol::decode_request(Role::Agent, &q).unwrap_err(),
+            ResponseError::Unauthorized
         );
         let mut grande = Zeroizing::new(String::with_capacity(MAX_ATTACHMENTS_TOTAL + 1));
         grande.push_str("falso-anexo-01");
         while grande.len() <= MAX_ATTACHMENTS_TOTAL {
             grande.push('x');
         }
-        let acima = Pedido::SalvarEntrada {
-            anterior: None,
-            rascunho: rascunho(&grande),
-            manter_anexos: Vec::new(),
+        let acima = Request::SaveEntry {
+            previous: None,
+            draft: rascunho(&grande),
+            keep_attachments: Vec::new(),
         };
-        assert!(protocolo::codificar_pedido(Papel::App, &acima).is_err());
+        assert!(protocol::encode_request(Role::App, &acima).is_err());
         drop((p, q, grande, acima));
     });
     assert_eq!(achados, 0, "segredo do protocolo em bloco liberado");

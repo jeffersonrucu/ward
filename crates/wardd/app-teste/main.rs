@@ -27,7 +27,7 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use ward_core::entry::Entry;
-use ward_core::protocolo::{self, Alvo, Papel, Pedido, Resposta};
+use ward_core::protocol::{self, Request, Resposta, Role, Target};
 use ward_core::totp::Totp;
 
 // O cofre de teste (só valores falsos) pela API pública, como o daemon falso do app.
@@ -35,8 +35,8 @@ use ward_core as wc;
 #[path = "../../ward-core/src/body/test_vault.rs"]
 mod test_vault;
 
-fn pedir(s: &mut UnixStream, p: &Pedido) -> Option<Vec<u8>> {
-    let corpo = protocolo::codificar_pedido(Papel::App, p).ok()?;
+fn pedir(s: &mut UnixStream, p: &Request) -> Option<Vec<u8>> {
+    let corpo = protocol::encode_request(Role::App, p).ok()?;
     s.write_all(&u32::try_from(corpo.len()).ok()?.to_be_bytes())
         .and_then(|()| s.write_all(&corpo))
         .ok()?;
@@ -51,10 +51,10 @@ fn pedir(s: &mut UnixStream, p: &Pedido) -> Option<Vec<u8>> {
 /// O papel vem do `estado`; o resto da leitura é a do agente (aceita tudo que o daemon
 /// manda a qualquer papel) para o tipo do `revelar`.
 fn descrever(corpo: &[u8]) -> String {
-    for papel in [Papel::App, Papel::Agente] {
-        match protocolo::decodificar_resposta(papel, corpo) {
-            Ok(Resposta::Erro(e)) => return e.codigo().to_owned(),
-            Ok(r) => return r.tipo().nome().to_owned(),
+    for papel in [Role::App, Role::Agent] {
+        match protocol::decode_response(papel, corpo) {
+            Ok(Resposta::Erro(e)) => return e.code().to_owned(),
+            Ok(r) => return r.tipo().name().to_owned(),
             Err(_) => {}
         }
     }
@@ -62,9 +62,9 @@ fn descrever(corpo: &[u8]) -> String {
 }
 
 /// O segredo da entrada do cofre de teste (para comparar, nunca para imprimir).
-fn esperado<'a>(entradas: &'a [Entry], nome: &str, alvo: &Alvo) -> Option<&'a [u8]> {
+fn esperado<'a>(entradas: &'a [Entry], nome: &str, alvo: &Target) -> Option<&'a [u8]> {
     let e = entradas.iter().find(|e| e.name() == nome)?;
-    alvo.segredo_em(e).map(|s| s.expose())
+    alvo.secret_in(e).map(|s| s.expose())
 }
 
 /// `igual`/`diferente` para um `segredo`; o tipo ou o código do erro para o resto.
@@ -72,7 +72,7 @@ fn comparar(corpo: Option<&[u8]>, esperado: Option<&[u8]>) -> String {
     let Some(corpo) = corpo else {
         return String::new();
     };
-    match protocolo::decodificar_resposta(Papel::App, corpo) {
+    match protocol::decode_response(Role::App, corpo) {
         Ok(Resposta::Segredo(s)) if Some(s.expose()) == esperado => "igual".to_owned(),
         Ok(Resposta::Segredo(_)) => "diferente".to_owned(),
         _ => descrever(corpo),
@@ -86,21 +86,21 @@ fn contem(palheiro: &[u8], agulha: &[u8]) -> bool {
 /// D65 b e c contra o cofre de teste: o que o app recebe, comparado sem imprimir.
 fn valores_do_app(s: &mut UnixStream) {
     let entradas = test_vault::test_vault_entries();
-    let senha = || Alvo::Campo("senha".into());
+    let senha = || Target::Field("senha".into());
     for (rotulo, revelar, nome) in [
         ("revelar_pg", true, "acme-pg-dev"),
         ("revelar_bloqueada", true, "gama-bloqueada"),
         ("copiar_pg", false, "acme-pg-dev"),
     ] {
         let p = if revelar {
-            Pedido::Revelar {
-                entrada: nome.into(),
-                alvo: senha(),
+            Request::Reveal {
+                entry: nome.into(),
+                target: senha(),
             }
         } else {
-            Pedido::Copiar {
-                entrada: nome.into(),
-                alvo: senha(),
+            Request::Copy {
+                entry: nome.into(),
+                target: senha(),
             }
         };
         let r = pedir(s, &p);
@@ -112,7 +112,7 @@ fn valores_do_app(s: &mut UnixStream) {
     let semente = esperado(
         &entradas,
         "acme-totp-dev",
-        &Alvo::Campo("totp_semente".into()),
+        &Target::Field("totp_semente".into()),
     )
     .map(|v| wc::entry::Secret::from_bytes(v.to_vec()));
     let local = || {
@@ -125,14 +125,14 @@ fn valores_do_app(s: &mut UnixStream) {
     let antes = local();
     let r = pedir(
         s,
-        &Pedido::Totp {
-            entrada: "acme-totp-dev".into(),
+        &Request::Totp {
+            entry: "acme-totp-dev".into(),
         },
     );
     let depois = local();
     let totp = match r
         .as_deref()
-        .map(|c| protocolo::decodificar_resposta(Papel::App, c))
+        .map(|c| protocol::decode_response(Role::App, c))
     {
         Some(Ok(Resposta::CodigoTotp { codigo, restante })) => {
             let bate = [&antes, &depois]
@@ -149,19 +149,19 @@ fn valores_do_app(s: &mut UnixStream) {
     println!("totp={totp}");
     let r = pedir(
         s,
-        &Pedido::Revelar {
-            entrada: "acme-pg-dev".into(),
-            alvo: Alvo::Campo("chave_privada".into()),
+        &Request::Reveal {
+            entry: "acme-pg-dev".into(),
+            target: Target::Field("chave_privada".into()),
         },
     );
     println!(
         "campo_inexistente={}",
         r.as_deref().map(descrever).unwrap_or_default()
     );
-    let r = pedir(s, &Pedido::Lista);
+    let r = pedir(s, &Request::List);
     let lista = match r
         .as_deref()
-        .map(|c| (c, protocolo::decodificar_resposta(Papel::App, c)))
+        .map(|c| (c, protocol::decode_response(Role::App, c)))
     {
         Some((c, Ok(Resposta::Lista(itens)))) => {
             if itens.len() != entradas.len() {
@@ -180,13 +180,13 @@ fn valores_do_app(s: &mut UnixStream) {
         _ => r.as_deref().map(descrever).unwrap_or_default(),
     };
     println!("lista={lista}");
-    let r = pedir(s, &Pedido::Travar);
+    let r = pedir(s, &Request::Lock);
     println!("travar={}", r.as_deref().map(descrever).unwrap_or_default());
     let r = pedir(
         s,
-        &Pedido::Revelar {
-            entrada: "acme-pg-dev".into(),
-            alvo: senha(),
+        &Request::Reveal {
+            entry: "acme-pg-dev".into(),
+            target: senha(),
         },
     );
     println!(
@@ -221,23 +221,23 @@ fn main() -> ExitCode {
         }
     };
     let _ = s.set_read_timeout(Some(Duration::from_secs(10)));
-    let papel = pedir(&mut s, &Pedido::Estado).and_then(|c| {
-        Papel::TODOS
+    let papel = pedir(&mut s, &Request::Status).and_then(|c| {
+        Role::ALL
             .into_iter()
-            .find_map(|p| match protocolo::decodificar_resposta(p, &c) {
+            .find_map(|p| match protocol::decode_response(p, &c) {
                 Ok(Resposta::Estado { papel, .. }) => Some(papel),
                 _ => None,
             })
     });
     match papel {
-        Some(p) => println!("papel={}", p.nome()),
+        Some(p) => println!("papel={}", p.name()),
         None => println!("papel=?"),
     }
     let r = pedir(
         &mut s,
-        &Pedido::Revelar {
-            entrada: "acme-pg-dev".into(),
-            alvo: Alvo::Campo("senha".into()),
+        &Request::Reveal {
+            entry: "acme-pg-dev".into(),
+            target: Target::Field("senha".into()),
         },
     );
     println!(
@@ -246,7 +246,7 @@ fn main() -> ExitCode {
     );
     // Só o app de teste aberto pelo daemon passa daqui: executado à mão (agente), um
     // `travar` mexeria no daemon de quem testa.
-    if papel == Some(Papel::App) {
+    if papel == Some(Role::App) {
         valores_do_app(&mut s);
     }
     println!("fim=1");

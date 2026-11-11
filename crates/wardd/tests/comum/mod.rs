@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use ward_core::protocolo::{self, ErroResposta, Papel, Pedido, Resposta};
+use ward_core::protocol::{self, Request, ResponseError, Resposta, Role};
 use wardd::nucleo::{Caminhos, Daemon, Relogio};
 
 pub const SENHA: &str = "falso-mestra-ward-01";
@@ -89,22 +89,22 @@ pub fn daemon_em(c: Caminhos) -> (Daemon, RelogioFalso) {
 }
 
 /// Lê o pedido como o socket leria (o papel confere antes).
-pub fn ped(papel: Papel, op: &str, dados: &str) -> Result<Pedido, ErroResposta> {
-    protocolo::decodificar_pedido(
+pub fn ped(papel: Role, op: &str, dados: &str) -> Result<Request, ResponseError> {
+    protocol::decode_request(
         papel,
         format!(r#"{{"v":1,"op":"{op}","dados":{dados}}}"#).as_bytes(),
     )
 }
 
 /// Pede e devolve a resposta (o pedido tem de passar pela leitura).
-pub fn pedir(d: &Daemon, papel: Papel, op: &str, dados: &str) -> Resposta {
+pub fn pedir(d: &Daemon, papel: Role, op: &str, dados: &str) -> Resposta {
     match ped(papel, op, dados) {
         Ok(p) => d.atender(papel, p),
         Err(e) => Resposta::Erro(e),
     }
 }
 
-pub fn erro(r: &Resposta) -> Option<ErroResposta> {
+pub fn erro(r: &Resposta) -> Option<ResponseError> {
     match r {
         Resposta::Erro(e) => Some(e.clone()),
         _ => None,
@@ -118,7 +118,7 @@ pub fn ok(r: &Resposta) -> bool {
 pub fn destravar(d: &Daemon, senha: &str) -> Resposta {
     pedir(
         d,
-        Papel::Agente,
+        Role::Agent,
         "destravar",
         &format!(r#"{{"senha":"{}"}}"#, b64(senha.as_bytes())),
     )
@@ -145,7 +145,7 @@ pub fn banco(nome: &str, tunel: &str) -> String {
     )
 }
 
-pub fn mudar_nivel(d: &Daemon, papel: Papel, nome: &str, nivel: &str, pin: &str) -> Resposta {
+pub fn mudar_nivel(d: &Daemon, papel: Role, nome: &str, nivel: &str, pin: &str) -> Resposta {
     pedir(
         d,
         papel,
@@ -163,7 +163,7 @@ pub fn cofre_de_teste(dir: &Dir) -> (Daemon, RelogioFalso) {
     let (d, r) = daemon_em(dir.caminhos());
     let criar = pedir(
         &d,
-        Papel::App,
+        Role::App,
         "criar_cofre",
         &format!(
             r#"{{"senha":"{}","pin":"{}"}}"#,
@@ -179,16 +179,16 @@ pub fn cofre_de_teste(dir: &Dir) -> (Daemon, RelogioFalso) {
         servidor("s1"),
         banco("b1", "s1"),
     ] {
-        let r = pedir(&d, Papel::App, "salvar_entrada", &q);
+        let r = pedir(&d, Role::App, "salvar_entrada", &q);
         assert!(ok(&r), "{r:?}");
     }
-    assert!(ok(&mudar_nivel(&d, Papel::App, "t-livre", "livre", PIN)));
-    assert!(ok(&mudar_nivel(&d, Papel::App, "t-bloq", "bloqueado", PIN)));
+    assert!(ok(&mudar_nivel(&d, Role::App, "t-livre", "livre", PIN)));
+    assert!(ok(&mudar_nivel(&d, Role::App, "t-bloq", "bloqueado", PIN)));
     (d, r)
 }
 
-pub fn codificado(papel: Papel, r: &Resposta) -> Vec<u8> {
-    protocolo::codificar_resposta(papel, r).unwrap().to_vec()
+pub fn codificado(papel: Role, r: &Resposta) -> Vec<u8> {
+    protocol::encode_response(papel, r).unwrap().to_vec()
 }
 
 pub fn contem(palheiro: &[u8], agulha: &[u8]) -> bool {
@@ -221,12 +221,12 @@ pub fn com_janela<R>(
     decisao: &str,
     pin: Option<&str>,
     f: impl FnOnce() -> R,
-) -> (R, Vec<protocolo::PedidoDeAprovacao>) {
+) -> (R, Vec<protocol::PedidoDeAprovacao>) {
     use std::sync::atomic::AtomicBool;
     use std::sync::mpsc;
     use wardd::aprovacao::Assinante;
 
-    struct JanelaFalsa(mpsc::Sender<protocolo::PedidoDeAprovacao>);
+    struct JanelaFalsa(mpsc::Sender<protocol::PedidoDeAprovacao>);
     impl Assinante for JanelaFalsa {
         fn entregar(&mut self, r: &Resposta) -> bool {
             if let Resposta::PedidoDeAprovacao(p) = r {
@@ -253,7 +253,7 @@ pub fn com_janela<R>(
                     .unwrap_or_default();
                 let _ = pedir(
                     d,
-                    Papel::App,
+                    Role::App,
                     "responder_aprovacao",
                     &format!(r#"{{"pedido":{},"decisao":"{decisao}"{pin}}}"#, p.id),
                 );

@@ -10,9 +10,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use comum::{Dir, PIN, SEGREDOS, b64, erro, login, mudar_nivel, ok, pedir};
-use ward_core::protocolo::{
-    self, DetalheEntrada, ErroResposta, Papel, Resposta, decodificar_resposta,
-};
+use ward_core::protocol::{self, DetalheEntrada, ResponseError, Resposta, Role, decode_response};
 use wardd::nucleo::{Daemon, Relogio};
 
 /// 2026-11-02 00:00 UTC e seguintes (o rodapé do frame aprovado no M0).
@@ -49,7 +47,7 @@ fn criar(dir: &Dir, relogio: &RelogioDeParede) -> Daemon {
     let d = daemon(dir, relogio);
     let r = pedir(
         &d,
-        Papel::App,
+        Role::App,
         "criar_cofre",
         &format!(
             r#"{{"senha":"{}","pin":"{}"}}"#,
@@ -64,7 +62,7 @@ fn criar(dir: &Dir, relogio: &RelogioDeParede) -> Daemon {
 fn detalhe(d: &Daemon, nome: &str) -> DetalheEntrada {
     match pedir(
         d,
-        Papel::App,
+        Role::App,
         "detalhe",
         &format!(r#"{{"entrada":"{nome}"}}"#),
     ) {
@@ -79,7 +77,7 @@ fn datas(d: &Daemon, nome: &str) -> (Option<u64>, Option<u64>) {
 }
 
 fn salvar(d: &Daemon, dados: &str) {
-    let r = pedir(d, Papel::App, "salvar_entrada", dados);
+    let r = pedir(d, Role::App, "salvar_entrada", dados);
     assert!(ok(&r), "{r:?}");
 }
 
@@ -104,13 +102,13 @@ fn v3_41_datas_pelo_relogio_do_daemon() {
     assert_eq!(datas(&d, "t-datas"), (Some(T0), Some(T0 + DIA)));
 
     relogio.em(T0 + 2 * DIA);
-    assert!(ok(&mudar_nivel(&d, Papel::App, "t-datas", "livre", PIN)));
+    assert!(ok(&mudar_nivel(&d, Role::App, "t-datas", "livre", PIN)));
     assert_eq!(datas(&d, "t-datas"), (Some(T0), Some(T0 + 2 * DIA)));
 
     // PIN errado não muda nada, nem a data.
     relogio.em(T0 + 3 * DIA);
-    let r = mudar_nivel(&d, Papel::App, "t-datas", "bloqueado", comum::PIN_ERRADO);
-    assert_eq!(erro(&r), Some(ErroResposta::PinIncorreto));
+    let r = mudar_nivel(&d, Role::App, "t-datas", "bloqueado", comum::PIN_ERRADO);
+    assert_eq!(erro(&r), Some(ResponseError::WrongPin));
     assert_eq!(datas(&d, "t-datas"), (Some(T0), Some(T0 + 2 * DIA)));
 
     // Relógio que volta: a alteração não desce, a criação nunca muda.
@@ -152,13 +150,13 @@ fn ataque_v3_41_datas_nao_vao_ao_agente() {
     let relogio = RelogioDeParede(Arc::new(AtomicU64::new(T0)));
     let d = criar(&dir, &relogio);
     salvar(&d, &login("t-datas", SEGREDOS[0]));
-    for papel in [Papel::Agente, Papel::Extensao] {
+    for papel in [Role::Agent, Role::Extension] {
         let r = pedir(&d, papel, "detalhe", r#"{"entrada":"t-datas"}"#);
-        assert_eq!(erro(&r), Some(ErroResposta::NaoAutorizado), "{papel:?}");
+        assert_eq!(erro(&r), Some(ResponseError::Unauthorized), "{papel:?}");
     }
-    for papel in [Papel::App, Papel::Agente] {
+    for papel in [Role::App, Role::Agent] {
         let r = pedir(&d, papel, "lista", "{}");
-        let q = protocolo::codificar_resposta(papel, &r).unwrap();
+        let q = protocol::encode_response(papel, &r).unwrap();
         let s = String::from_utf8_lossy(&q);
         assert!(
             !s.contains("criada_em") && !s.contains("alterada_em"),
@@ -167,10 +165,10 @@ fn ataque_v3_41_datas_nao_vao_ao_agente() {
         assert!(!s.contains(&T0.to_string()), "{s}");
     }
     // O quadro do detalhe do app traz as datas e não passa pela leitura do agente.
-    let r = pedir(&d, Papel::App, "detalhe", r#"{"entrada":"t-datas"}"#);
-    let q = protocolo::codificar_resposta(Papel::App, &r).unwrap();
+    let r = pedir(&d, Role::App, "detalhe", r#"{"entrada":"t-datas"}"#);
+    let q = protocol::encode_response(Role::App, &r).unwrap();
     assert!(String::from_utf8_lossy(&q).contains(&format!(r#""criada_em":{T0}"#)));
-    assert!(decodificar_resposta(Papel::Agente, &q).is_err());
+    assert!(decode_response(Role::Agent, &q).is_err());
     // Nenhum segredo da entrada no quadro com as datas.
     for s in SEGREDOS {
         assert!(!q.windows(s.len()).any(|w| w == s.as_bytes()));
@@ -204,12 +202,12 @@ fn ataque_v3_41_data_vinda_do_cliente_recusada() {
         login("t-nova", SEGREDOS[1]).replacen(r#""url":"#, r#""alterada_em":1,"url":"#, 1),
     ] {
         assert!(forjado.contains("_em\":1"), "{forjado}");
-        let r = pedir(&d, Papel::App, "salvar_entrada", &forjado);
-        assert_eq!(erro(&r), Some(ErroResposta::PedidoInvalido), "{forjado}");
+        let r = pedir(&d, Role::App, "salvar_entrada", &forjado);
+        assert_eq!(erro(&r), Some(ResponseError::InvalidRequest), "{forjado}");
     }
     assert_eq!(datas(&d, "t-datas"), (Some(T0), Some(T0)));
     assert!(std::fs::read(&dir.caminhos().cofre).unwrap() == antes);
-    assert!(erro(&pedir(&d, Papel::App, "detalhe", r#"{"entrada":"t-nova"}"#)).is_some());
+    assert!(erro(&pedir(&d, Role::App, "detalhe", r#"{"entrada":"t-nova"}"#)).is_some());
 }
 
 /// Relógio ilegível: a gravação segue sem carimbo novo (entrada nova sem datas, edição
@@ -226,7 +224,7 @@ fn relogio_ilegivel_grava_sem_data_nova() {
     assert_eq!(datas(&d, "t-sem"), (None, None));
     salvar(&d, &editar("t-com", "t-com", SEGREDOS[2]));
     assert_eq!(datas(&d, "t-com"), (Some(T0), Some(T0)));
-    assert!(ok(&mudar_nivel(&d, Papel::App, "t-com", "livre", PIN)));
+    assert!(ok(&mudar_nivel(&d, Role::App, "t-com", "livre", PIN)));
     assert_eq!(datas(&d, "t-com"), (Some(T0), Some(T0)));
     relogio.em(T0 + DIA);
     salvar(&d, &editar("t-sem", "t-sem", SEGREDOS[3]));
@@ -244,7 +242,7 @@ fn restaurar_mantem_as_datas() {
     let relogio = RelogioDeParede(Arc::new(AtomicU64::new(T0)));
     let d = criar(&dir, &relogio);
     salvar(&d, &login("t-datas", SEGREDOS[0]));
-    let versao = match pedir(&d, Papel::App, "backups", "{}") {
+    let versao = match pedir(&d, Role::App, "backups", "{}") {
         Resposta::Backups(l) => l[0].nome.clone(),
         outra => panic!("{outra:?}"),
     };
@@ -254,7 +252,7 @@ fn restaurar_mantem_as_datas() {
     relogio.em(T0 + 7 * DIA);
     let r = pedir(
         &d,
-        Papel::App,
+        Role::App,
         "restaurar_backup",
         &format!(
             r#"{{"versao":"{versao}","senha":"{}","pin":"{}"}}"#,

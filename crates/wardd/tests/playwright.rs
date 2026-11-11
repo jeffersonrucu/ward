@@ -17,7 +17,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use comum::*;
-use ward_core::protocolo::{ErroResposta, Papel, Resposta};
+use ward_core::protocol::{ResponseError, Resposta, Role};
 use wardd::aprovacao::SemCliente;
 use wardd::nucleo::Daemon;
 
@@ -80,12 +80,12 @@ fn cena(rotulo: &str, modo: &str) -> Cena {
 impl Cena {
     fn playwright(&self, entrada: &str) -> Resposta {
         let p = ped(
-            Papel::Agente,
+            Role::Agent,
             "playwright",
             &format!(r#"{{"entrada":"{entrada}"}}"#),
         )
         .unwrap();
-        self.d.atender_de(&SemCliente, Papel::Agente, p)
+        self.d.atender_de(&SemCliente, Role::Agent, p)
     }
 
     fn registro(&self) -> Vec<serde_json::Value> {
@@ -155,7 +155,7 @@ fn v6_12_sessao_gravada_so_o_caminho_volta() {
         }
         outra => panic!("{outra:?}"),
     }
-    let cod = codificado(Papel::Agente, &r);
+    let cod = codificado(Role::Agent, &r);
     for f in formas_da_senha() {
         assert!(!contem(&cod, &f), "a resposta tem a senha");
     }
@@ -251,7 +251,7 @@ fn v6_12_sessao_gravada_so_o_caminho_volta() {
 fn v6_15_redirecionamento_para_outra_origem_recusado() {
     let c = cena("redir", "redir");
     let r = c.playwright("t-livre");
-    assert_eq!(erro(&r), Some(ErroResposta::OrigemDiferente), "{r:?}");
+    assert_eq!(erro(&r), Some(ResponseError::OriginMismatch), "{r:?}");
     let d = c.eventos("decisao");
     assert_eq!(d.len(), 2, "{d:?}");
     assert_eq!(d[0]["seguiu"], true);
@@ -270,7 +270,7 @@ fn d9_origem_da_pagina_e_do_envio() {
     let c = cena("mente", "mente");
     assert_eq!(
         erro(&c.playwright("t-livre")),
-        Some(ErroResposta::OrigemDiferente)
+        Some(ResponseError::OriginMismatch)
     );
     assert!(c.eventos("preencher").is_empty(), "a senha foi ao Chrome");
     assert!(c.sem_perfil());
@@ -278,7 +278,7 @@ fn d9_origem_da_pagina_e_do_envio() {
     let c = cena("posoutra", "pos_outra");
     assert_eq!(
         erro(&c.playwright("t-livre")),
-        Some(ErroResposta::OrigemDiferente)
+        Some(ResponseError::OriginMismatch)
     );
     let d = c.eventos("decisao");
     assert_eq!(
@@ -295,7 +295,7 @@ fn d9_origem_da_pagina_e_do_envio() {
     let c = cena("formoutra", "form_outra");
     assert_eq!(
         erro(&c.playwright("t-livre")),
-        Some(ErroResposta::OrigemDiferente)
+        Some(ResponseError::OriginMismatch)
     );
     assert!(!c.sessao("t-livre").exists());
     assert!(c.sem_perfil());
@@ -309,7 +309,7 @@ fn s1_sessao_com_a_senha_nao_e_gravada() {
         let c = cena(modo, modo);
         assert_eq!(
             erro(&c.playwright("t-livre")),
-            Some(ErroResposta::SessaoComSegredo),
+            Some(ResponseError::SessionHasSecret),
             "{modo}"
         );
         assert!(!c.sessao("t-livre").exists(), "{modo}");
@@ -329,7 +329,7 @@ fn navegador_que_cai_ou_manda_lixo() {
         let c = cena(modo, modo);
         assert_eq!(
             erro(&c.playwright("t-livre")),
-            Some(ErroResposta::NavegadorFalhou),
+            Some(ResponseError::BrowserFailed),
             "{modo}"
         );
         assert!(c.sem_perfil(), "{modo}");
@@ -348,7 +348,7 @@ fn d6_travar_durante_a_sessao_nada_gravado() {
     });
     let r = c.playwright("t-livre");
     t.join().unwrap();
-    assert_eq!(erro(&r), Some(ErroResposta::Travado), "{r:?}");
+    assert_eq!(erro(&r), Some(ResponseError::Locked), "{r:?}");
     assert!(!c.sessao("t-livre").exists());
     assert!(c.sem_perfil());
 }
@@ -359,9 +359,9 @@ fn d6_travar_durante_a_sessao_nada_gravado() {
 fn recusas_sem_abrir_o_navegador() {
     let c = cena("recusas", "ok");
     for (entrada, esperado) in [
-        ("t-bloq", ErroResposta::EntradaInexistente),
-        ("nao-existe", ErroResposta::EntradaInexistente),
-        ("s1", ErroResposta::TipoSemEntrega),
+        ("t-bloq", ResponseError::EntryNotFound),
+        ("nao-existe", ResponseError::EntryNotFound),
+        ("s1", ResponseError::TypeWithoutDelivery),
     ] {
         assert_eq!(erro(&c.playwright(entrada)), Some(esperado), "{entrada}");
     }
@@ -371,10 +371,10 @@ fn recusas_sem_abrir_o_navegador() {
     );
     assert!(c.eventos("inicio").is_empty(), "o navegador abriu");
     // O papel app não pede `playwright`.
-    let p = ped(Papel::Agente, "playwright", r#"{"entrada":"t-livre"}"#).unwrap();
+    let p = ped(Role::Agent, "playwright", r#"{"entrada":"t-livre"}"#).unwrap();
     assert_eq!(
-        erro(&c.d.atender_de(&SemCliente, Papel::App, p)),
-        Some(ErroResposta::NaoAutorizado)
+        erro(&c.d.atender_de(&SemCliente, Role::App, p)),
+        Some(ResponseError::Unauthorized)
     );
     assert!(c.eventos("inicio").is_empty());
 }
@@ -538,20 +538,20 @@ struct CenaReal {
 }
 
 /// Os casos do site e o que o daemon deve responder (`None`: sessão gravada).
-const CASOS: [(&str, Option<ErroResposta>); 13] = [
+const CASOS: [(&str, Option<ResponseError>); 13] = [
     ("ok", None),
     ("dom", None),
-    ("dom-recusa", Some(ErroResposta::LoginRecusado)),
+    ("dom-recusa", Some(ResponseError::LoginRefused)),
     ("iframe", None),
-    ("acao-fora", Some(ErroResposta::OrigemDiferente)),
-    ("clobber", Some(ErroResposta::OrigemDiferente)),
-    ("formaction", Some(ErroResposta::OrigemDiferente)),
-    ("redir", Some(ErroResposta::OrigemDiferente)),
-    ("get", Some(ErroResposta::LoginRecusado)),
-    ("alvo", Some(ErroResposta::LoginRecusado)),
-    ("dois", Some(ErroResposta::LoginRecusado)),
-    ("recusa", Some(ErroResposta::LoginRecusado)),
-    ("ls", Some(ErroResposta::SessaoComSegredo)),
+    ("acao-fora", Some(ResponseError::OriginMismatch)),
+    ("clobber", Some(ResponseError::OriginMismatch)),
+    ("formaction", Some(ResponseError::OriginMismatch)),
+    ("redir", Some(ResponseError::OriginMismatch)),
+    ("get", Some(ResponseError::LoginRefused)),
+    ("alvo", Some(ResponseError::LoginRefused)),
+    ("dois", Some(ResponseError::LoginRefused)),
+    ("recusa", Some(ResponseError::LoginRefused)),
+    ("ls", Some(ResponseError::SessionHasSecret)),
 ];
 
 fn pagina(caso: &str, fora: &str, pp: u16) -> (u16, Vec<(String, String)>, String) {
@@ -644,12 +644,12 @@ fn cena_real(rotulo: &str) -> CenaReal {
         let nome = format!("w-{caso}");
         let r = pedir(
             &d,
-            Papel::App,
+            Role::App,
             "salvar_entrada",
             &login_em(&nome, &url, SENHA_LOGIN),
         );
         assert!(ok(&r), "{r:?}");
-        assert!(ok(&mudar_nivel(&d, Papel::App, &nome, "livre", PIN)));
+        assert!(ok(&mudar_nivel(&d, Role::App, &nome, "livre", PIN)));
     }
     CenaReal {
         d: Arc::new(d),
@@ -663,12 +663,12 @@ fn cena_real(rotulo: &str) -> CenaReal {
 impl CenaReal {
     fn playwright(&self, entrada: &str) -> Resposta {
         let p = ped(
-            Papel::Agente,
+            Role::Agent,
             "playwright",
             &format!(r#"{{"entrada":"{entrada}"}}"#),
         )
         .unwrap();
-        self.d.atender_de(&SemCliente, Papel::Agente, p)
+        self.d.atender_de(&SemCliente, Role::Agent, p)
     }
 
     /// O phishing não recebeu `POST` nem a senha em lugar nenhum.
@@ -777,26 +777,26 @@ fn ataque_playwright_http_livre_so_com_confirmacao() {
         r#"{{"entrada":{{"nome":"h-livre","grupo":"acme","ambiente":"prod","tipo":"login","campos":{{"url":"http://localhost:8081/wp-login.php","usuario":"wp_editor","senha":"{}"}}}}}}"#,
         b64(SENHA_LOGIN.as_bytes())
     );
-    assert!(ok(&pedir(&c.d, Papel::App, "salvar_entrada", &q)));
-    assert!(ok(&mudar_nivel(&c.d, Papel::App, "h-livre", "livre", PIN)));
+    assert!(ok(&pedir(&c.d, Role::App, "salvar_entrada", &q)));
+    assert!(ok(&mudar_nivel(&c.d, Role::App, "h-livre", "livre", PIN)));
     let r = c.playwright("h-livre");
-    assert_eq!(erro(&r), Some(ErroResposta::AprovacaoIndisponivel));
+    assert_eq!(erro(&r), Some(ResponseError::ApprovalUnavailable));
     assert!(
         c.eventos("inicio").is_empty(),
         "o Chrome abriu sem a janela"
     );
     let (r, vistos) = com_janela(&c.d, "negar", None, || c.playwright("h-livre"));
-    assert_eq!(erro(&r), Some(ErroResposta::Negado));
+    assert_eq!(erro(&r), Some(ResponseError::Denied));
     assert!(
         c.eventos("inicio").is_empty(),
         "o Chrome abriu com a janela negada"
     );
     assert!(!c.sessao("h-livre").exists());
     let p = &vistos[0];
-    assert_eq!(p.operacao, ward_core::protocolo::Operacao::Playwright);
+    assert_eq!(p.operacao, ward_core::protocol::Operation::Playwright);
     assert_eq!(p.origem, "http://localhost:8081");
     assert!(p.confirmacao);
-    let cod = codificado(Papel::App, &Resposta::PedidoDeAprovacao(p.clone()));
+    let cod = codificado(Role::App, &Resposta::PedidoDeAprovacao(p.clone()));
     for f in formas_da_senha() {
         assert!(!contem(&cod, &f), "o pedido da janela tem a senha");
     }
@@ -832,15 +832,15 @@ fn ataque_playwright_https_loopback_livre_so_com_confirmacao() {
             r#"{{"entrada":{{"nome":"{nome}","grupo":"acme","ambiente":"prod","tipo":"login","campos":{{"url":"{url}","usuario":"wp_editor","senha":"{}"}}}}}}"#,
             b64(SENHA_LOGIN.as_bytes())
         );
-        assert!(ok(&pedir(&c.d, Papel::App, "salvar_entrada", &q)), "{url}");
+        assert!(ok(&pedir(&c.d, Role::App, "salvar_entrada", &q)), "{url}");
         assert!(
-            ok(&mudar_nivel(&c.d, Papel::App, &nome, "livre", PIN)),
+            ok(&mudar_nivel(&c.d, Role::App, &nome, "livre", PIN)),
             "{url}"
         );
         let r = c.playwright(&nome);
-        assert_eq!(erro(&r), Some(ErroResposta::AprovacaoIndisponivel), "{url}");
+        assert_eq!(erro(&r), Some(ResponseError::ApprovalUnavailable), "{url}");
         let (r, vistos) = com_janela(&c.d, "negar", None, || c.playwright(&nome));
-        assert_eq!(erro(&r), Some(ErroResposta::Negado), "{url}");
+        assert_eq!(erro(&r), Some(ResponseError::Denied), "{url}");
         assert!(c.eventos("inicio").is_empty(), "o Chrome abriu: {url}");
         assert!(!c.sessao(&nome).exists(), "{url}");
         assert_eq!(vistos.len(), 1, "{url}");

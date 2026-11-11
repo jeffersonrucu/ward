@@ -35,7 +35,7 @@ use std::os::unix::net::UnixStream;
 use ward_platform::app::{self, Parent, ParentMismatch};
 use ward_platform::{AppEnvironment, SessionError, harden_process, verify_app_environment};
 
-use ward_core::protocolo::Papel;
+use ward_core::protocol::Role;
 
 use crate::AppError;
 use crate::client;
@@ -59,7 +59,7 @@ pub enum ErroPartida {
     /// `setresgid` não deixou os três gids no real.
     Grupo,
     /// O daemon não deu o papel app a esta conexão (D63).
-    Papel(Papel),
+    Papel(Role),
     /// Aberto fora do daemon: pediu a instância verdadeira (`abrir_app`) e sai.
     Delegado,
 }
@@ -81,7 +81,7 @@ impl fmt::Display for ErroPartida {
             ErroPartida::Papel(p) => write!(
                 f,
                 "o daemon deu o papel {} a este processo, não o de app; abra o Ward pelo menu ou pela bandeja",
-                p.nome()
+                p.name()
             ),
             ErroPartida::Delegado => f.write_str("pedido ao daemon; ele abre o app"),
         }
@@ -212,7 +212,7 @@ fn conferir_papel(
         return Err(ErroPartida::Pai(e));
     }
     match papel {
-        Ok(Papel::App) => Ok(()),
+        Ok(Role::App) => Ok(()),
         Ok(p) => Err(ErroPartida::Papel(p)),
         Err(e) => Err(ErroPartida::Daemon(e)),
     }
@@ -293,17 +293,17 @@ mod testes {
 
     /// V3.38 (D63): o daemon do outro lado do par responde `estado` com `papel`; o que
     /// ele recebeu volta para o teste.
-    fn daemon_que_da(papel: Papel) -> (DaemonSocket, std::thread::JoinHandle<Vec<String>>) {
-        use ward_core::protocolo::{self, Resposta, quadro};
+    fn daemon_que_da(papel: Role) -> (DaemonSocket, std::thread::JoinHandle<Vec<String>>) {
+        use ward_core::protocol::{self, Resposta, frame};
         let (a, mut b) = std::os::unix::net::UnixStream::pair().unwrap();
         let d = DaemonSocket::from_pair(a, std::time::Duration::from_secs(10));
         let h = std::thread::spawn(move || {
             let mut ops = Vec::new();
-            while let Ok(q) = quadro::ler_quadro(&mut b, quadro::limite_do_quadro(Papel::App)) {
-                let p = protocolo::decodificar_pedido(Papel::App, &q).unwrap();
-                ops.push(p.operacao().nome().to_owned());
+            while let Ok(q) = frame::read_frame(&mut b, frame::frame_limit(Role::App)) {
+                let p = protocol::decode_request(Role::App, &q).unwrap();
+                ops.push(p.operation().name().to_owned());
                 let r = match p {
-                    protocolo::Pedido::Estado => Resposta::Estado {
+                    protocol::Request::Status => Resposta::Estado {
                         travado: true,
                         cofre_existe: true,
                         papel,
@@ -311,8 +311,8 @@ mod testes {
                     _ => Resposta::Ok,
                 };
                 // O daemon escreve o `estado` no papel que deu (D63).
-                let q = protocolo::codificar_resposta(papel, &r).unwrap();
-                quadro::escrever_quadro(&mut b, &q, quadro::LIMITE_RESPOSTA).unwrap();
+                let q = protocol::encode_response(papel, &r).unwrap();
+                frame::write_frame(&mut b, &q, frame::RESPONSE_LIMIT).unwrap();
             }
             ops
         });
@@ -321,7 +321,7 @@ mod testes {
 
     #[test]
     fn ataque_sem_papel_app_na_primeira_resposta_sai_sem_usar_a_conexao() {
-        for papel in [Papel::Agente, Papel::Extensao] {
+        for papel in [Role::Agent, Role::Extension] {
             let (mut d, h) = daemon_que_da(papel);
             let r = conferir_papel(&mut d, Ok(()));
             assert!(
@@ -332,7 +332,7 @@ mod testes {
             // Só o `estado`: nenhum pedido de tela depois.
             assert_eq!(h.join().unwrap(), ["estado"]);
         }
-        let (mut d, h) = daemon_que_da(Papel::App);
+        let (mut d, h) = daemon_que_da(Role::App);
         assert!(conferir_papel(&mut d, Ok(())).is_ok());
         drop(d);
         assert_eq!(h.join().unwrap(), ["estado"]);
@@ -341,7 +341,7 @@ mod testes {
     #[test]
     fn com_outro_pai_pede_a_instancia_verdadeira_e_sai() {
         // O app do menu (pai qualquer) recebeu `agente`: pede `abrir_app` e sai (D57).
-        let (mut d, h) = daemon_que_da(Papel::Agente);
+        let (mut d, h) = daemon_que_da(Role::Agent);
         let r = conferir_papel(&mut d, Err(ParentMismatch::NotDaemon));
         assert!(matches!(
             r,
@@ -355,7 +355,7 @@ mod testes {
     fn aberto_pelo_menu_so_pede_abrir_app() {
         // O launcher do COSMIC passa o ambiente da sessão inteira: o app não confere o
         // ambiente nem pede `estado`; só `abrir_app`, e sai sem tela.
-        let (mut d, h) = daemon_que_da(Papel::Agente);
+        let (mut d, h) = daemon_que_da(Role::Agent);
         assert!(matches!(pedir_instancia(&mut d), ErroPartida::Delegado));
         drop(d);
         assert_eq!(h.join().unwrap(), ["abrir_app"]);

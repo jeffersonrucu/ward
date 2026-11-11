@@ -34,7 +34,7 @@ use ward_core::entry::{
     TOO_LARGE_FOR_MASK,
 };
 use ward_core::limits;
-use ward_core::protocolo::{ErroResposta, Problema};
+use ward_core::protocol::{Problem, ResponseError};
 use zeroize::Zeroizing;
 
 use crate::AppError;
@@ -213,26 +213,26 @@ const MAX_MOTIVO: usize = 200;
 /// Problemas do daemon como erros de campo. A resposta do daemon não é confiável
 /// (S1): o campo sai de uma tabela fixa e o motivo só passa se for texto curto, sem
 /// controle nem formatação Unicode; senão vira "inválido".
-pub fn erros_do_daemon(problemas: &[Problema]) -> Vec<ErroCampo> {
+pub fn erros_do_daemon(problemas: &[Problem]) -> Vec<ErroCampo> {
     problemas
         .iter()
         .take(limits::MAX_EXTRAS + 32)
         .map(|p| {
-            let limpo = p.motivo.chars().count() <= MAX_MOTIVO
-                && !p.motivo.is_empty()
-                && !p.motivo.chars().any(|c| c.is_control() || formatacao(c));
+            let limpo = p.reason.chars().count() <= MAX_MOTIVO
+                && !p.reason.is_empty()
+                && !p.reason.chars().any(|c| c.is_control() || formatacao(c));
             // D29: a recusa do orçamento da máscara vem da entrada inteira; a tela a
             // mostra no campo dos anexos, o que mais pesa no orçamento.
-            let campo = if p.campo == "entrada" && p.motivo == TOO_LARGE_FOR_MASK {
+            let campo = if p.field == "entrada" && p.reason == TOO_LARGE_FOR_MASK {
                 "anexos"
             } else {
-                campo_do_problema(&p.campo)
+                campo_do_problema(&p.field)
             };
             ErroCampo {
                 campo,
-                posicao: p.posicao.filter(|n| (1..=1024).contains(n)),
+                posicao: p.position.filter(|n| (1..=1024).contains(n)),
                 motivo: if limpo {
-                    p.motivo.clone()
+                    p.reason.clone()
                 } else {
                     "inválido".to_owned()
                 },
@@ -362,7 +362,7 @@ pub fn normalizar_semente(digitada: &str) -> Result<Zeroizing<String>, &'static 
 pub trait Fontes {
     /// Valor guardado de um campo secreto (`Alvo::Campo`) ou de um extra secreto
     /// (`Alvo::Extra`) da entrada editada.
-    fn guardado(&mut self, alvo: ward_core::protocolo::Alvo) -> Result<SegredoCore, AppError>;
+    fn guardado(&mut self, alvo: ward_core::protocol::Target) -> Result<SegredoCore, AppError>;
     /// Senha gerada para este campo ("Usar esta senha").
     fn gerada(&mut self, campo: &str) -> Result<SegredoCore, AppError>;
     /// Chave lida do arquivo para este campo ("Carregar de arquivo", Fase 53a).
@@ -442,7 +442,7 @@ pub fn montar(
             ValorSecreto::Novo(t) => Some(SegredoCore::from_bytes(t.0.as_bytes().to_vec())),
             ValorSecreto::Manter => match editando {
                 Some((guardados, _)) if guardados.iter().any(|g| g == id) => {
-                    Some(fontes.guardado(ward_core::protocolo::Alvo::Campo(id.to_owned()))?)
+                    Some(fontes.guardado(ward_core::protocol::Target::Field(id.to_owned()))?)
                 }
                 _ => return Err(AppError::InvalidRequest.into()),
             },
@@ -514,7 +514,7 @@ pub fn montar(
             ValorExtra::Novo(t) => SegredoCore::from_bytes(t.0.as_bytes().to_vec()),
             ValorExtra::Manter(nome) => match editando {
                 Some((_, guardados)) if guardados.contains(&nome) => {
-                    fontes.guardado(ward_core::protocolo::Alvo::Extra(nome))?
+                    fontes.guardado(ward_core::protocol::Target::Extra(nome))?
                 }
                 _ => return Err(AppError::InvalidRequest.into()),
             },
@@ -682,8 +682,8 @@ pub fn validar_local(r: &Draft) -> Result<(), Vec<ErroCampo>> {
             drop(entrada);
             Ok(())
         }
-        Err(e) => Err(erros_do_daemon(&match ErroResposta::de_validacao(&e) {
-            ErroResposta::Validacao(p) => p,
+        Err(e) => Err(erros_do_daemon(&match ResponseError::from_validation(&e) {
+            ResponseError::Validation(p) => p,
             _ => Vec::new(),
         })),
     }
@@ -746,10 +746,10 @@ mod testes {
 
     #[test]
     fn ataque_problema_forjado_pelo_daemon_nao_vira_texto_livre() {
-        let p = |campo: &str, motivo: &str| Problema {
-            campo: campo.to_owned(),
-            posicao: None,
-            motivo: motivo.to_owned(),
+        let p = |campo: &str, motivo: &str| Problem {
+            field: campo.to_owned(),
+            position: None,
+            reason: motivo.to_owned(),
         };
         let e = erros_do_daemon(&[
             p("senha", "obrigatório"),
@@ -770,10 +770,10 @@ mod testes {
     /// dos anexos; outro motivo em "entrada" não vira erro de anexo.
     #[test]
     fn recusa_do_orcamento_da_mascara_vai_para_os_anexos() {
-        let p = |campo: &str, motivo: &str| Problema {
-            campo: campo.to_owned(),
-            posicao: None,
-            motivo: motivo.to_owned(),
+        let p = |campo: &str, motivo: &str| Problem {
+            field: campo.to_owned(),
+            position: None,
+            reason: motivo.to_owned(),
         };
         let e = erros_do_daemon(&[
             p("entrada", TOO_LARGE_FOR_MASK),

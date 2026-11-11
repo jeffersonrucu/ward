@@ -15,7 +15,7 @@ use std::time::Duration;
 use zeroize::Zeroizing;
 
 use ward_core::limits::MAX_COMMON_FRAME;
-use ward_core::protocolo::quadro::{self, LIMITE_RESPOSTA};
+use ward_core::protocol::frame::{self, RESPONSE_LIMIT};
 use ward_nm::{Daemon, DaemonFailure};
 use ward_platform::{ExpectedServer, connect_server};
 
@@ -79,10 +79,10 @@ fn verify_extra(_: &UnixStream) -> Result<(), DaemonFailure> {
 impl Daemon for DaemonSocket {
     fn exchange(&mut self, request: &[u8]) -> Result<Zeroizing<Vec<u8>>, DaemonFailure> {
         let mut s = self.connect()?;
-        quadro::escrever_quadro(&mut s, request, MAX_COMMON_FRAME)
+        frame::write_frame(&mut s, request, MAX_COMMON_FRAME)
             .map_err(|_| DaemonFailure::Conversation)?;
         let r =
-            quadro::ler_quadro(&mut s, LIMITE_RESPOSTA).map_err(|_| DaemonFailure::Conversation)?;
+            frame::read_frame(&mut s, RESPONSE_LIMIT).map_err(|_| DaemonFailure::Conversation)?;
         let _ = s.shutdown(std::net::Shutdown::Both);
         Ok(r)
     }

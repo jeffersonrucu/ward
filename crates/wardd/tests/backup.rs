@@ -15,7 +15,7 @@ use std::time::{Duration, SystemTime};
 use comum::*;
 use ward_core::backup::Version;
 use ward_core::entry::Secret;
-use ward_core::protocolo::{ErroResposta, MSG_RETROCESSO, Papel, Pedido, Resposta, VersaoBackup};
+use ward_core::protocol::{MSG_ROLLBACK, Request, ResponseError, Resposta, Role, VersaoBackup};
 use wardd::arquivos::Geracoes;
 use wardd::nucleo::Daemon;
 
@@ -34,7 +34,7 @@ fn backups(d: &Daemon) -> Vec<String> {
 
 /// As versões com a geração selada (Fase 49a).
 fn versoes(d: &Daemon) -> Vec<VersaoBackup> {
-    match pedir(d, Papel::App, "backups", "{}") {
+    match pedir(d, Role::App, "backups", "{}") {
         Resposta::Backups(l) => l,
         outra => panic!("{outra:?}"),
     }
@@ -43,7 +43,7 @@ fn versoes(d: &Daemon) -> Vec<VersaoBackup> {
 fn restaurar(d: &Daemon, versao: &str, senha: &str, pin: &str) -> Resposta {
     pedir(
         d,
-        Papel::App,
+        Role::App,
         "restaurar_backup",
         &format!(
             r#"{{"versao":"{versao}","senha":"{}","pin":"{}"}}"#,
@@ -54,7 +54,7 @@ fn restaurar(d: &Daemon, versao: &str, senha: &str, pin: &str) -> Resposta {
 }
 
 fn nomes_da_lista(d: &Daemon) -> Vec<String> {
-    match pedir(d, Papel::App, "lista", "{}") {
+    match pedir(d, Role::App, "lista", "{}") {
         Resposta::Lista(l) => l.into_iter().map(|i| i.nome).collect(),
         outra => panic!("{outra:?}"),
     }
@@ -63,7 +63,7 @@ fn nomes_da_lista(d: &Daemon) -> Vec<String> {
 fn tempo_trava(d: &Daemon, minutos: u32) {
     let r = pedir(
         d,
-        Papel::App,
+        Role::App,
         "tempo_trava",
         &format!(r#"{{"minutos":{minutos}}}"#),
     );
@@ -107,7 +107,7 @@ fn v7_1_cada_gravacao_do_daemon_vai_para_o_backup() {
     // ordem; sem caminho nem geração (D39).
     let v = versoes(&d);
     assert!(v.iter().all(|x| x.conferida && !x.fora_de_ordem), "{v:?}");
-    let bytes = codificado(Papel::App, &Resposta::Backups(v));
+    let bytes = codificado(Role::App, &Resposta::Backups(v));
     assert!(!contem(&bytes, dir.0.to_string_lossy().as_bytes()));
     assert!(!contem(&bytes, b"geracao"));
 }
@@ -123,7 +123,7 @@ fn v7_8_agente_e_extensao_nao_restauram() {
     let alvo = backups(&d).pop().unwrap();
     let antes = fs::read(&c.cofre).unwrap();
     let estado_antes = fs::read(&c.estado).unwrap();
-    for papel in [Papel::Agente, Papel::Extensao] {
+    for papel in [Role::Agent, Role::Extension] {
         let r = pedir(
             &d,
             papel,
@@ -136,35 +136,35 @@ fn v7_8_agente_e_extensao_nao_restauram() {
         );
         assert_eq!(
             erro(&r),
-            Some(ErroResposta::NaoAutorizado),
+            Some(ResponseError::Unauthorized),
             "{}",
-            papel.nome()
+            papel.name()
         );
         let r = pedir(&d, papel, "backups", "{}");
         assert_eq!(
             erro(&r),
-            Some(ErroResposta::NaoAutorizado),
+            Some(ResponseError::Unauthorized),
             "{}",
-            papel.nome()
+            papel.name()
         );
         // Segunda camada: o pedido montado em memória, sem passar pelo protocolo.
         let r = d.atender(
             papel,
-            Pedido::RestaurarBackup {
-                versao: alvo.clone(),
-                senha: Secret::from_text(SENHA.to_owned()),
+            Request::RestoreBackup {
+                version: alvo.clone(),
+                password: Secret::from_text(SENHA.to_owned()),
                 pin: Secret::from_text(PIN.to_owned()),
             },
         );
         assert_eq!(
             erro(&r),
-            Some(ErroResposta::NaoAutorizado),
+            Some(ResponseError::Unauthorized),
             "{}",
-            papel.nome()
+            papel.name()
         );
         assert_eq!(
-            erro(&d.atender(papel, Pedido::Backups)),
-            Some(ErroResposta::NaoAutorizado)
+            erro(&d.atender(papel, Request::Backups)),
+            Some(ResponseError::Unauthorized)
         );
     }
     assert_eq!(fs::read(&c.cofre).unwrap(), antes);
@@ -190,7 +190,7 @@ fn v7_11_restaurar_sela_geracao_nova_e_copia_a_mao_e_retrocesso() {
     // Duas gravações: uma entrada nova e o tempo de trava.
     let r = pedir(
         &d,
-        Papel::App,
+        Role::App,
         "salvar_entrada",
         &login("t-nova", SEGREDOS[0]),
     );
@@ -236,16 +236,16 @@ fn v7_11_restaurar_sela_geracao_nova_e_copia_a_mao_e_retrocesso() {
     // Cópia à mão do mesmo backup: a geração n é menor que a vista (n+3).
     fs::write(&c.cofre, &copia_n).unwrap();
     let r = destravar(&d, SENHA);
-    assert_eq!(erro(&r), Some(ErroResposta::Retrocesso));
+    assert_eq!(erro(&r), Some(ResponseError::Rollback));
     assert!(contem(
-        &codificado(Papel::Agente, &r),
-        MSG_RETROCESSO.as_bytes()
+        &codificado(Role::Agent, &r),
+        MSG_ROLLBACK.as_bytes()
     ));
     assert!(d.travado());
     // Num daemon novo, direto o retrocesso; o arquivo copiado não é regravado.
     drop(d);
     let (d2, _) = daemon_em(dir.caminhos());
-    assert_eq!(erro(&destravar(&d2, SENHA)), Some(ErroResposta::Retrocesso));
+    assert_eq!(erro(&destravar(&d2, SENHA)), Some(ResponseError::Rollback));
     assert_eq!(fs::read(&c.cofre).unwrap(), copia_n);
 }
 
@@ -263,13 +263,13 @@ fn ataque_restaurar_sem_pin_senha_errada_e_travado() {
     let n_backups = backups(&d).len();
 
     let r = restaurar(&d, &alvo, SENHA, PIN_ERRADO);
-    assert_eq!(erro(&r), Some(ErroResposta::PinIncorreto));
+    assert_eq!(erro(&r), Some(ResponseError::WrongPin));
     let r = restaurar(&d, &alvo, "falso-mestra-ward-02", PIN);
-    assert_eq!(erro(&r), Some(ErroResposta::SenhaIncorreta));
+    assert_eq!(erro(&r), Some(ResponseError::WrongPassword));
     let r = restaurar(&d, "ward-20000101-000000.ward", SENHA, PIN);
-    assert_eq!(erro(&r), Some(ErroResposta::BackupInexistente));
+    assert_eq!(erro(&r), Some(ResponseError::BackupNotFound));
     let r = restaurar(&d, "../test-vault.ward", SENHA, PIN);
-    assert_eq!(erro(&r), Some(ErroResposta::PedidoInvalido));
+    assert_eq!(erro(&r), Some(ResponseError::InvalidRequest));
     assert_eq!(fs::read(&c.cofre).unwrap(), antes);
     assert_eq!(fs::read(&c.estado).unwrap(), estado);
     assert_eq!(backups(&d).len(), n_backups);
@@ -277,17 +277,17 @@ fn ataque_restaurar_sem_pin_senha_errada_e_travado() {
     // 5 PINs errados seguidos pelo restaurar travam o cofre.
     for i in 0..5 {
         let r = restaurar(&d, &alvo, SENHA, PIN_ERRADO);
-        assert_eq!(erro(&r), Some(ErroResposta::PinIncorreto), "tentativa {i}");
+        assert_eq!(erro(&r), Some(ResponseError::WrongPin), "tentativa {i}");
     }
     assert!(d.travado());
     // Travado: nem lista nem restaura, com o PIN certo.
     assert_eq!(
-        erro(&pedir(&d, Papel::App, "backups", "{}")),
-        Some(ErroResposta::Travado)
+        erro(&pedir(&d, Role::App, "backups", "{}")),
+        Some(ResponseError::Locked)
     );
     assert_eq!(
         erro(&restaurar(&d, &alvo, SENHA, PIN)),
-        Some(ErroResposta::Travado)
+        Some(ResponseError::Locked)
     );
     assert_eq!(fs::read(&c.cofre).unwrap(), antes);
 }
@@ -312,13 +312,13 @@ fn ataque_pasta_de_backups_trocada_por_link() {
     symlink(&outra, pasta(&dir)).unwrap();
 
     assert_eq!(
-        erro(&pedir(&d, Papel::App, "backups", "{}")),
-        Some(ErroResposta::BackupIndisponivel)
+        erro(&pedir(&d, Role::App, "backups", "{}")),
+        Some(ResponseError::BackupUnavailable)
     );
     let antes = fs::read(&c.cofre).unwrap();
     assert_eq!(
         erro(&restaurar(&d, &alvo_versao, SENHA, PIN)),
-        Some(ErroResposta::BackupIndisponivel)
+        Some(ResponseError::BackupUnavailable)
     );
     assert_eq!(fs::read(&c.cofre).unwrap(), antes);
     // A gravação segue e não escreve no alvo do link.
@@ -332,8 +332,8 @@ fn ataque_pasta_de_backups_trocada_por_link() {
     fs::rename(dir.0.join("backups-verdadeira"), pasta(&dir)).unwrap();
     fs::set_permissions(pasta(&dir), fs::Permissions::from_mode(0o755)).unwrap();
     assert_eq!(
-        erro(&pedir(&d, Papel::App, "backups", "{}")),
-        Some(ErroResposta::BackupIndisponivel)
+        erro(&pedir(&d, Role::App, "backups", "{}")),
+        Some(ResponseError::BackupUnavailable)
     );
     fs::set_permissions(pasta(&dir), fs::Permissions::from_mode(0o700)).unwrap();
     assert!(!backups(&d).is_empty());
@@ -356,7 +356,7 @@ fn ataque_versao_trocada_por_link() {
     // `O_NOFOLLOW` continua para a troca entre a lista e a abertura.
     assert_eq!(
         erro(&restaurar(&d, &v, SENHA, PIN)),
-        Some(ErroResposta::BackupInexistente)
+        Some(ResponseError::BackupNotFound)
     );
     assert_eq!(fs::read(&c.cofre).unwrap(), antes);
     assert!(!d.travado());
@@ -378,7 +378,7 @@ fn ataque_restaurar_com_cofre_trocado_fora_do_ward() {
     let n_backups = backups(&d).len();
     assert_eq!(
         erro(&restaurar(&d, &v, SENHA, PIN)),
-        Some(ErroResposta::CofreMudou)
+        Some(ResponseError::VaultChanged)
     );
     assert!(d.travado());
     assert_eq!(fs::read(&c.cofre).unwrap(), bytes);
@@ -401,7 +401,7 @@ fn ataque_restaurar_sem_gravar_o_estado_nao_troca_o_cofre() {
     fs::set_permissions(&dir.0, fs::Permissions::from_mode(0o500)).unwrap();
     let r = restaurar(&d, &v, SENHA, PIN);
     fs::set_permissions(&dir.0, fs::Permissions::from_mode(0o700)).unwrap();
-    assert_eq!(erro(&r), Some(ErroResposta::FalhaAoGravar));
+    assert_eq!(erro(&r), Some(ResponseError::WriteFailed));
     assert_eq!(fs::read(&c.cofre).unwrap(), antes);
     assert!(!d.travado());
     assert_eq!(nomes_da_lista(&d), lista_antes);
@@ -422,7 +422,7 @@ fn restaurar_pede_a_senha_da_versao() {
     let nova = "falso-mestra-ward-05";
     let r = pedir(
         &d,
-        Papel::App,
+        Role::App,
         "trocar_senha",
         &format!(
             r#"{{"atual":"{}","nova":"{}"}}"#,
@@ -440,13 +440,13 @@ fn restaurar_pede_a_senha_da_versao() {
     // A versão antiga só abre com a senha antiga.
     assert_eq!(
         erro(&restaurar(&d, &antiga, nova, PIN)),
-        Some(ErroResposta::SenhaIncorreta)
+        Some(ResponseError::WrongPassword)
     );
     assert!(ok(&restaurar(&d, &antiga, SENHA, PIN)));
     d.travar();
     assert_eq!(
         erro(&destravar(&d, nova)),
-        Some(ErroResposta::SenhaIncorreta)
+        Some(ResponseError::WrongPassword)
     );
     let (d2, _) = daemon_em(dir.caminhos());
     assert!(ok(&destravar(&d2, SENHA)));
@@ -507,7 +507,7 @@ fn ataque_versoes_com_data_futura_nao_apagam_as_reais_nem_restauram() {
     let estado = fs::read(&c.estado).unwrap();
     assert_eq!(
         erro(&restaurar(&d, &longe[0], SENHA, PIN)),
-        Some(ErroResposta::BackupInexistente)
+        Some(ResponseError::BackupNotFound)
     );
     assert_eq!(fs::read(&c.cofre).unwrap(), antes);
     assert_eq!(fs::read(&c.estado).unwrap(), estado);
@@ -543,14 +543,14 @@ fn restaurar_mantem_tempo_de_trava_e_backup_externo_atuais() {
     tempo_trava(&d, 30);
     let r = pedir(
         &d,
-        Papel::App,
+        Role::App,
         "definir_backup_externo",
         r#"{"ligado":true,"uuid":"ABCD-1234"}"#,
     );
     assert!(ok(&r), "{r:?}");
     assert!(ok(&restaurar(&d, &versao, SENHA, PIN)));
     assert_eq!(nomes_da_lista(&d), entradas);
-    match pedir(&d, Papel::App, "configuracao", "{}") {
+    match pedir(&d, Role::App, "configuracao", "{}") {
         Resposta::Configuracao {
             minutos_trava,
             backup_externo,
@@ -562,7 +562,7 @@ fn restaurar_mantem_tempo_de_trava_e_backup_externo_atuais() {
         }
         r => panic!("{r:?}"),
     }
-    match pedir(&d, Papel::App, "backup_externo", "{}") {
+    match pedir(&d, Role::App, "backup_externo", "{}") {
         Resposta::BackupExterno { ligado, uuid } => {
             assert!(ligado);
             assert_eq!(uuid.as_deref(), Some("ABCD-1234"));
@@ -583,7 +583,7 @@ fn restaurar_mantem_tempo_de_trava_e_backup_externo_atuais() {
 fn pasta_de_backups_insegura_aparece_na_configuracao() {
     let dir = Dir::novo("bk-aviso");
     let (d, _) = cofre_de_teste(&dir);
-    let local = |d: &Daemon| match pedir(d, Papel::App, "configuracao", "{}") {
+    let local = |d: &Daemon| match pedir(d, Role::App, "configuracao", "{}") {
         Resposta::Configuracao { backup_local, .. } => backup_local,
         r => panic!("{r:?}"),
     };
@@ -601,7 +601,7 @@ fn pasta_de_backups_insegura_aparece_na_configuracao() {
     fs::rename(pasta(&dir), dir.0.join("verdadeira")).unwrap();
     symlink(&outra, pasta(&dir)).unwrap();
     assert!(!local(&d));
-    let bytes = codificado(Papel::App, &pedir(&d, Papel::App, "configuracao", "{}"));
+    let bytes = codificado(Role::App, &pedir(&d, Role::App, "configuracao", "{}"));
     assert!(!contem(&bytes, dir.0.to_string_lossy().as_bytes()));
 }
 

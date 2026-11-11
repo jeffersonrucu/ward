@@ -44,7 +44,7 @@ use zbus::message::Type as TipoMensagem;
 use zbus::{Connection, MatchRule, MessageStream, OwnedObjectPath, OwnedVariant, Variant};
 
 use ward_core::config::ExternalBackup;
-use ward_core::protocolo::MAX_ROTULO;
+use ward_core::protocol::MAX_ROTULO;
 
 use crate::externo::{ErroExterno, FontePendrives, Visto};
 use crate::nucleo::Daemon;

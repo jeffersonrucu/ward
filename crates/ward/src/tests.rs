@@ -13,8 +13,8 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
 use ward_core::limits::MAX_COMMON_FRAME;
-use ward_core::protocolo::quadro::{self, LIMITE_RESPOSTA};
-use ward_core::protocolo::{self, Papel, Pedido};
+use ward_core::protocol::frame::{self, RESPONSE_LIMIT};
+use ward_core::protocol::{self, Request, Role};
 use ward_platform::{ExpectedServer, TerminalError};
 use zeroize::Zeroizing;
 
@@ -60,7 +60,7 @@ struct Seen {
     passwords: Vec<Vec<u8>>,
 }
 
-type ReplyFn = dyn Fn(&Pedido) -> Vec<u8> + Send + Sync;
+type ReplyFn = dyn Fn(&Request) -> Vec<u8> + Send + Sync;
 
 /// Fake server on the folder's socket. `reply = None`: only records the bytes (a
 /// malicious one waiting for the password). With `reply`: reads frames like the daemon
@@ -81,20 +81,20 @@ fn fake_server(dir: &TestDir, reply: Option<Arc<ReplyFn>>) -> Arc<Mutex<Seen>> {
                     v.lock().unwrap().bytes.extend_from_slice(&buf);
                 }
                 Some(r) => loop {
-                    let Ok(body) = quadro::ler_quadro(&mut s, MAX_COMMON_FRAME) else {
+                    let Ok(body) = frame::read_frame(&mut s, MAX_COMMON_FRAME) else {
                         break;
                     };
-                    let p = protocolo::decodificar_pedido(Papel::Agente, &body).unwrap();
+                    let p = protocol::decode_request(Role::Agent, &body).unwrap();
                     {
                         let mut v = v.lock().unwrap();
                         v.bytes.extend_from_slice(&body);
-                        v.operations.push(p.operacao().nome());
-                        if let Pedido::Destravar { senha } = &p {
+                        v.operations.push(p.operation().name());
+                        if let Request::Unlock { password: senha } = &p {
                             v.passwords.push(senha.expose().to_vec());
                         }
                     }
                     let response = r(&p);
-                    if quadro::escrever_quadro(&mut s, &response, LIMITE_RESPOSTA).is_err() {
+                    if frame::write_frame(&mut s, &response, RESPONSE_LIMIT).is_err() {
                         break;
                     }
                 },
@@ -118,7 +118,7 @@ struct TestEnv {
     env: Vec<(std::ffi::OsString, std::ffi::OsString)>,
     /// Phase 54b: the kind of standard input the environment reports (the test
     /// process's does not count).
-    kind: ward_core::protocolo::TipoEntradaPadrao,
+    kind: ward_core::protocol::StdinKind,
     /// How many times the standard input was asked for.
     stdin_reads: u32,
 }
@@ -134,7 +134,7 @@ impl TestEnv {
             out: Vec::new(),
             err: Vec::new(),
             env: vec![("PATH".into(), "/usr/bin:/bin".into())],
-            kind: ward_core::protocolo::TipoEntradaPadrao::Nula,
+            kind: ward_core::protocol::StdinKind::Null,
             stdin_reads: 0,
         }
     }
@@ -190,10 +190,10 @@ impl Env for TestEnv {
         self.stdin_reads += 1;
         Box::new(io::empty())
     }
-    fn stdin_kind(&self) -> ward_core::protocolo::TipoEntradaPadrao {
+    fn stdin_kind(&self) -> ward_core::protocol::StdinKind {
         self.kind
     }
-    fn terminal(&self) -> Option<ward_core::protocolo::Janela> {
+    fn terminal(&self) -> Option<ward_core::protocol::WindowSize> {
         // Never the terminal of whoever runs the tests.
         None
     }
@@ -343,12 +343,10 @@ fn usage_and_help() {
 mod with_fake_daemon {
     use super::*;
     use ward_core::entry::{EntryType, Environment};
-    use ward_core::protocolo::{ErroResposta, ItemLista, Resposta};
+    use ward_core::protocol::{ItemLista, ResponseError, Resposta};
 
     fn encode(r: &Resposta) -> Vec<u8> {
-        protocolo::codificar_resposta(Papel::Agente, r)
-            .unwrap()
-            .to_vec()
+        protocol::encode_response(Role::Agent, r).unwrap().to_vec()
     }
 
     /// Response to the state request. The only place that builds the state response:
@@ -357,7 +355,7 @@ mod with_fake_daemon {
         Resposta::Estado {
             travado: locked,
             cofre_existe: true,
-            papel: Papel::Agente,
+            papel: Role::Agent,
         }
     }
 
@@ -380,21 +378,23 @@ mod with_fake_daemon {
         let state = Arc::new(Mutex::new(locked));
         fake_server(
             dir,
-            Some(Arc::new(move |p: &Pedido| {
+            Some(Arc::new(move |p: &Request| {
                 let mut locked = state.lock().unwrap();
                 encode(&match p {
-                    Pedido::Estado => state_response(*locked),
-                    Pedido::Travar => {
+                    Request::Status => state_response(*locked),
+                    Request::Lock => {
                         *locked = true;
                         Resposta::Ok
                     }
-                    Pedido::Destravar { senha } if senha.expose() == PASSWORD.as_bytes() => {
+                    Request::Unlock { password: senha }
+                        if senha.expose() == PASSWORD.as_bytes() =>
+                    {
                         *locked = false;
                         Resposta::Ok
                     }
-                    Pedido::Destravar { .. } => Resposta::Erro(ErroResposta::SenhaIncorreta),
-                    Pedido::Lista if *locked => Resposta::Erro(ErroResposta::Travado),
-                    Pedido::Lista => Resposta::Lista(vec![
+                    Request::Unlock { .. } => Resposta::Erro(ResponseError::WrongPassword),
+                    Request::List if *locked => Resposta::Erro(ResponseError::Locked),
+                    Request::List => Resposta::Lista(vec![
                         item(
                             "acme-wp-dev",
                             EntryType::Login,
@@ -402,7 +402,7 @@ mod with_fake_daemon {
                         ),
                         item("gama-nota", EntryType::SecureNote, None),
                     ]),
-                    _ => Resposta::Erro(ErroResposta::NaoAutorizado),
+                    _ => Resposta::Erro(ResponseError::Unauthorized),
                 })
             })),
         )
@@ -419,25 +419,25 @@ mod with_fake_daemon {
     #[test]
     fn run_request_output_and_code() {
         use crate::commands::{EXIT_RUN_ERROR, MSG_RUN_LOCKED};
-        use ward_core::protocolo::Fluxo;
+        use ward_core::protocol::Fluxo;
         for (entry, locked) in [("t-ok", false), ("t-nota", false), ("t-ok", true)] {
             let dir = TestDir::new();
             let seen_env: Arc<Mutex<Vec<Vec<u8>>>> = Arc::default();
             let va = Arc::clone(&seen_env);
             let _v = fake_server(
                 &dir,
-                Some(Arc::new(move |p: &Pedido| match p {
-                    Pedido::Estado => encode(&state_response(locked)),
-                    Pedido::Executar(x) if x.entrada == "t-nota" => {
-                        encode(&Resposta::Erro(ErroResposta::TipoSemEntrega))
+                Some(Arc::new(move |p: &Request| match p {
+                    Request::Status => encode(&state_response(locked)),
+                    Request::Run(x) if x.entry == "t-nota" => {
+                        encode(&Resposta::Erro(ResponseError::TypeWithoutDelivery))
                     }
-                    Pedido::Executar(x) => {
+                    Request::Run(x) => {
                         assert_eq!(x.argv.len(), 2);
                         assert_eq!(x.argv[0].as_slice(), b"sh");
                         assert!(!x.cwd.is_empty());
                         va.lock()
                             .unwrap()
-                            .extend(x.ambiente.iter().map(|v| v.nome.to_vec()));
+                            .extend(x.env.iter().map(|v| v.name.to_vec()));
                         // The fake answers one frame per request: the output here and
                         // the end in the response to the end of the standard input.
                         encode(&Resposta::Saida {
@@ -445,8 +445,8 @@ mod with_fake_daemon {
                             dados: Zeroizing::new("ok ••••\n".as_bytes().to_vec()),
                         })
                     }
-                    Pedido::EntradaPadrao { .. } => encode(&Resposta::Fim { codigo: 3 }),
-                    _ => encode(&Resposta::Erro(ErroResposta::NaoAutorizado)),
+                    Request::Stdin { .. } => encode(&Resposta::Fim { codigo: 3 }),
+                    _ => encode(&Resposta::Erro(ResponseError::Unauthorized)),
                 })),
             );
             let mut t = test_env(&dir);
@@ -473,32 +473,35 @@ mod with_fake_daemon {
     /// (only the empty end frame goes).
     #[test]
     fn f54b_run_and_ssh_send_the_kind_and_null_does_not_read() {
-        use ward_core::protocolo::TipoEntradaPadrao as T;
-        for (sub, kind) in T::TODOS.into_iter().flat_map(|t| [("run", t), ("ssh", t)]) {
+        use ward_core::protocol::StdinKind as T;
+        for (sub, kind) in T::ALL.into_iter().flat_map(|t| [("run", t), ("ssh", t)]) {
             let dir = TestDir::new();
             let seen: Arc<Mutex<Vec<(T, usize)>>> = Arc::default();
             let v = Arc::clone(&seen);
             let output = Resposta::Saida {
-                fluxo: ward_core::protocolo::Fluxo::Saida,
+                fluxo: ward_core::protocol::Fluxo::Saida,
                 dados: Zeroizing::new(b"ok\n".to_vec()),
             };
             let _v = fake_server(
                 &dir,
-                Some(Arc::new(move |p: &Pedido| match p {
-                    Pedido::Estado => encode(&state_response(false)),
-                    Pedido::Executar(x) => {
-                        v.lock().unwrap().push((x.tipo_entrada, 0));
+                Some(Arc::new(move |p: &Request| match p {
+                    Request::Status => encode(&state_response(false)),
+                    Request::Run(x) => {
+                        v.lock().unwrap().push((x.stdin_kind, 0));
                         encode(&output)
                     }
-                    Pedido::Ssh { tipo_entrada, .. } => {
+                    Request::Ssh {
+                        stdin_kind: tipo_entrada,
+                        ..
+                    } => {
                         v.lock().unwrap().push((*tipo_entrada, 0));
                         encode(&output)
                     }
-                    Pedido::EntradaPadrao { dados } => {
-                        v.lock().unwrap().push((T::Nula, dados.len() + 1));
+                    Request::Stdin { data: dados } => {
+                        v.lock().unwrap().push((T::Null, dados.len() + 1));
                         encode(&Resposta::Fim { codigo: 0 })
                     }
-                    _ => encode(&Resposta::Erro(ErroResposta::NaoAutorizado)),
+                    _ => encode(&Resposta::Erro(ResponseError::Unauthorized)),
                 })),
             );
             let mut t = test_env(&dir);
@@ -513,7 +516,7 @@ mod with_fake_daemon {
             assert_eq!(seen.first().map(|x| x.0), Some(kind), "{sub}");
             // Only the empty end frame (size 0 + 1).
             assert_eq!(seen.get(1).map(|x| x.1), Some(1), "{sub} {kind:?}");
-            assert_eq!(t.stdin_reads, u32::from(kind != T::Nula), "{sub} {kind:?}");
+            assert_eq!(t.stdin_reads, u32::from(kind != T::Null), "{sub} {kind:?}");
         }
     }
 
@@ -579,25 +582,25 @@ mod with_fake_daemon {
     #[test]
     fn ssh_request_token_output_and_code() {
         use crate::commands::EXIT_RUN_ERROR;
-        use ward_core::protocolo::Fluxo;
+        use ward_core::protocol::Fluxo;
         let token = "AbCdEfGhIjKlMnOpQrStUvWxYz012345";
         let dir = TestDir::new();
         let _v = fake_server(
             &dir,
-            Some(Arc::new(move |p: &Pedido| match p {
-                Pedido::Estado => encode(&state_response(false)),
-                Pedido::Ssh { entrada, .. } if entrada == "t-nota" => {
-                    encode(&Resposta::Erro(ErroResposta::TipoSemEntrega))
+            Some(Arc::new(move |p: &Request| match p {
+                Request::Status => encode(&state_response(false)),
+                Request::Ssh { entry: entrada, .. } if entrada == "t-nota" => {
+                    encode(&Resposta::Erro(ResponseError::TypeWithoutDelivery))
                 }
-                Pedido::Ssh {
-                    entrada,
-                    comando,
+                Request::Ssh {
+                    entry: entrada,
+                    command: comando,
                     token: t,
-                    janela,
-                    tipo_entrada,
+                    window_size: janela,
+                    stdin_kind: tipo_entrada,
                 } => {
                     assert_eq!(entrada, "acme-ssh");
-                    assert_eq!(*tipo_entrada, ward_core::protocolo::TipoEntradaPadrao::Nula);
+                    assert_eq!(*tipo_entrada, ward_core::protocol::StdinKind::Null);
                     let c: Vec<&[u8]> = comando.iter().map(|x| x.as_slice()).collect();
                     assert_eq!(c, [b"ls".as_slice(), b"-la"]);
                     assert_eq!(t.as_ref().map(|t| t.expose().to_vec()), Some(token.into()));
@@ -607,8 +610,8 @@ mod with_fake_daemon {
                         dados: Zeroizing::new("senha=••••\n".as_bytes().to_vec()),
                     })
                 }
-                Pedido::EntradaPadrao { .. } => encode(&Resposta::Fim { codigo: 4 }),
-                _ => encode(&Resposta::Erro(ErroResposta::NaoAutorizado)),
+                Request::Stdin { .. } => encode(&Resposta::Fim { codigo: 4 }),
+                _ => encode(&Resposta::Erro(ResponseError::Unauthorized)),
             })),
         );
         let mut t = test_env(&dir);
@@ -738,7 +741,7 @@ mod with_fake_daemon {
         ] {
             let dir = TestDir::new();
             let body = body.as_bytes().to_vec();
-            let _v = fake_server(&dir, Some(Arc::new(move |_: &Pedido| body.clone())));
+            let _v = fake_server(&dir, Some(Arc::new(move |_: &Request| body.clone())));
             let mut t = test_env(&dir);
             assert_eq!(t.run(&["lista", "--json"]), EXIT_ERROR);
             assert_eq!(t.err(), "ward: resposta inválida do daemon\n");
@@ -754,13 +757,13 @@ mod with_fake_daemon {
 #[test]
 fn f54b_stdin_kind_by_fstat() {
     use crate::commands::classify_stdin;
-    use ward_core::protocolo::TipoEntradaPadrao as T;
+    use ward_core::protocol::StdinKind as T;
     let meta = |p: &str| std::fs::metadata(p).unwrap();
-    assert_eq!(classify_stdin(Some(&meta("/dev/null")), false), T::Nula);
+    assert_eq!(classify_stdin(Some(&meta("/dev/null")), false), T::Null);
     // `/dev/null` is never a terminal, even if `isatty` lied.
-    assert_eq!(classify_stdin(Some(&meta("/dev/null")), true), T::Nula);
-    assert_eq!(classify_stdin(Some(&meta("/dev/zero")), false), T::Outra);
-    assert_eq!(classify_stdin(None, false), T::Nula);
+    assert_eq!(classify_stdin(Some(&meta("/dev/null")), true), T::Null);
+    assert_eq!(classify_stdin(Some(&meta("/dev/zero")), false), T::Other);
+    assert_eq!(classify_stdin(None, false), T::Null);
     let (reader, _writer) = std::io::pipe().unwrap();
     let f = std::fs::File::from(std::os::fd::OwnedFd::from(reader));
     assert_eq!(classify_stdin(Some(&f.metadata().unwrap()), false), T::Pipe);
@@ -769,8 +772,8 @@ fn f54b_stdin_kind_by_fstat() {
     assert_eq!(classify_stdin(Some(&f.metadata().unwrap()), false), T::Pipe);
     let file = std::env::current_exe().unwrap();
     let m = std::fs::metadata(&file).unwrap();
-    assert_eq!(classify_stdin(Some(&m), false), T::Arquivo);
-    assert_eq!(classify_stdin(Some(&m), true), T::Arquivo);
+    assert_eq!(classify_stdin(Some(&m), false), T::File);
+    assert_eq!(classify_stdin(Some(&m), true), T::File);
     if let Ok(m) = std::fs::metadata("/dev/ptmx") {
         assert_eq!(classify_stdin(Some(&m), true), T::Terminal);
     }

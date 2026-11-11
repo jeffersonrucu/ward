@@ -11,7 +11,7 @@
 
 use serde::Serialize;
 use ward_core::entry::EntryType;
-use ward_core::protocolo::{DetalheEntrada, ItemLista, ResumoItem};
+use ward_core::protocol::{DetalheEntrada, ItemLista, ResumoItem};
 
 /// Uma linha da lista (`Item de lista` compacto).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -297,17 +297,17 @@ mod testes {
     use crate::daemon::Daemon;
     use crate::fake_daemon::{FakeDaemon, SECRETS};
     use ward_core::entry::{AccessLevel, DataDraft, Draft, Secret};
-    use ward_core::protocolo::{self, Papel, Pedido, Resposta};
+    use ward_core::protocol::{self, Request, Resposta, Role};
 
-    fn trocar(d: &mut FakeDaemon, pedido: &Pedido) -> Resposta {
-        let q = protocolo::codificar_pedido(Papel::App, pedido).unwrap();
+    fn trocar(d: &mut FakeDaemon, pedido: &Request) -> Resposta {
+        let q = protocol::encode_request(Role::App, pedido).unwrap();
         let r = d.exchange(&q).unwrap();
-        protocolo::decodificar_resposta(Papel::App, &r).unwrap()
+        protocol::decode_response(Role::App, &r).unwrap()
     }
 
     fn detalhe(d: &mut FakeDaemon, nome: &str) -> DetalheCredencial {
-        let p = Pedido::Detalhe {
-            entrada: nome.to_owned(),
+        let p = Request::Detail {
+            entry: nome.to_owned(),
         };
         match trocar(d, &p) {
             Resposta::Detalhe(x) => DetalheCredencial::novo(&x),
@@ -337,10 +337,10 @@ mod testes {
         );
 
         let antes = agora();
-        let novo = Pedido::SalvarEntrada {
-            anterior: None,
-            manter_anexos: Vec::new(),
-            rascunho: Draft {
+        let novo = Request::SaveEntry {
+            previous: None,
+            keep_attachments: Vec::new(),
+            draft: Draft {
                 name: "clientex-stage-wp".to_owned(),
                 group: "clientex".to_owned(),
                 environment: "stage".to_owned(),
@@ -367,9 +367,9 @@ mod testes {
             assert!(!json.contains(s));
         }
         // Mudar o nível (com o PIN de teste) só mexe na alteração.
-        let mudar = Pedido::MudarNivel {
-            entrada: "clientex-stage-wp".to_owned(),
-            nivel: AccessLevel::Free,
+        let mudar = Request::SetLevel {
+            entry: "clientex-stage-wp".to_owned(),
+            level: AccessLevel::Free,
             pin: Secret::from_text("135790".to_owned()),
         };
         assert!(matches!(trocar(&mut d, &mudar), Resposta::Ok));

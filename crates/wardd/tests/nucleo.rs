@@ -13,11 +13,11 @@ use std::time::Duration;
 
 use comum::*;
 use ward_core::entry::AccessLevel;
-use ward_core::protocolo::{ErroResposta, Papel, Resposta};
+use ward_core::protocol::{ResponseError, Resposta, Role};
 use wardd::arquivos::{self, Geracoes};
 use wardd::nucleo::{ESPERA_MAXIMA, espera_destrave};
 
-fn lista(d: &wardd::nucleo::Daemon, papel: Papel) -> Vec<ward_core::protocolo::ItemLista> {
+fn lista(d: &wardd::nucleo::Daemon, papel: Role) -> Vec<ward_core::protocol::ItemLista> {
     match pedir(d, papel, "lista", "{}") {
         Resposta::Lista(l) => l,
         r => panic!("{r:?}"),
@@ -25,7 +25,7 @@ fn lista(d: &wardd::nucleo::Daemon, papel: Papel) -> Vec<ward_core::protocolo::I
 }
 
 fn nivel_de(d: &wardd::nucleo::Daemon, nome: &str) -> Option<AccessLevel> {
-    lista(d, Papel::App)
+    lista(d, Role::App)
         .into_iter()
         .find(|i| i.nome == nome)
         .and_then(|i| i.nivel)
@@ -42,27 +42,27 @@ fn v3_10_travar_e_tudo_responde_travado() {
     let dir = Dir::novo("travar");
     let (d, _) = cofre_de_teste(&dir);
     assert!(!d.travado());
-    assert!(ok(&pedir(&d, Papel::Agente, "travar", "{}")));
+    assert!(ok(&pedir(&d, Role::Agent, "travar", "{}")));
     assert!(d.travado());
     let pin = b64(PIN.as_bytes());
     for (papel, op, dados) in [
-        (Papel::Agente, "lista", "{}".to_owned()),
-        (Papel::App, "lista", "{}".to_owned()),
-        (Papel::App, "detalhe", r#"{"entrada":"t-aprov"}"#.to_owned()),
+        (Role::Agent, "lista", "{}".to_owned()),
+        (Role::App, "lista", "{}".to_owned()),
+        (Role::App, "detalhe", r#"{"entrada":"t-aprov"}"#.to_owned()),
         (
-            Papel::App,
+            Role::App,
             "remover_entrada",
             r#"{"entrada":"t-aprov"}"#.to_owned(),
         ),
-        (Papel::App, "tempo_trava", r#"{"minutos":30}"#.to_owned()),
+        (Role::App, "tempo_trava", r#"{"minutos":30}"#.to_owned()),
         (
-            Papel::App,
+            Role::App,
             "mudar_nivel",
             format!(r#"{{"entrada":"t-aprov","nivel":"livre","pin":"{pin}"}}"#),
         ),
-        (Papel::App, "salvar_entrada", login("t-novo", SEGREDOS[0])),
+        (Role::App, "salvar_entrada", login("t-novo", SEGREDOS[0])),
         (
-            Papel::Agente,
+            Role::Agent,
             "executar",
             format!(
                 r#"{{"entrada":"t-livre","argv":["{}"],"cwd":"{}","tipo_entrada":"nula","ambiente":[]}}"#,
@@ -73,20 +73,20 @@ fn v3_10_travar_e_tudo_responde_travado() {
     ] {
         assert_eq!(
             erro(&pedir(&d, papel, op, &dados)),
-            Some(ErroResposta::Travado),
+            Some(ResponseError::Locked),
             "{op}"
         );
     }
-    match pedir(&d, Papel::Agente, "estado", "{}") {
+    match pedir(&d, Role::Agent, "estado", "{}") {
         Resposta::Estado {
             travado,
             cofre_existe,
             papel,
-        } => assert!(travado && cofre_existe && papel == Papel::Agente),
+        } => assert!(travado && cofre_existe && papel == Role::Agent),
         r => panic!("{r:?}"),
     }
     assert!(ok(&destravar(&d, SENHA)));
-    assert_eq!(lista(&d, Papel::App).len(), 5);
+    assert_eq!(lista(&d, Role::App).len(), 5);
 }
 
 /// V3.9 (D20): 10 senhas erradas seguidas; cada tentativa espera mais que a anterior,
@@ -106,8 +106,8 @@ fn v3_9_senha_errada_espera_crescente_sem_contagem() {
     let mut quadros = Vec::new();
     for i in 0..10 {
         let r = destravar(&d, &format!("falso-errada-{i:02}"));
-        assert_eq!(erro(&r), Some(ErroResposta::SenhaIncorreta));
-        quadros.push(codificado(Papel::Agente, &r));
+        assert_eq!(erro(&r), Some(ResponseError::WrongPassword));
+        quadros.push(codificado(Role::Agent, &r));
     }
     assert!(quadros.windows(2).all(|w| w[0] == w[1]));
     let s = String::from_utf8_lossy(&quadros[0]);
@@ -142,19 +142,19 @@ fn v3_11_mudar_nivel_exige_pin_e_papel_app() {
     // Sem PIN: a leitura do pedido recusa.
     let sem_pin = pedir(
         &d,
-        Papel::App,
+        Role::App,
         "mudar_nivel",
         r#"{"entrada":"t-aprov","nivel":"bloqueado"}"#,
     );
-    assert_eq!(erro(&sem_pin), Some(ErroResposta::PedidoInvalido));
+    assert_eq!(erro(&sem_pin), Some(ResponseError::InvalidRequest));
     // PIN errado.
-    let r = mudar_nivel(&d, Papel::App, "t-aprov", "bloqueado", PIN_ERRADO);
-    assert_eq!(erro(&r), Some(ErroResposta::PinIncorreto));
+    let r = mudar_nivel(&d, Role::App, "t-aprov", "bloqueado", PIN_ERRADO);
+    assert_eq!(erro(&r), Some(ResponseError::WrongPin));
     // Agente, PIN certo: não autorizado, pela leitura e pela segunda camada.
-    let r = mudar_nivel(&d, Papel::Agente, "t-aprov", "bloqueado", PIN);
-    assert_eq!(erro(&r), Some(ErroResposta::NaoAutorizado));
+    let r = mudar_nivel(&d, Role::Agent, "t-aprov", "bloqueado", PIN);
+    assert_eq!(erro(&r), Some(ResponseError::Unauthorized));
     let p = ped(
-        Papel::App,
+        Role::App,
         "mudar_nivel",
         &format!(
             r#"{{"entrada":"t-aprov","nivel":"bloqueado","pin":"{}"}}"#,
@@ -163,20 +163,14 @@ fn v3_11_mudar_nivel_exige_pin_e_papel_app() {
     )
     .unwrap();
     assert_eq!(
-        erro(&d.atender(Papel::Agente, p)),
-        Some(ErroResposta::NaoAutorizado)
+        erro(&d.atender(Role::Agent, p)),
+        Some(ResponseError::Unauthorized)
     );
     assert_eq!(fs::read(&cofre).unwrap(), antes, "o arquivo mudou");
     assert_eq!(nivel_de(&d, "t-aprov"), Some(AccessLevel::Approval));
 
     // App com o PIN certo: muda e fica no disco.
-    assert!(ok(&mudar_nivel(
-        &d,
-        Papel::App,
-        "t-aprov",
-        "bloqueado",
-        PIN
-    )));
+    assert!(ok(&mudar_nivel(&d, Role::App, "t-aprov", "bloqueado", PIN)));
     assert_ne!(fs::read(&cofre).unwrap(), antes);
     d.travar();
     assert!(ok(&destravar(&d, SENHA)));
@@ -190,13 +184,13 @@ fn v3_12_cinco_erros_de_pin_travam() {
     let dir = Dir::novo("pin");
     let (d, _) = cofre_de_teste(&dir);
     for _ in 0..4 {
-        let r = mudar_nivel(&d, Papel::App, "t-aprov", "livre", PIN_ERRADO);
-        assert_eq!(erro(&r), Some(ErroResposta::PinIncorreto));
+        let r = mudar_nivel(&d, Role::App, "t-aprov", "livre", PIN_ERRADO);
+        assert_eq!(erro(&r), Some(ResponseError::WrongPin));
     }
     assert!(!d.travado());
     assert!(ok(&mudar_nivel(
         &d,
-        Papel::App,
+        Role::App,
         "t-aprov",
         "com-aprovacao",
         PIN
@@ -205,7 +199,7 @@ fn v3_12_cinco_erros_de_pin_travam() {
     for _ in 0..4 {
         let r = pedir(
             &d,
-            Papel::App,
+            Role::App,
             "trocar_pin",
             &format!(
                 r#"{{"atual":"{}","novo":"{}"}}"#,
@@ -213,20 +207,20 @@ fn v3_12_cinco_erros_de_pin_travam() {
                 b64(b"2468")
             ),
         );
-        assert_eq!(erro(&r), Some(ErroResposta::PinIncorreto));
+        assert_eq!(erro(&r), Some(ResponseError::WrongPin));
     }
     assert!(!d.travado());
-    let r = mudar_nivel(&d, Papel::App, "t-aprov", "livre", PIN_ERRADO);
-    assert_eq!(erro(&r), Some(ErroResposta::PinIncorreto));
+    let r = mudar_nivel(&d, Role::App, "t-aprov", "livre", PIN_ERRADO);
+    assert_eq!(erro(&r), Some(ResponseError::WrongPin));
     assert!(d.travado(), "o 5.º erro seguido tem de travar");
     assert_eq!(
-        erro(&pedir(&d, Papel::App, "lista", "{}")),
-        Some(ErroResposta::Travado)
+        erro(&pedir(&d, Role::App, "lista", "{}")),
+        Some(ResponseError::Locked)
     );
     // Destravar zera a contagem.
     assert!(ok(&destravar(&d, SENHA)));
-    let r = mudar_nivel(&d, Papel::App, "t-aprov", "livre", PIN_ERRADO);
-    assert_eq!(erro(&r), Some(ErroResposta::PinIncorreto));
+    let r = mudar_nivel(&d, Role::App, "t-aprov", "livre", PIN_ERRADO);
+    assert_eq!(erro(&r), Some(ResponseError::WrongPin));
     assert!(!d.travado());
 }
 
@@ -237,29 +231,29 @@ fn v3_12_cinco_erros_de_pin_travam() {
 fn v3_17_v3_26_lista_do_agente_e_bloqueada_igual_inexistente() {
     let dir = Dir::novo("lista");
     let (d, _) = cofre_de_teste(&dir);
-    let agente = lista(&d, Papel::Agente);
+    let agente = lista(&d, Role::Agent);
     assert_eq!(agente.len(), 4);
     assert!(
         agente
             .iter()
             .all(|i| i.nome != "t-bloq" && i.nivel.is_none())
     );
-    let q = codificado(Papel::Agente, &Resposta::Lista(agente));
+    let q = codificado(Role::Agent, &Resposta::Lista(agente));
     assert!(!contem(&q, b"\"nivel\""));
     for s in SEGREDOS {
         assert!(!contem(&q, s.as_bytes()) && !contem(&q, b64(s.as_bytes()).as_bytes()));
     }
-    let app = lista(&d, Papel::App);
+    let app = lista(&d, Role::App);
     assert_eq!(app.len(), 5);
     assert!(app.iter().all(|i| i.nivel.is_some()));
     assert_eq!(nivel_de(&d, "t-bloq"), Some(AccessLevel::Blocked));
 
     let executar = |nome: &str| {
         codificado(
-            Papel::Agente,
+            Role::Agent,
             &pedir(
                 &d,
-                Papel::Agente,
+                Role::Agent,
                 "executar",
                 &format!(
                     r#"{{"entrada":"{nome}","argv":["{}"],"cwd":"{}","tipo_entrada":"nula","ambiente":[]}}"#,
@@ -280,19 +274,19 @@ fn v3_17_v3_26_lista_do_agente_e_bloqueada_igual_inexistente() {
             ""
         };
         let a = codificado(
-            Papel::Agente,
+            Role::Agent,
             &pedir(
                 &d,
-                Papel::Agente,
+                Role::Agent,
                 op,
                 &format!(r#"{{"entrada":"t-bloq"{extra}}}"#),
             ),
         );
         let b = codificado(
-            Papel::Agente,
+            Role::Agent,
             &pedir(
                 &d,
-                Papel::Agente,
+                Role::Agent,
                 op,
                 &format!(r#"{{"entrada":"nao-existe"{extra}}}"#),
             ),
@@ -310,7 +304,7 @@ fn v3_27_entrada_nova_nasce_com_aprovacao() {
     let (d, _) = cofre_de_teste(&dir);
     assert!(ok(&pedir(
         &d,
-        Papel::App,
+        Role::App,
         "salvar_entrada",
         &login("t-nova", SEGREDOS[0])
     )));
@@ -319,24 +313,24 @@ fn v3_27_entrada_nova_nasce_com_aprovacao() {
     let com_nivel =
         login("t-nova2", SEGREDOS[0]).replacen(r#""nome":"#, r#""nivel":"livre","nome":"#, 1);
     assert_eq!(
-        erro(&pedir(&d, Papel::App, "salvar_entrada", &com_nivel)),
-        Some(ErroResposta::PedidoInvalido)
+        erro(&pedir(&d, Role::App, "salvar_entrada", &com_nivel)),
+        Some(ResponseError::InvalidRequest)
     );
-    assert!(lista(&d, Papel::App).iter().all(|i| i.nome != "t-nova2"));
+    assert!(lista(&d, Role::App).iter().all(|i| i.nome != "t-nova2"));
     // Editar a livre mantém livre.
     let editar = login("t-livre", SEGREDOS[3]).replacen('{', r#"{"anterior":"t-livre","#, 1);
-    assert!(ok(&pedir(&d, Papel::App, "salvar_entrada", &editar)));
+    assert!(ok(&pedir(&d, Role::App, "salvar_entrada", &editar)));
     assert_eq!(nivel_de(&d, "t-livre"), Some(AccessLevel::Free));
     // Remover e recriar com o mesmo nome: volta "com aprovação".
     assert!(ok(&pedir(
         &d,
-        Papel::App,
+        Role::App,
         "remover_entrada",
         r#"{"entrada":"t-livre"}"#
     )));
     assert!(ok(&pedir(
         &d,
-        Papel::App,
+        Role::App,
         "salvar_entrada",
         &login("t-livre", SEGREDOS[3])
     )));
@@ -344,31 +338,31 @@ fn v3_27_entrada_nova_nasce_com_aprovacao() {
     // Nome repetido é erro de validação, e nada muda.
     let r = pedir(
         &d,
-        Papel::App,
+        Role::App,
         "salvar_entrada",
         &login("t-livre", SEGREDOS[3]),
     );
     assert!(
-        matches!(erro(&r), Some(ErroResposta::Validacao(_))),
+        matches!(erro(&r), Some(ResponseError::Validation(_))),
         "{r:?}"
     );
     // Remover um servidor usado como túnel deixaria o cofre sem reabrir: recusado.
-    let r = pedir(&d, Papel::App, "remover_entrada", r#"{"entrada":"s1"}"#);
+    let r = pedir(&d, Role::App, "remover_entrada", r#"{"entrada":"s1"}"#);
     assert!(
-        matches!(erro(&r), Some(ErroResposta::Validacao(_))),
+        matches!(erro(&r), Some(ResponseError::Validation(_))),
         "{r:?}"
     );
     let renomear = servidor("s2").replacen('{', r#"{"anterior":"s1","#, 1);
-    let r = pedir(&d, Papel::App, "salvar_entrada", &renomear);
+    let r = pedir(&d, Role::App, "salvar_entrada", &renomear);
     assert!(
-        matches!(erro(&r), Some(ErroResposta::Validacao(_))),
+        matches!(erro(&r), Some(ResponseError::Validation(_))),
         "{r:?}"
     );
-    assert!(lista(&d, Papel::App).iter().any(|i| i.nome == "s1"));
+    assert!(lista(&d, Role::App).iter().any(|i| i.nome == "s1"));
     // O cofre continua abrindo com tudo isso.
     d.travar();
     assert!(ok(&destravar(&d, SENHA)));
-    assert_eq!(lista(&d, Papel::App).len(), 6);
+    assert_eq!(lista(&d, Role::App).len(), 6);
 }
 
 /// V3.22 (D39; S7, S9, S13): cópia antiga por cima com o daemon travado, estado
@@ -382,13 +376,13 @@ fn v3_22_rollback_e_arquivo_trocado() {
     let n = geracao_no_disco(&c.cofre, SENHA);
     assert!(ok(&pedir(
         &d,
-        Papel::App,
+        Role::App,
         "tempo_trava",
         r#"{"minutos":30}"#
     )));
     assert!(ok(&pedir(
         &d,
-        Papel::App,
+        Role::App,
         "tempo_trava",
         r#"{"minutos":60}"#
     )));
@@ -406,9 +400,9 @@ fn v3_22_rollback_e_arquivo_trocado() {
     // arquivo não é regravado.
     fs::write(&c.cofre, &copia_n).unwrap();
     let r = destravar(&d, SENHA);
-    assert_eq!(erro(&r), Some(ErroResposta::Retrocesso));
+    assert_eq!(erro(&r), Some(ResponseError::Rollback));
     assert!(contem(
-        &codificado(Papel::Agente, &r),
+        &codificado(Role::Agent, &r),
         "o cofre no disco é mais antigo que o último aberto".as_bytes()
     ));
     assert!(d.travado());
@@ -417,7 +411,7 @@ fn v3_22_rollback_e_arquivo_trocado() {
     // Apagar o estado: recusa igual, mesmo com o cofre certo de volta.
     fs::remove_file(&c.estado).unwrap();
     let r = destravar(&d, SENHA);
-    assert_eq!(erro(&r), Some(ErroResposta::Retrocesso));
+    assert_eq!(erro(&r), Some(ResponseError::Rollback));
     assert!(d.travado());
 
     // Estado de volta (n), destrava a cópia n: a geração sobe com as gravações.
@@ -431,7 +425,10 @@ fn v3_22_rollback_e_arquivo_trocado() {
         },
     )
     .unwrap();
-    assert_eq!(erro(&destravar(&d, SENHA)), Some(ErroResposta::CofreMudou));
+    assert_eq!(
+        erro(&destravar(&d, SENHA)),
+        Some(ResponseError::VaultChanged)
+    );
     assert!(ok(&destravar(&d, SENHA)));
     // Com o daemon destravado, o arquivo trocado por `mv` (inode novo): não grava por
     // cima, trava e avisa.
@@ -439,10 +436,10 @@ fn v3_22_rollback_e_arquivo_trocado() {
     fs::copy(&c.cofre, &outro).unwrap();
     fs::rename(&outro, &c.cofre).unwrap();
     let antes = fs::read(&c.cofre).unwrap();
-    let r = pedir(&d, Papel::App, "tempo_trava", r#"{"minutos":90}"#);
-    assert_eq!(erro(&r), Some(ErroResposta::CofreMudou));
+    let r = pedir(&d, Role::App, "tempo_trava", r#"{"minutos":90}"#);
+    assert_eq!(erro(&r), Some(ResponseError::VaultChanged));
     assert!(contem(
-        &codificado(Papel::App, &r),
+        &codificado(Role::App, &r),
         "o arquivo do cofre mudou fora do Ward".as_bytes()
     ));
     assert!(d.travado());
@@ -452,15 +449,18 @@ fn v3_22_rollback_e_arquivo_trocado() {
     assert!(ok(&destravar(&d, SENHA)));
     std::thread::sleep(Duration::from_millis(20));
     fs::write(&c.cofre, &antes).unwrap();
-    let r = pedir(&d, Papel::App, "tempo_trava", r#"{"minutos":90}"#);
-    assert_eq!(erro(&r), Some(ErroResposta::CofreMudou));
+    let r = pedir(&d, Role::App, "tempo_trava", r#"{"minutos":90}"#);
+    assert_eq!(erro(&r), Some(ResponseError::VaultChanged));
     assert!(d.travado());
     // Trocado com o daemon travado (sem mudar a geração): o destravar avisa uma vez.
     assert!(ok(&destravar(&d, SENHA)));
     d.travar();
     std::thread::sleep(Duration::from_millis(20));
     fs::write(&c.cofre, &antes).unwrap();
-    assert_eq!(erro(&destravar(&d, SENHA)), Some(ErroResposta::CofreMudou));
+    assert_eq!(
+        erro(&destravar(&d, SENHA)),
+        Some(ResponseError::VaultChanged)
+    );
     assert!(ok(&destravar(&d, SENHA)));
 
     // O estado é 0600, sem segredo.
@@ -502,9 +502,9 @@ fn v3_28_geracao_queimada_no_estado() {
 
     // A: o rename acontece, o fsync do diretório falha.
     fs::set_permissions(&dir.0, fs::Permissions::from_mode(0o300)).unwrap();
-    let r = pedir(&d, Papel::App, "tempo_trava", r#"{"minutos":30}"#);
+    let r = pedir(&d, Role::App, "tempo_trava", r#"{"minutos":30}"#);
     fs::set_permissions(&dir.0, fs::Permissions::from_mode(0o700)).unwrap();
-    assert_eq!(erro(&r), Some(ErroResposta::FalhaAoGravar));
+    assert_eq!(erro(&r), Some(ResponseError::WriteFailed));
     assert_eq!(
         geracoes_em(&c.estado),
         Geracoes {
@@ -528,7 +528,7 @@ fn v3_28_geracao_queimada_no_estado() {
     );
     assert!(ok(&pedir(
         &d,
-        Papel::App,
+        Role::App,
         "tempo_trava",
         r#"{"minutos":45}"#
     )));
@@ -544,16 +544,16 @@ fn v3_28_geracao_queimada_no_estado() {
     // A cópia de A no lugar: retrocesso.
     d.travar();
     fs::write(&c.cofre, &copia_a).unwrap();
-    assert_eq!(erro(&destravar(&d, SENHA)), Some(ErroResposta::Retrocesso));
+    assert_eq!(erro(&destravar(&d, SENHA)), Some(ResponseError::Rollback));
     assert!(d.travado());
 
     // Sem reinício: A falha depois do rename, B grava n+4 (n+3 foi queimada por A).
     let (d, _) = cofre_n2(&c, &dir);
     let g = geracao_no_disco(&c.cofre, SENHA);
     fs::set_permissions(&dir.0, fs::Permissions::from_mode(0o300)).unwrap();
-    let r = pedir(&d, Papel::App, "tempo_trava", r#"{"minutos":31}"#);
+    let r = pedir(&d, Role::App, "tempo_trava", r#"{"minutos":31}"#);
     fs::set_permissions(&dir.0, fs::Permissions::from_mode(0o700)).unwrap();
-    assert_eq!(erro(&r), Some(ErroResposta::FalhaAoGravar));
+    assert_eq!(erro(&r), Some(ResponseError::WriteFailed));
     assert_eq!(
         geracoes_em(&c.estado),
         Geracoes {
@@ -563,7 +563,7 @@ fn v3_28_geracao_queimada_no_estado() {
     );
     assert!(ok(&pedir(
         &d,
-        Papel::App,
+        Role::App,
         "tempo_trava",
         r#"{"minutos":32}"#
     )));
@@ -579,9 +579,9 @@ fn v3_28_geracao_queimada_no_estado() {
     // O estado não grava (diretório só leitura): o cofre não é gravado.
     let antes = fs::read(&c.cofre).unwrap();
     fs::set_permissions(&dir_estado.0, fs::Permissions::from_mode(0o500)).unwrap();
-    let r = pedir(&d, Papel::App, "tempo_trava", r#"{"minutos":33}"#);
+    let r = pedir(&d, Role::App, "tempo_trava", r#"{"minutos":33}"#);
     fs::set_permissions(&dir_estado.0, fs::Permissions::from_mode(0o700)).unwrap();
-    assert_eq!(erro(&r), Some(ErroResposta::FalhaAoGravar));
+    assert_eq!(erro(&r), Some(ResponseError::WriteFailed));
     assert_eq!(fs::read(&c.cofre).unwrap(), antes);
     assert!(!d.travado());
 
@@ -591,7 +591,7 @@ fn v3_28_geracao_queimada_no_estado() {
     fs::set_permissions(&dir.0, fs::Permissions::from_mode(0o300)).unwrap();
     let r = pedir(
         &d,
-        Papel::App,
+        Role::App,
         "trocar_senha",
         &format!(
             r#"{{"atual":"{}","nova":"{}"}}"#,
@@ -600,13 +600,13 @@ fn v3_28_geracao_queimada_no_estado() {
         ),
     );
     fs::set_permissions(&dir.0, fs::Permissions::from_mode(0o700)).unwrap();
-    assert_eq!(erro(&r), Some(ErroResposta::FalhaAoGravar));
+    assert_eq!(erro(&r), Some(ResponseError::WriteFailed));
     assert!(d.travado());
     let q = geracoes_em(&c.estado).queimada;
     assert!(ok(&destravar(&d, nova)));
     assert!(ok(&pedir(
         &d,
-        Papel::App,
+        Role::App,
         "tempo_trava",
         r#"{"minutos":34}"#
     )));
@@ -640,7 +640,7 @@ fn d52_trocar_senha_com_senha_errada() {
     let troca = |atual: &str, nova: &str| {
         pedir(
             &d,
-            Papel::App,
+            Role::App,
             "trocar_senha",
             &format!(
                 r#"{{"atual":"{}","nova":"{}"}}"#,
@@ -651,20 +651,20 @@ fn d52_trocar_senha_com_senha_errada() {
     };
     assert_eq!(
         erro(&troca("falso-errada-01", "falso-nova-02")),
-        Some(ErroResposta::SenhaIncorreta)
+        Some(ResponseError::WrongPassword)
     );
     assert!(!d.travado());
     assert!(ok(&troca(SENHA, "falso-nova-02")));
     assert!(ok(&pedir(
         &d,
-        Papel::App,
+        Role::App,
         "tempo_trava",
         r#"{"minutos":20}"#
     )));
     d.travar();
     assert_eq!(
         erro(&destravar(&d, SENHA)),
-        Some(ErroResposta::SenhaIncorreta)
+        Some(ResponseError::WrongPassword)
     );
     assert!(ok(&destravar(&d, "falso-nova-02")));
 }
@@ -676,7 +676,7 @@ fn d52_trocar_senha_com_senha_errada() {
 fn primeiro_uso_e_pin_so_como_hash() {
     let dir = Dir::novo("primeiro");
     let (d, _) = daemon_em(dir.caminhos());
-    match pedir(&d, Papel::Agente, "estado", "{}") {
+    match pedir(&d, Role::Agent, "estado", "{}") {
         Resposta::Estado {
             travado,
             cofre_existe,
@@ -686,7 +686,7 @@ fn primeiro_uso_e_pin_so_como_hash() {
     }
     assert_eq!(
         erro(&destravar(&d, SENHA)),
-        Some(ErroResposta::CofreInexistente)
+        Some(ResponseError::VaultNotFound)
     );
     // O agente não cria cofre.
     let criar = format!(
@@ -695,19 +695,19 @@ fn primeiro_uso_e_pin_so_como_hash() {
         b64(PIN.as_bytes())
     );
     assert_eq!(
-        erro(&pedir(&d, Papel::Agente, "criar_cofre", &criar)),
-        Some(ErroResposta::NaoAutorizado)
+        erro(&pedir(&d, Role::Agent, "criar_cofre", &criar)),
+        Some(ResponseError::Unauthorized)
     );
     drop(d);
     let (d, _) = cofre_de_teste(&dir);
     assert_eq!(
-        erro(&pedir(&d, Papel::App, "criar_cofre", &criar)),
-        Some(ErroResposta::CofreJaExiste)
+        erro(&pedir(&d, Role::App, "criar_cofre", &criar)),
+        Some(ResponseError::VaultAlreadyExists)
     );
     d.travar();
     assert_eq!(
-        erro(&pedir(&d, Papel::App, "criar_cofre", &criar)),
-        Some(ErroResposta::CofreJaExiste)
+        erro(&pedir(&d, Role::App, "criar_cofre", &criar)),
+        Some(ResponseError::VaultAlreadyExists)
     );
     let c = dir.caminhos();
     for arq in [&c.cofre, &c.estado] {
@@ -725,7 +725,7 @@ fn primeiro_uso_e_pin_so_como_hash() {
     assert!(ok(&destravar(&d, SENHA)));
     let r = pedir(
         &d,
-        Papel::App,
+        Role::App,
         "trocar_pin",
         &format!(
             r#"{{"atual":"{}","novo":"{}"}}"#,
@@ -737,8 +737,8 @@ fn primeiro_uso_e_pin_so_como_hash() {
     d.travar();
     assert!(ok(&destravar(&d, SENHA)));
     assert_eq!(
-        erro(&mudar_nivel(&d, Papel::App, "t-aprov", "livre", PIN)),
-        Some(ErroResposta::PinIncorreto)
+        erro(&mudar_nivel(&d, Role::App, "t-aprov", "livre", PIN)),
+        Some(ResponseError::WrongPin)
     );
-    assert!(ok(&mudar_nivel(&d, Papel::App, "t-aprov", "livre", "2468")));
+    assert!(ok(&mudar_nivel(&d, Role::App, "t-aprov", "livre", "2468")));
 }

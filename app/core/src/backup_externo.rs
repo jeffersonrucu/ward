@@ -19,7 +19,7 @@
 use serde::Serialize;
 use ward_core::config::ExternalBackup;
 use ward_core::limits::MAX_BACKUP_UUID;
-use ward_core::protocolo::Pendrive;
+use ward_core::protocol::Pendrive;
 
 use crate::AppError;
 
@@ -197,7 +197,7 @@ mod testes {
         };
         let ok = item(r#"{"uuid":"7C1E-42A9","rotulo":"WARD","montado":true}"#);
         assert_eq!(client::usb_drives(&mut Resposta1(ok)).unwrap().len(), 1);
-        let muitos = (0..=ward_core::protocolo::MAX_PENDRIVES)
+        let muitos = (0..=ward_core::protocol::MAX_PENDRIVES)
             .map(|i| format!(r#"{{"uuid":"{i:04X}","rotulo":"x","montado":true}}"#))
             .collect::<Vec<_>>()
             .join(",");
@@ -210,7 +210,7 @@ mod testes {
             item(r#"{"uuid":"../etc","rotulo":"WARD","montado":true}"#),
             item(&format!(
                 r#"{{"uuid":"7C1E-42A9","rotulo":"{}","montado":true}}"#,
-                "a".repeat(ward_core::protocolo::MAX_ROTULO + 1)
+                "a".repeat(ward_core::protocol::MAX_ROTULO + 1)
             )),
             item(&muitos),
         ] {

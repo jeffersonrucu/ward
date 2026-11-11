@@ -8,7 +8,7 @@ mod comum;
 use std::time::Duration;
 
 use comum::{Dir, PIN, SEGREDOS, b64, erro, ok, pedir};
-use ward_core::protocolo::{self, Alvo, ErroResposta, Papel, Pedido, Resposta};
+use ward_core::protocol::{self, Request, ResponseError, Resposta, Role, Target};
 use ward_core::totp::Totp;
 use wardd::nucleo::{Daemon, Relogio};
 
@@ -48,7 +48,7 @@ fn cofre(dir: &Dir, unix: Option<u64>) -> Daemon {
     let d = Daemon::novo(dir.caminhos(), Box::new(RelogioFixo(unix)));
     let criar = pedir(
         &d,
-        Papel::App,
+        Role::App,
         "criar_cofre",
         &format!(
             r#"{{"senha":"{}","pin":"{}"}}"#,
@@ -63,11 +63,11 @@ fn cofre(dir: &Dir, unix: Option<u64>) -> Daemon {
         comum::servidor("s1"),
         com_totp("t-totp"),
     ] {
-        let r = pedir(&d, Papel::App, "salvar_entrada", &q);
+        let r = pedir(&d, Role::App, "salvar_entrada", &q);
         assert!(ok(&r), "{r:?}");
     }
     for n in ["t-bloq", "t-totp"] {
-        assert!(ok(&comum::mudar_nivel(&d, Papel::App, n, "bloqueado", PIN)));
+        assert!(ok(&comum::mudar_nivel(&d, Role::App, n, "bloqueado", PIN)));
     }
     d
 }
@@ -96,14 +96,14 @@ fn v3_39_app_revela_e_copia_sem_pin_nem_aprovacao_ate_a_bloqueada() {
         // protocolo nem aceita um) e sem janela (sem motor de aprovação ligado).
         let r = pedir(
             &d,
-            Papel::App,
+            Role::App,
             op,
             &pedido_valor("t-aprov", &alvo_campo("senha")),
         );
         assert_eq!(valor(&r), SEGREDOS[0].as_bytes(), "{op}");
         let r = pedir(
             &d,
-            Papel::App,
+            Role::App,
             op,
             &pedido_valor("t-bloq", &alvo_campo("senha")),
         );
@@ -111,24 +111,19 @@ fn v3_39_app_revela_e_copia_sem_pin_nem_aprovacao_ate_a_bloqueada() {
         // Semente TOTP e extra secreto também são segredos da entrada.
         let r = pedir(
             &d,
-            Papel::App,
+            Role::App,
             op,
             &pedido_valor("t-totp", &alvo_campo("totp_semente")),
         );
         assert_eq!(valor(&r), SEMENTE.as_bytes());
         let r = pedir(
             &d,
-            Papel::App,
+            Role::App,
             op,
             &pedido_valor("t-totp", r#""extra":"CHAVE""#),
         );
         assert_eq!(valor(&r), EXTRA.as_bytes());
-        let r = pedir(
-            &d,
-            Papel::App,
-            op,
-            &pedido_valor("s1", &alvo_campo("senha")),
-        );
+        let r = pedir(&d, Role::App, op, &pedido_valor("s1", &alvo_campo("senha")));
         assert_eq!(valor(&r), SEGREDOS[1].as_bytes());
 
         // Campo que o tipo não tem, extra comum, extra que não existe: "campo
@@ -141,45 +136,45 @@ fn v3_39_app_revela_e_copia_sem_pin_nem_aprovacao_ate_a_bloqueada() {
             ("t-totp", r#""extra":"REGIAO""#.to_owned()),
             ("t-totp", r#""extra":"NAO_EXISTE""#.to_owned()),
         ] {
-            let r = pedir(&d, Papel::App, op, &pedido_valor(entrada, &alvo));
+            let r = pedir(&d, Role::App, op, &pedido_valor(entrada, &alvo));
             assert_eq!(
                 erro(&r),
-                Some(ErroResposta::CampoInexistente),
+                Some(ResponseError::FieldNotFound),
                 "{op} {entrada} {alvo}"
             );
         }
         let r = pedir(
             &d,
-            Papel::App,
+            Role::App,
             op,
             &pedido_valor("nao-existe", &alvo_campo("senha")),
         );
-        assert_eq!(erro(&r), Some(ErroResposta::EntradaInexistente));
+        assert_eq!(erro(&r), Some(ResponseError::EntryNotFound));
     }
     // A resposta codificada para o app leva o valor em base64; para o agente, não sai.
     let r = pedir(
         &d,
-        Papel::App,
+        Role::App,
         "revelar",
         &pedido_valor("t-aprov", &alvo_campo("senha")),
     );
-    assert!(protocolo::codificar_resposta(Papel::App, &r).is_ok());
-    assert!(protocolo::codificar_resposta(Papel::Agente, &r).is_err());
-    assert!(protocolo::codificar_resposta(Papel::Extensao, &r).is_err());
+    assert!(protocol::encode_response(Role::App, &r).is_ok());
+    assert!(protocol::encode_response(Role::Agent, &r).is_err());
+    assert!(protocol::encode_response(Role::Extension, &r).is_err());
 
     // Travado: "travado", sem valor.
     d.travar();
     for op in ["revelar", "copiar"] {
         let r = pedir(
             &d,
-            Papel::App,
+            Role::App,
             op,
             &pedido_valor("t-aprov", &alvo_campo("senha")),
         );
-        assert_eq!(erro(&r), Some(ErroResposta::Travado), "{op}");
+        assert_eq!(erro(&r), Some(ResponseError::Locked), "{op}");
     }
-    let r = pedir(&d, Papel::App, "totp", r#"{"entrada":"t-totp"}"#);
-    assert_eq!(erro(&r), Some(ErroResposta::Travado));
+    let r = pedir(&d, Role::App, "totp", r#"{"entrada":"t-totp"}"#);
+    assert_eq!(erro(&r), Some(ResponseError::Locked));
 }
 
 #[test]
@@ -190,7 +185,7 @@ fn v3_39_totp_do_app_pelo_relogio_do_daemon() {
     let esperado = Totp::from_seed(&ward_core::entry::Secret::from_text(SEMENTE.into()))
         .unwrap()
         .code_at(59);
-    match pedir(&d, Papel::App, "totp", r#"{"entrada":"t-totp"}"#) {
+    match pedir(&d, Role::App, "totp", r#"{"entrada":"t-totp"}"#) {
         Resposta::CodigoTotp { codigo, restante } => {
             assert_eq!(codigo.as_str(), esperado.code());
             assert_eq!(codigo.len(), 6);
@@ -199,16 +194,16 @@ fn v3_39_totp_do_app_pelo_relogio_do_daemon() {
         outra => panic!("esperava código: {:?}", outra.tipo()),
     }
     // Sem semente: "campo inexistente"; sem entrada: "entrada inexistente".
-    let r = pedir(&d, Papel::App, "totp", r#"{"entrada":"t-aprov"}"#);
-    assert_eq!(erro(&r), Some(ErroResposta::CampoInexistente));
-    let r = pedir(&d, Papel::App, "totp", r#"{"entrada":"nao-existe"}"#);
-    assert_eq!(erro(&r), Some(ErroResposta::EntradaInexistente));
+    let r = pedir(&d, Role::App, "totp", r#"{"entrada":"t-aprov"}"#);
+    assert_eq!(erro(&r), Some(ResponseError::FieldNotFound));
+    let r = pedir(&d, Role::App, "totp", r#"{"entrada":"nao-existe"}"#);
+    assert_eq!(erro(&r), Some(ResponseError::EntryNotFound));
 
     // Relógio de parede ilegível: erro, nunca um código (falha fechada).
     let dir2 = Dir::novo("totp-sem-relogio");
     let d2 = cofre(&dir2, None);
-    let r = pedir(&d2, Papel::App, "totp", r#"{"entrada":"t-totp"}"#);
-    assert_eq!(erro(&r), Some(ErroResposta::Interno));
+    let r = pedir(&d2, Role::App, "totp", r#"{"entrada":"t-totp"}"#);
+    assert_eq!(erro(&r), Some(ResponseError::Internal));
 }
 
 #[test]
@@ -230,15 +225,15 @@ fn ataque_v3_39_agente_e_extensao_nao_revelam_nem_copiam_nem_tiram_totp() {
             ),
         ),
     ];
-    for papel in [Papel::Agente, Papel::Extensao] {
+    for papel in [Role::Agent, Role::Extension] {
         for (op, dados) in &pedidos {
             // Pelo protocolo (como o socket lê).
             let r = pedir(&d, papel, op, dados);
             assert_eq!(
                 erro(&r),
-                Some(ErroResposta::NaoAutorizado),
+                Some(ResponseError::Unauthorized),
                 "{} {op}",
-                papel.nome()
+                papel.name()
             );
             let q = comum::codificado(papel, &r);
             for s in SEGREDOS.iter().chain([&SEMENTE, &EXTRA]) {
@@ -248,26 +243,26 @@ fn ataque_v3_39_agente_e_extensao_nao_revelam_nem_copiam_nem_tiram_totp() {
         }
         // Pedido já decodificado entregue direto ao núcleo (segunda camada).
         for p in [
-            Pedido::Revelar {
-                entrada: "t-aprov".into(),
-                alvo: Alvo::Campo("senha".into()),
+            Request::Reveal {
+                entry: "t-aprov".into(),
+                target: Target::Field("senha".into()),
             },
-            Pedido::Copiar {
-                entrada: "t-bloq".into(),
-                alvo: Alvo::Campo("senha".into()),
+            Request::Copy {
+                entry: "t-bloq".into(),
+                target: Target::Field("senha".into()),
             },
-            Pedido::Totp {
-                entrada: "t-totp".into(),
+            Request::Totp {
+                entry: "t-totp".into(),
             },
         ] {
             let r = d.atender(papel, p);
-            assert_eq!(erro(&r), Some(ErroResposta::NaoAutorizado));
+            assert_eq!(erro(&r), Some(ResponseError::Unauthorized));
         }
     }
     // O cofre continua destravado e o app segue recebendo (nada travou nem gastou PIN).
     let r = pedir(
         &d,
-        Papel::App,
+        Role::App,
         "revelar",
         &pedido_valor("t-aprov", &alvo_campo("senha")),
     );
@@ -278,7 +273,7 @@ fn ataque_v3_39_agente_e_extensao_nao_revelam_nem_copiam_nem_tiram_totp() {
 fn v3_40_lista_do_app_com_resumo_e_do_agente_sem_nivel_nem_resumo() {
     let dir = Dir::novo("lista-resumo");
     let d = cofre(&dir, Some(59));
-    let Resposta::Lista(itens) = pedir(&d, Papel::App, "lista", "{}") else {
+    let Resposta::Lista(itens) = pedir(&d, Role::App, "lista", "{}") else {
         panic!("não é lista")
     };
     assert_eq!(itens.len(), 4);
@@ -293,14 +288,14 @@ fn v3_40_lista_do_app_com_resumo_e_do_agente_sem_nivel_nem_resumo() {
         vec!["senha".to_owned(), "totp_semente".to_owned()]
     );
     assert_eq!((r.extras, r.anexos), (2, 0));
-    let q = comum::codificado(Papel::App, &Resposta::Lista(itens));
+    let q = comum::codificado(Role::App, &Resposta::Lista(itens));
     for s in SEGREDOS.iter().chain([&SEMENTE, &EXTRA]) {
         assert!(!comum::contem(&q, s.as_bytes()), "segredo na lista do app");
         assert!(!comum::contem(&q, b64(s.as_bytes()).as_bytes()));
     }
     // Agente: as não bloqueadas, sem nível, sem resumo, sem usuário.
-    let r = pedir(&d, Papel::Agente, "lista", "{}");
-    let q = comum::codificado(Papel::Agente, &r);
+    let r = pedir(&d, Role::Agent, "lista", "{}");
+    let q = comum::codificado(Role::Agent, &r);
     let Resposta::Lista(itens) = r else {
         panic!("não é lista")
     };

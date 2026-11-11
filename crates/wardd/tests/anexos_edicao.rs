@@ -7,7 +7,7 @@ mod comum;
 
 use comum::*;
 use ward_core::entry::Entry;
-use ward_core::protocolo::{ErroResposta, Papel, Resposta};
+use ward_core::protocol::{ResponseError, Resposta, Role};
 
 const ANEXO_A: &[u8] = b"FALSO_A=falso-anexo-39b-a\n";
 const ANEXO_B: &[u8] = b"FALSO_B=falso-anexo-39b-b\n";
@@ -65,7 +65,7 @@ fn v5_12_editar_mantem_adiciona_e_remove_anexo() {
     let (d, _) = cofre_de_teste(&dir);
     let r = pedir(
         &d,
-        Papel::App,
+        Role::App,
         "salvar_entrada",
         &generico("g1", &[("a.env", ANEXO_A)]),
     );
@@ -74,7 +74,7 @@ fn v5_12_editar_mantem_adiciona_e_remove_anexo() {
     // Manter `a.env` e adicionar `b.env`.
     let r = pedir(
         &d,
-        Papel::App,
+        Role::App,
         "salvar_entrada",
         &editar("g1", &["a.env"], &[("b.env", ANEXO_B)]),
     );
@@ -86,12 +86,12 @@ fn v5_12_editar_mantem_adiciona_e_remove_anexo() {
             ("b.env".to_owned(), ANEXO_B.to_vec())
         ]
     );
-    let det = pedir(&d, Papel::App, "detalhe", r#"{"entrada":"g1"}"#);
+    let det = pedir(&d, Role::App, "detalhe", r#"{"entrada":"g1"}"#);
     let Resposta::Detalhe(x) = &det else {
         panic!("{det:?}")
     };
     assert_eq!(x.anexos.len(), 2);
-    let bytes = codificado(Papel::App, &det);
+    let bytes = codificado(Role::App, &det);
     for c in [ANEXO_A, ANEXO_B] {
         assert!(!contem(&bytes, c) && !contem(&bytes, b64(c).as_bytes()));
     }
@@ -99,7 +99,7 @@ fn v5_12_editar_mantem_adiciona_e_remove_anexo() {
     // Renomear mantendo os dois: o conteúdo vai junto.
     let renomear =
         editar("g1", &["b.env", "a.env"], &[]).replacen(r#""nome":"g1""#, r#""nome":"g2""#, 1);
-    let r = pedir(&d, Papel::App, "salvar_entrada", &renomear);
+    let r = pedir(&d, Role::App, "salvar_entrada", &renomear);
     assert!(ok(&r), "{r:?}");
     assert_eq!(
         anexos_no_disco(&dir, "g2"),
@@ -112,7 +112,7 @@ fn v5_12_editar_mantem_adiciona_e_remove_anexo() {
     // Remover: o que não está em `manter_anexos` sai.
     let r = pedir(
         &d,
-        Papel::App,
+        Role::App,
         "salvar_entrada",
         &editar("g2", &["a.env"], &[]),
     );
@@ -122,7 +122,7 @@ fn v5_12_editar_mantem_adiciona_e_remove_anexo() {
         [("a.env".to_owned(), ANEXO_A.to_vec())]
     );
     // Sem `manter_anexos` (o pedido de antes da Fase 39b): todos saem.
-    let r = pedir(&d, Papel::App, "salvar_entrada", &editar("g2", &[], &[]));
+    let r = pedir(&d, Role::App, "salvar_entrada", &editar("g2", &[], &[]));
     assert!(ok(&r), "{r:?}");
     assert!(anexos_no_disco(&dir, "g2").is_empty());
 }
@@ -138,12 +138,12 @@ fn v5_12_ataque_manter_anexos_forjado() {
         generico("g1", &[("a.env", ANEXO_A)]),
         generico("g2", &[("b.env", ANEXO_B)]),
     ] {
-        assert!(ok(&pedir(&d, Papel::App, "salvar_entrada", &q)));
+        assert!(ok(&pedir(&d, Role::App, "salvar_entrada", &q)));
     }
     let grande = vec![b'x'; 200 * 1024];
     assert!(ok(&pedir(
         &d,
-        Papel::App,
+        Role::App,
         "salvar_entrada",
         &generico("g3", &[("grande.bin", &grande)])
     )));
@@ -152,57 +152,57 @@ fn v5_12_ataque_manter_anexos_forjado() {
     // O anexo de `g2` não é alcançável editando `g1`.
     let r = pedir(
         &d,
-        Papel::App,
+        Role::App,
         "salvar_entrada",
         &editar("g1", &["b.env"], &[]),
     );
-    assert_eq!(erro(&r), Some(ErroResposta::PedidoInvalido), "{r:?}");
+    assert_eq!(erro(&r), Some(ResponseError::InvalidRequest), "{r:?}");
     // Nem com caminho.
     let r = pedir(
         &d,
-        Papel::App,
+        Role::App,
         "salvar_entrada",
         &editar("g1", &["../g2/b.env"], &[]),
     );
-    assert_eq!(erro(&r), Some(ErroResposta::PedidoInvalido), "{r:?}");
+    assert_eq!(erro(&r), Some(ResponseError::InvalidRequest), "{r:?}");
     // Entrada editada que não existe.
     let r = pedir(
         &d,
-        Papel::App,
+        Role::App,
         "salvar_entrada",
         &editar("nao-existe", &["a.env"], &[]),
     );
-    assert_eq!(erro(&r), Some(ErroResposta::EntradaInexistente), "{r:?}");
+    assert_eq!(erro(&r), Some(ResponseError::EntryNotFound), "{r:?}");
     // Entrada nova "copiando" o anexo de `g1`: a leitura recusa.
     let novo = generico("g9", &[]).replacen('{', r#"{"manter_anexos":["a.env"],"#, 1);
-    let r = pedir(&d, Papel::App, "salvar_entrada", &novo);
-    assert_eq!(erro(&r), Some(ErroResposta::PedidoInvalido), "{r:?}");
+    let r = pedir(&d, Role::App, "salvar_entrada", &novo);
+    assert_eq!(erro(&r), Some(ResponseError::InvalidRequest), "{r:?}");
     // Agente e extensão não têm a operação.
-    for papel in [Papel::Agente, Papel::Extensao] {
+    for papel in [Role::Agent, Role::Extension] {
         let r = pedir(&d, papel, "salvar_entrada", &editar("g1", &["a.env"], &[]));
-        assert_eq!(erro(&r), Some(ErroResposta::NaoAutorizado), "{papel:?}");
+        assert_eq!(erro(&r), Some(ResponseError::Unauthorized), "{papel:?}");
     }
     // 200 KiB mantidos + 60 KiB novos passam da soma: erro de validação.
     let novo60 = vec![b'y'; 60 * 1024];
     let r = pedir(
         &d,
-        Papel::App,
+        Role::App,
         "salvar_entrada",
         &editar("g3", &["grande.bin"], &[("mais.bin", &novo60)]),
     );
     assert!(
-        matches!(erro(&r), Some(ErroResposta::Validacao(_))),
+        matches!(erro(&r), Some(ResponseError::Validation(_))),
         "{r:?}"
     );
     // Nome mantido igual ao de um anexo novo: erro de validação (nome repetido).
     let r = pedir(
         &d,
-        Papel::App,
+        Role::App,
         "salvar_entrada",
         &editar("g1", &["a.env"], &[("a.env", ANEXO_B)]),
     );
     assert!(
-        matches!(erro(&r), Some(ErroResposta::Validacao(_))),
+        matches!(erro(&r), Some(ResponseError::Validation(_))),
         "{r:?}"
     );
 

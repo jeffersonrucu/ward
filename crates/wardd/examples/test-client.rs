@@ -19,7 +19,7 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use ward_core::entry::Secret;
-use ward_core::protocolo::{self, Papel, Pedido, Resposta};
+use ward_core::protocol::{self, Request, Resposta, Role};
 
 /// Largest password read from stdin.
 const MAX_PASSWORD: u64 = 1024;
@@ -31,8 +31,8 @@ fn main() -> ExitCode {
         return ExitCode::from(2);
     };
     let request = match op.as_str() {
-        "estado" => Pedido::Estado,
-        "lista" => Pedido::Lista,
+        "estado" => Request::Status,
+        "lista" => Request::List,
         "destravar" => {
             // Fixed capacity: no reallocation, no stray copy of the password.
             let mut password = Vec::with_capacity(MAX_PASSWORD as usize);
@@ -43,8 +43,8 @@ fn main() -> ExitCode {
             {
                 return ExitCode::from(2);
             }
-            Pedido::Destravar {
-                senha: Secret::from_bytes(password),
+            Request::Unlock {
+                password: Secret::from_bytes(password),
             }
         }
         _ => return ExitCode::from(2),
@@ -57,7 +57,7 @@ fn main() -> ExitCode {
         }
     };
     let _ = s.set_read_timeout(Some(Duration::from_secs(10)));
-    let body = protocolo::codificar_pedido(Papel::Agente, &request).expect("pedido");
+    let body = protocol::encode_request(Role::Agent, &request).expect("pedido");
     // If the daemon already closed, the write fails (EPIPE): it counts as closed without
     // bytes.
     let _ = s
@@ -74,11 +74,11 @@ fn main() -> ExitCode {
     let r = s
         .read_exact(&mut body)
         .ok()
-        .and_then(|()| protocolo::decodificar_resposta(Papel::Agente, &body).ok());
+        .and_then(|()| protocol::decode_response(Role::Agent, &body).ok());
     match r {
-        Some(Resposta::Erro(e)) => println!("resposta: erro {}", e.codigo()),
-        Some(Resposta::Estado { papel, .. }) => println!("resposta: estado papel={}", papel.nome()),
-        Some(r) => println!("resposta: {}", r.tipo().nome()),
+        Some(Resposta::Erro(e)) => println!("resposta: erro {}", e.code()),
+        Some(Resposta::Estado { papel, .. }) => println!("resposta: estado papel={}", papel.name()),
+        Some(r) => println!("resposta: {}", r.tipo().name()),
         None => println!("resposta: invalida"),
     }
     ExitCode::SUCCESS

@@ -26,7 +26,7 @@ import sys
 
 SOCKET_PATH, ROOT, VARIATIONS = sys.argv[1], sys.argv[2], sys.argv[3]
 CREDENTIAL = {"segredo", "token", "codigo_totp", "preenchimento"}
-AGENT_ROLES = {"TODOS", "AGENTE_E_APP", "SO_AGENTE"}
+AGENT_ROLES = {"ALL", "AGENT_AND_APP", "AGENT_ONLY"}
 # Never requested here: they change the state of the test itself (the rest is refused or harmless).
 SKIPPED = {"travar", "destravar"}
 
@@ -69,8 +69,8 @@ def req(obj):
 
 def operations():
     """(name, roles) of each operation, from the operation table of the protocol."""
-    text = open(f"{ROOT}/crates/ward-core/src/protocolo.rs", encoding="utf-8").read()
-    block = text.split("Operacao, ", 1)[1].split("tabela!", 1)[0]
+    text = open(f"{ROOT}/crates/ward-core/src/protocol.rs", encoding="utf-8").read()
+    block = text.split("Operation, ", 1)[1].split("table!", 1)[0]
     ops = re.findall(r'^\s*\w+ = "([a-z_]+)", ([A-Z_]+),', block, re.M)
     if len(ops) < 25:
         print(f"socket_matriz: só {len(ops)} operações lidas da tabela", file=sys.stderr)

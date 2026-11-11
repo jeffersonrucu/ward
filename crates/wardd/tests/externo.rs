@@ -29,7 +29,7 @@ use std::time::{Duration, Instant};
 
 use comum::*;
 use ward_core::backup::VERSIONS;
-use ward_core::protocolo::{ErroResposta, Papel, Resposta};
+use ward_core::protocol::{ResponseError, Resposta, Role};
 use wardd::externo::{ErroExterno, FontePendrives, Visto};
 use wardd::nucleo::Daemon;
 use zbus::connection::Builder;
@@ -90,7 +90,7 @@ fn montagem(dir: &Dir, nome: &str) -> PathBuf {
     p
 }
 
-fn ligar(d: &Daemon, papel: Papel, uuid: &str) -> Resposta {
+fn ligar(d: &Daemon, papel: Role, uuid: &str) -> Resposta {
     pedir(
         d,
         papel,
@@ -164,7 +164,7 @@ fn v7_4_desligado_por_padrao_nao_grava_nada() {
     let a = montagem(&dir, "pendrive-a");
     let fonte = Fonte::com(vec![pendrive(UUID_A, &a)]);
     let d = d.com_pendrives(Arc::new(fonte.clone()));
-    match pedir(&d, Papel::App, "backup_externo", "{}") {
+    match pedir(&d, Role::App, "backup_externo", "{}") {
         Resposta::BackupExterno { ligado, uuid } => {
             assert!(!ligado);
             assert_eq!(uuid, None);
@@ -175,7 +175,7 @@ fn v7_4_desligado_por_padrao_nao_grava_nada() {
     assert_eq!(fonte.consultas(), 0, "desligado nem consulta o udisks2");
     assert!(arvore(&a).is_empty(), "nada no pendrive");
     // A lista de pendrives (para o app escolher) funciona e não grava nada.
-    match pedir(&d, Papel::App, "pendrives", "{}") {
+    match pedir(&d, Role::App, "pendrives", "{}") {
         Resposta::Pendrives(l) => {
             assert_eq!(l.len(), 1);
             assert_eq!(l[0].uuid, UUID_A);
@@ -199,8 +199,8 @@ fn v7_5_v7_6_copia_so_para_o_pendrive_escolhido_e_sem_segredo() {
     let a = montagem(&dir, "pendrive-a");
     let b = montagem(&dir, "pendrive-b");
     let fonte = Fonte::com(vec![pendrive(UUID_B, &b)]);
-    assert!(ok(&ligar(&d, Papel::App, UUID_A)));
-    match pedir(&d, Papel::App, "backup_externo", "{}") {
+    assert!(ok(&ligar(&d, Role::App, UUID_A)));
+    match pedir(&d, Role::App, "backup_externo", "{}") {
         Resposta::BackupExterno { ligado, uuid } => {
             assert!(ligado);
             assert_eq!(uuid.as_deref(), Some(UUID_A));
@@ -244,7 +244,7 @@ fn v7_5_v7_6_copia_so_para_o_pendrive_escolhido_e_sem_segredo() {
     // Uma gravação nova: só ela vai.
     let r = pedir(
         &d,
-        Papel::App,
+        Role::App,
         "salvar_entrada",
         &login("t-nova", SEGREDOS[3]),
     );
@@ -286,7 +286,7 @@ fn ataque_pendrive_trocado_ou_uuid_repetido_nao_recebe_nada() {
     let (d, _) = cofre_de_teste(&dir);
     let a = montagem(&dir, "pendrive-a");
     let b = montagem(&dir, "pendrive-b");
-    assert!(ok(&ligar(&d, Papel::App, UUID_A)));
+    assert!(ok(&ligar(&d, Role::App, UUID_A)));
     // Dispositivo que não é o do diretório montado.
     let mut falso = pendrive(UUID_A, &a);
     falso.dispositivo ^= 0x55;
@@ -339,7 +339,7 @@ fn ataque_pendrive_trocado_ou_uuid_repetido_nao_recebe_nada() {
 fn ataque_montagem_ou_pasta_que_e_link() {
     let dir = Dir::novo("ext-link");
     let (d, _) = cofre_de_teste(&dir);
-    assert!(ok(&ligar(&d, Papel::App, UUID_A)));
+    assert!(ok(&ligar(&d, Role::App, UUID_A)));
     let alvo = montagem(&dir, "alvo");
     let link = dir.0.join("montagem-link");
     std::os::unix::fs::symlink(&alvo, &link).unwrap();
@@ -383,7 +383,7 @@ fn ataque_montagem_ou_pasta_que_e_link() {
 fn ataque_versao_existente_no_pendrive_nao_e_sobrescrita() {
     let dir = Dir::novo("ext-existe");
     let (d, _) = cofre_de_teste(&dir);
-    assert!(ok(&ligar(&d, Papel::App, UUID_A)));
+    assert!(ok(&ligar(&d, Role::App, UUID_A)));
     let a = montagem(&dir, "pendrive-a");
     let destino = pasta_externa(&a);
     fs::create_dir(&destino).unwrap();
@@ -427,7 +427,7 @@ fn ataque_versao_existente_no_pendrive_nao_e_sobrescrita() {
 fn pendrive_fica_com_30_versoes() {
     let dir = Dir::novo("ext-rodar");
     let (d, _) = cofre_de_teste(&dir);
-    assert!(ok(&ligar(&d, Papel::App, UUID_A)));
+    assert!(ok(&ligar(&d, Role::App, UUID_A)));
     let a = montagem(&dir, "pendrive-a");
     let destino = pasta_externa(&a);
     fs::create_dir(&destino).unwrap();
@@ -443,7 +443,7 @@ fn pendrive_fica_com_30_versoes() {
     for i in 0..VERSIONS + 5 {
         let r = pedir(
             &d,
-            Papel::App,
+            Role::App,
             "salvar_entrada",
             &login(&format!("t-rodar-{i}"), SEGREDOS[3]),
         );
@@ -483,7 +483,7 @@ fn pendrive_fica_com_30_versoes() {
 fn f54c_ataque_nomes_plantados_no_pendrive_nao_apagam_copias_reais() {
     let dir = Dir::novo("ext-plantados");
     let (d, _) = cofre_de_teste(&dir);
-    assert!(ok(&ligar(&d, Papel::App, UUID_A)));
+    assert!(ok(&ligar(&d, Role::App, UUID_A)));
     let a = montagem(&dir, "pendrive-a");
     let fonte = Fonte::com(vec![pendrive(UUID_A, &a)]);
     let c = d.sincronizar_externo(&fonte).unwrap().unwrap();
@@ -514,7 +514,7 @@ fn f54c_ataque_nomes_plantados_no_pendrive_nao_apagam_copias_reais() {
     std::thread::sleep(Duration::from_millis(1100));
     let r = pedir(
         &d,
-        Papel::App,
+        Role::App,
         "salvar_entrada",
         &login("t-plantados", SEGREDOS[3]),
     );
@@ -536,7 +536,7 @@ fn f54c_ataque_nomes_plantados_no_pendrive_nao_apagam_copias_reais() {
 fn ataque_versoes_com_data_futura_no_pendrive_nao_apagam_as_reais() {
     let dir = Dir::novo("ext-futuro");
     let (d, _) = cofre_de_teste(&dir);
-    assert!(ok(&ligar(&d, Papel::App, UUID_A)));
+    assert!(ok(&ligar(&d, Role::App, UUID_A)));
     let a = montagem(&dir, "pendrive-a");
     let fonte = Fonte::com(vec![pendrive(UUID_A, &a)]);
     let c = d.sincronizar_externo(&fonte).unwrap().unwrap();
@@ -562,7 +562,7 @@ fn ataque_versoes_com_data_futura_no_pendrive_nao_apagam_as_reais() {
     // Uma gravação nova e a cópia: nenhuma real sai, a plantada local não vai.
     let r = pedir(
         &d,
-        Papel::App,
+        Role::App,
         "salvar_entrada",
         &login("t-futuro", SEGREDOS[3]),
     );
@@ -589,7 +589,7 @@ fn ataque_versoes_com_data_futura_no_pendrive_nao_apagam_as_reais() {
 fn ataque_lixo_no_backup_local_nao_gira_o_pendrive() {
     let dir = Dir::novo("ext-lixo");
     let (d, _) = cofre_de_teste(&dir);
-    assert!(ok(&ligar(&d, Papel::App, UUID_A)));
+    assert!(ok(&ligar(&d, Role::App, UUID_A)));
     let a = montagem(&dir, "pendrive-a");
     let destino = pasta_externa(&a);
     fs::create_dir(&destino).unwrap();
@@ -650,7 +650,7 @@ fn ataque_lixo_no_backup_local_nao_gira_o_pendrive() {
     std::thread::sleep(Duration::from_millis(1100));
     let r = pedir(
         &d,
-        Papel::App,
+        Role::App,
         "salvar_entrada",
         &login("t-lixo", SEGREDOS[3]),
     );
@@ -676,7 +676,7 @@ fn travado_ou_desligado_nao_copia() {
     let (d, _) = cofre_de_teste(&dir);
     let a = montagem(&dir, "pendrive-a");
     let fonte = Fonte::com(vec![pendrive(UUID_A, &a)]);
-    assert!(ok(&ligar(&d, Papel::App, UUID_A)));
+    assert!(ok(&ligar(&d, Role::App, UUID_A)));
     d.sincronizar_externo(&fonte).unwrap().unwrap();
     let antes = arvore(&a);
     assert!(!antes.is_empty());
@@ -685,26 +685,26 @@ fn travado_ou_desligado_nao_copia() {
     assert_eq!(d.sincronizar_externo(&fonte), Ok(None));
     assert_eq!(fonte.consultas(), n);
     assert_eq!(
-        erro(&pedir(&d, Papel::App, "backup_externo", "{}")),
-        Some(ErroResposta::Travado)
+        erro(&pedir(&d, Role::App, "backup_externo", "{}")),
+        Some(ResponseError::Locked)
     );
     assert_eq!(
-        erro(&pedir(&d, Papel::App, "pendrives", "{}")),
-        Some(ErroResposta::Travado)
+        erro(&pedir(&d, Role::App, "pendrives", "{}")),
+        Some(ResponseError::Locked)
     );
     assert!(ok(&destravar(&d, SENHA)));
     // A configuração ligada voltou com o cofre (está na parte cifrada).
     assert!(d.sincronizar_externo(&fonte).unwrap().is_some());
     let r = pedir(
         &d,
-        Papel::App,
+        Role::App,
         "definir_backup_externo",
         &format!(r#"{{"ligado":false,"uuid":"{UUID_A}"}}"#),
     );
     assert!(ok(&r), "{r:?}");
     let r = pedir(
         &d,
-        Papel::App,
+        Role::App,
         "salvar_entrada",
         &login("t-depois", SEGREDOS[3]),
     );
@@ -713,7 +713,7 @@ fn travado_ou_desligado_nao_copia() {
     assert_eq!(d.sincronizar_externo(&fonte), Ok(None));
     assert_eq!(fonte.consultas(), n);
     assert_eq!(arvore(&a), antes, "nada novo, nada apagado");
-    match pedir(&d, Papel::App, "backup_externo", "{}") {
+    match pedir(&d, Role::App, "backup_externo", "{}") {
         Resposta::BackupExterno { ligado, uuid } => {
             assert!(!ligado);
             assert_eq!(uuid.as_deref(), Some(UUID_A));
@@ -733,7 +733,7 @@ fn v7_8_agente_e_extensao_nao_ligam_nem_leem() {
     let fonte = Fonte::com(vec![pendrive(UUID_A, &a)]);
     let d = d.com_pendrives(Arc::new(fonte.clone()));
     let cofre = fs::read(&dir.caminhos().cofre).unwrap();
-    for papel in [Papel::Agente, Papel::Extensao] {
+    for papel in [Role::Agent, Role::Extension] {
         for (op, dados) in [
             ("backup_externo", "{}".to_owned()),
             ("pendrives", "{}".to_owned()),
@@ -745,15 +745,15 @@ fn v7_8_agente_e_extensao_nao_ligam_nem_leem() {
             // Pela leitura do protocolo.
             assert_eq!(
                 erro(&pedir(&d, papel, op, &dados)),
-                Some(ErroResposta::NaoAutorizado),
+                Some(ResponseError::Unauthorized),
                 "{op} pelo {}",
-                papel.nome()
+                papel.name()
             );
             // Direto no daemon, com o pedido lido como app.
-            let p = ped(Papel::App, op, &dados).unwrap();
+            let p = ped(Role::App, op, &dados).unwrap();
             assert_eq!(
                 erro(&d.atender(papel, p)),
-                Some(ErroResposta::NaoAutorizado)
+                Some(ResponseError::Unauthorized)
             );
         }
     }
@@ -770,25 +770,25 @@ fn pendrives_sem_udisks_e_uuid_invalido() {
     let dir = Dir::novo("ext-sem");
     let (d, _) = cofre_de_teste(&dir);
     assert_eq!(
-        erro(&pedir(&d, Papel::App, "pendrives", "{}")),
-        Some(ErroResposta::PendrivesIndisponiveis)
+        erro(&pedir(&d, Role::App, "pendrives", "{}")),
+        Some(ResponseError::UsbDrivesUnavailable)
     );
     let cofre = fs::read(&dir.caminhos().cofre).unwrap();
     for uuid in ["../x", "ABCD 1234", "-AB", ""] {
         assert_eq!(
-            erro(&ligar(&d, Papel::App, uuid)),
-            Some(ErroResposta::PedidoInvalido),
+            erro(&ligar(&d, Role::App, uuid)),
+            Some(ResponseError::InvalidRequest),
             "{uuid}"
         );
     }
     assert_eq!(
         erro(&pedir(
             &d,
-            Papel::App,
+            Role::App,
             "definir_backup_externo",
             r#"{"ligado":true}"#
         )),
-        Some(ErroResposta::PedidoInvalido)
+        Some(ResponseError::InvalidRequest)
     );
     assert_eq!(fs::read(&dir.caminhos().cofre).unwrap(), cofre);
 }
@@ -1067,7 +1067,7 @@ fn v7_5_sinal_do_udisks_copia_para_o_pendrive_montado() {
     );
     let fonte = Arc::new(wardd::udisks::Udisks::novo(b.socket.clone()));
     let d = Arc::new(d.com_pendrives(fonte.clone()));
-    assert!(ok(&ligar(&d, Papel::App, UUID_A)));
+    assert!(ok(&ligar(&d, Role::App, UUID_A)));
     let cutucoes = d.ligar_copia_externa().unwrap();
     assert!(d.ligar_copia_externa().is_none(), "só uma thread de cópia");
     wardd::udisks::vigiar_copia(d.clone(), fonte, cutucoes).unwrap();
@@ -1082,7 +1082,7 @@ fn v7_5_sinal_do_udisks_copia_para_o_pendrive_montado() {
     .unwrap();
     rx.recv_timeout(Duration::from_secs(10))
         .expect("vigia conectou");
-    match pedir(&d, Papel::App, "pendrives", "{}") {
+    match pedir(&d, Role::App, "pendrives", "{}") {
         Resposta::Pendrives(l) => {
             assert_eq!(l.len(), 2);
             assert!(!l.iter().find(|p| p.uuid == UUID_A).unwrap().montado);
@@ -1108,7 +1108,7 @@ fn v7_5_sinal_do_udisks_copia_para_o_pendrive_montado() {
     // Uma gravação cutuca a cópia de novo.
     let r = pedir(
         &d,
-        Papel::App,
+        Role::App,
         "salvar_entrada",
         &login("t-sinal", SEGREDOS[3]),
     );
