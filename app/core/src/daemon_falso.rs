@@ -149,7 +149,7 @@ pub fn backups_de_teste(agora: std::time::SystemTime) -> Vec<BackupFalso> {
         .iter()
         .enumerate()
         .filter_map(|(i, idade)| {
-            let nome = wc::backup::Versao::do_instante(agora.checked_sub(*idade)?)?.nome();
+            let nome = wc::backup::Version::from_instant(agora.checked_sub(*idade)?)?.name();
             Some(BackupFalso {
                 nome,
                 geracao: u64::try_from(VERSOES_FALSAS - i).ok(),
@@ -350,12 +350,13 @@ impl DaemonFalso {
     pub fn backup_plantado() -> DaemonFalso {
         let mut d = DaemonFalso::cheio();
         let agora = std::time::SystemTime::now() + std::time::Duration::from_secs(60);
-        if let (Some(lista), Some(v)) = (d.backups.as_mut(), wc::backup::Versao::do_instante(agora))
+        if let (Some(lista), Some(v)) =
+            (d.backups.as_mut(), wc::backup::Version::from_instant(agora))
         {
             lista.insert(
                 0,
                 BackupFalso {
-                    nome: v.nome(),
+                    nome: v.name(),
                     geracao: Some(3),
                     senha: Zeroizing::new(test_vault::MASTER_PASSWORD.as_bytes().to_vec()),
                     entradas: EntradasDoBackup::Teste { menos: 6 },
@@ -679,14 +680,14 @@ impl DaemonFalso {
                 Some(l) => {
                     let com: Vec<_> = l
                         .iter()
-                        .filter_map(|b| Some((wc::backup::Versao::de_nome(&b.nome)?, b.geracao)))
+                        .filter_map(|b| Some((wc::backup::Version::from_name(&b.nome)?, b.geracao)))
                         .collect();
-                    let marcas = wc::backup::fora_de_ordem(&com);
+                    let marcas = wc::backup::out_of_order(&com);
                     Resposta::Backups(
                         com.iter()
                             .zip(marcas)
                             .map(|((v, g), fora)| wc::protocolo::VersaoBackup {
-                                nome: v.nome(),
+                                nome: v.name(),
                                 conferida: g.is_some(),
                                 fora_de_ordem: fora,
                             })
@@ -760,7 +761,7 @@ impl DaemonFalso {
         pin: &SegredoCore,
     ) -> Result<(), ErroResposta> {
         use ctutils::CtEq;
-        if !wc::backup::nome_valido(versao) {
+        if !wc::backup::valid_name(versao) {
             return Err(ErroResposta::PedidoInvalido);
         }
         self.conferir_pin(pin)?;
@@ -783,9 +784,9 @@ impl DaemonFalso {
                 EntradasDoBackup::Teste { menos } => cofre_de_teste_menos(menos),
             },
         };
-        let agora = wc::backup::Versao::do_instante(std::time::SystemTime::now())
+        let agora = wc::backup::Version::from_instant(std::time::SystemTime::now())
             .ok_or(ErroResposta::Interno)?
-            .nome();
+            .name();
         let senha_atual = match &self.senha {
             Some(s) => s.clone(),
             None => Zeroizing::new(test_vault::MASTER_PASSWORD.as_bytes().to_vec()),

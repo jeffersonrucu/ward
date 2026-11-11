@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use comum::*;
-use ward_core::backup::Versao;
+use ward_core::backup::Version;
 use ward_core::entry::Secret;
 use ward_core::protocolo::{ErroResposta, MSG_RETROCESSO, Papel, Pedido, Resposta, VersaoBackup};
 use wardd::arquivos::Geracoes;
@@ -83,7 +83,7 @@ fn v7_1_cada_gravacao_do_daemon_vai_para_o_backup() {
     assert_eq!(lista.len(), 8, "{lista:?}");
     assert_eq!(modo(&pasta(&dir)), 0o700);
     for n in &lista {
-        assert!(Versao::de_nome(n).is_some(), "{n}");
+        assert!(Version::from_name(n).is_some(), "{n}");
         let p = pasta(&dir).join(n);
         assert_eq!(modo(&p), 0o600, "{n}");
         let b = fs::read(&p).unwrap();
@@ -455,7 +455,7 @@ fn restaurar_pede_a_senha_da_versao() {
 // ---------------------------------------------------------------- Fase 49a
 
 fn versao_em(t: SystemTime) -> String {
-    Versao::do_instante(t).unwrap().nome()
+    Version::from_instant(t).unwrap().name()
 }
 
 fn plantar(dir: &Dir, nome: &str, bytes: &[u8]) {
@@ -517,14 +517,14 @@ fn ataque_versoes_com_data_futura_nao_apagam_as_reais_nem_restauram() {
     }
     let ate_agora = fs::read_dir(pasta(&dir))
         .unwrap()
-        .filter_map(|e| Versao::de_nome(&e.unwrap().file_name().into_string().unwrap()))
+        .filter_map(|e| Version::from_name(&e.unwrap().file_name().into_string().unwrap()))
         .filter(|v| {
-            *v <= Versao::do_instante(SystemTime::now())
+            *v <= Version::from_instant(SystemTime::now())
                 .unwrap()
-                .fim_do_segundo()
+                .end_of_second()
         })
         .count();
-    assert_eq!(ate_agora, ward_core::backup::VERSOES);
+    assert_eq!(ate_agora, ward_core::backup::VERSIONS);
     for n in &longe {
         assert!(pasta(&dir).join(n).exists(), "{n} sumiu");
     }

@@ -306,14 +306,14 @@ fn atender_conexao(
                 // `ward run` (Fase 26): a sessão escreve as respostas; depois de um
                 // comando lançado, a conexão acaba. Recusado antes, ela segue.
                 if papel == Papel::Agente && matches!(p, Pedido::Executar(_)) {
-                    if crate::execucao::sessao(daemon, &cliente, &stream, p) {
+                    if crate::execution::session(daemon, &cliente, &stream, p) {
                         continue;
                     }
                     break;
                 }
                 // `ward ssh` (Fase 27): a mesma forma de sessão.
                 if papel == Papel::Agente && matches!(p, Pedido::Ssh { .. }) {
-                    if crate::ssh::sessao(daemon, &cliente, &stream, p) {
+                    if crate::ssh::session(daemon, &cliente, &stream, p) {
                         continue;
                     }
                     break;

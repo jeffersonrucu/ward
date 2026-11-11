@@ -231,3 +231,16 @@ com `make compile` e o checador; a bateria fica para o Milestone 6.
   (regra 6)
 - [ ] (UI/DESIGN) Conferido contra o FigCraft — não se aplica
 - [x] Ficou dentro do escopo da fase
+
+## Merge com o master `efa6865` (Fases 15 e 21)
+- `execucao.rs`/`ponte.rs` apagados; os usos da ponte reaplicados no `execution.rs`
+  (`Bridge`, `Opening { target_host, target_port, programs, mask, limits, locks }`,
+  `TUNNEL_LIMITS`, `.port()`, `.start(`) e no `ssh.rs` da Fase 21 (`Intermediate { host,
+  port, username, cred }`, `Bridge::open`, `JUMP_LIMITS`, `p.port()`). Os campos
+  `ponte`/`mascara_ponte` já tinham virado `bridge`/`bridge_mask` na Fase 21.
+- `bridge.rs` passa a usar os nomes da Fase 21: `ssh::{Cred::{Password, Key { key }},
+  Destination, Program::Forward, SshAuth::{Password, Key { agent, public_key }},
+  SshPrograms, build_argv}`, `ssh_agent::{SshAgent::create, Allowed { child_of_child },
+  start, public_key}`, `execution::{BATCH, read_batch}`.
+- Glossário com os parágrafos das Fases 22, 21 e 15.
+- `make compile` depois do merge: 0 (log `scratchpad/f22/compile-merge-fase22.log`).

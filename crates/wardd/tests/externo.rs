@@ -28,7 +28,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use comum::*;
-use ward_core::backup::VERSOES;
+use ward_core::backup::VERSIONS;
 use ward_core::protocolo::{ErroResposta, Papel, Resposta};
 use wardd::externo::{ErroExterno, FontePendrives, Visto};
 use wardd::nucleo::Daemon;
@@ -104,9 +104,9 @@ fn locais(dir: &Dir) -> Vec<String> {
     let mut v: Vec<String> = fs::read_dir(dir.0.join("backups"))
         .unwrap()
         .map(|e| e.unwrap().file_name().into_string().unwrap())
-        .filter(|n| ward_core::backup::nome_valido(n))
+        .filter(|n| ward_core::backup::valid_name(n))
         .collect();
-    v.sort_by_key(|n| std::cmp::Reverse(ward_core::backup::Versao::de_nome(n).unwrap()));
+    v.sort_by_key(|n| std::cmp::Reverse(ward_core::backup::Version::from_name(n).unwrap()));
     v
 }
 
@@ -145,7 +145,7 @@ fn no_pendrive(m: &Path) -> Vec<String> {
     let mut v: Vec<String> = fs::read_dir(pasta_externa(m))
         .map(|l| {
             l.map(|e| e.unwrap().file_name().into_string().unwrap())
-                .filter(|n| ward_core::backup::nome_valido(n))
+                .filter(|n| ward_core::backup::valid_name(n))
                 .collect()
         })
         .unwrap_or_default();
@@ -440,7 +440,7 @@ fn pendrive_fica_com_30_versoes() {
     fs::write(destino.join("notas.txt"), b"x").unwrap();
     let fonte = Fonte::com(vec![pendrive(UUID_A, &a)]);
     let mut apagadas = 0;
-    for i in 0..VERSOES + 5 {
+    for i in 0..VERSIONS + 5 {
         let r = pedir(
             &d,
             Papel::App,
@@ -451,7 +451,7 @@ fn pendrive_fica_com_30_versoes() {
         let c = d.sincronizar_externo(&fonte).unwrap().unwrap();
         let todas = no_pendrive(&a);
         for v in &c.copiadas {
-            assert!(todas.contains(&v.nome()), "{v}");
+            assert!(todas.contains(&v.name()), "{v}");
         }
         apagadas += c.apagadas;
     }
@@ -462,7 +462,7 @@ fn pendrive_fica_com_30_versoes() {
     reais.sort();
     let mut esperadas = locais(&dir);
     esperadas.sort();
-    assert_eq!(esperadas.len(), VERSOES);
+    assert_eq!(esperadas.len(), VERSIONS);
     assert_eq!(reais, esperadas, "o pendrive não tem as 30 mais novas");
     assert!(apagadas > 0);
     for n in &lixo {
@@ -496,11 +496,11 @@ fn f54c_ataque_nomes_plantados_no_pendrive_nao_apagam_copias_reais() {
     let _ = cofre_de_teste(&outro);
     let de_outro = fs::read(outro.0.join("backups").join(&locais(&outro)[0])).unwrap();
     std::thread::sleep(Duration::from_millis(1100));
-    let base = ward_core::backup::Versao::do_instante(std::time::SystemTime::now())
+    let base = ward_core::backup::Version::from_instant(std::time::SystemTime::now())
         .unwrap()
-        .nome();
+        .name();
     let mut plantados = Vec::new();
-    for i in 1..=VERSOES + 5 {
+    for i in 1..=VERSIONS + 5 {
         let n = base.replace(".ward", &format!("-{i}.ward"));
         let conteudo = match i % 3 {
             0 => b"lixo com nome de versao".to_vec(),
@@ -551,11 +551,11 @@ fn ataque_versoes_com_data_futura_no_pendrive_nao_apagam_as_reais() {
         )
         .unwrap();
     }
-    let longe = ward_core::backup::Versao::do_instante(
+    let longe = ward_core::backup::Version::from_instant(
         std::time::SystemTime::now() + Duration::from_secs(10 * 365 * 86_400),
     )
     .unwrap()
-    .nome();
+    .name();
     let local = dir.0.join("backups").join(&longe);
     fs::copy(dir.0.join("backups").join(&locais(&dir)[0]), &local).unwrap();
     fs::set_permissions(&local, fs::Permissions::from_mode(0o600)).unwrap();
@@ -569,7 +569,7 @@ fn ataque_versoes_com_data_futura_no_pendrive_nao_apagam_as_reais() {
     assert!(ok(&r), "{r:?}");
     let c = d.sincronizar_externo(&fonte).unwrap().unwrap();
     assert_eq!(c.apagadas, 0);
-    assert!(c.copiadas.iter().all(|v| v.nome() != longe));
+    assert!(c.copiadas.iter().all(|v| v.name() != longe));
     let agora = no_pendrive(&a);
     for n in &reais {
         assert!(agora.contains(n), "{n} sumiu do pendrive");
@@ -593,10 +593,10 @@ fn ataque_lixo_no_backup_local_nao_gira_o_pendrive() {
     let a = montagem(&dir, "pendrive-a");
     let destino = pasta_externa(&a);
     fs::create_dir(&destino).unwrap();
-    // O pendrive já cheio: as reais de agora mais antigas de 2020 até `VERSOES`.
+    // O pendrive já cheio: as reais de agora mais antigas de 2020 até `VERSIONS`.
     let fonte = Fonte::com(vec![pendrive(UUID_A, &a)]);
     let reais = locais(&dir);
-    for i in 0..(VERSOES - reais.len()) as u32 {
+    for i in 0..(VERSIONS - reais.len()) as u32 {
         fs::write(
             destino.join(format!("ward-20200101-{:06}.ward", i * 100)),
             b"antiga",
@@ -607,13 +607,13 @@ fn ataque_lixo_no_backup_local_nao_gira_o_pendrive() {
     assert_eq!(c.copiadas.len(), reais.len());
     assert_eq!(c.apagadas, 0);
     let antes = arvore(&a);
-    assert_eq!(no_pendrive(&a).len(), VERSOES);
+    assert_eq!(no_pendrive(&a).len(), VERSIONS);
 
     // O atacante (mesmo uid) planta na pasta local, com data mais nova que as reais.
     std::thread::sleep(Duration::from_millis(1100));
-    let base = ward_core::backup::Versao::do_instante(std::time::SystemTime::now())
+    let base = ward_core::backup::Version::from_instant(std::time::SystemTime::now())
         .unwrap()
-        .nome();
+        .name();
     let nome = |i: usize| base.replace(".ward", &format!("-{i}.ward"));
     let backups = dir.0.join("backups");
     let real = fs::read(backups.join(&reais[0])).unwrap();
@@ -622,7 +622,7 @@ fn ataque_lixo_no_backup_local_nao_gira_o_pendrive() {
     let de_outro = fs::read(outro.0.join("backups").join(&locais(&outro)[0])).unwrap();
     let antiga = fs::read(backups.join(reais.last().unwrap())).unwrap();
     let mut plantados = Vec::new();
-    for i in 1..=VERSOES + 5 {
+    for i in 1..=VERSIONS + 5 {
         let conteudo = match i % 3 {
             0 => {
                 // Cabeçalho válido, corpo trocado.
@@ -640,7 +640,7 @@ fn ataque_lixo_no_backup_local_nao_gira_o_pendrive() {
         fs::set_permissions(&p, fs::Permissions::from_mode(0o600)).unwrap();
         plantados.push(nome(i));
     }
-    assert!(ward_core::backup::nome_valido(&plantados[0]));
+    assert!(ward_core::backup::valid_name(&plantados[0]));
     let c = d.sincronizar_externo(&fonte).unwrap().unwrap();
     assert!(c.copiadas.is_empty(), "{:?}", c.copiadas);
     assert_eq!(c.apagadas, 0, "o lixo girou o pendrive");
@@ -657,7 +657,7 @@ fn ataque_lixo_no_backup_local_nao_gira_o_pendrive() {
     assert!(ok(&r), "{r:?}");
     let c = d.sincronizar_externo(&fonte).unwrap().unwrap();
     assert_eq!(c.copiadas.len(), 1, "{:?}", c.copiadas);
-    assert!(!plantados.contains(&c.copiadas[0].nome()));
+    assert!(!plantados.contains(&c.copiadas[0].name()));
     // Fase 54c: o enchimento `antiga` do pendrive não confere: não conta nem sai.
     assert_eq!(c.apagadas, 0);
     for n in no_pendrive(&a) {

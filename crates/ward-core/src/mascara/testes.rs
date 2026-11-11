@@ -3,7 +3,7 @@
 //! Só valores falsos do cofre de teste (D15).
 
 use super::*;
-use crate::entrega::{ErroRecurso, Recursos, montar};
+use crate::delivery::{ResourceError, Resources, build};
 use crate::entry::{AttachmentDraft, DataDraft, Draft, ExtraDraft, Secret};
 
 // ---- Ajudantes ----
@@ -95,20 +95,20 @@ const CODIGO_FALSO: &str = "123456";
 
 struct Falsos;
 
-impl Recursos for Falsos {
-    fn codigo_totp(&mut self, _: &Secret) -> Result<Zeroizing<String>, ErroRecurso> {
+impl Resources for Falsos {
+    fn totp_code(&mut self, _: &Secret) -> Result<Zeroizing<String>, ResourceError> {
         Ok(Zeroizing::new(t(CODIGO_FALSO)))
     }
-    fn arquivo(&mut self, nome: &str, _: &Secret) -> Result<String, ErroRecurso> {
+    fn file(&mut self, nome: &str, _: &Secret) -> Result<String, ResourceError> {
         Ok(format!("/run/user/1000/ward/tmp/1-{nome}"))
     }
-    fn tunel(&mut self, _: &str, _: &str, _: u16) -> Result<u16, ErroRecurso> {
+    fn tunnel(&mut self, _: &str, _: &str, _: u16) -> Result<u16, ResourceError> {
         Ok(40123)
     }
 }
 
-fn entrega(e: &Entry) -> Entrega {
-    montar(e, &mut Falsos).unwrap_or_else(|erro| panic!("{erro}"))
+fn entrega(e: &Entry) -> Delivery {
+    build(e, &mut Falsos).unwrap_or_else(|erro| panic!("{erro}"))
 }
 
 /// Máscara da entrada com a entrega dela (como o `ward run` monta).
@@ -429,7 +429,7 @@ fn ataque_segredo_dentro_de_base64_maior() {
 fn v2_21_database_url_inteiro() {
     let e = pg_dev();
     let g = entrega(&e);
-    assert_eq!(g.valor("DATABASE_URL"), Some(URL_PG));
+    assert_eq!(g.value("DATABASE_URL"), Some(URL_PG));
     let m = Mascara::da_entrada(&e, Some(&g)).unwrap();
     for saida in [
         format!("DATABASE_URL={URL_PG}\n"),
@@ -471,7 +471,7 @@ fn codigo_totp_nao_e_mascarado() {
         },
     ));
     let g = entrega(&e);
-    assert_eq!(g.valor("WARD_TOTP"), Some(CODIGO_FALSO));
+    assert_eq!(g.value("WARD_TOTP"), Some(CODIGO_FALSO));
     let m = Mascara::da_entrada(&e, Some(&g)).unwrap();
     let saida = format!("codigo {CODIGO_FALSO} semente JBSWY3DPEHPK3PXP senha falso-WP-senha-01");
     assert_eq!(

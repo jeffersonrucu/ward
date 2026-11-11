@@ -136,7 +136,7 @@ Compilação de cada fase: `make compile`. Checador: os arquivos da fase.
 - [x] Fase 13 — `entrada/testes.rs`, `configuracao` (+ testes). — V2.1
 - [x] Fase 14 — `corpo.rs`, `corpo/cofre_teste.rs`, `corpo/testes.rs` (`VERSAO_CORPO`
   continua 4). — V2.1, V2.2
-- [ ] Fase 15 — `backup` (+ testes), `entrega` (+ testes; nomes das variáveis entregues
+- [x] Fase 15 — `backup` (+ testes), `entrega` (+ testes; nomes das variáveis entregues
   congelados). — V2.1
 - [ ] Fase 16 — `mascara.rs`, `mascara/automato.rs`, `mascara/testes.rs`. Lógica da
   máscara intocada. — V2.1, V2.5
@@ -152,7 +152,7 @@ Compilação de cada fase: `make compile`. Checador: os arquivos da fase.
 - [ ] Fase 19 — `main.rs`, `lib.rs`, `config.rs`, `log.rs`, `lancamento.rs`,
   `arquivos.rs`, `uso.rs`, `trava.rs` (formato do estado congelado). — V2.1, V2.7
 - [ ] Fase 20 — `nucleo.rs`, `aprovacao.rs`. — V2.1
-- [ ] Fase 21 — `execucao.rs`, `agente_ssh.rs`, `ssh.rs`, `ssh_testes.rs`. — V2.1, V2.7
+- [x] Fase 21 — `execucao.rs`, `agente_ssh.rs`, `ssh.rs`, `ssh_testes.rs`. — V2.1, V2.7
 - [ ] Fase 22 — `playwright.rs`, `cdp.rs`, `login.rs`, `ponte.rs` (`serde` do CDP: campos
   do Chrome não mudam). — V2.1
 - [ ] Fase 23 — `servidor.rs`, `externo.rs`, `udisks.rs`; testes `comum/`, `units.rs`,

@@ -45,9 +45,9 @@ use ward_core::mascara::Mascara;
 use ward_platform::child::{self, Command, Group};
 use zeroize::Zeroizing;
 
-use crate::agente_ssh::{AgenteSsh, Permitido};
-use crate::execucao;
-use crate::ssh::{Autent, Cred, Destino, Programa, ProgramasSsh, montar_argv};
+use crate::execution;
+use crate::ssh::{Cred, Destination, Program, SshAuth, SshPrograms, build_argv};
+use crate::ssh_agent::{Allowed, SshAgent};
 use crate::{aviso, depurar};
 
 /// How often the listener checks whether it should stop.
@@ -90,7 +90,7 @@ struct Plan {
     via: Intermediate,
     target_host: String,
     target_port: u16,
-    programs: ProgramasSsh,
+    programs: SshPrograms,
     known_hosts: PathBuf,
     rt: Option<PathBuf>,
 }
@@ -120,7 +120,7 @@ pub(crate) struct Opening<'a> {
     pub(crate) via: Intermediate,
     pub(crate) target_host: &'a str,
     pub(crate) target_port: u16,
-    pub(crate) programs: &'a ProgramasSsh,
+    pub(crate) programs: &'a SshPrograms,
     pub(crate) known_hosts: &'a Path,
     pub(crate) rt: Option<&'a Path>,
     pub(crate) mask: Mascara,
@@ -143,10 +143,10 @@ impl Bridge {
         // The argv with example paths: only to refuse before listening.
         let example = Path::new("/nonexistent/agent.sock");
         let auth = match plan.via.cred {
-            Cred::Senha(_) => Autent::Senha,
-            Cred::Chave { .. } => Autent::Chave {
-                agente: example,
-                publica: example,
+            Cred::Password(_) => SshAuth::Password,
+            Cred::Key { .. } => SshAuth::Key {
+                agent: example,
+                public_key: example,
             },
         };
         if bridge_argv(&plan, auth).is_none() {
@@ -223,19 +223,19 @@ impl Drop for RunningBridge {
 }
 
 /// The argv of the bridge's `ssh -W` (`None`: value out of format).
-fn bridge_argv(plan: &Plan, auth: Autent<'_>) -> Option<Vec<Vec<u8>>> {
-    montar_argv(
+fn bridge_argv(plan: &Plan, auth: SshAuth<'_>) -> Option<Vec<Vec<u8>>> {
+    build_argv(
         &plan.programs,
         &plan.known_hosts,
-        Destino {
+        Destination {
             host: &plan.via.host,
-            porta: plan.via.port,
-            usuario: &plan.via.username,
+            port: plan.via.port,
+            username: &plan.via.username,
         },
         auth,
-        Programa::Encaminhar {
+        Program::Forward {
             host: &plan.target_host,
-            porta: plan.target_port,
+            port: plan.target_port,
         },
     )
 }
@@ -310,10 +310,10 @@ fn connect(
     let _ = tcp.set_nonblocking(false);
     let plan = &bridge.plan;
     let (password, agent) = match &plan.via.cred {
-        Cred::Senha(s) => (Some(s), None),
-        Cred::Chave { chave, passphrase } => {
+        Cred::Password(s) => (Some(s), None),
+        Cred::Key { key, passphrase } => {
             let rt = plan.rt.as_deref()?;
-            match AgenteSsh::criar(rt, chave, passphrase.as_ref()) {
+            match SshAgent::create(rt, key, passphrase.as_ref()) {
                 Ok(a) => (None, Some(a)),
                 Err(e) => {
                     aviso!("ponte: {e}");
@@ -322,12 +322,12 @@ fn connect(
             }
         }
     };
-    let paths = agent.as_ref().map(|a| (a.socket(), a.publica()));
+    let paths = agent.as_ref().map(|a| (a.socket(), a.public_key()));
     let auth = match &paths {
-        None => Autent::Senha,
-        Some((sock, publica)) => Autent::Chave {
-            agente: sock,
-            publica,
+        None => SshAuth::Password,
+        Some((sock, public_key)) => SshAuth::Key {
+            agent: sock,
+            public_key,
         },
     };
     let Some(argv) = bridge_argv(plan, auth) else {
@@ -361,10 +361,10 @@ fn connect(
     let group = Arc::new(group);
     depurar!("ponte: ssh do salto/túnel pid {}", group.pid());
     let agent = agent.map(|a| {
-        a.iniciar(
-            Permitido {
+        a.start(
+            Allowed {
                 pid: group.pid(),
-                filho_do_filho: false,
+                child_of_child: false,
             },
             bridge.locks.clone(),
             bridge.initial,
@@ -461,10 +461,10 @@ fn read_stderr(mut f: fs::File, mask: &Mascara, sink: &Stderr) {
     let mut m = mask.fluxo();
     // Phase 28g: what is already in the pipe goes in a single batch (like the `ward run`
     // output).
-    let mut buf = Zeroizing::new(vec![0u8; execucao::LOTE]);
+    let mut buf = Zeroizing::new(vec![0u8; execution::BATCH]);
     let mut out = Zeroizing::new(Vec::with_capacity(2 * CHUNK));
     loop {
-        let (n, end) = execucao::ler_lote(&mut f, &mut buf);
+        let (n, end) = execution::read_batch(&mut f, &mut buf);
         if n > 0 {
             m.mascarar(&buf[..n], &mut out);
             zeroize::Zeroize::zeroize(&mut buf[..n]);
