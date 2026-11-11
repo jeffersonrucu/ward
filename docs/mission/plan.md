@@ -181,7 +181,7 @@ Clientes Rust:
   `restaurar.rs`, `bandeja.rs` (`serde` para a webview com `rename`). — V2.1
 - [x] Fase 33 — `app/core`: `comandos.rs`, `configuracoes.rs`, `backup_externo.rs`,
   `terminal.rs`, `chave.rs`, `partida.rs`, `credenciais.rs`. — V2.1
-- [ ] Fase 34 — `app/core`: `destrave.rs`, `primeiro_uso.rs`, `gerador.rs`,
+- [x] Fase 34 — `app/core`: `destrave.rs`, `primeiro_uso.rs`, `gerador.rs`,
   `area_transferencia.rs`, `nivel.rs`; `app/src-tauri/src` (`main.rs` — o heredoc do
   `dev/tests/webkit-real.sh` procura `partida::iniciar()`, `tomar_daemon`, `vigiar`,
   `na_vigia`, `ErroApp::ConexaoPerdida` e muda junto, achado da Fase 45; o
@@ -297,7 +297,7 @@ Contrato: V4.1–V4.24. Sequencial. A partir daqui o fio muda.
   em `dev/tests/dev-vault.sh` com os nomes v5 deste contrato; expectativas de
   `dev/tests/cli.py` e dos testes do `wardd` pela tabela "Entrega esperada". Compilação:
   `make compile`. — V4.19, V4.20, V4.21
-- [ ] Fase 54 — **(UI)** Comandos e eventos do Tauri e `serde` da webview: (procurar nome de fio como chave entre aspas e como acesso por
+- [ ] Fase 54 — **(UI)** Comandos e eventos do Tauri e `serde` da webview: (tirar do `dev/english-check/frozen.txt` as 52 entradas da Fase 54 que a Fase 34 pôs para os comandos e parâmetros do `main.rs`; e as dos `#[serde(rename)]` de app/core das Fases 32–34) (procurar nome de fio como chave entre aspas e como acesso por
   ponto, achado da Fase 36; `frozen.txt` lista os da W) nomes das
   funções `#[tauri::command]` e dos parâmetros, eventos, `capabilities/*.json`,
   `permissions/`, chamadas `invoke`/`listen` no `app/src`, ponte de teste, tira os
