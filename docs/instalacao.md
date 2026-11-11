@@ -38,8 +38,8 @@ parte do roteiro que ainda cita os nomes da 0.1.x.
   regrava o cofre no formato novo (corpo v5) e grava uma versão nova no backup local. A
   senha mestra, o PIN, as entradas, os níveis, os anexos e a configuração ficam iguais.
   O arquivo continua com o mesmo nome e no mesmo lugar (`~/.local/share/ward/`). A
-  partir daí a 0.1.x **não abre mais** esse cofre (ela diz "versão do corpo
-  desconhecida" e não grava nada). Por isso a cópia do passo 1 abaixo.
+  partir daí a 0.1.x **não abre mais** esse cofre (ela diz "o conteúdo do cofre é
+  inválido", ou recusa como retrocesso, e não grava nada). Por isso a cópia do passo 1 abaixo.
 - **Caminhos instalados.** A extensão do Chrome sai de `/usr/local/share/ward/extensao/`
   para `/usr/local/share/ward/extension/`, e a marca dos grupos sai de
   `/usr/local/lib/ward/grupos-criados` para `/usr/local/lib/ward/created-groups`. A
@@ -209,7 +209,7 @@ staging, tudo root/root, nenhum bit setgid no pacote e Depends com `sshpass` (V9
 sudo install -d -m 0700 -o root -g root /root/ward
 sudo install -m 0644 -o root -g root target/deb/ward_*.deb /root/ward/
 sudo sha256sum /root/ward/ward_*.deb                           # o mesmo que o make deb imprimiu
-sudo dpkg-deb -c /root/ward/ward_*.deb                         # 60 caminhos, root/root, sem 's'
+sudo dpkg-deb -c /root/ward/ward_*.deb                         # 61 linhas (o ./ e 60 caminhos), root/root, sem 's'
 sudo dpkg-deb -f /root/ward/ward_*.deb Depends                 # sshpass, openssh-client, systemd, libwebkit2gtk-4.1-0
 sudo dpkg-deb -I /root/ward/ward_*.deb preinst | less          # leia os scripts antes de rodar
 sudo apt install /root/ward/ward_*.deb                         # ou: sudo dpkg -i (sem resolver dependências)

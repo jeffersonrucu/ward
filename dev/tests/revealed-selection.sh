@@ -27,6 +27,8 @@ for f in "$DEV/test-vault.ward" "$DEV/variations.txt" "$ROOT/app/dist-teste/inde
     "$ROOT/target/debug/wardd" "$ROOT/target/debug/ward-test-bridge"; do
     [[ -f "$f" ]] || { echo "selecao-revelado: falta ${f#"$ROOT"/} (make dev-vault, dev-variations, app-front)" >&2; exit 1; }
 done
+# Phase 66: the test bundle has to be the one of the current sources (see the helper).
+"$ROOT/dev/check-test-bundle.sh" selecao-revelado
 
 UID_="$(id -u)"
 SOCKDIR="${WARD_DEV_SOCKET_DIR:-/run/user/$UID_/ward-test-selection}"

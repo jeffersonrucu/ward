@@ -236,8 +236,10 @@ Formato e cripto:
 - [ ] V4.7 — (SEG) Dado o cofre migrado (geração g+1), quando um processo do usuário
   troca só o arquivo do cofre pela cópia v4 (geração g) com o daemon parado e o
   destrava, então o daemon recusa com `rollback` (o estado guarda g+1), como na missão
-  1; trocar com o daemon rodando dá `vault_changed`. Cobre a conferência de geração
-  (D39/D53).
+  1. Com o daemon rodando, o resultado depende do estado dele: **destravado**, a
+  gravação seguinte dá `vault_changed` e não sobrescreve nada; **travado**, o destrave
+  relê o arquivo e dá `rollback` (ajuste da Fase 66, achado da Fase 64). Cobre a
+  conferência de geração (D39/D53).
 - [ ] V4.8 — (SEG) Dado um corpo v4 montado no teste com um nome desconhecido (tipo
   `banco2`, nível `livre ` com espaço, nível em inglês `free` num corpo v4, tipo
   `database` num corpo v4), quando o núcleo o lê, então recusa com `invalid_vault`, sem
@@ -256,8 +258,10 @@ Formato e cripto:
   gravação, grava `ward-state 2`, de forma atômica e 0600, com o nome `estado` no disco
   da release. Estado com link, FIFO ou dono errado é recusado, como antes.
 - [ ] V4.12 — (SEG) Dado o `wardd` 0.1.4 de `.dev/baseline/`, quando abre o cofre já
-  migrado (v5), então recusa ("versão do corpo desconhecida") sem gravar nada, e o
-  arquivo continua abrindo na 0.2.0 (DT7).
+  migrado (v5), então recusa sem gravar nada (com o estado `ward-estado 1`, a recusa
+  do 0.1.4 é `cofre_invalido`, "o conteúdo do cofre é inválido", log "corpo
+  inválido"; com o estado `ward-state 2`, `retrocesso`; ajuste da Fase 66, achado da
+  Fase 64: o binário 0.1.4 não muda), e o arquivo continua abrindo na 0.2.0 (DT7).
 
 Protocolo v2:
 
@@ -283,9 +287,11 @@ Protocolo v2:
   envia byte de senha (captura do servidor falso vazia). O mesmo vale para o app
   (`ward-app-core`). Cobre S5.
 - [ ] V4.17 — (SEG) Dada a CLI 0.1.4 diante do daemon 0.2.0, quando roda `lista`,
-  `executar` e `destravar` (este último com a senha de teste num pty), então recebe erro
-  de versão, nenhum comando executa e o daemon continua travado (a senha mandada pela
-  CLI velha não destrava o cofre). Cobre RM3.
+  `run` (a operação v1 `executar`) e `destravar` (este último com a senha de teste num
+  pty), então recebe erro de versão ou "ward: resposta inválida do daemon" (a CLI 0.1.4
+  não lê o quadro v2 `unknown_version` da DT8; ajuste da Fase 66, achado da Fase 64),
+  nenhum comando executa, o daemon continua travado e registra `unknown_version` (a
+  senha mandada pela CLI velha não destrava o cofre). Cobre RM3.
 - [ ] V4.18 — Dado `ward list --json`, quando o agente o lê, então as chaves e os valores
   são os de DT4/DT8 em inglês (`name`, `type`, `group`, `environment`, `project`,
   `address`), sem chave de nível (`level` nem `nivel`: D50 tira o nível da lista do
@@ -415,8 +421,10 @@ Comandos do Tauri e capabilities:
   Cobre S1–S13 pela reexecução dos ataques da missão 1.
 - [ ] V6.5 — (SEG) Dado o cofre de teste e o serviço `phish` (8082), quando
   `ward login delta-redir` e `ward playwright delta-redir` rodam e a extensão é aberta
-  no 8082, então todos recusam com "domínio não confere" e o `posts.log` do phishing
-  não muda; numa origem `http` (8081) o preenchimento passa pela janela de aprovação
+  no 8082, então todos recusam e o `posts.log` do phishing não muda (`ward login` e a
+  extensão dizem "domínio não confere"; `ward playwright` diz "a origem da página não
+  bate com a da entrada", o mesmo texto da 0.1.4; ajuste da Fase 66, achado da Fase
+  65); numa origem `http` (8081) o preenchimento passa pela janela de aprovação
   mesmo no nível `free`. Cobre S1 e a ameaça 4.
 - [ ] V6.6 — Dados os serviços de teste, quando `ward run acme-pg-dev -- psql -c 'select
   1'`, `ward run acme-pg-tunel -- dev/tests/pg_select.py`, `ward ssh
