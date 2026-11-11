@@ -17,8 +17,8 @@ use common::*;
 use ward_core::config::{PinHash, VaultConfig};
 use ward_core::format::{MasterPassword, OpenVault};
 use ward_core::protocol::{MSG_ROLLBACK, ResponseError, Resposta, Role};
+use wardd::core::{Clock, Daemon, MAX_WAIT, Paths, unlock_wait};
 use wardd::files::{self, Generations};
-use wardd::nucleo::{Caminhos, Daemon, ESPERA_MAXIMA, Relogio, espera_destrave};
 
 /// Clock with the time controlled by the test: records the waits and does not sleep.
 #[derive(Clone, Default)]
@@ -37,18 +37,18 @@ impl MovableClock {
     }
 }
 
-impl Relogio for MovableClock {
-    fn dormir(&self, d: Duration) {
+impl Clock for MovableClock {
+    fn sleep(&self, d: Duration) {
         self.waits.lock().unwrap().push(d);
     }
 
-    fn agora(&self) -> Option<Duration> {
+    fn now(&self) -> Option<Duration> {
         Some(*self.now.lock().unwrap())
     }
 }
 
-fn movable_daemon(c: Caminhos, r: &MovableClock) -> Daemon {
-    Daemon::novo(c, Box::new(r.clone()))
+fn movable_daemon(c: Paths, r: &MovableClock) -> Daemon {
+    Daemon::new(c, Box::new(r.clone()))
 }
 
 fn unlock_as(d: &Daemon, role: Role, password: &str) -> Resposta {
@@ -61,11 +61,11 @@ fn unlock_as(d: &Daemon, role: Role, password: &str) -> Resposta {
 }
 
 fn state_text(dir: &Dir) -> String {
-    fs::read_to_string(dir.paths().estado).unwrap()
+    fs::read_to_string(dir.paths().state).unwrap()
 }
 
 fn failures_on_disk(dir: &Dir) -> u32 {
-    files::read_full_state(&dir.paths().estado)
+    files::read_full_state(&dir.paths().state)
         .unwrap()
         .agent_failures
 }
@@ -73,7 +73,7 @@ fn failures_on_disk(dir: &Dir) -> u32 {
 /// Test vault created and locked; the daemon that created it is dropped.
 fn locked_vault(dir: &Dir) {
     let (d, _) = test_vault(dir);
-    d.travar();
+    d.lock();
 }
 
 /// V3.33 (D62, S9): 10 wrong passwords from the agent, `wardd` dies and starts again,
@@ -102,7 +102,7 @@ fn v3_33_agent_wait_survives_the_restart() {
         error(&unlock_as(&d, Role::Agent, "falso-errada-xx")),
         Some(ResponseError::WrongPassword)
     );
-    assert_eq!(r.waits(), [ESPERA_MAXIMA]);
+    assert_eq!(r.waits(), [MAX_WAIT]);
     assert_eq!(failures_on_disk(&dir), 11);
 
     // Counted from the start: the new daemon started 20 s ago, the first wait is 10 s.
@@ -115,7 +115,7 @@ fn v3_33_agent_wait_survives_the_restart() {
     let _ = unlock_as(&d, Role::Agent, "falso-errada-zz");
     assert_eq!(
         r.waits(),
-        [Duration::from_secs(10), ESPERA_MAXIMA],
+        [Duration::from_secs(10), MAX_WAIT],
         "a 1.ª depois da partida conta da partida; as outras, inteiras"
     );
     // Started more than 30 s ago: the first one does not wait, but the counter goes on.
@@ -125,12 +125,12 @@ fn v3_33_agent_wait_survives_the_restart() {
     r.advance(Duration::from_secs(45));
     let _ = unlock_as(&d, Role::Agent, "falso-errada-ww");
     let _ = unlock_as(&d, Role::Agent, "falso-errada-vv");
-    assert_eq!(r.waits(), [Duration::ZERO, ESPERA_MAXIMA]);
+    assert_eq!(r.waits(), [Duration::ZERO, MAX_WAIT]);
 
     // The right unlock zeroes both, on disk too.
     assert!(ok(&unlock_as(&d, Role::Agent, PASSWORD)));
     assert_eq!(failures_on_disk(&dir), 0);
-    d.travar();
+    d.lock();
     let _ = unlock_as(&d, Role::Agent, "falso-errada-uu");
     let _ = unlock_as(&d, Role::App, "falso-errada-tt");
     assert_eq!(r.waits()[1..], [Duration::ZERO, Duration::ZERO]);
@@ -151,8 +151,8 @@ fn attack_agent_in_the_middle_of_the_wait_does_not_delay_the_app() {
         release: Mutex<mpsc::Receiver<()>>,
         waits: Arc<Mutex<Vec<(Duration, bool)>>>,
     }
-    impl Relogio for Stuck {
-        fn dormir(&self, d: Duration) {
+    impl Clock for Stuck {
+        fn sleep(&self, d: Duration) {
             let stuck = d >= Duration::from_secs(4);
             self.waits.lock().unwrap().push((d, stuck));
             if stuck {
@@ -164,7 +164,7 @@ fn attack_agent_in_the_middle_of_the_wait_does_not_delay_the_app() {
     let (tx_entered, rx_entered) = mpsc::channel();
     let (tx_release, rx_release) = mpsc::channel();
     let waits = Arc::new(Mutex::new(Vec::new()));
-    let d = Arc::new(Daemon::novo(
+    let d = Arc::new(Daemon::new(
         dir.paths(),
         Box::new(Stuck {
             entered: Mutex::new(tx_entered),
@@ -189,7 +189,7 @@ fn attack_agent_in_the_middle_of_the_wait_does_not_delay_the_app() {
     // The app gets it right without waiting: its counter is another one, and the agent's
     // turn does not hold it.
     assert!(ok(&unlock_as(&d, Role::App, PASSWORD)));
-    assert!(!d.travado());
+    assert!(!d.is_locked());
     tx_release.send(()).unwrap();
     // The agent wakes up with the vault already open.
     assert!(ok(&agent.join().unwrap()));
@@ -207,7 +207,7 @@ fn attack_agent_in_the_middle_of_the_wait_does_not_delay_the_app() {
     );
     // Both reset (on disk too).
     assert_eq!(failures_on_disk(&dir), 0);
-    d.travar();
+    d.lock();
     waits.lock().unwrap().clear();
     let _ = unlock_as(&d, Role::Agent, "falso-errada-4");
     let _ = unlock_as(&d, Role::App, "falso-errada-5");
@@ -228,7 +228,7 @@ fn v3_33_old_format_and_state_without_secret() {
     locked_vault(&dir);
     let g = generations(&dir);
     fs::write(
-        dir.paths().estado,
+        dir.paths().state,
         format!("ward-estado 1\nvista {}\nqueimada {}\n", g.seen, g.burned),
     )
     .unwrap();
@@ -246,7 +246,7 @@ fn v3_33_old_format_and_state_without_secret() {
     // The app does not go to disk.
     let _ = unlock_as(&d, Role::App, "falso-errada-02");
     assert_eq!(failures_on_disk(&dir), 1);
-    let text = fs::read(dir.paths().estado).unwrap();
+    let text = fs::read(dir.paths().state).unwrap();
     for s in SECRETS
         .iter()
         .chain([&PASSWORD, &PIN, &"falso-errada-01", &"falso-errada-02"])
@@ -264,7 +264,7 @@ fn v3_33_old_format_and_state_without_secret() {
         "só números depois do cabeçalho"
     );
     // The wait is still the same D20 table.
-    assert_eq!(espera_destrave(1), Duration::from_secs(1));
+    assert_eq!(unlock_wait(1), Duration::from_secs(1));
 }
 
 /// V3.35 (D62, S7): state with seen = burned = 7 and no vault: the new vault is
@@ -286,8 +286,8 @@ fn v3_35_create_vault_with_old_state_and_old_copy() {
     .after_generation(4);
     ward_core::atomic_write::write_entries(&old, &mut stale, &[]).unwrap();
     assert_eq!(generation_on_disk(&old, PASSWORD), 5);
-    files::write_state(&c.estado, Generations { seen: 7, burned: 7 }).unwrap();
-    assert!(!c.cofre.exists());
+    files::write_state(&c.state, Generations { seen: 7, burned: 7 }).unwrap();
+    assert!(!c.vault.exists());
 
     let (d, _) = daemon_at(c.clone());
     let create = request(
@@ -301,16 +301,16 @@ fn v3_35_create_vault_with_old_state_and_old_copy() {
         ),
     );
     assert!(ok(&create), "{create:?}");
-    assert_eq!(generation_on_disk(&c.cofre, PASSWORD), 8);
+    assert_eq!(generation_on_disk(&c.vault, PASSWORD), 8);
     assert_eq!(generations(&dir), Generations { seen: 8, burned: 8 });
 
     // The attacker puts the old copy in place and unlocks.
-    d.travar();
-    fs::copy(&old, &c.cofre).unwrap();
+    d.lock();
+    fs::copy(&old, &c.vault).unwrap();
     let r = unlock(&d, PASSWORD);
     assert_eq!(error(&r), Some(ResponseError::Rollback));
     assert_eq!(ResponseError::Rollback.message(), MSG_ROLLBACK);
-    assert!(d.travado());
+    assert!(d.is_locked());
     // Not even a new daemon opens it.
     let (d2, _) = daemon_at(c.clone());
     assert_eq!(error(&unlock(&d2, PASSWORD)), Some(ResponseError::Rollback));
@@ -328,27 +328,27 @@ fn v3_35_create_vault_without_state_and_with_invalid_state() {
         b64(PASSWORD.as_bytes()),
         b64(PIN.as_bytes())
     );
-    fs::write(&c.estado, "ward-estado 1\nvista 9\n").unwrap();
+    fs::write(&c.state, "ward-estado 1\nvista 9\n").unwrap();
     let (d, _) = daemon_at(c.clone());
     assert_eq!(
         error(&request(&d, Role::App, "criar_cofre", &create)),
         Some(ResponseError::WriteFailed)
     );
-    assert!(!c.cofre.exists());
-    fs::remove_file(&c.estado).unwrap();
+    assert!(!c.vault.exists());
+    fs::remove_file(&c.state).unwrap();
     assert!(ok(&request(&d, Role::App, "criar_cofre", &create)));
-    assert_eq!(generation_on_disk(&c.cofre, PASSWORD), 1);
+    assert_eq!(generation_on_disk(&c.vault, PASSWORD), 1);
     assert_eq!(generations(&dir), Generations { seen: 1, burned: 1 });
 }
 
 /// Swaps the vault file for a copy with the same bytes in another inode (what a process
 /// of the same user would do right after the rename).
 #[cfg(feature = "test-hooks")]
-fn swap_for_copy(c: &Caminhos) {
-    let bytes = fs::read(&c.cofre).unwrap();
-    let tmp = c.cofre.with_extension("troca");
+fn swap_for_copy(c: &Paths) {
+    let bytes = fs::read(&c.vault).unwrap();
+    let tmp = c.vault.with_extension("troca");
     fs::write(&tmp, &bytes).unwrap();
-    fs::rename(&tmp, &c.cofre).unwrap();
+    fs::rename(&tmp, &c.vault).unwrap();
 }
 
 /// V3.35 (D62, S7, S13): a hook swaps the file right after the rename of
@@ -365,14 +365,14 @@ fn v3_35_swap_right_after_the_rename_is_refused() {
     let swapped = Arc::new(AtomicBool::new(false));
     let d = {
         let (armed, swapped, c) = (armed.clone(), swapped.clone(), c.clone());
-        Daemon::novo(c.clone(), Box::new(FakeClock::default())).com_gancho_depois_de_gravar(
-            Box::new(move || {
+        Daemon::new(c.clone(), Box::new(FakeClock::default())).with_hook_after_write(Box::new(
+            move || {
                 if armed.swap(false, Ordering::SeqCst) {
                     swap_for_copy(&c);
                     swapped.store(true, Ordering::SeqCst);
                 }
-            }),
-        )
+            },
+        ))
     };
     assert!(ok(&unlock(&d, PASSWORD)));
     // Without a swap, writing twice works.
@@ -390,16 +390,16 @@ fn v3_35_swap_right_after_the_rename_is_refused() {
         r#"{"minutos":31}"#
     )));
     assert!(swapped.load(Ordering::SeqCst), "o gancho não rodou");
-    let swapped_bytes = fs::read(&c.cofre).unwrap();
+    let swapped_bytes = fs::read(&c.vault).unwrap();
     let r = request(&d, Role::App, "tempo_trava", r#"{"minutos":32}"#);
     assert_eq!(error(&r), Some(ResponseError::VaultChanged));
     assert_eq!(
         ResponseError::VaultChanged.message(),
         ward_core::protocol::MSG_VAULT_CHANGED
     );
-    assert!(d.travado());
+    assert!(d.is_locked());
     assert_eq!(
-        fs::read(&c.cofre).unwrap(),
+        fs::read(&c.vault).unwrap(),
         swapped_bytes,
         "gravou por cima da troca"
     );
@@ -411,13 +411,13 @@ fn v3_35_swap_right_after_the_rename_is_refused() {
     let armed2 = Arc::new(AtomicBool::new(false));
     let d2 = {
         let (armed2, c2) = (armed2.clone(), c2.clone());
-        Daemon::novo(c2.clone(), Box::new(FakeClock::default())).com_gancho_depois_de_gravar(
-            Box::new(move || {
+        Daemon::new(c2.clone(), Box::new(FakeClock::default())).with_hook_after_write(Box::new(
+            move || {
                 if armed2.swap(false, Ordering::SeqCst) {
                     swap_for_copy(&c2);
                 }
-            }),
-        )
+            },
+        ))
     };
     assert!(ok(&unlock(&d2, PASSWORD)));
     armed2.store(true, Ordering::SeqCst);
@@ -432,9 +432,9 @@ fn v3_35_swap_right_after_the_rename_is_refused() {
             b64(new_password.as_bytes())
         ),
     )));
-    let swapped_bytes = fs::read(&c2.cofre).unwrap();
+    let swapped_bytes = fs::read(&c2.vault).unwrap();
     let r = request(&d2, Role::App, "tempo_trava", r#"{"minutos":33}"#);
     assert_eq!(error(&r), Some(ResponseError::VaultChanged));
-    assert!(d2.travado());
-    assert_eq!(fs::read(&c2.cofre).unwrap(), swapped_bytes);
+    assert!(d2.is_locked());
+    assert_eq!(fs::read(&c2.vault).unwrap(), swapped_bytes);
 }

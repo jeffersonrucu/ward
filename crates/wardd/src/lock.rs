@@ -50,7 +50,7 @@ use zbus::connection::Builder;
 use zbus::message::Type as MessageType;
 use zbus::{Connection, MatchRule, Message, MessageStream, OwnedVariant, Variant};
 
-use crate::nucleo::Daemon;
+use crate::core::Daemon;
 use crate::warning;
 
 /// Socket of the system bus.
@@ -274,8 +274,8 @@ async fn inhibit(conn: &Connection) -> Option<OwnedFd> {
 }
 
 fn lock_vault(daemon: &Daemon, reason: &str) {
-    if !daemon.travado() {
-        daemon.travar();
+    if !daemon.is_locked() {
+        daemon.lock();
         warning!("{reason}: cofre travado");
     }
 }
@@ -376,7 +376,7 @@ pub fn watch_inactivity(daemon: Arc<Daemon>, interval: Duration) -> io::Result<J
         .spawn(move || {
             loop {
                 std::thread::sleep(interval);
-                daemon.travar_se_inativo();
+                daemon.lock_if_idle();
             }
         })
 }

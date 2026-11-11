@@ -52,9 +52,9 @@ use ward_platform::child::{self, Command, Group, Pty};
 
 use crate::ssh_agent::{Allowed, SshAgent};
 
-use crate::aprovacao::Cliente;
+use crate::approval::Client;
 use crate::bridge::{Bridge, Opening, TUNNEL_LIMITS};
-use crate::nucleo::Daemon;
+use crate::core::Daemon;
 use crate::{debug, warning};
 
 /// Dir of the temporaries inside `<rt>`.
@@ -283,9 +283,9 @@ impl Resources for RunResources<'_> {
             via,
             target_host: host,
             target_port: port,
-            programs: ctx.daemon.programas_ssh(),
+            programs: ctx.daemon.ssh_programs(),
             known_hosts: &ctx.daemon.known_hosts().map_err(ResourceError)?,
-            rt: ctx.daemon.temporarios(),
+            rt: ctx.daemon.temp_root(),
             mask,
             limits: TUNNEL_LIMITS,
             locks: ctx.locks.clone(),
@@ -324,7 +324,7 @@ pub(crate) struct Preparation {
 /// The registry of the `ward run` and `ward ssh` in progress and the lock count from
 /// when the session was authorized (Phase 54 and 54c, S8).
 pub(crate) struct DiesOnLock {
-    pub(crate) sessions: Arc<crate::nucleo::SessoesRun>,
+    pub(crate) sessions: Arc<crate::core::RunSessions>,
     pub(crate) locks: Arc<AtomicU64>,
     pub(crate) initial: u64,
 }
@@ -539,7 +539,7 @@ impl Daemon {
     /// Steps 1 to 4: authorizes, builds the delivery, the mask and the command.
     fn prepare_run(
         &self,
-        client: &dyn Cliente,
+        client: &dyn Client,
         request: Request,
     ) -> Result<Preparation, ResponseError> {
         let Request::Run(x) = &request else {
@@ -548,8 +548,8 @@ impl Daemon {
         // Phase 54b: only the kind (fixed text), for the CLI suite to verify the `fstat`.
         debug!("executar: entrada padrão {}", x.stdin_kind.name());
         // A visible secure note: refuses before asking for approval (V4.11).
-        if let Some(a) = self.estado().aberto.as_ref()
-            && visible(&a.entradas, &x.entry)
+        if let Some(a) = self.state().open.as_ref()
+            && visible(&a.entries, &x.entry)
                 .is_some_and(|e| matches!(e.data(), Data::SecureNote(_)))
         {
             return Err(ResponseError::TypeWithoutDelivery);
@@ -558,7 +558,7 @@ impl Daemon {
         let Request::Run(x) = request else {
             return Err(ResponseError::InvalidRequest);
         };
-        self.registrar_uso();
+        self.record_use();
         let (argv0, cwd) = match (x.argv.first(), x.cwd.is_empty()) {
             (Some(a), false) => (a, &x.cwd),
             _ => return Err(ResponseError::InvalidRequest),
@@ -569,24 +569,24 @@ impl Daemon {
                 .argument(a)
                 .map_err(|_| ResponseError::InvalidRequest)?;
         }
-        let st = self.estado();
-        let a = st.aberto.as_ref().ok_or(ResponseError::Locked)?;
+        let st = self.state();
+        let a = st.open.as_ref().ok_or(ResponseError::Locked)?;
         // The entry may have changed during the approval: verify again.
-        let e = visible(&a.entradas, &x.entry).ok_or(ResponseError::EntryNotFound)?;
-        let (locks, initial) = self.travas_agora(&st);
+        let e = visible(&a.entries, &x.entry).ok_or(ResponseError::EntryNotFound)?;
+        let (locks, initial) = self.locks_now(&st);
         let lock = DiesOnLock {
-            sessions: self.sessoes_run(&st),
+            sessions: self.run_sessions(&st),
             locks,
             initial,
         };
         let mut resources = RunResources {
-            rt: self.temporarios(),
+            rt: self.temp_root(),
             temp_files: None,
             tunnel: Some(TunnelContext {
                 daemon: self,
-                entries: &a.entradas,
+                entries: &a.entries,
                 main: e,
-                locks: self.travas_agora(&st),
+                locks: self.locks_now(&st),
             }),
             bridge: None,
             tunnel_server: None,
@@ -870,7 +870,7 @@ fn thread(name: &str, f: impl FnOnce() + Send + 'static) -> bool {
 /// other operations); `false` when the session happened and the connection ended.
 pub fn session(
     daemon: &Daemon,
-    client: &dyn Cliente,
+    client: &dyn Client,
     stream: &UnixStream,
     request: Request,
 ) -> bool {
@@ -897,8 +897,8 @@ enum Launched {
 /// same return as [`session`].
 pub(crate) fn session_with(
     stream: &UnixStream,
-    prepare: impl FnOnce(&dyn Cliente) -> Result<Preparation, ResponseError>,
-    client: &dyn Cliente,
+    prepare: impl FnOnce(&dyn Client) -> Result<Preparation, ResponseError>,
+    client: &dyn Client,
 ) -> bool {
     let Ok(writer) = stream.try_clone() else {
         return false;
@@ -980,7 +980,7 @@ pub(crate) fn session_with(
     // Phase 54 (S8): the lock kills the `ward run` group; if it came between the
     // authorization and here, the group dies right away.
     if let Some(t) = &lock
-        && !t.sessions.registrar(&group, &t.locks, t.initial)
+        && !t.sessions.register(&group, &t.locks, t.initial)
     {
         debug!("executar: o cofre travou antes do lançamento; pid {pid} encerrado");
     }

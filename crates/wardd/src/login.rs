@@ -35,8 +35,8 @@ use ward_core::entry::{AccessLevel, Data};
 use ward_core::generator;
 use ward_core::protocol::{LoginResult, Request, ResponseError, Resposta, Role};
 
-use crate::aprovacao::Cliente;
-use crate::nucleo::Daemon;
+use crate::approval::Client;
+use crate::core::Daemon;
 use crate::warning;
 
 /// Deadlines of `ward login`.
@@ -147,15 +147,15 @@ impl Daemon {
     /// value.
     pub(crate) fn login(
         &self,
-        client: &dyn Cliente,
+        client: &dyn Client,
         request: &Request,
     ) -> Result<Resposta, ResponseError> {
         let Request::Login { entry } = request else {
             return Err(ResponseError::InvalidRequest);
         };
         // Type without login: refuse before asking for approval (like `playwright`).
-        if let Some(a) = self.estado().aberto.as_ref()
-            && a.entradas
+        if let Some(a) = self.state().open.as_ref()
+            && a.entries
                 .iter()
                 .find(|e| e.name() == entry && e.level() != AccessLevel::Blocked)
                 .is_some_and(|e| !matches!(e.data(), Data::Login(_)))
@@ -163,13 +163,13 @@ impl Daemon {
             return Err(ResponseError::TypeWithoutDelivery);
         }
         self.authorize_use(client, request)?;
-        self.registrar_uso();
+        self.record_use();
         // The entry may have changed during the approval: check again.
         let name = {
-            let st = self.estado();
-            let a = st.aberto.as_ref().ok_or(ResponseError::Locked)?;
+            let st = self.state();
+            let a = st.open.as_ref().ok_or(ResponseError::Locked)?;
             let e = a
-                .entradas
+                .entries
                 .iter()
                 .find(|e| e.name() == entry && e.level() != AccessLevel::Blocked)
                 .ok_or(ResponseError::EntryNotFound)?;
@@ -210,7 +210,7 @@ impl Daemon {
         &self,
         logins: &Logins,
         id: &str,
-        client: &dyn Cliente,
+        client: &dyn Client,
     ) -> Result<(), ResponseError> {
         let start = Instant::now();
         let mut taken: Option<Instant> = None;
@@ -236,11 +236,11 @@ impl Daemon {
             }
             drop(g);
             // Outside the requests lock: the vault state has its own lock.
-            if client.saiu() {
+            if client.exited() {
                 logins.finish(id, Err(ResponseError::Denied));
                 return Err(ResponseError::Denied);
             }
-            if self.travado() {
+            if self.is_locked() {
                 logins.finish(id, Err(ResponseError::Locked));
                 return Err(ResponseError::Locked);
             }
@@ -311,7 +311,7 @@ impl Daemon {
             t.phase = Phase::Filled;
             t.entry.clone()
         };
-        match self.preencher(role, &entry, origin) {
+        match self.fill(role, &entry, origin) {
             Ok(r) => {
                 // The request may have died (deadline, lock, CLI) while the value was
                 // leaving the vault: then nothing leaves.

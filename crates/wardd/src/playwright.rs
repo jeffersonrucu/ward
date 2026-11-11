@@ -44,9 +44,9 @@ use ward_core::protocol::{Request, ResponseError, Resposta};
 use ward_core::totp::Totp;
 use ward_platform::child::{Command, Group};
 
-use crate::aprovacao::Cliente;
+use crate::approval::Client;
 use crate::cdp::{Cdp, CdpError, Rule, Writer, worst_case};
-use crate::nucleo::Daemon;
+use crate::core::Daemon;
 use crate::warning;
 
 /// The installed Chrome (the same as the extension role, D47).
@@ -798,15 +798,15 @@ impl Daemon {
     /// state.
     pub(crate) fn playwright(
         &self,
-        client: &dyn Cliente,
+        client: &dyn Client,
         request: &Request,
     ) -> Result<Resposta, ResponseError> {
         let Request::Playwright { entry } = request else {
             return Err(ResponseError::InvalidRequest);
         };
         // Type without a visible login: refuse before asking for approval.
-        if let Some(a) = self.estado().aberto.as_ref()
-            && a.entradas
+        if let Some(a) = self.state().open.as_ref()
+            && a.entries
                 .iter()
                 .find(|e| e.name() == entry && e.level() != AccessLevel::Blocked)
                 .is_some_and(|e| !matches!(e.data(), Data::Login(_)))
@@ -814,17 +814,17 @@ impl Daemon {
             return Err(ResponseError::TypeWithoutDelivery);
         }
         self.authorize_use(client, request)?;
-        self.registrar_uso();
+        self.record_use();
         let rt = self
-            .temporarios()
+            .temp_root()
             .ok_or(ResponseError::DeliveryFailed)?
             .to_path_buf();
         let (url, cred, mask, locks, initial) = {
-            let st = self.estado();
-            let a = st.aberto.as_ref().ok_or(ResponseError::Locked)?;
+            let st = self.state();
+            let a = st.open.as_ref().ok_or(ResponseError::Locked)?;
             // The entry may have changed during the approval: check again.
             let e = a
-                .entradas
+                .entries
                 .iter()
                 .find(|e| e.name() == entry && e.level() != AccessLevel::Blocked)
                 .ok_or(ResponseError::EntryNotFound)?;
@@ -849,7 +849,7 @@ impl Daemon {
                 None => None,
             };
             let mask = Mask::from_entry(e, None).map_err(|_| ResponseError::DeliveryFailed)?;
-            let (locks, initial) = self.travas_agora(&st);
+            let (locks, initial) = self.locks_now(&st);
             (
                 l.url.clone(),
                 Credential {
@@ -877,8 +877,8 @@ impl Daemon {
         }
         // Writes with the vault unlocked and no lock since the start; locking afterwards
         // deletes it.
-        let st = self.estado();
-        if st.aberto.is_none() || locks.load(std::sync::atomic::Ordering::Acquire) != initial {
+        let st = self.state();
+        if st.open.is_none() || locks.load(std::sync::atomic::Ordering::Acquire) != initial {
             return Err(ResponseError::Locked);
         }
         let path = write_state(&rt, entry, &state).map_err(|e| {

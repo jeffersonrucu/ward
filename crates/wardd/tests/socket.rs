@@ -152,7 +152,7 @@ fn v3_20_cycle_through_the_socket_without_secret_in_the_log() {
     let dev = Dir::new("sock");
     {
         let (d, _) = test_vault(&dev);
-        d.travar();
+        d.lock();
     }
     let sock = SocketDir::new("cycle");
     let w = start(&dev, &sock);
@@ -302,9 +302,9 @@ fn v3_33_kill_9_between_the_wrong_passwords() {
     let dev = Dir::new("kill9");
     {
         let (d, _) = test_vault(&dev);
-        d.travar();
+        d.lock();
     }
-    let state = dev.paths().estado;
+    let state = dev.paths().state;
     let failures = || {
         wardd::files::read_full_state(&state)
             .unwrap()
@@ -400,7 +400,7 @@ fn v3_6_running_wardd_denies_proc_ptrace_and_core() {
     let dev = Dir::new("v36");
     {
         let (d, _) = test_vault(&dev);
-        d.travar();
+        d.lock();
     }
     let sock = SocketDir::new("v36");
     let log = dev.0.join("wardd.log");
