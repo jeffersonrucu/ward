@@ -130,7 +130,7 @@ Compilação de cada fase: `make compile`. Checador: os arquivos da fase.
   (+ testes), `origem`, `exibicao`. — V2.1
 - [x] Fase 11 — `formato` (+ testes), `gravacao` (+ testes). Gravação atômica intocada.
   — V2.1
-- [ ] Fase 12 — `entrada.rs`, `entrada/segredo.rs`, `entrada/validacao.rs` (os nomes
+- [x] Fase 12 — `entrada.rs`, `entrada/segredo.rs`, `entrada/validacao.rs` (os nomes
   gravados de `nome()`/`de_nome()` são literais congelados; os rótulos pt-BR ficam). —
   V2.1
 - [ ] Fase 13 — `entrada/testes.rs`, `configuracao` (+ testes). — V2.1
