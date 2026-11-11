@@ -2511,6 +2511,35 @@ entrega) → `Variable` (`nome`/`expor`/`e_segredo` → `name`/`expose`/`is_secr
 `protocolo::Variavel` (Fase 17), `VersaoBackup` (Fase 18), `ErroMascara::SemEntrega`
 (Fase 16), `RunResources` (Fase 21) e `RecursosDoOrcamento` (Fase 16) são outros e não
 mudaram.
+Fase 24 (testes do `wardd`: `tests/ssh.rs`, `tests/run.rs`, `tests/ssh_falso.py` →
+`tests/fake_ssh.py`): em `ssh.rs`, `SENHA_SSH`/`SENHA_BANCO` → `SSH_PASSWORD`/
+`DB_PASSWORD`, `RelogioManual` → `ManualClock` (`avancar` → `advance`), `Rt::novo` →
+`Rt::new`, `Cena { relogio }` → `Scene { clock }` (`cena` → `scene`; `modo`/`registros`/
+`registro`/`nada_executado` → `set_mode`/`records`/`record`/`nothing_ran`), `Reg` → `Rec`
+(`todos`/`um` → `all`/`one`), `Sessao { saida, erro, pedacos, fim, falha }` → `Session {
+stdout, stderr, chunks, end, failure }` (`texto` → `text`), `salvar` → `save`,
+`servidor_json` → `server_json`, `auth_senha` → `password_auth`, `gerar_chave` →
+`generate_key`, `pedido_ssh` → `ssh_request`, `mandar` → `send`, `sessao`/`sessao_de` →
+`session`/`session_of`, `fechar_entrada` → `close_stdin`, `opcoes` → `options`,
+`esperar` → `wait_for`, `rt_sem_agente` → `rt_without_agent`, `esperar_registro` →
+`wait_record`, `depois_de` → `after`, `estranho_e_recusado` → `stranger_is_refused`
+("estranho" aqui é o processo de fora da sessão, `stranger`, não `odd`),
+`inode_da_escuta`/`escuta_fechada` → `listener_inode`/`listener_closed`, `ninguem_com_w`
+→ `nobody_with_w`, `conferir_argv_da_ponte` → `verify_bridge_argv`. Em `run.rs`,
+`SENHA_LIVRE`/`LICENCA`/`ANEXO`/`APROVADOR` → `FREE_PASSWORD`/`LICENSE`/`ATTACHMENT`/
+`APPROVER`, `DirSocket::novo` → `SocketDir::new`, `Wardd { filho }` → `Wardd { child }`,
+`subir`/`subir_com` → `start`/`start_with`, `receber` → `receive`, `conectar` →
+`connect`, `destravar_por` → `unlock_through`, `pedido_executar(_com)` →
+`run_request(_with)`, `entrada_padrao` → `send_stdin`, `ler_sessao` → `read_session`,
+`cofre` → `vault`, `tmp_vazio` → `tmp_empty`, `vivo` → `alive`. Em `fake_ssh.py`, `NOME`
+→ `NAME`, `ler` → `read_file`, `registrar` → `record`, `opcao` → `option`, `pedir` →
+`ask`, `cliente_do_agente` → `agent_client`, `NETO` → `GRANDCHILD`, `esperar_continuar`/
+`esperar_arquivo` → `wait_continue`/`wait_file`, `valor` → `value`,
+`ponte_do_lado_do_salto` → `bridge_on_the_jump_side`, `conversar` → `talk`, `principal`
+→ `main`. Os arquivos que o falso grava e lê (`registro-<nome>-<pid>.txt`, `modo`,
+`esperar`, `continuar`, `pty-pronto`…) e as chaves do registro (`agente.lista`, `neto`,
+`depois`…) são literais e ficam. Os nomes do `comum` (Fase 23), do `nucleo`/`aprovacao`
+(Fase 20) e do `ward-core` (`protocolo`, Fases 17–18) ficam como estão até as fases deles.
 
 Funções e métodos não estão listados um a um: o nome sai da seção 2 na ordem do inglês
 (`conferir_arquivo` → `verify_file`, `ler_cofre` → `read_vault`, `codificar_resposta` →

@@ -283,7 +283,7 @@ Contrato: V4.1–V4.24. Sequencial. A partir daqui o fio muda.
   `app/src/lib/bridge`, ponte de teste do front-end, `dev/tests/*.py` que falam com o
   socket ou com o `ward-nm` (`socket_matrix.py`, `socket_attack.py`, `nm.py`,
   `extension.py`, `login.py`, `cli.py`, `chrome_policy.py`, `open-app.py`,
-  `chrome_falso.py`, `ssh_falso.py`), servidor falso v1 para o V4.16. Esvazia de
+  `chrome_falso.py`, `fake_ssh.py`), servidor falso v1 para o V4.16. Esvazia de
   `frozen.txt` as chaves de mensagem. Compilação: `make compile`. — V4.13, V4.16, V5.10
 - [ ] Fase 53 — Variáveis entregues (DT11) no `ward-core` `delivery` e no `wardd`;
   `make dev-vault` e `dev-vault-verify` com o `entries.json` novo (chaves lidas por

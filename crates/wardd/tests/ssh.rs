@@ -1,15 +1,15 @@
-//! `ward ssh` no núcleo (Fase 27), com `ssh`, `sshpass` e `sftp` falsos
-//! (`tests/ssh_falso.py`) que registram o argv e nunca conectam: D3 (token do
-//! "Conectar", V5.24, V4.32), D12 (agente só do filho, V4.24), D13 (`-F /dev/null`,
-//! `known_hosts` próprio, ambiente do zero), D34 revisto (sem oráculo de prefixo), D43 (usuário com `@`,
-//! V4.35) e D56 (`sftp` com `User=`, V4.37).
+//! `ward ssh` in the core (Phase 27), with fake `ssh`, `sshpass` and `sftp`
+//! (`tests/fake_ssh.py`) that record the argv and never connect: D3 ("Connect"
+//! token, V5.24, V4.32), D12 (agent only for the child, V4.24), D13 (`-F /dev/null`,
+//! own `known_hosts`, environment from scratch), D34 revised (no prefix oracle), D43
+//! (user with `@`, V4.35) and D56 (`sftp` with `User=`, V4.37).
 //!
-//! A sessão roda como no servidor (`wardd::ssh::session` numa ponta de um par de
-//! sockets); a outra ponta faz o papel da CLI. O cofre é de teste, criado pelo núcleo
-//! com valores falsos; a chave SSH é gerada aqui, com passphrase aleatória.
+//! The session runs as in the server (`wardd::ssh::session` on one end of a socket
+//! pair); the other end plays the CLI. The vault is a test one, created by the core
+//! with fake values; the SSH key is generated here, with a random passphrase.
 //!
-//! Os programas falsos entram por `Daemon::com_programas_ssh`, que só existe com a
-//! feature `test-hooks` (o `make test` liga todas).
+//! The fake programs come in through the daemon builder for the SSH programs, which
+//! only exists with the `test-hooks` feature (`make test` turns them all on).
 
 #![cfg(feature = "test-hooks")]
 
@@ -34,34 +34,34 @@ use wardd::nucleo::Daemon;
 use wardd::ssh::SshPrograms;
 use zeroize::Zeroizing;
 
-/// Senha dos servidores de teste (a de `comum::servidor`, falsa).
-const SENHA_SSH: &str = SEGREDOS[1];
-/// Senha do `banco` do túnel (falsa).
-const SENHA_BANCO: &str = SEGREDOS[2];
+/// Password of the test servers (the one of the shared server fixture, fake).
+const SSH_PASSWORD: &str = SEGREDOS[1];
+/// Password of the tunnel database (fake).
+const DB_PASSWORD: &str = SEGREDOS[2];
 
 #[derive(Clone, Default)]
-struct RelogioManual(Arc<Mutex<Duration>>);
+struct ManualClock(Arc<Mutex<Duration>>);
 
-impl RelogioManual {
-    fn avancar(&self, d: Duration) {
+impl ManualClock {
+    fn advance(&self, d: Duration) {
         *self.0.lock().unwrap() += d;
     }
 }
 
-impl RelogioMotor for RelogioManual {
+impl RelogioMotor for ManualClock {
     fn agora(&self) -> Duration {
         *self.0.lock().unwrap()
     }
 }
 
-/// `<rt>` só deste teste em `/run/user/<uid>/` (caminho curto: o socket do agente cabe
-/// no `sun_path`).
+/// `<rt>` of this test only, in `/run/user/<uid>/` (short path: the agent socket fits
+/// in `sun_path`).
 struct Rt(PathBuf);
 
 impl Rt {
-    fn novo(rotulo: &str) -> Rt {
+    fn new(label: &str) -> Rt {
         let p = ward_platform::socket::runtime_dir()
-            .join(format!("wsh-{}-{rotulo}", std::process::id()));
+            .join(format!("wsh-{}-{label}", std::process::id()));
         let _ = fs::remove_dir_all(&p);
         Rt(p)
     }
@@ -73,38 +73,38 @@ impl Drop for Rt {
     }
 }
 
-struct Cena {
+struct Scene {
     d: Arc<Daemon>,
     dir: Dir,
     rt: Rt,
-    /// Onde ficam os programas falsos, o `modo` e os registros.
+    /// Where the fake programs, the mode file and the records live.
     base: PathBuf,
-    relogio: RelogioManual,
+    clock: ManualClock,
 }
 
-fn salvar(d: &Daemon, json: &str) {
+fn save(d: &Daemon, json: &str) {
     let r = pedir(d, Papel::App, "salvar_entrada", json);
     assert!(ok(&r), "{r:?}");
 }
 
-fn servidor_json(nome: &str, usuario: &str, campos_auth: &str, extra: &str) -> String {
+fn server_json(name: &str, user: &str, auth_fields: &str, extra: &str) -> String {
     format!(
-        r#"{{"entrada":{{"nome":"{nome}","grupo":"clientex","ambiente":"stage","tipo":"servidor","campos":{{"host":"127.0.0.1","porta":"2222","usuario":"{usuario}",{campos_auth}{extra}}}}}}}"#
+        r#"{{"entrada":{{"nome":"{name}","grupo":"clientex","ambiente":"stage","tipo":"servidor","campos":{{"host":"127.0.0.1","porta":"2222","usuario":"{user}",{auth_fields}{extra}}}}}}}"#
     )
 }
 
-fn sftp_json(nome: &str, protocolo: &str, campos_auth: &str) -> String {
+fn sftp_json(name: &str, protocol: &str, auth_fields: &str) -> String {
     format!(
-        r#"{{"entrada":{{"nome":"{nome}","grupo":"clientex","ambiente":"dev","tipo":"ftp-sftp","campos":{{"protocolo":"{protocolo}","host":"127.0.0.1","porta":"2222","usuario":"sftpuser",{campos_auth}}}}}}}"#
+        r#"{{"entrada":{{"nome":"{name}","grupo":"clientex","ambiente":"dev","tipo":"ftp-sftp","campos":{{"protocolo":"{protocol}","host":"127.0.0.1","porta":"2222","usuario":"sftpuser",{auth_fields}}}}}}}"#
     )
 }
 
-fn auth_senha() -> String {
-    format!(r#""senha":"{}""#, b64(SENHA_SSH.as_bytes()))
+fn password_auth() -> String {
+    format!(r#""senha":"{}""#, b64(SSH_PASSWORD.as_bytes()))
 }
 
-/// Chave Ed25519 nova com passphrase aleatória (nada fixo no repositório).
-fn gerar_chave(dir: &Path) -> (Vec<u8>, String) {
+/// New Ed25519 key with a random passphrase (nothing fixed in the repository).
+fn generate_key(dir: &Path) -> (Vec<u8>, String) {
     let pp = format!(
         "pp-{}-{}",
         std::process::id(),
@@ -113,7 +113,7 @@ fn gerar_chave(dir: &Path) -> (Vec<u8>, String) {
             .unwrap()
             .as_nanos()
     );
-    let arq = dir.join("chave_teste");
+    let file = dir.join("chave_teste");
     let st = Command::new("/usr/bin/ssh-keygen")
         .env_clear()
         .env("HOME", dir)
@@ -121,28 +121,28 @@ fn gerar_chave(dir: &Path) -> (Vec<u8>, String) {
         .args(["-q", "-t", "ed25519", "-C", "teste-fase27", "-N"])
         .arg(&pp)
         .arg("-f")
-        .arg(&arq)
+        .arg(&file)
         .status()
         .unwrap();
     assert!(st.success());
-    let chave = fs::read(&arq).unwrap();
-    fs::remove_file(&arq).unwrap();
-    let _ = fs::remove_file(arq.with_extension("pub"));
-    (chave, pp)
+    let key = fs::read(&file).unwrap();
+    fs::remove_file(&file).unwrap();
+    let _ = fs::remove_file(file.with_extension("pub"));
+    (key, pp)
 }
 
-fn cena(rotulo: &str) -> Cena {
-    let dir = Dir::novo(rotulo);
+fn scene(label: &str) -> Scene {
+    let dir = Dir::novo(label);
     let (d, _) = cofre_de_teste(&dir);
     let base = dir.0.join("falsos");
     fs::create_dir(&base).unwrap();
-    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/ssh_falso.py");
-    for nome in ["ssh", "sshpass", "sftp"] {
-        let p = base.join(nome);
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fake_ssh.py");
+    for name in ["ssh", "sshpass", "sftp"] {
+        let p = base.join(name);
         fs::write(
             &p,
             format!(
-                "#!/bin/sh\nexec /usr/bin/python3 -I '{}' {nome} '{}' \"$@\"\n",
+                "#!/bin/sh\nexec /usr/bin/python3 -I '{}' {name} '{}' \"$@\"\n",
                 script.display(),
                 base.display()
             ),
@@ -150,81 +150,86 @@ fn cena(rotulo: &str) -> Cena {
         .unwrap();
         fs::set_permissions(&p, fs::Permissions::from_mode(0o700)).unwrap();
     }
-    let rt = Rt::novo(rotulo);
-    let relogio = RelogioManual::default();
+    let rt = Rt::new(label);
+    let clock = ManualClock::default();
     let d = d
-        .com_motor(Motor::novo(Arc::new(relogio.clone()), Box::new(SemApp)))
+        .com_motor(Motor::novo(Arc::new(clock.clone()), Box::new(SemApp)))
         .com_programas_ssh(SshPrograms {
             ssh: base.join("ssh"),
             sshpass: base.join("sshpass"),
             sftp: base.join("sftp"),
         })
         .com_temporarios(rt.0.clone());
-    let (chave, pp) = gerar_chave(&dir.0);
-    let auth_chave = format!(
+    let (key, pp) = generate_key(&dir.0);
+    let key_auth = format!(
         r#""chave_privada":"{}","passphrase":"{}""#,
-        b64(&chave),
+        b64(&key),
         b64(pp.as_bytes())
     );
-    salvar(
+    save(
         &d,
-        &servidor_json("s-livre", "deploy@cliente.com.br", &auth_senha(), ""),
+        &server_json("s-livre", "deploy@cliente.com.br", &password_auth(), ""),
     );
-    salvar(&d, &servidor_json("s-outro", "deploy", &auth_senha(), ""));
-    salvar(&d, &servidor_json("s-bloq", "deploy", &auth_senha(), ""));
-    salvar(&d, &servidor_json("s-chave", "deploy", &auth_chave, ""));
-    salvar(
+    save(&d, &server_json("s-outro", "deploy", &password_auth(), ""));
+    save(&d, &server_json("s-bloq", "deploy", &password_auth(), ""));
+    save(&d, &server_json("s-chave", "deploy", &key_auth, ""));
+    save(
         &d,
-        &servidor_json("s-salto", "deploy", &auth_senha(), r#","salto":"s-livre""#),
-    );
-    // Fase 28: salto com chave no principal, salto com chave no intermediário, salto com
-    // aprovação ou bloqueado (D19) e o túnel do `banco`.
-    salvar(
-        &d,
-        &servidor_json(
-            "s-salto-chave",
+        &server_json(
+            "s-salto",
             "deploy",
-            &auth_chave,
+            &password_auth(),
             r#","salto":"s-livre""#,
         ),
     );
-    salvar(
+    // Phase 28: jump with a key on the main host, jump with a key on the intermediate,
+    // jump that needs approval or is blocked (D19) and the database tunnel.
+    save(
         &d,
-        &servidor_json(
+        &server_json(
+            "s-salto-chave",
+            "deploy",
+            &key_auth,
+            r#","salto":"s-livre""#,
+        ),
+    );
+    save(
+        &d,
+        &server_json(
             "s-via-chave",
             "deploy",
-            &auth_senha(),
+            &password_auth(),
             r#","salto":"s-chave""#,
         ),
     );
-    salvar(
+    save(
         &d,
-        &servidor_json(
+        &server_json(
             "s-salto-aprov",
             "deploy",
-            &auth_senha(),
+            &password_auth(),
             r#","salto":"s-outro""#,
         ),
     );
-    salvar(
+    save(
         &d,
-        &servidor_json(
+        &server_json(
             "s-salto-bloq",
             "deploy",
-            &auth_senha(),
+            &password_auth(),
             r#","salto":"s-bloq""#,
         ),
     );
-    salvar(
+    save(
         &d,
         &format!(
             r#"{{"entrada":{{"nome":"b-tunel","grupo":"clientex","ambiente":"stage","tipo":"banco","campos":{{"motor":"postgres","host":"db.interno","porta":"5432","base":"app","usuario":"app","senha":"{}","tunel":"s-livre"}}}}}}"#,
-            b64(SENHA_BANCO.as_bytes())
+            b64(DB_PASSWORD.as_bytes())
         ),
     );
-    salvar(&d, &sftp_json("f-sftp", "sftp", &auth_senha()));
-    salvar(&d, &sftp_json("f-sftp-chave", "sftp", &auth_chave));
-    salvar(&d, &sftp_json("f-ftp", "ftp", &auth_senha()));
+    save(&d, &sftp_json("f-sftp", "sftp", &password_auth()));
+    save(&d, &sftp_json("f-sftp-chave", "sftp", &key_auth));
+    save(&d, &sftp_json("f-ftp", "ftp", &password_auth()));
     for n in [
         "s-livre",
         "s-chave",
@@ -241,28 +246,28 @@ fn cena(rotulo: &str) -> Cena {
         assert!(ok(&mudar_nivel(&d, Papel::App, n, "livre", PIN)));
     }
     assert!(ok(&mudar_nivel(&d, Papel::App, "s-bloq", "bloqueado", PIN)));
-    Cena {
+    Scene {
         d: Arc::new(d),
         dir,
         rt,
         base,
-        relogio,
+        clock,
     }
 }
 
-impl Cena {
-    fn modo(&self, m: &str) {
+impl Scene {
+    fn set_mode(&self, m: &str) {
         fs::write(self.base.join("modo"), m).unwrap();
     }
 
-    /// Os registros do programa falso `nome`.
-    fn registros(&self, nome: &str) -> Vec<Reg> {
+    /// The records of the fake program `name`.
+    fn records(&self, name: &str) -> Vec<Rec> {
         let mut v = Vec::new();
         for e in fs::read_dir(&self.base).unwrap() {
             let n = e.unwrap().file_name().into_string().unwrap();
-            if n.starts_with(&format!("registro-{nome}-")) && n.ends_with(".txt") {
+            if n.starts_with(&format!("registro-{name}-")) && n.ends_with(".txt") {
                 let t = fs::read_to_string(self.base.join(&n)).unwrap();
-                v.push(Reg(t
+                v.push(Rec(t
                     .lines()
                     .map(|l| {
                         let (k, v) = l.split_once('\t').unwrap();
@@ -274,48 +279,48 @@ impl Cena {
         v
     }
 
-    fn registro(&self, nome: &str) -> Reg {
-        let r = self.registros(nome);
-        assert_eq!(r.len(), 1, "registros de {nome}: {r:?}");
+    fn record(&self, name: &str) -> Rec {
+        let r = self.records(name);
+        assert_eq!(r.len(), 1, "registros de {name}: {r:?}");
         r.into_iter().next().unwrap()
     }
 
-    fn nada_executado(&self) -> bool {
+    fn nothing_ran(&self) -> bool {
         ["ssh", "sshpass", "sftp"]
             .iter()
-            .all(|n| self.registros(n).is_empty())
+            .all(|n| self.records(n).is_empty())
     }
 
-    fn token(&self, entrada: &str) -> Secret {
+    fn token(&self, entry: &str) -> Secret {
         match self.d.atender(
             Papel::App,
             Pedido::EmitirToken {
-                entrada: entrada.into(),
+                entrada: entry.into(),
             },
         ) {
             Resposta::Token(t) => t,
-            outra => panic!("emitir_token: {outra:?}"),
+            other => panic!("emitir_token: {other:?}"),
         }
     }
 }
 
-fn pedido_ssh(
-    entrada: &str,
-    comando: &[&str],
+fn ssh_request(
+    entry: &str,
+    command: &[&str],
     token: Option<&Secret>,
-    janela: Option<Janela>,
+    window: Option<Janela>,
 ) -> Pedido {
     Pedido::Ssh {
-        entrada: entrada.into(),
-        comando: comando
+        entrada: entry.into(),
+        comando: command
             .iter()
             .map(|c| Zeroizing::new(c.as_bytes().to_vec()))
             .collect(),
         token: token.map(|t| Secret::from_bytes(t.expose().to_vec())),
-        janela,
-        // Fase 54b: os testes mandam a entrada pelo socket (como um pipe), ou digitam
-        // no pty.
-        tipo_entrada: if janela.is_some() {
+        janela: window,
+        // Phase 54b: the tests send the input over the socket (like a pipe), or type
+        // it in the pty.
+        tipo_entrada: if window.is_some() {
             ward_core::protocolo::TipoEntradaPadrao::Terminal
         } else {
             ward_core::protocolo::TipoEntradaPadrao::Pipe
@@ -323,153 +328,151 @@ fn pedido_ssh(
     }
 }
 
-/// O que a sessão devolveu, com a hora de cada pedaço de saída.
+/// What the session returned, with the time of each output chunk.
 #[derive(Debug, Default)]
-struct Sessao {
-    saida: Vec<u8>,
-    erro: Vec<u8>,
-    pedacos: Vec<(Duration, Vec<u8>)>,
-    fim: Option<u8>,
-    falha: Option<ErroResposta>,
+struct Session {
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+    chunks: Vec<(Duration, Vec<u8>)>,
+    end: Option<u8>,
+    failure: Option<ErroResposta>,
 }
 
-impl Sessao {
-    fn texto(&self) -> String {
-        String::from_utf8_lossy(&self.saida).into_owned()
+impl Session {
+    fn text(&self) -> String {
+        String::from_utf8_lossy(&self.stdout).into_owned()
     }
 }
 
-fn mandar(s: &mut UnixStream, p: &Pedido) {
-    let corpo = protocolo::codificar_pedido(Papel::Agente, p).unwrap();
-    quadro::escrever_quadro(s, &corpo, MAX_COMMON_FRAME).unwrap();
+fn send(s: &mut UnixStream, p: &Pedido) {
+    let body = protocolo::codificar_pedido(Papel::Agente, p).unwrap();
+    quadro::escrever_quadro(s, &body, MAX_COMMON_FRAME).unwrap();
 }
 
-/// Roda a sessão como o servidor rodaria. `cli` recebe a ponta da CLI logo depois do
-/// pedido (manda entrada, janela, mexe no cofre) e a sessão é lida até o fim.
-fn sessao(c: &Cena, pedido: Pedido, cli: impl FnOnce(&mut UnixStream)) -> Sessao {
-    sessao_de(c, pedido, cli, false)
+/// Runs the session as the server would. `cli` gets the CLI end right after the
+/// request (sends input, window, touches the vault) and the session is read to the end.
+fn session(c: &Scene, request: Pedido, cli: impl FnOnce(&mut UnixStream)) -> Session {
+    session_of(c, request, cli, false)
 }
 
-/// Como [`sessao`]; `run`: a sessão do `ward run` (`wardd::execution::session`).
-fn sessao_de(c: &Cena, pedido: Pedido, cli: impl FnOnce(&mut UnixStream), run: bool) -> Sessao {
-    let (mut lado_cli, lado_daemon) = UnixStream::pair().unwrap();
-    lado_cli
+/// Like [`session`]; `run`: the `ward run` session (`wardd::execution::session`).
+fn session_of(c: &Scene, request: Pedido, cli: impl FnOnce(&mut UnixStream), run: bool) -> Session {
+    let (mut cli_end, daemon_end) = UnixStream::pair().unwrap();
+    cli_end
         .set_read_timeout(Some(Duration::from_secs(60)))
         .unwrap();
     let d = c.d.clone();
     let t = std::thread::spawn(move || {
         if run {
-            wardd::execution::session(&d, &SemCliente, &lado_daemon, pedido)
+            wardd::execution::session(&d, &SemCliente, &daemon_end, request)
         } else {
-            wardd::ssh::session(&d, &SemCliente, &lado_daemon, pedido)
+            wardd::ssh::session(&d, &SemCliente, &daemon_end, request)
         }
     });
-    let inicio = Instant::now();
-    cli(&mut lado_cli);
-    let mut r = Sessao::default();
+    let start = Instant::now();
+    cli(&mut cli_end);
+    let mut r = Session::default();
     loop {
-        let Ok(b) = quadro::ler_quadro(&mut lado_cli, LIMITE_RESPOSTA) else {
+        let Ok(b) = quadro::ler_quadro(&mut cli_end, LIMITE_RESPOSTA) else {
             break;
         };
         match protocolo::decodificar_resposta(Papel::Agente, &b).unwrap() {
             Resposta::Saida { fluxo, dados } => {
-                r.pedacos.push((inicio.elapsed(), dados.to_vec()));
+                r.chunks.push((start.elapsed(), dados.to_vec()));
                 match fluxo {
-                    Fluxo::Saida => r.saida.extend_from_slice(&dados),
-                    Fluxo::Erro => r.erro.extend_from_slice(&dados),
+                    Fluxo::Saida => r.stdout.extend_from_slice(&dados),
+                    Fluxo::Erro => r.stderr.extend_from_slice(&dados),
                 }
             }
             Resposta::Fim { codigo } => {
-                r.fim = Some(codigo);
+                r.end = Some(codigo);
                 break;
             }
             Resposta::Erro(e) => {
-                r.falha = Some(e);
+                r.failure = Some(e);
                 break;
             }
-            outra => panic!("resposta inesperada: {outra:?}"),
+            other => panic!("resposta inesperada: {other:?}"),
         }
     }
-    let seguiu = t.join().unwrap();
-    // Recusado antes de lançar: a conexão segue; depois da sessão, acaba.
-    assert_eq!(seguiu, r.falha.is_some(), "{r:?}");
+    let continued = t.join().unwrap();
+    // Refused before launching: the connection goes on; after the session, it ends.
+    assert_eq!(continued, r.failure.is_some(), "{r:?}");
     r
 }
 
-/// Fecha a entrada do comando. Quando o pedido é recusado antes de lançar (token
-/// inválido, nível), o daemon pode já ter respondido e soltado a ponta: a escrita que
-/// falha aí não é erro do teste (a resposta é conferida depois).
-fn fechar_entrada(s: &mut UnixStream) {
-    let corpo = protocolo::codificar_pedido(
+/// Closes the command input. When the request is refused before launching (invalid
+/// token, level), the daemon may have answered and let go of its end already: a write
+/// that fails there is not a test error (the answer is checked afterwards).
+fn close_stdin(s: &mut UnixStream) {
+    let body = protocolo::codificar_pedido(
         Papel::Agente,
         &Pedido::EntradaPadrao {
             dados: Secret::from_bytes(Vec::new()),
         },
     )
     .unwrap();
-    let _ = quadro::escrever_quadro(s, &corpo, MAX_COMMON_FRAME);
+    let _ = quadro::escrever_quadro(s, &body, MAX_COMMON_FRAME);
 }
 
-/// O registro de um programa falso: `campo → valores`, na ordem.
+/// The record of a fake program: `field → values`, in order.
 #[derive(Debug)]
-struct Reg(Vec<(String, String)>);
+struct Rec(Vec<(String, String)>);
 
-impl Reg {
-    fn todos(&self, campo: &str) -> Vec<String> {
+impl Rec {
+    fn all(&self, field: &str) -> Vec<String> {
         self.0
             .iter()
-            .filter(|(k, _)| k == campo)
+            .filter(|(k, _)| k == field)
             .map(|(_, v)| v.clone())
             .collect()
     }
 
-    /// O último valor do campo (o registro do agente é regravado com `depois`).
-    fn um(&self, campo: &str) -> String {
+    /// The last value of the field (the agent record is written again with `depois`).
+    fn one(&self, field: &str) -> String {
         self.0
             .iter()
             .rev()
-            .find(|(k, _)| k == campo)
+            .find(|(k, _)| k == field)
             .map(|(_, v)| v.clone())
-            .unwrap_or_else(|| panic!("sem {campo}: {self:?}"))
+            .unwrap_or_else(|| panic!("sem {field}: {self:?}"))
     }
 }
 
-fn argv(reg: &Reg) -> Vec<String> {
-    reg.todos("argv")
+fn argv(rec: &Rec) -> Vec<String> {
+    rec.all("argv")
 }
 
-/// Os nomes do ambiente, menos o `PWD` que o `/bin/sh` do programa falso põe.
-fn env(reg: &Reg) -> BTreeSet<String> {
-    reg.todos("env")
-        .into_iter()
-        .filter(|n| n != "PWD")
-        .collect()
+/// The names of the environment, minus the `PWD` that the `/bin/sh` of the fake program
+/// sets.
+fn env(rec: &Rec) -> BTreeSet<String> {
+    rec.all("env").into_iter().filter(|n| n != "PWD").collect()
 }
 
-fn opcoes(a: &[String]) -> Vec<String> {
+fn options(a: &[String]) -> Vec<String> {
     a.windows(2)
         .filter(|w| w[0] == "-o")
         .map(|w| w[1].clone())
         .collect()
 }
 
-fn sha256(dados: &[u8]) -> String {
+fn sha256(data: &[u8]) -> String {
     let out = Command::new("/usr/bin/sha256sum")
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .spawn()
         .and_then(|mut c| {
             use std::io::Write;
-            c.stdin.take().unwrap().write_all(dados)?;
+            c.stdin.take().unwrap().write_all(data)?;
             c.wait_with_output()
         })
         .unwrap();
     String::from_utf8(out.stdout).unwrap()[..64].to_owned()
 }
 
-fn esperar(prazo: Duration, mut cond: impl FnMut() -> bool) -> bool {
-    let fim = Instant::now() + prazo;
-    while Instant::now() < fim {
+fn wait_for(deadline: Duration, mut cond: impl FnMut() -> bool) -> bool {
+    let end = Instant::now() + deadline;
+    while Instant::now() < end {
         if cond() {
             return true;
         }
@@ -478,39 +481,39 @@ fn esperar(prazo: Duration, mut cond: impl FnMut() -> bool) -> bool {
     cond()
 }
 
-fn rt_sem_agente(c: &Cena) -> bool {
+fn rt_without_agent(c: &Scene) -> bool {
     fs::read_dir(&c.rt.0).map_or(true, |d| {
         d.filter_map(Result::ok)
             .all(|e| !e.file_name().to_string_lossy().starts_with("ssh-"))
     })
 }
 
-/// D43 + D13 (V4.35, V4.23): usuário com `@` inteiro depois de `-l`, host depois de
-/// `--`, nunca `usuário@host` nem `-o User=`; senha só em `SSHPASS` (nunca em argv);
-/// `-F /dev/null`, `known_hosts` do Ward e ambiente do zero; a saída que repete a
-/// senha volta mascarada; o código do comando remoto passa.
+/// D43 + D13 (V4.35, V4.23): the user with `@` whole after `-l`, the host after `--`,
+/// never `user@host` nor `-o User=`; the password only in `SSHPASS` (never in argv);
+/// `-F /dev/null`, the Ward `known_hosts` and an environment from scratch; output that
+/// repeats the password comes back masked; the code of the remote command passes.
 #[test]
-fn v4_35_d43_usuario_com_arroba_e_senha_so_no_ambiente() {
-    let c = cena("d43");
-    c.modo("normal");
-    let r = sessao(
+fn v4_35_d43_user_with_at_sign_and_password_only_in_env() {
+    let c = scene("d43");
+    c.set_mode("normal");
+    let r = session(
         &c,
-        pedido_ssh("s-livre", &["whoami", "--", "-l", "x@y"], None, None),
-        fechar_entrada,
+        ssh_request("s-livre", &["whoami", "--", "-l", "x@y"], None, None),
+        close_stdin,
     );
-    assert_eq!(r.fim, Some(7), "{r:?}");
-    let sp = c.registro("sshpass");
-    let ssh = c.registro("ssh");
+    assert_eq!(r.end, Some(7), "{r:?}");
+    let sp = c.record("sshpass");
+    let ssh = c.record("ssh");
     let a = argv(&sp);
     assert_eq!(a[0], "-e");
     assert_eq!(a[1], c.base.join("ssh").to_str().unwrap());
     assert_eq!(&argv(&ssh)[..], &a[2..]);
     let a = &a[2..];
     assert_eq!(&a[..2], ["-F", "/dev/null"]);
-    // O usuário inteiro, como argumento próprio de `-l`, antes do `--`.
-    let fim_opcoes = a.iter().position(|x| x == "--").unwrap();
+    // The whole user, as its own argument of `-l`, before the `--`.
+    let end_of_options = a.iter().position(|x| x == "--").unwrap();
     assert_eq!(
-        &a[fim_opcoes - 4..],
+        &a[end_of_options - 4..],
         [
             "-p",
             "2222",
@@ -529,11 +532,11 @@ fn v4_35_d43_usuario_com_arroba_e_senha_so_no_ambiente() {
             !x.contains("@127.0.0.1") && !x.contains("@cliente.com.br@"),
             "{x}"
         );
-        assert!(!x.starts_with("User=") && !x.contains(SENHA_SSH), "{x}");
+        assert!(!x.starts_with("User=") && !x.contains(SSH_PASSWORD), "{x}");
     }
-    let o = opcoes(a);
+    let o = options(a);
     let kh = c.dir.0.join("known_hosts");
-    for esperado in [
+    for expected in [
         "IdentitiesOnly=yes".to_owned(),
         "CertificateFile=/dev/null".to_owned(),
         format!("UserKnownHostsFile={}", kh.display()),
@@ -546,38 +549,41 @@ fn v4_35_d43_usuario_com_arroba_e_senha_so_no_ambiente() {
         "ControlMaster=no".to_owned(),
         "ProxyCommand=none".to_owned(),
     ] {
-        assert!(o.contains(&esperado), "falta {esperado}: {o:?}");
+        assert!(o.contains(&expected), "falta {expected}: {o:?}");
     }
-    // Ambiente do zero: nada do teste nem do daemon (nem SSH_AUTH_SOCK, nem HOME).
-    let esperado: BTreeSet<String> = ["LANG", "PATH", "SSHPASS"].map(String::from).into();
-    assert_eq!(env(&sp), esperado);
-    assert_eq!(sp.um("sshpass_sha256"), sha256(SENHA_SSH.as_bytes()));
-    assert_eq!(sp.um("tty"), "0");
-    // S4: o filho imprimiu a senha; a CLI só vê a marca.
-    let t = r.texto();
+    // Environment from scratch: nothing from the test nor from the daemon (no
+    // SSH_AUTH_SOCK, no HOME).
+    let expected: BTreeSet<String> = ["LANG", "PATH", "SSHPASS"].map(String::from).into();
+    assert_eq!(env(&sp), expected);
+    assert_eq!(sp.one("sshpass_sha256"), sha256(SSH_PASSWORD.as_bytes()));
+    assert_eq!(sp.one("tty"), "0");
+    // S4: the child printed the password; the CLI only sees the mark.
+    let t = r.text();
     assert!(t.contains("SSHPASS=••••"), "{t}");
-    assert!(!contem(&r.saida, SENHA_SSH.as_bytes()) && !contem(&r.erro, SENHA_SSH.as_bytes()));
+    assert!(
+        !contem(&r.stdout, SSH_PASSWORD.as_bytes()) && !contem(&r.stderr, SSH_PASSWORD.as_bytes())
+    );
     assert!(t.contains("remoto=whoami -- -l x@y"), "{t}");
 }
 
-/// D56 (V4.37): no `sftp`, `-o User=<usuário>`, `-P`, `-F /dev/null` e o host depois de
-/// `--`; nunca `-l` (limite de banda no `sftp`). Os comandos vêm da entrada padrão;
-/// `sftp` com comando é recusado sem executar nada.
+/// D56 (V4.37): in `sftp`, `-o User=<user>`, `-P`, `-F /dev/null` and the host after
+/// `--`; never `-l` (bandwidth limit in `sftp`). The commands come from stdin; `sftp`
+/// with a command is refused without running anything.
 #[test]
-fn v4_37_d56_sftp_com_user_e_host_depois_de_traco_traco() {
-    let c = cena("d56");
-    let r = sessao(&c, pedido_ssh("f-sftp", &[], None, None), |s| {
-        mandar(
+fn v4_37_d56_sftp_with_user_and_host_after_double_dash() {
+    let c = scene("d56");
+    let r = session(&c, ssh_request("f-sftp", &[], None, None), |s| {
+        send(
             s,
             &Pedido::EntradaPadrao {
                 dados: Secret::from_bytes(b"pwd\nls\n".to_vec()),
             },
         );
-        fechar_entrada(s);
+        close_stdin(s);
     });
-    assert_eq!(r.fim, Some(0), "{r:?}");
-    assert_eq!(r.texto(), "sftp> pwd\nsftp> ls\n");
-    let a = argv(&c.registro("sshpass"));
+    assert_eq!(r.end, Some(0), "{r:?}");
+    assert_eq!(r.text(), "sftp> pwd\nsftp> ls\n");
+    let a = argv(&c.record("sshpass"));
     assert_eq!(&a[..2], ["-e", c.base.join("sftp").to_str().unwrap()]);
     let a = &a[2..];
     assert_eq!(&a[..2], ["-F", "/dev/null"]);
@@ -587,20 +593,20 @@ fn v4_37_d56_sftp_com_user_e_host_depois_de_traco_traco() {
     );
     assert!(!a.iter().any(|x| x == "-l" || x.contains('@')), "{a:?}");
 
-    let c = cena("d56b");
-    let r = sessao(&c, pedido_ssh("f-sftp", &["ls"], None, None), |_| {});
-    assert_eq!(r.falha, Some(ErroResposta::PedidoInvalido));
-    assert!(c.nada_executado());
+    let c = scene("d56b");
+    let r = session(&c, ssh_request("f-sftp", &["ls"], None, None), |_| {});
+    assert_eq!(r.failure, Some(ErroResposta::PedidoInvalido));
+    assert!(c.nothing_ran());
 }
 
-/// Recusas antes de executar: tipo sem `ward ssh`, `ftp` (não `sftp`), bloqueada
-/// (inexistente), com aprovação sem app (vale o nível) e o nível combinado de D19
-/// (V4.30): livre com salto "com aprovação" sem app dá `aprovacao_indisponivel`, e
-/// livre com salto bloqueado é negado sem perguntar.
+/// Refusals before running: a kind without `ward ssh`, `ftp` (not `sftp`), blocked
+/// (nonexistent), needs approval without the app (the level holds) and the combined
+/// level of D19 (V4.30): free with a jump that "needs approval" without the app gives
+/// approval unavailable, and free with a blocked jump is denied without asking.
 #[test]
-fn recusas_sem_executar_nada() {
-    let c = cena("recusas");
-    for (entrada, erro) in [
+fn refusals_without_running_anything() {
+    let c = scene("recusas");
+    for (entry, error) in [
         ("t-livre", ErroResposta::TipoSemEntrega),
         ("f-ftp", ErroResposta::TipoSemEntrega),
         ("s-bloq", ErroResposta::EntradaInexistente),
@@ -609,73 +615,77 @@ fn recusas_sem_executar_nada() {
         ("s-salto-aprov", ErroResposta::AprovacaoIndisponivel),
         ("s-salto-bloq", ErroResposta::Negado),
     ] {
-        let r = sessao(&c, pedido_ssh(entrada, &["id"], None, None), |_| {});
-        assert_eq!(r.falha, Some(erro), "{entrada}: {r:?}");
+        let r = session(&c, ssh_request(entry, &["id"], None, None), |_| {});
+        assert_eq!(r.failure, Some(error), "{entry}: {r:?}");
     }
-    assert!(c.nada_executado());
-    assert!(rt_sem_agente(&c));
+    assert!(c.nothing_ran());
+    assert!(rt_without_agent(&c));
 }
 
-/// D12 (V4.24, ataque): o agente lista a chave e assina só para o `ssh` filho; recusa
-/// adicionar, remover e travar; um neto do `ssh` e o próprio teste (mesmo uid, outro
-/// pid) são fechados sem nenhum byte. Pasta 0700, socket 0600, sem `SSH_AUTH_SOCK` no
-/// ambiente; tudo some no fim da sessão.
+/// D12 (V4.24, attack): the agent lists the key and signs only for the child `ssh`;
+/// it refuses to add, remove and lock; a grandchild of `ssh` and the test itself (same
+/// uid, another pid) are closed without a single byte. Folder 0700, socket 0600, no
+/// `SSH_AUTH_SOCK` in the environment; everything goes away at the end of the session.
 #[test]
-fn v4_24_d12_agente_so_do_filho() {
-    let c = cena("d12");
-    c.modo("normal");
+fn v4_24_d12_agent_only_for_the_child() {
+    let c = scene("d12");
+    c.set_mode("normal");
     fs::write(c.base.join("esperar"), "").unwrap();
     let base = c.base.clone();
     let rt = c.rt.0.clone();
-    let r = sessao(&c, pedido_ssh("s-chave", &["true"], None, None), move |s| {
-        fechar_entrada(s);
-        // Espera o `ssh` falso registrar o argv e atacar o socket daqui.
-        assert!(esperar(Duration::from_secs(30), || {
-            fs::read_dir(&base).unwrap().any(|e| {
-                e.unwrap()
-                    .file_name()
-                    .to_string_lossy()
-                    .starts_with("registro-ssh-")
-            })
-        }));
-        let pasta = fs::read_dir(&rt)
-            .unwrap()
-            .filter_map(Result::ok)
-            .find(|e| e.file_name().to_string_lossy().starts_with("ssh-"))
-            .unwrap()
-            .path();
-        let modo = |p: &Path| fs::metadata(p).unwrap().permissions().mode() & 0o777;
-        assert_eq!(modo(&pasta), 0o700);
-        assert_eq!(modo(&pasta.join("agent.sock")), 0o600);
-        assert_eq!(modo(&pasta.join("id.pub")), 0o600);
-        let publica = fs::read_to_string(pasta.join("id.pub")).unwrap();
-        assert!(publica.starts_with("ssh-ed25519 "), "{publica}");
-        // Ataque: outro processo do mesmo usuário.
-        let mut a = UnixStream::connect(pasta.join("agent.sock")).unwrap();
-        a.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
-        use std::io::{Read, Write};
-        let _ = a.write_all(&[0, 0, 0, 1, 11]);
-        let mut buf = [0u8; 16];
-        assert_eq!(
-            a.read(&mut buf).unwrap_or(0),
-            0,
-            "o agente respondeu a um estranho"
-        );
-        fs::write(base.join("continuar"), "").unwrap();
-    });
-    assert_eq!(r.fim, Some(7), "{r:?}");
-    let ssh = c.registro("ssh");
-    assert_eq!(ssh.um("agente.lista"), "12", "{ssh:?}");
-    assert_eq!(ssh.um("agente.quantas"), "1");
-    assert_eq!(ssh.um("agente.assina"), "14", "{ssh:?}");
-    assert!(ssh.um("agente.assinatura").len() > 100);
+    let r = session(
+        &c,
+        ssh_request("s-chave", &["true"], None, None),
+        move |s| {
+            close_stdin(s);
+            // Waits for the fake `ssh` to record the argv and attacks the socket from here.
+            assert!(wait_for(Duration::from_secs(30), || {
+                fs::read_dir(&base).unwrap().any(|e| {
+                    e.unwrap()
+                        .file_name()
+                        .to_string_lossy()
+                        .starts_with("registro-ssh-")
+                })
+            }));
+            let dir = fs::read_dir(&rt)
+                .unwrap()
+                .filter_map(Result::ok)
+                .find(|e| e.file_name().to_string_lossy().starts_with("ssh-"))
+                .unwrap()
+                .path();
+            let mode = |p: &Path| fs::metadata(p).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode(&dir), 0o700);
+            assert_eq!(mode(&dir.join("agent.sock")), 0o600);
+            assert_eq!(mode(&dir.join("id.pub")), 0o600);
+            let public_key = fs::read_to_string(dir.join("id.pub")).unwrap();
+            assert!(public_key.starts_with("ssh-ed25519 "), "{public_key}");
+            // Attack: another process of the same user.
+            let mut a = UnixStream::connect(dir.join("agent.sock")).unwrap();
+            a.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+            use std::io::{Read, Write};
+            let _ = a.write_all(&[0, 0, 0, 1, 11]);
+            let mut buf = [0u8; 16];
+            assert_eq!(
+                a.read(&mut buf).unwrap_or(0),
+                0,
+                "o agente respondeu a um estranho"
+            );
+            fs::write(base.join("continuar"), "").unwrap();
+        },
+    );
+    assert_eq!(r.end, Some(7), "{r:?}");
+    let ssh = c.record("ssh");
+    assert_eq!(ssh.one("agente.lista"), "12", "{ssh:?}");
+    assert_eq!(ssh.one("agente.quantas"), "1");
+    assert_eq!(ssh.one("agente.assina"), "14", "{ssh:?}");
+    assert!(ssh.one("agente.assinatura").len() > 100);
     for op in ["adiciona", "remove", "trava"] {
-        assert_eq!(ssh.um(&format!("agente.{op}")), "5", "{op}: {ssh:?}");
+        assert_eq!(ssh.one(&format!("agente.{op}")), "5", "{op}: {ssh:?}");
     }
-    assert_eq!(ssh.um("agente.neto"), "recusada", "{ssh:?}");
-    assert_eq!(ssh.um("depois"), "12");
+    assert_eq!(ssh.one("agente.neto"), "recusada", "{ssh:?}");
+    assert_eq!(ssh.one("depois"), "12");
     let a = argv(&ssh);
-    let o = opcoes(&a);
+    let o = options(&a);
     assert!(o.contains(&"PubkeyAuthentication=yes".to_owned()));
     assert!(o.contains(&"IdentitiesOnly=yes".to_owned()));
     assert!(o.contains(&"PasswordAuthentication=no".to_owned()));
@@ -687,11 +697,11 @@ fn v4_24_d12_agente_so_do_filho() {
         o.iter()
             .any(|x| x.starts_with("IdentityFile=") && x.ends_with("/id.pub"))
     );
-    assert!(c.registros("sshpass").is_empty());
-    let esperado: BTreeSet<String> = ["LANG", "PATH"].map(String::from).into();
-    assert_eq!(env(&ssh), esperado);
-    // Fim da sessão: o agente e a pasta somem.
-    assert!(rt_sem_agente(&c));
+    assert!(c.records("sshpass").is_empty());
+    let expected: BTreeSet<String> = ["LANG", "PATH"].map(String::from).into();
+    assert_eq!(env(&ssh), expected);
+    // End of the session: the agent and the folder go away.
+    assert!(rt_without_agent(&c));
     let sock = o
         .iter()
         .find_map(|x| x.strip_prefix("IdentityAgent="))
@@ -699,190 +709,197 @@ fn v4_24_d12_agente_so_do_filho() {
     assert!(!Path::new(sock).exists());
 }
 
-/// D12: travar o cofre derruba o agente no meio da sessão; desde a Fase 54c (S8), a
-/// sessão inteira (o `ssh` morre antes de pedir ao agente de novo, e a CLI recebe 137).
+/// D12: locking the vault brings down the agent in the middle of the session; since
+/// Phase 54c (S8), the whole session (the `ssh` dies before asking the agent again, and
+/// the CLI gets 137).
 #[test]
-fn d12_travar_derruba_o_agente() {
-    let c = cena("d12trava");
+fn d12_lock_brings_down_the_agent() {
+    let c = scene("d12trava");
     fs::write(c.base.join("esperar"), "").unwrap();
     let (base, d, rt) = (c.base.clone(), c.d.clone(), c.rt.0.clone());
-    let r = sessao(&c, pedido_ssh("s-chave", &["true"], None, None), move |s| {
-        fechar_entrada(s);
-        assert!(esperar(Duration::from_secs(30), || {
-            fs::read_dir(&base).unwrap().any(|e| {
-                e.unwrap()
-                    .file_name()
-                    .to_string_lossy()
-                    .starts_with("registro-ssh-")
-            })
-        }));
-        d.travar();
-        assert!(esperar(Duration::from_secs(5), || {
-            fs::read_dir(&rt).map_or(true, |d| {
-                d.filter_map(Result::ok)
-                    .all(|e| !e.file_name().to_string_lossy().starts_with("ssh-"))
-            })
-        }));
-        fs::write(base.join("continuar"), "").unwrap();
-    });
-    assert_eq!(r.fim, Some(137), "{r:?}");
-    let ssh = c.registro("ssh");
-    assert_eq!(ssh.um("agente.lista"), "12");
+    let r = session(
+        &c,
+        ssh_request("s-chave", &["true"], None, None),
+        move |s| {
+            close_stdin(s);
+            assert!(wait_for(Duration::from_secs(30), || {
+                fs::read_dir(&base).unwrap().any(|e| {
+                    e.unwrap()
+                        .file_name()
+                        .to_string_lossy()
+                        .starts_with("registro-ssh-")
+                })
+            }));
+            d.travar();
+            assert!(wait_for(Duration::from_secs(5), || {
+                fs::read_dir(&rt).map_or(true, |d| {
+                    d.filter_map(Result::ok)
+                        .all(|e| !e.file_name().to_string_lossy().starts_with("ssh-"))
+                })
+            }));
+            fs::write(base.join("continuar"), "").unwrap();
+        },
+    );
+    assert_eq!(r.end, Some(137), "{r:?}");
+    let ssh = c.record("ssh");
+    assert_eq!(ssh.one("agente.lista"), "12");
     assert!(
         ssh.0.iter().all(|(k, v)| k != "depois" || v != "12"),
         "{ssh:?}"
     );
 }
 
-/// Fase 54c (S8; decisão do usuário, 2026-11-10), ataque: o agente abre `ward ssh` e a
-/// sessão fica de pé (o `ssh` falso dorme 30 s, conectado). O usuário trava o cofre: a
-/// sessão morre na hora, por senha (o `ssh` que o `sshpass` cria com `setsid()`, fora
-/// do grupo, também) e por chave; a CLI recebe o aviso e 137, e nada do que o `ssh`
-/// faria depois chega. Antes da correção, a sessão seguia até o fim (código 7, 30 s).
+/// Phase 54c (S8; user decision, 2026-11-10), attack: the agent opens `ward ssh` and the
+/// session stays up (the fake `ssh` sleeps 30 s, connected). The user locks the vault:
+/// the session dies at once, by password (the `ssh` that `sshpass` creates with
+/// `setsid()`, outside the group, too) and by key; the CLI gets the notice and 137, and
+/// nothing the `ssh` would do afterwards arrives. Before the fix, the session went on to
+/// the end (code 7, 30 s).
 #[test]
-fn f54c_ataque_ward_ssh_morre_na_trava() {
-    for entrada in ["s-livre", "s-chave"] {
-        let c = cena(&format!("f54c-{entrada}"));
-        c.modo("parado");
-        let travou = std::cell::Cell::new(None);
-        let r = sessao(&c, pedido_ssh(entrada, &["sleep", "20"], None, None), |s| {
-            fechar_entrada(s);
-            assert!(esperar(Duration::from_secs(30), || {
-                !c.registros("ssh").is_empty()
+fn f54c_attack_ward_ssh_dies_on_lock() {
+    for entry in ["s-livre", "s-chave"] {
+        let c = scene(&format!("f54c-{entry}"));
+        c.set_mode("parado");
+        let locked = std::cell::Cell::new(None);
+        let r = session(&c, ssh_request(entry, &["sleep", "20"], None, None), |s| {
+            close_stdin(s);
+            assert!(wait_for(Duration::from_secs(30), || {
+                !c.records("ssh").is_empty()
             }));
             std::thread::sleep(Duration::from_millis(300));
             c.d.travar();
-            travou.set(Some(Instant::now()));
+            locked.set(Some(Instant::now()));
         });
-        let depois = travou.get().unwrap().elapsed();
-        assert_eq!(r.fim, Some(137), "{entrada}: {r:?}");
-        assert!(depois < Duration::from_secs(5), "{entrada}: {depois:?}");
-        let t = format!("{}{}", r.texto(), String::from_utf8_lossy(&r.erro));
-        assert!(t.contains("conectado"), "{entrada}: {t}");
+        let after = locked.get().unwrap().elapsed();
+        assert_eq!(r.end, Some(137), "{entry}: {r:?}");
+        assert!(after < Duration::from_secs(5), "{entry}: {after:?}");
+        let t = format!("{}{}", r.text(), String::from_utf8_lossy(&r.stderr));
+        assert!(t.contains("conectado"), "{entry}: {t}");
         assert!(
             t.contains("ward: o cofre travou; o comando foi encerrado"),
-            "{entrada}: {t}"
+            "{entry}: {t}"
         );
-        assert!(!t.contains("depois-da-trava"), "{entrada}: {t}");
-        // Nenhum processo da sessão sobra: nem o `ssh` (filho do `sshpass` com sessão
-        // própria, na senha), nem o `sshpass`.
-        for nome in ["ssh", "sshpass"] {
-            for reg in c.registros(nome) {
-                let pid = reg.um("pid");
+        assert!(!t.contains("depois-da-trava"), "{entry}: {t}");
+        // No process of the session is left: neither the `ssh` (child of `sshpass` with
+        // its own session, for a password) nor the `sshpass`.
+        for name in ["ssh", "sshpass"] {
+            for rec in c.records(name) {
+                let pid = rec.one("pid");
                 assert!(
-                    esperar(Duration::from_secs(5), || {
+                    wait_for(Duration::from_secs(5), || {
                         fs::read_to_string(format!("/proc/{pid}/stat"))
                             .map_or(true, |s| s.contains(") Z "))
                     }),
-                    "{entrada}: {nome} {pid} sobreviveu à trava"
+                    "{entry}: {name} {pid} sobreviveu à trava"
                 );
             }
         }
-        if entrada == "s-livre" {
-            assert_eq!(c.registros("sshpass").len(), 1);
+        if entry == "s-livre" {
+            assert_eq!(c.records("sshpass").len(), 1);
         }
-        assert!(rt_sem_agente(&c));
+        assert!(rt_without_agent(&c));
     }
 }
 
-/// Fase 54l (achado da 54c; S8, D13), ataque: a CLI do `ward ssh` cai no meio da
-/// sessão aberta (fecha o socket, como um SIGKILL nela). Por senha, o `sshpass` cria o
-/// `ssh` com `setsid()`, fora do grupo; o falso não morre por `SIGHUP`. Antes, o fim da
-/// sessão matava só o grupo do `sshpass` e esse `ssh` seguia vivo, com a sessão
-/// autenticada, até o fim do comando. Agora nenhum processo da sessão sobra, com pipes
-/// e com pty, por senha e por chave, e o daemon solta a sessão logo.
+/// Phase 54l (finding of 54c; S8, D13), attack: the `ward ssh` CLI drops in the middle
+/// of the open session (closes the socket, like a SIGKILL on it). For a password,
+/// `sshpass` creates the `ssh` with `setsid()`, outside the group; the fake one does not
+/// die on `SIGHUP`. Before, the end of the session killed only the `sshpass` group and
+/// that `ssh` stayed alive, with the authenticated session, until the end of the
+/// command. Now no process of the session is left, with pipes and with a pty, by
+/// password and by key, and the daemon lets go of the session soon.
 #[test]
-fn f54l_ataque_cli_cai_no_ward_ssh_nenhum_ssh_sobra() {
-    let janela = Janela {
+fn f54l_attack_cli_drops_in_ward_ssh_no_ssh_left() {
+    let window = Janela {
         linhas: 30,
         colunas: 100,
     };
-    for (entrada, pty) in [("s-livre", false), ("s-livre", true), ("s-chave", false)] {
-        let rotulo = format!("{entrada}{}", if pty { "-pty" } else { "" });
-        let c = cena(&format!("f54l-{rotulo}"));
-        c.modo("parado");
-        let pedido = if pty {
-            pedido_ssh(entrada, &[], None, Some(janela))
+    for (entry, pty) in [("s-livre", false), ("s-livre", true), ("s-chave", false)] {
+        let label = format!("{entry}{}", if pty { "-pty" } else { "" });
+        let c = scene(&format!("f54l-{label}"));
+        c.set_mode("parado");
+        let request = if pty {
+            ssh_request(entry, &[], None, Some(window))
         } else {
-            pedido_ssh(entrada, &["sleep", "20"], None, None)
+            ssh_request(entry, &["sleep", "20"], None, None)
         };
-        let (mut lado_cli, lado_daemon) = UnixStream::pair().unwrap();
+        let (mut cli_end, daemon_end) = UnixStream::pair().unwrap();
         let d = c.d.clone();
         let t = std::thread::spawn(move || {
-            let _ = wardd::ssh::session(&d, &SemCliente, &lado_daemon, pedido);
+            let _ = wardd::ssh::session(&d, &SemCliente, &daemon_end, request);
         });
-        fechar_entrada(&mut lado_cli);
+        close_stdin(&mut cli_end);
         assert!(
-            esperar(Duration::from_secs(30), || !c.registros("ssh").is_empty()),
-            "{rotulo}: o ssh falso não subiu"
+            wait_for(Duration::from_secs(30), || !c.records("ssh").is_empty()),
+            "{label}: o ssh falso não subiu"
         );
         std::thread::sleep(Duration::from_millis(300));
-        let caiu = Instant::now();
-        drop(lado_cli);
-        // Nenhum processo da sessão sobra: nem o `ssh` (com sessão própria, na senha),
-        // nem o `sshpass`.
-        for nome in ["ssh", "sshpass"] {
-            for reg in c.registros(nome) {
-                let pid = reg.um("pid");
+        let dropped = Instant::now();
+        drop(cli_end);
+        // No process of the session is left: neither the `ssh` (with its own session,
+        // for a password) nor the `sshpass`.
+        for name in ["ssh", "sshpass"] {
+            for rec in c.records(name) {
+                let pid = rec.one("pid");
                 assert!(
-                    esperar(Duration::from_secs(5), || {
+                    wait_for(Duration::from_secs(5), || {
                         fs::read_to_string(format!("/proc/{pid}/stat"))
                             .map_or(true, |s| s.contains(") Z "))
                     }),
-                    "{rotulo}: {nome} {pid} sobreviveu à CLI que caiu"
+                    "{label}: {name} {pid} sobreviveu à CLI que caiu"
                 );
             }
         }
         t.join().unwrap();
-        let dt = caiu.elapsed();
-        assert!(dt < Duration::from_secs(10), "{rotulo}: {dt:?}");
-        if entrada == "s-livre" {
-            assert_eq!(c.registros("sshpass").len(), 1, "{rotulo}");
+        let dt = dropped.elapsed();
+        assert!(dt < Duration::from_secs(10), "{label}: {dt:?}");
+        if entry == "s-livre" {
+            assert_eq!(c.records("sshpass").len(), 1, "{label}");
         }
-        assert!(rt_sem_agente(&c), "{rotulo}");
+        assert!(rt_without_agent(&c), "{label}");
     }
 }
 
-/// D12 no `sftp` com chave: o `ssh` que o `sftp` chama (filho do filho) é atendido; o
-/// neto dele não.
+/// D12 in `sftp` with a key: the `ssh` that `sftp` calls (child of the child) is
+/// served; its grandchild is not.
 #[test]
-fn d12_sftp_com_chave_atende_o_ssh_do_sftp() {
-    let c = cena("d12sftp");
-    let r = sessao(
+fn d12_sftp_with_key_serves_the_ssh_of_sftp() {
+    let c = scene("d12sftp");
+    let r = session(
         &c,
-        pedido_ssh("f-sftp-chave", &[], None, None),
-        fechar_entrada,
+        ssh_request("f-sftp-chave", &[], None, None),
+        close_stdin,
     );
-    assert_eq!(r.fim, Some(0), "{r:?}");
-    let ssh = c.registro("ssh");
-    assert_eq!(ssh.um("agente.lista"), "12", "{ssh:?}");
-    assert_eq!(ssh.um("agente.assina"), "14");
-    assert_eq!(ssh.um("agente.neto"), "recusada");
-    assert_eq!(ssh.um("ppid"), c.registro("sftp").um("pid"));
-    assert!(rt_sem_agente(&c));
+    assert_eq!(r.end, Some(0), "{r:?}");
+    let ssh = c.record("ssh");
+    assert_eq!(ssh.one("agente.lista"), "12", "{ssh:?}");
+    assert_eq!(ssh.one("agente.assina"), "14");
+    assert_eq!(ssh.one("agente.neto"), "recusada");
+    assert_eq!(ssh.one("ppid"), c.record("sftp").one("pid"));
+    assert!(rt_without_agent(&c));
 }
 
-/// D34 revisto (auditoria do M4, oráculo de prefixo no pty): o filho imprime um
-/// prefixo errado de 10 caracteres e para 1 s, depois o prefixo certo da senha e para
-/// 1 s, depois o resto. Os dois prefixos chegam à CLI do mesmo jeito: em claro e na
-/// hora (nada de `••••` no lugar do certo, nada segurado até a pausa ou até o resto).
-/// O pedaço que completa a senha sai marcado. O filho tem terminal do tamanho pedido,
-/// `TERM` e acompanha a janela nova.
+/// D34 revised (M4 audit, prefix oracle in the pty): the child prints a wrong prefix of
+/// 10 characters and stops 1 s, then the right prefix of the password and stops 1 s,
+/// then the rest. Both prefixes reach the CLI the same way: in clear and at once (no
+/// `••••` in place of the right one, nothing held until the pause or until the rest).
+/// The chunk that completes the password comes out marked. The child has a terminal of
+/// the requested size, `TERM`, and follows the new window.
 #[test]
-fn d34_ataque_pty_prefixo_certo_e_errado_saem_iguais_e_na_hora() {
-    let c = cena("d34");
-    c.modo("pty");
-    let janela = Janela {
+fn d34_attack_pty_right_and_wrong_prefix_come_out_alike_and_at_once() {
+    let c = scene("d34");
+    c.set_mode("pty");
+    let window = Janela {
         linhas: 30,
         colunas: 100,
     };
-    let pronto = c.base.join("pty-pronto");
-    let r = sessao(
+    let ready = c.base.join("pty-pronto");
+    let r = session(
         &c,
-        pedido_ssh("s-livre", &[], None, Some(janela)),
+        ssh_request("s-livre", &[], None, Some(window)),
         move |s| {
-            assert!(esperar(Duration::from_secs(60), || pronto.exists()));
-            mandar(
+            assert!(wait_for(Duration::from_secs(60), || ready.exists()));
+            send(
                 s,
                 &Pedido::Janela(Janela {
                     linhas: 40,
@@ -891,190 +908,183 @@ fn d34_ataque_pty_prefixo_certo_e_errado_saem_iguais_e_na_hora() {
             );
         },
     );
-    assert_eq!(r.fim, Some(0), "{r:?}");
-    let t = r.texto();
-    let linha_do_tempo = || {
-        r.pedacos
+    assert_eq!(r.end, Some(0), "{r:?}");
+    let t = r.text();
+    let timeline = || {
+        r.chunks
             .iter()
             .map(|(t, p)| (t, String::from_utf8_lossy(p).into_owned()))
             .collect::<Vec<_>>()
     };
     assert!(t.contains("tty=True/True 30x100"), "{t}");
     assert!(t.contains("fim 40x120"), "{t}");
-    let certo = format!("[{}", &SENHA_SSH[..10]);
-    let errado: String = SENHA_SSH[..10]
+    let right = format!("[{}", &SSH_PASSWORD[..10]);
+    let wrong: String = SSH_PASSWORD[..10]
         .chars()
         .map(|a| if a == 'X' { 'Y' } else { 'X' })
         .collect();
-    let errado = format!("<{errado}");
-    // Os dois prefixos saem em claro, iguais ao que o filho escreveu.
-    assert!(t.contains(&errado), "{t}");
-    assert!(t.contains(&certo), "o prefixo certo foi trocado: {t}");
-    // A senha inteira nunca sai; o pedaço que a completa vira marca.
-    assert!(!contem(&r.saida, SENHA_SSH.as_bytes()), "{t}");
-    assert!(t.contains(&format!("{certo}••••]")), "{t}");
-    // Tempo: cada prefixo chega à CLI antes da pausa de 1 s acabar (nada segurado até
-    // a saída seguinte); a chegada não depende de ser o prefixo certo.
-    let quando = |marca: &str| {
-        r.pedacos
+    let wrong = format!("<{wrong}");
+    // Both prefixes come out in clear, as the child wrote them.
+    assert!(t.contains(&wrong), "{t}");
+    assert!(t.contains(&right), "o prefixo certo foi trocado: {t}");
+    // The whole password never comes out; the chunk that completes it becomes a mark.
+    assert!(!contem(&r.stdout, SSH_PASSWORD.as_bytes()), "{t}");
+    assert!(t.contains(&format!("{right}••••]")), "{t}");
+    // Timing: each prefix reaches the CLI before the 1 s pause ends (nothing held until
+    // the next output); the arrival does not depend on it being the right prefix.
+    let when = |mark: &str| {
+        r.chunks
             .iter()
-            .find(|(_, p)| contem(p, marca.as_bytes()))
+            .find(|(_, p)| contem(p, mark.as_bytes()))
             .map(|(t, _)| *t)
-            .unwrap_or_else(|| panic!("sem {marca}: {:?}", linha_do_tempo()))
+            .unwrap_or_else(|| panic!("sem {mark}: {:?}", timeline()))
     };
-    let (t_errado, t_fecha) = (quando(&errado), quando(">"));
-    let (t_certo, t_resto) = (quando(&certo), quando("••••"));
-    for (nome, t0, t1) in [("errado", t_errado, t_fecha), ("certo", t_certo, t_resto)] {
+    let (t_wrong, t_close) = (when(&wrong), when(">"));
+    let (t_right, t_rest) = (when(&right), when("••••"));
+    for (name, t0, t1) in [("errado", t_wrong, t_close), ("certo", t_right, t_rest)] {
         assert!(
             t1.saturating_sub(t0) >= Duration::from_millis(600),
-            "prefixo {nome} segurado até a saída seguinte: {:?}",
-            linha_do_tempo()
+            "prefixo {name} segurado até a saída seguinte: {:?}",
+            timeline()
         );
     }
-    let sp = c.registro("sshpass");
+    let sp = c.record("sshpass");
     assert!(env(&sp).contains("TERM"));
-    // Interativo: sem comando remoto (nada depois do host).
+    // Interactive: no remote command (nothing after the host).
     let a = argv(&sp);
     assert_eq!(a.last().unwrap(), "127.0.0.1");
 }
 
-/// D34 revisto (auditoria do M4, `tempo.py`): sem pty (`ward ssh` com comando), o
-/// filho escreve `A`, para, um candidato a prefixo, para, e `Z`. O candidato chega à
-/// CLI antes do `Z`, seja ou não o começo da senha (antes, o começo da senha ficava
-/// segurado até o `Z`: oráculo por tempo).
+/// D34 revised (M4 audit, timing script): without a pty (`ward ssh` with a command), the
+/// child writes `A`, stops, a prefix candidate, stops, and `Z`. The candidate reaches
+/// the CLI before the `Z`, whether or not it is the start of the password (before, the
+/// start of the password was held until the `Z`: a timing oracle).
 #[test]
-fn d34_ataque_tempo_sem_pty_prefixo_nao_atrasa() {
-    let c = cena("d34tempo");
-    c.modo("tempo");
-    let r = sessao(
-        &c,
-        pedido_ssh("s-livre", &["x"], None, None),
-        fechar_entrada,
-    );
-    assert_eq!(r.fim, Some(0), "{r:?}");
-    let linha_do_tempo: Vec<_> = r
-        .pedacos
+fn d34_attack_timing_without_pty_prefix_not_delayed() {
+    let c = scene("d34tempo");
+    c.set_mode("tempo");
+    let r = session(&c, ssh_request("s-livre", &["x"], None, None), close_stdin);
+    assert_eq!(r.end, Some(0), "{r:?}");
+    let timeline: Vec<_> = r
+        .chunks
         .iter()
         .map(|(t, p)| (*t, String::from_utf8_lossy(p).into_owned()))
         .collect();
-    let quando = |marca: &str| {
-        linha_do_tempo
+    let when = |mark: &str| {
+        timeline
             .iter()
-            .find(|(_, p)| p.contains(marca))
+            .find(|(_, p)| p.contains(mark))
             .map(|(t, _)| *t)
-            .unwrap_or_else(|| panic!("sem {marca}: {linha_do_tempo:?}"))
+            .unwrap_or_else(|| panic!("sem {mark}: {timeline:?}"))
     };
     for i in 0..4 {
-        let (t_cand, t_z) = (quando(&format!("C{i}=")), quando(&format!("Z{i}")));
+        let (t_candidate, t_z) = (when(&format!("C{i}=")), when(&format!("Z{i}")));
         assert!(
-            t_z.saturating_sub(t_cand) >= Duration::from_millis(400),
-            "candidato {i} segurado até o Z: {linha_do_tempo:?}"
+            t_z.saturating_sub(t_candidate) >= Duration::from_millis(400),
+            "candidato {i} segurado até o Z: {timeline:?}"
         );
     }
-    assert!(!contem(&r.saida, SENHA_SSH.as_bytes()));
+    assert!(!contem(&r.stdout, SSH_PASSWORD.as_bytes()));
 }
 
-/// Auditoria do M4 (baixo): `known_hosts` do Ward frouxo (outro usuário poderia ler os
-/// hosts ou, com escrita, plantar uma chave de host) recusa antes de executar qualquer
-/// coisa; se não existe, nasce 0600.
+/// M4 audit (low): a loose Ward `known_hosts` (another user could read the hosts or,
+/// with write access, plant a host key) refuses before running anything; if it does
+/// not exist, it is born 0600.
 #[test]
-fn ataque_known_hosts_frouxo_recusa_sem_executar() {
-    let c = cena("khfrouxo");
-    c.modo("normal");
+fn attack_loose_known_hosts_refused_without_running() {
+    let c = scene("khfrouxo");
+    c.set_mode("normal");
     let kh = c.dir.0.join("known_hosts");
-    let r = sessao(
+    let r = session(
         &c,
-        pedido_ssh("s-livre", &["true"], None, None),
-        fechar_entrada,
+        ssh_request("s-livre", &["true"], None, None),
+        close_stdin,
     );
-    assert_eq!(r.fim, Some(7), "{r:?}");
+    assert_eq!(r.end, Some(7), "{r:?}");
     assert_eq!(
         fs::metadata(&kh).unwrap().permissions().mode() & 0o777,
         0o600
     );
-    let antes = c.registros("ssh").len();
-    for modo in [0o644, 0o660, 0o606] {
-        fs::set_permissions(&kh, fs::Permissions::from_mode(modo)).unwrap();
-        let r = sessao(
+    let before = c.records("ssh").len();
+    for mode in [0o644, 0o660, 0o606] {
+        fs::set_permissions(&kh, fs::Permissions::from_mode(mode)).unwrap();
+        let r = session(
             &c,
-            pedido_ssh("s-livre", &["true"], None, None),
-            fechar_entrada,
+            ssh_request("s-livre", &["true"], None, None),
+            close_stdin,
         );
         assert_eq!(
-            r.falha,
+            r.failure,
             Some(ErroResposta::EntregaFalhou),
-            "{modo:o}: {r:?}"
+            "{mode:o}: {r:?}"
         );
     }
     fs::set_permissions(&kh, fs::Permissions::from_mode(0o600)).unwrap();
     fs::set_permissions(&c.dir.0, fs::Permissions::from_mode(0o755)).unwrap();
-    let r = sessao(
+    let r = session(
         &c,
-        pedido_ssh("s-livre", &["true"], None, None),
-        fechar_entrada,
+        ssh_request("s-livre", &["true"], None, None),
+        close_stdin,
     );
     fs::set_permissions(&c.dir.0, fs::Permissions::from_mode(0o700)).unwrap();
-    assert_eq!(r.falha, Some(ErroResposta::EntregaFalhou), "{r:?}");
+    assert_eq!(r.failure, Some(ErroResposta::EntregaFalhou), "{r:?}");
     assert_eq!(
-        c.registros("ssh").len(),
-        antes,
+        c.records("ssh").len(),
+        before,
         "rodou com known_hosts frouxo"
     );
 }
 
-/// Auditoria do M4 (alto): no `sftp` com chave, o `!cmd` do `sftp` é outro filho dele
-/// e usava o agente (`ssh-add -L`, login com a chave noutro host). O agente fica preso
-/// ao `ssh` que o `sftp` criou: o `!cmd` é recusado com o `ssh` vivo e depois que ele
-/// saiu; o `ssh` continua atendido.
+/// M4 audit (high): in `sftp` with a key, the `!cmd` of `sftp` is another child of it
+/// and used the agent (`ssh-add -L`, login with the key on another host). The agent is
+/// held to the `ssh` that `sftp` created: the `!cmd` is refused with the `ssh` alive and
+/// after it has exited; the `ssh` is still served.
 #[test]
-fn ataque_sftp_bang_nao_usa_o_agente() {
-    let c = cena("sftpbang");
-    c.modo("sftp-bang");
+fn attack_sftp_bang_does_not_use_the_agent() {
+    let c = scene("sftpbang");
+    c.set_mode("sftp-bang");
     fs::write(c.base.join("esperar"), "").unwrap();
-    let r = sessao(
+    let r = session(
         &c,
-        pedido_ssh("f-sftp-chave", &[], None, None),
-        fechar_entrada,
+        ssh_request("f-sftp-chave", &[], None, None),
+        close_stdin,
     );
-    assert_eq!(r.fim, Some(0), "{r:?}");
-    let ssh = c.registro("ssh");
-    assert_eq!(ssh.um("agente.lista"), "12", "{ssh:?}");
+    assert_eq!(r.end, Some(0), "{r:?}");
+    let ssh = c.record("ssh");
+    assert_eq!(ssh.one("agente.lista"), "12", "{ssh:?}");
     assert_eq!(
-        ssh.um("depois"),
+        ssh.one("depois"),
         "12",
         "o ssh do sftp perdeu o agente: {ssh:?}"
     );
-    let sftp = c.registro("sftp");
-    assert_eq!(sftp.um("bang_durante"), "recusada", "{sftp:?}");
-    assert_eq!(sftp.um("bang_depois"), "recusada", "{sftp:?}");
-    assert!(rt_sem_agente(&c));
+    let sftp = c.record("sftp");
+    assert_eq!(sftp.one("bang_durante"), "recusada", "{sftp:?}");
+    assert_eq!(sftp.one("bang_depois"), "recusada", "{sftp:?}");
+    assert!(rt_without_agent(&c));
 }
 
-/// D3 / V5.24 (ataques): o token do "Conectar" é de uso único, vale 30 s, só para a
-/// entrada dele e só o app emite. Inválido, vencido, repetido ou de outra entrada:
-/// vale o nível (aqui, com aprovação sem app: `aprovacao_indisponivel`), nada roda.
+/// D3 / V5.24 (attacks): the "Connect" token is single use, lasts 30 s, only for its
+/// entry, and only the app issues it. Invalid, expired, repeated or of another entry:
+/// the level holds (here, needs approval without the app: approval unavailable),
+/// nothing runs.
 #[test]
-fn v5_24_token_do_conectar() {
-    let c = cena("token");
-    c.modo("normal");
-    let rodar = |token: Option<&Secret>, entrada: &str| {
-        sessao(
-            &c,
-            pedido_ssh(entrada, &["true"], token, None),
-            fechar_entrada,
-        )
+fn v5_24_connect_token() {
+    let c = scene("token");
+    c.set_mode("normal");
+    let run = |token: Option<&Secret>, entry: &str| {
+        session(&c, ssh_request(entry, &["true"], token, None), close_stdin)
     };
-    let indisponivel = Some(ErroResposta::AprovacaoIndisponivel);
+    let unavailable = Some(ErroResposta::AprovacaoIndisponivel);
 
-    // Só o app emite; nada de token para tipo sem `ward ssh`.
-    for papel in [Papel::Agente, Papel::Extensao] {
+    // Only the app issues; no token for a kind without `ward ssh`.
+    for role in [Papel::Agente, Papel::Extensao] {
         let r = c.d.atender(
-            papel,
+            role,
             Pedido::EmitirToken {
                 entrada: "s-outro".into(),
             },
         );
-        assert_eq!(erro(&r), Some(ErroResposta::NaoAutorizado), "{papel:?}");
+        assert_eq!(erro(&r), Some(ErroResposta::NaoAutorizado), "{role:?}");
     }
     let r = c.d.atender(
         Papel::App,
@@ -1084,86 +1094,86 @@ fn v5_24_token_do_conectar() {
     );
     assert_eq!(erro(&r), Some(ErroResposta::PedidoInvalido));
 
-    // Válido: pula a aprovação uma vez.
+    // Valid: skips the approval once.
     let t = c.token("s-outro");
     assert_eq!(t.expose().len(), 32);
     assert!(t.expose().iter().all(u8::is_ascii_alphanumeric));
-    assert_eq!(rodar(Some(&t), "s-outro").fim, Some(7));
-    // Repetido: vale o nível.
-    assert_eq!(rodar(Some(&t), "s-outro").falha, indisponivel);
-    assert_eq!(c.registros("ssh").len(), 1);
+    assert_eq!(run(Some(&t), "s-outro").end, Some(7));
+    // Repeated: the level holds.
+    assert_eq!(run(Some(&t), "s-outro").failure, unavailable);
+    assert_eq!(c.records("ssh").len(), 1);
 
-    // Inventado (no formato certo).
-    let falso = Secret::from_text("AbCdEfGhIjKlMnOpQrStUvWxYz012345".into());
-    assert_eq!(rodar(Some(&falso), "s-outro").falha, indisponivel);
+    // Made up (in the right format).
+    let fake = Secret::from_text("AbCdEfGhIjKlMnOpQrStUvWxYz012345".into());
+    assert_eq!(run(Some(&fake), "s-outro").failure, unavailable);
 
-    // De outra entrada: não vale e morre ali.
+    // Of another entry: not valid and dies there.
     let t = c.token("s-livre");
-    assert_eq!(rodar(Some(&t), "s-outro").falha, indisponivel);
-    let antes = c.registros("ssh").len();
-    let r = rodar(Some(&t), "s-livre");
-    assert_eq!(r.fim, Some(7), "s-livre é livre: roda pelo nível");
-    assert_eq!(c.registros("ssh").len(), antes + 1);
+    assert_eq!(run(Some(&t), "s-outro").failure, unavailable);
+    let before = c.records("ssh").len();
+    let r = run(Some(&t), "s-livre");
+    assert_eq!(r.end, Some(7), "s-livre é livre: roda pelo nível");
+    assert_eq!(c.records("ssh").len(), before + 1);
 
-    // Vencido: 30 s no relógio do motor.
+    // Expired: 30 s on the engine clock.
     let t = c.token("s-outro");
-    c.relogio.avancar(Duration::from_secs(31));
-    assert_eq!(rodar(Some(&t), "s-outro").falha, indisponivel);
+    c.clock.advance(Duration::from_secs(31));
+    assert_eq!(run(Some(&t), "s-outro").failure, unavailable);
     let t = c.token("s-outro");
-    c.relogio.avancar(Duration::from_secs(29));
-    assert_eq!(rodar(Some(&t), "s-outro").fim, Some(7));
+    c.clock.advance(Duration::from_secs(29));
+    assert_eq!(run(Some(&t), "s-outro").end, Some(7));
 
-    // Travar apaga os tokens.
+    // Locking erases the tokens.
     let t = c.token("s-outro");
     c.d.travar();
     assert!(ok(&destravar(&c.d, SENHA)));
-    assert_eq!(rodar(Some(&t), "s-outro").falha, indisponivel);
+    assert_eq!(run(Some(&t), "s-outro").failure, unavailable);
 
-    // Bloqueada continua inexistente, mesmo com token válido.
+    // Blocked is still nonexistent, even with a valid token.
     let t = c.token("s-bloq");
     assert_eq!(
-        rodar(Some(&t), "s-bloq").falha,
+        run(Some(&t), "s-bloq").failure,
         Some(ErroResposta::EntradaInexistente)
     );
 
-    // Tokens demais: o mais antigo sai.
-    let primeiro = c.token("s-outro");
+    // Too many tokens: the oldest goes.
+    let first = c.token("s-outro");
     for _ in 0..16 {
         let _ = c.token("s-outro");
     }
-    assert_eq!(rodar(Some(&primeiro), "s-outro").falha, indisponivel);
+    assert_eq!(run(Some(&first), "s-outro").failure, unavailable);
 }
 
-// --- Fase 28: salto e túnel pela ponte (sem `ProxyJump`, sem shell) --------------------
+// --- Phase 28: jump and tunnel through the bridge (no `ProxyJump`, no shell) -----------
 
-/// Espera o registro do programa falso `nome` cujo argv tem `marca` (inteiro ou como
-/// começo de um argumento).
-fn esperar_registro(c: &Cena, nome: &str, marca: &str) -> Reg {
-    let mut achado = None;
+/// Waits for the record of the fake program `name` whose argv has `mark` (whole or as
+/// the start of an argument).
+fn wait_record(c: &Scene, name: &str, mark: &str) -> Rec {
+    let mut found = None;
     assert!(
-        esperar(Duration::from_secs(30), || {
-            achado = c
-                .registros(nome)
+        wait_for(Duration::from_secs(30), || {
+            found = c
+                .records(name)
                 .into_iter()
-                .find(|r| argv(r).iter().any(|a| a.starts_with(marca)));
-            achado.is_some()
+                .find(|r| argv(r).iter().any(|a| a.starts_with(mark)));
+            found.is_some()
         }),
-        "sem registro de {nome} com {marca}"
+        "sem registro de {name} com {mark}"
     );
-    achado.unwrap()
+    found.unwrap()
 }
 
-/// O valor depois de `op` no argv.
-fn depois_de(a: &[String], op: &str) -> String {
+/// The value after `op` in the argv.
+fn after(a: &[String], op: &str) -> String {
     let i = a.iter().position(|x| x == op).unwrap();
     a[i + 1].clone()
 }
 
-/// Ataque: um processo de fora da sessão (este teste: mesmo uid, outro grupo de
-/// processos) conecta na ponte. É fechado sem nenhum byte e nada é lançado.
-fn estranho_e_recusado(porta: u16) {
+/// Attack: a process outside the session (this test: same uid, another process group)
+/// connects to the bridge. It is closed without a single byte and nothing is launched.
+fn stranger_is_refused(port: u16) {
     use std::io::{Read, Write};
-    let mut t = std::net::TcpStream::connect(("127.0.0.1", porta)).unwrap();
+    let mut t = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
     t.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
     let _ = t.write_all(b"SSH-2.0-estranho\r\n");
     let mut buf = [0u8; 64];
@@ -1174,44 +1184,44 @@ fn estranho_e_recusado(porta: u16) {
     );
 }
 
-/// O inode do socket que escuta em `127.0.0.1:<porta>` (`/proc/net/tcp`, estado `0A`).
-/// A conferência do fim usa o inode, não a porta: com os testes em paralelo, outra
-/// ponte pode receber do kernel o mesmo número de porta logo depois.
-fn inode_da_escuta(porta: u16) -> u64 {
+/// The inode of the socket that listens on `127.0.0.1:<port>` (`/proc/net/tcp`, state
+/// `0A`). The final check uses the inode, not the port: with the tests in parallel,
+/// another bridge may get the same port number from the kernel right afterwards.
+fn listener_inode(port: u16) -> u64 {
     let t = fs::read_to_string("/proc/net/tcp").unwrap();
-    let local = format!("0100007F:{porta:04X}");
+    let local = format!("0100007F:{port:04X}");
     t.lines()
         .skip(1)
         .map(|l| l.split_whitespace().collect::<Vec<_>>())
         .find(|c| c.len() > 9 && c[1] == local && c[3] == "0A")
         .and_then(|c| c[9].parse().ok())
-        .unwrap_or_else(|| panic!("ninguém escuta em 127.0.0.1:{porta}"))
+        .unwrap_or_else(|| panic!("ninguém escuta em 127.0.0.1:{port}"))
 }
 
-/// A escuta da ponte (pelo inode) foi fechada? (O daemon roda neste processo.)
-fn escuta_fechada(inode: u64) -> bool {
-    let alvo = format!("socket:[{inode}]");
-    esperar(Duration::from_secs(5), || {
-        !fs::read_dir("/proc/self/fd")
-            .unwrap()
-            .any(|e| fs::read_link(e.unwrap().path()).is_ok_and(|l| l.as_os_str() == alvo.as_str()))
+/// Was the bridge listener (by inode) closed? (The daemon runs in this process.)
+fn listener_closed(inode: u64) -> bool {
+    let target = format!("socket:[{inode}]");
+    wait_for(Duration::from_secs(5), || {
+        !fs::read_dir("/proc/self/fd").unwrap().any(|e| {
+            fs::read_link(e.unwrap().path()).is_ok_and(|l| l.as_os_str() == target.as_str())
+        })
     })
 }
 
-fn ninguem_com_w(c: &Cena) -> bool {
-    !c.registros("ssh")
+fn nobody_with_w(c: &Scene) -> bool {
+    !c.records("ssh")
         .iter()
         .any(|r| argv(r).contains(&"-W".to_owned()))
 }
 
-/// Confere o `ssh -W` da ponte (D13, D43): `-F /dev/null`, `known_hosts` do Ward,
-/// usuário só depois de `-l`, host depois de `--`, alvo em `-W`, nada de `ProxyJump`,
-/// `User=` ou `usuário@host`.
-fn conferir_argv_da_ponte(c: &Cena, a: &[String], alvo: &str, usuario: &str) {
-    // O registro tem o argv sem o programa (o `ssh` falso de `c.base`).
+/// Checks the bridge `ssh -W` (D13, D43): `-F /dev/null`, the Ward `known_hosts`, the
+/// user only after `-l`, the host after `--`, the target in `-W`, no `ProxyJump`,
+/// `User=` nor `user@host`.
+fn verify_bridge_argv(c: &Scene, a: &[String], target: &str, user: &str) {
+    // The record has the argv without the program (the fake `ssh` of `c.base`).
     let _ = c;
     assert_eq!(&a[0..2], ["-F", "/dev/null"], "{a:?}");
-    let o = opcoes(a);
+    let o = options(a);
     for x in [
         "IdentitiesOnly=yes",
         "CertificateFile=/dev/null",
@@ -1228,10 +1238,10 @@ fn conferir_argv_da_ponte(c: &Cena, a: &[String], alvo: &str, usuario: &str) {
     assert!(o.iter().any(|x| x.starts_with("UserKnownHostsFile=")
         && x.ends_with("/known_hosts")
         && !x.contains("/.ssh/")));
-    let fim: Vec<String> = ["-W", alvo, "-p", "2222", "-l", usuario, "--", "127.0.0.1"]
+    let end: Vec<String> = ["-W", target, "-p", "2222", "-l", user, "--", "127.0.0.1"]
         .map(String::from)
         .into();
-    assert_eq!(&a[a.len() - 8..], fim.as_slice(), "{a:?}");
+    assert_eq!(&a[a.len() - 8..], end.as_slice(), "{a:?}");
     assert!(
         !a.iter().any(|x| x.contains("ProxyJump")
             || x.starts_with("User=")
@@ -1239,60 +1249,60 @@ fn conferir_argv_da_ponte(c: &Cena, a: &[String], alvo: &str, usuario: &str) {
     );
 }
 
-/// Fase 28 / V4.25 / V4.35 (D13, D19, D43; S1, S3, S4): `ward ssh` de um `servidor`
-/// com salto, senha nos dois. A ponte só aceita o `ssh` principal (o teste, de fora,
-/// é recusado sem byte e sem lançar nada; a segunda conexão também); o `ssh` do salto
-/// recebe a senha do salto só em `SSHPASS`; o principal conecta em `127.0.0.1:<porta>`
-/// com `HostKeyAlias` do destino; o `stderr` do salto chega mascarado; no fim a ponte
-/// fecha.
+/// Phase 28 / V4.25 / V4.35 (D13, D19, D43; S1, S3, S4): `ward ssh` of a server with a
+/// jump, password on both. The bridge only accepts the main `ssh` (the test, from
+/// outside, is refused without a byte and without launching anything; the second
+/// connection too); the jump `ssh` gets the jump password only in `SSHPASS`; the main
+/// one connects to `127.0.0.1:<port>` with the `HostKeyAlias` of the destination; the
+/// jump `stderr` arrives masked; at the end the bridge closes.
 #[test]
-fn fase28_salto_com_senha_pela_ponte() {
-    let c = cena("salto");
-    c.modo("normal");
+fn phase28_jump_with_password_through_the_bridge() {
+    let c = scene("salto");
+    c.set_mode("normal");
     fs::write(c.base.join("esperar-ponte"), "").unwrap();
-    let porta = std::cell::Cell::new(0u16);
+    let port = std::cell::Cell::new(0u16);
     let inode = std::cell::Cell::new(0u64);
-    let r = sessao(&c, pedido_ssh("s-salto", &["hostname"], None, None), |s| {
-        fechar_entrada(s);
-        let principal = esperar_registro(&c, "ssh", "HostKeyAlias=");
-        let pt: u16 = depois_de(&argv(&principal), "-p").parse().unwrap();
-        porta.set(pt);
-        inode.set(inode_da_escuta(pt));
-        estranho_e_recusado(pt);
+    let r = session(&c, ssh_request("s-salto", &["hostname"], None, None), |s| {
+        close_stdin(s);
+        let main = wait_record(&c, "ssh", "HostKeyAlias=");
+        let pt: u16 = after(&argv(&main), "-p").parse().unwrap();
+        port.set(pt);
+        inode.set(listener_inode(pt));
+        stranger_is_refused(pt);
         assert!(
-            ninguem_com_w(&c),
+            nobody_with_w(&c),
             "a conexão do estranho lançou o ssh do salto"
         );
         fs::write(c.base.join("continuar-ponte"), "").unwrap();
     });
-    assert_eq!(r.fim, Some(0), "{r:?}");
-    let t = r.texto();
+    assert_eq!(r.end, Some(0), "{r:?}");
+    let t = r.text();
     assert!(t.contains("ponte=eco:127.0.0.1:2222:oi"), "{t}");
     assert!(
         t.contains("segunda=fechada"),
         "a ponte do salto aceitou duas: {t}"
     );
-    let erro = String::from_utf8_lossy(&r.erro).into_owned();
-    assert!(erro.contains("erro-salto ••••"), "{erro}");
-    assert!(!contem(&r.saida, SENHA_SSH.as_bytes()));
-    assert!(!contem(&r.erro, SENHA_SSH.as_bytes()));
-    let pt = porta.get();
+    let stderr = String::from_utf8_lossy(&r.stderr).into_owned();
+    assert!(stderr.contains("erro-salto ••••"), "{stderr}");
+    assert!(!contem(&r.stdout, SSH_PASSWORD.as_bytes()));
+    assert!(!contem(&r.stderr, SSH_PASSWORD.as_bytes()));
+    let pt = port.get();
     assert!(
-        escuta_fechada(inode.get()),
+        listener_closed(inode.get()),
         "a ponte ficou aberta depois da sessão"
     );
 
-    // O principal: `sshpass -e ssh … -p <ponte> -l deploy -- 127.0.0.1 hostname`.
-    let principal = esperar_registro(&c, "ssh", "HostKeyAlias=");
-    let a = argv(&principal);
-    let o = opcoes(&a);
+    // The main one: `sshpass -e ssh … -p <bridge> -l deploy -- 127.0.0.1 hostname`.
+    let main = wait_record(&c, "ssh", "HostKeyAlias=");
+    let a = argv(&main);
+    let o = options(&a);
     assert!(
         o.contains(&"HostKeyAlias=[127.0.0.1]:2222".to_owned()),
         "{a:?}"
     );
     assert!(o.contains(&"CheckHostIP=no".to_owned()));
     assert!(o.contains(&"ProxyCommand=none".to_owned()));
-    let fim: Vec<String> = [
+    let end: Vec<String> = [
         "-p",
         &pt.to_string(),
         "-l",
@@ -1303,98 +1313,101 @@ fn fase28_salto_com_senha_pela_ponte() {
     ]
     .map(String::from)
     .into();
-    assert_eq!(&a[a.len() - 7..], fim.as_slice());
+    assert_eq!(&a[a.len() - 7..], end.as_slice());
     assert!(
         !a.iter()
             .any(|x| x.contains("ProxyJump") || x.starts_with("User="))
     );
 
-    // O do salto: usuário com `@` inteiro depois de `-l` (D43), senha só no ambiente.
-    let salto = esperar_registro(&c, "ssh", "-W");
-    let a = argv(&salto);
-    conferir_argv_da_ponte(&c, &a, "127.0.0.1:2222", "deploy@cliente.com.br");
-    let o = opcoes(&a);
+    // The jump one: the user with `@` whole after `-l` (D43), the password only in the
+    // environment.
+    let jump = wait_record(&c, "ssh", "-W");
+    let a = argv(&jump);
+    verify_bridge_argv(&c, &a, "127.0.0.1:2222", "deploy@cliente.com.br");
+    let o = options(&a);
     assert!(o.contains(&"PubkeyAuthentication=no".to_owned()));
     assert!(o.contains(&"IdentityAgent=none".to_owned()));
     assert!(o.contains(&"NumberOfPasswordPrompts=1".to_owned()));
-    let esperado: BTreeSet<String> = ["LANG", "PATH", "SSHPASS"].map(String::from).into();
-    assert_eq!(env(&salto), esperado);
-    assert_eq!(salto.um("sshpass_sha256"), sha256(SENHA_SSH.as_bytes()));
-    // Dois `sshpass -e` (o principal e o do salto), nenhum com a senha em argv.
-    let sp = c.registros("sshpass");
+    let expected: BTreeSet<String> = ["LANG", "PATH", "SSHPASS"].map(String::from).into();
+    assert_eq!(env(&jump), expected);
+    assert_eq!(jump.one("sshpass_sha256"), sha256(SSH_PASSWORD.as_bytes()));
+    // Two `sshpass -e` (the main one and the jump one), none with the password in argv.
+    let sp = c.records("sshpass");
     assert_eq!(sp.len(), 2, "{sp:?}");
     for r in &sp {
         assert_eq!(argv(r)[0], "-e");
-        assert!(!argv(r).iter().any(|x| x.contains(SENHA_SSH)));
+        assert!(!argv(r).iter().any(|x| x.contains(SSH_PASSWORD)));
     }
-    assert!(rt_sem_agente(&c));
+    assert!(rt_without_agent(&c));
 }
 
-/// Fase 28 / D12: chave no principal (como `acme-ssh-interno`) e chave no salto. Cada
-/// `ssh` tem o seu agente, que só atende a ele (o neto é recusado); tudo some no fim.
+/// Phase 28 / D12: a key on the main host (like the internal SSH host of the test
+/// vault) and a key on the jump. Each `ssh` has its own agent, which only serves it (the grandchild is
+/// refused); everything goes away at the end.
 #[test]
-fn fase28_salto_com_chave_agente_de_cada_ssh() {
-    // Principal com chave, salto com senha.
-    let c = cena("saltochave");
-    let r = sessao(
+fn phase28_jump_with_key_agent_per_ssh() {
+    // Main host with a key, jump with a password.
+    let c = scene("saltochave");
+    let r = session(
         &c,
-        pedido_ssh("s-salto-chave", &["hostname"], None, None),
-        fechar_entrada,
+        ssh_request("s-salto-chave", &["hostname"], None, None),
+        close_stdin,
     );
-    assert_eq!(r.fim, Some(0), "{r:?}");
-    assert!(r.texto().contains("ponte=eco:127.0.0.1:2222:oi"), "{r:?}");
-    let principal = esperar_registro(&c, "ssh", "HostKeyAlias=");
-    assert_eq!(principal.um("agente.lista"), "12", "{principal:?}");
-    assert_eq!(principal.um("agente.assina"), "14");
-    assert_eq!(principal.um("agente.neto"), "recusada");
-    let o = opcoes(&argv(&principal));
+    assert_eq!(r.end, Some(0), "{r:?}");
+    assert!(r.text().contains("ponte=eco:127.0.0.1:2222:oi"), "{r:?}");
+    let main = wait_record(&c, "ssh", "HostKeyAlias=");
+    assert_eq!(main.one("agente.lista"), "12", "{main:?}");
+    assert_eq!(main.one("agente.assina"), "14");
+    assert_eq!(main.one("agente.neto"), "recusada");
+    let o = options(&argv(&main));
     assert!(o.contains(&"PubkeyAuthentication=yes".to_owned()));
-    assert_eq!(c.registros("sshpass").len(), 1, "só o salto usa sshpass");
-    assert!(rt_sem_agente(&c));
+    assert_eq!(c.records("sshpass").len(), 1, "só o salto usa sshpass");
+    assert!(rt_without_agent(&c));
 
-    // Principal com senha, salto com chave.
-    let c = cena("viachave");
-    let r = sessao(
+    // Main host with a password, jump with a key.
+    let c = scene("viachave");
+    let r = session(
         &c,
-        pedido_ssh("s-via-chave", &["hostname"], None, None),
-        fechar_entrada,
+        ssh_request("s-via-chave", &["hostname"], None, None),
+        close_stdin,
     );
-    assert_eq!(r.fim, Some(0), "{r:?}");
-    assert!(r.texto().contains("ponte=eco:127.0.0.1:2222:oi"), "{r:?}");
-    let salto = esperar_registro(&c, "ssh", "-W");
-    assert_eq!(salto.um("agente.lista"), "12", "{salto:?}");
-    assert_eq!(salto.um("agente.assina"), "14");
+    assert_eq!(r.end, Some(0), "{r:?}");
+    assert!(r.text().contains("ponte=eco:127.0.0.1:2222:oi"), "{r:?}");
+    let jump = wait_record(&c, "ssh", "-W");
+    assert_eq!(jump.one("agente.lista"), "12", "{jump:?}");
+    assert_eq!(jump.one("agente.assina"), "14");
     for op in ["adiciona", "remove", "trava"] {
-        assert_eq!(salto.um(&format!("agente.{op}")), "5", "{op}");
+        assert_eq!(jump.one(&format!("agente.{op}")), "5", "{op}");
     }
-    assert_eq!(salto.um("agente.neto"), "recusada");
-    conferir_argv_da_ponte(&c, &argv(&salto), "127.0.0.1:2222", "deploy");
-    let esperado: BTreeSet<String> = ["LANG", "PATH"].map(String::from).into();
-    assert_eq!(env(&salto), esperado, "sem SSHPASS nem SSH_AUTH_SOCK");
-    assert!(rt_sem_agente(&c));
+    assert_eq!(jump.one("agente.neto"), "recusada");
+    verify_bridge_argv(&c, &argv(&jump), "127.0.0.1:2222", "deploy");
+    let expected: BTreeSet<String> = ["LANG", "PATH"].map(String::from).into();
+    assert_eq!(env(&jump), expected, "sem SSHPASS nem SSH_AUTH_SOCK");
+    assert!(rt_without_agent(&c));
 }
 
-/// Fase 28 / V4.29 (D10, D19): `ward run` de um `banco` com túnel. O comando recebe
-/// `PGHOST=127.0.0.1` e a porta da ponte e conversa com o alvo pelo `ssh -W` do
-/// `servidor` do túnel (duas conexões); um estranho é recusado sem lançar nada; a
-/// senha do banco e a do servidor do túnel saem mascaradas (D19); a ponte fecha no fim.
+/// Phase 28 / V4.29 (D10, D19): `ward run` of a database with a tunnel. The command gets
+/// `PGHOST=127.0.0.1` and the bridge port and talks to the target through the `ssh -W`
+/// of the tunnel server (two connections); a stranger is refused without launching
+/// anything; the database password and the tunnel server one come out masked (D19); the
+/// bridge closes at the end.
 #[test]
-fn fase28_tunel_do_banco_no_run() {
-    let c = cena("tunel");
-    let marca = c.base.join("continuar-tunel");
-    let arq_porta = c.base.join("porta-tunel");
+fn phase28_database_tunnel_in_run() {
+    let c = scene("tunel");
+    let mark = c.base.join("continuar-tunel");
+    let port_file = c.base.join("porta-tunel");
     let script = format!(
         r#"
 import os, socket, time
 porta = int(os.environ["PGPORT"])
-open({arq:?}, "w").write(str(porta))
+open({file:?}, "w").write(str(porta))
 print("PGHOST=" + os.environ["PGHOST"], flush=True)
 print("PGPORT=" + os.environ["PGPORT"], flush=True)
 print("url=" + os.environ["DATABASE_URL"], flush=True)
 print("senha=" + os.environ["PGPASSWORD"], flush=True)
-print("servidor={servidor}", flush=True)
+print("servidor={server}", flush=True)
 fim = time.time() + 30
-while time.time() < fim and not os.path.exists({marca:?}):
+while time.time() < fim and not os.path.exists({mark:?}):
     time.sleep(0.02)
 for i in range(2):
     s = socket.create_connection(("127.0.0.1", porta), timeout=60)
@@ -1408,11 +1421,11 @@ for i in range(2):
     print("resposta=" + d.decode().strip(), flush=True)
     s.close()
 "#,
-        arq = arq_porta.to_str().unwrap(),
-        marca = marca.to_str().unwrap(),
-        servidor = SENHA_SSH,
+        file = port_file.to_str().unwrap(),
+        mark = mark.to_str().unwrap(),
+        server = SSH_PASSWORD,
     );
-    let pedido = Pedido::Executar(ward_core::protocolo::PedidoExecutar {
+    let request = Pedido::Executar(ward_core::protocolo::PedidoExecutar {
         entrada: "b-tunel".into(),
         argv: ["/usr/bin/python3", "-I", "-c", script.as_str()]
             .iter()
@@ -1425,34 +1438,34 @@ for i in range(2):
             valor: Secret::from_text("/usr/bin:/bin".into()),
         }],
     });
-    let porta = std::cell::Cell::new(0u16);
+    let port = std::cell::Cell::new(0u16);
     let inode = std::cell::Cell::new(0u64);
-    let r = sessao_de(
+    let r = session_of(
         &c,
-        pedido,
+        request,
         |s| {
-            fechar_entrada(s);
-            assert!(esperar(Duration::from_secs(30), || {
-                fs::read_to_string(&arq_porta).is_ok_and(|t| t.parse::<u16>().is_ok())
+            close_stdin(s);
+            assert!(wait_for(Duration::from_secs(30), || {
+                fs::read_to_string(&port_file).is_ok_and(|t| t.parse::<u16>().is_ok())
             }));
-            let pt: u16 = fs::read_to_string(&arq_porta).unwrap().parse().unwrap();
-            porta.set(pt);
-            inode.set(inode_da_escuta(pt));
-            estranho_e_recusado(pt);
+            let pt: u16 = fs::read_to_string(&port_file).unwrap().parse().unwrap();
+            port.set(pt);
+            inode.set(listener_inode(pt));
+            stranger_is_refused(pt);
             assert!(
-                ninguem_com_w(&c),
+                nobody_with_w(&c),
                 "a conexão do estranho lançou o ssh do túnel"
             );
-            fs::write(&marca, "").unwrap();
+            fs::write(&mark, "").unwrap();
         },
         true,
     );
-    assert_eq!(r.fim, Some(0), "{r:?}");
-    let t = r.texto();
-    let pt = porta.get();
+    assert_eq!(r.end, Some(0), "{r:?}");
+    let t = r.text();
+    let pt = port.get();
     assert!(t.contains("PGHOST=127.0.0.1"), "{t}");
     assert!(t.contains(&format!("PGPORT={pt}\n")), "{t}");
-    // O `DATABASE_URL` inteiro é segredo (D11): sai mascarado.
+    // The whole `DATABASE_URL` is a secret (D11): it comes out masked.
     assert!(t.contains("url=••••"), "{t}");
     assert!(t.contains("resposta=eco:db.interno:5432:select 0"), "{t}");
     assert!(t.contains("resposta=eco:db.interno:5432:select 1"), "{t}");
@@ -1461,43 +1474,44 @@ for i in range(2):
         t.contains("servidor=••••"),
         "D19: a senha do túnel na máscara: {t}"
     );
-    for segredo in [SENHA_SSH, SENHA_BANCO] {
-        assert!(!contem(&r.saida, segredo.as_bytes()));
-        assert!(!contem(&r.erro, segredo.as_bytes()));
+    for secret in [SSH_PASSWORD, DB_PASSWORD] {
+        assert!(!contem(&r.stdout, secret.as_bytes()));
+        assert!(!contem(&r.stderr, secret.as_bytes()));
     }
-    let erro = String::from_utf8_lossy(&r.erro).into_owned();
-    assert!(erro.contains("erro-salto ••••"), "{erro}");
+    let stderr = String::from_utf8_lossy(&r.stderr).into_owned();
+    assert!(stderr.contains("erro-salto ••••"), "{stderr}");
     assert!(
-        escuta_fechada(inode.get()),
+        listener_closed(inode.get()),
         "o túnel ficou aberto depois do comando"
     );
-    let tuneis: Vec<Reg> = c
-        .registros("ssh")
+    let tunnels: Vec<Rec> = c
+        .records("ssh")
         .into_iter()
         .filter(|r| argv(r).contains(&"-W".to_owned()))
         .collect();
-    assert_eq!(tuneis.len(), 2, "um ssh -W por conexão");
-    for r in &tuneis {
-        conferir_argv_da_ponte(&c, &argv(r), "db.interno:5432", "deploy@cliente.com.br");
-        assert_eq!(r.um("sshpass_sha256"), sha256(SENHA_SSH.as_bytes()));
+    assert_eq!(tunnels.len(), 2, "um ssh -W por conexão");
+    for r in &tunnels {
+        verify_bridge_argv(&c, &argv(r), "db.interno:5432", "deploy@cliente.com.br");
+        assert_eq!(r.one("sshpass_sha256"), sha256(SSH_PASSWORD.as_bytes()));
     }
-    assert!(rt_sem_agente(&c));
+    assert!(rt_without_agent(&c));
 }
 
-/// Fase 28 (D12 + D19): travar o cofre durante o `ward run` com túnel faz a ponte parar
-/// de aceitar conexões novas; desde a Fase 54 (S8), o próprio comando morre (137).
+/// Phase 28 (D12 + D19): locking the vault during a `ward run` with a tunnel makes the
+/// bridge stop accepting new connections; since Phase 54 (S8), the command itself dies
+/// (137).
 #[test]
-fn fase28_travar_fecha_o_tunel_para_conexoes_novas() {
-    let c = cena("tuneltrava");
-    let marca = c.base.join("continuar-tunel");
-    let arq_porta = c.base.join("porta-tunel");
+fn phase28_lock_closes_the_tunnel_to_new_connections() {
+    let c = scene("tuneltrava");
+    let mark = c.base.join("continuar-tunel");
+    let port_file = c.base.join("porta-tunel");
     let script = format!(
         r#"
 import os, socket, time
 porta = int(os.environ["PGPORT"])
-open({arq:?}, "w").write(str(porta))
+open({file:?}, "w").write(str(porta))
 fim = time.time() + 30
-while time.time() < fim and not os.path.exists({marca:?}):
+while time.time() < fim and not os.path.exists({mark:?}):
     time.sleep(0.02)
 try:
     s = socket.create_connection(("127.0.0.1", porta), timeout=5)
@@ -1506,10 +1520,10 @@ try:
 except OSError as e:
     print("depois=" + type(e).__name__, flush=True)
 "#,
-        arq = arq_porta.to_str().unwrap(),
-        marca = marca.to_str().unwrap(),
+        file = port_file.to_str().unwrap(),
+        mark = mark.to_str().unwrap(),
     );
-    let pedido = Pedido::Executar(ward_core::protocolo::PedidoExecutar {
+    let request = Pedido::Executar(ward_core::protocolo::PedidoExecutar {
         entrada: "b-tunel".into(),
         argv: ["/usr/bin/python3", "-I", "-c", script.as_str()]
             .iter()
@@ -1519,26 +1533,27 @@ except OSError as e:
         ambiente: Vec::new(),
         tipo_entrada: ward_core::protocolo::TipoEntradaPadrao::Nula,
     });
-    let r = sessao_de(
+    let r = session_of(
         &c,
-        pedido,
+        request,
         |s| {
-            fechar_entrada(s);
-            assert!(esperar(Duration::from_secs(30), || {
-                fs::read_to_string(&arq_porta).is_ok_and(|t| t.parse::<u16>().is_ok())
+            close_stdin(s);
+            assert!(wait_for(Duration::from_secs(30), || {
+                fs::read_to_string(&port_file).is_ok_and(|t| t.parse::<u16>().is_ok())
             }));
             c.d.travar();
             std::thread::sleep(Duration::from_millis(400));
-            fs::write(&marca, "").unwrap();
+            fs::write(&mark, "").unwrap();
         },
         true,
     );
-    // Fase 54 (S8): a trava mata o `ward run` inteiro (137), além de fechar a ponte.
-    assert_eq!(r.fim, Some(137), "{r:?}");
-    let t = r.texto();
+    // Phase 54 (S8): the lock kills the whole `ward run` (137), besides closing the
+    // bridge.
+    assert_eq!(r.end, Some(137), "{r:?}");
+    let t = r.text();
     assert!(
         !t.contains("depois=eco"),
         "a ponte aceitou depois de travar: {t}"
     );
-    assert!(ninguem_com_w(&c));
+    assert!(nobody_with_w(&c));
 }
