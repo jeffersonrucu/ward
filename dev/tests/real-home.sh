@@ -30,11 +30,23 @@ for p in bwrap strace getent python3; do
     command -v "$p" >/dev/null 2>&1 || { echo "falta o programa: $p (o teste falha fechado)" >&2; exit 1; }
 done
 
+# In a linked git worktree the objects, refs and config live in the main checkout's
+# `.git`, outside the root (m2: Phase 62a). `worktree_dirs.py` prints that one directory,
+# checked (it never covers the home nor a folder directly in it), or nothing in a normal
+# clone; a layout that does not check out stops the test. Its self-test plants each
+# refused layout first.
+python3 -I -B "$ROOT/dev/tests/worktree_dirs.py" --self-test "$ROOT" >/dev/null ||
+    { echo "autoteste do worktree_dirs.py falhou (o teste falha fechado)" >&2; exit 1; }
+COMMON="$(python3 -I -B "$ROOT/dev/tests/worktree_dirs.py" "$ROOT")" || exit 1
+
 # --- Outside the sandbox: re-executes inside it -------------------------------------------
 if [ "${WARD_HOME_COVERED:-}" != 1 ]; then
     args=(--die-with-parent --dev-bind / / --tmpfs "$PASSWD_HOME")
-    # Only the repository comes back; /tmp too, in case the home tmpfs covered it.
-    args+=(--bind "$ROOT" "$ROOT" --bind /tmp /tmp --setenv WARD_HOME_COVERED 1 --chdir "$ROOT")
+    # Only the repository comes back (and, in a worktree, its git directory, read-only);
+    # /tmp too, in case the home tmpfs covered it.
+    args+=(--bind "$ROOT" "$ROOT")
+    [ -z "$COMMON" ] || args+=(--ro-bind "$COMMON" "$COMMON")
+    args+=(--bind /tmp /tmp --setenv WARD_HOME_COVERED 1 --chdir "$ROOT")
     exec bwrap "${args[@]}" -- /bin/bash -p "$ROOT/dev/tests/real-home.sh" "$@"
 fi
 
@@ -44,8 +56,12 @@ case "$ROOT/" in
     *) echo "aviso: o repositório não está dentro do home do passwd" >&2 ;;
 esac
 [ "$(stat -f -c %T "$PASSWD_HOME")" = tmpfs ] || { echo "o home não está coberto por tmpfs; abortando" >&2; exit 1; }
-# Nothing in the home besides the path to the repository (the tmpfs starts empty).
-extra="$(find "$PASSWD_HOME" -mindepth 1 -maxdepth 1 ! -path "$PASSWD_HOME/$(cut -d/ -f1 <<<"${ROOT#"$PASSWD_HOME"/}")" -print -quit)"
+# Nothing in the home besides the path to the repository and, in a worktree, to its git
+# directory (the tmpfs starts empty).
+top_common="$ROOT"
+case "$COMMON" in "$PASSWD_HOME"/*) top_common="$COMMON" ;; esac
+extra="$(find "$PASSWD_HOME" -mindepth 1 -maxdepth 1 ! -path "$PASSWD_HOME/$(cut -d/ -f1 <<<"${ROOT#"$PASSWD_HOME"/}")" \
+    ! -path "$PASSWD_HOME/$(cut -d/ -f1 <<<"${top_common#"$PASSWD_HOME"/}")" -print -quit)"
 [ -z "$extra" ] || { echo "o home coberto tem conteúdo inesperado; abortando" >&2; exit 1; }
 
 # shellcheck source=dev/services/common.sh
@@ -89,9 +105,9 @@ trace_ok() {
 # flagged <file.strace>: prints the home paths (outside the repository) or the paths
 # relative to the decoy directory that show up in the trace. Never prints content.
 flagged() {
-    python3 -I -B - "$1" "$PASSWD_HOME" "$ROOT" "$TMP/cwd" <<'PY'
+    python3 -I -B - "$1" "$PASSWD_HOME" "$ROOT" "$TMP/cwd" "$COMMON" <<'PY'
 import os, re, sys
-trace, home, root, cwd0 = sys.argv[1:5]
+trace, home, root, cwd0, common = sys.argv[1:6]
 # First quoted argument of each call (the path). A relative path is resolved by the
 # current directory of that process: it starts at cwd0, follows the chdir() calls that
 # succeeded and passes from parent to child on clone/fork (Phase 12b: `git -C` changes
@@ -176,6 +192,8 @@ for pid, call, resumed, rest, ret in lines:
             continue
         if inside(p, root) or inside(root, p):
             continue  # the repository, or a directory on the way to it
+        if common and (inside(p, common) or inside(common, p)):
+            continue  # the worktree's git directory (worktree_dirs.py), or the way to it
         flagged.add(p)
 for a in sorted(flagged):
     print(a)

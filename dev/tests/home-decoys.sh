@@ -27,16 +27,25 @@ for p in bwrap mkfifo; do
     command -v "$p" >/dev/null 2>&1 || { echo "falta o programa: $p (o teste falha fechado)" >&2; exit 1; }
 done
 
+# In a linked git worktree, its git directory (checked by worktree_dirs.py, as in
+# real-home.sh; m2: Phase 62a) comes back read-only too; nothing in a normal clone.
+COMMON="$(python3 -I -B "$ROOT/dev/tests/worktree_dirs.py" "$ROOT")" || exit 1
+common_bind=()
+[ -z "$COMMON" ] || common_bind=(--ro-bind "$COMMON" "$COMMON")
+
 # --- Outside the sandbox: re-executes inside it (without inheriting the inside mark) ----
 if [ "${WARD_DECOYS_INSIDE:-}" != 1 ]; then
     exec /usr/bin/env -u WARD_HOME_COVERED bwrap --die-with-parent --dev-bind / / --tmpfs "$PASSWD_HOME" \
-        --bind "$ROOT" "$ROOT" --bind /tmp /tmp --setenv WARD_DECOYS_INSIDE 1 --chdir "$ROOT" \
+        --bind "$ROOT" "$ROOT" "${common_bind[@]}" --bind /tmp /tmp --setenv WARD_DECOYS_INSIDE 1 --chdir "$ROOT" \
         -- /bin/bash -p "$ROOT/dev/tests/home-decoys.sh" "$@"
 fi
 
 # --- Inside: the home is the tmpfs and starts empty ----------------------------------------
 [ "$(stat -f -c %T "$PASSWD_HOME")" = tmpfs ] || { echo "o home não está coberto por tmpfs; abortando" >&2; exit 1; }
-extra="$(find "$PASSWD_HOME" -mindepth 1 -maxdepth 1 ! -path "$PASSWD_HOME/$(cut -d/ -f1 <<<"${ROOT#"$PASSWD_HOME"/}")" -print -quit)"
+top_common="$ROOT"
+case "$COMMON" in "$PASSWD_HOME"/*) top_common="$COMMON" ;; esac
+extra="$(find "$PASSWD_HOME" -mindepth 1 -maxdepth 1 ! -path "$PASSWD_HOME/$(cut -d/ -f1 <<<"${ROOT#"$PASSWD_HOME"/}")" \
+    ! -path "$PASSWD_HOME/$(cut -d/ -f1 <<<"${top_common#"$PASSWD_HOME"/}")" -print -quit)"
 [ -z "$extra" ] || { echo "o home coberto tem conteúdo inesperado; abortando" >&2; exit 1; }
 
 TMP="$(mktemp -d)"
