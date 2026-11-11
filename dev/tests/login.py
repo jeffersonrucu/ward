@@ -27,6 +27,17 @@ import time
 from urllib.parse import parse_qs
 
 ROOT, WORK_DIR, SOCKDIR, NM, CHROME, PATTERN_LIST, EXT, WARD = sys.argv[1:9]
+
+# Phase 65a: before any Chrome, the guard (dev/tests/chrome_guard.py): on a host where
+# Chrome would see the installed Ward (policy or host manifest), refuse (exit 3).
+if subprocess.run(["/usr/bin/python3", "-I", "-B", os.path.join(ROOT, "dev", "tests", "chrome_guard.py"), "check"],
+                  stdin=subprocess.DEVNULL).returncode != 0:
+    sys.exit(3)
+# Only in the browser container (dev/tests/browser-container.sh; /.dockerenv): Chrome's
+# sandbox needs user namespaces, which the container (no capabilities, Docker's seccomp)
+# does not give; the pages are the test ones and the container has no network.
+CONTAINER_ARGS = (["--no-sandbox"] if os.environ.get("WARD_TEST_IN_CONTAINER") == "1"
+                  and os.path.exists("/.dockerenv") else [])
 SOCKET_PATH = os.path.join(SOCKDIR, "wardd.sock")
 EVIDENCE = os.path.join(ROOT, "docs", "mission", "evidence", "test-login")
 HOST = "br.ward.nm"
@@ -129,7 +140,7 @@ def window_requests():
 
 
 def posts_phish():
-    p = subprocess.run([f"{ROOT}/dev/services/compose.sh", "exec", "-T", "phish", "cat", "/registro/posts.log"],
+    p = subprocess.run(["/usr/bin/python3", "-I", "-B", f"{ROOT}/dev/tests/service_relay.py", "cat", "phish", "/registro/posts.log"],
                        capture_output=True, timeout=120)
     if p.returncode == 0:
         return p.stdout
@@ -334,7 +345,7 @@ def prep():
 chrome_env = {"HOME": home, "PATH": "/usr/bin:/bin", "WARD_DEV_SOCKET_DIR": SOCKDIR, "LANG": "pt_BR.UTF-8"}
 log_chrome = open(os.path.join(WORK_DIR, "chrome.log"), "w")
 ch = subprocess.Popen(
-    [CHROME, "--headless=new", f"--user-data-dir={profile}", "--remote-debugging-pipe",
+    [CHROME, *CONTAINER_ARGS, "--headless=new", f"--user-data-dir={profile}", "--remote-debugging-pipe",
      "--enable-unsafe-extension-debugging", "--no-first-run", "--no-default-browser-check",
      "--disable-gpu", "--disable-sync", "--disable-background-networking", "--lang=pt-BR",
      "--force-device-scale-factor=1", "--window-size=1280,800", "about:blank"],

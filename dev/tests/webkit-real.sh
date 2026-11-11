@@ -98,9 +98,15 @@ H="$BASE/src-tauri"
 rm -rf "$H"
 mkdir -p "$H"
 tar -C "$ROOT/app/src-tauri" --exclude=./target -cf - . | tar -C "$H" -xf -
-python3 -I - "$H" "$ROOT" <<'PY'
-import sys
-h, root = sys.argv[1], sys.argv[2]
+# Phase 65a: the harness tray icon goes to a folder of this test in .dev
+# ($BASE/tray-runtime, 0700), never to $XDG_RUNTIME_DIR/ward-tray, the folder of the
+# installed app (checked under strace below).
+TRAY_RT="$BASE/tray-runtime"
+rm -rf "$TRAY_RT"
+mkdir -m 0700 "$TRAY_RT"
+python3 -I - "$H" "$ROOT" "$TRAY_RT" "$UID_" <<'PY'
+import json, sys
+h, root, tray_rt, uid = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4])
 p = h + "/Cargo.toml"
 s = open(p).read()
 assert s.count('path = "../core"') == 2, "Cargo.toml do app mudou"
@@ -130,6 +136,10 @@ a = once("    app_startup.watch(move || {")
 b = s.index("\n    });\n", a) + len("\n    });\n")
 assert "for_watcher" in s[a:b], "main.rs do app mudou: watch"
 s = s[:a] + "    drop(for_watcher);\n" + s[b:]
+# 4) tray icon folder (Phase 65a): the test one, not the installed app's in XDG_RUNTIME_DIR
+t = "tray::session_icons_dir()"
+once(t)
+s = s.replace(t, "tray::icons_dir(std::path::Path::new(%s), %d)" % (json.dumps(tray_rt), uid))
 once("use ward_app_core::startup;\n")
 s = s.replace("use ward_app_core::startup;\n", "")
 import re
@@ -263,6 +273,15 @@ else
     ok "o plugin-marca de ~/.local/share/gstreamer-1.0/plugins não carregou"
 fi
 # Phase 39c: the 29b channels are now part of V5.32.
+# Phase 65a: the installed app's tray folder is never touched (the harness uses its own).
+if grep -qF "\"$RT/ward-tray" "$OUT_DIR/strace.log"; then
+    not_ok "algum processo do app tocou $RT/ward-tray (pasta do app instalado)"
+else
+    ok "nenhum processo do app tocou /run/user/<uid>/ward-tray (pasta do app instalado)"
+fi
+grep -qF "\"$TRAY_RT/ward-tray" "$OUT_DIR/strace.log" \
+    && ok "o ícone da bandeja do harness ficou em .dev/webkit-real/tray-runtime" \
+    || not_ok "o harness não criou a pasta do ícone em .dev/webkit-real/tray-runtime (a bandeja não subiu?)"
 for label in frei0r ladspa libvisual lv2 cuda; do
     if grep -qx "$label" "$MARKS" 2> /dev/null; then
         not_ok "código da isca '$label' carregou num processo do app (canal da 29b, Fase 39c)"

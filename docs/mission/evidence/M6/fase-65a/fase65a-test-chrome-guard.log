@@ -1,0 +1,21 @@
+/usr/bin/python3 -I -B dev/tests/chrome_guard.py --self-test
+ok    árvore limpa: liberado
+ok    política alheia: liberado
+ok    manifesto alheio: liberado
+ok    cópia da política do host (ward.json): recusado
+ok    cópia da política do host com outro nome: recusado
+ok    ward.json gerado: recusado
+ok    ExtensionSettings com outro nome: recusado
+ok    ward.json vazio: recusado
+ok    ExtensionInstallForcelist: recusado
+ok    só NativeMessagingUserLevelHosts: recusado
+ok    JSON inválido com o id: recusado
+ok    pasta recommended: recusado
+ok    Chromium: recusado
+ok    política por link: recusado
+ok    política ilegível: recusado
+ok    pasta de política ilegível: recusado
+ok    manifesto br.ward.nm.json: recusado
+ok    manifesto com outro nome e o id: recusado
+ok    manifesto que aponta para o ward-nm: recusado
+chrome-guard --self-test: tudo certo

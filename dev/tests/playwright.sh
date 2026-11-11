@@ -39,6 +39,10 @@ ROOT="$(cd -P -- "${BASH_SOURCE[0]%/*}/../.." && pwd -P)"
 # shellcheck source=dev/env.sh
 . "$ROOT/dev/env.sh"
 cd "$ROOT"
+# Phase 65a: refuses before anything when the Chrome of this suite would see the installed
+# Ward (policy in /etc/opt/chrome/policies or the br.ward.nm host manifest): a test
+# extension (or the forced one) would reach /usr/local/bin/ward-nm and the real vault.
+/usr/bin/python3 -I -B "$ROOT/dev/tests/chrome_guard.py" check || exit 3
 
 WARDD="${1:?uso: playwright.sh <wardd> <ward> <wardd-test-approver>}"
 WARD="${2:?uso: playwright.sh <wardd> <ward> <wardd-test-approver>}"

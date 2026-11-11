@@ -75,8 +75,11 @@ def ward(*args, timeout=180):
 def run_in_background():
     if os.path.exists(MARK):
         os.unlink(MARK)
+    # Phase 65a: standard input closed. Inherited, it was the pipe through which
+    # app-e2e.sh passes the URL, and with a pipe D68 holds the buttons until the extra
+    # confirmation (V6.8), which this step does not test.
     return subprocess.Popen([WARD, "run", "acme-pg-aprovacao", "--", "touch", MARK], env=ENV, cwd=ROOT,
-                            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
 
 def wait_for(cond, timeout=30.0, step=0.25):
@@ -182,7 +185,19 @@ PAGES = []
 
 def main():
     with sync_playwright() as p:
-        browser = p.chromium.launch(executable_path="/opt/google/chrome/chrome", headless=True)
+        # Phase 65a: Chrome in the bwrap of chrome-isolated.sh (no Ward policy, host manifest
+        # nor /usr/local), with the Playwright `--disable-extensions`; and, before any page,
+        # no extension target may exist (the forced one of the installed Ward included).
+        browser = p.chromium.launch(executable_path=ROOT + "/dev/tests/chrome-isolated.sh", headless=True)
+        cdp = browser.new_browser_cdp_session()
+        targets = cdp.send("Target.getTargets")["targetInfos"]
+        cdp.detach()
+        extensions = [t for t in targets if t.get("url", "").startswith("chrome-extension://")]
+        check("Chrome sem nenhuma extensão (guarda da Fase 65a)", not extensions,
+              f"{len(extensions)} alvo(s) de extensão")
+        if extensions:
+            browser.close()
+            sys.exit(3)
         ctx = browser.new_context(viewport={"width": 1280, "height": 800})
         try:
             steps(ctx)
