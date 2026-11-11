@@ -141,13 +141,18 @@ sha256sum -c SHA256SUMS --ignore-missing
 sudo apt install ./ward_0.2.0_amd64.deb
 ```
 
-Ou a partir do código:
+Ou a partir do código, gerando o `.deb` como você (sem sudo):
 
 ```sh
 make release
 make extension && make extension-crx
-sudo make install EXTENSION_ID=<id impresso pelo extension-crx> EXTENSION_CRX=$PWD/target/extension/ward.crx
+make deb EXTENSION_ID=<id impresso pelo extension-crx> EXTENSION_CRX=$PWD/target/extension/ward.crx
 ```
+
+e instalando o pacote de uma pasta do root, como no passo 2a do
+[roteiro](docs/instalacao.md). Não rode `sudo make install` de dentro do checkout: um
+programa do seu usuário pode trocar o instalador antes do `sudo`. O passo 2b do roteiro
+mostra como rodar o `make install` de uma cópia em `/root`.
 
 O `sudo` só aparece uma vez, na instalação: ela cria os grupos, instala as units do
 systemd e a política do Chrome que instala a extensão. Depois disso, o uso diário não

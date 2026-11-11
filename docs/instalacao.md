@@ -7,7 +7,8 @@ Duas formas de instalar a mesma árvore (`install/tree.txt`). Escolha uma:
 
 - **`.deb`** (recomendada): `make deb` e depois `sudo dpkg -i`. O `dpkg` registra os
   arquivos, a dependência de `sshpass` e a remoção.
-- **`sudo make install`**: copia direto da árvore do repositório.
+- **`sudo make install`**: copia a árvore do repositório, rodado de uma cópia numa
+  pasta do root (passo 2b), nunca de dentro do clone.
 
 Não misture as duas. Se já usou uma, desinstale antes de trocar.
 
@@ -147,7 +148,10 @@ maior), que a 0.1.x recusa. Esse caminho não está conferido: faça a cópia.
 
    - no caminho do `.deb`, copie o pacote para uma pasta do root **antes** de conferir
      e instalar. Assim nada do seu usuário consegue trocá-lo entre a conferência e o
-     `dpkg` (passo 2).
+     `dpkg` (passo 2a);
+   - no caminho do `make install`, o mesmo: o instalador, os binários e o pacote da
+     extensão vão para `/root/ward-src` e o `sudo make` roda de lá, nunca do clone
+     (passo 2b).
 
    O risco não some: o build ainda roda como o seu usuário. Está anotado no handoff
    da Fase 52.
@@ -236,9 +240,41 @@ Durante a instalação:
 
 ## 2b. Ou instalar por `sudo make install`
 
+Prefira o `.deb` (2a). Se for pelo `make install`, **nunca rode `sudo make install` de
+dentro do clone**: o clone é do seu usuário, e qualquer programa seu pode trocar o
+`Makefile` ou o `install/install.sh` entre a sua conferência e o `sudo`; o root roda o que
+estiver lá (auditoria de segurança do M6, Fase 66b). Faça como no `.deb`: leve para uma
+pasta do root o instalador (o `Makefile`, `install/` com o `tree.txt` e os ícones), os
+binários e o pacote da extensão, confira lá e rode de lá.
+
+No clone, como você (sem sudo), gere o pacote do instalador a partir da revisão
+conferida no passo 0.3:
+
 ```sh
-sudo make install EXTENSION_ID=nhkehjnmlgkebhmelajfpmpblepaichf EXTENSION_CRX=$PWD/target/extension/ward.crx
+git archive -o target/ward-install.tar HEAD Makefile install docs/design/logo
+sha256sum target/ward-install.tar target/release/ward target/release/wardd \
+    target/release/ward-nm app/src-tauri/target/release/ward-app target/extension/ward.crx
 ```
+
+Depois, como root, copie tudo para `/root/ward-src` (0700), confira os sha256 (têm de ser
+os mesmos de cima), extraia, leia e rode de lá:
+
+```sh
+sudo install -d -m 0700 -o root -g root /root/ward-src /root/ward-src/bin
+sudo install -m 0644 -o root -g root target/ward-install.tar target/extension/ward.crx /root/ward-src/
+sudo install -m 0755 -o root -g root target/release/ward target/release/wardd target/release/ward-nm \
+    app/src-tauri/target/release/ward-app /root/ward-src/bin/
+sudo sha256sum /root/ward-src/ward-install.tar /root/ward-src/bin/* /root/ward-src/ward.crx
+sudo tar -x --no-same-owner -f /root/ward-src/ward-install.tar -C /root/ward-src
+sudo less /root/ward-src/install/install.sh               # leia antes de rodar
+sudo make -C /root/ward-src install EXTENSION_ID=nhkehjnmlgkebhmelajfpmpblepaichf \
+    EXTENSION_CRX=/root/ward-src/ward.crx \
+    BIN_WARD=/root/ward-src/bin/ward BIN_WARDD=/root/ward-src/bin/wardd \
+    BIN_NM=/root/ward-src/bin/ward-nm BIN_APP=/root/ward-src/bin/ward-app
+```
+
+Guarde `/root/ward-src` enquanto usar o Ward: o `sudo make -C /root/ward-src uninstall` sai
+de lá (passo 6). Nunca rode o `uninstall` do clone pelo mesmo motivo.
 
 ## 3. Conferir o systemd (V9.7)
 
@@ -517,7 +553,8 @@ da senha para o Google. As duas coisas tiram a senha do lugar onde ela deveria f
 
 **Se você usa o gerenciador do Chrome para outras senhas:** passe-as para o Ward ou
 para outro gerenciador antes de instalar. Não há como desligar só para os sites do
-Ward. Voltar atrás é desinstalar o Ward (`sudo make uninstall` ou `sudo dpkg -r ward`),
+Ward. Voltar atrás é desinstalar o Ward (`sudo dpkg -r ward` ou, pelo passo 2b,
+`sudo make -C /root/ward-src uninstall`),
 que tira a política.
 
 ## 4c. Outras políticas do Chrome
@@ -570,7 +607,7 @@ não usa `SSH_AUTH_SOCK`, `environment.d` nem `ssh_config` (D18).
 ## 6. Desinstalar
 
 ```sh
-sudo dpkg -r ward          # ou sudo dpkg -P ward; ou sudo make uninstall
+sudo dpkg -r ward          # ou sudo dpkg -P ward; ou sudo make -C /root/ward-src uninstall
 ```
 
 A remoção para e desliga todo `wardd@*`, apaga os arquivos, os overrides e `/run/ward`,

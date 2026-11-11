@@ -1,12 +1,12 @@
-make: Entrando no diretório '/home/jeffersonoliveira/projetos/cofre/.claude/worktrees/agent-a40b66606e9b53847/.dev/fase61-leakcopy'
-/home/jeffersonoliveira/projetos/cofre/.claude/worktrees/agent-a40b66606e9b53847/.dev/fase61-leakcopy/.dev/tools/bin/gitleaks dir --config dev/gitleaks-tree.toml --redact --verbose --no-banner --exit-code 1 .
+make: Entrando no diretório '<repo>/.dev/fase61-leakcopy'
+<repo>/.dev/fase61-leakcopy/.dev/tools/bin/gitleaks dir --config dev/gitleaks-tree.toml --redact --verbose --no-banner --exit-code 1 .
 10:32AM INF scanned ~9783722 bytes (9.78 MB) in 349ms
 10:32AM INF no leaks found
-/home/jeffersonoliveira/projetos/cofre/.claude/worktrees/agent-a40b66606e9b53847/.dev/fase61-leakcopy/.dev/tools/bin/gitleaks git --staged --pre-commit --config .gitleaks.toml --redact --verbose --no-banner --exit-code 1 .
+<repo>/.dev/fase61-leakcopy/.dev/tools/bin/gitleaks git --staged --pre-commit --config .gitleaks.toml --redact --verbose --no-banner --exit-code 1 .
 10:32AM INF 0 commits scanned.
 10:32AM INF scanned ~0 bytes (0) in 106ms
 10:32AM INF no leaks found
-/home/jeffersonoliveira/projetos/cofre/.claude/worktrees/agent-a40b66606e9b53847/.dev/fase61-leakcopy/.dev/tools/bin/gitleaks git --config .gitleaks.toml --redact --verbose --no-banner --exit-code 1 .
+<repo>/.dev/fase61-leakcopy/.dev/tools/bin/gitleaks git --config .gitleaks.toml --redact --verbose --no-banner --exit-code 1 .
 10:32AM INF Unknown SCM platform. Use --platform to include links in findings. host=
 Finding:     let api_key = "REDACTED"
 Secret:      REDACTED
@@ -24,4 +24,4 @@ Fingerprint: 72e23734a21a328ca261ac7e3dfe5cc36378b4f7:crates/planted_fake.rs:gen
 10:32AM INF scanned ~15946750 bytes (15.95 MB) in 1.85s
 10:32AM WRN leaks found: 1
 make: *** [Makefile:145: gitleaks] Erro 1
-make: Saindo do diretório '/home/jeffersonoliveira/projetos/cofre/.claude/worktrees/agent-a40b66606e9b53847/.dev/fase61-leakcopy'
+make: Saindo do diretório '<repo>/.dev/fase61-leakcopy'

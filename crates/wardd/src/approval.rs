@@ -40,6 +40,8 @@ pub const APPROVAL_DEADLINE: Duration = Duration::from_secs(120);
 pub const UNLOCK_DEADLINE: Duration = Duration::from_secs(120);
 /// "Allow for 1 hour" (D2).
 pub const ONE_HOUR: Duration = Duration::from_secs(3600);
+/// Minimum interval between two `show_window` to the app (m2:Phase 66b).
+pub const SHOW_WINDOW_INTERVAL: Duration = Duration::from_secs(1);
 /// How often (in real time) the wait looks at the clock, the client and the vault.
 const STEP: Duration = Duration::from_millis(25);
 
@@ -156,6 +158,9 @@ struct State {
     subscriber: Option<(u64, Box<dyn Subscriber>)>,
     /// Agent requests waiting for the unlock now, from the oldest to the newest.
     awaiting_unlock: Vec<UnlockWait>,
+    /// When the subscriber last received `show_window` (engine clock): requests closer
+    /// than [`SHOW_WINDOW_INTERVAL`] join that one (m2:Phase 66b).
+    last_show: Option<Duration>,
 }
 
 impl State {
@@ -257,6 +262,7 @@ impl Engine {
                     pending: Vec::new(),
                     subscriber: None,
                     awaiting_unlock: Vec::new(),
+                    last_show: None,
                 }),
                 changed: Condvar::new(),
             }),
@@ -319,13 +325,28 @@ impl Engine {
     /// the subscriber, which is a connection of the app role, receives it; nothing
     /// goes back to the caller. A failed delivery: the subscriber leaves, as with the
     /// other notices.
+    ///
+    /// At most one per [`SHOW_WINDOW_INTERVAL`] (m2:Phase 66b, security-auditor of M6):
+    /// `open_app` comes from any role, and each delivery writes on the app connection
+    /// with the engine lock held (as every notice: the subscriber lives in the state, so
+    /// the order of the notices holds). A request closer than that to the last delivery
+    /// joins it: the app treats several `show_window` in a row as one anyway (it only
+    /// marks the request), so a burst from an agent costs one write per second at most.
     fn show_window(&self) {
+        let now = self.clock.now();
         let mut g = self.inner.state();
+        if g.last_show
+            .is_some_and(|t| now.saturating_sub(t) < SHOW_WINDOW_INTERVAL)
+        {
+            return;
+        }
         let Some((sid, a)) = g.subscriber.as_mut() else {
             return;
         };
         let sid = *sid;
-        if !a.deliver(&Response::ShowWindow) {
+        let delivered = a.deliver(&Response::ShowWindow);
+        g.last_show = Some(now);
+        if !delivered {
             warning!("entrega ao app falhou: a janela conta como fechada");
             g.drop_subscriber(sid);
             drop(g);
@@ -346,6 +367,8 @@ impl Engine {
             }
         }
         g.subscriber = Some((id, a));
+        // A new app connection: its first `show_window` is not joined to the previous one.
+        g.last_show = None;
         g.deliver_pending(Some(self.clock.now()));
         drop(g);
         self.inner.changed.notify_all();

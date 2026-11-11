@@ -22,6 +22,16 @@
 //!   [`ResponseError::UnknownVersion`] before anything else of the frame is looked at:
 //!   a 0.1.x client (version 1) gets that error and no data. The data object may be
 //!   missing when empty.
+//! - Decision (m2:Phase 66b, security-auditor of M6): the reader is strict on the
+//!   **meaning** of the frame, not on its bytes. A missing `data` is the empty object
+//!   (the same request as `"data":{}`, with the same strict reading of the fields: an
+//!   operation with a required field still refuses), and names may carry JSON escapes
+//!   (`"list"` is `list`). Both were accepted by 0.1.x and are kept: the extension
+//!   and the test clients send `{"v":2,"op":"status"}`. Nothing compares frame bytes:
+//!   the name is decoded, then looked up in the exact table, then the role is checked;
+//!   `ward-nm` re-encodes the canonical form ([`encode_request`], which always writes
+//!   `data`) before the daemon. `protocol/tests.rs ›
+//!   decision_missing_data_and_escaped_names_are_the_canonical_request` pins this down.
 //! - Every name (operation, response type, field, error code, role and value) is
 //!   English `snake_case` (m2:DT8). The version 1 names are not known: an old field
 //!   name (the version 1 name of `entry`) is an unknown field and refuses the request;

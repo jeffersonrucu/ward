@@ -1,6 +1,6 @@
 FALHA V1.2 make check não pegou leak.txt (exit 2)
 ok    V1.2 a saída do make check não repete o segredo
-FALHA V1.2 sem o arquivo, make check continua falhando (ver /home/jeffersonoliveira/.cache/ward-attacks-foundation.NEE6N9/v1_2-clean.log)
+FALHA V1.2 sem o arquivo, make check continua falhando (ver <home>/.cache/ward-attacks-foundation.NEE6N9/v1_2-clean.log)
 make[2]: *** [Makefile:112: test] Erro 101
 make[1]: *** [Makefile:88: check] Erro 2
 ok    allowlist: valor falso com sufixo ainda é achado
@@ -158,9 +158,9 @@ ok    pré-checagem: rust-toolchain.toml com canal móvel (nightly) é barrado a
 ok    pré-checagem: rust-toolchain sem extensão é barrado antes do passo 1
 ok    controle: sem a pré-checagem o rustc-wrapper plantado roda (o vetor é real)
 ok    CARGO_HOME: config com '[alias] audit = "version"' é recusado
-ok    CARGO_HOME: config com '[build] rustc-wrapper = "/home/jeffersonoliveira/.cache/ward-attacks-foundation.NEE6N9/decoys/wrap.sh"' é recusado
-ok    CARGO_HOME: config com '[build] rustc = "/home/jeffersonoliveira/.cache/ward-attacks-foundation.NEE6N9/decoys/rustc.sh"' é recusado
-ok    CARGO_HOME: config com '[target.x86_64-unknown-linux-gnu] linker = "/home/jeffersonoliveira/.cache/ward-attacks-foundation.NEE6N9/decoys/linker.sh"' é recusado
+ok    CARGO_HOME: config com '[build] rustc-wrapper = "<home>/.cache/ward-attacks-foundation.NEE6N9/decoys/wrap.sh"' é recusado
+ok    CARGO_HOME: config com '[build] rustc = "<home>/.cache/ward-attacks-foundation.NEE6N9/decoys/rustc.sh"' é recusado
+ok    CARGO_HOME: config com '[target.x86_64-unknown-linux-gnu] linker = "<home>/.cache/ward-attacks-foundation.NEE6N9/decoys/linker.sh"' é recusado
 ok    CARGO_HOME: config com '[build] rustflags = ["-Cdebuginfo=0"]' é recusado
 ok    CARGO_HOME: config com '[env] RUSTC_BOOTSTRAP = "1"' é recusado
 ok    CARGO_HOME: config com '[source.crates-io] replace-with = "v"' é recusado
@@ -177,7 +177,7 @@ ok    28f: make origins da raiz limpo com 21 .cargo/config* plantados nas cópia
 FALHA o ambiente do usuário mudou o make check (exit 2, marcas: )
 make[2]: *** [Makefile:112: test] Erro 101
 make[1]: *** [Makefile:88: check] Erro 2
-make[1]: Saindo do diretório '/home/jeffersonoliveira/.cache/ward-attacks-foundation.NEE6N9/env-make'
+make[1]: Saindo do diretório '<home>/.cache/ward-attacks-foundation.NEE6N9/env-make'
 ok    controle: core.fsmonitor do gitconfig roda sem o isolamento
 ok    core.fsmonitor no .git/config não roda no make gitleaks
 ok    git dos testes ignora o ignore global do usuário (check-ignore depende só do repositório)

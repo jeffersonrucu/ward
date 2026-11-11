@@ -1,0 +1,32 @@
+install/deb.sh
+==> staging: make install DESTDIR=<repo>/target/deb/root
+==> conferindo os artefatos e a extensão
+==> arquivos em <repo>/target/deb/root
+    0755 root:root /usr/local/bin/ward
+    0755 root:root /usr/local/bin/wardd
+    2755 root:ward-app /usr/local/bin/ward-app
+    2755 root:ward-nm /usr/local/lib/ward/ward-nm
+    0644 root:root /usr/local/lib/systemd/system/wardd@.socket
+    0644 root:root /usr/local/lib/systemd/system/wardd@.service
+    0644 root:root /usr/local/lib/tmpfiles.d/ward.conf
+    0644 root:root /usr/local/share/ward/extension/ward.crx
+    0644 root:root /usr/local/share/ward/extension/update.xml
+    0644 root:root /etc/opt/chrome/native-messaging-hosts/br.ward.nm.json
+    0644 root:root /etc/opt/chrome/policies/managed/ward.json
+    0644 root:root /etc/apport/report-ignore/ward
+    0644 root:root /etc/apport/blacklist.d/ward
+    0644 root:root /etc/systemd/coredump.conf.d/ward.conf
+    0644 root:root /usr/local/share/applications/local.ward.app.desktop
+    0644 root:root /usr/local/share/metainfo/local.ward.app.metainfo.xml
+    0644 root:root /usr/local/share/icons/hicolor/48x48/apps/ward.png
+    0644 root:root /usr/local/share/icons/hicolor/64x64/apps/ward.png
+    0644 root:root /usr/local/share/icons/hicolor/128x128/apps/ward.png
+    0644 root:root /usr/local/share/icons/hicolor/256x256/apps/ward.png
+    0644 root:root /usr/local/share/icons/hicolor/512x512/apps/ward.png
+    0644 root:root /usr/local/share/icons/hicolor/scalable/apps/ward.svg
+==> pronto (DESTDIR: sem grupos, sem dono root e sem systemctl; donos e modos de verdade em install/tree.txt)
+==> pacote em <repo>/target/deb/package (sem setuid/setgid; o 2755 vem do dpkg-statoverride)
+==> dpkg-deb --build
+==> conferindo o pacote
+==> pronto: <repo>/target/deb/ward_0.2.0_amd64.deb
+1b7adb945c29a83baeee3a86f6267ae49be825eea713cfb9bd90903781161667  <repo>/target/deb/ward_0.2.0_amd64.deb

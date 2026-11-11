@@ -129,6 +129,37 @@ fn fill_goes_through_the_daemon_and_comes_back_canonical() {
     assert_eq!(p.operation(), Operation::Fill);
 }
 
+/// m2:Phase 66b (decision in the `protocol` module doc): a message without `data` or
+/// with escapes in the names reaches the daemon only as the canonical bytes, and an app
+/// or agent operation spelled with escapes is still refused here.
+#[test]
+fn attack_escaped_names_and_missing_data_reach_the_daemon_canonical() {
+    for m in [
+        r#"{"v":2,"op":"open_app"}"#,
+        r#"{"v":2,"op":"open_app"}"#,
+        r#"{"v":2,"op":"open_app","data":{}}"#,
+    ] {
+        let mut d = FakeDaemon::replying(Response::Ok);
+        let r = handle_with(m, &mut d);
+        assert!(r.contains(r#""type":"ok""#), "{m} -> {r}");
+        assert_eq!(
+            d.requests,
+            vec![br#"{"v":2,"op":"open_app","data":{}}"#.to_vec()],
+            "{m}"
+        );
+    }
+    for m in [
+        r#"{"v":2,"op":"reveal","data":{"entry":"acme-wp-dev","field":"password"}}"#,
+        r#"{"v":2,"op":"list"}"#,
+        r#"{"v":2,"op":"run","data":{}}"#,
+    ] {
+        let mut d = FakeDaemon::replying(fill_response());
+        let r = handle_with(m, &mut d);
+        assert!(r.contains(r#""code":"unauthorized""#), "{m} -> {r}");
+        assert!(d.requests.is_empty(), "{m} chegou ao daemon");
+    }
+}
+
 #[test]
 fn attack_app_and_agent_operations_do_not_reach_the_daemon() {
     for m in [
