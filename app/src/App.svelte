@@ -23,7 +23,7 @@
     'locked': 'O cofre está travado.',
     'unlocked': 'O cofre está destravado.',
   };
-  const SCREENS = ['credenciais', 'gerador', 'configuracoes'];
+  const SCREENS = ['credentials', 'generator', 'settings'];
 
   let message = $state('Conectando ao daemon…');
   let failed = $state(false);
@@ -35,7 +35,7 @@
   let request = $state(null);
   // Phase 30: no vault, the first use; on create, the daemon leaves the vault unlocked.
   let noVault = $state(false);
-  let screen = $state('credenciais');
+  let screen = $state('credentials');
   let Showcase = $state(null);
   // Phase 36: the approval window, opened by the Rust side when a request of the daemon
   // arrives, shows only the approval (its capability only has its own commands). The
@@ -91,7 +91,7 @@
 
   function onCreated() {
     noVault = false;
-    screen = 'credenciais';
+    screen = 'credentials';
     unlocked = true;
   }
 
@@ -131,7 +131,7 @@
     if (import.meta.env.MODE === 'teste' && !('__TAURI_INTERNALS__' in window)) {
       const { requestedScreen } = await import('./lib/bridge/test-bridge.js');
       const requested = requestedScreen();
-      if (requested === 'aprovacao') {
+      if (requested === 'approval') {
         approval = true;
         return;
       }
@@ -155,9 +155,9 @@
 {:else if unlocked}
   <div class="shell">
     <SideNav active={screen} onnavigate={navigate} onlock={lockNow} />
-    {#if screen === 'credenciais'}
+    {#if screen === 'credentials'}
       <Credentials onlocked={onLocked} />
-    {:else if screen === 'gerador'}
+    {:else if screen === 'generator'}
       <PasswordGenerator />
     {:else}
       <Settings onlocked={onLocked} />

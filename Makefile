@@ -350,7 +350,7 @@ test-webkit-real: origins
 	dev/tests/webkit-real.sh "$(CARGO)" $(if $(filter 1,$(NO_MPS)),--no-mps) $(if $(filter 1,$(NO_39C)),--no-39c)
 
 ## test-app-e2e: V5.10, V5.16, V5.24 (Phase 39c) end to end through the bridge: a test
-## `wardd` of its own (WARD_DEV_SOCKET_DIR, default /run/user/<uid>/ward-teste-e2e) with
+## `wardd` of its own (WARD_DEV_SOCKET_DIR, default /run/user/<uid>/ward-test-e2e) with
 ## the bridge opened by the daemon, headless Chrome and the real test CLI (`ward run`
 ## with the approval window; the app's Connect button with `ward ssh --token-fd` on the
 ## jump SSH service and the attacks on the token); log scan at the end; the test vault
@@ -368,7 +368,7 @@ test-app-e2e: origins
 ## click, in the real WebKitGTK 4.1 (python3-gi) on a private Xwayland with a cookie (the
 ## session clipboard is not touched); self-test with the value as text (the audit attack
 ## is found). A test `wardd` of its own (WARD_DEV_SOCKET_DIR, default
-## /run/user/<uid>/ward-teste-selecao) with the bridge; log scan at the end. Needs
+## /run/user/<uid>/ward-test-selection) with the bridge; log scan at the end. Needs
 ## `make dev-vault`, `make dev-variations`, `make app-front`, Xwayland, xauth and the
 ## Wayland session; out of `make check`
 test-revealed-selection: origins
@@ -516,12 +516,12 @@ test-chrome-policy: origins
 	$(CARGO) build --quiet --locked -p ward --bin ward --target-dir target/no-test-mode
 	$(CARGO) build --quiet --locked -p ward-nm --bin ward-nm --target-dir target/no-test-mode
 	$(CARGO) build --quiet --locked -p ward-app-core --example startup-container --target-dir target/no-test-mode
-	$(CARGO) build --quiet --locked -p wardd --features test-mode --bin wardd --bin wardd-aprovador-teste
+	$(CARGO) build --quiet --locked -p wardd --features test-mode --bin wardd --bin wardd-test-approver
 	$(CARGO) build --quiet --locked -p ward-nm --features test-mode --bin ward-nm
 	dev/tests/chrome-policy.sh target/debug/wardd target/debug/ward-nm \
 		target/no-test-mode/debug/ward target/no-test-mode/debug/wardd \
 		target/no-test-mode/debug/ward-nm target/no-test-mode/debug/examples/startup-container \
-		target/debug/wardd-aprovador-teste
+		target/debug/wardd-test-approver
 
 # --- .deb package (Phase 52; D18; V9.9) -------------------------------------------------
 # `make deb` (as the user) builds the staging with `install.sh` (DESTDIR) and packs it
@@ -569,7 +569,7 @@ test-deb: origins
 
 # --- Test daemon (Phase 22) ----------------------------------------------------------
 # `wardd` with the `test-mode` feature: vault from `.dev/`, socket in
-# $XDG_RUNTIME_DIR/ward-teste/. Starts with `env -i` and a fixed list (HOME, PATH,
+# $XDG_RUNTIME_DIR/ward-test/. Starts with `env -i` and a fixed list (HOME, PATH,
 # XDG_RUNTIME_DIR, LANG, WARD_DEV_DIR): wardd refuses TMPDIR and LD_* (V3.30).
 
 ## dev-daemon: builds and starts the test daemon in the background (log in .dev/logs/),
@@ -608,11 +608,11 @@ test-ssh-home: origins
 ## `make dev-variations` and the Python Playwright in PW_PYTHONPATH (or
 ## NO_PLAYWRIGHT_PYTHON=1); out of `make check`
 test-playwright: origins
-	$(CARGO) build --quiet --locked -p wardd --features test-mode --bin wardd --bin wardd-aprovador-teste
+	$(CARGO) build --quiet --locked -p wardd --features test-mode --bin wardd --bin wardd-test-approver
 	$(CARGO) build --quiet --locked -p ward --features test-mode --bin ward
 	$(CARGO) test --quiet --locked -p wardd --all-features --test playwright -- --ignored
 	PW_PYTHONPATH="$(PW_PYTHONPATH)" NO_PLAYWRIGHT_PYTHON="$(NO_PLAYWRIGHT_PYTHON)" \
-		dev/tests/playwright.sh target/debug/wardd target/debug/ward target/debug/wardd-aprovador-teste
+		dev/tests/playwright.sh target/debug/wardd target/debug/ward target/debug/wardd-test-approver
 
 ## test-no-test-mode: D63/V3.37: no member turns on test-mode in a normal dependency,
 ## unit tests of wardd and ward-platform without the feature and release strings without
@@ -674,25 +674,25 @@ extension:
 
 ## test-extension: Phase 41 (V6.2, V6.4–V6.7): the extension in the real Chrome
 ## (headless, temporary profile in .dev/extension.*) through the test ward-nm and a test
-## wardd of its own with WARD_DEV_EXTENSAO=chrome; suggestions, filling, TOTP, phishing,
+## wardd of its own with WARD_DEV_EXTENSION=chrome; suggestions, filling, TOTP, phishing,
 ## redir, iframe, DOM clobbering, hidden field, page messages, locked; screenshots in
 ## docs/mission/evidence/test-extension/. Needs `make dev-vault`, `make dev-variations`,
 ## `make dev-services-up` and `make app-front`; out of `make check`
 test-extension: origins extension
-	$(CARGO) build --quiet --locked -p wardd --features test-mode --bin wardd --bin wardd-aprovador-teste
+	$(CARGO) build --quiet --locked -p wardd --features test-mode --bin wardd --bin wardd-test-approver
 	$(CARGO) build --quiet --locked -p ward-nm --features test-mode --bin ward-nm
 	$(CARGO) build --quiet --locked -p ward-nm --example fake-chrome
 	$(CARGO) build --quiet --locked -p ward --features test-mode --bin ward
-	dev/tests/extension.sh target/debug/wardd target/debug/ward-nm target/debug/examples/fake-chrome target/debug/ward target/debug/wardd-aprovador-teste
+	dev/tests/extension.sh target/debug/wardd target/debug/ward-nm target/debug/examples/fake-chrome target/debug/ward target/debug/wardd-test-approver
 
 ## test-login: `ward login` end to end (Phase 43; V6.3, V6.10, V6.11, V6.15, V6.16):
 ## the extension in the real headless Chrome, `ward-nm` opened by the service worker and
-## a test `wardd` of its own with `WARD_DEV_EXTENSAO=chrome`; out of `make check`
+## a test `wardd` of its own with `WARD_DEV_EXTENSION=chrome`; out of `make check`
 test-login: origins extension
-	$(CARGO) build --quiet --locked -p wardd --features test-mode --bin wardd --bin wardd-aprovador-teste
+	$(CARGO) build --quiet --locked -p wardd --features test-mode --bin wardd --bin wardd-test-approver
 	$(CARGO) build --quiet --locked -p ward-nm --features test-mode --bin ward-nm
 	$(CARGO) build --quiet --locked -p ward --features test-mode --bin ward
-	dev/tests/login.sh target/debug/wardd target/debug/ward-nm target/debug/ward target/debug/wardd-aprovador-teste
+	dev/tests/login.sh target/debug/wardd target/debug/ward-nm target/debug/ward target/debug/wardd-test-approver
 
 ## dev-daemon-stop: stops the test daemon (verifies the pid really is the wardd from here)
 dev-daemon-stop:

@@ -626,10 +626,10 @@ mod tests {
         #[cfg(not(feature = "test-mode"))]
         let expected = format!("/run/ward/{}/wardd.sock", my_uid());
         #[cfg(feature = "test-mode")]
-        let expected = format!("/run/user/{}/ward-teste/wardd.sock", my_uid());
+        let expected = format!("/run/user/{}/ward-test/wardd.sock", my_uid());
         assert_eq!(d.path(), Path::new(&expected));
         #[cfg(not(feature = "test-mode"))]
-        assert!(!d.path().to_string_lossy().contains("ward-teste"));
+        assert!(!d.path().to_string_lossy().contains("ward-test"));
     }
 
     #[test]
@@ -640,7 +640,7 @@ mod tests {
         #[cfg(feature = "test-mode")]
         {
             let base = TempBase::new("ausente");
-            let dir = base.0.join("ward-teste");
+            let dir = base.0.join("ward-test");
             fs::DirBuilder::new().mode(0o700).create(&dir).unwrap();
             let mut t = DaemonSocket::test_at(dir.join(SOCKET));
             assert_eq!(t.status(), Err(AppError::DaemonUnavailable));

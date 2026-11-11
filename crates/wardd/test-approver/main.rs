@@ -1,4 +1,4 @@
-//! `wardd-aprovador-teste`: test approval window of the M6 end-to-end suites (Phase 44c;
+//! `wardd-test-approver`: test approval window of the M6 end-to-end suites (Phase 44c;
 //! D8, D9, D63). It only exists with the `test-mode` feature (`required-features`), never
 //! in the release.
 //!
@@ -30,7 +30,7 @@ fn socket() -> Option<PathBuf> {
     match std::env::var_os("WARD_DEV_SOCKET_DIR") {
         Some(d) => Some(PathBuf::from(d).join("wardd.sock")),
         None => Some(PathBuf::from(format!(
-            "/run/user/{}/ward-teste/wardd.sock",
+            "/run/user/{}/ward-test/wardd.sock",
             ward_platform::effective_uid()
         ))),
     }
@@ -61,7 +61,7 @@ fn read(s: &mut UnixStream) -> Option<Vec<u8>> {
 /// decision, PIN and the standard input box (Phase 54b).
 fn mode() -> Option<(Decision, Option<Secret>, bool)> {
     let dev = PathBuf::from(std::env::var_os("WARD_DEV_DIR")?);
-    let text = std::fs::read_to_string(dev.join("aprovador.modo")).ok()?;
+    let text = std::fs::read_to_string(dev.join("approver.mode")).ok()?;
     let line = text.lines().next()?.trim();
     match line.split_once(' ') {
         Some((m @ ("uma_vez" | "uma_vez_ciente"), pin)) => Some((

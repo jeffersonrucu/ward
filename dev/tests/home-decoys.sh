@@ -28,9 +28,9 @@ for p in bwrap mkfifo; do
 done
 
 # --- Outside the sandbox: re-executes inside it (without inheriting the inside mark) ----
-if [ "${WARD_ISCAS_DENTRO:-}" != 1 ]; then
-    exec /usr/bin/env -u WARD_HOME_COBERTO bwrap --die-with-parent --dev-bind / / --tmpfs "$PASSWD_HOME" \
-        --bind "$ROOT" "$ROOT" --bind /tmp /tmp --setenv WARD_ISCAS_DENTRO 1 --chdir "$ROOT" \
+if [ "${WARD_DECOYS_INSIDE:-}" != 1 ]; then
+    exec /usr/bin/env -u WARD_HOME_COVERED bwrap --die-with-parent --dev-bind / / --tmpfs "$PASSWD_HOME" \
+        --bind "$ROOT" "$ROOT" --bind /tmp /tmp --setenv WARD_DECOYS_INSIDE 1 --chdir "$ROOT" \
         -- /bin/bash -p "$ROOT/dev/tests/home-decoys.sh" "$@"
 fi
 

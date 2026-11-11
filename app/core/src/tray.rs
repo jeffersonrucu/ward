@@ -33,11 +33,11 @@ use crate::AppError;
 use crate::daemon::VaultStatus;
 
 /// Ids of the menu items. The text ones only inform (disabled).
-pub const ID_TITLE: &str = "bandeja-titulo";
-pub const ID_SUBTITLE: &str = "bandeja-subtitulo";
-pub const ID_OPEN: &str = "bandeja-abrir";
-pub const ID_ACTION: &str = "bandeja-acao";
-pub const ID_QUIT: &str = "bandeja-sair";
+pub const ID_TITLE: &str = "tray-title";
+pub const ID_SUBTITLE: &str = "tray-subtitle";
+pub const ID_OPEN: &str = "tray-open";
+pub const ID_ACTION: &str = "tray-action";
+pub const ID_QUIT: &str = "tray-quit";
 
 /// Fixed texts of the items that do not change with the status (frames `17269`/`17300`).
 pub const OPEN_TEXT: &str = "Abrir o Ward";
@@ -275,7 +275,7 @@ mod tests {
     fn temp_dir(name: &str) -> PathBuf {
         let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("target")
-            .join(format!("bandeja-{name}-{}", std::process::id()));
+            .join(format!("tray-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&p);
         DirBuilder::new()
             .recursive(true)
@@ -341,6 +341,14 @@ mod tests {
                 ID_SUBTITLE,
                 "bandeja-abrir ",
                 "BANDEJA-ACAO",
+                "tray-open ",
+                "TRAY-ACTION",
+                // m2:Phase 56: the 0.1.x (pt-BR) ids are gone, no alias.
+                "bandeja-titulo",
+                "bandeja-subtitulo",
+                "bandeja-abrir",
+                "bandeja-acao",
+                "bandeja-sair",
                 "responder_aprovacao",
                 "revelar_campo",
                 "copiar_campo",
@@ -350,6 +358,7 @@ mod tests {
                 "copy_field",
                 "unlock",
                 "bandeja-acao\0",
+                "tray-action\0",
             ] {
                 assert_eq!(action(id, state), None, "{id:?} em {state:?}");
             }

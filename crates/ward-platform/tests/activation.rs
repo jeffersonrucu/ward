@@ -22,7 +22,7 @@ use std::process::{Command, Stdio};
 use common::TestDir;
 use ward_platform::socket::prepare_dir;
 
-const MODE: &str = "WARD_ATIVACAO";
+const MODE: &str = "WARD_ACTIVATION";
 const MARK: &str = "RESULTADO:";
 
 /// Body of the child processes. Without the variable, does nothing.
@@ -31,23 +31,23 @@ fn helper_child() {
     let Ok(mode) = std::env::var(MODE) else {
         return;
     };
-    let path = std::env::var_os("WARD_CAMINHO").expect("WARD_CAMINHO");
+    let path = std::env::var_os("WARD_PATH").expect("WARD_PATH");
     match mode.as_str() {
         // Plays systemd: creates the socket and runs itself again as the receiver.
         "ativar" => {
             let listener = UnixListener::bind(&path).unwrap();
             let mut cmd = child("receber");
             // On `exec`, the same stdout as this process (the test's pipe).
-            cmd.env("WARD_CAMINHO", &path)
+            cmd.env("WARD_PATH", &path)
                 .stdout(Stdio::inherit())
                 .stderr(Stdio::inherit());
-            if let Some(expected) = std::env::var_os("WARD_ESPERADO") {
-                cmd.env("WARD_ESPERADO", expected);
+            if let Some(expected) = std::env::var_os("WARD_EXPECTED") {
+                cmd.env("WARD_EXPECTED", expected);
             }
             ward_platform::testing::run_with_socket(&listener, cmd);
         }
         "receber" => {
-            let expected = std::env::var_os("WARD_ESPERADO").unwrap_or(path);
+            let expected = std::env::var_os("WARD_EXPECTED").unwrap_or(path);
             match ward_platform::listen_from_listen_fds(Path::new(&expected)) {
                 Ok(_) => println!("{MARK}ok"),
                 Err(e) => println!("{MARK}{e:?}"),
@@ -90,7 +90,7 @@ fn attack_fake_user_systemd_with_socket_in_its_dir() {
     let dir = prepare_dir(&d.path).unwrap();
     let path = dir.path().join("wardd.sock");
     let mut c = child("ativar");
-    c.env("WARD_CAMINHO", &path);
+    c.env("WARD_PATH", &path);
     let r = result(c);
     // The socket is real and listens on the right path; the directory is what is not
     // root's.
@@ -103,8 +103,8 @@ fn attack_socket_at_another_path() {
     let dir = prepare_dir(&d.path).unwrap();
     let path = dir.path().join("wardd.sock");
     let mut c = child("ativar");
-    c.env("WARD_CAMINHO", &path)
-        .env("WARD_ESPERADO", "/run/ward/1000/wardd.sock");
+    c.env("WARD_PATH", &path)
+        .env("WARD_EXPECTED", "/run/ward/1000/wardd.sock");
     assert_eq!(result(c), "PathMismatch");
 }
 
@@ -113,12 +113,12 @@ fn attack_wrong_listen_pid_and_listen_fds() {
     let path = "/run/ward/1000/wardd.sock";
     // Without the variables.
     let mut c = child("receber");
-    c.env("WARD_CAMINHO", path);
+    c.env("WARD_PATH", path);
     assert_eq!(result(c), "NotActivated");
     // LISTEN_PID of another process (fd 3 would be another's), or malformed.
     for pid in ["1", "+1", "", "abc"] {
         let mut c = child("receber");
-        c.env("WARD_CAMINHO", path)
+        c.env("WARD_PATH", path)
             .env("LISTEN_PID", pid)
             .env("LISTEN_FDS", "1");
         assert_eq!(result(c), "PidMismatch", "{pid:?}");
@@ -137,7 +137,7 @@ fn attack_more_than_one_fd() {
         .env_clear()
         .env("PATH", "/usr/bin:/bin")
         .env(MODE, "receber")
-        .env("WARD_CAMINHO", path)
+        .env("WARD_PATH", path)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());

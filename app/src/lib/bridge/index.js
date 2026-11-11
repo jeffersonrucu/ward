@@ -28,7 +28,7 @@ function failure(code, message) {
 
 export async function call(command, args = {}) {
   if (!COMMANDS.includes(command)) {
-    throw failure('comando-desconhecido', 'comando desconhecido');
+    throw failure('unknown-command', 'comando desconhecido');
   }
   const t = await getTransport();
   try {
@@ -37,7 +37,7 @@ export async function call(command, args = {}) {
     if (e && typeof e.code === 'string' && typeof e.message === 'string') {
       throw failure(e.code, e.message);
     }
-    throw failure('falha', 'não foi possível falar com o app');
+    throw failure('failure', 'não foi possível falar com o app');
   }
 }
 
@@ -59,7 +59,7 @@ export const NOTICES = Object.freeze(['unlock-request', 'approval-request', 'sta
 export async function listenNotices(onArrive, notice = ['unlock-request', 'status-changed']) {
   const notices = Array.isArray(notice) ? notice : [notice];
   if (notices.length === 0 || !notices.every((a) => NOTICES.includes(a))) {
-    throw failure('aviso-desconhecido', 'aviso desconhecido');
+    throw failure('unknown-notice', 'aviso desconhecido');
   }
   if (import.meta.env.MODE === 'teste' && !('__TAURI_INTERNALS__' in window)) {
     const { listenByPolling } = await import('./test-bridge.js');

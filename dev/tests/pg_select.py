@@ -33,7 +33,7 @@ def fail(msg):
 def password():
     if "PGPASSWORD" in os.environ:
         return os.environ["PGPASSWORD"]
-    path = os.environ.get("WARD_TESTE_PG_SENHA_ARQUIVO")
+    path = os.environ.get("WARD_TEST_PG_PASSWORD_FILE")
     if path:
         with open(path) as f:
             return f.read().strip()

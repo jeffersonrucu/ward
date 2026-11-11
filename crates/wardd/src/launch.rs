@@ -115,7 +115,7 @@ impl TestApp {
 }
 
 /// The extension's test host (Phase 41, exception of the D63 kind): in the test daemon
-/// with `WARD_DEV_EXTENSAO=chrome`, a peer whose parent is the installed Chrome (checked
+/// with `WARD_DEV_EXTENSION=chrome`, a peer whose parent is the installed Chrome (checked
 /// through `/proc`, as in the release) gets the extension role **without** the egid of
 /// the `ward-nm` group. Without the `test-mode` feature, the type has no value
 /// (`Infallible`): the release has no way to give the extension role without the group.

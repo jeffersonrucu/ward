@@ -34,11 +34,11 @@ done
     || { echo "app-e2e: o ssh-salto (2224) não responde; rode 'make dev-services-up'" >&2; exit 1; }
 
 UID_="$(id -u)"
-SOCKDIR="${WARD_DEV_SOCKET_DIR:-/run/user/$UID_/ward-teste-e2e}"
+SOCKDIR="${WARD_DEV_SOCKET_DIR:-/run/user/$UID_/ward-test-e2e}"
 [[ "$SOCKDIR" == /run/user/"$UID_"/* && "$SOCKDIR" != */../* ]] \
     || { echo "app-e2e: WARD_DEV_SOCKET_DIR fora de /run/user/$UID_/" >&2; exit 1; }
-[[ "$SOCKDIR" != "/run/user/$UID_/ward-teste" ]] \
-    || { echo "app-e2e: use uma pasta própria em WARD_DEV_SOCKET_DIR (a ward-teste é de todos os checkouts)" >&2; exit 1; }
+[[ "$SOCKDIR" != "/run/user/$UID_/ward-test" ]] \
+    || { echo "app-e2e: use uma pasta própria em WARD_DEV_SOCKET_DIR (a ward-test é de todos os checkouts)" >&2; exit 1; }
 if [[ -f "$DEV/wardd.pid" ]] && p="$(head -c 16 "$DEV/wardd.pid")" && [[ "$p" =~ ^[0-9]+$ ]] \
     && [[ "$(cat "/proc/$p/comm" 2> /dev/null)" == wardd ]]; then
     echo "app-e2e: o daemon de teste deste repositório já está no ar (pid $p); rode 'make dev-daemon-stop'" >&2

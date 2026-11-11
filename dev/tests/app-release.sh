@@ -20,7 +20,10 @@ trap 'rm -f "$STRINGS_FILE"' EXIT
 strings -a -n 4 -- "$BINARY" > "$STRINGS_FILE"
 
 failed=0
-for mark in ward-ponte-teste ponte-teste test-bridge ward_test_bridge /ponte/ WARD_DEV_DIR WARD_DEV_APP ward-teste Vitrine Showcase 'token='; do
+# m2:DT12 (m2:Phase 56): the test names in the new form and in the 0.1.x one (bridge,
+# its path, test socket dir), and any `WARD_DEV_*` variable.
+for mark in ward-test-bridge ward-ponte-teste ponte-teste test-bridge ward_test_bridge /test-bridge/ \
+    /ponte/ WARD_DEV_ ward-test ward-teste wardd-test-app wardd-app-teste Vitrine Showcase 'token='; do
     if grep -qF -- "$mark" "$STRINGS_FILE"; then
         echo "app-release: o binário de release contém \"$mark\"" >&2
         failed=1
@@ -31,5 +34,5 @@ grep -qF -- 'wardd.sock' "$STRINGS_FILE" || {
     echo "app-release: 'wardd.sock' não encontrado; o binário conferido é mesmo o ward-app?" >&2
     failed=1
 }
-[[ $failed -eq 0 ]] && echo "app-release: sem ponte, sem caminho de teste e sem WARD_DEV_DIR no binário de release"
+[[ $failed -eq 0 ]] && echo "app-release: sem ponte, sem caminho de teste e sem WARD_DEV_* no binário de release"
 exit $failed

@@ -28,7 +28,9 @@ NAMESPACES = {
     "http://www.w3.org/XML/1998/namespace",
 }
 EXTENSIONS = {".html", ".js", ".css", ".svg", ".woff", ".woff2"}
-TEST_ONLY = ("/ponte/", "token=", "ponte-teste", "test-bridge", "Vitrine", "Showcase", "ward-teste")
+# m2:Phase 56: the bridge path and the test socket dir in the new form and the 0.1.x one.
+TEST_ONLY = ("/test-bridge/", "/ponte/", "token=", "ponte-teste", "test-bridge", "Vitrine", "Showcase",
+             "ward-test", "ward-teste")
 URL = re.compile(rb"https?://[^\s\"'`)<>]*")
 
 errors = []

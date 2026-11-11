@@ -487,7 +487,7 @@ impl TempDir {
             .parent()
             .and_then(std::path::Path::parent)
             .unwrap()
-            .join("ward-teste-memoria");
+            .join("ward-test-memory");
         std::fs::create_dir_all(&base).unwrap();
         let d = base.join(format!("{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);

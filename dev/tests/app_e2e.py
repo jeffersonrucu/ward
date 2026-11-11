@@ -212,7 +212,7 @@ def steps(ctx):
         apr = ctx.new_page()
         PAGES.append(apr)
         apr.set_viewport_size({"width": 560, "height": 760})
-        apr.goto(URL + "&tela=aprovacao")
+        apr.goto(URL + "&screen=approval")
         apr.wait_for_load_state("networkidle")
         check("janela de aprovação aberta sem pedido", wait_for(lambda: no_request(apr), 10))
 

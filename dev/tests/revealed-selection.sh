@@ -29,11 +29,11 @@ for f in "$DEV/test-vault.ward" "$DEV/variations.txt" "$ROOT/app/dist-teste/inde
 done
 
 UID_="$(id -u)"
-SOCKDIR="${WARD_DEV_SOCKET_DIR:-/run/user/$UID_/ward-teste-selecao}"
+SOCKDIR="${WARD_DEV_SOCKET_DIR:-/run/user/$UID_/ward-test-selection}"
 [[ "$SOCKDIR" == /run/user/"$UID_"/* && "$SOCKDIR" != */../* ]] \
     || { echo "selecao-revelado: WARD_DEV_SOCKET_DIR fora de /run/user/$UID_/" >&2; exit 1; }
-[[ "$SOCKDIR" != "/run/user/$UID_/ward-teste" ]] \
-    || { echo "selecao-revelado: use uma pasta própria em WARD_DEV_SOCKET_DIR (a ward-teste é de todos os checkouts)" >&2; exit 1; }
+[[ "$SOCKDIR" != "/run/user/$UID_/ward-test" ]] \
+    || { echo "selecao-revelado: use uma pasta própria em WARD_DEV_SOCKET_DIR (a ward-test é de todos os checkouts)" >&2; exit 1; }
 if [[ -f "$DEV/wardd.pid" ]] && p="$(head -c 16 "$DEV/wardd.pid")" && [[ "$p" =~ ^[0-9]+$ ]] \
     && [[ "$(cat "/proc/$p/comm" 2> /dev/null)" == wardd ]]; then
     echo "selecao-revelado: o daemon de teste deste repositório já está no ar (pid $p); rode 'make dev-daemon-stop'" >&2

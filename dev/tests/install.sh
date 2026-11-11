@@ -416,14 +416,30 @@ new_dir() { n=$((n + 1)); d="$TMP/r$n"; }
 # Artifacts with the test-mode mark: the real test wardd and copies with the mark.
 cp "$WARD" "$TMP/ward-marked" && printf 'WARD_DEV_SOCKET_DIR' >>"$TMP/ward-marked"
 cp "$NM" "$TMP/nm-marked" && printf 'x WARD_DEV_DIR x' >>"$TMP/nm-marked"
-cp "$APP" "$TMP/app-marked" && printf 'ward-ponte-teste' >>"$TMP/app-marked"
-new_dir; expect_refusal "V9.2: wardd com test-mode" "modo-teste" "$d" BIN_WARDD="$TEST_WARDD"
-new_dir; expect_refusal "V9.2: ward com WARD_DEV_SOCKET_DIR" "modo-teste" "$d" BIN_WARD="$TMP/ward-marked"
-new_dir; expect_refusal "V9.2: ward-nm com WARD_DEV_DIR" "modo-teste" "$d" BIN_NM="$TMP/nm-marked"
-new_dir; expect_refusal "V9.2: ward-app com a ponte de teste" "modo-teste" "$d" BIN_APP="$TMP/app-marked"
+cp "$APP" "$TMP/app-marked" && printf 'ward-test-bridge' >>"$TMP/app-marked"
+new_dir; expect_refusal "V9.2: wardd com test-mode" "compilado com test-mode" "$d" BIN_WARDD="$TEST_WARDD"
+new_dir; expect_refusal "V9.2: ward com WARD_DEV_SOCKET_DIR" "compilado com test-mode" "$d" BIN_WARD="$TMP/ward-marked"
+new_dir; expect_refusal "V9.2: ward-nm com WARD_DEV_DIR" "compilado com test-mode" "$d" BIN_NM="$TMP/nm-marked"
+new_dir; expect_refusal "V9.2: ward-app com a ponte de teste" "compilado com test-mode" "$d" BIN_APP="$TMP/app-marked"
 # Phase 51a: the exception for the system D-Bus dev variable is gone (the release does not have the text).
-cp "$WARDD" "$TMP/wardd-dbus" && printf "x WARD_DEV_DBUS_SISTEMA x" >>"$TMP/wardd-dbus"
-new_dir; expect_refusal "V9.2: wardd com WARD_DEV_DBUS_SISTEMA (sem exceção)" "WARD_DEV_DBUS_SISTEMA" "$d" BIN_WARDD="$TMP/wardd-dbus"
+cp "$WARDD" "$TMP/wardd-dbus" && printf "x WARD_DEV_SYSTEM_DBUS x" >>"$TMP/wardd-dbus"
+new_dir; expect_refusal "V9.2: wardd com WARD_DEV_SYSTEM_DBUS (sem exceção)" "WARD_DEV_SYSTEM_DBUS" "$d" BIN_WARDD="$TMP/wardd-dbus"
+# m2:V5.4 (m2:DT12, m2:Phase 56): each test-mode mark, in the new form and in the 0.1.x
+# one, is refused by itself in a release artifact, before any file.
+for mark in WARD_DEV_EXTENSION WARD_DEV_EXTENSAO WARD_DEV_DBUS_SISTEMA ward-test-bridge \
+    ward-ponte-teste wardd-test-app wardd-app-teste wardd-test-approver wardd-aprovador-teste \
+    ward-test ward-teste; do
+    cp "$WARDD" "$TMP/wardd-mark" && printf 'x %s x' "$mark" >>"$TMP/wardd-mark"
+    new_dir; expect_refusal "m2:V5.4: wardd com $mark" "contém $mark" "$d" BIN_WARDD="$TMP/wardd-mark"
+done
+# m2:V5.4: the 0.1.4 test wardd (feature `modo-teste`, socket dir `ward-teste`) of the
+# baseline (m2:Phase 3), when this checkout has it.
+BASELINE_TEST_WARDD="$ROOT/.dev/baseline/bin-test-mode/wardd"
+if [ -f "$BASELINE_TEST_WARDD" ]; then
+    new_dir; expect_refusal "m2:V5.4: wardd de teste 0.1.4" "compilado com test-mode" "$d" BIN_WARDD="$BASELINE_TEST_WARDD"
+else
+    echo "aviso: sem $BASELINE_TEST_WARDD (make da linha de base, m2:Fase 3); caso do wardd 0.1.4 pulado" >&2
+fi
 verify "o wardd de release não tem nenhum WARD_DEV_" "$(grep -a -c -E "WARD_DEV_[A-Z0-9_]*" "$WARDD" || true)" "0"
 # Phase 51a: another policy in policies/managed with one of the names of Ward's is refused
 # before any file (Chrome does not merge the two; the attacker's/administrator's would win).

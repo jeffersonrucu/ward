@@ -47,7 +47,7 @@ pub struct TestTerminal;
 impl Terminal for TestTerminal {
     fn open(&self, entry: &str, token: &Token) -> Result<(), AppError> {
         eprintln!(
-            "ward-ponte-teste: conectar {entry} (token de uso único com {} caracteres)",
+            "ward-test-bridge: conectar {entry} (token de uso único com {} caracteres)",
             token.len()
         );
         Ok(())
@@ -97,7 +97,7 @@ impl Terminal for RepoTerminal {
             a.command.env(k, v);
         }
         let mut child = a.open().map_err(|_| AppError::TerminalUnavailable)?;
-        eprintln!("ward-ponte-teste: conectar {entry} pelo terminal do repositório");
+        eprintln!("ward-test-bridge: conectar {entry} pelo terminal do repositório");
         std::thread::spawn(move || {
             let _ = child.wait();
         });

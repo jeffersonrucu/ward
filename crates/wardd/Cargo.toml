@@ -61,16 +61,16 @@ zbus = { version = "=6.2.1", default-features = false, features = ["default-rt",
 # the test daemon opens through `WARD_DEV_APP`. Only with `test-mode`; outside `src/`
 # (V3.15 reads the files of `src/`).
 [[bin]]
-name = "wardd-app-teste"
-path = "app-teste/main.rs"
+name = "wardd-test-app"
+path = "test-app/main.rs"
 required-features = ["test-mode"]
 
 # Test approval window of the M6 end-to-end suites (Phase 44c, D9): answers the requests
 # with what the suite wrote in the mode file under `$WARD_DEV_DIR`. Only with
 # `test-mode`, like the test app.
 [[bin]]
-name = "wardd-aprovador-teste"
-path = "aprovador-teste/main.rs"
+name = "wardd-test-approver"
+path = "test-approver/main.rs"
 required-features = ["test-mode"]
 
 # M4 scrutiny (Phase 28b): the integration tests that start the test `wardd`

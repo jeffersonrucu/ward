@@ -29,9 +29,9 @@ mod test_vault;
 use test_vault::{MASTER_PASSWORD, SECRETS, new_config, test_vault_entries};
 
 const CHILD_NAME: &str = "backup::tests::child_backup";
-const ENV_MODE: &str = "WARD_TESTE_BACKUP_MODO";
-const ENV_DIR: &str = "WARD_TESTE_BACKUP_DIR";
-const ENV_BASE: &str = "WARD_TESTE_BACKUP_BASE";
+const ENV_MODE: &str = "WARD_TEST_BACKUP_MODE";
+const ENV_DIR: &str = "WARD_TEST_BACKUP_DIR";
+const ENV_BASE: &str = "WARD_TEST_BACKUP_BASE";
 /// If the parent dies without killing the child, the child exits on its own.
 const CHILD_LIFETIME: Duration = Duration::from_secs(90);
 /// 2026-11-09 15:30:00 UTC.

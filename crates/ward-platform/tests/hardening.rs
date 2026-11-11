@@ -13,7 +13,7 @@ use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-const MODE: &str = "WARD_PLATAFORMA_FILHO";
+const MODE: &str = "WARD_PLATFORM_CHILD";
 const MARK: &str = "RESULTADO:";
 
 /// Not a real test: it is the body of the child process. Without the variable, does

@@ -1,4 +1,4 @@
-//! `wardd-app-teste`: minimal test app of the `wardd` tests (D63, Phase 23a). It only
+//! `wardd-test-app`: minimal test app of the `wardd` tests (D63, Phase 23a). It only
 //! exists with the `test-mode` feature (`required-features`), never in the release.
 //!
 //! Connects to the test daemon (`$WARD_DEV_SOCKET_DIR/wardd.sock`, or the test socket
@@ -213,7 +213,7 @@ fn main() -> ExitCode {
         .map(PathBuf::from)
         .unwrap_or_else(|| {
             PathBuf::from(format!(
-                "/run/user/{}/ward-teste",
+                "/run/user/{}/ward-test",
                 ward_platform::effective_uid()
             ))
         });

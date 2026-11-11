@@ -38,7 +38,7 @@ import threading
 import time
 
 WARDD, WARD, ROOT, PASSWD_HOME, WORK_DIR = sys.argv[1:6]
-if os.environ.get("WARD_SSH_HOME_DENTRO") != "1":
+if os.environ.get("WARD_SSH_HOME_INSIDE") != "1":
     print("ssh_home.py roda só dentro do bwrap de dev/tests/ssh-home.sh")
     sys.exit(2)
 

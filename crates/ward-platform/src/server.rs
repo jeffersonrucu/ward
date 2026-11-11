@@ -206,7 +206,7 @@ mod tests {
         assert_eq!(
             t.path(),
             Path::new(&format!(
-                "/run/user/{}/ward-teste/wardd.sock",
+                "/run/user/{}/ward-test/wardd.sock",
                 sys::geteuid()
             ))
         );

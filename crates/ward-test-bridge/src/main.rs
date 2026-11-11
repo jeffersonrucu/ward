@@ -37,10 +37,10 @@ use ward_test_bridge::simulated::{DirPicker, RepoTerminal, TestTerminal};
 use ward_test_bridge::startup;
 use ward_test_bridge::wl_clipboard::WlCopy;
 
-const USAGE: &str = "uso: ward-ponte-teste [--dist <diretório do build --mode teste> \
-[--daemon-falso cheio|vazio|travado|travado-com-pedido|travado-com-pedido-ataque|sem-cofre|aprovacao|aprovacao-prod|\
-aprovacao-expirando|aprovacao-ataque|aprovacao-origem|aprovacao-origem-popup|aprovacao-origem-pin|aprovacao-entrada|backup-externo-ligado|sem-udisks|sem-backups|\
-backups-indisponiveis|backup-plantado|backup-local-inseguro]] [--anexos <pasta com um arquivo>]";
+const USAGE: &str = "uso: ward-test-bridge [--dist <diretório do build --mode teste> \
+[--fake-daemon full|empty|locked|locked-with-request|locked-with-request-attack|no-vault|approval|approval-prod|\
+approval-expiring|approval-attack|approval-origin|approval-origin-popup|approval-origin-pin|approval-entry|external-backup-enabled|no-udisks|no-backups|\
+backups-unavailable|planted-backup|insecure-local-backup]] [--attachments <pasta com um arquivo>]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -48,7 +48,7 @@ fn main() -> ExitCode {
     // Phase 34: the attachments option (with a folder) at the end swaps the file picker
     // (simulated.rs).
     let attachments = match args.as_slice() {
-        [.., "--anexos", p] => {
+        [.., "--attachments", p] => {
             let p = PathBuf::from(*p);
             args.truncate(args.len() - 2);
             Some(p)
@@ -61,21 +61,21 @@ fn main() -> ExitCode {
             Some(dist) => with_daemon(&dist, attachments),
             None => {
                 eprintln!(
-                    "ward-ponte-teste: WARD_DEV_DIR ausente ou fora da forma <repositório>/.dev"
+                    "ward-test-bridge: WARD_DEV_DIR ausente ou fora da forma <repositório>/.dev"
                 );
                 ExitCode::FAILURE
             }
         },
         ["--dist", d] => with_daemon(Path::new(d), attachments),
-        ["--dist", d, "--daemon-falso", "cheio"] => {
+        ["--dist", d, "--fake-daemon", "full"] => {
             serve(FakeDaemon::full(), None, Path::new(d), attachments, &[])
         }
-        ["--dist", d, "--daemon-falso", "vazio"] => {
+        ["--dist", d, "--fake-daemon", "empty"] => {
             serve(FakeDaemon::empty(), None, Path::new(d), attachments, &[])
         }
         // Phase 31: the unlock screens with the fake one locked; with the request mode, an
         // unlock request arrives 3 s after starting, as if a `ward run` were waiting.
-        ["--dist", d, "--daemon-falso", "travado"] => {
+        ["--dist", d, "--fake-daemon", "locked"] => {
             serve(FakeDaemon::locked(), None, Path::new(d), attachments, &[])
         }
         // Phase 39a: the notice carries entry and command; the attack mode sends both raw,
@@ -83,10 +83,10 @@ fn main() -> ExitCode {
         [
             "--dist",
             d,
-            "--daemon-falso",
-            mode @ ("travado-com-pedido" | "travado-com-pedido-ataque"),
+            "--fake-daemon",
+            mode @ ("locked-with-request" | "locked-with-request-attack"),
         ] => {
-            let notice = if *mode == "travado-com-pedido" {
+            let notice = if *mode == "locked-with-request" {
                 Notice::test_unlock("acme-pg-aprovacao")
             } else {
                 Notice::hostile_test_unlock()
@@ -107,14 +107,14 @@ fn main() -> ExitCode {
         }
         // Phase 48: the settings screen with the external backup enabled, and udisks2 not
         // answering.
-        ["--dist", d, "--daemon-falso", "backup-externo-ligado"] => serve(
+        ["--dist", d, "--fake-daemon", "external-backup-enabled"] => serve(
             FakeDaemon::external_backup_enabled(),
             None,
             Path::new(d),
             attachments,
             &[],
         ),
-        ["--dist", d, "--daemon-falso", "sem-udisks"] => serve(
+        ["--dist", d, "--fake-daemon", "no-udisks"] => serve(
             FakeDaemon::external_backup_enabled().with_usb_drives(None),
             None,
             Path::new(d),
@@ -122,14 +122,14 @@ fn main() -> ExitCode {
             &[],
         ),
         // Phase 47: restore with no version and with the backup folder unavailable.
-        ["--dist", d, "--daemon-falso", "sem-backups"] => serve(
+        ["--dist", d, "--fake-daemon", "no-backups"] => serve(
             FakeDaemon::full().with_backups(Some(Vec::new())),
             None,
             Path::new(d),
             attachments,
             &[],
         ),
-        ["--dist", d, "--daemon-falso", "backups-indisponiveis"] => serve(
+        ["--dist", d, "--fake-daemon", "backups-unavailable"] => serve(
             FakeDaemon::full().with_backups(None),
             None,
             Path::new(d),
@@ -137,14 +137,14 @@ fn main() -> ExitCode {
             &[],
         ),
         // Phase 49a: old copy planted with a new date, and an unsafe local backup folder.
-        ["--dist", d, "--daemon-falso", "backup-plantado"] => serve(
+        ["--dist", d, "--fake-daemon", "planted-backup"] => serve(
             FakeDaemon::planted_backup(),
             None,
             Path::new(d),
             attachments,
             &[],
         ),
-        ["--dist", d, "--daemon-falso", "backup-local-inseguro"] => serve(
+        ["--dist", d, "--fake-daemon", "insecure-local-backup"] => serve(
             FakeDaemon::insecure_local_backup(),
             None,
             Path::new(d),
@@ -152,12 +152,12 @@ fn main() -> ExitCode {
             &[],
         ),
         // Phase 30: no vault, for the first-use screens.
-        ["--dist", d, "--daemon-falso", "sem-cofre"] => {
+        ["--dist", d, "--fake-daemon", "no-vault"] => {
             serve(FakeDaemon::no_vault(), None, Path::new(d), attachments, &[])
         }
         // Phase 36: full vault with an approval request waiting for the window (the
         // approval screen of the opening URL).
-        ["--dist", d, "--daemon-falso", mode] if mode.starts_with("aprovacao") => {
+        ["--dist", d, "--fake-daemon", mode] if mode.starts_with("approval") => {
             match simulated_approvals(mode) {
                 Some(requests) => {
                     let mut fake = FakeDaemon::full();
@@ -187,7 +187,7 @@ fn with_daemon(dist: &Path, attachments: Option<PathBuf>) -> ExitCode {
         .and_then(|d| {
             // Without the connection the bridge is useless (and never reconnects): exit.
             d.watch_close(|| {
-                eprintln!("ward-ponte-teste: a conexão com o daemon de teste caiu");
+                eprintln!("ward-test-bridge: a conexão com o daemon de teste caiu");
                 std::process::exit(1)
             })
             .map(|()| d)
@@ -204,7 +204,7 @@ fn with_daemon(dist: &Path, attachments: Option<PathBuf>) -> ExitCode {
                 Some(t) => Box::new(t),
                 None => {
                     eprintln!(
-                        "ward-ponte-teste: sem dev/tests/terminal-test.py ou target/debug/ward; o Conectar só registra"
+                        "ward-test-bridge: sem dev/tests/terminal-test.py ou target/debug/ward; o Conectar só registra"
                     );
                     Box::new(TestTerminal)
                 }
@@ -212,7 +212,7 @@ fn with_daemon(dist: &Path, attachments: Option<PathBuf>) -> ExitCode {
             serve_with(d, Some(queue), dist, attachments, &[], terminal)
         }
         Err(e) => {
-            eprintln!("ward-ponte-teste: {e}");
+            eprintln!("ward-test-bridge: {e}");
             ExitCode::FAILURE
         }
     }
@@ -253,7 +253,7 @@ fn serve_with<D: Daemon + 'static>(
             }
         }
         Err(e) => {
-            eprintln!("ward-ponte-teste: {e}");
+            eprintln!("ward-test-bridge: {e}");
             return ExitCode::FAILURE;
         }
     };
@@ -268,13 +268,13 @@ fn serve_with<D: Daemon + 'static>(
         && (approval::watch(Arc::clone(&queue), service.approvals(), || {}).is_err()
             || unlock::watch(queue, service.unlock_request(), || {}).is_err())
     {
-        eprintln!("ward-ponte-teste: não foi possível vigiar os avisos do daemon");
+        eprintln!("ward-test-bridge: não foi possível vigiar os avisos do daemon");
         return ExitCode::FAILURE;
     }
     let (bridge, listener) = match Bridge::open(service, &dist) {
         Ok(p) => p,
         Err(_) => {
-            eprintln!("ward-ponte-teste: não foi possível abrir a ponte (dist sem index.html?)");
+            eprintln!("ward-test-bridge: não foi possível abrir a ponte (dist sem index.html?)");
             return ExitCode::FAILURE;
         }
     };

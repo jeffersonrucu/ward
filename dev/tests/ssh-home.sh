@@ -44,12 +44,12 @@ case "$WARDD" in /*) ;; *) WARDD="$ROOT/$WARDD" ;; esac
 case "$WARD" in /*) ;; *) WARD="$ROOT/$WARD" ;; esac
 
 # --- Inside the bwrap: the Python driver does the rest ---------------------------------
-if [ "${WARD_SSH_HOME_DENTRO:-}" = 1 ]; then
+if [ "${WARD_SSH_HOME_INSIDE:-}" = 1 ]; then
     [ "$(stat -f -c %T "$PASSWD_HOME")" = tmpfs ] || { echo "o home não está coberto por tmpfs; abortando" >&2; exit 1; }
     [ "$(stat -f -c %T /tmp)" = tmpfs ] || { echo "o /tmp não está em tmpfs; abortando" >&2; exit 1; }
     extra="$(find "$PASSWD_HOME" -mindepth 1 -maxdepth 1 ! -path "$PASSWD_HOME/$(cut -d/ -f1 <<<"${ROOT#"$PASSWD_HOME"/}")" -print -quit)"
     [ -z "$extra" ] || { echo "o home coberto tem conteúdo inesperado; abortando" >&2; exit 1; }
-    exec /usr/bin/python3 -I -B "$ROOT/dev/tests/ssh_home.py" "$WARDD" "$WARD" "$ROOT" "$PASSWD_HOME" "$WARD_SSH_HOME_TRAB"
+    exec /usr/bin/python3 -I -B "$ROOT/dev/tests/ssh_home.py" "$WARDD" "$WARD" "$ROOT" "$PASSWD_HOME" "$WARD_SSH_HOME_WORK"
 fi
 
 # --- Outside: prepares and enters the bwrap --------------------------------------------
@@ -109,7 +109,7 @@ args+=(--tmpfs "$PASSWD_HOME" --bind "$ROOT" "$ROOT" --tmpfs /tmp --dir /tmp/war
 for p in ssh sshpass sftp; do
     args+=(--ro-bind "/usr/bin/$p" "/tmp/ward-real/$p" --ro-bind "$WORK_DIR/wrapper" "/usr/bin/$p")
 done
-args+=(--setenv WARD_SSH_HOME_DENTRO 1 --setenv WARD_SSH_HOME_TRAB "$WORK_DIR" --chdir "$ROOT")
+args+=(--setenv WARD_SSH_HOME_INSIDE 1 --setenv WARD_SSH_HOME_WORK "$WORK_DIR" --chdir "$ROOT")
 rc=0
-/usr/bin/env -u WARD_HOME_COBERTO bwrap "${args[@]}" -- /bin/bash -p "$ROOT/dev/tests/ssh-home.sh" "$WARDD" "$WARD" || rc=$?
+/usr/bin/env -u WARD_HOME_COVERED bwrap "${args[@]}" -- /bin/bash -p "$ROOT/dev/tests/ssh-home.sh" "$WARDD" "$WARD" || rc=$?
 exit "$rc"

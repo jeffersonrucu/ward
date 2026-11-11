@@ -71,7 +71,7 @@ def verify(cond, msg):
         failures.append(msg)
 
 
-SOCKET_DIR = os.environ.get("WARD_DEV_SOCKET_DIR") or f"/run/user/{UID}/ward-teste"
+SOCKET_DIR = os.environ.get("WARD_DEV_SOCKET_DIR") or f"/run/user/{UID}/ward-test"
 if not os.path.isabs(SOCKET_DIR):
     print("FALHA WARD_DEV_SOCKET_DIR não é absoluto")
     sys.exit(1)

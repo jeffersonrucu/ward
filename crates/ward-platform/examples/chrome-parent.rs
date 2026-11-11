@@ -34,7 +34,7 @@ fn serve(sock: &str, chrome: &str) -> ExitCode {
     let peer = match PeerProcess::from_socket(&s) {
         Ok(p) => p,
         Err(e) => {
-            println!("pai=SemIdentidade({})", e.kind());
+            println!("pai=NoIdentity({})", e.kind());
             return ExitCode::SUCCESS;
         }
     };
@@ -60,7 +60,7 @@ fn serve(sock: &str, chrome: &str) -> ExitCode {
 }
 
 fn probe() -> ExitCode {
-    let Some(sock) = std::env::var_os("WARD_PAI_CHROME_SOCK") else {
+    let Some(sock) = std::env::var_os("WARD_CHROME_PARENT_SOCK") else {
         return ExitCode::FAILURE;
     };
     if let Ok(mut s) = UnixStream::connect(sock) {

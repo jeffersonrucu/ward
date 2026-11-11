@@ -144,7 +144,7 @@ rm -f /etc/opt/chrome/policies/managed/outra.json
 
 # --- V9.2: test-mode artifact -> refusal before any group and file -------------------
 r="$(install_ward BIN_WARDD="$B/wardd-test-mode" 2>&1)" && failed "V9.2: instalou o wardd de teste" || ok "V9.2: wardd com test-mode recusado"
-check "V9.2: mensagem" "$r" "modo-teste"
+check "V9.2: mensagem" "$r" "compilado com test-mode"
 check "V9.2: nenhum arquivo do Ward" "$(no_ward_file)" "nada"
 check "V9.2: nenhum grupo criado" "$(getent group ward-app ward-nm || echo ausente)" "ausente"
 

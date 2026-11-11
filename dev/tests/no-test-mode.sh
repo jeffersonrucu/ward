@@ -10,7 +10,8 @@
 # 2. the unit tests of `wardd` and `ward-platform` **without** the feature (the peer
 #    without the egid opened by the launcher stays agent);
 # 3. `strings` on the release `wardd` and on the release `ward-platform` library does
-#    not find `WARD_DEV_APP` (nor `WARD_DEV_DIR`, nor the test app).
+#    not find `WARD_DEV_APP` (nor `WARD_DEV_DIR`, nor the test app), nor any other test
+#    name, new or from 0.1.x (m2:DT12); each mark planted in a copy is flagged.
 #
 # Builds in target/no-test-mode (`make check` uses --all-features in target/).
 
@@ -39,14 +40,14 @@ for package in ward wardd ward-nm ward-app-core ward-test-bridge; do
 done
 finding="$(with_test_mode "$TMP/tree")"
 if [ -n "$finding" ]; then
-    echo "sem-modo-teste: test-mode ligado por dependência normal:" >&2
+    echo "no-test-mode: test-mode ligado por dependência normal:" >&2
     echo "$finding" >&2
     failed=1
 fi
 # Self-test: with the feature forced, the check has to flag it.
 "$CARGO" tree -p wardd --features test-mode --locked -e normal,build -f '{p}|{f}' --prefix none > "$TMP/forced"
 if [ -z "$(with_test_mode "$TMP/forced")" ]; then
-    echo "sem-modo-teste: a conferência do cargo tree não acusou o caso forçado" >&2
+    echo "no-test-mode: a conferência do cargo tree não acusou o caso forçado" >&2
     failed=1
 fi
 
@@ -61,32 +62,58 @@ echo "==> 3/3 strings no release"
     --message-format=json > "$TMP/build.json"
 RLIB="$(grep -o '"filenames":\["[^"]*/libward_platform[^"]*\.rlib"' "$TMP/build.json" \
     | sed -e 's/.*\["//' -e 's/"$//' | tail -n 1 || true)"
-[ -f "$RLIB" ] || { echo "sem-modo-teste: rlib do ward-platform não achada" >&2; exit 1; }
+[ -f "$RLIB" ] || { echo "no-test-mode: rlib do ward-platform não achada" >&2; exit 1; }
 # In the rlib, the metadata keeps the names of the items removed by `cfg` (for the
 # "item configured out" diagnostic), without code: there only the texts are searched.
-check_strings() {
+# `strings` goes to a file before `grep -q` (SIGPIPE with `pipefail`).
+found_marks() {
     local binary="$1"
     shift
-    # `strings` goes to a file before `grep -q` (SIGPIPE with `pipefail`).
     strings -a -n 4 -- "$binary" > "$TMP/strings.txt"
     for mark in "$@"; do
         if grep -qF -- "$mark" "$TMP/strings.txt"; then
-            echo "sem-modo-teste: ${binary#"$ROOT"/} contém \"$mark\"" >&2
-            failed=1
+            echo "$mark"
         fi
     done
 }
-# Phase 41: nor the exception of the test extension (its variable).
-MARKS=(WARD_DEV_APP WARD_DEV_DIR WARD_DEV_SOCKET_DIR WARD_DEV_EXTENSAO wardd-app-teste wardd-aprovador-teste ward-ponte-teste)
+check_strings() {
+    local binary="$1" mark
+    shift
+    while read -r mark; do
+        [ -n "$mark" ] || continue
+        echo "no-test-mode: ${binary#"$ROOT"/} contém \"$mark\"" >&2
+        failed=1
+    done < <(found_marks "$binary" "$@")
+}
+# Phase 41: nor the exception of the test extension (its variable). m2:DT12 (m2:Phase
+# 56, m2:V5.5): every test name in the new form and in the 0.1.x one, so an undone
+# rename is flagged too. The rlib only gets the names: its metadata keeps public
+# constants (the test socket dir name is one).
+MARKS=(WARD_DEV_APP WARD_DEV_DIR WARD_DEV_SOCKET_DIR WARD_DEV_EXTENSION WARD_DEV_EXTENSAO
+    WARD_DEV_SYSTEM_DBUS WARD_DEV_DBUS_SISTEMA wardd-test-app wardd-app-teste
+    wardd-test-approver wardd-aprovador-teste ward-test-bridge ward-ponte-teste)
+# In the release binaries, any `WARD_DEV_*` and the test socket dir (new and old) too.
+BINARY_MARKS=("${MARKS[@]}" WARD_DEV_ ward-test ward-teste)
 check_strings "$RLIB" "${MARKS[@]}"
-check_strings "$TARGET_DIR/release/ward-nm" "${MARKS[@]}"
-check_strings "$TARGET_DIR/release/wardd" "${MARKS[@]}" classify_test_app classify_test_extension_host \
-    TestBinary launch_for_test
+check_strings "$TARGET_DIR/release/ward-nm" "${BINARY_MARKS[@]}"
+check_strings "$TARGET_DIR/release/wardd" "${BINARY_MARKS[@]}" classify_test_app \
+    classify_test_extension_host TestBinary launch_for_test
 # The checked binary really is the daemon (it has the system socket).
 grep -qF -- '/run/ward' "$TMP/strings.txt" || {
-    echo "sem-modo-teste: '/run/ward' não achado; o binário conferido é mesmo o wardd?" >&2
+    echo "no-test-mode: '/run/ward' não achado; o binário conferido é mesmo o wardd?" >&2
     failed=1
 }
+# Self-test (m2:V5.5): each mark planted in a copy of the release wardd is flagged, so
+# a mark misspelled in the list does not pass by mistake.
+for mark in "${BINARY_MARKS[@]}"; do
+    cp -- "$TARGET_DIR/release/wardd" "$TMP/planted"
+    printf '\n%s\n' "$mark" >>"$TMP/planted"
+    if ! found_marks "$TMP/planted" "$mark" | grep -qxF -- "$mark"; then
+        echo "no-test-mode: a conferência não acusou \"$mark\" plantado no wardd" >&2
+        failed=1
+    fi
+done
+rm -f -- "$TMP/planted"
 
-[ $failed -eq 0 ] && echo "sem-modo-teste: release sem WARD_DEV_APP nem a exceção do app de teste"
+[ $failed -eq 0 ] && echo "no-test-mode: release sem WARD_DEV_*, sem os nomes de teste (novos e antigos) nem a exceção do app de teste"
 exit $failed

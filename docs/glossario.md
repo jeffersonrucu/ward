@@ -1118,7 +1118,7 @@ Telas `Settings`, `Unlock`, `ChangePassword`, `ChangePin`, `ChooseUsbDrive`, `li
 | `data-teste="trocar-senha"`, `"trocar-senha-aviso-backups"`, `"trocar-pin"`; `data-tom` do medidor de força | `data-test="change-password"`, `"change-password-backups-notice"`, `"change-pin"`; `data-tone` (os valores vêm do `first-use.js`: `danger`/`warning`/`success`) |
 | `lib/bridge/commands.js` › `COMANDOS` | `COMMANDS` (a lista do fio fica) |
 | `lib/bridge/index.js` › `AVISOS`, `obterTransporte`, `falha(codigo, mensagem)` | `NOTICES`, `getTransport`, `failure(code, message)` (o objeto de erro continua `{ codigo, mensagem }`, do fio) |
-| `lib/bridge/test-bridge.js` › `criarTransporte`, `lerToken`, `ouvirPorConsulta(aoChegar)` | `createTransport`, `readToken`, `listenByPolling(onArrive)` (o caminho `/ponte/<comando>`, o `&tela=` da URL e os campos `ok`/`valor`/`codigo`/`mensagem` da resposta da ponte ficam) |
+| `lib/bridge/test-bridge.js` › `criarTransporte`, `lerToken`, `ouvirPorConsulta(aoChegar)` | `createTransport`, `readToken`, `listenByPolling(onArrive)` (o caminho `/ponte/<comando>` e o `&tela=` da URL mudam na Fase 56, seção 9; os campos da resposta da ponte, na Fase 54) |
 | `Vitrine` › `modalAberto`, `.vitrine`, `.linha`, `.lista` | `Showcase` › `modalOpen`, `.showcase`, `.row`, `.list` |
 
 ### Extensão (Fases 5 e 39)
@@ -1484,13 +1484,38 @@ também a forma nova, sem tirar a antiga.
 |---|---|---|
 | feature `modo-teste` | `test-mode` | |
 | marca `ward-ponte-teste` no binário | `ward-test-bridge` | o `install/install.sh` e o `make release` recusam a nova **e** a antiga |
-| marca `wardd-app-teste` | `wardd-test-app` | idem |
-| marca `ward-teste` (pasta do socket de teste) | `ward-test` | idem |
+| marca `wardd-app-teste` (pasta `crates/wardd/app-teste/`) | `wardd-test-app` (`crates/wardd/test-app/`) | idem; log `.dev/logs/wardd-test-app.log` |
+| marca `wardd-aprovador-teste` (pasta `crates/wardd/aprovador-teste/`) | `wardd-test-approver` (`crates/wardd/test-approver/`) | idem; log `.dev/logs/wardd-test-approver.log` |
+| marca `ward-teste` (pasta do socket de teste) | `ward-test` | idem; `ward-teste-e2e`/`ward-teste-selecao` → `ward-test-e2e`/`ward-test-selection` |
+| mensagem do `install.sh` "foi compilado com modo-teste" | "foi compilado com test-mode" | Fase 56; texto conferido pelos testes de instalação e do `.deb` |
+| prefixo `ward-ponte-teste:` das mensagens da ponte | `ward-test-bridge:` | o `dev/bridge.sh` aceita as duas formas |
 | `WARD_DEV_*` | `WARD_DEV_*` (com os nomes novos) | a recusa por `WARD_DEV_` pega as duas formas |
 | `/usr/local/share/ward/extensao/` | `/usr/local/share/ward/extension/` | a instalação apaga o antigo |
 | `/usr/local/lib/ward/grupos-criados` | `/usr/local/lib/ward/created-groups` | o uninstall lê os dois |
 | funções de `install/` procuradas pelo `dev/tests/deb.sh`: `garantir_grupo`, `conferir_grupo`, `conferir_politicas_chrome`, `apagar_grupos_marcados`, `avisar_manifestos_de_usuario`, `avisar_core_pattern` | `ensure_group`, `verify_group`, `verify_chrome_policies`, `delete_marked_groups`, `warn_user_manifests`, `warn_core_pattern` | Fase 57; "avisar" de aviso impresso vira `warn` (como `aviso` → `warning`), não `notify` |
 | (novos, Fase 57) | `install/upgrade.sh` (`LEGACY_FILES`, `LEGACY_DIR`, `verify_legacy_paths`, `remove_legacy_paths`, `legacy_paths_left`, `stop_running_daemons`, `start_enabled_sockets`), `LEGACY_GROUPS_MARK` e `migrate_legacy_mark` em `install/groups.sh`, `dev/tests/legacy-baseline.sh`, `dev/tests/legacy_client.py`, `dev/fixtures/legacy/install-0.1.4.txt` | atualização por cima da 0.1.x (DT15, DT16) |
+
+### Nomes internos e de teste trocados na Fase 56
+
+| Antigo | Novo | Onde |
+|---|---|---|
+| caminho `/ponte/<comando>` da ponte de teste | `/test-bridge/<comando>` | `ward-test-bridge/src/http.rs`, `lib/bridge/test-bridge.js`; `app-dist.py` e `app-release.sh` procuram os dois |
+| `&tela=` da URL de abertura e os nomes de tela `credenciais`, `gerador`, `configuracoes`, `aprovacao` | `&screen=`; `credentials`, `generator`, `settings`, `approval` | `App.svelte`, `SideNav.svelte`, `test-bridge.js`, `app_e2e.py` |
+| `--daemon-falso`, `--anexos` da ponte | `--fake-daemon`, `--attachments` | `ward-test-bridge/src/main.rs` |
+| modos `cheio`, `vazio`, `travado`, `travado-com-pedido(-ataque)`, `sem-cofre`, `aprovacao(-prod, -expirando, -ataque, -origem, -origem-popup, -origem-pin, -entrada)`, `backup-externo-ligado`, `sem-udisks`, `sem-backups`, `backups-indisponiveis`, `backup-plantado`, `backup-local-inseguro` | `full`, `empty`, `locked`, `locked-with-request(-attack)`, `no-vault`, `approval(-prod, -expiring, -attack, -origin, -origin-popup, -origin-pin, -entry)`, `external-backup-enabled`, `no-udisks`, `no-backups`, `backups-unavailable`, `planted-backup`, `insecure-local-backup` | idem e `app/core/src/fake_daemon.rs` (`simulated_approvals`) |
+| códigos locais `comando-desconhecido`, `aviso-desconhecido`, `falha`, `ponte-indisponivel`, `ponte-invalida` | `unknown-command`, `unknown-notice`, `failure`, `bridge-unavailable`, `bridge-invalid` | `lib/bridge/index.js`, `test-bridge.js` |
+| ids do menu da bandeja `bandeja-titulo`, `-subtitulo`, `-abrir`, `-acao`, `-sair` | `tray-title`, `tray-subtitle`, `tray-open`, `tray-action`, `tray-quit` | `app/core/src/tray.rs` |
+| nome de thread `ward-ponte` | `ward-bridge` | `http.rs` |
+| arquivo `aprovador.modo` em `$WARD_DEV_DIR` | `approver.mode` (as palavras `confirmar`, `negar`, `uma_vez`, `uma_vez_ciente` ficam: literais das suítes) | aprovador de teste e suítes do M6 |
+| texto de log `(UidRecusado)`, `(SemIdentidade)`; `pai=SemIdentidade(` | `(UidRefused)`, `(NoIdentity)`; `pai=NoIdentity(` | `wardd/src/server.rs` com `dev/container-uid/inside.sh`; `examples/chrome-parent.rs` |
+| caminho `/cadastro` do serviço `totp` (8083), página `iframe-cadastro.html`, form `#cadastro` | `/registration`, `iframe-registration.html`, `#registration` | `web/server.py`, `extension.py`, `wardd/tests/extension.rs` |
+| caminho `/ward-teste/` das páginas de teste servidas pelo CDP | `/ward-test/` | `extension.py`, `login.py` |
+| mensagens `sem-modo-teste:` | `no-test-mode:` | `dev/tests/no-test-mode.sh` |
+
+Ficam (nomes do Docker e caminhos dentro dos contêineres): projeto `ward-teste` do
+compose, imagens `ward-teste/*:1`, `/opt/teste/*`, `/etc/sudoers.d/ward-teste`; o valor
+`/run/user/1000/ward-teste/...` de `dev/fixtures/protocol-v2.jsonl` (dado igual ao da
+linha de base v1); o modo `teste` do Vite e `app/dist-teste/`.
 
 Ficam (PRD "Fora do escopo"): `/run/ward/<uid>/wardd.sock`, `wardd@.socket`,
 `wardd@.service`, grupos `ward-app`/`ward-nm`, binários `ward`, `wardd`, `ward-app`,

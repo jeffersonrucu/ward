@@ -136,7 +136,7 @@ def generate_deploy_key(entries: dict[str, dict]) -> None:
     if DEPLOY_KEY.exists():
         return
     passphrase = secret(entries, "acme-ssh-chave-prod", "passphrase")
-    ssh_keygen_with_passphrase(DEPLOY_KEY, "ward-teste-acme-deploy", passphrase)
+    ssh_keygen_with_passphrase(DEPLOY_KEY, "ward-test-acme-deploy", passphrase)
     os.chmod(DEPLOY_KEY, 0o600)
     os.chmod(DEPLOY_KEY.with_suffix(".pub"), 0o644)
 
@@ -150,7 +150,7 @@ def generate_host_key(service: str, rotate: bool) -> None:
     for c in (key, key.with_name(key.name + ".pub")):
         if c.exists():
             c.unlink()
-    ssh_keygen_without_passphrase(key, f"ward-teste-host-{service}")
+    ssh_keygen_without_passphrase(key, f"ward-test-host-{service}")
     os.chmod(key, 0o600)
 
 

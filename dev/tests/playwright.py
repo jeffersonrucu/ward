@@ -21,8 +21,8 @@ PATTERNS = [l for l in open(os.path.join(ROOT, ".dev/variations.txt"), "rb").rea
 failures = []
 
 
-APPROVER_LOG = os.path.join(WORK_DIR, "logs", "wardd-aprovador-teste.log")
-APPROVER_MODE = os.path.join(WORK_DIR, "aprovador.modo")
+APPROVER_LOG = os.path.join(WORK_DIR, "logs", "wardd-test-approver.log")
+APPROVER_MODE = os.path.join(WORK_DIR, "approver.mode")
 
 
 def set_window_mode(m):

@@ -581,7 +581,7 @@ fn environment() {
 /// environment of D57, as a unit of `~/.config/systemd/user/` would.
 fn manager() {
     let program =
-        std::env::var("WARD_GERENTE_PROGRAMA").unwrap_or_else(|_| fail("WARD_GERENTE_PROGRAMA"));
+        std::env::var("WARD_MANAGER_PROGRAM").unwrap_or_else(|_| fail("WARD_MANAGER_PROGRAM"));
     // The subshell that left this process orphaned exits right away; wait for `PPid` to
     // become 1.
     std::thread::sleep(std::time::Duration::from_millis(300));

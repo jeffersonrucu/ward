@@ -48,7 +48,7 @@ use ward_core as wc;
 mod test_vault;
 
 const WARDD: &str = env!("CARGO_BIN_EXE_wardd");
-const TEST_APP: &str = env!("CARGO_BIN_EXE_wardd-app-teste");
+const TEST_APP: &str = env!("CARGO_BIN_EXE_wardd-test-app");
 const PYTHON: &str = "/usr/bin/python3";
 
 /// Raw Python client: reads the password (base64) from stdin, unlocks if asked and
@@ -200,7 +200,7 @@ fn v3_39_v3_40_app_values_and_list_through_the_test_daemon() {
         .mode(0o700)
         .create(repo.0.join("bin"))
         .unwrap();
-    let app = repo.0.join("bin/wardd-app-teste");
+    let app = repo.0.join("bin/wardd-test-app");
     fs::hard_link(TEST_APP, &app).unwrap();
 
     // The test vault and the state at generation 0 (as `dev/daemon.sh` does, D39).
@@ -290,7 +290,7 @@ fn v3_39_v3_40_app_values_and_list_through_the_test_daemon() {
         send(&mut c, r#"{"v":2,"op":"open_app","data":{}}"#),
         Response::Ok
     ));
-    let app_output = dev.join("logs/wardd-app-teste.log");
+    let app_output = dev.join("logs/wardd-test-app.log");
     wait_for(|| read(&app_output).contains("fim=1"), "a saída do app");
     let text = read(&app_output);
     for line in [

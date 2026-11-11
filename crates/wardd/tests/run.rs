@@ -1085,7 +1085,7 @@ fn f54b_attack_null_stdin_with_data_kills_the_command() {
     assert!(!contains(&log, b"falso-script-do-agente"));
 }
 
-const APPROVER: &str = env!("CARGO_BIN_EXE_wardd-aprovador-teste");
+const APPROVER: &str = env!("CARGO_BIN_EXE_wardd-test-approver");
 
 /// Attack of the final audit, end to end through the binary (D68): `printf <script> |
 /// ward run <entry that needs approval> -- python3`, with the test approval window
@@ -1097,10 +1097,10 @@ const APPROVER: &str = env!("CARGO_BIN_EXE_wardd-aprovador-teste");
 fn f54b_attack_piped_script_on_approval() {
     let dev = Dir::new("run-54b-aprov");
     vault(&dev);
-    let app = dev.0.join("wardd-aprovador-teste");
+    let app = dev.0.join("wardd-test-approver");
     fs::hard_link(APPROVER, &app).unwrap();
-    let mode_file = dev.0.join("aprovador.modo");
-    let app_log = dev.0.join("logs/wardd-aprovador-teste.log");
+    let mode_file = dev.0.join("approver.mode");
+    let app_log = dev.0.join("logs/wardd-test-approver.log");
     let sock = SocketDir::new("54b-aprov");
     let w = start_with(&dev, &sock, &[("WARD_DEV_APP", app.as_os_str())]);
     unlock_through(&w);

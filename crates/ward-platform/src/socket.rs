@@ -30,7 +30,7 @@ use crate::sys;
 /// Ward's directory inside `/run/user/<uid>/`, with the socket and temporary files (S2).
 pub const DIR_NAME: &str = "ward";
 /// Directory of the test daemon (D7); never the same as the real daemon's.
-pub const TEST_DIR_NAME: &str = "ward-teste";
+pub const TEST_DIR_NAME: &str = "ward-test";
 /// Name of the socket inside the directory.
 pub const SOCKET_NAME: &str = "wardd.sock";
 /// Root directory where the system systemd creates each user's directory (D46).
