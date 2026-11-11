@@ -149,7 +149,7 @@ Compilação de cada fase: `make compile`. Checador: os arquivos da fase.
   e `tests/corpo_memoria.rs` (achado da Fase 10; o `fontes.rs` já exclui `tests`/`tests.rs`). — V2.1, V2.2
 
 `wardd`:
-- [ ] Fase 19 — `main.rs`, `lib.rs`, `config.rs`, `log.rs`, `lancamento.rs`,
+- [x] Fase 19 — `main.rs`, `lib.rs`, `config.rs`, `log.rs`, `lancamento.rs`,
   `arquivos.rs`, `uso.rs`, `trava.rs` (formato do estado congelado; o V3.15 em
   `tests/approval.rs` lista `uso.rs` pelo nome e muda junto, achado da Fase 23). — V2.1, V2.7
 - [ ] Fase 20 — `nucleo.rs`, `aprovacao.rs` (o V3.15 em `tests/approval.rs` lista os dois
