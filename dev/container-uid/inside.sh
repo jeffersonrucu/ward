@@ -1,37 +1,37 @@
 #!/bin/bash -p
-# Parte de dentro do `make test-docker-uid` (Fase 22; D49; V3.2). Roda como root **só
-# dentro** do contêiner `ubuntu:24.04` descartável; do host só vêm /opt/teste (somente
-# leitura: `wardd` de teste e cliente mínimo) e este script.
+# Inside part of `make test-docker-uid` (Phase 22; D49; V3.2). Runs as root **only
+# inside** the disposable `ubuntu:24.04` container; from the host come only the read-only
+# test mount under /opt (test `wardd` and minimal client) and this script.
 #
-# O `wardd` de teste sobe como uid 1000 (sem grupo nenhum) com o socket em
-# /run/user/1000/ward-teste/. Clientes:
-# - uid 4242: o `connect` falha com EACCES (13) pelo diretório 0700;
-# - uid 4242 com CAP_DAC_OVERRIDE (passa pelo 0700/0600): conecta, o daemon fecha sem
-#   mandar um byte e o log tem "UidRecusado" com o uid 4242;
-# - root (uid 0, com CAP_DAC_OVERRIDE do Docker): igual, com o uid 0;
-# - uid 1000: atendido.
-# Cada conferência imprime "ok:" ou "FALHOU:"; qualquer falha sai ≠ 0.
+# The test `wardd` starts as uid 1000 (without any group) with the socket in the test
+# socket folder under /run/user/1000/. Clients:
+# - uid 4242: the `connect` fails with EACCES (13) because of the 0700 folder;
+# - uid 4242 with CAP_DAC_OVERRIDE (gets past the 0700/0600): connects, the daemon closes
+#   without sending a byte and the log has the uid refusal with uid 4242;
+# - root (uid 0, with Docker's CAP_DAC_OVERRIDE): the same, with uid 0;
+# - uid 1000: served.
+# Each check prints "ok:" or the failure marker; any failure exits ≠ 0.
 
 export PATH=/usr/sbin:/usr/bin:/bin
 set -euo pipefail
 
 WARDD=/opt/teste/wardd
-CLIENTE=/opt/teste/cliente
+CLIENT=/opt/teste/cliente
 DIR=/run/user/1000/ward-teste
 SOCK=$DIR/wardd.sock
 LOG=/tmp/wardd.log
-falhas=0
+failures=0
 
 ok() { echo "ok: $*"; }
-falhou() { echo "FALHOU: $*"; falhas=$((falhas + 1)); }
-confere() {
-    if [[ "$2" == *"$3"* ]]; then ok "$1"; else falhou "$1 (esperado '$3', veio '$2')"; fi
+failed() { echo "FALHOU: $*"; failures=$((failures + 1)); }
+check() {
+    if [[ "$2" == *"$3"* ]]; then ok "$1"; else failed "$1 (esperado '$3', veio '$2')"; fi
 }
 
 [ "$(id -u)" = 0 ] || { echo "inside.sh roda como root, só no contêiner" >&2; exit 1; }
 [ -f /.dockerenv ] || { echo "inside.sh só roda dentro do contêiner" >&2; exit 1; }
 
-# Diretórios do usuário de teste (como o systemd-logind e o home dariam no host).
+# Folders of the test user (as systemd-logind and the home would give on the host).
 install -d -m 0700 -o 1000 -g 1000 /run/user/1000
 install -d -m 0700 -o 1000 -g 1000 /tmp/dev
 
@@ -47,35 +47,35 @@ done
 [ -S "$SOCK" ] || { echo "o wardd não subiu:"; cat "$LOG"; exit 1; }
 ok "wardd de teste no ar como uid 1000"
 
-# uid 4242 sem capacidade: barrado pelo diretório 0700.
-r="$(setpriv --reuid=4242 --regid=4242 --clear-groups -- "$CLIENTE" "$SOCK" estado)"
-confere "uid 4242: connect recusado (EACCES)" "$r" "connect: 13"
+# uid 4242 without capability: stopped by the 0700 folder.
+r="$(setpriv --reuid=4242 --regid=4242 --clear-groups -- "$CLIENT" "$SOCK" estado)"
+check "uid 4242: connect recusado (EACCES)" "$r" "connect: 13"
 
-# uid 4242 com CAP_DAC_OVERRIDE (ambiente): passa pelo 0700/0600; o SO_PEERCRED barra.
+# uid 4242 with CAP_DAC_OVERRIDE (ambient): gets past the 0700/0600; SO_PEERCRED stops it.
 r="$(setpriv --reuid=4242 --regid=4242 --clear-groups \
-    --inh-caps=+dac_override --ambient-caps=+dac_override -- "$CLIENTE" "$SOCK" lista)"
-confere "uid 4242 com CAP_DAC_OVERRIDE: fechado sem nenhum byte" "$r" "bytes: 0"
+    --inh-caps=+dac_override --ambient-caps=+dac_override -- "$CLIENT" "$SOCK" lista)"
+check "uid 4242 com CAP_DAC_OVERRIDE: fechado sem nenhum byte" "$r" "bytes: 0"
 
-# root: igual.
-r="$("$CLIENTE" "$SOCK" lista)"
-confere "root: fechado sem nenhum byte" "$r" "bytes: 0"
+# root: the same.
+r="$("$CLIENT" "$SOCK" lista)"
+check "root: fechado sem nenhum byte" "$r" "bytes: 0"
 
-# O dono é atendido.
-r="$(setpriv --reuid=1000 --regid=1000 --clear-groups -- "$CLIENTE" "$SOCK" estado)"
-confere "uid 1000: atendido" "$r" "resposta: estado"
+# The owner is served.
+r="$(setpriv --reuid=1000 --regid=1000 --clear-groups -- "$CLIENT" "$SOCK" estado)"
+check "uid 1000: atendido" "$r" "resposta: estado"
 
 sleep 0.3
 log="$(cat "$LOG")"
-confere "log: uid 4242 recusado por SO_PEERCRED" "$log" "conexão recusada (UidRecusado): uid 4242"
-confere "log: root recusado por SO_PEERCRED" "$log" "conexão recusada (UidRecusado): uid 0"
+check "log: uid 4242 recusado por SO_PEERCRED" "$log" "conexão recusada (UidRecusado): uid 4242"
+check "log: root recusado por SO_PEERCRED" "$log" "conexão recusada (UidRecusado): uid 0"
 
 kill "$PID" 2>/dev/null || true
 wait "$PID" 2>/dev/null || true
 
-if [ "$falhas" -ne 0 ]; then
+if [ "$failures" -ne 0 ]; then
     echo "--- log do wardd ---"
     cat "$LOG"
-    echo "$falhas conferência(s) falharam"
+    echo "$failures conferência(s) falharam"
     exit 1
 fi
 echo "test-docker-uid: tudo ok"

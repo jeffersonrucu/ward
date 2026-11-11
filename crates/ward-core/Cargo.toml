@@ -36,9 +36,9 @@ zeroize = { version = "1.9.1", default-features = false, features = ["alloc"] }
 [lints]
 workspace = true
 
-# `make dev-vault` (Fase 19): monta o cofre de teste em `.dev/` pela API pública. Só
-# desenvolvimento; `test = true` faz o `cargo test` rodar os testes de ataque dele.
+# `make dev-vault` (Phase 19): builds the test vault in `.dev/` through the public API.
+# Development only; `test = true` makes `cargo test` run its attack tests.
 [[example]]
-name = "dev-cofre"
-path = "examples/dev-cofre/main.rs"
+name = "dev-vault"
+path = "examples/dev-vault/main.rs"
 test = true

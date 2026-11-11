@@ -9,7 +9,7 @@
 # biblioteca de ataque do LD_PRELOAD, mais o script de dentro. Fica fora do `make
 # check` (exige Docker). Uso: dev/tests/docker-platform.sh <binário de teste>
 # <app de teste> <ward de release> <wardd de release>. O app de teste (Fase 29a) é o
-# `partida-conteiner` do `app/core`: a partida do app real (D47, D57) sem o GTK. A CLI
+# `startup-container` do `app/core`: a partida do app real (D47, D57) sem o GTK. A CLI
 # e o `wardd` de release (sem `test-mode`) e o servidor falso não-dumpable (`fake.c`)
 # são da 2ª parte do V4.2 (Fase 28, D65 e).
 
@@ -24,7 +24,7 @@ RAIZ="$(cd -P -- "${BASH_SOURCE[0]%/*}/../.." && pwd -P)"
 
 # Imagem pela digest (a lista multiarquitetura de ubuntu:24.04 conferida na Fase 21b).
 IMAGEM="ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852"
-USO="uso: docker-platform.sh <binário de teste> <app de teste> <ward de release> <wardd de release> <wardd test-mode> <ward-nm de release> <chrome-falso> <wardd-cliente-teste>"
+USO="uso: docker-platform.sh <binário de teste> <app de teste> <ward de release> <wardd de release> <wardd test-mode> <ward-nm de release> <fake-chrome> <wardd-test-client>"
 BIN="${1:?$USO}"
 APP="${2:?$USO}"
 CLI="${3:?$USO}"
@@ -64,8 +64,8 @@ install -m 0755 "$WARDD" "$TMP/wardd-release"
 # cofre de teste e a senha de teste (falsa, D15), lidas das fixtures.
 install -m 0755 "$WARDD_TESTE" "$TMP/wardd-real"
 install -m 0755 "$NM" "$TMP/ward-nm-real"
-install -m 0755 "$CHROME_FALSO" "$TMP/chrome-falso"
-install -m 0755 "$CLIENTE" "$TMP/wardd-cliente-teste"
+install -m 0755 "$CHROME_FALSO" "$TMP/fake-chrome"
+install -m 0755 "$CLIENTE" "$TMP/wardd-test-client"
 install -m 0644 "$COFRE" "$TMP/test-vault.ward"
 /usr/bin/python3 -I -c 'import json,sys; sys.stdout.write(json.load(open(sys.argv[1]))["senha_mestra"])' \
     "$RAIZ/dev/fixtures/entries.json" > "$TMP/senha"

@@ -1,37 +1,45 @@
-//! Binário de teste do contêiner da Fase 21b (`make test-docker-platform`; D46, D47;
-//! V3.5, V3.23, V3.24). Só com `test-mode`; nunca é instalado fora do contêiner.
+//! Test binary of the container of Phase 21b (`make test-docker-platform`; D46, D47;
+//! V3.5, V3.23, V3.24). Only with `test-mode`; it is never installed outside the
+//! container.
 //!
-//! Um binário só, com subcomandos, instalado com nomes diferentes:
-//! - `ativar <socket> <uid> -- <programa…>`: o papel do systemd do sistema (roda como
-//!   root): cria o socket, passa para o uid, 0600, e executa o programa como esse uid
-//!   (`setpriv`) com o socket no fd 3 e `LISTEN_FDS=1`;
-//! - `servidor --chrome <exe> [--lancar <programa…>]`: o "wardd" de teste: endurece,
-//!   recebe o socket por `LISTEN_FDS`, lê os grupos do `/etc/group` e responde a cada
-//!   conexão uma linha com o papel; com `--lancar`, abre um filho (o app aberto pelo
-//!   daemon). Se o cliente mandar um quadro logo (o app de teste da 23a pede `estado`
-//!   na partida, D63), a resposta é o quadro `estado` com o papel, e a conexão fecha;
-//! - `cliente [--sistema-em <socket>] [--pausar]`: confere o servidor (D46), conecta e
-//!   imprime o papel; instalado como `ward-app` e `ward-nm` (setgid);
-//! - `prender <programa…>`: lança o programa (um `cliente --pausar`) e tenta
-//!   `PTRACE_ATTACH`, `PTRACE_SEIZE` e ler o `/proc/<pid>/mem` dele;
-//! - `traceme <programa…>`: lança o programa já sob `ptrace` (`PTRACE_TRACEME`) e mostra
-//!   o egid depois do `exec`: sob depurador o kernel não aplica o setgid;
-//! - `bind <socket>`: tenta criar um socket (o atacante na pasta do root).
+//! A single binary, with subcommands, installed under different names:
+//! - `activate <socket> <uid> -- <program…>`: the role of the system systemd (runs as
+//!   root): creates the socket, hands it to the uid, 0600, and executes the program as
+//!   that uid (`setpriv`) with the socket on fd 3 and `LISTEN_FDS=1`;
+//! - `server --chrome <exe> [--launch <program…>]`: the test "wardd": hardens itself,
+//!   receives the socket through `LISTEN_FDS`, reads the groups from `/etc/group` and
+//!   answers each connection with one line with the role; with `--launch`, it opens a
+//!   child (the app opened by the daemon). If the client sends a frame right away (the
+//!   test app of 23a asks for the vault status at startup, D63), the reply is the status
+//!   frame with the role, and the connection closes;
+//! - `client [--system-at <socket>] [--pause]`: verifies the server (D46), connects and
+//!   prints the role; installed as `ward-app` and `ward-nm` (setgid);
+//! - `attach <program…>`: launches the program (a `client --pause`) and tries
+//!   `PTRACE_ATTACH`, `PTRACE_SEIZE` and reading its `/proc/<pid>/mem`;
+//! - `traceme <program…>`: launches the program already under `ptrace`
+//!   (`PTRACE_TRACEME`) and shows the egid after the `exec`: under a debugger the kernel
+//!   does not apply the setgid;
+//! - `bind <socket>`: tries to create a socket (the attacker in the root's folder).
 //!
-//! Fase 29a (D57; V5.31), com o `ward-app` de teste do `app/core`
-//! (`partida-conteiner`):
-//! - `servidor … --abrir-app <bin>`: o daemon abre o app pelo lançador de D57 (e tenta
-//!   abrir de novo logo em seguida: uma instância por vez);
-//! - `servidor … --abrir-app-com <bin> <VAR=valor>`: o daemon abre o app com o
-//!   ambiente de D57 e uma variável posta à força (teste do conferidor do app);
-//! - `lancar-app <bin>`: só o lançador, para os casos de sessão errada (dois
+//! Phase 29a (D57; V5.31), with the test `ward-app` of `app/core`
+//! (`startup-container`):
+//! - `server … --open-app <bin>`: the daemon opens the app through the launcher of D57
+//!   (and tries to open it again right after: one instance at a time);
+//! - `server … --open-app-with <bin> <VAR=value>`: the daemon opens the app with the
+//!   environment of D57 and one variable forced in (test of the app's checker);
+//! - `launch-app <bin>`: only the launcher, for the wrong session cases (two
 //!   `wayland-<n>`, link);
-//! - `escutar <socket>`: cria um socket e fica escutando (Wayland e barramento falsos);
-//! - `ambiente`: imprime o ambiente de D57 (`VAR=valor` por linha);
-//! - `--user` (chamado como `/usr/lib/systemd/systemd --user`): imita o gerente do
-//!   usuário e abre o programa de `WARD_GERENTE_PROGRAMA` com o ambiente de D57.
+//! - `listen <socket>`: creates a socket and keeps listening (fake Wayland and bus);
+//! - `environment`: prints the environment of D57 (`VAR=value` per line);
+//! - `--user` (called as `/usr/lib/systemd/systemd --user`): imitates the user's manager
+//!   and opens the program named by the manager-program variable with the environment of
+//!   D57.
 //!
-//! `unsafe` só para `ptrace`/`waitpid`/`prctl` dos ataques, com `// SAFETY:`.
+//! The subcommands and flags are the interface with `dev/container-platform/inside.sh`
+//! and `dev/container-install/inside.sh`; the printed markers are what those scripts look
+//! for and stay as they are.
+//!
+//! `unsafe` only for the `ptrace`/`waitpid`/`prctl` of the attacks, with `// SAFETY:`.
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -45,61 +53,61 @@ use ward_platform::{
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let (cmd, resto) = args
+    let (cmd, rest) = args
         .split_first()
         .map(|(c, r)| (c.as_str(), r))
         .unwrap_or(("", &[]));
     match cmd {
-        "ativar" => ativar(resto),
-        "servidor" => servidor(resto),
-        "cliente" => cliente(resto),
-        "prender" => prender(resto),
-        "traceme" => traceme(resto),
-        "bind" => bind(resto),
-        "lancar-app" => lancar_app(resto),
-        "escutar" => escutar(resto),
-        "ambiente" => ambiente(),
-        "--user" => gerente(),
+        "activate" => activate(rest),
+        "server" => server(rest),
+        "client" => client(rest),
+        "attach" => attach(rest),
+        "traceme" => traceme(rest),
+        "bind" => bind(rest),
+        "launch-app" => launch_app(rest),
+        "listen" => listen(rest),
+        "environment" => environment(),
+        "--user" => manager(),
         _ => {
             eprintln!(
-                "uso: ativar|servidor|cliente|prender|traceme|bind|lancar-app|escutar|ambiente"
+                "uso: activate|server|client|attach|traceme|bind|launch-app|listen|environment"
             );
             std::process::exit(2);
         }
     }
 }
 
-fn falhar(msg: impl std::fmt::Display) -> ! {
+fn fail(msg: impl std::fmt::Display) -> ! {
     eprintln!("erro: {msg}");
     std::process::exit(1)
 }
 
-fn ativar(args: &[String]) {
-    let [socket, uid, separador, programa @ ..] = args else {
-        falhar("ativar <socket> <uid> -- <programa…>");
+fn activate(args: &[String]) {
+    let [socket, uid, separator, program @ ..] = args else {
+        fail("activate <socket> <uid> -- <programa…>");
     };
-    if separador != "--" || programa.is_empty() {
-        falhar("falta -- <programa…>");
+    if separator != "--" || program.is_empty() {
+        fail("falta -- <programa…>");
     }
-    let uid: u32 = uid.parse().unwrap_or_else(|_| falhar("uid"));
+    let uid: u32 = uid.parse().unwrap_or_else(|_| fail("uid"));
     let _ = std::fs::remove_file(socket);
-    let listener = UnixListener::bind(socket).unwrap_or_else(|e| falhar(e));
-    std::os::unix::fs::chown(socket, Some(uid), None).unwrap_or_else(|e| falhar(e));
+    let listener = UnixListener::bind(socket).unwrap_or_else(|e| fail(e));
+    std::os::unix::fs::chown(socket, Some(uid), None).unwrap_or_else(|e| fail(e));
     std::fs::set_permissions(socket, std::os::unix::fs::PermissionsExt::from_mode(0o600))
-        .unwrap_or_else(|e| falhar(e));
+        .unwrap_or_else(|e| fail(e));
     let mut cmd = Command::new("/usr/bin/setpriv");
     cmd.arg(format!("--reuid={uid}"))
         .arg(format!("--regid={uid}"))
         .arg("--clear-groups")
         .arg("--")
-        .args(programa)
+        .args(program)
         .env_clear()
         .env("PATH", "/usr/bin:/bin");
     ward_platform::testing::run_with_socket(&listener, cmd);
 }
 
-/// fd de `listener` em `/proc/self/fd`, fd 3 ainda aberto e `O_CLOEXEC` do fd.
-fn estado_dos_fds(listener: &UnixListener) -> String {
+/// fd of `listener` in `/proc/self/fd`, fd 3 still open and the `O_CLOEXEC` of the fd.
+fn fds_state(listener: &UnixListener) -> String {
     use std::os::fd::AsRawFd;
     let fd = listener.as_raw_fd();
     let info = std::fs::read_to_string(format!("/proc/self/fdinfo/{fd}")).unwrap_or_default();
@@ -113,18 +121,18 @@ fn estado_dos_fds(listener: &UnixListener) -> String {
     format!("fd3_aberto={fd3} cloexec={cloexec}")
 }
 
-/// Como o app será aberto pelo servidor (Fase 29a).
-enum Abertura {
-    /// Pelo lançador de D57.
+/// How the app will be opened by the server (Phase 29a).
+enum Opening {
+    /// Through the launcher of D57.
     Launcher(String),
-    /// Ambiente de D57 com `VAR=valor` posto à força.
-    Com(String, String),
+    /// Environment of D57 with `VAR=value` forced in.
+    With(String, String),
 }
 
-fn servidor(args: &[String]) {
+fn server(args: &[String]) {
     let mut chrome = None;
-    let mut lancar: Vec<String> = Vec::new();
-    let mut aberturas: Vec<Abertura> = Vec::new();
+    let mut launch: Vec<String> = Vec::new();
+    let mut openings: Vec<Opening> = Vec::new();
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -132,71 +140,71 @@ fn servidor(args: &[String]) {
                 chrome = args.get(i + 1).cloned();
                 i += 2;
             }
-            "--abrir-app" => {
+            "--open-app" => {
                 let bin = args
                     .get(i + 1)
                     .cloned()
-                    .unwrap_or_else(|| falhar("--abrir-app"));
-                aberturas.push(Abertura::Launcher(bin));
+                    .unwrap_or_else(|| fail("--open-app"));
+                openings.push(Opening::Launcher(bin));
                 i += 2;
             }
-            "--abrir-app-com" => {
+            "--open-app-with" => {
                 let (Some(bin), Some(var)) = (args.get(i + 1), args.get(i + 2)) else {
-                    falhar("--abrir-app-com <bin> <VAR=valor>");
+                    fail("--open-app-with <bin> <VAR=valor>");
                 };
-                aberturas.push(Abertura::Com(bin.clone(), var.clone()));
+                openings.push(Opening::With(bin.clone(), var.clone()));
                 i += 3;
             }
-            "--lancar" => {
-                lancar = args[i + 1..].to_vec();
+            "--launch" => {
+                launch = args[i + 1..].to_vec();
                 break;
             }
-            _ => falhar("argumento"),
+            _ => fail("argumento"),
         }
     }
     if let Err(e) = start_hardened() {
-        falhar(e);
+        fail(e);
     }
-    let escuta = listen_from_listen_fds(&system_socket_path()).unwrap_or_else(|e| falhar(e));
-    let chrome = AllowedBinary::new(chrome.unwrap_or_else(|| falhar("--chrome")))
-        .unwrap_or_else(|e| falhar(e));
-    let inst = Install::from_system(chrome).unwrap_or_else(|e| falhar(e));
-    let politica = KernelPolicy::read();
+    let listening = listen_from_listen_fds(&system_socket_path()).unwrap_or_else(|e| fail(e));
+    let chrome =
+        AllowedBinary::new(chrome.unwrap_or_else(|| fail("--chrome"))).unwrap_or_else(|e| fail(e));
+    let inst = Install::from_system(chrome).unwrap_or_else(|e| fail(e));
+    let policy = KernelPolicy::read();
     println!(
         "servidor: pronto {} gid_app={} gid_nm={} politica={:?} vmlck={}",
-        estado_dos_fds(escuta.listener()),
+        fds_state(listening.listener()),
         inst.app_gid(),
         inst.extension_gid(),
-        politica.verify(),
+        policy.verify(),
         status("VmLck:")
     );
     let _ = std::io::stdout().flush();
-    if let Some((programa, resto)) = lancar.split_first() {
-        let saida = Command::new(programa)
-            .args(resto)
+    if let Some((program, rest)) = launch.split_first() {
+        let output = Command::new(program)
+            .args(rest)
             .env_clear()
             .env("PATH", "/usr/bin:/bin")
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .spawn();
-        match saida {
-            Ok(filho) => {
+        match output {
+            Ok(child) => {
                 std::thread::spawn(move || {
-                    let saida = filho
+                    let output = child
                         .wait_with_output()
                         .map(|o| o.stdout)
                         .unwrap_or_default();
-                    println!("app-filho: {}", String::from_utf8_lossy(&saida).trim());
+                    println!("app-filho: {}", String::from_utf8_lossy(&output).trim());
                     let _ = std::io::stdout().flush();
                 });
             }
             Err(e) => println!("app-filho: erro {e}"),
         }
     }
-    let _lancadores = abrir_apps(&aberturas, &inst);
-    for conexao in escuta.listener().incoming() {
-        let Ok(mut stream) = conexao else { continue };
-        let par = match verify_connection(&stream) {
+    let _launchers = open_apps(&openings, &inst);
+    for connection in listening.listener().incoming() {
+        let Ok(mut stream) = connection else { continue };
+        let peer = match verify_connection(&stream) {
             Ok(p) => p,
             Err(e) => {
                 println!("servidor: recusado {e:?}");
@@ -204,53 +212,56 @@ fn servidor(args: &[String]) {
                 continue;
             }
         };
-        let classe = par.classify(&inst, &politica);
-        let linha = match classe {
+        let class = peer.classify(&inst, &policy);
+        let line = match class {
             PeerClass::App => "papel=app".to_owned(),
             PeerClass::ExtensionHost => "papel=extensao".to_owned(),
-            PeerClass::Common { reason: motivo } => format!("papel=agente motivo={motivo:?}"),
+            PeerClass::Common { reason } => format!("papel=agente motivo={reason:?}"),
         };
         println!(
-            "servidor: pid={} gid={} {linha}",
-            par.credentials().pid,
-            par.credentials().gid
+            "servidor: pid={} gid={} {line}",
+            peer.credentials().pid,
+            peer.credentials().gid
         );
         let _ = std::io::stdout().flush();
-        let papel = match classe {
+        let role = match class {
             PeerClass::App => "app",
             PeerClass::ExtensionHost => "extensao",
             PeerClass::Common { .. } => "agente",
         };
-        if !responder_estado(&mut stream, papel) {
-            let _ = writeln!(stream, "{linha}");
+        if !answer_status(&mut stream, role) {
+            let _ = writeln!(stream, "{line}");
         }
     }
 }
 
-/// Fase 23a (D63): o app de teste manda `estado` logo depois de conectar e confere o
-/// papel na resposta. Se um quadro chega em 1 s, responde o `estado` (sem segredo, só o
-/// papel) e devolve `true`; senão (o `cliente`, que só lê), `false`.
-fn responder_estado(stream: &mut UnixStream, papel: &str) -> bool {
+/// Phase 23a (D63): the test app asks for the vault status right after connecting and
+/// checks the role in the reply. If a frame arrives within 1 s, it answers with the status
+/// (no secret, only the role) and returns `true`; otherwise (the `client` subcommand,
+/// which only reads), `false`. The frame fields are the wire of protocol v1 (frozen until
+/// m2:Phase 51).
+fn answer_status(stream: &mut UnixStream, role: &str) -> bool {
     let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(1)));
     let mut n = [0u8; 4];
     if stream.read_exact(&mut n).is_err() {
         return false;
     }
-    let tamanho = u32::from_be_bytes(n) as usize;
-    if tamanho == 0 || tamanho > 64 * 1024 {
+    let size = u32::from_be_bytes(n) as usize;
+    if size == 0 || size > 64 * 1024 {
         return true;
     }
-    let mut corpo = vec![0u8; tamanho];
-    if stream.read_exact(&mut corpo).is_err() {
+    let mut body = vec![0u8; size];
+    if stream.read_exact(&mut body).is_err() {
         return true;
     }
-    // O app aberto fora do daemon (o do menu) só pede `abrir_app`: "ok", como o daemon.
-    let abrir_app = corpo.windows(9).any(|j| j == b"abrir_app");
-    let r = if abrir_app {
+    // The app opened outside the daemon (the one from the menu) only asks the daemon to
+    // open the app: "ok", like the daemon.
+    let open_app = body.windows(9).any(|j| j == b"abrir_app");
+    let r = if open_app {
         r#"{"v":1,"tipo":"ok","dados":{}}"#.to_owned()
     } else {
         format!(
-            r#"{{"v":1,"tipo":"estado","dados":{{"travado":true,"cofre_existe":false,"papel":"{papel}"}}}}"#
+            r#"{{"v":1,"tipo":"estado","dados":{{"travado":true,"cofre_existe":false,"papel":"{role}"}}}}"#
         )
     };
     let _ = stream
@@ -259,57 +270,57 @@ fn responder_estado(stream: &mut UnixStream, papel: &str) -> bool {
     true
 }
 
-fn status(campo: &str) -> String {
+fn status(field: &str) -> String {
     std::fs::read_to_string("/proc/self/status")
         .unwrap_or_default()
         .lines()
         .find_map(|l| {
-            l.strip_prefix(campo)
+            l.strip_prefix(field)
                 .map(|v| v.split_whitespace().collect::<Vec<_>>().join(","))
         })
         .unwrap_or_default()
 }
 
-fn cliente(args: &[String]) {
+fn client(args: &[String]) {
     let mut socket: Option<PathBuf> = None;
-    let mut pausar = false;
+    let mut pause = false;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
-            "--sistema-em" => {
+            "--system-at" => {
                 socket = args.get(i + 1).map(PathBuf::from);
                 i += 2;
             }
-            "--pausar" => {
-                pausar = true;
+            "--pause" => {
+                pause = true;
                 i += 1;
             }
-            _ => falhar("argumento"),
+            _ => fail("argumento"),
         }
     }
-    let esperado = match socket {
+    let expected = match socket {
         Some(s) => ExpectedServer::system_at(s),
         None => ExpectedServer::system(),
     };
-    let marca = std::env::var_os("LD_PRELOAD").is_some();
-    if pausar {
+    let mark = std::env::var_os("LD_PRELOAD").is_some();
+    if pause {
         println!("pronto gid={}", status("Gid:"));
         let _ = std::io::stdout().flush();
-        let mut linha = String::new();
-        let _ = std::io::stdin().read_line(&mut linha);
+        let mut line = String::new();
+        let _ = std::io::stdin().read_line(&mut line);
     }
-    let stream: UnixStream = match connect_server(&esperado) {
+    let stream: UnixStream = match connect_server(&expected) {
         Ok(s) => s,
         Err(e) => {
             println!("servidor={e:?}");
             return;
         }
     };
-    let mut resposta = String::new();
-    let _ = BufReader::new(stream).read_line(&mut resposta);
+    let mut reply = String::new();
+    let _ = BufReader::new(stream).read_line(&mut reply);
     println!(
-        "servidor=ok {} gid={} dumpable={} ld_preload_no_ambiente={marca}",
-        resposta.trim(),
+        "servidor=ok {} gid={} dumpable={} ld_preload_no_ambiente={mark}",
+        reply.trim(),
         status("Gid:"),
         dumpable()
     );
@@ -317,11 +328,11 @@ fn cliente(args: &[String]) {
 
 #[allow(unsafe_code)]
 fn dumpable() -> i32 {
-    // SAFETY: `PR_GET_DUMPABLE` não recebe ponteiro; devolve o valor no retorno.
+    // SAFETY: `PR_GET_DUMPABLE` takes no pointer; it returns the value in the return.
     unsafe { libc::prctl(libc::PR_GET_DUMPABLE, 0, 0, 0, 0) }
 }
 
-fn erro_de(r: libc::c_long) -> String {
+fn error_of(r: libc::c_long) -> String {
     if r == 0 {
         "ok".to_owned()
     } else {
@@ -335,23 +346,23 @@ fn erro_de(r: libc::c_long) -> String {
 }
 
 #[allow(unsafe_code)]
-fn prender(args: &[String]) {
-    let Some((programa, resto)) = args.split_first() else {
-        falhar("prender <programa…>");
+fn attach(args: &[String]) {
+    let Some((program, rest)) = args.split_first() else {
+        fail("attach <programa…>");
     };
-    let mut filho = Command::new(programa)
-        .args(resto)
+    let mut child = Command::new(program)
+        .args(rest)
         .env_clear()
         .env("PATH", "/usr/bin:/bin")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
-        .unwrap_or_else(|e| falhar(e));
-    let mut saida = BufReader::new(filho.stdout.take().unwrap());
-    let mut pronto = String::new();
-    saida.read_line(&mut pronto).unwrap_or_else(|e| falhar(e));
-    let pid = libc::pid_t::try_from(filho.id()).unwrap_or_else(|_| falhar("pid"));
-    // SAFETY: `PTRACE_ATTACH` num pid nosso, sem ponteiros (endereço e dado nulos).
+        .unwrap_or_else(|e| fail(e));
+    let mut output = BufReader::new(child.stdout.take().unwrap());
+    let mut ready = String::new();
+    output.read_line(&mut ready).unwrap_or_else(|e| fail(e));
+    let pid = libc::pid_t::try_from(child.id()).unwrap_or_else(|_| fail("pid"));
+    // SAFETY: `PTRACE_ATTACH` on a pid of ours, without pointers (null address and data).
     let attach = unsafe {
         libc::ptrace(
             libc::PTRACE_ATTACH,
@@ -360,13 +371,14 @@ fn prender(args: &[String]) {
             std::ptr::null_mut::<libc::c_void>(),
         )
     };
-    let attach = erro_de(attach);
+    let attach = error_of(attach);
     if attach == "ok" {
-        // Controle (binário sem setgid): espera a parada do attach e solta o filho.
-        let mut estado: libc::c_int = 0;
-        // SAFETY: `waitpid` de um filho nosso, com `estado` local.
-        unsafe { libc::waitpid(pid, &raw mut estado, 0) };
-        // SAFETY: solta o filho parado, sem sinal (dado nulo).
+        // Control (binary without setgid): waits for the attach stop and releases the
+        // child.
+        let mut wstatus: libc::c_int = 0;
+        // SAFETY: `waitpid` of a child of ours, with a local `wstatus`.
+        unsafe { libc::waitpid(pid, &raw mut wstatus, 0) };
+        // SAFETY: releases the stopped child, without a signal (null data).
         unsafe {
             libc::ptrace(
                 libc::PTRACE_DETACH,
@@ -376,7 +388,7 @@ fn prender(args: &[String]) {
             )
         };
     }
-    // SAFETY: como acima, com `PTRACE_SEIZE` e opções 0.
+    // SAFETY: as above, with `PTRACE_SEIZE` and options 0.
     let seize = unsafe {
         libc::ptrace(
             libc::PTRACE_SEIZE,
@@ -385,7 +397,7 @@ fn prender(args: &[String]) {
             std::ptr::null_mut::<libc::c_void>(),
         )
     };
-    let seize = erro_de(seize);
+    let seize = error_of(seize);
     let mem = match std::fs::File::open(format!("/proc/{pid}/mem")) {
         Ok(_) => "ok".to_owned(),
         Err(e) if e.raw_os_error() == Some(libc::EACCES) => "EACCES".to_owned(),
@@ -397,31 +409,31 @@ fn prender(args: &[String]) {
         .lines()
         .find_map(|l| l.strip_prefix("TracerPid:").map(|v| v.trim().to_owned()))
         .unwrap_or_default();
-    let _ = filho.stdin.take().unwrap().write_all(b"\n");
-    let mut resto_saida = String::new();
-    let _ = saida.read_to_string(&mut resto_saida);
-    let _ = filho.wait();
+    let _ = child.stdin.take().unwrap().write_all(b"\n");
+    let mut rest_output = String::new();
+    let _ = output.read_to_string(&mut rest_output);
+    let _ = child.wait();
     println!(
         "prender: {} attach={attach} seize={seize} mem={mem} tracer={tracer} | {}",
-        pronto.trim(),
-        resto_saida.trim()
+        ready.trim(),
+        rest_output.trim()
     );
 }
 
 #[allow(unsafe_code)]
 fn traceme(args: &[String]) {
     use std::os::unix::process::CommandExt;
-    let Some((programa, resto)) = args.split_first() else {
-        falhar("traceme <programa…>");
+    let Some((program, rest)) = args.split_first() else {
+        fail("traceme <programa…>");
     };
-    let mut cmd = Command::new(programa);
-    cmd.args(resto)
+    let mut cmd = Command::new(program);
+    cmd.args(rest)
         .env_clear()
         .env("PATH", "/usr/bin:/bin")
         .stdin(Stdio::null())
         .stdout(Stdio::piped());
-    // SAFETY: o fechamento roda no filho entre o fork e o exec e só chama `ptrace`
-    // (async-signal-safe), sem alocar nem tocar em trava.
+    // SAFETY: the closure runs in the child between the fork and the exec and only calls
+    // `ptrace` (async-signal-safe), without allocating or touching a lock.
     unsafe {
         cmd.pre_exec(|| {
             let r = libc::ptrace(
@@ -436,13 +448,13 @@ fn traceme(args: &[String]) {
             Ok(())
         });
     }
-    let mut filho = cmd.spawn().unwrap_or_else(|e| falhar(e));
-    let pid = libc::pid_t::try_from(filho.id()).unwrap_or_else(|_| falhar("pid"));
-    let mut estado: libc::c_int = 0;
-    // SAFETY: `waitpid` de um filho nosso, com `estado` local.
-    let r = unsafe { libc::waitpid(pid, &raw mut estado, 0) };
-    if r != pid || !libc::WIFSTOPPED(estado) {
-        falhar("o filho não parou no exec");
+    let mut child = cmd.spawn().unwrap_or_else(|e| fail(e));
+    let pid = libc::pid_t::try_from(child.id()).unwrap_or_else(|_| fail("pid"));
+    let mut wstatus: libc::c_int = 0;
+    // SAFETY: `waitpid` of a child of ours, with a local `wstatus`.
+    let r = unsafe { libc::waitpid(pid, &raw mut wstatus, 0) };
+    if r != pid || !libc::WIFSTOPPED(wstatus) {
+        fail("o filho não parou no exec");
     }
     let gid = std::fs::read_to_string(format!("/proc/{pid}/status"))
         .unwrap_or_default()
@@ -452,7 +464,7 @@ fn traceme(args: &[String]) {
                 .map(|v| v.split_whitespace().collect::<Vec<_>>().join(","))
         })
         .unwrap_or_default();
-    // SAFETY: solta o filho parado, sem sinal (dado 0).
+    // SAFETY: releases the stopped child, without a signal (data 0).
     let r = unsafe {
         libc::ptrace(
             libc::PTRACE_DETACH,
@@ -462,17 +474,17 @@ fn traceme(args: &[String]) {
         )
     };
     if r != 0 {
-        falhar("PTRACE_DETACH");
+        fail("PTRACE_DETACH");
     }
-    let mut saida = String::new();
-    let _ = filho.stdout.take().unwrap().read_to_string(&mut saida);
-    let _ = filho.wait();
-    println!("traceme: gid_no_exec={gid} | {}", saida.trim());
+    let mut output = String::new();
+    let _ = child.stdout.take().unwrap().read_to_string(&mut output);
+    let _ = child.wait();
+    println!("traceme: gid_no_exec={gid} | {}", output.trim());
 }
 
 fn bind(args: &[String]) {
     let [socket] = args else {
-        falhar("bind <socket>")
+        fail("bind <socket>")
     };
     match UnixListener::bind(socket) {
         Ok(_) => {
@@ -484,14 +496,14 @@ fn bind(args: &[String]) {
     }
 }
 
-/// Abre os apps pedidos (Fase 29a). Devolve os lançadores, para os filhos não serem
-/// colhidos antes da hora.
-fn abrir_apps(aberturas: &[Abertura], inst: &Install) -> Vec<Launcher> {
-    let mut lancadores = Vec::new();
-    for a in aberturas {
+/// Opens the requested apps (Phase 29a). Returns the launchers, so the children are not
+/// reaped too early.
+fn open_apps(openings: &[Opening], inst: &Install) -> Vec<Launcher> {
+    let mut launchers = Vec::new();
+    for a in openings {
         match a {
-            Abertura::Launcher(bin) => {
-                let b = AllowedBinary::new(bin).unwrap_or_else(|e| falhar(e));
+            Opening::Launcher(bin) => {
+                let b = AllowedBinary::new(bin).unwrap_or_else(|e| fail(e));
                 let mut l = Launcher::new(b, inst);
                 match l.open() {
                     Ok(pid) => println!("lancador: aberto pid={pid}"),
@@ -501,23 +513,23 @@ fn abrir_apps(aberturas: &[Abertura], inst: &Install) -> Vec<Launcher> {
                     Ok(pid) => println!("lancador: segundo aberto pid={pid}"),
                     Err(e) => println!("lancador: segundo {e:?}"),
                 }
-                lancadores.push(l);
+                launchers.push(l);
             }
-            Abertura::Com(bin, var) => {
-                let Some((nome, valor)) = var.split_once('=') else {
-                    falhar("VAR=valor");
+            Opening::With(bin, var) => {
+                let Some((name, value)) = var.split_once('=') else {
+                    fail("VAR=valor");
                 };
-                let amb = app_environment().unwrap_or_else(|e| falhar(e));
-                let filho = Command::new(bin)
+                let app_env = app_environment().unwrap_or_else(|e| fail(e));
+                let child = Command::new(bin)
                     .env_clear()
-                    .envs(amb.variables().filter(|(k, _)| *k != nome))
-                    .env(nome, valor)
+                    .envs(app_env.variables().filter(|(k, _)| *k != name))
+                    .env(name, value)
                     .stdin(Stdio::null())
                     .stdout(Stdio::null())
                     .stderr(Stdio::null())
                     .spawn();
-                match filho {
-                    Ok(f) => println!("forcado: aberto pid={} {nome}", f.id()),
+                match child {
+                    Ok(f) => println!("forcado: aberto pid={} {name}", f.id()),
                     Err(e) => println!("forcado: erro {e}"),
                 }
             }
@@ -525,16 +537,16 @@ fn abrir_apps(aberturas: &[Abertura], inst: &Install) -> Vec<Launcher> {
         let _ = std::io::stdout().flush();
         std::thread::sleep(std::time::Duration::from_millis(300));
     }
-    lancadores
+    launchers
 }
 
-fn lancar_app(args: &[String]) {
+fn launch_app(args: &[String]) {
     let [bin] = args else {
-        falhar("lancar-app <bin>")
+        fail("launch-app <bin>")
     };
-    let chrome = AllowedBinary::new("/usr/bin/bash").unwrap_or_else(|e| falhar(e));
-    let inst = Install::from_system(chrome).unwrap_or_else(|e| falhar(e));
-    let b = AllowedBinary::new(bin).unwrap_or_else(|e| falhar(e));
+    let chrome = AllowedBinary::new("/usr/bin/bash").unwrap_or_else(|e| fail(e));
+    let inst = Install::from_system(chrome).unwrap_or_else(|e| fail(e));
+    let b = AllowedBinary::new(bin).unwrap_or_else(|e| fail(e));
     match Launcher::new(b, &inst).open() {
         Ok(pid) => println!("lancar-app: aberto pid={pid}"),
         Err(e) => println!(
@@ -544,12 +556,12 @@ fn lancar_app(args: &[String]) {
     }
 }
 
-fn escutar(args: &[String]) {
+fn listen(args: &[String]) {
     let [socket] = args else {
-        falhar("escutar <socket>")
+        fail("listen <socket>")
     };
     let _ = std::fs::remove_file(socket);
-    let _l = UnixListener::bind(socket).unwrap_or_else(|e| falhar(e));
+    let _l = UnixListener::bind(socket).unwrap_or_else(|e| fail(e));
     println!("escutando");
     let _ = std::io::stdout().flush();
     loop {
@@ -557,20 +569,21 @@ fn escutar(args: &[String]) {
     }
 }
 
-fn ambiente() {
-    let amb = app_environment().unwrap_or_else(|e| falhar(e));
-    for (k, v) in amb.variables() {
+fn environment() {
+    let app_env = app_environment().unwrap_or_else(|e| fail(e));
+    for (k, v) in app_env.variables() {
         println!("{k}={v}");
     }
 }
 
-/// Imita o `systemd --user` (Fase 29a, V5.31): `Name: systemd`, `cmdline`
-/// `/usr/lib/systemd/systemd --user`, órfão (`PPid: 1`). Abre o programa com o
-/// ambiente de D57, como uma unit de `~/.config/systemd/user/` faria.
-fn gerente() {
-    let programa =
-        std::env::var("WARD_GERENTE_PROGRAMA").unwrap_or_else(|_| falhar("WARD_GERENTE_PROGRAMA"));
-    // O subshell que deixou este processo órfão sai logo; espera o `PPid` virar 1.
+/// Imitates `systemd --user` (Phase 29a, V5.31): `Name: systemd`, `cmdline`
+/// `/usr/lib/systemd/systemd --user`, orphan (`PPid: 1`). Opens the program with the
+/// environment of D57, as a unit of `~/.config/systemd/user/` would.
+fn manager() {
+    let program =
+        std::env::var("WARD_GERENTE_PROGRAMA").unwrap_or_else(|_| fail("WARD_GERENTE_PROGRAMA"));
+    // The subshell that left this process orphaned exits right away; wait for `PPid` to
+    // become 1.
     std::thread::sleep(std::time::Duration::from_millis(300));
     let cmdline = std::fs::read("/proc/self/cmdline").unwrap_or_default();
     println!(
@@ -579,10 +592,10 @@ fn gerente() {
         status("PPid:"),
         String::from_utf8_lossy(&cmdline).replace('\0', " ").trim()
     );
-    let amb = app_environment().unwrap_or_else(|e| falhar(e));
-    let status = Command::new(programa)
+    let app_env = app_environment().unwrap_or_else(|e| fail(e));
+    let status = Command::new(program)
         .env_clear()
-        .envs(amb.variables())
+        .envs(app_env.variables())
         .stdin(Stdio::null())
         .status();
     println!("gerente: {status:?}");

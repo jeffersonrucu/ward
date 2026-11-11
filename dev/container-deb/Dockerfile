@@ -1,15 +1,15 @@
-# `make test-deb` (Fase 52): ubuntu:24.04 (a mesma digest das Fases 21b, 22, 24 e 51)
-# com o systemd e as dependências do `.deb` já instaladas (openssh-client e
-# libwebkit2gtk-4.1-0), menos o sshpass: o pacote dele fica baixado em /opt/debs para o
-# teste ver o `dpkg -i` falhar sem ele e passar com ele. A rede só é usada no build (apt
-# do Ubuntu); o contêiner roda com `--network none`. Contexto do build:
-# dev/container-units (o `start.sh` de lá).
+# `make test-deb` (Phase 52): ubuntu:24.04 (the same digest as Phases 21b, 22, 24 and
+# 51) with systemd and the `.deb` dependencies already installed (openssh-client and
+# libwebkit2gtk-4.1-0), except sshpass: its package is downloaded to /opt/debs so the
+# test sees `dpkg -i` fail without it and pass with it. The network is only used in the
+# build (Ubuntu apt); the container runs with `--network none`. Build context:
+# dev/container-units (its `start.sh`).
 #
-# Fase 51c: o apport instalado (o teste chama o /usr/share/apport/apport à mão, como o
-# kernel chamaria) e o systemd-coredump só extraído em /opt/coredump (sem postinst: nada
-# mexe no kernel.core_pattern, que é do host), com o usuário dele. As units do apport
-# ficam mascaradas: o `apport --start` escreveria o core_pattern (o /proc/sys do contêiner
-# é só leitura, e o teste confere isso antes de tudo).
+# Phase 51c: apport installed (the test calls /usr/share/apport/apport by hand, as the
+# kernel would) and systemd-coredump only extracted to /opt/coredump (no postinst: nothing
+# touches kernel.core_pattern, which belongs to the host), with its user. The apport units
+# stay masked: `apport --start` would write the core_pattern (the container's /proc/sys
+# is read-only, and the test checks that before anything else).
 FROM ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
@@ -25,7 +25,7 @@ RUN apt-get update \
          systemd-networkd.service systemd-resolved.service systemd-timesyncd.service \
          apport.service apport-forward.socket apport-autoreport.path apport-autoreport.service \
          apport-autoreport.timer
-COPY start.sh /usr/local/sbin/iniciar
+COPY start.sh /usr/local/sbin/start
 ENV container=docker
 STOPSIGNAL SIGRTMIN+3
-CMD ["/usr/local/sbin/iniciar"]
+CMD ["/usr/local/sbin/start"]

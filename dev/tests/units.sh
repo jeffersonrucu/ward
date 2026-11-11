@@ -31,9 +31,9 @@ RAIZ="$(cd -P -- "${BASH_SOURCE[0]%/*}/../.." && pwd -P)"
 # shellcheck source=dev/services/common.sh
 . "$RAIZ/dev/services/common.sh"
 
-WARDD="${1:?uso: units.sh <wardd> <wardd-cliente-teste> <ward>}"
-CLIENTE="${2:?uso: units.sh <wardd> <wardd-cliente-teste> <ward>}"
-WARD="${3:?uso: units.sh <wardd> <wardd-cliente-teste> <ward>}"
+WARDD="${1:?uso: units.sh <wardd> <wardd-test-client> <ward>}"
+CLIENTE="${2:?uso: units.sh <wardd> <wardd-test-client> <ward>}"
+WARD="${3:?uso: units.sh <wardd> <wardd-test-client> <ward>}"
 for b in "$WARDD" "$CLIENTE" "$WARD"; do
     [ -x "$b" ] || { echo "binário não encontrado: $b" >&2; exit 1; }
 done

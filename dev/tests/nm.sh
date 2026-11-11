@@ -20,7 +20,7 @@
 # deste script e somem no fim. Precisa de `make dev-vault` e `make dev-variations` e do
 # Chrome em /opt/google/chrome/chrome; fora do `make check`.
 #
-# Uso: dev/tests/nm.sh <wardd test-mode> <ward-nm test-mode> <exemplo pai-chrome>
+# Uso: dev/tests/nm.sh <wardd test-mode> <ward-nm test-mode> <exemplo chrome-parent>
 
 export PATH=/usr/bin:/bin
 set -euo pipefail
@@ -30,9 +30,9 @@ RAIZ="$(cd -P -- "${BASH_SOURCE[0]%/*}/../.." && pwd -P)"
 cd "$RAIZ"
 
 abs() { case "$1" in /*) printf '%s' "$1" ;; *) printf '%s/%s' "$RAIZ" "$1" ;; esac; }
-WARDD="$(abs "${1:?uso: nm.sh <wardd> <ward-nm> <pai-chrome>}")"
-NM="$(abs "${2:?uso: nm.sh <wardd> <ward-nm> <pai-chrome>}")"
-SONDA="$(abs "${3:?uso: nm.sh <wardd> <ward-nm> <pai-chrome>}")"
+WARDD="$(abs "${1:?uso: nm.sh <wardd> <ward-nm> <chrome-parent>}")"
+NM="$(abs "${2:?uso: nm.sh <wardd> <ward-nm> <chrome-parent>}")"
+SONDA="$(abs "${3:?uso: nm.sh <wardd> <ward-nm> <chrome-parent>}")"
 for b in "$WARDD" "$NM" "$SONDA"; do [ -x "$b" ] || { echo "falta $b" >&2; exit 1; }; done
 CHROME=/opt/google/chrome/chrome
 [ -x "$CHROME" ] || { echo "falta o Chrome em $CHROME" >&2; exit 1; }

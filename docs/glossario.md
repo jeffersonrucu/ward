@@ -1340,6 +1340,27 @@ Feitos na Fase 6: `dev/daemon.sh` (`up`, `stop`, `status`), `--no-mps`/`--no-39c
 Fases 40–46. O `--conferir` do exemplo `dev-cofre` (e `--senha-stdin`, `--cruzado`)
 vai com o exemplo, na Fase 43.
 
+Feitos na Fase 43 (exemplos e scripts de contêiner, sem alias para o nome velho):
+
+| Antes | Depois |
+| --- | --- |
+| `dev-cofre --conferir`, `--senha-stdin`, `--cruzado` (prefixo `dev-cofre:` na saída) | `dev-vault --verify`, `--password-stdin`, `--cross` (prefixo `dev-vault:`) |
+| `falso --ativar`, `--conectar` (`dev/container-platform/fake.c`) | `--activate`, `--connect` |
+| subcomandos do `ward-platform-container`: `ativar`, `servidor`, `cliente`, `prender`, `lancar-app`, `escutar`, `ambiente` (`traceme`, `bind`, `--user` ficam) | `activate`, `server`, `client`, `attach`, `launch-app`, `listen`, `environment` |
+| opções do `ward-platform-container`: `--lancar`, `--abrir-app`, `--abrir-app-com`, `--sistema-em`, `--pausar` (`--chrome` fica) | `--launch`, `--open-app`, `--open-app-with`, `--system-at`, `--pause` |
+| subcomando `servir` do `chrome-parent` | `serve` |
+| cópias no contêiner `/opt/teste/chrome-falso`, `/opt/teste/wardd-cliente-teste` | `/opt/teste/fake-chrome`, `/opt/teste/wardd-test-client` |
+| `/usr/local/sbin/iniciar` (PID 1 das imagens `units`, `install` e `deb`) | `/usr/local/sbin/start` |
+| funções dos `inside.sh`: `confere`, `nao_tem`, `igual`, `falhou`, `como_1000`, `como_usuario`, `instalar`, `caso_grupo`, `nada_do_ward`, `retrato_ssh`, `linha_app`, `ultimo_erro_pid`, `conferir_cli` | `check`, `lacks`, `equal`, `failed`, `as_1000`, `as_user`, `install_ward`, `group_case`, `no_ward_file`, `ssh_snapshot`, `app_line`, `last_error_pid`, `verify_cli` |
+
+Os marcadores impressos pelos exemplos (`servidor: pronto`, `papel=…`, `lancador:`,
+`gerente:`, `inicio`/`depois`/`erro`/`queda` do relatório do app, `saida=`,
+`resposta:`), os subcomandos do `wardd-test-client` (`estado`, `lista`, `destravar`, nomes
+de operação do protocolo, Fase 51), o nome do teste `area_gtk::testes::sessao_real` e o
+protocolo de linhas do `clipboard.py` (vão com o teste do `app/src-tauri`) e os outros
+nomes de dentro do contêiner (`/opt/teste`, `cliente`, `plataforma`, `falso`,
+`ward-servidor`, `libmarca.so`) ficam.
+
 Pasta de build (Fase 6): `target/sem-modo-teste/` → `target/no-test-mode/`.
 
 ## 7. CLI `ward` (DT10; Fases 51, 55)
