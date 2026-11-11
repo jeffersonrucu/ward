@@ -79,10 +79,10 @@ fn v3_10_lock_and_everything_answers_locked() {
     }
     match request(&d, Role::Agent, "estado", "{}") {
         Response::Status {
-            locked: travado,
-            vault_exists: cofre_existe,
+            locked,
+            vault_exists,
             role,
-        } => assert!(travado && cofre_existe && role == Role::Agent),
+        } => assert!(locked && vault_exists && role == Role::Agent),
         r => panic!("{r:?}"),
     }
     assert!(ok(&unlock(&d, PASSWORD)));
@@ -674,10 +674,10 @@ fn first_use_and_pin_only_as_hash() {
     let (d, _) = daemon_at(dir.paths());
     match request(&d, Role::Agent, "estado", "{}") {
         Response::Status {
-            locked: travado,
-            vault_exists: cofre_existe,
+            locked,
+            vault_exists,
             ..
-        } => assert!(travado && !cofre_existe),
+        } => assert!(locked && !vault_exists),
         r => panic!("{r:?}"),
     }
     assert_eq!(

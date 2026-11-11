@@ -1272,15 +1272,15 @@ mod tests {
     #[test]
     fn save_without_required_shows_field_error() {
         let (s, _) = service();
-        let vazio = serde_json::json!({
+        let empty = serde_json::json!({
             "tipo": "login", "nome": "", "grupo": "", "ambiente": "", "projeto": "",
             "tags": [], "campos": {}, "segredos": {"senha": {"novo": "falso-x-123456"}}, "extras": []
         });
-        let r = s.save_credential(None, form(vazio)).unwrap();
+        let r = s.save_credential(None, form(empty)).unwrap();
         assert_eq!(r.saved, None);
-        let campos: Vec<_> = r.errors.iter().map(|e| e.field).collect();
+        let fields: Vec<_> = r.errors.iter().map(|e| e.field).collect();
         for c in ["nome", "grupo", "ambiente", "url", "usuario"] {
-            assert!(campos.contains(&c), "{c}: {r:?}");
+            assert!(fields.contains(&c), "{c}: {r:?}");
         }
         assert!(!serde_json::to_string(&r).unwrap().contains("falso-x"));
         // Repeated name: daemon error on the name field.
@@ -1806,9 +1806,9 @@ mod tests {
             "extras": [], "anexos": []
         });
         let r = s.save_credential(None, form(database)).unwrap();
-        let campos: Vec<_> = r.errors.iter().map(|e| e.field).collect();
+        let fields: Vec<_> = r.errors.iter().map(|e| e.field).collect();
         assert!(
-            campos.contains(&"base") && campos.contains(&"porta"),
+            fields.contains(&"base") && fields.contains(&"porta"),
             "{r:?}"
         );
         assert!(!serde_json::to_string(&r).unwrap().contains("falso-banco"));

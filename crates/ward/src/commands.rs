@@ -471,20 +471,17 @@ fn forward_stdin(e: &mut dyn Env, writer: Arc<Mutex<SessionWriter>>, kind: Stdin
 fn receive_session(e: &mut dyn Env, mut session: Session) -> u8 {
     loop {
         match session.receive() {
-            Ok(Response::Output {
-                stream: fluxo,
-                data: dados,
-            }) => {
-                let dest = match fluxo {
+            Ok(Response::Output { stream, data }) => {
+                let dest = match stream {
                     Stream::Stdout => e.stdout(),
                     Stream::Stderr => e.stderr(),
                 };
                 // Output closed on the CLI side (`| head`): the rest is discarded.
-                let _ = dest.write_all(&dados).and_then(|()| dest.flush());
+                let _ = dest.write_all(&data).and_then(|()| dest.flush());
             }
-            Ok(Response::Exit { code: codigo }) => {
+            Ok(Response::Exit { code }) => {
                 let _ = e.stdout().flush();
-                return codigo;
+                return code;
             }
             Ok(Response::Error(error)) => return fail_run(e, &daemon_message(&error)),
             Ok(_) => return fail_run(e, "resposta inesperada do daemon"),
@@ -625,10 +622,10 @@ fn playwright(e: &mut dyn Env, entry: String) -> u8 {
     }
     // Waits for the unlock and the approval (2 min each, D16, S10) plus the browser.
     match c.request_with_timeout(&Request::Playwright { entry }, PLAYWRIGHT_TIMEOUT) {
-        Ok(Response::PlaywrightSession { path: caminho })
-            if caminho.starts_with('/') && !caminho.chars().any(char::is_control) =>
+        Ok(Response::PlaywrightSession { path })
+            if path.starts_with('/') && !path.chars().any(char::is_control) =>
         {
-            if writeln!(e.stdout(), "{caminho}").is_err() {
+            if writeln!(e.stdout(), "{path}").is_err() {
                 return EXIT_ERROR;
             }
             EXIT_OK

@@ -89,8 +89,8 @@ fn fake_server(dir: &TestDir, reply: Option<Arc<ReplyFn>>) -> Arc<Mutex<Seen>> {
                         let mut v = v.lock().unwrap();
                         v.bytes.extend_from_slice(&body);
                         v.operations.push(p.operation().name());
-                        if let Request::Unlock { password: senha } = &p {
-                            v.passwords.push(senha.expose().to_vec());
+                        if let Request::Unlock { password } = &p {
+                            v.passwords.push(password.expose().to_vec());
                         }
                     }
                     let response = r(&p);
@@ -386,9 +386,7 @@ mod with_fake_daemon {
                         *locked = true;
                         Response::Ok
                     }
-                    Request::Unlock { password: senha }
-                        if senha.expose() == PASSWORD.as_bytes() =>
-                    {
+                    Request::Unlock { password } if password.expose() == PASSWORD.as_bytes() => {
                         *locked = false;
                         Response::Ok
                     }
@@ -490,15 +488,12 @@ mod with_fake_daemon {
                         v.lock().unwrap().push((x.stdin_kind, 0));
                         encode(&output)
                     }
-                    Request::Ssh {
-                        stdin_kind: tipo_entrada,
-                        ..
-                    } => {
-                        v.lock().unwrap().push((*tipo_entrada, 0));
+                    Request::Ssh { stdin_kind, .. } => {
+                        v.lock().unwrap().push((*stdin_kind, 0));
                         encode(&output)
                     }
-                    Request::Stdin { data: dados } => {
-                        v.lock().unwrap().push((T::Null, dados.len() + 1));
+                    Request::Stdin { data } => {
+                        v.lock().unwrap().push((T::Null, data.len() + 1));
                         encode(&Response::Exit { code: 0 })
                     }
                     _ => encode(&Response::Error(ResponseError::Unauthorized)),
@@ -589,22 +584,22 @@ mod with_fake_daemon {
             &dir,
             Some(Arc::new(move |p: &Request| match p {
                 Request::Status => encode(&state_response(false)),
-                Request::Ssh { entry: entrada, .. } if entrada == "t-nota" => {
+                Request::Ssh { entry, .. } if entry == "t-nota" => {
                     encode(&Response::Error(ResponseError::TypeWithoutDelivery))
                 }
                 Request::Ssh {
-                    entry: entrada,
-                    command: comando,
+                    entry,
+                    command,
                     token: t,
-                    window_size: janela,
-                    stdin_kind: tipo_entrada,
+                    window_size,
+                    stdin_kind,
                 } => {
-                    assert_eq!(entrada, "acme-ssh");
-                    assert_eq!(*tipo_entrada, ward_core::protocol::StdinKind::Null);
-                    let c: Vec<&[u8]> = comando.iter().map(|x| x.as_slice()).collect();
+                    assert_eq!(entry, "acme-ssh");
+                    assert_eq!(*stdin_kind, ward_core::protocol::StdinKind::Null);
+                    let c: Vec<&[u8]> = command.iter().map(|x| x.as_slice()).collect();
                     assert_eq!(c, [b"ls".as_slice(), b"-la"]);
                     assert_eq!(t.as_ref().map(|t| t.expose().to_vec()), Some(token.into()));
-                    assert!(janela.is_none());
+                    assert!(window_size.is_none());
                     encode(&Response::Output {
                         stream: Stream::Stdout,
                         data: Zeroizing::new("senha=••••\n".as_bytes().to_vec()),

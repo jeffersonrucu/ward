@@ -225,8 +225,8 @@ pub fn handle(
     // D63: the state response carries the role the daemon gave to this connection.
     // Without the extension role (the host was not opened by the installed Chrome, or it
     // is not the setgid binary), the extension gets only the unauthorized error.
-    if let Response::Status { role: papel, .. } = &response
-        && *papel != Role::Extension
+    if let Response::Status { role, .. } = &response
+        && *role != Role::Extension
     {
         log("o daemon não deu o papel extensão a este host");
         return error_body(ResponseError::Unauthorized);

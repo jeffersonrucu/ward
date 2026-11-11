@@ -1,23 +1,22 @@
-//! `wardd-aprovador-teste`: janela de aprovação de teste das suítes de ponta a ponta do M6
-//! (Fase 44c; D8, D9, D63). Só existe com a feature `test-mode` (`required-features`),
-//! nunca no release.
+//! `wardd-aprovador-teste`: test approval window of the M6 end-to-end suites (Phase 44c;
+//! D8, D9, D63). It only exists with the `test-mode` feature (`required-features`), never
+//! in the release.
 //!
-//! O daemon de teste a abre pelo `abrir_app` quando um pedido precisa da janela (com
-//! `WARD_DEV_APP` apontando para uma cópia dela dentro do repositório): ela recebe o
-//! papel app (D63), conecta ao socket de teste (`$WARD_DEV_SOCKET_DIR/wardd.sock`, ou
-//! `/run/user/<uid>/ward-teste/wardd.sock`) e responde cada `pedido_de_aprovacao` com o
-//! que a suíte escreveu em `$WARD_DEV_DIR/aprovador.modo` (lido a cada pedido):
-//! - `confirmar`, `negar`, `uma_vez <PIN>` (o PIN do cofre de teste),
-//!   `uma_vez_ciente <PIN>` (Fase 54b: o mesmo com a caixa da entrada padrão marcada), ou
-//! - `nada` (não responde: o pedido expira, ou o cliente desiste).
+//! The test daemon opens it through its open-app request when a request needs the window
+//! (with `WARD_DEV_APP` pointing to a copy of it inside the repository): it gets the app
+//! role (D63), connects to the test socket (`$WARD_DEV_SOCKET_DIR/wardd.sock`, or the
+//! test socket under `/run/user/<uid>/`) and answers each approval request with what the
+//! suite wrote in the mode file under `$WARD_DEV_DIR` (read on every request): confirm,
+//! deny, allow once with the PIN of the test vault, the same with the standard input box
+//! checked (Phase 54b), or nothing (it does not answer: the request expires, or the
+//! client gives up). The mode words are the literals of [`mode`].
 //!
-//! Imprime, uma linha por evento, só o que a suíte confere (nenhum valor do cofre: o
-//! pedido de aprovação não tem nenhum): `papel=<papel>`,
-//! `pedido operacao=<op> entradas=<a,b> origem=<origem> confirmacao=<0|1> decisao=<d>`
-//! (com ` entrada_oculta=1` antes do `decisao` quando a entrada padrão é oculta) e
-//! `resposta=<tipo ou código>`. A saída vai para `$WARD_DEV_DIR/logs/<binário>.log`
-//! (o lançador do daemon de teste). Executada à mão, ela recebe o papel agente, o daemon
-//! recusa o `responder_aprovacao` e ela sai.
+//! It prints, one line per event, only what the suite checks (no value of the vault: the
+//! approval request has none): the role, the request (operation, entries, origin,
+//! confirmation, the hidden standard input flag when set, and the decision) and the
+//! response (kind or code). The output goes to `$WARD_DEV_DIR/logs/<binary>.log` (the
+//! launcher of the test daemon). Run by hand, it gets the agent role, the daemon refuses
+//! the answer and it exits.
 
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
@@ -37,40 +36,40 @@ fn socket() -> Option<PathBuf> {
     }
 }
 
-fn mandar(s: &mut UnixStream, p: &Request) -> bool {
-    let Ok(corpo) = protocol::encode_request(Role::App, p) else {
+fn send(s: &mut UnixStream, p: &Request) -> bool {
+    let Ok(body) = protocol::encode_request(Role::App, p) else {
         return false;
     };
-    let Ok(n) = u32::try_from(corpo.len()) else {
+    let Ok(n) = u32::try_from(body.len()) else {
         return false;
     };
     s.write_all(&n.to_be_bytes())
-        .and_then(|()| s.write_all(&corpo))
+        .and_then(|()| s.write_all(&body))
         .is_ok()
 }
 
-fn ler(s: &mut UnixStream) -> Option<Vec<u8>> {
+fn read(s: &mut UnixStream) -> Option<Vec<u8>> {
     let mut n = [0u8; 4];
     s.read_exact(&mut n).ok()?;
-    let tamanho = usize::try_from(u32::from_be_bytes(n)).ok()?;
-    let mut corpo = vec![0u8; tamanho.min(1 << 20)];
-    s.read_exact(&mut corpo).ok()?;
-    Some(corpo)
+    let size = usize::try_from(u32::from_be_bytes(n)).ok()?;
+    let mut body = vec![0u8; size.min(1 << 20)];
+    s.read_exact(&mut body).ok()?;
+    Some(body)
 }
 
-/// A decisão do arquivo de modo (a suíte troca entre um caso e outro): decisão, PIN e a
-/// caixa da entrada padrão (Fase 54b).
-fn modo() -> Option<(Decision, Option<Secret>, bool)> {
+/// The decision of the mode file (the suite switches between one case and another):
+/// decision, PIN and the standard input box (Phase 54b).
+fn mode() -> Option<(Decision, Option<Secret>, bool)> {
     let dev = PathBuf::from(std::env::var_os("WARD_DEV_DIR")?);
-    let texto = std::fs::read_to_string(dev.join("aprovador.modo")).ok()?;
-    let linha = texto.lines().next()?.trim();
-    match linha.split_once(' ') {
+    let text = std::fs::read_to_string(dev.join("aprovador.modo")).ok()?;
+    let line = text.lines().next()?.trim();
+    match line.split_once(' ') {
         Some((m @ ("uma_vez" | "uma_vez_ciente"), pin)) => Some((
             Decision::AllowOnce,
             Some(Secret::from_bytes(pin.trim().as_bytes().to_vec())),
             m == "uma_vez_ciente",
         )),
-        _ => match linha {
+        _ => match line {
             "confirmar" => Some((Decision::Confirm, None, false)),
             "negar" => Some((Decision::Deny, None, false)),
             _ => None,
@@ -79,21 +78,21 @@ fn modo() -> Option<(Decision, Option<Secret>, bool)> {
 }
 
 fn main() -> ExitCode {
-    let Some(caminho) = socket() else {
+    let Some(path) = socket() else {
         return ExitCode::FAILURE;
     };
-    let Ok(mut s) = UnixStream::connect(&caminho) else {
+    let Ok(mut s) = UnixStream::connect(&path) else {
         println!("erro=conectar");
         return ExitCode::FAILURE;
     };
-    if !mandar(&mut s, &Request::Status) {
+    if !send(&mut s, &Request::Status) {
         return ExitCode::FAILURE;
     }
-    while let Some(corpo) = ler(&mut s) {
-        match protocol::decode_response(Role::App, &corpo) {
-            Ok(Response::Status { role: papel, .. }) => println!("papel={}", papel.name()),
+    while let Some(body) = read(&mut s) {
+        match protocol::decode_response(Role::App, &body) {
+            Ok(Response::Status { role, .. }) => println!("papel={}", role.name()),
             Ok(Response::ApprovalRequest(p)) => {
-                let escolha = modo();
+                let choice = mode();
                 println!(
                     "pedido operacao={} entradas={} origem={} confirmacao={}{} decisao={}",
                     p.operation.name(),
@@ -105,16 +104,16 @@ fn main() -> ExitCode {
                     } else {
                         ""
                     },
-                    escolha.as_ref().map_or("nada", |(d, _, _)| d.name()),
+                    choice.as_ref().map_or("nada", |(d, _, _)| d.name()),
                 );
-                if let Some((decisao, pin, entrada_confirmada)) = escolha {
-                    let pedido = Request::AnswerApproval {
+                if let Some((decision, pin, confirmed_entry)) = choice {
+                    let request = Request::AnswerApproval {
                         request: p.id,
-                        decision: decisao,
+                        decision,
                         pin,
-                        confirmed_entry: entrada_confirmada,
+                        confirmed_entry,
                     };
-                    if !mandar(&mut s, &pedido) {
+                    if !send(&mut s, &request) {
                         break;
                     }
                 }

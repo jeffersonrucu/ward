@@ -1,24 +1,26 @@
-//! `wardd-app-teste`: app de teste mínimo dos testes do `wardd` (D63, Fase 23a). Só
-//! existe com a feature `test-mode` (`required-features`), nunca no release.
+//! `wardd-app-teste`: minimal test app of the `wardd` tests (D63, Phase 23a). It only
+//! exists with the `test-mode` feature (`required-features`), never in the release.
 //!
-//! Conecta ao daemon de teste (`$WARD_DEV_SOCKET_DIR/wardd.sock`, ou
-//! `/run/user/<uid>/ward-teste/wardd.sock`), pede `estado` e `revelar` e imprime, uma
-//! por linha, só o que o teste confere (sem valor nenhum):
-//! - `papel=<agente|app|extensao>`, da primeira resposta;
-//! - `revelar=<tipo ou código do erro>`;
-//! - `ambiente=<nomes das variáveis, em ordem>`;
-//! - `argumentos=<n>`;
-//! - D65 b e c (Fase 22c, V3.39 e V3.40), só quando o papel é app, contra o cofre de
-//!   teste de `crates/ward-core/src/body/test_vault.rs` (o teste grava o mesmo):
-//!   `revelar_pg`, `revelar_bloqueada` e `copiar_pg` (`igual` quando o valor bate com o
-//!   da entrada, `diferente`, ou o tipo/código), `totp` (`igual` quando bate com o
-//!   código local do mesmo período), `campo_inexistente` (o código), `lista` (`resumo`
-//!   quando todo item traz resumo e nenhum segredo, ou o motivo), e por fim `travar` e
-//!   `revelar_travado`. Nenhum valor sai: só a comparação;
-//! - `fim=1`.
+//! Connects to the test daemon (`$WARD_DEV_SOCKET_DIR/wardd.sock`, or the test socket
+//! under `/run/user/<uid>/`), asks for the status and for a reveal and prints, one
+//! `key=value` per line, only what the test checks (no value at all; the keys are the
+//! literals below):
+//! - the role, from the first response;
+//! - the reveal result (kind or error code);
+//! - the environment (names of the variables, in order);
+//! - the number of arguments;
+//! - D65 b and c (Phase 22c, V3.39 and V3.40), only when the role is app, against the
+//!   test vault of `crates/ward-core/src/body/test_vault.rs` (the test writes the same):
+//!   reveal of the database entry and of the blocked one, and copy of the database entry
+//!   (equal when the value matches the entry's, different, or the kind/code), TOTP
+//!   (equal when it matches the local code of the same period), a missing field (the
+//!   code), the list (summary when every item has a summary and no secret, or the
+//!   reason), and at last lock and a reveal while locked. No value goes out: only the
+//!   comparison;
+//! - the end line.
 //!
-//! Aberto pelo `abrir_app` do daemon de teste (com `WARD_DEV_APP` apontando para ele) a
-//! saída vai para `.dev/logs/wardd-app-teste.log`; executado à mão, para o terminal.
+//! Opened by the open-app request of the test daemon (with `WARD_DEV_APP` pointing to it)
+//! the output goes to the test app log under `.dev/logs/`; run by hand, to the terminal.
 
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
@@ -30,29 +32,29 @@ use ward_core::entry::Entry;
 use ward_core::protocol::{self, Request, Response, Role, Target};
 use ward_core::totp::Totp;
 
-// O cofre de teste (só valores falsos) pela API pública, como o daemon falso do app.
+// The test vault (fake values only) through the public API, like the app's fake daemon.
 use ward_core as wc;
 #[path = "../../ward-core/src/body/test_vault.rs"]
 mod test_vault;
 
-fn pedir(s: &mut UnixStream, p: &Request) -> Option<Vec<u8>> {
-    let corpo = protocol::encode_request(Role::App, p).ok()?;
-    s.write_all(&u32::try_from(corpo.len()).ok()?.to_be_bytes())
-        .and_then(|()| s.write_all(&corpo))
+fn ask(s: &mut UnixStream, p: &Request) -> Option<Vec<u8>> {
+    let body = protocol::encode_request(Role::App, p).ok()?;
+    s.write_all(&u32::try_from(body.len()).ok()?.to_be_bytes())
+        .and_then(|()| s.write_all(&body))
         .ok()?;
     let mut n = [0u8; 4];
     s.read_exact(&mut n).ok()?;
-    let tamanho = usize::try_from(u32::from_be_bytes(n)).ok()?;
-    let mut corpo = vec![0u8; tamanho.min(1 << 20)];
-    s.read_exact(&mut corpo).ok()?;
-    Some(corpo)
+    let size = usize::try_from(u32::from_be_bytes(n)).ok()?;
+    let mut body = vec![0u8; size.min(1 << 20)];
+    s.read_exact(&mut body).ok()?;
+    Some(body)
 }
 
-/// O papel vem do `estado`; o resto da leitura é a do agente (aceita tudo que o daemon
-/// manda a qualquer papel) para o tipo do `revelar`.
-fn descrever(corpo: &[u8]) -> String {
-    for papel in [Role::App, Role::Agent] {
-        match protocol::decode_response(papel, corpo) {
+/// The role comes from the status; the rest of the reading is the agent's (it accepts
+/// everything the daemon sends to any role) for the kind of the reveal.
+fn describe(body: &[u8]) -> String {
+    for role in [Role::App, Role::Agent] {
+        match protocol::decode_response(role, body) {
             Ok(Response::Error(e)) => return e.code().to_owned(),
             Ok(r) => return r.kind().name().to_owned(),
             Err(_) => {}
@@ -61,96 +63,92 @@ fn descrever(corpo: &[u8]) -> String {
     "invalida".to_owned()
 }
 
-/// O segredo da entrada do cofre de teste (para comparar, nunca para imprimir).
-fn esperado<'a>(entradas: &'a [Entry], nome: &str, alvo: &Target) -> Option<&'a [u8]> {
-    let e = entradas.iter().find(|e| e.name() == nome)?;
-    alvo.secret_in(e).map(|s| s.expose())
+/// The secret of the test vault entry (to compare, never to print).
+fn expected<'a>(entries: &'a [Entry], name: &str, target: &Target) -> Option<&'a [u8]> {
+    let e = entries.iter().find(|e| e.name() == name)?;
+    target.secret_in(e).map(|s| s.expose())
 }
 
-/// `igual`/`diferente` para um `segredo`; o tipo ou o código do erro para o resto.
-fn comparar(corpo: Option<&[u8]>, esperado: Option<&[u8]>) -> String {
-    let Some(corpo) = corpo else {
+/// Equal/different for a secret; the kind or the error code for the rest.
+fn compare(body: Option<&[u8]>, expected: Option<&[u8]>) -> String {
+    let Some(body) = body else {
         return String::new();
     };
-    match protocol::decode_response(Role::App, corpo) {
-        Ok(Response::Secret(s)) if Some(s.expose()) == esperado => "igual".to_owned(),
+    match protocol::decode_response(Role::App, body) {
+        Ok(Response::Secret(s)) if Some(s.expose()) == expected => "igual".to_owned(),
         Ok(Response::Secret(_)) => "diferente".to_owned(),
-        _ => descrever(corpo),
+        _ => describe(body),
     }
 }
 
-fn contem(palheiro: &[u8], agulha: &[u8]) -> bool {
-    !agulha.is_empty() && palheiro.windows(agulha.len()).any(|w| w == agulha)
+fn contains(haystack: &[u8], needle: &[u8]) -> bool {
+    !needle.is_empty() && haystack.windows(needle.len()).any(|w| w == needle)
 }
 
-/// D65 b e c contra o cofre de teste: o que o app recebe, comparado sem imprimir.
-fn valores_do_app(s: &mut UnixStream) {
-    let entradas = test_vault::test_vault_entries();
-    let senha = || Target::Field("senha".into());
-    for (rotulo, revelar, nome) in [
+/// D65 b and c against the test vault: what the app gets, compared without printing.
+fn app_values(s: &mut UnixStream) {
+    let entries = test_vault::test_vault_entries();
+    let password = || Target::Field("senha".into());
+    for (label, reveal, name) in [
         ("revelar_pg", true, "acme-pg-dev"),
         ("revelar_bloqueada", true, "gama-bloqueada"),
         ("copiar_pg", false, "acme-pg-dev"),
     ] {
-        let p = if revelar {
+        let p = if reveal {
             Request::Reveal {
-                entry: nome.into(),
-                target: senha(),
+                entry: name.into(),
+                target: password(),
             }
         } else {
             Request::Copy {
-                entry: nome.into(),
-                target: senha(),
+                entry: name.into(),
+                target: password(),
             }
         };
-        let r = pedir(s, &p);
+        let r = ask(s, &p);
         println!(
-            "{rotulo}={}",
-            comparar(r.as_deref(), esperado(&entradas, nome, &senha()))
+            "{label}={}",
+            compare(r.as_deref(), expected(&entries, name, &password()))
         );
     }
-    let semente = esperado(
-        &entradas,
+    let seed = expected(
+        &entries,
         "acme-totp-dev",
         &Target::Field("totp_semente".into()),
     )
     .map(|v| wc::entry::Secret::from_bytes(v.to_vec()));
     let local = || {
-        semente
-            .as_ref()
+        seed.as_ref()
             .and_then(|s| Totp::from_seed(s).ok())
             .and_then(|t| t.code_now().ok())
             .map(|c| c.code().to_owned())
     };
-    let antes = local();
-    let r = pedir(
+    let before = local();
+    let r = ask(
         s,
         &Request::Totp {
             entry: "acme-totp-dev".into(),
         },
     );
-    let depois = local();
+    let after = local();
     let totp = match r
         .as_deref()
         .map(|c| protocol::decode_response(Role::App, c))
     {
-        Some(Ok(Response::TotpCode {
-            code: codigo,
-            remaining: restante,
-        })) => {
-            let bate = [&antes, &depois]
+        Some(Ok(Response::TotpCode { code, remaining })) => {
+            let matches = [&before, &after]
                 .iter()
-                .any(|l| l.as_deref() == Some(codigo.as_str()));
-            if bate && (1..=30).contains(&restante) {
+                .any(|l| l.as_deref() == Some(code.as_str()));
+            if matches && (1..=30).contains(&remaining) {
                 "igual".to_owned()
             } else {
                 "diferente".to_owned()
             }
         }
-        _ => r.as_deref().map(descrever).unwrap_or_default(),
+        _ => r.as_deref().map(describe).unwrap_or_default(),
     };
     println!("totp={totp}");
-    let r = pedir(
+    let r = ask(
         s,
         &Request::Reveal {
             entry: "acme-pg-dev".into(),
@@ -159,51 +157,54 @@ fn valores_do_app(s: &mut UnixStream) {
     );
     println!(
         "campo_inexistente={}",
-        r.as_deref().map(descrever).unwrap_or_default()
+        r.as_deref().map(describe).unwrap_or_default()
     );
-    let r = pedir(s, &Request::List);
-    let lista = match r
+    let r = ask(s, &Request::List);
+    let list = match r
         .as_deref()
         .map(|c| (c, protocol::decode_response(Role::App, c)))
     {
-        Some((c, Ok(Response::List(itens)))) => {
-            if itens.len() != entradas.len() {
+        Some((c, Ok(Response::List(items)))) => {
+            if items.len() != entries.len() {
                 "contagem".to_owned()
-            } else if !itens
+            } else if !items
                 .iter()
                 .all(|i| i.summary.is_some() && i.level.is_some())
             {
                 "sem_resumo".to_owned()
-            } else if test_vault::SECRETS.iter().any(|v| contem(c, v.as_bytes())) {
+            } else if test_vault::SECRETS
+                .iter()
+                .any(|v| contains(c, v.as_bytes()))
+            {
                 "com_segredo".to_owned()
             } else {
                 "resumo".to_owned()
             }
         }
-        _ => r.as_deref().map(descrever).unwrap_or_default(),
+        _ => r.as_deref().map(describe).unwrap_or_default(),
     };
-    println!("lista={lista}");
-    let r = pedir(s, &Request::Lock);
-    println!("travar={}", r.as_deref().map(descrever).unwrap_or_default());
-    let r = pedir(
+    println!("lista={list}");
+    let r = ask(s, &Request::Lock);
+    println!("travar={}", r.as_deref().map(describe).unwrap_or_default());
+    let r = ask(
         s,
         &Request::Reveal {
             entry: "acme-pg-dev".into(),
-            target: senha(),
+            target: password(),
         },
     );
     println!(
         "revelar_travado={}",
-        r.as_deref().map(descrever).unwrap_or_default()
+        r.as_deref().map(describe).unwrap_or_default()
     );
 }
 
 fn main() -> ExitCode {
-    let mut nomes: Vec<String> = std::env::vars_os()
+    let mut names: Vec<String> = std::env::vars_os()
         .map(|(k, _)| k.to_string_lossy().into_owned())
         .collect();
-    nomes.sort();
-    println!("ambiente={}", nomes.join(","));
+    names.sort();
+    println!("ambiente={}", names.join(","));
     println!(
         "argumentos={}",
         std::env::args_os().count().saturating_sub(1)
@@ -224,33 +225,30 @@ fn main() -> ExitCode {
         }
     };
     let _ = s.set_read_timeout(Some(Duration::from_secs(10)));
-    let papel = pedir(&mut s, &Request::Status).and_then(|c| {
+    let role = ask(&mut s, &Request::Status).and_then(|c| {
         Role::ALL
             .into_iter()
             .find_map(|p| match protocol::decode_response(p, &c) {
-                Ok(Response::Status { role: papel, .. }) => Some(papel),
+                Ok(Response::Status { role, .. }) => Some(role),
                 _ => None,
             })
     });
-    match papel {
+    match role {
         Some(p) => println!("papel={}", p.name()),
         None => println!("papel=?"),
     }
-    let r = pedir(
+    let r = ask(
         &mut s,
         &Request::Reveal {
             entry: "acme-pg-dev".into(),
             target: Target::Field("senha".into()),
         },
     );
-    println!(
-        "revelar={}",
-        r.as_deref().map(descrever).unwrap_or_default()
-    );
-    // Só o app de teste aberto pelo daemon passa daqui: executado à mão (agente), um
-    // `travar` mexeria no daemon de quem testa.
-    if papel == Some(Role::App) {
-        valores_do_app(&mut s);
+    println!("revelar={}", r.as_deref().map(describe).unwrap_or_default());
+    // Only the test app opened by the daemon goes past here: run by hand (agent), a lock
+    // would touch the daemon of whoever is testing.
+    if role == Some(Role::App) {
+        app_values(&mut s);
     }
     println!("fim=1");
     let _ = std::io::stdout().flush();

@@ -77,8 +77,8 @@ fn main() -> ExitCode {
         .and_then(|()| protocol::decode_response(Role::Agent, &body).ok());
     match r {
         Some(Response::Error(e)) => println!("resposta: erro {}", e.code()),
-        Some(Response::Status { role: papel, .. }) => {
-            println!("resposta: estado papel={}", papel.name())
+        Some(Response::Status { role, .. }) => {
+            println!("resposta: estado papel={}", role.name())
         }
         Some(r) => println!("resposta: {}", r.kind().name()),
         None => println!("resposta: invalida"),

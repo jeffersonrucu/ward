@@ -229,12 +229,12 @@ fn v6_2_fill_only_on_the_right_origin() {
     );
     match &r {
         Response::Fill {
-            username: usuario,
-            password: senha,
+            username,
+            password,
             totp,
         } => {
-            assert_eq!(usuario, "wp_admin");
-            assert_eq!(senha.expose(), SECRETS[0].as_bytes());
+            assert_eq!(username, "wp_admin");
+            assert_eq!(password.expose(), SECRETS[0].as_bytes());
             assert!(totp.is_none());
         }
         other => panic!("esperava preenchimento: {:?}", other.kind()),
@@ -463,12 +463,8 @@ fn v6_8_save_login_starts_with_approval() {
         "localhost-8083",
         "http://localhost:8083",
     ) {
-        Response::Fill {
-            password: senha,
-            totp,
-            ..
-        } => {
-            assert_eq!(senha.expose(), NEW_PASSWORD.as_bytes());
+        Response::Fill { password, totp, .. } => {
+            assert_eq!(password.expose(), NEW_PASSWORD.as_bytes());
             assert!(totp.is_none());
         }
         other => panic!("esperava preenchimento: {:?}", other.kind()),
@@ -506,9 +502,7 @@ fn attack_save_login_does_not_overwrite_entry() {
         Some(AccessLevel::Approval)
     );
     match fill(&d, Role::Extension, "acme-wp-dev", "http://localhost:8081") {
-        Response::Fill {
-            password: senha, ..
-        } => assert_eq!(senha.expose(), SECRETS[0].as_bytes()),
+        Response::Fill { password, .. } => assert_eq!(password.expose(), SECRETS[0].as_bytes()),
         other => panic!("esperava preenchimento: {:?}", other.kind()),
     }
 }

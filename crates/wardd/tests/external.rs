@@ -167,11 +167,8 @@ fn v7_4_off_by_default_writes_nothing() {
     let source = Source::with(vec![usb_drive(UUID_A, &a)]);
     let d = d.with_usb_drives(Arc::new(source.clone()));
     match request(&d, Role::App, "backup_externo", "{}") {
-        Response::ExternalBackup {
-            enabled: ligado,
-            uuid,
-        } => {
-            assert!(!ligado);
+        Response::ExternalBackup { enabled, uuid } => {
+            assert!(!enabled);
             assert_eq!(uuid, None);
         }
         r => panic!("{r:?}"),
@@ -206,11 +203,8 @@ fn v7_5_v7_6_copies_only_to_the_chosen_drive_and_without_secret() {
     let source = Source::with(vec![usb_drive(UUID_B, &b)]);
     assert!(ok(&turn_on(&d, Role::App, UUID_A)));
     match request(&d, Role::App, "backup_externo", "{}") {
-        Response::ExternalBackup {
-            enabled: ligado,
-            uuid,
-        } => {
-            assert!(ligado);
+        Response::ExternalBackup { enabled, uuid } => {
+            assert!(enabled);
             assert_eq!(uuid.as_deref(), Some(UUID_A));
         }
         r => panic!("{r:?}"),
@@ -703,11 +697,8 @@ fn locked_or_off_does_not_copy() {
     assert_eq!(source.queries(), n);
     assert_eq!(tree(&a), before, "nada novo, nada apagado");
     match request(&d, Role::App, "backup_externo", "{}") {
-        Response::ExternalBackup {
-            enabled: ligado,
-            uuid,
-        } => {
-            assert!(!ligado);
+        Response::ExternalBackup { enabled, uuid } => {
+            assert!(!enabled);
             assert_eq!(uuid.as_deref(), Some(UUID_A));
         }
         r => panic!("{r:?}"),

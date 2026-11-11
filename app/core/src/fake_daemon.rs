@@ -564,7 +564,7 @@ impl FakeDaemon {
                 vault_exists: true,
                 role: Role::App,
             },
-            Request::Unlock { password: senha } => match self.unlock(&senha) {
+            Request::Unlock { password } => match self.unlock(&password) {
                 Ok(()) => Response::Ok,
                 Err(e) => Response::Error(e),
             },
@@ -579,25 +579,20 @@ impl FakeDaemon {
                     .map(|e| ListItem::from_entry(e, Role::App))
                     .collect(),
             ),
-            Request::Detail { entry: entrada } => match self.entry(&entrada) {
+            Request::Detail { entry } => match self.entry(&entry) {
                 Some(e) => Response::Detail(EntryDetail::from_entry(e)),
                 None => Response::Error(ResponseError::EntryNotFound),
             },
-            Request::Copy {
-                entry: entrada,
-                target: alvo,
+            Request::Copy { entry, target } | Request::Reveal { entry, target } => {
+                match self.entry(&entry) {
+                    Some(e) => match target.secret_in(e) {
+                        Some(v) => Response::Secret(CoreSecret::from_bytes(v.expose().to_vec())),
+                        None => Response::Error(ResponseError::FieldNotFound),
+                    },
+                    None => Response::Error(ResponseError::EntryNotFound),
+                }
             }
-            | Request::Reveal {
-                entry: entrada,
-                target: alvo,
-            } => match self.entry(&entrada) {
-                Some(e) => match alvo.secret_in(e) {
-                    Some(v) => Response::Secret(CoreSecret::from_bytes(v.expose().to_vec())),
-                    None => Response::Error(ResponseError::FieldNotFound),
-                },
-                None => Response::Error(ResponseError::EntryNotFound),
-            },
-            Request::Totp { entry: entrada } => match self.entry(&entrada) {
+            Request::Totp { entry } => match self.entry(&entry) {
                 Some(e) => match Target::Field("totp_semente".to_owned()).secret_in(e) {
                     Some(seed) => match Totp::from_seed(seed).and_then(|t| t.code_now()) {
                         Ok(c) => Response::TotpCode {
@@ -611,18 +606,14 @@ impl FakeDaemon {
                 None => Response::Error(ResponseError::EntryNotFound),
             },
             Request::SaveEntry {
-                previous: anterior,
-                draft: rascunho,
-                keep_attachments: manter_anexos,
-            } => match self.save(anterior.as_deref(), rascunho, &manter_anexos) {
+                previous,
+                draft,
+                keep_attachments,
+            } => match self.save(previous.as_deref(), draft, &keep_attachments) {
                 Ok(()) => Response::Ok,
                 Err(e) => Response::Error(e),
             },
-            Request::SetLevel {
-                entry: entrada,
-                level: nivel,
-                pin,
-            } => match self.set_level(&entrada, nivel, &pin) {
+            Request::SetLevel { entry, level, pin } => match self.set_level(&entry, level, &pin) {
                 Ok(()) => Response::Ok,
                 Err(e) => Response::Error(e),
             },
@@ -630,15 +621,15 @@ impl FakeDaemon {
             // no session; the token is random and not kept.
             // Phase 36: the same rule as `wardd` (its use module, answer approval).
             Request::AnswerApproval {
-                request: pedido,
-                decision: decisao,
+                request,
+                decision,
                 pin,
-                confirmed_entry: entrada_confirmada,
-            } => match self.answer_approval(pedido, decisao, pin.as_ref(), entrada_confirmada) {
+                confirmed_entry,
+            } => match self.answer_approval(request, decision, pin.as_ref(), confirmed_entry) {
                 Ok(()) => Response::Ok,
                 Err(e) => Response::Error(e),
             },
-            Request::IssueToken { entry: entrada } => match self.entry(&entrada) {
+            Request::IssueToken { entry } => match self.entry(&entry) {
                 Some(e) if e.kind() == EntryType::Server => {
                     match ward_core::generator::generate(&ward_core::generator::GeneratorOptions {
                         size: 32,
@@ -666,16 +657,15 @@ impl FakeDaemon {
                 enabled: self.backup.enabled(),
                 uuid: self.backup.uuid().map(str::to_owned),
             },
-            Request::SetExternalBackup {
-                enabled: ligado,
-                uuid,
-            } => match wc::config::ExternalBackup::new(ligado, uuid.as_deref()) {
-                Ok(b) => {
-                    self.backup = b;
-                    Response::Ok
+            Request::SetExternalBackup { enabled, uuid } => {
+                match wc::config::ExternalBackup::new(enabled, uuid.as_deref()) {
+                    Ok(b) => {
+                        self.backup = b;
+                        Response::Ok
+                    }
+                    Err(_) => Response::Error(ResponseError::InvalidRequest),
                 }
-                Err(_) => Response::Error(ResponseError::InvalidRequest),
-            },
+            }
             Request::UsbDrives => match &self.usb_drives {
                 Some(l) => Response::UsbDrives(l.clone()),
                 None => Response::Error(ResponseError::UsbDrivesUnavailable),
@@ -706,36 +696,32 @@ impl FakeDaemon {
                 None => Response::Error(ResponseError::BackupUnavailable),
             },
             Request::RestoreBackup {
-                version: versao,
-                password: senha,
+                version,
+                password,
                 pin,
-            } => match self.restore(&versao, &senha, &pin) {
+            } => match self.restore(&version, &password, &pin) {
                 Ok(()) => Response::Ok,
                 Err(e) => Response::Error(e),
             },
-            Request::LockTimeout { minutes: minutos } => {
-                if (wc::limits::MIN_LOCK_MINUTES..=wc::limits::MAX_LOCK_MINUTES).contains(&minutos)
+            Request::LockTimeout { minutes } => {
+                if (wc::limits::MIN_LOCK_MINUTES..=wc::limits::MAX_LOCK_MINUTES).contains(&minutes)
                 {
-                    self.lock_minutes = minutos;
+                    self.lock_minutes = minutes;
                     Response::Ok
                 } else {
                     Response::Error(ResponseError::InvalidRequest)
                 }
             }
-            Request::ChangePin {
-                current: atual,
-                new: novo,
-            } => match self.change_pin(&atual, &novo) {
+            Request::ChangePin { current, new } => match self.change_pin(&current, &new) {
                 Ok(()) => Response::Ok,
                 Err(e) => Response::Error(e),
             },
-            Request::ChangePassword {
-                current: atual,
-                new: nova,
-            } => match self.change_password(&atual, &nova) {
-                Ok(()) => Response::Ok,
-                Err(e) => Response::Error(e),
-            },
+            Request::ChangePassword { current, new } => {
+                match self.change_password(&current, &new) {
+                    Ok(()) => Response::Ok,
+                    Err(e) => Response::Error(e),
+                }
+            }
             _ => Response::Error(ResponseError::Internal),
         }
     }

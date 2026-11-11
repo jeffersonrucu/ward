@@ -18,13 +18,13 @@ use ward_core::protocol::{Response, ResponseError, Role};
 fn settings(d: &wardd::core::Daemon) -> (u32, bool) {
     match request(d, Role::App, "configuracao", "{}") {
         Response::Config {
-            lock_minutes: minutos_trava,
-            external_backup: backup_externo,
-            local_backup: backup_local,
+            lock_minutes,
+            external_backup,
+            local_backup,
         } => {
             // The test vault has the backups folder at 0700 (Phase 49a).
-            assert!(backup_local);
-            (minutos_trava, backup_externo)
+            assert!(local_backup);
+            (lock_minutes, external_backup)
         }
         other => panic!("{other:?}"),
     }
