@@ -7,10 +7,10 @@ use std::net::TcpStream;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use ward_app_core::ErroApp;
+use ward_app_core::AppError;
 use ward_app_core::area_transferencia::{AreaTransferencia, Copiador};
 use ward_app_core::daemon_falso::{DaemonFalso, SEGREDOS};
-use ward_app_core::servico::Servico;
+use ward_app_core::service::Service;
 use ward_test_bridge::http::{Bridge, MAX_BODY, MAX_HEADER, Request, read_request};
 use zeroize::Zeroizing;
 
@@ -20,14 +20,14 @@ const SECRET: &[u8] = b"falso-PG:s3nha/01@#";
 #[derive(Default, Clone)]
 struct FakeClipboard(Arc<Mutex<Option<Vec<u8>>>>);
 impl AreaTransferencia for FakeClipboard {
-    fn escrever(&self, v: &[u8]) -> Result<(), ErroApp> {
+    fn escrever(&self, v: &[u8]) -> Result<(), AppError> {
         *self.0.lock().unwrap() = Some(v.to_vec());
         Ok(())
     }
-    fn ler(&self) -> Result<Option<Zeroizing<Vec<u8>>>, ErroApp> {
+    fn ler(&self) -> Result<Option<Zeroizing<Vec<u8>>>, AppError> {
         Ok(self.0.lock().unwrap().clone().map(Zeroizing::new))
     }
-    fn limpar(&self) -> Result<(), ErroApp> {
+    fn limpar(&self) -> Result<(), AppError> {
         *self.0.lock().unwrap() = None;
         Ok(())
     }
@@ -58,7 +58,7 @@ fn bridge(
 ) {
     let base = dist(name);
     let clipboard = FakeClipboard::default();
-    let service = Servico::novo(DaemonFalso::cheio(), Copiador::novo(clipboard.clone()));
+    let service = Service::new(DaemonFalso::cheio(), Copiador::novo(clipboard.clone()));
     let (p, l) = Bridge::open(service, &base.join("dist")).unwrap();
     (p, l, clipboard, base)
 }
@@ -577,12 +577,12 @@ fn attack_attachments_and_connect_through_the_bridge() {
     let folder = base.join("anexos");
     fs::create_dir_all(&folder).unwrap();
     fs::write(folder.join("deploy.pem"), "falso-anexo-ponte-34\n").unwrap();
-    let service = Servico::novo(
+    let service = Service::new(
         DaemonFalso::cheio(),
         Copiador::novo(FakeClipboard::default()),
     )
-    .com_seletor(DirPicker(folder.clone()))
-    .com_terminal(TestTerminal);
+    .with_picker(DirPicker(folder.clone()))
+    .with_terminal(TestTerminal);
     let (p, _l) = Bridge::open(service, &base.join("dist")).unwrap();
     let r = p.respond(&post(&p, "escolher_anexo", "{}", &[]));
     let v = r.body_json().unwrap();
@@ -653,11 +653,11 @@ fn attack_load_key_through_the_bridge() {
     let label = ["OPENSSH", " PRIVATE", " KEY"].concat();
     let key = format!("-----BEGIN {label}-----\n{key_body}\n-----END {label}-----\n");
     fs::write(folder.join("deploy_ed25519"), &key).unwrap();
-    let service = Servico::novo(
+    let service = Service::new(
         DaemonFalso::cheio(),
         Copiador::novo(FakeClipboard::default()),
     )
-    .com_seletor(DirPicker(folder.clone()));
+    .with_picker(DirPicker(folder.clone()));
     let (p, _l) = Bridge::open(service, &base.join("dist")).unwrap();
     for body in [
         r#"{}"#,
@@ -755,7 +755,7 @@ fn attack_load_key_through_the_bridge() {
 #[test]
 fn attack_first_use_through_the_bridge() {
     let base = dist("primeiro-uso");
-    let service = Servico::novo(
+    let service = Service::new(
         DaemonFalso::sem_cofre(),
         Copiador::novo(FakeClipboard::default()),
     );
@@ -1001,7 +1001,7 @@ fn attack_lock_through_the_bridge() {
 #[test]
 fn attack_settings_through_the_bridge() {
     let base = dist("configuracoes");
-    let service = Servico::novo(
+    let service = Service::new(
         DaemonFalso::cheio(),
         Copiador::novo(FakeClipboard::default()),
     );
@@ -1104,7 +1104,7 @@ fn attack_settings_through_the_bridge() {
 #[test]
 fn attack_external_backup_through_the_bridge() {
     let base = dist("backup-externo");
-    let service = Servico::novo(
+    let service = Service::new(
         DaemonFalso::cheio(),
         Copiador::novo(FakeClipboard::default()),
     );
@@ -1187,7 +1187,7 @@ fn attack_external_backup_through_the_bridge() {
 #[test]
 fn attack_restore_backup_through_the_bridge() {
     let base = dist("restaurar-backup");
-    let service = Servico::novo(
+    let service = Service::new(
         DaemonFalso::cheio(),
         Copiador::novo(FakeClipboard::default()),
     );

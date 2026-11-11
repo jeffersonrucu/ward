@@ -8,7 +8,7 @@ publish.workspace = true
 
 # Sem Tauri e sem GTK: compila e testa no `make check` do workspace raiz. O crate do
 # Tauri (`app/src-tauri`, workspace próprio) e a ponte de teste (`ward-test-bridge`) só
-# chamam o `Servico` daqui, então os dois expõem exatamente os mesmos comandos.
+# chamam o `Service` daqui, então os dois expõem exatamente os mesmos comandos.
 [features]
 # D7: socket do daemon de teste (`/run/user/<uid>/ward-teste/`, pasta 0700 do usuário
 # e par do mesmo uid). Sem a feature, o caminho de teste e essa exceção nem existem no

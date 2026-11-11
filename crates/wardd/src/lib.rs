@@ -9,7 +9,7 @@
 //!   uso do agente (nível combinado, liberação de 1 hora, botões com PIN);
 //!   [`lancamento`]: o daemon abre o app pelo lançador (D57).
 //! - [`trava`]: trava automática por inatividade e pelo logind (Fase 24).
-//! - [`execucao`]: o `ward run` (Fase 26): entrega, máscara, filho e temporários.
+//! - [`execution`]: o `ward run` (Fase 26): entrega, máscara, filho e temporários.
 //! - [`ssh`]: o `ward ssh` (Fase 27); [`ponte`]: o salto e o túnel sem shell (Fase 28).
 //! - [`login`]: o `ward login` (Fase 43), levado à extensão do Chrome.
 //! - [`playwright`]: o `ward playwright` (Fase 44) pelo Chrome com o pipe de
@@ -23,12 +23,11 @@
 
 pub mod log;
 
-pub mod agente_ssh;
 pub mod aprovacao;
 pub mod arquivos;
 pub mod cdp;
 pub mod config;
-pub mod execucao;
+pub mod execution;
 pub mod externo;
 pub mod lancamento;
 pub mod login;
@@ -37,6 +36,7 @@ pub mod playwright;
 pub mod ponte;
 pub mod servidor;
 pub mod ssh;
+pub mod ssh_agent;
 pub mod trava;
 pub mod udisks;
 pub mod uso;

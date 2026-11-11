@@ -21,7 +21,7 @@ use ward_core::config::ExternalBackup;
 use ward_core::limits::MAX_BACKUP_UUID;
 use ward_core::protocolo::Pendrive;
 
-use crate::ErroApp;
+use crate::AppError;
 
 /// Um pendrive para a tela: o rótulo já neutralizado (D51).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -62,12 +62,12 @@ pub enum EscolhaDoPendrive {
 
 impl EscolhaDoPendrive {
     /// `ligado` e `uuid` como vieram da interface. Ligar sem UUID, UUID fora do formato
-    /// de D45 ou desligar com UUID: [`ErroApp::PedidoInvalido`], antes do daemon.
-    pub fn nova(ligado: bool, uuid: Option<&str>) -> Result<EscolhaDoPendrive, ErroApp> {
+    /// de D45 ou desligar com UUID: [`AppError::InvalidRequest`], antes do daemon.
+    pub fn nova(ligado: bool, uuid: Option<&str>) -> Result<EscolhaDoPendrive, AppError> {
         match (ligado, uuid) {
             (true, Some(u)) if uuid_valido(u) => Ok(EscolhaDoPendrive::Ligar(u.to_owned())),
             (false, None) => Ok(EscolhaDoPendrive::Desligar),
-            _ => Err(ErroApp::PedidoInvalido),
+            _ => Err(AppError::InvalidRequest),
         }
     }
 }
@@ -126,23 +126,23 @@ mod testes {
         ] {
             assert_eq!(
                 EscolhaDoPendrive::nova(true, Some(ruim)),
-                Err(ErroApp::PedidoInvalido),
+                Err(AppError::InvalidRequest),
                 "{ruim:?}"
             );
         }
         let longo = "A".repeat(MAX_BACKUP_UUID + 1);
         assert_eq!(
             EscolhaDoPendrive::nova(true, Some(&longo)),
-            Err(ErroApp::PedidoInvalido)
+            Err(AppError::InvalidRequest)
         );
         // Ligar sem pendrive, e desligar trocando o UUID guardado.
         assert_eq!(
             EscolhaDoPendrive::nova(true, None),
-            Err(ErroApp::PedidoInvalido)
+            Err(AppError::InvalidRequest)
         );
         assert_eq!(
             EscolhaDoPendrive::nova(false, Some("7C1E-42A9")),
-            Err(ErroApp::PedidoInvalido)
+            Err(AppError::InvalidRequest)
         );
     }
 
@@ -188,7 +188,7 @@ mod testes {
 
         struct Resposta1(Vec<u8>);
         impl Daemon for Resposta1 {
-            fn trocar(&mut self, _pedido: &[u8]) -> Result<Zeroizing<Vec<u8>>, ErroApp> {
+            fn trocar(&mut self, _pedido: &[u8]) -> Result<Zeroizing<Vec<u8>>, AppError> {
                 Ok(Zeroizing::new(self.0.clone()))
             }
         }
@@ -216,7 +216,7 @@ mod testes {
         ] {
             assert_eq!(
                 cliente::pendrives(&mut Resposta1(mau.clone())).unwrap_err(),
-                ErroApp::RespostaInvalida,
+                AppError::InvalidResponse,
                 "{}",
                 String::from_utf8_lossy(&mau)
             );
@@ -233,19 +233,19 @@ mod testes {
         use crate::daemon::Daemon;
         use crate::daemon_falso::DaemonFalso;
         use crate::nivel::Pin;
-        use crate::servico::Servico;
+        use crate::service::Service;
 
         type Quadros = Arc<Mutex<Vec<Vec<u8>>>>;
 
         struct SemArea;
         impl AreaTransferencia for SemArea {
-            fn escrever(&self, _: &[u8]) -> Result<(), ErroApp> {
+            fn escrever(&self, _: &[u8]) -> Result<(), AppError> {
                 Ok(())
             }
-            fn ler(&self) -> Result<Option<Zeroizing<Vec<u8>>>, ErroApp> {
+            fn ler(&self) -> Result<Option<Zeroizing<Vec<u8>>>, AppError> {
                 Ok(None)
             }
-            fn limpar(&self) -> Result<(), ErroApp> {
+            fn limpar(&self) -> Result<(), AppError> {
                 Ok(())
             }
         }
@@ -254,18 +254,18 @@ mod testes {
         #[derive(Clone)]
         struct Espiao(Arc<Mutex<DaemonFalso>>, Quadros);
         impl Daemon for Espiao {
-            fn trocar(&mut self, pedido: &[u8]) -> Result<Zeroizing<Vec<u8>>, ErroApp> {
+            fn trocar(&mut self, pedido: &[u8]) -> Result<Zeroizing<Vec<u8>>, AppError> {
                 self.1.lock().unwrap().push(pedido.to_vec());
                 self.0.lock().unwrap().trocar(pedido)
             }
         }
 
-        fn servico(falso: DaemonFalso) -> (Servico<Espiao, SemArea>, Espiao) {
+        fn servico(falso: DaemonFalso) -> (Service<Espiao, SemArea>, Espiao) {
             let e = Espiao(
                 Arc::new(Mutex::new(falso.sem_espera())),
                 Arc::new(Mutex::new(Vec::new())),
             );
-            (Servico::novo(e.clone(), Copiador::novo(SemArea)), e)
+            (Service::new(e.clone(), Copiador::novo(SemArea)), e)
         }
 
         fn definicoes(e: &Espiao) -> usize {
@@ -286,36 +286,36 @@ mod testes {
         fn v7_9_escolher_ligar_e_desligar() {
             let (s, e) = servico(DaemonFalso::cheio());
             // Desligado por padrão (D17), sem pendrive escolhido.
-            let b = s.backup_externo().unwrap();
+            let b = s.external_backup().unwrap();
             assert!(!b.ligado && b.uuid.is_none() && b.pendrive.is_none());
-            assert!(!s.configuracoes().unwrap().backup_externo);
-            let lista = s.listar_pendrives().unwrap();
+            assert!(!s.settings().unwrap().backup_externo);
+            let lista = s.list_usb_drives().unwrap();
             assert_eq!(lista.len(), 4);
             sem_caminho(&serde_json::to_string(&lista).unwrap());
             // Ligar com um pendrive da lista (em minúsculas: vai o UUID do daemon).
-            let b = s.definir_backup_externo(true, Some("3f2a-9b10")).unwrap();
+            let b = s.set_external_backup(true, Some("3f2a-9b10")).unwrap();
             assert!(b.ligado && b.pendrives_visiveis);
             assert_eq!(b.uuid.as_deref(), Some("3F2A-9B10"));
             let p = b.pendrive.as_ref().unwrap();
             assert_eq!((p.rotulo.as_str(), p.montado), ("FOTOS 2024", false));
-            assert!(s.configuracoes().unwrap().backup_externo);
+            assert!(s.settings().unwrap().backup_externo);
             assert_eq!(
                 e.0.lock().unwrap().backup(),
                 (true, Some("3F2A-9B10".into()))
             );
             sem_caminho(&serde_json::to_string(&b).unwrap());
             // Trocar de pendrive.
-            let b = s.definir_backup_externo(true, Some("7C1E-42A9")).unwrap();
+            let b = s.set_external_backup(true, Some("7C1E-42A9")).unwrap();
             assert_eq!(b.pendrive.unwrap().rotulo, "WARD-BACKUP");
             // Desligar mantém o UUID guardado; nada é apagado do pendrive (Fase 46).
-            let b = s.definir_backup_externo(false, None).unwrap();
+            let b = s.set_external_backup(false, None).unwrap();
             assert!(!b.ligado);
             assert_eq!(b.uuid.as_deref(), Some("7C1E-42A9"));
             assert_eq!(
                 e.0.lock().unwrap().backup(),
                 (false, Some("7C1E-42A9".into()))
             );
-            assert!(!s.configuracoes().unwrap().backup_externo);
+            assert!(!s.settings().unwrap().backup_externo);
             assert_eq!(definicoes(&e), 3);
         }
 
@@ -330,26 +330,26 @@ mod testes {
                 "",
             ] {
                 assert_eq!(
-                    s.definir_backup_externo(true, Some(ruim)),
-                    Err(ErroApp::PedidoInvalido),
+                    s.set_external_backup(true, Some(ruim)),
+                    Err(AppError::InvalidRequest),
                     "{ruim:?}"
                 );
             }
             assert_eq!(
-                s.definir_backup_externo(true, None),
-                Err(ErroApp::PedidoInvalido)
+                s.set_external_backup(true, None),
+                Err(AppError::InvalidRequest)
             );
             assert_eq!(
-                s.definir_backup_externo(false, Some("7C1E-42A9")),
-                Err(ErroApp::PedidoInvalido)
+                s.set_external_backup(false, Some("7C1E-42A9")),
+                Err(AppError::InvalidRequest)
             );
             assert!(e.1.lock().unwrap().is_empty());
             // No formato, mas não é de um pendrive conectado: o daemon só é consultado
             // (`pendrives`); o `definir_backup_externo` não sai.
             for forjado in ["DEAD-BEEF", "7C1E-42AA", "7C1E42A9"] {
                 assert_eq!(
-                    s.definir_backup_externo(true, Some(forjado)),
-                    Err(ErroApp::PendriveNaoConectado),
+                    s.set_external_backup(true, Some(forjado)),
+                    Err(AppError::UsbDriveNotConnected),
                     "{forjado}"
                 );
             }
@@ -365,8 +365,8 @@ mod testes {
             lista.push(clone);
             let (s, e) = servico(DaemonFalso::cheio().com_pendrives(Some(lista)));
             assert_eq!(
-                s.definir_backup_externo(true, Some("7C1E-42A9")),
-                Err(ErroApp::PendriveNaoConectado)
+                s.set_external_backup(true, Some("7C1E-42A9")),
+                Err(AppError::UsbDriveNotConnected)
             );
             assert_eq!(definicoes(&e), 0);
         }
@@ -374,22 +374,22 @@ mod testes {
         #[test]
         fn sem_udisks_nao_liga_e_o_cartao_diz_que_nao_viu() {
             let (s, e) = servico(DaemonFalso::backup_externo_ligado().com_pendrives(None));
-            assert_eq!(s.listar_pendrives(), Err(ErroApp::PendrivesIndisponiveis));
-            let b = s.backup_externo().unwrap();
+            assert_eq!(s.list_usb_drives(), Err(AppError::UsbDrivesUnavailable));
+            let b = s.external_backup().unwrap();
             assert!(b.ligado && !b.pendrives_visiveis && b.pendrive.is_none());
             assert_eq!(
-                s.definir_backup_externo(true, Some("3F2A-9B10")),
-                Err(ErroApp::PendrivesIndisponiveis)
+                s.set_external_backup(true, Some("3F2A-9B10")),
+                Err(AppError::UsbDrivesUnavailable)
             );
             assert_eq!(definicoes(&e), 0);
             // Desligar não depende do udisks2.
-            assert!(!s.definir_backup_externo(false, None).unwrap().ligado);
+            assert!(!s.set_external_backup(false, None).unwrap().ligado);
         }
 
         #[test]
         fn ataque_rotulo_do_pendrive_chega_neutralizado() {
             let (s, _) = servico(DaemonFalso::cheio());
-            let lista = s.listar_pendrives().unwrap();
+            let lista = s.list_usb_drives().unwrap();
             let estranho = lista.iter().find(|p| p.uuid.starts_with("a1b2")).unwrap();
             assert!(
                 !estranho
@@ -404,9 +404,7 @@ mod testes {
                 "{}",
                 estranho.rotulo
             );
-            let b = s
-                .definir_backup_externo(true, Some(&estranho.uuid))
-                .unwrap();
+            let b = s.set_external_backup(true, Some(&estranho.uuid)).unwrap();
             assert_eq!(b.pendrive.unwrap().rotulo, estranho.rotulo);
         }
 
@@ -415,13 +413,13 @@ mod testes {
             let (s, e) = servico(DaemonFalso::cheio());
             // Cinco PINs errados travam o falso (S9).
             for _ in 0..5 {
-                let _ = s.mudar_nivel("acme-pg-dev", "livre", Pin::novo("0000".into()).unwrap());
+                let _ = s.set_level("acme-pg-dev", "livre", Pin::novo("0000".into()).unwrap());
             }
-            assert_eq!(s.backup_externo(), Err(ErroApp::Travado));
-            assert_eq!(s.listar_pendrives(), Err(ErroApp::Travado));
+            assert_eq!(s.external_backup(), Err(AppError::Locked));
+            assert_eq!(s.list_usb_drives(), Err(AppError::Locked));
             assert_eq!(
-                s.definir_backup_externo(true, Some("7C1E-42A9")),
-                Err(ErroApp::Travado)
+                s.set_external_backup(true, Some("7C1E-42A9")),
+                Err(AppError::Locked)
             );
             assert_eq!(definicoes(&e), 0);
         }

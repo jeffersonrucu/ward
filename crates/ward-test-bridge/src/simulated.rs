@@ -18,17 +18,17 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use ward_app_core::ErroApp;
+use ward_app_core::AppError;
 use ward_app_core::anexos::Seletor;
 use ward_app_core::terminal::{Terminal, TerminalDoSistema, Token};
 
 pub struct DirPicker(pub PathBuf);
 
 impl Seletor for DirPicker {
-    fn escolher(&self) -> Result<Option<PathBuf>, ErroApp> {
+    fn escolher(&self) -> Result<Option<PathBuf>, AppError> {
         let mut files = Vec::new();
-        for e in fs::read_dir(&self.0).map_err(|_| ErroApp::SeletorIndisponivel)? {
-            let e = e.map_err(|_| ErroApp::SeletorIndisponivel)?;
+        for e in fs::read_dir(&self.0).map_err(|_| AppError::PickerUnavailable)? {
+            let e = e.map_err(|_| AppError::PickerUnavailable)?;
             // Without following links: `file_type` of `readdir` does not follow.
             if e.file_type().is_ok_and(|t| t.is_file()) {
                 files.push(e.path());
@@ -37,7 +37,7 @@ impl Seletor for DirPicker {
         match files.len() {
             0 => Ok(None),
             1 => Ok(files.pop()),
-            _ => Err(ErroApp::SeletorIndisponivel),
+            _ => Err(AppError::PickerUnavailable),
         }
     }
 }
@@ -45,7 +45,7 @@ impl Seletor for DirPicker {
 pub struct TestTerminal;
 
 impl Terminal for TestTerminal {
-    fn abrir(&self, entry: &str, token: &Token) -> Result<(), ErroApp> {
+    fn abrir(&self, entry: &str, token: &Token) -> Result<(), AppError> {
         eprintln!(
             "ward-ponte-teste: conectar {entry} (token de uso único com {} caracteres)",
             token.len()
@@ -91,12 +91,12 @@ impl RepoTerminal {
 }
 
 impl Terminal for RepoTerminal {
-    fn abrir(&self, entry: &str, token: &Token) -> Result<(), ErroApp> {
+    fn abrir(&self, entry: &str, token: &Token) -> Result<(), AppError> {
         let mut a = self.system.comando(entry, token)?;
         for (k, v) in &self.extras {
             a.comando.env(k, v);
         }
-        let mut child = a.abrir().map_err(|_| ErroApp::TerminalIndisponivel)?;
+        let mut child = a.abrir().map_err(|_| AppError::TerminalUnavailable)?;
         eprintln!("ward-ponte-teste: conectar {entry} pelo terminal do repositório");
         std::thread::spawn(move || {
             let _ = child.wait();

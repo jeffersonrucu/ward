@@ -34,7 +34,7 @@
 //! egid do grupo `ward-app` (o papel vem dele), e depois larga o grupo
 //! ([`crate::partida`]). Uma conexão nova depois disso teria o gid real e cairia no
 //! papel agente; por isso o [`DaemonSocket`] da partida (e o da ponte de teste) nunca
-//! reconecta: sem a conexão, os pedidos respondem [`ErroApp::ConexaoPerdida`] e o app
+//! reconecta: sem a conexão, os pedidos respondem [`AppError::ConnectionLost`] e o app
 //! se executa de novo. O [`DaemonSocket::padrao`] sem [`DaemonSocket::conectar_agora`]
 //! (só os testes) conecta no primeiro uso e, se a conexão cair, no uso seguinte.
 
@@ -53,7 +53,7 @@ use ward_platform::{ExpectedServer, ServerRefusal, connect_server};
 
 use zeroize::Zeroizing;
 
-use crate::ErroApp;
+use crate::AppError;
 
 /// Nome do socket (o mesmo do `wardd`).
 pub const SOCKET: &str = "wardd.sock";
@@ -91,7 +91,7 @@ impl EstadoCofre {
 /// leitura estrita do protocolo). Os testes e a ponte de teste trocam o socket pelo
 /// [`crate::daemon_falso`].
 pub trait Daemon: Send {
-    fn trocar(&mut self, pedido: &[u8]) -> Result<Zeroizing<Vec<u8>>, ErroApp>;
+    fn trocar(&mut self, pedido: &[u8]) -> Result<Zeroizing<Vec<u8>>, AppError>;
 }
 
 /// O que o daemon manda sem pedido, só na conexão do papel app (D65 a). Nenhum dos dois
@@ -280,8 +280,8 @@ struct Transporte {
 
 impl Transporte {
     /// Liga a thread leitora à conexão já conferida.
-    fn novo(stream: UnixStream, avisos: Arc<FilaAvisos>) -> Result<Transporte, ErroApp> {
-        let perdida = |_| ErroApp::ConexaoPerdida;
+    fn novo(stream: UnixStream, avisos: Arc<FilaAvisos>) -> Result<Transporte, AppError> {
+        let perdida = |_| AppError::ConnectionLost;
         // A leitora espera sem prazo (os avisos chegam a qualquer hora); o prazo da
         // resposta é o do canal.
         stream.set_read_timeout(None).map_err(perdida)?;
@@ -319,10 +319,10 @@ impl Transporte {
     }
 
     /// Um pedido e a sua resposta, com `prazo`.
-    fn trocar(&self, pedido: &[u8], prazo: Duration) -> Result<Zeroizing<Vec<u8>>, ErroApp> {
-        let mut p = self.pedinte.lock().map_err(|_| ErroApp::ConexaoPerdida)?;
+    fn trocar(&self, pedido: &[u8], prazo: Duration) -> Result<Zeroizing<Vec<u8>>, AppError> {
+        let mut p = self.pedinte.lock().map_err(|_| AppError::ConnectionLost)?;
         if !self.aberta() {
-            return Err(ErroApp::ConexaoPerdida);
+            return Err(AppError::ConnectionLost);
         }
         // Uma resposta que sobrou não pode virar a deste pedido (a leitora só entrega
         // com `esperando`, então isto não deveria achar nada).
@@ -334,11 +334,11 @@ impl Transporte {
             Err(ErroQuadro::Vazio | ErroQuadro::GrandeDemais) => {
                 // Nada foi escrito: a conexão continua em ordem.
                 self.esperando.store(false, Ordering::Release);
-                return Err(ErroApp::PedidoInvalido);
+                return Err(AppError::InvalidRequest);
             }
             Err(_) => {
                 self.fechar();
-                return Err(ErroApp::ConexaoPerdida);
+                return Err(AppError::ConnectionLost);
             }
         }
         match p.respostas.recv_timeout(prazo) {
@@ -348,7 +348,7 @@ impl Transporte {
                 // seria lida como a de outro pedido.
                 self.esperando.store(false, Ordering::Release);
                 self.fechar();
-                Err(ErroApp::ConexaoPerdida)
+                Err(AppError::ConnectionLost)
             }
         }
     }
@@ -412,7 +412,7 @@ impl DaemonSocket {
     /// teste noutra pasta não divide o socket fixo com outro checkout. As conferências
     /// não mudam (pasta 0700 do uid, sem link, par com o mesmo uid), e o papel app
     /// continua dependendo do pid que o lançador abriu (D63).
-    pub fn padrao() -> Result<DaemonSocket, ErroApp> {
+    pub fn padrao() -> Result<DaemonSocket, AppError> {
         #[cfg(not(feature = "test-mode"))]
         let esperado = ExpectedServer::system();
         #[cfg(feature = "test-mode")]
@@ -438,7 +438,7 @@ impl DaemonSocket {
     /// Conecta agora (com toda a conferência do servidor) e trava a conexão: daqui em
     /// diante este `DaemonSocket` nunca conecta de novo. É o que a partida do app chama
     /// antes de largar o grupo (D47), e o que a ponte de teste chama ao subir.
-    pub fn conectar_agora(&mut self) -> Result<&UnixStream, ErroApp> {
+    pub fn conectar_agora(&mut self) -> Result<&UnixStream, AppError> {
         self.pode_conectar = false;
         self.transporte = None;
         let t = self.conectar()?;
@@ -451,9 +451,9 @@ impl DaemonSocket {
     pub fn vigiar_fechamento(
         &self,
         ao_fechar: impl FnOnce() + Send + 'static,
-    ) -> Result<(), ErroApp> {
-        let t = self.transporte.as_ref().ok_or(ErroApp::ConexaoPerdida)?;
-        let s = t.stream.try_clone().map_err(|_| ErroApp::ConexaoPerdida)?;
+    ) -> Result<(), AppError> {
+        let t = self.transporte.as_ref().ok_or(AppError::ConnectionLost)?;
+        let s = t.stream.try_clone().map_err(|_| AppError::ConnectionLost)?;
         std::thread::Builder::new()
             .name("ward-app-vigia".into())
             .spawn(move || {
@@ -461,7 +461,7 @@ impl DaemonSocket {
                 ao_fechar();
             })
             .map(|_| ())
-            .map_err(|_| ErroApp::ConexaoPerdida)
+            .map_err(|_| AppError::ConnectionLost)
     }
 
     /// Os avisos que o daemon manda sem pedido (D65 a). A mesma fila vale para toda a
@@ -472,19 +472,19 @@ impl DaemonSocket {
 
     /// A conexão aberta. Sem ela: conecta no primeiro uso, menos depois de
     /// [`conectar_agora`](Self::conectar_agora), quando responde
-    /// [`ErroApp::ConexaoPerdida`].
-    fn transporte(&mut self) -> Result<&Transporte, ErroApp> {
+    /// [`AppError::ConnectionLost`].
+    fn transporte(&mut self) -> Result<&Transporte, AppError> {
         if self.transporte.as_ref().is_some_and(|t| !t.aberta()) {
             self.transporte = None;
         }
         if self.transporte.is_none() {
             if !self.pode_conectar {
-                return Err(ErroApp::ConexaoPerdida);
+                return Err(AppError::ConnectionLost);
             }
             let t = self.conectar()?;
             self.transporte = Some(t);
         }
-        self.transporte.as_ref().ok_or(ErroApp::ConexaoPerdida)
+        self.transporte.as_ref().ok_or(AppError::ConnectionLost)
     }
 
     /// Só nos testes: a conexão já aberta `s` (um par com o daemon falso), como a da
@@ -515,17 +515,17 @@ impl DaemonSocket {
 
     /// Confere o caminho, conecta e confere o par antes de qualquer byte, e liga a
     /// thread leitora. Nada é escrito no socket aqui.
-    fn conectar(&self) -> Result<Transporte, ErroApp> {
+    fn conectar(&self) -> Result<Transporte, AppError> {
         let s = connect_server(&self.esperado).map_err(|r| match r {
-            ServerRefusal::Missing | ServerRefusal::Io(_) => ErroApp::DaemonIndisponivel,
-            _ => ErroApp::DaemonNaoConfiavel,
+            ServerRefusal::Missing | ServerRefusal::Io(_) => AppError::DaemonUnavailable,
+            _ => AppError::DaemonUntrusted,
         })?;
         Transporte::novo(s, self.avisos.clone())
     }
 }
 
 impl Daemon for DaemonSocket {
-    fn trocar(&mut self, pedido: &[u8]) -> Result<Zeroizing<Vec<u8>>, ErroApp> {
+    fn trocar(&mut self, pedido: &[u8]) -> Result<Zeroizing<Vec<u8>>, AppError> {
         let prazo = self.prazo_resposta;
         self.transporte()?.trocar(pedido, prazo)
     }
@@ -544,10 +544,10 @@ mod testes {
     use ward_core::protocolo::Alvo;
 
     impl DaemonSocket {
-        fn estado(&mut self) -> Result<EstadoCofre, ErroApp> {
+        fn estado(&mut self) -> Result<EstadoCofre, AppError> {
             cliente::estado(self)
         }
-        fn valor_para_copiar(&mut self, r: &Referencia) -> Result<(), ErroApp> {
+        fn valor_para_copiar(&mut self, r: &Referencia) -> Result<(), AppError> {
             cliente::copiar(self, r.entrada(), Alvo::Campo(r.campo().to_owned())).map(|_| ())
         }
     }
@@ -615,14 +615,14 @@ mod testes {
     fn socket_ausente_e_indisponivel() {
         let mut d =
             DaemonSocket::sistema_em(PathBuf::from("/run/ward-nao-existe-falso/1/wardd.sock"));
-        assert_eq!(d.estado(), Err(ErroApp::DaemonIndisponivel));
+        assert_eq!(d.estado(), Err(AppError::DaemonUnavailable));
         #[cfg(feature = "test-mode")]
         {
             let base = Base::nova("ausente");
             let dir = base.0.join("ward-teste");
             fs::DirBuilder::new().mode(0o700).create(&dir).unwrap();
             let mut t = DaemonSocket::teste_em(dir.join(SOCKET));
-            assert_eq!(t.estado(), Err(ErroApp::DaemonIndisponivel));
+            assert_eq!(t.estado(), Err(AppError::DaemonUnavailable));
         }
     }
 
@@ -635,11 +635,11 @@ mod testes {
         fs::DirBuilder::new().mode(0o700).create(&dir).unwrap();
         let l = servidor_falso(&dir);
         let mut d = DaemonSocket::sistema_em(dir.join(SOCKET));
-        assert_eq!(d.estado(), Err(ErroApp::DaemonNaoConfiavel));
+        assert_eq!(d.estado(), Err(AppError::DaemonUntrusted));
         let r = Referencia::nova("acme-pg-dev", "senha").unwrap();
         assert!(matches!(
             d.valor_para_copiar(&r),
-            Err(ErroApp::DaemonNaoConfiavel)
+            Err(AppError::DaemonUntrusted)
         ));
         nada_recebido(&l);
     }
@@ -654,11 +654,11 @@ mod testes {
         let mut d = DaemonSocket::sistema_em(dir.join(SOCKET));
         assert!(d.conectar_agora().is_err());
         let l = servidor_falso(&dir);
-        assert_eq!(d.estado(), Err(ErroApp::ConexaoPerdida));
+        assert_eq!(d.estado(), Err(AppError::ConnectionLost));
         let r = Referencia::nova("acme-pg-dev", "senha").unwrap();
         assert!(matches!(
             d.valor_para_copiar(&r),
-            Err(ErroApp::ConexaoPerdida)
+            Err(AppError::ConnectionLost)
         ));
         assert!(l.accept().is_err(), "reconectou depois da partida");
         #[cfg(feature = "test-mode")]
@@ -691,16 +691,16 @@ mod testes {
         fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).unwrap();
         let l = servidor_falso(&dir);
         let mut d = DaemonSocket::sistema_em(dir.join(SOCKET));
-        assert_eq!(d.estado(), Err(ErroApp::DaemonNaoConfiavel));
+        assert_eq!(d.estado(), Err(AppError::DaemonUntrusted));
         #[cfg(feature = "test-mode")]
         {
             // Nem o build de teste aceita pasta aberta; com 0700 é o daemon de teste.
             let mut t = DaemonSocket::teste_em(dir.join(SOCKET));
-            assert_eq!(t.estado(), Err(ErroApp::DaemonNaoConfiavel));
+            assert_eq!(t.estado(), Err(AppError::DaemonUntrusted));
             nada_recebido(&l);
             fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).unwrap();
             t.prazo_resposta = Duration::from_millis(100);
-            assert_eq!(t.estado(), Err(ErroApp::ConexaoPerdida));
+            assert_eq!(t.estado(), Err(AppError::ConnectionLost));
             let _ = l.accept();
         }
         nada_recebido(&l);
@@ -714,11 +714,11 @@ mod testes {
         let l = servidor_falso(&real);
         symlink(&real, base.0.join("ward")).unwrap();
         let mut d = DaemonSocket::sistema_em(base.0.join("ward").join(SOCKET));
-        assert_eq!(d.estado(), Err(ErroApp::DaemonNaoConfiavel));
+        assert_eq!(d.estado(), Err(AppError::DaemonUntrusted));
         #[cfg(feature = "test-mode")]
         {
             let mut t = DaemonSocket::teste_em(base.0.join("ward").join(SOCKET));
-            assert_eq!(t.estado(), Err(ErroApp::DaemonNaoConfiavel));
+            assert_eq!(t.estado(), Err(AppError::DaemonUntrusted));
         }
         nada_recebido(&l);
     }
@@ -731,11 +731,11 @@ mod testes {
         fs::write(dir.join(SOCKET), b"").unwrap();
         fs::set_permissions(dir.join(SOCKET), fs::Permissions::from_mode(0o600)).unwrap();
         let mut d = DaemonSocket::sistema_em(dir.join(SOCKET));
-        assert_eq!(d.estado(), Err(ErroApp::DaemonNaoConfiavel));
+        assert_eq!(d.estado(), Err(AppError::DaemonUntrusted));
         #[cfg(feature = "test-mode")]
         {
             let mut t = DaemonSocket::teste_em(dir.join(SOCKET));
-            assert_eq!(t.estado(), Err(ErroApp::DaemonNaoConfiavel));
+            assert_eq!(t.estado(), Err(AppError::DaemonUntrusted));
         }
     }
 
@@ -747,11 +747,11 @@ mod testes {
         let l = servidor_falso(&dir);
         fs::set_permissions(dir.join(SOCKET), fs::Permissions::from_mode(0o666)).unwrap();
         let mut d = DaemonSocket::sistema_em(dir.join(SOCKET));
-        assert_eq!(d.estado(), Err(ErroApp::DaemonNaoConfiavel));
+        assert_eq!(d.estado(), Err(AppError::DaemonUntrusted));
         #[cfg(feature = "test-mode")]
         {
             let mut t = DaemonSocket::teste_em(dir.join(SOCKET));
-            assert_eq!(t.estado(), Err(ErroApp::DaemonNaoConfiavel));
+            assert_eq!(t.estado(), Err(AppError::DaemonUntrusted));
         }
         nada_recebido(&l);
     }
@@ -943,7 +943,7 @@ mod testes {
         let mut d = DaemonSocket::de_par(a, Duration::from_secs(10));
         mandar(&mut b, &estado_app());
         assert!(fechou(&mut b), "o app não fechou a conexão");
-        assert_eq!(cliente::estado(&mut d), Err(ErroApp::ConexaoPerdida));
+        assert_eq!(cliente::estado(&mut d), Err(AppError::ConnectionLost));
         assert_eq!(d.avisos().tamanho(), 0);
     }
 
@@ -958,9 +958,9 @@ mod testes {
             let _ = b.write_all(&[b'{'; 64]);
             fechou(&mut b)
         });
-        assert_eq!(cliente::estado(&mut d), Err(ErroApp::ConexaoPerdida));
+        assert_eq!(cliente::estado(&mut d), Err(AppError::ConnectionLost));
         assert!(servidor.join().unwrap(), "o app não fechou a conexão");
-        assert_eq!(cliente::estado(&mut d), Err(ErroApp::ConexaoPerdida));
+        assert_eq!(cliente::estado(&mut d), Err(AppError::ConnectionLost));
     }
 
     #[test]
@@ -991,7 +991,7 @@ mod testes {
                 quadro::escrever_quadro(&mut b, &corpo, quadro::LIMITE_RESPOSTA).unwrap();
                 fechou(&mut b)
             });
-            assert_eq!(cliente::lista(&mut d).err(), Some(ErroApp::ConexaoPerdida));
+            assert_eq!(cliente::lista(&mut d).err(), Some(AppError::ConnectionLost));
             assert!(servidor.join().unwrap(), "o app não fechou a conexão");
         }
     }
@@ -1011,9 +1011,9 @@ mod testes {
             );
             fechou(&mut b)
         });
-        assert_eq!(cliente::estado(&mut d), Err(ErroApp::ConexaoPerdida));
+        assert_eq!(cliente::estado(&mut d), Err(AppError::ConnectionLost));
         assert!(servidor.join().unwrap());
-        assert_eq!(cliente::estado(&mut d), Err(ErroApp::ConexaoPerdida));
+        assert_eq!(cliente::estado(&mut d), Err(AppError::ConnectionLost));
     }
 
     #[test]
@@ -1021,7 +1021,7 @@ mod testes {
         let (a, mut b) = UnixStream::pair().unwrap();
         let mut d = DaemonSocket::de_par(a, Duration::from_secs(10));
         let grande = vec![b'x'; quadro::limite_do_quadro(Papel::App) + 1];
-        assert_eq!(d.trocar(&grande).err(), Some(ErroApp::PedidoInvalido));
+        assert_eq!(d.trocar(&grande).err(), Some(AppError::InvalidRequest));
         let servidor = std::thread::spawn(move || {
             pedido_lido(&mut b);
             mandar(&mut b, &estado_app());

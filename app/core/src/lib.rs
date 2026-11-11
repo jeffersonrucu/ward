@@ -1,46 +1,51 @@
-//! Lado Rust do app desktop do Ward, sem Tauri (Fase 29).
+//! Rust side of the Ward desktop app, without Tauri (Phase 29).
 //!
-//! - [`comandos`]: a lista fechada dos comandos que a interface pode chamar. O
-//!   `build.rs` do Tauri, as capabilities e a ponte de teste saem dela (S11).
-//! - [`cliente`]: os pedidos do papel app pelo protocolo da Fase 20 (`estado`,
-//!   `lista`, `detalhe`, `copiar`), com a leitura estrita da resposta.
-//! - [`daemon`]: transporte até o `wardd` (socket conferido): quadros na conexão
-//!   única, thread leitora e fila de avisos (D65 a, Fase 23a).
-//! - [`daemon_falso`] (só testes e `test-mode`): responde pelo protocolo com as
-//!   entradas falsas do cofre de teste, para a ponte de teste.
-//! - [`credenciais`]: lista e detalhe da tela Credenciais (Fase 32), sem segredo.
-//! - [`area_transferencia`]: "copiar" resolvido aqui (D4). O valor vai do daemon para a
-//!   área de transferência sem passar pela webview, e a limpeza em 30 s só apaga se a
-//!   área ainda contém o valor copiado (S12).
-//! - [`formulario`]: formulário de entrada (Fase 33). Segredo mantido e senha gerada
-//!   ficam no lado Rust; a semente TOTP e o `otpauth://` são normalizados aqui (D35).
-//! - [`gerador`]: gerador de senha avulso (Fase 37). A senha nasce em
-//!   `ward_core::generator` e fica aqui; a interface recebe só tamanho, força e símbolos,
-//!   e o valor só no "revelar".
-//! - [`nivel`]: mudar o nível de acesso com PIN (Fase 35, S9); o PIN fica num tipo
-//!   que zera e só vai ao pedido `mudar_nivel`.
-//! - [`destrave`]: destravar com a senha mestra (Fase 31; a senha fica num tipo que
-//!   zera e só vai ao pedido `destravar`) e o `pedido_de_destrave` do agente (D65 a).
-//! - [`partida`]: partida do app setgid antes do GTK (D47, D57): ambiente de D57,
-//!   conexão com o egid do grupo `ward-app`, largar o grupo, não-dumpable, reexecução.
-//! - [`anexos`]: anexos do formulário (Fase 34). O arquivo é escolhido e lido no lado
-//!   Rust; a interface recebe só nome e tamanho (S11).
-//! - [`terminal`]: "Conectar" do `servidor` (D3): token de uso único e o terminal padrão.
-//! - [`primeiro_uso`]: senha mestra e PIN do cofre novo (Fase 30), conferidos no lado
-//!   Rust antes do `criar_cofre`; o daemon grava só o hash do PIN (D30).
-//! - [`configuracoes`]: tela Configurações (Fase 38): trocar PIN (pede o atual), trocar
-//!   senha mestra (pede a atual; a nova com a regra do primeiro uso) e tempo de trava,
-//!   gravados pelo daemon na configuração do cofre (D30, D39).
-//! - [`backup_externo`]: Configurações › backup externo (Fase 48): o pendrive escolhido
-//!   tem de estar na lista do daemon; o rótulo (não confiável) chega neutralizado (D51).
-//! - [`restaurar`]: restaurar backup (Fase 47): versões só pelo nome (data e hora, sem
-//!   conteúdo); a versão pedida tem de estar na lista do daemon; senha da versão e PIN
-//!   atual em tipos que zeram.
-//! - [`aprovacao`]: janela de aprovação (Fase 36): pedidos do daemon com o texto do
-//!   agente neutralizado (D51) e a resposta com PIN, só pela janela `aprovacao`.
-//! - [`bandeja`]: ícone e menu da bandeja (Fase 39): textos por estado, ações (nenhuma
-//!   revela, copia ou aprova) e a pasta 0700 do ícone.
-//! - [`servico`]: o que cada comando faz. Nenhuma resposta leva segredo (S1, S11).
+//! - [`comandos`]: the closed list of the commands the interface may call. The Tauri
+//!   `build.rs`, the capabilities and the test bridge come from it (S11).
+//! - [`cliente`]: the app role requests over the Phase 20 protocol (status, list, detail,
+//!   copy), with the strict reading of the response.
+//! - [`daemon`]: transport to `wardd` (checked socket): frames on the single connection,
+//!   reader thread and notice queue (D65 a, Phase 23a).
+//! - [`daemon_falso`] (tests and `test-mode` only): answers over the protocol with the
+//!   fake entries of the test vault, for the test bridge.
+//! - [`credenciais`]: list and detail of the Credentials screen (Phase 32), no secret.
+//! - [`area_transferencia`]: "copy" resolved here (D4). The value goes from the daemon to
+//!   the clipboard without passing through the webview, and the cleanup in 30 s only
+//!   erases if the clipboard still holds the copied value (S12).
+//! - [`formulario`]: entry form (Phase 33). A kept secret and a generated password stay
+//!   on the Rust side; the TOTP seed and the `otpauth://` are normalized here (D35).
+//! - [`gerador`]: standalone password generator (Phase 37). The password is born in
+//!   `ward_core::generator` and stays here; the interface receives only size, strength
+//!   and symbols, and the value only on "reveal".
+//! - [`nivel`]: change the access level with PIN (Phase 35, S9); the PIN stays in a type
+//!   that zeroes and only goes to the set level request.
+//! - [`destrave`]: unlock with the master password (Phase 31; the password stays in a
+//!   type that zeroes and only goes to the unlock request) and the agent's unlock
+//!   request (D65 a).
+//! - [`partida`]: startup of the setgid app before GTK (D47, D57): D57 environment,
+//!   connection with the egid of the `ward-app` group, dropping the group, non-dumpable,
+//!   re-execution.
+//! - [`anexos`]: form attachments (Phase 34). The file is chosen and read on the Rust
+//!   side; the interface receives only name and size (S11).
+//! - [`terminal`]: "Connect" of a server entry (D3): single-use token and the default
+//!   terminal.
+//! - [`primeiro_uso`]: master password and PIN of the new vault (Phase 30), checked on
+//!   the Rust side before the vault creation request; the daemon stores only the PIN
+//!   hash (D30).
+//! - [`configuracoes`]: Settings screen (Phase 38): change PIN (asks for the current
+//!   one), change master password (asks for the current one; the new one with the first
+//!   use rule) and lock timeout, stored by the daemon in the vault config (D30, D39).
+//! - [`backup_externo`]: Settings › external backup (Phase 48): the chosen USB drive must
+//!   be in the daemon's list; the label (untrusted) arrives neutralized (D51).
+//! - [`restaurar`]: restore backup (Phase 47): versions only by name (date and time, no
+//!   content); the requested version must be in the daemon's list; version password and
+//!   current PIN in types that zero.
+//! - [`aprovacao`]: approval window (Phase 36): daemon requests with the agent's text
+//!   neutralized (D51) and the answer with PIN, only through the approval window.
+//! - [`bandeja`]: tray icon and menu (Phase 39): texts by state, actions (none reveals,
+//!   copies or approves) and the 0700 folder of the icon.
+//! - [`service`]: what each command does. No response carries a secret (S1, S11).
+//! - [`secret`]: secret value in transit (only the "copy", D4), zeroed on drop.
 
 #![forbid(unsafe_code)]
 
@@ -58,15 +63,15 @@ pub mod daemon;
 #[cfg(any(test, feature = "test-mode"))]
 pub mod daemon_falso;
 pub mod destrave;
-mod erro;
+mod error;
 pub mod formulario;
 pub mod gerador;
 pub mod nivel;
 pub mod partida;
 pub mod primeiro_uso;
 pub mod restaurar;
-pub mod segredo;
-pub mod servico;
+pub mod secret;
+pub mod service;
 pub mod terminal;
 
-pub use erro::ErroApp;
+pub use error::AppError;

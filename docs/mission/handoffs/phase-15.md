@@ -188,3 +188,14 @@
 - [x] Teste de ataque para cada (SEG) tocado — os existentes acompanham os nomes; a lógica não mudou
 - [ ] (UI/DESIGN) Conferido contra o FigCraft — não se aplica
 - [x] Ficou dentro do escopo da fase
+
+## Merge com o master `e70805b` (Fases 21, 28, 29, 30)
+- Conflito modify/delete em `crates/wardd/src/execucao.rs` (a Fase 21 o renomeou para
+  `execution.rs`): `execucao.rs` apagado e os usos desta fase aplicados no `execution.rs`
+  (`ward_core::delivery::{self, Delivery, DeliveryError, ResourceError, Resources}`,
+  `impl Resources for RunResources` com `totp_code`/`file`/`tunnel`, `ResourceError(…)`,
+  `&Delivery`, `names()`/`variables()`/`name()`/`expose()`, `delivery::build`,
+  `DeliveryError::TypeWithoutDelivery`). Nenhum uso antigo restou em `app/core` nem em
+  `ward-test-bridge` (procurado). Glossário com as duas partes (o homônimo citado agora é
+  `RunResources`).
+- `make compile` depois do merge (log `.dev/logs/fase15-merge-make-compile.log`): 0.

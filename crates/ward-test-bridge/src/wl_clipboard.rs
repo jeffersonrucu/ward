@@ -14,7 +14,7 @@ use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use ward_app_core::ErroApp;
+use ward_app_core::AppError;
 use ward_app_core::area_transferencia::{AreaTransferencia, MAX_VALOR};
 use zeroize::Zeroizing;
 
@@ -30,7 +30,7 @@ const MIME_TYPE: &str = "text/plain;charset=utf-8";
 impl WlCopy {
     /// Checks both binaries (owned by root, regular file, no write for group and others,
     /// not a symbolic link) before using them.
-    pub fn new() -> Result<WlCopy, ErroApp> {
+    pub fn new() -> Result<WlCopy, AppError> {
         for b in [WL_COPY, WL_PASTE] {
             trusted_binary(Path::new(b))?;
         }
@@ -50,70 +50,68 @@ impl WlCopy {
     }
 }
 
-fn trusted_binary(path: &Path) -> Result<(), ErroApp> {
-    let md = fs::symlink_metadata(path).map_err(|_| ErroApp::AreaTransferencia)?;
+fn trusted_binary(path: &Path) -> Result<(), AppError> {
+    let md = fs::symlink_metadata(path).map_err(|_| AppError::Clipboard)?;
     if !md.file_type().is_file() || md.uid() != 0 || md.permissions().mode() & 0o022 != 0 {
-        return Err(ErroApp::AreaTransferencia);
+        return Err(AppError::Clipboard);
     }
     Ok(())
 }
 
 impl AreaTransferencia for WlCopy {
-    fn escrever(&self, value: &[u8]) -> Result<(), ErroApp> {
+    fn escrever(&self, value: &[u8]) -> Result<(), AppError> {
         let mut child = Self::command(WL_COPY)
             .args(["--type", MIME_TYPE])
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
             .spawn()
-            .map_err(|_| ErroApp::AreaTransferencia)?;
+            .map_err(|_| AppError::Clipboard)?;
         {
-            let mut stdin = child.stdin.take().ok_or(ErroApp::AreaTransferencia)?;
-            stdin
-                .write_all(value)
-                .map_err(|_| ErroApp::AreaTransferencia)?;
+            let mut stdin = child.stdin.take().ok_or(AppError::Clipboard)?;
+            stdin.write_all(value).map_err(|_| AppError::Clipboard)?;
         }
-        let status = child.wait().map_err(|_| ErroApp::AreaTransferencia)?;
+        let status = child.wait().map_err(|_| AppError::Clipboard)?;
         if status.success() {
             Ok(())
         } else {
-            Err(ErroApp::AreaTransferencia)
+            Err(AppError::Clipboard)
         }
     }
 
-    fn ler(&self) -> Result<Option<Zeroizing<Vec<u8>>>, ErroApp> {
+    fn ler(&self) -> Result<Option<Zeroizing<Vec<u8>>>, AppError> {
         let mut child = Self::command(WL_PASTE)
             .args(["--no-newline", "--type", "text/plain"])
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .spawn()
-            .map_err(|_| ErroApp::AreaTransferencia)?;
+            .map_err(|_| AppError::Clipboard)?;
         let mut output = Zeroizing::new(Vec::new());
         let read = child
             .stdout
             .take()
-            .ok_or(ErroApp::AreaTransferencia)?
+            .ok_or(AppError::Clipboard)?
             .take(MAX_VALOR as u64 + 1)
             .read_to_end(&mut output);
         // More than the limit: the rest stays in the pipe and wl-paste is killed.
         let _ = child.kill();
-        let status = child.wait().map_err(|_| ErroApp::AreaTransferencia)?;
+        let status = child.wait().map_err(|_| AppError::Clipboard)?;
         if read.is_err() || (!status.success() && output.is_empty()) {
             return Ok(None); // empty or no text
         }
         Ok(Some(output))
     }
 
-    fn limpar(&self) -> Result<(), ErroApp> {
+    fn limpar(&self) -> Result<(), AppError> {
         let status = Self::command(WL_COPY)
             .arg("--clear")
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .status()
-            .map_err(|_| ErroApp::AreaTransferencia)?;
+            .map_err(|_| AppError::Clipboard)?;
         if status.success() {
             Ok(())
         } else {
-            Err(ErroApp::AreaTransferencia)
+            Err(AppError::Clipboard)
         }
     }
 }
@@ -130,10 +128,10 @@ mod tests {
         fs::write(&fake, b"#!/bin/sh\n").unwrap();
         fs::set_permissions(&fake, fs::Permissions::from_mode(0o755)).unwrap();
         // File of the user (not root) and symbolic link: both refused.
-        assert_eq!(trusted_binary(&fake), Err(ErroApp::AreaTransferencia));
+        assert_eq!(trusted_binary(&fake), Err(AppError::Clipboard));
         let link = base.join("link");
         std::os::unix::fs::symlink("/usr/bin/env", &link).unwrap();
-        assert_eq!(trusted_binary(&link), Err(ErroApp::AreaTransferencia));
+        assert_eq!(trusted_binary(&link), Err(AppError::Clipboard));
         fs::remove_dir_all(base).unwrap();
     }
 }

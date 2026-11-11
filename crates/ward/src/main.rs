@@ -1,16 +1,16 @@
-//! CLI do Ward: cliente do `wardd` pelo socket local; nunca recebe segredo (S1).
+//! Ward CLI: client of `wardd` over the local socket; never receives a secret (S1).
 
 #![forbid(unsafe_code)]
 
 use std::process::ExitCode;
 
-use ward::comandos::Sistema;
+use ward::commands::System;
 
 fn main() -> ExitCode {
-    let mut e = Sistema {
-        esperado: ward::cliente::servidor_esperado(),
+    let mut e = System {
+        expected: ward::client::expected_server(),
         stdout: std::io::stdout(),
         stderr: std::io::stderr(),
     };
-    ExitCode::from(ward::principal(std::env::args_os().skip(1), &mut e))
+    ExitCode::from(ward::main(std::env::args_os().skip(1), &mut e))
 }

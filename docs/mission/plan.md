@@ -152,7 +152,7 @@ Compilação de cada fase: `make compile`. Checador: os arquivos da fase.
 - [ ] Fase 19 — `main.rs`, `lib.rs`, `config.rs`, `log.rs`, `lancamento.rs`,
   `arquivos.rs`, `uso.rs`, `trava.rs` (formato do estado congelado). — V2.1, V2.7
 - [ ] Fase 20 — `nucleo.rs`, `aprovacao.rs`. — V2.1
-- [ ] Fase 21 — `execucao.rs`, `agente_ssh.rs`, `ssh.rs`, `ssh_testes.rs`. — V2.1, V2.7
+- [x] Fase 21 — `execucao.rs`, `agente_ssh.rs`, `ssh.rs`, `ssh_testes.rs`. — V2.1, V2.7
 - [ ] Fase 22 — `playwright.rs`, `cdp.rs`, `login.rs`, `ponte.rs` (`serde` do CDP: campos
   do Chrome não mudam). — V2.1
 - [ ] Fase 23 — `servidor.rs`, `externo.rs`, `udisks.rs`; testes `comum/`, `units.rs`,
@@ -165,13 +165,13 @@ Compilação de cada fase: `make compile`. Checador: os arquivos da fase.
   `Cargo.toml`, achado da Fase 4). — V2.1
 
 Clientes Rust:
-- [ ] Fase 28 — `crates/ward` (`args`, `cliente`, `comandos`, `texto`, testes;
+- [x] Fase 28 — `crates/ward` (`args`, `cliente`, `comandos`, `texto`, testes;
   subcomandos e textos congelados) e `crates/ward-nm` (`ID_EXTENSAO` → `EXTENSION_ID`, com a leitura do
   `pub const` em `dev/tests/extension.py` e o regex e as mensagens de
   `dev/extension/build.py` (achado da Fase 39); mensagens congeladas). — V2.1
 - [x] Fase 29 — `crates/ward-test-bridge` (`http.rs`, `main.rs`, `simulados.rs`,
   `tests/ataques.rs`). — V2.1
-- [ ] Fase 30 — `app/core`: `servico.rs`, `segredo.rs`, `erro.rs`, `lib.rs`. — V2.1
+- [x] Fase 30 — `app/core`: `servico.rs`, `segredo.rs`, `erro.rs`, `lib.rs`. — V2.1
 - [ ] Fase 31 — `app/core`: `daemon_falso.rs` (com o reexport `SECRETS as SEGREDOS` e os usos, achado da Fase 14), `daemon.rs`, `cliente.rs`. — V2.1
 - [ ] Fase 32 — `app/core`: `formulario.rs`, `aprovacao.rs`, `anexos.rs`,
   `restaurar.rs`, `bandeja.rs` (`serde` para a webview com `rename`). — V2.1

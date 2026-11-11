@@ -2300,6 +2300,115 @@ com `Formato` → `Format`, `Corpo` → `Body`, `Retrocesso` → `Rollback`; `ab
 `ErroResposta::Retrocesso` (Fase 17), o `SEGREDOS` de `entrega/testes.rs` e de
 `wardd/tests/comum`, o `chave_falsa` de `entrega/testes.rs` e de `app/core/chave.rs` e o
 re-export `daemon_falso::SEGREDOS` (Fase 31) são outros e não mudaram.
+Fase 30 (`app/core`: `service`, `secret`, `error`, `lib`): módulos `servico` → `service`,
+`segredo` → `secret`, `erro` → `error`. `Servico` → `Service` (`novo` → `new`; os métodos
+seguem os comandos da seção 13: `estado_do_cofre` → `vault_status`, `listar_credenciais`
+→ `list_credentials`, `mudar_nivel` → `set_level`, `escolher_anexo` → `choose_attachment`
+etc.; os outros: `pedido_de_destrave` → `unlock_request`, `info_do_pedido` →
+`request_info`, `aprovacoes` → `approvals`, `negar_aprovacoes_pendentes` →
+`deny_pending_approvals`, `com_seletor`/`com_terminal` → `with_picker`/`with_terminal`,
+`estado_da_bandeja` → `tray_state`, `na_passagem_da_bandeja` → `on_tray_transition`,
+`ver_passagem` → `check_transition`, `ao_sair` → `on_exit`); `ResultadoSalvar { salvo,
+erros }` → `SaveResult { saved, errors }`, `ResultadoCriar { criado, erros }` →
+`CreateResult { created, errors }`, `CodigoTotp { codigo, restante }` (o do `service`) →
+`TotpCode { code, remaining }`, com `#[serde(rename = "<antigo>")]` até a Fase 54;
+`FontesDoServico` → `ServiceSources`, `CAMPOS_GERAVEIS` → `GENERATABLE_FIELDS`. O
+`Segredo` do `app/core` → `Secret` (`novo`/`expor` → `new`/`expose`; `Debug`
+`"Secret(••••)"`). `ErroApp` → `AppError` (`codigo()` → `code()`; os códigos do fio ficam)
+com os variantes pelos códigos da seção 13: `DaemonUnavailable`, `DaemonUntrusted`,
+`ConnectionLost`, `InvalidRequest`, `Locked`, `Clipboard`, `EntryNotFound`,
+`FieldNotFound`, `Unauthorized`, `Refused`, `InvalidResponse`, `RandomUnavailable`,
+`NoGeneratedPassword`, `WrongPin`, `PickerUnavailable`, `TerminalUnavailable`,
+`NotAServer`, `VaultAlreadyExists`, `VaultNotWritten`, `WrongPassword`, `VaultRollback`,
+`UsbDrivesUnavailable`, `UsbDriveNotConnected`, `BackupNotFound`, `BackupUnavailable`,
+`VaultChanged`. Os homônimos `cliente::CodigoTotp`, `Comando::CodigoTotp` e
+`Resposta::CodigoTotp` são outros e não mudaram.
+Fase 28 (clientes `ward` e `ward-nm`; nomes próprios deles, os de `ward-core`/
+`ward-platform` ficam para as fases desses crates): módulos `cliente`/`comandos`/
+`texto`/`testes` → `client`/`commands`/`text`/`tests`; `principal` → `main`;
+`Comando` → `Command` (`Lista`/`Travar`/`Destravar`/`Ajuda`/`Versao` → `List`/`Lock`/
+`Unlock`/`Help`/`Version`; campos `entrada`/`comando` → `entry`/`command`); `ErroUso` →
+`UsageError` (`SemComando`/`ComandoDesconhecido`/`ArgumentoInesperado`/`NaoUtf8`/
+`UsoRun`/`UsoSsh`/`TokenEmArgv`/`UsoPlaywright`/`UsoLogin` → `NoCommand`/
+`UnknownCommand`/`UnexpectedArgument`/`NotUtf8`/`RunUsage`/`SshUsage`/`TokenInArgv`/
+`PlaywrightUsage`/`LoginUsage`; `mensagem()` → `message()`); `AJUDA` → `HELP`;
+`interpretar` → `parse`; `ErroConexao` → `ConnectionError` (`Ausente`/`NaoConfiavel`/
+`SemResposta`/`Fechada`/`RespostaInvalida`/`PedidoInvalido` → `Missing`/`Untrusted`/
+`NoResponse`/`Closed`/`InvalidResponse`/`InvalidRequest`); `Conexao` → `Connection`
+(`conectar`/`reconferir`/`pedir`/`pedir_com_prazo`/`abrir_sessao` → `connect`/`reverify`/
+`request`/`request_with_timeout`/`open_session`); `Sessao`/`EscritaSessao` → `Session`/
+`SessionWriter` (`receber`/`entrada`/`janela` → `receive`/`send_stdin`/`send_window`);
+`servidor_esperado` → `expected_server`; `Entorno` → `Env` (`endurecer`/`ler_senha`/
+`saida`/`erro`/`ambiente`/`diretorio`/`entrada_padrao`/`tipo_entrada`/
+`tamanho_terminal`/`modo_cru`/`ler_token` → `harden`/`read_password`/`stdout`/`stderr`/
+`environment`/`current_dir`/`stdin`/`stdin_kind`/`terminal_size`/`raw_mode`/
+`read_token`); `Sistema` → `System`; `executar` (despacho dos comandos) → `execute`
+(não `run`, que é o `ward run`); `SAIDA_OK`/`SAIDA_ERRO`/`SAIDA_USO`/`SAIDA_RUN_ERRO` →
+`EXIT_OK`/`EXIT_ERROR`/`EXIT_USAGE`/`EXIT_RUN_ERROR`; `MSG_RUN_GRANDE`/`MSG_RUN_CAMPO`/
+`MSG_RUN_TRAVADO`/`MSG_TOKEN_FORMATO` → `MSG_RUN_TOO_LARGE`/`MSG_RUN_FIELD`/
+`MSG_RUN_LOCKED`/`MSG_TOKEN_FORMAT`; `mensagem_do_daemon`/`mensagem_do_login` →
+`daemon_message`/`login_message`; `pedido_run`/`pedido_ssh` → `run_request`/
+`ssh_request`; `classificar_entrada`/`tipo_da_entrada_padrao` → `classify_stdin`/
+`detect_stdin_kind`; `lista_json`/`lista_tabela`/`neutralizar`/`invisivel`/`json_texto` →
+`list_json`/`list_table`/`neutralize`/`invisible`/`json_text`. `ward-nm`: `ID_EXTENSAO` →
+`EXTENSION_ID` (com a leitura em `dev/extension/build.py`, `dev/tests/extension.py`,
+`dev/tests/login.py`, `dev/tests/chrome_policy.py`, `install/pack-extension.sh` e a
+mensagem que o `dev/tests/deb.sh` procura); `MAX_MENSAGEM_ENTRADA`/`SAIDA` →
+`MAX_MESSAGE_IN`/`OUT`; `OPERACOES` → `OPERATIONS`; `resposta_cabe` → `response_fits`;
+`origem_da_extensao_valida` → `valid_extension_origin`; `ErroMensagem` → `MessageError`
+(`Fim`/`Cortada`/`Vazia`/`GrandeDemais` → `End`/`Truncated`/`Empty`/`TooLarge`);
+`ler_mensagem`/`escrever_mensagem` → `read_message`/`write_message`; `FalhaDaemon` →
+`DaemonFailure` (`Indisponivel`/`Conversa` → `Unavailable`/`Conversation`; `texto()` →
+`text()`); `Daemon::trocar` → `exchange`; `atender`/`servir` → `handle`/`serve`.
+
+Fase 21 (`wardd`: `execution`, `ssh_agent`, `ssh`, `ssh_tests`): módulos `execucao`/
+`agente_ssh`/`ssh_testes` → `execution`/`ssh_agent`/`ssh_tests` (`mod testes` → `tests`).
+`execution`: `Temporarios { pasta, arquivos }` → `TempFiles { dir, files }` (`criar`/
+`gravar` → `create`/`write`), `Arquivo` (privado) → `SessionFile`, `pasta_temporarios`
+→ `temp_dir`, `PASTA_TEMPORARIOS` → `TEMP_DIR`, `zerar` → `zero`, `limpar_temporarios`
+→ `clean_temp_files` (o mesmo inglês do `atomic_write`; o homônimo do `wardd/externo.rs`
+é outro e fica para a fase dele); `Preparo` → `Preparation` (campos `comando`/`mascara`/
+`temporarios`/`ponte`/`agente`/`trava`/`entrada_nula` → `command`/`mask`/`temp_files`/
+`bridge`/`agent`/`lock`/`null_stdin`); `MorreNaTrava { sessoes, travas, inicial }` →
+`DiesOnLock { sessions, locks, initial }` (`travou` → `locked`); `AgentePreparado` →
+`PreparedAgent` (`filho_do_filho` → `child_of_child`); `RecursosRun` → `RunResources`,
+`ContextoTunel` → `TunnelContext`; `Forma { Locale, Terminal, Fuso, Sinal }` → `Shape {
+Locale, Terminal, Timezone, Flag }` ("sinal" aqui é a variável-bandeira `NO_COLOR`, não
+sinal de processo); `ENTRAM_DA_CLI` → `FROM_CLI`, `PATH_DO_COMANDO` → `COMMAND_PATH`,
+`DO_DAEMON` → `FROM_DAEMON`, `MAX_VALOR_DA_LISTA` → `MAX_LIST_VALUE`, `LOTE` → `BATCH`,
+`FILA_ENTRADA` → `STDIN_QUEUE`, `PRAZO_RESTO_DA_SAIDA` → `REST_OF_OUTPUT_DEADLINE`,
+`PASSO_LEITURA_MS` → `READ_STEP_MS`; `Conta { usuario, home }` → `Account { user, home }`
+(`do_passwd` → `from_passwd`); `ajustar_locale` → `adjust_locale`, `entra_da_cli` →
+`enters_from_cli`, `valor_aceito` → `value_accepted`, `montar_ambiente` →
+`build_environment`, `ler_lote` → `read_batch`, `ler_saida` → `read_output`,
+`escrever_entrada` → `write_stdin`, `ler_da_cli` → `read_from_cli`, `por_na_fila` →
+`enqueue`, `aviso_do_fim` → `end_notice`, `Lancado` → `Launched`, `sessao`/`sessao_com`
+→ `session`/`session_with`, `Daemon::preparar_execucao` → `prepare_run`; `Cli::enviar`/
+`enviar_saida` → `send`/`send_output`. `ssh_agent`: `AgenteSsh { pasta, escuta, chave }`
+→ `SshAgent { path, listener, key }` (`criar`/`publica`/`iniciar` → `create`/
+`public_key`/`start`), `Rodando` → `Running`, `Permitido { pid, filho_do_filho }` →
+`Allowed { pid, child_of_child }`, `ErroAgente` → `AgentError` com `ChaveInvalida` →
+`InvalidKey`, `AlgoritmoNaoSuportado` → `UnsupportedAlgorithm`, `Sistema` → `System`
+(`Passphrase` fica); `Chave` (privado) → `Key` (`ler`/`publica_em_texto`/`assinar` →
+`read`/`public_as_text`/`sign`); `NOME_SOCKET`/`NOME_PUBLICA`/`PREFIXO_PASTA` →
+`SOCKET_NAME`/`PUBLIC_NAME`/`DIR_PREFIX`; `limpar_pastas` → `clean_dirs`, `laco` →
+`serve_loop`, `atender` → `serve`, `par_permitido(_pid)` → `peer_allowed(_pid)` (`preso`
+→ `held`), `responder_mensagem` → `answer_message`. "Assinar" aqui é assinatura
+criptográfica → `sign`/`signature` (não `subscribe`, que é o sentido do D-Bus).
+`ssh`: `ProgramasSsh` → `SshPrograms` (`do_sistema` → `from_system`), `TokenConectar
+{ valor, entrada, ate }` → `ConnectToken { value, entry, until }`, `PRAZO_TOKEN` →
+`TOKEN_DEADLINE`, `PATH_FILHO` → `CHILD_PATH`; `Destino { host, porta, usuario }` →
+`Destination { host, port, username }`; `Autent { Senha, Chave { agente, publica } }` →
+`SshAuth { Password, Key { agent, public_key } }`; `Programa { Ssh { comando }, Sftp,
+Encaminhar { host, porta } }` → `Program { Ssh { command }, Sftp, Forward { host, port }
+}`; `Cred { Senha, Chave { chave, passphrase } }` → `Cred { Password, Key { key,
+passphrase } }`; `montar_argv(_com_alias)` → `build_argv(_with_alias)`,
+`alias_do_destino` → `destination_alias`, `usuario_ok` → `username_ok`, `host_simples`
+→ `simple_host`, `cred_de` → `cred_from`, `intermediario` → `intermediate`,
+`conferir_tipo` → `verify_kind`, `Daemon::emitir_token`/`usar_token`/`preparar_ssh` →
+`issue_token`/`use_token`/`prepare_ssh`. Os nomes que vêm de `nucleo`, `aprovacao`,
+`ponte`, `log` (Fases 19, 20 e 22) e do `ward-core` (`entrega`, `mascara`, `protocolo`,
+Fases 15–17) ficam como estão até as fases deles.
 
 Fase 15 (`ward-core`: `backup`, `delivery`): módulo `entrega` → `delivery` (`testes` →
 `tests`, também em `backup`). Backup: `VERSOES` → `VERSIONS`, `MAX_SUFIXO` → `MAX_SUFFIX`,
@@ -2330,7 +2439,7 @@ entrega) → `Variable` (`nome`/`expor`/`e_segredo` → `name`/`expose`/`is_secr
 (`WARD_ENTRADA`, `WARD_ARQUIVO_*`…) ficam até a Fase 53. Os homônimos
 `ErroResposta::TipoSemEntrega`/`EntregaFalhou` e `ErroEnvelope::Versao` (Fase 17),
 `protocolo::Variavel` (Fase 17), `VersaoBackup` (Fase 18), `ErroMascara::SemEntrega`
-(Fase 16), `RecursosRun` (Fase 21) e `RecursosDoOrcamento` (Fase 16) são outros e não
+(Fase 16), `RunResources` (Fase 21) e `RecursosDoOrcamento` (Fase 16) são outros e não
 mudaram.
 
 Funções e métodos não estão listados um a um: o nome sai da seção 2 na ordem do inglês

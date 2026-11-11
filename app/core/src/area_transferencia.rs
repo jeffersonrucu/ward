@@ -1,6 +1,6 @@
 //! "Copiar" no lado Rust do app (D4, S2, S11, S12).
 //!
-//! O valor vem do daemon como [`Segredo`], vai direto para a área de transferência e
+//! O valor vem do daemon como [`Secret`], vai direto para a área de transferência e
 //! nunca passa pela webview. Depois de [`PRAZO_LIMPEZA`], a limpeza só apaga se a área
 //! ainda contém exatamente o valor copiado (comparação em tempo constante): se o
 //! usuário copiou outra coisa nesse meio-tempo, ela fica lá (V5.5).
@@ -19,8 +19,8 @@ use ward_core::limits;
 /// daqui sem depender do `zeroize` (o app Tauri).
 pub use zeroize::Zeroizing;
 
-use crate::ErroApp;
-use crate::segredo::Segredo;
+use crate::AppError;
+use crate::secret::Secret;
 
 /// S12: a área de transferência é limpa 30 s depois do "copiar".
 pub const PRAZO_LIMPEZA: Duration = Duration::from_secs(30);
@@ -31,11 +31,11 @@ pub const MAX_VALOR: usize = limits::MAX_SECRET;
 
 /// Onde o valor copiado fica. Os testes usam uma área falsa.
 pub trait AreaTransferencia: Send + Sync + 'static {
-    fn escrever(&self, valor: &[u8]) -> Result<(), ErroApp>;
+    fn escrever(&self, valor: &[u8]) -> Result<(), AppError>;
     /// Conteúdo de texto atual (`None` se vazia ou sem texto), limitado a
     /// `MAX_SECRET + 1` bytes: mais que isso não pode ser o valor copiado.
-    fn ler(&self) -> Result<Option<Zeroizing<Vec<u8>>>, ErroApp>;
-    fn limpar(&self) -> Result<(), ErroApp>;
+    fn ler(&self) -> Result<Option<Zeroizing<Vec<u8>>>, AppError>;
+    fn limpar(&self) -> Result<(), AppError>;
 }
 
 struct Pendente {
@@ -69,18 +69,15 @@ impl<A: AreaTransferencia> Copiador<A> {
 
     /// Escreve o valor e agenda a limpeza. Uma cópia nova substitui a anterior: o
     /// prazo da anterior deixa de valer e só o da nova limpa.
-    pub fn copiar(&self, segredo: Segredo) -> Result<(), ErroApp> {
+    pub fn copiar(&self, segredo: Secret) -> Result<(), AppError> {
         if segredo.is_empty() || segredo.len() > limits::MAX_SECRET {
-            return Err(ErroApp::PedidoInvalido);
+            return Err(AppError::InvalidRequest);
         }
         let geracao = {
-            let mut p = self
-                .pendente
-                .lock()
-                .map_err(|_| ErroApp::AreaTransferencia)?;
-            self.area.escrever(segredo.expor())?;
+            let mut p = self.pendente.lock().map_err(|_| AppError::Clipboard)?;
+            self.area.escrever(segredo.expose())?;
             p.geracao = p.geracao.wrapping_add(1);
-            p.valor = Some(Zeroizing::new(segredo.expor().to_vec()));
+            p.valor = Some(Zeroizing::new(segredo.expose().to_vec()));
             p.geracao
         };
         drop(segredo);
@@ -93,7 +90,7 @@ impl<A: AreaTransferencia> Copiador<A> {
                 thread::sleep(prazo);
                 limpar_se_ainda_for(&*area, &pendente, Some(geracao));
             })
-            .map_err(|_| ErroApp::AreaTransferencia)?;
+            .map_err(|_| AppError::Clipboard)?;
         Ok(())
     }
 
@@ -137,14 +134,14 @@ mod testes {
     }
 
     impl AreaTransferencia for Arc<AreaFalsa> {
-        fn escrever(&self, valor: &[u8]) -> Result<(), ErroApp> {
+        fn escrever(&self, valor: &[u8]) -> Result<(), AppError> {
             *self.conteudo.lock().unwrap() = Some(valor.to_vec());
             Ok(())
         }
-        fn ler(&self) -> Result<Option<Zeroizing<Vec<u8>>>, ErroApp> {
+        fn ler(&self) -> Result<Option<Zeroizing<Vec<u8>>>, AppError> {
             Ok(self.conteudo.lock().unwrap().clone().map(Zeroizing::new))
         }
-        fn limpar(&self) -> Result<(), ErroApp> {
+        fn limpar(&self) -> Result<(), AppError> {
             *self.conteudo.lock().unwrap() = None;
             *self.limpezas.lock().unwrap() += 1;
             Ok(())
@@ -163,7 +160,7 @@ mod testes {
     fn copia_e_limpa_depois_do_prazo() {
         let area = Arc::new(AreaFalsa::default());
         let c = Copiador::com_prazo(Arc::clone(&area), CURTO);
-        c.copiar(Segredo::novo(b"falso-valor-1".to_vec())).unwrap();
+        c.copiar(Secret::new(b"falso-valor-1".to_vec())).unwrap();
         assert_eq!(
             area.conteudo.lock().unwrap().as_deref(),
             Some(&b"falso-valor-1"[..])
@@ -177,7 +174,7 @@ mod testes {
     fn ataque_texto_do_usuario_copiado_depois_nao_e_apagado() {
         let area = Arc::new(AreaFalsa::default());
         let c = Copiador::com_prazo(Arc::clone(&area), CURTO);
-        c.copiar(Segredo::novo(b"falso-valor-2".to_vec())).unwrap();
+        c.copiar(Secret::new(b"falso-valor-2".to_vec())).unwrap();
         *area.conteudo.lock().unwrap() = Some(b"texto do usuario".to_vec());
         thread::sleep(ESPERA);
         assert_eq!(
@@ -191,7 +188,7 @@ mod testes {
     fn ataque_prefixo_do_valor_nao_conta_como_igual() {
         let area = Arc::new(AreaFalsa::default());
         let c = Copiador::com_prazo(Arc::clone(&area), CURTO);
-        c.copiar(Segredo::novo(b"falso-valor-3".to_vec())).unwrap();
+        c.copiar(Secret::new(b"falso-valor-3".to_vec())).unwrap();
         *area.conteudo.lock().unwrap() = Some(b"falso-valor".to_vec());
         thread::sleep(ESPERA);
         assert_eq!(*area.limpezas.lock().unwrap(), 0);
@@ -201,9 +198,9 @@ mod testes {
     fn copia_nova_substitui_o_prazo_da_anterior() {
         let area = Arc::new(AreaFalsa::default());
         let c = Copiador::com_prazo(Arc::clone(&area), Duration::from_millis(400));
-        c.copiar(Segredo::novo(b"falso-a".to_vec())).unwrap();
+        c.copiar(Secret::new(b"falso-a".to_vec())).unwrap();
         thread::sleep(Duration::from_millis(200));
-        c.copiar(Segredo::novo(b"falso-b".to_vec())).unwrap();
+        c.copiar(Secret::new(b"falso-b".to_vec())).unwrap();
         // O prazo da primeira vence aqui e não pode apagar a segunda antes da hora.
         thread::sleep(Duration::from_millis(300));
         assert_eq!(
@@ -219,10 +216,10 @@ mod testes {
     fn limpar_agora_respeita_a_mesma_condicao() {
         let area = Arc::new(AreaFalsa::default());
         let c = Copiador::com_prazo(Arc::clone(&area), Duration::from_secs(60));
-        c.copiar(Segredo::novo(b"falso-c".to_vec())).unwrap();
+        c.copiar(Secret::new(b"falso-c".to_vec())).unwrap();
         c.limpar_agora();
         assert_eq!(*area.conteudo.lock().unwrap(), None);
-        c.copiar(Segredo::novo(b"falso-d".to_vec())).unwrap();
+        c.copiar(Secret::new(b"falso-d".to_vec())).unwrap();
         *area.conteudo.lock().unwrap() = Some(b"outro".to_vec());
         c.limpar_agora();
         assert_eq!(
@@ -236,12 +233,12 @@ mod testes {
         let area = Arc::new(AreaFalsa::default());
         let c = Copiador::com_prazo(Arc::clone(&area), CURTO);
         assert_eq!(
-            c.copiar(Segredo::novo(Vec::new())),
-            Err(ErroApp::PedidoInvalido)
+            c.copiar(Secret::new(Vec::new())),
+            Err(AppError::InvalidRequest)
         );
         assert_eq!(
-            c.copiar(Segredo::novo(vec![b'a'; limits::MAX_SECRET + 1])),
-            Err(ErroApp::PedidoInvalido)
+            c.copiar(Secret::new(vec![b'a'; limits::MAX_SECRET + 1])),
+            Err(AppError::InvalidRequest)
         );
         assert_eq!(*area.conteudo.lock().unwrap(), None);
     }

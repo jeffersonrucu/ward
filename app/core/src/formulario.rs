@@ -37,7 +37,7 @@ use ward_core::limits;
 use ward_core::protocolo::{ErroResposta, Problema};
 use zeroize::Zeroizing;
 
-use crate::ErroApp;
+use crate::AppError;
 
 /// Mensagem de D35 para um `otpauth://` com algoritmo, dígitos ou período fora de
 /// SHA1, 6 e 30.
@@ -251,7 +251,7 @@ pub type SegredoMontado = Option<SegredoCore>;
 /// Limites do que a interface pode mandar, antes de qualquer validação de formato. A
 /// validação fina (e a mensagem por campo) é do `ward-core`; isto só barra entrada
 /// absurda (memória, quadro).
-fn conferir_limites(f: &Formulario) -> Result<(), ErroApp> {
+fn conferir_limites(f: &Formulario) -> Result<(), AppError> {
     let texto_ok = |s: &str| s.len() <= limits::MAX_TEXT;
     let ok = texto_ok(&f.nome)
         && texto_ok(&f.grupo)
@@ -279,7 +279,7 @@ fn conferir_limites(f: &Formulario) -> Result<(), ErroApp> {
     if ok {
         Ok(())
     } else {
-        Err(ErroApp::PedidoInvalido)
+        Err(AppError::InvalidRequest)
     }
 }
 
@@ -362,21 +362,21 @@ pub fn normalizar_semente(digitada: &str) -> Result<Zeroizing<String>, &'static 
 pub trait Fontes {
     /// Valor guardado de um campo secreto (`Alvo::Campo`) ou de um extra secreto
     /// (`Alvo::Extra`) da entrada editada.
-    fn guardado(&mut self, alvo: ward_core::protocolo::Alvo) -> Result<SegredoCore, ErroApp>;
+    fn guardado(&mut self, alvo: ward_core::protocolo::Alvo) -> Result<SegredoCore, AppError>;
     /// Senha gerada para este campo ("Usar esta senha").
-    fn gerada(&mut self, campo: &str) -> Result<SegredoCore, ErroApp>;
+    fn gerada(&mut self, campo: &str) -> Result<SegredoCore, AppError>;
     /// Chave lida do arquivo para este campo ("Carregar de arquivo", Fase 53a).
-    fn carregada(&mut self, campo: &str) -> Result<SegredoCore, ErroApp>;
+    fn carregada(&mut self, campo: &str) -> Result<SegredoCore, AppError>;
 }
 
 /// O que falta para salvar: o rascunho dos dados e dos extras, ou o motivo.
 pub enum Falta {
-    App(ErroApp),
+    App(AppError),
     Campos(Vec<ErroCampo>),
 }
 
-impl From<ErroApp> for Falta {
-    fn from(e: ErroApp) -> Self {
+impl From<AppError> for Falta {
+    fn from(e: AppError) -> Self {
         Falta::App(e)
     }
 }
@@ -401,7 +401,7 @@ pub fn montar(
     if f.campos.keys().any(|k| !textos.contains(&k.as_str()))
         || f.segredos.keys().any(|k| !segredos.contains(&k.as_str()))
     {
-        return Err(ErroApp::PedidoInvalido.into());
+        return Err(AppError::InvalidRequest.into());
     }
     let mut erros = Vec::new();
     let mut tirar = |id: &str| f.campos.remove(id).unwrap_or_default();
@@ -444,7 +444,7 @@ pub fn montar(
                 Some((guardados, _)) if guardados.iter().any(|g| g == id) => {
                     Some(fontes.guardado(ward_core::protocolo::Alvo::Campo(id.to_owned()))?)
                 }
-                _ => return Err(ErroApp::PedidoInvalido.into()),
+                _ => return Err(AppError::InvalidRequest.into()),
             },
             ValorSecreto::Gerada => Some(fontes.gerada(id)?),
             ValorSecreto::Carregada => Some(fontes.carregada(id)?),
@@ -516,7 +516,7 @@ pub fn montar(
                 Some((_, guardados)) if guardados.contains(&nome) => {
                     fontes.guardado(ward_core::protocolo::Alvo::Extra(nome))?
                 }
-                _ => return Err(ErroApp::PedidoInvalido.into()),
+                _ => return Err(AppError::InvalidRequest.into()),
             },
         };
         extras.push(ExtraDraft {

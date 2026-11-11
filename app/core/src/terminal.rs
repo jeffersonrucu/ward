@@ -31,7 +31,7 @@ use std::process::{Command, Stdio};
 use ward_platform::connect::ConnectChannel;
 use zeroize::Zeroizing;
 
-use crate::ErroApp;
+use crate::AppError;
 
 /// Token do "Conectar", já conferido ([`Token::de_resposta`]).
 pub struct Token(Zeroizing<String>);
@@ -85,12 +85,12 @@ pub fn entrada_para_argv(nome: &str) -> bool {
 
 /// Quem abre o terminal.
 pub trait Terminal: Send + Sync {
-    fn abrir(&self, entrada: &str, token: &Token) -> Result<(), ErroApp>;
+    fn abrir(&self, entrada: &str, token: &Token) -> Result<(), AppError>;
 }
 
 /// Um terminal escolhido em tempo de execução (a ponte de teste, Fase 39c).
 impl<T: Terminal + ?Sized> Terminal for Box<T> {
-    fn abrir(&self, entrada: &str, token: &Token) -> Result<(), ErroApp> {
+    fn abrir(&self, entrada: &str, token: &Token) -> Result<(), AppError> {
         (**self).abrir(entrada, token)
     }
 }
@@ -99,8 +99,8 @@ impl<T: Terminal + ?Sized> Terminal for Box<T> {
 pub struct SemTerminal;
 
 impl Terminal for SemTerminal {
-    fn abrir(&self, _entrada: &str, _token: &Token) -> Result<(), ErroApp> {
-        Err(ErroApp::TerminalIndisponivel)
+    fn abrir(&self, _entrada: &str, _token: &Token) -> Result<(), AppError> {
+        Err(AppError::TerminalUnavailable)
     }
 }
 
@@ -155,12 +155,12 @@ impl TerminalDoSistema {
 
     /// O comando, sem rodar (os testes conferem argv e ambiente), com o canal do token
     /// já escrito. O token não vai em argv nem no ambiente: só o número do fd.
-    pub fn comando(&self, entrada: &str, token: &Token) -> Result<Abertura, ErroApp> {
+    pub fn comando(&self, entrada: &str, token: &Token) -> Result<Abertura, AppError> {
         if !entrada_para_argv(entrada) {
-            return Err(ErroApp::PedidoInvalido);
+            return Err(AppError::InvalidRequest);
         }
         let canal = ConnectChannel::new(token.expor().as_bytes())
-            .map_err(|_| ErroApp::TerminalIndisponivel)?;
+            .map_err(|_| AppError::TerminalUnavailable)?;
         let mut c = Command::new(&self.emulador);
         c.env_clear()
             .env("PATH", "/usr/local/bin:/usr/bin:/bin")
@@ -182,9 +182,9 @@ impl TerminalDoSistema {
 }
 
 impl Terminal for TerminalDoSistema {
-    fn abrir(&self, entrada: &str, token: &Token) -> Result<(), ErroApp> {
+    fn abrir(&self, entrada: &str, token: &Token) -> Result<(), AppError> {
         let a = self.comando(entrada, token)?;
-        let mut filho = a.abrir().map_err(|_| ErroApp::TerminalIndisponivel)?;
+        let mut filho = a.abrir().map_err(|_| AppError::TerminalUnavailable)?;
         // Espera o terminal numa thread para não deixar processo zumbi.
         std::thread::spawn(move || {
             let _ = filho.wait();
@@ -228,7 +228,7 @@ mod testes {
             TerminalDoSistema::default()
                 .comando("-oProxyCommand=x", &t)
                 .err(),
-            Some(ErroApp::PedidoInvalido)
+            Some(AppError::InvalidRequest)
         );
     }
 
