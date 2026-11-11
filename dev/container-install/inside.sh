@@ -220,7 +220,7 @@ for d in NoNewPrivileges= RestrictSUIDSGID=; do
 done
 
 # The first connection starts the wardd as the user (V9.7), with the peer uid 0 the CLI checks.
-r="$(as_1000 "$B/cliente" "$SOCK" estado)"
+r="$(as_1000 "$B/cliente" "$SOCK" status)"
 check "V9.7 a primeira conexão sobe o wardd e ele responde" "$r" "resposta: status"
 pid="$(systemctl show -p MainPID --value "wardd@$UID_T.service")"
 st="/proc/$pid/status"
@@ -258,7 +258,7 @@ check "V9.4 o gerente do usuário tem o LD_PRELOAD" "$(user_manager show-environ
 # Forces the wardd to start again: kills it and connects (with LD_PRELOAD in the client too).
 kill -9 "$pid"
 sleep 1.5
-r="$(as_1000 env "LD_PRELOAD=$B/libmarca.so" "$B/cliente" "$SOCK" estado 2>&1)"
+r="$(as_1000 env "LD_PRELOAD=$B/libmarca.so" "$B/cliente" "$SOCK" status 2>&1)"
 check "V9.4 depois de morto, a conexão sobe outro wardd" "$r" "resposta: status"
 pid="$(systemctl show -p MainPID --value "wardd@$UID_T.service")"
 app_env="$(tr '\0' '\n' <"/proc/$pid/environ" | cut -d= -f1 | sort | tr '\n' ' ')"
@@ -339,13 +339,13 @@ install -m 0600 -o "$UID_T" -g "$UID_T" "$T/cofre.ward" "$VAULT_T/cofre.ward"
 printf 'ward-state 2\nseen 0\nburned 0\nagent_failures 0\n' >"$VAULT_T/estado"
 chown "$UID_T:$UID_T" "$VAULT_T/estado"
 chmod 0600 "$VAULT_T/estado"
-r="$(printf '%s' "$PASSWORD" | as_1000 "$B/cliente" "$SOCK" destravar)"
+r="$(printf '%s' "$PASSWORD" | as_1000 "$B/cliente" "$SOCK" unlock)"
 check "o wardd instalado destrava o cofre de teste" "$r" "resposta: ok"
 before="$(cd "$VAULT_T" && sha256sum cofre.ward estado; stat -c '%U %a' cofre.ward)"
 r="$(install_ward 2>&1)" || { printf '%s\n' "$r"; failed "reinstalar"; }
 ok "reinstalar por cima sai 0 (grupos já existentes conferem)"
 check "reinstalar mantém o socket ativo" "$(systemctl is-active "wardd@$UID_T.socket" || true)" "active"
-r="$(as_1000 "$B/cliente" "$SOCK" estado)"
+r="$(as_1000 "$B/cliente" "$SOCK" status)"
 check "depois de reinstalar, o wardd responde" "$r" "resposta: status"
 
 # --- V9.10: uninstall ----------------------------------------------------------------
@@ -476,7 +476,7 @@ check "m2:V5.6: a política aponta para o caminho novo" "$(grep update_url /etc/
 check "m2:V5.7: o socket religou" "$(systemctl is-active "wardd@$UID_T.socket" || true)" "active"
 check "m2:V5.7: nenhum wardd no ar antes da primeira conexão" "$(systemctl is-active "wardd@$UID_T.service" || true)" "inactive"
 check "m2:V5.7: o cofre não foi tocado pela instalação" "$(vault_sums)" "$VAULT_BEFORE"
-r="$(as_1000 "$B/cliente" "$SOCK" estado)"
+r="$(as_1000 "$B/cliente" "$SOCK" status)"
 check "m2:V5.7: a primeira conexão sobe o wardd 0.2.0" "$r" "resposta: status"
 new_pid="$(systemctl show -p MainPID --value "wardd@$UID_T.service")"
 [ "$new_pid" != "$old_pid" ] && cmp -s "/proc/$new_pid/exe" "$B/wardd" && ok "m2:V5.7: o wardd no ar é o 0.2.0" || failed "m2:V5.7: o wardd no ar não é o 0.2.0"

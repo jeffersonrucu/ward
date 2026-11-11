@@ -3799,7 +3799,7 @@ dependencies = [
 
 [[package]]
 name = "ward-app"
-version = "0.1.4"
+version = "0.2.0"
 dependencies = [
  "gtk",
  "serde",
@@ -3811,7 +3811,7 @@ dependencies = [
 
 [[package]]
 name = "ward-app-core"
-version = "0.1.4"
+version = "0.2.0"
 dependencies = [
  "ctutils",
  "libc",
@@ -3823,7 +3823,7 @@ dependencies = [
 
 [[package]]
 name = "ward-core"
-version = "0.1.4"
+version = "0.2.0"
 dependencies = [
  "argon2",
  "base64ct",
@@ -3838,7 +3838,7 @@ dependencies = [
 
 [[package]]
 name = "ward-platform"
-version = "0.1.4"
+version = "0.2.0"
 dependencies = [
  "libc",
  "zeroize",

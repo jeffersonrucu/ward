@@ -233,7 +233,7 @@ fn v6_12_session_saved_only_the_path_comes_back() {
         assert!(f <= 5, "fd {f} a mais no Chrome: {start}");
     }
     // The password reached only the fill, with the entry's origin.
-    let fill = &c.events("preencher")[0];
+    let fill = &c.events("fill")[0];
     assert_eq!(fill["sha256"][1], sha256_hex(LOGIN_PASSWORD.as_bytes()));
     assert_eq!(fill["origem"], "https://clientex.invalid");
     // The POST with the password was paused and went on (same origin).
@@ -260,7 +260,7 @@ fn v6_15_redirect_to_another_origin_refused() {
     assert_eq!(d[0]["seguiu"], true);
     assert_eq!(d[1]["url"], "http://localhost:8082/wp-login.php");
     assert_eq!(d[1]["seguiu"], false);
-    assert!(c.events("preencher").is_empty(), "a senha foi ao Chrome");
+    assert!(c.events("fill").is_empty(), "a senha foi ao Chrome");
     assert!(!c.session("t-livre").exists());
     assert!(c.no_profile());
 }
@@ -275,7 +275,7 @@ fn d9_origin_of_the_page_and_of_the_submission() {
         error(&c.playwright("t-livre")),
         Some(ResponseError::OriginMismatch)
     );
-    assert!(c.events("preencher").is_empty(), "a senha foi ao Chrome");
+    assert!(c.events("fill").is_empty(), "a senha foi ao Chrome");
     assert!(c.no_profile());
 
     let c = scene("posoutra", "pos_outra");

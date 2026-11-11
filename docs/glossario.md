@@ -1402,11 +1402,14 @@ Feitos na Fase 43 (exemplos e scripts de contêiner, sem alias para o nome velho
 
 Os marcadores impressos pelos exemplos (`servidor: pronto`, `papel=…`, `lancador:`,
 `gerente:`, `inicio`/`depois`/`erro`/`queda` do relatório do app, `saida=`,
-`resposta:`), os subcomandos do `wardd-test-client` (`estado`, `lista`, `destravar`, nomes
-de operação do protocolo, Fase 51), o protocolo de linhas do `clipboard.py` (vai com o teste
+`resposta:`), o protocolo de linhas do `clipboard.py` (vai com o teste
 `gtk_clipboard::tests::real_session` do `app/src-tauri`, renomeado na Fase 34) e os outros
 nomes de dentro do contêiner (`/opt/teste`, `cliente`, `plataforma`, `falso`,
 `ward-servidor`, `libmarca.so`) ficam.
+
+Os subcomandos do `wardd-test-client` seguem os nomes v2 das operações (Fase 60 da missão
+2): `estado` → `status`, `lista` → `list`, a forma de destrave da 0.1.x → `unlock`, com
+todos os chamadores (`dev/container-*/inside.sh`).
 
 Pasta de build (Fase 6): `target/sem-modo-teste/` → `target/no-test-mode/`.
 

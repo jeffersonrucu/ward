@@ -10,8 +10,8 @@
 //! Usage: `wardd-test-client <socket> <operation>`, with the status, list or unlock
 //! operation. With unlock (`make test-units`, V3.34), the **test** password comes from
 //! stdin (never from argv) and goes into the core's zeroing secret type, which is zeroed
-//! on exit; no other secret goes through here. The argument names are the client's own
-//! (the scripts call them); the printed reply type and role are the protocol v2 names.
+//! on exit; no other secret goes through here. The arguments are the protocol v2 names
+//! of the operations (m2 Phase 60); the printed reply type and role are the v2 names too.
 
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
@@ -27,13 +27,13 @@ const MAX_PASSWORD: u64 = 1024;
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
     let (Some(path), Some(op)) = (args.get(1), args.get(2)) else {
-        eprintln!("uso: wardd-test-client <socket> <estado|lista|destravar>");
+        eprintln!("uso: wardd-test-client <socket> <status|list|unlock>");
         return ExitCode::from(2);
     };
     let request = match op.as_str() {
-        "estado" => Request::Status,
-        "lista" => Request::List,
-        "destravar" => {
+        "status" => Request::Status,
+        "list" => Request::List,
+        "unlock" => {
             // Fixed capacity: no reallocation, no stray copy of the password.
             let mut password = Vec::with_capacity(MAX_PASSWORD as usize);
             if std::io::stdin()

@@ -287,10 +287,11 @@ Protocolo v2:
   de versão, nenhum comando executa e o daemon continua travado (a senha mandada pela
   CLI velha não destrava o cofre). Cobre RM3.
 - [ ] V4.18 — Dado `ward list --json`, quando o agente o lê, então as chaves e os valores
-  são os de DT4/DT8 em inglês (`name`, `type`, `group`, `environment`, `project`, `url`
-  ou `host`, `level`); a entrada `blocked` não aparece; nenhum padrão de
-  `.dev/variations.txt`; e `ward list` (tabela) mostra os rótulos pt-BR ("banco",
-  "servidor", "com aprovação", "livre").
+  são os de DT4/DT8 em inglês (`name`, `type`, `group`, `environment`, `project`,
+  `address`), sem chave de nível (`level` nem `nivel`: D50 tira o nível da lista do
+  agente, como na 0.1.4; ajuste da Fase 60, achado da Fase 52); nenhuma chave nem valor
+  pt-BR; a entrada `blocked` não aparece; nenhum padrão de `.dev/variations.txt`; e
+  `ward list` (tabela) mostra os rótulos pt-BR de tipo ("banco", "servidor").
 
 Tipos e entrega (PRD DT11):
 
@@ -374,7 +375,18 @@ Comandos do Tauri e capabilities:
 - [ ] V5.11 — Dados `docs/`, o README, o `CLAUDE.md`, `skill/` e `.claude/`, quando o
   validador procura os nomes antigos de DT8–DT15 (subcomandos, alvos, variáveis,
   caminhos, crates, pastas), então só aparecem em `docs/mission/arquivo/`, na nota de
-  atualização de `docs/instalacao.md` e no histórico do escopo; o `CLAUDE.md` registra a
+  atualização de `docs/instalacao.md`, no histórico do escopo e nestes lugares que os
+  citam de propósito (ajuste da Fase 60, achado da Fase 59): `docs/glossario.md` (as
+  tabelas antigo → novo); os documentos da missão 2 em `docs/mission/` (PRD, plano,
+  este contrato, handoffs) e a tabela "antes → depois" do fim de
+  `docs/mission/design-nodes.md`; em `skill/README.md` e `skill/settings-deny.json`, as
+  regras de deny que negam as formas da 0.1.x (`ward destravar`, `WARD_ARQUIVO_*`; DT10,
+  Fase 58); no `CLAUDE.md`, as marcas de teste da 0.1.x que o `test-no-test-mode` e o
+  `install.sh` recusam (`WARD_DEV_EXTENSAO`, `ward-ponte-teste`…), a marca de grupos e a
+  pasta da extensão da 0.1.x que a instalação apaga, e os nomes que o glossário mantém
+  (imagens Docker `ward-teste/*:1`, a base `app_teste` do app de teste); e as palavras
+  pt-BR comuns usadas como texto (como "ferramentas", "origens", "livre", "revelar"),
+  que não são o nome antigo. O `CLAUDE.md` registra a
   convenção de IDs (DT2); o `docs/instalacao.md` tem a atualização 0.1.x → 0.2.0 e a
   volta pelo backup v4 (DT7); e o `make test-migration-guide` passa.
 

@@ -1570,7 +1570,7 @@ impl Daemon {
         }
         let r = self.save_entry(None, draft, &[]);
         if r.is_ok() {
-            warning!("salvar_login: login novo gravado pela extensão (com aprovação)");
+            warning!("save_login: login novo gravado pela extensão (com aprovação)");
         }
         r
     }

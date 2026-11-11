@@ -409,7 +409,7 @@ install -o root -g root -m 0755 /opt/teste/fake-chrome /opt/google/chrome/chrome
 SRV40=$!
 for _ in $(seq 100); do grep -q "pronto" "$LOG40" 2>/dev/null && break; sleep 0.1; done
 check "Fase 40: o wardd de teste real subiu com o socket do systemd" "$(grep -c pronto "$LOG40" || true)" "1"
-r="$(as_1000 /opt/teste/wardd-test-client "$SOCK" destravar < /opt/teste/senha)"
+r="$(as_1000 /opt/teste/wardd-test-client "$SOCK" unlock < /opt/teste/senha)"
 check "Fase 40: destravou a cópia do cofre de teste" "$r" "resposta: ok"
 
 M=/tmp/msgs-40.jsonl

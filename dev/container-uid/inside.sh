@@ -48,20 +48,20 @@ done
 ok "wardd de teste no ar como uid 1000"
 
 # uid 4242 without capability: stopped by the 0700 folder.
-r="$(setpriv --reuid=4242 --regid=4242 --clear-groups -- "$CLIENT" "$SOCK" estado)"
+r="$(setpriv --reuid=4242 --regid=4242 --clear-groups -- "$CLIENT" "$SOCK" status)"
 check "uid 4242: connect recusado (EACCES)" "$r" "connect: 13"
 
 # uid 4242 with CAP_DAC_OVERRIDE (ambient): gets past the 0700/0600; SO_PEERCRED stops it.
 r="$(setpriv --reuid=4242 --regid=4242 --clear-groups \
-    --inh-caps=+dac_override --ambient-caps=+dac_override -- "$CLIENT" "$SOCK" lista)"
+    --inh-caps=+dac_override --ambient-caps=+dac_override -- "$CLIENT" "$SOCK" list)"
 check "uid 4242 com CAP_DAC_OVERRIDE: fechado sem nenhum byte" "$r" "bytes: 0"
 
 # root: the same.
-r="$("$CLIENT" "$SOCK" lista)"
+r="$("$CLIENT" "$SOCK" list)"
 check "root: fechado sem nenhum byte" "$r" "bytes: 0"
 
 # The owner is served.
-r="$(setpriv --reuid=1000 --regid=1000 --clear-groups -- "$CLIENT" "$SOCK" estado)"
+r="$(setpriv --reuid=1000 --regid=1000 --clear-groups -- "$CLIENT" "$SOCK" status)"
 check "uid 1000: atendido" "$r" "resposta: status"
 
 sleep 0.3

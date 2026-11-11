@@ -185,7 +185,7 @@ v1_3_advisory() {
     add_attack_crate "$dir" 'time = "=0.1.43"'
     local output rc=0
     output="$(cd "$dir" && make check 2>&1)" || rc=$?
-    if [ "$rc" -ne 0 ] && grep -q '==> 4/6 cargo audit' <<<"$output" \
+    if [ "$rc" -ne 0 ] && grep -q '==> 5/7 cargo audit' <<<"$output" \
         && grep -q 'RUSTSEC-2020-0071' <<<"$output"; then
         ok "V1.3 make check falha em cargo audit com RUSTSEC-2020-0071"
     else
@@ -223,8 +223,8 @@ EOF
     local output rc=0
     output="$(cd "$dir" && make check 2>&1)" || rc=$?
     # Phase 12b: the git origin is already refused in the pre-check (before clippy compiles
-    # the crate, with build.rs, in step 2); cargo deny keeps refusing it too.
-    if [ "$rc" -ne 0 ] && grep -q '==> 0/6 origens' <<<"$output" && ! grep -q '==> 1/6' <<<"$output" \
+    # the crate, with build.rs, in step 3); cargo deny keeps refusing it too.
+    if [ "$rc" -ne 0 ] && grep -q '==> 0/7 origens' <<<"$output" && ! grep -q '==> 1/7' <<<"$output" \
         && grep -q "origens: pacote fake-git: fonte fora do crates.io" <<<"$output"; then
         ok "V1.3 make check recusa a origem git na pré-checagem, antes do passo 1"
     else
@@ -450,7 +450,7 @@ cargo_origins() {
     printf '[source.crates-io]\nreplace-with = "v"\n\n[source.v]\ndirectory = "vendor"\n' >"$dir/.cargo/config.toml"
     local output rc=0
     output="$(cd "$dir" && make check 2>&1)" || rc=$?
-    if [ "$rc" -ne 0 ] && grep -q '==> 0/6 origens' <<<"$output" && ! grep -q '==> 1/6' <<<"$output" \
+    if [ "$rc" -ne 0 ] && grep -q '==> 0/7 origens' <<<"$output" && ! grep -q '==> 1/7' <<<"$output" \
         && grep -q '.cargo/config.toml: .cargo/config\* no repositório é proibido' <<<"$output"; then
         ok "origens: make check falha na pré-checagem (antes do passo 1) com replace-with para vendor/"
     else
@@ -536,7 +536,7 @@ fixed_tools() {
 # --- Phase 12b (S14): origins as an allowlist, before step 1 ---------------------------------
 # The vectors of the 2nd audit (scratchpad/r2: v13-alias.sh, ataque-config.sh, wrap.sh): a
 # `.cargo/config.toml` or an environment variable that swaps what cargo runs. Each one
-# runs the whole `make check` in a copy and has to fail in the `0/6` pre-check, before
+# runs the whole `make check` in a copy and has to fail in the `0/7` pre-check, before
 # step 1, without the planted program running (the mark must not show up).
 MARKS="$TMP/marks"
 prepare_cargo_decoys() {
@@ -571,7 +571,7 @@ blocked_before() {
     shift 2
     rm -f "$MARKS"
     output="$(cd "$dir" && env "$@" make check 2>&1)" || rc=$?
-    if [ "$rc" -ne 0 ] && grep -q '==> 0/6 origens' <<<"$output" && ! grep -q '==> 1/6' <<<"$output" \
+    if [ "$rc" -ne 0 ] && grep -q '==> 0/7 origens' <<<"$output" && ! grep -q '==> 1/7' <<<"$output" \
         && grep -q '^origens: ' <<<"$output" && [ ! -e "$MARKS" ]; then
         ok "pré-checagem: $d é barrado antes do passo 1"
     else
