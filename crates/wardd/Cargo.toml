@@ -86,7 +86,7 @@ name = "socket"
 required-features = ["test-mode"]
 
 [[test]]
-name = "trava"
+name = "lock"
 required-features = ["test-mode"]
 
 [[test]]
