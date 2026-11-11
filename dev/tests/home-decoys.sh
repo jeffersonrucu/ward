@@ -1,5 +1,5 @@
 #!/bin/bash -p
-# Attack test (Phase 12b, vector `iscas.sh`/`iscas2.sh` of the 2nd audit of M1): the
+# Attack test (Phase 12b, the two home-decoy vectors of the 2nd audit of M1): the
 # WHOLE service scripts (`verify.sh` and `attacks-services.sh`), and not only each
 # client, open nothing from the user's home.
 #

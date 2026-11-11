@@ -15,14 +15,14 @@
 # 3. V4.38 (Phase 26, D63): with the `ward-app`/`ward-nm` groups and setgid copies of
 #    the minimal client, `ward run <free> -- ward-app …` (the release CLI) does not give
 #    the app role to the daemon's child: the peer has the right group and parent, but it
-#    is not the pid the launcher opened; the journal has "papel app recusado".
+#    is not the pid the launcher opened; the journal has the app role refusal line.
 #
 # systemd needs to write to the container's /sys/fs/cgroup (its subtree, with
 # `--cgroupns=private`), which Docker mounts read-only: the container gets
 # CAP_SYS_ADMIN and leaves the AppArmor profile only for `start.sh` to remount. It stays
-# without network, without `--privileged`, mounting nothing from the host besides
-# /opt/teste (ro), and is removed at the end. `--ulimit memlock=-1:-1` lets the systemd
-# inside apply the unit's `LimitMEMLOCK=infinity` (Docker's limit is 8 MiB).
+# without network, without `--privileged`, mounting nothing from the host besides the
+# read-only test folder, and is removed at the end. `--ulimit memlock=-1:-1` lets the
+# systemd inside apply the unit's `LimitMEMLOCK=infinity` (Docker's limit is 8 MiB).
 #
 # Stays out of `make check` (requires Docker). Usage: dev/tests/units.sh <wardd> <client> <ward>
 

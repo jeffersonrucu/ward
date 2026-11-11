@@ -9,7 +9,7 @@
 #   check).
 # - V6.13: no pattern of `.dev/variations.txt` in the storage state nor in the temporary
 #   profile (read every 50 ms while Chrome runs); the profile is gone at the end and
-#   `ward travar` deletes the storage states.
+#   locking the vault with the CLI deletes the storage states.
 # - V6.14: while Chrome runs, none of its processes listens on a TCP port
 #   (`/proc/net/tcp*` and `ss -ltnp`), the argv has `--remote-debugging-pipe` and no
 #   secret, and the debugging pipe is only in the main Chrome.
@@ -24,14 +24,14 @@
 # Needs `make dev-vault`, `make dev-variations` and the services up.
 #
 # Phase 44c (D9): every `http` entry goes through the window (only the origin
-# confirmation, at the free level). The window is the test one (`wardd-aprovador-teste`,
-# opened by the daemon through `WARD_DEV_APP`, which answers what is in
-# `$WORK_DIR/aprovador.modo`). The `[::1]` attack of the M6 audit (`dev/tests/fake_v6.py`
+# confirmation, at the free level). The window is the test one (the test approver
+# binary, opened by the daemon through `WARD_DEV_APP`, which answers what its mode file
+# in `$WORK_DIR` says). The `[::1]` attack of the M6 audit (`dev/tests/fake_v6.py`
 # on `[::1]:8081`, WordPress only on 127.0.0.1): denied, Chrome does not even open;
 # confirmed, `--host-resolver-rules` takes Chrome to 127.0.0.1 and the fake gets nothing.
 #
 # Usage: dev/tests/playwright.sh <wardd with test-mode> <ward with test-mode>
-#      <wardd-aprovador-teste>
+#      <test approver>
 
 export PATH=/usr/bin:/bin
 set -euo pipefail

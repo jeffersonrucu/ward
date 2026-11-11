@@ -3,8 +3,8 @@
 # against a test `wardd` of this script only, and with the real Chrome.
 #
 # - V6.1: the `ward-nm` run directly by a user process (here without the setgid, as on
-#   every development host) gets the agent role; `preencher` and `sugerir` answer
-#   `nao_autorizado` and nothing of the list `.dev/variations.txt` reaches stdout.
+#   every development host) gets the agent role; the fill and suggest operations answer
+#   "not authorized" and nothing of the list `.dev/variations.txt` reaches stdout.
 # - Real Chrome (headless, temporary profile in `.dev/nm.*`, test extension loaded through
 #   `--remote-debugging-pipe`, native messaging manifest only inside the temporary
 #   profile): Chrome opens the host as a direct child of the browser process, the

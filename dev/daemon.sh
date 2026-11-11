@@ -2,31 +2,31 @@
 # `make dev-daemon` / `make dev-daemon-stop` (Phase 22; D7, V3.30).
 #
 # Starts the TEST `wardd` (feature `test-mode`) with the test vault of `.dev/` and the
-# socket at `$XDG_RUNTIME_DIR/ward-teste/wardd.sock`. Never the real vault.
+# socket `wardd.sock` in the test socket folder under `$XDG_RUNTIME_DIR`. Never the real
+# vault.
 #
 # Clean environment (V3.30): `wardd` refuses to start with `TMPDIR` or `LD_*` in the
 # environment (V3.25), and the developer's session usually has both. So it starts through
 # `env -i` with a fixed list: HOME, PATH, XDG_RUNTIME_DIR, LANG, WARD_DEV_DIR and RUST_LOG
-# (default `trace`), plus
-# WARD_DEV_DBUS_SISTEMA only if set (Phase 24: socket of the bus the test daemon watches
-# for logind; without it, the test daemon does not turn logind on. For V3.19 with the
-# real `loginctl lock-session`, pass
-# WARD_DEV_DBUS_SISTEMA=/run/dbus/system_bus_socket; that locks the user's screen).
+# (default `trace`), plus the system-bus variable (`WARD_DEV_DBUS_*`) only if set
+# (Phase 24: socket of the bus the test daemon watches for logind; without it, the test
+# daemon does not turn logind on. For V3.19 with the real `loginctl lock-session`, set it
+# to /run/dbus/system_bus_socket; that locks the user's screen).
 #
-# WARD_DEV_APP (Phase 23a, D63): absolute path of the binary the test daemon's
-# `abrir_app` opens (the `ward-test-bridge` or the test `ward-app`), inside the
+# WARD_DEV_APP (Phase 23a, D63): absolute path of the binary the test daemon opens on the
+# open-app request (the `ward-test-bridge` or the test `ward-app`), inside the
 # repository; the daemon checks the rest and refuses to start outside the rule. Only that
 # process, child of the daemon, gets the app role. The value used stays in .dev/wardd.app:
 # with the daemon already up with another WARD_DEV_APP (or none), `up` fails instead of
 # pretending it switched.
 #
-# WARD_DEV_EXTENSAO=chrome (Phase 41): only if set; the test daemon gives the extension
-# role to the test `ward-nm` child of the installed Chrome (parent checked through
-# `/proc`), without the egid of the `ward-nm` group, for the extension QA in the test
-# Chrome. Any other value: the daemon refuses to start.
+# The extension variable (`WARD_DEV_EXT*`) set to `chrome` (Phase 41): only if set; the
+# test daemon gives the extension role to the test `ward-nm` child of the installed
+# Chrome (parent checked through `/proc`), without the egid of the `ward-nm` group, for
+# the extension QA in the test Chrome. Any other value: the daemon refuses to start.
 #
-# WARD_DEV_SOCKET_DIR (Phase 27a): 0700 socket folder in place of
-# `$XDG_RUNTIME_DIR/ward-teste` (absolute), to start the daemon of a worktree next to the
+# WARD_DEV_SOCKET_DIR (Phase 27a): 0700 socket folder in place of the test socket folder
+# under `$XDG_RUNTIME_DIR` (absolute), to start the daemon of a worktree next to the
 # test daemon of another checkout without bringing it down. It reaches the daemon through
 # `env -i`; the test CLI and `dev/tests/cli.py` use the same variable.
 #

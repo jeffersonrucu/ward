@@ -1,10 +1,10 @@
 #!/bin/bash -p
 # `make test-extension` (Phase 41; D5, D9, D47; V6.2, V6.4–V6.7): the MV3 extension of
 # `extension/dist/` in the real Chrome (headless, temporary profile in `.dev/extension.*`),
-# through the test `ward-nm`, against a test `wardd` of this script only with
-# `WARD_DEV_EXTENSAO=chrome` (the child of the installed Chrome gets the extension role
-# without the egid of the `ward-nm` group; only in `test-mode`) and the test services
-# (8081–8084).
+# through the test `ward-nm`, against a test `wardd` of this script only with the
+# extension variable set to `chrome` (the child of the installed Chrome gets the extension
+# role without the egid of the `ward-nm` group; only in `test-mode`) and the test
+# services (8081–8084).
 #
 # - V6.7: popup on `localhost:8081` with `acme-wp-dev` and `acme-wp-prod`; clicking
 #   `acme-wp-prod` fills user and password; on `localhost:8083`, `acme-totp-dev` fills
@@ -23,21 +23,21 @@
 # `make dev-services-up`, `make app-front` (fonts) and Chrome at
 # /opt/google/chrome/chrome; out of `make check`.
 #
-# Phase 42 (V6.8, V6.9): submitting a new login on `localhost:8083/cadastro` offers to save
-# (popup opened by the service worker), asks for type, group and environment and the
-# entry shows up in `ward lista --json` with the use asking for approval; attacks: submit
-# forged by the page script, login already saved, submit in an iframe of another origin,
-# vault locked at submit, messages from the content script to the service worker; light
-# system theme in the three popup states. Screenshots in
-# docs/mission/evidence/test-extension/popup/.
+# Phase 42 (V6.8, V6.9): submitting a new login on the sign-up page of `localhost:8083`
+# offers to save (popup opened by the service worker), asks for type, group and
+# environment and the entry shows up in the JSON list of the `ward` CLI with the use
+# asking for approval; attacks: submit forged by the page script, login already saved,
+# submit in an iframe of another origin, vault locked at submit, messages from the
+# content script to the service worker; light system theme in the three popup states.
+# Screenshots in docs/mission/evidence/test-extension/popup/.
 #
 # Phase 44c (D9): the popup fill on an `http` origin only after the origin is confirmed in
-# the window; the window is the test one (`wardd-aprovador-teste`, opened by the daemon
-# through `WARD_DEV_APP`, which answers what is in `$WORK_DIR/aprovador.modo`): denied,
+# the window; the window is the test one (the test approver binary, opened by the daemon
+# through `WARD_DEV_APP`, which answers what its mode file in `$WORK_DIR` says): denied,
 # nothing is filled and the popup warns; confirmed, it fills.
 #
 # Usage: dev/tests/extension.sh <wardd test-mode> <ward-nm test-mode> <fake-chrome> <ward test-mode>
-#      <wardd-aprovador-teste>
+#      <test approver>
 
 export PATH=/usr/bin:/bin
 set -euo pipefail

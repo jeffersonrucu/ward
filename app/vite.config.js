@@ -1,25 +1,27 @@
 import { defineConfig } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 
-// S11: nada inline (a CSP não tem 'unsafe-inline'), nada em data: URI, nada remoto.
-// `--mode teste` gera `dist-teste/` para o Chrome com a ponte de teste (D7); o build
-// normal (`dist/`, embutido no Tauri) não contém o código da ponte.
+// S11: nothing inline (the CSP has no 'unsafe-inline'), nothing in a data: URI, nothing
+// remote. The test mode (`npm run build:test`) writes the test output folder for Chrome
+// with the test bridge (D7); the normal build (`dist/`, embedded in Tauri) does not
+// contain the bridge code.
 //
-// `semLinksDeErro`: as mensagens de erro do runtime do Svelte terminam com um link de
-// documentação (`https://svelte.dev/e/<código>`). Nunca é buscado, mas deixaria uma URL
-// remota no pacote (V5.2); vira só o código. O que sobra de `http://` são os namespaces
-// XML (`http://www.w3.org/...`), que são nomes e não endereços (ver `dev/tests/app-dist.py`).
-function semLinksDeErro() {
+// `noErrorLinks`: the error messages of the Svelte runtime end with a documentation link
+// (`https://svelte.dev/e/<code>`). It is never fetched, but it would leave a remote URL
+// in the package (V5.2); it becomes just the code. What is left of `http://` are the XML
+// namespaces (`http://www.w3.org/...`), which are names and not addresses (see
+// `dev/tests/app-dist.py`).
+function noErrorLinks() {
   return {
-    name: 'ward-sem-links-de-erro',
-    renderChunk(codigo) {
-      return { code: codigo.replaceAll('https://svelte.dev/e/', 'svelte/e/'), map: null };
+    name: 'ward-no-error-links',
+    renderChunk(chunk) {
+      return { code: chunk.replaceAll('https://svelte.dev/e/', 'svelte/e/'), map: null };
     },
   };
 }
 
 export default defineConfig(({ mode }) => ({
-  plugins: [svelte(), semLinksDeErro()],
+  plugins: [svelte(), noErrorLinks()],
   base: '/',
   publicDir: false,
   build: {

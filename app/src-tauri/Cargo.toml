@@ -6,9 +6,9 @@ edition = "2024"
 rust-version = "1.99"
 publish = false
 
-# Workspace próprio (fora do `make check`; ver o `exclude` do Cargo.toml da raiz): o
-# Tauri precisa das bibliotecas de desenvolvimento do WebKitGTK e traz a árvore do GTK 3.
-# `make app-check` roda fmt, clippy, testes, audit e deny daqui.
+# Its own workspace (outside `make check`; see the `exclude` of the root Cargo.toml):
+# Tauri needs the WebKitGTK development libraries and brings the GTK 3 tree.
+# `make app-check` runs fmt, clippy, tests, audit and deny from here.
 [workspace]
 
 [[bin]]
@@ -16,34 +16,34 @@ name = "ward-app"
 path = "src/main.rs"
 
 [features]
-# D7, V5.1: só o app de teste tem devtools e fala com o daemon de teste
-# (`/run/user/<uid>/ward-teste/`). O build de release não liga esta feature e
-# `make install` recusa artefatos com ela.
+# D7, V5.1: only the test app has devtools and talks to the test daemon (the test
+# socket folder under `/run/user/<uid>/`). The release build does not turn this feature
+# on and `make install` refuses artifacts built with it.
 test-mode = ["tauri/devtools", "ward-app-core/test-mode"]
 
-# Motivo de cada dependência no handoff da Fase 29 (S14).
+# Reason for each dependency in the Phase 29 handoff (S14).
 [dependencies]
 ward-app-core = { path = "../core" }
-# Sem as features padrão: fora `dynamic-acl` (capabilities só as do build, nada
-# acrescentado em tempo de execução), `x11`, `dbus` e `common-controls-v6`.
-# `custom-protocol`: a interface vem sempre embutida no binário (`tauri://localhost`),
-# nunca de um servidor de desenvolvimento (S11: nenhum conteúdo remoto).
-# `tray-icon` (Fase 39, V5.23): ícone e menu da bandeja pelo AppIndicator. Traz
-# `tray-icon`, `libappindicator(-sys)` e `libloading` (a biblioteca do sistema é aberta
-# na hora; o app confere antes que ela existe, senão o crate entra em pânico).
+# Without the default features: leaves out `dynamic-acl` (capabilities only from the
+# build, nothing added at run time), `x11`, `dbus` and `common-controls-v6`.
+# `custom-protocol`: the interface always comes embedded in the binary
+# (`tauri://localhost`), never from a development server (S11: no remote content).
+# `tray-icon` (Phase 39, V5.23): tray icon and menu through AppIndicator. Brings
+# `tray-icon`, `libappindicator(-sys)` and `libloading` (the system library is opened at
+# run time; the app checks first that it exists, otherwise the crate panics).
 tauri = { version = "=2.12.5", default-features = false, features = ["wry", "compression", "custom-protocol", "tray-icon"] }
 serde = { version = "1", features = ["derive"] }
-# Diálogo "Adicionar arquivo" no lado Rust (Fase 34, S11): o mesmo gtk 0.18 que o
-# Tauri/wry já trazem; nenhum crate novo no Cargo.lock.
+# "Add file" dialog on the Rust side (Phase 34, S11): the same gtk 0.18 that Tauri/wry
+# already bring; no new crate in Cargo.lock.
 gtk = { version = "=0.18.2", default-features = false }
 
 [dev-dependencies]
-# Runtime falso do Tauri (`tauri::test`), para o teste de ataque da ACL (V5.1).
+# Fake Tauri runtime (`tauri::test`), for the ACL attack test (V5.1).
 tauri = { version = "=2.12.5", default-features = false, features = ["wry", "compression", "custom-protocol", "test"] }
 serde_json = "1"
 
 [build-dependencies]
-# A lista de comandos do manifesto do app sai do núcleo (uma fonte só, S11).
+# The command list of the app manifest comes from the core (a single source, S11).
 ward-app-core = { path = "../core" }
 tauri-build = { version = "=2.7.4", default-features = false, features = ["config-json"] }
 

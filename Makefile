@@ -268,7 +268,7 @@ app-front:
 	@test -x "$(NODE_DIR)/node" || { echo "node não encontrado; use NODE_DIR=/caminho/do/node/bin" >&2; exit 1; }
 	$(APP_NPM) ci --ignore-scripts --no-audit --no-fund
 	$(APP_NPM) run build
-	$(APP_NPM) run build:teste
+	$(APP_NPM) run build:test
 	$(PYTHON) dev/tests/app-dist.py
 	PATH="$(NODE_DIR):/usr/bin:/bin" "$(NODE_DIR)/node" dev/tests/bidi.mjs
 	$(PYTHON) dev/tests/bidi_icu.py

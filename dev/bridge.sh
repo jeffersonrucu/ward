@@ -2,10 +2,10 @@
 # `make app-bridge` (Phase 23a, D63): the test bridge opened by the test daemon.
 #
 # `make` already started the test daemon with WARD_DEV_APP = the bridge (dev/daemon.sh).
-# Here: asks for `abrir_app` (dev/open-app.py, no field) and waits for the URL the bridge
-# prints in its log (.dev/logs/ward-test-bridge.log, 0600). The bridge is a child of the
-# daemon, gets the app role (the launcher's pid), checks the role on the first reply and
-# exits when the daemon stops. Run by hand, it gets the agent role and exits.
+# Here: sends the open-app request (dev/open-app.py, no field) and waits for the URL the
+# bridge prints in its log (.dev/logs/ward-test-bridge.log, 0600). The bridge is a child
+# of the daemon, gets the app role (the launcher's pid), checks the role on the first
+# reply and exits when the daemon stops. Run by hand, it gets the agent role and exits.
 #
 # The URL carries the bridge token: it goes only to this command's output. Any process
 # of the uid that reads the log sees it too (residue of D63, only with the test vault).

@@ -1,7 +1,7 @@
 #!/bin/bash -p
 # `make test-no-test-mode` (Phase 23a; D63, D7; V3.37). The exception of the test app
-# (app role without the egid, `WARD_DEV_APP`; extension role without the egid,
-# `WARD_DEV_EXTENSAO`, Phase 41) does not leak into the release:
+# (app role without the egid, `WARD_DEV_APP`; extension role without the egid, through
+# the extension variable, Phase 41) does not leak into the release:
 #
 # 1. no workspace member turns on `wardd/test-mode` or `ward-platform/test-mode`
 #    through a normal or build dependency (`cargo tree -e normal,build`, without
@@ -27,7 +27,7 @@ TMP="$(mktemp -d)"
 trap 'rm -rf -- "$TMP"' EXIT
 failed=0
 # Lines `package vX (path)|features` of the Ward crates that have `test-mode` (or the
-# old name `modo-teste`, m2:DT12: an undone rename is flagged too).
+# old pt-BR name of the feature, m2:DT12: an undone rename is flagged too).
 with_test_mode() {
     grep -E '^(wardd|ward-platform) v[^|]*\|.*(test-mode|modo-teste)' "$1" || true
 }
@@ -76,7 +76,7 @@ check_strings() {
         fi
     done
 }
-# Phase 41: nor the exception of the test extension (`WARD_DEV_EXTENSAO`).
+# Phase 41: nor the exception of the test extension (its variable).
 MARKS=(WARD_DEV_APP WARD_DEV_DIR WARD_DEV_SOCKET_DIR WARD_DEV_EXTENSAO wardd-app-teste wardd-aprovador-teste ward-ponte-teste)
 check_strings "$RLIB" "${MARKS[@]}"
 check_strings "$TARGET_DIR/release/ward-nm" "${MARKS[@]}"
