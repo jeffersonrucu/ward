@@ -237,12 +237,18 @@ Trilha S (fases independentes entre si):
   `pg_select.py`, `bidi*`, `gst-channels.sh`, `terminal-test.py`, `log-scan.py` …); `CASA_PASSWD` → `PASSWD_HOME`, `OPCOES_SSH`, `IMAGEM_PG` e `RAIZ` → `ROOT` (apagar os `RAIZ="$ROOT"` do `install.sh`/`attacks-services.sh`) e as funções do `common.sh` (`exigir`, `cliente`, `ssh_senha`…, achar por grep) em todos os usos
   (achado da Fase 41). —
   V3.1, V3.7
-- [ ] Fase 47 — `install/` (`install.sh`, `groups.sh`, `dump.sh`, `chrome.sh`,
+- [x] Fase 47 — `install/` (`install.sh`, `groups.sh`, `dump.sh`, `chrome.sh`,
   `crx.py`, `deb.sh`, `deb/*`, `systemd/*`, `tmpfiles.d`, `coredump.conf.d`; caminhos
   instalados congelados até a Fase 57), comentários do `Makefile`, `deny.toml`,
   `app/src-tauri/deny.toml`, `.gitleaks.toml`, `dev/gitleaks-*.toml`,
   `rust-toolchain.toml`, `Cargo.toml` raiz. Textos do Makefile/`origins.py` que o
   `attacks-foundation.sh` procura mudam junto com o `grep` (achado da Fase 41). — V3.1
+
+- [ ] Fase 47a — Correção (achado da Fase 47): a varredura do V1.5 em
+  `dev/tests/attacks-foundation.sh` exclui `dev/fixtures/legacy/` (linha de base da Fase 3:
+  caminho do cofre real, variável do agente SSH e pasta do ssh na ajuda 0.1.4), com
+  controle de que a varredura ainda acusa o mesmo padrão plantado fora dessa pasta.
+  Compilação: `make compile`. — V1.6, V1.7
 
 ## Milestone 4 — Formato e protocolo novos
 
@@ -315,7 +321,10 @@ Contrato: V5.1–V5.11. Sequencial.
   `UidRecusado`/`SemIdentidade` do `wardd` com o `dev/container-uid/inside.sh`; variáveis
   `WARD_ATIVACAO`, `WARD_CAMINHO`, `WARD_ESPERADO`, `WARD_PLATAFORMA_FILHO` (achados da Fase 9). Compilação:
   `make compile`. — V5.4, V5.5
-- [ ] Fase 57 — Caminhos instalados e atualização (DT15, DT16): `install/tree.txt`,
+- [ ] Fase 57 — Caminhos instalados e atualização (DT15, DT16): seis funções de `install/` que o
+  `dev/tests/deb.sh` procura (`garantir_grupo`, `conferir_grupo`, `conferir_politicas_chrome`,
+  `apagar_grupos_marcados`, `avisar_manifestos_de_usuario`, `avisar_core_pattern`) e o
+  `grupos-criados` nos dois lados, tirando as entradas do `frozen.txt` (achado da Fase 47); `install/tree.txt`,
   `install.sh` (apaga `extensao/` e `grupos-criados` da 0.1.x, passa a marca para
   `created-groups`, para o `wardd@*` antes de trocar binários; uninstall lê as duas
   marcas), política do Chrome com o caminho novo, `install/deb/*` (preinst, postinst,
