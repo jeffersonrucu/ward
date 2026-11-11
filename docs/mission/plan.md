@@ -314,7 +314,7 @@ Contrato: V4.1–V4.24. Sequencial. A partir daqui o fio muda.
   em `dev/tests/dev-vault.sh` com os nomes v5 deste contrato; expectativas de
   `dev/tests/cli.py` e dos testes do `wardd` pela tabela "Entrega esperada". Compilação:
   `make compile`. — V4.19, V4.20, V4.21
-- [ ] Fase 54 — (achado da Fase 51: o `app/src` tem de usar os ids de formulário v2 — `password`, `username`, `totp_seed`, `private_key`… — e o código `versao-incompativel` do app não tem tela própria) **(UI)** Comandos e eventos do Tauri e `serde` da webview: (tirar do `dev/english-check/frozen.txt` as 52 entradas da Fase 54 que a Fase 34 pôs para os comandos e parâmetros do `main.rs`; e as dos `#[serde(rename)]` de app/core das Fases 32–34) (procurar nome de fio como chave entre aspas e como acesso por
+- [x] Fase 54 — (achado da Fase 51: o `app/src` tem de usar os ids de formulário v2 — `password`, `username`, `totp_seed`, `private_key`… — e o código `versao-incompativel` do app não tem tela própria) **(UI)** Comandos e eventos do Tauri e `serde` da webview: (tirar do `dev/english-check/frozen.txt` as 52 entradas da Fase 54 que a Fase 34 pôs para os comandos e parâmetros do `main.rs`; e as dos `#[serde(rename)]` de app/core das Fases 32–34) (procurar nome de fio como chave entre aspas e como acesso por
   ponto, achado da Fase 36; `frozen.txt` lista os da W) nomes das
   funções `#[tauri::command]` e dos parâmetros, eventos, `capabilities/*.json`,
   `permissions/`, chamadas `invoke`/`listen` no `app/src`, ponte de teste, tira os
@@ -346,7 +346,7 @@ Contrato: V5.1–V5.11. Sequencial.
   `ward --help` (texto pt-BR igual, só os nomes); mensagens que citam subcomando (CLI,
   daemon, app: "rode `ward unlock`"); `dev/tests/cli.py` e testes Rust. Compilação:
   `make compile`. — V5.1, V5.2
-- [ ] Fase 56 — (também, achado da Fase 47b: o caminho `/cadastro` do serviço totp 8083 e o arquivo `aprovador.modo` do aprovador de teste, e as exceções de Fase 56 no `frozen.txt`) Variáveis internas e de teste e marca de `test-mode` (DT12): renomes com
+- [ ] Fase 56 — (achado da Fase 54: ids do menu da bandeja `bandeja-*`, caminho `/ponte/`, nomes de tela do `&tela=`, modos `--daemon-falso` e códigos locais da ponte de teste ainda em pt-BR; e `incompatible-version` do app sem tela própria — cai no erro genérico) (também, achado da Fase 47b: o caminho `/cadastro` do serviço totp 8083 e o arquivo `aprovador.modo` do aprovador de teste, e as exceções de Fase 56 no `frozen.txt`) Variáveis internas e de teste e marca de `test-mode` (DT12): renomes com
   todos os usos (Rust, scripts, Makefile, units); recusa da marca nova e da antiga no
   `install/install.sh` e no `make release`; `dev/tests/no-test-mode.sh` procurando nomes
   novos e antigos; binários `wardd-app-teste`/`wardd-aprovador-teste`, texto de uso e
