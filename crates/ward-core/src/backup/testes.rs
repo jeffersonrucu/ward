@@ -20,7 +20,7 @@ use super::*;
 use crate as wc;
 use crate::atomic_write::{self, change_password_with_backup, write_entries_with_backup};
 use crate::corpo;
-use crate::entrada::Entrada;
+use crate::entry::Entry;
 use crate::format::MasterPassword;
 
 #[allow(clippy::duplicate_mod)]
@@ -62,12 +62,12 @@ fn cofre_novo(s: &str) -> OpenVault {
 }
 
 /// As entradas do cofre de teste (com os segredos falsos), montadas uma vez.
-fn entradas() -> &'static [Entrada] {
-    static E: OnceLock<Vec<Entrada>> = OnceLock::new();
+fn entradas() -> &'static [Entry] {
+    static E: OnceLock<Vec<Entry>> = OnceLock::new();
     E.get_or_init(cofre_de_teste)
 }
 
-fn abrir(arquivo: &[u8], s: &str) -> Result<(OpenVault, Vec<Entrada>, u64), corpo::ErroAbrir> {
+fn abrir(arquivo: &[u8], s: &str) -> Result<(OpenVault, Vec<Entry>, u64), corpo::ErroAbrir> {
     let _g = ARGON.lock().unwrap_or_else(|e| e.into_inner());
     corpo::abrir_entradas_lida(arquivo, &senha(s), 0, 0)
 }
@@ -997,7 +997,7 @@ fn versoes_seladas(d: &Dir, n: usize) -> (OpenVault, Vec<Vec<u8>>) {
 }
 
 /// Sela a próxima geração do `cofre` com `entradas`, como a gravação faz, sem gravar.
-fn selar_proxima(cofre: &mut OpenVault, entradas: &[Entrada]) -> Vec<u8> {
+fn selar_proxima(cofre: &mut OpenVault, entradas: &[Entry]) -> Vec<u8> {
     let g = cofre.next_generation().unwrap();
     let conteudo = corpo::serializar(cofre.config(), g, entradas).unwrap();
     let b = cofre.seal(&conteudo).unwrap();

@@ -2179,6 +2179,48 @@ para as fases deles), `gravar_novo_com_pontos` → `write_new_with_points`,
 protocolo (Fase 17) e `ErroAbrir::Retrocesso` do corpo (Fase 14) são outros e não
 mudaram; o `backup::geracao_selada` (Fase 15) também não.
 
+Fase 12 (`ward-core`: `entry`, `entry/secret`, `entry/validation`): módulo `entrada` →
+`entry` (`segredo` → `secret`, `validacao` → `validation`, `testes` → `tests`);
+`Segredo` → `Secret` (`de_texto`/`de_bytes`/`expor`/`expor_texto` → `from_text`/
+`from_bytes`/`expose`/`expose_text`; o `Segredo` do `app/core` é outro e não mudou);
+`Ambiente` → `Environment`, `NivelAcesso` → `AccessLevel` com `Bloqueado`/`ComAprovacao`/
+`Livre` → `Blocked`/`Approval`/`Free` (`mais_restritivo` → `most_restrictive`);
+`TipoEntrada` → `EntryType` com `Banco` → `Database`, `Servidor` → `Server`, `NotaSegura`
+→ `SecureNote`, `Generico` → `Generic`; `Motor` → `Engine` (o `Motor` do
+`wardd/aprovacao.rs` é outro); `SegurancaSmtp` → `SmtpSecurity` com `Nenhuma` → `None`;
+`Protocolo` → `Protocol`; `TODOS`/`TODAS` → `ALL`; `nome`/`de_nome`/`rotulo`/
+`porta_padrao` → `name`/`from_name`/`label`/`default_port` (os literais de `name()` são
+nomes gravados no cofre e ficam até a Fase 48; os de `label()` são texto exibido e ficam);
+`Autenticacao { Senha, Chave { chave_privada, passphrase } }` → `Auth { Password, Key {
+private_key, passphrase } }`; campos `usuario`/`senha`/`totp_semente`/`motor`/`porta`/
+`base`/`tunel`/`autenticacao`/`salto`/`variavel`/`regiao`/`seguranca`/`protocolo`/`texto`
+→ `username`/`password`/`totp_seed`/`engine`/`port`/`db_name`/`tunnel`/`auth`/`jump`/
+`variable`/`region`/`security`/`protocol`/`text`; `Banco`/`Servidor`/`NotaSegura` (structs)
+→ `Database`/`Server`/`SecureNote`; `Dados` → `Data` (`tipo()` → `kind()`, `Generico` →
+`Generic`); `ValorExtra { Texto, Segredo }` → `ExtraValue { Text, Secret }` (o do
+`app/core/formulario.rs` é outro); `CampoExtra` → `ExtraField` (`e_segredo` →
+`is_secret`); `Anexo` → `Attachment` (`conteudo` → `content`; os `Anexo` de
+`wardd/playwright.rs` e `app/core/credenciais.rs` são outros); `OrigemSegredo { Campo,
+Extra, Anexo }` → `SecretOrigin { Field, Extra, Attachment }`; `SegredoDaEntrada {
+origem, valor }` → `EntrySecret { origin, value }`; `Datas { criada_em, alterada_em }` →
+`Dates { created_at, modified_at }` (`NENHUMA`/`instante`/`de_partes`/`carimbo_novo`/
+`alterado` → `NONE`/`instant`/`from_parts`/`new_stamp`/`modified`); `Entrada` → `Entry`
+(`grupo`/`ambiente`/`projeto`/`nivel`/`definir_nivel`/`datas`/`definir_datas`/`tipo`/
+`dados`/`anexos`/`segredos`/`substituir_por`/`referencia`/`conferir_no_cofre` → `group`/
+`environment`/`project`/`level`/`set_level`/`dates`/`set_dates`/`kind`/`data`/
+`attachments`/`secrets`/`replace_with`/`reference`/`verify_in_vault`).
+`ErroValidacao { campo, posicao, motivo }` → `ValidationError { field, position, reason
+}`; `ErrosValidacao` → `ValidationErrors` (`lista`/`tem`/`tem_motivo` → `list`/`has`/
+`has_reason`); `Rascunho` → `Draft` (`validar` → `validate`), `RascunhoDados` →
+`DataDraft`, `RascunhoExtra { nome, valor, segredo }` → `ExtraDraft { name, value, secret
+}`, `RascunhoAnexo` → `AttachmentDraft`; `GRANDE_PARA_MASCARA` → `TOO_LARGE_FOR_MASK`;
+`nome_variavel` → `variable_name`, `origem_da_url` → `url_origin`,
+`origem_local_da_url` → `local_url_origin`, `url_valida` → `valid_url`,
+`separar_host_porta` → `split_host_port`, `VARIAVEIS_COMUNS` → `COMMON_VARIABLES`,
+`variaveis_do_tipo`/`anexos_do_tipo` → `type_variables`/`type_attachments`; `Coletor` →
+`Collector`; predicados `*_valido(a)` → `valid_*` (`nome_entrada_valido` →
+`valid_entry_name`, `chave_parece_privada` → `looks_like_private_key`).
+
 Funções e métodos não estão listados um a um: o nome sai da seção 2 na ordem do inglês
 (`conferir_arquivo` → `verify_file`, `ler_cofre` → `read_vault`, `codificar_resposta` →
 `encode_response`, `exigir_pin` → `require_pin`). Os poucos fixados por outra seção:

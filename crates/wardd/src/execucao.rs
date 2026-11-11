@@ -39,8 +39,8 @@ use std::time::{Duration, Instant};
 
 use zeroize::Zeroizing;
 
-use ward_core::entrada::{Dados, Entrada, NivelAcesso, Segredo};
 use ward_core::entrega::{self, Entrega, ErroEntrega, ErroRecurso, Recursos};
+use ward_core::entry::{AccessLevel, Data, Entry, Secret};
 use ward_core::limits::{MAX_COMMON_FRAME, MAX_DISPLAYED_TEXT};
 use ward_core::mascara::{ConstrutorMascara, Mascara};
 use ward_core::protocolo::{
@@ -228,19 +228,19 @@ struct RecursosRun<'a> {
     /// A ponte do túnel, aberta pela entrega.
     ponte: Option<Ponte>,
     /// A entrada `servidor` do túnel (para a máscara das duas, D19).
-    servidor_do_tunel: Option<&'a Entrada>,
+    servidor_do_tunel: Option<&'a Entry>,
 }
 
 /// O que o túnel precisa do daemon.
 struct ContextoTunel<'a> {
     daemon: &'a Daemon,
-    entradas: &'a [Entrada],
-    principal: &'a Entrada,
+    entradas: &'a [Entry],
+    principal: &'a Entry,
     travas: (Arc<std::sync::atomic::AtomicU64>, u64),
 }
 
 impl Recursos for RecursosRun<'_> {
-    fn codigo_totp(&mut self, semente: &Segredo) -> Result<Zeroizing<String>, ErroRecurso> {
+    fn codigo_totp(&mut self, semente: &Secret) -> Result<Zeroizing<String>, ErroRecurso> {
         let c = Totp::from_seed(semente)
             .and_then(|t| t.code_now())
             .map_err(|_| ErroRecurso("código TOTP"))?;
@@ -249,7 +249,7 @@ impl Recursos for RecursosRun<'_> {
         Ok(s)
     }
 
-    fn arquivo(&mut self, nome: &str, conteudo: &Segredo) -> Result<String, ErroRecurso> {
+    fn arquivo(&mut self, nome: &str, conteudo: &Secret) -> Result<String, ErroRecurso> {
         let rt = self.rt.ok_or(ErroRecurso("sem pasta de temporários"))?;
         if self.temporarios.is_none() {
             self.temporarios =
@@ -259,7 +259,7 @@ impl Recursos for RecursosRun<'_> {
             .temporarios
             .as_mut()
             .ok_or(ErroRecurso("pasta de temporários"))?;
-        t.gravar(nome, conteudo.expor())
+        t.gravar(nome, conteudo.expose())
             .map_err(|_| ErroRecurso("arquivo temporário"))
     }
 
@@ -501,14 +501,14 @@ fn montar_ambiente(
     let mut amb: Vec<(&[u8], &[u8])> = Vec::with_capacity(ENTRAM_DA_CLI.len() + 1);
     for v in cli {
         let nome: &[u8] = &v.nome;
-        if !entra_da_cli(nome, v.valor.expor()) {
+        if !entra_da_cli(nome, v.valor.expose()) {
             tirados += 1;
             continue;
         }
         if da_entrega.contains(nome) || !vistos.insert(nome) {
             continue;
         }
-        amb.push((nome, v.valor.expor()));
+        amb.push((nome, v.valor.expose()));
     }
     let fixas: [(&[u8], &[u8]); 4] = [
         (b"PATH", PATH_DO_COMANDO),
@@ -528,10 +528,10 @@ fn montar_ambiente(
 }
 
 /// A entrada visível (bloqueada = inexistente, V3.17).
-fn visivel<'a>(entradas: &'a [Entrada], nome: &str) -> Option<&'a Entrada> {
+fn visivel<'a>(entradas: &'a [Entry], nome: &str) -> Option<&'a Entry> {
     entradas
         .iter()
-        .find(|e| e.nome() == nome && e.nivel() != NivelAcesso::Bloqueado)
+        .find(|e| e.name() == nome && e.level() != AccessLevel::Blocked)
 }
 
 impl Daemon {
@@ -549,7 +549,7 @@ impl Daemon {
         // `nota segura` visível: recusa antes de pedir aprovação (V4.11).
         if let Some(a) = self.estado().aberto.as_ref()
             && visivel(&a.entradas, &x.entrada)
-                .is_some_and(|e| matches!(e.dados(), Dados::NotaSegura(_)))
+                .is_some_and(|e| matches!(e.data(), Data::SecureNote(_)))
         {
             return Err(ErroResposta::TipoSemEntrega);
         }
@@ -742,9 +742,9 @@ pub(crate) fn ler_lote(f: &mut File, buf: &mut [u8]) -> (usize, bool) {
 }
 
 /// Passa a entrada da CLI ao filho; `None` (ou a fila fechada) fecha a entrada dele.
-fn escrever_entrada(mut f: File, fila: Receiver<Option<Segredo>>) {
+fn escrever_entrada(mut f: File, fila: Receiver<Option<Secret>>) {
     while let Ok(Some(dados)) = fila.recv() {
-        if f.write_all(dados.expor()).is_err() {
+        if f.write_all(dados.expose()).is_err() {
             break;
         }
     }
@@ -761,7 +761,7 @@ fn escrever_entrada(mut f: File, fila: Receiver<Option<Segredo>>) {
 fn ler_da_cli(
     mut s: UnixStream,
     grupo: Arc<Group>,
-    fila: SyncSender<Option<Segredo>>,
+    fila: SyncSender<Option<Secret>>,
     fim: Arc<AtomicBool>,
     pty: Option<Arc<Pty>>,
     entrada_nula: bool,
@@ -821,8 +821,8 @@ fn ler_da_cli(
 /// Põe na fila da entrada sem perder a CLI de vista: com a fila cheia (o filho não
 /// lê), olha se a conexão caiu enquanto espera. `false`: a sessão acabou.
 fn por_na_fila(
-    fila: &SyncSender<Option<Segredo>>,
-    mut item: Option<Segredo>,
+    fila: &SyncSender<Option<Secret>>,
+    mut item: Option<Secret>,
     s: &UnixStream,
     fim: &AtomicBool,
     grupo: &Group,

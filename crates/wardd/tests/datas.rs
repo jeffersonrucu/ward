@@ -75,7 +75,7 @@ fn detalhe(d: &Daemon, nome: &str) -> DetalheEntrada {
 
 fn datas(d: &Daemon, nome: &str) -> (Option<u64>, Option<u64>) {
     let x = detalhe(d, nome).datas;
-    (x.criada_em(), x.alterada_em())
+    (x.created_at(), x.modified_at())
 }
 
 fn salvar(d: &Daemon, dados: &str) {

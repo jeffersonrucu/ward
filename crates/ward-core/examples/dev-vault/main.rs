@@ -50,11 +50,10 @@ use std::process::ExitCode;
 use ward_core::atomic_write::write_entries;
 use ward_core::configuracao::{Configuracao, HashPin, KDF_PIN};
 use ward_core::corpo::{abrir_entradas, serializar};
-use ward_core::entrada::{
-    Entrada, NivelAcesso, Rascunho, RascunhoAnexo, RascunhoDados, RascunhoExtra, Segredo,
-    TipoEntrada,
-};
 use ward_core::entrega::{self, ErroEntrega, ErroRecurso, Recursos};
+use ward_core::entry::{
+    AccessLevel, AttachmentDraft, DataDraft, Draft, Entry, EntryType, ExtraDraft, Secret,
+};
 use ward_core::format::{MasterPassword, OpenVault};
 use ward_core::limits::{DEFAULT_LOCK_MINUTES, MAX_ATTACHMENTS_TOTAL};
 use ward_core::mascara::{MARCA, Mascara};
@@ -244,11 +243,11 @@ fn print_config(generation: u64) {
 }
 
 /// Name, kind and level of each entry (none of it is secret).
-fn print_list(entries: &[Entrada]) {
-    let mut names: Vec<&Entrada> = entries.iter().collect();
-    names.sort_by(|a, b| a.nome().cmp(b.nome()));
+fn print_list(entries: &[Entry]) {
+    let mut names: Vec<&Entry> = entries.iter().collect();
+    names.sort_by(|a, b| a.name().cmp(b.name()));
     for e in names {
-        println!("  {}\t{}\t{}", e.nome(), e.tipo().nome(), e.nivel().nome());
+        println!("  {}\t{}\t{}", e.name(), e.kind().name(), e.level().name());
     }
 }
 
@@ -277,7 +276,7 @@ fn verify(
     output: &Path,
     password: &MasterPassword,
     pin: &str,
-    expected: &[Entrada],
+    expected: &[Entry],
 ) -> Result<(usize, u64), Error> {
     let meta = fs::symlink_metadata(output)
         .map_err(|_| Error::Vault("o cofre não existe; rode make dev-vault".into()))?;
@@ -338,10 +337,10 @@ fn verify_config(cfg: &Configuracao, pin: &str) -> Result<(), Error> {
 struct FakeResources;
 
 impl Recursos for FakeResources {
-    fn codigo_totp(&mut self, _: &Segredo) -> Result<Zeroizing<String>, ErroRecurso> {
+    fn codigo_totp(&mut self, _: &Secret) -> Result<Zeroizing<String>, ErroRecurso> {
         Ok(Zeroizing::new(String::from("000000")))
     }
-    fn arquivo(&mut self, name: &str, _: &Segredo) -> Result<String, ErroRecurso> {
+    fn arquivo(&mut self, name: &str, _: &Secret) -> Result<String, ErroRecurso> {
         Ok(format!("/run/user/0/ward-teste/{name}"))
     }
     fn tunel(&mut self, _: &str, _: &str, _: u16) -> Result<u16, ErroRecurso> {
@@ -366,9 +365,9 @@ fn hex_to_bytes(h: &[u8]) -> Option<Zeroizing<Vec<u8>>> {
 }
 
 /// Some piece of 6 bytes or more of some secret of the entry is left in the output.
-fn secret_left(output: &[u8], e: &Entrada) -> bool {
-    e.segredos().iter().any(|s| {
-        let v = s.valor.expor();
+fn secret_left(output: &[u8], e: &Entry) -> bool {
+    e.secrets().iter().any(|s| {
+        let v = s.value.expose();
         v.len() >= 6 && v.windows(6).any(|j| output.windows(6).any(|w| w == j))
     })
 }
@@ -399,7 +398,7 @@ fn cross(output: &Path, password: &MasterPassword) -> Result<(), Error> {
             return Err(Error::Usage("padrão grande demais no stdin"));
         }
         let name = String::from_utf8_lossy(name).into_owned();
-        let Some(e) = loaded.iter().find(|e| e.nome() == name) else {
+        let Some(e) = loaded.iter().find(|e| e.name() == name) else {
             return Err(Error::Vault(format!(
                 "cruzado: entrada {name} não está no cofre"
             )));
@@ -567,7 +566,7 @@ enum Source {
 /// Reads a file named in the fixtures: relative to the root, inside the base of the
 /// source, without `..` or a symbolic link in any component, a regular file, up to the
 /// limit.
-fn read_from_repo(root: &Path, source: Source, path: &str) -> Result<Segredo, Error> {
+fn read_from_repo(root: &Path, source: Source, path: &str) -> Result<Secret, Error> {
     let (base, max, missing) = match source {
         Source::Key => (
             KEYS_BASE,
@@ -628,7 +627,7 @@ fn read_from_repo(root: &Path, source: Source, path: &str) -> Result<Segredo, Er
     f.take(max)
         .read_to_end(&mut bytes)
         .map_err(|_| error("não deu para ler"))?;
-    let secret = Segredo::de_bytes(bytes);
+    let secret = Secret::from_bytes(bytes);
     if secret.len() != size {
         return Err(error("o arquivo mudou durante a leitura"));
     }
@@ -965,10 +964,10 @@ impl Obj {
     }
 
     /// Secret as text; the `String` is moved into the core's secret type, without a copy.
-    fn secret(&mut self, key: &str) -> Result<Option<Segredo>, Error> {
+    fn secret(&mut self, key: &str) -> Result<Option<Secret>, Error> {
         Ok(self
             .text(key)?
-            .map(|mut t| Segredo::de_texto(std::mem::take(&mut *t))))
+            .map(|mut t| Secret::from_text(std::mem::take(&mut *t))))
     }
 
     fn finish(self) -> Result<(), Error> {
@@ -979,11 +978,11 @@ impl Obj {
     }
 }
 
-type ReadFn<'a> = dyn FnMut(Source, &str) -> Result<Segredo, Error> + 'a;
+type ReadFn<'a> = dyn FnMut(Source, &str) -> Result<Secret, Error> + 'a;
 
 /// What the fixtures give: master password, PIN (in memory that is zeroed on exit) and
 /// entries.
-type Built = (MasterPassword, Zeroizing<String>, Vec<Entrada>);
+type Built = (MasterPassword, Zeroizing<String>, Vec<Entry>);
 
 /// Builds the master password, the PIN and the validated entries (with the level of the
 /// fixture) from the JSON. `read` reads the files named there (private key,
@@ -1019,14 +1018,14 @@ fn build(bytes: &[u8], read: &mut ReadFn<'_>) -> Result<Built, Error> {
     Ok((password, pin, entries))
 }
 
-fn entry(i: usize, v: Value, read: &mut ReadFn<'_>) -> Result<Entrada, Error> {
+fn entry(i: usize, v: Value, read: &mut ReadFn<'_>) -> Result<Entry, Error> {
     let mut e = Obj::from_value(format!("entradas[{i}]"), v)?;
     let name = e.required("nome")?;
     e.at = name.clone();
     let kind_text = e.required("tipo")?;
-    let kind = TipoEntrada::de_nome(&kind_text)
+    let kind = EntryType::from_name(&kind_text)
         .ok_or_else(|| fixture(name.as_str(), "tipo desconhecido"))?;
-    let level = NivelAcesso::de_nome(&e.required("nivel")?)
+    let level = AccessLevel::from_name(&e.required("nivel")?)
         .ok_or_else(|| fixture(name.as_str(), "nível desconhecido"))?;
     let group = e.plain("grupo")?;
     let environment = e.plain("ambiente")?;
@@ -1072,10 +1071,10 @@ fn entry(i: usize, v: Value, read: &mut ReadFn<'_>) -> Result<Entrada, Error> {
                     }
                 };
                 x.finish()?;
-                extras.push(RascunhoExtra {
-                    nome: extra_name,
-                    valor: value,
-                    segredo: secret,
+                extras.push(ExtraDraft {
+                    name: extra_name,
+                    value,
+                    secret,
                 });
             }
         }
@@ -1091,9 +1090,9 @@ fn entry(i: usize, v: Value, read: &mut ReadFn<'_>) -> Result<Entrada, Error> {
                 let attachment_name = a.required("nome")?;
                 let file = a.required("arquivo")?;
                 a.finish()?;
-                attachments.push(RascunhoAnexo {
-                    nome: attachment_name,
-                    conteudo: read(Source::Attachment, &file)?,
+                attachments.push(AttachmentDraft {
+                    name: attachment_name,
+                    content: read(Source::Attachment, &file)?,
                 });
             }
         }
@@ -1101,94 +1100,94 @@ fn entry(i: usize, v: Value, read: &mut ReadFn<'_>) -> Result<Entrada, Error> {
     }
     e.finish()?;
 
-    let r = Rascunho {
-        nome: name.clone(),
-        grupo: group,
-        ambiente: environment,
-        projeto: project,
+    let r = Draft {
+        name: name.clone(),
+        group,
+        environment,
+        project,
         tags,
-        dados: data,
+        data,
         extras,
-        anexos: attachments,
+        attachments,
     };
     // The validation of Phase 15 is the same one of the app; the error only has fixed
     // texts.
-    let mut validated = r.validar().map_err(|e| fixture(name, e.to_string()))?;
+    let mut validated = r.validate().map_err(|e| fixture(name, e.to_string()))?;
     // Only the daemon changes a level after the PIN (S9); here it is the assembly of the
     // test vault, which is born with the levels of the contract table.
-    validated.definir_nivel(level);
+    validated.set_level(level);
     Ok(validated)
 }
 
 fn data(
-    kind: TipoEntrada,
+    kind: EntryType,
     mut c: Obj,
     mut s: Obj,
     read: &mut ReadFn<'_>,
-) -> Result<RascunhoDados, Error> {
-    let mut key = |s: &mut Obj| -> Result<Option<Segredo>, Error> {
+) -> Result<DataDraft, Error> {
+    let mut key = |s: &mut Obj| -> Result<Option<Secret>, Error> {
         match s.text("chave_privada_arquivo")? {
             None => Ok(None),
             Some(path) => read(Source::Key, &path).map(Some),
         }
     };
     let d = match kind {
-        TipoEntrada::Login => RascunhoDados::Login {
+        EntryType::Login => DataDraft::Login {
             url: c.plain("url")?,
-            usuario: c.plain("usuario")?,
-            senha: s.secret("senha")?,
-            totp_semente: s.secret("totp_semente")?,
+            username: c.plain("usuario")?,
+            password: s.secret("senha")?,
+            totp_seed: s.secret("totp_semente")?,
         },
-        TipoEntrada::Banco => RascunhoDados::Banco {
-            motor: c.plain("motor")?,
+        EntryType::Database => DataDraft::Database {
+            engine: c.plain("motor")?,
             host: c.plain("host")?,
-            porta: c.port("porta")?,
-            base: c.plain("base")?,
-            usuario: c.plain("usuario")?,
-            senha: s.secret("senha")?,
-            tunel: c.plain("tunel")?,
+            port: c.port("porta")?,
+            db_name: c.plain("base")?,
+            username: c.plain("usuario")?,
+            password: s.secret("senha")?,
+            tunnel: c.plain("tunel")?,
         },
-        TipoEntrada::Servidor => RascunhoDados::Servidor {
+        EntryType::Server => DataDraft::Server {
             host: c.plain("host")?,
-            porta: c.port("porta")?,
-            usuario: c.plain("usuario")?,
-            senha: s.secret("senha")?,
-            chave_privada: key(&mut s)?,
+            port: c.port("porta")?,
+            username: c.plain("usuario")?,
+            password: s.secret("senha")?,
+            private_key: key(&mut s)?,
             passphrase: s.secret("passphrase")?,
-            salto: c.plain("salto")?,
+            jump: c.plain("salto")?,
         },
-        TipoEntrada::Api => RascunhoDados::Api {
+        EntryType::Api => DataDraft::Api {
             url: c.plain("url")?,
             token: s.secret("token")?,
-            variavel: c.plain("variavel")?,
+            variable: c.plain("variavel")?,
         },
-        TipoEntrada::Aws => RascunhoDados::Aws {
+        EntryType::Aws => DataDraft::Aws {
             access_key_id: c.plain("access_key_id")?,
             secret_access_key: s.secret("secret_access_key")?,
-            regiao: c.plain("regiao")?,
+            region: c.plain("regiao")?,
             role_arn: c.plain("role_arn")?,
             session_token: s.secret("session_token")?,
         },
-        TipoEntrada::Smtp => RascunhoDados::Smtp {
+        EntryType::Smtp => DataDraft::Smtp {
             host: c.plain("host")?,
-            porta: c.port("porta")?,
-            usuario: c.plain("usuario")?,
-            senha: s.secret("senha")?,
-            seguranca: c.plain("seguranca")?,
+            port: c.port("porta")?,
+            username: c.plain("usuario")?,
+            password: s.secret("senha")?,
+            security: c.plain("seguranca")?,
         },
-        TipoEntrada::FtpSftp => RascunhoDados::FtpSftp {
-            protocolo: c.plain("protocolo")?,
+        EntryType::FtpSftp => DataDraft::FtpSftp {
+            protocol: c.plain("protocolo")?,
             host: c.plain("host")?,
-            porta: c.port("porta")?,
-            usuario: c.plain("usuario")?,
-            senha: s.secret("senha")?,
-            chave_privada: key(&mut s)?,
+            port: c.port("porta")?,
+            username: c.plain("usuario")?,
+            password: s.secret("senha")?,
+            private_key: key(&mut s)?,
             passphrase: s.secret("passphrase")?,
         },
-        TipoEntrada::NotaSegura => RascunhoDados::NotaSegura {
-            texto: s.secret("texto")?,
+        EntryType::SecureNote => DataDraft::SecureNote {
+            text: s.secret("texto")?,
         },
-        TipoEntrada::Generico => RascunhoDados::Generico,
+        EntryType::Generic => DataDraft::Generic,
     };
     c.finish()?;
     s.finish()?;

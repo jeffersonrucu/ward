@@ -128,7 +128,7 @@ fn v6_10_login_livre_preenche_na_origem_certa_e_volta_ok() {
         match preencher(&d, &id, ORIGEM) {
             Resposta::Preenchimento { usuario, senha, .. } => {
                 assert_eq!(usuario, "admin");
-                assert_eq!(senha.expor(), SEGREDOS[3].as_bytes());
+                assert_eq!(senha.expose(), SEGREDOS[3].as_bytes());
             }
             r => panic!("{r:?}"),
         }

@@ -36,7 +36,7 @@ use ssh_key::encoding::Encode;
 use ssh_key::{Algorithm, PrivateKey, SigningKey};
 use zeroize::Zeroizing;
 
-use ward_core::entrada::Segredo;
+use ward_core::entry::Secret;
 use ward_platform::{AcceptError, Listener, SocketDir};
 
 use crate::{aviso, depurar};
@@ -94,12 +94,12 @@ struct Chave {
 }
 
 impl Chave {
-    fn ler(texto: &Segredo, passphrase: Option<&Segredo>) -> Result<Chave, ErroAgente> {
-        let texto = std::str::from_utf8(texto.expor()).map_err(|_| ErroAgente::ChaveInvalida)?;
+    fn ler(texto: &Secret, passphrase: Option<&Secret>) -> Result<Chave, ErroAgente> {
+        let texto = std::str::from_utf8(texto.expose()).map_err(|_| ErroAgente::ChaveInvalida)?;
         let lida = PrivateKey::from_openssh(texto).map_err(|_| ErroAgente::ChaveInvalida)?;
         let privada = if lida.is_encrypted() {
             let p = passphrase.ok_or(ErroAgente::Passphrase)?;
-            lida.decrypt(p.expor())
+            lida.decrypt(p.expose())
                 .map_err(|_| ErroAgente::Passphrase)?
         } else {
             lida
@@ -210,14 +210,15 @@ impl AgenteSsh {
     /// `id.pub`. A chave é conferida antes de qualquer arquivo existir.
     pub fn criar(
         rt: &Path,
-        chave: &Segredo,
-        passphrase: Option<&Segredo>,
+        chave: &Secret,
+        passphrase: Option<&Secret>,
     ) -> Result<AgenteSsh, ErroAgente> {
         let chave = Chave::ler(chave, passphrase)?;
         let publica = chave.publica_em_texto()?;
         ward_platform::prepare_dir(rt).map_err(|_| ErroAgente::Sistema)?;
         let sufixo = ward_core::generator::connect_token().map_err(|_| ErroAgente::Sistema)?;
-        let sufixo = std::str::from_utf8(&sufixo.expor()[..16]).map_err(|_| ErroAgente::Sistema)?;
+        let sufixo =
+            std::str::from_utf8(&sufixo.expose()[..16]).map_err(|_| ErroAgente::Sistema)?;
         let pasta = rt.join(format!("{PREFIXO_PASTA}{sufixo}"));
         // Pasta nova: nunca reaproveita uma que já existe.
         fs::DirBuilder::new()

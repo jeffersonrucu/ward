@@ -816,7 +816,7 @@ mod testes {
         PedidoDeAprovacao {
             id,
             entradas: vec!["acme-pg-dev".into()],
-            ambiente: ward_core::entrada::Ambiente::Dev,
+            ambiente: ward_core::entry::Environment::Dev,
             operacao: ward_core::protocolo::Operacao::Executar,
             comando: "\"psql\"".into(),
             diretorio: "\"/home/dev\"".into(),
@@ -965,14 +965,14 @@ mod testes {
 
     #[test]
     fn v5_33_tipo_do_papel_agente_ou_forjado_fecha_sem_mostrar_nada() {
-        use ward_core::entrada::{Ambiente, TipoEntrada};
+        use ward_core::entry::{EntryType, Environment};
         use ward_core::protocolo::ItemLista;
         // A lista do agente vem sem nível (D50): não é resposta que o app aceite.
         let item = ItemLista {
             nome: "acme-pg-dev".into(),
-            tipo: TipoEntrada::Banco,
+            tipo: EntryType::Database,
             grupo: "acme".into(),
-            ambiente: Ambiente::Dev,
+            ambiente: Environment::Dev,
             projeto: None,
             tags: vec![],
             nivel: None,

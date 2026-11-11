@@ -62,11 +62,11 @@ fn error_text(e: &Error) -> String {
 /// Reading of the fixture files for the tests: the fake key of the body test in place of
 /// the key generated in `.dev/` (the test does not depend on `make dev-services`) and the
 /// real attachment, through the same path as the program.
-fn test_read(root: &Path) -> impl FnMut(Source, &str) -> Result<Segredo, Error> + '_ {
+fn test_read(root: &Path) -> impl FnMut(Source, &str) -> Result<Secret, Error> + '_ {
     move |source, path| match source {
         Source::Key => {
             assert_eq!(path, ".dev/services/keys/acme-deploy_ed25519");
-            Ok(Segredo::de_texto(chave_falsa()))
+            Ok(Secret::from_text(chave_falsa()))
         }
         Source::Attachment => read_from_repo(root, source, path),
     }
@@ -88,7 +88,7 @@ fn fixture_with(entry: &str) -> String {
 
 fn build_text(json_text: &str) -> Result<Built, Error> {
     let mut read =
-        |_: Source, _: &str| -> Result<Segredo, Error> { Ok(Segredo::de_texto(chave_falsa())) };
+        |_: Source, _: &str| -> Result<Secret, Error> { Ok(Secret::from_text(chave_falsa())) };
     build(json_text.as_bytes(), &mut read)
 }
 
@@ -107,10 +107,10 @@ fn v2_29_fixtures_equal_the_contract_table() {
     assert_eq!(built.len(), 22);
     let totp = built
         .iter()
-        .find(|e| e.nome() == "acme-totp-dev")
+        .find(|e| e.name() == "acme-totp-dev")
         .expect("acme-totp-dev (D28) nas fixtures");
-    assert_eq!(totp.nivel(), NivelAcesso::Livre);
-    assert_eq!(totp.tipo(), TipoEntrada::Login);
+    assert_eq!(totp.level(), AccessLevel::Free);
+    assert_eq!(totp.kind(), EntryType::Login);
     let a = serializar(configuracao_de_teste(), 1, &built).unwrap();
     let b = serializar(configuracao_de_teste(), 1, &cofre_de_teste()).unwrap();
     assert!(*a == *b, "fixtures diferem da tabela do contrato");
@@ -123,13 +123,13 @@ fn v2_29_levels_of_the_table() {
     let (r, f) = real_fixtures();
     let mut read = test_read(&r);
     let (_s, _pin, built) = build(&f, &mut read).unwrap();
-    let level = |n: &str| built.iter().find(|e| e.nome() == n).unwrap().nivel();
-    assert_eq!(level("gama-bloqueada"), NivelAcesso::Bloqueado);
-    assert_eq!(level("acme-wp-dev"), NivelAcesso::ComAprovacao);
-    assert_eq!(level("acme-pg-aprovacao"), NivelAcesso::ComAprovacao);
-    assert_eq!(level("acme-pg-prod"), NivelAcesso::ComAprovacao);
-    assert_eq!(level("acme-ssh-salto"), NivelAcesso::ComAprovacao);
-    assert_eq!(level("acme-wp-prod"), NivelAcesso::Livre);
+    let level = |n: &str| built.iter().find(|e| e.name() == n).unwrap().level();
+    assert_eq!(level("gama-bloqueada"), AccessLevel::Blocked);
+    assert_eq!(level("acme-wp-dev"), AccessLevel::Approval);
+    assert_eq!(level("acme-pg-aprovacao"), AccessLevel::Approval);
+    assert_eq!(level("acme-pg-prod"), AccessLevel::Approval);
+    assert_eq!(level("acme-ssh-salto"), AccessLevel::Approval);
+    assert_eq!(level("acme-wp-prod"), AccessLevel::Free);
 }
 
 /// Round trip through the disk in a fake root: writes into `.dev/`, 0600, reopens and
@@ -179,9 +179,9 @@ fn v2_29_writes_reopens_and_verifies() {
     write_entries(&output, &mut vault, &built).unwrap();
 
     // A vault with one entry less does not pass the verification.
-    let fewer: Vec<Entrada> = cofre_de_teste()
+    let fewer: Vec<Entry> = cofre_de_teste()
         .into_iter()
-        .filter(|e| e.nome() != "acme-totp-dev")
+        .filter(|e| e.name() != "acme-totp-dev")
         .collect();
     write_entries(&output, &mut vault, &fewer).unwrap();
     let e = verify(&output, &password, &pin, &built).unwrap_err();
@@ -324,7 +324,7 @@ fn attack_input_file_outside_the_folder_refused() {
     assert_eq!(
         read_from_repo(&t.0, Source::Key, ".dev/services/keys/ok")
             .unwrap()
-            .expor(),
+            .expose(),
         b"conteudo"
     );
     assert!(read_from_repo(&t.0, Source::Attachment, "dev/fixtures/attachments/ok.env").is_ok());

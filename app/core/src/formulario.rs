@@ -29,9 +29,9 @@ use std::fmt;
 
 use serde::de::{self, Deserializer, Visitor};
 use serde::{Deserialize, Serialize};
-use ward_core::entrada::{
-    GRANDE_PARA_MASCARA, Rascunho, RascunhoAnexo, RascunhoDados, RascunhoExtra,
-    Segredo as SegredoCore, TipoEntrada,
+use ward_core::entry::{
+    AttachmentDraft, DataDraft, Draft, EntryType, ExtraDraft, Secret as SegredoCore,
+    TOO_LARGE_FOR_MASK,
 };
 use ward_core::limits;
 use ward_core::protocolo::{ErroResposta, Problema};
@@ -138,34 +138,34 @@ pub struct ErroCampo {
 }
 
 /// Tipo do formulário: os 9 tipos (Fases 33 e 34).
-pub fn tipo_do_formulario(nome: &str) -> Option<TipoEntrada> {
-    TipoEntrada::de_nome(nome)
+pub fn tipo_do_formulario(nome: &str) -> Option<EntryType> {
+    EntryType::from_name(nome)
 }
 
 /// Campos de texto e segredos de cada tipo, com os identificadores do protocolo.
-pub fn campos_do_tipo(tipo: TipoEntrada) -> (&'static [&'static str], &'static [&'static str]) {
+pub fn campos_do_tipo(tipo: EntryType) -> (&'static [&'static str], &'static [&'static str]) {
     match tipo {
-        TipoEntrada::Login => (&["url", "usuario"], &["senha", "totp_semente"]),
-        TipoEntrada::Api => (&["url", "variavel"], &["token"]),
-        TipoEntrada::Aws => (
+        EntryType::Login => (&["url", "usuario"], &["senha", "totp_semente"]),
+        EntryType::Api => (&["url", "variavel"], &["token"]),
+        EntryType::Aws => (
             &["access_key_id", "regiao", "role_arn"],
             &["secret_access_key", "session_token"],
         ),
-        TipoEntrada::Smtp => (&["host", "porta", "usuario", "seguranca"], &["senha"]),
-        TipoEntrada::NotaSegura => (&[], &["texto"]),
-        TipoEntrada::Banco => (
+        EntryType::Smtp => (&["host", "porta", "usuario", "seguranca"], &["senha"]),
+        EntryType::SecureNote => (&[], &["texto"]),
+        EntryType::Database => (
             &["motor", "host", "porta", "base", "usuario", "tunel"],
             &["senha"],
         ),
-        TipoEntrada::Servidor => (
+        EntryType::Server => (
             &["host", "porta", "usuario", "salto"],
             &["senha", "chave_privada", "passphrase"],
         ),
-        TipoEntrada::FtpSftp => (
+        EntryType::FtpSftp => (
             &["protocolo", "host", "porta", "usuario"],
             &["senha", "chave_privada", "passphrase"],
         ),
-        TipoEntrada::Generico => (&[], &[]),
+        EntryType::Generic => (&[], &[]),
     }
 }
 
@@ -223,7 +223,7 @@ pub fn erros_do_daemon(problemas: &[Problema]) -> Vec<ErroCampo> {
                 && !p.motivo.chars().any(|c| c.is_control() || formatacao(c));
             // D29: a recusa do orçamento da máscara vem da entrada inteira; a tela a
             // mostra no campo dos anexos, o que mais pesa no orçamento.
-            let campo = if p.campo == "entrada" && p.motivo == GRANDE_PARA_MASCARA {
+            let campo = if p.campo == "entrada" && p.motivo == TOO_LARGE_FOR_MASK {
                 "anexos"
             } else {
                 campo_do_problema(&p.campo)
@@ -383,8 +383,8 @@ impl From<ErroApp> for Falta {
 
 /// Partes do rascunho que dependem do tipo.
 pub struct Montado {
-    pub dados: RascunhoDados,
-    pub extras: Vec<RascunhoExtra>,
+    pub dados: DataDraft,
+    pub extras: Vec<ExtraDraft>,
 }
 
 /// Monta os dados do tipo e os extras. `editando` diz se é edição (só assim vale
@@ -392,7 +392,7 @@ pub struct Montado {
 /// entrada editada lista.
 pub fn montar(
     f: &mut Formulario,
-    tipo: TipoEntrada,
+    tipo: EntryType,
     editando: Option<(&[String], &[String])>,
     fontes: &mut dyn Fontes,
 ) -> Result<Montado, Falta> {
@@ -429,7 +429,7 @@ pub fn montar(
             ValorSecreto::Vazio => None,
             ValorSecreto::Novo(t) if t.0.is_empty() => None,
             ValorSecreto::Novo(t) if id == "totp_semente" => match normalizar_semente(&t.0) {
-                Ok(s) => Some(SegredoCore::de_bytes(s.as_bytes().to_vec())),
+                Ok(s) => Some(SegredoCore::from_bytes(s.as_bytes().to_vec())),
                 Err(motivo) => {
                     erros.push(ErroCampo {
                         campo: "totp_semente",
@@ -439,7 +439,7 @@ pub fn montar(
                     None
                 }
             },
-            ValorSecreto::Novo(t) => Some(SegredoCore::de_bytes(t.0.as_bytes().to_vec())),
+            ValorSecreto::Novo(t) => Some(SegredoCore::from_bytes(t.0.as_bytes().to_vec())),
             ValorSecreto::Manter => match editando {
                 Some((guardados, _)) if guardados.iter().any(|g| g == id) => {
                     Some(fontes.guardado(ward_core::protocolo::Alvo::Campo(id.to_owned()))?)
@@ -451,67 +451,67 @@ pub fn montar(
         })
     };
     let dados = match tipo {
-        TipoEntrada::Login => RascunhoDados::Login {
+        EntryType::Login => DataDraft::Login {
             url,
-            usuario,
-            senha: segredo("senha")?,
-            totp_semente: segredo("totp_semente")?,
+            username: usuario,
+            password: segredo("senha")?,
+            totp_seed: segredo("totp_semente")?,
         },
-        TipoEntrada::Api => RascunhoDados::Api {
+        EntryType::Api => DataDraft::Api {
             url,
             token: segredo("token")?,
-            variavel,
+            variable: variavel,
         },
-        TipoEntrada::Aws => RascunhoDados::Aws {
+        EntryType::Aws => DataDraft::Aws {
             access_key_id: access,
             secret_access_key: segredo("secret_access_key")?,
-            regiao,
+            region: regiao,
             role_arn: arn,
             session_token: segredo("session_token")?,
         },
-        TipoEntrada::Smtp => RascunhoDados::Smtp {
+        EntryType::Smtp => DataDraft::Smtp {
             host,
-            porta,
-            usuario,
-            senha: segredo("senha")?,
-            seguranca,
+            port: porta,
+            username: usuario,
+            password: segredo("senha")?,
+            security: seguranca,
         },
-        TipoEntrada::NotaSegura => RascunhoDados::NotaSegura {
-            texto: segredo("texto")?,
+        EntryType::SecureNote => DataDraft::SecureNote {
+            text: segredo("texto")?,
         },
-        TipoEntrada::Banco => RascunhoDados::Banco {
-            motor,
+        EntryType::Database => DataDraft::Database {
+            engine: motor,
             host,
-            porta,
-            base,
-            usuario,
-            senha: segredo("senha")?,
-            tunel,
+            port: porta,
+            db_name: base,
+            username: usuario,
+            password: segredo("senha")?,
+            tunnel: tunel,
         },
-        TipoEntrada::Servidor => RascunhoDados::Servidor {
+        EntryType::Server => DataDraft::Server {
             host,
-            porta,
-            usuario,
-            senha: segredo("senha")?,
-            chave_privada: segredo("chave_privada")?,
+            port: porta,
+            username: usuario,
+            password: segredo("senha")?,
+            private_key: segredo("chave_privada")?,
             passphrase: segredo("passphrase")?,
-            salto,
+            jump: salto,
         },
-        TipoEntrada::FtpSftp => RascunhoDados::FtpSftp {
-            protocolo,
+        EntryType::FtpSftp => DataDraft::FtpSftp {
+            protocol: protocolo,
             host,
-            porta,
-            usuario,
-            senha: segredo("senha")?,
-            chave_privada: segredo("chave_privada")?,
+            port: porta,
+            username: usuario,
+            password: segredo("senha")?,
+            private_key: segredo("chave_privada")?,
             passphrase: segredo("passphrase")?,
         },
-        TipoEntrada::Generico => RascunhoDados::Generico,
+        EntryType::Generic => DataDraft::Generic,
     };
     let mut extras = Vec::with_capacity(f.extras.len());
     for x in f.extras.drain(..) {
         let valor = match x.valor {
-            ValorExtra::Novo(t) => SegredoCore::de_bytes(t.0.as_bytes().to_vec()),
+            ValorExtra::Novo(t) => SegredoCore::from_bytes(t.0.as_bytes().to_vec()),
             ValorExtra::Manter(nome) => match editando {
                 Some((_, guardados)) if guardados.contains(&nome) => {
                     fontes.guardado(ward_core::protocolo::Alvo::Extra(nome))?
@@ -519,10 +519,10 @@ pub fn montar(
                 _ => return Err(ErroApp::PedidoInvalido.into()),
             },
         };
-        extras.push(RascunhoExtra {
-            nome: x.nome,
-            valor,
-            segredo: x.segredo,
+        extras.push(ExtraDraft {
+            name: x.nome,
+            value: valor,
+            secret: x.segredo,
         });
     }
     if erros.is_empty() {
@@ -533,7 +533,7 @@ pub fn montar(
 }
 
 fn copiar_segredo(s: &SegredoCore) -> SegredoCore {
-    SegredoCore::de_bytes(s.expor().to_vec())
+    SegredoCore::from_bytes(s.expose().to_vec())
 }
 
 fn copiar_opcional(s: &Option<SegredoCore>) -> Option<SegredoCore> {
@@ -544,140 +544,140 @@ fn copiar_opcional(s: &Option<SegredoCore>) -> Option<SegredoCore> {
 /// antes do pedido: os erros de todos os campos aparecem juntos e com as mensagens fixas
 /// do `ward-core`, e um rascunho fora do formato do protocolo (nome vazio, tags demais)
 /// nem vira pedido. O daemon valida de novo.
-pub fn copiar_rascunho(r: &Rascunho) -> Rascunho {
-    let dados = match &r.dados {
-        RascunhoDados::Login {
+pub fn copiar_rascunho(r: &Draft) -> Draft {
+    let dados = match &r.data {
+        DataDraft::Login {
             url,
-            usuario,
-            senha,
-            totp_semente,
-        } => RascunhoDados::Login {
+            username: usuario,
+            password: senha,
+            totp_seed: totp_semente,
+        } => DataDraft::Login {
             url: url.clone(),
-            usuario: usuario.clone(),
-            senha: copiar_opcional(senha),
-            totp_semente: copiar_opcional(totp_semente),
+            username: usuario.clone(),
+            password: copiar_opcional(senha),
+            totp_seed: copiar_opcional(totp_semente),
         },
-        RascunhoDados::Api {
+        DataDraft::Api {
             url,
             token,
-            variavel,
-        } => RascunhoDados::Api {
+            variable: variavel,
+        } => DataDraft::Api {
             url: url.clone(),
             token: copiar_opcional(token),
-            variavel: variavel.clone(),
+            variable: variavel.clone(),
         },
-        RascunhoDados::Aws {
+        DataDraft::Aws {
             access_key_id,
             secret_access_key,
-            regiao,
+            region: regiao,
             role_arn,
             session_token,
-        } => RascunhoDados::Aws {
+        } => DataDraft::Aws {
             access_key_id: access_key_id.clone(),
             secret_access_key: copiar_opcional(secret_access_key),
-            regiao: regiao.clone(),
+            region: regiao.clone(),
             role_arn: role_arn.clone(),
             session_token: copiar_opcional(session_token),
         },
-        RascunhoDados::Smtp {
+        DataDraft::Smtp {
             host,
-            porta,
-            usuario,
-            senha,
-            seguranca,
-        } => RascunhoDados::Smtp {
+            port: porta,
+            username: usuario,
+            password: senha,
+            security: seguranca,
+        } => DataDraft::Smtp {
             host: host.clone(),
-            porta: porta.clone(),
-            usuario: usuario.clone(),
-            senha: copiar_opcional(senha),
-            seguranca: seguranca.clone(),
+            port: porta.clone(),
+            username: usuario.clone(),
+            password: copiar_opcional(senha),
+            security: seguranca.clone(),
         },
-        RascunhoDados::NotaSegura { texto } => RascunhoDados::NotaSegura {
-            texto: copiar_opcional(texto),
+        DataDraft::SecureNote { text: texto } => DataDraft::SecureNote {
+            text: copiar_opcional(texto),
         },
-        RascunhoDados::Banco {
-            motor,
+        DataDraft::Database {
+            engine: motor,
             host,
-            porta,
-            base,
-            usuario,
-            senha,
-            tunel,
-        } => RascunhoDados::Banco {
-            motor: motor.clone(),
+            port: porta,
+            db_name: base,
+            username: usuario,
+            password: senha,
+            tunnel: tunel,
+        } => DataDraft::Database {
+            engine: motor.clone(),
             host: host.clone(),
-            porta: porta.clone(),
-            base: base.clone(),
-            usuario: usuario.clone(),
-            senha: copiar_opcional(senha),
-            tunel: tunel.clone(),
+            port: porta.clone(),
+            db_name: base.clone(),
+            username: usuario.clone(),
+            password: copiar_opcional(senha),
+            tunnel: tunel.clone(),
         },
-        RascunhoDados::Servidor {
+        DataDraft::Server {
             host,
-            porta,
-            usuario,
-            senha,
-            chave_privada,
+            port: porta,
+            username: usuario,
+            password: senha,
+            private_key: chave_privada,
             passphrase,
-            salto,
-        } => RascunhoDados::Servidor {
+            jump: salto,
+        } => DataDraft::Server {
             host: host.clone(),
-            porta: porta.clone(),
-            usuario: usuario.clone(),
-            senha: copiar_opcional(senha),
-            chave_privada: copiar_opcional(chave_privada),
+            port: porta.clone(),
+            username: usuario.clone(),
+            password: copiar_opcional(senha),
+            private_key: copiar_opcional(chave_privada),
             passphrase: copiar_opcional(passphrase),
-            salto: salto.clone(),
+            jump: salto.clone(),
         },
-        RascunhoDados::FtpSftp {
-            protocolo,
+        DataDraft::FtpSftp {
+            protocol: protocolo,
             host,
-            porta,
-            usuario,
-            senha,
-            chave_privada,
+            port: porta,
+            username: usuario,
+            password: senha,
+            private_key: chave_privada,
             passphrase,
-        } => RascunhoDados::FtpSftp {
-            protocolo: protocolo.clone(),
+        } => DataDraft::FtpSftp {
+            protocol: protocolo.clone(),
             host: host.clone(),
-            porta: porta.clone(),
-            usuario: usuario.clone(),
-            senha: copiar_opcional(senha),
-            chave_privada: copiar_opcional(chave_privada),
+            port: porta.clone(),
+            username: usuario.clone(),
+            password: copiar_opcional(senha),
+            private_key: copiar_opcional(chave_privada),
             passphrase: copiar_opcional(passphrase),
         },
-        RascunhoDados::Generico => RascunhoDados::Generico,
+        DataDraft::Generic => DataDraft::Generic,
     };
-    Rascunho {
-        nome: r.nome.clone(),
-        grupo: r.grupo.clone(),
-        ambiente: r.ambiente.clone(),
-        projeto: r.projeto.clone(),
+    Draft {
+        name: r.name.clone(),
+        group: r.group.clone(),
+        environment: r.environment.clone(),
+        project: r.project.clone(),
         tags: r.tags.clone(),
-        dados,
+        data: dados,
         extras: r
             .extras
             .iter()
-            .map(|x| RascunhoExtra {
-                nome: x.nome.clone(),
-                valor: copiar_segredo(&x.valor),
-                segredo: x.segredo,
+            .map(|x| ExtraDraft {
+                name: x.name.clone(),
+                value: copiar_segredo(&x.value),
+                secret: x.secret,
             })
             .collect(),
-        anexos: r
-            .anexos
+        attachments: r
+            .attachments
             .iter()
-            .map(|a| RascunhoAnexo {
-                nome: a.nome.clone(),
-                conteudo: copiar_segredo(&a.conteudo),
+            .map(|a| AttachmentDraft {
+                name: a.name.clone(),
+                content: copiar_segredo(&a.content),
             })
             .collect(),
     }
 }
 
 /// Valida o rascunho no lado do app (cópia); `Err` com os erros por campo.
-pub fn validar_local(r: &Rascunho) -> Result<(), Vec<ErroCampo>> {
-    match copiar_rascunho(r).validar() {
+pub fn validar_local(r: &Draft) -> Result<(), Vec<ErroCampo>> {
+    match copiar_rascunho(r).validate() {
         Ok(entrada) => {
             drop(entrada);
             Ok(())
@@ -776,13 +776,13 @@ mod testes {
             motivo: motivo.to_owned(),
         };
         let e = erros_do_daemon(&[
-            p("entrada", GRANDE_PARA_MASCARA),
+            p("entrada", TOO_LARGE_FOR_MASK),
             p("entrada", "outra coisa"),
             p("túnel SSH", "precisa ser uma entrada servidor existente"),
             p("autenticação", "informe a senha ou a chave"),
         ]);
         assert_eq!(e[0].campo, "anexos");
-        assert_eq!(e[0].motivo, GRANDE_PARA_MASCARA);
+        assert_eq!(e[0].motivo, TOO_LARGE_FOR_MASK);
         assert_eq!(e[1].campo, "formulario");
         assert_eq!(e[2].campo, "tunel");
         assert_eq!(e[3].campo, "autenticacao");

@@ -217,3 +217,15 @@ extension/service.js campos 52 fields field of the salvar_login entry
 extension/service.js problemas 52 problems field of the protocol validation error
 extension/service.js campo 52 field of a validation problem
 extension/service.js motivo 52 reason field of a validation problem
+# Phase 12 (ward-core entry): vault names and delivered variables quoted in comments.
+crates/ward-core/src/entry.rs bloqueado 48 v4 vault name of AccessLevel::Blocked
+crates/ward-core/src/entry.rs aprovacao 48 v4 vault name of AccessLevel::Approval (com-aprovacao)
+crates/ward-core/src/entry.rs livre 48 v4 vault name of AccessLevel::Free
+crates/ward-core/src/entry.rs ambiente 53 delivered variable WARD_AMBIENTE
+crates/ward-core/src/entry.rs protocolo 53 delivered variable WARD_PROTOCOLO
+crates/ward-core/src/entry.rs arquivo 53 delivered variable prefix WARD_ARQUIVO_
+crates/ward-core/src/entry/validation.rs entrada 53 delivered variable WARD_ENTRADA
+crates/ward-core/src/entry/validation.rs grupo 53 delivered variable WARD_GRUPO
+crates/ward-core/src/entry/validation.rs ambiente 53 delivered variable WARD_AMBIENTE
+crates/ward-core/src/entry/validation.rs arquivo 53 delivered variable prefix WARD_ARQUIVO_
+crates/ward-core/src/entry/validation.rs chave 53 delivered variable WARD_ARQUIVO_CHAVE

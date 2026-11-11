@@ -149,7 +149,7 @@ fn sem_segredo(bytes: &[u8]) {
 /// popup mostrar o selo e "com TOTP"; nada de valor.
 #[test]
 fn sugestao_traz_ambiente_e_se_tem_totp() {
-    use ward_core::entrada::Ambiente;
+    use ward_core::entry::Environment;
     let dir = Dir::novo("ext-sugerir-totp");
     let d = cofre(&dir);
     let resumo = |r: &Resposta| match r {
@@ -161,14 +161,14 @@ fn sugestao_traz_ambiente_e_se_tem_totp() {
     };
     assert_eq!(
         resumo(&sugerir(&d, Papel::Extensao, "http://localhost:8083/login")),
-        [("acme-totp-dev".to_owned(), Ambiente::Dev, true)]
+        [("acme-totp-dev".to_owned(), Environment::Dev, true)]
     );
     let r = sugerir(&d, Papel::Extensao, "http://localhost:8081/");
     assert_eq!(
         resumo(&r),
         [
-            ("acme-wp-dev".to_owned(), Ambiente::Dev, false),
-            ("acme-wp-prod".to_owned(), Ambiente::Dev, false),
+            ("acme-wp-dev".to_owned(), Environment::Dev, false),
+            ("acme-wp-prod".to_owned(), Environment::Dev, false),
         ]
     );
     let q = comum::codificado(Papel::Extensao, &r);
@@ -237,13 +237,13 @@ fn v6_2_preencher_so_na_origem_certa() {
             totp,
         } => {
             assert_eq!(usuario, "wp_admin");
-            assert_eq!(senha.expor(), SEGREDOS[0].as_bytes());
+            assert_eq!(senha.expose(), SEGREDOS[0].as_bytes());
             assert!(totp.is_none());
         }
         outra => panic!("esperava preenchimento: {:?}", outra.tipo()),
     }
     // TOTP: o código atual da semente, pelo relógio do daemon.
-    let esperado = Totp::from_seed(&ward_core::entrada::Segredo::de_bytes(
+    let esperado = Totp::from_seed(&ward_core::entry::Secret::from_bytes(
         SEMENTE.as_bytes().to_vec(),
     ))
     .unwrap()
@@ -425,7 +425,7 @@ fn salvar_login(d: &Daemon, papel: Papel, nome: &str, senha: &str, extra: &str) 
 }
 
 /// Nível de uma entrada na lista do app (`None` se ela não existe).
-fn nivel_na_lista(d: &Daemon, nome: &str) -> Option<ward_core::entrada::NivelAcesso> {
+fn nivel_na_lista(d: &Daemon, nome: &str) -> Option<ward_core::entry::AccessLevel> {
     match pedir(d, Papel::App, "lista", "{}") {
         Resposta::Lista(l) => l.into_iter().find(|i| i.nome == nome).and_then(|i| i.nivel),
         outra => panic!("esperava a lista: {:?}", outra.tipo()),
@@ -439,7 +439,7 @@ const SENHA_NOVA: &str = "falso-cadastro-ward-42";
 /// sugerido para a origem e preenche com a senha enviada; a resposta não leva valor.
 #[test]
 fn v6_8_salvar_login_nasce_com_aprovacao() {
-    use ward_core::entrada::NivelAcesso;
+    use ward_core::entry::AccessLevel;
     let dir = Dir::novo("ext-salvar");
     let d = cofre(&dir);
     let r = salvar_login(&d, Papel::Extensao, "localhost-8083", SENHA_NOVA, "");
@@ -450,7 +450,7 @@ fn v6_8_salvar_login_nasce_com_aprovacao() {
     ));
     assert_eq!(
         nivel_na_lista(&d, "localhost-8083"),
-        Some(NivelAcesso::ComAprovacao)
+        Some(AccessLevel::Approval)
     );
     assert_eq!(
         nomes(&sugerir(&d, Papel::Extensao, "http://localhost:8083/")),
@@ -466,7 +466,7 @@ fn v6_8_salvar_login_nasce_com_aprovacao() {
         "http://localhost:8083",
     ) {
         Resposta::Preenchimento { senha, totp, .. } => {
-            assert_eq!(senha.expor(), SENHA_NOVA.as_bytes());
+            assert_eq!(senha.expose(), SENHA_NOVA.as_bytes());
             assert!(totp.is_none());
         }
         outra => panic!("esperava preenchimento: {:?}", outra.tipo()),
@@ -476,7 +476,7 @@ fn v6_8_salvar_login_nasce_com_aprovacao() {
     assert!(ok(&comum::destravar(&d, comum::SENHA)));
     assert_eq!(
         nivel_na_lista(&d, "localhost-8083"),
-        Some(NivelAcesso::ComAprovacao)
+        Some(AccessLevel::Approval)
     );
 }
 
@@ -485,7 +485,7 @@ fn v6_8_salvar_login_nasce_com_aprovacao() {
 /// validação, e a entrada continua com a senha e o nível de antes.
 #[test]
 fn ataque_salvar_login_nao_sobrescreve_entrada() {
-    use ward_core::entrada::NivelAcesso;
+    use ward_core::entry::AccessLevel;
     let dir = Dir::novo("ext-salvar-sobrescrever");
     let d = cofre(&dir);
     for nome in ["acme-wp-dev", "acme-wp-prod"] {
@@ -497,14 +497,14 @@ fn ataque_salvar_login_nao_sobrescreve_entrada() {
     }
     assert_eq!(
         nivel_na_lista(&d, "acme-wp-prod"),
-        Some(NivelAcesso::Bloqueado)
+        Some(AccessLevel::Blocked)
     );
     assert_eq!(
         nivel_na_lista(&d, "acme-wp-dev"),
-        Some(NivelAcesso::ComAprovacao)
+        Some(AccessLevel::Approval)
     );
     match preencher(&d, Papel::Extensao, "acme-wp-dev", "http://localhost:8081") {
-        Resposta::Preenchimento { senha, .. } => assert_eq!(senha.expor(), SEGREDOS[0].as_bytes()),
+        Resposta::Preenchimento { senha, .. } => assert_eq!(senha.expose(), SEGREDOS[0].as_bytes()),
         outra => panic!("esperava preenchimento: {:?}", outra.tipo()),
     }
 }

@@ -3,15 +3,15 @@
 //! lixo, segredo em `Debug`/erro). Só valores falsos do cofre de teste (D15).
 
 use super::*;
-use crate::entrada::{
-    Rascunho, RascunhoAnexo, RascunhoDados, RascunhoExtra, TipoEntrada, VARIAVEIS_COMUNS,
-    anexos_do_tipo, variaveis_do_tipo,
+use crate::entry::{
+    AttachmentDraft, COMMON_VARIABLES, DataDraft, Draft, EntryType, ExtraDraft, type_attachments,
+    type_variables,
 };
 
 // ---- Ajudantes ----
 
-fn s(v: &str) -> Option<Segredo> {
-    Some(Segredo::de_texto(v.to_owned()))
+fn s(v: &str) -> Option<Secret> {
+    Some(Secret::from_text(v.to_owned()))
 }
 
 fn t(v: &str) -> String {
@@ -25,31 +25,31 @@ fn chave_falsa() -> String {
     format!("-----BEGIN {rotulo}-----\nfalso-chave-ed25519-teste\n-----END {rotulo}-----\n")
 }
 
-fn rascunho(nome: &str, grupo: &str, ambiente: &str, dados: RascunhoDados) -> Rascunho {
-    Rascunho {
-        nome: t(nome),
-        grupo: t(grupo),
-        ambiente: t(ambiente),
-        projeto: String::new(),
+fn rascunho(nome: &str, grupo: &str, ambiente: &str, dados: DataDraft) -> Draft {
+    Draft {
+        name: t(nome),
+        group: t(grupo),
+        environment: t(ambiente),
+        project: String::new(),
         tags: Vec::new(),
-        dados,
+        data: dados,
         extras: Vec::new(),
-        anexos: Vec::new(),
+        attachments: Vec::new(),
     }
 }
 
-fn extra(nome: &str, valor: &str, segredo: bool) -> RascunhoExtra {
-    RascunhoExtra {
-        nome: t(nome),
-        valor: Segredo::de_texto(t(valor)),
-        segredo,
+fn extra(nome: &str, valor: &str, segredo: bool) -> ExtraDraft {
+    ExtraDraft {
+        name: t(nome),
+        value: Secret::from_text(t(valor)),
+        secret: segredo,
     }
 }
 
-fn anexo(nome: &str, conteudo: &[u8]) -> RascunhoAnexo {
-    RascunhoAnexo {
-        nome: t(nome),
-        conteudo: Segredo::de_bytes(conteudo.to_vec()),
+fn anexo(nome: &str, conteudo: &[u8]) -> AttachmentDraft {
+    AttachmentDraft {
+        name: t(nome),
+        content: Secret::from_bytes(conteudo.to_vec()),
     }
 }
 
@@ -60,20 +60,20 @@ fn banco(
     base: &str,
     usuario: &str,
     senha: &str,
-) -> RascunhoDados {
-    RascunhoDados::Banco {
-        motor: t(motor),
+) -> DataDraft {
+    DataDraft::Database {
+        engine: t(motor),
         host: t(host),
-        porta: t(porta),
-        base: t(base),
-        usuario: t(usuario),
-        senha: s(senha),
-        tunel: String::new(),
+        port: t(porta),
+        db_name: t(base),
+        username: t(usuario),
+        password: s(senha),
+        tunnel: String::new(),
     }
 }
 
-fn valida(r: Rascunho) -> Entrada {
-    match r.validar() {
+fn valida(r: Draft) -> Entry {
+    match r.validate() {
         Ok(e) => e,
         Err(erros) => panic!("devia validar: {erros}"),
     }
@@ -102,16 +102,16 @@ impl Falsos {
 }
 
 impl Recursos for Falsos {
-    fn codigo_totp(&mut self, semente: &Segredo) -> Result<Zeroizing<String>, ErroRecurso> {
-        self.totp.push(semente.expor().to_vec());
+    fn codigo_totp(&mut self, semente: &Secret) -> Result<Zeroizing<String>, ErroRecurso> {
+        self.totp.push(semente.expose().to_vec());
         if self.falhar {
             return Err(ErroRecurso("relógio indisponível"));
         }
         Ok(Zeroizing::new(t(self.codigo.unwrap_or(CODIGO_FALSO))))
     }
 
-    fn arquivo(&mut self, nome: &str, conteudo: &Segredo) -> Result<String, ErroRecurso> {
-        self.arquivos.push((t(nome), conteudo.expor().to_vec()));
+    fn arquivo(&mut self, nome: &str, conteudo: &Secret) -> Result<String, ErroRecurso> {
+        self.arquivos.push((t(nome), conteudo.expose().to_vec()));
         if self.falhar {
             return Err(ErroRecurso("sem espaço em /run/user"));
         }
@@ -130,7 +130,7 @@ impl Recursos for Falsos {
     }
 }
 
-fn montar_ok(e: &Entrada, r: &mut Falsos) -> Entrega {
+fn montar_ok(e: &Entry, r: &mut Falsos) -> Entrega {
     montar(e, r).unwrap_or_else(|erro| panic!("{e}: {erro}"))
 }
 
@@ -180,21 +180,21 @@ fn sem_segredo(texto: &str, onde: &str) {
 
 // ---- As entradas da tabela "Entrega esperada" ----
 
-fn wp_prod() -> Entrada {
+fn wp_prod() -> Entry {
     valida(rascunho(
         "acme-wp-prod",
         "acme",
         "prod",
-        RascunhoDados::Login {
+        DataDraft::Login {
             url: t("http://localhost:8081/wp-login.php"),
-            usuario: t("wp_editor"),
-            senha: s("falso-WP-senha-02"),
-            totp_semente: s("JBSWY3DPEHPK3PXP"),
+            username: t("wp_editor"),
+            password: s("falso-WP-senha-02"),
+            totp_seed: s("JBSWY3DPEHPK3PXP"),
         },
     ))
 }
 
-fn pg_dev() -> Entrada {
+fn pg_dev() -> Entry {
     valida(rascunho(
         "acme-pg-dev",
         "acme",
@@ -210,7 +210,7 @@ fn pg_dev() -> Entrada {
     ))
 }
 
-fn pg_tunel() -> Entrada {
+fn pg_tunel() -> Entry {
     let mut dados = banco(
         "postgres",
         "postgres",
@@ -219,129 +219,129 @@ fn pg_tunel() -> Entrada {
         "app",
         "falso-PG:s3nha/01@#",
     );
-    if let RascunhoDados::Banco { tunel, .. } = &mut dados {
+    if let DataDraft::Database { tunnel: tunel, .. } = &mut dados {
         *tunel = t("acme-ssh-senha-stage");
     }
     valida(rascunho("acme-pg-tunel", "acme", "stage", dados))
 }
 
-fn ssh_senha() -> Entrada {
+fn ssh_senha() -> Entry {
     valida(rascunho(
         "acme-ssh-senha-stage",
         "acme",
         "stage",
-        RascunhoDados::Servidor {
+        DataDraft::Server {
             host: t("127.0.0.1"),
-            porta: t("2222"),
-            usuario: t("deploy"),
-            senha: s("falso-SSH-senha-01"),
-            chave_privada: None,
+            port: t("2222"),
+            username: t("deploy"),
+            password: s("falso-SSH-senha-01"),
+            private_key: None,
             passphrase: None,
-            salto: String::new(),
+            jump: String::new(),
         },
     ))
 }
 
-fn ssh_chave() -> Entrada {
+fn ssh_chave() -> Entry {
     valida(rascunho(
         "acme-ssh-chave-prod",
         "acme",
         "prod",
-        RascunhoDados::Servidor {
+        DataDraft::Server {
             host: t("127.0.0.1"),
-            porta: t("2223"),
-            usuario: t("deploy"),
-            senha: None,
-            chave_privada: Some(Segredo::de_texto(chave_falsa())),
+            port: t("2223"),
+            username: t("deploy"),
+            password: None,
+            private_key: Some(Secret::from_text(chave_falsa())),
             passphrase: s("falso-passphrase-01"),
-            salto: String::new(),
+            jump: String::new(),
         },
     ))
 }
 
-fn github() -> Entrada {
+fn github() -> Entry {
     valida(rascunho(
         "beta-github-api",
         "beta",
         "dev",
-        RascunhoDados::Api {
+        DataDraft::Api {
             url: t("https://api.github.com"),
             token: s("falso_token_github_01"),
-            variavel: t("GITHUB_TOKEN"),
+            variable: t("GITHUB_TOKEN"),
         },
     ))
 }
 
-fn aws() -> Entrada {
+fn aws() -> Entry {
     valida(rascunho(
         "beta-aws-dev",
         "beta",
         "dev",
-        RascunhoDados::Aws {
+        DataDraft::Aws {
             access_key_id: t("FALSOACCESSKEY01"),
             secret_access_key: s("falso-aws-secret-01"),
-            regiao: t("sa-east-1"),
+            region: t("sa-east-1"),
             role_arn: t("arn:aws:iam::000000000000:role/teste"),
             session_token: s("falso-aws-session-01"),
         },
     ))
 }
 
-fn smtp() -> Entrada {
+fn smtp() -> Entry {
     valida(rascunho(
         "beta-smtp-stage",
         "beta",
         "stage",
-        RascunhoDados::Smtp {
+        DataDraft::Smtp {
             host: t("smtp.teste.invalid"),
-            porta: t("587"),
-            usuario: t("mailer"),
-            senha: s("falso-SMTP-01"),
-            seguranca: t("starttls"),
+            port: t("587"),
+            username: t("mailer"),
+            password: s("falso-SMTP-01"),
+            security: t("starttls"),
         },
     ))
 }
 
-fn sftp() -> Entrada {
+fn sftp() -> Entry {
     valida(rascunho(
         "beta-sftp-dev",
         "beta",
         "dev",
-        RascunhoDados::FtpSftp {
-            protocolo: t("sftp"),
+        DataDraft::FtpSftp {
+            protocol: t("sftp"),
             host: t("127.0.0.1"),
-            porta: t("2222"),
-            usuario: t("sftpuser"),
-            senha: s("falso-SFTP-01"),
-            chave_privada: None,
+            port: t("2222"),
+            username: t("sftpuser"),
+            password: s("falso-SFTP-01"),
+            private_key: None,
             passphrase: None,
         },
     ))
 }
 
-fn nota() -> Entrada {
+fn nota() -> Entry {
     valida(rascunho(
         "gama-nota",
         "gama",
         "dev",
-        RascunhoDados::NotaSegura {
-            texto: s("falso-nota-01"),
+        DataDraft::SecureNote {
+            text: s("falso-nota-01"),
         },
     ))
 }
 
-fn generico() -> Entrada {
-    let mut r = rascunho("gama-generico", "gama", "stage", RascunhoDados::Generico);
+fn generico() -> Entry {
+    let mut r = rascunho("gama-generico", "gama", "stage", DataDraft::Generic);
     r.extras = vec![
         extra("REGIAO", "r-01", false),
         extra("CHAVE_LICENCA", "falso-licenca-01", true),
     ];
-    r.anexos = vec![anexo("app.env", b"FALSO_ENV=falso-anexo-01\n")];
+    r.attachments = vec![anexo("app.env", b"FALSO_ENV=falso-anexo-01\n")];
     valida(r)
 }
 
 /// Uma entrada de cada tipo com entrega (nota fora).
-fn todas_com_entrega() -> Vec<Entrada> {
+fn todas_com_entrega() -> Vec<Entry> {
     vec![
         wp_prod(),
         pg_dev(),
@@ -569,9 +569,9 @@ fn v2_14_comuns_vem_primeiro_e_na_ordem() {
             ["WARD_ENTRADA", "WARD_GRUPO", "WARD_AMBIENTE"],
             "{e}"
         );
-        assert_eq!(entrega.valor("WARD_ENTRADA"), Some(e.nome()));
-        assert_eq!(entrega.valor("WARD_GRUPO"), Some(e.grupo()));
-        assert_eq!(entrega.valor("WARD_AMBIENTE"), Some(e.ambiente().nome()));
+        assert_eq!(entrega.valor("WARD_ENTRADA"), Some(e.name()));
+        assert_eq!(entrega.valor("WARD_GRUPO"), Some(e.group()));
+        assert_eq!(entrega.valor("WARD_AMBIENTE"), Some(e.environment().name()));
     }
 }
 
@@ -582,11 +582,11 @@ fn opcionais_ausentes_ficam_de_fora() {
         "x",
         "acme",
         "dev",
-        RascunhoDados::Login {
+        DataDraft::Login {
             url: t("https://painel.teste.invalid"),
-            usuario: t("u"),
-            senha: s("falso-WP-senha-02"),
-            totp_semente: None,
+            username: t("u"),
+            password: s("falso-WP-senha-02"),
+            totp_seed: None,
         },
     );
     let mut f = Falsos::default();
@@ -599,10 +599,10 @@ fn opcionais_ausentes_ficam_de_fora() {
         "y",
         "beta",
         "dev",
-        RascunhoDados::Aws {
+        DataDraft::Aws {
             access_key_id: t("FALSOACCESSKEY01"),
             secret_access_key: s("falso-aws-secret-01"),
-            regiao: t("sa-east-1"),
+            region: t("sa-east-1"),
             role_arn: String::new(),
             session_token: None,
         },
@@ -616,10 +616,10 @@ fn opcionais_ausentes_ficam_de_fora() {
         "z",
         "beta",
         "dev",
-        RascunhoDados::Api {
+        DataDraft::Api {
             url: String::new(),
             token: s("falso_token_github_01"),
-            variavel: String::new(),
+            variable: String::new(),
         },
     );
     let e = montar_ok(&valida(r), &mut Falsos::default());
@@ -652,7 +652,7 @@ fn opcionais_ausentes_ficam_de_fora() {
 
 // ---- V2.15 ----
 
-fn banco_v2_15(motor: &str) -> Entrada {
+fn banco_v2_15(motor: &str) -> Entry {
     // No redis a base é só número (D33); aqui fica sem base.
     let base = if motor == "redis" { "" } else { "b" };
     valida(rascunho(
@@ -795,9 +795,9 @@ fn percent_encoding_de_todos_os_bytes() {
 
 #[test]
 fn v2_16_extra_e_anexo_normalizados() {
-    let mut r = rascunho("g", "gama", "dev", RascunhoDados::Generico);
+    let mut r = rascunho("g", "gama", "dev", DataDraft::Generic);
     r.extras = vec![extra("api-key", "falso-licenca-01", true)];
-    r.anexos = vec![anexo("chave acesso.pem", b"falso-anexo-01\n")];
+    r.attachments = vec![anexo("chave acesso.pem", b"falso-anexo-01\n")];
     let mut f = Falsos::default();
     let e = montar_ok(&valida(r), &mut f);
     assert_eq!(e.valor("WARD_API_KEY"), Some("falso-licenca-01"));
@@ -811,14 +811,17 @@ fn v2_16_extra_e_anexo_normalizados() {
     );
 
     // Dois extras que normalizam para o mesmo nome: recusados ao salvar.
-    let mut r = rascunho("g", "gama", "dev", RascunhoDados::Generico);
+    let mut r = rascunho("g", "gama", "dev", DataDraft::Generic);
     r.extras = vec![extra("api-key", "a", false), extra("API KEY", "b", false)];
-    assert!(r.validar().is_err(), "api-key e API KEY viram WARD_API_KEY");
-    let mut r = rascunho("g", "gama", "dev", RascunhoDados::Generico);
-    r.extras = vec![extra("x", "a", false)];
-    r.anexos = vec![anexo("a.pem", b"1"), anexo("a-pem", b"2")];
     assert!(
-        r.validar().is_err(),
+        r.validate().is_err(),
+        "api-key e API KEY viram WARD_API_KEY"
+    );
+    let mut r = rascunho("g", "gama", "dev", DataDraft::Generic);
+    r.extras = vec![extra("x", "a", false)];
+    r.attachments = vec![anexo("a.pem", b"1"), anexo("a-pem", b"2")];
+    assert!(
+        r.validate().is_err(),
         "a.pem e a-pem viram WARD_ARQUIVO_A_PEM"
     );
 }
@@ -832,7 +835,7 @@ fn extras_entram_em_todo_tipo_que_tem_entrega() {
         banco("postgres", "127.0.0.1", "", "b", "u", "falso:DB/01"),
     );
     r.extras = vec![extra("sslmode", "require", false)];
-    r.anexos = vec![anexo("ca.pem", b"falso-anexo-01")];
+    r.attachments = vec![anexo("ca.pem", b"falso-anexo-01")];
     let e = montar_ok(&valida(r), &mut Falsos::default());
     let nomes: Vec<&str> = e.nomes().collect();
     // Comuns, depois o tipo, depois extras e anexos.
@@ -848,17 +851,17 @@ fn extras_entram_em_todo_tipo_que_tem_entrega() {
 fn variaveis_do_tipo_batem_com_as_reservadas() {
     let mut vistos = Vec::new();
     for e in todas_com_entrega() {
-        let tipo = e.tipo();
+        let tipo = e.kind();
         vistos.push(tipo);
         let entrega = montar_ok(&e, &mut Falsos::default());
         let extras: Vec<String> = e
             .extras()
             .iter()
-            .map(|x| format!("WARD_{}", nome_variavel(x.nome())))
+            .map(|x| format!("WARD_{}", variable_name(x.name())))
             .chain(
-                e.anexos()
+                e.attachments()
                     .iter()
-                    .map(|a| format!("WARD_ARQUIVO_{}", nome_variavel(a.nome()))),
+                    .map(|a| format!("WARD_ARQUIVO_{}", variable_name(a.name()))),
             )
             .collect();
         for nome in entrega.nomes() {
@@ -870,20 +873,20 @@ fn variaveis_do_tipo_batem_com_as_reservadas() {
             };
             if let Some(arquivo) = sufixo.strip_prefix("ARQUIVO_") {
                 assert!(
-                    anexos_do_tipo(tipo).contains(&arquivo),
+                    type_attachments(tipo).contains(&arquivo),
                     "{nome} de {tipo} não está em anexos_do_tipo"
                 );
             } else {
                 assert!(
-                    VARIAVEIS_COMUNS.contains(&sufixo) || variaveis_do_tipo(tipo).contains(&sufixo),
+                    COMMON_VARIABLES.contains(&sufixo) || type_variables(tipo).contains(&sufixo),
                     "{nome} de {tipo} não está em variaveis_do_tipo"
                 );
             }
         }
     }
     // Todos os tipos com entrega passaram por aqui (a nota é recusada à parte).
-    for tipo in TipoEntrada::TODOS {
-        if tipo != TipoEntrada::NotaSegura {
+    for tipo in EntryType::ALL {
+        if tipo != EntryType::SecureNote {
             assert!(vistos.contains(&tipo), "falta {tipo}");
         }
     }
@@ -924,7 +927,7 @@ fn ataque_senha_usuario_ou_base_mudam_o_destino_do_url() {
             banco(motor, "db.teste.invalid", "", hostil, usuario, senha),
         );
         assert!(
-            r.validar().is_err_and(|e| e.tem("base")),
+            r.validate().is_err_and(|e| e.has("base")),
             "{motor}: base hostil aceita"
         );
         let base = if motor == "redis" { "7" } else { "app_teste-1" };
@@ -945,7 +948,7 @@ fn ataque_senha_usuario_ou_base_mudam_o_destino_do_url() {
             assert_eq!(resto.matches('@').count(), 1, "{motor} {}", v.nome());
             let (credenciais, destino) = resto.split_once('@').expect("@");
             assert_eq!(credenciais.matches(':').count(), 1, "{motor}");
-            let porta = Motor::de_nome(motor).expect("motor").porta_padrao();
+            let porta = Engine::from_name(motor).expect("motor").default_port();
             assert!(
                 destino.starts_with(&format!("db.teste.invalid:{porta}")),
                 "{motor}: destino mudou"
@@ -976,7 +979,7 @@ fn ataque_extra_vira_variavel_do_sistema() {
         extra("PGPASSWORD", "outra", false),
         extra("DATABASE_URL", "postgresql://evil.invalid", false),
     ];
-    r.anexos = vec![anexo("LD_AUDIT", b"x")];
+    r.attachments = vec![anexo("LD_AUDIT", b"x")];
     let e = montar_ok(&valida(r), &mut Falsos::default());
     for nome in e.nomes() {
         assert!(!nome.starts_with("LD_"), "{nome}");
@@ -1191,10 +1194,10 @@ fn v2_48_variavel_aceita_sai_com_o_token() {
             "beta-github-api",
             "beta",
             "dev",
-            RascunhoDados::Api {
+            DataDraft::Api {
                 url: t("https://api.github.com"),
                 token: s("falso_token_github_01"),
-                variavel: t(var),
+                variable: t(var),
             },
         ));
         let entrega = montar_ok(&e, &mut Falsos::default());

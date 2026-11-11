@@ -1,7 +1,7 @@
 //! Testes do host com um daemon falso em memória (só valores falsos).
 
 use super::*;
-use ward_core::entrada::Segredo;
+use ward_core::entry::Secret;
 use ward_core::protocolo::Sugestao;
 
 const SENHA_FALSA: &str = "falso-WP-senha-01";
@@ -72,7 +72,7 @@ fn atender_com(m: &str, d: &mut Falso) -> String {
 fn preenchimento() -> Resposta {
     Resposta::Preenchimento {
         usuario: "wp_admin".into(),
-        senha: Segredo::de_bytes(SENHA_FALSA.as_bytes().to_vec()),
+        senha: Secret::from_bytes(SENHA_FALSA.as_bytes().to_vec()),
         totp: None,
     }
 }
@@ -198,11 +198,11 @@ fn ataque_resposta_do_daemon_fora_do_papel_ou_da_operacao_nao_sai() {
     let casos: Vec<(&str, Resposta)> = vec![
         (
             PREENCHER,
-            Resposta::Segredo(Segredo::de_bytes(SENHA_FALSA.as_bytes().to_vec())),
+            Resposta::Segredo(Secret::from_bytes(SENHA_FALSA.as_bytes().to_vec())),
         ),
         (
             PREENCHER,
-            Resposta::Token(Segredo::de_bytes(SENHA_FALSA.as_bytes().to_vec())),
+            Resposta::Token(Secret::from_bytes(SENHA_FALSA.as_bytes().to_vec())),
         ),
         (
             r#"{"v":1,"op":"sugerir","dados":{"origem":"http://localhost:8081"}}"#,
@@ -220,14 +220,14 @@ fn ataque_resposta_do_daemon_fora_do_papel_ou_da_operacao_nao_sai() {
         ),
         (
             r#"{"v":1,"op":"preencher_login","dados":{"id":"AbCdEfGhIjKlMnOpQrStUvWxYz012345","origem":"http://localhost:8081"}}"#,
-            Resposta::Segredo(Segredo::de_bytes(SENHA_FALSA.as_bytes().to_vec())),
+            Resposta::Segredo(Secret::from_bytes(SENHA_FALSA.as_bytes().to_vec())),
         ),
         (
             PREENCHER,
             Resposta::Sugestoes(vec![Sugestao {
                 nome: "x".into(),
                 usuario: "y".into(),
-                ambiente: ward_core::entrada::Ambiente::Dev,
+                ambiente: ward_core::entry::Environment::Dev,
                 totp: false,
             }]),
         ),

@@ -1,4 +1,4 @@
-//! Entrega por variáveis de ambiente (D10): de uma [`Entrada`] validada, monta a lista
+//! Entrega por variáveis de ambiente (D10): de uma [`Entry`] validada, monta a lista
 //! exata de variáveis que o `ward run` põe no ambiente do filho.
 //!
 //! O núcleo não faz E/S nem depende de Linux. O que precisa do sistema fica com quem
@@ -29,9 +29,7 @@ use core::fmt;
 
 use zeroize::{ZeroizeOnDrop, Zeroizing};
 
-use crate::entrada::{
-    Autenticacao, Banco, Dados, Entrada, Motor, Segredo, ValorExtra, nome_variavel,
-};
+use crate::entry::{Auth, Data, Database, Engine, Entry, ExtraValue, Secret, variable_name};
 
 #[cfg(test)]
 mod testes;
@@ -44,12 +42,12 @@ pub struct ErroRecurso(pub &'static str);
 /// um falso.
 pub trait Recursos {
     /// Código TOTP atual da semente (RFC 6238). Só dígitos, de 6 a 8.
-    fn codigo_totp(&mut self, semente: &Segredo) -> Result<Zeroizing<String>, ErroRecurso>;
+    fn codigo_totp(&mut self, semente: &Secret) -> Result<Zeroizing<String>, ErroRecurso>;
 
     /// Grava o conteúdo num arquivo temporário 0600 em `/run/user/<uid>/ward/` e devolve
     /// o caminho. `nome` é o nome do anexo (já validado: sem `/`, sem começar por `.` ou
     /// `-`) ou `chave` para a chave privada do tipo.
-    fn arquivo(&mut self, nome: &str, conteudo: &Segredo) -> Result<String, ErroRecurso>;
+    fn arquivo(&mut self, nome: &str, conteudo: &Secret) -> Result<String, ErroRecurso>;
 
     /// Abre o túnel SSH pelo `servidor` de nome `servidor` até `host:porta` e devolve a
     /// porta local em `127.0.0.1`.
@@ -156,21 +154,21 @@ impl fmt::Debug for Entrega {
 }
 
 /// Monta o ambiente da entrada (D10).
-pub fn montar(entrada: &Entrada, recursos: &mut dyn Recursos) -> Result<Entrega, ErroEntrega> {
-    if matches!(entrada.dados(), Dados::NotaSegura(_)) {
+pub fn montar(entrada: &Entry, recursos: &mut dyn Recursos) -> Result<Entrega, ErroEntrega> {
+    if matches!(entrada.data(), Data::SecureNote(_)) {
         return Err(ErroEntrega::TipoSemEntrega);
     }
     let mut m = Montagem::default();
-    m.texto("WARD_ENTRADA", entrada.nome());
-    m.texto("WARD_GRUPO", entrada.grupo());
-    m.texto("WARD_AMBIENTE", entrada.ambiente().nome());
+    m.texto("WARD_ENTRADA", entrada.name());
+    m.texto("WARD_GRUPO", entrada.group());
+    m.texto("WARD_AMBIENTE", entrada.environment().name());
 
-    match entrada.dados() {
-        Dados::Login(l) => {
+    match entrada.data() {
+        Data::Login(l) => {
             m.texto("WARD_URL", &l.url);
-            m.texto("WARD_USER", &l.usuario);
-            m.segredo("WARD_PASS", &l.senha)?;
-            if let Some(semente) = &l.totp_semente {
+            m.texto("WARD_USER", &l.username);
+            m.segredo("WARD_PASS", &l.password)?;
+            if let Some(semente) = &l.totp_seed {
                 let codigo = recursos.codigo_totp(semente)?;
                 if !(6..=8).contains(&codigo.len()) || !codigo.bytes().all(|b| b.is_ascii_digit()) {
                     return Err(ErroEntrega::RecursoInvalido("código TOTP fora do formato"));
@@ -178,62 +176,62 @@ pub fn montar(entrada: &Entrada, recursos: &mut dyn Recursos) -> Result<Entrega,
                 m.push("WARD_TOTP", codigo, false);
             }
         }
-        Dados::Banco(b) => banco(&mut m, b, recursos)?,
-        Dados::Servidor(s) => {
+        Data::Database(b) => banco(&mut m, b, recursos)?,
+        Data::Server(s) => {
             m.texto("WARD_HOST", &s.host);
-            m.texto("WARD_PORT", &s.porta.to_string());
-            m.texto("WARD_USER", &s.usuario);
-            autenticacao(&mut m, &s.autenticacao, recursos)?;
+            m.texto("WARD_PORT", &s.port.to_string());
+            m.texto("WARD_USER", &s.username);
+            autenticacao(&mut m, &s.auth, recursos)?;
         }
-        Dados::Api(a) => {
+        Data::Api(a) => {
             if let Some(url) = &a.url {
                 m.texto("WARD_URL", url);
             }
             m.segredo("WARD_TOKEN", &a.token)?;
-            if let Some(var) = &a.variavel {
+            if let Some(var) = &a.variable {
                 m.segredo(var, &a.token)?;
             }
         }
-        Dados::Aws(a) => {
+        Data::Aws(a) => {
             m.texto("AWS_ACCESS_KEY_ID", &a.access_key_id);
             m.segredo("AWS_SECRET_ACCESS_KEY", &a.secret_access_key)?;
             if let Some(t) = &a.session_token {
                 m.segredo("AWS_SESSION_TOKEN", t)?;
             }
-            m.texto("AWS_REGION", &a.regiao);
-            m.texto("AWS_DEFAULT_REGION", &a.regiao);
+            m.texto("AWS_REGION", &a.region);
+            m.texto("AWS_DEFAULT_REGION", &a.region);
             if let Some(arn) = &a.role_arn {
                 m.texto("AWS_ROLE_ARN", arn);
             }
         }
-        Dados::Smtp(s) => {
+        Data::Smtp(s) => {
             m.texto("SMTP_HOST", &s.host);
-            m.texto("SMTP_PORT", &s.porta.to_string());
-            m.texto("SMTP_USER", &s.usuario);
-            m.segredo("SMTP_PASS", &s.senha)?;
-            m.texto("SMTP_SECURITY", s.seguranca.nome());
+            m.texto("SMTP_PORT", &s.port.to_string());
+            m.texto("SMTP_USER", &s.username);
+            m.segredo("SMTP_PASS", &s.password)?;
+            m.texto("SMTP_SECURITY", s.security.name());
         }
-        Dados::FtpSftp(f) => {
-            m.texto("WARD_PROTOCOLO", f.protocolo.nome());
+        Data::FtpSftp(f) => {
+            m.texto("WARD_PROTOCOLO", f.protocol.name());
             m.texto("WARD_HOST", &f.host);
-            m.texto("WARD_PORT", &f.porta.to_string());
-            m.texto("WARD_USER", &f.usuario);
-            autenticacao(&mut m, &f.autenticacao, recursos)?;
+            m.texto("WARD_PORT", &f.port.to_string());
+            m.texto("WARD_USER", &f.username);
+            autenticacao(&mut m, &f.auth, recursos)?;
         }
-        Dados::NotaSegura(_) => return Err(ErroEntrega::TipoSemEntrega),
-        Dados::Generico => {}
+        Data::SecureNote(_) => return Err(ErroEntrega::TipoSemEntrega),
+        Data::Generic => {}
     }
 
     for extra in entrada.extras() {
-        let nome = prefixado("WARD_", extra.nome());
-        match extra.valor() {
-            ValorExtra::Texto(v) => m.texto(&nome, v),
-            ValorExtra::Segredo(v) => m.segredo(&nome, v)?,
+        let nome = prefixado("WARD_", extra.name());
+        match extra.value() {
+            ExtraValue::Text(v) => m.texto(&nome, v),
+            ExtraValue::Secret(v) => m.segredo(&nome, v)?,
         }
     }
-    for anexo in entrada.anexos() {
-        let nome = prefixado("WARD_ARQUIVO_", anexo.nome());
-        m.arquivo(&nome, anexo.nome(), anexo.conteudo(), recursos)?;
+    for anexo in entrada.attachments() {
+        let nome = prefixado("WARD_ARQUIVO_", anexo.name());
+        m.arquivo(&nome, anexo.name(), anexo.content(), recursos)?;
     }
 
     m.conferir()?;
@@ -244,19 +242,19 @@ pub fn montar(entrada: &Entrada, recursos: &mut dyn Recursos) -> Result<Entrega,
 
 fn prefixado(prefixo: &str, nome: &str) -> String {
     let mut s = String::from(prefixo);
-    s.push_str(&nome_variavel(nome));
+    s.push_str(&variable_name(nome));
     s
 }
 
 fn autenticacao(
     m: &mut Montagem,
-    a: &Autenticacao,
+    a: &Auth,
     recursos: &mut dyn Recursos,
 ) -> Result<(), ErroEntrega> {
     match a {
-        Autenticacao::Senha(senha) => m.segredo("WARD_PASS", senha),
-        Autenticacao::Chave {
-            chave_privada,
+        Auth::Password(senha) => m.segredo("WARD_PASS", senha),
+        Auth::Key {
+            private_key: chave_privada,
             passphrase,
         } => {
             m.arquivo("WARD_ARQUIVO_CHAVE", "chave", chave_privada, recursos)?;
@@ -268,25 +266,25 @@ fn autenticacao(
     }
 }
 
-fn banco(m: &mut Montagem, b: &Banco, recursos: &mut dyn Recursos) -> Result<(), ErroEntrega> {
+fn banco(m: &mut Montagem, b: &Database, recursos: &mut dyn Recursos) -> Result<(), ErroEntrega> {
     // Com túnel, o cliente conecta na ponta local (D10).
-    let (host, porta) = match &b.tunel {
+    let (host, porta) = match &b.tunnel {
         Some(servidor) => {
-            let local = recursos.tunel(servidor, &b.host, b.porta)?;
+            let local = recursos.tunel(servidor, &b.host, b.port)?;
             if local == 0 {
                 return Err(ErroEntrega::RecursoInvalido("porta do túnel inválida"));
             }
             ("127.0.0.1", local)
         }
-        None => (b.host.as_str(), b.porta),
+        None => (b.host.as_str(), b.port),
     };
     let porta = porta.to_string();
-    let senha = texto_do_segredo(&b.senha)?;
-    let base = b.base.as_deref();
+    let senha = texto_do_segredo(&b.password)?;
+    let base = b.db_name.as_deref();
     let url = |esquema: &str, base_no_caminho: Option<&str>, consulta_base: Option<&str>| {
         url_do_banco(
             esquema,
-            &b.usuario,
+            &b.username,
             senha,
             host,
             &porta,
@@ -295,49 +293,49 @@ fn banco(m: &mut Montagem, b: &Banco, recursos: &mut dyn Recursos) -> Result<(),
         )
     };
 
-    match b.motor {
-        Motor::Postgres => {
+    match b.engine {
+        Engine::Postgres => {
             m.texto("PGHOST", host);
             m.texto("PGPORT", &porta);
             if let Some(base) = base {
                 m.texto("PGDATABASE", base);
             }
-            m.texto("PGUSER", &b.usuario);
-            m.segredo("PGPASSWORD", &b.senha)?;
+            m.texto("PGUSER", &b.username);
+            m.segredo("PGPASSWORD", &b.password)?;
             m.push("DATABASE_URL", url("postgresql", base, None), true);
         }
-        Motor::Mysql => {
+        Engine::Mysql => {
             m.texto("MYSQL_HOST", host);
             m.texto("MYSQL_TCP_PORT", &porta);
-            m.texto("MYSQL_USER", &b.usuario);
-            m.segredo("MYSQL_PWD", &b.senha)?;
+            m.texto("MYSQL_USER", &b.username);
+            m.segredo("MYSQL_PWD", &b.password)?;
             if let Some(base) = base {
                 m.texto("MYSQL_DATABASE", base);
             }
             m.push("DATABASE_URL", url("mysql", base, None), true);
         }
-        Motor::Redis => {
+        Engine::Redis => {
             // No redis o caminho do URL é o número do banco; base que não é número fica
             // de fora do URL (o redis-cli recusaria).
             let numero = base.filter(|b| !b.is_empty() && b.bytes().all(|c| c.is_ascii_digit()));
             m.texto("REDIS_HOST", host);
             m.texto("REDIS_PORT", &porta);
-            m.segredo("REDISCLI_AUTH", &b.senha)?;
+            m.segredo("REDISCLI_AUTH", &b.password)?;
             m.push("REDIS_URL", url("redis", numero, None), true);
             m.push("DATABASE_URL", url("redis", numero, None), true);
         }
-        Motor::Mongo => {
+        Engine::Mongo => {
             m.push("MONGODB_URI", url("mongodb", base, None), true);
             m.push("DATABASE_URL", url("mongodb", base, None), true);
         }
-        Motor::Sqlserver => {
+        Engine::Sqlserver => {
             let mut servidor = String::with_capacity(host.len() + 1 + porta.len());
             servidor.push_str(host);
             servidor.push(',');
             servidor.push_str(&porta);
             m.texto("SQLCMDSERVER", &servidor);
-            m.texto("SQLCMDUSER", &b.usuario);
-            m.segredo("SQLCMDPASSWORD", &b.senha)?;
+            m.texto("SQLCMDUSER", &b.username);
+            m.segredo("SQLCMDPASSWORD", &b.password)?;
             if let Some(base) = base {
                 m.texto("SQLCMDDBNAME", base);
             }
@@ -431,8 +429,8 @@ fn codificar_em(destino: &mut String, texto: &str) {
     }
 }
 
-fn texto_do_segredo(s: &Segredo) -> Result<&str, ErroEntrega> {
-    s.expor_texto()
+fn texto_do_segredo(s: &Secret) -> Result<&str, ErroEntrega> {
+    s.expose_text()
         .ok_or(ErroEntrega::Invalida("segredo que não é texto"))
 }
 
@@ -454,7 +452,7 @@ impl Montagem {
         self.push(nome, Zeroizing::new(valor.to_owned()), false);
     }
 
-    fn segredo(&mut self, nome: &str, valor: &Segredo) -> Result<(), ErroEntrega> {
+    fn segredo(&mut self, nome: &str, valor: &Secret) -> Result<(), ErroEntrega> {
         let v = texto_do_segredo(valor)?;
         self.push(nome, Zeroizing::new(v.to_owned()), true);
         Ok(())
@@ -464,7 +462,7 @@ impl Montagem {
         &mut self,
         variavel: &str,
         nome: &str,
-        conteudo: &Segredo,
+        conteudo: &Secret,
         recursos: &mut dyn Recursos,
     ) -> Result<(), ErroEntrega> {
         let caminho = recursos.arquivo(nome, conteudo)?;

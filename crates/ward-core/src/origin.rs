@@ -8,7 +8,7 @@
 //! written. Any text the parser refuses (another scheme, `chrome://`, `file://`,
 //! userinfo, uppercase host, IP in hex form, control) has no origin: it matches nothing.
 
-use crate::entrada::validacao::{separar_host_porta, url_valida};
+use crate::entry::validation::{split_host_port, valid_url};
 
 /// Scheme, host (lowercase, as the parser requires) and effective port.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -21,7 +21,7 @@ pub struct Origin {
 impl Origin {
     /// Origin of the URL, or `None` if the URL does not pass the strict parser.
     pub fn from_url(url: &str) -> Option<Origin> {
-        if !url_valida(url) {
+        if !valid_url(url) {
             return None;
         }
         let (https, rest) = match url.strip_prefix("https://") {
@@ -29,7 +29,7 @@ impl Origin {
             None => (false, url.strip_prefix("http://")?),
         };
         let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
-        let (host, port) = separar_host_porta(&rest[..end])?;
+        let (host, port) = split_host_port(&rest[..end])?;
         let port = match port {
             Some(p) => p.parse().ok()?,
             None if https => 443,

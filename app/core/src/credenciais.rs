@@ -10,7 +10,7 @@
 //! secreto entrar aqui por engano.
 
 use serde::Serialize;
-use ward_core::entrada::TipoEntrada;
+use ward_core::entry::EntryType;
 use ward_core::protocolo::{DetalheEntrada, ItemLista, ResumoItem};
 
 /// Uma linha da lista (`Item de lista` compacto).
@@ -148,11 +148,11 @@ fn juntar(partes: &[&str]) -> String {
 
 /// A segunda linha do item, pelo tipo (como nos frames `Credenciais / *`), do resumo
 /// da lista do app.
-fn resumo(tipo: TipoEntrada, r: &ResumoItem) -> String {
+fn resumo(tipo: EntryType, r: &ResumoItem) -> String {
     let c = |id: &str| campo(&r.campos, id);
     let tem = |id: &str| r.segredos.iter().any(|s| s == id);
     match tipo {
-        TipoEntrada::Banco => {
+        EntryType::Database => {
             let motor = c("motor").unwrap_or_default();
             if c("tunel").is_some() {
                 juntar(&[motor, &conexao(None, c("host"), c("porta")), "túnel SSH"])
@@ -160,7 +160,7 @@ fn resumo(tipo: TipoEntrada, r: &ResumoItem) -> String {
                 juntar(&[motor, &conexao(c("usuario"), c("host"), c("porta"))])
             }
         }
-        TipoEntrada::Servidor | TipoEntrada::FtpSftp => {
+        EntryType::Server | EntryType::FtpSftp => {
             let acesso = if c("salto").is_some() {
                 "salto"
             } else if tem("chave_privada") {
@@ -175,25 +175,25 @@ fn resumo(tipo: TipoEntrada, r: &ResumoItem) -> String {
                 acesso,
             ])
         }
-        TipoEntrada::Smtp => juntar(&[
+        EntryType::Smtp => juntar(&[
             &conexao(c("usuario"), c("host"), c("porta")),
             c("seguranca").unwrap_or_default(),
         ]),
-        TipoEntrada::Login => juntar(&[
+        EntryType::Login => juntar(&[
             c("usuario").unwrap_or_default(),
             c("url").unwrap_or_default(),
             if tem("totp_semente") { "TOTP" } else { "" },
         ]),
-        TipoEntrada::Api => juntar(&[
+        EntryType::Api => juntar(&[
             c("variavel").unwrap_or_default(),
             c("url").unwrap_or_default(),
         ]),
-        TipoEntrada::Aws => juntar(&[
+        EntryType::Aws => juntar(&[
             c("access_key_id").unwrap_or_default(),
             c("regiao").unwrap_or_default(),
         ]),
-        TipoEntrada::NotaSegura => "texto protegido".to_owned(),
-        TipoEntrada::Generico => match (r.extras, r.anexos) {
+        EntryType::SecureNote => "texto protegido".to_owned(),
+        EntryType::Generic => match (r.extras, r.anexos) {
             (0, 0) => "sem campos".to_owned(),
             (e, a) => juntar(&[
                 &plural(e, "campo extra", "campos extras"),
@@ -219,10 +219,10 @@ impl ItemCredencial {
         let r = item.resumo.as_ref()?;
         Some(ItemCredencial {
             nome: item.nome.clone(),
-            tipo: item.tipo.nome(),
+            tipo: item.tipo.name(),
             grupo: item.grupo.clone(),
-            ambiente: item.ambiente.nome(),
-            nivel: item.nivel?.nome(),
+            ambiente: item.ambiente.name(),
+            nivel: item.nivel?.name(),
             resumo: resumo(item.tipo, r),
             endereco: item.endereco.clone(),
             usuario: campo(&r.campos, "usuario").map(str::to_owned),
@@ -242,10 +242,10 @@ impl DetalheCredencial {
         ]);
         DetalheCredencial {
             nome: d.nome.clone(),
-            tipo: d.tipo.nome(),
+            tipo: d.tipo.name(),
             grupo: d.grupo.clone(),
-            ambiente: d.ambiente.nome(),
-            nivel: d.nivel.nome(),
+            ambiente: d.ambiente.name(),
+            nivel: d.nivel.name(),
             projeto: d.projeto.clone(),
             tags: d.tags.clone(),
             subtitulo,
@@ -285,8 +285,8 @@ impl DetalheCredencial {
                     tamanho: a.tamanho,
                 })
                 .collect(),
-            criada_em: d.datas.criada_em(),
-            alterada_em: d.datas.alterada_em(),
+            criada_em: d.datas.created_at(),
+            alterada_em: d.datas.modified_at(),
         }
     }
 }
@@ -296,7 +296,7 @@ mod testes {
     use super::*;
     use crate::daemon::Daemon;
     use crate::daemon_falso::{DaemonFalso, SEGREDOS};
-    use ward_core::entrada::{NivelAcesso, Rascunho, RascunhoDados, Segredo};
+    use ward_core::entry::{AccessLevel, DataDraft, Draft, Secret};
     use ward_core::protocolo::{self, Papel, Pedido, Resposta};
 
     fn trocar(d: &mut DaemonFalso, pedido: &Pedido) -> Resposta {
@@ -340,20 +340,20 @@ mod testes {
         let novo = Pedido::SalvarEntrada {
             anterior: None,
             manter_anexos: Vec::new(),
-            rascunho: Rascunho {
-                nome: "clientex-stage-wp".to_owned(),
-                grupo: "clientex".to_owned(),
-                ambiente: "stage".to_owned(),
-                projeto: String::new(),
+            rascunho: Draft {
+                name: "clientex-stage-wp".to_owned(),
+                group: "clientex".to_owned(),
+                environment: "stage".to_owned(),
+                project: String::new(),
                 tags: Vec::new(),
-                dados: RascunhoDados::Login {
+                data: DataDraft::Login {
                     url: "https://clientex.invalid/login".to_owned(),
-                    usuario: "admin".to_owned(),
-                    senha: Some(Segredo::de_texto(SEGREDOS[0].to_owned())),
-                    totp_semente: None,
+                    username: "admin".to_owned(),
+                    password: Some(Secret::from_text(SEGREDOS[0].to_owned())),
+                    totp_seed: None,
                 },
                 extras: Vec::new(),
-                anexos: Vec::new(),
+                attachments: Vec::new(),
             },
         };
         assert!(matches!(trocar(&mut d, &novo), Resposta::Ok));
@@ -369,8 +369,8 @@ mod testes {
         // Mudar o nível (com o PIN de teste) só mexe na alteração.
         let mudar = Pedido::MudarNivel {
             entrada: "clientex-stage-wp".to_owned(),
-            nivel: NivelAcesso::Livre,
-            pin: Segredo::de_texto("135790".to_owned()),
+            nivel: AccessLevel::Free,
+            pin: Secret::from_text("135790".to_owned()),
         };
         assert!(matches!(trocar(&mut d, &mudar), Resposta::Ok));
         let y = detalhe(&mut d, "clientex-stage-wp");

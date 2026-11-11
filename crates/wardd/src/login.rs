@@ -26,7 +26,7 @@
 use std::sync::{Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
-use ward_core::entrada::{Dados, NivelAcesso};
+use ward_core::entry::{AccessLevel, Data};
 use ward_core::generator;
 use ward_core::protocolo::{ErroResposta, Papel, Pedido, Resposta, ResultadoLogin};
 
@@ -150,8 +150,8 @@ impl Daemon {
         if let Some(a) = self.estado().aberto.as_ref()
             && a.entradas
                 .iter()
-                .find(|e| e.nome() == entrada && e.nivel() != NivelAcesso::Bloqueado)
-                .is_some_and(|e| !matches!(e.dados(), Dados::Login(_)))
+                .find(|e| e.name() == entrada && e.level() != AccessLevel::Blocked)
+                .is_some_and(|e| !matches!(e.data(), Data::Login(_)))
         {
             return Err(ErroResposta::TipoSemEntrega);
         }
@@ -164,16 +164,16 @@ impl Daemon {
             let e = a
                 .entradas
                 .iter()
-                .find(|e| e.nome() == entrada && e.nivel() != NivelAcesso::Bloqueado)
+                .find(|e| e.name() == entrada && e.level() != AccessLevel::Blocked)
                 .ok_or(ErroResposta::EntradaInexistente)?;
-            if !matches!(e.dados(), Dados::Login(_)) {
+            if !matches!(e.data(), Data::Login(_)) {
                 return Err(ErroResposta::TipoSemEntrega);
             }
-            e.nome().to_owned()
+            e.name().to_owned()
         };
         let id = {
             let t = generator::connect_token().map_err(|_| ErroResposta::Interno)?;
-            String::from_utf8(t.expor().to_vec()).map_err(|_| ErroResposta::Interno)?
+            String::from_utf8(t.expose().to_vec()).map_err(|_| ErroResposta::Interno)?
         };
         let logins = self.logins();
         {

@@ -26,9 +26,7 @@ use ward_core as wc;
 use ward_core::atomic_write::write_entries;
 use ward_core::configuracao::{Configuracao, HashPin};
 use ward_core::corpo::{ErroCorpo, abrir_entradas, desserializar, serializar};
-use ward_core::entrada::{
-    Entrada, NivelAcesso, Rascunho, RascunhoAnexo, RascunhoDados, RascunhoExtra, Segredo,
-};
+use ward_core::entry::{AccessLevel, AttachmentDraft, DataDraft, Draft, Entry, ExtraDraft, Secret};
 use ward_core::format::{MasterPassword, OpenVault};
 use ward_core::limits::{
     MAX_ATTACHMENTS_TOTAL, MAX_BODY, MAX_ENTRIES, MAX_EXTRA_VALUE, MAX_EXTRAS, MAX_NOTE,
@@ -414,45 +412,45 @@ fn v2_32_corpo_autentico_aloca_so_o_que_existe() {
     let (r, pedidos, maior) = contando(|| desserializar(&corpo));
     assert_eq!(r.map(|(_, _, e)| e.len()), Ok(22));
     assert!(pedidos > 0);
-    let teto = corpo.len().max(22 * std::mem::size_of::<Entrada>());
+    let teto = corpo.len().max(22 * std::mem::size_of::<Entry>());
     assert!(maior <= teto, "pedido de {maior} > {teto}");
 }
 
 /// Uma `nota segura` no máximo do modelo: texto de 1 MiB, 64 extras de 64 KiB e um
 /// anexo de 256 KiB (~5,3 MiB). Sem entrega, fica fora do orçamento da máscara (D29),
 /// então é o jeito de montar um corpo grande com entradas válidas.
-fn nota_cheia(nome: &str) -> Entrada {
-    let mut r = Rascunho {
-        nome: nome.to_owned(),
-        grupo: "g".to_owned(),
-        ambiente: "dev".to_owned(),
-        projeto: String::new(),
+fn nota_cheia(nome: &str) -> Entry {
+    let mut r = Draft {
+        name: nome.to_owned(),
+        group: "g".to_owned(),
+        environment: "dev".to_owned(),
+        project: String::new(),
         tags: Vec::new(),
-        dados: RascunhoDados::NotaSegura {
-            texto: Some(Segredo::de_bytes(vec![b'n'; MAX_NOTE])),
+        data: DataDraft::SecureNote {
+            text: Some(Secret::from_bytes(vec![b'n'; MAX_NOTE])),
         },
         extras: Vec::new(),
-        anexos: Vec::new(),
+        attachments: Vec::new(),
     };
     for i in 0..MAX_EXTRAS {
-        r.extras.push(RascunhoExtra {
-            nome: format!("e{i:02}"),
-            valor: Segredo::de_bytes(vec![b'v'; MAX_EXTRA_VALUE]),
-            segredo: true,
+        r.extras.push(ExtraDraft {
+            name: format!("e{i:02}"),
+            value: Secret::from_bytes(vec![b'v'; MAX_EXTRA_VALUE]),
+            secret: true,
         });
     }
-    r.anexos.push(RascunhoAnexo {
-        nome: "a.bin".to_owned(),
-        conteudo: Segredo::de_bytes(vec![0x5a; MAX_ATTACHMENTS_TOTAL]),
+    r.attachments.push(AttachmentDraft {
+        name: "a.bin".to_owned(),
+        content: Secret::from_bytes(vec![0x5a; MAX_ATTACHMENTS_TOTAL]),
     });
-    validada(r, NivelAcesso::Livre)
+    validada(r, AccessLevel::Free)
 }
 
 #[test]
 fn v2_32_codificador_recusa_acima_do_limite_antes_de_alocar() {
     // Notas cheias até passar de 64 MiB (com anexos de 256 KiB, D29, uma entrada sozinha
     // não chega perto do limite do corpo).
-    let mut entradas: Vec<Entrada> = Vec::new();
+    let mut entradas: Vec<Entry> = Vec::new();
     let mut aproximado = 0usize;
     while aproximado <= MAX_BODY {
         entradas.push(nota_cheia(&format!("nota-{:03}", entradas.len())));
@@ -542,7 +540,7 @@ fn v2_33_nenhum_bloco_liberado_tem_segredo() {
         let mut s = String::new();
         s.push_str(SEGREDOS[1]);
         s.push_str(&"x".repeat(64));
-        drop(Segredo::de_texto(s));
+        drop(Secret::from_text(s));
     });
     assert!(achados >= 1, "o detector não viu a realocação");
 
@@ -615,30 +613,30 @@ fn s8_protocolo_nenhum_bloco_liberado_tem_segredo() {
     use ward_core::protocolo::{self, ErroResposta, Papel, Pedido, Resposta};
     use zeroize::Zeroizing;
 
-    fn s(v: &str) -> Segredo {
-        Segredo::de_texto(v.to_owned())
+    fn s(v: &str) -> Secret {
+        Secret::from_text(v.to_owned())
     }
-    fn rascunho(anexo: &str) -> Rascunho {
-        Rascunho {
-            nome: "clientex-stage-wp".to_owned(),
-            grupo: "clientex".to_owned(),
-            ambiente: "stage".to_owned(),
-            projeto: String::new(),
+    fn rascunho(anexo: &str) -> Draft {
+        Draft {
+            name: "clientex-stage-wp".to_owned(),
+            group: "clientex".to_owned(),
+            environment: "stage".to_owned(),
+            project: String::new(),
             tags: Vec::new(),
-            dados: RascunhoDados::Login {
+            data: DataDraft::Login {
                 url: "https://clientex.invalid/login".to_owned(),
-                usuario: "admin".to_owned(),
-                senha: Some(s("falso-WP-senha-01")),
-                totp_semente: Some(s("JBSWY3DPEHPK3PXP")),
+                username: "admin".to_owned(),
+                password: Some(s("falso-WP-senha-01")),
+                totp_seed: Some(s("JBSWY3DPEHPK3PXP")),
             },
-            extras: vec![RascunhoExtra {
-                nome: "PIN_BANCO".to_owned(),
-                valor: s("falso-nota-01"),
-                segredo: true,
+            extras: vec![ExtraDraft {
+                name: "PIN_BANCO".to_owned(),
+                value: s("falso-nota-01"),
+                secret: true,
             }],
-            anexos: vec![RascunhoAnexo {
-                nome: "chave.pem".to_owned(),
-                conteudo: s(anexo),
+            attachments: vec![AttachmentDraft {
+                name: "chave.pem".to_owned(),
+                content: s(anexo),
             }],
         }
     }
@@ -678,7 +676,7 @@ fn s8_protocolo_nenhum_bloco_liberado_tem_segredo() {
         else {
             panic!("destravar não voltou")
         };
-        assert_eq!(senha.expor(), SENHA_MESTRA.as_bytes());
+        assert_eq!(senha.expose(), SENHA_MESTRA.as_bytes());
         drop((p, q, lido, senha));
 
         // Salvar pelo app, validar o que chegou e responder um segredo ao app.
@@ -694,7 +692,7 @@ fn s8_protocolo_nenhum_bloco_liberado_tem_segredo() {
         else {
             panic!("salvar não voltou")
         };
-        let entrada = r.validar().unwrap();
+        let entrada = r.validate().unwrap();
         let resposta = Resposta::Segredo(s("falso-REDIR-01"));
         let qr = protocolo::codificar_resposta(Papel::App, &resposta).unwrap();
         let lida = protocolo::decodificar_resposta(Papel::App, &qr).unwrap();

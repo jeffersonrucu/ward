@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use serde::Serialize;
-use ward_core::entrada::{Rascunho, RascunhoAnexo, Segredo as SegredoCore, TipoEntrada};
+use ward_core::entry::{AttachmentDraft, Draft, EntryType, Secret as SegredoCore};
 use ward_core::protocolo::Alvo;
 
 use crate::ErroApp;
@@ -114,20 +114,20 @@ impl<D: Daemon> Fontes for FontesDoServico<'_, D> {
     fn guardado(&mut self, alvo: Alvo) -> Result<SegredoCore, ErroApp> {
         let entrada = self.entrada.ok_or(ErroApp::PedidoInvalido)?;
         let s = cliente::revelar(self.daemon, entrada, alvo)?;
-        Ok(SegredoCore::de_bytes(s.expor().to_vec()))
+        Ok(SegredoCore::from_bytes(s.expor().to_vec()))
     }
 
     fn gerada(&mut self, campo: &str) -> Result<SegredoCore, ErroApp> {
         self.usadas
             .get(campo)
-            .map(|s| SegredoCore::de_bytes(s.expor().to_vec()))
+            .map(|s| SegredoCore::from_bytes(s.expor().to_vec()))
             .ok_or(ErroApp::SemSenhaGerada)
     }
 
     fn carregada(&mut self, campo: &str) -> Result<SegredoCore, ErroApp> {
         self.carregadas
             .get(campo)
-            .map(|s| SegredoCore::de_bytes(s.expor().to_vec()))
+            .map(|s| SegredoCore::from_bytes(s.expor().to_vec()))
             .ok_or(ErroApp::PedidoInvalido)
     }
 }
@@ -194,7 +194,7 @@ impl<D: Daemon, A: AreaTransferencia> Servico<D, A> {
                 .pedido
                 .entradas
                 .iter()
-                .map(|n| cliente::detalhe(&mut *d, n).ok().map(|x| x.tipo.nome()))
+                .map(|n| cliente::detalhe(&mut *d, n).ok().map(|x| x.tipo.name()))
                 .collect();
             drop(d);
             self.aprovacoes
@@ -412,7 +412,7 @@ impl<D: Daemon, A: AreaTransferencia> Servico<D, A> {
         }
         let token = {
             let mut d = self.daemon()?;
-            if cliente::detalhe(&mut *d, entrada)?.tipo != TipoEntrada::Servidor {
+            if cliente::detalhe(&mut *d, entrada)?.tipo != EntryType::Server {
                 return Err(ErroApp::NaoEServidor);
             }
             cliente::emitir_token(&mut *d, entrada)?
@@ -652,25 +652,25 @@ impl<D: Daemon, A: AreaTransferencia> Servico<D, A> {
         drop(carregadas);
         // Os anexos pedidos, copiados: se o daemon recusar, continuam escolhidos para o
         // próximo salvar.
-        let anexos: Vec<RascunhoAnexo> = self
+        let anexos: Vec<AttachmentDraft> = self
             .anexos_travados()
             .escolhidos(&f.anexos)?
             .into_iter()
-            .map(|p| RascunhoAnexo {
-                nome: p.nome.clone(),
-                conteudo: SegredoCore::de_bytes(p.conteudo.expor().to_vec()),
+            .map(|p| AttachmentDraft {
+                name: p.nome.clone(),
+                content: SegredoCore::from_bytes(p.conteudo.expor().to_vec()),
             })
             .collect();
         let nome = f.nome.clone();
-        let rascunho = Rascunho {
-            nome: f.nome,
-            grupo: f.grupo,
-            ambiente: f.ambiente,
-            projeto: f.projeto,
+        let rascunho = Draft {
+            name: f.nome,
+            group: f.grupo,
+            environment: f.ambiente,
+            project: f.projeto,
             tags: f.tags,
-            dados: montado.dados,
+            data: montado.dados,
             extras: montado.extras,
-            anexos,
+            attachments: anexos,
         };
         if let Err(erros) = formulario::validar_local(&rascunho) {
             return Ok(ResultadoSalvar { salvo: None, erros });
@@ -707,7 +707,7 @@ impl<D: Daemon, A: AreaTransferencia> Servico<D, A> {
         drop(pin);
         Ok(NivelMudado {
             entrada: entrada.to_owned(),
-            nivel: nivel.nome(),
+            nivel: nivel.name(),
         })
     }
 
