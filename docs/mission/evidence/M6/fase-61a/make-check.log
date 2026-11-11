@@ -6,26 +6,26 @@ autoteste: 93/93 casos ok
 english-check: 0 achado(s) em 0 arquivo(s), 0 problema(s) nas exceções
 ==> 2/7 cargo fmt --check
 origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
-/home/jeffersonoliveira/.cargo/bin/cargo fmt --all --check
+<home>/.cargo/bin/cargo fmt --all --check
 ==> 3/7 cargo clippy --all-targets -- -D warnings
 origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
-/home/jeffersonoliveira/.cargo/bin/cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
-    Checking ward-platform v0.2.0 (/home/jeffersonoliveira/projetos/cofre/.claude/worktrees/agent-a05575206561cc4b2/crates/ward-platform)
-    Checking wardd v0.2.0 (/home/jeffersonoliveira/projetos/cofre/.claude/worktrees/agent-a05575206561cc4b2/crates/wardd)
-    Checking ward-app-core v0.2.0 (/home/jeffersonoliveira/projetos/cofre/.claude/worktrees/agent-a05575206561cc4b2/app/core)
-    Checking ward-nm v0.2.0 (/home/jeffersonoliveira/projetos/cofre/.claude/worktrees/agent-a05575206561cc4b2/crates/ward-nm)
-    Checking ward v0.2.0 (/home/jeffersonoliveira/projetos/cofre/.claude/worktrees/agent-a05575206561cc4b2/crates/ward)
-    Checking ward-test-bridge v0.2.0 (/home/jeffersonoliveira/projetos/cofre/.claude/worktrees/agent-a05575206561cc4b2/crates/ward-test-bridge)
+<home>/.cargo/bin/cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+    Checking ward-platform v0.2.0 (<repo>/crates/ward-platform)
+    Checking wardd v0.2.0 (<repo>/crates/wardd)
+    Checking ward-app-core v0.2.0 (<repo>/app/core)
+    Checking ward-nm v0.2.0 (<repo>/crates/ward-nm)
+    Checking ward v0.2.0 (<repo>/crates/ward)
+    Checking ward-test-bridge v0.2.0 (<repo>/crates/ward-test-bridge)
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.02s
 ==> 4/7 cargo test
 origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
-/home/jeffersonoliveira/.cargo/bin/cargo test --workspace --all-features --locked
-   Compiling ward-platform v0.2.0 (/home/jeffersonoliveira/projetos/cofre/.claude/worktrees/agent-a05575206561cc4b2/crates/ward-platform)
-   Compiling wardd v0.2.0 (/home/jeffersonoliveira/projetos/cofre/.claude/worktrees/agent-a05575206561cc4b2/crates/wardd)
-   Compiling ward-app-core v0.2.0 (/home/jeffersonoliveira/projetos/cofre/.claude/worktrees/agent-a05575206561cc4b2/app/core)
-   Compiling ward-nm v0.2.0 (/home/jeffersonoliveira/projetos/cofre/.claude/worktrees/agent-a05575206561cc4b2/crates/ward-nm)
-   Compiling ward v0.2.0 (/home/jeffersonoliveira/projetos/cofre/.claude/worktrees/agent-a05575206561cc4b2/crates/ward)
-   Compiling ward-test-bridge v0.2.0 (/home/jeffersonoliveira/projetos/cofre/.claude/worktrees/agent-a05575206561cc4b2/crates/ward-test-bridge)
+<home>/.cargo/bin/cargo test --workspace --all-features --locked
+   Compiling ward-platform v0.2.0 (<repo>/crates/ward-platform)
+   Compiling wardd v0.2.0 (<repo>/crates/wardd)
+   Compiling ward-app-core v0.2.0 (<repo>/app/core)
+   Compiling ward-nm v0.2.0 (<repo>/crates/ward-nm)
+   Compiling ward v0.2.0 (<repo>/crates/ward)
+   Compiling ward-test-bridge v0.2.0 (<repo>/crates/ward-test-bridge)
     Finished `test` profile [unoptimized + debuginfo] target(s) in 2.59s
      Running unittests src/lib.rs (target/debug/deps/ward-2c54ba5aece3aad8)
 
@@ -1398,16 +1398,16 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 ==> 5/7 cargo audit
 origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
-/home/jeffersonoliveira/.cargo/bin/cargo-audit audit --deny warnings
+<home>/.cargo/bin/cargo-audit audit --deny warnings
     Fetching advisory database from `https://github.com/RustSec/advisory-db.git`
-      Loaded 1458 security advisories (from /home/jeffersonoliveira/.cargo/advisory-db)
+      Loaded 1458 security advisories (from <home>/.cargo/advisory-db)
     Updating crates.io index
     Scanning Cargo.lock for vulnerabilities (112 crate dependencies)
 ==> 6/7 cargo deny check
 origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
-/home/jeffersonoliveira/.cargo/bin/cargo-deny --all-features check
+<home>/.cargo/bin/cargo-deny --all-features check
 warning[duplicate]: found 2 duplicate entries for crate 'syn'
-   ┌─ /home/jeffersonoliveira/projetos/cofre/.claude/worktrees/agent-a05575206561cc4b2/Cargo.lock:75:1
+   ┌─ <repo>/Cargo.lock:75:1
    │  
 75 │ ╭ syn 2.0.119 registry+https://github.com/rust-lang/crates.io-index
 76 │ │ syn 3.0.9 registry+https://github.com/rust-lang/crates.io-index
@@ -1442,25 +1442,25 @@ warning[duplicate]: found 2 duplicate entries for crate 'syn'
 
 advisories ok, bans ok, licenses ok, sources ok
 ==> 7/7 gitleaks
-/home/jeffersonoliveira/projetos/cofre/.claude/worktrees/agent-a05575206561cc4b2/.dev/tools/bin/gitleaks dir --config dev/gitleaks-tree.toml --redact --verbose --no-banner --exit-code 1 .
+<repo>/.dev/tools/bin/gitleaks dir --config dev/gitleaks-tree.toml --redact --verbose --no-banner --exit-code 1 .
 12:08PM INF scanned ~9841972 bytes (9.84 MB) in 325ms
 12:08PM INF no leaks found
-/home/jeffersonoliveira/projetos/cofre/.claude/worktrees/agent-a05575206561cc4b2/.dev/tools/bin/gitleaks git --staged --pre-commit --config .gitleaks.toml --redact --verbose --no-banner --exit-code 1 .
+<repo>/.dev/tools/bin/gitleaks git --staged --pre-commit --config .gitleaks.toml --redact --verbose --no-banner --exit-code 1 .
 12:08PM INF 0 commits scanned.
 12:08PM INF scanned ~0 bytes (0) in 117ms
 12:08PM INF no leaks found
-/home/jeffersonoliveira/projetos/cofre/.claude/worktrees/agent-a05575206561cc4b2/.dev/tools/bin/gitleaks git --config .gitleaks.toml --redact --verbose --no-banner --exit-code 1 .
+<repo>/.dev/tools/bin/gitleaks git --config .gitleaks.toml --redact --verbose --no-banner --exit-code 1 .
 12:08PM INF 352 commits scanned.
 12:08PM INF scanned ~16008672 bytes (16.01 MB) in 2.12s
 12:08PM INF no leaks found
-/home/jeffersonoliveira/projetos/cofre/.claude/worktrees/agent-a05575206561cc4b2/.dev/tools/bin/gitleaks dir --config dev/gitleaks-extra-tree.toml --redact --verbose --no-banner --exit-code 1 --max-archive-depth 3 .
+<repo>/.dev/tools/bin/gitleaks dir --config dev/gitleaks-extra-tree.toml --redact --verbose --no-banner --exit-code 1 --max-archive-depth 3 .
 12:08PM INF scanned ~84894915 bytes (84.89 MB) in 565ms
 12:08PM INF no leaks found
-/home/jeffersonoliveira/projetos/cofre/.claude/worktrees/agent-a05575206561cc4b2/.dev/tools/bin/gitleaks git --staged --pre-commit --config dev/gitleaks-extra.toml --redact --verbose --no-banner --exit-code 1 --max-archive-depth 3 .
+<repo>/.dev/tools/bin/gitleaks git --staged --pre-commit --config dev/gitleaks-extra.toml --redact --verbose --no-banner --exit-code 1 --max-archive-depth 3 .
 12:08PM INF 0 commits scanned.
 12:08PM INF scanned ~0 bytes (0) in 4.35ms
 12:08PM INF no leaks found
-/home/jeffersonoliveira/projetos/cofre/.claude/worktrees/agent-a05575206561cc4b2/.dev/tools/bin/gitleaks git --config dev/gitleaks-extra.toml --redact --verbose --no-banner --exit-code 1 --max-archive-depth 3 .
+<repo>/.dev/tools/bin/gitleaks git --config dev/gitleaks-extra.toml --redact --verbose --no-banner --exit-code 1 --max-archive-depth 3 .
 12:08PM INF 352 commits scanned.
 12:08PM INF scanned ~16008672 bytes (16.01 MB) in 1.75s
 12:08PM INF no leaks found

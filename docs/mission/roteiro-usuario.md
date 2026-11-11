@@ -1,6 +1,6 @@
 # Roteiro do usuário — atualizar para a 0.2.0
 
-Roteiro das Fases 66 e 66a (missão 2; V6.12, V6.13). Quem roda é você, na sua máquina.
+Roteiro das Fases 66, 66a e 66b (missão 2; V6.12, V6.13). Quem roda é você, na sua máquina.
 A missão não roda `sudo`, não instala nada, não mexe no `~/.claude` e não toca no cofre
 real.
 
@@ -16,10 +16,11 @@ e a 0.1.5 (a máquina tem a 0.1.5; `dpkg-query -W ward`).
 
 ## Artefatos
 
-Ficam em `target/release-0.2.0/` do checkout principal (fora do git), refeitos na Fase
-66a com a correção da 0.1.5. Os sha256 estão na tabela abaixo, no handoff da Fase 66a
-(`docs/mission/handoffs/phase-66a.md`) e em `target/release-0.2.0/SHA256SUMS`. Os da
-Fase 66 não valem mais.
+Ficam em `target/release-0.2.0/` do checkout principal (fora do git), refeitos pela
+última vez na Fase 66b (correções dos validadores do M6 e metainfo com a 0.1.5 e a
+0.2.0). Os sha256 estão na tabela abaixo, no handoff da Fase 66b
+(`docs/mission/handoffs/phase-66b.md`) e em `target/release-0.2.0/SHA256SUMS`. Os das
+Fases 66 e 66a não valem mais.
 
 | Artefato | sha256 |
 | --- | --- |
@@ -29,14 +30,17 @@ Fase 66 não valem mais.
 | `bin/wardd` | `d6bcb03dc0d5cea085a38951ddc9062f250ac37ddd3e250d7126742692cd2190` |
 | `bin/ward-nm` | `c073f81c88cae15bff34b3491772e9f5b1048543822b2b2c78ebef324cd76e97` |
 | `bin/ward-app` | `54ef9d199b7016eec6af469911760c9d744bbc74fd4cf74bdb36c371fa6dd004` |
+| `ward-install-0.2.0.tar` | `SHA_TAR` |
 
 | Arquivo | O que é |
 | --- | --- |
 | `ward_0.2.0_amd64.deb` | pacote para `sudo apt install`/`sudo dpkg -i` |
 | `ward.crx` | extensão do Chrome 0.2.0, id `nhkehjnmlgkebhmelajfpmpblepaichf` (o de sempre) |
 | `bin/ward`, `bin/wardd`, `bin/ward-nm`, `bin/ward-app` | binários de release, para o caminho `sudo make install` |
+| `ward-install-0.2.0.tar` | o instalador do `make install` (`Makefile`, `install/` com o `tree.txt`, ícones), para rodar de uma pasta do root (3b) |
 
 Use **o mesmo meio** com que instalou a 0.1.x (`.deb` ou `make install`). Não misture.
+Esta máquina tem a 0.1.5 pelo `.deb` (`dpkg-query -W ward`): o seu caminho é o 3a.
 
 ## 1. Copie a pasta do cofre (antes de tudo)
 
@@ -86,16 +90,31 @@ sudo dpkg-deb -I /root/ward/ward_0.2.0_amd64.deb preinst | less   # leia antes d
 sudo dpkg -i /root/ward/ward_0.2.0_amd64.deb
 ```
 
-### 3b. Ou por `sudo make install` (se a 0.1.x veio pelo `make install`)
+### 3b. Ou por `sudo make install` (só se a 0.1.x veio pelo `make install`)
 
-Do checkout principal, com os binários e o pacote da extensão de `target/release-0.2.0/`:
+**Nunca rode `sudo make install` de dentro do checkout** (`~/projetos/cofre`): ele é do
+seu usuário, e qualquer programa seu pode trocar o `Makefile` ou o `install/install.sh`
+entre a sua conferência e o `sudo`; o root roda o que estiver lá (auditoria de segurança
+do M6, Fase 66b). Como no `.deb`, copie para uma pasta do root o instalador
+(`ward-install-0.2.0.tar`), os binários e o pacote da extensão, confira lá e rode de lá:
 
 ```sh
-cd ~/projetos/cofre
-R=$PWD/target/release-0.2.0
-sudo make install EXTENSION_ID=nhkehjnmlgkebhmelajfpmpblepaichf EXTENSION_CRX=$R/ward.crx \
-    BIN_WARD=$R/bin/ward BIN_WARDD=$R/bin/wardd BIN_NM=$R/bin/ward-nm BIN_APP=$R/bin/ward-app
+R=~/projetos/cofre/target/release-0.2.0
+sudo install -d -m 0700 -o root -g root /root/ward-src /root/ward-src/bin
+sudo install -m 0644 -o root -g root $R/ward-install-0.2.0.tar $R/ward.crx /root/ward-src/
+sudo install -m 0755 -o root -g root $R/bin/ward $R/bin/wardd $R/bin/ward-nm $R/bin/ward-app /root/ward-src/bin/
+sudo sha256sum /root/ward-src/ward-install-0.2.0.tar /root/ward-src/ward.crx /root/ward-src/bin/*
+#   os mesmos da tabela "Artefatos" acima
+sudo tar -x --no-same-owner -f /root/ward-src/ward-install-0.2.0.tar -C /root/ward-src
+sudo less /root/ward-src/install/install.sh        # leia antes de rodar
+sudo make -C /root/ward-src install EXTENSION_ID=nhkehjnmlgkebhmelajfpmpblepaichf \
+    EXTENSION_CRX=/root/ward-src/ward.crx \
+    BIN_WARD=/root/ward-src/bin/ward BIN_WARDD=/root/ward-src/bin/wardd \
+    BIN_NM=/root/ward-src/bin/ward-nm BIN_APP=/root/ward-src/bin/ward-app
 ```
+
+Guarde `/root/ward-src`: desinstalar é `sudo make -C /root/ward-src uninstall`, nunca do
+checkout.
 
 ### 3c. Conferir a instalação
 
@@ -187,8 +206,9 @@ Não há volta automática: a 0.1.x não abre o cofre migrado. O que você mudou
 depois de atualizar (entradas novas, senhas trocadas) se perde e tem de ser refeito à
 mão.
 
-1. Reinstale a 0.1.x pelo mesmo meio de antes (o `.deb` da 0.1.x com `sudo dpkg -i`, ou
-   `sudo make install` num clone na tag dela). Pelo `.deb`, o mais seguro é
+1. Reinstale a 0.1.x pelo mesmo meio de antes: o `.deb` da 0.1.x copiado para
+   `/root/ward` e `sudo dpkg -i` de lá (como no 3a), ou o `make install` da tag dela
+   rodado de uma cópia em `/root` (como no 3b), nunca de dentro de um clone. Pelo `.deb`, o mais seguro é
    `sudo dpkg -r ward` antes (o cofre fica intacto) e depois `sudo dpkg -i` da 0.1.x; o
    downgrade direto não foi conferido pela missão.
 2. Pare o daemon, guarde o cofre migrado à parte (não apague) e reponha a cópia:

@@ -1,5 +1,5 @@
-make: Entrando no diretório '/home/jeffersonoliveira/projetos/cofre/.claude/worktrees/agent-a40b66606e9b53847/.dev/fase61-leakcopy'
-/home/jeffersonoliveira/projetos/cofre/.claude/worktrees/agent-a40b66606e9b53847/.dev/fase61-leakcopy/.dev/tools/bin/gitleaks dir --config dev/gitleaks-tree.toml --redact --verbose --no-banner --exit-code 1 .
+make: Entrando no diretório '<repo>/.dev/fase61-leakcopy'
+<repo>/.dev/fase61-leakcopy/.dev/tools/bin/gitleaks dir --config dev/gitleaks-tree.toml --redact --verbose --no-banner --exit-code 1 .
 Finding:     let api_key = "REDACTED"
 Secret:      REDACTED
 RuleID:      generic-api-key
@@ -11,4 +11,4 @@ Fingerprint: crates/planted_fake.rs:generic-api-key:2
 10:32AM INF scanned ~9783798 bytes (9.78 MB) in 347ms
 10:32AM WRN leaks found: 1
 make: *** [Makefile:143: gitleaks] Erro 1
-make: Saindo do diretório '/home/jeffersonoliveira/projetos/cofre/.claude/worktrees/agent-a40b66606e9b53847/.dev/fase61-leakcopy'
+make: Saindo do diretório '<repo>/.dev/fase61-leakcopy'

@@ -828,6 +828,88 @@ fn envelope_refused() {
     }
 }
 
+/// m2:Phase 66b (security-auditor of M6, low): documented decision, see the module
+/// doc. A missing `data` and escapes in the names give exactly the canonical request
+/// (same re-encoded bytes), so no spelling reaches a different operation, skips the
+/// role check or carries an extra field; any other spelling is unknown.
+#[test]
+fn decision_missing_data_and_escaped_names_are_the_canonical_request() {
+    let canonical = |role: Role, q: &str| -> Vec<u8> {
+        let r = req(role, q).unwrap_or_else(|e| panic!("{q}: {e:?}"));
+        encode_request(role, &r).unwrap().to_vec()
+    };
+    let list = canonical(Role::Agent, r#"{"v":2,"op":"list","data":{}}"#);
+    assert_eq!(list, br#"{"v":2,"op":"list","data":{}}"#);
+    for q in [
+        r#"{"v":2,"op":"list"}"#,
+        r#"{"v":2,"op":"list"}"#,
+        r#"{"v":2,"op":"list","data":{}}"#,
+        r#"{"v":2,"op":"list","data":{}}"#,
+    ] {
+        assert_eq!(canonical(Role::Agent, q), list, "{q}");
+    }
+    let status = canonical(Role::Extension, r#"{"v":2,"op":"status"}"#);
+    assert_eq!(status, br#"{"v":2,"op":"status","data":{}}"#);
+    // The escape does not dodge the role: an app operation spelled with escapes is
+    // still the app's.
+    for role in [Role::Agent, Role::Extension] {
+        for q in [
+            r#"{"v":2,"op":"reveal"}"#,
+            r#"{"v":2,"op":"copy","data":{}}"#,
+            r#"{"v":2,"op":"set_level"}"#,
+        ] {
+            assert_eq!(
+                req(role, q).unwrap_err(),
+                ResponseError::Unauthorized,
+                "{q}"
+            );
+        }
+    }
+    // Only the exact name after decoding: another spelling is unknown.
+    for q in [
+        r#"{"v":2,"op":"list "}"#,
+        r#"{"v":2,"op":"List"}"#,
+        r#"{"v":2,"op":"liſt"}"#,
+        r#"{"v":2,"op":"list\u0000"}"#,
+    ] {
+        let e = req(Role::Agent, q).unwrap_err();
+        assert!(
+            matches!(
+                e,
+                ResponseError::UnknownOperation | ResponseError::InvalidRequest
+            ),
+            "{q}: {e:?}"
+        );
+    }
+    // A missing `data` is the empty object, not a pass: required fields still refuse.
+    for (role, op) in [
+        (Role::Agent, "run"),
+        (Role::Agent, "unlock"),
+        (Role::App, "reveal"),
+        (Role::App, "answer_approval"),
+        (Role::Extension, "fill"),
+    ] {
+        assert_eq!(
+            req(role, &format!(r#"{{"v":2,"op":"{op}"}}"#)).unwrap_err(),
+            ResponseError::InvalidRequest,
+            "{op}"
+        );
+    }
+    // An escaped key is the same key: a second `op` written with escapes is a repeated
+    // key, and an escaped extra field is still an extra field.
+    for q in [
+        r#"{"v":2,"op":"list","op":"reveal"}"#,
+        r#"{"v":2,"op":"list","data":{},"data":{}}"#,
+        r#"{"v":2,"op":"list","data":{"reveal":true}}"#,
+    ] {
+        assert_eq!(
+            req(Role::Agent, q).unwrap_err(),
+            ResponseError::InvalidRequest,
+            "{q}"
+        );
+    }
+}
+
 // ---- Format of each operation ----
 
 #[test]

@@ -182,6 +182,14 @@ def reload_page(page):
     page.goto(URL)
 
 
+def unlock_button_ready(page):
+    """The unlock form takes a password now: the submit button has the idle label (not
+    the sending one nor the D20 countdown), is enabled and the field is editable."""
+    button = page.locator('form button[type="submit"]', has_text=re.compile(r"^\s*Destravar\s*$"))
+    return (button.count() == 1 and button.first.is_enabled()
+            and page.locator("#master-password").is_editable())
+
+
 def unlock(page):
     try:
         page.wait_for_selector("#master-password", timeout=20000)
@@ -194,8 +202,11 @@ def unlock(page):
             raise RuntimeError("a tela mostra um erro da ponte de teste em vez do destravar "
                                "(app/dist-teste de outro build? rode 'make test-app-e2e')") from None
         raise
-    # A wrong password before makes the next try wait (the field comes back enabled).
-    wait_for(lambda: page.locator("#master-password").is_enabled(), 40)
+    # A wrong password before makes the next try wait (D20): only the button is
+    # disabled (with the countdown) and an Enter in the field is dropped; the field
+    # stays enabled. Wait for the idle button to come back (m2:Phase 66b).
+    if not wait_for(lambda: unlock_button_ready(page), 40):
+        raise RuntimeError("o botão 'Destravar' não voltou depois da espera da senha errada")
     page.fill("#master-password", PASSWORD)
     page.press("#master-password", "Enter")
     page.wait_for_selector("[data-entry]", timeout=60000)
@@ -517,7 +528,8 @@ def unlock_screens(page):
     check("V3.2 destravar: 'Senha mestra incorreta.'",
           wait_for(lambda: "Senha mestra incorreta." in page_text(page), 30))
     shot(page, "destravar-senha-errada")
-    wait_for(lambda: page.locator("#master-password").is_enabled(), 40)
+    check("V3.2 destravar: o botão 'Destravar' volta depois da espera",
+          wait_for(lambda: unlock_button_ready(page), 40))
     f = focused(page)
     check("V3.3 destravar: o foco volta ao campo depois do erro", f and f["id"] == "master-password", str(f))
 

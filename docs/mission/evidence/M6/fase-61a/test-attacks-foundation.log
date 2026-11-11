@@ -155,9 +155,9 @@ ok    pré-checagem: rust-toolchain.toml com canal móvel (nightly) é barrado a
 ok    pré-checagem: rust-toolchain sem extensão é barrado antes do passo 1
 ok    controle: sem a pré-checagem o rustc-wrapper plantado roda (o vetor é real)
 ok    CARGO_HOME: config com '[alias] audit = "version"' é recusado
-ok    CARGO_HOME: config com '[build] rustc-wrapper = "/home/jeffersonoliveira/.cache/ward-attacks-foundation.Z26gSj/decoys/wrap.sh"' é recusado
-ok    CARGO_HOME: config com '[build] rustc = "/home/jeffersonoliveira/.cache/ward-attacks-foundation.Z26gSj/decoys/rustc.sh"' é recusado
-ok    CARGO_HOME: config com '[target.x86_64-unknown-linux-gnu] linker = "/home/jeffersonoliveira/.cache/ward-attacks-foundation.Z26gSj/decoys/linker.sh"' é recusado
+ok    CARGO_HOME: config com '[build] rustc-wrapper = "<home>/.cache/ward-attacks-foundation.Z26gSj/decoys/wrap.sh"' é recusado
+ok    CARGO_HOME: config com '[build] rustc = "<home>/.cache/ward-attacks-foundation.Z26gSj/decoys/rustc.sh"' é recusado
+ok    CARGO_HOME: config com '[target.x86_64-unknown-linux-gnu] linker = "<home>/.cache/ward-attacks-foundation.Z26gSj/decoys/linker.sh"' é recusado
 ok    CARGO_HOME: config com '[build] rustflags = ["-Cdebuginfo=0"]' é recusado
 ok    CARGO_HOME: config com '[env] RUSTC_BOOTSTRAP = "1"' é recusado
 ok    CARGO_HOME: config com '[source.crates-io] replace-with = "v"' é recusado

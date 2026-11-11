@@ -29,11 +29,11 @@ exit=0
 exit=0
 
 ## V4.20 anexo 0600 em <rt>tmp/ e apagado no fim (gama-generico, acme-ssh-chave-prod)
-600 jeffersonoliveira
+600 <user>
 exit=0
 caminho em <rt>/ward/tmp/: NÃO (/run/user/1000/ward-test/tmp/s1857643-8/app.env)
 anexo apagado depois do fim: sim
-600 jeffersonoliveira
+600 <user>
 exit=7
 chave apagada depois de exit 7: sim
 exit=137

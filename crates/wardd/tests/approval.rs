@@ -19,7 +19,10 @@ use ward_core::protocol::{
     ApprovalRequest, Operation, Response, ResponseError, Role, UnlockRequest,
 };
 use ward_platform::{PeerClass, Refusal};
-use wardd::approval::{AppOpener, Client, Engine, EngineClock, NoClient, OpenAppError, Subscriber};
+use wardd::approval::{
+    AppOpener, Client, Engine, EngineClock, NoClient, OpenAppError, SHOW_WINDOW_INTERVAL,
+    Subscriber,
+};
 use wardd::core::Daemon;
 use wardd::server::role_from_class;
 use wardd::usage::Authorization;
@@ -1077,6 +1080,8 @@ fn attack_show_window_only_to_the_subscribed_app() {
     let rx = subscribe(&s.d, 11);
     assert!(rx.try_recv().is_err(), "show_window guardado para depois");
     for role in Role::ALL {
+        // One per second at most (m2:Phase 66b): each request here comes a second later.
+        s.clock.advance(SHOW_WINDOW_INTERVAL);
         let r = request(&s.d, role, "open_app", "{}");
         assert!(ok(&r), "{role:?}");
         assert!(!matches!(r, Response::ShowWindow), "{role:?}");
@@ -1112,8 +1117,63 @@ fn attack_show_window_only_to_the_subscribed_app() {
     assert!(rx.try_recv().is_err(), "o assinante antigo recebeu");
     // Delivery fails (the app connection dropped): the subscriber leaves.
     drop(rx2);
+    s.clock.advance(SHOW_WINDOW_INTERVAL);
     assert!(ok(&request(&s.d, Role::Agent, "open_app", "{}")));
     assert!(!s.d.engine().has_subscriber());
+}
+
+/// m2:Phase 66b (security-auditor of M6, low), attack: an agent floods `open_app` with
+/// the app in the tray. Every request still gets only `ok`, but the app connection gets
+/// at most one `show_window` per [`SHOW_WINDOW_INTERVAL`]: the burst joins the first
+/// one, a request a second later is delivered again, and a new app connection is not
+/// held back by the previous one's window.
+#[test]
+fn attack_open_app_burst_joins_show_window() {
+    let s = scene_with("mostrar-janela-rajada", Err(OpenAppError::AlreadyOpen));
+    let rx = subscribe(&s.d, 21);
+    for role in [Role::Agent, Role::Extension, Role::Agent] {
+        for _ in 0..500 {
+            assert!(ok(&request(&s.d, role, "open_app", "{}")), "{role:?}");
+        }
+        s.clock.advance(SHOW_WINDOW_INTERVAL / 4);
+    }
+    let received: Vec<_> = rx.try_iter().collect();
+    assert_eq!(received.len(), 1, "{received:?}");
+    assert!(matches!(received[0], Received::ShowWindow));
+    // Just under the interval since the delivery: still joined.
+    s.clock.set(SHOW_WINDOW_INTERVAL - Duration::from_millis(1));
+    assert!(ok(&request(&s.d, Role::Agent, "open_app", "{}")));
+    assert!(rx.try_recv().is_err(), "dois avisos em menos de um segundo");
+    // A second after the delivery: delivered again, once.
+    s.clock.set(SHOW_WINDOW_INTERVAL);
+    for _ in 0..50 {
+        assert!(ok(&request(&s.d, Role::Agent, "open_app", "{}")));
+    }
+    assert!(matches!(
+        rx.recv_timeout(DEADLINE),
+        Ok(Received::ShowWindow)
+    ));
+    assert!(rx.try_recv().is_err(), "a rajada passou do limite");
+    // A new app connection receives its first one at once.
+    let rx2 = subscribe(&s.d, 22);
+    assert!(ok(&request(&s.d, Role::Agent, "open_app", "{}")));
+    assert!(matches!(
+        rx2.recv_timeout(DEADLINE),
+        Ok(Received::ShowWindow)
+    ));
+    assert!(rx.try_recv().is_err(), "o assinante antigo recebeu");
+    // No subscriber: a request does not start the interval for the next app.
+    drop(rx2);
+    s.clock.advance(SHOW_WINDOW_INTERVAL);
+    assert!(ok(&request(&s.d, Role::Agent, "open_app", "{}")));
+    assert!(!s.d.engine().has_subscriber());
+    assert!(ok(&request(&s.d, Role::Agent, "open_app", "{}")));
+    let rx3 = subscribe(&s.d, 23);
+    assert!(ok(&request(&s.d, Role::Agent, "open_app", "{}")));
+    assert!(matches!(
+        rx3.recv_timeout(DEADLINE),
+        Ok(Received::ShowWindow)
+    ));
 }
 
 /// V3.36 (D63, the classifier part): with the app group and the right parent, only the
