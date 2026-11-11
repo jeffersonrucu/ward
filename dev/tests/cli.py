@@ -432,14 +432,14 @@ with open("/dev/null", "rb") as null_file, open(os.path.join(ROOT, "Makefile"), 
     for label, action, kind in [
         ("/dev/null", lambda: subprocess.run([WARD, "run", "acme-pg-dev", "--", "/bin/cat"],
                                              env=environment(), stdin=null_file, capture_output=True,
-                                             timeout=30), "nula"),
+                                             timeout=30), "null"),
         ("pipe", lambda: run(["acme-pg-dev", "--", "/bin/true"], input_data=b"x\n"), "pipe"),
         ("arquivo", lambda: subprocess.run([WARD, "run", "acme-pg-dev", "--", "/bin/true"],
                                            env=environment(), stdin=plain_file, capture_output=True,
-                                           timeout=30), "arquivo"),
+                                           timeout=30), "file"),
         ("/dev/zero", lambda: subprocess.run([WARD, "run", "acme-pg-dev", "--", "/bin/true"],
                                              env=environment(), stdin=zero, capture_output=True,
-                                             timeout=30), "outra"),
+                                             timeout=30), "other"),
         ("pty", lambda: run_pty(["run", "acme-pg-dev", "--", "/bin/true"]), "terminal"),
     ]:
         seen = kinds_in_log(action)

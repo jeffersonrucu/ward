@@ -1,0 +1,6 @@
+origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
+<home>/.cargo/bin/cargo install --locked cargo-audit@0.22.2 cargo-deny@0.20.2
+     Ignored package `cargo-audit v0.22.2` is already installed, use --force to override
+     Ignored package `cargo-deny v0.20.2` is already installed, use --force to override
+     Summary Successfully installed cargo-audit, cargo-deny!
+8.30.1

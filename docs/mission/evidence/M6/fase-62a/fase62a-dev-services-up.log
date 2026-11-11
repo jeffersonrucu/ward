@@ -1,0 +1,152 @@
+/usr/bin/python3 -I -B dev/services/generate.py
+dev-services: pronto em .dev/services/
+dev/services/compose.sh up -d --build
+ Image ward-teste/ssh:1 Building 
+ Image ward-teste/ssh:1 Building 
+ Image ward-teste/ssh:1 Building 
+ Image ward-teste/ssh:1 Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 2.38kB done
+#1 DONE 0.0s
+
+#2 [ssh-chave internal] load build definition from Dockerfile
+#2 transferring dockerfile: 842B done
+#2 DONE 0.0s
+
+#3 [ssh-chave internal] load metadata for docker.io/library/alpine:3.22@sha256:49340b346798875b5592e5d420241f2f9cfba5f47e62ebb1446a1b34734e898f
+#3 DONE 0.9s
+
+#4 [ssh-interno internal] load .dockerignore
+#4 transferring context: 2B done
+#4 DONE 0.0s
+
+#5 [ssh-chave 1/4] FROM docker.io/library/alpine:3.22@sha256:49340b346798875b5592e5d420241f2f9cfba5f47e62ebb1446a1b34734e898f
+#5 resolve docker.io/library/alpine:3.22@sha256:49340b346798875b5592e5d420241f2f9cfba5f47e62ebb1446a1b34734e898f 0.0s done
+#5 DONE 0.0s
+
+#6 [ssh-chave internal] load build context
+#6 transferring context: 3.17kB done
+#6 DONE 0.0s
+
+#7 [ssh-interno 3/4] COPY entrypoint.sh /usr/local/bin/ward-ssh-entrada
+#7 CACHED
+
+#8 [ssh-interno 2/4] RUN apk add --no-cache openssh-server openssh-sftp-server     && rm -f /etc/ssh/ssh_host_*     && adduser -D -s /bin/sh deploy     && adduser -D -s /bin/sh salto     && adduser -D -H -s /sbin/nologin sftpuser     && mkdir -p /srv/sftp/arquivos /etc/ssh/autorizadas     && chown sftpuser:sftpuser /srv/sftp/arquivos
+#8 CACHED
+
+#9 [ssh-interno 4/4] RUN chmod 0755 /usr/local/bin/ward-ssh-entrada
+#9 CACHED
+
+#10 [ssh-senha] exporting to image
+#10 exporting layers done
+#10 exporting manifest sha256:fb00be36a312df528981ee345aa6fd1c6dead895d540f6fa66452fcd83a4fe3b done
+#10 exporting config sha256:f05e6fc4e40c4fe259adcc81ffc7faf47428ae538e7db992b8e970cee76e24b6 done
+#10 exporting attestation manifest sha256:6f523d4aac11b8676b3799545f818f6ea1543f36dc5fd6dfdf52329105a750c4 0.0s done
+#10 exporting manifest list sha256:ba5c549dde1ec53e2af1b37f88d95df584a596be43689d4293c79cefa0430a6c 0.0s done
+#10 naming to docker.io/ward-teste/ssh:1 done
+#10 unpacking to docker.io/ward-teste/ssh:1 done
+#10 DONE 0.1s
+
+#11 [ssh-salto] exporting to image
+#11 exporting layers done
+#11 exporting manifest sha256:fd15ebe50b1eba931e55102c674a58f3e56286fe6f855d86a9b770f5d2bb2e4c done
+#11 exporting config sha256:53a462aa6d50426ffef053cb3180c08593dda33ff280e26483f0b4163254f385 done
+#11 exporting attestation manifest sha256:76b27581d668e202ca729b8513df81d7b5e9e8e5bbf058c0770e7f4d16f930bc 0.0s done
+#11 exporting manifest list sha256:f38813014f9842e6cb6da45f9e701c1e27f2158a877b6de8aad75b1e3c830d66 0.0s done
+#11 naming to docker.io/ward-teste/ssh:1 done
+#11 unpacking to docker.io/ward-teste/ssh:1 done
+#11 DONE 0.1s
+
+#12 [ssh-interno] exporting to image
+#12 exporting layers done
+#12 exporting manifest sha256:6147d87839c67bbf6a649254680b773139546db36965de0b08ea6b962c0c96f7 done
+#12 exporting config sha256:e6e016e971f86f38fa3f7a95f9052cab14bd9f4e30ad1000251616cde89f42b7 done
+#12 exporting attestation manifest sha256:d5a41b6aefe7955f2164aaa75f3ba950b3055b021432bf25c28fc9587a201df0 0.0s done
+#12 exporting manifest list sha256:a3151d293d2961a15e6bc3abb1cfef4835f33b596b2edea640de9a1448a4eb1d 0.0s done
+#12 naming to docker.io/ward-teste/ssh:1 done
+#12 unpacking to docker.io/ward-teste/ssh:1 done
+#12 DONE 0.1s
+
+#13 [ssh-chave] exporting to image
+#13 exporting layers done
+#13 exporting manifest sha256:9a17312a8776570ab1dbfbc35548246f52ebe8b047c636b23a0c540309453cbb done
+#13 exporting config sha256:6866f899a5dafc604cdc9c75d2240b8af8940257a8f09bc1ce84a26093254eee done
+#13 exporting attestation manifest sha256:38eda2674ba6663f4783ca1d4250a79923ea737e15a2bcc8602830d60b260a3c 0.0s done
+#13 exporting manifest list sha256:353ffb301eff817a3cd036b3b6b71889fcf030f5bdf6eb4ed9876c03986ebf4e 0.0s done
+#13 naming to docker.io/ward-teste/ssh:1 done
+#13 unpacking to docker.io/ward-teste/ssh:1 done
+#13 DONE 0.1s
+
+#14 [ssh-interno] resolving provenance for metadata file
+#14 DONE 0.0s
+
+#15 [ssh-senha] resolving provenance for metadata file
+#15 DONE 0.0s
+
+#16 [ssh-salto] resolving provenance for metadata file
+#16 DONE 0.0s
+
+#17 [ssh-chave] resolving provenance for metadata file
+#17 DONE 0.0s
+ Image ward-teste/ssh:1 Built 
+ Image ward-teste/ssh:1 Built 
+ Image ward-teste/ssh:1 Built 
+ Image ward-teste/ssh:1 Built 
+ Network ward-teste_default Creating 
+ Network ward-teste_internal Creating 
+ Volume ward-teste_wp-html Creating 
+ Volume ward-teste_wp-html Creating 
+ Network ward-teste_internal Creating 
+ Network ward-teste_default Creating 
+ Volume ward-teste_wp-html Created 
+ Volume ward-teste_wp-html Created 
+ Network ward-teste_internal Created 
+ Network ward-teste_internal Created 
+ Container ward-teste-ssh-interno-1 Creating 
+ Network ward-teste_default Created 
+ Network ward-teste_default Created 
+ Container ward-teste-mariadb-1 Creating 
+ Container ward-teste-totp-1 Creating 
+ Container ward-teste-ssh-salto-1 Creating 
+ Container ward-teste-postgres-1 Creating 
+ Container ward-teste-redir-1 Creating 
+ Container ward-teste-ssh-chave-1 Creating 
+ Container ward-teste-ssh-senha-1 Creating 
+ Container ward-teste-phish-1 Creating 
+ Container ward-teste-ssh-interno-1 Created 
+ Container ward-teste-ssh-chave-1 Created 
+ Container ward-teste-ssh-salto-1 Created 
+ Container ward-teste-ssh-senha-1 Created 
+ Container ward-teste-redir-1 Created 
+ Container ward-teste-mariadb-1 Created 
+ Container ward-teste-wordpress-1 Creating 
+ Container ward-teste-phish-1 Created 
+ Container ward-teste-postgres-1 Created 
+ Container ward-teste-totp-1 Created 
+ Container ward-teste-wordpress-1 Created 
+ Container ward-teste-wpcli-1 Creating 
+ Container ward-teste-wpcli-1 Created 
+ Container ward-teste-redir-1 Starting 
+ Container ward-teste-postgres-1 Starting 
+ Container ward-teste-totp-1 Starting 
+ Container ward-teste-mariadb-1 Starting 
+ Container ward-teste-ssh-interno-1 Starting 
+ Container ward-teste-ssh-chave-1 Starting 
+ Container ward-teste-ssh-salto-1 Starting 
+ Container ward-teste-phish-1 Starting 
+ Container ward-teste-ssh-senha-1 Starting 
+ Container ward-teste-redir-1 Started 
+ Container ward-teste-postgres-1 Started 
+ Container ward-teste-totp-1 Started 
+ Container ward-teste-mariadb-1 Started 
+ Container ward-teste-mariadb-1 Waiting 
+ Container ward-teste-ssh-interno-1 Started 
+ Container ward-teste-ssh-chave-1 Started 
+ Container ward-teste-ssh-salto-1 Started 
+ Container ward-teste-phish-1 Started 
+ Container ward-teste-ssh-senha-1 Started 
+ Container ward-teste-mariadb-1 Healthy 
+ Container ward-teste-wordpress-1 Starting 
+ Container ward-teste-wordpress-1 Started 
+ Container ward-teste-wpcli-1 Starting 
+ Container ward-teste-wpcli-1 Started 

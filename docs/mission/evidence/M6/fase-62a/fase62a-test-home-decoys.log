@@ -1,0 +1,8 @@
+dev/tests/home-decoys.sh
+ok    dev/services/verify.sh inteiro não abre nenhuma isca do home
+ok    dev/tests/attacks-services.sh inteiro não abre nenhuma isca do home
+ok    controle: sem o isolamento a isca .ssh/id_ed25519 é aberta (as iscas funcionam)
+ok    controle: sem o isolamento a isca .gitconfig é aberta (as iscas funcionam)
+ok    controle: sem o isolamento a isca .docker/config.json é aberta (as iscas funcionam)
+
+Os scripts de serviço não abrem nada do home real.
