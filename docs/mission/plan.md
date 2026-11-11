@@ -216,7 +216,7 @@ Trilha S (fases independentes entre si):
   `attacks-foundation.sh`, `skill.py`. — V3.1, V3.7
 - [x] Fase 42 — `dev/variations.py`, `dev/tests/variations_test.py`, `login.py`,
   `revealed_selection.py`. — V3.1
-- [ ] Fase 43 — `dev/container-*` (`inside.sh` de plataforma, install e deb; units, uid;
+- [x] Fase 43 — `dev/container-*` (`inside.sh` de plataforma, install e deb; units, uid;
   `falso.c` → `fake.c`), `dev/tests/clipboard.py`; exemplos `wardd-cliente-teste`,
   `pai-chrome`, `chrome-falso`, `dev-cofre` e `partida-conteiner` com todos os usos
   (achado da Fase 4). — V3.1, V3.7
