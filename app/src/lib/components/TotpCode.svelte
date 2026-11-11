@@ -6,21 +6,38 @@
   //
   // The code comes from the Rust side (the TOTP code command); the seed never gets here.
   // Copy asks the Rust side (the copy TOTP code command).
+  //
+  // Phase 65b: the label is a property (the current-code text in the form, the TOTP code
+  // text in the detail; the label property of FigCraft 6909), and the 6 digits show in
+  // two groups of 3, as in the component; copy takes the digits only, from Rust.
   import FieldAction from './FieldAction.svelte';
   import Icon from './Icon.svelte';
 
   /**
-   * @type {{ id: string, code?: string | null, remaining?: number, copied?: boolean,
-   *   oncopy?: () => void }}
+   * @type {{ id: string, label?: string, code?: string | null, remaining?: number,
+   *   copied?: boolean, oncopy?: () => void, emptyText?: string, emptyHelp?: string }}
    */
-  let { id, code = null, remaining = 0, copied = false, oncopy = undefined } = $props();
+  let {
+    id,
+    label = 'Código atual',
+    code = null,
+    remaining = 0,
+    copied = false,
+    oncopy = undefined,
+    emptyText = 'Sem semente',
+    emptyHelp = 'Aparece com a semente salva.',
+  } = $props();
+
+  const shown = $derived(
+    typeof code === 'string' && /^[0-9]{6}$/.test(code) ? `${code.slice(0, 3)} ${code.slice(3)}` : code,
+  );
 </script>
 
 <div class="field">
-  <span class="label" id="{id}-label">Código atual</span>
+  <span class="label" id="{id}-label">{label}</span>
   <div class="box" class:disabled={!code} role="group" aria-labelledby="{id}-label">
     {#if code}
-      <span class="code" data-test="codigo-totp">{code}</span>
+      <span class="code" data-test="codigo-totp">{shown}</span>
       <span class="countdown" aria-label="troca em {remaining} segundos">
         <Icon name="clock" size="xs" />{remaining} s
       </span>
@@ -31,10 +48,10 @@
         aria-label="Copiar código"
       />
     {:else}
-      <span class="code empty">Sem semente</span>
+      <span class="code empty">{emptyText}</span>
     {/if}
   </div>
-  <span class="help">{code ? 'Novo código a cada 30 s.' : 'Aparece com a semente salva.'}</span>
+  <span class="help">{code ? 'Novo código a cada 30 s.' : emptyHelp}</span>
 </div>
 
 <style>

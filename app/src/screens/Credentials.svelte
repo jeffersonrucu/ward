@@ -30,6 +30,14 @@
   //
   // Wire names (m2:Phase 54): the fields of the list items and of the entry detail, and
   // the arguments and replies of the Tauri commands.
+  //
+  // Phase 65b: an entry with a TOTP seed shows the current code (TotpCode, FigCraft
+  // 6909, frame 23159 of Ward.figcraft) in place of the seed: the code comes
+  // from the TOTP code command (the daemon computes it; the seed never leaves it), with a
+  // local countdown and a new request at the end, and Copy asks Rust (copy TOTP code
+  // command, same clipboard rules as copy). The detail never asks to reveal or copy the
+  // seed; it shows only in the edit form. The code leaves the screen on switching
+  // entries, opening the form, locking or leaving.
   import { onMount, tick } from 'svelte';
   import Button from '../lib/components/Button.svelte';
   import EnvironmentBadge from '../lib/components/EnvironmentBadge.svelte';
@@ -47,6 +55,7 @@
   import Icon from '../lib/components/Icon.svelte';
   import ListItem from '../lib/components/ListItem.svelte';
   import Toast from '../lib/components/Toast.svelte';
+  import TotpCode from '../lib/components/TotpCode.svelte';
   import { TYPES, entryType } from '../lib/components/types.js';
   import { call } from '../lib/bridge/index.js';
   import {
@@ -58,6 +67,9 @@
     groupsOf,
     topSummary,
     filtersSummary,
+    detailSecrets,
+    detailField,
+    hasTotp,
   } from './credentials.js';
 
   /** @type {{ onlocked?: () => void }} */
@@ -90,6 +102,11 @@
   let revealDeadline = 0;
   let successDeadline = 0;
   let levelOpen = $state(false);
+  /** Current TOTP code of the detail entry (code and seconds left, wire names), or null. */
+  let totp = $state(null);
+  let totpDeadline = 0;
+  // Only the reply of the last TOTP request counts (fast clicks, refresh at the end).
+  let totpRequest = 0;
 
   const filtering = $derived(activeFilters(filters) > 0 || search.trim() !== '');
   const visible = $derived(filterItems(items, filters, search));
@@ -144,15 +161,72 @@
   // Only the reply of the last detail request counts (fast clicks).
   let detailRequest = 0;
 
+  function stopTotp() {
+    clearTimeout(totpDeadline);
+    totpRequest++;
+    totp = null;
+  }
+
+  // TOTP code of the detail entry: one request, a local countdown, a new request at the
+  // end. Nothing when the entry has no seed or the detail is not on screen.
+  async function refreshTotp() {
+    clearTimeout(totpDeadline);
+    const mine = ++totpRequest;
+    const entry = detail?.name;
+    if (!entry || mode !== 'detail' || !hasTotp(detail)) {
+      totp = null;
+      return;
+    }
+    try {
+      const r = await call('totp_code', { 'entry': entry });
+      if (mine !== totpRequest || detail?.name !== entry || mode !== 'detail') return;
+      totp = r;
+      totpCountdown(mine);
+    } catch (e) {
+      if (mine === totpRequest) {
+        totp = null;
+        error = e.message;
+      }
+    }
+  }
+
+  function totpCountdown(mine) {
+    totpDeadline = setTimeout(() => {
+      if (mine !== totpRequest || !totp) return;
+      if (totp.remaining <= 1) refreshTotp();
+      else {
+        totp = { ...totp, 'remaining': totp.remaining - 1 };
+        totpCountdown(mine);
+      }
+    }, 1000);
+  }
+
+  async function copyTotp() {
+    if (!detail || !hasTotp(detail)) return;
+    error = '';
+    try {
+      await call('copy_totp_code', { 'entry': detail.name });
+      copied = 'totp-code';
+      clearTimeout(timer);
+      timer = setTimeout(() => (copied = ''), COPIED_MS);
+    } catch (e) {
+      error = e.message;
+    }
+  }
+
   async function openEntry(name, focus = true) {
     selected = name;
     copied = '';
     hide();
+    stopTotp();
     mode = 'detail';
     const mine = ++detailRequest;
     try {
       const d = await call('credential_detail', { 'entry': name });
-      if (mine === detailRequest) detail = d;
+      if (mine === detailRequest) {
+        detail = d;
+        refreshTotp();
+      }
     } catch (e) {
       if (mine === detailRequest) {
         detail = null;
@@ -168,7 +242,8 @@
   let timer = null;
 
   async function copy(field) {
-    if (!detail) return;
+    // Phase 65b: never the TOTP seed from the detail (the code has its own command).
+    if (!detail || !detailField(field)) return;
     error = '';
     try {
       await call('copy_field', { 'entry': detail.name, 'field': field });
@@ -186,7 +261,7 @@
   }
 
   async function reveal(field) {
-    if (!detail) return;
+    if (!detail || !detailField(field)) return;
     const entry = detail.name;
     try {
       const r = await call('reveal_field', { 'entry': entry, 'field': field });
@@ -203,6 +278,7 @@
 
   function newCredential() {
     hide();
+    stopTotp();
     error = '';
     mode = 'choose';
   }
@@ -210,6 +286,7 @@
   function edit() {
     if (!editable) return;
     hide();
+    stopTotp();
     error = '';
     formKind = detail.type;
     formDetail = detail;
@@ -218,6 +295,7 @@
 
   function cancelForm() {
     mode = 'detail';
+    refreshTotp();
   }
 
   async function saved(name) {
@@ -250,6 +328,7 @@
   function vaultLocked() {
     levelOpen = false;
     hide();
+    stopTotp();
     detail = null;
     items = [];
     onlocked?.();
@@ -321,6 +400,7 @@
     if (!loaded) return;
     if (order.length === 0) {
       selected = '';
+      stopTotp();
       detail = null;
     } else if (!order.includes(selected)) {
       openEntry(order[0], false);
@@ -338,6 +418,7 @@
       clearTimeout(timer);
       clearTimeout(successDeadline);
       hide();
+      stopTotp();
     };
   });
 </script>
@@ -501,7 +582,7 @@
               {/each}
             </div>
           {/if}
-          {#each detail.secrets as s (s.id)}
+          {#each detailSecrets(detail) as s (s.id)}
             <SecretField
               id="secret-{s.id}"
               label={s.label}
@@ -512,6 +593,18 @@
               oncopy={() => copy(s.id)}
             />
           {/each}
+          {#if hasTotp(detail)}
+            <TotpCode
+              id="detail-totp"
+              label="Código TOTP"
+              code={totp?.code ?? null}
+              remaining={totp?.remaining ?? 0}
+              copied={copied === 'totp-code'}
+              oncopy={copyTotp}
+              emptyText="Calculando o código…"
+              emptyHelp="Novo código a cada 30 s."
+            />
+          {/if}
           {#if detail.extras.length > 0}
             <div class="grid">
               {#each detail.extras as x (x.name)}

@@ -384,6 +384,35 @@ mod tests {
         assert!(y.modified_at.unwrap() >= created);
     }
 
+    /// Phase 65b (S11): the detail of an entry with TOTP has the seed only as an
+    /// identifier (the screen swaps it for the code), never its value in any form; the
+    /// TOTP code reply carries 6 digits and the seconds left, not the seed.
+    #[test]
+    fn attack_totp_detail_without_the_seed() {
+        const SEED: &str = "JBSWY3DPEHPK3PXP";
+        let mut d = FakeDaemon::full();
+        for entry in ["acme-totp-dev", "acme-wp-dev"] {
+            let x = detail(&mut d, entry);
+            assert!(x.secrets.iter().any(|s| s.id == "totp_seed"), "{entry}");
+            let json = serde_json::to_string(&x).unwrap();
+            for form in [SEED, &SEED.to_lowercase(), "JBSW Y3DP", "secret=", "Hello!"] {
+                assert!(!json.contains(form), "{entry}: {form}");
+            }
+            let q = Request::Totp {
+                entry: entry.to_owned(),
+            };
+            match exchange(&mut d, &q) {
+                Response::TotpCode { code, remaining } => {
+                    assert_eq!(code.as_str().len(), 6, "{entry}");
+                    assert!(code.as_str().bytes().all(|b| b.is_ascii_digit()));
+                    assert!((1..=30).contains(&remaining));
+                    assert!(!code.as_str().contains(SEED));
+                }
+                other => panic!("{:?}", other.kind()),
+            }
+        }
+    }
+
     /// m2:V4.23 (m2:Phase 54): the webview receives the English fields, never the 0.1.x
     /// (pt-BR) ones. The type goes as `type` (the Rust field is `kind`).
     #[test]

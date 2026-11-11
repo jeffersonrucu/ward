@@ -5,6 +5,28 @@
 
 import { TYPES } from '../lib/components/types.js';
 
+/**
+ * Phase 65b: the TOTP seed is a secret of the entry that the detail never shows: in its
+ * place goes the current code, which the daemon computes (the seed does not leave it).
+ * The seed shows only in the edit form.
+ */
+export const TOTP_SEED = 'totp_seed';
+
+/** The secret fields that the detail draws (all but the TOTP seed). */
+export function detailSecrets(detail) {
+  return (detail?.secrets ?? []).filter((s) => s.id !== TOTP_SEED);
+}
+
+/** Whether the entry has a TOTP seed saved (the detail then shows the current code). */
+export function hasTotp(detail) {
+  return (detail?.secrets ?? []).some((s) => s.id === TOTP_SEED);
+}
+
+/** Whether the detail may ask for this field (reveal or copy): never the TOTP seed. */
+export function detailField(field) {
+  return typeof field === 'string' && field !== '' && field !== TOTP_SEED;
+}
+
 export const ENVIRONMENTS = Object.freeze(['dev', 'stage', 'prod']);
 export const EMPTY_FILTERS = Object.freeze({ group: '', kind: '', environment: '' });
 

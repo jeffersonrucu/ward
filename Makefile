@@ -702,3 +702,19 @@ test-login: origins extension
 ## dev-daemon-stop: stops the test daemon (verifies the pid really is the wardd from here)
 dev-daemon-stop:
 	dev/daemon.sh stop
+
+## test-totp-detail: Phase 65b (S11, D4): the detail of an entry with TOTP shows the
+## current code (TOTP code command) and never asks for, nor shows, the seed. Unit test of
+## the detail rules (node) and, with the test bridge on the fake daemon of the app core
+## (no wardd), headless Chrome by the Python Playwright: code, countdown and copy of the
+## code; every button of the detail clicked without any call naming the seed or any reply
+## or page carrying it; control: the edit form still reveals it and the same detector
+## sees it. Copy is answered by the test (the session clipboard is not touched). Needs
+## `make app-front`, Chrome in /opt/google/chrome and the Python Playwright in
+## PW_PYTHONPATH; out of `make check`
+.PHONY: test-totp-detail
+test-totp-detail: origins
+	@test -f app/dist-teste/index.html || { echo "rode 'make app-front' antes" >&2; exit 1; }
+	$(CARGO) build --quiet --locked -p ward-test-bridge --features test-mode --bin ward-test-bridge
+	PATH="$(NODE_DIR):/usr/bin:/bin" "$(NODE_DIR)/node" dev/tests/credentials_totp.mjs
+	PW_PYTHONPATH="$(PW_PYTHONPATH)" $(PYTHON) dev/tests/totp_detail.py target/debug/ward-test-bridge app/dist-teste
