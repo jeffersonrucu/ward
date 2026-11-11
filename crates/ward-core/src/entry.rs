@@ -34,6 +34,8 @@ pub use validation::{
 // Reserved names that the delivery (D10) builds; the delivery test checks that they match.
 #[cfg(test)]
 pub(crate) use validation::{COMMON_VARIABLES, type_attachments, type_variables};
+// The delivery refuses an entry with a reserved extra or attachment name (m2 Phase 54b).
+pub(crate) use validation::has_reserved_name;
 
 /// Environment of the entry (required). Organizes and filters; changes no rule (R16).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

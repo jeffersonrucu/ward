@@ -1067,9 +1067,11 @@ fn v2_31_forged_fields() {
         let k = index(c, "acme-ssh-senha-stage");
         c[k].data[3] = vec![b's'; 64 * 1024 + 1];
     });
-    with("anexo do servidor chamado chave", "chave", &|c| {
+    // The attachment named like the key is accepted on read since m2 Phase 54b (refused
+    // on save); a name that 0.1.x already reserved is still refused on read.
+    with("extra do servidor chamado host", "HOST", &|c| {
         let k = index(c, "acme-ssh-senha-stage");
-        c[k].attachments.push((b"chave".to_vec(), b"x".to_vec()));
+        c[k].extras.push((b"HOST".to_vec(), 0, b"x".to_vec()));
     });
 
     assert!(cases.len() >= 30);
@@ -2458,4 +2460,158 @@ fn dt4_v4_vault_on_disk_opens_without_writing_and_any_write_is_v5() {
     let (_, g, again) = deserialize(&content).unwrap();
     assert_eq!(g, 4);
     check_round_trip(&test_vault_entries(), &again);
+}
+
+// ---- m2 Phase 54b: names reserved only since 0.2.0, accepted on read ----
+
+/// Resources that count the calls and refuse them all: the delivery of an entry with a
+/// reserved name must not reach any of them (no temp file, no TOTP, no tunnel).
+#[derive(Default)]
+struct CountingResources(usize);
+
+impl crate::delivery::Resources for CountingResources {
+    fn totp_code(
+        &mut self,
+        _seed: &Secret,
+    ) -> Result<Zeroizing<String>, crate::delivery::ResourceError> {
+        self.0 += 1;
+        Err(crate::delivery::ResourceError("recurso pedido"))
+    }
+
+    fn file(
+        &mut self,
+        _name: &str,
+        _content: &Secret,
+    ) -> Result<String, crate::delivery::ResourceError> {
+        self.0 += 1;
+        Err(crate::delivery::ResourceError("recurso pedido"))
+    }
+
+    fn tunnel(
+        &mut self,
+        _server: &str,
+        _host: &str,
+        _port: u16,
+    ) -> Result<u16, crate::delivery::ResourceError> {
+        self.0 += 1;
+        Err(crate::delivery::ResourceError("recurso pedido"))
+    }
+}
+
+/// The raw entries of the test vault with extras (not secret) and attachments added to
+/// one entry.
+fn with_names(entry: &str, extras: &[&str], attachments: &[&str]) -> Vec<RawRecord> {
+    let mut base = raw_records(&test_body());
+    let k = index(&base, entry);
+    for name in extras {
+        base[k]
+            .extras
+            .push((name.as_bytes().to_vec(), 0, b"valor-de-teste".to_vec()));
+    }
+    for name in attachments {
+        base[k]
+            .attachments
+            .push((name.as_bytes().to_vec(), b"conteudo-de-teste".to_vec()));
+    }
+    base
+}
+
+/// m2 Phase 54b (S1, m2:V4.1, m2:V4.19): a vault of 0.1.x (v4), or one already migrated
+/// (v5), with an extra or attachment named like a variable that only 0.2.0 delivers
+/// opens; the v4 is written again as exactly the v5 bytes (it migrates); and the delivery
+/// of that entry is refused whole before any resource, so no extra replaces
+/// `WARD_ENTRY`/`WARD_GROUP`/`WARD_ENVIRONMENT`/`WARD_PROTOCOL` and no attachment
+/// replaces or impersonates `WARD_FILE_KEY`.
+#[test]
+fn m2_54b_names_reserved_since_v5_open_and_migrate() {
+    let cases: [(&str, &[&str], &[&str]); 12] = [
+        ("gama-generico", &["ENTRY"], &[]),
+        ("gama-generico", &["group"], &[]),
+        ("gama-generico", &["Environment"], &[]),
+        ("gama-generico", &["FILE"], &[]),
+        // Same variable as the attachment `app.env` (WARD_FILE_APP_ENV).
+        ("gama-generico", &["file_app_env"], &[]),
+        ("gama-generico", &["File-Key"], &[]),
+        (
+            "acme-wp-dev",
+            &["entry", "GROUP", "environment", "file_x"],
+            &[],
+        ),
+        ("beta-sftp-dev", &["PROTOCOL"], &[]),
+        ("beta-sftp-dev", &[], &["key"]),
+        ("acme-ssh-chave-prod", &[], &["key"]),
+        ("acme-ssh-senha-stage", &[], &["KEY"]),
+        ("gama-nota", &["ENTRY"], &[]),
+    ];
+    for (entry, extras, attachments) in cases {
+        let case = format!("{entry} {extras:?} {attachments:?}");
+        let records = with_names(entry, extras, attachments);
+        let n = records.len() as u32;
+        let v5 = forge(&records);
+        let v4 = forge_with(LEGACY_BODY_VERSION, n, &v4_records(&records));
+        for (body, version) in [(&v4, "v4"), (&v5, "v5")] {
+            let entries = read(body).unwrap_or_else(|e| panic!("{case} {version}: {e}"));
+            assert_eq!(entries.len(), n as usize, "{case} {version}");
+            let written = serialize(cfg(), 1, &entries).unwrap();
+            assert!(written[..] == v5[..], "{case} {version}: não migrou igual");
+            let e = entries.iter().find(|e| e.name() == entry).unwrap();
+            for name in extras {
+                assert!(
+                    e.extras().iter().any(|x| x.name() == *name),
+                    "{case} {version}: extra perdido"
+                );
+            }
+            for name in attachments {
+                assert!(
+                    e.attachments().iter().any(|a| a.name() == *name),
+                    "{case} {version}: anexo perdido"
+                );
+            }
+            // `ward run`: refused whole, before any resource.
+            assert!(crate::entry::has_reserved_name(e), "{case}");
+            let mut resources = CountingResources::default();
+            let delivered = crate::delivery::build(e, &mut resources);
+            let expected = if e.kind() == EntryType::SecureNote {
+                crate::delivery::DeliveryError::TypeWithoutDelivery
+            } else {
+                crate::delivery::DeliveryError::ReservedName
+            };
+            assert_eq!(delivered.err(), Some(expected), "{case} {version}");
+            assert_eq!(resources.0, 0, "{case} {version}: recurso pedido");
+            // The other entries are untouched.
+            for other in entries.iter().filter(|o| o.name() != entry) {
+                assert!(!crate::entry::has_reserved_name(other), "{case}");
+            }
+        }
+    }
+}
+
+/// m2 Phase 54b: the leniency is only for the names that 0.1.x left free. A name that
+/// 0.1.x already reserved (a variable of the type), and two extras or attachments that
+/// become the same variable, are still refused on read, in v4 and in v5.
+#[test]
+fn m2_54b_other_reserved_names_still_refused_on_read() {
+    let cases: [(&str, &[&str], &[&str]); 10] = [
+        ("acme-wp-dev", &["PASS"], &[]),
+        ("acme-wp-dev", &["url"], &[]),
+        ("acme-wp-dev", &["Totp"], &[]),
+        ("acme-ssh-senha-stage", &["HOST"], &[]),
+        ("acme-ssh-chave-prod", &["passphrase"], &[]),
+        ("beta-sftp-dev", &["user"], &[]),
+        ("beta-github-api", &["TOKEN"], &[]),
+        ("gama-generico", &["ENTRY", "entry"], &[]),
+        ("gama-generico", &["FILE_X", "file-x"], &[]),
+        ("acme-ssh-chave-prod", &[], &["key", "Key"]),
+    ];
+    for (entry, extras, attachments) in cases {
+        let case = format!("{entry} {extras:?} {attachments:?}");
+        let records = with_names(entry, extras, attachments);
+        let n = records.len() as u32;
+        refused(&forge(&records), &format!("{case} v5"), entry);
+        refused(
+            &forge_with(LEGACY_BODY_VERSION, n, &v4_records(&records)),
+            &format!("{case} v4"),
+            entry,
+        );
+    }
 }

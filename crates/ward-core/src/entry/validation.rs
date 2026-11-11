@@ -116,6 +116,63 @@ pub(crate) fn type_attachments(kind: EntryType) -> &'static [&'static str] {
     }
 }
 
+/// Extra names that 0.2.0 reserves and 0.1.x left free (m2:DT11): the common variables,
+/// `FILE`/`FILE_*` and `PROTOCOL` in `ftp/sftp`. The names that 0.1.x already reserved
+/// are not here: no vault of 0.1.x has them.
+fn reserved_only_since_v5_extra(kind: EntryType, var: &str) -> bool {
+    COMMON_VARIABLES.contains(&var)
+        || var == "FILE"
+        || var.starts_with("FILE_")
+        || (kind == EntryType::FtpSftp && var == "PROTOCOL")
+}
+
+/// Attachment names that 0.2.0 reserves and 0.1.x left free (m2:DT11): `KEY` in server
+/// and `ftp/sftp` (0.1.x reserved another name for the key).
+fn reserved_only_since_v5_attachment(kind: EntryType, var: &str) -> bool {
+    matches!(kind, EntryType::Server | EntryType::FtpSftp) && var == "KEY"
+}
+
+/// Extra name that becomes a variable the type delivers or may deliver.
+fn reserved_extra(kind: EntryType, var: &str) -> bool {
+    COMMON_VARIABLES.contains(&var)
+        || type_variables(kind).contains(&var)
+        || var == "FILE"
+        || var.starts_with("FILE_")
+}
+
+/// Attachment name that becomes a variable the type delivers or may deliver.
+fn reserved_attachment(kind: EntryType, var: &str) -> bool {
+    type_attachments(kind).contains(&var)
+}
+
+/// Some extra or attachment of the entry has a reserved name (every rule of the save,
+/// not only the names of 0.2.0). The delivery refuses such an entry whole (m2 Phase
+/// 54b); after the save validation it is always `false`.
+pub(crate) fn has_reserved_name(entry: &Entry) -> bool {
+    let kind = entry.kind();
+    entry
+        .extras
+        .iter()
+        .any(|e| reserved_extra(kind, &variable_name(&e.name)))
+        || entry
+            .attachments
+            .iter()
+            .any(|a| reserved_attachment(kind, &variable_name(&a.name)))
+}
+
+/// Where the draft comes from (m2 Phase 54b).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Origin {
+    /// Saving the entry (app, CLI, protocol): every rule.
+    Save,
+    /// Reading the vault body: the extra and attachment names of
+    /// [`reserved_only_since_v5_extra`] and [`reserved_only_since_v5_attachment`] are
+    /// accepted, so a vault of 0.1.x that has them still opens and migrates. The entry
+    /// cannot be saved again without renaming them, and its delivery is refused whole
+    /// ([`crate::delivery::DeliveryError::ReservedName`]).
+    Read,
+}
+
 // Variables that change the behavior of the system, of the shell or of tools that
 // `ward run`/`ward ssh` call. The `api` cannot put the token in one of them.
 const SYSTEM_VARIABLES: &[&str] = &[
@@ -584,6 +641,16 @@ impl Draft {
     /// Checks the whole form. Returns the entry with level "with approval" or all the
     /// problems found.
     pub fn validate(self) -> Result<Entry, ValidationErrors> {
+        self.validate_from(Origin::Save)
+    }
+
+    /// [`Draft::validate`] of an entry read from the vault body (m2 Phase 54b): the same
+    /// rules, except the names of [`Origin::Read`]. Only the body reader calls it.
+    pub(crate) fn validate_stored(self) -> Result<Entry, ValidationErrors> {
+        self.validate_from(Origin::Read)
+    }
+
+    fn validate_from(self, origin: Origin) -> Result<Entry, ValidationErrors> {
         let mut c = Collector(Vec::new());
         let kind = self.data.kind();
 
@@ -602,8 +669,8 @@ impl Draft {
         let project = c.optional_line("projeto", self.project, MAX_LINE);
         let tags = validate_tags(&mut c, self.tags);
         let data = validate_data(&mut c, self.data);
-        let extras = validate_extras(&mut c, kind, self.extras);
-        let attachments = validate_attachments(&mut c, kind, self.attachments);
+        let extras = validate_extras(&mut c, kind, self.extras, origin);
+        let attachments = validate_attachments(&mut c, kind, self.attachments, origin);
         if let Some(extras) = &extras
             && kind == EntryType::Generic
             && extras.is_empty()
@@ -647,7 +714,11 @@ impl Draft {
                 // Mask budget (D29), by the same function that builds the automaton: no
                 // accepted entry is left without `ward run`. If it refuses, the entry is
                 // discarded here and the secrets are zeroed.
-                match mask::entry_cost(&entry) {
+                let cost = match origin {
+                    Origin::Save => mask::entry_cost(&entry),
+                    Origin::Read => mask::stored_entry_cost(&entry),
+                };
+                match cost {
                     Ok(_) => Ok(entry),
                     Err(e) => {
                         let reason = match e {
@@ -920,6 +991,7 @@ fn validate_extras(
     c: &mut Collector,
     kind: EntryType,
     extras: Vec<ExtraDraft>,
+    origin: Origin,
 ) -> Option<Vec<ExtraField>> {
     const FIELD: &str = "campos extras";
     if extras.len() > MAX_EXTRAS {
@@ -944,10 +1016,8 @@ fn validate_extras(
             c.error_at(FIELD, i, NO_LETTER);
             continue;
         }
-        if COMMON_VARIABLES.contains(&var.as_str())
-            || type_variables(kind).contains(&var.as_str())
-            || var == "FILE"
-            || var.starts_with("FILE_")
+        if reserved_extra(kind, &var)
+            && !(origin == Origin::Read && reserved_only_since_v5_extra(kind, &var))
         {
             c.error_at(FIELD, i, RESERVED_EXTRA);
             continue;
@@ -985,6 +1055,7 @@ fn validate_attachments(
     c: &mut Collector,
     kind: EntryType,
     attachments: Vec<AttachmentDraft>,
+    origin: Origin,
 ) -> Option<Vec<Attachment>> {
     const FIELD: &str = "anexos";
     if attachments.len() > MAX_ATTACHMENTS {
@@ -1011,7 +1082,9 @@ fn validate_attachments(
             c.error_at(FIELD, i, NO_LETTER);
             continue;
         }
-        if type_attachments(kind).contains(&var.as_str()) {
+        if reserved_attachment(kind, &var)
+            && !(origin == Origin::Read && reserved_only_since_v5_attachment(kind, &var))
+        {
             c.error_at(FIELD, i, RESERVED_ATTACHMENT);
             continue;
         }
