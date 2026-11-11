@@ -171,7 +171,7 @@ Clientes Rust:
   `dev/extension/build.py` (achado da Fase 39); mensagens congeladas). — V2.1
 - [x] Fase 29 — `crates/ward-test-bridge` (`http.rs`, `main.rs`, `simulados.rs`,
   `tests/ataques.rs`). — V2.1
-- [ ] Fase 30 — `app/core`: `servico.rs`, `segredo.rs`, `erro.rs`, `lib.rs`. — V2.1
+- [x] Fase 30 — `app/core`: `servico.rs`, `segredo.rs`, `erro.rs`, `lib.rs`. — V2.1
 - [ ] Fase 31 — `app/core`: `daemon_falso.rs` (com o reexport `SECRETS as SEGREDOS` e os usos, achado da Fase 14), `daemon.rs`, `cliente.rs`. — V2.1
 - [ ] Fase 32 — `app/core`: `formulario.rs`, `aprovacao.rs`, `anexos.rs`,
   `restaurar.rs`, `bandeja.rs` (`serde` para a webview com `rename`). — V2.1
