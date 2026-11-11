@@ -30,7 +30,7 @@ use ward_core::display::neutralize;
 use ward_core::protocolo::{Decisao, PedidoDeAprovacao};
 
 use crate::AppError;
-use crate::daemon::{FilaAvisos, MAX_AVISOS};
+use crate::daemon::{MAX_NOTICES, NoticeQueue};
 
 /// Quanto o pedido espera resposta (S10; o mesmo prazo do `wardd`).
 pub const PRAZO_APROVACAO: Duration = Duration::from_secs(120);
@@ -39,7 +39,7 @@ pub const PRAZO_APROVACAO: Duration = Duration::from_secs(120);
 pub const SEGUNDOS_URGENTE: u64 = 20;
 
 /// Pedidos guardados ao mesmo tempo (o mesmo limite da fila de avisos, D65 a).
-pub const MAX_PENDENTES: usize = MAX_AVISOS;
+pub const MAX_PENDENTES: usize = MAX_NOTICES;
 
 /// Separador da cadeia na tela; dentro de um nome de processo ele vira escape.
 pub const SEPARADOR_CADEIA: char = '\u{2192}';
@@ -297,7 +297,7 @@ pub(crate) fn exibir(a: &Atual) -> PedidoExibido {
 /// Liga a thread que tira os `pedido_de_aprovacao` da `fila` (D65 a): cada um vai para
 /// `aprovacoes` e chama `ao_chegar` (que abre ou traz a janela para a frente).
 pub fn vigiar(
-    fila: Arc<FilaAvisos>,
+    fila: Arc<NoticeQueue>,
     aprovacoes: Arc<Aprovacoes>,
     ao_chegar: impl Fn() + Send + 'static,
 ) -> Result<(), AppError> {
@@ -305,7 +305,7 @@ pub fn vigiar(
         .name("ward-app-aprovacao".into())
         .spawn(move || {
             loop {
-                if let Some(p) = fila.esperar_aprovacao(Duration::from_secs(3600)) {
+                if let Some(p) = fila.wait_approval(Duration::from_secs(3600)) {
                     aprovacoes.chegou(p);
                     ao_chegar();
                 }
@@ -318,7 +318,7 @@ pub fn vigiar(
 #[cfg(test)]
 mod testes {
     use super::*;
-    use crate::daemon::Aviso;
+    use crate::daemon::Notice;
     use ward_core::entry::Environment;
     use ward_core::protocolo::Operacao;
 
@@ -465,21 +465,18 @@ mod testes {
 
     #[test]
     fn vigia_tira_a_aprovacao_e_deixa_o_destrave() {
-        let fila = Arc::new(FilaAvisos::default());
+        let fila = Arc::new(NoticeQueue::default());
         let aprovacoes = Arc::new(Aprovacoes::default());
         let (tx, rx) = std::sync::mpsc::channel();
         vigiar(Arc::clone(&fila), Arc::clone(&aprovacoes), move || {
             let _ = tx.send(());
         })
         .unwrap();
-        fila.simular(Aviso::destrave_de_teste("acme-pg-aprovacao"));
-        fila.simular(Aviso::Aprovacao(pedido(9, "\"ls\"", &["claude"])));
+        fila.simulate(Notice::test_unlock("acme-pg-aprovacao"));
+        fila.simulate(Notice::Approval(pedido(9, "\"ls\"", &["claude"])));
         rx.recv_timeout(Duration::from_secs(5)).unwrap();
         assert_eq!(aprovacoes.pendentes(), [9]);
-        assert_eq!(
-            fila.tomar(),
-            Some(Aviso::destrave_de_teste("acme-pg-aprovacao"))
-        );
+        assert_eq!(fila.take(), Some(Notice::test_unlock("acme-pg-aprovacao")));
     }
 }
 
@@ -489,7 +486,7 @@ mod testes_servico {
     use super::testes::pedido;
     use super::*;
     use crate::area_transferencia::{AreaTransferencia, Copiador};
-    use crate::daemon_falso::{DaemonFalso, SEGREDOS};
+    use crate::fake_daemon::{FakeDaemon, SECRETS};
     use crate::nivel::Pin;
     use crate::service::Service;
     use std::sync::Mutex as M;
@@ -512,10 +509,10 @@ mod testes_servico {
 
     /// O daemon falso atrás de um `Arc<Mutex>`, para o teste olhar o estado dele.
     #[derive(Clone)]
-    struct Falso(Arc<M<DaemonFalso>>);
+    struct Falso(Arc<M<FakeDaemon>>);
     impl crate::daemon::Daemon for Falso {
-        fn trocar(&mut self, p: &[u8]) -> Result<Zeroizing<Vec<u8>>, AppError> {
-            self.0.lock().unwrap().trocar(p)
+        fn exchange(&mut self, p: &[u8]) -> Result<Zeroizing<Vec<u8>>, AppError> {
+            self.0.lock().unwrap().exchange(p)
         }
     }
 
@@ -526,9 +523,9 @@ mod testes_servico {
     }
 
     fn montar(pedidos: &[PedidoDeAprovacao]) -> (Service<Falso, SemArea>, Falso) {
-        let mut d = DaemonFalso::cheio();
+        let mut d = FakeDaemon::full();
         for p in pedidos {
-            d = d.com_aprovacao(p);
+            d = d.with_approval(p);
         }
         let f = Falso(Arc::new(M::new(d)));
         let s = Service::new(f.clone(), Copiador::novo(SemArea));
@@ -539,7 +536,7 @@ mod testes_servico {
     }
 
     fn pendentes_no_daemon(f: &Falso) -> Vec<u64> {
-        f.0.lock().unwrap().aprovacoes_pendentes()
+        f.0.lock().unwrap().pending_approvals()
     }
 
     #[test]
@@ -587,7 +584,7 @@ mod testes_servico {
         assert_eq!((r.resultado, r.ha_outro), ("respondido", false));
         // A entrada não virou livre.
         assert_eq!(
-            f.0.lock().unwrap().nivel_de("acme-pg-aprovacao"),
+            f.0.lock().unwrap().level_of("acme-pg-aprovacao"),
             Some(AccessLevel::Approval)
         );
     }
@@ -699,7 +696,7 @@ mod testes_servico {
             },
         )
         .unwrap();
-        let r = crate::daemon::Daemon::trocar(&mut *f.0.lock().unwrap(), &q).unwrap();
+        let r = crate::daemon::Daemon::exchange(&mut *f.0.lock().unwrap(), &q).unwrap();
         assert!(matches!(
             protocolo::decodificar_resposta(protocolo::Papel::App, &r),
             Ok(protocolo::Resposta::Erro(
@@ -725,7 +722,7 @@ mod testes_servico {
         s.answer_approval(5, "sempre", pin(PIN_CERTO), false)
             .unwrap();
         assert_eq!(
-            f.0.lock().unwrap().nivel_de("acme-pg-aprovacao"),
+            f.0.lock().unwrap().level_of("acme-pg-aprovacao"),
             Some(AccessLevel::Free)
         );
         let mut prod = pedido(6, "\"ls\"", &[]);
@@ -755,7 +752,7 @@ mod testes_servico {
         textos.push(serde_json::to_string(&r).unwrap());
         for t in &textos {
             assert!(!t.contains(PIN_CERTO) && !t.contains("000000"), "{t}");
-            for seg in SEGREDOS {
+            for seg in SECRETS {
                 assert!(!t.contains(seg), "segredo na janela: {t}");
             }
         }

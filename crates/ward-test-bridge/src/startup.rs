@@ -18,7 +18,7 @@
 use std::ffi::OsString;
 use std::path::PathBuf;
 
-use ward_app_core::cliente;
+use ward_app_core::client;
 use ward_app_core::daemon::DaemonSocket;
 
 /// Message for when the daemon did not give the app role (V3.38).
@@ -26,8 +26,8 @@ pub const NO_APP_ROLE: &str = "o daemon não deu o papel app";
 
 /// Connects (once) and checks the role in the first reply. The error message is fixed.
 pub fn connect_with_app_role(mut daemon: DaemonSocket) -> Result<DaemonSocket, String> {
-    daemon.conectar_agora().map_err(|e| e.to_string())?;
-    match cliente::tem_papel_app(&mut daemon) {
+    daemon.connect_now().map_err(|e| e.to_string())?;
+    match client::has_app_role(&mut daemon) {
         Ok(true) => Ok(daemon),
         Ok(false) => Err(NO_APP_ROLE.to_owned()),
         Err(e) => Err(e.to_string()),

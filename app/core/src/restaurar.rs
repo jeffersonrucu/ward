@@ -262,7 +262,7 @@ mod testes {
         use super::super::*;
         use crate::area_transferencia::{AreaTransferencia, Copiador};
         use crate::daemon::Daemon;
-        use crate::daemon_falso::{DaemonFalso, SEGREDOS};
+        use crate::fake_daemon::{FakeDaemon, SECRETS};
         use crate::service::Service;
 
         type Quadros = Arc<Mutex<Vec<Vec<u8>>>>;
@@ -282,17 +282,17 @@ mod testes {
 
         /// Daemon falso que guarda cada quadro recebido.
         #[derive(Clone)]
-        struct Espiao(Arc<Mutex<DaemonFalso>>, Quadros);
+        struct Espiao(Arc<Mutex<FakeDaemon>>, Quadros);
         impl Daemon for Espiao {
-            fn trocar(&mut self, pedido: &[u8]) -> Result<Zeroizing<Vec<u8>>, AppError> {
+            fn exchange(&mut self, pedido: &[u8]) -> Result<Zeroizing<Vec<u8>>, AppError> {
                 self.1.lock().unwrap().push(pedido.to_vec());
-                self.0.lock().unwrap().trocar(pedido)
+                self.0.lock().unwrap().exchange(pedido)
             }
         }
 
-        fn servico(falso: DaemonFalso) -> (Service<Espiao, SemArea>, Espiao) {
+        fn servico(falso: FakeDaemon) -> (Service<Espiao, SemArea>, Espiao) {
             let e = Espiao(
-                Arc::new(Mutex::new(falso.sem_espera())),
+                Arc::new(Mutex::new(falso.without_wait())),
                 Arc::new(Mutex::new(Vec::new())),
             );
             (Service::new(e.clone(), Copiador::novo(SemArea)), e)
@@ -319,7 +319,7 @@ mod testes {
         /// Nenhuma resposta ao app traz segredo, senha, PIN ou caminho (a geração da
         /// lista é de propósito, Fase 49a).
         fn sem_segredo(json: &str) {
-            for s in SEGREDOS {
+            for s in SECRETS {
                 assert!(!json.contains(s), "segredo em {json}");
             }
             for agulha in [PIN, SENHA, "/home", ".local", "backups/"] {
@@ -329,7 +329,7 @@ mod testes {
 
         #[test]
         fn v7_7_escolhe_versao_confirma_e_as_entradas_da_versao_aparecem() {
-            let (s, e) = servico(DaemonFalso::cheio());
+            let (s, e) = servico(FakeDaemon::full());
             let antes = s.list_credentials().unwrap().len();
             let versoes = s.list_backups().unwrap();
             assert_eq!(versoes.len(), 30);
@@ -362,7 +362,7 @@ mod testes {
         /// não sai marcado. Nenhuma geração chega à interface (D39).
         #[test]
         fn ataque_copia_plantada_chega_marcada_pela_geracao() {
-            let (s, _) = servico(DaemonFalso::backup_plantado());
+            let (s, _) = servico(FakeDaemon::planted_backup());
             let v = s.list_backups().unwrap();
             assert_eq!(v.len(), 31);
             assert!(v[0].fora_de_ordem && v[0].conferida);
@@ -381,17 +381,17 @@ mod testes {
 
         #[test]
         fn ataque_pin_errado_nao_restaura_e_o_quinto_trava() {
-            let (s, e) = servico(DaemonFalso::cheio());
+            let (s, e) = servico(FakeDaemon::full());
             let v = s.list_backups().unwrap()[3].nome.clone();
-            let antes = e.0.lock().unwrap().quantas_entradas();
+            let antes = e.0.lock().unwrap().entry_count();
             for n in 1..=4 {
                 assert_eq!(
                     s.restore_backup(pedido(&v, SENHA, "000000")),
                     Err(AppError::WrongPin)
                 );
-                assert_eq!(e.0.lock().unwrap().erros_de_pin(), n);
+                assert_eq!(e.0.lock().unwrap().pin_errors(), n);
             }
-            assert_eq!(e.0.lock().unwrap().quantas_entradas(), antes);
+            assert_eq!(e.0.lock().unwrap().entry_count(), antes);
             assert_eq!(
                 s.restore_backup(pedido(&v, SENHA, "000000")),
                 Err(AppError::WrongPin)
@@ -402,29 +402,29 @@ mod testes {
                 s.restore_backup(pedido(&v, SENHA, PIN)),
                 Err(AppError::Locked)
             );
-            assert_eq!(e.0.lock().unwrap().quantas_entradas(), antes);
+            assert_eq!(e.0.lock().unwrap().entry_count(), antes);
         }
 
         #[test]
         fn ataque_senha_da_versao_errada_nao_muda_nada() {
-            let (s, e) = servico(DaemonFalso::cheio());
-            let nomes = e.0.lock().unwrap().nomes_dos_backups();
-            let antes = e.0.lock().unwrap().quantas_entradas();
+            let (s, e) = servico(FakeDaemon::full());
+            let nomes = e.0.lock().unwrap().backup_names();
+            let antes = e.0.lock().unwrap().entry_count();
             for errada in ["falso-mestra-ward-02", "falso-mestra-ward-0", "x"] {
                 assert_eq!(
                     s.restore_backup(pedido(&nomes[1], errada, PIN)),
                     Err(AppError::WrongPassword)
                 );
             }
-            assert_eq!(e.0.lock().unwrap().quantas_entradas(), antes);
-            assert_eq!(e.0.lock().unwrap().nomes_dos_backups(), nomes);
+            assert_eq!(e.0.lock().unwrap().entry_count(), antes);
+            assert_eq!(e.0.lock().unwrap().backup_names(), nomes);
             // O PIN certo zerou a contagem (como no `wardd`).
-            assert_eq!(e.0.lock().unwrap().erros_de_pin(), 0);
+            assert_eq!(e.0.lock().unwrap().pin_errors(), 0);
         }
 
         #[test]
         fn ataque_versao_inexistente_ou_forjada_nao_chega_ao_daemon() {
-            let (s, e) = servico(DaemonFalso::cheio());
+            let (s, e) = servico(FakeDaemon::full());
             // Fora do formato: recusado antes de qualquer quadro.
             for ruim in [
                 "../cofre.ward",
@@ -447,22 +447,22 @@ mod testes {
             assert_eq!(restauracoes(&e), 0);
             // Um cliente que pule o serviço e mande direto: o falso responde como o
             // `wardd` (`backup_inexistente`), e nada muda.
-            let antes = e.0.lock().unwrap().quantas_entradas();
-            let r = crate::cliente::restaurar_backup(
+            let antes = e.0.lock().unwrap().entry_count();
+            let r = crate::client::restore_backup(
                 &mut e.clone(),
                 "ward-19990101-000000.ward",
                 &crate::destrave::SenhaMestra::nova(SENHA.into()).unwrap(),
                 &crate::nivel::Pin::novo(PIN.into()).unwrap(),
             );
             assert_eq!(r, Err(AppError::BackupNotFound));
-            assert_eq!(e.0.lock().unwrap().quantas_entradas(), antes);
+            assert_eq!(e.0.lock().unwrap().entry_count(), antes);
         }
 
         #[test]
         fn ataque_cofre_travado_no_meio_nao_restaura() {
-            let (s, e) = servico(DaemonFalso::cheio());
+            let (s, e) = servico(FakeDaemon::full());
             let v = s.list_backups().unwrap()[1].nome.clone();
-            let antes = e.0.lock().unwrap().quantas_entradas();
+            let antes = e.0.lock().unwrap().entry_count();
             // Travou (tempo, bandeja, outra janela) entre escolher e confirmar.
             s.lock().unwrap();
             assert_eq!(
@@ -470,14 +470,14 @@ mod testes {
                 Err(AppError::Locked)
             );
             assert_eq!(restauracoes(&e), 0);
-            assert_eq!(e.0.lock().unwrap().quantas_entradas(), antes);
+            assert_eq!(e.0.lock().unwrap().entry_count(), antes);
         }
 
         #[test]
         fn pasta_indisponivel_e_sem_versoes() {
-            let (s, _) = servico(DaemonFalso::cheio().com_backups(None));
+            let (s, _) = servico(FakeDaemon::full().with_backups(None));
             assert_eq!(s.list_backups(), Err(AppError::BackupUnavailable));
-            let (s, _) = servico(DaemonFalso::cheio().com_backups(Some(Vec::new())));
+            let (s, _) = servico(FakeDaemon::full().with_backups(Some(Vec::new())));
             assert_eq!(s.list_backups(), Ok(Vec::new()));
         }
 
@@ -485,7 +485,7 @@ mod testes {
         #[derive(Clone)]
         struct ComoAgente(Quadros);
         impl Daemon for ComoAgente {
-            fn trocar(&mut self, pedido: &[u8]) -> Result<Zeroizing<Vec<u8>>, AppError> {
+            fn exchange(&mut self, pedido: &[u8]) -> Result<Zeroizing<Vec<u8>>, AppError> {
                 self.0.lock().unwrap().push(pedido.to_vec());
                 let r = match protocolo::decodificar_pedido(Papel::Agente, pedido) {
                     Ok(_) => Resposta::Erro(ErroResposta::Interno),
@@ -500,8 +500,8 @@ mod testes {
         fn v7_8_papel_agente_recebe_nao_autorizado() {
             let q: Quadros = Arc::new(Mutex::new(Vec::new()));
             let mut d = ComoAgente(Arc::clone(&q));
-            assert_eq!(crate::cliente::backups(&mut d), Err(AppError::Unauthorized));
-            let r = crate::cliente::restaurar_backup(
+            assert_eq!(crate::client::backups(&mut d), Err(AppError::Unauthorized));
+            let r = crate::client::restore_backup(
                 &mut d,
                 "ward-20261108-143200.ward",
                 &crate::destrave::SenhaMestra::nova(SENHA.into()).unwrap(),

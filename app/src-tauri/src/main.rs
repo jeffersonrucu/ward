@@ -153,7 +153,7 @@ fn estado_do_cofre(estado: State<'_, Estado>) -> Result<RespostaEstado, Falha> {
     let s = estado.servico()?;
     let e = s.vault_status()?;
     Ok(RespostaEstado {
-        estado: e.codigo(),
+        estado: e.code(),
         pedido: s.request_info(e),
     })
 }
@@ -202,7 +202,7 @@ fn ouvir_avisos<R: Runtime>(
 fn vigiar_avisos<R: Runtime>(
     app: &AppHandle<R>,
     estado: &Estado,
-    fila: Option<Arc<ward_app_core::daemon::FilaAvisos>>,
+    fila: Option<Arc<ward_app_core::daemon::NoticeQueue>>,
 ) {
     let (Some(fila), Ok(s)) = (fila, estado.servico()) else {
         return;
@@ -969,7 +969,7 @@ fn main() {
         std::process::exit(1)
     });
     let daemon = partida.tomar_daemon().ok_or(AppError::ConnectionLost);
-    let fila = daemon.as_ref().ok().map(DaemonSocket::avisos);
+    let fila = daemon.as_ref().ok().map(DaemonSocket::notices);
     let servico = Arc::new(montar_servico(daemon));
     let na_aprovacao = Arc::clone(&servico);
     let na_vigia = Arc::clone(&servico);
@@ -1060,7 +1060,7 @@ mod testes {
     use tauri::webview::InvokeRequest;
 
     /// Sem daemon: um socket num caminho que não existe, com as regras do daemon
-    /// instalado (pasta do root). Nunca o `DaemonSocket::padrao()`: no `test-mode` ele
+    /// instalado (pasta do root). Nunca o `DaemonSocket::standard()`: no `test-mode` ele
     /// é o socket de teste do uid, `/run/user/<uid>/ward-teste/`, que pode ter um
     /// `wardd` de teste de outro worktree no ar (e o teste falaria com ele).
     fn sem_daemon() -> DaemonSocket {
@@ -1069,7 +1069,7 @@ mod testes {
             .join(format!("sem-daemon-{}", std::process::id()))
             .join("wardd.sock");
         assert!(!caminho.exists());
-        DaemonSocket::sistema_em(caminho)
+        DaemonSocket::system_at(caminho)
     }
 
     fn app_de_teste() -> tauri::App<MockRuntime> {

@@ -2323,6 +2323,45 @@ com os variantes pelos códigos da seção 13: `DaemonUnavailable`, `DaemonUntru
 `UsbDrivesUnavailable`, `UsbDriveNotConnected`, `BackupNotFound`, `BackupUnavailable`,
 `VaultChanged`. Os homônimos `cliente::CodigoTotp`, `Comando::CodigoTotp` e
 `Resposta::CodigoTotp` são outros e não mudaram.
+Fase 31 (`app/core`: `client`, `daemon`, `fake_daemon`): módulos `cliente` → `client`,
+`daemon_falso` → `fake_daemon` (`daemon` fica). `Daemon::trocar` → `Daemon::exchange` (troca
+de pedido e resposta: "exchange", não "change"); `EstadoCofre` → `VaultStatus` (`SemCofre`/
+`Travado`/`Destravado` → `NoVault`/`Locked`/`Unlocked`; `codigo()` → `code()`, os códigos
+`sem-cofre`/`travado`/`destravado` ficam até a Fase 54); `Aviso` → `Notice` (`Aprovacao`/
+`Destrave` → `Approval`/`Unlock`; `destrave_de_teste`/`destrave_hostil_de_teste` →
+`test_unlock`/`hostile_test_unlock`); `FilaAvisos` → `NoticeQueue` (`tomar`/`esperar`/
+`esperar_destrave`/`esperar_aprovacao`/`simular`/`tamanho`/`descartados` → `take`/`wait`/
+`wait_unlock`/`wait_approval`/`simulate`/`size`/`dropped`); `PRAZO_RESPOSTA` →
+`RESPONSE_TIMEOUT`, `MAX_AVISOS` → `MAX_NOTICES`; `DaemonSocket` fica (`padrao` →
+`standard`, `conectar_agora` → `connect_now`, `vigiar_fechamento` → `watch_close`, `avisos`
+→ `notices`, `sistema_em`/`teste_em`/`de_par` → `system_at`/`test_at`/`from_pair`,
+`caminho` → `path`); privados `Fila` → `Queue`, `Pedinte` → `Requester`, `Transporte` →
+`Transport`, `ler` → `read_loop`, `PRAZO_ESCRITA` → `WRITE_TIMEOUT`. Funções do `client`
+pelas operações: `estado` → `status`, `criar_cofre` → `create_vault`, `papel` → `role`,
+`tem_papel_app` → `has_app_role`, `abrir_app`/`abrir_app_como_agente` →
+`open_app`/`open_app_as_agent`, `lista` → `list`, `detalhe` → `detail`, `copiar` → `copy`,
+`revelar` → `reveal`, `emitir_token` → `issue_token`, `salvar` → `save`, `mudar_nivel` →
+`set_level`, `responder_aprovacao` → `answer_approval`, `destravar` → `unlock`,
+`configuracao` → `settings`, `trocar_pin`/`trocar_senha` → `change_pin`/`change_password`,
+`tempo_trava` → `set_lock_timeout`, `travar` → `lock`, `backup_externo` →
+`external_backup`, `pendrives` → `usb_drives`, `definir_backup_externo` →
+`set_external_backup`, `restaurar_backup` → `restore_backup` (`totp`, `backups` ficam);
+`cliente::CodigoTotp { codigo, restante }` → `client::TotpCode { code, remaining }` (sem
+`serde`), `Salvamento { Salvo, Problemas }` → `Save { Saved, Problems }`, `Respondida { Ok,
+PinIncorreto, Expirado }` → `Answered { Ok, WrongPin, Expired }`. Daemon falso: `DaemonFalso`
+→ `FakeDaemon` (`cheio`/`vazio`/`travado`/`sem_cofre`/`backup_plantado`/
+`backup_local_inseguro`/`backup_externo_ligado` → `full`/`empty`/`locked`/`no_vault`/
+`planted_backup`/`insecure_local_backup`/`external_backup_enabled`; `com_pendrives`/
+`com_backups`/`com_aprovacao`/`sem_espera` → `with_usb_drives`/`with_backups`/
+`with_approval`/`without_wait`; `nomes_dos_backups`/`quantas_entradas`/`erros_de_pin`/
+`aprovacoes_pendentes`/`nivel_de`/`pin_confere` → `backup_names`/`entry_count`/
+`pin_errors`/`pending_approvals`/`level_of`/`pin_matches`), `BackupFalso` → `FakeBackup`,
+`EntradasDoBackup { Teste, Guardadas }` → `BackupEntries { Test, Stored }`,
+`AprovacaoSimulada` → `SimulatedApproval`, `aprovacoes_simuladas` → `simulated_approvals`,
+`backups_de_teste`/`pendrives_de_teste` → `test_backups`/`test_usb_drives`,
+`MAX_ERROS_PIN` → `MAX_PIN_ERRORS`, `VERSOES_FALSAS` → `FAKE_VERSIONS`; o re-export
+`daemon_falso::SEGREDOS` (achado da Fase 14) vira `fake_daemon::SECRETS`. Os modos da ponte
+(`aprovacao`, `aprovacao-prod`…, `--daemon-falso`) ficam (fio da ponte; Fase 56).
 Fase 28 (clientes `ward` e `ward-nm`; nomes próprios deles, os de `ward-core`/
 `ward-platform` ficam para as fases desses crates): módulos `cliente`/`comandos`/
 `texto`/`testes` → `client`/`commands`/`text`/`tests`; `principal` → `main`;
@@ -2360,6 +2399,37 @@ mensagem que o `dev/tests/deb.sh` procura); `MAX_MENSAGEM_ENTRADA`/`SAIDA` →
 `ler_mensagem`/`escrever_mensagem` → `read_message`/`write_message`; `FalhaDaemon` →
 `DaemonFailure` (`Indisponivel`/`Conversa` → `Unavailable`/`Conversation`; `texto()` →
 `text()`); `Daemon::trocar` → `exchange`; `atender`/`servir` → `handle`/`serve`.
+
+Fase 22 (`wardd`: `playwright`, `cdp`, `login`, `bridge`; nomes próprios desses arquivos,
+os de `ward-core`/`ward-platform` e de outros arquivos do `wardd` ficam para as fases
+deles): módulo `ponte` → `bridge`; `cdp`: `MAX_MENSAGEM` → `MAX_MESSAGE`, `ErroCdp` →
+`CdpError` (`Prazo`/`Fechado`/`Protocolo`/`Comando`/`Io` → `Deadline`/`Closed`/
+`Protocol`/`Command`/`Io`), `Escritor` → `Writer` (`novo`/`abre_objeto`/`fecha_objeto`/
+`abre_lista`/`fecha_lista`/`chave`/`texto`/`inteiro`/`logico`/`nulo`/`fim` → `new`/
+`open_object`/`close_object`/`open_list`/`close_list`/`key`/`text`/`integer`/`boolean`/
+`null`/`finish`), `pior_caso` → `worst_case`, `Regra { origem, quadro }` → `Rule {
+origin, frame }`, `Cdp { sessao, regra, bloqueou, cargas }` → `Cdp { session, rule,
+blocked, loads }` (`novo`/`enviar`/`comando`/`comando_de`/`esperar_carga` → `new`/`send`/
+`command`/`command_as`/`wait_load`); `playwright`: `PASTA_SESSOES`/`PREFIXO_PERFIL`/
+`PRAZO_SESSAO` → `SESSIONS_DIR`/`PROFILE_PREFIX`/`SESSION_DEADLINE`, `PREENCHER`/
+`LER_PAGINA` → `FILL_SCRIPT`/`READ_PAGE_SCRIPT` (o JavaScript dentro é literal e fica),
+`pasta_sessoes`/`apagar_sessoes`/`limpar`/`argv_chrome`/`tem_segredo` → `sessions_dir`/
+`delete_sessions`/`clean_up`/`chrome_argv`/`has_secret`, `entrar` → `log_in`; `login`:
+`PrazosLogin { aguardar, retirada, total }` → `LoginDeadlines { wait, pickup, total }`
+(`wait`, não `await`, que é palavra reservada do Rust), `Logins::novo` → `new`, o pedido em
+curso `Trabalho` → `Job` (não `Work`: é um pedido de login pendente) com `Fase { Esperando,
+Entregue, Preenchido }` → `Phase { Waiting, Delivered, Filled }`, `Daemon::aguardar_login`/
+`preencher_login`/`resultado_login` → `await_login`/`fill_login`/`login_result` (as
+operações do fio ficam até a Fase 50); `bridge`: `Ponte` → `Bridge` (`abrir`/`porta`/
+`iniciar` → `open`/`port`/`start`), `PonteRodando` → `RunningBridge`, `Abertura` →
+`Opening` (`alvo_host`/`alvo_porta`/`programas`/`mascara`/`limites`/`travas` →
+`target_host`/`target_port`/`programs`/`mask`/`limits`/`locks`), `Intermediario { host,
+porta, usuario, cred }` → `Intermediate { host, port, username, cred }`, `Limites {
+simultaneas, total }` → `Limits { concurrent, total }`, `LIMITES_SALTO`/`LIMITES_TUNEL` →
+`JUMP_LIMITS`/`TUNNEL_LIMITS`, `SaidaDeErro` → `Stderr`, `par_do_grupo`/`socket_do_par`/
+`processo_do_grupo_com_socket` → `peer_in_group`/`peer_socket`/`group_process_has_socket`,
+`pai_do_stat`/`grupo_do_stat`/`sessao_do_stat` → `stat_parent`/`stat_group`/
+`stat_session`. Os nomes das threads (`wardd-ponte*`) são literais e ficam.
 
 Fase 21 (`wardd`: `execution`, `ssh_agent`, `ssh`, `ssh_tests`): módulos `execucao`/
 `agente_ssh`/`ssh_testes` → `execution`/`ssh_agent`/`ssh_tests` (`mod testes` → `tests`).
@@ -2441,6 +2511,35 @@ entrega) → `Variable` (`nome`/`expor`/`e_segredo` → `name`/`expose`/`is_secr
 `protocolo::Variavel` (Fase 17), `VersaoBackup` (Fase 18), `ErroMascara::SemEntrega`
 (Fase 16), `RunResources` (Fase 21) e `RecursosDoOrcamento` (Fase 16) são outros e não
 mudaram.
+Fase 24 (testes do `wardd`: `tests/ssh.rs`, `tests/run.rs`, `tests/ssh_falso.py` →
+`tests/fake_ssh.py`): em `ssh.rs`, `SENHA_SSH`/`SENHA_BANCO` → `SSH_PASSWORD`/
+`DB_PASSWORD`, `RelogioManual` → `ManualClock` (`avancar` → `advance`), `Rt::novo` →
+`Rt::new`, `Cena { relogio }` → `Scene { clock }` (`cena` → `scene`; `modo`/`registros`/
+`registro`/`nada_executado` → `set_mode`/`records`/`record`/`nothing_ran`), `Reg` → `Rec`
+(`todos`/`um` → `all`/`one`), `Sessao { saida, erro, pedacos, fim, falha }` → `Session {
+stdout, stderr, chunks, end, failure }` (`texto` → `text`), `salvar` → `save`,
+`servidor_json` → `server_json`, `auth_senha` → `password_auth`, `gerar_chave` →
+`generate_key`, `pedido_ssh` → `ssh_request`, `mandar` → `send`, `sessao`/`sessao_de` →
+`session`/`session_of`, `fechar_entrada` → `close_stdin`, `opcoes` → `options`,
+`esperar` → `wait_for`, `rt_sem_agente` → `rt_without_agent`, `esperar_registro` →
+`wait_record`, `depois_de` → `after`, `estranho_e_recusado` → `stranger_is_refused`
+("estranho" aqui é o processo de fora da sessão, `stranger`, não `odd`),
+`inode_da_escuta`/`escuta_fechada` → `listener_inode`/`listener_closed`, `ninguem_com_w`
+→ `nobody_with_w`, `conferir_argv_da_ponte` → `verify_bridge_argv`. Em `run.rs`,
+`SENHA_LIVRE`/`LICENCA`/`ANEXO`/`APROVADOR` → `FREE_PASSWORD`/`LICENSE`/`ATTACHMENT`/
+`APPROVER`, `DirSocket::novo` → `SocketDir::new`, `Wardd { filho }` → `Wardd { child }`,
+`subir`/`subir_com` → `start`/`start_with`, `receber` → `receive`, `conectar` →
+`connect`, `destravar_por` → `unlock_through`, `pedido_executar(_com)` →
+`run_request(_with)`, `entrada_padrao` → `send_stdin`, `ler_sessao` → `read_session`,
+`cofre` → `vault`, `tmp_vazio` → `tmp_empty`, `vivo` → `alive`. Em `fake_ssh.py`, `NOME`
+→ `NAME`, `ler` → `read_file`, `registrar` → `record`, `opcao` → `option`, `pedir` →
+`ask`, `cliente_do_agente` → `agent_client`, `NETO` → `GRANDCHILD`, `esperar_continuar`/
+`esperar_arquivo` → `wait_continue`/`wait_file`, `valor` → `value`,
+`ponte_do_lado_do_salto` → `bridge_on_the_jump_side`, `conversar` → `talk`, `principal`
+→ `main`. Os arquivos que o falso grava e lê (`registro-<nome>-<pid>.txt`, `modo`,
+`esperar`, `continuar`, `pty-pronto`…) e as chaves do registro (`agente.lista`, `neto`,
+`depois`…) são literais e ficam. Os nomes do `comum` (Fase 23), do `nucleo`/`aprovacao`
+(Fase 20) e do `ward-core` (`protocolo`, Fases 17–18) ficam como estão até as fases deles.
 
 Fase 16 (`ward-core`: `mask`): módulo `mascara` → `mask` (`automato` → `automaton`,
 `testes` → `tests`). `MARCA` → `MARK`; `ErroMascara` → `MaskError` com `GrandeDemais` →

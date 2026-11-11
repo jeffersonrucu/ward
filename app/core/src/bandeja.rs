@@ -28,7 +28,7 @@ use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 use crate::AppError;
-use crate::daemon::EstadoCofre;
+use crate::daemon::VaultStatus;
 
 /// Ids dos itens do menu. Os de texto só informam (desabilitados).
 pub const ID_TITULO: &str = "bandeja-titulo";
@@ -77,11 +77,11 @@ pub enum EstadoBandeja {
 }
 
 impl EstadoBandeja {
-    pub fn de(estado: Result<EstadoCofre, AppError>) -> EstadoBandeja {
+    pub fn de(estado: Result<VaultStatus, AppError>) -> EstadoBandeja {
         match estado {
-            Ok(EstadoCofre::Destravado) => EstadoBandeja::Destravado,
-            Ok(EstadoCofre::Travado) => EstadoBandeja::Travado,
-            Ok(EstadoCofre::SemCofre) => EstadoBandeja::SemCofre,
+            Ok(VaultStatus::Unlocked) => EstadoBandeja::Destravado,
+            Ok(VaultStatus::Locked) => EstadoBandeja::Travado,
+            Ok(VaultStatus::NoVault) => EstadoBandeja::SemCofre,
             Err(_) => EstadoBandeja::SemDaemon,
         }
     }
@@ -310,15 +310,15 @@ mod testes {
     #[test]
     fn estado_vem_da_resposta_e_erro_fica_travado() {
         assert_eq!(
-            EstadoBandeja::de(Ok(EstadoCofre::Destravado)),
+            EstadoBandeja::de(Ok(VaultStatus::Unlocked)),
             EstadoBandeja::Destravado
         );
         assert_eq!(
-            EstadoBandeja::de(Ok(EstadoCofre::Travado)),
+            EstadoBandeja::de(Ok(VaultStatus::Locked)),
             EstadoBandeja::Travado
         );
         assert_eq!(
-            EstadoBandeja::de(Ok(EstadoCofre::SemCofre)),
+            EstadoBandeja::de(Ok(VaultStatus::NoVault)),
             EstadoBandeja::SemCofre
         );
         let e = EstadoBandeja::de(Err(AppError::DaemonUnavailable));
@@ -365,7 +365,7 @@ mod testes {
         for estado in TODOS {
             let a = aparencia(estado);
             for texto in [a.titulo, a.subtitulo, a.acao, TEXTO_ABRIR, TEXTO_SAIR] {
-                for s in crate::daemon_falso::SEGREDOS {
+                for s in crate::fake_daemon::SECRETS {
                     assert!(!texto.contains(s), "{texto}");
                 }
                 assert!(!texto.contains("acme-"), "{texto}");

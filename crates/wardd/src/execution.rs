@@ -53,8 +53,8 @@ use ward_platform::child::{self, Command, Group, Pty};
 use crate::ssh_agent::{Allowed, SshAgent};
 
 use crate::aprovacao::Cliente;
+use crate::bridge::{Bridge, Opening, TUNNEL_LIMITS};
 use crate::nucleo::Daemon;
-use crate::ponte::{Abertura, LIMITES_TUNEL, Ponte};
 use crate::{aviso, depurar};
 
 /// Dir of the temporaries inside `<rt>`.
@@ -223,7 +223,7 @@ struct RunResources<'a> {
     /// locked), the main entry and the lock count from when the session was authorized.
     tunnel: Option<TunnelContext<'a>>,
     /// The tunnel's bridge, opened by the delivery.
-    bridge: Option<Ponte>,
+    bridge: Option<Bridge>,
     /// The tunnel's server entry (for the mask of both, D19).
     tunnel_server: Option<&'a Entry>,
 }
@@ -279,19 +279,19 @@ impl Resources for RunResources<'_> {
             .entry(es)
             .build()
             .map_err(|_| ResourceError("máscara do túnel"))?;
-        let bridge = Ponte::abrir(Abertura {
+        let bridge = Bridge::open(Opening {
             via,
-            alvo_host: host,
-            alvo_porta: port,
-            programas: ctx.daemon.programas_ssh(),
+            target_host: host,
+            target_port: port,
+            programs: ctx.daemon.programas_ssh(),
             known_hosts: &ctx.daemon.known_hosts().map_err(ResourceError)?,
             rt: ctx.daemon.temporarios(),
-            mascara: mask,
-            limites: LIMITES_TUNEL,
-            travas: ctx.locks.clone(),
+            mask,
+            limits: TUNNEL_LIMITS,
+            locks: ctx.locks.clone(),
         })
         .map_err(ResourceError)?;
-        let p = bridge.porta();
+        let p = bridge.port();
         self.bridge = Some(bridge);
         self.tunnel_server = Some(es);
         Ok(p)
@@ -307,7 +307,7 @@ pub(crate) struct Preparation {
     pub(crate) temp_files: Option<TempFiles>,
     /// Jump of `ward ssh` or database tunnel (Phase 28): the bridge, which starts
     /// accepting when the child's pid is known.
-    pub(crate) bridge: Option<Ponte>,
+    pub(crate) bridge: Option<Bridge>,
     /// Interactive `ward ssh`: the child in a pty of this size (D13, D34).
     pub(crate) pty: Option<Janela>,
     /// `ward ssh` with a key: the agent of D12, which serves only the child.
@@ -967,7 +967,7 @@ pub(crate) fn session_with(
     // its `ssh` reaches the CLI already masked.
     let bridge = bridge.map(|p| {
         let c = cli.clone();
-        p.iniciar(
+        p.start(
             pid,
             Arc::new(move |out: &mut Zeroizing<Vec<u8>>| {
                 c.send_output(Fluxo::Erro, out);

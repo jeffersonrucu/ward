@@ -164,3 +164,16 @@ Conferido por multiconjunto de literais (script na scratchpad, comentários fora
 - [x] Teste de ataque para cada (SEG) tocado — os existentes acompanham os nomes; a lógica não mudou
 - [ ] (UI/DESIGN) Conferido contra o FigCraft — não se aplica
 - [x] Ficou dentro do escopo da fase
+
+## Merge com o master `5162340` (Fases 22, 24, 31)
+- Conflito modify/delete em `crates/wardd/src/ponte.rs` (a Fase 22 o renomeou para
+  `bridge.rs`): `ponte.rs` apagado e os usos desta fase aplicados no `bridge.rs`
+  (`ward_core::mask::Mask`, `Arc<Mask>`, `mask.stream()`, `m.mask(…)`, `m.finish(…)`).
+- Conflito de conteúdo em `crates/wardd/src/playwright.rs`: ficou a versão da Fase 22
+  (`has_secret`, `mask`), com `Mask`, `mask_all` e `Mask::from_entry`.
+- Glossário com as partes das Fases 15, 16, 21, 22, 24 e 31. Nenhum uso antigo restou
+  (procurado em `crates/` e `app/`).
+- Literais conferidos de novo por script nos arquivos tocados: iguais ao `5162340` fora
+  as capturas `{MARCA}` → `{MARK}` do `dev-vault`; `mask*` iguais à conferência de antes.
+- `cargo check` (log `.dev/logs/fase16-merge-check.log`) 0; `make compile` (log
+  `.dev/logs/fase16-merge-make-compile.log`) 0.

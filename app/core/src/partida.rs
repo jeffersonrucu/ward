@@ -38,7 +38,7 @@ use ward_platform::{AppEnvironment, SessionError, harden_process, verify_app_env
 use ward_core::protocolo::Papel;
 
 use crate::AppError;
-use crate::cliente;
+use crate::client;
 use crate::daemon::DaemonSocket;
 
 /// Por que o app não abriu. Sem valor de variável nem caminho.
@@ -105,7 +105,7 @@ pub fn iniciar() -> Result<Partida, ErroPartida> {
     let pai_e_o_daemon = Parent::current()
         .and_then(|p| p.verify_looks_like_daemon())
         .is_ok();
-    iniciar_com(std::env::vars_os(), DaemonSocket::padrao, pai_e_o_daemon)
+    iniciar_com(std::env::vars_os(), DaemonSocket::standard, pai_e_o_daemon)
 }
 
 fn tracer_zero() -> bool {
@@ -133,7 +133,7 @@ where
     let pai = Parent::current().map_err(ErroPartida::Pai)?;
 
     let mut daemon = daemon().map_err(ErroPartida::Daemon)?;
-    let conexao = daemon.conectar_agora().map_err(ErroPartida::Daemon)?;
+    let conexao = daemon.connect_now().map_err(ErroPartida::Daemon)?;
     if !app::has_cloexec(conexao).unwrap_or(false) {
         return Err(ErroPartida::SemCloexec);
     }
@@ -186,7 +186,7 @@ where
         Ok(d) => d,
         Err(e) => return ErroPartida::Daemon(e),
     };
-    if let Err(e) = daemon.conectar_agora() {
+    if let Err(e) = daemon.connect_now() {
         return ErroPartida::Daemon(e);
     }
     pedir_instancia(&mut daemon)
@@ -194,7 +194,7 @@ where
 
 /// `abrir_app` e nada mais: nenhum outro pedido nesta conexão.
 fn pedir_instancia(daemon: &mut DaemonSocket) -> ErroPartida {
-    match cliente::abrir_app_como_agente(daemon) {
+    match client::open_app_as_agent(daemon) {
         Ok(()) => ErroPartida::Delegado,
         Err(e) => ErroPartida::Daemon(e),
     }
@@ -206,9 +206,9 @@ fn conferir_papel(
     daemon: &mut DaemonSocket,
     pai: Result<(), ParentMismatch>,
 ) -> Result<(), ErroPartida> {
-    let papel = cliente::papel(daemon);
+    let papel = client::role(daemon);
     if let Err(e) = pai {
-        let _ = cliente::abrir_app(daemon);
+        let _ = client::open_app(daemon);
         return Err(ErroPartida::Pai(e));
     }
     match papel {
@@ -282,7 +282,7 @@ mod testes {
                 ambiente
                     .into_iter()
                     .map(|(k, v)| (OsString::from(k), OsString::from(v))),
-                move || Ok(DaemonSocket::sistema_em(c)),
+                move || Ok(DaemonSocket::system_at(c)),
                 true,
             );
             assert!(matches!(r, Err(ErroPartida::Ambiente(_))), "{:?}", r.err());
@@ -296,7 +296,7 @@ mod testes {
     fn daemon_que_da(papel: Papel) -> (DaemonSocket, std::thread::JoinHandle<Vec<String>>) {
         use ward_core::protocolo::{self, Resposta, quadro};
         let (a, mut b) = std::os::unix::net::UnixStream::pair().unwrap();
-        let d = DaemonSocket::de_par(a, std::time::Duration::from_secs(10));
+        let d = DaemonSocket::from_pair(a, std::time::Duration::from_secs(10));
         let h = std::thread::spawn(move || {
             let mut ops = Vec::new();
             while let Ok(q) = quadro::ler_quadro(&mut b, quadro::limite_do_quadro(Papel::App)) {

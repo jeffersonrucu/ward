@@ -25,6 +25,7 @@ pub mod log;
 
 pub mod aprovacao;
 pub mod arquivos;
+pub mod bridge;
 pub mod cdp;
 pub mod config;
 pub mod execution;
@@ -33,7 +34,6 @@ pub mod lancamento;
 pub mod login;
 pub mod nucleo;
 pub mod playwright;
-pub mod ponte;
 pub mod servidor;
 pub mod ssh;
 pub mod ssh_agent;

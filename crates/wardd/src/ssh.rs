@@ -50,9 +50,9 @@ use ward_platform::child::Command;
 use zeroize::Zeroizing;
 
 use crate::aprovacao::Cliente;
+use crate::bridge::{Bridge, Intermediate, JUMP_LIMITS, Opening};
 use crate::execution::{DiesOnLock, Preparation, PreparedAgent};
 use crate::nucleo::Daemon;
-use crate::ponte::{Abertura, Intermediario, LIMITES_SALTO, Ponte};
 use crate::ssh_agent::{AgentError, SshAgent};
 use crate::{aviso, depurar};
 
@@ -411,7 +411,7 @@ pub(crate) fn cred_from(a: &Auth) -> Cred {
 pub(crate) fn intermediate<'a>(
     entries: &'a [Entry],
     name: &str,
-) -> Result<(&'a Entry, Intermediario), ErroResposta> {
+) -> Result<(&'a Entry, Intermediate), ErroResposta> {
     let Some(e) = visible(entries, name) else {
         aviso!("salto ou túnel: a outra entrada sumiu ou foi bloqueada; negado (D19)");
         return Err(ErroResposta::Negado);
@@ -419,10 +419,10 @@ pub(crate) fn intermediate<'a>(
     match e.data() {
         Data::Server(s) if s.jump.is_none() => Ok((
             e,
-            Intermediario {
+            Intermediate {
                 host: s.host.clone(),
-                porta: s.port,
-                usuario: s.username.clone(),
+                port: s.port,
+                username: s.username.clone(),
                 cred: cred_from(&s.auth),
             },
         )),
@@ -561,16 +561,16 @@ impl Daemon {
         let bridge = match jump {
             None => None,
             Some((via, bridge_mask)) => Some(
-                Ponte::abrir(Abertura {
+                Bridge::open(Opening {
                     via,
-                    alvo_host: &host,
-                    alvo_porta: port,
-                    programas: self.programas_ssh(),
+                    target_host: &host,
+                    target_port: port,
+                    programs: self.programas_ssh(),
                     known_hosts: &known_hosts,
                     rt: self.temporarios(),
-                    mascara: bridge_mask,
-                    limites: LIMITES_SALTO,
-                    travas: (locks.clone(), initial),
+                    mask: bridge_mask,
+                    limits: JUMP_LIMITS,
+                    locks: (locks.clone(), initial),
                 })
                 .map_err(|m| {
                     aviso!("ssh: {m}");
@@ -618,7 +618,7 @@ impl Daemon {
             },
             Some(p) => Destination {
                 host: "127.0.0.1",
-                port: p.porta(),
+                port: p.port(),
                 username: &username,
             },
         };
