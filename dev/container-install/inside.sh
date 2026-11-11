@@ -321,9 +321,11 @@ check "V9.3 servidor falso do uid escutando em /run/user/$UID_T/ward" "$(cat /tm
 PASSWORD="$(cat "$T/senha")"
 r="$(printf '%s\n' "$PASSWORD" | as_1000 /usr/bin/env -i HOME="$HOME_T" PATH=/usr/bin:/bin LANG=C.UTF-8 \
     XDG_RUNTIME_DIR="/run/user/$UID_T" WARD_SOCKET="/run/user/$UID_T/ward/wardd.sock" \
-    /usr/bin/script -qec "/usr/local/bin/ward destravar" /dev/null 2>&1; echo "saiu=$?")"
-lacks "V9.3 ward destravar não sai 0" "$r" "saiu=0"
-lacks "V9.3 ward destravar não pede a senha" "$r" "Senha mestra"
+    /usr/bin/script -qec "/usr/local/bin/ward unlock" /dev/null 2>&1; echo "saiu=$?")"
+lacks "V9.3 ward unlock não sai 0" "$r" "saiu=0"
+lacks "V9.3 ward unlock não pede a senha" "$r" "Senha mestra"
+# m2:DT10: the refusal comes from the server check, not from an unknown subcommand.
+lacks "V9.3 ward unlock é um subcomando conhecido" "$r" "comando desconhecido"
 check "V9.3 o servidor falso não recebeu conexão nem byte" "[$(cat "$RECORD")]" "[]"
 kill "$FPID" 2>/dev/null || true
 wait "$FPID" 2>/dev/null || true
@@ -480,8 +482,10 @@ new_pid="$(systemctl show -p MainPID --value "wardd@$UID_T.service")"
 [ "$new_pid" != "$old_pid" ] && cmp -s "/proc/$new_pid/exe" "$B/wardd" && ok "m2:V5.7: o wardd no ar é o 0.2.0" || failed "m2:V5.7: o wardd no ar não é o 0.2.0"
 lacks "m2:V5.7: o wardd 0.2.0 não atende o cliente v1" "$(legacy_call "$REQ_STATUS" "$RESP_LOCKED")" "same"
 check "m2:V5.7: o cofre continua intacto até destravar" "$(vault_sums)" "$VAULT_BEFORE"
-r="$(printf '%s' "$PASSWORD" | as_1000 "$B/cliente" "$SOCK" destravar)"
-check "m2:V5.7: o wardd 0.2.0 destrava o cofre 0.1.4" "$r" "resposta: ok"
+r="$(printf '%s\n' "$PASSWORD" | as_1000 /usr/bin/env -i HOME="$HOME_T" PATH=/usr/bin:/bin LANG=C.UTF-8 \
+    XDG_RUNTIME_DIR="/run/user/$UID_T" /usr/bin/script -qec "/usr/local/bin/ward unlock" /dev/null 2>&1; echo "saiu=$?")"
+check "m2:V5.7: \`ward unlock\` 0.2.0 destrava o cofre 0.1.4" "$r" "cofre destravado"
+check "m2:V5.7: \`ward unlock\` sai 0" "$r" "saiu=0"
 lacks "m2:V5.7: o destrave migra o cofre (arquivo regravado)" "$(vault_sums)" "$(head -n 1 <<<"$VAULT_BEFORE")"
 check "m2:V5.7: estado no formato novo depois do destrave" "$(head -n 1 "$VAULT_T/estado")" "ward-state 2"
 check "m2:V5.7: cofre migrado continua 0600 do usuário" "$(stat -c '%U %a' "$VAULT_T/cofre.ward")" "$TEST_USER 600"

@@ -84,10 +84,10 @@ impl Strength {
     /// Stable code for the interface.
     pub fn code(self) -> &'static str {
         match self {
-            Strength::Weak => "fraca",
-            Strength::Fair => "razoavel",
-            Strength::Strong => "forte",
-            Strength::VeryStrong => "muito-forte",
+            Strength::Weak => "weak",
+            Strength::Fair => "fair",
+            Strength::Strong => "strong",
+            Strength::VeryStrong => "very-strong",
         }
     }
 }

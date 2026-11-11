@@ -12,9 +12,8 @@
 // what the user typed goes as a new value.
 //
 // The type keys and the SMTP security values are the vault v5 names (m2:DT4, Phase 52).
-// Wire names frozen until m2:Phase 54: the field ids, the keys of the save form and of
-// its errors, and the secret values above. They stay as quoted literals, or as property
-// names listed in `dev/english-check/frozen.txt`.
+// Wire names (m2:Phase 54): the field ids (the protocol v2 ones), the keys of the save
+// form and of its errors, and the secret values above.
 
 export const FORM_ENVIRONMENTS = Object.freeze([
   { value: '', label: 'Escolha o ambiente' },
@@ -83,10 +82,10 @@ export function databaseAccess(engine) {
 
 /** Default port (placeholder) of the port field, by engine, protocol or security. */
 export function defaultPort(kind, fields) {
-  if (kind === 'database') return ENGINES.find((x) => x.value === fields.motor)?.port ?? '';
-  if (kind === 'ftp-sftp') return PROTOCOLS.find((x) => x.value === fields.protocolo)?.port ?? '';
+  if (kind === 'database') return ENGINES.find((x) => x.value === fields.engine)?.port ?? '';
+  if (kind === 'ftp-sftp') return PROTOCOLS.find((x) => x.value === fields.protocol)?.port ?? '';
   if (kind === 'server') return '22';
-  if (kind === 'smtp') return { none: '25', starttls: '587', tls: '465' }[fields.seguranca] ?? '587';
+  if (kind === 'smtp') return { none: '25', starttls: '587', tls: '465' }[fields.security] ?? '587';
   return '';
 }
 
@@ -103,9 +102,9 @@ const AUTHENTICATION = {
   local: true,
 };
 const AUTHENTICATION_ROWS = [
-  [S('senha', 'Senha', { generate: true, auth: 'password' })],
+  [S('password', 'Senha', { generate: true, auth: 'password' })],
   [
-    S('chave_privada', 'Chave privada', { auth: 'key', multiline: true }),
+    S('private_key', 'Chave privada', { auth: 'key', multiline: true }),
     S('passphrase', 'Passphrase (opcional)', { auth: 'key' }),
   ],
 ];
@@ -115,8 +114,8 @@ export const FORM_TYPES = Object.freeze({
     access: 'Entregues como WARD_URL, WARD_USER, WARD_PASS e WARD_TOTP.',
     rows: [
       [T('url', 'URL', { placeholder: 'Endereço com http ou https', url: true })],
-      [T('usuario', 'Usuário', { placeholder: 'Ex.: wp_admin' }), S('senha', 'Senha', { generate: true })],
-      [S('totp_semente', 'Semente TOTP'), { id: 'code', kind: 'totp' }],
+      [T('username', 'Usuário', { placeholder: 'Ex.: wp_admin' }), S('password', 'Senha', { generate: true })],
+      [S('totp_seed', 'Semente TOTP'), { id: 'code', kind: 'totp' }],
     ],
   },
   'database': {
@@ -124,15 +123,15 @@ export const FORM_TYPES = Object.freeze({
     access: databaseAccess('postgres'),
     rows: [
       [
-        { id: 'motor', label: 'Motor', kind: 'select', options: 'engines' },
+        { id: 'engine', label: 'Motor', kind: 'select', options: 'engines' },
         T('host', 'Host', { placeholder: 'Ex.: 127.0.0.1' }),
       ],
       [
-        T('porta', 'Porta', { port: true, inputMode: 'numeric' }),
-        T('base', 'Base', { placeholder: 'Ex.: app_teste' }),
+        T('port', 'Porta', { port: true, inputMode: 'numeric' }),
+        T('db_name', 'Base', { placeholder: 'Ex.: app_teste' }),
       ],
-      [T('usuario', 'Usuário', { placeholder: 'Ex.: app' }), S('senha', 'Senha', { generate: true })],
-      [{ id: 'tunel', label: 'Túnel SSH (opcional)', kind: 'select', options: 'servers' }],
+      [T('username', 'Usuário', { placeholder: 'Ex.: app' }), S('password', 'Senha', { generate: true })],
+      [{ id: 'tunnel', label: 'Túnel SSH (opcional)', kind: 'select', options: 'servers' }],
     ],
   },
   'server': {
@@ -141,11 +140,11 @@ export const FORM_TYPES = Object.freeze({
     rows: [
       [
         T('host', 'Host', { placeholder: 'Ex.: 127.0.0.1' }),
-        T('porta', 'Porta', { port: true, inputMode: 'numeric' }),
+        T('port', 'Porta', { port: true, inputMode: 'numeric' }),
       ],
-      [T('usuario', 'Usuário', { placeholder: 'Ex.: deploy' }), AUTHENTICATION],
+      [T('username', 'Usuário', { placeholder: 'Ex.: deploy' }), AUTHENTICATION],
       ...AUTHENTICATION_ROWS,
-      [{ id: 'salto', label: 'Servidor de salto (opcional)', kind: 'select', options: 'jumps' }],
+      [{ id: 'jump', label: 'Servidor de salto (opcional)', kind: 'select', options: 'jumps' }],
     ],
   },
   'api': {
@@ -154,7 +153,7 @@ export const FORM_TYPES = Object.freeze({
       [T('url', 'URL base', { placeholder: 'Endereço com http ou https', url: true })],
       [S('token', 'Token')],
       [
-        T('variavel', 'Nome da variável', {
+        T('variable', 'Nome da variável', {
           placeholder: 'Ex.: GITLAB_TOKEN',
           help: 'O token vai nesta variável e em WARD_TOKEN.',
         }),
@@ -168,7 +167,7 @@ export const FORM_TYPES = Object.freeze({
       [T('access_key_id', 'Access key ID', { placeholder: 'Ex.: AKIA…' })],
       [S('secret_access_key', 'Secret access key')],
       [
-        { id: 'regiao', label: 'Região', kind: 'select', options: 'regions' },
+        { id: 'region', label: 'Região', kind: 'select', options: 'regions' },
         S('session_token', 'Session token (opcional)'),
       ],
       [T('role_arn', 'Role ARN (opcional)', { placeholder: 'arn:aws:iam::…' })],
@@ -179,13 +178,13 @@ export const FORM_TYPES = Object.freeze({
     rows: [
       [
         T('host', 'Host', { placeholder: 'Ex.: smtp.exemplo.com' }),
-        T('porta', 'Porta', { placeholder: '587', inputMode: 'numeric' }),
+        T('port', 'Porta', { placeholder: '587', inputMode: 'numeric' }),
       ],
       [
-        T('usuario', 'Usuário', { placeholder: 'Ex.: mailer' }),
-        { id: 'seguranca', label: 'Segurança', kind: 'select', options: 'security' },
+        T('username', 'Usuário', { placeholder: 'Ex.: mailer' }),
+        { id: 'security', label: 'Segurança', kind: 'select', options: 'security' },
       ],
-      [S('senha', 'Senha', { generate: true })],
+      [S('password', 'Senha', { generate: true })],
     ],
   },
   'ftp-sftp': {
@@ -193,19 +192,19 @@ export const FORM_TYPES = Object.freeze({
     access:
       'Entregues como WARD_PROTOCOL, WARD_HOST, WARD_PORT, WARD_USER e WARD_FILE_KEY (+ WARD_PASSPHRASE) ou WARD_PASS.',
     rows: [
-      [{ id: 'protocolo', label: 'Protocolo', kind: 'select', options: 'protocols' }],
+      [{ id: 'protocol', label: 'Protocolo', kind: 'select', options: 'protocols' }],
       [
         T('host', 'Host', { placeholder: 'Ex.: sftp.exemplo.com' }),
-        T('porta', 'Porta', { port: true, inputMode: 'numeric' }),
+        T('port', 'Porta', { port: true, inputMode: 'numeric' }),
       ],
-      [T('usuario', 'Usuário', { placeholder: 'Ex.: sftpuser' }), AUTHENTICATION],
+      [T('username', 'Usuário', { placeholder: 'Ex.: sftpuser' }), AUTHENTICATION],
       ...AUTHENTICATION_ROWS,
     ],
   },
   'secure-note': {
     access: 'Sem entrega: o ward run recusa este tipo e o Claude nunca recebe o texto.',
     accessTitle: 'Conteúdo',
-    rows: [[{ id: 'texto', label: 'Nota', kind: 'note' }]],
+    rows: [[{ id: 'text', label: 'Nota', kind: 'note' }]],
   },
   'generic': { access: '', rows: [] },
 });
@@ -316,38 +315,38 @@ export function buildForm(kind, state) {
   for (const c of fieldsOfType(kind)) {
     if (c.local) continue;
     if (c.auth && c.auth !== auth) {
-      secrets[c.id] = 'vazio';
+      secrets[c.id] = 'empty';
     } else if (c.kind === 'text' || c.kind === 'select') {
       const v = state.fields[c.id] ?? '';
       fields[c.id] = c.url ? urlWithPunycode(v) : nfc(v).trim();
     } else if (c.kind === 'secret' || c.kind === 'note') {
       const s = state.secrets[c.id];
-      if (!s) secrets[c.id] = 'vazio';
-      else if (s.mode === 'saved') secrets[c.id] = 'manter';
-      else if (s.mode === 'generated') secrets[c.id] = 'gerada';
-      else if (s.mode === 'loaded') secrets[c.id] = 'carregada';
-      else if (s.typed === '') secrets[c.id] = 'vazio';
-      else secrets[c.id] = { 'novo': c.kind === 'note' ? nfc(s.typed) : s.typed };
+      if (!s) secrets[c.id] = 'empty';
+      else if (s.mode === 'saved') secrets[c.id] = 'keep';
+      else if (s.mode === 'generated') secrets[c.id] = 'generated';
+      else if (s.mode === 'loaded') secrets[c.id] = 'loaded';
+      else if (s.typed === '') secrets[c.id] = 'empty';
+      else secrets[c.id] = { 'new': c.kind === 'note' ? nfc(s.typed) : s.typed };
     }
   }
   return {
-    'tipo': kind,
-    'nome': nfc(state.name).trim(),
-    'grupo': nfc(state.group).trim(),
-    'ambiente': state.environment,
-    'projeto': nfc(state.project).trim(),
+    'type': kind,
+    'name': nfc(state.name).trim(),
+    'group': nfc(state.group).trim(),
+    'environment': state.environment,
+    'project': nfc(state.project).trim(),
     'tags': tagsOf(state.tags),
-    'campos': fields,
-    'segredos': secrets,
+    'fields': fields,
+    'secrets': secrets,
     'extras': state.extras.map((x) => ({
-      'nome': nfc(x.name).trim(),
-      'segredo': x.secret,
-      'valor': x.stored ? { 'manter': x.original } : { 'novo': x.secret ? x.value : nfc(x.value) },
+      'name': nfc(x.name).trim(),
+      'secret': x.secret,
+      'value': x.stored ? { 'keep': x.original } : { 'new': x.secret ? x.value : nfc(x.value) },
     })),
-    'anexos': (state.attachments ?? []).map((a) => a.id),
+    'attachments': (state.attachments ?? []).map((a) => a.id),
     // Phase 39b: when editing, the stored attachments that stay (by name). The content
     // stays in the daemon; whatever leaves this list is removed on save.
-    'anexos_mantidos': (state.stored ?? []).map((a) => a.name),
+    'kept_attachments': (state.stored ?? []).map((a) => a.name),
   };
 }
 
@@ -355,8 +354,8 @@ export function buildForm(kind, state) {
 export function errorsByField(errors) {
   const map = {};
   for (const e of errors ?? []) {
-    const key = e.posicao && e.campo === 'extras' ? `extras-${e.posicao}` : e.campo;
-    if (!(key in map)) map[key] = e.motivo;
+    const key = e.position && e.field === 'extras' ? `extras-${e.position}` : e.field;
+    if (!(key in map)) map[key] = e.reason;
   }
   return map;
 }

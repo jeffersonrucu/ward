@@ -274,7 +274,7 @@ def ward(args, stdin_data=b"", timeout=120):
 
 
 try:
-    code, screen = pty_run(["destravar"], [("Senha mestra", PASSWORD + "\r")])
+    code, screen = pty_run(["unlock"], [("Senha mestra", PASSWORD + "\r")])
     verify(code == 0 and b"cofre destravado" in screen, f"destravar o wardd de teste ({code})")
 
     # --- 3. ward ssh and tunnel suite ---------------------------------------------------

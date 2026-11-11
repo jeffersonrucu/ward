@@ -943,7 +943,7 @@ def phase_42_section(t, s):
         document.getElementById('entry-group').value = 'teste-fase-42'; document.getElementById('entry-environment').value = 'dev'; return true; })()""")
     evaluate(cdp, ps, "document.querySelector('.button.primary').click(), true")
     verify(closed(pt), "V6.8: \"Salvar no Ward\" grava e o popup fecha", "v68_salvou")
-    p = subprocess.run([WARD, "lista", "--json"], capture_output=True, timeout=60,
+    p = subprocess.run([WARD, "list", "--json"], capture_output=True, timeout=60,
                        env={"PATH": "/usr/bin:/bin", "HOME": WORK_DIR, "WARD_DEV_SOCKET_DIR": SOCKDIR, "LANG": "C.UTF-8"})
     try:
         items = json.loads(p.stdout)
@@ -953,7 +953,7 @@ def phase_42_section(t, s):
         item = None
     verify(p.returncode == 0 and item is not None and item.get("group") == "teste-fase-42" and item.get("environment") == "dev"
            and item.get("type") == "login" and "level" not in item and new_password.encode() not in p.stdout,
-           f"V6.8: a entrada aparece no `ward lista --json` (login, grupo e ambiente escolhidos; sem nível, D50) ({item})", "v68_ward_lista")
+           f"V6.8: a entrada aparece no `ward list --json` (login, grupo e ambiente escolhidos; sem nível, D50) ({item})", "v68_ward_lista")
     # Level "with approval": the use by the agent asks for approval with PIN (the test
     # window denies); a free entry would only ask for the origin confirmation (Phase 44c).
     set_window_mode("negar")

@@ -29,8 +29,8 @@
   import { call } from '../bridge/index.js';
 
   /**
-   * Wire fields of the entry (frozen until Phase 54): name, type, environment, level.
-   * @typedef {{ nome: string, tipo: string, ambiente: 'dev' | 'stage' | 'prod', nivel: string }} Entry
+   * Wire fields of the entry (m2:Phase 54): name, type, environment, level.
+   * @typedef {{ name: string, type: string, environment: 'dev' | 'stage' | 'prod', level: string }} Entry
    * @type {{
    *   open?: boolean, entry: Entry | null,
    *   onclose?: () => void, onchanged?: (level: string) => void, onlocked?: () => void
@@ -55,12 +55,12 @@
   let error = $state('');
   let sending = $state(false);
 
-  const current = $derived(accessLevel(entry?.nivel) ?? accessLevel('approval'));
+  const current = $derived(accessLevel(entry?.level) ?? accessLevel('approval'));
   const next = $derived(accessLevel(chosen));
 
   function reset() {
     step = 'escolher';
-    chosen = entry?.nivel ?? '';
+    chosen = entry?.level ?? '';
     pin = '';
     wrongPin = false;
     error = '';
@@ -82,7 +82,7 @@
   }
 
   async function proceed() {
-    if (!next || chosen === entry?.nivel) return;
+    if (!next || chosen === entry?.level) return;
     step = 'pin';
     pin = '';
     wrongPin = false;
@@ -102,28 +102,28 @@
     if (sending || pin.length < 4 || !entry || !next) return;
     // The PIN leaves the state before the answer: the screen does not keep it, not even
     // on error.
-    const args = { entrada: entry.nome, nivel: chosen, pin };
+    const args = { entry: entry.name, level: chosen, pin };
     pin = '';
     sending = true;
     error = '';
     try {
-      const r = await call('mudar_nivel', args);
+      const r = await call('set_level', args);
       args.pin = '';
       sending = false;
-      onchanged?.(r.nivel);
+      onchanged?.(r.level);
       return;
     } catch (e) {
       args.pin = '';
       sending = false;
-      if (e.codigo === 'pin-incorreto') {
+      if (e.code === 'wrong-pin') {
         wrongPin = true;
         if (await isLocked()) return;
-      } else if (e.codigo === 'travado') {
+      } else if (e.code === 'locked') {
         onlocked?.();
         return;
       } else {
         wrongPin = false;
-        error = e.mensagem;
+        error = e.message;
       }
     }
     await tick();
@@ -133,8 +133,8 @@
   /** After a wrong PIN: the 5th in a row locks the vault (the daemon counts). */
   async function isLocked() {
     try {
-      const r = await call('estado_do_cofre');
-      if (r?.estado === 'destravado') return false;
+      const r = await call('vault_status');
+      if (r?.status === 'unlocked') return false;
     } catch {
       // No answer: treat as locked; the unlock screen asks again.
     }
@@ -160,9 +160,9 @@
   {#if entry}
     <div class="entry">
       <Icon name="key" />
-      <span class="entry-name">{entry.nome}</span>
-      <TypeBadge kind={entry.tipo} />
-      <EnvironmentBadge environment={entry.ambiente} />
+      <span class="entry-name">{entry.name}</span>
+      <TypeBadge kind={entry.type} />
+      <EnvironmentBadge environment={entry.environment} />
     </div>
   {/if}
 
@@ -186,7 +186,7 @@
       <Button variant="secondary" onclick={close}>Cancelar</Button>
       <Button
         variant="primary"
-        disabled={!next || chosen === entry?.nivel}
+        disabled={!next || chosen === entry?.level}
         onclick={proceed}>Continuar</Button
       >
     </div>

@@ -34,20 +34,16 @@ use crate::unlock::MasterPassword;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct VersionView {
     /// The exact file name, as the daemon gave it.
-    #[serde(rename = "nome")]
     pub name: String,
     /// Seconds since 1970 in UTC, from the name (date and time; the `-N` suffix does not
     /// change it).
-    #[serde(rename = "instante")]
     pub instant: i64,
     /// The version opens with the key of the open vault (Phase 49a); `false`: from
     /// another master password (the daemon did not check its order).
-    #[serde(rename = "conferida")]
     pub verified: bool,
     /// The write is older than the one of a version with an earlier date: the date in
     /// the name does not match the order of the writes (old copy with a new name, or the
     /// clock went backwards). Marked by the daemon.
-    #[serde(rename = "fora_de_ordem")]
     pub out_of_order: bool,
 }
 
@@ -127,9 +123,7 @@ pub fn requested_version(name: &str) -> Result<&str, AppError> {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Restore {
-    #[serde(rename = "versao")]
     pub version: String,
-    #[serde(rename = "senha")]
     pub password: MasterPassword,
     pub pin: Pin,
 }
@@ -137,10 +131,8 @@ pub struct Restore {
 /// Response of the restore backup command: no value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct Restored {
-    #[serde(rename = "restaurado")]
     pub restored: bool,
     /// How many entries the vault has after the swap (the ones of the version).
-    #[serde(rename = "entradas")]
     pub entries: usize,
 }
 
@@ -229,8 +221,8 @@ mod tests {
     #[test]
     fn attack_restore_with_extra_field_or_bad_pin_is_refused() {
         let ok = serde_json::json!({
-            "versao": "ward-20261108-143200.ward",
-            "senha": "falso-mestra-ward-01",
+            "version": "ward-20261108-143200.ward",
+            "password": "falso-mestra-ward-01",
             "pin": "135790",
         });
         let r: Restore = serde_json::from_value(ok.clone()).unwrap();
@@ -241,9 +233,9 @@ mod tests {
         for (key, value) in [
             ("geracao", serde_json::json!(9)),
             ("caminho", serde_json::json!("/tmp/x.ward")),
-            // m2 Phase 32: the new Rust names are not wire names (m2:DT3).
-            ("version", serde_json::json!("ward-20261108-143200.ward")),
-            ("password", serde_json::json!("falso-mestra-ward-01")),
+            // m2:V4.23 (m2:Phase 54): the 0.1.x (pt-BR) names are refused, with no alias.
+            ("versao", serde_json::json!("ward-20261108-143200.ward")),
+            ("senha", serde_json::json!("falso-mestra-ward-01")),
         ] {
             let mut v = ok.clone();
             v[key] = value;
@@ -253,27 +245,27 @@ mod tests {
             ("pin", serde_json::json!("12ab")),
             ("pin", serde_json::json!("123")),
             ("pin", serde_json::json!(135790)),
-            ("senha", serde_json::json!("")),
-            ("versao", serde_json::json!(1)),
+            ("password", serde_json::json!("")),
+            ("version", serde_json::json!(1)),
         ] {
             let mut v = ok.clone();
             v[key] = value;
             assert!(serde_json::from_value::<Restore>(v).is_err(), "{key}");
         }
-        for missing in ["versao", "senha", "pin"] {
+        for missing in ["version", "password", "pin"] {
             let mut v = ok.clone();
             v.as_object_mut().unwrap().remove(missing);
             assert!(serde_json::from_value::<Restore>(v).is_err(), "{missing}");
         }
     }
 
-    /// m2 Phase 32: the screen receives the old keys (m2:DT3, `rename` until Phase 54).
+    /// m2:V4.23 (m2:Phase 54): the screen receives the English keys, never the 0.1.x ones.
     #[test]
-    fn attack_new_rust_names_are_not_wire_names() {
+    fn webview_keys_are_the_english_ones() {
         let v = VersionView::from_name("ward-19700101-000000.ward").unwrap();
         assert_eq!(
             serde_json::to_string(&v).unwrap(),
-            r#"{"nome":"ward-19700101-000000.ward","instante":0,"conferida":false,"fora_de_ordem":false}"#
+            r#"{"name":"ward-19700101-000000.ward","instant":0,"verified":false,"out_of_order":false}"#
         );
         let r = Restored {
             restored: true,
@@ -281,7 +273,7 @@ mod tests {
         };
         assert_eq!(
             serde_json::to_string(&r).unwrap(),
-            r#"{"restaurado":true,"entradas":3}"#
+            r#"{"restored":true,"entries":3}"#
         );
     }
 
@@ -340,7 +332,7 @@ mod tests {
 
         fn request(version: &str, password: &str, pin: &str) -> Restore {
             serde_json::from_value(serde_json::json!({
-                "versao": version, "senha": password, "pin": pin,
+                "version": version, "password": password, "pin": pin,
             }))
             .unwrap()
         }

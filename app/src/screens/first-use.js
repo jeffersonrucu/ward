@@ -35,10 +35,10 @@ export function isValidPin(pin) {
 // strong ≥ 128). It is only a hint; the rule that blocks is the minimum of 12
 // characters.
 const STRENGTHS = [
-  { upTo: 60, code: 'fraca', label: 'fraca', segments: 1, tone: 'danger' },
-  { upTo: 80, code: 'razoavel', label: 'razoável', segments: 2, tone: 'warning' },
-  { upTo: 128, code: 'forte', label: 'forte', segments: 3, tone: 'success' },
-  { upTo: Infinity, code: 'muito-forte', label: 'muito forte', segments: 4, tone: 'success' },
+  { upTo: 60, code: 'weak', label: 'fraca', segments: 1, tone: 'danger' },
+  { upTo: 80, code: 'fair', label: 'razoável', segments: 2, tone: 'warning' },
+  { upTo: 128, code: 'strong', label: 'forte', segments: 3, tone: 'success' },
+  { upTo: Infinity, code: 'very-strong', label: 'muito forte', segments: 4, tone: 'success' },
 ];
 
 export function passwordStrength(password) {

@@ -369,6 +369,13 @@ MARK=/usr/local/lib/ward/created-groups
 REQ_STATUS=1 REQ_UNLOCK=2 RESP_OK=37 RESP_LOCKED=38
 legacy_call() { as_1000 /usr/bin/python3 -I "$L/legacy_client.py" "$SOCK" "$L/protocol-v1.jsonl" "$1" "$2"; }
 PASSWORD="$(cat "$T/senha")"
+# The installed `ward unlock` (0.2.0 name, Phase 55) in a pty, as the user, with the test
+# password (fake, D15) typed on its stdin.
+unlock_with_cli() {
+    printf '%s\n' "$PASSWORD" | as_1000 /usr/bin/env -i HOME="$HOME_T" PATH=/usr/bin:/bin LANG=C.UTF-8 \
+        XDG_RUNTIME_DIR="/run/user/$UID_T" /usr/bin/script -qec "/usr/local/bin/ward unlock" /dev/null 2>&1
+    echo "saiu=$?"
+}
 plant_old_vault() {
     rm -rf -- "$VAULT_T"
     install -d -m 0700 -o "$UID_T" -g "$UID_T" "$VAULT_T"
@@ -453,8 +460,9 @@ NEW_WARDD_SUM="$(sha256sum </usr/local/bin/wardd)"
 [ "$NEW_WARDD_SUM" != "$OLD_WARDD_SUM" ] && [ "$(sha256sum <"/proc/$new_pid/exe")" = "$NEW_WARDD_SUM" ] &&
     ok "m2:V5.7: o wardd no ar é o 0.2.0" || failed "m2:V5.7: o wardd no ar não é o 0.2.0"
 lacks "m2:V5.7: o wardd 0.2.0 não atende o cliente v1" "$(legacy_call "$REQ_STATUS" "$RESP_LOCKED")" "same"
-r="$(printf '%s' "$PASSWORD" | as_1000 "$T/bin/cliente" "$SOCK" destravar)"
-check "m2:V5.7: o wardd 0.2.0 destrava o cofre 0.1.4" "$r" "resposta: ok"
+r="$(unlock_with_cli)"
+check "m2:V5.7: \`ward unlock\` 0.2.0 destrava o cofre 0.1.4" "$r" "cofre destravado"
+check "m2:V5.7: \`ward unlock\` sai 0" "$r" "saiu=0"
 lacks "m2:V5.7: o destrave migra o cofre (arquivo regravado)" "$(vault_sums)" "$(head -n 1 <<<"$VAULT_BEFORE")"
 check "m2:V5.7: estado no formato novo depois do destrave" "$(head -n 1 "$VAULT_T/estado")" "ward-state 2"
 VAULT_MIGRATED="$(vault_sums)"

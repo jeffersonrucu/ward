@@ -69,7 +69,7 @@ CARGO_DENY_VERSION := 0.20.2
 	app-front app-check app-bridge test-docker-platform test-no-test-mode test-socket-attacks \
 	test-webkit-real test-clipboard test-revealed-selection test-gst-channels test-app-e2e test-app-logs test-nm test-playwright test-skill test-migration-guide \
 	release install uninstall test-install extension test-extension deb extension-crx test-deb test-login \
-	test-ssh-home test-chrome-policy compile english-check
+	test-ssh-home test-chrome-policy compile english-check test-system-socket
 
 ## check: origins pre-check, then fmt, clippy -D warnings, tests, cargo audit,
 ## cargo deny and gitleaks, in this order (V1.1)
@@ -415,6 +415,14 @@ test-docker-platform: origins
 test-docker-uid: origins
 	$(CARGO) build --quiet --locked -p wardd --features test-mode --bin wardd --example wardd-test-client
 	dev/tests/docker-uid.sh target/debug/wardd target/debug/examples/wardd-test-client
+
+## test-system-socket: m2:Phase 54a (S1, S5, D46): every test that runs a Ward binary
+## has the `test-mode` guard, the ones that talk to a daemon do not build without it,
+## and, in an ubuntu:24.04 container without network with a fake system socket planted
+## (root folder, peer uid 0), no test binary (`--all-features` and the ones built
+## without the feature) connects to it; the release `ward-nm` does (control)
+test-system-socket: origins
+	dev/tests/system-socket.sh
 
 ## test-units: V3.21 (Phase 24; D46, D57, D62): `systemd-analyze verify` of the units of
 ## `install/systemd/` and, in an ubuntu:24.04 container with systemd and without network,

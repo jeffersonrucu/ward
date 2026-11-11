@@ -14,115 +14,115 @@ use ward_core::limits;
 use crate::AppError;
 
 /// Vault status: locked, unlocked or no vault. No argument.
-pub const VAULT_STATUS: &str = "estado_do_cofre";
+pub const VAULT_STATUS: &str = "vault_status";
 /// Copy a field (entry and field): the value goes from the daemon to the clipboard on
 /// the Rust side (D4); the response does not carry the value.
-pub const COPY_FIELD: &str = "copiar_campo";
+pub const COPY_FIELD: &str = "copy_field";
 
 /// List credentials: the entries for the Credentials screen (Phase 32), no secret. No
 /// argument.
-pub const LIST_CREDENTIALS: &str = "listar_credenciais";
+pub const LIST_CREDENTIALS: &str = "list_credentials";
 /// Credential detail (entry): the detail panel of an entry (Phase 32): text fields,
 /// only the names of the secrets, extras without the secret value and attachments
 /// without the content.
-pub const CREDENTIAL_DETAIL: &str = "detalhe_credencial";
+pub const CREDENTIAL_DETAIL: &str = "credential_detail";
 /// Generate password (size, lowercase, uppercase, digits, symbols): standalone
 /// generator (Phase 37). The password stays on the Rust side; the response carries only
 /// size, strength and symbols.
-pub const GENERATE_PASSWORD: &str = "gerar_senha";
+pub const GENERATE_PASSWORD: &str = "generate_password";
 /// Copy the generated password: the standalone password goes to the clipboard (D4); the
 /// response does not carry the value.
-pub const COPY_GENERATED_PASSWORD: &str = "copiar_senha_gerada";
+pub const COPY_GENERATED_PASSWORD: &str = "copy_generated_password";
 /// Reveal the generated password: the value, only on the "reveal" click (S11).
-pub const REVEAL_GENERATED_PASSWORD: &str = "revelar_senha_gerada";
+pub const REVEAL_GENERATED_PASSWORD: &str = "reveal_generated_password";
 /// Discard the generated password: zeroes the standalone password when leaving the
 /// screen.
-pub const DISCARD_GENERATED_PASSWORD: &str = "descartar_senha_gerada";
+pub const DISCARD_GENERATED_PASSWORD: &str = "discard_generated_password";
 /// Reveal a field (entry and field): the value of a secret of the entry, only on the
 /// "reveal" click (S11, D65 b). The screen removes it in 30 s, on hide or on leaving.
-pub const REVEAL_FIELD: &str = "revelar_campo";
+pub const REVEAL_FIELD: &str = "reveal_field";
 /// TOTP code (entry): the current TOTP code and the seconds until it changes (Phase
 /// 33). The seed never goes to the interface.
-pub const TOTP_CODE: &str = "codigo_totp";
+pub const TOTP_CODE: &str = "totp_code";
 /// Copy the TOTP code (entry): the code goes to the clipboard (D4).
-pub const COPY_TOTP_CODE: &str = "copiar_codigo_totp";
+pub const COPY_TOTP_CODE: &str = "copy_totp_code";
 /// Use the generated password (field): "Use this password" of the form generator. The
 /// password goes to the field on the Rust side; the response carries only the size.
-pub const USE_GENERATED_PASSWORD: &str = "usar_senha_gerada";
+pub const USE_GENERATED_PASSWORD: &str = "use_generated_password";
 /// Discard the form: on cancelling or leaving the form, zeroes the used passwords.
-pub const DISCARD_FORM: &str = "descartar_formulario";
+pub const DISCARD_FORM: &str = "discard_form";
 /// Save a credential (previous name and form): creates or edits an entry (Phase 33). A
 /// kept secret and a generated password are put in the draft on the Rust side.
-pub const SAVE_CREDENTIAL: &str = "salvar_credencial";
+pub const SAVE_CREDENTIAL: &str = "save_credential";
 /// Set the level (entry, level and PIN): changes the access level with the PIN (Phase
 /// 35, S9). The PIN goes only to the daemon; the response carries the new level.
-pub const SET_LEVEL: &str = "mudar_nivel";
+pub const SET_LEVEL: &str = "set_level";
 /// Choose an attachment: the Rust side chooses and reads the file (Phase 34); the
 /// response carries id, name and size, or the notice. No argument: the interface does
 /// not choose a path.
-pub const CHOOSE_ATTACHMENT: &str = "escolher_anexo";
+pub const CHOOSE_ATTACHMENT: &str = "choose_attachment";
 /// Remove an attachment (id): removes an attachment chosen and not yet saved.
-pub const REMOVE_ATTACHMENT: &str = "remover_anexo";
+pub const REMOVE_ATTACHMENT: &str = "remove_attachment";
 /// Load a key (field): "Load from file" of the "Private key" field (Phase 53a). The Rust
 /// side chooses, reads and checks the file and keeps the key until saving; the response
 /// carries only the size, or the notice. The interface sends no path.
-pub const LOAD_KEY: &str = "carregar_chave";
+pub const LOAD_KEY: &str = "load_key";
 /// Connect (entry): "Connect" of a server entry (D3); the token does not come back.
-pub const CONNECT: &str = "conectar";
+pub const CONNECT: &str = "connect";
 /// Create the vault (data: password, confirmation, PIN and PIN confirmation): first use
 /// (Phase 30). Checked on the Rust side; the daemon stores only the PIN hash (D30). The
 /// response carries "created" or the errors per field, never the value.
-pub const CREATE_VAULT: &str = "criar_cofre";
+pub const CREATE_VAULT: &str = "create_vault";
 /// Unlock (password): unlocks with the master password (Phase 31). The password goes
 /// only to the daemon, in a type that zeroes; the response neither carries it nor says
 /// how many attempts there were.
-pub const UNLOCK: &str = "destravar";
+pub const UNLOCK: &str = "unlock";
 /// Lock: "Lock now" of the side navigation (Phase 39; the tray locks on the Rust side).
 /// No argument; clears the clipboard and the form first.
-pub const LOCK: &str = "travar";
+pub const LOCK: &str = "lock";
 /// Listen to notices (channel): the Tauri channel through which the Rust side tells the
 /// screen about an unlock request (Phase 31, D65 a). The notice carries only its name,
 /// no data.
-pub const LISTEN_NOTICES: &str = "ouvir_avisos";
+pub const LISTEN_NOTICES: &str = "listen_notices";
 /// Approval request: the current request for the approval window (Phase 36), with the
 /// agent's text already neutralized (D51), or `null`. Only the approval window.
-pub const APPROVAL_REQUEST: &str = "pedido_de_aprovacao";
+pub const APPROVAL_REQUEST: &str = "approval_request";
 /// Answer an approval (id, decision, PIN, acknowledged): Deny (no PIN) or one of the
 /// three Allow (with PIN, S9, S10). Only the approval window; the response does not
 /// carry the PIN. The acknowledgement (Phase 54b, D68) is the box of the hidden default
 /// entry, required in an Allow of a request with a hidden entry and refused in the
 /// others.
-pub const ANSWER_APPROVAL: &str = "responder_aprovacao";
+pub const ANSWER_APPROVAL: &str = "answer_approval";
 
 /// Settings: lock timeout and external backup on or off (Phase 38). No argument; no PIN
 /// hash nor UUID.
-pub const SETTINGS: &str = "configuracoes";
+pub const SETTINGS: &str = "settings";
 /// Change the PIN (data: current, new and confirmation): changes the PIN asking for the
 /// current one (Phase 38, V5.22, S9). The response carries "changed" or the errors per
 /// field, never the value.
-pub const CHANGE_PIN: &str = "trocar_pin";
+pub const CHANGE_PIN: &str = "change_pin";
 /// Change the master password (data: current, new and confirmation): changes the master
 /// password asking for the current one (Phase 38, V5.22). The response carries "changed"
 /// or the errors per field.
-pub const CHANGE_MASTER_PASSWORD: &str = "trocar_senha_mestra";
+pub const CHANGE_MASTER_PASSWORD: &str = "change_master_password";
 /// Set the lock timeout (minutes): inactivity lock timeout, stored in the vault config
 /// (Phase 38, D30, D45).
-pub const SET_LOCK_TIMEOUT: &str = "definir_tempo_trava";
+pub const SET_LOCK_TIMEOUT: &str = "set_lock_timeout";
 /// External backup: on or off, the chosen UUID and, if connected, the USB drive (label
 /// neutralized, D51). Never the mount path (Phase 48, V7.9).
-pub const EXTERNAL_BACKUP: &str = "backup_externo";
+pub const EXTERNAL_BACKUP: &str = "external_backup";
 /// List USB drives: the USB drives the daemon sees, to choose from (Phase 48).
-pub const LIST_USB_DRIVES: &str = "listar_pendrives";
+pub const LIST_USB_DRIVES: &str = "list_usb_drives";
 /// Set the external backup (on, optional UUID): turn on with a USB drive the daemon sees
 /// now (the Rust side checks again) or turn off keeping the UUID (Phase 48, D17, D30).
-pub const SET_EXTERNAL_BACKUP: &str = "definir_backup_externo";
+pub const SET_EXTERNAL_BACKUP: &str = "set_external_backup";
 /// List backups: the versions of the local backup (name and instant, never content),
 /// from the newest to the oldest (Phase 47, V7.7).
-pub const LIST_BACKUPS: &str = "listar_backups";
+pub const LIST_BACKUPS: &str = "list_backups";
 /// Restore a backup (data: version, password and PIN): restores a version with its
 /// master password and the current PIN (Phase 47, V7.7; D17, D39, S9). The response
 /// carries only "restored" and the entry count.
-pub const RESTORE_BACKUP: &str = "restaurar_backup";
+pub const RESTORE_BACKUP: &str = "restore_backup";
 
 /// Commands of the main window, in the order of its capability.
 pub const MAIN_COMMANDS: &[&str] = &[
@@ -349,40 +349,40 @@ mod tests {
         assert_eq!(
             COMMANDS,
             &[
-                "estado_do_cofre",
-                "copiar_campo",
-                "listar_credenciais",
-                "detalhe_credencial",
-                "gerar_senha",
-                "copiar_senha_gerada",
-                "revelar_senha_gerada",
-                "descartar_senha_gerada",
-                "revelar_campo",
-                "codigo_totp",
-                "copiar_codigo_totp",
-                "usar_senha_gerada",
-                "descartar_formulario",
-                "salvar_credencial",
-                "mudar_nivel",
-                "escolher_anexo",
-                "remover_anexo",
-                "carregar_chave",
-                "conectar",
-                "criar_cofre",
-                "destravar",
-                "ouvir_avisos",
-                "configuracoes",
-                "trocar_pin",
-                "trocar_senha_mestra",
-                "definir_tempo_trava",
-                "backup_externo",
-                "listar_pendrives",
-                "definir_backup_externo",
-                "listar_backups",
-                "restaurar_backup",
-                "pedido_de_aprovacao",
-                "responder_aprovacao",
-                "travar",
+                "vault_status",
+                "copy_field",
+                "list_credentials",
+                "credential_detail",
+                "generate_password",
+                "copy_generated_password",
+                "reveal_generated_password",
+                "discard_generated_password",
+                "reveal_field",
+                "totp_code",
+                "copy_totp_code",
+                "use_generated_password",
+                "discard_form",
+                "save_credential",
+                "set_level",
+                "choose_attachment",
+                "remove_attachment",
+                "load_key",
+                "connect",
+                "create_vault",
+                "unlock",
+                "listen_notices",
+                "settings",
+                "change_pin",
+                "change_master_password",
+                "set_lock_timeout",
+                "external_backup",
+                "list_usb_drives",
+                "set_external_backup",
+                "list_backups",
+                "restore_backup",
+                "approval_request",
+                "answer_approval",
+                "lock",
             ]
         );
         // Both windows together are all of them; in common, only the notice channel.
@@ -399,9 +399,9 @@ mod tests {
         }
         assert_eq!(
             APPROVAL_COMMANDS,
-            &["ouvir_avisos", "pedido_de_aprovacao", "responder_aprovacao"]
+            &["listen_notices", "approval_request", "answer_approval"]
         );
-        assert_eq!(permission(COPY_FIELD), "allow-copiar-campo");
+        assert_eq!(permission(COPY_FIELD), "allow-copy-field");
         for c in COMMANDS {
             assert!(Command::from_name(c).is_some());
         }
@@ -424,6 +424,50 @@ mod tests {
             "detalhe_credencial ",
         ] {
             assert_eq!(Command::from_name(name), None, "{name}");
+        }
+    }
+
+    /// m2:V4.23: the 0.1.x (pt-BR) command names no longer exist, not even as an alias.
+    #[test]
+    fn attack_old_command_names_are_refused() {
+        for name in [
+            "estado_do_cofre",
+            "copiar_campo",
+            "listar_credenciais",
+            "detalhe_credencial",
+            "gerar_senha",
+            "copiar_senha_gerada",
+            "revelar_senha_gerada",
+            "descartar_senha_gerada",
+            "revelar_campo",
+            "codigo_totp",
+            "copiar_codigo_totp",
+            "usar_senha_gerada",
+            "descartar_formulario",
+            "salvar_credencial",
+            "mudar_nivel",
+            "escolher_anexo",
+            "remover_anexo",
+            "carregar_chave",
+            "conectar",
+            "criar_cofre",
+            "destravar",
+            "ouvir_avisos",
+            "configuracoes",
+            "trocar_pin",
+            "trocar_senha_mestra",
+            "definir_tempo_trava",
+            "backup_externo",
+            "listar_pendrives",
+            "definir_backup_externo",
+            "listar_backups",
+            "restaurar_backup",
+            "pedido_de_aprovacao",
+            "responder_aprovacao",
+            "travar",
+        ] {
+            assert_eq!(Command::from_name(name), None, "{name}");
+            assert!(!COMMANDS.contains(&name), "{name}");
         }
     }
 

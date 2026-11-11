@@ -15,7 +15,7 @@ export const DENY_ID = 'approval-deny';
 // Phase 44c (D9): decisions that take no PIN. The confirm decision only applies to the
 // confirmation of an `http` origin (the Rust side and the daemon check it again).
 export function needsPin(decision) {
-  return decision !== 'negar' && decision !== 'confirmar';
+  return decision !== 'deny' && decision !== 'confirm';
 }
 
 // Separator of the process chain ("claude → bash → ward run"). An arrow inside a process
@@ -92,7 +92,7 @@ export function originNotice(origin) {
 
 /** Message in the PIN field (FigCraft 650) for the result of the approval answer. */
 export function resultMessage(result) {
-  if (result === 'pin-incorreto') return TEXTS.pinIncorrect;
-  if (result === 'expirado') return TEXTS.expired;
+  if (result === 'wrong-pin') return TEXTS.pinIncorrect;
+  if (result === 'expired') return TEXTS.expired;
   return '';
 }

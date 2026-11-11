@@ -30,20 +30,20 @@
   // Thresholds of Phase 37 (bits): weak < 60, fair < 80, strong < 128, very strong.
   // The keys are the wire values of the strength.
   const STRENGTHS = {
-    'fraca': 'fraca',
-    'razoavel': 'razoável',
-    'forte': 'forte',
-    'muito-forte': 'muito forte',
+    'weak': 'fraca',
+    'fair': 'razoável',
+    'strong': 'forte',
+    'very-strong': 'muito forte',
   };
 
   /** @type {{ field: string, onuse: (length: number) => void, onclose: () => void }} */
   let { field, onuse, onclose } = $props();
 
   let length = $state(DEFAULT_LENGTH);
-  // Character sets, by the wire names of the generate password command (frozen until
-  // Phase 54): lowercase, uppercase, digits, symbols.
-  let charsets = $state({ minusculas: true, maiusculas: true, digitos: true, simbolos: true });
-  /** @type {{ tamanho: number, bits: number, forca: string, simbolos: string } | null} */
+  // Character sets, by the wire names of the generate password command (m2:Phase 54):
+  // lowercase, uppercase, digits, symbols.
+  let charsets = $state({ lowercase: true, uppercase: true, digits: true, symbols: true });
+  /** @type {{ size: number, bits: number, strength: string, symbols: string } | null} */
   let generated = $state(null);
   /** @type {string | null} */
   let revealed = $state(null);
@@ -76,7 +76,7 @@
       do {
         again = false;
         try {
-          const r = await call('gerar_senha', { tamanho: length, ...charsets });
+          const r = await call('generate_password', { size: length, ...charsets });
           if (alive) {
             generated = r;
             error = '';
@@ -84,7 +84,7 @@
         } catch (e) {
           if (alive) {
             generated = null;
-            error = e.mensagem;
+            error = e.message;
           }
         }
       } while (again && alive);
@@ -95,34 +95,34 @@
 
   async function reveal() {
     try {
-      const r = await call('revelar_senha_gerada');
+      const r = await call('reveal_generated_password');
       if (!alive || generating) return;
-      revealed = r.valor;
+      revealed = r.value;
       clearTimeout(revealDeadline);
       revealDeadline = setTimeout(hide, REVEAL_DEADLINE_MS);
     } catch (e) {
-      error = e.mensagem;
+      error = e.message;
     }
   }
 
   async function copy() {
     try {
-      await call('copiar_senha_gerada');
+      await call('copy_generated_password');
       copied = true;
       clearTimeout(copiedDeadline);
       copiedDeadline = setTimeout(() => (copied = false), COPIED_DEADLINE_MS);
     } catch (e) {
-      error = e.mensagem;
+      error = e.message;
     }
   }
 
   async function use() {
     hide();
     try {
-      const r = await call('usar_senha_gerada', { campo: field });
-      onuse(r.tamanho);
+      const r = await call('use_generated_password', { field: field });
+      onuse(r.size);
     } catch (e) {
-      error = e.mensagem;
+      error = e.message;
     }
   }
 
@@ -155,7 +155,7 @@
     clearTimeout(copiedDeadline);
     // The generator password leaves the Rust side; the "used" one stays until save or
     // cancel.
-    call('descartar_senha_gerada').catch(() => {});
+    call('discard_generated_password').catch(() => {});
   });
 </script>
 
@@ -179,7 +179,7 @@
     id="popover-password"
     label="Senha gerada"
     empty={!generated}
-    mask={'•'.repeat(generated?.tamanho ?? 0)}
+    mask={'•'.repeat(generated?.size ?? 0)}
     help="A senha só aparece no revelar. Copiar limpa a área de transferência em 30 s."
     {revealed}
     {copied}
@@ -201,8 +201,8 @@
       oninput={changeLength}
     />
     {#if generated}
-      <span class="strength" data-strength={generated.forca}>
-        {STRENGTHS[generated.forca] ?? ''} · cerca de {generated.bits} bits
+      <span class="strength" data-strength={generated.strength}>
+        {STRENGTHS[generated.strength] ?? ''} · cerca de {generated.bits} bits
       </span>
     {/if}
   </div>
@@ -211,36 +211,36 @@
       <Switch
         id="popover-lowercase"
         label="Minúsculas"
-        on={charsets.minusculas}
-        disabled={charsets.minusculas && onCount === 1}
-        onchange={(v) => changeCharset('minusculas', v)}
+        on={charsets.lowercase}
+        disabled={charsets.lowercase && onCount === 1}
+        onchange={(v) => changeCharset('lowercase', v)}
       />
       <Switch
         id="popover-uppercase"
         label="Maiúsculas"
-        on={charsets.maiusculas}
-        disabled={charsets.maiusculas && onCount === 1}
-        onchange={(v) => changeCharset('maiusculas', v)}
+        on={charsets.uppercase}
+        disabled={charsets.uppercase && onCount === 1}
+        onchange={(v) => changeCharset('uppercase', v)}
       />
     </div>
     <div class="option-line">
       <Switch
         id="popover-digits"
         label="Dígitos"
-        on={charsets.digitos}
-        disabled={charsets.digitos && onCount === 1}
-        onchange={(v) => changeCharset('digitos', v)}
+        on={charsets.digits}
+        disabled={charsets.digits && onCount === 1}
+        onchange={(v) => changeCharset('digits', v)}
       />
       <Switch
         id="popover-symbols"
         label="Símbolos"
-        on={charsets.simbolos}
-        disabled={charsets.simbolos && onCount === 1}
-        onchange={(v) => changeCharset('simbolos', v)}
+        on={charsets.symbols}
+        disabled={charsets.symbols && onCount === 1}
+        onchange={(v) => changeCharset('symbols', v)}
       />
     </div>
-    {#if generated?.simbolos}
-      <span class="symbols" data-test="simbolos">{generated.simbolos}</span>
+    {#if generated?.symbols}
+      <span class="symbols" data-test="symbols">{generated.symbols}</span>
     {/if}
   </div>
   {#if error}<Toast kind="error" message={error} />{/if}
@@ -317,14 +317,14 @@
     font-size: var(--size-xs);
     line-height: var(--line-height-xs);
   }
-  .strength[data-strength='fraca'] {
+  .strength[data-strength='weak'] {
     color: var(--color-danger-text);
   }
-  .strength[data-strength='razoavel'] {
+  .strength[data-strength='fair'] {
     color: var(--color-warning-text);
   }
-  .strength[data-strength='forte'],
-  .strength[data-strength='muito-forte'] {
+  .strength[data-strength='strong'],
+  .strength[data-strength='very-strong'] {
     color: var(--color-success-text);
   }
   .symbols {

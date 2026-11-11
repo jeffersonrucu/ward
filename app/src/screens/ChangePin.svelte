@@ -28,12 +28,12 @@
   } = $props();
 
   // Keyed by the wire field names that the errors of the reply use.
-  const IDS = { 'atual': 'change-pin-current', 'novo': 'change-pin-new', 'confirmacao': 'change-pin-confirmation' };
+  const IDS = { 'current': 'change-pin-current', 'new': 'change-pin-new', 'confirmation': 'change-pin-confirmation' };
 
   let current = $state('');
   let next = $state('');
   let confirmation = $state('');
-  let errors = $state({ 'atual': '', 'novo': '', 'confirmacao': '' });
+  let errors = $state({ 'current': '', 'new': '', 'confirmation': '' });
   let wrongPin = $state(false);
   let failure = $state('');
   let sending = $state(false);
@@ -45,7 +45,7 @@
   }
 
   function clearErrors() {
-    errors = { 'atual': '', 'novo': '', 'confirmacao': '' };
+    errors = { 'current': '', 'new': '', 'confirmation': '' };
     wrongPin = false;
     failure = '';
   }
@@ -59,7 +59,7 @@
     if (open) {
       clear();
       clearErrors();
-      focusField('atual');
+      focusField('current');
     }
   });
 
@@ -77,7 +77,7 @@
     return (e) => {
       const text = e.data ?? e.dataTransfer?.getData('text/plain') ?? '';
       if (!text) return;
-      const value = { 'atual': current, 'novo': next, 'confirmacao': confirmation }[field];
+      const value = { 'current': current, 'new': next, 'confirmation': confirmation }[field];
       const noSelection = e.target?.selectionStart === e.target?.selectionEnd;
       if (/\D/.test(text)) errors[field] = MESSAGES.pinWithLetter;
       else if (noSelection && value.length + text.length > MAX_PIN_DIGITS) errors[field] = MESSAGES.pinLong;
@@ -90,54 +90,54 @@
     if (sending) return;
     clearErrors();
     if (!isValidPin(current)) {
-      errors.atual = MESSAGES.pinInvalid;
-      return focusField('atual');
+      errors.current = MESSAGES.pinInvalid;
+      return focusField('current');
     }
     if (!isValidPin(next)) {
-      errors.novo = MESSAGES.pinInvalid;
-      return focusField('novo');
+      errors.new = MESSAGES.pinInvalid;
+      return focusField('new');
     }
     if (confirmation !== next) {
-      errors.confirmacao = MESSAGES.pinMismatch;
-      return focusField('confirmacao');
+      errors.confirmation = MESSAGES.pinMismatch;
+      return focusField('confirmation');
     }
     // The PINs leave the state before the reply: the screen keeps them not even in the error.
-    const args = { 'dados': { 'atual': current, 'novo': next, 'confirmacao': confirmation } };
+    const args = { 'data': { 'current': current, 'new': next, 'confirmation': confirmation } };
     clear();
     sending = true;
     try {
-      const r = await call('trocar_pin', args);
-      if (r?.trocado) {
+      const r = await call('change_pin', args);
+      if (r?.changed) {
         onchanged?.();
         return;
       }
-      for (const item of r?.erros ?? []) {
-        if (item.campo in errors) errors[item.campo] = rustMessage(item.motivo);
+      for (const item of r?.errors ?? []) {
+        if (item.field in errors) errors[item.field] = rustMessage(item.reason);
       }
     } catch (err) {
-      if (err?.codigo === 'pin-incorreto') {
+      if (err?.code === 'wrong-pin') {
         wrongPin = true;
-        errors.atual = 'PIN incorreto. Nada foi alterado.';
+        errors.current = 'PIN incorreto. Nada foi alterado.';
         if (await locked()) return;
-      } else if (err?.codigo === 'travado') {
+      } else if (err?.code === 'locked') {
         onlocked?.();
         return;
       } else {
-        failure = rustMessage(err?.mensagem) || 'Não foi possível trocar o PIN.';
-        onfailure?.(err?.codigo ?? '');
+        failure = rustMessage(err?.message) || 'Não foi possível trocar o PIN.';
+        onfailure?.(err?.code ?? '');
       }
     } finally {
-      args.dados = null;
+      args.data = null;
       sending = false;
     }
-    await focusField('atual');
+    await focusField('current');
   }
 
   /** After a wrong PIN: the 5th in a row locks the vault (the daemon counts). */
   async function locked() {
     try {
-      const r = await call('estado_do_cofre');
-      if (r?.estado === 'destravado') return false;
+      const r = await call('vault_status');
+      if (r?.status === 'unlocked') return false;
     } catch {
       // No reply, treat it as locked: the unlock screen asks again.
     }
@@ -152,25 +152,25 @@
       O PIN aprova usos e mudanças de nível; ele não destrava o cofre. O PIN atual confirma
       a troca.
     </p>
-    <div class="pin" onbeforeinput={refusal('atual')}>
-      <PinField label="PIN atual" id={IDS.atual} bind:value={current} error={errors.atual} />
+    <div class="pin" onbeforeinput={refusal('current')}>
+      <PinField label="PIN atual" id={IDS.current} bind:value={current} error={errors.current} />
     </div>
-    <div class="pin" onbeforeinput={refusal('novo')}>
+    <div class="pin" onbeforeinput={refusal('new')}>
       <PinField
         label="Novo PIN"
-        id={IDS.novo}
+        id={IDS.new}
         bind:value={next}
         help="4 a 6 dígitos."
-        error={errors.novo}
+        error={errors.new}
       />
     </div>
-    <div class="pin" onbeforeinput={refusal('confirmacao')}>
+    <div class="pin" onbeforeinput={refusal('confirmation')}>
       <PinField
         label="Confirmar novo PIN"
-        id={IDS.confirmacao}
+        id={IDS.confirmation}
         bind:value={confirmation}
         help="Digite o mesmo PIN de novo."
-        error={errors.confirmacao}
+        error={errors.confirmation}
       />
     </div>
     {#if wrongPin}

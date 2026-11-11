@@ -63,21 +63,15 @@ pub fn too_big_notice() -> String {
 
 /// What the interface receives from the load key command. Never the content nor the path.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(tag = "resultado")]
+#[serde(tag = "result")]
 pub enum Loading {
-    #[serde(rename = "carregada")]
-    Loaded {
-        #[serde(rename = "tamanho")]
-        size: u64,
-    },
-    #[serde(rename = "cancelado")]
+    #[serde(rename = "loaded")]
+    Loaded { size: u64 },
+    #[serde(rename = "canceled")]
     Canceled,
     /// Nothing was kept; the reason is a fixed text.
-    #[serde(rename = "aviso")]
-    Notice {
-        #[serde(rename = "motivo")]
-        reason: String,
-    },
+    #[serde(rename = "notice")]
+    Notice { reason: String },
 }
 
 /// Reads and checks the key file. `Err` carries the fixed notice.
@@ -296,20 +290,19 @@ mod tests {
         let _ = std::fs::remove_dir_all(d);
     }
 
-    /// m2:DT3: the new Rust names are not wire names. The webview keeps receiving the
-    /// old tag values and fields until Phase 54.
+    /// m2:V4.23 (m2:Phase 54): the webview receives the English tag values and fields.
     #[test]
-    fn attack_new_rust_names_are_not_wire_names() {
+    fn webview_tag_and_fields_are_the_english_ones() {
         assert_eq!(
             serde_json::to_string(&Loading::Canceled).unwrap(),
-            r#"{"resultado":"cancelado"}"#
+            r#"{"result":"canceled"}"#
         );
         assert_eq!(
             serde_json::to_string(&Loading::Notice {
                 reason: EMPTY_NOTICE.to_owned()
             })
             .unwrap(),
-            format!(r#"{{"resultado":"aviso","motivo":"{EMPTY_NOTICE}"}}"#)
+            format!(r#"{{"result":"notice","reason":"{EMPTY_NOTICE}"}}"#)
         );
     }
 

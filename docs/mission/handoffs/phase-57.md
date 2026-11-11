@@ -132,9 +132,9 @@ roda os testes de contêiner.
 | smoke de `install/upgrade.sh` com links (`fase57-smoke-legacy.log`) | 0 |
 
 ## Problemas descobertos
-- `dev/container-install/inside.sh` (V9.3) e os cenários novos ainda chamam `ward destravar` /
-  o cliente mínimo com `estado`/`destravar`; se a Fase 55 renomear os subcomandos/argumentos,
-  esses checks precisam acompanhar (risco de virar check vazio).
+- Depois do merge com o master (Fases 54, 54a, 55): o destrave pós-atualização dos cenários
+  novos usa o `ward unlock` instalado num pty (espera "cofre destravado" e saída 0); o cliente
+  mínimo continua com `estado`/`destravar` até a Fase 60, que precisa acompanhar se renomear.
 - Interpretação de m2:V5.7: o `test-install` cobre `make install` 0.1.4 → `make install` 0.2.0 e
   o `test-deb` cobre `.deb` 0.1.4 → `.deb` 0.2.0, mais uma rodada `.deb` sobre sobras de um
   `make install` 0.1.x. Misturar (`make install` 0.1.4 → `.deb` 0.2.0) só está coberto pelas

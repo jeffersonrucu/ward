@@ -1,8 +1,7 @@
 // Rules of the Credentials screen (Phase 32) without Svelte: search, filters, grouping
 // and the count texts of the frames 4063 (full), 4410 (filtered) and 4780 (empty).
 // Nothing here touches a secret: the items come from the list command of the bridge,
-// which has none. The item fields are wire names, frozen until m2:Phase 54
-// (`dev/english-check/frozen.txt`).
+// which has none. The item fields are wire names (m2:Phase 54).
 
 import { TYPES } from '../lib/components/types.js';
 
@@ -34,15 +33,15 @@ export function activeFilters(f) {
 export function matchesSearch(item, search) {
   const s = normalize(search).trim();
   if (!s) return true;
-  return [item.nome, item.endereco, item.usuario].some((c) => normalize(c).includes(s));
+  return [item.name, item.address, item.username].some((c) => normalize(c).includes(s));
 }
 
 export function filterItems(items, filters, search) {
   return items.filter(
     (i) =>
-      (!filters.group || i.grupo === filters.group) &&
-      (!filters.kind || i.tipo === filters.kind) &&
-      (!filters.environment || i.ambiente === filters.environment) &&
+      (!filters.group || i.group === filters.group) &&
+      (!filters.kind || i.type === filters.kind) &&
+      (!filters.environment || i.environment === filters.environment) &&
       matchesSearch(i, search),
   );
 }
@@ -53,7 +52,7 @@ function compare(a, b) {
 
 /** The groups of all entries, in order, each with its fixed color (1 to 5). */
 export function groupsOf(items) {
-  const names = [...new Set(items.map((i) => i.grupo))].sort(compare);
+  const names = [...new Set(items.map((i) => i.group))].sort(compare);
   return names.map((name, k) => ({ name, color: (k % 5) + 1 }));
 }
 
@@ -63,10 +62,10 @@ export function groupsOf(items) {
  */
 export function groupItems(all, visible, filtering) {
   const total = new Map();
-  for (const i of all) total.set(i.grupo, (total.get(i.grupo) ?? 0) + 1);
+  for (const i of all) total.set(i.group, (total.get(i.group) ?? 0) + 1);
   return groupsOf(all)
     .map((g) => {
-      const items = visible.filter((i) => i.grupo === g.name).sort((a, b) => compare(a.nome, b.nome));
+      const items = visible.filter((i) => i.group === g.name).sort((a, b) => compare(a.name, b.name));
       const n = total.get(g.name) ?? 0;
       return {
         ...g,
@@ -114,6 +113,6 @@ export const LEVELS = Object.freeze({
     label: 'Bloqueado',
     icon: 'eye-closed',
     explanation:
-      'O Claude nem vê esta entrada: ela some do ward lista. Só você usa, pelo app. Mudar o nível pede o PIN.',
+      'O Claude nem vê esta entrada: ela some do ward list. Só você usa, pelo app. Mudar o nível pede o PIN.',
   },
 });

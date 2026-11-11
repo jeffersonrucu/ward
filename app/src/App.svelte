@@ -17,11 +17,11 @@
   import ApprovalWindow from './screens/ApprovalWindow.svelte';
   import FirstUse from './screens/FirstUse.svelte';
 
-  // Keyed by the wire values of the vault status (frozen until Phase 54).
+  // Keyed by the wire values of the vault status (m2:Phase 54).
   const TEXTS = {
-    'sem-cofre': 'Nenhum cofre criado ainda.',
-    'travado': 'O cofre está travado.',
-    'destravado': 'O cofre está destravado.',
+    'no-vault': 'Nenhum cofre criado ainda.',
+    'locked': 'O cofre está travado.',
+    'unlocked': 'O cofre está destravado.',
   };
   const SCREENS = ['credenciais', 'gerador', 'configuracoes'];
 
@@ -40,40 +40,40 @@
   // Phase 36: the approval window, opened by the Rust side when a request of the daemon
   // arrives, shows only the approval (its capability only has its own commands). The
   // label comes from the metadata Tauri injects in the window, with no IPC.
-  let approval = $state(window.__TAURI_INTERNALS__?.metadata?.currentWindow?.label === 'aprovacao');
+  let approval = $state(window.__TAURI_INTERNALS__?.metadata?.currentWindow?.label === 'approval');
   let stopListening = null;
 
   // Only the known fields, each one in the right type; the rest is ignored. The fields
-  // are wire names (frozen until Phase 54).
+  // are wire names (m2:Phase 54).
   const text = (v) => (typeof v === 'string' ? v : '');
   function requestFrom(p) {
     return {
       id: p.id,
-      restante: p.restante,
-      entrada: text(p.entrada),
-      operacao: text(p.operacao),
-      comando: text(p.comando),
+      remaining: p.remaining,
+      entry: text(p.entry),
+      operation: text(p.operation),
+      command: text(p.command),
     };
   }
 
   function apply(r) {
-    unlocked = r?.estado === 'destravado';
-    locked = r?.estado === 'travado';
-    noVault = r?.estado === 'sem-cofre';
-    request = locked && r?.pedido ? requestFrom(r.pedido) : null;
-    message = TEXTS[r?.estado] ?? 'Estado desconhecido.';
+    unlocked = r?.status === 'unlocked';
+    locked = r?.status === 'locked';
+    noVault = r?.status === 'no-vault';
+    request = locked && r?.request ? requestFrom(r.request) : null;
+    message = TEXTS[r?.status] ?? 'Estado desconhecido.';
   }
 
   async function query() {
     failed = false;
     message = 'Conectando ao daemon…';
     try {
-      apply(await call('estado_do_cofre'));
+      apply(await call('vault_status'));
     } catch (e) {
       failed = true;
       locked = false;
       noVault = false;
-      message = e.mensagem;
+      message = e.message;
     }
   }
 
@@ -83,7 +83,7 @@
   async function refresh() {
     if (failed) return;
     try {
-      apply(await call('estado_do_cofre'));
+      apply(await call('vault_status'));
     } catch {
       // The next action on the screen shows the error.
     }
@@ -106,7 +106,7 @@
   // and the form and locks; the shell goes away and the screen goes to unlock.
   async function lockNow() {
     try {
-      await call('travar');
+      await call('lock');
     } catch {
       // The status read again below shows what happened.
     }

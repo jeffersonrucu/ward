@@ -1,5 +1,12 @@
 //! Attacks on the test bridge (D7, S11): each one must fail.
-#![cfg(feature = "test-mode")]
+
+// m2:Phase 54a: without `test-mode` the binaries this test runs are the release ones,
+// which only know the system socket (`/run/ward/<uid>/wardd.sock`, the installed
+// daemon). The build fails, loudly, instead of a test reaching it.
+#[cfg(not(feature = "test-mode"))]
+compile_error!(
+    "este teste exige a feature test-mode (cargo test --all-features ou --features test-mode): sem ela os binários do teste são os de release, que só conhecem o socket do sistema"
+);
 
 use std::fs;
 use std::io::{Read, Write};
@@ -95,19 +102,70 @@ fn copy_works_and_the_response_has_no_value() {
     let (p, _l, clipboard, base) = bridge("copiar");
     let r = p.respond(&post(
         &p,
-        "copiar_campo",
-        r#"{"entrada":"acme-pg-dev","campo":"password"}"#,
+        "copy_field",
+        r#"{"entry":"acme-pg-dev","field":"password"}"#,
         &[],
     ));
     assert_eq!(r.status, 200);
     assert_eq!(
         r.body_json().unwrap(),
-        serde_json::json!({ "ok": true, "valor": null })
+        serde_json::json!({ "ok": true, "value": null })
     );
     assert!(!r.body.windows(SECRET.len()).any(|j| j == SECRET));
     assert_eq!(clipboard.0.lock().unwrap().as_deref(), Some(SECRET));
-    let r = p.respond(&post(&p, "estado_do_cofre", "{}", &[]));
-    assert_eq!(r.body_json().unwrap()["valor"]["estado"], "destravado");
+    let r = p.respond(&post(&p, "vault_status", "{}", &[]));
+    assert_eq!(r.body_json().unwrap()["value"]["status"], "unlocked");
+    fs::remove_dir_all(base).unwrap();
+}
+
+/// m2:V4.23 (m2:Phase 54): the 0.1.x (pt-BR) command names do not exist in the bridge
+/// either (404, nothing runs, the clipboard stays empty), and the old argument keys are
+/// refused (no alias).
+#[test]
+fn attack_old_command_names_and_keys_are_refused() {
+    let (p, _l, clipboard, base) = bridge("nomes-antigos");
+    for command in [
+        "estado_do_cofre",
+        "copiar_campo",
+        "listar_credenciais",
+        "detalhe_credencial",
+        "revelar_campo",
+        "revelar_senha_gerada",
+        "salvar_credencial",
+        "mudar_nivel",
+        "destravar",
+        "travar",
+        "trocar_pin",
+        "restaurar_backup",
+        "responder_aprovacao",
+    ] {
+        let r = p.respond(&post(
+            &p,
+            command,
+            r#"{"entrada":"acme-pg-dev","campo":"password"}"#,
+            &[],
+        ));
+        assert_eq!(r.status, 404, "{command}");
+        assert!(!has_secret(&r.body), "{command}");
+    }
+    for (command, body) in [
+        (
+            "copy_field",
+            r#"{"entrada":"acme-pg-dev","campo":"password"}"#,
+        ),
+        (
+            "reveal_field",
+            r#"{"entrada":"acme-pg-dev","campo":"password"}"#,
+        ),
+        ("credential_detail", r#"{"entrada":"acme-pg-dev"}"#),
+    ] {
+        let r = p.respond(&post(&p, command, body, &[]));
+        let v = r.body_json().unwrap();
+        assert_eq!(v["code"], "invalid-request", "{command}: {v}");
+        assert!(v.get("codigo").is_none() && v.get("valor").is_none(), "{v}");
+        assert!(!has_secret(&r.body), "{command}");
+    }
+    assert_eq!(clipboard.0.lock().unwrap().as_deref(), None);
     fs::remove_dir_all(base).unwrap();
 }
 
@@ -128,15 +186,15 @@ fn attack_credentials_screen_responses_without_secret() {
     // V5.3 through the bridge: the list and the detail of all entries of the test vault,
     // as they reach the interface, have no secret.
     let (p, _l, _a, base) = bridge("credenciais");
-    let r = p.respond(&post(&p, "listar_credenciais", "{}", &[]));
+    let r = p.respond(&post(&p, "list_credentials", "{}", &[]));
     assert_eq!(r.status, 200);
     assert!(!has_secret(&r.body));
-    let list = r.body_json().unwrap()["valor"].clone();
+    let list = r.body_json().unwrap()["value"].clone();
     let names: Vec<String> = list
         .as_array()
         .unwrap()
         .iter()
-        .map(|i| i["nome"].as_str().unwrap().to_owned())
+        .map(|i| i["name"].as_str().unwrap().to_owned())
         .collect();
     assert_eq!(
         names.len(),
@@ -149,19 +207,19 @@ fn attack_credentials_screen_responses_without_secret() {
             .len()
     );
     for name in &names {
-        let body = serde_json::json!({ "entrada": name }).to_string();
-        let r = p.respond(&post(&p, "detalhe_credencial", &body, &[]));
+        let body = serde_json::json!({ "entry": name }).to_string();
+        let r = p.respond(&post(&p, "credential_detail", &body, &[]));
         assert_eq!(r.body_json().unwrap()["ok"], true, "{name}");
         assert!(!has_secret(&r.body), "segredo no detalhe de {name}");
     }
     // Name off the format, of another type or absent: error without echoing the request.
     for body in [
-        r#"{"entrada":"acme-pg-dev\n"}"#,
-        r#"{"entrada":"<img src=x onerror=alert(1)>"}"#,
-        r#"{"entrada":1}"#,
+        r#"{"entry":"acme-pg-dev\n"}"#,
+        r#"{"entry":"<img src=x onerror=alert(1)>"}"#,
+        r#"{"entry":1}"#,
         r#"{}"#,
     ] {
-        let r = p.respond(&post(&p, "detalhe_credencial", body, &[]));
+        let r = p.respond(&post(&p, "credential_detail", body, &[]));
         let v = r.body_json().unwrap();
         assert_eq!(v["ok"], false, "{body}");
         assert!(!String::from_utf8_lossy(&r.body).contains("img"));
@@ -176,55 +234,49 @@ fn attack_credentials_screen_responses_without_secret() {
 #[test]
 fn attack_form_through_the_bridge() {
     let (p, _l, _a, base) = bridge("formulario");
-    let new_entry = serde_json::json!({ "formulario": {
-        "tipo": "api", "nome": "beta-gitlab-api", "grupo": "beta", "ambiente": "dev",
-        "projeto": "", "tags": [], "campos": {"url": "https://gitlab.exemplo.com", "variable": "GITLAB_TOKEN"},
-        "segredos": {"token": {"novo": "falso-token-gitlab-99"}}, "extras": []
+    let new_entry = serde_json::json!({ "form": {
+        "type": "api", "name": "beta-gitlab-api", "group": "beta", "environment": "dev",
+        "project": "", "tags": [], "fields": {"url": "https://gitlab.exemplo.com", "variable": "GITLAB_TOKEN"},
+        "secrets": {"token": {"new": "falso-token-gitlab-99"}}, "extras": []
     }});
-    let r = p.respond(&post(&p, "salvar_credencial", &new_entry.to_string(), &[]));
+    let r = p.respond(&post(&p, "save_credential", &new_entry.to_string(), &[]));
     let v = r.body_json().unwrap();
-    assert_eq!(v["valor"]["salvo"], "beta-gitlab-api", "{v}");
+    assert_eq!(v["value"]["saved"], "beta-gitlab-api", "{v}");
     assert!(!String::from_utf8_lossy(&r.body).contains("falso-token-gitlab"));
     let r = p.respond(&post(
         &p,
-        "revelar_campo",
-        r#"{"entrada":"beta-gitlab-api","campo":"token"}"#,
+        "reveal_field",
+        r#"{"entry":"beta-gitlab-api","field":"token"}"#,
         &[],
     ));
     assert_eq!(
-        r.body_json().unwrap()["valor"]["valor"],
+        r.body_json().unwrap()["value"]["value"],
         "falso-token-gitlab-99"
     );
-    let r = p.respond(&post(
-        &p,
-        "codigo_totp",
-        r#"{"entrada":"acme-wp-dev"}"#,
-        &[],
-    ));
+    let r = p.respond(&post(&p, "totp_code", r#"{"entry":"acme-wp-dev"}"#, &[]));
     let v = r.body_json().unwrap();
-    assert_eq!(v["valor"]["codigo"].as_str().unwrap().len(), 6, "{v}");
+    assert_eq!(v["value"]["code"].as_str().unwrap().len(), 6, "{v}");
     assert!(!has_secret(&r.body));
-    let generate =
-        r#"{"tamanho":20,"minusculas":true,"maiusculas":true,"digitos":true,"simbolos":true}"#;
-    p.respond(&post(&p, "gerar_senha", generate, &[]));
+    let generate = r#"{"size":20,"lowercase":true,"uppercase":true,"digits":true,"symbols":true}"#;
+    p.respond(&post(&p, "generate_password", generate, &[]));
     let r = p.respond(&post(
         &p,
-        "usar_senha_gerada",
-        r#"{"campo":"password"}"#,
+        "use_generated_password",
+        r#"{"field":"password"}"#,
         &[],
     ));
     assert_eq!(
-        r.body_json().unwrap()["valor"],
-        serde_json::json!({ "tamanho": 20 })
+        r.body_json().unwrap()["value"],
+        serde_json::json!({ "size": 20 })
     );
     for body in [
-        r#"{"formulario":{"tipo":"login","nome":"x","grupo":"g","ambiente":"dev","projeto":"","tags":[],"campos":{},"segredos":{},"extras":[],"nivel":"free"}}"#,
-        r#"{"formulario":{"tipo":"login","nome":"acme-x","grupo":"g","ambiente":"dev","projeto":"","tags":[],"campos":{},"segredos":{"password":"manter"},"extras":[]}}"#,
-        r#"{"anterior":5,"formulario":{"tipo":"login","nome":"x","grupo":"g","ambiente":"dev","projeto":"","tags":[],"campos":{},"segredos":{},"extras":[]}}"#,
-        r#"{"formulario":"<img src=x>"}"#,
+        r#"{"form":{"type":"login","name":"x","group":"g","environment":"dev","project":"","tags":[],"fields":{},"secrets":{},"extras":[],"level":"free"}}"#,
+        r#"{"form":{"type":"login","name":"acme-x","group":"g","environment":"dev","project":"","tags":[],"fields":{},"secrets":{"password":"keep"},"extras":[]}}"#,
+        r#"{"previous":5,"form":{"type":"login","name":"x","group":"g","environment":"dev","project":"","tags":[],"fields":{},"secrets":{},"extras":[]}}"#,
+        r#"{"form":"<img src=x>"}"#,
         r#"{}"#,
     ] {
-        let r = p.respond(&post(&p, "salvar_credencial", body, &[]));
+        let r = p.respond(&post(&p, "save_credential", body, &[]));
         let v = r.body_json().unwrap();
         assert_eq!(v["ok"], false, "{body}");
         assert!(!String::from_utf8_lossy(&r.body).contains("img"));
@@ -243,14 +295,14 @@ fn attack_set_level_through_the_bridge() {
     let level = |p: &Bridge<FakeDaemon, FakeClipboard>| {
         let r = p.respond(&post(
             p,
-            "detalhe_credencial",
-            r#"{"entrada":"acme-pg-prod"}"#,
+            "credential_detail",
+            r#"{"entry":"acme-pg-prod"}"#,
             &[],
         ));
-        r.body_json().unwrap()["valor"]["nivel"].clone()
+        r.body_json().unwrap()["value"]["level"].clone()
     };
     let set_level = |p: &Bridge<FakeDaemon, FakeClipboard>, body: &str| {
-        let r = p.respond(&post(p, "mudar_nivel", body, &[]));
+        let r = p.respond(&post(p, "set_level", body, &[]));
         assert!(
             !String::from_utf8_lossy(&r.body).contains("135790"),
             "PIN na resposta"
@@ -259,46 +311,46 @@ fn attack_set_level_through_the_bridge() {
     };
     let v = set_level(
         &p,
-        r#"{"entrada":"acme-pg-prod","nivel":"free","pin":"135790"}"#,
+        r#"{"entry":"acme-pg-prod","level":"free","pin":"135790"}"#,
     );
     assert_eq!(
         v,
-        serde_json::json!({"ok": true, "valor": {"entrada": "acme-pg-prod", "nivel": "free"}})
+        serde_json::json!({"ok": true, "value": {"entry": "acme-pg-prod", "level": "free"}})
     );
     assert_eq!(level(&p), "free");
     // Refused before the daemon: they do not count as PIN errors (it would be 6 × 6).
     for _ in 0..6 {
         for body in [
-            r#"{"entrada":"acme-pg-prod","nivel":"blocked","pin":"12"}"#,
-            r#"{"entrada":"acme-pg-prod","nivel":"blocked","pin":135790}"#,
-            r#"{"entrada":"acme-pg-prod","nivel":"blocked","pin":"13579a"}"#,
-            r#"{"entrada":"acme-pg-prod","nivel":"admin","pin":"000000"}"#,
-            r#"{"entrada":"acme-pg-prod","nivel":"blocked"}"#,
-            r#"{"entrada":"acme\npg","nivel":"blocked","pin":"000000"}"#,
+            r#"{"entry":"acme-pg-prod","level":"blocked","pin":"12"}"#,
+            r#"{"entry":"acme-pg-prod","level":"blocked","pin":135790}"#,
+            r#"{"entry":"acme-pg-prod","level":"blocked","pin":"13579a"}"#,
+            r#"{"entry":"acme-pg-prod","level":"admin","pin":"000000"}"#,
+            r#"{"entry":"acme-pg-prod","level":"blocked"}"#,
+            r#"{"entry":"acme\npg","level":"blocked","pin":"000000"}"#,
         ] {
             let v = set_level(&p, body);
             assert_eq!(v["ok"], false, "{body}");
-            assert_eq!(v["codigo"], "pedido-invalido", "{body}: {v}");
+            assert_eq!(v["code"], "invalid-request", "{body}: {v}");
         }
     }
     assert_eq!(level(&p), "free");
     for k in 1..=5 {
         let v = set_level(
             &p,
-            r#"{"entrada":"acme-pg-prod","nivel":"blocked","pin":"000000"}"#,
+            r#"{"entry":"acme-pg-prod","level":"blocked","pin":"000000"}"#,
         );
-        assert_eq!(v["codigo"], "pin-incorreto", "erro {k}: {v}");
+        assert_eq!(v["code"], "wrong-pin", "erro {k}: {v}");
         if k < 5 {
             assert_eq!(level(&p), "free");
         }
     }
-    let r = p.respond(&post(&p, "estado_do_cofre", "{}", &[]));
-    assert_eq!(r.body_json().unwrap()["valor"]["estado"], "travado");
+    let r = p.respond(&post(&p, "vault_status", "{}", &[]));
+    assert_eq!(r.body_json().unwrap()["value"]["status"], "locked");
     let v = set_level(
         &p,
-        r#"{"entrada":"acme-pg-prod","nivel":"blocked","pin":"135790"}"#,
+        r#"{"entry":"acme-pg-prod","level":"blocked","pin":"135790"}"#,
     );
-    assert_eq!(v["codigo"], "travado", "{v}");
+    assert_eq!(v["code"], "locked", "{v}");
     fs::remove_dir_all(base).unwrap();
 }
 
@@ -309,52 +361,47 @@ fn attack_set_level_through_the_bridge() {
 #[test]
 fn attack_standalone_generator_through_the_bridge() {
     let (p, _l, clipboard, base) = bridge("gerador");
-    let options =
-        r#"{"tamanho":24,"minusculas":true,"maiusculas":true,"digitos":true,"simbolos":true}"#;
-    let r = p.respond(&post(&p, "gerar_senha", options, &[]));
+    let options = r#"{"size":24,"lowercase":true,"uppercase":true,"digits":true,"symbols":true}"#;
+    let r = p.respond(&post(&p, "generate_password", options, &[]));
     assert_eq!(
         r.body_json().unwrap(),
-        serde_json::json!({ "ok": true, "valor": {
-            "tamanho": 24, "bits": 150, "forca": "muito-forte",
-            "simbolos": "!#$%&()*+,-./:;<=>?@[]^_{|}~"
+        serde_json::json!({ "ok": true, "value": {
+            "size": 24, "bits": 150, "strength": "very-strong",
+            "symbols": "!#$%&()*+,-./:;<=>?@[]^_{|}~"
         }})
     );
-    let r = p.respond(&post(&p, "copiar_senha_gerada", "{}", &[]));
+    let r = p.respond(&post(&p, "copy_generated_password", "{}", &[]));
     assert_eq!(
         r.body_json().unwrap(),
-        serde_json::json!({ "ok": true, "valor": null })
+        serde_json::json!({ "ok": true, "value": null })
     );
     let copied = clipboard.0.lock().unwrap().clone().unwrap();
     assert_eq!(copied.len(), 24);
-    let r = p.respond(&post(&p, "revelar_senha_gerada", "{}", &[]));
+    let r = p.respond(&post(&p, "reveal_generated_password", "{}", &[]));
     assert_eq!(
-        r.body_json().unwrap()["valor"]["valor"]
+        r.body_json().unwrap()["value"]["value"]
             .as_str()
             .unwrap()
             .as_bytes(),
         &copied[..]
     );
-    let r = p.respond(&post(&p, "descartar_senha_gerada", "{}", &[]));
+    let r = p.respond(&post(&p, "discard_generated_password", "{}", &[]));
     assert_eq!(r.body_json().unwrap()["ok"], true);
-    let r = p.respond(&post(&p, "revelar_senha_gerada", "{}", &[]));
-    assert_eq!(r.body_json().unwrap()["codigo"], "sem-senha-gerada");
+    let r = p.respond(&post(&p, "reveal_generated_password", "{}", &[]));
+    assert_eq!(r.body_json().unwrap()["code"], "no-generated-password");
     for body in [
-        r#"{"tamanho":7,"minusculas":true,"maiusculas":true,"digitos":true,"simbolos":true}"#,
-        r#"{"tamanho":65,"minusculas":true,"maiusculas":true,"digitos":true,"simbolos":true}"#,
-        r#"{"tamanho":128,"minusculas":true,"maiusculas":true,"digitos":true,"simbolos":true}"#,
-        r#"{"tamanho":-1,"minusculas":true,"maiusculas":true,"digitos":true,"simbolos":true}"#,
-        r#"{"tamanho":24.5,"minusculas":true,"maiusculas":true,"digitos":true,"simbolos":true}"#,
-        r#"{"tamanho":"24","minusculas":true,"maiusculas":true,"digitos":true,"simbolos":true}"#,
-        r#"{"tamanho":24,"minusculas":"sim","maiusculas":true,"digitos":true,"simbolos":true}"#,
-        r#"{"tamanho":24,"maiusculas":true,"digitos":true,"simbolos":true}"#,
-        r#"{"tamanho":24,"minusculas":false,"maiusculas":false,"digitos":false,"simbolos":false}"#,
+        r#"{"size":7,"lowercase":true,"uppercase":true,"digits":true,"symbols":true}"#,
+        r#"{"size":65,"lowercase":true,"uppercase":true,"digits":true,"symbols":true}"#,
+        r#"{"size":128,"lowercase":true,"uppercase":true,"digits":true,"symbols":true}"#,
+        r#"{"size":-1,"lowercase":true,"uppercase":true,"digits":true,"symbols":true}"#,
+        r#"{"size":24.5,"lowercase":true,"uppercase":true,"digits":true,"symbols":true}"#,
+        r#"{"size":"24","lowercase":true,"uppercase":true,"digits":true,"symbols":true}"#,
+        r#"{"size":24,"lowercase":"sim","uppercase":true,"digits":true,"symbols":true}"#,
+        r#"{"size":24,"uppercase":true,"digits":true,"symbols":true}"#,
+        r#"{"size":24,"lowercase":false,"uppercase":false,"digits":false,"symbols":false}"#,
     ] {
-        let r = p.respond(&post(&p, "gerar_senha", body, &[]));
-        assert_eq!(
-            r.body_json().unwrap()["codigo"],
-            "pedido-invalido",
-            "{body}"
-        );
+        let r = p.respond(&post(&p, "generate_password", body, &[]));
+        assert_eq!(r.body_json().unwrap()["code"], "invalid-request", "{body}");
     }
     fs::remove_dir_all(base).unwrap();
 }
@@ -362,7 +409,7 @@ fn attack_standalone_generator_through_the_bridge() {
 #[test]
 fn attack_no_token_wrong_token_or_repeated() {
     let (p, _l, clipboard, base) = bridge("token");
-    let body = r#"{"entrada":"acme-pg-dev","campo":"password"}"#;
+    let body = r#"{"entry":"acme-pg-dev","field":"password"}"#;
     let wrong = format!("Bearer {}", "0".repeat(64));
     let prefix = format!("Bearer {}", &p.token_for_test()[..63]);
     for changes in [
@@ -372,7 +419,7 @@ fn attack_no_token_wrong_token_or_repeated() {
         vec![("Authorization", Some(p.token_for_test()))],
     ] {
         assert_eq!(
-            p.respond(&post(&p, "copiar_campo", body, &changes)).status,
+            p.respond(&post(&p, "copy_field", body, &changes)).status,
             401,
             "{changes:?}"
         );
@@ -394,8 +441,7 @@ fn attack_host_or_origin_of_another_site() {
         (vec![("Content-Type", Some("text/plain"))], 415),
     ] {
         assert_eq!(
-            p.respond(&post(&p, "estado_do_cofre", "{}", &changes))
-                .status,
+            p.respond(&post(&p, "vault_status", "{}", &changes)).status,
             status,
             "{changes:?}"
         );
@@ -421,10 +467,10 @@ fn attack_plugin_or_invented_command() {
         "",
         "[]",
         "nao json",
-        r#"{"entrada":1,"campo":"password"}"#,
-        r#"{"entrada":"acme-pg-dev\n","campo":"password"}"#,
+        r#"{"entry":1,"field":"password"}"#,
+        r#"{"entry":"acme-pg-dev\n","field":"password"}"#,
     ] {
-        let r = p.respond(&post(&p, "copiar_campo", body, &[]));
+        let r = p.respond(&post(&p, "copy_field", body, &[]));
         assert_eq!(
             r.body_json().map(|v| v["ok"].clone()),
             Some(serde_json::json!(false)),
@@ -586,54 +632,52 @@ fn attack_attachments_and_connect_through_the_bridge() {
         .with_picker(DirPicker(folder.clone()))
         .with_terminal(TestTerminal);
     let (p, _l) = Bridge::open(service, &base.join("dist")).unwrap();
-    let r = p.respond(&post(&p, "escolher_anexo", "{}", &[]));
+    let r = p.respond(&post(&p, "choose_attachment", "{}", &[]));
     let v = r.body_json().unwrap();
     assert_eq!(
-        v["valor"],
-        serde_json::json!({"resultado": "anexado", "id": 0, "nome": "deploy.pem", "tamanho": 21}),
+        v["value"],
+        serde_json::json!({"result": "attached", "id": 0, "name": "deploy.pem", "size": 21}),
         "{v}"
     );
     assert!(!String::from_utf8_lossy(&r.body).contains("falso-anexo"));
-    let new_entry = serde_json::json!({ "formulario": {
-        "tipo": "generic", "nome": "gama-anexo", "grupo": "gama", "ambiente": "dev",
-        "projeto": "", "tags": [], "campos": {}, "segredos": {},
-        "extras": [{"nome": "REGIAO", "segredo": false, "valor": {"novo": "r-01"}}],
-        "anexos": [0]
+    let new_entry = serde_json::json!({ "form": {
+        "type": "generic", "name": "gama-anexo", "group": "gama", "environment": "dev",
+        "project": "", "tags": [], "fields": {}, "secrets": {},
+        "extras": [{"name": "REGIAO", "secret": false, "value": {"new": "r-01"}}],
+        "attachments": [0]
     }});
-    let r = p.respond(&post(&p, "salvar_credencial", &new_entry.to_string(), &[]));
-    assert_eq!(r.body_json().unwrap()["valor"]["salvo"], "gama-anexo");
+    let r = p.respond(&post(&p, "save_credential", &new_entry.to_string(), &[]));
+    assert_eq!(r.body_json().unwrap()["value"]["saved"], "gama-anexo");
     let r = p.respond(&post(
         &p,
-        "detalhe_credencial",
-        r#"{"entrada":"gama-anexo"}"#,
+        "credential_detail",
+        r#"{"entry":"gama-anexo"}"#,
         &[],
     ));
     assert!(!String::from_utf8_lossy(&r.body).contains("falso-anexo"));
-    assert_eq!(r.body_json().unwrap()["valor"]["anexos"][0]["tamanho"], 21);
+    assert_eq!(
+        r.body_json().unwrap()["value"]["attachments"][0]["size"],
+        21
+    );
     for body in [r#"{"id":"0"}"#, r#"{"id":-1}"#, r#"{"id":99}"#, r#"{}"#] {
-        let r = p.respond(&post(&p, "remover_anexo", body, &[]));
+        let r = p.respond(&post(&p, "remove_attachment", body, &[]));
         assert_eq!(r.body_json().unwrap()["ok"], false, "{body}");
     }
     fs::write(folder.join("outro.txt"), "x").unwrap();
-    let r = p.respond(&post(&p, "escolher_anexo", "{}", &[]));
+    let r = p.respond(&post(&p, "choose_attachment", "{}", &[]));
     assert_eq!(r.body_json().unwrap()["ok"], false);
 
-    let r = p.respond(&post(
-        &p,
-        "conectar",
-        r#"{"entrada":"acme-ssh-salto"}"#,
-        &[],
-    ));
+    let r = p.respond(&post(&p, "connect", r#"{"entry":"acme-ssh-salto"}"#, &[]));
     assert_eq!(
         r.body_json().unwrap(),
-        serde_json::json!({"ok": true, "valor": null})
+        serde_json::json!({"ok": true, "value": null})
     );
     for body in [
-        r#"{"entrada":"acme-pg-aprovacao"}"#,
-        r#"{"entrada":"-oProxyCommand=x"}"#,
-        r#"{"entrada":5}"#,
+        r#"{"entry":"acme-pg-aprovacao"}"#,
+        r#"{"entry":"-oProxyCommand=x"}"#,
+        r#"{"entry":5}"#,
     ] {
-        let r = p.respond(&post(&p, "conectar", body, &[]));
+        let r = p.respond(&post(&p, "connect", body, &[]));
         assert_eq!(r.body_json().unwrap()["ok"], false, "{body}");
     }
     fs::remove_dir_all(base).unwrap();
@@ -651,7 +695,7 @@ fn attack_load_key_through_the_bridge() {
     let base = dist("chave53a");
     let folder = base.join("chave");
     fs::create_dir_all(&folder).unwrap();
-    let key_body = "ZmFsc28tY2hhdmUtcG9udGUtNTNh";
+    let key_body = "ZmFsc28tV1Atc2VuaGEtMDE=";
     let label = ["OPENSSH", " PRIVATE", " KEY"].concat();
     let key = format!("-----BEGIN {label}-----\n{key_body}\n-----END {label}-----\n");
     fs::write(folder.join("deploy_ed25519"), &key).unwrap();
@@ -660,55 +704,50 @@ fn attack_load_key_through_the_bridge() {
     let (p, _l) = Bridge::open(service, &base.join("dist")).unwrap();
     for body in [
         r#"{}"#,
-        r#"{"campo":"password"}"#,
-        r#"{"campo":"passphrase"}"#,
-        r#"{"campo":5}"#,
-        r#"{"campo":"private_key","caminho":"/etc/shadow"}"#,
+        r#"{"field":"password"}"#,
+        r#"{"field":"passphrase"}"#,
+        r#"{"field":5}"#,
+        r#"{"field":"private_key","caminho":"/etc/shadow"}"#,
     ] {
-        let r = p.respond(&post(&p, "carregar_chave", body, &[]));
+        let r = p.respond(&post(&p, "load_key", body, &[]));
         assert_eq!(r.body_json().unwrap()["ok"], false, "{body}");
     }
-    let r = p.respond(&post(
-        &p,
-        "carregar_chave",
-        r#"{"campo":"private_key"}"#,
-        &[],
-    ));
+    let r = p.respond(&post(&p, "load_key", r#"{"field":"private_key"}"#, &[]));
     let body = String::from_utf8_lossy(&r.body).into_owned();
     assert!(
         !body.contains(key_body) && !body.contains("deploy_ed25519") && !body.contains('/'),
         "{body}"
     );
     assert_eq!(
-        r.body_json().unwrap()["valor"],
-        serde_json::json!({"resultado": "carregada", "tamanho": key.len()})
+        r.body_json().unwrap()["value"],
+        serde_json::json!({"result": "loaded", "size": key.len()})
     );
     let new_entry = |name: &str| {
-        serde_json::json!({ "formulario": {
-            "tipo": "server", "nome": name, "grupo": "clientex", "ambiente": "stage",
-            "projeto": "", "tags": [],
-            "campos": {"host": "127.0.0.1", "port": "2223", "username": "deploy", "jump": ""},
-            "segredos": {"password": "vazio", "private_key": "carregada", "passphrase": "vazio"},
-            "extras": [], "anexos": []
+        serde_json::json!({ "form": {
+            "type": "server", "name": name, "group": "clientex", "environment": "stage",
+            "project": "", "tags": [],
+            "fields": {"host": "127.0.0.1", "port": "2223", "username": "deploy", "jump": ""},
+            "secrets": {"password": "empty", "private_key": "loaded", "passphrase": "empty"},
+            "extras": [], "attachments": []
         }})
         .to_string()
     };
     let r = p.respond(&post(
         &p,
-        "salvar_credencial",
+        "save_credential",
         &new_entry("clientex-ssh-53a"),
         &[],
     ));
     assert_eq!(
-        r.body_json().unwrap()["valor"]["salvo"],
+        r.body_json().unwrap()["value"]["saved"],
         "clientex-ssh-53a",
         "{}",
         String::from_utf8_lossy(&r.body)
     );
     let r = p.respond(&post(
         &p,
-        "detalhe_credencial",
-        r#"{"entrada":"clientex-ssh-53a"}"#,
+        "credential_detail",
+        r#"{"entry":"clientex-ssh-53a"}"#,
         &[],
     ));
     assert!(!String::from_utf8_lossy(&r.body).contains(key_body));
@@ -716,29 +755,24 @@ fn attack_load_key_through_the_bridge() {
     // request.
     let r = p.respond(&post(
         &p,
-        "salvar_credencial",
+        "save_credential",
         &new_entry("clientex-ssh-53b"),
         &[],
     ));
     assert_eq!(r.body_json().unwrap()["ok"], false);
     // Text that is not a key: fixed notice, nothing stored.
     fs::write(folder.join("deploy_ed25519"), "falso-texto-53a\n").unwrap();
-    let r = p.respond(&post(
-        &p,
-        "carregar_chave",
-        r#"{"campo":"private_key"}"#,
-        &[],
-    ));
+    let r = p.respond(&post(&p, "load_key", r#"{"field":"private_key"}"#, &[]));
     assert!(!String::from_utf8_lossy(&r.body).contains("falso-texto"));
     assert_eq!(
-        r.body_json().unwrap()["valor"]["resultado"],
-        "aviso",
+        r.body_json().unwrap()["value"]["result"],
+        "notice",
         "{}",
         String::from_utf8_lossy(&r.body)
     );
     let r = p.respond(&post(
         &p,
-        "salvar_credencial",
+        "save_credential",
         &new_entry("clientex-ssh-53b"),
         &[],
     ));
@@ -760,15 +794,15 @@ fn attack_first_use_through_the_bridge() {
     );
     let (p, _l) = Bridge::open(service, &base.join("dist")).unwrap();
     let vault_status = || {
-        p.respond(&post(&p, "estado_do_cofre", "{}", &[]))
+        p.respond(&post(&p, "vault_status", "{}", &[]))
             .body_json()
-            .unwrap()["valor"]["estado"]
+            .unwrap()["value"]["status"]
             .clone()
     };
-    assert_eq!(vault_status(), "sem-cofre");
+    assert_eq!(vault_status(), "no-vault");
     let data = |password: &str, conf: &str, pin: &str, conf_pin: &str| {
-        serde_json::json!({ "dados": {
-            "senha": password, "confirmacao": conf, "pin": pin, "confirmacao_pin": conf_pin
+        serde_json::json!({ "data": {
+            "password": password, "confirmation": conf, "pin": pin, "pin_confirmation": conf_pin
         }})
         .to_string()
     };
@@ -779,56 +813,56 @@ fn attack_first_use_through_the_bridge() {
         (data(password, password, "13579a", "13579a"), "pin"),
         (
             data(password, password, "135790", "135791"),
-            "confirmacao_pin",
+            "pin_confirmation",
         ),
         (
-            data(password, "falso-mestra-ward-02", "135790", "135790"),
-            "confirmacao",
+            data(password, "falso-WP-senha-01", "135790", "135790"),
+            "confirmation",
         ),
         (
             data("falso-curta", "falso-curta", "135790", "135790"),
-            "senha",
+            "password",
         ),
     ] {
-        let r = p.respond(&post(&p, "criar_cofre", &body, &[]));
+        let r = p.respond(&post(&p, "create_vault", &body, &[]));
         let text = String::from_utf8_lossy(&r.body).into_owned();
         let v = r.body_json().unwrap();
-        assert_eq!(v["valor"]["criado"], false, "{v}");
-        assert_eq!(v["valor"]["erros"][0]["campo"], field, "{v}");
+        assert_eq!(v["value"]["created"], false, "{v}");
+        assert_eq!(v["value"]["errors"][0]["field"], field, "{v}");
         for needle in ["falso-", "1357"] {
             assert!(!text.contains(needle), "{text}");
         }
     }
-    assert_eq!(vault_status(), "sem-cofre");
+    assert_eq!(vault_status(), "no-vault");
     for body in [
-        r#"{"dados":{"senha":"falso-mestra-ward-01","confirmacao":"falso-mestra-ward-01","pin":"135790","confirmacao_pin":"135790","nivel":"free"}}"#,
-        r#"{"dados":{"senha":"falso-mestra-ward-01","confirmacao":"falso-mestra-ward-01","pin":135790,"confirmacao_pin":"135790"}}"#,
-        r#"{"senha":"falso-mestra-ward-01","pin":"135790"}"#,
-        r#"{"dados":"falso-mestra-ward-01"}"#,
+        r#"{"data":{"password":"falso-mestra-ward-01","confirmation":"falso-mestra-ward-01","pin":"135790","pin_confirmation":"135790","level":"free"}}"#,
+        r#"{"data":{"password":"falso-mestra-ward-01","confirmation":"falso-mestra-ward-01","pin":135790,"pin_confirmation":"135790"}}"#,
+        r#"{"password":"falso-mestra-ward-01","pin":"135790"}"#,
+        r#"{"data":"falso-mestra-ward-01"}"#,
     ] {
-        let r = p.respond(&post(&p, "criar_cofre", body, &[]));
+        let r = p.respond(&post(&p, "create_vault", body, &[]));
         let v = r.body_json().unwrap();
-        assert_eq!(v["codigo"], "pedido-invalido", "{v}");
+        assert_eq!(v["code"], "invalid-request", "{v}");
         assert!(!String::from_utf8_lossy(&r.body).contains("falso-"));
     }
     let r = p.respond(&post(
         &p,
-        "criar_cofre",
+        "create_vault",
         &data(password, password, "135790", "135790"),
         &[],
     ));
-    assert_eq!(r.body_json().unwrap()["valor"]["criado"], true);
+    assert_eq!(r.body_json().unwrap()["value"]["created"], true);
     assert!(!String::from_utf8_lossy(&r.body).contains("falso-"));
-    assert_eq!(vault_status(), "destravado");
-    let r = p.respond(&post(&p, "listar_credenciais", "{}", &[]));
-    assert_eq!(r.body_json().unwrap()["valor"], serde_json::json!([]));
+    assert_eq!(vault_status(), "unlocked");
+    let r = p.respond(&post(&p, "list_credentials", "{}", &[]));
+    assert_eq!(r.body_json().unwrap()["value"], serde_json::json!([]));
     let r = p.respond(&post(
         &p,
-        "criar_cofre",
+        "create_vault",
         &data(password, password, "2468", "2468"),
         &[],
     ));
-    assert_eq!(r.body_json().unwrap()["codigo"], "cofre-ja-existe");
+    assert_eq!(r.body_json().unwrap()["code"], "vault-already-exists");
     fs::remove_dir_all(base).unwrap();
 }
 
@@ -896,57 +930,57 @@ fn attack_bridge_without_app_role_exits_on_first_reply() {
 fn attack_unlock_through_the_bridge() {
     let (p, _l, _a, base) = bridge("destravar");
     let vault_status = |p: &Bridge<FakeDaemon, FakeClipboard>| {
-        p.respond(&post(p, "estado_do_cofre", "{}", &[]))
+        p.respond(&post(p, "vault_status", "{}", &[]))
             .body_json()
-            .unwrap()["valor"]
+            .unwrap()["value"]
             .clone()
     };
     // Locks through the 5th wrong PIN (Phase 35), as in the app.
     for _ in 0..5 {
         p.respond(&post(
             &p,
-            "mudar_nivel",
-            r#"{"entrada":"acme-pg-prod","nivel":"free","pin":"000000"}"#,
+            "set_level",
+            r#"{"entry":"acme-pg-prod","level":"free","pin":"000000"}"#,
             &[],
         ));
     }
     assert_eq!(
         vault_status(&p),
-        serde_json::json!({"estado": "travado", "pedido": null})
+        serde_json::json!({"status": "locked", "request": null})
     );
     let unlock = |p: &Bridge<FakeDaemon, FakeClipboard>, body: &str| {
-        let r = p.respond(&post(p, "destravar", body, &[]));
+        let r = p.respond(&post(p, "unlock", body, &[]));
         let text = String::from_utf8_lossy(&r.body).into_owned();
         assert!(!text.contains("falso-mestra"), "senha na resposta: {text}");
         r.body_json().unwrap()
     };
     for body in [
         r#"{}"#,
-        r#"{"senha":""}"#,
-        r#"{"senha":135790}"#,
-        r#"{"senha":null}"#,
-        r#"{"senha":["falso-mestra-ward-01"]}"#,
-        r#"{"senha":"falso-mestra-ward-01","extra":1}"#,
+        r#"{"password":""}"#,
+        r#"{"password":135790}"#,
+        r#"{"password":null}"#,
+        r#"{"password":["falso-mestra-ward-01"]}"#,
+        r#"{"password":"falso-mestra-ward-01","extra":1}"#,
     ] {
         let v = unlock(&p, body);
-        assert_eq!(v["codigo"], "pedido-invalido", "{body}: {v}");
+        assert_eq!(v["code"], "invalid-request", "{body}: {v}");
     }
-    assert_eq!(vault_status(&p)["estado"], "travado");
-    let v = unlock(&p, r#"{"senha":"falso-mestra-ward-00"}"#);
-    assert_eq!(v["codigo"], "senha-incorreta", "{v}");
-    let msg = v["mensagem"].as_str().unwrap().to_owned();
+    assert_eq!(vault_status(&p)["status"], "locked");
+    let v = unlock(&p, r#"{"password":"falso-WP-senha-01"}"#);
+    assert_eq!(v["code"], "wrong-password", "{v}");
+    let msg = v["message"].as_str().unwrap().to_owned();
     assert!(!msg.chars().any(|c| c.is_ascii_digit()), "{msg}");
-    assert_eq!(vault_status(&p)["estado"], "travado");
+    assert_eq!(vault_status(&p)["status"], "locked");
     // The 2nd attempt waits 1 s in the daemon (D20) and unlocks.
-    let v = unlock(&p, r#"{"senha":"falso-mestra-ward-01"}"#);
-    assert_eq!(v, serde_json::json!({"ok": true, "valor": null}));
+    let v = unlock(&p, r#"{"password":"falso-mestra-ward-01"}"#);
+    assert_eq!(v, serde_json::json!({"ok": true, "value": null}));
     assert_eq!(
         vault_status(&p),
-        serde_json::json!({"estado": "destravado", "pedido": null})
+        serde_json::json!({"status": "unlocked", "request": null})
     );
     // The notice-listening command does not exist in the bridge (the channel is Tauri's).
-    let r = p.respond(&post(&p, "ouvir_avisos", "{}", &[]));
-    assert_eq!(r.body_json().unwrap()["codigo"], "pedido-invalido");
+    let r = p.respond(&post(&p, "listen_notices", "{}", &[]));
+    assert_eq!(r.body_json().unwrap()["code"], "invalid-request");
     let _ = fs::remove_dir_all(base);
 }
 
@@ -956,40 +990,40 @@ fn attack_unlock_through_the_bridge() {
 #[test]
 fn attack_lock_through_the_bridge() {
     let (p, _l, clipboard, base) = bridge("travar");
-    let r = p.respond(&post(&p, "travar", r#"{"x":1}"#, &[]));
-    assert_eq!(r.body_json().unwrap()["codigo"], "pedido-invalido");
+    let r = p.respond(&post(&p, "lock", r#"{"x":1}"#, &[]));
+    assert_eq!(r.body_json().unwrap()["code"], "invalid-request");
     let vault_status = |p: &Bridge<FakeDaemon, FakeClipboard>| {
-        p.respond(&post(p, "estado_do_cofre", "{}", &[]))
+        p.respond(&post(p, "vault_status", "{}", &[]))
             .body_json()
-            .unwrap()["valor"]["estado"]
+            .unwrap()["value"]["status"]
             .clone()
     };
-    assert_eq!(vault_status(&p), "destravado");
+    assert_eq!(vault_status(&p), "unlocked");
     p.respond(&post(
         &p,
-        "copiar_campo",
-        r#"{"entrada":"acme-pg-dev","campo":"password"}"#,
+        "copy_field",
+        r#"{"entry":"acme-pg-dev","field":"password"}"#,
         &[],
     ));
     let copied = clipboard.0.lock().unwrap().is_some();
-    let r = p.respond(&post(&p, "travar", "{}", &[]));
+    let r = p.respond(&post(&p, "lock", "{}", &[]));
     let text = String::from_utf8_lossy(&r.body).into_owned();
     assert_eq!(
         r.body_json().unwrap(),
-        serde_json::json!({"ok": true, "valor": null})
+        serde_json::json!({"ok": true, "value": null})
     );
     assert!(!text.contains("falso-"), "{text}");
     if copied {
         assert!(clipboard.0.lock().unwrap().is_none(), "área não foi limpa");
     }
-    assert_eq!(vault_status(&p), "travado");
+    assert_eq!(vault_status(&p), "locked");
     let r = p.respond(&post(
         &p,
-        "revelar_campo",
-        r#"{"entrada":"acme-pg-dev","campo":"password"}"#,
+        "reveal_field",
+        r#"{"entry":"acme-pg-dev","field":"password"}"#,
         &[],
     ));
-    assert_eq!(r.body_json().unwrap()["codigo"], "travado");
+    assert_eq!(r.body_json().unwrap()["code"], "locked");
     let _ = fs::remove_dir_all(base);
 }
 
@@ -1010,84 +1044,77 @@ fn attack_settings_through_the_bridge() {
         }
         r.body_json().unwrap()
     };
-    let v = ask("configuracoes", "{}");
-    assert_eq!(v["valor"]["minutos_trava"], 240, "{v}");
-    assert_eq!(v["valor"]["backup_externo"], false, "{v}");
-    assert_eq!(
-        ask("configuracoes", r#"{"hash":1}"#)["codigo"],
-        "pedido-invalido"
-    );
-    let v = ask("definir_tempo_trava", r#"{"minutos":60}"#);
-    assert_eq!(v["valor"]["minutos_trava"], 60, "{v}");
+    let v = ask("settings", "{}");
+    assert_eq!(v["value"]["lock_minutes"], 240, "{v}");
+    assert_eq!(v["value"]["external_backup"], false, "{v}");
+    assert_eq!(ask("settings", r#"{"hash":1}"#)["code"], "invalid-request");
+    let v = ask("set_lock_timeout", r#"{"minutes":60}"#);
+    assert_eq!(v["value"]["lock_minutes"], 60, "{v}");
     for body in [
-        r#"{"minutos":0}"#,
-        r#"{"minutos":1441}"#,
-        r#"{"minutos":"60"}"#,
-        r#"{"minutos":-1}"#,
-        r#"{"minutos":60,"pin":"135790"}"#,
+        r#"{"minutes":0}"#,
+        r#"{"minutes":1441}"#,
+        r#"{"minutes":"60"}"#,
+        r#"{"minutes":-1}"#,
+        r#"{"minutes":60,"pin":"135790"}"#,
         r#"{}"#,
     ] {
         assert_eq!(
-            ask("definir_tempo_trava", body)["codigo"],
-            "pedido-invalido",
+            ask("set_lock_timeout", body)["code"],
+            "invalid-request",
             "{body}"
         );
     }
-    assert_eq!(ask("configuracoes", "{}")["valor"]["minutos_trava"], 60);
+    assert_eq!(ask("settings", "{}")["value"]["lock_minutes"], 60);
     let pin_change = |current: &str, new_pin: &str, conf: &str| {
-        serde_json::json!({ "dados": { "atual": current, "novo": new_pin, "confirmacao": conf } })
+        serde_json::json!({ "data": { "current": current, "new": new_pin, "confirmation": conf } })
             .to_string()
     };
     for (body, field) in [
-        (pin_change("135", "2468", "2468"), "atual"),
-        (pin_change("135790", "13579a", "13579a"), "novo"),
-        (pin_change("135790", "2468", "2469"), "confirmacao"),
+        (pin_change("135", "2468", "2468"), "current"),
+        (pin_change("135790", "13579a", "13579a"), "new"),
+        (pin_change("135790", "2468", "2469"), "confirmation"),
     ] {
-        let v = ask("trocar_pin", &body);
-        assert_eq!(v["valor"]["trocado"], false, "{v}");
-        assert_eq!(v["valor"]["erros"][0]["campo"], field, "{v}");
+        let v = ask("change_pin", &body);
+        assert_eq!(v["value"]["changed"], false, "{v}");
+        assert_eq!(v["value"]["errors"][0]["field"], field, "{v}");
     }
     for body in [
-        r#"{"dados":{"atual":"135790","novo":"2468","confirmacao":"2468","nivel":"free"}}"#,
-        r#"{"dados":{"atual":135790,"novo":"2468","confirmacao":"2468"}}"#,
-        r#"{"dados":{"atual":"135790","novo":"2468","confirmacao":"2468"},"x":1}"#,
-        r#"{"atual":"135790","novo":"2468"}"#,
+        r#"{"data":{"current":"135790","new":"2468","confirmation":"2468","level":"free"}}"#,
+        r#"{"data":{"current":135790,"new":"2468","confirmation":"2468"}}"#,
+        r#"{"data":{"current":"135790","new":"2468","confirmation":"2468"},"x":1}"#,
+        r#"{"current":"135790","new":"2468"}"#,
     ] {
-        assert_eq!(
-            ask("trocar_pin", body)["codigo"],
-            "pedido-invalido",
-            "{body}"
-        );
+        assert_eq!(ask("change_pin", body)["code"], "invalid-request", "{body}");
     }
     assert_eq!(
-        ask("trocar_pin", &pin_change("246801", "2468", "2468"))["codigo"],
-        "pin-incorreto"
+        ask("change_pin", &pin_change("246801", "2468", "2468"))["code"],
+        "wrong-pin"
     );
     assert_eq!(
-        ask("trocar_pin", &pin_change("135790", "2468", "2468"))["valor"]["trocado"],
+        ask("change_pin", &pin_change("135790", "2468", "2468"))["value"]["changed"],
         true
     );
     let password_change = |current: &str, new_password: &str| {
-        serde_json::json!({ "dados": { "atual": current, "nova": new_password, "confirmacao": new_password } })
+        serde_json::json!({ "data": { "current": current, "new": new_password, "confirmation": new_password } })
             .to_string()
     };
     let v = ask(
-        "trocar_senha_mestra",
+        "change_master_password",
         &password_change("falso-mestra-ward-01", "falso-curta"),
     );
-    assert_eq!(v["valor"]["erros"][0]["campo"], "nova", "{v}");
+    assert_eq!(v["value"]["errors"][0]["field"], "new", "{v}");
     assert_eq!(
         ask(
-            "trocar_senha_mestra",
+            "change_master_password",
             &password_change("falso-errada-mestra-09", "falso-nova-mestra-02")
-        )["codigo"],
-        "senha-incorreta"
+        )["code"],
+        "wrong-password"
     );
     assert_eq!(
         ask(
-            "trocar_senha_mestra",
+            "change_master_password",
             &password_change("falso-mestra-ward-01", "falso-nova-mestra-02")
-        )["valor"]["trocado"],
+        )["value"]["changed"],
         true
     );
     let _ = fs::remove_dir_all(base);
@@ -1110,65 +1137,62 @@ fn attack_external_backup_through_the_bridge() {
         }
         r.body_json().unwrap()
     };
-    let v = ask("backup_externo", "{}");
-    assert_eq!(v["valor"]["ligado"], false, "{v}");
-    assert!(v["valor"]["uuid"].is_null(), "{v}");
-    let v = ask("listar_pendrives", "{}");
-    let list = v["valor"].as_array().unwrap();
+    let v = ask("external_backup", "{}");
+    assert_eq!(v["value"]["enabled"], false, "{v}");
+    assert!(v["value"]["uuid"].is_null(), "{v}");
+    let v = ask("list_usb_drives", "{}");
+    let list = v["value"].as_array().unwrap();
     assert_eq!(list.len(), 4, "{v}");
     assert!(
         list.iter()
-            .any(|p| p["rotulo"].as_str().unwrap().contains("\\u{202E}")),
+            .any(|p| p["label"].as_str().unwrap().contains("\\u{202E}")),
         "{v}"
     );
     for (command, body) in [
-        ("backup_externo", r#"{"uuid":"7C1E-42A9"}"#),
-        ("listar_pendrives", r#"{"todos":true}"#),
-        ("definir_backup_externo", r#"{"ligado":true}"#),
+        ("external_backup", r#"{"uuid":"7C1E-42A9"}"#),
+        ("list_usb_drives", r#"{"todos":true}"#),
+        ("set_external_backup", r#"{"enabled":true}"#),
         (
-            "definir_backup_externo",
-            r#"{"ligado":"true","uuid":"7C1E-42A9"}"#,
+            "set_external_backup",
+            r#"{"enabled":"true","uuid":"7C1E-42A9"}"#,
         ),
-        ("definir_backup_externo", r#"{"ligado":true,"uuid":4242}"#),
+        ("set_external_backup", r#"{"enabled":true,"uuid":4242}"#),
+        ("set_external_backup", r#"{"enabled":true,"uuid":"../etc"}"#),
         (
-            "definir_backup_externo",
-            r#"{"ligado":true,"uuid":"../etc"}"#,
-        ),
-        (
-            "definir_backup_externo",
-            r#"{"ligado":true,"uuid":"7C1E-42A9","montagem":"/media/x"}"#,
+            "set_external_backup",
+            r#"{"enabled":true,"uuid":"7C1E-42A9","montagem":"/media/x"}"#,
         ),
         (
-            "definir_backup_externo",
-            r#"{"ligado":false,"uuid":"DEAD-BEEF"}"#,
+            "set_external_backup",
+            r#"{"enabled":false,"uuid":"DEAD-BEEF"}"#,
         ),
-        ("definir_backup_externo", r#"{"uuid":"7C1E-42A9"}"#),
+        ("set_external_backup", r#"{"uuid":"7C1E-42A9"}"#),
     ] {
         assert_eq!(
-            ask(command, body)["codigo"],
-            "pedido-invalido",
+            ask(command, body)["code"],
+            "invalid-request",
             "{command} {body}"
         );
     }
     assert_eq!(
         ask(
-            "definir_backup_externo",
-            r#"{"ligado":true,"uuid":"DEAD-BEEF"}"#
-        )["codigo"],
-        "pendrive-nao-conectado"
+            "set_external_backup",
+            r#"{"enabled":true,"uuid":"DEAD-BEEF"}"#
+        )["code"],
+        "usb-drive-not-connected"
     );
-    assert_eq!(ask("backup_externo", "{}")["valor"]["ligado"], false);
+    assert_eq!(ask("external_backup", "{}")["value"]["enabled"], false);
     let v = ask(
-        "definir_backup_externo",
-        r#"{"ligado":true,"uuid":"7C1E-42A9"}"#,
+        "set_external_backup",
+        r#"{"enabled":true,"uuid":"7C1E-42A9"}"#,
     );
-    assert_eq!(v["valor"]["ligado"], true, "{v}");
-    assert_eq!(v["valor"]["pendrive"]["rotulo"], "WARD-BACKUP", "{v}");
-    assert_eq!(v["valor"]["pendrive"]["montado"], true, "{v}");
-    assert_eq!(ask("configuracoes", "{}")["valor"]["backup_externo"], true);
-    let v = ask("definir_backup_externo", r#"{"ligado":false,"uuid":null}"#);
-    assert_eq!(v["valor"]["ligado"], false, "{v}");
-    assert_eq!(v["valor"]["uuid"], "7C1E-42A9", "{v}");
+    assert_eq!(v["value"]["enabled"], true, "{v}");
+    assert_eq!(v["value"]["usb_drive"]["label"], "WARD-BACKUP", "{v}");
+    assert_eq!(v["value"]["usb_drive"]["mounted"], true, "{v}");
+    assert_eq!(ask("settings", "{}")["value"]["external_backup"], true);
+    let v = ask("set_external_backup", r#"{"enabled":false,"uuid":null}"#);
+    assert_eq!(v["value"]["enabled"], false, "{v}");
+    assert_eq!(v["value"]["uuid"], "7C1E-42A9", "{v}");
     let _ = fs::remove_dir_all(base);
 }
 
@@ -1201,39 +1225,39 @@ fn attack_restore_backup_through_the_bridge() {
         r.body_json().unwrap()
     };
     let body = |version: &str, password: &str, pin: &str| {
-        serde_json::json!({ "dados": { "versao": version, "senha": password, "pin": pin } })
+        serde_json::json!({ "data": { "version": version, "password": password, "pin": pin } })
             .to_string()
     };
     let entry_count = || {
-        ask("listar_credenciais", "{}")["valor"]
+        ask("list_credentials", "{}")["value"]
             .as_array()
             .unwrap()
             .len()
     };
     let before = entry_count();
-    let v = ask("listar_backups", "{}");
-    let list = v["valor"].as_array().unwrap().clone();
+    let v = ask("list_backups", "{}");
+    let list = v["value"].as_array().unwrap().clone();
     assert_eq!(list.len(), 30, "{v}");
     for item in &list {
         let keys: Vec<_> = item.as_object().unwrap().keys().cloned().collect();
         assert_eq!(
             keys,
-            ["conferida", "fora_de_ordem", "instante", "nome"],
+            ["instant", "name", "out_of_order", "verified"],
             "{item}"
         );
     }
-    let target = list[4]["nome"].as_str().unwrap().to_owned();
+    let target = list[4]["name"].as_str().unwrap().to_owned();
     assert_eq!(
-        ask("listar_backups", r#"{"todos":true}"#)["codigo"],
-        "pedido-invalido"
+        ask("list_backups", r#"{"todos":true}"#)["code"],
+        "invalid-request"
     );
     // Format, type and extra field: refused before the daemon.
-    let extra_field = serde_json::json!({ "dados": {
-        "versao": target, "senha": "falso-mestra-ward-01", "pin": "135790", "geracao": 9 } });
-    let numeric_pin = serde_json::json!({ "dados": {
-        "versao": target, "senha": "falso-mestra-ward-01", "pin": 135790 } });
-    let outside = serde_json::json!({ "dados": {
-        "versao": target, "senha": "falso-mestra-ward-01", "pin": "135790" }, "a_mais": 1 });
+    let extra_field = serde_json::json!({ "data": {
+        "version": target, "password": "falso-mestra-ward-01", "pin": "135790", "geracao": 9 } });
+    let numeric_pin = serde_json::json!({ "data": {
+        "version": target, "password": "falso-mestra-ward-01", "pin": 135790 } });
+    let outside = serde_json::json!({ "data": {
+        "version": target, "password": "falso-mestra-ward-01", "pin": "135790" }, "a_mais": 1 });
     for c in [
         body("../cofre.ward", "falso-mestra-ward-01", "135790"),
         body(
@@ -1246,13 +1270,9 @@ fn attack_restore_backup_through_the_bridge() {
         extra_field.to_string(),
         numeric_pin.to_string(),
         outside.to_string(),
-        r#"{"versao":"ward-20261108-143200.ward"}"#.to_owned(),
+        r#"{"version":"ward-20261108-143200.ward"}"#.to_owned(),
     ] {
-        assert_eq!(
-            ask("restaurar_backup", &c)["codigo"],
-            "pedido-invalido",
-            "{c}"
-        );
+        assert_eq!(ask("restore_backup", &c)["code"], "invalid-request", "{c}");
     }
     // Version in the format, but missing.
     let missing = body(
@@ -1260,29 +1280,23 @@ fn attack_restore_backup_through_the_bridge() {
         "falso-mestra-ward-01",
         "135790",
     );
-    assert_eq!(
-        ask("restaurar_backup", &missing)["codigo"],
-        "backup-inexistente"
-    );
+    assert_eq!(ask("restore_backup", &missing)["code"], "backup-not-found");
     // Wrong PIN and wrong version password.
     let wrong_pin = body(&target, "falso-mestra-ward-01", "000000");
-    assert_eq!(
-        ask("restaurar_backup", &wrong_pin)["codigo"],
-        "pin-incorreto"
-    );
+    assert_eq!(ask("restore_backup", &wrong_pin)["code"], "wrong-pin");
     let wrong_password = body(&target, "falso-mestra-ward-09", "135790");
     assert_eq!(
-        ask("restaurar_backup", &wrong_password)["codigo"],
-        "senha-incorreta"
+        ask("restore_backup", &wrong_password)["code"],
+        "wrong-password"
     );
     assert_eq!(entry_count(), before);
     // The right one: version 4 has four entries fewer.
     let v = ask(
-        "restaurar_backup",
+        "restore_backup",
         &body(&target, "falso-mestra-ward-01", "135790"),
     );
-    assert_eq!(v["valor"]["restaurado"], true, "{v}");
-    assert_eq!(v["valor"]["entradas"], before - 4, "{v}");
+    assert_eq!(v["value"]["restored"], true, "{v}");
+    assert_eq!(v["value"]["entries"], before - 4, "{v}");
     assert_eq!(entry_count(), before - 4);
     let _ = fs::remove_dir_all(base);
 }

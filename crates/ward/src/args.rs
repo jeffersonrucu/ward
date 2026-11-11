@@ -82,10 +82,10 @@ pub const HELP: &str = "\
 ward: cofre de credenciais do trabalho (cliente do wardd)
 
 Uso:
-  ward lista [--json]   entradas que o agente pode ver: nome, tipo, grupo,
+  ward list [--json]    entradas que o agente pode ver: nome, tipo, grupo,
                         ambiente, projeto e URL/host (nunca segredo)
-  ward destravar        destrava o cofre com a senha mestra, lida do terminal
-  ward travar           trava o cofre agora
+  ward unlock           destrava o cofre com a senha mestra, lida do terminal
+  ward lock             trava o cofre agora
   ward run <entrada> -- <comando> [argumentos…]
                         roda o comando com a credencial no ambiente (D10); a
                         saída volta com os segredos trocados por ••••, e o
@@ -225,10 +225,12 @@ pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command, UsageE
         }
     };
     match first {
-        "-h" | "--help" | "ajuda" => no_rest(Command::Help, "--help"),
+        // m2:DT10: English names only; the four 0.1.x names (the unit test
+        // `old_names_are_unknown_commands` lists them) are unknown commands, with no alias.
+        "-h" | "--help" | "help" => no_rest(Command::Help, "--help"),
         "-V" | "--version" => no_rest(Command::Version, "--version"),
-        "travar" => no_rest(Command::Lock, "travar"),
-        "destravar" => no_rest(Command::Unlock, "destravar"),
+        "lock" => no_rest(Command::Lock, "lock"),
+        "unlock" => no_rest(Command::Unlock, "unlock"),
         "playwright" => match rest.as_slice() {
             [entry] if !entry.is_empty() && !entry.starts_with('-') => Ok(Command::Playwright {
                 entry: (*entry).to_owned(),
@@ -241,10 +243,10 @@ pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Command, UsageE
             }),
             _ => Err(UsageError::LoginUsage),
         },
-        "lista" => match rest.as_slice() {
+        "list" => match rest.as_slice() {
             [] => Ok(Command::List { json: false }),
             ["--json"] => Ok(Command::List { json: true }),
-            _ => Err(UsageError::UnexpectedArgument("lista")),
+            _ => Err(UsageError::UnexpectedArgument("list")),
         },
         _ => Err(UsageError::UnknownCommand),
     }
@@ -260,26 +262,67 @@ mod tests {
 
     #[test]
     fn commands() {
-        assert_eq!(parse_args(&["lista"]), Ok(Command::List { json: false }));
+        assert_eq!(parse_args(&["list"]), Ok(Command::List { json: false }));
         assert_eq!(
-            parse_args(&["lista", "--json"]),
+            parse_args(&["list", "--json"]),
             Ok(Command::List { json: true })
         );
-        assert_eq!(parse_args(&["travar"]), Ok(Command::Lock));
-        assert_eq!(parse_args(&["destravar"]), Ok(Command::Unlock));
+        assert_eq!(parse_args(&["lock"]), Ok(Command::Lock));
+        assert_eq!(parse_args(&["unlock"]), Ok(Command::Unlock));
         assert_eq!(parse_args(&["--help"]), Ok(Command::Help));
         assert_eq!(parse_args(&["-h"]), Ok(Command::Help));
+        assert_eq!(parse_args(&["help"]), Ok(Command::Help));
         assert_eq!(parse_args(&["--version"]), Ok(Command::Version));
         assert_eq!(parse_args(&[]), Err(UsageError::NoCommand));
         assert_eq!(parse_args(&["revelar"]), Err(UsageError::UnknownCommand));
         assert_eq!(
-            parse_args(&["lista", "--json", "x"]),
-            Err(UsageError::UnexpectedArgument("lista"))
+            parse_args(&["list", "--json", "x"]),
+            Err(UsageError::UnexpectedArgument("list"))
         );
         assert_eq!(
-            parse_args(&["lista", "--nivel"]),
-            Err(UsageError::UnexpectedArgument("lista"))
+            parse_args(&["list", "--nivel"]),
+            Err(UsageError::UnexpectedArgument("list"))
         );
+        assert_eq!(
+            parse_args(&["unlock", "x"]),
+            Err(UsageError::UnexpectedArgument("unlock"))
+        );
+        assert_eq!(
+            parse_args(&["lock", "x"]),
+            Err(UsageError::UnexpectedArgument("lock"))
+        );
+    }
+
+    /// m2:DT10, m2:V5.1: the 0.1.x subcommands have no alias. Each one (alone, with the
+    /// arguments it took, and in another case) is an unknown command (exit 2), never
+    /// the English command it used to mean.
+    #[test]
+    fn old_names_are_unknown_commands() {
+        for old in [
+            &["lista"][..],
+            &["lista", "--json"],
+            &["travar"],
+            &["destravar"],
+            &["ajuda"],
+            &["LIST"],
+            &["Unlock"],
+        ] {
+            assert_eq!(parse_args(old), Err(UsageError::UnknownCommand), "{old:?}");
+        }
+        assert_eq!(
+            parse_args(&["help", "x"]),
+            Err(UsageError::UnexpectedArgument("--help"))
+        );
+        assert_eq!(UsageError::UnknownCommand.message(), "comando desconhecido");
+        for old in ["lista", "travar", "destravar", "ajuda"] {
+            assert!(
+                !HELP.contains(&format!("ward {old}")),
+                "a ajuda ainda cita `ward {old}`"
+            );
+        }
+        for new in ["ward list [--json]", "ward unlock", "ward lock"] {
+            assert!(HELP.contains(new), "a ajuda não cita `{new}`");
+        }
     }
 
     /// Attack: the password typed by mistake as an argument does not come back in the
@@ -287,9 +330,10 @@ mod tests {
     #[test]
     fn attack_argument_not_echoed_in_message() {
         for a in [
-            &["destravar", "falso-mestra-ward-01"][..],
+            &["unlock", "falso-mestra-ward-01"][..],
             &["falso-mestra-ward-01"][..],
-            &["lista", "falso-mestra-ward-01"][..],
+            &["list", "falso-mestra-ward-01"][..],
+            &["destravar", "falso-mestra-ward-01"][..],
         ] {
             let m = parse_args(a).unwrap_err().message();
             assert!(!m.contains("falso-mestra"), "{m}");

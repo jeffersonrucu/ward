@@ -36,27 +36,21 @@ const GENERATABLE_FIELDS: &[&str] = &["password"];
 /// Response of the save command: the saved name, or the errors per field. No value.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SaveResult {
-    #[serde(rename = "salvo")]
     pub saved: Option<String>,
-    #[serde(rename = "erros")]
     pub errors: Vec<FieldError>,
 }
 
 /// Response of the vault creation: created, or the errors per field. No value.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct CreateResult {
-    #[serde(rename = "criado")]
     pub created: bool,
-    #[serde(rename = "erros")]
     pub errors: Vec<FieldError>,
 }
 
 /// TOTP code for the interface (the code is shown, the seed never).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct TotpCode {
-    #[serde(rename = "codigo")]
     pub code: String,
-    #[serde(rename = "restante")]
     pub remaining: u64,
 }
 
@@ -240,7 +234,7 @@ impl<D: Daemon, A: Clipboard> Service<D, A> {
                     return Err(AppError::Locked);
                 }
                 self.approvals.remove(id);
-                "respondido"
+                "answered"
             }
             Some(false) => {
                 // Phase 44c: the origin confirmation is only decided by "Deny" or
@@ -269,19 +263,19 @@ impl<D: Daemon, A: Clipboard> Service<D, A> {
                 match r? {
                     client::Answered::Ok => {
                         self.approvals.remove(id);
-                        "respondido"
+                        "answered"
                     }
                     client::Answered::Expired => {
                         self.approvals.remove(id);
-                        "expirado"
+                        "expired"
                     }
                     client::Answered::WrongPin => {
                         if self.vault_status()? == VaultStatus::Unlocked {
-                            "pin-incorreto"
+                            "wrong-pin"
                         } else {
                             // The 5th error locked the vault: the daemon denied the request (S9).
                             self.approvals.mark_blocked(id);
-                            "bloqueado"
+                            "blocked"
                         }
                     }
                 }
@@ -1213,12 +1207,12 @@ mod tests {
 
     fn new_login(name: &str) -> serde_json::Value {
         serde_json::json!({
-            "tipo": "login", "nome": name, "grupo": "acme", "ambiente": "dev",
-            "projeto": "site", "tags": ["wordpress", "painel"],
-            "campos": {"url": "https://painel.exemplo.com/login", "username": "wp_novo"},
-            "segredos": {"password": {"novo": "falso-nova-senha-77"},
-                          "totp_seed": {"novo": "jbsw y3dp ehpk 3pxp"}},
-            "extras": [{"nome": "SITE_ID", "segredo": false, "valor": {"novo": "acme-site-01"}}]
+            "type": "login", "name": name, "group": "acme", "environment": "dev",
+            "project": "site", "tags": ["wordpress", "painel"],
+            "fields": {"url": "https://painel.exemplo.com/login", "username": "wp_novo"},
+            "secrets": {"password": {"new": "falso-nova-senha-77"},
+                          "totp_seed": {"new": "jbsw y3dp ehpk 3pxp"}},
+            "extras": [{"name": "SITE_ID", "secret": false, "value": {"new": "acme-site-01"}}]
         })
     }
 
@@ -1243,10 +1237,10 @@ mod tests {
         assert_eq!(s.totp_code("acme-wp-novo").unwrap().code.len(), 6);
         // Edit of a `free` entry: keeps the password, renames, the level stays.
         let edit = serde_json::json!({
-            "tipo": "login", "nome": "acme-totp-dev2", "grupo": "acme", "ambiente": "dev",
-            "projeto": "", "tags": [],
-            "campos": {"url": "http://localhost:8083/login", "username": "wp_admin"},
-            "segredos": {"password": "manter", "totp_seed": "manter"},
+            "type": "login", "name": "acme-totp-dev2", "group": "acme", "environment": "dev",
+            "project": "", "tags": [],
+            "fields": {"url": "http://localhost:8083/login", "username": "wp_admin"},
+            "secrets": {"password": "keep", "totp_seed": "keep"},
             "extras": []
         });
         let r = s
@@ -1272,13 +1266,13 @@ mod tests {
     fn save_without_required_shows_field_error() {
         let (s, _) = service();
         let empty = serde_json::json!({
-            "tipo": "login", "nome": "", "grupo": "", "ambiente": "", "projeto": "",
-            "tags": [], "campos": {}, "segredos": {"password": {"novo": "falso-x-123456"}}, "extras": []
+            "type": "login", "name": "", "group": "", "environment": "", "project": "",
+            "tags": [], "fields": {}, "secrets": {"password": {"new": "falso-x-123456"}}, "extras": []
         });
         let r = s.save_credential(None, form(empty)).unwrap();
         assert_eq!(r.saved, None);
         let fields: Vec<_> = r.errors.iter().map(|e| e.field).collect();
-        for c in ["nome", "grupo", "ambiente", "url", "username"] {
+        for c in ["name", "group", "environment", "url", "username"] {
             assert!(fields.contains(&c), "{c}: {r:?}");
         }
         assert!(!serde_json::to_string(&r).unwrap().contains("falso-x"));
@@ -1286,7 +1280,7 @@ mod tests {
         let r = s
             .save_credential(None, form(new_login("acme-wp-dev")))
             .unwrap();
-        assert!(r.errors.iter().any(|e| e.field == "nome"), "{r:?}");
+        assert!(r.errors.iter().any(|e| e.field == "name"), "{r:?}");
     }
 
     /// D35/V5.13: `otpauth://` with SHA256, 8 digits or 60 s is refused on save, with the
@@ -1300,7 +1294,7 @@ mod tests {
             "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP&period=60",
         ] {
             let mut j = new_login("acme-otp-novo");
-            j["segredos"]["totp_seed"] = serde_json::json!({ "novo": uri });
+            j["secrets"]["totp_seed"] = serde_json::json!({ "new": uri });
             let r = s.save_credential(None, form(j)).unwrap();
             assert_eq!(r.saved, None);
             assert_eq!(r.errors[0].field, "totp_seed");
@@ -1311,8 +1305,8 @@ mod tests {
             );
         }
         let mut j = new_login("acme-otp-novo");
-        j["segredos"]["totp_seed"] = serde_json::json!({
-            "novo": "otpauth://totp/Acme?secret=JBSWY3DPEHPK3PXP&algorithm=SHA1&digits=6&period=30"
+        j["secrets"]["totp_seed"] = serde_json::json!({
+            "new": "otpauth://totp/Acme?secret=JBSWY3DPEHPK3PXP&algorithm=SHA1&digits=6&period=30"
         });
         assert!(s.save_credential(None, form(j)).unwrap().saved.is_some());
     }
@@ -1341,7 +1335,7 @@ mod tests {
             );
         }
         let mut j = new_login("acme-gerada");
-        j["segredos"]["password"] = serde_json::json!("gerada");
+        j["secrets"]["password"] = serde_json::json!("generated");
         let r = s.save_credential(None, form(j)).unwrap();
         assert_eq!(r.saved.as_deref(), Some("acme-gerada"));
         assert_eq!(
@@ -1350,7 +1344,7 @@ mod tests {
         );
         // After saving, the used password goes away.
         let mut j = new_login("acme-gerada-2");
-        j["segredos"]["password"] = serde_json::json!("gerada");
+        j["secrets"]["password"] = serde_json::json!("generated");
         assert_eq!(
             s.save_credential(None, form(j)),
             Err(AppError::NoGeneratedPassword)
@@ -1365,14 +1359,14 @@ mod tests {
     fn attack_form_forged_by_the_interface() {
         let (s, _) = service();
         let mut j = new_login("acme-roubo");
-        j["segredos"]["password"] = serde_json::json!("manter");
+        j["secrets"]["password"] = serde_json::json!("keep");
         assert_eq!(
             s.save_credential(None, form(j)),
             Err(AppError::InvalidRequest)
         );
         let mut j = new_login("acme-roubo");
         j["extras"] = serde_json::json!([
-            {"nome": "X", "segredo": false, "valor": {"manter": "CHAVE_LICENCA"}}
+            {"name": "X", "secret": false, "value": {"keep": "CHAVE_LICENCA"}}
         ]);
         assert_eq!(
             s.save_credential(None, form(j)),
@@ -1381,7 +1375,7 @@ mod tests {
         // When editing another entry, the extra it does not have is not valid either.
         let mut e = new_login("acme-wp-dev");
         e["extras"] = serde_json::json!([
-            {"nome": "X", "segredo": true, "valor": {"manter": "CHAVE_LICENCA"}}
+            {"name": "X", "secret": true, "value": {"keep": "CHAVE_LICENCA"}}
         ]);
         assert_eq!(
             s.save_credential(Some("acme-wp-dev"), form(e)),
@@ -1389,14 +1383,14 @@ mod tests {
         );
         // Type swapped when editing.
         let mut t = new_login("beta-github-api");
-        t["campos"] = serde_json::json!({});
+        t["fields"] = serde_json::json!({});
         assert_eq!(
             s.save_credential(Some("beta-github-api"), form(t)),
             Err(AppError::InvalidRequest)
         );
         // Field of another type.
         let mut c = new_login("acme-x");
-        c["campos"]["host"] = serde_json::json!("127.0.0.1");
+        c["fields"]["host"] = serde_json::json!("127.0.0.1");
         assert_eq!(
             s.save_credential(None, form(c)),
             Err(AppError::InvalidRequest)
@@ -1404,7 +1398,7 @@ mod tests {
         // Login fields in a type of Phase 34, and a made-up type.
         for kind in ["database", "server", "ftp-sftp", "root", ""] {
             let mut c = new_login("acme-x");
-            c["tipo"] = serde_json::json!(kind);
+            c["type"] = serde_json::json!(kind);
             assert_eq!(
                 s.save_credential(None, form(c)),
                 Err(AppError::InvalidRequest),
@@ -1423,11 +1417,11 @@ mod tests {
             (None, serde_json::json!(["app.env"])),
         ] {
             let mut g = serde_json::json!({
-                "tipo": "generic", "nome": "gama-generico-2", "grupo": "gama",
-                "ambiente": "stage", "projeto": "", "tags": [], "campos": {}, "segredos": {},
-                "extras": [{"nome": "REGIAO", "segredo": false, "valor": {"novo": "r-02"}}]
+                "type": "generic", "name": "gama-generico-2", "group": "gama",
+                "environment": "stage", "project": "", "tags": [], "fields": {}, "secrets": {},
+                "extras": [{"name": "REGIAO", "secret": false, "value": {"new": "r-02"}}]
             });
-            g["anexos_mantidos"] = kept;
+            g["kept_attachments"] = kept;
             assert_eq!(
                 s.save_credential(previous, form(g)),
                 Err(AppError::InvalidRequest),
@@ -1491,7 +1485,7 @@ mod tests {
         s.copy_totp_code("acme-wp-dev").unwrap();
         assert_eq!(area.0.lock().unwrap().as_ref().map(Vec::len), Some(6));
         let mut j = new_login("acme-edit");
-        j["segredos"]["password"] = serde_json::json!({"novo": "falso-WP-senha-01"});
+        j["secrets"]["password"] = serde_json::json!({"new": "falso-WP-senha-01"});
         let r = serde_json::to_string(&s.save_credential(None, form(j)).unwrap()).unwrap();
         assert_no_secret(&r, "salvar");
         for item in s.list_credentials().unwrap() {
@@ -1639,7 +1633,7 @@ mod tests {
         let r = s.set_level("acme-wp-dev", "free", pin(RIGHT_PIN)).unwrap();
         let ok = serde_json::to_string(&r).unwrap();
         assert!(!ok.contains(RIGHT_PIN), "{ok}");
-        assert_no_secret(&ok, "mudar_nivel");
+        assert_no_secret(&ok, "set_level");
         let e = s
             .set_level("acme-wp-dev", "free", pin(WRONG_PIN))
             .unwrap_err();
@@ -1715,12 +1709,12 @@ mod tests {
 
     fn new_server(name: &str) -> serde_json::Value {
         serde_json::json!({
-            "tipo": "server", "nome": name, "grupo": "clientex", "ambiente": "stage",
-            "projeto": "", "tags": [],
-            "campos": {"host": "127.0.0.1", "port": "2222", "username": "deploy", "jump": ""},
-            "segredos": {"password": "vazio", "private_key": {"novo": test_key()},
-                "passphrase": {"novo": "falso-frase-34"}},
-            "extras": [], "anexos": []
+            "type": "server", "name": name, "group": "clientex", "environment": "stage",
+            "project": "", "tags": [],
+            "fields": {"host": "127.0.0.1", "port": "2222", "username": "deploy", "jump": ""},
+            "secrets": {"password": "empty", "private_key": {"new": test_key()},
+                "passphrase": {"new": "falso-frase-34"}},
+            "extras": [], "attachments": []
         })
     }
 
@@ -1730,12 +1724,12 @@ mod tests {
     fn database_server_and_ftp_save_and_edit() {
         let (s, _, _) = service_34();
         let database = serde_json::json!({
-            "tipo": "database", "nome": "clientex-pg-stage", "grupo": "clientex", "ambiente": "stage",
-            "projeto": "", "tags": [],
-            "campos": {"engine": "postgres", "host": "127.0.0.1", "port": "", "db_name": "app_teste",
+            "type": "database", "name": "clientex-pg-stage", "group": "clientex", "environment": "stage",
+            "project": "", "tags": [],
+            "fields": {"engine": "postgres", "host": "127.0.0.1", "port": "", "db_name": "app_teste",
                 "username": "app", "tunnel": "acme-ssh-senha-stage"},
-            "segredos": {"password": {"novo": "falso-banco-34"}},
-            "extras": [], "anexos": []
+            "secrets": {"password": {"new": "falso-banco-34"}},
+            "extras": [], "attachments": []
         });
         let r = s.save_credential(None, form(database)).unwrap();
         assert_eq!(r.saved.as_deref(), Some("clientex-pg-stage"), "{r:?}");
@@ -1760,22 +1754,22 @@ mod tests {
         );
 
         let ftp = serde_json::json!({
-            "tipo": "ftp-sftp", "nome": "clientex-ftp", "grupo": "clientex", "ambiente": "dev",
-            "projeto": "", "tags": [],
-            "campos": {"protocol": "ftp", "host": "127.0.0.1", "port": "", "username": "sftpuser"},
-            "segredos": {"password": {"novo": "falso-ftp-34"}, "private_key": "vazio", "passphrase": "vazio"},
-            "extras": [], "anexos": []
+            "type": "ftp-sftp", "name": "clientex-ftp", "group": "clientex", "environment": "dev",
+            "project": "", "tags": [],
+            "fields": {"protocol": "ftp", "host": "127.0.0.1", "port": "", "username": "sftpuser"},
+            "secrets": {"password": {"new": "falso-ftp-34"}, "private_key": "empty", "passphrase": "empty"},
+            "extras": [], "attachments": []
         });
         let r = s.save_credential(None, form(ftp)).unwrap();
         assert_eq!(r.saved.as_deref(), Some("clientex-ftp"), "{r:?}");
 
         // Edit of the server with a test vault key, keeping key and passphrase.
         let ed = serde_json::json!({
-            "tipo": "server", "nome": "acme-ssh-chave-prod", "grupo": "acme", "ambiente": "prod",
-            "projeto": "", "tags": [],
-            "campos": {"host": "127.0.0.1", "port": "2223", "username": "deploy", "jump": ""},
-            "segredos": {"password": "vazio", "private_key": "manter", "passphrase": "manter"},
-            "extras": [], "anexos": []
+            "type": "server", "name": "acme-ssh-chave-prod", "group": "acme", "environment": "prod",
+            "project": "", "tags": [],
+            "fields": {"host": "127.0.0.1", "port": "2223", "username": "deploy", "jump": ""},
+            "secrets": {"password": "empty", "private_key": "keep", "passphrase": "keep"},
+            "extras": [], "attachments": []
         });
         let r = s
             .save_credential(Some("acme-ssh-chave-prod"), form(ed))
@@ -1793,12 +1787,12 @@ mod tests {
     fn new_type_errors_on_the_field() {
         let (s, _, _) = service_34();
         let database = serde_json::json!({
-            "tipo": "database", "nome": "clientex-pg", "grupo": "clientex", "ambiente": "dev",
-            "projeto": "", "tags": [],
-            "campos": {"engine": "postgres", "host": "127.0.0.1", "port": "99999", "db_name": "app.teste?x",
+            "type": "database", "name": "clientex-pg", "group": "clientex", "environment": "dev",
+            "project": "", "tags": [],
+            "fields": {"engine": "postgres", "host": "127.0.0.1", "port": "99999", "db_name": "app.teste?x",
                 "username": "app", "tunnel": "acme-pg-dev"},
-            "segredos": {"password": {"novo": "falso-banco-erro"}},
-            "extras": [], "anexos": []
+            "secrets": {"password": {"new": "falso-banco-erro"}},
+            "extras": [], "attachments": []
         });
         let r = s.save_credential(None, form(database)).unwrap();
         let fields: Vec<_> = r.errors.iter().map(|e| e.field).collect();
@@ -1809,25 +1803,25 @@ mod tests {
         assert!(!serde_json::to_string(&r).unwrap().contains("falso-banco"));
         // A tunnel that is not a server: daemon error on the tunnel field.
         let mut b = serde_json::json!({
-            "tipo": "database", "nome": "clientex-pg", "grupo": "clientex", "ambiente": "dev",
-            "projeto": "", "tags": [],
-            "campos": {"engine": "postgres", "host": "127.0.0.1", "port": "", "db_name": "app",
+            "type": "database", "name": "clientex-pg", "group": "clientex", "environment": "dev",
+            "project": "", "tags": [],
+            "fields": {"engine": "postgres", "host": "127.0.0.1", "port": "", "db_name": "app",
                 "username": "app", "tunnel": "acme-pg-dev"},
-            "segredos": {"password": {"novo": "falso-banco-erro"}},
-            "extras": [], "anexos": []
+            "secrets": {"password": {"new": "falso-banco-erro"}},
+            "extras": [], "attachments": []
         });
         let r = s.save_credential(None, form(b.clone())).unwrap();
         assert_eq!(r.errors.first().map(|e| e.field), Some("tunnel"), "{r:?}");
-        b["campos"]["engine"] = serde_json::json!("oracle");
-        b["campos"]["tunnel"] = serde_json::json!("");
+        b["fields"]["engine"] = serde_json::json!("oracle");
+        b["fields"]["tunnel"] = serde_json::json!("");
         let r = s.save_credential(None, form(b)).unwrap();
         assert!(r.errors.iter().any(|e| e.field == "engine"), "{r:?}");
         // No password nor key on the server: error on the auth field.
         let mut v = new_server("clientex-ssh");
-        v["segredos"] =
-            serde_json::json!({"password": "vazio", "private_key": "vazio", "passphrase": "vazio"});
+        v["secrets"] =
+            serde_json::json!({"password": "empty", "private_key": "empty", "passphrase": "empty"});
         let r = s.save_credential(None, form(v)).unwrap();
-        assert!(r.errors.iter().any(|e| e.field == "autenticacao"), "{r:?}");
+        assert!(r.errors.iter().any(|e| e.field == "auth"), "{r:?}");
     }
 
     /// S1: the interface forging both methods, or a key on ftp, is refused by the
@@ -1837,20 +1831,20 @@ mod tests {
     fn attack_auth_forged_by_the_interface() {
         let (s, _, _) = service_34();
         let mut v = new_server("clientex-ssh");
-        v["segredos"]["password"] = serde_json::json!({"novo": "falso-as-duas-34"});
+        v["secrets"]["password"] = serde_json::json!({"new": "falso-as-duas-34"});
         let r = s.save_credential(None, form(v)).unwrap();
-        assert!(r.errors.iter().any(|e| e.field == "autenticacao"), "{r:?}");
+        assert!(r.errors.iter().any(|e| e.field == "auth"), "{r:?}");
         let mut f = new_server("clientex-ftp");
-        f["tipo"] = serde_json::json!("ftp-sftp");
-        f["campos"] = serde_json::json!({"protocol": "ftp", "host": "127.0.0.1", "port": "", "username": "u"});
+        f["type"] = serde_json::json!("ftp-sftp");
+        f["fields"] = serde_json::json!({"protocol": "ftp", "host": "127.0.0.1", "port": "", "username": "u"});
         let r = s.save_credential(None, form(f)).unwrap();
-        assert!(r.errors.iter().any(|e| e.field == "autenticacao"), "{r:?}");
+        assert!(r.errors.iter().any(|e| e.field == "auth"), "{r:?}");
         let ed = serde_json::json!({
-            "tipo": "server", "nome": "acme-ssh-senha-stage", "grupo": "acme", "ambiente": "stage",
-            "projeto": "", "tags": [],
-            "campos": {"host": "127.0.0.1", "port": "2222", "username": "deploy", "jump": ""},
-            "segredos": {"password": "vazio", "private_key": "manter", "passphrase": "vazio"},
-            "extras": [], "anexos": []
+            "type": "server", "name": "acme-ssh-senha-stage", "group": "acme", "environment": "stage",
+            "project": "", "tags": [],
+            "fields": {"host": "127.0.0.1", "port": "2222", "username": "deploy", "jump": ""},
+            "secrets": {"password": "empty", "private_key": "keep", "passphrase": "empty"},
+            "extras": [], "attachments": []
         });
         assert_eq!(
             s.save_credential(Some("acme-ssh-senha-stage"), form(ed)),
@@ -1879,7 +1873,7 @@ mod tests {
         };
         assert_eq!(size, content.len() as u64);
         let mut v = new_server("clientex-ssh-anexo");
-        v["anexos"] = serde_json::json!([id]);
+        v["attachments"] = serde_json::json!([id]);
         let r = s.save_credential(None, form(v)).unwrap();
         assert_eq!(r.saved.as_deref(), Some("clientex-ssh-anexo"), "{r:?}");
         let det = s.credential_detail("clientex-ssh-anexo").unwrap();
@@ -1894,7 +1888,7 @@ mod tests {
         );
         // Once saved, the chosen attachments are discarded: the id is not valid again.
         let mut v = new_server("clientex-ssh-anexo2");
-        v["anexos"] = serde_json::json!([id]);
+        v["attachments"] = serde_json::json!([id]);
         assert_eq!(
             s.save_credential(None, form(v)),
             Err(AppError::InvalidRequest)
@@ -1909,12 +1903,12 @@ mod tests {
 
     fn loaded_server(name: &str) -> serde_json::Value {
         let mut v = new_server(name);
-        v["segredos"]["private_key"] = serde_json::json!("carregada");
+        v["secrets"]["private_key"] = serde_json::json!("loaded");
         v
     }
 
     /// Phase 53a (S2, S11): "Load from file" reads the key in Rust; the response carries
-    /// only the size; saving with `"carregada"` stores exactly the file in the vault (the
+    /// only the size; saving with `"loaded"` stores exactly the file in the vault (the
     /// daemon reveal returns the same); saving discards the loaded key.
     #[test]
     fn load_key_goes_to_the_daemon_without_passing_through_the_interface() {
@@ -1941,7 +1935,7 @@ mod tests {
         assert_eq!(r.saved.as_deref(), Some("clientex-ssh-53a"), "{r:?}");
         let v = s.reveal_field("clientex-ssh-53a", "private_key").unwrap();
         assert_eq!(v.expose(), k.as_str());
-        // Once saved, the key was discarded: "carregada" again is an invalid request.
+        // Once saved, the key was discarded: "loaded" again is an invalid request.
         assert_eq!(
             s.save_credential(None, form(loaded_server("clientex-ssh-53b"))),
             Err(AppError::InvalidRequest)
@@ -2055,9 +2049,9 @@ mod tests {
         // Canceled: nothing.
         *sel.0.lock().unwrap() = None;
         assert_eq!(s.load_key("private_key").unwrap(), Loading::Canceled);
-        // "carregada" on a field that is not a key one: invalid request.
+        // "loaded" on a field that is not a key one: invalid request.
         let mut v = new_server("clientex-ssh-53d");
-        v["segredos"]["passphrase"] = serde_json::json!("carregada");
+        v["secrets"]["passphrase"] = serde_json::json!("loaded");
         assert_eq!(
             s.save_credential(None, form(v)),
             Err(AppError::InvalidRequest)
@@ -2091,7 +2085,7 @@ mod tests {
         assert_eq!(s.choose_attachment(None).unwrap(), Choice::Canceled);
         for ids in [serde_json::json!([id, id]), serde_json::json!([id + 99])] {
             let mut v = new_server("clientex-ssh-x");
-            v["anexos"] = ids;
+            v["attachments"] = ids;
             assert_eq!(
                 s.save_credential(None, form(v)),
                 Err(AppError::InvalidRequest)
@@ -2103,9 +2097,9 @@ mod tests {
             panic!()
         };
         let mut v = new_server("clientex-ssh-x");
-        v["anexos"] = serde_json::json!([id]);
+        v["attachments"] = serde_json::json!([id]);
         let r = s.save_credential(None, form(v)).unwrap();
-        assert!(r.errors.iter().any(|e| e.field == "anexos"), "{r:?}");
+        assert!(r.errors.iter().any(|e| e.field == "attachments"), "{r:?}");
         // Canceling the form discards the chosen ones.
         s.discard_form();
         assert_eq!(s.remove_attachment(id), Err(AppError::InvalidRequest));
@@ -2136,15 +2130,15 @@ mod tests {
         let content = "FALSO_ENV=falso-anexo-01";
         let edit = |kept: serde_json::Value| {
             let mut g = serde_json::json!({
-                "tipo": "generic", "nome": "gama-generico", "grupo": "gama",
-                "ambiente": "stage", "projeto": "", "tags": [], "campos": {}, "segredos": {},
+                "type": "generic", "name": "gama-generico", "group": "gama",
+                "environment": "stage", "project": "", "tags": [], "fields": {}, "secrets": {},
                 "extras": [
-                    {"nome": "REGIAO", "segredo": false, "valor": {"novo": "r-02"}},
-                    {"nome": "CHAVE_LICENCA", "segredo": true,
-                     "valor": {"manter": "CHAVE_LICENCA"}}
+                    {"name": "REGIAO", "secret": false, "value": {"new": "r-02"}},
+                    {"name": "CHAVE_LICENCA", "secret": true,
+                     "value": {"keep": "CHAVE_LICENCA"}}
                 ]
             });
-            g["anexos_mantidos"] = kept;
+            g["kept_attachments"] = kept;
             g
         };
         // Keep: the attachment stays, with the same size.
@@ -2183,7 +2177,7 @@ mod tests {
         };
         assert_eq!(name, "env");
         let mut g = edit(serde_json::json!(["app.env"]));
-        g["anexos"] = serde_json::json!([id]);
+        g["attachments"] = serde_json::json!([id]);
         let r = s.save_credential(Some("gama-generico"), form(g)).unwrap();
         assert_eq!(r.saved.as_deref(), Some("gama-generico"), "{r:?}");
         let names: Vec<String> = s
@@ -2464,7 +2458,7 @@ mod unlock_tests {
         let j = serde_json::to_value(s.request_info(VaultStatus::Locked).unwrap()).unwrap();
         let mut keys: Vec<&String> = j.as_object().unwrap().keys().collect();
         keys.sort();
-        assert_eq!(keys, ["comando", "entrada", "id", "operacao", "restante"]);
+        assert_eq!(keys, ["command", "entry", "id", "operation", "remaining"]);
     }
 
     #[test]
