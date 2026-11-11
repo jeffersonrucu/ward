@@ -42,6 +42,10 @@ ROOT="$(cd -P -- "${BASH_SOURCE[0]%/*}/../.." && pwd -P)"
 . "$ROOT/dev/env.sh"
 unset MAKEFLAGS MAKELEVEL MFLAGS
 cd "$ROOT"
+# Phase 65a: refuses before anything when the Chrome of this suite would see the installed
+# Ward (policy in /etc/opt/chrome/policies or the br.ward.nm host manifest): a test
+# extension (or the forced one) would reach /usr/local/bin/ward-nm and the real vault.
+/usr/bin/python3 -I -B "$ROOT/dev/tests/chrome_guard.py" check || exit 3
 
 usage="uso: chrome-policy.sh <wardd-teste> <ward-nm-teste> <ward> <wardd> <ward-nm> <ward-app> <wardd-test-approver>"
 [ $# -eq 7 ] || { echo "$usage" >&2; exit 2; }

@@ -1,0 +1,122 @@
+origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
+/usr/bin/python3 -I -B dev/extension/build.py
+extensão montada em extension/dist/ (id nhkehjnmlgkebhmelajfpmpblepaichf)
+<home>/.cargo/bin/cargo build --quiet --locked -p wardd --features test-mode --bin wardd --bin wardd-test-approver
+<home>/.cargo/bin/cargo build --quiet --locked -p ward-nm --features test-mode --bin ward-nm
+<home>/.cargo/bin/cargo build --quiet --locked -p ward-nm --example fake-chrome
+<home>/.cargo/bin/cargo build --quiet --locked -p ward --features test-mode --bin ward
+dev/tests/browser-container.sh extension target/debug/wardd target/debug/ward-nm target/debug/examples/fake-chrome target/debug/ward target/debug/wardd-test-approver
+==> imagem ward-teste/browser:1 (o build usa a rede; o teste não)
+==> make test-extension no contêiner (sem rede; Chrome sem política nem host do Ward)
+chrome-guard: ok, o Chrome não vê política nem host do Ward
+[1111/184600.755336:WARNING:chrome/app/chrome_main_linux.cc:84] Read channel stable from /opt/google/chrome/CHROME_VERSION_EXTRA
+contêiner: Google Chrome 157.0.8103.50 , uid 1000, sem rede
+chrome-guard: ok, o Chrome não vê política nem host do Ward
+wardd de teste só deste script (WARD_DEV_EXTENSION=chrome): pid 52, socket /run/user/1000/ward-extension-test-20-HogoHx/wardd.sock
+chrome-guard: ok, o Chrome não vê política nem host do Ward
+ok    destravou o cofre de teste (cópia) pelo socket
+ok    posts.log do phishing lido antes do teste
+ok    extensão carregada com o id fixo do manifesto (nhkehjnmlgkebhmelajfpmpblepaichf)
+ok    ataque [::1]: a aba em localhost:8081 caiu no falso de [::1] (título 'falso-v6')
+ok    ataque [::1], popup negado na janela: nada preenchido no falso e o popup avisa ('O preenchimento foi negado na janela do Ward. Nada foi enviado à página.')
+ok    ataque [::1], popup: o pedido mostra a origem e não pede PIN (['pedido operacao=fill entradas=acme-wp-prod origem=http://localhost:8081 confirmacao=1 decisao=deny'])
+ok    ataque [::1], popup: o falso não recebeu nenhum POST (0 bytes)
+ok    V6.7: em localhost:8081 aparecem acme-wp-dev e acme-wp-prod (só elas)
+ok    popup mostra a origem da aba
+ok    rótulo da lista e estado do cabeçalho
+ok    ambiente e detalhe (usuário · com TOTP) de cada entrada: [('dev', 'wp_admin · com TOTP'), ('prod', 'wp_editor · com TOTP')]
+ok    Inter e JetBrains Mono carregadas do pacote
+ok    medidas do popup iguais às do frame 17332 (Extensão / Sugestões do domínio)
+ok    cores do fundo, nome, detalhe e estado iguais às do FigCraft
+ok    V6.5: DOM do popup sem segredo
+ok    V6.5: sem chrome.storage (sem a permissão) e nada no armazenamento do popup
+ok    hover do item com a superfície elevada (#24282F)
+ok    screenshot sugestoes-do-dominio-localhost-8081.png
+ok    Fase 44c: preencher do popup em http negado na janela: nada preenchido e o popup avisa ('O preenchimento foi negado na janela do Ward. Nada foi enviado à página.')
+ok    Fase 44c: o pedido do popup mostra a origem http e não pede PIN (['pedido operacao=fill entradas=acme-wp-prod origem=http://localhost:8081 confirmacao=1 decisao=deny'])
+ok    o popup fecha depois de preencher (o contexto com a resposta some)
+ok    V6.7: clicar em acme-wp-prod preenche usuário e senha em localhost:8081 (origem confirmada)
+ok    V6.7: em localhost:8083 só acme-totp-dev
+ok    screenshot sugestoes-do-dominio-localhost-8083.png
+ok    V6.7: acme-totp-dev preenche usuário, senha e TOTP
+ok    V6.7: o login no localhost:8083 entra (Painel)
+ok    V6.2: em 127.0.0.1:8081, acme-wp-* não é sugerida
+ok    screenshot sugestoes-do-dominio-sem-entrada-127.png
+ok    V6.2: preencher forçado para a aba 127.0.0.1:8081: o daemon recusa (origin_mismatch)
+ok    injeção com origem esperada diferente da do documento: nada escrito
+ok    phishing localhost:8082: nada sugerido
+ok    phishing: preencher acme-wp-prod forçado com a origem da aba: recusado
+ok    redir 8084 leva a aba ao phishing 8082
+ok    redir: o popup usa a origem final (8082), delta-redir não é sugerida
+ok    redir: preencher delta-redir com a origem final: recusado (D9)
+ok    aba que navegou para o phishing com o popup aberto: nada preenchido
+      quadros: [{"url": "http://localhost:8082/wp-login.php", "unreachableUrl": null, "securityOrigin": "http://localhost:8082"}]
+ok    V6.4: o iframe é o phishing carregado (http://localhost:8082/wp-login.php)
+ok    V6.4: o documento da origem certa recebe usuário e senha
+ok    V6.4: o iframe do phishing (localhost:8082) não recebe nada (iframe: {'user_login': False, 'user_pass': False}, quadros filhos: 1)
+ok    V6.4: formulário só no iframe do phishing: nada preenchido
+ok    DOM clobbering: preenche os campos certos, a isca fica vazia
+ok    DOM clobbering: os protótipos trocados pela página não são chamados
+ok    campo escondido: nenhuma das 10 iscas recebe valor
+ok    campo escondido: só os campos visíveis recebem
+ok    só campos escondidos: nada preenchido e o popup avisa
+ok    screenshot sugestoes-do-dominio-sem-campo.png
+ok    V6.6: chrome.runtime.sendMessage(<id>) da página não chega a nada (sem externally_connectable)
+ok    V6.6: a página não lê o popup nem o manifesto (sem web_accessible_resources)
+ok    V6.6: postMessage pedindo preencher: nada acontece
+ok    ataque: requestSubmit do script da página (sem ativação do usuário) não oferece salvar
+ok    ataque: nada pendente depois do envio forjado
+ok    login já cadastrado (acme-totp-dev): enviar não oferece salvar
+ok    ataque: envio dentro do iframe (outra origem) não oferece salvar
+ok    cofre travado antes do envio
+ok    cofre travado no envio: não oferece salvar
+ok    cofre travado no envio: nada ficou pendente para depois do destravar
+ok    V6.9: sugestões do domínio continuam escuras com prefers-color-scheme: light
+      popup aberto pelo service worker (openPopup): True
+ok    o cadastro no localhost:8083 foi aceito pelo site
+ok    V6.8: enviar o login novo abre o popup "Salvar login novo" sozinho
+ok    V6.8: título e texto do frame 17414 com o host da aba
+ok    V6.8: pede tipo, grupo e ambiente, com sugestões do host (localhost-8083, localhost, dev)
+ok    V6.8: a senha não chega ao popup (máscara fixa, DOM sem o valor)
+ok    V6.8: o service worker dá ao popup só a origem e o usuário
+ok    medidas do popup iguais às dos frames 17414/18850 (Extensão / Salvar login novo)
+ok    cores e fontes iguais às do FigCraft ({'fundo': 'rgb(16, 17, 20)', 'entrada': 'rgb(22, 24, 29)', 'borda': 'rgb(36, 40, 47)', 'nivel': 'rgb(28, 31, 37)', 'primario': 'rgb(74, 108, 240)', 'intro': 'rgb(154, 161, 174)'})
+ok    screenshot salvar-login-novo-localhost-8083.png
+ok    medidas do conteúdo inteiro iguais às do frame 18850 (360×806; rodapé [0, 729, 360, 77])
+ok    screenshot salvar-login-novo-rolado.png
+ok    V6.9: salvar login novo continua escuro com prefers-color-scheme: light
+ok    screenshot salvar-login-novo-tema-claro.png
+ok    ataque: mensagens do content script (pendente/salvar/descartar) ficam sem resposta ({'pending': 'nada', 'save': 'nada', 'discard': 'nada'})
+ok    o pendente continua lá depois do ataque do content script (só o popup descarta)
+ok    nome inválido: o motivo do daemon aparece no campo (use letras minúsculas, números, '.', '_' ou '-', começando por letra ou número)
+ok    screenshot salvar-login-novo-erro-nome.png
+ok    V6.8: "Salvar no Ward" grava e o popup fecha
+ok    V6.8: a entrada aparece no `ward list --json` (login, grupo e ambiente escolhidos; sem nível, D50) ({'name': 'localhost-8083-novo', 'type': 'login', 'group': 'teste-fase-42', 'environment': 'dev', 'project': None, 'address': 'http://localhost:8083/registration'})
+ok    V6.8: nível inicial "com aprovação" (o uso pelo agente pede aprovação com PIN: denied, ['pedido operacao=login entradas=localhost-8083-novo origem=http://localhost:8083 confirmacao=0 decisao=deny'])
+ok    a entrada nova é sugerida em localhost:8083 (['acme-totp-dev', 'localhost-8083-novo'])
+ok    a entrada nova preenche o usuário e a senha enviados
+ok    "Agora não" fecha o popup
+ok    "Agora não": nada fica pendente
+ok    cofre travado pelo socket
+ok    travado: o popup mostra o estado e nenhuma entrada
+ok    medidas do travado iguais às do frame 17392
+ok    screenshot cofre-travado-localhost-8081.png
+ok    V6.9: cofre travado continua escuro com prefers-color-scheme: light
+ok    screenshot cofre-travado-tema-claro.png
+ok    V6.9: o botão do travado pede open_app ao daemon e o popup fecha (['open_app'])
+ok    V6.5: nada da extensão no perfil com segredo
+ok    Fase 44a: filtro do dicionário zxcvbn recusa segredo plantado (6 casos)
+ok    V6.5: achado do dicionário zxcvbn fora de arquivo da extensão
+info  Default/Code Cache/js/8ee65dfe02344aa1_0: lista de senhas comuns do zxcvbn (linha(s) [81] de .dev/variations.txt; palavra do dicionário no meio da lista); não vem do cofre
+ok    V6.5/V6.8: a senha do login novo não fica em nada da extensão no perfil
+ok    posts.log do phishing (8082) sem mudança
+ok    exceção de teste: o ward-nm aberto por outro processo continua agente
+ok    exceção de teste: o ward-nm filho de um Chrome falso (outro exe) continua agente
+ok    ward-nm recusa outra extensão (id diferente do do Ward)
+ok    wardd.log sem padrão de .dev/variations.txt
+ok    chrome.log sem padrão de .dev/variations.txt
+ok    console.log sem padrão de .dev/variations.txt
+ok    wardd-test-approver.log sem padrão de .dev/variations.txt
+ok    log do daemon sem as origens pedidas
+ok    o daemon de teste deu o papel extensão ao ward-nm filho do Chrome
+test-extension: tudo certo

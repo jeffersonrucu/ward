@@ -1,0 +1,89 @@
+origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
+dev/tests/webkit-real.sh "<home>/.cargo/bin/cargo"  
+==> compilando o harness em .dev/webkit-real (release, sem LTO)
+==> abrindo o app (WebKitGTK real) sob strace -f por 20 s
+ok - o WebKitWebProcess subiu
+ok - o ambiente do app tem só as 14 variáveis de D57
+ok - o GStreamer varreu a pasta de plugins do sistema
+ok - nenhum processo do app tocou /tmp/nvidia-mps
+ok - o listener do atacante em /tmp/nvidia-mps/control não recebeu conexão
+ok - o plugin-marca de ~/.local/share/gstreamer-1.0/plugins não carregou
+ok - nenhum processo do app tocou /run/user/<uid>/ward-tray (pasta do app instalado)
+ok - o ícone da bandeja do harness ficou em .dev/webkit-real/tray-runtime
+ok - a isca 'frei0r' não carregou
+ok - a isca 'ladspa' não carregou
+ok - a isca 'libvisual' não carregou
+ok - a isca 'lv2' não carregou
+ok - a isca 'cuda' não carregou
+ok - nenhum processo do app abriu ~/.nv/nvidia-application-profiles-rc
+ok - nenhum processo do app abriu ~/.mfx_trace
+ok - nenhum processo do app abriu /dev/shm/GFX_MEDIA_TRACE
+ok - nenhum processo do app abriu /dev/shm/cuda_injection_path_shm
+ok - nenhum processo do app abriu ~/.nv/ComputeCache
+==> open/connect/bind/mkdir em pastas graváveis fora do root (para o handoff)
+## HOME (falso)
+  mkdir     ok             x1   ~/.cache
+  openat    erro ENOENT    x58  ~/.cache/fontconfig//<hash>-le64.cache-9
+  openat    ok             x10  ~/.cache/fontconfig//<hash>-le64.cache-9
+  mkdir     ok             x1   ~/.cache/gstreamer-1.0
+  openat    erro ENOENT    x2   ~/.cache/gstreamer-1.0/registry.x86_64.bin
+  rename    ok             x1   ~/.cache/gstreamer-1.0/registry.x86_64.bin
+  openat    ok             x1   ~/.cache/gstreamer-1.0/registry.x86_64.bin.tmpH7LKY3
+  rename    ok             x1   ~/.cache/gstreamer-1.0/registry.x86_64.bin.tmpH7LKY3
+  openat    erro ENOENT    x1   ~/.cache/gstreamer-1.0/registry.x86_64.bin.tmpSYLKY3
+  mkdir     ok             x1   ~/.cache/gtk-3.0
+  mkdir     erro ENOENT    x1   ~/.cache/gtk-3.0/compose
+  mkdir     ok             x1   ~/.cache/gtk-3.0/compose
+  mkdir     erro EEXIST    x1   ~/.cache/gtk-3.0/compose
+  rename    ok             x1   ~/.cache/gtk-3.0/compose/ac78c0e5.cache
+  openat    ok             x1   ~/.cache/gtk-3.0/compose/ac78c0e5.cache.AS2UY3
+  rename    ok             x1   ~/.cache/gtk-3.0/compose/ac78c0e5.cache.AS2UY3
+  openat    ok             x1   ~/.config/dconf/user
+  openat    erro ENOENT    x61  ~/.fontconfig//<hash>-le64.cache-9
+  openat    ok             x7   ~/.fontconfig//<hash>-le64.cache-9
+  openat    erro ENOENT    x1   ~/.local/share/glib-2.0/schemas/gschemas.compiled
+  mkdir     ok             x1   ~/.local/share/local.ward.app
+  mkdir     ok             x1   ~/.local/share/local.ward.app/CacheStorage
+  openat    ok             x1   ~/.local/share/local.ward.app/CacheStorage/salt
+  mkdir     ok             x1   ~/.local/share/local.ward.app/WebKitCache
+  openat    ok             x1   ~/.local/share/local.ward.app/WebKitCache
+  mkdir     ok             x1   ~/.local/share/local.ward.app/WebKitCache/Version 17
+  mkdir     ok             x1   ~/.local/share/local.ward.app/WebKitCache/Version 17/Blobs
+  openat    ok             x1   ~/.local/share/local.ward.app/WebKitCache/Version 17/Blobs
+  openat    ok             x1   ~/.local/share/local.ward.app/WebKitCache/Version 17/Records
+  openat    erro ENOENT    x1   ~/.local/share/local.ward.app/WebKitCache/Version 17/Records
+  openat    ok             x1   ~/.local/share/local.ward.app/WebKitCache/Version 17/salt
+  openat    erro ENOENT    x1   ~/.local/share/local.ward.app/cookies
+  openat    ok             x1   ~/.local/share/local.ward.app/databases/indexeddb
+  openat    ok             x1   ~/.local/share/local.ward.app/hsts-storage.sqlite
+  openat    ok             x1   ~/.local/share/local.ward.app/hsts-storage.sqlite-journal
+  unlink    ok             x1   ~/.local/share/local.ward.app/hsts-storage.sqlite-journal
+  mkdir     ok             x1   ~/.local/share/local.ward.app/mediakeys
+  openat    ok             x1   ~/.local/share/local.ward.app/mediakeys
+  mkdir     ok             x1   ~/.local/share/local.ward.app/mediakeys/v1
+  openat    ok             x1   ~/.local/share/local.ward.app/mediakeys/v1/salt
+  openat    erro ENOENT    x1   ~/.local/share/local.ward.app/serviceworkers/Scripts
+  mkdir     ok             x1   ~/.local/share/local.ward.app/storage
+  openat    erro ENOENT    x1   ~/.local/share/local.ward.app/storage/aI9wBQ-RLu1Hb4HfKci0IZ4khcSSv_qMyHnMt-A-Zx0/aI9wBQ-RLu1Hb4HfKci0IZ4khcSSv_qMyHnMt-A-Zx0
+  openat    ok             x1   ~/.local/share/local.ward.app/storage/salt
+  openat    erro ENOENT    x1   ~/.local/share/mime//aliases
+  openat    erro ENOENT    x1   ~/.local/share/mime//generic-icons
+  openat    erro ENOENT    x1   ~/.local/share/mime//icons
+  openat    erro ENOENT    x1   ~/.local/share/mime//subclasses
+  openat    erro ENOENT    x5   ~/.nv/nvidia-application-profile-globals-rc
+  openat    erro ENOENT    x1   ~//.cursors/Adwaita/cursors/
+  openat    erro ENOENT    x1   ~//.cursors/hicolor//index.theme
+  openat    erro ENOENT    x1   ~//.cursors/hicolor/cursors/
+  openat    erro ENOENT    x1   ~//.icons/Adwaita//index.theme
+  openat    erro ENOENT    x1   ~//.icons/Adwaita/cursors/
+  openat    erro ENOENT    x1   ~//.icons/hicolor//index.theme
+  openat    erro ENOENT    x1   ~//.icons/hicolor/cursors/
+  openat    erro ENOENT    x1   ~//.local/share/icons/Adwaita//index.theme
+  openat    erro ENOENT    x1   ~//.local/share/icons/Adwaita/cursors/
+  openat    erro ENOENT    x1   ~//.local/share/icons/hicolor//index.theme
+  openat    erro ENOENT    x1   ~//.local/share/icons/hicolor/cursors/
+## /run/user/<uid>
+  mkdir     ok             x1   /run/user/1000/dconf
+  openat    erro ENOENT    x1   /run/user/1000/dconf/profile
+  openat    ok             x1   /run/user/1000/dconf/user
+webkit-real: V5.32 ok

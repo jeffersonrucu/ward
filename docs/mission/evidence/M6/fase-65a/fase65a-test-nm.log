@@ -1,0 +1,48 @@
+origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
+<home>/.cargo/bin/cargo build --quiet --locked -p wardd --features test-mode --bin wardd
+<home>/.cargo/bin/cargo build --quiet --locked -p ward-nm --features test-mode --bin ward-nm
+<home>/.cargo/bin/cargo build --quiet --locked -p ward-platform --example chrome-parent
+dev/tests/browser-container.sh nm target/debug/wardd target/debug/ward-nm target/debug/examples/chrome-parent
+==> imagem ward-teste/browser:1 (o build usa a rede; o teste não)
+==> make test-nm no contêiner (sem rede; Chrome sem política nem host do Ward)
+chrome-guard: ok, o Chrome não vê política nem host do Ward
+[1111/184549.233997:WARNING:chrome/app/chrome_main_linux.cc:84] Read channel stable from /opt/google/chrome/CHROME_VERSION_EXTRA
+contêiner: Google Chrome 157.0.8103.50 , uid 1000, sem rede
+chrome-guard: ok, o Chrome não vê política nem host do Ward
+wardd de teste só deste script: pid 36, socket /run/user/1000/ward-nm-test-20-Fy6YCW/wardd.sock
+chrome-guard: ok, o Chrome não vê política nem host do Ward
+ok    destravou o cofre de teste (cópia) pelo socket
+ok    V6.1: o ward-nm respondeu as três mensagens
+ok    V6.1: aberto por um processo do usuário (sem setgid, pai não é o Chrome), o daemon não dá o papel extensão
+ok    V6.1: fill do ward-nm aberto à mão: o daemon recusa (unauthorized)
+ok    V6.1: suggest do ward-nm aberto à mão: o daemon recusa (unauthorized)
+ok    V6.1: stdout do ward-nm: nenhum padrão de .dev/variations.txt
+ok    V6.1: stderr do ward-nm: nenhum padrão de .dev/variations.txt
+ok    mensagem de 70 000 bytes: invalid_frame e o host sai ≠ 0
+ok    JSON malformado e reveal (operação do app): recusados no host
+ok    mensagens ruins: stdout do ward-nm: nenhum padrão de .dev/variations.txt
+ok    m2:V5.10: estado, preencher e sugerir v1 (extensão 0.1.x): só unknown_version
+ok    m2:V5.10: stdout do ward-nm com os pedidos v1: nenhum padrão de .dev/variations.txt
+ok    m2:V5.10: nada de password na resposta aos pedidos v1
+ok    m2:V5.10: nada de senha na resposta aos pedidos v1
+ok    m2:V5.10: nada de username na resposta aos pedidos v1
+ok    m2:V5.10: nada de usuario na resposta aos pedidos v1
+ok    m2:V5.10: nada de totp na resposta aos pedidos v1
+ok    verificador do pai pronto
+ok    extensão de teste carregada no Chrome real (perfil temporário)
+      verificador: pai=Ok ppid=51 pai_dumpable=sim cadeia=bash,nm.sh,python3,chrome,chrome-parent
+ok    D47: o host aberto pelo Chrome tem o Chrome instalado de pai (verify_parent pelo /proc)
+ok    D47: o Chrome abre o host como filho direto do navegador (sem intermediário)
+ok    D47: o processo do navegador é dumpable (exe legível pelo /proc)
+ok    relatório da extensão: nenhum padrão de .dev/variations.txt
+ok    Chrome real: a sonda respondeu pelo native messaging
+ok    Chrome real: o ward-nm de teste (sem setgid) não recebe o papel extensão (status: unauthorized)
+ok    Chrome real: fill pelo ward-nm sem o papel extensão é recusado
+ok    Chrome real: reveal pelo ward-nm sem o papel extensão é recusado
+ok    Chrome real: mensagem de mais de 64 KiB recusada pelo host
+ok    m2:V5.10: Chrome real: fill_v1 (extensão 0.1.x, protocolo v1) recebe só unknown_version
+ok    m2:V5.10: Chrome real: suggest_v1 (extensão 0.1.x, protocolo v1) recebe só unknown_version
+ok    controle: o host aberto por outro processo é recusado (ParentNotAllowed)
+ok    wardd.log sem padrão de .dev/variations.txt
+ok    chrome.log sem padrão de .dev/variations.txt
+test-nm: tudo certo

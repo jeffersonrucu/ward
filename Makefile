@@ -69,7 +69,7 @@ CARGO_DENY_VERSION := 0.20.2
 	app-front app-check app-bridge test-docker-platform test-no-test-mode test-socket-attacks \
 	test-webkit-real test-clipboard test-revealed-selection test-gst-channels test-app-e2e test-app-logs test-nm test-playwright test-skill test-migration-guide \
 	release install uninstall test-install extension test-extension deb extension-crx test-deb test-login \
-	test-ssh-home test-chrome-policy compile english-check test-system-socket
+	test-ssh-home test-chrome-policy compile english-check test-system-socket test-chrome-guard
 
 ## check: origins pre-check, then the pt-BR checker (self-test and the whole repository,
 ## m2:V6.1), fmt, clippy -D warnings, tests, cargo audit, cargo deny and gitleaks, in
@@ -350,13 +350,17 @@ test-clipboard: origins
 ## in Phase 39c). Needs libwebkit2gtk-4.1-dev (or PKG_CONFIG_PATH, R32), strace, gcc and
 ## `make app-front`; out of `make check`. `NO_MPS=1` runs without
 ## CUDA_MPS_PIPE_DIRECTORY and `NO_39C=1` without
-## GST_PLUGIN_LOADING_WHITELIST/__GL_APPLICATION_PROFILE (they show the attacks)
+## GST_PLUGIN_LOADING_WHITELIST/__GL_APPLICATION_PROFILE (they show the attacks). Phase 65a:
+## the harness tray icon goes to .dev/webkit-real/tray-runtime, and touching
+## $XDG_RUNTIME_DIR/ward-tray (the installed app's folder) fails the test
 test-webkit-real: origins
 	dev/tests/webkit-real.sh "$(CARGO)" $(if $(filter 1,$(NO_MPS)),--no-mps) $(if $(filter 1,$(NO_39C)),--no-39c)
 
 ## test-app-e2e: V5.10, V5.16, V5.24 (Phase 39c) end to end through the bridge: a test
 ## `wardd` of its own (WARD_DEV_SOCKET_DIR, default /run/user/<uid>/ward-test-e2e) with
-## the bridge opened by the daemon, headless Chrome and the real test CLI (`ward run`
+## the bridge opened by the daemon, headless Chrome (Phase 65a: through
+## dev/tests/chrome-isolated.sh, a bwrap without the Ward policy, host manifest nor
+## /usr/local, with the guard inside) and the real test CLI (`ward run`
 ## with the approval window; the app's Connect button with `ward ssh --token-fd` on the
 ## jump SSH service and the attacks on the token); log scan at the end; the test vault
 ## goes back to what it was.
@@ -517,6 +521,7 @@ test-install: origins
 ## `make dev-vault`, `make dev-variations` and Chrome in /opt/google/chrome; out of
 ## `make check`
 test-chrome-policy: origins
+	$(PYTHON) dev/tests/chrome_guard.py check
 	$(CARGO) build --quiet --locked -p wardd --bin wardd --target-dir target/no-test-mode
 	$(CARGO) build --quiet --locked -p ward --bin ward --target-dir target/no-test-mode
 	$(CARGO) build --quiet --locked -p ward-nm --bin ward-nm --target-dir target/no-test-mode
@@ -613,6 +618,7 @@ test-ssh-home: origins
 ## `make dev-variations` and the Python Playwright in PW_PYTHONPATH (or
 ## NO_PLAYWRIGHT_PYTHON=1); out of `make check`
 test-playwright: origins
+	$(PYTHON) dev/tests/chrome_guard.py check
 	$(CARGO) build --quiet --locked -p wardd --features test-mode --bin wardd --bin wardd-test-approver
 	$(CARGO) build --quiet --locked -p ward --features test-mode --bin ward
 	$(CARGO) test --quiet --locked -p wardd --all-features --test playwright -- --ignored
@@ -638,7 +644,8 @@ test-socket-attacks: origins
 
 ## test-nm: Phase 40 (V6.1; D5, D9, D47): the test `ward-nm` opened by hand stays an
 ## agent and gets no secret; with the real Chrome (headless, temporary profile in
-## .dev/nm.*, manifest only in it) the host is a direct child of the browser,
+## .dev/nm.*, manifest only in it; Phase 65a: in the browser container, see
+## `browser-container.sh` below) the host is a direct child of the browser,
 ## `verify_parent` accepts that parent and refuses another, and the host answers through
 ## Chrome. Test daemon of its own (copy of the vault, its own socket). Needs
 ## `make dev-vault`, `make dev-variations` and Chrome in /opt/google/chrome; out of
@@ -668,7 +675,22 @@ test-nm: origins
 	$(CARGO) build --quiet --locked -p wardd --features test-mode --bin wardd
 	$(CARGO) build --quiet --locked -p ward-nm --features test-mode --bin ward-nm
 	$(CARGO) build --quiet --locked -p ward-platform --example chrome-parent
-	dev/tests/nm.sh target/debug/wardd target/debug/ward-nm target/debug/examples/chrome-parent
+	dev/tests/browser-container.sh nm target/debug/wardd target/debug/ward-nm target/debug/examples/chrome-parent
+
+## Phase 65a: test-nm, test-extension and test-login run in a disposable ubuntu:24.04
+## container with Chrome (image built from dev/container-browser/; the build
+## uses the network, the test runs with --network none), through
+## dev/tests/browser-container.sh: on a host with Ward installed, the Chrome policy
+## force-installs the real extension and the system manifest sends the Ward id to
+## /usr/local/bin/ward-nm (the real vault). The services (already up on the host) are
+## reached through dev/tests/service_relay.py; needs Docker.
+##
+## test-chrome-guard: Phase 65a: self-test of the guard (dev/tests/chrome_guard.py) that
+## every suite that opens Chrome runs first (refuses with exit 3 when this Chrome would see
+## a Ward policy or the br.ward.nm host manifest): plants each form of the policy and of
+## the manifest, including a copy of the host's ward.json, in a copy under .dev/
+test-chrome-guard:
+	$(PYTHON) dev/tests/chrome_guard.py --self-test
 
 ## extension: builds the Chrome extension in extension/dist/ (Phase 41) with the tokens,
 ## icons and fonts of the app and verifies the package and the manifest (fixed id =
@@ -688,7 +710,7 @@ test-extension: origins extension
 	$(CARGO) build --quiet --locked -p ward-nm --features test-mode --bin ward-nm
 	$(CARGO) build --quiet --locked -p ward-nm --example fake-chrome
 	$(CARGO) build --quiet --locked -p ward --features test-mode --bin ward
-	dev/tests/extension.sh target/debug/wardd target/debug/ward-nm target/debug/examples/fake-chrome target/debug/ward target/debug/wardd-test-approver
+	dev/tests/browser-container.sh extension target/debug/wardd target/debug/ward-nm target/debug/examples/fake-chrome target/debug/ward target/debug/wardd-test-approver
 
 ## test-login: `ward login` end to end (Phase 43; V6.3, V6.10, V6.11, V6.15, V6.16):
 ## the extension in the real headless Chrome, `ward-nm` opened by the service worker and
@@ -697,7 +719,7 @@ test-login: origins extension
 	$(CARGO) build --quiet --locked -p wardd --features test-mode --bin wardd --bin wardd-test-approver
 	$(CARGO) build --quiet --locked -p ward-nm --features test-mode --bin ward-nm
 	$(CARGO) build --quiet --locked -p ward --features test-mode --bin ward
-	dev/tests/login.sh target/debug/wardd target/debug/ward-nm target/debug/ward target/debug/wardd-test-approver
+	dev/tests/browser-container.sh login target/debug/wardd target/debug/ward-nm target/debug/ward target/debug/wardd-test-approver
 
 ## dev-daemon-stop: stops the test daemon (verifies the pid really is the wardd from here)
 dev-daemon-stop:

@@ -20,6 +20,17 @@ import sys
 import time
 
 ROOT, WORK_DIR, SOCKDIR, NM, PROBE, CHROME, PATTERN_LIST = sys.argv[1:8]
+
+# Phase 65a: before any Chrome, the guard (dev/tests/chrome_guard.py): on a host where
+# Chrome would see the installed Ward (policy or host manifest), refuse (exit 3).
+if subprocess.run(["/usr/bin/python3", "-I", "-B", os.path.join(ROOT, "dev", "tests", "chrome_guard.py"), "check"],
+                  stdin=subprocess.DEVNULL).returncode != 0:
+    sys.exit(3)
+# Only in the browser container (dev/tests/browser-container.sh; /.dockerenv): Chrome's
+# sandbox needs user namespaces, which the container (no capabilities, Docker's seccomp)
+# does not give; the pages are the test ones and the container has no network.
+CONTAINER_ARGS = (["--no-sandbox"] if os.environ.get("WARD_TEST_IN_CONTAINER") == "1"
+                  and os.path.exists("/.dockerenv") else [])
 SOCKET_PATH = os.path.join(SOCKDIR, "wardd.sock")
 failures = []
 
@@ -223,7 +234,7 @@ chrome_env = {"HOME": home, "PATH": "/usr/bin:/bin", "WARD_DEV_SOCKET_DIR": SOCK
               "WARD_CHROME_PARENT_SOCK": probe_sock}
 log_chrome = open(os.path.join(WORK_DIR, "chrome.log"), "w")
 ch = subprocess.Popen(
-    [CHROME, "--headless=new", f"--user-data-dir={profile}", "--remote-debugging-pipe",
+    [CHROME, *CONTAINER_ARGS, "--headless=new", f"--user-data-dir={profile}", "--remote-debugging-pipe",
      "--enable-unsafe-extension-debugging", "--no-first-run", "--no-default-browser-check",
      "--disable-gpu", "--disable-sync", "--disable-background-networking", "about:blank"],
     preexec_fn=prep, pass_fds=(3, 4), env=chrome_env, stdout=subprocess.DEVNULL, stderr=log_chrome)
