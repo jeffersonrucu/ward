@@ -62,7 +62,7 @@ check "root: fechado sem nenhum byte" "$r" "bytes: 0"
 
 # The owner is served.
 r="$(setpriv --reuid=1000 --regid=1000 --clear-groups -- "$CLIENT" "$SOCK" estado)"
-check "uid 1000: atendido" "$r" "resposta: estado"
+check "uid 1000: atendido" "$r" "resposta: status"
 
 sleep 0.3
 log="$(cat "$LOG")"

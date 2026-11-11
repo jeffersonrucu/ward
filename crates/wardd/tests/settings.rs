@@ -16,7 +16,7 @@ use ward_core::limits::{DEFAULT_LOCK_MINUTES, MAX_LOCK_MINUTES, MIN_LOCK_MINUTES
 use ward_core::protocol::{Response, ResponseError, Role};
 
 fn settings(d: &wardd::core::Daemon) -> (u32, bool) {
-    match request(d, Role::App, "configuracao", "{}") {
+    match request(d, Role::App, "config", "{}") {
         Response::Config {
             lock_minutes,
             external_backup,
@@ -34,8 +34,8 @@ fn lock_timeout(d: &wardd::core::Daemon, role: Role, minutes: u32) -> Response {
     request(
         d,
         role,
-        "tempo_trava",
-        &format!(r#"{{"minutos":{minutes}}}"#),
+        "lock_timeout",
+        &format!(r#"{{"minutes":{minutes}}}"#),
     )
 }
 
@@ -43,9 +43,9 @@ fn change_pin(d: &wardd::core::Daemon, role: Role, current: &str, new: &str) -> 
     request(
         d,
         role,
-        "trocar_pin",
+        "change_pin",
         &format!(
-            r#"{{"atual":"{}","novo":"{}"}}"#,
+            r#"{{"current":"{}","new":"{}"}}"#,
             b64(current.as_bytes()),
             b64(new.as_bytes())
         ),
@@ -56,9 +56,9 @@ fn change_password(d: &wardd::core::Daemon, role: Role, current: &str, new: &str
     request(
         d,
         role,
-        "trocar_senha",
+        "change_password",
         &format!(
-            r#"{{"atual":"{}","nova":"{}"}}"#,
+            r#"{{"current":"{}","new":"{}"}}"#,
             b64(current.as_bytes()),
             b64(new.as_bytes())
         ),
@@ -102,7 +102,7 @@ fn attack_agent_and_extension_neither_read_nor_change_the_settings() {
     let (d, _) = test_vault(&dir);
     let generation = generation_on_disk(&dir.paths().vault, PASSWORD);
     for role in [Role::Agent, Role::Extension] {
-        let r = request(&d, role, "configuracao", "{}");
+        let r = request(&d, role, "config", "{}");
         assert_eq!(error(&r), Some(ResponseError::Unauthorized), "{role:?}");
         let r = lock_timeout(&d, role, 1);
         assert_eq!(error(&r), Some(ResponseError::Unauthorized), "{role:?}");
@@ -114,7 +114,7 @@ fn attack_agent_and_extension_neither_read_nor_change_the_settings() {
     assert_eq!(settings(&d), (DEFAULT_LOCK_MINUTES, false));
     assert_eq!(generation_on_disk(&dir.paths().vault, PASSWORD), generation);
     // The PIN and the password are still the same.
-    assert!(ok(&set_level(&d, Role::App, "t-aprov", "livre", PIN)));
+    assert!(ok(&set_level(&d, Role::App, "t-aprov", "free", PIN)));
     d.lock();
     assert!(ok(&unlock(&d, PASSWORD)));
 }
@@ -126,8 +126,8 @@ fn attack_settings_with_the_vault_locked() {
     let (d, _) = test_vault(&dir);
     d.lock();
     for (op, data) in [
-        ("configuracao", "{}".to_owned()),
-        ("tempo_trava", r#"{"minutos":30}"#.to_owned()),
+        ("config", "{}".to_owned()),
+        ("lock_timeout", r#"{"minutes":30}"#.to_owned()),
     ] {
         let r = request(&d, Role::App, op, &data);
         assert_eq!(error(&r), Some(ResponseError::Locked), "{op}");
@@ -144,7 +144,7 @@ fn attack_settings_with_the_vault_locked() {
 fn attack_settings_reply_without_hash_or_pin() {
     let dir = Dir::new("cfg-hash");
     let (d, _) = test_vault(&dir);
-    let r = request(&d, Role::App, "configuracao", "{}");
+    let r = request(&d, Role::App, "config", "{}");
     let bytes = encoded(Role::App, &r);
     let text = String::from_utf8(bytes.clone()).unwrap();
     for needle in [
@@ -160,7 +160,7 @@ fn attack_settings_reply_without_hash_or_pin() {
     }
     assert!(
         text.ends_with(
-            r#""dados":{"minutos_trava":240,"backup_externo":false,"backup_local":true}}"#
+            r#""data":{"lock_minutes":240,"external_backup":false,"local_backup":true}}"#
         ),
         "{text}"
     );
@@ -179,7 +179,7 @@ fn v5_22_change_pin_asks_for_the_current_pin() {
         Some(ResponseError::WrongPin)
     );
     assert_eq!(generation_on_disk(&dir.paths().vault, PASSWORD), generation);
-    assert!(ok(&set_level(&d, Role::App, "t-aprov", "livre", PIN)));
+    assert!(ok(&set_level(&d, Role::App, "t-aprov", "free", PIN)));
     assert!(ok(&change_pin(&d, Role::App, PIN, "2468")));
     assert_eq!(
         generation_on_disk(&dir.paths().vault, PASSWORD),
@@ -187,20 +187,14 @@ fn v5_22_change_pin_asks_for_the_current_pin() {
         "mudar_nivel e trocar_pin gravam"
     );
     assert_eq!(
-        error(&set_level(&d, Role::App, "t-aprov", "com-aprovacao", PIN)),
+        error(&set_level(&d, Role::App, "t-aprov", "approval", PIN)),
         Some(ResponseError::WrongPin)
     );
-    assert!(ok(&set_level(
-        &d,
-        Role::App,
-        "t-aprov",
-        "com-aprovacao",
-        "2468"
-    )));
+    assert!(ok(&set_level(&d, Role::App, "t-aprov", "approval", "2468")));
     // The new PIN is on disk: it holds after locking and unlocking.
     d.lock();
     assert!(ok(&unlock(&d, PASSWORD)));
-    assert!(ok(&set_level(&d, Role::App, "t-aprov", "livre", "2468")));
+    assert!(ok(&set_level(&d, Role::App, "t-aprov", "free", "2468")));
     // A new PIN out of format does not even reach the daemon.
     for new in ["135", "1357901", "13579a", ""] {
         assert_eq!(
@@ -224,7 +218,7 @@ fn attack_guessing_the_pin_through_the_change_locks_on_the_fifth_error() {
     assert!(d.is_locked());
     assert!(ok(&unlock(&d, PASSWORD)));
     // Nothing changed: the PIN is the old one.
-    assert!(ok(&set_level(&d, Role::App, "t-aprov", "livre", PIN)));
+    assert!(ok(&set_level(&d, Role::App, "t-aprov", "free", PIN)));
 }
 
 /// V5.22: changing the master password asks for the current one. A wrong one changes
@@ -261,7 +255,7 @@ fn v5_22_change_password_asks_for_the_current_one_and_keeps_the_settings() {
     );
     assert!(ok(&unlock(&d, "falso-nova-mestra-02")));
     assert_eq!(settings(&d), (60, false));
-    assert!(ok(&set_level(&d, Role::App, "t-aprov", "livre", PIN)));
+    assert!(ok(&set_level(&d, Role::App, "t-aprov", "free", PIN)));
 }
 
 /// Phase 39c: the 12-character minimum of the master password also holds in the daemon,
@@ -288,9 +282,9 @@ fn attack_short_new_master_password_refused_by_the_daemon() {
         let r = request(
             &d,
             Role::App,
-            "criar_cofre",
+            "create_vault",
             &format!(
-                r#"{{"senha":"{}","pin":"{}"}}"#,
+                r#"{{"password":"{}","pin":"{}"}}"#,
                 b64(short.as_bytes()),
                 b64(PIN.as_bytes())
             ),

@@ -39,6 +39,10 @@ pub fn expected_server() -> ExpectedServer {
     }
 }
 
+/// m2:DT8, m2:V4.16: the message when the daemon speaks another protocol version.
+pub const MSG_INCOMPATIBLE_VERSION: &str =
+    "versão do protocolo incompatível com o daemon: atualize o Ward; nada foi enviado";
+
 /// Why the conversation with the daemon failed. Without frame content.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConnectionError {
@@ -54,6 +58,9 @@ pub enum ConnectionError {
     Io(io::ErrorKind),
     /// Response out of format, of another role or too large.
     InvalidResponse,
+    /// The daemon speaks another protocol version (m2:DT8): the CLI stops there,
+    /// before reading or sending the password (m2:V4.16).
+    IncompatibleVersion,
     /// Request the protocol refuses (should not happen).
     InvalidRequest,
 }
@@ -69,6 +76,7 @@ impl ConnectionError {
             ConnectionError::Closed => "o daemon fechou a conexão".to_owned(),
             ConnectionError::Io(k) => format!("erro ao falar com o daemon ({k})"),
             ConnectionError::InvalidResponse => "resposta inválida do daemon".to_owned(),
+            ConnectionError::IncompatibleVersion => MSG_INCOMPATIBLE_VERSION.to_owned(),
             ConnectionError::InvalidRequest => "pedido inválido".to_owned(),
         }
     }
@@ -92,6 +100,18 @@ fn io_error(e: &io::Error) -> ConnectionError {
         | io::ErrorKind::UnexpectedEof => ConnectionError::Closed,
         k => ConnectionError::Io(k),
     }
+}
+
+/// Strict reading of a response of the agent role. A frame the reading refuses whose
+/// `v` is another version is the incompatible version error (m2:DT8, m2:V4.16); the rest
+/// is an invalid response. Nothing of the frame goes into the error.
+pub fn read_response(frame: &[u8]) -> Result<Response, ConnectionError> {
+    protocol::decode_response(Role::Agent, frame).map_err(|_| {
+        match protocol::frame_version(frame) {
+            Some(v) if v != protocol::VERSION => ConnectionError::IncompatibleVersion,
+            _ => ConnectionError::InvalidResponse,
+        }
+    })
 }
 
 fn frame_error(e: FrameError) -> ConnectionError {
@@ -207,8 +227,7 @@ impl Connection {
         frame::write_frame(&mut self.stream, &body, MAX_COMMON_FRAME).map_err(frame_error)?;
         drop(body);
         let response = frame::read_frame(&mut self.stream, RESPONSE_LIMIT).map_err(frame_error)?;
-        protocol::decode_response(Role::Agent, &response)
-            .map_err(|_| ConnectionError::InvalidResponse)
+        read_response(&response)
     }
 }
 
@@ -253,7 +272,7 @@ impl Session {
     /// refused).
     pub fn receive(&mut self) -> Result<Response, ConnectionError> {
         let frame = frame::read_frame(&mut self.reader, RESPONSE_LIMIT).map_err(frame_error)?;
-        protocol::decode_response(Role::Agent, &frame).map_err(|_| ConnectionError::InvalidResponse)
+        read_response(&frame)
     }
 }
 

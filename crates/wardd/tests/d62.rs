@@ -55,8 +55,8 @@ fn unlock_as(d: &Daemon, role: Role, password: &str) -> Response {
     request(
         d,
         role,
-        "destravar",
-        &format!(r#"{{"senha":"{}"}}"#, b64(password.as_bytes())),
+        "unlock",
+        &format!(r#"{{"password":"{}"}}"#, b64(password.as_bytes())),
     )
 }
 
@@ -294,9 +294,9 @@ fn v3_35_create_vault_with_old_state_and_old_copy() {
     let create = request(
         &d,
         Role::App,
-        "criar_cofre",
+        "create_vault",
         &format!(
-            r#"{{"senha":"{}","pin":"{}"}}"#,
+            r#"{{"password":"{}","pin":"{}"}}"#,
             b64(PASSWORD.as_bytes()),
             b64(PIN.as_bytes())
         ),
@@ -325,19 +325,19 @@ fn v3_35_create_vault_without_state_and_with_invalid_state() {
     let dir = Dir::new("d62-criar-sem");
     let c = dir.paths();
     let create = format!(
-        r#"{{"senha":"{}","pin":"{}"}}"#,
+        r#"{{"password":"{}","pin":"{}"}}"#,
         b64(PASSWORD.as_bytes()),
         b64(PIN.as_bytes())
     );
     fs::write(&c.state, "ward-estado 1\nvista 9\n").unwrap();
     let (d, _) = daemon_at(c.clone());
     assert_eq!(
-        error(&request(&d, Role::App, "criar_cofre", &create)),
+        error(&request(&d, Role::App, "create_vault", &create)),
         Some(ResponseError::WriteFailed)
     );
     assert!(!c.vault.exists());
     fs::remove_file(&c.state).unwrap();
-    assert!(ok(&request(&d, Role::App, "criar_cofre", &create)));
+    assert!(ok(&request(&d, Role::App, "create_vault", &create)));
     assert_eq!(generation_on_disk(&c.vault, PASSWORD), 1);
     assert_eq!(generations(&dir), Generations { seen: 1, burned: 1 });
 }
@@ -380,19 +380,19 @@ fn v3_35_swap_right_after_the_rename_is_refused() {
     assert!(ok(&request(
         &d,
         Role::App,
-        "tempo_trava",
-        r#"{"minutos":30}"#
+        "lock_timeout",
+        r#"{"minutes":30}"#
     )));
     armed.store(true, Ordering::SeqCst);
     assert!(ok(&request(
         &d,
         Role::App,
-        "tempo_trava",
-        r#"{"minutos":31}"#
+        "lock_timeout",
+        r#"{"minutes":31}"#
     )));
     assert!(swapped.load(Ordering::SeqCst), "o gancho não rodou");
     let swapped_bytes = fs::read(&c.vault).unwrap();
-    let r = request(&d, Role::App, "tempo_trava", r#"{"minutos":32}"#);
+    let r = request(&d, Role::App, "lock_timeout", r#"{"minutes":32}"#);
     assert_eq!(error(&r), Some(ResponseError::VaultChanged));
     assert_eq!(
         ResponseError::VaultChanged.message(),
@@ -426,15 +426,15 @@ fn v3_35_swap_right_after_the_rename_is_refused() {
     assert!(ok(&request(
         &d2,
         Role::App,
-        "trocar_senha",
+        "change_password",
         &format!(
-            r#"{{"atual":"{}","nova":"{}"}}"#,
+            r#"{{"current":"{}","new":"{}"}}"#,
             b64(PASSWORD.as_bytes()),
             b64(new_password.as_bytes())
         ),
     )));
     let swapped_bytes = fs::read(&c2.vault).unwrap();
-    let r = request(&d2, Role::App, "tempo_trava", r#"{"minutos":33}"#);
+    let r = request(&d2, Role::App, "lock_timeout", r#"{"minutes":33}"#);
     assert_eq!(error(&r), Some(ResponseError::VaultChanged));
     assert!(d2.is_locked());
     assert_eq!(fs::read(&c2.vault).unwrap(), swapped_bytes);

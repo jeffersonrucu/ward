@@ -93,7 +93,7 @@ pub fn daemon_at(c: Paths) -> (Daemon, FakeClock) {
 pub fn req(role: Role, op: &str, data: &str) -> Result<Request, ResponseError> {
     protocol::decode_request(
         role,
-        format!(r#"{{"v":1,"op":"{op}","dados":{data}}}"#).as_bytes(),
+        format!(r#"{{"v":2,"op":"{op}","data":{data}}}"#).as_bytes(),
     )
 }
 
@@ -120,28 +120,28 @@ pub fn unlock(d: &Daemon, password: &str) -> Response {
     request(
         d,
         Role::Agent,
-        "destravar",
-        &format!(r#"{{"senha":"{}"}}"#, b64(password.as_bytes())),
+        "unlock",
+        &format!(r#"{{"password":"{}"}}"#, b64(password.as_bytes())),
     )
 }
 
 pub fn login(name: &str, password: &str) -> String {
     format!(
-        r#"{{"entrada":{{"nome":"{name}","grupo":"clientex","ambiente":"dev","tipo":"login","campos":{{"url":"https://clientex.invalid/login","usuario":"admin","senha":"{}"}}}}}}"#,
+        r#"{{"entry":{{"name":"{name}","group":"clientex","environment":"dev","type":"login","fields":{{"url":"https://clientex.invalid/login","username":"admin","password":"{}"}}}}}}"#,
         b64(password.as_bytes())
     )
 }
 
 pub fn server(name: &str) -> String {
     format!(
-        r#"{{"entrada":{{"nome":"{name}","grupo":"clientex","ambiente":"stage","tipo":"servidor","campos":{{"host":"ssh.clientex.invalid","porta":"22","usuario":"deploy","senha":"{}"}}}}}}"#,
+        r#"{{"entry":{{"name":"{name}","group":"clientex","environment":"stage","type":"server","fields":{{"host":"ssh.clientex.invalid","port":"22","username":"deploy","password":"{}"}}}}}}"#,
         b64(SECRETS[1].as_bytes())
     )
 }
 
 pub fn database(name: &str, tunnel: &str) -> String {
     format!(
-        r#"{{"entrada":{{"nome":"{name}","grupo":"clientex","ambiente":"prod","tipo":"banco","campos":{{"motor":"postgres","host":"127.0.0.1","porta":"5432","base":"app","usuario":"app","senha":"{}","tunel":"{tunnel}"}}}}}}"#,
+        r#"{{"entry":{{"name":"{name}","group":"clientex","environment":"prod","type":"database","fields":{{"engine":"postgres","host":"127.0.0.1","port":"5432","db_name":"app","username":"app","password":"{}","tunnel":"{tunnel}"}}}}}}"#,
         b64(SECRETS[2].as_bytes())
     )
 }
@@ -150,9 +150,9 @@ pub fn set_level(d: &Daemon, role: Role, name: &str, level: &str, pin: &str) -> 
     request(
         d,
         role,
-        "mudar_nivel",
+        "set_level",
         &format!(
-            r#"{{"entrada":"{name}","nivel":"{level}","pin":"{}"}}"#,
+            r#"{{"entry":"{name}","level":"{level}","pin":"{}"}}"#,
             b64(pin.as_bytes())
         ),
     )
@@ -165,9 +165,9 @@ pub fn test_vault(dir: &Dir) -> (Daemon, FakeClock) {
     let create = request(
         &d,
         Role::App,
-        "criar_cofre",
+        "create_vault",
         &format!(
-            r#"{{"senha":"{}","pin":"{}"}}"#,
+            r#"{{"password":"{}","pin":"{}"}}"#,
             b64(PASSWORD.as_bytes()),
             b64(PIN.as_bytes())
         ),
@@ -180,11 +180,11 @@ pub fn test_vault(dir: &Dir) -> (Daemon, FakeClock) {
         server("s1"),
         database("b1", "s1"),
     ] {
-        let r = request(&d, Role::App, "salvar_entrada", &q);
+        let r = request(&d, Role::App, "save_entry", &q);
         assert!(ok(&r), "{r:?}");
     }
-    assert!(ok(&set_level(&d, Role::App, "t-livre", "livre", PIN)));
-    assert!(ok(&set_level(&d, Role::App, "t-bloq", "bloqueado", PIN)));
+    assert!(ok(&set_level(&d, Role::App, "t-livre", "free", PIN)));
+    assert!(ok(&set_level(&d, Role::App, "t-bloq", "blocked", PIN)));
     (d, r)
 }
 
@@ -255,8 +255,8 @@ pub fn with_window<R>(
                 let _ = request(
                     d,
                     Role::App,
-                    "responder_aprovacao",
-                    &format!(r#"{{"pedido":{},"decisao":"{decision}"{pin}}}"#, p.id),
+                    "answer_approval",
+                    &format!(r#"{{"request":{},"decision":"{decision}"{pin}}}"#, p.id),
                 );
                 seen.lock().unwrap().push(p);
             }

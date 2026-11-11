@@ -334,7 +334,7 @@ mod tests {
             e.1.lock()
                 .unwrap()
                 .iter()
-                .filter(|q| String::from_utf8_lossy(q).contains("\"restaurar_backup\""))
+                .filter(|q| String::from_utf8_lossy(q).contains("\"restore_backup\""))
                 .count()
         }
 

@@ -33,10 +33,10 @@ impl Clock for FixedClock {
 
 fn login(name: &str, url: &str, user: &str, password: &str, seed: Option<&str>) -> String {
     let totp = seed
-        .map(|s| format!(r#","totp_semente":"{}""#, b64(s.as_bytes())))
+        .map(|s| format!(r#","totp_seed":"{}""#, b64(s.as_bytes())))
         .unwrap_or_default();
     format!(
-        r#"{{"entrada":{{"nome":"{name}","grupo":"acme","ambiente":"dev","tipo":"login","campos":{{"url":"{url}","usuario":"{user}","senha":"{}"{totp}}}}}}}"#,
+        r#"{{"entry":{{"name":"{name}","group":"acme","environment":"dev","type":"login","fields":{{"url":"{url}","username":"{user}","password":"{}"{totp}}}}}}}"#,
         b64(password.as_bytes())
     )
 }
@@ -48,9 +48,9 @@ fn vault(dir: &Dir) -> Daemon {
     let create = request(
         &d,
         Role::App,
-        "criar_cofre",
+        "create_vault",
         &format!(
-            r#"{{"senha":"{}","pin":"{}"}}"#,
+            r#"{{"password":"{}","pin":"{}"}}"#,
             b64(common::PASSWORD.as_bytes()),
             b64(PIN.as_bytes())
         ),
@@ -88,21 +88,21 @@ fn vault(dir: &Dir) -> Daemon {
         common::server("s1"),
         common::database("b1", "s1"),
     ] {
-        let r = request(&d, Role::App, "salvar_entrada", &q);
+        let r = request(&d, Role::App, "save_entry", &q);
         assert!(ok(&r), "{r:?}");
     }
     assert!(ok(&common::set_level(
         &d,
         Role::App,
         "acme-wp-prod",
-        "bloqueado",
+        "blocked",
         PIN
     )));
     d
 }
 
 fn suggest(d: &Daemon, role: Role, origin: &str) -> Response {
-    request(d, role, "sugerir", &format!(r#"{{"origem":"{origin}"}}"#))
+    request(d, role, "suggest", &format!(r#"{{"origin":"{origin}"}}"#))
 }
 
 /// The popup's fill with no window at all (the test daemon's engine has no app).
@@ -110,15 +110,15 @@ fn fill_raw(d: &Daemon, role: Role, entry: &str, origin: &str) -> Response {
     request(
         d,
         role,
-        "preencher",
-        &format!(r#"{{"entrada":"{entry}","origem":"{origin}"}}"#),
+        "fill",
+        &format!(r#"{{"entry":"{entry}","origin":"{origin}"}}"#),
     )
 }
 
 /// The popup's fill with the user confirming the origin in the window (Phase
 /// 44c: `http` entries only fill after that).
 fn fill(d: &Daemon, role: Role, entry: &str, origin: &str) -> Response {
-    common::with_window(d, "confirmar", None, || fill_raw(d, role, entry, origin)).0
+    common::with_window(d, "confirm", None, || fill_raw(d, role, entry, origin)).0
 }
 
 fn names(r: &Response) -> Vec<(String, String)> {
@@ -169,7 +169,7 @@ fn suggestion_carries_environment_and_whether_it_has_totp() {
         ]
     );
     let q = common::encoded(Role::Extension, &r);
-    assert!(common::contains(&q, br#""ambiente":"dev","totp":false"#));
+    assert!(common::contains(&q, br#""environment":"dev","totp":false"#));
     no_secret(&q);
 }
 
@@ -311,8 +311,8 @@ fn v6_1_agent_and_app_neither_suggest_nor_fill() {
         // with another role (the role comes from the connection, never from the frame).
         let p = req(
             Role::Extension,
-            "preencher",
-            r#"{"entrada":"acme-wp-dev","origem":"http://localhost:8081/"}"#,
+            "fill",
+            r#"{"entry":"acme-wp-dev","origin":"http://localhost:8081/"}"#,
         )
         .unwrap();
         let r = d.serve(role, p);
@@ -345,7 +345,7 @@ fn attack_extension_without_app_or_agent_operations() {
         );
         if !allowed.contains(op) {
             // Whatever the rest of the frame is.
-            for data in ["{}", r#"{"entrada":"acme-wp-dev","campo":"senha"}"#] {
+            for data in ["{}", r#"{"entry":"acme-wp-dev","field":"password"}"#] {
                 assert_eq!(
                     req(Role::Extension, op.name(), data).unwrap_err(),
                     ResponseError::Unauthorized,
@@ -359,21 +359,21 @@ fn attack_extension_without_app_or_agent_operations() {
     for (role, op, data) in [
         (
             Role::App,
-            "revelar",
-            r#"{"entrada":"acme-wp-dev","campo":"senha"}"#,
+            "reveal",
+            r#"{"entry":"acme-wp-dev","field":"password"}"#,
         ),
         (
             Role::App,
-            "copiar",
-            r#"{"entrada":"acme-wp-dev","campo":"senha"}"#,
+            "copy",
+            r#"{"entry":"acme-wp-dev","field":"password"}"#,
         ),
-        (Role::App, "totp", r#"{"entrada":"acme-totp-dev"}"#),
-        (Role::App, "detalhe", r#"{"entrada":"acme-wp-dev"}"#),
-        (Role::App, "lista", "{}"),
-        (Role::Agent, "lista", "{}"),
-        (Role::App, "emitir_token", r#"{"entrada":"s1"}"#),
-        (Role::Agent, "login", r#"{"entrada":"acme-wp-dev"}"#),
-        (Role::Agent, "playwright", r#"{"entrada":"acme-wp-dev"}"#),
+        (Role::App, "totp", r#"{"entry":"acme-totp-dev"}"#),
+        (Role::App, "detail", r#"{"entry":"acme-wp-dev"}"#),
+        (Role::App, "list", "{}"),
+        (Role::Agent, "list", "{}"),
+        (Role::App, "issue_token", r#"{"entry":"s1"}"#),
+        (Role::Agent, "login", r#"{"entry":"acme-wp-dev"}"#),
+        (Role::Agent, "playwright", r#"{"entry":"acme-wp-dev"}"#),
     ] {
         let p = req(role, op, data).unwrap_or_else(|e| panic!("{op}: {e:?}"));
         let r = d.serve(Role::Extension, p);
@@ -383,9 +383,9 @@ fn attack_extension_without_app_or_agent_operations() {
         Role::Extension,
         req(
             Role::App,
-            "mudar_nivel",
+            "set_level",
             &format!(
-                r#"{{"entrada":"acme-wp-dev","nivel":"livre","pin":"{}"}}"#,
+                r#"{{"entry":"acme-wp-dev","level":"free","pin":"{}"}}"#,
                 b64(PIN.as_bytes())
             ),
         )
@@ -413,9 +413,9 @@ fn save_login(d: &Daemon, role: Role, name: &str, password: &str, extra: &str) -
     request(
         d,
         role,
-        "salvar_login",
+        "save_login",
         &format!(
-            r#"{{"entrada":{{"nome":"{name}","grupo":"localhost","ambiente":"dev","tipo":"login","campos":{{"url":"http://localhost:8083/cadastro","usuario":"novo.usuario","senha":"{}"}}{extra}}}}}"#,
+            r#"{{"entry":{{"name":"{name}","group":"localhost","environment":"dev","type":"login","fields":{{"url":"http://localhost:8083/cadastro","username":"novo.usuario","password":"{}"}}{extra}}}}}"#,
             b64(password.as_bytes())
         ),
     )
@@ -423,7 +423,7 @@ fn save_login(d: &Daemon, role: Role, name: &str, password: &str, extra: &str) -
 
 /// Level of an entry in the app's list (`None` if it does not exist).
 fn level_in_list(d: &Daemon, name: &str) -> Option<ward_core::entry::AccessLevel> {
-    match request(d, Role::App, "lista", "{}") {
+    match request(d, Role::App, "list", "{}") {
         Response::List(l) => l.into_iter().find(|i| i.name == name).and_then(|i| i.level),
         other => panic!("esperava a lista: {:?}", other.kind()),
     }
@@ -470,7 +470,7 @@ fn v6_8_save_login_starts_with_approval() {
         other => panic!("esperava preenchimento: {:?}", other.kind()),
     }
     // Saved on disk: after locking and unlocking, it is still there and with approval.
-    assert!(ok(&request(&d, Role::App, "travar", "{}")));
+    assert!(ok(&request(&d, Role::App, "lock", "{}")));
     assert!(ok(&common::unlock(&d, common::PASSWORD)));
     assert_eq!(
         level_in_list(&d, "localhost-8083"),
@@ -517,15 +517,15 @@ fn attack_save_login_only_the_popup_fields() {
     let seed = b64(SEED.as_bytes());
     let value = b64(b"x");
     let refused = [
-        (r#","nivel":"livre""#.to_owned(), false),
-        (r#","projeto":"p1""#.to_owned(), true),
+        (r#","level":"free""#.to_owned(), false),
+        (r#","project":"p1""#.to_owned(), true),
         (r#","tags":["t1"]"#.to_owned(), true),
         (
-            format!(r#","extras":[{{"nome":"API_KEY","valor":"{value}","segredo":true}}]"#),
+            format!(r#","extras":[{{"name":"API_KEY","value":"{value}","secret":true}}]"#),
             true,
         ),
         (
-            format!(r#","anexos":[{{"nome":"a.txt","conteudo":"{value}"}}]"#),
+            format!(r#","attachments":[{{"name":"a.txt","content":"{value}"}}]"#),
             true,
         ),
     ];
@@ -541,22 +541,15 @@ fn attack_save_login_only_the_popup_fields() {
     let r = request(
         &d,
         Role::Extension,
-        "salvar_login",
+        "save_login",
         &format!(
-            r#"{{"entrada":{{"nome":"localhost-8083","grupo":"g","ambiente":"dev","tipo":"login","campos":{{"url":"http://localhost:8083/","usuario":"u","senha":"{}","totp_semente":"{seed}"}}}}}}"#,
+            r#"{{"entry":{{"name":"localhost-8083","group":"g","environment":"dev","type":"login","fields":{{"url":"http://localhost:8083/","username":"u","password":"{}","totp_seed":"{seed}"}}}}}}"#,
             b64(NEW_PASSWORD.as_bytes())
         ),
     );
     assert_eq!(error(&r), Some(ResponseError::InvalidRequest));
     // Another type (database) through save login: reading the request refuses it.
-    assert!(
-        req(
-            Role::Extension,
-            "salvar_login",
-            &common::database("b9", "s1")
-        )
-        .is_err()
-    );
+    assert!(req(Role::Extension, "save_login", &common::database("b9", "s1")).is_err());
     assert_eq!(level_in_list(&d, "localhost-8083"), None);
     assert_eq!(level_in_list(&d, "b9"), None);
 }
@@ -569,16 +562,16 @@ fn attack_save_login_extension_only_and_unlocked() {
     let d = vault(&dir);
     let p = |name: &str| {
         format!(
-            r#"{{"entrada":{{"nome":"{name}","grupo":"g","ambiente":"dev","tipo":"login","campos":{{"url":"http://localhost:8083/","usuario":"u","senha":"{}"}}}}}}"#,
+            r#"{{"entry":{{"name":"{name}","group":"g","environment":"dev","type":"login","fields":{{"url":"http://localhost:8083/","username":"u","password":"{}"}}}}}}"#,
             b64(NEW_PASSWORD.as_bytes())
         )
     };
     for role in [Role::Agent, Role::App] {
         assert_eq!(
-            error(&request(&d, role, "salvar_login", &p("x1"))),
+            error(&request(&d, role, "save_login", &p("x1"))),
             Some(ResponseError::Unauthorized)
         );
-        let read = req(Role::Extension, "salvar_login", &p("x2")).unwrap();
+        let read = req(Role::Extension, "save_login", &p("x2")).unwrap();
         assert_eq!(
             error(&d.serve(role, read)),
             Some(ResponseError::Unauthorized)
@@ -586,9 +579,9 @@ fn attack_save_login_extension_only_and_unlocked() {
     }
     assert_eq!(level_in_list(&d, "x1"), None);
     assert_eq!(level_in_list(&d, "x2"), None);
-    assert!(ok(&request(&d, Role::App, "travar", "{}")));
+    assert!(ok(&request(&d, Role::App, "lock", "{}")));
     assert_eq!(
-        error(&request(&d, Role::Extension, "salvar_login", &p("x3"))),
+        error(&request(&d, Role::Extension, "save_login", &p("x3"))),
         Some(ResponseError::Locked)
     );
     assert!(ok(&common::unlock(&d, common::PASSWORD)));
@@ -614,7 +607,7 @@ fn attack_fill_http_without_confirming_nothing_leaves() {
     assert_eq!(error(&r), Some(ResponseError::ApprovalUnavailable));
     no_secret(&common::encoded(Role::Extension, &r));
     // Denied in the window.
-    let (r, seen) = common::with_window(&d, "negar", None, || {
+    let (r, seen) = common::with_window(&d, "deny", None, || {
         fill_raw(&d, Role::Extension, "acme-wp-dev", tab)
     });
     assert_eq!(error(&r), Some(ResponseError::Denied));
@@ -632,7 +625,7 @@ fn attack_fill_http_without_confirming_nothing_leaves() {
     // The "Allow" answers with a PIN do not decide a confirmation (the forged window
     // does not skip the format): the request stays pending and expires; here the
     // window loop only tries.
-    let (r, _) = common::with_window(&d, "uma_vez", Some(PIN), || {
+    let (r, _) = common::with_window(&d, "once", Some(PIN), || {
         // With no accepted decision, the request would stay pending until it expired
         // (2 min): the test ends it through the client that leaves.
         struct LeavesSoon(std::sync::atomic::AtomicU32);
@@ -646,8 +639,8 @@ fn attack_fill_http_without_confirming_nothing_leaves() {
         }
         let p = req(
             Role::Extension,
-            "preencher",
-            &format!(r#"{{"entrada":"acme-wp-dev","origem":"{tab}"}}"#),
+            "fill",
+            &format!(r#"{{"entry":"acme-wp-dev","origin":"{tab}"}}"#),
         )
         .unwrap();
         d.serve_from(&LeavesSoon(Default::default()), Role::Extension, p)
@@ -659,13 +652,13 @@ fn attack_fill_http_without_confirming_nothing_leaves() {
     );
     no_secret(&common::encoded(Role::Extension, &r));
     // Confirmed: it fills.
-    let (r, seen) = common::with_window(&d, "confirmar", None, || {
+    let (r, seen) = common::with_window(&d, "confirm", None, || {
         fill_raw(&d, Role::Extension, "acme-wp-dev", tab)
     });
     assert!(matches!(r, Response::Fill { .. }), "{:?}", r.kind());
     assert_eq!(seen.len(), 1);
     // `https`: no window.
-    let (r, seen) = common::with_window(&d, "negar", None, || {
+    let (r, seen) = common::with_window(&d, "deny", None, || {
         fill_raw(
             &d,
             Role::Extension,
@@ -676,7 +669,7 @@ fn attack_fill_http_without_confirming_nothing_leaves() {
     assert!(matches!(r, Response::Fill { .. }), "{:?}", r.kind());
     assert!(seen.is_empty(), "janela num preencher https");
     // Different origin: refused before asking.
-    let (r, seen) = common::with_window(&d, "confirmar", None, || {
+    let (r, seen) = common::with_window(&d, "confirm", None, || {
         fill_raw(&d, Role::Extension, "acme-wp-dev", "http://127.0.0.1:8081/")
     });
     assert_eq!(error(&r), Some(ResponseError::OriginMismatch));
@@ -703,14 +696,14 @@ fn attack_fill_https_loopback_without_confirming_nothing_leaves() {
         let r = request(
             &d,
             Role::App,
-            "salvar_entrada",
+            "save_entry",
             &login(&name, url, "wp_admin", SECRETS[0], None),
         );
         assert!(ok(&r), "{r:?}");
         let r = fill_raw(&d, Role::Extension, &name, url);
         assert_eq!(error(&r), Some(ResponseError::ApprovalUnavailable), "{url}");
         no_secret(&common::encoded(Role::Extension, &r));
-        let (r, seen) = common::with_window(&d, "negar", None, || {
+        let (r, seen) = common::with_window(&d, "deny", None, || {
             fill_raw(&d, Role::Extension, &name, url)
         });
         assert_eq!(error(&r), Some(ResponseError::Denied), "{url}");
@@ -719,7 +712,7 @@ fn attack_fill_https_loopback_without_confirming_nothing_leaves() {
         assert_eq!(seen[0].operation, Operation::Fill);
         assert_eq!(seen[0].origin, origin, "{url}");
         assert!(seen[0].confirmation, "{url}");
-        let (r, _) = common::with_window(&d, "confirmar", None, || {
+        let (r, _) = common::with_window(&d, "confirm", None, || {
             fill_raw(&d, Role::Extension, &name, url)
         });
         assert!(matches!(r, Response::Fill { .. }), "{url}");

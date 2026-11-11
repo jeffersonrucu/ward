@@ -6,7 +6,7 @@
 //! messages: 4 bytes of size in native order and the JSON body in UTF-8.
 //!
 //! Each message of the extension is a request of the daemon protocol
-//! (`{"v":1,"op":"…",…}`), parsed with the same strict parsing as the daemon in the
+//! (`{"v":2,"op":"…",…}`), parsed with the same strict parsing as the daemon in the
 //! extension role. Only the extension's operations pass ([`OPERATIONS`]); the request is
 //! re-encoded (canonical form) and goes to `wardd` on a connection of its own, checked
 //! before the first byte (D46). The daemon decides the role, by the egid and by the
@@ -177,7 +177,7 @@ pub trait Daemon {
 fn error_body(e: ResponseError) -> Zeroizing<Vec<u8>> {
     protocol::encode_response(Role::Extension, &Response::Error(e)).unwrap_or_else(|_| {
         Zeroizing::new(
-            br#"{"v":1,"tipo":"erro","dados":{"codigo":"interno","mensagem":"erro interno"}}"#
+            br#"{"v":2,"type":"error","data":{"code":"internal","message":"erro interno do Ward"}}"#
                 .to_vec(),
         )
     })
@@ -217,6 +217,12 @@ pub fn handle(
     drop(frame);
     let response = match protocol::decode_response(Role::Extension, &body) {
         Ok(r) if response_fits(op, r.kind()) => r,
+        // m2:DT8: a daemon of another protocol version. The extension gets only the
+        // version error, never the frame.
+        Err(_) if protocol::frame_version(&body).is_some_and(|v| v != protocol::VERSION) => {
+            log("o daemon fala outra versão do protocolo");
+            return error_body(ResponseError::UnknownVersion);
+        }
         _ => {
             log("resposta do daemon fora do papel extensão ou da operação");
             return error_body(ResponseError::Internal);

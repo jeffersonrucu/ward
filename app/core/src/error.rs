@@ -69,6 +69,9 @@ pub enum AppError {
     BackupUnavailable,
     /// Restore (D39): the vault file changed outside Ward; the daemon locked the vault.
     VaultChanged,
+    /// The daemon speaks another protocol version (m2:DT8): the app stops before
+    /// sending any password (m2:V4.16).
+    IncompatibleVersion,
 }
 
 impl AppError {
@@ -101,6 +104,7 @@ impl AppError {
             AppError::BackupNotFound => "backup-inexistente",
             AppError::BackupUnavailable => "backup-indisponivel",
             AppError::VaultChanged => "cofre-mudou",
+            AppError::IncompatibleVersion => "versao-incompativel",
         }
     }
 }
@@ -147,6 +151,9 @@ impl fmt::Display for AppError {
             }
             AppError::VaultNotWritten => {
                 "não foi possível gravar o cofre; confira o espaço e as permissões da pasta do Ward"
+            }
+            AppError::IncompatibleVersion => {
+                "versão do protocolo incompatível com o daemon: atualize o Ward"
             }
         })
     }

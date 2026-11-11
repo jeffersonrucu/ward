@@ -82,7 +82,7 @@ impl Scene {
         let p = req(
             Role::Agent,
             "playwright",
-            &format!(r#"{{"entrada":"{entry}"}}"#),
+            &format!(r#"{{"entry":"{entry}"}}"#),
         )
         .unwrap();
         self.d.serve_from(&NoClient, Role::Agent, p)
@@ -375,7 +375,7 @@ fn refusals_without_opening_the_browser() {
     );
     assert!(c.events("inicio").is_empty(), "o navegador abriu");
     // The app role does not ask for `playwright`.
-    let p = req(Role::Agent, "playwright", r#"{"entrada":"t-livre"}"#).unwrap();
+    let p = req(Role::Agent, "playwright", r#"{"entry":"t-livre"}"#).unwrap();
     assert_eq!(
         error(&c.d.serve_from(&NoClient, Role::App, p)),
         Some(ResponseError::Unauthorized)
@@ -529,7 +529,7 @@ fn with_clobber(html: &str) -> String {
 
 fn login_at(name: &str, url: &str, password: &str) -> String {
     format!(
-        r#"{{"entrada":{{"nome":"{name}","grupo":"clientex","ambiente":"dev","tipo":"login","campos":{{"url":"{url}","usuario":"admin","senha":"{}"}}}}}}"#,
+        r#"{{"entry":{{"name":"{name}","group":"clientex","environment":"dev","type":"login","fields":{{"url":"{url}","username":"admin","password":"{}"}}}}}}"#,
         b64(password.as_bytes())
     )
 }
@@ -650,11 +650,11 @@ fn real_scene(label: &str) -> RealScene {
         let r = request(
             &d,
             Role::App,
-            "salvar_entrada",
+            "save_entry",
             &login_at(&name, &url, LOGIN_PASSWORD),
         );
         assert!(ok(&r), "{r:?}");
-        assert!(ok(&set_level(&d, Role::App, &name, "livre", PIN)));
+        assert!(ok(&set_level(&d, Role::App, &name, "free", PIN)));
     }
     RealScene {
         d: Arc::new(d),
@@ -670,7 +670,7 @@ impl RealScene {
         let p = req(
             Role::Agent,
             "playwright",
-            &format!(r#"{{"entrada":"{entry}"}}"#),
+            &format!(r#"{{"entry":"{entry}"}}"#),
         )
         .unwrap();
         self.d.serve_from(&NoClient, Role::Agent, p)
@@ -721,7 +721,7 @@ fn real_chrome_login_and_attacks() {
         let entry = format!("w-{case}");
         // Phase 44c: the sites are `http://127.0.0.1:<port>`, so every use goes through
         // the origin confirmation (the fake window confirms).
-        let (r, seen) = with_window(&c.d, "confirmar", None, || c.playwright(&entry));
+        let (r, seen) = with_window(&c.d, "confirm", None, || c.playwright(&entry));
         assert!(
             seen.len() == 1
                 && seen[0].confirmation
@@ -781,15 +781,15 @@ fn real_chrome_login_and_attacks() {
 fn attack_playwright_http_free_only_with_confirmation() {
     let c = scene("http", "ok");
     let q = format!(
-        r#"{{"entrada":{{"nome":"h-livre","grupo":"acme","ambiente":"prod","tipo":"login","campos":{{"url":"http://localhost:8081/wp-login.php","usuario":"wp_editor","senha":"{}"}}}}}}"#,
+        r#"{{"entry":{{"name":"h-livre","group":"acme","environment":"prod","type":"login","fields":{{"url":"http://localhost:8081/wp-login.php","username":"wp_editor","password":"{}"}}}}}}"#,
         b64(LOGIN_PASSWORD.as_bytes())
     );
-    assert!(ok(&request(&c.d, Role::App, "salvar_entrada", &q)));
-    assert!(ok(&set_level(&c.d, Role::App, "h-livre", "livre", PIN)));
+    assert!(ok(&request(&c.d, Role::App, "save_entry", &q)));
+    assert!(ok(&set_level(&c.d, Role::App, "h-livre", "free", PIN)));
     let r = c.playwright("h-livre");
     assert_eq!(error(&r), Some(ResponseError::ApprovalUnavailable));
     assert!(c.events("inicio").is_empty(), "o Chrome abriu sem a janela");
-    let (r, seen) = with_window(&c.d, "negar", None, || c.playwright("h-livre"));
+    let (r, seen) = with_window(&c.d, "deny", None, || c.playwright("h-livre"));
     assert_eq!(error(&r), Some(ResponseError::Denied));
     assert!(
         c.events("inicio").is_empty(),
@@ -804,7 +804,7 @@ fn attack_playwright_http_free_only_with_confirmation() {
     for f in password_forms() {
         assert!(!contains(&enc, &f), "o pedido da janela tem a senha");
     }
-    let (_, seen) = with_window(&c.d, "confirmar", None, || c.playwright("h-livre"));
+    let (_, seen) = with_window(&c.d, "confirm", None, || c.playwright("h-livre"));
     assert_eq!(seen.len(), 1);
     assert!(
         !c.events("inicio").is_empty(),
@@ -832,17 +832,14 @@ fn attack_playwright_https_loopback_free_only_with_confirmation() {
     {
         let name = format!("l-livre-{i}");
         let q = format!(
-            r#"{{"entrada":{{"nome":"{name}","grupo":"acme","ambiente":"prod","tipo":"login","campos":{{"url":"{url}","usuario":"wp_editor","senha":"{}"}}}}}}"#,
+            r#"{{"entry":{{"name":"{name}","group":"acme","environment":"prod","type":"login","fields":{{"url":"{url}","username":"wp_editor","password":"{}"}}}}}}"#,
             b64(LOGIN_PASSWORD.as_bytes())
         );
-        assert!(ok(&request(&c.d, Role::App, "salvar_entrada", &q)), "{url}");
-        assert!(
-            ok(&set_level(&c.d, Role::App, &name, "livre", PIN)),
-            "{url}"
-        );
+        assert!(ok(&request(&c.d, Role::App, "save_entry", &q)), "{url}");
+        assert!(ok(&set_level(&c.d, Role::App, &name, "free", PIN)), "{url}");
         let r = c.playwright(&name);
         assert_eq!(error(&r), Some(ResponseError::ApprovalUnavailable), "{url}");
-        let (r, seen) = with_window(&c.d, "negar", None, || c.playwright(&name));
+        let (r, seen) = with_window(&c.d, "deny", None, || c.playwright(&name));
         assert_eq!(error(&r), Some(ResponseError::Denied), "{url}");
         assert!(c.events("inicio").is_empty(), "o Chrome abriu: {url}");
         assert!(!c.session(&name).exists(), "{url}");
@@ -856,7 +853,7 @@ fn attack_playwright_https_loopback_free_only_with_confirmation() {
 #[test]
 fn playwright_https_free_without_window() {
     let c = scene("https-livre", "ok");
-    let (r, seen) = with_window(&c.d, "negar", None, || c.playwright("t-livre"));
+    let (r, seen) = with_window(&c.d, "deny", None, || c.playwright("t-livre"));
     assert!(matches!(r, Response::PlaywrightSession { .. }), "{r:?}");
     assert!(seen.is_empty());
 }

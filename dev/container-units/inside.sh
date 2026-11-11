@@ -38,7 +38,7 @@ check "socket do uid, 0600" "$(stat -c '%u %a %F' /run/ward/$UID_T/wardd.sock)" 
 
 # The first connection starts the wardd (reply of the daemon, as uid 1000).
 r="$(setpriv --reuid="$UID_T" --regid="$UID_T" --init-groups /opt/teste/cliente "/run/ward/$UID_T/wardd.sock" estado)"
-check "primeira conexão responde" "$r" "resposta: estado"
+check "primeira conexão responde" "$r" "resposta: status"
 check "serviço subiu" "$(systemctl is-active "wardd@$UID_T.service" || true)" "active"
 
 pid="$(systemctl show -p MainPID --value "wardd@$UID_T.service")"
@@ -67,7 +67,7 @@ chmod 0600 "$VAULT_T/estado"
 r="$(printf '%s' 'falso-mestra-ward-01' | setpriv --reuid="$UID_T" --regid="$UID_T" --init-groups /opt/teste/cliente "/run/ward/$UID_T/wardd.sock" destravar)"
 check "destrava o cofre de teste" "$r" "resposta: ok"
 r="$(setpriv --reuid="$UID_T" --regid="$UID_T" --init-groups /opt/teste/cliente "/run/ward/$UID_T/wardd.sock" lista)"
-check "lista com o cofre destravado" "$r" "resposta: lista"
+check "lista com o cofre destravado" "$r" "resposta: list"
 
 # V4.38 (Phase 26, D63): install groups and setgid copies of the minimal client. The
 # `wardd` reads the groups at startup: restart it to turn the roles on.
@@ -89,11 +89,11 @@ as_user() {
 }
 since="$(date '+%Y-%m-%d %H:%M:%S')"
 r="$(as_user /usr/local/bin/ward run acme-pg-dev -- /usr/local/bin/ward-app "/run/ward/$UID_T/wardd.sock" estado 2>&1)" || true
-check "V4.38 ward run -- ward-app: papel agente" "$r" "resposta: estado papel=agente"
+check "V4.38 ward run -- ward-app: papel agente" "$r" "resposta: status papel=agent"
 r="$(as_user /usr/local/bin/ward run acme-pg-dev -- /usr/local/bin/ward-app "/run/ward/$UID_T/wardd.sock" lista 2>&1)" || true
-check "V4.38 ward run -- ward-app: lista do agente" "$r" "resposta: lista"
+check "V4.38 ward run -- ward-app: lista do agente" "$r" "resposta: list"
 r="$(as_user /usr/local/bin/ward run acme-pg-dev -- /usr/local/bin/ward-nm "/run/ward/$UID_T/wardd.sock" estado 2>&1)" || true
-check "V4.38 ward run -- ward-nm: papel agente" "$r" "resposta: estado papel=agente"
+check "V4.38 ward run -- ward-nm: papel agente" "$r" "resposta: status papel=agent"
 r="$(as_user /usr/local/bin/ward run acme-pg-dev -- /bin/sh -c 'printf %s "$PGPASSWORD"' 2>&1)" || true
 check "ward run de release: a senha sai mascarada" "$r" "••••"
 sleep 0.5
@@ -119,7 +119,7 @@ if [[ "$output" == *pronto* ]]; then failed "8 MiB de memlock: chegou a subir"; 
 kill -9 "$pid"
 sleep 1.5
 r="$(setpriv --reuid="$UID_T" --regid="$UID_T" --init-groups /opt/teste/cliente "/run/ward/$UID_T/wardd.sock" estado)"
-check "depois de morto, a conexão sobe de novo" "$r" "resposta: estado"
+check "depois de morto, a conexão sobe de novo" "$r" "resposta: status"
 new_pid="$(systemctl show -p MainPID --value "wardd@$UID_T.service")"
 if [[ "$new_pid" != "$pid" && "$new_pid" != 0 ]]; then ok "pid novo ($new_pid)"; else failed "pid não mudou"; fi
 

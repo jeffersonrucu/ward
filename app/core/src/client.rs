@@ -34,11 +34,21 @@ fn ask<D: Daemon + ?Sized>(daemon: &mut D, request: &Request) -> Result<Response
     let frame =
         protocol::encode_request(Role::App, request).map_err(|_| AppError::InvalidRequest)?;
     let body = daemon.exchange(&frame)?;
-    match protocol::decode_response(Role::App, &body) {
-        Ok(Response::Error(e)) => Err(daemon_error(&e)),
-        Ok(r) => Ok(r),
-        Err(_) => Err(AppError::InvalidResponse),
+    match read(Role::App, &body)? {
+        Response::Error(e) => Err(daemon_error(&e)),
+        r => Ok(r),
     }
+}
+
+/// Strict reading of a response in the role. A frame the reading refuses whose `v` is
+/// another version is [`AppError::IncompatibleVersion`] (m2:DT8): the status asked first
+/// stops the app there, before any password goes out (m2:V4.16). The rest is an invalid
+/// response.
+fn read(role: Role, body: &[u8]) -> Result<Response, AppError> {
+    protocol::decode_response(role, body).map_err(|_| match protocol::frame_version(body) {
+        Some(v) if v != protocol::VERSION => AppError::IncompatibleVersion,
+        _ => AppError::InvalidResponse,
+    })
 }
 
 /// The protocol errors the screen tells apart; the rest is "refused".
@@ -57,6 +67,7 @@ fn daemon_error(e: &ResponseError) -> AppError {
         ResponseError::BackupNotFound => AppError::BackupNotFound,
         ResponseError::BackupUnavailable => AppError::BackupUnavailable,
         ResponseError::VaultChanged => AppError::VaultChanged,
+        ResponseError::UnknownVersion => AppError::IncompatibleVersion,
         _ => AppError::Refused,
     }
 }
@@ -125,9 +136,9 @@ pub fn open_app_as_agent<D: Daemon + ?Sized>(daemon: &mut D) -> Result<(), AppEr
     let frame = protocol::encode_request(Role::Agent, &Request::OpenApp)
         .map_err(|_| AppError::InvalidRequest)?;
     let body = daemon.exchange(&frame)?;
-    match protocol::decode_response(Role::Agent, &body) {
-        Ok(Response::Ok) => Ok(()),
-        Ok(Response::Error(e)) => Err(daemon_error(&e)),
+    match read(Role::Agent, &body)? {
+        Response::Ok => Ok(()),
+        Response::Error(e) => Err(daemon_error(&e)),
         _ => Err(AppError::InvalidResponse),
     }
 }
@@ -244,10 +255,10 @@ pub fn save<D: Daemon + ?Sized>(
     drop(request);
     let body = daemon.exchange(&frame)?;
     drop(frame);
-    match protocol::decode_response(Role::App, &body) {
-        Ok(Response::Ok) => Ok(Save::Saved),
-        Ok(Response::Error(ResponseError::Validation(p))) => Ok(Save::Problems(p)),
-        Ok(Response::Error(e)) => Err(daemon_error(&e)),
+    match read(Role::App, &body)? {
+        Response::Ok => Ok(Save::Saved),
+        Response::Error(ResponseError::Validation(p)) => Ok(Save::Problems(p)),
+        Response::Error(e) => Err(daemon_error(&e)),
         _ => Err(AppError::InvalidResponse),
     }
 }
@@ -307,13 +318,12 @@ pub fn answer_approval<D: Daemon + ?Sized>(
     drop(request);
     let body = daemon.exchange(&frame)?;
     drop(frame);
-    match protocol::decode_response(Role::App, &body) {
-        Ok(Response::Ok) => Ok(Answered::Ok),
-        Ok(Response::Error(ResponseError::WrongPin)) => Ok(Answered::WrongPin),
-        Ok(Response::Error(ResponseError::Expired)) => Ok(Answered::Expired),
-        Ok(Response::Error(e)) => Err(daemon_error(&e)),
-        Ok(_) => Err(AppError::InvalidResponse),
-        Err(_) => Err(AppError::InvalidResponse),
+    match read(Role::App, &body)? {
+        Response::Ok => Ok(Answered::Ok),
+        Response::Error(ResponseError::WrongPin) => Ok(Answered::WrongPin),
+        Response::Error(ResponseError::Expired) => Ok(Answered::Expired),
+        Response::Error(e) => Err(daemon_error(&e)),
+        _ => Err(AppError::InvalidResponse),
     }
 }
 
@@ -509,7 +519,7 @@ mod tests {
                 .len()
         );
         let det = detail(&mut d, "acme-pg-dev").unwrap();
-        assert_eq!(det.secrets, vec!["senha".to_owned()]);
+        assert_eq!(det.secrets, vec!["password".to_owned()]);
         assert_eq!(
             detail(&mut d, "nao-existe").unwrap_err(),
             AppError::EntryNotFound
@@ -524,7 +534,7 @@ mod tests {
         // entry, a detail with the secret extra's value and a response of another
         // version: all become `InvalidResponse`, nothing reaches the interface.
         let secret_instead_of_list =
-            br#"{"v":1,"tipo":"segredo","dados":{"valor":"ZmFsc28tUEc="}}"#.to_vec();
+            br#"{"v":2,"type":"secret","data":{"value":"ZmFsc28tUEc="}}"#.to_vec();
         assert_eq!(
             list(&mut FixedReply(secret_instead_of_list)).unwrap_err(),
             AppError::InvalidResponse
@@ -552,18 +562,29 @@ mod tests {
         )
         .unwrap();
         let real = String::from_utf8(fake.exchange(&frame).unwrap().to_vec()).unwrap();
-        let target = r#""segredo":true"#;
+        let target = r#""secret":true"#;
         assert!(real.contains(target), "{real}");
         let forged = real
-            .replacen(target, r#""segredo":true,"valor":"falso-licenca-01""#, 1)
+            .replacen(target, r#""secret":true,"value":"falso-licenca-01""#, 1)
             .into_bytes();
         assert_eq!(
             detail(&mut FixedReply(forged), "gama-generico").unwrap_err(),
             AppError::InvalidResponse
         );
-        let version = br#"{"v":2,"tipo":"lista","dados":{"itens":[]}}"#.to_vec();
+        // m2:DT8: a response of another version (v1 of the 0.1.4 daemon, a future v3) is
+        // the version error; a v2 frame with a v1 name is only an invalid response.
+        for version in [
+            &br#"{"v":1,"tipo":"lista","dados":{"itens":[]}}"#[..],
+            br#"{"v":3,"type":"list","data":{"items":[]}}"#,
+        ] {
+            assert_eq!(
+                list(&mut FixedReply(version.to_vec())).unwrap_err(),
+                AppError::IncompatibleVersion
+            );
+        }
+        let old_name = br#"{"v":2,"type":"list","dados":{"items":[]}}"#.to_vec();
         assert_eq!(
-            list(&mut FixedReply(version)).unwrap_err(),
+            list(&mut FixedReply(old_name)).unwrap_err(),
             AppError::InvalidResponse
         );
     }
@@ -601,11 +622,11 @@ mod tests {
         );
         // A "daemon" that slips a secret into the summary (secret field among the text
         // fields, or an extra key): refused whole, nothing reaches the interface.
-        let target = r#""resumo":{"#;
+        let target = r#""summary":{"#;
         assert!(real.contains(target));
         for swap in [
-            r#""resumo":{"campos":{"senha":"falso-PG:s3nha/01@#"},"segredos":[],"extras":0,"anexos":0},"x":{"#,
-            r#""resumo":{"valor":"ZmFsc28tUEc=","#,
+            r#""summary":{"fields":{"password":"falso-PG:s3nha/01@#"},"secrets":[],"extras":0,"attachments":0},"x":{"#,
+            r#""summary":{"value":"ZmFsc28tUEc=","#,
         ] {
             let f = real.replacen(target, swap, 1).into_bytes();
             assert_eq!(
@@ -618,13 +639,12 @@ mod tests {
 
     #[test]
     fn daemon_errors_have_a_fixed_message() {
-        let denied = br#"{"v":1,"tipo":"erro","dados":{"codigo":"nao_autorizado","mensagem":"<img src=x> falso-PG:s3nha/01@#"}}"#.to_vec();
+        let denied = br#"{"v":2,"type":"error","data":{"code":"unauthorized","message":"<img src=x> falso-PG:s3nha/01@#"}}"#.to_vec();
         let e = list(&mut FixedReply(denied)).unwrap_err();
         assert_eq!(e, AppError::Unauthorized);
         assert!(!e.to_string().contains("img"));
         assert!(!e.to_string().contains("falso"));
-        let locked =
-            br#"{"v":1,"tipo":"erro","dados":{"codigo":"travado","mensagem":"x"}}"#.to_vec();
+        let locked = br#"{"v":2,"type":"error","data":{"code":"locked","message":"x"}}"#.to_vec();
         assert_eq!(
             status(&mut FixedReply(locked)).unwrap_err(),
             AppError::Locked

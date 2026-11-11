@@ -208,7 +208,6 @@ crates/ward-core/src/entry/validation.rs arquivo 53 delivered variable prefix WA
 crates/ward-core/src/entry/validation.rs chave 53 delivered variable WARD_ARQUIVO_CHAVE
 
 # Phase 30 (app/core service): wire values quoted in test comments.
-app/core/src/service.rs livre 51 level value of the set level request in the app tests (v4 name; the protocol clients follow the v5 names in Phase 51)
 app/core/src/service.rs carregada 54 "loaded" value of a form secret sent by the webview
 app/core/src/service.rs chave 53 reserved attachment name CHAVE (delivered variable WARD_ARQUIVO_CHAVE)
 

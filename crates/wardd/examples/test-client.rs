@@ -10,8 +10,8 @@
 //! Usage: `wardd-test-client <socket> <operation>`, with the status, list or unlock
 //! operation. With unlock (`make test-units`, V3.34), the **test** password comes from
 //! stdin (never from argv) and goes into the core's zeroing secret type, which is zeroed
-//! on exit; no other secret goes through here. The operation names are the names of the
-//! protocol operations (frozen until m2:Phase 51).
+//! on exit; no other secret goes through here. The argument names are the client's own
+//! (the scripts call them); the printed reply type and role are the protocol v2 names.
 
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
@@ -78,7 +78,7 @@ fn main() -> ExitCode {
     match r {
         Some(Response::Error(e)) => println!("resposta: erro {}", e.code()),
         Some(Response::Status { role, .. }) => {
-            println!("resposta: estado papel={}", role.name())
+            println!("resposta: status papel={}", role.name())
         }
         Some(r) => println!("resposta: {}", r.kind().name()),
         None => println!("resposta: invalida"),

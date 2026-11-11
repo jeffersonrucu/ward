@@ -95,8 +95,8 @@ fn turn_on(d: &Daemon, role: Role, uuid: &str) -> Response {
     request(
         d,
         role,
-        "definir_backup_externo",
-        &format!(r#"{{"ligado":true,"uuid":"{uuid}"}}"#),
+        "set_external_backup",
+        &format!(r#"{{"enabled":true,"uuid":"{uuid}"}}"#),
     )
 }
 
@@ -166,7 +166,7 @@ fn v7_4_off_by_default_writes_nothing() {
     let a = mount_point(&dir, "pendrive-a");
     let source = Source::with(vec![usb_drive(UUID_A, &a)]);
     let d = d.with_usb_drives(Arc::new(source.clone()));
-    match request(&d, Role::App, "backup_externo", "{}") {
+    match request(&d, Role::App, "external_backup", "{}") {
         Response::ExternalBackup { enabled, uuid } => {
             assert!(!enabled);
             assert_eq!(uuid, None);
@@ -177,7 +177,7 @@ fn v7_4_off_by_default_writes_nothing() {
     assert_eq!(source.queries(), 0, "desligado nem consulta o udisks2");
     assert!(tree(&a).is_empty(), "nada no pendrive");
     // The list of USB drives (for the app to choose from) works and writes nothing.
-    match request(&d, Role::App, "pendrives", "{}") {
+    match request(&d, Role::App, "usb_drives", "{}") {
         Response::UsbDrives(l) => {
             assert_eq!(l.len(), 1);
             assert_eq!(l[0].uuid, UUID_A);
@@ -202,7 +202,7 @@ fn v7_5_v7_6_copies_only_to_the_chosen_drive_and_without_secret() {
     let b = mount_point(&dir, "pendrive-b");
     let source = Source::with(vec![usb_drive(UUID_B, &b)]);
     assert!(ok(&turn_on(&d, Role::App, UUID_A)));
-    match request(&d, Role::App, "backup_externo", "{}") {
+    match request(&d, Role::App, "external_backup", "{}") {
         Response::ExternalBackup { enabled, uuid } => {
             assert!(enabled);
             assert_eq!(uuid.as_deref(), Some(UUID_A));
@@ -235,12 +235,7 @@ fn v7_5_v7_6_copies_only_to_the_chosen_drive_and_without_secret() {
     assert!(d.sync_external(&source).unwrap().unwrap().copied.is_empty());
     assert_eq!(tree(&a), before);
     // A new write: only it goes.
-    let r = request(
-        &d,
-        Role::App,
-        "salvar_entrada",
-        &login("t-nova", SECRETS[3]),
-    );
+    let r = request(&d, Role::App, "save_entry", &login("t-nova", SECRETS[3]));
     assert!(ok(&r), "{r:?}");
     let c = d.sync_external(&source).unwrap().unwrap();
     assert_eq!(c.copied.len(), 1);
@@ -424,7 +419,7 @@ fn drive_keeps_30_versions() {
         let r = request(
             &d,
             Role::App,
-            "salvar_entrada",
+            "save_entry",
             &login(&format!("t-rodar-{i}"), SECRETS[3]),
         );
         assert!(ok(&r), "{r:?}");
@@ -495,7 +490,7 @@ fn f54c_attack_names_planted_on_the_drive_do_not_delete_real_copies() {
     let r = request(
         &d,
         Role::App,
-        "salvar_entrada",
+        "save_entry",
         &login("t-plantados", SECRETS[3]),
     );
     assert!(ok(&r), "{r:?}");
@@ -541,12 +536,7 @@ fn attack_future_dated_versions_on_the_drive_do_not_delete_the_real_ones() {
     fs::copy(dir.0.join("backups").join(&local_versions(&dir)[0]), &local).unwrap();
     fs::set_permissions(&local, fs::Permissions::from_mode(0o600)).unwrap();
     // A new write and the copy: no real one leaves, the planted local one does not go.
-    let r = request(
-        &d,
-        Role::App,
-        "salvar_entrada",
-        &login("t-futuro", SECRETS[3]),
-    );
+    let r = request(&d, Role::App, "save_entry", &login("t-futuro", SECRETS[3]));
     assert!(ok(&r), "{r:?}");
     let c = d.sync_external(&source).unwrap().unwrap();
     assert_eq!(c.deleted, 0);
@@ -630,12 +620,7 @@ fn attack_junk_in_the_local_backup_does_not_rotate_the_drive() {
 
     // A real write: only it goes, even with the newer junk around.
     std::thread::sleep(Duration::from_millis(1100));
-    let r = request(
-        &d,
-        Role::App,
-        "salvar_entrada",
-        &login("t-lixo", SECRETS[3]),
-    );
+    let r = request(&d, Role::App, "save_entry", &login("t-lixo", SECRETS[3]));
     assert!(ok(&r), "{r:?}");
     let c = d.sync_external(&source).unwrap().unwrap();
     assert_eq!(c.copied.len(), 1, "{:?}", c.copied);
@@ -668,11 +653,11 @@ fn locked_or_off_does_not_copy() {
     assert_eq!(d.sync_external(&source), Ok(None));
     assert_eq!(source.queries(), n);
     assert_eq!(
-        error(&request(&d, Role::App, "backup_externo", "{}")),
+        error(&request(&d, Role::App, "external_backup", "{}")),
         Some(ResponseError::Locked)
     );
     assert_eq!(
-        error(&request(&d, Role::App, "pendrives", "{}")),
+        error(&request(&d, Role::App, "usb_drives", "{}")),
         Some(ResponseError::Locked)
     );
     assert!(ok(&unlock(&d, PASSWORD)));
@@ -681,22 +666,17 @@ fn locked_or_off_does_not_copy() {
     let r = request(
         &d,
         Role::App,
-        "definir_backup_externo",
-        &format!(r#"{{"ligado":false,"uuid":"{UUID_A}"}}"#),
+        "set_external_backup",
+        &format!(r#"{{"enabled":false,"uuid":"{UUID_A}"}}"#),
     );
     assert!(ok(&r), "{r:?}");
-    let r = request(
-        &d,
-        Role::App,
-        "salvar_entrada",
-        &login("t-depois", SECRETS[3]),
-    );
+    let r = request(&d, Role::App, "save_entry", &login("t-depois", SECRETS[3]));
     assert!(ok(&r));
     let n = source.queries();
     assert_eq!(d.sync_external(&source), Ok(None));
     assert_eq!(source.queries(), n);
     assert_eq!(tree(&a), before, "nada novo, nada apagado");
-    match request(&d, Role::App, "backup_externo", "{}") {
+    match request(&d, Role::App, "external_backup", "{}") {
         Response::ExternalBackup { enabled, uuid } => {
             assert!(!enabled);
             assert_eq!(uuid.as_deref(), Some(UUID_A));
@@ -718,11 +698,11 @@ fn v7_8_agent_and_extension_neither_turn_on_nor_read() {
     let vault = fs::read(&dir.paths().vault).unwrap();
     for role in [Role::Agent, Role::Extension] {
         for (op, data) in [
-            ("backup_externo", "{}".to_owned()),
-            ("pendrives", "{}".to_owned()),
+            ("external_backup", "{}".to_owned()),
+            ("usb_drives", "{}".to_owned()),
             (
-                "definir_backup_externo",
-                format!(r#"{{"ligado":true,"uuid":"{UUID_A}"}}"#),
+                "set_external_backup",
+                format!(r#"{{"enabled":true,"uuid":"{UUID_A}"}}"#),
             ),
         ] {
             // Through the protocol read.
@@ -750,7 +730,7 @@ fn usb_drives_without_udisks_and_invalid_uuid() {
     let dir = Dir::new("ext-sem");
     let (d, _) = test_vault(&dir);
     assert_eq!(
-        error(&request(&d, Role::App, "pendrives", "{}")),
+        error(&request(&d, Role::App, "usb_drives", "{}")),
         Some(ResponseError::UsbDrivesUnavailable)
     );
     let vault = fs::read(&dir.paths().vault).unwrap();
@@ -765,8 +745,8 @@ fn usb_drives_without_udisks_and_invalid_uuid() {
         error(&request(
             &d,
             Role::App,
-            "definir_backup_externo",
-            r#"{"ligado":true}"#
+            "set_external_backup",
+            r#"{"enabled":true}"#
         )),
         Some(ResponseError::InvalidRequest)
     );
@@ -1056,7 +1036,7 @@ fn v7_5_udisks_signal_copies_to_the_mounted_drive() {
     .unwrap();
     rx.recv_timeout(Duration::from_secs(10))
         .expect("vigia conectou");
-    match request(&d, Role::App, "pendrives", "{}") {
+    match request(&d, Role::App, "usb_drives", "{}") {
         Response::UsbDrives(l) => {
             assert_eq!(l.len(), 2);
             assert!(!l.iter().find(|p| p.uuid == UUID_A).unwrap().mounted);
@@ -1080,12 +1060,7 @@ fn v7_5_udisks_signal_copies_to_the_mounted_drive() {
     }
     assert!(tree(&bdir).is_empty(), "o B não recebe nada");
     // A write nudges the copy again.
-    let r = request(
-        &d,
-        Role::App,
-        "salvar_entrada",
-        &login("t-sinal", SECRETS[3]),
-    );
+    let r = request(&d, Role::App, "save_entry", &login("t-sinal", SECRETS[3]));
     assert!(ok(&r));
     let end = Instant::now() + Duration::from_secs(15);
     while on_drive(&a).len() < total + 1 {

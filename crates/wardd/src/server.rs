@@ -335,8 +335,13 @@ fn serve_connection(
                 Response::Error(e)
             }
         };
+        // m2:DT8, m2:V4.13: a frame of another protocol version gets the
+        // `unknown_version` error (code and fixed message, no data) and the connection
+        // ends there. Nothing else of the old client is read: a v1 unlock, list or run
+        // that comes next on the same connection never reaches the core.
+        let close = matches!(response, Response::Error(ResponseError::UnknownVersion));
         let _g = write_lock.lock().unwrap_or_else(|e| e.into_inner());
-        if answer(&mut stream, role, &response).is_err() {
+        if answer(&mut stream, role, &response).is_err() || close {
             break;
         }
     }

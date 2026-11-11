@@ -226,8 +226,8 @@ fn server(args: &[String]) {
         let _ = std::io::stdout().flush();
         let role = match class {
             PeerClass::App => "app",
-            PeerClass::ExtensionHost => "extensao",
-            PeerClass::Common { .. } => "agente",
+            PeerClass::ExtensionHost => "extension",
+            PeerClass::Common { .. } => "agent",
         };
         if !answer_status(&mut stream, role) {
             let _ = writeln!(stream, "{line}");
@@ -238,8 +238,8 @@ fn server(args: &[String]) {
 /// Phase 23a (D63): the test app asks for the vault status right after connecting and
 /// checks the role in the reply. If a frame arrives within 1 s, it answers with the status
 /// (no secret, only the role) and returns `true`; otherwise (the `client` subcommand,
-/// which only reads), `false`. The frame fields are the wire of protocol v1 (frozen until
-/// m2:Phase 51).
+/// which only reads), `false`. The frame is protocol v2 (m2:DT8): the app reads it
+/// strictly and stops on another version.
 fn answer_status(stream: &mut UnixStream, role: &str) -> bool {
     let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(1)));
     let mut n = [0u8; 4];
@@ -256,12 +256,12 @@ fn answer_status(stream: &mut UnixStream, role: &str) -> bool {
     }
     // The app opened outside the daemon (the one from the menu) only asks the daemon to
     // open the app: "ok", like the daemon.
-    let open_app = body.windows(9).any(|j| j == b"abrir_app");
+    let open_app = body.windows(8).any(|j| j == b"open_app");
     let r = if open_app {
-        r#"{"v":1,"tipo":"ok","dados":{}}"#.to_owned()
+        r#"{"v":2,"type":"ok","data":{}}"#.to_owned()
     } else {
         format!(
-            r#"{{"v":1,"tipo":"estado","dados":{{"travado":true,"cofre_existe":false,"papel":"{role}"}}}}"#
+            r#"{{"v":2,"type":"status","data":{{"locked":true,"vault_exists":false,"role":"{role}"}}}}"#
         )
     };
     let _ = stream

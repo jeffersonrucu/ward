@@ -96,7 +96,7 @@ fn copy_works_and_the_response_has_no_value() {
     let r = p.respond(&post(
         &p,
         "copiar_campo",
-        r#"{"entrada":"acme-pg-dev","campo":"senha"}"#,
+        r#"{"entrada":"acme-pg-dev","campo":"password"}"#,
         &[],
     ));
     assert_eq!(r.status, 200);
@@ -178,7 +178,7 @@ fn attack_form_through_the_bridge() {
     let (p, _l, _a, base) = bridge("formulario");
     let new_entry = serde_json::json!({ "formulario": {
         "tipo": "api", "nome": "beta-gitlab-api", "grupo": "beta", "ambiente": "dev",
-        "projeto": "", "tags": [], "campos": {"url": "https://gitlab.exemplo.com", "variavel": "GITLAB_TOKEN"},
+        "projeto": "", "tags": [], "campos": {"url": "https://gitlab.exemplo.com", "variable": "GITLAB_TOKEN"},
         "segredos": {"token": {"novo": "falso-token-gitlab-99"}}, "extras": []
     }});
     let r = p.respond(&post(&p, "salvar_credencial", &new_entry.to_string(), &[]));
@@ -207,14 +207,19 @@ fn attack_form_through_the_bridge() {
     let generate =
         r#"{"tamanho":20,"minusculas":true,"maiusculas":true,"digitos":true,"simbolos":true}"#;
     p.respond(&post(&p, "gerar_senha", generate, &[]));
-    let r = p.respond(&post(&p, "usar_senha_gerada", r#"{"campo":"senha"}"#, &[]));
+    let r = p.respond(&post(
+        &p,
+        "usar_senha_gerada",
+        r#"{"campo":"password"}"#,
+        &[],
+    ));
     assert_eq!(
         r.body_json().unwrap()["valor"],
         serde_json::json!({ "tamanho": 20 })
     );
     for body in [
-        r#"{"formulario":{"tipo":"login","nome":"x","grupo":"g","ambiente":"dev","projeto":"","tags":[],"campos":{},"segredos":{},"extras":[],"nivel":"livre"}}"#,
-        r#"{"formulario":{"tipo":"login","nome":"acme-x","grupo":"g","ambiente":"dev","projeto":"","tags":[],"campos":{},"segredos":{"senha":"manter"},"extras":[]}}"#,
+        r#"{"formulario":{"tipo":"login","nome":"x","grupo":"g","ambiente":"dev","projeto":"","tags":[],"campos":{},"segredos":{},"extras":[],"nivel":"free"}}"#,
+        r#"{"formulario":{"tipo":"login","nome":"acme-x","grupo":"g","ambiente":"dev","projeto":"","tags":[],"campos":{},"segredos":{"password":"manter"},"extras":[]}}"#,
         r#"{"anterior":5,"formulario":{"tipo":"login","nome":"x","grupo":"g","ambiente":"dev","projeto":"","tags":[],"campos":{},"segredos":{},"extras":[]}}"#,
         r#"{"formulario":"<img src=x>"}"#,
         r#"{}"#,
@@ -254,44 +259,44 @@ fn attack_set_level_through_the_bridge() {
     };
     let v = set_level(
         &p,
-        r#"{"entrada":"acme-pg-prod","nivel":"livre","pin":"135790"}"#,
+        r#"{"entrada":"acme-pg-prod","nivel":"free","pin":"135790"}"#,
     );
     assert_eq!(
         v,
-        serde_json::json!({"ok": true, "valor": {"entrada": "acme-pg-prod", "nivel": "livre"}})
+        serde_json::json!({"ok": true, "valor": {"entrada": "acme-pg-prod", "nivel": "free"}})
     );
-    assert_eq!(level(&p), "livre");
+    assert_eq!(level(&p), "free");
     // Refused before the daemon: they do not count as PIN errors (it would be 6 × 6).
     for _ in 0..6 {
         for body in [
-            r#"{"entrada":"acme-pg-prod","nivel":"bloqueado","pin":"12"}"#,
-            r#"{"entrada":"acme-pg-prod","nivel":"bloqueado","pin":135790}"#,
-            r#"{"entrada":"acme-pg-prod","nivel":"bloqueado","pin":"13579a"}"#,
+            r#"{"entrada":"acme-pg-prod","nivel":"blocked","pin":"12"}"#,
+            r#"{"entrada":"acme-pg-prod","nivel":"blocked","pin":135790}"#,
+            r#"{"entrada":"acme-pg-prod","nivel":"blocked","pin":"13579a"}"#,
             r#"{"entrada":"acme-pg-prod","nivel":"admin","pin":"000000"}"#,
-            r#"{"entrada":"acme-pg-prod","nivel":"bloqueado"}"#,
-            r#"{"entrada":"acme\npg","nivel":"bloqueado","pin":"000000"}"#,
+            r#"{"entrada":"acme-pg-prod","nivel":"blocked"}"#,
+            r#"{"entrada":"acme\npg","nivel":"blocked","pin":"000000"}"#,
         ] {
             let v = set_level(&p, body);
             assert_eq!(v["ok"], false, "{body}");
             assert_eq!(v["codigo"], "pedido-invalido", "{body}: {v}");
         }
     }
-    assert_eq!(level(&p), "livre");
+    assert_eq!(level(&p), "free");
     for k in 1..=5 {
         let v = set_level(
             &p,
-            r#"{"entrada":"acme-pg-prod","nivel":"bloqueado","pin":"000000"}"#,
+            r#"{"entrada":"acme-pg-prod","nivel":"blocked","pin":"000000"}"#,
         );
         assert_eq!(v["codigo"], "pin-incorreto", "erro {k}: {v}");
         if k < 5 {
-            assert_eq!(level(&p), "livre");
+            assert_eq!(level(&p), "free");
         }
     }
     let r = p.respond(&post(&p, "estado_do_cofre", "{}", &[]));
     assert_eq!(r.body_json().unwrap()["valor"]["estado"], "travado");
     let v = set_level(
         &p,
-        r#"{"entrada":"acme-pg-prod","nivel":"bloqueado","pin":"135790"}"#,
+        r#"{"entrada":"acme-pg-prod","nivel":"blocked","pin":"135790"}"#,
     );
     assert_eq!(v["codigo"], "travado", "{v}");
     fs::remove_dir_all(base).unwrap();
@@ -357,7 +362,7 @@ fn attack_standalone_generator_through_the_bridge() {
 #[test]
 fn attack_no_token_wrong_token_or_repeated() {
     let (p, _l, clipboard, base) = bridge("token");
-    let body = r#"{"entrada":"acme-pg-dev","campo":"senha"}"#;
+    let body = r#"{"entrada":"acme-pg-dev","campo":"password"}"#;
     let wrong = format!("Bearer {}", "0".repeat(64));
     let prefix = format!("Bearer {}", &p.token_for_test()[..63]);
     for changes in [
@@ -416,8 +421,8 @@ fn attack_plugin_or_invented_command() {
         "",
         "[]",
         "nao json",
-        r#"{"entrada":1,"campo":"senha"}"#,
-        r#"{"entrada":"acme-pg-dev\n","campo":"senha"}"#,
+        r#"{"entrada":1,"campo":"password"}"#,
+        r#"{"entrada":"acme-pg-dev\n","campo":"password"}"#,
     ] {
         let r = p.respond(&post(&p, "copiar_campo", body, &[]));
         assert_eq!(
@@ -590,7 +595,7 @@ fn attack_attachments_and_connect_through_the_bridge() {
     );
     assert!(!String::from_utf8_lossy(&r.body).contains("falso-anexo"));
     let new_entry = serde_json::json!({ "formulario": {
-        "tipo": "generico", "nome": "gama-anexo", "grupo": "gama", "ambiente": "dev",
+        "tipo": "generic", "nome": "gama-anexo", "grupo": "gama", "ambiente": "dev",
         "projeto": "", "tags": [], "campos": {}, "segredos": {},
         "extras": [{"nome": "REGIAO", "segredo": false, "valor": {"novo": "r-01"}}],
         "anexos": [0]
@@ -655,10 +660,10 @@ fn attack_load_key_through_the_bridge() {
     let (p, _l) = Bridge::open(service, &base.join("dist")).unwrap();
     for body in [
         r#"{}"#,
-        r#"{"campo":"senha"}"#,
+        r#"{"campo":"password"}"#,
         r#"{"campo":"passphrase"}"#,
         r#"{"campo":5}"#,
-        r#"{"campo":"chave_privada","caminho":"/etc/shadow"}"#,
+        r#"{"campo":"private_key","caminho":"/etc/shadow"}"#,
     ] {
         let r = p.respond(&post(&p, "carregar_chave", body, &[]));
         assert_eq!(r.body_json().unwrap()["ok"], false, "{body}");
@@ -666,7 +671,7 @@ fn attack_load_key_through_the_bridge() {
     let r = p.respond(&post(
         &p,
         "carregar_chave",
-        r#"{"campo":"chave_privada"}"#,
+        r#"{"campo":"private_key"}"#,
         &[],
     ));
     let body = String::from_utf8_lossy(&r.body).into_owned();
@@ -680,10 +685,10 @@ fn attack_load_key_through_the_bridge() {
     );
     let new_entry = |name: &str| {
         serde_json::json!({ "formulario": {
-            "tipo": "servidor", "nome": name, "grupo": "clientex", "ambiente": "stage",
+            "tipo": "server", "nome": name, "grupo": "clientex", "ambiente": "stage",
             "projeto": "", "tags": [],
-            "campos": {"host": "127.0.0.1", "porta": "2223", "usuario": "deploy", "salto": ""},
-            "segredos": {"senha": "vazio", "chave_privada": "carregada", "passphrase": "vazio"},
+            "campos": {"host": "127.0.0.1", "port": "2223", "username": "deploy", "jump": ""},
+            "segredos": {"password": "vazio", "private_key": "carregada", "passphrase": "vazio"},
             "extras": [], "anexos": []
         }})
         .to_string()
@@ -721,7 +726,7 @@ fn attack_load_key_through_the_bridge() {
     let r = p.respond(&post(
         &p,
         "carregar_chave",
-        r#"{"campo":"chave_privada"}"#,
+        r#"{"campo":"private_key"}"#,
         &[],
     ));
     assert!(!String::from_utf8_lossy(&r.body).contains("falso-texto"));
@@ -796,7 +801,7 @@ fn attack_first_use_through_the_bridge() {
     }
     assert_eq!(vault_status(), "sem-cofre");
     for body in [
-        r#"{"dados":{"senha":"falso-mestra-ward-01","confirmacao":"falso-mestra-ward-01","pin":"135790","confirmacao_pin":"135790","nivel":"livre"}}"#,
+        r#"{"dados":{"senha":"falso-mestra-ward-01","confirmacao":"falso-mestra-ward-01","pin":"135790","confirmacao_pin":"135790","nivel":"free"}}"#,
         r#"{"dados":{"senha":"falso-mestra-ward-01","confirmacao":"falso-mestra-ward-01","pin":135790,"confirmacao_pin":"135790"}}"#,
         r#"{"senha":"falso-mestra-ward-01","pin":"135790"}"#,
         r#"{"dados":"falso-mestra-ward-01"}"#,
@@ -840,7 +845,7 @@ fn attack_bridge_without_app_role_exits_on_first_reply() {
     use ward_test_bridge::startup::{NO_APP_ROLE, connect_with_app_role};
 
     let uid = fs::metadata("/proc/self").unwrap().uid();
-    for role in ["agente", "extensao", "app"] {
+    for role in ["agent", "extension", "app"] {
         let dir = PathBuf::from(format!(
             "/run/user/{uid}/ward-bridge-role-{}-{role}",
             std::process::id()
@@ -862,7 +867,7 @@ fn attack_bridge_without_app_role_exits_on_first_reply() {
                 c.read_exact(&mut b).unwrap();
                 received.push(String::from_utf8(b).unwrap());
                 let r = format!(
-                    r#"{{"v":1,"tipo":"estado","dados":{{"travado":true,"cofre_existe":true,"papel":"{role}"}}}}"#
+                    r#"{{"v":2,"type":"status","data":{{"locked":true,"vault_exists":true,"role":"{role}"}}}}"#
                 );
                 c.write_all(&(r.len() as u32).to_be_bytes()).unwrap();
                 c.write_all(r.as_bytes()).unwrap();
@@ -878,7 +883,7 @@ fn attack_bridge_without_app_role_exits_on_first_reply() {
         drop(r);
         let received = server.join().unwrap();
         assert_eq!(received.len(), 1, "{received:?}");
-        assert!(received[0].contains(r#""op":"estado""#), "{received:?}");
+        assert!(received[0].contains(r#""op":"status""#), "{received:?}");
         let _ = fs::remove_dir_all(&dir);
     }
 }
@@ -901,7 +906,7 @@ fn attack_unlock_through_the_bridge() {
         p.respond(&post(
             &p,
             "mudar_nivel",
-            r#"{"entrada":"acme-pg-prod","nivel":"livre","pin":"000000"}"#,
+            r#"{"entrada":"acme-pg-prod","nivel":"free","pin":"000000"}"#,
             &[],
         ));
     }
@@ -963,7 +968,7 @@ fn attack_lock_through_the_bridge() {
     p.respond(&post(
         &p,
         "copiar_campo",
-        r#"{"entrada":"acme-pg-dev","campo":"senha"}"#,
+        r#"{"entrada":"acme-pg-dev","campo":"password"}"#,
         &[],
     ));
     let copied = clipboard.0.lock().unwrap().is_some();
@@ -981,7 +986,7 @@ fn attack_lock_through_the_bridge() {
     let r = p.respond(&post(
         &p,
         "revelar_campo",
-        r#"{"entrada":"acme-pg-dev","campo":"senha"}"#,
+        r#"{"entrada":"acme-pg-dev","campo":"password"}"#,
         &[],
     ));
     assert_eq!(r.body_json().unwrap()["codigo"], "travado");
@@ -1043,7 +1048,7 @@ fn attack_settings_through_the_bridge() {
         assert_eq!(v["valor"]["erros"][0]["campo"], field, "{v}");
     }
     for body in [
-        r#"{"dados":{"atual":"135790","novo":"2468","confirmacao":"2468","nivel":"livre"}}"#,
+        r#"{"dados":{"atual":"135790","novo":"2468","confirmacao":"2468","nivel":"free"}}"#,
         r#"{"dados":{"atual":135790,"novo":"2468","confirmacao":"2468"}}"#,
         r#"{"dados":{"atual":"135790","novo":"2468","confirmacao":"2468"},"x":1}"#,
         r#"{"atual":"135790","novo":"2468"}"#,

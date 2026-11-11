@@ -432,14 +432,14 @@ mod tests {
         let long = "a".repeat(limits::MAX_NAME + 1);
         let long_field = "a".repeat(limits::MAX_EXTRA_NAME + 1);
         for (e, c) in [
-            ("", "senha"),
+            ("", "password"),
             ("acme-pg-dev", ""),
-            (long.as_str(), "senha"),
+            (long.as_str(), "password"),
             ("acme-pg-dev", long_field.as_str()),
-            (" acme-pg-dev", "senha"),
-            ("acme\npg", "senha"),
+            (" acme-pg-dev", "password"),
+            ("acme\npg", "password"),
             ("acme-pg-dev", "se\u{0}nha"),
-            ("acme\u{202E}gp", "senha"),
+            ("acme\u{202E}gp", "password"),
             ("acme-pg-dev", "senha\u{200B}"),
         ] {
             assert_eq!(
@@ -448,8 +448,8 @@ mod tests {
                 "{e:?} {c:?}"
             );
         }
-        let r = Reference::new("acme-pg-dev", "senha").unwrap();
-        assert_eq!((r.entry(), r.field()), ("acme-pg-dev", "senha"));
-        assert!(Reference::new(&"á".repeat(limits::MAX_NAME), "senha").is_ok());
+        let r = Reference::new("acme-pg-dev", "password").unwrap();
+        assert_eq!((r.entry(), r.field()), ("acme-pg-dev", "password"));
+        assert!(Reference::new(&"á".repeat(limits::MAX_NAME), "password").is_ok());
     }
 }

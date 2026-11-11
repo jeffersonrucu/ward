@@ -85,27 +85,22 @@ fn vault_with_clock(dir: &Dir) -> (Daemon, ManualClock) {
     let create = request(
         &d,
         Role::App,
-        "criar_cofre",
+        "create_vault",
         &format!(
-            r#"{{"senha":"{}","pin":"{}"}}"#,
+            r#"{{"password":"{}","pin":"{}"}}"#,
             b64(PASSWORD.as_bytes()),
             b64(PIN.as_bytes())
         ),
     );
     assert!(ok(&create), "{create:?}");
-    let s = request(
-        &d,
-        Role::App,
-        "salvar_entrada",
-        &login("t-aprov", SECRETS[0]),
-    );
+    let s = request(&d, Role::App, "save_entry", &login("t-aprov", SECRETS[0]));
     assert!(ok(&s), "{s:?}");
     (d, r)
 }
 
 /// An app action (the list of the Credentials screen): counts as use (Phase 54).
 fn list_ok(d: &Daemon) {
-    let r = request(d, Role::App, "lista", "{}");
+    let r = request(d, Role::App, "list", "{}");
     assert!(matches!(r, Response::List(_)), "{r:?}");
 }
 
@@ -121,7 +116,7 @@ fn v3_19_inactivity_with_injected_clock() {
     assert!(d.lock_if_idle(), "4h00 sem uso trava");
     assert!(d.is_locked());
     assert_eq!(
-        error(&request(&d, Role::Agent, "lista", "{}")),
+        error(&request(&d, Role::Agent, "list", "{}")),
         Some(ResponseError::Locked)
     );
     // Locked, nothing more to do.
@@ -145,7 +140,7 @@ fn v3_19_inactivity_with_injected_clock() {
 fn v3_19_timeout_read_from_the_vault_settings() {
     let dir = Dir::new("cfg");
     let (d, r) = vault_with_clock(&dir);
-    let t = request(&d, Role::App, "tempo_trava", r#"{"minutos":30}"#);
+    let t = request(&d, Role::App, "lock_timeout", r#"{"minutes":30}"#);
     assert!(ok(&t), "{t:?}");
     r.set(30 * 60 - 1);
     assert!(!d.lock_if_idle());
@@ -171,16 +166,11 @@ fn attack_agent_does_not_keep_the_vault_open_with_status_or_errors() {
     while t < 4 * H {
         r.set(t);
         assert!(matches!(
-            request(&d, Role::Agent, "estado", "{}"),
+            request(&d, Role::Agent, "status", "{}"),
             Response::Status { locked: false, .. }
         ));
         assert_eq!(
-            error(&request(
-                &d,
-                Role::Agent,
-                "executar",
-                &run_request("nao-existe")
-            )),
+            error(&request(&d, Role::Agent, "run", &run_request("nao-existe"))),
             Some(ResponseError::EntryNotFound)
         );
         // Unlocking with the vault already open (any password) is not use.
@@ -189,13 +179,13 @@ fn attack_agent_does_not_keep_the_vault_open_with_status_or_errors() {
             error(&request(
                 &d,
                 Role::Agent,
-                "detalhe",
-                r#"{"entrada":"t-aprov"}"#
+                "detail",
+                r#"{"entry":"t-aprov"}"#
             ))
             .is_some()
         );
         if t % 2400 == 0 && t / 2400 < 4 {
-            let m = set_level(&d, Role::App, "t-aprov", "livre", WRONG_PIN);
+            let m = set_level(&d, Role::App, "t-aprov", "free", WRONG_PIN);
             assert_eq!(error(&m), Some(ResponseError::WrongPin));
         }
         assert!(!d.lock_if_idle(), "t = {t}");
@@ -215,13 +205,13 @@ fn attack_periodic_agent_list_does_not_delay_the_lock() {
     let mut t = 0;
     while t < 4 * H {
         r.set(t);
-        let l = request(&d, Role::Agent, "lista", "{}");
+        let l = request(&d, Role::Agent, "list", "{}");
         assert!(matches!(l, Response::List(_)), "{l:?}");
         let s = request(
             &d,
             Role::Extension,
-            "sugerir",
-            r#"{"origem":"https://wp.acme.test"}"#,
+            "suggest",
+            r#"{"origin":"https://wp.acme.test"}"#,
         );
         assert!(
             !matches!(s, Response::Error(ResponseError::Locked)),
@@ -254,24 +244,24 @@ fn attack_f55_denied_ward_run_and_window_do_not_delay_the_lock() {
     let dir = Dir::new("negado55");
     let (d, r) = vault_with_clock(&dir);
     let totp = format!(
-        r#"{{"entrada":{{"nome":"t-totp","grupo":"clientex","ambiente":"dev","tipo":"login","campos":{{"url":"https://clientex.invalid/login","usuario":"admin","senha":"{}","totp_semente":"{}"}}}}}}"#,
+        r#"{{"entry":{{"name":"t-totp","group":"clientex","environment":"dev","type":"login","fields":{{"url":"https://clientex.invalid/login","username":"admin","password":"{}","totp_seed":"{}"}}}}}}"#,
         b64(SECRETS[1].as_bytes()),
         b64(b"JBSWY3DPEHPK3PXP")
     );
-    assert!(ok(&request(&d, Role::App, "salvar_entrada", &totp)));
+    assert!(ok(&request(&d, Role::App, "save_entry", &totp)));
     let mut t = 0;
     while t < 4 * H {
         r.set(t);
-        let (denied, seen) = with_window(&d, "negar", None, || {
-            let p = req(Role::Agent, "executar", &run_request("t-aprov")).unwrap();
+        let (denied, seen) = with_window(&d, "deny", None, || {
+            let p = req(Role::Agent, "run", &run_request("t-aprov")).unwrap();
             d.authorize_use(&wardd::approval::NoClient, &p)
         });
         assert_eq!(denied.err(), Some(ResponseError::Denied));
         assert_eq!(seen.len(), 1);
         // What the window asks for to show the request, and the open form.
-        let det = request(&d, Role::App, "detalhe", r#"{"entrada":"t-aprov"}"#);
+        let det = request(&d, Role::App, "detail", r#"{"entry":"t-aprov"}"#);
         assert!(matches!(det, Response::Detail(_)), "{det:?}");
-        let c = request(&d, Role::App, "totp", r#"{"entrada":"t-totp"}"#);
+        let c = request(&d, Role::App, "totp", r#"{"entry":"t-totp"}"#);
         assert!(matches!(c, Response::TotpCode { .. }), "{c:?}");
         assert!(!d.lock_if_idle(), "t = {t}");
         t += 600;
@@ -285,7 +275,7 @@ fn attack_f55_denied_ward_run_and_window_do_not_delay_the_lock() {
 
 fn run_request(entry: &str) -> String {
     format!(
-        r#"{{"entrada":"{entry}","argv":["{}"],"cwd":"{}","tipo_entrada":"pipe","ambiente":[]}}"#,
+        r#"{{"entry":"{entry}","argv":["{}"],"cwd":"{}","stdin_kind":"pipe","environment":[]}}"#,
         b64(b"true"),
         b64(b"/")
     )
@@ -335,7 +325,7 @@ fn attack_clock_that_goes_back_or_is_unreadable_locks() {
     r.set(6 * H);
     assert!(ok(&unlock(&d, PASSWORD)));
     r.unreadable();
-    let _ = request(&d, Role::App, "lista", "{}");
+    let _ = request(&d, Role::App, "list", "{}");
     r.set(6 * H + 1);
     assert!(d.lock_if_idle());
 }
@@ -662,7 +652,7 @@ fn attack_forged_signal_neither_unlocks_nor_holds() {
     std::thread::sleep(Duration::from_millis(300));
     assert!(d.is_locked(), "nada do barramento destrava");
     assert_eq!(
-        error(&request(&d, Role::Agent, "lista", "{}")),
+        error(&request(&d, Role::Agent, "list", "{}")),
         Some(ResponseError::Locked)
     );
 }
@@ -675,7 +665,7 @@ fn send(s: &mut UnixStream, json: &str) {
 }
 
 fn request_over(s: &mut UnixStream, op: &str, data: &str) -> Response {
-    send(s, &format!(r#"{{"v":1,"op":"{op}","dados":{data}}}"#));
+    send(s, &format!(r#"{{"v":2,"op":"{op}","data":{data}}}"#));
     let mut n = [0u8; 4];
     s.read_exact(&mut n).unwrap();
     let mut q = vec![0u8; u32::from_be_bytes(n) as usize];
@@ -746,14 +736,14 @@ fn v3_19_binary_locks_on_lock_session_of_the_fake_logind() {
     s.set_read_timeout(Some(Duration::from_secs(60))).unwrap();
     let r = request_over(
         &mut s,
-        "destravar",
-        &format!(r#"{{"senha":"{}"}}"#, b64(PASSWORD.as_bytes())),
+        "unlock",
+        &format!(r#"{{"password":"{}"}}"#, b64(PASSWORD.as_bytes())),
     );
     assert!(ok(&r), "{r:?}");
     logind.lock();
     let start = Instant::now();
     loop {
-        match request_over(&mut s, "estado", "{}") {
+        match request_over(&mut s, "status", "{}") {
             Response::Status { locked: true, .. } => break,
             Response::Status { .. } => {}
             other => panic!("{other:?}"),

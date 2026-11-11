@@ -45,7 +45,7 @@ fn vault(label: &str, pickup_ms: u64) -> (Daemon, Dir) {
 }
 
 fn agent_login(d: &Daemon, client: &dyn Client, name: &str) -> Response {
-    match req(Role::Agent, "login", &format!(r#"{{"entrada":"{name}"}}"#)) {
+    match req(Role::Agent, "login", &format!(r#"{{"entry":"{name}"}}"#)) {
         Ok(p) => d.serve_from(client, Role::Agent, p),
         Err(e) => Response::Error(e),
     }
@@ -53,7 +53,7 @@ fn agent_login(d: &Daemon, client: &dyn Client, name: &str) -> Response {
 
 /// The extension's await-login request: `Some((id, entry))` or `None` (empty wait).
 fn await_login(d: &Daemon) -> Option<(String, String)> {
-    match request(d, Role::Extension, "aguardar_login", "{}") {
+    match request(d, Role::Extension, "await_login", "{}") {
         Response::LoginRequest { id, entry } => {
             // S1: the request taken to the extension has no value of the entry at all.
             let q = encoded(
@@ -88,8 +88,8 @@ fn fill(d: &Daemon, id: &str, origin: &str) -> Response {
     request(
         d,
         Role::Extension,
-        "preencher_login",
-        &format!(r#"{{"id":"{id}","origem":"{origin}"}}"#),
+        "fill_login",
+        &format!(r#"{{"id":"{id}","origin":"{origin}"}}"#),
     )
 }
 
@@ -97,8 +97,8 @@ fn outcome(d: &Daemon, id: &str, r: &str) -> Response {
     request(
         d,
         Role::Extension,
-        "resultado_login",
-        &format!(r#"{{"id":"{id}","resultado":"{r}"}}"#),
+        "login_result",
+        &format!(r#"{{"id":"{id}","result":"{r}"}}"#),
     )
 }
 
@@ -133,7 +133,7 @@ fn v6_10_free_login_fills_on_the_right_origin_and_returns_ok() {
         let r = fill(&d, &id, ORIGIN);
         assert_eq!(error(&r), Some(ResponseError::Expired));
         no_value(&r);
-        assert!(ok(&outcome(&d, &id, "enviado")));
+        assert!(ok(&outcome(&d, &id, "submitted")));
         let r = t.join().unwrap();
         assert!(ok(&r), "{r:?}");
         // The agent's answer carries no credential (S1).
@@ -175,7 +175,7 @@ fn v6_3_v6_15_attack_different_origin_does_not_fill() {
             assert_eq!(error(&r), Some(ResponseError::Expired), "{tab}");
             no_value(&r);
             assert_eq!(
-                error(&outcome(&d, &id, "enviado")),
+                error(&outcome(&d, &id, "submitted")),
                 Some(ResponseError::Expired)
             );
             assert_eq!(
@@ -203,7 +203,7 @@ fn attack_forged_id_does_not_fill() {
             assert_eq!(error(&r), Some(ResponseError::Expired));
             no_value(&r);
             assert_eq!(
-                error(&outcome(&d, fake, "enviado")),
+                error(&outcome(&d, fake, "submitted")),
                 Some(ResponseError::Expired)
             );
         }
@@ -213,11 +213,11 @@ fn attack_forged_id_does_not_fill() {
         }
         // "Sent" before filling does not count.
         assert_eq!(
-            error(&outcome(&d, &id, "enviado")),
+            error(&outcome(&d, &id, "submitted")),
             Some(ResponseError::InvalidRequest)
         );
         assert!(matches!(fill(&d, &id, ORIGIN), Response::Fill { .. }));
-        assert!(ok(&outcome(&d, &id, "recusado")));
+        assert!(ok(&outcome(&d, &id, "refused")));
         assert_eq!(error(&t.join().unwrap()), Some(ResponseError::LoginRefused));
     });
 }
@@ -238,7 +238,7 @@ fn extension_outcomes() {
             assert!(ok(&outcome(&d, &id, r.name())));
             // Outcome again: changes nothing.
             assert_eq!(
-                error(&outcome(&d, &id, "enviado")),
+                error(&outcome(&d, &id, "submitted")),
                 Some(ResponseError::Expired)
             );
             assert_eq!(error(&t.join().unwrap()), Some(expected));
@@ -256,14 +256,14 @@ fn attack_agent_and_app_on_the_extension_operations() {
         let (id, _) = take(&d);
         for role in [Role::Agent, Role::App] {
             for (op, data) in [
-                ("aguardar_login", "{}".to_owned()),
+                ("await_login", "{}".to_owned()),
                 (
-                    "preencher_login",
-                    format!(r#"{{"id":"{id}","origem":"{ORIGIN}"}}"#),
+                    "fill_login",
+                    format!(r#"{{"id":"{id}","origin":"{ORIGIN}"}}"#),
                 ),
                 (
-                    "resultado_login",
-                    format!(r#"{{"id":"{id}","resultado":"enviado"}}"#),
+                    "login_result",
+                    format!(r#"{{"id":"{id}","result":"submitted"}}"#),
                 ),
             ] {
                 let r = request(&d, role, op, &data);
@@ -285,11 +285,11 @@ fn attack_agent_and_app_on_the_extension_operations() {
             }
         }
         // The extension does not ask for `login` (only the agent).
-        let r = request(&d, Role::Extension, "login", r#"{"entrada":"t-livre"}"#);
+        let r = request(&d, Role::Extension, "login", r#"{"entry":"t-livre"}"#);
         assert_eq!(error(&r), Some(ResponseError::Unauthorized));
         // The real request goes on intact.
         assert!(matches!(fill(&d, &id, ORIGIN), Response::Fill { .. }));
-        assert!(ok(&outcome(&d, &id, "enviado")));
+        assert!(ok(&outcome(&d, &id, "submitted")));
         assert!(ok(&t.join().unwrap()));
     });
 }
@@ -329,7 +329,7 @@ fn one_request_at_a_time() {
         let (id, _) = take(&d);
         let r = agent_login(&d, &NoClient, "t-livre");
         assert_eq!(error(&r), Some(ResponseError::Busy));
-        assert!(ok(&outcome(&d, &id, "falha")));
+        assert!(ok(&outcome(&d, &id, "failure")));
         assert_eq!(
             error(&t.join().unwrap()),
             Some(ResponseError::BrowserFailed)
@@ -345,7 +345,7 @@ fn lock_in_the_middle_kills_the_request() {
     std::thread::scope(|s| {
         let t = s.spawn(|| agent_login(&d, &NoClient, "t-livre"));
         let (id, _) = take(&d);
-        assert!(ok(&request(&d, Role::App, "travar", "{}")));
+        assert!(ok(&request(&d, Role::App, "lock", "{}")));
         assert_eq!(error(&t.join().unwrap()), Some(ResponseError::Locked));
         let r = fill(&d, &id, ORIGIN);
         assert!(error(&r).is_some(), "{r:?}");
@@ -434,8 +434,8 @@ fn answer(d: &Daemon, id: u64, decision: &str, pin: Option<&str>) -> Response {
     request(
         d,
         Role::App,
-        "responder_aprovacao",
-        &format!(r#"{{"pedido":{id},"decisao":"{decision}"{pin}}}"#),
+        "answer_approval",
+        &format!(r#"{{"request":{id},"decision":"{decision}"{pin}}}"#),
     )
 }
 
@@ -453,7 +453,7 @@ fn v6_11_with_approval_deny_does_not_reach_the_extension_and_allow_does() {
         assert_eq!(p.operation, Operation::Login);
         assert_eq!(p.entries, vec!["t-aprov".to_owned()]);
         assert_eq!(await_login(&d), None);
-        assert!(ok(&answer(&d, p.id, "negar", None)));
+        assert!(ok(&answer(&d, p.id, "deny", None)));
         assert_eq!(error(&t.join().unwrap()), Some(ResponseError::Denied));
         seen.lock().unwrap().push(await_login(&d));
     });
@@ -462,11 +462,11 @@ fn v6_11_with_approval_deny_does_not_reach_the_extension_and_allow_does() {
     std::thread::scope(|s| {
         let t = s.spawn(|| agent_login(&d, &NoClient, "t-aprov"));
         let p = rx.recv_timeout(Duration::from_secs(5)).expect("sem janela");
-        assert!(ok(&answer(&d, p.id, "uma_vez", Some(PIN))));
+        assert!(ok(&answer(&d, p.id, "once", Some(PIN))));
         let (id, entry) = take(&d);
         assert_eq!(entry, "t-aprov");
         assert!(matches!(fill(&d, &id, ORIGIN), Response::Fill { .. }));
-        assert!(ok(&outcome(&d, &id, "enviado")));
+        assert!(ok(&outcome(&d, &id, "submitted")));
         assert!(ok(&t.join().unwrap()));
     });
 }
@@ -481,13 +481,13 @@ fn http_login(d: &Daemon, name: &str, level: &str) {
 /// `login` entry at the given URL and level.
 fn login_at_url(d: &Daemon, name: &str, level: &str, url: &str) {
     let q = format!(
-        r#"{{"entrada":{{"nome":"{name}","grupo":"acme","ambiente":"prod","tipo":"login","campos":{{"url":"{url}","usuario":"wp_editor","senha":"{}"}}}}}}"#,
+        r#"{{"entry":{{"name":"{name}","group":"acme","environment":"prod","type":"login","fields":{{"url":"{url}","username":"wp_editor","password":"{}"}}}}}}"#,
         b64(SECRETS[3].as_bytes())
     );
-    let r = request(d, Role::App, "salvar_entrada", &q);
+    let r = request(d, Role::App, "save_entry", &q);
     assert!(ok(&r), "{r:?}");
     // A new entry already starts with "approval" (D50).
-    if level != "com-aprovacao" {
+    if level != "approval" {
         let r = set_level(d, Role::App, name, level, PIN);
         assert!(ok(&r), "{r:?}");
     }
@@ -516,7 +516,7 @@ fn full_http_login(d: &Daemon, name: &str) -> Response {
             fill(d, &id, "http://localhost:8081"),
             Response::Fill { .. }
         ));
-        assert!(ok(&outcome(d, &id, "enviado")));
+        assert!(ok(&outcome(d, &id, "submitted")));
         t.join().unwrap()
     })
 }
@@ -530,13 +530,13 @@ fn full_http_login(d: &Daemon, name: &str) -> Response {
 #[test]
 fn attack_login_http_free_only_with_confirmation() {
     let (d, _dir) = vault("login-http-livre", 2000);
-    http_login(&d, "h-livre", "livre");
+    http_login(&d, "h-livre", "free");
     // No app.
     let r = agent_login(&d, &NoClient, "h-livre");
     assert_eq!(error(&r), Some(ResponseError::ApprovalUnavailable));
     assert_eq!(await_login(&d), None);
     // Denied: the extension sees nothing.
-    let (r, seen) = with_window(&d, "negar", None, || agent_login(&d, &NoClient, "h-livre"));
+    let (r, seen) = with_window(&d, "deny", None, || agent_login(&d, &NoClient, "h-livre"));
     assert_eq!(error(&r), Some(ResponseError::Denied));
     assert_eq!(await_login(&d), None);
     let p = &seen[0];
@@ -546,13 +546,13 @@ fn attack_login_http_free_only_with_confirmation() {
     assert!(p.confirmation);
     // "Allow once" with a PIN on a confirmation: refused, and the request never arrives.
     let client = DropsLater(std::sync::atomic::AtomicU32::new(0));
-    let (r, _) = with_window(&d, "uma_vez", Some(PIN), || {
+    let (r, _) = with_window(&d, "once", Some(PIN), || {
         agent_login(&d, &client, "h-livre")
     });
     assert_eq!(error(&r), Some(ResponseError::Denied));
     assert_eq!(await_login(&d), None);
     // Confirmed: the request goes to the extension and fills on the right origin.
-    let (r, seen) = with_window(&d, "confirmar", None, || full_http_login(&d, "h-livre"));
+    let (r, seen) = with_window(&d, "confirm", None, || full_http_login(&d, "h-livre"));
     assert!(ok(&r), "{r:?}");
     assert_eq!(seen.len(), 1);
 }
@@ -563,11 +563,9 @@ fn attack_login_http_free_only_with_confirmation() {
 #[test]
 fn attack_login_http_approval_asks_pin_and_shows_the_origin() {
     let (d, _dir) = vault("login-http-aprov", 2000);
-    http_login(&d, "h-aprov", "com-aprovacao");
+    http_login(&d, "h-aprov", "approval");
     let client = DropsLater(std::sync::atomic::AtomicU32::new(0));
-    let (r, seen) = with_window(&d, "confirmar", None, || {
-        agent_login(&d, &client, "h-aprov")
-    });
+    let (r, seen) = with_window(&d, "confirm", None, || agent_login(&d, &client, "h-aprov"));
     assert_eq!(
         error(&r),
         Some(ResponseError::Denied),
@@ -577,11 +575,11 @@ fn attack_login_http_approval_asks_pin_and_shows_the_origin() {
     assert!(!seen[0].confirmation);
     assert_eq!(seen[0].origin, "http://localhost:8081");
     // Allow for 1 hour (with a PIN): it goes on.
-    let (r, seen) = with_window(&d, "uma_hora", Some(PIN), || full_http_login(&d, "h-aprov"));
+    let (r, seen) = with_window(&d, "one_hour", Some(PIN), || full_http_login(&d, "h-aprov"));
     assert!(ok(&r), "{r:?}");
     assert!(!seen[0].confirmation);
     // Within the release: still the origin confirmation (without a PIN).
-    let (r, seen) = with_window(&d, "confirmar", None, || full_http_login(&d, "h-aprov"));
+    let (r, seen) = with_window(&d, "confirm", None, || full_http_login(&d, "h-aprov"));
     assert!(ok(&r), "{r:?}");
     assert_eq!(seen.len(), 1);
     assert!(seen[0].confirmation);
@@ -612,11 +610,11 @@ fn attack_login_https_loopback_free_only_with_confirmation() {
     .enumerate()
     {
         let name = format!("l-livre-{i}");
-        login_at_url(&d, &name, "livre", url);
+        login_at_url(&d, &name, "free", url);
         let r = agent_login(&d, &NoClient, &name);
         assert_eq!(error(&r), Some(ResponseError::ApprovalUnavailable), "{url}");
         assert_eq!(await_login(&d), None, "{url}");
-        let (r, seen) = with_window(&d, "negar", None, || agent_login(&d, &NoClient, &name));
+        let (r, seen) = with_window(&d, "deny", None, || agent_login(&d, &NoClient, &name));
         assert_eq!(error(&r), Some(ResponseError::Denied), "{url}");
         assert_eq!(await_login(&d), None, "{url}");
         assert_eq!(seen.len(), 1, "{url}");
@@ -629,12 +627,12 @@ fn attack_login_https_loopback_free_only_with_confirmation() {
 #[test]
 fn login_https_free_without_window() {
     let (d, _dir) = vault("login-https-livre", 2000);
-    let (r, seen) = with_window(&d, "negar", None, || {
+    let (r, seen) = with_window(&d, "deny", None, || {
         std::thread::scope(|s| {
             let t = s.spawn(|| agent_login(&d, &NoClient, "t-livre"));
             let (id, _) = take(&d);
             assert!(matches!(fill(&d, &id, ORIGIN), Response::Fill { .. }));
-            assert!(ok(&outcome(&d, &id, "enviado")));
+            assert!(ok(&outcome(&d, &id, "submitted")));
             t.join().unwrap()
         })
     });

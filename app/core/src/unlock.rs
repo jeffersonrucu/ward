@@ -320,7 +320,7 @@ mod tests {
         rx.recv_timeout(Duration::from_secs(5)).unwrap();
         let i = request.info().unwrap();
         assert_eq!(i.entry, "acme-pg-aprovacao");
-        assert_eq!(i.operation, "executar");
+        assert_eq!(i.operation, "run");
         assert_eq!(i.command, r#""psql" "-c" "select count(*) from pedidos""#);
         assert_eq!(queue.size(), 0);
     }

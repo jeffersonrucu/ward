@@ -219,7 +219,7 @@ done
 
 # The first connection starts the wardd as the user (V9.7), with the peer uid 0 the CLI checks.
 r="$(as_1000 "$B/cliente" "$SOCK" estado)"
-check "V9.7 a primeira conexão sobe o wardd e ele responde" "$r" "resposta: estado"
+check "V9.7 a primeira conexão sobe o wardd e ele responde" "$r" "resposta: status"
 pid="$(systemctl show -p MainPID --value "wardd@$UID_T.service")"
 st="/proc/$pid/status"
 check "V9.7 wardd roda com o uid" "$(awk '/^Uid:/{print $2,$3,$4,$5}' "$st")" "$UID_T $UID_T $UID_T $UID_T"
@@ -257,7 +257,7 @@ check "V9.4 o gerente do usuário tem o LD_PRELOAD" "$(user_manager show-environ
 kill -9 "$pid"
 sleep 1.5
 r="$(as_1000 env "LD_PRELOAD=$B/libmarca.so" "$B/cliente" "$SOCK" estado 2>&1)"
-check "V9.4 depois de morto, a conexão sobe outro wardd" "$r" "resposta: estado"
+check "V9.4 depois de morto, a conexão sobe outro wardd" "$r" "resposta: status"
 pid="$(systemctl show -p MainPID --value "wardd@$UID_T.service")"
 app_env="$(tr '\0' '\n' <"/proc/$pid/environ" | cut -d= -f1 | sort | tr '\n' ' ')"
 lacks "V9.4 o wardd novo não tem LD_PRELOAD (environ lido como root: $app_env)" "$app_env" "LD_"
@@ -342,7 +342,7 @@ r="$(install_ward 2>&1)" || { printf '%s\n' "$r"; failed "reinstalar"; }
 ok "reinstalar por cima sai 0 (grupos já existentes conferem)"
 check "reinstalar mantém o socket ativo" "$(systemctl is-active "wardd@$UID_T.socket" || true)" "active"
 r="$(as_1000 "$B/cliente" "$SOCK" estado)"
-check "depois de reinstalar, o wardd responde" "$r" "resposta: estado"
+check "depois de reinstalar, o wardd responde" "$r" "resposta: status"
 
 # --- V9.10: uninstall ----------------------------------------------------------------
 r="$(make -s -C "$T/repo" uninstall 2>&1)" || { printf '%s\n' "$r"; failed "make uninstall"; }

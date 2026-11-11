@@ -118,27 +118,27 @@ pub struct CredentialDetail {
 pub fn field_label(id: &str) -> String {
     match id {
         "url" => "URL",
-        "usuario" => "Usuário",
-        "motor" => "Motor",
+        "username" => "Usuário",
+        "engine" => "Motor",
         "host" => "Host",
-        "porta" => "Porta",
-        "base" => "Base",
-        "tunel" => "Túnel SSH",
-        "salto" => "Salto",
-        "variavel" => "Variável",
+        "port" => "Porta",
+        "db_name" => "Base",
+        "tunnel" => "Túnel SSH",
+        "jump" => "Salto",
+        "variable" => "Variável",
         "access_key_id" => "Access key ID",
-        "regiao" => "Região",
+        "region" => "Região",
         "role_arn" => "Role ARN",
-        "seguranca" => "Segurança",
-        "protocolo" => "Protocolo",
-        "senha" => "Senha",
-        "totp_semente" => "Semente TOTP",
-        "chave_privada" => "Chave privada",
+        "security" => "Segurança",
+        "protocol" => "Protocolo",
+        "password" => "Senha",
+        "totp_seed" => "Semente TOTP",
+        "private_key" => "Chave privada",
         "passphrase" => "Passphrase",
         "token" => "Token",
         "secret_access_key" => "Secret access key",
         "session_token" => "Session token",
-        "texto" => "Texto",
+        "text" => "Texto",
         other => return other.to_owned(),
     }
     .to_owned()
@@ -182,48 +182,44 @@ fn summary(kind: EntryType, r: &ItemSummary) -> String {
     let has = |id: &str| r.secrets.iter().any(|s| s == id);
     match kind {
         EntryType::Database => {
-            let engine = c("motor").unwrap_or_default();
-            if c("tunel").is_some() {
-                join(&[
-                    engine,
-                    &connection(None, c("host"), c("porta")),
-                    "túnel SSH",
-                ])
+            let engine = c("engine").unwrap_or_default();
+            if c("tunnel").is_some() {
+                join(&[engine, &connection(None, c("host"), c("port")), "túnel SSH"])
             } else {
-                join(&[engine, &connection(c("usuario"), c("host"), c("porta"))])
+                join(&[engine, &connection(c("username"), c("host"), c("port"))])
             }
         }
         EntryType::Server | EntryType::FtpSftp => {
-            let access = if c("salto").is_some() {
+            let access = if c("jump").is_some() {
                 "salto"
-            } else if has("chave_privada") {
+            } else if has("private_key") {
                 "chave"
             } else {
                 "senha"
             };
-            let protocol = c("protocolo").unwrap_or_default();
+            let protocol = c("protocol").unwrap_or_default();
             join(&[
                 protocol,
-                &connection(c("usuario"), c("host"), c("porta")),
+                &connection(c("username"), c("host"), c("port")),
                 access,
             ])
         }
         EntryType::Smtp => join(&[
-            &connection(c("usuario"), c("host"), c("porta")),
-            c("seguranca").unwrap_or_default(),
+            &connection(c("username"), c("host"), c("port")),
+            c("security").unwrap_or_default(),
         ]),
         EntryType::Login => join(&[
-            c("usuario").unwrap_or_default(),
+            c("username").unwrap_or_default(),
             c("url").unwrap_or_default(),
-            if has("totp_semente") { "TOTP" } else { "" },
+            if has("totp_seed") { "TOTP" } else { "" },
         ]),
         EntryType::Api => join(&[
-            c("variavel").unwrap_or_default(),
+            c("variable").unwrap_or_default(),
             c("url").unwrap_or_default(),
         ]),
         EntryType::Aws => join(&[
             c("access_key_id").unwrap_or_default(),
-            c("regiao").unwrap_or_default(),
+            c("region").unwrap_or_default(),
         ]),
         EntryType::SecureNote => "texto protegido".to_owned(),
         EntryType::Generic => match (r.extras, r.attachments) {
@@ -258,15 +254,15 @@ impl CredentialItem {
             level: item.level?.name(),
             summary: summary(item.kind, r),
             address: item.address.clone(),
-            username: field(&r.fields, "usuario").map(str::to_owned),
+            username: field(&r.fields, "username").map(str::to_owned),
         })
     }
 }
 
 impl CredentialDetail {
     pub fn new(d: &EntryDetail) -> CredentialDetail {
-        let engine = field(&d.fields, "motor");
-        let protocol = field(&d.fields, "protocolo");
+        let engine = field(&d.fields, "engine");
+        let protocol = field(&d.fields, "protocol");
         let group = format!("grupo {}", d.group);
         let subtitle = join(&[
             &group,
@@ -286,7 +282,7 @@ impl CredentialDetail {
             fields: d
                 .fields
                 .iter()
-                .filter(|(k, _)| k != "motor" && k != "protocolo")
+                .filter(|(k, _)| k != "engine" && k != "protocol")
                 .map(|(k, v)| TextField {
                     id: k.clone(),
                     label: field_label(k),

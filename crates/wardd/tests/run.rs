@@ -118,7 +118,7 @@ fn unlock_through(w: &Wardd) {
     send(
         &mut s,
         &format!(
-            r#"{{"v":1,"op":"destravar","dados":{{"senha":"{}"}}}}"#,
+            r#"{{"v":2,"op":"unlock","data":{{"password":"{}"}}}}"#,
             b64(PASSWORD.as_bytes())
         ),
     );
@@ -139,14 +139,14 @@ fn run_request_with(entry: &str, argv: &[&str], env_vars: &[(&str, &str)], kind:
         .iter()
         .map(|(k, v)| {
             format!(
-                r#"{{"nome":"{}","valor":"{}"}}"#,
+                r#"{{"name":"{}","value":"{}"}}"#,
                 b64(k.as_bytes()),
                 b64(v.as_bytes())
             )
         })
         .collect();
     format!(
-        r#"{{"v":1,"op":"executar","dados":{{"entrada":"{entry}","argv":[{}],"cwd":"{}","tipo_entrada":"{kind}","ambiente":[{}]}}}}"#,
+        r#"{{"v":2,"op":"run","data":{{"entry":"{entry}","argv":[{}],"cwd":"{}","stdin_kind":"{kind}","environment":[{}]}}}}"#,
         argv.join(","),
         b64(b"/"),
         env_vars.join(",")
@@ -157,7 +157,7 @@ fn send_stdin(s: &mut UnixStream, data: &[u8]) {
     send(
         s,
         &format!(
-            r#"{{"v":1,"op":"entrada_padrao","dados":{{"dados":"{}"}}}}"#,
+            r#"{{"v":2,"op":"stdin","data":{{"data":"{}"}}}}"#,
             b64(data)
         ),
     );
@@ -229,21 +229,21 @@ fn vault(dev: &Dir) {
     let (d, _) = test_vault(dev);
     for q in [
         format!(
-            r#"{{"entrada":{{"nome":"t-nota","grupo":"clientex","ambiente":"dev","tipo":"nota-segura","campos":{{"texto":"{}"}}}}}}"#,
+            r#"{{"entry":{{"name":"t-nota","group":"clientex","environment":"dev","type":"secure-note","fields":{{"text":"{}"}}}}}}"#,
             b64(b"falso-nota-run-26")
         ),
         format!(
-            r#"{{"entrada":{{"nome":"t-gen","grupo":"clientex","ambiente":"stage","tipo":"generico","extras":[{{"nome":"REGIAO","valor":"{}","segredo":false}},{{"nome":"CHAVE_LICENCA","valor":"{}","segredo":true}}],"anexos":[{{"nome":"app.env","conteudo":"{}"}}]}}}}"#,
+            r#"{{"entry":{{"name":"t-gen","group":"clientex","environment":"stage","type":"generic","extras":[{{"name":"REGIAO","value":"{}","secret":false}},{{"name":"CHAVE_LICENCA","value":"{}","secret":true}}],"attachments":[{{"name":"app.env","content":"{}"}}]}}}}"#,
             b64(b"r-01"),
             b64(LICENSE.as_bytes()),
             b64(ATTACHMENT.as_bytes())
         ),
     ] {
-        let r = request(&d, Role::App, "salvar_entrada", &q);
+        let r = request(&d, Role::App, "save_entry", &q);
         assert!(ok(&r), "{r:?}");
     }
     for n in ["t-nota", "t-gen"] {
-        assert!(ok(&set_level(&d, Role::App, n, "livre", PIN)));
+        assert!(ok(&set_level(&d, Role::App, n, "free", PIN)));
     }
     d.lock();
 }
@@ -477,7 +477,7 @@ fn v4_delivery_mask_code_and_refusals() {
     let mut s = connect(&w);
     send(&mut s, &run_request("t-livre", &sh("sleep 30"), &[]));
     std::thread::sleep(Duration::from_millis(300));
-    send(&mut s, r#"{"v":1,"op":"lista","dados":{}}"#);
+    send(&mut s, r#"{"v":2,"op":"list","data":{}}"#);
     let t = Instant::now();
     let r = read_session(&mut s);
     assert_eq!(r.end, Some(137), "{r:?}");
@@ -910,7 +910,7 @@ fn f54_attack_ward_run_dies_on_lock() {
     assert!(alive(pid));
     let before = Instant::now();
     let mut t = connect(&w);
-    send(&mut t, r#"{"v":1,"op":"travar","dados":{}}"#);
+    send(&mut t, r#"{"v":2,"op":"lock","data":{}}"#);
     assert!(matches!(receive(&mut t), Some(Response::Ok)));
     let r = read_session(&mut s);
     assert!(
@@ -1005,7 +1005,7 @@ fn f55_attack_descendant_outside_group_dies_at_end_and_on_lock() {
     };
     assert!(alive(child));
     let mut t = connect(&w);
-    send(&mut t, r#"{"v":1,"op":"travar","dados":{}}"#);
+    send(&mut t, r#"{"v":2,"op":"lock","data":{}}"#);
     assert!(matches!(receive(&mut t), Some(Response::Ok)));
     let r = read_session(&mut s);
     assert_eq!(r.end, Some(137), "{r:?}");
@@ -1044,7 +1044,7 @@ fn f54b_attack_null_stdin_with_data_kills_the_command() {
     let mut s = connect(&w);
     send(
         &mut s,
-        &run_request_with("t-livre", &sh("cat; echo fim"), &[], "nula"),
+        &run_request_with("t-livre", &sh("cat; echo fim"), &[], "null"),
     );
     let r = read_session(&mut s);
     assert_eq!(r.end, Some(0), "{r:?}");
@@ -1053,7 +1053,7 @@ fn f54b_attack_null_stdin_with_data_kills_the_command() {
     let mut s = connect(&w);
     send(
         &mut s,
-        &run_request_with("t-livre", &sh("sleep 3; cat; echo fim"), &[], "nula"),
+        &run_request_with("t-livre", &sh("sleep 3; cat; echo fim"), &[], "null"),
     );
     let before = Instant::now();
     send_stdin(&mut s, b"falso-script-do-agente-54b\n");
@@ -1114,7 +1114,7 @@ fn f54b_attack_piped_script_on_approval() {
         (
             &["/bin/sh"],
             b"printf 'ENTREGUE:%s' \"${#WARD_PASS}\"\n",
-            "arquivo",
+            "file",
         ),
     ];
     for (n, (argv, data, kind)) in cases.iter().enumerate() {

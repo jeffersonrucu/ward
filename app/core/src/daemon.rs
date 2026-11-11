@@ -373,7 +373,9 @@ impl Drop for Transport {
 
 /// The reader thread: the only one that reads the socket. Leaves (and closes the
 /// connection) at the end of the connection, on a refused frame or on a response with no
-/// request.
+/// request. A refused frame of another protocol version (m2:DT8) still goes to the
+/// request waiting for it, so the client tells the version apart (m2:V4.16); nothing of
+/// it is shown.
 fn read_loop(
     mut s: UnixStream,
     tx: &SyncSender<Zeroizing<Vec<u8>>>,
@@ -391,6 +393,17 @@ fn read_loop(
                 if !waiting.swap(false, Ordering::AcqRel) || tx.send(q).is_err() {
                     break;
                 }
+            }
+            // m2:DT8: a server of another protocol version. The connection closes
+            // first (no later request, and so no password, can go out on it); then the
+            // waiting request gets the frame, only to read its version.
+            Err(_) if protocol::frame_version(&q).is_some_and(|v| v != protocol::VERSION) => {
+                open.store(false, Ordering::Release);
+                let _ = s.shutdown(Shutdown::Both);
+                if waiting.swap(false, Ordering::AcqRel) {
+                    let _ = tx.send(q);
+                }
+                break;
             }
             // Type of another role or forged frame.
             Err(_) => break,
@@ -645,7 +658,7 @@ mod tests {
         let l = fake_server(&dir);
         let mut d = DaemonSocket::system_at(dir.join(SOCKET));
         assert_eq!(d.status(), Err(AppError::DaemonUntrusted));
-        let r = Reference::new("acme-pg-dev", "senha").unwrap();
+        let r = Reference::new("acme-pg-dev", "password").unwrap();
         assert!(matches!(
             d.value_to_copy(&r),
             Err(AppError::DaemonUntrusted)
@@ -664,7 +677,7 @@ mod tests {
         assert!(d.connect_now().is_err());
         let l = fake_server(&dir);
         assert_eq!(d.status(), Err(AppError::ConnectionLost));
-        let r = Reference::new("acme-pg-dev", "senha").unwrap();
+        let r = Reference::new("acme-pg-dev", "password").unwrap();
         assert!(matches!(d.value_to_copy(&r), Err(AppError::ConnectionLost)));
         assert!(l.accept().is_err(), "reconectou depois da partida");
         #[cfg(feature = "test-mode")]
@@ -984,7 +997,7 @@ mod tests {
         let agent_list = protocol::encode_response(Role::Agent, &Response::List(vec![item]))
             .unwrap()
             .to_vec();
-        let forged = br#"{"v":1,"tipo":"estado","dados":{"travado":false,"cofre_existe":true,"papel":"app","x":1}}"#.to_vec();
+        let forged = br#"{"v":2,"type":"status","data":{"locked":false,"vault_exists":true,"role":"app","x":1}}"#.to_vec();
         for body in [agent_list, forged] {
             let (a, mut b) = UnixStream::pair().unwrap();
             let mut d = DaemonSocket::from_pair(a, Duration::from_secs(10));
@@ -995,6 +1008,39 @@ mod tests {
             });
             assert_eq!(client::list(&mut d).err(), Some(AppError::ConnectionLost));
             assert!(server.join().unwrap(), "o app não fechou a conexão");
+        }
+    }
+
+    /// Attack m2:V4.16 (S5, m2:DT8): a server that answers the first request (the
+    /// status) in another protocol version, v1 (the 0.1.4 daemon) or v3. The app gets the
+    /// version error, closes the connection and sends nothing more: the unlock that
+    /// would come next does not go out (the connection is gone).
+    #[test]
+    fn attack_m2_v4_16_server_of_another_version_closes_before_the_password() {
+        for body in [
+            &br#"{"v":1,"tipo":"estado","dados":{"travado":true,"cofre_existe":true,"papel":"app"}}"#[..],
+            br#"{"v":1,"tipo":"erro","dados":{"codigo":"versao_desconhecida","mensagem":"x"}}"#,
+            br#"{"v":3,"type":"status","data":{"locked":true,"vault_exists":true,"role":"app"}}"#,
+        ] {
+            let (a, mut b) = UnixStream::pair().unwrap();
+            let mut d = DaemonSocket::from_pair(a, Duration::from_secs(10));
+            let body = body.to_vec();
+            let server = std::thread::spawn(move || {
+                read_request(&mut b);
+                frame::write_frame(&mut b, &body, frame::RESPONSE_LIMIT).unwrap();
+                // Nothing more arrives: no unlock request, no password.
+                closed(&mut b)
+            });
+            assert_eq!(
+                client::status(&mut d),
+                Err(AppError::IncompatibleVersion)
+            );
+            assert!(server.join().unwrap(), "o app não fechou a conexão");
+            let password = crate::unlock::MasterPassword::new("falso-mestra-ward-01".into());
+            assert_eq!(
+                client::unlock(&mut d, &password.unwrap()),
+                Err(AppError::ConnectionLost)
+            );
         }
     }
 

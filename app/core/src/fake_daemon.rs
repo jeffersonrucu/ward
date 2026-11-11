@@ -593,7 +593,7 @@ impl FakeDaemon {
                 }
             }
             Request::Totp { entry } => match self.entry(&entry) {
-                Some(e) => match Target::Field("totp_semente".to_owned()).secret_in(e) {
+                Some(e) => match Target::Field("totp_seed".to_owned()).secret_in(e) {
                     Some(seed) => match Totp::from_seed(seed).and_then(|t| t.code_now()) {
                         Ok(c) => Response::TotpCode {
                             code: Zeroizing::new(c.code().to_owned()),
