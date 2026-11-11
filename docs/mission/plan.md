@@ -300,7 +300,7 @@ Contrato: V4.1–V4.24. Sequencial. A partir daqui o fio muda.
   valores em inglês e tabela com rótulos pt-BR: imprime `label()`, não `nome()`, achado da Fase 1), `ward-nm`, `ward-test-bridge`,
   `app/core` (com o `daemon_falso`), testes Rust que montam JSON à mão. Compilação:
   `make compile`. — V4.13, V4.16, V4.17, V4.18
-- [ ] Fase 52 — (achado da Fase 50: `dev/tests/socket_matrix.py`, a extensão e os `dev/tests/*.py` ainda falam v1) (achado da Fase 48: o front-end `app/src` e `app/core/src/level.rs` ainda mandam `com-aprovacao`/`livre`/`banco`/`nenhuma`, que o `from_name` recusa desde a Fase 48; trocar pelos nomes v5 aqui ou na 54; `grep -rnE '"(banco|servidor|nota-segura|generico|bloqueado|com-aprovacao|livre|nenhuma)"'`) Protocolo v2 em JS e Python: `extension/` (native messaging; motivos de `fillInPage` e códigos locais do service worker, que dividem `FAILURES`/`SAVE_FAILURES` do popup com os do daemon, achado da Fase 39),
+- [x] Fase 52 — (achado da Fase 50: `dev/tests/socket_matrix.py`, a extensão e os `dev/tests/*.py` ainda falam v1) (achado da Fase 48: o front-end `app/src` e `app/core/src/level.rs` ainda mandam `com-aprovacao`/`livre`/`banco`/`nenhuma`, que o `from_name` recusa desde a Fase 48; trocar pelos nomes v5 aqui ou na 54; `grep -rnE '"(banco|servidor|nota-segura|generico|bloqueado|com-aprovacao|livre|nenhuma)"'`) Protocolo v2 em JS e Python: `extension/` (native messaging; motivos de `fillInPage` e códigos locais do service worker, que dividem `FAILURES`/`SAVE_FAILURES` do popup com os do daemon, achado da Fase 39),
   `app/src/lib/bridge`, ponte de teste do front-end, `dev/tests/*.py` que falam com o
   socket ou com o `ward-nm` (`socket_matrix.py`, `socket_attack.py`, `nm.py`,
   `extension.py`, `login.py`, `cli.py`, `chrome_policy.py`, `open-app.py`,
@@ -374,7 +374,7 @@ limpeza de `target/` velho. Rajadas de processos com teto (`systemd-run --user
 -p TasksMax=…`). No fim de cada fase: serviços de teste parados e worktrees limpos.
 Depois das Fases 61–66 (e das correções), o orchestrator chama os três validadores.
 
-- [ ] Fase 60 — Gate e versão: `english-check` (com o autoteste) dentro do `make check`;
+- [ ] Fase 60 — (achado da Fase 52: o V4.18 do contrato lista `level` nas chaves do `ward list --json`, mas D50 tira o nível da lista do agente; as Fases 51–52 seguem D50; o contrato precisa tirar `level` do V4.18 antes da validação) Gate e versão: `english-check` (com o autoteste) dentro do `make check`;
   achados restantes no repositório inteiro corrigidos ou em `allow.txt` com motivo;
   versão 0.2.0 (DT19); comparação dos literais com `strings-0.1.4.txt` e lista da
   diferença no handoff; procura dos nomes antigos (V6.2). Compilação: `make compile`. —
