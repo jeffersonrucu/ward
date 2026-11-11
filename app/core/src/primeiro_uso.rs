@@ -248,9 +248,9 @@ mod testes {
         use super::*;
         use crate::AppError;
         use crate::area_transferencia::{AreaTransferencia, Copiador};
-        use crate::cliente;
-        use crate::daemon::{Daemon, EstadoCofre};
-        use crate::daemon_falso::DaemonFalso;
+        use crate::client;
+        use crate::daemon::{Daemon, VaultStatus};
+        use crate::fake_daemon::FakeDaemon;
         use crate::service::Service;
 
         type Quadros = Arc<Mutex<Vec<Vec<u8>>>>;
@@ -269,29 +269,29 @@ mod testes {
         }
 
         /// Daemon falso que guarda cada quadro recebido (o "daemon" é quem olha).
-        struct Espiao(DaemonFalso, Quadros);
+        struct Espiao(FakeDaemon, Quadros);
         impl Daemon for Espiao {
-            fn trocar(&mut self, pedido: &[u8]) -> Result<Zeroizing<Vec<u8>>, AppError> {
+            fn exchange(&mut self, pedido: &[u8]) -> Result<Zeroizing<Vec<u8>>, AppError> {
                 self.1.lock().unwrap().push(pedido.to_vec());
-                self.0.trocar(pedido)
+                self.0.exchange(pedido)
             }
         }
 
         fn servico() -> (Service<Espiao, SemArea>, Quadros) {
             let quadros = Arc::new(Mutex::new(Vec::new()));
-            let d = Espiao(DaemonFalso::sem_cofre(), Arc::clone(&quadros));
+            let d = Espiao(FakeDaemon::no_vault(), Arc::clone(&quadros));
             (Service::new(d, Copiador::novo(SemArea)), quadros)
         }
 
         #[test]
         fn cria_o_cofre_e_fica_destravado() {
             let (s, quadros) = servico();
-            assert_eq!(s.vault_status(), Ok(EstadoCofre::SemCofre));
+            assert_eq!(s.vault_status(), Ok(VaultStatus::NoVault));
             let r = s
                 .create_vault(novo(SENHA, SENHA, "135790", "135790"))
                 .unwrap();
             assert!(r.created && r.errors.is_empty());
-            assert_eq!(s.vault_status(), Ok(EstadoCofre::Destravado));
+            assert_eq!(s.vault_status(), Ok(VaultStatus::Unlocked));
             assert!(s.list_credentials().unwrap().is_empty());
             // Só senha e PIN vão ao daemon; as confirmações ficam no app.
             let q = quadros.lock().unwrap();
@@ -306,10 +306,10 @@ mod testes {
 
         #[test]
         fn daemon_guarda_so_o_hash_do_pin() {
-            let mut d = DaemonFalso::sem_cofre();
-            cliente::criar_cofre(&mut d, SENHA.as_bytes(), b"135790").unwrap();
-            assert!(d.pin_confere(b"135790"));
-            assert!(!d.pin_confere(b"135791"));
+            let mut d = FakeDaemon::no_vault();
+            client::create_vault(&mut d, SENHA.as_bytes(), b"135790").unwrap();
+            assert!(d.pin_matches(b"135790"));
+            assert!(!d.pin_matches(b"135791"));
         }
 
         #[test]
@@ -327,7 +327,7 @@ mod testes {
                 assert!(!r.created && !r.errors.is_empty());
             }
             assert!(quadros.lock().unwrap().is_empty());
-            assert_eq!(s.vault_status(), Ok(EstadoCofre::SemCofre));
+            assert_eq!(s.vault_status(), Ok(VaultStatus::NoVault));
         }
 
         #[test]
@@ -342,7 +342,7 @@ mod testes {
                 s.create_vault(novo(SENHA, SENHA, "2468", "2468")),
                 Err(AppError::VaultAlreadyExists)
             );
-            let cheio = Service::new(DaemonFalso::cheio(), Copiador::novo(SemArea));
+            let cheio = Service::new(FakeDaemon::full(), Copiador::novo(SemArea));
             assert_eq!(
                 cheio.create_vault(novo(SENHA, SENHA, "2468", "2468")),
                 Err(AppError::VaultAlreadyExists)

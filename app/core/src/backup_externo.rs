@@ -183,12 +183,12 @@ mod testes {
     fn ataque_resposta_pendrives_forjada_e_recusada() {
         use zeroize::Zeroizing;
 
-        use crate::cliente;
+        use crate::client;
         use crate::daemon::Daemon;
 
         struct Resposta1(Vec<u8>);
         impl Daemon for Resposta1 {
-            fn trocar(&mut self, _pedido: &[u8]) -> Result<Zeroizing<Vec<u8>>, AppError> {
+            fn exchange(&mut self, _pedido: &[u8]) -> Result<Zeroizing<Vec<u8>>, AppError> {
                 Ok(Zeroizing::new(self.0.clone()))
             }
         }
@@ -196,7 +196,7 @@ mod testes {
             format!(r#"{{"v":1,"tipo":"pendrives","dados":{{"itens":[{corpo}]}}}}"#).into_bytes()
         };
         let ok = item(r#"{"uuid":"7C1E-42A9","rotulo":"WARD","montado":true}"#);
-        assert_eq!(cliente::pendrives(&mut Resposta1(ok)).unwrap().len(), 1);
+        assert_eq!(client::usb_drives(&mut Resposta1(ok)).unwrap().len(), 1);
         let muitos = (0..=ward_core::protocolo::MAX_PENDRIVES)
             .map(|i| format!(r#"{{"uuid":"{i:04X}","rotulo":"x","montado":true}}"#))
             .collect::<Vec<_>>()
@@ -215,7 +215,7 @@ mod testes {
             item(&muitos),
         ] {
             assert_eq!(
-                cliente::pendrives(&mut Resposta1(mau.clone())).unwrap_err(),
+                client::usb_drives(&mut Resposta1(mau.clone())).unwrap_err(),
                 AppError::InvalidResponse,
                 "{}",
                 String::from_utf8_lossy(&mau)
@@ -231,7 +231,7 @@ mod testes {
         use super::super::*;
         use crate::area_transferencia::{AreaTransferencia, Copiador};
         use crate::daemon::Daemon;
-        use crate::daemon_falso::DaemonFalso;
+        use crate::fake_daemon::FakeDaemon;
         use crate::nivel::Pin;
         use crate::service::Service;
 
@@ -252,17 +252,17 @@ mod testes {
 
         /// Daemon falso que guarda cada quadro recebido e deixa ver a configuração.
         #[derive(Clone)]
-        struct Espiao(Arc<Mutex<DaemonFalso>>, Quadros);
+        struct Espiao(Arc<Mutex<FakeDaemon>>, Quadros);
         impl Daemon for Espiao {
-            fn trocar(&mut self, pedido: &[u8]) -> Result<Zeroizing<Vec<u8>>, AppError> {
+            fn exchange(&mut self, pedido: &[u8]) -> Result<Zeroizing<Vec<u8>>, AppError> {
                 self.1.lock().unwrap().push(pedido.to_vec());
-                self.0.lock().unwrap().trocar(pedido)
+                self.0.lock().unwrap().exchange(pedido)
             }
         }
 
-        fn servico(falso: DaemonFalso) -> (Service<Espiao, SemArea>, Espiao) {
+        fn servico(falso: FakeDaemon) -> (Service<Espiao, SemArea>, Espiao) {
             let e = Espiao(
-                Arc::new(Mutex::new(falso.sem_espera())),
+                Arc::new(Mutex::new(falso.without_wait())),
                 Arc::new(Mutex::new(Vec::new())),
             );
             (Service::new(e.clone(), Copiador::novo(SemArea)), e)
@@ -284,7 +284,7 @@ mod testes {
 
         #[test]
         fn v7_9_escolher_ligar_e_desligar() {
-            let (s, e) = servico(DaemonFalso::cheio());
+            let (s, e) = servico(FakeDaemon::full());
             // Desligado por padrão (D17), sem pendrive escolhido.
             let b = s.external_backup().unwrap();
             assert!(!b.ligado && b.uuid.is_none() && b.pendrive.is_none());
@@ -321,7 +321,7 @@ mod testes {
 
         #[test]
         fn ataque_uuid_forjado_pela_interface_nao_chega_ao_daemon() {
-            let (s, e) = servico(DaemonFalso::cheio());
+            let (s, e) = servico(FakeDaemon::full());
             // Fora do formato: nem um quadro.
             for ruim in [
                 "../etc",
@@ -359,11 +359,11 @@ mod testes {
 
         #[test]
         fn ataque_pendrive_clonado_com_uuid_repetido_nao_e_escolhido() {
-            let mut lista = crate::daemon_falso::pendrives_de_teste();
+            let mut lista = crate::fake_daemon::test_usb_drives();
             let mut clone = lista[0].clone();
             clone.uuid = clone.uuid.to_lowercase();
             lista.push(clone);
-            let (s, e) = servico(DaemonFalso::cheio().com_pendrives(Some(lista)));
+            let (s, e) = servico(FakeDaemon::full().with_usb_drives(Some(lista)));
             assert_eq!(
                 s.set_external_backup(true, Some("7C1E-42A9")),
                 Err(AppError::UsbDriveNotConnected)
@@ -373,7 +373,7 @@ mod testes {
 
         #[test]
         fn sem_udisks_nao_liga_e_o_cartao_diz_que_nao_viu() {
-            let (s, e) = servico(DaemonFalso::backup_externo_ligado().com_pendrives(None));
+            let (s, e) = servico(FakeDaemon::external_backup_enabled().with_usb_drives(None));
             assert_eq!(s.list_usb_drives(), Err(AppError::UsbDrivesUnavailable));
             let b = s.external_backup().unwrap();
             assert!(b.ligado && !b.pendrives_visiveis && b.pendrive.is_none());
@@ -388,7 +388,7 @@ mod testes {
 
         #[test]
         fn ataque_rotulo_do_pendrive_chega_neutralizado() {
-            let (s, _) = servico(DaemonFalso::cheio());
+            let (s, _) = servico(FakeDaemon::full());
             let lista = s.list_usb_drives().unwrap();
             let estranho = lista.iter().find(|p| p.uuid.starts_with("a1b2")).unwrap();
             assert!(
@@ -410,7 +410,7 @@ mod testes {
 
         #[test]
         fn travado_nao_le_nem_muda() {
-            let (s, e) = servico(DaemonFalso::cheio());
+            let (s, e) = servico(FakeDaemon::full());
             // Cinco PINs errados travam o falso (S9).
             for _ in 0..5 {
                 let _ = s.set_level("acme-pg-dev", "livre", Pin::novo("0000".into()).unwrap());

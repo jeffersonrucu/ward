@@ -266,9 +266,9 @@ mod testes {
 
         use super::*;
         use crate::area_transferencia::{AreaTransferencia, Copiador};
-        use crate::daemon::{Daemon, EstadoCofre};
-        use crate::daemon_falso::{DaemonFalso, SEGREDOS};
+        use crate::daemon::{Daemon, VaultStatus};
         use crate::destrave::SenhaMestra;
+        use crate::fake_daemon::{FakeDaemon, SECRETS};
         use crate::service::Service;
 
         type Quadros = Arc<Mutex<Vec<Vec<u8>>>>;
@@ -287,17 +287,17 @@ mod testes {
         }
 
         /// Daemon falso que guarda cada quadro recebido (o "daemon" é quem olha).
-        struct Espiao(DaemonFalso, Quadros);
+        struct Espiao(FakeDaemon, Quadros);
         impl Daemon for Espiao {
-            fn trocar(&mut self, pedido: &[u8]) -> Result<Zeroizing<Vec<u8>>, AppError> {
+            fn exchange(&mut self, pedido: &[u8]) -> Result<Zeroizing<Vec<u8>>, AppError> {
                 self.1.lock().unwrap().push(pedido.to_vec());
-                self.0.trocar(pedido)
+                self.0.exchange(pedido)
             }
         }
 
         fn servico() -> (Service<Espiao, SemArea>, Quadros) {
             let quadros = Arc::new(Mutex::new(Vec::new()));
-            let d = Espiao(DaemonFalso::cheio().sem_espera(), Arc::clone(&quadros));
+            let d = Espiao(FakeDaemon::full().without_wait(), Arc::clone(&quadros));
             (Service::new(d, Copiador::novo(SemArea)), quadros)
         }
 
@@ -305,7 +305,7 @@ mod testes {
             for agulha in ["135790", "2468", "falso", "argon2", "$m="]
                 .iter()
                 .copied()
-                .chain(SEGREDOS.iter().map(|s| &s[..s.len().min(12)]))
+                .chain(SECRETS.iter().map(|s| &s[..s.len().min(12)]))
             {
                 assert!(!json.contains(agulha), "{agulha} em {json}");
             }
@@ -398,7 +398,7 @@ mod testes {
                     Err(AppError::WrongPin)
                 );
             }
-            assert_eq!(s.vault_status(), Ok(EstadoCofre::Travado));
+            assert_eq!(s.vault_status(), Ok(VaultStatus::Locked));
             assert_eq!(
                 s.change_pin(pin("135790", "2468", "2468")),
                 Err(AppError::Locked)
@@ -413,14 +413,14 @@ mod testes {
                 s.change_master_password(senha("falso-errada-mestra-09", NOVA, NOVA)),
                 Err(AppError::WrongPassword)
             );
-            assert_eq!(s.vault_status(), Ok(EstadoCofre::Destravado));
+            assert_eq!(s.vault_status(), Ok(VaultStatus::Unlocked));
             let r = s.change_master_password(senha(SENHA, NOVA, NOVA)).unwrap();
             assert!(r.trocado);
             // Trava (5 PINs errados) e confere qual senha destrava.
             for _ in 0..5 {
                 let _ = s.change_pin(pin("000000", "2468", "2468"));
             }
-            assert_eq!(s.vault_status(), Ok(EstadoCofre::Travado));
+            assert_eq!(s.vault_status(), Ok(VaultStatus::Locked));
             assert_eq!(s.unlock(senha_mestra(SENHA)), Err(AppError::WrongPassword));
             assert!(s.unlock(senha_mestra(NOVA)).is_ok());
         }

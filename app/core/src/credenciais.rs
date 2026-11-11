@@ -295,17 +295,17 @@ impl DetalheCredencial {
 mod testes {
     use super::*;
     use crate::daemon::Daemon;
-    use crate::daemon_falso::{DaemonFalso, SEGREDOS};
+    use crate::fake_daemon::{FakeDaemon, SECRETS};
     use ward_core::entry::{AccessLevel, DataDraft, Draft, Secret};
     use ward_core::protocolo::{self, Papel, Pedido, Resposta};
 
-    fn trocar(d: &mut DaemonFalso, pedido: &Pedido) -> Resposta {
+    fn trocar(d: &mut FakeDaemon, pedido: &Pedido) -> Resposta {
         let q = protocolo::codificar_pedido(Papel::App, pedido).unwrap();
-        let r = d.trocar(&q).unwrap();
+        let r = d.exchange(&q).unwrap();
         protocolo::decodificar_resposta(Papel::App, &r).unwrap()
     }
 
-    fn detalhe(d: &mut DaemonFalso, nome: &str) -> DetalheCredencial {
+    fn detalhe(d: &mut FakeDaemon, nome: &str) -> DetalheCredencial {
         let p = Pedido::Detalhe {
             entrada: nome.to_owned(),
         };
@@ -327,7 +327,7 @@ mod testes {
     /// rodapé). O JSON que vai à interface não tem segredo.
     #[test]
     fn d65_datas_no_detalhe_da_tela() {
-        let mut d = DaemonFalso::cheio();
+        let mut d = FakeDaemon::full();
         let sem = detalhe(&mut d, "acme-pg-dev");
         assert_eq!((sem.criada_em, sem.alterada_em), (None, None));
         let json = serde_json::to_string(&sem).unwrap();
@@ -349,7 +349,7 @@ mod testes {
                 data: DataDraft::Login {
                     url: "https://clientex.invalid/login".to_owned(),
                     username: "admin".to_owned(),
-                    password: Some(Secret::from_text(SEGREDOS[0].to_owned())),
+                    password: Some(Secret::from_text(SECRETS[0].to_owned())),
                     totp_seed: None,
                 },
                 extras: Vec::new(),
@@ -363,7 +363,7 @@ mod testes {
         assert_eq!(x.alterada_em, Some(criada));
         let json = serde_json::to_string(&x).unwrap();
         assert!(json.contains(&format!(r#""criada_em":{criada}"#)), "{json}");
-        for s in SEGREDOS {
+        for s in SECRETS {
             assert!(!json.contains(s));
         }
         // Mudar o nível (com o PIN de teste) só mexe na alteração.

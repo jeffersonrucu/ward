@@ -30,7 +30,7 @@ use ward_core::protocolo::PedidoDeDestrave;
 use zeroize::Zeroizing;
 
 use crate::AppError;
-use crate::daemon::FilaAvisos;
+use crate::daemon::NoticeQueue;
 
 /// Quanto o pedido do agente espera o destrave (D16; o `PRAZO_DESTRAVE` do `wardd`).
 pub const PRAZO_PEDIDO: Duration = Duration::from_secs(120);
@@ -202,7 +202,7 @@ impl PedidoPendente {
 /// `estado_do_cofre`). Os avisos de aprovação ficam na fila para a janela de aprovação
 /// (Fase 36).
 pub fn vigiar(
-    fila: Arc<FilaAvisos>,
+    fila: Arc<NoticeQueue>,
     pedido: Arc<PedidoPendente>,
     ao_chegar: impl Fn() + Send + 'static,
 ) -> Result<(), AppError> {
@@ -210,7 +210,7 @@ pub fn vigiar(
         .name("ward-app-destrave".into())
         .spawn(move || {
             loop {
-                if let Some(p) = fila.esperar_destrave(Duration::from_secs(3600)) {
+                if let Some(p) = fila.wait_unlock(Duration::from_secs(3600)) {
                     pedido.marcar(&p);
                     ao_chegar();
                 }
@@ -223,7 +223,7 @@ pub fn vigiar(
 #[cfg(test)]
 mod testes {
     use super::*;
-    use crate::daemon::Aviso;
+    use crate::daemon::Notice;
 
     #[test]
     fn ataque_senha_fora_do_formato_e_recusada_sem_eco() {
@@ -264,12 +264,12 @@ mod testes {
     }
 
     fn aviso(entrada: &str, restante: u64) -> PedidoDeDestrave {
-        match Aviso::destrave_de_teste(entrada) {
-            Aviso::Destrave(mut p) => {
+        match Notice::test_unlock(entrada) {
+            Notice::Unlock(mut p) => {
                 p.restante = restante;
                 p
             }
-            Aviso::Aprovacao(_) => unreachable!(),
+            Notice::Approval(_) => unreachable!(),
         }
     }
 
@@ -300,20 +300,20 @@ mod testes {
 
     #[test]
     fn vigia_tira_o_destrave_e_marca_o_pedido() {
-        let fila = Arc::new(FilaAvisos::default());
+        let fila = Arc::new(NoticeQueue::default());
         let pedido = Arc::new(PedidoPendente::default());
         let (tx, rx) = std::sync::mpsc::channel();
         vigiar(fila.clone(), pedido.clone(), move || {
             let _ = tx.send(());
         })
         .unwrap();
-        fila.simular(Aviso::destrave_de_teste("acme-pg-aprovacao"));
+        fila.simulate(Notice::test_unlock("acme-pg-aprovacao"));
         rx.recv_timeout(Duration::from_secs(5)).unwrap();
         let i = pedido.info().unwrap();
         assert_eq!(i.entrada, "acme-pg-aprovacao");
         assert_eq!(i.operacao, "executar");
         assert_eq!(i.comando, r#""psql" "-c" "select count(*) from pedidos""#);
-        assert_eq!(fila.tamanho(), 0);
+        assert_eq!(fila.size(), 0);
     }
 
     /// Fase 39a (V5.8): o prazo é o que o daemon mandou (o app que assinou depois não

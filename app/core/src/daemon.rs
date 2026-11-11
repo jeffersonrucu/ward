@@ -1,42 +1,47 @@
-//! Cliente do socket do `wardd` (lado Rust do app; a webview nunca fala com o socket).
+//! Client of the `wardd` socket (Rust side of the app; the webview never talks to the
+//! socket).
 //!
-//! Antes de mandar qualquer byte, o app confere o servidor pela mesma regra da CLI
-//! (`ward_platform::connect_server`, S5, D46): o socket é
-//! `/run/ward/<uid>/wardd.sock`, toda pasta do caminho é do root, sem escrita para grupo
-//! e outros e sem link, o socket é do próprio uid e 0600, e o `SO_PEERCRED` do par tem
-//! uid 0 (quem fez o `listen` foi o systemd do sistema). Só no build de teste
-//! (`test-mode`, D7) o socket é o do daemon de teste, em `/run/user/<uid>/ward-teste/`
-//! (pasta 0700 do usuário e par do mesmo uid); sem a feature, esse caminho e essa
-//! exceção nem existem no binário, e nenhuma variável de ambiente escolhe o caminho.
+//! Before sending any byte, the app checks the server with the same rule as the CLI
+//! (`ward_platform::connect_server`, S5, D46): the socket is
+//! `/run/ward/<uid>/wardd.sock`, every folder of the path belongs to root, with no write
+//! for group and others and no link, the socket belongs to the uid itself and is 0600,
+//! and the peer's `SO_PEERCRED` has uid 0 (whoever did the `listen` was the system
+//! systemd). Only in the test build (`test-mode`, D7) the socket is the test daemon's,
+//! in its folder under `/run/user/<uid>/` (the user's 0700 folder and a peer with the same
+//! uid); without the feature, that path and that exception do not even exist in the
+//! binary, and no environment variable picks the path.
 //!
-//! O protocolo (Fase 20) fica em [`crate::cliente`]: lá o pedido vira o corpo do
-//! quadro e a resposta é lida no papel app. Este módulo é só o transporte.
+//! The protocol (Phase 20) lives in [`crate::client`]: there the request becomes the
+//! frame body and the response is read in the app role. This module is only the
+//! transport.
 //!
-//! Transporte (D65 a, Fase 23a): `escrever_quadro`/`ler_quadro` na conexão única.
-//! - Uma thread leitora é a única que lê o socket. O que chega é lido no papel app
-//!   (`decodificar_resposta(Papel::App, …)`) e separado:
-//!   - `pedido_de_aprovacao` e `pedido_de_destrave` são **avisos** e vão para a
-//!     [`FilaAvisos`] (no máximo [`MAX_AVISOS`]), nunca no lugar de uma resposta. Com a
-//!     fila cheia, o aviso novo é descartado com uma linha de log sem conteúdo (o
-//!     pedido do agente expira e nega no daemon, S10);
-//!   - qualquer outro tipo é a resposta de quem pediu;
-//!   - resposta sem pedido em curso, quadro acima de `LIMITE_RESPOSTA` ou quadro que
-//!     não decodifica no papel app (inclusive um tipo do papel agente) **fecham a
-//!     conexão**: o app não tenta adivinhar o que o daemon quis dizer.
-//! - Um pedido por vez, sob mutex: o protocolo não tem id de pedido e o daemon
-//!   responde na ordem. A resposta tem [`PRAZO_RESPOSTA`] (destravar com a espera de
-//!   D20 mais o Argon2, D62); sem ela, a conexão fecha (uma resposta atrasada seria
-//!   "resposta sem pedido").
-//! - Os quadros ficam em `Zeroizing` (o `copiar` traz segredo) e o limite é o de
-//!   `ward_core::limits`.
+//! Transport (D65 a, Phase 23a): frame write and frame read on the single
+//! connection.
+//! - A reader thread is the only one that reads the socket. What arrives is read in the
+//!   app role (the strict response decoder) and sorted:
+//!   - the approval request and the unlock request are **notices** and go to the
+//!     [`NoticeQueue`] (at most [`MAX_NOTICES`]), never in place of a response. With the
+//!     queue full, the new notice is dropped with a log line without content (the
+//!     agent's request expires and is denied in the daemon, S10);
+//!   - any other type is the response of whoever asked;
+//!   - a response with no request in flight, a frame above the response frame limit or a frame
+//!     that does not decode in the app role (including an agent role type) **close the
+//!     connection**: the app does not try to guess what the daemon meant.
+//! - One request at a time, under a mutex: the protocol has no request id and the daemon
+//!   answers in order. The response has [`RESPONSE_TIMEOUT`] (unlock with the D20 wait
+//!   plus Argon2, D62); without it, the connection closes (a late response would be a
+//!   "response with no request").
+//! - The frames stay in `Zeroizing` (the copy brings a secret) and the limit is the one
+//!   of `ward_core::limits`.
 //!
-//! Conexão única (D47, Fase 29a): o app setgid conecta **uma vez**, antes do GTK, com o
-//! egid do grupo `ward-app` (o papel vem dele), e depois larga o grupo
-//! ([`crate::partida`]). Uma conexão nova depois disso teria o gid real e cairia no
-//! papel agente; por isso o [`DaemonSocket`] da partida (e o da ponte de teste) nunca
-//! reconecta: sem a conexão, os pedidos respondem [`AppError::ConnectionLost`] e o app
-//! se executa de novo. O [`DaemonSocket::padrao`] sem [`DaemonSocket::conectar_agora`]
-//! (só os testes) conecta no primeiro uso e, se a conexão cair, no uso seguinte.
+//! Single connection (D47, Phase 29a): the setgid app connects **once**, before GTK,
+//! with the egid of the `ward-app` group (the role comes from it), and then drops the
+//! group (the startup module). A new connection after that would have the real gid and
+//! fall into the agent role; that is why the startup's [`DaemonSocket`] (and the test
+//! bridge's) never reconnects: without the connection, the requests answer
+//! [`AppError::ConnectionLost`] and the app executes itself again. The
+//! [`DaemonSocket::standard`] without [`DaemonSocket::connect_now`] (tests only)
+//! connects on first use and, if the connection drops, on the next use.
 
 use std::collections::VecDeque;
 use std::net::Shutdown;
@@ -55,75 +60,75 @@ use zeroize::Zeroizing;
 
 use crate::AppError;
 
-/// Nome do socket (o mesmo do `wardd`).
+/// Socket name (the same as `wardd`'s).
 pub const SOCKET: &str = "wardd.sock";
 
-/// Prazo de cada escrita no socket.
-const PRAZO_ESCRITA: Duration = Duration::from_secs(10);
+/// Timeout of each write to the socket.
+const WRITE_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Prazo da resposta de um pedido (D65 a): o destravar espera até 2 min pela trava de
-/// D20 e ainda roda o Argon2 (D62).
-pub const PRAZO_RESPOSTA: Duration = Duration::from_secs(130);
+/// Timeout of a request's response (D65 a): unlock waits up to 2 min for the D20 lock
+/// and still runs Argon2 (D62).
+pub const RESPONSE_TIMEOUT: Duration = Duration::from_secs(130);
 
-/// Maior número de avisos esperando na fila (D65 a).
-pub const MAX_AVISOS: usize = 16;
+/// Largest number of notices waiting in the queue (D65 a).
+pub const MAX_NOTICES: usize = 16;
 
-/// Estado do cofre como a interface vê.
+/// Vault status as the interface sees it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum EstadoCofre {
-    SemCofre,
-    Travado,
-    Destravado,
+pub enum VaultStatus {
+    NoVault,
+    Locked,
+    Unlocked,
 }
 
-impl EstadoCofre {
-    pub fn codigo(self) -> &'static str {
+impl VaultStatus {
+    pub fn code(self) -> &'static str {
         match self {
-            EstadoCofre::SemCofre => "sem-cofre",
-            EstadoCofre::Travado => "travado",
-            EstadoCofre::Destravado => "destravado",
+            VaultStatus::NoVault => "sem-cofre",
+            VaultStatus::Locked => "travado",
+            VaultStatus::Unlocked => "destravado",
         }
     }
 }
 
-/// Transporte até o daemon. Recebe o corpo de um pedido já codificado no papel app e
-/// devolve o corpo da resposta, ainda não lido (quem lê é [`crate::cliente`], com a
-/// leitura estrita do protocolo). Os testes e a ponte de teste trocam o socket pelo
-/// [`crate::daemon_falso`].
+/// Transport to the daemon. Receives the body of a request already encoded in the app
+/// role and returns the response body, not read yet (the reader is [`crate::client`],
+/// with the protocol's strict reading). The tests and the test bridge swap the socket
+/// for the [`crate::fake_daemon`].
 pub trait Daemon: Send {
-    fn trocar(&mut self, pedido: &[u8]) -> Result<Zeroizing<Vec<u8>>, AppError>;
+    fn exchange(&mut self, request: &[u8]) -> Result<Zeroizing<Vec<u8>>, AppError>;
 }
 
-/// O que o daemon manda sem pedido, só na conexão do papel app (D65 a). Nenhum dos dois
-/// tem segredo: o texto do pedido (`comando`, `cadeia`, `entrada`) é exibido pelas
-/// Fases 36 e 39a com D51.
+/// What the daemon sends with no request, only on the app role connection (D65 a).
+/// Neither has a secret: the request text (command, chain, entry) is displayed by
+/// Phases 36 and 39a with D51.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Aviso {
-    /// Um uso do agente espera aprovação (Fase 36).
-    Aprovacao(PedidoDeAprovacao),
-    /// Um uso do agente espera o destrave (Fases 31 e 39a).
-    Destrave(PedidoDeDestrave),
+pub enum Notice {
+    /// An agent use waits for approval (Phase 36).
+    Approval(PedidoDeAprovacao),
+    /// An agent use waits for the unlock (Phases 31 and 39a).
+    Unlock(PedidoDeDestrave),
 }
 
-impl Aviso {
-    /// Só nos testes e na ponte de teste: um `pedido_de_destrave` com dados falsos (D15).
+impl Notice {
+    /// Tests and test bridge only: an unlock request with fake data (D15).
     #[cfg(any(test, feature = "test-mode"))]
-    pub fn destrave_de_teste(entrada: &str) -> Aviso {
-        Aviso::Destrave(PedidoDeDestrave {
-            entrada: entrada.to_owned(),
+    pub fn test_unlock(entry: &str) -> Notice {
+        Notice::Unlock(PedidoDeDestrave {
+            entrada: entry.to_owned(),
             operacao: protocolo::Operacao::Executar,
             comando: r#""psql" "-c" "select count(*) from pedidos""#.to_owned(),
             restante: 120,
         })
     }
 
-    /// Só nos testes e na ponte de teste (Fase 39a, D51): um `pedido_de_destrave` com
-    /// entrada e comando crus, como um daemon que não formatou ou um quadro forjado:
-    /// `ESC`, bidi, largura zero, aspas e tag HTML. A tela tem de mostrar tudo como
-    /// escape visível e texto, nunca como HTML.
+    /// Tests and test bridge only (Phase 39a, D51): an unlock request with a raw entry
+    /// and command, like a daemon that did not format or a forged frame: `ESC`, bidi,
+    /// zero width, quotes and an HTML tag. The screen must show everything as a visible
+    /// escape and text, never as HTML.
     #[cfg(any(test, feature = "test-mode"))]
-    pub fn destrave_hostil_de_teste() -> Aviso {
-        Aviso::Destrave(PedidoDeDestrave {
+    pub fn hostile_test_unlock() -> Notice {
+        Notice::Unlock(PedidoDeDestrave {
             entrada: "acme-pg-\u{202E}vorpa\u{200B}<b>x</b>".to_owned(),
             operacao: protocolo::Operacao::Executar,
             comando: "\"psql\" \"-c\" \"select 1\u{1b}[2K\" \"<img src=x onerror=alert(1)>\""
@@ -134,461 +139,464 @@ impl Aviso {
 }
 
 #[derive(Default)]
-struct Fila {
-    itens: VecDeque<Aviso>,
-    descartados: u64,
+struct Queue {
+    items: VecDeque<Notice>,
+    dropped: u64,
 }
 
-/// Fila limitada dos avisos (D65 a). A thread leitora põe; as telas de destrave (Fase
-/// 31) e de aprovação (Fase 36) tiram.
+/// Bounded queue of the notices (D65 a). The reader thread pushes; the unlock (Phase 31)
+/// and approval (Phase 36) screens take.
 #[derive(Default)]
-pub struct FilaAvisos {
-    fila: Mutex<Fila>,
-    chegou: Condvar,
+pub struct NoticeQueue {
+    queue: Mutex<Queue>,
+    arrived: Condvar,
 }
 
-impl FilaAvisos {
-    fn travar(&self) -> MutexGuard<'_, Fila> {
-        self.fila.lock().unwrap_or_else(|e| e.into_inner())
+impl NoticeQueue {
+    fn lock(&self) -> MutexGuard<'_, Queue> {
+        self.queue.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    /// Põe no fim. Cheia: descarta o aviso novo, com log sem conteúdo.
-    fn por(&self, aviso: Aviso) {
-        let mut f = self.travar();
-        if f.itens.len() >= MAX_AVISOS {
-            f.descartados = f.descartados.saturating_add(1);
-            drop(f);
-            drop(aviso);
+    /// Pushes to the end. Full: drops the new notice, with a log without content.
+    fn push(&self, notice: Notice) {
+        let mut q = self.lock();
+        if q.items.len() >= MAX_NOTICES {
+            q.dropped = q.dropped.saturating_add(1);
+            drop(q);
+            drop(notice);
             eprintln!("ward-app: aviso do daemon descartado (fila cheia)");
             return;
         }
-        f.itens.push_back(aviso);
-        drop(f);
-        self.chegou.notify_all();
+        q.items.push_back(notice);
+        drop(q);
+        self.arrived.notify_all();
     }
 
-    /// O aviso mais antigo, sem esperar.
-    pub fn tomar(&self) -> Option<Aviso> {
-        self.travar().itens.pop_front()
+    /// The oldest notice, without waiting.
+    pub fn take(&self) -> Option<Notice> {
+        self.lock().items.pop_front()
     }
 
-    /// O aviso mais antigo, esperando até `prazo`.
-    pub fn esperar(&self, prazo: Duration) -> Option<Aviso> {
-        let fim = Instant::now() + prazo;
-        let mut f = self.travar();
+    /// The oldest notice, waiting up to `timeout`.
+    pub fn wait(&self, timeout: Duration) -> Option<Notice> {
+        let end = Instant::now() + timeout;
+        let mut q = self.lock();
         loop {
-            if let Some(a) = f.itens.pop_front() {
+            if let Some(a) = q.items.pop_front() {
                 return Some(a);
             }
-            let falta = fim.checked_duration_since(Instant::now())?;
-            f = self
-                .chegou
-                .wait_timeout(f, falta)
+            let left = end.checked_duration_since(Instant::now())?;
+            q = self
+                .arrived
+                .wait_timeout(q, left)
                 .unwrap_or_else(|e| e.into_inner())
                 .0;
         }
     }
 
-    /// Fase 31: espera até `prazo` por um `pedido_de_destrave` e tira **todos** os que
-    /// estão na fila (vários avisos seguidos são um pedido só na tela). Os avisos de
-    /// aprovação ficam onde estão, na ordem, para a janela de aprovação (Fase 36).
-    /// Fase 39a: devolve o mais novo (o daemon manda o mais novo por último); `None`:
-    /// nenhum chegou no prazo.
-    pub fn esperar_destrave(&self, prazo: Duration) -> Option<PedidoDeDestrave> {
-        let fim = Instant::now() + prazo;
-        let mut f = self.travar();
+    /// Phase 31: waits up to `timeout` for an unlock request and takes **all** of those
+    /// in the queue (several notices in a row are a single request on the screen). The
+    /// approval notices stay where they are, in order, for the approval window (Phase
+    /// 36). Phase 39a: returns the newest (the daemon sends the newest last); `None`:
+    /// none arrived in time.
+    pub fn wait_unlock(&self, timeout: Duration) -> Option<PedidoDeDestrave> {
+        let end = Instant::now() + timeout;
+        let mut q = self.lock();
         loop {
-            let mut ultimo = None;
-            f.itens.retain(|a| match a {
-                Aviso::Destrave(p) => {
-                    ultimo = Some(p.clone());
+            let mut last = None;
+            q.items.retain(|a| match a {
+                Notice::Unlock(p) => {
+                    last = Some(p.clone());
                     false
                 }
-                Aviso::Aprovacao(_) => true,
+                Notice::Approval(_) => true,
             });
-            if ultimo.is_some() {
-                return ultimo;
+            if last.is_some() {
+                return last;
             }
-            let falta = fim.checked_duration_since(Instant::now())?;
-            f = self
-                .chegou
-                .wait_timeout(f, falta)
+            let left = end.checked_duration_since(Instant::now())?;
+            q = self
+                .arrived
+                .wait_timeout(q, left)
                 .unwrap_or_else(|e| e.into_inner())
                 .0;
         }
     }
 
-    /// Fase 36: espera até `prazo` pelo `pedido_de_aprovacao` mais antigo e o tira da
-    /// fila. Os `pedido_de_destrave` ficam onde estão, na ordem, para a tela de destravar
-    /// (Fase 31). `None`: nenhum chegou no prazo.
-    pub fn esperar_aprovacao(&self, prazo: Duration) -> Option<PedidoDeAprovacao> {
-        let fim = Instant::now() + prazo;
-        let mut f = self.travar();
+    /// Phase 36: waits up to `timeout` for the oldest approval request and takes it out
+    /// of the queue. The unlock requests stay where they are, in order, for the unlock
+    /// screen (Phase 31). `None`: none arrived in time.
+    pub fn wait_approval(&self, timeout: Duration) -> Option<PedidoDeAprovacao> {
+        let end = Instant::now() + timeout;
+        let mut q = self.lock();
         loop {
-            if let Some(i) = f
-                .itens
+            if let Some(i) = q
+                .items
                 .iter()
-                .position(|a| matches!(a, Aviso::Aprovacao(_)))
-                && let Some(Aviso::Aprovacao(p)) = f.itens.remove(i)
+                .position(|a| matches!(a, Notice::Approval(_)))
+                && let Some(Notice::Approval(p)) = q.items.remove(i)
             {
                 return Some(p);
             }
-            let falta = fim.checked_duration_since(Instant::now())?;
-            f = self
-                .chegou
-                .wait_timeout(f, falta)
+            let left = end.checked_duration_since(Instant::now())?;
+            q = self
+                .arrived
+                .wait_timeout(q, left)
                 .unwrap_or_else(|e| e.into_inner())
                 .0;
         }
     }
 
-    /// Só nos testes e na ponte de teste (`--daemon-falso travado-com-pedido`): põe um
-    /// aviso como se viesse do daemon.
+    /// Tests and test bridge only (the locked-with-request fake daemon mode): pushes a
+    /// notice as if it came from the daemon.
     #[cfg(any(test, feature = "test-mode"))]
-    pub fn simular(&self, aviso: Aviso) {
-        self.por(aviso);
+    pub fn simulate(&self, notice: Notice) {
+        self.push(notice);
     }
 
-    /// Avisos esperando.
-    pub fn tamanho(&self) -> usize {
-        self.travar().itens.len()
+    /// Notices waiting.
+    pub fn size(&self) -> usize {
+        self.lock().items.len()
     }
 
-    /// Avisos descartados com a fila cheia, desde o começo.
-    pub fn descartados(&self) -> u64 {
-        self.travar().descartados
+    /// Notices dropped with the queue full, since the start.
+    pub fn dropped(&self) -> u64 {
+        self.lock().dropped
     }
 }
 
-/// Lado de quem pede: a escrita e o canal por onde a thread leitora entrega a resposta.
-struct Pedinte {
-    escrita: UnixStream,
-    respostas: Receiver<Zeroizing<Vec<u8>>>,
+/// The asking side: the writer and the channel through which the reader thread delivers
+/// the response.
+struct Requester {
+    writer: UnixStream,
+    responses: Receiver<Zeroizing<Vec<u8>>>,
 }
 
-/// Uma conexão aberta com a sua thread leitora.
-struct Transporte {
-    /// A conexão (a partida confere o `CLOEXEC` e vigia o fechamento nela).
+/// An open connection with its reader thread.
+struct Transport {
+    /// The connection (the startup checks `CLOEXEC` and watches the close on it).
     stream: UnixStream,
-    /// Um pedido por vez.
-    pedinte: Mutex<Pedinte>,
-    /// Há um pedido esperando resposta (a leitora só entrega se houver).
-    esperando: Arc<AtomicBool>,
-    /// `false` depois que a conexão fechou (pelo daemon ou por um quadro recusado).
-    aberta: Arc<AtomicBool>,
+    /// One request at a time.
+    requester: Mutex<Requester>,
+    /// A request is waiting for a response (the reader only delivers if there is one).
+    waiting: Arc<AtomicBool>,
+    /// `false` after the connection closed (by the daemon or by a refused frame).
+    open: Arc<AtomicBool>,
 }
 
-impl Transporte {
-    /// Liga a thread leitora à conexão já conferida.
-    fn novo(stream: UnixStream, avisos: Arc<FilaAvisos>) -> Result<Transporte, AppError> {
-        let perdida = |_| AppError::ConnectionLost;
-        // A leitora espera sem prazo (os avisos chegam a qualquer hora); o prazo da
-        // resposta é o do canal.
-        stream.set_read_timeout(None).map_err(perdida)?;
+impl Transport {
+    /// Attaches the reader thread to the already checked connection.
+    fn new(stream: UnixStream, notices: Arc<NoticeQueue>) -> Result<Transport, AppError> {
+        let lost = |_| AppError::ConnectionLost;
+        // The reader waits with no timeout (notices arrive at any time); the response
+        // timeout is the channel's.
+        stream.set_read_timeout(None).map_err(lost)?;
         stream
-            .set_write_timeout(Some(PRAZO_ESCRITA))
-            .map_err(perdida)?;
-        let leitura = stream.try_clone().map_err(perdida)?;
-        let escrita = stream.try_clone().map_err(perdida)?;
+            .set_write_timeout(Some(WRITE_TIMEOUT))
+            .map_err(lost)?;
+        let reader = stream.try_clone().map_err(lost)?;
+        let writer = stream.try_clone().map_err(lost)?;
         let (tx, rx) = mpsc::sync_channel(1);
-        let esperando = Arc::new(AtomicBool::new(false));
-        let aberta = Arc::new(AtomicBool::new(true));
-        let (e, a) = (esperando.clone(), aberta.clone());
+        let waiting = Arc::new(AtomicBool::new(false));
+        let open = Arc::new(AtomicBool::new(true));
+        let (w, o) = (waiting.clone(), open.clone());
         std::thread::Builder::new()
             .name("ward-app-leitora".into())
-            .spawn(move || ler(leitura, &tx, &e, &a, &avisos))
-            .map_err(perdida)?;
-        Ok(Transporte {
+            .spawn(move || read_loop(reader, &tx, &w, &o, &notices))
+            .map_err(lost)?;
+        Ok(Transport {
             stream,
-            pedinte: Mutex::new(Pedinte {
-                escrita,
-                respostas: rx,
+            requester: Mutex::new(Requester {
+                writer,
+                responses: rx,
             }),
-            esperando,
-            aberta,
+            waiting,
+            open,
         })
     }
 
-    fn aberta(&self) -> bool {
-        self.aberta.load(Ordering::Acquire)
+    fn is_open(&self) -> bool {
+        self.open.load(Ordering::Acquire)
     }
 
-    fn fechar(&self) {
-        self.aberta.store(false, Ordering::Release);
+    fn close(&self) {
+        self.open.store(false, Ordering::Release);
         let _ = self.stream.shutdown(Shutdown::Both);
     }
 
-    /// Um pedido e a sua resposta, com `prazo`.
-    fn trocar(&self, pedido: &[u8], prazo: Duration) -> Result<Zeroizing<Vec<u8>>, AppError> {
-        let mut p = self.pedinte.lock().map_err(|_| AppError::ConnectionLost)?;
-        if !self.aberta() {
+    /// One request and its response, with `timeout`.
+    fn exchange(&self, request: &[u8], timeout: Duration) -> Result<Zeroizing<Vec<u8>>, AppError> {
+        let mut p = self
+            .requester
+            .lock()
+            .map_err(|_| AppError::ConnectionLost)?;
+        if !self.is_open() {
             return Err(AppError::ConnectionLost);
         }
-        // Uma resposta que sobrou não pode virar a deste pedido (a leitora só entrega
-        // com `esperando`, então isto não deveria achar nada).
-        while p.respostas.try_recv().is_ok() {}
-        self.esperando.store(true, Ordering::Release);
-        let limite = quadro::limite_do_quadro(Papel::App);
-        match quadro::escrever_quadro(&mut p.escrita, pedido, limite) {
+        // A leftover response cannot become this request's (the reader only delivers
+        // with `waiting`, so this should find nothing).
+        while p.responses.try_recv().is_ok() {}
+        self.waiting.store(true, Ordering::Release);
+        let limit = quadro::limite_do_quadro(Papel::App);
+        match quadro::escrever_quadro(&mut p.writer, request, limit) {
             Ok(()) => {}
             Err(ErroQuadro::Vazio | ErroQuadro::GrandeDemais) => {
-                // Nada foi escrito: a conexão continua em ordem.
-                self.esperando.store(false, Ordering::Release);
+                // Nothing was written: the connection is still in order.
+                self.waiting.store(false, Ordering::Release);
                 return Err(AppError::InvalidRequest);
             }
             Err(_) => {
-                self.fechar();
+                self.close();
                 return Err(AppError::ConnectionLost);
             }
         }
-        match p.respostas.recv_timeout(prazo) {
+        match p.responses.recv_timeout(timeout) {
             Ok(r) => Ok(r),
             Err(_) => {
-                // Sem resposta no prazo (ou a leitora fechou): uma resposta atrasada
-                // seria lida como a de outro pedido.
-                self.esperando.store(false, Ordering::Release);
-                self.fechar();
+                // No response in time (or the reader closed): a late response would be
+                // read as another request's.
+                self.waiting.store(false, Ordering::Release);
+                self.close();
                 Err(AppError::ConnectionLost)
             }
         }
     }
 }
 
-impl Drop for Transporte {
-    /// A leitora segura uma cópia do fd: sem o `shutdown`, a conexão ficaria aberta.
+impl Drop for Transport {
+    /// The reader holds a copy of the fd: without the `shutdown`, the connection would
+    /// stay open.
     fn drop(&mut self) {
-        self.fechar();
+        self.close();
     }
 }
 
-/// A thread leitora: a única que lê o socket. Sai (e fecha a conexão) no fim da
-/// conexão, num quadro recusado ou numa resposta sem pedido.
-fn ler(
+/// The reader thread: the only one that reads the socket. Leaves (and closes the
+/// connection) at the end of the connection, on a refused frame or on a response with no
+/// request.
+fn read_loop(
     mut s: UnixStream,
     tx: &SyncSender<Zeroizing<Vec<u8>>>,
-    esperando: &AtomicBool,
-    aberta: &AtomicBool,
-    avisos: &FilaAvisos,
+    waiting: &AtomicBool,
+    open: &AtomicBool,
+    notices: &NoticeQueue,
 ) {
-    // Fechada, truncada, acima do limite ou erro de E/S: sai.
+    // Closed, truncated, above the limit or I/O error: leaves.
     while let Ok(q) = quadro::ler_quadro(&mut s, quadro::LIMITE_RESPOSTA) {
         match protocolo::decodificar_resposta(Papel::App, &q) {
-            Ok(Resposta::PedidoDeAprovacao(p)) => avisos.por(Aviso::Aprovacao(p)),
-            Ok(Resposta::PedidoDeDestrave(p)) => avisos.por(Aviso::Destrave(p)),
+            Ok(Resposta::PedidoDeAprovacao(p)) => notices.push(Notice::Approval(p)),
+            Ok(Resposta::PedidoDeDestrave(p)) => notices.push(Notice::Unlock(p)),
             Ok(_) => {
-                // Resposta sem pedido: sai.
-                if !esperando.swap(false, Ordering::AcqRel) || tx.send(q).is_err() {
+                // Response with no request: leaves.
+                if !waiting.swap(false, Ordering::AcqRel) || tx.send(q).is_err() {
                     break;
                 }
             }
-            // Tipo de outro papel ou quadro forjado.
+            // Type of another role or forged frame.
             Err(_) => break,
         }
     }
-    aberta.store(false, Ordering::Release);
+    open.store(false, Ordering::Release);
     let _ = s.shutdown(Shutdown::Both);
 }
 
-/// Daemon real, pelo socket local.
+/// Real daemon, over the local socket.
 pub struct DaemonSocket {
-    esperado: ExpectedServer,
-    transporte: Option<Transporte>,
-    /// `false` depois de [`conectar_agora`](Self::conectar_agora): a conexão não se
-    /// refaz neste processo.
-    pode_conectar: bool,
-    avisos: Arc<FilaAvisos>,
-    prazo_resposta: Duration,
+    expected: ExpectedServer,
+    transport: Option<Transport>,
+    /// `false` after [`connect_now`](Self::connect_now): the connection is not redone in
+    /// this process.
+    can_connect: bool,
+    notices: Arc<NoticeQueue>,
+    response_timeout: Duration,
 }
 
 impl DaemonSocket {
-    /// O daemon instalado: `/run/ward/<uid>/wardd.sock`, conferido como socket do
-    /// systemd do sistema. No build de teste, o daemon de teste em
-    /// `/run/user/<uid>/ward-teste/wardd.sock`. O uid é o efetivo do processo, não
-    /// `XDG_RUNTIME_DIR` nem outra variável.
+    /// The installed daemon: `/run/ward/<uid>/wardd.sock`, checked as a socket of the
+    /// system systemd. In the test build, the test daemon in
+    /// its folder under `/run/user/<uid>/`. The uid is the process's effective one,
+    /// not `XDG_RUNTIME_DIR` nor another variable.
     ///
-    /// Só no `test-mode` (Fase 39c), `WARD_DEV_SOCKET_DIR` troca a pasta do socket de
-    /// teste, como na CLI de teste: o daemon de teste passa ao app e à ponte que abre a
-    /// pasta dele (da configuração do daemon, nunca do pedido), e assim um daemon de
-    /// teste noutra pasta não divide o socket fixo com outro checkout. As conferências
-    /// não mudam (pasta 0700 do uid, sem link, par com o mesmo uid), e o papel app
-    /// continua dependendo do pid que o lançador abriu (D63).
-    pub fn padrao() -> Result<DaemonSocket, AppError> {
+    /// Only in `test-mode` (Phase 39c), `WARD_DEV_SOCKET_DIR` changes the test socket
+    /// folder, as in the test CLI: the test daemon passes its folder to the app and to
+    /// the bridge it opens (from the daemon's config, never from the request), and so a
+    /// test daemon in another folder does not share the fixed socket with another
+    /// checkout. The checks do not change (0700 folder of the uid, no link, peer with the
+    /// same uid), and the app role still depends on the pid the launcher opened (D63).
+    pub fn standard() -> Result<DaemonSocket, AppError> {
         #[cfg(not(feature = "test-mode"))]
-        let esperado = ExpectedServer::system();
+        let expected = ExpectedServer::system();
         #[cfg(feature = "test-mode")]
-        let esperado = match std::env::var_os("WARD_DEV_SOCKET_DIR") {
+        let expected = match std::env::var_os("WARD_DEV_SOCKET_DIR") {
             Some(d) => ExpectedServer::test_at(
                 std::path::PathBuf::from(d).join(ward_platform::socket::SOCKET_NAME),
             ),
             None => ExpectedServer::test(),
         };
-        Ok(DaemonSocket::sem_conexao(esperado))
+        Ok(DaemonSocket::unconnected(expected))
     }
 
-    fn sem_conexao(esperado: ExpectedServer) -> DaemonSocket {
+    fn unconnected(expected: ExpectedServer) -> DaemonSocket {
         DaemonSocket {
-            esperado,
-            transporte: None,
-            pode_conectar: true,
-            avisos: Arc::new(FilaAvisos::default()),
-            prazo_resposta: PRAZO_RESPOSTA,
+            expected,
+            transport: None,
+            can_connect: true,
+            notices: Arc::new(NoticeQueue::default()),
+            response_timeout: RESPONSE_TIMEOUT,
         }
     }
 
-    /// Conecta agora (com toda a conferência do servidor) e trava a conexão: daqui em
-    /// diante este `DaemonSocket` nunca conecta de novo. É o que a partida do app chama
-    /// antes de largar o grupo (D47), e o que a ponte de teste chama ao subir.
-    pub fn conectar_agora(&mut self) -> Result<&UnixStream, AppError> {
-        self.pode_conectar = false;
-        self.transporte = None;
-        let t = self.conectar()?;
-        Ok(&self.transporte.insert(t).stream)
+    /// Connects now (with the full server check) and locks the connection: from here on
+    /// this `DaemonSocket` never connects again. It is what the app startup calls before
+    /// dropping the group (D47), and what the test bridge calls when it starts.
+    pub fn connect_now(&mut self) -> Result<&UnixStream, AppError> {
+        self.can_connect = false;
+        self.transport = None;
+        let t = self.connect()?;
+        Ok(&self.transport.insert(t).stream)
     }
 
-    /// Numa thread: espera a conexão aberta fechar (pelo daemon, ou pelo app depois de
-    /// um quadro recusado), sem ler nada, e chama `ao_fechar`. A ponte de teste sai por
-    /// aqui quando o daemon de teste para.
-    pub fn vigiar_fechamento(
-        &self,
-        ao_fechar: impl FnOnce() + Send + 'static,
-    ) -> Result<(), AppError> {
-        let t = self.transporte.as_ref().ok_or(AppError::ConnectionLost)?;
+    /// In a thread: waits for the open connection to close (by the daemon, or by the app
+    /// after a refused frame), reading nothing, and calls `on_close`. The test bridge
+    /// leaves through here when the test daemon stops.
+    pub fn watch_close(&self, on_close: impl FnOnce() + Send + 'static) -> Result<(), AppError> {
+        let t = self.transport.as_ref().ok_or(AppError::ConnectionLost)?;
         let s = t.stream.try_clone().map_err(|_| AppError::ConnectionLost)?;
         std::thread::Builder::new()
             .name("ward-app-vigia".into())
             .spawn(move || {
                 let _ = ward_platform::app::wait_for_close(&s);
-                ao_fechar();
+                on_close();
             })
             .map(|_| ())
             .map_err(|_| AppError::ConnectionLost)
     }
 
-    /// Os avisos que o daemon manda sem pedido (D65 a). A mesma fila vale para toda a
-    /// vida deste `DaemonSocket`.
-    pub fn avisos(&self) -> Arc<FilaAvisos> {
-        self.avisos.clone()
+    /// The notices the daemon sends with no request (D65 a). The same queue holds for the
+    /// whole life of this `DaemonSocket`.
+    pub fn notices(&self) -> Arc<NoticeQueue> {
+        self.notices.clone()
     }
 
-    /// A conexão aberta. Sem ela: conecta no primeiro uso, menos depois de
-    /// [`conectar_agora`](Self::conectar_agora), quando responde
-    /// [`AppError::ConnectionLost`].
-    fn transporte(&mut self) -> Result<&Transporte, AppError> {
-        if self.transporte.as_ref().is_some_and(|t| !t.aberta()) {
-            self.transporte = None;
+    /// The open connection. Without it: connects on first use, except after
+    /// [`connect_now`](Self::connect_now), when it answers [`AppError::ConnectionLost`].
+    fn transport(&mut self) -> Result<&Transport, AppError> {
+        if self.transport.as_ref().is_some_and(|t| !t.is_open()) {
+            self.transport = None;
         }
-        if self.transporte.is_none() {
-            if !self.pode_conectar {
+        if self.transport.is_none() {
+            if !self.can_connect {
                 return Err(AppError::ConnectionLost);
             }
-            let t = self.conectar()?;
-            self.transporte = Some(t);
+            let t = self.connect()?;
+            self.transport = Some(t);
         }
-        self.transporte.as_ref().ok_or(AppError::ConnectionLost)
+        self.transport.as_ref().ok_or(AppError::ConnectionLost)
     }
 
-    /// Só nos testes: a conexão já aberta `s` (um par com o daemon falso), como a da
-    /// partida (sem reconectar).
+    /// Tests only: the already open connection `s` (a pair with the fake daemon), like
+    /// the startup's (no reconnect).
     #[cfg(test)]
-    pub(crate) fn de_par(s: UnixStream, prazo: Duration) -> DaemonSocket {
-        let mut d = DaemonSocket::sistema_em(PathBuf::from("/nao-usado/wardd.sock"));
-        d.pode_conectar = false;
-        d.prazo_resposta = prazo;
-        d.transporte = Some(Transporte::novo(s, d.avisos.clone()).expect("transporte"));
+    pub(crate) fn from_pair(s: UnixStream, timeout: Duration) -> DaemonSocket {
+        let mut d = DaemonSocket::system_at(PathBuf::from("/nao-usado/wardd.sock"));
+        d.can_connect = false;
+        d.response_timeout = timeout;
+        d.transport = Some(Transport::new(s, d.notices.clone()).expect("transporte"));
         d
     }
 
-    /// Outro caminho, com as regras do daemon instalado (pasta do root, par uid 0).
-    pub fn sistema_em(caminho: PathBuf) -> DaemonSocket {
-        DaemonSocket::sem_conexao(ExpectedServer::system_at(caminho))
+    /// Another path, with the installed daemon's rules (root folder, uid 0 peer).
+    pub fn system_at(path: PathBuf) -> DaemonSocket {
+        DaemonSocket::unconnected(ExpectedServer::system_at(path))
     }
 
-    /// Outro caminho, com as regras do daemon de teste. Só no `test-mode`.
+    /// Another path, with the test daemon's rules. Only in `test-mode`.
     #[cfg(feature = "test-mode")]
-    pub fn teste_em(caminho: PathBuf) -> DaemonSocket {
-        DaemonSocket::sem_conexao(ExpectedServer::test_at(caminho))
+    pub fn test_at(path: PathBuf) -> DaemonSocket {
+        DaemonSocket::unconnected(ExpectedServer::test_at(path))
     }
 
-    pub fn caminho(&self) -> &Path {
-        self.esperado.path()
+    pub fn path(&self) -> &Path {
+        self.expected.path()
     }
 
-    /// Confere o caminho, conecta e confere o par antes de qualquer byte, e liga a
-    /// thread leitora. Nada é escrito no socket aqui.
-    fn conectar(&self) -> Result<Transporte, AppError> {
-        let s = connect_server(&self.esperado).map_err(|r| match r {
+    /// Checks the path, connects and checks the peer before any byte, and starts the
+    /// reader thread. Nothing is written to the socket here.
+    fn connect(&self) -> Result<Transport, AppError> {
+        let s = connect_server(&self.expected).map_err(|r| match r {
             ServerRefusal::Missing | ServerRefusal::Io(_) => AppError::DaemonUnavailable,
             _ => AppError::DaemonUntrusted,
         })?;
-        Transporte::novo(s, self.avisos.clone())
+        Transport::new(s, self.notices.clone())
     }
 }
 
 impl Daemon for DaemonSocket {
-    fn trocar(&mut self, pedido: &[u8]) -> Result<Zeroizing<Vec<u8>>, AppError> {
-        let prazo = self.prazo_resposta;
-        self.transporte()?.trocar(pedido, prazo)
+    fn exchange(&mut self, request: &[u8]) -> Result<Zeroizing<Vec<u8>>, AppError> {
+        let timeout = self.response_timeout;
+        self.transport()?.exchange(request, timeout)
     }
 }
 
 #[cfg(test)]
-mod testes {
+mod tests {
     use super::*;
     use std::fs;
     use std::io::{Read, Write};
     use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt, symlink};
     use std::os::unix::net::UnixListener;
 
-    use crate::cliente;
+    use crate::client;
     use crate::comandos::Referencia;
     use ward_core::protocolo::Alvo;
 
     impl DaemonSocket {
-        fn estado(&mut self) -> Result<EstadoCofre, AppError> {
-            cliente::estado(self)
+        fn status(&mut self) -> Result<VaultStatus, AppError> {
+            client::status(self)
         }
-        fn valor_para_copiar(&mut self, r: &Referencia) -> Result<(), AppError> {
-            cliente::copiar(self, r.entrada(), Alvo::Campo(r.campo().to_owned())).map(|_| ())
+        fn value_to_copy(&mut self, r: &Referencia) -> Result<(), AppError> {
+            client::copy(self, r.entrada(), Alvo::Campo(r.campo().to_owned())).map(|_| ())
         }
     }
 
-    fn meu_uid() -> u32 {
+    fn my_uid() -> u32 {
         fs::metadata("/proc/self").unwrap().uid()
     }
 
-    /// Pasta só deste teste em `/run/user/<uid>/` (tmpfs, 0700 do usuário; o `/tmp` é
-    /// 1777 e não passaria em conferência nenhuma). Apagada ao sair.
-    struct Base(PathBuf);
+    /// Folder of this test only in `/run/user/<uid>/` (tmpfs, the user's 0700; `/tmp` is
+    /// 1777 and would pass no check at all). Removed on drop.
+    struct TempBase(PathBuf);
 
-    impl Base {
-        fn nova(nome: &str) -> Base {
+    impl TempBase {
+        fn new(name: &str) -> TempBase {
             let p = PathBuf::from(format!(
-                "/run/user/{}/ward-app-core-{}-{nome}",
-                meu_uid(),
+                "/run/user/{}/ward-app-core-{}-{name}",
+                my_uid(),
                 std::process::id()
             ));
             let _ = fs::remove_dir_all(&p);
             fs::DirBuilder::new().mode(0o700).create(&p).unwrap();
-            Base(p)
+            TempBase(p)
         }
     }
 
-    impl Drop for Base {
+    impl Drop for TempBase {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
         }
     }
 
-    /// Servidor falso do mesmo uid: socket 0600 em `dir`.
-    fn servidor_falso(dir: &Path) -> UnixListener {
+    /// Fake server of the same uid: 0600 socket in `dir`.
+    fn fake_server(dir: &Path) -> UnixListener {
         let l = UnixListener::bind(dir.join(SOCKET)).unwrap();
         fs::set_permissions(dir.join(SOCKET), fs::Permissions::from_mode(0o600)).unwrap();
         l.set_nonblocking(true).unwrap();
         l
     }
 
-    /// Nenhum byte chegou ao servidor falso (aceita o que houver e lê sem bloquear).
-    fn nada_recebido(l: &UnixListener) {
+    /// No byte reached the fake server (accepts whatever there is and reads without
+    /// blocking).
+    fn nothing_received(l: &UnixListener) {
         while let Ok((mut c, _)) = l.accept() {
             c.set_nonblocking(true).unwrap();
             let mut buf = [0u8; 16];
@@ -600,175 +608,174 @@ mod testes {
     }
 
     #[test]
-    fn caminho_padrao_sem_variavel_de_ambiente() {
-        let d = DaemonSocket::padrao().unwrap();
+    fn default_path_without_environment_variable() {
+        let d = DaemonSocket::standard().unwrap();
         #[cfg(not(feature = "test-mode"))]
-        let esperado = format!("/run/ward/{}/wardd.sock", meu_uid());
+        let expected = format!("/run/ward/{}/wardd.sock", my_uid());
         #[cfg(feature = "test-mode")]
-        let esperado = format!("/run/user/{}/ward-teste/wardd.sock", meu_uid());
-        assert_eq!(d.caminho(), Path::new(&esperado));
+        let expected = format!("/run/user/{}/ward-teste/wardd.sock", my_uid());
+        assert_eq!(d.path(), Path::new(&expected));
         #[cfg(not(feature = "test-mode"))]
-        assert!(!d.caminho().to_string_lossy().contains("ward-teste"));
+        assert!(!d.path().to_string_lossy().contains("ward-teste"));
     }
 
     #[test]
-    fn socket_ausente_e_indisponivel() {
+    fn missing_socket_is_unavailable() {
         let mut d =
-            DaemonSocket::sistema_em(PathBuf::from("/run/ward-nao-existe-falso/1/wardd.sock"));
-        assert_eq!(d.estado(), Err(AppError::DaemonUnavailable));
+            DaemonSocket::system_at(PathBuf::from("/run/ward-nao-existe-falso/1/wardd.sock"));
+        assert_eq!(d.status(), Err(AppError::DaemonUnavailable));
         #[cfg(feature = "test-mode")]
         {
-            let base = Base::nova("ausente");
+            let base = TempBase::new("ausente");
             let dir = base.0.join("ward-teste");
             fs::DirBuilder::new().mode(0o700).create(&dir).unwrap();
-            let mut t = DaemonSocket::teste_em(dir.join(SOCKET));
-            assert_eq!(t.estado(), Err(AppError::DaemonUnavailable));
+            let mut t = DaemonSocket::test_at(dir.join(SOCKET));
+            assert_eq!(t.status(), Err(AppError::DaemonUnavailable));
         }
     }
 
     #[test]
-    fn ataque_servidor_falso_do_mesmo_uid_e_recusado_sem_receber_nada() {
-        // V3.23: servidor do mesmo uid, socket 0600, pasta 0700 do usuário. Pela regra
-        // do daemon instalado, a pasta não é do root e o par não é uid 0.
-        let base = Base::nova("falso");
+    fn attack_fake_server_of_the_same_uid_is_refused_without_receiving_anything() {
+        // V3.23: server of the same uid, 0600 socket, the user's 0700 folder. By the
+        // installed daemon's rule, the folder does not belong to root and the peer is
+        // not uid 0.
+        let base = TempBase::new("falso");
         let dir = base.0.join("ward");
         fs::DirBuilder::new().mode(0o700).create(&dir).unwrap();
-        let l = servidor_falso(&dir);
-        let mut d = DaemonSocket::sistema_em(dir.join(SOCKET));
-        assert_eq!(d.estado(), Err(AppError::DaemonUntrusted));
+        let l = fake_server(&dir);
+        let mut d = DaemonSocket::system_at(dir.join(SOCKET));
+        assert_eq!(d.status(), Err(AppError::DaemonUntrusted));
         let r = Referencia::nova("acme-pg-dev", "senha").unwrap();
         assert!(matches!(
-            d.valor_para_copiar(&r),
+            d.value_to_copy(&r),
             Err(AppError::DaemonUntrusted)
         ));
-        nada_recebido(&l);
+        nothing_received(&l);
     }
 
     #[test]
-    fn ataque_sem_a_conexao_da_partida_nao_reconecta() {
-        // D47: depois de largar o grupo, uma conexão nova teria o gid real (papel
-        // agente). Falhou na partida: nenhum pedido conecta depois.
-        let base = Base::nova("partida");
+    fn attack_without_the_startup_connection_does_not_reconnect() {
+        // D47: after dropping the group, a new connection would have the real gid
+        // (agent role). It failed at startup: no request connects afterwards.
+        let base = TempBase::new("partida");
         let dir = base.0.join("ward");
         fs::DirBuilder::new().mode(0o700).create(&dir).unwrap();
-        let mut d = DaemonSocket::sistema_em(dir.join(SOCKET));
-        assert!(d.conectar_agora().is_err());
-        let l = servidor_falso(&dir);
-        assert_eq!(d.estado(), Err(AppError::ConnectionLost));
+        let mut d = DaemonSocket::system_at(dir.join(SOCKET));
+        assert!(d.connect_now().is_err());
+        let l = fake_server(&dir);
+        assert_eq!(d.status(), Err(AppError::ConnectionLost));
         let r = Referencia::nova("acme-pg-dev", "senha").unwrap();
-        assert!(matches!(
-            d.valor_para_copiar(&r),
-            Err(AppError::ConnectionLost)
-        ));
+        assert!(matches!(d.value_to_copy(&r), Err(AppError::ConnectionLost)));
         assert!(l.accept().is_err(), "reconectou depois da partida");
         #[cfg(feature = "test-mode")]
         {
-            // Com a conexão da partida aberta, os pedidos usam a mesma, sem conectar
-            // de novo.
-            let mut t = DaemonSocket::teste_em(dir.join(SOCKET));
-            let c = t.conectar_agora().unwrap();
+            // With the startup connection open, the requests use the same one, without
+            // connecting again.
+            let mut t = DaemonSocket::test_at(dir.join(SOCKET));
+            let c = t.connect_now().unwrap();
             assert!(ward_platform::app::has_cloexec(c).unwrap());
             let (mut c, _) = l.accept().unwrap();
-            let servidor = std::thread::spawn(move || {
+            let server = std::thread::spawn(move || {
                 for _ in 0..2 {
-                    pedido_lido(&mut c);
-                    mandar(&mut c, &estado_app());
+                    read_request(&mut c);
+                    send(&mut c, &app_status());
                 }
                 c
             });
-            assert_eq!(t.estado(), Ok(EstadoCofre::Destravado));
-            assert_eq!(t.estado(), Ok(EstadoCofre::Destravado));
-            let _c = servidor.join().unwrap();
+            assert_eq!(t.status(), Ok(VaultStatus::Unlocked));
+            assert_eq!(t.status(), Ok(VaultStatus::Unlocked));
+            let _c = server.join().unwrap();
             assert!(l.accept().is_err(), "conectou de novo");
         }
     }
 
     #[test]
-    fn ataque_diretorio_aberto_para_outros_e_recusado() {
-        let base = Base::nova("aberto");
+    fn attack_directory_open_to_others_is_refused() {
+        let base = TempBase::new("aberto");
         let dir = base.0.join("ward");
         fs::DirBuilder::new().mode(0o755).create(&dir).unwrap();
         fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).unwrap();
-        let l = servidor_falso(&dir);
-        let mut d = DaemonSocket::sistema_em(dir.join(SOCKET));
-        assert_eq!(d.estado(), Err(AppError::DaemonUntrusted));
+        let l = fake_server(&dir);
+        let mut d = DaemonSocket::system_at(dir.join(SOCKET));
+        assert_eq!(d.status(), Err(AppError::DaemonUntrusted));
         #[cfg(feature = "test-mode")]
         {
-            // Nem o build de teste aceita pasta aberta; com 0700 é o daemon de teste.
-            let mut t = DaemonSocket::teste_em(dir.join(SOCKET));
-            assert_eq!(t.estado(), Err(AppError::DaemonUntrusted));
-            nada_recebido(&l);
+            // Not even the test build accepts an open folder; with 0700 it is the test
+            // daemon.
+            let mut t = DaemonSocket::test_at(dir.join(SOCKET));
+            assert_eq!(t.status(), Err(AppError::DaemonUntrusted));
+            nothing_received(&l);
             fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).unwrap();
-            t.prazo_resposta = Duration::from_millis(100);
-            assert_eq!(t.estado(), Err(AppError::ConnectionLost));
+            t.response_timeout = Duration::from_millis(100);
+            assert_eq!(t.status(), Err(AppError::ConnectionLost));
             let _ = l.accept();
         }
-        nada_recebido(&l);
+        nothing_received(&l);
     }
 
     #[test]
-    fn ataque_diretorio_por_link_simbolico_e_recusado() {
-        let base = Base::nova("link");
+    fn attack_directory_through_symlink_is_refused() {
+        let base = TempBase::new("link");
         let real = base.0.join("real");
         fs::DirBuilder::new().mode(0o700).create(&real).unwrap();
-        let l = servidor_falso(&real);
+        let l = fake_server(&real);
         symlink(&real, base.0.join("ward")).unwrap();
-        let mut d = DaemonSocket::sistema_em(base.0.join("ward").join(SOCKET));
-        assert_eq!(d.estado(), Err(AppError::DaemonUntrusted));
+        let mut d = DaemonSocket::system_at(base.0.join("ward").join(SOCKET));
+        assert_eq!(d.status(), Err(AppError::DaemonUntrusted));
         #[cfg(feature = "test-mode")]
         {
-            let mut t = DaemonSocket::teste_em(base.0.join("ward").join(SOCKET));
-            assert_eq!(t.estado(), Err(AppError::DaemonUntrusted));
+            let mut t = DaemonSocket::test_at(base.0.join("ward").join(SOCKET));
+            assert_eq!(t.status(), Err(AppError::DaemonUntrusted));
         }
-        nada_recebido(&l);
+        nothing_received(&l);
     }
 
     #[test]
-    fn ataque_arquivo_comum_no_lugar_do_socket_e_recusado() {
-        let base = Base::nova("arquivo");
+    fn attack_regular_file_in_place_of_the_socket_is_refused() {
+        let base = TempBase::new("arquivo");
         let dir = base.0.join("ward");
         fs::DirBuilder::new().mode(0o700).create(&dir).unwrap();
         fs::write(dir.join(SOCKET), b"").unwrap();
         fs::set_permissions(dir.join(SOCKET), fs::Permissions::from_mode(0o600)).unwrap();
-        let mut d = DaemonSocket::sistema_em(dir.join(SOCKET));
-        assert_eq!(d.estado(), Err(AppError::DaemonUntrusted));
+        let mut d = DaemonSocket::system_at(dir.join(SOCKET));
+        assert_eq!(d.status(), Err(AppError::DaemonUntrusted));
         #[cfg(feature = "test-mode")]
         {
-            let mut t = DaemonSocket::teste_em(dir.join(SOCKET));
-            assert_eq!(t.estado(), Err(AppError::DaemonUntrusted));
+            let mut t = DaemonSocket::test_at(dir.join(SOCKET));
+            assert_eq!(t.status(), Err(AppError::DaemonUntrusted));
         }
     }
 
     #[test]
-    fn ataque_socket_aberto_para_outros_e_recusado() {
-        let base = Base::nova("socket");
+    fn attack_socket_open_to_others_is_refused() {
+        let base = TempBase::new("socket");
         let dir = base.0.join("ward");
         fs::DirBuilder::new().mode(0o700).create(&dir).unwrap();
-        let l = servidor_falso(&dir);
+        let l = fake_server(&dir);
         fs::set_permissions(dir.join(SOCKET), fs::Permissions::from_mode(0o666)).unwrap();
-        let mut d = DaemonSocket::sistema_em(dir.join(SOCKET));
-        assert_eq!(d.estado(), Err(AppError::DaemonUntrusted));
+        let mut d = DaemonSocket::system_at(dir.join(SOCKET));
+        assert_eq!(d.status(), Err(AppError::DaemonUntrusted));
         #[cfg(feature = "test-mode")]
         {
-            let mut t = DaemonSocket::teste_em(dir.join(SOCKET));
-            assert_eq!(t.estado(), Err(AppError::DaemonUntrusted));
+            let mut t = DaemonSocket::test_at(dir.join(SOCKET));
+            assert_eq!(t.status(), Err(AppError::DaemonUntrusted));
         }
-        nada_recebido(&l);
+        nothing_received(&l);
     }
 
-    // --- Transporte (D65 a, V5.33) com um daemon falso do outro lado de um par ----------
+    // --- Transport (D65 a, V5.33) with a fake daemon on the other side of a pair -------
 
-    fn mandar(s: &mut UnixStream, r: &Resposta) {
+    fn send(s: &mut UnixStream, r: &Resposta) {
         let q = protocolo::codificar_resposta(Papel::App, r).unwrap();
         quadro::escrever_quadro(s, &q, quadro::LIMITE_RESPOSTA).unwrap();
     }
 
-    fn pedido_lido(s: &mut UnixStream) -> ward_core::protocolo::Pedido {
+    fn read_request(s: &mut UnixStream) -> ward_core::protocolo::Pedido {
         let q = quadro::ler_quadro(s, quadro::limite_do_quadro(Papel::App)).unwrap();
         protocolo::decodificar_pedido(Papel::App, &q).unwrap()
     }
 
-    fn estado_app() -> Resposta {
+    fn app_status() -> Resposta {
         Resposta::Estado {
             travado: false,
             cofre_existe: true,
@@ -776,43 +783,42 @@ mod testes {
         }
     }
 
-    /// Fase 31: a vigia do destrave tira só os `pedido_de_destrave`; os de aprovação
-    /// ficam na ordem para a Fase 36. Sem destrave, espera o prazo e diz `false`.
+    /// Phase 31: the unlock watcher takes only the unlock requests; the approval ones
+    /// stay in order for Phase 36. With no unlock, waits the timeout and says `None`.
     #[test]
-    fn esperar_destrave_deixa_a_aprovacao_na_fila() {
-        let f = FilaAvisos::default();
-        assert_eq!(f.esperar_destrave(Duration::from_millis(30)), None);
-        f.simular(Aviso::Aprovacao(aprovacao(1)));
-        f.simular(Aviso::destrave_de_teste("acme-pg-velho"));
-        f.simular(Aviso::Aprovacao(aprovacao(2)));
-        f.simular(Aviso::destrave_de_teste("acme-pg-novo"));
-        // Fase 39a: o mais novo.
+    fn wait_unlock_leaves_the_approval_in_the_queue() {
+        let f = NoticeQueue::default();
+        assert_eq!(f.wait_unlock(Duration::from_millis(30)), None);
+        f.simulate(Notice::Approval(approval(1)));
+        f.simulate(Notice::test_unlock("acme-pg-velho"));
+        f.simulate(Notice::Approval(approval(2)));
+        f.simulate(Notice::test_unlock("acme-pg-novo"));
+        // Phase 39a: the newest.
         assert_eq!(
-            f.esperar_destrave(Duration::from_millis(30))
-                .map(|p| p.entrada),
+            f.wait_unlock(Duration::from_millis(30)).map(|p| p.entrada),
             Some("acme-pg-novo".to_owned())
         );
-        assert_eq!(f.esperar_destrave(Duration::from_millis(30)), None);
-        assert_eq!(f.tomar(), Some(Aviso::Aprovacao(aprovacao(1))));
-        assert_eq!(f.tomar(), Some(Aviso::Aprovacao(aprovacao(2))));
-        assert_eq!(f.tomar(), None);
-        // Chega de outra thread enquanto espera.
+        assert_eq!(f.wait_unlock(Duration::from_millis(30)), None);
+        assert_eq!(f.take(), Some(Notice::Approval(approval(1))));
+        assert_eq!(f.take(), Some(Notice::Approval(approval(2))));
+        assert_eq!(f.take(), None);
+        // Arrives from another thread while it waits.
         let f = Arc::new(f);
         let g = f.clone();
-        let t = std::thread::spawn(move || g.esperar_destrave(Duration::from_secs(10)));
+        let t = std::thread::spawn(move || g.wait_unlock(Duration::from_secs(10)));
         std::thread::sleep(Duration::from_millis(50));
-        f.simular(Aviso::destrave_de_teste("acme-pg-dev"));
+        f.simulate(Notice::test_unlock("acme-pg-dev"));
         assert!(t.join().unwrap().is_some());
     }
 
-    fn destrave() -> Resposta {
-        match Aviso::destrave_de_teste("acme-pg-aprovacao") {
-            Aviso::Destrave(p) => Resposta::PedidoDeDestrave(p),
-            Aviso::Aprovacao(_) => unreachable!(),
+    fn unlock_notice() -> Resposta {
+        match Notice::test_unlock("acme-pg-aprovacao") {
+            Notice::Unlock(p) => Resposta::PedidoDeDestrave(p),
+            Notice::Approval(_) => unreachable!(),
         }
     }
 
-    fn aprovacao(id: u64) -> PedidoDeAprovacao {
+    fn approval(id: u64) -> PedidoDeAprovacao {
         PedidoDeAprovacao {
             id,
             entradas: vec!["acme-pg-dev".into()],
@@ -827,147 +833,143 @@ mod testes {
         }
     }
 
-    /// O daemon falso fechou do lado dele? (o app fecha a conexão sem mandar nada)
-    fn fechou(s: &mut UnixStream) -> bool {
+    /// Did the fake daemon close on its side? (the app closes the connection without
+    /// sending anything)
+    fn closed(s: &mut UnixStream) -> bool {
         s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
         let mut b = [0u8; 1];
         matches!(s.read(&mut b), Ok(0))
     }
 
     #[test]
-    fn v5_33_avisos_no_meio_vao_para_a_fila_e_a_resposta_para_quem_pediu() {
+    fn v5_33_notices_in_the_middle_go_to_the_queue_and_the_response_to_the_requester() {
         let (a, mut b) = UnixStream::pair().unwrap();
-        let mut d = DaemonSocket::de_par(a, Duration::from_secs(10));
-        let avisos = d.avisos();
-        let servidor = std::thread::spawn(move || {
+        let mut d = DaemonSocket::from_pair(a, Duration::from_secs(10));
+        let notices = d.notices();
+        let server = std::thread::spawn(move || {
             for _ in 0..2 {
                 assert!(matches!(
-                    pedido_lido(&mut b),
+                    read_request(&mut b),
                     ward_core::protocolo::Pedido::Estado
                 ));
-                mandar(&mut b, &Resposta::PedidoDeAprovacao(aprovacao(7)));
-                mandar(&mut b, &destrave());
-                mandar(&mut b, &estado_app());
+                send(&mut b, &Resposta::PedidoDeAprovacao(approval(7)));
+                send(&mut b, &unlock_notice());
+                send(&mut b, &app_status());
             }
             b
         });
-        assert_eq!(cliente::estado(&mut d), Ok(EstadoCofre::Destravado));
-        assert_eq!(cliente::papel(&mut d), Ok(Papel::App));
-        let _b = servidor.join().unwrap();
-        assert_eq!(avisos.tomar(), Some(Aviso::Aprovacao(aprovacao(7))));
+        assert_eq!(client::status(&mut d), Ok(VaultStatus::Unlocked));
+        assert_eq!(client::role(&mut d), Ok(Papel::App));
+        let _b = server.join().unwrap();
+        assert_eq!(notices.take(), Some(Notice::Approval(approval(7))));
         assert_eq!(
-            avisos.tomar(),
-            Some(Aviso::destrave_de_teste("acme-pg-aprovacao"))
+            notices.take(),
+            Some(Notice::test_unlock("acme-pg-aprovacao"))
         );
-        assert_eq!(avisos.tomar(), Some(Aviso::Aprovacao(aprovacao(7))));
+        assert_eq!(notices.take(), Some(Notice::Approval(approval(7))));
         assert_eq!(
-            avisos.esperar(Duration::from_millis(50)),
-            Some(Aviso::destrave_de_teste("acme-pg-aprovacao"))
+            notices.wait(Duration::from_millis(50)),
+            Some(Notice::test_unlock("acme-pg-aprovacao"))
         );
-        assert_eq!(avisos.tomar(), None);
-        assert_eq!(avisos.descartados(), 0);
+        assert_eq!(notices.take(), None);
+        assert_eq!(notices.dropped(), 0);
     }
 
     #[test]
-    fn v5_33_mil_avisos_a_fila_nao_passa_de_16_e_o_app_segue_respondendo() {
+    fn v5_33_a_thousand_notices_the_queue_stays_at_16_and_the_app_keeps_answering() {
         let (a, mut b) = UnixStream::pair().unwrap();
-        let mut d = DaemonSocket::de_par(a, Duration::from_secs(30));
-        let avisos = d.avisos();
-        let servidor = std::thread::spawn(move || {
+        let mut d = DaemonSocket::from_pair(a, Duration::from_secs(30));
+        let notices = d.notices();
+        let server = std::thread::spawn(move || {
             for i in 0..1000 {
                 if i % 2 == 0 {
-                    mandar(&mut b, &Resposta::PedidoDeAprovacao(aprovacao(i)));
+                    send(&mut b, &Resposta::PedidoDeAprovacao(approval(i)));
                 } else {
-                    mandar(&mut b, &destrave());
+                    send(&mut b, &unlock_notice());
                 }
             }
             for _ in 0..2 {
-                pedido_lido(&mut b);
-                mandar(&mut b, &estado_app());
+                read_request(&mut b);
+                send(&mut b, &app_status());
             }
             b
         });
-        assert_eq!(cliente::estado(&mut d), Ok(EstadoCofre::Destravado));
-        assert_eq!(cliente::estado(&mut d), Ok(EstadoCofre::Destravado));
-        let _b = servidor.join().unwrap();
-        assert_eq!(avisos.tamanho(), MAX_AVISOS);
-        assert_eq!(avisos.descartados(), 1000 - 16);
-        // Ficam os 16 primeiros, na ordem.
-        assert_eq!(avisos.tomar(), Some(Aviso::Aprovacao(aprovacao(0))));
+        assert_eq!(client::status(&mut d), Ok(VaultStatus::Unlocked));
+        assert_eq!(client::status(&mut d), Ok(VaultStatus::Unlocked));
+        let _b = server.join().unwrap();
+        assert_eq!(notices.size(), MAX_NOTICES);
+        assert_eq!(notices.dropped(), 1000 - 16);
+        // The first 16 stay, in order.
+        assert_eq!(notices.take(), Some(Notice::Approval(approval(0))));
         assert_eq!(
-            avisos.tomar(),
-            Some(Aviso::destrave_de_teste("acme-pg-aprovacao"))
+            notices.take(),
+            Some(Notice::test_unlock("acme-pg-aprovacao"))
         );
     }
 
-    /// Fase 36: a vigia da aprovação tira só os `pedido_de_aprovacao`, na ordem; os de
-    /// destrave ficam para a Fase 31. Sem aprovação, espera o prazo e diz `None`.
+    /// Phase 36: the approval watcher takes only the approval requests, in order; the
+    /// unlock ones stay for Phase 31. With no approval, waits the timeout and says
+    /// `None`.
     #[test]
-    fn esperar_aprovacao_deixa_o_destrave_na_fila() {
-        let f = FilaAvisos::default();
-        assert_eq!(f.esperar_aprovacao(Duration::from_millis(30)), None);
-        f.por(Aviso::destrave_de_teste("acme-pg-aprovacao"));
-        f.por(Aviso::Aprovacao(aprovacao(1)));
-        f.por(Aviso::destrave_de_teste("acme-pg-aprovacao"));
-        f.por(Aviso::Aprovacao(aprovacao(2)));
+    fn wait_approval_leaves_the_unlock_in_the_queue() {
+        let f = NoticeQueue::default();
+        assert_eq!(f.wait_approval(Duration::from_millis(30)), None);
+        f.push(Notice::test_unlock("acme-pg-aprovacao"));
+        f.push(Notice::Approval(approval(1)));
+        f.push(Notice::test_unlock("acme-pg-aprovacao"));
+        f.push(Notice::Approval(approval(2)));
         assert_eq!(
-            f.esperar_aprovacao(Duration::from_millis(30)),
-            Some(aprovacao(1))
+            f.wait_approval(Duration::from_millis(30)),
+            Some(approval(1))
         );
         assert_eq!(
-            f.esperar_aprovacao(Duration::from_millis(30)),
-            Some(aprovacao(2))
+            f.wait_approval(Duration::from_millis(30)),
+            Some(approval(2))
         );
-        assert_eq!(f.esperar_aprovacao(Duration::from_millis(30)), None);
-        assert_eq!(
-            f.tomar(),
-            Some(Aviso::destrave_de_teste("acme-pg-aprovacao"))
-        );
-        assert_eq!(
-            f.tomar(),
-            Some(Aviso::destrave_de_teste("acme-pg-aprovacao"))
-        );
-        assert_eq!(f.tomar(), None);
-        // Chega de outra thread enquanto espera.
+        assert_eq!(f.wait_approval(Duration::from_millis(30)), None);
+        assert_eq!(f.take(), Some(Notice::test_unlock("acme-pg-aprovacao")));
+        assert_eq!(f.take(), Some(Notice::test_unlock("acme-pg-aprovacao")));
+        assert_eq!(f.take(), None);
+        // Arrives from another thread while it waits.
         let f = Arc::new(f);
         let g = Arc::clone(&f);
-        let t = std::thread::spawn(move || g.esperar_aprovacao(Duration::from_secs(10)));
+        let t = std::thread::spawn(move || g.wait_approval(Duration::from_secs(10)));
         std::thread::sleep(Duration::from_millis(50));
-        f.por(Aviso::Aprovacao(aprovacao(3)));
-        assert_eq!(t.join().unwrap(), Some(aprovacao(3)));
+        f.push(Notice::Approval(approval(3)));
+        assert_eq!(t.join().unwrap(), Some(approval(3)));
     }
 
     #[test]
-    fn v5_33_resposta_sem_pedido_fecha_a_conexao() {
+    fn v5_33_response_with_no_request_closes_the_connection() {
         let (a, mut b) = UnixStream::pair().unwrap();
-        let mut d = DaemonSocket::de_par(a, Duration::from_secs(10));
-        mandar(&mut b, &estado_app());
-        assert!(fechou(&mut b), "o app não fechou a conexão");
-        assert_eq!(cliente::estado(&mut d), Err(AppError::ConnectionLost));
-        assert_eq!(d.avisos().tamanho(), 0);
+        let mut d = DaemonSocket::from_pair(a, Duration::from_secs(10));
+        send(&mut b, &app_status());
+        assert!(closed(&mut b), "o app não fechou a conexão");
+        assert_eq!(client::status(&mut d), Err(AppError::ConnectionLost));
+        assert_eq!(d.notices().size(), 0);
     }
 
     #[test]
-    fn v5_33_quadro_acima_do_limite_fecha_a_conexao() {
+    fn v5_33_frame_above_the_limit_closes_the_connection() {
         let (a, mut b) = UnixStream::pair().unwrap();
-        let mut d = DaemonSocket::de_par(a, Duration::from_secs(10));
-        let servidor = std::thread::spawn(move || {
-            pedido_lido(&mut b);
+        let mut d = DaemonSocket::from_pair(a, Duration::from_secs(10));
+        let server = std::thread::spawn(move || {
+            read_request(&mut b);
             let n = u32::try_from(quadro::LIMITE_RESPOSTA + 1).unwrap();
             b.write_all(&n.to_be_bytes()).unwrap();
             let _ = b.write_all(&[b'{'; 64]);
-            fechou(&mut b)
+            closed(&mut b)
         });
-        assert_eq!(cliente::estado(&mut d), Err(AppError::ConnectionLost));
-        assert!(servidor.join().unwrap(), "o app não fechou a conexão");
-        assert_eq!(cliente::estado(&mut d), Err(AppError::ConnectionLost));
+        assert_eq!(client::status(&mut d), Err(AppError::ConnectionLost));
+        assert!(server.join().unwrap(), "o app não fechou a conexão");
+        assert_eq!(client::status(&mut d), Err(AppError::ConnectionLost));
     }
 
     #[test]
-    fn v5_33_tipo_do_papel_agente_ou_forjado_fecha_sem_mostrar_nada() {
+    fn v5_33_agent_role_type_or_forged_closes_without_showing_anything() {
         use ward_core::entry::{EntryType, Environment};
         use ward_core::protocolo::ItemLista;
-        // A lista do agente vem sem nível (D50): não é resposta que o app aceite.
+        // The agent list comes without a level (D50): not a response the app accepts.
         let item = ItemLista {
             nome: "acme-pg-dev".into(),
             tipo: EntryType::Database,
@@ -979,55 +981,55 @@ mod testes {
             endereco: None,
             resumo: None,
         };
-        let do_agente = protocolo::codificar_resposta(Papel::Agente, &Resposta::Lista(vec![item]))
+        let agent_list = protocolo::codificar_resposta(Papel::Agente, &Resposta::Lista(vec![item]))
             .unwrap()
             .to_vec();
-        let forjado = br#"{"v":1,"tipo":"estado","dados":{"travado":false,"cofre_existe":true,"papel":"app","x":1}}"#.to_vec();
-        for corpo in [do_agente, forjado] {
+        let forged = br#"{"v":1,"tipo":"estado","dados":{"travado":false,"cofre_existe":true,"papel":"app","x":1}}"#.to_vec();
+        for body in [agent_list, forged] {
             let (a, mut b) = UnixStream::pair().unwrap();
-            let mut d = DaemonSocket::de_par(a, Duration::from_secs(10));
-            let servidor = std::thread::spawn(move || {
-                pedido_lido(&mut b);
-                quadro::escrever_quadro(&mut b, &corpo, quadro::LIMITE_RESPOSTA).unwrap();
-                fechou(&mut b)
+            let mut d = DaemonSocket::from_pair(a, Duration::from_secs(10));
+            let server = std::thread::spawn(move || {
+                read_request(&mut b);
+                quadro::escrever_quadro(&mut b, &body, quadro::LIMITE_RESPOSTA).unwrap();
+                closed(&mut b)
             });
-            assert_eq!(cliente::lista(&mut d).err(), Some(AppError::ConnectionLost));
-            assert!(servidor.join().unwrap(), "o app não fechou a conexão");
+            assert_eq!(client::list(&mut d).err(), Some(AppError::ConnectionLost));
+            assert!(server.join().unwrap(), "o app não fechou a conexão");
         }
     }
 
     #[test]
-    fn sem_resposta_no_prazo_fecha_e_a_atrasada_nao_vira_outra() {
+    fn no_response_in_time_closes_and_the_late_one_does_not_become_another() {
         let (a, mut b) = UnixStream::pair().unwrap();
-        let mut d = DaemonSocket::de_par(a, Duration::from_millis(200));
-        let servidor = std::thread::spawn(move || {
-            pedido_lido(&mut b);
+        let mut d = DaemonSocket::from_pair(a, Duration::from_millis(200));
+        let server = std::thread::spawn(move || {
+            read_request(&mut b);
             std::thread::sleep(Duration::from_millis(400));
-            // A resposta atrasada: a conexão já fechou do lado do app.
+            // The late response: the connection already closed on the app side.
             let _ = quadro::escrever_quadro(
                 &mut b,
-                &protocolo::codificar_resposta(Papel::App, &estado_app()).unwrap(),
+                &protocolo::codificar_resposta(Papel::App, &app_status()).unwrap(),
                 quadro::LIMITE_RESPOSTA,
             );
-            fechou(&mut b)
+            closed(&mut b)
         });
-        assert_eq!(cliente::estado(&mut d), Err(AppError::ConnectionLost));
-        assert!(servidor.join().unwrap());
-        assert_eq!(cliente::estado(&mut d), Err(AppError::ConnectionLost));
+        assert_eq!(client::status(&mut d), Err(AppError::ConnectionLost));
+        assert!(server.join().unwrap());
+        assert_eq!(client::status(&mut d), Err(AppError::ConnectionLost));
     }
 
     #[test]
-    fn pedido_grande_demais_nao_sai_e_a_conexao_continua() {
+    fn request_too_large_does_not_go_out_and_the_connection_stays() {
         let (a, mut b) = UnixStream::pair().unwrap();
-        let mut d = DaemonSocket::de_par(a, Duration::from_secs(10));
-        let grande = vec![b'x'; quadro::limite_do_quadro(Papel::App) + 1];
-        assert_eq!(d.trocar(&grande).err(), Some(AppError::InvalidRequest));
-        let servidor = std::thread::spawn(move || {
-            pedido_lido(&mut b);
-            mandar(&mut b, &estado_app());
+        let mut d = DaemonSocket::from_pair(a, Duration::from_secs(10));
+        let large = vec![b'x'; quadro::limite_do_quadro(Papel::App) + 1];
+        assert_eq!(d.exchange(&large).err(), Some(AppError::InvalidRequest));
+        let server = std::thread::spawn(move || {
+            read_request(&mut b);
+            send(&mut b, &app_status());
             b
         });
-        assert_eq!(cliente::estado(&mut d), Ok(EstadoCofre::Destravado));
-        servidor.join().unwrap();
+        assert_eq!(client::status(&mut d), Ok(VaultStatus::Unlocked));
+        server.join().unwrap();
     }
 }

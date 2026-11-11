@@ -32,6 +32,8 @@ app/core/src/service.rs falso fake values of the test vault (falso-mestra-ward-0
 app/core/src/service.rs mestra fake test password of D15 (falso-mestra-ward-01; test data)
 app/core/src/service.rs anexo fake attachment value falso-anexo-01 of the test vault (test data)
 app/core/src/service.rs generico entry name gama-generico of the test vault (user data)
+# Phase 31: entry name of the test vault quoted in app/core/src/fake_daemon.rs comments.
+app/core/src/fake_daemon.rs aprovacao entry name acme-pg-aprovacao of the test vault (user data)
 Makefile frei frei0r is the name of a GStreamer plugin family, not Portuguese
 # File names of the pt-BR documentation (docs/ stays in pt-BR, m2:PRD rule 1).
 Makefile instalacao docs/instalacao.md, the pt-BR install guide
