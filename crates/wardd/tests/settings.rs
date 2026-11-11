@@ -13,7 +13,7 @@ mod common;
 
 use common::*;
 use ward_core::limits::{DEFAULT_LOCK_MINUTES, MAX_LOCK_MINUTES, MIN_LOCK_MINUTES};
-use ward_core::protocol::{ResponseError, Role, Resposta};
+use ward_core::protocol::{ResponseError, Resposta, Role};
 
 fn settings(d: &wardd::nucleo::Daemon) -> (u32, bool) {
     match request(d, Role::App, "configuracao", "{}") {
@@ -272,8 +272,8 @@ fn v5_22_change_password_asks_for_the_current_one_and_keeps_the_settings() {
 fn attack_short_new_master_password_refused_by_the_daemon() {
     let field = |r: &Resposta| match r {
         Resposta::Erro(ResponseError::Validation(p)) => {
-            assert!(p.iter().all(|p| p.motivo.contains("12 caracteres")));
-            p.iter().map(|p| p.campo.clone()).collect::<Vec<_>>()
+            assert!(p.iter().all(|p| p.reason.contains("12 caracteres")));
+            p.iter().map(|p| p.field.clone()).collect::<Vec<_>>()
         }
         other => panic!("{other:?}"),
     };
@@ -442,7 +442,9 @@ fn f55_attack_fifo_in_place_of_the_vault_does_not_hold_the_password_change() {
             matches!(
                 error(&r),
                 Some(
-                    ResponseError::WrongPassword | ResponseError::VaultChanged | ResponseError::Locked
+                    ResponseError::WrongPassword
+                        | ResponseError::VaultChanged
+                        | ResponseError::Locked
                 )
             ),
             "{r:?}"

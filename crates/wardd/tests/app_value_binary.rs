@@ -33,7 +33,7 @@ use std::time::{Duration, Instant};
 use common::{Dir, b64};
 use ward_core::atomic_write::write_entries;
 use ward_core::format::{MasterPassword, OpenVault};
-use ward_core::protocol::{self, ResponseError, Role, Resposta};
+use ward_core::protocol::{self, ResponseError, Resposta, Role};
 
 // The test vault through the public API (the same as the test app's and the fake
 // daemon's).

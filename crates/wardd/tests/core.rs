@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use common::*;
 use ward_core::entry::AccessLevel;
-use ward_core::protocol::{ResponseError, Role, Resposta};
+use ward_core::protocol::{ResponseError, Resposta, Role};
 use wardd::arquivos::{self, Geracoes};
 use wardd::nucleo::{ESPERA_MAXIMA, espera_destrave};
 
@@ -426,7 +426,10 @@ fn v3_22_rollback_and_swapped_file() {
         },
     )
     .unwrap();
-    assert_eq!(error(&unlock(&d, PASSWORD)), Some(ResponseError::VaultChanged));
+    assert_eq!(
+        error(&unlock(&d, PASSWORD)),
+        Some(ResponseError::VaultChanged)
+    );
     assert!(ok(&unlock(&d, PASSWORD)));
     // With the daemon unlocked, the file swapped by `mv` (new inode): does not write over
     // it, locks and warns.
@@ -455,7 +458,10 @@ fn v3_22_rollback_and_swapped_file() {
     d.travar();
     std::thread::sleep(Duration::from_millis(20));
     fs::write(&c.cofre, &before).unwrap();
-    assert_eq!(error(&unlock(&d, PASSWORD)), Some(ResponseError::VaultChanged));
+    assert_eq!(
+        error(&unlock(&d, PASSWORD)),
+        Some(ResponseError::VaultChanged)
+    );
     assert!(ok(&unlock(&d, PASSWORD)));
 
     // The state is 0600, with no secret.

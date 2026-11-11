@@ -17,7 +17,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::*;
-use ward_core::protocol::{ResponseError, Role, Resposta};
+use ward_core::protocol::{ResponseError, Resposta, Role};
 use wardd::aprovacao::SemCliente;
 use wardd::nucleo::Daemon;
 
@@ -835,20 +835,13 @@ fn attack_playwright_https_loopback_free_only_with_confirmation() {
             r#"{{"entrada":{{"nome":"{name}","grupo":"acme","ambiente":"prod","tipo":"login","campos":{{"url":"{url}","usuario":"wp_editor","senha":"{}"}}}}}}"#,
             b64(LOGIN_PASSWORD.as_bytes())
         );
-        assert!(
-            ok(&request(&c.d, Role::App, "salvar_entrada", &q)),
-            "{url}"
-        );
+        assert!(ok(&request(&c.d, Role::App, "salvar_entrada", &q)), "{url}");
         assert!(
             ok(&set_level(&c.d, Role::App, &name, "livre", PIN)),
             "{url}"
         );
         let r = c.playwright(&name);
-        assert_eq!(
-            error(&r),
-            Some(ResponseError::ApprovalUnavailable),
-            "{url}"
-        );
+        assert_eq!(error(&r), Some(ResponseError::ApprovalUnavailable), "{url}");
         let (r, seen) = with_window(&c.d, "negar", None, || c.playwright(&name));
         assert_eq!(error(&r), Some(ResponseError::Denied), "{url}");
         assert!(c.events("inicio").is_empty(), "o Chrome abriu: {url}");

@@ -16,7 +16,7 @@ use std::time::Duration;
 use common::*;
 use ward_core::config::{PinHash, VaultConfig};
 use ward_core::format::{MasterPassword, OpenVault};
-use ward_core::protocol::{ResponseError, MSG_ROLLBACK, Role, Resposta};
+use ward_core::protocol::{MSG_ROLLBACK, ResponseError, Resposta, Role};
 use wardd::arquivos::{self, Geracoes};
 use wardd::nucleo::{Caminhos, Daemon, ESPERA_MAXIMA, Relogio, espera_destrave};
 
@@ -325,14 +325,11 @@ fn v3_35_create_vault_with_old_state_and_old_copy() {
     fs::copy(&old, &c.cofre).unwrap();
     let r = unlock(&d, PASSWORD);
     assert_eq!(error(&r), Some(ResponseError::Rollback));
-    assert_eq!(ResponseError::Rollback.mensagem(), MSG_ROLLBACK);
+    assert_eq!(ResponseError::Rollback.message(), MSG_ROLLBACK);
     assert!(d.travado());
     // Not even a new daemon opens it.
     let (d2, _) = daemon_at(c.clone());
-    assert_eq!(
-        error(&unlock(&d2, PASSWORD)),
-        Some(ResponseError::Rollback)
-    );
+    assert_eq!(error(&unlock(&d2, PASSWORD)), Some(ResponseError::Rollback));
 }
 
 /// V3.35 (D62): without a state, the vault is born at generation 1 (the usual first
@@ -419,7 +416,7 @@ fn v3_35_swap_right_after_the_rename_is_refused() {
     let r = request(&d, Role::App, "tempo_trava", r#"{"minutos":32}"#);
     assert_eq!(error(&r), Some(ResponseError::VaultChanged));
     assert_eq!(
-        ResponseError::VaultChanged.mensagem(),
+        ResponseError::VaultChanged.message(),
         ward_core::protocol::MSG_VAULT_CHANGED
     );
     assert!(d.travado());

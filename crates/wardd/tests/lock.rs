@@ -28,7 +28,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use common::*;
-use ward_core::protocol::{self, ResponseError, Role, Resposta};
+use ward_core::protocol::{self, ResponseError, Resposta, Role};
 use wardd::nucleo::{Daemon, Relogio};
 use zbus::Connection;
 use zbus::Variant as Value;

@@ -9,7 +9,7 @@ mod common;
 use std::time::Duration;
 
 use common::{Dir, PIN, SECRETS, b64, error, ok, req, request};
-use ward_core::protocol::{self, ResponseError, Operation, Role, Resposta};
+use ward_core::protocol::{self, Operation, ResponseError, Resposta, Role};
 use ward_core::totp::Totp;
 use wardd::nucleo::{Daemon, Relogio};
 
@@ -338,19 +338,19 @@ fn attack_extension_without_app_or_agent_operations() {
     ];
     for op in Operation::ALL {
         assert_eq!(
-            op.permitida(Role::Extension),
+            op.allowed(Role::Extension),
             allowed.contains(op),
             "{}",
-            op.nome()
+            op.name()
         );
         if !allowed.contains(op) {
             // Whatever the rest of the frame is.
             for data in ["{}", r#"{"entrada":"acme-wp-dev","campo":"senha"}"#] {
                 assert_eq!(
-                    req(Role::Extension, op.nome(), data).unwrap_err(),
+                    req(Role::Extension, op.name(), data).unwrap_err(),
                     ResponseError::Unauthorized,
                     "{}",
-                    op.nome()
+                    op.name()
                 );
             }
         }
@@ -400,7 +400,7 @@ fn attack_extension_without_app_or_agent_operations() {
         protocol::ResponseType::Detail,
         protocol::ResponseType::Output,
     ] {
-        assert!(!t.permitida(Role::Extension), "{}", t.nome());
+        assert!(!t.allowed(Role::Extension), "{}", t.name());
     }
 }
 
@@ -716,11 +716,7 @@ fn attack_fill_https_loopback_without_confirming_nothing_leaves() {
         );
         assert!(ok(&r), "{r:?}");
         let r = fill_raw(&d, Role::Extension, &name, url);
-        assert_eq!(
-            error(&r),
-            Some(ResponseError::ApprovalUnavailable),
-            "{url}"
-        );
+        assert_eq!(error(&r), Some(ResponseError::ApprovalUnavailable), "{url}");
         no_secret(&common::encoded(Role::Extension, &r));
         let (r, seen) = common::with_window(&d, "negar", None, || {
             fill_raw(&d, Role::Extension, &name, url)

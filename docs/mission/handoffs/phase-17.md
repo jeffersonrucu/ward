@@ -218,3 +218,22 @@ arquivos tocados, contra o `6db0d00`:
 - [x] Teste de ataque para cada (SEG) tocado — os existentes acompanham os nomes; a lógica não mudou
 - [ ] (UI/DESIGN) Conferido contra o FigCraft — não se aplica
 - [x] Ficou dentro do escopo da fase
+
+## Merge com o master `46138ad` e `2e23f1d` (Fases 23, 25, 26, 27, 32 e 33)
+- Dois merges (o primeiro, com `46138ad`, foi commitado antes de o master andar para
+  `2e23f1d` e só compila junto com o segundo). Nos arquivos dessas fases ficou a versão do
+  master (conflito de conteúdo) e os antigos que voltaram (modify/delete: `servidor.rs`,
+  testes `comum/`, `aprovacao`, `trava`, `nucleo`, `externo`, `configuracoes`, `datas`,
+  `memoria`, `extensao`, `app_valor`, `valor_app`, `anexos_edicao`; `app/core`
+  `formulario`, `aprovacao`, `restaurar`, `backup_externo`, `credenciais`, `partida`)
+  foram apagados. Os usos desta fase foram reaplicados pelo mesmo script e pelo corretor de
+  diagnósticos (9 rodadas do `cargo check`), à mão o `use … frame` de `app/core/src/startup.rs`;
+  os `x: x` pelo clippy (`app/core/src/client.rs`).
+- O `StartupError::Role(Role)` da Fase 33 é dela e ficou. O V3.15 de `wardd/tests/approval.rs`
+  só lê `wardd/src`: nada desta fase.
+- Literais conferidos de novo por script contra `2e23f1d`: só os `include_str!` de
+  `protocol/tests.rs`; os arquivos da fase iguais à conferência de antes. Glossário com as
+  partes de todas as fases, sem marca de conflito.
+- `cargo check` 0, `cargo clippy -D warnings` 0, `cargo fmt --check` 0,
+  `cargo test -p ward-core --lib -- protocol wire_v1` 58 ok (log
+  `fase17-merge-test-protocol.log`), `make compile` 0 (log `fase17-merge-make-compile.log`).

@@ -28,7 +28,7 @@ use common::*;
 use ward_core::entry::Secret;
 use ward_core::limits::MAX_COMMON_FRAME;
 use ward_core::protocol::frame::{self, RESPONSE_LIMIT};
-use ward_core::protocol::{self, ResponseError, Fluxo, WindowSize, Role, Request, Resposta};
+use ward_core::protocol::{self, Fluxo, Request, ResponseError, Resposta, Role, WindowSize};
 use wardd::aprovacao::{Motor, RelogioMotor, SemApp, SemCliente};
 use wardd::nucleo::Daemon;
 use wardd::ssh::SshPrograms;
@@ -295,7 +295,7 @@ impl Scene {
         match self.d.atender(
             Role::App,
             Request::IssueToken {
-                entrada: entry.into(),
+                entry: entry.into(),
             },
         ) {
             Resposta::Token(t) => t,
@@ -311,16 +311,16 @@ fn ssh_request(
     window: Option<WindowSize>,
 ) -> Request {
     Request::Ssh {
-        entrada: entry.into(),
-        comando: command
+        entry: entry.into(),
+        command: command
             .iter()
             .map(|c| Zeroizing::new(c.as_bytes().to_vec()))
             .collect(),
         token: token.map(|t| Secret::from_bytes(t.expose().to_vec())),
-        janela: window,
+        window_size: window,
         // Phase 54b: the tests send the input over the socket (like a pipe), or type
         // it in the pty.
-        tipo_entrada: if window.is_some() {
+        stdin_kind: if window.is_some() {
             ward_core::protocol::StdinKind::Terminal
         } else {
             ward_core::protocol::StdinKind::Pipe
@@ -356,7 +356,12 @@ fn session(c: &Scene, request: Request, cli: impl FnOnce(&mut UnixStream)) -> Se
 }
 
 /// Like [`session`]; `run`: the `ward run` session (`wardd::execution::session`).
-fn session_of(c: &Scene, request: Request, cli: impl FnOnce(&mut UnixStream), run: bool) -> Session {
+fn session_of(
+    c: &Scene,
+    request: Request,
+    cli: impl FnOnce(&mut UnixStream),
+    run: bool,
+) -> Session {
     let (mut cli_end, daemon_end) = UnixStream::pair().unwrap();
     cli_end
         .set_read_timeout(Some(Duration::from_secs(60)))
@@ -408,7 +413,7 @@ fn close_stdin(s: &mut UnixStream) {
     let body = protocol::encode_request(
         Role::Agent,
         &Request::Stdin {
-            dados: Secret::from_bytes(Vec::new()),
+            data: Secret::from_bytes(Vec::new()),
         },
     )
     .unwrap();
@@ -577,7 +582,7 @@ fn v4_37_d56_sftp_with_user_and_host_after_double_dash() {
         send(
             s,
             &Request::Stdin {
-                dados: Secret::from_bytes(b"pwd\nls\n".to_vec()),
+                data: Secret::from_bytes(b"pwd\nls\n".to_vec()),
             },
         );
         close_stdin(s);
@@ -812,8 +817,8 @@ fn f54c_attack_ward_ssh_dies_on_lock() {
 #[test]
 fn f54l_attack_cli_drops_in_ward_ssh_no_ssh_left() {
     let window = WindowSize {
-        linhas: 30,
-        colunas: 100,
+        rows: 30,
+        cols: 100,
     };
     for (entry, pty) in [("s-livre", false), ("s-livre", true), ("s-chave", false)] {
         let label = format!("{entry}{}", if pty { "-pty" } else { "" });
@@ -891,8 +896,8 @@ fn d34_attack_pty_right_and_wrong_prefix_come_out_alike_and_at_once() {
     let c = scene("d34");
     c.set_mode("pty");
     let window = WindowSize {
-        linhas: 30,
-        colunas: 100,
+        rows: 30,
+        cols: 100,
     };
     let ready = c.base.join("pty-pronto");
     let r = session(
@@ -903,8 +908,8 @@ fn d34_attack_pty_right_and_wrong_prefix_come_out_alike_and_at_once() {
             send(
                 s,
                 &Request::Resize(WindowSize {
-                    linhas: 40,
-                    colunas: 120,
+                    rows: 40,
+                    cols: 120,
                 }),
             );
         },
@@ -1082,7 +1087,7 @@ fn v5_24_connect_token() {
         let r = c.d.atender(
             role,
             Request::IssueToken {
-                entrada: "s-outro".into(),
+                entry: "s-outro".into(),
             },
         );
         assert_eq!(error(&r), Some(ResponseError::Unauthorized), "{role:?}");
@@ -1090,7 +1095,7 @@ fn v5_24_connect_token() {
     let r = c.d.atender(
         Role::App,
         Request::IssueToken {
-            entrada: "t-livre".into(),
+            entry: "t-livre".into(),
         },
     );
     assert_eq!(error(&r), Some(ResponseError::InvalidRequest));
@@ -1427,16 +1432,16 @@ for i in range(2):
         server = SSH_PASSWORD,
     );
     let request = Request::Run(ward_core::protocol::RunRequest {
-        entrada: "b-tunel".into(),
+        entry: "b-tunel".into(),
         argv: ["/usr/bin/python3", "-I", "-c", script.as_str()]
             .iter()
             .map(|x| Zeroizing::new(x.as_bytes().to_vec()))
             .collect(),
         cwd: Zeroizing::new(b"/".to_vec()),
-        tipo_entrada: ward_core::protocol::StdinKind::Null,
-        ambiente: vec![ward_core::protocol::Variable {
-            nome: Zeroizing::new(b"PATH".to_vec()),
-            valor: Secret::from_text("/usr/bin:/bin".into()),
+        stdin_kind: ward_core::protocol::StdinKind::Null,
+        env: vec![ward_core::protocol::Variable {
+            name: Zeroizing::new(b"PATH".to_vec()),
+            value: Secret::from_text("/usr/bin:/bin".into()),
         }],
     });
     let port = std::cell::Cell::new(0u16);
@@ -1525,14 +1530,14 @@ except OSError as e:
         mark = mark.to_str().unwrap(),
     );
     let request = Request::Run(ward_core::protocol::RunRequest {
-        entrada: "b-tunel".into(),
+        entry: "b-tunel".into(),
         argv: ["/usr/bin/python3", "-I", "-c", script.as_str()]
             .iter()
             .map(|x| Zeroizing::new(x.as_bytes().to_vec()))
             .collect(),
         cwd: Zeroizing::new(b"/".to_vec()),
-        ambiente: Vec::new(),
-        tipo_entrada: ward_core::protocol::StdinKind::Null,
+        env: Vec::new(),
+        stdin_kind: ward_core::protocol::StdinKind::Null,
     });
     let r = session_of(
         &c,

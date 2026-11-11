@@ -547,15 +547,15 @@ mod tests {
     use std::os::unix::net::UnixListener;
 
     use crate::client;
-    use crate::comandos::Referencia;
+    use crate::commands::Reference;
     use ward_core::protocol::Target;
 
     impl DaemonSocket {
         fn status(&mut self) -> Result<VaultStatus, AppError> {
             client::status(self)
         }
-        fn value_to_copy(&mut self, r: &Referencia) -> Result<(), AppError> {
-            client::copy(self, r.entrada(), Target::Field(r.campo().to_owned())).map(|_| ())
+        fn value_to_copy(&mut self, r: &Reference) -> Result<(), AppError> {
+            client::copy(self, r.entry(), Target::Field(r.field().to_owned())).map(|_| ())
         }
     }
 
@@ -645,7 +645,7 @@ mod tests {
         let l = fake_server(&dir);
         let mut d = DaemonSocket::system_at(dir.join(SOCKET));
         assert_eq!(d.status(), Err(AppError::DaemonUntrusted));
-        let r = Referencia::nova("acme-pg-dev", "senha").unwrap();
+        let r = Reference::new("acme-pg-dev", "senha").unwrap();
         assert!(matches!(
             d.value_to_copy(&r),
             Err(AppError::DaemonUntrusted)
@@ -664,7 +664,7 @@ mod tests {
         assert!(d.connect_now().is_err());
         let l = fake_server(&dir);
         assert_eq!(d.status(), Err(AppError::ConnectionLost));
-        let r = Referencia::nova("acme-pg-dev", "senha").unwrap();
+        let r = Reference::new("acme-pg-dev", "senha").unwrap();
         assert!(matches!(d.value_to_copy(&r), Err(AppError::ConnectionLost)));
         assert!(l.accept().is_err(), "reconectou depois da partida");
         #[cfg(feature = "test-mode")]

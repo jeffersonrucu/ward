@@ -11,9 +11,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use common::{Dir, PIN, SECRETS, b64, error, login, ok, request, set_level};
-use ward_core::protocol::{
-    self, DetalheEntrada, ResponseError, Role, Resposta, decode_response,
-};
+use ward_core::protocol::{self, DetalheEntrada, ResponseError, Resposta, Role, decode_response};
 use wardd::nucleo::{Daemon, Relogio};
 
 /// 2026-11-02 00:00 UTC and following (the footer of the frame approved in M0).

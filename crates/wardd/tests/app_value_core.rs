@@ -9,7 +9,7 @@ mod common;
 use std::time::Duration;
 
 use common::{Dir, PIN, SECRETS, b64, error, ok, request};
-use ward_core::protocol::{self, Target, ResponseError, Role, Request, Resposta};
+use ward_core::protocol::{self, Request, ResponseError, Resposta, Role, Target};
 use ward_core::totp::Totp;
 use wardd::nucleo::{Daemon, Relogio};
 
@@ -242,7 +242,7 @@ fn attack_v3_39_agent_and_extension_neither_reveal_nor_copy_nor_take_totp() {
                 error(&r),
                 Some(ResponseError::Unauthorized),
                 "{} {op}",
-                role.nome()
+                role.name()
             );
             let q = common::encoded(role, &r);
             for s in SECRETS.iter().chain([&SEED, &EXTRA]) {
@@ -253,15 +253,15 @@ fn attack_v3_39_agent_and_extension_neither_reveal_nor_copy_nor_take_totp() {
         // Request already decoded, handed straight to the core (second layer).
         for p in [
             Request::Reveal {
-                entrada: "t-aprov".into(),
-                alvo: Target::Field("senha".into()),
+                entry: "t-aprov".into(),
+                target: Target::Field("senha".into()),
             },
             Request::Copy {
-                entrada: "t-bloq".into(),
-                alvo: Target::Field("senha".into()),
+                entry: "t-bloq".into(),
+                target: Target::Field("senha".into()),
             },
             Request::Totp {
-                entrada: "t-totp".into(),
+                entry: "t-totp".into(),
             },
         ] {
             let r = d.atender(role, p);

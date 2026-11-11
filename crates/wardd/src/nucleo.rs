@@ -64,8 +64,8 @@ use ward_core::entry::{AccessLevel, Data, DataDraft, Dates, Draft, Entry, Secret
 use ward_core::format::{MasterPassword, OpenVault};
 use ward_core::origin::Origin;
 use ward_core::protocol::{
-    Target, DetalheEntrada, ResponseError, ItemLista, MAX_BACKUPS, MAX_PENDRIVES, Operation, Role,
-    Request, PedidoDeAprovacao, Pendrive, Problem, Resposta, Sugestao, VersaoBackup,
+    DetalheEntrada, ItemLista, MAX_BACKUPS, MAX_PENDRIVES, Operation, PedidoDeAprovacao, Pendrive,
+    Problem, Request, ResponseError, Resposta, Role, Sugestao, Target, VersaoBackup,
 };
 use ward_core::totp::Totp;
 
@@ -304,9 +304,9 @@ enum FalhaGravar {
 
 fn problema(campo: &str, motivo: &str) -> ResponseError {
     ResponseError::Validation(vec![Problem {
-        campo: campo.to_owned(),
-        posicao: None,
-        motivo: motivo.to_owned(),
+        field: campo.to_owned(),
+        position: None,
+        reason: motivo.to_owned(),
     }])
 }
 
@@ -782,9 +782,9 @@ impl Daemon {
     /// Como [`Daemon::atender`], com o cliente da conexão (cadeia de processos para a
     /// janela de aprovação e se ele ainda está lá).
     pub fn atender_de(&self, cliente: &dyn Cliente, papel: Role, pedido: Request) -> Resposta {
-        let op = pedido.operacao();
+        let op = pedido.operation();
         // O protocolo já recusou; aqui é a segunda camada.
-        if !op.permitida(papel) {
+        if !op.allowed(papel) {
             return Resposta::Erro(ResponseError::Unauthorized);
         }
         let r = self.atender_permitido(cliente, papel, pedido);
@@ -796,11 +796,11 @@ impl Daemon {
         }
         depurar!(
             "{} ({}): {}",
-            op.nome(),
-            papel.nome(),
+            op.name(),
+            papel.name(),
             match &r {
-                Resposta::Erro(e) => e.codigo(),
-                outra => outra.tipo().nome(),
+                Resposta::Erro(e) => e.code(),
+                outra => outra.tipo().name(),
             }
         );
         r
@@ -817,7 +817,7 @@ impl Daemon {
                     papel,
                 })
             }
-            Request::Unlock { senha } => self.destravar(papel, &senha),
+            Request::Unlock { password: senha } => self.destravar(papel, &senha),
             Request::Lock => {
                 self.travar();
                 Ok(Resposta::Ok)
@@ -828,8 +828,11 @@ impl Daemon {
             // Fase 43: o daemon leva o pedido à extensão; só `ok` ou erro voltam.
             Request::Login { .. } => self.login(cliente, &pedido),
             Request::AwaitLogin => self.await_login(papel),
-            Request::FillLogin { id, origem } => self.fill_login(papel, &id, &origem),
-            Request::LoginResult { id, resultado } => self.login_result(papel, &id, resultado),
+            Request::FillLogin { id, origin: origem } => self.fill_login(papel, &id, &origem),
+            Request::LoginResult {
+                id,
+                result: resultado,
+            } => self.login_result(papel, &id, resultado),
             // Fase 23: nível, destrave e aprovação. O `executar` e o `ssh` são atendidos
             // pela sessão do servidor (Fases 26/27); aqui o uso autorizado responde erro
             // interno.
@@ -837,58 +840,73 @@ impl Daemon {
                 .autorizar_uso(cliente, &pedido)
                 .and(Err(ResponseError::Internal)),
             Request::AnswerApproval {
-                pedido,
-                decisao,
+                request: pedido,
+                decision: decisao,
                 pin,
-                entrada_confirmada,
+                confirmed_entry: entrada_confirmada,
             } => self.responder_aprovacao(pedido, decisao, pin.as_ref(), entrada_confirmada),
             Request::OpenApp => self.aprovacao.abrir_app().map(|()| Resposta::Ok),
             // Não há sessão aberta nesta fase (Fases 26/27).
             Request::Stdin { .. } | Request::Resize(_) => Err(ResponseError::InvalidRequest),
-            Request::CreateVault { senha, pin } => self.criar_cofre(&senha, &pin),
-            Request::Detail { entrada } => self.detalhe(&entrada),
+            Request::CreateVault {
+                password: senha,
+                pin,
+            } => self.criar_cofre(&senha, &pin),
+            Request::Detail { entry: entrada } => self.detalhe(&entrada),
             Request::SaveEntry {
-                anterior,
-                rascunho,
-                manter_anexos,
+                previous: anterior,
+                draft: rascunho,
+                keep_attachments: manter_anexos,
             } => self.salvar_entrada(anterior.as_deref(), rascunho, &manter_anexos),
-            Request::RemoveEntry { entrada } => self.remover_entrada(&entrada),
+            Request::RemoveEntry { entry: entrada } => self.remover_entrada(&entrada),
             Request::SetLevel {
-                entrada,
-                nivel,
+                entry: entrada,
+                level: nivel,
                 pin,
             } => self.mudar_nivel(&entrada, nivel, &pin),
-            Request::ChangePin { atual, novo } => self.trocar_pin(&atual, &novo),
-            Request::ChangePassword { atual, nova } => self.trocar_senha(&atual, &nova),
-            Request::LockTimeout { minutos } => self.tempo_trava(minutos),
+            Request::ChangePin {
+                current: atual,
+                new: novo,
+            } => self.trocar_pin(&atual, &novo),
+            Request::ChangePassword {
+                current: atual,
+                new: nova,
+            } => self.trocar_senha(&atual, &nova),
+            Request::LockTimeout { minutes: minutos } => self.tempo_trava(minutos),
             // D4, D65 b: só o app, sem PIN, aprovação nem nível.
-            Request::Reveal { entrada, alvo } => {
-                self.valor_do_app(papel, Operation::Reveal, &entrada, &alvo)
-            }
-            Request::Copy { entrada, alvo } => {
-                self.valor_do_app(papel, Operation::Copy, &entrada, &alvo)
-            }
-            Request::Totp { entrada } => self.totp_do_app(papel, &entrada),
+            Request::Reveal {
+                entry: entrada,
+                target: alvo,
+            } => self.valor_do_app(papel, Operation::Reveal, &entrada, &alvo),
+            Request::Copy {
+                entry: entrada,
+                target: alvo,
+            } => self.valor_do_app(papel, Operation::Copy, &entrada, &alvo),
+            Request::Totp { entry: entrada } => self.totp_do_app(papel, &entrada),
             Request::Backups => self.backups(),
             Request::Config => self.configuracao(),
             Request::ExternalBackup => self.backup_externo(),
-            Request::SetExternalBackup { ligado, uuid } => {
-                self.definir_backup_externo(ligado, uuid.as_deref())
-            }
+            Request::SetExternalBackup {
+                enabled: ligado,
+                uuid,
+            } => self.definir_backup_externo(ligado, uuid.as_deref()),
             Request::UsbDrives => self.pendrives(),
-            Request::RestoreBackup { versao, senha, pin } => {
-                self.restaurar_backup(&versao, &senha, &pin)
-            }
+            Request::RestoreBackup {
+                version: versao,
+                password: senha,
+                pin,
+            } => self.restaurar_backup(&versao, &senha, &pin),
             // D3 (Fase 27): token de uso único do "Conectar", só para o app.
-            Request::IssueToken { entrada } => self.issue_token(papel, &entrada),
+            Request::IssueToken { entry: entrada } => self.issue_token(papel, &entrada),
             // Fase 40 (D9): sugerir e preencher pela origem da aba, só para a extensão.
-            Request::Suggest { origem } => self.sugerir(papel, &origem),
+            Request::Suggest { origin: origem } => self.sugerir(papel, &origem),
             // Fase 44c: numa origem `http`, só depois da confirmação na janela.
-            Request::Fill { entrada, origem } => {
-                self.preencher_do_popup(cliente, papel, &entrada, &origem)
-            }
+            Request::Fill {
+                entry: entrada,
+                origin: origem,
+            } => self.preencher_do_popup(cliente, papel, &entrada, &origem),
             // Fase 42: login novo visto pela extensão, sempre "com aprovação" (D50, S9).
-            Request::SaveLogin { rascunho } => self.salvar_login(papel, rascunho),
+            Request::SaveLogin { draft: rascunho } => self.salvar_login(papel, rascunho),
         };
         r.unwrap_or_else(Resposta::Erro)
     }
@@ -1053,12 +1071,12 @@ impl Daemon {
             .iter()
             .find(|e| e.name() == nome)
             .ok_or(ResponseError::EntryNotFound)?;
-        let valor = alvo.segredo_em(e).ok_or(ResponseError::FieldNotFound)?;
+        let valor = alvo.secret_in(e).ok_or(ResponseError::FieldNotFound)?;
         // O campo do tipo já passou pela lista fixa do protocolo; o nome do extra vem
         // da entrada e sai com escape (sem quebra de linha nem controle no log).
         match alvo {
-            Target::Field(c) => aviso!("{} {} {c}", op.nome(), e.name()),
-            Target::Extra(x) => aviso!("{} {} extra {x:?}", op.nome(), e.name()),
+            Target::Field(c) => aviso!("{} {} {c}", op.name(), e.name()),
+            Target::Extra(x) => aviso!("{} {} extra {x:?}", op.name(), e.name()),
         }
         Ok(Resposta::Segredo(Secret::from_bytes(
             valor.expose().to_vec(),
@@ -1080,9 +1098,12 @@ impl Daemon {
             .find(|e| e.name() == nome)
             .ok_or(ResponseError::EntryNotFound)?;
         let semente = Target::Field("totp_semente".to_owned())
-            .segredo_em(e)
+            .secret_in(e)
             .ok_or(ResponseError::FieldNotFound)?;
-        let agora = self.relogio.segundos_unix().ok_or(ResponseError::Internal)?;
+        let agora = self
+            .relogio
+            .segundos_unix()
+            .ok_or(ResponseError::Internal)?;
         let c = Totp::from_seed(semente)
             .map_err(|_| ResponseError::Internal)?
             .code_at(agora);
@@ -1219,7 +1240,10 @@ impl Daemon {
         }
         let totp = match &l.totp_seed {
             Some(semente) => {
-                let agora = self.relogio.segundos_unix().ok_or(ResponseError::Internal)?;
+                let agora = self
+                    .relogio
+                    .segundos_unix()
+                    .ok_or(ResponseError::Internal)?;
                 let c = Totp::from_seed(semente)
                     .map_err(|_| ResponseError::Internal)?
                     .code_at(agora);

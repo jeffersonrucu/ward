@@ -23,7 +23,7 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use common::Dir;
-use ward_core::protocol::{self, ResponseError, Role, Resposta};
+use ward_core::protocol::{self, ResponseError, Resposta, Role};
 
 const WARDD: &str = env!("CARGO_BIN_EXE_wardd");
 const TEST_APP: &str = env!("CARGO_BIN_EXE_wardd-app-teste");
@@ -195,7 +195,7 @@ fn v3_37_only_the_app_opened_by_the_test_daemon_is_app() {
     );
 
     // By hand (the same file) and a copy: agent, and reveal not authorized.
-    let not_authorized = ResponseError::Unauthorized.codigo();
+    let not_authorized = ResponseError::Unauthorized.code();
     let copy = repo.0.join("bin/copia-do-app");
     fs::copy(&app, &copy).unwrap();
     for b in [&app, &copy] {

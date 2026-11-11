@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use ward_core::protocol::{self, ResponseError, Role, Request, Resposta};
+use ward_core::protocol::{self, Request, ResponseError, Resposta, Role};
 use wardd::nucleo::{Caminhos, Daemon, Relogio};
 
 pub const PASSWORD: &str = "falso-mestra-ward-01";

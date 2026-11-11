@@ -305,7 +305,7 @@ pub(crate) fn display(a: &Current) -> DisplayedRequest {
         id: p.id,
         entries,
         environment: p.ambiente.name(),
-        operation: p.operacao.nome(),
+        operation: p.operacao.name(),
         command: neutralize(&p.comando),
         directory: neutralize(&p.diretorio),
         chain: p.cadeia.iter().map(|c| display_process(c)).collect(),
@@ -756,10 +756,10 @@ mod service_tests {
         let q = protocol::encode_request(
             protocol::Role::App,
             &protocol::Request::AnswerApproval {
-                pedido: 21,
-                decisao: protocol::Decision::AllowOnce,
+                request: 21,
+                decision: protocol::Decision::AllowOnce,
                 pin: Some(ward_core::entry::Secret::from_text(RIGHT_PIN.to_owned())),
-                entrada_confirmada: false,
+                confirmed_entry: false,
             },
         )
         .unwrap();

@@ -18,7 +18,7 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use common::*;
-use ward_core::protocol::{self, ResponseError, Fluxo, Role, Resposta};
+use ward_core::protocol::{self, Fluxo, ResponseError, Resposta, Role};
 
 const WARDD: &str = env!("CARGO_BIN_EXE_wardd");
 /// Password of the free test entry (fake).
@@ -439,7 +439,10 @@ fn v4_delivery_mask_code_and_refusals() {
         &[],
     );
     assert_eq!(r.failure, Some(ResponseError::TypeWithoutDelivery), "{r:?}");
-    assert_eq!(ResponseError::TypeWithoutDelivery.mensagem(), "tipo sem entrega");
+    assert_eq!(
+        ResponseError::TypeWithoutDelivery.message(),
+        "tipo sem entrega"
+    );
     assert!(!mark.exists());
     // V4.20: needs approval and no app → approval unavailable, nothing run.
     let r = run(
@@ -448,11 +451,7 @@ fn v4_delivery_mask_code_and_refusals() {
         &["/usr/bin/touch", mark.to_str().unwrap()],
         &[],
     );
-    assert_eq!(
-        r.failure,
-        Some(ResponseError::ApprovalUnavailable),
-        "{r:?}"
-    );
+    assert_eq!(r.failure, Some(ResponseError::ApprovalUnavailable), "{r:?}");
     assert!(!mark.exists());
     // Blocked = nonexistent (V3.17); the database tunnel is Phase 28 (nothing run).
     let r = run(

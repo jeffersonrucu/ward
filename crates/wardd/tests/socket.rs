@@ -17,7 +17,7 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use common::*;
-use ward_core::protocol::{self, ResponseError, Role, Resposta};
+use ward_core::protocol::{self, ResponseError, Resposta, Role};
 
 const WARDD: &str = env!("CARGO_BIN_EXE_wardd");
 
@@ -230,10 +230,7 @@ fn v3_20_cycle_through_the_socket_without_secret_in_the_log() {
         "abrir_app: {e:?}"
     );
     let (_, r) = request_on(&mut s, "executar", &exec("t-aprov"));
-    assert_eq!(
-        protocol_error(&r),
-        Some(ResponseError::ApprovalUnavailable)
-    );
+    assert_eq!(protocol_error(&r), Some(ResponseError::ApprovalUnavailable));
 
     // V3.4: 70 stalled connections do not take the service away (the oldest stalled
     // one leaves).

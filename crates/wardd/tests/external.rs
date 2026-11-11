@@ -30,7 +30,7 @@ use std::time::{Duration, Instant};
 
 use common::*;
 use ward_core::backup::VERSIONS;
-use ward_core::protocol::{ResponseError, Role, Resposta};
+use ward_core::protocol::{ResponseError, Resposta, Role};
 use wardd::external::{ExternalError, Seen, UsbDriveSource};
 use wardd::nucleo::Daemon;
 use zbus::connection::Builder;
@@ -751,7 +751,7 @@ fn v7_8_agent_and_extension_neither_turn_on_nor_read() {
                 error(&request(&d, role, op, &data)),
                 Some(ResponseError::Unauthorized),
                 "{op} pelo {}",
-                role.nome()
+                role.name()
             );
             // Directly in the daemon, with the request read as the app.
             let p = req(Role::App, op, &data).unwrap();

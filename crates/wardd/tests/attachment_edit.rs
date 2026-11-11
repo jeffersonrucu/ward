@@ -7,7 +7,7 @@ mod common;
 
 use common::*;
 use ward_core::entry::Entry;
-use ward_core::protocol::{ResponseError, Role, Resposta};
+use ward_core::protocol::{ResponseError, Resposta, Role};
 
 const ATTACHMENT_A: &[u8] = b"FALSO_A=falso-anexo-39b-a\n";
 const ATTACHMENT_B: &[u8] = b"FALSO_B=falso-anexo-39b-b\n";

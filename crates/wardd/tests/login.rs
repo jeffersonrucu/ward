@@ -20,7 +20,7 @@ use std::time::Duration;
 
 use common::*;
 use ward_core::protocol::{
-    ResponseError, Operation, Role, Request, PedidoDeAprovacao, Resposta, LoginResult,
+    LoginResult, Operation, PedidoDeAprovacao, Request, ResponseError, Resposta, Role,
 };
 use wardd::aprovacao::{
     AbridorApp, Assinante, Cliente, ErroAbrirApp, Motor, RelogioMotor, SemCliente,
@@ -47,11 +47,7 @@ fn vault(label: &str, pickup_ms: u64) -> (Daemon, Dir) {
 }
 
 fn agent_login(d: &Daemon, client: &dyn Cliente, name: &str) -> Resposta {
-    match req(
-        Role::Agent,
-        "login",
-        &format!(r#"{{"entrada":"{name}"}}"#),
-    ) {
+    match req(Role::Agent, "login", &format!(r#"{{"entrada":"{name}"}}"#)) {
         Ok(p) => d.atender_de(client, Role::Agent, p),
         Err(e) => Resposta::Erro(e),
     }
@@ -242,7 +238,7 @@ fn extension_outcomes() {
             let t = s.spawn(|| agent_login(&d, &SemCliente, "t-livre"));
             let (id, _) = take(&d);
             // Before the fill (the tab without a form, or that changed on the probe).
-            assert!(ok(&outcome(&d, &id, r.nome())));
+            assert!(ok(&outcome(&d, &id, r.name())));
             // Outcome again: changes nothing.
             assert_eq!(
                 error(&outcome(&d, &id, "enviado")),
@@ -280,11 +276,11 @@ fn attack_agent_and_app_on_the_extension_operations() {
                 Request::AwaitLogin,
                 Request::FillLogin {
                     id: id.clone(),
-                    origem: ORIGIN.into(),
+                    origin: ORIGIN.into(),
                 },
                 Request::LoginResult {
                     id: id.clone(),
-                    resultado: LoginResult::Submitted,
+                    result: LoginResult::Submitted,
                 },
             ] {
                 let r = d.atender(role, p);
@@ -629,11 +625,7 @@ fn attack_login_https_loopback_free_only_with_confirmation() {
         let name = format!("l-livre-{i}");
         login_at_url(&d, &name, "livre", url);
         let r = agent_login(&d, &SemCliente, &name);
-        assert_eq!(
-            error(&r),
-            Some(ResponseError::ApprovalUnavailable),
-            "{url}"
-        );
+        assert_eq!(error(&r), Some(ResponseError::ApprovalUnavailable), "{url}");
         assert_eq!(await_login(&d), None, "{url}");
         let (r, seen) = with_window(&d, "negar", None, || agent_login(&d, &SemCliente, &name));
         assert_eq!(error(&r), Some(ResponseError::Denied), "{url}");

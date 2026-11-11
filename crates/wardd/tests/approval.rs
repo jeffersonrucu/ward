@@ -16,7 +16,7 @@ use std::time::Duration;
 use common::*;
 use ward_core::entry::{AccessLevel, Environment};
 use ward_core::protocol::{
-    ResponseError, Operation, Role, PedidoDeAprovacao, PedidoDeDestrave, Resposta,
+    Operation, PedidoDeAprovacao, PedidoDeDestrave, ResponseError, Resposta, Role,
 };
 use ward_platform::{PeerClass, Refusal};
 use wardd::aprovacao::{
@@ -437,10 +437,10 @@ fn attack_agent_answers_the_approval() {
             }
             // Not even through the request handler directly with the request built by hand.
             let q = ward_core::protocol::Request::AnswerApproval {
-                pedido: p.id,
-                decisao: ward_core::protocol::Decision::AllowOnce,
+                request: p.id,
+                decision: ward_core::protocol::Decision::AllowOnce,
                 pin: Some(ward_core::entry::Secret::from_text(PIN.to_owned())),
-                entrada_confirmada: false,
+                confirmed_entry: false,
             };
             assert_eq!(
                 error(&c.d.atender(role, q)),
@@ -996,10 +996,10 @@ fn attack_phase_39a_empty_entry_does_not_bring_down_the_app() {
     );
     for p in [
         ward_core::protocol::Request::Login {
-            entrada: String::new(),
+            entry: String::new(),
         },
         ward_core::protocol::Request::Playwright {
-            entrada: String::new(),
+            entry: String::new(),
         },
     ] {
         assert_eq!(

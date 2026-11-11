@@ -16,7 +16,7 @@ use std::time::{Duration, SystemTime};
 use common::*;
 use ward_core::backup::Version;
 use ward_core::entry::Secret;
-use ward_core::protocol::{ResponseError, MSG_ROLLBACK, Role, Request, Resposta, VersaoBackup};
+use ward_core::protocol::{MSG_ROLLBACK, Request, ResponseError, Resposta, Role, VersaoBackup};
 use wardd::arquivos::Geracoes;
 use wardd::nucleo::Daemon;
 
@@ -139,21 +139,21 @@ fn v7_8_agent_and_extension_do_not_restore() {
             error(&r),
             Some(ResponseError::Unauthorized),
             "{}",
-            role.nome()
+            role.name()
         );
         let r = request(&d, role, "backups", "{}");
         assert_eq!(
             error(&r),
             Some(ResponseError::Unauthorized),
             "{}",
-            role.nome()
+            role.name()
         );
         // Second layer: the request built in memory, without going through the protocol.
         let r = d.atender(
             role,
             Request::RestoreBackup {
-                versao: target.clone(),
-                senha: Secret::from_text(PASSWORD.to_owned()),
+                version: target.clone(),
+                password: Secret::from_text(PASSWORD.to_owned()),
                 pin: Secret::from_text(PIN.to_owned()),
             },
         );
@@ -161,7 +161,7 @@ fn v7_8_agent_and_extension_do_not_restore() {
             error(&r),
             Some(ResponseError::Unauthorized),
             "{}",
-            role.nome()
+            role.name()
         );
         assert_eq!(
             error(&d.atender(role, Request::Backups)),
@@ -242,18 +242,12 @@ fn v7_11_restore_seals_a_new_generation_and_hand_copy_is_rollback() {
     fs::write(&c.cofre, &copy_n).unwrap();
     let r = unlock(&d, PASSWORD);
     assert_eq!(error(&r), Some(ResponseError::Rollback));
-    assert!(contains(
-        &encoded(Role::Agent, &r),
-        MSG_ROLLBACK.as_bytes()
-    ));
+    assert!(contains(&encoded(Role::Agent, &r), MSG_ROLLBACK.as_bytes()));
     assert!(d.travado());
     // In a new daemon, straight to the rollback; the copied file is not rewritten.
     drop(d);
     let (d2, _) = daemon_at(dir.paths());
-    assert_eq!(
-        error(&unlock(&d2, PASSWORD)),
-        Some(ResponseError::Rollback)
-    );
+    assert_eq!(error(&unlock(&d2, PASSWORD)), Some(ResponseError::Rollback));
     assert_eq!(fs::read(&c.cofre).unwrap(), copy_n);
 }
 

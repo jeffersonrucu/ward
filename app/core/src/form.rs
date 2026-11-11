@@ -36,7 +36,7 @@ use ward_core::entry::{
     TOO_LARGE_FOR_MASK,
 };
 use ward_core::limits;
-use ward_core::protocol::{ResponseError, Problem};
+use ward_core::protocol::{Problem, ResponseError};
 use zeroize::Zeroizing;
 
 use crate::AppError;
@@ -240,24 +240,24 @@ pub fn daemon_errors(problems: &[Problem]) -> Vec<FieldError> {
         .iter()
         .take(limits::MAX_EXTRAS + 32)
         .map(|p| {
-            let clean = p.motivo.chars().count() <= MAX_REASON
-                && !p.motivo.is_empty()
+            let clean = p.reason.chars().count() <= MAX_REASON
+                && !p.reason.is_empty()
                 && !p
-                    .motivo
+                    .reason
                     .chars()
                     .any(|c| c.is_control() || is_format_char(c));
             // D29: the mask budget refusal comes from the whole entry; the screen shows
             // it on the attachments field, the one that weighs most on the budget.
-            let field = if p.campo == "entrada" && p.motivo == TOO_LARGE_FOR_MASK {
+            let field = if p.field == "entrada" && p.reason == TOO_LARGE_FOR_MASK {
                 "anexos"
             } else {
-                problem_field(&p.campo)
+                problem_field(&p.field)
             };
             FieldError {
                 field,
-                position: p.posicao.filter(|n| (1..=1024).contains(n)),
+                position: p.position.filter(|n| (1..=1024).contains(n)),
                 reason: if clean {
-                    p.motivo.clone()
+                    p.reason.clone()
                 } else {
                     "inválido".to_owned()
                 },
@@ -770,9 +770,9 @@ mod tests {
     #[test]
     fn attack_problem_forged_by_the_daemon_does_not_become_free_text() {
         let p = |field: &str, reason: &str| Problem {
-            campo: field.to_owned(),
-            posicao: None,
-            motivo: reason.to_owned(),
+            field: field.to_owned(),
+            position: None,
+            reason: reason.to_owned(),
         };
         let e = daemon_errors(&[
             p("senha", "obrigatório"),
@@ -795,9 +795,9 @@ mod tests {
     #[test]
     fn mask_budget_refusal_goes_to_the_attachments() {
         let p = |field: &str, reason: &str| Problem {
-            campo: field.to_owned(),
-            posicao: None,
-            motivo: reason.to_owned(),
+            field: field.to_owned(),
+            position: None,
+            reason: reason.to_owned(),
         };
         let e = daemon_errors(&[
             p("entrada", TOO_LARGE_FOR_MASK),

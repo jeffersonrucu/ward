@@ -34,7 +34,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use ward_core::protocol::{
-    self, ResponseError, Role, Request, Resposta,
+    self, Request, ResponseError, Resposta, Role,
     frame::{self, FrameError},
 };
 use ward_platform::{AcceptError, Install, KernelPolicy, Listener, PeerClass, PeerProcess};
@@ -209,7 +209,7 @@ fn answer(stream: &mut UnixStream, role: Role, r: &Resposta) -> Result<(), Frame
     let q = match protocol::encode_response(role, r) {
         Ok(q) => q,
         Err(_) => {
-            aviso!("resposta recusada para o papel {}", role.nome());
+            aviso!("resposta recusada para o papel {}", role.name());
             protocol::encode_response(role, &Resposta::Erro(ResponseError::Internal))
                 .map_err(|_| FrameError::Io(io::ErrorKind::InvalidData))?
         }
@@ -289,12 +289,8 @@ fn serve_connection(
                 break;
             }
             Err(e) => {
-                depurar!("quadro recusado ({}): {e}", role.nome());
-                let _ = answer(
-                    &mut stream,
-                    role,
-                    &Resposta::Erro(protocol::frame_error(e)),
-                );
+                depurar!("quadro recusado ({}): {e}", role.name());
+                let _ = answer(&mut stream, role, &Resposta::Erro(protocol::frame_error(e)));
                 break;
             }
         };
@@ -302,7 +298,7 @@ fn serve_connection(
         if role != Role::Agent && peer.reverify_no_debugger().is_err() {
             aviso!(
                 "cliente {} sob depurador ou encerrado: conexão fechada",
-                role.nome()
+                role.name()
             );
             break;
         }
@@ -331,7 +327,7 @@ fn serve_connection(
                 daemon.atender_de(&client, role, p)
             }
             Err(e) => {
-                depurar!("pedido recusado ({}): {}", role.nome(), e.codigo());
+                depurar!("pedido recusado ({}): {}", role.name(), e.code());
                 Resposta::Erro(e)
             }
         };
@@ -423,10 +419,7 @@ mod tests {
                 Role::Agent
             );
         }
-        assert_eq!(
-            role_from_class(PeerClass::App, 42, |_| false),
-            Role::Agent
-        );
+        assert_eq!(role_from_class(PeerClass::App, 42, |_| false), Role::Agent);
         assert_eq!(role_from_class(PeerClass::App, 42, |p| p == 42), Role::App);
     }
 

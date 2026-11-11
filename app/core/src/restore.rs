@@ -288,7 +288,7 @@ mod tests {
     mod through_the_service {
         use std::sync::{Arc, Mutex};
 
-        use ward_core::protocol::{self, ResponseError, Role, Resposta};
+        use ward_core::protocol::{self, ResponseError, Resposta, Role};
         use zeroize::Zeroizing;
 
         use super::super::*;
@@ -528,8 +528,7 @@ mod tests {
                     Ok(_) => Resposta::Erro(ResponseError::Internal),
                     Err(e) => Resposta::Erro(e),
                 };
-                protocol::encode_response(Role::Agent, &r)
-                    .map_err(|_| AppError::InvalidResponse)
+                protocol::encode_response(Role::Agent, &r).map_err(|_| AppError::InvalidResponse)
             }
         }
 
