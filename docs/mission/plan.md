@@ -180,7 +180,8 @@ Clientes Rust:
 - [ ] Fase 34 — `app/core`: `destrave.rs`, `primeiro_uso.rs`, `gerador.rs`,
   `area_transferencia.rs`, `nivel.rs`; `app/src-tauri/src` (`main.rs` — o heredoc do
   `dev/tests/webkit-real.sh` procura `partida::iniciar()`, `tomar_daemon`, `vigiar`,
-  `na_vigia`, `ErroApp::ConexaoPerdida` e muda junto, achado da Fase 45 —, `area_gtk.rs`,
+  `na_vigia`, `ErroApp::ConexaoPerdida` e muda junto, achado da Fase 45; o
+  `dev/tests/clipboard.py` roda `area_gtk::testes::sessao_real` pelo nome, achado da Fase 46 —, `area_gtk.rs`,
   `build.rs`; nomes das funções `#[tauri::command]`, dos parâmetros e dos eventos
   congelados até a Fase 54). Compilação: `make compile` (com o `cargo check` do
   `app/src-tauri`). — V2.1
@@ -231,7 +232,7 @@ Trilha S (fases independentes entre si):
   `dev/services/web/server.py`, `nm.py`, `socket_attack.py`, `dev/services/generate.py`,
   `deb.sh`, `dev/compose.yml`, `socket_matrix.py`; `make test-webkit-real NO_MPS=1
   NO_39C=1` passa `--no-mps--no-39c` grudado (achado da Fase 6). — V3.1, V3.7
-- [ ] Fase 46 — o resto de `dev/` (scripts com menos de 150 linhas, `daemon.sh`,
+- [x] Fase 46 — o resto de `dev/` (scripts com menos de 150 linhas, `daemon.sh`,
   `bridge.sh`, `open-app.py`, `dev/services/*`, Dockerfiles, `entrypoint.sh`,
   `pg_select.py`, `bidi*`, `gst-channels.sh`, `terminal-test.py`, `log-scan.py` …); `CASA_PASSWD` → `PASSWD_HOME`, `OPCOES_SSH`, `IMAGEM_PG` e `RAIZ` → `ROOT` (apagar os `RAIZ="$ROOT"` do `install.sh`/`attacks-services.sh`) e as funções do `common.sh` (`exigir`, `cliente`, `ssh_senha`…, achar por grep) em todos os usos
   (achado da Fase 41). —
@@ -308,7 +309,9 @@ Contrato: V5.1–V5.11. Sequencial.
   mensagens `ward-ponte-teste:` da ponte (com o `dev/ponte.sh` aceitando as duas formas)
   e a mensagem "modo-teste" do `install.sh` (achados da Fase 4); pasta do socket de teste
   `ward-teste`, logs `wardd-*-teste.log` (achados da Fase 5); guarda `WARD_HOME_COBERTO`
-  em `real-home.sh`, `ssh-home.sh` e `home-decoys.sh` de uma vez (achado da Fase 45). Textos de log
+  em `real-home.sh`, `ssh-home.sh` e `home-decoys.sh` de uma vez (achado da Fase 45); os
+  `WARD_*`/`ward-teste*` dos scripts de `dev/` e o prefixo `ward-ponte-teste:` que o
+  `dev/bridge.sh` procura (achado da Fase 46). Textos de log
   `UidRecusado`/`SemIdentidade` do `wardd` com o `dev/container-uid/inside.sh`; variáveis
   `WARD_ATIVACAO`, `WARD_CAMINHO`, `WARD_ESPERADO`, `WARD_PLATAFORMA_FILHO` (achados da Fase 9). Compilação:
   `make compile`. — V5.4, V5.5
