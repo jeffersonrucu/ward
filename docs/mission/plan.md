@@ -403,12 +403,13 @@ Depois das Fases 61–66 (e das correções), o orchestrator chama os três vali
   `english_check.py --self-test`. — V1.*, V2.1, V2.2, V3.1, V3.6, V3.7, V4.1, V4.2,
   V4.8, V4.9, V4.15, V5.3, V5.5, V5.11, V6.1, V6.11
 - [x] Fase 61a — Correção da Bateria A: 4 testes com expectativa antiga (pt-BR/v1) no `cargo test` — `app/core/src/key.rs:286` (`result`/`loaded`/`size`), `crates/wardd/tests/dates.rs:204` (guarda `_em` → `created_at`/`modified_at`; o ataque V3.41 tem de rodar de verdade), `crates/wardd/tests/core.rs:114` (regra de dígitos do v1 contra `"v":2`, sem afrouxar a checagem de contagem), `crates/wardd/tests/run.rs:1140` (`invalid_request`/`run`/`once`); depois `make check` e `make test-attacks-foundation` verdes. Handoff da 61. — V1.2, V1.3, V6.11
-- [ ] Fase 62 — (achado da Fase 56: `crates/wardd/tests/run.rs` perto da linha 1149 espera `operacao=executar … decisao=uma_vez` do aprovador de teste, que já fala v2 (`run`, `once`); deve falhar aqui; logs velhos `wardd-*-teste.log` podem ser apagados) Bateria B (daemon, CLI e serviços): `make dev-services` +
+- [x] Fase 62 — (achado da Fase 56: `crates/wardd/tests/run.rs` perto da linha 1149 espera `operacao=executar … decisao=uma_vez` do aprovador de teste, que já fala v2 (`run`, `once`); deve falhar aqui; logs velhos `wardd-*-teste.log` podem ser apagados) Bateria B (daemon, CLI e serviços): `make dev-services` +
   `dev-services-up` + `dev-services-verify`, `make dev-daemon`,
   `make test-attacks-services`, `test-home-decoys`, `test-real-home`, `test-cli`,
   `test-ssh-home`, `test-socket-attacks`, `test-docker-uid`; V6.6, V6.7, V6.10 à mão
   pela CLI de teste. — V2.4–V2.8, V4.13, V4.14, V4.16–V4.21, V5.1, V5.2, V6.4, V6.6,
   V6.7, V6.10
+- [ ] Fase 62a — Correção da Bateria B: `dev/tests/cli.py` linhas 430–442 (`kinds_in_log` da 54b: `nula`/`arquivo`/`outra` → `null`/`file`/`other`); `dev/tests/pg_select.py` executável (ou o teste chama por `python3 -I`); suítes de serviço em git worktree (o `real-home.sh` acusa o `git check-ignore` lendo `<git-common-dir>/worktrees/<nome>/HEAD`: aceitar o `git-common-dir` sem afrouxar a regra do home); depois `make test-cli` verde com os serviços. Handoff da 62. — V4.1, V4.2, V5.1, V5.2
 - [ ] Fase 63 — Bateria C (contêineres e instalação): `make test-docker-platform`,
   `test-units`, `test-install`, `test-deb` (com a atualização a partir da 0.1.4). —
   V2.3, V2.6, V2.7, V4.4, V5.4, V5.6–V5.9, V6.4
