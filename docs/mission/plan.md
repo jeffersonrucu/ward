@@ -165,7 +165,7 @@ Compilação de cada fase: `make compile`. Checador: os arquivos da fase.
   `Cargo.toml`, achado da Fase 4). — V2.1
 
 Clientes Rust:
-- [ ] Fase 28 — `crates/ward` (`args`, `cliente`, `comandos`, `texto`, testes;
+- [x] Fase 28 — `crates/ward` (`args`, `cliente`, `comandos`, `texto`, testes;
   subcomandos e textos congelados) e `crates/ward-nm` (`ID_EXTENSAO` → `EXTENSION_ID`, com a leitura do
   `pub const` em `dev/tests/extension.py` e o regex e as mensagens de
   `dev/extension/build.py` (achado da Fase 39); mensagens congeladas). — V2.1
