@@ -406,7 +406,7 @@ verify(r.stdout.decode().endswith("|••••"), "V4.17 a senha impressa sai 
 no_variation(r, "login")
 
 r = run(["gama-generico", "--", "/bin/sh", "-c",
-         'f="$WARD_ARQUIVO_APP_ENV"; stat -c %a "$f"; cat "$f"; env; echo "$f"'])
+         'f="$WARD_FILE_APP_ENV"; stat -c %a "$f"; cat "$f"; env; echo "$f"'])
 output = r.stdout.decode(errors="replace")
 verify(r.returncode == 0 and output.startswith("600\n"), "V4.10 anexo 0600 entregue")
 path = output.strip().split("\n")[-1]
@@ -544,16 +544,19 @@ EXPECTED = {
     "beta-smtp-stage": {"SMTP_HOST": c("beta-smtp-stage", "host"), "SMTP_PORT": c("beta-smtp-stage", "port"),
                         "SMTP_USER": c("beta-smtp-stage", "username"), "SMTP_PASS": s("beta-smtp-stage", "password"),
                         "SMTP_SECURITY": c("beta-smtp-stage", "security")},
-    "beta-sftp-dev": {"WARD_PROTOCOLO": "sftp", "WARD_HOST": "127.0.0.1", "WARD_PORT": "2222",
+    "beta-sftp-dev": {"WARD_PROTOCOL": "sftp", "WARD_HOST": "127.0.0.1", "WARD_PORT": "2222",
                       "WARD_USER": "sftpuser", "WARD_PASS": s("beta-sftp-dev", "password")},
     "gama-generico": {"WARD_REGIAO": "r-01",
                       "WARD_CHAVE_LICENCA": [x for x in FIX["gama-generico"]["extras"]
                                              if x["name"] == "CHAVE_LICENCA"][0]["value"]},
 }
 FILES = {
-    "acme-ssh-chave-prod": {"WARD_ARQUIVO_CHAVE": s("acme-ssh-chave-prod", "private_key_file")},
-    "gama-generico": {"WARD_ARQUIVO_APP_ENV": FIX["gama-generico"]["attachments"][0]["file"]},
+    "acme-ssh-chave-prod": {"WARD_FILE_KEY": s("acme-ssh-chave-prod", "private_key_file")},
+    "gama-generico": {"WARD_FILE_APP_ENV": FIX["gama-generico"]["attachments"][0]["file"]},
 }
+# m2:V4.19 (m2:DT11): none of the 0.1.x names reaches the child.
+OLD_NAMES = ("WARD_ENTRADA", "WARD_GRUPO", "WARD_AMBIENTE", "WARD_PROTOCOLO")
+OLD_PREFIX = "WARD_ARQUIVO_"
 # For each name: "<name> <sha256 of the value>"; for a file: "<name> <mode> <dir> <sha256>".
 SCRIPT = r'''
 for n; do
@@ -567,7 +570,8 @@ done
 '''
 for name, vars_ in EXPECTED.items():
     entry = FIX[name]
-    all_vars = dict(vars_, **{"WARD_ENTRADA": name, "WARD_GRUPO": entry["group"], "WARD_AMBIENTE": entry["environment"]})
+    all_vars = dict(vars_, **{"WARD_ENTRY": name, "WARD_GROUP": entry["group"],
+                              "WARD_ENVIRONMENT": entry["environment"]})
     names = list(all_vars) + ["arq:" + k for k in FILES.get(name, {})]
     if name == "acme-wp-prod":
         names.append("WARD_TOTP")
@@ -586,6 +590,18 @@ for name, vars_ in EXPECTED.items():
         matches = matches and lines.get("WARD_TOTP") in {h(totp(seed, t)) for t in (before, after)}
     verify(matches, f"V4.3–V4.10 entrega de {name} bate com a tabela ({len(names)} itens)")
     no_variation(r, f"hashes de {name}")
+    # Only the names of `env -0` (the values stay in the child; the output goes through
+    # the mask and is checked against the list of variations).
+    r = run([name, "--", "/usr/bin/env", "-0"])
+    seen = {kv.split(b"=", 1)[0].decode(errors="replace") for kv in r.stdout.split(b"\0") if b"=" in kv}
+    expected_ward = {k for k in all_vars if k.startswith("WARD_")} | set(FILES.get(name, {}))
+    if name == "acme-wp-prod":
+        expected_ward.add("WARD_TOTP")
+    verify(r.returncode == 0 and {k for k in seen if k.startswith("WARD_")} == expected_ward,
+           f"m2:V4.19 {name}: as variáveis WARD_* são exatamente as da tabela")
+    verify(not any(k in OLD_NAMES or k.startswith(OLD_PREFIX) for k in seen),
+           f"m2:V4.19 {name}: nenhum nome da 0.1.x")
+    no_variation(r, f"env -0 de {name}")
 
 # --- 4. `ward ssh` (Phase 27) against the test daemon and the test SSH servers --------
 # The `ssh`/`sshpass`/`sftp` is run by the daemon (D13: `-F /dev/null`, Ward's

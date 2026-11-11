@@ -161,9 +161,9 @@ pub fn build(entry: &Entry, resources: &mut dyn Resources) -> Result<Delivery, D
         return Err(DeliveryError::TypeWithoutDelivery);
     }
     let mut m = Builder::default();
-    m.text("WARD_ENTRADA", entry.name());
-    m.text("WARD_GRUPO", entry.group());
-    m.text("WARD_AMBIENTE", entry.environment().name());
+    m.text("WARD_ENTRY", entry.name());
+    m.text("WARD_GROUP", entry.group());
+    m.text("WARD_ENVIRONMENT", entry.environment().name());
 
     match entry.data() {
         Data::Login(l) => {
@@ -216,7 +216,7 @@ pub fn build(entry: &Entry, resources: &mut dyn Resources) -> Result<Delivery, D
             m.text("SMTP_SECURITY", s.security.name());
         }
         Data::FtpSftp(f) => {
-            m.text("WARD_PROTOCOLO", f.protocol.name());
+            m.text("WARD_PROTOCOL", f.protocol.name());
             m.text("WARD_HOST", &f.host);
             m.text("WARD_PORT", &f.port.to_string());
             m.text("WARD_USER", &f.username);
@@ -234,7 +234,7 @@ pub fn build(entry: &Entry, resources: &mut dyn Resources) -> Result<Delivery, D
         }
     }
     for attachment in entry.attachments() {
-        let name = prefixed("WARD_ARQUIVO_", attachment.name());
+        let name = prefixed("WARD_FILE_", attachment.name());
         m.file(&name, attachment.name(), attachment.content(), resources)?;
     }
 
@@ -257,7 +257,7 @@ fn auth(m: &mut Builder, a: &Auth, resources: &mut dyn Resources) -> Result<(), 
             private_key,
             passphrase,
         } => {
-            m.file("WARD_ARQUIVO_CHAVE", "chave", private_key, resources)?;
+            m.file("WARD_FILE_KEY", "chave", private_key, resources)?;
             if let Some(p) = passphrase {
                 m.secret("WARD_PASSPHRASE", p)?;
             }

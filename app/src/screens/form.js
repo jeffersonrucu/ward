@@ -191,7 +191,7 @@ export const FORM_TYPES = Object.freeze({
   'ftp-sftp': {
     example: 'Ex.: beta-sftp-dev',
     access:
-      'Entregues como WARD_PROTOCOLO, WARD_HOST, WARD_PORT, WARD_USER e WARD_ARQUIVO_CHAVE (+ WARD_PASSPHRASE) ou WARD_PASS.',
+      'Entregues como WARD_PROTOCOL, WARD_HOST, WARD_PORT, WARD_USER e WARD_FILE_KEY (+ WARD_PASSPHRASE) ou WARD_PASS.',
     rows: [
       [{ id: 'protocolo', label: 'Protocolo', kind: 'select', options: 'protocols' }],
       [
@@ -218,7 +218,7 @@ export const EXTRAS_TEXTS = Object.freeze({
 
 export const ATTACHMENTS_TEXTS = Object.freeze({
   'secure-note': 'Ficam cifrados com a nota; sem entrega no ward run.',
-  default: 'Viram WARD_ARQUIVO_<NOME> no ward run.',
+  default: 'Viram WARD_FILE_<NOME> no ward run.',
 });
 
 // Cards of the choose-type screen (FigCraft 17657).
@@ -251,7 +251,7 @@ export function readableSize(bytes) {
 
 /** The attachment variable as ward-core builds it (D10): uppercase; the rest becomes `_`. */
 export function attachmentVariable(name) {
-  return `WARD_ARQUIVO_${name.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`;
+  return `WARD_FILE_${name.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`;
 }
 
 /** Text as the vault keeps it: NFC (Rust validates it again). */

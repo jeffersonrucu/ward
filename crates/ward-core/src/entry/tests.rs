@@ -1196,6 +1196,7 @@ fn attack_dangerous_variable_in_api() {
         "GIT_SSH_COMMAND",
         "NODE_OPTIONS",
         "WARD_PASS",
+        "WARD_ENTRY",
         "WARD_ENTRADA",
         "BASH_FUNC_x%%",
         "IFS",
@@ -1232,13 +1233,14 @@ fn attack_extra_or_attachment_overrides_type_variable() {
         (login, "url"),
         (server_password, "host"),
         (server_password, "passphrase"),
-        (sftp, "protocolo"),
+        (sftp, "protocol"),
         (api, "token"),
-        (note, "entrada"),
-        (aws, "GRUPO"),
-        (smtp, "ambiente"),
-        (database, "arquivo_app_env"),
-        (database, "arquivo"),
+        (note, "entry"),
+        (aws, "GROUP"),
+        (smtp, "environment"),
+        (database, "file_app_env"),
+        (database, "file"),
+        (login, "File-Key"),
     ];
     for (data, name) in reserved {
         let mut r = draft("x", "acme", "dev", data());
@@ -1252,13 +1254,29 @@ fn attack_extra_or_attachment_overrides_type_variable() {
     // over the entry's own key.
     for data in [server_password(), sftp()] {
         let mut r = draft("x", "acme", "dev", data);
-        r.attachments = vec![attachment("chave", b"x")];
+        r.attachments = vec![attachment("key", b"x")];
         assert!(errors(r).has("anexos"));
     }
     // In other types, those two are common names.
     let mut r = generic();
     r.extras.push(extra("PASS", "v", true));
-    r.attachments.push(attachment("chave", b"x"));
+    r.attachments.push(attachment("key", b"x"));
+    valid(r);
+}
+
+/// m2:DT11: the 0.1.x names are no longer delivered by the type, so they stop being
+/// reserved; they are user data like any other extra or attachment name.
+#[test]
+fn m2_dt11_old_names_are_not_reserved() {
+    let mut r = draft("x", "acme", "dev", sftp());
+    r.extras = vec![
+        extra("entrada", "v", false),
+        extra("GRUPO", "v", false),
+        extra("ambiente", "v", false),
+        extra("protocolo", "v", false),
+        extra("arquivo_x", "v", false),
+    ];
+    r.attachments = vec![attachment("chave", b"x")];
     valid(r);
 }
 

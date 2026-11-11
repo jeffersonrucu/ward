@@ -68,6 +68,7 @@ Serviços de teste: os da missão 1 (`dev/compose.yml`, portas 55432, 2222, 2223
 | `gama-generico` | `WARD_REGIAO=r-01`, `WARD_CHAVE_LICENCA=falso-licenca-01`, `WARD_FILE_APP_ENV=<rt>tmp/…` (conteúdo `FALSO_ENV=falso-anexo-01`) |
 | todas | `WARD_ENTRY=<nome>`, `WARD_GROUP=<grupo>`, `WARD_ENVIRONMENT=<ambiente>` |
 | nenhuma | nenhuma variável `WARD_ENTRADA`, `WARD_GRUPO`, `WARD_AMBIENTE`, `WARD_PROTOCOLO`, `WARD_ARQUIVO_*` |
+| smtp (qualquer) | `SMTP_SECURITY` com o nome v5 da segurança (DT4): `none`, `starttls` ou `tls`; a 0.1.x entregava `nenhuma` no lugar de `none` (achado da Fase 48, registrado na Fase 53) |
 
 ## Milestone 0 — Design no FigCraft
 
