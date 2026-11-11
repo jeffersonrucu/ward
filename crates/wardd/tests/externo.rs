@@ -634,7 +634,7 @@ fn ataque_lixo_no_backup_local_nao_gira_o_pendrive() {
             1 => de_outro.clone(),
             _ => antiga.clone(),
         };
-        assert!(ward_core::formato::ler_cabecalho(&conteudo).is_ok());
+        assert!(ward_core::format::read_header(&conteudo).is_ok());
         let p = backups.join(nome(i));
         fs::write(&p, &conteudo).unwrap();
         fs::set_permissions(&p, fs::Permissions::from_mode(0o600)).unwrap();

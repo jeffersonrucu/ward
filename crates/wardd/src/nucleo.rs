@@ -1,6 +1,6 @@
 //! Estado do daemon e regra de negócio de cada operação (Fase 22).
 //!
-//! - **Travado / destravado.** Destravado, o daemon guarda um único [`CofreAberto`]
+//! - **Travado / destravado.** Destravado, o daemon guarda um único [`OpenVault`]
 //!   (dono único, sem cópia) e as entradas. Travar solta os dois: a chave de dados, o
 //!   hash do PIN e os segredos zeram ao sair (S8, V3.8).
 //! - **Destravar** (D20, revista pela D62): a tentativa espera 0 s, e cada senha errada
@@ -56,12 +56,12 @@ use std::time::{Duration, SystemTime};
 
 use zeroize::Zeroizing;
 
+use ward_core::atomic_write::{self, Step, WriteError};
 use ward_core::backup::{self, ErroBackup, Versao};
 use ward_core::configuracao::{BackupExterno, Configuracao, HashPin};
 use ward_core::corpo::{self, ErroAbrir, ErroCorpo};
 use ward_core::entrada::{Dados, Datas, Entrada, NivelAcesso, Rascunho, RascunhoDados, Segredo};
-use ward_core::formato::{CofreAberto, SenhaMestra};
-use ward_core::gravacao::{self, ErroGravacao, Etapa};
+use ward_core::format::{MasterPassword, OpenVault};
 use ward_core::origin::Origin;
 use ward_core::protocolo::{
     Alvo, DetalheEntrada, ErroResposta, ItemLista, MAX_BACKUPS, MAX_PENDRIVES, Operacao, Papel,
@@ -130,7 +130,7 @@ pub struct Caminhos {
 
 /// Cofre destravado.
 pub(crate) struct Aberto {
-    cofre: CofreAberto,
+    cofre: OpenVault,
     /// Em ordem de nome.
     pub(crate) entradas: Vec<Entrada>,
     /// "Permitir por 1 hora" (D2): entrada → até quando, no relógio do motor. Some ao
@@ -234,7 +234,7 @@ impl Estado {
                 );
             }
             self.identidade_conhecida = a.identidade;
-            // `CofreAberto` e `Entrada` zeram ao sair (chave de dados, hash, segredos).
+            // `OpenVault` e `Entrada` zeram ao sair (chave de dados, hash, segredos).
             drop(a);
             // D6: as sessões do `ward playwright` não sobrevivem à trava.
             if let Some(rt) = &self.rt_playwright {
@@ -313,8 +313,8 @@ fn problema(campo: &str, motivo: &str) -> ErroResposta {
 /// Senha mestra do pedido, em NFC (Fase 39c): destravar, criar, trocar e restaurar
 /// passam todos por aqui, então o app e a CLI abrem o mesmo cofre com o mesmo texto
 /// composto ou decomposto, sem depender do cliente.
-fn senha_de(s: &Segredo) -> SenhaMestra {
-    SenhaMestra::digitada(Zeroizing::new(s.expor().to_vec()))
+fn senha_de(s: &Segredo) -> MasterPassword {
+    MasterPassword::typed(Zeroizing::new(s.expor().to_vec()))
 }
 
 /// Texto fixo (sem valor) de senha mestra nova abaixo do mínimo, igual ao do app.
@@ -322,9 +322,9 @@ const SENHA_CURTA: &str = "a senha mestra precisa de 12 caracteres ou mais";
 
 /// Senha mestra nova (criar, trocar): o mínimo vale também aqui, não só no app
 /// (Fase 39c; um cliente do papel app que pule a tela não cria cofre com senha curta).
-fn senha_nova(s: &Segredo, campo: &str) -> Result<SenhaMestra, ErroResposta> {
+fn senha_nova(s: &Segredo, campo: &str) -> Result<MasterPassword, ErroResposta> {
     let senha = senha_de(s);
-    if senha.serve_de_nova() {
+    if senha.is_valid_new() {
         Ok(senha)
     } else {
         aviso!("senha mestra nova recusada: abaixo do mínimo de caracteres");
@@ -340,7 +340,7 @@ fn gravar(caminhos: &Caminhos, a: &mut Aberto, gancho: Option<&Gancho>) -> Resul
     }
     // O conjunto reabriria? (nome repetido, túnel/salto quebrado por renomear ou
     // remover um servidor usado). Sem tocar no disco nem queimar geração.
-    if let Err(e) = corpo::serializar(a.cofre.configuracao(), 1, &a.entradas) {
+    if let Err(e) = corpo::serializar(a.cofre.config(), 1, &a.entradas) {
         return Err(FalhaGravar::Resposta(match e {
             ErroCorpo::GrandeDemais => problema("cofre", "o cofre passaria do limite de tamanho"),
             _ => problema(
@@ -351,7 +351,7 @@ fn gravar(caminhos: &Caminhos, a: &mut Aberto, gancho: Option<&Gancho>) -> Resul
     }
     let proxima = a
         .cofre
-        .geracao()
+        .generation()
         .checked_add(1)
         .ok_or(FalhaGravar::Resposta(ErroResposta::GeracaoEsgotada))?;
     let antes = Geracoes {
@@ -374,15 +374,15 @@ fn gravar(caminhos: &Caminhos, a: &mut Aberto, gancho: Option<&Gancho>) -> Resul
             Ok(())
         }
         Err(e) => {
-            if let ErroGravacao::Io {
-                etapa: Etapa::FsyncDiretorio,
-                identidade,
+            if let WriteError::Io {
+                step: Step::FsyncDir,
+                identity,
                 ..
             } = e
             {
                 // O rename aconteceu: o arquivo no lugar é o que o Ward acabou de gravar,
                 // com a identidade lida do fd do temporário (D62), sem `stat` do caminho.
-                a.identidade = identidade;
+                a.identidade = identity;
             }
             aviso!("falha ao gravar o cofre: {}", codigo_gravacao(&e));
             Err(FalhaGravar::Resposta(ErroResposta::from(&e)))
@@ -430,12 +430,12 @@ fn registrar_backup(r: &Result<Versao, ErroBackup>) {
 /// Sem pasta, grava só o cofre: o backup nunca impede a gravação.
 fn gravar_com_backup(
     caminhos: &Caminhos,
-    cofre: &mut CofreAberto,
+    cofre: &mut OpenVault,
     entradas: &[Entrada],
-) -> Result<Identidade, ErroGravacao> {
+) -> Result<Identidade, WriteError> {
     match abrir_pasta(caminhos) {
         Some(p) => {
-            let g = gravacao::gravar_entradas_com_backup(
+            let g = atomic_write::write_entries_with_backup(
                 &caminhos.cofre,
                 cofre,
                 entradas,
@@ -443,9 +443,9 @@ fn gravar_com_backup(
                 SystemTime::now(),
             )?;
             registrar_backup(&g.backup);
-            Ok(g.identidade)
+            Ok(g.identity)
         }
-        None => gravacao::gravar_entradas(&caminhos.cofre, cofre, entradas),
+        None => atomic_write::write_entries(&caminhos.cofre, cofre, entradas),
     }
 }
 
@@ -454,7 +454,7 @@ fn gravar_com_backup(
 /// um arquivo trocado nesse meio-tempo fica com outra identidade, e a próxima gravação
 /// recusa como "mudou".
 fn confirmar(caminhos: &Caminhos, a: &mut Aberto, id: Identidade) {
-    let g = a.cofre.geracao();
+    let g = a.cofre.generation();
     a.geracoes = Geracoes {
         vista: g,
         queimada: a.geracoes.queimada.max(g),
@@ -487,21 +487,21 @@ fn muda_o_externo(op: Operacao) -> bool {
 }
 
 /// Nome fixo do erro de gravação para o log (sem caminho nem valor).
-fn codigo_gravacao(e: &ErroGravacao) -> &'static str {
+fn codigo_gravacao(e: &WriteError) -> &'static str {
     match e {
-        ErroGravacao::GeracaoEsgotada => "geração esgotada",
-        ErroGravacao::Retrocesso => "retrocesso",
-        ErroGravacao::NaoECofre => "não é cofre",
-        ErroGravacao::Formato(_) => "formato",
-        ErroGravacao::Corpo(_) => "corpo",
-        ErroGravacao::DestinoInvalido => "destino inválido",
-        ErroGravacao::Io { etapa, .. } => match etapa {
-            Etapa::Ler => "e/s ao ler",
-            Etapa::CriarTemporario => "e/s ao criar o temporário",
-            Etapa::Escrever => "e/s ao escrever",
-            Etapa::FsyncTemporario => "e/s no fsync do temporário",
-            Etapa::Renomear => "e/s no rename",
-            Etapa::FsyncDiretorio => "e/s no fsync do diretório",
+        WriteError::GenerationExhausted => "geração esgotada",
+        WriteError::Rollback => "retrocesso",
+        WriteError::NotVault => "não é cofre",
+        WriteError::Format(_) => "formato",
+        WriteError::Body(_) => "corpo",
+        WriteError::InvalidDestination => "destino inválido",
+        WriteError::Io { step, .. } => match step {
+            Step::Read => "e/s ao ler",
+            Step::CreateTemp => "e/s ao criar o temporário",
+            Step::Write => "e/s ao escrever",
+            Step::FsyncTemp => "e/s no fsync do temporário",
+            Step::Rename => "e/s no rename",
+            Step::FsyncDir => "e/s no fsync do diretório",
         },
     }
 }
@@ -582,7 +582,7 @@ impl Daemon {
     /// UUID do pendrive se o cofre está destravado e o externo ligado.
     fn uuid_externo(&self) -> Option<String> {
         let est = self.estado();
-        let b = est.aberto.as_ref()?.cofre.configuracao().backup();
+        let b = est.aberto.as_ref()?.cofre.config().backup();
         if b.ligado() {
             b.uuid().map(str::to_owned)
         } else {
@@ -757,7 +757,7 @@ impl Daemon {
         };
         // Lido com o estado travado: um uso de outra thread não fica "no futuro".
         let agora = self.relogio.agora();
-        let minutos = a.cofre.configuracao().minutos_trava();
+        let minutos = a.cofre.config().minutos_trava();
         if !crate::trava::venceu(est.ultimo_uso, agora, minutos) {
             return false;
         }
@@ -981,7 +981,7 @@ impl Daemon {
             aviso!("destravar recusado: não deu para atualizar o arquivo de estado");
             return Err(ErroResposta::FalhaAoGravar);
         }
-        match gravacao::limpar_temporarios(&self.caminhos.cofre) {
+        match atomic_write::clean_temp_files(&self.caminhos.cofre) {
             Ok(0) => {}
             Ok(n) => aviso!("{n} temporário(s) de gravação interrompida apagado(s)"),
             Err(_) => aviso!("não deu para limpar os temporários do cofre"),
@@ -1255,9 +1255,9 @@ impl Daemon {
         if velho.is_some() {
             aviso!("criar cofre: estado anterior na geração {q}; o cofre novo nasce na {primeira}");
         }
-        let mut cofre = CofreAberto::novo(&senha, Configuracao::nova(hash))
+        let mut cofre = OpenVault::new(&senha, Configuracao::nova(hash))
             .map_err(|_| ErroResposta::Interno)?
-            .depois_da_geracao(q);
+            .after_generation(q);
         if let Some(dir) = self.caminhos.cofre.parent() {
             use std::os::unix::fs::DirBuilderExt;
             let _ = std::fs::DirBuilder::new()
@@ -1475,7 +1475,7 @@ impl Daemon {
     /// Confere o PIN (S9): acerto zera a contagem; o 5.º erro seguido trava.
     pub(crate) fn conferir_pin(est: &mut Estado, pin: &Segredo) -> Result<(), ErroResposta> {
         let a = est.aberto.as_ref().ok_or(ErroResposta::Travado)?;
-        if a.cofre.configuracao().conferir_pin(pin.expor()) {
+        if a.cofre.config().conferir_pin(pin.expor()) {
             est.erros_pin = 0;
             return Ok(());
         }
@@ -1524,7 +1524,7 @@ impl Daemon {
         Self::conferir_pin(&mut est, atual)?;
         let hash = HashPin::criar(novo.expor()).map_err(|_| ErroResposta::PedidoInvalido)?;
         let a = est.aberto.as_mut().ok_or(ErroResposta::Travado)?;
-        a.cofre.configuracao_mut().trocar_hash_pin(hash);
+        a.cofre.config_mut().trocar_hash_pin(hash);
         match self.gravar_ou_desfazer(&mut est, |_| {}) {
             Ok(r) => Ok(r),
             Err(e) => {
@@ -1539,13 +1539,13 @@ impl Daemon {
     fn tempo_trava(&self, minutos: u32) -> Result<Resposta, ErroResposta> {
         let mut est = self.estado();
         let a = est.aberto.as_mut().ok_or(ErroResposta::Travado)?;
-        let antes = a.cofre.configuracao().minutos_trava();
+        let antes = a.cofre.config().minutos_trava();
         a.cofre
-            .configuracao_mut()
+            .config_mut()
             .definir_minutos_trava(minutos)
             .map_err(|_| ErroResposta::PedidoInvalido)?;
         self.gravar_ou_desfazer(&mut est, move |a| {
-            let _ = a.cofre.configuracao_mut().definir_minutos_trava(antes);
+            let _ = a.cofre.config_mut().definir_minutos_trava(antes);
         })
     }
 
@@ -1567,7 +1567,7 @@ impl Daemon {
                 return Err(ErroResposta::CofreMudou);
             }
         };
-        let geracao = a.cofre.geracao();
+        let geracao = a.cofre.generation();
         let proxima = geracao
             .checked_add(1)
             .ok_or(ErroResposta::GeracaoEsgotada)?;
@@ -1582,7 +1582,7 @@ impl Daemon {
         a.geracoes = antes;
         let atual = senha_de(atual);
         let r = match abrir_pasta(&self.caminhos) {
-            Some(p) => gravacao::trocar_senha_com_backup_lido(
+            Some(p) => atomic_write::change_password_with_backup_from_bytes(
                 &self.caminhos.cofre,
                 &arquivo,
                 &atual,
@@ -1594,9 +1594,9 @@ impl Daemon {
             )
             .map(|(novo, g)| {
                 registrar_backup(&g.backup);
-                (novo, g.identidade)
+                (novo, g.identity)
             }),
-            None => gravacao::trocar_senha_lido(
+            None => atomic_write::change_password_from_bytes(
                 &self.caminhos.cofre,
                 &arquivo,
                 &atual,
@@ -1617,7 +1617,7 @@ impl Daemon {
                 Ok(Resposta::Ok)
             }
             // D52: na troca de senha, `Formato` é a senha atual errada; nada foi selado.
-            Err(ErroGravacao::Formato(_)) => Err(ErroResposta::SenhaIncorreta),
+            Err(WriteError::Format(_)) => Err(ErroResposta::SenhaIncorreta),
             Err(e) => {
                 // D53: o cofre guardado não passou pela queima da troca; trava, e o
                 // destravar reabre com a `queimada` do estado.
@@ -1637,7 +1637,7 @@ impl Daemon {
     fn configuracao(&self) -> Result<Resposta, ErroResposta> {
         let est = self.estado();
         let a = est.aberto.as_ref().ok_or(ErroResposta::Travado)?;
-        let c = a.cofre.configuracao();
+        let c = a.cofre.config();
         // Fase 49a: a tela avisa quando a pasta do backup local não abre ou não é segura
         // (o cofre é gravado sem backup). Só um sim/não: nenhum caminho.
         let backup_local = abrir_pasta(&self.caminhos).is_some_and(|p| p.pasta().listar().is_ok());
@@ -1692,7 +1692,7 @@ impl Daemon {
     fn backup_externo(&self) -> Result<Resposta, ErroResposta> {
         let est = self.estado();
         let a = est.aberto.as_ref().ok_or(ErroResposta::Travado)?;
-        let b = a.cofre.configuracao().backup();
+        let b = a.cofre.config().backup();
         Ok(Resposta::BackupExterno {
             ligado: b.ligado(),
             uuid: b.uuid().map(str::to_owned),
@@ -1709,10 +1709,10 @@ impl Daemon {
         let novo = BackupExterno::novo(ligado, uuid).map_err(|_| ErroResposta::PedidoInvalido)?;
         let mut est = self.estado();
         let a = est.aberto.as_mut().ok_or(ErroResposta::Travado)?;
-        let antes = a.cofre.configuracao().backup().clone();
-        a.cofre.configuracao_mut().definir_backup(novo);
+        let antes = a.cofre.config().backup().clone();
+        a.cofre.config_mut().definir_backup(novo);
         let r = self.gravar_ou_desfazer(&mut est, move |a| {
-            a.cofre.configuracao_mut().definir_backup(antes);
+            a.cofre.config_mut().definir_backup(antes);
         });
         if r.is_ok() {
             aviso!(
@@ -1825,19 +1825,19 @@ impl Daemon {
         // traz os dela; restaurar uma antiga não desliga a cópia para o pendrive sem
         // aviso). PIN, senha e entradas são os da versão (D17).
         {
-            let atual = a.cofre.configuracao();
+            let atual = a.cofre.config();
             let minutos = atual.minutos_trava();
             let externo = atual.backup().clone();
-            let c = restaurado.configuracao_mut();
+            let c = restaurado.config_mut();
             if c.definir_minutos_trava(minutos).is_err() {
                 aviso!("restaurar: tempo de trava atual fora da faixa; ficou o da versão");
             }
             c.definir_backup(externo);
         }
         // D39: geração = maior queimada + 1, queimada no estado antes de selar (D53).
-        let q = a.geracoes.queimada.max(a.cofre.geracao());
+        let q = a.geracoes.queimada.max(a.cofre.generation());
         let proxima = q.checked_add(1).ok_or(ErroResposta::GeracaoEsgotada)?;
-        restaurado = restaurado.depois_da_geracao(q);
+        restaurado = restaurado.after_generation(q);
         let antes = Geracoes {
             vista: a.geracoes.vista,
             queimada: proxima,
@@ -1847,7 +1847,7 @@ impl Daemon {
             return Err(ErroResposta::FalhaAoGravar);
         }
         a.geracoes = antes;
-        let r = gravacao::gravar_entradas_com_backup(
+        let r = atomic_write::write_entries_with_backup(
             &self.caminhos.cofre,
             &mut restaurado,
             &entradas,
@@ -1864,7 +1864,7 @@ impl Daemon {
                 a.cofre = restaurado;
                 a.entradas = entradas;
                 a.liberacoes.clear();
-                confirmar(&self.caminhos, a, g.identidade);
+                confirmar(&self.caminhos, a, g.identity);
                 est.erros_pin = 0;
                 // Fase 49a: um pedido de aprovação aberto era sobre o cofre de antes;
                 // uma resposta que chegasse agora mudaria a entrada de mesmo nome da
@@ -1877,14 +1877,14 @@ impl Daemon {
                 Ok(Resposta::Ok)
             }
             Err(e) => {
-                if let ErroGravacao::Io {
-                    etapa: Etapa::FsyncDiretorio,
-                    identidade,
+                if let WriteError::Io {
+                    step: Step::FsyncDir,
+                    identity,
                     ..
                 } = e
                 {
                     // A versão restaurada está no lugar (o rename aconteceu).
-                    a.identidade = identidade;
+                    a.identidade = identity;
                 }
                 aviso!("restaurar falhou ({}): cofre travado", codigo_gravacao(&e));
                 // A geração queimada está no estado; o destravar reabre com ela (D53).

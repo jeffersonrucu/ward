@@ -140,10 +140,10 @@ fn v2_29_grava_reabre_e_confere() {
     let (senha, pin, montadas) = montar(&f, &mut ler).unwrap();
     let t = raiz_falsa("ida-volta");
     let saida = validar_saida(&t.0, OsStr::new(SAIDA_PADRAO)).unwrap();
-    let mut cofre = CofreAberto::novo(&senha, configuracao_nova()).unwrap();
-    gravar_entradas(&saida, &mut cofre, &montadas).unwrap();
+    let mut cofre = OpenVault::new(&senha, configuracao_nova()).unwrap();
+    write_entries(&saida, &mut cofre, &montadas).unwrap();
     // Segunda gravação (V2.29 "roda duas vezes"): troca o arquivo pelo mesmo caminho.
-    gravar_entradas(&saida, &mut cofre, &montadas).unwrap();
+    write_entries(&saida, &mut cofre, &montadas).unwrap();
     // A segunda gravação do mesmo cofre aberto sobe a geração (D39).
     assert_eq!(conferir(&saida, &senha, &pin, &montadas).unwrap(), (22, 2));
     let modo = fs::metadata(&saida).unwrap().permissions().mode() & 0o777;
@@ -157,7 +157,7 @@ fn v2_29_grava_reabre_e_confere() {
         );
     }
 
-    let errada = SenhaMestra::nova("falso-mestra-errada".to_owned());
+    let errada = MasterPassword::new("falso-mestra-errada".to_owned());
     let e = conferir(&saida, &errada, &pin, &montadas).unwrap_err();
     assert!(texto_do_erro(&e).contains("não abriu"));
 
@@ -168,19 +168,19 @@ fn v2_29_grava_reabre_e_confere() {
     assert!(!msg.contains("246802") && !msg.contains(PIN_TESTE));
 
     // Configuração fora da padrão (trava de 30 minutos) também.
-    let mut outro = CofreAberto::novo(&senha, configuracao_nova()).unwrap();
-    outro.configuracao_mut().definir_minutos_trava(30).unwrap();
-    gravar_entradas(&saida, &mut outro, &montadas).unwrap();
+    let mut outro = OpenVault::new(&senha, configuracao_nova()).unwrap();
+    outro.config_mut().definir_minutos_trava(30).unwrap();
+    write_entries(&saida, &mut outro, &montadas).unwrap();
     let e = conferir(&saida, &senha, &pin, &montadas).unwrap_err();
     assert!(texto_do_erro(&e).contains("não é a padrão"));
-    gravar_entradas(&saida, &mut cofre, &montadas).unwrap();
+    write_entries(&saida, &mut cofre, &montadas).unwrap();
 
     // Cofre com uma entrada a menos não passa na conferência.
     let menos: Vec<Entrada> = cofre_de_teste()
         .into_iter()
         .filter(|e| e.nome() != "acme-totp-dev")
         .collect();
-    gravar_entradas(&saida, &mut cofre, &menos).unwrap();
+    write_entries(&saida, &mut cofre, &menos).unwrap();
     let e = conferir(&saida, &senha, &pin, &montadas).unwrap_err();
     assert!(texto_do_erro(&e).contains("diferem"));
 
@@ -578,8 +578,8 @@ fn v2_39_cofre_gerado_tem_a_configuracao() {
     let t = raiz_falsa("configuracao");
     let saida = validar_saida(&t.0, OsStr::new(SAIDA_PADRAO)).unwrap();
     let hash = HashPin::criar(pin.as_bytes()).unwrap();
-    let mut cofre = CofreAberto::novo(&senha, Configuracao::nova(hash)).unwrap();
-    gravar_entradas(&saida, &mut cofre, &montadas).unwrap();
+    let mut cofre = OpenVault::new(&senha, Configuracao::nova(hash)).unwrap();
+    write_entries(&saida, &mut cofre, &montadas).unwrap();
     drop(cofre);
 
     let bytes = fs::read(&saida).unwrap();
@@ -589,10 +589,10 @@ fn v2_39_cofre_gerado_tem_a_configuracao() {
             .any(|w| w == PIN_TESTE.as_bytes())
     );
     let (cofre, lidas) = abrir_entradas(&bytes, &senha).unwrap();
-    let cfg = cofre.configuracao();
+    let cfg = cofre.config();
     assert_eq!(lidas.len(), 22);
     // D39: o cofre recém-criado está na geração 1.
-    assert_eq!(cofre.geracao(), 1);
+    assert_eq!(cofre.generation(), 1);
     assert_eq!(cfg.minutos_trava(), 240);
     assert!(!cfg.backup().ligado() && cfg.backup().uuid().is_none());
     assert_eq!(cfg.hash_pin().parametros(), KDF_PIN);

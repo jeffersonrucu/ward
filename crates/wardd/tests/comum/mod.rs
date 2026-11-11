@@ -204,7 +204,7 @@ pub fn geracoes(dir: &Dir) -> wardd::arquivos::Geracoes {
 /// Geração lida do disco (abre com a senha de teste, sem piso).
 pub fn geracao_no_disco(caminho: &Path, senha: &str) -> u64 {
     let bytes = fs::read(caminho).unwrap();
-    let s = ward_core::formato::SenhaMestra::nova(senha.to_owned());
+    let s = ward_core::format::MasterPassword::new(senha.to_owned());
     ward_core::corpo::abrir_entradas_lida(&bytes, &s, 0, 0)
         .unwrap()
         .2

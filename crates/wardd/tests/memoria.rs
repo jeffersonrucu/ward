@@ -2,7 +2,7 @@
 //! travar, nenhum bloco liberado pelo daemon tem a chave de dados do cofre, a senha
 //! mestra, o PIN nem os segredos das entradas. A chave é tirada do próprio arquivo de
 //! teste (Argon2id + XChaCha20-Poly1305, as mesmas bibliotecas auditadas do núcleo),
-//! então a procura é pelo valor exato que o `CofreAberto` guardou.
+//! então a procura é pelo valor exato que o `OpenVault` guardou.
 //!
 //! Binário de teste próprio por causa do `#[global_allocator]`. `unsafe` só aqui, no
 //! alocador de teste (D31: a exceção aceita para teste de integração); nenhum código do

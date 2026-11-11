@@ -17,7 +17,7 @@ use chacha20poly1305::aead::AeadInOut;
 use chacha20poly1305::{Key as AeadKey, KeyInit, Tag, XChaCha20Poly1305, XNonce};
 use zeroize::{ZeroizeOnDrop, Zeroizing};
 
-use crate::formato::ParametrosKdf;
+use crate::format::KdfParams;
 use crate::limits::MAX_PIN_HASH;
 
 /// Key size (derived KEK and data key), in bytes.
@@ -92,14 +92,14 @@ pub(crate) fn argon2id(
     salt: &[u8],
     secret: &[u8],
     assoc_data: &[u8],
-    cost: &ParametrosKdf,
+    cost: &KdfParams,
     output: &mut [u8],
 ) -> Result<(), CryptoFailure> {
     let mut builder = ParamsBuilder::new();
     builder
-        .m_cost(cost.memoria_kib)
+        .m_cost(cost.memory_kib)
         .t_cost(cost.passes)
-        .p_cost(cost.paralelismo)
+        .p_cost(cost.parallelism)
         .output_len(output.len());
     if !assoc_data.is_empty() {
         builder.data(AssociatedData::new(assoc_data).map_err(|_| CryptoFailure)?);
@@ -130,7 +130,7 @@ pub(crate) fn argon2id(
 pub(crate) fn derive_kek(
     password: &[u8],
     salt: &[u8],
-    cost: &ParametrosKdf,
+    cost: &KdfParams,
 ) -> Result<Key, CryptoFailure> {
     let mut kek = Key::zeroed();
     argon2id(password, salt, &[], &[], cost, &mut kek[..])?;
@@ -229,7 +229,7 @@ pub(crate) const PIN_HASH_SIZE: usize = 32;
 /// PIN hash already read from the PHC text: parameters, salt and output. Does not leave
 /// the crate.
 pub(crate) struct PinPhc {
-    pub(crate) cost: ParametrosKdf,
+    pub(crate) cost: KdfParams,
     salt: Salt,
     hash: Output,
 }
@@ -256,16 +256,16 @@ impl fmt::Write for FixedBuffer<'_> {
 /// Canonical PHC text of (parameters, salt, output), written into `buf`. Returns how
 /// many bytes it used. Does not allocate.
 fn write_phc(
-    cost: &ParametrosKdf,
+    cost: &KdfParams,
     salt: &[u8],
     output: &[u8],
     buf: &mut [u8; MAX_PIN_HASH],
 ) -> Result<usize, CryptoFailure> {
     let mut params = ParamsString::new();
     for (name, value) in [
-        ("m", cost.memoria_kib),
+        ("m", cost.memory_kib),
         ("t", cost.passes),
-        ("p", cost.paralelismo),
+        ("p", cost.parallelism),
     ] {
         params.add_decimal(name, value).map_err(|_| CryptoFailure)?;
     }
@@ -283,10 +283,7 @@ fn write_phc(
 
 /// Argon2id hash of the PIN with a new random salt, in PHC text. The text is born in an
 /// allocation of the exact size, which zeroes on drop.
-pub(crate) fn hash_pin(
-    pin: &[u8],
-    cost: &ParametrosKdf,
-) -> Result<Zeroizing<String>, CryptoFailure> {
+pub(crate) fn hash_pin(pin: &[u8], cost: &KdfParams) -> Result<Zeroizing<String>, CryptoFailure> {
     let mut salt = [0u8; PIN_SALT_SIZE];
     random(&mut salt)?;
     let mut output: Zeroizing<[u8; PIN_HASH_SIZE]> = Zeroizing::new([0u8; PIN_HASH_SIZE]);
@@ -307,8 +304,8 @@ pub(crate) fn hash_pin(
 /// one does not run cheap.
 pub(crate) fn read_pin_phc(
     text: &[u8],
-    minimum: &ParametrosKdf,
-    maximum: &ParametrosKdf,
+    minimum: &KdfParams,
+    maximum: &KdfParams,
 ) -> Option<PinPhc> {
     if text.len() > MAX_PIN_HASH || !text.is_ascii() {
         return None;
@@ -321,20 +318,20 @@ pub(crate) fn read_pin_phc(
     if phc.params.iter().count() != 3 {
         return None;
     }
-    let cost = ParametrosKdf {
-        memoria_kib: phc.params.get_decimal("m")?,
+    let cost = KdfParams {
+        memory_kib: phc.params.get_decimal("m")?,
         passes: phc.params.get_decimal("t")?,
-        paralelismo: phc.params.get_decimal("p")?,
+        parallelism: phc.params.get_decimal("p")?,
     };
     let within = |v: u32, min: u32, max: u32| (min..=max).contains(&v);
-    if !within(cost.memoria_kib, minimum.memoria_kib, maximum.memoria_kib)
+    if !within(cost.memory_kib, minimum.memory_kib, maximum.memory_kib)
         || !within(cost.passes, minimum.passes, maximum.passes)
         || !within(
-            cost.paralelismo,
-            minimum.paralelismo.max(1),
-            maximum.paralelismo,
+            cost.parallelism,
+            minimum.parallelism.max(1),
+            maximum.parallelism,
         )
-        || u64::from(cost.memoria_kib) < 8 * u64::from(cost.paralelismo)
+        || u64::from(cost.memory_kib) < 8 * u64::from(cost.parallelism)
     {
         return None;
     }
@@ -373,11 +370,11 @@ pub(crate) fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 mod tests {
     use super::*;
 
-    fn cost(memory_kib: u32, passes: u32, parallelism: u32) -> ParametrosKdf {
-        ParametrosKdf {
-            memoria_kib: memory_kib,
+    fn cost(memory_kib: u32, passes: u32, parallelism: u32) -> KdfParams {
+        KdfParams {
+            memory_kib,
             passes,
-            paralelismo: parallelism,
+            parallelism,
         }
     }
 

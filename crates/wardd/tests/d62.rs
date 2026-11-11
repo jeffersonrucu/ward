@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use comum::*;
 use ward_core::configuracao::{Configuracao, HashPin};
-use ward_core::formato::{CofreAberto, SenhaMestra};
+use ward_core::format::{MasterPassword, OpenVault};
 use ward_core::protocolo::{ErroResposta, MSG_RETROCESSO, Papel, Resposta};
 use wardd::arquivos::{self, Geracoes};
 use wardd::nucleo::{Caminhos, Daemon, ESPERA_MAXIMA, Relogio, espera_destrave};
@@ -277,14 +277,14 @@ fn v3_35_criar_cofre_com_estado_velho_e_copia_antiga() {
     let c = dir.caminhos();
     // Um cofre anterior, na geração 5, com a mesma senha de teste (o atacante guardou).
     let antigo = dir.0.join("antigo.ward");
-    let senha = SenhaMestra::nova(SENHA.to_owned());
-    let mut velho = CofreAberto::novo(
+    let senha = MasterPassword::new(SENHA.to_owned());
+    let mut velho = OpenVault::new(
         &senha,
         Configuracao::nova(HashPin::criar(PIN.as_bytes()).unwrap()),
     )
     .unwrap()
-    .depois_da_geracao(4);
-    ward_core::gravacao::gravar_entradas(&antigo, &mut velho, &[]).unwrap();
+    .after_generation(4);
+    ward_core::atomic_write::write_entries(&antigo, &mut velho, &[]).unwrap();
     assert_eq!(geracao_no_disco(&antigo, SENHA), 5);
     arquivos::gravar_estado(
         &c.estado,
@@ -370,7 +370,7 @@ fn trocar_por_copia(c: &Caminhos) {
 }
 
 /// V3.35 (D62, S7, S13): um gancho troca o arquivo logo depois do rename do
-/// `gravar_entradas`. A identidade que o daemon guarda é a do fd do temporário, então
+/// `write_entries`. A identidade que o daemon guarda é a do fd do temporário, então
 /// a gravação seguinte responde "o arquivo do cofre mudou fora do Ward", trava e não
 /// grava. Com o `stat` depois do rename, a troca passaria como sendo do Ward.
 #[cfg(feature = "test-hooks")]

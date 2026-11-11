@@ -1,5 +1,5 @@
 //! Corpo do cofre (D26, D30, D39, D65 d): a configuração, a geração e as entradas em bytes,
-//! para o [`crate::formato`] cifrar.
+//! para o [`crate::format`] cifrar.
 //!
 //! Codificação binária própria, versionada e canônica, sem dependência nova (S14).
 //! Inteiros em little-endian; todo campo de bytes leva o comprimento antes (u32 LE).
@@ -21,7 +21,7 @@
 //!
 //! - **Versão 3** (D30, D39): a configuração ([`Configuracao`]) vem antes das entradas e
 //!   é obrigatória, e começa pela **geração**: o número da versão gravada, que toda
-//!   gravação a partir de um [`CofreAberto`] sobe em 1. Ela barra a troca do arquivo
+//!   gravação a partir de um [`OpenVault`] sobe em 1. Ela barra a troca do arquivo
 //!   por uma versão autêntica mais antiga ([`abrir_entradas_desde`] e
 //!   [`ErroAbrir::Retrocesso`]). As versões 1 (só entradas) e 2 (sem geração) são
 //!   desconhecidas e recusadas como qualquer outra; geração 0, um corpo sem hash de
@@ -63,7 +63,7 @@ use crate::entrada::{
     Autenticacao, Dados, Datas, Entrada, NivelAcesso, Rascunho, RascunhoAnexo, RascunhoDados,
     RascunhoExtra, Segredo, TipoEntrada, ValorExtra,
 };
-use crate::formato::{self, CofreAberto, ErroFormato, SenhaMestra};
+use crate::format::{self, FormatError, MasterPassword, OpenVault};
 
 #[cfg(test)]
 mod testes;
@@ -134,7 +134,7 @@ impl fmt::Display for Milhar {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErroAbrir {
     /// Senha errada, arquivo adulterado ou parâmetros recusados.
-    Formato(ErroFormato),
+    Formato(FormatError),
     /// Decifrou, mas o conteúdo não é um corpo válido.
     Corpo(ErroCorpo),
     /// Decifrou e o corpo é válido, mas a geração dele é menor que a mínima pedida
@@ -156,15 +156,15 @@ impl fmt::Display for ErroAbrir {
 impl std::error::Error for ErroAbrir {}
 
 /// Abre o arquivo do cofre e lê a configuração, a geração e as entradas (o caminho do
-/// `make dev-vault`). O [`CofreAberto`] devolvido leva a configuração e a geração lidas
+/// `make dev-vault`). O [`OpenVault`] devolvido leva a configuração e a geração lidas
 /// (D30, D39). O conteúdo decifrado zera ao sair; as entradas voltam em ordem de nome.
 ///
 /// Aceita qualquer geração. O daemon (Fase 22) abre por [`abrir_entradas_desde`], com
 /// a maior geração que já viu e a maior que já queimou.
 pub fn abrir_entradas(
     arquivo: &[u8],
-    senha: &SenhaMestra,
-) -> Result<(CofreAberto, Vec<Entrada>), ErroAbrir> {
+    senha: &MasterPassword,
+) -> Result<(OpenVault, Vec<Entrada>), ErroAbrir> {
     abrir_entradas_desde(arquivo, senha, 0, 0)
 }
 
@@ -174,30 +174,30 @@ pub fn abrir_entradas(
 /// inteiro, e nenhuma entrada é devolvida.
 ///
 /// `geracao_queimada` (D53) é a maior geração já selada ou tentada que o chamador
-/// conhece (uma gravação que falhou depois de selar). O [`CofreAberto`] devolvido fica
+/// conhece (uma gravação que falhou depois de selar). O [`OpenVault`] devolvido fica
 /// com max(geração do corpo, `geracao_queimada`), e a próxima gravação usa um número
 /// que nunca foi selado.
 pub fn abrir_entradas_desde(
     arquivo: &[u8],
-    senha: &SenhaMestra,
+    senha: &MasterPassword,
     geracao_minima: u64,
     geracao_queimada: u64,
-) -> Result<(CofreAberto, Vec<Entrada>), ErroAbrir> {
+) -> Result<(OpenVault, Vec<Entrada>), ErroAbrir> {
     abrir_entradas_lida(arquivo, senha, geracao_minima, geracao_queimada)
         .map(|(cofre, entradas, _)| (cofre, entradas))
 }
 
 /// Como [`abrir_entradas_desde`], e devolve também a geração **lida do corpo** (Fase 22,
-/// D53). O [`CofreAberto::geracao`] fica em max(lida, `geracao_queimada`); o daemon
+/// D53). O [`OpenVault::generation`] fica em max(lida, `geracao_queimada`); o daemon
 /// precisa da lida para subir a maior geração confirmada no disco (`vista`) sem
 /// confundi-la com uma queimada que nunca chegou ao disco.
 pub fn abrir_entradas_lida(
     arquivo: &[u8],
-    senha: &SenhaMestra,
+    senha: &MasterPassword,
     geracao_minima: u64,
     geracao_queimada: u64,
-) -> Result<(CofreAberto, Vec<Entrada>, u64), ErroAbrir> {
-    let (chaves, conteudo) = formato::abrir(arquivo, senha).map_err(ErroAbrir::Formato)?;
+) -> Result<(OpenVault, Vec<Entrada>, u64), ErroAbrir> {
+    let (chaves, conteudo) = format::open(arquivo, senha).map_err(ErroAbrir::Formato)?;
     let (configuracao, geracao, entradas) = desserializar(&conteudo).map_err(ErroAbrir::Corpo)?;
     drop(conteudo);
     if geracao < geracao_minima {
@@ -205,7 +205,7 @@ pub fn abrir_entradas_lida(
         return Err(ErroAbrir::Retrocesso);
     }
     Ok((
-        CofreAberto::de_partes(chaves, configuracao, geracao.max(geracao_queimada)),
+        OpenVault::from_parts(chaves, configuracao, geracao.max(geracao_queimada)),
         entradas,
         geracao,
     ))
@@ -215,8 +215,8 @@ pub fn abrir_entradas_lida(
 /// qualquer ordem; saem em ordem de nome). O buffer zera ao sair e nasce com a
 /// capacidade final. Geração 0 é recusada com [`ErroCorpo::Inconsistente`].
 ///
-/// Serializar não grava: fora do crate, só [`crate::gravacao::gravar_entradas`] e
-/// [`crate::gravacao::trocar_senha`] selam e gravam, e é a gravação que escolhe a
+/// Serializar não grava: fora do crate, só [`crate::atomic_write::write_entries`] e
+/// [`crate::atomic_write::change_password`] selam e gravam, e é a gravação que escolhe a
 /// geração (a do cofre aberto + 1).
 pub fn serializar(
     configuracao: &Configuracao,

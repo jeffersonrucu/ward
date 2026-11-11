@@ -4,7 +4,7 @@
 use std::sync::OnceLock;
 
 use super::*;
-use crate::formato::{CofreAberto, SenhaMestra};
+use crate::format::{MasterPassword, OpenVault};
 
 const PIN: &[u8] = b"135790";
 
@@ -125,8 +125,8 @@ fn debug_e_erros_sem_segredo() {
     assert!(d.contains("••••"));
     let cfg = Configuracao::nova(HashPin::de_phc(t.as_bytes()).unwrap());
     let dc = format!("{cfg:?} {cfg:#?}");
-    let senha = SenhaMestra::nova("falso-mestra-ward-01".to_owned());
-    let cofre = CofreAberto::novo(&senha, cfg).unwrap();
+    let senha = MasterPassword::new("falso-mestra-ward-01".to_owned());
+    let cofre = OpenVault::new(&senha, cfg).unwrap();
     let dcofre = format!("{cofre:?} {cofre:#?}");
     for texto in [&d, &dc, &dcofre] {
         assert!(!texto.contains(&saida), "Debug com o hash");
