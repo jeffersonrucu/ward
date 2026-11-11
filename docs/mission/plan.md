@@ -160,7 +160,7 @@ Compilação de cada fase: `make compile`. Checador: os arquivos da fase.
 - [x] Fase 24 — testes `ssh.rs`, `run.rs`, `ssh_falso.py`. — V2.1
 - [ ] Fase 25 — testes `aprovacao.rs`, `trava.rs`, `nucleo.rs` (com o `[[test]]` `trava` no `Cargo.toml`, achado da Fase 4). — V2.1
 - [ ] Fase 26 — testes `externo.rs`, `backup.rs`, `configuracoes.rs`, `d62.rs`. — V2.1
-- [ ] Fase 27 — testes `playwright.rs`, `extensao.rs`, `login.rs`, `chrome_falso.py`,
+- [x] Fase 27 — testes `playwright.rs`, `extensao.rs`, `login.rs`, `chrome_falso.py`,
   `app_valor.rs`, `valor_app.rs`, `app_teste.rs`, `anexos_edicao.rs` (com os `[[test]]` `app_teste` e `app_valor` no
   `Cargo.toml`, achado da Fase 4). — V2.1
 
