@@ -311,7 +311,7 @@ mod tests {
     /// V3.38 (D63): the daemon on the other side of the pair answers the status with
     /// `role`; what it received comes back to the test.
     fn daemon_giving(role: Role) -> (DaemonSocket, std::thread::JoinHandle<Vec<String>>) {
-        use ward_core::protocol::{self, Resposta, frame};
+        use ward_core::protocol::{self, Response, frame};
         let (a, mut b) = std::os::unix::net::UnixStream::pair().unwrap();
         let d = DaemonSocket::from_pair(a, std::time::Duration::from_secs(10));
         let h = std::thread::spawn(move || {
@@ -320,12 +320,12 @@ mod tests {
                 let p = protocol::decode_request(Role::App, &q).unwrap();
                 ops.push(p.operation().name().to_owned());
                 let r = match p {
-                    protocol::Request::Status => Resposta::Estado {
-                        travado: true,
-                        cofre_existe: true,
-                        papel: role,
+                    protocol::Request::Status => Response::Status {
+                        locked: true,
+                        vault_exists: true,
+                        role,
                     },
-                    _ => Resposta::Ok,
+                    _ => Response::Ok,
                 };
                 // The daemon writes the status in the role it gave (D63).
                 let q = protocol::encode_response(role, &r).unwrap();

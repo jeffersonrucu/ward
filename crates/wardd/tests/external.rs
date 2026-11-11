@@ -30,7 +30,7 @@ use std::time::{Duration, Instant};
 
 use common::*;
 use ward_core::backup::VERSIONS;
-use ward_core::protocol::{ResponseError, Resposta, Role};
+use ward_core::protocol::{Response, ResponseError, Role};
 use wardd::core::Daemon;
 use wardd::external::{ExternalError, Seen, UsbDriveSource};
 use zbus::connection::Builder;
@@ -91,7 +91,7 @@ fn mount_point(dir: &Dir, name: &str) -> PathBuf {
     p
 }
 
-fn turn_on(d: &Daemon, role: Role, uuid: &str) -> Resposta {
+fn turn_on(d: &Daemon, role: Role, uuid: &str) -> Response {
     request(
         d,
         role,
@@ -167,7 +167,10 @@ fn v7_4_off_by_default_writes_nothing() {
     let source = Source::with(vec![usb_drive(UUID_A, &a)]);
     let d = d.with_usb_drives(Arc::new(source.clone()));
     match request(&d, Role::App, "backup_externo", "{}") {
-        Resposta::BackupExterno { ligado, uuid } => {
+        Response::ExternalBackup {
+            enabled: ligado,
+            uuid,
+        } => {
             assert!(!ligado);
             assert_eq!(uuid, None);
         }
@@ -178,10 +181,10 @@ fn v7_4_off_by_default_writes_nothing() {
     assert!(tree(&a).is_empty(), "nada no pendrive");
     // The list of USB drives (for the app to choose from) works and writes nothing.
     match request(&d, Role::App, "pendrives", "{}") {
-        Resposta::Pendrives(l) => {
+        Response::UsbDrives(l) => {
             assert_eq!(l.len(), 1);
             assert_eq!(l[0].uuid, UUID_A);
-            assert!(l[0].montado);
+            assert!(l[0].mounted);
         }
         r => panic!("{r:?}"),
     }
@@ -203,7 +206,10 @@ fn v7_5_v7_6_copies_only_to_the_chosen_drive_and_without_secret() {
     let source = Source::with(vec![usb_drive(UUID_B, &b)]);
     assert!(ok(&turn_on(&d, Role::App, UUID_A)));
     match request(&d, Role::App, "backup_externo", "{}") {
-        Resposta::BackupExterno { ligado, uuid } => {
+        Response::ExternalBackup {
+            enabled: ligado,
+            uuid,
+        } => {
             assert!(ligado);
             assert_eq!(uuid.as_deref(), Some(UUID_A));
         }
@@ -697,7 +703,10 @@ fn locked_or_off_does_not_copy() {
     assert_eq!(source.queries(), n);
     assert_eq!(tree(&a), before, "nada novo, nada apagado");
     match request(&d, Role::App, "backup_externo", "{}") {
-        Resposta::BackupExterno { ligado, uuid } => {
+        Response::ExternalBackup {
+            enabled: ligado,
+            uuid,
+        } => {
             assert!(!ligado);
             assert_eq!(uuid.as_deref(), Some(UUID_A));
         }
@@ -1057,9 +1066,9 @@ fn v7_5_udisks_signal_copies_to_the_mounted_drive() {
     rx.recv_timeout(Duration::from_secs(10))
         .expect("vigia conectou");
     match request(&d, Role::App, "pendrives", "{}") {
-        Resposta::Pendrives(l) => {
+        Response::UsbDrives(l) => {
             assert_eq!(l.len(), 2);
-            assert!(!l.iter().find(|p| p.uuid == UUID_A).unwrap().montado);
+            assert!(!l.iter().find(|p| p.uuid == UUID_A).unwrap().mounted);
         }
         r => panic!("{r:?}"),
     }

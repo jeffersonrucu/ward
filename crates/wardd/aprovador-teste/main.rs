@@ -25,7 +25,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use ward_core::entry::Secret;
-use ward_core::protocol::{self, Decision, Request, Resposta, Role};
+use ward_core::protocol::{self, Decision, Request, Response, Role};
 
 fn socket() -> Option<PathBuf> {
     match std::env::var_os("WARD_DEV_SOCKET_DIR") {
@@ -91,16 +91,16 @@ fn main() -> ExitCode {
     }
     while let Some(corpo) = ler(&mut s) {
         match protocol::decode_response(Role::App, &corpo) {
-            Ok(Resposta::Estado { papel, .. }) => println!("papel={}", papel.name()),
-            Ok(Resposta::PedidoDeAprovacao(p)) => {
+            Ok(Response::Status { role: papel, .. }) => println!("papel={}", papel.name()),
+            Ok(Response::ApprovalRequest(p)) => {
                 let escolha = modo();
                 println!(
                     "pedido operacao={} entradas={} origem={} confirmacao={}{} decisao={}",
-                    p.operacao.name(),
-                    p.entradas.join(","),
-                    if p.origem.is_empty() { "-" } else { &p.origem },
-                    u8::from(p.confirmacao),
-                    if p.entrada_oculta {
+                    p.operation.name(),
+                    p.entries.join(","),
+                    if p.origin.is_empty() { "-" } else { &p.origin },
+                    u8::from(p.confirmation),
+                    if p.hidden_entry {
                         " entrada_oculta=1"
                     } else {
                         ""
@@ -119,9 +119,9 @@ fn main() -> ExitCode {
                     }
                 }
             }
-            Ok(Resposta::PedidoDeDestrave(_)) => println!("destrave"),
-            Ok(Resposta::Erro(e)) => println!("resposta={}", e.code()),
-            Ok(r) => println!("resposta={}", r.tipo().name()),
+            Ok(Response::UnlockRequest(_)) => println!("destrave"),
+            Ok(Response::Error(e)) => println!("resposta={}", e.code()),
+            Ok(r) => println!("resposta={}", r.kind().name()),
             Err(_) => println!("resposta=invalida"),
         }
         let _ = std::io::stdout().flush();

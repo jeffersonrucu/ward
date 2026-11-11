@@ -53,7 +53,7 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use ward_core::protocol::frame::{self, FrameError};
-use ward_core::protocol::{self, PedidoDeAprovacao, PedidoDeDestrave, Resposta, Role};
+use ward_core::protocol::{self, ApprovalRequest, Response, Role, UnlockRequest};
 use ward_platform::{ExpectedServer, ServerRefusal, connect_server};
 
 use zeroize::Zeroizing;
@@ -105,20 +105,20 @@ pub trait Daemon: Send {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Notice {
     /// An agent use waits for approval (Phase 36).
-    Approval(PedidoDeAprovacao),
+    Approval(ApprovalRequest),
     /// An agent use waits for the unlock (Phases 31 and 39a).
-    Unlock(PedidoDeDestrave),
+    Unlock(UnlockRequest),
 }
 
 impl Notice {
     /// Tests and test bridge only: an unlock request with fake data (D15).
     #[cfg(any(test, feature = "test-mode"))]
     pub fn test_unlock(entry: &str) -> Notice {
-        Notice::Unlock(PedidoDeDestrave {
-            entrada: entry.to_owned(),
-            operacao: protocol::Operation::Run,
-            comando: r#""psql" "-c" "select count(*) from pedidos""#.to_owned(),
-            restante: 120,
+        Notice::Unlock(UnlockRequest {
+            entry: entry.to_owned(),
+            operation: protocol::Operation::Run,
+            command: r#""psql" "-c" "select count(*) from pedidos""#.to_owned(),
+            remaining: 120,
         })
     }
 
@@ -128,12 +128,12 @@ impl Notice {
     /// escape and text, never as HTML.
     #[cfg(any(test, feature = "test-mode"))]
     pub fn hostile_test_unlock() -> Notice {
-        Notice::Unlock(PedidoDeDestrave {
-            entrada: "acme-pg-\u{202E}vorpa\u{200B}<b>x</b>".to_owned(),
-            operacao: protocol::Operation::Run,
-            comando: "\"psql\" \"-c\" \"select 1\u{1b}[2K\" \"<img src=x onerror=alert(1)>\""
+        Notice::Unlock(UnlockRequest {
+            entry: "acme-pg-\u{202E}vorpa\u{200B}<b>x</b>".to_owned(),
+            operation: protocol::Operation::Run,
+            command: "\"psql\" \"-c\" \"select 1\u{1b}[2K\" \"<img src=x onerror=alert(1)>\""
                 .to_owned(),
-            restante: 120,
+            remaining: 120,
         })
     }
 }
@@ -199,7 +199,7 @@ impl NoticeQueue {
     /// approval notices stay where they are, in order, for the approval window (Phase
     /// 36). Phase 39a: returns the newest (the daemon sends the newest last); `None`:
     /// none arrived in time.
-    pub fn wait_unlock(&self, timeout: Duration) -> Option<PedidoDeDestrave> {
+    pub fn wait_unlock(&self, timeout: Duration) -> Option<UnlockRequest> {
         let end = Instant::now() + timeout;
         let mut q = self.lock();
         loop {
@@ -226,7 +226,7 @@ impl NoticeQueue {
     /// Phase 36: waits up to `timeout` for the oldest approval request and takes it out
     /// of the queue. The unlock requests stay where they are, in order, for the unlock
     /// screen (Phase 31). `None`: none arrived in time.
-    pub fn wait_approval(&self, timeout: Duration) -> Option<PedidoDeAprovacao> {
+    pub fn wait_approval(&self, timeout: Duration) -> Option<ApprovalRequest> {
         let end = Instant::now() + timeout;
         let mut q = self.lock();
         loop {
@@ -384,8 +384,8 @@ fn read_loop(
     // Closed, truncated, above the limit or I/O error: leaves.
     while let Ok(q) = frame::read_frame(&mut s, frame::RESPONSE_LIMIT) {
         match protocol::decode_response(Role::App, &q) {
-            Ok(Resposta::PedidoDeAprovacao(p)) => notices.push(Notice::Approval(p)),
-            Ok(Resposta::PedidoDeDestrave(p)) => notices.push(Notice::Unlock(p)),
+            Ok(Response::ApprovalRequest(p)) => notices.push(Notice::Approval(p)),
+            Ok(Response::UnlockRequest(p)) => notices.push(Notice::Unlock(p)),
             Ok(_) => {
                 // Response with no request: leaves.
                 if !waiting.swap(false, Ordering::AcqRel) || tx.send(q).is_err() {
@@ -765,7 +765,7 @@ mod tests {
 
     // --- Transport (D65 a, V5.33) with a fake daemon on the other side of a pair -------
 
-    fn send(s: &mut UnixStream, r: &Resposta) {
+    fn send(s: &mut UnixStream, r: &Response) {
         let q = protocol::encode_response(Role::App, r).unwrap();
         frame::write_frame(s, &q, frame::RESPONSE_LIMIT).unwrap();
     }
@@ -775,11 +775,11 @@ mod tests {
         protocol::decode_request(Role::App, &q).unwrap()
     }
 
-    fn app_status() -> Resposta {
-        Resposta::Estado {
-            travado: false,
-            cofre_existe: true,
-            papel: Role::App,
+    fn app_status() -> Response {
+        Response::Status {
+            locked: false,
+            vault_exists: true,
+            role: Role::App,
         }
     }
 
@@ -795,7 +795,7 @@ mod tests {
         f.simulate(Notice::test_unlock("acme-pg-novo"));
         // Phase 39a: the newest.
         assert_eq!(
-            f.wait_unlock(Duration::from_millis(30)).map(|p| p.entrada),
+            f.wait_unlock(Duration::from_millis(30)).map(|p| p.entry),
             Some("acme-pg-novo".to_owned())
         );
         assert_eq!(f.wait_unlock(Duration::from_millis(30)), None);
@@ -811,25 +811,25 @@ mod tests {
         assert!(t.join().unwrap().is_some());
     }
 
-    fn unlock_notice() -> Resposta {
+    fn unlock_notice() -> Response {
         match Notice::test_unlock("acme-pg-aprovacao") {
-            Notice::Unlock(p) => Resposta::PedidoDeDestrave(p),
+            Notice::Unlock(p) => Response::UnlockRequest(p),
             Notice::Approval(_) => unreachable!(),
         }
     }
 
-    fn approval(id: u64) -> PedidoDeAprovacao {
-        PedidoDeAprovacao {
+    fn approval(id: u64) -> ApprovalRequest {
+        ApprovalRequest {
             id,
-            entradas: vec!["acme-pg-dev".into()],
-            ambiente: ward_core::entry::Environment::Dev,
-            operacao: ward_core::protocol::Operation::Run,
-            comando: "\"psql\"".into(),
-            diretorio: "\"/home/dev\"".into(),
-            cadeia: vec!["claude".into(), "ward run".into()],
-            origem: String::new(),
-            confirmacao: false,
-            entrada_oculta: false,
+            entries: vec!["acme-pg-dev".into()],
+            environment: ward_core::entry::Environment::Dev,
+            operation: ward_core::protocol::Operation::Run,
+            command: "\"psql\"".into(),
+            directory: "\"/home/dev\"".into(),
+            chain: vec!["claude".into(), "ward run".into()],
+            origin: String::new(),
+            confirmation: false,
+            hidden_entry: false,
         }
     }
 
@@ -852,7 +852,7 @@ mod tests {
                     read_request(&mut b),
                     ward_core::protocol::Request::Status
                 ));
-                send(&mut b, &Resposta::PedidoDeAprovacao(approval(7)));
+                send(&mut b, &Response::ApprovalRequest(approval(7)));
                 send(&mut b, &unlock_notice());
                 send(&mut b, &app_status());
             }
@@ -883,7 +883,7 @@ mod tests {
         let server = std::thread::spawn(move || {
             for i in 0..1000 {
                 if i % 2 == 0 {
-                    send(&mut b, &Resposta::PedidoDeAprovacao(approval(i)));
+                    send(&mut b, &Response::ApprovalRequest(approval(i)));
                 } else {
                     send(&mut b, &unlock_notice());
                 }
@@ -968,20 +968,20 @@ mod tests {
     #[test]
     fn v5_33_agent_role_type_or_forged_closes_without_showing_anything() {
         use ward_core::entry::{EntryType, Environment};
-        use ward_core::protocol::ItemLista;
+        use ward_core::protocol::ListItem;
         // The agent list comes without a level (D50): not a response the app accepts.
-        let item = ItemLista {
-            nome: "acme-pg-dev".into(),
-            tipo: EntryType::Database,
-            grupo: "acme".into(),
-            ambiente: Environment::Dev,
-            projeto: None,
+        let item = ListItem {
+            name: "acme-pg-dev".into(),
+            kind: EntryType::Database,
+            group: "acme".into(),
+            environment: Environment::Dev,
+            project: None,
             tags: vec![],
-            nivel: None,
-            endereco: None,
-            resumo: None,
+            level: None,
+            address: None,
+            summary: None,
         };
-        let agent_list = protocol::encode_response(Role::Agent, &Resposta::Lista(vec![item]))
+        let agent_list = protocol::encode_response(Role::Agent, &Response::List(vec![item]))
             .unwrap()
             .to_vec();
         let forged = br#"{"v":1,"tipo":"estado","dados":{"travado":false,"cofre_existe":true,"papel":"app","x":1}}"#.to_vec();

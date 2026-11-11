@@ -29,7 +29,7 @@ use serde::de::{self, Deserialize, Deserializer, Visitor};
 use ward_core::display::neutralize;
 use ward_core::entry::Secret as CoreSecret;
 use ward_core::limits::MAX_SECRET;
-use ward_core::protocol::PedidoDeDestrave;
+use ward_core::protocol::UnlockRequest;
 use zeroize::Zeroizing;
 
 use crate::AppError;
@@ -152,17 +152,17 @@ impl PendingRequest {
 
     /// An unlock request notice arrived now: the shown request becomes this one (the
     /// newest), with the deadline the daemon sent (never above [`REQUEST_TIMEOUT`]).
-    pub fn mark(&self, p: &PedidoDeDestrave) {
+    pub fn mark(&self, p: &UnlockRequest) {
         self.mark_at(p, Instant::now());
     }
 
-    fn mark_at(&self, p: &PedidoDeDestrave, now: Instant) {
+    fn mark_at(&self, p: &UnlockRequest, now: Instant) {
         let text = Text {
-            entry: neutralize(&p.entrada),
-            operation: p.operacao.name(),
-            command: neutralize(&p.comando),
+            entry: neutralize(&p.entry),
+            operation: p.operation.name(),
+            command: neutralize(&p.command),
         };
-        let left = Duration::from_secs(p.restante).min(REQUEST_TIMEOUT);
+        let left = Duration::from_secs(p.remaining).min(REQUEST_TIMEOUT);
         let mut e = self.lock_state();
         e.id = e.id.wrapping_add(1);
         e.deadline = Some(now + left);
@@ -272,10 +272,10 @@ mod tests {
         );
     }
 
-    fn notice(entry: &str, remaining: u64) -> PedidoDeDestrave {
+    fn notice(entry: &str, remaining: u64) -> UnlockRequest {
         match Notice::test_unlock(entry) {
             Notice::Unlock(mut p) => {
-                p.restante = remaining;
+                p.remaining = remaining;
                 p
             }
             Notice::Approval(_) => unreachable!(),
@@ -351,7 +351,7 @@ mod tests {
     fn attack_raw_entry_and_command_arrive_neutralized() {
         let p = PendingRequest::default();
         let mut a = notice("acme\u{202E}gp-pg\u{1b}[2K\u{200B}\u{E0041}\n", 120);
-        a.comando = "\"psql\" \"-c\" \"x\u{2066}\u{feff}\u{9b}\u{7f}\"".into();
+        a.command = "\"psql\" \"-c\" \"x\u{2066}\u{feff}\u{9b}\u{7f}\"".into();
         p.mark(&a);
         let i = p.info().unwrap();
         for t in [&i.entry, &i.command] {
@@ -361,7 +361,7 @@ mod tests {
         assert_eq!(i.command, r#""psql" "-c" "x\u{2066}\u{FEFF}\x9b\x7f""#);
         // The form already neutralized by the daemon passes unchanged (no double escape).
         let mut b = notice(r"acme\u{202E}", 120);
-        b.comando = r#""a\x1b""#.into();
+        b.command = r#""a\x1b""#.into();
         p.mark(&b);
         let j = p.info().unwrap();
         assert_eq!(

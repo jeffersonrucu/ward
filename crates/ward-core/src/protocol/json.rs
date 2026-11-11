@@ -33,7 +33,7 @@ pub(crate) const MAX_NODES: usize = 20_000;
 /// Largest number of values in a response: the list of a full vault (each item has up
 /// to 9 values plus the tags and the app summary, D65 c).
 pub(crate) const MAX_RESPONSE_NODES: usize = crate::limits::MAX_ENTRIES
-    * (9 + crate::limits::MAX_TAGS + super::response::MAX_NOS_RESUMO)
+    * (9 + crate::limits::MAX_TAGS + super::response::MAX_SUMMARY_NODES)
     + 1024;
 /// Largest number of keys in an object.
 pub(crate) const MAX_KEYS: usize = 32;

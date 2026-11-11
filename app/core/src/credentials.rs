@@ -11,7 +11,7 @@
 
 use serde::Serialize;
 use ward_core::entry::EntryType;
-use ward_core::protocol::{DetalheEntrada, ItemLista, ResumoItem};
+use ward_core::protocol::{EntryDetail, ItemSummary, ListItem};
 
 /// A row of the list (compact list item).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -177,9 +177,9 @@ fn join(parts: &[&str]) -> String {
 
 /// The second line of the item, by type (as in the Credentials screen frames), from the
 /// app list summary.
-fn summary(kind: EntryType, r: &ResumoItem) -> String {
-    let c = |id: &str| field(&r.campos, id);
-    let has = |id: &str| r.segredos.iter().any(|s| s == id);
+fn summary(kind: EntryType, r: &ItemSummary) -> String {
+    let c = |id: &str| field(&r.fields, id);
+    let has = |id: &str| r.secrets.iter().any(|s| s == id);
     match kind {
         EntryType::Database => {
             let engine = c("motor").unwrap_or_default();
@@ -226,7 +226,7 @@ fn summary(kind: EntryType, r: &ResumoItem) -> String {
             c("regiao").unwrap_or_default(),
         ]),
         EntryType::SecureNote => "texto protegido".to_owned(),
-        EntryType::Generic => match (r.extras, r.anexos) {
+        EntryType::Generic => match (r.extras, r.attachments) {
             (0, 0) => "sem campos".to_owned(),
             (e, a) => join(&[
                 &plural(e, "campo extra", "campos extras"),
@@ -248,43 +248,43 @@ impl CredentialItem {
     /// The app list item, with the 2nd line and the username taken from the summary
     /// (D65 c). `None` when the item has no level or summary: it is not an app role list
     /// (D50), and the caller refuses the whole response.
-    pub fn new(item: &ItemLista) -> Option<CredentialItem> {
-        let r = item.resumo.as_ref()?;
+    pub fn new(item: &ListItem) -> Option<CredentialItem> {
+        let r = item.summary.as_ref()?;
         Some(CredentialItem {
-            name: item.nome.clone(),
-            kind: item.tipo.name(),
-            group: item.grupo.clone(),
-            environment: item.ambiente.name(),
-            level: item.nivel?.name(),
-            summary: summary(item.tipo, r),
-            address: item.endereco.clone(),
-            username: field(&r.campos, "usuario").map(str::to_owned),
+            name: item.name.clone(),
+            kind: item.kind.name(),
+            group: item.group.clone(),
+            environment: item.environment.name(),
+            level: item.level?.name(),
+            summary: summary(item.kind, r),
+            address: item.address.clone(),
+            username: field(&r.fields, "usuario").map(str::to_owned),
         })
     }
 }
 
 impl CredentialDetail {
-    pub fn new(d: &DetalheEntrada) -> CredentialDetail {
-        let engine = field(&d.campos, "motor");
-        let protocol = field(&d.campos, "protocolo");
-        let group = format!("grupo {}", d.grupo);
+    pub fn new(d: &EntryDetail) -> CredentialDetail {
+        let engine = field(&d.fields, "motor");
+        let protocol = field(&d.fields, "protocolo");
+        let group = format!("grupo {}", d.group);
         let subtitle = join(&[
             &group,
             engine.or(protocol).unwrap_or_default(),
-            d.projeto.as_deref().unwrap_or_default(),
+            d.project.as_deref().unwrap_or_default(),
         ]);
         CredentialDetail {
-            name: d.nome.clone(),
-            kind: d.tipo.name(),
-            group: d.grupo.clone(),
-            environment: d.ambiente.name(),
-            level: d.nivel.name(),
-            project: d.projeto.clone(),
+            name: d.name.clone(),
+            kind: d.kind.name(),
+            group: d.group.clone(),
+            environment: d.environment.name(),
+            level: d.level.name(),
+            project: d.project.clone(),
             tags: d.tags.clone(),
             subtitle,
             // The engine and the protocol are already in the subtitle.
             fields: d
-                .campos
+                .fields
                 .iter()
                 .filter(|(k, _)| k != "motor" && k != "protocolo")
                 .map(|(k, v)| TextField {
@@ -294,7 +294,7 @@ impl CredentialDetail {
                 })
                 .collect(),
             secrets: d
-                .segredos
+                .secrets
                 .iter()
                 .map(|k| SecretField {
                     id: k.clone(),
@@ -305,21 +305,21 @@ impl CredentialDetail {
                 .extras
                 .iter()
                 .map(|x| Extra {
-                    name: x.nome.clone(),
-                    secret: x.valor.is_none(),
-                    value: x.valor.clone(),
+                    name: x.name.clone(),
+                    secret: x.value.is_none(),
+                    value: x.value.clone(),
                 })
                 .collect(),
             attachments: d
-                .anexos
+                .attachments
                 .iter()
                 .map(|a| Attachment {
-                    name: a.nome.clone(),
-                    size: a.tamanho,
+                    name: a.name.clone(),
+                    size: a.size,
                 })
                 .collect(),
-            created_at: d.datas.created_at(),
-            modified_at: d.datas.modified_at(),
+            created_at: d.dates.created_at(),
+            modified_at: d.dates.modified_at(),
         }
     }
 }
@@ -330,9 +330,9 @@ mod tests {
     use crate::daemon::Daemon;
     use crate::fake_daemon::{FakeDaemon, SECRETS};
     use ward_core::entry::{AccessLevel, DataDraft, Draft, Secret};
-    use ward_core::protocol::{self, Request, Resposta, Role};
+    use ward_core::protocol::{self, Request, Response, Role};
 
-    fn exchange(d: &mut FakeDaemon, request: &Request) -> Resposta {
+    fn exchange(d: &mut FakeDaemon, request: &Request) -> Response {
         let q = protocol::encode_request(Role::App, request).unwrap();
         let r = d.exchange(&q).unwrap();
         protocol::decode_response(Role::App, &r).unwrap()
@@ -343,8 +343,8 @@ mod tests {
             entry: name.to_owned(),
         };
         match exchange(d, &p) {
-            Resposta::Detalhe(x) => CredentialDetail::new(&x),
-            other => panic!("{:?}", other.tipo()),
+            Response::Detail(x) => CredentialDetail::new(&x),
+            other => panic!("{:?}", other.kind()),
         }
     }
 
@@ -389,7 +389,7 @@ mod tests {
                 attachments: Vec::new(),
             },
         };
-        assert!(matches!(exchange(&mut d, &new), Resposta::Ok));
+        assert!(matches!(exchange(&mut d, &new), Response::Ok));
         let x = detail(&mut d, "clientex-stage-wp");
         let created = x.created_at.unwrap();
         assert!(created >= before && created <= now());
@@ -408,7 +408,7 @@ mod tests {
             level: AccessLevel::Free,
             pin: Secret::from_text("135790".to_owned()),
         };
-        assert!(matches!(exchange(&mut d, &set), Resposta::Ok));
+        assert!(matches!(exchange(&mut d, &set), Response::Ok));
         let y = detail(&mut d, "clientex-stage-wp");
         assert_eq!(y.created_at, Some(created));
         assert!(y.modified_at.unwrap() >= created);

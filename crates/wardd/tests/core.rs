@@ -13,13 +13,13 @@ use std::time::Duration;
 
 use common::*;
 use ward_core::entry::AccessLevel;
-use ward_core::protocol::{ResponseError, Resposta, Role};
+use ward_core::protocol::{Response, ResponseError, Role};
 use wardd::core::{MAX_WAIT, unlock_wait};
 use wardd::files::{self, Generations};
 
-fn list(d: &wardd::core::Daemon, role: Role) -> Vec<ward_core::protocol::ItemLista> {
+fn list(d: &wardd::core::Daemon, role: Role) -> Vec<ward_core::protocol::ListItem> {
     match request(d, role, "lista", "{}") {
-        Resposta::Lista(l) => l,
+        Response::List(l) => l,
         r => panic!("{r:?}"),
     }
 }
@@ -27,8 +27,8 @@ fn list(d: &wardd::core::Daemon, role: Role) -> Vec<ward_core::protocol::ItemLis
 fn level_of(d: &wardd::core::Daemon, name: &str) -> Option<AccessLevel> {
     list(d, Role::App)
         .into_iter()
-        .find(|i| i.nome == name)
-        .and_then(|i| i.nivel)
+        .find(|i| i.name == name)
+        .and_then(|i| i.level)
 }
 
 fn is_root() -> bool {
@@ -78,10 +78,10 @@ fn v3_10_lock_and_everything_answers_locked() {
         );
     }
     match request(&d, Role::Agent, "estado", "{}") {
-        Resposta::Estado {
-            travado,
-            cofre_existe,
-            papel: role,
+        Response::Status {
+            locked: travado,
+            vault_exists: cofre_existe,
+            role,
         } => assert!(travado && cofre_existe && role == Role::Agent),
         r => panic!("{r:?}"),
     }
@@ -236,16 +236,16 @@ fn v3_17_v3_26_agent_list_and_blocked_equals_missing() {
     assert!(
         agent
             .iter()
-            .all(|i| i.nome != "t-bloq" && i.nivel.is_none())
+            .all(|i| i.name != "t-bloq" && i.level.is_none())
     );
-    let q = encoded(Role::Agent, &Resposta::Lista(agent));
+    let q = encoded(Role::Agent, &Response::List(agent));
     assert!(!contains(&q, b"\"nivel\""));
     for s in SECRETS {
         assert!(!contains(&q, s.as_bytes()) && !contains(&q, b64(s.as_bytes()).as_bytes()));
     }
     let app = list(&d, Role::App);
     assert_eq!(app.len(), 5);
-    assert!(app.iter().all(|i| i.nivel.is_some()));
+    assert!(app.iter().all(|i| i.level.is_some()));
     assert_eq!(level_of(&d, "t-bloq"), Some(AccessLevel::Blocked));
 
     let run = |name: &str| {
@@ -317,7 +317,7 @@ fn v3_27_new_entry_starts_with_approval() {
         error(&request(&d, Role::App, "salvar_entrada", &with_level)),
         Some(ResponseError::InvalidRequest)
     );
-    assert!(list(&d, Role::App).iter().all(|i| i.nome != "t-nova2"));
+    assert!(list(&d, Role::App).iter().all(|i| i.name != "t-nova2"));
     // Editing the free one keeps it free.
     let edit = login("t-livre", SECRETS[3]).replacen('{', r#"{"anterior":"t-livre","#, 1);
     assert!(ok(&request(&d, Role::App, "salvar_entrada", &edit)));
@@ -359,7 +359,7 @@ fn v3_27_new_entry_starts_with_approval() {
         matches!(error(&r), Some(ResponseError::Validation(_))),
         "{r:?}"
     );
-    assert!(list(&d, Role::App).iter().any(|i| i.nome == "s1"));
+    assert!(list(&d, Role::App).iter().any(|i| i.name == "s1"));
     // The vault still opens after all this.
     d.lock();
     assert!(ok(&unlock(&d, PASSWORD)));
@@ -673,9 +673,9 @@ fn first_use_and_pin_only_as_hash() {
     let dir = Dir::new("primeiro");
     let (d, _) = daemon_at(dir.paths());
     match request(&d, Role::Agent, "estado", "{}") {
-        Resposta::Estado {
-            travado,
-            cofre_existe,
+        Response::Status {
+            locked: travado,
+            vault_exists: cofre_existe,
             ..
         } => assert!(travado && !cofre_existe),
         r => panic!("{r:?}"),

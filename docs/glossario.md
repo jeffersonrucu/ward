@@ -3010,6 +3010,43 @@ valores) continuam os literais v1 até a Fase 50. O `ler_cabecalho` de `resposta
 `Papeis` do `wardd/servidor.rs` são outros e não mudaram; o `ErroPartida::Papel` do
 `app/core` (variante) também não.
 
+Fase 18 (`ward-core`: `protocol/response`, `protocol/tests`, `tests/sources.rs` e
+`tests/body_memory.rs`, antes `tests/fontes.rs` e `tests/corpo_memoria.rs`): `Resposta` →
+`Response` com as variantes pelos tipos de resposta v2 (`Ok`, `Estado { travado,
+cofre_existe, papel }` → `Status { locked, vault_exists, role }`, `Erro` → `Error`, `Lista` →
+`List`, `Saida { fluxo, dados }` → `Output { stream, data }`, `Fim { codigo }` → `Exit {
+code }`, `SessaoPlaywright { caminho }` → `PlaywrightSession { path }`, `Detalhe` →
+`Detail`, `Segredo` → `Secret`, `Token`, `PedidoDeAprovacao` → `ApprovalRequest`,
+`PedidoDeDestrave` → `UnlockRequest`, `CodigoTotp { codigo, restante }` → `TotpCode { code,
+remaining }`, `Sugestoes` → `Suggestions`, `Preenchimento { usuario, senha, totp }` → `Fill {
+username, password, totp }`, `PedidoDeLogin { id, entrada }` → `LoginRequest { id, entry }`,
+`Backups`, `Configuracao { minutos_trava, backup_externo, backup_local }` → `Config {
+lock_minutes, external_backup, local_backup }`, `BackupExterno { ligado, uuid }` →
+`ExternalBackup { enabled, uuid }`, `Pendrives` → `UsbDrives`); `tipo()`/`conferir`/
+`escrever`/`ler` → `kind()`/`check`/`write`/`read`. `Fluxo { Saida, Erro }` → `Stream {
+Stdout, Stderr }` (o `mask::Stream` é outro tipo, em outro módulo). Structs com os campos
+pela tabela de campos da seção 10 (`tipo` → `kind` no Rust): `ItemLista` → `ListItem`
+(`name`, `kind`, `group`, `environment`, `project`, `tags`, `level`, `address`, `summary`),
+`ResumoItem` → `ItemSummary` (`fields`, `secrets`, `extras`, `attachments`), `ExtraDetalhe`
+→ `ExtraDetail` (`name`, `value`), `AnexoDetalhe` → `AttachmentDetail` (`name`, `size`),
+`DetalheEntrada` → `EntryDetail` (… `fields`, `secrets`, `extras`, `attachments`, `dates`),
+`PedidoDeAprovacao` → `ApprovalRequest` (`id`, `entries`, `environment`, `operation`,
+`command`, `directory`, `chain`, `origin`, `confirmation`, `hidden_entry`),
+`PedidoDeDestrave` → `UnlockRequest` (`entry`, `operation`, `command`, `remaining`),
+`Sugestao` → `Suggestion` (`name`, `username`, `environment`, `totp`), `Pendrive` →
+`UsbDrive` (`uuid`, `label`, `mounted`), `VersaoBackup` → `BackupVersion` (`name`,
+`verified`, `out_of_order`); `de_entrada` → `from_entry`. Constantes: `MAX_PENDRIVES` →
+`MAX_USB_DRIVES`, `MAX_ROTULO` → `MAX_LABEL`, `MAX_RESTANTE_DESTRAVE` →
+`MAX_UNLOCK_REMAINING`, `MAX_NOS_RESUMO` → `MAX_SUMMARY_NODES` (`MAX_BACKUPS` fica);
+privados `CAMPOS_TEXTO` → `TEXT_FIELDS`, `OPERACOES_APROVADAS` → `APPROVED_OPERATIONS`,
+`MAX_PROBLEMAS`/`MAX_CADEIA` → `MAX_PROBLEMS`/`MAX_CHAIN`, `campos_e_segredos` →
+`fields_and_secrets`, `Cabecalho`/`cabecalho`/`ler_cabecalho` → `Header`/`write_header`/
+`read_header`, `escrever_campos`/`ler_campos`/`escrever_textos` → `write_fields`/
+`read_fields`/`write_texts`, `rotulo_ok`/`campos_ok`/`digitos_totp` → `label_ok`/
+`fields_ok`/`totp_digits`. Os nomes de fio (chaves e valores do JSON) continuam os literais
+v1 até a Fase 50. A variante `FalhaGravar::Resposta` do `wardd/nucleo.rs` (hoje
+`WriteFailure::Response` do `wardd/core.rs`, Fase 20) é outra e não mudou aqui.
+
 Fase 20 (`wardd`: `core`, `approval`): módulos `nucleo` → `core` e `aprovacao` →
 `approval` (o `core` do `wardd` convive com o crate `core` da biblioteca padrão: só a raiz
 do crate veria os dois, e lá ninguém usa `core::`; o link da doc do `lib.rs` vai por

@@ -40,7 +40,7 @@ use zeroize::Zeroizing;
 
 use ward_core::entry::{AccessLevel, Data, url_origin};
 use ward_core::mask::Mask;
-use ward_core::protocol::{Request, ResponseError, Resposta};
+use ward_core::protocol::{Request, Response, ResponseError};
 use ward_core::totp::Totp;
 use ward_platform::child::{Command, Group};
 
@@ -800,7 +800,7 @@ impl Daemon {
         &self,
         client: &dyn Client,
         request: &Request,
-    ) -> Result<Resposta, ResponseError> {
+    ) -> Result<Response, ResponseError> {
         let Request::Playwright { entry } = request else {
             return Err(ResponseError::InvalidRequest);
         };
@@ -891,7 +891,7 @@ impl Daemon {
             .into_string()
             .map_err(|_| ResponseError::Internal)?;
         warning!("playwright: sessão gravada");
-        Ok(Resposta::SessaoPlaywright { caminho: path })
+        Ok(Response::PlaywrightSession { path })
     }
 }
 

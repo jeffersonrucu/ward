@@ -37,8 +37,8 @@ use ward_core::display;
 use ward_core::entry::{AccessLevel, Data, Entry, Environment, Secret};
 use ward_core::limits::{MAX_DISPLAYED_TEXT, MAX_TEXT};
 use ward_core::protocol::{
-    Decision, Operation, PedidoDeAprovacao, PedidoDeDestrave, Request, ResponseError, Resposta,
-    StdinKind,
+    ApprovalRequest, Decision, Operation, Request, Response, ResponseError, StdinKind,
+    UnlockRequest,
 };
 
 use crate::approval::{Client, ONE_HOUR};
@@ -221,11 +221,11 @@ impl Daemon {
             // Phase 39a (D51): the unlock screen shows what the agent asked for, with
             // visible escape. With the vault locked it is not known whether the entry
             // exists, nor its kind and environment; the name goes as the agent sent it.
-            let notice = PedidoDeDestrave {
-                entrada: display::display_text(name.as_bytes(), MAX_TEXT),
-                operacao: op,
-                comando: command.clone(),
-                restante: 0,
+            let notice = UnlockRequest {
+                entry: display::display_text(name.as_bytes(), MAX_TEXT),
+                operation: op,
+                command: command.clone(),
+                remaining: 0,
             };
             self.approval
                 .wait_for_unlock(notice, &|| self.is_locked(), client)?;
@@ -256,19 +256,19 @@ impl Daemon {
             }
             (level, entries, environment, origin)
         };
-        let window_request = |confirmation: bool, origin: Option<String>| PedidoDeAprovacao {
+        let window_request = |confirmation: bool, origin: Option<String>| ApprovalRequest {
             id: 0,
-            entradas: entries.clone(),
-            ambiente: environment,
-            operacao: op,
-            comando: command.clone(),
-            diretorio: directory.clone(),
-            cadeia: display_chain(client),
-            origem: origin.unwrap_or_default(),
-            confirmacao: confirmation,
+            entries: entries.clone(),
+            environment,
+            operation: op,
+            command: command.clone(),
+            directory: directory.clone(),
+            chain: display_chain(client),
+            origin: origin.unwrap_or_default(),
+            confirmation,
             // Phase 54b: only in the request with PIN (the origin confirmation has no
             // standard input).
-            entrada_oculta: hidden_stdin && !confirmation,
+            hidden_entry: hidden_stdin && !confirmation,
         };
         match level {
             AccessLevel::Free => match origin {
@@ -310,7 +310,7 @@ impl Daemon {
         decision: Decision,
         pin: Option<&Secret>,
         stdin_confirmed: bool,
-    ) -> Result<Resposta, ResponseError> {
+    ) -> Result<Response, ResponseError> {
         let entries = self.approval.pending(id).ok_or(ResponseError::Expired)?;
         let confirmation = self
             .approval
@@ -322,7 +322,7 @@ impl Daemon {
             .ok_or(ResponseError::Expired)?;
         if decision == Decision::Deny {
             return if self.approval.decide(id, Err(ResponseError::Denied)) {
-                Ok(Resposta::Ok)
+                Ok(Response::Ok)
             } else {
                 Err(ResponseError::Expired)
             };
@@ -336,7 +336,7 @@ impl Daemon {
         if decision == Decision::Confirm {
             return if self.approval.decide(id, Ok(())) {
                 warning!("aprovação {id}: origem confirmada");
-                Ok(Resposta::Ok)
+                Ok(Response::Ok)
             } else {
                 Err(ResponseError::Expired)
             };
@@ -379,7 +379,7 @@ impl Daemon {
                     a.grants.insert(n, until);
                 }
                 warning!("aprovação {id}: permitida por 1 hora");
-                return Ok(Resposta::Ok);
+                return Ok(Response::Ok);
             }
             Decision::AllowAlways => {
                 // The request's entries that are "with approval" become "free", on disk.
@@ -406,7 +406,7 @@ impl Daemon {
             }
         }
         if self.approval.decide(id, Ok(())) {
-            Ok(Resposta::Ok)
+            Ok(Response::Ok)
         } else {
             Err(ResponseError::Expired)
         }

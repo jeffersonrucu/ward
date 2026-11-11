@@ -28,7 +28,7 @@ use common::*;
 use ward_core::entry::Secret;
 use ward_core::limits::MAX_COMMON_FRAME;
 use ward_core::protocol::frame::{self, RESPONSE_LIMIT};
-use ward_core::protocol::{self, Fluxo, Request, ResponseError, Resposta, Role, WindowSize};
+use ward_core::protocol::{self, Request, Response, ResponseError, Role, Stream, WindowSize};
 use wardd::approval::{Engine, EngineClock, NoApp, NoClient};
 use wardd::core::Daemon;
 use wardd::ssh::SshPrograms;
@@ -298,7 +298,7 @@ impl Scene {
                 entry: entry.into(),
             },
         ) {
-            Resposta::Token(t) => t,
+            Response::Token(t) => t,
             other => panic!("emitir_token: {other:?}"),
         }
     }
@@ -382,18 +382,21 @@ fn session_of(
             break;
         };
         match protocol::decode_response(Role::Agent, &b).unwrap() {
-            Resposta::Saida { fluxo, dados } => {
+            Response::Output {
+                stream: fluxo,
+                data: dados,
+            } => {
                 r.chunks.push((start.elapsed(), dados.to_vec()));
                 match fluxo {
-                    Fluxo::Saida => r.stdout.extend_from_slice(&dados),
-                    Fluxo::Erro => r.stderr.extend_from_slice(&dados),
+                    Stream::Stdout => r.stdout.extend_from_slice(&dados),
+                    Stream::Stderr => r.stderr.extend_from_slice(&dados),
                 }
             }
-            Resposta::Fim { codigo } => {
+            Response::Exit { code: codigo } => {
                 r.end = Some(codigo);
                 break;
             }
-            Resposta::Erro(e) => {
+            Response::Error(e) => {
                 r.failure = Some(e);
                 break;
             }

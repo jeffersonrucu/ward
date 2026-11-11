@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use ward_core::limits::MAX_COMMON_FRAME;
 use ward_core::protocol::frame::{self, FrameError, RESPONSE_LIMIT};
-use ward_core::protocol::{self, Request, Resposta, Role};
+use ward_core::protocol::{self, Request, Response, Role};
 use ward_platform::{ExpectedServer, ServerRefusal, connect_server, verify_server};
 
 /// Time limit for the daemon to answer. The unlock can take the growing wait of D20
@@ -191,7 +191,7 @@ impl Connection {
         &mut self,
         request: &Request,
         timeout: Duration,
-    ) -> Result<Resposta, ConnectionError> {
+    ) -> Result<Response, ConnectionError> {
         self.stream
             .set_read_timeout(Some(timeout))
             .map_err(|e| io_error(&e))?;
@@ -201,7 +201,7 @@ impl Connection {
     }
 
     /// Sends a request of the agent role and reads a response of the agent role.
-    pub fn request(&mut self, request: &Request) -> Result<Resposta, ConnectionError> {
+    pub fn request(&mut self, request: &Request) -> Result<Response, ConnectionError> {
         let body = protocol::encode_request(Role::Agent, request)
             .map_err(|_| ConnectionError::InvalidRequest)?;
         frame::write_frame(&mut self.stream, &body, MAX_COMMON_FRAME).map_err(frame_error)?;
@@ -251,7 +251,7 @@ impl Connection {
 impl Session {
     /// The next response of the daemon (of the agent role: one with a credential is
     /// refused).
-    pub fn receive(&mut self) -> Result<Resposta, ConnectionError> {
+    pub fn receive(&mut self) -> Result<Response, ConnectionError> {
         let frame = frame::read_frame(&mut self.reader, RESPONSE_LIMIT).map_err(frame_error)?;
         protocol::decode_response(Role::Agent, &frame).map_err(|_| ConnectionError::InvalidResponse)
     }

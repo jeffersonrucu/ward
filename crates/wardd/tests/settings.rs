@@ -13,14 +13,14 @@ mod common;
 
 use common::*;
 use ward_core::limits::{DEFAULT_LOCK_MINUTES, MAX_LOCK_MINUTES, MIN_LOCK_MINUTES};
-use ward_core::protocol::{ResponseError, Resposta, Role};
+use ward_core::protocol::{Response, ResponseError, Role};
 
 fn settings(d: &wardd::core::Daemon) -> (u32, bool) {
     match request(d, Role::App, "configuracao", "{}") {
-        Resposta::Configuracao {
-            minutos_trava,
-            backup_externo,
-            backup_local,
+        Response::Config {
+            lock_minutes: minutos_trava,
+            external_backup: backup_externo,
+            local_backup: backup_local,
         } => {
             // The test vault has the backups folder at 0700 (Phase 49a).
             assert!(backup_local);
@@ -30,7 +30,7 @@ fn settings(d: &wardd::core::Daemon) -> (u32, bool) {
     }
 }
 
-fn lock_timeout(d: &wardd::core::Daemon, role: Role, minutes: u32) -> Resposta {
+fn lock_timeout(d: &wardd::core::Daemon, role: Role, minutes: u32) -> Response {
     request(
         d,
         role,
@@ -39,7 +39,7 @@ fn lock_timeout(d: &wardd::core::Daemon, role: Role, minutes: u32) -> Resposta {
     )
 }
 
-fn change_pin(d: &wardd::core::Daemon, role: Role, current: &str, new: &str) -> Resposta {
+fn change_pin(d: &wardd::core::Daemon, role: Role, current: &str, new: &str) -> Response {
     request(
         d,
         role,
@@ -52,7 +52,7 @@ fn change_pin(d: &wardd::core::Daemon, role: Role, current: &str, new: &str) -> 
     )
 }
 
-fn change_password(d: &wardd::core::Daemon, role: Role, current: &str, new: &str) -> Resposta {
+fn change_password(d: &wardd::core::Daemon, role: Role, current: &str, new: &str) -> Response {
     request(
         d,
         role,
@@ -270,8 +270,8 @@ fn v5_22_change_password_asks_for_the_current_one_and_keeps_the_settings() {
 /// generation is burned and the current password stays valid.
 #[test]
 fn attack_short_new_master_password_refused_by_the_daemon() {
-    let field = |r: &Resposta| match r {
-        Resposta::Erro(ResponseError::Validation(p)) => {
+    let field = |r: &Response| match r {
+        Response::Error(ResponseError::Validation(p)) => {
             assert!(p.iter().all(|p| p.reason.contains("12 caracteres")));
             p.iter().map(|p| p.field.clone()).collect::<Vec<_>>()
         }

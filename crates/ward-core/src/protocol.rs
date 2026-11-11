@@ -70,9 +70,9 @@ pub use request::{
     login_id_ok, merge_kept_attachments,
 };
 pub use response::{
-    AnexoDetalhe, DetalheEntrada, ExtraDetalhe, Fluxo, ItemLista, MAX_BACKUPS, MAX_PENDRIVES,
-    MAX_RESTANTE_DESTRAVE, MAX_ROTULO, PedidoDeAprovacao, PedidoDeDestrave, Pendrive, Resposta,
-    ResumoItem, Sugestao, VersaoBackup,
+    ApprovalRequest, AttachmentDetail, BackupVersion, EntryDetail, ExtraDetail, ItemSummary,
+    ListItem, MAX_BACKUPS, MAX_LABEL, MAX_UNLOCK_REMAINING, MAX_USB_DRIVES, Response, Stream,
+    Suggestion, UnlockRequest, UsbDrive,
 };
 
 /// Protocol version.
@@ -422,27 +422,27 @@ pub fn encode_request(role: Role, p: &Request) -> Result<Zeroizing<Vec<u8>>, Enc
 
 /// Encodes a daemon response for the client with this role. Refuses the type that is
 /// not of the role: a response with a credential never goes out to the agent (S1).
-pub fn encode_response(role: Role, r: &Resposta) -> Result<Zeroizing<Vec<u8>>, EncodeError> {
-    let kind = r.tipo();
+pub fn encode_response(role: Role, r: &Response) -> Result<Zeroizing<Vec<u8>>, EncodeError> {
+    let kind = r.kind();
     if !kind.allowed(role) {
         return Err(EncodeError::NotAllowedForRole);
     }
     // D50: the access level never goes to the agent in the list; D65 c: nor the summary.
-    if let Resposta::Lista(items) = r
+    if let Response::List(items) = r
         && role != Role::App
         && items
             .iter()
-            .any(|i| i.nivel.is_some() || i.resumo.is_some())
+            .any(|i| i.level.is_some() || i.summary.is_some())
     {
         return Err(EncodeError::NotAllowedForRole);
     }
     // D63: the status says the role of the connection that receives it, never another.
-    if let Resposta::Estado { papel: p, .. } = r
+    if let Response::Status { role: p, .. } = r
         && *p != role
     {
         return Err(EncodeError::Invalid);
     }
-    r.conferir(role).map_err(|_| EncodeError::Invalid)?;
+    r.check(role).map_err(|_| EncodeError::Invalid)?;
     json::encode(frame::RESPONSE_LIMIT, |e| {
         e.open_object();
         e.key("v");
@@ -450,7 +450,7 @@ pub fn encode_response(role: Role, r: &Resposta) -> Result<Zeroizing<Vec<u8>>, E
         e.key("tipo");
         e.text(kind.name());
         e.key("dados");
-        e.object(|e| r.escrever(e));
+        e.object(|e| r.write(e));
         e.close_object();
     })
     .map_err(|_| EncodeError::TooLarge)
@@ -458,7 +458,7 @@ pub fn encode_response(role: Role, r: &Resposta) -> Result<Zeroizing<Vec<u8>>, E
 
 /// Reads a daemon response (client side with this role). Refuses the type that is not
 /// of the role: the CLI never accepts a response with a credential.
-pub fn decode_response(role: Role, bytes: &[u8]) -> Result<Resposta, InvalidResponse> {
+pub fn decode_response(role: Role, bytes: &[u8]) -> Result<Response, InvalidResponse> {
     let env =
         read_envelope(bytes, "tipo", json::MAX_RESPONSE_NODES).map_err(|_| InvalidResponse)?;
     let kind = ResponseType::from_name(&env.name).ok_or(InvalidResponse)?;
@@ -466,7 +466,7 @@ pub fn decode_response(role: Role, bytes: &[u8]) -> Result<Resposta, InvalidResp
         return Err(InvalidResponse);
     }
     let data = env.data().map_err(|_| InvalidResponse)?;
-    response::ler(role, kind, data).map_err(|_| InvalidResponse)
+    response::read(role, kind, data).map_err(|_| InvalidResponse)
 }
 
 /// The error response for a frame refused by the reading (V3.4). The daemon sends this

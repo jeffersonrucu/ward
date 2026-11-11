@@ -45,7 +45,7 @@ use std::time::Duration;
 
 use ward_core::entry::{AccessLevel, Auth, Data, Entry, Protocol, Secret};
 use ward_core::mask::{Mask, MaskBuilder};
-use ward_core::protocol::{Request, ResponseError, Resposta, Role};
+use ward_core::protocol::{Request, Response, ResponseError, Role};
 use ward_platform::child::Command;
 use zeroize::Zeroizing;
 
@@ -327,7 +327,7 @@ impl Daemon {
     /// Token issuing (app only; D3): random single-use token, 30 s, bound to a
     /// server entry. Goes away on lock. The value only goes in the response to the
     /// app.
-    pub(crate) fn issue_token(&self, role: Role, name: &str) -> Result<Resposta, ResponseError> {
+    pub(crate) fn issue_token(&self, role: Role, name: &str) -> Result<Response, ResponseError> {
         if role != Role::App {
             return Err(ResponseError::Unauthorized);
         }
@@ -353,7 +353,7 @@ impl Daemon {
             until: now.saturating_add(TOKEN_DEADLINE),
         });
         warning!("token do Conectar emitido para uma entrada servidor (D3)");
-        Ok(Resposta::Token(value))
+        Ok(Response::Token(value))
     }
 
     /// Is the token valid for `entry`? Every token that exists dies here (single use),

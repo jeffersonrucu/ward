@@ -9,7 +9,7 @@ mod common;
 use std::time::Duration;
 
 use common::{Dir, PIN, SECRETS, b64, error, ok, request};
-use ward_core::protocol::{self, Request, ResponseError, Resposta, Role, Target};
+use ward_core::protocol::{self, Request, Response, ResponseError, Role, Target};
 use ward_core::totp::Totp;
 use wardd::core::{Clock, Daemon};
 
@@ -77,10 +77,10 @@ fn field_target(c: &str) -> String {
     format!(r#""campo":"{c}""#)
 }
 
-fn value(r: &Resposta) -> Vec<u8> {
+fn value(r: &Response) -> Vec<u8> {
     match r {
-        Resposta::Segredo(s) => s.expose().to_vec(),
-        other => panic!("esperava segredo: {:?}", other.tipo()),
+        Response::Secret(s) => s.expose().to_vec(),
+        other => panic!("esperava segredo: {:?}", other.kind()),
     }
 }
 
@@ -194,12 +194,15 @@ fn v3_39_app_totp_by_the_daemon_clock() {
         .unwrap()
         .code_at(59);
     match request(&d, Role::App, "totp", r#"{"entrada":"t-totp"}"#) {
-        Resposta::CodigoTotp { codigo, restante } => {
+        Response::TotpCode {
+            code: codigo,
+            remaining: restante,
+        } => {
             assert_eq!(codigo.as_str(), expected.code());
             assert_eq!(codigo.len(), 6);
             assert_eq!(restante, 1);
         }
-        other => panic!("esperava código: {:?}", other.tipo()),
+        other => panic!("esperava código: {:?}", other.kind()),
     }
     // No seed: "field does not exist"; no entry: "entry does not exist".
     let r = request(&d, Role::App, "totp", r#"{"entrada":"t-aprov"}"#);
@@ -283,22 +286,22 @@ fn attack_v3_39_agent_and_extension_neither_reveal_nor_copy_nor_take_totp() {
 fn v3_40_app_list_with_summary_and_agent_list_without_level_or_summary() {
     let dir = Dir::new("lista-resumo");
     let d = vault(&dir, Some(59));
-    let Resposta::Lista(items) = request(&d, Role::App, "lista", "{}") else {
+    let Response::List(items) = request(&d, Role::App, "lista", "{}") else {
         panic!("não é lista")
     };
     assert_eq!(items.len(), 4);
-    let t = items.iter().find(|i| i.nome == "t-totp").unwrap();
-    let r = t.resumo.as_ref().unwrap();
+    let t = items.iter().find(|i| i.name == "t-totp").unwrap();
+    let r = t.summary.as_ref().unwrap();
     assert!(
-        r.campos
+        r.fields
             .contains(&("usuario".to_owned(), "admin".to_owned()))
     );
     assert_eq!(
-        r.segredos,
+        r.secrets,
         vec!["senha".to_owned(), "totp_semente".to_owned()]
     );
-    assert_eq!((r.extras, r.anexos), (2, 0));
-    let q = common::encoded(Role::App, &Resposta::Lista(items));
+    assert_eq!((r.extras, r.attachments), (2, 0));
+    let q = common::encoded(Role::App, &Response::List(items));
     for s in SECRETS.iter().chain([&SEED, &EXTRA]) {
         assert!(
             !common::contains(&q, s.as_bytes()),
@@ -309,15 +312,15 @@ fn v3_40_app_list_with_summary_and_agent_list_without_level_or_summary() {
     // Agent: the non-blocked ones, without level, summary or user.
     let r = request(&d, Role::Agent, "lista", "{}");
     let q = common::encoded(Role::Agent, &r);
-    let Resposta::Lista(items) = r else {
+    let Response::List(items) = r else {
         panic!("não é lista")
     };
-    let names: Vec<&str> = items.iter().map(|i| i.nome.as_str()).collect();
+    let names: Vec<&str> = items.iter().map(|i| i.name.as_str()).collect();
     assert_eq!(names, ["s1", "t-aprov"]);
     assert!(
         items
             .iter()
-            .all(|i| i.nivel.is_none() && i.resumo.is_none())
+            .all(|i| i.level.is_none() && i.summary.is_none())
     );
     for needle in [&b"\"resumo\""[..], b"\"nivel\"", b"\"usuario\"", b"deploy"] {
         assert!(!common::contains(&q, needle));

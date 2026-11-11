@@ -29,7 +29,7 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use ward_core::protocol::{
-    MAX_RESTANTE_DESTRAVE, PedidoDeAprovacao, PedidoDeDestrave, ResponseError, Resposta,
+    ApprovalRequest, MAX_UNLOCK_REMAINING, Response, ResponseError, UnlockRequest,
 };
 
 use crate::{debug, warning};
@@ -99,7 +99,7 @@ impl AppOpener for NoApp {
 pub trait Subscriber: Send {
     /// Delivers an approval request or an unlock request. `false`: it did not work
     /// (the connection dropped); the engine treats it as a closed app.
-    fn deliver(&mut self, r: &Resposta) -> bool;
+    fn deliver(&mut self, r: &Response) -> bool;
 }
 
 /// The client that made the agent's request (the CLI connection).
@@ -124,7 +124,7 @@ impl Client for NoClient {
 }
 
 struct Pending {
-    request: PedidoDeAprovacao,
+    request: ApprovalRequest,
     /// Id of the subscriber that received it.
     delivered_to: Option<u64>,
     result: Option<Result<(), ResponseError>>,
@@ -135,18 +135,18 @@ struct Pending {
 struct UnlockWait {
     id: u64,
     deadline: Duration,
-    notice: PedidoDeDestrave,
+    notice: UnlockRequest,
 }
 
 impl UnlockWait {
     /// The notice with the seconds left at `now`, rounded up, from
     /// 1 up to the protocol's maximum.
-    fn notice_at(&self, now: Duration) -> Resposta {
+    fn notice_at(&self, now: Duration) -> Response {
         let left = self.deadline.saturating_sub(now);
         let s = left.as_secs() + u64::from(left.subsec_nanos() > 0);
         let mut a = self.notice.clone();
-        a.restante = s.clamp(1, MAX_RESTANTE_DESTRAVE);
-        Resposta::PedidoDeDestrave(a)
+        a.remaining = s.clamp(1, MAX_UNLOCK_REMAINING);
+        Response::UnlockRequest(a)
     }
 }
 
@@ -185,7 +185,7 @@ impl State {
                 break;
             }
             if p.delivered_to.is_none() && p.result.is_none() {
-                ok = a.deliver(&Resposta::PedidoDeAprovacao(p.request.clone()));
+                ok = a.deliver(&Response::ApprovalRequest(p.request.clone()));
                 if ok {
                     p.delivered_to = Some(sid);
                 }
@@ -337,7 +337,7 @@ impl Engine {
     /// with the PIN verified by the core). The request's `id` is the engine's.
     pub fn request_approval(
         &self,
-        mut request: PedidoDeAprovacao,
+        mut request: ApprovalRequest,
         client: &dyn Client,
     ) -> Result<(), ResponseError> {
         let mut g = self.inner.state();
@@ -413,7 +413,7 @@ impl Engine {
         let mut g = self.inner.state();
         g.find_pending(id)
             .filter(|p| p.result.is_none())
-            .map(|p| p.request.entradas.clone())
+            .map(|p| p.request.entries.clone())
     }
 
     /// Is the request `id`, pending and without a decision, only an origin confirmation
@@ -422,7 +422,7 @@ impl Engine {
         let mut g = self.inner.state();
         g.find_pending(id)
             .filter(|p| p.result.is_none())
-            .map(|p| p.request.confirmacao)
+            .map(|p| p.request.confirmation)
     }
 
     /// Does the request `id`, pending and without a decision, have a standard input that
@@ -431,7 +431,7 @@ impl Engine {
         let mut g = self.inner.state();
         g.find_pending(id)
             .filter(|p| p.result.is_none())
-            .map(|p| p.request.entrada_oculta)
+            .map(|p| p.request.hidden_entry)
     }
 
     /// Decides the request `id`. `false`: it is no longer pending (expired, was cancelled
@@ -453,7 +453,7 @@ impl Engine {
     /// queried without holding any engine lock.
     pub fn wait_for_unlock(
         &self,
-        notice: PedidoDeDestrave,
+        notice: UnlockRequest,
         locked: &dyn Fn() -> bool,
         client: &dyn Client,
     ) -> Result<(), ResponseError> {

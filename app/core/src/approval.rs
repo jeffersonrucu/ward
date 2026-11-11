@@ -28,7 +28,7 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use ward_core::display::neutralize;
-use ward_core::protocol::{Decision, PedidoDeAprovacao};
+use ward_core::protocol::{ApprovalRequest, Decision};
 
 use crate::AppError;
 use crate::daemon::{MAX_NOTICES, NoticeQueue};
@@ -126,7 +126,7 @@ pub struct ApprovalResult {
 }
 
 struct Item {
-    request: PedidoDeAprovacao,
+    request: ApprovalRequest,
     arrival: Instant,
     blocked: bool,
     /// Types of the entries, fetched once from the detail.
@@ -135,7 +135,7 @@ struct Item {
 
 /// The current request, already taken out of the lock.
 pub(crate) struct Current {
-    pub request: PedidoDeAprovacao,
+    pub request: ApprovalRequest,
     pub remaining: u64,
     pub blocked: bool,
     pub kinds: Option<Vec<Option<&'static str>>>,
@@ -153,19 +153,19 @@ impl Approvals {
     }
 
     /// An approval request arrived now.
-    pub fn arrived(&self, p: PedidoDeAprovacao) {
+    pub fn arrived(&self, p: ApprovalRequest) {
         self.arrived_at(p, Instant::now());
     }
 
     /// Only in the tests and in the test bridge: a request that arrived `elapsed` ago
     /// (for the expiring state without waiting 2 min).
     #[cfg(any(test, feature = "test-mode"))]
-    pub fn arrived_ago(&self, p: PedidoDeAprovacao, elapsed: Duration) {
+    pub fn arrived_ago(&self, p: ApprovalRequest, elapsed: Duration) {
         let now = Instant::now();
         self.arrived_at(p, now.checked_sub(elapsed).unwrap_or(now));
     }
 
-    fn arrived_at(&self, p: PedidoDeAprovacao, arrival: Instant) {
+    fn arrived_at(&self, p: ApprovalRequest, arrival: Instant) {
         let mut f = self.lock();
         if f.iter().any(|i| i.request.id == p.id) {
             return;
@@ -222,7 +222,7 @@ impl Approvals {
         self.lock()
             .iter()
             .find(|i| i.request.id == id)
-            .map(|i| i.request.confirmacao)
+            .map(|i| i.request.confirmation)
     }
 
     /// Does request `id` have the hidden standard input (Phase 54b)? `None` if it is not
@@ -231,7 +231,7 @@ impl Approvals {
         self.lock()
             .iter()
             .find(|i| i.request.id == id)
-            .map(|i| i.request.entrada_oculta)
+            .map(|i| i.request.hidden_entry)
     }
 
     /// State of request `id` here: `Some(false)` pending, `Some(true)` blocked, `None`
@@ -293,7 +293,7 @@ fn display_process(name: &str) -> String {
 pub(crate) fn display(a: &Current) -> DisplayedRequest {
     let p = &a.request;
     let entries = p
-        .entradas
+        .entries
         .iter()
         .enumerate()
         .map(|(i, n)| DisplayedEntry {
@@ -304,14 +304,14 @@ pub(crate) fn display(a: &Current) -> DisplayedRequest {
     DisplayedRequest {
         id: p.id,
         entries,
-        environment: p.ambiente.name(),
-        operation: p.operacao.name(),
-        command: neutralize(&p.comando),
-        directory: neutralize(&p.diretorio),
-        chain: p.cadeia.iter().map(|c| display_process(c)).collect(),
-        origin: neutralize(&p.origem),
-        confirmation: p.confirmacao,
-        hidden_entry: p.entrada_oculta,
+        environment: p.environment.name(),
+        operation: p.operation.name(),
+        command: neutralize(&p.command),
+        directory: neutralize(&p.directory),
+        chain: p.chain.iter().map(|c| display_process(c)).collect(),
+        origin: neutralize(&p.origin),
+        confirmation: p.confirmation,
+        hidden_entry: p.hidden_entry,
         remaining: a.remaining,
         status: if a.blocked { "bloqueado" } else { "pendente" },
     }
@@ -346,18 +346,18 @@ mod tests {
     use ward_core::entry::Environment;
     use ward_core::protocol::Operation;
 
-    pub(crate) fn request(id: u64, command: &str, chain: &[&str]) -> PedidoDeAprovacao {
-        PedidoDeAprovacao {
+    pub(crate) fn request(id: u64, command: &str, chain: &[&str]) -> ApprovalRequest {
+        ApprovalRequest {
             id,
-            entradas: vec!["acme-pg-aprovacao".into()],
-            ambiente: Environment::Stage,
-            operacao: Operation::Run,
-            comando: command.into(),
-            diretorio: "\"/home/dev/projetos/acme\"".into(),
-            cadeia: chain.iter().map(|c| (*c).to_owned()).collect(),
-            origem: String::new(),
-            confirmacao: false,
-            entrada_oculta: false,
+            entries: vec!["acme-pg-aprovacao".into()],
+            environment: Environment::Stage,
+            operation: Operation::Run,
+            command: command.into(),
+            directory: "\"/home/dev/projetos/acme\"".into(),
+            chain: chain.iter().map(|c| (*c).to_owned()).collect(),
+            origin: String::new(),
+            confirmation: false,
+            hidden_entry: false,
         }
     }
 
@@ -382,7 +382,7 @@ mod tests {
     #[test]
     fn attack_directory_with_bidi_becomes_visible_escape() {
         let mut p = request(1, "\"make\"", &["claude"]);
-        p.diretorio = "\"/home/dev/\u{202E}emca\u{1b}[2J\"".into();
+        p.directory = "\"/home/dev/\u{202E}emca\u{1b}[2J\"".into();
         let e = display(&Current {
             request: p,
             remaining: 90,
@@ -436,7 +436,7 @@ mod tests {
         // The entry name also goes through D51 (the daemon already refuses it, but the
         // window does not trust it).
         let mut p = request(2, "\"ls\"", &[]);
-        p.entradas = vec!["acme\u{202E}gp".into()];
+        p.entries = vec!["acme\u{202E}gp".into()];
         let a = Current {
             request: p,
             remaining: 1,
@@ -472,7 +472,7 @@ mod tests {
         a.arrived(request(2, "\"b\"", &[]));
         a.arrived(request(1, "\"outro\"", &[]));
         assert_eq!(a.pending(), [1, 2]);
-        assert_eq!(a.current().unwrap().request.comando, "\"a\"");
+        assert_eq!(a.current().unwrap().request.command, "\"a\"");
         a.mark_blocked(1);
         assert_eq!(a.pending(), [2]);
         assert_eq!(a.state_of(1), Some(true));
@@ -586,7 +586,7 @@ mod service_tests {
         Some(Pin::new(s.to_owned()).unwrap())
     }
 
-    fn setup(requests: &[PedidoDeAprovacao]) -> (Service<Fake, NoClipboard>, Fake) {
+    fn setup(requests: &[ApprovalRequest]) -> (Service<Fake, NoClipboard>, Fake) {
         let mut d = FakeDaemon::full();
         for p in requests {
             d = d.with_approval(p);
@@ -690,10 +690,10 @@ mod service_tests {
     #[test]
     fn attack_confirmation_only_by_confirm_and_request_with_pin_never() {
         let mut c = request(11, "", &["claude", "ward playwright"]);
-        c.operacao = ward_core::protocol::Operation::Playwright;
-        c.diretorio.clear();
-        c.origem = "http://localhost:8081\u{202E}".into();
-        c.confirmacao = true;
+        c.operation = ward_core::protocol::Operation::Playwright;
+        c.directory.clear();
+        c.origin = "http://localhost:8081\u{202E}".into();
+        c.confirmation = true;
         let n = request(12, "\"ls\"", &["claude"]);
         let (s, f) = setup(&[c, n]);
         let e = s.approval_request().unwrap().unwrap();
@@ -729,7 +729,7 @@ mod service_tests {
     #[test]
     fn attack_hidden_entry_only_with_the_box() {
         let mut o = request(21, "\"python3\"", &["claude", "bash", "ward run"]);
-        o.entrada_oculta = true;
+        o.hidden_entry = true;
         let n = request(22, "\"ls\"", &["claude"]);
         let (s, f) = setup(&[o, n]);
         let e = s.approval_request().unwrap().unwrap();
@@ -766,7 +766,7 @@ mod service_tests {
         let r = crate::daemon::Daemon::exchange(&mut *f.0.lock().unwrap(), &q).unwrap();
         assert!(matches!(
             protocol::decode_response(protocol::Role::App, &r),
-            Ok(protocol::Resposta::Erro(
+            Ok(protocol::Response::Error(
                 protocol::ResponseError::InvalidRequest
             ))
         ));
@@ -793,8 +793,8 @@ mod service_tests {
             Some(AccessLevel::Free)
         );
         let mut prod = request(6, "\"ls\"", &[]);
-        prod.entradas = vec!["acme-pg-prod".into()];
-        prod.ambiente = Environment::Prod;
+        prod.entries = vec!["acme-pg-prod".into()];
+        prod.environment = Environment::Prod;
         let (s, f) = setup(&[prod, request(8, "\"ls\"", &[])]);
         assert_eq!(s.approval_request().unwrap().unwrap().environment, "prod");
         s.deny_pending_approvals();

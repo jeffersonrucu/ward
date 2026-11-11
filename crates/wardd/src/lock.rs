@@ -43,7 +43,7 @@ use std::time::Duration;
 use std::future::poll_fn;
 use std::num::NonZeroUsize;
 use std::pin::Pin;
-use ward_core::protocol::{Operation, Resposta, Role};
+use ward_core::protocol::{Operation, Response, Role};
 
 use futures_core::Stream;
 use zbus::connection::Builder;
@@ -85,8 +85,8 @@ const MAX_PATH: usize = 107;
 /// The unlock does not count: the unlock that opens the vault already marks the start of
 /// the count, and the one that arrives with the vault open answers `ok` without looking
 /// at the password. An error never counts.
-pub fn counts_as_use(role: Role, op: Operation, r: &Resposta) -> bool {
-    if matches!(r, Resposta::Erro(_)) {
+pub fn counts_as_use(role: Role, op: Operation, r: &Response) -> bool {
+    if matches!(r, Response::Error(_)) {
         return false;
     }
     match role {
@@ -405,64 +405,64 @@ mod tests {
 
     #[test]
     fn status_lock_and_error_do_not_count_as_use() {
-        let list = Resposta::Lista(vec![]);
+        let list = Response::List(vec![]);
         for p in [Role::Agent, Role::App, Role::Extension] {
-            assert!(!counts_as_use(p, Operation::Status, &Resposta::Ok));
-            assert!(!counts_as_use(p, Operation::Lock, &Resposta::Ok));
-            assert!(!counts_as_use(p, Operation::Unlock, &Resposta::Ok));
-            assert!(!counts_as_use(p, Operation::OpenApp, &Resposta::Ok));
+            assert!(!counts_as_use(p, Operation::Status, &Response::Ok));
+            assert!(!counts_as_use(p, Operation::Lock, &Response::Ok));
+            assert!(!counts_as_use(p, Operation::Unlock, &Response::Ok));
+            assert!(!counts_as_use(p, Operation::OpenApp, &Response::Ok));
         }
         assert!(!counts_as_use(
             Role::App,
             Operation::List,
-            &Resposta::Erro(ResponseError::Locked)
+            &Response::Error(ResponseError::Locked)
         ));
         assert!(!counts_as_use(
             Role::App,
             Operation::SetLevel,
-            &Resposta::Erro(ResponseError::WrongPin)
+            &Response::Error(ResponseError::WrongPin)
         ));
         assert!(counts_as_use(Role::App, Operation::List, &list));
-        assert!(counts_as_use(Role::App, Operation::Reveal, &Resposta::Ok));
+        assert!(counts_as_use(Role::App, Operation::Reveal, &Response::Ok));
     }
 
     /// Phase 54: a query from the agent and from the extension does not delay the lock;
     /// a delivery does.
     #[test]
     fn attack_list_and_suggest_do_not_count_as_use() {
-        let list = Resposta::Lista(vec![]);
+        let list = Response::List(vec![]);
         assert!(!counts_as_use(Role::Agent, Operation::List, &list));
-        assert!(!counts_as_use(Role::Agent, Operation::Stdin, &Resposta::Ok));
+        assert!(!counts_as_use(Role::Agent, Operation::Stdin, &Response::Ok));
         assert!(!counts_as_use(
             Role::Agent,
             Operation::Resize,
-            &Resposta::Ok
+            &Response::Ok
         ));
         assert!(!counts_as_use(
             Role::Extension,
             Operation::Suggest,
-            &Resposta::Ok
+            &Response::Ok
         ));
         assert!(!counts_as_use(
             Role::Extension,
             Operation::AwaitLogin,
-            &Resposta::Ok
+            &Response::Ok
         ));
         assert!(!counts_as_use(
             Role::Extension,
             Operation::LoginResult,
-            &Resposta::Ok
+            &Response::Ok
         ));
-        assert!(counts_as_use(Role::Agent, Operation::Run, &Resposta::Ok));
+        assert!(counts_as_use(Role::Agent, Operation::Run, &Response::Ok));
         assert!(counts_as_use(
             Role::Extension,
             Operation::Fill,
-            &Resposta::Ok
+            &Response::Ok
         ));
         assert!(counts_as_use(
             Role::Extension,
             Operation::FillLogin,
-            &Resposta::Ok
+            &Response::Ok
         ));
     }
 
@@ -475,13 +475,13 @@ mod tests {
             Operation::Totp,
             Operation::AnswerApproval,
         ] {
-            assert!(!counts_as_use(Role::App, op, &Resposta::Ok), "{op:?}");
+            assert!(!counts_as_use(Role::App, op, &Response::Ok), "{op:?}");
         }
-        assert!(counts_as_use(Role::App, Operation::Copy, &Resposta::Ok));
+        assert!(counts_as_use(Role::App, Operation::Copy, &Response::Ok));
         assert!(counts_as_use(
             Role::App,
             Operation::SaveEntry,
-            &Resposta::Ok
+            &Response::Ok
         ));
     }
 

@@ -20,7 +20,7 @@ use std::time::Duration;
 use ward_core::entry::Secret;
 use ward_core::limits::{KIB, MAX_ARGUMENT, MAX_ARGUMENTS, MAX_ENV_VARIABLES, MAX_SECRET};
 use ward_core::protocol::{
-    EncodeError, Fluxo, Request, ResponseError, Resposta, Role, RunRequest, StdinKind, Variable,
+    EncodeError, Request, Response, ResponseError, Role, RunRequest, StdinKind, Stream, Variable,
     WindowSize,
 };
 use ward_platform::connect::ChannelError;
@@ -221,9 +221,9 @@ pub fn execute(cmd: Command, e: &mut dyn Env) -> u8 {
     }
 }
 
-fn request(e: &mut dyn Env, c: &mut Connection, p: &Request) -> Result<Resposta, u8> {
+fn request(e: &mut dyn Env, c: &mut Connection, p: &Request) -> Result<Response, u8> {
     match c.request(p) {
-        Ok(Resposta::Erro(error)) => Err(fail(e, &daemon_message(&error))),
+        Ok(Response::Error(error)) => Err(fail(e, &daemon_message(&error))),
         Ok(r) => Ok(r),
         Err(error) => Err(fail(e, &error.message())),
     }
@@ -239,7 +239,7 @@ fn list(e: &mut dyn Env, json: bool) -> u8 {
         Err(code) => return code,
     };
     match request(e, &mut c, &Request::List) {
-        Ok(Resposta::Lista(items)) => {
+        Ok(Response::List(items)) => {
             let out = if json {
                 text::list_json(&items)
             } else {
@@ -261,7 +261,7 @@ fn lock(e: &mut dyn Env) -> u8 {
         Err(code) => return code,
     };
     match request(e, &mut c, &Request::Lock) {
-        Ok(Resposta::Ok) => {
+        Ok(Response::Ok) => {
             let _ = writeln!(e.stdout(), "cofre travado");
             EXIT_OK
         }
@@ -278,15 +278,15 @@ fn unlock(e: &mut dyn Env) -> u8 {
     };
     // 2. State, without secret.
     match request(e, &mut c, &Request::Status) {
-        Ok(Resposta::Estado {
-            cofre_existe: false,
+        Ok(Response::Status {
+            vault_exists: false,
             ..
         }) => return fail(e, &daemon_message(&ResponseError::VaultNotFound)),
-        Ok(Resposta::Estado { travado: false, .. }) => {
+        Ok(Response::Status { locked: false, .. }) => {
             let _ = writeln!(e.stdout(), "o cofre já está destravado");
             return EXIT_OK;
         }
-        Ok(Resposta::Estado { .. }) => {}
+        Ok(Response::Status { .. }) => {}
         Ok(_) => return fail(e, "resposta inesperada do daemon"),
         Err(code) => return code,
     }
@@ -321,7 +321,7 @@ fn unlock(e: &mut dyn Env) -> u8 {
     drop(read);
     let r = request(e, &mut c, &Request::Unlock { password });
     match r {
-        Ok(Resposta::Ok) => {
+        Ok(Response::Ok) => {
             let _ = writeln!(e.stdout(), "cofre destravado");
             EXIT_OK
         }
@@ -417,15 +417,15 @@ fn run(e: &mut dyn Env, entry: String, argv: Vec<OsString>) -> u8 {
         Err(error) => return fail_run(e, &error.message()),
     };
     match c.request(&Request::Status) {
-        Ok(Resposta::Estado {
-            cofre_existe: false,
+        Ok(Response::Status {
+            vault_exists: false,
             ..
         }) => return fail_run(e, &daemon_message(&ResponseError::VaultNotFound)),
-        Ok(Resposta::Estado { travado: true, .. }) => {
+        Ok(Response::Status { locked: true, .. }) => {
             let _ = writeln!(e.stderr(), "ward: {MSG_RUN_LOCKED}");
         }
-        Ok(Resposta::Estado { .. }) => {}
-        Ok(Resposta::Erro(error)) => return fail_run(e, &daemon_message(&error)),
+        Ok(Response::Status { .. }) => {}
+        Ok(Response::Error(error)) => return fail_run(e, &daemon_message(&error)),
         Ok(_) => return fail_run(e, "resposta inesperada do daemon"),
         Err(error) => return fail_run(e, &error.message()),
     }
@@ -471,19 +471,22 @@ fn forward_stdin(e: &mut dyn Env, writer: Arc<Mutex<SessionWriter>>, kind: Stdin
 fn receive_session(e: &mut dyn Env, mut session: Session) -> u8 {
     loop {
         match session.receive() {
-            Ok(Resposta::Saida { fluxo, dados }) => {
+            Ok(Response::Output {
+                stream: fluxo,
+                data: dados,
+            }) => {
                 let dest = match fluxo {
-                    Fluxo::Saida => e.stdout(),
-                    Fluxo::Erro => e.stderr(),
+                    Stream::Stdout => e.stdout(),
+                    Stream::Stderr => e.stderr(),
                 };
                 // Output closed on the CLI side (`| head`): the rest is discarded.
                 let _ = dest.write_all(&dados).and_then(|()| dest.flush());
             }
-            Ok(Resposta::Fim { codigo }) => {
+            Ok(Response::Exit { code: codigo }) => {
                 let _ = e.stdout().flush();
                 return codigo;
             }
-            Ok(Resposta::Erro(error)) => return fail_run(e, &daemon_message(&error)),
+            Ok(Response::Error(error)) => return fail_run(e, &daemon_message(&error)),
             Ok(_) => return fail_run(e, "resposta inesperada do daemon"),
             Err(error) => return fail_run(e, &error.message()),
         }
@@ -568,15 +571,15 @@ fn ssh(e: &mut dyn Env, entry: String, token_fd: Option<u32>, command: Vec<OsStr
         Err(error) => return fail_run(e, &error.message()),
     };
     match c.request(&Request::Status) {
-        Ok(Resposta::Estado {
-            cofre_existe: false,
+        Ok(Response::Status {
+            vault_exists: false,
             ..
         }) => return fail_run(e, &daemon_message(&ResponseError::VaultNotFound)),
-        Ok(Resposta::Estado { travado: true, .. }) => {
+        Ok(Response::Status { locked: true, .. }) => {
             let _ = writeln!(e.stderr(), "ward: {MSG_RUN_LOCKED}");
         }
-        Ok(Resposta::Estado { .. }) => {}
-        Ok(Resposta::Erro(error)) => return fail_run(e, &daemon_message(&error)),
+        Ok(Response::Status { .. }) => {}
+        Ok(Response::Error(error)) => return fail_run(e, &daemon_message(&error)),
         Ok(_) => return fail_run(e, "resposta inesperada do daemon"),
         Err(error) => return fail_run(e, &error.message()),
     }
@@ -608,21 +611,21 @@ fn playwright(e: &mut dyn Env, entry: String) -> u8 {
         Err(code) => return code,
     };
     match c.request(&Request::Status) {
-        Ok(Resposta::Estado {
-            cofre_existe: false,
+        Ok(Response::Status {
+            vault_exists: false,
             ..
         }) => return fail(e, &daemon_message(&ResponseError::VaultNotFound)),
-        Ok(Resposta::Estado { travado: true, .. }) => {
+        Ok(Response::Status { locked: true, .. }) => {
             let _ = writeln!(e.stderr(), "ward: {MSG_RUN_LOCKED}");
         }
-        Ok(Resposta::Estado { .. }) => {}
-        Ok(Resposta::Erro(error)) => return fail(e, &daemon_message(&error)),
+        Ok(Response::Status { .. }) => {}
+        Ok(Response::Error(error)) => return fail(e, &daemon_message(&error)),
         Ok(_) => return fail(e, "resposta inesperada do daemon"),
         Err(error) => return fail(e, &error.message()),
     }
     // Waits for the unlock and the approval (2 min each, D16, S10) plus the browser.
     match c.request_with_timeout(&Request::Playwright { entry }, PLAYWRIGHT_TIMEOUT) {
-        Ok(Resposta::SessaoPlaywright { caminho })
+        Ok(Response::PlaywrightSession { path: caminho })
             if caminho.starts_with('/') && !caminho.chars().any(char::is_control) =>
         {
             if writeln!(e.stdout(), "{caminho}").is_err() {
@@ -630,7 +633,7 @@ fn playwright(e: &mut dyn Env, entry: String) -> u8 {
             }
             EXIT_OK
         }
-        Ok(Resposta::Erro(error)) => fail(e, &daemon_message(&error)),
+        Ok(Response::Error(error)) => fail(e, &daemon_message(&error)),
         Ok(_) => fail(e, "resposta inesperada do daemon"),
         Err(error) => fail(e, &error.message()),
     }
@@ -645,15 +648,15 @@ fn login(e: &mut dyn Env, entry: String) -> u8 {
         Err(code) => return code,
     };
     match c.request(&Request::Status) {
-        Ok(Resposta::Estado {
-            cofre_existe: false,
+        Ok(Response::Status {
+            vault_exists: false,
             ..
         }) => return fail(e, &daemon_message(&ResponseError::VaultNotFound)),
-        Ok(Resposta::Estado { travado: true, .. }) => {
+        Ok(Response::Status { locked: true, .. }) => {
             let _ = writeln!(e.stderr(), "ward: {MSG_RUN_LOCKED}");
         }
-        Ok(Resposta::Estado { .. }) => {}
-        Ok(Resposta::Erro(error)) => return fail(e, &daemon_message(&error)),
+        Ok(Response::Status { .. }) => {}
+        Ok(Response::Error(error)) => return fail(e, &daemon_message(&error)),
         Ok(_) => return fail(e, "resposta inesperada do daemon"),
         Err(error) => return fail(e, &error.message()),
     }
@@ -663,13 +666,13 @@ fn login(e: &mut dyn Env, entry: String) -> u8 {
         },
         PLAYWRIGHT_TIMEOUT,
     ) {
-        Ok(Resposta::Ok) => {
+        Ok(Response::Ok) => {
             if writeln!(e.stdout(), "login enviado: {entry} (aba ativa do Chrome)").is_err() {
                 return EXIT_ERROR;
             }
             EXIT_OK
         }
-        Ok(Resposta::Erro(error)) => fail(e, &login_message(&error)),
+        Ok(Response::Error(error)) => fail(e, &login_message(&error)),
         Ok(_) => fail(e, "resposta inesperada do daemon"),
         Err(error) => fail(e, &error.message()),
     }

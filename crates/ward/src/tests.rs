@@ -343,33 +343,33 @@ fn usage_and_help() {
 mod with_fake_daemon {
     use super::*;
     use ward_core::entry::{EntryType, Environment};
-    use ward_core::protocol::{ItemLista, ResponseError, Resposta};
+    use ward_core::protocol::{ListItem, Response, ResponseError};
 
-    fn encode(r: &Resposta) -> Vec<u8> {
+    fn encode(r: &Response) -> Vec<u8> {
         protocol::encode_response(Role::Agent, r).unwrap().to_vec()
     }
 
     /// Response to the state request. The only place that builds the state response:
     /// Phase 23 adds the role (D63) and only this spot changes.
-    fn state_response(locked: bool) -> Resposta {
-        Resposta::Estado {
-            travado: locked,
-            cofre_existe: true,
-            papel: Role::Agent,
+    fn state_response(locked: bool) -> Response {
+        Response::Status {
+            locked,
+            vault_exists: true,
+            role: Role::Agent,
         }
     }
 
-    fn item(name: &str, kind: EntryType, address: Option<&str>) -> ItemLista {
-        ItemLista {
-            nome: name.to_owned(),
-            tipo: kind,
-            grupo: "acme".to_owned(),
-            ambiente: Environment::Dev,
-            projeto: Some("site".to_owned()),
+    fn item(name: &str, kind: EntryType, address: Option<&str>) -> ListItem {
+        ListItem {
+            name: name.to_owned(),
+            kind,
+            group: "acme".to_owned(),
+            environment: Environment::Dev,
+            project: Some("site".to_owned()),
             tags: vec![],
-            nivel: None,
-            endereco: address.map(str::to_owned),
-            resumo: None,
+            level: None,
+            address: address.map(str::to_owned),
+            summary: None,
         }
     }
 
@@ -384,17 +384,17 @@ mod with_fake_daemon {
                     Request::Status => state_response(*locked),
                     Request::Lock => {
                         *locked = true;
-                        Resposta::Ok
+                        Response::Ok
                     }
                     Request::Unlock { password: senha }
                         if senha.expose() == PASSWORD.as_bytes() =>
                     {
                         *locked = false;
-                        Resposta::Ok
+                        Response::Ok
                     }
-                    Request::Unlock { .. } => Resposta::Erro(ResponseError::WrongPassword),
-                    Request::List if *locked => Resposta::Erro(ResponseError::Locked),
-                    Request::List => Resposta::Lista(vec![
+                    Request::Unlock { .. } => Response::Error(ResponseError::WrongPassword),
+                    Request::List if *locked => Response::Error(ResponseError::Locked),
+                    Request::List => Response::List(vec![
                         item(
                             "acme-wp-dev",
                             EntryType::Login,
@@ -402,7 +402,7 @@ mod with_fake_daemon {
                         ),
                         item("gama-nota", EntryType::SecureNote, None),
                     ]),
-                    _ => Resposta::Erro(ResponseError::Unauthorized),
+                    _ => Response::Error(ResponseError::Unauthorized),
                 })
             })),
         )
@@ -419,7 +419,7 @@ mod with_fake_daemon {
     #[test]
     fn run_request_output_and_code() {
         use crate::commands::{EXIT_RUN_ERROR, MSG_RUN_LOCKED};
-        use ward_core::protocol::Fluxo;
+        use ward_core::protocol::Stream;
         for (entry, locked) in [("t-ok", false), ("t-nota", false), ("t-ok", true)] {
             let dir = TestDir::new();
             let seen_env: Arc<Mutex<Vec<Vec<u8>>>> = Arc::default();
@@ -429,7 +429,7 @@ mod with_fake_daemon {
                 Some(Arc::new(move |p: &Request| match p {
                     Request::Status => encode(&state_response(locked)),
                     Request::Run(x) if x.entry == "t-nota" => {
-                        encode(&Resposta::Erro(ResponseError::TypeWithoutDelivery))
+                        encode(&Response::Error(ResponseError::TypeWithoutDelivery))
                     }
                     Request::Run(x) => {
                         assert_eq!(x.argv.len(), 2);
@@ -440,13 +440,13 @@ mod with_fake_daemon {
                             .extend(x.env.iter().map(|v| v.name.to_vec()));
                         // The fake answers one frame per request: the output here and
                         // the end in the response to the end of the standard input.
-                        encode(&Resposta::Saida {
-                            fluxo: Fluxo::Saida,
-                            dados: Zeroizing::new("ok ••••\n".as_bytes().to_vec()),
+                        encode(&Response::Output {
+                            stream: Stream::Stdout,
+                            data: Zeroizing::new("ok ••••\n".as_bytes().to_vec()),
                         })
                     }
-                    Request::Stdin { .. } => encode(&Resposta::Fim { codigo: 3 }),
-                    _ => encode(&Resposta::Erro(ResponseError::Unauthorized)),
+                    Request::Stdin { .. } => encode(&Response::Exit { code: 3 }),
+                    _ => encode(&Response::Error(ResponseError::Unauthorized)),
                 })),
             );
             let mut t = test_env(&dir);
@@ -478,9 +478,9 @@ mod with_fake_daemon {
             let dir = TestDir::new();
             let seen: Arc<Mutex<Vec<(T, usize)>>> = Arc::default();
             let v = Arc::clone(&seen);
-            let output = Resposta::Saida {
-                fluxo: ward_core::protocol::Fluxo::Saida,
-                dados: Zeroizing::new(b"ok\n".to_vec()),
+            let output = Response::Output {
+                stream: ward_core::protocol::Stream::Stdout,
+                data: Zeroizing::new(b"ok\n".to_vec()),
             };
             let _v = fake_server(
                 &dir,
@@ -499,9 +499,9 @@ mod with_fake_daemon {
                     }
                     Request::Stdin { data: dados } => {
                         v.lock().unwrap().push((T::Null, dados.len() + 1));
-                        encode(&Resposta::Fim { codigo: 0 })
+                        encode(&Response::Exit { code: 0 })
                     }
-                    _ => encode(&Resposta::Erro(ResponseError::Unauthorized)),
+                    _ => encode(&Response::Error(ResponseError::Unauthorized)),
                 })),
             );
             let mut t = test_env(&dir);
@@ -582,7 +582,7 @@ mod with_fake_daemon {
     #[test]
     fn ssh_request_token_output_and_code() {
         use crate::commands::EXIT_RUN_ERROR;
-        use ward_core::protocol::Fluxo;
+        use ward_core::protocol::Stream;
         let token = "AbCdEfGhIjKlMnOpQrStUvWxYz012345";
         let dir = TestDir::new();
         let _v = fake_server(
@@ -590,7 +590,7 @@ mod with_fake_daemon {
             Some(Arc::new(move |p: &Request| match p {
                 Request::Status => encode(&state_response(false)),
                 Request::Ssh { entry: entrada, .. } if entrada == "t-nota" => {
-                    encode(&Resposta::Erro(ResponseError::TypeWithoutDelivery))
+                    encode(&Response::Error(ResponseError::TypeWithoutDelivery))
                 }
                 Request::Ssh {
                     entry: entrada,
@@ -605,13 +605,13 @@ mod with_fake_daemon {
                     assert_eq!(c, [b"ls".as_slice(), b"-la"]);
                     assert_eq!(t.as_ref().map(|t| t.expose().to_vec()), Some(token.into()));
                     assert!(janela.is_none());
-                    encode(&Resposta::Saida {
-                        fluxo: Fluxo::Saida,
-                        dados: Zeroizing::new("senha=••••\n".as_bytes().to_vec()),
+                    encode(&Response::Output {
+                        stream: Stream::Stdout,
+                        data: Zeroizing::new("senha=••••\n".as_bytes().to_vec()),
                     })
                 }
-                Request::Stdin { .. } => encode(&Resposta::Fim { codigo: 4 }),
-                _ => encode(&Resposta::Erro(ResponseError::Unauthorized)),
+                Request::Stdin { .. } => encode(&Response::Exit { code: 4 }),
+                _ => encode(&Response::Error(ResponseError::Unauthorized)),
             })),
         );
         let mut t = test_env(&dir);

@@ -20,7 +20,7 @@ use std::time::Duration;
 
 use common::*;
 use ward_core::protocol::{
-    LoginResult, Operation, PedidoDeAprovacao, Request, ResponseError, Resposta, Role,
+    ApprovalRequest, LoginResult, Operation, Request, Response, ResponseError, Role,
 };
 use wardd::approval::{AppOpener, Client, Engine, EngineClock, NoClient, OpenAppError, Subscriber};
 use wardd::core::Daemon;
@@ -44,23 +44,23 @@ fn vault(label: &str, pickup_ms: u64) -> (Daemon, Dir) {
     (d.with_login_deadlines(deadlines(pickup_ms)), dir)
 }
 
-fn agent_login(d: &Daemon, client: &dyn Client, name: &str) -> Resposta {
+fn agent_login(d: &Daemon, client: &dyn Client, name: &str) -> Response {
     match req(Role::Agent, "login", &format!(r#"{{"entrada":"{name}"}}"#)) {
         Ok(p) => d.serve_from(client, Role::Agent, p),
-        Err(e) => Resposta::Erro(e),
+        Err(e) => Response::Error(e),
     }
 }
 
 /// The extension's await-login request: `Some((id, entry))` or `None` (empty wait).
 fn await_login(d: &Daemon) -> Option<(String, String)> {
     match request(d, Role::Extension, "aguardar_login", "{}") {
-        Resposta::PedidoDeLogin { id, entrada } => {
+        Response::LoginRequest { id, entry: entrada } => {
             // S1: the request taken to the extension has no value of the entry at all.
             let q = encoded(
                 Role::Extension,
-                &Resposta::PedidoDeLogin {
+                &Response::LoginRequest {
                     id: id.clone(),
-                    entrada: entrada.clone(),
+                    entry: entrada.clone(),
                 },
             );
             for s in SECRETS {
@@ -69,7 +69,7 @@ fn await_login(d: &Daemon) -> Option<(String, String)> {
             }
             Some((id, entrada))
         }
-        Resposta::Ok => None,
+        Response::Ok => None,
         r => panic!("{r:?}"),
     }
 }
@@ -84,7 +84,7 @@ fn take(d: &Daemon) -> (String, String) {
     panic!("o pedido não chegou à extensão");
 }
 
-fn fill(d: &Daemon, id: &str, origin: &str) -> Resposta {
+fn fill(d: &Daemon, id: &str, origin: &str) -> Response {
     request(
         d,
         Role::Extension,
@@ -93,7 +93,7 @@ fn fill(d: &Daemon, id: &str, origin: &str) -> Resposta {
     )
 }
 
-fn outcome(d: &Daemon, id: &str, r: &str) -> Resposta {
+fn outcome(d: &Daemon, id: &str, r: &str) -> Response {
     request(
         d,
         Role::Extension,
@@ -102,7 +102,7 @@ fn outcome(d: &Daemon, id: &str, r: &str) -> Resposta {
     )
 }
 
-fn no_value(r: &Resposta) {
+fn no_value(r: &Response) {
     let q = encoded(Role::Extension, r);
     for s in SECRETS {
         assert!(!contains(&q, s.as_bytes()), "{r:?}");
@@ -121,7 +121,11 @@ fn v6_10_free_login_fills_on_the_right_origin_and_returns_ok() {
         assert_eq!(entry, "t-livre");
         assert_eq!(id.len(), 32);
         match fill(&d, &id, ORIGIN) {
-            Resposta::Preenchimento { usuario, senha, .. } => {
+            Response::Fill {
+                username: usuario,
+                password: senha,
+                ..
+            } => {
                 assert_eq!(usuario, "admin");
                 assert_eq!(senha.expose(), SECRETS[3].as_bytes());
             }
@@ -214,10 +218,7 @@ fn attack_forged_id_does_not_fill() {
             error(&outcome(&d, &id, "enviado")),
             Some(ResponseError::InvalidRequest)
         );
-        assert!(matches!(
-            fill(&d, &id, ORIGIN),
-            Resposta::Preenchimento { .. }
-        ));
+        assert!(matches!(fill(&d, &id, ORIGIN), Response::Fill { .. }));
         assert!(ok(&outcome(&d, &id, "recusado")));
         assert_eq!(error(&t.join().unwrap()), Some(ResponseError::LoginRefused));
     });
@@ -289,10 +290,7 @@ fn attack_agent_and_app_on_the_extension_operations() {
         let r = request(&d, Role::Extension, "login", r#"{"entrada":"t-livre"}"#);
         assert_eq!(error(&r), Some(ResponseError::Unauthorized));
         // The real request goes on intact.
-        assert!(matches!(
-            fill(&d, &id, ORIGIN),
-            Resposta::Preenchimento { .. }
-        ));
+        assert!(matches!(fill(&d, &id, ORIGIN), Response::Fill { .. }));
         assert!(ok(&outcome(&d, &id, "enviado")));
         assert!(ok(&t.join().unwrap()));
     });
@@ -392,12 +390,12 @@ fn await_does_not_count_as_use() {
     assert!(!wardd::lock::counts_as_use(
         Role::Extension,
         Operation::AwaitLogin,
-        &Resposta::Ok
+        &Response::Ok
     ));
     assert!(wardd::lock::counts_as_use(
         Role::Extension,
         Operation::FillLogin,
-        &Resposta::Ok
+        &Response::Ok
     ));
 }
 
@@ -412,12 +410,12 @@ impl EngineClock for StoppedClock {
     }
 }
 
-struct FakeApp(Sender<PedidoDeAprovacao>);
+struct FakeApp(Sender<ApprovalRequest>);
 
 impl Subscriber for FakeApp {
-    fn deliver(&mut self, r: &Resposta) -> bool {
+    fn deliver(&mut self, r: &Response) -> bool {
         match r {
-            Resposta::PedidoDeAprovacao(p) => self.0.send(p.clone()).is_ok(),
+            Response::ApprovalRequest(p) => self.0.send(p.clone()).is_ok(),
             other => panic!("o motor mandou ao app {other:?}"),
         }
     }
@@ -431,7 +429,7 @@ impl AppOpener for NoOpen {
     }
 }
 
-fn answer(d: &Daemon, id: u64, decision: &str, pin: Option<&str>) -> Resposta {
+fn answer(d: &Daemon, id: u64, decision: &str, pin: Option<&str>) -> Response {
     let pin = pin
         .map(|p| format!(r#","pin":"{}""#, b64(p.as_bytes())))
         .unwrap_or_default();
@@ -454,8 +452,8 @@ fn v6_11_with_approval_deny_does_not_reach_the_extension_and_allow_does() {
     std::thread::scope(|s| {
         let t = s.spawn(|| agent_login(&d, &NoClient, "t-aprov"));
         let p = rx.recv_timeout(Duration::from_secs(5)).expect("sem janela");
-        assert_eq!(p.operacao, Operation::Login);
-        assert_eq!(p.entradas, vec!["t-aprov".to_owned()]);
+        assert_eq!(p.operation, Operation::Login);
+        assert_eq!(p.entries, vec!["t-aprov".to_owned()]);
         assert_eq!(await_login(&d), None);
         assert!(ok(&answer(&d, p.id, "negar", None)));
         assert_eq!(error(&t.join().unwrap()), Some(ResponseError::Denied));
@@ -469,10 +467,7 @@ fn v6_11_with_approval_deny_does_not_reach_the_extension_and_allow_does() {
         assert!(ok(&answer(&d, p.id, "uma_vez", Some(PIN))));
         let (id, entry) = take(&d);
         assert_eq!(entry, "t-aprov");
-        assert!(matches!(
-            fill(&d, &id, ORIGIN),
-            Resposta::Preenchimento { .. }
-        ));
+        assert!(matches!(fill(&d, &id, ORIGIN), Response::Fill { .. }));
         assert!(ok(&outcome(&d, &id, "enviado")));
         assert!(ok(&t.join().unwrap()));
     });
@@ -515,13 +510,13 @@ impl Client for DropsLater {
 
 /// The agent asks for `login`, the extension takes it, fills on the `http` origin and
 /// says "sent".
-fn full_http_login(d: &Daemon, name: &str) -> Resposta {
+fn full_http_login(d: &Daemon, name: &str) -> Response {
     std::thread::scope(|s| {
         let t = s.spawn(|| agent_login(d, &NoClient, name));
         let (id, _) = take(d);
         assert!(matches!(
             fill(d, &id, "http://localhost:8081"),
-            Resposta::Preenchimento { .. }
+            Response::Fill { .. }
         ));
         assert!(ok(&outcome(d, &id, "enviado")));
         t.join().unwrap()
@@ -547,10 +542,10 @@ fn attack_login_http_free_only_with_confirmation() {
     assert_eq!(error(&r), Some(ResponseError::Denied));
     assert_eq!(await_login(&d), None);
     let p = &seen[0];
-    assert_eq!(p.operacao, Operation::Login);
-    assert_eq!(p.entradas, ["h-livre".to_owned()]);
-    assert_eq!(p.origem, "http://localhost:8081");
-    assert!(p.confirmacao);
+    assert_eq!(p.operation, Operation::Login);
+    assert_eq!(p.entries, ["h-livre".to_owned()]);
+    assert_eq!(p.origin, "http://localhost:8081");
+    assert!(p.confirmation);
     // "Allow once" with a PIN on a confirmation: refused, and the request never arrives.
     let client = DropsLater(std::sync::atomic::AtomicU32::new(0));
     let (r, _) = with_window(&d, "uma_vez", Some(PIN), || {
@@ -581,17 +576,17 @@ fn attack_login_http_approval_asks_pin_and_shows_the_origin() {
         "confirmar sem PIN decidiu"
     );
     assert_eq!(await_login(&d), None);
-    assert!(!seen[0].confirmacao);
-    assert_eq!(seen[0].origem, "http://localhost:8081");
+    assert!(!seen[0].confirmation);
+    assert_eq!(seen[0].origin, "http://localhost:8081");
     // Allow for 1 hour (with a PIN): it goes on.
     let (r, seen) = with_window(&d, "uma_hora", Some(PIN), || full_http_login(&d, "h-aprov"));
     assert!(ok(&r), "{r:?}");
-    assert!(!seen[0].confirmacao);
+    assert!(!seen[0].confirmation);
     // Within the release: still the origin confirmation (without a PIN).
     let (r, seen) = with_window(&d, "confirmar", None, || full_http_login(&d, "h-aprov"));
     assert!(ok(&r), "{r:?}");
     assert_eq!(seen.len(), 1);
-    assert!(seen[0].confirmacao);
+    assert!(seen[0].confirmation);
     // No app, nothing.
     let r = agent_login(&d, &NoClient, "h-aprov");
     assert_eq!(error(&r), Some(ResponseError::ApprovalUnavailable));
@@ -627,8 +622,8 @@ fn attack_login_https_loopback_free_only_with_confirmation() {
         assert_eq!(error(&r), Some(ResponseError::Denied), "{url}");
         assert_eq!(await_login(&d), None, "{url}");
         assert_eq!(seen.len(), 1, "{url}");
-        assert_eq!(seen[0].origem, origin, "{url}");
-        assert!(seen[0].confirmacao, "{url}");
+        assert_eq!(seen[0].origin, origin, "{url}");
+        assert!(seen[0].confirmation, "{url}");
     }
 }
 
@@ -640,10 +635,7 @@ fn login_https_free_without_window() {
         std::thread::scope(|s| {
             let t = s.spawn(|| agent_login(&d, &NoClient, "t-livre"));
             let (id, _) = take(&d);
-            assert!(matches!(
-                fill(&d, &id, ORIGIN),
-                Resposta::Preenchimento { .. }
-            ));
+            assert!(matches!(fill(&d, &id, ORIGIN), Response::Fill { .. }));
             assert!(ok(&outcome(&d, &id, "enviado")));
             t.join().unwrap()
         })

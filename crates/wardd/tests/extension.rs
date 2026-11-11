@@ -9,7 +9,7 @@ mod common;
 use std::time::Duration;
 
 use common::{Dir, PIN, SECRETS, b64, error, ok, req, request};
-use ward_core::protocol::{self, Operation, ResponseError, Resposta, Role};
+use ward_core::protocol::{self, Operation, Response, ResponseError, Role};
 use ward_core::totp::Totp;
 use wardd::core::{Clock, Daemon};
 
@@ -101,12 +101,12 @@ fn vault(dir: &Dir) -> Daemon {
     d
 }
 
-fn suggest(d: &Daemon, role: Role, origin: &str) -> Resposta {
+fn suggest(d: &Daemon, role: Role, origin: &str) -> Response {
     request(d, role, "sugerir", &format!(r#"{{"origem":"{origin}"}}"#))
 }
 
 /// The popup's fill with no window at all (the test daemon's engine has no app).
-fn fill_raw(d: &Daemon, role: Role, entry: &str, origin: &str) -> Resposta {
+fn fill_raw(d: &Daemon, role: Role, entry: &str, origin: &str) -> Response {
     request(
         d,
         role,
@@ -117,17 +117,17 @@ fn fill_raw(d: &Daemon, role: Role, entry: &str, origin: &str) -> Resposta {
 
 /// The popup's fill with the user confirming the origin in the window (Phase
 /// 44c: `http` entries only fill after that).
-fn fill(d: &Daemon, role: Role, entry: &str, origin: &str) -> Resposta {
+fn fill(d: &Daemon, role: Role, entry: &str, origin: &str) -> Response {
     common::with_window(d, "confirmar", None, || fill_raw(d, role, entry, origin)).0
 }
 
-fn names(r: &Resposta) -> Vec<(String, String)> {
+fn names(r: &Response) -> Vec<(String, String)> {
     match r {
-        Resposta::Sugestoes(l) => l
+        Response::Suggestions(l) => l
             .iter()
-            .map(|s| (s.nome.clone(), s.usuario.clone()))
+            .map(|s| (s.name.clone(), s.username.clone()))
             .collect(),
-        other => panic!("esperava sugestões: {:?}", other.tipo()),
+        other => panic!("esperava sugestões: {:?}", other.kind()),
     }
 }
 
@@ -149,12 +149,12 @@ fn suggestion_carries_environment_and_whether_it_has_totp() {
     use ward_core::entry::Environment;
     let dir = Dir::new("ext-sugerir-totp");
     let d = vault(&dir);
-    let summary = |r: &Resposta| match r {
-        Resposta::Sugestoes(l) => l
+    let summary = |r: &Response| match r {
+        Response::Suggestions(l) => l
             .iter()
-            .map(|s| (s.nome.clone(), s.ambiente, s.totp))
+            .map(|s| (s.name.clone(), s.environment, s.totp))
             .collect::<Vec<_>>(),
-        other => panic!("esperava sugestões: {:?}", other.tipo()),
+        other => panic!("esperava sugestões: {:?}", other.kind()),
     };
     assert_eq!(
         summary(&suggest(&d, Role::Extension, "http://localhost:8083/login")),
@@ -228,16 +228,16 @@ fn v6_2_fill_only_on_the_right_origin() {
         "http://localhost:8081/wp-login.php",
     );
     match &r {
-        Resposta::Preenchimento {
-            usuario,
-            senha,
+        Response::Fill {
+            username: usuario,
+            password: senha,
             totp,
         } => {
             assert_eq!(usuario, "wp_admin");
             assert_eq!(senha.expose(), SECRETS[0].as_bytes());
             assert!(totp.is_none());
         }
-        other => panic!("esperava preenchimento: {:?}", other.tipo()),
+        other => panic!("esperava preenchimento: {:?}", other.kind()),
     }
     // TOTP: the current code of the seed, by the daemon's clock.
     let expected = Totp::from_seed(&ward_core::entry::Secret::from_bytes(
@@ -251,8 +251,8 @@ fn v6_2_fill_only_on_the_right_origin() {
         "acme-totp-dev",
         "http://localhost:8083/",
     ) {
-        Resposta::Preenchimento { totp: Some(c), .. } => assert_eq!(&*c, expected.code()),
-        other => panic!("esperava preenchimento com TOTP: {:?}", other.tipo()),
+        Response::Fill { totp: Some(c), .. } => assert_eq!(&*c, expected.code()),
+        other => panic!("esperava preenchimento com TOTP: {:?}", other.kind()),
     }
 
     // V6.2 (D9): the same entry for another origin is refused, with no value at all.
@@ -409,7 +409,7 @@ fn attack_extension_without_app_or_agent_operations() {
 /// Save-login request as the extension's service worker builds it: only name, group,
 /// environment, type and the URL, user and password fields; `extra` goes raw into the
 /// entry object (for the attacks).
-fn save_login(d: &Daemon, role: Role, name: &str, password: &str, extra: &str) -> Resposta {
+fn save_login(d: &Daemon, role: Role, name: &str, password: &str, extra: &str) -> Response {
     request(
         d,
         role,
@@ -424,8 +424,8 @@ fn save_login(d: &Daemon, role: Role, name: &str, password: &str, extra: &str) -
 /// Level of an entry in the app's list (`None` if it does not exist).
 fn level_in_list(d: &Daemon, name: &str) -> Option<ward_core::entry::AccessLevel> {
     match request(d, Role::App, "lista", "{}") {
-        Resposta::Lista(l) => l.into_iter().find(|i| i.nome == name).and_then(|i| i.nivel),
-        other => panic!("esperava a lista: {:?}", other.tipo()),
+        Response::List(l) => l.into_iter().find(|i| i.name == name).and_then(|i| i.level),
+        other => panic!("esperava a lista: {:?}", other.kind()),
     }
 }
 
@@ -463,11 +463,15 @@ fn v6_8_save_login_starts_with_approval() {
         "localhost-8083",
         "http://localhost:8083",
     ) {
-        Resposta::Preenchimento { senha, totp, .. } => {
+        Response::Fill {
+            password: senha,
+            totp,
+            ..
+        } => {
             assert_eq!(senha.expose(), NEW_PASSWORD.as_bytes());
             assert!(totp.is_none());
         }
-        other => panic!("esperava preenchimento: {:?}", other.tipo()),
+        other => panic!("esperava preenchimento: {:?}", other.kind()),
     }
     // Saved on disk: after locking and unlocking, it is still there and with approval.
     assert!(ok(&request(&d, Role::App, "travar", "{}")));
@@ -502,8 +506,10 @@ fn attack_save_login_does_not_overwrite_entry() {
         Some(AccessLevel::Approval)
     );
     match fill(&d, Role::Extension, "acme-wp-dev", "http://localhost:8081") {
-        Resposta::Preenchimento { senha, .. } => assert_eq!(senha.expose(), SECRETS[0].as_bytes()),
-        other => panic!("esperava preenchimento: {:?}", other.tipo()),
+        Response::Fill {
+            password: senha, ..
+        } => assert_eq!(senha.expose(), SECRETS[0].as_bytes()),
+        other => panic!("esperava preenchimento: {:?}", other.kind()),
     }
 }
 
@@ -621,13 +627,13 @@ fn attack_fill_http_without_confirming_nothing_leaves() {
     no_secret(&common::encoded(Role::Extension, &r));
     assert_eq!(seen.len(), 1);
     let p = &seen[0];
-    assert_eq!(p.operacao, Operation::Fill);
-    assert_eq!(p.entradas, ["acme-wp-dev".to_owned()]);
-    assert_eq!(p.origem, "http://localhost:8081");
-    assert!(p.confirmacao);
+    assert_eq!(p.operation, Operation::Fill);
+    assert_eq!(p.entries, ["acme-wp-dev".to_owned()]);
+    assert_eq!(p.origin, "http://localhost:8081");
+    assert!(p.confirmation);
     no_secret(&common::encoded(
         Role::App,
-        &Resposta::PedidoDeAprovacao(p.clone()),
+        &Response::ApprovalRequest(p.clone()),
     ));
     // The "Allow" answers with a PIN do not decide a confirmation (the forged window
     // does not skip the format): the request stays pending and expires; here the
@@ -662,11 +668,7 @@ fn attack_fill_http_without_confirming_nothing_leaves() {
     let (r, seen) = common::with_window(&d, "confirmar", None, || {
         fill_raw(&d, Role::Extension, "acme-wp-dev", tab)
     });
-    assert!(
-        matches!(r, Resposta::Preenchimento { .. }),
-        "{:?}",
-        r.tipo()
-    );
+    assert!(matches!(r, Response::Fill { .. }), "{:?}", r.kind());
     assert_eq!(seen.len(), 1);
     // `https`: no window.
     let (r, seen) = common::with_window(&d, "negar", None, || {
@@ -677,11 +679,7 @@ fn attack_fill_http_without_confirming_nothing_leaves() {
             "https://app.clientex.com.br/login",
         )
     });
-    assert!(
-        matches!(r, Resposta::Preenchimento { .. }),
-        "{:?}",
-        r.tipo()
-    );
+    assert!(matches!(r, Response::Fill { .. }), "{:?}", r.kind());
     assert!(seen.is_empty(), "janela num preencher https");
     // Different origin: refused before asking.
     let (r, seen) = common::with_window(&d, "confirmar", None, || {
@@ -724,12 +722,12 @@ fn attack_fill_https_loopback_without_confirming_nothing_leaves() {
         assert_eq!(error(&r), Some(ResponseError::Denied), "{url}");
         no_secret(&common::encoded(Role::Extension, &r));
         assert_eq!(seen.len(), 1, "{url}");
-        assert_eq!(seen[0].operacao, Operation::Fill);
-        assert_eq!(seen[0].origem, origin, "{url}");
-        assert!(seen[0].confirmacao, "{url}");
+        assert_eq!(seen[0].operation, Operation::Fill);
+        assert_eq!(seen[0].origin, origin, "{url}");
+        assert!(seen[0].confirmation, "{url}");
         let (r, _) = common::with_window(&d, "confirmar", None, || {
             fill_raw(&d, Role::Extension, &name, url)
         });
-        assert!(matches!(r, Resposta::Preenchimento { .. }), "{url}");
+        assert!(matches!(r, Response::Fill { .. }), "{url}");
     }
 }

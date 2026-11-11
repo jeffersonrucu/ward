@@ -28,7 +28,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use common::*;
-use ward_core::protocol::{self, ResponseError, Resposta, Role};
+use ward_core::protocol::{self, Response, ResponseError, Role};
 use wardd::core::{Clock, Daemon};
 use zbus::Connection;
 use zbus::Variant as Value;
@@ -106,7 +106,7 @@ fn vault_with_clock(dir: &Dir) -> (Daemon, ManualClock) {
 /// An app action (the list of the Credentials screen): counts as use (Phase 54).
 fn list_ok(d: &Daemon) {
     let r = request(d, Role::App, "lista", "{}");
-    assert!(matches!(r, Resposta::Lista(_)), "{r:?}");
+    assert!(matches!(r, Response::List(_)), "{r:?}");
 }
 
 #[test]
@@ -172,7 +172,7 @@ fn attack_agent_does_not_keep_the_vault_open_with_status_or_errors() {
         r.set(t);
         assert!(matches!(
             request(&d, Role::Agent, "estado", "{}"),
-            Resposta::Estado { travado: false, .. }
+            Response::Status { locked: false, .. }
         ));
         assert_eq!(
             error(&request(
@@ -216,14 +216,17 @@ fn attack_periodic_agent_list_does_not_delay_the_lock() {
     while t < 4 * H {
         r.set(t);
         let l = request(&d, Role::Agent, "lista", "{}");
-        assert!(matches!(l, Resposta::Lista(_)), "{l:?}");
+        assert!(matches!(l, Response::List(_)), "{l:?}");
         let s = request(
             &d,
             Role::Extension,
             "sugerir",
             r#"{"origem":"https://wp.acme.test"}"#,
         );
-        assert!(!matches!(s, Resposta::Erro(ResponseError::Locked)), "{s:?}");
+        assert!(
+            !matches!(s, Response::Error(ResponseError::Locked)),
+            "{s:?}"
+        );
         assert!(!d.lock_if_idle(), "t = {t}");
         t += 600;
     }
@@ -267,9 +270,9 @@ fn attack_f55_denied_ward_run_and_window_do_not_delay_the_lock() {
         assert_eq!(seen.len(), 1);
         // What the window asks for to show the request, and the open form.
         let det = request(&d, Role::App, "detalhe", r#"{"entrada":"t-aprov"}"#);
-        assert!(matches!(det, Resposta::Detalhe(_)), "{det:?}");
+        assert!(matches!(det, Response::Detail(_)), "{det:?}");
         let c = request(&d, Role::App, "totp", r#"{"entrada":"t-totp"}"#);
-        assert!(matches!(c, Resposta::CodigoTotp { .. }), "{c:?}");
+        assert!(matches!(c, Response::TotpCode { .. }), "{c:?}");
         assert!(!d.lock_if_idle(), "t = {t}");
         t += 600;
     }
@@ -671,7 +674,7 @@ fn send(s: &mut UnixStream, json: &str) {
     s.write_all(json.as_bytes()).unwrap();
 }
 
-fn request_over(s: &mut UnixStream, op: &str, data: &str) -> Resposta {
+fn request_over(s: &mut UnixStream, op: &str, data: &str) -> Response {
     send(s, &format!(r#"{{"v":1,"op":"{op}","dados":{data}}}"#));
     let mut n = [0u8; 4];
     s.read_exact(&mut n).unwrap();
@@ -751,8 +754,8 @@ fn v3_19_binary_locks_on_lock_session_of_the_fake_logind() {
     let start = Instant::now();
     loop {
         match request_over(&mut s, "estado", "{}") {
-            Resposta::Estado { travado: true, .. } => break,
-            Resposta::Estado { .. } => {}
+            Response::Status { locked: true, .. } => break,
+            Response::Status { .. } => {}
             other => panic!("{other:?}"),
         }
         assert!(start.elapsed() < Duration::from_secs(2), "V3.19: até 2 s");

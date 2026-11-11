@@ -8,7 +8,7 @@
 //!   in: `HintIgnore` false and `HintSystem` false (USB drive, card), or a loop device
 //!   (the V7.4 test image mounted by `udisksctl`).
 //! - **Everything that comes from the bus is checked**: UUID in the D45 format, label
-//!   without control characters and cut at [`MAX_ROTULO`], absolute mount point, without
+//!   without control characters and cut at [`MAX_LABEL`], absolute mount point, without
 //!   NUL, without `.`/`..` and with up to 4096 bytes (otherwise, it counts as not
 //!   mounted), and at most [`MAX_OBJECTS`] objects read. What guarantees that the mount
 //!   point is the UUID's is [`crate::external`], through the `st_dev` of the open fd.
@@ -45,7 +45,7 @@ use zbus::message::Type as MessageType;
 use zbus::{Connection, MatchRule, MessageStream, OwnedObjectPath, OwnedVariant, Variant};
 
 use ward_core::config::ExternalBackup;
-use ward_core::protocol::MAX_ROTULO;
+use ward_core::protocol::MAX_LABEL;
 
 use crate::core::Daemon;
 use crate::external::{ExternalError, Seen, UsbDriveSource};
@@ -132,11 +132,11 @@ pub fn valid_mount(mut b: Vec<u8>) -> Option<PathBuf> {
     simple.then(|| PathBuf::from(std::ffi::OsString::from_vec(b)))
 }
 
-/// Label to show: without control characters, cut at [`MAX_ROTULO`] bytes.
+/// Label to show: without control characters, cut at [`MAX_LABEL`] bytes.
 pub fn clean_label(r: &str) -> String {
     let mut s = String::new();
     for c in r.chars().filter(|c| !c.is_control()) {
-        if s.len() + c.len_utf8() > MAX_ROTULO {
+        if s.len() + c.len_utf8() > MAX_LABEL {
             break;
         }
         s.push(c);
@@ -347,8 +347,8 @@ mod tests {
     #[test]
     fn label_without_control_and_cut() {
         assert_eq!(clean_label("PEN\u{1b}[2J\n"), "PEN[2J");
-        let long = "é".repeat(MAX_ROTULO);
+        let long = "é".repeat(MAX_LABEL);
         let r = clean_label(&long);
-        assert!(r.len() <= MAX_ROTULO && r.chars().all(|c| c == 'é'));
+        assert!(r.len() <= MAX_LABEL && r.chars().all(|c| c == 'é'));
     }
 }

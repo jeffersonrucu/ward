@@ -66,8 +66,8 @@ use ward_core::entry::{AccessLevel, Data, DataDraft, Dates, Draft, Entry, Secret
 use ward_core::format::{MasterPassword, OpenVault};
 use ward_core::origin::Origin;
 use ward_core::protocol::{
-    DetalheEntrada, ItemLista, MAX_BACKUPS, MAX_PENDRIVES, Operation, PedidoDeAprovacao, Pendrive,
-    Problem, Request, ResponseError, Resposta, Role, Sugestao, Target, VersaoBackup,
+    ApprovalRequest, BackupVersion, EntryDetail, ListItem, MAX_BACKUPS, MAX_USB_DRIVES, Operation,
+    Problem, Request, Response, ResponseError, Role, Suggestion, Target, UsbDrive,
 };
 use ward_core::totp::Totp;
 
@@ -785,23 +785,23 @@ impl Daemon {
     }
 
     /// Serves a request already decoded for the connection's role.
-    pub fn serve(&self, role: Role, request: Request) -> Resposta {
+    pub fn serve(&self, role: Role, request: Request) -> Response {
         self.serve_from(&NoClient, role, request)
     }
 
     /// Like [`Daemon::serve`], with the connection's client (process chain for the
     /// approval window and whether it is still there).
-    pub fn serve_from(&self, client: &dyn Client, role: Role, request: Request) -> Resposta {
+    pub fn serve_from(&self, client: &dyn Client, role: Role, request: Request) -> Response {
         let op = request.operation();
         // The protocol already refused; here is the second layer.
         if !op.allowed(role) {
-            return Resposta::Erro(ResponseError::Unauthorized);
+            return Response::Error(ResponseError::Unauthorized);
         }
         let r = self.serve_allowed(client, role, request);
         if crate::lock::counts_as_use(role, op, &r) {
             self.record_use();
         }
-        if changes_external(op) && !matches!(r, Resposta::Erro(_)) {
+        if changes_external(op) && !matches!(r, Response::Error(_)) {
             self.poke_external();
         }
         debug!(
@@ -809,28 +809,28 @@ impl Daemon {
             op.name(),
             role.name(),
             match &r {
-                Resposta::Erro(e) => e.code(),
-                other => other.tipo().name(),
+                Response::Error(e) => e.code(),
+                other => other.kind().name(),
             }
         );
         r
     }
 
-    fn serve_allowed(&self, client: &dyn Client, role: Role, request: Request) -> Resposta {
+    fn serve_allowed(&self, client: &dyn Client, role: Role, request: Request) -> Response {
         let r = match request {
             Request::Status => {
                 let locked = self.is_locked();
-                Ok(Resposta::Estado {
-                    travado: locked,
-                    cofre_existe: !locked || files::vault_exists(&self.paths.vault),
+                Ok(Response::Status {
+                    locked,
+                    vault_exists: !locked || files::vault_exists(&self.paths.vault),
                     // D63: this connection's role, without any other data.
-                    papel: role,
+                    role,
                 })
             }
             Request::Unlock { password } => self.unlock(role, &password),
             Request::Lock => {
                 self.lock();
-                Ok(Resposta::Ok)
+                Ok(Response::Ok)
             }
             Request::List => self.list(role),
             // D6 (Phase 44): only the storage state path comes back.
@@ -853,7 +853,7 @@ impl Daemon {
                 pin,
                 confirmed_entry,
             } => self.answer_approval(request, decision, pin.as_ref(), confirmed_entry),
-            Request::OpenApp => self.approval.open_app().map(|()| Resposta::Ok),
+            Request::OpenApp => self.approval.open_app().map(|()| Response::Ok),
             // There is no open session in this phase (Phases 26/27).
             Request::Stdin { .. } | Request::Resize(_) => Err(ResponseError::InvalidRequest),
             Request::CreateVault { password, pin } => self.create_vault(&password, &pin),
@@ -897,7 +897,7 @@ impl Daemon {
             // Phase 42: new login seen by the extension, always "with approval" (D50, S9).
             Request::SaveLogin { draft } => self.save_login(role, draft),
         };
-        r.unwrap_or_else(Resposta::Erro)
+        r.unwrap_or_else(Response::Error)
     }
 
     /// Wait of the role's next attempt (D20, D62). The agent's first after startup waits
@@ -917,9 +917,9 @@ impl Daemon {
         }
     }
 
-    fn unlock(&self, role: Role, password: &Secret) -> Result<Resposta, ResponseError> {
+    fn unlock(&self, role: Role, password: &Secret) -> Result<Response, ResponseError> {
         if !self.is_locked() {
-            return Ok(Resposta::Ok);
+            return Ok(Response::Ok);
         }
         // D62: the extension role does not unlock (the protocol refuses); any other that
         // is not the app counts as the agent.
@@ -938,7 +938,7 @@ impl Daemon {
         self.clock.sleep(wait);
         let mut st = self.state();
         if st.open.is_some() {
-            return Ok(Resposta::Ok);
+            return Ok(Response::Ok);
         }
         let (bytes, id) = match files::read_vault(&self.paths.vault) {
             Ok(Some(x)) => x,
@@ -1005,7 +1005,7 @@ impl Daemon {
             identity: Some(id),
             generations: new,
         });
-        Ok(Resposta::Ok)
+        Ok(Response::Ok)
     }
 
     /// A wrong password (D20, D62). The agent's goes to the state file, with fsync,
@@ -1026,16 +1026,16 @@ impl Daemon {
         }
     }
 
-    fn list(&self, role: Role) -> Result<Resposta, ResponseError> {
+    fn list(&self, role: Role) -> Result<Response, ResponseError> {
         let st = self.state();
         let a = st.open.as_ref().ok_or(ResponseError::Locked)?;
         let items = a
             .entries
             .iter()
             .filter(|e| role == Role::App || e.level() != AccessLevel::Blocked)
-            .map(|e| ItemLista::de_entrada(e, role))
+            .map(|e| ListItem::from_entry(e, role))
             .collect();
-        Ok(Resposta::Lista(items))
+        Ok(Response::List(items))
     }
 
     /// Reveal and copy (D4, D65 b): the value of an entry's secret for the app.
@@ -1050,7 +1050,7 @@ impl Daemon {
         op: Operation,
         name: &str,
         target: &Target,
-    ) -> Result<Resposta, ResponseError> {
+    ) -> Result<Response, ResponseError> {
         if role != Role::App {
             return Err(ResponseError::Unauthorized);
         }
@@ -1069,7 +1069,7 @@ impl Daemon {
             Target::Field(c) => warning!("{} {} {c}", op.name(), e.name()),
             Target::Extra(x) => warning!("{} {} extra {x:?}", op.name(), e.name()),
         }
-        Ok(Resposta::Segredo(Secret::from_bytes(
+        Ok(Response::Secret(Secret::from_bytes(
             value.expose().to_vec(),
         )))
     }
@@ -1077,7 +1077,7 @@ impl Daemon {
     /// The app's `totp` (D65 b): the current code of the `login` entry's seed, by the
     /// daemon's clock, with the same rules as the reveal. Without a seed: "field not
     /// found". The code is not a vault secret (R8), but it goes in a `Zeroizing`.
-    fn app_totp(&self, role: Role, name: &str) -> Result<Resposta, ResponseError> {
+    fn app_totp(&self, role: Role, name: &str) -> Result<Response, ResponseError> {
         if role != Role::App {
             return Err(ResponseError::Unauthorized);
         }
@@ -1096,9 +1096,9 @@ impl Daemon {
             .map_err(|_| ResponseError::Internal)?
             .code_at(now);
         warning!("totp {}", e.name());
-        Ok(Resposta::CodigoTotp {
-            codigo: Zeroizing::new(c.code().to_owned()),
-            restante: c.remaining(),
+        Ok(Response::TotpCode {
+            code: Zeroizing::new(c.code().to_owned()),
+            remaining: c.remaining(),
         })
     }
 
@@ -1108,33 +1108,33 @@ impl Daemon {
     /// (it regulates the agent; whoever uses the extension is the user), so the blocked
     /// one also shows up. An origin that the strict parser refuses matches nothing: empty
     /// list. The origin comes from the extension (untrusted) and never goes to the log.
-    fn suggest(&self, role: Role, origin: &str) -> Result<Resposta, ResponseError> {
+    fn suggest(&self, role: Role, origin: &str) -> Result<Response, ResponseError> {
         if role != Role::Extension {
             return Err(ResponseError::Unauthorized);
         }
         let st = self.state();
         let a = st.open.as_ref().ok_or(ResponseError::Locked)?;
         let Some(tab) = Origin::from_url(origin) else {
-            return Ok(Resposta::Sugestoes(Vec::new()));
+            return Ok(Response::Suggestions(Vec::new()));
         };
-        let mut items: Vec<Sugestao> = a
+        let mut items: Vec<Suggestion> = a
             .entries
             .iter()
             .filter_map(|e| match e.data() {
                 Data::Login(l) if Origin::from_url(&l.url).as_ref() == Some(&tab) => {
-                    Some(Sugestao {
-                        nome: e.name().to_owned(),
-                        usuario: l.username.clone(),
-                        ambiente: e.environment(),
+                    Some(Suggestion {
+                        name: e.name().to_owned(),
+                        username: l.username.clone(),
+                        environment: e.environment(),
                         totp: l.totp_seed.is_some(),
                     })
                 }
                 _ => None,
             })
             .collect();
-        items.sort_by(|x, y| x.nome.cmp(&y.nome));
+        items.sort_by(|x, y| x.name.cmp(&y.name));
         debug!("sugerir: {} entrada(s)", items.len());
-        Ok(Resposta::Sugestoes(items))
+        Ok(Response::Suggestions(items))
     }
 
     /// Fill from the extension popup (Phase 44c, D9): on an entry whose URL is local
@@ -1150,7 +1150,7 @@ impl Daemon {
         role: Role,
         name: &str,
         origin: &str,
-    ) -> Result<Resposta, ResponseError> {
+    ) -> Result<Response, ResponseError> {
         if role != Role::Extension {
             return Err(ResponseError::Unauthorized);
         }
@@ -1173,17 +1173,17 @@ impl Daemon {
                 warning!("preencher {} recusado: origem diferente (D9)", e.name());
                 return Err(ResponseError::OriginMismatch);
             }
-            crate::usage::origin_to_confirm(e, Operation::Fill).map(|o| PedidoDeAprovacao {
+            crate::usage::origin_to_confirm(e, Operation::Fill).map(|o| ApprovalRequest {
                 id: 0,
-                entradas: vec![e.name().to_owned()],
-                ambiente: e.environment(),
-                operacao: Operation::Fill,
-                comando: String::new(),
-                diretorio: String::new(),
-                cadeia: crate::usage::display_chain(client),
-                origem: o,
-                confirmacao: true,
-                entrada_oculta: false,
+                entries: vec![e.name().to_owned()],
+                environment: e.environment(),
+                operation: Operation::Fill,
+                command: String::new(),
+                directory: String::new(),
+                chain: crate::usage::display_chain(client),
+                origin: o,
+                confirmation: true,
+                hidden_entry: false,
             })
         };
         if let Some(p) = request {
@@ -1204,7 +1204,7 @@ impl Daemon {
         role: Role,
         name: &str,
         origin: &str,
-    ) -> Result<Resposta, ResponseError> {
+    ) -> Result<Response, ResponseError> {
         if role != Role::Extension {
             return Err(ResponseError::Unauthorized);
         }
@@ -1237,14 +1237,14 @@ impl Daemon {
             None => None,
         };
         warning!("preencher {}", e.name());
-        Ok(Resposta::Preenchimento {
-            usuario: l.username.clone(),
-            senha: Secret::from_bytes(l.password.expose().to_vec()),
+        Ok(Response::Fill {
+            username: l.username.clone(),
+            password: Secret::from_bytes(l.password.expose().to_vec()),
             totp,
         })
     }
 
-    fn create_vault(&self, password: &Secret, pin: &Secret) -> Result<Resposta, ResponseError> {
+    fn create_vault(&self, password: &Secret, pin: &Secret) -> Result<Response, ResponseError> {
         let password = new_password(password, "senha")?;
         let mut st = self.state();
         if st.open.is_some() || files::vault_exists(&self.paths.vault) {
@@ -1312,10 +1312,10 @@ impl Daemon {
         st.pin_errors = 0;
         st.last_use = self.clock.now();
         st.open = Some(a);
-        Ok(Resposta::Ok)
+        Ok(Response::Ok)
     }
 
-    fn detail(&self, name: &str) -> Result<Resposta, ResponseError> {
+    fn detail(&self, name: &str) -> Result<Response, ResponseError> {
         let st = self.state();
         let a = st.open.as_ref().ok_or(ResponseError::Locked)?;
         let e = a
@@ -1323,7 +1323,7 @@ impl Daemon {
             .iter()
             .find(|e| e.name() == name)
             .ok_or(ResponseError::EntryNotFound)?;
-        Ok(Resposta::Detalhe(DetalheEntrada::de_entrada(e)))
+        Ok(Response::Detail(EntryDetail::from_entry(e)))
     }
 
     /// Writes; on error undoes the change in memory with `undo`. File swapped: locks.
@@ -1331,12 +1331,12 @@ impl Daemon {
         &self,
         st: &mut State,
         undo: impl FnOnce(&mut Open),
-    ) -> Result<Resposta, ResponseError> {
+    ) -> Result<Response, ResponseError> {
         let Some(a) = st.open.as_mut() else {
             return Err(ResponseError::Locked);
         };
         match write_vault(&self.paths, a, self.write_hook.as_ref()) {
-            Ok(()) => Ok(Resposta::Ok),
+            Ok(()) => Ok(Response::Ok),
             Err(WriteFailure::Response(r)) => {
                 undo(a);
                 Err(r)
@@ -1370,7 +1370,7 @@ impl Daemon {
         previous: Option<&str>,
         mut draft: Draft,
         keep_attachments: &[String],
-    ) -> Result<Resposta, ResponseError> {
+    ) -> Result<Response, ResponseError> {
         let now = self.now_for_dates();
         let mut st = self.state();
         let a = st.open.as_mut().ok_or(ResponseError::Locked)?;
@@ -1447,7 +1447,7 @@ impl Daemon {
     /// app is the place to complete the entry). The level is always "with approval" (D50,
     /// S9), as in the app's entry save. The log carries neither the name nor the
     /// URL (they came from the page).
-    fn save_login(&self, role: Role, draft: Draft) -> Result<Resposta, ResponseError> {
+    fn save_login(&self, role: Role, draft: Draft) -> Result<Response, ResponseError> {
         if role != Role::Extension {
             return Err(ResponseError::Unauthorized);
         }
@@ -1469,7 +1469,7 @@ impl Daemon {
         r
     }
 
-    fn remove_entry(&self, name: &str) -> Result<Resposta, ResponseError> {
+    fn remove_entry(&self, name: &str) -> Result<Response, ResponseError> {
         let mut st = self.state();
         let a = st.open.as_mut().ok_or(ResponseError::Locked)?;
         let i = a
@@ -1502,7 +1502,7 @@ impl Daemon {
         name: &str,
         level: AccessLevel,
         pin: &Secret,
-    ) -> Result<Resposta, ResponseError> {
+    ) -> Result<Response, ResponseError> {
         let now = self.now_for_dates();
         let mut st = self.state();
         Self::verify_pin(&mut st, pin)?;
@@ -1529,7 +1529,7 @@ impl Daemon {
         })
     }
 
-    fn change_pin(&self, current: &Secret, new: &Secret) -> Result<Resposta, ResponseError> {
+    fn change_pin(&self, current: &Secret, new: &Secret) -> Result<Response, ResponseError> {
         let mut st = self.state();
         Self::verify_pin(&mut st, current)?;
         let hash = PinHash::create(new.expose()).map_err(|_| ResponseError::InvalidRequest)?;
@@ -1547,7 +1547,7 @@ impl Daemon {
         }
     }
 
-    fn lock_timeout(&self, minutes: u32) -> Result<Resposta, ResponseError> {
+    fn lock_timeout(&self, minutes: u32) -> Result<Response, ResponseError> {
         let mut st = self.state();
         let a = st.open.as_mut().ok_or(ResponseError::Locked)?;
         let before = a.vault.config().lock_minutes();
@@ -1563,7 +1563,7 @@ impl Daemon {
     /// Changes the master password (D53): `burned` first, `ward_core`'s password change
     /// with (`vista`, current generation), and an error after the password was verified
     /// locks the vault.
-    fn change_password(&self, current: &Secret, new: &Secret) -> Result<Resposta, ResponseError> {
+    fn change_password(&self, current: &Secret, new: &Secret) -> Result<Response, ResponseError> {
         // Before anything: a short new password neither burns a generation nor touches
         // the disk.
         let new = new_password(new, "nova")?;
@@ -1628,7 +1628,7 @@ impl Daemon {
                 // The old vault (old key) is zeroed here.
                 a.vault = changed;
                 confirm_write(&self.paths, a, id);
-                Ok(Resposta::Ok)
+                Ok(Response::Ok)
             }
             // D52: in the password change, `Format` is the wrong current password;
             // nothing was sealed.
@@ -1646,17 +1646,17 @@ impl Daemon {
     /// Lock time and whether the external backup is enabled (Phase 38), for the Settings
     /// screen. Only with the vault unlocked and only through the app; never the PIN hash
     /// nor the USB drive's UUID.
-    fn settings(&self) -> Result<Resposta, ResponseError> {
+    fn settings(&self) -> Result<Response, ResponseError> {
         let st = self.state();
         let a = st.open.as_ref().ok_or(ResponseError::Locked)?;
         let c = a.vault.config();
         // Phase 49a: the screen warns when the local backup dir does not open or is not
         // safe (the vault is written without a backup). Only a yes/no: no path.
         let local_backup = open_backups(&self.paths).is_some_and(|p| p.backup_dir().list().is_ok());
-        Ok(Resposta::Configuracao {
-            minutos_trava: c.lock_minutes(),
-            backup_externo: c.backup().enabled(),
-            backup_local: local_backup,
+        Ok(Response::Config {
+            lock_minutes: c.lock_minutes(),
+            external_backup: c.backup().enabled(),
+            local_backup,
         })
     }
 
@@ -1669,7 +1669,7 @@ impl Daemon {
     /// the open vault's key ([`backup::sealed_generation`], authenticated), which becomes
     /// the verified and out-of-order marks ([`backup::out_of_order`]): an old copy
     /// with a new name comes out marked. The generation does not go in the response (D39).
-    fn backups(&self) -> Result<Resposta, ResponseError> {
+    fn backups(&self) -> Result<Response, ResponseError> {
         let st = self.state();
         let a = st.open.as_ref().ok_or(ResponseError::Locked)?;
         let dir = open_backups(&self.paths).ok_or(ResponseError::BackupUnavailable)?;
@@ -1695,22 +1695,22 @@ impl Daemon {
         let list = with_generation
             .iter()
             .zip(marks)
-            .map(|((v, g), out)| VersaoBackup {
-                nome: v.name(),
-                conferida: g.is_some(),
-                fora_de_ordem: out,
+            .map(|((v, g), out)| BackupVersion {
+                name: v.name(),
+                verified: g.is_some(),
+                out_of_order: out,
             })
             .collect();
-        Ok(Resposta::Backups(list))
+        Ok(Response::Backups(list))
     }
 
     /// External backup config (Phase 46): only with the vault unlocked.
-    fn external_backup(&self) -> Result<Resposta, ResponseError> {
+    fn external_backup(&self) -> Result<Response, ResponseError> {
         let st = self.state();
         let a = st.open.as_ref().ok_or(ResponseError::Locked)?;
         let b = a.vault.config().backup();
-        Ok(Resposta::BackupExterno {
-            ligado: b.enabled(),
+        Ok(Response::ExternalBackup {
+            enabled: b.enabled(),
             uuid: b.uuid().map(str::to_owned),
         })
     }
@@ -1722,7 +1722,7 @@ impl Daemon {
         &self,
         enabled: bool,
         uuid: Option<&str>,
-    ) -> Result<Resposta, ResponseError> {
+    ) -> Result<Response, ResponseError> {
         let new = ExternalBackup::new(enabled, uuid).map_err(|_| ResponseError::InvalidRequest)?;
         let mut st = self.state();
         let a = st.open.as_mut().ok_or(ResponseError::Locked)?;
@@ -1742,7 +1742,7 @@ impl Daemon {
 
     /// USB drives that udisks2 sees (Phase 46): only with the vault unlocked. The state is
     /// not held during the query.
-    fn usb_drives(&self) -> Result<Resposta, ResponseError> {
+    fn usb_drives(&self) -> Result<Response, ResponseError> {
         if self.is_locked() {
             return Err(ResponseError::Locked);
         }
@@ -1753,13 +1753,13 @@ impl Daemon {
         let seen = source
             .usb_drives()
             .ok_or(ResponseError::UsbDrivesUnavailable)?;
-        Ok(Resposta::Pendrives(
+        Ok(Response::UsbDrives(
             seen.into_iter()
-                .take(MAX_PENDRIVES)
-                .map(|v| Pendrive {
-                    montado: v.mount.is_some(),
+                .take(MAX_USB_DRIVES)
+                .map(|v| UsbDrive {
+                    mounted: v.mount.is_some(),
                     uuid: v.uuid,
-                    rotulo: v.label,
+                    label: v.label,
                 })
                 .collect(),
         ))
@@ -1786,7 +1786,7 @@ impl Daemon {
         version: &str,
         password: &Secret,
         pin: &Secret,
-    ) -> Result<Resposta, ResponseError> {
+    ) -> Result<Response, ResponseError> {
         let version = Version::from_name(version).ok_or(ResponseError::InvalidRequest)?;
         let mut st = self.state();
         Self::verify_pin(&mut st, pin)?;
@@ -1896,7 +1896,7 @@ impl Daemon {
                     warning!("{n} pedido(s) de aprovação cancelado(s) pelo restaurar");
                 }
                 warning!("backup restaurado; o cofre anterior ficou na pasta de backups");
-                Ok(Resposta::Ok)
+                Ok(Response::Ok)
             }
             Err(e) => {
                 if let WriteError::Io {
