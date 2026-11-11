@@ -27,7 +27,7 @@
   let next = $state('');
   let confirmation = $state('');
   // Keyed by the wire field names that the errors of the reply use.
-  let errors = $state({ 'atual': '', 'nova': '', 'confirmacao': '' });
+  let errors = $state({ 'current': '', 'new': '', 'confirmation': '' });
   let failure = $state('');
   let sending = $state(false);
   let currentField = $state();
@@ -43,7 +43,7 @@
   }
 
   function clearErrors() {
-    errors = { 'atual': '', 'nova': '', 'confirmacao': '' };
+    errors = { 'current': '', 'new': '', 'confirmation': '' };
     failure = '';
   }
 
@@ -68,43 +68,43 @@
     if (sending) return;
     clearErrors();
     if (!current) {
-      errors.atual = 'Digite a senha mestra atual.';
+      errors.current = 'Digite a senha mestra atual.';
       currentField?.focus();
       return;
     }
     const short = passwordError(next);
     if (short) {
-      errors.nova = short;
+      errors.new = short;
       nextField?.focus();
       return;
     }
     if (confirmation !== next) {
-      errors.confirmacao = MESSAGES.passwordMismatch;
+      errors.confirmation = MESSAGES.passwordMismatch;
       confirmationField?.focus();
       return;
     }
     // The values leave the state before the reply: the screen keeps them not even in the error.
-    const args = { 'dados': { 'atual': current, 'nova': next, 'confirmacao': confirmation } };
+    const args = { 'data': { 'current': current, 'new': next, 'confirmation': confirmation } };
     clear();
     sending = true;
     try {
-      const r = await call('trocar_senha_mestra', args);
-      if (r?.trocado) {
+      const r = await call('change_master_password', args);
+      if (r?.changed) {
         onchanged?.();
         return;
       }
-      for (const item of r?.erros ?? []) {
-        if (item.campo in errors) errors[item.campo] = rustMessage(item.motivo);
+      for (const item of r?.errors ?? []) {
+        if (item.field in errors) errors[item.field] = rustMessage(item.reason);
       }
     } catch (err) {
-      if (err?.codigo === 'senha-incorreta') {
-        errors.atual = 'Senha mestra incorreta. Nada foi alterado.';
+      if (err?.code === 'wrong-password') {
+        errors.current = 'Senha mestra incorreta. Nada foi alterado.';
       } else {
-        failure = rustMessage(err?.mensagem) || 'Não foi possível trocar a senha mestra.';
-        onfailure?.(err?.codigo ?? '');
+        failure = rustMessage(err?.message) || 'Não foi possível trocar a senha mestra.';
+        onfailure?.(err?.code ?? '');
       }
     } finally {
-      args.dados = null;
+      args.data = null;
       sending = false;
     }
     await tick();
@@ -127,7 +127,7 @@
       bind:value={current}
       bind:input={currentField}
       autocomplete="current-password"
-      error={errors.atual}
+      error={errors.current}
     />
     <PasswordField
       label="Nova senha mestra"
@@ -135,7 +135,7 @@
       bind:value={next}
       bind:input={nextField}
       help="Mínimo de 12 caracteres."
-      error={errors.nova}
+      error={errors.new}
     />
     <div class="strength" aria-live="polite">
       <div class="bars" aria-hidden="true">
@@ -153,7 +153,7 @@
       id="change-password-confirmation"
       bind:value={confirmation}
       bind:input={confirmationField}
-      error={errors.confirmacao}
+      error={errors.confirmation}
     />
     {#if failure}<p class="failure" role="alert">{failure}</p>{/if}
     <button class="visually-hidden" type="submit" tabindex="-1">Trocar senha</button>

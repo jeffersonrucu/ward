@@ -16,26 +16,19 @@ use ward_core::protocol::{EntryDetail, ItemSummary, ListItem};
 /// A row of the list (compact list item).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct CredentialItem {
-    #[serde(rename = "nome")]
     pub name: String,
     /// Type identifier (the wire name of the entry type, e.g. `ftp-sftp`).
-    #[serde(rename = "tipo")]
+    #[serde(rename = "type")]
     pub kind: &'static str,
-    #[serde(rename = "grupo")]
     pub group: String,
-    #[serde(rename = "ambiente")]
     pub environment: &'static str,
     /// Wire name of the access level (blocked, with approval or free).
-    #[serde(rename = "nivel")]
     pub level: &'static str,
     /// Second line of the item (`postgres · app@127.0.0.1:55432`).
-    #[serde(rename = "resumo")]
     pub summary: String,
     /// Host or URL, for the search.
-    #[serde(rename = "endereco")]
     pub address: Option<String>,
     /// Username, for the search.
-    #[serde(rename = "usuario")]
     pub username: Option<String>,
 }
 
@@ -44,9 +37,7 @@ pub struct CredentialItem {
 pub struct TextField {
     /// Protocol identifier (`host`, `url`…), the one "copy" uses.
     pub id: String,
-    #[serde(rename = "rotulo")]
     pub label: String,
-    #[serde(rename = "valor")]
     pub value: String,
 }
 
@@ -54,63 +45,46 @@ pub struct TextField {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SecretField {
     pub id: String,
-    #[serde(rename = "rotulo")]
     pub label: String,
 }
 
 /// Extra field: the value only when it is not a secret.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Extra {
-    #[serde(rename = "nome")]
     pub name: String,
-    #[serde(rename = "segredo")]
     pub secret: bool,
-    #[serde(rename = "valor")]
     pub value: Option<String>,
 }
 
 /// Attachment: name and size, without the content.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Attachment {
-    #[serde(rename = "nome")]
     pub name: String,
-    #[serde(rename = "tamanho")]
     pub size: u64,
 }
 
 /// The detail panel.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct CredentialDetail {
-    #[serde(rename = "nome")]
     pub name: String,
-    #[serde(rename = "tipo")]
+    #[serde(rename = "type")]
     pub kind: &'static str,
-    #[serde(rename = "grupo")]
     pub group: String,
-    #[serde(rename = "ambiente")]
     pub environment: &'static str,
-    #[serde(rename = "nivel")]
     pub level: &'static str,
     /// Project and tags, for the edit form (Phase 33).
-    #[serde(rename = "projeto")]
     pub project: Option<String>,
     pub tags: Vec<String>,
     /// Line next to the badges (group, engine or protocol, and project).
-    #[serde(rename = "subtitulo")]
     pub subtitle: String,
-    #[serde(rename = "campos")]
     pub fields: Vec<TextField>,
-    #[serde(rename = "segredos")]
     pub secrets: Vec<SecretField>,
     pub extras: Vec<Extra>,
-    #[serde(rename = "anexos")]
     pub attachments: Vec<Attachment>,
     /// Daemon dates (D65 d), in UTC seconds; the screen shows them in the local time zone.
     /// `None`: the entry does not have the date (those of `make dev-vault`), and the
     /// footer does not show it.
-    #[serde(rename = "criada_em")]
     pub created_at: Option<u64>,
-    #[serde(rename = "alterada_em")]
     pub modified_at: Option<u64>,
 }
 
@@ -361,7 +335,7 @@ mod tests {
         assert_eq!((without.created_at, without.modified_at), (None, None));
         let json = serde_json::to_string(&without).unwrap();
         assert!(
-            json.contains(r#""criada_em":null,"alterada_em":null"#),
+            json.contains(r#""created_at":null,"modified_at":null"#),
             "{json}"
         );
 
@@ -392,7 +366,7 @@ mod tests {
         assert_eq!(x.modified_at, Some(created));
         let json = serde_json::to_string(&x).unwrap();
         assert!(
-            json.contains(&format!(r#""criada_em":{created}"#)),
+            json.contains(&format!(r#""created_at":{created}"#)),
             "{json}"
         );
         for s in SECRETS {
@@ -410,10 +384,10 @@ mod tests {
         assert!(y.modified_at.unwrap() >= created);
     }
 
-    /// m2:DT3: the new Rust names are not wire names. The webview keeps receiving the
-    /// old fields until Phase 54.
+    /// m2:V4.23 (m2:Phase 54): the webview receives the English fields, never the 0.1.x
+    /// (pt-BR) ones. The type goes as `type` (the Rust field is `kind`).
     #[test]
-    fn attack_new_rust_names_are_not_wire_names() {
+    fn attack_old_wire_names_are_gone() {
         let mut d = FakeDaemon::full();
         let json = serde_json::to_string(&detail(&mut d, "acme-pg-dev")).unwrap();
         for old in [
@@ -429,12 +403,14 @@ mod tests {
             "\"anexos\":",
             "\"rotulo\":",
             "\"valor\":",
+            "\"criada_em\":",
+            "\"alterada_em\":",
         ] {
-            assert!(json.contains(old), "{old} em {json}");
+            assert!(!json.contains(old), "{old} em {json}");
         }
         for new in [
             "\"name\":",
-            "\"kind\":",
+            "\"type\":",
             "\"group\":",
             "\"environment\":",
             "\"level\":",
@@ -448,7 +424,7 @@ mod tests {
             "\"created_at\":",
             "\"modified_at\":",
         ] {
-            assert!(!json.contains(new), "{new} em {json}");
+            assert!(json.contains(new), "{new} em {json}");
         }
     }
 }

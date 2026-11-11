@@ -90,12 +90,9 @@ impl<'de> Deserialize<'de> for Typed {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NewVault {
-    #[serde(rename = "senha")]
     pub password: Typed,
-    #[serde(rename = "confirmacao")]
     pub confirmation: Typed,
     pub pin: Typed,
-    #[serde(rename = "confirmacao_pin")]
     pub pin_confirmation: Typed,
 }
 
@@ -111,11 +108,11 @@ fn field_error(field: &'static str, reason: &str) -> FieldError {
 pub fn password_errors(password: &Typed, confirmation: &Typed) -> Vec<FieldError> {
     let mut errors = Vec::new();
     if password.bytes().len() > MAX_SECRET {
-        errors.push(field_error("senha", PASSWORD_LONG));
+        errors.push(field_error("password", PASSWORD_LONG));
     } else if !password.valid_as_new() {
-        errors.push(field_error("senha", PASSWORD_SHORT));
+        errors.push(field_error("password", PASSWORD_SHORT));
     } else if !password.equals(confirmation) {
-        errors.push(field_error("confirmacao", PASSWORD_MISMATCH));
+        errors.push(field_error("confirmation", PASSWORD_MISMATCH));
     }
     errors
 }
@@ -133,7 +130,7 @@ impl NewVault {
         if !valid_pin(&self.pin) {
             errors.push(field_error("pin", PIN_INVALID));
         } else if !self.pin.equals(&self.pin_confirmation) {
-            errors.push(field_error("confirmacao_pin", PIN_MISMATCH));
+            errors.push(field_error("pin_confirmation", PIN_MISMATCH));
         }
         errors
     }
@@ -202,16 +199,16 @@ mod tests {
                 "135790",
                 "135790"
             )),
-            vec!["confirmacao"]
+            vec!["confirmation"]
         );
         assert_eq!(
             fields(&new_vault(PASSWORD, PASSWORD, "135790", "135791")),
-            vec!["confirmacao_pin"]
+            vec!["pin_confirmation"]
         );
         // A prefix of the other is not equal.
         assert_eq!(
             fields(&new_vault(PASSWORD, PASSWORD, "135790", "1357")),
-            vec!["confirmacao_pin"]
+            vec!["pin_confirmation"]
         );
     }
 
@@ -219,9 +216,9 @@ mod tests {
     fn attack_password_too_short_or_too_large_is_refused() {
         assert_eq!(
             fields(&new_vault("curta-11chr", "curta-11chr", "1357", "1357")),
-            vec!["senha"]
+            vec!["password"]
         );
-        assert_eq!(fields(&new_vault("", "", "1357", "1357")), vec!["senha"]);
+        assert_eq!(fields(&new_vault("", "", "1357", "1357")), vec!["password"]);
         let large = "a".repeat(MAX_SECRET + 1);
         let e = new_vault(&large, &large, "1357", "1357").errors();
         assert_eq!(e[0].reason, PASSWORD_LONG);
@@ -238,24 +235,24 @@ mod tests {
 
     #[test]
     fn attack_extra_field_or_wrong_type_is_refused() {
-        let ok = r#"{"senha":"x","confirmacao":"x","pin":"1","confirmacao_pin":"1"}"#;
+        let ok = r#"{"password":"x","confirmation":"x","pin":"1","pin_confirmation":"1"}"#;
         assert!(serde_json::from_str::<NewVault>(ok).is_ok());
         for bad in [
-            r#"{"senha":"x","confirmacao":"x","pin":"1","confirmacao_pin":"1","nivel":"livre"}"#,
-            r#"{"senha":"x","confirmacao":"x","pin":1357,"confirmacao_pin":"1"}"#,
-            r#"{"senha":"x","pin":"1","confirmacao_pin":"1"}"#,
-            r#"{"senha":["x"],"confirmacao":"x","pin":"1","confirmacao_pin":"1"}"#,
+            r#"{"password":"x","confirmation":"x","pin":"1","pin_confirmation":"1","level":"livre"}"#,
+            r#"{"password":"x","confirmation":"x","pin":1357,"pin_confirmation":"1"}"#,
+            r#"{"password":"x","pin":"1","pin_confirmation":"1"}"#,
+            r#"{"password":["x"],"confirmation":"x","pin":"1","pin_confirmation":"1"}"#,
         ] {
             assert!(serde_json::from_str::<NewVault>(bad).is_err(), "{bad}");
         }
     }
 
-    /// The new Rust names are not wire names (frozen until m2:Phase 54): the webview
-    /// still sends the old keys, and the new ones are refused as unknown fields.
+    /// m2:V4.23 (m2:Phase 54): the 0.1.x (pt-BR) keys are refused as unknown fields, with
+    /// no alias.
     #[test]
-    fn attack_new_rust_names_are_not_wire_names() {
-        let new = r#"{"password":"x","confirmation":"x","pin":"1","pin_confirmation":"1"}"#;
-        assert!(serde_json::from_str::<NewVault>(new).is_err());
+    fn attack_old_wire_names_are_refused() {
+        let old = r#"{"senha":"x","confirmacao":"x","pin":"1","confirmacao_pin":"1"}"#;
+        assert!(serde_json::from_str::<NewVault>(old).is_err());
     }
 
     mod through_service {
@@ -319,7 +316,7 @@ mod tests {
                 .collect();
             assert_eq!(create.len(), 1);
             let t = String::from_utf8_lossy(create[0]);
-            assert!(!t.contains("confirmacao"), "{t}");
+            assert!(!t.contains("confirmation"), "{t}");
         }
 
         #[test]

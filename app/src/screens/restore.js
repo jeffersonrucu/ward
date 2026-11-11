@@ -53,8 +53,8 @@ export function howLongAgo(instant, now = new Date()) {
  * says.
  */
 export function versionDetail(v) {
-  if (v?.conferida !== true) return 'Cópia local · de outra senha mestra';
-  if (v?.fora_de_ordem === true) {
+  if (v?.verified !== true) return 'Cópia local · de outra senha mestra';
+  if (v?.out_of_order === true) {
     return 'Cópia local · gravação mais antiga do que a data diz';
   }
   return 'Cópia local';

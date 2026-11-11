@@ -56,22 +56,22 @@
     try {
       // Phase 48: the external backup command brings on, UUID (D45) and the USB drive, if
       // connected (label already neutralized in the Rust side). No mount path, no secret.
-      const b = await call('backup_externo');
+      const b = await call('external_backup');
       if (mine !== readId) return;
       external = {
-        enabled: b?.ligado === true,
+        enabled: b?.enabled === true,
         uuid: typeof b?.uuid === 'string' ? b.uuid : null,
-        usbDrive: b?.pendrive && typeof b.pendrive.rotulo === 'string' ? { label: b.pendrive.rotulo } : null,
+        usbDrive: b?.usb_drive && typeof b.usb_drive.label === 'string' ? { label: b.usb_drive.label } : null,
       };
       ready = true;
     } catch (e) {
       if (mine !== readId) return;
-      if (e?.codigo === 'travado') {
+      if (e?.code === 'locked') {
         close();
         onlocked?.();
         return;
       }
-      error = rustMessage(e?.mensagem) || 'Não foi possível ler o backup externo. Tente de novo.';
+      error = rustMessage(e?.message) || 'Não foi possível ler o backup externo. Tente de novo.';
     }
   }
 

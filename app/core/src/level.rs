@@ -88,9 +88,7 @@ pub fn level_from_name(name: &str) -> Result<AccessLevel, AppError> {
 /// Response of the set level command: the level the entry now has. No PIN.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct LevelChanged {
-    #[serde(rename = "entrada")]
     pub entry: String,
-    #[serde(rename = "nivel")]
     pub level: &'static str,
 }
 
@@ -164,9 +162,9 @@ mod tests {
         }
     }
 
-    /// The new Rust names are not wire names (frozen until m2:Phase 54).
+    /// m2:V4.23 (m2:Phase 54): the webview receives the English keys.
     #[test]
-    fn attack_new_rust_names_are_not_wire_names() {
+    fn webview_keys_are_the_english_ones() {
         let v = serde_json::to_value(LevelChanged {
             entry: "acme-pg-dev".into(),
             level: "free",
@@ -174,7 +172,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             v,
-            serde_json::json!({"entrada": "acme-pg-dev", "nivel": "free"})
+            serde_json::json!({"entry": "acme-pg-dev", "level": "free"})
         );
     }
 }

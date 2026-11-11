@@ -49,12 +49,12 @@ pub const CHAIN_SEPARATOR: char = '\u{2192}';
 /// The decision by the name that comes from the interface (untrusted).
 pub fn decision_from_name(name: &str) -> Result<Decision, AppError> {
     match name {
-        "negar" => Ok(Decision::Deny),
-        "uma_vez" => Ok(Decision::AllowOnce),
-        "uma_hora" => Ok(Decision::AllowOneHour),
-        "sempre" => Ok(Decision::AllowAlways),
+        "deny" => Ok(Decision::Deny),
+        "once" => Ok(Decision::AllowOnce),
+        "one_hour" => Ok(Decision::AllowOneHour),
+        "always" => Ok(Decision::AllowAlways),
         // Phase 44c: only the confirmation of the `http` origin (no PIN).
-        "confirmar" => Ok(Decision::Confirm),
+        "confirm" => Ok(Decision::Confirm),
         _ => Err(AppError::InvalidRequest),
     }
 }
@@ -63,9 +63,8 @@ pub fn decision_from_name(name: &str) -> Result<Decision, AppError> {
 /// id); without it the screen shows the generic icon.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct DisplayedEntry {
-    #[serde(rename = "nome")]
     pub name: String,
-    #[serde(rename = "tipo")]
+    #[serde(rename = "type")]
     pub kind: Option<&'static str>,
 }
 
@@ -75,40 +74,29 @@ pub struct DisplayedEntry {
 pub struct DisplayedRequest {
     pub id: u64,
     /// The entry and, in the combined use (D19), the one of the jump or of the tunnel.
-    #[serde(rename = "entradas")]
     pub entries: Vec<DisplayedEntry>,
-    #[serde(rename = "ambiente")]
     pub environment: &'static str,
-    #[serde(rename = "operacao")]
     pub operation: &'static str,
     /// The exact command, each argument in quotes (D51).
-    #[serde(rename = "comando")]
     pub command: String,
     /// Where the command runs (run operation, Phase 26a), in quotes (D51); empty in the
     /// other operations.
-    #[serde(rename = "diretorio")]
     pub directory: String,
     /// Who asked, from the farthest to the closest.
-    #[serde(rename = "cadeia")]
     pub chain: Vec<String>,
     /// Phase 44c (D9): the `http` origin where username and password go, with a visible
     /// escape (D51); empty when there is none.
-    #[serde(rename = "origem")]
     pub origin: String,
     /// Phase 44c: only the confirmation of the origin ("Deny" and "Confirm", no PIN).
-    #[serde(rename = "confirmacao")]
     pub confirmation: bool,
     /// Phase 54b (D68): the command receives on the standard input (pipe, file…) data the
     /// window does not show: highlighted notice and the "Allow" buttons only with the
     /// box checked.
-    #[serde(rename = "entrada_oculta")]
     pub hidden_entry: bool,
     /// Seconds until it expires (0 when `status` is blocked).
-    #[serde(rename = "restante")]
     pub remaining: u64,
     /// Pending or blocked (the 5th wrong PIN locked the vault and the daemon
     /// denied; the window only shows what happened until the user closes it).
-    #[serde(rename = "estado")]
     pub status: &'static str,
 }
 
@@ -118,10 +106,8 @@ pub struct ApprovalResult {
     /// Answered, wrong PIN (the request stays pending), blocked (the 5th error locked
     /// the vault and the request was denied) or expired (the daemon no
     /// longer has it).
-    #[serde(rename = "resultado")]
     pub result: &'static str,
     /// There is still a request waiting (the window stays open).
-    #[serde(rename = "ha_outro")]
     pub has_other: bool,
 }
 
@@ -313,7 +299,7 @@ pub(crate) fn display(a: &Current) -> DisplayedRequest {
         confirmation: p.confirmation,
         hidden_entry: p.hidden_entry,
         remaining: a.remaining,
-        status: if a.blocked { "bloqueado" } else { "pendente" },
+        status: if a.blocked { "blocked" } else { "pending" },
     }
 }
 
@@ -326,7 +312,7 @@ pub fn watch(
     on_arrival: impl Fn() + Send + 'static,
 ) -> Result<(), AppError> {
     std::thread::Builder::new()
-        .name("ward-app-aprovacao".into())
+        .name("ward-app-approval".into())
         .spawn(move || {
             loop {
                 if let Some(p) = queue.wait_approval(Duration::from_secs(3600)) {
@@ -363,12 +349,28 @@ mod tests {
 
     #[test]
     fn decision_only_by_the_five_names() {
-        assert_eq!(decision_from_name("negar"), Ok(Decision::Deny));
-        assert_eq!(decision_from_name("uma_vez"), Ok(Decision::AllowOnce));
-        assert_eq!(decision_from_name("uma_hora"), Ok(Decision::AllowOneHour));
-        assert_eq!(decision_from_name("sempre"), Ok(Decision::AllowAlways));
-        assert_eq!(decision_from_name("confirmar"), Ok(Decision::Confirm));
-        for bad in ["", "Negar", "permitir", "uma-vez", "sempre ", "livre"] {
+        assert_eq!(decision_from_name("deny"), Ok(Decision::Deny));
+        assert_eq!(decision_from_name("once"), Ok(Decision::AllowOnce));
+        assert_eq!(decision_from_name("one_hour"), Ok(Decision::AllowOneHour));
+        assert_eq!(decision_from_name("always"), Ok(Decision::AllowAlways));
+        assert_eq!(decision_from_name("confirm"), Ok(Decision::Confirm));
+        for bad in [
+            "",
+            "Negar",
+            "permitir",
+            "uma-vez",
+            "sempre ",
+            "livre",
+            "Deny",
+            "always ",
+            "one-hour",
+            // m2:V4.23 (m2:Phase 54): the 0.1.x (pt-BR) decisions are refused.
+            "negar",
+            "uma_vez",
+            "uma_hora",
+            "sempre",
+            "confirmar",
+        ] {
             assert_eq!(
                 decision_from_name(bad),
                 Err(AppError::InvalidRequest),
@@ -432,7 +434,7 @@ mod tests {
         assert!(e.command.starts_with("\"sh\" \"-c\" \"echo <img"));
         assert_eq!(e.chain, ["claude\\u{202E}", "ba\\u{2192}sh", "ward run"]);
         assert_eq!(e.entries[0].kind, Some("database"));
-        assert_eq!(e.status, "pendente");
+        assert_eq!(e.status, "pending");
         // The entry name also goes through D51 (the daemon already refuses it, but the
         // window does not trust it).
         let mut p = request(2, "\"ls\"", &[]);
@@ -445,7 +447,7 @@ mod tests {
         };
         let e = display(&a);
         assert_eq!(e.entries[0].name, "acme\\u{202E}gp");
-        assert_eq!(e.status, "bloqueado");
+        assert_eq!(e.status, "blocked");
     }
 
     #[test]
@@ -504,9 +506,10 @@ mod tests {
         assert_eq!(queue.take(), Some(Notice::test_unlock("acme-pg-aprovacao")));
     }
 
-    /// m2 Phase 32: the window receives the old keys (m2:DT3, `rename` until Phase 54).
+    /// m2:V4.23 (m2:Phase 54): the window receives the English keys, never the 0.1.x
+    /// (pt-BR) ones.
     #[test]
-    fn attack_new_rust_names_are_not_wire_names() {
+    fn webview_keys_are_the_english_ones() {
         let e = display(&Current {
             request: request(1, "\"ls\"", &["claude"]),
             remaining: 90,
@@ -519,28 +522,28 @@ mod tests {
         assert_eq!(
             keys,
             [
-                "ambiente",
-                "cadeia",
-                "comando",
-                "confirmacao",
-                "diretorio",
-                "entrada_oculta",
-                "entradas",
-                "estado",
+                "chain",
+                "command",
+                "confirmation",
+                "directory",
+                "entries",
+                "environment",
+                "hidden_entry",
                 "id",
-                "operacao",
-                "origem",
-                "restante"
+                "operation",
+                "origin",
+                "remaining",
+                "status"
             ]
         );
-        assert_eq!(v["entradas"][0]["nome"], "acme-pg-aprovacao");
-        assert_eq!(v["entradas"][0]["tipo"], "database");
+        assert_eq!(v["entries"][0]["name"], "acme-pg-aprovacao");
+        assert_eq!(v["entries"][0]["type"], "database");
         let r = serde_json::to_string(&ApprovalResult {
-            result: "respondido",
+            result: "answered",
             has_other: false,
         })
         .unwrap();
-        assert_eq!(r, r#"{"resultado":"respondido","ha_outro":false}"#);
+        assert_eq!(r, r#"{"result":"answered","has_other":false}"#);
     }
 }
 
@@ -609,13 +612,11 @@ mod service_tests {
         let e = s.approval_request().unwrap().unwrap();
         assert_eq!((e.id, e.environment, e.operation), (1, "stage", "run"));
         assert_eq!(e.entries[0].kind, Some("database"));
-        let r = s.answer_approval(1, "negar", None, false).unwrap();
-        assert_eq!((r.result, r.has_other), ("respondido", true));
+        let r = s.answer_approval(1, "deny", None, false).unwrap();
+        assert_eq!((r.result, r.has_other), ("answered", true));
         assert_eq!(pending_in_daemon(&f), [2]);
-        let r = s
-            .answer_approval(2, "uma_vez", pin(RIGHT_PIN), false)
-            .unwrap();
-        assert_eq!((r.result, r.has_other), ("respondido", false));
+        let r = s.answer_approval(2, "once", pin(RIGHT_PIN), false).unwrap();
+        assert_eq!((r.result, r.has_other), ("answered", false));
         assert!(pending_in_daemon(&f).is_empty());
         assert_eq!(s.approval_request().unwrap(), None);
     }
@@ -627,26 +628,24 @@ mod service_tests {
     fn attack_wrong_pin_five_times_locks_and_denies() {
         let (s, f) = setup(&[request(7, "\"ls\"", &[])]);
         for _ in 0..4 {
-            let r = s
-                .answer_approval(7, "uma_vez", pin("000000"), false)
-                .unwrap();
-            assert_eq!(r.result, "pin-incorreto");
+            let r = s.answer_approval(7, "once", pin("000000"), false).unwrap();
+            assert_eq!(r.result, "wrong-pin");
             assert_eq!(pending_in_daemon(&f), [7]);
-            assert_eq!(s.approval_request().unwrap().unwrap().status, "pendente");
+            assert_eq!(s.approval_request().unwrap().unwrap().status, "pending");
         }
         let r = s
-            .answer_approval(7, "sempre", pin("000000"), false)
+            .answer_approval(7, "always", pin("000000"), false)
             .unwrap();
-        assert_eq!((r.result, r.has_other), ("bloqueado", true));
+        assert_eq!((r.result, r.has_other), ("blocked", true));
         assert!(pending_in_daemon(&f).is_empty(), "o daemon negou");
         let e = s.approval_request().unwrap().unwrap();
-        assert_eq!((e.status, e.remaining), ("bloqueado", 0));
+        assert_eq!((e.status, e.remaining), ("blocked", 0));
         assert_eq!(
-            s.answer_approval(7, "uma_vez", pin(RIGHT_PIN), false),
+            s.answer_approval(7, "once", pin(RIGHT_PIN), false),
             Err(AppError::Locked)
         );
-        let r = s.answer_approval(7, "negar", None, false).unwrap();
-        assert_eq!((r.result, r.has_other), ("respondido", false));
+        let r = s.answer_approval(7, "deny", None, false).unwrap();
+        assert_eq!((r.result, r.has_other), ("answered", false));
         // The entry did not become free.
         assert_eq!(
             f.0.lock().unwrap().level_of("acme-pg-aprovacao"),
@@ -661,7 +660,7 @@ mod service_tests {
     fn attack_forged_answer_does_not_reach_the_daemon() {
         let (s, f) = setup(&[request(3, "\"ls\"", &[])]);
         assert_eq!(
-            s.answer_approval(4, "uma_vez", pin(RIGHT_PIN), false),
+            s.answer_approval(4, "once", pin(RIGHT_PIN), false),
             Err(AppError::InvalidRequest)
         );
         assert_eq!(
@@ -669,10 +668,10 @@ mod service_tests {
             Err(AppError::InvalidRequest)
         );
         assert_eq!(
-            s.answer_approval(3, "negar", pin(RIGHT_PIN), false),
+            s.answer_approval(3, "deny", pin(RIGHT_PIN), false),
             Err(AppError::InvalidRequest)
         );
-        for d in ["uma_vez", "uma_hora", "sempre"] {
+        for d in ["once", "one_hour", "always"] {
             assert_eq!(
                 s.answer_approval(3, d, None, false),
                 Err(AppError::InvalidRequest),
@@ -700,7 +699,7 @@ mod service_tests {
         assert_eq!(e.id, 11);
         assert!(e.confirmation);
         assert_eq!(e.origin, "http://localhost:8081\\u{202E}");
-        for d in ["uma_vez", "uma_hora", "sempre"] {
+        for d in ["once", "one_hour", "always"] {
             assert_eq!(
                 s.answer_approval(11, d, pin(RIGHT_PIN), false),
                 Err(AppError::InvalidRequest),
@@ -708,17 +707,17 @@ mod service_tests {
             );
         }
         assert_eq!(
-            s.answer_approval(11, "confirmar", pin(RIGHT_PIN), false),
+            s.answer_approval(11, "confirm", pin(RIGHT_PIN), false),
             Err(AppError::InvalidRequest)
         );
         assert_eq!(
-            s.answer_approval(12, "confirmar", None, false),
+            s.answer_approval(12, "confirm", None, false),
             Err(AppError::InvalidRequest),
             "confirmar num pedido com PIN"
         );
         assert_eq!(pending_in_daemon(&f), [11, 12]);
-        let r = s.answer_approval(11, "confirmar", None, false).unwrap();
-        assert_eq!(r.result, "respondido");
+        let r = s.answer_approval(11, "confirm", None, false).unwrap();
+        assert_eq!(r.result, "answered");
         assert_eq!(pending_in_daemon(&f), [12]);
     }
 
@@ -735,7 +734,7 @@ mod service_tests {
         let e = s.approval_request().unwrap().unwrap();
         assert_eq!(e.id, 21);
         assert!(e.hidden_entry);
-        for d in ["uma_vez", "uma_hora", "sempre"] {
+        for d in ["once", "one_hour", "always"] {
             assert_eq!(
                 s.answer_approval(21, d, pin(RIGHT_PIN), false),
                 Err(AppError::InvalidRequest),
@@ -743,11 +742,11 @@ mod service_tests {
             );
         }
         assert_eq!(
-            s.answer_approval(21, "negar", None, true),
+            s.answer_approval(21, "deny", None, true),
             Err(AppError::InvalidRequest)
         );
         assert_eq!(
-            s.answer_approval(22, "uma_vez", pin(RIGHT_PIN), true),
+            s.answer_approval(22, "once", pin(RIGHT_PIN), true),
             Err(AppError::InvalidRequest),
             "caixa num pedido sem o aviso"
         );
@@ -770,14 +769,12 @@ mod service_tests {
                 protocol::ResponseError::InvalidRequest
             ))
         ));
+        let r = s.answer_approval(21, "once", pin(RIGHT_PIN), true).unwrap();
+        assert_eq!(r.result, "answered");
         let r = s
-            .answer_approval(21, "uma_vez", pin(RIGHT_PIN), true)
+            .answer_approval(22, "once", pin(RIGHT_PIN), false)
             .unwrap();
-        assert_eq!(r.result, "respondido");
-        let r = s
-            .answer_approval(22, "uma_vez", pin(RIGHT_PIN), false)
-            .unwrap();
-        assert_eq!(r.result, "respondido");
+        assert_eq!(r.result, "answered");
         assert!(pending_in_daemon(&f).is_empty());
     }
 
@@ -786,7 +783,7 @@ mod service_tests {
     #[test]
     fn always_makes_free_and_close_denies_all() {
         let (s, f) = setup(&[request(5, "\"ls\"", &[])]);
-        s.answer_approval(5, "sempre", pin(RIGHT_PIN), false)
+        s.answer_approval(5, "always", pin(RIGHT_PIN), false)
             .unwrap();
         assert_eq!(
             f.0.lock().unwrap().level_of("acme-pg-aprovacao"),
@@ -809,12 +806,12 @@ mod service_tests {
         let mut texts = vec![serde_json::to_string(&s.approval_request().unwrap()).unwrap()];
         for _ in 0..2 {
             let r = s
-                .answer_approval(9, "uma_hora", pin("000000"), false)
+                .answer_approval(9, "one_hour", pin("000000"), false)
                 .unwrap();
             texts.push(serde_json::to_string(&r).unwrap());
         }
         let r = s
-            .answer_approval(9, "uma_hora", pin(RIGHT_PIN), false)
+            .answer_approval(9, "one_hour", pin(RIGHT_PIN), false)
             .unwrap();
         texts.push(serde_json::to_string(&r).unwrap());
         for t in &texts {

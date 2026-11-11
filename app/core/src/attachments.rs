@@ -57,24 +57,15 @@ pub struct Pending {
 
 /// What the interface receives from choosing an attachment. Never the content.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(tag = "resultado")]
+#[serde(tag = "result")]
 pub enum Choice {
-    #[serde(rename = "anexado")]
-    Attached {
-        id: u64,
-        #[serde(rename = "nome")]
-        name: String,
-        #[serde(rename = "tamanho")]
-        size: u64,
-    },
-    #[serde(rename = "cancelado")]
+    #[serde(rename = "attached")]
+    Attached { id: u64, name: String, size: u64 },
+    #[serde(rename = "canceled")]
     Canceled,
     /// The file was not kept; the reason is a fixed text.
-    #[serde(rename = "aviso")]
-    Notice {
-        #[serde(rename = "motivo")]
-        reason: String,
-    },
+    #[serde(rename = "notice")]
+    Notice { reason: String },
 }
 
 /// Texts of the notices (fixed; no path nor system error, S13).
@@ -112,9 +103,7 @@ pub struct Base {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AttachmentEdit {
-    #[serde(rename = "entrada")]
     pub entry: String,
-    #[serde(rename = "mantidos")]
     pub kept: Vec<String>,
 }
 
@@ -328,10 +317,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(d);
     }
 
-    /// m2 Phase 32: the interface receives the old tag and keys (m2:DT3, `rename` until
-    /// Phase 54), and the edit argument is read only by the old keys.
+    /// m2:V4.23 (m2:Phase 54): the interface receives the English tag and keys, and the edit
+    /// argument refuses the 0.1.x (pt-BR) keys.
     #[test]
-    fn attack_new_rust_names_are_not_wire_names() {
+    fn attack_old_wire_names_are_refused() {
         let j = |c: &Choice| serde_json::to_string(c).unwrap();
         assert_eq!(
             j(&Choice::Attached {
@@ -339,17 +328,19 @@ mod tests {
                 name: "a.pem".into(),
                 size: 9
             }),
-            r#"{"resultado":"anexado","id":3,"nome":"a.pem","tamanho":9}"#
+            r#"{"result":"attached","id":3,"name":"a.pem","size":9}"#
         );
-        assert_eq!(j(&Choice::Canceled), r#"{"resultado":"cancelado"}"#);
+        assert_eq!(j(&Choice::Canceled), r#"{"result":"canceled"}"#);
         assert_eq!(
             j(&Choice::Notice { reason: "x".into() }),
-            r#"{"resultado":"aviso","motivo":"x"}"#
+            r#"{"result":"notice","reason":"x"}"#
         );
         let e: AttachmentEdit =
-            serde_json::from_str(r#"{"entrada":"acme-ssh","mantidos":["a"]}"#).unwrap();
+            serde_json::from_str(r#"{"entry":"acme-ssh","kept":["a"]}"#).unwrap();
         assert_eq!((e.entry.as_str(), e.kept.len()), ("acme-ssh", 1));
-        assert!(serde_json::from_str::<AttachmentEdit>(r#"{"entry":"x","kept":[]}"#).is_err());
+        assert!(
+            serde_json::from_str::<AttachmentEdit>(r#"{"entrada":"x","mantidos":[]}"#).is_err()
+        );
     }
 
     /// V5.12: 300 KiB gives a notice and is not kept; going past 256 KiB in total gives a

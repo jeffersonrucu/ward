@@ -203,27 +203,25 @@ impl<D: Daemon + 'static, A: Clipboard> Bridge<D, A> {
         // master password type of the app core, which zeroes.
         let password = match command {
             Command::Unlock => args
-                .remove("senha")
+                .remove("password")
                 .map(serde_json::from_value::<MasterPassword>),
             _ => None,
         };
         // Phase 38: the data of the changes also leave the map (ownership) and become typed
         // values that zero.
         let pin_change = match command {
-            Command::ChangePin => args
-                .remove("dados")
-                .map(serde_json::from_value::<PinChange>),
+            Command::ChangePin => args.remove("data").map(serde_json::from_value::<PinChange>),
             _ => None,
         };
         let password_change = match command {
             Command::ChangeMasterPassword => args
-                .remove("dados")
+                .remove("data")
                 .map(serde_json::from_value::<PasswordChange>),
             _ => None,
         };
         // Phase 47: the version password and the current PIN also leave the map (ownership).
         let restore = match command {
-            Command::RestoreBackup => args.remove("dados").map(serde_json::from_value::<Restore>),
+            Command::RestoreBackup => args.remove("data").map(serde_json::from_value::<Restore>),
             _ => None,
         };
         let text = |key: &str| args.get(key).and_then(Value::as_str);
@@ -234,8 +232,8 @@ impl<D: Daemon + 'static, A: Clipboard> Bridge<D, A> {
             Command::VaultStatus => self
                 .service
                 .vault_status()
-                .map(|e| json!({ "estado": e.code(), "pedido": self.service.request_info(e) })),
-            Command::CopyField => match (text("entrada"), text("campo")) {
+                .map(|e| json!({ "status": e.code(), "request": self.service.request_info(e) })),
+            Command::CopyField => match (text("entry"), text("field")) {
                 (Some(e), Some(c)) => self.service.copy_field(e, c).map(|()| Value::Null),
                 _ => Err(AppError::InvalidRequest),
             },
@@ -243,7 +241,7 @@ impl<D: Daemon + 'static, A: Clipboard> Bridge<D, A> {
                 .service
                 .list_credentials()
                 .and_then(|l| serde_json::to_value(l).map_err(|_| AppError::InvalidResponse)),
-            Command::CredentialDetail => match text("entrada") {
+            Command::CredentialDetail => match text("entry") {
                 Some(e) => self
                     .service
                     .credential_detail(e)
@@ -251,11 +249,11 @@ impl<D: Daemon + 'static, A: Clipboard> Bridge<D, A> {
                 None => Err(AppError::InvalidRequest),
             },
             Command::GeneratePassword => match (
-                args.get("tamanho").and_then(Value::as_u64),
-                flag("minusculas"),
-                flag("maiusculas"),
-                flag("digitos"),
-                flag("simbolos"),
+                args.get("size").and_then(Value::as_u64),
+                flag("lowercase"),
+                flag("uppercase"),
+                flag("digits"),
+                flag("symbols"),
             ) {
                 (Some(length), Some(lowercase), Some(uppercase), Some(digits), Some(symbols)) => {
                     self.service
@@ -268,10 +266,10 @@ impl<D: Daemon + 'static, A: Clipboard> Bridge<D, A> {
                         })
                         .map(|g| {
                             json!({
-                                "tamanho": g.size,
+                                "size": g.size,
                                 "bits": g.bits,
-                                "forca": g.strength.code(),
-                                "simbolos": g.symbols,
+                                "strength": g.strength.code(),
+                                "symbols": g.symbols,
                             })
                         })
                 }
@@ -284,35 +282,35 @@ impl<D: Daemon + 'static, A: Clipboard> Bridge<D, A> {
             Command::RevealGeneratedPassword => self
                 .service
                 .reveal_generated_password()
-                .map(|r| json!({ "valor": r.expose() })),
+                .map(|r| json!({ "value": r.expose() })),
             Command::DiscardGeneratedPassword => self
                 .service
                 .discard_generated_password()
                 .map(|()| Value::Null),
             // S11 (D65 b): the value only on "reveal", as in the app.
-            Command::RevealField => match (text("entrada"), text("campo")) {
+            Command::RevealField => match (text("entry"), text("field")) {
                 (Some(e), Some(c)) => self
                     .service
                     .reveal_field(e, c)
-                    .map(|r| json!({ "valor": r.expose() })),
+                    .map(|r| json!({ "value": r.expose() })),
                 _ => Err(AppError::InvalidRequest),
             },
-            Command::TotpCode => match text("entrada") {
+            Command::TotpCode => match text("entry") {
                 Some(e) => self
                     .service
                     .totp_code(e)
                     .and_then(|c| serde_json::to_value(c).map_err(|_| AppError::InvalidResponse)),
                 None => Err(AppError::InvalidRequest),
             },
-            Command::CopyTotpCode => match text("entrada") {
+            Command::CopyTotpCode => match text("entry") {
                 Some(e) => self.service.copy_totp_code(e).map(|()| Value::Null),
                 None => Err(AppError::InvalidRequest),
             },
-            Command::UseGeneratedPassword => match text("campo") {
+            Command::UseGeneratedPassword => match text("field") {
                 Some(c) => self
                     .service
                     .use_generated_password(c)
-                    .map(|t| json!({ "tamanho": t })),
+                    .map(|t| json!({ "size": t })),
                 None => Err(AppError::InvalidRequest),
             },
             Command::DiscardForm => {
@@ -320,13 +318,13 @@ impl<D: Daemon + 'static, A: Clipboard> Bridge<D, A> {
                 Ok(Value::Null)
             }
             Command::SaveCredential => {
-                let previous = match args.get("anterior") {
+                let previous = match args.get("previous") {
                     None | Some(Value::Null) => Ok(None),
                     Some(Value::String(a)) => Ok(Some(a.as_str())),
                     Some(_) => Err(AppError::InvalidRequest),
                 };
                 let form = args
-                    .get("formulario")
+                    .get("form")
                     .cloned()
                     .map(serde_json::from_value::<Form>)
                     .and_then(Result::ok)
@@ -338,7 +336,7 @@ impl<D: Daemon + 'static, A: Clipboard> Bridge<D, A> {
                     _ => Err(AppError::InvalidRequest),
                 }
             }
-            Command::SetLevel => match (text("entrada"), text("nivel"), pin) {
+            Command::SetLevel => match (text("entry"), text("level"), pin) {
                 (Some(e), Some(n), Some(Ok(pin))) => self
                     .service
                     .set_level(e, n, pin)
@@ -350,7 +348,7 @@ impl<D: Daemon + 'static, A: Clipboard> Bridge<D, A> {
             // Phase 39b: when editing, the edit object with the entry and the kept ids (the
             // stored attachments that remain count in the limits).
             Command::ChooseAttachment => {
-                let edit = match args.get("edicao") {
+                let edit = match args.get("edit") {
                     None | Some(Value::Null) => Ok(None),
                     Some(v) => serde_json::from_value::<AttachmentEdit>(v.clone())
                         .map(Some)
@@ -365,7 +363,7 @@ impl<D: Daemon + 'static, A: Clipboard> Bridge<D, A> {
             },
             // Phase 53a: "load from file" of the private key; the file is picked,
             // read and checked on the Rust side; returns only the size, or the notice (S2, S11).
-            Command::LoadKey => match text("campo") {
+            Command::LoadKey => match text("field") {
                 Some(c) if args.len() == 1 => self
                     .service
                     .load_key(c)
@@ -373,7 +371,7 @@ impl<D: Daemon + 'static, A: Clipboard> Bridge<D, A> {
                 _ => Err(AppError::InvalidRequest),
             },
             // D3: the token does not go back to the interface.
-            Command::Connect => match text("entrada") {
+            Command::Connect => match text("entry") {
                 Some(e) => self.service.connect(e).map(|()| Value::Null),
                 None => Err(AppError::InvalidRequest),
             },
@@ -400,9 +398,9 @@ impl<D: Daemon + 'static, A: Clipboard> Bridge<D, A> {
             // `true`/`false`.
             Command::AnswerApproval => match (
                 args.get("id").and_then(Value::as_u64),
-                text("decisao"),
+                text("decision"),
                 pin,
-                args.get("ciente").map(Value::as_bool),
+                args.get("acknowledged").map(Value::as_bool),
             ) {
                 (Some(id), Some(d), None, None | Some(Some(false))) => {
                     self.service.answer_approval(id, d, None, false)
@@ -417,7 +415,7 @@ impl<D: Daemon + 'static, A: Clipboard> Bridge<D, A> {
             // no value. The data field leaves the object through `remove`, without copying
             // the text.
             Command::CreateVault => {
-                match args.remove("dados").map(serde_json::from_value::<NewVault>) {
+                match args.remove("data").map(serde_json::from_value::<NewVault>) {
                     Some(Ok(n)) => self.service.create_vault(n).and_then(|r| {
                         serde_json::to_value(r).map_err(|_| AppError::InvalidResponse)
                     }),
@@ -444,7 +442,7 @@ impl<D: Daemon + 'static, A: Clipboard> Bridge<D, A> {
                     .and_then(|r| serde_json::to_value(r).map_err(|_| AppError::InvalidResponse)),
                 _ => Err(AppError::InvalidRequest),
             },
-            Command::SetLockTimeout => match args.get("minutos").and_then(Value::as_u64) {
+            Command::SetLockTimeout => match args.get("minutes").and_then(Value::as_u64) {
                 Some(m) if args.len() == 1 => self
                     .service
                     .set_lock_timeout(m)
@@ -483,8 +481,8 @@ impl<D: Daemon + 'static, A: Clipboard> Bridge<D, A> {
                     Some(Value::String(u)) => Ok(Some(u.as_str())),
                     Some(_) => Err(AppError::InvalidRequest),
                 };
-                let only_known = args.keys().all(|k| k == "ligado" || k == "uuid");
-                match (flag("ligado"), uuid) {
+                let only_known = args.keys().all(|k| k == "enabled" || k == "uuid");
+                match (flag("enabled"), uuid) {
                     (Some(l), Ok(u)) if only_known => {
                         self.service.set_external_backup(l, u).and_then(|b| {
                             serde_json::to_value(b).map_err(|_| AppError::InvalidResponse)
@@ -495,7 +493,7 @@ impl<D: Daemon + 'static, A: Clipboard> Bridge<D, A> {
             }
         };
         match result {
-            Ok(value) => Response::json(200, &json!({ "ok": true, "valor": value })),
+            Ok(value) => Response::json(200, &json!({ "ok": true, "value": value })),
             Err(e) => Response::error(200, e),
         }
     }
@@ -666,7 +664,7 @@ impl Response {
     fn error(status: u16, e: AppError) -> Response {
         Response::json(
             status,
-            &json!({ "ok": false, "codigo": e.code(), "mensagem": e.to_string() }),
+            &json!({ "ok": false, "code": e.code(), "message": e.to_string() }),
         )
     }
 

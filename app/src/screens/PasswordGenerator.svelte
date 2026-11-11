@@ -28,17 +28,17 @@
 
   // The keys are the wire values of the strength.
   const STRENGTHS = {
-    'fraca': { label: 'fraca', segments: 1, tone: 'danger' },
-    'razoavel': { label: 'razoável', segments: 2, tone: 'warning' },
-    'forte': { label: 'forte', segments: 3, tone: 'success' },
-    'muito-forte': { label: 'muito forte', segments: 4, tone: 'success' },
+    'weak': { label: 'fraca', segments: 1, tone: 'danger' },
+    'fair': { label: 'razoável', segments: 2, tone: 'warning' },
+    'strong': { label: 'forte', segments: 3, tone: 'success' },
+    'very-strong': { label: 'muito forte', segments: 4, tone: 'success' },
   };
 
   let length = $state(DEFAULT_LENGTH);
-  // Character sets, by the wire names of the generate password command (frozen until
-  // Phase 54): lowercase, uppercase, digits, symbols.
-  let charsets = $state({ 'minusculas': true, 'maiusculas': true, 'digitos': true, 'simbolos': true });
-  /** @type {{ tamanho: number, bits: number, forca: string, simbolos: string } | null} */
+  // Character sets, by the wire names of the generate password command (m2:Phase 54):
+  // lowercase, uppercase, digits, symbols.
+  let charsets = $state({ 'lowercase': true, 'uppercase': true, 'digits': true, 'symbols': true });
+  /** @type {{ size: number, bits: number, strength: string, symbols: string } | null} */
   let generated = $state(null);
   /** @type {string | null} */
   let revealed = $state(null);
@@ -46,7 +46,7 @@
   /** @type {string | null} */
   let error = $state(null);
 
-  const strength = $derived(generated ? STRENGTHS[generated.forca] : null);
+  const strength = $derived(generated ? STRENGTHS[generated.strength] : null);
   const onCount = $derived(Object.values(charsets).filter(Boolean).length);
 
   let revealDeadline = 0;
@@ -76,7 +76,7 @@
       do {
         again = false;
         try {
-          const r = await call('gerar_senha', { 'tamanho': length, ...charsets });
+          const r = await call('generate_password', { 'size': length, ...charsets });
           if (alive) {
             generated = r;
             error = null;
@@ -84,7 +84,7 @@
         } catch (e) {
           if (alive) {
             generated = null;
-            error = e.mensagem;
+            error = e.message;
           }
         }
       } while (again && alive);
@@ -95,25 +95,25 @@
 
   async function reveal() {
     try {
-      const r = await call('revelar_senha_gerada');
+      const r = await call('reveal_generated_password');
       if (!alive || generating) return;
-      revealed = r.valor;
+      revealed = r.value;
       clearTimeout(revealDeadline);
       revealDeadline = setTimeout(hide, REVEAL_DEADLINE_MS);
     } catch (e) {
-      error = e.mensagem;
+      error = e.message;
     }
   }
 
   async function copy() {
     try {
-      await call('copiar_senha_gerada');
+      await call('copy_generated_password');
       copied = true;
       error = null;
       clearTimeout(copiedDeadline);
       copiedDeadline = setTimeout(() => (copied = false), COPIED_DEADLINE_MS);
     } catch (e) {
-      error = e.mensagem;
+      error = e.message;
     }
   }
 
@@ -135,7 +135,7 @@
     alive = false;
     hide();
     clearTimeout(copiedDeadline);
-    call('descartar_senha_gerada').catch(() => {});
+    call('discard_generated_password').catch(() => {});
   });
 </script>
 
@@ -168,38 +168,38 @@
       <OptionRow
         id="generator-lowercase"
         title="Minúsculas"
-        on={charsets.minusculas}
-        disabled={charsets.minusculas && onCount === 1}
-        onchange={(v) => changeCharset('minusculas', v)}
+        on={charsets.lowercase}
+        disabled={charsets.lowercase && onCount === 1}
+        onchange={(v) => changeCharset('lowercase', v)}
       >
         {#snippet description()}a a z{/snippet}
       </OptionRow>
       <OptionRow
         id="generator-uppercase"
         title="Maiúsculas"
-        on={charsets.maiusculas}
-        disabled={charsets.maiusculas && onCount === 1}
-        onchange={(v) => changeCharset('maiusculas', v)}
+        on={charsets.uppercase}
+        disabled={charsets.uppercase && onCount === 1}
+        onchange={(v) => changeCharset('uppercase', v)}
       >
         {#snippet description()}A a Z{/snippet}
       </OptionRow>
       <OptionRow
         id="generator-digits"
         title="Dígitos"
-        on={charsets.digitos}
-        disabled={charsets.digitos && onCount === 1}
-        onchange={(v) => changeCharset('digitos', v)}
+        on={charsets.digits}
+        disabled={charsets.digits && onCount === 1}
+        onchange={(v) => changeCharset('digits', v)}
       >
         {#snippet description()}0 a 9{/snippet}
       </OptionRow>
       <OptionRow
         id="generator-symbols"
         title="Símbolos"
-        on={charsets.simbolos}
-        disabled={charsets.simbolos && onCount === 1}
-        onchange={(v) => changeCharset('simbolos', v)}
+        on={charsets.symbols}
+        disabled={charsets.symbols && onCount === 1}
+        onchange={(v) => changeCharset('symbols', v)}
       >
-        {#snippet description()}<span class="symbols" data-test="symbols">{generated?.simbolos ?? ''}</span>
+        {#snippet description()}<span class="symbols" data-test="symbols">{generated?.symbols ?? ''}</span>
           Desligue se o painel não aceitar.{/snippet}
       </OptionRow>
     </section>
@@ -215,7 +215,7 @@
           id="generator-password"
           label="Senha"
           empty={!generated}
-          mask={'•'.repeat(generated?.tamanho ?? 0)}
+          mask={'•'.repeat(generated?.size ?? 0)}
           revealed={revealed}
           copied={copied}
           onreveal={reveal}

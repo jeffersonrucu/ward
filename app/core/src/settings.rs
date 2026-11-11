@@ -31,22 +31,17 @@ pub const CURRENT_PASSWORD_EMPTY: &str = "digite a senha mestra atual";
 /// What the Settings screen shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct Settings {
-    #[serde(rename = "minutos_trava")]
     pub lock_minutes: u32,
-    #[serde(rename = "backup_externo")]
     pub external_backup: bool,
     /// The local backup folder opens and is safe (Phase 49a); `false`: the vault is
     /// written without backup and the "Backup local" row warns.
-    #[serde(rename = "backup_local")]
     pub local_backup: bool,
 }
 
 /// Response of the PIN and password changes: changed, or the errors per field. No value.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ChangeResult {
-    #[serde(rename = "trocado")]
     pub changed: bool,
-    #[serde(rename = "erros")]
     pub errors: Vec<FieldError>,
 }
 
@@ -78,11 +73,8 @@ fn field_error(field: &'static str, reason: &str) -> FieldError {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PinChange {
-    #[serde(rename = "atual")]
     pub current: Typed,
-    #[serde(rename = "novo")]
     pub new: Typed,
-    #[serde(rename = "confirmacao")]
     pub confirmation: Typed,
 }
 
@@ -91,12 +83,12 @@ impl PinChange {
     pub fn errors(&self) -> Vec<FieldError> {
         let mut errors = Vec::new();
         if !valid_pin(&self.current) {
-            errors.push(field_error("atual", CURRENT_PIN_INVALID));
+            errors.push(field_error("current", CURRENT_PIN_INVALID));
         }
         if !valid_pin(&self.new) {
-            errors.push(field_error("novo", PIN_INVALID));
+            errors.push(field_error("new", PIN_INVALID));
         } else if !self.new.equals(&self.confirmation) {
-            errors.push(field_error("confirmacao", PIN_MISMATCH));
+            errors.push(field_error("confirmation", PIN_MISMATCH));
         }
         errors
     }
@@ -107,11 +99,8 @@ impl PinChange {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PasswordChange {
-    #[serde(rename = "atual")]
     pub current: Typed,
-    #[serde(rename = "nova")]
     pub new: Typed,
-    #[serde(rename = "confirmacao")]
     pub confirmation: Typed,
 }
 
@@ -122,11 +111,11 @@ impl PasswordChange {
         let mut errors = Vec::new();
         let current = self.current.bytes();
         if current.is_empty() || current.len() > MAX_SECRET {
-            errors.push(field_error("atual", CURRENT_PASSWORD_EMPTY));
+            errors.push(field_error("current", CURRENT_PASSWORD_EMPTY));
         }
         for mut e in password_errors(&self.new, &self.confirmation) {
-            if e.field == "senha" {
-                e.field = "nova";
+            if e.field == "password" {
+                e.field = "new";
             }
             errors.push(e);
         }
@@ -196,22 +185,18 @@ mod tests {
         ] {
             assert_eq!(
                 fields(pin(bad, "2468", "2468").errors()),
-                ["atual"],
+                ["current"],
                 "{bad:?}"
             );
-            assert_eq!(
-                fields(pin("135790", bad, bad).errors()),
-                ["novo"],
-                "{bad:?}"
-            );
+            assert_eq!(fields(pin("135790", bad, bad).errors()), ["new"], "{bad:?}");
         }
         assert_eq!(
             fields(pin("135790", "2468", "2469").errors()),
-            ["confirmacao"]
+            ["confirmation"]
         );
         assert_eq!(
             fields(pin("135790", "2468", "24680").errors()),
-            ["confirmacao"]
+            ["confirmation"]
         );
     }
 
@@ -219,16 +204,16 @@ mod tests {
     fn attack_short_or_different_new_password_and_empty_current_refused() {
         assert_eq!(
             fields(password(PASSWORD, "curta-11chr", "curta-11chr").errors()),
-            ["nova"]
+            ["new"]
         );
         assert_eq!(
             fields(password(PASSWORD, NEW, PASSWORD).errors()),
-            ["confirmacao"]
+            ["confirmation"]
         );
-        assert_eq!(fields(password("", NEW, NEW).errors()), ["atual"]);
+        assert_eq!(fields(password("", NEW, NEW).errors()), ["current"]);
         let big = "a".repeat(MAX_SECRET + 1);
-        assert_eq!(fields(password(&big, NEW, NEW).errors()), ["atual"]);
-        assert_eq!(fields(password(PASSWORD, &big, &big).errors()), ["nova"]);
+        assert_eq!(fields(password(&big, NEW, NEW).errors()), ["current"]);
+        assert_eq!(fields(password(PASSWORD, &big, &big).errors()), ["new"]);
     }
 
     #[test]
@@ -243,21 +228,21 @@ mod tests {
 
     #[test]
     fn attack_extra_field_or_wrong_type_is_refused() {
-        let ok = r#"{"atual":"1","novo":"2","confirmacao":"2"}"#;
+        let ok = r#"{"current":"1","new":"2","confirmation":"2"}"#;
         assert!(serde_json::from_str::<PinChange>(ok).is_ok());
         for bad in [
-            r#"{"atual":"1","novo":"2","confirmacao":"2","pin":"3"}"#,
-            r#"{"atual":1357,"novo":"2","confirmacao":"2"}"#,
-            r#"{"novo":"2","confirmacao":"2"}"#,
+            r#"{"current":"1","new":"2","confirmation":"2","pin":"3"}"#,
+            r#"{"current":1357,"new":"2","confirmation":"2"}"#,
+            r#"{"new":"2","confirmation":"2"}"#,
         ] {
             assert!(serde_json::from_str::<PinChange>(bad).is_err(), "{bad}");
         }
-        let ok = r#"{"atual":"1","nova":"2","confirmacao":"2"}"#;
+        let ok = r#"{"current":"1","new":"2","confirmation":"2"}"#;
         assert!(serde_json::from_str::<PasswordChange>(ok).is_ok());
         for bad in [
-            r#"{"atual":"1","nova":"2","confirmacao":"2","geracao":0}"#,
-            r#"{"atual":"1","nova":["2"],"confirmacao":"2"}"#,
-            r#"{"atual":"1","confirmacao":"2"}"#,
+            r#"{"current":"1","new":"2","confirmation":"2","geracao":0}"#,
+            r#"{"current":"1","new":["2"],"confirmation":"2"}"#,
+            r#"{"current":"1","confirmation":"2"}"#,
         ] {
             assert!(
                 serde_json::from_str::<PasswordChange>(bad).is_err(),
@@ -266,13 +251,14 @@ mod tests {
         }
     }
 
-    /// m2:DT3: the new Rust names are not wire names. The webview keeps sending and
-    /// receiving the old fields until Phase 54.
+    /// m2:V4.23 (m2:Phase 54): the 0.1.x (pt-BR) fields of the webview are refused, with no
+    /// alias.
     #[test]
-    fn attack_new_rust_names_are_not_wire_names() {
+    fn attack_old_wire_names_are_refused() {
         for bad in [
-            r#"{"current":"1","new":"2","confirmation":"2"}"#,
-            r#"{"current":"1","novo":"2","confirmacao":"2"}"#,
+            r#"{"atual":"1","novo":"2","confirmacao":"2"}"#,
+            r#"{"atual":"1","nova":"2","confirmacao":"2"}"#,
+            r#"{"current":"1","novo":"2","confirmation":"2"}"#,
         ] {
             assert!(serde_json::from_str::<PinChange>(bad).is_err(), "{bad}");
             assert!(
@@ -287,11 +273,11 @@ mod tests {
         };
         assert_eq!(
             serde_json::to_string(&s).unwrap(),
-            r#"{"minutos_trava":30,"backup_externo":true,"backup_local":false}"#
+            r#"{"lock_minutes":30,"external_backup":true,"local_backup":false}"#
         );
         assert_eq!(
             serde_json::to_string(&ChangeResult::changed()).unwrap(),
-            r#"{"trocado":true,"erros":[]}"#
+            r#"{"changed":true,"errors":[]}"#
         );
     }
 
@@ -415,7 +401,7 @@ mod tests {
                 .filter(|q| q.contains("\"change_pin\""))
                 .collect();
             assert_eq!(changes.len(), 2);
-            assert!(changes.iter().all(|t| !t.contains("confirmacao")));
+            assert!(changes.iter().all(|t| !t.contains("confirmation")));
         }
 
         #[test]

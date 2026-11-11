@@ -39,18 +39,18 @@ export function createTransport() {
         referrerPolicy: 'no-referrer',
       });
     } catch {
-      throw { 'codigo': 'ponte-indisponivel', 'mensagem': 'a ponte de teste não respondeu' };
+      throw { 'code': 'ponte-indisponivel', 'message': 'a ponte de teste não respondeu' };
     }
     let body;
     try {
       body = await reply.json();
     } catch {
-      throw { 'codigo': 'ponte-invalida', 'mensagem': 'resposta inválida da ponte de teste' };
+      throw { 'code': 'ponte-invalida', 'message': 'resposta inválida da ponte de teste' };
     }
-    if (body && body.ok === true) return body.valor ?? null;
+    if (body && body.ok === true) return body.value ?? null;
     throw {
-      'codigo': String(body?.codigo ?? 'falha'),
-      'mensagem': String(body?.mensagem ?? 'falha na ponte de teste'),
+      'code': String(body?.code ?? 'falha'),
+      'message': String(body?.message ?? 'falha na ponte de teste'),
     };
   };
 }

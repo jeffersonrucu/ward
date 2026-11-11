@@ -29,9 +29,7 @@ use crate::AppError;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct UsbDriveView {
     pub uuid: String,
-    #[serde(rename = "rotulo")]
     pub label: String,
-    #[serde(rename = "montado")]
     pub mounted: bool,
 }
 
@@ -48,15 +46,12 @@ impl UsbDriveView {
 /// What the external backup card shows.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ExternalBackupView {
-    #[serde(rename = "ligado")]
     pub enabled: bool,
     /// UUID of the chosen USB drive (the daemon keeps it even when off).
     pub uuid: Option<String>,
     /// The chosen USB drive, if it is connected now.
-    #[serde(rename = "pendrive")]
     pub usb_drive: Option<UsbDriveView>,
     /// `false` if udisks2 did not answer (no way to say whether it is connected).
-    #[serde(rename = "pendrives_visiveis")]
     pub visible_usb_drives: bool,
 }
 
@@ -184,10 +179,9 @@ mod tests {
         assert!(find(&repeated, "7C1E-42A9").is_none());
     }
 
-    /// m2:DT3: the new Rust names are not wire names. The webview keeps receiving the
-    /// old fields until Phase 54.
+    /// m2:V4.23 (m2:Phase 54): the webview receives the English fields.
     #[test]
-    fn attack_new_rust_names_are_not_wire_names() {
+    fn webview_fields_are_the_english_ones() {
         let v = ExternalBackupView {
             enabled: true,
             uuid: Some("7C1E-42A9".into()),
@@ -196,7 +190,7 @@ mod tests {
         };
         assert_eq!(
             serde_json::to_string(&v).unwrap(),
-            r#"{"ligado":true,"uuid":"7C1E-42A9","pendrive":{"uuid":"7C1E-42A9","rotulo":"WARD","montado":true},"pendrives_visiveis":true}"#
+            r#"{"enabled":true,"uuid":"7C1E-42A9","usb_drive":{"uuid":"7C1E-42A9","label":"WARD","mounted":true},"visible_usb_drives":true}"#
         );
     }
 

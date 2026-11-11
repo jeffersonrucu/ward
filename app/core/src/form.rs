@@ -9,7 +9,7 @@
 //! any request to the daemon. The format of each field is checked by the daemon (the
 //! draft validation), which returns the problems per field ([`FieldError`]).
 //!
-//! Secrets (S11, D4; the wire names of [`SecretValue`] stay until m2:Phase 54):
+//! Secrets (S11, D4):
 //! - [`SecretValue::Empty`]: no value (optional field or not filled in);
 //! - [`SecretValue::New`]: what the user typed now, in a [`SecretText`] that zeroes on
 //!   drop and has no `Debug` of the value;
@@ -81,15 +81,15 @@ impl<'de> Deserialize<'de> for SecretText {
 /// without keeping an intermediate copy of the text.
 #[derive(Debug, Deserialize)]
 pub enum SecretValue {
-    #[serde(rename = "vazio")]
+    #[serde(rename = "empty")]
     Empty,
-    #[serde(rename = "manter")]
+    #[serde(rename = "keep")]
     Keep,
-    #[serde(rename = "gerada")]
+    #[serde(rename = "generated")]
     Generated,
-    #[serde(rename = "carregada")]
+    #[serde(rename = "loaded")]
     Loaded,
-    #[serde(rename = "novo")]
+    #[serde(rename = "new")]
     New(SecretText),
 }
 
@@ -97,20 +97,17 @@ pub enum SecretValue {
 /// already in the vault, by the name the extra had.
 #[derive(Debug, Deserialize)]
 pub enum ExtraValue {
-    #[serde(rename = "novo")]
+    #[serde(rename = "new")]
     New(SecretText),
-    #[serde(rename = "manter")]
+    #[serde(rename = "keep")]
     Keep(String),
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FormExtra {
-    #[serde(rename = "nome")]
     pub name: String,
-    #[serde(rename = "segredo")]
     pub secret: bool,
-    #[serde(rename = "valor")]
     pub value: ExtraValue,
 }
 
@@ -118,30 +115,24 @@ pub struct FormExtra {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Form {
-    #[serde(rename = "tipo")]
+    #[serde(rename = "type")]
     pub kind: String,
-    #[serde(rename = "nome")]
     pub name: String,
-    #[serde(rename = "grupo")]
     pub group: String,
-    #[serde(rename = "ambiente")]
     pub environment: String,
-    #[serde(rename = "projeto")]
     pub project: String,
     pub tags: Vec<String>,
-    #[serde(rename = "campos")]
     pub fields: BTreeMap<String, String>,
-    #[serde(rename = "segredos")]
     pub secrets: BTreeMap<String, SecretValue>,
     pub extras: Vec<FormExtra>,
     /// Ids of the attachments chosen on the Rust side that go into the draft, in the
     /// order of the screen. The content never passes through the interface (S11, V5.12).
-    #[serde(default, rename = "anexos")]
+    #[serde(default)]
     pub attachments: Vec<u64>,
     /// Phase 39b (V5.12): when editing, the names of the stored attachments that stay in
     /// the entry. The daemon copies their content (the keep attachments field of the save
     /// entry request); a stored attachment outside this list is removed on save.
-    #[serde(default, rename = "anexos_mantidos")]
+    #[serde(default)]
     pub kept_attachments: Vec<String>,
 }
 
@@ -150,11 +141,8 @@ pub struct Form {
 /// position in the list (extras and tags, from 1) and the reason, a fixed text.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct FieldError {
-    #[serde(rename = "campo")]
     pub field: &'static str,
-    #[serde(rename = "posicao")]
     pub position: Option<u64>,
-    #[serde(rename = "motivo")]
     pub reason: String,
 }
 
@@ -194,10 +182,10 @@ pub fn fields_of_kind(kind: EntryType) -> (&'static [&'static str], &'static [&'
 /// about one field goes to the whole form.
 fn problem_field(name: &str) -> &'static str {
     match name {
-        "nome" => "nome",
-        "grupo" => "grupo",
-        "ambiente" => "ambiente",
-        "projeto" => "projeto",
+        "nome" => "name",
+        "grupo" => "group",
+        "ambiente" => "environment",
+        "projeto" => "project",
         "tags" => "tags",
         "url" => "url",
         "usuário" => "username",
@@ -222,9 +210,9 @@ fn problem_field(name: &str) -> &'static str {
         "protocolo" => "protocol",
         "chave privada" => "private_key",
         "passphrase" => "passphrase",
-        "autenticação" => "autenticacao",
-        "anexos" => "anexos",
-        _ => "formulario",
+        "autenticação" => "auth",
+        "anexos" => "attachments",
+        _ => "form",
     }
 }
 
@@ -249,7 +237,7 @@ pub fn daemon_errors(problems: &[Problem]) -> Vec<FieldError> {
             // D29: the mask budget refusal comes from the whole entry; the screen shows
             // it on the attachments field, the one that weighs most on the budget.
             let field = if p.field == "entrada" && p.reason == TOO_LARGE_FOR_MASK {
-                "anexos"
+                "attachments"
             } else {
                 problem_field(&p.field)
             };
@@ -783,7 +771,7 @@ mod tests {
         ]);
         assert_eq!(e[0].field, "password");
         assert_eq!(e[0].reason, "obrigatório");
-        assert_eq!(e[1].field, "formulario");
+        assert_eq!(e[1].field, "form");
         assert_eq!(e[2].reason, "inválido");
         assert_eq!(e[3].reason, "inválido");
         assert_eq!(e[4].reason, "inválido");
@@ -805,19 +793,19 @@ mod tests {
             p("túnel SSH", "precisa ser uma entrada servidor existente"),
             p("autenticação", "informe a senha ou a chave"),
         ]);
-        assert_eq!(e[0].field, "anexos");
+        assert_eq!(e[0].field, "attachments");
         assert_eq!(e[0].reason, TOO_LARGE_FOR_MASK);
-        assert_eq!(e[1].field, "formulario");
+        assert_eq!(e[1].field, "form");
         assert_eq!(e[2].field, "tunnel");
-        assert_eq!(e[3].field, "autenticacao");
+        assert_eq!(e[3].field, "auth");
     }
 
     #[test]
     fn attack_debug_of_the_secret_text_does_not_show_the_value() {
         let f: Form = serde_json::from_str(
-            r#"{"tipo":"login","nome":"x","grupo":"g","ambiente":"dev","projeto":"","tags":[],
-                "campos":{},"segredos":{"password":{"novo":"falso-segredo-123"}},"extras":[
-                {"nome":"A","segredo":true,"valor":{"novo":"falso-extra-456"}}]}"#,
+            r#"{"type":"login","name":"x","group":"g","environment":"dev","project":"","tags":[],
+                "fields":{},"secrets":{"password":{"new":"falso-segredo-123"}},"extras":[
+                {"name":"A","secret":true,"value":{"new":"falso-extra-456"}}]}"#,
         )
         .unwrap();
         let text = format!("{f:?}");
@@ -828,35 +816,41 @@ mod tests {
     #[test]
     fn attack_form_with_unknown_key_is_refused() {
         for json in [
-            r#"{"tipo":"login","nome":"x","grupo":"g","ambiente":"dev","projeto":"","tags":[],"campos":{},"segredos":{},"extras":[],"nivel":"livre"}"#,
-            r#"{"tipo":"login","nome":"x","grupo":"g","ambiente":"dev","projeto":"","tags":[],"campos":{},"segredos":{"password":{"revelar":"x"}},"extras":[]}"#,
-            r#"{"tipo":"login","nome":"x","grupo":"g","ambiente":"dev","projeto":"","tags":[],"campos":{},"segredos":{},"extras":[{"nome":"A","segredo":true,"valor":{"novo":"v"},"x":1}]}"#,
-            r#"{"tipo":"login","nome":"x","grupo":"g","ambiente":"dev","projeto":"","tags":[],"campos":{},"segredos":{"password":{"novo":5}},"extras":[]}"#,
+            r#"{"type":"login","name":"x","group":"g","environment":"dev","project":"","tags":[],"fields":{},"secrets":{},"extras":[],"level":"livre"}"#,
+            r#"{"type":"login","name":"x","group":"g","environment":"dev","project":"","tags":[],"fields":{},"secrets":{"password":{"revelar":"x"}},"extras":[]}"#,
+            r#"{"type":"login","name":"x","group":"g","environment":"dev","project":"","tags":[],"fields":{},"secrets":{},"extras":[{"name":"A","secret":true,"value":{"new":"v"},"x":1}]}"#,
+            r#"{"type":"login","name":"x","group":"g","environment":"dev","project":"","tags":[],"fields":{},"secrets":{"password":{"new":5}},"extras":[]}"#,
         ] {
             assert!(serde_json::from_str::<Form>(json).is_err(), "{json}");
         }
     }
 
-    /// m2 Phase 32: the `rename`s keep the webview wire (m2:DT3) until Phase 54: the old
-    /// keys and values are read and written, the new Rust names are not.
+    /// m2:V4.23 (m2:Phase 54): the webview wire is in English; the 0.1.x (pt-BR) keys and
+    /// values are refused, with no alias, and the Rust name `kind` is not a wire name.
     #[test]
-    fn attack_new_rust_names_are_not_wire_names() {
-        let ok = r#"{"tipo":"login","nome":"x","grupo":"g","ambiente":"dev","projeto":"","tags":[],"campos":{},"segredos":{"password":"vazio","totp_seed":"gerada"},"extras":[{"nome":"A","segredo":true,"valor":{"manter":"A"}}],"anexos":[1],"anexos_mantidos":["a"]}"#;
+    fn attack_old_wire_names_are_refused() {
+        let ok = r#"{"type":"login","name":"x","group":"g","environment":"dev","project":"","tags":[],"fields":{},"secrets":{"password":"empty","totp_seed":"generated"},"extras":[{"name":"A","secret":true,"value":{"keep":"A"}}],"attachments":[1],"kept_attachments":["a"]}"#;
         let f: Form = serde_json::from_str(ok).unwrap();
         assert_eq!((f.kind.as_str(), f.attachments.len()), ("login", 1));
         for json in [
-            r#"{"kind":"login","nome":"x","grupo":"g","ambiente":"dev","projeto":"","tags":[],"campos":{},"segredos":{},"extras":[]}"#,
-            r#"{"tipo":"login","nome":"x","grupo":"g","ambiente":"dev","projeto":"","tags":[],"campos":{},"segredos":{"password":"empty"},"extras":[]}"#,
-            r#"{"tipo":"login","nome":"x","grupo":"g","ambiente":"dev","projeto":"","tags":[],"campos":{},"segredos":{"password":{"new":"v"}},"extras":[]}"#,
+            r#"{"kind":"login","name":"x","group":"g","environment":"dev","project":"","tags":[],"fields":{},"secrets":{},"extras":[]}"#,
+            r#"{"tipo":"login","nome":"x","grupo":"g","ambiente":"dev","projeto":"","tags":[],"campos":{},"segredos":{},"extras":[]}"#,
+            r#"{"type":"login","name":"x","group":"g","environment":"dev","project":"","tags":[],"fields":{},"secrets":{"password":"vazio"},"extras":[]}"#,
+            r#"{"type":"login","name":"x","group":"g","environment":"dev","project":"","tags":[],"fields":{},"secrets":{"password":"manter"},"extras":[]}"#,
+            r#"{"type":"login","name":"x","group":"g","environment":"dev","project":"","tags":[],"fields":{},"secrets":{"password":"gerada"},"extras":[]}"#,
+            r#"{"type":"login","name":"x","group":"g","environment":"dev","project":"","tags":[],"fields":{},"secrets":{"password":"carregada"},"extras":[]}"#,
+            r#"{"type":"login","name":"x","group":"g","environment":"dev","project":"","tags":[],"fields":{},"secrets":{"password":{"novo":"v"}},"extras":[]}"#,
+            r#"{"type":"login","name":"x","group":"g","environment":"dev","project":"","tags":[],"fields":{},"secrets":{},"extras":[{"nome":"A","segredo":true,"valor":{"novo":"v"}}]}"#,
+            r#"{"type":"login","name":"x","group":"g","environment":"dev","project":"","tags":[],"fields":{},"secrets":{},"extras":[],"anexos":[1]}"#,
         ] {
             assert!(serde_json::from_str::<Form>(json).is_err(), "{json}");
         }
         let e = serde_json::to_string(&FieldError {
-            field: "nome",
+            field: "name",
             position: Some(1),
             reason: "x".into(),
         })
         .unwrap();
-        assert_eq!(e, r#"{"campo":"nome","posicao":1,"motivo":"x"}"#);
+        assert_eq!(e, r#"{"field":"name","position":1,"reason":"x"}"#);
     }
 }
