@@ -263,7 +263,7 @@ Trilha S (fases independentes entre si):
   controle de que a varredura ainda acusa o mesmo padrão plantado fora dessa pasta.
   Compilação: `make compile`. — V1.6, V1.7
 
-- [ ] Fase 47b — Resto fora do Rust (achado do fechamento do M2: `make english-check` no repositório dá 444
+- [x] Fase 47b — Resto fora do Rust (achado do fechamento do M2: `make english-check` no repositório dá 444
   achados): comentários de `.gitignore`, `app/.npmrc`, `app/vite.config.js`, `app/src-tauri/Cargo.toml`, `app/package.json`
   (`build:teste`), `app/src-tauri/capabilities/aprovacao.json` e dos scripts de `dev/` (`daemon.sh`, `bridge.sh`,
   `open-app.py`, `dev/tests/*.sh`). Nome que só muda depois (variáveis `WARD_*`, binários e pastas de teste: Fase 56;
@@ -329,7 +329,7 @@ Contrato: V5.1–V5.11. Sequencial.
   `ward --help` (texto pt-BR igual, só os nomes); mensagens que citam subcomando (CLI,
   daemon, app: "rode `ward unlock`"); `dev/tests/cli.py` e testes Rust. Compilação:
   `make compile`. — V5.1, V5.2
-- [ ] Fase 56 — Variáveis internas e de teste e marca de `test-mode` (DT12): renomes com
+- [ ] Fase 56 — (também, achado da Fase 47b: o caminho `/cadastro` do serviço totp 8083 e o arquivo `aprovador.modo` do aprovador de teste, e as exceções de Fase 56 no `frozen.txt`) Variáveis internas e de teste e marca de `test-mode` (DT12): renomes com
   todos os usos (Rust, scripts, Makefile, units); recusa da marca nova e da antiga no
   `install/install.sh` e no `make release`; `dev/tests/no-test-mode.sh` procurando nomes
   novos e antigos; binários `wardd-app-teste`/`wardd-aprovador-teste`, texto de uso e
