@@ -16,15 +16,17 @@ Ward. Veja "SSH com chave do `~/.ssh`" no fim.
 
 ## Fluxo (sempre nesta ordem)
 
-1. **Listar.** Rode `ward lista --json` (ou `ward lista` para a tabela). Cada entrada
-   traz `nome`, `tipo`, `grupo`, `ambiente` (`dev`, `stage` ou `prod`), `projeto` e
-   `endereco` (URL ou host). Nunca traz segredo. Entradas bloqueadas não aparecem.
+1. **Listar.** Rode `ward list --json` (ou `ward list` para a tabela). Cada entrada
+   traz `name`, `type`, `group`, `environment` (`dev`, `stage` ou `prod`), `project` e
+   `address` (URL ou host). Nunca traz segredo. Entradas bloqueadas não aparecem.
 2. **Cruzar com a tarefa.** Escolha pela combinação de:
-   - **grupo**: o cliente ou a pasta citada (`acme`, `beta`, `clientex`…);
-   - **ambiente**: "teste"/"local"/"desenvolvimento" → `dev`; "homologação"/"stage" →
-     `stage`; "produção" → `prod`;
-   - **tipo**: banco → `banco`; servidor/SSH → `servidor`; site/painel → `login`;
-     token/API → `api`; AWS → `aws`; e-mail → `smtp`; SFTP/FTP → `ftp-sftp` (na tela, "ftp/sftp").
+   - **grupo** (`group`): o cliente ou a pasta citada (`acme`, `beta`, `clientex`…);
+   - **ambiente** (`environment`): "teste"/"local"/"desenvolvimento" → `dev`;
+     "homologação"/"stage" → `stage`; "produção" → `prod`;
+   - **tipo** (`type` no JSON; na tabela, o rótulo em português): banco → `database`
+     ("banco"); servidor/SSH → `server` ("servidor"); site/painel → `login`; token/API →
+     `api`; AWS → `aws`; e-mail → `smtp`; SFTP/FTP → `ftp-sftp` ("ftp/sftp"); nota →
+     `secure-note` ("nota segura"); outros → `generic` ("genérico").
 
    Se sobrar mais de uma candidata, ou nenhuma, **pergunte ao usuário** em vez de
    chutar. Nunca troque de ambiente por conta própria (não use `prod` quando o pedido
@@ -45,12 +47,12 @@ Ward. Veja "SSH com chave do `~/.ssh`" no fim.
 
 | Comando | Para quê |
 | --- | --- |
-| `ward lista [--json]` | ver as entradas que você pode usar |
+| `ward list [--json]` | ver as entradas que você pode usar |
 | `ward run <entrada> -- <comando> [args…]` | rodar um comando local com a credencial no ambiente |
 | `ward ssh <entrada> [--] <comando remoto…>` | rodar um comando no servidor da entrada (senha, chave e salto resolvidos pelo Ward) |
 | `ward login <entrada>` | preencher e enviar o login na aba do Chrome, pela extensão |
 | `ward playwright <entrada>` | fazer o login e receber o caminho de um storage state para o Playwright |
-| `ward travar` | travar o cofre agora (quando o usuário pedir) |
+| `ward lock` | travar o cofre agora (quando o usuário pedir) |
 
 ### `ward run`
 
@@ -65,23 +67,24 @@ ward run acme-pg-tunel -- /usr/bin/psql -tAc 'select 1'   # túnel SSH aberto pe
 ```
 
 - Variáveis por tipo:
-  - `banco` (postgres): `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`,
+  - `database` (banco; postgres): `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`,
     `DATABASE_URL`;
   - `login`: `WARD_URL`, `WARD_USER`, `WARD_PASS`, `WARD_TOTP` (código, nunca a
     semente);
-  - `servidor`: `WARD_HOST`, `WARD_PORT`, `WARD_USER` e `WARD_PASS` ou
-    `WARD_ARQUIVO_CHAVE` + `WARD_PASSPHRASE`;
+  - `server` (servidor): `WARD_HOST`, `WARD_PORT`, `WARD_USER` e `WARD_PASS` ou
+    `WARD_FILE_KEY` + `WARD_PASSPHRASE`;
   - `api`: `WARD_URL`, `WARD_TOKEN` e a variável escolhida na entrada (ex.:
     `GITHUB_TOKEN`);
   - `aws`: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`,
     `AWS_REGION`, `AWS_DEFAULT_REGION`, `AWS_ROLE_ARN`;
   - `smtp`: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_SECURITY`;
-  - `ftp-sftp`: `WARD_PROTOCOLO`, `WARD_HOST`, `WARD_PORT`, `WARD_USER`, `WARD_PASS`;
-  - `genérico`: `WARD_<CAMPO>` de cada campo extra;
-  - anexos: `WARD_ARQUIVO_<NOME>` com o **caminho** de um arquivo temporário 0600,
+  - `ftp-sftp`: `WARD_PROTOCOL`, `WARD_HOST`, `WARD_PORT`, `WARD_USER`, `WARD_PASS`;
+  - `generic` (genérico): `WARD_<CAMPO>` de cada campo extra, com o nome que o
+    usuário deu ao campo;
+  - anexos: `WARD_FILE_<NOME>` com o **caminho** de um arquivo temporário 0600,
     apagado quando o comando termina;
-  - todas: `WARD_ENTRADA`, `WARD_GRUPO`, `WARD_AMBIENTE`.
-- `nota segura` não tem entrega: `ward run` sai com "tipo sem entrega". A nota é só
+  - todas: `WARD_ENTRY`, `WARD_GROUP`, `WARD_ENVIRONMENT`.
+- `secure-note` (nota segura) não tem entrega: `ward run` sai com "tipo sem entrega". A nota é só
   para o usuário ler no app.
 - **Ambiente limpo e `PATH` fixo.** O comando não herda o seu ambiente: roda com
   `PATH=/usr/local/bin:/usr/bin:/bin` e só `HOME`, `USER`, `LOGNAME`, `LANG`, `LC_*`,
@@ -126,7 +129,7 @@ printf 'ls\n' | ward ssh beta-sftp-dev         # sftp: comandos pela entrada pad
   local é o home do usuário, então use caminho local absoluto em `get`/`put`. Numa
   entrada "com aprovação", a janela avisa que o comando recebe dados pela entrada
   padrão e pede a confirmação a mais; diga ao usuário quais comandos do sftp vão.
-- Para um banco atrás de SSH, use a entrada `banco` com túnel (ex.: `acme-pg-tunel`)
+- Para um banco atrás de SSH, use a entrada `database` com túnel (ex.: `acme-pg-tunel`)
   no `ward run`; o Ward abre o túnel e ajusta `PGHOST`/`PGPORT`/`DATABASE_URL`.
 
 ### `ward login`
@@ -145,14 +148,14 @@ ward login acme-wp-prod
 ### `ward playwright`
 
 ```sh
-WARD_ESTADO="$(ward playwright acme-wp-prod)" /usr/bin/python3 tests/test_painel.py
+WARD_STATE="$(ward playwright acme-wp-prod)" /usr/bin/python3 tests/test_painel.py
 ```
 
 - O Ward faz o login num Chrome headless e imprime **só o caminho** do storage state
   (um arquivo na pasta de execução do Ward). A senha nunca vai para o arquivo.
 - Passe o caminho ao teste **por variável**, como no exemplo, e leia a variável no
-  teste (`storage_state=os.environ["WARD_ESTADO"]` no Python,
-  `storageState: process.env.WARD_ESTADO` no `browser.newContext` em JS). **Não
+  teste (`storage_state=os.environ["WARD_STATE"]` no Python,
+  `storageState: process.env.WARD_STATE` no `browser.newContext` em JS). **Não
   escreva o caminho em comando nenhum**: as regras de deny barram todo comando que
   cita a pasta de execução do Ward.
 - Não abra, não imprima e não copie o arquivo: ele tem os cookies da sessão. Travar o
@@ -174,7 +177,7 @@ intenção:
   log de depuração da ferramenta que mostre a URL de conexão.
 - **Nunca grave credencial em arquivo**: nada de `> arquivo`, `tee`, `.env` gerado,
   `~/.pgpass`, `~/.netrc`, config de cliente com a senha, `git config`, histórico.
-- **Nunca imprima nem copie anexo.** O `WARD_ARQUIVO_<NOME>` é para a ferramenta ler
+- **Nunca imprima nem copie anexo.** O `WARD_FILE_<NOME>` é para a ferramenta ler
   (`ssh -i`, `--key-file`, `source` de um `.env` pelo programa). Nunca `cat`, `head`,
   `less`, `base64`, `xxd`, `cp`, `mv` nem `ln` do anexo.
 - **Nunca leia os arquivos do Ward**: `~/.local/share/ward/**` (cofre e estado),
@@ -195,13 +198,13 @@ intenção:
 
 | Mensagem | O que fazer |
 | --- | --- |
-| `travado` / `cofre travado: o comando espera o destrave por até 2 min` | O cofre está travado. Avise o usuário: "o Ward está travado; destrave pelo app ou, num terminal seu, com /usr/local/bin/ward destravar (caminho completo)". O caminho completo é para um `ward` falso no `PATH` não ler a senha mestra; nunca sugira que ele digite a senha mestra num comando rodado por você ou com `!` no Claude Code. O `ward run`/`ward ssh` espera até 2 min pelo destrave; se expirar, rode de novo depois que o usuário confirmar. **Você nunca destrava** (a senha mestra não passa por você). |
+| `travado` / `cofre travado: o comando espera o destrave por até 2 min` | O cofre está travado. Avise o usuário: "o Ward está travado; destrave pelo app ou, num terminal seu, com /usr/local/bin/ward unlock (caminho completo)". O caminho completo é para um `ward` falso no `PATH` não ler a senha mestra; nunca sugira que ele digite a senha mestra num comando rodado por você ou com `!` no Claude Code. O `ward run`/`ward ssh` espera até 2 min pelo destrave; se expirar, rode de novo depois que o usuário confirmar. **Você nunca destrava** (a senha mestra não passa por você). |
 | `travado: tempo esgotado` | Passaram os 2 min sem destrave. Peça ao usuário para destravar e rode de novo. |
 | Janela de aprovação aberta (o comando fica esperando) | A entrada é "com aprovação": o usuário vê a entrada, o ambiente e o comando exato e decide com o PIN. Avise "abri um pedido de aprovação para `<entrada>`" e espere (até 2 min). Não repita o pedido em paralelo. |
 | `pedido negado` | O usuário negou (ou fechou a janela). **Não tente de novo nem por outro caminho**; pergunte o que ele quer fazer. |
 | `pedido expirado` | Ninguém respondeu em 2 min. Avise e pergunte se deve pedir de novo. |
 | `aprovação indisponível` | O app não está aberto para aprovar. Peça ao usuário para abrir o app do Ward. |
-| `entrada inexistente` | O nome não existe **ou** a entrada está bloqueada para você (o Ward não diferencia). Rode `ward lista` de novo e confira o nome; se não houver outra adequada, pergunte ao usuário. Não tente adivinhar nomes. |
+| `entrada inexistente` | O nome não existe **ou** a entrada está bloqueada para você (o Ward não diferencia). Rode `ward list` de novo e confira o nome; se não houver outra adequada, pergunte ao usuário. Não tente adivinhar nomes. |
 | `tipo sem entrega` | A entrada (ex.: nota segura) não tem credencial para entregar. Escolha outra ou pergunte. |
 | `domínio não confere` / `a origem da página não bate com a da entrada` | A aba ou a página não é a do site da entrada. Pare e avise o usuário. |
 | `a extensão do Ward no Chrome não respondeu (o Chrome está aberto?)` (`ward login`, código 1) | O Chrome não está aberto ou está sem a extensão do Ward. Peça ao usuário para abrir o Chrome com a extensão (e a aba na página de login) e rode `ward login` de novo depois que ele confirmar. Não tente outro caminho para o login. |
@@ -221,5 +224,5 @@ ssh git@github.com
 ```
 
 O Ward não intercepta nem bloqueia esse SSH. Use `ward ssh` só para os servidores de
-trabalho que estão no `ward lista` (entradas `servidor`). Mesmo usando o `~/.ssh`
+trabalho que estão no `ward list` (entradas `server`). Mesmo usando o `~/.ssh`
 direto, nunca leia nem imprima os arquivos dele.
