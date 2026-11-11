@@ -48,7 +48,7 @@ use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
 
 use ward_core::atomic_write::write_entries;
-use ward_core::configuracao::{Configuracao, HashPin, KDF_PIN};
+use ward_core::config::{KDF_PIN, PinHash, VaultConfig};
 use ward_core::corpo::{abrir_entradas, serializar};
 use ward_core::entrega::{self, ErroEntrega, ErroRecurso, Recursos};
 use ward_core::entry::{
@@ -213,9 +213,9 @@ fn run(args: impl Iterator<Item = OsString>) -> Result<(), Error> {
 
     // D30: the vault is born with the configuration (hash of the test PIN, default lock,
     // backup off). The PIN only exists here, in memory that is zeroed on exit.
-    let hash = HashPin::criar(pin.as_bytes())
+    let hash = PinHash::create(pin.as_bytes())
         .map_err(|e| Error::Vault(format!("não deu para criar o hash do PIN: {e}")))?;
-    let mut vault = OpenVault::new(&password, Configuracao::nova(hash))
+    let mut vault = OpenVault::new(&password, VaultConfig::new(hash))
         .map_err(|e| Error::Vault(format!("não deu para criar o cofre: {e}")))?;
     write_entries(&output, &mut vault, &expected)
         .map_err(|e| Error::Vault(format!("não deu para gravar {shown}: {e}")))?;
@@ -311,16 +311,16 @@ fn verify(
 
 /// The configuration read is the one of the test vault (without saying anything about
 /// the PIN or the hash).
-fn verify_config(cfg: &Configuracao, pin: &str) -> Result<(), Error> {
+fn verify_config(cfg: &VaultConfig, pin: &str) -> Result<(), Error> {
     let wrong = Zeroizing::new(neighbor_pin(pin));
-    if !cfg.conferir_pin(pin.as_bytes()) || cfg.conferir_pin(wrong.as_bytes()) {
+    if !cfg.verify_pin(pin.as_bytes()) || cfg.verify_pin(wrong.as_bytes()) {
         return Err(Error::Vault(
             "o hash do PIN do cofre não é o do PIN das fixtures; rode make dev-vault".into(),
         ));
     }
-    if cfg.hash_pin().parametros() != KDF_PIN
-        || cfg.minutos_trava() != DEFAULT_LOCK_MINUTES
-        || cfg.backup().ligado()
+    if cfg.pin_hash().params() != KDF_PIN
+        || cfg.lock_minutes() != DEFAULT_LOCK_MINUTES
+        || cfg.backup().enabled()
         || cfg.backup().uuid().is_some()
     {
         return Err(Error::Vault(

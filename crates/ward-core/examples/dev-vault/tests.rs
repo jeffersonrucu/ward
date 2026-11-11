@@ -172,7 +172,7 @@ fn v2_29_writes_reopens_and_verifies() {
 
     // Configuration other than the default one (lock of 30 minutes) too.
     let mut other = OpenVault::new(&password, configuracao_nova()).unwrap();
-    other.config_mut().definir_minutos_trava(30).unwrap();
+    other.config_mut().set_lock_minutes(30).unwrap();
     write_entries(&output, &mut other, &built).unwrap();
     let e = verify(&output, &password, &pin, &built).unwrap_err();
     assert!(error_text(&e).contains("não é a padrão"));
@@ -584,8 +584,8 @@ fn v2_39_generated_vault_has_the_configuration() {
     let (password, pin, built) = build(&f, &mut read).unwrap();
     let t = fake_root("configuracao");
     let output = validate_output(&t.0, OsStr::new(DEFAULT_OUTPUT)).unwrap();
-    let hash = HashPin::criar(pin.as_bytes()).unwrap();
-    let mut vault = OpenVault::new(&password, Configuracao::nova(hash)).unwrap();
+    let hash = PinHash::create(pin.as_bytes()).unwrap();
+    let mut vault = OpenVault::new(&password, VaultConfig::new(hash)).unwrap();
     write_entries(&output, &mut vault, &built).unwrap();
     drop(vault);
 
@@ -600,11 +600,11 @@ fn v2_39_generated_vault_has_the_configuration() {
     assert_eq!(loaded.len(), 22);
     // D39: a freshly created vault is at generation 1.
     assert_eq!(vault.generation(), 1);
-    assert_eq!(cfg.minutos_trava(), 240);
-    assert!(!cfg.backup().ligado() && cfg.backup().uuid().is_none());
-    assert_eq!(cfg.hash_pin().parametros(), KDF_PIN);
-    assert!(cfg.conferir_pin(PIN_TESTE.as_bytes()));
-    assert!(!cfg.conferir_pin(b"135791"));
+    assert_eq!(cfg.lock_minutes(), 240);
+    assert!(!cfg.backup().enabled() && cfg.backup().uuid().is_none());
+    assert_eq!(cfg.pin_hash().params(), KDF_PIN);
+    assert!(cfg.verify_pin(PIN_TESTE.as_bytes()));
+    assert!(!cfg.verify_pin(b"135791"));
 
     // The decrypted body (through the public path: the canonical body of the entries read).
     let body = serializar(cfg, 1, &loaded).unwrap();

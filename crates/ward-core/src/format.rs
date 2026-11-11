@@ -37,7 +37,7 @@ use core::fmt;
 
 use zeroize::{ZeroizeOnDrop, Zeroizing};
 
-use crate::configuracao::Configuracao;
+use crate::config::VaultConfig;
 use crate::crypto::{self, KEY_SIZE, Key, NONCE_SIZE, TAG_SIZE};
 
 /// Start of every Ward vault file.
@@ -271,28 +271,28 @@ impl fmt::Debug for MasterPassword {
 /// setter, not even through the config:
 ///
 /// ```compile_fail,E0609
-/// # use ward_core::configuracao::{Configuracao, HashPin};
+/// # use ward_core::config::{PinHash, VaultConfig};
 /// # use ward_core::format::{OpenVault, MasterPassword};
 /// # let password = MasterPassword::new("falso-mestra-ward-01".to_owned());
-/// # let cfg = Configuracao::nova(HashPin::criar(b"135790").unwrap());
+/// # let cfg = VaultConfig::new(PinHash::create(b"135790").unwrap());
 /// let mut vault = OpenVault::new(&password, cfg).unwrap();
 /// vault.config_mut().generation = 0; // does not exist
 /// ```
 ///
 /// ```compile_fail,E0599
-/// # use ward_core::configuracao::{Configuracao, HashPin};
+/// # use ward_core::config::{PinHash, VaultConfig};
 /// # use ward_core::format::{OpenVault, MasterPassword};
 /// # let password = MasterPassword::new("falso-mestra-ward-01".to_owned());
-/// # let cfg = Configuracao::nova(HashPin::criar(b"135790").unwrap());
+/// # let cfg = VaultConfig::new(PinHash::create(b"135790").unwrap());
 /// let mut vault = OpenVault::new(&password, cfg).unwrap();
 /// vault.config_mut().set_generation(0); // does not exist
 /// ```
 ///
 /// ```compile_fail,E0616
-/// # use ward_core::configuracao::{Configuracao, HashPin};
+/// # use ward_core::config::{PinHash, VaultConfig};
 /// # use ward_core::format::{OpenVault, MasterPassword};
 /// # let password = MasterPassword::new("falso-mestra-ward-01".to_owned());
-/// # let cfg = Configuracao::nova(HashPin::criar(b"135790").unwrap());
+/// # let cfg = VaultConfig::new(PinHash::create(b"135790").unwrap());
 /// let mut vault = OpenVault::new(&password, cfg).unwrap();
 /// vault.generation = 0; // private field
 /// ```
@@ -301,16 +301,16 @@ impl fmt::Debug for MasterPassword {
 /// `write_entries`, which serializes the body (with the PIN hash) first.
 ///
 /// ```compile_fail,E0624
-/// # use ward_core::configuracao::{Configuracao, HashPin};
+/// # use ward_core::config::{PinHash, VaultConfig};
 /// # use ward_core::format::{OpenVault, MasterPassword};
 /// # let password = MasterPassword::new("falso-mestra-ward-01".to_owned());
-/// # let cfg = Configuracao::nova(HashPin::criar(b"135790").unwrap());
+/// # let cfg = VaultConfig::new(PinHash::create(b"135790").unwrap());
 /// let vault = OpenVault::new(&password, cfg).unwrap();
 /// let _ = vault.seal(b"body without a PIN hash");
 /// ```
 pub struct OpenVault {
     keys: VaultKeys,
-    config: Configuracao,
+    config: VaultConfig,
     generation: u64,
 }
 
@@ -331,7 +331,7 @@ impl OpenVault {
     /// New vault with [`KdfParams::DEFAULT`]: new salt, nonce and data key, and the given
     /// config (which already carries the PIN hash). Not written yet: generation 0, and
     /// the first write writes 1 (D39).
-    pub fn new(password: &MasterPassword, config: Configuracao) -> Result<Self, FormatError> {
+    pub fn new(password: &MasterPassword, config: VaultConfig) -> Result<Self, FormatError> {
         Self::new_with(password, KdfParams::DEFAULT, config)
     }
 
@@ -340,7 +340,7 @@ impl OpenVault {
     pub fn new_with(
         password: &MasterPassword,
         kdf: KdfParams,
-        config: Configuracao,
+        config: VaultConfig,
     ) -> Result<Self, FormatError> {
         Ok(Self {
             keys: VaultKeys::new_with(password, kdf)?,
@@ -360,7 +360,7 @@ impl OpenVault {
 
     /// Joins the keys of an opened file to the config and the generation read from its
     /// body.
-    pub(crate) fn from_parts(keys: VaultKeys, config: Configuracao, generation: u64) -> Self {
+    pub(crate) fn from_parts(keys: VaultKeys, config: VaultConfig, generation: u64) -> Self {
         Self {
             keys,
             config,
@@ -395,14 +395,14 @@ impl OpenVault {
     }
 
     /// Vault config (D30).
-    pub fn config(&self) -> &Configuracao {
+    pub fn config(&self) -> &VaultConfig {
         &self.config
     }
 
     /// Vault config, to change (PIN, lock timeout, backup). Goes to disk on the next
     /// write of the entries. The generation is not in the config and does not change
     /// through here (D39).
-    pub fn config_mut(&mut self) -> &mut Configuracao {
+    pub fn config_mut(&mut self) -> &mut VaultConfig {
         &mut self.config
     }
 

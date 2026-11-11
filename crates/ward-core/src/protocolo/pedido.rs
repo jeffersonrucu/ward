@@ -748,7 +748,7 @@ fn versao_ok(v: &str) -> bool {
 /// Backup externo no formato que a configuração aceita (D45): UUID `[0-9A-Fa-f-]`, de 1
 /// a 36, sem `-` nas pontas; ligado exige o UUID.
 fn backup_externo_ok(ligado: bool, uuid: &Option<String>) -> bool {
-    crate::configuracao::BackupExterno::novo(ligado, uuid.as_deref()).is_ok()
+    crate::config::ExternalBackup::new(ligado, uuid.as_deref()).is_ok()
 }
 
 fn senha_ok(s: &Secret) -> bool {

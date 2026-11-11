@@ -10,7 +10,7 @@
 
 #![allow(dead_code)]
 
-use super::wc::configuracao::{Configuracao, HashPin};
+use super::wc::config::{PinHash, VaultConfig};
 use super::wc::entry::{AccessLevel, AttachmentDraft, DataDraft, Draft, Entry, ExtraDraft, Secret};
 use super::wc::limits::MAX_ATTACHMENTS_TOTAL;
 
@@ -22,14 +22,14 @@ pub const PIN_TESTE: &str = "135790";
 /// Configuração do cofre de teste (D30): hash do PIN de teste, trava em 240 minutos e
 /// backup desligado. Calculada uma vez (o Argon2id do PIN custa 64 MiB) e compartilhada
 /// pelos testes.
-pub fn configuracao_de_teste() -> &'static Configuracao {
-    static CFG: std::sync::OnceLock<Configuracao> = std::sync::OnceLock::new();
-    CFG.get_or_init(|| Configuracao::nova(HashPin::criar(PIN_TESTE.as_bytes()).unwrap()))
+pub fn configuracao_de_teste() -> &'static VaultConfig {
+    static CFG: std::sync::OnceLock<VaultConfig> = std::sync::OnceLock::new();
+    CFG.get_or_init(|| VaultConfig::new(PinHash::create(PIN_TESTE.as_bytes()).unwrap()))
 }
 
 /// Uma configuração nova, com hash próprio (sal novo), para quem precisa de posse.
-pub fn configuracao_nova() -> Configuracao {
-    Configuracao::nova(HashPin::criar(PIN_TESTE.as_bytes()).unwrap())
+pub fn configuracao_nova() -> VaultConfig {
+    VaultConfig::new(PinHash::create(PIN_TESTE.as_bytes()).unwrap())
 }
 
 /// Todos os valores secretos do cofre de teste (as marcas que os testes procuram).

@@ -16,7 +16,7 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use super::*;
-use crate::configuracao::{Configuracao, HashPin};
+use crate::config::{PinHash, VaultConfig};
 use crate::format::{MasterPassword, open};
 
 const PASSWORD: &str = "falso-mestra-ward-01";
@@ -42,8 +42,8 @@ fn password() -> MasterPassword {
 }
 
 /// Config of the test vault (hash of the fake PIN of D15).
-fn config() -> Configuracao {
-    Configuracao::nova(HashPin::criar(b"135790").unwrap())
+fn config() -> VaultConfig {
+    VaultConfig::new(PinHash::create(b"135790").unwrap())
 }
 
 /// Shared open vault (a single Argon2id for all the tests here).

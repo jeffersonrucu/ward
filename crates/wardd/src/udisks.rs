@@ -43,7 +43,7 @@ use futures_core::Stream;
 use zbus::message::Type as TipoMensagem;
 use zbus::{Connection, MatchRule, MessageStream, OwnedObjectPath, OwnedVariant, Variant};
 
-use ward_core::configuracao::BackupExterno;
+use ward_core::config::ExternalBackup;
 use ward_core::protocolo::MAX_ROTULO;
 
 use crate::externo::{ErroExterno, FontePendrives, Visto};
@@ -163,7 +163,7 @@ pub fn ler_objetos(objetos: &Objetos) -> Vec<Visto> {
         let Some(uuid) = texto(bloco, "IdUUID") else {
             continue;
         };
-        if BackupExterno::novo(false, Some(&uuid)).is_err() {
+        if ExternalBackup::new(false, Some(&uuid)).is_err() {
             continue;
         }
         let Some(dispositivo) = numero(bloco, "DeviceNumber") else {

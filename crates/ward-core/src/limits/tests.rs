@@ -8,7 +8,7 @@
 use zeroize::Zeroizing;
 
 use super::*;
-use crate::configuracao::{Configuracao, HashPin};
+use crate::config::{PinHash, VaultConfig};
 use crate::corpo::{ErroCorpo, desserializar, serializar};
 use crate::entrega::{self, Entrega, ErroRecurso, Recursos};
 use crate::entry::{
@@ -20,9 +20,9 @@ use crate::mascara::{self, ConstrutorMascara, ErroMascara};
 // ---- Helpers ----
 
 /// Configuration of body v2 (hash of the fake D15 PIN), computed once.
-fn cfg() -> &'static Configuracao {
-    static C: std::sync::OnceLock<Configuracao> = std::sync::OnceLock::new();
-    C.get_or_init(|| Configuracao::nova(HashPin::criar(b"135790").unwrap()))
+fn cfg() -> &'static VaultConfig {
+    static C: std::sync::OnceLock<VaultConfig> = std::sync::OnceLock::new();
+    C.get_or_init(|| VaultConfig::new(PinHash::create(b"135790").unwrap()))
 }
 
 fn t(v: &str) -> String {

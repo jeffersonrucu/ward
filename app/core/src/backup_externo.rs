@@ -17,7 +17,7 @@
 //!   Desligar não leva UUID: o lado Rust mantém o que estava escolhido.
 
 use serde::Serialize;
-use ward_core::configuracao::BackupExterno;
+use ward_core::config::ExternalBackup;
 use ward_core::limits::MAX_BACKUP_UUID;
 use ward_core::protocolo::Pendrive;
 
@@ -74,7 +74,7 @@ impl EscolhaDoPendrive {
 
 /// UUID no formato de D45 (`[0-9A-Fa-f-]`, 1 a 36, sem `-` nas pontas).
 pub fn uuid_valido(uuid: &str) -> bool {
-    uuid.len() <= MAX_BACKUP_UUID && BackupExterno::novo(true, Some(uuid)).is_ok()
+    uuid.len() <= MAX_BACKUP_UUID && ExternalBackup::new(true, Some(uuid)).is_ok()
 }
 
 /// O pendrive com aquele UUID na lista do daemon (sem diferenciar maiúsculas, como a

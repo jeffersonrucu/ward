@@ -2221,6 +2221,24 @@ origem, valor }` → `EntrySecret { origin, value }`; `Datas { criada_em, altera
 `Collector`; predicados `*_valido(a)` → `valid_*` (`nome_entrada_valido` →
 `valid_entry_name`, `chave_parece_privada` → `looks_like_private_key`).
 
+Fase 13 (`ward-core`: `config`, `entry/tests`): módulo `configuracao` → `config`
+(`testes` → `tests`); `Configuracao` → `VaultConfig` (`nova`/`de_partes`/`conferir_pin`/
+`hash_pin`/`trocar_hash_pin`/`minutos_trava`/`definir_minutos_trava`/`definir_backup` →
+`new`/`from_parts`/`verify_pin`/`pin_hash`/`change_pin_hash`/`lock_minutes`/
+`set_lock_minutes`/`set_backup`); `HashPin` → `PinHash` (`criar`/`conferir`/`parametros`/
+`de_phc` → `create`/`verify`/`params`/`from_phc`); `BackupExterno { ligado, uuid }` →
+`ExternalBackup { enabled, uuid }` (`desligado`/`novo`/`ligado` → `disabled`/`new`/
+`enabled`); `ErroConfiguracao` → `ConfigError` com `PinInvalido` → `InvalidPin`,
+`TempoDeTrava` → `LockTimeout`, `UuidInvalido` → `InvalidUuid`, `BackupSemUuid` →
+`BackupWithoutUuid` (`Hash` fica); `KDF_PIN_MINIMO`/`KDF_PIN_MAXIMO` →
+`KDF_PIN_MINIMUM`/`KDF_PIN_MAXIMUM` (`KDF_PIN` fica); `conferir_texto` → `verify_text`,
+`minutos_validos` → `valid_minutes`, `uuid_valido` → `valid_uuid`, `pin_valido` →
+`valid_pin`. Os homônimos `Operacao::Configuracao`/`BackupExterno`/`DefinirBackupExterno`
+do protocolo (Fase 17), `BackupExternoVisto` e `uuid_valido` do `app/core/backup_externo.rs`
+e `minutos_validos` do `app/core/configuracoes.rs` (Fase 33) são outros e não mudaram.
+Nos testes de `entry`: `rascunho` → `draft`, `sem` → `without`, `NaoClone` → `NotClone`,
+`zera_ao_sair` → `zeroes_on_drop`.
+
 Funções e métodos não estão listados um a um: o nome sai da seção 2 na ordem do inglês
 (`conferir_arquivo` → `verify_file`, `ler_cofre` → `read_vault`, `codificar_resposta` →
 `encode_response`, `exigir_pin` → `require_pin`). Os poucos fixados por outra seção:
