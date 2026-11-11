@@ -52,7 +52,7 @@ pub const MSG_RUN_FIELD: &str = "um argumento ou uma variável do ambiente passa
      ou há argumentos ou variáveis demais; reduza o ambiente (ex.: `env -i`)";
 /// Notice for when the vault is locked: the request waits for the unlock (D16).
 pub const MSG_RUN_LOCKED: &str = "cofre travado: o comando espera o destrave por até 2 min \
-     (`/usr/local/bin/ward destravar` em outro terminal, ou pelo app)";
+     (`/usr/local/bin/ward unlock` em outro terminal, ou pelo app)";
 /// Chunk of the standard input per frame.
 const STDIN_CHUNK: usize = 64 * KIB;
 
@@ -190,7 +190,7 @@ pub fn daemon_message(error: &ResponseError) -> String {
     match error {
         // Phase 54a (RA8): by the full path, not by the `ward` of the `PATH`.
         ResponseError::Locked => {
-            "travado: destrave com `/usr/local/bin/ward destravar` ou pelo app".to_owned()
+            "travado: destrave com `/usr/local/bin/ward unlock` ou pelo app".to_owned()
         }
         ResponseError::VaultNotFound => "ainda não existe cofre; crie pelo app".to_owned(),
         e => e.message().to_owned(),
@@ -301,10 +301,7 @@ fn unlock(e: &mut dyn Env) -> u8 {
     let mut read = match e.read_password() {
         Ok(s) => s,
         Err(TerminalError::NoTerminal) => {
-            return fail(
-                e,
-                "`ward destravar` precisa de um terminal para ler a senha",
-            );
+            return fail(e, "`ward unlock` precisa de um terminal para ler a senha");
         }
         Err(TerminalError::Canceled) => return fail(e, "cancelado; nada foi enviado"),
         Err(TerminalError::TooLong) => return fail(e, "senha longa demais; nada foi enviado"),

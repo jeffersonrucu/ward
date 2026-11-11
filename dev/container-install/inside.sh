@@ -319,9 +319,11 @@ check "V9.3 servidor falso do uid escutando em /run/user/$UID_T/ward" "$(cat /tm
 PASSWORD="$(cat "$T/senha")"
 r="$(printf '%s\n' "$PASSWORD" | as_1000 /usr/bin/env -i HOME="$HOME_T" PATH=/usr/bin:/bin LANG=C.UTF-8 \
     XDG_RUNTIME_DIR="/run/user/$UID_T" WARD_SOCKET="/run/user/$UID_T/ward/wardd.sock" \
-    /usr/bin/script -qec "/usr/local/bin/ward destravar" /dev/null 2>&1; echo "saiu=$?")"
-lacks "V9.3 ward destravar não sai 0" "$r" "saiu=0"
-lacks "V9.3 ward destravar não pede a senha" "$r" "Senha mestra"
+    /usr/bin/script -qec "/usr/local/bin/ward unlock" /dev/null 2>&1; echo "saiu=$?")"
+lacks "V9.3 ward unlock não sai 0" "$r" "saiu=0"
+lacks "V9.3 ward unlock não pede a senha" "$r" "Senha mestra"
+# m2:DT10: the refusal comes from the server check, not from an unknown subcommand.
+lacks "V9.3 ward unlock é um subcomando conhecido" "$r" "comando desconhecido"
 check "V9.3 o servidor falso não recebeu conexão nem byte" "[$(cat "$RECORD")]" "[]"
 kill "$FPID" 2>/dev/null || true
 wait "$FPID" 2>/dev/null || true
