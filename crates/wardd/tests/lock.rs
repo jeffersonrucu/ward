@@ -1,15 +1,16 @@
-//! Trava automática (Fase 24, V3.19): inatividade com relógio injetado, lida do tempo de
-//! trava da configuração do cofre, e o logind (`Lock`, `LockedHint`, `PrepareForSleep`)
-//! num **barramento falso**: um `dbus-daemon` privado, só deste teste, num diretório
-//! 0700 de `$XDG_RUNTIME_DIR`, com um logind falso feito com o próprio `zbus`. Nunca o
-//! barramento do sistema nem o logind real.
+//! Automatic lock (Phase 24, V3.19): inactivity with an injected clock, read from the
+//! lock timeout in the vault settings, and logind (`Lock`, `LockedHint`,
+//! `PrepareForSleep`) on a **fake bus**: a private `dbus-daemon`, for this test only, in a
+//! 0700 directory of `$XDG_RUNTIME_DIR`, with a fake logind built with `zbus` itself.
+//! Never the system bus nor the real logind.
 //!
-//! Ataques (todos falham do lado do atacante):
-//! - agente que consulta `estado` ou manda pedidos com erro não segura o cofre aberto;
-//! - relógio que volta ou que não se lê trava;
-//! - barramento que cai com o cofre aberto trava;
-//! - sinal forjado por quem não é o logind não destrava nem desfaz a trava;
-//! - a suspensão não passa à frente da trava (o inibidor só é solto depois).
+//! Attacks (all fail on the attacker's side):
+//! - an agent that queries the status or sends failing requests does not keep the vault
+//!   open;
+//! - a clock that goes back or cannot be read locks;
+//! - a bus that drops with the vault open locks;
+//! - a signal forged by someone who is not logind neither unlocks nor undoes the lock;
+//! - suspend does not get ahead of the lock (the inhibitor is only released after).
 
 mod common;
 
@@ -33,8 +34,8 @@ use zbus::Connection;
 use zbus::Variant as Value;
 use zbus::connection::Builder;
 
-/// `emit_signal` do zbus, esperado aqui mesmo (o teste não tem runtime próprio).
-macro_rules! emitir {
+/// zbus `emit_signal`, awaited right here (the test has no runtime of its own).
+macro_rules! emit {
     ($c:expr, $($a:expr),+ $(,)?) => {
         zbus::block_on($c.emit_signal(None::<&str>, $($a),+)).unwrap()
     };
@@ -42,33 +43,33 @@ macro_rules! emitir {
 
 const H: u64 = 3600;
 const LOGIND: &str = "org.freedesktop.login1";
-const SESSAO: &str = "/org/freedesktop/login1/session/_32";
-const IFACE_SESSAO: &str = "org.freedesktop.login1.Session";
+const SESSION: &str = "/org/freedesktop/login1/session/_32";
+const SESSION_IFACE: &str = "org.freedesktop.login1.Session";
 const WARDD: &str = env!("CARGO_BIN_EXE_wardd");
 
-// ---------------------------------------------------------------- relógio injetado
+// ---------------------------------------------------------------- injected clock
 
-/// Relógio manual: `agora` devolve o que o teste pôs (`None` = ilegível); `dormir` só
-/// anota a espera do D20.
+/// Manual clock: the reading returns what the test set (`None` = unreadable); the sleep
+/// only records the D20 wait.
 #[derive(Clone)]
-struct RelogioManual(Arc<Mutex<Option<Duration>>>, Arc<Mutex<Vec<Duration>>>);
+struct ManualClock(Arc<Mutex<Option<Duration>>>, Arc<Mutex<Vec<Duration>>>);
 
-impl RelogioManual {
-    fn novo() -> Self {
-        RelogioManual(Arc::new(Mutex::new(Some(Duration::ZERO))), Arc::default())
+impl ManualClock {
+    fn new() -> Self {
+        ManualClock(Arc::new(Mutex::new(Some(Duration::ZERO))), Arc::default())
     }
-    fn esperas(&self) -> Vec<Duration> {
+    fn waits(&self) -> Vec<Duration> {
         std::mem::take(&mut *self.1.lock().unwrap())
     }
-    fn por(&self, segundos: u64) {
-        *self.0.lock().unwrap() = Some(Duration::from_secs(segundos));
+    fn set(&self, secs: u64) {
+        *self.0.lock().unwrap() = Some(Duration::from_secs(secs));
     }
-    fn ilegivel(&self) {
+    fn unreadable(&self) {
         *self.0.lock().unwrap() = None;
     }
 }
 
-impl Relogio for RelogioManual {
+impl Relogio for ManualClock {
     fn dormir(&self, d: Duration) {
         self.1.lock().unwrap().push(d);
     }
@@ -77,11 +78,11 @@ impl Relogio for RelogioManual {
     }
 }
 
-/// Cofre de teste novo (destravado em t = 0) no `dir`, com o relógio manual.
-fn cofre_com_relogio(dir: &Dir) -> (Daemon, RelogioManual) {
-    let r = RelogioManual::novo();
+/// New test vault (unlocked at t = 0) in `dir`, with the manual clock.
+fn vault_with_clock(dir: &Dir) -> (Daemon, ManualClock) {
+    let r = ManualClock::new();
     let d = Daemon::novo(dir.paths(), Box::new(r.clone()));
-    let criar = request(
+    let create = request(
         &d,
         Papel::App,
         "criar_cofre",
@@ -91,7 +92,7 @@ fn cofre_com_relogio(dir: &Dir) -> (Daemon, RelogioManual) {
             b64(PIN.as_bytes())
         ),
     );
-    assert!(ok(&criar), "{criar:?}");
+    assert!(ok(&create), "{create:?}");
     let s = request(
         &d,
         Papel::App,
@@ -102,73 +103,73 @@ fn cofre_com_relogio(dir: &Dir) -> (Daemon, RelogioManual) {
     (d, r)
 }
 
-/// Uma ação do app (a lista da tela Credenciais): conta como uso (Fase 54).
-fn lista_ok(d: &Daemon) {
+/// An app action (the list of the Credentials screen): counts as use (Phase 54).
+fn list_ok(d: &Daemon) {
     let r = request(d, Papel::App, "lista", "{}");
     assert!(matches!(r, Resposta::Lista(_)), "{r:?}");
 }
 
 #[test]
-fn v3_19_inatividade_com_relogio_injetado() {
+fn v3_19_inactivity_with_injected_clock() {
     let dir = Dir::new("inat");
-    let (d, r) = cofre_com_relogio(&dir);
-    // Padrão da configuração (D30): 240 min.
-    r.por(4 * H - 60);
+    let (d, r) = vault_with_clock(&dir);
+    // Settings default (D30): 240 min.
+    r.set(4 * H - 60);
     assert!(!d.travar_se_inativo(), "3h59 sem uso não trava");
     assert!(!d.travado());
-    r.por(4 * H);
+    r.set(4 * H);
     assert!(d.travar_se_inativo(), "4h00 sem uso trava");
     assert!(d.travado());
     assert_eq!(
         error(&request(&d, Papel::Agente, "lista", "{}")),
         Some(ErroResposta::Travado)
     );
-    // Travado, nada mais a fazer.
+    // Locked, nothing more to do.
     assert!(!d.travar_se_inativo());
 
-    // Um uso às 3h zera a contagem.
+    // A use at 3h resets the count.
     let t0 = 10 * H;
-    r.por(t0);
+    r.set(t0);
     assert!(ok(&unlock(&d, PASSWORD)));
-    r.por(t0 + 3 * H);
-    lista_ok(&d);
-    r.por(t0 + 4 * H);
+    r.set(t0 + 3 * H);
+    list_ok(&d);
+    r.set(t0 + 4 * H);
     assert!(!d.travar_se_inativo(), "o uso às 3h zerou");
-    r.por(t0 + 3 * H + 4 * H - 1);
+    r.set(t0 + 3 * H + 4 * H - 1);
     assert!(!d.travar_se_inativo());
-    r.por(t0 + 7 * H);
+    r.set(t0 + 7 * H);
     assert!(d.travar_se_inativo());
 }
 
 #[test]
-fn v3_19_tempo_lido_da_configuracao_do_cofre() {
+fn v3_19_timeout_read_from_the_vault_settings() {
     let dir = Dir::new("cfg");
-    let (d, r) = cofre_com_relogio(&dir);
+    let (d, r) = vault_with_clock(&dir);
     let t = request(&d, Papel::App, "tempo_trava", r#"{"minutos":30}"#);
     assert!(ok(&t), "{t:?}");
-    r.por(30 * 60 - 1);
+    r.set(30 * 60 - 1);
     assert!(!d.travar_se_inativo());
-    r.por(30 * 60);
+    r.set(30 * 60);
     assert!(d.travar_se_inativo(), "30 min da configuração");
-    // Vale depois de reabrir: o tempo está no cofre, não na memória.
+    // Holds after reopening: the timeout is in the vault, not in memory.
     let d2 = Daemon::novo(dir.paths(), Box::new(r.clone()));
-    r.por(100 * H);
+    r.set(100 * H);
     assert!(ok(&unlock(&d2, PASSWORD)));
-    r.por(100 * H + 29 * 60);
+    r.set(100 * H + 29 * 60);
     assert!(!d2.travar_se_inativo());
-    r.por(100 * H + 30 * 60);
+    r.set(100 * H + 30 * 60);
     assert!(d2.travar_se_inativo());
 }
 
 #[test]
-fn ataque_agente_nao_segura_o_cofre_aberto_com_estado_ou_erro() {
+fn attack_agent_does_not_keep_the_vault_open_with_status_or_errors() {
     let dir = Dir::new("segura");
-    let (d, r) = cofre_com_relogio(&dir);
-    // Durante 4 h, a cada 10 min: `estado`, entrada inexistente, `destravar` repetido,
-    // pedido de app pelo agente e, quatro vezes, PIN errado (o quinto travaria pelo S9).
+    let (d, r) = vault_with_clock(&dir);
+    // For 4 h, every 10 min: status, a missing entry, a repeated unlock, an app request
+    // by the agent and, four times, a wrong PIN (the fifth would lock by S9).
     let mut t = 0;
     while t < 4 * H {
-        r.por(t);
+        r.set(t);
         assert!(matches!(
             request(&d, Papel::Agente, "estado", "{}"),
             Resposta::Estado { travado: false, .. }
@@ -178,11 +179,11 @@ fn ataque_agente_nao_segura_o_cofre_aberto_com_estado_ou_erro() {
                 &d,
                 Papel::Agente,
                 "executar",
-                &executar("nao-existe")
+                &run_request("nao-existe")
             )),
             Some(ErroResposta::EntradaInexistente)
         );
-        // `destravar` com o cofre já aberto (qualquer senha) não é uso.
+        // Unlocking with the vault already open (any password) is not use.
         assert!(ok(&unlock(&d, "qualquer-coisa")));
         assert!(
             error(&request(
@@ -200,23 +201,23 @@ fn ataque_agente_nao_segura_o_cofre_aberto_com_estado_ou_erro() {
         assert!(!d.travar_se_inativo(), "t = {t}");
         t += 600;
     }
-    r.por(4 * H);
+    r.set(4 * H);
     assert!(
         d.travar_se_inativo(),
         "nenhum desses pedidos conta como uso"
     );
 }
 
-/// Fase 54 (auditoria final): o agente que roda `ward lista` a cada 10 min (e a
-/// extensão que sugere a cada página) não adia a trava; a 4h00 o cofre trava. Uma ação
-/// do app, sim, zera a contagem.
+/// Phase 54 (final audit): the agent that lists the entries every 10 min (and the
+/// extension that suggests on every page) does not delay the lock; at 4h00 the vault
+/// locks. An app action does reset the count.
 #[test]
-fn ataque_lista_periodica_do_agente_nao_adia_a_trava() {
+fn attack_periodic_agent_list_does_not_delay_the_lock() {
     let dir = Dir::new("lista54");
-    let (d, r) = cofre_com_relogio(&dir);
+    let (d, r) = vault_with_clock(&dir);
     let mut t = 0;
     while t < 4 * H {
-        r.por(t);
+        r.set(t);
         let l = request(&d, Papel::Agente, "lista", "{}");
         assert!(matches!(l, Resposta::Lista(_)), "{l:?}");
         let s = request(
@@ -229,29 +230,29 @@ fn ataque_lista_periodica_do_agente_nao_adia_a_trava() {
         assert!(!d.travar_se_inativo(), "t = {t}");
         t += 600;
     }
-    r.por(4 * H);
+    r.set(4 * H);
     assert!(
         d.travar_se_inativo(),
         "a lista do agente e o sugerir seguraram o cofre aberto"
     );
 
-    // Controle: com uma ação do app às 3h, a 4h00 não trava.
+    // Control: with an app action at 3h, it does not lock at 4h00.
     let t0 = 10 * H;
-    r.por(t0);
+    r.set(t0);
     assert!(ok(&unlock(&d, PASSWORD)));
-    r.por(t0 + 3 * H);
-    lista_ok(&d);
-    r.por(t0 + 4 * H);
+    r.set(t0 + 3 * H);
+    list_ok(&d);
+    r.set(t0 + 4 * H);
     assert!(!d.travar_se_inativo(), "a ação do app zerou");
 }
 
-/// Fase 55 (reauditoria final): um `ward run` do agente repetido a cada 10 min numa
-/// entrada que pede aprovação, negado na janela, com o `detalhe` que a janela pede e o
-/// `totp` que o formulário renova, não adia a trava: a 4h00 o cofre trava.
+/// Phase 55 (final re-audit): an agent `ward run` repeated every 10 min on an entry that
+/// asks for approval, denied in the window, with the entry detail the window asks for
+/// and the TOTP code the form renews, does not delay the lock: at 4h00 the vault locks.
 #[test]
-fn ataque_f55_ward_run_negado_e_janela_nao_adiam_a_trava() {
+fn attack_f55_denied_ward_run_and_window_do_not_delay_the_lock() {
     let dir = Dir::new("negado55");
-    let (d, r) = cofre_com_relogio(&dir);
+    let (d, r) = vault_with_clock(&dir);
     let totp = format!(
         r#"{{"entrada":{{"nome":"t-totp","grupo":"clientex","ambiente":"dev","tipo":"login","campos":{{"url":"https://clientex.invalid/login","usuario":"admin","senha":"{}","totp_semente":"{}"}}}}}}"#,
         b64(SECRETS[1].as_bytes()),
@@ -260,14 +261,14 @@ fn ataque_f55_ward_run_negado_e_janela_nao_adiam_a_trava() {
     assert!(ok(&request(&d, Papel::App, "salvar_entrada", &totp)));
     let mut t = 0;
     while t < 4 * H {
-        r.por(t);
-        let (negado, vistos) = with_window(&d, "negar", None, || {
-            let p = req(Papel::Agente, "executar", &executar("t-aprov")).unwrap();
+        r.set(t);
+        let (denied, seen) = with_window(&d, "negar", None, || {
+            let p = req(Papel::Agente, "executar", &run_request("t-aprov")).unwrap();
             d.autorizar_uso(&wardd::aprovacao::SemCliente, &p)
         });
-        assert_eq!(negado.err(), Some(ErroResposta::Negado));
-        assert_eq!(vistos.len(), 1);
-        // O que a janela pede para mostrar o pedido e o formulário aberto.
+        assert_eq!(denied.err(), Some(ErroResposta::Negado));
+        assert_eq!(seen.len(), 1);
+        // What the window asks for to show the request, and the open form.
         let det = request(&d, Papel::App, "detalhe", r#"{"entrada":"t-aprov"}"#);
         assert!(matches!(det, Resposta::Detalhe(_)), "{det:?}");
         let c = request(&d, Papel::App, "totp", r#"{"entrada":"t-totp"}"#);
@@ -275,31 +276,31 @@ fn ataque_f55_ward_run_negado_e_janela_nao_adiam_a_trava() {
         assert!(!d.travar_se_inativo(), "t = {t}");
         t += 600;
     }
-    r.por(4 * H);
+    r.set(4 * H);
     assert!(
         d.travar_se_inativo(),
         "o ward run negado, o detalhe ou o totp seguraram o cofre aberto"
     );
 }
 
-fn executar(entrada: &str) -> String {
+fn run_request(entry: &str) -> String {
     format!(
-        r#"{{"entrada":"{entrada}","argv":["{}"],"cwd":"{}","tipo_entrada":"pipe","ambiente":[]}}"#,
+        r#"{{"entrada":"{entry}","argv":["{}"],"cwd":"{}","tipo_entrada":"pipe","ambiente":[]}}"#,
         b64(b"true"),
         b64(b"/")
     )
 }
 
-/// D62: a trava automática não mexe no contador de espera do D20 (nem zera a espera de
-/// quem errou a senha, nem cria espera para o usuário).
+/// D62: the automatic lock does not touch the D20 wait counter (it neither resets the
+/// wait of whoever got the password wrong nor creates a wait for the user).
 #[test]
-fn d62_trava_automatica_nao_mexe_na_espera_do_d20() {
+fn d62_auto_lock_does_not_touch_the_d20_wait() {
     let dir = Dir::new("d20");
-    let (d, r) = cofre_com_relogio(&dir);
-    r.por(4 * H);
+    let (d, r) = vault_with_clock(&dir);
+    r.set(4 * H);
     assert!(d.travar_se_inativo());
-    r.esperas();
-    // Depois da trava automática, a primeira tentativa não espera.
+    r.waits();
+    // After the automatic lock, the first attempt does not wait.
     assert_eq!(
         error(&unlock(&d, "senha-errada")),
         Some(ErroResposta::SenhaIncorreta)
@@ -308,50 +309,50 @@ fn d62_trava_automatica_nao_mexe_na_espera_do_d20() {
         error(&unlock(&d, "senha-errada")),
         Some(ErroResposta::SenhaIncorreta)
     );
-    assert_eq!(r.esperas(), [Duration::ZERO, Duration::from_secs(1)]);
-    // Travado, a conferência de inatividade não zera as duas falhas: a próxima espera 2 s.
-    r.por(100 * H);
+    assert_eq!(r.waits(), [Duration::ZERO, Duration::from_secs(1)]);
+    // Locked, the inactivity check does not reset the two failures: the next waits 2 s.
+    r.set(100 * H);
     assert!(!d.travar_se_inativo());
     assert!(ok(&unlock(&d, PASSWORD)));
-    assert_eq!(r.esperas(), [Duration::from_secs(2)]);
+    assert_eq!(r.waits(), [Duration::from_secs(2)]);
 }
 
 #[test]
-fn ataque_relogio_que_volta_ou_ilegivel_trava() {
+fn attack_clock_that_goes_back_or_is_unreadable_locks() {
     let dir = Dir::new("relogio");
-    let (d, r) = cofre_com_relogio(&dir);
-    r.por(2 * H);
-    lista_ok(&d);
-    r.por(H);
+    let (d, r) = vault_with_clock(&dir);
+    r.set(2 * H);
+    list_ok(&d);
+    r.set(H);
     assert!(d.travar_se_inativo(), "relógio voltou: trava");
 
-    r.por(5 * H);
+    r.set(5 * H);
     assert!(ok(&unlock(&d, PASSWORD)));
-    r.ilegivel();
+    r.unreadable();
     assert!(d.travar_se_inativo(), "relógio ilegível: trava");
 
-    // Uso anotado sem relógio também trava na conferência seguinte.
-    r.por(6 * H);
+    // A use recorded without a clock also locks on the next check.
+    r.set(6 * H);
     assert!(ok(&unlock(&d, PASSWORD)));
-    r.ilegivel();
+    r.unreadable();
     let _ = request(&d, Papel::App, "lista", "{}");
-    r.por(6 * H + 1);
+    r.set(6 * H + 1);
     assert!(d.travar_se_inativo());
 }
 
-// ---------------------------------------------------------------- barramento falso
+// ---------------------------------------------------------------- fake bus
 
 static N: AtomicU32 = AtomicU32::new(0);
 
-/// `dbus-daemon` privado, só deste teste (morto no `Drop`).
-struct BarramentoFalso {
+/// Private `dbus-daemon`, for this test only (killed on `Drop`).
+struct FakeBus {
     dir: PathBuf,
     socket: PathBuf,
-    filho: Option<Child>,
+    child: Option<Child>,
 }
 
-impl BarramentoFalso {
-    fn subir() -> BarramentoFalso {
+impl FakeBus {
+    fn start() -> FakeBus {
         let base = std::env::var_os("XDG_RUNTIME_DIR")
             .map(PathBuf::from)
             .filter(|p| p.is_absolute())
@@ -387,7 +388,7 @@ impl BarramentoFalso {
             ),
         )
         .unwrap();
-        let filho = Command::new("/usr/bin/dbus-daemon")
+        let child = Command::new("/usr/bin/dbus-daemon")
             .env_clear()
             .env("PATH", "/usr/bin:/bin")
             .arg(format!("--config-file={}", config.display()))
@@ -397,46 +398,46 @@ impl BarramentoFalso {
             .stderr(Stdio::null())
             .spawn()
             .expect("dbus-daemon");
-        let fim = Instant::now() + Duration::from_secs(10);
+        let deadline = Instant::now() + Duration::from_secs(10);
         while UnixStream::connect(&socket).is_err() {
-            assert!(Instant::now() < fim, "o dbus-daemon falso não subiu");
+            assert!(Instant::now() < deadline, "o dbus-daemon falso não subiu");
             std::thread::sleep(Duration::from_millis(20));
         }
-        BarramentoFalso {
+        FakeBus {
             dir,
             socket,
-            filho: Some(filho),
+            child: Some(child),
         }
     }
 
-    fn endereco(&self) -> String {
+    fn address(&self) -> String {
         format!("unix:path={}", self.socket.display())
     }
 
-    fn cliente(&self) -> Connection {
-        zbus::block_on(Builder::address(self.endereco().as_str()).build()).unwrap()
+    fn client(&self) -> Connection {
+        zbus::block_on(Builder::address(self.address().as_str()).build()).unwrap()
     }
 
-    fn matar(&mut self) {
-        if let Some(mut f) = self.filho.take() {
+    fn kill(&mut self) {
+        if let Some(mut f) = self.child.take() {
             let _ = f.kill();
             let _ = f.wait();
         }
     }
 }
 
-impl Drop for BarramentoFalso {
+impl Drop for FakeBus {
     fn drop(&mut self) {
-        self.matar();
+        self.kill();
         let _ = fs::remove_dir_all(&self.dir);
     }
 }
 
-/// Inibidores entregues pelo logind falso: (what, mode, ponta de leitura do pipe).
-type Inibidores = Arc<Mutex<Vec<(String, String, PipeReader)>>>;
+/// Inhibitors handed out by the fake logind: (what, mode, read end of the pipe).
+type Inhibitors = Arc<Mutex<Vec<(String, String, PipeReader)>>>;
 
 struct Manager {
-    inibidores: Inibidores,
+    inhibitors: Inhibitors,
 }
 
 #[zbus::interface(name = "org.freedesktop.login1.Manager")]
@@ -449,7 +450,7 @@ impl Manager {
         mode: &str,
     ) -> zbus::fdo::Result<zbus::OwnedFd> {
         let (r, w) = std::io::pipe().map_err(|e| zbus::fdo::Error::Failed(e.to_string()))?;
-        self.inibidores
+        self.inhibitors
             .lock()
             .unwrap()
             .push((what.to_owned(), mode.to_owned(), r));
@@ -457,62 +458,62 @@ impl Manager {
     }
 }
 
-/// O logind falso: dono de `org.freedesktop.login1` no barramento falso.
-struct LogindFalso {
+/// The fake logind: owner of `org.freedesktop.login1` on the fake bus.
+struct FakeLogind {
     conn: Connection,
-    inibidores: Inibidores,
+    inhibitors: Inhibitors,
 }
 
-impl LogindFalso {
-    fn novo(b: &BarramentoFalso) -> LogindFalso {
-        let inibidores = Inibidores::default();
+impl FakeLogind {
+    fn new(b: &FakeBus) -> FakeLogind {
+        let inhibitors = Inhibitors::default();
         let conn = zbus::block_on(
-            Builder::address(b.endereco().as_str())
+            Builder::address(b.address().as_str())
                 .name(LOGIND)
                 .serve_at(
                     "/org/freedesktop/login1",
                     Manager {
-                        inibidores: inibidores.clone(),
+                        inhibitors: inhibitors.clone(),
                     },
                 )
                 .build(),
         )
         .unwrap();
-        LogindFalso { conn, inibidores }
+        FakeLogind { conn, inhibitors }
     }
 
     fn lock(&self) {
-        emitir!(self.conn, SESSAO, IFACE_SESSAO, "Lock", &());
+        emit!(self.conn, SESSION, SESSION_IFACE, "Lock", &());
     }
 
-    fn locked_hint(&self, valor: bool) {
-        let mut mudou: HashMap<&str, Value<'_>> = HashMap::new();
-        mudou.insert("LockedHint", Value::Bool(valor));
-        emitir!(
+    fn locked_hint(&self, value: bool) {
+        let mut changed: HashMap<&str, Value<'_>> = HashMap::new();
+        changed.insert("LockedHint", Value::Bool(value));
+        emit!(
             self.conn,
-            SESSAO,
+            SESSION,
             "org.freedesktop.DBus.Properties",
             "PropertiesChanged",
-            &(IFACE_SESSAO, mudou, Vec::<&str>::new()),
+            &(SESSION_IFACE, changed, Vec::<&str>::new()),
         );
     }
 
-    fn prepare_for_sleep(&self, valor: bool) {
-        emitir!(
+    fn prepare_for_sleep(&self, value: bool) {
+        emit!(
             self.conn,
             "/org/freedesktop/login1",
             "org.freedesktop.login1.Manager",
             "PrepareForSleep",
-            &valor,
+            &value,
         );
     }
 
-    /// Espera o `n`-ésimo inibidor e devolve um canal que recebe quando ele fecha.
-    fn inibidor(&self, n: usize) -> mpsc::Receiver<usize> {
-        let fim = Instant::now() + Duration::from_secs(10);
+    /// Waits for the `n`-th inhibitor and returns a channel that receives when it closes.
+    fn inhibitor(&self, n: usize) -> mpsc::Receiver<usize> {
+        let deadline = Instant::now() + Duration::from_secs(10);
         loop {
             {
-                let mut v = self.inibidores.lock().unwrap();
+                let mut v = self.inhibitors.lock().unwrap();
                 if v.len() > n {
                     let (what, mode, r) = &mut v[n];
                     assert_eq!((what.as_str(), mode.as_str()), ("sleep", "delay"));
@@ -525,14 +526,17 @@ impl LogindFalso {
                     return rx;
                 }
             }
-            assert!(Instant::now() < fim, "o daemon não pediu o inibidor {n}");
+            assert!(
+                Instant::now() < deadline,
+                "o daemon não pediu o inibidor {n}"
+            );
             std::thread::sleep(Duration::from_millis(20));
         }
     }
 }
 
-/// Daemon de teste com o vigia do logind ligado ao barramento falso.
-fn daemon_vigiado(dir: &Dir, b: &BarramentoFalso) -> (Arc<Daemon>, mpsc::Receiver<()>) {
+/// Test daemon with the logind watcher connected to the fake bus.
+fn watched_daemon(dir: &Dir, b: &FakeBus) -> (Arc<Daemon>, mpsc::Receiver<()>) {
     let (d, _r) = test_vault(dir);
     let d = Arc::new(d);
     let (tx, rx) = mpsc::channel();
@@ -550,110 +554,110 @@ fn daemon_vigiado(dir: &Dir, b: &BarramentoFalso) -> (Arc<Daemon>, mpsc::Receive
     (d, rx)
 }
 
-fn espera_travar(d: &Daemon, limite: Duration) -> Duration {
-    let ini = Instant::now();
+fn wait_locked(d: &Daemon, limit: Duration) -> Duration {
+    let start = Instant::now();
     while !d.travado() {
         assert!(
-            ini.elapsed() < limite,
-            "não travou em {limite:?} (V3.19: até 2 s)"
+            start.elapsed() < limit,
+            "não travou em {limit:?} (V3.19: até 2 s)"
         );
         std::thread::sleep(Duration::from_millis(10));
     }
-    ini.elapsed()
+    start.elapsed()
 }
 
 #[test]
-fn v3_19_lock_e_locked_hint_travam_em_ate_2s() {
-    let b = BarramentoFalso::subir();
-    let logind = LogindFalso::novo(&b);
+fn v3_19_lock_and_locked_hint_lock_within_2s() {
+    let b = FakeBus::start();
+    let logind = FakeLogind::new(&b);
     let dir = Dir::new("lock");
-    let (d, _pronto) = daemon_vigiado(&dir, &b);
+    let (d, _ready) = watched_daemon(&dir, &b);
     assert!(!d.travado());
 
-    // `loginctl lock-session` → `Lock` na sessão.
+    // `loginctl lock-session` → `Lock` on the session.
     logind.lock();
-    espera_travar(&d, Duration::from_secs(2));
+    wait_locked(&d, Duration::from_secs(2));
 
-    // `LockedHint` falso não trava; verdadeiro trava.
+    // `LockedHint` false does not lock; true locks.
     assert!(ok(&unlock(&d, PASSWORD)));
     logind.locked_hint(false);
     std::thread::sleep(Duration::from_millis(300));
     assert!(!d.travado(), "LockedHint falso não trava");
     logind.locked_hint(true);
-    espera_travar(&d, Duration::from_secs(2));
+    wait_locked(&d, Duration::from_secs(2));
 }
 
 #[test]
-fn v3_19_prepare_for_sleep_trava_antes_de_soltar_o_inibidor() {
-    let b = BarramentoFalso::subir();
-    let logind = LogindFalso::novo(&b);
+fn v3_19_prepare_for_sleep_locks_before_releasing_the_inhibitor() {
+    let b = FakeBus::start();
+    let logind = FakeLogind::new(&b);
     let dir = Dir::new("sleep");
-    let (d, _pronto) = daemon_vigiado(&dir, &b);
-    let fechou = logind.inibidor(0);
+    let (d, _ready) = watched_daemon(&dir, &b);
+    let closed = logind.inhibitor(0);
     assert!(
-        fechou.recv_timeout(Duration::from_millis(300)).is_err(),
+        closed.recv_timeout(Duration::from_millis(300)).is_err(),
         "o inibidor fica aberto enquanto não há suspensão"
     );
     assert!(!d.travado());
     logind.prepare_for_sleep(true);
-    fechou
+    closed
         .recv_timeout(Duration::from_secs(2))
         .expect("o inibidor não foi solto");
-    // Quando o logind vê o fd fechar, o cofre já está travado.
+    // When logind sees the fd close, the vault is already locked.
     assert!(d.travado(), "a suspensão passou à frente da trava");
 
-    // Ao acordar, o daemon pega outro inibidor; a próxima suspensão trava de novo.
+    // On wake-up, the daemon takes another inhibitor; the next suspend locks again.
     logind.prepare_for_sleep(false);
-    let fechou2 = logind.inibidor(1);
+    let closed2 = logind.inhibitor(1);
     assert!(ok(&unlock(&d, PASSWORD)));
     logind.prepare_for_sleep(true);
-    fechou2.recv_timeout(Duration::from_secs(2)).unwrap();
+    closed2.recv_timeout(Duration::from_secs(2)).unwrap();
     assert!(d.travado());
 }
 
 #[test]
-fn ataque_barramento_cai_com_o_cofre_aberto_trava() {
-    let mut b = BarramentoFalso::subir();
-    let _logind = LogindFalso::novo(&b);
+fn attack_bus_drops_with_the_vault_open_locks() {
+    let mut b = FakeBus::start();
+    let _logind = FakeLogind::new(&b);
     let dir = Dir::new("cai");
-    let (d, _pronto) = daemon_vigiado(&dir, &b);
+    let (d, _ready) = watched_daemon(&dir, &b);
     assert!(!d.travado());
-    b.matar();
-    espera_travar(&d, Duration::from_secs(2));
+    b.kill();
+    wait_locked(&d, Duration::from_secs(2));
 }
 
 #[test]
-fn ataque_sinal_forjado_nao_destrava_nem_segura() {
-    let b = BarramentoFalso::subir();
-    let logind = LogindFalso::novo(&b);
+fn attack_forged_signal_neither_unlocks_nor_holds() {
+    let b = FakeBus::start();
+    let logind = FakeLogind::new(&b);
     let dir = Dir::new("forja");
-    let (d, _pronto) = daemon_vigiado(&dir, &b);
-    // Um processo qualquer no barramento (não é o dono de org.freedesktop.login1).
-    let forjador = b.cliente();
+    let (d, _ready) = watched_daemon(&dir, &b);
+    // Any process on the bus (not the owner of org.freedesktop.login1).
+    let forger = b.client();
     logind.lock();
-    espera_travar(&d, Duration::from_secs(2));
-    for (caminho, iface, membro) in [
-        (SESSAO, IFACE_SESSAO, "Unlock"),
+    wait_locked(&d, Duration::from_secs(2));
+    for (path, iface, member) in [
+        (SESSION, SESSION_IFACE, "Unlock"),
         (
             "/org/freedesktop/login1",
             "org.freedesktop.login1.Manager",
             "PrepareForSleep",
         ),
     ] {
-        if membro == "PrepareForSleep" {
-            emitir!(forjador, caminho, iface, membro, &false);
+        if member == "PrepareForSleep" {
+            emit!(forger, path, iface, member, &false);
         } else {
-            emitir!(forjador, caminho, iface, membro, &());
+            emit!(forger, path, iface, member, &());
         }
     }
-    let mut mudou: HashMap<&str, Value<'_>> = HashMap::new();
-    mudou.insert("LockedHint", Value::Bool(false));
-    emitir!(
-        forjador,
-        SESSAO,
+    let mut changed: HashMap<&str, Value<'_>> = HashMap::new();
+    changed.insert("LockedHint", Value::Bool(false));
+    emit!(
+        forger,
+        SESSION,
         "org.freedesktop.DBus.Properties",
         "PropertiesChanged",
-        &(IFACE_SESSAO, mudou, Vec::<&str>::new()),
+        &(SESSION_IFACE, changed, Vec::<&str>::new()),
     );
     std::thread::sleep(Duration::from_millis(300));
     assert!(d.travado(), "nada do barramento destrava");
@@ -663,15 +667,15 @@ fn ataque_sinal_forjado_nao_destrava_nem_segura() {
     );
 }
 
-// ---------------------------------------------------------------- binário
+// ---------------------------------------------------------------- binary
 
-fn mandar(s: &mut UnixStream, json: &str) {
+fn send(s: &mut UnixStream, json: &str) {
     s.write_all(&(json.len() as u32).to_be_bytes()).unwrap();
     s.write_all(json.as_bytes()).unwrap();
 }
 
-fn pedir_por(s: &mut UnixStream, op: &str, dados: &str) -> Resposta {
-    mandar(s, &format!(r#"{{"v":1,"op":"{op}","dados":{dados}}}"#));
+fn request_over(s: &mut UnixStream, op: &str, data: &str) -> Resposta {
+    send(s, &format!(r#"{{"v":1,"op":"{op}","dados":{data}}}"#));
     let mut n = [0u8; 4];
     s.read_exact(&mut n).unwrap();
     let mut q = vec![0u8; u32::from_be_bytes(n) as usize];
@@ -679,36 +683,36 @@ fn pedir_por(s: &mut UnixStream, op: &str, dados: &str) -> Resposta {
     protocolo::decodificar_resposta(Papel::Agente, &q).unwrap()
 }
 
-struct Filho(Child);
+struct KillOnDrop(Child);
 
-impl Drop for Filho {
+impl Drop for KillOnDrop {
     fn drop(&mut self) {
         let _ = self.0.kill();
         let _ = self.0.wait();
     }
 }
 
-fn esperar_no_log(log: &Path, texto: &str) {
-    let fim = Instant::now() + Duration::from_secs(20);
+fn wait_in_log(log: &Path, text: &str) {
+    let deadline = Instant::now() + Duration::from_secs(20);
     loop {
-        if fs::read_to_string(log).is_ok_and(|t| t.contains(texto)) {
+        if fs::read_to_string(log).is_ok_and(|t| t.contains(text)) {
             return;
         }
-        assert!(Instant::now() < fim, "o log não mostrou {texto:?}");
+        assert!(Instant::now() < deadline, "o log não mostrou {text:?}");
         std::thread::sleep(Duration::from_millis(20));
     }
 }
 
 #[test]
-fn v3_19_binario_trava_com_lock_session_do_logind_falso() {
-    let b = BarramentoFalso::subir();
-    let logind = LogindFalso::novo(&b);
+fn v3_19_binary_locks_on_lock_session_of_the_fake_logind() {
+    let b = FakeBus::start();
+    let logind = FakeLogind::new(&b);
     let dev = Dir::new("bin");
-    // O cofre de teste é criado pelo núcleo e depois servido pelo binário.
+    // The test vault is created by the core and then served by the binary.
     drop(test_vault(&dev));
     let sock = b.dir.join("sock");
     let log = dev.0.join("wardd.log");
-    let _w = Filho(
+    let _w = KillOnDrop(
         Command::new(WARDD)
             .env_clear()
             .env("PATH", "/usr/bin:/bin")
@@ -722,9 +726,9 @@ fn v3_19_binario_trava_com_lock_session_do_logind_falso() {
             .spawn()
             .unwrap(),
     );
-    esperar_no_log(&log, "logind: vigiando");
-    // O runtime do zbus não toma o SIGCHLD do daemon (o `ward run` e o lançador do app
-    // esperam os próprios filhos).
+    wait_in_log(&log, "logind: vigiando");
+    // The zbus runtime does not take the daemon's SIGCHLD (`ward run` and the app
+    // launcher wait for their own children).
     let status = fs::read_to_string(format!("/proc/{}/status", _w.0.id())).unwrap();
     let cgt = status
         .lines()
@@ -732,46 +736,46 @@ fn v3_19_binario_trava_com_lock_session_do_logind_falso() {
         .map(|v| u64::from_str_radix(v.trim(), 16).unwrap())
         .unwrap();
     assert_eq!(cgt & (1 << (17 - 1)), 0, "SIGCHLD capturado: {cgt:x}");
-    let fim = Instant::now() + Duration::from_secs(20);
-    let caminho = sock.join(ward_platform::socket::SOCKET_NAME);
-    while !caminho.exists() {
-        assert!(Instant::now() < fim);
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let path = sock.join(ward_platform::socket::SOCKET_NAME);
+    while !path.exists() {
+        assert!(Instant::now() < deadline);
         std::thread::sleep(Duration::from_millis(20));
     }
-    let mut s = UnixStream::connect(&caminho).unwrap();
+    let mut s = UnixStream::connect(&path).unwrap();
     s.set_read_timeout(Some(Duration::from_secs(60))).unwrap();
-    let r = pedir_por(
+    let r = request_over(
         &mut s,
         "destravar",
         &format!(r#"{{"senha":"{}"}}"#, b64(PASSWORD.as_bytes())),
     );
     assert!(ok(&r), "{r:?}");
     logind.lock();
-    let ini = Instant::now();
+    let start = Instant::now();
     loop {
-        match pedir_por(&mut s, "estado", "{}") {
+        match request_over(&mut s, "estado", "{}") {
             Resposta::Estado { travado: true, .. } => break,
             Resposta::Estado { .. } => {}
-            outra => panic!("{outra:?}"),
+            other => panic!("{other:?}"),
         }
-        assert!(ini.elapsed() < Duration::from_secs(2), "V3.19: até 2 s");
+        assert!(start.elapsed() < Duration::from_secs(2), "V3.19: até 2 s");
         std::thread::sleep(Duration::from_millis(20));
     }
-    esperar_no_log(&log, "tela bloqueada: cofre travado");
-    // O log não tem senha nem segredo (S13).
-    let texto = fs::read(&log).unwrap();
-    for seg in [PASSWORD, PIN].iter().chain(SECRETS.iter()) {
-        assert!(!contains(&texto, seg.as_bytes()), "segredo no log");
+    wait_in_log(&log, "tela bloqueada: cofre travado");
+    // The log has no password and no secret (S13).
+    let text = fs::read(&log).unwrap();
+    for secret in [PASSWORD, PIN].iter().chain(SECRETS.iter()) {
+        assert!(!contains(&text, secret.as_bytes()), "segredo no log");
     }
 }
 
 #[test]
-fn daemon_de_teste_sem_barramento_falso_nao_liga_o_logind() {
+fn test_daemon_without_fake_bus_does_not_enable_logind() {
     let dev = Dir::new("semdbus");
-    let b = BarramentoFalso::subir(); // só para ter um diretório curto do socket
+    let b = FakeBus::start(); // only to have a short socket directory
     let sock = b.dir.join("sock2");
     let log = dev.0.join("wardd.log");
-    let _w = Filho(
+    let _w = KillOnDrop(
         Command::new(WARDD)
             .env_clear()
             .env("PATH", "/usr/bin:/bin")
@@ -783,8 +787,8 @@ fn daemon_de_teste_sem_barramento_falso_nao_liga_o_logind() {
             .spawn()
             .unwrap(),
     );
-    esperar_no_log(&log, "logind desligado");
-    // Caminho estranho na variável: recusa subir.
+    wait_in_log(&log, "logind desligado");
+    // Odd path in the variable: refuses to start.
     let log2 = dev.0.join("wardd2.log");
     let st = Command::new(WARDD)
         .env_clear()

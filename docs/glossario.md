@@ -2672,6 +2672,37 @@ serve}`, `formulario` → `form`, `com_clobber` → `with_clobber`, `login_em` �
 do registro (`evento`, `inicio`, `preencher`, `decisao`, `seguiu`, `ambiente`, `alvos`…)
 são literais e ficam, como o código `"usuario, senha"` que o falso procura no script do
 daemon. O código Python embutido no `CLIENT` de `app_value_binary.rs` é literal e fica.
+Fase 25 (testes do `wardd`: `aprovacao.rs` → `approval.rs`, `trava.rs` → `lock.rs`,
+`nucleo.rs` → `core.rs`; `[[test]]` `trava` → `lock`): em `lock.rs`, a macro `emitir` →
+`emit`, `SESSAO`/`IFACE_SESSAO` → `SESSION`/`SESSION_IFACE`, `RelogioManual` →
+`ManualClock` (`novo`/`esperas`/`por`/`ilegivel` → `new`/`waits`/`set`/`unreadable`),
+`cofre_com_relogio` → `vault_with_clock`, `lista_ok` → `list_ok`, `executar` (local) →
+`run_request`, `BarramentoFalso` → `FakeBus` (`filho`/`subir`/`endereco`/`cliente`/
+`matar` → `child`/`start`/`address`/`client`/`kill`), `Inibidores` → `Inhibitors`,
+`LogindFalso` → `FakeLogind` (`inibidor` → `inhibitor`), `daemon_vigiado` →
+`watched_daemon`, `espera_travar` → `wait_locked`, `mandar` → `send`, `pedir_por` →
+`request_over`, `Filho` → `KillOnDrop`, `esperar_no_log` → `wait_in_log`, `forjador` →
+`forger`. Em `core.rs`, `lista` → `list`, `nivel_de` → `level_of`, `sou_root` →
+`is_root`, `cofre_n2` → `vault_n2`, `geracoes_em` → `generations_at`. Em `approval.rs`,
+`PRAZO` → `DEADLINE`, `RelogioManual` → `ManualClock` (`ir`/`avancar` → `set`/`advance`),
+`Recebido { Aprovacao, Destrave }` → `Received { Approval, Unlock }`, `AppFalso` →
+`FakeApp`, `AoSair` → `OnExit`, `AbridorFalso { resultado, aberturas, ao_sair }` →
+`FakeOpener { result, opens, on_exit }` (`novo`/`sair` → `new`/`exit`), `Cena { relogio,
+abridor }` → `Scene { clock, opener }`, `cena`/`cena_com` → `scene`/`scene_with`,
+`assinar` → `subscribe`, `executar_json(_em)` → `run_json(_in)`, `usar` → `use_entry`,
+`pedido` → `approval_request`, `responder` → `answer`, `nivel` → `level`,
+`ExpirarSeCair` → `ExpireOnPanic`, `com_janela` (local) → `with_approval_window` (o
+`with_window` do `common` é outro), `fontes_rs` → `rs_sources`, `GANCHOS_DE_TESTE`/
+`CFG_GANCHOS` → `TEST_HOOKS`/`CFG_HOOKS`, `conferir_v3_15` → `check_v3_15` (aqui
+`assinatura` é a assinatura da função, `signature`, não o `subscription` do D-Bus),
+`destrave` → `unlock_request`, `usar_com_entrada` → `use_with_stdin`,
+`com_janela_e_entrada` → `with_window_and_stdin`, `responder_ciente` →
+`answer_confirmed`, `ClienteForjado` → `ForgedClient`, `Caiu` → `Dropped`. Os nomes de
+arquivo de `src/` que o V3.15 procura (`trava.rs`, `nucleo.rs`, `aprovacao.rs`,
+`uso.rs`…) e os ganchos (`com_chrome`, `com_programas_ssh`…) são literais e mudam com as
+Fases 19–20; os métodos dos traits de fora (`Relogio::agora`/`dormir`,
+`RelogioMotor::agora`, `Assinante::entregar`, `AbridorApp::abrir`, `Cliente::cadeia`/
+`saiu`) ficam até as fases deles.
 
 Fase 16 (`ward-core`: `mask`): módulo `mascara` → `mask` (`automato` → `automaton`,
 `testes` → `tests`). `MARCA` → `MARK`; `ErroMascara` → `MaskError` com `GrandeDemais` →
