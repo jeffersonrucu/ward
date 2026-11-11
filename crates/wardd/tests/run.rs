@@ -1139,14 +1139,14 @@ fn f54b_attack_piped_script_on_approval() {
         send_stdin(&mut s, b"");
         assert!(
             wait_for(Duration::from_secs(20), || answers(
-                "resposta=pedido_invalido"
+                "resposta=invalid_request"
             ) > n),
             "a janela de teste não respondeu: {}",
             fs::read_to_string(&app_log).unwrap_or_default()
         );
         let lines = fs::read_to_string(&app_log).unwrap();
         assert!(
-        lines.contains("pedido operacao=executar entradas=t-aprov origem=- confirmacao=0 entrada_oculta=1 decisao=uma_vez"),
+        lines.contains("pedido operacao=run entradas=t-aprov origem=- confirmacao=0 entrada_oculta=1 decisao=once"),
         "{lines}"
     );
         s.set_read_timeout(Some(Duration::from_secs(1))).unwrap();

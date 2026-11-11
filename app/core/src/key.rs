@@ -285,7 +285,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             response,
-            format!("{{\"resultado\":\"carregada\",\"tamanho\":{}}}", k.len())
+            format!("{{\"result\":\"loaded\",\"size\":{}}}", k.len())
         );
         let _ = std::fs::remove_dir_all(d);
     }

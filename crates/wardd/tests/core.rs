@@ -110,8 +110,16 @@ fn v3_9_wrong_password_growing_wait_without_count() {
         frames.push(encoded(Role::Agent, &r));
     }
     assert!(frames.windows(2).all(|w| w[0] == w[1]));
+    // No number in the frame besides the protocol version: the v2 frame carries
+    // `"v":2`; take exactly that field out (it must be there, once, with the value 2)
+    // and nothing else of the frame may have a digit (no count, no attempt, no wait).
     let s = String::from_utf8_lossy(&frames[0]);
-    assert!(!s.chars().any(|c| c.is_ascii_digit() && c != '1'), "{s}");
+    let mut frame: serde_json::Map<String, serde_json::Value> =
+        serde_json::from_slice(&frames[0]).unwrap();
+    assert_eq!(frame.remove("v"), Some(serde_json::Value::from(2u8)), "{s}");
+    let rest = serde_json::to_string(&frame).unwrap();
+    assert!(!rest.chars().any(|c| c.is_ascii_digit()), "{s}");
+    assert_eq!(s.matches(|c: char| c.is_ascii_digit()).count(), 1, "{s}");
     let waits: Vec<u64> = clock
         .0
         .lock()
