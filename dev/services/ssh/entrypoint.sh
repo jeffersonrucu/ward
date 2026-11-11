@@ -3,7 +3,7 @@
 # Senhas lidas de /run/ward/ e passadas ao chpasswd pela entrada padrão (nunca argv).
 set -eu
 
-modo="${WARD_MODO:?WARD_MODO não definido}"
+modo="${WARD_MODE:?WARD_MODE não definido}"
 segredos=/run/ward
 
 # Chave de host vem de .dev/ (estável entre recriações; trocada em V4.28).
@@ -46,7 +46,7 @@ Subsystem sftp internal-sftp
 CONF
 
 case "$modo" in
-senha)
+password)
     # 2222: deploy por senha (e túnel até o postgres); sftpuser só sftp, em chroot.
     definir_senha deploy "$segredos/senha-deploy"
     definir_senha sftpuser "$segredos/senha-sftpuser"
@@ -63,7 +63,7 @@ Match User sftpuser
     PermitTTY no
 CONF
     ;;
-chave)
+key)
     # 2223: deploy só por chave; senha recusada.
     so_chave deploy
     autorizar_chave deploy
@@ -75,7 +75,7 @@ AuthenticationMethods publickey
 AllowTcpForwarding no
 CONF
     ;;
-salto)
+jump)
     # 2224: salto por senha; encaminha só para o ssh-interno:22 (ProxyJump).
     definir_senha salto "$segredos/senha-salto"
     cat >>/etc/ssh/sshd_config <<CONF
@@ -86,7 +86,7 @@ AllowTcpForwarding local
 PermitOpen ssh-interno:22
 CONF
     ;;
-interno)
+internal)
     # Sem porta no host; só a rede interna do compose chega (pelo ssh-salto).
     so_chave deploy
     autorizar_chave deploy
@@ -99,7 +99,7 @@ AllowTcpForwarding no
 CONF
     ;;
 *)
-    echo "WARD_MODO desconhecido: $modo" >&2
+    echo "WARD_MODE desconhecido: $modo" >&2
     exit 1
     ;;
 esac

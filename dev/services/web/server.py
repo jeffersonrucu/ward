@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Sites falsos de teste do Ward (Fase 12), só biblioteca padrão.
+"""Fake Ward test sites (Phase 12), standard library only.
 
-    python3 -I -B server.py phish   # 8082: clone da tela de login do WordPress;
-                                      #       grava TODO POST em /registro/posts.log
-    python3 -I -B server.py totp    # 8083: login com campo de código e cadastro novo
-    python3 -I -B server.py redir   # 8084: redireciona tudo para o phish (8082)
+    python3 -I -B server.py phish   # 8082: clone of the WordPress login screen;
+                                      #       records EVERY POST in posts.log
+    python3 -I -B server.py totp    # 8083: login with a code field, plus sign-up
+    python3 -I -B server.py redir   # 8084: redirects everything to phish (8082)
 
-Entradas são não confiáveis: corpo limitado a 16 KiB, só formulário urlencoded,
-campos com tamanho máximo. O log de acesso mostra só método e caminho (sem query,
-sem corpo). Senha e código comparados em tempo constante (hmac.compare_digest).
+Inputs are untrusted: body limited to 16 KiB, urlencoded forms only, fields with a
+maximum size. The access log shows only method and path (no query, no body). Password
+and code compared in constant time (hmac.compare_digest).
 """
 
 from __future__ import annotations
@@ -27,14 +27,14 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 
-LIMITE_CORPO = 16 * 1024
-LIMITE_CAMPO = 256
-LIMITE_CONTAS_NOVAS = 100
-REGISTRO = os.environ.get("WARD_REGISTRO", "/registro/posts.log")
-CONTAS = os.environ.get("WARD_CONTAS", "/run/ward/totp-contas.json")
-DESTINO_REDIR = os.environ.get("WARD_DESTINO_REDIR", "http://localhost:8082/wp-login.php")
+BODY_LIMIT = 16 * 1024
+FIELD_LIMIT = 256
+NEW_ACCOUNTS_LIMIT = 100
+RECORD = os.environ.get("WARD_RECORD", "/registro/posts.log")
+ACCOUNTS = os.environ.get("WARD_ACCOUNTS", "/run/ward/totp-contas.json")
+REDIR_TARGET = os.environ.get("WARD_REDIR_TARGET", "http://localhost:8082/wp-login.php")
 
-ESTILO = (
+STYLE = (
     "body{font-family:sans-serif;background:#f0f0f1;margin:0}"
     "main{width:320px;margin:8% auto;background:#fff;padding:26px 24px;"
     "border:1px solid #c3c4c7;border-radius:4px}"
@@ -43,28 +43,28 @@ ESTILO = (
 )
 
 
-def pagina(titulo: str, corpo: str) -> bytes:
+def page(title: str, body: str) -> bytes:
     return (
         "<!doctype html><html lang=\"pt-BR\"><head><meta charset=\"utf-8\">"
-        f"<title>{html.escape(titulo)}</title><style>{ESTILO}</style></head>"
-        f"<body><main>{corpo}</main></body></html>"
+        f"<title>{html.escape(title)}</title><style>{STYLE}</style></head>"
+        f"<body><main>{body}</main></body></html>"
     ).encode()
 
 
-# --- TOTP (RFC 6238, SHA-1, 30 s, 6 dígitos) sobre o hmac da biblioteca padrão -------
-def totp(semente_b32: str, contador: int) -> str:
-    chave = base64.b32decode(semente_b32.upper() + "=" * (-len(semente_b32) % 8))
-    mac = hmac.new(chave, struct.pack(">Q", contador), hashlib.sha1).digest()
-    deslocamento = mac[-1] & 0x0F
-    valor = struct.unpack(">I", mac[deslocamento : deslocamento + 4])[0] & 0x7FFFFFFF
-    return f"{valor % 1_000_000:06d}"
+# --- TOTP (RFC 6238, SHA-1, 30 s, 6 digits) over the standard library hmac -----------
+def totp(seed_b32: str, counter: int) -> str:
+    key = base64.b32decode(seed_b32.upper() + "=" * (-len(seed_b32) % 8))
+    mac = hmac.new(key, struct.pack(">Q", counter), hashlib.sha1).digest()
+    offset = mac[-1] & 0x0F
+    value = struct.unpack(">I", mac[offset : offset + 4])[0] & 0x7FFFFFFF
+    return f"{value % 1_000_000:06d}"
 
 
-def totp_confere(semente: str, codigo: str) -> bool:
-    agora = int(time.time()) // 30
+def totp_matches(seed: str, code: str) -> bool:
+    now = int(time.time()) // 30
     ok = False
-    for passo in (-1, 0, 1):  # tolera um período de relógio para cada lado
-        ok |= hmac.compare_digest(totp(semente, agora + passo).encode(), codigo.encode())
+    for step in (-1, 0, 1):  # tolerates one clock period on each side
+        ok |= hmac.compare_digest(totp(seed, now + step).encode(), code.encode())
     return ok
 
 
@@ -72,64 +72,64 @@ class Base(BaseHTTPRequestHandler):
     server_version = "ward-teste"
     sys_version = ""
     protocol_version = "HTTP/1.1"
-    timeout = 10  # cliente lento não segura a thread
+    timeout = 10  # a slow client does not hold the thread
 
-    def log_message(self, formato: str, *args) -> None:  # sem query nem corpo
-        caminho = urlsplit(self.path).path
-        sys.stderr.write(f"{self.command} {caminho[:200]}\n")
+    def log_message(self, fmt: str, *args) -> None:  # no query, no body
+        url_path = urlsplit(self.path).path
+        sys.stderr.write(f"{self.command} {url_path[:200]}\n")
 
-    def responder(self, status: int, corpo: bytes, extra: dict[str, str] | None = None) -> None:
+    def respond(self, status: int, body: bytes, extra: dict[str, str] | None = None) -> None:
         self.send_response(status)
         self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(corpo)))
+        self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         for k, v in (extra or {}).items():
             self.send_header(k, v)
         self.end_headers()
-        self.wfile.write(corpo)
+        self.wfile.write(body)
 
-    def ler_corpo(self) -> bytes | None:
-        """Corpo do POST, ou None se recusado (já respondido)."""
+    def read_body(self) -> bytes | None:
+        """POST body, or None if refused (already answered)."""
         try:
-            tamanho = int(self.headers.get("Content-Length", ""))
+            size = int(self.headers.get("Content-Length", ""))
         except ValueError:
-            self.responder(411, pagina("Erro", "<p>Content-Length obrigatório.</p>"))
+            self.respond(411, page("Erro", "<p>Content-Length obrigatório.</p>"))
             return None
-        if tamanho < 0 or tamanho > LIMITE_CORPO:
+        if size < 0 or size > BODY_LIMIT:
             self.close_connection = True
-            self.responder(413, pagina("Erro", "<p>Corpo grande demais.</p>"))
+            self.respond(413, page("Erro", "<p>Corpo grande demais.</p>"))
             return None
-        return self.rfile.read(tamanho)
+        return self.rfile.read(size)
 
-    def formulario(self, corpo: bytes) -> dict[str, str] | None:
-        tipo = self.headers.get("Content-Type", "").split(";")[0].strip().lower()
-        if tipo != "application/x-www-form-urlencoded":
-            self.responder(415, pagina("Erro", "<p>Formulário inválido.</p>"))
+    def form(self, body: bytes) -> dict[str, str] | None:
+        content_type = self.headers.get("Content-Type", "").split(";")[0].strip().lower()
+        if content_type != "application/x-www-form-urlencoded":
+            self.respond(415, page("Erro", "<p>Formulário inválido.</p>"))
             return None
         try:
-            campos = parse_qs(corpo.decode("utf-8"), keep_blank_values=True, max_num_fields=20)
+            fields = parse_qs(body.decode("utf-8"), keep_blank_values=True, max_num_fields=20)
         except (UnicodeDecodeError, ValueError):
-            self.responder(400, pagina("Erro", "<p>Formulário inválido.</p>"))
+            self.respond(400, page("Erro", "<p>Formulário inválido.</p>"))
             return None
-        saida = {}
-        for k, v in campos.items():
-            if len(k) > 64 or len(v[0]) > LIMITE_CAMPO:
-                self.responder(400, pagina("Erro", "<p>Campo grande demais.</p>"))
+        out = {}
+        for k, v in fields.items():
+            if len(k) > 64 or len(v[0]) > FIELD_LIMIT:
+                self.respond(400, page("Erro", "<p>Campo grande demais.</p>"))
                 return None
-            saida[k] = v[0]
-        return saida
+            out[k] = v[0]
+        return out
 
 
 # --- phish (8082) ----------------------------------------------------------------------
-TRAVA_REGISTRO = threading.Lock()
+RECORD_LOCK = threading.Lock()
 
 
-def tela_wp(erro: str = "") -> bytes:
-    aviso = f"<p class=\"erro\" id=\"login_error\">{html.escape(erro)}</p>" if erro else ""
-    return pagina(
+def wp_screen(error: str = "") -> bytes:
+    notice = f"<p class=\"erro\" id=\"login_error\">{html.escape(error)}</p>" if error else ""
+    return page(
         "Acessar ‹ Acme — WordPress",
-        "<h1>Acme</h1>" + aviso +
+        "<h1>Acme</h1>" + notice +
         "<form name=\"loginform\" id=\"loginform\" action=\"/wp-login.php\" method=\"post\">"
         "<label for=\"user_login\">Nome de usuário ou endereço de e-mail</label>"
         "<input type=\"text\" name=\"log\" id=\"user_login\" autocomplete=\"username\">"
@@ -143,38 +143,38 @@ def tela_wp(erro: str = "") -> bytes:
 
 class Phish(Base):
     def do_GET(self) -> None:
-        self.responder(200, tela_wp())
+        self.respond(200, wp_screen())
 
     def do_POST(self) -> None:
-        corpo = self.ler_corpo()
-        if corpo is None:
+        body = self.read_body()
+        if body is None:
             return
-        linha = {
+        line = {
             "quando": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
             "caminho": urlsplit(self.path).path[:200],
-            "corpo": corpo.decode("utf-8", "replace"),
-            "campos": {k: v[0] for k, v in parse_qs(corpo.decode("utf-8", "replace"), keep_blank_values=True, max_num_fields=50).items()},
+            "corpo": body.decode("utf-8", "replace"),
+            "campos": {k: v[0] for k, v in parse_qs(body.decode("utf-8", "replace"), keep_blank_values=True, max_num_fields=50).items()},
         }
-        with TRAVA_REGISTRO:
-            fd = os.open(REGISTRO, os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW, 0o600)
+        with RECORD_LOCK:
+            fd = os.open(RECORD, os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW, 0o600)
             try:
-                os.write(fd, (json.dumps(linha, ensure_ascii=False) + "\n").encode())
+                os.write(fd, (json.dumps(line, ensure_ascii=False) + "\n").encode())
             finally:
                 os.close(fd)
-        self.responder(200, tela_wp("Erro: a senha informada está incorreta."))
+        self.respond(200, wp_screen("Erro: a senha informada está incorreta."))
 
 
 # --- totp (8083) -----------------------------------------------------------------------
-USUARIO_VALIDO = re.compile(r"^[a-z0-9_.-]{1,64}$")
-TRAVA_CONTAS = threading.Lock()
-CONTAS_CARREGADAS: dict[str, dict[str, str]] = {}
+VALID_USERNAME = re.compile(r"^[a-z0-9_.-]{1,64}$")
+ACCOUNTS_LOCK = threading.Lock()
+LOADED_ACCOUNTS: dict[str, dict[str, str]] = {}
 
 
-def tela_totp(msg: str = "", classe: str = "erro") -> bytes:
-    aviso = f"<p class=\"{classe}\" id=\"mensagem\">{html.escape(msg)}</p>" if msg else ""
-    return pagina(
+def totp_screen(msg: str = "", css_class: str = "erro") -> bytes:
+    notice = f"<p class=\"{css_class}\" id=\"mensagem\">{html.escape(msg)}</p>" if msg else ""
+    return page(
         "Entrar — Portal de teste",
-        "<h1>Portal de teste</h1>" + aviso +
+        "<h1>Portal de teste</h1>" + notice +
         "<form id=\"login\" action=\"/login\" method=\"post\">"
         "<label for=\"usuario\">Usuário</label>"
         "<input type=\"text\" name=\"usuario\" id=\"usuario\" autocomplete=\"username\">"
@@ -188,11 +188,11 @@ def tela_totp(msg: str = "", classe: str = "erro") -> bytes:
     )
 
 
-def tela_cadastro(msg: str = "", classe: str = "erro") -> bytes:
-    aviso = f"<p class=\"{classe}\" id=\"mensagem\">{html.escape(msg)}</p>" if msg else ""
-    return pagina(
+def signup_screen(msg: str = "", css_class: str = "erro") -> bytes:
+    notice = f"<p class=\"{css_class}\" id=\"mensagem\">{html.escape(msg)}</p>" if msg else ""
+    return page(
         "Criar conta — Portal de teste",
-        "<h1>Criar conta</h1>" + aviso +
+        "<h1>Criar conta</h1>" + notice +
         "<form id=\"cadastro\" action=\"/cadastro\" method=\"post\">"
         "<label for=\"usuario\">Usuário</label>"
         "<input type=\"text\" name=\"usuario\" id=\"usuario\" autocomplete=\"username\">"
@@ -205,87 +205,87 @@ def tela_cadastro(msg: str = "", classe: str = "erro") -> bytes:
 
 class Totp(Base):
     def do_GET(self) -> None:
-        caminho = urlsplit(self.path).path
-        if caminho in ("/", "/login"):
-            self.responder(200, tela_totp())
-        elif caminho == "/cadastro":
-            self.responder(200, tela_cadastro())
+        url_path = urlsplit(self.path).path
+        if url_path in ("/", "/login"):
+            self.respond(200, totp_screen())
+        elif url_path == "/cadastro":
+            self.respond(200, signup_screen())
         else:
-            self.responder(404, pagina("Não encontrado", "<p>Não encontrado.</p>"))
+            self.respond(404, page("Não encontrado", "<p>Não encontrado.</p>"))
 
     def do_POST(self) -> None:
-        caminho = urlsplit(self.path).path
-        if caminho not in ("/login", "/cadastro"):
-            self.responder(404, pagina("Não encontrado", "<p>Não encontrado.</p>"))
+        url_path = urlsplit(self.path).path
+        if url_path not in ("/login", "/cadastro"):
+            self.respond(404, page("Não encontrado", "<p>Não encontrado.</p>"))
             return
-        corpo = self.ler_corpo()
-        if corpo is None:
+        body = self.read_body()
+        if body is None:
             return
-        campos = self.formulario(corpo)
-        if campos is None:
+        fields = self.form(body)
+        if fields is None:
             return
-        usuario = campos.get("usuario", "")
-        senha = campos.get("senha", "")
-        if caminho == "/cadastro":
-            self.cadastrar(usuario, senha)
+        username = fields.get("usuario", "")
+        password = fields.get("senha", "")
+        if url_path == "/cadastro":
+            self.sign_up(username, password)
         else:
-            self.entrar(usuario, senha, campos.get("codigo", ""))
+            self.log_in(username, password, fields.get("codigo", ""))
 
-    def cadastrar(self, usuario: str, senha: str) -> None:
-        if not USUARIO_VALIDO.match(usuario) or not (8 <= len(senha) <= LIMITE_CAMPO):
-            self.responder(400, tela_cadastro("Usuário inválido ou senha com menos de 8 caracteres."))
+    def sign_up(self, username: str, password: str) -> None:
+        if not VALID_USERNAME.match(username) or not (8 <= len(password) <= FIELD_LIMIT):
+            self.respond(400, signup_screen("Usuário inválido ou senha com menos de 8 caracteres."))
             return
-        with TRAVA_CONTAS:
-            if usuario in CONTAS_CARREGADAS:
-                self.responder(409, tela_cadastro("Usuário já existe."))
+        with ACCOUNTS_LOCK:
+            if username in LOADED_ACCOUNTS:
+                self.respond(409, signup_screen("Usuário já existe."))
                 return
-            if len(CONTAS_CARREGADAS) >= LIMITE_CONTAS_NOVAS:
-                self.responder(429, tela_cadastro("Limite de contas de teste atingido."))
+            if len(LOADED_ACCOUNTS) >= NEW_ACCOUNTS_LIMIT:
+                self.respond(429, signup_screen("Limite de contas de teste atingido."))
                 return
-            CONTAS_CARREGADAS[usuario] = {"senha": senha, "totp_semente": ""}
-        self.responder(201, tela_cadastro("Conta criada. Já pode entrar.", "ok"))
+            LOADED_ACCOUNTS[username] = {"senha": password, "totp_semente": ""}
+        self.respond(201, signup_screen("Conta criada. Já pode entrar.", "ok"))
 
-    def entrar(self, usuario: str, senha: str, codigo: str) -> None:
-        with TRAVA_CONTAS:
-            conta = CONTAS_CARREGADAS.get(usuario)
-        # Compara sempre (mesmo sem conta) para não revelar por tempo se o usuário existe.
-        senha_ok = hmac.compare_digest(
-            (conta["senha"] if conta else "\0" * 32).encode(), senha.encode()
+    def log_in(self, username: str, password: str, code: str) -> None:
+        with ACCOUNTS_LOCK:
+            account = LOADED_ACCOUNTS.get(username)
+        # Always compares (even without an account) so timing does not reveal whether the user exists.
+        password_ok = hmac.compare_digest(
+            (account["senha"] if account else "\0" * 32).encode(), password.encode()
         )
-        semente = conta["totp_semente"] if conta else ""
-        codigo_ok = totp_confere(semente, codigo) if semente else True
-        if conta and senha_ok and codigo_ok:
-            self.responder(200, pagina("Painel — Portal de teste", f"<h1 id=\"painel\">Painel</h1><p>Olá, {html.escape(usuario)}.</p>"))
+        seed = account["totp_semente"] if account else ""
+        code_ok = totp_matches(seed, code) if seed else True
+        if account and password_ok and code_ok:
+            self.respond(200, page("Painel — Portal de teste", f"<h1 id=\"painel\">Painel</h1><p>Olá, {html.escape(username)}.</p>"))
         else:
-            self.responder(401, tela_totp("Usuário, senha ou código incorretos."))
+            self.respond(401, totp_screen("Usuário, senha ou código incorretos."))
 
 
 # --- redir (8084) ----------------------------------------------------------------------
 class Redir(Base):
-    def redirecionar(self) -> None:
-        self.responder(302, pagina("Redirecionando", "<p>Redirecionando…</p>"), {"Location": DESTINO_REDIR})
+    def redirect(self) -> None:
+        self.respond(302, page("Redirecionando", "<p>Redirecionando…</p>"), {"Location": REDIR_TARGET})
 
     def do_GET(self) -> None:
-        self.redirecionar()
+        self.redirect()
 
     def do_POST(self) -> None:
-        self.redirecionar()
+        self.redirect()
 
 
 def main() -> None:
-    modos = {"phish": Phish, "totp": Totp, "redir": Redir}
-    if len(sys.argv) != 2 or sys.argv[1] not in modos:
+    modes = {"phish": Phish, "totp": Totp, "redir": Redir}
+    if len(sys.argv) != 2 or sys.argv[1] not in modes:
         sys.exit("uso: server.py phish|totp|redir")
-    modo = sys.argv[1]
-    if modo == "totp":
-        with open(CONTAS, encoding="utf-8") as f:
+    mode = sys.argv[1]
+    if mode == "totp":
+        with open(ACCOUNTS, encoding="utf-8") as f:
             for c in json.load(f):
-                CONTAS_CARREGADAS[c["usuario"]] = {"senha": c["senha"], "totp_semente": c["totp_semente"]}
-    porta = int(os.environ.get("WARD_PORTA", "8080"))
-    servidor = ThreadingHTTPServer(("0.0.0.0", porta), modos[modo])
-    servidor.daemon_threads = True
-    sys.stderr.write(f"ward-teste {modo} escutando na porta {porta}\n")
-    servidor.serve_forever()
+                LOADED_ACCOUNTS[c["usuario"]] = {"senha": c["senha"], "totp_semente": c["totp_semente"]}
+    port = int(os.environ.get("WARD_LISTEN_PORT", "8080"))
+    server = ThreadingHTTPServer(("0.0.0.0", port), modes[mode])
+    server.daemon_threads = True
+    sys.stderr.write(f"ward-teste {mode} escutando na porta {port}\n")
+    server.serve_forever()
 
 
 if __name__ == "__main__":

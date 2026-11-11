@@ -1220,6 +1220,29 @@ Identificadores de `dev/variations.py`, `dev/tests/variations_test.py`, `login.p
 `read_selections` (e a opção interna `--ler` → `--read`), `no_principal` → `on_main`,
 `sem_valor` → `no_value`, `prova` → `proof`, `neutralizar` → `neutralize`.
 
+Identificadores da Fase 45 (`origins.py`, `services/web/server.py`, `services/generate.py`,
+`compose.yml`, `nm.py`, `socket_attack.py`, `socket_matrix.py`, `real-home.sh`,
+`webkit-real.sh`, `deb.sh`), pela seção 2: `PERMITIDAS_HOME`/`ENV_PERMITIDAS`/
+`TOOLCHAIN_PERMITIDAS` → `HOME_ALLOWED`/`ENV_ALLOWED`/`TOOLCHAIN_ALLOWED`, `CANAL_FIXO` →
+`FIXED_CHANNEL`, `PULAR` → `SKIP`, `CASA` (home do passwd, local) → `PASSWD_HOME`,
+`terminar` → `finish`; no `server.py`: `tela_*` → `*_screen`, `cadastrar`/`entrar` →
+`sign_up`/`log_in`, `CONTAS_CARREGADAS` → `LOADED_ACCOUNTS`, `TRAVA_*` → `*_LOCK`; no
+`generate.py`: `diretorio` → `ensure_dir`, `SERVICOS_SSH` → `SSH_SERVICES`, `trocar`
+(chave de host) → `rotate`, e a primeira linha da docstring (descrição do `--help`) virou
+a constante `DESCRIPTION` com o mesmo texto; nos testes: `rastrear` → `trace_run`,
+`acusados` → `flagged`, `isca` → `decoy`, `valor_fixo` → `fixed_value`, `LANCADOR` →
+`LAUNCHER`, `SEM_MPS`/`SEM_39C` (locais) → `NO_MPS`/`NO_39C`, `RUINS` → `BAD_FRAMES`,
+`VAGAS` → `SLOTS`, `sessao` → `session`. Feitos na Fase 45 (antes da 56): `WARD_MODO` =
+`password`/`key`/`jump`/`internal` (com o `ssh/entrypoint.sh`), `WARD_PORTA` →
+`WARD_LISTEN_PORT`, `WARD_REGISTRO`/`WARD_CONTAS`/`WARD_DESTINO_REDIR` →
+`WARD_RECORD`/`WARD_ACCOUNTS`/`WARD_REDIR_TARGET` (só `compose.yml` e `server.py` os
+usam); âncoras YAML `seguranca`/`wp-ambiente` → `security`/`wp-env`, rede `interno` →
+`internal`; opção interna `--so-host` do `deb.sh` → `--host-only`. Ficam (dados do cofre
+de teste, `allow.txt`): os serviços `ssh-senha`, `ssh-chave`, `ssh-salto`, `ssh-interno`.
+Ficam para a Fase 46 (contrato do `common.sh`): `RAIZ` em quem faz `source` dele,
+`OPCOES_SSH`, `IMAGEM_PG`, `DS`, `SEG` e as funções; para a 56: `WARD_HOME_COBERTO`,
+`WARD_TESTE_PG_SENHA_ARQUIVO`, `WARD_PAI_CHROME_SOCK`.
+
 ### Evidência dos scripts (DT1; Fase 5)
 
 `docs/mission/evidence/fase-NN/` → `docs/mission/evidence/<suíte>/`, pelo alvo novo:

@@ -1,13 +1,13 @@
 #!/usr/bin/python3 -I -B
-"""V3.4 (S5, scrutiny do M3): o `wardd` de teste aguenta quadros ruins e 10 000
-conexões caladas e continua atendendo um cliente normal.
+"""V3.4 (S5, M3 scrutiny): the test `wardd` withstands bad frames and 10 000 silent
+connections and keeps serving a normal client.
 
-Uso: socket_attack.py <caminho do socket> <pid do wardd> [conexoes]
-Chamado por `dev/tests/socket-attacks.sh` (`make test-socket-attacks`), que sobe um
-`wardd` só para o teste, num diretório próprio. Não imprime nada do que o daemon manda
-além do tipo e do código das respostas (nenhuma tem segredo: o cofre fica travado).
+Usage: socket_attack.py <socket path> <wardd pid> [connections]
+Called by `dev/tests/socket-attacks.sh` (`make test-socket-attacks`), which starts a
+`wardd` only for the test, in its own directory. Prints nothing the daemon sends beyond
+the type and the code of the replies (none carries a secret: the vault stays locked).
 
-Cada caso tem de passar; sai 1 na primeira rodada com falha (todas as falhas listadas).
+Every case has to pass; exits 1 on the first run with a failure (all failures listed).
 """
 
 import json
@@ -19,33 +19,33 @@ import struct
 import sys
 import time
 
-CAMINHO = sys.argv[1]
+SOCKET_PATH = sys.argv[1]
 PID = int(sys.argv[2])
-CONEXOES = int(sys.argv[3]) if len(sys.argv) > 3 else 10_000
-# Vagas de agente do daemon (`servidor::MAX_CONEXOES`): no fim da enxurrada, no máximo
-# essas ficam abertas (mais as que ainda estavam na fila do `accept`).
-VAGAS = 64
+CONNECTIONS = int(sys.argv[3]) if len(sys.argv) > 3 else 10_000
+# Agent slots of the daemon (its maximum number of connections): at the end of the
+# flood, at most these stay open (plus the ones still in the `accept` queue).
+SLOTS = 64
 
-falhas = []
+failures = []
 
 
 def ok(msg):
     print(f"ok    {msg}")
 
 
-def falhou(msg):
+def fail(msg):
     print(f"FALHA {msg}", file=sys.stderr)
-    falhas.append(msg)
+    failures.append(msg)
 
 
-def novo(prazo=30):
+def connect_new(deadline=30):
     s = socket.socket(socket.AF_UNIX)
-    s.settimeout(prazo)
-    s.connect(CAMINHO)
+    s.settimeout(deadline)
+    s.connect(SOCKET_PATH)
     return s
 
 
-def ler_exato(s, n):
+def read_exact(s, n):
     d = b""
     while len(d) < n:
         c = s.recv(n - len(d))
@@ -55,30 +55,30 @@ def ler_exato(s, n):
     return d
 
 
-def resposta(s):
-    """O próximo quadro (dict) ou None se a conexão fechou sem quadro."""
+def reply(s):
+    """The next frame (dict) or None if the connection closed without a frame."""
     try:
-        n = ler_exato(s, 4)
+        n = read_exact(s, 4)
         if n is None:
             return None
-        corpo = ler_exato(s, struct.unpack(">I", n)[0])
-        return None if corpo is None else json.loads(corpo)
+        body = read_exact(s, struct.unpack(">I", n)[0])
+        return None if body is None else json.loads(body)
     except ConnectionResetError:
         return None
     except socket.timeout:
-        # Nem quadro nem fechamento no prazo: o daemon ficou esperando (falha).
+        # Neither a frame nor a close in time: the daemon kept waiting (failure).
         return {"tipo": "sem resposta no prazo"}
 
 
-def pedir(s, op, dados=None):
-    b = json.dumps({"v": 1, "op": op, "dados": dados or {}}).encode()
+def request(s, op, data=None):
+    b = json.dumps({"v": 1, "op": op, "dados": data or {}}).encode()
     s.sendall(struct.pack(">I", len(b)) + b)
-    return resposta(s)
+    return reply(s)
 
 
-def fechada(s, prazo=10):
-    """A conexão foi fechada pelo daemon (EOF ou reset) dentro do prazo."""
-    s.settimeout(prazo)
+def closed(s, deadline=10):
+    """The connection was closed by the daemon (EOF or reset) within the deadline."""
+    s.settimeout(deadline)
     try:
         while True:
             c = s.recv(4096)
@@ -90,7 +90,7 @@ def fechada(s, prazo=10):
         return False
 
 
-def tipo_codigo(r):
+def kind_code(r):
     if r is None:
         return "fechou"
     t = r.get("tipo")
@@ -99,7 +99,7 @@ def tipo_codigo(r):
     return str(t)
 
 
-def vivo():
+def alive():
     try:
         os.kill(PID, 0)
         return True
@@ -107,27 +107,27 @@ def vivo():
         return False
 
 
-def normal(rotulo):
+def normal_client(label):
     t = time.monotonic()
     try:
-        s = novo()
-        r = pedir(s, "estado")
+        s = connect_new()
+        r = request(s, "estado")
         s.close()
     except OSError as e:
-        falhou(f"{rotulo}: cliente normal sem resposta ({e.__class__.__name__})")
+        fail(f"{label}: cliente normal sem resposta ({e.__class__.__name__})")
         return
     dt = time.monotonic() - t
     if r is not None and r.get("tipo") == "estado":
-        ok(f"{rotulo}: cliente normal atendido em {dt:.2f} s")
+        ok(f"{label}: cliente normal atendido em {dt:.2f} s")
     else:
-        falhou(f"{rotulo}: cliente normal recebeu {tipo_codigo(r)}")
+        fail(f"{label}: cliente normal recebeu {kind_code(r)}")
 
 
-# --- Quadros ruins: cada um recusado (erro) ou fechado, e o daemon segue -------------
-normal("antes")
-# (rótulo, bytes, o quadro em si é recusado: a conexão tem de fechar). JSON ruim num
-# quadro bem formado recebe erro e a conexão pode seguir.
-RUINS = [
+# --- Bad frames: each one refused (error) or closed, and the daemon goes on -----------
+normal_client("antes")
+# (label, bytes, the frame itself is refused: the connection has to close). Bad JSON in
+# a well-formed frame gets an error and the connection may go on.
+BAD_FRAMES = [
     ("tamanho de 2 MiB", struct.pack(">I", 2 * 1024 * 1024) + b"x" * 1024, True),
     ("tamanho 0xFFFFFFFF (negativo em i32)", struct.pack(">i", -1), True),
     ("tamanho negativo com corpo", struct.pack(">i", -5) + b"{}{}{", True),
@@ -138,102 +138,102 @@ RUINS = [
     ("versão errada", None, False),
     ("operação desconhecida", None, False),
 ]
-for rotulo, bruto, deve_fechar in RUINS:
-    s = novo(10)
-    if rotulo == "versão errada":
+for label, raw, must_close in BAD_FRAMES:
+    s = connect_new(10)
+    if label == "versão errada":
         b = json.dumps({"v": 99, "op": "estado", "dados": {}}).encode()
         s.sendall(struct.pack(">I", len(b)) + b)
-        r = resposta(s)
-    elif rotulo == "operação desconhecida":
-        r = pedir(s, "inventada")
+        r = reply(s)
+    elif label == "operação desconhecida":
+        r = request(s, "inventada")
     else:
         try:
-            s.sendall(bruto)
+            s.sendall(raw)
         except (BrokenPipeError, ConnectionResetError):
             pass
-        r = resposta(s)
-    tc = tipo_codigo(r)
+        r = reply(s)
+    tc = kind_code(r)
     if tc == "fechou" or tc.startswith("erro:"):
-        ok(f"{rotulo}: {tc}")
+        ok(f"{label}: {tc}")
     else:
-        falhou(f"{rotulo}: aceito ({tc})")
-    if deve_fechar and not fechada(s):
-        falhou(f"{rotulo}: conexão continuou aberta")
+        fail(f"{label}: aceito ({tc})")
+    if must_close and not closed(s):
+        fail(f"{label}: conexão continuou aberta")
     s.close()
 
-# Quadro cortado: anuncia 100 bytes, manda 10 e fecha.
-s = novo(10)
+# Truncated frame: announces 100 bytes, sends 10 and closes.
+s = connect_new(10)
 s.sendall(struct.pack(">I", 100) + b"{" * 10)
 s.shutdown(socket.SHUT_WR)
-if fechada(s):
+if closed(s):
     ok("quadro cortado: fechado")
 else:
-    falhou("quadro cortado: conexão continuou aberta")
+    fail("quadro cortado: conexão continuou aberta")
 s.close()
-if vivo():
+if alive():
     ok("daemon vivo depois dos quadros ruins")
 else:
-    falhou("daemon morreu com os quadros ruins")
-normal("depois dos quadros ruins")
+    fail("daemon morreu com os quadros ruins")
+normal_client("depois dos quadros ruins")
 
-# --- 10 000 conexões caladas ---------------------------------------------------------
-mole, dura = resource.getrlimit(resource.RLIMIT_NOFILE)
-precisa = CONEXOES + 256
-if dura != resource.RLIM_INFINITY and dura < precisa:
-    falhou(f"RLIMIT_NOFILE rígido {dura} < {precisa}: não dá para abrir {CONEXOES} conexões")
+# --- 10 000 silent connections --------------------------------------------------------
+soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+needed = CONNECTIONS + 256
+if hard != resource.RLIM_INFINITY and hard < needed:
+    fail(f"RLIMIT_NOFILE rígido {hard} < {needed}: não dá para abrir {CONNECTIONS} conexões")
     sys.exit(1)
-resource.setrlimit(resource.RLIMIT_NOFILE, (precisa, dura))
-conexoes = []
-erros_connect = 0
+resource.setrlimit(resource.RLIMIT_NOFILE, (needed, hard))
+conns = []
+connect_errors = 0
 t = time.monotonic()
-# `connect` bloqueante, como o de um cliente comum: com a fila do `listen` cheia, ele
-# espera o daemon aceitar (um `connect` com prazo, que é não bloqueante, levaria
-# EAGAIN na hora). Se o daemon parar de aceitar, o alarme encerra o teste com falha.
+# Blocking `connect`, like an ordinary client's: with the `listen` queue full, it waits
+# for the daemon to accept (a `connect` with a timeout, which is non-blocking, would get
+# EAGAIN right away). If the daemon stops accepting, the alarm ends the test with a failure.
 signal.signal(signal.SIGALRM, lambda *_: (_ for _ in ()).throw(TimeoutError()))
 signal.alarm(180)
 try:
-    for _ in range(CONEXOES):
+    for _ in range(CONNECTIONS):
         c = socket.socket(socket.AF_UNIX)
         try:
-            c.connect(CAMINHO)
-            conexoes.append(c)
+            c.connect(SOCKET_PATH)
+            conns.append(c)
         except OSError:
-            erros_connect += 1
+            connect_errors += 1
             c.close()
 except TimeoutError:
-    falhou(f"connect parado: o daemon parou de aceitar depois de {len(conexoes)} conexões")
+    fail(f"connect parado: o daemon parou de aceitar depois de {len(conns)} conexões")
 signal.alarm(0)
 dt = time.monotonic() - t
-print(f"info  {len(conexoes)} conexões caladas abertas em {dt:.1f} s ({erros_connect} connect falhou)")
-if erros_connect:
-    falhou(f"{erros_connect} connect recusado (o daemon parou de aceitar)")
-normal(f"com {CONEXOES} conexões caladas")
-# Ninguém pediu nada: as caladas antigas foram derrubadas para dar vaga às novas.
-abertas = 0
-for c in conexoes:
+print(f"info  {len(conns)} conexões caladas abertas em {dt:.1f} s ({connect_errors} connect falhou)")
+if connect_errors:
+    fail(f"{connect_errors} connect recusado (o daemon parou de aceitar)")
+normal_client(f"com {CONNECTIONS} conexões caladas")
+# Nobody asked anything: the old silent ones were dropped to make room for the new ones.
+still_open = 0
+for c in conns:
     c.setblocking(False)
     try:
         if c.recv(1, socket.MSG_PEEK) == b"":
             continue
-        abertas += 1  # mandou algo? não deveria
+        still_open += 1  # did it send something? it should not
     except BlockingIOError:
-        abertas += 1
+        still_open += 1
     except ConnectionResetError:
         pass
-if abertas <= 2 * VAGAS + 1:
-    ok(f"das {len(conexoes)} caladas, {abertas} seguem abertas (até {2 * VAGAS + 1})")
+if still_open <= 2 * SLOTS + 1:
+    ok(f"das {len(conns)} caladas, {still_open} seguem abertas (até {2 * SLOTS + 1})")
 else:
-    falhou(f"{abertas} conexões caladas seguem abertas (esperado até {2 * VAGAS + 1})")
-for c in conexoes:
+    fail(f"{still_open} conexões caladas seguem abertas (esperado até {2 * SLOTS + 1})")
+for c in conns:
     c.close()
-conexoes.clear()
-if vivo():
+conns.clear()
+if alive():
     ok("daemon vivo depois da enxurrada")
 else:
-    falhou("daemon morreu com a enxurrada")
-normal("depois da enxurrada")
+    fail("daemon morreu com a enxurrada")
+normal_client("depois da enxurrada")
 
-if falhas:
-    print(f"socket_ataque: {len(falhas)} falha(s)", file=sys.stderr)
+if failures:
+    print(f"socket_ataque: {len(failures)} falha(s)", file=sys.stderr)
     sys.exit(1)
 print("socket_ataque: V3.4 ok")

@@ -343,7 +343,7 @@ test-clipboard: origins
 ## fora do `make check`. `NO_MPS=1` roda sem CUDA_MPS_PIPE_DIRECTORY e `NO_39C=1` sem
 ## GST_PLUGIN_LOADING_WHITELIST/__GL_APPLICATION_PROFILE (mostram os ataques)
 test-webkit-real: origins
-	dev/tests/webkit-real.sh "$(CARGO)" $(if $(filter 1,$(NO_MPS)),--no-mps)$(if $(filter 1,$(NO_39C)),--no-39c)
+	dev/tests/webkit-real.sh "$(CARGO)" $(if $(filter 1,$(NO_MPS)),--no-mps) $(if $(filter 1,$(NO_39C)),--no-39c)
 
 ## test-app-e2e: V5.10, V5.16, V5.24 (Fase 39c) de ponta a ponta pela ponte: `wardd` de
 ## teste só dele (WARD_DEV_SOCKET_DIR, padrão /run/user/<uid>/ward-teste-e2e) com a ponte
