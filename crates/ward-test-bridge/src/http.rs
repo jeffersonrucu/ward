@@ -1,4 +1,4 @@
-//! Servidor HTTP mínimo da ponte de teste (só a biblioteca padrão). Ver o topo do crate.
+//! Minimal HTTP server of the test bridge (standard library only). See the top of the crate.
 
 use std::fs;
 use std::io::{self, BufRead, BufReader, Read, Write};
@@ -25,32 +25,32 @@ use ward_app_core::restaurar::Restauracao;
 use ward_app_core::servico::Servico;
 use zeroize::Zeroizing;
 
-/// Cabeçalho da requisição (linha + cabeçalhos).
-pub const MAX_CABECALHO: usize = 8 * 1024;
-/// Corpo de um `POST /ponte/<comando>`.
-pub const MAX_CORPO: usize = 16 * 1024;
-/// Conexões abertas ao mesmo tempo.
-pub const MAX_CONEXOES: usize = 16;
-const PRAZO: Duration = Duration::from_secs(5);
+/// Request head (line + headers).
+pub const MAX_HEADER: usize = 8 * 1024;
+/// Body of a `POST` to a bridge command.
+pub const MAX_BODY: usize = 16 * 1024;
+/// Connections open at the same time.
+pub const MAX_CONNECTIONS: usize = 16;
+const TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Mesma CSP do app (`tauri.conf.json`), com `connect-src 'self'` no lugar da IPC.
+/// Same CSP as the app (`tauri.conf.json`), with `connect-src 'self'` in place of the IPC.
 pub const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; \
 font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; \
 frame-src 'none'; worker-src 'none'; object-src 'none'; media-src 'none'; manifest-src 'none'";
 
-/// Ponte ligada a um serviço do app e a um diretório `dist-teste/`.
-pub struct Ponte<D: Daemon, A: AreaTransferencia> {
-    servico: Servico<D, A>,
+/// Bridge bound to an app service and to the directory of the test-mode build.
+pub struct Bridge<D: Daemon, A: AreaTransferencia> {
+    service: Servico<D, A>,
     dist: PathBuf,
     token: Zeroizing<String>,
     host: String,
-    origem: String,
-    abertas: AtomicUsize,
+    origin: String,
+    open_conns: AtomicUsize,
 }
 
-impl<D: Daemon + 'static, A: AreaTransferencia> Ponte<D, A> {
-    /// Abre `127.0.0.1:0` e sorteia o token.
-    pub fn abrir(servico: Servico<D, A>, dist: &Path) -> io::Result<(Arc<Self>, TcpListener)> {
+impl<D: Daemon + 'static, A: AreaTransferencia> Bridge<D, A> {
+    /// Opens `127.0.0.1:0` and draws the token.
+    pub fn open(service: Servico<D, A>, dist: &Path) -> io::Result<(Arc<Self>, TcpListener)> {
         let dist = fs::canonicalize(dist)?;
         if !dist.join("index.html").is_file() {
             return Err(io::Error::new(
@@ -58,422 +58,420 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Ponte<D, A> {
                 "dist sem index.html",
             ));
         }
-        let ouvinte = TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))?;
-        let porta = ouvinte.local_addr()?.port();
-        let mut bruto = Zeroizing::new([0u8; 32]);
-        getrandom::fill(&mut *bruto).map_err(|_| io::Error::other("sem aleatório do sistema"))?;
+        let listener = TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))?;
+        let port = listener.local_addr()?.port();
+        let mut raw = Zeroizing::new([0u8; 32]);
+        getrandom::fill(&mut *raw).map_err(|_| io::Error::other("sem aleatório do sistema"))?;
         let mut token = Zeroizing::new(String::with_capacity(64));
-        for b in bruto.iter() {
+        for b in raw.iter() {
             token.push(char::from(b"0123456789abcdef"[usize::from(b >> 4)]));
             token.push(char::from(b"0123456789abcdef"[usize::from(b & 0xf)]));
         }
-        let host = format!("127.0.0.1:{porta}");
-        let origem = format!("http://{host}");
-        let ponte = Arc::new(Ponte {
-            servico,
+        let host = format!("127.0.0.1:{port}");
+        let origin = format!("http://{host}");
+        let bridge = Arc::new(Bridge {
+            service,
             dist,
             token,
             host,
-            origem,
-            abertas: AtomicUsize::new(0),
+            origin,
+            open_conns: AtomicUsize::new(0),
         });
-        Ok((ponte, ouvinte))
+        Ok((bridge, listener))
     }
 
-    /// URL que o Chrome abre (com o token no fragmento).
-    pub fn url_de_abertura(&self) -> String {
-        format!("{}/#token={}", self.origem, *self.token)
+    /// URL that Chrome opens (with the token in the fragment).
+    pub fn opening_url(&self) -> String {
+        format!("{}/#token={}", self.origin, *self.token)
     }
 
-    pub fn origem(&self) -> &str {
-        &self.origem
+    pub fn origin(&self) -> &str {
+        &self.origin
     }
 
-    /// Só para os testes da ponte.
+    /// Only for the bridge tests.
     #[doc(hidden)]
-    pub fn token_para_teste(&self) -> &str {
+    pub fn token_for_test(&self) -> &str {
         &self.token
     }
 
-    /// Atende até o processo terminar.
-    pub fn servir(self: &Arc<Self>, ouvinte: TcpListener) {
-        for conexao in ouvinte.incoming() {
-            let Ok(conexao) = conexao else { continue };
-            if self.abertas.fetch_add(1, Ordering::SeqCst) >= MAX_CONEXOES {
-                self.abertas.fetch_sub(1, Ordering::SeqCst);
-                continue; // cai a conexão
+    /// Serves until the process ends.
+    pub fn serve(self: &Arc<Self>, listener: TcpListener) {
+        for conn in listener.incoming() {
+            let Ok(conn) = conn else { continue };
+            if self.open_conns.fetch_add(1, Ordering::SeqCst) >= MAX_CONNECTIONS {
+                self.open_conns.fetch_sub(1, Ordering::SeqCst);
+                continue; // drops the connection
             }
-            let ponte = Arc::clone(self);
+            let bridge = Arc::clone(self);
             let r = thread::Builder::new()
                 .name("ward-ponte".into())
                 .spawn(move || {
-                    let _ = ponte.atender(conexao);
-                    ponte.abertas.fetch_sub(1, Ordering::SeqCst);
+                    let _ = bridge.handle(conn);
+                    bridge.open_conns.fetch_sub(1, Ordering::SeqCst);
                 });
             if r.is_err() {
-                self.abertas.fetch_sub(1, Ordering::SeqCst);
+                self.open_conns.fetch_sub(1, Ordering::SeqCst);
             }
         }
     }
 
-    fn atender(&self, conexao: TcpStream) -> io::Result<()> {
-        conexao.set_read_timeout(Some(PRAZO))?;
-        conexao.set_write_timeout(Some(PRAZO))?;
-        let mut saida = conexao.try_clone()?;
-        let resposta = match ler_pedido(conexao) {
-            Ok(p) => self.responder(&p),
-            Err(status) => Resposta::texto(status),
+    fn handle(&self, conn: TcpStream) -> io::Result<()> {
+        conn.set_read_timeout(Some(TIMEOUT))?;
+        conn.set_write_timeout(Some(TIMEOUT))?;
+        let mut output = conn.try_clone()?;
+        let response = match read_request(conn) {
+            Ok(p) => self.respond(&p),
+            Err(status) => Response::text(status),
         };
-        resposta.escrever(&mut saida)
+        response.write_to(&mut output)
     }
 
-    /// Decide a resposta de um pedido já lido.
-    pub fn responder(&self, p: &Pedido) -> Resposta {
-        if p.cabecalho("host") != Some(self.host.as_str()) {
-            return Resposta::texto(421);
+    /// Decides the response to an already read request.
+    pub fn respond(&self, p: &Request) -> Response {
+        if p.header("host") != Some(self.host.as_str()) {
+            return Response::text(421);
         }
-        match (p.metodo.as_str(), p.caminho.as_str()) {
-            ("GET", caminho) => self.estatico(caminho),
-            ("POST", caminho) if caminho.starts_with("/ponte/") => {
-                self.comando(p, &caminho["/ponte/".len()..])
+        match (p.method.as_str(), p.path.as_str()) {
+            ("GET", path) => self.static_file(path),
+            ("POST", path) if path.starts_with("/ponte/") => {
+                self.command(p, &path["/ponte/".len()..])
             }
-            _ => Resposta::texto(405),
+            _ => Response::text(405),
         }
     }
 
-    fn estatico(&self, caminho: &str) -> Resposta {
-        let arquivo = match caminho {
+    fn static_file(&self, path: &str) -> Response {
+        let file = match path {
             "/" | "/index.html" => self.dist.join("index.html"),
             c => match c.strip_prefix("/assets/") {
-                Some(nome) if nome_de_asset_valido(nome) => self.dist.join("assets").join(nome),
-                _ => return Resposta::texto(404),
+                Some(name) if valid_asset_name(name) => self.dist.join("assets").join(name),
+                _ => return Response::text(404),
             },
         };
-        // Sem seguir link para fora do dist.
-        let Ok(real) = fs::canonicalize(&arquivo) else {
-            return Resposta::texto(404);
+        // Without following a link out of the dist.
+        let Ok(real) = fs::canonicalize(&file) else {
+            return Response::text(404);
         };
         if !real.starts_with(&self.dist) || !real.is_file() {
-            return Resposta::texto(404);
+            return Response::text(404);
         }
         match fs::read(&real) {
-            Ok(corpo) => Resposta {
+            Ok(body) => Response {
                 status: 200,
-                tipo: tipo_de(&real),
-                corpo,
+                content_type: content_type_of(&real),
+                body,
             },
-            Err(_) => Resposta::texto(404),
+            Err(_) => Response::text(404),
         }
     }
 
-    fn comando(&self, p: &Pedido, nome: &str) -> Resposta {
-        if p.cabecalho("origin") != Some(self.origem.as_str()) {
-            return Resposta::texto(403);
+    fn command(&self, p: &Request, name: &str) -> Response {
+        if p.header("origin") != Some(self.origin.as_str()) {
+            return Response::text(403);
         }
-        let autorizado = p
-            .cabecalho("authorization")
+        let authorized = p
+            .header("authorization")
             .and_then(|v| v.strip_prefix("Bearer "))
-            .is_some_and(|t| iguais(t.as_bytes(), self.token.as_bytes()));
-        if !autorizado {
-            return Resposta::texto(401);
+            .is_some_and(|t| ct_equal(t.as_bytes(), self.token.as_bytes()));
+        if !authorized {
+            return Response::text(401);
         }
         if !p
-            .cabecalho("content-type")
+            .header("content-type")
             .is_some_and(|t| t == "application/json" || t.starts_with("application/json;"))
         {
-            return Resposta::texto(415);
+            return Response::text(415);
         }
-        let Some(comando) = Comando::de_nome(nome) else {
-            return Resposta::erro(404, ErroApp::PedidoInvalido);
+        let Some(command) = Comando::de_nome(name) else {
+            return Response::error(404, ErroApp::PedidoInvalido);
         };
-        let Ok(Value::Object(mut args)) = serde_json::from_slice::<Value>(&p.corpo) else {
-            return Resposta::erro(400, ErroApp::PedidoInvalido);
+        let Ok(Value::Object(mut args)) = serde_json::from_slice::<Value>(&p.body) else {
+            return Response::error(400, ErroApp::PedidoInvalido);
         };
-        // Fase 35: o PIN sai do mapa (posse, sem cópia) e vira um `Pin` que zera.
-        let pin = match comando {
+        // Phase 35: the PIN leaves the map (ownership, no copy) and becomes a `Pin` that zeroes.
+        let pin = match command {
             Comando::MudarNivel => args.remove("pin").map(serde_json::from_value::<Pin>),
-            // Fase 36: `null` (Negar) fica `None`; o resto vira `Pin` ou erro.
+            // Phase 36: `null` (Deny) stays `None`; the rest becomes `Pin` or an error.
             Comando::ResponderAprovacao => match args.remove("pin") {
                 None | Some(Value::Null) => None,
                 Some(v) => Some(serde_json::from_value::<Pin>(v)),
             },
             _ => None,
         };
-        // Fase 31: a senha mestra também sai do mapa (posse) e vira um `SenhaMestra`.
-        let senha = match comando {
+        // Phase 31: the master password also leaves the map (ownership) and becomes the
+        // master password type of the app core, which zeroes.
+        let password = match command {
             Comando::Destravar => args
                 .remove("senha")
                 .map(serde_json::from_value::<SenhaMestra>),
             _ => None,
         };
-        // Fase 38: os dados das trocas também saem do mapa (posse) e viram `Digitado`.
-        let troca_pin = match comando {
+        // Phase 38: the data of the changes also leave the map (ownership) and become typed
+        // values that zero.
+        let pin_change = match command {
             Comando::TrocarPin => args.remove("dados").map(serde_json::from_value::<TrocaPin>),
             _ => None,
         };
-        let troca_senha = match comando {
+        let password_change = match command {
             Comando::TrocarSenhaMestra => args
                 .remove("dados")
                 .map(serde_json::from_value::<TrocaSenha>),
             _ => None,
         };
-        // Fase 47: senha da versão e PIN atual também saem do mapa (posse).
-        let restauracao = match comando {
+        // Phase 47: the version password and the current PIN also leave the map (ownership).
+        let restore = match command {
             Comando::RestaurarBackup => args
                 .remove("dados")
                 .map(serde_json::from_value::<Restauracao>),
             _ => None,
         };
-        let texto = |chave: &str| args.get(chave).and_then(Value::as_str);
-        let marcado = |chave: &str| args.get(chave).and_then(Value::as_bool);
-        let resultado = match comando {
-            // Fase 31: com o cofre travado, o pedido do agente que espera (só id e os
-            // segundos que faltam).
+        let text = |key: &str| args.get(key).and_then(Value::as_str);
+        let flag = |key: &str| args.get(key).and_then(Value::as_bool);
+        let result = match command {
+            // Phase 31: with the vault locked, the request of the waiting agent (only id and the
+            // seconds left).
             Comando::EstadoDoCofre => self
-                .servico
+                .service
                 .estado_do_cofre()
-                .map(|e| json!({ "estado": e.codigo(), "pedido": self.servico.info_do_pedido(e) })),
-            Comando::CopiarCampo => match (texto("entrada"), texto("campo")) {
-                (Some(e), Some(c)) => self.servico.copiar_campo(e, c).map(|()| Value::Null),
+                .map(|e| json!({ "estado": e.codigo(), "pedido": self.service.info_do_pedido(e) })),
+            Comando::CopiarCampo => match (text("entrada"), text("campo")) {
+                (Some(e), Some(c)) => self.service.copiar_campo(e, c).map(|()| Value::Null),
                 _ => Err(ErroApp::PedidoInvalido),
             },
             Comando::ListarCredenciais => self
-                .servico
+                .service
                 .listar_credenciais()
                 .and_then(|l| serde_json::to_value(l).map_err(|_| ErroApp::RespostaInvalida)),
-            Comando::DetalheCredencial => match texto("entrada") {
+            Comando::DetalheCredencial => match text("entrada") {
                 Some(e) => self
-                    .servico
+                    .service
                     .detalhe_credencial(e)
                     .and_then(|d| serde_json::to_value(d).map_err(|_| ErroApp::RespostaInvalida)),
                 None => Err(ErroApp::PedidoInvalido),
             },
             Comando::GerarSenha => match (
                 args.get("tamanho").and_then(Value::as_u64),
-                marcado("minusculas"),
-                marcado("maiusculas"),
-                marcado("digitos"),
-                marcado("simbolos"),
+                flag("minusculas"),
+                flag("maiusculas"),
+                flag("digitos"),
+                flag("simbolos"),
             ) {
-                (
-                    Some(tamanho),
-                    Some(minusculas),
-                    Some(maiusculas),
-                    Some(digitos),
-                    Some(simbolos),
-                ) => self
-                    .servico
-                    .gerar_senha(Opcoes {
-                        tamanho,
-                        minusculas,
-                        maiusculas,
-                        digitos,
-                        simbolos,
-                    })
-                    .map(|g| {
-                        json!({
-                            "tamanho": g.tamanho,
-                            "bits": g.bits,
-                            "forca": g.forca.codigo(),
-                            "simbolos": g.simbolos,
+                (Some(length), Some(lowercase), Some(uppercase), Some(digits), Some(symbols)) => {
+                    self.service
+                        .gerar_senha(Opcoes {
+                            tamanho: length,
+                            minusculas: lowercase,
+                            maiusculas: uppercase,
+                            digitos: digits,
+                            simbolos: symbols,
                         })
-                    }),
+                        .map(|g| {
+                            json!({
+                                "tamanho": g.tamanho,
+                                "bits": g.bits,
+                                "forca": g.forca.codigo(),
+                                "simbolos": g.simbolos,
+                            })
+                        })
+                }
                 _ => Err(ErroApp::PedidoInvalido),
             },
-            Comando::CopiarSenhaGerada => self.servico.copiar_senha_gerada().map(|()| Value::Null),
-            // S11: o valor só sai no "revelar", como no app.
+            Comando::CopiarSenhaGerada => self.service.copiar_senha_gerada().map(|()| Value::Null),
+            // S11: the value only comes out on "reveal", as in the app.
             Comando::RevelarSenhaGerada => self
-                .servico
+                .service
                 .revelar_senha_gerada()
                 .map(|r| json!({ "valor": r.expor() })),
             Comando::DescartarSenhaGerada => {
-                self.servico.descartar_senha_gerada().map(|()| Value::Null)
+                self.service.descartar_senha_gerada().map(|()| Value::Null)
             }
-            // S11 (D65 b): o valor só no "revelar", como no app.
-            Comando::RevelarCampo => match (texto("entrada"), texto("campo")) {
+            // S11 (D65 b): the value only on "reveal", as in the app.
+            Comando::RevelarCampo => match (text("entrada"), text("campo")) {
                 (Some(e), Some(c)) => self
-                    .servico
+                    .service
                     .revelar_campo(e, c)
                     .map(|r| json!({ "valor": r.expor() })),
                 _ => Err(ErroApp::PedidoInvalido),
             },
-            Comando::CodigoTotp => match texto("entrada") {
+            Comando::CodigoTotp => match text("entrada") {
                 Some(e) => self
-                    .servico
+                    .service
                     .codigo_totp(e)
                     .and_then(|c| serde_json::to_value(c).map_err(|_| ErroApp::RespostaInvalida)),
                 None => Err(ErroApp::PedidoInvalido),
             },
-            Comando::CopiarCodigoTotp => match texto("entrada") {
-                Some(e) => self.servico.copiar_codigo_totp(e).map(|()| Value::Null),
+            Comando::CopiarCodigoTotp => match text("entrada") {
+                Some(e) => self.service.copiar_codigo_totp(e).map(|()| Value::Null),
                 None => Err(ErroApp::PedidoInvalido),
             },
-            Comando::UsarSenhaGerada => match texto("campo") {
+            Comando::UsarSenhaGerada => match text("campo") {
                 Some(c) => self
-                    .servico
+                    .service
                     .usar_senha_gerada(c)
                     .map(|t| json!({ "tamanho": t })),
                 None => Err(ErroApp::PedidoInvalido),
             },
             Comando::DescartarFormulario => {
-                self.servico.descartar_formulario();
+                self.service.descartar_formulario();
                 Ok(Value::Null)
             }
             Comando::SalvarCredencial => {
-                let anterior = match args.get("anterior") {
+                let previous = match args.get("anterior") {
                     None | Some(Value::Null) => Ok(None),
                     Some(Value::String(a)) => Ok(Some(a.as_str())),
                     Some(_) => Err(ErroApp::PedidoInvalido),
                 };
-                let formulario = args
+                let form = args
                     .get("formulario")
                     .cloned()
                     .map(serde_json::from_value::<Formulario>)
                     .and_then(Result::ok)
                     .ok_or(ErroApp::PedidoInvalido);
-                match (anterior, formulario) {
-                    (Ok(a), Ok(f)) => self.servico.salvar_credencial(a, f).and_then(|r| {
+                match (previous, form) {
+                    (Ok(a), Ok(f)) => self.service.salvar_credencial(a, f).and_then(|r| {
                         serde_json::to_value(r).map_err(|_| ErroApp::RespostaInvalida)
                     }),
                     _ => Err(ErroApp::PedidoInvalido),
                 }
             }
-            Comando::MudarNivel => match (texto("entrada"), texto("nivel"), pin) {
+            Comando::MudarNivel => match (text("entrada"), text("nivel"), pin) {
                 (Some(e), Some(n), Some(Ok(pin))) => self
-                    .servico
+                    .service
                     .mudar_nivel(e, n, pin)
                     .and_then(|r| serde_json::to_value(r).map_err(|_| ErroApp::RespostaInvalida)),
                 _ => Err(ErroApp::PedidoInvalido),
             },
-            // Fase 34: o arquivo é escolhido e lido no lado Rust; volta id, nome e
-            // tamanho, ou o aviso (S11, V5.12).
-            // Fase 39b: na edição, `edicao { entrada, mantidos }` (os anexos guardados que
-            // continuam contam nos limites).
+            // Phase 34: the file is picked and read on the Rust side; returns id, name and
+            // size, or the notice (S11, V5.12).
+            // Phase 39b: when editing, the edit object with the entry and the kept ids (the
+            // stored attachments that remain count in the limits).
             Comando::EscolherAnexo => {
-                let edicao = match args.get("edicao") {
+                let edit = match args.get("edicao") {
                     None | Some(Value::Null) => Ok(None),
                     Some(v) => serde_json::from_value::<EdicaoDosAnexos>(v.clone())
                         .map(Some)
                         .map_err(|_| ErroApp::PedidoInvalido),
                 };
-                edicao
-                    .and_then(|ed| self.servico.escolher_anexo(ed.as_ref()))
+                edit.and_then(|ed| self.service.escolher_anexo(ed.as_ref()))
                     .and_then(|e| serde_json::to_value(e).map_err(|_| ErroApp::RespostaInvalida))
             }
             Comando::RemoverAnexo => match args.get("id").and_then(Value::as_u64) {
-                Some(id) => self.servico.remover_anexo(id).map(|()| Value::Null),
+                Some(id) => self.service.remover_anexo(id).map(|()| Value::Null),
                 None => Err(ErroApp::PedidoInvalido),
             },
-            // Fase 53a: "Carregar de arquivo" da chave privada; o arquivo é escolhido,
-            // lido e conferido no lado Rust; volta só o tamanho, ou o aviso (S2, S11).
-            Comando::CarregarChave => match texto("campo") {
+            // Phase 53a: "load from file" of the private key; the file is picked,
+            // read and checked on the Rust side; returns only the size, or the notice (S2, S11).
+            Comando::CarregarChave => match text("campo") {
                 Some(c) if args.len() == 1 => self
-                    .servico
+                    .service
                     .carregar_chave(c)
                     .and_then(|r| serde_json::to_value(r).map_err(|_| ErroApp::RespostaInvalida)),
                 _ => Err(ErroApp::PedidoInvalido),
             },
-            // D3: o token não volta à interface.
-            Comando::Conectar => match texto("entrada") {
-                Some(e) => self.servico.conectar(e).map(|()| Value::Null),
+            // D3: the token does not go back to the interface.
+            Comando::Conectar => match text("entrada") {
+                Some(e) => self.service.conectar(e).map(|()| Value::Null),
                 None => Err(ErroApp::PedidoInvalido),
             },
-            // Fase 31: a resposta não traz a senha nem quantas tentativas houve.
-            Comando::Destravar => match senha {
-                Some(Ok(senha)) if args.is_empty() => {
-                    self.servico.destravar(senha).map(|()| Value::Null)
+            // Phase 31: the response carries neither the password nor how many attempts there were.
+            Comando::Destravar => match password {
+                Some(Ok(password)) if args.is_empty() => {
+                    self.service.destravar(password).map(|()| Value::Null)
                 }
                 _ => Err(ErroApp::PedidoInvalido),
             },
-            // Fase 39: "Travar agora"; limpa a área e o formulário antes.
-            Comando::Travar if args.is_empty() => self.servico.travar().map(|()| Value::Null),
+            // Phase 39: "lock now"; clears the clipboard and the form first.
+            Comando::Travar if args.is_empty() => self.service.travar().map(|()| Value::Null),
             Comando::Travar => Err(ErroApp::PedidoInvalido),
-            // O canal do Tauri não existe na ponte: a tela de teste consulta o estado
-            // (`ponte-teste.js` › `ouvirAvisos`).
+            // The Tauri channel does not exist in the bridge: the test screen polls the status
+            // (`test-bridge.js` › `listenByPolling`).
             Comando::OuvirAvisos => Err(ErroApp::PedidoInvalido),
-            // Fase 36: a janela de aprovação. Na ponte não há janelas separadas (a ACL por
-            // janela é do Tauri); o serviço confere id, decisão e PIN do mesmo jeito.
+            // Phase 36: the approval window. The bridge has no separate windows (the per-window
+            // ACL is Tauri's); the service checks id, decision and PIN the same way.
             Comando::PedidoDeAprovacao => self
-                .servico
+                .service
                 .pedido_de_aprovacao()
                 .and_then(|r| serde_json::to_value(r).map_err(|_| ErroApp::RespostaInvalida)),
-            // Fase 54b: `ciente` (a caixa da entrada padrão) só como `true`/`false`.
+            // Phase 54b: the acknowledgement field (the stdin checkbox) only as
+            // `true`/`false`.
             Comando::ResponderAprovacao => match (
                 args.get("id").and_then(Value::as_u64),
-                texto("decisao"),
+                text("decisao"),
                 pin,
                 args.get("ciente").map(Value::as_bool),
             ) {
                 (Some(id), Some(d), None, None | Some(Some(false))) => {
-                    self.servico.responder_aprovacao(id, d, None, false)
+                    self.service.responder_aprovacao(id, d, None, false)
                 }
                 (Some(id), Some(d), Some(Ok(p)), c @ (None | Some(Some(_)))) => self
-                    .servico
+                    .service
                     .responder_aprovacao(id, d, Some(p), c == Some(Some(true))),
                 _ => Err(ErroApp::PedidoInvalido),
             }
             .and_then(|r| serde_json::to_value(r).map_err(|_| ErroApp::RespostaInvalida)),
-            // Fase 30: senha mestra e PIN conferidos no lado Rust; a resposta não traz
-            // valor. `dados` sai do objeto por `remove`, sem cópia do texto.
+            // Phase 30: master password and PIN checked on the Rust side; the response carries
+            // no value. The data field leaves the object through `remove`, without copying
+            // the text.
             Comando::CriarCofre => match args
                 .remove("dados")
                 .map(serde_json::from_value::<NovoCofre>)
             {
                 Some(Ok(n)) => self
-                    .servico
+                    .service
                     .criar_cofre(n)
                     .and_then(|r| serde_json::to_value(r).map_err(|_| ErroApp::RespostaInvalida)),
                 _ => Err(ErroApp::PedidoInvalido),
             },
-            // Fase 38 (V5.22): nenhuma resposta traz PIN, senha ou hash.
+            // Phase 38 (V5.22): no response carries a PIN, a password or a hash.
             Comando::Configuracoes if args.is_empty() => self
-                .servico
+                .service
                 .configuracoes()
                 .and_then(|c| serde_json::to_value(c).map_err(|_| ErroApp::RespostaInvalida)),
             Comando::Configuracoes => Err(ErroApp::PedidoInvalido),
-            Comando::TrocarPin => match troca_pin {
+            Comando::TrocarPin => match pin_change {
                 Some(Ok(t)) if args.is_empty() => self
-                    .servico
+                    .service
                     .trocar_pin(t)
                     .and_then(|r| serde_json::to_value(r).map_err(|_| ErroApp::RespostaInvalida)),
                 _ => Err(ErroApp::PedidoInvalido),
             },
-            Comando::TrocarSenhaMestra => match troca_senha {
+            Comando::TrocarSenhaMestra => match password_change {
                 Some(Ok(t)) if args.is_empty() => self
-                    .servico
+                    .service
                     .trocar_senha_mestra(t)
                     .and_then(|r| serde_json::to_value(r).map_err(|_| ErroApp::RespostaInvalida)),
                 _ => Err(ErroApp::PedidoInvalido),
             },
             Comando::DefinirTempoTrava => match args.get("minutos").and_then(Value::as_u64) {
                 Some(m) if args.len() == 1 => self
-                    .servico
+                    .service
                     .definir_tempo_trava(m)
                     .and_then(|c| serde_json::to_value(c).map_err(|_| ErroApp::RespostaInvalida)),
                 _ => Err(ErroApp::PedidoInvalido),
             },
-            // Fase 48 (V7.9): sem caminho de montagem; o UUID é conferido no serviço
-            // (formato e lista do daemon).
+            // Phase 48 (V7.9): no mount path; the UUID is checked in the service
+            // (format and the daemon's list).
             Comando::BackupExterno if args.is_empty() => self
-                .servico
+                .service
                 .backup_externo()
                 .and_then(|b| serde_json::to_value(b).map_err(|_| ErroApp::RespostaInvalida)),
             Comando::ListarPendrives if args.is_empty() => self
-                .servico
+                .service
                 .listar_pendrives()
                 .and_then(|l| serde_json::to_value(l).map_err(|_| ErroApp::RespostaInvalida)),
             Comando::BackupExterno | Comando::ListarPendrives => Err(ErroApp::PedidoInvalido),
-            // Fase 47 (V7.7): só nome e instante das versões; a resposta do restaurar só
-            // diz restaurado e quantas entradas. A versão é conferida no serviço
-            // (formato e lista do daemon).
+            // Phase 47 (V7.7): only name and instant of the versions; the restore response only
+            // says restored and how many entries. The version is checked in the service
+            // (format and the daemon's list).
             Comando::ListarBackups if args.is_empty() => self
-                .servico
+                .service
                 .listar_backups()
                 .and_then(|l| serde_json::to_value(l).map_err(|_| ErroApp::RespostaInvalida)),
             Comando::ListarBackups => Err(ErroApp::PedidoInvalido),
-            Comando::RestaurarBackup => match restauracao {
+            Comando::RestaurarBackup => match restore {
                 Some(Ok(r)) if args.is_empty() => self
-                    .servico
+                    .service
                     .restaurar_backup(r)
                     .and_then(|r| serde_json::to_value(r).map_err(|_| ErroApp::RespostaInvalida)),
                 _ => Err(ErroApp::PedidoInvalido),
@@ -484,10 +482,10 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Ponte<D, A> {
                     Some(Value::String(u)) => Ok(Some(u.as_str())),
                     Some(_) => Err(ErroApp::PedidoInvalido),
                 };
-                let so_conhecidos = args.keys().all(|k| k == "ligado" || k == "uuid");
-                match (marcado("ligado"), uuid) {
-                    (Some(l), Ok(u)) if so_conhecidos => {
-                        self.servico.definir_backup_externo(l, u).and_then(|b| {
+                let only_known = args.keys().all(|k| k == "ligado" || k == "uuid");
+                match (flag("ligado"), uuid) {
+                    (Some(l), Ok(u)) if only_known => {
+                        self.service.definir_backup_externo(l, u).and_then(|b| {
                             serde_json::to_value(b).map_err(|_| ErroApp::RespostaInvalida)
                         })
                     }
@@ -495,28 +493,28 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Ponte<D, A> {
                 }
             }
         };
-        match resultado {
-            Ok(valor) => Resposta::json(200, &json!({ "ok": true, "valor": valor })),
-            Err(e) => Resposta::erro(200, e),
+        match result {
+            Ok(value) => Response::json(200, &json!({ "ok": true, "valor": value })),
+            Err(e) => Response::error(200, e),
         }
     }
 }
 
-fn iguais(a: &[u8], b: &[u8]) -> bool {
+fn ct_equal(a: &[u8], b: &[u8]) -> bool {
     use ctutils::CtEq;
     a.ct_eq(b).to_bool()
 }
 
-fn nome_de_asset_valido(nome: &str) -> bool {
-    !nome.is_empty()
-        && nome.len() <= 128
-        && !nome.starts_with('.')
-        && nome
+fn valid_asset_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 128
+        && !name.starts_with('.')
+        && name
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_'))
 }
 
-fn tipo_de(p: &Path) -> &'static str {
+fn content_type_of(p: &Path) -> &'static str {
     match p.extension().and_then(|e| e.to_str()) {
         Some("html") => "text/html; charset=utf-8",
         Some("js") => "text/javascript; charset=utf-8",
@@ -529,75 +527,72 @@ fn tipo_de(p: &Path) -> &'static str {
     }
 }
 
-/// Pedido HTTP já lido e dentro dos limites.
-pub struct Pedido {
-    pub metodo: String,
-    pub caminho: String,
-    cabecalhos: Vec<(String, String)>,
-    pub corpo: Vec<u8>,
+/// HTTP request already read and within the limits.
+pub struct Request {
+    pub method: String,
+    pub path: String,
+    headers: Vec<(String, String)>,
+    pub body: Vec<u8>,
 }
 
-impl Pedido {
-    /// Monta um pedido (testes).
-    pub fn novo(metodo: &str, caminho: &str, cabecalhos: &[(&str, &str)], corpo: &[u8]) -> Pedido {
-        Pedido {
-            metodo: metodo.into(),
-            caminho: caminho.into(),
-            cabecalhos: cabecalhos
+impl Request {
+    /// Builds a request (tests).
+    pub fn new(method: &str, path: &str, headers: &[(&str, &str)], body: &[u8]) -> Request {
+        Request {
+            method: method.into(),
+            path: path.into(),
+            headers: headers
                 .iter()
                 .map(|(n, v)| (n.to_ascii_lowercase(), (*v).into()))
                 .collect(),
-            corpo: corpo.to_vec(),
+            body: body.to_vec(),
         }
     }
 
-    /// Valor do cabeçalho; repetido conta como ausente (não há como saber qual vale).
-    pub fn cabecalho(&self, nome: &str) -> Option<&str> {
-        let mut achados = self.cabecalhos.iter().filter(|(n, _)| n == nome);
-        let primeiro = achados.next()?;
-        if achados.next().is_some() {
+    /// Header value; a repeated one counts as absent (there is no way to know which one holds).
+    pub fn header(&self, name: &str) -> Option<&str> {
+        let mut found = self.headers.iter().filter(|(n, _)| n == name);
+        let first = found.next()?;
+        if found.next().is_some() {
             None
         } else {
-            Some(primeiro.1.as_str())
+            Some(first.1.as_str())
         }
     }
 }
 
-/// Lê linha, cabeçalhos e corpo com os limites; erro é o status HTTP.
-pub fn ler_pedido<R: Read>(entrada: R) -> Result<Pedido, u16> {
-    let mut leitor = BufReader::new(entrada);
-    let mut usados = 0usize;
-    // Uma linha, sem passar do que resta do limite do cabeçalho.
-    let mut ler_linha = |leitor: &mut BufReader<R>| -> Result<String, u16> {
-        let mut bruto = Vec::new();
-        let restante = (MAX_CABECALHO - usados) as u64;
-        let n = (&mut *leitor)
-            .take(restante)
-            .read_until(b'\n', &mut bruto)
+/// Reads line, headers and body within the limits; the error is the HTTP status.
+pub fn read_request<R: Read>(input: R) -> Result<Request, u16> {
+    let mut reader = BufReader::new(input);
+    let mut used = 0usize;
+    // One line, without going past what is left of the head limit.
+    let mut read_line = |reader: &mut BufReader<R>| -> Result<String, u16> {
+        let mut raw = Vec::new();
+        let remaining = (MAX_HEADER - used) as u64;
+        let n = (&mut *reader)
+            .take(remaining)
+            .read_until(b'\n', &mut raw)
             .map_err(|_| 400u16)?;
-        usados += n;
-        if n == 0 || !bruto.ends_with(b"\n") {
-            return Err(431); // limite do cabeçalho ou conexão fechada no meio
+        used += n;
+        if n == 0 || !raw.ends_with(b"\n") {
+            return Err(431); // head limit or connection closed midway
         }
-        let texto = String::from_utf8(bruto).map_err(|_| 400u16)?;
-        Ok(texto.trim_end_matches(['\r', '\n']).to_owned())
+        let text = String::from_utf8(raw).map_err(|_| 400u16)?;
+        Ok(text.trim_end_matches(['\r', '\n']).to_owned())
     };
-    let linha = ler_linha(&mut leitor)?;
-    let mut partes = linha.split(' ');
-    let (Some(metodo), Some(caminho), Some("HTTP/1.1"), None) =
-        (partes.next(), partes.next(), partes.next(), partes.next())
+    let line = read_line(&mut reader)?;
+    let mut parts = line.split(' ');
+    let (Some(method), Some(path), Some("HTTP/1.1"), None) =
+        (parts.next(), parts.next(), parts.next(), parts.next())
     else {
         return Err(400);
     };
-    if !caminho.starts_with('/')
-        || caminho.contains(['?', '#', '%', '\\'])
-        || caminho.contains("..")
-    {
+    if !path.starts_with('/') || path.contains(['?', '#', '%', '\\']) || path.contains("..") {
         return Err(400);
     }
-    let mut cabecalhos = Vec::new();
+    let mut headers = Vec::new();
     loop {
-        let l = ler_linha(&mut leitor)?;
+        let l = read_line(&mut reader)?;
         if l.is_empty() {
             break;
         }
@@ -605,97 +600,97 @@ pub fn ler_pedido<R: Read>(entrada: R) -> Result<Pedido, u16> {
         if n.is_empty() || !n.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-') {
             return Err(400);
         }
-        cabecalhos.push((n.to_ascii_lowercase(), v.trim().to_owned()));
+        headers.push((n.to_ascii_lowercase(), v.trim().to_owned()));
     }
-    let mut pedido = Pedido {
-        metodo: metodo.into(),
-        caminho: caminho.into(),
-        cabecalhos,
-        corpo: Vec::new(),
+    let mut request = Request {
+        method: method.into(),
+        path: path.into(),
+        headers,
+        body: Vec::new(),
     };
-    if pedido
-        .cabecalhos
+    if request
+        .headers
         .iter()
         .any(|(n, _)| n == "transfer-encoding")
     {
         return Err(501);
     }
-    let tamanho = match pedido.cabecalho("content-length") {
-        None if pedido.cabecalhos.iter().any(|(n, _)| n == "content-length") => return Err(400),
+    let length = match request.header("content-length") {
+        None if request.headers.iter().any(|(n, _)| n == "content-length") => return Err(400),
         None => 0,
         Some(v) if !v.is_empty() && v.bytes().all(|b| b.is_ascii_digit()) => {
             v.parse::<usize>().map_err(|_| 413u16)?
         }
         Some(_) => return Err(400),
     };
-    if tamanho > MAX_CORPO {
+    if length > MAX_BODY {
         return Err(413);
     }
-    let mut corpo = Vec::with_capacity(tamanho);
-    leitor
-        .take(tamanho as u64)
-        .read_to_end(&mut corpo)
+    let mut body = Vec::with_capacity(length);
+    reader
+        .take(length as u64)
+        .read_to_end(&mut body)
         .map_err(|_| 400u16)?;
-    if corpo.len() != tamanho {
+    if body.len() != length {
         return Err(400);
     }
-    pedido.corpo = corpo;
-    Ok(pedido)
+    request.body = body;
+    Ok(request)
 }
 
-/// Resposta pronta para escrever.
-pub struct Resposta {
+/// Response ready to be written.
+pub struct Response {
     pub status: u16,
-    tipo: &'static str,
-    pub corpo: Vec<u8>,
+    content_type: &'static str,
+    pub body: Vec<u8>,
 }
 
-impl Resposta {
-    fn texto(status: u16) -> Resposta {
-        Resposta {
+impl Response {
+    fn text(status: u16) -> Response {
+        Response {
             status,
-            tipo: "text/plain; charset=utf-8",
-            corpo: motivo(status).as_bytes().to_vec(),
+            content_type: "text/plain; charset=utf-8",
+            body: reason(status).as_bytes().to_vec(),
         }
     }
 
-    fn json(status: u16, v: &Value) -> Resposta {
-        Resposta {
+    fn json(status: u16, v: &Value) -> Response {
+        Response {
             status,
-            tipo: "application/json",
-            corpo: v.to_string().into_bytes(),
+            content_type: "application/json",
+            body: v.to_string().into_bytes(),
         }
     }
 
-    fn erro(status: u16, e: ErroApp) -> Resposta {
-        Resposta::json(
+    fn error(status: u16, e: ErroApp) -> Response {
+        Response::json(
             status,
             &json!({ "ok": false, "codigo": e.codigo(), "mensagem": e.to_string() }),
         )
     }
 
-    pub fn corpo_json(&self) -> Option<Value> {
-        serde_json::from_slice(&self.corpo).ok()
+    pub fn body_json(&self) -> Option<Value> {
+        serde_json::from_slice(&self.body).ok()
     }
 
-    fn escrever<W: Write>(&self, w: &mut W) -> io::Result<()> {
-        let cabecalho = format!(
+    fn write_to<W: Write>(&self, w: &mut W) -> io::Result<()> {
+        let header = format!(
             "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nContent-Security-Policy: {CSP}\r\n\
 X-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nCache-Control: no-store\r\n\
 Cross-Origin-Opener-Policy: same-origin\r\nCross-Origin-Resource-Policy: same-origin\r\n\
 X-Frame-Options: DENY\r\nConnection: close\r\n\r\n",
             self.status,
-            motivo(self.status),
-            self.tipo,
-            self.corpo.len()
+            reason(self.status),
+            self.content_type,
+            self.body.len()
         );
-        w.write_all(cabecalho.as_bytes())?;
-        w.write_all(&self.corpo)?;
+        w.write_all(header.as_bytes())?;
+        w.write_all(&self.body)?;
         w.flush()
     }
 }
 
-fn motivo(status: u16) -> &'static str {
+fn reason(status: u16) -> &'static str {
     match status {
         200 => "OK",
         400 => "Bad Request",
