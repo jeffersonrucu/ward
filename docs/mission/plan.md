@@ -289,18 +289,18 @@ Contrato: V4.1–V4.24. Sequencial. A partir daqui o fio muda.
   do `wardd` (morte em cada ponto da gravação por pontos de falha de `test-mode`,
   retrocesso, idempotência) escritos, não rodados. Compilação: `make compile`. — V4.3,
   V4.4, V4.5, V4.6, V4.7, V4.10, V4.11, V4.12
-- [ ] Fase 50 — (achado da Fase 48: os valores de tipo, nível e segurança SMTP já saem nos nomes v5 pelo `name()`/`from_name()`; as linhas de `protocol-v1.jsonl` com `servidor`/`livre`/`bloqueado` falham no `wire_v1` até esta fase) Protocolo v2 no `ward-core` (DT8). `VERSION` 2; operações, respostas,
+- [x] Fase 50 — (achado da Fase 48: os valores de tipo, nível e segurança SMTP já saem nos nomes v5 pelo `name()`/`from_name()`; as linhas de `protocol-v1.jsonl` com `servidor`/`livre`/`bloqueado` falham no `wire_v1` até esta fase) Protocolo v2 no `ward-core` (DT8). `VERSION` 2; operações, respostas,
   campos, erros e papéis pela tabela; campo desconhecido recusado; v1 →
   `unknown_version`; testes do protocolo (matriz de papéis igual, nenhum nome pt-BR,
   linhas de `protocol-v1.jsonl` recusadas) escritos. Compilação: só `cargo check` do
   `ward-core` (os clientes quebram até a Fase 51; o handoff diz isso). — V4.13, V4.14,
   V4.15
-- [ ] Fase 51 — (achado da Fase 48: testes Rust que montam JSON com `banco`/`servidor`/`nota-segura`/`generico`/`bloqueado`/`com-aprovacao`/`livre`/`nenhuma` em `crates/wardd/tests/*`, `app/core`, `app/src-tauri/src/main.rs`, ponte, `ward-nm` e `ward` passam aos nomes v5; coluna TIPO do `ward list` por `label()`) Protocolo v2 nos clientes Rust: `wardd` (servidor, sessões, extensão,
+- [ ] Fase 51 — (achados da Fase 50: o `server.rs` responde ao erro de leitura e segue na conexão, e o V4.13 pede fechar depois de `unknown_version`; a CLI e o app usam `protocol::frame_version` para parar antes da senha (V4.16); `app/core` `credentials.rs` (`"usuario"`/`"senha"`/`"chave_privada"`) e `key.rs` (`LOADABLE_FIELDS`), o erro pronto do `ward-nm` (`{"v":1,"tipo":"erro",…}`) e o JSON montado à mão nos testes Rust passam à v2; gitleaks pode acusar `"password":"<base64>"`: só a forma base64 exata de um valor de D15 entra na allowlist) (achado da Fase 48: testes Rust que montam JSON com `banco`/`servidor`/`nota-segura`/`generico`/`bloqueado`/`com-aprovacao`/`livre`/`nenhuma` em `crates/wardd/tests/*`, `app/core`, `app/src-tauri/src/main.rs`, ponte, `ward-nm` e `ward` passam aos nomes v5; coluna TIPO do `ward list` por `label()`) Protocolo v2 nos clientes Rust: `wardd` (servidor, sessões, extensão,
   ponte), `ward` (conferência da versão antes da senha; `list --json` com chaves e
   valores em inglês e tabela com rótulos pt-BR: imprime `label()`, não `nome()`, achado da Fase 1), `ward-nm`, `ward-test-bridge`,
   `app/core` (com o `daemon_falso`), testes Rust que montam JSON à mão. Compilação:
   `make compile`. — V4.13, V4.16, V4.17, V4.18
-- [ ] Fase 52 — (achado da Fase 48: o front-end `app/src` e `app/core/src/level.rs` ainda mandam `com-aprovacao`/`livre`/`banco`/`nenhuma`, que o `from_name` recusa desde a Fase 48; trocar pelos nomes v5 aqui ou na 54; `grep -rnE '"(banco|servidor|nota-segura|generico|bloqueado|com-aprovacao|livre|nenhuma)"'`) Protocolo v2 em JS e Python: `extension/` (native messaging; motivos de `fillInPage` e códigos locais do service worker, que dividem `FAILURES`/`SAVE_FAILURES` do popup com os do daemon, achado da Fase 39),
+- [ ] Fase 52 — (achado da Fase 50: `dev/tests/socket_matrix.py`, a extensão e os `dev/tests/*.py` ainda falam v1) (achado da Fase 48: o front-end `app/src` e `app/core/src/level.rs` ainda mandam `com-aprovacao`/`livre`/`banco`/`nenhuma`, que o `from_name` recusa desde a Fase 48; trocar pelos nomes v5 aqui ou na 54; `grep -rnE '"(banco|servidor|nota-segura|generico|bloqueado|com-aprovacao|livre|nenhuma)"'`) Protocolo v2 em JS e Python: `extension/` (native messaging; motivos de `fillInPage` e códigos locais do service worker, que dividem `FAILURES`/`SAVE_FAILURES` do popup com os do daemon, achado da Fase 39),
   `app/src/lib/bridge`, ponte de teste do front-end, `dev/tests/*.py` que falam com o
   socket ou com o `ward-nm` (`socket_matrix.py`, `socket_attack.py`, `nm.py`,
   `extension.py`, `login.py`, `cli.py`, `chrome_policy.py`, `open-app.py`,
@@ -379,7 +379,7 @@ Depois das Fases 61–66 (e das correções), o orchestrator chama os três vali
   versão 0.2.0 (DT19); comparação dos literais com `strings-0.1.4.txt` e lista da
   diferença no handoff; procura dos nomes antigos (V6.2). Compilação: `make compile`. —
   V6.1, V6.2, V6.3
-- [ ] Fase 61 — Bateria A (estática e unitária): `make check`, `make app-check`,
+- [ ] Fase 61 — (achado da Fase 50: gitleaks acusa `"falso-mestra-ward-03"` em `crates/ward-core/src/backup/tests.rs:369`, fora da allowlist de D15) Bateria A (estática e unitária): `make check`, `make app-check`,
   `make test-no-test-mode`, `make test-skill`, `make test-migration-guide`,
   `make dev-vault` + `dev-variations` + `test-dev-vault`,
   `make test-attacks-foundation`, testes de fio no commit do fim do M3 (V2.2),
