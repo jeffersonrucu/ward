@@ -359,7 +359,7 @@ Contrato: V5.1–V5.11. Sequencial.
   `UidRecusado`/`SemIdentidade` do `wardd` com o `dev/container-uid/inside.sh`; variáveis
   `WARD_ATIVACAO`, `WARD_CAMINHO`, `WARD_ESPERADO`, `WARD_PLATAFORMA_FILHO` (achados da Fase 9). Compilação:
   `make compile`. — V5.4, V5.5
-- [ ] Fase 57 — Caminhos instalados e atualização (DT15, DT16): seis funções de `install/` que o
+- [x] Fase 57 — Caminhos instalados e atualização (DT15, DT16): seis funções de `install/` que o
   `dev/tests/deb.sh` procura (`garantir_grupo`, `conferir_grupo`, `conferir_politicas_chrome`,
   `apagar_grupos_marcados`, `avisar_manifestos_de_usuario`, `avisar_core_pattern`) e o
   `grupos-criados` nos dois lados, tirando as entradas do `frozen.txt` (achado da Fase 47); `install/tree.txt`,
@@ -411,7 +411,7 @@ Depois das Fases 61–66 (e das correções), o orchestrator chama os três vali
 - [ ] Fase 63 — Bateria C (contêineres e instalação): `make test-docker-platform`,
   `test-units`, `test-install`, `test-deb` (com a atualização a partir da 0.1.4). —
   V2.3, V2.6, V2.7, V4.4, V5.4, V5.6–V5.9, V6.4
-- [ ] Fase 64 — (achado da Fase 49: os scripts de dev agora criam `ward-state 2`, que o `wardd` 0.1.4 recusa; para subir o 0.1.4 use `ward-estado 1`, p.ex. o fixture `state-0.1.4`; a parte em contêiner do V4.4 (`inotifywait`/`strace`) entra aqui ou no `test-units`) Bateria D (migração de ponta a ponta e versões misturadas): `wardd`
+- [ ] Fase 64 — (achado da Fase 57: os cenários de atualização 0.1.4 → 0.2.0 de `test-install`/`test-deb` precisam da linha de base em `.dev/baseline/` (`bin-release/`, `deb-0.1.4/`, `SHA256SUMS`; montagem no handoff da 57); `make install` 0.1.4 → `.deb` 0.2.0 só por sobras plantadas) (achado da Fase 49: os scripts de dev agora criam `ward-state 2`, que o `wardd` 0.1.4 recusa; para subir o 0.1.4 use `ward-estado 1`, p.ex. o fixture `state-0.1.4`; a parte em contêiner do V4.4 (`inotifywait`/`strace`) entra aqui ou no `test-units`) Bateria D (migração de ponta a ponta e versões misturadas): `wardd`
   0.2.0 de teste com cópias de `vault-0.1.4.ward`, `state-0.1.4` e `backup-0.1.4/` em
   `.dev/`; migração comparada com o `wardd` 0.1.4 (V4.5); morte em cada ponto (V4.3);
   observação do disco (V4.4); retrocesso (V4.7); restauração e rotação (V4.10); estado
