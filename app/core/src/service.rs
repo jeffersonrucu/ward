@@ -13,21 +13,21 @@ use crate::AppError;
 use crate::approval::{self, ApprovalResult, Approvals, DisplayedRequest};
 use crate::area_transferencia::{AreaTransferencia, Copiador};
 use crate::attachments::{AttachmentEdit, Attachments, Base, Choice, NoPicker, Picker};
-use crate::backup_externo::{self, BackupExternoVisto, EscolhaDoPendrive, PendriveVisto};
-use crate::chave::{self, CAMPOS_CARREGAVEIS, Carregamento};
 use crate::client;
-use crate::comandos::{Referencia, validar_nome_entrada};
-use crate::configuracoes::{Configuracoes, ResultadoTroca, TrocaPin, TrocaSenha, minutos_validos};
-use crate::credenciais::{DetalheCredencial, ItemCredencial};
+use crate::commands::{Reference, validate_entry_name};
+use crate::credentials::{CredentialDetail, CredentialItem};
 use crate::daemon::{Daemon, VaultStatus};
 use crate::destrave::{InfoPedido, PedidoPendente, SenhaMestra};
+use crate::external_backup::{self, ExternalBackupView, UsbDriveChoice, UsbDriveView};
 use crate::form::{self, FieldError, Form, Missing, Sources};
 use crate::gerador::{Gerada, Gerador, Opcoes, Revelada};
+use crate::key::{self, LOADABLE_FIELDS, Loading};
 use crate::nivel::{NivelMudado, Pin, nivel_de_nome};
 use crate::primeiro_uso::NovoCofre;
 use crate::restore::{self, Restore, Restored, VersionView};
 use crate::secret::Secret;
-use crate::terminal::{SemTerminal, Terminal, entrada_para_argv};
+use crate::settings::{ChangeResult, PasswordChange, PinChange, Settings, valid_minutes};
+use crate::terminal::{NoTerminal, Terminal, entry_for_argv};
 
 /// Form fields that accept "Use this password" (in the design, the secret field with
 /// generate is only the password one).
@@ -87,21 +87,24 @@ pub struct Service<D: Daemon, A: AreaTransferencia> {
 /// The state of the external backup: the config and, with a chosen UUID, whether it is
 /// among the USB drives seen. udisks2 without an answer is not an error here: the card
 /// says it could not see them.
-fn external_backup_of<D: Daemon + ?Sized>(d: &mut D) -> Result<BackupExternoVisto, AppError> {
+fn external_backup_of<D: Daemon + ?Sized>(d: &mut D) -> Result<ExternalBackupView, AppError> {
     let (enabled, uuid) = client::external_backup(d)?;
     let (usb_drive, drives_visible) = match &uuid {
         None => (None, true),
         Some(u) => match client::usb_drives(d) {
-            Ok(list) => (backup_externo::achar(&list, u).map(PendriveVisto::de), true),
+            Ok(list) => (
+                external_backup::find(&list, u).map(UsbDriveView::from_drive),
+                true,
+            ),
             Err(AppError::UsbDrivesUnavailable) => (None, false),
             Err(e) => return Err(e),
         },
     };
-    Ok(BackupExternoVisto {
-        ligado: enabled,
+    Ok(ExternalBackupView {
+        enabled,
         uuid,
-        pendrive: usb_drive,
-        pendrives_visiveis: drives_visible,
+        usb_drive,
+        visible_usb_drives: drives_visible,
     })
 }
 
@@ -145,7 +148,7 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
             loaded: Mutex::new(BTreeMap::new()),
             attachments: Mutex::new(Attachments::default()),
             picker: Box::new(NoPicker),
-            terminal: Box::new(SemTerminal),
+            terminal: Box::new(NoTerminal),
             approvals: Arc::new(Approvals::default()),
             pending_unlock: Arc::new(PedidoPendente::default()),
         }
@@ -351,7 +354,7 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
 
     /// Sum and count of the stored attachments of the edited entry that the screen keeps.
     fn edit_base(&self, ed: &AttachmentEdit) -> Result<Base, AppError> {
-        validar_nome_entrada(&ed.entry)?;
+        validate_entry_name(&ed.entry)?;
         if ed.kept.len() > ward_core::limits::MAX_ATTACHMENTS {
             return Err(AppError::InvalidRequest);
         }
@@ -373,25 +376,25 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
 
     /// Load key (Phase 53a): "Load from file" of the "Private key" field. The field is
     /// checked before opening the picker; the file is read and checked here
-    /// ([`chave::ler_chave`]: no link, regular file only, up to 64 KiB, OpenSSH/PEM key
+    /// ([`key::read_key`]: no link, regular file only, up to 64 KiB, OpenSSH/PEM key
     /// only) and kept until save, cancel or exit. The response carries only the size, or
     /// the notice; never the content nor the path (S2, S11). A notice or a cancel do not
     /// erase the key loaded before.
-    pub fn load_key(&self, field: &str) -> Result<Carregamento, AppError> {
-        let field = CAMPOS_CARREGAVEIS
+    pub fn load_key(&self, field: &str) -> Result<Loading, AppError> {
+        let field = LOADABLE_FIELDS
             .iter()
             .find(|c| **c == field)
             .ok_or(AppError::InvalidRequest)?;
         let Some(path) = self.picker.choose_key()? else {
-            return Ok(Carregamento::Cancelado);
+            return Ok(Loading::Canceled);
         };
-        match chave::ler_chave(&path) {
+        match key::read_key(&path) {
             Ok(s) => {
                 let size = s.len() as u64;
                 self.lock_loaded().insert((*field).to_owned(), s);
-                Ok(Carregamento::Carregada { tamanho: size })
+                Ok(Loading::Loaded { size })
             }
-            Err(reason) => Ok(Carregamento::Aviso { motivo: reason }),
+            Err(reason) => Ok(Loading::Notice { reason }),
         }
     }
 
@@ -413,8 +416,8 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
     /// terminal opens `ward ssh --token-fd <n> <entry>` and the token goes through the fd
     /// channel (Phase 27a), never in argv. The response does not carry the token.
     pub fn connect(&self, entry: &str) -> Result<(), AppError> {
-        validar_nome_entrada(entry)?;
-        if !entrada_para_argv(entry) {
+        validate_entry_name(entry)?;
+        if !entry_for_argv(entry) {
             return Err(AppError::InvalidRequest);
         }
         let token = {
@@ -424,7 +427,7 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
             }
             client::issue_token(&mut *d, entry)?
         };
-        self.terminal.abrir(entry, &token)
+        self.terminal.open(entry, &token)
     }
 
     fn daemon(&self) -> Result<MutexGuard<'_, D>, AppError> {
@@ -463,20 +466,20 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
     /// item (username, port, engine) and the search username come from the app role
     /// summary (D65 c), without one detail request per entry. No secret. An item without
     /// summary or without level refuses the whole response.
-    pub fn list_credentials(&self) -> Result<Vec<ItemCredencial>, AppError> {
+    pub fn list_credentials(&self) -> Result<Vec<CredentialItem>, AppError> {
         let items = client::list(&mut *self.daemon()?)?;
         items
             .iter()
-            .map(|item| ItemCredencial::novo(item).ok_or(AppError::InvalidResponse))
+            .map(|item| CredentialItem::new(item).ok_or(AppError::InvalidResponse))
             .collect()
     }
 
     /// Credential detail: the panel of one entry. The name comes from the interface and is
     /// validated before going to the daemon.
-    pub fn credential_detail(&self, entry: &str) -> Result<DetalheCredencial, AppError> {
-        validar_nome_entrada(entry)?;
+    pub fn credential_detail(&self, entry: &str) -> Result<CredentialDetail, AppError> {
+        validate_entry_name(entry)?;
         let d = client::detail(&mut *self.daemon()?, entry)?;
-        Ok(DetalheCredencial::novo(&d))
+        Ok(CredentialDetail::new(&d))
     }
 
     /// Copy field: the value goes from the daemon straight to the clipboard. The response
@@ -486,20 +489,20 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
     /// goes through the protocol copy request; a text field or a plain extra, by the value
     /// the daemon gave in the detail (never by what the interface sent).
     pub fn copy_field(&self, entry: &str, field: &str) -> Result<(), AppError> {
-        let reference = Referencia::nova(entry, field)?;
+        let reference = Reference::new(entry, field)?;
         let value = {
             let mut d = self.daemon()?;
-            let detail = client::detail(&mut *d, reference.entrada())?;
-            let field = reference.campo();
+            let detail = client::detail(&mut *d, reference.entry())?;
+            let field = reference.field();
             if detail.segredos.iter().any(|s| s == field) {
-                client::copy(&mut *d, reference.entrada(), Alvo::Campo(field.to_owned()))?
+                client::copy(&mut *d, reference.entry(), Alvo::Campo(field.to_owned()))?
             } else if let Some((_, v)) = detail.campos.iter().find(|(k, _)| k == field) {
                 Secret::new(v.as_bytes().to_vec())
             } else if let Some(x) = detail.extras.iter().find(|x| x.nome == field) {
                 match &x.valor {
                     Some(v) => Secret::new(v.as_bytes().to_vec()),
                     None => {
-                        client::copy(&mut *d, reference.entrada(), Alvo::Extra(field.to_owned()))?
+                        client::copy(&mut *d, reference.entry(), Alvo::Extra(field.to_owned()))?
                     }
                 }
             } else {
@@ -538,10 +541,10 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
     /// extra), only on the click on "reveal" (S11). A text field does not go through
     /// here.
     pub fn reveal_field(&self, entry: &str, field: &str) -> Result<Revelada, AppError> {
-        let reference = Referencia::nova(entry, field)?;
+        let reference = Reference::new(entry, field)?;
         let mut d = self.daemon()?;
-        let detail = client::detail(&mut *d, reference.entrada())?;
-        let field = reference.campo();
+        let detail = client::detail(&mut *d, reference.entry())?;
+        let field = reference.field();
         let target = if detail.segredos.iter().any(|s| s == field) {
             Alvo::Campo(field.to_owned())
         } else if detail
@@ -553,13 +556,13 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
         } else {
             return Err(AppError::FieldNotFound);
         };
-        let value = client::reveal(&mut *d, reference.entrada(), target)?;
+        let value = client::reveal(&mut *d, reference.entry(), target)?;
         Revelada::de_segredo(&value).ok_or(AppError::Refused)
     }
 
     /// TOTP code: the current code of the entry and the seconds until it changes.
     pub fn totp_code(&self, entry: &str) -> Result<TotpCode, AppError> {
-        validar_nome_entrada(entry)?;
+        validate_entry_name(entry)?;
         let c = client::totp(&mut *self.daemon()?, entry)?;
         Ok(TotpCode {
             code: c.code.as_str().to_owned(),
@@ -569,7 +572,7 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
 
     /// Copy the TOTP code: the code goes to the clipboard (D4).
     pub fn copy_totp_code(&self, entry: &str) -> Result<(), AppError> {
-        validar_nome_entrada(entry)?;
+        validate_entry_name(entry)?;
         let c = client::totp(&mut *self.daemon()?, entry)?;
         self.copier.copiar(Secret::new(c.code.as_bytes().to_vec()))
     }
@@ -608,7 +611,7 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
     ) -> Result<SaveResult, AppError> {
         let kind = form::form_kind(&f.kind).ok_or(AppError::InvalidRequest)?;
         if let Some(a) = previous {
-            validar_nome_entrada(a)?;
+            validate_entry_name(a)?;
         }
         let mut d = self.daemon()?;
         let edited = match previous {
@@ -714,7 +717,7 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
     /// The response is the new level, without PIN. A wrong PIN is [`AppError::WrongPin`]
     /// (the screen queries the status afterwards: the 5th error locks).
     pub fn set_level(&self, entry: &str, level: &str, pin: Pin) -> Result<NivelMudado, AppError> {
-        validar_nome_entrada(entry)?;
+        validate_entry_name(entry)?;
         let level = nivel_de_nome(level)?;
         client::set_level(&mut *self.daemon()?, entry, level, &pin)?;
         drop(pin);
@@ -725,7 +728,7 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
     }
 
     /// Settings (Phase 38): lock timeout and external backup, no hash nor UUID.
-    pub fn settings(&self) -> Result<Configuracoes, AppError> {
+    pub fn settings(&self) -> Result<Settings, AppError> {
         client::settings(&mut *self.daemon()?)
     }
 
@@ -733,38 +736,38 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
     /// confirmation here; with a field error, nothing goes to the daemon. The daemon
     /// checks the current PIN (the 5th error in a row locks). The response carries no
     /// value.
-    pub fn change_pin(&self, change: TrocaPin) -> Result<ResultadoTroca, AppError> {
-        let errors = change.erros();
+    pub fn change_pin(&self, change: PinChange) -> Result<ChangeResult, AppError> {
+        let errors = change.errors();
         if !errors.is_empty() {
-            return Ok(ResultadoTroca::com_erros(errors));
+            return Ok(ChangeResult::with_errors(errors));
         }
         client::change_pin(
             &mut *self.daemon()?,
-            change.atual.bytes(),
-            change.novo.bytes(),
+            change.current.bytes(),
+            change.new.bytes(),
         )?;
-        Ok(ResultadoTroca::trocado())
+        Ok(ChangeResult::changed())
     }
 
     /// Change master password (Phase 38, V5.22): the new one follows the first use rule;
     /// the daemon checks the current one. The response carries no value.
-    pub fn change_master_password(&self, change: TrocaSenha) -> Result<ResultadoTroca, AppError> {
-        let errors = change.erros();
+    pub fn change_master_password(&self, change: PasswordChange) -> Result<ChangeResult, AppError> {
+        let errors = change.errors();
         if !errors.is_empty() {
-            return Ok(ResultadoTroca::com_erros(errors));
+            return Ok(ChangeResult::with_errors(errors));
         }
         client::change_password(
             &mut *self.daemon()?,
-            change.atual.bytes(),
-            change.nova.bytes(),
+            change.current.bytes(),
+            change.new.bytes(),
         )?;
-        Ok(ResultadoTroca::trocado())
+        Ok(ChangeResult::changed())
     }
 
     /// Set lock timeout (Phase 38, D30, D45): outside 1 to 1440 it does not even reach the
     /// daemon. The response is the config read again from the daemon.
-    pub fn set_lock_timeout(&self, minutes: u64) -> Result<Configuracoes, AppError> {
-        let minutes = minutos_validos(minutes)?;
+    pub fn set_lock_timeout(&self, minutes: u64) -> Result<Settings, AppError> {
+        let minutes = valid_minutes(minutes)?;
         let mut d = self.daemon()?;
         client::set_lock_timeout(&mut *d, minutes)?;
         client::settings(&mut *d)
@@ -772,34 +775,34 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
 
     /// External backup (Phase 48, V7.9): enabled or not, the chosen UUID and, if it is
     /// connected, the USB drive (label neutralized, D51). No mount path.
-    pub fn external_backup(&self) -> Result<BackupExternoVisto, AppError> {
+    pub fn external_backup(&self) -> Result<ExternalBackupView, AppError> {
         external_backup_of(&mut *self.daemon()?)
     }
 
     /// List USB drives (Phase 48): the USB drives the daemon sees, to choose from.
-    pub fn list_usb_drives(&self) -> Result<Vec<PendriveVisto>, AppError> {
+    pub fn list_usb_drives(&self) -> Result<Vec<UsbDriveView>, AppError> {
         let list = client::usb_drives(&mut *self.daemon()?)?;
-        Ok(list.iter().map(PendriveVisto::de).collect())
+        Ok(list.iter().map(UsbDriveView::from_drive).collect())
     }
 
     /// Set external backup (Phase 48, V7.9; D17, D30). Enable: the UUID (format of D45,
-    /// checked in [`EscolhaDoPendrive::nova`]) must be of a USB drive the daemon sees now;
+    /// checked in [`UsbDriveChoice::new`]) must be of a USB drive the daemon sees now;
     /// otherwise nothing goes to the daemon. The UUID goes as the daemon gave it. Disable
     /// keeps the stored UUID. The response is the state read again.
     pub fn set_external_backup(
         &self,
         enabled: bool,
         uuid: Option<&str>,
-    ) -> Result<BackupExternoVisto, AppError> {
-        let choice = EscolhaDoPendrive::nova(enabled, uuid)?;
+    ) -> Result<ExternalBackupView, AppError> {
+        let choice = UsbDriveChoice::new(enabled, uuid)?;
         let mut d = self.daemon()?;
         match choice {
-            EscolhaDoPendrive::Ligar(u) => {
+            UsbDriveChoice::Enable(u) => {
                 let list = client::usb_drives(&mut *d)?;
-                let p = backup_externo::achar(&list, &u).ok_or(AppError::UsbDriveNotConnected)?;
+                let p = external_backup::find(&list, &u).ok_or(AppError::UsbDriveNotConnected)?;
                 client::set_external_backup(&mut *d, true, Some(p.uuid.clone()))?;
             }
-            EscolhaDoPendrive::Desligar => {
+            UsbDriveChoice::Disable => {
                 let (_, current) = client::external_backup(&mut *d)?;
                 client::set_external_backup(&mut *d, false, current)?;
             }
@@ -985,33 +988,36 @@ mod tests {
         );
         assert_no_secret(&serde_json::to_string(&list).unwrap(), "lista");
         for item in &list {
-            let d = s.credential_detail(&item.nome).unwrap();
+            let d = s.credential_detail(&item.name).unwrap();
             let json = serde_json::to_string(&d).unwrap();
-            assert_no_secret(&json, &item.nome);
-            assert!(!json.contains("valor\":\"falso"), "{}", item.nome);
+            assert_no_secret(&json, &item.name);
+            assert!(!json.contains("valor\":\"falso"), "{}", item.name);
         }
         // The secret extra goes only with the name.
         let g = s.credential_detail("gama-generico").unwrap();
-        let license = g.extras.iter().find(|x| x.nome == "CHAVE_LICENCA").unwrap();
-        assert!(license.segredo && license.valor.is_none());
-        assert_eq!(g.anexos.len(), 1);
+        let license = g.extras.iter().find(|x| x.name == "CHAVE_LICENCA").unwrap();
+        assert!(license.secret && license.value.is_none());
+        assert_eq!(g.attachments.len(), 1);
     }
 
     #[test]
     fn list_and_detail_of_acme_pg_dev_as_in_the_frame() {
         let (s, _) = service();
         let list = s.list_credentials().unwrap();
-        let pg = list.iter().find(|i| i.nome == "acme-pg-dev").unwrap();
-        assert_eq!(pg.resumo, "postgres · app@127.0.0.1:55432");
-        assert_eq!((pg.tipo, pg.ambiente, pg.nivel), ("banco", "dev", "livre"));
-        let tunnel = list.iter().find(|i| i.nome == "acme-pg-tunel").unwrap();
-        assert_eq!(tunnel.resumo, "postgres · postgres:5432 · túnel SSH");
+        let pg = list.iter().find(|i| i.name == "acme-pg-dev").unwrap();
+        assert_eq!(pg.summary, "postgres · app@127.0.0.1:55432");
+        assert_eq!(
+            (pg.kind, pg.environment, pg.level),
+            ("banco", "dev", "livre")
+        );
+        let tunnel = list.iter().find(|i| i.name == "acme-pg-tunel").unwrap();
+        assert_eq!(tunnel.summary, "postgres · postgres:5432 · túnel SSH");
         let d = s.credential_detail("acme-pg-dev").unwrap();
-        assert_eq!(d.subtitulo, "grupo acme · postgres");
-        let labels: Vec<_> = d.campos.iter().map(|c| c.rotulo.as_str()).collect();
+        assert_eq!(d.subtitle, "grupo acme · postgres");
+        let labels: Vec<_> = d.fields.iter().map(|c| c.label.as_str()).collect();
         assert_eq!(labels, ["Host", "Porta", "Base", "Usuário"]);
-        assert_eq!(d.segredos.len(), 1);
-        assert_eq!(d.segredos[0].rotulo, "Senha");
+        assert_eq!(d.secrets.len(), 1);
+        assert_eq!(d.secrets[0].label, "Senha");
     }
 
     #[test]
@@ -1226,7 +1232,7 @@ mod tests {
             .unwrap();
         assert_eq!(r.saved.as_deref(), Some("acme-wp-novo"), "{r:?}");
         let d = s.credential_detail("acme-wp-novo").unwrap();
-        assert_eq!(d.nivel, "com-aprovacao");
+        assert_eq!(d.level, "com-aprovacao");
         assert_eq!(d.tags, ["wordpress", "painel"]);
         assert_eq!(
             s.reveal_field("acme-wp-novo", "totp_semente")
@@ -1248,7 +1254,7 @@ mod tests {
             .unwrap();
         assert_eq!(r.saved.as_deref(), Some("acme-totp-dev2"), "{r:?}");
         assert_eq!(
-            s.credential_detail("acme-totp-dev2").unwrap().nivel,
+            s.credential_detail("acme-totp-dev2").unwrap().level,
             "livre"
         );
         assert_eq!(
@@ -1430,7 +1436,10 @@ mod tests {
             );
         }
         assert_eq!(
-            s.credential_detail("gama-generico").unwrap().anexos.len(),
+            s.credential_detail("gama-generico")
+                .unwrap()
+                .attachments
+                .len(),
             1
         );
         assert_eq!(
@@ -1487,8 +1496,8 @@ mod tests {
         let r = serde_json::to_string(&s.save_credential(None, form(j)).unwrap()).unwrap();
         assert_no_secret(&r, "salvar");
         for item in s.list_credentials().unwrap() {
-            let d = serde_json::to_string(&s.credential_detail(&item.nome).unwrap()).unwrap();
-            assert_no_secret(&d, &item.nome);
+            let d = serde_json::to_string(&s.credential_detail(&item.name).unwrap()).unwrap();
+            assert_no_secret(&d, &item.name);
         }
     }
 
@@ -1510,13 +1519,13 @@ mod tests {
         );
         let list = s.list_credentials().unwrap();
         assert_eq!(n.load(std::sync::atomic::Ordering::SeqCst), 1);
-        let pg = list.iter().find(|i| i.nome == "acme-pg-dev").unwrap();
-        assert_eq!(pg.usuario.as_deref(), Some("app"));
-        let totp = list.iter().find(|i| i.nome == "acme-totp-dev").unwrap();
-        assert_eq!(totp.usuario.as_deref(), Some("wp_admin"));
-        assert!(totp.resumo.ends_with("TOTP"), "{}", totp.resumo);
-        let g = list.iter().find(|i| i.nome == "gama-generico").unwrap();
-        assert_eq!(g.resumo, "2 campos extras · 1 anexo");
+        let pg = list.iter().find(|i| i.name == "acme-pg-dev").unwrap();
+        assert_eq!(pg.username.as_deref(), Some("app"));
+        let totp = list.iter().find(|i| i.name == "acme-totp-dev").unwrap();
+        assert_eq!(totp.username.as_deref(), Some("wp_admin"));
+        assert!(totp.summary.ends_with("TOTP"), "{}", totp.summary);
+        let g = list.iter().find(|i| i.name == "gama-generico").unwrap();
+        assert_eq!(g.summary, "2 campos extras · 1 anexo");
         assert_no_secret(&serde_json::to_string(&list).unwrap(), "lista");
     }
 
@@ -1535,7 +1544,7 @@ mod tests {
     }
 
     fn level_of(s: &Service<FakeDaemon, Arc<Area>>, entry: &str) -> &'static str {
-        s.credential_detail(entry).unwrap().nivel
+        s.credential_detail(entry).unwrap().level
     }
 
     #[test]
@@ -1553,9 +1562,9 @@ mod tests {
                 .list_credentials()
                 .unwrap()
                 .into_iter()
-                .find(|i| i.nome == "acme-pg-prod")
+                .find(|i| i.name == "acme-pg-prod")
                 .unwrap();
-            assert_eq!(item.nivel, level);
+            assert_eq!(item.level, level);
         }
         assert_eq!(
             s.set_level("nao-existe", "livre", pin(RIGHT_PIN))
@@ -1660,7 +1669,7 @@ mod tests {
     struct FixedTerminal(Arc<Mutex<Vec<(String, String)>>>);
 
     impl crate::terminal::Terminal for FixedTerminal {
-        fn abrir(&self, entry: &str, token: &Token) -> Result<(), AppError> {
+        fn open(&self, entry: &str, token: &Token) -> Result<(), AppError> {
             // `Token` does not expose the value outside the module; the test only sees
             // the size and the Debug.
             self.0
@@ -1733,14 +1742,14 @@ mod tests {
         assert_eq!(r.saved.as_deref(), Some("clientex-pg-stage"), "{r:?}");
         let d = s.credential_detail("clientex-pg-stage").unwrap();
         assert!(
-            d.campos
+            d.fields
                 .iter()
-                .any(|c| c.id == "porta" && c.valor == "5432")
+                .any(|c| c.id == "porta" && c.value == "5432")
         );
         assert!(
-            d.campos
+            d.fields
                 .iter()
-                .any(|c| c.id == "tunel" && c.valor == "acme-ssh-senha-stage")
+                .any(|c| c.id == "tunel" && c.value == "acme-ssh-senha-stage")
         );
 
         let r = s
@@ -1750,7 +1759,7 @@ mod tests {
         assert_eq!(
             s.credential_detail("clientex-ssh-stage")
                 .unwrap()
-                .segredos
+                .secrets
                 .len(),
             2
         );
@@ -1879,9 +1888,9 @@ mod tests {
         let r = s.save_credential(None, form(v)).unwrap();
         assert_eq!(r.saved.as_deref(), Some("clientex-ssh-anexo"), "{r:?}");
         let det = s.credential_detail("clientex-ssh-anexo").unwrap();
-        assert_eq!(det.anexos.len(), 1);
-        assert_eq!(det.anexos[0].nome, "acme-vpn.ovpn");
-        assert_eq!(det.anexos[0].tamanho, content.len() as u64);
+        assert_eq!(det.attachments.len(), 1);
+        assert_eq!(det.attachments[0].name, "acme-vpn.ovpn");
+        assert_eq!(det.attachments[0].size, content.len() as u64);
         assert_no_secret(&serde_json::to_string(&det).unwrap(), "detalhe com anexo");
         assert!(
             !serde_json::to_string(&det)
@@ -1922,8 +1931,8 @@ mod tests {
         let r = s.load_key("chave_privada").unwrap();
         assert_eq!(
             r,
-            Carregamento::Carregada {
-                tamanho: k.len() as u64
+            Loading::Loaded {
+                size: k.len() as u64
             }
         );
         let json = serde_json::to_string(&r).unwrap();
@@ -1958,7 +1967,7 @@ mod tests {
         for after in [Locked, NoDaemon, NoVault] {
             assert!(matches!(
                 s.load_key("chave_privada").unwrap(),
-                Carregamento::Carregada { .. }
+                Loading::Loaded { .. }
             ));
             s.on_tray_transition(Unlocked, after);
             assert_eq!(
@@ -1969,7 +1978,7 @@ mod tests {
         }
         assert!(matches!(
             s.load_key("chave_privada").unwrap(),
-            Carregamento::Carregada { .. }
+            Loading::Loaded { .. }
         ));
         s.on_tray_transition(Unlocked, Unlocked);
         s.on_tray_transition(Locked, Unlocked);
@@ -2000,8 +2009,8 @@ mod tests {
         let r = s.load_key("chave_privada").unwrap();
         assert_eq!(
             r,
-            Carregamento::Aviso {
-                motivo: chave::AVISO_NAO_E_CHAVE.into()
+            Loading::Notice {
+                reason: key::NOT_A_KEY_NOTICE.into()
             }
         );
         let json = serde_json::to_string(&r).unwrap();
@@ -2017,20 +2026,20 @@ mod tests {
         *sel.0.lock().unwrap() = Some(d.join("link"));
         assert_eq!(
             s.load_key("chave_privada").unwrap(),
-            Carregamento::Aviso {
-                motivo: chave::AVISO_LINK.into()
+            Loading::Notice {
+                reason: key::LINK_NOTICE.into()
             }
         );
         // Loaded and then a notice: the loaded one stays; discarding erases it.
         *sel.0.lock().unwrap() = Some(d.join("chave"));
         assert!(matches!(
             s.load_key("chave_privada").unwrap(),
-            Carregamento::Carregada { .. }
+            Loading::Loaded { .. }
         ));
         *sel.0.lock().unwrap() = Some(text);
         assert!(matches!(
             s.load_key("chave_privada").unwrap(),
-            Carregamento::Aviso { .. }
+            Loading::Notice { .. }
         ));
         s.discard_form();
         assert_eq!(
@@ -2041,7 +2050,7 @@ mod tests {
         *sel.0.lock().unwrap() = Some(d.join("chave"));
         assert!(matches!(
             s.load_key("chave_privada").unwrap(),
-            Carregamento::Carregada { .. }
+            Loading::Loaded { .. }
         ));
         s.on_exit();
         assert_eq!(
@@ -2050,10 +2059,7 @@ mod tests {
         );
         // Canceled: nothing.
         *sel.0.lock().unwrap() = None;
-        assert_eq!(
-            s.load_key("chave_privada").unwrap(),
-            Carregamento::Cancelado
-        );
+        assert_eq!(s.load_key("chave_privada").unwrap(), Loading::Canceled);
         // "carregada" on a field that is not a key one: invalid request.
         let mut v = new_server("clientex-ssh-53d");
         v["segredos"]["passphrase"] = serde_json::json!("carregada");
@@ -2147,7 +2153,7 @@ mod tests {
             g
         };
         // Keep: the attachment stays, with the same size.
-        let before = s.credential_detail("gama-generico").unwrap().anexos;
+        let before = s.credential_detail("gama-generico").unwrap().attachments;
         assert_eq!(before.len(), 1);
         let r = s
             .save_credential(
@@ -2157,15 +2163,15 @@ mod tests {
             .unwrap();
         assert_eq!(r.saved.as_deref(), Some("gama-generico"), "{r:?}");
         let det = s.credential_detail("gama-generico").unwrap();
-        assert_eq!(det.anexos.len(), 1);
-        assert_eq!(det.anexos[0].nome, "app.env");
-        assert_eq!(det.anexos[0].tamanho, before[0].tamanho);
+        assert_eq!(det.attachments.len(), 1);
+        assert_eq!(det.attachments[0].name, "app.env");
+        assert_eq!(det.attachments[0].size, before[0].size);
         assert_eq!(
             det.extras
                 .iter()
-                .find(|x| x.nome == "REGIAO")
+                .find(|x| x.name == "REGIAO")
                 .unwrap()
-                .valor
+                .value
                 .as_deref(),
             Some("r-02")
         );
@@ -2188,9 +2194,9 @@ mod tests {
         let names: Vec<String> = s
             .credential_detail("gama-generico")
             .unwrap()
-            .anexos
+            .attachments
             .into_iter()
-            .map(|a| a.nome)
+            .map(|a| a.name)
             .collect();
         assert_eq!(names, ["app.env", "env"]);
         // Remove: what is not in the kept attachments leaves.
@@ -2202,8 +2208,8 @@ mod tests {
             .unwrap();
         assert_eq!(r.saved.as_deref(), Some("gama-generico"), "{r:?}");
         let det = s.credential_detail("gama-generico").unwrap();
-        assert_eq!(det.anexos.len(), 1);
-        assert_eq!(det.anexos[0].nome, "env");
+        assert_eq!(det.attachments.len(), 1);
+        assert_eq!(det.attachments[0].name, "env");
         // An unknown kept name in [`Service::choose_attachment`] is an invalid request.
         let forged = AttachmentEdit {
             entry: "gama-generico".into(),

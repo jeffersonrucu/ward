@@ -7,7 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
-use ward_app_core::comandos::{COMANDOS, permissao};
+use ward_app_core::commands::{COMMANDS, permission};
 
 fn app() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("..")
@@ -66,7 +66,7 @@ fn janela_de_aprovacao_segue_o_rust_e_nao_usa_html() {
 /// aprovação só ouve o aviso, lê o pedido e responde.
 #[test]
 fn ataque_capability_com_permissao_a_mais() {
-    use ward_app_core::comandos::{COMANDOS_APROVACAO, COMANDOS_DAS_DUAS, COMANDOS_PRINCIPAL};
+    use ward_app_core::commands::{APPROVAL_COMMANDS, MAIN_COMMANDS, SHARED_COMMANDS};
     let dir = app().join("src-tauri/capabilities");
     let mut arquivos: Vec<_> = fs::read_dir(&dir)
         .unwrap()
@@ -79,11 +79,14 @@ fn ataque_capability_com_permissao_a_mais() {
         "só as duas capabilities"
     );
     for (arquivo, janela, comandos) in [
-        ("principal.json", "principal", COMANDOS_PRINCIPAL),
-        ("aprovacao.json", "aprovacao", COMANDOS_APROVACAO),
+        ("principal.json", "principal", MAIN_COMMANDS),
+        ("aprovacao.json", "aprovacao", APPROVAL_COMMANDS),
     ] {
         let cap = json(&dir.join(arquivo));
-        let esperadas: Vec<Value> = comandos.iter().map(|c| Value::from(permissao(c))).collect();
+        let esperadas: Vec<Value> = comandos
+            .iter()
+            .map(|c| Value::from(permission(c)))
+            .collect();
         assert_eq!(
             cap["permissions"],
             Value::from(esperadas),
@@ -102,17 +105,17 @@ fn ataque_capability_com_permissao_a_mais() {
             );
         }
     }
-    assert_eq!(COMANDOS_DAS_DUAS, &["ouvir_avisos"]);
+    assert_eq!(SHARED_COMMANDS, &["ouvir_avisos"]);
     let principal = json(&dir.join("principal.json"));
-    for c in COMANDOS_APROVACAO
+    for c in APPROVAL_COMMANDS
         .iter()
-        .filter(|c| !COMANDOS_DAS_DUAS.contains(c))
+        .filter(|c| !SHARED_COMMANDS.contains(c))
     {
         assert!(
             !principal["permissions"]
                 .as_array()
                 .unwrap()
-                .contains(&Value::from(permissao(c))),
+                .contains(&Value::from(permission(c))),
             "a janela principal não pode {c}"
         );
     }
@@ -232,14 +235,14 @@ fn ataque_devtools_ou_acl_dinamica_no_release() {
 #[test]
 fn lista_de_comandos_da_interface_e_a_mesma() {
     let js = fs::read_to_string(app().join("src/lib/bridge/commands.js")).unwrap();
-    let lista: String = COMANDOS
+    let lista: String = COMMANDS
         .iter()
         .map(|c| format!("'{c}'"))
         .collect::<Vec<_>>()
         .join(", ");
     assert!(
         js.contains(&format!("Object.freeze([{lista}])")),
-        "comandos.js diverge de COMANDOS"
+        "commands.js diverge de COMMANDS"
     );
 }
 
