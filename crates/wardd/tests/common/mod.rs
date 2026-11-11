@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use ward_core::protocol::{self, Request, ResponseError, Resposta, Role};
-use wardd::nucleo::{Caminhos, Daemon, Relogio};
+use wardd::core::{Clock, Daemon, Paths};
 
 pub const PASSWORD: &str = "falso-mestra-ward-01";
 pub const PIN: &str = "135790";
@@ -62,7 +62,7 @@ impl Dir {
         Dir(p)
     }
 
-    pub fn paths(&self) -> Caminhos {
+    pub fn paths(&self) -> Paths {
         wardd::config::test_paths(&self.0)
     }
 }
@@ -78,15 +78,15 @@ impl Drop for Dir {
 #[derive(Clone, Default)]
 pub struct FakeClock(pub Arc<Mutex<Vec<Duration>>>);
 
-impl Relogio for FakeClock {
-    fn dormir(&self, d: Duration) {
+impl Clock for FakeClock {
+    fn sleep(&self, d: Duration) {
         self.0.lock().unwrap().push(d);
     }
 }
 
-pub fn daemon_at(c: Caminhos) -> (Daemon, FakeClock) {
+pub fn daemon_at(c: Paths) -> (Daemon, FakeClock) {
     let r = FakeClock::default();
-    (Daemon::novo(c, Box::new(r.clone())), r)
+    (Daemon::new(c, Box::new(r.clone())), r)
 }
 
 /// Reads the request as the socket would (the role is checked first).
@@ -100,7 +100,7 @@ pub fn req(role: Role, op: &str, data: &str) -> Result<Request, ResponseError> {
 /// Requests and returns the response (the request has to go through the reading).
 pub fn request(d: &Daemon, role: Role, op: &str, data: &str) -> Resposta {
     match req(role, op, data) {
-        Ok(p) => d.atender(role, p),
+        Ok(p) => d.serve(role, p),
         Err(e) => Resposta::Erro(e),
     }
 }
@@ -199,7 +199,7 @@ pub fn contains(haystack: &[u8], needle: &[u8]) -> bool {
 }
 
 pub fn generations(dir: &Dir) -> wardd::files::Generations {
-    wardd::files::read_state(&dir.paths().estado).unwrap()
+    wardd::files::read_state(&dir.paths().state).unwrap()
 }
 
 /// Generation read from disk (opens with the test password, no floor).
@@ -225,11 +225,11 @@ pub fn with_window<R>(
 ) -> (R, Vec<protocol::PedidoDeAprovacao>) {
     use std::sync::atomic::AtomicBool;
     use std::sync::mpsc;
-    use wardd::aprovacao::Assinante;
+    use wardd::approval::Subscriber;
 
     struct FakeWindow(mpsc::Sender<protocol::PedidoDeAprovacao>);
-    impl Assinante for FakeWindow {
-        fn entregar(&mut self, r: &Resposta) -> bool {
+    impl Subscriber for FakeWindow {
+        fn deliver(&mut self, r: &Resposta) -> bool {
             if let Resposta::PedidoDeAprovacao(p) = r {
                 return self.0.send(p.clone()).is_ok();
             }
@@ -239,7 +239,7 @@ pub fn with_window<R>(
 
     const WINDOW_ID: u64 = 9_999;
     let (tx, rx) = mpsc::channel();
-    d.motor().assinar(WINDOW_ID, Box::new(FakeWindow(tx)));
+    d.engine().subscribe(WINDOW_ID, Box::new(FakeWindow(tx)));
     let stop = AtomicBool::new(false);
     let seen = Mutex::new(Vec::new());
     let r = std::thread::scope(|s| {
@@ -265,6 +265,6 @@ pub fn with_window<R>(
         stop.store(true, Ordering::Release);
         r
     });
-    d.motor().desassinar(WINDOW_ID);
+    d.engine().unsubscribe(WINDOW_ID);
     (r, seen.into_inner().unwrap())
 }

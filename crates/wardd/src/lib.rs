@@ -1,11 +1,11 @@
 //! Ward daemon (`wardd`): the only process that touches secrets (R1, Phase 22).
 //!
-//! - [`nucleo`]: locked/unlocked state and the rule of each operation.
+//! - [`core`](crate::core): locked/unlocked state and the rule of each operation.
 //! - [`server`]: the socket loop (peer uid, role, frames, limits).
 //! - [`files`]: reading the vault with identity by `fstat` and the state file
 //!   (D39, D53).
 //! - [`config`]: release and test daemon paths (D7).
-//! - [`aprovacao`]: approval engine and the wait for the unlock (Phase 23); [`usage`]:
+//! - [`approval`]: approval engine and the wait for the unlock (Phase 23); [`usage`]:
 //!   the agent's use (combined level, 1 hour grant, buttons with PIN);
 //!   [`launch`]: the daemon opens the app through the launcher (D57).
 //! - [`lock`]: automatic lock on inactivity and through logind (Phase 24).
@@ -24,17 +24,17 @@
 
 pub mod log;
 
-pub mod aprovacao;
+pub mod approval;
 pub mod bridge;
 pub mod cdp;
 pub mod config;
+pub mod core;
 pub mod execution;
 pub mod external;
 pub mod files;
 pub mod launch;
 pub mod lock;
 pub mod login;
-pub mod nucleo;
 pub mod playwright;
 pub mod server;
 pub mod ssh;

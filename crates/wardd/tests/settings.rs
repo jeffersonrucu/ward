@@ -15,7 +15,7 @@ use common::*;
 use ward_core::limits::{DEFAULT_LOCK_MINUTES, MAX_LOCK_MINUTES, MIN_LOCK_MINUTES};
 use ward_core::protocol::{ResponseError, Resposta, Role};
 
-fn settings(d: &wardd::nucleo::Daemon) -> (u32, bool) {
+fn settings(d: &wardd::core::Daemon) -> (u32, bool) {
     match request(d, Role::App, "configuracao", "{}") {
         Resposta::Configuracao {
             minutos_trava,
@@ -30,7 +30,7 @@ fn settings(d: &wardd::nucleo::Daemon) -> (u32, bool) {
     }
 }
 
-fn lock_timeout(d: &wardd::nucleo::Daemon, role: Role, minutes: u32) -> Resposta {
+fn lock_timeout(d: &wardd::core::Daemon, role: Role, minutes: u32) -> Resposta {
     request(
         d,
         role,
@@ -39,7 +39,7 @@ fn lock_timeout(d: &wardd::nucleo::Daemon, role: Role, minutes: u32) -> Resposta
     )
 }
 
-fn change_pin(d: &wardd::nucleo::Daemon, role: Role, current: &str, new: &str) -> Resposta {
+fn change_pin(d: &wardd::core::Daemon, role: Role, current: &str, new: &str) -> Resposta {
     request(
         d,
         role,
@@ -52,7 +52,7 @@ fn change_pin(d: &wardd::nucleo::Daemon, role: Role, current: &str, new: &str) -
     )
 }
 
-fn change_password(d: &wardd::nucleo::Daemon, role: Role, current: &str, new: &str) -> Resposta {
+fn change_password(d: &wardd::core::Daemon, role: Role, current: &str, new: &str) -> Resposta {
     request(
         d,
         role,
@@ -74,11 +74,11 @@ fn v5_22_default_4h_off_and_changeable_timeout_saved_in_the_vault() {
     let (d, _) = test_vault(&dir);
     assert_eq!(settings(&d), (DEFAULT_LOCK_MINUTES, false));
     assert_eq!(DEFAULT_LOCK_MINUTES, 240);
-    let before = generation_on_disk(&dir.paths().cofre, PASSWORD);
+    let before = generation_on_disk(&dir.paths().vault, PASSWORD);
     assert!(ok(&lock_timeout(&d, Role::App, 30)));
     assert_eq!(settings(&d), (30, false));
-    assert_eq!(generation_on_disk(&dir.paths().cofre, PASSWORD), before + 1);
-    d.travar();
+    assert_eq!(generation_on_disk(&dir.paths().vault, PASSWORD), before + 1);
+    d.lock();
     assert!(ok(&unlock(&d, PASSWORD)));
     assert_eq!(settings(&d), (30, false));
     // The D45 bounds pass; outside them it does not even reach the daemon.
@@ -100,7 +100,7 @@ fn v5_22_default_4h_off_and_changeable_timeout_saved_in_the_vault() {
 fn attack_agent_and_extension_neither_read_nor_change_the_settings() {
     let dir = Dir::new("cfg-papel");
     let (d, _) = test_vault(&dir);
-    let generation = generation_on_disk(&dir.paths().cofre, PASSWORD);
+    let generation = generation_on_disk(&dir.paths().vault, PASSWORD);
     for role in [Role::Agent, Role::Extension] {
         let r = request(&d, role, "configuracao", "{}");
         assert_eq!(error(&r), Some(ResponseError::Unauthorized), "{role:?}");
@@ -112,10 +112,10 @@ fn attack_agent_and_extension_neither_read_nor_change_the_settings() {
         assert_eq!(error(&r), Some(ResponseError::Unauthorized), "{role:?}");
     }
     assert_eq!(settings(&d), (DEFAULT_LOCK_MINUTES, false));
-    assert_eq!(generation_on_disk(&dir.paths().cofre, PASSWORD), generation);
+    assert_eq!(generation_on_disk(&dir.paths().vault, PASSWORD), generation);
     // The PIN and the password are still the same.
     assert!(ok(&set_level(&d, Role::App, "t-aprov", "livre", PIN)));
-    d.travar();
+    d.lock();
     assert!(ok(&unlock(&d, PASSWORD)));
 }
 
@@ -124,7 +124,7 @@ fn attack_agent_and_extension_neither_read_nor_change_the_settings() {
 fn attack_settings_with_the_vault_locked() {
     let dir = Dir::new("cfg-travado");
     let (d, _) = test_vault(&dir);
-    d.travar();
+    d.lock();
     for (op, data) in [
         ("configuracao", "{}".to_owned()),
         ("tempo_trava", r#"{"minutos":30}"#.to_owned()),
@@ -173,16 +173,16 @@ fn attack_settings_reply_without_hash_or_pin() {
 fn v5_22_change_pin_asks_for_the_current_pin() {
     let dir = Dir::new("cfg-pin");
     let (d, _) = test_vault(&dir);
-    let generation = generation_on_disk(&dir.paths().cofre, PASSWORD);
+    let generation = generation_on_disk(&dir.paths().vault, PASSWORD);
     assert_eq!(
         error(&change_pin(&d, Role::App, WRONG_PIN, "2468")),
         Some(ResponseError::WrongPin)
     );
-    assert_eq!(generation_on_disk(&dir.paths().cofre, PASSWORD), generation);
+    assert_eq!(generation_on_disk(&dir.paths().vault, PASSWORD), generation);
     assert!(ok(&set_level(&d, Role::App, "t-aprov", "livre", PIN)));
     assert!(ok(&change_pin(&d, Role::App, PIN, "2468")));
     assert_eq!(
-        generation_on_disk(&dir.paths().cofre, PASSWORD),
+        generation_on_disk(&dir.paths().vault, PASSWORD),
         generation + 2,
         "mudar_nivel e trocar_pin gravam"
     );
@@ -198,7 +198,7 @@ fn v5_22_change_pin_asks_for_the_current_pin() {
         "2468"
     )));
     // The new PIN is on disk: it holds after locking and unlocking.
-    d.travar();
+    d.lock();
     assert!(ok(&unlock(&d, PASSWORD)));
     assert!(ok(&set_level(&d, Role::App, "t-aprov", "livre", "2468")));
     // A new PIN out of format does not even reach the daemon.
@@ -221,7 +221,7 @@ fn attack_guessing_the_pin_through_the_change_locks_on_the_fifth_error() {
         let r = change_pin(&d, Role::App, &format!("00{i:02}"), "2468");
         assert_eq!(error(&r), Some(ResponseError::WrongPin));
     }
-    assert!(d.travado());
+    assert!(d.is_locked());
     assert!(ok(&unlock(&d, PASSWORD)));
     // Nothing changed: the PIN is the old one.
     assert!(ok(&set_level(&d, Role::App, "t-aprov", "livre", PIN)));
@@ -235,7 +235,7 @@ fn v5_22_change_password_asks_for_the_current_one_and_keeps_the_settings() {
     let dir = Dir::new("cfg-senha");
     let (d, _) = test_vault(&dir);
     assert!(ok(&lock_timeout(&d, Role::App, 60)));
-    let generation = generation_on_disk(&dir.paths().cofre, PASSWORD);
+    let generation = generation_on_disk(&dir.paths().vault, PASSWORD);
     assert_eq!(
         error(&change_password(
             &d,
@@ -245,16 +245,16 @@ fn v5_22_change_password_asks_for_the_current_one_and_keeps_the_settings() {
         )),
         Some(ResponseError::WrongPassword)
     );
-    assert!(!d.travado());
-    assert_eq!(generation_on_disk(&dir.paths().cofre, PASSWORD), generation);
+    assert!(!d.is_locked());
+    assert_eq!(generation_on_disk(&dir.paths().vault, PASSWORD), generation);
     assert!(ok(&change_password(
         &d,
         Role::App,
         PASSWORD,
         "falso-nova-mestra-02"
     )));
-    assert!(generation_on_disk(&dir.paths().cofre, "falso-nova-mestra-02") > generation);
-    d.travar();
+    assert!(generation_on_disk(&dir.paths().vault, "falso-nova-mestra-02") > generation);
+    d.lock();
     assert_eq!(
         error(&unlock(&d, PASSWORD)),
         Some(ResponseError::WrongPassword)
@@ -296,8 +296,8 @@ fn attack_short_new_master_password_refused_by_the_daemon() {
             ),
         );
         assert_eq!(field(&r), ["senha"], "{short:?}");
-        assert!(!c.cofre.exists());
-        assert!(!c.estado.exists());
+        assert!(!c.vault.exists());
+        assert!(!c.state.exists());
     }
 
     // Changing the password.
@@ -311,7 +311,7 @@ fn attack_short_new_master_password_refused_by_the_daemon() {
         );
     }
     assert_eq!(generations(&dir), before);
-    d.travar();
+    d.lock();
     assert!(ok(&unlock(&d, PASSWORD)));
 }
 
@@ -324,9 +324,9 @@ fn composed_master_password_opens_decomposed_through_the_daemon() {
     let dir = Dir::new("cfg-senha-nfc");
     let (d, _) = test_vault(&dir);
     assert!(ok(&change_password(&d, Role::App, PASSWORD, decomposed)));
-    d.travar();
+    d.lock();
     assert!(ok(&unlock(&d, composed)));
-    d.travar();
+    d.lock();
     assert!(ok(&unlock(&d, decomposed)));
     assert!(ok(&change_password(&d, Role::App, composed, PASSWORD)));
 }
@@ -349,7 +349,7 @@ fn f55_attack_fifo_in_place_of_the_vault_does_not_hold_the_password_change() {
     let dir = Dir::new("troca-fifo");
     let (d, _) = test_vault(&dir);
     let d = Arc::new(d);
-    let vault = dir.paths().cofre;
+    let vault = dir.paths().vault;
     let real = dir.0.join("x-real");
     fs::hard_link(&vault, &real).unwrap();
 
@@ -379,7 +379,7 @@ fn f55_attack_fifo_in_place_of_the_vault_does_not_hold_the_password_change() {
         .recv_timeout(Duration::from_secs(5))
         .expect("a troca de senha ficou presa no FIFO");
     assert_eq!(error(&r), Some(ResponseError::VaultChanged), "{r:?}");
-    assert!(d.travado());
+    assert!(d.is_locked());
     let back = dir.0.join("x-volta");
     fs::hard_link(&real, &back).unwrap();
     fs::rename(&back, &vault).unwrap();
@@ -461,7 +461,7 @@ fn f55_attack_fifo_in_place_of_the_vault_does_not_hold_the_password_change() {
         "{swaps} trocas, {requests} pedidos, {read_ok} lidos"
     );
     // The real file in place: the change with the right password works.
-    if d.travado() {
+    if d.is_locked() {
         assert!(ok(&unlock(&d, PASSWORD)));
     }
     let r = change_password(&d, Role::App, PASSWORD, "falso-nova-mestra-55");

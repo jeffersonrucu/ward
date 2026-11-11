@@ -29,7 +29,7 @@ use std::time::{Duration, Instant};
 
 use common::*;
 use ward_core::protocol::{self, ResponseError, Resposta, Role};
-use wardd::nucleo::{Daemon, Relogio};
+use wardd::core::{Clock, Daemon};
 use zbus::Connection;
 use zbus::Variant as Value;
 use zbus::connection::Builder;
@@ -69,11 +69,11 @@ impl ManualClock {
     }
 }
 
-impl Relogio for ManualClock {
-    fn dormir(&self, d: Duration) {
+impl Clock for ManualClock {
+    fn sleep(&self, d: Duration) {
         self.1.lock().unwrap().push(d);
     }
-    fn agora(&self) -> Option<Duration> {
+    fn now(&self) -> Option<Duration> {
         *self.0.lock().unwrap()
     }
 }
@@ -81,7 +81,7 @@ impl Relogio for ManualClock {
 /// New test vault (unlocked at t = 0) in `dir`, with the manual clock.
 fn vault_with_clock(dir: &Dir) -> (Daemon, ManualClock) {
     let r = ManualClock::new();
-    let d = Daemon::novo(dir.paths(), Box::new(r.clone()));
+    let d = Daemon::new(dir.paths(), Box::new(r.clone()));
     let create = request(
         &d,
         Role::App,
@@ -115,17 +115,17 @@ fn v3_19_inactivity_with_injected_clock() {
     let (d, r) = vault_with_clock(&dir);
     // Settings default (D30): 240 min.
     r.set(4 * H - 60);
-    assert!(!d.travar_se_inativo(), "3h59 sem uso não trava");
-    assert!(!d.travado());
+    assert!(!d.lock_if_idle(), "3h59 sem uso não trava");
+    assert!(!d.is_locked());
     r.set(4 * H);
-    assert!(d.travar_se_inativo(), "4h00 sem uso trava");
-    assert!(d.travado());
+    assert!(d.lock_if_idle(), "4h00 sem uso trava");
+    assert!(d.is_locked());
     assert_eq!(
         error(&request(&d, Role::Agent, "lista", "{}")),
         Some(ResponseError::Locked)
     );
     // Locked, nothing more to do.
-    assert!(!d.travar_se_inativo());
+    assert!(!d.lock_if_idle());
 
     // A use at 3h resets the count.
     let t0 = 10 * H;
@@ -134,11 +134,11 @@ fn v3_19_inactivity_with_injected_clock() {
     r.set(t0 + 3 * H);
     list_ok(&d);
     r.set(t0 + 4 * H);
-    assert!(!d.travar_se_inativo(), "o uso às 3h zerou");
+    assert!(!d.lock_if_idle(), "o uso às 3h zerou");
     r.set(t0 + 3 * H + 4 * H - 1);
-    assert!(!d.travar_se_inativo());
+    assert!(!d.lock_if_idle());
     r.set(t0 + 7 * H);
-    assert!(d.travar_se_inativo());
+    assert!(d.lock_if_idle());
 }
 
 #[test]
@@ -148,17 +148,17 @@ fn v3_19_timeout_read_from_the_vault_settings() {
     let t = request(&d, Role::App, "tempo_trava", r#"{"minutos":30}"#);
     assert!(ok(&t), "{t:?}");
     r.set(30 * 60 - 1);
-    assert!(!d.travar_se_inativo());
+    assert!(!d.lock_if_idle());
     r.set(30 * 60);
-    assert!(d.travar_se_inativo(), "30 min da configuração");
+    assert!(d.lock_if_idle(), "30 min da configuração");
     // Holds after reopening: the timeout is in the vault, not in memory.
-    let d2 = Daemon::novo(dir.paths(), Box::new(r.clone()));
+    let d2 = Daemon::new(dir.paths(), Box::new(r.clone()));
     r.set(100 * H);
     assert!(ok(&unlock(&d2, PASSWORD)));
     r.set(100 * H + 29 * 60);
-    assert!(!d2.travar_se_inativo());
+    assert!(!d2.lock_if_idle());
     r.set(100 * H + 30 * 60);
-    assert!(d2.travar_se_inativo());
+    assert!(d2.lock_if_idle());
 }
 
 #[test]
@@ -198,14 +198,11 @@ fn attack_agent_does_not_keep_the_vault_open_with_status_or_errors() {
             let m = set_level(&d, Role::App, "t-aprov", "livre", WRONG_PIN);
             assert_eq!(error(&m), Some(ResponseError::WrongPin));
         }
-        assert!(!d.travar_se_inativo(), "t = {t}");
+        assert!(!d.lock_if_idle(), "t = {t}");
         t += 600;
     }
     r.set(4 * H);
-    assert!(
-        d.travar_se_inativo(),
-        "nenhum desses pedidos conta como uso"
-    );
+    assert!(d.lock_if_idle(), "nenhum desses pedidos conta como uso");
 }
 
 /// Phase 54 (final audit): the agent that lists the entries every 10 min (and the
@@ -227,12 +224,12 @@ fn attack_periodic_agent_list_does_not_delay_the_lock() {
             r#"{"origem":"https://wp.acme.test"}"#,
         );
         assert!(!matches!(s, Resposta::Erro(ResponseError::Locked)), "{s:?}");
-        assert!(!d.travar_se_inativo(), "t = {t}");
+        assert!(!d.lock_if_idle(), "t = {t}");
         t += 600;
     }
     r.set(4 * H);
     assert!(
-        d.travar_se_inativo(),
+        d.lock_if_idle(),
         "a lista do agente e o sugerir seguraram o cofre aberto"
     );
 
@@ -243,7 +240,7 @@ fn attack_periodic_agent_list_does_not_delay_the_lock() {
     r.set(t0 + 3 * H);
     list_ok(&d);
     r.set(t0 + 4 * H);
-    assert!(!d.travar_se_inativo(), "a ação do app zerou");
+    assert!(!d.lock_if_idle(), "a ação do app zerou");
 }
 
 /// Phase 55 (final re-audit): an agent `ward run` repeated every 10 min on an entry that
@@ -264,7 +261,7 @@ fn attack_f55_denied_ward_run_and_window_do_not_delay_the_lock() {
         r.set(t);
         let (denied, seen) = with_window(&d, "negar", None, || {
             let p = req(Role::Agent, "executar", &run_request("t-aprov")).unwrap();
-            d.authorize_use(&wardd::aprovacao::SemCliente, &p)
+            d.authorize_use(&wardd::approval::NoClient, &p)
         });
         assert_eq!(denied.err(), Some(ResponseError::Denied));
         assert_eq!(seen.len(), 1);
@@ -273,12 +270,12 @@ fn attack_f55_denied_ward_run_and_window_do_not_delay_the_lock() {
         assert!(matches!(det, Resposta::Detalhe(_)), "{det:?}");
         let c = request(&d, Role::App, "totp", r#"{"entrada":"t-totp"}"#);
         assert!(matches!(c, Resposta::CodigoTotp { .. }), "{c:?}");
-        assert!(!d.travar_se_inativo(), "t = {t}");
+        assert!(!d.lock_if_idle(), "t = {t}");
         t += 600;
     }
     r.set(4 * H);
     assert!(
-        d.travar_se_inativo(),
+        d.lock_if_idle(),
         "o ward run negado, o detalhe ou o totp seguraram o cofre aberto"
     );
 }
@@ -298,7 +295,7 @@ fn d62_auto_lock_does_not_touch_the_d20_wait() {
     let dir = Dir::new("d20");
     let (d, r) = vault_with_clock(&dir);
     r.set(4 * H);
-    assert!(d.travar_se_inativo());
+    assert!(d.lock_if_idle());
     r.waits();
     // After the automatic lock, the first attempt does not wait.
     assert_eq!(
@@ -312,7 +309,7 @@ fn d62_auto_lock_does_not_touch_the_d20_wait() {
     assert_eq!(r.waits(), [Duration::ZERO, Duration::from_secs(1)]);
     // Locked, the inactivity check does not reset the two failures: the next waits 2 s.
     r.set(100 * H);
-    assert!(!d.travar_se_inativo());
+    assert!(!d.lock_if_idle());
     assert!(ok(&unlock(&d, PASSWORD)));
     assert_eq!(r.waits(), [Duration::from_secs(2)]);
 }
@@ -324,12 +321,12 @@ fn attack_clock_that_goes_back_or_is_unreadable_locks() {
     r.set(2 * H);
     list_ok(&d);
     r.set(H);
-    assert!(d.travar_se_inativo(), "relógio voltou: trava");
+    assert!(d.lock_if_idle(), "relógio voltou: trava");
 
     r.set(5 * H);
     assert!(ok(&unlock(&d, PASSWORD)));
     r.unreadable();
-    assert!(d.travar_se_inativo(), "relógio ilegível: trava");
+    assert!(d.lock_if_idle(), "relógio ilegível: trava");
 
     // A use recorded without a clock also locks on the next check.
     r.set(6 * H);
@@ -337,7 +334,7 @@ fn attack_clock_that_goes_back_or_is_unreadable_locks() {
     r.unreadable();
     let _ = request(&d, Role::App, "lista", "{}");
     r.set(6 * H + 1);
-    assert!(d.travar_se_inativo());
+    assert!(d.lock_if_idle());
 }
 
 // ---------------------------------------------------------------- fake bus
@@ -556,7 +553,7 @@ fn watched_daemon(dir: &Dir, b: &FakeBus) -> (Arc<Daemon>, mpsc::Receiver<()>) {
 
 fn wait_locked(d: &Daemon, limit: Duration) -> Duration {
     let start = Instant::now();
-    while !d.travado() {
+    while !d.is_locked() {
         assert!(
             start.elapsed() < limit,
             "não travou em {limit:?} (V3.19: até 2 s)"
@@ -572,7 +569,7 @@ fn v3_19_lock_and_locked_hint_lock_within_2s() {
     let logind = FakeLogind::new(&b);
     let dir = Dir::new("lock");
     let (d, _ready) = watched_daemon(&dir, &b);
-    assert!(!d.travado());
+    assert!(!d.is_locked());
 
     // `loginctl lock-session` → `Lock` on the session.
     logind.lock();
@@ -582,7 +579,7 @@ fn v3_19_lock_and_locked_hint_lock_within_2s() {
     assert!(ok(&unlock(&d, PASSWORD)));
     logind.locked_hint(false);
     std::thread::sleep(Duration::from_millis(300));
-    assert!(!d.travado(), "LockedHint falso não trava");
+    assert!(!d.is_locked(), "LockedHint falso não trava");
     logind.locked_hint(true);
     wait_locked(&d, Duration::from_secs(2));
 }
@@ -598,13 +595,13 @@ fn v3_19_prepare_for_sleep_locks_before_releasing_the_inhibitor() {
         closed.recv_timeout(Duration::from_millis(300)).is_err(),
         "o inibidor fica aberto enquanto não há suspensão"
     );
-    assert!(!d.travado());
+    assert!(!d.is_locked());
     logind.prepare_for_sleep(true);
     closed
         .recv_timeout(Duration::from_secs(2))
         .expect("o inibidor não foi solto");
     // When logind sees the fd close, the vault is already locked.
-    assert!(d.travado(), "a suspensão passou à frente da trava");
+    assert!(d.is_locked(), "a suspensão passou à frente da trava");
 
     // On wake-up, the daemon takes another inhibitor; the next suspend locks again.
     logind.prepare_for_sleep(false);
@@ -612,7 +609,7 @@ fn v3_19_prepare_for_sleep_locks_before_releasing_the_inhibitor() {
     assert!(ok(&unlock(&d, PASSWORD)));
     logind.prepare_for_sleep(true);
     closed2.recv_timeout(Duration::from_secs(2)).unwrap();
-    assert!(d.travado());
+    assert!(d.is_locked());
 }
 
 #[test]
@@ -621,7 +618,7 @@ fn attack_bus_drops_with_the_vault_open_locks() {
     let _logind = FakeLogind::new(&b);
     let dir = Dir::new("cai");
     let (d, _ready) = watched_daemon(&dir, &b);
-    assert!(!d.travado());
+    assert!(!d.is_locked());
     b.kill();
     wait_locked(&d, Duration::from_secs(2));
 }
@@ -660,7 +657,7 @@ fn attack_forged_signal_neither_unlocks_nor_holds() {
         &(SESSION_IFACE, changed, Vec::<&str>::new()),
     );
     std::thread::sleep(Duration::from_millis(300));
-    assert!(d.travado(), "nada do barramento destrava");
+    assert!(d.is_locked(), "nada do barramento destrava");
     assert_eq!(
         error(&request(&d, Role::Agent, "lista", "{}")),
         Some(ResponseError::Locked)

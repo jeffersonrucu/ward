@@ -41,8 +41,8 @@ use ward_core::protocol::{
     StdinKind,
 };
 
-use crate::aprovacao::{Cliente, UMA_HORA};
-use crate::nucleo::{Aberto, Daemon};
+use crate::approval::{Client, ONE_HOUR};
+use crate::core::{Daemon, Open};
 use crate::warning;
 
 /// Largest number of processes of the chain that goes to the app.
@@ -104,14 +104,14 @@ pub(crate) fn origin_to_confirm(e: &Entry, op: Operation) -> Option<String> {
 /// The level of an entry for this use, with the 1 hour grant (D2). With
 /// `without_grant` (Phase 54b: hidden standard input), the grant does not count.
 fn effective_level(
-    a: &Aberto,
+    a: &Open,
     e: &Entry,
     now: std::time::Duration,
     without_grant: bool,
 ) -> AccessLevel {
     match e.level() {
         AccessLevel::Approval
-            if !without_grant && a.liberacoes.get(e.name()).is_some_and(|until| now < *until) =>
+            if !without_grant && a.grants.get(e.name()).is_some_and(|until| now < *until) =>
         {
             AccessLevel::Free
         }
@@ -184,8 +184,8 @@ fn describe(request: &Request) -> Option<Description<'_>> {
 }
 
 /// Chain for display (D51): names with visible escape, within the protocol limit.
-pub(crate) fn display_chain(client: &dyn Cliente) -> Vec<String> {
-    let mut c = client.cadeia();
+pub(crate) fn display_chain(client: &dyn Client) -> Vec<String> {
+    let mut c = client.chain();
     if c.len() > MAX_CHAIN {
         c.drain(..c.len() - MAX_CHAIN);
     }
@@ -200,7 +200,7 @@ impl Daemon {
     /// blocked (or gone) denies without asking.
     pub fn authorize_use(
         &self,
-        client: &dyn Cliente,
+        client: &dyn Client,
         request: &Request,
     ) -> Result<Authorization, ResponseError> {
         let Description {
@@ -217,7 +217,7 @@ impl Daemon {
         if name.is_empty() {
             return Err(ResponseError::EntryNotFound);
         }
-        if self.travado() {
+        if self.is_locked() {
             // Phase 39a (D51): the unlock screen shows what the agent asked for, with
             // visible escape. With the vault locked it is not known whether the entry
             // exists, nor its kind and environment; the name goes as the agent sent it.
@@ -227,15 +227,15 @@ impl Daemon {
                 comando: command.clone(),
                 restante: 0,
             };
-            self.aprovacao
-                .esperar_destrave(notice, &|| self.travado(), client)?;
+            self.approval
+                .wait_for_unlock(notice, &|| self.is_locked(), client)?;
         }
-        let now = self.aprovacao.agora();
+        let now = self.approval.now();
         let (level, entries, environment, origin) = {
-            let state = self.estado();
-            let a = state.aberto.as_ref().ok_or(ResponseError::Locked)?;
+            let state = self.state();
+            let a = state.open.as_ref().ok_or(ResponseError::Locked)?;
             let e = a
-                .entradas
+                .entries
                 .iter()
                 .find(|e| e.name() == name && e.level() != AccessLevel::Blocked)
                 .ok_or(ResponseError::EntryNotFound)?;
@@ -245,7 +245,7 @@ impl Daemon {
             let mut entries = vec![e.name().to_owned()];
             let mut environment = e.environment();
             if let Some(other) = second_entry(e, op) {
-                match a.entradas.iter().find(|x| x.name() == other) {
+                match a.entries.iter().find(|x| x.name() == other) {
                     Some(x) => {
                         level = most_restrictive(level, effective_level(a, x, now, hidden_stdin));
                         environment = most_sensitive(environment, x.environment());
@@ -276,8 +276,8 @@ impl Daemon {
                 // Phase 44c/44e: local origin, only the confirmation (without PIN).
                 Some(o) => {
                     warning!("uso numa origem local: confirmação na janela (D9)");
-                    self.aprovacao
-                        .pedir_aprovacao(window_request(true, Some(o)), client)?;
+                    self.approval
+                        .request_approval(window_request(true, Some(o)), client)?;
                     Ok(Authorization::Approved)
                 }
             },
@@ -291,8 +291,8 @@ impl Daemon {
                         "uso com a entrada padrão que a janela não mostra: aviso e confirmação na janela (D68)"
                     );
                 }
-                self.aprovacao
-                    .pedir_aprovacao(window_request(false, origin), client)?;
+                self.approval
+                    .request_approval(window_request(false, origin), client)?;
                 Ok(Authorization::Approved)
             }
         }
@@ -311,17 +311,17 @@ impl Daemon {
         pin: Option<&Secret>,
         stdin_confirmed: bool,
     ) -> Result<Resposta, ResponseError> {
-        let entries = self.aprovacao.pendente(id).ok_or(ResponseError::Expired)?;
+        let entries = self.approval.pending(id).ok_or(ResponseError::Expired)?;
         let confirmation = self
-            .aprovacao
-            .e_confirmacao(id)
+            .approval
+            .is_confirmation(id)
             .ok_or(ResponseError::Expired)?;
         let hidden_stdin = self
-            .aprovacao
-            .e_entrada_oculta(id)
+            .approval
+            .is_hidden_stdin(id)
             .ok_or(ResponseError::Expired)?;
         if decision == Decision::Deny {
-            return if self.aprovacao.decidir(id, Err(ResponseError::Denied)) {
+            return if self.approval.decide(id, Err(ResponseError::Denied)) {
                 Ok(Resposta::Ok)
             } else {
                 Err(ResponseError::Expired)
@@ -334,7 +334,7 @@ impl Daemon {
             return Err(ResponseError::InvalidRequest);
         }
         if decision == Decision::Confirm {
-            return if self.aprovacao.decidir(id, Ok(())) {
+            return if self.approval.decide(id, Ok(())) {
                 warning!("aprovação {id}: origem confirmada");
                 Ok(Resposta::Ok)
             } else {
@@ -352,51 +352,51 @@ impl Daemon {
         // The protocol already requires the PIN on every "Allow"; this is the second
         // layer.
         let pin = pin.ok_or(ResponseError::InvalidRequest)?;
-        let mut state = self.estado();
+        let mut state = self.state();
         // Phase 49a: with the state held, the request still has to be pending. A restore
         // between the read above and here canceled the request; without this check, the
         // "always allow" would change the same-named entry of the restored version.
-        if self.aprovacao.pendente(id).as_ref() != Some(&entries) {
+        if self.approval.pending(id).as_ref() != Some(&entries) {
             return Err(ResponseError::Expired);
         }
-        if let Err(e) = Self::conferir_pin(&mut state, pin) {
-            if state.aberto.is_none() {
+        if let Err(e) = Self::verify_pin(&mut state, pin) {
+            if state.open.is_none() {
                 // The 5th error locked (or the vault locked in the middle): the request is
                 // denied.
-                self.aprovacao.decidir(id, Err(ResponseError::Denied));
+                self.approval.decide(id, Err(ResponseError::Denied));
             }
             return Err(e);
         }
         match decision {
             Decision::Deny | Decision::AllowOnce | Decision::Confirm => {}
             Decision::AllowOneHour => {
-                if !self.aprovacao.decidir(id, Ok(())) {
+                if !self.approval.decide(id, Ok(())) {
                     return Err(ResponseError::Expired);
                 }
-                let until = self.aprovacao.agora().saturating_add(UMA_HORA);
-                let a = state.aberto.as_mut().ok_or(ResponseError::Locked)?;
+                let until = self.approval.now().saturating_add(ONE_HOUR);
+                let a = state.open.as_mut().ok_or(ResponseError::Locked)?;
                 for n in entries {
-                    a.liberacoes.insert(n, until);
+                    a.grants.insert(n, until);
                 }
                 warning!("aprovação {id}: permitida por 1 hora");
                 return Ok(Resposta::Ok);
             }
             Decision::AllowAlways => {
                 // The request's entries that are "with approval" become "free", on disk.
-                let a = state.aberto.as_mut().ok_or(ResponseError::Locked)?;
+                let a = state.open.as_mut().ok_or(ResponseError::Locked)?;
                 let mut changed = Vec::new();
-                for e in a.entradas.iter_mut() {
+                for e in a.entries.iter_mut() {
                     if entries.iter().any(|n| n == e.name()) && e.level() == AccessLevel::Approval {
                         e.set_level(AccessLevel::Free);
                         changed.push(e.name().to_owned());
                     }
                 }
                 for n in &changed {
-                    a.liberacoes.remove(n);
+                    a.grants.remove(n);
                 }
                 // Failed to write: the level goes back and the request stays pending.
-                self.gravar_ou_desfazer(&mut state, move |a| {
-                    for e in a.entradas.iter_mut() {
+                self.write_or_undo(&mut state, move |a| {
+                    for e in a.entries.iter_mut() {
                         if changed.iter().any(|n| n == e.name()) {
                             e.set_level(AccessLevel::Approval);
                         }
@@ -405,7 +405,7 @@ impl Daemon {
                 warning!("aprovação {id}: permitida sempre (entrada agora livre)");
             }
         }
-        if self.aprovacao.decidir(id, Ok(())) {
+        if self.approval.decide(id, Ok(())) {
             Ok(Resposta::Ok)
         } else {
             Err(ResponseError::Expired)

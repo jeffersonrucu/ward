@@ -8,10 +8,10 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use ward_platform::{AllowedBinary, Install, Listener, Memory};
-use wardd::aprovacao::{Motor, RelogioMonotonico};
+use wardd::approval::{Engine, MonotonicClock};
 use wardd::config::Config;
+use wardd::core::{Daemon, RealClock};
 use wardd::launch::{RealOpener, TestApp, TestExtension};
-use wardd::nucleo::{Daemon, RelogioReal};
 use wardd::server::{self, Roles};
 use wardd::{execution, lock, log, udisks, warning};
 
@@ -168,14 +168,14 @@ fn main() -> ExitCode {
         ),
         Err(e) => warning!("pasta do ward playwright indisponível ({})", e.kind()),
     }
-    let mut daemon = Daemon::novo(config.paths, Box::new(RelogioReal)).com_temporarios(config.rt);
+    let mut daemon = Daemon::new(config.paths, Box::new(RealClock)).with_temp_root(config.rt);
     // V4.21: locked and without the app, the agent's request waits for the unlock
     // command (D16).
     let engine = match opener {
-        Some(a) => Motor::novo(Arc::new(RelogioMonotonico::novo()), Box::new(a)),
-        None => Motor::sem_app(),
+        Some(a) => Engine::new(Arc::new(MonotonicClock::new()), Box::new(a)),
+        None => Engine::without_app(),
     };
-    daemon = daemon.com_motor(engine.esperando_sem_app());
+    daemon = daemon.with_engine(engine.waiting_without_app());
     // Phase 24 (logind) and Phase 46 (udisks2): the same system bus.
     let bus = match lock::daemon_bus() {
         Ok(b) => b,
@@ -188,7 +188,7 @@ fn main() -> ExitCode {
         .as_ref()
         .map(|s| Arc::new(udisks::Udisks::new(s.clone())));
     if let Some(u) = &udisks {
-        daemon = daemon.com_pendrives(u.clone());
+        daemon = daemon.with_usb_drives(u.clone());
     }
     let daemon = Arc::new(daemon);
     // Phase 24: lock on inactivity and through logind (screen lock, suspend).
@@ -204,7 +204,7 @@ fn main() -> ExitCode {
             }
             // Phase 46: external backup. The copy only happens with the vault unlocked
             // and the external backup turned on in the vault settings (off by default).
-            let Some(pokes) = daemon.ligar_copia_externa() else {
+            let Some(pokes) = daemon.enable_external_copy() else {
                 warning!("cópia externa já ligada");
                 return ExitCode::FAILURE;
             };

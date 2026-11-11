@@ -19,7 +19,7 @@ use std::time::Duration;
 
 use ward_platform::{AllowedBinary, Install, Launcher, LauncherError, PeerClass, PeerProcess};
 
-use crate::aprovacao::{AbridorApp, ErroAbrirApp};
+use crate::approval::{AppOpener, OpenAppError};
 use crate::warning;
 
 /// Fixed path of the installed app (D18).
@@ -168,16 +168,16 @@ pub fn describe_exit(pid: u32, st: std::process::ExitStatus) -> String {
     }
 }
 
-impl AbridorApp for RealOpener {
-    fn abrir(&self, on_exit: Box<dyn FnOnce() + Send>) -> Result<(), ErroAbrirApp> {
+impl AppOpener for RealOpener {
+    fn open(&self, on_exit: Box<dyn FnOnce() + Send>) -> Result<(), OpenAppError> {
         let mut l = self.launcher.lock().unwrap_or_else(|e| e.into_inner());
         let pid = match l.open() {
             Ok(pid) => pid,
-            Err(LauncherError::AlreadyOpen) => return Err(ErroAbrirApp::JaAberto),
+            Err(LauncherError::AlreadyOpen) => return Err(OpenAppError::AlreadyOpen),
             Err(e) => {
                 // `LauncherError` carries no path or value (only variable names).
                 warning!("app não aberto: {e}");
-                return Err(ErroAbrirApp::Indisponivel);
+                return Err(OpenAppError::Unavailable);
             }
         };
         drop(l);

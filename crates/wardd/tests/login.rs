@@ -22,11 +22,9 @@ use common::*;
 use ward_core::protocol::{
     LoginResult, Operation, PedidoDeAprovacao, Request, ResponseError, Resposta, Role,
 };
-use wardd::aprovacao::{
-    AbridorApp, Assinante, Cliente, ErroAbrirApp, Motor, RelogioMotor, SemCliente,
-};
+use wardd::approval::{AppOpener, Client, Engine, EngineClock, NoClient, OpenAppError, Subscriber};
+use wardd::core::Daemon;
 use wardd::login::LoginDeadlines;
-use wardd::nucleo::Daemon;
 
 /// The URL of the `login` entries of the common test vault (free, approval and
 /// blocked).
@@ -43,12 +41,12 @@ fn deadlines(pickup_ms: u64) -> LoginDeadlines {
 fn vault(label: &str, pickup_ms: u64) -> (Daemon, Dir) {
     let dir = Dir::new(label);
     let (d, _) = test_vault(&dir);
-    (d.com_prazos_login(deadlines(pickup_ms)), dir)
+    (d.with_login_deadlines(deadlines(pickup_ms)), dir)
 }
 
-fn agent_login(d: &Daemon, client: &dyn Cliente, name: &str) -> Resposta {
+fn agent_login(d: &Daemon, client: &dyn Client, name: &str) -> Resposta {
     match req(Role::Agent, "login", &format!(r#"{{"entrada":"{name}"}}"#)) {
-        Ok(p) => d.atender_de(client, Role::Agent, p),
+        Ok(p) => d.serve_from(client, Role::Agent, p),
         Err(e) => Resposta::Erro(e),
     }
 }
@@ -118,7 +116,7 @@ fn no_value(r: &Resposta) {
 fn v6_10_free_login_fills_on_the_right_origin_and_returns_ok() {
     let (d, _dir) = vault("login-ok", 2000);
     std::thread::scope(|s| {
-        let t = s.spawn(|| agent_login(&d, &SemCliente, "t-livre"));
+        let t = s.spawn(|| agent_login(&d, &NoClient, "t-livre"));
         let (id, entry) = take(&d);
         assert_eq!(entry, "t-livre");
         assert_eq!(id.len(), 32);
@@ -166,7 +164,7 @@ fn v6_3_v6_15_attack_different_origin_does_not_fill() {
     .enumerate()
     {
         std::thread::scope(|s| {
-            let t = s.spawn(|| agent_login(&d, &SemCliente, "t-livre"));
+            let t = s.spawn(|| agent_login(&d, &NoClient, "t-livre"));
             let (id, _) = take(&d);
             let r = fill(&d, &id, tab);
             assert_eq!(error(&r), Some(ResponseError::OriginMismatch), "{i}: {tab}");
@@ -193,7 +191,7 @@ fn v6_3_v6_15_attack_different_origin_does_not_fill() {
 fn attack_forged_id_does_not_fill() {
     let (d, _dir) = vault("login-id", 2000);
     std::thread::scope(|s| {
-        let t = s.spawn(|| agent_login(&d, &SemCliente, "t-livre"));
+        let t = s.spawn(|| agent_login(&d, &NoClient, "t-livre"));
         let (id, _) = take(&d);
         let mut changed = id.clone().into_bytes();
         changed[31] = if changed[31] == b'a' { b'b' } else { b'a' };
@@ -235,7 +233,7 @@ fn extension_outcomes() {
         (LoginResult::Failure, ResponseError::BrowserFailed),
     ] {
         std::thread::scope(|s| {
-            let t = s.spawn(|| agent_login(&d, &SemCliente, "t-livre"));
+            let t = s.spawn(|| agent_login(&d, &NoClient, "t-livre"));
             let (id, _) = take(&d);
             // Before the fill (the tab without a form, or that changed on the probe).
             assert!(ok(&outcome(&d, &id, r.name())));
@@ -255,7 +253,7 @@ fn extension_outcomes() {
 fn attack_agent_and_app_on_the_extension_operations() {
     let (d, _dir) = vault("login-papeis", 2000);
     std::thread::scope(|s| {
-        let t = s.spawn(|| agent_login(&d, &SemCliente, "t-livre"));
+        let t = s.spawn(|| agent_login(&d, &NoClient, "t-livre"));
         let (id, _) = take(&d);
         for role in [Role::Agent, Role::App] {
             for (op, data) in [
@@ -283,7 +281,7 @@ fn attack_agent_and_app_on_the_extension_operations() {
                     result: LoginResult::Submitted,
                 },
             ] {
-                let r = d.atender(role, p);
+                let r = d.serve(role, p);
                 assert_eq!(error(&r), Some(ResponseError::Unauthorized));
             }
         }
@@ -310,7 +308,7 @@ fn refusals_before_the_extension() {
         ("nao-existe", ResponseError::EntryNotFound),
         ("s1", ResponseError::TypeWithoutDelivery),
     ] {
-        let r = agent_login(&d, &SemCliente, name);
+        let r = agent_login(&d, &NoClient, name);
         assert_eq!(error(&r), Some(expected), "{name}");
         assert_eq!(await_login(&d), None, "{name}");
     }
@@ -321,7 +319,7 @@ fn refusals_before_the_extension() {
 #[test]
 fn without_extension_the_request_dies() {
     let (d, _dir) = vault("login-sem-ext", 300);
-    let r = agent_login(&d, &SemCliente, "t-livre");
+    let r = agent_login(&d, &NoClient, "t-livre");
     assert_eq!(error(&r), Some(ResponseError::BrowserFailed));
     assert_eq!(await_login(&d), None);
 }
@@ -331,9 +329,9 @@ fn without_extension_the_request_dies() {
 fn one_request_at_a_time() {
     let (d, _dir) = vault("login-ocupado", 2000);
     std::thread::scope(|s| {
-        let t = s.spawn(|| agent_login(&d, &SemCliente, "t-livre"));
+        let t = s.spawn(|| agent_login(&d, &NoClient, "t-livre"));
         let (id, _) = take(&d);
-        let r = agent_login(&d, &SemCliente, "t-livre");
+        let r = agent_login(&d, &NoClient, "t-livre");
         assert_eq!(error(&r), Some(ResponseError::Busy));
         assert!(ok(&outcome(&d, &id, "falha")));
         assert_eq!(
@@ -349,7 +347,7 @@ fn one_request_at_a_time() {
 fn lock_in_the_middle_kills_the_request() {
     let (d, _dir) = vault("login-travar", 2000);
     std::thread::scope(|s| {
-        let t = s.spawn(|| agent_login(&d, &SemCliente, "t-livre"));
+        let t = s.spawn(|| agent_login(&d, &NoClient, "t-livre"));
         let (id, _) = take(&d);
         assert!(ok(&request(&d, Role::App, "travar", "{}")));
         assert_eq!(error(&t.join().unwrap()), Some(ResponseError::Locked));
@@ -361,11 +359,11 @@ fn lock_in_the_middle_kills_the_request() {
 
 struct LeavingClient(AtomicBool);
 
-impl Cliente for LeavingClient {
-    fn cadeia(&self) -> Vec<String> {
+impl Client for LeavingClient {
+    fn chain(&self) -> Vec<String> {
         vec!["claude".into(), "ward login".into()]
     }
-    fn saiu(&self) -> bool {
+    fn exited(&self) -> bool {
         self.0.load(Ordering::Acquire)
     }
 }
@@ -408,16 +406,16 @@ fn await_does_not_count_as_use() {
 #[derive(Clone, Default)]
 struct StoppedClock;
 
-impl RelogioMotor for StoppedClock {
-    fn agora(&self) -> Duration {
+impl EngineClock for StoppedClock {
+    fn now(&self) -> Duration {
         Duration::ZERO
     }
 }
 
 struct FakeApp(Sender<PedidoDeAprovacao>);
 
-impl Assinante for FakeApp {
-    fn entregar(&mut self, r: &Resposta) -> bool {
+impl Subscriber for FakeApp {
+    fn deliver(&mut self, r: &Resposta) -> bool {
         match r {
             Resposta::PedidoDeAprovacao(p) => self.0.send(p.clone()).is_ok(),
             other => panic!("o motor mandou ao app {other:?}"),
@@ -427,8 +425,8 @@ impl Assinante for FakeApp {
 
 struct NoOpen;
 
-impl AbridorApp for NoOpen {
-    fn abrir(&self, _on_exit: Box<dyn FnOnce() + Send>) -> Result<(), ErroAbrirApp> {
+impl AppOpener for NoOpen {
+    fn open(&self, _on_exit: Box<dyn FnOnce() + Send>) -> Result<(), OpenAppError> {
         Ok(())
     }
 }
@@ -448,13 +446,13 @@ fn answer(d: &Daemon, id: u64, decision: &str, pin: Option<&str>) -> Resposta {
 #[test]
 fn v6_11_with_approval_deny_does_not_reach_the_extension_and_allow_does() {
     let (d, _dir) = vault("login-aprov", 2000);
-    let d = d.com_motor(Motor::novo(Arc::new(StoppedClock), Box::new(NoOpen)));
+    let d = d.with_engine(Engine::new(Arc::new(StoppedClock), Box::new(NoOpen)));
     let (tx, rx) = mpsc::channel();
-    d.motor().assinar(1, Box::new(FakeApp(tx)));
+    d.engine().subscribe(1, Box::new(FakeApp(tx)));
     let seen = Mutex::new(Vec::new());
     // Deny: the extension sees no request during or after.
     std::thread::scope(|s| {
-        let t = s.spawn(|| agent_login(&d, &SemCliente, "t-aprov"));
+        let t = s.spawn(|| agent_login(&d, &NoClient, "t-aprov"));
         let p = rx.recv_timeout(Duration::from_secs(5)).expect("sem janela");
         assert_eq!(p.operacao, Operation::Login);
         assert_eq!(p.entradas, vec!["t-aprov".to_owned()]);
@@ -466,7 +464,7 @@ fn v6_11_with_approval_deny_does_not_reach_the_extension_and_allow_does() {
     assert_eq!(seen.lock().unwrap().as_slice(), &[None]);
     // Allow once (with the PIN): the request arrives and the login goes on.
     std::thread::scope(|s| {
-        let t = s.spawn(|| agent_login(&d, &SemCliente, "t-aprov"));
+        let t = s.spawn(|| agent_login(&d, &NoClient, "t-aprov"));
         let p = rx.recv_timeout(Duration::from_secs(5)).expect("sem janela");
         assert!(ok(&answer(&d, p.id, "uma_vez", Some(PIN))));
         let (id, entry) = take(&d);
@@ -506,11 +504,11 @@ fn login_at_url(d: &Daemon, name: &str, level: &str, url: &str) {
 /// without waiting the 2 min).
 struct DropsLater(std::sync::atomic::AtomicU32);
 
-impl Cliente for DropsLater {
-    fn cadeia(&self) -> Vec<String> {
+impl Client for DropsLater {
+    fn chain(&self) -> Vec<String> {
         vec!["claude".into(), "ward login".into()]
     }
-    fn saiu(&self) -> bool {
+    fn exited(&self) -> bool {
         self.0.fetch_add(1, Ordering::AcqRel) > 40
     }
 }
@@ -519,7 +517,7 @@ impl Cliente for DropsLater {
 /// says "sent".
 fn full_http_login(d: &Daemon, name: &str) -> Resposta {
     std::thread::scope(|s| {
-        let t = s.spawn(|| agent_login(d, &SemCliente, name));
+        let t = s.spawn(|| agent_login(d, &NoClient, name));
         let (id, _) = take(d);
         assert!(matches!(
             fill(d, &id, "http://localhost:8081"),
@@ -541,13 +539,11 @@ fn attack_login_http_free_only_with_confirmation() {
     let (d, _dir) = vault("login-http-livre", 2000);
     http_login(&d, "h-livre", "livre");
     // No app.
-    let r = agent_login(&d, &SemCliente, "h-livre");
+    let r = agent_login(&d, &NoClient, "h-livre");
     assert_eq!(error(&r), Some(ResponseError::ApprovalUnavailable));
     assert_eq!(await_login(&d), None);
     // Denied: the extension sees nothing.
-    let (r, seen) = with_window(&d, "negar", None, || {
-        agent_login(&d, &SemCliente, "h-livre")
-    });
+    let (r, seen) = with_window(&d, "negar", None, || agent_login(&d, &NoClient, "h-livre"));
     assert_eq!(error(&r), Some(ResponseError::Denied));
     assert_eq!(await_login(&d), None);
     let p = &seen[0];
@@ -597,7 +593,7 @@ fn attack_login_http_approval_asks_pin_and_shows_the_origin() {
     assert_eq!(seen.len(), 1);
     assert!(seen[0].confirmacao);
     // No app, nothing.
-    let r = agent_login(&d, &SemCliente, "h-aprov");
+    let r = agent_login(&d, &NoClient, "h-aprov");
     assert_eq!(error(&r), Some(ResponseError::ApprovalUnavailable));
 }
 
@@ -624,10 +620,10 @@ fn attack_login_https_loopback_free_only_with_confirmation() {
     {
         let name = format!("l-livre-{i}");
         login_at_url(&d, &name, "livre", url);
-        let r = agent_login(&d, &SemCliente, &name);
+        let r = agent_login(&d, &NoClient, &name);
         assert_eq!(error(&r), Some(ResponseError::ApprovalUnavailable), "{url}");
         assert_eq!(await_login(&d), None, "{url}");
-        let (r, seen) = with_window(&d, "negar", None, || agent_login(&d, &SemCliente, &name));
+        let (r, seen) = with_window(&d, "negar", None, || agent_login(&d, &NoClient, &name));
         assert_eq!(error(&r), Some(ResponseError::Denied), "{url}");
         assert_eq!(await_login(&d), None, "{url}");
         assert_eq!(seen.len(), 1, "{url}");
@@ -642,7 +638,7 @@ fn login_https_free_without_window() {
     let (d, _dir) = vault("login-https-livre", 2000);
     let (r, seen) = with_window(&d, "negar", None, || {
         std::thread::scope(|s| {
-            let t = s.spawn(|| agent_login(&d, &SemCliente, "t-livre"));
+            let t = s.spawn(|| agent_login(&d, &NoClient, "t-livre"));
             let (id, _) = take(&d);
             assert!(matches!(
                 fill(&d, &id, ORIGIN),
