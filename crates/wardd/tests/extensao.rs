@@ -4,11 +4,11 @@
 //! extensão, e a extensão pedindo as do app e do agente. Só valores falsos, num cofre de
 //! teste próprio.
 
-mod comum;
+mod common;
 
 use std::time::Duration;
 
-use comum::{Dir, PIN, SEGREDOS, b64, erro, ok, ped, pedir};
+use common::{Dir, PIN, SECRETS, b64, error, ok, req, request};
 use ward_core::protocolo::{self, ErroResposta, Operacao, Papel, Resposta};
 use ward_core::totp::Totp;
 use wardd::nucleo::{Daemon, Relogio};
@@ -44,14 +44,14 @@ fn login(nome: &str, url: &str, usuario: &str, senha: &str, semente: Option<&str
 /// Cofre de teste com logins em `localhost:8081` (um deles bloqueado), um com TOTP em
 /// `localhost:8083`, um em `https`, um servidor e um banco.
 fn cofre(dir: &Dir) -> Daemon {
-    let d = Daemon::novo(dir.caminhos(), Box::new(RelogioFixo));
-    let criar = pedir(
+    let d = Daemon::novo(dir.paths(), Box::new(RelogioFixo));
+    let criar = request(
         &d,
         Papel::App,
         "criar_cofre",
         &format!(
             r#"{{"senha":"{}","pin":"{}"}}"#,
-            b64(comum::SENHA.as_bytes()),
+            b64(common::PASSWORD.as_bytes()),
             b64(PIN.as_bytes())
         ),
     );
@@ -61,37 +61,37 @@ fn cofre(dir: &Dir) -> Daemon {
             "acme-wp-dev",
             "http://localhost:8081/wp-login.php",
             "wp_admin",
-            SEGREDOS[0],
+            SECRETS[0],
             None,
         ),
         login(
             "acme-wp-prod",
             "http://localhost:8081/wp-login.php",
             "wp_editor",
-            SEGREDOS[3],
+            SECRETS[3],
             None,
         ),
         login(
             "acme-totp-dev",
             "http://localhost:8083/login",
             "wp_admin",
-            SEGREDOS[0],
+            SECRETS[0],
             Some(SEMENTE),
         ),
         login(
             "clientex-portal",
             "https://app.clientex.com.br/login",
             "admin",
-            SEGREDOS[1],
+            SECRETS[1],
             None,
         ),
-        comum::servidor("s1"),
-        comum::banco("b1", "s1"),
+        common::server("s1"),
+        common::database("b1", "s1"),
     ] {
-        let r = pedir(&d, Papel::App, "salvar_entrada", &q);
+        let r = request(&d, Papel::App, "salvar_entrada", &q);
         assert!(ok(&r), "{r:?}");
     }
-    assert!(ok(&comum::mudar_nivel(
+    assert!(ok(&common::set_level(
         &d,
         Papel::App,
         "acme-wp-prod",
@@ -102,12 +102,12 @@ fn cofre(dir: &Dir) -> Daemon {
 }
 
 fn sugerir(d: &Daemon, papel: Papel, origem: &str) -> Resposta {
-    pedir(d, papel, "sugerir", &format!(r#"{{"origem":"{origem}"}}"#))
+    request(d, papel, "sugerir", &format!(r#"{{"origem":"{origem}"}}"#))
 }
 
 /// `preencher` do popup sem janela nenhuma (o motor do daemon de teste não tem app).
 fn preencher_cru(d: &Daemon, papel: Papel, entrada: &str, origem: &str) -> Resposta {
-    pedir(
+    request(
         d,
         papel,
         "preencher",
@@ -118,7 +118,7 @@ fn preencher_cru(d: &Daemon, papel: Papel, entrada: &str, origem: &str) -> Respo
 /// `preencher` do popup com o usuário confirmando a origem na janela (Fase 44c: as
 /// entradas `http` só preenchem depois disso).
 fn preencher(d: &Daemon, papel: Papel, entrada: &str, origem: &str) -> Resposta {
-    comum::com_janela(d, "confirmar", None, || {
+    common::with_window(d, "confirmar", None, || {
         preencher_cru(d, papel, entrada, origem)
     })
     .0
@@ -136,10 +136,10 @@ fn nomes(r: &Resposta) -> Vec<(String, String)> {
 
 /// Nenhum segredo do cofre de teste nos bytes (em claro ou em base64).
 fn sem_segredo(bytes: &[u8]) {
-    for s in SEGREDOS.iter().chain([&SEMENTE]) {
-        assert!(!comum::contem(bytes, s.as_bytes()), "segredo em claro");
+    for s in SECRETS.iter().chain([&SEMENTE]) {
+        assert!(!common::contains(bytes, s.as_bytes()), "segredo em claro");
         assert!(
-            !comum::contem(bytes, b64(s.as_bytes()).as_bytes()),
+            !common::contains(bytes, b64(s.as_bytes()).as_bytes()),
             "segredo em base64"
         );
     }
@@ -150,7 +150,7 @@ fn sem_segredo(bytes: &[u8]) {
 #[test]
 fn sugestao_traz_ambiente_e_se_tem_totp() {
     use ward_core::entry::Environment;
-    let dir = Dir::novo("ext-sugerir-totp");
+    let dir = Dir::new("ext-sugerir-totp");
     let d = cofre(&dir);
     let resumo = |r: &Resposta| match r {
         Resposta::Sugestoes(l) => l
@@ -171,14 +171,14 @@ fn sugestao_traz_ambiente_e_se_tem_totp() {
             ("acme-wp-prod".to_owned(), Environment::Dev, false),
         ]
     );
-    let q = comum::codificado(Papel::Extensao, &r);
-    assert!(comum::contem(&q, br#""ambiente":"dev","totp":false"#));
+    let q = common::encoded(Papel::Extensao, &r);
+    assert!(common::contains(&q, br#""ambiente":"dev","totp":false"#));
     sem_segredo(&q);
 }
 
 #[test]
 fn v6_2_sugerir_so_a_origem_da_aba() {
-    let dir = Dir::novo("ext-sugerir");
+    let dir = Dir::new("ext-sugerir");
     let d = cofre(&dir);
     let r = sugerir(&d, Papel::Extensao, "http://localhost:8081/wp-login.php");
     assert_eq!(
@@ -190,7 +190,7 @@ fn v6_2_sugerir_so_a_origem_da_aba() {
         ]
     );
     // A resposta de sugerir não tem segredo nenhum.
-    sem_segredo(&comum::codificado(Papel::Extensao, &r));
+    sem_segredo(&common::encoded(Papel::Extensao, &r));
     assert_eq!(
         nomes(&sugerir(&d, Papel::Extensao, "http://localhost:8083/login")),
         [("acme-totp-dev".to_owned(), "wp_admin".to_owned())]
@@ -222,7 +222,7 @@ fn v6_2_sugerir_so_a_origem_da_aba() {
 
 #[test]
 fn v6_2_preencher_so_na_origem_certa() {
-    let dir = Dir::novo("ext-preencher");
+    let dir = Dir::new("ext-preencher");
     let d = cofre(&dir);
     let r = preencher(
         &d,
@@ -237,7 +237,7 @@ fn v6_2_preencher_so_na_origem_certa() {
             totp,
         } => {
             assert_eq!(usuario, "wp_admin");
-            assert_eq!(senha.expose(), SEGREDOS[0].as_bytes());
+            assert_eq!(senha.expose(), SECRETS[0].as_bytes());
             assert!(totp.is_none());
         }
         outra => panic!("esperava preenchimento: {:?}", outra.tipo()),
@@ -270,13 +270,13 @@ fn v6_2_preencher_so_na_origem_certa() {
         "",
     ] {
         let r = preencher(&d, Papel::Extensao, "acme-wp-dev", aba);
-        assert_eq!(erro(&r), Some(ErroResposta::OrigemDiferente), "{aba:?}");
-        sem_segredo(&comum::codificado(Papel::Extensao, &r));
+        assert_eq!(error(&r), Some(ErroResposta::OrigemDiferente), "{aba:?}");
+        sem_segredo(&common::encoded(Papel::Extensao, &r));
     }
     // Entrada que não existe e entrada de outro tipo respondem igual.
     for nome in ["nao-existe", "s1", "b1"] {
         let r = preencher(&d, Papel::Extensao, nome, "http://localhost:8081/");
-        assert_eq!(erro(&r), Some(ErroResposta::EntradaInexistente), "{nome}");
+        assert_eq!(error(&r), Some(ErroResposta::EntradaInexistente), "{nome}");
     }
     // Travado: nada.
     d.travar();
@@ -286,19 +286,19 @@ fn v6_2_preencher_so_na_origem_certa() {
         "acme-wp-dev",
         "http://localhost:8081/wp-login.php",
     );
-    assert_eq!(erro(&r), Some(ErroResposta::Travado));
+    assert_eq!(error(&r), Some(ErroResposta::Travado));
     let r = sugerir(&d, Papel::Extensao, "http://localhost:8081/wp-login.php");
-    assert_eq!(erro(&r), Some(ErroResposta::Travado));
+    assert_eq!(error(&r), Some(ErroResposta::Travado));
 }
 
 #[test]
 fn v6_1_agente_e_app_nao_sugerem_nem_preenchem() {
-    let dir = Dir::novo("ext-papeis");
+    let dir = Dir::new("ext-papeis");
     let d = cofre(&dir);
     for papel in [Papel::Agente, Papel::App] {
         // Primeira camada: a leitura do pedido.
         assert_eq!(
-            erro(&preencher(
+            error(&preencher(
                 &d,
                 papel,
                 "acme-wp-dev",
@@ -307,26 +307,26 @@ fn v6_1_agente_e_app_nao_sugerem_nem_preenchem() {
             Some(ErroResposta::NaoAutorizado)
         );
         assert_eq!(
-            erro(&sugerir(&d, papel, "http://localhost:8081/")),
+            error(&sugerir(&d, papel, "http://localhost:8081/")),
             Some(ErroResposta::NaoAutorizado)
         );
         // Segunda e terceira camadas: o pedido já lido como extensão, atendido com
         // outro papel (o papel vem da conexão, nunca do quadro).
-        let p = ped(
+        let p = req(
             Papel::Extensao,
             "preencher",
             r#"{"entrada":"acme-wp-dev","origem":"http://localhost:8081/"}"#,
         )
         .unwrap();
         let r = d.atender(papel, p);
-        assert_eq!(erro(&r), Some(ErroResposta::NaoAutorizado));
-        sem_segredo(&comum::codificado(papel, &r));
+        assert_eq!(error(&r), Some(ErroResposta::NaoAutorizado));
+        sem_segredo(&common::encoded(papel, &r));
     }
 }
 
 #[test]
 fn ataque_extensao_sem_operacoes_de_app_nem_de_agente() {
-    let dir = Dir::novo("ext-tabela");
+    let dir = Dir::new("ext-tabela");
     let d = cofre(&dir);
     let permitidas = [
         Operacao::Estado,
@@ -350,7 +350,7 @@ fn ataque_extensao_sem_operacoes_de_app_nem_de_agente() {
             // Qualquer que seja o resto do quadro.
             for dados in ["{}", r#"{"entrada":"acme-wp-dev","campo":"senha"}"#] {
                 assert_eq!(
-                    ped(Papel::Extensao, op.nome(), dados).unwrap_err(),
+                    req(Papel::Extensao, op.nome(), dados).unwrap_err(),
                     ErroResposta::NaoAutorizado,
                     "{}",
                     op.nome()
@@ -378,13 +378,13 @@ fn ataque_extensao_sem_operacoes_de_app_nem_de_agente() {
         (Papel::Agente, "login", r#"{"entrada":"acme-wp-dev"}"#),
         (Papel::Agente, "playwright", r#"{"entrada":"acme-wp-dev"}"#),
     ] {
-        let p = ped(papel, op, dados).unwrap_or_else(|e| panic!("{op}: {e:?}"));
+        let p = req(papel, op, dados).unwrap_or_else(|e| panic!("{op}: {e:?}"));
         let r = d.atender(Papel::Extensao, p);
-        assert_eq!(erro(&r), Some(ErroResposta::NaoAutorizado), "{op}");
+        assert_eq!(error(&r), Some(ErroResposta::NaoAutorizado), "{op}");
     }
     let r = d.atender(
         Papel::Extensao,
-        ped(
+        req(
             Papel::App,
             "mudar_nivel",
             &format!(
@@ -394,7 +394,7 @@ fn ataque_extensao_sem_operacoes_de_app_nem_de_agente() {
         )
         .unwrap(),
     );
-    assert_eq!(erro(&r), Some(ErroResposta::NaoAutorizado));
+    assert_eq!(error(&r), Some(ErroResposta::NaoAutorizado));
     // O que a extensão recebe: nenhuma resposta de segredo, token ou lista do app.
     for t in [
         protocolo::TipoResposta::Segredo,
@@ -413,7 +413,7 @@ fn ataque_extensao_sem_operacoes_de_app_nem_de_agente() {
 /// ambiente, tipo e os campos URL, usuário e senha; `extra` entra cru no objeto
 /// `entrada` (para os ataques).
 fn salvar_login(d: &Daemon, papel: Papel, nome: &str, senha: &str, extra: &str) -> Resposta {
-    pedir(
+    request(
         d,
         papel,
         "salvar_login",
@@ -426,7 +426,7 @@ fn salvar_login(d: &Daemon, papel: Papel, nome: &str, senha: &str, extra: &str) 
 
 /// Nível de uma entrada na lista do app (`None` se ela não existe).
 fn nivel_na_lista(d: &Daemon, nome: &str) -> Option<ward_core::entry::AccessLevel> {
-    match pedir(d, Papel::App, "lista", "{}") {
+    match request(d, Papel::App, "lista", "{}") {
         Resposta::Lista(l) => l.into_iter().find(|i| i.nome == nome).and_then(|i| i.nivel),
         outra => panic!("esperava a lista: {:?}", outra.tipo()),
     }
@@ -440,12 +440,12 @@ const SENHA_NOVA: &str = "falso-cadastro-ward-42";
 #[test]
 fn v6_8_salvar_login_nasce_com_aprovacao() {
     use ward_core::entry::AccessLevel;
-    let dir = Dir::novo("ext-salvar");
+    let dir = Dir::new("ext-salvar");
     let d = cofre(&dir);
     let r = salvar_login(&d, Papel::Extensao, "localhost-8083", SENHA_NOVA, "");
     assert!(ok(&r), "{r:?}");
-    assert!(!comum::contem(
-        &comum::codificado(Papel::Extensao, &r),
+    assert!(!common::contains(
+        &common::encoded(Papel::Extensao, &r),
         SENHA_NOVA.as_bytes()
     ));
     assert_eq!(
@@ -472,8 +472,8 @@ fn v6_8_salvar_login_nasce_com_aprovacao() {
         outra => panic!("esperava preenchimento: {:?}", outra.tipo()),
     }
     // Gravado no disco: depois de travar e destravar, continua lá e com aprovação.
-    assert!(ok(&pedir(&d, Papel::App, "travar", "{}")));
-    assert!(ok(&comum::destravar(&d, comum::SENHA)));
+    assert!(ok(&request(&d, Papel::App, "travar", "{}")));
+    assert!(ok(&common::unlock(&d, common::PASSWORD)));
     assert_eq!(
         nivel_na_lista(&d, "localhost-8083"),
         Some(AccessLevel::Approval)
@@ -486,12 +486,12 @@ fn v6_8_salvar_login_nasce_com_aprovacao() {
 #[test]
 fn ataque_salvar_login_nao_sobrescreve_entrada() {
     use ward_core::entry::AccessLevel;
-    let dir = Dir::novo("ext-salvar-sobrescrever");
+    let dir = Dir::new("ext-salvar-sobrescrever");
     let d = cofre(&dir);
     for nome in ["acme-wp-dev", "acme-wp-prod"] {
         let r = salvar_login(&d, Papel::Extensao, nome, SENHA_NOVA, "");
         assert!(
-            matches!(erro(&r), Some(ErroResposta::Validacao(_))),
+            matches!(error(&r), Some(ErroResposta::Validacao(_))),
             "{nome}: {r:?}"
         );
     }
@@ -504,7 +504,7 @@ fn ataque_salvar_login_nao_sobrescreve_entrada() {
         Some(AccessLevel::Approval)
     );
     match preencher(&d, Papel::Extensao, "acme-wp-dev", "http://localhost:8081") {
-        Resposta::Preenchimento { senha, .. } => assert_eq!(senha.expose(), SEGREDOS[0].as_bytes()),
+        Resposta::Preenchimento { senha, .. } => assert_eq!(senha.expose(), SECRETS[0].as_bytes()),
         outra => panic!("esperava preenchimento: {:?}", outra.tipo()),
     }
 }
@@ -514,7 +514,7 @@ fn ataque_salvar_login_nao_sobrescreve_entrada() {
 /// e nada é gravado.
 #[test]
 fn ataque_salvar_login_so_os_campos_do_popup() {
-    let dir = Dir::novo("ext-salvar-campos");
+    let dir = Dir::new("ext-salvar-campos");
     let d = cofre(&dir);
     let semente = b64(SEMENTE.as_bytes());
     let valor = b64(b"x");
@@ -533,14 +533,14 @@ fn ataque_salvar_login_so_os_campos_do_popup() {
     ];
     for (extra, chega_ao_daemon) in &recusados {
         let r = salvar_login(&d, Papel::Extensao, "localhost-8083", SENHA_NOVA, extra);
-        let e = erro(&r).unwrap_or_else(|| panic!("{extra}: aceito"));
+        let e = error(&r).unwrap_or_else(|| panic!("{extra}: aceito"));
         if *chega_ao_daemon {
             assert_eq!(e, ErroResposta::PedidoInvalido, "{extra}");
         }
         assert_eq!(nivel_na_lista(&d, "localhost-8083"), None, "{extra}");
     }
     // TOTP dentro dos campos do login.
-    let r = pedir(
+    let r = request(
         &d,
         Papel::Extensao,
         "salvar_login",
@@ -549,9 +549,16 @@ fn ataque_salvar_login_so_os_campos_do_popup() {
             b64(SENHA_NOVA.as_bytes())
         ),
     );
-    assert_eq!(erro(&r), Some(ErroResposta::PedidoInvalido));
+    assert_eq!(error(&r), Some(ErroResposta::PedidoInvalido));
     // Outro tipo (banco) pelo `salvar_login`: a leitura do pedido recusa.
-    assert!(ped(Papel::Extensao, "salvar_login", &comum::banco("b9", "s1")).is_err());
+    assert!(
+        req(
+            Papel::Extensao,
+            "salvar_login",
+            &common::database("b9", "s1")
+        )
+        .is_err()
+    );
     assert_eq!(nivel_na_lista(&d, "localhost-8083"), None);
     assert_eq!(nivel_na_lista(&d, "b9"), None);
 }
@@ -560,7 +567,7 @@ fn ataque_salvar_login_so_os_campos_do_popup() {
 /// extensão; com o cofre travado, nada é gravado.
 #[test]
 fn ataque_salvar_login_so_extensao_e_destravado() {
-    let dir = Dir::novo("ext-salvar-papeis");
+    let dir = Dir::new("ext-salvar-papeis");
     let d = cofre(&dir);
     let p = |nome: &str| {
         format!(
@@ -570,23 +577,23 @@ fn ataque_salvar_login_so_extensao_e_destravado() {
     };
     for papel in [Papel::Agente, Papel::App] {
         assert_eq!(
-            erro(&pedir(&d, papel, "salvar_login", &p("x1"))),
+            error(&request(&d, papel, "salvar_login", &p("x1"))),
             Some(ErroResposta::NaoAutorizado)
         );
-        let lido = ped(Papel::Extensao, "salvar_login", &p("x2")).unwrap();
+        let lido = req(Papel::Extensao, "salvar_login", &p("x2")).unwrap();
         assert_eq!(
-            erro(&d.atender(papel, lido)),
+            error(&d.atender(papel, lido)),
             Some(ErroResposta::NaoAutorizado)
         );
     }
     assert_eq!(nivel_na_lista(&d, "x1"), None);
     assert_eq!(nivel_na_lista(&d, "x2"), None);
-    assert!(ok(&pedir(&d, Papel::App, "travar", "{}")));
+    assert!(ok(&request(&d, Papel::App, "travar", "{}")));
     assert_eq!(
-        erro(&pedir(&d, Papel::Extensao, "salvar_login", &p("x3"))),
+        error(&request(&d, Papel::Extensao, "salvar_login", &p("x3"))),
         Some(ErroResposta::Travado)
     );
-    assert!(ok(&comum::destravar(&d, comum::SENHA)));
+    assert!(ok(&common::unlock(&d, common::PASSWORD)));
     assert_eq!(nivel_na_lista(&d, "x3"), None);
 }
 
@@ -600,32 +607,32 @@ fn ataque_salvar_login_so_extensao_e_destravado() {
 /// é do popup (`preencher`) e não pede PIN. `https` segue sem janela.
 #[test]
 fn ataque_preencher_http_sem_confirmar_nada_sai() {
-    let dir = Dir::novo("ext-http-confirma");
+    let dir = Dir::new("ext-http-confirma");
     let d = cofre(&dir);
     let aba = "http://localhost:8081/wp-login.php";
     // Sem app nenhum.
     let r = preencher_cru(&d, Papel::Extensao, "acme-wp-dev", aba);
-    assert_eq!(erro(&r), Some(ErroResposta::AprovacaoIndisponivel));
-    sem_segredo(&comum::codificado(Papel::Extensao, &r));
+    assert_eq!(error(&r), Some(ErroResposta::AprovacaoIndisponivel));
+    sem_segredo(&common::encoded(Papel::Extensao, &r));
     // Negado na janela.
-    let (r, vistos) = comum::com_janela(&d, "negar", None, || {
+    let (r, vistos) = common::with_window(&d, "negar", None, || {
         preencher_cru(&d, Papel::Extensao, "acme-wp-dev", aba)
     });
-    assert_eq!(erro(&r), Some(ErroResposta::Negado));
-    sem_segredo(&comum::codificado(Papel::Extensao, &r));
+    assert_eq!(error(&r), Some(ErroResposta::Negado));
+    sem_segredo(&common::encoded(Papel::Extensao, &r));
     assert_eq!(vistos.len(), 1);
     let p = &vistos[0];
     assert_eq!(p.operacao, Operacao::Preencher);
     assert_eq!(p.entradas, ["acme-wp-dev".to_owned()]);
     assert_eq!(p.origem, "http://localhost:8081");
     assert!(p.confirmacao);
-    sem_segredo(&comum::codificado(
+    sem_segredo(&common::encoded(
         Papel::App,
         &Resposta::PedidoDeAprovacao(p.clone()),
     ));
     // Os "Permitir" com PIN não decidem uma confirmação (a janela forjada não pula o
     // formato): o pedido segue pendente e expira; aqui o laço da janela só tenta.
-    let (r, _) = comum::com_janela(&d, "uma_vez", Some(PIN), || {
+    let (r, _) = common::with_window(&d, "uma_vez", Some(PIN), || {
         // Sem decisão aceita, o pedido ficaria pendente até expirar (2 min): o teste
         // encerra pelo cliente que sai.
         struct SaiLogo(std::sync::atomic::AtomicU32);
@@ -637,7 +644,7 @@ fn ataque_preencher_http_sem_confirmar_nada_sai() {
                 self.0.fetch_add(1, std::sync::atomic::Ordering::AcqRel) > 40
             }
         }
-        let p = ped(
+        let p = req(
             Papel::Extensao,
             "preencher",
             &format!(r#"{{"entrada":"acme-wp-dev","origem":"{aba}"}}"#),
@@ -646,13 +653,13 @@ fn ataque_preencher_http_sem_confirmar_nada_sai() {
         d.atender_de(&SaiLogo(Default::default()), Papel::Extensao, p)
     });
     assert_eq!(
-        erro(&r),
+        error(&r),
         Some(ErroResposta::Negado),
         "uma_vez decidiu uma confirmação"
     );
-    sem_segredo(&comum::codificado(Papel::Extensao, &r));
+    sem_segredo(&common::encoded(Papel::Extensao, &r));
     // Confirmado: preenche.
-    let (r, vistos) = comum::com_janela(&d, "confirmar", None, || {
+    let (r, vistos) = common::with_window(&d, "confirmar", None, || {
         preencher_cru(&d, Papel::Extensao, "acme-wp-dev", aba)
     });
     assert!(
@@ -662,7 +669,7 @@ fn ataque_preencher_http_sem_confirmar_nada_sai() {
     );
     assert_eq!(vistos.len(), 1);
     // `https`: nenhuma janela.
-    let (r, vistos) = comum::com_janela(&d, "negar", None, || {
+    let (r, vistos) = common::with_window(&d, "negar", None, || {
         preencher_cru(
             &d,
             Papel::Extensao,
@@ -677,10 +684,10 @@ fn ataque_preencher_http_sem_confirmar_nada_sai() {
     );
     assert!(vistos.is_empty(), "janela num preencher https");
     // Origem diferente: recusa antes de perguntar.
-    let (r, vistos) = comum::com_janela(&d, "confirmar", None, || {
+    let (r, vistos) = common::with_window(&d, "confirmar", None, || {
         preencher_cru(&d, Papel::Extensao, "acme-wp-dev", "http://127.0.0.1:8081/")
     });
-    assert_eq!(erro(&r), Some(ErroResposta::OrigemDiferente));
+    assert_eq!(error(&r), Some(ErroResposta::OrigemDiferente));
     assert!(vistos.is_empty());
 }
 
@@ -690,7 +697,7 @@ fn ataque_preencher_http_sem_confirmar_nada_sai() {
 /// app: "aprovação indisponível"; negado: nenhum valor; o pedido mostra a origem.
 #[test]
 fn ataque_preencher_https_loopback_sem_confirmar_nada_sai() {
-    let dir = Dir::novo("ext-https-loopback");
+    let dir = Dir::new("ext-https-loopback");
     let d = cofre(&dir);
     for (i, (url, origem)) in [
         ("https://localhost:8443/login", "https://localhost:8443"),
@@ -701,26 +708,30 @@ fn ataque_preencher_https_loopback_sem_confirmar_nada_sai() {
     .enumerate()
     {
         let nome = format!("l-{i}");
-        let r = pedir(
+        let r = request(
             &d,
             Papel::App,
             "salvar_entrada",
-            &login(&nome, url, "wp_admin", SEGREDOS[0], None),
+            &login(&nome, url, "wp_admin", SECRETS[0], None),
         );
         assert!(ok(&r), "{r:?}");
         let r = preencher_cru(&d, Papel::Extensao, &nome, url);
-        assert_eq!(erro(&r), Some(ErroResposta::AprovacaoIndisponivel), "{url}");
-        sem_segredo(&comum::codificado(Papel::Extensao, &r));
-        let (r, vistos) = comum::com_janela(&d, "negar", None, || {
+        assert_eq!(
+            error(&r),
+            Some(ErroResposta::AprovacaoIndisponivel),
+            "{url}"
+        );
+        sem_segredo(&common::encoded(Papel::Extensao, &r));
+        let (r, vistos) = common::with_window(&d, "negar", None, || {
             preencher_cru(&d, Papel::Extensao, &nome, url)
         });
-        assert_eq!(erro(&r), Some(ErroResposta::Negado), "{url}");
-        sem_segredo(&comum::codificado(Papel::Extensao, &r));
+        assert_eq!(error(&r), Some(ErroResposta::Negado), "{url}");
+        sem_segredo(&common::encoded(Papel::Extensao, &r));
         assert_eq!(vistos.len(), 1, "{url}");
         assert_eq!(vistos[0].operacao, Operacao::Preencher);
         assert_eq!(vistos[0].origem, origem, "{url}");
         assert!(vistos[0].confirmacao, "{url}");
-        let (r, _) = comum::com_janela(&d, "confirmar", None, || {
+        let (r, _) = common::with_window(&d, "confirmar", None, || {
             preencher_cru(&d, Papel::Extensao, &nome, url)
         });
         assert!(matches!(r, Resposta::Preenchimento { .. }), "{url}");

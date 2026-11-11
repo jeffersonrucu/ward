@@ -11,14 +11,14 @@
 
 #![cfg(feature = "test-hooks")]
 
-mod comum;
+mod common;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use comum::*;
+use common::*;
 use ward_core::protocolo::{
     ErroResposta, Operacao, Papel, Pedido, PedidoDeAprovacao, Resposta, ResultadoLogin,
 };
@@ -40,13 +40,13 @@ fn prazos(retirada_ms: u64) -> LoginDeadlines {
 }
 
 fn cofre(rotulo: &str, retirada_ms: u64) -> (Daemon, Dir) {
-    let dir = Dir::novo(rotulo);
-    let (d, _) = cofre_de_teste(&dir);
+    let dir = Dir::new(rotulo);
+    let (d, _) = test_vault(&dir);
     (d.com_prazos_login(prazos(retirada_ms)), dir)
 }
 
 fn login_do_agente(d: &Daemon, cliente: &dyn Cliente, nome: &str) -> Resposta {
-    match ped(
+    match req(
         Papel::Agente,
         "login",
         &format!(r#"{{"entrada":"{nome}"}}"#),
@@ -58,19 +58,19 @@ fn login_do_agente(d: &Daemon, cliente: &dyn Cliente, nome: &str) -> Resposta {
 
 /// O `aguardar_login` da extensão: `Some((id, entrada))` ou `None` (espera vazia).
 fn aguardar(d: &Daemon) -> Option<(String, String)> {
-    match pedir(d, Papel::Extensao, "aguardar_login", "{}") {
+    match request(d, Papel::Extensao, "aguardar_login", "{}") {
         Resposta::PedidoDeLogin { id, entrada } => {
             // S1: o pedido levado à extensão não tem valor nenhum da entrada.
-            let q = codificado(
+            let q = encoded(
                 Papel::Extensao,
                 &Resposta::PedidoDeLogin {
                     id: id.clone(),
                     entrada: entrada.clone(),
                 },
             );
-            for s in SEGREDOS {
-                assert!(!contem(&q, s.as_bytes()));
-                assert!(!contem(&q, b64(s.as_bytes()).as_bytes()));
+            for s in SECRETS {
+                assert!(!contains(&q, s.as_bytes()));
+                assert!(!contains(&q, b64(s.as_bytes()).as_bytes()));
             }
             Some((id, entrada))
         }
@@ -90,7 +90,7 @@ fn pegar(d: &Daemon) -> (String, String) {
 }
 
 fn preencher(d: &Daemon, id: &str, origem: &str) -> Resposta {
-    pedir(
+    request(
         d,
         Papel::Extensao,
         "preencher_login",
@@ -99,7 +99,7 @@ fn preencher(d: &Daemon, id: &str, origem: &str) -> Resposta {
 }
 
 fn resultado(d: &Daemon, id: &str, r: &str) -> Resposta {
-    pedir(
+    request(
         d,
         Papel::Extensao,
         "resultado_login",
@@ -108,10 +108,10 @@ fn resultado(d: &Daemon, id: &str, r: &str) -> Resposta {
 }
 
 fn sem_valor(r: &Resposta) {
-    let q = codificado(Papel::Extensao, r);
-    for s in SEGREDOS {
-        assert!(!contem(&q, s.as_bytes()), "{r:?}");
-        assert!(!contem(&q, b64(s.as_bytes()).as_bytes()), "{r:?}");
+    let q = encoded(Papel::Extensao, r);
+    for s in SECRETS {
+        assert!(!contains(&q, s.as_bytes()), "{r:?}");
+        assert!(!contains(&q, b64(s.as_bytes()).as_bytes()), "{r:?}");
     }
 }
 
@@ -128,21 +128,21 @@ fn v6_10_login_livre_preenche_na_origem_certa_e_volta_ok() {
         match preencher(&d, &id, ORIGEM) {
             Resposta::Preenchimento { usuario, senha, .. } => {
                 assert_eq!(usuario, "admin");
-                assert_eq!(senha.expose(), SEGREDOS[3].as_bytes());
+                assert_eq!(senha.expose(), SECRETS[3].as_bytes());
             }
             r => panic!("{r:?}"),
         }
         // Um id preenche uma vez só.
         let r = preencher(&d, &id, ORIGEM);
-        assert_eq!(erro(&r), Some(ErroResposta::Expirado));
+        assert_eq!(error(&r), Some(ErroResposta::Expirado));
         sem_valor(&r);
         assert!(ok(&resultado(&d, &id, "enviado")));
         let r = t.join().unwrap();
         assert!(ok(&r), "{r:?}");
         // A resposta do agente não carrega credencial (S1).
-        let q = codificado(Papel::Agente, &r);
-        for sgr in SEGREDOS {
-            assert!(!contem(&q, sgr.as_bytes()));
+        let q = encoded(Papel::Agente, &r);
+        for sgr in SECRETS {
+            assert!(!contains(&q, sgr.as_bytes()));
         }
     });
     // O pedido morreu: o id não serve mais e a fila está vazia.
@@ -172,17 +172,17 @@ fn v6_3_v6_15_ataque_origem_diferente_nao_preenche() {
             let t = s.spawn(|| login_do_agente(&d, &SemCliente, "t-livre"));
             let (id, _) = pegar(&d);
             let r = preencher(&d, &id, aba);
-            assert_eq!(erro(&r), Some(ErroResposta::OrigemDiferente), "{i}: {aba}");
+            assert_eq!(error(&r), Some(ErroResposta::OrigemDiferente), "{i}: {aba}");
             sem_valor(&r);
             let r = preencher(&d, &id, ORIGEM);
-            assert_eq!(erro(&r), Some(ErroResposta::Expirado), "{aba}");
+            assert_eq!(error(&r), Some(ErroResposta::Expirado), "{aba}");
             sem_valor(&r);
             assert_eq!(
-                erro(&resultado(&d, &id, "enviado")),
+                error(&resultado(&d, &id, "enviado")),
                 Some(ErroResposta::Expirado)
             );
             assert_eq!(
-                erro(&t.join().unwrap()),
+                error(&t.join().unwrap()),
                 Some(ErroResposta::OrigemDiferente),
                 "{aba}"
             );
@@ -203,20 +203,20 @@ fn ataque_id_forjado_nao_preenche() {
         let trocado = String::from_utf8(trocado).unwrap();
         for falso in [trocado.as_str(), "AbCdEfGhIjKlMnOpQrStUvWxYz012345"] {
             let r = preencher(&d, falso, ORIGEM);
-            assert_eq!(erro(&r), Some(ErroResposta::Expirado));
+            assert_eq!(error(&r), Some(ErroResposta::Expirado));
             sem_valor(&r);
             assert_eq!(
-                erro(&resultado(&d, falso, "enviado")),
+                error(&resultado(&d, falso, "enviado")),
                 Some(ErroResposta::Expirado)
             );
         }
         for ruim in ["", "x", &id[..31]] {
             let r = preencher(&d, ruim, ORIGEM);
-            assert_eq!(erro(&r), Some(ErroResposta::PedidoInvalido));
+            assert_eq!(error(&r), Some(ErroResposta::PedidoInvalido));
         }
         // "Enviado" antes de preencher não vale.
         assert_eq!(
-            erro(&resultado(&d, &id, "enviado")),
+            error(&resultado(&d, &id, "enviado")),
             Some(ErroResposta::PedidoInvalido)
         );
         assert!(matches!(
@@ -224,7 +224,7 @@ fn ataque_id_forjado_nao_preenche() {
             Resposta::Preenchimento { .. }
         ));
         assert!(ok(&resultado(&d, &id, "recusado")));
-        assert_eq!(erro(&t.join().unwrap()), Some(ErroResposta::LoginRecusado));
+        assert_eq!(error(&t.join().unwrap()), Some(ErroResposta::LoginRecusado));
     });
 }
 
@@ -244,10 +244,10 @@ fn desfechos_da_extensao() {
             assert!(ok(&resultado(&d, &id, r.nome())));
             // Desfecho de novo: não muda nada.
             assert_eq!(
-                erro(&resultado(&d, &id, "enviado")),
+                error(&resultado(&d, &id, "enviado")),
                 Some(ErroResposta::Expirado)
             );
-            assert_eq!(erro(&t.join().unwrap()), Some(esperado));
+            assert_eq!(error(&t.join().unwrap()), Some(esperado));
         });
     }
 }
@@ -272,8 +272,8 @@ fn ataque_agente_e_app_nas_operacoes_da_extensao() {
                     format!(r#"{{"id":"{id}","resultado":"enviado"}}"#),
                 ),
             ] {
-                let r = pedir(&d, papel, op, &dados);
-                assert_eq!(erro(&r), Some(ErroResposta::NaoAutorizado), "{op}");
+                let r = request(&d, papel, op, &dados);
+                assert_eq!(error(&r), Some(ErroResposta::NaoAutorizado), "{op}");
             }
             for p in [
                 Pedido::AguardarLogin,
@@ -287,12 +287,12 @@ fn ataque_agente_e_app_nas_operacoes_da_extensao() {
                 },
             ] {
                 let r = d.atender(papel, p);
-                assert_eq!(erro(&r), Some(ErroResposta::NaoAutorizado));
+                assert_eq!(error(&r), Some(ErroResposta::NaoAutorizado));
             }
         }
         // A extensão não pede `login` (só o agente).
-        let r = pedir(&d, Papel::Extensao, "login", r#"{"entrada":"t-livre"}"#);
-        assert_eq!(erro(&r), Some(ErroResposta::NaoAutorizado));
+        let r = request(&d, Papel::Extensao, "login", r#"{"entrada":"t-livre"}"#);
+        assert_eq!(error(&r), Some(ErroResposta::NaoAutorizado));
         // O pedido verdadeiro segue intacto.
         assert!(matches!(
             preencher(&d, &id, ORIGEM),
@@ -314,7 +314,7 @@ fn recusas_antes_da_extensao() {
         ("s1", ErroResposta::TipoSemEntrega),
     ] {
         let r = login_do_agente(&d, &SemCliente, nome);
-        assert_eq!(erro(&r), Some(esperado), "{nome}");
+        assert_eq!(error(&r), Some(esperado), "{nome}");
         assert_eq!(aguardar(&d), None, "{nome}");
     }
 }
@@ -325,7 +325,7 @@ fn recusas_antes_da_extensao() {
 fn sem_extensao_o_pedido_morre() {
     let (d, _dir) = cofre("login-sem-ext", 300);
     let r = login_do_agente(&d, &SemCliente, "t-livre");
-    assert_eq!(erro(&r), Some(ErroResposta::NavegadorFalhou));
+    assert_eq!(error(&r), Some(ErroResposta::NavegadorFalhou));
     assert_eq!(aguardar(&d), None);
 }
 
@@ -337,10 +337,10 @@ fn um_pedido_por_vez() {
         let t = s.spawn(|| login_do_agente(&d, &SemCliente, "t-livre"));
         let (id, _) = pegar(&d);
         let r = login_do_agente(&d, &SemCliente, "t-livre");
-        assert_eq!(erro(&r), Some(ErroResposta::Ocupado));
+        assert_eq!(error(&r), Some(ErroResposta::Ocupado));
         assert!(ok(&resultado(&d, &id, "falha")));
         assert_eq!(
-            erro(&t.join().unwrap()),
+            error(&t.join().unwrap()),
             Some(ErroResposta::NavegadorFalhou)
         );
     });
@@ -353,10 +353,10 @@ fn travar_no_meio_mata_o_pedido() {
     std::thread::scope(|s| {
         let t = s.spawn(|| login_do_agente(&d, &SemCliente, "t-livre"));
         let (id, _) = pegar(&d);
-        assert!(ok(&pedir(&d, Papel::App, "travar", "{}")));
-        assert_eq!(erro(&t.join().unwrap()), Some(ErroResposta::Travado));
+        assert!(ok(&request(&d, Papel::App, "travar", "{}")));
+        assert_eq!(error(&t.join().unwrap()), Some(ErroResposta::Travado));
         let r = preencher(&d, &id, ORIGEM);
-        assert!(erro(&r).is_some(), "{r:?}");
+        assert!(error(&r).is_some(), "{r:?}");
         sem_valor(&r);
     });
 }
@@ -381,9 +381,9 @@ fn cli_que_cai_mata_o_pedido() {
         let t = s.spawn(|| login_do_agente(&d, &cliente, "t-livre"));
         let (id, _) = pegar(&d);
         cliente.0.store(true, Ordering::Release);
-        assert_eq!(erro(&t.join().unwrap()), Some(ErroResposta::Negado));
+        assert_eq!(error(&t.join().unwrap()), Some(ErroResposta::Negado));
         let r = preencher(&d, &id, ORIGEM);
-        assert_eq!(erro(&r), Some(ErroResposta::Expirado));
+        assert_eq!(error(&r), Some(ErroResposta::Expirado));
         sem_valor(&r);
     });
 }
@@ -438,7 +438,7 @@ fn responder(d: &Daemon, id: u64, decisao: &str, pin: Option<&str>) -> Resposta 
     let pin = pin
         .map(|p| format!(r#","pin":"{}""#, b64(p.as_bytes())))
         .unwrap_or_default();
-    pedir(
+    request(
         d,
         Papel::App,
         "responder_aprovacao",
@@ -461,7 +461,7 @@ fn v6_11_com_aprovacao_negar_nao_chega_a_extensao_e_permitir_chega() {
         assert_eq!(p.entradas, vec!["t-aprov".to_owned()]);
         assert_eq!(aguardar(&d), None);
         assert!(ok(&responder(&d, p.id, "negar", None)));
-        assert_eq!(erro(&t.join().unwrap()), Some(ErroResposta::Negado));
+        assert_eq!(error(&t.join().unwrap()), Some(ErroResposta::Negado));
         visto.lock().unwrap().push(aguardar(&d));
     });
     assert_eq!(visto.lock().unwrap().as_slice(), &[None]);
@@ -492,13 +492,13 @@ fn login_http(d: &Daemon, nome: &str, nivel: &str) {
 fn login_na_url(d: &Daemon, nome: &str, nivel: &str, url: &str) {
     let q = format!(
         r#"{{"entrada":{{"nome":"{nome}","grupo":"acme","ambiente":"prod","tipo":"login","campos":{{"url":"{url}","usuario":"wp_editor","senha":"{}"}}}}}}"#,
-        b64(SEGREDOS[3].as_bytes())
+        b64(SECRETS[3].as_bytes())
     );
-    let r = pedir(d, Papel::App, "salvar_entrada", &q);
+    let r = request(d, Papel::App, "salvar_entrada", &q);
     assert!(ok(&r), "{r:?}");
     // Entrada nova já nasce "com aprovação" (D50).
     if nivel != "com-aprovacao" {
-        let r = mudar_nivel(d, Papel::App, nome, nivel, PIN);
+        let r = set_level(d, Papel::App, nome, nivel, PIN);
         assert!(ok(&r), "{r:?}");
     }
 }
@@ -541,13 +541,13 @@ fn ataque_login_http_livre_so_com_confirmacao() {
     login_http(&d, "h-livre", "livre");
     // Sem app.
     let r = login_do_agente(&d, &SemCliente, "h-livre");
-    assert_eq!(erro(&r), Some(ErroResposta::AprovacaoIndisponivel));
+    assert_eq!(error(&r), Some(ErroResposta::AprovacaoIndisponivel));
     assert_eq!(aguardar(&d), None);
     // Negado: a extensão não vê nada.
-    let (r, vistos) = com_janela(&d, "negar", None, || {
+    let (r, vistos) = with_window(&d, "negar", None, || {
         login_do_agente(&d, &SemCliente, "h-livre")
     });
-    assert_eq!(erro(&r), Some(ErroResposta::Negado));
+    assert_eq!(error(&r), Some(ErroResposta::Negado));
     assert_eq!(aguardar(&d), None);
     let p = &vistos[0];
     assert_eq!(p.operacao, Operacao::Login);
@@ -556,13 +556,13 @@ fn ataque_login_http_livre_so_com_confirmacao() {
     assert!(p.confirmacao);
     // "Permitir uma vez" com PIN numa confirmação: recusado, e o pedido nunca chega.
     let cliente = CaiDepois(std::sync::atomic::AtomicU32::new(0));
-    let (r, _) = com_janela(&d, "uma_vez", Some(PIN), || {
+    let (r, _) = with_window(&d, "uma_vez", Some(PIN), || {
         login_do_agente(&d, &cliente, "h-livre")
     });
-    assert_eq!(erro(&r), Some(ErroResposta::Negado));
+    assert_eq!(error(&r), Some(ErroResposta::Negado));
     assert_eq!(aguardar(&d), None);
     // Confirmado: o pedido vai à extensão e preenche na origem certa.
-    let (r, vistos) = com_janela(&d, "confirmar", None, || login_http_completo(&d, "h-livre"));
+    let (r, vistos) = with_window(&d, "confirmar", None, || login_http_completo(&d, "h-livre"));
     assert!(ok(&r), "{r:?}");
     assert_eq!(vistos.len(), 1);
 }
@@ -575,11 +575,11 @@ fn ataque_login_http_com_aprovacao_pede_pin_e_mostra_a_origem() {
     let (d, _dir) = cofre("login-http-aprov", 2000);
     login_http(&d, "h-aprov", "com-aprovacao");
     let cliente = CaiDepois(std::sync::atomic::AtomicU32::new(0));
-    let (r, vistos) = com_janela(&d, "confirmar", None, || {
+    let (r, vistos) = with_window(&d, "confirmar", None, || {
         login_do_agente(&d, &cliente, "h-aprov")
     });
     assert_eq!(
-        erro(&r),
+        error(&r),
         Some(ErroResposta::Negado),
         "confirmar sem PIN decidiu"
     );
@@ -587,19 +587,19 @@ fn ataque_login_http_com_aprovacao_pede_pin_e_mostra_a_origem() {
     assert!(!vistos[0].confirmacao);
     assert_eq!(vistos[0].origem, "http://localhost:8081");
     // Permitir por 1 hora (com PIN): segue.
-    let (r, vistos) = com_janela(&d, "uma_hora", Some(PIN), || {
+    let (r, vistos) = with_window(&d, "uma_hora", Some(PIN), || {
         login_http_completo(&d, "h-aprov")
     });
     assert!(ok(&r), "{r:?}");
     assert!(!vistos[0].confirmacao);
     // Dentro da liberação: ainda a confirmação da origem (sem PIN).
-    let (r, vistos) = com_janela(&d, "confirmar", None, || login_http_completo(&d, "h-aprov"));
+    let (r, vistos) = with_window(&d, "confirmar", None, || login_http_completo(&d, "h-aprov"));
     assert!(ok(&r), "{r:?}");
     assert_eq!(vistos.len(), 1);
     assert!(vistos[0].confirmacao);
     // Sem app, nada.
     let r = login_do_agente(&d, &SemCliente, "h-aprov");
-    assert_eq!(erro(&r), Some(ErroResposta::AprovacaoIndisponivel));
+    assert_eq!(error(&r), Some(ErroResposta::AprovacaoIndisponivel));
 }
 
 /// Fase 44e (Médio da 2ª auditoria do M6): `https` num host de loopback também pede a
@@ -626,12 +626,16 @@ fn ataque_login_https_loopback_livre_so_com_confirmacao() {
         let nome = format!("l-livre-{i}");
         login_na_url(&d, &nome, "livre", url);
         let r = login_do_agente(&d, &SemCliente, &nome);
-        assert_eq!(erro(&r), Some(ErroResposta::AprovacaoIndisponivel), "{url}");
+        assert_eq!(
+            error(&r),
+            Some(ErroResposta::AprovacaoIndisponivel),
+            "{url}"
+        );
         assert_eq!(aguardar(&d), None, "{url}");
-        let (r, vistos) = com_janela(&d, "negar", None, || {
+        let (r, vistos) = with_window(&d, "negar", None, || {
             login_do_agente(&d, &SemCliente, &nome)
         });
-        assert_eq!(erro(&r), Some(ErroResposta::Negado), "{url}");
+        assert_eq!(error(&r), Some(ErroResposta::Negado), "{url}");
         assert_eq!(aguardar(&d), None, "{url}");
         assert_eq!(vistos.len(), 1, "{url}");
         assert_eq!(vistos[0].origem, origem, "{url}");
@@ -643,7 +647,7 @@ fn ataque_login_https_loopback_livre_so_com_confirmacao() {
 #[test]
 fn login_https_livre_sem_janela() {
     let (d, _dir) = cofre("login-https-livre", 2000);
-    let (r, vistos) = com_janela(&d, "negar", None, || {
+    let (r, vistos) = with_window(&d, "negar", None, || {
         std::thread::scope(|s| {
             let t = s.spawn(|| login_do_agente(&d, &SemCliente, "t-livre"));
             let (id, _) = pegar(&d);

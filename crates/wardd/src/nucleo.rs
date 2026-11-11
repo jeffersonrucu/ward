@@ -71,7 +71,7 @@ use ward_core::totp::Totp;
 
 use crate::aprovacao::{Cliente, Motor, SemCliente};
 use crate::arquivos::{self, ArquivoEstado, Geracoes, Identidade};
-use crate::externo::{self, Copia, ErroExterno, FontePendrives};
+use crate::external::{self, BackupCopy, ExternalError, UsbDriveSource};
 use crate::{aviso, depurar};
 use ward_platform::child::Group;
 
@@ -279,7 +279,7 @@ pub struct Daemon {
     temporarios: Option<PathBuf>,
     /// Os pendrives (udisks2) para a operação `pendrives` (Fase 46). `None`: sem
     /// barramento, responde `pendrives_indisponiveis`.
-    pendrives: Option<Arc<dyn FontePendrives>>,
+    pendrives: Option<Arc<dyn UsbDriveSource>>,
     /// Cutuca a thread da cópia externa (Fase 46), se ligada.
     cutucao: OnceLock<SyncSender<()>>,
     /// Uma cópia externa por vez.
@@ -555,13 +555,13 @@ impl Daemon {
 
     /// Liga a fonte dos pendrives (o udisks2; uma lista nos testes) da operação
     /// `pendrives` (Fase 46).
-    pub fn com_pendrives(mut self, fonte: Arc<dyn FontePendrives>) -> Self {
+    pub fn com_pendrives(mut self, fonte: Arc<dyn UsbDriveSource>) -> Self {
         self.pendrives = Some(fonte);
         self
     }
 
     /// Cria o canal dos cutucões da cópia externa e devolve a ponta de leitura (para a
-    /// thread de [`crate::udisks::vigiar_copia`]). Só a primeira chamada liga.
+    /// thread de [`crate::udisks::watch_copy`]). Só a primeira chamada liga.
     pub fn ligar_copia_externa(&self) -> Option<Receiver<()>> {
         let (tx, rx) = std::sync::mpsc::sync_channel(1);
         self.cutucao.set(tx).ok().map(|()| rx)
@@ -595,22 +595,22 @@ impl Daemon {
     /// não fica preso durante a cópia: só o UUID é lido dele.
     pub fn sincronizar_externo(
         &self,
-        fonte: &dyn FontePendrives,
-    ) -> Result<Option<Copia>, ErroExterno> {
+        fonte: &dyn UsbDriveSource,
+    ) -> Result<Option<BackupCopy>, ExternalError> {
         let _vez = self.vez_externo.lock().unwrap_or_else(|e| e.into_inner());
         let Some(uuid) = self.uuid_externo() else {
             return Ok(None);
         };
-        let vistos = fonte.pendrives().ok_or(ErroExterno::SemUdisks)?;
-        let visto = externo::escolher(&vistos, &uuid)?.clone();
-        let local = abrir_pasta(&self.caminhos).ok_or(ErroExterno::SemBackupLocal)?;
+        let vistos = fonte.usb_drives().ok_or(ExternalError::NoUdisks)?;
+        let visto = external::choose(&vistos, &uuid)?.clone();
+        let local = abrir_pasta(&self.caminhos).ok_or(ExternalError::NoLocalBackup)?;
         // Fase 54: só versões seladas pela chave do cofre aberto vão (travado no meio:
         // nenhuma). O estado fica preso só durante a conferência de cada versão.
         let geracao = |b: &[u8]| {
             let est = self.estado();
             backup::sealed_generation(&est.aberto.as_ref()?.cofre, b)
         };
-        externo::copiar(&local, &visto, &uuid, fonte, &geracao).map(Some)
+        external::copy(&local, &visto, &uuid, fonte, &geracao).map(Some)
     }
 
     /// Troca os programas do `ward ssh` (Fase 27). Só os testes do crate chamam (com
@@ -1736,16 +1736,16 @@ impl Daemon {
             .as_ref()
             .ok_or(ErroResposta::PendrivesIndisponiveis)?;
         let vistos = fonte
-            .pendrives()
+            .usb_drives()
             .ok_or(ErroResposta::PendrivesIndisponiveis)?;
         Ok(Resposta::Pendrives(
             vistos
                 .into_iter()
                 .take(MAX_PENDRIVES)
                 .map(|v| Pendrive {
-                    montado: v.montagem.is_some(),
+                    montado: v.mount.is_some(),
                     uuid: v.uuid,
-                    rotulo: v.rotulo,
+                    rotulo: v.label,
                 })
                 .collect(),
         ))

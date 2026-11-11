@@ -6,7 +6,7 @@
 //! O cofre é de teste, criado neste diretório pelo próprio núcleo, só com valores
 //! falsos; o socket (e o `<rt>`) fica num diretório só deste teste em `/run/user/<uid>/`.
 
-mod comum;
+mod common;
 
 use std::fs;
 use std::io::{Read, Write};
@@ -16,12 +16,12 @@ use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
-use comum::*;
+use common::*;
 use ward_core::protocolo::{self, ErroResposta, Fluxo, Papel, Resposta};
 
 const WARDD: &str = env!("CARGO_BIN_EXE_wardd");
 /// Senha do `t-livre` (falsa).
-const SENHA_LIVRE: &str = SEGREDOS[3];
+const SENHA_LIVRE: &str = SECRETS[3];
 const LICENCA: &str = "falso-licenca-run-26";
 const ANEXO: &str = "FALSO_ENV=falso-anexo-run-26";
 
@@ -118,7 +118,7 @@ fn destravar_por(w: &Wardd) {
         &mut s,
         &format!(
             r#"{{"v":1,"op":"destravar","dados":{{"senha":"{}"}}}}"#,
-            b64(SENHA.as_bytes())
+            b64(PASSWORD.as_bytes())
         ),
     );
     assert!(matches!(receber(&mut s), Some(Resposta::Ok)));
@@ -220,10 +220,10 @@ fn sha256(dados: &[u8]) -> String {
     String::from_utf8(out.stdout).unwrap()
 }
 
-/// Cofre de teste com, além do de `comum`, `t-nota` (nota segura) e `t-gen` (genérico
+/// Cofre de teste com, além do de `common`, `t-nota` (nota segura) e `t-gen` (genérico
 /// com extra secreto e anexo), os dois livres. Travado no fim (o binário o abre).
 fn cofre(dev: &Dir) {
-    let (d, _) = cofre_de_teste(dev);
+    let (d, _) = test_vault(dev);
     for q in [
         format!(
             r#"{{"entrada":{{"nome":"t-nota","grupo":"clientex","ambiente":"dev","tipo":"nota-segura","campos":{{"texto":"{}"}}}}}}"#,
@@ -236,11 +236,11 @@ fn cofre(dev: &Dir) {
             b64(ANEXO.as_bytes())
         ),
     ] {
-        let r = pedir(&d, Papel::App, "salvar_entrada", &q);
+        let r = request(&d, Papel::App, "salvar_entrada", &q);
         assert!(ok(&r), "{r:?}");
     }
     for n in ["t-nota", "t-gen"] {
-        assert!(ok(&mudar_nivel(&d, Papel::App, n, "livre", PIN)));
+        assert!(ok(&set_level(&d, Papel::App, n, "livre", PIN)));
     }
     d.travar();
 }
@@ -272,7 +272,7 @@ fn vivo(pid: u32) -> bool {
 /// locale (handoff 22a).
 #[test]
 fn v4_entrega_mascara_codigo_e_recusas() {
-    let dev = Dir::novo("run");
+    let dev = Dir::new("run");
     cofre(&dev);
     let sock = DirSocket::novo("run");
     let w = subir(&dev, &sock);
@@ -310,10 +310,14 @@ fn v4_entrega_mascara_codigo_e_recusas() {
         let r = run(&w, "t-livre", &sh(script), &[]);
         assert_eq!(r.fim, Some(0), "{script}: {r:?}");
         let tudo = [r.saida.as_slice(), r.erro.as_slice()].concat();
-        assert!(!contem(&tudo, b"falso-livre"), "{script}: {}", texto(&tudo));
-        assert!(!contem(&tudo, b"ZmFsc28tbGl2cmU"), "{script}");
         assert!(
-            contem(&tudo, "••••".as_bytes()),
+            !contains(&tudo, b"falso-livre"),
+            "{script}: {}",
+            texto(&tudo)
+        );
+        assert!(!contains(&tudo, b"ZmFsc28tbGl2cmU"), "{script}");
+        assert!(
+            contains(&tudo, "••••".as_bytes()),
             "{script}: {}",
             texto(&tudo)
         );
@@ -380,7 +384,7 @@ fn v4_entrega_mascara_codigo_e_recusas() {
         &[("LANG", "C")],
     );
     assert!(texto(&r.saida).contains("UTF-8"), "{r:?}");
-    assert!(!contem(&r.saida, b"falso-livre"), "{r:?}");
+    assert!(!contains(&r.saida, b"falso-livre"), "{r:?}");
 
     // Entrada padrão (D13).
     let mut s = conectar(&w);
@@ -478,10 +482,10 @@ fn v4_entrega_mascara_codigo_e_recusas() {
 
     // S13: nada de segredo no log (`RUST_LOG=trace`).
     let log = fs::read(&w.log).unwrap();
-    for segredo in [SENHA, SENHA_LIVRE, LICENCA, ANEXO, "falso-nota-run-26"] {
-        assert!(!contem(&log, segredo.as_bytes()), "{segredo} no log");
+    for segredo in [PASSWORD, SENHA_LIVRE, LICENCA, ANEXO, "falso-nota-run-26"] {
+        assert!(!contains(&log, segredo.as_bytes()), "{segredo} no log");
         assert!(
-            !contem(&log, b64(segredo.as_bytes()).as_bytes()),
+            !contains(&log, b64(segredo.as_bytes()).as_bytes()),
             "{segredo} (b64) no log"
         );
     }
@@ -499,7 +503,7 @@ fn v4_entrega_mascara_codigo_e_recusas() {
 /// trabalho continua o da CLI.
 #[test]
 fn f26a_ataque_ambiente_da_cli_nao_muda_o_comando() {
-    let dev = Dir::novo("f26a");
+    let dev = Dir::new("f26a");
     cofre(&dev);
     let sock = DirSocket::novo("f26a");
     let w = subir(&dev, &sock);
@@ -650,7 +654,7 @@ fn f26a_ataque_ambiente_da_cli_nao_muda_o_comando() {
 
 #[test]
 fn v4_15_cli_que_cai_e_daemon_morto() {
-    let dev = Dir::novo("cai");
+    let dev = Dir::new("cai");
     cofre(&dev);
     let sock = DirSocket::novo("cai");
     let mut w = subir(&dev, &sock);
@@ -744,7 +748,7 @@ fn v4_15_cli_que_cai_e_daemon_morto() {
 /// `environ` do filho deixar de ser legível, ele falha e o registro muda.
 #[test]
 fn ra1_registro_environ_do_filho_legivel_pelo_mesmo_uid() {
-    let dev = Dir::novo("ra1");
+    let dev = Dir::new("ra1");
     cofre(&dev);
     let sock = DirSocket::novo("ra1");
     let w = subir(&dev, &sock);
@@ -760,7 +764,7 @@ fn ra1_registro_environ_do_filho_legivel_pelo_mesmo_uid() {
     };
     let environ = fs::read(format!("/proc/{pid}/environ")).unwrap_or_default();
     assert!(
-        contem(&environ, LICENCA.as_bytes()),
+        contains(&environ, LICENCA.as_bytes()),
         "RA1 mudou: o environ do filho deixou de ser legível pelo mesmo uid"
     );
     // O daemon, não-dumpable (S8), não é legível.
@@ -776,7 +780,7 @@ fn ra1_registro_environ_do_filho_legivel_pelo_mesmo_uid() {
 /// não executa nada (a CLI mede antes; aqui é a segunda camada).
 #[test]
 fn d52_pedido_grande_demais_recusado_pelo_daemon() {
-    let dev = Dir::novo("d52");
+    let dev = Dir::new("d52");
     cofre(&dev);
     let sock = DirSocket::novo("d52");
     let w = subir(&dev, &sock);
@@ -810,7 +814,7 @@ fn d52_pedido_grande_demais_recusado_pelo_daemon() {
 /// outra conexão (o `ward destravar`) solta o pedido, que roda com a entrega.
 #[test]
 fn v4_21_travado_espera_o_destravar_da_cli() {
-    let dev = Dir::novo("v421");
+    let dev = Dir::new("v421");
     cofre(&dev);
     let sock = DirSocket::novo("v421");
     let w = subir(&dev, &sock);
@@ -834,7 +838,7 @@ fn v4_21_travado_espera_o_destravar_da_cli() {
 /// `••••`, na saída e no erro.
 #[test]
 fn f28g_ataque_write_unico_grande_nao_mostra_o_comeco_da_senha() {
-    let dev = Dir::novo("run-28g");
+    let dev = Dir::new("run-28g");
     cofre(&dev);
     let sock = DirSocket::novo("28g");
     let w = subir(&dev, &sock);
@@ -851,7 +855,7 @@ fn f28g_ataque_write_unico_grande_nao_mostra_o_comeco_da_senha() {
             assert_eq!(r.fim, Some(0), "fd={fd} n={n}: {:?}", r.falha);
             let tudo = if fd == 1 { &r.saida } else { &r.erro };
             assert!(
-                !contem(tudo, b"falso-"),
+                !contains(tudo, b"falso-"),
                 "fd={fd} n={n}: o começo da senha saiu em claro"
             );
             let mut esperado = vec![b'b'; n];
@@ -860,7 +864,7 @@ fn f28g_ataque_write_unico_grande_nao_mostra_o_comeco_da_senha() {
         }
     }
     let log = fs::read(&w.log).unwrap();
-    assert!(!contem(&log, SENHA_LIVRE.as_bytes()));
+    assert!(!contains(&log, SENHA_LIVRE.as_bytes()));
 }
 
 /// Fase 54 (S8), ataque da auditoria final: o comando do `ward run` recebeu a senha no
@@ -870,7 +874,7 @@ fn f28g_ataque_write_unico_grande_nao_mostra_o_comeco_da_senha() {
 /// trava espera o destravar, como o V4.21.
 #[test]
 fn f54_ataque_ward_run_morre_na_trava() {
-    let dev = Dir::novo("run-54");
+    let dev = Dir::new("run-54");
     cofre(&dev);
     let sock = DirSocket::novo("54");
     let w = subir(&dev, &sock);
@@ -930,8 +934,8 @@ fn f54_ataque_ward_run_morre_na_trava() {
     assert_eq!(r.fim, Some(3), "{r:?}");
     assert!(r.erro.is_empty(), "{r:?}");
     let log = fs::read(&w.log).unwrap();
-    assert!(!contem(&log, SENHA_LIVRE.as_bytes()));
-    assert!(contem(&log, "encerrado(s) ao travar".as_bytes()));
+    assert!(!contains(&log, SENHA_LIVRE.as_bytes()));
+    assert!(contains(&log, "encerrado(s) ao travar".as_bytes()));
 }
 
 /// Fase 55 (S8), os dois passos da reauditoria final contra o `wardd` de verdade:
@@ -945,7 +949,7 @@ fn f54_ataque_ward_run_morre_na_trava() {
 /// correção (o fugitivo sobrevive) está em `ward-platform/tests/subreaper.rs`.
 #[test]
 fn f55_ataque_descendente_fora_do_grupo_morre_no_fim_e_na_trava() {
-    let dev = Dir::novo("run-55");
+    let dev = Dir::new("run-55");
     cofre(&dev);
     let sock = DirSocket::novo("55");
     let w = subir(&dev, &sock);
@@ -1007,7 +1011,7 @@ fn f55_ataque_descendente_fora_do_grupo_morre_no_fim_e_na_trava() {
         "o filho com setpgid usou a senha depois da trava"
     );
     let log = fs::read(&w.log).unwrap();
-    assert!(!contem(&log, SENHA_LIVRE.as_bytes()));
+    assert!(!contains(&log, SENHA_LIVRE.as_bytes()));
 }
 
 /// Fase 54b (D68): quem declara a entrada padrão nula não manda nada depois. A entrada
@@ -1015,7 +1019,7 @@ fn f55_ataque_descendente_fora_do_grupo_morre_no_fim_e_na_trava() {
 /// `entrada_padrao` com dados mata o grupo, sem o dado chegar ao comando.
 #[test]
 fn f54b_ataque_entrada_nula_com_dado_mata_o_comando() {
-    let dev = Dir::novo("run-54b-nula");
+    let dev = Dir::new("run-54b-nula");
     cofre(&dev);
     let sock = DirSocket::novo("54b-nula");
     let w = subir(&dev, &sock);
@@ -1041,11 +1045,11 @@ fn f54b_ataque_entrada_nula_com_dado_mata_o_comando() {
     assert!(antes.elapsed() < Duration::from_secs(3), "o comando seguiu");
     assert_eq!(r.fim, Some(137), "{r:?}");
     let tudo = [r.saida.as_slice(), r.erro.as_slice()].concat();
-    assert!(!contem(&tudo, b"falso-script-do-agente"), "{r:?}");
-    assert!(!contem(&tudo, b"fim"), "{r:?}");
+    assert!(!contains(&tudo, b"falso-script-do-agente"), "{r:?}");
+    assert!(!contains(&tudo, b"fim"), "{r:?}");
     let log = fs::read(&w.log).unwrap();
-    assert!(contem(&log, "entrada padrão declarada nula".as_bytes()));
-    assert!(!contem(&log, b"falso-script-do-agente"));
+    assert!(contains(&log, "entrada padrão declarada nula".as_bytes()));
+    assert!(!contains(&log, b"falso-script-do-agente"));
 }
 
 const APROVADOR: &str = env!("CARGO_BIN_EXE_wardd-aprovador-teste");
@@ -1057,7 +1061,7 @@ const APROVADOR: &str = env!("CARGO_BIN_EXE_wardd-aprovador-teste");
 /// sai; com a caixa, roda. Com terminal, "Permitir uma vez" passa como antes.
 #[test]
 fn f54b_ataque_script_por_pipe_na_aprovacao() {
-    let dev = Dir::novo("run-54b-aprov");
+    let dev = Dir::new("run-54b-aprov");
     cofre(&dev);
     let app = dev.0.join("wardd-aprovador-teste");
     fs::hard_link(APROVADOR, &app).unwrap();
@@ -1136,7 +1140,7 @@ fn f54b_ataque_script_por_pipe_na_aprovacao() {
     entrada_padrao(&mut s, b"");
     let r = ler_sessao(&mut s);
     assert_eq!(r.fim, Some(0), "{r:?}");
-    assert_eq!(texto(&r.saida), format!("ENTREGUE:{}", SEGREDOS[0].len()));
+    assert_eq!(texto(&r.saida), format!("ENTREGUE:{}", SECRETS[0].len()));
 
     // 3. Terminal: "Permitir uma vez" sem a caixa, como antes.
     fs::write(&modo, format!("uma_vez {PIN}\n")).unwrap();
@@ -1153,14 +1157,14 @@ fn f54b_ataque_script_por_pipe_na_aprovacao() {
     entrada_padrao(&mut s, b"");
     let r = ler_sessao(&mut s);
     assert_eq!(r.fim, Some(0), "{r:?}");
-    assert_eq!(texto(&r.saida).trim(), SEGREDOS[0].len().to_string());
+    assert_eq!(texto(&r.saida).trim(), SECRETS[0].len().to_string());
 
     let log = fs::read(&w.log).unwrap();
-    for segredo in SEGREDOS {
-        assert!(!contem(&log, segredo.as_bytes()));
-        assert!(!contem(&fs::read(&log_app).unwrap(), segredo.as_bytes()));
+    for segredo in SECRETS {
+        assert!(!contains(&log, segredo.as_bytes()));
+        assert!(!contains(&fs::read(&log_app).unwrap(), segredo.as_bytes()));
     }
-    assert!(contem(
+    assert!(contains(
         &log,
         b"confirma\xc3\xa7\xc3\xa3o da entrada padr\xc3\xa3o"
     ));

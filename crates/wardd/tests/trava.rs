@@ -11,7 +11,7 @@
 //! - sinal forjado por quem não é o logind não destrava nem desfaz a trava;
 //! - a suspensão não passa à frente da trava (o inibidor só é solto depois).
 
-mod comum;
+mod common;
 
 use std::collections::HashMap;
 use std::fs;
@@ -26,7 +26,7 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use comum::*;
+use common::*;
 use ward_core::protocolo::{self, ErroResposta, Papel, Resposta};
 use wardd::nucleo::{Daemon, Relogio};
 use zbus::Connection;
@@ -80,23 +80,23 @@ impl Relogio for RelogioManual {
 /// Cofre de teste novo (destravado em t = 0) no `dir`, com o relógio manual.
 fn cofre_com_relogio(dir: &Dir) -> (Daemon, RelogioManual) {
     let r = RelogioManual::novo();
-    let d = Daemon::novo(dir.caminhos(), Box::new(r.clone()));
-    let criar = pedir(
+    let d = Daemon::novo(dir.paths(), Box::new(r.clone()));
+    let criar = request(
         &d,
         Papel::App,
         "criar_cofre",
         &format!(
             r#"{{"senha":"{}","pin":"{}"}}"#,
-            b64(SENHA.as_bytes()),
+            b64(PASSWORD.as_bytes()),
             b64(PIN.as_bytes())
         ),
     );
     assert!(ok(&criar), "{criar:?}");
-    let s = pedir(
+    let s = request(
         &d,
         Papel::App,
         "salvar_entrada",
-        &login("t-aprov", SEGREDOS[0]),
+        &login("t-aprov", SECRETS[0]),
     );
     assert!(ok(&s), "{s:?}");
     (d, r)
@@ -104,13 +104,13 @@ fn cofre_com_relogio(dir: &Dir) -> (Daemon, RelogioManual) {
 
 /// Uma ação do app (a lista da tela Credenciais): conta como uso (Fase 54).
 fn lista_ok(d: &Daemon) {
-    let r = pedir(d, Papel::App, "lista", "{}");
+    let r = request(d, Papel::App, "lista", "{}");
     assert!(matches!(r, Resposta::Lista(_)), "{r:?}");
 }
 
 #[test]
 fn v3_19_inatividade_com_relogio_injetado() {
-    let dir = Dir::novo("inat");
+    let dir = Dir::new("inat");
     let (d, r) = cofre_com_relogio(&dir);
     // Padrão da configuração (D30): 240 min.
     r.por(4 * H - 60);
@@ -120,7 +120,7 @@ fn v3_19_inatividade_com_relogio_injetado() {
     assert!(d.travar_se_inativo(), "4h00 sem uso trava");
     assert!(d.travado());
     assert_eq!(
-        erro(&pedir(&d, Papel::Agente, "lista", "{}")),
+        error(&request(&d, Papel::Agente, "lista", "{}")),
         Some(ErroResposta::Travado)
     );
     // Travado, nada mais a fazer.
@@ -129,7 +129,7 @@ fn v3_19_inatividade_com_relogio_injetado() {
     // Um uso às 3h zera a contagem.
     let t0 = 10 * H;
     r.por(t0);
-    assert!(ok(&destravar(&d, SENHA)));
+    assert!(ok(&unlock(&d, PASSWORD)));
     r.por(t0 + 3 * H);
     lista_ok(&d);
     r.por(t0 + 4 * H);
@@ -142,18 +142,18 @@ fn v3_19_inatividade_com_relogio_injetado() {
 
 #[test]
 fn v3_19_tempo_lido_da_configuracao_do_cofre() {
-    let dir = Dir::novo("cfg");
+    let dir = Dir::new("cfg");
     let (d, r) = cofre_com_relogio(&dir);
-    let t = pedir(&d, Papel::App, "tempo_trava", r#"{"minutos":30}"#);
+    let t = request(&d, Papel::App, "tempo_trava", r#"{"minutos":30}"#);
     assert!(ok(&t), "{t:?}");
     r.por(30 * 60 - 1);
     assert!(!d.travar_se_inativo());
     r.por(30 * 60);
     assert!(d.travar_se_inativo(), "30 min da configuração");
     // Vale depois de reabrir: o tempo está no cofre, não na memória.
-    let d2 = Daemon::novo(dir.caminhos(), Box::new(r.clone()));
+    let d2 = Daemon::novo(dir.paths(), Box::new(r.clone()));
     r.por(100 * H);
-    assert!(ok(&destravar(&d2, SENHA)));
+    assert!(ok(&unlock(&d2, PASSWORD)));
     r.por(100 * H + 29 * 60);
     assert!(!d2.travar_se_inativo());
     r.por(100 * H + 30 * 60);
@@ -162,7 +162,7 @@ fn v3_19_tempo_lido_da_configuracao_do_cofre() {
 
 #[test]
 fn ataque_agente_nao_segura_o_cofre_aberto_com_estado_ou_erro() {
-    let dir = Dir::novo("segura");
+    let dir = Dir::new("segura");
     let (d, r) = cofre_com_relogio(&dir);
     // Durante 4 h, a cada 10 min: `estado`, entrada inexistente, `destravar` repetido,
     // pedido de app pelo agente e, quatro vezes, PIN errado (o quinto travaria pelo S9).
@@ -170,11 +170,11 @@ fn ataque_agente_nao_segura_o_cofre_aberto_com_estado_ou_erro() {
     while t < 4 * H {
         r.por(t);
         assert!(matches!(
-            pedir(&d, Papel::Agente, "estado", "{}"),
+            request(&d, Papel::Agente, "estado", "{}"),
             Resposta::Estado { travado: false, .. }
         ));
         assert_eq!(
-            erro(&pedir(
+            error(&request(
                 &d,
                 Papel::Agente,
                 "executar",
@@ -183,9 +183,9 @@ fn ataque_agente_nao_segura_o_cofre_aberto_com_estado_ou_erro() {
             Some(ErroResposta::EntradaInexistente)
         );
         // `destravar` com o cofre já aberto (qualquer senha) não é uso.
-        assert!(ok(&destravar(&d, "qualquer-coisa")));
+        assert!(ok(&unlock(&d, "qualquer-coisa")));
         assert!(
-            erro(&pedir(
+            error(&request(
                 &d,
                 Papel::Agente,
                 "detalhe",
@@ -194,8 +194,8 @@ fn ataque_agente_nao_segura_o_cofre_aberto_com_estado_ou_erro() {
             .is_some()
         );
         if t % 2400 == 0 && t / 2400 < 4 {
-            let m = mudar_nivel(&d, Papel::App, "t-aprov", "livre", PIN_ERRADO);
-            assert_eq!(erro(&m), Some(ErroResposta::PinIncorreto));
+            let m = set_level(&d, Papel::App, "t-aprov", "livre", WRONG_PIN);
+            assert_eq!(error(&m), Some(ErroResposta::PinIncorreto));
         }
         assert!(!d.travar_se_inativo(), "t = {t}");
         t += 600;
@@ -212,14 +212,14 @@ fn ataque_agente_nao_segura_o_cofre_aberto_com_estado_ou_erro() {
 /// do app, sim, zera a contagem.
 #[test]
 fn ataque_lista_periodica_do_agente_nao_adia_a_trava() {
-    let dir = Dir::novo("lista54");
+    let dir = Dir::new("lista54");
     let (d, r) = cofre_com_relogio(&dir);
     let mut t = 0;
     while t < 4 * H {
         r.por(t);
-        let l = pedir(&d, Papel::Agente, "lista", "{}");
+        let l = request(&d, Papel::Agente, "lista", "{}");
         assert!(matches!(l, Resposta::Lista(_)), "{l:?}");
-        let s = pedir(
+        let s = request(
             &d,
             Papel::Extensao,
             "sugerir",
@@ -238,7 +238,7 @@ fn ataque_lista_periodica_do_agente_nao_adia_a_trava() {
     // Controle: com uma ação do app às 3h, a 4h00 não trava.
     let t0 = 10 * H;
     r.por(t0);
-    assert!(ok(&destravar(&d, SENHA)));
+    assert!(ok(&unlock(&d, PASSWORD)));
     r.por(t0 + 3 * H);
     lista_ok(&d);
     r.por(t0 + 4 * H);
@@ -250,27 +250,27 @@ fn ataque_lista_periodica_do_agente_nao_adia_a_trava() {
 /// `totp` que o formulário renova, não adia a trava: a 4h00 o cofre trava.
 #[test]
 fn ataque_f55_ward_run_negado_e_janela_nao_adiam_a_trava() {
-    let dir = Dir::novo("negado55");
+    let dir = Dir::new("negado55");
     let (d, r) = cofre_com_relogio(&dir);
     let totp = format!(
         r#"{{"entrada":{{"nome":"t-totp","grupo":"clientex","ambiente":"dev","tipo":"login","campos":{{"url":"https://clientex.invalid/login","usuario":"admin","senha":"{}","totp_semente":"{}"}}}}}}"#,
-        b64(SEGREDOS[1].as_bytes()),
+        b64(SECRETS[1].as_bytes()),
         b64(b"JBSWY3DPEHPK3PXP")
     );
-    assert!(ok(&pedir(&d, Papel::App, "salvar_entrada", &totp)));
+    assert!(ok(&request(&d, Papel::App, "salvar_entrada", &totp)));
     let mut t = 0;
     while t < 4 * H {
         r.por(t);
-        let (negado, vistos) = com_janela(&d, "negar", None, || {
-            let p = ped(Papel::Agente, "executar", &executar("t-aprov")).unwrap();
+        let (negado, vistos) = with_window(&d, "negar", None, || {
+            let p = req(Papel::Agente, "executar", &executar("t-aprov")).unwrap();
             d.autorizar_uso(&wardd::aprovacao::SemCliente, &p)
         });
         assert_eq!(negado.err(), Some(ErroResposta::Negado));
         assert_eq!(vistos.len(), 1);
         // O que a janela pede para mostrar o pedido e o formulário aberto.
-        let det = pedir(&d, Papel::App, "detalhe", r#"{"entrada":"t-aprov"}"#);
+        let det = request(&d, Papel::App, "detalhe", r#"{"entrada":"t-aprov"}"#);
         assert!(matches!(det, Resposta::Detalhe(_)), "{det:?}");
-        let c = pedir(&d, Papel::App, "totp", r#"{"entrada":"t-totp"}"#);
+        let c = request(&d, Papel::App, "totp", r#"{"entrada":"t-totp"}"#);
         assert!(matches!(c, Resposta::CodigoTotp { .. }), "{c:?}");
         assert!(!d.travar_se_inativo(), "t = {t}");
         t += 600;
@@ -294,31 +294,31 @@ fn executar(entrada: &str) -> String {
 /// quem errou a senha, nem cria espera para o usuário).
 #[test]
 fn d62_trava_automatica_nao_mexe_na_espera_do_d20() {
-    let dir = Dir::novo("d20");
+    let dir = Dir::new("d20");
     let (d, r) = cofre_com_relogio(&dir);
     r.por(4 * H);
     assert!(d.travar_se_inativo());
     r.esperas();
     // Depois da trava automática, a primeira tentativa não espera.
     assert_eq!(
-        erro(&destravar(&d, "senha-errada")),
+        error(&unlock(&d, "senha-errada")),
         Some(ErroResposta::SenhaIncorreta)
     );
     assert_eq!(
-        erro(&destravar(&d, "senha-errada")),
+        error(&unlock(&d, "senha-errada")),
         Some(ErroResposta::SenhaIncorreta)
     );
     assert_eq!(r.esperas(), [Duration::ZERO, Duration::from_secs(1)]);
     // Travado, a conferência de inatividade não zera as duas falhas: a próxima espera 2 s.
     r.por(100 * H);
     assert!(!d.travar_se_inativo());
-    assert!(ok(&destravar(&d, SENHA)));
+    assert!(ok(&unlock(&d, PASSWORD)));
     assert_eq!(r.esperas(), [Duration::from_secs(2)]);
 }
 
 #[test]
 fn ataque_relogio_que_volta_ou_ilegivel_trava() {
-    let dir = Dir::novo("relogio");
+    let dir = Dir::new("relogio");
     let (d, r) = cofre_com_relogio(&dir);
     r.por(2 * H);
     lista_ok(&d);
@@ -326,15 +326,15 @@ fn ataque_relogio_que_volta_ou_ilegivel_trava() {
     assert!(d.travar_se_inativo(), "relógio voltou: trava");
 
     r.por(5 * H);
-    assert!(ok(&destravar(&d, SENHA)));
+    assert!(ok(&unlock(&d, PASSWORD)));
     r.ilegivel();
     assert!(d.travar_se_inativo(), "relógio ilegível: trava");
 
     // Uso anotado sem relógio também trava na conferência seguinte.
     r.por(6 * H);
-    assert!(ok(&destravar(&d, SENHA)));
+    assert!(ok(&unlock(&d, PASSWORD)));
     r.ilegivel();
-    let _ = pedir(&d, Papel::App, "lista", "{}");
+    let _ = request(&d, Papel::App, "lista", "{}");
     r.por(6 * H + 1);
     assert!(d.travar_se_inativo());
 }
@@ -533,7 +533,7 @@ impl LogindFalso {
 
 /// Daemon de teste com o vigia do logind ligado ao barramento falso.
 fn daemon_vigiado(dir: &Dir, b: &BarramentoFalso) -> (Arc<Daemon>, mpsc::Receiver<()>) {
-    let (d, _r) = cofre_de_teste(dir);
+    let (d, _r) = test_vault(dir);
     let d = Arc::new(d);
     let (tx, rx) = mpsc::channel();
     let tx = Mutex::new(tx);
@@ -566,7 +566,7 @@ fn espera_travar(d: &Daemon, limite: Duration) -> Duration {
 fn v3_19_lock_e_locked_hint_travam_em_ate_2s() {
     let b = BarramentoFalso::subir();
     let logind = LogindFalso::novo(&b);
-    let dir = Dir::novo("lock");
+    let dir = Dir::new("lock");
     let (d, _pronto) = daemon_vigiado(&dir, &b);
     assert!(!d.travado());
 
@@ -575,7 +575,7 @@ fn v3_19_lock_e_locked_hint_travam_em_ate_2s() {
     espera_travar(&d, Duration::from_secs(2));
 
     // `LockedHint` falso não trava; verdadeiro trava.
-    assert!(ok(&destravar(&d, SENHA)));
+    assert!(ok(&unlock(&d, PASSWORD)));
     logind.locked_hint(false);
     std::thread::sleep(Duration::from_millis(300));
     assert!(!d.travado(), "LockedHint falso não trava");
@@ -587,7 +587,7 @@ fn v3_19_lock_e_locked_hint_travam_em_ate_2s() {
 fn v3_19_prepare_for_sleep_trava_antes_de_soltar_o_inibidor() {
     let b = BarramentoFalso::subir();
     let logind = LogindFalso::novo(&b);
-    let dir = Dir::novo("sleep");
+    let dir = Dir::new("sleep");
     let (d, _pronto) = daemon_vigiado(&dir, &b);
     let fechou = logind.inibidor(0);
     assert!(
@@ -605,7 +605,7 @@ fn v3_19_prepare_for_sleep_trava_antes_de_soltar_o_inibidor() {
     // Ao acordar, o daemon pega outro inibidor; a próxima suspensão trava de novo.
     logind.prepare_for_sleep(false);
     let fechou2 = logind.inibidor(1);
-    assert!(ok(&destravar(&d, SENHA)));
+    assert!(ok(&unlock(&d, PASSWORD)));
     logind.prepare_for_sleep(true);
     fechou2.recv_timeout(Duration::from_secs(2)).unwrap();
     assert!(d.travado());
@@ -615,7 +615,7 @@ fn v3_19_prepare_for_sleep_trava_antes_de_soltar_o_inibidor() {
 fn ataque_barramento_cai_com_o_cofre_aberto_trava() {
     let mut b = BarramentoFalso::subir();
     let _logind = LogindFalso::novo(&b);
-    let dir = Dir::novo("cai");
+    let dir = Dir::new("cai");
     let (d, _pronto) = daemon_vigiado(&dir, &b);
     assert!(!d.travado());
     b.matar();
@@ -626,7 +626,7 @@ fn ataque_barramento_cai_com_o_cofre_aberto_trava() {
 fn ataque_sinal_forjado_nao_destrava_nem_segura() {
     let b = BarramentoFalso::subir();
     let logind = LogindFalso::novo(&b);
-    let dir = Dir::novo("forja");
+    let dir = Dir::new("forja");
     let (d, _pronto) = daemon_vigiado(&dir, &b);
     // Um processo qualquer no barramento (não é o dono de org.freedesktop.login1).
     let forjador = b.cliente();
@@ -658,7 +658,7 @@ fn ataque_sinal_forjado_nao_destrava_nem_segura() {
     std::thread::sleep(Duration::from_millis(300));
     assert!(d.travado(), "nada do barramento destrava");
     assert_eq!(
-        erro(&pedir(&d, Papel::Agente, "lista", "{}")),
+        error(&request(&d, Papel::Agente, "lista", "{}")),
         Some(ErroResposta::Travado)
     );
 }
@@ -703,9 +703,9 @@ fn esperar_no_log(log: &Path, texto: &str) {
 fn v3_19_binario_trava_com_lock_session_do_logind_falso() {
     let b = BarramentoFalso::subir();
     let logind = LogindFalso::novo(&b);
-    let dev = Dir::novo("bin");
+    let dev = Dir::new("bin");
     // O cofre de teste é criado pelo núcleo e depois servido pelo binário.
-    drop(cofre_de_teste(&dev));
+    drop(test_vault(&dev));
     let sock = b.dir.join("sock");
     let log = dev.0.join("wardd.log");
     let _w = Filho(
@@ -743,7 +743,7 @@ fn v3_19_binario_trava_com_lock_session_do_logind_falso() {
     let r = pedir_por(
         &mut s,
         "destravar",
-        &format!(r#"{{"senha":"{}"}}"#, b64(SENHA.as_bytes())),
+        &format!(r#"{{"senha":"{}"}}"#, b64(PASSWORD.as_bytes())),
     );
     assert!(ok(&r), "{r:?}");
     logind.lock();
@@ -760,14 +760,14 @@ fn v3_19_binario_trava_com_lock_session_do_logind_falso() {
     esperar_no_log(&log, "tela bloqueada: cofre travado");
     // O log não tem senha nem segredo (S13).
     let texto = fs::read(&log).unwrap();
-    for seg in [SENHA, PIN].iter().chain(SEGREDOS.iter()) {
-        assert!(!contem(&texto, seg.as_bytes()), "segredo no log");
+    for seg in [PASSWORD, PIN].iter().chain(SECRETS.iter()) {
+        assert!(!contains(&texto, seg.as_bytes()), "segredo no log");
     }
 }
 
 #[test]
 fn daemon_de_teste_sem_barramento_falso_nao_liga_o_logind() {
-    let dev = Dir::novo("semdbus");
+    let dev = Dir::new("semdbus");
     let b = BarramentoFalso::subir(); // só para ter um diretório curto do socket
     let sock = b.dir.join("sock2");
     let log = dev.0.join("wardd.log");

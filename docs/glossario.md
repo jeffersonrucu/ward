@@ -2431,6 +2431,45 @@ simultaneas, total }` → `Limits { concurrent, total }`, `LIMITES_SALTO`/`LIMIT
 `pai_do_stat`/`grupo_do_stat`/`sessao_do_stat` → `stat_parent`/`stat_group`/
 `stat_session`. Os nomes das threads (`wardd-ponte*`) são literais e ficam.
 
+Fase 23 (`wardd`: `server`, `external`, `udisks` e os testes `common`, `units`, `memory`,
+`socket`, `dates`; nomes próprios desses arquivos): módulos `servidor` → `server`,
+`externo` → `external`, `tests/comum` → `tests/common`, `tests/memoria` → `tests/memory`,
+`tests/datas` → `tests/dates` (`mod testes` → `tests`). `server`: `MAX_CONEXOES`/
+`MAX_CONEXOES_APP` → `MAX_CONNECTIONS`/`MAX_APP_CONNECTIONS`, `PRAZO_LEITURA`/
+`PRAZO_ESCRITA` → `READ_DEADLINE`/`WRITE_DEADLINE`; `Vaga { ociosa, desde }` → `Slot {
+idle, since }`, `Vagas { lista, proximo }` → `Slots { list, next_id }` (`reservar`/
+`marcar`/`soltar` → `reserve`/`mark`/`release`), `Soltar` → `ReleaseOnDrop`; `Papeis {
+instalacao, app, app_de_teste, extensao_de_teste }` → `Roles { install, app, test_app,
+test_extension }` (`papel` → `role`); `papel_da_classe` → `role_from_class`; `responder`
+→ `answer`; `AssinanteSocket { escrita }` → `SocketSubscriber { write_lock }`;
+`ClienteSocket { par }` → `SocketClient { peer }`; `atender_conexao` → `serve_connection`;
+`servir` → `serve`. `external`: `PASTA` → `BACKUP_DIR`, `PREFIXO_TEMPORARIO` →
+`TEMP_PREFIX`; `Visto { rotulo, montagem, dispositivo }` → `Seen { label, mount, device }`;
+`FontePendrives::pendrives` → `UsbDriveSource::usb_drives`; `ErroExterno` →
+`ExternalError` com `SemUdisks`/`NaoConectado`/`Ambiguo`/`NaoMontado`/`Trocado`/
+`PastaInsegura`/`SemBackupLocal` → `NoUdisks`/`NotConnected`/`Ambiguous`/`NotMounted`/
+`Swapped`/`UnsafeDir`/`NoLocalBackup` (`codigo` → `code`); `Copia { copiadas, apagadas }`
+→ `BackupCopy { copied, deleted }`; `escolher`/`copiar`/`rodar` → `choose`/`copy`/
+`rotate`; privados `pelo_fd` → `via_fd`, `abrir_montagem`/`abrir_destino` → `open_mount`/
+`open_destination`, `versoes_em`/`geracoes_em` → `versions_in`/`generations_in`,
+`ler_versao`/`gravar_versao` → `read_version`/`write_version`, `limpar_temporarios` →
+`clean_temp_files`, `teto` → `cap`. `udisks`: `CAMINHO_UDISKS` → `UDISKS_PATH`,
+`MAX_OBJETOS`/`MAX_MONTAGEM` → `MAX_OBJECTS`/`MAX_MOUNT`, `ESPERA_RAJADA` → `BURST_WAIT`,
+`INTERVALO_COPIA` → `COPY_INTERVAL`, `FILA` → `QUEUE`, `Objetos` → `Objects`;
+`montagem_valida`/`rotulo_limpo`/`ler_objetos`/`consultar`/`registrar` → `valid_mount`/
+`clean_label`/`read_objects`/`query`/`record`; `Udisks::novo` → `new`; `vigiar_copia`/
+`vigiar_udisks` → `watch_copy`/`watch_udisks` (`cutucoes` → `pokes`). Testes (`common`):
+`SENHA`/`PIN_ERRADO`/`SEGREDOS` → `PASSWORD`/`WRONG_PIN`/`SECRETS`, `RelogioFalso` →
+`FakeClock`, `Dir::novo`/`caminhos` → `new`/`paths`, `daemon_em` → `daemon_at`, `ped`/
+`pedir` → `req`/`request`, `erro` → `error`, `destravar` → `unlock`, `servidor`/`banco`
+→ `server`/`database`, `mudar_nivel` → `set_level`, `cofre_de_teste` → `test_vault`,
+`codificado` → `encoded`, `contem` → `contains`, `geracoes`/`geracao_no_disco` →
+`generations`/`generation_on_disk`, `com_janela` → `with_window` (`JanelaFalsa` →
+`FakeWindow`); `socket.rs`: `DirSocket` → `SocketDir`, `subir`/`conectar`/`mandar`/
+`receber`/`pedir_por` → `start`/`connect`/`send`/`receive`/`request_on`; `dates.rs`:
+`RelogioDeParede` → `WallClock`. Os nomes das threads (`wardd-conexao`, `wardd-externo`,
+`wardd-udisks`) e os textos de log (`UidRecusado`, `SemIdentidade`) são literais e ficam.
+
 Fase 21 (`wardd`: `execution`, `ssh_agent`, `ssh`, `ssh_tests`): módulos `execucao`/
 `agente_ssh`/`ssh_testes` → `execution`/`ssh_agent`/`ssh_tests` (`mod testes` → `tests`).
 `execution`: `Temporarios { pasta, arquivos }` → `TempFiles { dir, files }` (`criar`/

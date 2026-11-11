@@ -13,7 +13,7 @@
 
 #![cfg(feature = "test-hooks")]
 
-mod comum;
+mod common;
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -24,7 +24,7 @@ use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use comum::*;
+use common::*;
 use ward_core::entry::Secret;
 use ward_core::limits::MAX_COMMON_FRAME;
 use ward_core::protocolo::quadro::{self, LIMITE_RESPOSTA};
@@ -34,10 +34,10 @@ use wardd::nucleo::Daemon;
 use wardd::ssh::SshPrograms;
 use zeroize::Zeroizing;
 
-/// Senha dos servidores de teste (a de `comum::servidor`, falsa).
-const SENHA_SSH: &str = SEGREDOS[1];
+/// Senha dos servidores de teste (a de `common::server`, falsa).
+const SENHA_SSH: &str = SECRETS[1];
 /// Senha do `banco` do túnel (falsa).
-const SENHA_BANCO: &str = SEGREDOS[2];
+const SENHA_BANCO: &str = SECRETS[2];
 
 #[derive(Clone, Default)]
 struct RelogioManual(Arc<Mutex<Duration>>);
@@ -83,7 +83,7 @@ struct Cena {
 }
 
 fn salvar(d: &Daemon, json: &str) {
-    let r = pedir(d, Papel::App, "salvar_entrada", json);
+    let r = request(d, Papel::App, "salvar_entrada", json);
     assert!(ok(&r), "{r:?}");
 }
 
@@ -132,8 +132,8 @@ fn gerar_chave(dir: &Path) -> (Vec<u8>, String) {
 }
 
 fn cena(rotulo: &str) -> Cena {
-    let dir = Dir::novo(rotulo);
-    let (d, _) = cofre_de_teste(&dir);
+    let dir = Dir::new(rotulo);
+    let (d, _) = test_vault(&dir);
     let base = dir.0.join("falsos");
     fs::create_dir(&base).unwrap();
     let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/ssh_falso.py");
@@ -238,9 +238,9 @@ fn cena(rotulo: &str) -> Cena {
         "f-sftp-chave",
         "f-ftp",
     ] {
-        assert!(ok(&mudar_nivel(&d, Papel::App, n, "livre", PIN)));
+        assert!(ok(&set_level(&d, Papel::App, n, "livre", PIN)));
     }
-    assert!(ok(&mudar_nivel(&d, Papel::App, "s-bloq", "bloqueado", PIN)));
+    assert!(ok(&set_level(&d, Papel::App, "s-bloq", "bloqueado", PIN)));
     Cena {
         d: Arc::new(d),
         dir,
@@ -556,7 +556,7 @@ fn v4_35_d43_usuario_com_arroba_e_senha_so_no_ambiente() {
     // S4: o filho imprimiu a senha; a CLI só vê a marca.
     let t = r.texto();
     assert!(t.contains("SSHPASS=••••"), "{t}");
-    assert!(!contem(&r.saida, SENHA_SSH.as_bytes()) && !contem(&r.erro, SENHA_SSH.as_bytes()));
+    assert!(!contains(&r.saida, SENHA_SSH.as_bytes()) && !contains(&r.erro, SENHA_SSH.as_bytes()));
     assert!(t.contains("remoto=whoami -- -l x@y"), "{t}");
 }
 
@@ -911,14 +911,14 @@ fn d34_ataque_pty_prefixo_certo_e_errado_saem_iguais_e_na_hora() {
     assert!(t.contains(&errado), "{t}");
     assert!(t.contains(&certo), "o prefixo certo foi trocado: {t}");
     // A senha inteira nunca sai; o pedaço que a completa vira marca.
-    assert!(!contem(&r.saida, SENHA_SSH.as_bytes()), "{t}");
+    assert!(!contains(&r.saida, SENHA_SSH.as_bytes()), "{t}");
     assert!(t.contains(&format!("{certo}••••]")), "{t}");
     // Tempo: cada prefixo chega à CLI antes da pausa de 1 s acabar (nada segurado até
     // a saída seguinte); a chegada não depende de ser o prefixo certo.
     let quando = |marca: &str| {
         r.pedacos
             .iter()
-            .find(|(_, p)| contem(p, marca.as_bytes()))
+            .find(|(_, p)| contains(p, marca.as_bytes()))
             .map(|(t, _)| *t)
             .unwrap_or_else(|| panic!("sem {marca}: {:?}", linha_do_tempo()))
     };
@@ -971,7 +971,7 @@ fn d34_ataque_tempo_sem_pty_prefixo_nao_atrasa() {
             "candidato {i} segurado até o Z: {linha_do_tempo:?}"
         );
     }
-    assert!(!contem(&r.saida, SENHA_SSH.as_bytes()));
+    assert!(!contains(&r.saida, SENHA_SSH.as_bytes()));
 }
 
 /// Auditoria do M4 (baixo): `known_hosts` do Ward frouxo (outro usuário poderia ler os
@@ -1074,7 +1074,7 @@ fn v5_24_token_do_conectar() {
                 entrada: "s-outro".into(),
             },
         );
-        assert_eq!(erro(&r), Some(ErroResposta::NaoAutorizado), "{papel:?}");
+        assert_eq!(error(&r), Some(ErroResposta::NaoAutorizado), "{papel:?}");
     }
     let r = c.d.atender(
         Papel::App,
@@ -1082,7 +1082,7 @@ fn v5_24_token_do_conectar() {
             entrada: "t-livre".into(),
         },
     );
-    assert_eq!(erro(&r), Some(ErroResposta::PedidoInvalido));
+    assert_eq!(error(&r), Some(ErroResposta::PedidoInvalido));
 
     // Válido: pula a aprovação uma vez.
     let t = c.token("s-outro");
@@ -1116,7 +1116,7 @@ fn v5_24_token_do_conectar() {
     // Travar apaga os tokens.
     let t = c.token("s-outro");
     c.d.travar();
-    assert!(ok(&destravar(&c.d, SENHA)));
+    assert!(ok(&unlock(&c.d, PASSWORD)));
     assert_eq!(rodar(Some(&t), "s-outro").falha, indisponivel);
 
     // Bloqueada continua inexistente, mesmo com token válido.
@@ -1274,8 +1274,8 @@ fn fase28_salto_com_senha_pela_ponte() {
     );
     let erro = String::from_utf8_lossy(&r.erro).into_owned();
     assert!(erro.contains("erro-salto ••••"), "{erro}");
-    assert!(!contem(&r.saida, SENHA_SSH.as_bytes()));
-    assert!(!contem(&r.erro, SENHA_SSH.as_bytes()));
+    assert!(!contains(&r.saida, SENHA_SSH.as_bytes()));
+    assert!(!contains(&r.erro, SENHA_SSH.as_bytes()));
     let pt = porta.get();
     assert!(
         escuta_fechada(inode.get()),
@@ -1462,8 +1462,8 @@ for i in range(2):
         "D19: a senha do túnel na máscara: {t}"
     );
     for segredo in [SENHA_SSH, SENHA_BANCO] {
-        assert!(!contem(&r.saida, segredo.as_bytes()));
-        assert!(!contem(&r.erro, segredo.as_bytes()));
+        assert!(!contains(&r.saida, segredo.as_bytes()));
+        assert!(!contains(&r.erro, segredo.as_bytes()));
     }
     let erro = String::from_utf8_lossy(&r.erro).into_owned();
     assert!(erro.contains("erro-salto ••••"), "{erro}");

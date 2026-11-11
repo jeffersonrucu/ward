@@ -15,7 +15,7 @@
 //! - desligado por padrão, travado ou desligado depois: nada é consultado nem gravado;
 //! - agente e extensão não leem, não ligam e não listam pendrives (V7.8).
 
-mod comum;
+mod common;
 
 use std::collections::HashMap;
 use std::fs;
@@ -27,10 +27,10 @@ use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use comum::*;
+use common::*;
 use ward_core::backup::VERSIONS;
 use ward_core::protocolo::{ErroResposta, Papel, Resposta};
-use wardd::externo::{ErroExterno, FontePendrives, Visto};
+use wardd::external::{ExternalError, Seen, UsbDriveSource};
 use wardd::nucleo::Daemon;
 use zbus::connection::Builder;
 use zbus::{Connection, OwnedObjectPath, OwnedVariant, Variant};
@@ -43,19 +43,19 @@ const UUID_B: &str = "0F3C-9A51";
 /// Fonte de pendrives: a lista que o teste põe, contando as consultas.
 #[derive(Clone, Default)]
 struct Fonte {
-    vistos: Arc<Mutex<Vec<Visto>>>,
+    vistos: Arc<Mutex<Vec<Seen>>>,
     /// Respostas seguintes, uma por consulta (para mudar de ideia no meio).
-    proximas: Arc<Mutex<Vec<Vec<Visto>>>>,
+    proximas: Arc<Mutex<Vec<Vec<Seen>>>>,
     consultas: Arc<AtomicUsize>,
 }
 
 impl Fonte {
-    fn com(vistos: Vec<Visto>) -> Fonte {
+    fn com(vistos: Vec<Seen>) -> Fonte {
         let f = Fonte::default();
         *f.vistos.lock().unwrap() = vistos;
         f
     }
-    fn por(&self, vistos: Vec<Visto>) {
+    fn por(&self, vistos: Vec<Seen>) {
         *self.vistos.lock().unwrap() = vistos;
     }
     fn consultas(&self) -> usize {
@@ -63,8 +63,8 @@ impl Fonte {
     }
 }
 
-impl FontePendrives for Fonte {
-    fn pendrives(&self) -> Option<Vec<Visto>> {
+impl UsbDriveSource for Fonte {
+    fn usb_drives(&self) -> Option<Vec<Seen>> {
         self.consultas.fetch_add(1, Ordering::SeqCst);
         let mut p = self.proximas.lock().unwrap();
         if !p.is_empty() {
@@ -75,12 +75,12 @@ impl FontePendrives for Fonte {
 }
 
 /// Um "pendrive" montado em `dir` (o dispositivo é o `st_dev` do diretório).
-fn pendrive(uuid: &str, dir: &Path) -> Visto {
-    Visto {
+fn pendrive(uuid: &str, dir: &Path) -> Seen {
+    Seen {
         uuid: uuid.into(),
-        rotulo: "PENDRIVE".into(),
-        montagem: Some(dir.to_path_buf()),
-        dispositivo: fs::metadata(dir).unwrap().dev(),
+        label: "PENDRIVE".into(),
+        mount: Some(dir.to_path_buf()),
+        device: fs::metadata(dir).unwrap().dev(),
     }
 }
 
@@ -91,7 +91,7 @@ fn montagem(dir: &Dir, nome: &str) -> PathBuf {
 }
 
 fn ligar(d: &Daemon, papel: Papel, uuid: &str) -> Resposta {
-    pedir(
+    request(
         d,
         papel,
         "definir_backup_externo",
@@ -159,12 +159,12 @@ fn no_pendrive(m: &Path) -> Vec<String> {
 /// (desligado por padrão), e a configuração diz desligado, sem UUID.
 #[test]
 fn v7_4_desligado_por_padrao_nao_grava_nada() {
-    let dir = Dir::novo("ext-padrao");
-    let (d, _) = cofre_de_teste(&dir);
+    let dir = Dir::new("ext-padrao");
+    let (d, _) = test_vault(&dir);
     let a = montagem(&dir, "pendrive-a");
     let fonte = Fonte::com(vec![pendrive(UUID_A, &a)]);
     let d = d.com_pendrives(Arc::new(fonte.clone()));
-    match pedir(&d, Papel::App, "backup_externo", "{}") {
+    match request(&d, Papel::App, "backup_externo", "{}") {
         Resposta::BackupExterno { ligado, uuid } => {
             assert!(!ligado);
             assert_eq!(uuid, None);
@@ -175,7 +175,7 @@ fn v7_4_desligado_por_padrao_nao_grava_nada() {
     assert_eq!(fonte.consultas(), 0, "desligado nem consulta o udisks2");
     assert!(arvore(&a).is_empty(), "nada no pendrive");
     // A lista de pendrives (para o app escolher) funciona e não grava nada.
-    match pedir(&d, Papel::App, "pendrives", "{}") {
+    match request(&d, Papel::App, "pendrives", "{}") {
         Resposta::Pendrives(l) => {
             assert_eq!(l.len(), 1);
             assert_eq!(l[0].uuid, UUID_A);
@@ -194,13 +194,13 @@ fn v7_4_desligado_por_padrao_nao_grava_nada() {
 /// senha de teste.
 #[test]
 fn v7_5_v7_6_copia_so_para_o_pendrive_escolhido_e_sem_segredo() {
-    let dir = Dir::novo("ext-a-b");
-    let (d, _) = cofre_de_teste(&dir);
+    let dir = Dir::new("ext-a-b");
+    let (d, _) = test_vault(&dir);
     let a = montagem(&dir, "pendrive-a");
     let b = montagem(&dir, "pendrive-b");
     let fonte = Fonte::com(vec![pendrive(UUID_B, &b)]);
     assert!(ok(&ligar(&d, Papel::App, UUID_A)));
-    match pedir(&d, Papel::App, "backup_externo", "{}") {
+    match request(&d, Papel::App, "backup_externo", "{}") {
         Resposta::BackupExterno { ligado, uuid } => {
             assert!(ligado);
             assert_eq!(uuid.as_deref(), Some(UUID_A));
@@ -210,14 +210,14 @@ fn v7_5_v7_6_copia_so_para_o_pendrive_escolhido_e_sem_segredo() {
     // Só o B conectado: nada.
     assert_eq!(
         d.sincronizar_externo(&fonte),
-        Err(ErroExterno::NaoConectado)
+        Err(ExternalError::NotConnected)
     );
     assert!(arvore(&b).is_empty());
     // A e B conectados: só o A recebe.
     fonte.por(vec![pendrive(UUID_A, &a), pendrive(UUID_B, &b)]);
     let c = d.sincronizar_externo(&fonte).unwrap().unwrap();
     let locais = locais(&dir);
-    assert_eq!(c.copiadas.len(), locais.len());
+    assert_eq!(c.copied.len(), locais.len());
     assert!(arvore(&b).is_empty(), "o pendrive B não recebe nada");
     let mut esperado = locais.clone();
     esperado.sort();
@@ -237,20 +237,20 @@ fn v7_5_v7_6_copia_so_para_o_pendrive_escolhido_e_sem_segredo() {
         d.sincronizar_externo(&fonte)
             .unwrap()
             .unwrap()
-            .copiadas
+            .copied
             .is_empty()
     );
     assert_eq!(arvore(&a), antes);
     // Uma gravação nova: só ela vai.
-    let r = pedir(
+    let r = request(
         &d,
         Papel::App,
         "salvar_entrada",
-        &login("t-nova", SEGREDOS[3]),
+        &login("t-nova", SECRETS[3]),
     );
     assert!(ok(&r), "{r:?}");
     let c = d.sincronizar_externo(&fonte).unwrap().unwrap();
-    assert_eq!(c.copiadas.len(), 1);
+    assert_eq!(c.copied.len(), 1);
     assert_eq!(no_pendrive(&a).len(), locais.len() + 1);
     // UUID em minúsculas no udisks2 (o vfat vem em maiúsculas; tanto faz).
     fonte.por(vec![pendrive(&UUID_A.to_lowercase(), &a)]);
@@ -258,19 +258,19 @@ fn v7_5_v7_6_copia_so_para_o_pendrive_escolhido_e_sem_segredo() {
 
     // V7.6: o auditor procura segredos nos arquivos do pendrive.
     let mut agulhas: Vec<Vec<u8>> = Vec::new();
-    for s in SEGREDOS.iter().chain([&SENHA, &PIN]) {
+    for s in SECRETS.iter().chain([&PASSWORD, &PIN]) {
         agulhas.push(s.as_bytes().to_vec());
         agulhas.push(b64(s.as_bytes()).trim_end_matches('=').as_bytes().to_vec());
     }
     for (caminho, bytes) in arvore(&a) {
         for ag in &agulhas {
             assert!(
-                !contem(&bytes, ag),
+                !contains(&bytes, ag),
                 "{} tem um valor de teste em claro",
                 caminho.display()
             );
         }
-        assert!(geracao_no_disco(&caminho, SENHA) >= 1);
+        assert!(generation_on_disk(&caminho, PASSWORD) >= 1);
     }
 }
 
@@ -282,21 +282,21 @@ fn v7_5_v7_6_copia_so_para_o_pendrive_escolhido_e_sem_segredo() {
 /// mesmo UUID também não recebem nada.
 #[test]
 fn ataque_pendrive_trocado_ou_uuid_repetido_nao_recebe_nada() {
-    let dir = Dir::novo("ext-trocado");
-    let (d, _) = cofre_de_teste(&dir);
+    let dir = Dir::new("ext-trocado");
+    let (d, _) = test_vault(&dir);
     let a = montagem(&dir, "pendrive-a");
     let b = montagem(&dir, "pendrive-b");
     assert!(ok(&ligar(&d, Papel::App, UUID_A)));
     // Dispositivo que não é o do diretório montado.
     let mut falso = pendrive(UUID_A, &a);
-    falso.dispositivo ^= 0x55;
+    falso.device ^= 0x55;
     let fonte = Fonte::com(vec![falso]);
-    assert_eq!(d.sincronizar_externo(&fonte), Err(ErroExterno::Trocado));
+    assert_eq!(d.sincronizar_externo(&fonte), Err(ExternalError::Swapped));
     // A resposta muda depois de abrir: outro dispositivo, outra montagem.
     for depois in [
         {
             let mut v = pendrive(UUID_A, &a);
-            v.dispositivo ^= 1;
+            v.device ^= 1;
             v
         },
         pendrive(UUID_A, &b),
@@ -307,7 +307,7 @@ fn ataque_pendrive_trocado_ou_uuid_repetido_nao_recebe_nada() {
             .lock()
             .unwrap()
             .extend([vec![pendrive(UUID_A, &a)], vec![depois]]);
-        assert_eq!(d.sincronizar_externo(&fonte), Err(ErroExterno::Trocado));
+        assert_eq!(d.sincronizar_externo(&fonte), Err(ExternalError::Swapped));
     }
     // Pendrive desconectado entre as consultas.
     let fonte = Fonte::com(vec![pendrive(UUID_A, &a)]);
@@ -318,17 +318,17 @@ fn ataque_pendrive_trocado_ou_uuid_repetido_nao_recebe_nada() {
         .extend([vec![pendrive(UUID_A, &a)], vec![]]);
     assert_eq!(
         d.sincronizar_externo(&fonte),
-        Err(ErroExterno::NaoConectado)
+        Err(ExternalError::NotConnected)
     );
     // Dois com o mesmo UUID (pendrive clonado).
     let fonte = Fonte::com(vec![pendrive(UUID_A, &a), pendrive(UUID_A, &b)]);
-    assert_eq!(d.sincronizar_externo(&fonte), Err(ErroExterno::Ambiguo));
+    assert_eq!(d.sincronizar_externo(&fonte), Err(ExternalError::Ambiguous));
     // Conectado sem montar.
     let mut sem = pendrive(UUID_A, &a);
-    sem.montagem = None;
+    sem.mount = None;
     assert_eq!(
         d.sincronizar_externo(&Fonte::com(vec![sem])),
-        Err(ErroExterno::NaoMontado)
+        Err(ExternalError::NotMounted)
     );
     assert!(arvore(&a).is_empty() && arvore(&b).is_empty());
 }
@@ -337,17 +337,17 @@ fn ataque_pendrive_trocado_ou_uuid_repetido_nao_recebe_nada() {
 /// `ward-backup` que é link ou arquivo: nada é escrito no alvo.
 #[test]
 fn ataque_montagem_ou_pasta_que_e_link() {
-    let dir = Dir::novo("ext-link");
-    let (d, _) = cofre_de_teste(&dir);
+    let dir = Dir::new("ext-link");
+    let (d, _) = test_vault(&dir);
     assert!(ok(&ligar(&d, Papel::App, UUID_A)));
     let alvo = montagem(&dir, "alvo");
     let link = dir.0.join("montagem-link");
     std::os::unix::fs::symlink(&alvo, &link).unwrap();
     let mut v = pendrive(UUID_A, &alvo);
-    v.montagem = Some(link.clone());
+    v.mount = Some(link.clone());
     assert_eq!(
         d.sincronizar_externo(&Fonte::com(vec![v])),
-        Err(ErroExterno::Trocado)
+        Err(ExternalError::Swapped)
     );
     assert!(arvore(&alvo).is_empty());
 
@@ -356,10 +356,7 @@ fn ataque_montagem_ou_pasta_que_e_link() {
     let outra = montagem(&dir, "outra");
     std::os::unix::fs::symlink(&outra, pasta_externa(&a)).unwrap();
     let fonte = Fonte::com(vec![pendrive(UUID_A, &a)]);
-    assert_eq!(
-        d.sincronizar_externo(&fonte),
-        Err(ErroExterno::PastaInsegura)
-    );
+    assert_eq!(d.sincronizar_externo(&fonte), Err(ExternalError::UnsafeDir));
     assert!(arvore(&outra).is_empty());
     assert!(
         fs::symlink_metadata(pasta_externa(&a))
@@ -369,10 +366,7 @@ fn ataque_montagem_ou_pasta_que_e_link() {
     // `ward-backup` é um arquivo.
     fs::remove_file(pasta_externa(&a)).unwrap();
     fs::write(pasta_externa(&a), b"nao e pasta").unwrap();
-    assert_eq!(
-        d.sincronizar_externo(&fonte),
-        Err(ErroExterno::PastaInsegura)
-    );
+    assert_eq!(d.sincronizar_externo(&fonte), Err(ExternalError::UnsafeDir));
     assert_eq!(fs::read(pasta_externa(&a)).unwrap(), b"nao e pasta");
 }
 
@@ -381,8 +375,8 @@ fn ataque_montagem_ou_pasta_que_e_link() {
 /// e o que não tem nome de versão fica.
 #[test]
 fn ataque_versao_existente_no_pendrive_nao_e_sobrescrita() {
-    let dir = Dir::novo("ext-existe");
-    let (d, _) = cofre_de_teste(&dir);
+    let dir = Dir::new("ext-existe");
+    let (d, _) = test_vault(&dir);
     assert!(ok(&ligar(&d, Papel::App, UUID_A)));
     let a = montagem(&dir, "pendrive-a");
     let destino = pasta_externa(&a);
@@ -416,7 +410,7 @@ fn ataque_versao_existente_no_pendrive_nao_e_sobrescrita() {
     );
     // O link com nome de versão não conta como cópia: ele fica, e a versão não vai
     // para um nome que existe.
-    assert_eq!(c.copiadas.len(), locais.len() - 2);
+    assert_eq!(c.copied.len(), locais.len() - 2);
 }
 
 /// Rotação no pendrive: com mais de 30 gerações reais, ficam as 30 mais novas (as
@@ -425,8 +419,8 @@ fn ataque_versao_existente_no_pendrive_nao_e_sobrescrita() {
 /// (aqui, `antiga`) não contam e não saem.
 #[test]
 fn pendrive_fica_com_30_versoes() {
-    let dir = Dir::novo("ext-rodar");
-    let (d, _) = cofre_de_teste(&dir);
+    let dir = Dir::new("ext-rodar");
+    let (d, _) = test_vault(&dir);
     assert!(ok(&ligar(&d, Papel::App, UUID_A)));
     let a = montagem(&dir, "pendrive-a");
     let destino = pasta_externa(&a);
@@ -441,19 +435,19 @@ fn pendrive_fica_com_30_versoes() {
     let fonte = Fonte::com(vec![pendrive(UUID_A, &a)]);
     let mut apagadas = 0;
     for i in 0..VERSIONS + 5 {
-        let r = pedir(
+        let r = request(
             &d,
             Papel::App,
             "salvar_entrada",
-            &login(&format!("t-rodar-{i}"), SEGREDOS[3]),
+            &login(&format!("t-rodar-{i}"), SECRETS[3]),
         );
         assert!(ok(&r), "{r:?}");
         let c = d.sincronizar_externo(&fonte).unwrap().unwrap();
         let todas = no_pendrive(&a);
-        for v in &c.copiadas {
+        for v in &c.copied {
             assert!(todas.contains(&v.name()), "{v}");
         }
-        apagadas += c.apagadas;
+        apagadas += c.deleted;
     }
     let mut reais: Vec<String> = no_pendrive(&a)
         .into_iter()
@@ -481,19 +475,19 @@ fn pendrive_fica_com_30_versoes() {
 /// e apagava as cópias reais. Agora nada real sai, e o que não confere fica.
 #[test]
 fn f54c_ataque_nomes_plantados_no_pendrive_nao_apagam_copias_reais() {
-    let dir = Dir::novo("ext-plantados");
-    let (d, _) = cofre_de_teste(&dir);
+    let dir = Dir::new("ext-plantados");
+    let (d, _) = test_vault(&dir);
     assert!(ok(&ligar(&d, Papel::App, UUID_A)));
     let a = montagem(&dir, "pendrive-a");
     let fonte = Fonte::com(vec![pendrive(UUID_A, &a)]);
     let c = d.sincronizar_externo(&fonte).unwrap().unwrap();
     let reais = no_pendrive(&a);
-    assert_eq!(reais.len(), c.copiadas.len());
+    assert_eq!(reais.len(), c.copied.len());
     assert!(!reais.is_empty());
     let destino = pasta_externa(&a);
     let real = fs::read(destino.join(&reais[0])).unwrap();
-    let outro = Dir::novo("ext-plantados-outro");
-    let _ = cofre_de_teste(&outro);
+    let outro = Dir::new("ext-plantados-outro");
+    let _ = test_vault(&outro);
     let de_outro = fs::read(outro.0.join("backups").join(&locais(&outro)[0])).unwrap();
     std::thread::sleep(Duration::from_millis(1100));
     let base = ward_core::backup::Version::from_instant(std::time::SystemTime::now())
@@ -512,16 +506,16 @@ fn f54c_ataque_nomes_plantados_no_pendrive_nao_apagam_copias_reais() {
     }
     // Uma gravação real e a cópia: só ela vai; nada sai.
     std::thread::sleep(Duration::from_millis(1100));
-    let r = pedir(
+    let r = request(
         &d,
         Papel::App,
         "salvar_entrada",
-        &login("t-plantados", SEGREDOS[3]),
+        &login("t-plantados", SECRETS[3]),
     );
     assert!(ok(&r), "{r:?}");
     let c = d.sincronizar_externo(&fonte).unwrap().unwrap();
-    assert_eq!(c.copiadas.len(), 1, "{:?}", c.copiadas);
-    assert_eq!(c.apagadas, 0, "os plantados giraram o pendrive");
+    assert_eq!(c.copied.len(), 1, "{:?}", c.copied);
+    assert_eq!(c.deleted, 0, "os plantados giraram o pendrive");
     let agora = no_pendrive(&a);
     for n in reais.iter().chain(&plantados) {
         assert!(agora.contains(n), "{n} sumiu do pendrive");
@@ -534,14 +528,14 @@ fn f54c_ataque_nomes_plantados_no_pendrive_nao_apagam_copias_reais() {
 /// de data depois da margem não vão para o pendrive.
 #[test]
 fn ataque_versoes_com_data_futura_no_pendrive_nao_apagam_as_reais() {
-    let dir = Dir::novo("ext-futuro");
-    let (d, _) = cofre_de_teste(&dir);
+    let dir = Dir::new("ext-futuro");
+    let (d, _) = test_vault(&dir);
     assert!(ok(&ligar(&d, Papel::App, UUID_A)));
     let a = montagem(&dir, "pendrive-a");
     let fonte = Fonte::com(vec![pendrive(UUID_A, &a)]);
     let c = d.sincronizar_externo(&fonte).unwrap().unwrap();
     let reais = no_pendrive(&a);
-    assert_eq!(reais.len(), c.copiadas.len());
+    assert_eq!(reais.len(), c.copied.len());
     let destino = pasta_externa(&a);
     // 30 de 2099 no pendrive e uma no backup local, 10 anos à frente.
     for i in 0..30u32 {
@@ -560,16 +554,16 @@ fn ataque_versoes_com_data_futura_no_pendrive_nao_apagam_as_reais() {
     fs::copy(dir.0.join("backups").join(&locais(&dir)[0]), &local).unwrap();
     fs::set_permissions(&local, fs::Permissions::from_mode(0o600)).unwrap();
     // Uma gravação nova e a cópia: nenhuma real sai, a plantada local não vai.
-    let r = pedir(
+    let r = request(
         &d,
         Papel::App,
         "salvar_entrada",
-        &login("t-futuro", SEGREDOS[3]),
+        &login("t-futuro", SECRETS[3]),
     );
     assert!(ok(&r), "{r:?}");
     let c = d.sincronizar_externo(&fonte).unwrap().unwrap();
-    assert_eq!(c.apagadas, 0);
-    assert!(c.copiadas.iter().all(|v| v.name() != longe));
+    assert_eq!(c.deleted, 0);
+    assert!(c.copied.iter().all(|v| v.name() != longe));
     let agora = no_pendrive(&a);
     for n in &reais {
         assert!(agora.contains(n), "{n} sumiu do pendrive");
@@ -587,8 +581,8 @@ fn ataque_versoes_com_data_futura_no_pendrive_nao_apagam_as_reais() {
 /// rotação de lá apagar nada. Uma gravação real depois vai, sozinha.
 #[test]
 fn ataque_lixo_no_backup_local_nao_gira_o_pendrive() {
-    let dir = Dir::novo("ext-lixo");
-    let (d, _) = cofre_de_teste(&dir);
+    let dir = Dir::new("ext-lixo");
+    let (d, _) = test_vault(&dir);
     assert!(ok(&ligar(&d, Papel::App, UUID_A)));
     let a = montagem(&dir, "pendrive-a");
     let destino = pasta_externa(&a);
@@ -604,8 +598,8 @@ fn ataque_lixo_no_backup_local_nao_gira_o_pendrive() {
         .unwrap();
     }
     let c = d.sincronizar_externo(&fonte).unwrap().unwrap();
-    assert_eq!(c.copiadas.len(), reais.len());
-    assert_eq!(c.apagadas, 0);
+    assert_eq!(c.copied.len(), reais.len());
+    assert_eq!(c.deleted, 0);
     let antes = arvore(&a);
     assert_eq!(no_pendrive(&a).len(), VERSIONS);
 
@@ -617,8 +611,8 @@ fn ataque_lixo_no_backup_local_nao_gira_o_pendrive() {
     let nome = |i: usize| base.replace(".ward", &format!("-{i}.ward"));
     let backups = dir.0.join("backups");
     let real = fs::read(backups.join(&reais[0])).unwrap();
-    let outro = Dir::novo("ext-lixo-outro");
-    let _ = cofre_de_teste(&outro);
+    let outro = Dir::new("ext-lixo-outro");
+    let _ = test_vault(&outro);
     let de_outro = fs::read(outro.0.join("backups").join(&locais(&outro)[0])).unwrap();
     let antiga = fs::read(backups.join(reais.last().unwrap())).unwrap();
     let mut plantados = Vec::new();
@@ -642,24 +636,24 @@ fn ataque_lixo_no_backup_local_nao_gira_o_pendrive() {
     }
     assert!(ward_core::backup::valid_name(&plantados[0]));
     let c = d.sincronizar_externo(&fonte).unwrap().unwrap();
-    assert!(c.copiadas.is_empty(), "{:?}", c.copiadas);
-    assert_eq!(c.apagadas, 0, "o lixo girou o pendrive");
+    assert!(c.copied.is_empty(), "{:?}", c.copied);
+    assert_eq!(c.deleted, 0, "o lixo girou o pendrive");
     assert_eq!(arvore(&a), antes, "o pendrive mudou");
 
     // Uma gravação real: só ela vai, mesmo com o lixo mais novo em volta.
     std::thread::sleep(Duration::from_millis(1100));
-    let r = pedir(
+    let r = request(
         &d,
         Papel::App,
         "salvar_entrada",
-        &login("t-lixo", SEGREDOS[3]),
+        &login("t-lixo", SECRETS[3]),
     );
     assert!(ok(&r), "{r:?}");
     let c = d.sincronizar_externo(&fonte).unwrap().unwrap();
-    assert_eq!(c.copiadas.len(), 1, "{:?}", c.copiadas);
-    assert!(!plantados.contains(&c.copiadas[0].name()));
+    assert_eq!(c.copied.len(), 1, "{:?}", c.copied);
+    assert!(!plantados.contains(&c.copied[0].name()));
     // Fase 54c: o enchimento `antiga` do pendrive não confere: não conta nem sai.
-    assert_eq!(c.apagadas, 0);
+    assert_eq!(c.deleted, 0);
     for n in no_pendrive(&a) {
         assert!(!plantados.contains(&n), "{n} plantado foi para o pendrive");
     }
@@ -672,8 +666,8 @@ fn ataque_lixo_no_backup_local_nao_gira_o_pendrive() {
 /// apaga o que já está no pendrive.
 #[test]
 fn travado_ou_desligado_nao_copia() {
-    let dir = Dir::novo("ext-travado");
-    let (d, _) = cofre_de_teste(&dir);
+    let dir = Dir::new("ext-travado");
+    let (d, _) = test_vault(&dir);
     let a = montagem(&dir, "pendrive-a");
     let fonte = Fonte::com(vec![pendrive(UUID_A, &a)]);
     assert!(ok(&ligar(&d, Papel::App, UUID_A)));
@@ -685,35 +679,35 @@ fn travado_ou_desligado_nao_copia() {
     assert_eq!(d.sincronizar_externo(&fonte), Ok(None));
     assert_eq!(fonte.consultas(), n);
     assert_eq!(
-        erro(&pedir(&d, Papel::App, "backup_externo", "{}")),
+        error(&request(&d, Papel::App, "backup_externo", "{}")),
         Some(ErroResposta::Travado)
     );
     assert_eq!(
-        erro(&pedir(&d, Papel::App, "pendrives", "{}")),
+        error(&request(&d, Papel::App, "pendrives", "{}")),
         Some(ErroResposta::Travado)
     );
-    assert!(ok(&destravar(&d, SENHA)));
+    assert!(ok(&unlock(&d, PASSWORD)));
     // A configuração ligada voltou com o cofre (está na parte cifrada).
     assert!(d.sincronizar_externo(&fonte).unwrap().is_some());
-    let r = pedir(
+    let r = request(
         &d,
         Papel::App,
         "definir_backup_externo",
         &format!(r#"{{"ligado":false,"uuid":"{UUID_A}"}}"#),
     );
     assert!(ok(&r), "{r:?}");
-    let r = pedir(
+    let r = request(
         &d,
         Papel::App,
         "salvar_entrada",
-        &login("t-depois", SEGREDOS[3]),
+        &login("t-depois", SECRETS[3]),
     );
     assert!(ok(&r));
     let n = fonte.consultas();
     assert_eq!(d.sincronizar_externo(&fonte), Ok(None));
     assert_eq!(fonte.consultas(), n);
     assert_eq!(arvore(&a), antes, "nada novo, nada apagado");
-    match pedir(&d, Papel::App, "backup_externo", "{}") {
+    match request(&d, Papel::App, "backup_externo", "{}") {
         Resposta::BackupExterno { ligado, uuid } => {
             assert!(!ligado);
             assert_eq!(uuid.as_deref(), Some(UUID_A));
@@ -727,12 +721,12 @@ fn travado_ou_desligado_nao_copia() {
 /// o cofre fica igual byte a byte e o externo, desligado.
 #[test]
 fn v7_8_agente_e_extensao_nao_ligam_nem_leem() {
-    let dir = Dir::novo("ext-papel");
-    let (d, _) = cofre_de_teste(&dir);
+    let dir = Dir::new("ext-papel");
+    let (d, _) = test_vault(&dir);
     let a = montagem(&dir, "pendrive-a");
     let fonte = Fonte::com(vec![pendrive(UUID_A, &a)]);
     let d = d.com_pendrives(Arc::new(fonte.clone()));
-    let cofre = fs::read(&dir.caminhos().cofre).unwrap();
+    let cofre = fs::read(&dir.paths().cofre).unwrap();
     for papel in [Papel::Agente, Papel::Extensao] {
         for (op, dados) in [
             ("backup_externo", "{}".to_owned()),
@@ -744,20 +738,20 @@ fn v7_8_agente_e_extensao_nao_ligam_nem_leem() {
         ] {
             // Pela leitura do protocolo.
             assert_eq!(
-                erro(&pedir(&d, papel, op, &dados)),
+                error(&request(&d, papel, op, &dados)),
                 Some(ErroResposta::NaoAutorizado),
                 "{op} pelo {}",
                 papel.nome()
             );
             // Direto no daemon, com o pedido lido como app.
-            let p = ped(Papel::App, op, &dados).unwrap();
+            let p = req(Papel::App, op, &dados).unwrap();
             assert_eq!(
-                erro(&d.atender(papel, p)),
+                error(&d.atender(papel, p)),
                 Some(ErroResposta::NaoAutorizado)
             );
         }
     }
-    assert_eq!(fs::read(&dir.caminhos().cofre).unwrap(), cofre);
+    assert_eq!(fs::read(&dir.paths().cofre).unwrap(), cofre);
     assert_eq!(fonte.consultas(), 0);
     assert_eq!(d.sincronizar_externo(&fonte), Ok(None));
     assert!(arvore(&a).is_empty());
@@ -767,22 +761,22 @@ fn v7_8_agente_e_extensao_nao_ligam_nem_leem() {
 /// `pendrives_indisponiveis`; UUID fora do formato é recusado sem gravar.
 #[test]
 fn pendrives_sem_udisks_e_uuid_invalido() {
-    let dir = Dir::novo("ext-sem");
-    let (d, _) = cofre_de_teste(&dir);
+    let dir = Dir::new("ext-sem");
+    let (d, _) = test_vault(&dir);
     assert_eq!(
-        erro(&pedir(&d, Papel::App, "pendrives", "{}")),
+        error(&request(&d, Papel::App, "pendrives", "{}")),
         Some(ErroResposta::PendrivesIndisponiveis)
     );
-    let cofre = fs::read(&dir.caminhos().cofre).unwrap();
+    let cofre = fs::read(&dir.paths().cofre).unwrap();
     for uuid in ["../x", "ABCD 1234", "-AB", ""] {
         assert_eq!(
-            erro(&ligar(&d, Papel::App, uuid)),
+            error(&ligar(&d, Papel::App, uuid)),
             Some(ErroResposta::PedidoInvalido),
             "{uuid}"
         );
     }
     assert_eq!(
-        erro(&pedir(
+        error(&request(
             &d,
             Papel::App,
             "definir_backup_externo",
@@ -790,7 +784,7 @@ fn pendrives_sem_udisks_e_uuid_invalido() {
         )),
         Some(ErroResposta::PedidoInvalido)
     );
-    assert_eq!(fs::read(&dir.caminhos().cofre).unwrap(), cofre);
+    assert_eq!(fs::read(&dir.paths().cofre).unwrap(), cofre);
 }
 
 // ---------------------------------------------------------------- udisks2 falso
@@ -993,7 +987,7 @@ fn objeto(caminho: &'static str, uuid: &str, dir: Option<&Path>) -> Objeto {
 /// formato, rótulo sem controle, montagem conferida.
 #[test]
 fn udisks_falso_e_lido_com_as_conferencias() {
-    let dir = Dir::novo("ext-udisks-ler");
+    let dir = Dir::new("ext-udisks-ler");
     let a = montagem(&dir, "pendrive-a");
     let b = BarramentoFalso::subir();
     let mut sistema = objeto(
@@ -1023,23 +1017,23 @@ fn udisks_falso_e_lido_com_as_conferencias() {
     );
     estranho.montagem = Some(b"/media/u/../../etc\0".to_vec());
     let _u = UdisksFalso::novo(&b, vec![sistema, de_loop, sujo, ruim, estranho]);
-    let fonte = wardd::udisks::Udisks::novo(b.socket.clone());
-    let vistos = fonte.pendrives().expect("udisks2 falso respondeu");
+    let fonte = wardd::udisks::Udisks::new(b.socket.clone());
+    let vistos = fonte.usb_drives().expect("udisks2 falso respondeu");
     let uuids: Vec<&str> = vistos.iter().map(|v| v.uuid.as_str()).collect();
     assert_eq!(uuids, ["0F3C-9A51", "AAAA-BBBB", "ABCD-1234"]);
     let pa = vistos.iter().find(|v| v.uuid == UUID_A).unwrap();
-    assert_eq!(pa.rotulo, "PEN[2J");
-    assert_eq!(pa.montagem.as_deref(), Some(a.as_path()));
-    assert_eq!(pa.dispositivo, fs::metadata(&a).unwrap().dev());
+    assert_eq!(pa.label, "PEN[2J");
+    assert_eq!(pa.mount.as_deref(), Some(a.as_path()));
+    assert_eq!(pa.device, fs::metadata(&a).unwrap().dev());
     assert!(
         vistos
             .iter()
-            .all(|v| v.uuid != "AAAA-BBBB" || v.montagem.is_none())
+            .all(|v| v.uuid != "AAAA-BBBB" || v.mount.is_none())
     );
     // Barramento sem udisks2: `None`.
     let b2 = BarramentoFalso::subir();
     assert_eq!(
-        wardd::udisks::Udisks::novo(b2.socket.clone()).pendrives(),
+        wardd::udisks::Udisks::new(b2.socket.clone()).usb_drives(),
         None
     );
 }
@@ -1049,8 +1043,8 @@ fn udisks_falso_e_lido_com_as_conferencias() {
 /// montado ao mesmo tempo não recebe nada.
 #[test]
 fn v7_5_sinal_do_udisks_copia_para_o_pendrive_montado() {
-    let dir = Dir::novo("ext-udisks-sinal");
-    let (d, _) = cofre_de_teste(&dir);
+    let dir = Dir::new("ext-udisks-sinal");
+    let (d, _) = test_vault(&dir);
     let a = montagem(&dir, "pendrive-a");
     let bdir = montagem(&dir, "pendrive-b");
     let b = BarramentoFalso::subir();
@@ -1065,14 +1059,14 @@ fn v7_5_sinal_do_udisks_copia_para_o_pendrive_montado() {
             ),
         ],
     );
-    let fonte = Arc::new(wardd::udisks::Udisks::novo(b.socket.clone()));
+    let fonte = Arc::new(wardd::udisks::Udisks::new(b.socket.clone()));
     let d = Arc::new(d.com_pendrives(fonte.clone()));
     assert!(ok(&ligar(&d, Papel::App, UUID_A)));
     let cutucoes = d.ligar_copia_externa().unwrap();
     assert!(d.ligar_copia_externa().is_none(), "só uma thread de cópia");
-    wardd::udisks::vigiar_copia(d.clone(), fonte, cutucoes).unwrap();
+    wardd::udisks::watch_copy(d.clone(), fonte, cutucoes).unwrap();
     let (tx, rx) = std::sync::mpsc::channel();
-    wardd::udisks::vigiar_udisks(
+    wardd::udisks::watch_udisks(
         d.clone(),
         b.socket.clone(),
         Box::new(move || {
@@ -1082,14 +1076,14 @@ fn v7_5_sinal_do_udisks_copia_para_o_pendrive_montado() {
     .unwrap();
     rx.recv_timeout(Duration::from_secs(10))
         .expect("vigia conectou");
-    match pedir(&d, Papel::App, "pendrives", "{}") {
+    match request(&d, Papel::App, "pendrives", "{}") {
         Resposta::Pendrives(l) => {
             assert_eq!(l.len(), 2);
             assert!(!l.iter().find(|p| p.uuid == UUID_A).unwrap().montado);
         }
         r => panic!("{r:?}"),
     }
-    std::thread::sleep(wardd::udisks::ESPERA_RAJADA * 3);
+    std::thread::sleep(wardd::udisks::BURST_WAIT * 3);
     assert!(arvore(&a).is_empty() && arvore(&bdir).is_empty());
     // O A é montado.
     u.lista.lock().unwrap()[0] = objeto(
@@ -1106,11 +1100,11 @@ fn v7_5_sinal_do_udisks_copia_para_o_pendrive_montado() {
     }
     assert!(arvore(&bdir).is_empty(), "o B não recebe nada");
     // Uma gravação cutuca a cópia de novo.
-    let r = pedir(
+    let r = request(
         &d,
         Papel::App,
         "salvar_entrada",
-        &login("t-sinal", SEGREDOS[3]),
+        &login("t-sinal", SECRETS[3]),
     );
     assert!(ok(&r));
     let fim = Instant::now() + Duration::from_secs(15);
@@ -1127,9 +1121,9 @@ fn v7_5_sinal_do_udisks_copia_para_o_pendrive_montado() {
 /// `renameat2(RENAME_NOREPLACE)`.
 #[test]
 fn externo_nao_usa_link() {
-    let fonte = include_str!("../src/externo.rs");
+    let fonte = include_str!("../src/external.rs");
     for proibido in ["hard_link", "linkat", "libc::link", "fs::symlink("] {
-        assert!(!fonte.contains(proibido), "{proibido} em externo.rs");
+        assert!(!fonte.contains(proibido), "{proibido} em external.rs");
     }
-    assert!(fonte.contains("rename_no_replace(destino.as_fd()"));
+    assert!(fonte.contains("rename_no_replace(destination.as_fd()"));
 }
