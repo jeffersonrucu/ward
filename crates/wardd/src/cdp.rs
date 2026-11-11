@@ -388,7 +388,7 @@ impl Cdp {
         let url = Zeroizing::new(p.request.url);
         let permitido = match &self.regra {
             Some(r) if p.tipo == "Document" && p.quadro == r.quadro => {
-                ward_core::entrada::origem_da_url(&url).is_some_and(|o| o == r.origem)
+                ward_core::entry::url_origin(&url).is_some_and(|o| o == r.origem)
             }
             _ => true,
         };

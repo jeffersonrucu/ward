@@ -168,7 +168,7 @@ impl Gerador {
             }
         })?;
         // Copia para o tipo do app, que zera ao sair; o `ward_core::Segredo` zera no drop.
-        self.atual = Some(Segredo::novo(senha.expor().to_vec()));
+        self.atual = Some(Segredo::novo(senha.expose().to_vec()));
         drop(senha);
         let bits = bits(&o);
         Ok(Gerada {

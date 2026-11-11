@@ -14,7 +14,7 @@ pub mod corpo;
 mod crypto;
 // Agent text to display in the approval window (D51, Phase 23).
 pub mod display;
-pub mod entrada;
+pub mod entry;
 // Delivery through environment variables (D10, Phase 16).
 pub mod entrega;
 // Vault file format: header, key wrapping and sealing (S6).

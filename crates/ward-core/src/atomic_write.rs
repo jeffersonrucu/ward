@@ -71,7 +71,7 @@ use std::time::SystemTime;
 use crate::backup::{ErroBackup, PastaBackup, Versao};
 use crate::corpo::{self, ErroCorpo};
 use crate::crypto;
-use crate::entrada::Entrada;
+use crate::entry::Entry;
 use crate::format::{self, FormatError, MasterPassword, OpenVault};
 
 /// Suffix of the temporary files: `.<destination name>.ward-tmp-<32 hex>`.
@@ -217,7 +217,7 @@ pub(crate) enum Point {
 pub fn write_entries(
     destination: &Path,
     vault: &mut OpenVault,
-    entries: &[Entrada],
+    entries: &[Entry],
 ) -> Result<FileIdentity, WriteError> {
     write_entries_with_points(destination, vault, entries, &mut |_| Ok(()))
 }
@@ -225,7 +225,7 @@ pub fn write_entries(
 fn write_entries_with_points(
     destination: &Path,
     vault: &mut OpenVault,
-    entries: &[Entrada],
+    entries: &[Entry],
     point: &mut dyn FnMut(Point) -> io::Result<()>,
 ) -> Result<FileIdentity, WriteError> {
     write_entries_sealed(destination, vault, entries, point).map(|(id, _)| id)
@@ -236,7 +236,7 @@ fn write_entries_with_points(
 fn write_entries_sealed(
     destination: &Path,
     vault: &mut OpenVault,
-    entries: &[Entrada],
+    entries: &[Entry],
     point: &mut dyn FnMut(Point) -> io::Result<()>,
 ) -> Result<(FileIdentity, Vec<u8>), WriteError> {
     let generation = vault
@@ -270,7 +270,7 @@ pub struct Written {
 pub fn write_entries_with_backup(
     destination: &Path,
     vault: &mut OpenVault,
-    entries: &[Entrada],
+    entries: &[Entry],
     dir: &PastaBackup,
     instant: SystemTime,
 ) -> Result<Written, WriteError> {

@@ -41,7 +41,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use ward_core::entrada::{Autenticacao, Dados, Entrada, NivelAcesso, Protocolo, Segredo};
+use ward_core::entry::{AccessLevel, Auth, Data, Entry, Protocol, Secret};
 use ward_core::mascara::{ConstrutorMascara, Mascara};
 use ward_core::protocolo::{ErroResposta, Papel, Pedido, Resposta};
 use ward_platform::child::Command;
@@ -85,7 +85,7 @@ impl ProgramasSsh {
 
 /// Um token do "Conectar" emitido e ainda não usado.
 pub(crate) struct TokenConectar {
-    valor: Segredo,
+    valor: Secret,
     entrada: String,
     ate: Duration,
 }
@@ -329,9 +329,9 @@ impl Daemon {
         let e = a
             .entradas
             .iter()
-            .find(|e| e.nome() == nome)
+            .find(|e| e.name() == nome)
             .ok_or(ErroResposta::EntradaInexistente)?;
-        if !matches!(e.dados(), Dados::Servidor(_)) {
+        if !matches!(e.data(), Data::Server(_)) {
             return Err(ErroResposta::PedidoInvalido);
         }
         let valor = ward_core::generator::connect_token().map_err(|_| ErroResposta::Interno)?;
@@ -340,7 +340,7 @@ impl Daemon {
             a.tokens.remove(0);
         }
         a.tokens.push(TokenConectar {
-            valor: Segredo::de_bytes(valor.expor().to_vec()),
+            valor: Secret::from_bytes(valor.expose().to_vec()),
             entrada: nome.to_owned(),
             ate: agora.saturating_add(PRAZO_TOKEN),
         });
@@ -350,7 +350,7 @@ impl Daemon {
 
     /// O token vale para `entrada`? Todo token que existe morre aqui (uso único), mesmo
     /// apresentado com outra entrada. Comparação em tempo constante.
-    fn usar_token(&self, token: &Segredo, entrada: &str) -> bool {
+    fn usar_token(&self, token: &Secret, entrada: &str) -> bool {
         let agora = self.aprovacao.agora();
         let mut est = self.estado();
         let Some(a) = est.aberto.as_mut() else {
@@ -359,7 +359,7 @@ impl Daemon {
         a.tokens.retain(|t| agora < t.ate);
         let mut achado = None;
         for (i, t) in a.tokens.iter().enumerate() {
-            if ward_core::generator::tokens_equal(t.valor.expor(), token.expor()) {
+            if ward_core::generator::tokens_equal(t.valor.expose(), token.expose()) {
                 achado = Some(i);
             }
         }
@@ -374,25 +374,25 @@ impl Daemon {
 
 /// O que a sessão precisa da entrada, copiado sob a trava do estado.
 pub(crate) enum Cred {
-    Senha(Segredo),
+    Senha(Secret),
     Chave {
-        chave: Segredo,
-        passphrase: Option<Segredo>,
+        chave: Secret,
+        passphrase: Option<Secret>,
     },
 }
 
-fn copiar(s: &Segredo) -> Segredo {
-    Segredo::de_bytes(s.expor().to_vec())
+fn copiar(s: &Secret) -> Secret {
+    Secret::from_bytes(s.expose().to_vec())
 }
 
-pub(crate) fn cred_de(a: &Autenticacao) -> Cred {
+pub(crate) fn cred_de(a: &Auth) -> Cred {
     match a {
-        Autenticacao::Senha(s) => Cred::Senha(copiar(s)),
-        Autenticacao::Chave {
-            chave_privada,
+        Auth::Password(s) => Cred::Senha(copiar(s)),
+        Auth::Key {
+            private_key,
             passphrase,
         } => Cred::Chave {
-            chave: copiar(chave_privada),
+            chave: copiar(private_key),
             passphrase: passphrase.as_ref().map(copiar),
         },
     }
@@ -401,21 +401,21 @@ pub(crate) fn cred_de(a: &Autenticacao) -> Cred {
 /// A entrada de salto ou de túnel (D19, D25): `servidor` visível, sem salto próprio.
 /// Bloqueada (ou sumida) depois da autorização nega; outro tipo, ou com salto, falha.
 pub(crate) fn intermediario<'a>(
-    entradas: &'a [Entrada],
+    entradas: &'a [Entry],
     nome: &str,
-) -> Result<(&'a Entrada, Intermediario), ErroResposta> {
+) -> Result<(&'a Entry, Intermediario), ErroResposta> {
     let Some(e) = visivel(entradas, nome) else {
         aviso!("salto ou túnel: a outra entrada sumiu ou foi bloqueada; negado (D19)");
         return Err(ErroResposta::Negado);
     };
-    match e.dados() {
-        Dados::Servidor(s) if s.salto.is_none() => Ok((
+    match e.data() {
+        Data::Server(s) if s.jump.is_none() => Ok((
             e,
             Intermediario {
                 host: s.host.clone(),
-                porta: s.porta,
-                usuario: s.usuario.clone(),
-                cred: cred_de(&s.autenticacao),
+                porta: s.port,
+                usuario: s.username.clone(),
+                cred: cred_de(&s.auth),
             },
         )),
         _ => {
@@ -426,18 +426,18 @@ pub(crate) fn intermediario<'a>(
 }
 
 /// A entrada visível (bloqueada = inexistente, V3.17).
-fn visivel<'a>(entradas: &'a [Entrada], nome: &str) -> Option<&'a Entrada> {
+fn visivel<'a>(entradas: &'a [Entry], nome: &str) -> Option<&'a Entry> {
     entradas
         .iter()
-        .find(|e| e.nome() == nome && e.nivel() != NivelAcesso::Bloqueado)
+        .find(|e| e.name() == nome && e.level() != AccessLevel::Blocked)
 }
 
 /// O tipo aceita o `ward ssh`? `servidor`, ou `ftp/sftp` com `sftp` e sem comando (o
 /// `sftp` lê os comandos da entrada). Os outros: `tipo_sem_entrega`.
-fn conferir_tipo(e: &Entrada, com_comando: bool) -> Result<(), ErroResposta> {
-    match e.dados() {
-        Dados::Servidor(_) => Ok(()),
-        Dados::FtpSftp(f) if f.protocolo == Protocolo::Sftp => {
+fn conferir_tipo(e: &Entry, com_comando: bool) -> Result<(), ErroResposta> {
+    match e.data() {
+        Data::Server(_) => Ok(()),
+        Data::FtpSftp(f) if f.protocol == Protocol::Sftp => {
             if com_comando {
                 Err(ErroResposta::PedidoInvalido)
             } else {
@@ -494,16 +494,16 @@ impl Daemon {
             let a = est.aberto.as_ref().ok_or(ErroResposta::Travado)?;
             let e = visivel(&a.entradas, &nome).ok_or(ErroResposta::EntradaInexistente)?;
             conferir_tipo(e, com_comando)?;
-            let (host, porta, usuario, auth, sftp, nome_salto) = match e.dados() {
-                Dados::Servidor(s) => (
+            let (host, porta, usuario, auth, sftp, nome_salto) = match e.data() {
+                Data::Server(s) => (
                     &s.host,
-                    s.porta,
-                    &s.usuario,
-                    &s.autenticacao,
+                    s.port,
+                    &s.username,
+                    &s.auth,
                     false,
-                    s.salto.as_deref(),
+                    s.jump.as_deref(),
                 ),
-                Dados::FtpSftp(f) => (&f.host, f.porta, &f.usuario, &f.autenticacao, true, None),
+                Data::FtpSftp(f) => (&f.host, f.port, &f.username, &f.auth, true, None),
                 _ => return Err(ErroResposta::TipoSemEntrega),
             };
             let falhou = |erro: ward_core::mascara::ErroMascara| {
@@ -643,7 +643,7 @@ impl Daemon {
         }
         if let Some(s) = &senha {
             // `sshpass -e`: a senha só no ambiente do filho, nunca em argv (S3).
-            cmd.variable(b"SSHPASS", s.expor()).map_err(invalido)?;
+            cmd.variable(b"SSHPASS", s.expose()).map_err(invalido)?;
         }
         drop(senha);
         depurar!(

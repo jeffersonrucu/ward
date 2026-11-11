@@ -314,8 +314,8 @@ mod testes {
 
         // Token novo a cada rodada, gerado aqui (nunca escrito no repositório).
         let gerado = ward_core::generator::connect_token().unwrap();
-        let token = Token::de_resposta(gerado.expor()).unwrap();
-        let agulha = gerado.expor().to_vec();
+        let token = Token::de_resposta(gerado.expose()).unwrap();
+        let agulha = gerado.expose().to_vec();
 
         let parar = Arc::new(AtomicBool::new(false));
         let achados = Arc::new(AtomicUsize::new(0));

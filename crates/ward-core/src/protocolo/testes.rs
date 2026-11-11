@@ -11,9 +11,7 @@ use super::*;
 use crate as wc;
 use crate::atomic_write::WriteError;
 use crate::corpo::ErroAbrir;
-use crate::entrada::{
-    Ambiente, Rascunho, RascunhoAnexo, RascunhoDados, RascunhoExtra, Segredo, TipoEntrada,
-};
+use crate::entry::{AttachmentDraft, DataDraft, Draft, EntryType, Environment, ExtraDraft, Secret};
 use crate::limits::{
     KIB, MAX_APP_FRAME, MAX_ATTACHMENT_NAME, MAX_ATTACHMENTS, MAX_ATTACHMENTS_TOTAL,
     MAX_COMMON_FRAME, MAX_EXTRA_VALUE, MAX_EXTRAS, MAX_NOTE, MIB,
@@ -35,8 +33,8 @@ fn ped(papel: Papel, json: &str) -> Result<Pedido, ErroResposta> {
     decodificar_pedido(papel, json.as_bytes())
 }
 
-fn seg(s: &str) -> Segredo {
-    Segredo::de_texto(s.to_owned())
+fn seg(s: &str) -> Secret {
+    Secret::from_text(s.to_owned())
 }
 
 /// Os `dados` mínimos válidos de cada operação (valores falsos).
@@ -139,9 +137,9 @@ fn um_pedido_de_cada() -> Vec<Pedido> {
 fn item(nome: &str) -> ItemLista {
     ItemLista {
         nome: nome.into(),
-        tipo: TipoEntrada::Login,
+        tipo: EntryType::Login,
         grupo: "clientex".into(),
-        ambiente: Ambiente::Stage,
+        ambiente: Environment::Stage,
         projeto: Some("portal \"novo\" \\ ação".into()),
         tags: vec!["web".into()],
         nivel: None,
@@ -155,7 +153,7 @@ fn uma_resposta_de_cada() -> Vec<Resposta> {
     let entradas = cofre_de_teste();
     let servidor = entradas
         .iter()
-        .find(|e| e.tipo() == TipoEntrada::Servidor)
+        .find(|e| e.kind() == EntryType::Server)
         .unwrap();
     vec![
         Resposta::Ok,
@@ -185,7 +183,7 @@ fn uma_resposta_de_cada() -> Vec<Resposta> {
         Resposta::PedidoDeAprovacao(PedidoDeAprovacao {
             id: 42,
             entradas: vec!["acme-pg-prod".into(), "acme-ssh-prod".into()],
-            ambiente: Ambiente::Prod,
+            ambiente: Environment::Prod,
             operacao: Operacao::Executar,
             comando: "psql -c 'select 1'".into(),
             diretorio: "\"/home/usuario/projetos/acme\"".into(),
@@ -197,7 +195,7 @@ fn uma_resposta_de_cada() -> Vec<Resposta> {
         Resposta::PedidoDeAprovacao(PedidoDeAprovacao {
             id: 43,
             entradas: vec!["acme-wp-prod".into()],
-            ambiente: Ambiente::Prod,
+            ambiente: Environment::Prod,
             operacao: Operacao::Playwright,
             comando: String::new(),
             diretorio: String::new(),
@@ -209,7 +207,7 @@ fn uma_resposta_de_cada() -> Vec<Resposta> {
         Resposta::PedidoDeAprovacao(PedidoDeAprovacao {
             id: 44,
             entradas: vec!["acme-wp-dev".into()],
-            ambiente: Ambiente::Dev,
+            ambiente: Environment::Dev,
             operacao: Operacao::Preencher,
             comando: String::new(),
             diretorio: String::new(),
@@ -231,7 +229,7 @@ fn uma_resposta_de_cada() -> Vec<Resposta> {
         Resposta::Sugestoes(vec![Sugestao {
             nome: "acme-wp-dev".into(),
             usuario: "wp_admin".into(),
-            ambiente: crate::entrada::Ambiente::Dev,
+            ambiente: crate::entry::Environment::Dev,
             totp: true,
         }]),
         Resposta::Preenchimento {
@@ -686,15 +684,15 @@ fn v3_3_lista_e_detalhe_do_cofre_de_teste_sem_segredo() {
         .collect();
     let mut agulhas = 0;
     for e in &entradas {
-        for s in e.segredos() {
-            for f in formas(s.valor.expor()) {
+        for s in e.secrets() {
+            for f in formas(s.value.expose()) {
                 if f.len() < 6 {
                     continue;
                 }
                 agulhas += 1;
-                assert!(!contem(&q_lista, &f), "segredo de {} na lista", e.nome());
+                assert!(!contem(&q_lista, &f), "segredo de {} na lista", e.name());
                 for d in &detalhes {
-                    assert!(!contem(d, &f), "segredo de {} num detalhe", e.nome());
+                    assert!(!contem(d, &f), "segredo de {} num detalhe", e.name());
                 }
             }
         }
@@ -967,25 +965,25 @@ fn s9_rascunho_sem_nivel_e_sem_campo_de_outro_tipo() {
 
 // ---- D29: anexos pelo app ----
 
-fn rascunho_com_anexos(tamanhos: &[usize]) -> Rascunho {
-    Rascunho {
-        nome: "clientex-stage-vpn".into(),
-        grupo: "clientex".into(),
-        ambiente: "stage".into(),
-        projeto: String::new(),
+fn rascunho_com_anexos(tamanhos: &[usize]) -> Draft {
+    Draft {
+        name: "clientex-stage-vpn".into(),
+        group: "clientex".into(),
+        environment: "stage".into(),
+        project: String::new(),
         tags: Vec::new(),
-        dados: RascunhoDados::Generico,
-        extras: vec![RascunhoExtra {
-            nome: "usuario".into(),
-            valor: seg("vpn-user"),
-            segredo: false,
+        data: DataDraft::Generic,
+        extras: vec![ExtraDraft {
+            name: "usuario".into(),
+            value: seg("vpn-user"),
+            secret: false,
         }],
-        anexos: tamanhos
+        attachments: tamanhos
             .iter()
             .enumerate()
-            .map(|(i, &n)| RascunhoAnexo {
-                nome: format!("cliente-{i}.ovpn"),
-                conteudo: Segredo::de_bytes(cofre_teste::bytes_0_a_255(n)),
+            .map(|(i, &n)| AttachmentDraft {
+                name: format!("cliente-{i}.ovpn"),
+                content: Secret::from_bytes(cofre_teste::bytes_0_a_255(n)),
             })
             .collect(),
     }
@@ -1006,10 +1004,10 @@ fn d29_anexos_ate_256_kib_somados_pelo_app() {
         panic!()
     };
     assert_eq!(
-        rascunho.anexos[0].conteudo.expor(),
+        rascunho.attachments[0].content.expose(),
         &cofre_teste::bytes_0_a_255(MAX_ATTACHMENTS_TOTAL - 10 * KIB)[..]
     );
-    rascunho.validar().expect("entrada com anexos no limite");
+    rascunho.validate().expect("entrada com anexos no limite");
     assert_eq!(
         decodificar_pedido(Papel::Agente, &q).unwrap_err(),
         ErroResposta::NaoAutorizado
@@ -1125,9 +1123,9 @@ fn fase39b_ataque_manter_anexos_forjado() {
 /// e o rascunho não muda; a soma de D29 continua valendo pela validação inteira.
 #[test]
 fn fase39b_ataque_juntar_anexos_mantidos() {
-    let antiga = rascunho_com_anexos(&[200 * KIB, 10]).validar().unwrap();
+    let antiga = rascunho_com_anexos(&[200 * KIB, 10]).validate().unwrap();
     let mut r = rascunho_com_anexos(&[5]);
-    r.anexos[0].nome = "novo.env".into();
+    r.attachments[0].name = "novo.env".into();
     for nomes in [
         vec!["nao-existe.ovpn".to_owned()],
         vec!["cliente-0.ovpn".to_owned(), "cliente-0.ovpn".to_owned()],
@@ -1139,28 +1137,28 @@ fn fase39b_ataque_juntar_anexos_mantidos() {
             ErroResposta::PedidoInvalido,
             "{nomes:?}"
         );
-        assert_eq!(r.anexos.len(), 1);
+        assert_eq!(r.attachments.len(), 1);
     }
     juntar_anexos_mantidos(&mut r, &antiga, &["cliente-1.ovpn".to_owned()]).unwrap();
-    let nomes: Vec<&str> = r.anexos.iter().map(|a| a.nome.as_str()).collect();
+    let nomes: Vec<&str> = r.attachments.iter().map(|a| a.name.as_str()).collect();
     assert_eq!(nomes, ["cliente-1.ovpn", "novo.env"]);
     assert_eq!(
-        r.anexos[0].conteudo.expor(),
-        antiga.anexos()[1].conteudo().expor()
+        r.attachments[0].content.expose(),
+        antiga.attachments()[1].content().expose()
     );
-    let e = r.validar().unwrap();
-    assert_eq!(e.anexos().len(), 2);
+    let e = r.validate().unwrap();
+    assert_eq!(e.attachments().len(), 2);
 
     // Mantido de 200 KiB + novo de 60 KiB passa da soma: a validação recusa.
     let mut r = rascunho_com_anexos(&[60 * KIB]);
-    r.anexos[0].nome = "novo.env".into();
+    r.attachments[0].name = "novo.env".into();
     juntar_anexos_mantidos(&mut r, &antiga, &["cliente-0.ovpn".to_owned()]).unwrap();
-    assert!(r.validar().is_err());
+    assert!(r.validate().is_err());
 
     // Nome mantido igual ao de um anexo novo: a validação acusa a repetição.
     let mut r = rascunho_com_anexos(&[5]);
     juntar_anexos_mantidos(&mut r, &antiga, &["cliente-0.ovpn".to_owned()]).unwrap();
-    assert!(r.validar().is_err());
+    assert!(r.validate().is_err());
 }
 
 /// A maior entrada que a validação aceita (nota de 1 MiB, 64 extras de 64 KiB, anexos
@@ -1168,25 +1166,25 @@ fn fase39b_ataque_juntar_anexos_mantidos() {
 /// cliente comum.
 #[test]
 fn maior_entrada_cabe_no_quadro_do_app() {
-    let r = Rascunho {
-        nome: "clientex-prod-nota".into(),
-        grupo: "clientex".into(),
-        ambiente: "prod".into(),
-        projeto: "portal".into(),
+    let r = Draft {
+        name: "clientex-prod-nota".into(),
+        group: "clientex".into(),
+        environment: "prod".into(),
+        project: "portal".into(),
         tags: (0..16).map(|i| format!("tag-{i:02}")).collect(),
-        dados: RascunhoDados::NotaSegura {
-            texto: Some(Segredo::de_bytes(vec![b'"'; MAX_NOTE])),
+        data: DataDraft::SecureNote {
+            text: Some(Secret::from_bytes(vec![b'"'; MAX_NOTE])),
         },
         extras: (0..MAX_EXTRAS)
-            .map(|i| RascunhoExtra {
-                nome: format!("EXTRA_{i:02}"),
-                valor: Segredo::de_bytes(vec![b'x'; MAX_EXTRA_VALUE]),
-                segredo: i % 2 == 0,
+            .map(|i| ExtraDraft {
+                name: format!("EXTRA_{i:02}"),
+                value: Secret::from_bytes(vec![b'x'; MAX_EXTRA_VALUE]),
+                secret: i % 2 == 0,
             })
             .collect(),
-        anexos: vec![RascunhoAnexo {
-            nome: "tudo.bin".into(),
-            conteudo: Segredo::de_bytes(cofre_teste::bytes_0_a_255(MAX_ATTACHMENTS_TOTAL)),
+        attachments: vec![AttachmentDraft {
+            name: "tudo.bin".into(),
+            content: Secret::from_bytes(cofre_teste::bytes_0_a_255(MAX_ATTACHMENTS_TOTAL)),
         }],
     };
     let p = Pedido::SalvarEntrada {
@@ -1200,7 +1198,7 @@ fn maior_entrada_cabe_no_quadro_do_app() {
     let Pedido::SalvarEntrada { rascunho, .. } = decodificar_pedido(Papel::App, &q).unwrap() else {
         panic!()
     };
-    let e = rascunho.validar().expect("maior entrada válida");
+    let e = rascunho.validate().expect("maior entrada válida");
     assert_eq!(e.extras().len(), MAX_EXTRAS);
     // O mesmo quadro, pelo leitor de quadros: cabe no do app e não no comum.
     let mut bruto = Vec::new();
@@ -1724,7 +1722,7 @@ fn d50_lista_do_agente_sem_nivel_e_do_app_com_nivel() {
         panic!("não é lista")
     };
     for (i, e) in itens.iter().zip(&entradas) {
-        assert_eq!(i.nivel, Some(e.nivel()));
+        assert_eq!(i.nivel, Some(e.level()));
     }
     // Ataques: o item do app mandado ao agente é recusado na escrita; o quadro do app
     // lido como agente é recusado; o do agente lido como app também.
@@ -1764,10 +1762,10 @@ fn d65_lista_do_app_com_resumo_e_do_agente_sem() {
     for (i, e) in itens.iter().zip(&entradas) {
         let r = i.resumo.as_ref().expect("item do app sem resumo");
         let d = DetalheEntrada::de_entrada(e);
-        assert_eq!(r.campos, d.campos, "{}", e.nome());
-        assert_eq!(r.segredos, d.segredos, "{}", e.nome());
+        assert_eq!(r.campos, d.campos, "{}", e.name());
+        assert_eq!(r.segredos, d.segredos, "{}", e.name());
         assert_eq!(r.extras, e.extras().len() as u64);
-        assert_eq!(r.anexos, e.anexos().len() as u64);
+        assert_eq!(r.anexos, e.attachments().len() as u64);
     }
     let pg = itens.iter().find(|i| i.nome == "acme-pg-dev").unwrap();
     let r = pg.resumo.as_ref().unwrap();
@@ -1864,17 +1862,17 @@ fn d65_alvo_acha_so_os_segredos_da_entrada() {
     let entradas = cofre_de_teste();
     for e in &entradas {
         let d = DetalheEntrada::de_entrada(e);
-        let todos: Vec<&[u8]> = e.segredos().iter().map(|s| s.valor.expor()).collect();
+        let todos: Vec<&[u8]> = e.secrets().iter().map(|s| s.value.expose()).collect();
         for id in CAMPOS_SECRETOS_TESTE {
             let achado = Alvo::Campo((*id).to_owned()).segredo_em(e);
             assert_eq!(
                 achado.is_some(),
                 d.segredos.iter().any(|s| s == id),
                 "{} {id}",
-                e.nome()
+                e.name()
             );
             if let Some(v) = achado {
-                assert!(todos.contains(&v.expor()));
+                assert!(todos.contains(&v.expose()));
             }
         }
         for x in &d.extras {
@@ -1883,7 +1881,7 @@ fn d65_alvo_acha_so_os_segredos_da_entrada() {
                 achado.is_some(),
                 x.valor.is_none(),
                 "{} {}",
-                e.nome(),
+                e.name(),
                 x.nome
             );
         }
@@ -1892,13 +1890,13 @@ fn d65_alvo_acha_so_os_segredos_da_entrada() {
     }
     let generico = entradas
         .iter()
-        .find(|e| e.nome() == "gama-generico")
+        .find(|e| e.name() == "gama-generico")
         .unwrap();
     assert_eq!(
         Alvo::Extra("CHAVE_LICENCA".into())
             .segredo_em(generico)
             .unwrap()
-            .expor(),
+            .expose(),
         b"falso-licenca-01"
     );
     assert!(Alvo::Extra("REGIAO".into()).segredo_em(generico).is_none());
@@ -2065,16 +2063,16 @@ fn vb(nome: &str, conferida: bool, fora_de_ordem: bool) -> VersaoBackup {
 /// não vai; o agente não recebe `detalhe`, e a lista não leva data para ninguém.
 #[test]
 fn d65_datas_so_no_detalhe_do_app() {
-    use crate::entrada::{Datas, NivelAcesso};
+    use crate::entry::{AccessLevel, Dates};
     let mut entradas = cofre_de_teste();
     let i = entradas
         .iter()
-        .position(|e| e.nome() == "acme-pg-dev")
+        .position(|e| e.name() == "acme-pg-dev")
         .unwrap();
-    entradas[i].definir_datas(
-        Datas::carimbo_novo(1_762_041_600)
+    entradas[i].set_dates(
+        Dates::new_stamp(1_762_041_600)
             .unwrap()
-            .alterado(1_762_473_600)
+            .modified(1_762_473_600)
             .unwrap(),
     );
     let d = DetalheEntrada::de_entrada(&entradas[i]);
@@ -2095,7 +2093,7 @@ fn d65_datas_so_no_detalhe_do_app() {
     for papel in [Papel::App, Papel::Agente] {
         let itens = entradas
             .iter()
-            .filter(|e| papel == Papel::App || e.nivel() != NivelAcesso::Bloqueado)
+            .filter(|e| papel == Papel::App || e.level() != AccessLevel::Blocked)
             .map(|e| ItemLista::de_entrada(e, papel))
             .collect();
         let q = codificar_resposta(papel, &Resposta::Lista(itens)).unwrap();
@@ -2106,7 +2104,7 @@ fn d65_datas_so_no_detalhe_do_app() {
     // Sem datas: nenhuma das chaves vai.
     let sem = entradas
         .iter()
-        .find(|e| e.nome() == "gama-bloqueada")
+        .find(|e| e.name() == "gama-bloqueada")
         .unwrap();
     let q = codificar_resposta(
         Papel::App,
@@ -2123,7 +2121,7 @@ fn d65_datas_so_no_detalhe_do_app() {
 #[test]
 fn ataque_d65_detalhe_com_data_forjada_recusado() {
     let entradas = cofre_de_teste();
-    let e = entradas.iter().find(|e| e.nome() == "acme-pg-dev").unwrap();
+    let e = entradas.iter().find(|e| e.name() == "acme-pg-dev").unwrap();
     let q = codificar_resposta(
         Papel::App,
         &Resposta::Detalhe(DetalheEntrada::de_entrada(e)),
@@ -2535,7 +2533,7 @@ fn ataque_pedido_de_aprovacao_com_origem_fora_da_forma() {
     let base = PedidoDeAprovacao {
         id: 1,
         entradas: vec!["acme-wp-dev".into()],
-        ambiente: Ambiente::Dev,
+        ambiente: Environment::Dev,
         operacao: Operacao::Login,
         comando: String::new(),
         diretorio: String::new(),

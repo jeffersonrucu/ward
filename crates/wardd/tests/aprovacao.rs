@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use comum::*;
-use ward_core::entrada::{Ambiente, NivelAcesso};
+use ward_core::entry::{AccessLevel, Environment};
 use ward_core::protocolo::{
     ErroResposta, Operacao, Papel, PedidoDeAprovacao, PedidoDeDestrave, Resposta,
 };
@@ -172,7 +172,7 @@ fn responder(d: &Daemon, papel: Papel, id: u64, decisao: &str, pin: Option<&str>
     )
 }
 
-fn nivel(d: &Daemon, nome: &str) -> Option<NivelAcesso> {
+fn nivel(d: &Daemon, nome: &str) -> Option<AccessLevel> {
     match pedir(d, Papel::App, "lista", "{}") {
         Resposta::Lista(l) => l.into_iter().find(|i| i.nome == nome).and_then(|i| i.nivel),
         r => panic!("{r:?}"),
@@ -344,7 +344,7 @@ fn v3_14_sempre_deixa_livre_no_arquivo() {
     assert_eq!(r, Ok(Autorizacao::Aprovado));
     assert!(ok(&pedir(&c.d, Papel::Agente, "travar", "{}")));
     assert!(ok(&destravar(&c.d, SENHA)));
-    assert_eq!(nivel(&c.d, "t-aprov"), Some(NivelAcesso::Livre));
+    assert_eq!(nivel(&c.d, "t-aprov"), Some(AccessLevel::Free));
     assert_eq!(
         usar(&c.d, &SemCliente, "t-aprov"),
         Ok(Autorizacao::SemPerguntar)
@@ -383,10 +383,10 @@ fn ataque_49a_restaurar_cancela_pedido_pendente() {
         resultado
     });
     assert_eq!(r, Err(ErroResposta::Negado));
-    assert_eq!(nivel(&c.d, "t-aprov"), Some(NivelAcesso::ComAprovacao));
+    assert_eq!(nivel(&c.d, "t-aprov"), Some(AccessLevel::Approval));
     assert!(ok(&pedir(&c.d, Papel::Agente, "travar", "{}")));
     assert!(ok(&destravar(&c.d, SENHA)));
-    assert_eq!(nivel(&c.d, "t-aprov"), Some(NivelAcesso::ComAprovacao));
+    assert_eq!(nivel(&c.d, "t-aprov"), Some(AccessLevel::Approval));
 }
 
 /// Ataque (V3.14, S9/S10): os três "Permitir" sem PIN válido não permitem; PIN errado
@@ -442,7 +442,7 @@ fn ataque_permitir_sem_pin_valido() {
     assert_eq!(r, Err(ErroResposta::Negado));
     assert!(c.d.travado());
     assert!(ok(&destravar(&c.d, SENHA)));
-    assert_eq!(nivel(&c.d, "t-aprov"), Some(NivelAcesso::ComAprovacao));
+    assert_eq!(nivel(&c.d, "t-aprov"), Some(AccessLevel::Approval));
 }
 
 /// Ataque (V3.15, V5.20): o agente (e a extensão) mandam "responder aprovação" com o
@@ -463,7 +463,7 @@ fn ataque_agente_responde_a_aprovacao() {
             let q = ward_core::protocolo::Pedido::ResponderAprovacao {
                 pedido: p.id,
                 decisao: ward_core::protocolo::Decisao::PermitirUmaVez,
-                pin: Some(ward_core::entrada::Segredo::de_texto(PIN.to_owned())),
+                pin: Some(ward_core::entry::Secret::from_text(PIN.to_owned())),
                 entrada_confirmada: false,
             };
             assert_eq!(
@@ -630,7 +630,7 @@ fn v3_16_prod_tem_os_mesmos_niveis_e_botoes() {
     assert!(rx.try_recv().is_err());
     for decisao in ["negar", "uma_vez", "uma_hora", "sempre"] {
         let r = com_janela(&c, &rx, "p-aprov", |p| {
-            assert_eq!(p.ambiente, Ambiente::Prod);
+            assert_eq!(p.ambiente, Environment::Prod);
             assert_eq!(p.entradas, ["p-aprov"]);
             let pin = (decisao != "negar").then_some(PIN);
             assert!(
@@ -649,7 +649,7 @@ fn v3_16_prod_tem_os_mesmos_niveis_e_botoes() {
             assert!(ok(&destravar(&c.d, SENHA)));
         }
     }
-    assert_eq!(nivel(&c.d, "p-aprov"), Some(NivelAcesso::Livre));
+    assert_eq!(nivel(&c.d, "p-aprov"), Some(AccessLevel::Free));
 }
 
 /// D19: banco com túnel vale o nível mais restritivo das duas; a janela mostra as duas
@@ -661,7 +661,7 @@ fn d19_nivel_combinado() {
     // b1 (prod, com aprovação) + s1 (stage, com aprovação).
     let r = com_janela(&c, &rx, "b1", |p| {
         assert_eq!(p.entradas, ["b1", "s1"]);
-        assert_eq!(p.ambiente, Ambiente::Prod);
+        assert_eq!(p.ambiente, Environment::Prod);
         assert!(ok(&responder(
             &c.d,
             Papel::App,
@@ -713,8 +713,8 @@ fn d19_nivel_combinado() {
         assert!(ok(&responder(&c.d, Papel::App, p.id, "sempre", Some(PIN))));
     });
     assert_eq!(r, Ok(Autorizacao::Aprovado));
-    assert_eq!(nivel(&c.d, "b1"), Some(NivelAcesso::Livre));
-    assert_eq!(nivel(&c.d, "s1"), Some(NivelAcesso::Livre));
+    assert_eq!(nivel(&c.d, "b1"), Some(AccessLevel::Free));
+    assert_eq!(nivel(&c.d, "s1"), Some(AccessLevel::Free));
 }
 
 /// D21: sem como abrir o app, o pedido com aprovação é negado na hora; o app que abre e

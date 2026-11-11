@@ -394,7 +394,7 @@ pub fn servir(escuta: &Listener, daemon: Arc<Daemon>, papeis: Arc<Papeis>) -> io
 #[cfg(test)]
 mod testes {
     use super::*;
-    use ward_core::entrada::Ambiente;
+    use ward_core::entry::Environment;
     use ward_core::protocolo::{Operacao, PedidoDeAprovacao, PedidoDeDestrave};
 
     /// D63: sem o grupo, o pid do lançador não basta; com o grupo, só o pid do lançador.
@@ -560,7 +560,7 @@ mod testes {
         let p = PedidoDeAprovacao {
             id: 3,
             entradas: vec!["t-aprov".into()],
-            ambiente: Ambiente::Prod,
+            ambiente: Environment::Prod,
             operacao: Operacao::Executar,
             comando: "\"true\"".into(),
             diretorio: "\"/\"".into(),

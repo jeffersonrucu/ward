@@ -11,7 +11,7 @@ use std::fmt;
 
 use serde::de::{self, Deserializer, Visitor};
 use serde::{Deserialize, Serialize};
-use ward_core::entrada::{NivelAcesso, Segredo as SegredoCore};
+use ward_core::entry::{AccessLevel, Secret as SegredoCore};
 use ward_core::limits::{MAX_PIN_DIGITS, MIN_PIN_DIGITS};
 use zeroize::Zeroizing;
 
@@ -33,7 +33,7 @@ impl Pin {
 
     /// O PIN no tipo do protocolo (também zera ao sair).
     pub(crate) fn para_o_protocolo(&self) -> SegredoCore {
-        SegredoCore::de_bytes(self.0.as_bytes().to_vec())
+        SegredoCore::from_bytes(self.0.as_bytes().to_vec())
     }
 }
 
@@ -80,8 +80,8 @@ impl<'de> Deserialize<'de> for Pin {
 
 /// Nível pedido pela interface, pelo nome do protocolo (`livre`, `com-aprovacao`,
 /// `bloqueado`).
-pub fn nivel_de_nome(nome: &str) -> Result<NivelAcesso, ErroApp> {
-    NivelAcesso::de_nome(nome).ok_or(ErroApp::PedidoInvalido)
+pub fn nivel_de_nome(nome: &str) -> Result<AccessLevel, ErroApp> {
+    AccessLevel::from_name(nome).ok_or(ErroApp::PedidoInvalido)
 }
 
 /// Resposta do `mudar_nivel`: o nível que a entrada passou a ter. Sem PIN.
@@ -141,12 +141,9 @@ mod testes {
 
     #[test]
     fn nivel_so_pelos_tres_nomes_do_protocolo() {
-        assert_eq!(nivel_de_nome("livre"), Ok(NivelAcesso::Livre));
-        assert_eq!(
-            nivel_de_nome("com-aprovacao"),
-            Ok(NivelAcesso::ComAprovacao)
-        );
-        assert_eq!(nivel_de_nome("bloqueado"), Ok(NivelAcesso::Bloqueado));
+        assert_eq!(nivel_de_nome("livre"), Ok(AccessLevel::Free));
+        assert_eq!(nivel_de_nome("com-aprovacao"), Ok(AccessLevel::Approval));
+        assert_eq!(nivel_de_nome("bloqueado"), Ok(AccessLevel::Blocked));
         for ruim in [
             "",
             "Livre",

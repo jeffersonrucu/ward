@@ -44,7 +44,7 @@ fn v2_26_ten_thousand_passwords_per_combination() {
         for i in 0..10_000usize {
             let size = MIN_SIZE + i % (MAX_SIZE - MIN_SIZE + 1);
             let password = generate(&options(size, mask)).unwrap();
-            let b = password.expor();
+            let b = password.expose();
             assert_eq!(b.len(), size);
             assert!(
                 b.iter().all(|c| allowed.contains(c)),
@@ -101,11 +101,11 @@ fn v2_26_all_randomness_comes_from_the_source() {
     let o = options(32, 15);
     let a = generate_with(&o, &mut counter()).unwrap();
     let b = generate_with(&o, &mut counter()).unwrap();
-    assert_eq!(a.expor(), b.expor());
+    assert_eq!(a.expose(), b.expose());
     // The system source does not repeat.
     let x = generate(&o).unwrap();
     let y = generate(&o).unwrap();
-    assert_ne!(x.expor(), y.expor());
+    assert_ne!(x.expose(), y.expose());
     let source = include_str!("../generator.rs");
     assert!(source.contains("generate_with(options, &mut crypto::random)"));
 }
@@ -167,7 +167,7 @@ fn attack_modulo_bias() {
     let mut total = 0u64;
     for _ in 0..4_000 {
         let s = generate(&options(128, 15)).unwrap();
-        for &c in s.expor() {
+        for &c in s.expose() {
             count[usize::from(c)] += 1;
             total += 1;
         }
@@ -189,7 +189,7 @@ fn attack_modulo_bias() {
 #[test]
 fn attack_password_debug_and_errors_without_value() {
     let s = generate(&options(64, 15)).unwrap();
-    let text = s.expor_texto().unwrap().to_owned();
+    let text = s.expose_text().unwrap().to_owned();
     for output in [format!("{s:?}"), format!("{s}"), format!("{s:#?}")] {
         assert!(!output.contains(&text));
         assert!(output.contains("••••"));

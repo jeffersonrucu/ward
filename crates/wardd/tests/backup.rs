@@ -14,7 +14,7 @@ use std::time::{Duration, SystemTime};
 
 use comum::*;
 use ward_core::backup::Versao;
-use ward_core::entrada::Segredo;
+use ward_core::entry::Secret;
 use ward_core::protocolo::{ErroResposta, MSG_RETROCESSO, Papel, Pedido, Resposta, VersaoBackup};
 use wardd::arquivos::Geracoes;
 use wardd::nucleo::Daemon;
@@ -152,8 +152,8 @@ fn v7_8_agente_e_extensao_nao_restauram() {
             papel,
             Pedido::RestaurarBackup {
                 versao: alvo.clone(),
-                senha: Segredo::de_texto(SENHA.to_owned()),
-                pin: Segredo::de_texto(PIN.to_owned()),
+                senha: Secret::from_text(SENHA.to_owned()),
+                pin: Secret::from_text(PIN.to_owned()),
             },
         );
         assert_eq!(

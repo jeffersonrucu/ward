@@ -24,7 +24,7 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 use serde::de::{self, Deserialize, Deserializer, Visitor};
 use ward_core::display::neutralize;
-use ward_core::entrada::Segredo as SegredoCore;
+use ward_core::entry::Secret as SegredoCore;
 use ward_core::limits::MAX_SECRET;
 use ward_core::protocolo::PedidoDeDestrave;
 use zeroize::Zeroizing;
@@ -54,7 +54,7 @@ impl SenhaMestra {
 
     /// A senha no tipo do protocolo (também zera ao sair).
     pub(crate) fn para_o_protocolo(&self) -> SegredoCore {
-        SegredoCore::de_bytes(self.0.as_bytes().to_vec())
+        SegredoCore::from_bytes(self.0.as_bytes().to_vec())
     }
 }
 
@@ -246,10 +246,10 @@ mod testes {
             assert!(!texto.contains("xxxx"), "{texto}");
         }
         let s: SenhaMestra = serde_json::from_str("\"falso-mestra-ward-01\"").unwrap();
-        assert_eq!(s.para_o_protocolo().expor(), b"falso-mestra-ward-01");
+        assert_eq!(s.para_o_protocolo().expose(), b"falso-mestra-ward-01");
         // Com acento e espaço: a senha é o que veio, sem normalizar.
         let s: SenhaMestra = serde_json::from_str("\" senha é\\u0000x \"").unwrap();
-        assert_eq!(s.para_o_protocolo().expor(), " senha é\0x ".as_bytes());
+        assert_eq!(s.para_o_protocolo().expose(), " senha é\0x ".as_bytes());
     }
 
     #[test]

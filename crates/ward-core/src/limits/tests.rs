@@ -10,11 +10,11 @@ use zeroize::Zeroizing;
 use super::*;
 use crate::configuracao::{Configuracao, HashPin};
 use crate::corpo::{ErroCorpo, desserializar, serializar};
-use crate::entrada::{
-    Entrada, ErrosValidacao, GRANDE_PARA_MASCARA, Rascunho, RascunhoAnexo, RascunhoDados,
-    RascunhoExtra, Segredo, TipoEntrada,
-};
 use crate::entrega::{self, Entrega, ErroRecurso, Recursos};
+use crate::entry::{
+    AttachmentDraft, DataDraft, Draft, Entry, EntryType, ExtraDraft, Secret, TOO_LARGE_FOR_MASK,
+    ValidationErrors,
+};
 use crate::mascara::{self, ConstrutorMascara, ErroMascara};
 
 // ---- Helpers ----
@@ -29,8 +29,8 @@ fn t(v: &str) -> String {
     v.to_owned()
 }
 
-fn sec(v: Vec<u8>) -> Option<Segredo> {
-    Some(Segredo::de_bytes(v))
+fn sec(v: Vec<u8>) -> Option<Secret> {
+    Some(Secret::from_bytes(v))
 }
 
 /// Text of `n` bytes that exercises the mask variations: JSON escape (`"`, `\`, `/`)
@@ -55,16 +55,16 @@ fn fake_key(n: usize) -> Vec<u8> {
     v
 }
 
-fn draft(name: &str, data: RascunhoDados) -> Rascunho {
-    Rascunho {
-        nome: t(name),
-        grupo: t("zeta"),
-        ambiente: t("stage"),
-        projeto: t("projeto"),
+fn draft(name: &str, data: DataDraft) -> Draft {
+    Draft {
+        name: t(name),
+        group: t("zeta"),
+        environment: t("stage"),
+        project: t("projeto"),
         tags: (1..=MAX_TAGS).map(|n| format!("tag-{n:02}")).collect(),
-        dados: data,
+        data,
         extras: Vec::new(),
-        anexos: Vec::new(),
+        attachments: Vec::new(),
     }
 }
 
@@ -72,65 +72,65 @@ fn draft(name: &str, data: RascunhoDados) -> Rascunho {
 /// and escapes; the private key of the server and ftp/sftp types at the 64 KiB limit, in
 /// several lines, so that the per-line pass of D36 weighs in, V2.43), tunnel reference
 /// when `tunnel`.
-fn large_data(kind: TipoEntrada, tunnel: Option<&str>) -> RascunhoDados {
+fn large_data(kind: EntryType, tunnel: Option<&str>) -> DataDraft {
     const S: usize = 4 * 1024;
     match kind {
-        TipoEntrada::Login => RascunhoDados::Login {
+        EntryType::Login => DataDraft::Login {
             url: format!("https://cheio.invalid/{}", "a".repeat(MAX_URL - 22)),
-            usuario: "u".repeat(MAX_LINE),
-            senha: sec(hard_text(S)),
-            totp_semente: sec(vec![b'A'; MAX_TOTP]),
+            username: "u".repeat(MAX_LINE),
+            password: sec(hard_text(S)),
+            totp_seed: sec(vec![b'A'; MAX_TOTP]),
         },
-        TipoEntrada::Banco => RascunhoDados::Banco {
-            motor: t("redis"),
+        EntryType::Database => DataDraft::Database {
+            engine: t("redis"),
             host: "h".repeat(MAX_HOST),
-            porta: t("1"),
-            base: t("99999"),
-            usuario: "u".repeat(MAX_LINE),
-            senha: sec(hard_text(S)),
-            tunel: tunnel.map(t).unwrap_or_default(),
+            port: t("1"),
+            db_name: t("99999"),
+            username: "u".repeat(MAX_LINE),
+            password: sec(hard_text(S)),
+            tunnel: tunnel.map(t).unwrap_or_default(),
         },
-        TipoEntrada::Servidor => RascunhoDados::Servidor {
+        EntryType::Server => DataDraft::Server {
             host: "h".repeat(MAX_HOST),
-            porta: t("65535"),
-            usuario: "u".repeat(MAX_LINE),
-            senha: None,
-            chave_privada: sec(fake_key(MAX_SECRET)),
+            port: t("65535"),
+            username: "u".repeat(MAX_LINE),
+            password: None,
+            private_key: sec(fake_key(MAX_SECRET)),
             passphrase: sec(hard_text(S)),
-            salto: String::new(),
+            jump: String::new(),
         },
-        TipoEntrada::Api => RascunhoDados::Api {
+        EntryType::Api => DataDraft::Api {
             url: format!("https://cheio.invalid/{}", "a".repeat(MAX_URL - 22)),
             token: sec(hard_text(S)),
-            variavel: t("FALSO_TOKEN"),
+            variable: t("FALSO_TOKEN"),
         },
-        TipoEntrada::Aws => RascunhoDados::Aws {
+        EntryType::Aws => DataDraft::Aws {
             access_key_id: "A".repeat(MAX_ACCESS_KEY),
             secret_access_key: sec(hard_text(S)),
-            regiao: "r".repeat(MAX_REGION),
+            region: "r".repeat(MAX_REGION),
             role_arn: format!("arn:{}", "a".repeat(MAX_URL - 4)),
             session_token: sec(hard_text(S)),
         },
-        TipoEntrada::Smtp => RascunhoDados::Smtp {
+        EntryType::Smtp => DataDraft::Smtp {
             host: "h".repeat(MAX_HOST),
-            porta: t("1"),
-            usuario: "u".repeat(MAX_LINE),
-            senha: sec(hard_text(S)),
-            seguranca: t("tls"),
+            port: t("1"),
+            username: "u".repeat(MAX_LINE),
+            password: sec(hard_text(S)),
+            security: t("tls"),
         },
-        TipoEntrada::FtpSftp => RascunhoDados::FtpSftp {
-            protocolo: t("sftp"),
+        EntryType::FtpSftp => DataDraft::FtpSftp {
+            protocol: t("sftp"),
             host: "h".repeat(MAX_HOST),
-            porta: t("1"),
-            usuario: "u".repeat(MAX_LINE),
-            senha: None,
-            chave_privada: sec(fake_key(MAX_SECRET)),
+            port: t("1"),
+            username: "u".repeat(MAX_LINE),
+            password: None,
+            private_key: sec(fake_key(MAX_SECRET)),
             passphrase: sec(hard_text(S)),
         },
-        TipoEntrada::NotaSegura => RascunhoDados::NotaSegura {
-            texto: sec(vec![b'n'; MAX_NOTE]),
+        EntryType::SecureNote => DataDraft::SecureNote {
+            text: sec(vec![b'n'; MAX_NOTE]),
         },
-        TipoEntrada::Generico => RascunhoDados::Generico,
+        EntryType::Generic => DataDraft::Generic,
     }
 }
 
@@ -167,28 +167,28 @@ fn multi_line_json(n: usize) -> Vec<u8> {
 /// Entry of the type with the large fields, attachments adding up to the D29 limit, a
 /// multi-line secret extra (D36) and `total` bytes of secret extras (in extras of up to
 /// [`MAX_EXTRA_VALUE`], at most [`MAX_EXTRAS`]).
-fn full(kind: TipoEntrada, total: usize, tunnel: Option<&str>) -> Rascunho {
+fn full(kind: EntryType, total: usize, tunnel: Option<&str>) -> Draft {
     let mut r = draft(
-        &format!("zz-{}", kind.nome().replace('/', "-")),
+        &format!("zz-{}", kind.name().replace('/', "-")),
         large_data(kind, tunnel),
     );
     // With the 64 KiB key (cost ~1.6 MiB in the mask), the server and ftp/sftp types do not
     // fit the budget with the attachments at the D29 limit (it was already so before
     // D36: the per-line pass of the key adds only ~64 KiB); their largest accepted entry
     // carries half the attachments.
-    let binary_max = if matches!(kind, TipoEntrada::Servidor | TipoEntrada::FtpSftp) {
+    let binary_max = if matches!(kind, EntryType::Server | EntryType::FtpSftp) {
         MAX_ATTACHMENTS_TOTAL / 2
     } else {
         MAX_ATTACHMENTS_TOTAL - 4096
     };
-    r.anexos = vec![
-        RascunhoAnexo {
-            nome: t("binario.bin"),
-            conteudo: Segredo::de_bytes(binary(binary_max)),
+    r.attachments = vec![
+        AttachmentDraft {
+            name: t("binario.bin"),
+            content: Secret::from_bytes(binary(binary_max)),
         },
-        RascunhoAnexo {
-            nome: t("app.env"),
-            conteudo: Segredo::de_bytes(
+        AttachmentDraft {
+            name: t("app.env"),
+            content: Secret::from_bytes(
                 b"FALSO_ENV=falso-anexo-01\nPORT=8080\n"
                     .iter()
                     .copied()
@@ -198,19 +198,19 @@ fn full(kind: TipoEntrada, total: usize, tunnel: Option<&str>) -> Rascunho {
             ),
         },
     ];
-    r.extras.push(RascunhoExtra {
-        nome: t("json"),
-        valor: Segredo::de_bytes(multi_line_json(4 * 1024)),
-        segredo: true,
+    r.extras.push(ExtraDraft {
+        name: t("json"),
+        value: Secret::from_bytes(multi_line_json(4 * 1024)),
+        secret: true,
     });
     let mut rest = total;
     let mut i = 1;
     while rest > 0 && i < MAX_EXTRAS {
         let n = rest.min(MAX_EXTRA_VALUE);
-        r.extras.push(RascunhoExtra {
-            nome: format!("e{i:02}"),
-            valor: Segredo::de_bytes(hard_text(n)),
-            segredo: true,
+        r.extras.push(ExtraDraft {
+            name: format!("e{i:02}"),
+            value: Secret::from_bytes(hard_text(n)),
+            secret: true,
         });
         rest -= n;
         i += 1;
@@ -218,17 +218,17 @@ fn full(kind: TipoEntrada, total: usize, tunnel: Option<&str>) -> Rascunho {
     r
 }
 
-fn too_large(e: &ErrosValidacao) -> bool {
-    e.tem_motivo("entrada", GRANDE_PARA_MASCARA)
+fn too_large(e: &ValidationErrors) -> bool {
+    e.has_reason("entrada", TOO_LARGE_FOR_MASK)
 }
 
 /// The largest `total` of extras that validation accepts (binary search) and the entry
 /// at it.
-fn largest_accepted(kind: TipoEntrada, tunnel: Option<&str>) -> (usize, Entrada) {
+fn largest_accepted(kind: EntryType, tunnel: Option<&str>) -> (usize, Entry) {
     let ceiling = MAX_EXTRAS * MAX_EXTRA_VALUE;
     let mut lo = 0usize;
     let mut hi = ceiling;
-    let accepts = |n: usize| match full(kind, n, tunnel).validar() {
+    let accepts = |n: usize| match full(kind, n, tunnel).validate() {
         Ok(_) => true,
         Err(e) => {
             assert!(too_large(&e), "{kind}: recusada por outro motivo: {e}");
@@ -249,7 +249,7 @@ fn largest_accepted(kind: TipoEntrada, tunnel: Option<&str>) -> (usize, Entrada)
             }
         }
     }
-    let e = full(kind, lo, tunnel).validar().unwrap();
+    let e = full(kind, lo, tunnel).validate().unwrap();
     (lo, e)
 }
 
@@ -257,10 +257,10 @@ fn largest_accepted(kind: TipoEntrada, tunnel: Option<&str>) -> (usize, Entrada)
 struct Fakes;
 
 impl Recursos for Fakes {
-    fn codigo_totp(&mut self, _: &Segredo) -> Result<Zeroizing<String>, ErroRecurso> {
+    fn codigo_totp(&mut self, _: &Secret) -> Result<Zeroizing<String>, ErroRecurso> {
         Ok(Zeroizing::new(t("123456")))
     }
-    fn arquivo(&mut self, name: &str, _: &Segredo) -> Result<String, ErroRecurso> {
+    fn arquivo(&mut self, name: &str, _: &Secret) -> Result<String, ErroRecurso> {
         Ok(format!("/run/user/1000/ward/tmp/1-{name}"))
     }
     fn tunel(&mut self, _: &str, _: &str, _: u16) -> Result<u16, ErroRecurso> {
@@ -268,12 +268,12 @@ impl Recursos for Fakes {
     }
 }
 
-fn delivery_of(e: &Entrada) -> Entrega {
+fn delivery_of(e: &Entry) -> Entrega {
     entrega::montar(e, &mut Fakes).unwrap()
 }
 
 /// Real sum of the patterns of the `ward run` mask (entries and deliveries).
-fn real_cost(entries: &[&Entrada], deliveries: &[&Entrega]) -> usize {
+fn real_cost(entries: &[&Entry], deliveries: &[&Entrega]) -> usize {
     let mut c = ConstrutorMascara::new();
     for e in entries {
         c = c.entrada(e);
@@ -289,28 +289,28 @@ fn real_cost(entries: &[&Entrada], deliveries: &[&Entrega]) -> usize {
 #[test]
 fn v2_35_validation_and_body_at_the_same_attachment_limit() {
     let generic = |sizes: &[usize]| {
-        let mut r = draft("anexos", RascunhoDados::Generico);
-        r.extras.push(RascunhoExtra {
-            nome: t("x"),
-            valor: Segredo::de_texto(t("y")),
-            segredo: false,
+        let mut r = draft("anexos", DataDraft::Generic);
+        r.extras.push(ExtraDraft {
+            name: t("x"),
+            value: Secret::from_text(t("y")),
+            secret: false,
         });
-        r.anexos = sizes
+        r.attachments = sizes
             .iter()
             .enumerate()
-            .map(|(i, &n)| RascunhoAnexo {
-                nome: format!("a{i}.bin"),
-                conteudo: Segredo::de_bytes(vec![0x5a; n]),
+            .map(|(i, &n)| AttachmentDraft {
+                name: format!("a{i}.bin"),
+                content: Secret::from_bytes(vec![0x5a; n]),
             })
             .collect();
         r
     };
     // At the limit: validation accepts, the body writes and reads.
-    let at_limit = generic(&[MAX_ATTACHMENTS_TOTAL - 1, 1]).validar().unwrap();
+    let at_limit = generic(&[MAX_ATTACHMENTS_TOTAL - 1, 1]).validate().unwrap();
     let body = serializar(cfg(), 1, core::slice::from_ref(&at_limit)).unwrap();
     assert_eq!(desserializar(&body).map(|(_, _, v)| v.len()), Ok(1));
     // One byte above: validation refuses, and so does the body with that extra byte.
-    assert!(generic(&[MAX_ATTACHMENTS_TOTAL, 1]).validar().is_err());
+    assert!(generic(&[MAX_ATTACHMENTS_TOTAL, 1]).validate().is_err());
     let mut forged = body.to_vec();
     // The last field of the body is the content of the 2nd attachment (1 byte): grows
     // to 2.
@@ -328,11 +328,11 @@ fn v2_35_validation_and_body_at_the_same_attachment_limit() {
 fn v2_35_budget_is_the_same_in_validation_and_in_the_mask() {
     // Validation refuses exactly when the cost by the mask pattern generator goes over the
     // budget: near the boundary, on both sides.
-    let (n, e) = largest_accepted(TipoEntrada::Api, None);
+    let (n, e) = largest_accepted(EntryType::Api, None);
     let cost = mascara::custo_da_entrada(&e).unwrap();
     assert!(cost <= MASK_BUDGET);
-    let r = full(TipoEntrada::Api, n + 1, None);
-    assert!(r.validar().is_err_and(|e| too_large(&e)));
+    let r = full(EntryType::Api, n + 1, None);
+    assert!(r.validate().is_err_and(|e| too_large(&e)));
     // The validation cost is that of the mask built with the real delivery, or more
     // (the measured tunnel port is the longest).
     let g = delivery_of(&e);
@@ -347,18 +347,18 @@ fn v2_35_budget_is_the_same_in_validation_and_in_the_mask() {
 /// mask, and the cost measured by validation is ≥ the real one.
 #[test]
 fn v2_36_largest_entry_of_each_type_builds_the_mask() {
-    for kind in TipoEntrada::TODOS {
-        if kind == TipoEntrada::NotaSegura {
+    for kind in EntryType::ALL {
+        if kind == EntryType::SecureNote {
             continue;
         }
         let (_, e) = largest_accepted(kind, None);
         // The multi-line extra is there, and the key at the D25 limit (V2.43).
-        assert!(e.extras().iter().any(|x| x.nome() == "json"), "{kind}");
-        if matches!(kind, TipoEntrada::Servidor | TipoEntrada::FtpSftp) {
+        assert!(e.extras().iter().any(|x| x.name() == "json"), "{kind}");
+        if matches!(kind, EntryType::Server | EntryType::FtpSftp) {
             let key = e
-                .segredos()
+                .secrets()
                 .into_iter()
-                .map(|s| s.valor.expor().len())
+                .map(|s| s.value.expose().len())
                 .max()
                 .unwrap();
             assert!(key >= MAX_SECRET - 64, "{kind}: chave de {key} bytes");
@@ -377,9 +377,9 @@ fn v2_36_largest_entry_of_each_type_builds_the_mask() {
 #[test]
 fn v2_36_database_and_tunnel_server_pair_builds_the_mask() {
     // The two entries of a combined use (D19), each at the largest accepted size.
-    let (_, server) = largest_accepted(TipoEntrada::Servidor, None);
-    let (_, database) = largest_accepted(TipoEntrada::Banco, Some(server.nome()));
-    assert!(database.conferir_no_cofre([&server]).is_ok());
+    let (_, server) = largest_accepted(EntryType::Server, None);
+    let (_, database) = largest_accepted(EntryType::Database, Some(server.name()));
+    assert!(database.verify_in_vault([&server]).is_ok());
     let g_database = delivery_of(&database);
     let g_server = delivery_of(&server);
     let real = real_cost(&[&database, &server], &[&g_database, &g_server]);
@@ -392,7 +392,7 @@ fn v2_36_database_and_tunnel_server_pair_builds_the_mask() {
         .construir()
         .expect("o par cabe na máscara");
     // And the same holds for the jump (server + jump server).
-    let (_, jump) = largest_accepted(TipoEntrada::Servidor, None);
+    let (_, jump) = largest_accepted(EntryType::Server, None);
     let g_jump = delivery_of(&jump);
     assert!(real_cost(&[&server, &jump], &[&g_server, &g_jump]) <= PATTERN_LIMIT);
 }
@@ -400,20 +400,20 @@ fn v2_36_database_and_tunnel_server_pair_builds_the_mask() {
 #[test]
 fn v2_36_cost_refuses_above_the_budget_and_note_stays_out() {
     // Above the budget: the too-large error, without value in the error.
-    let mut r = full(TipoEntrada::Generico, 0, None);
+    let mut r = full(EntryType::Generic, 0, None);
     r.extras = (0..MAX_EXTRAS)
-        .map(|i| RascunhoExtra {
-            nome: format!("e{i:02}"),
-            valor: Segredo::de_bytes(vec![b'k'; MAX_EXTRA_VALUE]),
-            segredo: true,
+        .map(|i| ExtraDraft {
+            name: format!("e{i:02}"),
+            value: Secret::from_bytes(vec![b'k'; MAX_EXTRA_VALUE]),
+            secret: true,
         })
         .collect();
-    let errors = r.validar().unwrap_err();
+    let errors = r.validate().unwrap_err();
     assert!(too_large(&errors));
     assert!(!format!("{errors} {errors:?}").contains("kkkk"));
     // The secure note has no delivery: cost 0, even when full.
-    let note = full(TipoEntrada::NotaSegura, MAX_EXTRAS * MAX_EXTRA_VALUE, None)
-        .validar()
+    let note = full(EntryType::SecureNote, MAX_EXTRAS * MAX_EXTRA_VALUE, None)
+        .validate()
         .unwrap();
     assert_eq!(mascara::custo_da_entrada(&note), Ok(0));
     assert!(!format!("{}", ErroMascara::GrandeDemais).contains("falso"));
@@ -434,15 +434,15 @@ fn lines_with(sep: u8, n: usize) -> Vec<u8> {
 
 /// The full generic with a secret extra of lines separated by `sep` and `total` bytes
 /// of filler extras.
-fn with_lines(sep: u8, total: usize) -> Rascunho {
-    let mut r = full(TipoEntrada::Generico, total, None);
+fn with_lines(sep: u8, total: usize) -> Draft {
+    let mut r = full(EntryType::Generic, total, None);
     // Without the attachments: the filler (extras) is what takes the entry to the
     // budget.
-    r.anexos.clear();
-    r.extras.push(RascunhoExtra {
-        nome: t("linhas"),
-        valor: Segredo::de_bytes(lines_with(sep, MAX_EXTRA_VALUE)),
-        segredo: true,
+    r.attachments.clear();
+    r.extras.push(ExtraDraft {
+        name: t("linhas"),
+        value: Secret::from_bytes(lines_with(sep, MAX_EXTRA_VALUE)),
+        secret: true,
     });
     r
 }
@@ -455,7 +455,7 @@ fn with_lines(sep: u8, total: usize) -> Rascunho {
 /// value in the error.
 #[test]
 fn v2_43_entry_that_only_goes_over_the_budget_by_d36_is_refused() {
-    let accepts = |n: usize| match with_lines(b'\t', n).validar() {
+    let accepts = |n: usize| match with_lines(b'\t', n).validate() {
         Ok(_) => true,
         Err(e) => {
             assert!(too_large(&e), "recusada por outro motivo: {e}");
@@ -472,10 +472,10 @@ fn v2_43_entry_that_only_goes_over_the_budget_by_d36_is_refused() {
             hi = mid;
         }
     }
-    let tab = with_lines(b'\t', lo).validar().unwrap();
+    let tab = with_lines(b'\t', lo).validate().unwrap();
     let tab_cost = mascara::custo_da_entrada(&tab).unwrap();
     assert!(tab_cost <= MASK_BUDGET);
-    let errors = with_lines(b'\n', lo).validar().unwrap_err();
+    let errors = with_lines(b'\n', lo).validate().unwrap_err();
     assert!(too_large(&errors), "{errors}");
     let text = format!("{errors} {errors:?}");
     assert!(!text.contains("falso"), "erro com valor");
@@ -483,13 +483,13 @@ fn v2_43_entry_that_only_goes_over_the_budget_by_d36_is_refused() {
     // With the same line in a smaller chunk, the version with breaks fits and its cost
     // is ≥ the real one (the same pattern generator).
     let small = {
-        let mut r = full(TipoEntrada::Generico, 0, None);
-        r.extras.push(RascunhoExtra {
-            nome: t("linhas"),
-            valor: Segredo::de_bytes(lines_with(b'\n', 16 * 1024)),
-            segredo: true,
+        let mut r = full(EntryType::Generic, 0, None);
+        r.extras.push(ExtraDraft {
+            name: t("linhas"),
+            value: Secret::from_bytes(lines_with(b'\n', 16 * 1024)),
+            secret: true,
         });
-        r.validar().unwrap()
+        r.validate().unwrap()
     };
     let g = delivery_of(&small);
     let cost = mascara::custo_da_entrada(&small).unwrap();

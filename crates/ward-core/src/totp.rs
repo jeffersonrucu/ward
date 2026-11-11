@@ -17,7 +17,7 @@ use hmac::{Hmac, KeyInit, Mac};
 use sha1::Sha1;
 use zeroize::{Zeroize, Zeroizing};
 
-use crate::entrada::Segredo;
+use crate::entry::Secret;
 
 /// Code period, in seconds (RFC 6238, default of every authenticator).
 pub const PERIOD: u64 = 30;
@@ -97,16 +97,16 @@ impl fmt::Display for TotpCode {
 
 impl Totp {
     /// Reads the base32 seed of the entry (6 digits, 30 s).
-    pub fn from_seed(seed: &Segredo) -> Result<Self, TotpError> {
+    pub fn from_seed(seed: &Secret) -> Result<Self, TotpError> {
         Self::with_digits(seed, DEFAULT_DIGITS)
     }
 
     /// Reads the base32 seed with another number of digits (6 to 8).
-    pub fn with_digits(seed: &Segredo, digits: u32) -> Result<Self, TotpError> {
+    pub fn with_digits(seed: &Secret, digits: u32) -> Result<Self, TotpError> {
         if !(6..=8).contains(&digits) {
             return Err(TotpError::InvalidDigits);
         }
-        let key = decode_base32(seed.expor())?;
+        let key = decode_base32(seed.expose())?;
         Ok(Self { key, digits })
     }
 

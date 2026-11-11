@@ -78,7 +78,7 @@ fn alvo_campo(c: &str) -> String {
 
 fn valor(r: &Resposta) -> Vec<u8> {
     match r {
-        Resposta::Segredo(s) => s.expor().to_vec(),
+        Resposta::Segredo(s) => s.expose().to_vec(),
         outra => panic!("esperava segredo: {:?}", outra.tipo()),
     }
 }
@@ -187,7 +187,7 @@ fn v3_39_totp_do_app_pelo_relogio_do_daemon() {
     let dir = Dir::novo("totp-app");
     // RFC 6238: em t = 59 s o período é o 1, faltando 1 s.
     let d = cofre(&dir, Some(59));
-    let esperado = Totp::from_seed(&ward_core::entrada::Segredo::de_texto(SEMENTE.into()))
+    let esperado = Totp::from_seed(&ward_core::entry::Secret::from_text(SEMENTE.into()))
         .unwrap()
         .code_at(59);
     match pedir(&d, Papel::App, "totp", r#"{"entrada":"t-totp"}"#) {

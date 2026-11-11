@@ -7,7 +7,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use super::*;
 use crate as wc;
-use crate::entrada::{Ambiente, CampoExtra, Login, RascunhoAnexo, RascunhoDados};
+use crate::entry::{AttachmentDraft, DataDraft, Environment, ExtraField, Login};
 use crate::format::KdfParams as ParametrosKdfPin;
 
 #[path = "cofre_teste.rs"]
@@ -27,7 +27,7 @@ fn corpo_de_teste() -> Zeroizing<Vec<u8>> {
 }
 
 /// Lê sem deixar o pânico passar: um pânico vira falha do teste com mensagem própria.
-fn ler_tudo(corpo: &[u8]) -> Result<(Configuracao, Vec<Entrada>), ErroCorpo> {
+fn ler_tudo(corpo: &[u8]) -> Result<(Configuracao, Vec<Entry>), ErroCorpo> {
     match catch_unwind(AssertUnwindSafe(|| desserializar(corpo))) {
         Ok(r) => r.map(|(c, _, e)| (c, e)),
         Err(_) => panic!("o decodificador entrou em pânico"),
@@ -35,7 +35,7 @@ fn ler_tudo(corpo: &[u8]) -> Result<(Configuracao, Vec<Entrada>), ErroCorpo> {
 }
 
 /// Só as entradas (a configuração é conferida nos testes de V2.39).
-fn ler(corpo: &[u8]) -> Result<Vec<Entrada>, ErroCorpo> {
+fn ler(corpo: &[u8]) -> Result<Vec<Entry>, ErroCorpo> {
     ler_tudo(corpo).map(|(_, e)| e)
 }
 
@@ -56,11 +56,11 @@ fn recusado(corpo: &[u8], caso: &str, valor: &str) {
     }
 }
 
-fn mesmo_segredo(a: &Segredo, b: &Segredo) -> bool {
-    a.expor() == b.expor()
+fn mesmo_segredo(a: &Secret, b: &Secret) -> bool {
+    a.expose() == b.expose()
 }
 
-fn mesmo_opcional(a: &Option<Segredo>, b: &Option<Segredo>) -> bool {
+fn mesmo_opcional(a: &Option<Secret>, b: &Option<Secret>) -> bool {
     match (a, b) {
         (None, None) => true,
         (Some(a), Some(b)) => mesmo_segredo(a, b),
@@ -68,16 +68,16 @@ fn mesmo_opcional(a: &Option<Segredo>, b: &Option<Segredo>) -> bool {
     }
 }
 
-fn mesma_autenticacao(a: &Autenticacao, b: &Autenticacao) -> bool {
+fn mesma_autenticacao(a: &Auth, b: &Auth) -> bool {
     match (a, b) {
-        (Autenticacao::Senha(a), Autenticacao::Senha(b)) => mesmo_segredo(a, b),
+        (Auth::Password(a), Auth::Password(b)) => mesmo_segredo(a, b),
         (
-            Autenticacao::Chave {
-                chave_privada: ca,
+            Auth::Key {
+                private_key: ca,
                 passphrase: pa,
             },
-            Autenticacao::Chave {
-                chave_privada: cb,
+            Auth::Key {
+                private_key: cb,
                 passphrase: pb,
             },
         ) => mesmo_segredo(ca, cb) && mesmo_opcional(pa, pb),
@@ -85,106 +85,110 @@ fn mesma_autenticacao(a: &Autenticacao, b: &Autenticacao) -> bool {
     }
 }
 
-fn mesmos_dados(a: &Dados, b: &Dados) -> bool {
+fn mesmos_dados(a: &Data, b: &Data) -> bool {
     match (a, b) {
-        (Dados::Login(a), Dados::Login(b)) => {
+        (Data::Login(a), Data::Login(b)) => {
             let Login {
                 url,
-                usuario,
-                senha,
-                totp_semente,
+                username: usuario,
+                password: senha,
+                totp_seed: totp_semente,
             } = a;
             *url == b.url
-                && *usuario == b.usuario
-                && mesmo_segredo(senha, &b.senha)
-                && mesmo_opcional(totp_semente, &b.totp_semente)
+                && *usuario == b.username
+                && mesmo_segredo(senha, &b.password)
+                && mesmo_opcional(totp_semente, &b.totp_seed)
         }
-        (Dados::Banco(a), Dados::Banco(b)) => {
-            a.motor == b.motor
+        (Data::Database(a), Data::Database(b)) => {
+            a.engine == b.engine
                 && a.host == b.host
-                && a.porta == b.porta
-                && a.base == b.base
-                && a.usuario == b.usuario
-                && mesmo_segredo(&a.senha, &b.senha)
-                && a.tunel == b.tunel
+                && a.port == b.port
+                && a.db_name == b.db_name
+                && a.username == b.username
+                && mesmo_segredo(&a.password, &b.password)
+                && a.tunnel == b.tunnel
         }
-        (Dados::Servidor(a), Dados::Servidor(b)) => {
+        (Data::Server(a), Data::Server(b)) => {
             a.host == b.host
-                && a.porta == b.porta
-                && a.usuario == b.usuario
-                && mesma_autenticacao(&a.autenticacao, &b.autenticacao)
-                && a.salto == b.salto
+                && a.port == b.port
+                && a.username == b.username
+                && mesma_autenticacao(&a.auth, &b.auth)
+                && a.jump == b.jump
         }
-        (Dados::Api(a), Dados::Api(b)) => {
-            a.url == b.url && mesmo_segredo(&a.token, &b.token) && a.variavel == b.variavel
+        (Data::Api(a), Data::Api(b)) => {
+            a.url == b.url && mesmo_segredo(&a.token, &b.token) && a.variable == b.variable
         }
-        (Dados::Aws(a), Dados::Aws(b)) => {
+        (Data::Aws(a), Data::Aws(b)) => {
             a.access_key_id == b.access_key_id
                 && mesmo_segredo(&a.secret_access_key, &b.secret_access_key)
-                && a.regiao == b.regiao
+                && a.region == b.region
                 && a.role_arn == b.role_arn
                 && mesmo_opcional(&a.session_token, &b.session_token)
         }
-        (Dados::Smtp(a), Dados::Smtp(b)) => {
+        (Data::Smtp(a), Data::Smtp(b)) => {
             a.host == b.host
-                && a.porta == b.porta
-                && a.usuario == b.usuario
-                && mesmo_segredo(&a.senha, &b.senha)
-                && a.seguranca == b.seguranca
+                && a.port == b.port
+                && a.username == b.username
+                && mesmo_segredo(&a.password, &b.password)
+                && a.security == b.security
         }
-        (Dados::FtpSftp(a), Dados::FtpSftp(b)) => {
-            a.protocolo == b.protocolo
+        (Data::FtpSftp(a), Data::FtpSftp(b)) => {
+            a.protocol == b.protocol
                 && a.host == b.host
-                && a.porta == b.porta
-                && a.usuario == b.usuario
-                && mesma_autenticacao(&a.autenticacao, &b.autenticacao)
+                && a.port == b.port
+                && a.username == b.username
+                && mesma_autenticacao(&a.auth, &b.auth)
         }
-        (Dados::NotaSegura(a), Dados::NotaSegura(b)) => mesmo_segredo(&a.texto, &b.texto),
-        (Dados::Generico, Dados::Generico) => true,
+        (Data::SecureNote(a), Data::SecureNote(b)) => mesmo_segredo(&a.text, &b.text),
+        (Data::Generic, Data::Generic) => true,
         _ => false,
     }
 }
 
-fn mesmo_extra(a: &CampoExtra, b: &CampoExtra) -> bool {
-    a.nome() == b.nome()
-        && match (a.valor(), b.valor()) {
-            (ValorExtra::Texto(x), ValorExtra::Texto(y)) => x == y,
-            (ValorExtra::Segredo(x), ValorExtra::Segredo(y)) => mesmo_segredo(x, y),
+fn mesmo_extra(a: &ExtraField, b: &ExtraField) -> bool {
+    a.name() == b.name()
+        && match (a.value(), b.value()) {
+            (ExtraValue::Text(x), ExtraValue::Text(y)) => x == y,
+            (ExtraValue::Secret(x), ExtraValue::Secret(y)) => mesmo_segredo(x, y),
             _ => false,
         }
 }
 
 /// Campo a campo; segredos comparados pelos bytes, sem nunca imprimi-los.
-fn conferir_iguais(a: &Entrada, b: &Entrada) {
-    let nome = a.nome();
-    assert_eq!(a.nome(), b.nome());
-    assert_eq!(a.tipo(), b.tipo(), "{nome}: tipo");
-    assert_eq!(a.nivel(), b.nivel(), "{nome}: nível");
-    assert_eq!(a.grupo(), b.grupo(), "{nome}: grupo");
-    assert_eq!(a.ambiente(), b.ambiente(), "{nome}: ambiente");
-    assert_eq!(a.projeto(), b.projeto(), "{nome}: projeto");
+fn conferir_iguais(a: &Entry, b: &Entry) {
+    let nome = a.name();
+    assert_eq!(a.name(), b.name());
+    assert_eq!(a.kind(), b.kind(), "{nome}: tipo");
+    assert_eq!(a.level(), b.level(), "{nome}: nível");
+    assert_eq!(a.group(), b.group(), "{nome}: grupo");
+    assert_eq!(a.environment(), b.environment(), "{nome}: ambiente");
+    assert_eq!(a.project(), b.project(), "{nome}: projeto");
     assert_eq!(a.tags(), b.tags(), "{nome}: tags");
-    assert_eq!(a.datas(), b.datas(), "{nome}: datas");
-    assert!(mesmos_dados(a.dados(), b.dados()), "{nome}: dados");
+    assert_eq!(a.dates(), b.dates(), "{nome}: datas");
+    assert!(mesmos_dados(a.data(), b.data()), "{nome}: dados");
     assert_eq!(a.extras().len(), b.extras().len(), "{nome}: extras");
     for (x, y) in a.extras().iter().zip(b.extras()) {
-        assert!(mesmo_extra(x, y), "{nome}: extra {}", x.nome());
+        assert!(mesmo_extra(x, y), "{nome}: extra {}", x.name());
     }
-    assert_eq!(a.anexos().len(), b.anexos().len(), "{nome}: anexos");
-    for (x, y) in a.anexos().iter().zip(b.anexos()) {
-        assert_eq!(x.nome(), y.nome(), "{nome}: anexo");
+    assert_eq!(
+        a.attachments().len(),
+        b.attachments().len(),
+        "{nome}: anexos"
+    );
+    for (x, y) in a.attachments().iter().zip(b.attachments()) {
+        assert_eq!(x.name(), y.name(), "{nome}: anexo");
         assert!(
-            mesmo_segredo(x.conteudo(), y.conteudo()),
+            mesmo_segredo(x.content(), y.content()),
             "{nome}: conteúdo do anexo {}",
-            x.nome()
+            x.name()
         );
     }
 }
 
-fn conferir_ida_e_volta(originais: &[Entrada], voltaram: &[Entrada]) {
+fn conferir_ida_e_volta(originais: &[Entry], voltaram: &[Entry]) {
     assert_eq!(originais.len(), voltaram.len());
-    let mut ordem: Vec<&Entrada> = originais.iter().collect();
-    ordem.sort_by(|a, b| a.nome().cmp(b.nome()));
+    let mut ordem: Vec<&Entry> = originais.iter().collect();
+    ordem.sort_by(|a, b| a.name().cmp(b.name()));
     for (a, b) in ordem.iter().zip(voltaram) {
         conferir_iguais(a, b);
     }
@@ -193,7 +197,7 @@ fn conferir_ida_e_volta(originais: &[Entrada], voltaram: &[Entrada]) {
 /// O que o decodificador aceitou tem de ser um cofre válido: a configuração dentro das
 /// regras, cada entrada confere contra todas as outras (a conferência completa,
 /// quadrática, sem o índice do módulo) e serializar de novo dá os mesmos bytes.
-fn conferir_aceito(corpo: &[u8], configuracao: &Configuracao, entradas: &[Entrada]) {
+fn conferir_aceito(corpo: &[u8], configuracao: &Configuracao, entradas: &[Entry]) {
     // D39: a geração aceita é ≥ 1 e volta igual (ela está logo depois da versão).
     let geracao = desserializar(corpo).map(|(_, g, _)| g).unwrap();
     assert!(geracao >= 1, "aceitou geração 0");
@@ -209,7 +213,7 @@ fn conferir_aceito(corpo: &[u8], configuracao: &Configuracao, entradas: &[Entrad
             .filter(move |(j, _)| *j != i)
             .map(|(_, o)| o);
         assert!(
-            e.conferir_no_cofre(outras).is_ok(),
+            e.verify_in_vault(outras).is_ok(),
             "aceitou entrada que não confere no cofre"
         );
     }
@@ -220,7 +224,7 @@ fn conferir_aceito(corpo: &[u8], configuracao: &Configuracao, entradas: &[Entrad
 // ---- Corpo cru, para forjar ----
 
 /// Uma entrada como bytes crus, para forjar campos que a validação nunca deixaria
-/// existir numa [`Entrada`].
+/// existir numa [`Entry`].
 #[derive(Clone)]
 struct Crua {
     tipo: Vec<u8>,
@@ -283,8 +287,8 @@ fn cruas(corpo: &[u8]) -> Vec<Crua> {
                 resto: b.anexos.bytes,
             };
             Crua {
-                tipo: b.tipo.nome().as_bytes().to_vec(),
-                nivel: b.nivel.nome().as_bytes().to_vec(),
+                tipo: b.tipo.name().as_bytes().to_vec(),
+                nivel: b.nivel.name().as_bytes().to_vec(),
                 nome: b.nome.to_vec(),
                 grupo: b.grupo.to_vec(),
                 ambiente: b.ambiente.to_vec(),
@@ -308,8 +312,8 @@ fn cruas(corpo: &[u8]) -> Vec<Crua> {
                         (n.to_vec(), c.to_vec())
                     })
                     .collect(),
-                criada: b.datas.criada_em().unwrap_or(0),
-                alterada: b.datas.alterada_em().unwrap_or(0),
+                criada: b.datas.created_at().unwrap_or(0),
+                alterada: b.datas.modified_at().unwrap_or(0),
             }
         })
         .collect()
@@ -427,14 +431,14 @@ fn v2_30_ida_e_volta_do_cofre_de_teste() {
     let mut originais = cofre_de_teste();
     assert_eq!(originais.len(), 22);
     // D65 d: datas nas três formas (as duas, só a alteração, nenhuma).
-    originais[0].definir_datas(Datas::carimbo_novo(1_762_000_000).unwrap());
-    originais[1].definir_datas(
-        Datas::carimbo_novo(1_762_000_000)
+    originais[0].set_dates(Dates::new_stamp(1_762_000_000).unwrap());
+    originais[1].set_dates(
+        Dates::new_stamp(1_762_000_000)
             .unwrap()
-            .alterado(1_762_500_000)
+            .modified(1_762_500_000)
             .unwrap(),
     );
-    originais[2].definir_datas(Datas::NENHUMA.alterado(MAX_DATE).unwrap());
+    originais[2].set_dates(Dates::NONE.modified(MAX_DATE).unwrap());
     let corpo = serializar(cfg(), 1, &originais).unwrap();
     let voltaram = ler(&corpo).unwrap();
     conferir_ida_e_volta(&originais, &voltaram);
@@ -443,14 +447,14 @@ fn v2_30_ida_e_volta_do_cofre_de_teste() {
     let nivel = |nome: &str| {
         voltaram
             .iter()
-            .find(|e| e.nome() == nome)
-            .map(Entrada::nivel)
+            .find(|e| e.name() == nome)
+            .map(Entry::level)
             .unwrap()
     };
-    assert_eq!(nivel("gama-bloqueada"), NivelAcesso::Bloqueado);
-    assert_eq!(nivel("acme-pg-aprovacao"), NivelAcesso::ComAprovacao);
-    assert_eq!(nivel("acme-pg-dev"), NivelAcesso::Livre);
-    assert_eq!(nivel("acme-totp-dev"), NivelAcesso::Livre);
+    assert_eq!(nivel("gama-bloqueada"), AccessLevel::Blocked);
+    assert_eq!(nivel("acme-pg-aprovacao"), AccessLevel::Approval);
+    assert_eq!(nivel("acme-pg-dev"), AccessLevel::Free);
+    assert_eq!(nivel("acme-totp-dev"), AccessLevel::Free);
 
     // Canônico: de novo dá os mesmos bytes, e a ordem de entrada não importa.
     assert!(serializar(cfg(), 1, &voltaram).unwrap()[..] == corpo[..]);
@@ -458,7 +462,7 @@ fn v2_30_ida_e_volta_do_cofre_de_teste() {
     invertidas.reverse();
     assert!(serializar(cfg(), 1, &invertidas).unwrap()[..] == corpo[..]);
     // Saem em ordem de nome.
-    assert!(voltaram.windows(2).all(|w| w[0].nome() < w[1].nome()));
+    assert!(voltaram.windows(2).all(|w| w[0].name() < w[1].name()));
     // O escritor independente dos testes chega aos mesmos bytes.
     assert!(forjar(&cruas(&corpo)) == corpo[..]);
 }
@@ -466,13 +470,13 @@ fn v2_30_ida_e_volta_do_cofre_de_teste() {
 #[test]
 fn v2_30_uma_de_cada_tipo_no_maximo_do_modelo() {
     let originais = um_de_cada_cheio();
-    for tipo in TipoEntrada::TODOS {
-        assert!(originais.iter().any(|e| e.tipo() == tipo), "falta {tipo}");
+    for tipo in EntryType::ALL {
+        assert!(originais.iter().any(|e| e.kind() == tipo), "falta {tipo}");
     }
     for e in &originais {
         assert_eq!(e.tags().len(), 16);
         assert_eq!(e.extras().len(), 64);
-        assert!(e.projeto().is_some());
+        assert!(e.project().is_some());
     }
     let corpo = serializar(cfg(), 1, &originais).unwrap();
     let voltaram = ler(&corpo).unwrap();
@@ -551,9 +555,9 @@ fn v2_30_ida_e_volta_pelo_disco_com_anexos_no_limite() {
     originais.extend(um_de_cada_cheio());
     for e in originais
         .iter()
-        .filter(|e| e.nome().starts_with("zz-cheio-") && e.nome() != "zz-cheio-api-token")
+        .filter(|e| e.name().starts_with("zz-cheio-") && e.name() != "zz-cheio-api-token")
     {
-        let soma: usize = e.anexos().iter().map(|a| a.conteudo().len()).sum();
+        let soma: usize = e.attachments().iter().map(|a| a.content().len()).sum();
         assert_eq!(soma, crate::limits::MAX_ATTACHMENTS_TOTAL);
     }
     let esperado = serializar(cofre.config(), 1, &originais).unwrap();
@@ -668,15 +672,15 @@ fn formato_conhecido_de_uma_entrada() {
     let entradas = ler(&v).unwrap();
     assert_eq!(entradas.len(), 1);
     let e = &entradas[0];
-    assert_eq!(e.nome(), "x-1");
-    assert_eq!(e.tipo(), TipoEntrada::Generico);
-    assert_eq!(e.nivel(), NivelAcesso::Livre);
-    assert_eq!(e.ambiente(), Ambiente::Dev);
-    assert_eq!(e.projeto(), None);
+    assert_eq!(e.name(), "x-1");
+    assert_eq!(e.kind(), EntryType::Generic);
+    assert_eq!(e.level(), AccessLevel::Free);
+    assert_eq!(e.environment(), Environment::Dev);
+    assert_eq!(e.project(), None);
     assert_eq!(e.tags(), ["tag".to_owned()]);
-    assert!(matches!(e.extras()[0].valor(), ValorExtra::Texto(t) if t == "valor"));
-    assert_eq!(e.datas().criada_em(), Some(1_762_000_000));
-    assert_eq!(e.datas().alterada_em(), Some(1_762_086_400));
+    assert!(matches!(e.extras()[0].value(), ExtraValue::Text(t) if t == "valor"));
+    assert_eq!(e.dates().created_at(), Some(1_762_000_000));
+    assert_eq!(e.dates().modified_at(), Some(1_762_086_400));
     assert_eq!(desserializar(&v).map(|(_, g, _)| g), Ok(7));
     assert!(serializar(cfg(), 7, &entradas).unwrap()[..] == v[..]);
 }
@@ -694,9 +698,9 @@ fn serializar_recusa_cofre_que_nao_reabriria() {
     );
 
     // Túnel para um servidor que não está no cofre.
-    let entradas: Vec<Entrada> = cofre_de_teste()
+    let entradas: Vec<Entry> = cofre_de_teste()
         .into_iter()
-        .filter(|e| e.nome() != "acme-ssh-senha-stage")
+        .filter(|e| e.name() != "acme-ssh-senha-stage")
         .collect();
     assert_eq!(
         serializar(cfg(), 1, &entradas).unwrap_err(),
@@ -704,30 +708,30 @@ fn serializar_recusa_cofre_que_nao_reabriria() {
     );
 
     // Salto para um servidor que tem salto (cadeia).
-    let mut entradas: Vec<Entrada> = cofre_de_teste()
+    let mut entradas: Vec<Entry> = cofre_de_teste()
         .into_iter()
-        .filter(|e| e.nome() != "acme-ssh-salto")
+        .filter(|e| e.name() != "acme-ssh-salto")
         .collect();
-    let mut r = Rascunho {
-        nome: "acme-ssh-salto".to_owned(),
-        grupo: "acme".to_owned(),
-        ambiente: "prod".to_owned(),
-        projeto: String::new(),
+    let mut r = Draft {
+        name: "acme-ssh-salto".to_owned(),
+        group: "acme".to_owned(),
+        environment: "prod".to_owned(),
+        project: String::new(),
         tags: Vec::new(),
-        dados: RascunhoDados::Servidor {
+        data: DataDraft::Server {
             host: "127.0.0.1".to_owned(),
-            porta: "2224".to_owned(),
-            usuario: "salto".to_owned(),
-            senha: Some(Segredo::de_texto("falso-SALTO-01".to_owned())),
-            chave_privada: None,
+            port: "2224".to_owned(),
+            username: "salto".to_owned(),
+            password: Some(Secret::from_text("falso-SALTO-01".to_owned())),
+            private_key: None,
             passphrase: None,
-            salto: "acme-ssh-senha-stage".to_owned(),
+            jump: "acme-ssh-senha-stage".to_owned(),
         },
         extras: Vec::new(),
-        anexos: Vec::new(),
+        attachments: Vec::new(),
     };
     r.tags.push("salto".to_owned());
-    entradas.push(validada(r, NivelAcesso::ComAprovacao));
+    entradas.push(validada(r, AccessLevel::Approval));
     assert_eq!(
         serializar(cfg(), 1, &entradas).unwrap_err(),
         ErroCorpo::Inconsistente
@@ -736,24 +740,24 @@ fn serializar_recusa_cofre_que_nao_reabriria() {
 
 #[test]
 fn serializar_recusa_mais_de_10_000_entradas() {
-    let entradas: Vec<Entrada> = (0..=MAX_ENTRIES)
+    let entradas: Vec<Entry> = (0..=MAX_ENTRIES)
         .map(|i| {
-            let mut r = Rascunho {
-                nome: format!("e{i:05}"),
-                grupo: "g".to_owned(),
-                ambiente: "dev".to_owned(),
-                projeto: String::new(),
+            let mut r = Draft {
+                name: format!("e{i:05}"),
+                group: "g".to_owned(),
+                environment: "dev".to_owned(),
+                project: String::new(),
                 tags: Vec::new(),
-                dados: RascunhoDados::Generico,
+                data: DataDraft::Generic,
                 extras: Vec::new(),
-                anexos: Vec::new(),
+                attachments: Vec::new(),
             };
-            r.extras.push(crate::entrada::RascunhoExtra {
-                nome: "A".to_owned(),
-                valor: Segredo::de_texto("v".to_owned()),
-                segredo: false,
+            r.extras.push(crate::entry::ExtraDraft {
+                name: "A".to_owned(),
+                value: Secret::from_text("v".to_owned()),
+                secret: false,
             });
-            validada(r, NivelAcesso::Livre)
+            validada(r, AccessLevel::Free)
         })
         .collect();
     assert_eq!(
@@ -769,21 +773,21 @@ fn serializar_recusa_mais_de_10_000_entradas() {
 fn v2_30_anexo_vazio_recusado_ao_salvar_e_no_corpo() {
     // D29: anexo vazio é recusado ao salvar (não chega a virar `Entrada`) e no corpo
     // forjado.
-    let mut r = Rascunho {
-        nome: "anexo-vazio".to_owned(),
-        grupo: "g".to_owned(),
-        ambiente: "dev".to_owned(),
-        projeto: String::new(),
+    let mut r = Draft {
+        name: "anexo-vazio".to_owned(),
+        group: "g".to_owned(),
+        environment: "dev".to_owned(),
+        project: String::new(),
         tags: Vec::new(),
-        dados: RascunhoDados::Generico,
+        data: DataDraft::Generic,
         extras: Vec::new(),
-        anexos: Vec::new(),
+        attachments: Vec::new(),
     };
-    r.anexos.push(RascunhoAnexo {
-        nome: "vazio.txt".to_owned(),
-        conteudo: Segredo::de_bytes(Vec::new()),
+    r.attachments.push(AttachmentDraft {
+        name: "vazio.txt".to_owned(),
+        content: Secret::from_bytes(Vec::new()),
     });
-    assert!(r.validar().is_err());
+    assert!(r.validate().is_err());
 
     let corpo = corpo_de_teste();
     let mut c = cruas(&corpo);
@@ -1077,7 +1081,7 @@ fn leitura_no_limite_aceita_e_acima_recusa() {
     let corpo = serializar(cfg(), 1, &cheias).unwrap();
     conferir_ida_e_volta(&cheias, &ler(&corpo).unwrap());
     // Ambiente lido de volta pelo identificador.
-    assert!(cheias.iter().all(|e| e.ambiente() == Ambiente::Stage));
+    assert!(cheias.iter().all(|e| e.environment() == Environment::Stage));
 }
 
 // ---- V2.36: entrada grande demais no corpo forjado (D29) ----
@@ -1795,34 +1799,37 @@ fn v2_58_corpo_forjado_com_ultimo_rotulo_numerico() {
 /// dela; a alteração nunca desce, nem com o relógio voltando.
 #[test]
 fn d65_regra_das_datas() {
-    assert_eq!(Datas::carimbo_novo(0), None);
-    assert_eq!(Datas::carimbo_novo(MAX_DATE + 1), None);
-    assert_eq!(Datas::carimbo_novo(u64::MAX), None);
-    let d = Datas::carimbo_novo(1_000).unwrap();
-    assert_eq!((d.criada_em(), d.alterada_em()), (Some(1_000), Some(1_000)));
-    let depois = d.alterado(5_000).unwrap();
+    assert_eq!(Dates::new_stamp(0), None);
+    assert_eq!(Dates::new_stamp(MAX_DATE + 1), None);
+    assert_eq!(Dates::new_stamp(u64::MAX), None);
+    let d = Dates::new_stamp(1_000).unwrap();
     assert_eq!(
-        (depois.criada_em(), depois.alterada_em()),
+        (d.created_at(), d.modified_at()),
+        (Some(1_000), Some(1_000))
+    );
+    let depois = d.modified(5_000).unwrap();
+    assert_eq!(
+        (depois.created_at(), depois.modified_at()),
         (Some(1_000), Some(5_000))
     );
     // Relógio que volta: a alteração fica onde estava, a criação não muda.
-    let voltou = depois.alterado(10).unwrap();
+    let voltou = depois.modified(10).unwrap();
     assert_eq!(
-        (voltou.criada_em(), voltou.alterada_em()),
+        (voltou.created_at(), voltou.modified_at()),
         (Some(1_000), Some(5_000))
     );
-    assert_eq!(depois.alterado(0), None);
-    assert_eq!(depois.alterado(MAX_DATE + 1), None);
+    assert_eq!(depois.modified(0), None);
+    assert_eq!(depois.modified(MAX_DATE + 1), None);
     // Sem datas: a alteração ganha data, a criação segue desconhecida.
-    let so_alterada = Datas::NENHUMA.alterado(77).unwrap();
+    let so_alterada = Dates::NONE.modified(77).unwrap();
     assert_eq!(
-        (so_alterada.criada_em(), so_alterada.alterada_em()),
+        (so_alterada.created_at(), so_alterada.modified_at()),
         (None, Some(77))
     );
-    assert_eq!(Datas::de_partes(Some(5), Some(4)), None);
-    assert_eq!(Datas::de_partes(Some(5), None), None);
-    assert_eq!(Datas::de_partes(None, Some(0)), None);
-    assert_eq!(Datas::de_partes(Some(0), Some(1)), None);
+    assert_eq!(Dates::from_parts(Some(5), Some(4)), None);
+    assert_eq!(Dates::from_parts(Some(5), None), None);
+    assert_eq!(Dates::from_parts(None, Some(0)), None);
+    assert_eq!(Dates::from_parts(Some(0), Some(1)), None);
 }
 
 /// V3.41: o corpo v3 (sem datas) é recusado como versão desconhecida, com o erro
@@ -1892,10 +1899,10 @@ fn d65_datas_forjadas_no_corpo() {
         let v = com(criada, alterada);
         let (c, entradas) = ler_tudo(&v).unwrap();
         conferir_aceito(&v, &c, &entradas);
-        let e = entradas.iter().find(|e| e.nome() == "acme-pg-dev").unwrap();
+        let e = entradas.iter().find(|e| e.name() == "acme-pg-dev").unwrap();
         let opc = |d: u64| (d != 0).then_some(d);
-        assert_eq!(e.datas().criada_em(), opc(criada));
-        assert_eq!(e.datas().alterada_em(), opc(alterada));
+        assert_eq!(e.dates().created_at(), opc(criada));
+        assert_eq!(e.dates().modified_at(), opc(alterada));
     }
 }
 
@@ -1907,7 +1914,7 @@ fn d65_datas_so_mudam_os_16_bytes_da_entrada() {
     let sem = corpo_de_teste();
     let mut entradas = cofre_de_teste();
     for e in &mut entradas {
-        e.definir_datas(Datas::carimbo_novo(1_762_000_000).unwrap());
+        e.set_dates(Dates::new_stamp(1_762_000_000).unwrap());
     }
     let com = serializar(cfg(), 1, &entradas).unwrap();
     assert_eq!(sem.len(), com.len());

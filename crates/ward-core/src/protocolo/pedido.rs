@@ -3,7 +3,7 @@
 //!
 //! Formato e limite são conferidos aqui; regra de negócio (a entrada existe? o PIN
 //! confere? a origem bate?) fica no daemon. Toda entrada nova ou editada ainda passa por
-//! [`Rascunho::validar`] no daemon.
+//! [`Draft::validate`] no daemon.
 
 use zeroize::Zeroizing;
 
@@ -11,9 +11,9 @@ use super::Operacao;
 use super::campos::{Campos, R, bytes_de, segredo_de, texto_de, textos_de};
 use super::erros::ErroResposta;
 use super::json::{Escritor, JsonInvalido, Valor};
-use crate::entrada::{
-    Autenticacao, Dados, Entrada, NivelAcesso, Rascunho, RascunhoAnexo, RascunhoDados,
-    RascunhoExtra, Segredo, TipoEntrada, ValorExtra,
+use crate::entry::{
+    AccessLevel, AttachmentDraft, Auth, Data, DataDraft, Draft, Entry, EntryType, ExtraDraft,
+    ExtraValue, Secret,
 };
 use crate::limits::{
     MAX_ARGUMENT, MAX_ARGUMENTS, MAX_ATTACHMENT_NAME, MAX_ATTACHMENTS, MAX_ATTACHMENTS_TOTAL,
@@ -29,7 +29,7 @@ pub type Bytes = Zeroizing<Vec<u8>>;
 #[derive(Debug)]
 pub struct Variavel {
     pub nome: Bytes,
-    pub valor: Segredo,
+    pub valor: Secret,
 }
 
 /// `ward run`: entrada, comando, diretório e ambiente da CLI, em bytes (podem não ser
@@ -116,36 +116,42 @@ impl Alvo {
     /// O segredo da entrada que este alvo aponta (D65 b: `revelar`/`copiar` do app), ou
     /// `None` se o tipo não tem o campo, o campo não está preenchido ou o extra não
     /// existe ou não é secreto. Anexo não é alvo.
-    pub fn segredo_em<'a>(&self, e: &'a Entrada) -> Option<&'a Segredo> {
+    pub fn segredo_em<'a>(&self, e: &'a Entry) -> Option<&'a Secret> {
         match self {
-            Alvo::Extra(nome) => e.extras().iter().find_map(|x| match x.valor() {
-                ValorExtra::Segredo(v) if x.nome() == nome => Some(v),
+            Alvo::Extra(nome) => e.extras().iter().find_map(|x| match x.value() {
+                ExtraValue::Secret(v) if x.name() == nome => Some(v),
                 _ => None,
             }),
-            Alvo::Campo(id) => segredo_do_campo(e.dados(), id),
+            Alvo::Campo(id) => segredo_do_campo(e.data(), id),
         }
     }
 }
 
 /// Campo secreto do tipo pelo identificador do protocolo ([`CAMPOS_SECRETOS`]).
-fn segredo_do_campo<'a>(d: &'a Dados, id: &str) -> Option<&'a Segredo> {
-    let auth = |a: &'a Autenticacao| match (a, id) {
-        (Autenticacao::Senha(s), "senha") => Some(s),
-        (Autenticacao::Chave { chave_privada, .. }, "chave_privada") => Some(chave_privada),
-        (Autenticacao::Chave { passphrase, .. }, "passphrase") => passphrase.as_ref(),
+fn segredo_do_campo<'a>(d: &'a Data, id: &str) -> Option<&'a Secret> {
+    let auth = |a: &'a Auth| match (a, id) {
+        (Auth::Password(s), "senha") => Some(s),
+        (
+            Auth::Key {
+                private_key: chave_privada,
+                ..
+            },
+            "chave_privada",
+        ) => Some(chave_privada),
+        (Auth::Key { passphrase, .. }, "passphrase") => passphrase.as_ref(),
         _ => None,
     };
     match (d, id) {
-        (Dados::Login(l), "senha") => Some(&l.senha),
-        (Dados::Login(l), "totp_semente") => l.totp_semente.as_ref(),
-        (Dados::Banco(b), "senha") => Some(&b.senha),
-        (Dados::Servidor(v), _) => auth(&v.autenticacao),
-        (Dados::FtpSftp(f), _) => auth(&f.autenticacao),
-        (Dados::Api(a), "token") => Some(&a.token),
-        (Dados::Aws(a), "secret_access_key") => Some(&a.secret_access_key),
-        (Dados::Aws(a), "session_token") => a.session_token.as_ref(),
-        (Dados::Smtp(m), "senha") => Some(&m.senha),
-        (Dados::NotaSegura(n), "texto") => Some(&n.texto),
+        (Data::Login(l), "senha") => Some(&l.password),
+        (Data::Login(l), "totp_semente") => l.totp_seed.as_ref(),
+        (Data::Database(b), "senha") => Some(&b.password),
+        (Data::Server(v), _) => auth(&v.auth),
+        (Data::FtpSftp(f), _) => auth(&f.auth),
+        (Data::Api(a), "token") => Some(&a.token),
+        (Data::Aws(a), "secret_access_key") => Some(&a.secret_access_key),
+        (Data::Aws(a), "session_token") => a.session_token.as_ref(),
+        (Data::Smtp(m), "senha") => Some(&m.password),
+        (Data::SecureNote(n), "texto") => Some(&n.text),
         _ => None,
     }
 }
@@ -244,12 +250,12 @@ pub fn id_login_ok(id: &str) -> bool {
     id.len() == 32 && id.bytes().all(|b| b.is_ascii_alphanumeric())
 }
 
-/// Pedido do cliente. Segredos em [`Segredo`] (zera ao sair, `Debug` sem valor).
+/// Pedido do cliente. Segredos em [`Secret`] (zera ao sair, `Debug` sem valor).
 #[derive(Debug)]
 pub enum Pedido {
     Estado,
     Destravar {
-        senha: Segredo,
+        senha: Secret,
     },
     Travar,
     Lista,
@@ -259,7 +265,7 @@ pub enum Pedido {
         /// Comando remoto (vazio = shell interativo).
         comando: Vec<Bytes>,
         /// Token do "Conectar" (D3); sem token vale o nível.
-        token: Option<Segredo>,
+        token: Option<Secret>,
         janela: Option<Janela>,
         /// Fase 54b (D68): o que é a entrada padrão da CLI.
         tipo_entrada: TipoEntradaPadrao,
@@ -271,12 +277,12 @@ pub enum Pedido {
         entrada: String,
     },
     EntradaPadrao {
-        dados: Segredo,
+        dados: Secret,
     },
     Janela(Janela),
     CriarCofre {
-        senha: Segredo,
-        pin: Segredo,
+        senha: Secret,
+        pin: Secret,
     },
     Detalhe {
         entrada: String,
@@ -295,7 +301,7 @@ pub enum Pedido {
     SalvarEntrada {
         /// Nome atual da entrada editada; `None` cria.
         anterior: Option<String>,
-        rascunho: Rascunho,
+        rascunho: Draft,
         /// Fase 39b (V5.12): nomes dos anexos da entrada editada (`anterior`) que
         /// continuam nela. O daemon copia o conteúdo deles para o rascunho, à frente dos
         /// anexos novos; o conteúdo de um anexo guardado nunca sai do daemon. Anexo da
@@ -307,14 +313,14 @@ pub enum Pedido {
     },
     MudarNivel {
         entrada: String,
-        nivel: NivelAcesso,
-        pin: Segredo,
+        nivel: AccessLevel,
+        pin: Secret,
     },
     ResponderAprovacao {
         pedido: u64,
         decisao: Decisao,
         /// Presente se e só se a decisão pede PIN.
-        pin: Option<Segredo>,
+        pin: Option<Secret>,
         /// Fase 54b (D68): o usuário marcou, na janela, que permite a entrada padrão
         /// que ela não mostra. Só com um "Permitir"; o daemon exige `true` num pedido
         /// com `entrada_oculta` e recusa `true` nos outros.
@@ -324,12 +330,12 @@ pub enum Pedido {
         entrada: String,
     },
     TrocarPin {
-        atual: Segredo,
-        novo: Segredo,
+        atual: Secret,
+        novo: Secret,
     },
     TrocarSenha {
-        atual: Segredo,
-        nova: Segredo,
+        atual: Secret,
+        nova: Secret,
     },
     TempoTrava {
         minutos: u32,
@@ -343,7 +349,7 @@ pub enum Pedido {
     },
     SalvarLogin {
         /// Sempre `RascunhoDados::Login`.
-        rascunho: Rascunho,
+        rascunho: Draft,
     },
     /// `ward login` (Fase 43): a extensão espera o próximo pedido de login, sem campo.
     AguardarLogin,
@@ -369,8 +375,8 @@ pub enum Pedido {
     /// e o PIN do cofre atual (S9: restaurar volta níveis e PIN).
     RestaurarBackup {
         versao: String,
-        senha: Segredo,
-        pin: Segredo,
+        senha: Secret,
+        pin: Secret,
     },
     /// Configuração do backup externo (Fase 46), sem campo.
     BackupExterno,
@@ -494,7 +500,7 @@ impl Pedido {
                 && rascunho_ok(rascunho)
                 && manter_anexos_ok(anterior.is_some(), manter_anexos, rascunho)),
             Pedido::SalvarLogin { rascunho } => {
-                ok(matches!(rascunho.dados, RascunhoDados::Login { .. }) && rascunho_ok(rascunho))
+                ok(matches!(rascunho.data, DataDraft::Login { .. }) && rascunho_ok(rascunho))
             }
             Pedido::RestaurarBackup { versao, senha, pin } => {
                 ok(versao_ok(versao) && senha_ok(senha) && pin_ok(pin))
@@ -536,13 +542,13 @@ impl Pedido {
                 e.chave("versao");
                 e.texto(versao);
                 e.chave("senha");
-                e.base64(senha.expor());
+                e.base64(senha.expose());
                 e.chave("pin");
-                e.base64(pin.expor());
+                e.base64(pin.expose());
             }
             Pedido::Destravar { senha } => {
                 e.chave("senha");
-                e.base64(senha.expor());
+                e.base64(senha.expose());
             }
             Pedido::Executar(x) => {
                 e.chave("entrada");
@@ -561,7 +567,7 @@ impl Pedido {
                             e.chave("nome");
                             e.base64(&v.nome);
                             e.chave("valor");
-                            e.base64(v.valor.expor());
+                            e.base64(v.valor.expose());
                         });
                     }
                 });
@@ -581,7 +587,7 @@ impl Pedido {
                 e.texto(tipo_entrada.nome());
                 if let Some(t) = token {
                     e.chave("token");
-                    e.base64(t.expor());
+                    e.base64(t.expose());
                 }
                 if let Some(j) = janela {
                     e.chave("janela");
@@ -599,14 +605,14 @@ impl Pedido {
             }
             Pedido::EntradaPadrao { dados } => {
                 e.chave("dados");
-                e.base64(dados.expor());
+                e.base64(dados.expose());
             }
             Pedido::Janela(j) => escrever_janela(e, *j),
             Pedido::CriarCofre { senha, pin } => {
                 e.chave("senha");
-                e.base64(senha.expor());
+                e.base64(senha.expose());
                 e.chave("pin");
-                e.base64(pin.expor());
+                e.base64(pin.expose());
             }
             Pedido::Revelar { entrada, alvo } | Pedido::Copiar { entrada, alvo } => {
                 e.chave("entrada");
@@ -655,9 +661,9 @@ impl Pedido {
                 e.chave("entrada");
                 e.texto(entrada);
                 e.chave("nivel");
-                e.texto(nivel.nome());
+                e.texto(nivel.name());
                 e.chave("pin");
-                e.base64(pin.expor());
+                e.base64(pin.expose());
             }
             Pedido::ResponderAprovacao {
                 pedido,
@@ -671,7 +677,7 @@ impl Pedido {
                 e.texto(decisao.nome());
                 if let Some(p) = pin {
                     e.chave("pin");
-                    e.base64(p.expor());
+                    e.base64(p.expose());
                 }
                 if *entrada_confirmada {
                     e.chave("entrada_confirmada");
@@ -680,15 +686,15 @@ impl Pedido {
             }
             Pedido::TrocarPin { atual, novo } => {
                 e.chave("atual");
-                e.base64(atual.expor());
+                e.base64(atual.expose());
                 e.chave("novo");
-                e.base64(novo.expor());
+                e.base64(novo.expose());
             }
             Pedido::TrocarSenha { atual, nova } => {
                 e.chave("atual");
-                e.base64(atual.expor());
+                e.base64(atual.expose());
                 e.chave("nova");
-                e.base64(nova.expor());
+                e.base64(nova.expose());
             }
             Pedido::TempoTrava { minutos } => {
                 e.chave("minutos");
@@ -745,13 +751,13 @@ fn backup_externo_ok(ligado: bool, uuid: &Option<String>) -> bool {
     crate::configuracao::BackupExterno::novo(ligado, uuid.as_deref()).is_ok()
 }
 
-fn senha_ok(s: &Segredo) -> bool {
+fn senha_ok(s: &Secret) -> bool {
     !s.is_empty() && s.len() <= MAX_SECRET
 }
 
 /// PIN: de 4 a 6 dígitos ASCII. Quem confere contra o hash é o daemon (S9).
-fn pin_ok(p: &Segredo) -> bool {
-    let b = p.expor();
+fn pin_ok(p: &Secret) -> bool {
+    let b = p.expose();
     (MIN_PIN_DIGITS..=MAX_PIN_DIGITS).contains(&b.len()) && b.iter().all(u8::is_ascii_digit)
 }
 
@@ -771,7 +777,7 @@ fn variavel_ok(v: &Variavel) -> bool {
         && sem_nul(&v.nome)
         && !v.nome.contains(&b'=')
         && v.valor.len() <= MAX_ARGUMENT
-        && sem_nul(v.valor.expor())
+        && sem_nul(v.valor.expose())
 }
 
 fn janela_ok(j: Janela) -> bool {
@@ -797,21 +803,23 @@ pub(crate) const CAMPOS_SECRETOS: &[&str] = &[
     "texto",
 ];
 
-fn rascunho_ok(r: &Rascunho) -> bool {
-    let anexos: usize = r.anexos.iter().map(|a| a.conteudo.len()).sum();
-    let textos = [&r.grupo, &r.ambiente, &r.projeto];
-    nome_ok(&r.nome)
+fn rascunho_ok(r: &Draft) -> bool {
+    let anexos: usize = r.attachments.iter().map(|a| a.content.len()).sum();
+    let textos = [&r.group, &r.environment, &r.project];
+    nome_ok(&r.name)
         && textos.iter().all(|t| t.len() <= MAX_TEXT)
         && r.tags.len() <= MAX_TAGS
         && r.tags.iter().all(|t| t.len() <= MAX_TAG)
         && r.extras.len() <= MAX_EXTRAS
         && r.extras
             .iter()
-            .all(|x| x.nome.len() <= MAX_EXTRA_NAME && x.valor.len() <= MAX_EXTRA_VALUE)
-        && r.anexos.len() <= MAX_ATTACHMENTS
-        && r.anexos.iter().all(|a| a.nome.len() <= MAX_ATTACHMENT_NAME)
+            .all(|x| x.name.len() <= MAX_EXTRA_NAME && x.value.len() <= MAX_EXTRA_VALUE)
+        && r.attachments.len() <= MAX_ATTACHMENTS
+        && r.attachments
+            .iter()
+            .all(|a| a.name.len() <= MAX_ATTACHMENT_NAME)
         && anexos <= MAX_ATTACHMENTS_TOTAL
-        && campos_do_rascunho(&r.dados).iter().all(|c| match c {
+        && campos_do_rascunho(&r.data).iter().all(|c| match c {
             CampoRascunho::Texto(_, t) => t.len() <= MAX_TEXT,
             CampoRascunho::Segredo(k, s) => s.len() <= max_segredo(k),
         })
@@ -820,9 +828,9 @@ fn rascunho_ok(r: &Rascunho) -> bool {
 /// Fase 39b: "manter anexo" só na edição; nomes não vazios, dentro do limite, sem
 /// repetição, e mantidos mais novos cabem em [`MAX_ATTACHMENTS`]. Se o nome existe na
 /// entrada editada é regra do daemon ([`juntar_anexos_mantidos`]).
-fn manter_anexos_ok(editando: bool, nomes: &[String], r: &Rascunho) -> bool {
+fn manter_anexos_ok(editando: bool, nomes: &[String], r: &Draft) -> bool {
     (editando || nomes.is_empty())
-        && nomes.len().saturating_add(r.anexos.len()) <= MAX_ATTACHMENTS
+        && nomes.len().saturating_add(r.attachments.len()) <= MAX_ATTACHMENTS
         && nomes.iter().enumerate().all(|(i, n)| {
             !n.is_empty() && n.len() <= MAX_ATTACHMENT_NAME && !nomes[..i].contains(n)
         })
@@ -831,12 +839,12 @@ fn manter_anexos_ok(editando: bool, nomes: &[String], r: &Rascunho) -> bool {
 /// Fase 39b (V5.12): põe à frente dos anexos novos do rascunho uma cópia de cada anexo
 /// de `antiga` pedido em `nomes`, na ordem pedida. Nome que a entrada editada não tem, ou
 /// repetido, é [`ErroResposta::PedidoInvalido`] (nada muda no rascunho). Depois disto o
-/// rascunho passa por [`Rascunho::validar`] inteiro: soma de D29, nome repetido com um
+/// rascunho passa por [`Draft::validate`] inteiro: soma de D29, nome repetido com um
 /// anexo novo, orçamento da máscara. O conteúdo é copiado dentro do daemon; não há
 /// operação que o devolva (S1, S11).
 pub fn juntar_anexos_mantidos(
-    rascunho: &mut Rascunho,
-    antiga: &Entrada,
+    rascunho: &mut Draft,
+    antiga: &Entry,
     nomes: &[String],
 ) -> Result<(), ErroResposta> {
     let mut mantidos = Vec::with_capacity(nomes.len());
@@ -845,20 +853,20 @@ pub fn juntar_anexos_mantidos(
             return Err(ErroResposta::PedidoInvalido);
         }
         let a = antiga
-            .anexos()
+            .attachments()
             .iter()
-            .find(|a| a.nome() == nome)
+            .find(|a| a.name() == nome)
             .ok_or(ErroResposta::PedidoInvalido)?;
-        mantidos.push(RascunhoAnexo {
-            nome: a.nome().to_owned(),
-            conteudo: Segredo::de_bytes(a.conteudo().expor().to_vec()),
+        mantidos.push(AttachmentDraft {
+            name: a.name().to_owned(),
+            content: Secret::from_bytes(a.content().expose().to_vec()),
         });
     }
-    if mantidos.len().saturating_add(rascunho.anexos.len()) > MAX_ATTACHMENTS {
+    if mantidos.len().saturating_add(rascunho.attachments.len()) > MAX_ATTACHMENTS {
         return Err(ErroResposta::PedidoInvalido);
     }
-    mantidos.append(&mut rascunho.anexos);
-    rascunho.anexos = mantidos;
+    mantidos.append(&mut rascunho.attachments);
+    rascunho.attachments = mantidos;
     Ok(())
 }
 
@@ -997,7 +1005,7 @@ pub(crate) fn ler(op: Operacao, mut c: Campos) -> R<Pedido> {
         },
         Operacao::MudarNivel => {
             let entrada = c.texto("entrada", MAX_NAME)?;
-            let nivel = NivelAcesso::de_nome(&c.texto("nivel", MAX_NAME)?).ok_or(JsonInvalido)?;
+            let nivel = AccessLevel::from_name(&c.texto("nivel", MAX_NAME)?).ok_or(JsonInvalido)?;
             let pin = c.segredo("pin", MAX_PIN_DIGITS)?;
             Pedido::MudarNivel {
                 entrada,
@@ -1104,11 +1112,11 @@ fn escrever_janela(e: &mut Escritor, j: Janela) {
 /// Um campo do tipo como o protocolo o vê.
 enum CampoRascunho<'a> {
     Texto(&'static str, &'a String),
-    Segredo(&'static str, &'a Segredo),
+    Segredo(&'static str, &'a Secret),
 }
 
 /// Os campos preenchidos do rascunho, na ordem do tipo.
-fn campos_do_rascunho(d: &RascunhoDados) -> Vec<CampoRascunho<'_>> {
+fn campos_do_rascunho(d: &DataDraft) -> Vec<CampoRascunho<'_>> {
     use CampoRascunho::{Segredo as S, Texto as T};
     let mut v = Vec::new();
     macro_rules! t {
@@ -1126,25 +1134,25 @@ fn campos_do_rascunho(d: &RascunhoDados) -> Vec<CampoRascunho<'_>> {
         };
     }
     match d {
-        RascunhoDados::Login {
+        DataDraft::Login {
             url,
-            usuario,
-            senha,
-            totp_semente,
+            username: usuario,
+            password: senha,
+            totp_seed: totp_semente,
         } => {
             t!("url", url);
             t!("usuario", usuario);
             s!("senha", senha);
             s!("totp_semente", totp_semente);
         }
-        RascunhoDados::Banco {
-            motor,
+        DataDraft::Database {
+            engine: motor,
             host,
-            porta,
-            base,
-            usuario,
-            senha,
-            tunel,
+            port: porta,
+            db_name: base,
+            username: usuario,
+            password: senha,
+            tunnel: tunel,
         } => {
             t!("motor", motor);
             t!("host", host);
@@ -1154,14 +1162,14 @@ fn campos_do_rascunho(d: &RascunhoDados) -> Vec<CampoRascunho<'_>> {
             s!("senha", senha);
             t!("tunel", tunel);
         }
-        RascunhoDados::Servidor {
+        DataDraft::Server {
             host,
-            porta,
-            usuario,
-            senha,
-            chave_privada,
+            port: porta,
+            username: usuario,
+            password: senha,
+            private_key: chave_privada,
             passphrase,
-            salto,
+            jump: salto,
         } => {
             t!("host", host);
             t!("porta", porta);
@@ -1171,19 +1179,19 @@ fn campos_do_rascunho(d: &RascunhoDados) -> Vec<CampoRascunho<'_>> {
             s!("passphrase", passphrase);
             t!("salto", salto);
         }
-        RascunhoDados::Api {
+        DataDraft::Api {
             url,
             token,
-            variavel,
+            variable: variavel,
         } => {
             t!("url", url);
             s!("token", token);
             t!("variavel", variavel);
         }
-        RascunhoDados::Aws {
+        DataDraft::Aws {
             access_key_id,
             secret_access_key,
-            regiao,
+            region: regiao,
             role_arn,
             session_token,
         } => {
@@ -1193,12 +1201,12 @@ fn campos_do_rascunho(d: &RascunhoDados) -> Vec<CampoRascunho<'_>> {
             t!("role_arn", role_arn);
             s!("session_token", session_token);
         }
-        RascunhoDados::Smtp {
+        DataDraft::Smtp {
             host,
-            porta,
-            usuario,
-            senha,
-            seguranca,
+            port: porta,
+            username: usuario,
+            password: senha,
+            security: seguranca,
         } => {
             t!("host", host);
             t!("porta", porta);
@@ -1206,13 +1214,13 @@ fn campos_do_rascunho(d: &RascunhoDados) -> Vec<CampoRascunho<'_>> {
             s!("senha", senha);
             t!("seguranca", seguranca);
         }
-        RascunhoDados::FtpSftp {
-            protocolo,
+        DataDraft::FtpSftp {
+            protocol: protocolo,
             host,
-            porta,
-            usuario,
-            senha,
-            chave_privada,
+            port: porta,
+            username: usuario,
+            password: senha,
+            private_key: chave_privada,
             passphrase,
         } => {
             t!("protocolo", protocolo);
@@ -1223,87 +1231,87 @@ fn campos_do_rascunho(d: &RascunhoDados) -> Vec<CampoRascunho<'_>> {
             s!("chave_privada", chave_privada);
             s!("passphrase", passphrase);
         }
-        RascunhoDados::NotaSegura { texto } => {
+        DataDraft::SecureNote { text: texto } => {
             s!("texto", texto);
         }
-        RascunhoDados::Generico => {}
+        DataDraft::Generic => {}
     }
     v
 }
 
-fn ler_dados(tipo: TipoEntrada, mut c: Campos) -> R<RascunhoDados> {
+fn ler_dados(tipo: EntryType, mut c: Campos) -> R<DataDraft> {
     let t = |c: &mut Campos, k: &str| c.texto_ou_vazio(k, MAX_TEXT);
     let s = |c: &mut Campos, k: &str| c.segredo_opc(k, max_segredo(k));
     let d = match tipo {
-        TipoEntrada::Login => RascunhoDados::Login {
+        EntryType::Login => DataDraft::Login {
             url: t(&mut c, "url")?,
-            usuario: t(&mut c, "usuario")?,
-            senha: s(&mut c, "senha")?,
-            totp_semente: s(&mut c, "totp_semente")?,
+            username: t(&mut c, "usuario")?,
+            password: s(&mut c, "senha")?,
+            totp_seed: s(&mut c, "totp_semente")?,
         },
-        TipoEntrada::Banco => RascunhoDados::Banco {
-            motor: t(&mut c, "motor")?,
+        EntryType::Database => DataDraft::Database {
+            engine: t(&mut c, "motor")?,
             host: t(&mut c, "host")?,
-            porta: t(&mut c, "porta")?,
-            base: t(&mut c, "base")?,
-            usuario: t(&mut c, "usuario")?,
-            senha: s(&mut c, "senha")?,
-            tunel: t(&mut c, "tunel")?,
+            port: t(&mut c, "porta")?,
+            db_name: t(&mut c, "base")?,
+            username: t(&mut c, "usuario")?,
+            password: s(&mut c, "senha")?,
+            tunnel: t(&mut c, "tunel")?,
         },
-        TipoEntrada::Servidor => RascunhoDados::Servidor {
+        EntryType::Server => DataDraft::Server {
             host: t(&mut c, "host")?,
-            porta: t(&mut c, "porta")?,
-            usuario: t(&mut c, "usuario")?,
-            senha: s(&mut c, "senha")?,
-            chave_privada: s(&mut c, "chave_privada")?,
+            port: t(&mut c, "porta")?,
+            username: t(&mut c, "usuario")?,
+            password: s(&mut c, "senha")?,
+            private_key: s(&mut c, "chave_privada")?,
             passphrase: s(&mut c, "passphrase")?,
-            salto: t(&mut c, "salto")?,
+            jump: t(&mut c, "salto")?,
         },
-        TipoEntrada::Api => RascunhoDados::Api {
+        EntryType::Api => DataDraft::Api {
             url: t(&mut c, "url")?,
             token: s(&mut c, "token")?,
-            variavel: t(&mut c, "variavel")?,
+            variable: t(&mut c, "variavel")?,
         },
-        TipoEntrada::Aws => RascunhoDados::Aws {
+        EntryType::Aws => DataDraft::Aws {
             access_key_id: t(&mut c, "access_key_id")?,
             secret_access_key: s(&mut c, "secret_access_key")?,
-            regiao: t(&mut c, "regiao")?,
+            region: t(&mut c, "regiao")?,
             role_arn: t(&mut c, "role_arn")?,
             session_token: s(&mut c, "session_token")?,
         },
-        TipoEntrada::Smtp => RascunhoDados::Smtp {
+        EntryType::Smtp => DataDraft::Smtp {
             host: t(&mut c, "host")?,
-            porta: t(&mut c, "porta")?,
-            usuario: t(&mut c, "usuario")?,
-            senha: s(&mut c, "senha")?,
-            seguranca: t(&mut c, "seguranca")?,
+            port: t(&mut c, "porta")?,
+            username: t(&mut c, "usuario")?,
+            password: s(&mut c, "senha")?,
+            security: t(&mut c, "seguranca")?,
         },
-        TipoEntrada::FtpSftp => RascunhoDados::FtpSftp {
-            protocolo: t(&mut c, "protocolo")?,
+        EntryType::FtpSftp => DataDraft::FtpSftp {
+            protocol: t(&mut c, "protocolo")?,
             host: t(&mut c, "host")?,
-            porta: t(&mut c, "porta")?,
-            usuario: t(&mut c, "usuario")?,
-            senha: s(&mut c, "senha")?,
-            chave_privada: s(&mut c, "chave_privada")?,
+            port: t(&mut c, "porta")?,
+            username: t(&mut c, "usuario")?,
+            password: s(&mut c, "senha")?,
+            private_key: s(&mut c, "chave_privada")?,
             passphrase: s(&mut c, "passphrase")?,
         },
-        TipoEntrada::NotaSegura => RascunhoDados::NotaSegura {
-            texto: s(&mut c, "texto")?,
+        EntryType::SecureNote => DataDraft::SecureNote {
+            text: s(&mut c, "texto")?,
         },
-        TipoEntrada::Generico => RascunhoDados::Generico,
+        EntryType::Generic => DataDraft::Generic,
     };
     // Campo de outro tipo (ou inventado, como "nivel") recusa.
     c.fim()?;
     Ok(d)
 }
 
-fn ler_rascunho(mut c: Campos) -> R<Rascunho> {
+fn ler_rascunho(mut c: Campos) -> R<Draft> {
     let nome = c.texto("nome", MAX_NAME)?;
     let grupo = c.texto_ou_vazio("grupo", MAX_TEXT)?;
     let ambiente = c.texto_ou_vazio("ambiente", MAX_TEXT)?;
     let projeto = c.texto_ou_vazio("projeto", MAX_TEXT)?;
     let tags = textos_de(c.lista_ou_vazia("tags", MAX_TAGS)?, MAX_TAG)?;
-    let tipo = TipoEntrada::de_nome(&c.texto("tipo", MAX_NAME)?).ok_or(JsonInvalido)?;
+    let tipo = EntryType::from_name(&c.texto("tipo", MAX_NAME)?).ok_or(JsonInvalido)?;
     let dados = ler_dados(tipo, c.objeto_ou_vazio("campos")?)?;
     let mut extras = Vec::new();
     for v in c.lista_ou_vazia("extras", MAX_EXTRAS)? {
@@ -1312,10 +1320,10 @@ fn ler_rascunho(mut c: Campos) -> R<Rascunho> {
         let valor = o.segredo("valor", MAX_EXTRA_VALUE)?;
         let segredo = o.logico("segredo")?;
         o.fim()?;
-        extras.push(RascunhoExtra {
-            nome,
-            valor,
-            segredo,
+        extras.push(ExtraDraft {
+            name: nome,
+            value: valor,
+            secret: segredo,
         });
     }
     let mut anexos = Vec::new();
@@ -1330,31 +1338,34 @@ fn ler_rascunho(mut c: Campos) -> R<Rascunho> {
         )?;
         o.fim()?;
         soma += conteudo.len();
-        anexos.push(RascunhoAnexo { nome, conteudo });
+        anexos.push(AttachmentDraft {
+            name: nome,
+            content: conteudo,
+        });
     }
     c.fim()?;
-    Ok(Rascunho {
-        nome,
-        grupo,
-        ambiente,
-        projeto,
+    Ok(Draft {
+        name: nome,
+        group: grupo,
+        environment: ambiente,
+        project: projeto,
         tags,
-        dados,
+        data: dados,
         extras,
-        anexos,
+        attachments: anexos,
     })
 }
 
-fn escrever_rascunho(e: &mut Escritor, r: &Rascunho) {
+fn escrever_rascunho(e: &mut Escritor, r: &Draft) {
     e.chave("nome");
-    e.texto(&r.nome);
+    e.texto(&r.name);
     e.chave("grupo");
-    e.texto(&r.grupo);
+    e.texto(&r.group);
     e.chave("ambiente");
-    e.texto(&r.ambiente);
-    if !r.projeto.is_empty() {
+    e.texto(&r.environment);
+    if !r.project.is_empty() {
         e.chave("projeto");
-        e.texto(&r.projeto);
+        e.texto(&r.project);
     }
     e.chave("tags");
     e.lista(|e| {
@@ -1364,10 +1375,10 @@ fn escrever_rascunho(e: &mut Escritor, r: &Rascunho) {
         }
     });
     e.chave("tipo");
-    e.texto(r.dados.tipo().nome());
+    e.texto(r.data.kind().name());
     e.chave("campos");
     e.objeto(|e| {
-        for c in campos_do_rascunho(&r.dados) {
+        for c in campos_do_rascunho(&r.data) {
             match c {
                 CampoRascunho::Texto(k, t) => {
                     e.chave(k);
@@ -1375,7 +1386,7 @@ fn escrever_rascunho(e: &mut Escritor, r: &Rascunho) {
                 }
                 CampoRascunho::Segredo(k, s) => {
                     e.chave(k);
-                    e.base64(s.expor());
+                    e.base64(s.expose());
                 }
             }
         }
@@ -1386,23 +1397,23 @@ fn escrever_rascunho(e: &mut Escritor, r: &Rascunho) {
             e.item();
             e.objeto(|e| {
                 e.chave("nome");
-                e.texto(&x.nome);
+                e.texto(&x.name);
                 e.chave("valor");
-                e.base64(x.valor.expor());
+                e.base64(x.value.expose());
                 e.chave("segredo");
-                e.logico(x.segredo);
+                e.logico(x.secret);
             });
         }
     });
     e.chave("anexos");
     e.lista(|e| {
-        for a in &r.anexos {
+        for a in &r.attachments {
             e.item();
             e.objeto(|e| {
                 e.chave("nome");
-                e.texto(&a.nome);
+                e.texto(&a.name);
                 e.chave("conteudo");
-                e.base64(a.conteudo.expor());
+                e.base64(a.content.expose());
             });
         }
     });

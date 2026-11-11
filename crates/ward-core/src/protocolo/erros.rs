@@ -8,10 +8,10 @@ use core::fmt;
 #[cfg(unix)]
 use crate::atomic_write::WriteError;
 use crate::corpo::ErroAbrir;
-use crate::entrada::ErrosValidacao;
+use crate::entry::ValidationErrors;
 
 /// Um problema de validação da entrada (campo, posição na lista e motivo), copiado de
-/// [`crate::entrada::ErroValidacao`], que só tem textos fixos.
+/// [`crate::entry::ValidationError`], que só tem textos fixos.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Problema {
     pub campo: String,
@@ -233,15 +233,15 @@ impl ErroResposta {
     }
 
     /// Erro de validação a partir dos problemas da entrada (só textos fixos).
-    pub fn de_validacao(erros: &ErrosValidacao) -> Self {
+    pub fn de_validacao(erros: &ValidationErrors) -> Self {
         Self::Validacao(
             erros
-                .lista()
+                .list()
                 .iter()
                 .map(|e| Problema {
-                    campo: e.campo.to_owned(),
-                    posicao: e.posicao.map(|p| p as u64),
-                    motivo: e.motivo.to_owned(),
+                    campo: e.field.to_owned(),
+                    posicao: e.position.map(|p| p as u64),
+                    motivo: e.reason.to_owned(),
                 })
                 .collect(),
         )

@@ -1,7 +1,7 @@
 use super::*;
 
-fn seed(s: &str) -> Segredo {
-    Segredo::de_texto(s.to_owned())
+fn seed(s: &str) -> Secret {
+    Secret::from_text(s.to_owned())
 }
 
 /// RFC 6238 seed (appendix B) for SHA1: ASCII "12345678901234567890" in base32.
@@ -157,7 +157,7 @@ fn attack_malformed_seed_is_refused() {
     let at_limit = "A".repeat(MAX_SEED);
     assert!(Totp::from_seed(&seed(&at_limit)).is_ok());
     // Invalid UTF-8 bytes (the seed is a secret, it can come from anywhere).
-    assert!(Totp::from_seed(&Segredo::de_bytes(vec![0xff; 20])).is_err());
+    assert!(Totp::from_seed(&Secret::from_bytes(vec![0xff; 20])).is_err());
 }
 
 #[test]
@@ -228,20 +228,20 @@ fn v2_28_totp_without_clone_and_seed_zeroes() {
 /// digits), on a fixed clock. The file and tunnel resources are not used by a `login`.
 #[test]
 fn v2_25_delivered_ward_totp_comes_from_this_module() {
-    use crate::entrada::{Rascunho, RascunhoDados};
     use crate::entrega::{ErroRecurso, Recursos, montar};
+    use crate::entry::{DataDraft, Draft};
 
     struct FixedClock {
         time: u64,
         digits: u32,
     }
     impl Recursos for FixedClock {
-        fn codigo_totp(&mut self, seed: &Segredo) -> Result<Zeroizing<String>, ErroRecurso> {
+        fn codigo_totp(&mut self, seed: &Secret) -> Result<Zeroizing<String>, ErroRecurso> {
             let t = Totp::with_digits(seed, self.digits)
                 .map_err(|_| ErroRecurso("semente TOTP inválida"))?;
             Ok(Zeroizing::new(t.code_at(self.time).code().to_owned()))
         }
-        fn arquivo(&mut self, _: &str, _: &Segredo) -> Result<String, ErroRecurso> {
+        fn arquivo(&mut self, _: &str, _: &Secret) -> Result<String, ErroRecurso> {
             Err(ErroRecurso("sem arquivo no teste"))
         }
         fn tunel(&mut self, _: &str, _: &str, _: u16) -> Result<u16, ErroRecurso> {
@@ -249,23 +249,23 @@ fn v2_25_delivered_ward_totp_comes_from_this_module() {
         }
     }
 
-    fn login(b32_seed: &str) -> crate::entrada::Entrada {
-        let r = Rascunho {
-            nome: "acme-wp-prod".to_owned(),
-            grupo: "acme".to_owned(),
-            ambiente: "prod".to_owned(),
-            projeto: String::new(),
+    fn login(b32_seed: &str) -> crate::entry::Entry {
+        let r = Draft {
+            name: "acme-wp-prod".to_owned(),
+            group: "acme".to_owned(),
+            environment: "prod".to_owned(),
+            project: String::new(),
             tags: Vec::new(),
-            dados: RascunhoDados::Login {
+            data: DataDraft::Login {
                 url: "http://localhost:8081/wp-login.php".to_owned(),
-                usuario: "wp_editor".to_owned(),
-                senha: Some(seed("falso-WP-senha-02")),
-                totp_semente: Some(seed(b32_seed)),
+                username: "wp_editor".to_owned(),
+                password: Some(seed("falso-WP-senha-02")),
+                totp_seed: Some(seed(b32_seed)),
             },
             extras: Vec::new(),
-            anexos: Vec::new(),
+            attachments: Vec::new(),
         };
-        match r.validar() {
+        match r.validate() {
             Ok(e) => e,
             Err(errors) => panic!("devia validar: {errors}"),
         }

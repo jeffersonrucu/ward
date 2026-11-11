@@ -38,7 +38,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
-use ward_core::entrada::{Dados, NivelAcesso, origem_da_url};
+use ward_core::entry::{AccessLevel, Data, url_origin};
 use ward_core::mascara::Mascara;
 use ward_core::protocolo::{ErroResposta, Pedido, Resposta};
 use ward_core::totp::Totp;
@@ -276,7 +276,7 @@ fn abrir_navegador(chrome: &Path, rt: &Path) -> Result<(Navegador, Cdp), ErroRes
     let falhou = |_| ErroResposta::NavegadorFalhou;
     ward_platform::prepare_dir(rt).map_err(|_| ErroResposta::EntregaFalhou)?;
     let sufixo = ward_core::generator::connect_token().map_err(|_| ErroResposta::Interno)?;
-    let sufixo = std::str::from_utf8(&sufixo.expor()[..16]).map_err(|_| ErroResposta::Interno)?;
+    let sufixo = std::str::from_utf8(&sufixo.expose()[..16]).map_err(|_| ErroResposta::Interno)?;
     let perfil = rt.join(format!("{PREFIXO_PERFIL}{sufixo}"));
     // Pasta nova: nunca reaproveita uma que já existe.
     fs::DirBuilder::new()
@@ -502,7 +502,7 @@ fn origem_confere(cdp: &mut Cdp, origem: &str) -> Result<(String, bool), ErroRes
         .map_err(|e| erro_cdp(cdp, e))?;
     let q = a.arvore.frame;
     let url = Zeroizing::new(q.url);
-    let ok = origem_da_url(&url).is_some_and(|o| o == origem) && q.origem == origem;
+    let ok = url_origin(&url).is_some_and(|o| o == origem) && q.origem == origem;
     Ok((q.id, ok))
 }
 
@@ -763,7 +763,7 @@ fn gravar_estado(rt: &Path, entrada: &str, estado: &[u8]) -> io::Result<PathBuf>
     let sufixo =
         ward_core::generator::connect_token().map_err(|_| io::Error::other("aleatório"))?;
     let sufixo =
-        std::str::from_utf8(&sufixo.expor()[..12]).map_err(|_| io::Error::other("aleatório"))?;
+        std::str::from_utf8(&sufixo.expose()[..12]).map_err(|_| io::Error::other("aleatório"))?;
     let tmp = pasta.join(format!(".{entrada}.{sufixo}.tmp"));
     let destino = pasta.join(format!("{entrada}.json"));
     let r = (|| {
@@ -797,8 +797,8 @@ impl Daemon {
         if let Some(a) = self.estado().aberto.as_ref()
             && a.entradas
                 .iter()
-                .find(|e| e.nome() == entrada && e.nivel() != NivelAcesso::Bloqueado)
-                .is_some_and(|e| !matches!(e.dados(), Dados::Login(_)))
+                .find(|e| e.name() == entrada && e.level() != AccessLevel::Blocked)
+                .is_some_and(|e| !matches!(e.data(), Data::Login(_)))
         {
             return Err(ErroResposta::TipoSemEntrega);
         }
@@ -815,15 +815,18 @@ impl Daemon {
             let e = a
                 .entradas
                 .iter()
-                .find(|e| e.nome() == entrada && e.nivel() != NivelAcesso::Bloqueado)
+                .find(|e| e.name() == entrada && e.level() != AccessLevel::Blocked)
                 .ok_or(ErroResposta::EntradaInexistente)?;
-            let Dados::Login(l) = e.dados() else {
+            let Data::Login(l) = e.data() else {
                 return Err(ErroResposta::TipoSemEntrega);
             };
-            let senha = l.senha.expor_texto().ok_or(ErroResposta::EntregaFalhou)?;
+            let senha = l
+                .password
+                .expose_text()
+                .ok_or(ErroResposta::EntregaFalhou)?;
             let mut s = Zeroizing::new(String::with_capacity(senha.len()));
             s.push_str(senha);
-            let codigo = match &l.totp_semente {
+            let codigo = match &l.totp_seed {
                 Some(semente) => {
                     let c = Totp::from_seed(semente)
                         .and_then(|t| t.code_now())
@@ -839,7 +842,7 @@ impl Daemon {
             (
                 l.url.clone(),
                 Credencial {
-                    usuario: l.usuario.clone(),
+                    usuario: l.username.clone(),
                     senha: s,
                     codigo,
                 },
@@ -848,7 +851,7 @@ impl Daemon {
                 inicial,
             )
         };
-        let origem = origem_da_url(&url).ok_or(ErroResposta::EntregaFalhou)?;
+        let origem = url_origin(&url).ok_or(ErroResposta::EntregaFalhou)?;
         aviso!("playwright: abrindo o navegador");
         let (navegador, mut cdp) = abrir_navegador(self.chrome(), &rt)?;
         let resultado = entrar(&mut cdp, &url, &origem, &cred);

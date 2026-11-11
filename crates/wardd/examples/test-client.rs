@@ -18,7 +18,7 @@ use std::os::unix::net::UnixStream;
 use std::process::ExitCode;
 use std::time::Duration;
 
-use ward_core::entrada::Segredo;
+use ward_core::entry::Secret;
 use ward_core::protocolo::{self, Papel, Pedido, Resposta};
 
 /// Largest password read from stdin.
@@ -44,7 +44,7 @@ fn main() -> ExitCode {
                 return ExitCode::from(2);
             }
             Pedido::Destravar {
-                senha: Segredo::de_bytes(password),
+                senha: Secret::from_bytes(password),
             }
         }
         _ => return ExitCode::from(2),

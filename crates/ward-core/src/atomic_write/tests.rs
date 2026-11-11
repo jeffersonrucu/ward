@@ -1119,28 +1119,28 @@ fn d62_new_vault_after_the_burned_generation() {
 /// entries have the same size.
 fn v4_body_with_dates(version: u64) -> zeroize::Zeroizing<Vec<u8>> {
     use crate::corpo::serializar;
-    use crate::entrada::{Datas, Rascunho, RascunhoDados, Segredo};
+    use crate::entry::{DataDraft, Dates, Draft, Secret};
     let entries: Vec<_> = (0..3u64)
         .map(|i| {
-            let mut e = Rascunho {
-                nome: format!("nota-{i}"),
-                grupo: "g".to_owned(),
-                ambiente: "dev".to_owned(),
-                projeto: String::new(),
+            let mut e = Draft {
+                name: format!("nota-{i}"),
+                group: "g".to_owned(),
+                environment: "dev".to_owned(),
+                project: String::new(),
                 tags: Vec::new(),
-                dados: RascunhoDados::NotaSegura {
-                    texto: Some(Segredo::de_bytes(vec![b'n'; crate::limits::MAX_NOTE])),
+                data: DataDraft::SecureNote {
+                    text: Some(Secret::from_bytes(vec![b'n'; crate::limits::MAX_NOTE])),
                 },
                 extras: Vec::new(),
-                anexos: Vec::new(),
+                attachments: Vec::new(),
             }
-            .validar()
+            .validate()
             .unwrap();
             let created = 1_762_000_000 + i;
-            e.definir_datas(
-                Datas::carimbo_novo(created)
+            e.set_dates(
+                Dates::new_stamp(created)
                     .unwrap()
-                    .alterado(created + version)
+                    .modified(created + version)
                     .unwrap(),
             );
             e
@@ -1154,7 +1154,7 @@ fn body_dates(content: &[u8]) -> Vec<(Option<u64>, Option<u64>)> {
         .unwrap()
         .2
         .iter()
-        .map(|e| (e.datas().criada_em(), e.datas().alterada_em()))
+        .map(|e| (e.dates().created_at(), e.dates().modified_at()))
         .collect()
 }
 
