@@ -1,0 +1,20 @@
+unlock: ok
+## pontes antes: 0
+## V6.7 ward run acme-pg-dev -- true (livre)
+exit=0
+pontes depois do livre: 0
+linhas novas do log com open_app/app: 0
+## V6.7 ward run acme-pg-aprovacao -- true (aprovação; corte em 8 s)
+ward: pedido negado
+pontes durante o pedido: 0
+pedido pendente no log: 0
+exit=125 (124 = esperava a decisão na janela)
+wardd[debug]: status (agent): status
+wardd[debug]: executar: entrada padrão null
+wardd: app aberto (pid 1905366)
+wardd[debug]: aprovação 1: pendente
+wardd[debug]: status (app): status
+wardd: aprovação 1: denied
+wardd[debug]: executar (agente): denied
+wardd[debug]: stdin (agent): invalid_request
+wardd: app (pid 1905366) saiu com código 1

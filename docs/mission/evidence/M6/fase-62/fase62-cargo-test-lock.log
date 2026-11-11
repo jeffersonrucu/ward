@@ -1,0 +1,23 @@
+   Compiling zbus_macros v6.2.1
+   Compiling zbus v6.2.1
+   Compiling wardd v0.2.0 (<repo>/crates/wardd)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.51s
+     Running tests/lock.rs (target/debug/deps/lock-76b4f93c0b823801)
+
+running 13 tests
+test test_daemon_without_fake_bus_does_not_enable_logind ... ok
+test attack_agent_does_not_keep_the_vault_open_with_status_or_errors ... ok
+test attack_periodic_agent_list_does_not_delay_the_lock ... ok
+test attack_forged_signal_neither_unlocks_nor_holds ... ok
+test v3_19_timeout_read_from_the_vault_settings ... ok
+test attack_f55_denied_ward_run_and_window_do_not_delay_the_lock ... ok
+test attack_bus_drops_with_the_vault_open_locks ... ok
+test v3_19_inactivity_with_injected_clock ... ok
+test attack_clock_that_goes_back_or_is_unreadable_locks ... ok
+test v3_19_lock_and_locked_hint_lock_within_2s ... ok
+test v3_19_prepare_for_sleep_locks_before_releasing_the_inhibitor ... ok
+test v3_19_binary_locks_on_lock_session_of_the_fake_logind ... ok
+test d62_auto_lock_does_not_touch_the_d20_wait ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.44s
+

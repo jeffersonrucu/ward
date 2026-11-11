@@ -1,0 +1,30 @@
+dev/services/verify.sh
+ok    ssh_password (2222, deploy) não abre nada do home real
+ok    ssh_password com senha errada (2224) não abre nada do home real
+ok    ssh_key (2223, -i) não abre nada do home real
+ok    ssh_internal (ProxyCommand pelo salto) não abre nada do home real
+ok    ssh -v sem credencial (2223) não abre nada do home real
+ok    ssh -W (túnel até o postgres) não abre nada do home real
+ok    sftp do sftpuser não abre nada do home real
+ok    ssh-keygen -y da chave do deploy não abre nada do home real
+ok    ssh-keygen -t ed25519 -f (como no generate.py) não abre nada do home real
+ok    curl no wp-login não abre nada do home real
+FALHA git: o cliente devia ter entrado e não entrou
+FALHA git check-ignore (sem config do usuário) abriu caminho fora do permitido:
+        <home>/projetos/cofre/.git/worktrees/agent-a3777e5048a8f9c3d/HEAD
+ok    docker compose ps (DOCKER_CONFIG vazio) não abre nada do home real
+ok    docker run do psql_app não abre nada do home real
+ok    dev/tests/pg_select.py (cliente Postgres da Fase 28) não abre nada do home real
+ok    mutação acusada: sem IdentityFile=none (abre as chaves padrão)
+ok    mutação acusada: CertificateFile=none no lugar de /dev/null (abre ./none)
+ok    mutação acusada: sem IdentityFile=none e sem CertificateFile=/dev/null (abre os -cert.pub)
+ok    mutação acusada: sem -F /dev/null (lê a config do usuário)
+ok    mutação acusada: sem UserKnownHostsFile próprio (lê o known_hosts do usuário)
+ok    CertificateFile=/dev/null tira os *-cert.pub do home mesmo sem IdentityFile=none
+ok    controle: git sem o isolamento é acusado
+ok    controle: docker sem DOCKER_CONFIG é acusado
+ok    controle: curl sem -q é acusado
+
+2 cliente(s) tocaram o home real ou o detector falhou.
+clientes de teste tocam o home real; abortando
+make: *** [Makefile:194: dev-services-verify] Erro 1
