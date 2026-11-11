@@ -145,7 +145,7 @@ Compilação de cada fase: `make compile`. Checador: os arquivos da fase.
   `dev/tests/socket_matrix.py` lê `protocolo.rs`, `Operacao, `, `tabela!`, `TODOS`/
   `AGENTE_E_APP`/`SO_AGENTE` e muda junto, achado da Fase 45). —
   V2.1, V2.2
-- [ ] Fase 18 — `protocol/response.rs`, `protocol/tests.rs`; `crates/ward-core/tests/sources.rs`
+- [x] Fase 18 — `protocol/response.rs`, `protocol/tests.rs`; `crates/ward-core/tests/sources.rs`
   e `tests/body_memory.rs`, antes `tests/fontes.rs` e `tests/corpo_memoria.rs` (achado da
   Fase 10; o `sources.rs` já exclui `tests`/`tests.rs`). — V2.1, V2.2
 
