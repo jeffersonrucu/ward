@@ -238,7 +238,7 @@ impl Estado {
             drop(a);
             // D6: as sessões do `ward playwright` não sobrevivem à trava.
             if let Some(rt) = &self.rt_playwright {
-                let n = crate::playwright::apagar_sessoes(rt);
+                let n = crate::playwright::delete_sessions(rt);
                 if n > 0 {
                     aviso!("{n} sessão(ões) do ward playwright apagada(s) ao travar (D6)");
                 }
@@ -640,8 +640,8 @@ impl Daemon {
     /// Só com a feature `test-hooks` (V3.15, V9.2).
     #[cfg(feature = "test-hooks")]
     #[doc(hidden)]
-    pub fn com_prazos_login(mut self, prazos: crate::login::PrazosLogin) -> Self {
-        self.logins = crate::login::Logins::novo(prazos);
+    pub fn com_prazos_login(mut self, prazos: crate::login::LoginDeadlines) -> Self {
+        self.logins = crate::login::Logins::new(prazos);
         self
     }
 
@@ -827,9 +827,9 @@ impl Daemon {
             Pedido::Playwright { .. } => self.playwright(cliente, &pedido),
             // Fase 43: o daemon leva o pedido à extensão; só `ok` ou erro voltam.
             Pedido::Login { .. } => self.login(cliente, &pedido),
-            Pedido::AguardarLogin => self.aguardar_login(papel),
-            Pedido::PreencherLogin { id, origem } => self.preencher_login(papel, &id, &origem),
-            Pedido::ResultadoLogin { id, resultado } => self.resultado_login(papel, &id, resultado),
+            Pedido::AguardarLogin => self.await_login(papel),
+            Pedido::PreencherLogin { id, origem } => self.fill_login(papel, &id, &origem),
+            Pedido::ResultadoLogin { id, resultado } => self.login_result(papel, &id, resultado),
             // Fase 23: nível, destrave e aprovação. O `executar` e o `ssh` são atendidos
             // pela sessão do servidor (Fases 26/27); aqui o uso autorizado responde erro
             // interno.

@@ -2361,6 +2361,37 @@ mensagem que o `dev/tests/deb.sh` procura); `MAX_MENSAGEM_ENTRADA`/`SAIDA` →
 `DaemonFailure` (`Indisponivel`/`Conversa` → `Unavailable`/`Conversation`; `texto()` →
 `text()`); `Daemon::trocar` → `exchange`; `atender`/`servir` → `handle`/`serve`.
 
+Fase 22 (`wardd`: `playwright`, `cdp`, `login`, `bridge`; nomes próprios desses arquivos,
+os de `ward-core`/`ward-platform` e de outros arquivos do `wardd` ficam para as fases
+deles): módulo `ponte` → `bridge`; `cdp`: `MAX_MENSAGEM` → `MAX_MESSAGE`, `ErroCdp` →
+`CdpError` (`Prazo`/`Fechado`/`Protocolo`/`Comando`/`Io` → `Deadline`/`Closed`/
+`Protocol`/`Command`/`Io`), `Escritor` → `Writer` (`novo`/`abre_objeto`/`fecha_objeto`/
+`abre_lista`/`fecha_lista`/`chave`/`texto`/`inteiro`/`logico`/`nulo`/`fim` → `new`/
+`open_object`/`close_object`/`open_list`/`close_list`/`key`/`text`/`integer`/`boolean`/
+`null`/`finish`), `pior_caso` → `worst_case`, `Regra { origem, quadro }` → `Rule {
+origin, frame }`, `Cdp { sessao, regra, bloqueou, cargas }` → `Cdp { session, rule,
+blocked, loads }` (`novo`/`enviar`/`comando`/`comando_de`/`esperar_carga` → `new`/`send`/
+`command`/`command_as`/`wait_load`); `playwright`: `PASTA_SESSOES`/`PREFIXO_PERFIL`/
+`PRAZO_SESSAO` → `SESSIONS_DIR`/`PROFILE_PREFIX`/`SESSION_DEADLINE`, `PREENCHER`/
+`LER_PAGINA` → `FILL_SCRIPT`/`READ_PAGE_SCRIPT` (o JavaScript dentro é literal e fica),
+`pasta_sessoes`/`apagar_sessoes`/`limpar`/`argv_chrome`/`tem_segredo` → `sessions_dir`/
+`delete_sessions`/`clean_up`/`chrome_argv`/`has_secret`, `entrar` → `log_in`; `login`:
+`PrazosLogin { aguardar, retirada, total }` → `LoginDeadlines { wait, pickup, total }`
+(`wait`, não `await`, que é palavra reservada do Rust), `Logins::novo` → `new`, o pedido em
+curso `Trabalho` → `Job` (não `Work`: é um pedido de login pendente) com `Fase { Esperando,
+Entregue, Preenchido }` → `Phase { Waiting, Delivered, Filled }`, `Daemon::aguardar_login`/
+`preencher_login`/`resultado_login` → `await_login`/`fill_login`/`login_result` (as
+operações do fio ficam até a Fase 50); `bridge`: `Ponte` → `Bridge` (`abrir`/`porta`/
+`iniciar` → `open`/`port`/`start`), `PonteRodando` → `RunningBridge`, `Abertura` →
+`Opening` (`alvo_host`/`alvo_porta`/`programas`/`mascara`/`limites`/`travas` →
+`target_host`/`target_port`/`programs`/`mask`/`limits`/`locks`), `Intermediario { host,
+porta, usuario, cred }` → `Intermediate { host, port, username, cred }`, `Limites {
+simultaneas, total }` → `Limits { concurrent, total }`, `LIMITES_SALTO`/`LIMITES_TUNEL` →
+`JUMP_LIMITS`/`TUNNEL_LIMITS`, `SaidaDeErro` → `Stderr`, `par_do_grupo`/`socket_do_par`/
+`processo_do_grupo_com_socket` → `peer_in_group`/`peer_socket`/`group_process_has_socket`,
+`pai_do_stat`/`grupo_do_stat`/`sessao_do_stat` → `stat_parent`/`stat_group`/
+`stat_session`. Os nomes das threads (`wardd-ponte*`) são literais e ficam.
+
 Fase 21 (`wardd`: `execution`, `ssh_agent`, `ssh`, `ssh_tests`): módulos `execucao`/
 `agente_ssh`/`ssh_testes` → `execution`/`ssh_agent`/`ssh_tests` (`mod testes` → `tests`).
 `execution`: `Temporarios { pasta, arquivos }` → `TempFiles { dir, files }` (`criar`/
