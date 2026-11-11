@@ -331,6 +331,13 @@ Contrato: V4.1–V4.24. Sequencial. A partir daqui o fio muda.
   Fase 50): segredo de teste novo é gerado em `.dev/` ou é um valor de D15; o handoff não leva o valor; nada de padrão
   genérico na allowlist. — S1, S3, V2.1
 
+- [ ] Fase 54b — Nomes reservados na leitura (achado da Fase 53; decisão do usuário 2026-11-11: aceitar na leitura). Um
+  cofre v4 ou v5 com extra `ENTRY`/`GROUP`/`ENVIRONMENT`/`FILE`/`FILE_*` (ou `PROTOCOL` em ftp/sftp) ou anexo `key` em
+  server/ftp/sftp abre e migra; o nome reservado só é recusado ao salvar a entrada (`Draft::validate` no caminho de
+  gravação), e a entrega continua recusando nome repetido na conferência final (nenhuma variável entregue é trocada
+  por um extra). Testes de ataque: v4 com cada nome reservado abre e migra igual; salvar a entrada sem renomear é
+  recusado; `ward run` dessa entrada não deixa o extra sobrescrever `WARD_*` nem o anexo trocar `WARD_FILE_KEY`. — S1, V4.1, V4.19
+
 ## Milestone 5 — Nomes externos e documentação
 
 Contrato: V5.1–V5.11. Sequencial.
