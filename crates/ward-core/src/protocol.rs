@@ -13,13 +13,19 @@
 //! # Messages
 //!
 //! ```text
-//! request  = {"v": 1, "op": "<operation>", "dados": {…}}
-//! response = {"v": 1, "tipo": "<type>", "dados": {…}}
-//! error    = {"v": 1, "tipo": "erro", "dados": {"codigo": "…", "mensagem": "…"}}
+//! request  = {"v": 2, "op": "<operation>", "data": {…}}
+//! response = {"v": 2, "type": "<type>", "data": {…}}
+//! error    = {"v": 2, "type": "error", "data": {"code": "…", "message": "…"}}
 //! ```
 //!
-//! - `v` is the version ([`VERSION`]); another one is refused with
-//!   [`ResponseError::UnknownVersion`]. The data object may be missing when empty.
+//! - `v` is the version ([`VERSION`], 2 since m2:DT8); another one is refused with
+//!   [`ResponseError::UnknownVersion`] before anything else of the frame is looked at:
+//!   a 0.1.x client (version 1) gets that error and no data. The data object may be
+//!   missing when empty.
+//! - Every name (operation, response type, field, error code, role and value) is
+//!   English `snake_case` (m2:DT8). The version 1 names are not known: an old field
+//!   name (the version 1 name of `entry`) is an unknown field and refuses the request;
+//!   it is never read as the new one nor ignored.
 //! - Strict reading: a field the request does not have (a `true` reveal flag, a field
 //!   name in a list request, a level in a new entry, a generation anywhere) refuses the
 //!   whole request. A repeated key too (two `op` keys in the same frame).
@@ -75,8 +81,8 @@ pub use response::{
     Suggestion, UnlockRequest, UsbDrive,
 };
 
-/// Protocol version.
-pub const VERSION: u64 = 1;
+/// Protocol version (m2:DT8: 1 in 0.1.x, 2 with the English names).
+pub const VERSION: u64 = 2;
 
 /// Who is on the other side of the socket (D5). The daemon decides by the connection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -97,9 +103,9 @@ impl Role {
     /// Name for the log.
     pub fn name(self) -> &'static str {
         match self {
-            Role::Agent => "agente",
+            Role::Agent => "agent",
             Role::App => "app",
-            Role::Extension => "extensao",
+            Role::Extension => "extension",
         }
     }
 
@@ -180,66 +186,66 @@ macro_rules! table {
 
 table! {
     Operation, "Operation of the protocol and the roles that can request it (D5).",
-    Status = "estado", ALL, "Locked or not, and whether the vault exists.";
-    Unlock = "destravar", AGENT_AND_APP, "Unlock with the master password (CLI in the user's terminal or app).";
-    Lock = "travar", AGENT_AND_APP, "Lock now.";
-    List = "lista", AGENT_AND_APP, "Visible entries (for the agent, without the blocked ones).";
-    Run = "executar", AGENT_ONLY, "`ward run`: the daemon runs the command with the credential; the masked output comes back.";
+    Status = "status", ALL, "Locked or not, and whether the vault exists.";
+    Unlock = "unlock", AGENT_AND_APP, "Unlock with the master password (CLI in the user's terminal or app).";
+    Lock = "lock", AGENT_AND_APP, "Lock now.";
+    List = "list", AGENT_AND_APP, "Visible entries (for the agent, without the blocked ones).";
+    Run = "run", AGENT_ONLY, "`ward run`: the daemon runs the command with the credential; the masked output comes back.";
     Ssh = "ssh", AGENT_ONLY, "`ward ssh`.";
     Login = "login", AGENT_ONLY, "`ward login`, through the extension.";
     Playwright = "playwright", AGENT_ONLY, "`ward playwright`: only the path of the storage state comes back.";
-    Stdin = "entrada_padrao", AGENT_ONLY, "Bytes for the standard input of the open session (empty = end).";
-    Resize = "janela", AGENT_ONLY, "Terminal size of the open session.";
-    CreateVault = "criar_cofre", APP_ONLY, "First use: master password and PIN.";
-    Detail = "detalhe", APP_ONLY, "Fields of an entry for the form, without secrets.";
-    Reveal = "revelar", APP_ONLY, "Value of a secret to show (D4).";
-    Copy = "copiar", APP_ONLY, "Value of a secret for the clipboard, by the Rust side of the app (D4).";
+    Stdin = "stdin", AGENT_ONLY, "Bytes for the standard input of the open session (empty = end).";
+    Resize = "resize", AGENT_ONLY, "Terminal size of the open session.";
+    CreateVault = "create_vault", APP_ONLY, "First use: master password and PIN.";
+    Detail = "detail", APP_ONLY, "Fields of an entry for the form, without secrets.";
+    Reveal = "reveal", APP_ONLY, "Value of a secret to show (D4).";
+    Copy = "copy", APP_ONLY, "Value of a secret for the clipboard, by the Rust side of the app (D4).";
     Totp = "totp", APP_ONLY, "Current TOTP code of the entry.";
-    SaveEntry = "salvar_entrada", APP_ONLY, "Create or edit an entry (without level; S9).";
-    RemoveEntry = "remover_entrada", APP_ONLY, "Delete an entry.";
-    SetLevel = "mudar_nivel", APP_ONLY, "Change the access level, with PIN (S9).";
-    AnswerApproval = "responder_aprovacao", APP_ONLY, "Answer of the approval window, with PIN to allow (S10).";
-    IssueToken = "emitir_token", APP_ONLY, "Single-use token of \"Connect\" (D3).";
-    ChangePin = "trocar_pin", APP_ONLY, "Change the PIN.";
-    ChangePassword = "trocar_senha", APP_ONLY, "Change the master password.";
-    LockTimeout = "tempo_trava", APP_ONLY, "Inactivity lock time, in minutes.";
+    SaveEntry = "save_entry", APP_ONLY, "Create or edit an entry (without level; S9).";
+    RemoveEntry = "remove_entry", APP_ONLY, "Delete an entry.";
+    SetLevel = "set_level", APP_ONLY, "Change the access level, with PIN (S9).";
+    AnswerApproval = "answer_approval", APP_ONLY, "Answer of the approval window, with PIN to allow (S10).";
+    IssueToken = "issue_token", APP_ONLY, "Single-use token of \"Connect\" (D3).";
+    ChangePin = "change_pin", APP_ONLY, "Change the PIN.";
+    ChangePassword = "change_password", APP_ONLY, "Change the master password.";
+    LockTimeout = "lock_timeout", APP_ONLY, "Inactivity lock time, in minutes.";
     Backups = "backups", APP_ONLY, "Versions of the local backup, from the newest to the oldest (D17, Phase 45).";
-    RestoreBackup = "restaurar_backup", APP_ONLY, "Restore a version of the local backup, with its master password and the current PIN (D17, D39, Phase 45).";
-    Config = "configuracao", APP_ONLY, "Lock time and external backup on or off, for the Settings screen (Phase 38); without the PIN hash or the UUID.";
-    ExternalBackup = "backup_externo", APP_ONLY, "Configuration of the external backup: on or off and the UUID of the USB drive (D17, D30, Phase 46).";
-    SetExternalBackup = "definir_backup_externo", APP_ONLY, "Turn the external backup on or off and choose the USB drive by the UUID (D17, D30, Phase 46).";
-    UsbDrives = "pendrives", APP_ONLY, "USB drive file systems that udisks2 sees, to choose the one of the external backup (Phase 46).";
-    Suggest = "sugerir", EXTENSION_ONLY, "`login` entries of the tab origin.";
-    Fill = "preencher", EXTENSION_ONLY, "Username, password and TOTP to fill, if the origin matches (D9).";
-    SaveLogin = "salvar_login", EXTENSION_ONLY, "Save a new login seen by the extension.";
-    AwaitLogin = "aguardar_login", EXTENSION_ONLY, "`ward login` (Phase 43): the extension waits for the next login request (up to 25 s).";
-    FillLogin = "preencher_login", EXTENSION_ONLY, "`ward login` (Phase 43): username, password and TOTP of the request, if the tab origin matches (D9).";
-    LoginResult = "resultado_login", EXTENSION_ONLY, "`ward login` (Phase 43): the outcome of the request in the tab.";
-    OpenApp = "abrir_app", ALL, "Open the true instance of the app, child of the daemon (D57); without fields and without secrets.";
+    RestoreBackup = "restore_backup", APP_ONLY, "Restore a version of the local backup, with its master password and the current PIN (D17, D39, Phase 45).";
+    Config = "config", APP_ONLY, "Lock time and external backup on or off, for the Settings screen (Phase 38); without the PIN hash or the UUID.";
+    ExternalBackup = "external_backup", APP_ONLY, "Configuration of the external backup: on or off and the UUID of the USB drive (D17, D30, Phase 46).";
+    SetExternalBackup = "set_external_backup", APP_ONLY, "Turn the external backup on or off and choose the USB drive by the UUID (D17, D30, Phase 46).";
+    UsbDrives = "usb_drives", APP_ONLY, "USB drive file systems that udisks2 sees, to choose the one of the external backup (Phase 46).";
+    Suggest = "suggest", EXTENSION_ONLY, "`login` entries of the tab origin.";
+    Fill = "fill", EXTENSION_ONLY, "Username, password and TOTP to fill, if the origin matches (D9).";
+    SaveLogin = "save_login", EXTENSION_ONLY, "Save a new login seen by the extension.";
+    AwaitLogin = "await_login", EXTENSION_ONLY, "`ward login` (Phase 43): the extension waits for the next login request (up to 25 s).";
+    FillLogin = "fill_login", EXTENSION_ONLY, "`ward login` (Phase 43): username, password and TOTP of the request, if the tab origin matches (D9).";
+    LoginResult = "login_result", EXTENSION_ONLY, "`ward login` (Phase 43): the outcome of the request in the tab.";
+    OpenApp = "open_app", ALL, "Open the true instance of the app, child of the daemon (D57); without fields and without secrets.";
 }
 
 table! {
     ResponseType, "Response type of the daemon and the roles that can receive it.",
     Ok = "ok", ALL, "Done, without data.";
-    Status = "estado", ALL, "Locked or not, and whether the vault exists.";
-    Error = "erro", ALL, "Error with code and fixed message.";
-    List = "lista", AGENT_AND_APP, "Items of the list (without secrets).";
-    Output = "saida", AGENT_ONLY, "Piece of the output, already masked.";
-    Exit = "fim", AGENT_ONLY, "End of the run, with the exit code.";
-    PlaywrightSession = "sessao_playwright", AGENT_ONLY, "Path of the storage state.";
-    Detail = "detalhe", APP_ONLY, "Fields of an entry without secrets.";
-    Secret = "segredo", APP_ONLY, "Value of a secret (reveal/copy).";
+    Status = "status", ALL, "Locked or not, and whether the vault exists.";
+    Error = "error", ALL, "Error with code and fixed message.";
+    List = "list", AGENT_AND_APP, "Items of the list (without secrets).";
+    Output = "output", AGENT_ONLY, "Piece of the output, already masked.";
+    Exit = "exit", AGENT_ONLY, "End of the run, with the exit code.";
+    PlaywrightSession = "playwright_session", AGENT_ONLY, "Path of the storage state.";
+    Detail = "detail", APP_ONLY, "Fields of an entry without secrets.";
+    Secret = "secret", APP_ONLY, "Value of a secret (reveal/copy).";
     Token = "token", APP_ONLY, "Token of \"Connect\".";
-    ApprovalRequest = "pedido_de_aprovacao", APP_ONLY, "The daemon asks the app for the approval window.";
-    UnlockRequest = "pedido_de_destrave", APP_ONLY, "The daemon asks the app for the unlock screen (D16): entry, operation, command with visible escapes (D51) and seconds left (Phase 39a).";
-    TotpCode = "codigo_totp", APP_AND_EXTENSION, "Current TOTP code.";
-    Suggestions = "sugestoes", EXTENSION_ONLY, "Entries suggested for the tab.";
-    Fill = "preenchimento", EXTENSION_ONLY, "Username, password and TOTP to fill.";
-    LoginRequest = "pedido_de_login", EXTENSION_ONLY, "`ward login` (Phase 43): id and name of the entry, without a value.";
+    ApprovalRequest = "approval_request", APP_ONLY, "The daemon asks the app for the approval window.";
+    UnlockRequest = "unlock_request", APP_ONLY, "The daemon asks the app for the unlock screen (D16): entry, operation, command with visible escapes (D51) and seconds left (Phase 39a).";
+    TotpCode = "totp_code", APP_AND_EXTENSION, "Current TOTP code.";
+    Suggestions = "suggestions", EXTENSION_ONLY, "Entries suggested for the tab.";
+    Fill = "fill", EXTENSION_ONLY, "Username, password and TOTP to fill.";
+    LoginRequest = "login_request", EXTENSION_ONLY, "`ward login` (Phase 43): id and name of the entry, without a value.";
     Backups = "backups", APP_ONLY, "Names of the local backup versions, without the ones with a future date, with the verified and out-of-order marks, without the generation (D17, D39, Phases 45 and 49a).";
-    Config = "configuracao", APP_ONLY, "Lock time in minutes, external backup on or off and local backup folder safe or not (Phases 38 and 49a).";
-    ExternalBackup = "backup_externo", APP_ONLY, "Configuration of the external backup (D17, D30, Phase 46).";
-    UsbDrives = "pendrives", APP_ONLY, "USB drives seen by udisks2: UUID, label and whether it is mounted (Phase 46).";
+    Config = "config", APP_ONLY, "Lock time in minutes, external backup on or off and local backup folder safe or not (Phases 38 and 49a).";
+    ExternalBackup = "external_backup", APP_ONLY, "Configuration of the external backup (D17, D30, Phase 46).";
+    UsbDrives = "usb_drives", APP_ONLY, "USB drives seen by udisks2: UUID, label and whether it is mounted (Phase 46).";
 }
 
 impl ResponseType {
@@ -374,7 +380,7 @@ impl Envelope {
         // `v` and the name already left; a second copy of them stayed and falls here or
         // in `finish`.
         self.top.no_duplicates()?;
-        let data = self.top.object_or_empty("dados")?;
+        let data = self.top.object_or_empty("data")?;
         self.top.finish()?;
         Ok(data)
     }
@@ -413,7 +419,7 @@ pub fn encode_request(role: Role, p: &Request) -> Result<Zeroizing<Vec<u8>>, Enc
         e.integer(VERSION);
         e.key("op");
         e.text(op.name());
-        e.key("dados");
+        e.key("data");
         e.object(|e| p.write(e));
         e.close_object();
     })
@@ -447,9 +453,9 @@ pub fn encode_response(role: Role, r: &Response) -> Result<Zeroizing<Vec<u8>>, E
         e.open_object();
         e.key("v");
         e.integer(VERSION);
-        e.key("tipo");
+        e.key("type");
         e.text(kind.name());
-        e.key("dados");
+        e.key("data");
         e.object(|e| r.write(e));
         e.close_object();
     })
@@ -460,13 +466,23 @@ pub fn encode_response(role: Role, r: &Response) -> Result<Zeroizing<Vec<u8>>, E
 /// of the role: the CLI never accepts a response with a credential.
 pub fn decode_response(role: Role, bytes: &[u8]) -> Result<Response, InvalidResponse> {
     let env =
-        read_envelope(bytes, "tipo", json::MAX_RESPONSE_NODES).map_err(|_| InvalidResponse)?;
+        read_envelope(bytes, "type", json::MAX_RESPONSE_NODES).map_err(|_| InvalidResponse)?;
     let kind = ResponseType::from_name(&env.name).ok_or(InvalidResponse)?;
     if !kind.allowed(role) {
         return Err(InvalidResponse);
     }
     let data = env.data().map_err(|_| InvalidResponse)?;
     response::read(role, kind, data).map_err(|_| InvalidResponse)
+}
+
+/// The version a daemon frame says it has, when [`decode_response`] refused it (m2:DT8):
+/// `Some(n)` with `n` ≠ [`VERSION`] tells the client that the server speaks another
+/// version, so the CLI and the app stop with the version message before sending the
+/// master password. Only the JSON and the `v` key are read; nothing else of the frame is
+/// trusted or returned.
+pub fn frame_version(bytes: &[u8]) -> Option<u64> {
+    let v = json::read(bytes, json::MAX_RESPONSE_NODES).ok()?;
+    fields::Fields::unchecked(v).ok()?.integer("v").ok()
 }
 
 /// The error response for a frame refused by the reading (V3.4). The daemon sends this

@@ -80,10 +80,10 @@ impl StdinKind {
     pub fn name(self) -> &'static str {
         match self {
             StdinKind::Terminal => "terminal",
-            StdinKind::Null => "nula",
+            StdinKind::Null => "null",
             StdinKind::Pipe => "pipe",
-            StdinKind::File => "arquivo",
-            StdinKind::Other => "outra",
+            StdinKind::File => "file",
+            StdinKind::Other => "other",
         }
     }
 
@@ -132,22 +132,22 @@ impl Target {
 /// Secret field of the type by the protocol identifier ([`SECRET_FIELDS`]).
 fn field_secret<'a>(d: &'a Data, id: &str) -> Option<&'a Secret> {
     let auth = |a: &'a Auth| match (a, id) {
-        (Auth::Password(s), "senha") => Some(s),
-        (Auth::Key { private_key, .. }, "chave_privada") => Some(private_key),
+        (Auth::Password(s), "password") => Some(s),
+        (Auth::Key { private_key, .. }, "private_key") => Some(private_key),
         (Auth::Key { passphrase, .. }, "passphrase") => passphrase.as_ref(),
         _ => None,
     };
     match (d, id) {
-        (Data::Login(l), "senha") => Some(&l.password),
-        (Data::Login(l), "totp_semente") => l.totp_seed.as_ref(),
-        (Data::Database(b), "senha") => Some(&b.password),
+        (Data::Login(l), "password") => Some(&l.password),
+        (Data::Login(l), "totp_seed") => l.totp_seed.as_ref(),
+        (Data::Database(b), "password") => Some(&b.password),
         (Data::Server(v), _) => auth(&v.auth),
         (Data::FtpSftp(f), _) => auth(&f.auth),
         (Data::Api(a), "token") => Some(&a.token),
         (Data::Aws(a), "secret_access_key") => Some(&a.secret_access_key),
         (Data::Aws(a), "session_token") => a.session_token.as_ref(),
-        (Data::Smtp(m), "senha") => Some(&m.password),
-        (Data::SecureNote(n), "texto") => Some(&n.text),
+        (Data::Smtp(m), "password") => Some(&m.password),
+        (Data::SecureNote(n), "text") => Some(&n.text),
         _ => None,
     }
 }
@@ -180,11 +180,11 @@ impl Decision {
     /// Name in the frame.
     pub fn name(self) -> &'static str {
         match self {
-            Decision::Deny => "negar",
-            Decision::AllowOnce => "uma_vez",
-            Decision::AllowOneHour => "uma_hora",
-            Decision::AllowAlways => "sempre",
-            Decision::Confirm => "confirmar",
+            Decision::Deny => "deny",
+            Decision::AllowOnce => "once",
+            Decision::AllowOneHour => "one_hour",
+            Decision::AllowAlways => "always",
+            Decision::Confirm => "confirm",
         }
     }
 
@@ -226,11 +226,11 @@ impl LoginResult {
     /// Name in the frame.
     pub fn name(self) -> &'static str {
         match self {
-            LoginResult::Submitted => "enviado",
-            LoginResult::Refused => "recusado",
-            LoginResult::NoForm => "sem_formulario",
-            LoginResult::TabChanged => "aba_mudou",
-            LoginResult::Failure => "falha",
+            LoginResult::Submitted => "submitted",
+            LoginResult::Refused => "refused",
+            LoginResult::NoForm => "no_form",
+            LoginResult::TabChanged => "tab_changed",
+            LoginResult::Failure => "failure",
         }
     }
 
@@ -533,7 +533,7 @@ impl Request {
             | Request::AwaitLogin
             | Request::UsbDrives => {}
             Request::SetExternalBackup { enabled, uuid } => {
-                e.key("ligado");
+                e.key("enabled");
                 e.boolean(*enabled);
                 if let Some(u) = uuid {
                     e.key("uuid");
@@ -545,34 +545,34 @@ impl Request {
                 password,
                 pin,
             } => {
-                e.key("versao");
+                e.key("version");
                 e.text(version);
-                e.key("senha");
+                e.key("password");
                 e.base64(password.expose());
                 e.key("pin");
                 e.base64(pin.expose());
             }
             Request::Unlock { password } => {
-                e.key("senha");
+                e.key("password");
                 e.base64(password.expose());
             }
             Request::Run(x) => {
-                e.key("entrada");
+                e.key("entry");
                 e.text(&x.entry);
                 e.key("argv");
                 write_bytes(e, &x.argv);
                 e.key("cwd");
                 e.base64(&x.cwd);
-                e.key("tipo_entrada");
+                e.key("stdin_kind");
                 e.text(x.stdin_kind.name());
-                e.key("ambiente");
+                e.key("environment");
                 e.list(|e| {
                     for v in &x.env {
                         e.item();
                         e.object(|e| {
-                            e.key("nome");
+                            e.key("name");
                             e.base64(&v.name);
-                            e.key("valor");
+                            e.key("value");
                             e.base64(v.value.expose());
                         });
                     }
@@ -585,18 +585,18 @@ impl Request {
                 window_size,
                 stdin_kind,
             } => {
-                e.key("entrada");
+                e.key("entry");
                 e.text(entry);
-                e.key("comando");
+                e.key("command");
                 write_bytes(e, command);
-                e.key("tipo_entrada");
+                e.key("stdin_kind");
                 e.text(stdin_kind.name());
                 if let Some(t) = token {
                     e.key("token");
                     e.base64(t.expose());
                 }
                 if let Some(j) = window_size {
-                    e.key("janela");
+                    e.key("window_size");
                     e.object(|e| write_window_size(e, *j));
                 }
             }
@@ -606,26 +606,26 @@ impl Request {
             | Request::Totp { entry }
             | Request::RemoveEntry { entry }
             | Request::IssueToken { entry } => {
-                e.key("entrada");
+                e.key("entry");
                 e.text(entry);
             }
             Request::Stdin { data } => {
-                e.key("dados");
+                e.key("data");
                 e.base64(data.expose());
             }
             Request::Resize(j) => write_window_size(e, *j),
             Request::CreateVault { password, pin } => {
-                e.key("senha");
+                e.key("password");
                 e.base64(password.expose());
                 e.key("pin");
                 e.base64(pin.expose());
             }
             Request::Reveal { entry, target } | Request::Copy { entry, target } => {
-                e.key("entrada");
+                e.key("entry");
                 e.text(entry);
                 match target {
                     Target::Field(c) => {
-                        e.key("campo");
+                        e.key("field");
                         e.text(c);
                     }
                     Target::Extra(x) => {
@@ -640,11 +640,11 @@ impl Request {
                 keep_attachments,
             } => {
                 if let Some(a) = previous {
-                    e.key("anterior");
+                    e.key("previous");
                     e.text(a);
                 }
                 if !keep_attachments.is_empty() {
-                    e.key("manter_anexos");
+                    e.key("keep_attachments");
                     e.list(|e| {
                         for n in keep_attachments {
                             e.item();
@@ -652,17 +652,17 @@ impl Request {
                         }
                     });
                 }
-                e.key("entrada");
+                e.key("entry");
                 e.object(|e| write_draft(e, draft));
             }
             Request::SaveLogin { draft } => {
-                e.key("entrada");
+                e.key("entry");
                 e.object(|e| write_draft(e, draft));
             }
             Request::SetLevel { entry, level, pin } => {
-                e.key("entrada");
+                e.key("entry");
                 e.text(entry);
-                e.key("nivel");
+                e.key("level");
                 e.text(level.name());
                 e.key("pin");
                 e.base64(pin.expose());
@@ -673,55 +673,55 @@ impl Request {
                 pin,
                 confirmed_entry,
             } => {
-                e.key("pedido");
+                e.key("request");
                 e.integer(*request);
-                e.key("decisao");
+                e.key("decision");
                 e.text(decision.name());
                 if let Some(p) = pin {
                     e.key("pin");
                     e.base64(p.expose());
                 }
                 if *confirmed_entry {
-                    e.key("entrada_confirmada");
+                    e.key("confirmed_entry");
                     e.boolean(true);
                 }
             }
             Request::ChangePin { current, new } => {
-                e.key("atual");
+                e.key("current");
                 e.base64(current.expose());
-                e.key("novo");
+                e.key("new");
                 e.base64(new.expose());
             }
             Request::ChangePassword { current, new } => {
-                e.key("atual");
+                e.key("current");
                 e.base64(current.expose());
-                e.key("nova");
+                e.key("new");
                 e.base64(new.expose());
             }
             Request::LockTimeout { minutes } => {
-                e.key("minutos");
+                e.key("minutes");
                 e.integer(u64::from(*minutes));
             }
             Request::Suggest { origin } => {
-                e.key("origem");
+                e.key("origin");
                 e.text(origin);
             }
             Request::Fill { entry, origin } => {
-                e.key("entrada");
+                e.key("entry");
                 e.text(entry);
-                e.key("origem");
+                e.key("origin");
                 e.text(origin);
             }
             Request::FillLogin { id, origin } => {
                 e.key("id");
                 e.text(id);
-                e.key("origem");
+                e.key("origin");
                 e.text(origin);
             }
             Request::LoginResult { id, result } => {
                 e.key("id");
                 e.text(id);
-                e.key("resultado");
+                e.key("result");
                 e.text(result.name());
             }
         }
@@ -795,14 +795,14 @@ fn target_ok(a: &Target) -> bool {
 
 /// Identifiers of the secret fields of all types (the same as the draft's).
 pub(crate) const SECRET_FIELDS: &[&str] = &[
-    "senha",
-    "totp_semente",
-    "chave_privada",
+    "password",
+    "totp_seed",
+    "private_key",
     "passphrase",
     "token",
     "secret_access_key",
     "session_token",
-    "texto",
+    "text",
 ];
 
 fn draft_ok(r: &Draft) -> bool {
@@ -873,7 +873,7 @@ pub fn merge_kept_attachments(
 }
 
 fn max_secret(field: &str) -> usize {
-    if field == "texto" {
+    if field == "text" {
         MAX_NOTE
     } else {
         MAX_SECRET
@@ -896,34 +896,34 @@ pub(crate) fn read(op: Operation, mut c: Fields) -> R<Request> {
         Operation::AwaitLogin => Request::AwaitLogin,
         Operation::FillLogin => Request::FillLogin {
             id: c.text("id", MAX_NAME)?,
-            origin: c.text("origem", MAX_URL)?,
+            origin: c.text("origin", MAX_URL)?,
         },
         Operation::LoginResult => Request::LoginResult {
             id: c.text("id", MAX_NAME)?,
-            result: LoginResult::from_name(&c.text("resultado", MAX_NAME)?).ok_or(InvalidJson)?,
+            result: LoginResult::from_name(&c.text("result", MAX_NAME)?).ok_or(InvalidJson)?,
         },
         Operation::SetExternalBackup => Request::SetExternalBackup {
-            enabled: c.boolean("ligado")?,
+            enabled: c.boolean("enabled")?,
             uuid: c.text_opt("uuid", MAX_BACKUP_UUID)?,
         },
         Operation::RestoreBackup => Request::RestoreBackup {
-            version: c.text("versao", MAX_NAME)?,
-            password: c.secret("senha", MAX_SECRET)?,
+            version: c.text("version", MAX_NAME)?,
+            password: c.secret("password", MAX_SECRET)?,
             pin: c.secret("pin", MAX_PIN_DIGITS)?,
         },
         Operation::Unlock => Request::Unlock {
-            password: c.secret("senha", MAX_SECRET)?,
+            password: c.secret("password", MAX_SECRET)?,
         },
         Operation::Run => {
-            let entry = c.text("entrada", MAX_NAME)?;
+            let entry = c.text("entry", MAX_NAME)?;
             let argv = read_bytes(c.list("argv", MAX_ARGUMENTS)?)?;
             let cwd = c.bytes("cwd", MAX_ARGUMENT)?;
             let stdin_kind = read_stdin_kind(&mut c)?;
             let mut env = Vec::new();
-            for v in c.list("ambiente", MAX_ENV_VARIABLES)? {
+            for v in c.list("environment", MAX_ENV_VARIABLES)? {
                 let mut o = Fields::from_value(v)?;
-                let name = o.bytes("nome", MAX_ARGUMENT)?;
-                let value = o.secret("valor", MAX_ARGUMENT)?;
+                let name = o.bytes("name", MAX_ARGUMENT)?;
+                let value = o.secret("value", MAX_ARGUMENT)?;
                 o.finish()?;
                 env.push(Variable { name, value });
             }
@@ -936,10 +936,10 @@ pub(crate) fn read(op: Operation, mut c: Fields) -> R<Request> {
             })
         }
         Operation::Ssh => {
-            let entry = c.text("entrada", MAX_NAME)?;
-            let command = read_bytes(c.list_or_empty("comando", MAX_ARGUMENTS)?)?;
+            let entry = c.text("entry", MAX_NAME)?;
+            let command = read_bytes(c.list_or_empty("command", MAX_ARGUMENTS)?)?;
             let token = c.secret_opt("token", MAX_NAME)?;
-            let window_size = match c.take("janela") {
+            let window_size = match c.take("window_size") {
                 Some(v) => Some(read_window_size(Fields::from_value(v)?)?),
                 None => None,
             };
@@ -953,28 +953,28 @@ pub(crate) fn read(op: Operation, mut c: Fields) -> R<Request> {
             }
         }
         Operation::Login => Request::Login {
-            entry: c.text("entrada", MAX_NAME)?,
+            entry: c.text("entry", MAX_NAME)?,
         },
         Operation::Playwright => Request::Playwright {
-            entry: c.text("entrada", MAX_NAME)?,
+            entry: c.text("entry", MAX_NAME)?,
         },
         Operation::Stdin => Request::Stdin {
-            data: c.secret("dados", MAX_ARGUMENT)?,
+            data: c.secret("data", MAX_ARGUMENT)?,
         },
         Operation::Resize => {
             let j = read_window_size(c)?;
             return checked(Request::Resize(j));
         }
         Operation::CreateVault => Request::CreateVault {
-            password: c.secret("senha", MAX_SECRET)?,
+            password: c.secret("password", MAX_SECRET)?,
             pin: c.secret("pin", MAX_PIN_DIGITS)?,
         },
         Operation::Detail => Request::Detail {
-            entry: c.text("entrada", MAX_NAME)?,
+            entry: c.text("entry", MAX_NAME)?,
         },
         Operation::Reveal | Operation::Copy => {
-            let entry = c.text("entrada", MAX_NAME)?;
-            let target = match (c.take("campo"), c.take("extra")) {
+            let entry = c.text("entry", MAX_NAME)?;
+            let target = match (c.take("field"), c.take("extra")) {
                 (Some(v), None) => Target::Field(text_of(v, MAX_NAME)?),
                 (None, Some(v)) => Target::Extra(text_of(v, MAX_EXTRA_NAME)?),
                 _ => return Err(InvalidJson),
@@ -986,15 +986,15 @@ pub(crate) fn read(op: Operation, mut c: Fields) -> R<Request> {
             }
         }
         Operation::Totp => Request::Totp {
-            entry: c.text("entrada", MAX_NAME)?,
+            entry: c.text("entry", MAX_NAME)?,
         },
         Operation::SaveEntry => {
-            let previous = c.text_opt("anterior", MAX_NAME)?;
+            let previous = c.text_opt("previous", MAX_NAME)?;
             let keep_attachments = texts_of(
-                c.list_or_empty("manter_anexos", MAX_ATTACHMENTS)?,
+                c.list_or_empty("keep_attachments", MAX_ATTACHMENTS)?,
                 MAX_ATTACHMENT_NAME,
             )?;
-            let draft = read_draft(c.object("entrada")?)?;
+            let draft = read_draft(c.object("entry")?)?;
             Request::SaveEntry {
                 previous,
                 draft,
@@ -1002,24 +1002,24 @@ pub(crate) fn read(op: Operation, mut c: Fields) -> R<Request> {
             }
         }
         Operation::RemoveEntry => Request::RemoveEntry {
-            entry: c.text("entrada", MAX_NAME)?,
+            entry: c.text("entry", MAX_NAME)?,
         },
         Operation::SetLevel => {
-            let entry = c.text("entrada", MAX_NAME)?;
-            let level = AccessLevel::from_name(&c.text("nivel", MAX_NAME)?).ok_or(InvalidJson)?;
+            let entry = c.text("entry", MAX_NAME)?;
+            let level = AccessLevel::from_name(&c.text("level", MAX_NAME)?).ok_or(InvalidJson)?;
             let pin = c.secret("pin", MAX_PIN_DIGITS)?;
             Request::SetLevel { entry, level, pin }
         }
         Operation::AnswerApproval => {
-            let request = c.integer("pedido")?;
-            let name = c.text("decisao", MAX_NAME)?;
+            let request = c.integer("request")?;
+            let name = c.text("decision", MAX_NAME)?;
             let decision = Decision::ALL
                 .into_iter()
                 .find(|d| d.name() == name)
                 .ok_or(InvalidJson)?;
             let pin = c.secret_opt("pin", MAX_PIN_DIGITS)?;
             // Phase 54b: absent = not ticked; present only as `true`.
-            let confirmed_entry = match c.take("entrada_confirmada") {
+            let confirmed_entry = match c.take("confirmed_entry") {
                 None => false,
                 Some(Value::Bool(true)) => true,
                 Some(_) => return Err(InvalidJson),
@@ -1032,28 +1032,28 @@ pub(crate) fn read(op: Operation, mut c: Fields) -> R<Request> {
             }
         }
         Operation::IssueToken => Request::IssueToken {
-            entry: c.text("entrada", MAX_NAME)?,
+            entry: c.text("entry", MAX_NAME)?,
         },
         Operation::ChangePin => Request::ChangePin {
-            current: c.secret("atual", MAX_PIN_DIGITS)?,
-            new: c.secret("novo", MAX_PIN_DIGITS)?,
+            current: c.secret("current", MAX_PIN_DIGITS)?,
+            new: c.secret("new", MAX_PIN_DIGITS)?,
         },
         Operation::ChangePassword => Request::ChangePassword {
-            current: c.secret("atual", MAX_SECRET)?,
-            new: c.secret("nova", MAX_SECRET)?,
+            current: c.secret("current", MAX_SECRET)?,
+            new: c.secret("new", MAX_SECRET)?,
         },
         Operation::LockTimeout => Request::LockTimeout {
-            minutes: u32::try_from(c.integer("minutos")?).map_err(|_| InvalidJson)?,
+            minutes: u32::try_from(c.integer("minutes")?).map_err(|_| InvalidJson)?,
         },
         Operation::Suggest => Request::Suggest {
-            origin: c.text("origem", MAX_URL)?,
+            origin: c.text("origin", MAX_URL)?,
         },
         Operation::Fill => Request::Fill {
-            entry: c.text("entrada", MAX_NAME)?,
-            origin: c.text("origem", MAX_URL)?,
+            entry: c.text("entry", MAX_NAME)?,
+            origin: c.text("origin", MAX_URL)?,
         },
         Operation::SaveLogin => Request::SaveLogin {
-            draft: read_draft(c.object("entrada")?)?,
+            draft: read_draft(c.object("entry")?)?,
         },
     };
     c.finish()?;
@@ -1068,7 +1068,7 @@ fn checked(p: Request) -> R<Request> {
 /// Phase 54b (D68): the kind of the standard input, required (no default: the client
 /// says it).
 fn read_stdin_kind(c: &mut Fields) -> R<StdinKind> {
-    StdinKind::from_name(&c.text("tipo_entrada", MAX_NAME)?).ok_or(InvalidJson)
+    StdinKind::from_name(&c.text("stdin_kind", MAX_NAME)?).ok_or(InvalidJson)
 }
 
 fn read_bytes(v: Vec<Value>) -> R<Vec<Bytes>> {
@@ -1085,16 +1085,16 @@ fn write_bytes(e: &mut Writer, l: &[Bytes]) {
 }
 
 fn read_window_size(mut c: Fields) -> R<WindowSize> {
-    let rows = u16::try_from(c.integer("linhas")?).map_err(|_| InvalidJson)?;
-    let cols = u16::try_from(c.integer("colunas")?).map_err(|_| InvalidJson)?;
+    let rows = u16::try_from(c.integer("rows")?).map_err(|_| InvalidJson)?;
+    let cols = u16::try_from(c.integer("cols")?).map_err(|_| InvalidJson)?;
     c.finish()?;
     Ok(WindowSize { rows, cols })
 }
 
 fn write_window_size(e: &mut Writer, j: WindowSize) {
-    e.key("linhas");
+    e.key("rows");
     e.integer(u64::from(j.rows));
-    e.key("colunas");
+    e.key("cols");
     e.integer(u64::from(j.cols));
 }
 
@@ -1139,9 +1139,9 @@ fn draft_fields(d: &DataDraft) -> Vec<DraftField<'_>> {
             totp_seed,
         } => {
             t!("url", url);
-            t!("usuario", username);
-            s!("senha", password);
-            s!("totp_semente", totp_seed);
+            t!("username", username);
+            s!("password", password);
+            s!("totp_seed", totp_seed);
         }
         DataDraft::Database {
             engine,
@@ -1152,13 +1152,13 @@ fn draft_fields(d: &DataDraft) -> Vec<DraftField<'_>> {
             password,
             tunnel,
         } => {
-            t!("motor", engine);
+            t!("engine", engine);
             t!("host", host);
-            t!("porta", port);
-            t!("base", db_name);
-            t!("usuario", username);
-            s!("senha", password);
-            t!("tunel", tunnel);
+            t!("port", port);
+            t!("db_name", db_name);
+            t!("username", username);
+            s!("password", password);
+            t!("tunnel", tunnel);
         }
         DataDraft::Server {
             host,
@@ -1170,12 +1170,12 @@ fn draft_fields(d: &DataDraft) -> Vec<DraftField<'_>> {
             jump,
         } => {
             t!("host", host);
-            t!("porta", port);
-            t!("usuario", username);
-            s!("senha", password);
-            s!("chave_privada", private_key);
+            t!("port", port);
+            t!("username", username);
+            s!("password", password);
+            s!("private_key", private_key);
             s!("passphrase", passphrase);
-            t!("salto", jump);
+            t!("jump", jump);
         }
         DataDraft::Api {
             url,
@@ -1184,7 +1184,7 @@ fn draft_fields(d: &DataDraft) -> Vec<DraftField<'_>> {
         } => {
             t!("url", url);
             s!("token", token);
-            t!("variavel", variable);
+            t!("variable", variable);
         }
         DataDraft::Aws {
             access_key_id,
@@ -1195,7 +1195,7 @@ fn draft_fields(d: &DataDraft) -> Vec<DraftField<'_>> {
         } => {
             t!("access_key_id", access_key_id);
             s!("secret_access_key", secret_access_key);
-            t!("regiao", region);
+            t!("region", region);
             t!("role_arn", role_arn);
             s!("session_token", session_token);
         }
@@ -1207,10 +1207,10 @@ fn draft_fields(d: &DataDraft) -> Vec<DraftField<'_>> {
             security,
         } => {
             t!("host", host);
-            t!("porta", port);
-            t!("usuario", username);
-            s!("senha", password);
-            t!("seguranca", security);
+            t!("port", port);
+            t!("username", username);
+            s!("password", password);
+            t!("security", security);
         }
         DataDraft::FtpSftp {
             protocol,
@@ -1221,16 +1221,16 @@ fn draft_fields(d: &DataDraft) -> Vec<DraftField<'_>> {
             private_key,
             passphrase,
         } => {
-            t!("protocolo", protocol);
+            t!("protocol", protocol);
             t!("host", host);
-            t!("porta", port);
-            t!("usuario", username);
-            s!("senha", password);
-            s!("chave_privada", private_key);
+            t!("port", port);
+            t!("username", username);
+            s!("password", password);
+            s!("private_key", private_key);
             s!("passphrase", passphrase);
         }
         DataDraft::SecureNote { text } => {
-            s!("texto", text);
+            s!("text", text);
         }
         DataDraft::Generic => {}
     }
@@ -1243,58 +1243,58 @@ fn read_data(kind: EntryType, mut c: Fields) -> R<DataDraft> {
     let d = match kind {
         EntryType::Login => DataDraft::Login {
             url: t(&mut c, "url")?,
-            username: t(&mut c, "usuario")?,
-            password: s(&mut c, "senha")?,
-            totp_seed: s(&mut c, "totp_semente")?,
+            username: t(&mut c, "username")?,
+            password: s(&mut c, "password")?,
+            totp_seed: s(&mut c, "totp_seed")?,
         },
         EntryType::Database => DataDraft::Database {
-            engine: t(&mut c, "motor")?,
+            engine: t(&mut c, "engine")?,
             host: t(&mut c, "host")?,
-            port: t(&mut c, "porta")?,
-            db_name: t(&mut c, "base")?,
-            username: t(&mut c, "usuario")?,
-            password: s(&mut c, "senha")?,
-            tunnel: t(&mut c, "tunel")?,
+            port: t(&mut c, "port")?,
+            db_name: t(&mut c, "db_name")?,
+            username: t(&mut c, "username")?,
+            password: s(&mut c, "password")?,
+            tunnel: t(&mut c, "tunnel")?,
         },
         EntryType::Server => DataDraft::Server {
             host: t(&mut c, "host")?,
-            port: t(&mut c, "porta")?,
-            username: t(&mut c, "usuario")?,
-            password: s(&mut c, "senha")?,
-            private_key: s(&mut c, "chave_privada")?,
+            port: t(&mut c, "port")?,
+            username: t(&mut c, "username")?,
+            password: s(&mut c, "password")?,
+            private_key: s(&mut c, "private_key")?,
             passphrase: s(&mut c, "passphrase")?,
-            jump: t(&mut c, "salto")?,
+            jump: t(&mut c, "jump")?,
         },
         EntryType::Api => DataDraft::Api {
             url: t(&mut c, "url")?,
             token: s(&mut c, "token")?,
-            variable: t(&mut c, "variavel")?,
+            variable: t(&mut c, "variable")?,
         },
         EntryType::Aws => DataDraft::Aws {
             access_key_id: t(&mut c, "access_key_id")?,
             secret_access_key: s(&mut c, "secret_access_key")?,
-            region: t(&mut c, "regiao")?,
+            region: t(&mut c, "region")?,
             role_arn: t(&mut c, "role_arn")?,
             session_token: s(&mut c, "session_token")?,
         },
         EntryType::Smtp => DataDraft::Smtp {
             host: t(&mut c, "host")?,
-            port: t(&mut c, "porta")?,
-            username: t(&mut c, "usuario")?,
-            password: s(&mut c, "senha")?,
-            security: t(&mut c, "seguranca")?,
+            port: t(&mut c, "port")?,
+            username: t(&mut c, "username")?,
+            password: s(&mut c, "password")?,
+            security: t(&mut c, "security")?,
         },
         EntryType::FtpSftp => DataDraft::FtpSftp {
-            protocol: t(&mut c, "protocolo")?,
+            protocol: t(&mut c, "protocol")?,
             host: t(&mut c, "host")?,
-            port: t(&mut c, "porta")?,
-            username: t(&mut c, "usuario")?,
-            password: s(&mut c, "senha")?,
-            private_key: s(&mut c, "chave_privada")?,
+            port: t(&mut c, "port")?,
+            username: t(&mut c, "username")?,
+            password: s(&mut c, "password")?,
+            private_key: s(&mut c, "private_key")?,
             passphrase: s(&mut c, "passphrase")?,
         },
         EntryType::SecureNote => DataDraft::SecureNote {
-            text: s(&mut c, "texto")?,
+            text: s(&mut c, "text")?,
         },
         EntryType::Generic => DataDraft::Generic,
     };
@@ -1304,19 +1304,19 @@ fn read_data(kind: EntryType, mut c: Fields) -> R<DataDraft> {
 }
 
 fn read_draft(mut c: Fields) -> R<Draft> {
-    let name = c.text("nome", MAX_NAME)?;
-    let group = c.text_or_empty("grupo", MAX_TEXT)?;
-    let environment = c.text_or_empty("ambiente", MAX_TEXT)?;
-    let project = c.text_or_empty("projeto", MAX_TEXT)?;
+    let name = c.text("name", MAX_NAME)?;
+    let group = c.text_or_empty("group", MAX_TEXT)?;
+    let environment = c.text_or_empty("environment", MAX_TEXT)?;
+    let project = c.text_or_empty("project", MAX_TEXT)?;
     let tags = texts_of(c.list_or_empty("tags", MAX_TAGS)?, MAX_TAG)?;
-    let kind = EntryType::from_name(&c.text("tipo", MAX_NAME)?).ok_or(InvalidJson)?;
-    let data = read_data(kind, c.object_or_empty("campos")?)?;
+    let kind = EntryType::from_name(&c.text("type", MAX_NAME)?).ok_or(InvalidJson)?;
+    let data = read_data(kind, c.object_or_empty("fields")?)?;
     let mut extras = Vec::new();
     for v in c.list_or_empty("extras", MAX_EXTRAS)? {
         let mut o = Fields::from_value(v)?;
-        let name = o.text("nome", MAX_EXTRA_NAME)?;
-        let value = o.secret("valor", MAX_EXTRA_VALUE)?;
-        let secret = o.boolean("segredo")?;
+        let name = o.text("name", MAX_EXTRA_NAME)?;
+        let value = o.secret("value", MAX_EXTRA_VALUE)?;
+        let secret = o.boolean("secret")?;
         o.finish()?;
         extras.push(ExtraDraft {
             name,
@@ -1326,12 +1326,12 @@ fn read_draft(mut c: Fields) -> R<Draft> {
     }
     let mut attachments = Vec::new();
     let mut sum = 0usize;
-    for v in c.list_or_empty("anexos", MAX_ATTACHMENTS)? {
+    for v in c.list_or_empty("attachments", MAX_ATTACHMENTS)? {
         let mut o = Fields::from_value(v)?;
-        let name = o.text("nome", MAX_ATTACHMENT_NAME)?;
+        let name = o.text("name", MAX_ATTACHMENT_NAME)?;
         // The limit of each one is what still fits in the sum (D29).
         let content = secret_of(
-            o.take("conteudo").ok_or(InvalidJson)?,
+            o.take("content").ok_or(InvalidJson)?,
             MAX_ATTACHMENTS_TOTAL - sum,
         )?;
         o.finish()?;
@@ -1352,14 +1352,14 @@ fn read_draft(mut c: Fields) -> R<Draft> {
 }
 
 fn write_draft(e: &mut Writer, r: &Draft) {
-    e.key("nome");
+    e.key("name");
     e.text(&r.name);
-    e.key("grupo");
+    e.key("group");
     e.text(&r.group);
-    e.key("ambiente");
+    e.key("environment");
     e.text(&r.environment);
     if !r.project.is_empty() {
-        e.key("projeto");
+        e.key("project");
         e.text(&r.project);
     }
     e.key("tags");
@@ -1369,9 +1369,9 @@ fn write_draft(e: &mut Writer, r: &Draft) {
             e.text(t);
         }
     });
-    e.key("tipo");
+    e.key("type");
     e.text(r.data.kind().name());
-    e.key("campos");
+    e.key("fields");
     e.object(|e| {
         for c in draft_fields(&r.data) {
             match c {
@@ -1391,23 +1391,23 @@ fn write_draft(e: &mut Writer, r: &Draft) {
         for x in &r.extras {
             e.item();
             e.object(|e| {
-                e.key("nome");
+                e.key("name");
                 e.text(&x.name);
-                e.key("valor");
+                e.key("value");
                 e.base64(x.value.expose());
-                e.key("segredo");
+                e.key("secret");
                 e.boolean(x.secret);
             });
         }
     });
-    e.key("anexos");
+    e.key("attachments");
     e.list(|e| {
         for a in &r.attachments {
             e.item();
             e.object(|e| {
-                e.key("nome");
+                e.key("name");
                 e.text(&a.name);
-                e.key("conteudo");
+                e.key("content");
                 e.base64(a.content.expose());
             });
         }

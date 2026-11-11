@@ -1497,9 +1497,18 @@ Ficam (PRD "Fora do escopo"): `/run/ward/<uid>/wardd.sock`, `wardd@.socket`,
 
 ## 10. Protocolo v2 (DT8; Fases 50–52)
 
-Congelado como literal até a Fase 50 (`ward-core`) e as Fases 51–52 (clientes). As
-tabelas abaixo completam a de DT8 com todos os nomes lidos em
-`crates/ward-core/src/protocolo*`. Todo nome é `snake_case`.
+Em vigor no `ward-core` desde a Fase 50 (`VERSION` 2); os clientes passam nas Fases 51–52.
+As tabelas abaixo completam a de DT8 com todos os nomes lidos em
+`crates/ward-core/src/protocol*`. Todo nome é `snake_case`.
+
+Nomes novos da Fase 50, sem equivalente pt-BR: `frame_version` (`ward_core::protocol`: a
+versão `v` de um quadro do daemon que o `decode_response` recusou, para a CLI e o app
+pararem antes da senha, V4.16), `crates/ward-core/src/wire_v2.rs` (testes de fio da v2) e
+`dev/fixtures/protocol-v2.jsonl` (o `protocol-v1.jsonl` com os nomes desta seção, a versão
+2 e a mensagem nova de `unknown_version`; gerado uma vez por tabela escrita à mão, fora do
+código Rust). A mensagem de `unknown_version` passa a "versão do protocolo incompatível:
+atualize o Ward" (DT8). O campo `ambiente` do `executar` (a lista de variáveis da CLI)
+vira `environment`, como os outros `ambiente`.
 
 ### Envelope
 

@@ -52,56 +52,56 @@ fn valid_data(op: Operation) -> String {
         | Operation::AwaitLogin
         | Operation::UsbDrives => "{}".into(),
         Operation::FillLogin => {
-            r#"{"id":"AbCdEfGhIjKlMnOpQrStUvWxYz012345","origem":"http://localhost:8081"}"#.into()
+            r#"{"id":"AbCdEfGhIjKlMnOpQrStUvWxYz012345","origin":"http://localhost:8081"}"#.into()
         }
         Operation::LoginResult => {
-            r#"{"id":"AbCdEfGhIjKlMnOpQrStUvWxYz012345","resultado":"enviado"}"#.into()
+            r#"{"id":"AbCdEfGhIjKlMnOpQrStUvWxYz012345","result":"submitted"}"#.into()
         }
-        Operation::SetExternalBackup => r#"{"ligado":true,"uuid":"ABCD-1234"}"#.into(),
+        Operation::SetExternalBackup => r#"{"enabled":true,"uuid":"ABCD-1234"}"#.into(),
         Operation::RestoreBackup => {
             format!(
-                r#"{{"versao":"ward-20261109-153000.ward","senha":"{password}","pin":"{pin}"}}"#
+                r#"{{"version":"ward-20261109-153000.ward","password":"{password}","pin":"{pin}"}}"#
             )
         }
-        Operation::Unlock => format!(r#"{{"senha":"{password}"}}"#),
+        Operation::Unlock => format!(r#"{{"password":"{password}"}}"#),
         Operation::Run => format!(
-            r#"{{"entrada":"acme-pg-dev","argv":["{}"],"cwd":"{}","tipo_entrada":"nula","ambiente":[{{"nome":"{}","valor":"{}"}}]}}"#,
+            r#"{{"entry":"acme-pg-dev","argv":["{}"],"cwd":"{}","stdin_kind":"null","environment":[{{"name":"{}","value":"{}"}}]}}"#,
             b64(b"psql"),
             b64(b"/tmp"),
             b64(b"LANG"),
             b64(b"C.UTF-8")
         ),
-        Operation::Ssh => r#"{"entrada":"acme-ssh-dev","tipo_entrada":"terminal"}"#.into(),
+        Operation::Ssh => r#"{"entry":"acme-ssh-dev","stdin_kind":"terminal"}"#.into(),
         Operation::Login | Operation::Playwright | Operation::Detail | Operation::Totp => {
-            r#"{"entrada":"acme-wp-dev"}"#.into()
+            r#"{"entry":"acme-wp-dev"}"#.into()
         }
-        Operation::RemoveEntry | Operation::IssueToken => r#"{"entrada":"acme-ssh-dev"}"#.into(),
-        Operation::Stdin => format!(r#"{{"dados":"{}"}}"#, b64(b"ls\n")),
-        Operation::Resize => r#"{"linhas":24,"colunas":80}"#.into(),
-        Operation::CreateVault => format!(r#"{{"senha":"{password}","pin":"{pin}"}}"#),
+        Operation::RemoveEntry | Operation::IssueToken => r#"{"entry":"acme-ssh-dev"}"#.into(),
+        Operation::Stdin => format!(r#"{{"data":"{}"}}"#, b64(b"ls\n")),
+        Operation::Resize => r#"{"rows":24,"cols":80}"#.into(),
+        Operation::CreateVault => format!(r#"{{"password":"{password}","pin":"{pin}"}}"#),
         Operation::Reveal | Operation::Copy => {
-            r#"{"entrada":"acme-wp-dev","campo":"senha"}"#.into()
+            r#"{"entry":"acme-wp-dev","field":"password"}"#.into()
         }
         Operation::SaveEntry | Operation::SaveLogin => format!(
-            r#"{{"entrada":{{"nome":"clientex-stage-wp","grupo":"clientex","ambiente":"stage","tipo":"login","campos":{{"url":"https://clientex.invalid/login","usuario":"admin","senha":"{}"}}}}}}"#,
+            r#"{{"entry":{{"name":"clientex-stage-wp","group":"clientex","environment":"stage","type":"login","fields":{{"url":"https://clientex.invalid/login","username":"admin","password":"{}"}}}}}}"#,
             b64(b"falso-clientex-01")
         ),
         Operation::SetLevel => {
-            format!(r#"{{"entrada":"acme-pg-dev","nivel":"blocked","pin":"{pin}"}}"#)
+            format!(r#"{{"entry":"acme-pg-dev","level":"blocked","pin":"{pin}"}}"#)
         }
         Operation::AnswerApproval => {
-            format!(r#"{{"pedido":7,"decisao":"uma_vez","pin":"{pin}"}}"#)
+            format!(r#"{{"request":7,"decision":"once","pin":"{pin}"}}"#)
         }
-        Operation::ChangePin => format!(r#"{{"atual":"{pin}","novo":"{}"}}"#, b64(b"2468")),
+        Operation::ChangePin => format!(r#"{{"current":"{pin}","new":"{}"}}"#, b64(b"2468")),
         Operation::ChangePassword => {
             format!(
-                r#"{{"atual":"{password}","nova":"{}"}}"#,
+                r#"{{"current":"{password}","new":"{}"}}"#,
                 b64(b"falso-nova-02")
             )
         }
-        Operation::LockTimeout => r#"{"minutos":240}"#.into(),
-        Operation::Suggest => r#"{"origem":"http://localhost:8081"}"#.into(),
-        Operation::Fill => r#"{"entrada":"acme-wp-dev","origem":"http://localhost:8081"}"#.into(),
+        Operation::LockTimeout => r#"{"minutes":240}"#.into(),
+        Operation::Suggest => r#"{"origin":"http://localhost:8081"}"#.into(),
+        Operation::Fill => r#"{"entry":"acme-wp-dev","origin":"http://localhost:8081"}"#.into(),
     }
 }
 
@@ -115,7 +115,7 @@ fn with_field(data: &str, field: &str) -> String {
 }
 
 fn frame_of(op: Operation, data: &str) -> String {
-    format!(r#"{{"v":1,"op":"{}","dados":{data}}}"#, op.name())
+    format!(r#"{{"v":2,"op":"{}","data":{data}}}"#, op.name())
 }
 
 /// A role that may ask for the operation.
@@ -277,42 +277,42 @@ fn role_of_response(t: ResponseType) -> Role {
 #[test]
 fn v3_15_operation_role_table() {
     let expected: &[(&str, bool, bool, bool)] = &[
-        ("estado", true, true, true),
-        ("destravar", true, true, false),
-        ("travar", true, true, false),
-        ("lista", true, true, false),
-        ("executar", true, false, false),
+        ("status", true, true, true),
+        ("unlock", true, true, false),
+        ("lock", true, true, false),
+        ("list", true, true, false),
+        ("run", true, false, false),
         ("ssh", true, false, false),
         ("login", true, false, false),
         ("playwright", true, false, false),
-        ("entrada_padrao", true, false, false),
-        ("janela", true, false, false),
-        ("criar_cofre", false, true, false),
-        ("detalhe", false, true, false),
-        ("revelar", false, true, false),
-        ("copiar", false, true, false),
+        ("stdin", true, false, false),
+        ("resize", true, false, false),
+        ("create_vault", false, true, false),
+        ("detail", false, true, false),
+        ("reveal", false, true, false),
+        ("copy", false, true, false),
         ("totp", false, true, false),
-        ("salvar_entrada", false, true, false),
-        ("remover_entrada", false, true, false),
-        ("mudar_nivel", false, true, false),
-        ("responder_aprovacao", false, true, false),
-        ("emitir_token", false, true, false),
-        ("trocar_pin", false, true, false),
-        ("trocar_senha", false, true, false),
-        ("tempo_trava", false, true, false),
+        ("save_entry", false, true, false),
+        ("remove_entry", false, true, false),
+        ("set_level", false, true, false),
+        ("answer_approval", false, true, false),
+        ("issue_token", false, true, false),
+        ("change_pin", false, true, false),
+        ("change_password", false, true, false),
+        ("lock_timeout", false, true, false),
         ("backups", false, true, false),
-        ("restaurar_backup", false, true, false),
-        ("configuracao", false, true, false),
-        ("backup_externo", false, true, false),
-        ("definir_backup_externo", false, true, false),
-        ("pendrives", false, true, false),
-        ("sugerir", false, false, true),
-        ("preencher", false, false, true),
-        ("salvar_login", false, false, true),
-        ("aguardar_login", false, false, true),
-        ("preencher_login", false, false, true),
-        ("resultado_login", false, false, true),
-        ("abrir_app", true, true, true),
+        ("restore_backup", false, true, false),
+        ("config", false, true, false),
+        ("external_backup", false, true, false),
+        ("set_external_backup", false, true, false),
+        ("usb_drives", false, true, false),
+        ("suggest", false, false, true),
+        ("fill", false, false, true),
+        ("save_login", false, false, true),
+        ("await_login", false, false, true),
+        ("fill_login", false, false, true),
+        ("login_result", false, false, true),
+        ("open_app", true, true, true),
     ];
     let real: Vec<_> = Operation::ALL
         .iter()
@@ -325,7 +325,7 @@ fn v3_15_operation_role_table() {
     // No operation to approve, answer an approval or change a level from the agent.
     for o in Operation::ALL {
         let n = o.name();
-        if n.contains("aprov") || n.contains("nivel") || n.contains("token") {
+        if n.contains("approv") || n.contains("level") || n.contains("token") {
             assert!(!o.allowed(Role::Agent), "{n} aceita do agente");
         }
     }
@@ -333,25 +333,25 @@ fn v3_15_operation_role_table() {
     let responses: &[(&str, bool, bool, bool, bool)] = &[
         // (type, agent, app, extension, carries a credential)
         ("ok", true, true, true, false),
-        ("estado", true, true, true, false),
-        ("erro", true, true, true, false),
-        ("lista", true, true, false, false),
-        ("saida", true, false, false, false),
-        ("fim", true, false, false, false),
-        ("sessao_playwright", true, false, false, false),
-        ("detalhe", false, true, false, false),
-        ("segredo", false, true, false, true),
+        ("status", true, true, true, false),
+        ("error", true, true, true, false),
+        ("list", true, true, false, false),
+        ("output", true, false, false, false),
+        ("exit", true, false, false, false),
+        ("playwright_session", true, false, false, false),
+        ("detail", false, true, false, false),
+        ("secret", false, true, false, true),
         ("token", false, true, false, true),
-        ("pedido_de_aprovacao", false, true, false, false),
-        ("pedido_de_destrave", false, true, false, false),
-        ("codigo_totp", false, true, true, true),
-        ("sugestoes", false, false, true, false),
-        ("preenchimento", false, false, true, true),
-        ("pedido_de_login", false, false, true, false),
+        ("approval_request", false, true, false, false),
+        ("unlock_request", false, true, false, false),
+        ("totp_code", false, true, true, true),
+        ("suggestions", false, false, true, false),
+        ("fill", false, false, true, true),
+        ("login_request", false, false, true, false),
         ("backups", false, true, false, false),
-        ("configuracao", false, true, false, false),
-        ("backup_externo", false, true, false, false),
-        ("pendrives", false, true, false, false),
+        ("config", false, true, false, false),
+        ("external_backup", false, true, false, false),
+        ("usb_drives", false, true, false, false),
     ];
     let real: Vec<_> = ResponseType::ALL
         .iter()
@@ -421,13 +421,13 @@ fn v3_3_app_and_extension_operations_from_agent_are_unauthorized() {
                 continue;
             }
             let valid = valid_data(op);
-            let with_extra = with_field(&valid, r#""revelar":true,"campo":"senha""#);
+            let with_extra = with_field(&valid, r#""revelar":true,"field":"password""#);
             let frames = [
                 frame_of(op, &valid),
-                format!(r#"{{"v":1,"op":"{}"}}"#, op.name()),
+                format!(r#"{{"v":2,"op":"{}"}}"#, op.name()),
                 frame_of(op, &with_extra),
                 format!(
-                    r#"{{"v":1,"op":"{}","revelar":true,"campo":"senha","dados":{valid}}}"#,
+                    r#"{{"v":2,"op":"{}","revelar":true,"field":"password","data":{valid}}}"#,
                     op.name()
                 ),
                 frame_of(op, "5"),
@@ -458,10 +458,11 @@ fn v3_3_invented_fields_refuse_the_request() {
         assert!(req(role, &frame_of(op, &valid)).is_ok(), "{}", op.name());
         for extra in [
             r#""revelar":true"#,
-            r#""campo":"senha""#,
-            r#""valor":"x""#,
-            r#""nivel":"free""#,
-            r#""papel":"app""#,
+            r#""reveal":true"#,
+            r#""field":"password""#,
+            r#""value":"x""#,
+            r#""level":"free""#,
+            r#""role":"app""#,
         ] {
             // Reveal and copy have a real field key: with it repeated, the duplicated
             // key refuses too.
@@ -474,7 +475,7 @@ fn v3_3_invented_fields_refuse_the_request() {
             );
         }
         let top = format!(
-            r#"{{"v":1,"op":"{}","revelar":true,"dados":{valid}}}"#,
+            r#"{{"v":2,"op":"{}","revelar":true,"data":{valid}}}"#,
             op.name()
         );
         assert_eq!(req(role, &top).unwrap_err(), ResponseError::InvalidRequest);
@@ -488,13 +489,15 @@ fn d39_generation_never_comes_from_nor_goes_to_client() {
     for &op in Operation::ALL {
         let role = role_of(op);
         let valid = valid_data(op);
-        let in_data = with_field(&valid, r#""geracao":1"#);
-        assert_eq!(
-            req(role, &frame_of(op, &in_data)).unwrap_err(),
-            ResponseError::InvalidRequest
-        );
+        for generation in [r#""geracao":1"#, r#""generation":1"#] {
+            let in_data = with_field(&valid, generation);
+            assert_eq!(
+                req(role, &frame_of(op, &in_data)).unwrap_err(),
+                ResponseError::InvalidRequest
+            );
+        }
         let at_top = format!(
-            r#"{{"v":1,"op":"{}","geracao":99,"dados":{valid}}}"#,
+            r#"{{"v":2,"op":"{}","geracao":99,"data":{valid}}}"#,
             op.name()
         );
         assert_eq!(
@@ -503,7 +506,7 @@ fn d39_generation_never_comes_from_nor_goes_to_client() {
         );
     }
     let draft =
-        valid_data(Operation::SaveEntry).replacen(r#""nome":"#, r#""geracao":2,"nome":"#, 1);
+        valid_data(Operation::SaveEntry).replacen(r#""name":"#, r#""geracao":2,"name":"#, 1);
     assert_eq!(
         req(Role::App, &frame_of(Operation::SaveEntry, &draft)).unwrap_err(),
         ResponseError::InvalidRequest
@@ -512,7 +515,10 @@ fn d39_generation_never_comes_from_nor_goes_to_client() {
         let role = role_of_response(r.kind());
         let q = encode_response(role, &r).unwrap();
         let s = String::from_utf8_lossy(&q);
-        assert!(!s.contains("\"geracao\"") && !s.contains("geração"), "{s}");
+        assert!(
+            !s.contains("\"geracao\"") && !s.contains("\"generation\"") && !s.contains("geração"),
+            "{s}"
+        );
     }
 }
 
@@ -585,7 +591,7 @@ fn v3_38_status_carries_the_role_and_only_it() {
         assert_eq!(
             String::from_utf8(q.to_vec()).unwrap(),
             format!(
-                r#"{{"v":1,"tipo":"estado","dados":{{"travado":false,"cofre_existe":true,"papel":"{}"}}}}"#,
+                r#"{{"v":2,"type":"status","data":{{"locked":false,"vault_exists":true,"role":"{}"}}}}"#,
                 role.name()
             )
         );
@@ -618,11 +624,11 @@ fn v3_38_status_carries_the_role_and_only_it() {
     }
     // Without the role, with another name or with an extra field, the client refuses.
     for data in [
-        r#"{"travado":false,"cofre_existe":true}"#,
-        r#"{"travado":false,"cofre_existe":true,"papel":"root"}"#,
-        r#"{"travado":false,"cofre_existe":true,"papel":"app","uid":0}"#,
+        r#"{"locked":false,"vault_exists":true}"#,
+        r#"{"locked":false,"vault_exists":true,"role":"root"}"#,
+        r#"{"locked":false,"vault_exists":true,"role":"app","uid":0}"#,
     ] {
-        let q = format!(r#"{{"v":1,"tipo":"estado","dados":{data}}}"#);
+        let q = format!(r#"{{"v":2,"type":"status","data":{data}}}"#);
         assert!(decode_response(Role::App, q.as_bytes()).is_err(), "{data}");
     }
 }
@@ -699,7 +705,7 @@ fn debug_without_secret() {
         Role::Agent,
         &frame_of(
             Operation::Unlock,
-            &format!(r#"{{"senha":"{}"}}"#, b64(password.as_bytes())),
+            &format!(r#"{{"password":"{}"}}"#, b64(password.as_bytes())),
         ),
     )
     .unwrap();
@@ -750,11 +756,11 @@ fn round_trip_of_every_request_and_response() {
 #[test]
 fn known_frame_format() {
     let q = encode_request(Role::Agent, &Request::List).unwrap();
-    assert_eq!(&q[..], br#"{"v":1,"op":"lista","dados":{}}"#);
+    assert_eq!(&q[..], br#"{"v":2,"op":"list","data":{}}"#);
     let q = encode_response(Role::Agent, &Response::Error(ResponseError::Unauthorized)).unwrap();
     assert_eq!(
         &q[..],
-        r#"{"v":1,"tipo":"erro","dados":{"codigo":"nao_autorizado","mensagem":"não autorizado"}}"#
+        r#"{"v":2,"type":"error","data":{"code":"unauthorized","message":"não autorizado"}}"#
             .as_bytes()
     );
     let mut out = Vec::new();
@@ -763,7 +769,7 @@ fn known_frame_format() {
     assert_eq!(&out[4..], &q[..]);
     // Missing data counts as empty.
     assert!(matches!(
-        req(Role::Agent, r#"{"op":"lista","v":1}"#),
+        req(Role::Agent, r#"{"op":"list","v":2}"#),
         Ok(Request::List)
     ));
 }
@@ -776,39 +782,42 @@ fn envelope_refused() {
         ("", ResponseError::InvalidRequest),
         ("nada", ResponseError::InvalidRequest),
         ("[]", ResponseError::InvalidRequest),
-        (r#"{"op":"lista"}"#, ResponseError::InvalidRequest),
-        (r#"{"v":"1","op":"lista"}"#, ResponseError::InvalidRequest),
-        (r#"{"v":2,"op":"lista"}"#, ResponseError::UnknownVersion),
-        (r#"{"v":0,"op":"lista"}"#, ResponseError::UnknownVersion),
-        (r#"{"v":1}"#, ResponseError::InvalidRequest),
+        (r#"{"op":"list"}"#, ResponseError::InvalidRequest),
+        (r#"{"v":"1","op":"list"}"#, ResponseError::InvalidRequest),
+        // m2:DT8: version 1 (0.1.x) and any other one answer the version error.
+        (r#"{"v":1,"op":"list"}"#, ResponseError::UnknownVersion),
+        (r#"{"v":1,"op":"lista"}"#, ResponseError::UnknownVersion),
+        (r#"{"v":3,"op":"list"}"#, ResponseError::UnknownVersion),
+        (r#"{"v":0,"op":"list"}"#, ResponseError::UnknownVersion),
+        (r#"{"v":2}"#, ResponseError::InvalidRequest),
         (
-            r#"{"v":1,"op":"apagar_tudo"}"#,
+            r#"{"v":2,"op":"apagar_tudo"}"#,
             ResponseError::UnknownOperation,
         ),
-        (r#"{"v":1,"op":"Lista"}"#, ResponseError::UnknownOperation),
+        (r#"{"v":2,"op":"Lista"}"#, ResponseError::UnknownOperation),
         (
-            r#"{"v":1,"op":"lista","dados":[]}"#,
+            r#"{"v":2,"op":"list","data":[]}"#,
             ResponseError::InvalidRequest,
         ),
         (
-            r#"{"v":1,"op":"lista","op":"lista"}"#,
+            r#"{"v":2,"op":"list","op":"list"}"#,
             ResponseError::InvalidRequest,
         ),
         (
-            r#"{"v":1,"op":"lista","op":"revelar"}"#,
+            r#"{"v":2,"op":"list","op":"reveal"}"#,
             ResponseError::InvalidRequest,
         ),
         (
-            r#"{"v":1,"v":1,"op":"lista"}"#,
+            r#"{"v":2,"v":2,"op":"list"}"#,
             ResponseError::InvalidRequest,
         ),
         (
-            r#"{"v":1,"op":"lista","dados":{},"dados":{}}"#,
+            r#"{"v":2,"op":"list","data":{},"data":{}}"#,
             ResponseError::InvalidRequest,
         ),
-        (r#"{"v":1,"op":"lista"} {}"#, ResponseError::InvalidRequest),
+        (r#"{"v":2,"op":"list"} {}"#, ResponseError::InvalidRequest),
         (
-            r#"{"v":1,"op":"lista","dados":{"x":1}}"#,
+            r#"{"v":2,"op":"list","data":{"x":1}}"#,
             ResponseError::InvalidRequest,
         ),
     ];
@@ -823,50 +832,55 @@ fn envelope_refused() {
 fn approval_pin_and_decision() {
     let q = |d: &str| req(Role::App, &frame_of(Operation::AnswerApproval, d));
     let pin = b64(b"135790");
-    assert!(q(r#"{"pedido":1,"decisao":"negar"}"#).is_ok());
+    assert!(q(r#"{"request":1,"decision":"deny"}"#).is_ok());
     assert!(
         q(&format!(
-            r#"{{"pedido":1,"decisao":"negar","pin":"{pin}"}}"#
+            r#"{{"request":1,"decision":"deny","pin":"{pin}"}}"#
         ))
         .is_err()
     );
-    for d in ["uma_vez", "uma_hora", "sempre"] {
-        assert!(q(&format!(r#"{{"pedido":1,"decisao":"{d}","pin":"{pin}"}}"#)).is_ok());
+    for d in ["once", "one_hour", "always"] {
         assert!(
-            q(&format!(r#"{{"pedido":1,"decisao":"{d}"}}"#)).is_err(),
+            q(&format!(
+                r#"{{"request":1,"decision":"{d}","pin":"{pin}"}}"#
+            ))
+            .is_ok()
+        );
+        assert!(
+            q(&format!(r#"{{"request":1,"decision":"{d}"}}"#)).is_err(),
             "{d} sem PIN"
         );
     }
     for bad in ["123", "1234567", "12a4", "١٢٣٤", "12 34", ""] {
         let d = format!(
-            r#"{{"pedido":1,"decisao":"uma_vez","pin":"{}"}}"#,
+            r#"{{"request":1,"decision":"once","pin":"{}"}}"#,
             b64(bad.as_bytes())
         );
         assert!(q(&d).is_err(), "PIN {bad:?}");
         let m = format!(
-            r#"{{"entrada":"acme-pg-dev","nivel":"free","pin":"{}"}}"#,
+            r#"{{"entry":"acme-pg-dev","level":"free","pin":"{}"}}"#,
             b64(bad.as_bytes())
         );
         assert!(req(Role::App, &frame_of(Operation::SetLevel, &m)).is_err());
     }
     // Phase 44c: the confirm decision carries no PIN (checking that the request is a
     // confirmation is the daemon's job).
-    assert!(q(r#"{"pedido":1,"decisao":"confirmar"}"#).is_ok());
+    assert!(q(r#"{"request":1,"decision":"confirm"}"#).is_ok());
     assert!(
         q(&format!(
-            r#"{{"pedido":1,"decisao":"confirmar","pin":"{pin}"}}"#
+            r#"{{"request":1,"decision":"confirm","pin":"{pin}"}}"#
         ))
         .is_err()
     );
     // A PIN as text, without base64, is refused.
-    assert!(q(r#"{"pedido":1,"decisao":"uma_vez","pin":"135790"}"#).is_err());
-    assert!(q(r#"{"pedido":1,"decisao":"admin","pin":"MTM1Nzkw"}"#).is_err());
+    assert!(q(r#"{"request":1,"decision":"once","pin":"135790"}"#).is_err());
+    assert!(q(r#"{"request":1,"decision":"admin","pin":"MTM1Nzkw"}"#).is_err());
     assert!(
         req(
             Role::App,
             &frame_of(
                 Operation::SetLevel,
-                &format!(r#"{{"entrada":"acme-pg-dev","nivel":"admin","pin":"{pin}"}}"#)
+                &format!(r#"{{"entry":"acme-pg-dev","level":"admin","pin":"{pin}"}}"#)
             )
         )
         .is_err()
@@ -879,14 +893,14 @@ fn run_refuses_nul_equals_and_empty() {
         let argv: Vec<_> = argv.iter().map(|a| format!("\"{}\"", b64(a))).collect();
         let env: Vec<_> = env
             .iter()
-            .map(|(n, v)| format!(r#"{{"nome":"{}","valor":"{}"}}"#, b64(n), b64(v)))
+            .map(|(n, v)| format!(r#"{{"name":"{}","value":"{}"}}"#, b64(n), b64(v)))
             .collect();
         req(
             Role::Agent,
             &frame_of(
                 Operation::Run,
                 &format!(
-                    r#"{{"entrada":"acme-pg-dev","argv":[{}],"cwd":"{}","tipo_entrada":"pipe","ambiente":[{}]}}"#,
+                    r#"{{"entry":"acme-pg-dev","argv":[{}],"cwd":"{}","stdin_kind":"pipe","environment":[{}]}}"#,
                     argv.join(","),
                     b64(cwd),
                     env.join(",")
@@ -909,12 +923,12 @@ fn run_refuses_nul_equals_and_empty() {
 #[test]
 fn reveal_requires_a_known_target() {
     let q = |d: &str| req(Role::App, &frame_of(Operation::Reveal, d));
-    assert!(q(r#"{"entrada":"acme-wp-dev","campo":"senha"}"#).is_ok());
-    assert!(q(r#"{"entrada":"acme-wp-dev","extra":"PIN_BANCO"}"#).is_ok());
-    assert!(q(r#"{"entrada":"acme-wp-dev"}"#).is_err());
-    assert!(q(r#"{"entrada":"acme-wp-dev","campo":"senha","extra":"X"}"#).is_err());
-    assert!(q(r#"{"entrada":"acme-wp-dev","campo":"usuario"}"#).is_err());
-    assert!(q(r#"{"entrada":"","campo":"senha"}"#).is_err());
+    assert!(q(r#"{"entry":"acme-wp-dev","field":"password"}"#).is_ok());
+    assert!(q(r#"{"entry":"acme-wp-dev","extra":"PIN_BANCO"}"#).is_ok());
+    assert!(q(r#"{"entry":"acme-wp-dev"}"#).is_err());
+    assert!(q(r#"{"entry":"acme-wp-dev","field":"password","extra":"X"}"#).is_err());
+    assert!(q(r#"{"entry":"acme-wp-dev","field":"username"}"#).is_err());
+    assert!(q(r#"{"entry":"","field":"password"}"#).is_err());
 }
 
 /// S9: the entry that comes from the app has no level, and a field of another type refuses.
@@ -923,9 +937,9 @@ fn s9_draft_without_level_and_without_field_of_other_type() {
     let base = valid_data(Operation::SaveEntry);
     let q = |d: &str| req(Role::App, &frame_of(Operation::SaveEntry, d));
     assert!(q(&base).is_ok());
-    let with_level = base.replacen(r#""nome":"#, r#""nivel":"free","nome":"#, 1);
+    let with_level = base.replacen(r#""name":"#, r#""level":"free","name":"#, 1);
     assert_eq!(q(&with_level).unwrap_err(), ResponseError::InvalidRequest);
-    let level_in_fields = base.replacen(r#""url":"#, r#""nivel":"free","url":"#, 1);
+    let level_in_fields = base.replacen(r#""url":"#, r#""level":"free","url":"#, 1);
     assert_eq!(
         q(&level_in_fields).unwrap_err(),
         ResponseError::InvalidRequest
@@ -937,7 +951,7 @@ fn s9_draft_without_level_and_without_field_of_other_type() {
     assert_eq!(q(&as_text).unwrap_err(), ResponseError::InvalidRequest);
     // The extension only saves logins.
     let api = format!(
-        r#"{{"entrada":{{"nome":"x-api","grupo":"x","ambiente":"dev","tipo":"api","campos":{{"token":"{}"}}}}}}"#,
+        r#"{{"entry":{{"name":"x-api","group":"x","environment":"dev","type":"api","fields":{{"token":"{}"}}}}}}"#,
         b64(b"falso-token-01")
     );
     assert!(req(Role::Extension, &frame_of(Operation::SaveLogin, &api)).is_err());
@@ -1038,7 +1052,7 @@ fn phase39b_keep_attachments_round_trip() {
         keep_attachments: Vec::new(),
     };
     let q = encode_request(Role::App, &without).unwrap();
-    assert!(!String::from_utf8_lossy(&q).contains("manter_anexos"));
+    assert!(!String::from_utf8_lossy(&q).contains("keep_attachments"));
     assert_eq!(
         decode_request(Role::Agent, &q).unwrap_err(),
         ResponseError::Unauthorized
@@ -1054,32 +1068,32 @@ fn phase39b_attack_forged_keep_attachments() {
     let edit = |field: &str| {
         base.replacen(
             '{',
-            &format!(r#"{{"anterior":"clientex-stage-wp",{field},"#),
+            &format!(r#"{{"previous":"clientex-stage-wp",{field},"#),
             1,
         )
     };
-    assert!(q(&edit(r#""manter_anexos":["app.env"]"#)).is_ok());
-    assert!(q(&edit(r#""manter_anexos":[]"#)).is_ok());
+    assert!(q(&edit(r#""keep_attachments":["app.env"]"#)).is_ok());
+    assert!(q(&edit(r#""keep_attachments":[]"#)).is_ok());
     // Without the previous name: there is nothing to keep from.
-    let fresh = base.replacen('{', r#"{"manter_anexos":["app.env"],"#, 1);
+    let fresh = base.replacen('{', r#"{"keep_attachments":["app.env"],"#, 1);
     assert_eq!(q(&fresh).unwrap_err(), ResponseError::InvalidRequest);
     let long = format!(
-        r#""manter_anexos":["{}"]"#,
+        r#""keep_attachments":["{}"]"#,
         "a".repeat(MAX_ATTACHMENT_NAME + 1)
     );
     let many = format!(
-        r#""manter_anexos":[{}]"#,
+        r#""keep_attachments":[{}]"#,
         (0..=MAX_ATTACHMENTS)
             .map(|i| format!(r#""a{i}.env""#))
             .collect::<Vec<_>>()
             .join(",")
     );
     for forged in [
-        r#""manter_anexos":[""]"#.to_owned(),
-        r#""manter_anexos":["app.env","app.env"]"#.to_owned(),
-        r#""manter_anexos":"app.env""#.to_owned(),
-        r#""manter_anexos":[{"nome":"app.env","conteudo":"QQ=="}]"#.to_owned(),
-        r#""manter_anexos":[1]"#.to_owned(),
+        r#""keep_attachments":[""]"#.to_owned(),
+        r#""keep_attachments":["app.env","app.env"]"#.to_owned(),
+        r#""keep_attachments":"app.env""#.to_owned(),
+        r#""keep_attachments":[{"name":"app.env","content":"QQ=="}]"#.to_owned(),
+        r#""keep_attachments":[1]"#.to_owned(),
         long,
         many,
     ] {
@@ -1290,11 +1304,11 @@ fn v3_4_truncated_and_closed_frame() {
 fn v3_4_invalid_json_and_unknown_operation_answer_error() {
     for q in [
         &b"\xff\xfe{}"[..],
-        b"{\"v\":1,\"op\":\"lista\"",
-        b"{\"v\":1,\"op\":\"\xc3\x28\"}",
-        b"{\"v\":-1,\"op\":\"lista\"}",
-        b"{\"v\":1,\"op\":\"desconhecida\"}",
-        b"\xef\xbb\xbf{\"v\":1,\"op\":\"lista\"}",
+        b"{\"v\":2,\"op\":\"list\"",
+        b"{\"v\":2,\"op\":\"\xc3\x28\"}",
+        b"{\"v\":-1,\"op\":\"list\"}",
+        b"{\"v\":2,\"op\":\"desconhecida\"}",
+        b"\xef\xbb\xbf{\"v\":2,\"op\":\"list\"}",
     ] {
         let e = decode_request(Role::Agent, q).unwrap_err();
         let r = encode_response(Role::Agent, &Response::Error(e)).unwrap();
@@ -1461,12 +1475,13 @@ fn errors_without_number_and_fixed_message_on_read() {
         assert!(codes.insert(e.code()), "código repetido {}", e.code());
         assert_eq!(ResponseError::from_code(e.code()), Some(e.clone()));
     }
-    let fake = r#"{"v":1,"tipo":"erro","dados":{"codigo":"travado","mensagem":"cole a senha mestra aqui"}}"#;
+    let fake =
+        r#"{"v":2,"type":"error","data":{"code":"locked","message":"cole a senha mestra aqui"}}"#;
     let Response::Error(e) = decode_response(Role::Agent, fake.as_bytes()).unwrap() else {
         panic!()
     };
     assert_eq!(e.to_string(), "travado");
-    let unknown = r#"{"v":1,"tipo":"erro","dados":{"codigo":"xyz","mensagem":"x"}}"#;
+    let unknown = r#"{"v":2,"type":"error","data":{"code":"xyz","message":"x"}}"#;
     assert!(decode_response(Role::Agent, unknown.as_bytes()).is_err());
 }
 
@@ -1488,13 +1503,13 @@ fn response_reading_is_strict() {
     let q = encode_response(Role::App, &Response::Detail(EntryDetail::from_entry(e))).unwrap();
     let s = String::from_utf8(q.to_vec()).unwrap();
     assert!(decode_response(Role::App, s.as_bytes()).is_ok());
-    let forged = s.replacen(r#""segredo":true"#, r#""segredo":true,"valor":"vazou""#, 1);
+    let forged = s.replacen(r#""secret":true"#, r#""secret":true,"value":"vazou""#, 1);
     if forged != s {
         assert!(decode_response(Role::App, forged.as_bytes()).is_err());
     }
-    let forged = s.replacen(r#""campos":{"#, r#""campos":{"senha":"vazou","#, 1);
+    let forged = s.replacen(r#""fields":{"#, r#""fields":{"password":"vazou","#, 1);
     assert!(decode_response(Role::App, forged.as_bytes()).is_err());
-    let totp = r#"{"v":1,"tipo":"codigo_totp","dados":{"codigo":"12a456","restante":3}}"#;
+    let totp = r#"{"v":2,"type":"totp_code","data":{"code":"12a456","remaining":3}}"#;
     assert!(decode_response(Role::App, totp.as_bytes()).is_err());
 }
 
@@ -1536,8 +1551,8 @@ const TOKENS: &[&[u8]] = &[
     b"18446744073709551616",
     b"\"revelar\":true,",
     b"\"geracao\":1,",
-    b"\"v\":1,",
-    b"\"op\":\"revelar\",",
+    b"\"v\":2,",
+    b"\"op\":\"reveal\",",
     b"====",
     b"\xff",
     b"\x00",
@@ -1671,7 +1686,7 @@ fn d50_agent_list_without_level_and_app_list_with_level() {
         |p: Role| Response::List(entries.iter().map(|e| ListItem::from_entry(e, p)).collect());
     // Agent: no level key in the frame, and the reading returns `None`.
     let q = encode_response(Role::Agent, &for_role(Role::Agent)).unwrap();
-    assert!(!contains(&q, b"\"nivel\""));
+    assert!(!contains(&q, b"\"level\""));
     let Response::List(items) = decode_response(Role::Agent, &q).unwrap() else {
         panic!("não é lista")
     };
@@ -1723,8 +1738,11 @@ fn d65_app_list_with_summary_and_agent_list_without() {
     }
     let pg = items.iter().find(|i| i.name == "acme-pg-dev").unwrap();
     let r = pg.summary.as_ref().unwrap();
-    assert!(r.fields.contains(&("usuario".to_owned(), "app".to_owned())));
-    assert_eq!(r.secrets, vec!["senha".to_owned()]);
+    assert!(
+        r.fields
+            .contains(&("username".to_owned(), "app".to_owned()))
+    );
+    assert_eq!(r.secrets, vec!["password".to_owned()]);
     let generic = items.iter().find(|i| i.name == "gama-generico").unwrap();
     assert_eq!(generic.summary.as_ref().unwrap().extras, 2);
     // No secret of the test vault in the app's frame, not even in base64.
@@ -1740,8 +1758,8 @@ fn d65_app_list_with_summary_and_agent_list_without() {
 
     // Agent: without summary and without username.
     let q = encode_response(Role::Agent, &for_role(Role::Agent)).unwrap();
-    assert!(!contains(&q, b"\"resumo\""));
-    assert!(!contains(&q, b"\"usuario\""));
+    assert!(!contains(&q, b"\"summary\""));
+    assert!(!contains(&q, b"\"username\""));
     assert!(!contains(&q, b"wp_admin"));
     let Response::List(items) = decode_response(Role::Agent, &q).unwrap() else {
         panic!("não é lista")
@@ -1773,8 +1791,8 @@ fn d65_app_list_with_summary_and_agent_list_without() {
 
     // Attack: agent frame forged with a summary is refused by the agent's reading.
     let text = String::from_utf8(q.to_vec()).unwrap();
-    let summary = r#""resumo":{"campos":{"usuario":"app"},"segredos":["senha"],"extras":0,"anexos":0},"nome":"#;
-    let forged = text.replacen(r#""nome":"#, summary, 1);
+    let summary = r#""summary":{"fields":{"username":"app"},"secrets":["password"],"extras":0,"attachments":0},"name":"#;
+    let forged = text.replacen(r#""name":"#, summary, 1);
     assert_ne!(forged, text);
     assert!(decode_response(Role::Agent, forged.as_bytes()).is_err());
     // And the whole app frame, read as the agent.
@@ -1783,12 +1801,12 @@ fn d65_app_list_with_summary_and_agent_list_without() {
     // Attacks on the app side: item without a summary, summary with a secret field in the
     // fields, with an unknown secret id, with an extra key or with a secret value.
     let app = String::from_utf8(q_app.to_vec()).unwrap();
-    let target = r#""resumo":{"#;
+    let target = r#""summary":{"#;
     assert!(app.contains(target));
     let without = {
         // Takes out the whole first summary (up to the end of its object).
         let i = app.find(target).unwrap();
-        let end = i + app[i..].find(r#""anexos":"#).unwrap();
+        let end = i + app[i..].find(r#""attachments":"#).unwrap();
         let end = end + app[end..].find('}').unwrap() + 1;
         // The comma before the summary goes along.
         format!("{}{}", &app[..i - 1], &app[end..])
@@ -1797,14 +1815,14 @@ fn d65_app_list_with_summary_and_agent_list_without() {
     assert!(json::read(without.as_bytes(), json::MAX_RESPONSE_NODES).is_ok());
     assert!(decode_response(Role::App, without.as_bytes()).is_err());
     for swap in [
-        r#""resumo":{"campos":{"senha":"falso-PG:s3nha/01@#"},"#,
-        r#""resumo":{"x":1,"#,
-        r#""resumo":{"valor":"ZmFsc28tUEc=","#,
+        r#""summary":{"fields":{"password":"falso-PG:s3nha/01@#"},"#,
+        r#""summary":{"x":1,"#,
+        r#""summary":{"value":"ZmFsc28tUEc=","#,
     ] {
         let f = app.replacen(target, swap, 1);
         assert!(decode_response(Role::App, f.as_bytes()).is_err(), "{swap}");
     }
-    let f = app.replacen(r#""segredos":["#, r#""segredos":["chave_mestra","#, 1);
+    let f = app.replacen(r#""secrets":["#, r#""secrets":["chave_mestra","#, 1);
     assert!(decode_response(Role::App, f.as_bytes()).is_err());
 }
 
@@ -1840,7 +1858,7 @@ fn d65_target_finds_only_the_entry_secrets() {
             );
         }
         assert!(Target::Extra("nao-existe".into()).secret_in(e).is_none());
-        assert!(Target::Field("usuario".into()).secret_in(e).is_none());
+        assert!(Target::Field("username".into()).secret_in(e).is_none());
     }
     let generic = entries
         .iter()
@@ -1857,14 +1875,14 @@ fn d65_target_finds_only_the_entry_secrets() {
 }
 
 const TEST_SECRET_FIELDS: &[&str] = &[
-    "senha",
-    "totp_semente",
-    "chave_privada",
+    "password",
+    "totp_seed",
+    "private_key",
     "passphrase",
     "token",
     "secret_access_key",
     "session_token",
-    "texto",
+    "text",
 ];
 
 // ---- Phase 45: backups and restore ----
@@ -1880,8 +1898,8 @@ fn v7_8_restore_and_backups_only_from_app() {
             for q in [
                 good.clone(),
                 frame_of(op, "{}"),
-                frame_of(op, r#"{"versao":"../cofre.ward"}"#),
-                frame_of(op, &with_field(&valid_data(op), r#""papel":"app""#)),
+                frame_of(op, r#"{"version":"../cofre.ward"}"#),
+                frame_of(op, &with_field(&valid_data(op), r#""role":"app""#)),
             ] {
                 assert_eq!(
                     req(role, &q).unwrap_err(),
@@ -1933,7 +1951,7 @@ fn attack_restore_with_path_in_name_refused() {
     ] {
         let q = frame_of(
             Operation::RestoreBackup,
-            &format!(r#"{{"versao":"{version}","senha":"{password}","pin":"{pin}"}}"#),
+            &format!(r#"{{"version":"{version}","password":"{password}","pin":"{pin}"}}"#),
         );
         assert_eq!(
             req(Role::App, &q).unwrap_err(),
@@ -1942,14 +1960,14 @@ fn attack_restore_with_path_in_name_refused() {
         );
     }
     for data in [
-        format!(r#"{{"versao":"ward-20261109-153000.ward","senha":"","pin":"{pin}"}}"#),
+        format!(r#"{{"version":"ward-20261109-153000.ward","password":"","pin":"{pin}"}}"#),
         format!(
-            r#"{{"versao":"ward-20261109-153000.ward","senha":"{password}","pin":"{}"}}"#,
+            r#"{{"version":"ward-20261109-153000.ward","password":"{password}","pin":"{}"}}"#,
             b64(b"12ab")
         ),
-        format!(r#"{{"versao":"ward-20261109-153000.ward","senha":"{password}"}}"#),
+        format!(r#"{{"version":"ward-20261109-153000.ward","password":"{password}"}}"#),
         format!(
-            r#"{{"versao":"ward-20261109-153000.ward","senha":"{password}","pin":"{pin}","geracao":9}}"#
+            r#"{{"version":"ward-20261109-153000.ward","password":"{password}","pin":"{pin}","geracao":9}}"#
         ),
     ] {
         let q = frame_of(Operation::RestoreBackup, &data);
@@ -1981,15 +1999,15 @@ fn attack_restore_with_path_in_name_refused() {
         );
     }
     for frame in [
-        r#"{"v":1,"tipo":"backups","dados":{"versoes":[{"nome":"../cofre.ward","conferida":true,"fora_de_ordem":false}]}}"#,
+        r#"{"v":2,"type":"backups","data":{"versions":[{"name":"../cofre.ward","verified":true,"out_of_order":false}]}}"#,
         // The old format (only names) is not accepted.
-        r#"{"v":1,"tipo":"backups","dados":{"versoes":["ward-20261109-153000.ward"]}}"#,
+        r#"{"v":2,"type":"backups","data":{"versions":["ward-20261109-153000.ward"]}}"#,
         // D39: the generation does not come in the response, not even as an extra field.
-        r#"{"v":1,"tipo":"backups","dados":{"versoes":[{"nome":"ward-20261109-153000.ward","conferida":true,"fora_de_ordem":false,"geracao":9}]}}"#,
-        r#"{"v":1,"tipo":"backups","dados":{"versoes":[{"nome":"ward-20261109-153000.ward","conferida":false,"fora_de_ordem":true}]}}"#,
-        r#"{"v":1,"tipo":"backups","dados":{"versoes":[{"nome":"ward-20261109-153000.ward","conferida":"sim","fora_de_ordem":false}]}}"#,
-        r#"{"v":1,"tipo":"backups","dados":{"versoes":[{"nome":"ward-20261109-153000.ward","conferida":true,"fora_de_ordem":false,"caminho":"x"}]}}"#,
-        r#"{"v":1,"tipo":"configuracao","dados":{"minutos_trava":240,"backup_externo":false}}"#,
+        r#"{"v":2,"type":"backups","data":{"versions":[{"name":"ward-20261109-153000.ward","verified":true,"out_of_order":false,"geracao":9}]}}"#,
+        r#"{"v":2,"type":"backups","data":{"versions":[{"name":"ward-20261109-153000.ward","verified":false,"out_of_order":true}]}}"#,
+        r#"{"v":2,"type":"backups","data":{"versions":[{"name":"ward-20261109-153000.ward","verified":"sim","out_of_order":false}]}}"#,
+        r#"{"v":2,"type":"backups","data":{"versions":[{"name":"ward-20261109-153000.ward","verified":true,"out_of_order":false,"path":"x"}]}}"#,
+        r#"{"v":2,"type":"config","data":{"lock_minutes":240,"external_backup":false}}"#,
     ] {
         assert!(
             decode_response(Role::App, frame.as_bytes()).is_err(),
@@ -2033,8 +2051,8 @@ fn d65_dates_only_in_app_detail() {
     let d = EntryDetail::from_entry(&entries[i]);
     let q = encode_response(Role::App, &Response::Detail(d.clone())).unwrap();
     let s = String::from_utf8(q.to_vec()).unwrap();
-    assert!(s.contains(r#""criada_em":1762041600"#), "{s}");
-    assert!(s.contains(r#""alterada_em":1762473600"#), "{s}");
+    assert!(s.contains(r#""created_at":1762041600"#), "{s}");
+    assert!(s.contains(r#""modified_at":1762473600"#), "{s}");
     match decode_response(Role::App, &q).unwrap() {
         Response::Detail(got) => assert_eq!(got, d),
         other => panic!("{:?}", other.kind()),
@@ -2053,7 +2071,7 @@ fn d65_dates_only_in_app_detail() {
             .collect();
         let q = encode_response(role, &Response::List(items)).unwrap();
         let s = String::from_utf8_lossy(&q);
-        assert!(!s.contains("criada_em") && !s.contains("alterada_em"));
+        assert!(!s.contains("created_at") && !s.contains("modified_at"));
         assert!(!s.contains("1762041600") && !s.contains("1762473600"));
     }
     // Without dates: none of the keys goes.
@@ -2067,7 +2085,7 @@ fn d65_dates_only_in_app_detail() {
     )
     .unwrap();
     let s = String::from_utf8_lossy(&q);
-    assert!(!s.contains("criada_em") && !s.contains("alterada_em"));
+    assert!(!s.contains("created_at") && !s.contains("modified_at"));
 }
 
 /// V3.41: a forged detail with a date out of the rule (creation after the modification,
@@ -2079,27 +2097,27 @@ fn attack_d65_detail_with_forged_date_refused() {
     let e = entries.iter().find(|e| e.name() == "acme-pg-dev").unwrap();
     let q = encode_response(Role::App, &Response::Detail(EntryDetail::from_entry(e))).unwrap();
     let s = String::from_utf8(q.to_vec()).unwrap();
-    let with = |extra: &str| s.replacen(r#""nome":"#, &format!(r#"{extra},"nome":"#), 1);
-    assert!(decode_response(Role::App, with(r#""alterada_em":5"#).as_bytes()).is_ok());
+    let with = |extra: &str| s.replacen(r#""name":"#, &format!(r#"{extra},"name":"#), 1);
+    assert!(decode_response(Role::App, with(r#""modified_at":5"#).as_bytes()).is_ok());
     assert!(
         decode_response(
             Role::App,
-            with(r#""criada_em":5,"alterada_em":5"#).as_bytes()
+            with(r#""created_at":5,"modified_at":5"#).as_bytes()
         )
         .is_ok()
     );
     for forged in [
-        r#""criada_em":6,"alterada_em":5"#,
-        r#""criada_em":5"#,
-        r#""criada_em":0,"alterada_em":5"#,
-        r#""alterada_em":0"#,
-        r#""alterada_em":253402300800"#,
-        r#""alterada_em":18446744073709551615"#,
-        r#""alterada_em":"5""#,
-        r#""alterada_em":-5"#,
-        r#""alterada_em":5.5"#,
-        r#""alterada_em":null"#,
-        r#""alterada_em":5,"alterada_em":6"#,
+        r#""created_at":6,"modified_at":5"#,
+        r#""created_at":5"#,
+        r#""created_at":0,"modified_at":5"#,
+        r#""modified_at":0"#,
+        r#""modified_at":253402300800"#,
+        r#""modified_at":18446744073709551615"#,
+        r#""modified_at":"5""#,
+        r#""modified_at":-5"#,
+        r#""modified_at":5.5"#,
+        r#""modified_at":null"#,
+        r#""modified_at":5,"modified_at":6"#,
         r#""criado_em":5"#,
     ] {
         assert!(
@@ -2117,10 +2135,18 @@ fn attack_d65_date_in_draft_refused() {
     let base = valid_data(Operation::SaveEntry);
     let q = |d: &str| req(Role::App, &frame_of(Operation::SaveEntry, d));
     assert!(q(&base).is_ok());
-    for key in ["criada_em", "alterada_em", "datas"] {
+    // The version 1 names too (m2:DT8): an old name is an unknown field.
+    for key in [
+        "created_at",
+        "modified_at",
+        "dates",
+        "criada_em",
+        "alterada_em",
+        "datas",
+    ] {
         for value in ["1762041600", "\"2026-11-02\"", "{}"] {
             let pair = format!(r#""{key}":{value}"#);
-            let at_top = base.replacen(r#""nome":"#, &format!(r#"{pair},"nome":"#), 1);
+            let at_top = base.replacen(r#""name":"#, &format!(r#"{pair},"name":"#), 1);
             assert_eq!(
                 q(&at_top).unwrap_err(),
                 ResponseError::InvalidRequest,
@@ -2144,14 +2170,14 @@ fn attack_d65_date_in_draft_refused() {
         let valid = valid_data(op);
         let role = role_of(op);
         assert!(req(role, &frame_of(op, &valid)).is_ok());
-        let with = with_field(&valid, r#""alterada_em":1762041600"#);
+        let with = with_field(&valid, r#""modified_at":1762041600"#);
         assert_eq!(
             req(role, &frame_of(op, &with)).unwrap_err(),
             ResponseError::InvalidRequest
         );
     }
     let login =
-        valid_data(Operation::SaveLogin).replacen(r#""nome":"#, r#""criada_em":1,"nome":"#, 1);
+        valid_data(Operation::SaveLogin).replacen(r#""name":"#, r#""created_at":1,"name":"#, 1);
     assert_eq!(
         req(Role::Extension, &frame_of(Operation::SaveLogin, &login)).unwrap_err(),
         ResponseError::InvalidRequest
@@ -2175,9 +2201,9 @@ fn v7_8_external_backup_only_from_app() {
             for q in [
                 good.clone(),
                 frame_of(op, "{}"),
-                frame_of(op, r#"{"ligado":true,"uuid":"ABCD-1234"}"#),
-                frame_of(op, r#"{"ligado":false}"#),
-                frame_of(op, &with_field(&valid_data(op), r#""papel":"app""#)),
+                frame_of(op, r#"{"enabled":true,"uuid":"ABCD-1234"}"#),
+                frame_of(op, r#"{"enabled":false}"#),
+                frame_of(op, &with_field(&valid_data(op), r#""role":"app""#)),
             ] {
                 assert_eq!(
                     req(role, &q).unwrap_err(),
@@ -2225,18 +2251,18 @@ fn v7_8_external_backup_only_from_app() {
 #[test]
 fn attack_set_external_backup_out_of_format() {
     for data in [
-        r#"{"ligado":true}"#.to_owned(),
-        r#"{"ligado":true,"uuid":""}"#.to_owned(),
-        r#"{"ligado":true,"uuid":"../../etc"}"#.to_owned(),
-        r#"{"ligado":true,"uuid":"/media/usuario/PEN"}"#.to_owned(),
-        r#"{"ligado":true,"uuid":"ABCD 1234"}"#.to_owned(),
-        r#"{"ligado":true,"uuid":"-ABCD"}"#.to_owned(),
-        r#"{"ligado":true,"uuid":"ABCD-"}"#.to_owned(),
-        r#"{"ligado":true,"uuid":"xyz"}"#.to_owned(),
-        format!(r#"{{"ligado":true,"uuid":"{}"}}"#, "A".repeat(37)),
-        r#"{"ligado":"sim","uuid":"ABCD-1234"}"#.to_owned(),
+        r#"{"enabled":true}"#.to_owned(),
+        r#"{"enabled":true,"uuid":""}"#.to_owned(),
+        r#"{"enabled":true,"uuid":"../../etc"}"#.to_owned(),
+        r#"{"enabled":true,"uuid":"/media/usuario/PEN"}"#.to_owned(),
+        r#"{"enabled":true,"uuid":"ABCD 1234"}"#.to_owned(),
+        r#"{"enabled":true,"uuid":"-ABCD"}"#.to_owned(),
+        r#"{"enabled":true,"uuid":"ABCD-"}"#.to_owned(),
+        r#"{"enabled":true,"uuid":"xyz"}"#.to_owned(),
+        format!(r#"{{"enabled":true,"uuid":"{}"}}"#, "A".repeat(37)),
+        r#"{"enabled":"sim","uuid":"ABCD-1234"}"#.to_owned(),
         r#"{"uuid":"ABCD-1234"}"#.to_owned(),
-        r#"{"ligado":true,"uuid":"ABCD-1234","caminho":"/tmp"}"#.to_owned(),
+        r#"{"enabled":true,"uuid":"ABCD-1234","path":"/tmp"}"#.to_owned(),
     ] {
         let q = frame_of(Operation::SetExternalBackup, &data);
         assert_eq!(
@@ -2247,9 +2273,9 @@ fn attack_set_external_backup_out_of_format() {
     }
     // Disabled, with or without UUID; enabled with the UUID (vfat and ext4).
     for data in [
-        r#"{"ligado":false}"#,
-        r#"{"ligado":false,"uuid":"ABCD-1234"}"#,
-        r#"{"ligado":true,"uuid":"0f3c2b7e-9a51-4c1e-8d2f-5b6a7c8d9e01"}"#,
+        r#"{"enabled":false}"#,
+        r#"{"enabled":false,"uuid":"ABCD-1234"}"#,
+        r#"{"enabled":true,"uuid":"0f3c2b7e-9a51-4c1e-8d2f-5b6a7c8d9e01"}"#,
     ] {
         let q = frame_of(Operation::SetExternalBackup, data);
         assert!(req(Role::App, &q).is_ok(), "{data}");
@@ -2292,7 +2318,7 @@ fn attack_set_external_backup_out_of_format() {
             "{bad:?}"
         );
     }
-    let frame = r#"{"v":1,"tipo":"pendrives","dados":{"itens":[{"uuid":"ABCD-1234","rotulo":"a\u0007b","montado":true}]}}"#;
+    let frame = r#"{"v":2,"type":"usb_drives","data":{"items":[{"uuid":"ABCD-1234","label":"a\u0007b","mounted":true}]}}"#;
     assert!(decode_response(Role::App, frame.as_bytes()).is_err());
 }
 
@@ -2303,17 +2329,17 @@ fn attack_set_external_backup_out_of_format() {
 fn attack_phase_43_login_extension_only_and_strict_format() {
     const ID: &str = "AbCdEfGhIjKlMnOpQrStUvWxYz012345";
     for (op, data) in [
-        ("aguardar_login", "{}".to_owned()),
+        ("await_login", "{}".to_owned()),
         (
-            "preencher_login",
-            format!(r#"{{"id":"{ID}","origem":"http://localhost:8081"}}"#),
+            "fill_login",
+            format!(r#"{{"id":"{ID}","origin":"http://localhost:8081"}}"#),
         ),
         (
-            "resultado_login",
-            format!(r#"{{"id":"{ID}","resultado":"enviado"}}"#),
+            "login_result",
+            format!(r#"{{"id":"{ID}","result":"submitted"}}"#),
         ),
     ] {
-        let q = format!(r#"{{"v":1,"op":"{op}","dados":{data}}}"#);
+        let q = format!(r#"{{"v":2,"op":"{op}","data":{data}}}"#);
         for role in [Role::Agent, Role::App] {
             assert_eq!(
                 req(role, &q).unwrap_err(),
@@ -2324,20 +2350,20 @@ fn attack_phase_43_login_extension_only_and_strict_format() {
         assert!(req(Role::Extension, &q).is_ok(), "{op}");
     }
     for bad in [
-        r#"{"id":"curto","origem":"http://localhost:8081"}"#.to_owned(),
-        format!(r#"{{"id":"{ID}x","origem":"http://localhost:8081"}}"#),
+        r#"{"id":"curto","origin":"http://localhost:8081"}"#.to_owned(),
+        format!(r#"{{"id":"{ID}x","origin":"http://localhost:8081"}}"#),
         format!(
-            r#"{{"id":"{}","origem":"http://localhost:8081"}}"#,
+            r#"{{"id":"{}","origin":"http://localhost:8081"}}"#,
             "AbCdEfGhIjKlMnOpQrStUvWxYz01234-"
         ),
         format!(
-            r#"{{"id":"{}","origem":"http://localhost:8081"}}"#,
+            r#"{{"id":"{}","origin":"http://localhost:8081"}}"#,
             "AbCdEfGhIjKlMnOpQrStUvWxYz0123é"
         ),
         format!(r#"{{"id":"{ID}"}}"#),
-        format!(r#"{{"id":"{ID}","origem":"http://localhost:8081","entrada":"acme-wp-prod"}}"#),
+        format!(r#"{{"id":"{ID}","origin":"http://localhost:8081","entry":"acme-wp-prod"}}"#),
     ] {
-        let q = format!(r#"{{"v":1,"op":"preencher_login","dados":{bad}}}"#);
+        let q = format!(r#"{{"v":2,"op":"fill_login","data":{bad}}}"#);
         assert_eq!(
             req(Role::Extension, &q).unwrap_err(),
             ResponseError::InvalidRequest,
@@ -2345,9 +2371,7 @@ fn attack_phase_43_login_extension_only_and_strict_format() {
         );
     }
     for bad in ["ENVIADO", "ok", "", "enviado "] {
-        let q = format!(
-            r#"{{"v":1,"op":"resultado_login","dados":{{"id":"{ID}","resultado":"{bad}"}}}}"#
-        );
+        let q = format!(r#"{{"v":2,"op":"login_result","data":{{"id":"{ID}","result":"{bad}"}}}}"#);
         assert_eq!(
             req(Role::Extension, &q).unwrap_err(),
             ResponseError::InvalidRequest,
@@ -2357,7 +2381,7 @@ fn attack_phase_43_login_extension_only_and_strict_format() {
     assert_eq!(
         req(
             Role::Extension,
-            r#"{"v":1,"op":"aguardar_login","dados":{"entrada":"x"}}"#
+            r#"{"v":2,"op":"await_login","data":{"entry":"x"}}"#
         )
         .unwrap_err(),
         ResponseError::InvalidRequest
@@ -2380,15 +2404,15 @@ fn attack_phase_43_login_extension_only_and_strict_format() {
     let q = encode_response(Role::Extension, &p).unwrap();
     assert!(!String::from_utf8_lossy(&q).contains("falso"));
     let with_password = format!(
-        r#"{{"v":1,"tipo":"pedido_de_login","dados":{{"id":"{ID}","entrada":"acme-wp-prod","senha":"{}"}}}}"#,
+        r#"{{"v":2,"type":"login_request","data":{{"id":"{ID}","entry":"acme-wp-prod","password":"{}"}}}}"#,
         b64(b"falso-WP-senha-02")
     );
     assert!(decode_response(Role::Extension, with_password.as_bytes()).is_err());
-    let bad_id = r#"{"v":1,"tipo":"pedido_de_login","dados":{"id":"x","entrada":"acme-wp-prod"}}"#;
+    let bad_id = r#"{"v":2,"type":"login_request","data":{"id":"x","entry":"acme-wp-prod"}}"#;
     assert!(decode_response(Role::Extension, bad_id.as_bytes()).is_err());
     for role in [Role::Agent, Role::App] {
         let good =
-            format!(r#"{{"v":1,"tipo":"pedido_de_login","dados":{{"id":"{ID}","entrada":"e"}}}}"#);
+            format!(r#"{{"v":2,"type":"login_request","data":{{"id":"{ID}","entry":"e"}}}}"#);
         assert!(decode_response(role, good.as_bytes()).is_err());
     }
 }
@@ -2428,26 +2452,33 @@ fn attack_phase_39a_unlock_request_app_only_and_strict_format() {
     }
     let data = |entry: &str, op: &str, remaining: &str, extra: &str| {
         format!(
-            r#"{{"v":1,"tipo":"pedido_de_destrave","dados":{{"entrada":{entry},"operacao":"{op}","comando":"\"uptime\"","restante":{remaining}{extra}}}}}"#
+            r#"{{"v":2,"type":"unlock_request","data":{{"entry":{entry},"operation":"{op}","command":"\"uptime\"","remaining":{remaining}{extra}}}}}"#
         )
     };
-    assert!(decode_response(Role::App, data(r#""a""#, "executar", "1", "").as_bytes()).is_ok());
+    assert!(decode_response(Role::App, data(r#""a""#, "run", "1", "").as_bytes()).is_ok());
     let large = format!("\"{}\"", "a".repeat(wc::limits::MAX_TEXT + 1));
     for bad in [
-        data(r#""a""#, "executar", "0", ""),
-        data(r#""a""#, "executar", "121", ""),
-        data(r#""a""#, "executar", "-1", ""),
-        data(r#""a""#, "executar", "\"5\"", ""),
-        data(r#""a""#, "lista", "5", ""),
-        data(r#""a""#, "destravar", "5", ""),
-        data(r#""a""#, "EXECUTAR", "5", ""),
-        data(r#""""#, "executar", "5", ""),
-        data(&large, "executar", "5", ""),
-        data("5", "executar", "5", ""),
-        data(r#""a""#, "executar", "5", &format!(r#","senha":"{}""#, b64(b"falso-PG-senha-01"))),
-        data(r#""a""#, "executar", "5", r#","ambiente":"prod""#),
-        r#"{"v":1,"tipo":"pedido_de_destrave","dados":{}}"#.to_owned(),
-        r#"{"v":1,"tipo":"pedido_de_destrave","dados":{"entrada":"a","operacao":"ssh","restante":5}}"#.to_owned(),
+        data(r#""a""#, "run", "0", ""),
+        data(r#""a""#, "run", "121", ""),
+        data(r#""a""#, "run", "-1", ""),
+        data(r#""a""#, "run", "\"5\"", ""),
+        data(r#""a""#, "list", "5", ""),
+        data(r#""a""#, "unlock", "5", ""),
+        data(r#""a""#, "RUN", "5", ""),
+        data(r#""a""#, "executar", "5", ""),
+        data(r#""""#, "run", "5", ""),
+        data(&large, "run", "5", ""),
+        data("5", "run", "5", ""),
+        data(
+            r#""a""#,
+            "run",
+            "5",
+            &format!(r#","password":"{}""#, b64(b"falso-PG-senha-01")),
+        ),
+        data(r#""a""#, "run", "5", r#","environment":"prod""#),
+        r#"{"v":2,"type":"unlock_request","data":{}}"#.to_owned(),
+        r#"{"v":2,"type":"unlock_request","data":{"entry":"a","operation":"ssh","remaining":5}}"#
+            .to_owned(),
     ] {
         assert!(
             decode_response(Role::App, bad.as_bytes()).is_err(),
@@ -2534,14 +2565,14 @@ fn attack_approval_request_with_origin_out_of_shape() {
 fn attack_stdin_kind_out_of_format() {
     let exec = |kind: Option<&str>| {
         let kind = kind
-            .map(|t| format!(r#","tipo_entrada":{t}"#))
+            .map(|t| format!(r#","stdin_kind":{t}"#))
             .unwrap_or_default();
         req(
             Role::Agent,
             &frame_of(
                 Operation::Run,
                 &format!(
-                    r#"{{"entrada":"acme-pg-dev","argv":["{}"],"cwd":"{}","ambiente":[]{kind}}}"#,
+                    r#"{{"entry":"acme-pg-dev","argv":["{}"],"cwd":"{}","environment":[]{kind}}}"#,
                     b64(b"python3"),
                     b64(b"/tmp")
                 ),
@@ -2558,19 +2589,21 @@ fn attack_stdin_kind_out_of_format() {
         None,
         Some(r#""tty""#),
         Some(r#""Terminal""#),
+        Some(r#""Null""#),
         Some("true"),
         Some(r#""""#),
         Some("null"),
+        // m2:DT8: the version 1 names are not read as the new ones.
+        Some(r#""nula""#),
+        Some(r#""arquivo""#),
+        Some(r#""outra""#),
     ] {
         assert!(exec(bad).is_err(), "{bad:?}");
     }
     let ssh = |data: &str| req(Role::Agent, &frame_of(Operation::Ssh, data));
-    assert!(
-        ssh(r#"{"entrada":"acme-ssh-dev"}"#).is_err(),
-        "ssh sem tipo"
-    );
-    assert!(ssh(r#"{"entrada":"acme-ssh-dev","tipo_entrada":"pts"}"#).is_err());
-    match ssh(r#"{"entrada":"acme-ssh-dev","tipo_entrada":"arquivo"}"#) {
+    assert!(ssh(r#"{"entry":"acme-ssh-dev"}"#).is_err(), "ssh sem tipo");
+    assert!(ssh(r#"{"entry":"acme-ssh-dev","stdin_kind":"pts"}"#).is_err());
+    match ssh(r#"{"entry":"acme-ssh-dev","stdin_kind":"file"}"#) {
         Ok(Request::Ssh { stdin_kind, .. }) => {
             assert_eq!(stdin_kind, StdinKind::File)
         }
@@ -2587,25 +2620,681 @@ fn attack_stdin_kind_out_of_format() {
             Role::App,
             &frame_of(
                 Operation::AnswerApproval,
-                &format!(r#"{{"pedido":7,"decisao":"{decision}"{pin}{extra}}}"#),
+                &format!(r#"{{"request":7,"decision":"{decision}"{pin}{extra}}}"#),
             ),
         )
     };
-    match answer(r#","entrada_confirmada":true"#, "uma_vez", true) {
+    match answer(r#","confirmed_entry":true"#, "once", true) {
         Ok(Request::AnswerApproval {
             confirmed_entry, ..
         }) => assert!(confirmed_entry),
         other => panic!("{other:?}"),
     }
-    match answer("", "uma_hora", true) {
+    match answer("", "one_hour", true) {
         Ok(Request::AnswerApproval {
             confirmed_entry, ..
         }) => assert!(!confirmed_entry),
         other => panic!("{other:?}"),
     }
-    assert!(answer(r#","entrada_confirmada":false"#, "uma_vez", true).is_err());
-    assert!(answer(r#","entrada_confirmada":1"#, "uma_vez", true).is_err());
-    assert!(answer(r#","entrada_confirmada":"sim""#, "uma_vez", true).is_err());
-    assert!(answer(r#","entrada_confirmada":true"#, "negar", false).is_err());
-    assert!(answer(r#","entrada_confirmada":true"#, "confirmar", false).is_err());
+    assert!(answer(r#","confirmed_entry":false"#, "once", true).is_err());
+    assert!(answer(r#","confirmed_entry":1"#, "once", true).is_err());
+    assert!(answer(r#","confirmed_entry":"sim""#, "once", true).is_err());
+    assert!(answer(r#","confirmed_entry":true"#, "deny", false).is_err());
+    assert!(answer(r#","confirmed_entry":true"#, "confirm", false).is_err());
+}
+
+// ---- m2:DT8: protocol v2 (Phase 50 of mission 2; m2:V4.14, m2:V4.15) ----
+
+/// The v2 field names that changed and the v1 name of each (m2:DT8, glossary section
+/// 10), written here by hand. A v2 frame with the v1 name is an unknown field.
+const V1_FIELD_NAMES: &[(&str, &str)] = &[
+    ("data", "dados"),
+    ("type", "tipo"),
+    ("code", "codigo"),
+    ("message", "mensagem"),
+    ("problems", "problemas"),
+    ("field", "campo"),
+    ("position", "posicao"),
+    ("reason", "motivo"),
+    ("modified_at", "alterada_em"),
+    ("environment", "ambiente"),
+    ("attachments", "anexos"),
+    ("previous", "anterior"),
+    ("current", "atual"),
+    ("external_backup", "backup_externo"),
+    ("local_backup", "backup_local"),
+    ("db_name", "base"),
+    ("chain", "cadeia"),
+    ("path", "caminho"),
+    ("fields", "campos"),
+    ("private_key", "chave_privada"),
+    ("vault_exists", "cofre_existe"),
+    ("cols", "colunas"),
+    ("command", "comando"),
+    ("verified", "conferida"),
+    ("confirmation", "confirmacao"),
+    ("content", "conteudo"),
+    ("created_at", "criada_em"),
+    ("decision", "decisao"),
+    ("directory", "diretorio"),
+    ("address", "endereco"),
+    ("entry", "entrada"),
+    ("confirmed_entry", "entrada_confirmada"),
+    ("hidden_entry", "entrada_oculta"),
+    ("entries", "entradas"),
+    ("stream", "fluxo"),
+    ("out_of_order", "fora_de_ordem"),
+    ("group", "grupo"),
+    ("items", "itens"),
+    ("window_size", "janela"),
+    ("enabled", "ligado"),
+    ("rows", "linhas"),
+    ("keep_attachments", "manter_anexos"),
+    ("minutes", "minutos"),
+    ("lock_minutes", "minutos_trava"),
+    ("mounted", "montado"),
+    ("engine", "motor"),
+    ("level", "nivel"),
+    ("name", "nome"),
+    ("new", "novo"),
+    ("new", "nova"),
+    ("operation", "operacao"),
+    ("origin", "origem"),
+    ("role", "papel"),
+    ("request", "pedido"),
+    ("port", "porta"),
+    ("project", "projeto"),
+    ("protocol", "protocolo"),
+    ("region", "regiao"),
+    ("remaining", "restante"),
+    ("result", "resultado"),
+    ("summary", "resumo"),
+    ("label", "rotulo"),
+    ("jump", "salto"),
+    ("secret", "segredo"),
+    ("secrets", "segredos"),
+    ("security", "seguranca"),
+    ("password", "senha"),
+    ("size", "tamanho"),
+    ("text", "texto"),
+    ("stdin_kind", "tipo_entrada"),
+    ("totp_seed", "totp_semente"),
+    ("locked", "travado"),
+    ("tunnel", "tunel"),
+    ("username", "usuario"),
+    ("value", "valor"),
+    ("variable", "variavel"),
+    ("version", "versao"),
+    ("versions", "versoes"),
+];
+
+/// The v1 operation names (m2:DT8), each with the v2 name it became.
+const V1_OPERATIONS: &[(&str, &str)] = &[
+    ("estado", "status"),
+    ("destravar", "unlock"),
+    ("travar", "lock"),
+    ("lista", "list"),
+    ("executar", "run"),
+    ("entrada_padrao", "stdin"),
+    ("janela", "resize"),
+    ("criar_cofre", "create_vault"),
+    ("detalhe", "detail"),
+    ("revelar", "reveal"),
+    ("copiar", "copy"),
+    ("salvar_entrada", "save_entry"),
+    ("remover_entrada", "remove_entry"),
+    ("mudar_nivel", "set_level"),
+    ("responder_aprovacao", "answer_approval"),
+    ("emitir_token", "issue_token"),
+    ("trocar_pin", "change_pin"),
+    ("trocar_senha", "change_password"),
+    ("tempo_trava", "lock_timeout"),
+    ("restaurar_backup", "restore_backup"),
+    ("configuracao", "config"),
+    ("backup_externo", "external_backup"),
+    ("definir_backup_externo", "set_external_backup"),
+    ("pendrives", "usb_drives"),
+    ("sugerir", "suggest"),
+    ("preencher", "fill"),
+    ("salvar_login", "save_login"),
+    ("aguardar_login", "await_login"),
+    ("preencher_login", "fill_login"),
+    ("resultado_login", "login_result"),
+    ("abrir_app", "open_app"),
+];
+
+/// The v1 response types that changed.
+const V1_RESPONSE_TYPES: &[&str] = &[
+    "estado",
+    "erro",
+    "lista",
+    "saida",
+    "fim",
+    "sessao_playwright",
+    "detalhe",
+    "segredo",
+    "pedido_de_aprovacao",
+    "pedido_de_destrave",
+    "codigo_totp",
+    "sugestoes",
+    "preenchimento",
+    "pedido_de_login",
+    "configuracao",
+    "backup_externo",
+    "pendrives",
+];
+
+/// m2:V4.14 (RM1, RA11): in a v2 frame, the v1 name of each field of each operation
+/// (instead of the v2 one, or next to it) refuses the whole request with
+/// `invalid_request`; nothing is read with a default.
+#[test]
+fn dt8_attack_v1_field_name_in_v2_request_refused() {
+    let mut tested = 0;
+    for &op in Operation::ALL {
+        let role = role_of(op);
+        let valid = valid_data(op);
+        assert!(req(role, &frame_of(op, &valid)).is_ok(), "{}", op.name());
+        for (new, old) in V1_FIELD_NAMES {
+            let key = format!(r#""{new}":"#);
+            if !valid.contains(&key) {
+                continue;
+            }
+            let renamed = valid.replacen(&key, &format!(r#""{old}":"#), 1);
+            assert_eq!(
+                req(role, &frame_of(op, &renamed)).unwrap_err(),
+                ResponseError::InvalidRequest,
+                "{} with {old}",
+                op.name()
+            );
+            let both = with_field(&valid, &format!(r#""{old}":1"#));
+            assert_eq!(
+                req(role, &frame_of(op, &both)).unwrap_err(),
+                ResponseError::InvalidRequest,
+                "{} with {old} next to {new}",
+                op.name()
+            );
+            tested += 1;
+        }
+        // The v1 envelope keys in a v2 frame.
+        for top in [
+            format!(r#"{{"v":2,"op":"{}","dados":{valid}}}"#, op.name()),
+            format!(
+                r#"{{"v":2,"op":"{}","data":{valid},"dados":{{}}}}"#,
+                op.name()
+            ),
+            format!(
+                r#"{{"v":2,"op":"{}","tipo":"x","data":{valid}}}"#,
+                op.name()
+            ),
+        ] {
+            assert_eq!(
+                req(role, &top).unwrap_err(),
+                ResponseError::InvalidRequest,
+                "{top}"
+            );
+        }
+    }
+    assert!(tested >= 40, "{tested}");
+    // The terminal size of `ssh` by the v1 name.
+    let ssh = |d: &str| req(Role::Agent, &frame_of(Operation::Ssh, d));
+    assert!(
+        ssh(r#"{"entry":"acme-ssh-dev","stdin_kind":"terminal","window_size":{"rows":24,"cols":80}}"#)
+            .is_ok()
+    );
+    for bad in [
+        r#"{"entry":"acme-ssh-dev","stdin_kind":"terminal","janela":{"rows":24,"cols":80}}"#,
+        r#"{"entry":"acme-ssh-dev","stdin_kind":"terminal","window_size":{"linhas":24,"colunas":80}}"#,
+    ] {
+        assert_eq!(
+            ssh(bad).unwrap_err(),
+            ResponseError::InvalidRequest,
+            "{bad}"
+        );
+    }
+}
+
+/// m2:V4.14: the v1 operation names are unknown operations for every role, also when
+/// the role could ask for the v2 one, and with a v1 frame they answer the version
+/// error first.
+#[test]
+fn dt8_attack_v1_operation_names_refused() {
+    for (old, new) in V1_OPERATIONS {
+        assert!(Operation::from_name(old).is_none(), "{old}");
+        let op = Operation::from_name(new).expect("v2 name");
+        let data = valid_data(op);
+        for role in Role::ALL {
+            let q = format!(r#"{{"v":2,"op":"{old}","data":{data}}}"#);
+            assert_eq!(
+                req(role, &q).unwrap_err(),
+                ResponseError::UnknownOperation,
+                "{q}"
+            );
+            let q = format!(r#"{{"v":1,"op":"{old}","dados":{{}}}}"#);
+            assert_eq!(req(role, &q).unwrap_err(), ResponseError::UnknownVersion);
+        }
+    }
+    for old in V1_RESPONSE_TYPES {
+        assert!(ResponseType::from_name(old).is_none(), "{old}");
+    }
+}
+
+/// m2:V4.14 (RA11): the v1 values are not read as the v2 ones: standard input kind
+/// (the v1 name of `null` is not read as it, and a missing kind is never a terminal), decision, login
+/// result, level, entry type and the reveal target field.
+#[test]
+fn dt8_attack_v1_values_refused() {
+    let pin = b64(b"135790");
+    let run = |kind: &str| {
+        req(
+            Role::Agent,
+            &frame_of(
+                Operation::Run,
+                &format!(
+                    r#"{{"entry":"acme-pg-dev","argv":["{}"],"cwd":"{}","environment":[]{kind}}}"#,
+                    b64(b"psql"),
+                    b64(b"/tmp")
+                ),
+            ),
+        )
+    };
+    match run(r#","stdin_kind":"null""#) {
+        Ok(Request::Run(r)) => assert_eq!(r.stdin_kind, StdinKind::Null),
+        other => panic!("{other:?}"),
+    }
+    for kind in [
+        "",
+        r#","stdin_kind":"nula""#,
+        r#","stdin_kind":"arquivo""#,
+        r#","stdin_kind":"outra""#,
+        r#","tipo_entrada":"terminal""#,
+        r#","tipo_entrada":"null""#,
+    ] {
+        assert_eq!(
+            run(kind).unwrap_err(),
+            ResponseError::InvalidRequest,
+            "{kind}"
+        );
+    }
+    let mut cases: Vec<(Operation, Role, String)> = Vec::new();
+    for d in ["negar", "uma_vez", "uma_hora", "sempre", "confirmar"] {
+        cases.push((
+            Operation::AnswerApproval,
+            Role::App,
+            format!(r#"{{"request":7,"decision":"{d}","pin":"{pin}"}}"#),
+        ));
+    }
+    for r in [
+        "enviado",
+        "recusado",
+        "sem_formulario",
+        "aba_mudou",
+        "falha",
+    ] {
+        cases.push((
+            Operation::LoginResult,
+            Role::Extension,
+            format!(r#"{{"id":"AbCdEfGhIjKlMnOpQrStUvWxYz012345","result":"{r}"}}"#),
+        ));
+    }
+    for l in ["bloqueado", "com-aprovacao", "livre"] {
+        cases.push((
+            Operation::SetLevel,
+            Role::App,
+            format!(r#"{{"entry":"acme-pg-dev","level":"{l}","pin":"{pin}"}}"#),
+        ));
+    }
+    for f in ["senha", "totp_semente", "chave_privada", "texto"] {
+        cases.push((
+            Operation::Reveal,
+            Role::App,
+            format!(r#"{{"entry":"acme-wp-dev","field":"{f}"}}"#),
+        ));
+    }
+    for t in ["banco", "servidor", "nota-segura", "generico"] {
+        cases.push((
+            Operation::SaveEntry,
+            Role::App,
+            format!(r#"{{"entry":{{"name":"x","group":"x","environment":"dev","type":"{t}"}}}}"#),
+        ));
+    }
+    for (op, role, data) in &cases {
+        assert_eq!(
+            req(*role, &frame_of(*op, data)).unwrap_err(),
+            ResponseError::InvalidRequest,
+            "{data}"
+        );
+    }
+}
+
+/// m2:V4.14, client side: a daemon frame with a v1 name (envelope key, field key,
+/// response type, error code, stream or role) is refused by the v2 reader of every
+/// role; nothing is read with a default.
+#[test]
+fn dt8_attack_v1_names_in_v2_response_refused() {
+    let mut responses = one_response_of_each();
+    responses.push(Response::Output {
+        stream: Stream::Stdout,
+        data: zeroize::Zeroizing::new(b"ok".to_vec()),
+    });
+    let mut tested = 0;
+    for r in &responses {
+        let role = role_of_response(r.kind());
+        let q = encode_response(role, r).unwrap();
+        let s = String::from_utf8(q.to_vec()).unwrap();
+        assert!(decode_response(role, s.as_bytes()).is_ok());
+        for (new, old) in V1_FIELD_NAMES {
+            let key = format!(r#""{new}":"#);
+            if !s.contains(&key) {
+                continue;
+            }
+            let renamed = s.replacen(&key, &format!(r#""{old}":"#), 1);
+            for p in Role::ALL {
+                assert!(
+                    decode_response(p, renamed.as_bytes()).is_err(),
+                    "{} with {old}",
+                    r.kind().name()
+                );
+            }
+            tested += 1;
+        }
+    }
+    assert!(tested >= 60, "{tested}");
+    let frames = [
+        r#"{"v":2,"type":"estado","data":{"locked":true,"vault_exists":true,"role":"agent"}}"#,
+        r#"{"v":2,"type":"status","data":{"locked":true,"vault_exists":true,"role":"agente"}}"#,
+        r#"{"v":2,"type":"erro","data":{"code":"locked","message":"travado"}}"#,
+        r#"{"v":2,"type":"error","data":{"code":"travado","message":"travado"}}"#,
+        r#"{"v":2,"type":"error","data":{"code":"versao_desconhecida","message":"x"}}"#,
+        r#"{"v":2,"type":"output","data":{"stream":"saida","data":"b2s="}}"#,
+        r#"{"v":2,"type":"output","data":{"stream":"erro","data":"b2s="}}"#,
+        r#"{"v":2,"type":"fim","data":{"code":0}}"#,
+        r#"{"v":2,"tipo":"ok","data":{}}"#,
+        r#"{"v":2,"type":"ok","dados":{}}"#,
+    ];
+    for f in frames {
+        for p in Role::ALL {
+            assert!(decode_response(p, f.as_bytes()).is_err(), "{f}");
+        }
+    }
+    // Control: the same frames with the v2 names are read.
+    for f in [
+        r#"{"v":2,"type":"status","data":{"locked":true,"vault_exists":true,"role":"agent"}}"#,
+        r#"{"v":2,"type":"error","data":{"code":"locked","message":"x"}}"#,
+        r#"{"v":2,"type":"output","data":{"stream":"stdout","data":"b2s="}}"#,
+        r#"{"v":2,"type":"exit","data":{"code":0}}"#,
+    ] {
+        assert!(decode_response(Role::Agent, f.as_bytes()).is_ok(), "{f}");
+    }
+}
+
+/// The Portuguese words of the checker (`dev/english-check/pt-words.txt`, m2:DT17):
+/// the stems, the exact words and the function words.
+struct PtWords {
+    stems: Vec<String>,
+    words: std::collections::BTreeSet<String>,
+}
+
+fn pt_words() -> PtWords {
+    let text = include_str!("../../../../dev/english-check/pt-words.txt");
+    let mut w = PtWords {
+        stems: Vec::new(),
+        words: Default::default(),
+    };
+    let mut section = "";
+    for raw in text.lines() {
+        let line = raw.split('#').next().unwrap().trim();
+        if line.is_empty() {
+            continue;
+        }
+        if line.starts_with('[') && line.ends_with(']') {
+            section = match line {
+                "[stems]" => "stems",
+                "[words]" | "[function]" => "words",
+                _ => "",
+            };
+            continue;
+        }
+        match section {
+            "stems" => w.stems.push(line.to_lowercase()),
+            "words" => {
+                w.words.insert(line.to_lowercase());
+            }
+            _ => {}
+        }
+    }
+    assert!(
+        w.stems.len() > 100 && w.words.len() > 1000,
+        "word list not read"
+    );
+    w
+}
+
+/// Does a wire name have a Portuguese word, by the rules of the checker for an
+/// identifier (split at `_` and `-`; a stem, an exact word or a function word)?
+fn pt_hit(w: &PtWords, name: &str) -> bool {
+    if !name.is_ascii() {
+        return true;
+    }
+    name.split(['_', '-'])
+        .filter(|p| !p.is_empty())
+        .map(|p| p.to_ascii_lowercase())
+        .any(|p| w.words.contains(&p) || w.stems.iter().any(|s| p.starts_with(s.as_str())))
+}
+
+/// Collects the keys of a JSON value and the values that are names (operation, type,
+/// code, role, kind, decision, result, stream, level, reveal target, secret fields).
+/// The validation problems carry Portuguese texts on purpose (field label and reason,
+/// shown to the user): only their keys are names.
+fn wire_names(v: &super::json::Value, parent: &str, out: &mut BTreeSet<String>) {
+    use super::json::Value;
+    const NAME_VALUES: &[&str] = &[
+        "op",
+        "type",
+        "code",
+        "role",
+        "stdin_kind",
+        "decision",
+        "result",
+        "stream",
+        "operation",
+        "level",
+        "field",
+        "security",
+        "engine",
+        "protocol",
+        "environment",
+    ];
+    match v {
+        Value::Object(pairs) => {
+            for (k, x) in pairs {
+                out.insert(k.clone());
+                if parent == "problems" {
+                    continue;
+                }
+                match x {
+                    Value::Text(t) if NAME_VALUES.contains(&k.as_str()) => {
+                        // The TOTP code and the exit code are numbers, not names.
+                        if !t.bytes().all(|b| b.is_ascii_digit()) {
+                            out.insert(t.to_string());
+                        }
+                    }
+                    Value::List(l) if k == "secrets" => {
+                        for i in l {
+                            if let Value::Text(t) = i {
+                                out.insert(t.to_string());
+                            }
+                        }
+                    }
+                    _ => wire_names(x, k, out),
+                }
+            }
+        }
+        Value::List(l) => {
+            for i in l {
+                wire_names(i, parent, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+use std::collections::BTreeSet;
+
+/// m2:V4.15 (S1, S9): every name of the protocol v2 (operations, response types, error
+/// codes, roles, value names, field identifiers and every key of a frame of each
+/// request and response) is English: none has a word of the checker's Portuguese list.
+/// The v1 names are the control: the same rule flags them.
+#[test]
+fn dt8_no_portuguese_name_in_protocol_v2() {
+    let w = pt_words();
+    let mut names: BTreeSet<String> = BTreeSet::new();
+    names.extend(Operation::ALL.iter().map(|o| o.name().to_owned()));
+    names.extend(ResponseType::ALL.iter().map(|t| t.name().to_owned()));
+    names.extend(ResponseError::SIMPLE.iter().map(|e| e.code().to_owned()));
+    names.insert(ResponseError::Validation(Vec::new()).code().to_owned());
+    names.extend(Role::ALL.iter().map(|r| r.name().to_owned()));
+    names.extend(StdinKind::ALL.iter().map(|k| k.name().to_owned()));
+    names.extend(LoginResult::ALL.iter().map(|r| r.name().to_owned()));
+    names.extend(
+        [
+            Decision::Deny,
+            Decision::AllowOnce,
+            Decision::AllowOneHour,
+            Decision::AllowAlways,
+            Decision::Confirm,
+        ]
+        .iter()
+        .map(|d| d.name().to_owned()),
+    );
+    names.extend(
+        super::request::SECRET_FIELDS
+            .iter()
+            .map(|f| (*f).to_owned()),
+    );
+    names.extend(super::response::TEXT_FIELDS.iter().map(|f| (*f).to_owned()));
+    let mut frames: Vec<Vec<u8>> = Vec::new();
+    for (op, r) in Operation::ALL.iter().zip(one_request_of_each()) {
+        frames.push(encode_request(role_of(*op), &r).unwrap().to_vec());
+    }
+    let mut responses = one_response_of_each();
+    responses.push(Response::Output {
+        stream: Stream::Stdout,
+        data: zeroize::Zeroizing::new(b"ok".to_vec()),
+    });
+    responses.push(Response::Error(ResponseError::UnknownVersion));
+    for r in &responses {
+        frames.push(
+            encode_response(role_of_response(r.kind()), r)
+                .unwrap()
+                .to_vec(),
+        );
+    }
+    for f in &frames {
+        let v = super::json::read(f, super::json::MAX_RESPONSE_NODES).unwrap();
+        wire_names(&v, "", &mut names);
+    }
+    assert!(names.len() > 150, "{}", names.len());
+    let hits: Vec<_> = names.iter().filter(|n| pt_hit(&w, n)).collect();
+    assert!(
+        hits.is_empty(),
+        "Portuguese names in the protocol: {hits:?}"
+    );
+
+    // Control: the rule flags the v1 names (operations, keys, codes and roles).
+    for (old, _) in V1_OPERATIONS {
+        assert!(pt_hit(&w, old), "{old}");
+    }
+    for old in [
+        "entrada",
+        "senha",
+        "tipo_entrada",
+        "dados",
+        "codigo",
+        "mensagem",
+        "nao_autorizado",
+        "versao_desconhecida",
+        "agente",
+        "extensao",
+        "pedido_de_aprovacao",
+        "preenchimento",
+    ] {
+        assert!(pt_hit(&w, old), "{old}");
+    }
+}
+
+/// m2:V4.15 (S1, S9): the operation × role matrix of v2 is the one of v1, name by name
+/// through the table of m2:DT8. The v1 matrix is written here by hand as 0.1.4 had it.
+#[test]
+fn dt8_role_matrix_same_as_v1() {
+    // (v1 name, agent, app, extension), as `protocol.rs` of 0.1.4.
+    let v1: &[(&str, bool, bool, bool)] = &[
+        ("estado", true, true, true),
+        ("destravar", true, true, false),
+        ("travar", true, true, false),
+        ("lista", true, true, false),
+        ("executar", true, false, false),
+        ("ssh", true, false, false),
+        ("login", true, false, false),
+        ("playwright", true, false, false),
+        ("entrada_padrao", true, false, false),
+        ("janela", true, false, false),
+        ("criar_cofre", false, true, false),
+        ("detalhe", false, true, false),
+        ("revelar", false, true, false),
+        ("copiar", false, true, false),
+        ("totp", false, true, false),
+        ("salvar_entrada", false, true, false),
+        ("remover_entrada", false, true, false),
+        ("mudar_nivel", false, true, false),
+        ("responder_aprovacao", false, true, false),
+        ("emitir_token", false, true, false),
+        ("trocar_pin", false, true, false),
+        ("trocar_senha", false, true, false),
+        ("tempo_trava", false, true, false),
+        ("backups", false, true, false),
+        ("restaurar_backup", false, true, false),
+        ("configuracao", false, true, false),
+        ("backup_externo", false, true, false),
+        ("definir_backup_externo", false, true, false),
+        ("pendrives", false, true, false),
+        ("sugerir", false, false, true),
+        ("preencher", false, false, true),
+        ("salvar_login", false, false, true),
+        ("aguardar_login", false, false, true),
+        ("preencher_login", false, false, true),
+        ("resultado_login", false, false, true),
+        ("abrir_app", true, true, true),
+    ];
+    assert_eq!(v1.len(), Operation::ALL.len());
+    for (old, agent, app, extension) in v1 {
+        let new = V1_OPERATIONS
+            .iter()
+            .find(|(o, _)| o == old)
+            .map_or(*old, |(_, n)| *n);
+        let op = Operation::from_name(new).unwrap_or_else(|| panic!("{old} -> {new}"));
+        let r = op.roles();
+        assert_eq!(
+            (r.agent, r.app, r.extension),
+            (*agent, *app, *extension),
+            "{old} -> {new}"
+        );
+    }
+    // The agent never asks for these (the examples of m2:V4.15).
+    for name in [
+        "reveal",
+        "copy",
+        "detail",
+        "fill",
+        "suggest",
+        "set_level",
+        "restore_backup",
+        "answer_approval",
+        "issue_token",
+        "totp",
+    ] {
+        assert!(
+            !Operation::from_name(name).unwrap().allowed(Role::Agent),
+            "{name}"
+        );
+    }
 }

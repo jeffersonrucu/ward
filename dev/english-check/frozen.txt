@@ -267,13 +267,6 @@ crates/wardd/app-teste* teste 56 folder and binary name wardd-app-teste
 crates/wardd/aprovador-teste* aprovador 56 folder and binary name wardd-aprovador-teste
 crates/wardd/aprovador-teste* teste 56 folder and binary name wardd-aprovador-teste
 
-# Phase 17 (ward-core protocol): v1 envelope keys and the error type quoted in the doc.
-crates/ward-core/src/protocol.rs dados 50 data key of the v1 envelope (v2: data)
-crates/ward-core/src/protocol.rs tipo 50 type key of the v1 response envelope (v2: type)
-crates/ward-core/src/protocol.rs erro 50 error response type of v1 (v2: error)
-crates/ward-core/src/protocol.rs codigo 50 code key of the v1 error (v2: code)
-crates/ward-core/src/protocol.rs mensagem 50 message key of the v1 error (v2: message)
-
 # Phase 34 (Tauri main): command names and JSON arguments the webview calls.
 app/src-tauri/src/main.rs estado_do_cofre 54 Tauri command name called by the webview
 app/src-tauri/src/main.rs copiar_campo 54 Tauri command name called by the webview

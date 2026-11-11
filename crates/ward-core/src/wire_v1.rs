@@ -1,17 +1,15 @@
 //! Wire tests against the 0.1.4 baseline (m2:DT18, m2:V2.2; Phase 3 of mission 2).
 //!
 //! The fixtures in `dev/fixtures/legacy/` were produced by the code of the tag `v0.1.4`
-//! (handoff of Phase 3) and are never regenerated. Until the format and the protocol
-//! change on purpose (Phases 48 and 50), every rename must keep these tests green
-//! without touching their expectations:
+//! (handoff of Phase 3) and are never regenerated:
 //!
 //! - `protocol-v1.jsonl`: one line per request (every operation), per response sample
 //!   (every response type) and per simple error code, each one
 //!   `{"kind":"<request|response|error>","role":"<role>","frame":<frame>}` with the
-//!   frame exactly as the 0.1.4 code wrote it. Each frame is read by the current code
-//!   with that role and written again, and the bytes must be the same: a renamed
-//!   operation, field, error code, role or value breaks the reading (strict) or the
-//!   writing.
+//!   frame exactly as the 0.1.4 code wrote it. Since Phase 50 (m2:DT8) the protocol is
+//!   v2: every v1 request answers `unknown_version` whatever the role, and no v1
+//!   response is accepted by a v2 client (m2:V4.13). The byte-for-byte reading and
+//!   writing moved to `protocol-v2.jsonl` (`wire_v2`).
 //! - `vault-0.1.4.ward`: the test vault (D15 entries, fake values only), body v4,
 //!   generation 3. It opens with the test password; since Phase 48 (m2:DT4) the body v4
 //!   is only read: its names, types and levels come back by the table of m2:DT4, and
@@ -21,11 +19,9 @@
 //!
 //! Only fake values (D15). Nothing here prints a value: the comparisons are on bytes.
 
-use std::collections::BTreeSet;
-
 use crate::body;
 use crate::format::{self, MasterPassword};
-use crate::protocol::{self, Operation, Response, ResponseError, ResponseType, Role, VERSION};
+use crate::protocol::{self, Operation, Response, ResponseError, Role, VERSION};
 
 const PROTOCOL_V1: &[u8] = include_bytes!("../../../dev/fixtures/legacy/protocol-v1.jsonl");
 const VAULT: &[u8] = include_bytes!("../../../dev/fixtures/legacy/vault-0.1.4.ward");
@@ -92,8 +88,19 @@ fn v5_name(v4: &str) -> &'static str {
 /// One line of `protocol-v1.jsonl`.
 struct Line<'a> {
     kind: &'a str,
+    /// The role of the line, by its v1 name.
     role: Role,
     frame: &'a [u8],
+}
+
+/// The v1 role names, written here by hand (the v2 names are other ones, m2:DT8).
+fn v1_role(name: &str) -> Role {
+    match name {
+        "agente" => Role::Agent,
+        "app" => Role::App,
+        "extensao" => Role::Extension,
+        _ => panic!("fixture role unknown"),
+    }
 }
 
 /// Splits the fixed shape of a line. The fixture is ours (written by the generator of
@@ -114,7 +121,7 @@ fn parse_line(line: &[u8]) -> Line<'_> {
         .expect("fixture line without frame");
     Line {
         kind,
-        role: Role::from_name(role).expect("fixture role unknown"),
+        role: v1_role(role),
         frame: frame.as_bytes(),
     }
 }
@@ -133,66 +140,68 @@ fn lines() -> Vec<Line<'static>> {
 
 #[test]
 fn v1_fixture_is_version_1() {
-    // Phase 50 moves the protocol to v2 on purpose; until then the version is 1.
-    assert_eq!(VERSION, 1);
+    // Phase 50 moved the protocol to v2 on purpose (m2:DT8); the fixture stays v1.
+    assert_eq!(VERSION, 2);
     for l in lines() {
         assert!(l.frame.starts_with(br#"{"v":1,"#));
     }
 }
 
+/// m2:V4.13 (S1, RM3): every v1 request answers `unknown_version`, for its own role and
+/// for any other one, before the operation, the role or the fields are looked at.
 #[test]
-fn v1_requests_read_and_written_byte_for_byte() {
-    let mut seen = Vec::new();
-    for l in lines().into_iter().filter(|l| l.kind == "request") {
-        let request = protocol::decode_request(l.role, l.frame)
-            .unwrap_or_else(|_| panic!("v1 request refused: {}", String::from_utf8_lossy(l.frame)));
-        let again = protocol::encode_request(l.role, &request).expect("request not written");
-        assert_eq!(
-            &again[..],
-            l.frame,
-            "request written differently from 0.1.4"
-        );
-        seen.push(request.operation());
-    }
-    // One line per operation, in the order of the table.
-    assert_eq!(seen, Operation::ALL);
-}
-
-#[test]
-fn v1_responses_read_and_written_byte_for_byte() {
-    let mut types = BTreeSet::new();
+fn dt8_v1_requests_answer_unknown_version() {
     let mut count = 0;
-    for l in lines().into_iter().filter(|l| l.kind == "response") {
-        let response = protocol::decode_response(l.role, l.frame)
-            .unwrap_or_else(|_| panic!("v1 response refused (kind {})", l.kind));
-        let again = protocol::encode_response(l.role, &response).expect("response not written");
+    for l in lines().into_iter().filter(|l| l.kind == "request") {
+        for role in Role::ALL {
+            assert_eq!(
+                protocol::decode_request(role, l.frame).unwrap_err(),
+                ResponseError::UnknownVersion,
+                "{}",
+                String::from_utf8_lossy(l.frame)
+            );
+        }
+        // The line's own role could ask for it in v1: the version comes first.
         assert_eq!(
-            &again[..],
-            l.frame,
-            "response written differently from 0.1.4"
+            protocol::decode_request(l.role, l.frame).unwrap_err(),
+            ResponseError::UnknownVersion
         );
-        types.insert(response.kind().name());
         count += 1;
     }
-    let all: BTreeSet<_> = ResponseType::ALL.iter().map(|t| t.name()).collect();
-    assert_eq!(types, all, "every response type has a line");
-    assert_eq!(count, 23);
+    assert_eq!(count, Operation::ALL.len());
 }
 
+/// m2:V4.13, client side (m2:V4.16 in the CLI and the app): no v1 response or error is
+/// accepted by a v2 client, whatever the role, and the version of the frame is readable
+/// so the client can stop with the version message before sending the password.
 #[test]
-fn v1_error_codes_read_and_written_byte_for_byte() {
-    let mut codes = Vec::new();
-    for l in lines().into_iter().filter(|l| l.kind == "error") {
-        let response = protocol::decode_response(l.role, l.frame)
-            .unwrap_or_else(|_| panic!("v1 error refused: {}", String::from_utf8_lossy(l.frame)));
-        let again = protocol::encode_response(l.role, &response).expect("error not written");
-        assert_eq!(&again[..], l.frame, "error written differently from 0.1.4");
-        match response {
-            Response::Error(e) => codes.push(e),
-            _ => panic!("error line is not an error"),
+fn dt8_v1_responses_refused_by_the_v2_client() {
+    let mut count = 0;
+    for l in lines().into_iter().filter(|l| l.kind != "request") {
+        for role in Role::ALL {
+            assert!(protocol::decode_response(role, l.frame).is_err());
         }
+        assert_eq!(protocol::frame_version(l.frame), Some(1));
+        count += 1;
     }
-    assert_eq!(codes, ResponseError::SIMPLE);
+    assert_eq!(count, 23 + ResponseError::SIMPLE.len());
+    // Not JSON or without `v`: no version.
+    assert_eq!(protocol::frame_version(b"{"), None);
+    assert_eq!(protocol::frame_version(br#"{"tipo":"erro"}"#), None);
+    assert_eq!(protocol::frame_version(br#"{"v":"1"}"#), None);
+}
+
+/// m2:DT8: the answer to a v1 frame is the v2 error with the fixed code and message
+/// and nothing else (no data, no echo of the frame), for every role.
+#[test]
+fn dt8_unknown_version_error_has_no_data() {
+    let expected = "{\"v\":2,\"type\":\"error\",\"data\":{\"code\":\"unknown_version\",\
+                    \"message\":\"versão do protocolo incompatível: atualize o Ward\"}}";
+    for role in Role::ALL {
+        let q = protocol::encode_response(role, &Response::Error(ResponseError::UnknownVersion))
+            .unwrap();
+        assert_eq!(&q[..], expected.as_bytes());
+    }
 }
 
 #[test]
@@ -337,29 +346,7 @@ fn vault_v5_header_same_as_014() {
     assert_eq!(u16::from_le_bytes([opened[0], opened[1]]), 5);
 }
 
-// ---- Attacks (m2:RM1, S6, S2) ----
-
-/// RM1: a rename that reaches the wire (operation or field) is not silently accepted
-/// by the v1 reader; the wire tests above depend on this strictness.
-#[test]
-fn attack_renamed_wire_name_is_refused() {
-    for l in lines().into_iter().filter(|l| l.kind == "request") {
-        let frame = std::str::from_utf8(l.frame).unwrap();
-        let (head, tail) = frame.split_once(r#""op":""#).unwrap();
-        let renamed = format!(r#"{head}"op":"x_{tail}"#);
-        assert_eq!(
-            protocol::decode_request(l.role, renamed.as_bytes()).unwrap_err(),
-            ResponseError::UnknownOperation
-        );
-        if frame.contains(r#""entrada":"#) {
-            let renamed = frame.replacen(r#""entrada":"#, r#""entry":"#, 1);
-            assert_eq!(
-                protocol::decode_request(l.role, renamed.as_bytes()).unwrap_err(),
-                ResponseError::InvalidRequest
-            );
-        }
-    }
-}
+// ---- Attacks (S6, S2) ----
 
 /// S6: one byte changed anywhere in the 0.1.4 file and it does not open.
 #[test]

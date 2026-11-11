@@ -33,8 +33,8 @@ pub enum Stream {
 impl Stream {
     fn name(self) -> &'static str {
         match self {
-            Stream::Stdout => "saida",
-            Stream::Stderr => "erro",
+            Stream::Stdout => "stdout",
+            Stream::Stderr => "stderr",
         }
     }
 }
@@ -208,9 +208,9 @@ fn fields_and_secrets(e: &Entry) -> FieldsAndSecrets {
     let mut t = |k: &str, v: &str| fields.push((k.to_owned(), v.to_owned()));
     let mut s = |k: &str| secrets.push(k.to_owned());
     let auth = |a: &Auth, s: &mut dyn FnMut(&str)| match a {
-        Auth::Password(_) => s("senha"),
+        Auth::Password(_) => s("password"),
         Auth::Key { passphrase, .. } => {
-            s("chave_privada");
+            s("private_key");
             if passphrase.is_some() {
                 s("passphrase");
             }
@@ -219,31 +219,31 @@ fn fields_and_secrets(e: &Entry) -> FieldsAndSecrets {
     match e.data() {
         Data::Login(l) => {
             t("url", &l.url);
-            t("usuario", &l.username);
-            s("senha");
+            t("username", &l.username);
+            s("password");
             if l.totp_seed.is_some() {
-                s("totp_semente");
+                s("totp_seed");
             }
         }
         Data::Database(b) => {
-            t("motor", b.engine.name());
+            t("engine", b.engine.name());
             t("host", &b.host);
-            t("porta", &b.port.to_string());
+            t("port", &b.port.to_string());
             if let Some(x) = &b.db_name {
-                t("base", x);
+                t("db_name", x);
             }
-            t("usuario", &b.username);
+            t("username", &b.username);
             if let Some(x) = &b.tunnel {
-                t("tunel", x);
+                t("tunnel", x);
             }
-            s("senha");
+            s("password");
         }
         Data::Server(v) => {
             t("host", &v.host);
-            t("porta", &v.port.to_string());
-            t("usuario", &v.username);
+            t("port", &v.port.to_string());
+            t("username", &v.username);
             if let Some(x) = &v.jump {
-                t("salto", x);
+                t("jump", x);
             }
             auth(&v.auth, &mut s);
         }
@@ -252,13 +252,13 @@ fn fields_and_secrets(e: &Entry) -> FieldsAndSecrets {
                 t("url", x);
             }
             if let Some(x) = &a.variable {
-                t("variavel", x);
+                t("variable", x);
             }
             s("token");
         }
         Data::Aws(a) => {
             t("access_key_id", &a.access_key_id);
-            t("regiao", &a.region);
+            t("region", &a.region);
             if let Some(x) = &a.role_arn {
                 t("role_arn", x);
             }
@@ -269,40 +269,40 @@ fn fields_and_secrets(e: &Entry) -> FieldsAndSecrets {
         }
         Data::Smtp(m) => {
             t("host", &m.host);
-            t("porta", &m.port.to_string());
-            t("usuario", &m.username);
-            t("seguranca", m.security.name());
-            s("senha");
+            t("port", &m.port.to_string());
+            t("username", &m.username);
+            t("security", m.security.name());
+            s("password");
         }
         Data::FtpSftp(f) => {
-            t("protocolo", f.protocol.name());
+            t("protocol", f.protocol.name());
             t("host", &f.host);
-            t("porta", &f.port.to_string());
-            t("usuario", &f.username);
+            t("port", &f.port.to_string());
+            t("username", &f.username);
             auth(&f.auth, &mut s);
         }
-        Data::SecureNote(_) => s("texto"),
+        Data::SecureNote(_) => s("text"),
         Data::Generic => {}
     }
     (fields, secrets)
 }
 
 /// Identifiers of the text fields of every type.
-const TEXT_FIELDS: &[&str] = &[
+pub(super) const TEXT_FIELDS: &[&str] = &[
     "url",
-    "usuario",
-    "motor",
+    "username",
+    "engine",
     "host",
-    "porta",
-    "base",
-    "tunel",
-    "salto",
-    "variavel",
+    "port",
+    "db_name",
+    "tunnel",
+    "jump",
+    "variable",
     "access_key_id",
-    "regiao",
+    "region",
     "role_arn",
-    "seguranca",
-    "protocolo",
+    "security",
+    "protocol",
 ];
 
 /// The daemon asks the app for the approval window (the text is the daemon's, already
@@ -620,13 +620,13 @@ impl Response {
         match self {
             Response::Ok => {}
             Response::UnlockRequest(p) => {
-                e.key("entrada");
+                e.key("entry");
                 e.text(&p.entry);
-                e.key("operacao");
+                e.key("operation");
                 e.text(p.operation.name());
-                e.key("comando");
+                e.key("command");
                 e.text(&p.command);
-                e.key("restante");
+                e.key("remaining");
                 e.integer(p.remaining);
             }
             Response::Status {
@@ -634,31 +634,31 @@ impl Response {
                 vault_exists,
                 role,
             } => {
-                e.key("travado");
+                e.key("locked");
                 e.boolean(*locked);
-                e.key("cofre_existe");
+                e.key("vault_exists");
                 e.boolean(*vault_exists);
-                e.key("papel");
+                e.key("role");
                 e.text(role.name());
             }
             Response::Error(x) => {
-                e.key("codigo");
+                e.key("code");
                 e.text(x.code());
-                e.key("mensagem");
+                e.key("message");
                 e.text(x.message());
                 if let ResponseError::Validation(p) = x {
-                    e.key("problemas");
+                    e.key("problems");
                     e.list(|e| {
                         for p in p {
                             e.item();
                             e.object(|e| {
-                                e.key("campo");
+                                e.key("field");
                                 e.text(&p.field);
                                 if let Some(n) = p.position {
-                                    e.key("posicao");
+                                    e.key("position");
                                     e.integer(n);
                                 }
-                                e.key("motivo");
+                                e.key("reason");
                                 e.text(&p.reason);
                             });
                         }
@@ -666,7 +666,7 @@ impl Response {
                 }
             }
             Response::List(l) => {
-                e.key("itens");
+                e.key("items");
                 e.list(|e| {
                     for i in l {
                         e.item();
@@ -682,16 +682,16 @@ impl Response {
                                 i.level,
                             );
                             if let Some(x) = &i.address {
-                                e.key("endereco");
+                                e.key("address");
                                 e.text(x);
                             }
                             if let Some(r) = &i.summary {
-                                e.key("resumo");
+                                e.key("summary");
                                 e.object(|e| {
                                     write_fields(e, &r.fields, &r.secrets);
                                     e.key("extras");
                                     e.integer(r.extras);
-                                    e.key("anexos");
+                                    e.key("attachments");
                                     e.integer(r.attachments);
                                 });
                             }
@@ -700,17 +700,17 @@ impl Response {
                 });
             }
             Response::Output { stream, data } => {
-                e.key("fluxo");
+                e.key("stream");
                 e.text(stream.name());
-                e.key("dados");
+                e.key("data");
                 e.base64(data);
             }
             Response::Exit { code } => {
-                e.key("codigo");
+                e.key("code");
                 e.integer(u64::from(*code));
             }
             Response::PlaywrightSession { path } => {
-                e.key("caminho");
+                e.key("path");
                 e.text(path);
             }
             Response::Detail(d) => {
@@ -730,41 +730,41 @@ impl Response {
                     for x in &d.extras {
                         e.item();
                         e.object(|e| {
-                            e.key("nome");
+                            e.key("name");
                             e.text(&x.name);
-                            e.key("segredo");
+                            e.key("secret");
                             e.boolean(x.value.is_none());
                             if let Some(v) = &x.value {
-                                e.key("valor");
+                                e.key("value");
                                 e.text(v);
                             }
                         });
                     }
                 });
-                e.key("anexos");
+                e.key("attachments");
                 e.list(|e| {
                     for a in &d.attachments {
                         e.item();
                         e.object(|e| {
-                            e.key("nome");
+                            e.key("name");
                             e.text(&a.name);
-                            e.key("tamanho");
+                            e.key("size");
                             e.integer(a.size);
                         });
                     }
                 });
                 // D65 d: only the dates that exist.
                 if let Some(c) = d.dates.created_at() {
-                    e.key("criada_em");
+                    e.key("created_at");
                     e.integer(c);
                 }
                 if let Some(a) = d.dates.modified_at() {
-                    e.key("alterada_em");
+                    e.key("modified_at");
                     e.integer(a);
                 }
             }
             Response::Secret(s) => {
-                e.key("valor");
+                e.key("value");
                 e.base64(s.expose());
             }
             Response::Token(t) => {
@@ -774,42 +774,42 @@ impl Response {
             Response::ApprovalRequest(p) => {
                 e.key("id");
                 e.integer(p.id);
-                e.key("entradas");
+                e.key("entries");
                 write_texts(e, &p.entries);
-                e.key("ambiente");
+                e.key("environment");
                 e.text(p.environment.name());
-                e.key("operacao");
+                e.key("operation");
                 e.text(p.operation.name());
-                e.key("comando");
+                e.key("command");
                 e.text(&p.command);
-                e.key("diretorio");
+                e.key("directory");
                 e.text(&p.directory);
-                e.key("cadeia");
+                e.key("chain");
                 write_texts(e, &p.chain);
-                e.key("origem");
+                e.key("origin");
                 e.text(&p.origin);
-                e.key("confirmacao");
+                e.key("confirmation");
                 e.boolean(p.confirmation);
-                e.key("entrada_oculta");
+                e.key("hidden_entry");
                 e.boolean(p.hidden_entry);
             }
             Response::TotpCode { code, remaining } => {
-                e.key("codigo");
+                e.key("code");
                 e.text(code);
-                e.key("restante");
+                e.key("remaining");
                 e.integer(*remaining);
             }
             Response::Backups(l) => {
-                e.key("versoes");
+                e.key("versions");
                 e.list(|e| {
                     for v in l {
                         e.item();
                         e.object(|e| {
-                            e.key("nome");
+                            e.key("name");
                             e.text(&v.name);
-                            e.key("conferida");
+                            e.key("verified");
                             e.boolean(v.verified);
-                            e.key("fora_de_ordem");
+                            e.key("out_of_order");
                             e.boolean(v.out_of_order);
                         });
                     }
@@ -820,15 +820,15 @@ impl Response {
                 external_backup,
                 local_backup,
             } => {
-                e.key("minutos_trava");
+                e.key("lock_minutes");
                 e.integer(u64::from(*lock_minutes));
-                e.key("backup_externo");
+                e.key("external_backup");
                 e.boolean(*external_backup);
-                e.key("backup_local");
+                e.key("local_backup");
                 e.boolean(*local_backup);
             }
             Response::ExternalBackup { enabled, uuid } => {
-                e.key("ligado");
+                e.key("enabled");
                 e.boolean(*enabled);
                 if let Some(u) = uuid {
                     e.key("uuid");
@@ -836,32 +836,32 @@ impl Response {
                 }
             }
             Response::UsbDrives(l) => {
-                e.key("itens");
+                e.key("items");
                 e.list(|e| {
                     for p in l {
                         e.item();
                         e.object(|e| {
                             e.key("uuid");
                             e.text(&p.uuid);
-                            e.key("rotulo");
+                            e.key("label");
                             e.text(&p.label);
-                            e.key("montado");
+                            e.key("mounted");
                             e.boolean(p.mounted);
                         });
                     }
                 });
             }
             Response::Suggestions(l) => {
-                e.key("itens");
+                e.key("items");
                 e.list(|e| {
                     for s in l {
                         e.item();
                         e.object(|e| {
-                            e.key("nome");
+                            e.key("name");
                             e.text(&s.name);
-                            e.key("usuario");
+                            e.key("username");
                             e.text(&s.username);
-                            e.key("ambiente");
+                            e.key("environment");
                             e.text(s.environment.name());
                             e.key("totp");
                             e.boolean(s.totp);
@@ -874,9 +874,9 @@ impl Response {
                 password,
                 totp,
             } => {
-                e.key("usuario");
+                e.key("username");
                 e.text(username);
-                e.key("senha");
+                e.key("password");
                 e.base64(password.expose());
                 if let Some(c) = totp {
                     e.key("totp");
@@ -886,7 +886,7 @@ impl Response {
             Response::LoginRequest { id, entry } => {
                 e.key("id");
                 e.text(id);
-                e.key("entrada");
+                e.key("entry");
                 e.text(entry);
             }
         }
@@ -938,14 +938,14 @@ fn fields_ok(fields: &[(String, String)], secrets: &[String]) -> bool {
 }
 
 fn write_fields(e: &mut Writer, fields: &[(String, String)], secrets: &[String]) {
-    e.key("campos");
+    e.key("fields");
     e.object(|e| {
         for (k, v) in fields {
             e.key(k);
             e.text(v);
         }
     });
-    e.key("segredos");
+    e.key("secrets");
     write_texts(e, secrets);
 }
 
@@ -954,13 +954,13 @@ fn write_fields(e: &mut Writer, fields: &[(String, String)], secrets: &[String])
 /// the check at the end limits the count and the identifiers of the secrets.
 fn read_fields(c: &mut Fields) -> R<FieldsAndSecrets> {
     let mut fields = Vec::new();
-    for (k, v) in c.object("campos")?.in_order() {
+    for (k, v) in c.object("fields")?.in_order() {
         if !TEXT_FIELDS.contains(&k.as_str()) {
             return Err(InvalidJson);
         }
         fields.push((k, text_of(v, MAX_TEXT)?));
     }
-    let secrets = texts_of(c.list("segredos", SECRET_FIELDS.len())?, MAX_NAME)?;
+    let secrets = texts_of(c.list("secrets", SECRET_FIELDS.len())?, MAX_NAME)?;
     Ok((fields, secrets))
 }
 
@@ -984,22 +984,22 @@ fn write_header(
     tags: &[String],
     level: Option<AccessLevel>,
 ) {
-    e.key("nome");
+    e.key("name");
     e.text(name);
-    e.key("tipo");
+    e.key("type");
     e.text(kind.name());
-    e.key("grupo");
+    e.key("group");
     e.text(group);
-    e.key("ambiente");
+    e.key("environment");
     e.text(environment.name());
     if let Some(p) = project {
-        e.key("projeto");
+        e.key("project");
         e.text(p);
     }
     e.key("tags");
     write_texts(e, tags);
     if let Some(level) = level {
-        e.key("nivel");
+        e.key("level");
         e.text(level.name());
     }
 }
@@ -1018,13 +1018,14 @@ struct Header {
 /// forbidden (agent's list, D50).
 fn read_header(c: &mut Fields, with_level: bool) -> R<Header> {
     Ok(Header {
-        name: c.text("nome", MAX_NAME)?,
-        kind: EntryType::from_name(&c.text("tipo", MAX_NAME)?).ok_or(InvalidJson)?,
-        group: c.text("grupo", MAX_TEXT)?,
-        environment: Environment::from_name(&c.text("ambiente", MAX_NAME)?).ok_or(InvalidJson)?,
-        project: c.text_opt("projeto", MAX_TEXT)?,
+        name: c.text("name", MAX_NAME)?,
+        kind: EntryType::from_name(&c.text("type", MAX_NAME)?).ok_or(InvalidJson)?,
+        group: c.text("group", MAX_TEXT)?,
+        environment: Environment::from_name(&c.text("environment", MAX_NAME)?)
+            .ok_or(InvalidJson)?,
+        project: c.text_opt("project", MAX_TEXT)?,
         tags: texts_of(c.list("tags", MAX_TAGS)?, MAX_TAG)?,
-        level: match c.text_opt("nivel", MAX_NAME)? {
+        level: match c.text_opt("level", MAX_NAME)? {
             Some(n) if with_level => Some(AccessLevel::from_name(&n).ok_or(InvalidJson)?),
             None if !with_level => None,
             _ => return Err(InvalidJson),
@@ -1037,32 +1038,32 @@ pub(crate) fn read(role: Role, kind: ResponseType, mut c: Fields) -> R<Response>
     let r = match kind {
         ResponseType::Ok => Response::Ok,
         ResponseType::UnlockRequest => Response::UnlockRequest(UnlockRequest {
-            entry: c.text("entrada", MAX_TEXT)?,
-            operation: Operation::from_name(&c.text("operacao", MAX_NAME)?).ok_or(InvalidJson)?,
-            command: c.text("comando", MAX_DISPLAYED_TEXT)?,
-            remaining: c.integer("restante")?,
+            entry: c.text("entry", MAX_TEXT)?,
+            operation: Operation::from_name(&c.text("operation", MAX_NAME)?).ok_or(InvalidJson)?,
+            command: c.text("command", MAX_DISPLAYED_TEXT)?,
+            remaining: c.integer("remaining")?,
         }),
         ResponseType::Status => Response::Status {
-            locked: c.boolean("travado")?,
-            vault_exists: c.boolean("cofre_existe")?,
+            locked: c.boolean("locked")?,
+            vault_exists: c.boolean("vault_exists")?,
             // Read as it came: the receiver checks whether it is the role it expected.
-            role: Role::from_name(&c.text("papel", MAX_NAME)?).ok_or(InvalidJson)?,
+            role: Role::from_name(&c.text("role", MAX_NAME)?).ok_or(InvalidJson)?,
         },
         ResponseType::Error => {
-            let code = c.text("codigo", MAX_NAME)?;
+            let code = c.text("code", MAX_NAME)?;
             // The message of the frame is ignored: the fixed one of the code is what counts.
-            let _ = c.text("mensagem", MAX_LINE)?;
+            let _ = c.text("message", MAX_LINE)?;
             let mut error = ResponseError::from_code(&code).ok_or(InvalidJson)?;
             if let ResponseError::Validation(list) = &mut error {
-                for v in c.list("problemas", MAX_PROBLEMS)? {
+                for v in c.list("problems", MAX_PROBLEMS)? {
                     let mut o = Fields::from_value(v)?;
-                    let field = o.text("campo", MAX_LINE)?;
-                    let position = match o.take("posicao") {
+                    let field = o.text("field", MAX_LINE)?;
+                    let position = match o.take("position") {
                         Some(super::json::Value::Integer(n)) => Some(n),
                         Some(_) => return Err(InvalidJson),
                         None => None,
                     };
-                    let reason = o.text("motivo", MAX_LINE)?;
+                    let reason = o.text("reason", MAX_LINE)?;
                     o.finish()?;
                     list.push(Problem {
                         field,
@@ -1075,17 +1076,17 @@ pub(crate) fn read(role: Role, kind: ResponseType, mut c: Fields) -> R<Response>
         }
         ResponseType::List => {
             let mut items = Vec::new();
-            for v in c.list("itens", MAX_ENTRIES)? {
+            for v in c.list("items", MAX_ENTRIES)? {
                 let mut o = Fields::from_value(v)?;
                 let k = read_header(&mut o, role == Role::App)?;
-                let address = o.text_opt("endereco", MAX_URL)?;
+                let address = o.text_opt("address", MAX_URL)?;
                 // D65 c: the summary is mandatory in the app's list and forbidden in the agent's.
-                let summary = match o.take("resumo") {
+                let summary = match o.take("summary") {
                     Some(v) if role == Role::App => {
                         let mut r = Fields::from_value(v)?;
                         let (fields, secrets) = read_fields(&mut r)?;
                         let extras = r.integer("extras")?;
-                        let attachments = r.integer("anexos")?;
+                        let attachments = r.integer("attachments")?;
                         r.finish()?;
                         Some(ItemSummary {
                             fields,
@@ -1113,21 +1114,21 @@ pub(crate) fn read(role: Role, kind: ResponseType, mut c: Fields) -> R<Response>
             Response::List(items)
         }
         ResponseType::Output => {
-            let stream = match c.text("fluxo", MAX_NAME)?.as_str() {
-                "saida" => Stream::Stdout,
-                "erro" => Stream::Stderr,
+            let stream = match c.text("stream", MAX_NAME)?.as_str() {
+                "stdout" => Stream::Stdout,
+                "stderr" => Stream::Stderr,
                 _ => return Err(InvalidJson),
             };
             Response::Output {
                 stream,
-                data: c.bytes("dados", MAX_DISPLAYED_TEXT)?,
+                data: c.bytes("data", MAX_DISPLAYED_TEXT)?,
             }
         }
         ResponseType::Exit => Response::Exit {
-            code: u8::try_from(c.integer("codigo")?).map_err(|_| InvalidJson)?,
+            code: u8::try_from(c.integer("code")?).map_err(|_| InvalidJson)?,
         },
         ResponseType::PlaywrightSession => Response::PlaywrightSession {
-            path: c.text("caminho", MAX_TEXT)?,
+            path: c.text("path", MAX_TEXT)?,
         },
         ResponseType::Detail => {
             let k = read_header(&mut c, true)?;
@@ -1135,9 +1136,9 @@ pub(crate) fn read(role: Role, kind: ResponseType, mut c: Fields) -> R<Response>
             let mut extras = Vec::new();
             for v in c.list("extras", MAX_EXTRAS)? {
                 let mut o = Fields::from_value(v)?;
-                let name = o.text("nome", MAX_EXTRA_NAME)?;
-                let secret = o.boolean("segredo")?;
-                let value = o.text_opt("valor", MAX_EXTRA_VALUE)?;
+                let name = o.text("name", MAX_EXTRA_NAME)?;
+                let secret = o.boolean("secret")?;
+                let value = o.text_opt("value", MAX_EXTRA_VALUE)?;
                 // A secret extra never carries a value; the plain one always does.
                 if secret == value.is_some() {
                     return Err(InvalidJson);
@@ -1146,10 +1147,10 @@ pub(crate) fn read(role: Role, kind: ResponseType, mut c: Fields) -> R<Response>
                 extras.push(ExtraDetail { name, value });
             }
             let mut attachments = Vec::new();
-            for v in c.list("anexos", MAX_ATTACHMENTS)? {
+            for v in c.list("attachments", MAX_ATTACHMENTS)? {
                 let mut o = Fields::from_value(v)?;
-                let name = o.text("nome", MAX_ATTACHMENT_NAME)?;
-                let size = o.integer("tamanho")?;
+                let name = o.text("name", MAX_ATTACHMENT_NAME)?;
+                let size = o.integer("size")?;
                 o.finish()?;
                 attachments.push(AttachmentDetail { name, size });
             }
@@ -1160,8 +1161,8 @@ pub(crate) fn read(role: Role, kind: ResponseType, mut c: Fields) -> R<Response>
                 Some(super::json::Value::Integer(n)) => Ok(Some(n)),
                 Some(_) => Err(InvalidJson),
             };
-            let created = data("criada_em")?;
-            let modified = data("alterada_em")?;
+            let created = data("created_at")?;
+            let modified = data("modified_at")?;
             let dates = Dates::from_parts(created, modified).ok_or(InvalidJson)?;
             Response::Detail(EntryDetail {
                 name: k.name,
@@ -1178,21 +1179,21 @@ pub(crate) fn read(role: Role, kind: ResponseType, mut c: Fields) -> R<Response>
                 dates,
             })
         }
-        ResponseType::Secret => Response::Secret(c.secret("valor", crate::limits::MAX_NOTE)?),
+        ResponseType::Secret => Response::Secret(c.secret("value", crate::limits::MAX_NOTE)?),
         ResponseType::Token => Response::Token(c.secret("token", MAX_NAME)?),
         ResponseType::ApprovalRequest => {
             let id = c.integer("id")?;
-            let entries = texts_of(c.list("entradas", 2)?, MAX_NAME)?;
+            let entries = texts_of(c.list("entries", 2)?, MAX_NAME)?;
             let environment =
-                Environment::from_name(&c.text("ambiente", MAX_NAME)?).ok_or(InvalidJson)?;
+                Environment::from_name(&c.text("environment", MAX_NAME)?).ok_or(InvalidJson)?;
             let operation =
-                Operation::from_name(&c.text("operacao", MAX_NAME)?).ok_or(InvalidJson)?;
-            let command = c.text("comando", MAX_DISPLAYED_TEXT)?;
-            let directory = c.text("diretorio", MAX_DISPLAYED_TEXT)?;
-            let chain = texts_of(c.list("cadeia", MAX_CHAIN)?, MAX_TEXT)?;
-            let origin = c.text("origem", MAX_TEXT)?;
-            let confirmation = c.boolean("confirmacao")?;
-            let hidden_entry = c.boolean("entrada_oculta")?;
+                Operation::from_name(&c.text("operation", MAX_NAME)?).ok_or(InvalidJson)?;
+            let command = c.text("command", MAX_DISPLAYED_TEXT)?;
+            let directory = c.text("directory", MAX_DISPLAYED_TEXT)?;
+            let chain = texts_of(c.list("chain", MAX_CHAIN)?, MAX_TEXT)?;
+            let origin = c.text("origin", MAX_TEXT)?;
+            let confirmation = c.boolean("confirmation")?;
+            let hidden_entry = c.boolean("hidden_entry")?;
             Response::ApprovalRequest(ApprovalRequest {
                 id,
                 entries,
@@ -1207,20 +1208,20 @@ pub(crate) fn read(role: Role, kind: ResponseType, mut c: Fields) -> R<Response>
             })
         }
         ResponseType::TotpCode => {
-            let code = c.text("codigo", 8)?;
+            let code = c.text("code", 8)?;
             Response::TotpCode {
                 code: Zeroizing::new(code),
-                remaining: c.integer("restante")?,
+                remaining: c.integer("remaining")?,
             }
         }
         ResponseType::Suggestions => {
             let mut items = Vec::new();
-            for v in c.list("itens", MAX_ENTRIES)? {
+            for v in c.list("items", MAX_ENTRIES)? {
                 let mut o = Fields::from_value(v)?;
-                let name = o.text("nome", MAX_NAME)?;
-                let username = o.text("usuario", MAX_TEXT)?;
+                let name = o.text("name", MAX_NAME)?;
+                let username = o.text("username", MAX_TEXT)?;
                 let environment =
-                    Environment::from_name(&o.text("ambiente", MAX_NAME)?).ok_or(InvalidJson)?;
+                    Environment::from_name(&o.text("environment", MAX_NAME)?).ok_or(InvalidJson)?;
                 let totp = o.boolean("totp")?;
                 o.finish()?;
                 items.push(Suggestion {
@@ -1234,11 +1235,11 @@ pub(crate) fn read(role: Role, kind: ResponseType, mut c: Fields) -> R<Response>
         }
         ResponseType::Backups => {
             let mut versions = Vec::new();
-            for v in c.list("versoes", MAX_BACKUPS)? {
+            for v in c.list("versions", MAX_BACKUPS)? {
                 let mut o = Fields::from_value(v)?;
-                let name = o.text("nome", crate::limits::MAX_NAME)?;
-                let verified = o.boolean("conferida")?;
-                let out_of_order = o.boolean("fora_de_ordem")?;
+                let name = o.text("name", crate::limits::MAX_NAME)?;
+                let verified = o.boolean("verified")?;
+                let out_of_order = o.boolean("out_of_order")?;
                 o.finish()?;
                 versions.push(BackupVersion {
                     name,
@@ -1249,21 +1250,21 @@ pub(crate) fn read(role: Role, kind: ResponseType, mut c: Fields) -> R<Response>
             Response::Backups(versions)
         }
         ResponseType::Config => Response::Config {
-            lock_minutes: u32::try_from(c.integer("minutos_trava")?).map_err(|_| InvalidJson)?,
-            external_backup: c.boolean("backup_externo")?,
-            local_backup: c.boolean("backup_local")?,
+            lock_minutes: u32::try_from(c.integer("lock_minutes")?).map_err(|_| InvalidJson)?,
+            external_backup: c.boolean("external_backup")?,
+            local_backup: c.boolean("local_backup")?,
         },
         ResponseType::ExternalBackup => Response::ExternalBackup {
-            enabled: c.boolean("ligado")?,
+            enabled: c.boolean("enabled")?,
             uuid: c.text_opt("uuid", crate::limits::MAX_BACKUP_UUID)?,
         },
         ResponseType::UsbDrives => {
             let mut items = Vec::new();
-            for v in c.list("itens", MAX_USB_DRIVES)? {
+            for v in c.list("items", MAX_USB_DRIVES)? {
                 let mut o = Fields::from_value(v)?;
                 let uuid = o.text("uuid", crate::limits::MAX_BACKUP_UUID)?;
-                let label = o.text("rotulo", MAX_LABEL)?;
-                let mounted = o.boolean("montado")?;
+                let label = o.text("label", MAX_LABEL)?;
+                let mounted = o.boolean("mounted")?;
                 o.finish()?;
                 items.push(UsbDrive {
                     uuid,
@@ -1274,13 +1275,13 @@ pub(crate) fn read(role: Role, kind: ResponseType, mut c: Fields) -> R<Response>
             Response::UsbDrives(items)
         }
         ResponseType::Fill => Response::Fill {
-            username: c.text("usuario", MAX_TEXT)?,
-            password: secret_of(c.take("senha").ok_or(InvalidJson)?, MAX_SECRET)?,
+            username: c.text("username", MAX_TEXT)?,
+            password: secret_of(c.take("password").ok_or(InvalidJson)?, MAX_SECRET)?,
             totp: c.text_opt("totp", 8)?.map(Zeroizing::new),
         },
         ResponseType::LoginRequest => Response::LoginRequest {
             id: c.text("id", MAX_NAME)?,
-            entry: c.text("entrada", MAX_NAME)?,
+            entry: c.text("entry", MAX_NAME)?,
         },
     };
     c.finish()?;

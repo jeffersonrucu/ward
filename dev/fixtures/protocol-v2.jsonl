@@ -1,0 +1,91 @@
+{"kind":"request","role":"agent","frame":{"v":2,"op":"status","data":{}}}
+{"kind":"request","role":"agent","frame":{"v":2,"op":"unlock","data":{"password":"ZmFsc28tbWVzdHJhLXdhcmQtMDE="}}}
+{"kind":"request","role":"agent","frame":{"v":2,"op":"lock","data":{}}}
+{"kind":"request","role":"agent","frame":{"v":2,"op":"list","data":{}}}
+{"kind":"request","role":"agent","frame":{"v":2,"op":"run","data":{"entry":"acme-pg-dev","argv":["cHNxbA=="],"cwd":"L3RtcA==","stdin_kind":"null","environment":[{"name":"TEFORw==","value":"Qy5VVEYtOA=="}]}}}
+{"kind":"request","role":"agent","frame":{"v":2,"op":"ssh","data":{"entry":"acme-ssh-dev","command":[],"stdin_kind":"terminal"}}}
+{"kind":"request","role":"agent","frame":{"v":2,"op":"login","data":{"entry":"acme-wp-dev"}}}
+{"kind":"request","role":"agent","frame":{"v":2,"op":"playwright","data":{"entry":"acme-wp-dev"}}}
+{"kind":"request","role":"agent","frame":{"v":2,"op":"stdin","data":{"data":"bHMK"}}}
+{"kind":"request","role":"agent","frame":{"v":2,"op":"resize","data":{"rows":24,"cols":80}}}
+{"kind":"request","role":"app","frame":{"v":2,"op":"create_vault","data":{"password":"ZmFsc28tbWVzdHJhLXdhcmQtMDE=","pin":"MTM1Nzkw"}}}
+{"kind":"request","role":"app","frame":{"v":2,"op":"detail","data":{"entry":"acme-wp-dev"}}}
+{"kind":"request","role":"app","frame":{"v":2,"op":"reveal","data":{"entry":"acme-wp-dev","field":"password"}}}
+{"kind":"request","role":"app","frame":{"v":2,"op":"copy","data":{"entry":"acme-wp-dev","field":"password"}}}
+{"kind":"request","role":"app","frame":{"v":2,"op":"totp","data":{"entry":"acme-wp-dev"}}}
+{"kind":"request","role":"app","frame":{"v":2,"op":"save_entry","data":{"entry":{"name":"clientex-stage-wp","group":"clientex","environment":"stage","tags":[],"type":"login","fields":{"url":"https://clientex.invalid/login","username":"admin","password":"ZmFsc28tV1Atc2VuaGEtMDE="},"extras":[],"attachments":[]}}}}
+{"kind":"request","role":"app","frame":{"v":2,"op":"remove_entry","data":{"entry":"acme-ssh-dev"}}}
+{"kind":"request","role":"app","frame":{"v":2,"op":"set_level","data":{"entry":"acme-pg-dev","level":"blocked","pin":"MTM1Nzkw"}}}
+{"kind":"request","role":"app","frame":{"v":2,"op":"answer_approval","data":{"request":7,"decision":"once","pin":"MTM1Nzkw"}}}
+{"kind":"request","role":"app","frame":{"v":2,"op":"issue_token","data":{"entry":"acme-ssh-dev"}}}
+{"kind":"request","role":"app","frame":{"v":2,"op":"change_pin","data":{"current":"MTM1Nzkw","new":"MTM1Nzkw"}}}
+{"kind":"request","role":"app","frame":{"v":2,"op":"change_password","data":{"current":"ZmFsc28tbWVzdHJhLXdhcmQtMDE=","new":"ZmFsc28tU1NILXNlbmhhLTAx"}}}
+{"kind":"request","role":"app","frame":{"v":2,"op":"lock_timeout","data":{"minutes":240}}}
+{"kind":"request","role":"app","frame":{"v":2,"op":"backups","data":{}}}
+{"kind":"request","role":"app","frame":{"v":2,"op":"restore_backup","data":{"version":"ward-20261109-153000.ward","password":"ZmFsc28tbWVzdHJhLXdhcmQtMDE=","pin":"MTM1Nzkw"}}}
+{"kind":"request","role":"app","frame":{"v":2,"op":"config","data":{}}}
+{"kind":"request","role":"app","frame":{"v":2,"op":"external_backup","data":{}}}
+{"kind":"request","role":"app","frame":{"v":2,"op":"set_external_backup","data":{"enabled":true,"uuid":"ABCD-1234"}}}
+{"kind":"request","role":"app","frame":{"v":2,"op":"usb_drives","data":{}}}
+{"kind":"request","role":"extension","frame":{"v":2,"op":"suggest","data":{"origin":"http://localhost:8081"}}}
+{"kind":"request","role":"extension","frame":{"v":2,"op":"fill","data":{"entry":"acme-wp-dev","origin":"http://localhost:8081"}}}
+{"kind":"request","role":"extension","frame":{"v":2,"op":"save_login","data":{"entry":{"name":"clientex-stage-wp","group":"clientex","environment":"stage","tags":[],"type":"login","fields":{"url":"https://clientex.invalid/login","username":"admin","password":"ZmFsc28tV1Atc2VuaGEtMDE="},"extras":[],"attachments":[]}}}}
+{"kind":"request","role":"extension","frame":{"v":2,"op":"await_login","data":{}}}
+{"kind":"request","role":"extension","frame":{"v":2,"op":"fill_login","data":{"id":"AbCdEfGhIjKlMnOpQrStUvWxYz012345","origin":"http://localhost:8081"}}}
+{"kind":"request","role":"extension","frame":{"v":2,"op":"login_result","data":{"id":"AbCdEfGhIjKlMnOpQrStUvWxYz012345","result":"submitted"}}}
+{"kind":"request","role":"agent","frame":{"v":2,"op":"open_app","data":{}}}
+{"kind":"response","role":"agent","frame":{"v":2,"type":"ok","data":{}}}
+{"kind":"response","role":"agent","frame":{"v":2,"type":"status","data":{"locked":true,"vault_exists":true,"role":"agent"}}}
+{"kind":"response","role":"agent","frame":{"v":2,"type":"error","data":{"code":"rollback","message":"o cofre no disco é mais antigo que o último aberto"}}}
+{"kind":"response","role":"agent","frame":{"v":2,"type":"error","data":{"code":"validation","message":"entrada inválida","problems":[{"field":"senha","position":2,"reason":"caractere não permitido"}]}}}
+{"kind":"response","role":"agent","frame":{"v":2,"type":"list","data":{"items":[{"name":"clientex-stage-wp","type":"login","group":"clientex","environment":"stage","project":"portal \"novo\" \\ ação","tags":["web"],"address":"https://clientex.invalid/login"},{"name":"clientex-stage-api","type":"login","group":"clientex","environment":"stage","project":"portal \"novo\" \\ ação","tags":["web"],"address":"https://clientex.invalid/login"}]}}}
+{"kind":"response","role":"agent","frame":{"v":2,"type":"output","data":{"stream":"stderr","data":"AP9zYWlkYSDigKLigKI="}}}
+{"kind":"response","role":"agent","frame":{"v":2,"type":"exit","data":{"code":130}}}
+{"kind":"response","role":"agent","frame":{"v":2,"type":"playwright_session","data":{"path":"/run/user/1000/ward-teste/playwright/acme-wp-dev.json"}}}
+{"kind":"response","role":"app","frame":{"v":2,"type":"detail","data":{"name":"acme-ssh-senha-stage","type":"server","group":"acme","environment":"stage","tags":[],"level":"free","fields":{"host":"127.0.0.1","port":"2222","username":"deploy"},"secrets":["password"],"extras":[],"attachments":[]}}}
+{"kind":"response","role":"app","frame":{"v":2,"type":"secret","data":{"value":"ZmFsc28tV1Atc2VuaGEtMDE="}}}
+{"kind":"response","role":"app","frame":{"v":2,"type":"token","data":{"token":"MTM1Nzkw"}}}
+{"kind":"response","role":"app","frame":{"v":2,"type":"approval_request","data":{"id":42,"entries":["acme-pg-prod","acme-ssh-prod"],"environment":"prod","operation":"run","command":"psql -c 'select 1'","directory":"\"/home/usuario/projetos/acme\"","chain":["claude","bash","ward run"],"origin":"","confirmation":false,"hidden_entry":true}}}
+{"kind":"response","role":"app","frame":{"v":2,"type":"approval_request","data":{"id":43,"entries":["acme-wp-prod"],"environment":"prod","operation":"playwright","command":"","directory":"","chain":["claude","ward playwright"],"origin":"http://localhost:8081","confirmation":true,"hidden_entry":false}}}
+{"kind":"response","role":"app","frame":{"v":2,"type":"approval_request","data":{"id":44,"entries":["acme-wp-dev"],"environment":"dev","operation":"fill","command":"","directory":"","chain":["chrome","ward-nm"],"origin":"http://localhost:8081","confirmation":true,"hidden_entry":false}}}
+{"kind":"response","role":"app","frame":{"v":2,"type":"unlock_request","data":{"entry":"acme-pg-aprovacao","operation":"run","command":"\"psql\" \"-c\" \"select 1\"","remaining":102}}}
+{"kind":"response","role":"app","frame":{"v":2,"type":"totp_code","data":{"code":"123456","remaining":17}}}
+{"kind":"response","role":"extension","frame":{"v":2,"type":"suggestions","data":{"items":[{"name":"acme-wp-dev","username":"wp_admin","environment":"dev","totp":true}]}}}
+{"kind":"response","role":"extension","frame":{"v":2,"type":"fill","data":{"username":"wp_admin","password":"ZmFsc28tV1Atc2VuaGEtMDE=","totp":"654321"}}}
+{"kind":"response","role":"extension","frame":{"v":2,"type":"login_request","data":{"id":"AbCdEfGhIjKlMnOpQrStUvWxYz012345","entry":"acme-wp-prod"}}}
+{"kind":"response","role":"app","frame":{"v":2,"type":"backups","data":{"versions":[{"name":"ward-20261109-153000-1.ward","verified":true,"out_of_order":true},{"name":"ward-20261109-153000.ward","verified":false,"out_of_order":false}]}}}
+{"kind":"response","role":"app","frame":{"v":2,"type":"config","data":{"lock_minutes":240,"external_backup":false,"local_backup":true}}}
+{"kind":"response","role":"app","frame":{"v":2,"type":"external_backup","data":{"enabled":true,"uuid":"ABCD-1234"}}}
+{"kind":"response","role":"app","frame":{"v":2,"type":"usb_drives","data":{"items":[{"uuid":"ABCD-1234","label":"PENDRIVE \"A\"","mounted":true}]}}}
+{"kind":"error","role":"agent","frame":{"v":2,"type":"error","data":{"code":"unauthorized","message":"não autorizado"}}}
+{"kind":"error","role":"agent","frame":{"v":2,"type":"error","data":{"code":"locked","message":"travado"}}}
+{"kind":"error","role":"agent","frame":{"v":2,"type":"error","data":{"code":"locked_timed_out","message":"travado: tempo esgotado"}}}
+{"kind":"error","role":"agent","frame":{"v":2,"type":"error","data":{"code":"invalid_request","message":"pedido inválido"}}}
+{"kind":"error","role":"agent","frame":{"v":2,"type":"error","data":{"code":"unknown_operation","message":"operação desconhecida"}}}
+{"kind":"error","role":"agent","frame":{"v":2,"type":"error","data":{"code":"unknown_version","message":"versão do protocolo incompatível: atualize o Ward"}}}
+{"kind":"error","role":"agent","frame":{"v":2,"type":"error","data":{"code":"invalid_frame","message":"quadro vazio ou grande demais"}}}
+{"kind":"error","role":"agent","frame":{"v":2,"type":"error","data":{"code":"busy","message":"o Ward está ocupado; tente de novo"}}}
+{"kind":"error","role":"agent","frame":{"v":2,"type":"error","data":{"code":"wrong_password","message":"senha mestra incorreta ou arquivo do cofre adulterado"}}}
+{"kind":"error","role":"agent","frame":{"v":2,"type":"error","data":{"code":"invalid_vault","message":"o conteúdo do cofre é inválido"}}}
+{"kind":"error","role":"agent","frame":{"v":2,"type":"error","data":{"code":"vault_not_found","message":"ainda não existe cofre"}}}
+{"kind":"error","role":"agent","frame":{"v":2,"type":"error","data":{"code":"vault_already_exists","message":"o cofre já existe"}}}
+{"kind":"error","role":"agent","frame":{"v":2,"type":"error","data":{"code":"rollback","message":"o cofre no disco é mais antigo que o último aberto"}}}
+{"kind":"error","role":"agent","frame":{"v":2,"type":"error","data":{"code":"vault_changed","message":"o arquivo do cofre mudou fora do Ward"}}}
+{"kind":"error","role":"agent","frame":{"v":2,"type":"error","data":{"code":"generation_exhausted","message":"recusado gravar: o contador de versões do cofre chegou ao fim"}}}
+{"kind":"error","role":"agent","frame":{"v":2,"type":"error","data":{"code":"write_failed","message":"falha ao gravar o cofre; a versão anterior foi mantida"}}}
+{"kind":"error","role":"agent","frame":{"v":2,"type":"error","data":{"code":"wrong_pin","message":"PIN incorreto"}}}
+{"kind":"error","role":"agent","frame":{"v":2,"type":"error","data":{"code":"entry_not_found","message":"entrada inexistente"}}}
+{"kind":"error","role":"agent","frame":{"v":2,"type":"error","data":{"code":"field_not_found","message":"campo inexistente"}}}
+{"kind":"error","role":"agent","frame":{"v":2,"type":"error","data":{"code":"denied","message":"pedido negado"}}}
+{"kind":"error","role":"agent","frame":{"v":2,"type":"error","data":{"code":"expired","message":"pedido expirado"}}}
+{"kind":"error","role":"agent","frame":{"v":2,"type":"error","data":{"code":"approval_unavailable","message":"aprovação indisponível"}}}
+{"kind":"error","role":"agent","frame":{"v":2,"type":"error","data":{"code":"origin_mismatch","message":"a origem da página não bate com a da entrada"}}}
+{"kind":"error","role":"agent","frame":{"v":2,"type":"error","data":{"code":"login_refused","message":"a página não tem um formulário de login seguro ou o site não aceitou o login"}}}
+{"kind":"error","role":"agent","frame":{"v":2,"type":"error","data":{"code":"browser_failed","message":"o navegador não abriu ou não respondeu a tempo"}}}
+{"kind":"error","role":"agent","frame":{"v":2,"type":"error","data":{"code":"session_has_secret","message":"a sessão do site guarda a senha; nada foi gravado"}}}
+{"kind":"error","role":"agent","frame":{"v":2,"type":"error","data":{"code":"type_without_delivery","message":"tipo sem entrega"}}}
+{"kind":"error","role":"agent","frame":{"v":2,"type":"error","data":{"code":"delivery_failed","message":"a entrega da credencial falhou; nada foi executado"}}}
+{"kind":"error","role":"agent","frame":{"v":2,"type":"error","data":{"code":"backup_not_found","message":"a versão do backup não existe"}}}
+{"kind":"error","role":"agent","frame":{"v":2,"type":"error","data":{"code":"backup_unavailable","message":"a pasta de backups não está disponível ou não é segura"}}}
+{"kind":"error","role":"agent","frame":{"v":2,"type":"error","data":{"code":"usb_drives_unavailable","message":"não deu para ver os pendrives (o udisks não respondeu)"}}}
+{"kind":"error","role":"agent","frame":{"v":2,"type":"error","data":{"code":"internal","message":"erro interno do Ward"}}}
