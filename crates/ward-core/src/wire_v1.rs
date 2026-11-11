@@ -22,7 +22,7 @@
 
 use std::collections::BTreeSet;
 
-use crate::corpo;
+use crate::body;
 use crate::format::{self, MasterPassword};
 use crate::protocolo::{self, ErroResposta, Operacao, Papel, Resposta, TipoResposta, VERSAO};
 
@@ -193,11 +193,11 @@ fn body_of(file: &[u8]) -> zeroize::Zeroizing<Vec<u8>> {
 fn vault_014_body_v4_read_and_written_byte_for_byte() {
     let body = body_of(VAULT);
     // Body v4 (u16 LE at the start) until Phase 48 moves it to v5 on purpose.
-    assert_eq!(corpo::VERSAO_CORPO, 4);
+    assert_eq!(body::BODY_VERSION, 4);
     assert_eq!(u16::from_le_bytes([body[0], body[1]]), 4);
-    let (config, generation, entries) = corpo::desserializar(&body).expect("body v4 refused");
+    let (config, generation, entries) = body::deserialize(&body).expect("body v4 refused");
     assert_eq!(generation, 3);
-    let again = corpo::serializar(&config, generation, &entries).expect("body not written");
+    let again = body::serialize(&config, generation, &entries).expect("body not written");
     assert!(*again == *body, "body written differently from 0.1.4");
     let got: Vec<(&str, &str, &str)> = entries
         .iter()
@@ -211,11 +211,11 @@ fn vault_014_body_v4_read_and_written_byte_for_byte() {
 fn backup_014_two_consecutive_generations() {
     assert_eq!(BACKUP_GEN_3, VAULT, "the newest backup is the vault itself");
     let older = body_of(BACKUP_GEN_2);
-    let (config, generation, entries) = corpo::desserializar(&older).expect("backup refused");
+    let (config, generation, entries) = body::deserialize(&older).expect("backup refused");
     assert_eq!(generation, 2);
     // Same configuration and entries, one generation before: written at generation 3
     // they give the body of the vault.
-    let again = corpo::serializar(&config, 3, &entries).expect("body not written");
+    let again = body::serialize(&config, 3, &entries).expect("body not written");
     assert!(*again == *body_of(VAULT));
 }
 

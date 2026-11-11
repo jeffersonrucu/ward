@@ -24,19 +24,18 @@ use std::time::{Duration, Instant};
 
 use ward_core as wc;
 use ward_core::atomic_write::write_entries;
+use ward_core::body::{BodyError, deserialize, open_entries, serialize};
 use ward_core::config::{PinHash, VaultConfig};
-use ward_core::corpo::{ErroCorpo, abrir_entradas, desserializar, serializar};
 use ward_core::entry::{AccessLevel, AttachmentDraft, DataDraft, Draft, Entry, ExtraDraft, Secret};
 use ward_core::format::{MasterPassword, OpenVault};
 use ward_core::limits::{
     MAX_ATTACHMENTS_TOTAL, MAX_BODY, MAX_ENTRIES, MAX_EXTRA_VALUE, MAX_EXTRAS, MAX_NOTE,
 };
 
-#[path = "../src/corpo/cofre_teste.rs"]
-mod cofre_teste;
-use cofre_teste::{
-    PIN_TESTE, SEGREDOS, SENHA_MESTRA, cofre_de_teste, configuracao_de_teste, configuracao_nova,
-    validada,
+#[path = "../src/body/test_vault.rs"]
+mod test_vault;
+use test_vault::{
+    MASTER_PASSWORD, SECRETS, TEST_PIN, new_config, test_config, test_vault_entries, validated,
 };
 
 // ---- O alocador ----
@@ -63,11 +62,11 @@ fn marcar_extra(marca: &[u8]) {
 const PRIMEIROS: [bool; 256] = {
     let mut t = [false; 256];
     let mut i = 0;
-    while i < SEGREDOS.len() {
-        t[SEGREDOS[i].as_bytes()[0] as usize] = true;
+    while i < SECRETS.len() {
+        t[SECRETS[i].as_bytes()[0] as usize] = true;
         i += 1;
     }
-    t[PIN_TESTE.as_bytes()[0] as usize] = true;
+    t[TEST_PIN.as_bytes()[0] as usize] = true;
     t
 };
 
@@ -115,7 +114,7 @@ unsafe fn procurar(ptr: *const u8, tamanho: usize) {
         // é volátil para o compilador não tirá-la de um bloco que vai ser liberado.
         let b = unsafe { core::ptr::read_volatile(ptr.add(i)) };
         if PRIMEIROS[b as usize] {
-            for marca in SEGREDOS.iter().chain([&PIN_TESTE]) {
+            for marca in SECRETS.iter().chain([&TEST_PIN]) {
                 let m = marca.as_bytes();
                 // SAFETY: o mesmo bloco, com o contrato desta função.
                 if m[0] == b && unsafe { casa(ptr, tamanho, i, m) } {
@@ -210,9 +209,7 @@ const P_HASH: usize = 2 + 8;
 /// O corpo vazio do cofre de teste: versão 4 e a configuração (D30, D39), mais a
 /// contagem.
 fn corpo_vazio() -> Vec<u8> {
-    serializar(configuracao_de_teste(), 1, &[])
-        .unwrap()
-        .to_vec()
+    serialize(test_config(), 1, &[]).unwrap().to_vec()
 }
 
 /// Versão e configuração do cofre de teste (o corpo vazio sem a contagem final).
@@ -285,7 +282,7 @@ fn forjados() -> Vec<(&'static str, Vec<u8>)> {
         ("sem hash do PIN", &b""[..]),
         ("hash do PIN inflado", inflado.as_bytes()),
         ("hash do PIN rebaixado", rebaixado.as_bytes()),
-        ("PIN em claro", PIN_TESTE.as_bytes()),
+        ("PIN em claro", TEST_PIN.as_bytes()),
     ] {
         let mut v = cabecalho_com_hash(hash);
         v.extend_from_slice(&entrada);
@@ -377,17 +374,17 @@ fn v2_32_corpo_forjado_recusado_rapido_sem_alocar() {
     // Controle: o corpo forjado bem formado (uma entrada genérica, sem datas) é aceito.
     let mut ok = com_contagem(generico_ate_anexos(), 0);
     ok.extend_from_slice(&[0; 16]);
-    assert_eq!(desserializar(&ok).map(|(_, _, e)| e.len()), Ok(1));
+    assert_eq!(deserialize(&ok).map(|(_, _, e)| e.len()), Ok(1));
     // Controle da seção: o cabeçalho remontado com o hash de teste é o do módulo.
     assert!(cabecalho_com_hash(&hash_de_teste()) == cabecalho());
 
     for (caso, forjado) in forjados() {
         let inicio = Instant::now();
         let (r, pedidos, maior) =
-            contando(|| catch_unwind(AssertUnwindSafe(|| desserializar(&forjado))));
+            contando(|| catch_unwind(AssertUnwindSafe(|| deserialize(&forjado))));
         let tempo = inicio.elapsed();
         let r = r.unwrap_or_else(|_| panic!("{caso}: pânico"));
-        assert_eq!(r.err(), Some(ErroCorpo::Invalido), "{caso}");
+        assert_eq!(r.err(), Some(BodyError::Invalid), "{caso}");
         assert!(tempo < Duration::from_millis(100), "{caso}: {tempo:?}");
         // A estrutura é conferida antes de alocar: nenhum pedido, nem pequeno.
         assert_eq!(pedidos, 0, "{caso}: alocou");
@@ -398,8 +395,8 @@ fn v2_32_corpo_forjado_recusado_rapido_sem_alocar() {
     let mut grande = vec![0u8; MAX_BODY + 1];
     grande[0] = 2;
     let inicio = Instant::now();
-    let (r, pedidos, _) = contando(|| desserializar(&grande));
-    assert_eq!(r.err(), Some(ErroCorpo::Invalido));
+    let (r, pedidos, _) = contando(|| deserialize(&grande));
+    assert_eq!(r.err(), Some(BodyError::Invalid));
     assert!(inicio.elapsed() < Duration::from_millis(100));
     assert_eq!(pedidos, 0);
 }
@@ -408,8 +405,8 @@ fn v2_32_corpo_forjado_recusado_rapido_sem_alocar() {
 fn v2_32_corpo_autentico_aloca_so_o_que_existe() {
     // O cofre de teste lido de verdade: o maior pedido é o corpo (cópia de um campo) ou
     // o vetor das 22 entradas que existem, nunca algo do tamanho declarado.
-    let corpo = serializar(configuracao_de_teste(), 1, &cofre_de_teste()).unwrap();
-    let (r, pedidos, maior) = contando(|| desserializar(&corpo));
+    let corpo = serialize(test_config(), 1, &test_vault_entries()).unwrap();
+    let (r, pedidos, maior) = contando(|| deserialize(&corpo));
     assert_eq!(r.map(|(_, _, e)| e.len()), Ok(22));
     assert!(pedidos > 0);
     let teto = corpo.len().max(22 * std::mem::size_of::<Entry>());
@@ -443,7 +440,7 @@ fn nota_cheia(nome: &str) -> Entry {
         name: "a.bin".to_owned(),
         content: Secret::from_bytes(vec![0x5a; MAX_ATTACHMENTS_TOTAL]),
     });
-    validada(r, AccessLevel::Free)
+    validated(r, AccessLevel::Free)
 }
 
 #[test]
@@ -456,20 +453,20 @@ fn v2_32_codificador_recusa_acima_do_limite_antes_de_alocar() {
         entradas.push(nota_cheia(&format!("nota-{:03}", entradas.len())));
         aproximado += MAX_NOTE + MAX_EXTRAS * MAX_EXTRA_VALUE + MAX_ATTACHMENTS_TOTAL;
     }
-    let cfg = configuracao_de_teste();
+    let cfg = test_config();
     let (r, _, maior) =
-        contando(|| catch_unwind(AssertUnwindSafe(|| serializar(cfg, 1, &entradas))));
+        contando(|| catch_unwind(AssertUnwindSafe(|| serialize(cfg, 1, &entradas))));
     let r = r.unwrap_or_else(|_| panic!("pânico"));
-    assert_eq!(r.err(), Some(ErroCorpo::GrandeDemais));
+    assert_eq!(r.err(), Some(BodyError::TooLarge));
     // Só o vetor de ordem (um ponteiro por entrada); o buffer do corpo não nasce.
     assert!(maior < 1024, "pedido de {maior} bytes");
 
     // Uma a menos cabe e volta.
     entradas.pop();
-    let corpo = serializar(cfg, 1, &entradas).unwrap();
+    let corpo = serialize(cfg, 1, &entradas).unwrap();
     assert!(corpo.len() <= MAX_BODY);
     assert_eq!(
-        desserializar(&corpo).map(|(_, _, e)| e.len()),
+        deserialize(&corpo).map(|(_, _, e)| e.len()),
         Ok(entradas.len())
     );
 }
@@ -509,8 +506,8 @@ fn v2_33_nenhum_bloco_liberado_tem_segredo() {
     // `Zeroizing` por um `Vec`).
     // A configuração deste teste, com o hash dela como marca extra (a saída B64, o
     // último campo do texto PHC).
-    let cfg = configuracao_nova();
-    let corpo_cfg = serializar(&cfg, 1, &[]).unwrap();
+    let cfg = new_config();
+    let corpo_cfg = serialize(&cfg, 1, &[]).unwrap();
     let n = u32::from_le_bytes(corpo_cfg[P_HASH..P_HASH + 4].try_into().unwrap()) as usize;
     let texto = &corpo_cfg[P_HASH + 4..P_HASH + 4 + n];
     let saida = &texto[texto.iter().rposition(|b| *b == b'$').unwrap() + 1..];
@@ -518,19 +515,19 @@ fn v2_33_nenhum_bloco_liberado_tem_segredo() {
     marcar_extra(saida);
     drop(corpo_cfg);
 
-    let corpo = serializar(&cfg, 1, &cofre_de_teste()).unwrap();
+    let corpo = serialize(&cfg, 1, &test_vault_entries()).unwrap();
     let achados = procurando(|| {
         let comum: Vec<u8> = corpo.to_vec();
         drop(comum);
     });
     // Todas as marcas menos a senha mestra e o PIN (que não estão no corpo), mais o
     // hash do PIN.
-    assert!(achados >= SEGREDOS.len(), "o detector não viu o controle");
+    assert!(achados >= SECRETS.len(), "o detector não viu o controle");
     drop(corpo);
 
     // Controle 3: o PIN e o hash dele num `Vec` comum são vistos.
     let achados = procurando(|| {
-        drop(PIN_TESTE.as_bytes().to_vec());
+        drop(TEST_PIN.as_bytes().to_vec());
         drop(saida_vec(&cfg));
     });
     assert_eq!(achados, 2, "o detector não viu o PIN ou o hash");
@@ -538,7 +535,7 @@ fn v2_33_nenhum_bloco_liberado_tem_segredo() {
     // Controle 2: um segredo que cresce por realocação é visto.
     let achados = procurando(|| {
         let mut s = String::new();
-        s.push_str(SEGREDOS[1]);
+        s.push_str(SECRETS[1]);
         s.push_str(&"x".repeat(64));
         drop(Secret::from_text(s));
     });
@@ -550,23 +547,23 @@ fn v2_33_nenhum_bloco_liberado_tem_segredo() {
     let dir = DirTemporario::novo("v2-33");
     let destino = dir.0.join("cofre.ward");
     let achados = procurando(|| {
-        let senha = MasterPassword::new(SENHA_MESTRA.to_owned());
-        let entradas = cofre_de_teste();
-        let corpo = serializar(&cfg, 1, &entradas).unwrap();
-        let (_, _, lidas) = desserializar(&corpo).unwrap();
+        let senha = MasterPassword::new(MASTER_PASSWORD.to_owned());
+        let entradas = test_vault_entries();
+        let corpo = serialize(&cfg, 1, &entradas).unwrap();
+        let (_, _, lidas) = deserialize(&corpo).unwrap();
         assert_eq!(lidas.len(), 22);
         drop(corpo);
         let mut cofre = OpenVault::new(&senha, cfg).unwrap();
         write_entries(&destino, &mut cofre, &entradas).unwrap();
         let arquivo = std::fs::read(&destino).unwrap();
-        let (mut reaberto, voltaram) = abrir_entradas(&arquivo, &senha).unwrap();
+        let (mut reaberto, voltaram) = open_entries(&arquivo, &senha).unwrap();
         assert_eq!(voltaram.len(), 22);
         assert_eq!(reaberto.generation(), 1);
         // O PIN confere no hash lido do corpo (D30), e um hash novo nasce e morre.
-        assert!(reaberto.config().verify_pin(PIN_TESTE.as_bytes()));
+        assert!(reaberto.config().verify_pin(TEST_PIN.as_bytes()));
         assert!(!reaberto.config().verify_pin(b"135791"));
         drop(VaultConfig::new(
-            PinHash::create(PIN_TESTE.as_bytes()).unwrap(),
+            PinHash::create(TEST_PIN.as_bytes()).unwrap(),
         ));
         write_entries(&destino, &mut reaberto, &voltaram).unwrap();
         let arquivo2 = std::fs::read(&destino).unwrap();
@@ -578,7 +575,7 @@ fn v2_33_nenhum_bloco_liberado_tem_segredo() {
     // Corpo recusado no meio da 2ª passada (entrada inválida depois de outras já
     // montadas): o que já foi montado também zera.
     let achados = procurando(|| {
-        let mut corpo = serializar(configuracao_de_teste(), 1, &cofre_de_teste())
+        let mut corpo = serialize(test_config(), 1, &test_vault_entries())
             .unwrap()
             .to_vec();
         // Estraga o host da última entrada `servidor` com chave (`-` no começo): passa
@@ -586,7 +583,7 @@ fn v2_33_nenhum_bloco_liberado_tem_segredo() {
         let alvo = b"ssh-interno";
         let pos = corpo.windows(alvo.len()).rposition(|j| j == alvo).unwrap();
         corpo[pos] = b'-';
-        assert_eq!(desserializar(&corpo).err(), Some(ErroCorpo::Invalido));
+        assert_eq!(deserialize(&corpo).err(), Some(BodyError::Invalid));
         // O corpo em claro deste teste é um `Vec` comum: zera antes de soltar.
         zeroize::Zeroize::zeroize(&mut corpo);
     });
@@ -596,7 +593,7 @@ fn v2_33_nenhum_bloco_liberado_tem_segredo() {
 
 /// A saída B64 do hash do PIN de `cfg`, num `Vec` comum (só para o controle).
 fn saida_vec(cfg: &VaultConfig) -> Vec<u8> {
-    let corpo = serializar(cfg, 1, &[]).unwrap();
+    let corpo = serialize(cfg, 1, &[]).unwrap();
     let n = u32::from_le_bytes(corpo[P_HASH..P_HASH + 4].try_into().unwrap()) as usize;
     let texto = &corpo[P_HASH + 4..P_HASH + 4 + n];
     texto[texto.iter().rposition(|b| *b == b'$').unwrap() + 1..].to_vec()
@@ -649,7 +646,7 @@ fn s8_protocolo_nenhum_bloco_liberado_tem_segredo() {
 
     // A marca extra é o base64 da senha mestra, como vai no quadro.
     let destravar = Pedido::Destravar {
-        senha: s(SENHA_MESTRA),
+        senha: s(MASTER_PASSWORD),
     };
     let q = protocolo::codificar_pedido(Papel::Agente, &destravar).unwrap();
     let texto = core::str::from_utf8(&q).unwrap();
@@ -668,7 +665,7 @@ fn s8_protocolo_nenhum_bloco_liberado_tem_segredo() {
         let limite_app = limite_do_quadro(Papel::App);
         // Destravar pela CLI.
         let p = Pedido::Destravar {
-            senha: s(SENHA_MESTRA),
+            senha: s(MASTER_PASSWORD),
         };
         let q = protocolo::codificar_pedido(Papel::Agente, &p).unwrap();
         let lido = pelo_socket(&q, limite_comum);
@@ -676,7 +673,7 @@ fn s8_protocolo_nenhum_bloco_liberado_tem_segredo() {
         else {
             panic!("destravar não voltou")
         };
-        assert_eq!(senha.expose(), SENHA_MESTRA.as_bytes());
+        assert_eq!(senha.expose(), MASTER_PASSWORD.as_bytes());
         drop((p, q, lido, senha));
 
         // Salvar pelo app, validar o que chegou e responder um segredo ao app.

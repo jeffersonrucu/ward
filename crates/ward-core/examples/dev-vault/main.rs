@@ -48,8 +48,8 @@ use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
 
 use ward_core::atomic_write::write_entries;
+use ward_core::body::{open_entries, serialize};
 use ward_core::config::{KDF_PIN, PinHash, VaultConfig};
-use ward_core::corpo::{abrir_entradas, serializar};
 use ward_core::entrega::{self, ErroEntrega, ErroRecurso, Recursos};
 use ward_core::entry::{
     AccessLevel, AttachmentDraft, DataDraft, Draft, Entry, EntryType, ExtraDraft, Secret,
@@ -63,7 +63,7 @@ use zeroize::Zeroizing;
 use ward_core as wc;
 
 #[cfg(test)]
-#[path = "../../src/corpo/cofre_teste.rs"]
+#[path = "../../src/body/test_vault.rs"]
 mod test_vault;
 
 const FIXTURES: &str = "dev/fixtures/entries.json";
@@ -292,14 +292,14 @@ fn verify(
         return Err(Error::Vault("o cofre passa do tamanho máximo".into()));
     }
     let bytes = fs::read(output).map_err(|_| Error::Vault("não deu para ler o cofre".into()))?;
-    let (vault, loaded) = abrir_entradas(&bytes, password)
+    let (vault, loaded) = open_entries(&bytes, password)
         .map_err(|e| Error::Vault(format!("o cofre não abriu: {e}")))?;
     // D39: the generation read (≥ 1; the reader refuses 0) goes into both sides of the
     // comparison.
     let generation = vault.generation();
     let cfg = vault.config();
-    let a = serializar(cfg, generation, &loaded).map_err(|e| Error::Vault(format!("{e}")))?;
-    let b = serializar(cfg, generation, expected).map_err(|e| Error::Vault(format!("{e}")))?;
+    let a = serialize(cfg, generation, &loaded).map_err(|e| Error::Vault(format!("{e}")))?;
+    let b = serialize(cfg, generation, expected).map_err(|e| Error::Vault(format!("{e}")))?;
     if *a != *b {
         return Err(Error::Vault(
             "o cofre abre, mas as entradas diferem das fixtures; rode make dev-vault".into(),
@@ -376,7 +376,7 @@ fn secret_left(output: &[u8], e: &Entry) -> bool {
 /// entry.
 fn cross(output: &Path, password: &MasterPassword) -> Result<(), Error> {
     let bytes = fs::read(output).map_err(|_| Error::Vault("não deu para ler o cofre".into()))?;
-    let (_, loaded) = abrir_entradas(&bytes, password)
+    let (_, loaded) = open_entries(&bytes, password)
         .map_err(|e| Error::Vault(format!("o cofre não abriu: {e}")))?;
     let mut tsv = Zeroizing::new(Vec::new());
     io::stdin()

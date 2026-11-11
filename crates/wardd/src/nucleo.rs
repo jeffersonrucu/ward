@@ -58,8 +58,8 @@ use zeroize::Zeroizing;
 
 use ward_core::atomic_write::{self, Step, WriteError};
 use ward_core::backup::{self, ErroBackup, Versao};
+use ward_core::body::{self, BodyError, OpenError};
 use ward_core::config::{ExternalBackup, PinHash, VaultConfig};
-use ward_core::corpo::{self, ErroAbrir, ErroCorpo};
 use ward_core::entry::{AccessLevel, Data, DataDraft, Dates, Draft, Entry, Secret};
 use ward_core::format::{MasterPassword, OpenVault};
 use ward_core::origin::Origin;
@@ -340,9 +340,9 @@ fn gravar(caminhos: &Caminhos, a: &mut Aberto, gancho: Option<&Gancho>) -> Resul
     }
     // O conjunto reabriria? (nome repetido, túnel/salto quebrado por renomear ou
     // remover um servidor usado). Sem tocar no disco nem queimar geração.
-    if let Err(e) = corpo::serializar(a.cofre.config(), 1, &a.entradas) {
+    if let Err(e) = body::serialize(a.cofre.config(), 1, &a.entradas) {
         return Err(FalhaGravar::Resposta(match e {
-            ErroCorpo::GrandeDemais => problema("cofre", "o cofre passaria do limite de tamanho"),
+            BodyError::TooLarge => problema("cofre", "o cofre passaria do limite de tamanho"),
             _ => problema(
                 "nome",
                 "outra entrada usa esta como túnel SSH ou servidor de salto",
@@ -950,15 +950,15 @@ impl Daemon {
         };
         let senha = senha_de(senha);
         let (cofre, entradas, lida) =
-            match corpo::abrir_entradas_lida(&bytes, &senha, g.vista, g.queimada) {
+            match body::open_entries_with_generation(&bytes, &senha, g.vista, g.queimada) {
                 Ok(x) => x,
                 Err(e) => {
                     match e {
-                        ErroAbrir::Formato(_) => self.contar_falha(&mut est, agente, g),
-                        ErroAbrir::Retrocesso => {
+                        OpenError::Format(_) => self.contar_falha(&mut est, agente, g),
+                        OpenError::Rollback => {
                             aviso!("destravar recusado: o cofre no disco é mais antigo (D39)")
                         }
-                        ErroAbrir::Corpo(_) => aviso!("destravar recusado: corpo inválido"),
+                        OpenError::Body(_) => aviso!("destravar recusado: corpo inválido"),
                     }
                     return Err(ErroResposta::from(&e));
                 }
@@ -1796,7 +1796,7 @@ impl Daemon {
             }
         };
         let (mut restaurado, entradas, _) =
-            corpo::abrir_entradas_lida(&bytes, &senha_de(senha), 0, 0).map_err(|e| {
+            body::open_entries_with_generation(&bytes, &senha_de(senha), 0, 0).map_err(|e| {
                 aviso!("restaurar recusado: a versão não abriu");
                 ErroResposta::from(&e)
             })?;

@@ -1,5 +1,5 @@
 //! V3.39 e V3.40 (D4, D65 b e c; Fase 22c), pelo binário do daemon de teste com o
-//! cofre de teste (as 22 entradas de `cofre_teste.rs`, só valores falsos):
+//! cofre de teste (as 22 entradas de `test_vault.rs`, só valores falsos):
 //!
 //! - um cliente Python no papel agente (que destrava com a senha de teste pelo stdin) e
 //!   outro que se diz host da extensão (`argv[0]` = `ward-nm`, fora do Chrome) pedem
@@ -34,8 +34,8 @@ use ward_core::protocolo::{self, ErroResposta, Papel, Resposta};
 
 // O cofre de teste pela API pública (o mesmo do app de teste e do daemon falso).
 use ward_core as wc;
-#[path = "../../ward-core/src/corpo/cofre_teste.rs"]
-mod cofre_teste;
+#[path = "../../ward-core/src/body/test_vault.rs"]
+mod test_vault;
 
 const WARDD: &str = env!("CARGO_BIN_EXE_wardd");
 const APP_TESTE: &str = env!("CARGO_BIN_EXE_wardd-app-teste");
@@ -119,11 +119,11 @@ fn ler(p: &Path) -> String {
 /// Os segredos do cofre de teste e o base64 de cada um.
 fn agulhas() -> Vec<String> {
     let mut v = Vec::new();
-    for s in cofre_teste::SEGREDOS {
+    for s in test_vault::SECRETS {
         v.push((*s).to_owned());
         v.push(b64(s.as_bytes()));
     }
-    v.push(cofre_teste::chave_falsa());
+    v.push(test_vault::fake_key());
     // A lista de variações de `make dev-variations`, se existe (o oráculo de D54).
     let variacoes = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.dev/variations.txt");
     if let Ok(t) = fs::read_to_string(variacoes) {
@@ -156,7 +156,7 @@ fn cliente_python(sock: &Path, destravar: bool, nome: &str) -> String {
         let mut entrada = filho.stdin.take().unwrap();
         if destravar {
             entrada
-                .write_all(format!("{}\n", b64(cofre_teste::SENHA_MESTRA.as_bytes())).as_bytes())
+                .write_all(format!("{}\n", b64(test_vault::MASTER_PASSWORD.as_bytes())).as_bytes())
                 .unwrap();
         }
     }
@@ -201,10 +201,10 @@ fn v3_39_v3_40_valores_e_lista_do_app_pelo_daemon_de_teste() {
         },
     )
     .unwrap();
-    let mut entradas = cofre_teste::cofre_de_teste();
+    let mut entradas = test_vault::test_vault_entries();
     entradas.sort_by(|a, b| a.name().cmp(b.name()));
-    let senha = MasterPassword::new(cofre_teste::SENHA_MESTRA.to_owned());
-    let mut cofre = OpenVault::new(&senha, cofre_teste::configuracao_nova()).unwrap();
+    let senha = MasterPassword::new(test_vault::MASTER_PASSWORD.to_owned());
+    let mut cofre = OpenVault::new(&senha, test_vault::new_config()).unwrap();
     write_entries(&dev.join("test-vault.ward"), &mut cofre, &entradas).unwrap();
     drop(cofre);
 

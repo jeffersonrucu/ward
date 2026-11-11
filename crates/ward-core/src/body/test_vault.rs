@@ -1,12 +1,11 @@
-//! Cofre de teste para os testes do corpo (D15 + `acme-totp-dev` de D28 +
-//! `delta-api-simbolos` de D59): as 22 entradas
-//! da tabela do contrato, com os níveis dela, e as entradas "cheias" do V2.30. Só valores
-//! falsos.
+//! Test vault for the body tests (D15 + `acme-totp-dev` from D28 + the special
+//! characters API entry from D59): the 22 entries of the contract table, with its
+//! levels, and the "full" entries of V2.30. Only fake values.
 //!
-//! Usado pelos testes de unidade (`corpo/testes.rs`) e pelo teste de integração do
-//! alocador (`tests/corpo_memoria.rs`), por isso só usa a API pública, pelo apelido
-//! `wc` que quem inclui define. Os segredos nascem sem realocação (o teste do alocador
-//! procura as marcas em todo bloco liberado).
+//! Used by the unit tests (`body/tests.rs`) and by the allocator integration test in
+//! `tests/` (V2.32, V2.33), so it only uses the public API, through the alias `wc`
+//! that the includer defines. The secrets are born without reallocation (the allocator
+//! test looks for the markers in every freed block).
 
 #![allow(dead_code)]
 
@@ -14,27 +13,27 @@ use super::wc::config::{PinHash, VaultConfig};
 use super::wc::entry::{AccessLevel, AttachmentDraft, DataDraft, Draft, Entry, ExtraDraft, Secret};
 use super::wc::limits::MAX_ATTACHMENTS_TOTAL;
 
-/// Senha mestra do cofre de teste.
-pub const SENHA_MESTRA: &str = "falso-mestra-ward-01";
-/// PIN do cofre de teste (D15). Nunca é gravado em claro: só o hash dele.
-pub const PIN_TESTE: &str = "135790";
+/// Master password of the test vault.
+pub const MASTER_PASSWORD: &str = "falso-mestra-ward-01";
+/// PIN of the test vault (D15). Never written in cleartext: only its hash.
+pub const TEST_PIN: &str = "135790";
 
-/// Configuração do cofre de teste (D30): hash do PIN de teste, trava em 240 minutos e
-/// backup desligado. Calculada uma vez (o Argon2id do PIN custa 64 MiB) e compartilhada
-/// pelos testes.
-pub fn configuracao_de_teste() -> &'static VaultConfig {
+/// Configuration of the test vault (D30): hash of the test PIN, lock at 240 minutes and
+/// backup disabled. Computed once (the PIN Argon2id costs 64 MiB) and shared by the
+/// tests.
+pub fn test_config() -> &'static VaultConfig {
     static CFG: std::sync::OnceLock<VaultConfig> = std::sync::OnceLock::new();
-    CFG.get_or_init(|| VaultConfig::new(PinHash::create(PIN_TESTE.as_bytes()).unwrap()))
+    CFG.get_or_init(|| VaultConfig::new(PinHash::create(TEST_PIN.as_bytes()).unwrap()))
 }
 
-/// Uma configuração nova, com hash próprio (sal novo), para quem precisa de posse.
-pub fn configuracao_nova() -> VaultConfig {
-    VaultConfig::new(PinHash::create(PIN_TESTE.as_bytes()).unwrap())
+/// A new configuration, with its own hash (new salt), for whoever needs ownership.
+pub fn new_config() -> VaultConfig {
+    VaultConfig::new(PinHash::create(TEST_PIN.as_bytes()).unwrap())
 }
 
-/// Todos os valores secretos do cofre de teste (as marcas que os testes procuram).
-pub const SEGREDOS: &[&str] = &[
-    SENHA_MESTRA,
+/// All the secret values of the test vault (the markers the tests look for).
+pub const SECRETS: &[&str] = &[
+    MASTER_PASSWORD,
     "falso-WP-senha-01",
     "falso-WP-senha-02",
     "JBSWY3DPEHPK3PXP",
@@ -65,10 +64,10 @@ fn s(v: &str) -> Option<Secret> {
     Some(Secret::from_text(v.to_owned()))
 }
 
-/// Chave privada falsa, montada em tempo de execução (o texto inteiro não fica no
-/// repositório) e numa alocação só, do tamanho exato.
-pub fn chave_falsa() -> String {
-    let partes = [
+/// Fake private key, built at run time (the whole text is not in the repository) and in
+/// a single allocation, of the exact size.
+pub fn fake_key() -> String {
+    let parts = [
         "-----BEGIN ",
         "OPENSSH",
         " PRIVATE",
@@ -79,87 +78,87 @@ pub fn chave_falsa() -> String {
         " PRIVATE",
         " KEY-----\n",
     ];
-    let mut c = String::with_capacity(partes.iter().map(|p| p.len()).sum());
-    for p in partes {
+    let mut c = String::with_capacity(parts.iter().map(|p| p.len()).sum());
+    for p in parts {
         c.push_str(p);
     }
     c
 }
 
-fn rascunho(nome: &str, grupo: &str, ambiente: &str, dados: DataDraft) -> Draft {
+fn draft(name: &str, group: &str, environment: &str, data: DataDraft) -> Draft {
     Draft {
-        name: t(nome),
-        group: t(grupo),
-        environment: t(ambiente),
+        name: t(name),
+        group: t(group),
+        environment: t(environment),
         project: String::new(),
         tags: Vec::new(),
-        data: dados,
+        data,
         extras: Vec::new(),
         attachments: Vec::new(),
     }
 }
 
-/// Valida e aplica o nível (como o daemon faria depois do PIN).
-pub fn validada(r: Draft, nivel: AccessLevel) -> Entry {
+/// Validates and applies the level (as the daemon would after the PIN).
+pub fn validated(r: Draft, level: AccessLevel) -> Entry {
     let mut e = match r.validate() {
         Ok(e) => e,
-        Err(erros) => panic!("entrada de teste inválida: {erros}"),
+        Err(errors) => panic!("entrada de teste inválida: {errors}"),
     };
-    e.set_level(nivel);
+    e.set_level(level);
     e
 }
 
-fn login(url: &str, usuario: &str, senha: &str, totp: Option<&str>) -> DataDraft {
+fn login(url: &str, username: &str, password: &str, totp: Option<&str>) -> DataDraft {
     DataDraft::Login {
         url: t(url),
-        username: t(usuario),
-        password: s(senha),
+        username: t(username),
+        password: s(password),
         totp_seed: totp.and_then(s),
     }
 }
 
-fn banco(host: &str, porta: &str, tunel: &str) -> DataDraft {
+fn database(host: &str, port: &str, tunnel: &str) -> DataDraft {
     DataDraft::Database {
         engine: t("postgres"),
         host: t(host),
-        port: t(porta),
+        port: t(port),
         db_name: t("app_teste"),
         username: t("app"),
         password: s("falso-PG:s3nha/01@#"),
-        tunnel: t(tunel),
+        tunnel: t(tunnel),
     }
 }
 
-fn servidor_senha(porta: &str, usuario: &str, senha: &str) -> DataDraft {
+fn server_password(port: &str, username: &str, password: &str) -> DataDraft {
     DataDraft::Server {
         host: t("127.0.0.1"),
-        port: t(porta),
-        username: t(usuario),
-        password: s(senha),
+        port: t(port),
+        username: t(username),
+        password: s(password),
         private_key: None,
         passphrase: None,
         jump: String::new(),
     }
 }
 
-fn servidor_chave(host: &str, porta: &str, salto: &str) -> DataDraft {
+fn server_key(host: &str, port: &str, jump: &str) -> DataDraft {
     DataDraft::Server {
         host: t(host),
-        port: t(porta),
+        port: t(port),
         username: t("deploy"),
         password: None,
-        private_key: Some(Secret::from_text(chave_falsa())),
+        private_key: Some(Secret::from_text(fake_key())),
         passphrase: s("falso-passphrase-01"),
-        jump: t(salto),
+        jump: t(jump),
     }
 }
 
-/// As 22 entradas do cofre de teste, com os níveis da tabela (fora de ordem de nome).
-pub fn cofre_de_teste() -> Vec<Entry> {
+/// The 22 entries of the test vault, with the levels of the table (out of name order).
+pub fn test_vault_entries() -> Vec<Entry> {
     use AccessLevel::{Approval, Blocked, Free};
     const WP: &str = "http://localhost:8081/wp-login.php";
-    let mut generico = rascunho("gama-generico", "gama", "stage", DataDraft::Generic);
-    generico.extras = vec![
+    let mut generic = draft("gama-generico", "gama", "stage", DataDraft::Generic);
+    generic.extras = vec![
         ExtraDraft {
             name: t("REGIAO"),
             value: Secret::from_text(t("r-01")),
@@ -171,12 +170,12 @@ pub fn cofre_de_teste() -> Vec<Entry> {
             secret: true,
         },
     ];
-    generico.attachments = vec![AttachmentDraft {
+    generic.attachments = vec![AttachmentDraft {
         name: t("app.env"),
         content: Secret::from_bytes(b"FALSO_ENV=falso-anexo-01\n".to_vec()),
     }];
-    // D59: caracteres especiais (aspas simples, `$&<>`, `/` e fora do ASCII).
-    let mut simbolos = rascunho(
+    // D59: special characters (single quotes, `$&<>`, `/` and outside ASCII).
+    let mut symbols = draft(
         "delta-api-simbolos",
         "delta",
         "dev",
@@ -186,14 +185,14 @@ pub fn cofre_de_teste() -> Vec<Entry> {
             variable: t("SIMBOLOS_TOKEN"),
         },
     );
-    simbolos.extras = vec![ExtraDraft {
+    symbols.extras = vec![ExtraDraft {
         name: t("SEGREDO_ASCII"),
         value: Secret::from_text(t("falso-Ab3$k&<9>Zq!'")),
         secret: true,
     }];
-    let lista = vec![
+    let list = vec![
         (
-            rascunho(
+            draft(
                 "acme-wp-dev",
                 "acme",
                 "dev",
@@ -207,7 +206,7 @@ pub fn cofre_de_teste() -> Vec<Entry> {
             Approval,
         ),
         (
-            rascunho(
+            draft(
                 "acme-wp-prod",
                 "acme",
                 "prod",
@@ -221,97 +220,97 @@ pub fn cofre_de_teste() -> Vec<Entry> {
             Free,
         ),
         (
-            rascunho(
+            draft(
                 "acme-pg-dev",
                 "acme",
                 "dev",
-                banco("127.0.0.1", "55432", ""),
+                database("127.0.0.1", "55432", ""),
             ),
             Free,
         ),
         (
-            rascunho(
+            draft(
                 "acme-pg-aprovacao",
                 "acme",
                 "stage",
-                banco("127.0.0.1", "55432", ""),
+                database("127.0.0.1", "55432", ""),
             ),
             Approval,
         ),
         (
-            rascunho(
+            draft(
                 "acme-pg-prod",
                 "acme",
                 "prod",
-                banco("127.0.0.1", "55432", ""),
+                database("127.0.0.1", "55432", ""),
             ),
             Approval,
         ),
         (
-            rascunho(
+            draft(
                 "acme-pg-tunel",
                 "acme",
                 "stage",
-                banco("postgres", "5432", "acme-ssh-senha-stage"),
+                database("postgres", "5432", "acme-ssh-senha-stage"),
             ),
             Free,
         ),
         (
-            rascunho(
+            draft(
                 "acme-ssh-senha-stage",
                 "acme",
                 "stage",
-                servidor_senha("2222", "deploy", "falso-SSH-senha-01"),
+                server_password("2222", "deploy", "falso-SSH-senha-01"),
             ),
             Free,
         ),
         (
-            rascunho(
+            draft(
                 "acme-ssh-chave-prod",
                 "acme",
                 "prod",
-                servidor_chave("127.0.0.1", "2223", ""),
+                server_key("127.0.0.1", "2223", ""),
             ),
             Free,
         ),
         (
-            rascunho(
+            draft(
                 "acme-ssh-salto",
                 "acme",
                 "prod",
-                servidor_senha("2224", "salto", "falso-SALTO-01"),
+                server_password("2224", "salto", "falso-SALTO-01"),
             ),
             Approval,
         ),
         (
-            rascunho(
+            draft(
                 "acme-ssh-salto-livre",
                 "acme",
                 "prod",
-                servidor_senha("2224", "salto", "falso-SALTO-01"),
+                server_password("2224", "salto", "falso-SALTO-01"),
             ),
             Free,
         ),
         (
-            rascunho(
+            draft(
                 "acme-ssh-interno",
                 "acme",
                 "prod",
-                servidor_chave("ssh-interno", "22", "acme-ssh-salto-livre"),
+                server_key("ssh-interno", "22", "acme-ssh-salto-livre"),
             ),
             Free,
         ),
         (
-            rascunho(
+            draft(
                 "acme-ssh-interno-aprov",
                 "acme",
                 "prod",
-                servidor_chave("ssh-interno", "22", "acme-ssh-salto"),
+                server_key("ssh-interno", "22", "acme-ssh-salto"),
             ),
             Free,
         ),
         (
-            rascunho(
+            draft(
                 "beta-github-api",
                 "beta",
                 "dev",
@@ -324,7 +323,7 @@ pub fn cofre_de_teste() -> Vec<Entry> {
             Free,
         ),
         (
-            rascunho(
+            draft(
                 "beta-aws-dev",
                 "beta",
                 "dev",
@@ -339,7 +338,7 @@ pub fn cofre_de_teste() -> Vec<Entry> {
             Free,
         ),
         (
-            rascunho(
+            draft(
                 "beta-smtp-stage",
                 "beta",
                 "stage",
@@ -354,7 +353,7 @@ pub fn cofre_de_teste() -> Vec<Entry> {
             Free,
         ),
         (
-            rascunho(
+            draft(
                 "beta-sftp-dev",
                 "beta",
                 "dev",
@@ -371,7 +370,7 @@ pub fn cofre_de_teste() -> Vec<Entry> {
             Free,
         ),
         (
-            rascunho(
+            draft(
                 "gama-nota",
                 "gama",
                 "dev",
@@ -381,9 +380,9 @@ pub fn cofre_de_teste() -> Vec<Entry> {
             ),
             Free,
         ),
-        (generico, Free),
+        (generic, Free),
         (
-            rascunho(
+            draft(
                 "gama-bloqueada",
                 "gama",
                 "prod",
@@ -392,7 +391,7 @@ pub fn cofre_de_teste() -> Vec<Entry> {
             Blocked,
         ),
         (
-            rascunho(
+            draft(
                 "delta-redir",
                 "delta",
                 "dev",
@@ -401,7 +400,7 @@ pub fn cofre_de_teste() -> Vec<Entry> {
             Free,
         ),
         (
-            rascunho(
+            draft(
                 "acme-totp-dev",
                 "acme",
                 "dev",
@@ -414,28 +413,27 @@ pub fn cofre_de_teste() -> Vec<Entry> {
             ),
             Free,
         ),
-        (simbolos, Free),
+        (symbols, Free),
     ];
-    lista
-        .into_iter()
-        .map(|(r, nivel)| validada(r, nivel))
+    list.into_iter()
+        .map(|(r, level)| validated(r, level))
         .collect()
 }
 
-/// Bytes de 0 a 255 repetidos até `tam`.
-pub fn bytes_0_a_255(tam: usize) -> Vec<u8> {
-    (0..tam).map(|i| (i % 256) as u8).collect()
+/// Bytes from 0 to 255 repeated up to `size`.
+pub fn bytes_0_to_255(size: usize) -> Vec<u8> {
+    (0..size).map(|i| (i % 256) as u8).collect()
 }
 
-/// Uma entrada de cada tipo no máximo do modelo (V2.30): projeto, 16 tags, 64 extras
-/// (metade segredo) e dois anexos com bytes de 0 a 255 que somam exatamente o limite de
-/// D29 (256 KiB), dentro do orçamento da máscara; mais uma `api` com o token de 64 KiB e
-/// só o anexo pequeno (as duas coisas juntas passam do orçamento). Os campos no limite de D25 (URL de
-/// 2048, token de 64 KiB, nota de 1 MiB) prendem os limites da leitura aos da
-/// validação.
-pub fn um_de_cada_cheio() -> Vec<Entry> {
+/// One entry of each type at the model maximum (V2.30): project, 16 tags, 64 extras
+/// (half secret) and two attachments with bytes from 0 to 255 that add up to exactly the
+/// D29 limit (256 KiB), within the mask budget; plus an `api` with the 64 KiB token and
+/// only the small attachment (both together go over the budget). The fields at the D25
+/// limit (2048 URL, 64 KiB token, 1 MiB note) tie the read limits to the validation
+/// ones.
+pub fn one_of_each_full() -> Vec<Entry> {
     use AccessLevel::{Approval, Blocked, Free};
-    let url_longa = {
+    let long_url = {
         let base = "https://cheio.invalid/";
         let mut u = String::with_capacity(2048);
         u.push_str(base);
@@ -444,11 +442,11 @@ pub fn um_de_cada_cheio() -> Vec<Entry> {
         }
         u
     };
-    let dados: Vec<(&str, DataDraft, AccessLevel)> = vec![
+    let entries: Vec<(&str, DataDraft, AccessLevel)> = vec![
         (
             "zz-cheio-login",
             DataDraft::Login {
-                url: url_longa,
+                url: long_url,
                 username: t("Usuário Com Espaço"),
                 password: s("falso-cheio-senha"),
                 totp_seed: s("JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"),
@@ -475,7 +473,7 @@ pub fn um_de_cada_cheio() -> Vec<Entry> {
                 port: t("65535"),
                 username: t("root"),
                 password: None,
-                private_key: Some(Secret::from_text(chave_falsa())),
+                private_key: Some(Secret::from_text(fake_key())),
                 passphrase: None,
                 jump: String::new(),
             },
@@ -490,9 +488,10 @@ pub fn um_de_cada_cheio() -> Vec<Entry> {
             },
             Free,
         ),
-        // O token no limite de D25 (64 KiB) passa do orçamento da máscara junto com
-        // 256 KiB de anexos (entrada e `WARD_TOKEN`, ~1 MiB de padrões cada, mais
-        // ~2,4 MiB do anexo); fica numa segunda `api`, com o anexo pequeno.
+        // The token at the D25 limit (64 KiB) goes over the mask budget together with
+        // 256 KiB of attachments (entry and `WARD_TOKEN`, ~1 MiB of patterns each, plus
+        // ~2.4 MiB from the attachment); it stays in a second `api`, with the small
+        // attachment.
         (
             "zz-cheio-api-token",
             DataDraft::Api {
@@ -546,38 +545,38 @@ pub fn um_de_cada_cheio() -> Vec<Entry> {
         ),
         ("zz-cheio-generico", DataDraft::Generic, Free),
     ];
-    dados
+    entries
         .into_iter()
-        .map(|(nome, dados, nivel)| {
-            let mut r = rascunho(nome, "zeta", "stage", dados);
+        .map(|(name, data, level)| {
+            let mut r = draft(name, "zeta", "stage", data);
             r.project = t("projeto cheio");
             r.tags = (1..=16).map(|n| format!("tag-{n:02}")).collect();
             r.extras = (1..=64)
                 .map(|n| {
-                    let segredo = n % 2 == 0;
-                    let valor = if segredo {
+                    let secret = n % 2 == 0;
+                    let value = if secret {
                         format!("falso-extra-{n:02}")
                     } else {
                         format!("valor-{n:02}")
                     };
                     ExtraDraft {
                         name: format!("extra_{n:02}"),
-                        value: Secret::from_text(valor),
-                        secret: segredo,
+                        value: Secret::from_text(value),
+                        secret,
                     }
                 })
                 .collect();
             r.attachments = vec![AttachmentDraft {
                 name: t("binario.bin"),
-                content: Secret::from_bytes(bytes_0_a_255(4096)),
+                content: Secret::from_bytes(bytes_0_to_255(4096)),
             }];
-            if nome != "zz-cheio-api-token" {
+            if name != "zz-cheio-api-token" {
                 r.attachments.push(AttachmentDraft {
                     name: t("grande.bin"),
-                    content: Secret::from_bytes(bytes_0_a_255(MAX_ATTACHMENTS_TOTAL - 4096)),
+                    content: Secret::from_bytes(bytes_0_to_255(MAX_ATTACHMENTS_TOTAL - 4096)),
                 });
             }
-            validada(r, nivel)
+            validated(r, level)
         })
         .collect()
 }

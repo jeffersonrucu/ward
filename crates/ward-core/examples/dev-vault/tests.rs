@@ -7,9 +7,7 @@
 use std::os::unix::fs::symlink;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use super::test_vault::{
-    PIN_TESTE, SEGREDOS, chave_falsa, cofre_de_teste, configuracao_de_teste, configuracao_nova,
-};
+use super::test_vault::{SECRETS, TEST_PIN, fake_key, new_config, test_config, test_vault_entries};
 use super::*;
 
 // --- Support ------------------------------------------------------------------------
@@ -66,7 +64,7 @@ fn test_read(root: &Path) -> impl FnMut(Source, &str) -> Result<Secret, Error> +
     move |source, path| match source {
         Source::Key => {
             assert_eq!(path, ".dev/services/keys/acme-deploy_ed25519");
-            Ok(Secret::from_text(chave_falsa()))
+            Ok(Secret::from_text(fake_key()))
         }
         Source::Attachment => read_from_repo(root, source, path),
     }
@@ -88,7 +86,7 @@ fn fixture_with(entry: &str) -> String {
 
 fn build_text(json_text: &str) -> Result<Built, Error> {
     let mut read =
-        |_: Source, _: &str| -> Result<Secret, Error> { Ok(Secret::from_text(chave_falsa())) };
+        |_: Source, _: &str| -> Result<Secret, Error> { Ok(Secret::from_text(fake_key())) };
     build(json_text.as_bytes(), &mut read)
 }
 
@@ -103,7 +101,7 @@ fn v2_29_fixtures_equal_the_contract_table() {
     let (r, f) = real_fixtures();
     let mut read = test_read(&r);
     let (_password, pin, built) = build(&f, &mut read).expect("fixtures montam");
-    assert_eq!(pin.as_str(), PIN_TESTE, "PIN de D15");
+    assert_eq!(pin.as_str(), TEST_PIN, "PIN de D15");
     assert_eq!(built.len(), 22);
     let totp = built
         .iter()
@@ -111,8 +109,8 @@ fn v2_29_fixtures_equal_the_contract_table() {
         .expect("acme-totp-dev (D28) nas fixtures");
     assert_eq!(totp.level(), AccessLevel::Free);
     assert_eq!(totp.kind(), EntryType::Login);
-    let a = serializar(configuracao_de_teste(), 1, &built).unwrap();
-    let b = serializar(configuracao_de_teste(), 1, &cofre_de_teste()).unwrap();
+    let a = serialize(test_config(), 1, &built).unwrap();
+    let b = serialize(test_config(), 1, &test_vault_entries()).unwrap();
     assert!(*a == *b, "fixtures diferem da tabela do contrato");
 }
 
@@ -142,7 +140,7 @@ fn v2_29_writes_reopens_and_verifies() {
     let (password, pin, built) = build(&f, &mut read).unwrap();
     let t = fake_root("ida-volta");
     let output = validate_output(&t.0, OsStr::new(DEFAULT_OUTPUT)).unwrap();
-    let mut vault = OpenVault::new(&password, configuracao_nova()).unwrap();
+    let mut vault = OpenVault::new(&password, new_config()).unwrap();
     write_entries(&output, &mut vault, &built).unwrap();
     // Second write (V2.29 "runs twice"): replaces the file through the same path.
     write_entries(&output, &mut vault, &built).unwrap();
@@ -152,7 +150,7 @@ fn v2_29_writes_reopens_and_verifies() {
     assert_eq!(mode, 0o600);
 
     let bytes = fs::read(&output).unwrap();
-    for s in SEGREDOS.iter().chain([&PIN_TESTE, &"$argon2id$"]) {
+    for s in SECRETS.iter().chain([&TEST_PIN, &"$argon2id$"]) {
         assert!(
             !bytes.windows(s.len()).any(|w| w == s.as_bytes()),
             "segredo em claro no arquivo"
@@ -168,10 +166,10 @@ fn v2_29_writes_reopens_and_verifies() {
     let e = verify(&output, &password, "246802", &built).unwrap_err();
     let msg = error_text(&e);
     assert!(msg.contains("hash do PIN"));
-    assert!(!msg.contains("246802") && !msg.contains(PIN_TESTE));
+    assert!(!msg.contains("246802") && !msg.contains(TEST_PIN));
 
     // Configuration other than the default one (lock of 30 minutes) too.
-    let mut other = OpenVault::new(&password, configuracao_nova()).unwrap();
+    let mut other = OpenVault::new(&password, new_config()).unwrap();
     other.config_mut().set_lock_minutes(30).unwrap();
     write_entries(&output, &mut other, &built).unwrap();
     let e = verify(&output, &password, &pin, &built).unwrap_err();
@@ -179,7 +177,7 @@ fn v2_29_writes_reopens_and_verifies() {
     write_entries(&output, &mut vault, &built).unwrap();
 
     // A vault with one entry less does not pass the verification.
-    let fewer: Vec<Entry> = cofre_de_teste()
+    let fewer: Vec<Entry> = test_vault_entries()
         .into_iter()
         .filter(|e| e.name() != "acme-totp-dev")
         .collect();
@@ -539,10 +537,10 @@ fn attack_invalid_fixture_refused_without_value_in_the_error() {
 fn attack_inconsistent_vault_is_not_written() {
     let login = r#"{"nome": "x-1", "tipo": "login", "grupo": "g", "ambiente": "dev", "nivel": "livre", "campos": {"url": "https://a.invalid", "usuario": "u"}, "segredos": {"senha": "falso-s-01"}}"#;
     let (_s, _p, repeated) = build_text(&fixture_with(&format!("{login}, {login}"))).unwrap();
-    assert!(serializar(configuracao_de_teste(), 1, &repeated).is_err());
+    assert!(serialize(test_config(), 1, &repeated).is_err());
     let tunnel = r#"{"nome": "x-2", "tipo": "banco", "grupo": "g", "ambiente": "dev", "nivel": "livre", "campos": {"motor": "postgres", "host": "h", "porta": 1, "base": "b", "usuario": "u", "tunel": "nao-existe"}, "segredos": {"senha": "falso-s-01"}}"#;
     let (_s, _p, without_tunnel) = build_text(&fixture_with(tunnel)).unwrap();
-    assert!(serializar(configuracao_de_teste(), 1, &without_tunnel).is_err());
+    assert!(serialize(test_config(), 1, &without_tunnel).is_err());
 }
 
 #[test]
@@ -592,10 +590,10 @@ fn v2_39_generated_vault_has_the_configuration() {
     let bytes = fs::read(&output).unwrap();
     assert!(
         !bytes
-            .windows(PIN_TESTE.len())
-            .any(|w| w == PIN_TESTE.as_bytes())
+            .windows(TEST_PIN.len())
+            .any(|w| w == TEST_PIN.as_bytes())
     );
-    let (vault, loaded) = abrir_entradas(&bytes, &password).unwrap();
+    let (vault, loaded) = open_entries(&bytes, &password).unwrap();
     let cfg = vault.config();
     assert_eq!(loaded.len(), 22);
     // D39: a freshly created vault is at generation 1.
@@ -603,15 +601,15 @@ fn v2_39_generated_vault_has_the_configuration() {
     assert_eq!(cfg.lock_minutes(), 240);
     assert!(!cfg.backup().enabled() && cfg.backup().uuid().is_none());
     assert_eq!(cfg.pin_hash().params(), KDF_PIN);
-    assert!(cfg.verify_pin(PIN_TESTE.as_bytes()));
+    assert!(cfg.verify_pin(TEST_PIN.as_bytes()));
     assert!(!cfg.verify_pin(b"135791"));
 
     // The decrypted body (through the public path: the canonical body of the entries read).
-    let body = serializar(cfg, 1, &loaded).unwrap();
+    let body = serialize(cfg, 1, &loaded).unwrap();
     assert!(
         !body
-            .windows(PIN_TESTE.len())
-            .any(|w| w == PIN_TESTE.as_bytes())
+            .windows(TEST_PIN.len())
+            .any(|w| w == TEST_PIN.as_bytes())
     );
     assert!(body[..2] == [4, 0], "corpo v4");
     assert!(body[2..10] == 1u64.to_le_bytes(), "geração 1");

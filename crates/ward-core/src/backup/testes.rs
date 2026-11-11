@@ -19,14 +19,14 @@ use base64ct::{Base64, Encoding};
 use super::*;
 use crate as wc;
 use crate::atomic_write::{self, change_password_with_backup, write_entries_with_backup};
-use crate::corpo;
+use crate::body;
 use crate::entry::Entry;
 use crate::format::MasterPassword;
 
 #[allow(clippy::duplicate_mod)]
-#[path = "../corpo/cofre_teste.rs"]
-mod cofre_teste;
-use cofre_teste::{SEGREDOS, SENHA_MESTRA, cofre_de_teste, configuracao_nova};
+#[path = "../body/test_vault.rs"]
+mod test_vault;
+use test_vault::{MASTER_PASSWORD, SECRETS, new_config, test_vault_entries};
 
 const NOME_FILHO: &str = "backup::testes::filho_backup";
 const ENV_MODO: &str = "WARD_TESTE_BACKUP_MODO";
@@ -58,18 +58,18 @@ fn uid() -> u32 {
 /// Um cofre aberto novo com a senha de teste (um Argon2id).
 fn cofre_novo(s: &str) -> OpenVault {
     let _g = ARGON.lock().unwrap_or_else(|e| e.into_inner());
-    OpenVault::new(&senha(s), configuracao_nova()).unwrap()
+    OpenVault::new(&senha(s), new_config()).unwrap()
 }
 
 /// As entradas do cofre de teste (com os segredos falsos), montadas uma vez.
 fn entradas() -> &'static [Entry] {
     static E: OnceLock<Vec<Entry>> = OnceLock::new();
-    E.get_or_init(cofre_de_teste)
+    E.get_or_init(test_vault_entries)
 }
 
-fn abrir(arquivo: &[u8], s: &str) -> Result<(OpenVault, Vec<Entry>, u64), corpo::ErroAbrir> {
+fn abrir(arquivo: &[u8], s: &str) -> Result<(OpenVault, Vec<Entry>, u64), body::OpenError> {
     let _g = ARGON.lock().unwrap_or_else(|e| e.into_inner());
-    corpo::abrir_entradas_lida(arquivo, &senha(s), 0, 0)
+    body::open_entries_with_generation(arquivo, &senha(s), 0, 0)
 }
 
 fn hex_aleatorio() -> String {
@@ -231,7 +231,7 @@ fn ataque_nome_fora_do_formato_recusado() {
 #[test]
 fn v7_1_31_gravacoes_deixam_30_versoes() {
     let d = Dir::novo("v7-1");
-    let mut cofre = cofre_novo(SENHA_MESTRA);
+    let mut cofre = cofre_novo(MASTER_PASSWORD);
     let pasta = d.pasta();
     let mut versoes = Vec::new();
     for i in 0..31u64 {
@@ -268,12 +268,19 @@ fn v7_1_31_gravacoes_deixam_30_versoes() {
     esperada.reverse();
     assert_eq!(lista, esperada);
     // A mais nova abre com a senha, na geração 31, com as 22 entradas da fixture.
-    let (_, lidas, geracao) =
-        abrir(&fs::read(pasta.caminho(versoes[30])).unwrap(), SENHA_MESTRA).unwrap();
+    let (_, lidas, geracao) = abrir(
+        &fs::read(pasta.caminho(versoes[30])).unwrap(),
+        MASTER_PASSWORD,
+    )
+    .unwrap();
     assert_eq!(geracao, 31);
     assert_eq!(lidas.len(), entradas().len());
     // A segunda mais antiga que ficou é a geração 2.
-    let (_, _, g2) = abrir(&fs::read(pasta.caminho(versoes[1])).unwrap(), SENHA_MESTRA).unwrap();
+    let (_, _, g2) = abrir(
+        &fs::read(pasta.caminho(versoes[1])).unwrap(),
+        MASTER_PASSWORD,
+    )
+    .unwrap();
     assert_eq!(g2, 2);
 }
 
@@ -281,7 +288,7 @@ fn v7_1_31_gravacoes_deixam_30_versoes() {
 #[test]
 fn mesmo_segundo_ganha_sufixo_sem_sobrescrever() {
     let d = Dir::novo("sufixo");
-    let mut cofre = cofre_novo(SENHA_MESTRA);
+    let mut cofre = cofre_novo(MASTER_PASSWORD);
     let pasta = d.pasta();
     let mut arquivos = Vec::new();
     for _ in 0..3 {
@@ -314,12 +321,12 @@ fn mesmo_segundo_ganha_sufixo_sem_sobrescrever() {
 #[test]
 fn v7_2_backup_cifrado_senha_errada_e_byte_alterado() {
     let d = Dir::novo("v7-2");
-    let mut cofre = cofre_novo(SENHA_MESTRA);
+    let mut cofre = cofre_novo(MASTER_PASSWORD);
     let pasta = d.pasta();
     let g = write_entries_with_backup(&d.cofre(), &mut cofre, entradas(), &pasta, em(INSTANTE))
         .unwrap();
     let arquivo = fs::read(pasta.caminho(g.backup.unwrap())).unwrap();
-    for s in SEGREDOS {
+    for s in SECRETS {
         assert!(
             !contem(&arquivo, s.as_bytes()),
             "segredo em claro no backup"
@@ -330,11 +337,11 @@ fn v7_2_backup_cifrado_senha_errada_e_byte_alterado() {
             "segredo em base64"
         );
     }
-    assert!(!contem(&arquivo, cofre_teste::PIN_TESTE.as_bytes()));
+    assert!(!contem(&arquivo, test_vault::TEST_PIN.as_bytes()));
 
     assert!(matches!(
         abrir(&arquivo, "falso-mestra-ward-02"),
-        Err(corpo::ErroAbrir::Formato(_))
+        Err(body::OpenError::Format(_))
     ));
     assert!(cofre.authenticates(&arquivo));
     for i in 0..arquivo.len() {
@@ -352,12 +359,12 @@ fn v7_2_backup_cifrado_senha_errada_e_byte_alterado() {
         let mut a = arquivo.clone();
         a[i] ^= 0x01;
         assert!(
-            abrir(&a, SENHA_MESTRA).is_err(),
+            abrir(&a, MASTER_PASSWORD).is_err(),
             "abriu com o byte {i} trocado"
         );
     }
     // Controle: o original abre.
-    assert!(abrir(&arquivo, SENHA_MESTRA).is_ok());
+    assert!(abrir(&arquivo, MASTER_PASSWORD).is_ok());
 }
 
 /// Troca de senha com backup: a versão nova só abre com a senha nova; a anterior, que
@@ -365,7 +372,7 @@ fn v7_2_backup_cifrado_senha_errada_e_byte_alterado() {
 #[test]
 fn troca_de_senha_vai_para_o_backup_com_a_senha_nova() {
     let d = Dir::novo("troca");
-    let mut cofre = cofre_novo(SENHA_MESTRA);
+    let mut cofre = cofre_novo(MASTER_PASSWORD);
     let pasta = d.pasta();
     let antiga = write_entries_with_backup(&d.cofre(), &mut cofre, &[], &pasta, em(INSTANTE))
         .unwrap()
@@ -376,7 +383,7 @@ fn troca_de_senha_vai_para_o_backup_com_a_senha_nova() {
         let _g = ARGON.lock().unwrap_or_else(|e| e.into_inner());
         change_password_with_backup(
             &d.cofre(),
-            &senha(SENHA_MESTRA),
+            &senha(MASTER_PASSWORD),
             &senha(nova_senha),
             1,
             1,
@@ -388,10 +395,10 @@ fn troca_de_senha_vai_para_o_backup_com_a_senha_nova() {
     let v = g.backup.unwrap();
     let bytes = fs::read(pasta.caminho(v)).unwrap();
     assert!(novo.authenticates(&bytes));
-    assert!(abrir(&bytes, SENHA_MESTRA).is_err());
+    assert!(abrir(&bytes, MASTER_PASSWORD).is_err());
     assert_eq!(abrir(&bytes, nova_senha).unwrap().2, 2);
     assert_eq!(
-        abrir(&fs::read(pasta.caminho(antiga)).unwrap(), SENHA_MESTRA)
+        abrir(&fs::read(pasta.caminho(antiga)).unwrap(), MASTER_PASSWORD)
             .unwrap()
             .2,
         1
@@ -405,7 +412,7 @@ fn troca_de_senha_vai_para_o_backup_com_a_senha_nova() {
 #[test]
 fn ataque_pasta_com_permissao_aberta_recusada() {
     let d = Dir::novo("pasta-aberta");
-    let mut cofre = cofre_novo(SENHA_MESTRA);
+    let mut cofre = cofre_novo(MASTER_PASSWORD);
     let pasta = d.pasta();
     for m in [0o750, 0o705, 0o755, 0o777, 0o701] {
         fs::set_permissions(d.backups(), fs::Permissions::from_mode(m)).unwrap();
@@ -432,7 +439,7 @@ fn ataque_pasta_com_permissao_aberta_recusada() {
 #[test]
 fn ataque_link_com_nome_de_versao_nao_e_seguido() {
     let d = Dir::novo("link-versao");
-    let mut cofre = cofre_novo(SENHA_MESTRA);
+    let mut cofre = cofre_novo(MASTER_PASSWORD);
     let pasta = d.pasta();
     let alvo = d.0.join("alvo");
     fs::write(&alvo, b"conteudo do alvo").unwrap();
@@ -467,12 +474,12 @@ fn ataque_link_com_nome_de_versao_nao_e_seguido() {
 #[test]
 fn ataque_guardar_atual_so_aceita_o_arquivo_autentico() {
     let d = Dir::novo("atual");
-    let mut cofre = cofre_novo(SENHA_MESTRA);
+    let mut cofre = cofre_novo(MASTER_PASSWORD);
     let pasta = d.pasta();
     atomic_write::write_entries(&d.cofre(), &mut cofre, &[]).unwrap();
     let atual = fs::read(d.cofre()).unwrap();
 
-    let mut outro = cofre_novo(SENHA_MESTRA);
+    let mut outro = cofre_novo(MASTER_PASSWORD);
     let d2 = Dir::novo("atual-outro");
     atomic_write::write_entries(&d2.cofre(), &mut outro, &[]).unwrap();
     let do_outro = fs::read(d2.cofre()).unwrap();
@@ -500,7 +507,7 @@ fn ataque_guardar_atual_so_aceita_o_arquivo_autentico() {
 #[test]
 fn ataque_versoes_com_data_futura_nao_apagam_as_reais() {
     let d = Dir::novo("futuro");
-    let mut cofre = cofre_novo(SENHA_MESTRA);
+    let mut cofre = cofre_novo(MASTER_PASSWORD);
     let pasta = d.pasta();
     let mut reais = Vec::new();
     for i in 0..5u64 {
@@ -587,7 +594,7 @@ fn plantar(pasta: &PastaBackup, v: Versao, bytes: &[u8]) {
 #[test]
 fn f54c_ataque_lixo_com_data_mais_nova_nao_apaga_versoes_reais() {
     let d = Dir::novo("f54c-lixo");
-    let mut cofre = cofre_novo(SENHA_MESTRA);
+    let mut cofre = cofre_novo(MASTER_PASSWORD);
     let pasta = d.pasta();
     let gravar = |cofre: &mut OpenVault, t: u64| {
         write_entries_with_backup(&d.cofre(), cofre, &[], &pasta, em(t))
@@ -603,7 +610,7 @@ fn f54c_ataque_lixo_com_data_mais_nova_nao_apaga_versoes_reais() {
     let mut adulterada = recente.clone();
     let n = adulterada.len();
     adulterada[n - 3] ^= 0x5a;
-    let mut outro = cofre_novo(SENHA_MESTRA);
+    let mut outro = cofre_novo(MASTER_PASSWORD);
     let d2 = Dir::novo("f54c-lixo-outro");
     atomic_write::write_entries(&d2.cofre(), &mut outro, &[]).unwrap();
     let de_outro = fs::read(d2.cofre()).unwrap();
@@ -662,7 +669,7 @@ fn f54c_ataque_lixo_com_data_mais_nova_nao_apaga_versoes_reais() {
 #[test]
 fn f54c_versoes_de_antes_da_troca_de_senha_nao_contam_nem_saem() {
     let d = Dir::novo("f54c-troca");
-    let mut cofre = cofre_novo(SENHA_MESTRA);
+    let mut cofre = cofre_novo(MASTER_PASSWORD);
     let pasta = d.pasta();
     let antigas: Vec<Versao> = (0..3u64)
         .map(|i| {
@@ -676,7 +683,7 @@ fn f54c_versoes_de_antes_da_troca_de_senha_nao_contam_nem_saem() {
         let _g = ARGON.lock().unwrap_or_else(|e| e.into_inner());
         change_password_with_backup(
             &d.cofre(),
-            &senha(SENHA_MESTRA),
+            &senha(MASTER_PASSWORD),
             &senha("falso-mestra-ward-03"),
             3,
             3,
@@ -718,7 +725,7 @@ fn f54c_versoes_de_antes_da_troca_de_senha_nao_contam_nem_saem() {
 #[test]
 fn f54c_relogio_que_volta_nao_apaga_versao_real() {
     let d = Dir::novo("f54c-relogio");
-    let mut cofre = cofre_novo(SENHA_MESTRA);
+    let mut cofre = cofre_novo(MASTER_PASSWORD);
     let pasta = d.pasta();
     let mut gravar = |t: u64| {
         write_entries_with_backup(&d.cofre(), &mut cofre, &[], &pasta, em(t))
@@ -849,13 +856,13 @@ fn ataque_copia_antiga_com_nome_novo_sai_marcada() {
 #[test]
 fn ataque_geracao_selada_nao_se_forja() {
     let d = Dir::novo("geracao");
-    let mut cofre = cofre_novo(SENHA_MESTRA);
+    let mut cofre = cofre_novo(MASTER_PASSWORD);
     for _ in 0..3 {
         atomic_write::write_entries(&d.cofre(), &mut cofre, entradas()).unwrap();
     }
     let bom = fs::read(d.cofre()).unwrap();
     assert_eq!(geracao_selada(&cofre, &bom), Some(3));
-    let mut outro = cofre_novo(SENHA_MESTRA);
+    let mut outro = cofre_novo(MASTER_PASSWORD);
     let d2 = Dir::novo("geracao-outro");
     atomic_write::write_entries(&d2.cofre(), &mut outro, &[]).unwrap();
     assert_eq!(geracao_selada(&cofre, &fs::read(d2.cofre()).unwrap()), None);
@@ -986,7 +993,7 @@ fn tres_versoes(d: &Dir) -> (OpenVault, Vec<Vec<u8>>) {
 /// `n` versões seladas em ordem por um cofre novo (a `k` com a geração `k + 1`), em
 /// `v0..` no diretório de teste. Sela direto, sem gravar o cofre (sem fsync por versão).
 fn versoes_seladas(d: &Dir, n: usize) -> (OpenVault, Vec<Vec<u8>>) {
-    let mut cofre = cofre_novo(SENHA_MESTRA);
+    let mut cofre = cofre_novo(MASTER_PASSWORD);
     let mut versoes = Vec::new();
     for k in 0..n {
         let b = selar_proxima(&mut cofre, entradas());
@@ -999,7 +1006,7 @@ fn versoes_seladas(d: &Dir, n: usize) -> (OpenVault, Vec<Vec<u8>>) {
 /// Sela a próxima geração do `cofre` com `entradas`, como a gravação faz, sem gravar.
 fn selar_proxima(cofre: &mut OpenVault, entradas: &[Entry]) -> Vec<u8> {
     let g = cofre.next_generation().unwrap();
-    let conteudo = corpo::serializar(cofre.config(), g, entradas).unwrap();
+    let conteudo = body::serialize(cofre.config(), g, entradas).unwrap();
     let b = cofre.seal(&conteudo).unwrap();
     cofre.burn(g);
     b
@@ -1027,7 +1034,7 @@ fn conferir_pasta(d: &Dir, versoes: &[Vec<u8>]) -> (usize, usize) {
             versoes.iter().any(|v| v.starts_with(&b)),
             "temporário não é prefixo"
         );
-        for s in SEGREDOS {
+        for s in SECRETS {
             assert!(!contem(&b, s.as_bytes()), "temporário em claro");
         }
         assert_eq!(modo(t), 0o600);
@@ -1136,7 +1143,7 @@ fn v7_3_sigkill_em_100_pontos_aleatorios() {
     for v in &versoes {
         assert!(cofre.authenticates(v));
     }
-    let (_, lidas, _) = abrir(&versoes[2], SENHA_MESTRA).unwrap();
+    let (_, lidas, _) = abrir(&versoes[2], MASTER_PASSWORD).unwrap();
     assert_eq!(lidas.len(), entradas().len());
     // A próxima gravação (geração nova) limpa o temporário e volta às 30.
     let nova = selar_proxima(&mut cofre, entradas());

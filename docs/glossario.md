@@ -2263,6 +2263,28 @@ e `minutos_validos` do `app/core/configuracoes.rs` (Fase 33) são outros e não 
 Nos testes de `entry`: `rascunho` → `draft`, `sem` → `without`, `NaoClone` → `NotClone`,
 `zera_ao_sair` → `zeroes_on_drop`.
 
+Fase 14 (`ward-core`: `body`, `body/test_vault`, `body/tests`): módulo `corpo` → `body`
+(`cofre_teste` → `test_vault`, `testes` → `tests`); `VERSAO_CORPO` → `BODY_VERSION` (o
+valor continua 4 até a Fase 48); `ErroCorpo` → `BodyError` com `Invalido` → `Invalid`,
+`GrandeDemais` → `TooLarge`, `Inconsistente` → `Inconsistent`; `ErroAbrir` → `OpenError`
+com `Formato` → `Format`, `Corpo` → `Body`, `Retrocesso` → `Rollback`; `abrir_entradas` →
+`open_entries`, `abrir_entradas_desde` → `open_entries_since`, `abrir_entradas_lida` →
+`open_entries_with_generation` (devolve também a geração lida), `serializar`/`desserializar`
+→ `serialize`/`deserialize`, `CorpoLido` → `ReadBody`, `geracao_do_corpo` →
+`body_generation`; privados: `Milhar` → `Thousands`, `Campo` → `Field`, `esquema` →
+`schema`, `Saida` → `Output`, `Leitor` → `Reader`, `Lista` → `List`, `Bruta` → `RawEntry`,
+`BrutaConfiguracao` → `RawConfig`, `MAX_DADOS` → `MAX_DATA_FIELDS`, `ler_cabecalho` →
+`read_header`, `ler_bruta` → `read_raw`, `montar`/`montar_dados`/`montar_configuracao` →
+`build`/`build_data`/`build_config`, `conferir_estrutura`/`conferir_ordenadas` →
+`check_structure`/`check_sorted`. Cofre de teste: `SENHA_MESTRA` → `MASTER_PASSWORD`,
+`PIN_TESTE` → `TEST_PIN`, `SEGREDOS` → `SECRETS`, `configuracao_de_teste`/
+`configuracao_nova` → `test_config`/`new_config`, `cofre_de_teste` → `test_vault_entries`,
+`um_de_cada_cheio` → `one_of_each_full`, `chave_falsa` → `fake_key`, `validada` →
+`validated`, `bytes_0_a_255` → `bytes_0_to_255`. Os homônimos `ErroAbrirApp` do `wardd`,
+`ErroResposta::Retrocesso` (Fase 17), o `SEGREDOS` de `entrega/testes.rs` e de
+`wardd/tests/comum`, o `chave_falsa` de `entrega/testes.rs` e de `app/core/chave.rs` e o
+re-export `daemon_falso::SEGREDOS` (Fase 31) são outros e não mudaram.
+
 Funções e métodos não estão listados um a um: o nome sai da seção 2 na ordem do inglês
 (`conferir_arquivo` → `verify_file`, `ler_cofre` → `read_vault`, `codificar_resposta` →
 `encode_response`, `exigir_pin` → `require_pin`). Os poucos fixados por outra seção:

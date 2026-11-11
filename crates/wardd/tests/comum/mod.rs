@@ -205,7 +205,7 @@ pub fn geracoes(dir: &Dir) -> wardd::arquivos::Geracoes {
 pub fn geracao_no_disco(caminho: &Path, senha: &str) -> u64 {
     let bytes = fs::read(caminho).unwrap();
     let s = ward_core::format::MasterPassword::new(senha.to_owned());
-    ward_core::corpo::abrir_entradas_lida(&bytes, &s, 0, 0)
+    ward_core::body::open_entries_with_generation(&bytes, &s, 0, 0)
         .unwrap()
         .2
 }
