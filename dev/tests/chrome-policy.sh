@@ -18,19 +18,19 @@
 #   3. the whole audit attack without a policy (control, outside the bwrap: the host has
 #      no /etc/opt/chrome; with one, the round is skipped): the profile's host does an
 #      exec of the test `ward-nm` and takes passwords from the test `wardd`
-#      (`WARD_DEV_EXTENSAO=chrome`); the daemon and Chrome logs without a pattern of
-#      `.dev/variations.txt`;
+#      (extension variable set to `chrome`); the daemon and Chrome logs without a
+#      pattern of `.dev/variations.txt`;
 #   4. the same attack with the generated `ward.json`, in the bwrap: the attacker's host
 #      does not even run, the system's runs and nothing comes out.
 #
 # Phase 44c (D9): the `login` entries of the test vault are `http://localhost`, and
-# `preencher` over `http` now waits for the origin confirmation in the window. In the
-# control of round 3 the test window (`wardd-aprovador-teste`) confirms everything, like
+# a fill over `http` now waits for the origin confirmation in the window. In the
+# control of round 3 the test window (the test approver binary) confirms everything, like
 # a user who confirms without looking: the attack still reproduces (RA10). The policy
 # also turns off Chrome's password manager and the leak check (verified in `ward.json`).
 #
 # Usage: chrome-policy.sh <wardd test-mode> <ward-nm test-mode> <ward> <wardd> <ward-nm> <ward-app>
-#        <wardd-aprovador-teste>
+#        <test approver>
 #        (the 3rd to the 6th without `test-mode`, for `install.sh` to generate the policy).
 # Needs bwrap, openssl, `make dev-vault`, `make dev-variations` and Chrome in
 # /opt/google/chrome; out of `make check`.

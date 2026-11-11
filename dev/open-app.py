@@ -1,5 +1,7 @@
 #!/usr/bin/python3 -IB
-"""Asks the test daemon for `abrir_app` (Phase 23a, D63). Used by `make app-bridge`.
+"""Sends the open-app request to the test daemon (Phase 23a, D63).
+
+Used by `make app-bridge`.
 
 The request has no field: the daemon opens only the `WARD_DEV_APP` of its configuration,
 with the fixed environment; nothing from here reaches the opened process. This client is

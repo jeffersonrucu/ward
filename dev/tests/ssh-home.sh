@@ -5,11 +5,11 @@
 # ssh finds its folder in the home through the passwd home (getpwuid), not through
 # `$HOME`. So the test runs in a bwrap with the passwd home covered by tmpfs (the real
 # home is never seen; only the repository comes back by bind) and `/tmp` in tmpfs too.
-# The covered home holds the decoys, in the ssh folder: `config` with `Host *`,
-# `ProxyCommand touch /tmp/sentinela-ssh`, `LocalCommand` and the fake agent's
-# `IdentityAgent`; a `known_hosts` with a swapped host key; a sentinel `id_ed25519`; and
-# FIFOs on the other names ssh looks for (`id_rsa`, `id_ecdsa`, `*-cert.pub`,
-# `known_hosts2`, `authorized_keys`, `.pgpass`...).
+# The covered home holds the decoys, in the ssh folder: `config` with `Host *`, a
+# `ProxyCommand` that touches a sentinel file in `/tmp`, `LocalCommand` and the fake
+# agent's `IdentityAgent`; a `known_hosts` with a swapped host key; a sentinel
+# `id_ed25519`; and FIFOs on the other names ssh looks for (`id_rsa`, `id_ecdsa`,
+# `*-cert.pub`, `known_hosts2`, `authorized_keys`, `.pgpass`...).
 #
 # Three independent detectors (`wardd` refuses to start under `strace`, so the tracing
 # is only on the programs it executes):

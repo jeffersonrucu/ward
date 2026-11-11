@@ -329,3 +329,12 @@ app/src-tauri/src/main.rs minutos 54 minutes argument of definir_tempo_trava
 app/src-tauri/src/main.rs ligado 54 on argument of definir_backup_externo
 app/src-tauri/src/main.rs decisao 54 decision argument of responder_aprovacao
 app/src-tauri/src/main.rs ciente 54 acknowledged argument of responder_aprovacao
+
+# Phase 47b (rest outside Rust): Tauri capability file and test variables of dev/.
+app/src-tauri/capabilities/aprovacao.json aprovacao 54 file name of the Tauri capability of the approval window (capabilities/*.json)
+dev/daemon.sh WARD_DEV_DBUS_SISTEMA 56 test variable read by wardd (test-mode) and passed through env -i
+dev/daemon.sh WARD_DEV_EXTENSAO 56 test variable read by wardd (test-mode) and passed through env -i
+dev/tests/home-decoys.sh WARD_ISCAS_DENTRO 56 re-exec guard of the script inside the bwrap
+dev/tests/real-home.sh WARD_HOME_COBERTO 56 re-exec guard of the script inside the bwrap (renamed with ssh-home.sh and home-decoys.sh)
+dev/tests/ssh-home.sh WARD_SSH_HOME_DENTRO 56 re-exec guard of the script inside the bwrap
+dev/tests/ssh-home.sh WARD_SSH_HOME_TRAB 56 work folder handed to the script inside the bwrap

@@ -2,24 +2,24 @@
 # `make test-login` (Phase 43; R14, D9; V6.3, V6.10, V6.11, V6.15, V6.16): `ward login`
 # end to end. The extension of `extension/dist/` in the real Chrome (headless, temporary
 # profile in `.dev/login.*`), the test `ward-nm` opened by its service worker and a test
-# `wardd` of this script only with `WARD_DEV_EXTENSAO=chrome` (the child of the installed
-# Chrome gets the extension role without the egid; only in `test-mode`). The test `ward`
-# CLI talks to that daemon through `WARD_DEV_SOCKET_DIR`.
+# `wardd` of this script only with the extension variable set to `chrome` (the child of
+# the installed Chrome gets the extension role without the egid; only in `test-mode`).
+# The test `ward` CLI talks to that daemon through `WARD_DEV_SOCKET_DIR`.
 #
 # - V6.10: tab on `localhost:8081/wp-login.php`, `ward login acme-wp-prod` exits 0 and the
 #   tab reaches the dashboard; a page that refuses the login (served by CDP on the right
 #   origin) and a page that does not navigate: the fields are empty after the submit and
 #   the CLI exits ≠ 0.
-# - V6.3: tab on the phishing (8082): exits ≠ 0 with "domínio não confere", `posts.log`
-#   unchanged and nothing filled.
+# - V6.3: tab on the phishing (8082): exits ≠ 0 with the domain mismatch message,
+#   `posts.log` unchanged and nothing filled.
 # - V6.15: `delta-redir` with the tab on 8084 (which goes to 8082): the same.
 # - Form attacks on the right origin: `action`/`formaction` to the phishing, `GET`,
 #   `target`, two password fields, masked `action`: nothing sent outside.
 # - V6.11 (daemon side): `acme-wp-dev` (with approval) denied in the window fills
 #   nothing.
 # - Phase 44c (D9): every `http` entry goes through the window, with the origin in view.
-#   The window is the test one (`wardd-aprovador-teste`, opened by the daemon through
-#   `WARD_DEV_APP`, which answers what is in `$WORK_DIR/aprovador.modo`); the `[::1]`
+#   The window is the test one (the test approver binary, opened by the daemon through
+#   `WARD_DEV_APP`, which answers what its mode file in `$WORK_DIR` says); the `[::1]`
 #   attack of the M6 audit (`dev/tests/fake_v6.py` on `[::1]:8081`, WordPress only on
 #   127.0.0.1) with the window denied takes nothing to the fake.
 # - V6.16: logs of the daemon, of Chrome and of `ward-nm` and the extension console
@@ -31,7 +31,7 @@
 # /opt/google/chrome/chrome; out of `make check`.
 #
 # Usage: dev/tests/login.sh <wardd test-mode> <ward-nm test-mode> <ward test-mode>
-#      <wardd-aprovador-teste>
+#      <test approver>
 
 export PATH=/usr/bin:/bin
 set -euo pipefail

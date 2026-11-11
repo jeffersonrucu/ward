@@ -7,7 +7,7 @@
 #   refuses or closes each one and keeps answering a normal client.
 # - V3.3 (`socket_matrix.py`): operation × entry × field matrix as agent; no reply with a
 #   pattern of `.dev/variations.txt`, app and extension operations answer
-#   `nao_autorizado`.
+#   "not authorized".
 # - The daemon log (`RUST_LOG=trace`) without a pattern of `.dev/variations.txt`.
 #
 # Never brings down the test daemon of another process: starts its own with a copy of the

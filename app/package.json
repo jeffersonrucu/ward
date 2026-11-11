@@ -10,7 +10,7 @@
   },
   "scripts": {
     "build": "vite build",
-    "build:teste": "vite build --mode teste"
+    "build:test": "vite build --mode teste"
   },
   "dependencies": {
     "@tauri-apps/api": "2.12.4"
