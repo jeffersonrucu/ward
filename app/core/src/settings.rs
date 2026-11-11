@@ -6,7 +6,7 @@
 //!   (D30, D39).
 //! - [`PasswordChange`]: current master password, new one and the confirmation. The new
 //!   one follows the same rule as the first use
-//!   ([`crate::primeiro_uso::erros_da_senha`]: 12 characters or more, up to `MAX_SECRET`
+//!   ([`crate::first_use::password_errors`]: 12 characters or more, up to `MAX_SECRET`
 //!   bytes); the current one only needs to exist and fit the limit (the daemon checks
 //!   it, change password operation).
 //! - Lock timeout: from `MIN_LOCK_MINUTES` to `MAX_LOCK_MINUTES` (D45), stored in the
@@ -14,7 +14,7 @@
 //! - [`Settings`]: what the screen shows (lock timeout and external backup on or off),
 //!   read by the config operation; never the PIN hash nor the UUID.
 //!
-//! Everything typed arrives as [`Digitado`] (zeroes on drop, `Debug` without the value)
+//! Everything typed arrives as [`Typed`] (zeroes on drop, `Debug` without the value)
 //! and is checked here before going to the daemon. Errors per field, with fixed text, no
 //! value.
 
@@ -23,7 +23,7 @@ use ward_core::limits::{MAX_LOCK_MINUTES, MAX_SECRET, MIN_LOCK_MINUTES};
 
 use crate::AppError;
 use crate::form::FieldError;
-use crate::primeiro_uso::{Digitado, PIN_DIFERENTE, PIN_INVALIDO, erros_da_senha, pin_valido};
+use crate::first_use::{Typed, PIN_MISMATCH, PIN_INVALID, password_errors, valid_pin};
 
 pub const CURRENT_PIN_INVALID: &str = "o PIN atual tem de 4 a 6 dígitos, só números";
 pub const CURRENT_PASSWORD_EMPTY: &str = "digite a senha mestra atual";
@@ -79,24 +79,24 @@ fn field_error(field: &'static str, reason: &str) -> FieldError {
 #[serde(deny_unknown_fields)]
 pub struct PinChange {
     #[serde(rename = "atual")]
-    pub current: Digitado,
+    pub current: Typed,
     #[serde(rename = "novo")]
-    pub new: Digitado,
+    pub new: Typed,
     #[serde(rename = "confirmacao")]
-    pub confirmation: Digitado,
+    pub confirmation: Typed,
 }
 
 impl PinChange {
     /// All the errors per field; empty if it may go to the daemon.
     pub fn errors(&self) -> Vec<FieldError> {
         let mut errors = Vec::new();
-        if !pin_valido(&self.current) {
+        if !valid_pin(&self.current) {
             errors.push(field_error("atual", CURRENT_PIN_INVALID));
         }
-        if !pin_valido(&self.new) {
-            errors.push(field_error("novo", PIN_INVALIDO));
-        } else if !self.new.igual(&self.confirmation) {
-            errors.push(field_error("confirmacao", PIN_DIFERENTE));
+        if !valid_pin(&self.new) {
+            errors.push(field_error("novo", PIN_INVALID));
+        } else if !self.new.equals(&self.confirmation) {
+            errors.push(field_error("confirmacao", PIN_MISMATCH));
         }
         errors
     }
@@ -108,11 +108,11 @@ impl PinChange {
 #[serde(deny_unknown_fields)]
 pub struct PasswordChange {
     #[serde(rename = "atual")]
-    pub current: Digitado,
+    pub current: Typed,
     #[serde(rename = "nova")]
-    pub new: Digitado,
+    pub new: Typed,
     #[serde(rename = "confirmacao")]
-    pub confirmation: Digitado,
+    pub confirmation: Typed,
 }
 
 impl PasswordChange {
@@ -124,7 +124,7 @@ impl PasswordChange {
         if current.is_empty() || current.len() > MAX_SECRET {
             errors.push(field_error("atual", CURRENT_PASSWORD_EMPTY));
         }
-        for mut e in erros_da_senha(&self.new, &self.confirmation) {
+        for mut e in password_errors(&self.new, &self.confirmation) {
             if e.field == "senha" {
                 e.field = "nova";
             }
@@ -146,8 +146,8 @@ pub fn valid_minutes(minutes: u64) -> Result<u32, AppError> {
 mod tests {
     use super::*;
 
-    fn d(s: &str) -> Digitado {
-        Digitado::novo(s.to_owned())
+    fn d(s: &str) -> Typed {
+        Typed::new(s.to_owned())
     }
 
     fn pin(current: &str, new: &str, conf: &str) -> PinChange {
@@ -316,23 +316,23 @@ mod tests {
         use zeroize::Zeroizing;
 
         use super::*;
-        use crate::area_transferencia::{AreaTransferencia, Copiador};
+        use crate::clipboard::{Clipboard, Copier};
         use crate::daemon::{Daemon, VaultStatus};
-        use crate::destrave::SenhaMestra;
+        use crate::unlock::MasterPassword;
         use crate::fake_daemon::{FakeDaemon, SECRETS};
         use crate::service::Service;
 
         type Frames = Arc<Mutex<Vec<Vec<u8>>>>;
 
         struct NoClipboard;
-        impl AreaTransferencia for NoClipboard {
-            fn escrever(&self, _: &[u8]) -> Result<(), AppError> {
+        impl Clipboard for NoClipboard {
+            fn write(&self, _: &[u8]) -> Result<(), AppError> {
                 Ok(())
             }
-            fn ler(&self) -> Result<Option<Zeroizing<Vec<u8>>>, AppError> {
+            fn read(&self) -> Result<Option<Zeroizing<Vec<u8>>>, AppError> {
                 Ok(None)
             }
-            fn limpar(&self) -> Result<(), AppError> {
+            fn clear(&self) -> Result<(), AppError> {
                 Ok(())
             }
         }
@@ -349,7 +349,7 @@ mod tests {
         fn service() -> (Service<Spy, NoClipboard>, Frames) {
             let frames = Arc::new(Mutex::new(Vec::new()));
             let d = Spy(FakeDaemon::full().without_wait(), Arc::clone(&frames));
-            (Service::new(d, Copiador::novo(NoClipboard)), frames)
+            (Service::new(d, Copier::new(NoClipboard)), frames)
         }
 
         fn no_value(json: &str) {
@@ -362,8 +362,8 @@ mod tests {
             }
         }
 
-        fn master_password(s: &str) -> SenhaMestra {
-            SenhaMestra::nova(s.to_owned()).unwrap()
+        fn master_password(s: &str) -> MasterPassword {
+            MasterPassword::new(s.to_owned()).unwrap()
         }
 
         #[test]
@@ -401,7 +401,7 @@ mod tests {
                 s.set_level(
                     "acme-pg-dev",
                     "bloqueado",
-                    crate::nivel::Pin::novo(p.into()).unwrap(),
+                    crate::level::Pin::new(p.into()).unwrap(),
                 )
             };
             assert_eq!(set("135790"), Err(AppError::WrongPin));

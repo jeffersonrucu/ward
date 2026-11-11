@@ -11,15 +11,15 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 use ward_app_core::AppError;
-use ward_app_core::area_transferencia::AreaTransferencia;
+use ward_app_core::clipboard::Clipboard;
 use ward_app_core::attachments::AttachmentEdit;
 use ward_app_core::commands::Command;
 use ward_app_core::daemon::Daemon;
-use ward_app_core::destrave::SenhaMestra;
+use ward_app_core::unlock::MasterPassword;
 use ward_app_core::form::Form;
-use ward_app_core::gerador::Opcoes;
-use ward_app_core::nivel::Pin;
-use ward_app_core::primeiro_uso::NovoCofre;
+use ward_app_core::generator::Options;
+use ward_app_core::level::Pin;
+use ward_app_core::first_use::NewVault;
 use ward_app_core::restore::Restore;
 use ward_app_core::service::Service;
 use ward_app_core::settings::{PasswordChange, PinChange};
@@ -39,7 +39,7 @@ font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-
 frame-src 'none'; worker-src 'none'; object-src 'none'; media-src 'none'; manifest-src 'none'";
 
 /// Bridge bound to an app service and to the directory of the test-mode build.
-pub struct Bridge<D: Daemon, A: AreaTransferencia> {
+pub struct Bridge<D: Daemon, A: Clipboard> {
     service: Service<D, A>,
     dist: PathBuf,
     token: Zeroizing<String>,
@@ -48,7 +48,7 @@ pub struct Bridge<D: Daemon, A: AreaTransferencia> {
     open_conns: AtomicUsize,
 }
 
-impl<D: Daemon + 'static, A: AreaTransferencia> Bridge<D, A> {
+impl<D: Daemon + 'static, A: Clipboard> Bridge<D, A> {
     /// Opens `127.0.0.1:0` and draws the token.
     pub fn open(service: Service<D, A>, dist: &Path) -> io::Result<(Arc<Self>, TcpListener)> {
         let dist = fs::canonicalize(dist)?;
@@ -204,7 +204,7 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Bridge<D, A> {
         let password = match command {
             Command::Unlock => args
                 .remove("senha")
-                .map(serde_json::from_value::<SenhaMestra>),
+                .map(serde_json::from_value::<MasterPassword>),
             _ => None,
         };
         // Phase 38: the data of the changes also leave the map (ownership) and become typed
@@ -259,19 +259,19 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Bridge<D, A> {
             ) {
                 (Some(length), Some(lowercase), Some(uppercase), Some(digits), Some(symbols)) => {
                     self.service
-                        .generate_password(Opcoes {
-                            tamanho: length,
-                            minusculas: lowercase,
-                            maiusculas: uppercase,
-                            digitos: digits,
-                            simbolos: symbols,
+                        .generate_password(Options {
+                            size: length,
+                            lowercase,
+                            uppercase,
+                            digits,
+                            symbols,
                         })
                         .map(|g| {
                             json!({
-                                "tamanho": g.tamanho,
+                                "tamanho": g.size,
                                 "bits": g.bits,
-                                "forca": g.forca.codigo(),
-                                "simbolos": g.simbolos,
+                                "forca": g.strength.code(),
+                                "simbolos": g.symbols,
                             })
                         })
                 }
@@ -284,7 +284,7 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Bridge<D, A> {
             Command::RevealGeneratedPassword => self
                 .service
                 .reveal_generated_password()
-                .map(|r| json!({ "valor": r.expor() })),
+                .map(|r| json!({ "valor": r.expose() })),
             Command::DiscardGeneratedPassword => self
                 .service
                 .discard_generated_password()
@@ -294,7 +294,7 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Bridge<D, A> {
                 (Some(e), Some(c)) => self
                     .service
                     .reveal_field(e, c)
-                    .map(|r| json!({ "valor": r.expor() })),
+                    .map(|r| json!({ "valor": r.expose() })),
                 _ => Err(AppError::InvalidRequest),
             },
             Command::TotpCode => match text("entrada") {
@@ -418,7 +418,7 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Bridge<D, A> {
             // the text.
             Command::CreateVault => match args
                 .remove("dados")
-                .map(serde_json::from_value::<NovoCofre>)
+                .map(serde_json::from_value::<NewVault>)
             {
                 Some(Ok(n)) => self
                     .service

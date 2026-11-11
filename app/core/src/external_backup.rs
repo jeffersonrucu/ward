@@ -253,23 +253,23 @@ mod tests {
         use zeroize::Zeroizing;
 
         use super::super::*;
-        use crate::area_transferencia::{AreaTransferencia, Copiador};
+        use crate::clipboard::{Clipboard, Copier};
         use crate::daemon::Daemon;
         use crate::fake_daemon::FakeDaemon;
-        use crate::nivel::Pin;
+        use crate::level::Pin;
         use crate::service::Service;
 
         type Frames = Arc<Mutex<Vec<Vec<u8>>>>;
 
         struct NoClipboard;
-        impl AreaTransferencia for NoClipboard {
-            fn escrever(&self, _: &[u8]) -> Result<(), AppError> {
+        impl Clipboard for NoClipboard {
+            fn write(&self, _: &[u8]) -> Result<(), AppError> {
                 Ok(())
             }
-            fn ler(&self) -> Result<Option<Zeroizing<Vec<u8>>>, AppError> {
+            fn read(&self) -> Result<Option<Zeroizing<Vec<u8>>>, AppError> {
                 Ok(None)
             }
-            fn limpar(&self) -> Result<(), AppError> {
+            fn clear(&self) -> Result<(), AppError> {
                 Ok(())
             }
         }
@@ -289,7 +289,7 @@ mod tests {
                 Arc::new(Mutex::new(fake.without_wait())),
                 Arc::new(Mutex::new(Vec::new())),
             );
-            (Service::new(e.clone(), Copiador::novo(NoClipboard)), e)
+            (Service::new(e.clone(), Copier::new(NoClipboard)), e)
         }
 
         fn set_requests(e: &Spy) -> usize {
@@ -437,7 +437,7 @@ mod tests {
             let (s, e) = service(FakeDaemon::full());
             // Five wrong PINs lock the fake (S9).
             for _ in 0..5 {
-                let _ = s.set_level("acme-pg-dev", "livre", Pin::novo("0000".into()).unwrap());
+                let _ = s.set_level("acme-pg-dev", "livre", Pin::new("0000".into()).unwrap());
             }
             assert_eq!(s.external_backup(), Err(AppError::Locked));
             assert_eq!(s.list_usb_drives(), Err(AppError::Locked));

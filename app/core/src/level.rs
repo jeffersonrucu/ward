@@ -1,43 +1,43 @@
-//! Mudar o nível de acesso de uma entrada (Fase 35, S9).
+//! Change the access level of an entry (Phase 35, S9).
 //!
-//! O PIN chega da interface (não confiável) e vira um [`Pin`]: zera ao sair, não tem
-//! `Clone`, `Display` nem `Serialize`, e o `Debug` não mostra o valor. A leitura
-//! (`Deserialize`) já recusa o que não é PIN (4 a 6 dígitos ASCII, como o
-//! `ward_core::limits`), então um valor fora do formato nem chega ao daemon. O PIN só
-//! sai daqui para o pedido `mudar_nivel` do protocolo; nenhuma resposta o devolve e
-//! nenhum log o escreve.
+//! The PIN arrives from the interface (untrusted) and becomes a [`Pin`]: zeroed on drop,
+//! no `Clone`, `Display` or `Serialize`, and the `Debug` does not show the value. Reading
+//! it (`Deserialize`) already refuses what is not a PIN (4 to 6 ASCII digits, like
+//! `ward_core::limits`), so a value out of format never reaches the daemon. The PIN only
+//! leaves here for the protocol's `mudar_nivel` request; no response returns it and no
+//! log writes it.
 
 use std::fmt;
 
 use serde::de::{self, Deserializer, Visitor};
 use serde::{Deserialize, Serialize};
-use ward_core::entry::{AccessLevel, Secret as SegredoCore};
+use ward_core::entry::{AccessLevel, Secret as CoreSecret};
 use ward_core::limits::{MAX_PIN_DIGITS, MIN_PIN_DIGITS};
 use zeroize::Zeroizing;
 
 use crate::AppError;
 
-/// PIN digitado na interface, só para confirmar a mudança de nível.
+/// PIN typed in the interface, only to confirm the level change.
 pub struct Pin(Zeroizing<String>);
 
 impl Pin {
-    /// Confere o formato e toma posse do texto (sem cópia que fique sem zerar).
-    pub fn novo(texto: String) -> Result<Pin, AppError> {
-        let texto = Zeroizing::new(texto);
-        if formato_ok(&texto) {
-            Ok(Pin(texto))
+    /// Checks the format and takes ownership of the text (no copy left without zeroing).
+    pub fn new(text: String) -> Result<Pin, AppError> {
+        let text = Zeroizing::new(text);
+        if format_ok(&text) {
+            Ok(Pin(text))
         } else {
             Err(AppError::InvalidRequest)
         }
     }
 
-    /// O PIN no tipo do protocolo (também zera ao sair).
-    pub(crate) fn para_o_protocolo(&self) -> SegredoCore {
-        SegredoCore::from_bytes(self.0.as_bytes().to_vec())
+    /// The PIN in the protocol type (also zeroed on drop).
+    pub(crate) fn to_protocol(&self) -> CoreSecret {
+        CoreSecret::from_bytes(self.0.as_bytes().to_vec())
     }
 }
 
-fn formato_ok(t: &str) -> bool {
+fn format_ok(t: &str) -> bool {
     (MIN_PIN_DIGITS..=MAX_PIN_DIGITS).contains(&t.len()) && t.bytes().all(|b| b.is_ascii_digit())
 }
 
@@ -59,10 +59,10 @@ impl<'de> Deserialize<'de> for Pin {
                 self.visit_string(v.to_owned())
             }
             fn visit_string<E: de::Error>(self, v: String) -> Result<Pin, E> {
-                // A mensagem de erro é fixa: não ecoa o que veio.
-                Pin::novo(v).map_err(|_| E::custom("PIN fora do formato"))
+                // The error message is fixed: it does not echo what came in.
+                Pin::new(v).map_err(|_| E::custom("PIN fora do formato"))
             }
-            // Número no lugar do texto: o erro padrão do serde ecoaria o valor.
+            // A number instead of the text: serde's default error would echo the value.
             fn visit_u64<E: de::Error>(self, _: u64) -> Result<Pin, E> {
                 Err(E::custom("PIN fora do formato"))
             }
@@ -73,31 +73,34 @@ impl<'de> Deserialize<'de> for Pin {
                 Err(E::custom("PIN fora do formato"))
             }
         }
-        // `any`: um número cai no `visit_u64` (erro fixo), não no erro padrão com o valor.
+        // `any`: a number falls into `visit_u64` (fixed error), not into the default
+        // error with the value.
         d.deserialize_any(V)
     }
 }
 
-/// Nível pedido pela interface, pelo nome do protocolo (`livre`, `com-aprovacao`,
+/// Level requested by the interface, by the protocol name (`livre`, `com-aprovacao`,
 /// `bloqueado`).
-pub fn nivel_de_nome(nome: &str) -> Result<AccessLevel, AppError> {
-    AccessLevel::from_name(nome).ok_or(AppError::InvalidRequest)
+pub fn level_from_name(name: &str) -> Result<AccessLevel, AppError> {
+    AccessLevel::from_name(name).ok_or(AppError::InvalidRequest)
 }
 
-/// Resposta do `mudar_nivel`: o nível que a entrada passou a ter. Sem PIN.
+/// Response of `mudar_nivel`: the level the entry now has. No PIN.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct NivelMudado {
-    pub entrada: String,
-    pub nivel: &'static str,
+pub struct LevelChanged {
+    #[serde(rename = "entrada")]
+    pub entry: String,
+    #[serde(rename = "nivel")]
+    pub level: &'static str,
 }
 
 #[cfg(test)]
-mod testes {
+mod tests {
     use super::*;
 
     #[test]
-    fn ataque_pin_fora_do_formato_e_recusado_sem_eco() {
-        for ruim in [
+    fn attack_pin_out_of_format_is_refused_without_echo() {
+        for bad in [
             "",
             "123",
             "1234567",
@@ -110,19 +113,16 @@ mod testes {
             "+13579",
         ] {
             assert_eq!(
-                Pin::novo(ruim.to_owned()).unwrap_err(),
+                Pin::new(bad.to_owned()).unwrap_err(),
                 AppError::InvalidRequest,
-                "{ruim:?}"
+                "{bad:?}"
             );
-            let json = serde_json::to_string(ruim).unwrap();
+            let json = serde_json::to_string(bad).unwrap();
             let e = serde_json::from_str::<Pin>(&json).unwrap_err().to_string();
             assert!(e.contains("PIN fora do formato"), "{e}");
-            assert!(
-                ruim.len() < 4 || !e.contains(ruim),
-                "erro ecoa o valor: {e}"
-            );
+            assert!(bad.len() < 4 || !e.contains(bad), "erro ecoa o valor: {e}");
         }
-        // Número em vez de texto, objeto, nulo: recusados.
+        // Number instead of text, object, null: refused.
         for json in ["135790", "{}", "null", "[\"135790\"]"] {
             let e = serde_json::from_str::<Pin>(json).unwrap_err().to_string();
             assert!(!e.contains("135790"), "{e}");
@@ -132,19 +132,19 @@ mod testes {
     }
 
     #[test]
-    fn ataque_debug_do_pin_nao_mostra_o_valor() {
-        let p = Pin::novo("135790".to_owned()).unwrap();
-        let texto = format!("{p:?} {:?}", Some(&p));
-        assert!(!texto.contains("135790"));
-        assert!(texto.contains("••••"));
+    fn attack_pin_debug_does_not_show_the_value() {
+        let p = Pin::new("135790".to_owned()).unwrap();
+        let text = format!("{p:?} {:?}", Some(&p));
+        assert!(!text.contains("135790"));
+        assert!(text.contains("••••"));
     }
 
     #[test]
-    fn nivel_so_pelos_tres_nomes_do_protocolo() {
-        assert_eq!(nivel_de_nome("livre"), Ok(AccessLevel::Free));
-        assert_eq!(nivel_de_nome("com-aprovacao"), Ok(AccessLevel::Approval));
-        assert_eq!(nivel_de_nome("bloqueado"), Ok(AccessLevel::Blocked));
-        for ruim in [
+    fn level_only_by_the_three_protocol_names() {
+        assert_eq!(level_from_name("livre"), Ok(AccessLevel::Free));
+        assert_eq!(level_from_name("com-aprovacao"), Ok(AccessLevel::Approval));
+        assert_eq!(level_from_name("bloqueado"), Ok(AccessLevel::Blocked));
+        for bad in [
             "",
             "Livre",
             "com aprovação",
@@ -153,10 +153,21 @@ mod testes {
             "livre ",
         ] {
             assert_eq!(
-                nivel_de_nome(ruim),
+                level_from_name(bad),
                 Err(AppError::InvalidRequest),
-                "{ruim:?}"
+                "{bad:?}"
             );
         }
+    }
+
+    /// The new Rust names are not wire names (frozen until m2:Phase 54).
+    #[test]
+    fn attack_new_rust_names_are_not_wire_names() {
+        let v = serde_json::to_value(LevelChanged {
+            entry: "acme-pg-dev".into(),
+            level: "livre",
+        })
+        .unwrap();
+        assert_eq!(v, serde_json::json!({"entrada": "acme-pg-dev", "nivel": "livre"}));
     }
 }

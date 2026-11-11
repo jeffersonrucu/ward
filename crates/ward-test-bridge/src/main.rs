@@ -25,13 +25,13 @@ use std::process::ExitCode;
 
 use std::sync::Arc;
 use std::time::Duration;
-use ward_app_core::area_transferencia::Copiador;
+use ward_app_core::clipboard::Copier;
 
 use ward_app_core::daemon::{Daemon, DaemonSocket, Notice, NoticeQueue};
 use ward_app_core::fake_daemon::{FakeDaemon, SimulatedApproval, simulated_approvals};
 use ward_app_core::service::Service;
 use ward_app_core::terminal::Terminal;
-use ward_app_core::{approval, destrave};
+use ward_app_core::{approval, unlock};
 use ward_test_bridge::http::Bridge;
 use ward_test_bridge::simulated::{DirPicker, RepoTerminal, TestTerminal};
 use ward_test_bridge::startup;
@@ -246,7 +246,7 @@ fn serve_with<D: Daemon + 'static>(
     let dist: PathBuf = dist.to_path_buf();
     let service = match WlCopy::new() {
         Ok(a) => {
-            let s = Service::new(daemon, Copiador::novo(a)).with_terminal(terminal);
+            let s = Service::new(daemon, Copier::new(a)).with_terminal(terminal);
             match attachments {
                 Some(p) => s.with_picker(DirPicker(p)),
                 None => s,
@@ -266,7 +266,7 @@ fn serve_with<D: Daemon + 'static>(
     // window, which polls its command every second.
     if let Some(queue) = notices
         && (approval::watch(Arc::clone(&queue), service.approvals(), || {}).is_err()
-            || destrave::vigiar(queue, service.unlock_request(), || {}).is_err())
+            || unlock::watch(queue, service.unlock_request(), || {}).is_err())
     {
         eprintln!("ward-ponte-teste: não foi possível vigiar os avisos do daemon");
         return ExitCode::FAILURE;

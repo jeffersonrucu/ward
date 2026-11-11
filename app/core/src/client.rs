@@ -264,12 +264,12 @@ pub fn set_level<D: Daemon + ?Sized>(
     daemon: &mut D,
     entry: &str,
     level: AccessLevel,
-    pin: &crate::nivel::Pin,
+    pin: &crate::level::Pin,
 ) -> Result<(), AppError> {
     let request = Pedido::MudarNivel {
         entrada: entry.to_owned(),
         nivel: level,
-        pin: pin.para_o_protocolo(),
+        pin: pin.to_protocol(),
     };
     match ask(daemon, &request)? {
         Resposta::Ok => Ok(()),
@@ -294,7 +294,7 @@ pub fn answer_approval<D: Daemon + ?Sized>(
     daemon: &mut D,
     id: u64,
     decision: protocolo::Decisao,
-    pin: Option<&crate::nivel::Pin>,
+    pin: Option<&crate::level::Pin>,
     stdin_confirmed: bool,
 ) -> Result<Answered, AppError> {
     if decision.pede_pin() != pin.is_some() || (stdin_confirmed && !decision.pede_pin()) {
@@ -303,7 +303,7 @@ pub fn answer_approval<D: Daemon + ?Sized>(
     let request = Pedido::ResponderAprovacao {
         pedido: id,
         decisao: decision,
-        pin: pin.map(crate::nivel::Pin::para_o_protocolo),
+        pin: pin.map(crate::level::Pin::to_protocol),
         entrada_confirmada: stdin_confirmed,
     };
     let frame =
@@ -327,10 +327,10 @@ pub fn answer_approval<D: Daemon + ?Sized>(
 /// before it looks at the password).
 pub fn unlock<D: Daemon + ?Sized>(
     daemon: &mut D,
-    password: &crate::destrave::SenhaMestra,
+    password: &crate::unlock::MasterPassword,
 ) -> Result<(), AppError> {
     let request = Pedido::Destravar {
-        senha: password.para_o_protocolo(),
+        senha: password.to_protocol(),
     };
     match ask(daemon, &request)? {
         Resposta::Ok => Ok(()),
@@ -469,13 +469,13 @@ pub fn backups<D: Daemon + ?Sized>(
 pub fn restore_backup<D: Daemon + ?Sized>(
     daemon: &mut D,
     version: &str,
-    password: &crate::destrave::SenhaMestra,
-    pin: &crate::nivel::Pin,
+    password: &crate::unlock::MasterPassword,
+    pin: &crate::level::Pin,
 ) -> Result<(), AppError> {
     let request = Pedido::RestaurarBackup {
         versao: version.to_owned(),
-        senha: password.para_o_protocolo(),
-        pin: pin.para_o_protocolo(),
+        senha: password.to_protocol(),
+        pin: pin.to_protocol(),
     };
     let frame =
         protocolo::codificar_pedido(Papel::App, &request).map_err(|_| AppError::InvalidRequest)?;

@@ -1,334 +1,341 @@
-//! Gerador de senha avulso (Fase 37, tela `Gerador de senha / Avulso`).
+//! Standalone password generator (Phase 37, screen `Gerador de senha / Avulso`).
 //!
-//! A senha nasce só em `ward_core::generator` (RNG do sistema, sem viés, símbolos de D35),
-//! nunca no JavaScript. Ela fica aqui, no lado Rust, num [`Secret`] que zera ao sair:
+//! The password is born only in `ward_core::generator` (system RNG, no bias, D35
+//! symbols), never in JavaScript. It stays here, on the Rust side, in a [`Secret`] that
+//! is zeroed on drop:
 //!
-//! - `gerar_senha` devolve à interface só o que não é segredo: o tamanho, a força
-//!   estimada pelas opções e o conjunto de símbolos de D35 (para a tela mostrar o mesmo
-//!   conjunto que o gerador usa);
-//! - `copiar_senha_gerada` manda a senha para a área de transferência pelo mesmo
-//!   [`crate::area_transferencia::Copiador`] do "copiar" (S12, D4): a resposta é `()`;
-//! - `revelar_senha_gerada` é o único caminho do valor para a webview, e só no clique em
-//!   "revelar" que o design mostra (S11). A tela esconde de novo em 30 s ou ao sair;
-//! - `descartar_senha_gerada` zera a senha ao sair da tela. Nada é gravado: a senha
-//!   avulsa não fica no cofre nem em disco.
+//! - `gerar_senha` returns to the interface only what is not secret: the size, the
+//!   strength estimated from the options and the D35 symbol set (so the screen shows the
+//!   same set the generator uses);
+//! - `copiar_senha_gerada` sends the password to the clipboard through the same
+//!   [`crate::clipboard::Copier`] as the "copy" (S12, D4): the response is `()`;
+//! - `revelar_senha_gerada` is the only path of the value to the webview, and only on the
+//!   "reveal" click the design shows (S11). The screen hides it again in 30 s or on
+//!   leaving;
+//! - `descartar_senha_gerada` zeroes the password on leaving the screen. Nothing is
+//!   stored: the standalone password stays neither in the vault nor on disk.
 
 use std::fmt;
 
-use ward_core::generator::{self as nucleo, GeneratorOptions};
+use ward_core::generator::{self as core_generator, GeneratorOptions};
 use zeroize::Zeroizing;
 
 use crate::AppError;
 use crate::secret::Secret;
 
-/// Menor tamanho da tela (o design diz "De 8 a 64"). Fica dentro de
+/// Smallest size on the screen (the design says "De 8 a 64"). Stays within
 /// `ward_core::generator::MIN_SIZE..=MAX_SIZE`.
-pub const TAMANHO_MIN: usize = 8;
-/// Maior tamanho da tela.
-pub const TAMANHO_MAX: usize = 64;
-/// Tamanho inicial (o mesmo do gerador do núcleo e do design: "24 caracteres").
-pub const TAMANHO_PADRAO: usize = nucleo::DEFAULT_SIZE;
+pub const MIN_LENGTH: usize = 8;
+/// Largest size on the screen.
+pub const MAX_LENGTH: usize = 64;
+/// Initial size (the same as the core generator and the design: "24 caracteres").
+pub const DEFAULT_LENGTH: usize = core_generator::DEFAULT_SIZE;
 
-/// Opções que vieram da interface (não confiável): o tamanho é conferido aqui e de novo
-/// no núcleo.
+/// Options that came from the interface (untrusted): the size is checked here and again
+/// in the core.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Opcoes {
-    pub tamanho: u64,
-    pub minusculas: bool,
-    pub maiusculas: bool,
-    pub digitos: bool,
-    pub simbolos: bool,
+pub struct Options {
+    pub size: u64,
+    pub lowercase: bool,
+    pub uppercase: bool,
+    pub digits: bool,
+    pub symbols: bool,
 }
 
-impl Opcoes {
-    fn validar(self) -> Result<GeneratorOptions, AppError> {
-        let tamanho = usize::try_from(self.tamanho).map_err(|_| AppError::InvalidRequest)?;
-        if !(TAMANHO_MIN..=TAMANHO_MAX).contains(&tamanho) {
+impl Options {
+    fn validate(self) -> Result<GeneratorOptions, AppError> {
+        let size = usize::try_from(self.size).map_err(|_| AppError::InvalidRequest)?;
+        if !(MIN_LENGTH..=MAX_LENGTH).contains(&size) {
             return Err(AppError::InvalidRequest);
         }
-        if !(self.minusculas || self.maiusculas || self.digitos || self.simbolos) {
+        if !(self.lowercase || self.uppercase || self.digits || self.symbols) {
             return Err(AppError::InvalidRequest);
         }
         Ok(GeneratorOptions {
-            size: tamanho,
-            lowercase: self.minusculas,
-            uppercase: self.maiusculas,
-            digits: self.digitos,
-            symbols: self.simbolos,
+            size,
+            lowercase: self.lowercase,
+            uppercase: self.uppercase,
+            digits: self.digits,
+            symbols: self.symbols,
         })
     }
 }
 
-/// Força pela entropia das opções (não pelo valor gerado, que a interface não vê).
+/// Strength from the entropy of the options (not from the generated value, which the
+/// interface does not see).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Forca {
-    Fraca,
-    Razoavel,
-    Forte,
-    MuitoForte,
+pub enum Strength {
+    Weak,
+    Fair,
+    Strong,
+    VeryStrong,
 }
 
-impl Forca {
-    fn de_bits(bits: u32) -> Forca {
+impl Strength {
+    fn from_bits(bits: u32) -> Strength {
         match bits {
-            0..60 => Forca::Fraca,
-            60..80 => Forca::Razoavel,
-            80..128 => Forca::Forte,
-            _ => Forca::MuitoForte,
+            0..60 => Strength::Weak,
+            60..80 => Strength::Fair,
+            80..128 => Strength::Strong,
+            _ => Strength::VeryStrong,
         }
     }
 
-    /// Código estável para a interface.
-    pub fn codigo(self) -> &'static str {
+    /// Stable code for the interface.
+    pub fn code(self) -> &'static str {
         match self {
-            Forca::Fraca => "fraca",
-            Forca::Razoavel => "razoavel",
-            Forca::Forte => "forte",
-            Forca::MuitoForte => "muito-forte",
+            Strength::Weak => "fraca",
+            Strength::Fair => "razoavel",
+            Strength::Strong => "forte",
+            Strength::VeryStrong => "muito-forte",
         }
     }
 }
 
-/// O que `gerar_senha` devolve: nada do valor (nem um caractere).
+/// What `gerar_senha` returns: nothing of the value (not a single character).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Gerada {
-    pub tamanho: usize,
-    /// Entropia arredondada para baixo, de 10 em 10 ("cerca de 150 bits").
+pub struct Generated {
+    pub size: usize,
+    /// Entropy rounded down, in steps of 10 ("cerca de 150 bits").
     pub bits: u32,
-    pub forca: Forca,
-    /// Símbolos de D35, de `ward_core::generator::SYMBOLS`.
-    pub simbolos: &'static str,
+    pub strength: Strength,
+    /// D35 symbols, from `ward_core::generator::SYMBOLS`.
+    pub symbols: &'static str,
 }
 
-/// Símbolos de D35 como texto (são ASCII).
-pub fn simbolos() -> &'static str {
-    // `SIMBOLOS` é ASCII por construção; o teste confere.
-    core::str::from_utf8(nucleo::SYMBOLS).unwrap_or("")
+/// D35 symbols as text (they are ASCII).
+pub fn symbols() -> &'static str {
+    // `SYMBOLS` is ASCII by construction; the test checks it.
+    core::str::from_utf8(core_generator::SYMBOLS).unwrap_or("")
 }
 
-/// Entropia em bits de uma senha uniforme com essas opções, arredondada para baixo de
-/// 10 em 10. Ignora o pequeno desconto de "um de cada conjunto" (menos de 1 bit).
+/// Entropy in bits of a uniform password with these options, rounded down in steps of
+/// 10. Ignores the small discount of "one of each set" (less than 1 bit).
 fn bits(o: &GeneratorOptions) -> u32 {
-    let alfabeto = [
-        (o.lowercase, nucleo::LOWERCASE.len()),
-        (o.uppercase, nucleo::UPPERCASE.len()),
-        (o.digits, nucleo::DIGITS.len()),
-        (o.symbols, nucleo::SYMBOLS.len()),
+    let alphabet = [
+        (o.lowercase, core_generator::LOWERCASE.len()),
+        (o.uppercase, core_generator::UPPERCASE.len()),
+        (o.digits, core_generator::DIGITS.len()),
+        (o.symbols, core_generator::SYMBOLS.len()),
     ]
     .iter()
     .filter(|(m, _)| *m)
     .map(|(_, n)| *n)
     .sum::<usize>();
-    // tamanho ≤ 64 e alfabeto ≤ 90: cabe com folga em f64 e em u32.
+    // size ≤ 64 and alphabet ≤ 90: fits with room to spare in f64 and in u32.
     let total = f64::from(u32::try_from(o.size).unwrap_or(0))
-        * f64::from(u32::try_from(alfabeto).unwrap_or(0)).log2();
-    let inteiro = total.floor().clamp(0.0, 10_000.0) as u32;
-    inteiro - inteiro % 10
+        * f64::from(u32::try_from(alphabet).unwrap_or(0)).log2();
+    let whole = total.floor().clamp(0.0, 10_000.0) as u32;
+    whole - whole % 10
 }
 
-/// Valor revelado. Zera ao sair; o `Debug` não mostra o valor. Só o comando
-/// `revelar_senha_gerada` o cria.
-pub struct Revelada(Zeroizing<String>);
+/// Revealed value. Zeroed on drop; the `Debug` does not show the value. Only the
+/// `revelar_senha_gerada` command creates it.
+pub struct Revealed(Zeroizing<String>);
 
-impl Revelada {
-    /// Valor de um segredo do cofre para o "revelar" do formulário (Fase 33). Só UTF-8.
-    pub(crate) fn de_segredo(s: &Secret) -> Option<Revelada> {
-        let texto = core::str::from_utf8(s.expose()).ok()?;
-        Some(Revelada(Zeroizing::new(texto.to_owned())))
+impl Revealed {
+    /// Value of a vault secret for the form's "reveal" (Phase 33). UTF-8 only.
+    pub(crate) fn from_secret(s: &Secret) -> Option<Revealed> {
+        let text = core::str::from_utf8(s.expose()).ok()?;
+        Some(Revealed(Zeroizing::new(text.to_owned())))
     }
 
-    /// O texto, só para a serialização da resposta do "revelar".
-    pub fn expor(&self) -> &str {
+    /// The text, only for serializing the "reveal" response.
+    pub fn expose(&self) -> &str {
         &self.0
     }
 }
 
-impl fmt::Debug for Revelada {
+impl fmt::Debug for Revealed {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Revelada(••••)")
+        f.write_str("Revealed(••••)")
     }
 }
 
-/// A senha avulsa atual, só em memória do lado Rust.
+/// The current standalone password, only in memory on the Rust side.
 #[derive(Default)]
-pub struct Gerador {
-    atual: Option<Secret>,
+pub struct Generator {
+    current: Option<Secret>,
 }
 
-impl Gerador {
-    /// Gera uma senha nova (a anterior zera) e devolve só os dados sem segredo.
-    pub fn gerar(&mut self, opcoes: Opcoes) -> Result<Gerada, AppError> {
-        let o = opcoes.validar()?;
-        // Antes de gerar: se o RNG falhar, não sobra a senha antiga com opções novas.
-        self.atual = None;
-        let senha = nucleo::generate(&o).map_err(|e| match e {
-            nucleo::GeneratorError::RandomUnavailable => AppError::RandomUnavailable,
-            nucleo::GeneratorError::InvalidSize | nucleo::GeneratorError::NoSet => {
+impl Generator {
+    /// Generates a new password (the previous one is zeroed) and returns only the data
+    /// without a secret.
+    pub fn generate(&mut self, options: Options) -> Result<Generated, AppError> {
+        let o = options.validate()?;
+        // Before generating: if the RNG fails, the old password does not remain with new
+        // options.
+        self.current = None;
+        let password = core_generator::generate(&o).map_err(|e| match e {
+            core_generator::GeneratorError::RandomUnavailable => AppError::RandomUnavailable,
+            core_generator::GeneratorError::InvalidSize | core_generator::GeneratorError::NoSet => {
                 AppError::InvalidRequest
             }
         })?;
-        // Copia para o tipo do app, que zera ao sair; o `ward_core::Segredo` zera no drop.
-        self.atual = Some(Secret::new(senha.expose().to_vec()));
-        drop(senha);
+        // Copies to the app type, which is zeroed on drop; the `ward_core` secret is
+        // zeroed on drop.
+        self.current = Some(Secret::new(password.expose().to_vec()));
+        drop(password);
         let bits = bits(&o);
-        Ok(Gerada {
-            tamanho: o.size,
+        Ok(Generated {
+            size: o.size,
             bits,
-            forca: Forca::de_bits(bits),
-            simbolos: simbolos(),
+            strength: Strength::from_bits(bits),
+            symbols: symbols(),
         })
     }
 
-    /// Uma cópia para a área de transferência (o `Copiador` toma posse e zera).
-    pub fn para_copiar(&self) -> Result<Secret, AppError> {
-        self.atual
+    /// A copy for the clipboard (the `Copier` takes ownership and zeroes it).
+    pub fn for_copy(&self) -> Result<Secret, AppError> {
+        self.current
             .as_ref()
             .map(|s| Secret::new(s.expose().to_vec()))
             .ok_or(AppError::NoGeneratedPassword)
     }
 
-    /// O valor para o "revelar".
-    pub fn revelar(&self) -> Result<Revelada, AppError> {
-        let s = self.atual.as_ref().ok_or(AppError::NoGeneratedPassword)?;
-        let texto = core::str::from_utf8(s.expose()).map_err(|_| AppError::NoGeneratedPassword)?;
-        Ok(Revelada(Zeroizing::new(texto.to_owned())))
+    /// The value for the "reveal".
+    pub fn reveal(&self) -> Result<Revealed, AppError> {
+        let s = self.current.as_ref().ok_or(AppError::NoGeneratedPassword)?;
+        let text = core::str::from_utf8(s.expose()).map_err(|_| AppError::NoGeneratedPassword)?;
+        Ok(Revealed(Zeroizing::new(text.to_owned())))
     }
 
-    /// Zera a senha (ao sair da tela, travar ou fechar o app).
-    pub fn descartar(&mut self) {
-        self.atual = None;
+    /// Zeroes the password (on leaving the screen, locking or closing the app).
+    pub fn discard(&mut self) {
+        self.current = None;
     }
 
     #[cfg(test)]
-    pub(crate) fn tem_senha(&self) -> bool {
-        self.atual.is_some()
+    pub(crate) fn has_password(&self) -> bool {
+        self.current.is_some()
     }
 }
 
 #[cfg(test)]
-mod testes {
+mod tests {
     use super::*;
 
-    fn opcoes(tamanho: u64) -> Opcoes {
-        Opcoes {
-            tamanho,
-            minusculas: true,
-            maiusculas: true,
-            digitos: true,
-            simbolos: true,
+    fn options(size: u64) -> Options {
+        Options {
+            size,
+            lowercase: true,
+            uppercase: true,
+            digits: true,
+            symbols: true,
         }
     }
 
     #[test]
-    fn limites_da_tela_dentro_do_nucleo() {
-        const { assert!(TAMANHO_MIN >= nucleo::MIN_SIZE) };
-        const { assert!(TAMANHO_MAX <= nucleo::MAX_SIZE) };
-        const { assert!(TAMANHO_MIN <= TAMANHO_PADRAO && TAMANHO_PADRAO <= TAMANHO_MAX) };
+    fn screen_limits_within_the_core() {
+        const { assert!(MIN_LENGTH >= core_generator::MIN_SIZE) };
+        const { assert!(MAX_LENGTH <= core_generator::MAX_SIZE) };
+        const { assert!(MIN_LENGTH <= DEFAULT_LENGTH && DEFAULT_LENGTH <= MAX_LENGTH) };
     }
 
     #[test]
-    fn simbolos_sao_os_de_d35() {
-        assert_eq!(simbolos(), "!#$%&()*+,-./:;<=>?@[]^_{|}~");
-        for proibido in [' ', '"', '\'', '`', '\\'] {
-            assert!(!simbolos().contains(proibido), "{proibido:?}");
+    fn symbols_are_those_of_d35() {
+        assert_eq!(symbols(), "!#$%&()*+,-./:;<=>?@[]^_{|}~");
+        for forbidden in [' ', '"', '\'', '`', '\\'] {
+            assert!(!symbols().contains(forbidden), "{forbidden:?}");
         }
     }
 
     #[test]
-    fn forca_do_design() {
-        // Design: 24 caracteres, quatro conjuntos → "muito forte · cerca de 150 bits".
-        let mut g = Gerador::default();
-        let r = g.gerar(opcoes(24)).unwrap();
-        assert_eq!((r.tamanho, r.bits, r.forca), (24, 150, Forca::MuitoForte));
-        let so_digitos = Opcoes {
-            tamanho: 8,
-            minusculas: false,
-            maiusculas: false,
-            digitos: true,
-            simbolos: false,
+    fn design_strength() {
+        // Design: 24 characters, four sets → "muito forte · cerca de 150 bits".
+        let mut g = Generator::default();
+        let r = g.generate(options(24)).unwrap();
+        assert_eq!((r.size, r.bits, r.strength), (24, 150, Strength::VeryStrong));
+        let digits_only = Options {
+            size: 8,
+            lowercase: false,
+            uppercase: false,
+            digits: true,
+            symbols: false,
         };
-        let r = g.gerar(so_digitos).unwrap();
-        assert_eq!((r.bits, r.forca), (20, Forca::Fraca));
-        let r = g.gerar(opcoes(8)).unwrap();
-        assert_eq!((r.bits, r.forca), (50, Forca::Fraca));
-        let r = g.gerar(opcoes(12)).unwrap();
-        assert_eq!((r.bits, r.forca), (70, Forca::Razoavel));
-        let r = g.gerar(opcoes(16)).unwrap();
-        assert_eq!((r.bits, r.forca), (100, Forca::Forte));
-        let r = g.gerar(opcoes(64)).unwrap();
-        assert_eq!(r.forca, Forca::MuitoForte);
+        let r = g.generate(digits_only).unwrap();
+        assert_eq!((r.bits, r.strength), (20, Strength::Weak));
+        let r = g.generate(options(8)).unwrap();
+        assert_eq!((r.bits, r.strength), (50, Strength::Weak));
+        let r = g.generate(options(12)).unwrap();
+        assert_eq!((r.bits, r.strength), (70, Strength::Fair));
+        let r = g.generate(options(16)).unwrap();
+        assert_eq!((r.bits, r.strength), (100, Strength::Strong));
+        let r = g.generate(options(64)).unwrap();
+        assert_eq!(r.strength, Strength::VeryStrong);
     }
 
     #[test]
-    fn senha_respeita_tamanho_e_conjuntos() {
-        let mut g = Gerador::default();
-        let sem_simbolos = Opcoes {
-            simbolos: false,
-            ..opcoes(32)
+    fn password_respects_size_and_sets() {
+        let mut g = Generator::default();
+        let without_symbols = Options {
+            symbols: false,
+            ..options(32)
         };
         for _ in 0..50 {
-            g.gerar(sem_simbolos).unwrap();
-            let v = g.revelar().unwrap();
-            assert_eq!(v.expor().len(), 32);
-            assert!(v.expor().bytes().all(|b| b.is_ascii_alphanumeric()));
+            g.generate(without_symbols).unwrap();
+            let v = g.reveal().unwrap();
+            assert_eq!(v.expose().len(), 32);
+            assert!(v.expose().bytes().all(|b| b.is_ascii_alphanumeric()));
         }
         for _ in 0..50 {
-            g.gerar(opcoes(8)).unwrap();
-            let v = g.revelar().unwrap();
+            g.generate(options(8)).unwrap();
+            let v = g.reveal().unwrap();
             assert!(
-                v.expor()
+                v.expose()
                     .bytes()
-                    .any(|b| simbolos().as_bytes().contains(&b))
+                    .any(|b| symbols().as_bytes().contains(&b))
             );
         }
     }
 
-    /// Entrada da interface fora do formato: tamanho fora de 8–64 (inclusive valores que
-    /// o núcleo aceitaria e um `u64` enorme) e nenhum conjunto. Nada é gerado e a senha
-    /// anterior não volta a ficar disponível com opções que falharam.
+    /// Interface input out of format: size outside 8–64 (including values the core would
+    /// accept and a huge `u64`) and no set. Nothing is generated and the previous password
+    /// does not become available again with options that failed.
     #[test]
-    fn ataque_opcoes_fora_do_formato_sao_recusadas() {
-        let mut g = Gerador::default();
+    fn attack_options_out_of_format_are_refused() {
+        let mut g = Generator::default();
         for t in [0, 4, 7, 65, 128, 129, u64::from(u32::MAX) + 1, u64::MAX] {
-            assert_eq!(g.gerar(opcoes(t)), Err(AppError::InvalidRequest), "{t}");
+            assert_eq!(g.generate(options(t)), Err(AppError::InvalidRequest), "{t}");
         }
-        let nenhum = Opcoes {
-            tamanho: 24,
-            minusculas: false,
-            maiusculas: false,
-            digitos: false,
-            simbolos: false,
+        let none = Options {
+            size: 24,
+            lowercase: false,
+            uppercase: false,
+            digits: false,
+            symbols: false,
         };
-        assert_eq!(g.gerar(nenhum), Err(AppError::InvalidRequest));
-        assert!(!g.tem_senha());
-        assert_eq!(g.revelar().err(), Some(AppError::NoGeneratedPassword));
-        assert_eq!(g.para_copiar().err(), Some(AppError::NoGeneratedPassword));
+        assert_eq!(g.generate(none), Err(AppError::InvalidRequest));
+        assert!(!g.has_password());
+        assert_eq!(g.reveal().err(), Some(AppError::NoGeneratedPassword));
+        assert_eq!(g.for_copy().err(), Some(AppError::NoGeneratedPassword));
     }
 
-    /// A resposta do "gerar" não carrega o valor: nem no tipo nem no `Debug`.
+    /// The "generate" response does not carry the value: neither in the type nor in the
+    /// `Debug`.
     #[test]
-    fn ataque_gerar_nao_devolve_o_valor() {
-        let mut g = Gerador::default();
-        let r = g.gerar(opcoes(64)).unwrap();
-        let v = g.revelar().unwrap();
-        let texto = format!("{r:?} {v:?}");
-        assert!(!texto.contains(v.expor()));
-        assert!(texto.contains("Revelada(••••)"));
-        // Nenhum pedaço de 6 caracteres do valor aparece na resposta.
-        for i in 0..v.expor().len() - 6 {
-            assert!(!format!("{r:?}").contains(&v.expor()[i..i + 6]));
+    fn attack_generate_does_not_return_the_value() {
+        let mut g = Generator::default();
+        let r = g.generate(options(64)).unwrap();
+        let v = g.reveal().unwrap();
+        let text = format!("{r:?} {v:?}");
+        assert!(!text.contains(v.expose()));
+        assert!(text.contains("Revealed(••••)"));
+        // No 6-character piece of the value appears in the response.
+        for i in 0..v.expose().len() - 6 {
+            assert!(!format!("{r:?}").contains(&v.expose()[i..i + 6]));
         }
     }
 
     #[test]
-    fn descartar_zera_e_gerar_de_novo_troca() {
-        let mut g = Gerador::default();
-        g.gerar(opcoes(24)).unwrap();
-        let a = g.revelar().unwrap().expor().to_owned();
-        g.gerar(opcoes(24)).unwrap();
-        let b = g.revelar().unwrap().expor().to_owned();
+    fn discard_zeroes_and_generating_again_changes() {
+        let mut g = Generator::default();
+        g.generate(options(24)).unwrap();
+        let a = g.reveal().unwrap().expose().to_owned();
+        g.generate(options(24)).unwrap();
+        let b = g.reveal().unwrap().expose().to_owned();
         assert_ne!(a, b);
-        g.descartar();
-        assert_eq!(g.revelar().err(), Some(AppError::NoGeneratedPassword));
+        g.discard();
+        assert_eq!(g.reveal().err(), Some(AppError::NoGeneratedPassword));
     }
 }

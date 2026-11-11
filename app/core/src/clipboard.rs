@@ -1,245 +1,241 @@
-//! "Copiar" no lado Rust do app (D4, S2, S11, S12).
+//! "Copy" on the Rust side of the app (D4, S2, S11, S12).
 //!
-//! O valor vem do daemon como [`Secret`], vai direto para a área de transferência e
-//! nunca passa pela webview. Depois de [`PRAZO_LIMPEZA`], a limpeza só apaga se a área
-//! ainda contém exatamente o valor copiado (comparação em tempo constante): se o
-//! usuário copiou outra coisa nesse meio-tempo, ela fica lá (V5.5).
+//! The value comes from the daemon as a [`Secret`], goes straight to the clipboard and
+//! never passes through the webview. After [`CLEAR_DELAY`], the cleanup only erases if
+//! the clipboard still holds exactly the copied value (constant-time comparison): if the
+//! user copied something else in the meantime, it stays there (V5.5).
 //!
-//! Fase 39f (S2): quem implementa [`AreaTransferencia`] no app é a área do GTK
-//! (`app/src-tauri/src/area_gtk.rs`), que serve o valor da memória do processo. Nenhum
-//! programa externo (`wl-copy`, que gravava o valor em `/tmp`) entra no caminho do
-//! app. A ponte de teste (só valores falsos) tem a sua, em `ward-test-bridge`.
+//! Phase 39f (S2): what implements [`Clipboard`] in the app is the GTK clipboard
+//! (`app/src-tauri/src/gtk_clipboard.rs`), which serves the value from the process
+//! memory. No external program (`wl-copy`, which stored the value in `/tmp`) enters the
+//! app's path. The test bridge (fake values only) has its own, in `ward-test-bridge`.
 
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
 use ward_core::limits;
-/// O tipo que [`AreaTransferencia::ler`] devolve, para quem implementa a área fora
-/// daqui sem depender do `zeroize` (o app Tauri).
+/// The type [`Clipboard::read`] returns, for whoever implements the clipboard outside
+/// here without depending on `zeroize` (the Tauri app).
 pub use zeroize::Zeroizing;
 
 use crate::AppError;
 use crate::secret::Secret;
 
-/// S12: a área de transferência é limpa 30 s depois do "copiar".
-pub const PRAZO_LIMPEZA: Duration = Duration::from_secs(30);
+/// S12: the clipboard is cleared 30 s after the "copy".
+pub const CLEAR_DELAY: Duration = Duration::from_secs(30);
 
-/// Maior valor que o "copiar" aceita (o limite de um segredo de texto do `ward-core`).
-/// Quem lê a área não precisa de mais que `MAX_VALOR + 1` bytes para comparar.
-pub const MAX_VALOR: usize = limits::MAX_SECRET;
+/// Largest value the "copy" accepts (the limit of a `ward-core` text secret). Whoever
+/// reads the clipboard needs no more than `MAX_VALUE + 1` bytes to compare.
+pub const MAX_VALUE: usize = limits::MAX_SECRET;
 
-/// Onde o valor copiado fica. Os testes usam uma área falsa.
-pub trait AreaTransferencia: Send + Sync + 'static {
-    fn escrever(&self, valor: &[u8]) -> Result<(), AppError>;
-    /// Conteúdo de texto atual (`None` se vazia ou sem texto), limitado a
-    /// `MAX_SECRET + 1` bytes: mais que isso não pode ser o valor copiado.
-    fn ler(&self) -> Result<Option<Zeroizing<Vec<u8>>>, AppError>;
-    fn limpar(&self) -> Result<(), AppError>;
+/// Where the copied value stays. The tests use a fake clipboard.
+pub trait Clipboard: Send + Sync + 'static {
+    fn write(&self, value: &[u8]) -> Result<(), AppError>;
+    /// Current text content (`None` if empty or without text), limited to
+    /// `MAX_SECRET + 1` bytes: more than that cannot be the copied value.
+    fn read(&self) -> Result<Option<Zeroizing<Vec<u8>>>, AppError>;
+    fn clear(&self) -> Result<(), AppError>;
 }
 
-struct Pendente {
-    geracao: u64,
-    valor: Option<Zeroizing<Vec<u8>>>,
+struct Pending {
+    generation: u64,
+    value: Option<Zeroizing<Vec<u8>>>,
 }
 
-/// Copia e agenda a limpeza condicional.
-pub struct Copiador<A: AreaTransferencia> {
-    area: Arc<A>,
-    pendente: Arc<Mutex<Pendente>>,
-    prazo: Duration,
+/// Copies and schedules the conditional cleanup.
+pub struct Copier<A: Clipboard> {
+    clipboard: Arc<A>,
+    pending: Arc<Mutex<Pending>>,
+    delay: Duration,
 }
 
-impl<A: AreaTransferencia> Copiador<A> {
-    pub fn novo(area: A) -> Self {
-        Self::com_prazo(area, PRAZO_LIMPEZA)
+impl<A: Clipboard> Copier<A> {
+    pub fn new(clipboard: A) -> Self {
+        Self::with_delay(clipboard, CLEAR_DELAY)
     }
 
-    /// Prazo diferente, só para os testes.
-    pub fn com_prazo(area: A, prazo: Duration) -> Self {
-        Copiador {
-            area: Arc::new(area),
-            pendente: Arc::new(Mutex::new(Pendente {
-                geracao: 0,
-                valor: None,
+    /// A different delay, for the tests only.
+    pub fn with_delay(clipboard: A, delay: Duration) -> Self {
+        Copier {
+            clipboard: Arc::new(clipboard),
+            pending: Arc::new(Mutex::new(Pending {
+                generation: 0,
+                value: None,
             })),
-            prazo,
+            delay,
         }
     }
 
-    /// Escreve o valor e agenda a limpeza. Uma cópia nova substitui a anterior: o
-    /// prazo da anterior deixa de valer e só o da nova limpa.
-    pub fn copiar(&self, segredo: Secret) -> Result<(), AppError> {
-        if segredo.is_empty() || segredo.len() > limits::MAX_SECRET {
+    /// Writes the value and schedules the cleanup. A new copy replaces the previous one:
+    /// the previous delay stops counting and only the new one clears.
+    pub fn copy(&self, secret: Secret) -> Result<(), AppError> {
+        if secret.is_empty() || secret.len() > limits::MAX_SECRET {
             return Err(AppError::InvalidRequest);
         }
-        let geracao = {
-            let mut p = self.pendente.lock().map_err(|_| AppError::Clipboard)?;
-            self.area.escrever(segredo.expose())?;
-            p.geracao = p.geracao.wrapping_add(1);
-            p.valor = Some(Zeroizing::new(segredo.expose().to_vec()));
-            p.geracao
+        let generation = {
+            let mut p = self.pending.lock().map_err(|_| AppError::Clipboard)?;
+            self.clipboard.write(secret.expose())?;
+            p.generation = p.generation.wrapping_add(1);
+            p.value = Some(Zeroizing::new(secret.expose().to_vec()));
+            p.generation
         };
-        drop(segredo);
-        let area = Arc::clone(&self.area);
-        let pendente = Arc::clone(&self.pendente);
-        let prazo = self.prazo;
+        drop(secret);
+        let clipboard = Arc::clone(&self.clipboard);
+        let pending = Arc::clone(&self.pending);
+        let delay = self.delay;
         thread::Builder::new()
             .name("ward-limpeza".into())
             .spawn(move || {
-                thread::sleep(prazo);
-                limpar_se_ainda_for(&*area, &pendente, Some(geracao));
+                thread::sleep(delay);
+                clear_if_still(&*clipboard, &pending, Some(generation));
             })
             .map_err(|_| AppError::Clipboard)?;
         Ok(())
     }
 
-    /// Limpa já (ao travar ou ao fechar o app), com a mesma condição do prazo.
-    pub fn limpar_agora(&self) {
-        limpar_se_ainda_for(&*self.area, &self.pendente, None);
+    /// Clears now (on locking or closing the app), with the same condition as the delay.
+    pub fn clear_now(&self) {
+        clear_if_still(&*self.clipboard, &self.pending, None);
     }
 }
 
-fn limpar_se_ainda_for<A: AreaTransferencia>(
-    area: &A,
-    pendente: &Mutex<Pendente>,
-    geracao: Option<u64>,
-) {
-    let Ok(mut p) = pendente.lock() else { return };
-    if geracao.is_some_and(|g| g != p.geracao) {
-        return; // uma cópia mais nova tem o próprio prazo
+fn clear_if_still<A: Clipboard>(clipboard: &A, pending: &Mutex<Pending>, generation: Option<u64>) {
+    let Ok(mut p) = pending.lock() else { return };
+    if generation.is_some_and(|g| g != p.generation) {
+        return; // a newer copy has its own delay
     }
-    let Some(valor) = p.valor.take() else { return };
-    if let Ok(Some(atual)) = area.ler()
-        && iguais(&atual, &valor)
+    let Some(value) = p.value.take() else { return };
+    if let Ok(Some(current)) = clipboard.read()
+        && equal(&current, &value)
     {
-        let _ = area.limpar();
+        let _ = clipboard.clear();
     }
 }
 
-fn iguais(a: &[u8], b: &[u8]) -> bool {
+fn equal(a: &[u8], b: &[u8]) -> bool {
     use ctutils::CtEq;
     a.ct_eq(b).to_bool()
 }
 
 #[cfg(test)]
-mod testes {
+mod tests {
     use super::*;
 
-    /// Área falsa: guarda o conteúdo e conta as limpezas.
+    /// Fake clipboard: keeps the content and counts the cleanups.
     #[derive(Default)]
-    pub(crate) struct AreaFalsa {
-        pub conteudo: Mutex<Option<Vec<u8>>>,
-        pub limpezas: Mutex<u32>,
+    pub(crate) struct FakeClipboard {
+        pub content: Mutex<Option<Vec<u8>>>,
+        pub clears: Mutex<u32>,
     }
 
-    impl AreaTransferencia for Arc<AreaFalsa> {
-        fn escrever(&self, valor: &[u8]) -> Result<(), AppError> {
-            *self.conteudo.lock().unwrap() = Some(valor.to_vec());
+    impl Clipboard for Arc<FakeClipboard> {
+        fn write(&self, value: &[u8]) -> Result<(), AppError> {
+            *self.content.lock().unwrap() = Some(value.to_vec());
             Ok(())
         }
-        fn ler(&self) -> Result<Option<Zeroizing<Vec<u8>>>, AppError> {
-            Ok(self.conteudo.lock().unwrap().clone().map(Zeroizing::new))
+        fn read(&self) -> Result<Option<Zeroizing<Vec<u8>>>, AppError> {
+            Ok(self.content.lock().unwrap().clone().map(Zeroizing::new))
         }
-        fn limpar(&self) -> Result<(), AppError> {
-            *self.conteudo.lock().unwrap() = None;
-            *self.limpezas.lock().unwrap() += 1;
+        fn clear(&self) -> Result<(), AppError> {
+            *self.content.lock().unwrap() = None;
+            *self.clears.lock().unwrap() += 1;
             Ok(())
         }
     }
 
-    const CURTO: Duration = Duration::from_millis(40);
-    const ESPERA: Duration = Duration::from_millis(600);
+    const SHORT: Duration = Duration::from_millis(40);
+    const WAIT: Duration = Duration::from_millis(600);
 
     #[test]
-    fn prazo_e_30_segundos() {
-        assert_eq!(PRAZO_LIMPEZA, Duration::from_secs(30));
+    fn delay_is_30_seconds() {
+        assert_eq!(CLEAR_DELAY, Duration::from_secs(30));
     }
 
     #[test]
-    fn copia_e_limpa_depois_do_prazo() {
-        let area = Arc::new(AreaFalsa::default());
-        let c = Copiador::com_prazo(Arc::clone(&area), CURTO);
-        c.copiar(Secret::new(b"falso-valor-1".to_vec())).unwrap();
+    fn copies_and_clears_after_the_delay() {
+        let clipboard = Arc::new(FakeClipboard::default());
+        let c = Copier::with_delay(Arc::clone(&clipboard), SHORT);
+        c.copy(Secret::new(b"falso-valor-1".to_vec())).unwrap();
         assert_eq!(
-            area.conteudo.lock().unwrap().as_deref(),
+            clipboard.content.lock().unwrap().as_deref(),
             Some(&b"falso-valor-1"[..])
         );
-        thread::sleep(ESPERA);
-        assert_eq!(*area.conteudo.lock().unwrap(), None);
-        assert_eq!(*area.limpezas.lock().unwrap(), 1);
+        thread::sleep(WAIT);
+        assert_eq!(*clipboard.content.lock().unwrap(), None);
+        assert_eq!(*clipboard.clears.lock().unwrap(), 1);
     }
 
     #[test]
-    fn ataque_texto_do_usuario_copiado_depois_nao_e_apagado() {
-        let area = Arc::new(AreaFalsa::default());
-        let c = Copiador::com_prazo(Arc::clone(&area), CURTO);
-        c.copiar(Secret::new(b"falso-valor-2".to_vec())).unwrap();
-        *area.conteudo.lock().unwrap() = Some(b"texto do usuario".to_vec());
-        thread::sleep(ESPERA);
+    fn attack_user_text_copied_later_is_not_erased() {
+        let clipboard = Arc::new(FakeClipboard::default());
+        let c = Copier::with_delay(Arc::clone(&clipboard), SHORT);
+        c.copy(Secret::new(b"falso-valor-2".to_vec())).unwrap();
+        *clipboard.content.lock().unwrap() = Some(b"texto do usuario".to_vec());
+        thread::sleep(WAIT);
         assert_eq!(
-            area.conteudo.lock().unwrap().as_deref(),
+            clipboard.content.lock().unwrap().as_deref(),
             Some(&b"texto do usuario"[..])
         );
-        assert_eq!(*area.limpezas.lock().unwrap(), 0);
+        assert_eq!(*clipboard.clears.lock().unwrap(), 0);
     }
 
     #[test]
-    fn ataque_prefixo_do_valor_nao_conta_como_igual() {
-        let area = Arc::new(AreaFalsa::default());
-        let c = Copiador::com_prazo(Arc::clone(&area), CURTO);
-        c.copiar(Secret::new(b"falso-valor-3".to_vec())).unwrap();
-        *area.conteudo.lock().unwrap() = Some(b"falso-valor".to_vec());
-        thread::sleep(ESPERA);
-        assert_eq!(*area.limpezas.lock().unwrap(), 0);
+    fn attack_value_prefix_does_not_count_as_equal() {
+        let clipboard = Arc::new(FakeClipboard::default());
+        let c = Copier::with_delay(Arc::clone(&clipboard), SHORT);
+        c.copy(Secret::new(b"falso-valor-3".to_vec())).unwrap();
+        *clipboard.content.lock().unwrap() = Some(b"falso-valor".to_vec());
+        thread::sleep(WAIT);
+        assert_eq!(*clipboard.clears.lock().unwrap(), 0);
     }
 
     #[test]
-    fn copia_nova_substitui_o_prazo_da_anterior() {
-        let area = Arc::new(AreaFalsa::default());
-        let c = Copiador::com_prazo(Arc::clone(&area), Duration::from_millis(400));
-        c.copiar(Secret::new(b"falso-a".to_vec())).unwrap();
+    fn new_copy_replaces_the_previous_delay() {
+        let clipboard = Arc::new(FakeClipboard::default());
+        let c = Copier::with_delay(Arc::clone(&clipboard), Duration::from_millis(400));
+        c.copy(Secret::new(b"falso-a".to_vec())).unwrap();
         thread::sleep(Duration::from_millis(200));
-        c.copiar(Secret::new(b"falso-b".to_vec())).unwrap();
-        // O prazo da primeira vence aqui e não pode apagar a segunda antes da hora.
+        c.copy(Secret::new(b"falso-b".to_vec())).unwrap();
+        // The first delay expires here and must not erase the second one early.
         thread::sleep(Duration::from_millis(300));
         assert_eq!(
-            area.conteudo.lock().unwrap().as_deref(),
+            clipboard.content.lock().unwrap().as_deref(),
             Some(&b"falso-b"[..])
         );
         thread::sleep(Duration::from_millis(600));
-        assert_eq!(*area.conteudo.lock().unwrap(), None);
-        assert_eq!(*area.limpezas.lock().unwrap(), 1);
+        assert_eq!(*clipboard.content.lock().unwrap(), None);
+        assert_eq!(*clipboard.clears.lock().unwrap(), 1);
     }
 
     #[test]
-    fn limpar_agora_respeita_a_mesma_condicao() {
-        let area = Arc::new(AreaFalsa::default());
-        let c = Copiador::com_prazo(Arc::clone(&area), Duration::from_secs(60));
-        c.copiar(Secret::new(b"falso-c".to_vec())).unwrap();
-        c.limpar_agora();
-        assert_eq!(*area.conteudo.lock().unwrap(), None);
-        c.copiar(Secret::new(b"falso-d".to_vec())).unwrap();
-        *area.conteudo.lock().unwrap() = Some(b"outro".to_vec());
-        c.limpar_agora();
+    fn clear_now_respects_the_same_condition() {
+        let clipboard = Arc::new(FakeClipboard::default());
+        let c = Copier::with_delay(Arc::clone(&clipboard), Duration::from_secs(60));
+        c.copy(Secret::new(b"falso-c".to_vec())).unwrap();
+        c.clear_now();
+        assert_eq!(*clipboard.content.lock().unwrap(), None);
+        c.copy(Secret::new(b"falso-d".to_vec())).unwrap();
+        *clipboard.content.lock().unwrap() = Some(b"outro".to_vec());
+        c.clear_now();
         assert_eq!(
-            area.conteudo.lock().unwrap().as_deref(),
+            clipboard.content.lock().unwrap().as_deref(),
             Some(&b"outro"[..])
         );
     }
 
     #[test]
-    fn ataque_valor_vazio_ou_grande_demais_e_recusado() {
-        let area = Arc::new(AreaFalsa::default());
-        let c = Copiador::com_prazo(Arc::clone(&area), CURTO);
+    fn attack_empty_or_too_large_value_is_refused() {
+        let clipboard = Arc::new(FakeClipboard::default());
+        let c = Copier::with_delay(Arc::clone(&clipboard), SHORT);
         assert_eq!(
-            c.copiar(Secret::new(Vec::new())),
+            c.copy(Secret::new(Vec::new())),
             Err(AppError::InvalidRequest)
         );
         assert_eq!(
-            c.copiar(Secret::new(vec![b'a'; limits::MAX_SECRET + 1])),
+            c.copy(Secret::new(vec![b'a'; limits::MAX_SECRET + 1])),
             Err(AppError::InvalidRequest)
         );
-        assert_eq!(*area.conteudo.lock().unwrap(), None);
+        assert_eq!(*clipboard.content.lock().unwrap(), None);
     }
 }

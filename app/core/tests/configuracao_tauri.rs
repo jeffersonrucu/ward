@@ -25,12 +25,12 @@ fn conf() -> Value {
 /// Rust aceita.
 #[test]
 fn limites_do_gerador_na_interface_sao_os_do_rust() {
-    use ward_app_core::gerador::{TAMANHO_MAX, TAMANHO_MIN, TAMANHO_PADRAO};
+    use ward_app_core::generator::{MAX_LENGTH, MIN_LENGTH, DEFAULT_LENGTH};
     let js = fs::read_to_string(app().join("src/screens/PasswordGenerator.svelte")).unwrap();
     for (nome, valor) in [
-        ("MIN_LENGTH", TAMANHO_MIN),
-        ("MAX_LENGTH", TAMANHO_MAX),
-        ("DEFAULT_LENGTH", TAMANHO_PADRAO),
+        ("MIN_LENGTH", MIN_LENGTH),
+        ("MAX_LENGTH", MAX_LENGTH),
+        ("DEFAULT_LENGTH", DEFAULT_LENGTH),
     ] {
         assert!(
             js.contains(&format!("const {nome} = {valor};")),
