@@ -282,7 +282,7 @@ Contrato: V4.1–V4.24. Sequencial. A partir daqui o fio muda.
   testes novos (v4 → v5 igual em tudo, v5 com nome pt recusado, v4 com nome inglês
   recusado, byte alterado, vetores) escritos, não rodados. Atualiza o teste de fio do
   corpo (o v4 fica como leitura). Compilação: `make compile`. — V4.1, V4.2, V4.8, V4.9
-- [ ] Fase 49 — (achado da Fase 48: a API pública do corpo ainda não diz se o lido era v4; p.ex. `open_entries_with_generation` devolver a versão) Migração no daemon e estado v2 (DT5, DT6; o `dev/daemon.sh` grava `ward-estado 1` quando falta o estado e muda junto, achado da Fase 46). Destrave de um v4 → grava v5
+- [x] Fase 49 — (achado da Fase 48: a API pública do corpo ainda não diz se o lido era v4; p.ex. `open_entries_with_generation` devolver a versão) Migração no daemon e estado v2 (DT5, DT6; o `dev/daemon.sh` grava `ward-estado 1` quando falta o estado e muda junto, achado da Fase 46). Destrave de um v4 → grava v5
   pelo caminho atômico, geração + 1, estado, backup; erro na gravação = destrave com
   erro e v4 intacto; sem regravação de v5; restaurar v4 grava v5; rotação local e do
   pendrive lendo v4 e v5; `ward-state 2` lendo `ward-estado 1`; log sem segredo. Testes
@@ -357,7 +357,7 @@ Contrato: V5.1–V5.11. Sequencial.
   comandos novos e `ward list --json` em inglês; `skill/settings-deny.json` negando
   `ward unlock` em todas as formas e mantendo `destravar`; `dev/tests/skill.py` (lista
   de ataques com as duas formas; autoteste). Compilação: `make compile`. — V5.3
-- [ ] Fase 59 — Documentação: `docs/escopo.md` (nomes novos: comandos, variáveis,
+- [ ] Fase 59 — (achado da Fase 49: a migração não guarda a v4 atual no backup antes de gravar e a rotação tira as v4 depois de 30 gravações; `docs/instalacao.md` manda copiar o cofre antes de atualizar, para a volta de DT7) Documentação: `docs/escopo.md` (nomes novos: comandos, variáveis,
   tipos, caminhos; o histórico das decisões fica), `docs/instalacao.md` (atualização
   0.1.x → 0.2.0, volta pelo backup v4, DT7), `docs/migracao.md` (comandos novos;
   `make test-migration-guide` com as expectativas novas), caminhos de arquivo em
@@ -394,7 +394,7 @@ Depois das Fases 61–66 (e das correções), o orchestrator chama os três vali
 - [ ] Fase 63 — Bateria C (contêineres e instalação): `make test-docker-platform`,
   `test-units`, `test-install`, `test-deb` (com a atualização a partir da 0.1.4). —
   V2.3, V2.6, V2.7, V4.4, V5.4, V5.6–V5.9, V6.4
-- [ ] Fase 64 — Bateria D (migração de ponta a ponta e versões misturadas): `wardd`
+- [ ] Fase 64 — (achado da Fase 49: os scripts de dev agora criam `ward-state 2`, que o `wardd` 0.1.4 recusa; para subir o 0.1.4 use `ward-estado 1`, p.ex. o fixture `state-0.1.4`; a parte em contêiner do V4.4 (`inotifywait`/`strace`) entra aqui ou no `test-units`) Bateria D (migração de ponta a ponta e versões misturadas): `wardd`
   0.2.0 de teste com cópias de `vault-0.1.4.ward`, `state-0.1.4` e `backup-0.1.4/` em
   `.dev/`; migração comparada com o `wardd` 0.1.4 (V4.5); morte em cada ponto (V4.3);
   observação do disco (V4.4); retrocesso (V4.7); restauração e rotação (V4.10); estado
