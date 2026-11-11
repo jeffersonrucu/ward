@@ -1,0 +1,15 @@
+  ok  ataque recusado: 53d: ssh-keygen -F na chave
+  ok  ataque recusado: 53d: pasta em memória por outro caminho
+  ok  ataque recusado: 53d: 2a salva direto no ssh
+  ok  ataque recusado: 53d: 2a põe passphrase já no ssh
+  ok  ataque recusado: 53d: 2a leva a chave com cp
+  ok  ataque recusado: 53d: known_hosts do Ward sem chmod 600
+  ok  ataque recusado: 54a: destravar pelo PATH
+  ok  ataque recusado: 54a: destravar por outro ward
+  ok  ataque recusado: 54a: destravar pelo PATH em outro passo
+  ok  ataque recusado: 59: destravar da 0.1.x pelo caminho completo
+  ok  ataque recusado: 59: ward lista
+  ok  ataque recusado: 59: ward travar
+  ok  ataque recusado: 59: ward ajuda
+==> docs/migracao.md
+  ok  V10.1, V10.2 e V10.3
