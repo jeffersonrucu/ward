@@ -39,7 +39,7 @@ use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
 use ward_core::entry::{AccessLevel, Data, url_origin};
-use ward_core::mascara::Mascara;
+use ward_core::mask::Mask;
 use ward_core::protocolo::{ErroResposta, Pedido, Resposta};
 use ward_core::totp::Totp;
 use ward_platform::child::{Command, Group};
@@ -751,8 +751,8 @@ fn build_state(
 
 /// S1/V6.13: the storage state must not have the password nor a variation of it
 /// (through the entry's mask: literal, URL, base64, text forms).
-pub fn has_secret(mask: &Mascara, state: &[u8]) -> bool {
-    let masked = Zeroizing::new(mask.mascarar_tudo(state));
+pub fn has_secret(mask: &Mask, state: &[u8]) -> bool {
+    let masked = Zeroizing::new(mask.mask_all(state));
     masked.as_slice() != state
 }
 
@@ -848,7 +848,7 @@ impl Daemon {
                 }
                 None => None,
             };
-            let mask = Mascara::da_entrada(e, None).map_err(|_| ErroResposta::EntregaFalhou)?;
+            let mask = Mask::from_entry(e, None).map_err(|_| ErroResposta::EntregaFalhou)?;
             let (locks, initial) = self.travas_agora(&st);
             (
                 l.url.clone(),

@@ -2541,6 +2541,42 @@ stdout, stderr, chunks, end, failure }` (`texto` → `text`), `salvar` → `save
 `depois`…) são literais e ficam. Os nomes do `comum` (Fase 23), do `nucleo`/`aprovacao`
 (Fase 20) e do `ward-core` (`protocolo`, Fases 17–18) ficam como estão até as fases deles.
 
+Fase 16 (`ward-core`: `mask`): módulo `mascara` → `mask` (`automato` → `automaton`,
+`testes` → `tests`). `MARCA` → `MARK`; `ErroMascara` → `MaskError` com `GrandeDemais` →
+`TooLarge` e `SemEntrega` → `NoDelivery`; `ConstrutorMascara` → `MaskBuilder` (`entrada`/
+`entrega`/`construir` → `entry`/`delivery`/`build`); `Mascara` → `Mask` (`da_entrada`/
+`tem_segredo_curto`/`fluxo`/`mascarar_tudo` → `from_entry`/`has_short_secret`/`stream`/
+`mask_all`); `Fluxo` → `Stream` (`mascarar`/`terminar` → `mask`/`finish`; campos
+`pendente`/`emitido`/`lido`/`visoes`/`cobertos`/`em_marca` → `pending`/`emitted`/
+`consumed`/`views`/`covered`/`in_mark`; `emitir_ate` → `emit_until`: aqui "emitir" é soltar
+saída, `emit`, e não o `issue` do token); `custo_da_entrada` → `entry_cost`; `somar`
+(`pub(crate)`) → `sum_patterns`. Privados: `RecursosDoOrcamento` → `BudgetResources`,
+`visitar`/`Visitante` → `visit`/`Visitor`, `Gerador` → `Generator` (`segredo_de_campo`/
+`valor_minimo`/`json_da_linha`/`comentario_e_aspas`/`segredo`/`formas_de_texto`/`anexo`/
+`linhas`/`valor_da_linha` → `field_secret`/`min_value`/`line_json`/`comment_and_quotes`/
+`secret`/`text_forms`/`attachment`/`lines`/`line_value`), `B64_PADRAO` → `B64_STD`,
+`caracteres` → `char_count`, `sem_quebra_final` → `without_final_newline`,
+`valor_de_chave`/`valor_de_dois_pontos`/`valor_de_chave_composta` → `key_value`/
+`colon_value`/`compound_key_value`, `antes_de_comentario`/`miolo_antes_de_comentario` →
+`before_comment`/`core_before_comment`, `pular_branco_json`/`fim_string_json`/
+`decodificar_string_json` → `skip_json_blank`/`json_string_end`/`decode_json_string`,
+`sem_aspas` → `unquoted`, `json_escapa`/`json_muda` → `json_escapes`/`json_changes`,
+`JsonEscapado` → `EscapedJson` (`json_escapado`/`_u`/`_muda` → `escaped_json`/`_u`/
+`_changes`), `aspas_duplas(_escapa)`/`aspas_simples` → `double_quotes(_escapes)`/
+`single_quotes`, `printf_q_escapa`/`printf_q_muda` → `printf_q_escapes`/`printf_q_changes`,
+`Modo { Cru, Percent, Formulario }` → `Mode { Raw, Percent, Form }`, `Escape { Nada,
+Percent { ini }, Hex { ini, alto, char_alto } }` → `Escape { Nothing, Percent { start },
+Hex { start, high, high_char } }`, `Visao` → `View` (`andar`/`ler`/`fechar` → `walk`/
+`read`/`close`), `cobrir` → `cover`. Autômato: `Automato` → `Automaton` (campos `filho`/
+`irmao`/`falha`/`saida`/`prof`/`raiz` → `child`/`sibling`/`fail`/`output`/`depth`/`root`;
+`com_capacidade`/`novo_no`/`nos`/`filho_de`/`inserir`/`finalizar`/`passo`/`saida`/
+`profundidade` → `with_capacity`/`new_node`/`nodes`/`child_of`/`insert`/`finalize`/`step`/
+`output`/`depth`), `NENHUM`/`RAIZ` → `NO_NODE`/`ROOT`, `reservar`/`empurrar`/`indice` →
+`reserve`/`push`/`index`. O `Debug` dos tipos acompanha o nome (`"Mask(••••)"`,
+`"MaskBuilder(••••)"`, `"Stream(••••)"`, como o `"Secret(••••)"` da Fase 12). Os
+homônimos `ErroCodificar::GrandeDemais`, `ErroQuadro::GrandeDemais` e
+`ErroResposta::TipoSemEntrega` (Fase 17) são outros e não mudaram.
+
 Funções e métodos não estão listados um a um: o nome sai da seção 2 na ordem do inglês
 (`conferir_arquivo` → `verify_file`, `ler_cofre` → `read_vault`, `codificar_resposta` →
 `encode_response`, `exigir_pin` → `require_pin`). Os poucos fixados por outra seção:

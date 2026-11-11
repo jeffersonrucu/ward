@@ -43,7 +43,7 @@ use zeroize::Zeroizing;
 use ward_core::delivery::{self, Delivery, DeliveryError, ResourceError, Resources};
 use ward_core::entry::{AccessLevel, Data, Entry, Secret};
 use ward_core::limits::{MAX_COMMON_FRAME, MAX_DISPLAYED_TEXT};
-use ward_core::mascara::{ConstrutorMascara, Mascara};
+use ward_core::mask::{Mask, MaskBuilder};
 use ward_core::protocolo::{
     self, ErroResposta, Fluxo, Janela, Papel, Pedido, Resposta, TipoEntradaPadrao, Variavel, quadro,
 };
@@ -274,10 +274,10 @@ impl Resources for RunResources<'_> {
             .ok_or(ResourceError("túnel indisponível"))?;
         let (es, via) = crate::ssh::intermediate(ctx.entries, server)
             .map_err(|_| ResourceError("servidor do túnel"))?;
-        let mask = ConstrutorMascara::new()
-            .entrada(ctx.main)
-            .entrada(es)
-            .construir()
+        let mask = MaskBuilder::new()
+            .entry(ctx.main)
+            .entry(es)
+            .build()
             .map_err(|_| ResourceError("máscara do túnel"))?;
         let bridge = Bridge::open(Opening {
             via,
@@ -303,7 +303,7 @@ impl Resources for RunResources<'_> {
 /// and the SSH agent.
 pub(crate) struct Preparation {
     pub(crate) command: Command,
-    pub(crate) mask: Mascara,
+    pub(crate) mask: Mask,
     pub(crate) temp_files: Option<TempFiles>,
     /// Jump of `ward ssh` or database tunnel (Phase 28): the bridge, which starts
     /// accepting when the child's pid is known.
@@ -600,11 +600,11 @@ impl Daemon {
             }
         };
         // D19: with a tunnel, the mask also covers the tunnel's server entry.
-        let mut builder = ConstrutorMascara::new().entrada(e).entrega(&delivery);
+        let mut builder = MaskBuilder::new().entry(e).delivery(&delivery);
         if let Some(s) = resources.tunnel_server {
-            builder = builder.entrada(s);
+            builder = builder.entry(s);
         }
-        let mask = builder.construir().map_err(|err| {
+        let mask = builder.build().map_err(|err| {
             aviso!("executar: {err}");
             ErroResposta::EntregaFalhou
         })?;
@@ -679,12 +679,12 @@ impl Cli {
 fn read_output(
     mut f: File,
     stream: Fluxo,
-    mask: Arc<Mascara>,
+    mask: Arc<Mask>,
     cli: Cli,
     stop: Arc<AtomicBool>,
     ready: mpsc::Sender<()>,
 ) {
-    let mut m = mask.fluxo();
+    let mut m = mask.stream();
     let mut buf = Zeroizing::new(vec![0u8; BATCH]);
     let mut out = Zeroizing::new(Vec::with_capacity(BATCH + BATCH / 4));
     let mut cli_ok = true;
@@ -696,7 +696,7 @@ fn read_output(
         }
         let (n, end) = read_batch(&mut f, &mut buf);
         if n > 0 {
-            m.mascarar(&buf[..n], &mut out);
+            m.mask(&buf[..n], &mut out);
             zeroize::Zeroize::zeroize(&mut buf[..n]);
             if cli_ok {
                 cli_ok = cli.send_output(stream, &mut out);
@@ -709,7 +709,7 @@ fn read_output(
         }
     }
     // Nothing was held; just closes the stream (zeroes).
-    m.terminar(&mut out);
+    m.finish(&mut out);
     if cli_ok {
         cli.send_output(stream, &mut out);
     }

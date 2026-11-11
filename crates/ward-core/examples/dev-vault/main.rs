@@ -56,7 +56,7 @@ use ward_core::entry::{
 };
 use ward_core::format::{MasterPassword, OpenVault};
 use ward_core::limits::{DEFAULT_LOCK_MINUTES, MAX_ATTACHMENTS_TOTAL};
-use ward_core::mascara::{MARCA, Mascara};
+use ward_core::mask::{MARK, Mask};
 use zeroize::Zeroizing;
 
 #[cfg(test)]
@@ -383,7 +383,7 @@ fn cross(output: &Path, password: &MasterPassword) -> Result<(), Error> {
         .take(64 * 1024 * 1024)
         .read_to_end(&mut tsv)
         .map_err(|_| Error::Usage("não deu para ler os padrões do stdin"))?;
-    let mut masks: Vec<(String, Mascara)> = Vec::new();
+    let mut masks: Vec<(String, Mask)> = Vec::new();
     let (mut total, mut failures) = (0usize, 0usize);
     let mut names = std::collections::BTreeSet::new();
     for (i, line) in tsv.split(|b| *b == b'\n').enumerate() {
@@ -412,16 +412,16 @@ fn cross(output: &Path, password: &MasterPassword) -> Result<(), Error> {
                 Err(DeliveryError::TypeWithoutDelivery) => None,
                 Err(_) => return Err(Error::Vault(format!("cruzado: entrega de {name} falhou"))),
             };
-            let m = Mascara::da_entrada(e, g.as_ref())
+            let m = Mask::from_entry(e, g.as_ref())
                 .map_err(|_| Error::Vault(format!("cruzado: máscara de {name} não montou")))?;
             masks.push((name.clone(), m));
         }
         let m = &masks.iter().find(|(n, _)| *n == name).unwrap().1;
-        let out = Zeroizing::new(m.mascarar_tudo(&pattern));
+        let out = Zeroizing::new(m.mask_all(&pattern));
         let ok = match kind {
-            b"inteiro" => out.as_slice() == MARCA.as_bytes(),
+            b"inteiro" => out.as_slice() == MARK.as_bytes(),
             b"url" => {
-                out.windows(MARCA.len()).any(|w| w == MARCA.as_bytes()) && !secret_left(&out, e)
+                out.windows(MARK.len()).any(|w| w == MARK.as_bytes()) && !secret_left(&out, e)
             }
             _ => return Err(Error::Usage("tipo de padrão desconhecido no stdin")),
         };
@@ -430,7 +430,7 @@ fn cross(output: &Path, password: &MasterPassword) -> Result<(), Error> {
         if !ok {
             failures += 1;
             eprintln!(
-                "dev-vault: cruzado: o padrão da linha {} ({}) de {name} não saiu {MARCA}",
+                "dev-vault: cruzado: o padrão da linha {} ({}) de {name} não saiu {MARK}",
                 i + 1,
                 String::from_utf8_lossy(kind)
             );
@@ -441,11 +441,11 @@ fn cross(output: &Path, password: &MasterPassword) -> Result<(), Error> {
     }
     if failures > 0 {
         return Err(Error::Vault(format!(
-            "cruzado: {failures} de {total} padrões não saíram {MARCA}"
+            "cruzado: {failures} de {total} padrões não saíram {MARK}"
         )));
     }
     println!(
-        "dev-vault: cruzado: os {total} padrões de {} entradas saem {MARCA} pela máscara da entrada",
+        "dev-vault: cruzado: os {total} padrões de {} entradas saem {MARK} pela máscara da entrada",
         names.len()
     );
     Ok(())
