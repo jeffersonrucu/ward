@@ -425,6 +425,9 @@ pub enum Response {
     Token(Secret),
     ApprovalRequest(ApprovalRequest),
     UnlockRequest(UnlockRequest),
+    /// The app opened from the menu found the real instance already up: the daemon asks
+    /// it to show the main window (port of 0.1.5, Phase 66a of mission 2). No data.
+    ShowWindow,
     TotpCode {
         code: Zeroizing<String>,
         remaining: u64,
@@ -492,6 +495,7 @@ impl Response {
             Response::Token(_) => ResponseType::Token,
             Response::ApprovalRequest(_) => ResponseType::ApprovalRequest,
             Response::UnlockRequest(_) => ResponseType::UnlockRequest,
+            Response::ShowWindow => ResponseType::ShowWindow,
             Response::TotpCode { .. } => ResponseType::TotpCode,
             Response::Suggestions(_) => ResponseType::Suggestions,
             Response::Fill { .. } => ResponseType::Fill,
@@ -523,7 +527,7 @@ impl Response {
         match self {
             // The role of the status is only checked on writing (`encode_response`): the
             // client reads what came and decides (D63).
-            Response::Ok | Response::Status { .. } => Ok(()),
+            Response::Ok | Response::Status { .. } | Response::ShowWindow => Ok(()),
             Response::UnlockRequest(p) => ok(!p.entry.is_empty()
                 && p.entry.len() <= MAX_TEXT
                 && APPROVED_OPERATIONS.contains(&p.operation)
@@ -618,7 +622,7 @@ impl Response {
     /// Writes the data of the response.
     pub(crate) fn write(&self, e: &mut Writer) {
         match self {
-            Response::Ok => {}
+            Response::Ok | Response::ShowWindow => {}
             Response::UnlockRequest(p) => {
                 e.key("entry");
                 e.text(&p.entry);
@@ -1037,6 +1041,7 @@ fn read_header(c: &mut Fields, with_level: bool) -> R<Header> {
 pub(crate) fn read(role: Role, kind: ResponseType, mut c: Fields) -> R<Response> {
     let r = match kind {
         ResponseType::Ok => Response::Ok,
+        ResponseType::ShowWindow => Response::ShowWindow,
         ResponseType::UnlockRequest => Response::UnlockRequest(UnlockRequest {
             entry: c.text("entry", MAX_TEXT)?,
             operation: Operation::from_name(&c.text("operation", MAX_NAME)?).ok_or(InvalidJson)?,

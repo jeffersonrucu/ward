@@ -127,7 +127,14 @@ fn v2_responses_read_and_written_byte_for_byte() {
         types.insert(response.kind().name());
         count += 1;
     }
-    let all: BTreeSet<_> = ResponseType::ALL.iter().map(|t| t.name()).collect();
+    // `show_window` came after 0.1.4 (port of 0.1.5, Phase 66a of mission 2): the
+    // fixture is the 0.1.4 one, line by line; its frame is checked byte for byte in
+    // `protocol::tests::attack_show_window_app_only_and_without_data`.
+    let all: BTreeSet<_> = ResponseType::ALL
+        .iter()
+        .map(|t| t.name())
+        .filter(|n| *n != "show_window")
+        .collect();
     assert_eq!(types, all, "every response type has a line");
     assert_eq!(count, 23);
 }

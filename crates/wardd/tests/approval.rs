@@ -49,6 +49,7 @@ impl EngineClock for ManualClock {
 enum Received {
     Approval(ApprovalRequest),
     Unlock(UnlockRequest),
+    ShowWindow,
 }
 
 struct FakeApp(Sender<Received>);
@@ -58,6 +59,7 @@ impl Subscriber for FakeApp {
         let x = match r {
             Response::ApprovalRequest(p) => Received::Approval(p.clone()),
             Response::UnlockRequest(p) => Received::Unlock(p.clone()),
+            Response::ShowWindow => Received::ShowWindow,
             other => panic!("o motor mandou ao app {other:?}"),
         };
         self.0.send(x).is_ok()
@@ -1047,6 +1049,71 @@ fn d57_open_app() {
     );
     let s = scene_with("abrir-app-ja", Err(OpenAppError::AlreadyOpen));
     assert!(ok(&request(&s.d, Role::Agent, "open_app", "{}")));
+    // Already open (window closed, in the tray): the subscribed app receives
+    // `show_window`, without data; the menu brings the window back (port of 0.1.5).
+    let rx = subscribe(&s.d, 7);
+    assert!(ok(&request(&s.d, Role::Agent, "open_app", "{}")));
+    assert!(matches!(
+        rx.recv_timeout(DEADLINE),
+        Ok(Received::ShowWindow)
+    ));
+    // Opened now by the launcher: nothing goes to the subscriber.
+    let c = scene("abrir-app-novo");
+    let rx = subscribe(&c.d, 8);
+    assert!(ok(&request(&c.d, Role::Agent, "open_app", "{}")));
+    assert!(rx.try_recv().is_err());
+}
+
+/// Phase 66a of mission 2 (port of 0.1.5), attack: whoever asks `open_app` (agent,
+/// extension or app) only gets a bare `ok`; `show_window` goes only to the subscriber
+/// (the app role connection), once per request, with nothing in it; no field of the
+/// request points it elsewhere (a pid, a window, a binary: refused, nothing delivered);
+/// without a subscriber nothing is sent; and a subscriber whose delivery fails leaves.
+#[test]
+fn attack_show_window_only_to_the_subscribed_app() {
+    let s = scene_with("mostrar-janela", Err(OpenAppError::AlreadyOpen));
+    // No subscriber: ok, nothing to deliver, nothing kept for later.
+    assert!(ok(&request(&s.d, Role::Agent, "open_app", "{}")));
+    let rx = subscribe(&s.d, 11);
+    assert!(rx.try_recv().is_err(), "show_window guardado para depois");
+    for role in Role::ALL {
+        let r = request(&s.d, role, "open_app", "{}");
+        assert!(ok(&r), "{role:?}");
+        assert!(!matches!(r, Response::ShowWindow), "{role:?}");
+        assert!(matches!(
+            rx.recv_timeout(DEADLINE),
+            Ok(Received::ShowWindow)
+        ));
+        assert!(rx.try_recv().is_err(), "{role:?}: mais de um aviso");
+    }
+    for role in [Role::Agent, Role::Extension] {
+        for data in [
+            r#"{"pid":4242}"#,
+            r#"{"window":"main"}"#,
+            r#"{"id":1}"#,
+            r#"{"binario":"/tmp/x"}"#,
+            r#"{"entry":"acme-pg-prod"}"#,
+        ] {
+            assert_eq!(
+                error(&request(&s.d, role, "open_app", data)),
+                Some(ResponseError::InvalidRequest),
+                "{role:?} {data}"
+            );
+        }
+    }
+    assert!(rx.try_recv().is_err(), "pedido recusado chegou ao app");
+    // A new subscriber takes the place: only it receives.
+    let rx2 = subscribe(&s.d, 12);
+    assert!(ok(&request(&s.d, Role::Extension, "open_app", "{}")));
+    assert!(matches!(
+        rx2.recv_timeout(DEADLINE),
+        Ok(Received::ShowWindow)
+    ));
+    assert!(rx.try_recv().is_err(), "o assinante antigo recebeu");
+    // Delivery fails (the app connection dropped): the subscriber leaves.
+    drop(rx2);
+    assert!(ok(&request(&s.d, Role::Agent, "open_app", "{}")));
+    assert!(!s.d.engine().has_subscriber());
 }
 
 /// V3.36 (D63, the classifier part): with the app group and the right parent, only the

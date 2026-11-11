@@ -238,6 +238,7 @@ table! {
     Token = "token", APP_ONLY, "Token of \"Connect\".";
     ApprovalRequest = "approval_request", APP_ONLY, "The daemon asks the app for the approval window.";
     UnlockRequest = "unlock_request", APP_ONLY, "The daemon asks the app for the unlock screen (D16): entry, operation, command with visible escapes (D51) and seconds left (Phase 39a).";
+    ShowWindow = "show_window", APP_ONLY, "The daemon asks the open app to show the main window (the menu found the instance already up). No data.";
     TotpCode = "totp_code", APP_AND_EXTENSION, "Current TOTP code.";
     Suggestions = "suggestions", EXTENSION_ONLY, "Entries suggested for the tab.";
     Fill = "fill", EXTENSION_ONLY, "Username, password and TOTP to fill.";

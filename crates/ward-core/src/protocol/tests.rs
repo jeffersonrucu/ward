@@ -222,6 +222,7 @@ fn one_response_of_each() -> Vec<Response> {
             command: r#""psql" "-c" "select 1""#.into(),
             remaining: 102,
         }),
+        Response::ShowWindow,
         Response::TotpCode {
             code: zeroize::Zeroizing::new("123456".into()),
             remaining: 17,
@@ -344,6 +345,7 @@ fn v3_15_operation_role_table() {
         ("token", false, true, false, true),
         ("approval_request", false, true, false, false),
         ("unlock_request", false, true, false, false),
+        ("show_window", false, true, false, false),
         ("totp_code", false, true, true, true),
         ("suggestions", false, false, true, false),
         ("fill", false, false, true, true),
@@ -2507,6 +2509,46 @@ fn attack_phase_39a_unlock_request_app_only_and_strict_format() {
         },
     ] {
         assert!(encode_response(Role::App, &Response::UnlockRequest(bad)).is_err());
+    }
+}
+
+/// Phase 66a of mission 2 (port of 0.1.5): `show_window` goes only to the app and
+/// carries nothing. The agent and the extension can neither receive it nor read it, the
+/// frame written is exactly the empty one, and a frame with any data (a value, an id of
+/// another process, a window name) or with the 0.1.5 v1 name is refused.
+#[test]
+fn attack_show_window_app_only_and_without_data() {
+    for role in [Role::Agent, Role::Extension] {
+        assert_eq!(
+            encode_response(role, &Response::ShowWindow).unwrap_err(),
+            EncodeError::NotAllowedForRole
+        );
+    }
+    let q = encode_response(Role::App, &Response::ShowWindow).unwrap();
+    assert_eq!(&q[..], br#"{"v":2,"type":"show_window","data":{}}"#);
+    assert!(matches!(
+        decode_response(Role::App, &q[..]).unwrap(),
+        Response::ShowWindow
+    ));
+    for role in [Role::Agent, Role::Extension] {
+        assert!(decode_response(role, &q[..]).is_err());
+    }
+    for bad in [
+        r#"{"v":2,"type":"show_window","data":{"pid":4242}}"#.to_owned(),
+        r#"{"v":2,"type":"show_window","data":{"window":"main"}}"#.to_owned(),
+        r#"{"v":2,"type":"show_window","data":{"entry":"acme-pg-prod"}}"#.to_owned(),
+        format!(
+            r#"{{"v":2,"type":"show_window","data":{{"password":"{}"}}}}"#,
+            b64(b"falso-PG-senha-01")
+        ),
+        r#"{"v":2,"type":"show_window","data":[]}"#.to_owned(),
+        r#"{"v":2,"type":"mostrar_janela","data":{}}"#.to_owned(),
+        r#"{"v":1,"tipo":"mostrar_janela","dados":{}}"#.to_owned(),
+    ] {
+        assert!(
+            decode_response(Role::App, bad.as_bytes()).is_err(),
+            "aceitou {bad}"
+        );
     }
 }
 

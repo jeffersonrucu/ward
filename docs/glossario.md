@@ -1598,6 +1598,12 @@ vira `environment`, como os outros `ambiente`.
 | `preenchimento` | `fill` | `pedido_de_login` | `login_request` |
 | `backups` | `backups` | `configuracao` | `config` |
 | `backup_externo` | `external_backup` | `pendrives` | `usb_drives` |
+| `mostrar_janela` (0.1.5) | `show_window` | | |
+
+`mostrar_janela` só existe na 0.1.5 (commit `b4d5e1b`, fora do master); a Fase 66a o
+portou como `show_window`: só papel app, sem dado, enviado ao app assinado quando o
+`open_app` acha a instância já de pé. Não está nas fixtures de fio (`protocol-v1.jsonl`
+é a 0.1.4); o quadro exato é conferido em `protocol/tests.rs`.
 
 ### Papéis
 
@@ -2120,6 +2126,7 @@ a seção 2 (`ErroResposta::NaoAutorizado` → `ResponseError::Unauthorized`).
 | `PastaAberta` | `OpenDir` | `PastaBackup` | `BackupDir` |
 | `Pedido` | `Request` | `PedidoDeAprovacao` | `ApprovalRequest` |
 | `PedidoDeDestrave` | `UnlockRequest` | `PedidoExecutar` | `RunRequest` |
+| `MostrarJanela` (0.1.5, Fase 66a) | `ShowWindow` | | |
 | `PedidoExibido` | `DisplayedRequest` | `PedidoPendente` | `PendingRequest` |
 | `Pendente` | `Pending` | `Pendrive` | `UsbDrive` |
 | `PendriveVisto` | `UsbDriveView` | `Permitido` | `Allowed` |
@@ -3210,3 +3217,9 @@ Funções e métodos não estão listados um a um: o nome sai da seção 2 na or
 `nome()`/`de_nome()` → `name()`/`from_name()`, `rotulo()` → `label()`, `expor()` →
 `expose()`, `papeis()` → `roles()`, `permitida()` → `allowed()`, `carrega_credencial()` →
 `carries_credential()`.
+
+Fase 66a (porte da 0.1.5, commit `b4d5e1b`): `Resposta::MostrarJanela` →
+`Response::ShowWindow` (tipo `show_window`, seção 10); no `wardd/approval.rs`,
+`abrir_pelo_lancador` → `open_via_launcher` e `Motor::mostrar_janela` → `Engine::show_window`;
+no `app/core/daemon.rs`, `Fila::mostrar` → `Queue::show`, `pedir_janela` → `request_window`,
+`esperar_mostrar` → `wait_show`; no `main.rs`, a thread `ward-app-mostrar` → `ward-app-show`.

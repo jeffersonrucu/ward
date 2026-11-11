@@ -1,7 +1,8 @@
 # Roteiro do usuário — atualizar para a 0.2.0
 
-Roteiro da Fase 66 (missão 2; V6.12, V6.13). Quem roda é você, na sua máquina. A missão
-não roda `sudo`, não instala nada, não mexe no `~/.claude` e não toca no cofre real.
+Roteiro das Fases 66 e 66a (missão 2; V6.12, V6.13). Quem roda é você, na sua máquina.
+A missão não roda `sudo`, não instala nada, não mexe no `~/.claude` e não toca no cofre
+real.
 
 A 0.2.0 traduziu o código para o inglês. As telas e os textos continuam os mesmos. O
 que muda para você (subcomandos, variáveis do `ward run`, `ward list --json`, caminhos
@@ -9,19 +10,25 @@ instalados e nomes reservados) está em `docs/instalacao.md` › "Atualizar da 0
 a 0.2.0". Leia essa seção antes. Este roteiro é o caminho curto, com os artefatos já
 prontos.
 
-> **Atenção (Fase 66).** A máquina tem a 0.1.5 instalada (`dpkg-query -W ward`), mas a
-> 0.2.0 da missão 2 partiu da 0.1.4: a correção da 0.1.5 (abrir o Ward pelo menu com o
-> app na bandeja mostra a janela; commit `b4d5e1b`, só no `origin/master`) **não está**
-> nestes artefatos. Com eles, abrir pelo menu com o app já na bandeja volta a não mostrar
-> a janela (use a bandeja). Não instale antes de o orchestrator decidir se a correção
-> entra na 0.2.0 (handoff da Fase 66, Problema 1). Onde este roteiro diz 0.1.x, vale
-> para a 0.1.4 e a 0.1.5.
+A 0.2.0 inclui a correção da 0.1.5 (Fase 66a): abrir o Ward pelo menu de aplicativos
+com o app já na bandeja mostra a janela. Onde este roteiro diz 0.1.x, vale para a 0.1.4
+e a 0.1.5 (a máquina tem a 0.1.5; `dpkg-query -W ward`).
 
 ## Artefatos
 
-Ficam em `target/release-0.2.0/` do checkout principal (fora do git). Os sha256 estão no
-handoff da Fase 66 (`docs/mission/handoffs/phase-66.md`) e em
-`target/release-0.2.0/SHA256SUMS`.
+Ficam em `target/release-0.2.0/` do checkout principal (fora do git), refeitos na Fase
+66a com a correção da 0.1.5. Os sha256 estão na tabela abaixo, no handoff da Fase 66a
+(`docs/mission/handoffs/phase-66a.md`) e em `target/release-0.2.0/SHA256SUMS`. Os da
+Fase 66 não valem mais.
+
+| Artefato | sha256 |
+| --- | --- |
+| `ward_0.2.0_amd64.deb` | `9ff2397fc0813b0ea92c92bc50eebd57680039e5eec720015fbf774f60ddc0c2` |
+| `ward.crx` | `bd6e92f180ef90d5fb57ce33ba108ce9bac4c19ab75de2fb7b04c3b2e09fc9c0` |
+| `bin/ward` | `994f8d29eaabe5e1eae5b6bdabd925eae9f2736621759c735cb6e4bc886bd70b` |
+| `bin/wardd` | `d6bcb03dc0d5cea085a38951ddc9062f250ac37ddd3e250d7126742692cd2190` |
+| `bin/ward-nm` | `c073f81c88cae15bff34b3491772e9f5b1048543822b2b2c78ebef324cd76e97` |
+| `bin/ward-app` | `54ef9d199b7016eec6af469911760c9d744bbc74fd4cf74bdb36c371fa6dd004` |
 
 | Arquivo | O que é |
 | --- | --- |
@@ -54,7 +61,7 @@ reservados da 0.2.0 (`ENTRY`, `GROUP`, `ENVIRONMENT`, `FILE`, `FILE_…`; `PROTO
 
 ```sh
 cd ~/projetos/cofre/target/release-0.2.0
-sha256sum -c SHA256SUMS                 # todos "OK", e os mesmos do handoff da Fase 66
+sha256sum -c SHA256SUMS                 # todos "OK", e os mesmos da tabela acima (Fase 66a)
 dpkg-deb -f ward_0.2.0_amd64.deb Package Version Depends
 # Package: ward / Version: 0.2.0 / Depends: sshpass, openssh-client, systemd, libwebkit2gtk-4.1-0
 ./bin/ward --version                    # ward 0.2.0
@@ -144,6 +151,9 @@ Você faz isto à mão, a partir de `skill/` do checkout principal (`skill/READM
 
 1. **Janela nativa.** Abra o Ward pelo menu de aplicativos. A janela é a mesma da 0.1.x:
    barra de título escura com minimizar, maximizar e fechar, as mesmas telas e textos.
+   Feche a janela (o Ward fica na bandeja) e abra o Ward **de novo pelo menu de
+   aplicativos**: a janela principal volta (correção da 0.1.5, Fase 66a). Repita com a
+   janela minimizada: ela volta e ganha o foco.
 2. **Bandeja.** Feche a janela: o Ward fica na bandeja. O menu da bandeja diz "Cofre
    destravado" e tem **Travar agora** e **Sair**. Clique em **Travar agora**: o cofre
    trava e a bandeja passa a dizer "Cofre travado". Destrave de novo (passo 4).

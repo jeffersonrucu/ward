@@ -142,6 +142,9 @@ impl Notice {
 struct Queue {
     items: VecDeque<Notice>,
     dropped: u64,
+    /// The daemon asked for the main window (`show_window`); several requests in a row
+    /// are one.
+    show: bool,
 }
 
 /// Bounded queue of the notices (D65 a). The reader thread pushes; the unlock (Phase 31)
@@ -170,6 +173,32 @@ impl NoticeQueue {
         q.items.push_back(notice);
         drop(q);
         self.arrived.notify_all();
+    }
+
+    /// Marks the request to show the main window.
+    fn request_window(&self) {
+        self.lock().show = true;
+        self.arrived.notify_all();
+    }
+
+    /// Waits up to `timeout` for the request to show the window and takes it. `false`:
+    /// none arrived in time.
+    pub fn wait_show(&self, timeout: Duration) -> bool {
+        let end = Instant::now() + timeout;
+        let mut q = self.lock();
+        loop {
+            if std::mem::take(&mut q.show) {
+                return true;
+            }
+            let Some(left) = end.checked_duration_since(Instant::now()) else {
+                return false;
+            };
+            q = self
+                .arrived
+                .wait_timeout(q, left)
+                .unwrap_or_else(|e| e.into_inner())
+                .0;
+        }
     }
 
     /// The oldest notice, without waiting.
@@ -388,6 +417,7 @@ fn read_loop(
         match protocol::decode_response(Role::App, &q) {
             Ok(Response::ApprovalRequest(p)) => notices.push(Notice::Approval(p)),
             Ok(Response::UnlockRequest(p)) => notices.push(Notice::Unlock(p)),
+            Ok(Response::ShowWindow) => notices.request_window(),
             Ok(_) => {
                 // Response with no request: leaves.
                 if !waiting.swap(false, Ordering::AcqRel) || tx.send(q).is_err() {
@@ -886,6 +916,54 @@ mod tests {
         );
         assert_eq!(notices.take(), None);
         assert_eq!(notices.dropped(), 0);
+    }
+
+    /// `show_window` in the middle of the conversation (port of 0.1.5): marks the
+    /// request (several in a row are one), does not enter the notice queue and the
+    /// response goes to the requester.
+    #[test]
+    fn show_window_marks_the_request_outside_the_queue() {
+        let (a, mut b) = UnixStream::pair().unwrap();
+        let mut d = DaemonSocket::from_pair(a, Duration::from_secs(10));
+        let notices = d.notices();
+        assert!(!notices.wait_show(Duration::from_millis(30)));
+        let server = std::thread::spawn(move || {
+            read_request(&mut b);
+            send(&mut b, &Response::ShowWindow);
+            send(&mut b, &Response::ShowWindow);
+            send(&mut b, &app_status());
+            b
+        });
+        assert_eq!(client::status(&mut d), Ok(VaultStatus::Unlocked));
+        let _b = server.join().unwrap();
+        assert!(notices.wait_show(Duration::from_millis(50)));
+        assert!(!notices.wait_show(Duration::from_millis(30)));
+        assert_eq!(notices.size(), 0);
+    }
+
+    /// Attack (port of 0.1.5): a forged `show_window` with data (a pid, a window name)
+    /// or with the 0.1.5 v1 name is not a request to show anything: the app closes the
+    /// connection and the window stays as it was.
+    #[test]
+    fn attack_show_window_with_data_closes_without_showing() {
+        for body in [
+            br#"{"v":2,"type":"show_window","data":{"pid":4242}}"#.to_vec(),
+            br#"{"v":2,"type":"show_window","data":{"window":"main"}}"#.to_vec(),
+            br#"{"v":2,"type":"mostrar_janela","data":{}}"#.to_vec(),
+        ] {
+            let (a, mut b) = UnixStream::pair().unwrap();
+            let mut d = DaemonSocket::from_pair(a, Duration::from_secs(10));
+            let notices = d.notices();
+            let server = std::thread::spawn(move || {
+                read_request(&mut b);
+                frame::write_frame(&mut b, &body, frame::RESPONSE_LIMIT).unwrap();
+                closed(&mut b)
+            });
+            assert_eq!(client::status(&mut d), Err(AppError::ConnectionLost));
+            assert!(server.join().unwrap(), "o app não fechou a conexão");
+            assert!(!notices.wait_show(Duration::from_millis(30)));
+            assert_eq!(notices.size(), 0);
+        }
     }
 
     #[test]

@@ -285,21 +285,52 @@ impl Engine {
 
     /// Opens the app through the launcher. Already open is also a success.
     fn open(&self) -> Result<(), OpenAppError> {
-        let inner = Arc::downgrade(&self.inner);
-        let r = self.opener.open(Box::new(move || {
-            if let Some(i) = inner.upgrade() {
-                i.app_exited();
-            }
-        }));
-        match r {
+        match self.open_via_launcher() {
             Ok(()) | Err(OpenAppError::AlreadyOpen) => Ok(()),
             Err(e) => Err(e),
         }
     }
 
-    /// The open app operation (D57): from any role, no field, no secret.
+    fn open_via_launcher(&self) -> Result<(), OpenAppError> {
+        let inner = Arc::downgrade(&self.inner);
+        self.opener.open(Box::new(move || {
+            if let Some(i) = inner.upgrade() {
+                i.app_exited();
+            }
+        }))
+    }
+
+    /// The open app operation (D57): from any role, no field, no secret. With the app
+    /// already up (its window closed, it stays in the tray), asks it to show the main
+    /// window: without that, the menu would bring nothing back (port of 0.1.5,
+    /// Phase 66a of mission 2).
     pub fn open_app(&self) -> Result<(), ResponseError> {
-        self.open().map_err(|_| ResponseError::ApprovalUnavailable)
+        match self.open_via_launcher() {
+            Ok(()) => Ok(()),
+            Err(OpenAppError::AlreadyOpen) => {
+                self.show_window();
+                Ok(())
+            }
+            Err(OpenAppError::Unavailable) => Err(ResponseError::ApprovalUnavailable),
+        }
+    }
+
+    /// Delivers `show_window` (no data) to the subscribed app, if there is one: only
+    /// the subscriber, which is a connection of the app role, receives it; nothing
+    /// goes back to the caller. A failed delivery: the subscriber leaves, as with the
+    /// other notices.
+    fn show_window(&self) {
+        let mut g = self.inner.state();
+        let Some((sid, a)) = g.subscriber.as_mut() else {
+            return;
+        };
+        let sid = *sid;
+        if !a.deliver(&Response::ShowWindow) {
+            warning!("entrega ao app falhou: a janela conta como fechada");
+            g.drop_subscriber(sid);
+            drop(g);
+            self.inner.changed.notify_all();
+        }
     }
 
     /// The connection `id` of the app role starts receiving the notices. One at a
