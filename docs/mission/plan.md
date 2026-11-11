@@ -191,6 +191,14 @@ Clientes Rust:
   congelados até a Fase 54). Compilação: `make compile` (com o `cargo check` do
   `app/src-tauri`). — V2.1
 
+- [ ] Fase 34a — Resto do Rust (achado do fechamento do M2: `make english-check PATHS="crates app/core app/src-tauri/src"`
+  dá 1158 achados): comentários dos `Cargo.toml` (`crates/wardd`, `crates/ward-core`, `app/core`), os binários de teste
+  `crates/wardd/app-teste/main.rs` e `aprovador-teste/main.rs` (pastas e nomes de binário ficam para a Fase 56),
+  `app/core/tests/configuracao_tauri.rs`, e os identificadores que sobraram em `fake_daemon.rs`, `client.rs`,
+  `ward/src/{tests,commands}.rs`, `wardd/src/ssh.rs` e testes do `wardd`. Nome de fio, de comando Tauri, de
+  variável entregue ou de teste congelado continua literal (exceção em `frozen.txt` com a fase que o muda).
+  No fim, o checador nesses caminhos dá 0 achado. — V2.1
+
 ## Milestone 3 — Web e scripts em inglês (trilhas W e S, fio congelado)
 
 Contrato: V3.1–V3.7. Pode rodar em paralelo com o Milestone 2 (depois da Fase 6).
