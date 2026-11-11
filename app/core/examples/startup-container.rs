@@ -17,7 +17,7 @@
 
 use std::io::Write;
 
-use ward_app_core::partida;
+use ward_app_core::startup;
 
 const REPORT: &str = "/tmp/ward-app-relatorio.txt";
 
@@ -116,7 +116,7 @@ fn main() {
         dumpable(),
         status("TracerPid:")
     ));
-    let mut p = match partida::iniciar() {
+    let mut p = match startup::start() {
         Ok(p) => p,
         Err(e) => {
             report(&format!("erro pid={pid} {e}"));
@@ -137,8 +137,8 @@ fn main() {
         p.parent_pid(),
         names.join(",")
     ));
-    let _daemon = p.tomar_daemon();
+    let _daemon = p.take_daemon();
     if runs_of_this_pid(pid) < 2 {
-        let _ = p.vigiar(move || report(&format!("queda pid={pid}"))).join();
+        let _ = p.watch(move || report(&format!("queda pid={pid}"))).join();
     }
 }

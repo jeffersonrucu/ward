@@ -217,7 +217,7 @@ pub fn issue_token<D: Daemon + ?Sized>(daemon: &mut D, entry: &str) -> Result<To
         entrada: entry.to_owned(),
     };
     match ask(daemon, &request)? {
-        Resposta::Token(t) => Token::de_resposta(t.expose()).ok_or(AppError::InvalidResponse),
+        Resposta::Token(t) => Token::from_response(t.expose()).ok_or(AppError::InvalidResponse),
         _ => Err(AppError::InvalidResponse),
     }
 }
@@ -340,18 +340,16 @@ pub fn unlock<D: Daemon + ?Sized>(
 
 /// Config (Phase 38): lock timeout and external backup on or off. The strict reading
 /// already refused minutes outside D45 and an extra field.
-pub fn settings<D: Daemon + ?Sized>(
-    daemon: &mut D,
-) -> Result<crate::configuracoes::Configuracoes, AppError> {
+pub fn settings<D: Daemon + ?Sized>(daemon: &mut D) -> Result<crate::settings::Settings, AppError> {
     match ask(daemon, &Pedido::Configuracao)? {
         Resposta::Configuracao {
             minutos_trava,
             backup_externo,
             backup_local,
-        } => Ok(crate::configuracoes::Configuracoes {
-            minutos_trava,
-            backup_externo,
-            backup_local,
+        } => Ok(crate::settings::Settings {
+            lock_minutes: minutos_trava,
+            external_backup: backup_externo,
+            local_backup: backup_local,
         }),
         _ => Err(AppError::InvalidResponse),
     }

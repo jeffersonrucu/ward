@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 
 use ward_app_core::AppError;
 use ward_app_core::attachments::Picker;
-use ward_app_core::terminal::{Terminal, TerminalDoSistema, Token};
+use ward_app_core::terminal::{SystemTerminal, Terminal, Token};
 
 pub struct DirPicker(pub PathBuf);
 
@@ -45,7 +45,7 @@ impl Picker for DirPicker {
 pub struct TestTerminal;
 
 impl Terminal for TestTerminal {
-    fn abrir(&self, entry: &str, token: &Token) -> Result<(), AppError> {
+    fn open(&self, entry: &str, token: &Token) -> Result<(), AppError> {
         eprintln!(
             "ward-ponte-teste: conectar {entry} (token de uso único com {} caracteres)",
             token.len()
@@ -55,7 +55,7 @@ impl Terminal for TestTerminal {
 }
 
 pub struct RepoTerminal {
-    system: TerminalDoSistema,
+    system: SystemTerminal,
     extras: Vec<(&'static str, OsString)>,
 }
 
@@ -84,19 +84,19 @@ impl RepoTerminal {
             extras.push(("WARD_DEV_SOCKET_DIR", s));
         }
         Some(RepoTerminal {
-            system: TerminalDoSistema::com_caminhos(emulator, ward),
+            system: SystemTerminal::with_paths(emulator, ward),
             extras,
         })
     }
 }
 
 impl Terminal for RepoTerminal {
-    fn abrir(&self, entry: &str, token: &Token) -> Result<(), AppError> {
-        let mut a = self.system.comando(entry, token)?;
+    fn open(&self, entry: &str, token: &Token) -> Result<(), AppError> {
+        let mut a = self.system.command(entry, token)?;
         for (k, v) in &self.extras {
-            a.comando.env(k, v);
+            a.command.env(k, v);
         }
-        let mut child = a.abrir().map_err(|_| AppError::TerminalUnavailable)?;
+        let mut child = a.open().map_err(|_| AppError::TerminalUnavailable)?;
         eprintln!("ward-ponte-teste: conectar {entry} pelo terminal do repositório");
         std::thread::spawn(move || {
             let _ = child.wait();
