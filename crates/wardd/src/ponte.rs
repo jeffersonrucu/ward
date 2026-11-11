@@ -43,9 +43,9 @@ use ward_core::mascara::Mascara;
 use ward_platform::child::{self, Command, Group};
 use zeroize::Zeroizing;
 
-use crate::agente_ssh::{AgenteSsh, Permitido};
-use crate::execucao;
-use crate::ssh::{Autent, Cred, Destino, Programa, ProgramasSsh, montar_argv};
+use crate::execution;
+use crate::ssh::{Cred, Destination, Program, SshAuth, SshPrograms, build_argv};
+use crate::ssh_agent::{Allowed, SshAgent};
 use crate::{aviso, depurar};
 
 /// De quanto em quanto tempo a escuta olha se deve parar.
@@ -88,7 +88,7 @@ struct Plano {
     via: Intermediario,
     alvo_host: String,
     alvo_porta: u16,
-    programas: ProgramasSsh,
+    programas: SshPrograms,
     known_hosts: PathBuf,
     rt: Option<PathBuf>,
 }
@@ -118,7 +118,7 @@ pub(crate) struct Abertura<'a> {
     pub(crate) via: Intermediario,
     pub(crate) alvo_host: &'a str,
     pub(crate) alvo_porta: u16,
-    pub(crate) programas: &'a ProgramasSsh,
+    pub(crate) programas: &'a SshPrograms,
     pub(crate) known_hosts: &'a Path,
     pub(crate) rt: Option<&'a Path>,
     pub(crate) mascara: Mascara,
@@ -141,10 +141,10 @@ impl Ponte {
         // O argv com caminhos de exemplo: só para recusar antes de escutar.
         let exemplo = Path::new("/nonexistent/agent.sock");
         let autent = match plano.via.cred {
-            Cred::Senha(_) => Autent::Senha,
-            Cred::Chave { .. } => Autent::Chave {
-                agente: exemplo,
-                publica: exemplo,
+            Cred::Password(_) => SshAuth::Password,
+            Cred::Key { .. } => SshAuth::Key {
+                agent: exemplo,
+                public_key: exemplo,
             },
         };
         if argv_da_ponte(&plano, autent).is_none() {
@@ -221,19 +221,19 @@ impl Drop for PonteRodando {
 }
 
 /// O argv do `ssh -W` da ponte (`None`: valor fora do formato).
-fn argv_da_ponte(plano: &Plano, autent: Autent<'_>) -> Option<Vec<Vec<u8>>> {
-    montar_argv(
+fn argv_da_ponte(plano: &Plano, autent: SshAuth<'_>) -> Option<Vec<Vec<u8>>> {
+    build_argv(
         &plano.programas,
         &plano.known_hosts,
-        Destino {
+        Destination {
             host: &plano.via.host,
-            porta: plano.via.porta,
-            usuario: &plano.via.usuario,
+            port: plano.via.porta,
+            username: &plano.via.usuario,
         },
         autent,
-        Programa::Encaminhar {
+        Program::Forward {
             host: &plano.alvo_host,
-            porta: plano.alvo_porta,
+            port: plano.alvo_porta,
         },
     )
 }
@@ -308,10 +308,13 @@ fn conectar(
     let _ = tcp.set_nonblocking(false);
     let plano = &ponte.plano;
     let (senha, agente) = match &plano.via.cred {
-        Cred::Senha(s) => (Some(s), None),
-        Cred::Chave { chave, passphrase } => {
+        Cred::Password(s) => (Some(s), None),
+        Cred::Key {
+            key: chave,
+            passphrase,
+        } => {
             let rt = plano.rt.as_deref()?;
-            match AgenteSsh::criar(rt, chave, passphrase.as_ref()) {
+            match SshAgent::create(rt, chave, passphrase.as_ref()) {
                 Ok(a) => (None, Some(a)),
                 Err(e) => {
                     aviso!("ponte: {e}");
@@ -320,12 +323,12 @@ fn conectar(
             }
         }
     };
-    let caminhos = agente.as_ref().map(|a| (a.socket(), a.publica()));
+    let caminhos = agente.as_ref().map(|a| (a.socket(), a.public_key()));
     let autent = match &caminhos {
-        None => Autent::Senha,
-        Some((sock, publica)) => Autent::Chave {
-            agente: sock,
-            publica,
+        None => SshAuth::Password,
+        Some((sock, publica)) => SshAuth::Key {
+            agent: sock,
+            public_key: publica,
         },
     };
     let Some(argv) = argv_da_ponte(plano, autent) else {
@@ -358,10 +361,10 @@ fn conectar(
     let grupo = Arc::new(grupo);
     depurar!("ponte: ssh do salto/túnel pid {}", grupo.pid());
     let agente = agente.map(|a| {
-        a.iniciar(
-            Permitido {
+        a.start(
+            Allowed {
                 pid: grupo.pid(),
-                filho_do_filho: false,
+                child_of_child: false,
             },
             ponte.travas.clone(),
             ponte.inicial,
@@ -456,10 +459,10 @@ impl FimDeEscrita for fs::File {}
 fn ler_erro(mut f: fs::File, mascara: &Mascara, saida: &SaidaDeErro) {
     let mut m = mascara.fluxo();
     // Fase 28g: o que já está no pipe vai num lote só (como a saída do `ward run`).
-    let mut buf = Zeroizing::new(vec![0u8; execucao::LOTE]);
+    let mut buf = Zeroizing::new(vec![0u8; execution::BATCH]);
     let mut out = Zeroizing::new(Vec::with_capacity(2 * PEDACO));
     loop {
-        let (n, fim) = execucao::ler_lote(&mut f, &mut buf);
+        let (n, fim) = execution::read_batch(&mut f, &mut buf);
         if n > 0 {
             m.mascarar(&buf[..n], &mut out);
             zeroize::Zeroize::zeroize(&mut buf[..n]);

@@ -13,7 +13,7 @@ use wardd::config::Config;
 use wardd::lancamento::{AbridorReal, AppDeTeste, ExtensaoDeTeste};
 use wardd::nucleo::{Daemon, RelogioReal};
 use wardd::servidor::{self, Papeis};
-use wardd::{aviso, execucao, log, trava, udisks};
+use wardd::{aviso, execution, log, trava, udisks};
 
 /// Chrome instalado, pai aceito do host da extensão (D5, D47).
 const CHROME: &str = "/opt/google/chrome/chrome";
@@ -144,7 +144,7 @@ fn main() -> ExitCode {
         }
     };
     // S2, V4.15: o que um `wardd` morto deixou em `<rt>tmp/` some na partida.
-    match execucao::limpar_temporarios(&config.rt) {
+    match execution::clean_temp_files(&config.rt) {
         Ok(0) => {}
         Ok(n) => aviso!("{n} pasta(s) temporária(s) de antes da partida apagada(s) (S2)"),
         Err(e) => aviso!(
@@ -153,7 +153,7 @@ fn main() -> ExitCode {
         ),
     }
     // Fase 28g: pastas do agente SSH (`<rt>ssh-*/`) que um `wardd` morto deixou.
-    match wardd::agente_ssh::limpar_pastas(&config.rt) {
+    match wardd::ssh_agent::clean_dirs(&config.rt) {
         Ok(0) => {}
         Ok(n) => aviso!("{n} pasta(s) do agente SSH de antes da partida apagada(s)"),
         Err(e) => aviso!("pastas do agente SSH indisponíveis ({})", e.kind()),
