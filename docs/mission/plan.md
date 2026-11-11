@@ -133,7 +133,7 @@ Compilação de cada fase: `make compile`. Checador: os arquivos da fase.
 - [x] Fase 12 — `entrada.rs`, `entrada/segredo.rs`, `entrada/validacao.rs` (os nomes
   gravados de `nome()`/`de_nome()` são literais congelados; os rótulos pt-BR ficam). —
   V2.1
-- [ ] Fase 13 — `entrada/testes.rs`, `configuracao` (+ testes). — V2.1
+- [x] Fase 13 — `entrada/testes.rs`, `configuracao` (+ testes). — V2.1
 - [ ] Fase 14 — `corpo.rs`, `corpo/cofre_teste.rs`, `corpo/testes.rs` (`VERSAO_CORPO`
   continua 4). — V2.1, V2.2
 - [ ] Fase 15 — `backup` (+ testes), `entrega` (+ testes; nomes das variáveis entregues
