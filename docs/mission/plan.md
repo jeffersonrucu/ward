@@ -263,6 +263,14 @@ Trilha S (fases independentes entre si):
   controle de que a varredura ainda acusa o mesmo padrão plantado fora dessa pasta.
   Compilação: `make compile`. — V1.6, V1.7
 
+- [ ] Fase 47b — Resto fora do Rust (achado do fechamento do M2: `make english-check` no repositório dá 444
+  achados): comentários de `.gitignore`, `app/.npmrc`, `app/vite.config.js`, `app/src-tauri/Cargo.toml`, `app/package.json`
+  (`build:teste`), `app/src-tauri/capabilities/aprovacao.json` e dos scripts de `dev/` (`daemon.sh`, `bridge.sh`,
+  `open-app.py`, `dev/tests/*.sh`). Nome que só muda depois (variáveis `WARD_*`, binários e pastas de teste: Fase 56;
+  comandos e capabilities do Tauri: Fase 54; `dev/fixtures/entries.json`: Fases 48 e 53) vai para `frozen.txt` com a fase
+  que o muda; comentário que só cita esse nome é reescrito sem ele. No fim, `make english-check` no repositório só acusa
+  `dev/fixtures/entries.json` (da Fase 48). — V2.1
+
 ## Milestone 4 — Formato e protocolo novos
 
 Contrato: V4.1–V4.24. Sequencial. A partir daqui o fio muda.
