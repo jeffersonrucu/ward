@@ -316,9 +316,10 @@ english-check:
 ## app-bridge: the test bridge (D7) opened by the test daemon (D63): starts the test
 ## daemon with WARD_DEV_APP = the bridge (or requires it to be up with it), asks the
 ## daemon to open the app and prints the URL with the token, read from
-## .dev/logs/ward-test-bridge.log
+## .dev/logs/ward-test-bridge.log. Phase 66: refuses a test bundle older than the app
+## sources (dev/check-test-bundle.sh), as `test-app-e2e` does since Phase 65c
 app-bridge: origins
-	@test -f app/dist-teste/index.html || { echo "rode 'make app-front' antes" >&2; exit 1; }
+	@dev/check-test-bundle.sh app-bridge
 	$(CARGO) build --quiet --locked -p wardd --features test-mode --bin wardd
 	$(CARGO) build --quiet --locked -p ward-test-bridge --features test-mode --bin ward-test-bridge
 	WARD_DEV_APP="$(TEST_BRIDGE)" dev/daemon.sh up
@@ -386,7 +387,8 @@ test-app-e2e: origins
 ## is found). A test `wardd` of its own (WARD_DEV_SOCKET_DIR, default
 ## /run/user/<uid>/ward-test-selection) with the bridge; log scan at the end. Needs
 ## `make dev-vault`, `make dev-variations`, `make app-front`, Xwayland, xauth and the
-## Wayland session; out of `make check`
+## Wayland session; out of `make check`. Phase 66: refuses a test bundle older than the
+## app sources (dev/check-test-bundle.sh)
 test-revealed-selection: origins
 	$(CARGO) build --quiet --locked -p wardd --features test-mode --bin wardd
 	$(CARGO) build --quiet --locked -p ward-test-bridge --features test-mode --bin ward-test-bridge
