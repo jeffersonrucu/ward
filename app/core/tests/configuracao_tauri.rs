@@ -25,12 +25,12 @@ fn conf() -> Value {
 /// Rust aceita.
 #[test]
 fn limites_do_gerador_na_interface_sao_os_do_rust() {
-    use ward_app_core::gerador::{TAMANHO_MAX, TAMANHO_MIN, TAMANHO_PADRAO};
+    use ward_app_core::generator::{DEFAULT_LENGTH, MAX_LENGTH, MIN_LENGTH};
     let js = fs::read_to_string(app().join("src/screens/PasswordGenerator.svelte")).unwrap();
     for (nome, valor) in [
-        ("MIN_LENGTH", TAMANHO_MIN),
-        ("MAX_LENGTH", TAMANHO_MAX),
-        ("DEFAULT_LENGTH", TAMANHO_PADRAO),
+        ("MIN_LENGTH", MIN_LENGTH),
+        ("MAX_LENGTH", MAX_LENGTH),
+        ("DEFAULT_LENGTH", DEFAULT_LENGTH),
     ] {
         assert!(
             js.contains(&format!("const {nome} = {valor};")),
@@ -228,7 +228,7 @@ fn ataque_devtools_ou_acl_dinamica_no_release() {
     );
     let main = fs::read_to_string(app().join("src-tauri/src/main.rs")).unwrap();
     assert!(main.contains(".devtools(cfg!(feature = \"test-mode\"))"));
-    assert!(main.contains(".on_navigation(navegacao_permitida)"));
+    assert!(main.contains(".on_navigation(navigation_allowed)"));
     assert!(!main.contains("WARD_DEV_DIR"));
 }
 

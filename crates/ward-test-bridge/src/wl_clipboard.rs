@@ -15,7 +15,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 
 use ward_app_core::AppError;
-use ward_app_core::area_transferencia::{AreaTransferencia, MAX_VALOR};
+use ward_app_core::clipboard::{Clipboard, MAX_VALUE};
 use zeroize::Zeroizing;
 
 /// The system `wl-copy`/`wl-paste`.
@@ -58,8 +58,8 @@ fn trusted_binary(path: &Path) -> Result<(), AppError> {
     Ok(())
 }
 
-impl AreaTransferencia for WlCopy {
-    fn escrever(&self, value: &[u8]) -> Result<(), AppError> {
+impl Clipboard for WlCopy {
+    fn write(&self, value: &[u8]) -> Result<(), AppError> {
         let mut child = Self::command(WL_COPY)
             .args(["--type", MIME_TYPE])
             .stdin(Stdio::piped())
@@ -78,7 +78,7 @@ impl AreaTransferencia for WlCopy {
         }
     }
 
-    fn ler(&self) -> Result<Option<Zeroizing<Vec<u8>>>, AppError> {
+    fn read(&self) -> Result<Option<Zeroizing<Vec<u8>>>, AppError> {
         let mut child = Self::command(WL_PASTE)
             .args(["--no-newline", "--type", "text/plain"])
             .stdin(Stdio::null())
@@ -90,7 +90,7 @@ impl AreaTransferencia for WlCopy {
             .stdout
             .take()
             .ok_or(AppError::Clipboard)?
-            .take(MAX_VALOR as u64 + 1)
+            .take(MAX_VALUE as u64 + 1)
             .read_to_end(&mut output);
         // More than the limit: the rest stays in the pipe and wl-paste is killed.
         let _ = child.kill();
@@ -101,7 +101,7 @@ impl AreaTransferencia for WlCopy {
         Ok(Some(output))
     }
 
-    fn limpar(&self) -> Result<(), AppError> {
+    fn clear(&self) -> Result<(), AppError> {
         let status = Self::command(WL_COPY)
             .arg("--clear")
             .stdin(Stdio::null())

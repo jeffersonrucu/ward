@@ -45,6 +45,13 @@
   resolvidos tomando a versão do master e reaplicando o script de renomeação e o
   corretor; `trava.rs`/`uso.rs` (apagados no master) saíram, e `lock.rs`/`usage.rs`
   receberam os usos.
+- Merge com `cd5a330` (Fase 34): `app/core/src/destrave.rs` (apagado lá, modify/delete
+  aqui) saiu; os usos do protocolo (`UnlockRequest`, `entry`, `remaining`…) foram
+  reaplicados no `app/core/src/unlock.rs` pelo corretor. Literais iguais aos do
+  `cd5a330` em todo arquivo fora dos três da fase; `protocol wire_v1` 58/58; clippy,
+  fmt e `make compile` 0. `docs/mission/plan.md`: caminhos da Fase 18 atualizados
+  (`protocol/response.rs`, `protocol/tests.rs`, `tests/sources.rs`,
+  `tests/body_memory.rs`), a pedido do orchestrator.
 
 ## Literais alterados (PRD regra 5)
 
@@ -90,7 +97,7 @@ que o rustfmt tirou ou pôs nos braços de `match` (nomes mais curtos/longos) e
 
 - `make check` completo (PRD regra 6: a fase roda `make compile` + `english-check`).
 - Testes do `wardd`/`ward`/`app/core` (só compilados; o clippy cobre todos os alvos).
-- `docs/mission/plan.md` ainda cita `tests/fontes.rs` e `tests/corpo_memoria.rs` nos
+- (resolvido no merge com `cd5a330`) `docs/mission/plan.md` citava `tests/fontes.rs` e `tests/corpo_memoria.rs` nos
   arquivos da Fase 18: é do orchestrator.
 
 ## Comandos executados
@@ -119,7 +126,7 @@ que o rustfmt tirou ou pôs nos braços de `match` (nomes mais curtos/longos) e
   "Confirmar", "Permitir") e a seção "Comandos" do escopo; foram descritos em inglês
   em vez de citados, e o nome da pasta `ward-teste-memoria` saiu do comentário de
   `body_memory.rs` (o literal fica, é a pasta de teste).
-- `docs/mission/plan.md` cita os nomes antigos dos dois testes de integração.
+- `docs/mission/plan.md` citava os nomes antigos dos dois testes de integração (corrigido no merge com `cd5a330`).
 
 ## Arquivos criados/alterados
 
@@ -135,7 +142,8 @@ que o rustfmt tirou ou pôs nos braços de `match` (nomes mais curtos/longos) e
 | `crates/wardd/src/{aprovacao,execution,lock,login,nucleo,playwright,server,ssh,udisks,usage}.rs` | alterado (usos; `lock`/`usage` da Fase 19) |
 | `crates/wardd/{app-teste,aprovador-teste}/main.rs`, `crates/wardd/examples/test-client.rs` | alterado (usos) |
 | `crates/wardd/tests/{app_value_binary,app_value_core,approval,attachment_edit,backup,common/mod,core,d62,dates,extension,external,lock,login,playwright,run,settings,socket,ssh,test_app}.rs` | alterado (usos) |
-| `app/core/src/{approval,client,credentials,daemon,destrave,external_backup,fake_daemon,restore,service,startup}.rs` | alterado (usos; `destrave` da Fase 34) |
+| `app/core/src/{approval,client,credentials,daemon,unlock,external_backup,fake_daemon,restore,service,startup}.rs` | alterado (usos; `unlock` da Fase 34) |
+| `docs/mission/plan.md` | alterado (caminhos da Fase 18) |
 | `docs/glossario.md` | alterado |
 | `docs/mission/handoffs/phase-18.md` | criado |
 

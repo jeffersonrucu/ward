@@ -4,7 +4,7 @@
 #
 # Builds the tests of `app/src-tauri` (the same `target/` as `make app-check`) and passes
 # the binary to `dev/tests/clipboard.py`, which runs the ignored real-session test of the
-# `area_gtk` module (the real GTK clipboard, with the core's copier) under `strace -f`
+# `gtk_clipboard` module (the real GTK clipboard, with the core's copier) under `strace -f`
 # and verifies, only with fake values generated on the spot:
 # - first, the self-test: the file watcher finds the value that `wl-copy` writes in
 #   `/tmp/wl-copy-buffer-*/` (the attack of the M5 audit is caught);

@@ -11,23 +11,23 @@ use ward_core::protocol::Target;
 
 use crate::AppError;
 use crate::approval::{self, ApprovalResult, Approvals, DisplayedRequest};
-use crate::area_transferencia::{AreaTransferencia, Copiador};
 use crate::attachments::{AttachmentEdit, Attachments, Base, Choice, NoPicker, Picker};
 use crate::client;
+use crate::clipboard::{Clipboard, Copier};
 use crate::commands::{Reference, validate_entry_name};
 use crate::credentials::{CredentialDetail, CredentialItem};
 use crate::daemon::{Daemon, VaultStatus};
-use crate::destrave::{InfoPedido, PedidoPendente, SenhaMestra};
 use crate::external_backup::{self, ExternalBackupView, UsbDriveChoice, UsbDriveView};
+use crate::first_use::NewVault;
 use crate::form::{self, FieldError, Form, Missing, Sources};
-use crate::gerador::{Gerada, Gerador, Opcoes, Revelada};
+use crate::generator::{Generated, Generator, Options, Revealed};
 use crate::key::{self, LOADABLE_FIELDS, Loading};
-use crate::nivel::{NivelMudado, Pin, nivel_de_nome};
-use crate::primeiro_uso::NovoCofre;
+use crate::level::{LevelChanged, Pin, level_from_name};
 use crate::restore::{self, Restore, Restored, VersionView};
 use crate::secret::Secret;
 use crate::settings::{ChangeResult, PasswordChange, PinChange, Settings, valid_minutes};
 use crate::terminal::{NoTerminal, Terminal, entry_for_argv};
+use crate::unlock::{MasterPassword, PendingRequest, RequestInfo};
 
 /// Form fields that accept "Use this password" (in the design, the secret field with
 /// generate is only the password one).
@@ -60,11 +60,11 @@ pub struct TotpCode {
     pub remaining: u64,
 }
 
-pub struct Service<D: Daemon, A: AreaTransferencia> {
+pub struct Service<D: Daemon, A: Clipboard> {
     daemon: Mutex<D>,
-    copier: Copiador<A>,
+    copier: Copier<A>,
     /// Standalone password of the password generator screen (Phase 37), in memory only.
-    generator: Mutex<Gerador>,
+    generator: Mutex<Generator>,
     /// Passwords the form generator handed to a field ("Use this password"), in memory
     /// only, until save, cancel or exit.
     used: Mutex<BTreeMap<String, Secret>>,
@@ -81,7 +81,7 @@ pub struct Service<D: Daemon, A: AreaTransferencia> {
     /// The approval requests waiting for the window (Phase 36, D65 a).
     approvals: Arc<Approvals>,
     /// The agent's unlock request that is waiting (Phase 31, D65 a).
-    pending_unlock: Arc<PedidoPendente>,
+    pending_unlock: Arc<PendingRequest>,
 }
 
 /// The state of the external backup: the config and, with a chosen UUID, whether it is
@@ -138,32 +138,32 @@ impl<D: Daemon> Sources for ServiceSources<'_, D> {
     }
 }
 
-impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
-    pub fn new(daemon: D, copier: Copiador<A>) -> Self {
+impl<D: Daemon, A: Clipboard> Service<D, A> {
+    pub fn new(daemon: D, copier: Copier<A>) -> Self {
         Service {
             daemon: Mutex::new(daemon),
             copier,
-            generator: Mutex::new(Gerador::default()),
+            generator: Mutex::new(Generator::default()),
             used: Mutex::new(BTreeMap::new()),
             loaded: Mutex::new(BTreeMap::new()),
             attachments: Mutex::new(Attachments::default()),
             picker: Box::new(NoPicker),
             terminal: Box::new(NoTerminal),
             approvals: Arc::new(Approvals::default()),
-            pending_unlock: Arc::new(PedidoPendente::default()),
+            pending_unlock: Arc::new(PendingRequest::default()),
         }
     }
 
     /// The unlock request the notice queue watcher marks
-    /// ([`crate::destrave::vigiar`]).
-    pub fn unlock_request(&self) -> Arc<PedidoPendente> {
+    /// ([`crate::unlock::watch`]).
+    pub fn unlock_request(&self) -> Arc<PendingRequest> {
         Arc::clone(&self.pending_unlock)
     }
 
     /// The agent request waiting for the unlock, if the vault is locked and the request
     /// is still within its deadline. No entry nor command (the notice does not carry
     /// them).
-    pub fn request_info(&self, status: VaultStatus) -> Option<InfoPedido> {
+    pub fn request_info(&self, status: VaultStatus) -> Option<RequestInfo> {
         match status {
             VaultStatus::Locked => self.pending_unlock.info(),
             _ => None,
@@ -171,15 +171,15 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
     }
 
     /// Unlock (Phase 31): the password arrives already checked for format, in a
-    /// [`SenhaMestra`] that zeroes, and only goes to the daemon. The D20 wait is the
+    /// [`MasterPassword`] that zeroes, and only goes to the daemon. The D20 wait is the
     /// daemon's (before looking at the password), and the response does not say how many
     /// attempts there were. Once unlocked, the agent request proceeds on its own in the
     /// daemon and leaves the screen.
-    pub fn unlock(&self, password: SenhaMestra) -> Result<(), AppError> {
+    pub fn unlock(&self, password: MasterPassword) -> Result<(), AppError> {
         let r = client::unlock(&mut *self.daemon()?, &password);
         drop(password);
         r?;
-        self.pending_unlock.limpar();
+        self.pending_unlock.clear();
         Ok(())
     }
 
@@ -443,8 +443,8 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
     /// confirmations here and only then asks the daemon. With a field error, nothing goes
     /// to the daemon. The response carries no value at all; `new_vault` is zeroed on
     /// drop.
-    pub fn create_vault(&self, new_vault: NovoCofre) -> Result<CreateResult, AppError> {
-        let errors = new_vault.erros();
+    pub fn create_vault(&self, new_vault: NewVault) -> Result<CreateResult, AppError> {
+        let errors = new_vault.errors();
         if !errors.is_empty() {
             return Ok(CreateResult {
                 created: false,
@@ -453,7 +453,7 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
         }
         client::create_vault(
             &mut *self.daemon()?,
-            new_vault.senha.bytes(),
+            new_vault.password.bytes(),
             new_vault.pin.bytes(),
         )?;
         Ok(CreateResult {
@@ -509,38 +509,38 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
                 return Err(AppError::FieldNotFound);
             }
         };
-        self.copier.copiar(value)
+        self.copier.copy(value)
     }
 
     /// Generate password: generates in `ward_core::generator` and keeps it here. The
     /// response has only size, strength and symbols; the value does not come back.
-    pub fn generate_password(&self, options: Opcoes) -> Result<Gerada, AppError> {
-        self.lock_generator()?.gerar(options)
+    pub fn generate_password(&self, options: Options) -> Result<Generated, AppError> {
+        self.lock_generator()?.generate(options)
     }
 
     /// Copy the generated password: same path as [`Self::copy_field`] (D4, S12). Response
     /// `()`.
     pub fn copy_generated_password(&self) -> Result<(), AppError> {
-        let value = self.lock_generator()?.para_copiar()?;
-        self.copier.copiar(value)
+        let value = self.lock_generator()?.for_copy()?;
+        self.copier.copy(value)
     }
 
     /// Reveal the generated password: the only command that takes the value to the
     /// interface, on the click on "reveal" (S11).
-    pub fn reveal_generated_password(&self) -> Result<Revelada, AppError> {
-        self.lock_generator()?.revelar()
+    pub fn reveal_generated_password(&self) -> Result<Revealed, AppError> {
+        self.lock_generator()?.reveal()
     }
 
     /// Discard the generated password: on leaving the screen, the password is zeroed.
     pub fn discard_generated_password(&self) -> Result<(), AppError> {
-        self.lock_generator()?.descartar();
+        self.lock_generator()?.discard();
         Ok(())
     }
 
     /// Reveal field: the value of a secret of the entry (field of the type or secret
     /// extra), only on the click on "reveal" (S11). A text field does not go through
     /// here.
-    pub fn reveal_field(&self, entry: &str, field: &str) -> Result<Revelada, AppError> {
+    pub fn reveal_field(&self, entry: &str, field: &str) -> Result<Revealed, AppError> {
         let reference = Reference::new(entry, field)?;
         let mut d = self.daemon()?;
         let detail = client::detail(&mut *d, reference.entry())?;
@@ -557,7 +557,7 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
             return Err(AppError::FieldNotFound);
         };
         let value = client::reveal(&mut *d, reference.entry(), target)?;
-        Revelada::de_segredo(&value).ok_or(AppError::Refused)
+        Revealed::from_secret(&value).ok_or(AppError::Refused)
     }
 
     /// TOTP code: the current code of the entry and the seconds until it changes.
@@ -574,7 +574,7 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
     pub fn copy_totp_code(&self, entry: &str) -> Result<(), AppError> {
         validate_entry_name(entry)?;
         let c = client::totp(&mut *self.daemon()?, entry)?;
-        self.copier.copiar(Secret::new(c.code.as_bytes().to_vec()))
+        self.copier.copy(Secret::new(c.code.as_bytes().to_vec()))
     }
 
     /// Use the generated password: the generator password goes to the form field, on the
@@ -584,7 +584,7 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
             .iter()
             .find(|c| **c == field)
             .ok_or(AppError::InvalidRequest)?;
-        let password = self.lock_generator()?.para_copiar()?;
+        let password = self.lock_generator()?.for_copy()?;
         let size = password.len();
         self.lock_used().insert((*field).to_owned(), password);
         Ok(size)
@@ -597,7 +597,7 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
         self.lock_loaded().clear();
         self.lock_attachments().clear();
         if let Ok(mut g) = self.lock_generator() {
-            g.descartar();
+            g.discard();
         }
     }
 
@@ -716,14 +716,14 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
     /// checked here; the PIN arrives already checked for format, in a [`Pin`] that zeroes.
     /// The response is the new level, without PIN. A wrong PIN is [`AppError::WrongPin`]
     /// (the screen queries the status afterwards: the 5th error locks).
-    pub fn set_level(&self, entry: &str, level: &str, pin: Pin) -> Result<NivelMudado, AppError> {
+    pub fn set_level(&self, entry: &str, level: &str, pin: Pin) -> Result<LevelChanged, AppError> {
         validate_entry_name(entry)?;
-        let level = nivel_de_nome(level)?;
+        let level = level_from_name(level)?;
         client::set_level(&mut *self.daemon()?, entry, level, &pin)?;
         drop(pin);
-        Ok(NivelMudado {
-            entrada: entry.to_owned(),
-            nivel: level.name(),
+        Ok(LevelChanged {
+            entry: entry.to_owned(),
+            level: level.name(),
         })
     }
 
@@ -857,12 +857,12 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
         })
     }
 
-    fn lock_generator(&self) -> Result<std::sync::MutexGuard<'_, Gerador>, AppError> {
+    fn lock_generator(&self) -> Result<std::sync::MutexGuard<'_, Generator>, AppError> {
         // A panic with the lock held does not leave the password stuck: the state is
         // discarded.
         Ok(self.generator.lock().unwrap_or_else(|e| {
             let mut g = e.into_inner();
-            g.descartar();
+            g.discard();
             g
         }))
     }
@@ -918,7 +918,7 @@ impl<D: Daemon, A: AreaTransferencia> Service<D, A> {
     /// On lock or app close: clears the clipboard if it still has the copied value and
     /// zeroes the standalone password.
     pub fn on_exit(&self) {
-        self.copier.limpar_agora();
+        self.copier.clear_now();
         self.discard_form();
     }
 }
@@ -933,15 +933,15 @@ mod tests {
     #[derive(Default)]
     struct Area(Mutex<Option<Vec<u8>>>);
 
-    impl AreaTransferencia for Arc<Area> {
-        fn escrever(&self, v: &[u8]) -> Result<(), AppError> {
+    impl Clipboard for Arc<Area> {
+        fn write(&self, v: &[u8]) -> Result<(), AppError> {
             *self.0.lock().unwrap() = Some(v.to_vec());
             Ok(())
         }
-        fn ler(&self) -> Result<Option<Zeroizing<Vec<u8>>>, AppError> {
+        fn read(&self) -> Result<Option<Zeroizing<Vec<u8>>>, AppError> {
             Ok(self.0.lock().unwrap().clone().map(Zeroizing::new))
         }
-        fn limpar(&self) -> Result<(), AppError> {
+        fn clear(&self) -> Result<(), AppError> {
             *self.0.lock().unwrap() = None;
             Ok(())
         }
@@ -949,7 +949,7 @@ mod tests {
 
     fn service() -> (Service<FakeDaemon, Arc<Area>>, Arc<Area>) {
         let area = Arc::new(Area::default());
-        let s = Service::new(FakeDaemon::full(), Copiador::novo(Arc::clone(&area)));
+        let s = Service::new(FakeDaemon::full(), Copier::new(Arc::clone(&area)));
         (s, area)
     }
 
@@ -1044,23 +1044,23 @@ mod tests {
         assert_eq!(*area.0.lock().unwrap(), None);
     }
 
-    fn options() -> crate::gerador::Opcoes {
-        crate::gerador::Opcoes {
-            tamanho: 24,
-            minusculas: true,
-            maiusculas: true,
-            digitos: true,
-            simbolos: true,
+    fn options() -> crate::generator::Options {
+        crate::generator::Options {
+            size: 24,
+            lowercase: true,
+            uppercase: true,
+            digits: true,
+            symbols: true,
         }
     }
 
-    /// V5.21 with V5.5: the generator "copy" goes through the same `Copiador` (the
+    /// V5.21 with V5.5: the generator "copy" goes through the same `Copier` (the
     /// clipboard receives the generated value, the response is `()`), and "generate" does
     /// not return the value.
     #[test]
     fn attack_generator_copies_without_returning_the_value() {
         let area = Arc::new(Area::default());
-        let s = Service::new(FakeDaemon::full(), Copiador::novo(Arc::clone(&area)));
+        let s = Service::new(FakeDaemon::full(), Copier::new(Arc::clone(&area)));
         assert_eq!(
             s.copy_generated_password(),
             Err(AppError::NoGeneratedPassword)
@@ -1072,7 +1072,7 @@ mod tests {
         assert_eq!(copied.len(), 24);
         assert!(!format!("{g:?}").contains(core::str::from_utf8(&copied).unwrap()));
         assert_eq!(
-            s.reveal_generated_password().unwrap().expor().as_bytes(),
+            s.reveal_generated_password().unwrap().expose().as_bytes(),
             &copied[..]
         );
         // Leaving the screen zeroes; "copy" and "reveal" no longer have anything to hand.
@@ -1104,7 +1104,7 @@ mod tests {
         let area = Arc::new(Area::default());
         let s = Service::new(
             FakeDaemon::full(),
-            Copiador::com_prazo(Arc::clone(&area), std::time::Duration::from_millis(50)),
+            Copier::with_delay(Arc::clone(&area), std::time::Duration::from_millis(50)),
         );
         s.generate_password(options()).unwrap();
         s.copy_generated_password().unwrap();
@@ -1237,7 +1237,7 @@ mod tests {
         assert_eq!(
             s.reveal_field("acme-wp-novo", "totp_semente")
                 .unwrap()
-                .expor(),
+                .expose(),
             "JBSWY3DPEHPK3PXP"
         );
         assert_eq!(s.totp_code("acme-wp-novo").unwrap().code.len(), 6);
@@ -1258,7 +1258,7 @@ mod tests {
             "livre"
         );
         assert_eq!(
-            s.reveal_field("acme-totp-dev2", "senha").unwrap().expor(),
+            s.reveal_field("acme-totp-dev2", "senha").unwrap().expose(),
             "falso-WP-senha-01"
         );
         assert_eq!(
@@ -1327,12 +1327,12 @@ mod tests {
             s.use_generated_password("senha"),
             Err(AppError::NoGeneratedPassword)
         );
-        s.generate_password(crate::gerador::Opcoes {
-            tamanho: 32,
+        s.generate_password(crate::generator::Options {
+            size: 32,
             ..options()
         })
         .unwrap();
-        let gerada = s.reveal_generated_password().unwrap().expor().to_owned();
+        let generated = s.reveal_generated_password().unwrap().expose().to_owned();
         assert_eq!(s.use_generated_password("senha"), Ok(32));
         for field in ["token", "totp_semente", "", "senha "] {
             assert_eq!(
@@ -1346,8 +1346,8 @@ mod tests {
         let r = s.save_credential(None, form(j)).unwrap();
         assert_eq!(r.saved.as_deref(), Some("acme-gerada"));
         assert_eq!(
-            s.reveal_field("acme-gerada", "senha").unwrap().expor(),
-            gerada
+            s.reveal_field("acme-gerada", "senha").unwrap().expose(),
+            generated
         );
         // After saving, the used password goes away.
         let mut j = new_login("acme-gerada-2");
@@ -1459,13 +1459,13 @@ mod tests {
     fn attack_reveal_only_secrets_and_responses_without_secret() {
         let (s, area) = service();
         assert_eq!(
-            s.reveal_field("acme-pg-dev", "senha").unwrap().expor(),
+            s.reveal_field("acme-pg-dev", "senha").unwrap().expose(),
             "falso-PG:s3nha/01@#"
         );
         assert_eq!(
             s.reveal_field("gama-generico", "CHAVE_LICENCA")
                 .unwrap()
-                .expor(),
+                .expose(),
             "falso-licenca-01"
         );
         assert_eq!(
@@ -1515,7 +1515,7 @@ mod tests {
         let n = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let s = Service::new(
             Counter(FakeDaemon::full(), Arc::clone(&n)),
-            Copiador::novo(Arc::new(Area::default())),
+            Copier::new(Arc::new(Area::default())),
         );
         let list = s.list_credentials().unwrap();
         assert_eq!(n.load(std::sync::atomic::Ordering::SeqCst), 1);
@@ -1532,7 +1532,7 @@ mod tests {
     #[test]
     fn empty_vault() {
         let area = Arc::new(Area::default());
-        let s = Service::new(FakeDaemon::empty(), Copiador::novo(area));
+        let s = Service::new(FakeDaemon::empty(), Copier::new(area));
         assert!(s.list_credentials().unwrap().is_empty());
     }
 
@@ -1540,7 +1540,7 @@ mod tests {
     const WRONG_PIN: &str = "000000";
 
     fn pin(p: &str) -> Pin {
-        Pin::novo(p.to_owned()).unwrap()
+        Pin::new(p.to_owned()).unwrap()
     }
 
     fn level_of(s: &Service<FakeDaemon, Arc<Area>>, entry: &str) -> &'static str {
@@ -1556,7 +1556,7 @@ mod tests {
         assert_eq!(level_of(&s, "acme-pg-prod"), "com-aprovacao");
         for level in ["livre", "bloqueado", "com-aprovacao", "livre"] {
             let r = s.set_level("acme-pg-prod", level, pin(RIGHT_PIN)).unwrap();
-            assert_eq!((r.entrada.as_str(), r.nivel), ("acme-pg-prod", level));
+            assert_eq!((r.entry.as_str(), r.level), ("acme-pg-prod", level));
             assert_eq!(level_of(&s, "acme-pg-prod"), level);
             let item = s
                 .list_credentials()
@@ -1789,7 +1789,7 @@ mod tests {
         let key = s
             .reveal_field("acme-ssh-chave-prod", "chave_privada")
             .unwrap();
-        assert!(key.expor().contains("falso-chave-ed25519-teste"));
+        assert!(key.expose().contains("falso-chave-ed25519-teste"));
     }
 
     /// V5.10 and D33: the errors of the new types come back on the right field, without
@@ -1945,7 +1945,7 @@ mod tests {
             .unwrap();
         assert_eq!(r.saved.as_deref(), Some("clientex-ssh-53a"), "{r:?}");
         let v = s.reveal_field("clientex-ssh-53a", "chave_privada").unwrap();
-        assert_eq!(v.expor(), k.as_str());
+        assert_eq!(v.expose(), k.as_str());
         // Once saved, the key was discarded: "carregada" again is an invalid request.
         assert_eq!(
             s.save_credential(None, form(loaded_server("clientex-ssh-53b"))),
@@ -2135,7 +2135,7 @@ mod tests {
         let sel = FixedPicker::default();
         let s = Service::new(
             Spy(FakeDaemon::full(), Arc::clone(&frames)),
-            Copiador::novo(Arc::new(Area::default())),
+            Copier::new(Arc::new(Area::default())),
         )
         .with_picker(sel.clone());
         let content = "FALSO_ENV=falso-anexo-01";
@@ -2305,7 +2305,7 @@ mod tests {
         let ops = Arc::new(Mutex::new(Vec::new()));
         let s = Service::new(
             Recorder(FakeDaemon::full(), Arc::clone(&ops)),
-            Copiador::novo(Arc::new(Area::default())),
+            Copier::new(Arc::new(Area::default())),
         );
         for _ in 0..5 {
             s.tray_state();
@@ -2323,7 +2323,7 @@ mod tests {
             }
         }
         let area = Arc::new(Area::default());
-        let s = Service::new(Down, Copiador::novo(Arc::clone(&area)));
+        let s = Service::new(Down, Copier::new(Arc::clone(&area)));
         *area.0.lock().unwrap() = Some(b"qualquer".to_vec());
         assert!(s.lock().is_err());
         assert_eq!(s.tray_state(), crate::tray::TrayState::NoDaemon);
@@ -2342,14 +2342,14 @@ mod unlock_tests {
     const RIGHT_PASSWORD: &str = "falso-mestra-ward-01";
 
     struct NoClipboard;
-    impl AreaTransferencia for NoClipboard {
-        fn escrever(&self, _: &[u8]) -> Result<(), AppError> {
+    impl Clipboard for NoClipboard {
+        fn write(&self, _: &[u8]) -> Result<(), AppError> {
             Err(AppError::Clipboard)
         }
-        fn ler(&self) -> Result<Option<Zeroizing<Vec<u8>>>, AppError> {
+        fn read(&self) -> Result<Option<Zeroizing<Vec<u8>>>, AppError> {
             Ok(None)
         }
-        fn limpar(&self) -> Result<(), AppError> {
+        fn clear(&self) -> Result<(), AppError> {
             Ok(())
         }
     }
@@ -2357,12 +2357,12 @@ mod unlock_tests {
     fn service() -> Service<FakeDaemon, NoClipboard> {
         Service::new(
             FakeDaemon::locked().without_wait(),
-            Copiador::novo(NoClipboard),
+            Copier::new(NoClipboard),
         )
     }
 
-    fn password(s: &str) -> SenhaMestra {
-        SenhaMestra::nova(s.to_owned()).unwrap()
+    fn password(s: &str) -> MasterPassword {
+        MasterPassword::new(s.to_owned()).unwrap()
     }
 
     /// Keeps the frames the app sends and answers through the fake daemon.
@@ -2422,7 +2422,7 @@ mod unlock_tests {
         let frames = Arc::new(Mutex::new(Vec::new()));
         let s = Service::new(
             Spy(FakeDaemon::locked().without_wait(), frames.clone()),
-            Copiador::novo(NoClipboard),
+            Copier::new(NoClipboard),
         );
         let _ = s.vault_status();
         s.unlock(password(RIGHT_PASSWORD)).unwrap();
@@ -2449,7 +2449,7 @@ mod unlock_tests {
         let s = service();
         let queue = Arc::new(NoticeQueue::default());
         let (tx, rx) = std::sync::mpsc::channel();
-        crate::destrave::vigiar(queue.clone(), s.unlock_request(), move || {
+        crate::unlock::watch(queue.clone(), s.unlock_request(), move || {
             let _ = tx.send(());
         })
         .unwrap();
@@ -2457,7 +2457,7 @@ mod unlock_tests {
         queue.simulate(Notice::test_unlock("acme-pg-aprovacao"));
         rx.recv_timeout(Duration::from_secs(5)).unwrap();
         let info = s.request_info(VaultStatus::Locked).unwrap();
-        assert!(info.restante > 110 && info.restante <= 120, "{info:?}");
+        assert!(info.remaining > 110 && info.remaining <= 120, "{info:?}");
         assert_eq!(s.request_info(VaultStatus::Unlocked), None);
         assert_eq!(s.request_info(VaultStatus::NoVault), None);
         // A wrong password does not remove the request.
@@ -2478,7 +2478,7 @@ mod unlock_tests {
     #[test]
     fn fake_daemon_waits_d20_before_looking_at_the_password() {
         // The 2nd attempt (after 1 error) waits 1 s even with the right password.
-        let s = Service::new(FakeDaemon::locked(), Copiador::novo(NoClipboard));
+        let s = Service::new(FakeDaemon::locked(), Copier::new(NoClipboard));
         assert_eq!(s.unlock(password("errada")), Err(AppError::WrongPassword));
         let t = std::time::Instant::now();
         s.unlock(password(RIGHT_PASSWORD)).unwrap();
