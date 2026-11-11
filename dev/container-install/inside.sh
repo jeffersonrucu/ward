@@ -319,9 +319,38 @@ FPID=$!
 for _ in $(seq 50); do grep -q pronto /tmp/v93/falso.out 2>/dev/null && break; sleep 0.1; done
 check "V9.3 servidor falso do uid escutando em /run/user/$UID_T/ward" "$(cat /tmp/v93/falso.out)" "pronto"
 PASSWORD="$(cat "$T/senha")"
-r="$(printf '%s\n' "$PASSWORD" | as_1000 /usr/bin/env -i HOME="$HOME_T" PATH=/usr/bin:/bin LANG=C.UTF-8 \
-    XDG_RUNTIME_DIR="/run/user/$UID_T" WARD_SOCKET="/run/user/$UID_T/ward/wardd.sock" \
-    /usr/bin/script -qec "/usr/local/bin/ward unlock" /dev/null 2>&1; echo "saiu=$?")"
+# `ward unlock` in a pty, as the user (Phase 63a). The test password (fake, D15) is typed
+# only after the prompt shows up: the CLI turns the echo off before writing the prompt, so
+# the password never goes back into the output; without a prompt in 10 s nothing is typed.
+# Extra environment for the CLI in "$@". Prints the output and "saiu=<code>".
+pty_unlock() {
+    local d w pid code=0
+    d="$(mktemp -d /tmp/unlock.XXXXXX)"
+    mkfifo -m 0600 "$d/in"
+    as_1000 /usr/bin/env -i HOME="$HOME_T" PATH=/usr/bin:/bin LANG=C.UTF-8 XDG_RUNTIME_DIR="/run/user/$UID_T" "$@" \
+        /usr/bin/script -qec "/usr/local/bin/ward unlock" /dev/null <"$d/in" >"$d/out" 2>&1 &
+    pid=$!
+    exec {w}>"$d/in"
+    for _ in $(seq 100); do
+        grep -q "Senha mestra" "$d/out" 2>/dev/null && break
+        kill -0 "$pid" 2>/dev/null || break
+        sleep 0.1
+    done
+    if grep -q "Senha mestra" "$d/out" 2>/dev/null; then
+        printf '%s\n' "$PASSWORD" >&"$w"
+    fi
+    exec {w}>&-
+    wait "$pid" || code=$?
+    cat "$d/out"
+    echo "saiu=$code"
+    rm -rf -- "$d"
+}
+# The password never in the output (the label only; the output is not printed).
+no_password() {
+    if [[ "$2" != *"$PASSWORD"* ]]; then ok "$1"; else failed "$1 (a senha de teste apareceu na saída)"; fi
+}
+r="$(pty_unlock WARD_SOCKET="/run/user/$UID_T/ward/wardd.sock")"
+no_password "V9.3 ward unlock: a senha não aparece na saída" "$r"
 lacks "V9.3 ward unlock não sai 0" "$r" "saiu=0"
 lacks "V9.3 ward unlock não pede a senha" "$r" "Senha mestra"
 # m2:DT10: the refusal comes from the server check, not from an unknown subcommand.
@@ -421,20 +450,30 @@ watch_swap() {
     done
     echo "parado" >>"$out"
 }
-# Control: the watcher sees a binary swapped under a live process.
+# Control: the watcher sees a binary swapped under a live process that, like the wardd,
+# is not dumpable and runs as another uid (a setgid copy run by the user; Phase 63a).
+# The copy lives in /var/tmp: the container's /tmp is noexec.
 install -d -m 0700 /tmp/v57
-cp /usr/bin/sleep /tmp/v57/sleep
-/tmp/v57/sleep 30 &
+CTL_BIN=/var/tmp/v57-sleep
+rm -f -- "$CTL_BIN" "$CTL_BIN.new"
+install -m 0755 /usr/bin/sleep "$CTL_BIN"
+chown root:nogroup "$CTL_BIN"
+chmod 2755 "$CTL_BIN"
+# setpriv straight (not the as_1000 function): `$!` is then the sleep itself, not a subshell.
+setpriv --reuid="$UID_T" --regid="$UID_T" --init-groups "$CTL_BIN" 30 &
 CTL=$!
 sleep 0.2
+check "m2:V5.7 controle: o processo vigiado é do usuário e não-dumpable (/proc/<pid> do usuário, environ do root)" \
+    "$(stat -c %U "/proc/$CTL" "/proc/$CTL/environ" 2>&1 | tr '\n' ' ')" "$TEST_USER root "
 watch_swap "$CTL" /tmp/v57/control &
 CTL_WATCH=$!
 sleep 0.2
-cp /usr/bin/sleep /tmp/v57/sleep.new && mv -f /tmp/v57/sleep.new /tmp/v57/sleep
+cp /usr/bin/sleep "$CTL_BIN.new" && mv -f "$CTL_BIN.new" "$CTL_BIN"
 sleep 0.2
 kill "$CTL" 2>/dev/null || true
 wait "$CTL" 2>/dev/null || true
 wait "$CTL_WATCH" || true
+rm -f -- "$CTL_BIN"
 check "m2:V5.7 controle: o vigia vê um binário trocado com o processo no ar" "$(cat /tmp/v57/control)" "trocado com o processo no ar"
 
 clean_groups
@@ -482,13 +521,33 @@ new_pid="$(systemctl show -p MainPID --value "wardd@$UID_T.service")"
 [ "$new_pid" != "$old_pid" ] && cmp -s "/proc/$new_pid/exe" "$B/wardd" && ok "m2:V5.7: o wardd no ar é o 0.2.0" || failed "m2:V5.7: o wardd no ar não é o 0.2.0"
 lacks "m2:V5.7: o wardd 0.2.0 não atende o cliente v1" "$(legacy_call "$REQ_STATUS" "$RESP_LOCKED")" "same"
 check "m2:V5.7: o cofre continua intacto até destravar" "$(vault_sums)" "$VAULT_BEFORE"
-r="$(printf '%s\n' "$PASSWORD" | as_1000 /usr/bin/env -i HOME="$HOME_T" PATH=/usr/bin:/bin LANG=C.UTF-8 \
-    XDG_RUNTIME_DIR="/run/user/$UID_T" /usr/bin/script -qec "/usr/local/bin/ward unlock" /dev/null 2>&1; echo "saiu=$?")"
+r="$(pty_unlock)"
+no_password "m2:V5.7: \`ward unlock\`: a senha não aparece na saída" "$r"
 check "m2:V5.7: \`ward unlock\` 0.2.0 destrava o cofre 0.1.4" "$r" "cofre destravado"
 check "m2:V5.7: \`ward unlock\` sai 0" "$r" "saiu=0"
 lacks "m2:V5.7: o destrave migra o cofre (arquivo regravado)" "$(vault_sums)" "$(head -n 1 <<<"$VAULT_BEFORE")"
 check "m2:V5.7: estado no formato novo depois do destrave" "$(head -n 1 "$VAULT_T/estado")" "ward-state 2"
 check "m2:V5.7: cofre migrado continua 0600 do usuário" "$(stat -c '%U %a' "$VAULT_T/cofre.ward")" "$TEST_USER 600"
+
+# Attack (Phase 63a; m2:DT15, m2:DT16): a refused `make install` (0.1.x extension dir by
+# link) neither stops, restarts nor locks the running wardd: same pid, vault unlocked.
+check "m2:DT16 (Fase 63a): cofre destravado antes do ataque" "$(as_1000 "$B/cliente" "$SOCK" list)" "resposta: list"
+live_pid="$(systemctl show -p MainPID --value "wardd@$UID_T.service")"
+install -d -m 0755 /tmp/v57/victim
+printf 'da vítima\n' >/tmp/v57/victim/ward.crx
+ln -s /tmp/v57/victim "$OLD_EXT_DIR"
+r="$(install_ward 2>&1; echo "saiu=$?")"
+lacks "m2:DT15 ataque (Fase 63a): pasta da 0.1.x por link: make install recusado" "$r" "saiu=0"
+check "m2:DT15 ataque (Fase 63a): mensagem da recusa" "$r" "link simbólico"
+lacks "m2:DT16 ataque (Fase 63a): recusado antes de parar" "$r" "parando"
+check "m2:DT15 ataque (Fase 63a): o alvo do link intacto" "$(cat /tmp/v57/victim/ward.crx)" "da vítima"
+after_pid="$(systemctl show -p MainPID --value "wardd@$UID_T.service")"
+[ -n "$live_pid" ] && [ "$live_pid" != 0 ] && [ "$after_pid" = "$live_pid" ] &&
+    ok "m2:DT16 ataque (Fase 63a): make install recusado: mesmo wardd no ar (pid $live_pid)" ||
+    failed "m2:DT16 ataque (Fase 63a): make install recusado: o wardd mudou ($live_pid -> $after_pid)"
+check "m2:DT16 ataque (Fase 63a): make install recusado: o cofre continua destravado" "$(as_1000 "$B/cliente" "$SOCK" list)" "resposta: list"
+rm -f -- "$OLD_EXT_DIR"
+rm -rf /tmp/v57/victim
 
 # --- Phase 57 (m2:V5.8, SEG): 0.2.0 uninstall over a 0.1.4 install (only the old mark) ----
 r="$(make -s -C "$T/repo" uninstall 2>&1)" || { printf '%s\n' "$r"; failed "m2:V5.8: limpar"; }

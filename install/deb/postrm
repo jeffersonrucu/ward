@@ -61,10 +61,11 @@ case "${1:-}" in
         remove_groups
         ;;
     abort-upgrade)
-        # This version's preinst stopped the sockets (m2:DT16) and the upgrade failed: they
-        # come back with the binaries dpkg put back.
+        # The upgrade failed. If this version's preinst stopped the sockets (m2:DT16; its
+        # mark in /run), they come back with the binaries dpkg put back; a refused preinst
+        # stopped nothing, and nothing is started or restarted (Phase 63a).
         if [ -d /run/systemd/system ]; then
-            start_enabled_sockets
+            restart_stopped_sockets
         fi
         ;;
     upgrade | failed-upgrade | disappear) ;;

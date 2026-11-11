@@ -1,0 +1,452 @@
+/dev/nvme0n1p6  104G   83G   17G  84% /
+origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
+<home>/.cargo/bin/cargo build --quiet --locked -p wardd --bin wardd --example wardd-test-client --target-dir target/no-test-mode
+<home>/.cargo/bin/cargo build --quiet --locked -p ward --bin ward --target-dir target/no-test-mode
+<home>/.cargo/bin/cargo build --quiet --locked -p ward-nm --bin ward-nm --target-dir target/no-test-mode
+<home>/.cargo/bin/cargo build --quiet --locked -p ward-app-core --example startup-container --target-dir target/no-test-mode
+<home>/.cargo/bin/cargo build --quiet --locked -p ward-platform --features test-mode --example ward-platform-container
+<home>/.cargo/bin/cargo build --quiet --locked -p wardd --features test-mode --bin wardd
+dev/tests/install.sh
+==> 1. DESTDIR (host, sem root)
+ok: make install DESTDIR saiu 0
+ok: V9.1: árvore exata (22 arquivos)
+ok: V9.1: modos de tree.txt (ward-app e ward-nm 2755), sem escrita para grupo e outros
+ok: binários iguais aos artefatos
+ok: units, tmpfiles.d e pacote iguais aos do repositório
+ok: 51c: drop-in do systemd-coredump igual ao do repositório
+ok: 51c: drop-in com Storage=none e ProcessSizeMax=0
+ok: 51c: report-ignore/ward e blacklist.d/ward iguais
+ok: 51c: os 3 auxiliares do libwebkit2gtk-4.1-0 do host e os 4 binários do Ward na lista
+ok: 51c: nenhuma linha vazia ou com espaço na lista (o apport compara a linha inteira)
+ok: 51c: o apport (report-ignore) cala os 7 caminhos e não os controles
+ok: 51c: apport (report-ignore) sem FALHOU
+ok: 51c: o apport (blacklist.d) cala os 7 caminhos e não os controles
+ok: 51c: apport (blacklist.d) sem FALHOU
+ok: 51c ataque: auxiliar novo no pacote (WebKitPrintProcess) recusa a lista
+ok: 51c ataque: auxiliar novo não sai 0
+ok: 51c: arquitetura fora da tabela recusa
+ok: 51c: arquitetura fora da tabela não sai 0
+ok: 51c: sem o libwebkit2gtk, avisa e usa o caminho do multiarch
+ok: 51c: arm64 -> aarch64-linux-gnu
+ok: 51c: core_pattern apport sem aviso
+ok: 51c: core_pattern systemd sem aviso
+ok: 51c: core_pattern file sem aviso
+ok: 51c: core_pattern de outro programa avisa
+ok: 51c: core_pattern por outro socket avisa
+ok: m2:DT15: a marca da 0.1.x passa para created-groups com as mesmas linhas
+ok: m2:DT15: a marca da 0.1.x é apagada depois
+ok: m2:DT15: linha inválida da marca antiga não passa
+ok: m2:DT15: gid fora do sistema na marca antiga não passa
+ok: m2:DT15: migração sai 0
+ok: m2:DT15: com as duas marcas, a nova vence
+ok: m2:DT15: com as duas marcas, a antiga é apagada
+ok: m2:V5.8: sem a nova, a marca lida é a da 0.1.x
+ok: m2:DT15 ataque: marca nova por link não dá grupo nenhum (nem cai na antiga)
+ok: m2:DT15 ataque: marca nova por link: nada lido
+ok: m2:DT15 ataque: marca antiga por link não é seguida
+ok: m2:DT15 ataque: o link da marca antiga é apagado
+ok: m2:DT15 ataque: o alvo do link intacto
+ok: m2:V5.8: delete_marked_groups sai 0
+ok: m2:V5.8: o uninstall apaga as duas marcas
+ok: m2:V5.8: o uninstall apaga a created-groups
+ok: m2:DT16: stop_running_daemons sai 0
+ok: m2:DT16: avisa que para o daemon antes de trocar
+ok: m2:DT16: os sockets param antes do daemon
+ok: m2:DT16: nenhum wardd@ ativo no fim
+ok: m2:DT16 ataque: daemon que não para recusa
+ok: m2:DT16 ataque: daemon que não para: nada depois
+ok: m2:DT16 ataque: daemon que não para: não sai 0
+ok: m2:DT16: stop que falha recusa
+ok: m2:DT16: stop que falha: nada depois
+ok: m2:DT16 (Fase 63a): stop que falha não deixa marca
+ok: m2:DT16 (Fase 63a): stop com marca sai 0
+ok: m2:DT16 (Fase 63a): marca 0700
+ok: m2:DT16 (Fase 63a): marca com os sockets parados
+ok: m2:DT16 (Fase 63a): marca sem o serviço
+ok: m2:DT16 (Fase 63a): abort religa só os sockets da marca
+ok: m2:DT16 (Fase 63a): abort apaga a marca
+ok: m2:DT16 (Fase 63a): nada parado, nenhuma marca
+ok: m2:DT16 ataque (Fase 63a): sem marca (preinst recusado), o abort sai 0
+ok: m2:DT16 ataque (Fase 63a): sem marca, o abort não religa nem reinicia nada
+ok: m2:DT16 ataque (Fase 63a): marca por link não é seguida
+ok: m2:DT16 ataque (Fase 63a): o link da marca é apagado
+ok: m2:DT16 ataque (Fase 63a): o alvo do link intacto
+ok: m2:DT16 ataque (Fase 63a): link no lugar da marca recusa
+ok: m2:DT16 ataque (Fase 63a): link no lugar da marca: nada depois
+ok: m2:DT16 ataque (Fase 63a): link no lugar da marca: alvo intacto
+ok: m2:DT16 ataque (Fase 63a): marca 0755 não é lida
+ok: m2:DT16 ataque (Fase 63a): da marca só sai wardd@<uid>.socket
+ok: m2:DT16 (Fase 63a): depois da troca (configure), o daemon ainda no ar vai para o binário novo
+ok: V9.6: manifesto de native messaging (allowed_origins só o id, path do ward-nm)
+ok: política do Chrome: NativeMessagingUserLevelHosts, PasswordManagerEnabled e PasswordLeakDetectionEnabled false, só a extensão do Ward, force_installed, update local
+ok: update.xml: id, pacote local e versão do pacote
+ok: systemd-analyze verify das units instaladas
+ok: reinstalar troca o link plantado pelo binário
+ok: o alvo do link plantado não foi escrito
+ok: m2:V5.6: usr/local/share/ward/extension/ com o update.xml
+ok: m2:V5.6: nenhum caminho da 0.1.x na árvore
+ok: m2:V5.6: tree.txt sem caminho da 0.1.x
+ok: m2:V5.6: tree.txt explica a marca usr/local/lib/ward/created-groups
+ok: m2:V5.6: a marca não sai com DESTDIR
+ok: m2:DT15: a pasta da extensão da 0.1.x foi apagada
+ok: m2:DT15: a instalação diz o que apagou
+ok: m2:DT15 ataque: o alvo do link no lugar do update.xml antigo intacto
+ok: m2:V5.8: o uninstall apaga a pasta da extensão da 0.1.x e usr/local/share/ward
+ok: V9.10: uninstall apaga todo arquivo do Ward
+ok: V9.10: pastas comuns ficam
+ok: V9.10: o cofre e o arquivo de outro pacote intactos
+ok: uninstall de novo (nada instalado) sai 0
+==> 1b. Recusas (cada uma numa pasta nova)
+ok: V9.2: wardd com test-mode: recusado (saiu 2)
+ok: V9.2: wardd com test-mode: mensagem
+ok: V9.2: wardd com test-mode: nenhum arquivo do Ward
+ok: V9.2: ward com WARD_DEV_SOCKET_DIR: recusado (saiu 2)
+ok: V9.2: ward com WARD_DEV_SOCKET_DIR: mensagem
+ok: V9.2: ward com WARD_DEV_SOCKET_DIR: nenhum arquivo do Ward
+ok: V9.2: ward-nm com WARD_DEV_DIR: recusado (saiu 2)
+ok: V9.2: ward-nm com WARD_DEV_DIR: mensagem
+ok: V9.2: ward-nm com WARD_DEV_DIR: nenhum arquivo do Ward
+ok: V9.2: ward-app com a ponte de teste: recusado (saiu 2)
+ok: V9.2: ward-app com a ponte de teste: mensagem
+ok: V9.2: ward-app com a ponte de teste: nenhum arquivo do Ward
+ok: V9.2: wardd com WARD_DEV_SYSTEM_DBUS (sem exceção): recusado (saiu 2)
+ok: V9.2: wardd com WARD_DEV_SYSTEM_DBUS (sem exceção): mensagem
+ok: V9.2: wardd com WARD_DEV_SYSTEM_DBUS (sem exceção): nenhum arquivo do Ward
+ok: m2:V5.4: wardd com WARD_DEV_EXTENSION: recusado (saiu 2)
+ok: m2:V5.4: wardd com WARD_DEV_EXTENSION: mensagem
+ok: m2:V5.4: wardd com WARD_DEV_EXTENSION: nenhum arquivo do Ward
+ok: m2:V5.4: wardd com WARD_DEV_EXTENSAO: recusado (saiu 2)
+ok: m2:V5.4: wardd com WARD_DEV_EXTENSAO: mensagem
+ok: m2:V5.4: wardd com WARD_DEV_EXTENSAO: nenhum arquivo do Ward
+ok: m2:V5.4: wardd com WARD_DEV_DBUS_SISTEMA: recusado (saiu 2)
+ok: m2:V5.4: wardd com WARD_DEV_DBUS_SISTEMA: mensagem
+ok: m2:V5.4: wardd com WARD_DEV_DBUS_SISTEMA: nenhum arquivo do Ward
+ok: m2:V5.4: wardd com ward-test-bridge: recusado (saiu 2)
+ok: m2:V5.4: wardd com ward-test-bridge: mensagem
+ok: m2:V5.4: wardd com ward-test-bridge: nenhum arquivo do Ward
+ok: m2:V5.4: wardd com ward-ponte-teste: recusado (saiu 2)
+ok: m2:V5.4: wardd com ward-ponte-teste: mensagem
+ok: m2:V5.4: wardd com ward-ponte-teste: nenhum arquivo do Ward
+ok: m2:V5.4: wardd com wardd-test-app: recusado (saiu 2)
+ok: m2:V5.4: wardd com wardd-test-app: mensagem
+ok: m2:V5.4: wardd com wardd-test-app: nenhum arquivo do Ward
+ok: m2:V5.4: wardd com wardd-app-teste: recusado (saiu 2)
+ok: m2:V5.4: wardd com wardd-app-teste: mensagem
+ok: m2:V5.4: wardd com wardd-app-teste: nenhum arquivo do Ward
+ok: m2:V5.4: wardd com wardd-test-approver: recusado (saiu 2)
+ok: m2:V5.4: wardd com wardd-test-approver: mensagem
+ok: m2:V5.4: wardd com wardd-test-approver: nenhum arquivo do Ward
+ok: m2:V5.4: wardd com wardd-aprovador-teste: recusado (saiu 2)
+ok: m2:V5.4: wardd com wardd-aprovador-teste: mensagem
+ok: m2:V5.4: wardd com wardd-aprovador-teste: nenhum arquivo do Ward
+ok: m2:V5.4: wardd com ward-test: recusado (saiu 2)
+ok: m2:V5.4: wardd com ward-test: mensagem
+ok: m2:V5.4: wardd com ward-test: nenhum arquivo do Ward
+ok: m2:V5.4: wardd com ward-teste: recusado (saiu 2)
+ok: m2:V5.4: wardd com ward-teste: mensagem
+ok: m2:V5.4: wardd com ward-teste: nenhum arquivo do Ward
+ok: m2:V5.4: wardd de teste 0.1.4: recusado (saiu 2)
+ok: m2:V5.4: wardd de teste 0.1.4: mensagem
+ok: m2:V5.4: wardd de teste 0.1.4: nenhum arquivo do Ward
+ok: o wardd de release não tem nenhum WARD_DEV_
+ok: política: outro arquivo com NativeMessagingUserLevelHosts: recusado (saiu 2)
+ok: política: outro arquivo com NativeMessagingUserLevelHosts: mensagem
+ok: política: outro arquivo com NativeMessagingUserLevelHosts: nenhum arquivo do Ward
+ok: política: outro arquivo com ExtensionSettings: recusado (saiu 2)
+ok: política: outro arquivo com ExtensionSettings: mensagem
+ok: política: outro arquivo com ExtensionSettings: nenhum arquivo do Ward
+ok: política: nome escondido com escape \u: recusado (saiu 2)
+ok: política: nome escondido com escape \u: mensagem
+ok: política: nome escondido com escape \u: nenhum arquivo do Ward
+ok: política: arquivo oculto também conta: recusado (saiu 2)
+ok: política: arquivo oculto também conta: mensagem
+ok: política: arquivo oculto também conta: nenhum arquivo do Ward
+ok: política: outro arquivo com PasswordManagerEnabled: recusado (saiu 2)
+ok: política: outro arquivo com PasswordManagerEnabled: mensagem
+ok: política: outro arquivo com PasswordManagerEnabled: nenhum arquivo do Ward
+ok: política: outro arquivo com PasswordLeakDetectionEnabled: recusado (saiu 2)
+ok: política: outro arquivo com PasswordLeakDetectionEnabled: mensagem
+ok: política: outro arquivo com PasswordLeakDetectionEnabled: nenhum arquivo do Ward
+ok: política: outro arquivo sem os nomes do Ward não impede
+ok: política: o outro arquivo ficou intacto
+ok: wardd que não é ELF: recusado (saiu 2)
+ok: wardd que não é ELF: mensagem
+ok: wardd que não é ELF: nenhum arquivo do Ward
+ok: ward por link simbólico: recusado (saiu 2)
+ok: ward por link simbólico: mensagem
+ok: ward por link simbólico: nenhum arquivo do Ward
+ok: artefato ausente: recusado (saiu 2)
+ok: artefato ausente: mensagem
+ok: artefato ausente: nenhum arquivo do Ward
+ok: EXTENSION_ID vazio: recusado (saiu 2)
+ok: EXTENSION_ID vazio: mensagem
+ok: EXTENSION_ID vazio: nenhum arquivo do Ward
+ok: EXTENSION_ID em maiúsculas: recusado (saiu 2)
+ok: EXTENSION_ID em maiúsculas: mensagem
+ok: EXTENSION_ID em maiúsculas: nenhum arquivo do Ward
+ok: EXTENSION_ID com 31 letras: recusado (saiu 2)
+ok: EXTENSION_ID com 31 letras: mensagem
+ok: EXTENSION_ID com 31 letras: nenhum arquivo do Ward
+ok: EXTENSION_ID com aspas (injeção no JSON): recusado (saiu 2)
+ok: EXTENSION_ID com aspas (injeção no JSON): mensagem
+ok: EXTENSION_ID com aspas (injeção no JSON): nenhum arquivo do Ward
+ok: EXTENSION_ID de outra extensão: recusado (saiu 2)
+ok: EXTENSION_ID de outra extensão: mensagem
+ok: EXTENSION_ID de outra extensão: nenhum arquivo do Ward
+ok: pacote com id que não é o da chave: recusado (saiu 2)
+ok: pacote com id que não é o da chave: mensagem
+ok: pacote com id que não é o da chave: nenhum arquivo do Ward
+ok: pacote com versão fora do formato: recusado (saiu 2)
+ok: pacote com versão fora do formato: mensagem
+ok: pacote com versão fora do formato: nenhum arquivo do Ward
+ok: pacote ausente: recusado (saiu 2)
+ok: pacote ausente: mensagem
+ok: pacote ausente: nenhum arquivo do Ward
+ok: PREFIX=/opt/ward: recusado (saiu 2)
+ok: PREFIX=/opt/ward: mensagem
+ok: PREFIX=/opt/ward: nenhum arquivo do Ward
+ok: PREFIX=/usr/local/../tmp: recusado (saiu 2)
+ok: PREFIX=/usr/local/../tmp: mensagem
+ok: PREFIX=/usr/local/../tmp: nenhum arquivo do Ward
+ok: DESTDIR por link: recusado (saiu 2)
+ok: DESTDIR por link: mensagem
+ok: DESTDIR por link: nenhum arquivo do Ward
+ok: DESTDIR por link: nada no alvo do link
+ok: DESTDIR com ..: recusado (saiu 2)
+ok: DESTDIR com ..: mensagem
+ok: DESTDIR com ..: nenhum arquivo do Ward
+ok: usr/local/bin por link dentro do DESTDIR: recusado (saiu 2)
+ok: usr/local/bin por link dentro do DESTDIR: mensagem
+ok: usr/local/bin por link dentro do DESTDIR: nenhum arquivo do Ward
+ok: pasta-link: nada escrito no alvo
+ok: 51c: etc/apport/report-ignore por link: recusado (saiu 2)
+ok: 51c: etc/apport/report-ignore por link: mensagem
+ok: 51c: etc/apport/report-ignore por link: nenhum arquivo do Ward
+ok: 51c: etc/apport/report-ignore por link: nada escrito no alvo
+ok: 51c: etc/systemd/coredump.conf.d por link: recusado (saiu 2)
+ok: 51c: etc/systemd/coredump.conf.d por link: mensagem
+ok: 51c: etc/systemd/coredump.conf.d por link: nenhum arquivo do Ward
+ok: 51c: etc/systemd/coredump.conf.d por link: nada escrito no alvo
+ok: m2:DT15 ataque: usr/local/share/ward/extensao por link: recusado (saiu 2)
+ok: m2:DT15 ataque: usr/local/share/ward/extensao por link: mensagem
+ok: m2:DT15 ataque: usr/local/share/ward/extensao por link: nenhum arquivo do Ward
+ok: m2:DT15 ataque: usr/local/share/ward/extensao por link: o alvo intacto
+ok: m2:DT15 ataque: usr/local/share/ward por link: recusado (saiu 2)
+ok: m2:DT15 ataque: usr/local/share/ward por link: mensagem
+ok: m2:DT15 ataque: usr/local/share/ward por link: nenhum arquivo do Ward
+ok: m2:DT15 ataque: usr/local/share/ward por link: o alvo intacto
+ok: m2:DT15: pasta no lugar do ward.crx da 0.1.x: recusado (saiu 2)
+ok: m2:DT15: pasta no lugar do ward.crx da 0.1.x: mensagem
+ok: m2:DT15: pasta no lugar do ward.crx da 0.1.x: nenhum arquivo do Ward
+ok: m2:DT15: a pasta no lugar do ward.crx ficou
+ok: DESTDIR relativo: recusado
+ok: DESTDIR relativo: não sai 0
+ok: make install no sistema sem root: recusa
+ok: make install no sistema sem root: não sai 0
+ok: make uninstall no sistema sem root: recusa
+ok: make uninstall no sistema sem root: não sai 0
+==> 2. Contêiner com systemd (root só dentro dele)
+ok: systemd de pé
+ok: o systemd lê /usr/local/lib/systemd/system
+ok: V9.11 gid >= 1000: recusado
+ok: V9.11 gid >= 1000: mensagem
+ok: V9.11 gid >= 1000: nenhum arquivo do Ward (nem o setgid)
+ok: V9.11 com membro: recusado
+ok: V9.11 com membro: mensagem
+ok: V9.11 com membro: nenhum arquivo do Ward (nem o setgid)
+ok: V9.11 com senha no gshadow: recusado
+ok: V9.11 com senha no gshadow: mensagem
+ok: V9.11 com senha no gshadow: nenhum arquivo do Ward (nem o setgid)
+ok: V9.11 com administrador no gshadow: recusado
+ok: V9.11 com administrador no gshadow: mensagem
+ok: V9.11 com administrador no gshadow: nenhum arquivo do Ward (nem o setgid)
+ok: V9.11 outro grupo com o mesmo gid: recusado
+ok: V9.11 outro grupo com o mesmo gid: mensagem
+ok: V9.11 outro grupo com o mesmo gid: nenhum arquivo do Ward (nem o setgid)
+ok: V9.11 grupo primário de um usuário: recusado
+ok: V9.11 grupo primário de um usuário: mensagem
+ok: V9.11 grupo primário de um usuário: nenhum arquivo do Ward (nem o setgid)
+ok: V9.11 gid numa faixa do /etc/subgid: recusado
+ok: V9.11 gid numa faixa do /etc/subgid: mensagem
+ok: V9.11 gid numa faixa do /etc/subgid: nenhum arquivo do Ward (nem o setgid)
+ok: V9.11 grupo novo cairia no /etc/subgid: recusado
+ok: V9.11 grupo novo cairia no /etc/subgid: mensagem
+ok: V9.11 grupo novo cairia no /etc/subgid: nenhum arquivo do Ward (nem o setgid)
+ok: V9.11 o grupo recém-criado e recusado foi apagado
+ok: V9.11 pam_group (group.conf) dá o grupo no login: recusado
+ok: V9.11 pam_group (group.conf) dá o grupo no login: mensagem
+ok: V9.11 pam_group (group.conf) dá o grupo no login: nenhum arquivo do Ward (nem o setgid)
+ok: V9.11 sudoers.d com sudo -g ward-nm: recusado
+ok: V9.11 sudoers.d com sudo -g ward-nm: mensagem
+ok: V9.11 sudoers.d com sudo -g ward-nm: nenhum arquivo do Ward (nem o setgid)
+ok: V9.11 sudoers por @include com #<gid>: recusado
+ok: V9.11 sudoers por @include com #<gid>: mensagem
+ok: V9.11 sudoers por @include com #<gid>: nenhum arquivo do Ward (nem o setgid)
+ok: V9.11 nsswitch com subid: sss: recusado
+ok: V9.11 nsswitch com subid: sss: mensagem
+ok: V9.11 nsswitch com subid: sss: nenhum arquivo do Ward (nem o setgid)
+ok: V9.11 nsswitch com sudoers: files ldap: recusado
+ok: V9.11 nsswitch com sudoers: files ldap: mensagem
+ok: V9.11 nsswitch com sudoers: files ldap: nenhum arquivo do Ward (nem o setgid)
+ok: V9.11 nsswitch com group: files sss: recusado
+ok: V9.11 nsswitch com group: files sss: mensagem
+ok: V9.11 nsswitch com group: files sss: nenhum arquivo do Ward (nem o setgid)
+ok: V9.11 nsswitch com initgroups: files ldap: recusado
+ok: V9.11 nsswitch com initgroups: files ldap: mensagem
+ok: V9.11 nsswitch com initgroups: files ldap: nenhum arquivo do Ward (nem o setgid)
+ok: V9.11 (51a) os grupos recém-criados e recusados foram apagados
+ok: política conflitante (NativeMessagingUserLevelHosts em outro arquivo): recusada
+ok: política conflitante: mensagem
+ok: política conflitante: nenhum arquivo do Ward
+ok: política conflitante: nenhum grupo criado
+ok: V9.2: wardd com test-mode recusado
+ok: V9.2: mensagem
+ok: V9.2: nenhum arquivo do Ward
+ok: V9.2: nenhum grupo criado
+ok: make install (root, sem DESTDIR) saiu 0
+ok: V9.1: donos e modos de tree.txt (root:root, ward-app e ward-nm root:<grupo> 2755)
+ok: V9.6: manifesto de native messaging do root
+ok: V9.6: allowed_origins só com o id
+ok: Fase 51a/44c: política com NativeMessagingUserLevelHosts, PasswordManagerEnabled e PasswordLeakDetectionEnabled false
+ok: Fase 51a: marca dos grupos criados (nome e gid)
+ok: 51c: sem o libwebkit2gtk-4.1-0, a instalação avisa
+ok: 51c: /etc/apport/report-ignore/ward com o WebKitWebProcess
+ok: 51c: /etc/apport/report-ignore/ward com o ward-app
+ok: 51c: /etc/apport/blacklist.d/ward com o WebKitWebProcess
+ok: 51c: /etc/apport/blacklist.d/ward com o ward-app
+ok: 51c: systemd-analyze cat-config lê o drop-in do Ward
+ok: 51c: Storage=none
+ok: 51c: ProcessSizeMax=0
+ok: Fase 51a: marca root 0644
+ok: V9.11 ward-app é de sistema (gid 997)
+ok: V9.11 ward-app sem membros
+ok: V9.11 ward-app com '!' no gshadow
+ok: V9.11 ward-app sem administradores nem membros no gshadow
+ok: V9.11 ward-app fora das faixas do /etc/subgid
+ok: V9.11 ward-nm é de sistema (gid 996)
+ok: V9.11 ward-nm sem membros
+ok: V9.11 ward-nm com '!' no gshadow
+ok: V9.11 ward-nm sem administradores nem membros no gshadow
+ok: V9.11 ward-nm fora das faixas do /etc/subgid
+ok: V9.11 newgrp ward-app pelo uid 1000 falha
+ok: V9.11 sg ward-app pelo uid 1000 falha
+ok: V9.11 o uid 1000 não ganha o gid de ward-app
+ok: V9.7 wardd@1000.socket habilitado
+ok: V9.7 wardd@1000.socket ativo
+ok: V9.7 serviço ainda parado (sobe na primeira conexão)
+ok: V9.7 /run/ward root:root 0755 (tmpfiles.d)
+ok: V9.7 /run/ward/1000 root:root 0755
+ok: V9.7 socket do uid, 0600
+ok: V9.11 systemctl show: NoNewPrivileges=no
+ok: V9.11 systemctl show: RestrictSUIDSGID=no
+ok: V9.11 systemd-analyze security: NoNewPrivileges= não ligado
+ok: V9.11 systemd-analyze security: RestrictSUIDSGID= não ligado
+ok: V9.7 a primeira conexão sobe o wardd e ele responde
+ok: V9.7 wardd roda com o uid
+ok: D57 wardd sem no_new_privs
+ok: V9.4 core 0
+ok: D62 LimitMEMLOCK=infinity
+ok: V9.4 /proc/<wardd>/environ do root (dumpable 0)
+ok: V9.4 o uid 1000 não lê o environ do wardd
+ok: V9.4 o uid 1000 não abre o mem do wardd
+ok: V9.4 o uid 1000 não muda o ambiente do gerente do sistema
+ok: V9.4 o gerente do sistema continua sem LD_PRELOAD
+ok: V9.4 gerente do usuário (user@1000.service) no ar
+ok: V9.4 o atacante põe LD_PRELOAD no gerente do usuário
+ok: V9.4 o gerente do usuário tem o LD_PRELOAD
+ok: V9.4 depois de morto, a conexão sobe outro wardd
+ok: V9.4 o wardd novo não tem LD_PRELOAD (environ lido como root: HOME INVOCATION_ID JOURNAL_STREAM LANG LISTEN_FDNAMES LISTEN_FDS LISTEN_PID LOGNAME MEMORY_PRESSURE_WATCH MEMORY_PRESSURE_WRITE PATH SHELL SYSTEMD_EXEC_PID USER )
+ok: V9.4 a lib do atacante não está no wardd
+ok: V9.4 o wardd novo também é não-dumpable
+ok: o ward-app aberto pelo usuário pede ao daemon e sai (pai não é o daemon)
+ok: V9.11 o daemon abriu o ward-app setgid e ele recebeu o papel app
+ok: V9.11 o app largou o grupo depois de conectar
+ok: V9.11 o app ficou não-dumpable
+ok: V9.11 o exec aplicou o setgid (units sem no_new_privs, D57)
+ok: V9.11 o daemon não recusou o papel app ao app que ele abriu
+ok: V9.3 o wardd copiado para ~/bin não sobe sem o systemd
+ok: V9.3 o wardd copiado não fica no ar
+ok: V9.3 servidor falso do uid escutando em /run/user/1000/ward
+ok: V9.3 ward unlock: a senha não aparece na saída
+ok: V9.3 ward unlock não sai 0
+ok: V9.3 ward unlock não pede a senha
+ok: V9.3 ward unlock é um subcomando conhecido
+ok: V9.3 o servidor falso não recebeu conexão nem byte
+ok: o wardd instalado destrava o cofre de teste
+ok: reinstalar por cima sai 0 (grupos já existentes conferem)
+ok: reinstalar mantém o socket ativo
+ok: depois de reinstalar, o wardd responde
+ok: make uninstall saiu 0
+ok: V9.10 nenhum arquivo do Ward
+ok: V9.10 /usr/local/lib/ward apagada
+ok: V9.10 /usr/local/share/ward apagada
+ok: V9.10 /run/ward apagada
+ok: 51c: depois do uninstall, o systemd-coredump não lê mais o drop-in
+ok: V9.10 grupos apagados
+ok: V9.10 nenhuma unit wardd@ carregada
+ok: V9.10 wardd@1000.socket não está mais habilitado
+ok: V9.10 nenhum link em sockets.target.wants
+ok: V9.10 o cofre do usuário intacto
+ok: uninstall de novo sai 0
+ok: grupo do administrador: aceito
+ok: grupo do administrador: fora da marca
+ok: uninstall: ward-app do administrador fica (mesmo gid)
+ok: uninstall: avisa que ficou
+ok: uninstall: ward-nm (criado pelo Ward) apagado
+ok: uninstall: /usr/local/lib/ward (com a marca) apagada
+ok: m2:V5.7 controle: o processo vigiado é do usuário e não-dumpable (/proc/<pid> do usuário, environ do root)
+ok: m2:V5.7 controle: o vigia vê um binário trocado com o processo no ar
+ok: m2:V5.7: a 0.1.4 instalou a extensão no caminho dela
+ok: m2:V5.7: a 0.1.4 gravou a marca dos grupos no nome dela
+ok: m2:V5.7: /usr/local/bin/wardd é o 0.1.4
+ok: m2:V5.7: o wardd 0.1.4 responde ao cliente v1 (cofre travado)
+ok: m2:V5.7: o wardd 0.1.4 destrava o cofre 0.1.4
+ok: m2:V5.7: wardd 0.1.4 no ar
+ok: m2:V5.7 (DT16): o wardd 0.1.4 terminou
+ok: m2:V5.7 (DT16): o binário não foi trocado com o wardd 0.1.4 no ar
+ok: m2:V5.7 (DT16): a instalação parou o wardd@1000 antes dos arquivos
+ok: m2:V5.7 (DT15): a pasta da extensão da 0.1.4 sumiu
+ok: m2:V5.7 (DT15): a marca no nome da 0.1.4 sumiu
+ok: m2:V5.7 (DT15): created-groups com os grupos que a 0.1.4 criou
+ok: m2:V5.7 (DT15): created-groups root 0644
+ok: m2:V5.7: os grupos não mudam de gid
+ok: m2:V5.7: ward-app novo root:ward-app 2755
+ok: m2:V5.7: ward-nm novo root:ward-nm 2755
+ok: m2:V5.7: binários da 0.2.0 no lugar
+ok: m2:V5.6: a política aponta para o caminho novo
+ok: m2:V5.7: o socket religou
+ok: m2:V5.7: nenhum wardd no ar antes da primeira conexão
+ok: m2:V5.7: o cofre não foi tocado pela instalação
+ok: m2:V5.7: a primeira conexão sobe o wardd 0.2.0
+ok: m2:V5.7: o wardd no ar é o 0.2.0
+ok: m2:V5.7: o wardd 0.2.0 não atende o cliente v1
+ok: m2:V5.7: o cofre continua intacto até destravar
+ok: m2:V5.7: `ward unlock`: a senha não aparece na saída
+ok: m2:V5.7: `ward unlock` 0.2.0 destrava o cofre 0.1.4
+ok: m2:V5.7: `ward unlock` sai 0
+ok: m2:V5.7: o destrave migra o cofre (arquivo regravado)
+ok: m2:V5.7: estado no formato novo depois do destrave
+ok: m2:V5.7: cofre migrado continua 0600 do usuário
+ok: m2:DT16 (Fase 63a): cofre destravado antes do ataque
+ok: m2:DT15 ataque (Fase 63a): pasta da 0.1.x por link: make install recusado
+ok: m2:DT15 ataque (Fase 63a): mensagem da recusa
+ok: m2:DT16 ataque (Fase 63a): recusado antes de parar
+ok: m2:DT15 ataque (Fase 63a): o alvo do link intacto
+ok: m2:DT16 ataque (Fase 63a): make install recusado: mesmo wardd no ar (pid 6100)
+ok: m2:DT16 ataque (Fase 63a): make install recusado: o cofre continua destravado
+ok: m2:V5.8: a 0.1.4 aceita o ward-app do administrador
+ok: m2:V5.8: marca da 0.1.4 sem o ward-app do administrador
+ok: m2:V5.8: marca da 0.1.4 com o ward-nm que ela criou
+ok: m2:V5.8: só a marca no nome da 0.1.4
+ok: m2:V5.8: o ward-app do administrador fica (mesmo gid)
+ok: m2:V5.8: avisa que o ward-app ficou
+ok: m2:V5.8: o ward-nm da marca antiga é apagado
+ok: m2:V5.8: as duas marcas apagadas
+ok: m2:V5.8: /usr/local/share/ward/extensao apagada
+ok: m2:V5.8: /usr/local/share/ward apagada
+ok: m2:V5.8: /usr/local/lib/ward apagada
+ok: m2:V5.8: nenhum arquivo do Ward
+ok: m2:V5.8: o cofre do usuário intacto
+test-install (contêiner): tudo ok
+test-install: tudo ok
+test-install exit=0

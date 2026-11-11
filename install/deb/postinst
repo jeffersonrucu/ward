@@ -118,10 +118,11 @@ case "${1:-}" in
         fi
         ;;
     abort-upgrade)
-        # An upgrade from this version failed after the new preinst stopped the sockets
-        # (m2:DT16): they come back with this version's binaries.
+        # An upgrade from this version failed. Only the sockets the new preinst stopped
+        # (m2:DT16; its mark in /run) come back, with this version's binaries; no daemon
+        # is restarted, and a refused preinst left nothing to start (Phase 63a).
         if [ -d /run/systemd/system ]; then
-            start_enabled_sockets
+            restart_stopped_sockets
         fi
         ;;
     abort-remove | abort-deconfigure) ;;

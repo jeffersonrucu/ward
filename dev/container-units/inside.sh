@@ -88,11 +88,11 @@ as_user() {
         XDG_RUNTIME_DIR="/run/user/$UID_T" WAYLAND_DISPLAY=wayland-0 "$@"
 }
 since="$(date '+%Y-%m-%d %H:%M:%S')"
-r="$(as_user /usr/local/bin/ward run acme-pg-dev -- /usr/local/bin/ward-app "/run/ward/$UID_T/wardd.sock" estado 2>&1)" || true
+r="$(as_user /usr/local/bin/ward run acme-pg-dev -- /usr/local/bin/ward-app "/run/ward/$UID_T/wardd.sock" status 2>&1)" || true
 check "V4.38 ward run -- ward-app: papel agente" "$r" "resposta: status papel=agent"
-r="$(as_user /usr/local/bin/ward run acme-pg-dev -- /usr/local/bin/ward-app "/run/ward/$UID_T/wardd.sock" lista 2>&1)" || true
+r="$(as_user /usr/local/bin/ward run acme-pg-dev -- /usr/local/bin/ward-app "/run/ward/$UID_T/wardd.sock" list 2>&1)" || true
 check "V4.38 ward run -- ward-app: lista do agente" "$r" "resposta: list"
-r="$(as_user /usr/local/bin/ward run acme-pg-dev -- /usr/local/bin/ward-nm "/run/ward/$UID_T/wardd.sock" estado 2>&1)" || true
+r="$(as_user /usr/local/bin/ward run acme-pg-dev -- /usr/local/bin/ward-nm "/run/ward/$UID_T/wardd.sock" status 2>&1)" || true
 check "V4.38 ward run -- ward-nm: papel agente" "$r" "resposta: status papel=agent"
 r="$(as_user /usr/local/bin/ward run acme-pg-dev -- /bin/sh -c 'printf %s "$PGPASSWORD"' 2>&1)" || true
 check "ward run de release: a senha sai mascarada" "$r" "••••"

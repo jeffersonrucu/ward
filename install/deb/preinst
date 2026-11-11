@@ -15,7 +15,10 @@
 # m2:DT16: the running `wardd@*` (and their sockets) stop here, before dpkg swaps the
 # binaries (the vault locks); the postinst starts the sockets again. The 0.1.x extension
 # dir is only verified here (dpkg deletes it on the upgrade; the postinst verifies). After
-# a failed upgrade, this version's postrm (`abort-upgrade`) starts the sockets again.
+# a failed upgrade, this version's postrm (`abort-upgrade`) starts again only the sockets
+# listed in the mark /run/ward-upgrade-stopped, written after the stop (Phase 63a): a
+# refused preinst writes no mark, so the abort restarts nothing and the running daemon
+# keeps the vault unlocked. A mark left from before is deleted first.
 
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export LC_ALL=C
@@ -67,6 +70,10 @@ override() {
 
 case "${1:-}" in
     install | upgrade)
+        # Phase 63a: a stop mark left from before (an abort that did not finish) goes
+        # before any check: a refused preinst leaves no mark, so the abort-upgrade starts
+        # nothing.
+        clear_stop_mark
         verify_dirs
         # Phase 51a: another policy file that names ExtensionSettings or
         # NativeMessagingUserLevelHosts refuses (Chrome does not merge the two).
@@ -89,9 +96,10 @@ case "${1:-}" in
         suid="$(cat /proc/sys/fs/suid_dumpable 2>/dev/null || echo ?)"
         [ "$ptrace" != 0 ] || printf 'ward: aviso: kernel.yama.ptrace_scope = 0: o daemon recusa os papéis app e extensão (D47)\n' >&2
         [ "$suid" != 1 ] || printf 'ward: aviso: fs.suid_dumpable = 1: o daemon recusa os papéis app e extensão (D47)\n' >&2
-        # m2:DT16: last, after every check: nothing stops if the install is refused.
+        # m2:DT16: last, after every check: nothing stops if the install is refused. The
+        # stopped sockets go to the mark, for this version's postrm abort-upgrade.
         if [ -d /run/systemd/system ]; then
-            stop_running_daemons
+            stop_running_daemons mark
         fi
         ;;
     abort-upgrade) ;;

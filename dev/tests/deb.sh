@@ -148,7 +148,7 @@ verify "política do pacote com PasswordManagerEnabled false (Fase 44c)" "$(grep
 verify "política do pacote com PasswordLeakDetectionEnabled false (Fase 44c)" "$(grep -c '^  "PasswordLeakDetectionEnabled": false,$' "$X/etc/opt/chrome/policies/managed/ward.json")" "1"
 verify "preinst confere as pastas do sistema" "$(grep -c '^    usr/local/bin$' "$TMP/control/preinst")" "1"
 # Phase 57 (m2:DT15, m2:DT16): upgrade.sh in the preinst and the postinst.
-grep -q '^stop_running_daemons()' "$TMP/control/preinst" && grep -q '^            stop_running_daemons$' "$TMP/control/preinst" &&
+grep -q '^stop_running_daemons()' "$TMP/control/preinst" && grep -q '^            stop_running_daemons mark$' "$TMP/control/preinst" &&
     ok "m2:DT16: o preinst para os wardd@* antes de o dpkg trocar os binários" || fail "preinst sem stop_running_daemons"
 grep -q '^migrate_legacy_mark()' "$TMP/control/preinst" && grep -q '^        migrate_legacy_mark$' "$TMP/control/preinst" &&
     ok "m2:DT15: o preinst passa a marca da 0.1.x para created-groups" || fail "preinst sem migrate_legacy_mark"
@@ -158,8 +158,17 @@ grep -q '^remove_legacy_paths()' "$TMP/control/postinst" && grep -q '^        re
     ok "m2:DT15: o postinst confere (e apaga) caminho da 0.1.x" || fail "postinst sem remove_legacy_paths"
 grep -q '^            start_enabled_sockets$' "$TMP/control/postinst" &&
     ok "m2:DT16: o postinst religa os sockets" || fail "postinst sem start_enabled_sockets"
-grep -q '^start_enabled_sockets()' "$TMP/control/postrm" && grep -q '^            start_enabled_sockets$' "$TMP/control/postrm" &&
-    ok "m2:DT16: atualização que falha religa os sockets (postrm abort-upgrade)" || fail "postrm sem start_enabled_sockets"
+grep -q '^restart_stopped_sockets()' "$TMP/control/postrm" && grep -q '^            restart_stopped_sockets$' "$TMP/control/postrm" &&
+    ok "m2:DT16: atualização que falha religa só os sockets que o preinst parou (postrm abort-upgrade)" || fail "postrm sem restart_stopped_sockets"
+# Phase 63a: no abort-upgrade restarts a daemon (a refused preinst stopped nothing).
+for s in postinst postrm; do
+    verify "m2:DT16 (Fase 63a): $s abort-upgrade sem start_enabled_sockets" \
+        "$(sed -n '/^    abort-upgrade)$/,/^        ;;$/p' "$TMP/control/$s" | grep -c -e start_enabled_sockets -e try-restart || true)" "0"
+    verify "m2:DT16 (Fase 63a): $s abort-upgrade com restart_stopped_sockets" \
+        "$(sed -n '/^    abort-upgrade)$/,/^        ;;$/p' "$TMP/control/$s" | grep -c '^            restart_stopped_sockets$' || true)" "1"
+done
+grep -q '^        clear_stop_mark$' "$TMP/control/preinst" &&
+    ok "m2:DT16 (Fase 63a): o preinst apaga a marca velha antes das conferências" || fail "preinst sem clear_stop_mark"
 verify "m2:V5.9: a marca do pacote é created-groups" "$(grep -c '^GROUPS_MARK=/usr/local/lib/ward/created-groups$' "$TMP/control/postrm")" "1"
 verify "m2:V5.9: a política do pacote aponta para o caminho novo" "$(cat "$X/etc/opt/chrome/policies/managed/ward.json")" \
     '"update_url": "file:///usr/local/share/ward/extension/update.xml"'
