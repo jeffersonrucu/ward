@@ -1,5 +1,5 @@
 //! App desktop do Ward (Tauri 2). Só a janela e a ligação dos comandos: o que cada
-//! comando faz está em `ward_app_core::servico` (o mesmo que a ponte de teste usa).
+//! comando faz está em `ward_app_core::service` (o mesmo que a ponte de teste usa).
 //!
 //! S11: capabilities só com os comandos próprios (`capabilities/principal.json` para a
 //! janela principal, `capabilities/aprovacao.json` para a janela de aprovação; manifesto
@@ -42,7 +42,7 @@ use tauri::{
     AppHandle, Builder, Manager, RunEvent, Runtime, State, WebviewUrl, WebviewWindow,
     WebviewWindowBuilder, WindowEvent,
 };
-use ward_app_core::ErroApp;
+use ward_app_core::AppError;
 use ward_app_core::anexos::{EdicaoDosAnexos, Escolha, Seletor};
 use ward_app_core::aprovacao::{self, PedidoExibido, ResultadoAprovacao};
 use ward_app_core::area_transferencia::Copiador;
@@ -59,10 +59,10 @@ use ward_app_core::nivel::{NivelMudado, Pin};
 use ward_app_core::partida;
 use ward_app_core::primeiro_uso::NovoCofre;
 use ward_app_core::restaurar::{Restauracao, Restaurado, VersaoVista};
-use ward_app_core::servico::{CodigoTotp, ResultadoCriar, ResultadoSalvar, Servico};
+use ward_app_core::service::{CreateResult, SaveResult, Service, TotpCode};
 use ward_app_core::terminal::TerminalDoSistema;
 
-type ServicoApp = Servico<DaemonSocket, AreaGtk>;
+type ServicoApp = Service<DaemonSocket, AreaGtk>;
 
 /// O que a interface recebe num erro: código estável e mensagem fixa, sem valor.
 #[derive(Serialize)]
@@ -71,10 +71,10 @@ struct Falha {
     mensagem: String,
 }
 
-impl From<ErroApp> for Falha {
-    fn from(e: ErroApp) -> Self {
+impl From<AppError> for Falha {
+    fn from(e: AppError) -> Self {
         Falha {
-            codigo: e.codigo(),
+            codigo: e.code(),
             mensagem: e.to_string(),
         }
     }
@@ -126,7 +126,7 @@ fn avisar(canais: &CanalAvisos, janela: &str, aviso: &'static str) {
 /// e mostra a falha). `Arc`: a vigia da conexão limpa a
 /// área de transferência antes de reexecutar o app.
 struct Estado {
-    servico: Arc<Result<ServicoApp, ErroApp>>,
+    servico: Arc<Result<ServicoApp, AppError>>,
     canal: CanalAvisos,
     /// O último estado do cofre que a vigia viu (Fase 39g), com ou sem bandeja: é por
     /// ele que a trava vinda de fora limpa a área de transferência e o formulário na
@@ -135,7 +135,7 @@ struct Estado {
 }
 
 impl Estado {
-    fn novo(servico: Arc<Result<ServicoApp, ErroApp>>) -> Estado {
+    fn novo(servico: Arc<Result<ServicoApp, AppError>>) -> Estado {
         Estado {
             servico,
             canal: Arc::new(Mutex::new(Canais::default())),
@@ -151,10 +151,10 @@ impl Estado {
 #[tauri::command]
 fn estado_do_cofre(estado: State<'_, Estado>) -> Result<RespostaEstado, Falha> {
     let s = estado.servico()?;
-    let e = s.estado_do_cofre()?;
+    let e = s.vault_status()?;
     Ok(RespostaEstado {
         estado: e.codigo(),
-        pedido: s.info_do_pedido(e),
+        pedido: s.request_info(e),
     })
 }
 
@@ -163,14 +163,14 @@ fn estado_do_cofre(estado: State<'_, Estado>) -> Result<RespostaEstado, Falha> {
 /// nem diz quantas tentativas houve (D20).
 #[tauri::command]
 fn destravar(senha: SenhaMestra, estado: State<'_, Estado>) -> Result<(), Falha> {
-    Ok(estado.servico()?.destravar(senha)?)
+    Ok(estado.servico()?.unlock(senha)?)
 }
 
 /// "Travar agora" da `Navegação lateral` (Fase 39): limpa a área de transferência e o
 /// formulário, trava, e a bandeja passa a mostrar travado.
 #[tauri::command]
 fn travar<R: Runtime>(app: AppHandle<R>, estado: State<'_, Estado>) -> Result<(), Falha> {
-    let r = estado.servico()?.travar();
+    let r = estado.servico()?.lock();
     atualizar_bandeja(&app);
     Ok(r?)
 }
@@ -190,7 +190,7 @@ fn ouvir_avisos<R: Runtime>(
     match janela.label() {
         JANELA_PRINCIPAL => c.principal = Some(canal),
         JANELA_APROVACAO => c.aprovacao = Some(canal),
-        _ => return Err(Falha::from(ErroApp::NaoAutorizado)),
+        _ => return Err(Falha::from(AppError::Unauthorized)),
     }
     Ok(())
 }
@@ -209,7 +209,7 @@ fn vigiar_avisos<R: Runtime>(
     };
     let canais = Arc::clone(&estado.canal);
     let h = app.clone();
-    let r = destrave::vigiar(fila, s.pedido_de_destrave(), move || {
+    let r = destrave::vigiar(fila, s.unlock_request(), move || {
         let h2 = h.clone();
         let _ = h.run_on_main_thread(move || mostrar_principal(&h2));
         avisar(&canais, JANELA_PRINCIPAL, "pedido-de-destrave");
@@ -222,13 +222,13 @@ fn vigiar_avisos<R: Runtime>(
 /// D4: o valor vai do daemon para a área de transferência aqui; a resposta não o traz.
 #[tauri::command]
 fn copiar_campo(entrada: String, campo: String, estado: State<'_, Estado>) -> Result<(), Falha> {
-    Ok(estado.servico()?.copiar_campo(&entrada, &campo)?)
+    Ok(estado.servico()?.copy_field(&entrada, &campo)?)
 }
 
 /// Tela Credenciais (Fase 32): a lista, sem segredo.
 #[tauri::command]
 fn listar_credenciais(estado: State<'_, Estado>) -> Result<Vec<ItemCredencial>, Falha> {
-    Ok(estado.servico()?.listar_credenciais()?)
+    Ok(estado.servico()?.list_credentials()?)
 }
 
 /// Tela Credenciais (Fase 32): o detalhe de uma entrada, sem segredo (só os nomes dos
@@ -238,7 +238,7 @@ fn detalhe_credencial(
     entrada: String,
     estado: State<'_, Estado>,
 ) -> Result<DetalheCredencial, Falha> {
-    Ok(estado.servico()?.detalhe_credencial(&entrada)?)
+    Ok(estado.servico()?.credential_detail(&entrada)?)
 }
 
 #[derive(Serialize)]
@@ -261,7 +261,7 @@ fn gerar_senha(
     simbolos: bool,
     estado: State<'_, Estado>,
 ) -> Result<RespostaGerada, Falha> {
-    let g = estado.servico()?.gerar_senha(Opcoes {
+    let g = estado.servico()?.generate_password(Opcoes {
         tamanho,
         minusculas,
         maiusculas,
@@ -279,7 +279,7 @@ fn gerar_senha(
 /// D4: a senha avulsa vai para a área de transferência aqui; a resposta não a traz.
 #[tauri::command]
 fn copiar_senha_gerada(estado: State<'_, Estado>) -> Result<(), Falha> {
-    Ok(estado.servico()?.copiar_senha_gerada()?)
+    Ok(estado.servico()?.copy_generated_password()?)
 }
 
 #[derive(Serialize)]
@@ -290,7 +290,7 @@ struct RespostaRevelada {
 /// S11: o único comando que leva o valor à webview, no clique em "revelar".
 #[tauri::command]
 fn revelar_senha_gerada(estado: State<'_, Estado>) -> Result<RespostaRevelada, Falha> {
-    let r = estado.servico()?.revelar_senha_gerada()?;
+    let r = estado.servico()?.reveal_generated_password()?;
     Ok(RespostaRevelada {
         valor: r.expor().to_owned(),
     })
@@ -298,7 +298,7 @@ fn revelar_senha_gerada(estado: State<'_, Estado>) -> Result<RespostaRevelada, F
 
 #[tauri::command]
 fn descartar_senha_gerada(estado: State<'_, Estado>) -> Result<(), Falha> {
-    Ok(estado.servico()?.descartar_senha_gerada()?)
+    Ok(estado.servico()?.discard_generated_password()?)
 }
 
 /// S11 (D65 b): o valor de um segredo da entrada, só no clique em "revelar".
@@ -308,7 +308,7 @@ fn revelar_campo(
     campo: String,
     estado: State<'_, Estado>,
 ) -> Result<RespostaRevelada, Falha> {
-    let r = estado.servico()?.revelar_campo(&entrada, &campo)?;
+    let r = estado.servico()?.reveal_field(&entrada, &campo)?;
     Ok(RespostaRevelada {
         valor: r.expor().to_owned(),
     })
@@ -316,14 +316,14 @@ fn revelar_campo(
 
 /// Formulário (Fase 33): o código TOTP atual; a semente não sai do daemon.
 #[tauri::command]
-fn codigo_totp(entrada: String, estado: State<'_, Estado>) -> Result<CodigoTotp, Falha> {
-    Ok(estado.servico()?.codigo_totp(&entrada)?)
+fn codigo_totp(entrada: String, estado: State<'_, Estado>) -> Result<TotpCode, Falha> {
+    Ok(estado.servico()?.totp_code(&entrada)?)
 }
 
 /// D4: o código TOTP vai para a área de transferência aqui.
 #[tauri::command]
 fn copiar_codigo_totp(entrada: String, estado: State<'_, Estado>) -> Result<(), Falha> {
-    Ok(estado.servico()?.copiar_codigo_totp(&entrada)?)
+    Ok(estado.servico()?.copy_totp_code(&entrada)?)
 }
 
 #[derive(Serialize)]
@@ -334,13 +334,13 @@ struct RespostaUsada {
 /// "Usar esta senha": a senha gerada passa ao campo no lado Rust; volta só o tamanho.
 #[tauri::command]
 fn usar_senha_gerada(campo: String, estado: State<'_, Estado>) -> Result<RespostaUsada, Falha> {
-    let tamanho = estado.servico()?.usar_senha_gerada(&campo)?;
+    let tamanho = estado.servico()?.use_generated_password(&campo)?;
     Ok(RespostaUsada { tamanho })
 }
 
 #[tauri::command]
 fn descartar_formulario(estado: State<'_, Estado>) -> Result<(), Falha> {
-    estado.servico()?.descartar_formulario();
+    estado.servico()?.discard_form();
     Ok(())
 }
 
@@ -351,10 +351,10 @@ fn salvar_credencial(
     anterior: Option<String>,
     formulario: Formulario,
     estado: State<'_, Estado>,
-) -> Result<ResultadoSalvar, Falha> {
+) -> Result<SaveResult, Falha> {
     Ok(estado
         .servico()?
-        .salvar_credencial(anterior.as_deref(), formulario)?)
+        .save_credential(anterior.as_deref(), formulario)?)
 }
 
 /// Nível de acesso (Fase 35, S9). O PIN chega num `Pin` (zera ao sair; o formato é
@@ -366,7 +366,7 @@ fn mudar_nivel(
     pin: Pin,
     estado: State<'_, Estado>,
 ) -> Result<NivelMudado, Falha> {
-    Ok(estado.servico()?.mudar_nivel(&entrada, &nivel, pin)?)
+    Ok(estado.servico()?.set_level(&entrada, &nivel, pin)?)
 }
 
 /// Anexo (Fase 34): o diálogo de arquivo do GTK escolhe o arquivo e o núcleo o lê; a
@@ -379,12 +379,12 @@ fn escolher_anexo(
     edicao: Option<EdicaoDosAnexos>,
     estado: State<'_, Estado>,
 ) -> Result<Escolha, Falha> {
-    Ok(estado.servico()?.escolher_anexo(edicao.as_ref())?)
+    Ok(estado.servico()?.choose_attachment(edicao.as_ref())?)
 }
 
 #[tauri::command]
 fn remover_anexo(id: u64, estado: State<'_, Estado>) -> Result<(), Falha> {
-    Ok(estado.servico()?.remover_anexo(id)?)
+    Ok(estado.servico()?.remove_attachment(id)?)
 }
 
 /// "Carregar de arquivo" da chave privada (Fase 53a, S2, S11): o diálogo do GTK escolhe
@@ -393,20 +393,20 @@ fn remover_anexo(id: u64, estado: State<'_, Estado>) -> Result<(), Falha> {
 /// o aviso. Síncrono, como o `escolher_anexo` (o GTK abre o diálogo na thread principal).
 #[tauri::command]
 fn carregar_chave(campo: String, estado: State<'_, Estado>) -> Result<Carregamento, Falha> {
-    Ok(estado.servico()?.carregar_chave(&campo)?)
+    Ok(estado.servico()?.load_key(&campo)?)
 }
 
 /// "Conectar" (D3): token de uso único e o terminal padrão; o token não volta.
 #[tauri::command]
 fn conectar(entrada: String, estado: State<'_, Estado>) -> Result<(), Falha> {
-    Ok(estado.servico()?.conectar(&entrada)?)
+    Ok(estado.servico()?.connect(&entrada)?)
 }
 
 /// Primeiro uso (Fase 30): senha mestra, PIN e as confirmações, conferidos no núcleo;
 /// o daemon grava só o hash do PIN (D30). A resposta não traz valor.
 #[tauri::command]
-fn criar_cofre(dados: NovoCofre, estado: State<'_, Estado>) -> Result<ResultadoCriar, Falha> {
-    Ok(estado.servico()?.criar_cofre(dados)?)
+fn criar_cofre(dados: NovoCofre, estado: State<'_, Estado>) -> Result<CreateResult, Falha> {
+    Ok(estado.servico()?.create_vault(dados)?)
 }
 
 /// Configurações (Fase 38): tempo de trava e backup externo, sem hash nem UUID.
@@ -415,7 +415,7 @@ fn configuracoes<R: Runtime>(
     app: AppHandle<R>,
     estado: State<'_, Estado>,
 ) -> Result<Configuracoes, Falha> {
-    let c = estado.servico()?.configuracoes()?;
+    let c = estado.servico()?.settings()?;
     // Fase 39: a tela abriu (ação do usuário); a bandeja aproveita o tempo lido.
     tempo_da_bandeja(&app, c.minutos_trava);
     Ok(c)
@@ -425,7 +425,7 @@ fn configuracoes<R: Runtime>(
 /// conferidos no núcleo, o atual pelo daemon. A resposta não traz valor.
 #[tauri::command]
 fn trocar_pin(dados: TrocaPin, estado: State<'_, Estado>) -> Result<ResultadoTroca, Falha> {
-    Ok(estado.servico()?.trocar_pin(dados)?)
+    Ok(estado.servico()?.change_pin(dados)?)
 }
 
 /// Trocar a senha mestra (Fase 38, V5.22): a atual conferida pelo daemon; a nova com a
@@ -435,7 +435,7 @@ fn trocar_senha_mestra(
     dados: TrocaSenha,
     estado: State<'_, Estado>,
 ) -> Result<ResultadoTroca, Falha> {
-    Ok(estado.servico()?.trocar_senha_mestra(dados)?)
+    Ok(estado.servico()?.change_master_password(dados)?)
 }
 
 /// Tempo de trava (Fase 38, D30, D45): 1 a 1440 minutos, gravado no cofre pelo daemon.
@@ -445,7 +445,7 @@ fn definir_tempo_trava<R: Runtime>(
     app: AppHandle<R>,
     estado: State<'_, Estado>,
 ) -> Result<Configuracoes, Falha> {
-    let c = estado.servico()?.definir_tempo_trava(minutos)?;
+    let c = estado.servico()?.set_lock_timeout(minutos)?;
     // Fase 39: o subtítulo da bandeja passa a dizer o tempo novo.
     tempo_da_bandeja(&app, c.minutos_trava);
     Ok(c)
@@ -455,13 +455,13 @@ fn definir_tempo_trava<R: Runtime>(
 /// (rótulo neutralizado, D51). Nenhum caminho de montagem.
 #[tauri::command]
 fn backup_externo(estado: State<'_, Estado>) -> Result<BackupExternoVisto, Falha> {
-    Ok(estado.servico()?.backup_externo()?)
+    Ok(estado.servico()?.external_backup()?)
 }
 
 /// Os pendrives que o daemon vê, para escolher o do backup externo (Fase 48).
 #[tauri::command]
 fn listar_pendrives(estado: State<'_, Estado>) -> Result<Vec<PendriveVisto>, Falha> {
-    Ok(estado.servico()?.listar_pendrives()?)
+    Ok(estado.servico()?.list_usb_drives()?)
 }
 
 /// Ligar (com um pendrive que o daemon vê agora; o UUID da interface é conferido de novo
@@ -474,14 +474,14 @@ fn definir_backup_externo(
 ) -> Result<BackupExternoVisto, Falha> {
     Ok(estado
         .servico()?
-        .definir_backup_externo(ligado, uuid.as_deref())?)
+        .set_external_backup(ligado, uuid.as_deref())?)
 }
 
 /// Versões do backup local (Fase 47, V7.7): nome e instante (do nome), da mais nova
 /// para a mais antiga. Nenhum conteúdo nem caminho.
 #[tauri::command]
 fn listar_backups(estado: State<'_, Estado>) -> Result<Vec<VersaoVista>, Falha> {
-    Ok(estado.servico()?.listar_backups()?)
+    Ok(estado.servico()?.list_backups()?)
 }
 
 /// Restaurar uma versão (Fase 47, V7.7; D17, D39, S9): a versão (formato conferido e
@@ -494,9 +494,9 @@ fn restaurar_backup<R: Runtime>(
     estado: State<'_, Estado>,
 ) -> Result<Restaurado, Falha> {
     let servico = estado.servico()?;
-    let r = servico.restaurar_backup(dados)?;
+    let r = servico.restore_backup(dados)?;
     // A versão traz a configuração dela (D30): a bandeja passa a dizer o tempo dela.
-    if let Ok(c) = servico.configuracoes() {
+    if let Ok(c) = servico.settings() {
         tempo_da_bandeja(&app, c.minutos_trava);
     }
     Ok(r)
@@ -512,7 +512,7 @@ fn na_janela_de_aprovacao<R: Runtime>(janela: &WebviewWindow<R>) -> Result<(), F
     if janela.label() == JANELA_APROVACAO {
         Ok(())
     } else {
-        Err(Falha::from(ErroApp::NaoAutorizado))
+        Err(Falha::from(AppError::Unauthorized))
     }
 }
 
@@ -524,7 +524,7 @@ fn pedido_de_aprovacao<R: Runtime>(
     estado: State<'_, Estado>,
 ) -> Result<Option<PedidoExibido>, Falha> {
     na_janela_de_aprovacao(&janela)?;
-    let p = estado.servico()?.pedido_de_aprovacao()?;
+    let p = estado.servico()?.approval_request()?;
     if p.is_none() {
         let _ = janela.destroy();
     }
@@ -547,7 +547,7 @@ fn responder_aprovacao<R: Runtime>(
     na_janela_de_aprovacao(&janela)?;
     let r = estado
         .servico()?
-        .responder_aprovacao(id, &decisao, pin, ciente == Some(true))?;
+        .answer_approval(id, &decisao, pin, ciente == Some(true))?;
     if !r.ha_outro {
         let _ = janela.destroy();
     }
@@ -584,12 +584,12 @@ fn abrir_janela_de_aprovacao<R: Runtime>(app: &AppHandle<R>) {
 
 /// Fechar a janela de aprovação nega (S10). Em outra thread: a conversa com o daemon
 /// não prende o laço de eventos.
-fn ao_fechar_a_aprovacao(servico: Arc<Result<ServicoApp, ErroApp>>) {
+fn ao_fechar_a_aprovacao(servico: Arc<Result<ServicoApp, AppError>>) {
     let _ = std::thread::Builder::new()
         .name("ward-app-negar".into())
         .spawn(move || {
             if let Ok(s) = servico.as_ref() {
-                s.negar_aprovacoes_pendentes();
+                s.deny_pending_approvals();
             }
         });
 }
@@ -598,32 +598,32 @@ fn ao_fechar_a_aprovacao(servico: Arc<Result<ServicoApp, ErroApp>>) {
 struct SeletorGtk;
 
 impl Seletor for SeletorGtk {
-    fn escolher(&self) -> Result<Option<PathBuf>, ErroApp> {
+    fn escolher(&self) -> Result<Option<PathBuf>, AppError> {
         dialogo_de_arquivo("Adicionar arquivo", "Anexar")
     }
 
     /// Fase 53a: o mesmo diálogo, com o título e o botão do "Carregar de arquivo".
-    fn escolher_chave(&self) -> Result<Option<PathBuf>, ErroApp> {
+    fn escolher_chave(&self) -> Result<Option<PathBuf>, AppError> {
         dialogo_de_arquivo("Carregar chave privada", "Carregar")
     }
 }
 
 /// O diálogo de abrir arquivo do GTK, modal, um arquivo só, só local. `Ok(None)`:
 /// cancelado.
-fn dialogo_de_arquivo(titulo: &str, botao: &str) -> Result<Option<PathBuf>, ErroApp> {
+fn dialogo_de_arquivo(titulo: &str, botao: &str) -> Result<Option<PathBuf>, AppError> {
     use gtk::prelude::{DialogExt, FileChooserExt, GtkSettingsExt, GtkWindowExt};
     if !gtk::is_initialized_main_thread() {
-        return Err(ErroApp::SeletorIndisponivel);
+        return Err(AppError::PickerUnavailable);
     }
     // Fase 53d: o diálogo não grava o caminho escolhido (a chave na pasta em memória,
     // um anexo) no `recently-used.xbel` do usuário. O valor do app vence o do sistema
     // (XSETTINGS, `settings.ini`); conferido de volta, e sem ele o diálogo não abre.
     let Some(ajustes) = gtk::Settings::default() else {
-        return Err(ErroApp::SeletorIndisponivel);
+        return Err(AppError::PickerUnavailable);
     };
     ajustes.set_gtk_recent_files_enabled(false);
     if ajustes.is_gtk_recent_files_enabled() {
-        return Err(ErroApp::SeletorIndisponivel);
+        return Err(AppError::PickerUnavailable);
     }
     let dialogo = gtk::FileChooserDialog::with_buttons(
         Some(titulo),
@@ -752,7 +752,7 @@ fn estado_mostrado<R: Runtime>(b: &Bandeja<R>) -> std::sync::MutexGuard<'_, Esta
 fn atualizar_bandeja<R: Runtime>(app: &AppHandle<R>) {
     let estado = app.state::<Estado>();
     let Ok(s) = estado.servico() else { return };
-    let (antes, novo) = s.ver_passagem(&estado.visto);
+    let (antes, novo) = s.check_transition(&estado.visto);
     let Some(b) = app.try_state::<Bandeja<R>>() else {
         if antes != novo {
             avisar(&estado.canal, JANELA_PRINCIPAL, "estado-mudou");
@@ -768,7 +768,7 @@ fn atualizar_bandeja<R: Runtime>(app: &AppHandle<R>) {
     // (destravou ou criou o cofre), nunca na consulta periódica nem na partida.
     let mut minutos = b.minutos.lock().unwrap_or_else(|e| e.into_inner());
     if bandeja::ler_configuracao_na_passagem(*atual, novo) {
-        *minutos = s.configuracoes().ok().map(|c| c.minutos_trava);
+        *minutos = s.settings().ok().map(|c| c.minutos_trava);
     }
     let subtitulo = match novo {
         EstadoBandeja::Destravado => bandeja::subtitulo_destravado(*minutos),
@@ -830,7 +830,7 @@ fn ao_clicar_na_bandeja<R: Runtime>(app: &AppHandle<R>, id: &str) {
                 .name("ward-app-travar".into())
                 .spawn(move || {
                     if let Ok(s) = h.state::<Estado>().servico()
-                        && s.travar().is_err()
+                        && s.lock().is_err()
                     {
                         eprintln!("ward-app: o daemon não respondeu ao travar");
                     }
@@ -901,12 +901,12 @@ fn criar_janela_principal<R: Runtime, M: Manager<R>>(app: &M) -> tauri::Result<W
         .build()
 }
 
-fn montar_servico(daemon: Result<DaemonSocket, ErroApp>) -> Result<ServicoApp, ErroApp> {
+fn montar_servico(daemon: Result<DaemonSocket, AppError>) -> Result<ServicoApp, AppError> {
     let daemon = daemon?;
     // Fase 39f (S2): o valor copiado fica na memória do app (GTK), sem `wl-copy`.
-    Ok(Servico::novo(daemon, Copiador::novo(AreaGtk::nova()))
-        .com_seletor(SeletorGtk)
-        .com_terminal(TerminalDoSistema::default()))
+    Ok(Service::new(daemon, Copiador::novo(AreaGtk::nova()))
+        .with_picker(SeletorGtk)
+        .with_terminal(TerminalDoSistema::default()))
 }
 
 /// Só a interface embutida: `tauri://localhost` (Linux). Qualquer outra URL (link,
@@ -968,14 +968,14 @@ fn main() {
         eprintln!("ward-app: {e}");
         std::process::exit(1)
     });
-    let daemon = partida.tomar_daemon().ok_or(ErroApp::ConexaoPerdida);
+    let daemon = partida.tomar_daemon().ok_or(AppError::ConnectionLost);
     let fila = daemon.as_ref().ok().map(DaemonSocket::avisos);
     let servico = Arc::new(montar_servico(daemon));
     let na_aprovacao = Arc::clone(&servico);
     let na_vigia = Arc::clone(&servico);
     partida.vigiar(move || {
         if let Ok(s) = na_vigia.as_ref() {
-            s.ao_sair();
+            s.on_exit();
         }
     });
 
@@ -995,7 +995,7 @@ fn main() {
                 let estado = janela.state::<Estado>();
                 travar_canais(&estado.canal).principal = None;
                 if let Ok(s) = estado.servico() {
-                    s.descartar_formulario();
+                    s.discard_form();
                 }
             }
         })
@@ -1005,7 +1005,7 @@ fn main() {
             // janela de aprovação e a avisa pelo canal dela (`ouvir_avisos`), sem dado.
             if let (Some(fila), Ok(s)) = (fila, na_aprovacao.as_ref()) {
                 let h = app.handle().clone();
-                let r = aprovacao::vigiar(fila, s.aprovacoes(), move || {
+                let r = aprovacao::vigiar(fila, s.approvals(), move || {
                     let h2 = h.clone();
                     let _ = h.run_on_main_thread(move || abrir_janela_de_aprovacao(&h2));
                     avisar(&canais, JANELA_APROVACAO, "pedido-de-aprovacao");
@@ -1020,7 +1020,7 @@ fn main() {
             let inicial = app
                 .state::<Estado>()
                 .servico()
-                .map(|s| s.estado_da_bandeja())
+                .map(|s| s.tray_state())
                 .unwrap_or(EstadoBandeja::SemDaemon);
             *app.state::<Estado>()
                 .visto
@@ -1045,7 +1045,7 @@ fn main() {
         } if handle.try_state::<Bandeja<tauri::Wry>>().is_some() => api.prevent_exit(),
         RunEvent::Exit => {
             if let Ok(s) = handle.state::<Estado>().servico() {
-                s.ao_sair();
+                s.on_exit();
             }
         }
         _ => {}
@@ -1882,7 +1882,7 @@ mod testes {
 
     #[test]
     fn ataque_falha_nao_carrega_valor() {
-        let f = Falha::from(ErroApp::PedidoInvalido);
+        let f = Falha::from(AppError::InvalidRequest);
         assert_eq!(f.codigo, "pedido-invalido");
         assert_eq!(f.mensagem, "pedido inválido");
     }

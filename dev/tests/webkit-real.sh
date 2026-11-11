@@ -122,9 +122,9 @@ a = once("    let mut partida = partida::iniciar()")
 b = s.index("\n    });\n", a) + len("\n    });\n")
 s = s[:a] + "    // webkit-real.sh: sem a partida (só em .dev).\n" + s[b:]
 # 2) daemon: none, as if the startup had not handed over the connection
-t = "partida.tomar_daemon().ok_or(ErroApp::ConexaoPerdida)"
+t = "partida.tomar_daemon().ok_or(AppError::ConnectionLost)"
 once(t)
-s = s.replace(t, "Err::<DaemonSocket, ErroApp>(ErroApp::ConexaoPerdida)")
+s = s.replace(t, "Err::<DaemonSocket, AppError>(AppError::ConnectionLost)")
 # 3) the startup watch call with its closure, up to the closing `});`
 a = once("    partida.vigiar(move || {")
 b = s.index("\n    });\n", a) + len("\n    });\n")

@@ -3,7 +3,7 @@
 //! S11: o conteúdo de um anexo nunca passa pela webview. A interface só pede
 //! `escolher_anexo`; quem escolhe o arquivo é o [`Seletor`] do lado Rust (no app, o
 //! diálogo de arquivo do GTK; na ponte de teste, uma pasta fixa dada na linha de
-//! comando). O arquivo é lido aqui, guardado em [`Segredo`] (zera ao sair) e a resposta
+//! comando). O arquivo é lido aqui, guardado em [`Secret`] (zera ao sair) e a resposta
 //! traz só o identificador, o nome e o tamanho.
 //!
 //! Os limites saem de `ward_core::limits` (D32): um arquivo acima de
@@ -24,16 +24,16 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use ward_core::limits;
 
-use crate::ErroApp;
-use crate::segredo::Segredo;
+use crate::AppError;
+use crate::secret::Secret;
 
 /// Quem escolhe o arquivo. `Ok(None)`: o usuário cancelou.
 pub trait Seletor: Send + Sync {
-    fn escolher(&self) -> Result<Option<PathBuf>, ErroApp>;
+    fn escolher(&self) -> Result<Option<PathBuf>, AppError>;
 
     /// O arquivo da chave privada ("Carregar de arquivo", Fase 53a). O padrão é o mesmo
     /// seletor; o do GTK troca só o título e o botão do diálogo.
-    fn escolher_chave(&self) -> Result<Option<PathBuf>, ErroApp> {
+    fn escolher_chave(&self) -> Result<Option<PathBuf>, AppError> {
         self.escolher()
     }
 }
@@ -42,8 +42,8 @@ pub trait Seletor: Send + Sync {
 pub struct SemSeletor;
 
 impl Seletor for SemSeletor {
-    fn escolher(&self) -> Result<Option<PathBuf>, ErroApp> {
-        Err(ErroApp::SeletorIndisponivel)
+    fn escolher(&self) -> Result<Option<PathBuf>, AppError> {
+        Err(AppError::PickerUnavailable)
     }
 }
 
@@ -51,7 +51,7 @@ impl Seletor for SemSeletor {
 pub struct Pendente {
     pub id: u64,
     pub nome: String,
-    pub conteudo: Segredo,
+    pub conteudo: Secret,
 }
 
 /// O que a interface recebe do `escolher_anexo`. Nunca o conteúdo.
@@ -176,29 +176,29 @@ impl Anexos {
     }
 
     /// Tira um anexo escolhido. Identificador desconhecido é pedido inválido.
-    pub fn remover(&mut self, id: u64) -> Result<(), ErroApp> {
+    pub fn remover(&mut self, id: u64) -> Result<(), AppError> {
         let i = self
             .pendentes
             .iter()
             .position(|p| p.id == id)
-            .ok_or(ErroApp::PedidoInvalido)?;
+            .ok_or(AppError::InvalidRequest)?;
         drop(self.pendentes.remove(i));
         Ok(())
     }
 
     /// Os anexos pedidos pelo formulário, na ordem dele. Cada id uma vez só e só os
     /// que existem (a interface não é confiável).
-    pub fn escolhidos(&self, ids: &[u64]) -> Result<Vec<&Pendente>, ErroApp> {
+    pub fn escolhidos(&self, ids: &[u64]) -> Result<Vec<&Pendente>, AppError> {
         let mut saida: Vec<&Pendente> = Vec::with_capacity(ids.len());
         for id in ids {
             if saida.iter().any(|p| p.id == *id) {
-                return Err(ErroApp::PedidoInvalido);
+                return Err(AppError::InvalidRequest);
             }
             saida.push(
                 self.pendentes
                     .iter()
                     .find(|p| p.id == *id)
-                    .ok_or(ErroApp::PedidoInvalido)?,
+                    .ok_or(AppError::InvalidRequest)?,
             );
         }
         Ok(saida)
@@ -219,7 +219,7 @@ impl Anexos {
 }
 
 enum Leitura {
-    Conteudo(Segredo),
+    Conteudo(Secret),
     Grande,
 }
 
@@ -244,7 +244,7 @@ fn ler_limitado(caminho: &Path, max: usize) -> Result<Leitura, ()> {
         return Ok(Leitura::Grande);
     }
     match ler_ate(arquivo, max)? {
-        Some(mut buf) => Ok(Leitura::Conteudo(Segredo::novo(core::mem::take(&mut *buf)))),
+        Some(mut buf) => Ok(Leitura::Conteudo(Secret::new(core::mem::take(&mut *buf)))),
         None => Ok(Leitura::Grande),
     }
 }
@@ -254,7 +254,7 @@ fn ler_limitado(caminho: &Path, max: usize) -> Result<Leitura, ()> {
 /// realoca, então nenhum pedaço do anexo fica num bloco antigo do heap sem zerar (o
 /// `read_to_end` num `Vec` com a capacidade do `fstat` realocava se o arquivo crescesse
 /// entre o `fstat` e a leitura). `None` quando passou de `max`. O `truncate` só muda o
-/// tamanho; o `Segredo` toma posse do mesmo bloco, sem cópia.
+/// tamanho; o `Secret` toma posse do mesmo bloco, sem cópia.
 fn ler_ate(mut arquivo: impl Read, max: usize) -> Result<Option<zeroize::Zeroizing<Vec<u8>>>, ()> {
     let mut buf = zeroize::Zeroizing::new(vec![0u8; max + 1]);
     let mut lidos = 0usize;
@@ -311,7 +311,7 @@ mod testes {
         assert_eq!(a.escolhidos(&[0]).unwrap().len(), 1);
         a.remover(0).unwrap();
         assert!(a.is_empty());
-        assert_eq!(a.remover(0), Err(ErroApp::PedidoInvalido));
+        assert_eq!(a.remover(0), Err(AppError::InvalidRequest));
         let _ = std::fs::remove_dir_all(d);
     }
 
@@ -342,12 +342,12 @@ mod testes {
         assert_eq!(buf.len(), 50);
         assert_eq!(buf.capacity(), 65);
         let p = buf.as_ptr();
-        let s = Segredo::novo({
+        let s = Secret::new({
             let mut b = buf;
             core::mem::take(&mut *b)
         });
         assert_eq!(
-            s.expor().as_ptr(),
+            s.expose().as_ptr(),
             p,
             "o Segredo não tomou posse do mesmo bloco"
         );
@@ -452,8 +452,8 @@ mod testes {
         let d = pasta("ids");
         let mut a = Anexos::default();
         a.anexar(&arquivo(&d, "x.pem", 10));
-        assert_eq!(a.escolhidos(&[0, 0]).err(), Some(ErroApp::PedidoInvalido));
-        assert_eq!(a.escolhidos(&[7]).err(), Some(ErroApp::PedidoInvalido));
+        assert_eq!(a.escolhidos(&[0, 0]).err(), Some(AppError::InvalidRequest));
+        assert_eq!(a.escolhidos(&[7]).err(), Some(AppError::InvalidRequest));
         assert!(a.escolhidos(&[]).unwrap().is_empty());
         let _ = std::fs::remove_dir_all(d);
     }

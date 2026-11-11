@@ -10,7 +10,7 @@ use std::thread;
 use std::time::Duration;
 
 use serde_json::{Value, json};
-use ward_app_core::ErroApp;
+use ward_app_core::AppError;
 use ward_app_core::anexos::EdicaoDosAnexos;
 use ward_app_core::area_transferencia::AreaTransferencia;
 use ward_app_core::comandos::Comando;
@@ -22,7 +22,7 @@ use ward_app_core::gerador::Opcoes;
 use ward_app_core::nivel::Pin;
 use ward_app_core::primeiro_uso::NovoCofre;
 use ward_app_core::restaurar::Restauracao;
-use ward_app_core::servico::Servico;
+use ward_app_core::service::Service;
 use zeroize::Zeroizing;
 
 /// Request head (line + headers).
@@ -40,7 +40,7 @@ frame-src 'none'; worker-src 'none'; object-src 'none'; media-src 'none'; manife
 
 /// Bridge bound to an app service and to the directory of the test-mode build.
 pub struct Bridge<D: Daemon, A: AreaTransferencia> {
-    service: Servico<D, A>,
+    service: Service<D, A>,
     dist: PathBuf,
     token: Zeroizing<String>,
     host: String,
@@ -50,7 +50,7 @@ pub struct Bridge<D: Daemon, A: AreaTransferencia> {
 
 impl<D: Daemon + 'static, A: AreaTransferencia> Bridge<D, A> {
     /// Opens `127.0.0.1:0` and draws the token.
-    pub fn open(service: Servico<D, A>, dist: &Path) -> io::Result<(Arc<Self>, TcpListener)> {
+    pub fn open(service: Service<D, A>, dist: &Path) -> io::Result<(Arc<Self>, TcpListener)> {
         let dist = fs::canonicalize(dist)?;
         if !dist.join("index.html").is_file() {
             return Err(io::Error::new(
@@ -184,10 +184,10 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Bridge<D, A> {
             return Response::text(415);
         }
         let Some(command) = Comando::de_nome(name) else {
-            return Response::error(404, ErroApp::PedidoInvalido);
+            return Response::error(404, AppError::InvalidRequest);
         };
         let Ok(Value::Object(mut args)) = serde_json::from_slice::<Value>(&p.body) else {
-            return Response::error(400, ErroApp::PedidoInvalido);
+            return Response::error(400, AppError::InvalidRequest);
         };
         // Phase 35: the PIN leaves the map (ownership, no copy) and becomes a `Pin` that zeroes.
         let pin = match command {
@@ -233,22 +233,22 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Bridge<D, A> {
             // seconds left).
             Comando::EstadoDoCofre => self
                 .service
-                .estado_do_cofre()
-                .map(|e| json!({ "estado": e.codigo(), "pedido": self.service.info_do_pedido(e) })),
+                .vault_status()
+                .map(|e| json!({ "estado": e.codigo(), "pedido": self.service.request_info(e) })),
             Comando::CopiarCampo => match (text("entrada"), text("campo")) {
-                (Some(e), Some(c)) => self.service.copiar_campo(e, c).map(|()| Value::Null),
-                _ => Err(ErroApp::PedidoInvalido),
+                (Some(e), Some(c)) => self.service.copy_field(e, c).map(|()| Value::Null),
+                _ => Err(AppError::InvalidRequest),
             },
             Comando::ListarCredenciais => self
                 .service
-                .listar_credenciais()
-                .and_then(|l| serde_json::to_value(l).map_err(|_| ErroApp::RespostaInvalida)),
+                .list_credentials()
+                .and_then(|l| serde_json::to_value(l).map_err(|_| AppError::InvalidResponse)),
             Comando::DetalheCredencial => match text("entrada") {
                 Some(e) => self
                     .service
-                    .detalhe_credencial(e)
-                    .and_then(|d| serde_json::to_value(d).map_err(|_| ErroApp::RespostaInvalida)),
-                None => Err(ErroApp::PedidoInvalido),
+                    .credential_detail(e)
+                    .and_then(|d| serde_json::to_value(d).map_err(|_| AppError::InvalidResponse)),
+                None => Err(AppError::InvalidRequest),
             },
             Comando::GerarSenha => match (
                 args.get("tamanho").and_then(Value::as_u64),
@@ -259,7 +259,7 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Bridge<D, A> {
             ) {
                 (Some(length), Some(lowercase), Some(uppercase), Some(digits), Some(symbols)) => {
                     self.service
-                        .gerar_senha(Opcoes {
+                        .generate_password(Opcoes {
                             tamanho: length,
                             minusculas: lowercase,
                             maiusculas: uppercase,
@@ -275,72 +275,75 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Bridge<D, A> {
                             })
                         })
                 }
-                _ => Err(ErroApp::PedidoInvalido),
+                _ => Err(AppError::InvalidRequest),
             },
-            Comando::CopiarSenhaGerada => self.service.copiar_senha_gerada().map(|()| Value::Null),
+            Comando::CopiarSenhaGerada => {
+                self.service.copy_generated_password().map(|()| Value::Null)
+            }
             // S11: the value only comes out on "reveal", as in the app.
             Comando::RevelarSenhaGerada => self
                 .service
-                .revelar_senha_gerada()
+                .reveal_generated_password()
                 .map(|r| json!({ "valor": r.expor() })),
-            Comando::DescartarSenhaGerada => {
-                self.service.descartar_senha_gerada().map(|()| Value::Null)
-            }
+            Comando::DescartarSenhaGerada => self
+                .service
+                .discard_generated_password()
+                .map(|()| Value::Null),
             // S11 (D65 b): the value only on "reveal", as in the app.
             Comando::RevelarCampo => match (text("entrada"), text("campo")) {
                 (Some(e), Some(c)) => self
                     .service
-                    .revelar_campo(e, c)
+                    .reveal_field(e, c)
                     .map(|r| json!({ "valor": r.expor() })),
-                _ => Err(ErroApp::PedidoInvalido),
+                _ => Err(AppError::InvalidRequest),
             },
             Comando::CodigoTotp => match text("entrada") {
                 Some(e) => self
                     .service
-                    .codigo_totp(e)
-                    .and_then(|c| serde_json::to_value(c).map_err(|_| ErroApp::RespostaInvalida)),
-                None => Err(ErroApp::PedidoInvalido),
+                    .totp_code(e)
+                    .and_then(|c| serde_json::to_value(c).map_err(|_| AppError::InvalidResponse)),
+                None => Err(AppError::InvalidRequest),
             },
             Comando::CopiarCodigoTotp => match text("entrada") {
-                Some(e) => self.service.copiar_codigo_totp(e).map(|()| Value::Null),
-                None => Err(ErroApp::PedidoInvalido),
+                Some(e) => self.service.copy_totp_code(e).map(|()| Value::Null),
+                None => Err(AppError::InvalidRequest),
             },
             Comando::UsarSenhaGerada => match text("campo") {
                 Some(c) => self
                     .service
-                    .usar_senha_gerada(c)
+                    .use_generated_password(c)
                     .map(|t| json!({ "tamanho": t })),
-                None => Err(ErroApp::PedidoInvalido),
+                None => Err(AppError::InvalidRequest),
             },
             Comando::DescartarFormulario => {
-                self.service.descartar_formulario();
+                self.service.discard_form();
                 Ok(Value::Null)
             }
             Comando::SalvarCredencial => {
                 let previous = match args.get("anterior") {
                     None | Some(Value::Null) => Ok(None),
                     Some(Value::String(a)) => Ok(Some(a.as_str())),
-                    Some(_) => Err(ErroApp::PedidoInvalido),
+                    Some(_) => Err(AppError::InvalidRequest),
                 };
                 let form = args
                     .get("formulario")
                     .cloned()
                     .map(serde_json::from_value::<Formulario>)
                     .and_then(Result::ok)
-                    .ok_or(ErroApp::PedidoInvalido);
+                    .ok_or(AppError::InvalidRequest);
                 match (previous, form) {
-                    (Ok(a), Ok(f)) => self.service.salvar_credencial(a, f).and_then(|r| {
-                        serde_json::to_value(r).map_err(|_| ErroApp::RespostaInvalida)
+                    (Ok(a), Ok(f)) => self.service.save_credential(a, f).and_then(|r| {
+                        serde_json::to_value(r).map_err(|_| AppError::InvalidResponse)
                     }),
-                    _ => Err(ErroApp::PedidoInvalido),
+                    _ => Err(AppError::InvalidRequest),
                 }
             }
             Comando::MudarNivel => match (text("entrada"), text("nivel"), pin) {
                 (Some(e), Some(n), Some(Ok(pin))) => self
                     .service
-                    .mudar_nivel(e, n, pin)
-                    .and_then(|r| serde_json::to_value(r).map_err(|_| ErroApp::RespostaInvalida)),
-                _ => Err(ErroApp::PedidoInvalido),
+                    .set_level(e, n, pin)
+                    .and_then(|r| serde_json::to_value(r).map_err(|_| AppError::InvalidResponse)),
+                _ => Err(AppError::InvalidRequest),
             },
             // Phase 34: the file is picked and read on the Rust side; returns id, name and
             // size, or the notice (S11, V5.12).
@@ -351,48 +354,48 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Bridge<D, A> {
                     None | Some(Value::Null) => Ok(None),
                     Some(v) => serde_json::from_value::<EdicaoDosAnexos>(v.clone())
                         .map(Some)
-                        .map_err(|_| ErroApp::PedidoInvalido),
+                        .map_err(|_| AppError::InvalidRequest),
                 };
-                edit.and_then(|ed| self.service.escolher_anexo(ed.as_ref()))
-                    .and_then(|e| serde_json::to_value(e).map_err(|_| ErroApp::RespostaInvalida))
+                edit.and_then(|ed| self.service.choose_attachment(ed.as_ref()))
+                    .and_then(|e| serde_json::to_value(e).map_err(|_| AppError::InvalidResponse))
             }
             Comando::RemoverAnexo => match args.get("id").and_then(Value::as_u64) {
-                Some(id) => self.service.remover_anexo(id).map(|()| Value::Null),
-                None => Err(ErroApp::PedidoInvalido),
+                Some(id) => self.service.remove_attachment(id).map(|()| Value::Null),
+                None => Err(AppError::InvalidRequest),
             },
             // Phase 53a: "load from file" of the private key; the file is picked,
             // read and checked on the Rust side; returns only the size, or the notice (S2, S11).
             Comando::CarregarChave => match text("campo") {
                 Some(c) if args.len() == 1 => self
                     .service
-                    .carregar_chave(c)
-                    .and_then(|r| serde_json::to_value(r).map_err(|_| ErroApp::RespostaInvalida)),
-                _ => Err(ErroApp::PedidoInvalido),
+                    .load_key(c)
+                    .and_then(|r| serde_json::to_value(r).map_err(|_| AppError::InvalidResponse)),
+                _ => Err(AppError::InvalidRequest),
             },
             // D3: the token does not go back to the interface.
             Comando::Conectar => match text("entrada") {
-                Some(e) => self.service.conectar(e).map(|()| Value::Null),
-                None => Err(ErroApp::PedidoInvalido),
+                Some(e) => self.service.connect(e).map(|()| Value::Null),
+                None => Err(AppError::InvalidRequest),
             },
             // Phase 31: the response carries neither the password nor how many attempts there were.
             Comando::Destravar => match password {
                 Some(Ok(password)) if args.is_empty() => {
-                    self.service.destravar(password).map(|()| Value::Null)
+                    self.service.unlock(password).map(|()| Value::Null)
                 }
-                _ => Err(ErroApp::PedidoInvalido),
+                _ => Err(AppError::InvalidRequest),
             },
             // Phase 39: "lock now"; clears the clipboard and the form first.
-            Comando::Travar if args.is_empty() => self.service.travar().map(|()| Value::Null),
-            Comando::Travar => Err(ErroApp::PedidoInvalido),
+            Comando::Travar if args.is_empty() => self.service.lock().map(|()| Value::Null),
+            Comando::Travar => Err(AppError::InvalidRequest),
             // The Tauri channel does not exist in the bridge: the test screen polls the status
             // (`test-bridge.js` › `listenByPolling`).
-            Comando::OuvirAvisos => Err(ErroApp::PedidoInvalido),
+            Comando::OuvirAvisos => Err(AppError::InvalidRequest),
             // Phase 36: the approval window. The bridge has no separate windows (the per-window
             // ACL is Tauri's); the service checks id, decision and PIN the same way.
             Comando::PedidoDeAprovacao => self
                 .service
-                .pedido_de_aprovacao()
-                .and_then(|r| serde_json::to_value(r).map_err(|_| ErroApp::RespostaInvalida)),
+                .approval_request()
+                .and_then(|r| serde_json::to_value(r).map_err(|_| AppError::InvalidResponse)),
             // Phase 54b: the acknowledgement field (the stdin checkbox) only as
             // `true`/`false`.
             Comando::ResponderAprovacao => match (
@@ -402,14 +405,14 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Bridge<D, A> {
                 args.get("ciente").map(Value::as_bool),
             ) {
                 (Some(id), Some(d), None, None | Some(Some(false))) => {
-                    self.service.responder_aprovacao(id, d, None, false)
+                    self.service.answer_approval(id, d, None, false)
                 }
                 (Some(id), Some(d), Some(Ok(p)), c @ (None | Some(Some(_)))) => self
                     .service
-                    .responder_aprovacao(id, d, Some(p), c == Some(Some(true))),
-                _ => Err(ErroApp::PedidoInvalido),
+                    .answer_approval(id, d, Some(p), c == Some(Some(true))),
+                _ => Err(AppError::InvalidRequest),
             }
-            .and_then(|r| serde_json::to_value(r).map_err(|_| ErroApp::RespostaInvalida)),
+            .and_then(|r| serde_json::to_value(r).map_err(|_| AppError::InvalidResponse)),
             // Phase 30: master password and PIN checked on the Rust side; the response carries
             // no value. The data field leaves the object through `remove`, without copying
             // the text.
@@ -419,77 +422,77 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Bridge<D, A> {
             {
                 Some(Ok(n)) => self
                     .service
-                    .criar_cofre(n)
-                    .and_then(|r| serde_json::to_value(r).map_err(|_| ErroApp::RespostaInvalida)),
-                _ => Err(ErroApp::PedidoInvalido),
+                    .create_vault(n)
+                    .and_then(|r| serde_json::to_value(r).map_err(|_| AppError::InvalidResponse)),
+                _ => Err(AppError::InvalidRequest),
             },
             // Phase 38 (V5.22): no response carries a PIN, a password or a hash.
             Comando::Configuracoes if args.is_empty() => self
                 .service
-                .configuracoes()
-                .and_then(|c| serde_json::to_value(c).map_err(|_| ErroApp::RespostaInvalida)),
-            Comando::Configuracoes => Err(ErroApp::PedidoInvalido),
+                .settings()
+                .and_then(|c| serde_json::to_value(c).map_err(|_| AppError::InvalidResponse)),
+            Comando::Configuracoes => Err(AppError::InvalidRequest),
             Comando::TrocarPin => match pin_change {
                 Some(Ok(t)) if args.is_empty() => self
                     .service
-                    .trocar_pin(t)
-                    .and_then(|r| serde_json::to_value(r).map_err(|_| ErroApp::RespostaInvalida)),
-                _ => Err(ErroApp::PedidoInvalido),
+                    .change_pin(t)
+                    .and_then(|r| serde_json::to_value(r).map_err(|_| AppError::InvalidResponse)),
+                _ => Err(AppError::InvalidRequest),
             },
             Comando::TrocarSenhaMestra => match password_change {
                 Some(Ok(t)) if args.is_empty() => self
                     .service
-                    .trocar_senha_mestra(t)
-                    .and_then(|r| serde_json::to_value(r).map_err(|_| ErroApp::RespostaInvalida)),
-                _ => Err(ErroApp::PedidoInvalido),
+                    .change_master_password(t)
+                    .and_then(|r| serde_json::to_value(r).map_err(|_| AppError::InvalidResponse)),
+                _ => Err(AppError::InvalidRequest),
             },
             Comando::DefinirTempoTrava => match args.get("minutos").and_then(Value::as_u64) {
                 Some(m) if args.len() == 1 => self
                     .service
-                    .definir_tempo_trava(m)
-                    .and_then(|c| serde_json::to_value(c).map_err(|_| ErroApp::RespostaInvalida)),
-                _ => Err(ErroApp::PedidoInvalido),
+                    .set_lock_timeout(m)
+                    .and_then(|c| serde_json::to_value(c).map_err(|_| AppError::InvalidResponse)),
+                _ => Err(AppError::InvalidRequest),
             },
             // Phase 48 (V7.9): no mount path; the UUID is checked in the service
             // (format and the daemon's list).
             Comando::BackupExterno if args.is_empty() => self
                 .service
-                .backup_externo()
-                .and_then(|b| serde_json::to_value(b).map_err(|_| ErroApp::RespostaInvalida)),
+                .external_backup()
+                .and_then(|b| serde_json::to_value(b).map_err(|_| AppError::InvalidResponse)),
             Comando::ListarPendrives if args.is_empty() => self
                 .service
-                .listar_pendrives()
-                .and_then(|l| serde_json::to_value(l).map_err(|_| ErroApp::RespostaInvalida)),
-            Comando::BackupExterno | Comando::ListarPendrives => Err(ErroApp::PedidoInvalido),
+                .list_usb_drives()
+                .and_then(|l| serde_json::to_value(l).map_err(|_| AppError::InvalidResponse)),
+            Comando::BackupExterno | Comando::ListarPendrives => Err(AppError::InvalidRequest),
             // Phase 47 (V7.7): only name and instant of the versions; the restore response only
             // says restored and how many entries. The version is checked in the service
             // (format and the daemon's list).
             Comando::ListarBackups if args.is_empty() => self
                 .service
-                .listar_backups()
-                .and_then(|l| serde_json::to_value(l).map_err(|_| ErroApp::RespostaInvalida)),
-            Comando::ListarBackups => Err(ErroApp::PedidoInvalido),
+                .list_backups()
+                .and_then(|l| serde_json::to_value(l).map_err(|_| AppError::InvalidResponse)),
+            Comando::ListarBackups => Err(AppError::InvalidRequest),
             Comando::RestaurarBackup => match restore {
                 Some(Ok(r)) if args.is_empty() => self
                     .service
-                    .restaurar_backup(r)
-                    .and_then(|r| serde_json::to_value(r).map_err(|_| ErroApp::RespostaInvalida)),
-                _ => Err(ErroApp::PedidoInvalido),
+                    .restore_backup(r)
+                    .and_then(|r| serde_json::to_value(r).map_err(|_| AppError::InvalidResponse)),
+                _ => Err(AppError::InvalidRequest),
             },
             Comando::DefinirBackupExterno => {
                 let uuid = match args.get("uuid") {
                     None | Some(Value::Null) => Ok(None),
                     Some(Value::String(u)) => Ok(Some(u.as_str())),
-                    Some(_) => Err(ErroApp::PedidoInvalido),
+                    Some(_) => Err(AppError::InvalidRequest),
                 };
                 let only_known = args.keys().all(|k| k == "ligado" || k == "uuid");
                 match (flag("ligado"), uuid) {
                     (Some(l), Ok(u)) if only_known => {
-                        self.service.definir_backup_externo(l, u).and_then(|b| {
-                            serde_json::to_value(b).map_err(|_| ErroApp::RespostaInvalida)
+                        self.service.set_external_backup(l, u).and_then(|b| {
+                            serde_json::to_value(b).map_err(|_| AppError::InvalidResponse)
                         })
                     }
-                    _ => Err(ErroApp::PedidoInvalido),
+                    _ => Err(AppError::InvalidRequest),
                 }
             }
         };
@@ -662,10 +665,10 @@ impl Response {
         }
     }
 
-    fn error(status: u16, e: ErroApp) -> Response {
+    fn error(status: u16, e: AppError) -> Response {
         Response::json(
             status,
-            &json!({ "ok": false, "codigo": e.codigo(), "mensagem": e.to_string() }),
+            &json!({ "ok": false, "codigo": e.code(), "mensagem": e.to_string() }),
         )
     }
 

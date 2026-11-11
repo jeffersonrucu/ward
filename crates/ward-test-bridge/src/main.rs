@@ -29,7 +29,7 @@ use ward_app_core::area_transferencia::Copiador;
 
 use ward_app_core::daemon::{Aviso, Daemon, DaemonSocket, FilaAvisos};
 use ward_app_core::daemon_falso::{AprovacaoSimulada, DaemonFalso, aprovacoes_simuladas};
-use ward_app_core::servico::Servico;
+use ward_app_core::service::Service;
 use ward_app_core::terminal::Terminal;
 use ward_app_core::{aprovacao, destrave};
 use ward_test_bridge::http::Bridge;
@@ -250,9 +250,9 @@ fn serve_with<D: Daemon + 'static>(
     let dist: PathBuf = dist.to_path_buf();
     let service = match WlCopy::new() {
         Ok(a) => {
-            let s = Servico::novo(daemon, Copiador::novo(a)).com_terminal(terminal);
+            let s = Service::new(daemon, Copiador::novo(a)).with_terminal(terminal);
             match attachments {
-                Some(p) => s.com_seletor(DirPicker(p)),
+                Some(p) => s.with_picker(DirPicker(p)),
                 None => s,
             }
         }
@@ -262,15 +262,15 @@ fn serve_with<D: Daemon + 'static>(
         }
     };
     for (p, elapsed) in approvals {
-        service.aprovacoes().chegou_ha(p.clone(), *elapsed);
+        service.approvals().chegou_ha(p.clone(), *elapsed);
     }
     // Phase 31 (D65 a): the unlock requests of the connection mark the request that the
     // screen reads in the vault status command (the bridge has no Tauri channel; the
     // screen polls). Phase 36: the approval requests of the same queue go to the approval
     // window, which polls its command every second.
     if let Some(queue) = notices
-        && (aprovacao::vigiar(Arc::clone(&queue), service.aprovacoes(), || {}).is_err()
-            || destrave::vigiar(queue, service.pedido_de_destrave(), || {}).is_err())
+        && (aprovacao::vigiar(Arc::clone(&queue), service.approvals(), || {}).is_err()
+            || destrave::vigiar(queue, service.unlock_request(), || {}).is_err())
     {
         eprintln!("ward-ponte-teste: não foi possível vigiar os avisos do daemon");
         return ExitCode::FAILURE;

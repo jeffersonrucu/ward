@@ -18,7 +18,7 @@
 use serde::{Deserialize, Serialize};
 use ward_core::limits::{MAX_LOCK_MINUTES, MAX_SECRET, MIN_LOCK_MINUTES};
 
-use crate::ErroApp;
+use crate::AppError;
 use crate::formulario::ErroCampo;
 use crate::primeiro_uso::{Digitado, PIN_DIFERENTE, PIN_INVALIDO, erros_da_senha, pin_valido};
 
@@ -120,11 +120,11 @@ impl TrocaSenha {
 }
 
 /// Minutos de trava vindos da interface (não confiável), na faixa de D45.
-pub fn minutos_validos(minutos: u64) -> Result<u32, ErroApp> {
+pub fn minutos_validos(minutos: u64) -> Result<u32, AppError> {
     u32::try_from(minutos)
         .ok()
         .filter(|m| (MIN_LOCK_MINUTES..=MAX_LOCK_MINUTES).contains(m))
-        .ok_or(ErroApp::PedidoInvalido)
+        .ok_or(AppError::InvalidRequest)
 }
 
 #[cfg(test)]
@@ -252,7 +252,7 @@ mod testes {
             u64::from(u32::MAX) + 1,
             u64::MAX,
         ] {
-            assert_eq!(minutos_validos(m), Err(ErroApp::PedidoInvalido), "{m}");
+            assert_eq!(minutos_validos(m), Err(AppError::InvalidRequest), "{m}");
         }
         assert_eq!(minutos_validos(1), Ok(1));
         assert_eq!(minutos_validos(240), Ok(240));
@@ -269,19 +269,19 @@ mod testes {
         use crate::daemon::{Daemon, EstadoCofre};
         use crate::daemon_falso::{DaemonFalso, SEGREDOS};
         use crate::destrave::SenhaMestra;
-        use crate::servico::Servico;
+        use crate::service::Service;
 
         type Quadros = Arc<Mutex<Vec<Vec<u8>>>>;
 
         struct SemArea;
         impl AreaTransferencia for SemArea {
-            fn escrever(&self, _: &[u8]) -> Result<(), ErroApp> {
+            fn escrever(&self, _: &[u8]) -> Result<(), AppError> {
                 Ok(())
             }
-            fn ler(&self) -> Result<Option<Zeroizing<Vec<u8>>>, ErroApp> {
+            fn ler(&self) -> Result<Option<Zeroizing<Vec<u8>>>, AppError> {
                 Ok(None)
             }
-            fn limpar(&self) -> Result<(), ErroApp> {
+            fn limpar(&self) -> Result<(), AppError> {
                 Ok(())
             }
         }
@@ -289,16 +289,16 @@ mod testes {
         /// Daemon falso que guarda cada quadro recebido (o "daemon" é quem olha).
         struct Espiao(DaemonFalso, Quadros);
         impl Daemon for Espiao {
-            fn trocar(&mut self, pedido: &[u8]) -> Result<Zeroizing<Vec<u8>>, ErroApp> {
+            fn trocar(&mut self, pedido: &[u8]) -> Result<Zeroizing<Vec<u8>>, AppError> {
                 self.1.lock().unwrap().push(pedido.to_vec());
                 self.0.trocar(pedido)
             }
         }
 
-        fn servico() -> (Servico<Espiao, SemArea>, Quadros) {
+        fn servico() -> (Service<Espiao, SemArea>, Quadros) {
             let quadros = Arc::new(Mutex::new(Vec::new()));
             let d = Espiao(DaemonFalso::cheio().sem_espera(), Arc::clone(&quadros));
-            (Servico::novo(d, Copiador::novo(SemArea)), quadros)
+            (Service::new(d, Copiador::novo(SemArea)), quadros)
         }
 
         fn sem_valor(json: &str) {
@@ -318,11 +318,11 @@ mod testes {
         #[test]
         fn v5_22_padrao_4h_desligado_e_tempo_alteravel() {
             let (s, _) = servico();
-            let c = s.configuracoes().unwrap();
+            let c = s.settings().unwrap();
             assert_eq!((c.minutos_trava, c.backup_externo), (240, false));
-            let c = s.definir_tempo_trava(30).unwrap();
+            let c = s.set_lock_timeout(30).unwrap();
             assert_eq!(c.minutos_trava, 30);
-            assert_eq!(s.configuracoes().unwrap().minutos_trava, 30);
+            assert_eq!(s.settings().unwrap().minutos_trava, 30);
             sem_valor(&serde_json::to_string(&c).unwrap());
         }
 
@@ -330,7 +330,7 @@ mod testes {
         fn ataque_tempo_fora_da_faixa_nem_chega_ao_daemon() {
             let (s, quadros) = servico();
             for m in [0, 1441, u64::MAX] {
-                assert_eq!(s.definir_tempo_trava(m), Err(ErroApp::PedidoInvalido));
+                assert_eq!(s.set_lock_timeout(m), Err(AppError::InvalidRequest));
             }
             assert!(quadros.lock().unwrap().is_empty());
         }
@@ -339,21 +339,21 @@ mod testes {
         fn v5_22_trocar_pin_pede_o_pin_atual() {
             let (s, quadros) = servico();
             assert_eq!(
-                s.trocar_pin(pin("246801", "2468", "2468")),
-                Err(ErroApp::PinIncorreto)
+                s.change_pin(pin("246801", "2468", "2468")),
+                Err(AppError::WrongPin)
             );
-            let r = s.trocar_pin(pin("135790", "2468", "2468")).unwrap();
+            let r = s.change_pin(pin("135790", "2468", "2468")).unwrap();
             assert!(r.trocado && r.erros.is_empty());
             sem_valor(&serde_json::to_string(&r).unwrap());
             // Daí só o PIN novo aprova.
             let mudar = |p: &str| {
-                s.mudar_nivel(
+                s.set_level(
                     "acme-pg-dev",
                     "bloqueado",
                     crate::nivel::Pin::novo(p.into()).unwrap(),
                 )
             };
-            assert_eq!(mudar("135790"), Err(ErroApp::PinIncorreto));
+            assert_eq!(mudar("135790"), Err(AppError::WrongPin));
             assert!(mudar("2468").is_ok());
             // O quadro leva só `atual` e `novo` (a confirmação fica no app).
             let q = quadros.lock().unwrap();
@@ -374,7 +374,7 @@ mod testes {
                 pin("135790", "13579a", "13579a"),
                 pin("135790", "2468", "2469"),
             ] {
-                let r = s.trocar_pin(t).unwrap();
+                let r = s.change_pin(t).unwrap();
                 assert!(!r.trocado && !r.erros.is_empty());
             }
             for t in [
@@ -382,7 +382,7 @@ mod testes {
                 senha(SENHA, "curta", "curta"),
                 senha(SENHA, NOVA, "falso-outra-mestra-03"),
             ] {
-                let r = s.trocar_senha_mestra(t).unwrap();
+                let r = s.change_master_password(t).unwrap();
                 assert!(!r.trocado && !r.erros.is_empty());
                 sem_valor(&serde_json::to_string(&r).unwrap());
             }
@@ -394,38 +394,35 @@ mod testes {
             let (s, _) = servico();
             for i in 0..5 {
                 assert_eq!(
-                    s.trocar_pin(pin(&format!("00{i:02}"), "2468", "2468")),
-                    Err(ErroApp::PinIncorreto)
+                    s.change_pin(pin(&format!("00{i:02}"), "2468", "2468")),
+                    Err(AppError::WrongPin)
                 );
             }
-            assert_eq!(s.estado_do_cofre(), Ok(EstadoCofre::Travado));
+            assert_eq!(s.vault_status(), Ok(EstadoCofre::Travado));
             assert_eq!(
-                s.trocar_pin(pin("135790", "2468", "2468")),
-                Err(ErroApp::Travado)
+                s.change_pin(pin("135790", "2468", "2468")),
+                Err(AppError::Locked)
             );
-            assert_eq!(s.configuracoes(), Err(ErroApp::Travado));
+            assert_eq!(s.settings(), Err(AppError::Locked));
         }
 
         #[test]
         fn v5_22_trocar_senha_pede_a_atual_e_a_nova_destrava() {
             let (s, _) = servico();
             assert_eq!(
-                s.trocar_senha_mestra(senha("falso-errada-mestra-09", NOVA, NOVA)),
-                Err(ErroApp::SenhaIncorreta)
+                s.change_master_password(senha("falso-errada-mestra-09", NOVA, NOVA)),
+                Err(AppError::WrongPassword)
             );
-            assert_eq!(s.estado_do_cofre(), Ok(EstadoCofre::Destravado));
-            let r = s.trocar_senha_mestra(senha(SENHA, NOVA, NOVA)).unwrap();
+            assert_eq!(s.vault_status(), Ok(EstadoCofre::Destravado));
+            let r = s.change_master_password(senha(SENHA, NOVA, NOVA)).unwrap();
             assert!(r.trocado);
             // Trava (5 PINs errados) e confere qual senha destrava.
             for _ in 0..5 {
-                let _ = s.trocar_pin(pin("000000", "2468", "2468"));
+                let _ = s.change_pin(pin("000000", "2468", "2468"));
             }
-            assert_eq!(s.estado_do_cofre(), Ok(EstadoCofre::Travado));
-            assert_eq!(
-                s.destravar(senha_mestra(SENHA)),
-                Err(ErroApp::SenhaIncorreta)
-            );
-            assert!(s.destravar(senha_mestra(NOVA)).is_ok());
+            assert_eq!(s.vault_status(), Ok(EstadoCofre::Travado));
+            assert_eq!(s.unlock(senha_mestra(SENHA)), Err(AppError::WrongPassword));
+            assert!(s.unlock(senha_mestra(NOVA)).is_ok());
         }
     }
 }

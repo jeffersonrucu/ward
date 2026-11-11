@@ -26,7 +26,7 @@
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use gtk::{gdk, glib};
-use ward_app_core::ErroApp;
+use ward_app_core::AppError;
 use ward_app_core::area_transferencia::{AreaTransferencia, Zeroizing};
 
 /// Tipos de texto oferecidos (`info` 0).
@@ -88,9 +88,9 @@ fn na_thread_principal() -> bool {
 }
 
 impl AreaTransferencia for AreaGtk {
-    fn escrever(&self, valor: &[u8]) -> Result<(), ErroApp> {
+    fn escrever(&self, valor: &[u8]) -> Result<(), AppError> {
         if !na_thread_principal() {
-            return Err(ErroApp::AreaTransferencia);
+            return Err(AppError::Clipboard);
         }
         let valor: Valor = Arc::new(Zeroizing::new(valor.to_vec()));
         let id = {
@@ -121,20 +121,20 @@ impl AreaTransferencia for AreaGtk {
             dados.set(&dados.target(), 8, conteudo);
         });
         if !ok {
-            return Err(ErroApp::AreaTransferencia);
+            return Err(AppError::Clipboard);
         }
         travar(&self.dono).atual = Some((id, valor));
         Ok(())
     }
 
-    fn ler(&self) -> Result<Option<Zeroizing<Vec<u8>>>, ErroApp> {
+    fn ler(&self) -> Result<Option<Zeroizing<Vec<u8>>>, AppError> {
         Ok(travar(&self.dono)
             .atual
             .as_ref()
             .map(|(_, v)| Zeroizing::new(v.to_vec())))
     }
 
-    fn limpar(&self) -> Result<(), ErroApp> {
+    fn limpar(&self) -> Result<(), AppError> {
         let Some(id) = travar(&self.dono).atual.as_ref().map(|(id, _)| *id) else {
             return Ok(());
         };
@@ -212,10 +212,7 @@ mod testes {
     #[test]
     fn ataque_copiar_fora_da_thread_principal_e_recusado() {
         let area = AreaGtk::nova();
-        assert_eq!(
-            area.escrever(b"falso-39f-d"),
-            Err(ErroApp::AreaTransferencia)
-        );
+        assert_eq!(area.escrever(b"falso-39f-d"), Err(AppError::Clipboard));
         assert_eq!(area.ler().unwrap(), None);
     }
 
@@ -243,7 +240,7 @@ mod testes {
         use std::sync::mpsc;
         use std::time::Duration;
         use ward_app_core::area_transferencia::Copiador;
-        use ward_app_core::segredo::Segredo;
+        use ward_app_core::secret::Secret;
 
         gtk::init().expect("GTK");
         let (tx, rx) = mpsc::channel::<String>();
@@ -277,13 +274,13 @@ mod testes {
                 }
                 "copiar" => {
                     let c = copiador.as_ref().expect("prazo antes");
-                    let r = c.copiar(Segredo::novo(arg.as_bytes().to_vec()));
+                    let r = c.copiar(Secret::new(arg.as_bytes().to_vec()));
                     responder(if r.is_ok() { "ok" } else { "erro" });
                 }
                 "copiar-fora" => {
                     let c = Arc::clone(copiador.as_ref().expect("prazo antes"));
                     let v = arg.as_bytes().to_vec();
-                    let r = std::thread::spawn(move || c.copiar(Segredo::novo(v)))
+                    let r = std::thread::spawn(move || c.copiar(Secret::new(v)))
                         .join()
                         .unwrap();
                     responder(if r.is_ok() { "ok" } else { "erro" });

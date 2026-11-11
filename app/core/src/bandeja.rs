@@ -27,7 +27,7 @@ use std::io;
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
-use crate::ErroApp;
+use crate::AppError;
 use crate::daemon::EstadoCofre;
 
 /// Ids dos itens do menu. Os de texto só informam (desabilitados).
@@ -77,7 +77,7 @@ pub enum EstadoBandeja {
 }
 
 impl EstadoBandeja {
-    pub fn de(estado: Result<EstadoCofre, ErroApp>) -> EstadoBandeja {
+    pub fn de(estado: Result<EstadoCofre, AppError>) -> EstadoBandeja {
         match estado {
             Ok(EstadoCofre::Destravado) => EstadoBandeja::Destravado,
             Ok(EstadoCofre::Travado) => EstadoBandeja::Travado,
@@ -321,7 +321,7 @@ mod testes {
             EstadoBandeja::de(Ok(EstadoCofre::SemCofre)),
             EstadoBandeja::SemCofre
         );
-        let e = EstadoBandeja::de(Err(ErroApp::DaemonIndisponivel));
+        let e = EstadoBandeja::de(Err(AppError::DaemonUnavailable));
         assert_eq!(e, EstadoBandeja::SemDaemon);
         // Falha fechada: sem daemon o ícone é o de travado e não há o que travar.
         assert_eq!(aparencia(e).icone, Icone::Travado);

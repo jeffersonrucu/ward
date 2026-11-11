@@ -15,19 +15,19 @@ use ward_core::entry::{AccessLevel, Secret as SegredoCore};
 use ward_core::limits::{MAX_PIN_DIGITS, MIN_PIN_DIGITS};
 use zeroize::Zeroizing;
 
-use crate::ErroApp;
+use crate::AppError;
 
 /// PIN digitado na interface, só para confirmar a mudança de nível.
 pub struct Pin(Zeroizing<String>);
 
 impl Pin {
     /// Confere o formato e toma posse do texto (sem cópia que fique sem zerar).
-    pub fn novo(texto: String) -> Result<Pin, ErroApp> {
+    pub fn novo(texto: String) -> Result<Pin, AppError> {
         let texto = Zeroizing::new(texto);
         if formato_ok(&texto) {
             Ok(Pin(texto))
         } else {
-            Err(ErroApp::PedidoInvalido)
+            Err(AppError::InvalidRequest)
         }
     }
 
@@ -80,8 +80,8 @@ impl<'de> Deserialize<'de> for Pin {
 
 /// Nível pedido pela interface, pelo nome do protocolo (`livre`, `com-aprovacao`,
 /// `bloqueado`).
-pub fn nivel_de_nome(nome: &str) -> Result<AccessLevel, ErroApp> {
-    AccessLevel::from_name(nome).ok_or(ErroApp::PedidoInvalido)
+pub fn nivel_de_nome(nome: &str) -> Result<AccessLevel, AppError> {
+    AccessLevel::from_name(nome).ok_or(AppError::InvalidRequest)
 }
 
 /// Resposta do `mudar_nivel`: o nível que a entrada passou a ter. Sem PIN.
@@ -111,7 +111,7 @@ mod testes {
         ] {
             assert_eq!(
                 Pin::novo(ruim.to_owned()).unwrap_err(),
-                ErroApp::PedidoInvalido,
+                AppError::InvalidRequest,
                 "{ruim:?}"
             );
             let json = serde_json::to_string(ruim).unwrap();
@@ -154,7 +154,7 @@ mod testes {
         ] {
             assert_eq!(
                 nivel_de_nome(ruim),
-                Err(ErroApp::PedidoInvalido),
+                Err(AppError::InvalidRequest),
                 "{ruim:?}"
             );
         }

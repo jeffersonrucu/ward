@@ -6,7 +6,7 @@
 //! S11/D4: nada daqui tem segredo. Dos segredos vai só o identificador e o rótulo do
 //! campo (para o `Campo secreto` desenhar a máscara); dos extras secretos, só o nome;
 //! dos anexos, nome e tamanho. Os tipos implementam `Serialize` para o Tauri e para a
-//! ponte de teste; o `Segredo` do app não implementa, então não há como um valor
+//! ponte de teste; o `Secret` do app não implementa, então não há como um valor
 //! secreto entrar aqui por engano.
 
 use serde::Serialize;

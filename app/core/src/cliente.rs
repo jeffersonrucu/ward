@@ -12,8 +12,8 @@
 //! e na ponte de teste, o daemon falso ([`crate::daemon_falso`]).
 //!
 //! Nenhuma função daqui devolve segredo à interface: [`copiar`] e [`revelar`] leem um
-//! valor em [`Segredo`] (que zera ao sair); quem decide o destino é o
-//! [`crate::servico`]: a área de transferência (D4), o "revelar" no clique (S11) ou o
+//! valor em [`Secret`] (que zera ao sair); quem decide o destino é o
+//! [`crate::service`]: a área de transferência (D4), o "revelar" no clique (S11) ou o
 //! rascunho que volta ao daemon ao editar (Fase 33).
 
 use ward_core::entry::{AccessLevel, Draft, Secret as SegredoCore};
@@ -23,46 +23,46 @@ use ward_core::protocolo::{
 };
 use zeroize::Zeroizing;
 
-use crate::ErroApp;
+use crate::AppError;
 use crate::daemon::{Daemon, EstadoCofre};
-use crate::segredo::Segredo;
+use crate::secret::Secret;
 use crate::terminal::Token;
 
-/// Um pedido e a resposta já lida. Um `erro` do daemon vira [`ErroApp`] com mensagem
+/// Um pedido e a resposta já lida. Um `erro` do daemon vira [`AppError`] com mensagem
 /// fixa (o código do protocolo não vai à interface).
-fn pedir<D: Daemon + ?Sized>(daemon: &mut D, pedido: &Pedido) -> Result<Resposta, ErroApp> {
+fn pedir<D: Daemon + ?Sized>(daemon: &mut D, pedido: &Pedido) -> Result<Resposta, AppError> {
     let quadro =
-        protocolo::codificar_pedido(Papel::App, pedido).map_err(|_| ErroApp::PedidoInvalido)?;
+        protocolo::codificar_pedido(Papel::App, pedido).map_err(|_| AppError::InvalidRequest)?;
     let corpo = daemon.trocar(&quadro)?;
     match protocolo::decodificar_resposta(Papel::App, &corpo) {
         Ok(Resposta::Erro(e)) => Err(erro_do_daemon(&e)),
         Ok(r) => Ok(r),
-        Err(_) => Err(ErroApp::RespostaInvalida),
+        Err(_) => Err(AppError::InvalidResponse),
     }
 }
 
 /// O erro do protocolo que a tela distingue; o resto é "recusado".
-fn erro_do_daemon(e: &ErroResposta) -> ErroApp {
+fn erro_do_daemon(e: &ErroResposta) -> AppError {
     match e {
-        ErroResposta::Travado | ErroResposta::TravadoTempoEsgotado => ErroApp::Travado,
-        ErroResposta::EntradaInexistente => ErroApp::EntradaInexistente,
-        ErroResposta::CampoInexistente => ErroApp::CampoInexistente,
-        ErroResposta::NaoAutorizado => ErroApp::NaoAutorizado,
-        ErroResposta::CofreJaExiste => ErroApp::CofreJaExiste,
-        ErroResposta::FalhaAoGravar => ErroApp::CofreNaoGravado,
-        ErroResposta::PinIncorreto => ErroApp::PinIncorreto,
-        ErroResposta::SenhaIncorreta => ErroApp::SenhaIncorreta,
-        ErroResposta::Retrocesso => ErroApp::CofreRetrocesso,
-        ErroResposta::PendrivesIndisponiveis => ErroApp::PendrivesIndisponiveis,
-        ErroResposta::BackupInexistente => ErroApp::BackupInexistente,
-        ErroResposta::BackupIndisponivel => ErroApp::BackupIndisponivel,
-        ErroResposta::CofreMudou => ErroApp::CofreMudou,
-        _ => ErroApp::Recusado,
+        ErroResposta::Travado | ErroResposta::TravadoTempoEsgotado => AppError::Locked,
+        ErroResposta::EntradaInexistente => AppError::EntryNotFound,
+        ErroResposta::CampoInexistente => AppError::FieldNotFound,
+        ErroResposta::NaoAutorizado => AppError::Unauthorized,
+        ErroResposta::CofreJaExiste => AppError::VaultAlreadyExists,
+        ErroResposta::FalhaAoGravar => AppError::VaultNotWritten,
+        ErroResposta::PinIncorreto => AppError::WrongPin,
+        ErroResposta::SenhaIncorreta => AppError::WrongPassword,
+        ErroResposta::Retrocesso => AppError::VaultRollback,
+        ErroResposta::PendrivesIndisponiveis => AppError::UsbDrivesUnavailable,
+        ErroResposta::BackupInexistente => AppError::BackupNotFound,
+        ErroResposta::BackupIndisponivel => AppError::BackupUnavailable,
+        ErroResposta::CofreMudou => AppError::VaultChanged,
+        _ => AppError::Refused,
     }
 }
 
 /// `estado`.
-pub fn estado<D: Daemon + ?Sized>(daemon: &mut D) -> Result<EstadoCofre, ErroApp> {
+pub fn estado<D: Daemon + ?Sized>(daemon: &mut D) -> Result<EstadoCofre, AppError> {
     match pedir(daemon, &Pedido::Estado)? {
         Resposta::Estado {
             cofre_existe: false,
@@ -70,72 +70,72 @@ pub fn estado<D: Daemon + ?Sized>(daemon: &mut D) -> Result<EstadoCofre, ErroApp
         } => Ok(EstadoCofre::SemCofre),
         Resposta::Estado { travado: true, .. } => Ok(EstadoCofre::Travado),
         Resposta::Estado { travado: false, .. } => Ok(EstadoCofre::Destravado),
-        _ => Err(ErroApp::RespostaInvalida),
+        _ => Err(AppError::InvalidResponse),
     }
 }
 
 /// `criar_cofre` (primeiro uso, Fase 30): a senha mestra e o PIN já conferidos por
 /// [`crate::primeiro_uso`]. O daemon grava o hash do PIN na configuração do corpo
-/// (D30) e deixa o cofre destravado. Os valores vão em `Segredo` do núcleo (zera ao
+/// (D30) e deixa o cofre destravado. Os valores vão em `Secret` do núcleo (zera ao
 /// sair) e o quadro é zerado depois da troca.
 pub fn criar_cofre<D: Daemon + ?Sized>(
     daemon: &mut D,
     senha: &[u8],
     pin: &[u8],
-) -> Result<(), ErroApp> {
+) -> Result<(), AppError> {
     let pedido = Pedido::CriarCofre {
         senha: SegredoCore::from_bytes(senha.to_vec()),
         pin: SegredoCore::from_bytes(pin.to_vec()),
     };
     match pedir(daemon, &pedido)? {
         Resposta::Ok => Ok(()),
-        _ => Err(ErroApp::RespostaInvalida),
+        _ => Err(AppError::InvalidResponse),
     }
 }
 
 /// O papel que o daemon deu a esta conexão, pela resposta de `estado` (D63). O app e a
 /// ponte de teste pedem isto **primeiro** e, sem [`Papel::App`], não usam a conexão.
-pub fn papel<D: Daemon + ?Sized>(daemon: &mut D) -> Result<Papel, ErroApp> {
+pub fn papel<D: Daemon + ?Sized>(daemon: &mut D) -> Result<Papel, AppError> {
     match pedir(daemon, &Pedido::Estado)? {
         Resposta::Estado { papel, .. } => Ok(papel),
-        _ => Err(ErroApp::RespostaInvalida),
+        _ => Err(AppError::InvalidResponse),
     }
 }
 
 /// O papel desta conexão é o de app? (O mesmo de [`papel`], para quem não depende do
 /// `ward-core`, como a ponte de teste.)
-pub fn tem_papel_app<D: Daemon + ?Sized>(daemon: &mut D) -> Result<bool, ErroApp> {
+pub fn tem_papel_app<D: Daemon + ?Sized>(daemon: &mut D) -> Result<bool, AppError> {
     papel(daemon).map(|p| p == Papel::App)
 }
 
 /// `abrir_app` (D57): pede ao daemon que abra a instância verdadeira do app. Sem
 /// campo: nada do pedido chega ao processo que o daemon abre.
-pub fn abrir_app<D: Daemon + ?Sized>(daemon: &mut D) -> Result<(), ErroApp> {
+pub fn abrir_app<D: Daemon + ?Sized>(daemon: &mut D) -> Result<(), AppError> {
     match pedir(daemon, &Pedido::AbrirApp)? {
         Resposta::Ok => Ok(()),
-        _ => Err(ErroApp::RespostaInvalida),
+        _ => Err(AppError::InvalidResponse),
     }
 }
 
 /// `abrir_app` pela conexão de um cliente comum (o app aberto pelo menu, que largou o
 /// grupo antes de conectar): o daemon escreve a resposta no papel que deu, o de agente
 /// (D63), e é nele que ela é lida.
-pub fn abrir_app_como_agente<D: Daemon + ?Sized>(daemon: &mut D) -> Result<(), ErroApp> {
+pub fn abrir_app_como_agente<D: Daemon + ?Sized>(daemon: &mut D) -> Result<(), AppError> {
     let quadro = protocolo::codificar_pedido(Papel::Agente, &Pedido::AbrirApp)
-        .map_err(|_| ErroApp::PedidoInvalido)?;
+        .map_err(|_| AppError::InvalidRequest)?;
     let corpo = daemon.trocar(&quadro)?;
     match protocolo::decodificar_resposta(Papel::Agente, &corpo) {
         Ok(Resposta::Ok) => Ok(()),
         Ok(Resposta::Erro(e)) => Err(erro_do_daemon(&e)),
-        _ => Err(ErroApp::RespostaInvalida),
+        _ => Err(AppError::InvalidResponse),
     }
 }
 
 /// `lista`: todas as entradas (o app vê também as bloqueadas), sem segredo.
-pub fn lista<D: Daemon + ?Sized>(daemon: &mut D) -> Result<Vec<ItemLista>, ErroApp> {
+pub fn lista<D: Daemon + ?Sized>(daemon: &mut D) -> Result<Vec<ItemLista>, AppError> {
     match pedir(daemon, &Pedido::Lista)? {
         Resposta::Lista(itens) => Ok(itens),
-        _ => Err(ErroApp::RespostaInvalida),
+        _ => Err(AppError::InvalidResponse),
     }
 }
 
@@ -144,13 +144,13 @@ pub fn lista<D: Daemon + ?Sized>(daemon: &mut D) -> Result<Vec<ItemLista>, ErroA
 pub fn detalhe<D: Daemon + ?Sized>(
     daemon: &mut D,
     entrada: &str,
-) -> Result<DetalheEntrada, ErroApp> {
+) -> Result<DetalheEntrada, AppError> {
     let pedido = Pedido::Detalhe {
         entrada: entrada.to_owned(),
     };
     match pedir(daemon, &pedido)? {
         Resposta::Detalhe(d) if d.nome == entrada => Ok(d),
-        _ => Err(ErroApp::RespostaInvalida),
+        _ => Err(AppError::InvalidResponse),
     }
 }
 
@@ -159,14 +159,14 @@ pub fn copiar<D: Daemon + ?Sized>(
     daemon: &mut D,
     entrada: &str,
     alvo: Alvo,
-) -> Result<Segredo, ErroApp> {
+) -> Result<Secret, AppError> {
     let pedido = Pedido::Copiar {
         entrada: entrada.to_owned(),
         alvo,
     };
     match pedir(daemon, &pedido)? {
-        Resposta::Segredo(s) => Ok(Segredo::novo(s.expose().to_vec())),
-        _ => Err(ErroApp::RespostaInvalida),
+        Resposta::Segredo(s) => Ok(Secret::new(s.expose().to_vec())),
+        _ => Err(AppError::InvalidResponse),
     }
 }
 
@@ -176,14 +176,14 @@ pub fn revelar<D: Daemon + ?Sized>(
     daemon: &mut D,
     entrada: &str,
     alvo: Alvo,
-) -> Result<Segredo, ErroApp> {
+) -> Result<Secret, AppError> {
     let pedido = Pedido::Revelar {
         entrada: entrada.to_owned(),
         alvo,
     };
     match pedir(daemon, &pedido)? {
-        Resposta::Segredo(s) => Ok(Segredo::novo(s.expose().to_vec())),
-        _ => Err(ErroApp::RespostaInvalida),
+        Resposta::Segredo(s) => Ok(Secret::new(s.expose().to_vec())),
+        _ => Err(AppError::InvalidResponse),
     }
 }
 
@@ -194,7 +194,7 @@ pub struct CodigoTotp {
 }
 
 /// `totp`: o código atual (6 dígitos, D35) e quanto falta para trocar (1 a 30 s).
-pub fn totp<D: Daemon + ?Sized>(daemon: &mut D, entrada: &str) -> Result<CodigoTotp, ErroApp> {
+pub fn totp<D: Daemon + ?Sized>(daemon: &mut D, entrada: &str) -> Result<CodigoTotp, AppError> {
     let pedido = Pedido::Totp {
         entrada: entrada.to_owned(),
     };
@@ -204,7 +204,7 @@ pub fn totp<D: Daemon + ?Sized>(daemon: &mut D, entrada: &str) -> Result<CodigoT
         {
             Ok(CodigoTotp { codigo, restante })
         }
-        _ => Err(ErroApp::RespostaInvalida),
+        _ => Err(AppError::InvalidResponse),
     }
 }
 
@@ -212,13 +212,13 @@ pub fn totp<D: Daemon + ?Sized>(daemon: &mut D, entrada: &str) -> Result<CodigoT
 /// textos fixos do `ward-core`; nenhum valor do usuário).
 /// `emitir_token`: o token de uso único do "Conectar" (D3), conferido antes de ir a um
 /// argv ([`Token::de_resposta`]).
-pub fn emitir_token<D: Daemon + ?Sized>(daemon: &mut D, entrada: &str) -> Result<Token, ErroApp> {
+pub fn emitir_token<D: Daemon + ?Sized>(daemon: &mut D, entrada: &str) -> Result<Token, AppError> {
     let pedido = Pedido::EmitirToken {
         entrada: entrada.to_owned(),
     };
     match pedir(daemon, &pedido)? {
-        Resposta::Token(t) => Token::de_resposta(t.expose()).ok_or(ErroApp::RespostaInvalida),
-        _ => Err(ErroApp::RespostaInvalida),
+        Resposta::Token(t) => Token::de_resposta(t.expose()).ok_or(AppError::InvalidResponse),
+        _ => Err(AppError::InvalidResponse),
     }
 }
 
@@ -235,14 +235,14 @@ pub fn salvar<D: Daemon + ?Sized>(
     anterior: Option<String>,
     rascunho: Draft,
     manter_anexos: Vec<String>,
-) -> Result<Salvamento, ErroApp> {
+) -> Result<Salvamento, AppError> {
     let pedido = Pedido::SalvarEntrada {
         anterior,
         rascunho,
         manter_anexos,
     };
     let quadro =
-        protocolo::codificar_pedido(Papel::App, &pedido).map_err(|_| ErroApp::PedidoInvalido)?;
+        protocolo::codificar_pedido(Papel::App, &pedido).map_err(|_| AppError::InvalidRequest)?;
     drop(pedido);
     let corpo = daemon.trocar(&quadro)?;
     drop(quadro);
@@ -250,19 +250,19 @@ pub fn salvar<D: Daemon + ?Sized>(
         Ok(Resposta::Ok) => Ok(Salvamento::Salvo),
         Ok(Resposta::Erro(ErroResposta::Validacao(p))) => Ok(Salvamento::Problemas(p)),
         Ok(Resposta::Erro(e)) => Err(erro_do_daemon(&e)),
-        _ => Err(ErroApp::RespostaInvalida),
+        _ => Err(AppError::InvalidResponse),
     }
 }
 
 /// `mudar_nivel` (S9): o PIN vai só neste pedido. O quadro com o PIN é largado (e
 /// zerado: `codificar_pedido` devolve `Zeroizing`) logo depois da troca. PIN errado dá
-/// [`ErroApp::PinIncorreto`]; a contagem e a trava no 5º erro são do daemon.
+/// [`AppError::WrongPin`]; a contagem e a trava no 5º erro são do daemon.
 pub fn mudar_nivel<D: Daemon + ?Sized>(
     daemon: &mut D,
     entrada: &str,
     nivel: AccessLevel,
     pin: &crate::nivel::Pin,
-) -> Result<(), ErroApp> {
+) -> Result<(), AppError> {
     let pedido = Pedido::MudarNivel {
         entrada: entrada.to_owned(),
         nivel,
@@ -270,7 +270,7 @@ pub fn mudar_nivel<D: Daemon + ?Sized>(
     };
     match pedir(daemon, &pedido)? {
         Resposta::Ok => Ok(()),
-        _ => Err(ErroApp::RespostaInvalida),
+        _ => Err(AppError::InvalidResponse),
     }
 }
 
@@ -292,9 +292,9 @@ pub fn responder_aprovacao<D: Daemon + ?Sized>(
     decisao: protocolo::Decisao,
     pin: Option<&crate::nivel::Pin>,
     entrada_confirmada: bool,
-) -> Result<Respondida, ErroApp> {
+) -> Result<Respondida, AppError> {
     if decisao.pede_pin() != pin.is_some() || (entrada_confirmada && !decisao.pede_pin()) {
-        return Err(ErroApp::PedidoInvalido);
+        return Err(AppError::InvalidRequest);
     }
     let pedido = Pedido::ResponderAprovacao {
         pedido: id,
@@ -303,7 +303,7 @@ pub fn responder_aprovacao<D: Daemon + ?Sized>(
         entrada_confirmada,
     };
     let quadro =
-        protocolo::codificar_pedido(Papel::App, &pedido).map_err(|_| ErroApp::PedidoInvalido)?;
+        protocolo::codificar_pedido(Papel::App, &pedido).map_err(|_| AppError::InvalidRequest)?;
     drop(pedido);
     let corpo = daemon.trocar(&quadro)?;
     drop(quadro);
@@ -312,24 +312,24 @@ pub fn responder_aprovacao<D: Daemon + ?Sized>(
         Ok(Resposta::Erro(ErroResposta::PinIncorreto)) => Ok(Respondida::PinIncorreto),
         Ok(Resposta::Erro(ErroResposta::Expirado)) => Ok(Respondida::Expirado),
         Ok(Resposta::Erro(e)) => Err(erro_do_daemon(&e)),
-        Ok(_) => Err(ErroApp::RespostaInvalida),
-        Err(_) => Err(ErroApp::RespostaInvalida),
+        Ok(_) => Err(AppError::InvalidResponse),
+        Err(_) => Err(AppError::InvalidResponse),
     }
 }
 
-/// `destravar { senha }` (Fase 31): a senha mestra só vai ao pedido, num `Segredo` do
-/// núcleo (que zera). `ok` destrava; senha errada é [`ErroApp::SenhaIncorreta`], sem
+/// `destravar { senha }` (Fase 31): a senha mestra só vai ao pedido, num `Secret` do
+/// núcleo (que zera). `ok` destrava; senha errada é [`AppError::WrongPassword`], sem
 /// contagem (D20: a espera é do daemon, antes de olhar a senha).
 pub fn destravar<D: Daemon + ?Sized>(
     daemon: &mut D,
     senha: &crate::destrave::SenhaMestra,
-) -> Result<(), ErroApp> {
+) -> Result<(), AppError> {
     let pedido = Pedido::Destravar {
         senha: senha.para_o_protocolo(),
     };
     match pedir(daemon, &pedido)? {
         Resposta::Ok => Ok(()),
-        _ => Err(ErroApp::RespostaInvalida),
+        _ => Err(AppError::InvalidResponse),
     }
 }
 
@@ -337,7 +337,7 @@ pub fn destravar<D: Daemon + ?Sized>(
 /// estrita já recusou minutos fora de D45 e campo a mais.
 pub fn configuracao<D: Daemon + ?Sized>(
     daemon: &mut D,
-) -> Result<crate::configuracoes::Configuracoes, ErroApp> {
+) -> Result<crate::configuracoes::Configuracoes, AppError> {
     match pedir(daemon, &Pedido::Configuracao)? {
         Resposta::Configuracao {
             minutos_trava,
@@ -348,60 +348,60 @@ pub fn configuracao<D: Daemon + ?Sized>(
             backup_externo,
             backup_local,
         }),
-        _ => Err(ErroApp::RespostaInvalida),
+        _ => Err(AppError::InvalidResponse),
     }
 }
 
 /// `trocar_pin { atual, novo }` (Fase 38, S9): os dois PINs já conferidos no formato por
-/// [`crate::configuracoes`], em `Segredo` do núcleo (zera). PIN atual errado é
-/// [`ErroApp::PinIncorreto`]; a contagem e a trava no 5.º erro são do daemon.
+/// [`crate::configuracoes`], em `Secret` do núcleo (zera). PIN atual errado é
+/// [`AppError::WrongPin`]; a contagem e a trava no 5.º erro são do daemon.
 pub fn trocar_pin<D: Daemon + ?Sized>(
     daemon: &mut D,
     atual: &[u8],
     novo: &[u8],
-) -> Result<(), ErroApp> {
+) -> Result<(), AppError> {
     let pedido = Pedido::TrocarPin {
         atual: SegredoCore::from_bytes(atual.to_vec()),
         novo: SegredoCore::from_bytes(novo.to_vec()),
     };
     match pedir(daemon, &pedido)? {
         Resposta::Ok => Ok(()),
-        _ => Err(ErroApp::RespostaInvalida),
+        _ => Err(AppError::InvalidResponse),
     }
 }
 
 /// `trocar_senha { atual, nova }` (Fase 38): senha atual errada é
-/// [`ErroApp::SenhaIncorreta`] (D52); o daemon grava o cofre com a chave nova e geração
+/// [`AppError::WrongPassword`] (D52); o daemon grava o cofre com a chave nova e geração
 /// nova (D39, D53).
 pub fn trocar_senha<D: Daemon + ?Sized>(
     daemon: &mut D,
     atual: &[u8],
     nova: &[u8],
-) -> Result<(), ErroApp> {
+) -> Result<(), AppError> {
     let pedido = Pedido::TrocarSenha {
         atual: SegredoCore::from_bytes(atual.to_vec()),
         nova: SegredoCore::from_bytes(nova.to_vec()),
     };
     match pedir(daemon, &pedido)? {
         Resposta::Ok => Ok(()),
-        _ => Err(ErroApp::RespostaInvalida),
+        _ => Err(AppError::InvalidResponse),
     }
 }
 
 /// `tempo_trava { minutos }` (Fase 38, D30): o daemon grava na configuração do cofre.
-pub fn tempo_trava<D: Daemon + ?Sized>(daemon: &mut D, minutos: u32) -> Result<(), ErroApp> {
+pub fn tempo_trava<D: Daemon + ?Sized>(daemon: &mut D, minutos: u32) -> Result<(), AppError> {
     match pedir(daemon, &Pedido::TempoTrava { minutos })? {
         Resposta::Ok => Ok(()),
-        _ => Err(ErroApp::RespostaInvalida),
+        _ => Err(AppError::InvalidResponse),
     }
 }
 
 /// `travar` ("Travar agora" da janela e da bandeja, Fase 39): sem campo. O daemon zera a
 /// chave e responde `ok` (travado já, também `ok`).
-pub fn travar<D: Daemon + ?Sized>(daemon: &mut D) -> Result<(), ErroApp> {
+pub fn travar<D: Daemon + ?Sized>(daemon: &mut D) -> Result<(), AppError> {
     match pedir(daemon, &Pedido::Travar)? {
         Resposta::Ok => Ok(()),
-        _ => Err(ErroApp::RespostaInvalida),
+        _ => Err(AppError::InvalidResponse),
     }
 }
 
@@ -409,20 +409,20 @@ pub fn travar<D: Daemon + ?Sized>(daemon: &mut D) -> Result<(), ErroApp> {
 /// conferiu o formato de D45 e que ligado tem UUID).
 pub fn backup_externo<D: Daemon + ?Sized>(
     daemon: &mut D,
-) -> Result<(bool, Option<String>), ErroApp> {
+) -> Result<(bool, Option<String>), AppError> {
     match pedir(daemon, &Pedido::BackupExterno)? {
         Resposta::BackupExterno { ligado, uuid } => Ok((ligado, uuid)),
-        _ => Err(ErroApp::RespostaInvalida),
+        _ => Err(AppError::InvalidResponse),
     }
 }
 
 /// `pendrives` (Fase 46/48): UUID, rótulo (sem controle, até `MAX_ROTULO`) e montado;
 /// nunca o caminho de montagem. O udisks2 sem resposta é
-/// [`ErroApp::PendrivesIndisponiveis`].
-pub fn pendrives<D: Daemon + ?Sized>(daemon: &mut D) -> Result<Vec<Pendrive>, ErroApp> {
+/// [`AppError::UsbDrivesUnavailable`].
+pub fn pendrives<D: Daemon + ?Sized>(daemon: &mut D) -> Result<Vec<Pendrive>, AppError> {
     match pedir(daemon, &Pedido::Pendrives)? {
         Resposta::Pendrives(l) => Ok(l),
-        _ => Err(ErroApp::RespostaInvalida),
+        _ => Err(AppError::InvalidResponse),
     }
 }
 
@@ -432,10 +432,10 @@ pub fn definir_backup_externo<D: Daemon + ?Sized>(
     daemon: &mut D,
     ligado: bool,
     uuid: Option<String>,
-) -> Result<(), ErroApp> {
+) -> Result<(), AppError> {
     match pedir(daemon, &Pedido::DefinirBackupExterno { ligado, uuid })? {
         Resposta::Ok => Ok(()),
-        _ => Err(ErroApp::RespostaInvalida),
+        _ => Err(AppError::InvalidResponse),
     }
 }
 
@@ -444,37 +444,37 @@ pub fn definir_backup_externo<D: Daemon + ?Sized>(
 /// geração 0, campo a mais e mais de `MAX_BACKUPS`.
 pub fn backups<D: Daemon + ?Sized>(
     daemon: &mut D,
-) -> Result<Vec<ward_core::protocolo::VersaoBackup>, ErroApp> {
+) -> Result<Vec<ward_core::protocolo::VersaoBackup>, AppError> {
     match pedir(daemon, &Pedido::Backups)? {
         Resposta::Backups(l) => Ok(l),
-        _ => Err(ErroApp::RespostaInvalida),
+        _ => Err(AppError::InvalidResponse),
     }
 }
 
 /// `restaurar_backup { versao, senha, pin }` (Fase 45/47; D17, D39, S9): a senha mestra
-/// daquela versão e o PIN atual vão só neste pedido, em `Segredo` do núcleo (zera), e o
-/// quadro é largado logo depois da troca. PIN errado é [`ErroApp::PinIncorreto`] (o
-/// daemon conta; o 5.º trava); a senha da versão errada, [`ErroApp::SenhaIncorreta`].
+/// daquela versão e o PIN atual vão só neste pedido, em `Secret` do núcleo (zera), e o
+/// quadro é largado logo depois da troca. PIN errado é [`AppError::WrongPin`] (o
+/// daemon conta; o 5.º trava); a senha da versão errada, [`AppError::WrongPassword`].
 pub fn restaurar_backup<D: Daemon + ?Sized>(
     daemon: &mut D,
     versao: &str,
     senha: &crate::destrave::SenhaMestra,
     pin: &crate::nivel::Pin,
-) -> Result<(), ErroApp> {
+) -> Result<(), AppError> {
     let pedido = Pedido::RestaurarBackup {
         versao: versao.to_owned(),
         senha: senha.para_o_protocolo(),
         pin: pin.para_o_protocolo(),
     };
     let quadro =
-        protocolo::codificar_pedido(Papel::App, &pedido).map_err(|_| ErroApp::PedidoInvalido)?;
+        protocolo::codificar_pedido(Papel::App, &pedido).map_err(|_| AppError::InvalidRequest)?;
     drop(pedido);
     let corpo = daemon.trocar(&quadro)?;
     drop(quadro);
     match protocolo::decodificar_resposta(Papel::App, &corpo) {
         Ok(Resposta::Ok) => Ok(()),
         Ok(Resposta::Erro(e)) => Err(erro_do_daemon(&e)),
-        _ => Err(ErroApp::RespostaInvalida),
+        _ => Err(AppError::InvalidResponse),
     }
 }
 
@@ -487,7 +487,7 @@ mod testes {
     struct Resposta1(Vec<u8>);
 
     impl Daemon for Resposta1 {
-        fn trocar(&mut self, _pedido: &[u8]) -> Result<Zeroizing<Vec<u8>>, ErroApp> {
+        fn trocar(&mut self, _pedido: &[u8]) -> Result<Zeroizing<Vec<u8>>, AppError> {
             Ok(Zeroizing::new(self.0.clone()))
         }
     }
@@ -511,7 +511,7 @@ mod testes {
         assert_eq!(det.segredos, vec!["senha".to_owned()]);
         assert_eq!(
             detalhe(&mut d, "nao-existe").unwrap_err(),
-            ErroApp::EntradaInexistente
+            AppError::EntryNotFound
         );
         assert_eq!(
             estado(&mut DaemonFalso::vazio()),
@@ -529,7 +529,7 @@ mod testes {
             br#"{"v":1,"tipo":"segredo","dados":{"valor":"ZmFsc28tUEc="}}"#.to_vec();
         assert_eq!(
             lista(&mut Resposta1(segredo_no_lugar_da_lista)).unwrap_err(),
-            ErroApp::RespostaInvalida
+            AppError::InvalidResponse
         );
         let mut falso = DaemonFalso::cheio();
         let quadro = protocolo::codificar_pedido(
@@ -542,7 +542,7 @@ mod testes {
         let outro = falso.trocar(&quadro).unwrap().to_vec();
         assert_eq!(
             detalhe(&mut Resposta1(outro), "acme-pg-prod").unwrap_err(),
-            ErroApp::RespostaInvalida
+            AppError::InvalidResponse
         );
         // O detalhe verdadeiro de `gama-generico`, com o valor do extra secreto
         // enfiado pelo "daemon".
@@ -561,12 +561,12 @@ mod testes {
             .into_bytes();
         assert_eq!(
             detalhe(&mut Resposta1(forjado), "gama-generico").unwrap_err(),
-            ErroApp::RespostaInvalida
+            AppError::InvalidResponse
         );
         let versao = br#"{"v":2,"tipo":"lista","dados":{"itens":[]}}"#.to_vec();
         assert_eq!(
             lista(&mut Resposta1(versao)).unwrap_err(),
-            ErroApp::RespostaInvalida
+            AppError::InvalidResponse
         );
     }
 
@@ -599,7 +599,7 @@ mod testes {
             .to_vec();
         assert_eq!(
             lista(&mut Resposta1(q)).unwrap_err(),
-            ErroApp::RespostaInvalida
+            AppError::InvalidResponse
         );
         // Um "daemon" que enfia um segredo no resumo (campo secreto em `campos`, ou
         // chave a mais): recusado inteiro, nada chega à interface.
@@ -612,7 +612,7 @@ mod testes {
             let f = verdadeira.replacen(alvo, troca, 1).into_bytes();
             assert_eq!(
                 lista(&mut Resposta1(f)).unwrap_err(),
-                ErroApp::RespostaInvalida,
+                AppError::InvalidResponse,
                 "{troca}"
             );
         }
@@ -622,14 +622,14 @@ mod testes {
     fn erros_do_daemon_tem_mensagem_fixa() {
         let nao = br#"{"v":1,"tipo":"erro","dados":{"codigo":"nao_autorizado","mensagem":"<img src=x> falso-PG:s3nha/01@#"}}"#.to_vec();
         let e = lista(&mut Resposta1(nao)).unwrap_err();
-        assert_eq!(e, ErroApp::NaoAutorizado);
+        assert_eq!(e, AppError::Unauthorized);
         assert!(!e.to_string().contains("img"));
         assert!(!e.to_string().contains("falso"));
         let travado =
             br#"{"v":1,"tipo":"erro","dados":{"codigo":"travado","mensagem":"x"}}"#.to_vec();
         assert_eq!(
             estado(&mut Resposta1(travado)).unwrap_err(),
-            ErroApp::Travado
+            AppError::Locked
         );
     }
 }
