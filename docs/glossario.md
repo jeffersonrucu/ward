@@ -2672,6 +2672,30 @@ serve}`, `formulario` → `form`, `com_clobber` → `with_clobber`, `login_em` �
 do registro (`evento`, `inicio`, `preencher`, `decisao`, `seguiu`, `ambiente`, `alvos`…)
 são literais e ficam, como o código `"usuario, senha"` que o falso procura no script do
 daemon. O código Python embutido no `CLIENT` de `app_value_binary.rs` é literal e fica.
+Fase 26 (testes do `wardd`: `tests/externo.rs` → `tests/external.rs`,
+`tests/configuracoes.rs` → `tests/settings.rs`; `backup.rs` e `d62.rs` ficam): em
+`external.rs`, `Fonte { vistos, proximas, consultas }` → `Source { seen, next, queries }`
+(`com`/`por` → `with`/`set`), `pendrive` → `usb_drive`, `montagem` → `mount_point`,
+`ligar` → `turn_on`, `locais` → `local_versions`, `arvore` → `tree`, `pasta_externa` →
+`external_dir`, `no_pendrive` → `on_drive`, `BarramentoFalso { filho }` → `FakeBus {
+child }` (`subir`/`endereco` → `start`/`address`), `Objeto { caminho, rotulo,
+dispositivo, montagem, sistema, de_loop }` → `Object { path, label, device, mount,
+system, is_loop }`, `Objetos`/`objetos`/`objeto` → `Objects`/`objects`/`object`,
+`Gerente { lista }` → `Manager { list }`, `UdisksFalso { lista }` → `FakeUdisks { list }`
+(`novo`/`montou` → `new`/`mounted`), `cutucoes` → `nudges`. Em `backup.rs`, `pasta` →
+`backup_dir`, `modo` → `mode`, `versoes` → `versions`, `restaurar` → `restore`,
+`nomes_da_lista` → `list_names`, `tempo_trava` → `lock_timeout`, `versao_em` →
+`version_at`, `plantar` → `plant`. Em `settings.rs`, `configuracao` → `settings`,
+`tempo_trava` → `lock_timeout`, `trocar_pin` → `change_pin`, `trocar_senha` →
+`change_password`. Em `d62.rs`, `RelogioMovel { agora, esperas }` → `MovableClock { now,
+waits }` (`andar` → `advance`), `Preso { entrou, soltar }` → `Stuck { entered, release
+}`, `daemon_movel` → `movable_daemon`, `destravar_como` → `unlock_as`, `texto_estado` →
+`state_text`, `falhas_no_disco` → `failures_on_disk`, `cofre_travado` → `locked_vault`,
+`trocar_por_copia` → `swap_for_copy`. Os métodos `dormir`/`agora` do trait `Relogio`, os
+nomes do `nucleo` (`com_pendrives`, `sincronizar_externo`, `ligar_copia_externa`,
+`com_gancho_depois_de_gravar`, `Caminhos`, `ESPERA_MAXIMA`, `espera_destrave`), do
+`arquivos` (`Geracoes`, `ler_estado_completo`, `gravar_estado`) e do `ward-core`
+(`protocolo`) ficam até as fases deles (17–20).
 
 Fase 16 (`ward-core`: `mask`): módulo `mascara` → `mask` (`automato` → `automaton`,
 `testes` → `tests`). `MARCA` → `MARK`; `ErroMascara` → `MaskError` com `GrandeDemais` →
