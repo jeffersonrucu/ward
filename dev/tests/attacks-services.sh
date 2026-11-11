@@ -299,14 +299,14 @@ no_exposed_secret() {
     python3 -I -B - "$ROOT/dev/fixtures/entries.json" >"$TMP/secrets.txt" <<'PY'
 import json, sys
 d = json.load(open(sys.argv[1]))
-vals = {d["senha_mestra"], d["pin"]}
-for e in d["entradas"]:
-    for k, v in e.get("segredos", {}).items():
-        if not k.endswith("_arquivo"):
+vals = {d["master_password"], d["pin"]}
+for e in d["entries"]:
+    for k, v in e.get("secrets", {}).items():
+        if not k.endswith("_file"):
             vals.add(v)
     for x in e.get("extras", []):
-        if x.get("segredo"):
-            vals.add(x["valor"])
+        if x.get("secret"):
+            vals.add(x["value"])
 print("\n".join(sorted(vals)))
 PY
     cat "$SECRETS_DIR/mariadb-root" >>"$TMP/secrets.txt"; echo >>"$TMP/secrets.txt"

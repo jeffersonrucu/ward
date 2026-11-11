@@ -84,14 +84,14 @@ def ensure_dir(path: Path) -> None:
 
 def load_fixtures() -> dict[str, dict]:
     data = json.loads(FIXTURES.read_text(encoding="utf-8"))
-    return {e["nome"]: e for e in data["entradas"]}
+    return {e["name"]: e for e in data["entries"]}
 
 
 def secret(entries: dict[str, dict], name: str, field: str) -> str:
     try:
-        return entries[name]["segredos"][field]
+        return entries[name]["secrets"][field]
     except KeyError:
-        fail(f"fixture sem {name}.segredos.{field}")
+        fail(f"fixture sem {name}.secrets.{field}")
         raise  # unreachable
 
 
@@ -166,13 +166,13 @@ def write_secrets(entries: dict[str, dict]) -> None:
     ensure_dir(SECRETS)
     # (file, value, mode). 0644 only for what a non-root user reads in the container.
     fixed = [
-        ("pg-app", secret(entries, "acme-pg-dev", "senha"), 0o644),  # postgres (uid 70)
-        ("ssh-deploy", secret(entries, "acme-ssh-senha-stage", "senha"), 0o600),
-        ("ssh-sftpuser", secret(entries, "beta-sftp-dev", "senha"), 0o600),
-        ("ssh-salto", secret(entries, "acme-ssh-salto", "senha"), 0o600),
+        ("pg-app", secret(entries, "acme-pg-dev", "password"), 0o644),  # postgres (uid 70)
+        ("ssh-deploy", secret(entries, "acme-ssh-senha-stage", "password"), 0o600),
+        ("ssh-sftpuser", secret(entries, "beta-sftp-dev", "password"), 0o600),
+        ("ssh-salto", secret(entries, "acme-ssh-salto", "password"), 0o600),
         ("chave-passphrase", secret(entries, "acme-ssh-chave-prod", "passphrase"), 0o600),
-        ("wp-admin", secret(entries, "acme-wp-dev", "senha"), 0o644),  # wp-cli (www-data)
-        ("wp-editor", secret(entries, "acme-wp-prod", "senha"), 0o644),
+        ("wp-admin", secret(entries, "acme-wp-dev", "password"), 0o644),  # wp-cli (www-data)
+        ("wp-editor", secret(entries, "acme-wp-prod", "password"), 0o644),
     ]
     for name, value, mode in fixed:
         write_file(SECRETS / name, value.encode(), mode)
@@ -191,9 +191,9 @@ def write_secrets(entries: dict[str, dict]) -> None:
         e = entries[name]
         accounts.append(
             {
-                "usuario": e["campos"]["usuario"],
-                "senha": e["segredos"]["senha"],
-                "totp_semente": e["segredos"]["totp_semente"],
+                "usuario": e["fields"]["username"],
+                "senha": e["secrets"]["password"],
+                "totp_semente": e["secrets"]["totp_seed"],
             }
         )
     write_file(SECRETS / "totp-contas.json", json.dumps(accounts).encode(), 0o644)  # nobody

@@ -973,13 +973,19 @@ mod tests {
         );
         let json: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
-        let mut expected: Vec<(String, String, String, String, String)> = json["entradas"]
+        let mut expected: Vec<(String, String, String, String, String)> = json["entries"]
             .as_array()
             .unwrap()
             .iter()
             .map(|e| {
                 let t = |k: &str| e[k].as_str().unwrap().to_owned();
-                (t("nome"), t("tipo"), t("grupo"), t("ambiente"), t("nivel"))
+                (
+                    t("name"),
+                    t("type"),
+                    t("group"),
+                    t("environment"),
+                    t("level"),
+                )
             })
             .collect();
         let mut fake: Vec<_> = FakeDaemon::full()

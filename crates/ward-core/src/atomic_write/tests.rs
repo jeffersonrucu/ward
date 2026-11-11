@@ -1113,8 +1113,10 @@ fn d62_new_vault_after_the_burned_generation() {
 }
 
 // --- D65 d (V3.41): the V2.2 and V2.9 tests with the v4 body and the dates --------------
+// (The body with dates was v4 in mission 1; it is written as v5 since m2:DT4, with the
+// same layout. The names below keep the "v4" of D65 d.)
 
-/// Three large secure notes (no delivery, outside the mask budget) with dates: the v4
+/// Three large secure notes (no delivery, outside the mask budget) with dates: the
 /// body goes past `LARGE_SIZE`, so there is a point in the middle of the write. The three
 /// entries have the same size.
 fn v4_body_with_dates(version: u64) -> zeroize::Zeroizing<Vec<u8>> {

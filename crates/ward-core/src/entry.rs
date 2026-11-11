@@ -89,13 +89,13 @@ impl AccessLevel {
         AccessLevel::Free,
     ];
 
-    /// Stable identifier (`bloqueado`, `com-aprovacao`, `livre`; written in the vault,
-    /// frozen until m2:Phase 48).
+    /// Stable identifier (`blocked`, `approval`, `free`; written in the vault body v5,
+    /// m2:DT4). The v4 names are read only by `body::legacy_v4`.
     pub fn name(self) -> &'static str {
         match self {
-            AccessLevel::Blocked => "bloqueado",
-            AccessLevel::Approval => "com-aprovacao",
-            AccessLevel::Free => "livre",
+            AccessLevel::Blocked => "blocked",
+            AccessLevel::Approval => "approval",
+            AccessLevel::Free => "free",
         }
     }
 
@@ -165,8 +165,24 @@ impl EntryType {
     ];
 
     /// Stable identifier, without spaces or accents (the one in
-    /// `dev/fixtures/entries.json`; written in the vault, frozen until m2:Phase 48).
+    /// `dev/fixtures/entries.json`; written in the vault body v5, m2:DT4). The v4 names
+    /// are read only by `body::legacy_v4`.
     pub fn name(self) -> &'static str {
+        match self {
+            EntryType::Login => "login",
+            EntryType::Database => "database",
+            EntryType::Server => "server",
+            EntryType::Api => "api",
+            EntryType::Aws => "aws",
+            EntryType::Smtp => "smtp",
+            EntryType::FtpSftp => "ftp-sftp",
+            EntryType::SecureNote => "secure-note",
+            EntryType::Generic => "generic",
+        }
+    }
+
+    /// Interface text (pt-BR; it does not follow [`EntryType::name`]).
+    pub fn label(self) -> &'static str {
         match self {
             EntryType::Login => "login",
             EntryType::Database => "banco",
@@ -174,19 +190,9 @@ impl EntryType {
             EntryType::Api => "api",
             EntryType::Aws => "aws",
             EntryType::Smtp => "smtp",
-            EntryType::FtpSftp => "ftp-sftp",
-            EntryType::SecureNote => "nota-segura",
-            EntryType::Generic => "generico",
-        }
-    }
-
-    /// Interface text.
-    pub fn label(self) -> &'static str {
-        match self {
             EntryType::FtpSftp => "ftp/sftp",
             EntryType::SecureNote => "nota segura",
             EntryType::Generic => "genérico",
-            other => other.name(),
         }
     }
 
@@ -266,11 +272,11 @@ impl SmtpSecurity {
         SmtpSecurity::Tls,
     ];
 
-    /// Identifier (the value of `SMTP_SECURITY`; written in the vault, frozen until
-    /// m2:Phase 48).
+    /// Identifier (the value of `SMTP_SECURITY`; written in the vault body v5, m2:DT4).
+    /// The v4 name of [`SmtpSecurity::None`] is read only by `body::legacy_v4`.
     pub fn name(self) -> &'static str {
         match self {
-            SmtpSecurity::None => "nenhuma",
+            SmtpSecurity::None => "none",
             SmtpSecurity::Starttls => "starttls",
             SmtpSecurity::Tls => "tls",
         }

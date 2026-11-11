@@ -79,14 +79,14 @@ variations() {
     python3 -I -B - "$ROOT/dev/fixtures/entries.json" >"$TMP/literals.txt" <<'PY'
 import json, sys
 d = json.load(open(sys.argv[1]))
-vals = {d["senha_mestra"], d["pin"]}
-for e in d["entradas"]:
-    for k, v in e.get("segredos", {}).items():
-        if not k.endswith("_arquivo"):
+vals = {d["master_password"], d["pin"]}
+for e in d["entries"]:
+    for k, v in e.get("secrets", {}).items():
+        if not k.endswith("_file"):
             vals.add(v)
     for x in e.get("extras", []):
-        if x.get("segredo"):
-            vals.add(x["valor"])
+        if x.get("secret"):
+            vals.add(x["value"])
 print("\n".join(sorted(vals)))
 PY
     local missing=0 v
@@ -150,14 +150,14 @@ variations_d36_d37() {
     python3 -I -B - "$ROOT/dev/fixtures/entries.json" "$ROOT/dev/fixtures/attachments" >"$TMP/d37.txt" <<'PY'
 import json, pathlib, re, sys
 d = json.load(open(sys.argv[1]))
-vals = {d["senha_mestra"], d["pin"]}
-for e in d["entradas"]:
-    for k, v in e.get("segredos", {}).items():
-        if not k.endswith("_arquivo"):
+vals = {d["master_password"], d["pin"]}
+for e in d["entries"]:
+    for k, v in e.get("secrets", {}).items():
+        if not k.endswith("_file"):
             vals.add(v)
     for x in e.get("extras", []):
-        if x.get("segredo"):
-            vals.add(x["valor"])
+        if x.get("secret"):
+            vals.add(x["value"])
 for p in sorted(pathlib.Path(sys.argv[2]).rglob("*")):
     if p.is_file() and not p.is_symlink():
         for line in p.read_text(encoding="utf-8").splitlines():
@@ -222,10 +222,11 @@ vault_twice() {
 import re, sys
 text = open(sys.argv[1], encoding="utf-8").read()
 section = text.split("## Cofre de teste (D15)", 1)[1].split("\n## ", 1)[0]
-kinds = {"login": "login", "banco (postgres)": "banco", "servidor": "servidor", "api": "api",
-         "aws": "aws", "smtp": "smtp", "ftp/sftp": "ftp-sftp", "nota segura": "nota-segura",
-         "genérico": "generico"}
-levels = {"livre": "livre", "com aprovação": "com-aprovacao", "bloqueado": "bloqueado"}
+# The table has the body v5 names (m2:DT4); the database row also names the engine.
+kinds = {"login": "login", "database (postgres)": "database", "server": "server", "api": "api",
+         "aws": "aws", "smtp": "smtp", "ftp-sftp": "ftp-sftp", "secure-note": "secure-note",
+         "generic": "generic"}
+levels = {"free": "free", "approval": "approval", "blocked": "blocked"}
 for line in section.splitlines():
     m = re.match(r"^\| `([^`]+)` \| ([^|]+) \| [^|]+ \| [^|]+ \| ([^|]+) \|", line)
     if m:
@@ -243,8 +244,8 @@ PY
         failed "entradas do cofre diferem da tabela do contrato"
         diff "$TMP/table.txt" "$TMP/listed.txt" >&2 || true
     fi
-    grep -qxP 'acme-totp-dev\tlogin\tlivre' "$TMP/listed.txt" && ok "acme-totp-dev (D28) no cofre" || failed "acme-totp-dev fora do cofre"
-    grep -qxP 'delta-api-simbolos\tapi\tlivre' "$TMP/listed.txt" && ok "delta-api-simbolos (D59) no cofre" || failed "delta-api-simbolos fora do cofre"
+    grep -qxP 'acme-totp-dev\tlogin\tfree' "$TMP/listed.txt" && ok "acme-totp-dev (D28) no cofre" || failed "acme-totp-dev fora do cofre"
+    grep -qxP 'delta-api-simbolos\tapi\tfree' "$TMP/listed.txt" && ok "delta-api-simbolos (D59) no cofre" || failed "delta-api-simbolos fora do cofre"
 
     # The list of names/levels does not match the list of secrets (no false positive).
     if grep -qF -f "$PATTERN_LIST" "$TMP/listed.txt"; then failed "nome de entrada casa com a lista de segredos"; else
@@ -304,10 +305,10 @@ v = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(v)
 data = json.loads((root / "dev" / "fixtures" / "entries.json").read_text(encoding="utf-8"))
 out = sys.stdout.buffer
-for e in data["entradas"]:
+for e in data["entries"]:
     for kind, patterns in (("inteiro", v.entry_patterns(e)), ("url", v.database_url(e))):
         for p in sorted(patterns):
-            out.write(e["nome"].encode() + b"\t" + kind.encode() + b"\t" + p.hex().encode() + b"\n")
+            out.write(e["name"].encode() + b"\t" + kind.encode() + b"\t" + p.hex().encode() + b"\n")
 PY
         ok "V2.57: todo padrão do oráculo sai •••• pela máscara da entrada ($(grep -o 'os [0-9]* padrões de [0-9]* entradas' "$TMP/cross.log"))"
     else
@@ -325,12 +326,12 @@ symbols_d59() {
     python3 -I -B - "$ROOT/dev/fixtures/entries.json" >"$TMP/symbols.env" <<'PY'
 import json, shlex, sys
 d = json.load(open(sys.argv[1], encoding="utf-8"))
-e = next(x for x in d["entradas"] if x["nome"] == "delta-api-simbolos")
-assert e["tipo"] == "api" and e["nivel"] == "livre" and e["campos"]["variavel"] == "SIMBOLOS_TOKEN"
-extras = [x for x in e.get("extras", []) if x.get("segredo") is True]
-assert [x["nome"] for x in extras] == ["SEGREDO_ASCII"]
-print("TOKEN=" + shlex.quote(e["segredos"]["token"]))
-print("ASCII=" + shlex.quote(extras[0]["valor"]))
+e = next(x for x in d["entries"] if x["name"] == "delta-api-simbolos")
+assert e["type"] == "api" and e["level"] == "free" and e["fields"]["variable"] == "SIMBOLOS_TOKEN"
+extras = [x for x in e.get("extras", []) if x.get("secret") is True]
+assert [x["name"] for x in extras] == ["SEGREDO_ASCII"]
+print("TOKEN=" + shlex.quote(e["secrets"]["token"]))
+print("ASCII=" + shlex.quote(extras[0]["value"]))
 PY
     python3 -I -B - "$TMP/symbols.env" >"$TMP/symbols-json.txt" <<'PY'
 import json, shlex, sys, base64

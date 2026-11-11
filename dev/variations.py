@@ -595,14 +595,14 @@ def variations(v: bytes, username: str | None, attachment: bool = False) -> set[
 
 
 def database_url(e: dict) -> list[bytes]:
-    c, s = e.get("campos", {}), e.get("segredos", {})
-    scheme = SCHEMES.get(c.get("motor", ""))
-    password = s.get("senha")
+    c, s = e.get("fields", {}), e.get("secrets", {})
+    scheme = SCHEMES.get(c.get("engine", ""))
+    password = s.get("password")
     if not scheme or not password:
         return []
-    username = quote(c.get("usuario", ""), safe="")
+    username = quote(c.get("username", ""), safe="")
     encoded = quote(password, safe="")
-    host, port, db_name = c.get("host", ""), c.get("porta", ""), c.get("base", "")
+    host, port, db_name = c.get("host", ""), c.get("port", ""), c.get("db_name", "")
     target = f"{scheme}://{username}:{encoded}@{host}:{port}/{db_name}"
     # Without host/port (the tunnel swaps them for the local ones): the piece with the
     # password.
@@ -622,26 +622,26 @@ def entry_patterns(e: dict) -> set[bytes]:
     (which comes from the delivery, with the host and port of whoever runs it) and only
     the ones that fit on a line."""
     pad: set[bytes] = set()
-    username = e.get("campos", {}).get("usuario") or None
-    for field, value in e.get("segredos", {}).items():
-        if field.endswith("_arquivo"):
+    username = e.get("fields", {}).get("username") or None
+    for field, value in e.get("secrets", {}).items():
+        if field.endswith("_file"):
             raw = read_from_repo(value, KEYS_BASE)
         else:
             raw = value.encode("utf-8")
         pad |= variations(raw, username)
     for x in e.get("extras", []):
-        if x.get("segredo") is True:
-            pad |= variations(x["valor"].encode("utf-8"), None)
-    for a in e.get("anexos", []):
-        pad |= variations(read_from_repo(a["arquivo"], ATTACHMENTS_BASE), None, attachment=True)
+        if x.get("secret") is True:
+            pad |= variations(x["value"].encode("utf-8"), None)
+    for a in e.get("attachments", []):
+        pad |= variations(read_from_repo(a["file"], ATTACHMENTS_BASE), None, attachment=True)
     return {p for p in pad if listable(p)}
 
 
 def collect(data: dict) -> set[bytes]:
     pad: set[bytes] = set()
-    for key in ("senha_mestra", "pin"):
+    for key in ("master_password", "pin"):
         pad |= variations(data[key].encode("utf-8"), None)
-    for e in data["entradas"]:
+    for e in data["entries"]:
         pad |= entry_patterns(e)
         pad.update(database_url(e))
     return {p for p in pad if listable(p)}
@@ -669,7 +669,7 @@ def main() -> None:
         if os.lstat(FIXTURES).st_size > 1024 * 1024 or not FIXTURES.is_file() or FIXTURES.is_symlink():
             raise Refusal("fixtures ausentes ou grandes demais")
         data = json.loads(FIXTURES.read_text(encoding="utf-8"))
-        if data.get("versao") != 1:
+        if data.get("version") != 1:
             raise Refusal("versão das fixtures desconhecida")
         ordered = verify_patterns(collect(data))
         write_file(out, b"\n".join(ordered) + b"\n")

@@ -143,7 +143,7 @@ fn attack_credentials_screen_responses_without_secret() {
         serde_json::from_str::<serde_json::Value>(include_str!(
             "../../../dev/fixtures/entries.json"
         ))
-        .unwrap()["entradas"]
+        .unwrap()["entries"]
             .as_array()
             .unwrap()
             .len()

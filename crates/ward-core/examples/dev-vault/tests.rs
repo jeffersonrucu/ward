@@ -79,8 +79,8 @@ fn real_fixtures() -> (PathBuf, Zeroizing<Vec<u8>>) {
 /// Minimal fixture of one entry, with the JSON of the entry given.
 fn fixture_with(entry: &str) -> String {
     format!(
-        r#"{{"versao": 1, "senha_mestra": "falso-mestra-ward-01", "pin": "135790",
-            "entradas": [{entry}]}}"#
+        r#"{{"version": 1, "master_password": "falso-mestra-ward-01", "pin": "135790",
+            "entries": [{entry}]}}"#
     )
 }
 
@@ -433,16 +433,16 @@ fn attack_malformed_json_refused() {
 #[test]
 fn attack_fixture_with_unknown_field_refused() {
     let base =
-        r#""nome": "x-1", "tipo": "login", "grupo": "g", "ambiente": "dev", "nivel": "livre""#;
+        r#""name": "x-1", "type": "login", "group": "g", "environment": "dev", "level": "free""#;
     for entry in [
         format!(
-            r#"{{{base}, "campos": {{"url": "http://a.invalid", "usuario": "u", "senha": "falso-no-lugar-errado"}}, "segredos": {{"senha": "falso-s-01"}}}}"#
+            r#"{{{base}, "fields": {{"url": "http://a.invalid", "username": "u", "password": "falso-no-lugar-errado"}}, "secrets": {{"password": "falso-s-01"}}}}"#
         ),
         format!(
-            r#"{{{base}, "campos": {{"url": "http://a.invalid", "usuario": "u"}}, "segredos": {{"senha": "falso-s-01", "token": "falso-no-lugar-errado"}}}}"#
+            r#"{{{base}, "fields": {{"url": "http://a.invalid", "username": "u"}}, "secrets": {{"password": "falso-s-01", "token": "falso-no-lugar-errado"}}}}"#
         ),
         format!(
-            r#"{{{base}, "campos": {{"url": "http://a.invalid", "usuario": "u"}}, "segredos": {{"senha": "falso-s-01"}}, "nivel_extra": "falso-no-lugar-errado"}}"#
+            r#"{{{base}, "fields": {{"url": "http://a.invalid", "username": "u"}}, "secrets": {{"password": "falso-s-01"}}, "level_extra": "falso-no-lugar-errado"}}"#
         ),
     ] {
         let e = build_text(&fixture_with(&entry)).expect_err("recusa");
@@ -452,7 +452,7 @@ fn attack_fixture_with_unknown_field_refused() {
     }
     // Unknown field at the top.
     let e = build_text(
-        r#"{"versao": 1, "senha_mestra": "falso-mestra-ward-01", "pin": "135790", "entradas": [], "extra": 1}"#,
+        r#"{"version": 1, "master_password": "falso-mestra-ward-01", "pin": "135790", "entries": [], "extra": 1}"#,
     )
     .err()
     .unwrap();
@@ -464,45 +464,45 @@ fn attack_invalid_fixture_refused_without_value_in_the_error() {
     let secret = "falso-segredo-que-nao-aparece";
     let base = |kind: &str, level: &str, fields: &str, secrets: &str| {
         fixture_with(&format!(
-            r#"{{"nome": "x-1", "tipo": "{kind}", "grupo": "g", "ambiente": "dev", "nivel": "{level}", "campos": {fields}, "segredos": {secrets}}}"#
+            r#"{{"name": "x-1", "type": "{kind}", "group": "g", "environment": "dev", "level": "{level}", "fields": {fields}, "secrets": {secrets}}}"#
         ))
     };
-    let s = format!(r#"{{"senha": "{secret}"}}"#);
+    let s = format!(r#"{{"password": "{secret}"}}"#);
     for (j, reason) in [
         // Invalid URL: the validation of Phase 15 refuses it.
         (
             base(
                 "login",
-                "livre",
-                r#"{"url": "javascript:x", "usuario": "u"}"#,
+                "free",
+                r#"{"url": "javascript:x", "username": "u"}"#,
                 &s,
             ),
             "inválida",
         ),
-        (base("root", "livre", r#"{}"#, &s), "tipo desconhecido"),
+        (base("root", "free", r#"{}"#, &s), "tipo desconhecido"),
         (
             base(
                 "login",
                 "admin",
-                r#"{"url": "http://a.invalid", "usuario": "u"}"#,
+                r#"{"url": "http://a.invalid", "username": "u"}"#,
                 &s,
             ),
             "nível desconhecido",
         ),
         (
             base(
-                "banco",
-                "livre",
-                r#"{"motor": "postgres", "host": "-oProxyCommand=x", "porta": 1, "base": "b", "usuario": "u"}"#,
+                "database",
+                "free",
+                r#"{"engine": "postgres", "host": "-oProxyCommand=x", "port": 1, "db_name": "b", "username": "u"}"#,
                 &s,
             ),
             "inválida",
         ),
         (
             base(
-                "servidor",
-                "livre",
-                r#"{"host": "h", "porta": 70000, "usuario": "u"}"#,
+                "server",
+                "free",
+                r#"{"host": "h", "port": 70000, "username": "u"}"#,
                 &s,
             ),
             "inválida",
@@ -517,10 +517,10 @@ fn attack_invalid_fixture_refused_without_value_in_the_error() {
     }
     // Version, password and PIN of the top.
     for top in [
-        r#"{"versao": 2, "senha_mestra": "falso-mestra-ward-01", "pin": "135790", "entradas": []}"#,
-        r#"{"versao": 1, "senha_mestra": "", "pin": "135790", "entradas": []}"#,
-        r#"{"versao": 1, "senha_mestra": "falso-mestra-ward-01", "pin": "1357", "entradas": []}"#,
-        r#"{"versao": 1, "senha_mestra": "falso-mestra-ward-01", "pin": "135790", "entradas": {}}"#,
+        r#"{"version": 2, "master_password": "falso-mestra-ward-01", "pin": "135790", "entries": []}"#,
+        r#"{"version": 1, "master_password": "", "pin": "135790", "entries": []}"#,
+        r#"{"version": 1, "master_password": "falso-mestra-ward-01", "pin": "1357", "entries": []}"#,
+        r#"{"version": 1, "master_password": "falso-mestra-ward-01", "pin": "135790", "entries": {}}"#,
     ] {
         let e = build_text(top).expect_err("recusa");
         let t = error_text(&e);
@@ -535,10 +535,10 @@ fn attack_invalid_fixture_refused_without_value_in_the_error() {
 /// assembly passes entry by entry, but the write refuses the vault (it would not reopen).
 #[test]
 fn attack_inconsistent_vault_is_not_written() {
-    let login = r#"{"nome": "x-1", "tipo": "login", "grupo": "g", "ambiente": "dev", "nivel": "livre", "campos": {"url": "https://a.invalid", "usuario": "u"}, "segredos": {"senha": "falso-s-01"}}"#;
+    let login = r#"{"name": "x-1", "type": "login", "group": "g", "environment": "dev", "level": "free", "fields": {"url": "https://a.invalid", "username": "u"}, "secrets": {"password": "falso-s-01"}}"#;
     let (_s, _p, repeated) = build_text(&fixture_with(&format!("{login}, {login}"))).unwrap();
     assert!(serialize(test_config(), 1, &repeated).is_err());
-    let tunnel = r#"{"nome": "x-2", "tipo": "banco", "grupo": "g", "ambiente": "dev", "nivel": "livre", "campos": {"motor": "postgres", "host": "h", "porta": 1, "base": "b", "usuario": "u", "tunel": "nao-existe"}, "segredos": {"senha": "falso-s-01"}}"#;
+    let tunnel = r#"{"name": "x-2", "type": "database", "group": "g", "environment": "dev", "level": "free", "fields": {"engine": "postgres", "host": "h", "port": 1, "db_name": "b", "username": "u", "tunnel": "nao-existe"}, "secrets": {"password": "falso-s-01"}}"#;
     let (_s, _p, without_tunnel) = build_text(&fixture_with(tunnel)).unwrap();
     assert!(serialize(test_config(), 1, &without_tunnel).is_err());
 }
@@ -611,7 +611,7 @@ fn v2_39_generated_vault_has_the_configuration() {
             .windows(TEST_PIN.len())
             .any(|w| w == TEST_PIN.as_bytes())
     );
-    assert!(body[..2] == [4, 0], "corpo v4");
+    assert!(body[..2] == [5, 0], "corpo v5");
     assert!(body[2..10] == 1u64.to_le_bytes(), "geração 1");
     let prefix = b"$argon2id$v=19$m=65536,t=3,p=1$";
     assert!(

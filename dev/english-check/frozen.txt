@@ -235,10 +235,8 @@ Makefile extensao 56 variable WARD_DEV_EXTENSAO cited in target comments
 Makefile teste 56 test socket dir names ward-teste, ward-teste-e2e and ward-teste-selecao
 Makefile selecao 56 test socket dir name ward-teste-selecao
 
-# Phase 12 (ward-core entry): vault names and delivered variables quoted in comments.
-crates/ward-core/src/entry.rs bloqueado 48 v4 vault name of AccessLevel::Blocked
-crates/ward-core/src/entry.rs aprovacao 48 v4 vault name of AccessLevel::Approval (com-aprovacao)
-crates/ward-core/src/entry.rs livre 48 v4 vault name of AccessLevel::Free
+# Phase 12 (ward-core entry): delivered variables quoted in comments (the vault names
+# left with Phase 48).
 crates/ward-core/src/entry.rs ambiente 53 delivered variable WARD_AMBIENTE
 crates/ward-core/src/entry.rs protocolo 53 delivered variable WARD_PROTOCOLO
 crates/ward-core/src/entry.rs arquivo 53 delivered variable prefix WARD_ARQUIVO_
@@ -249,7 +247,7 @@ crates/ward-core/src/entry/validation.rs arquivo 53 delivered variable prefix WA
 crates/ward-core/src/entry/validation.rs chave 53 delivered variable WARD_ARQUIVO_CHAVE
 
 # Phase 30 (app/core service): wire values quoted in test comments.
-app/core/src/service.rs livre 48 v4 vault name of AccessLevel::Free
+app/core/src/service.rs livre 51 level value of the set level request in the app tests (v4 name; the protocol clients follow the v5 names in Phase 51)
 app/core/src/service.rs carregada 54 "loaded" value of a form secret sent by the webview
 app/core/src/service.rs chave 53 reserved attachment name CHAVE (delivered variable WARD_ARQUIVO_CHAVE)
 

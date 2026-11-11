@@ -87,7 +87,7 @@ fn valid_data(op: Operation) -> String {
             b64(b"falso-clientex-01")
         ),
         Operation::SetLevel => {
-            format!(r#"{{"entrada":"acme-pg-dev","nivel":"bloqueado","pin":"{pin}"}}"#)
+            format!(r#"{{"entrada":"acme-pg-dev","nivel":"blocked","pin":"{pin}"}}"#)
         }
         Operation::AnswerApproval => {
             format!(r#"{{"pedido":7,"decisao":"uma_vez","pin":"{pin}"}}"#)
@@ -460,7 +460,7 @@ fn v3_3_invented_fields_refuse_the_request() {
             r#""revelar":true"#,
             r#""campo":"senha""#,
             r#""valor":"x""#,
-            r#""nivel":"livre""#,
+            r#""nivel":"free""#,
             r#""papel":"app""#,
         ] {
             // Reveal and copy have a real field key: with it repeated, the duplicated
@@ -844,7 +844,7 @@ fn approval_pin_and_decision() {
         );
         assert!(q(&d).is_err(), "PIN {bad:?}");
         let m = format!(
-            r#"{{"entrada":"acme-pg-dev","nivel":"livre","pin":"{}"}}"#,
+            r#"{{"entrada":"acme-pg-dev","nivel":"free","pin":"{}"}}"#,
             b64(bad.as_bytes())
         );
         assert!(req(Role::App, &frame_of(Operation::SetLevel, &m)).is_err());
@@ -923,9 +923,9 @@ fn s9_draft_without_level_and_without_field_of_other_type() {
     let base = valid_data(Operation::SaveEntry);
     let q = |d: &str| req(Role::App, &frame_of(Operation::SaveEntry, d));
     assert!(q(&base).is_ok());
-    let with_level = base.replacen(r#""nome":"#, r#""nivel":"livre","nome":"#, 1);
+    let with_level = base.replacen(r#""nome":"#, r#""nivel":"free","nome":"#, 1);
     assert_eq!(q(&with_level).unwrap_err(), ResponseError::InvalidRequest);
-    let level_in_fields = base.replacen(r#""url":"#, r#""nivel":"livre","url":"#, 1);
+    let level_in_fields = base.replacen(r#""url":"#, r#""nivel":"free","url":"#, 1);
     assert_eq!(
         q(&level_in_fields).unwrap_err(),
         ResponseError::InvalidRequest

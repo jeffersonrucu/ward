@@ -151,7 +151,7 @@ sys.stdout.buffer.flush()
         s = socket.socket(socket.AF_UNIX)
         s.connect(f"{sockdir}/wardd.sock")
         b = json.dumps({"v": 1, "op": "destravar", "dados": {
-            "senha": base64.b64encode(fx["senha_mestra"].encode()).decode()}}).encode()
+            "senha": base64.b64encode(fx["master_password"].encode()).decode()}}).encode()
         s.sendall(struct.pack(">I", len(b)) + b)
         n = struct.unpack(">I", s.recv(4))[0]
         r = b""

@@ -55,7 +55,7 @@ import threading
 import time
 
 WARD, ROOT = sys.argv[1], sys.argv[2]
-PASSWORD = json.load(open(os.path.join(ROOT, "dev/fixtures/entries.json")))["senha_mestra"]
+PASSWORD = json.load(open(os.path.join(ROOT, "dev/fixtures/entries.json")))["master_password"]
 UID = os.geteuid()
 failures = []
 
@@ -244,8 +244,8 @@ verify(r.returncode == 0, "V4.1 lista --json sai 0")
 items = json.loads(r.stdout)
 names = [i["nome"] for i in items]
 verify("gama-bloqueada" not in names, "V4.1 sem a bloqueada")
-expected = [e["nome"] for e in json.load(open(os.path.join(ROOT, "dev/fixtures/entries.json")))["entradas"]
-            if e.get("nivel") != "bloqueado"]
+expected = [e["name"] for e in json.load(open(os.path.join(ROOT, "dev/fixtures/entries.json")))["entries"]
+            if e.get("level") != "blocked"]
 verify(sorted(names) == sorted(expected), f"V4.1 {len(names)} entradas visíveis, todas menos a bloqueada")
 verify(len(names) == 21, f"V4.1 são 21 entradas visíveis (as 22 do cofre menos a bloqueada; vieram {len(names)})")
 fields = {"nome", "tipo", "grupo", "ambiente", "projeto", "endereco"}
@@ -412,15 +412,15 @@ import hmac  # noqa: E402
 import struct  # noqa: E402
 import urllib.parse  # noqa: E402
 
-FIX = {e["nome"]: e for e in json.load(open(os.path.join(ROOT, "dev/fixtures/entries.json")))["entradas"]}
+FIX = {e["name"]: e for e in json.load(open(os.path.join(ROOT, "dev/fixtures/entries.json")))["entries"]}
 
 
 def c(n, k):
-    return str(FIX[n]["campos"][k])
+    return str(FIX[n]["fields"][k])
 
 
 def s(n, k):
-    return FIX[n]["segredos"][k]
+    return FIX[n]["secrets"][k]
 
 
 def totp(seed_b32, t):
@@ -434,17 +434,17 @@ def h(v):
     return hashlib.sha256(v if isinstance(v, bytes) else v.encode()).hexdigest()
 
 
-pg = {"PGHOST": c("acme-pg-dev", "host"), "PGPORT": c("acme-pg-dev", "porta"),
-      "PGDATABASE": c("acme-pg-dev", "base"), "PGUSER": c("acme-pg-dev", "usuario"),
-      "PGPASSWORD": s("acme-pg-dev", "senha")}
+pg = {"PGHOST": c("acme-pg-dev", "host"), "PGPORT": c("acme-pg-dev", "port"),
+      "PGDATABASE": c("acme-pg-dev", "db_name"), "PGUSER": c("acme-pg-dev", "username"),
+      "PGPASSWORD": s("acme-pg-dev", "password")}
 pg["DATABASE_URL"] = "postgresql://%s:%s@%s:%s/%s" % (
     pg["PGUSER"], urllib.parse.quote(pg["PGPASSWORD"], safe=""), pg["PGHOST"], pg["PGPORT"], pg["PGDATABASE"])
 EXPECTED = {
-    "acme-wp-prod": {"WARD_URL": c("acme-wp-prod", "url"), "WARD_USER": c("acme-wp-prod", "usuario"),
-                     "WARD_PASS": s("acme-wp-prod", "senha")},
+    "acme-wp-prod": {"WARD_URL": c("acme-wp-prod", "url"), "WARD_USER": c("acme-wp-prod", "username"),
+                     "WARD_PASS": s("acme-wp-prod", "password")},
     "acme-pg-dev": pg,
     "acme-ssh-senha-stage": {"WARD_HOST": "127.0.0.1", "WARD_PORT": "2222", "WARD_USER": "deploy",
-                             "WARD_PASS": s("acme-ssh-senha-stage", "senha")},
+                             "WARD_PASS": s("acme-ssh-senha-stage", "password")},
     "acme-ssh-chave-prod": {"WARD_HOST": "127.0.0.1", "WARD_PORT": "2223", "WARD_USER": "deploy",
                             "WARD_PASSPHRASE": s("acme-ssh-chave-prod", "passphrase")},
     "beta-github-api": {"WARD_URL": c("beta-github-api", "url"), "WARD_TOKEN": s("beta-github-api", "token"),
@@ -452,20 +452,20 @@ EXPECTED = {
     "beta-aws-dev": {"AWS_ACCESS_KEY_ID": c("beta-aws-dev", "access_key_id"),
                      "AWS_SECRET_ACCESS_KEY": s("beta-aws-dev", "secret_access_key"),
                      "AWS_SESSION_TOKEN": s("beta-aws-dev", "session_token"),
-                     "AWS_REGION": c("beta-aws-dev", "regiao"), "AWS_DEFAULT_REGION": c("beta-aws-dev", "regiao"),
+                     "AWS_REGION": c("beta-aws-dev", "region"), "AWS_DEFAULT_REGION": c("beta-aws-dev", "region"),
                      "AWS_ROLE_ARN": c("beta-aws-dev", "role_arn")},
-    "beta-smtp-stage": {"SMTP_HOST": c("beta-smtp-stage", "host"), "SMTP_PORT": c("beta-smtp-stage", "porta"),
-                        "SMTP_USER": c("beta-smtp-stage", "usuario"), "SMTP_PASS": s("beta-smtp-stage", "senha"),
-                        "SMTP_SECURITY": c("beta-smtp-stage", "seguranca")},
+    "beta-smtp-stage": {"SMTP_HOST": c("beta-smtp-stage", "host"), "SMTP_PORT": c("beta-smtp-stage", "port"),
+                        "SMTP_USER": c("beta-smtp-stage", "username"), "SMTP_PASS": s("beta-smtp-stage", "password"),
+                        "SMTP_SECURITY": c("beta-smtp-stage", "security")},
     "beta-sftp-dev": {"WARD_PROTOCOLO": "sftp", "WARD_HOST": "127.0.0.1", "WARD_PORT": "2222",
-                      "WARD_USER": "sftpuser", "WARD_PASS": s("beta-sftp-dev", "senha")},
+                      "WARD_USER": "sftpuser", "WARD_PASS": s("beta-sftp-dev", "password")},
     "gama-generico": {"WARD_REGIAO": "r-01",
                       "WARD_CHAVE_LICENCA": [x for x in FIX["gama-generico"]["extras"]
-                                             if x["nome"] == "CHAVE_LICENCA"][0]["valor"]},
+                                             if x["name"] == "CHAVE_LICENCA"][0]["value"]},
 }
 FILES = {
-    "acme-ssh-chave-prod": {"WARD_ARQUIVO_CHAVE": s("acme-ssh-chave-prod", "chave_privada_arquivo")},
-    "gama-generico": {"WARD_ARQUIVO_APP_ENV": FIX["gama-generico"]["anexos"][0]["arquivo"]},
+    "acme-ssh-chave-prod": {"WARD_ARQUIVO_CHAVE": s("acme-ssh-chave-prod", "private_key_file")},
+    "gama-generico": {"WARD_ARQUIVO_APP_ENV": FIX["gama-generico"]["attachments"][0]["file"]},
 }
 # For each name: "<name> <sha256 of the value>"; for a file: "<name> <mode> <dir> <sha256>".
 SCRIPT = r'''
@@ -480,7 +480,7 @@ done
 '''
 for name, vars_ in EXPECTED.items():
     entry = FIX[name]
-    all_vars = dict(vars_, **{"WARD_ENTRADA": name, "WARD_GRUPO": entry["grupo"], "WARD_AMBIENTE": entry["ambiente"]})
+    all_vars = dict(vars_, **{"WARD_ENTRADA": name, "WARD_GRUPO": entry["group"], "WARD_AMBIENTE": entry["environment"]})
     names = list(all_vars) + ["arq:" + k for k in FILES.get(name, {})]
     if name == "acme-wp-prod":
         names.append("WARD_TOTP")
@@ -495,7 +495,7 @@ for name, vars_ in EXPECTED.items():
         matches = matches and mode == "600" and dir_.startswith(f"/run/user/{UID}/") \
             and dir_.endswith("/tmp") and hash_ == h(content)
     if name == "acme-wp-prod":
-        seed = s(name, "totp_semente")
+        seed = s(name, "totp_seed")
         matches = matches and lines.get("WARD_TOTP") in {h(totp(seed, t)) for t in (before, after)}
     verify(matches, f"V4.3–V4.10 entrega de {name} bate com a tabela ({len(names)} itens)")
     no_variation(r, f"hashes de {name}")
@@ -510,7 +510,7 @@ import signal  # noqa: E402
 
 DEV = os.path.join(ROOT, ".dev")
 RT_TEST = SOCKET_DIR
-SSH_PASSWORD = FIX["acme-ssh-senha-stage"]["segredos"]["senha"]
+SSH_PASSWORD = FIX["acme-ssh-senha-stage"]["secrets"]["password"]
 
 
 def port_open(p):

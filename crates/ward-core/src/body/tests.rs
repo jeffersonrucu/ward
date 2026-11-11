@@ -1,14 +1,14 @@
 //! Tests of the vault body (D26, D30): round trip (V2.30), tampering with the decrypted
 //! body (V2.31), the configuration section of body v2 (V2.39) and write refusals. The
 //! tests that need a global allocator (V2.32 with counting, V2.33 searching for a secret
-//! in a freed block) are in the allocator integration test in `tests/`. Only fake
-//! values (D15, D28).
+//! in a freed block) are in the allocator integration test in `tests/`. The body v5 and
+//! the reading of v4 (m2:DT4) are at the end. Only fake values (D15, D28).
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use super::*;
 use crate as wc;
-use crate::entry::{AttachmentDraft, DataDraft, Environment, ExtraField, Login};
+use crate::entry::{AttachmentDraft, DataDraft, Environment, ExtraField, Login, SmtpSecurity};
 use crate::format::KdfParams as PinKdfParams;
 
 #[path = "test_vault.rs"]
@@ -221,7 +221,19 @@ fn check_accepted(body: &[u8], config: &VaultConfig, entries: &[Entry]) {
         );
     }
     let again = serialize(config, generation, entries).expect("o aceito serializa");
-    assert!(again[..] == *body, "aceito não é canônico");
+    if body[..2] == LEGACY_BODY_VERSION.to_le_bytes() {
+        // m2:DT4: an accepted v4 body is written as v5, and the v5 form reads back to
+        // the same entries.
+        assert!(
+            again[..2] == BODY_VERSION.to_le_bytes(),
+            "v4 aceito gravado como v4"
+        );
+        let (_, g, back) = deserialize(&again).expect("a forma v5 do v4 aceito abre");
+        assert_eq!(g, generation);
+        check_round_trip(entries, &back);
+    } else {
+        assert!(again[..] == *body, "aceito não é canônico");
+    }
 }
 
 // ---- Raw body, for forging ----
@@ -276,10 +288,11 @@ impl RawCfg {
 /// Reads a well-formed body into raw entries (through the module reader).
 fn raw_records(body: &[u8]) -> Vec<RawRecord> {
     let mut l = Reader { rest: body };
-    let (_, n) = read_header(&mut l).unwrap();
+    let (version, _, n) = read_header(&mut l).unwrap();
+    assert_eq!(version, Version::V5, "raw_records lê só corpo v5");
     (0..n)
         .map(|_| {
-            let b = read_raw(&mut l).unwrap();
+            let b = read_raw(&mut l, version).unwrap();
             let mut lt = Reader { rest: b.tags.bytes };
             let mut le = Reader {
                 rest: b.extras.bytes,
@@ -487,11 +500,11 @@ fn v2_30_one_of_each_type_at_the_model_maximum() {
 
 #[test]
 fn v2_30_empty_vault() {
-    // Only the configuration: version 4, generation 1, PIN hash, 240 minutes, backup
-    // disabled without UUID, zero entries.
+    // Only the configuration: version 5 (m2:DT4), generation 1, PIN hash, 240 minutes,
+    // backup disabled without UUID, zero entries.
     let body = serialize(cfg(), 1, &[]).unwrap();
     let hash = cfg().pin_hash().bytes();
-    let mut expected = vec![4, 0];
+    let mut expected = vec![5, 0];
     expected.extend_from_slice(&1u64.to_le_bytes());
     expected.extend_from_slice(&(hash.len() as u32).to_le_bytes());
     expected.extend_from_slice(hash);
@@ -640,10 +653,82 @@ fn password_change_seals_and_writes_through_the_same_path() {
 
 #[test]
 fn known_format_of_one_entry() {
-    // A generic entry written by hand, byte by byte, as in the module design: version 4,
+    // A generic entry written by hand, byte by byte, as in the module design: version 5,
     // configuration (generation 7, hash, 240 minutes, backup disabled, no UUID), 1 entry,
     // with the dates at the end (D65 d).
-    let mut v: Vec<u8> = vec![4, 0];
+    let v = one_generic_entry(5, b"generic", b"free");
+
+    let entries = read(&v).unwrap();
+    check_one_generic_entry(&entries);
+    assert_eq!(deserialize(&v).map(|(_, g, _)| g), Ok(7));
+    assert!(serialize(cfg(), 7, &entries).unwrap()[..] == v[..]);
+}
+
+/// m2:DT4, m2:V4.8: the same entry written by hand as a body v4 (0.1.x names) reads as
+/// the same entry, and is written again as exactly the v5 bytes above: only the version
+/// and the two stored names change.
+#[test]
+fn known_format_of_one_entry_v4_is_written_as_v5() {
+    let v4 = one_generic_entry(4, b"generico", b"livre");
+    let v5 = one_generic_entry(5, b"generic", b"free");
+    let entries = read(&v4).unwrap();
+    check_one_generic_entry(&entries);
+    assert_eq!(deserialize(&v4).map(|(_, g, _)| g), Ok(7));
+    let written = serialize(cfg(), 7, &entries).unwrap();
+    assert!(
+        written[..] == v5[..],
+        "v4 não foi gravado como o v5 esperado"
+    );
+    // Crossed names are refused: v5 names in a v4 body and v4 names in a v5 body.
+    refused(
+        &one_generic_entry(4, b"generic", b"free"),
+        "v4 com nomes v5",
+        "generic",
+    );
+    refused(
+        &one_generic_entry(4, b"generico", b"free"),
+        "v4 com nível v5",
+        "free",
+    );
+    refused(
+        &one_generic_entry(4, b"generic", b"livre"),
+        "v4 com tipo v5",
+        "generic",
+    );
+    refused(
+        &one_generic_entry(5, b"generico", b"livre"),
+        "v5 com nomes v4",
+        "generico",
+    );
+    refused(
+        &one_generic_entry(5, b"generic", b"livre"),
+        "v5 com nível v4",
+        "livre",
+    );
+    refused(
+        &one_generic_entry(5, b"generico", b"free"),
+        "v5 com tipo v4",
+        "generico",
+    );
+    // Other versions around them stay unknown.
+    for version in [3u16, 6] {
+        refused(
+            &one_generic_entry(version, b"generic", b"free"),
+            "versão vizinha",
+            "x-1",
+        );
+        refused(
+            &one_generic_entry(version, b"generico", b"livre"),
+            "versão vizinha",
+            "x-1",
+        );
+    }
+}
+
+/// The body of [`known_format_of_one_entry`], with the version and the stored type and
+/// level names given (written by hand, independent of the module).
+fn one_generic_entry(version: u16, kind: &[u8], level: &[u8]) -> Vec<u8> {
+    let mut v: Vec<u8> = version.to_le_bytes().to_vec();
     v.extend_from_slice(&7u64.to_le_bytes());
     let field = |v: &mut Vec<u8>, b: &[u8]| {
         v.extend_from_slice(&(b.len() as u32).to_le_bytes());
@@ -654,8 +739,8 @@ fn known_format_of_one_entry() {
     v.push(0);
     field(&mut v, b"");
     v.extend_from_slice(&1u32.to_le_bytes());
-    field(&mut v, b"generico");
-    field(&mut v, b"livre");
+    field(&mut v, kind);
+    field(&mut v, level);
     field(&mut v, b"x-1");
     field(&mut v, b"grupo");
     field(&mut v, b"dev");
@@ -669,8 +754,10 @@ fn known_format_of_one_entry() {
     v.extend_from_slice(&0u32.to_le_bytes());
     v.extend_from_slice(&1_762_000_000u64.to_le_bytes());
     v.extend_from_slice(&1_762_086_400u64.to_le_bytes());
+    v
+}
 
-    let entries = read(&v).unwrap();
+fn check_one_generic_entry(entries: &[Entry]) {
     assert_eq!(entries.len(), 1);
     let e = &entries[0];
     assert_eq!(e.name(), "x-1");
@@ -682,8 +769,6 @@ fn known_format_of_one_entry() {
     assert!(matches!(e.extras()[0].value(), ExtraValue::Text(t) if t == "valor"));
     assert_eq!(e.dates().created_at(), Some(1_762_000_000));
     assert_eq!(e.dates().modified_at(), Some(1_762_086_400));
-    assert_eq!(deserialize(&v).map(|(_, g, _)| g), Ok(7));
-    assert!(serialize(cfg(), 7, &entries).unwrap()[..] == v[..]);
 }
 
 // ---- Write refusals ----
@@ -823,14 +908,21 @@ fn v2_31_forged_fields() {
     // (case, forged body, value that must not appear in the error)
     let mut cases: Vec<(&str, Vec<u8>, &str)> = Vec::new();
     // Version 1 (entries only, Phase 15a) is unknown since D30, version 2 (no generation)
-    // since D39, and version 3 (no dates) since D65 d.
-    for version in [0u16, 1, 2, 3, 5, 0xffff] {
+    // since D39, and version 3 (no dates) since D65 d. Version 6 does not exist yet.
+    for version in [0u16, 1, 2, 3, 6, 0xffff] {
         cases.push((
             "versão desconhecida",
             forge_with(version, n, &base),
             "versão",
         ));
     }
+    // m2:DT4: the v5 body relabeled as v4 keeps the v5 names, which the v4 table does
+    // not know (m2:V4.8).
+    cases.push((
+        "v5 rotulado 4",
+        forge_with(LEGACY_BODY_VERSION, n, &base),
+        "approval",
+    ));
     cases.push((
         "contagem a mais",
         forge_with(BODY_VERSION, n + 1, &base),
@@ -850,15 +942,30 @@ fn v2_31_forged_fields() {
     with("tipo fora da lista", "customizado", &|c| {
         c[0].kind = b"customizado".to_vec()
     });
-    with("tipo trocado", "banco", &|c| {
+    with("tipo trocado", "database", &|c| {
         let k = index(c, "beta-github-api");
-        c[k].kind = b"banco".to_vec();
+        c[k].kind = b"database".to_vec();
     });
-    for level in ["admin", "", "Livre", "livre "] {
+    for level in ["admin", "", "Free", "free ", "Livre", "livre "] {
         with("nível fora da lista", "admin", &move |c| {
             c[1].level = level.as_bytes().to_vec()
         });
     }
+    // m2:DT4, m2:V4.8: the v4 (0.1.x) names inside a v5 body are unknown.
+    for kind in ["banco", "servidor", "nota-segura", "generico"] {
+        with("tipo v4 no corpo v5", "banco", &move |c| {
+            c[0].kind = kind.as_bytes().to_vec()
+        });
+    }
+    for level in ["bloqueado", "com-aprovacao", "livre"] {
+        with("nível v4 no corpo v5", "bloqueado", &move |c| {
+            c[1].level = level.as_bytes().to_vec()
+        });
+    }
+    with("segurança SMTP v4 no corpo v5", "nenhuma", &|c| {
+        let k = index(c, "beta-smtp-stage");
+        c[k].data[SMTP_SECURITY] = b"nenhuma".to_vec();
+    });
     with("nome repetido", "acme-pg-dev", &|c| {
         let k = index(c, "acme-pg-prod");
         c[k].name = b"acme-pg-dev".to_vec();
@@ -1828,7 +1935,8 @@ fn d65_dates_rule() {
 }
 
 /// V3.41: body v3 (no dates) is refused as an unknown version, with the generic error;
-/// v4 without the date bytes, or with the version changed to 3, too.
+/// the current body (v5 since m2:DT4) without the date bytes, or with the version
+/// changed to 3, too.
 #[test]
 fn d65_body_v3_refused() {
     let body = test_body();
@@ -1842,17 +1950,28 @@ fn d65_body_v3_refused() {
     );
     refused(
         &forge_raw(3, Some(&cfg), n, &base, true),
-        "v4 rotulado 3",
+        "v5 rotulado 3",
         "falso",
     );
     refused(
-        &forge_raw(4, Some(&cfg), n, &base, false),
+        &forge_raw(BODY_VERSION, Some(&cfg), n, &base, false),
+        "v5 sem datas",
+        "falso",
+    );
+    refused(
+        &forge_raw(
+            LEGACY_BODY_VERSION,
+            Some(&cfg),
+            n,
+            &v4_records(&base),
+            false,
+        ),
         "v4 sem datas",
         "falso",
     );
     refused(
-        &forge_raw(5, Some(&cfg), n, &base, true),
-        "versão 5",
+        &forge_raw(6, Some(&cfg), n, &base, true),
+        "versão 6",
         "falso",
     );
     // The empty v3 vault too: the version is checked before anything else.
@@ -1861,9 +1980,20 @@ fn d65_body_v3_refused() {
         "v3 vazio",
         "falso",
     );
-    // Control: the same assembly with version 4 and the dates opens.
-    assert!(read(&forge_raw(4, Some(&cfg), n, &base, true)).is_ok());
-    assert_eq!(body[..2], [4, 0]);
+    // Control: the same assembly with version 5 and the dates opens, and so does the v4
+    // one with the v4 names and the dates (m2:DT4).
+    assert!(read(&forge_raw(BODY_VERSION, Some(&cfg), n, &base, true)).is_ok());
+    assert!(
+        read(&forge_raw(
+            LEGACY_BODY_VERSION,
+            Some(&cfg),
+            n,
+            &v4_records(&base),
+            true
+        ))
+        .is_ok()
+    );
+    assert_eq!(body[..2], [5, 0]);
 }
 
 /// V3.41: dates forged in the body (out of range, creation after modification, creation
@@ -1956,7 +2086,376 @@ fn d65_v3_vault_on_disk_refused_without_touching_the_file() {
     assert_eq!(meta.modified().unwrap(), after.modified().unwrap());
     let names: Vec<_> = std::fs::read_dir(&dir.0).unwrap().collect();
     assert_eq!(names.len(), 1, "sobrou arquivo além do cofre");
-    // Control: the same vault with body v4 opens.
-    let v4 = forge_raw(4, Some(&c), base.len() as u32, &base, true);
+    // Control: the same vault with body v5 opens, and with body v4 (v4 names) too.
+    let v5 = forge_raw(BODY_VERSION, Some(&c), base.len() as u32, &base, true);
+    assert!(open_entries(&vault.seal(&v5).unwrap(), &password).is_ok());
+    let v4 = forge_raw(
+        LEGACY_BODY_VERSION,
+        Some(&c),
+        base.len() as u32,
+        &v4_records(&base),
+        true,
+    );
     assert!(open_entries(&vault.seal(&v4).unwrap(), &password).is_ok());
+}
+
+// ---- m2:DT4: body v5 and reading of v4 (m2:V4.1, m2:V4.2, m2:V4.8, m2:V4.9) ----
+
+/// v5 → v4 stored names of type, level and SMTP security, written here by hand from the
+/// table of m2:DT4 (independent of `legacy_v4`; the tests compare the two).
+const V5_TO_V4: [(&str, &str); 15] = [
+    ("login", "login"),
+    ("database", "banco"),
+    ("server", "servidor"),
+    ("api", "api"),
+    ("aws", "aws"),
+    ("smtp", "smtp"),
+    ("ftp-sftp", "ftp-sftp"),
+    ("secure-note", "nota-segura"),
+    ("generic", "generico"),
+    ("blocked", "bloqueado"),
+    ("approval", "com-aprovacao"),
+    ("free", "livre"),
+    ("none", "nenhuma"),
+    ("starttls", "starttls"),
+    ("tls", "tls"),
+];
+
+fn v4_name(v5: &[u8]) -> Vec<u8> {
+    V5_TO_V4
+        .iter()
+        .find(|(n5, _)| n5.as_bytes() == v5)
+        .map(|(_, n4)| n4.as_bytes().to_vec())
+        .expect("nome v5 fora da tabela")
+}
+
+/// The raw entries of a v5 body with the v4 names, as 0.1.x wrote them.
+fn v4_records(base: &[RawRecord]) -> Vec<RawRecord> {
+    base.iter()
+        .cloned()
+        .map(|mut c| {
+            if c.kind == b"smtp" {
+                c.data[SMTP_SECURITY] = v4_name(&c.data[SMTP_SECURITY]);
+            }
+            c.kind = v4_name(&c.kind);
+            c.level = v4_name(&c.level);
+            c
+        })
+        .collect()
+}
+
+/// The test vault as a body v4 (generation 1), forged independently of the module.
+fn v4_test_body() -> Vec<u8> {
+    let base = raw_records(&test_body());
+    forge_with(LEGACY_BODY_VERSION, base.len() as u32, &v4_records(&base))
+}
+
+/// The two tables: each v5 name is the `name()` of its enum, the v4 table gives the same
+/// enum back from the v4 name, and neither version knows the names of the other one. The
+/// v4 table is closed: nothing near a v4 name passes.
+#[test]
+fn dt4_tables_of_the_two_versions() {
+    assert_eq!(BODY_VERSION, 5);
+    assert_eq!(LEGACY_BODY_VERSION, 4);
+    for (v5, v4) in V5_TO_V4 {
+        let (b5, b4) = (v5.as_bytes(), v4.as_bytes());
+        if let Some(k) = EntryType::from_name(v5) {
+            assert_eq!(k.name(), v5);
+            assert_eq!(legacy_v4::kind(b4), Some(k), "{v4}");
+            assert_eq!(legacy_v4::level(b4), None, "{v4}");
+            if v4 != v5 {
+                assert_eq!(legacy_v4::kind(b5), None, "v5 {v5} aceito no v4");
+                assert_eq!(EntryType::from_name(v4), None, "v4 {v4} aceito no v5");
+            }
+        } else if let Some(l) = AccessLevel::from_name(v5) {
+            assert_eq!(l.name(), v5);
+            assert_eq!(legacy_v4::level(b4), Some(l), "{v4}");
+            assert_eq!(legacy_v4::kind(b4), None, "{v4}");
+            assert_eq!(legacy_v4::level(b5), None, "v5 {v5} aceito no v4");
+            assert_eq!(AccessLevel::from_name(v4), None, "v4 {v4} aceito no v5");
+        } else {
+            let s = SmtpSecurity::from_name(v5).expect("nome v5 sem enum");
+            assert_eq!(s.name(), v5);
+            assert_eq!(legacy_v4::smtp_security(b4), Some(b5), "{v4}");
+            if v4 != v5 {
+                assert_eq!(legacy_v4::smtp_security(b5), None, "v5 {v5} aceito no v4");
+                assert_eq!(SmtpSecurity::from_name(v4), None, "v4 {v4} aceito no v5");
+            }
+        }
+    }
+    // Every value of the three enums is in the table, once.
+    assert_eq!(
+        EntryType::ALL.len() + AccessLevel::ALL.len() + SmtpSecurity::ALL.len(),
+        V5_TO_V4.len()
+    );
+    let names: Vec<&str> = EntryType::ALL
+        .iter()
+        .map(|k| k.name())
+        .chain(AccessLevel::ALL.iter().map(|l| l.name()))
+        .chain(SmtpSecurity::ALL.iter().map(|s| s.name()))
+        .collect();
+    for (v5, _) in V5_TO_V4 {
+        assert_eq!(names.iter().filter(|n| **n == v5).count(), 1, "{v5}");
+    }
+    // Closed: case, spaces, separators, accents, suffixes, NUL and empty are refused.
+    for near in [
+        "Banco",
+        "BANCO",
+        " banco",
+        "banco ",
+        "banco2",
+        "nota_segura",
+        "nota segura",
+        "genérico",
+        "Livre",
+        "livre ",
+        "com_aprovacao",
+        "com aprovação",
+        "Bloqueado",
+        "Nenhuma",
+        "nenhuma\0",
+        "STARTTLS",
+        "",
+    ] {
+        let b = near.as_bytes();
+        assert_eq!(legacy_v4::kind(b), None, "{near:?}");
+        assert_eq!(legacy_v4::level(b), None, "{near:?}");
+        assert_eq!(legacy_v4::smtp_security(b), None, "{near:?}");
+    }
+}
+
+/// m2:DT4: the test vault as a body v4 reads as the same configuration, generation and
+/// entries (every field, secret, extra, attachment and date), and is written again as
+/// exactly the v5 body of the same vault.
+#[test]
+fn dt4_v4_body_reads_equal_and_is_written_as_v5() {
+    let v4 = v4_test_body();
+    let v5 = test_body();
+    assert_eq!(v4[..2], [4, 0]);
+    assert_eq!(v5[..2], [5, 0]);
+    let (config, generation, entries) = deserialize(&v4).unwrap();
+    assert_eq!(generation, 1);
+    assert!(config.pin_hash().bytes() == cfg().pin_hash().bytes());
+    assert!(config.verify_pin(TEST_PIN.as_bytes()));
+    assert_eq!(config.lock_minutes(), cfg().lock_minutes());
+    assert_eq!(config.backup().enabled(), cfg().backup().enabled());
+    assert_eq!(config.backup().uuid(), cfg().backup().uuid());
+    check_round_trip(&test_vault_entries(), &entries);
+    let written = serialize(&config, generation, &entries).unwrap();
+    assert!(
+        written[..] == v5[..],
+        "v4 gravado diferente do v5 do mesmo cofre"
+    );
+    // Only the stored names change size: the v5 body is the v4 one plus the difference
+    // of each renamed name.
+    let size = |b: &[u8]| b.len() as isize;
+    let delta: isize = raw_records(&v5)
+        .iter()
+        .map(|c| {
+            let mut d =
+                size(&c.kind) - size(&v4_name(&c.kind)) + size(&c.level) - size(&v4_name(&c.level));
+            if c.kind == b"smtp" {
+                let s = &c.data[SMTP_SECURITY];
+                d += size(s) - size(&v4_name(s));
+            }
+            d
+        })
+        .sum();
+    assert_eq!(size(&v5), size(&v4) + delta);
+    // The generation of a backup version (Phase 49a) is read from both.
+    assert_eq!(body_generation(&v4), Some(1));
+    assert_eq!(body_generation(&v5), Some(1));
+}
+
+/// m2:DT4: the only renamed value inside the type fields, the v4 name of the SMTP
+/// security `none`, becomes `none`; `none` in a v4 body and the v4 name in a v5 body are
+/// refused.
+#[test]
+fn dt4_v4_smtp_security_none_becomes_v5_none() {
+    let base = raw_records(&test_body());
+    let k = index(&base, "beta-smtp-stage");
+    let mut v5 = base.clone();
+    v5[k].data[SMTP_SECURITY] = b"none".to_vec();
+    let n = v5.len() as u32;
+    let v5_body = forge(&v5);
+    let v4_body = forge_with(LEGACY_BODY_VERSION, n, &v4_records(&v5));
+    assert!(v4_body.windows(7).any(|w| w == b"nenhuma"));
+    let entries = read(&v4_body).unwrap();
+    let e = entries
+        .iter()
+        .find(|e| e.name() == "beta-smtp-stage")
+        .unwrap();
+    assert!(matches!(e.data(), Data::Smtp(s) if s.security == SmtpSecurity::None));
+    let written = serialize(cfg(), 1, &entries).unwrap();
+    assert!(written[..] == v5_body[..]);
+    assert!(!written.windows(7).any(|w| w == b"nenhuma"));
+
+    let mut crossed = v4_records(&v5);
+    crossed[k].data[SMTP_SECURITY] = b"none".to_vec();
+    refused(
+        &forge_with(LEGACY_BODY_VERSION, n, &crossed),
+        "segurança v5 no corpo v4",
+        "none",
+    );
+    for near in ["Nenhuma", "nenhuma ", "", "ssl"] {
+        let mut c = v4_records(&v5);
+        c[k].data[SMTP_SECURITY] = near.as_bytes().to_vec();
+        refused(
+            &forge_with(LEGACY_BODY_VERSION, n, &c),
+            "segurança fora da tabela v4",
+            "beta-smtp-stage",
+        );
+    }
+    let mut crossed = v5.clone();
+    crossed[k].data[SMTP_SECURITY] = b"nenhuma".to_vec();
+    refused(&forge(&crossed), "segurança v4 no corpo v5", "nenhuma");
+}
+
+/// m2:V4.8 (m2:RM2): a body v4 with an unknown name (the cases of the contract, the
+/// other v5 names and names near the v4 ones) is refused whole with the generic error,
+/// without the value.
+#[test]
+fn dt4_v4_body_with_unknown_name_refused() {
+    let base = v4_records(&raw_records(&test_body()));
+    let n = base.len() as u32;
+    let mut cases: Vec<(&str, Vec<u8>, &str)> = Vec::new();
+    let mut with = |case: &'static str, value: &'static str, f: &dyn Fn(&mut Vec<RawRecord>)| {
+        let mut c = base.clone();
+        f(&mut c);
+        cases.push((case, forge_with(LEGACY_BODY_VERSION, n, &c), value));
+    };
+    // The cases of the contract.
+    with("tipo banco2", "banco2", &|c| {
+        let k = index(c, "acme-pg-dev");
+        c[k].kind = b"banco2".to_vec();
+    });
+    with("nível livre com espaço", "livre ", &|c| {
+        let k = index(c, "acme-pg-dev");
+        c[k].level = b"livre ".to_vec();
+    });
+    with("nível free no v4", "free", &|c| {
+        let k = index(c, "acme-pg-dev");
+        c[k].level = b"free".to_vec();
+    });
+    with("tipo database no v4", "database", &|c| {
+        let k = index(c, "acme-pg-dev");
+        c[k].kind = b"database".to_vec();
+    });
+    // The other v5 names, in an entry of the matching type.
+    for (name, kind) in [
+        ("acme-ssh-senha-stage", "server"),
+        ("gama-nota", "secure-note"),
+        ("gama-generico", "generic"),
+    ] {
+        with("tipo v5 no v4", "tipo", &move |c| {
+            let k = index(c, name);
+            c[k].kind = kind.as_bytes().to_vec();
+        });
+    }
+    for level in ["approval", "blocked"] {
+        with("nível v5 no v4", "nivel", &move |c| {
+            c[0].level = level.as_bytes().to_vec()
+        });
+    }
+    // Near the v4 names.
+    for kind in ["Banco", "banco ", " banco", "nota_segura", "genérico", ""] {
+        with("tipo perto do v4", "tipo", &move |c| {
+            let k = index(c, "acme-pg-dev");
+            c[k].kind = kind.as_bytes().to_vec();
+        });
+    }
+    for level in ["Livre", "com_aprovacao", "com aprovação", "bloqueada", ""] {
+        with("nível perto do v4", "nivel", &move |c| {
+            c[0].level = level.as_bytes().to_vec()
+        });
+    }
+    for (case, forged, value) in &cases {
+        refused(forged, case, value);
+    }
+    // Control: the v4 body without changes opens.
+    assert!(read(&forge_with(LEGACY_BODY_VERSION, n, &base)).is_ok());
+}
+
+/// m2:V4.2 at the body level: one bit flipped in each byte of the decrypted v4 body;
+/// whatever is accepted is a valid vault and is written as v5 (`check_accepted`). (In
+/// the file, the AEAD already refuses any changed byte: `format` V2.2.)
+#[test]
+fn dt4_v4_bit_flipped_in_every_byte() {
+    let body = v4_test_body();
+    let mut accepted = 0;
+    for i in 0..body.len() {
+        let mut v = body.clone();
+        v[i] ^= 1 << (i % 8);
+        if let Ok((c, entries)) = read_all(&v) {
+            check_accepted(&v, &c, &entries);
+            accepted += 1;
+        }
+    }
+    assert!(accepted < body.len());
+    // The version bytes flipped never give a known version with the v4 names: 4 ^ 1 = 5
+    // (v5 does not know them) and the others are unknown.
+    for bit in 0..16 {
+        let mut v = body.clone();
+        v[bit / 8] ^= 1 << (bit % 8);
+        refused(&v, "versão do v4 trocada", "falso");
+    }
+}
+
+/// m2:V4.1 and m2:DT4 on disk: a vault sealed with a body v4 refuses the wrong password
+/// as a format error; opening it with the right one reads the entries and touches
+/// nothing (bytes, mtime, no temporary file); writing the entries read gives a body v5
+/// with generation + 1.
+#[cfg(unix)]
+#[test]
+fn dt4_v4_vault_on_disk_opens_without_writing_and_any_write_is_v5() {
+    use crate::atomic_write::write_entries;
+
+    let dir = Dir::new("v4");
+    let destination = dir.0.join("cofre.ward");
+    let password = MasterPassword::new(MASTER_PASSWORD.to_owned());
+    let vault = OpenVault::new(&password, new_config()).unwrap();
+    let mut c = RawCfg::of(vault.config());
+    c.generation = Some(3);
+    let base = v4_records(&raw_records(&test_body()));
+    let v4 = forge_raw(
+        LEGACY_BODY_VERSION,
+        Some(&c),
+        base.len() as u32,
+        &base,
+        true,
+    );
+    crate::atomic_write::write(&destination, &vault.seal(&v4).unwrap()).unwrap();
+    let before = std::fs::read(&destination).unwrap();
+    let modified = std::fs::metadata(&destination).unwrap().modified().unwrap();
+    let untouched = || {
+        assert!(
+            std::fs::read(&destination).unwrap() == before,
+            "o arquivo mudou"
+        );
+        let now = std::fs::metadata(&destination).unwrap().modified().unwrap();
+        assert_eq!(now, modified);
+        let names: Vec<_> = std::fs::read_dir(&dir.0).unwrap().collect();
+        assert_eq!(names.len(), 1, "sobrou arquivo além do cofre");
+    };
+
+    let wrong = MasterPassword::new("falso-mestra-ward-02".to_owned());
+    assert_eq!(
+        open_entries(&before, &wrong).map(|_| ()),
+        Err(OpenError::Format(FormatError::PasswordOrFile))
+    );
+    untouched();
+
+    let (mut opened, entries, generation) =
+        open_entries_with_generation(&before, &password, 0, 0).unwrap();
+    assert_eq!(generation, 3);
+    check_round_trip(&test_vault_entries(), &entries);
+    untouched();
+
+    write_entries(&destination, &mut opened, &entries).unwrap();
+    let after = std::fs::read(&destination).unwrap();
+    let (_, content) = format::open(&after, &password).unwrap();
+    assert_eq!(content[..2], [5, 0]);
+    let (_, g, again) = deserialize(&content).unwrap();
+    assert_eq!(g, 4);
+    check_round_trip(&test_vault_entries(), &again);
 }

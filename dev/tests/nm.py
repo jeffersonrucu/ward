@@ -88,7 +88,7 @@ def messages(out):
 
 
 fixtures = json.load(open(f"{ROOT}/dev/fixtures/entries.json", encoding="utf-8"))
-password = base64.b64encode(fixtures["senha_mestra"].encode()).decode()
+password = base64.b64encode(fixtures["master_password"].encode()).decode()
 r = json.loads(req({"v": 1, "op": "destravar", "dados": {"senha": password}}))
 verify(r.get("tipo") == "ok", "destravou o cofre de teste (cópia) pelo socket")
 

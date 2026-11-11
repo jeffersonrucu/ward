@@ -13,8 +13,9 @@
 //!   operation, field, error code, role or value breaks the reading (strict) or the
 //!   writing.
 //! - `vault-0.1.4.ward`: the test vault (D15 entries, fake values only), body v4,
-//!   generation 3. It opens with the test password; the body read and written again
-//!   gives the same bytes, and the names, types and levels are the ones 0.1.4 wrote.
+//!   generation 3. It opens with the test password; since Phase 48 (m2:DT4) the body v4
+//!   is only read: its names, types and levels come back by the table of m2:DT4, and
+//!   written again it gives a body v5 that reads back to the same vault.
 //! - `backup-0.1.4/`: the two backup versions of the same vault (generations 2 and 3);
 //!   the newest is the vault itself.
 //!
@@ -62,6 +63,31 @@ const ENTRIES_V4: [(&str, &str, &str); 22] = [
     ("gama-generico", "generico", "livre"),
     ("gama-nota", "nota-segura", "livre"),
 ];
+
+/// The v4 → v5 names of m2:DT4 that the test vault uses (types and levels), written
+/// here by hand, independent of `body::legacy_v4`.
+const V4_TO_V5: [(&str, &str); 12] = [
+    ("login", "login"),
+    ("banco", "database"),
+    ("servidor", "server"),
+    ("api", "api"),
+    ("aws", "aws"),
+    ("ftp-sftp", "ftp-sftp"),
+    ("smtp", "smtp"),
+    ("nota-segura", "secure-note"),
+    ("generico", "generic"),
+    ("bloqueado", "blocked"),
+    ("com-aprovacao", "approval"),
+    ("livre", "free"),
+];
+
+fn v5_name(v4: &str) -> &'static str {
+    V4_TO_V5
+        .iter()
+        .find(|(n4, _)| *n4 == v4)
+        .map(|(_, n5)| *n5)
+        .expect("v4 name outside the table")
+}
 
 /// One line of `protocol-v1.jsonl`.
 struct Line<'a> {
@@ -189,22 +215,86 @@ fn body_of(file: &[u8]) -> zeroize::Zeroizing<Vec<u8>> {
     body
 }
 
+/// m2:DT4 (Phase 48): the 0.1.4 body is v4; it is read by the table of m2:DT4 (types and
+/// levels as v5), and written again it is a body v5 that reads back to the same vault.
+/// Only the version and the stored names change: the size differs exactly by the
+/// renamed names.
 #[test]
-fn vault_014_body_v4_read_and_written_byte_for_byte() {
+fn vault_014_body_v4_is_read_and_written_as_v5() {
     let body = body_of(VAULT);
-    // Body v4 (u16 LE at the start) until Phase 48 moves it to v5 on purpose.
-    assert_eq!(body::BODY_VERSION, 4);
+    assert_eq!(body::BODY_VERSION, 5);
+    assert_eq!(body::LEGACY_BODY_VERSION, 4);
     assert_eq!(u16::from_le_bytes([body[0], body[1]]), 4);
     let (config, generation, entries) = body::deserialize(&body).expect("body v4 refused");
     assert_eq!(generation, 3);
-    let again = body::serialize(&config, generation, &entries).expect("body not written");
-    assert!(*again == *body, "body written differently from 0.1.4");
     let got: Vec<(&str, &str, &str)> = entries
         .iter()
         .map(|e| (e.name(), e.kind().name(), e.level().name()))
         .collect();
-    assert_eq!(got, ENTRIES_V4);
+    let expected: Vec<(&str, &str, &str)> = ENTRIES_V4
+        .iter()
+        .map(|(name, kind, level)| (*name, v5_name(kind), v5_name(level)))
+        .collect();
+    assert_eq!(got, expected);
     assert_eq!(config.lock_minutes(), 240);
+    assert!(!config.backup().enabled());
+    assert!(config.verify_pin(b"135790"));
+
+    let again = body::serialize(&config, generation, &entries).expect("body not written");
+    assert_eq!(u16::from_le_bytes([again[0], again[1]]), 5);
+    let delta: isize = ENTRIES_V4
+        .iter()
+        .map(|(_, kind, level)| {
+            let size = |n: &str| n.len() as isize;
+            size(v5_name(kind)) - size(kind) + size(v5_name(level)) - size(level)
+        })
+        .sum();
+    assert_eq!(again.len() as isize, body.len() as isize + delta);
+    // Outside the version and the names, the bytes are the same ones: the v4 body with
+    // each stored name replaced (in its length-prefixed field) is the v5 body.
+    let mut rebuilt = body.to_vec();
+    rebuilt[..2].copy_from_slice(&5u16.to_le_bytes());
+    for (v4, v5) in V4_TO_V5.iter().filter(|(a, b)| a != b) {
+        rebuilt = replace_field(&rebuilt, v4.as_bytes(), v5.as_bytes());
+    }
+    assert!(
+        rebuilt[..] == again[..],
+        "v5 body differs from v4 beyond the names"
+    );
+
+    let (config2, generation2, entries2) = body::deserialize(&again).expect("body v5 refused");
+    assert_eq!(generation2, 3);
+    assert!(config2.pin_hash().bytes() == config.pin_hash().bytes());
+    let got2: Vec<(&str, &str, &str)> = entries2
+        .iter()
+        .map(|e| (e.name(), e.kind().name(), e.level().name()))
+        .collect();
+    assert_eq!(got2, expected);
+    let canonical = body::serialize(&config2, generation2, &entries2).expect("body not written");
+    assert!(*canonical == *again, "body v5 not canonical");
+}
+
+/// Replaces every length-prefixed field equal to `from` by `to` (the u32 LE length plus
+/// the bytes). The fake values of the test vault never have the exact bytes of a
+/// prefixed stored name; `vault_014_body_v4_is_read_and_written_as_v5` checks the result
+/// against the module output.
+fn replace_field(body: &[u8], from: &[u8], to: &[u8]) -> Vec<u8> {
+    let mut pattern = (from.len() as u32).to_le_bytes().to_vec();
+    pattern.extend_from_slice(from);
+    let mut replacement = (to.len() as u32).to_le_bytes().to_vec();
+    replacement.extend_from_slice(to);
+    let mut out = Vec::with_capacity(body.len());
+    let mut i = 0;
+    while i < body.len() {
+        if body[i..].starts_with(&pattern) {
+            out.extend_from_slice(&replacement);
+            i += pattern.len();
+        } else {
+            out.push(body[i]);
+            i += 1;
+        }
+    }
+    out
 }
 
 #[test]
@@ -214,9 +304,37 @@ fn backup_014_two_consecutive_generations() {
     let (config, generation, entries) = body::deserialize(&older).expect("backup refused");
     assert_eq!(generation, 2);
     // Same configuration and entries, one generation before: written at generation 3
-    // they give the body of the vault.
+    // they give the body of the vault (both written as v5 since m2:DT4).
     let again = body::serialize(&config, 3, &entries).expect("body not written");
-    assert!(*again == *body_of(VAULT));
+    let newest = body_of(VAULT);
+    let (config3, generation3, entries3) = body::deserialize(&newest).expect("vault refused");
+    assert_eq!(generation3, 3);
+    let vault_v5 = body::serialize(&config3, 3, &entries3).expect("body not written");
+    assert!(*again == *vault_v5);
+}
+
+/// m2:V4.9: a vault v5 sealed now has the same header fields and sizes as the 0.1.4 one
+/// (magic, format version 1, Argon2id ≥ 256 MiB / 3 passes, header size); only the
+/// encrypted body changed version.
+#[test]
+fn vault_v5_header_same_as_014() {
+    let password = MasterPassword::new(TEST_PASSWORD.to_owned());
+    let old = format::read_header(VAULT).expect("0.1.4 header");
+    let (config, generation, entries) = body::deserialize(&body_of(VAULT)).expect("body v4");
+    let vault = format::OpenVault::new(&password, config).expect("new vault");
+    let v5 = body::serialize(vault.config(), generation, &entries).expect("body v5");
+    let file = vault.seal(&v5).expect("seal");
+    let new = format::read_header(&file).expect("v5 header");
+    assert_eq!(&file[..8], &VAULT[..8]);
+    assert_eq!(&file[..8], &format::MAGIC);
+    assert_eq!(new.version, old.version);
+    assert_eq!(new.version, format::VERSION);
+    assert_eq!(new.kdf, old.kdf);
+    assert!(new.kdf.memory_kib >= 262_144 && new.kdf.passes >= 3);
+    assert_eq!(new.body_size as usize, file.len() - format::HEADER_SIZE);
+    assert_eq!(old.body_size as usize, VAULT.len() - format::HEADER_SIZE);
+    let opened = body_of(&file);
+    assert_eq!(u16::from_le_bytes([opened[0], opened[1]]), 5);
 }
 
 // ---- Attacks (m2:RM1, S6, S2) ----

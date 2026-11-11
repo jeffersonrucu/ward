@@ -90,8 +90,8 @@ if len(variations) < 50:
 
 fixtures = json.load(open(f"{ROOT}/dev/fixtures/entries.json", encoding="utf-8"))
 # Test master password and PIN (D15, fake), from the fixtures.
-TEST_PASSWORD, TEST_PIN = fixtures["senha_mestra"], fixtures["pin"]
-names = sorted({e["nome"] for e in fixtures["entradas"]} | {"inexistente-ward"})
+TEST_PASSWORD, TEST_PIN = fixtures["master_password"], fixtures["pin"]
+names = sorted({e["name"] for e in fixtures["entries"]} | {"inexistente-ward"})
 
 r = json.loads(req({"v": 1, "op": "destravar", "dados": {"senha": b64(TEST_PASSWORD)}}))
 reply_kind = r.get("tipo")
