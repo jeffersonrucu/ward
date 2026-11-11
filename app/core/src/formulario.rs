@@ -33,7 +33,7 @@ use ward_core::entrada::{
     GRANDE_PARA_MASCARA, Rascunho, RascunhoAnexo, RascunhoDados, RascunhoExtra,
     Segredo as SegredoCore, TipoEntrada,
 };
-use ward_core::limites;
+use ward_core::limits;
 use ward_core::protocolo::{ErroResposta, Problema};
 use zeroize::Zeroizing;
 
@@ -216,7 +216,7 @@ const MAX_MOTIVO: usize = 200;
 pub fn erros_do_daemon(problemas: &[Problema]) -> Vec<ErroCampo> {
     problemas
         .iter()
-        .take(limites::MAX_EXTRAS + 32)
+        .take(limits::MAX_EXTRAS + 32)
         .map(|p| {
             let limpo = p.motivo.chars().count() <= MAX_MOTIVO
                 && !p.motivo.is_empty()
@@ -252,27 +252,27 @@ pub type SegredoMontado = Option<SegredoCore>;
 /// validação fina (e a mensagem por campo) é do `ward-core`; isto só barra entrada
 /// absurda (memória, quadro).
 fn conferir_limites(f: &Formulario) -> Result<(), ErroApp> {
-    let texto_ok = |s: &str| s.len() <= limites::MAX_TEXTO;
+    let texto_ok = |s: &str| s.len() <= limits::MAX_TEXT;
     let ok = texto_ok(&f.nome)
         && texto_ok(&f.grupo)
         && texto_ok(&f.ambiente)
         && texto_ok(&f.projeto)
         && f.tipo.len() <= 32
-        && f.tags.len() <= 2 * limites::MAX_TAGS
+        && f.tags.len() <= 2 * limits::MAX_TAGS
         && f.tags.iter().all(|t| texto_ok(t))
         && f.campos.len() <= 8
         && f.campos.values().all(|v| texto_ok(v))
         && f.segredos.len() <= 8
         && f.segredos.values().all(|v| match v {
-            ValorSecreto::Novo(t) => t.0.len() <= limites::MAX_NOTA,
+            ValorSecreto::Novo(t) => t.0.len() <= limits::MAX_NOTE,
             _ => true,
         })
-        && f.anexos.len() <= limites::MAX_ANEXOS + 1
-        && f.extras.len() <= limites::MAX_EXTRAS + 1
+        && f.anexos.len() <= limits::MAX_ATTACHMENTS + 1
+        && f.extras.len() <= limits::MAX_EXTRAS + 1
         && f.extras.iter().all(|x| {
             texto_ok(&x.nome)
                 && match &x.valor {
-                    ValorExtra::Novo(t) => t.0.len() <= limites::MAX_VALOR_EXTRA,
+                    ValorExtra::Novo(t) => t.0.len() <= limits::MAX_EXTRA_VALUE,
                     ValorExtra::Manter(n) => texto_ok(n),
                 }
         });

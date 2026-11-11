@@ -571,10 +571,10 @@ fn restaurar_mantem_tempo_de_trava_e_backup_externo_atuais() {
     }
     // No disco também (o destravar lê a configuração do arquivo).
     let bytes = fs::read(&c.cofre).unwrap();
-    let s = ward_core::formato::SenhaMestra::nova(SENHA.to_owned());
+    let s = ward_core::format::MasterPassword::new(SENHA.to_owned());
     let (aberto, _, _) = ward_core::corpo::abrir_entradas_lida(&bytes, &s, 0, 0).unwrap();
-    assert_eq!(aberto.configuracao().minutos_trava(), 30);
-    assert!(aberto.configuracao().backup().ligado());
+    assert_eq!(aberto.config().minutos_trava(), 30);
+    assert!(aberto.config().backup().ligado());
 }
 
 /// Fase 49a (achado baixo): a pasta de backups insegura vira aviso na tela

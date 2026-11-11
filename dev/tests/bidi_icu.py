@@ -2,7 +2,7 @@
 """Fase 39g (D51, V5.29): nenhum código fica fora do isolamento RTL e do escape bidi.
 
 A janela de aprovação mostra o texto do agente em duas camadas:
-- o Rust (`crates/ward-core/src/exibicao.rs`, `invisivel`) troca por escape visível o
+- o Rust (`crates/ward-core/src/display.rs`, `invisible`) troca por escape visível o
   controle e a formatação (bidi, largura zero...);
 - a interface (`app/src/lib/bidi.js`, `RTL`) isola em `<bdi dir="rtl">` cada sequência
   de letras RTL.
@@ -28,7 +28,7 @@ import sys
 
 RAIZ = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 BIDI_JS = os.path.join(RAIZ, "app", "src", "lib", "bidi.js")
-EXIBICAO = os.path.join(RAIZ, "crates", "ward-core", "src", "exibicao.rs")
+EXIBICAO = os.path.join(RAIZ, "crates", "ward-core", "src", "display.rs")
 
 # UCharDirection (uchar.h): as classes que reordenam o texto em volta.
 # 1 R, 2 EN... ver a enum; 7 B, 11 LRE, 12 LRO, 13 AL, 14 RLE, 15 RLO, 16 PDF,
@@ -104,11 +104,11 @@ def faixas_js():
 
 
 def faixas_rust():
-    """As faixas do `matches!` de `invisivel` em exibicao.rs."""
+    """As faixas do `matches!` de `invisible` em display.rs."""
     texto = open(EXIBICAO, encoding="utf-8").read()
-    m = re.search(r"pub fn invisivel\(c: char\) -> bool \{(.*?)\n\}", texto, re.S)
+    m = re.search(r"pub fn invisible\(c: char\) -> bool \{(.*?)\n\}", texto, re.S)
     if not m or "c.is_control()" not in m.group(1):
-        raise SystemExit("bidi_icu: não achei `invisivel` com `c.is_control()` em exibicao.rs")
+        raise SystemExit("bidi_icu: não achei `invisible` com `c.is_control()` em display.rs")
     corpo = re.sub(r"//[^\n]*", "", m.group(1))
     faixas = []
     for a, b in re.findall(r"0x([0-9A-Fa-f]+)(?:\s*\.\.=\s*0x([0-9A-Fa-f]+))?", corpo):

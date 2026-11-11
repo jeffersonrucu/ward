@@ -1033,9 +1033,9 @@ fn v2_28_tipos_de_segredo_zeram_e_nao_clonam() {
     <RascunhoDados as NaoClone<_>>::conferir();
     <RascunhoExtra as NaoClone<_>>::conferir();
     <RascunhoAnexo as NaoClone<_>>::conferir();
-    <crate::formato::SenhaMestra as NaoClone<_>>::conferir();
-    <crate::formato::CofreAberto as NaoClone<_>>::conferir();
-    <crate::formato::ChavesCofre as NaoClone<_>>::conferir();
+    <crate::format::MasterPassword as NaoClone<_>>::conferir();
+    <crate::format::OpenVault as NaoClone<_>>::conferir();
+    <crate::format::VaultKeys as NaoClone<_>>::conferir();
     // Configuração do corpo v2 (Fase 19b, D30).
     <crate::configuracao::HashPin as NaoClone<_>>::conferir();
     <crate::configuracao::Configuracao as NaoClone<_>>::conferir();
@@ -1047,11 +1047,11 @@ fn v2_28_tipos_de_segredo_zeram_e_nao_clonam() {
     zera_ao_sair::<CampoExtra>();
     zera_ao_sair::<Anexo>();
     // A chave de dados do formato (Fase 13) é `Zeroizing<[u8; 32]>`.
-    zera_ao_sair::<crate::cripto::Chave>();
+    zera_ao_sair::<crate::crypto::Key>();
     // A senha mestra e o cofre aberto (que guarda a chave de dados), Fase 15a.
-    zera_ao_sair::<crate::formato::SenhaMestra>();
-    zera_ao_sair::<crate::formato::CofreAberto>();
-    zera_ao_sair::<crate::formato::ChavesCofre>();
+    zera_ao_sair::<crate::format::MasterPassword>();
+    zera_ao_sair::<crate::format::OpenVault>();
+    zera_ao_sair::<crate::format::VaultKeys>();
     // O hash do PIN e a configuração que o guarda (Fase 19b, D30).
     zera_ao_sair::<crate::configuracao::HashPin>();
     zera_ao_sair::<crate::configuracao::Configuracao>();
@@ -1296,7 +1296,7 @@ fn ataque_tamanhos_excessivos() {
     let mut r = generico();
     r.anexos = vec![RascunhoAnexo {
         nome: t("grande.bin"),
-        conteudo: Segredo::de_bytes(vec![0; crate::limites::MAX_ANEXOS_SOMADOS + 1]),
+        conteudo: Segredo::de_bytes(vec![0; crate::limits::MAX_ATTACHMENTS_TOTAL + 1]),
     }];
     assert!(erros(r).tem_motivo("anexos", "longo demais"));
 
@@ -1459,12 +1459,12 @@ fn anexos_de(tamanhos: &[usize]) -> Vec<RascunhoAnexo> {
 
 #[test]
 fn v2_36_anexos_somados_e_orcamento_ao_salvar() {
-    use crate::limites::{MAX_ANEXOS_SOMADOS, MAX_EXTRAS, MAX_VALOR_EXTRA};
+    use crate::limits::{MAX_ATTACHMENTS_TOTAL, MAX_EXTRA_VALUE, MAX_EXTRAS};
     const KIB: usize = 1024;
 
     // Um anexo de 256 KiB + 1 byte.
     let mut r = generico();
-    r.anexos = anexos_de(&[MAX_ANEXOS_SOMADOS + 1]);
+    r.anexos = anexos_de(&[MAX_ATTACHMENTS_TOTAL + 1]);
     assert!(erros(r).tem_motivo("anexos", "longo demais"));
     // Dois anexos de 200 KiB: cada um cabe, a soma não.
     let mut r = generico();
@@ -1476,10 +1476,10 @@ fn v2_36_anexos_somados_e_orcamento_ao_salvar() {
     );
     // A soma exata no limite passa (com um anexo e com vários).
     let mut r = generico();
-    r.anexos = anexos_de(&[MAX_ANEXOS_SOMADOS]);
+    r.anexos = anexos_de(&[MAX_ATTACHMENTS_TOTAL]);
     valida(r);
     let mut r = generico();
-    r.anexos = anexos_de(&[MAX_ANEXOS_SOMADOS / 2, MAX_ANEXOS_SOMADOS / 2]);
+    r.anexos = anexos_de(&[MAX_ATTACHMENTS_TOTAL / 2, MAX_ATTACHMENTS_TOTAL / 2]);
     valida(r);
 
     // `api` com 64 extras secretos de 64 KiB: cada campo cabe, a máscara não.
@@ -1487,7 +1487,7 @@ fn v2_36_anexos_somados_e_orcamento_ao_salvar() {
     r.extras = (0..MAX_EXTRAS)
         .map(|i| RascunhoExtra {
             nome: format!("e{i:02}"),
-            valor: Segredo::de_bytes(vec![b'k'; MAX_VALOR_EXTRA]),
+            valor: Segredo::de_bytes(vec![b'k'; MAX_EXTRA_VALUE]),
             segredo: true,
         })
         .collect();
@@ -1511,7 +1511,7 @@ fn v2_36_anexos_somados_e_orcamento_ao_salvar() {
     r.extras = (0..MAX_EXTRAS)
         .map(|i| RascunhoExtra {
             nome: format!("e{i:02}"),
-            valor: Segredo::de_bytes(vec![b'k'; MAX_VALOR_EXTRA]),
+            valor: Segredo::de_bytes(vec![b'k'; MAX_EXTRA_VALUE]),
             segredo: true,
         })
         .collect();
@@ -1531,7 +1531,7 @@ fn v2_37_base_do_banco() {
         }
         rascunho("acme-pg-dev", "acme", "dev", d)
     };
-    let longa = "b".repeat(crate::limites::MAX_BASE + 1);
+    let longa = "b".repeat(crate::limits::MAX_DB_NAME + 1);
     for motor in ["postgres", "mysql", "mongo", "sqlserver"] {
         for base in [
             "b?x=1",
@@ -1563,7 +1563,7 @@ fn v2_37_base_do_banco() {
             "acme_db-1",
             "A",
             "app_teste",
-            &"b".repeat(crate::limites::MAX_BASE),
+            &"b".repeat(crate::limits::MAX_DB_NAME),
         ] {
             let entrada = valida(com_base(motor, base));
             let Dados::Banco(b) = entrada.dados() else {
@@ -1598,14 +1598,16 @@ fn v2_37_base_do_banco() {
 
 #[test]
 fn mensagens_citam_os_limites_atuais() {
-    // Se um limite mudar em `crate::limites`, a mensagem que o cita tem de mudar junto.
-    use crate::limites::{MAX_ANEXOS_SOMADOS, MAX_BASE, MAX_BASE_REDIS, MAX_TOTP, MIN_TOTP};
-    let somados = format!("{} KiB", MAX_ANEXOS_SOMADOS / 1024);
-    let base = format!("até {MAX_BASE} caracteres");
-    let redis = format!("de 0 a {MAX_BASE_REDIS}");
+    // Se um limite mudar em `crate::limits`, a mensagem que o cita tem de mudar junto.
+    use crate::limits::{
+        MAX_ATTACHMENTS_TOTAL, MAX_DB_NAME, MAX_REDIS_DB_NAME, MAX_TOTP, MIN_TOTP,
+    };
+    let somados = format!("{} KiB", MAX_ATTACHMENTS_TOTAL / 1024);
+    let base = format!("até {MAX_DB_NAME} caracteres");
+    let redis = format!("de 0 a {MAX_REDIS_DB_NAME}");
     let totp = format!("com {MIN_TOTP} a {MAX_TOTP} caracteres");
     let mut r = generico();
-    r.anexos = anexos_de(&[MAX_ANEXOS_SOMADOS, 1]);
+    r.anexos = anexos_de(&[MAX_ATTACHMENTS_TOTAL, 1]);
     assert!(erros(r).to_string().contains(&somados));
     let mut d = banco();
     if let RascunhoDados::Banco { base: b, .. } = &mut d {
@@ -1926,7 +1928,7 @@ fn v2_49_usuario_do_ssh() {
     // Até o limite de usuário de `limites`.
     let mut d = servidor_senha();
     if let RascunhoDados::Servidor { usuario, .. } = &mut d {
-        *usuario = "u".repeat(crate::limites::MAX_USUARIO + 1);
+        *usuario = "u".repeat(crate::limits::MAX_USERNAME + 1);
     }
     assert!(erros(rascunho("x", "acme", "dev", d)).tem("usuário"));
 }

@@ -14,7 +14,7 @@ use super::wc::configuracao::{Configuracao, HashPin};
 use super::wc::entrada::{
     Entrada, NivelAcesso, Rascunho, RascunhoAnexo, RascunhoDados, RascunhoExtra, Segredo,
 };
-use super::wc::limites::MAX_ANEXOS_SOMADOS;
+use super::wc::limits::MAX_ATTACHMENTS_TOTAL;
 
 /// Senha mestra do cofre de teste.
 pub const SENHA_MESTRA: &str = "falso-mestra-ward-01";
@@ -576,7 +576,7 @@ pub fn um_de_cada_cheio() -> Vec<Entrada> {
             if nome != "zz-cheio-api-token" {
                 r.anexos.push(RascunhoAnexo {
                     nome: t("grande.bin"),
-                    conteudo: Segredo::de_bytes(bytes_0_a_255(MAX_ANEXOS_SOMADOS - 4096)),
+                    conteudo: Segredo::de_bytes(bytes_0_a_255(MAX_ATTACHMENTS_TOTAL - 4096)),
                 });
             }
             validada(r, nivel)

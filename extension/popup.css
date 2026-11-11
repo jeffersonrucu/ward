@@ -1,6 +1,6 @@
-/* Popup da extensão (Fase 41): frames `Extensão / Sugestões do domínio` (17332) e
- * `Extensão / Cofre travado` (17392) do Ward.figcraft. Só tokens de tokens.css (gerado
- * das variables do FigCraft): nenhuma cor ou medida solta. Só tema escuro (D1). */
+/* Extension popup (Phase 41): the domain suggestions frame (17332) and the locked vault
+ * frame (17392) of Ward.figcraft. Only tokens from tokens.css (generated from the
+ * FigCraft variables): no loose color or size. Dark theme only (D1). */
 
 *,
 *::before,
@@ -44,7 +44,7 @@ button {
   outline-offset: var(--line-thick);
 }
 
-/* Frame 17332/17392: 360 de largura, fundo padrão, borda sutil de 1 por dentro. */
+/* Frame 17332/17392: 360 wide, default background, subtle 1 border inside. */
 .popup {
   display: flex;
   flex-direction: column;
@@ -54,8 +54,8 @@ button {
   overflow: hidden;
 }
 
-/* `Cabeçalho do popup` (17234): padding 16, gap 8, linha de baixo. */
-.cabecalho {
+/* Popup header (17234): padding 16, gap 8, bottom line. */
+.header {
   display: flex;
   align-items: center;
   gap: var(--space-8);
@@ -63,27 +63,27 @@ button {
   border-bottom: var(--line-thin) solid var(--color-border-subtle);
 }
 
-.simbolo {
+.symbol {
   flex: none;
   width: var(--icon-lg);
   height: var(--icon-lg);
   color: var(--color-brand-symbol);
 }
 
-.simbolo-botao {
+.button-symbol {
   flex: none;
   width: var(--icon-md);
   height: var(--icon-md);
   color: var(--color-icon-strong);
 }
 
-.nome-produto {
+.product-name {
   flex: 1 1 auto;
   min-width: var(--space-0);
 }
 
-/* `estado` (17337/17397): pílula, padding 2×8, gap 6, indicador de 6. */
-.estado {
+/* Status (17337/17397): pill, padding 2×8, gap 6, indicator of 6. */
+.status {
   display: inline-flex;
   align-items: center;
   gap: var(--space-6);
@@ -92,7 +92,7 @@ button {
   white-space: nowrap;
 }
 
-.estado::before {
+.status::before {
   content: "";
   flex: none;
   width: var(--space-6);
@@ -101,30 +101,30 @@ button {
   background: currentColor;
 }
 
-.estado.destravado {
+.status.unlocked {
   background: var(--color-success-tint);
   color: var(--color-success-text);
 }
 
-.estado.travado {
+.status.locked {
   background: var(--color-badge-neutral-bg);
   color: var(--color-text-secondary);
 }
 
-.estado.travado::before {
+.status.locked::before {
   background: var(--color-brand-on-color-inactive);
 }
 
-/* `corpo` (17340): padding 16, gap 12, coluna. */
-.corpo {
+/* Body (17340): padding 16, gap 12, column. */
+.body {
   display: flex;
   flex-direction: column;
   gap: var(--space-12);
   padding: var(--space-16);
 }
 
-/* `origem` (17341): cartão, raio 16, padding 16, gap 12, borda sutil. */
-.origem {
+/* Origin (17341): card, radius 16, padding 16, gap 12, subtle border. */
+.origin {
   display: flex;
   align-items: center;
   gap: var(--space-12);
@@ -134,7 +134,7 @@ button {
   border: var(--line-thin) solid var(--color-border-subtle);
 }
 
-.origem-textos {
+.origin-texts {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
@@ -142,17 +142,17 @@ button {
   min-width: var(--space-0);
 }
 
-.origem-rotulo,
-.secundario {
+.origin-label,
+.secondary {
   color: var(--color-text-secondary);
 }
 
-.origem-valor {
+.origin-value {
   color: var(--color-text-primary);
   overflow-wrap: anywhere;
 }
 
-.lista {
+.list {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
@@ -161,8 +161,8 @@ button {
   list-style: none;
 }
 
-/* `Item de lista` compacto (4002/4028): padding 16, gap 12, raio do item; hover com a
- * superfície elevada. */
+/* Compact list item (4002/4028): padding 16, gap 12, item radius; hover with the
+ * raised surface. */
 .item {
   display: flex;
   align-items: center;
@@ -185,7 +185,7 @@ button {
   cursor: progress;
 }
 
-/* `avatar` (17349): 40, raio 10, superfície elevada, borda padrão. */
+/* `avatar` (17349): 40, radius 10, raised surface, default border. */
 .avatar {
   display: flex;
   flex: none;
@@ -198,7 +198,7 @@ button {
   border: var(--line-thin) solid var(--color-border-default);
 }
 
-.item-textos {
+.item-texts {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
@@ -206,15 +206,15 @@ button {
   min-width: var(--space-0);
 }
 
-.linha {
+.row {
   display: flex;
   align-items: center;
   gap: var(--space-8);
   min-width: var(--space-0);
 }
 
-.item-nome,
-.item-detalhe {
+.item-name,
+.item-detail {
   flex: 1 1 auto;
   min-width: var(--space-0);
   overflow: hidden;
@@ -222,16 +222,16 @@ button {
   white-space: nowrap;
 }
 
-.item-nome {
+.item-name {
   color: var(--color-text-primary);
 }
 
-.item-detalhe {
+.item-detail {
   color: var(--color-text-secondary);
 }
 
-/* `Badge ambiente` padrão (463/465/467). */
-.badge-ambiente {
+/* Default environment badge (463/465/467). */
+.badge-environment {
   display: inline-flex;
   flex: none;
   align-items: center;
@@ -241,23 +241,23 @@ button {
   white-space: nowrap;
 }
 
-.badge-ambiente.dev {
+.badge-environment.dev {
   background: var(--color-environment-dev-tint);
   color: var(--color-environment-dev-text);
 }
 
-.badge-ambiente.stage {
+.badge-environment.stage {
   background: var(--color-environment-stage-tint);
   color: var(--color-environment-stage-text);
 }
 
-.badge-ambiente.prod {
+.badge-environment.prod {
   background: var(--color-environment-prod-tint);
   color: var(--color-environment-prod-text);
 }
 
-/* `Badge tipo` login (479): padding 2 8 2 6, gap 4, ícone de 12. */
-.badge-tipo {
+/* Login type badge (479): padding 2 8 2 6, gap 4, icon of 12. */
+.badge-type {
   display: inline-flex;
   flex: none;
   align-items: center;
@@ -270,44 +270,44 @@ button {
   white-space: nowrap;
 }
 
-/* `Ícone/*`: traço 1,5, cor pelo tom. */
-.icone {
+/* Icons: stroke 1.5, color by tone. */
+.icon {
   flex: none;
   color: var(--icon-tone);
 }
 
-.icone path {
+.icon path {
   stroke-width: var(--line-icon);
 }
 
-.icone.xs {
+.icon.xs {
   width: var(--icon-xs);
   height: var(--icon-xs);
 }
 
-.icone.md {
+.icon.md {
   width: var(--icon-md);
   height: var(--icon-md);
 }
 
-.nota {
+.note {
   margin: var(--space-0);
   color: var(--color-text-secondary);
 }
 
-.nota.erro {
+.note.error {
   color: var(--color-danger-text);
 }
 
-/* `rodapé` (17385): padding 16, linha de cima. */
-.rodape {
+/* Footer (17385): padding 16, top line. */
+.footer {
   display: flex;
   padding: var(--space-16);
   border-top: var(--line-thin) solid var(--color-border-subtle);
 }
 
-/* `Botão` (263): altura padrão 44, raio do controle, padding 0×20, gap 8. */
-.botao {
+/* Button (263): default height 44, control radius, padding 0×20, gap 8. */
+.button {
   display: inline-flex;
   flex: 1 1 auto;
   align-items: center;
@@ -321,32 +321,32 @@ button {
   cursor: pointer;
 }
 
-.botao.secundario-botao {
+.button.secondary-button {
   background: var(--color-surface-raised);
   border-color: var(--color-border-default);
   color: var(--color-text-primary);
 }
 
-.botao.secundario-botao:hover:not(:disabled) {
+.button.secondary-button:hover:not(:disabled) {
   background: var(--color-surface-hover);
 }
 
-.botao.primario {
+.button.primary {
   background: var(--color-primary-default);
   color: var(--color-primary-on);
   box-shadow: var(--shadow-glow-primary);
 }
 
-.botao.primario:hover:not(:disabled) {
+.button.primary:hover:not(:disabled) {
   background: var(--color-primary-hover);
 }
 
-.botao:disabled {
+.button:disabled {
   cursor: progress;
 }
 
-/* `corpo` do travado (17400): padding 24, gap 16, centralizado. */
-.corpo-travado {
+/* Locked body (17400): padding 24, gap 16, centered. */
+.locked-body {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -355,12 +355,12 @@ button {
   text-align: center;
 }
 
-.corpo-travado > * {
+.locked-body > * {
   width: 100%;
 }
 
-/* `avatar` do travado (17401): 48, pílula. */
-.corpo-travado > .avatar-grande {
+/* Locked `avatar` (17401): 48, pill. */
+.locked-body > .avatar-large {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -371,78 +371,79 @@ button {
   border: var(--line-thin) solid var(--color-border-default);
 }
 
-.texto-travado {
+.locked-text {
   margin: var(--space-0);
   color: var(--color-text-secondary);
   overflow-wrap: anywhere;
 }
 
-.titulo-travado {
+.locked-title {
   margin: var(--space-0);
   color: var(--color-text-primary);
 }
 
-/* --- Fase 42: `Extensão / Salvar login novo` (17414; 18850 com o conteúdo inteiro) ---
- * O frame tem 360×600 (o máximo do popup do Chrome): o cabeçalho fica em cima, o rodapé
- * embaixo e o corpo rola entre os dois. Aqui quem rola é o documento do popup, com o
- * cabeçalho e o rodapé presos (`sticky`); sem rolagem, fica igual ao 18850. */
-.popup.com-formulario {
+/* --- Phase 42: save new login frame (17414; 18850 with the whole content) ---
+ * The frame is 360×600 (the Chrome popup maximum): the header stays on top, the footer
+ * at the bottom and the body scrolls between them. Here the popup document is what
+ * scrolls, with the header and the footer stuck (`sticky`); without scrolling, it
+ * matches 18850. */
+.popup.with-form {
   overflow: visible;
 }
 
-.popup.com-formulario > .cabecalho {
+.popup.with-form > .header {
   position: sticky;
   top: var(--space-0);
   z-index: 1;
   background: var(--color-bg-default);
 }
 
-.popup-salvar {
+.popup-save {
   display: flex;
   flex-direction: column;
   margin: var(--space-0);
 }
 
-/* `corpo` (17422): padding 16, gap 16, coluna. */
-.corpo-salvar {
+/* Body (17422): padding 16, gap 16, column. */
+.save-body {
   display: flex;
   flex-direction: column;
   gap: var(--space-16);
   padding: var(--space-16);
 }
 
-/* `introdução` (17423): gap 4. */
-.introducao {
+/* Intro (17423): gap 4. */
+.intro {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
 }
 
-.titulo-salvar {
+.save-title {
   margin: var(--space-0);
   color: var(--color-text-primary);
 }
 
-.texto-salvar {
+.save-text {
   margin: var(--space-0);
   color: var(--color-text-secondary);
   overflow-wrap: anywhere;
 }
 
-/* `Campo` (340) e `Select` (422): rótulo, gap 8, entrada de 44. */
-.campo {
+/* Field (340) and `Select` (422): label, gap 8, input of 44. */
+.field {
   display: flex;
   flex-direction: column;
   gap: var(--space-8);
   min-width: var(--space-0);
 }
 
-.rotulo {
+.label {
   color: var(--color-text-primary);
 }
 
-/* `entrada` (17426): 44, raio 10, padding 0 8 0 16, superfície do campo, borda sutil. */
-.entrada {
+/* Input (17426): 44, radius 10, padding 0 8 0 16, field surface, subtle border. */
+.field-input {
   display: flex;
   align-items: center;
   width: 100%;
@@ -456,20 +457,20 @@ button {
   font-family: var(--font-family-text);
 }
 
-input.entrada:focus-visible,
+input.field-input:focus-visible,
 .select:focus-visible {
   outline: none;
   border-color: var(--color-border-focus);
 }
 
-.mascara {
+.mask {
   color: var(--color-text-primary);
   overflow: hidden;
   white-space: nowrap;
 }
 
-/* `Select` (17465): padding 0 16, chevron de 20 à direita. */
-.entrada-select {
+/* `Select` (17465): padding 0 16, chevron of 20 on the right. */
+.select-input {
   position: relative;
   display: flex;
   align-items: center;
@@ -493,38 +494,38 @@ input.entrada:focus-visible,
   color: var(--color-text-primary);
 }
 
-.entrada-select > .icone {
+.select-input > .icon {
   position: absolute;
   right: var(--space-16);
   pointer-events: none;
 }
 
-.ajuda {
+.help {
   margin: var(--space-0);
   color: var(--color-text-secondary);
 }
 
-.campo.com-erro .entrada,
-.campo.com-erro .select {
+.field.with-error .field-input,
+.field.with-error .select {
   border-color: var(--color-danger-border);
 }
 
-.campo.com-erro .ajuda {
+.field.with-error .help {
   color: var(--color-danger-text);
 }
 
-/* `linha tipo e ambiente` (18669): dois selects lado a lado, gap 8. */
-.linha-dupla {
+/* Type and environment row (18669): two selects side by side, gap 8. */
+.double-row {
   display: flex;
   gap: var(--space-8);
 }
 
-.linha-dupla > .campo {
+.double-row > .field {
   flex: 1 1 var(--space-0);
 }
 
-/* `nível inicial` (17483): cartão, raio 16, padding 16, gap 12. */
-.nivel-inicial {
+/* Initial level (17483): card, radius 16, padding 16, gap 12. */
+.initial-level {
   display: flex;
   align-items: center;
   gap: var(--space-12);
@@ -534,29 +535,29 @@ input.entrada:focus-visible,
   border: var(--line-thin) solid var(--color-border-subtle);
 }
 
-.nivel-textos {
+.level-texts {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
   min-width: var(--space-0);
 }
 
-.nivel-titulo {
+.level-title {
   color: var(--color-text-primary);
 }
 
-.nivel-texto {
+.level-text {
   color: var(--color-text-secondary);
 }
 
-/* `rodapé` (17484): padding 16, gap 12, dois botões iguais; preso embaixo. */
-.rodape-salvar {
+/* Footer (17484): padding 16, gap 12, two equal buttons; stuck at the bottom. */
+.save-footer {
   position: sticky;
   bottom: var(--space-0);
   gap: var(--space-12);
   background: var(--color-bg-default);
 }
 
-.rodape-salvar > .botao {
+.save-footer > .button {
   flex: 1 1 var(--space-0);
 }

@@ -8,7 +8,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use super::*;
 use crate as wc;
 use crate::entrada::{Ambiente, CampoExtra, Login, RascunhoAnexo, RascunhoDados};
-use crate::formato::ParametrosKdf as ParametrosKdfPin;
+use crate::format::KdfParams as ParametrosKdfPin;
 
 #[path = "cofre_teste.rs"]
 mod cofre_teste;
@@ -434,7 +434,7 @@ fn v2_30_ida_e_volta_do_cofre_de_teste() {
             .alterado(1_762_500_000)
             .unwrap(),
     );
-    originais[2].definir_datas(Datas::NENHUMA.alterado(MAX_DATA).unwrap());
+    originais[2].definir_datas(Datas::NENHUMA.alterado(MAX_DATE).unwrap());
     let corpo = serializar(cfg(), 1, &originais).unwrap();
     let voltaram = ler(&corpo).unwrap();
     conferir_ida_e_volta(&originais, &voltaram);
@@ -516,7 +516,7 @@ impl Dir {
             .join("ward-teste-corpo");
         std::fs::create_dir_all(&base).unwrap();
         let mut aleatorio = [0u8; 8];
-        crate::cripto::aleatorio(&mut aleatorio).unwrap();
+        crate::crypto::random(&mut aleatorio).unwrap();
         let d = base.join(format!(
             "{nome}-{}-{}",
             std::process::id(),
@@ -538,12 +538,12 @@ impl Drop for Dir {
 #[cfg(unix)]
 #[test]
 fn v2_30_ida_e_volta_pelo_disco_com_anexos_no_limite() {
-    use crate::gravacao::gravar_entradas;
+    use crate::atomic_write::write_entries;
 
     let dir = Dir::novo("ida-e-volta");
     let destino = dir.0.join("cofre.ward");
-    let senha = SenhaMestra::nova(SENHA_MESTRA.to_owned());
-    let mut cofre = CofreAberto::novo(&senha, configuracao_nova()).unwrap();
+    let senha = MasterPassword::new(SENHA_MESTRA.to_owned());
+    let mut cofre = OpenVault::new(&senha, configuracao_nova()).unwrap();
 
     // 22 do cofre de teste + uma de cada tipo cheia, cada uma com anexos que somam o
     // limite de D29 (256 KiB).
@@ -554,14 +554,16 @@ fn v2_30_ida_e_volta_pelo_disco_com_anexos_no_limite() {
         .filter(|e| e.nome().starts_with("zz-cheio-") && e.nome() != "zz-cheio-api-token")
     {
         let soma: usize = e.anexos().iter().map(|a| a.conteudo().len()).sum();
-        assert_eq!(soma, crate::limites::MAX_ANEXOS_SOMADOS);
+        assert_eq!(soma, crate::limits::MAX_ATTACHMENTS_TOTAL);
     }
-    let esperado = serializar(cofre.configuracao(), 1, &originais).unwrap();
-    assert!(esperado.len() > 8 * crate::limites::MAX_ANEXOS_SOMADOS && esperado.len() <= MAX_CORPO);
+    let esperado = serializar(cofre.config(), 1, &originais).unwrap();
+    assert!(
+        esperado.len() > 8 * crate::limits::MAX_ATTACHMENTS_TOTAL && esperado.len() <= MAX_BODY
+    );
 
-    gravar_entradas(&destino, &mut cofre, &originais).unwrap();
+    write_entries(&destino, &mut cofre, &originais).unwrap();
     let arquivo = std::fs::read(&destino).unwrap();
-    let hash = cofre.configuracao().hash_pin().bytes().to_vec();
+    let hash = cofre.config().hash_pin().bytes().to_vec();
     let hash = &hash[..];
     let marcas = SEGREDOS
         .iter()
@@ -577,56 +579,56 @@ fn v2_30_ida_e_volta_pelo_disco_com_anexos_no_limite() {
     let (reaberto, voltaram) = abrir_entradas(&arquivo, &senha).unwrap();
     conferir_ida_e_volta(&originais, &voltaram);
     // A configuração volta igual (D30), e o PIN de teste confere no hash lido.
-    assert!(serializar(reaberto.configuracao(), 1, &voltaram).unwrap()[..] == esperado[..]);
-    assert!(reaberto.configuracao().hash_pin().bytes() == hash);
-    assert!(reaberto.configuracao().conferir_pin(PIN_TESTE.as_bytes()));
+    assert!(serializar(reaberto.config(), 1, &voltaram).unwrap()[..] == esperado[..]);
+    assert!(reaberto.config().hash_pin().bytes() == hash);
+    assert!(reaberto.config().conferir_pin(PIN_TESTE.as_bytes()));
 
     // Cofre vazio (só a configuração) também faz ida e volta pelo disco.
-    gravar_entradas(&destino, &mut cofre, &[]).unwrap();
+    write_entries(&destino, &mut cofre, &[]).unwrap();
     let arquivo = std::fs::read(&destino).unwrap();
     let (reaberto, voltaram) = abrir_entradas(&arquivo, &senha).unwrap();
     assert!(voltaram.is_empty());
-    assert!(reaberto.configuracao().hash_pin().bytes() == hash);
+    assert!(reaberto.config().hash_pin().bytes() == hash);
 
     // Senha errada: erro do formato, não do corpo.
-    let errada = SenhaMestra::nova("falso-mestra-ward-02".to_owned());
+    let errada = MasterPassword::new("falso-mestra-ward-02".to_owned());
     assert_eq!(
         abrir_entradas(&arquivo, &errada).unwrap_err(),
-        ErroAbrir::Formato(ErroFormato::SenhaOuArquivo)
+        ErroAbrir::Formato(FormatError::PasswordOrFile)
     );
 }
 
 #[cfg(unix)]
 #[test]
 fn troca_de_senha_sela_e_grava_pelo_mesmo_caminho() {
-    use crate::gravacao::{ErroGravacao, gravar_entradas, trocar_senha};
+    use crate::atomic_write::{WriteError, change_password, write_entries};
 
     let dir = Dir::novo("troca");
     let destino = dir.0.join("cofre.ward");
-    let atual = SenhaMestra::nova(SENHA_MESTRA.to_owned());
-    let nova = SenhaMestra::nova("falso-mestra-ward-02".to_owned());
-    let mut cofre = CofreAberto::novo(&atual, configuracao_nova()).unwrap();
-    let hash = cofre.configuracao().hash_pin().bytes().to_vec();
+    let atual = MasterPassword::new(SENHA_MESTRA.to_owned());
+    let nova = MasterPassword::new("falso-mestra-ward-02".to_owned());
+    let mut cofre = OpenVault::new(&atual, configuracao_nova()).unwrap();
+    let hash = cofre.config().hash_pin().bytes().to_vec();
     let originais = cofre_de_teste();
-    gravar_entradas(&destino, &mut cofre, &originais).unwrap();
+    write_entries(&destino, &mut cofre, &originais).unwrap();
     let antes = std::fs::read(&destino).unwrap();
 
     // Senha atual errada: recusa e não toca no arquivo.
     assert_eq!(
-        trocar_senha(&destino, &nova, &nova, 0, 0).unwrap_err(),
-        ErroGravacao::Formato(ErroFormato::SenhaOuArquivo)
+        change_password(&destino, &nova, &nova, 0, 0).unwrap_err(),
+        WriteError::Format(FormatError::PasswordOrFile)
     );
     assert!(std::fs::read(&destino).unwrap() == antes);
 
-    let (mut novo, _) = trocar_senha(&destino, &atual, &nova, 0, 0).unwrap();
+    let (mut novo, _) = change_password(&destino, &atual, &nova, 0, 0).unwrap();
     // A troca de senha mantém a configuração (o mesmo hash do PIN).
-    assert!(novo.configuracao().hash_pin().bytes() == &hash[..]);
+    assert!(novo.config().hash_pin().bytes() == &hash[..]);
     let depois = std::fs::read(&destino).unwrap();
     assert!(abrir_entradas(&depois, &atual).is_err());
     let (_, voltaram) = abrir_entradas(&depois, &nova).unwrap();
     conferir_ida_e_volta(&originais, &voltaram);
     // O cofre devolvido grava com a senha nova.
-    gravar_entradas(&destino, &mut novo, &voltaram).unwrap();
+    write_entries(&destino, &mut novo, &voltaram).unwrap();
     let (_, de_novo) = abrir_entradas(&std::fs::read(&destino).unwrap(), &nova).unwrap();
     conferir_ida_e_volta(&originais, &de_novo);
 }
@@ -734,7 +736,7 @@ fn serializar_recusa_cofre_que_nao_reabriria() {
 
 #[test]
 fn serializar_recusa_mais_de_10_000_entradas() {
-    let entradas: Vec<Entrada> = (0..=MAX_ENTRADAS)
+    let entradas: Vec<Entrada> = (0..=MAX_ENTRIES)
         .map(|i| {
             let mut r = Rascunho {
                 nome: format!("e{i:05}"),
@@ -759,8 +761,8 @@ fn serializar_recusa_mais_de_10_000_entradas() {
         ErroCorpo::GrandeDemais
     );
     // 10 000 cabem e voltam.
-    let corpo = serializar(cfg(), 1, &entradas[..MAX_ENTRADAS]).unwrap();
-    assert_eq!(ler(&corpo).unwrap().len(), MAX_ENTRADAS);
+    let corpo = serializar(cfg(), 1, &entradas[..MAX_ENTRIES]).unwrap();
+    assert_eq!(ler(&corpo).unwrap().len(), MAX_ENTRIES);
 }
 
 #[test]
@@ -1066,7 +1068,7 @@ fn erros_sem_dado_do_cofre() {
 #[test]
 fn leitura_no_limite_aceita_e_acima_recusa() {
     // Corpo acima de 64 MiB é recusado antes de qualquer leitura.
-    let mut v = vec![0u8; MAX_CORPO + 1];
+    let mut v = vec![0u8; MAX_BODY + 1];
     v[0] = 2;
     recusado(&v, "acima de 64 MiB", "falso");
     // Os limites de leitura não são menores que os da validação: a entrada cheia
@@ -1082,7 +1084,7 @@ fn leitura_no_limite_aceita_e_acima_recusa() {
 
 #[test]
 fn v2_36_corpo_forjado_com_entrada_grande_demais() {
-    use crate::limites::{MAX_ANEXOS_SOMADOS, MAX_EXTRAS, MAX_VALOR_EXTRA};
+    use crate::limits::{MAX_ATTACHMENTS_TOTAL, MAX_EXTRA_VALUE, MAX_EXTRAS};
 
     let corpo = corpo_de_teste();
     let base = cruas(&corpo);
@@ -1090,7 +1092,10 @@ fn v2_36_corpo_forjado_com_entrada_grande_demais() {
     // Um anexo de 256 KiB + 1 byte (recusado já na 1ª passada).
     let mut c = base.clone();
     let k = indice(&c, "gama-generico");
-    c[k].anexos = vec![(b"grande.bin".to_vec(), vec![0x5a; MAX_ANEXOS_SOMADOS + 1])];
+    c[k].anexos = vec![(
+        b"grande.bin".to_vec(),
+        vec![0x5a; MAX_ATTACHMENTS_TOTAL + 1],
+    )];
     recusado(&forjar(&c), "anexo de 256 KiB + 1", "FALSO_ENV");
 
     // Dois anexos de 200 KiB: cada um cabe, a soma não.
@@ -1110,7 +1115,7 @@ fn v2_36_corpo_forjado_com_entrada_grande_demais() {
             (
                 format!("e{i:02}").into_bytes(),
                 1,
-                vec![b'k'; MAX_VALOR_EXTRA],
+                vec![b'k'; MAX_EXTRA_VALUE],
             )
         })
         .collect();
@@ -1119,14 +1124,14 @@ fn v2_36_corpo_forjado_com_entrada_grande_demais() {
     // Controle: no limite (um anexo de 256 KiB, poucos extras grandes) o corpo abre.
     let mut c = base.clone();
     let k = indice(&c, "gama-generico");
-    c[k].anexos = vec![(b"grande.bin".to_vec(), vec![0x5a; MAX_ANEXOS_SOMADOS])];
+    c[k].anexos = vec![(b"grande.bin".to_vec(), vec![0x5a; MAX_ATTACHMENTS_TOTAL])];
     let k = indice(&c, "beta-github-api");
     c[k].extras = (0..2)
         .map(|i| {
             (
                 format!("e{i:02}").into_bytes(),
                 1,
-                vec![b'k'; MAX_VALOR_EXTRA],
+                vec![b'k'; MAX_EXTRA_VALUE],
             )
         })
         .collect();
@@ -1329,7 +1334,7 @@ fn v2_39_secao_de_configuracao_forjada() {
         ),
         (
             "acima do limite",
-            vec![b'$'; crate::limites::MAX_HASH_PIN + 1],
+            vec![b'$'; crate::limits::MAX_PIN_HASH + 1],
         ),
     ];
     let corpo = corpo_de_teste();
@@ -1454,11 +1459,11 @@ fn v2_39_secao_de_configuracao_forjada() {
 #[test]
 fn v2_39_hash_rebaixado_do_pin_certo_recusado() {
     let fraco = ParametrosKdfPin {
-        memoria_kib: 8,
+        memory_kib: 8,
         passes: 1,
-        paralelismo: 1,
+        parallelism: 1,
     };
-    let rebaixado = crate::cripto::hash_pin(PIN_TESTE.as_bytes(), &fraco).unwrap();
+    let rebaixado = crate::crypto::hash_pin(PIN_TESTE.as_bytes(), &fraco).unwrap();
     // O hash rebaixado é PHC válido de Argon2id (a biblioteca o confere)…
     {
         use argon2::password_hash::PasswordVerifier;
@@ -1508,42 +1513,42 @@ fn serializar_recusa_configuracao_fora_da_regra() {
 #[cfg(unix)]
 #[test]
 fn v2_44_geracao_sobe_e_retrocesso_e_recusado() {
-    use crate::gravacao::{ErroGravacao, gravar_entradas, trocar_senha};
+    use crate::atomic_write::{WriteError, change_password, write_entries};
 
     let dir = Dir::novo("geracao");
     let destino = dir.0.join("cofre.ward");
-    let senha = SenhaMestra::nova(SENHA_MESTRA.to_owned());
-    let nova = SenhaMestra::nova("falso-mestra-ward-02".to_owned());
+    let senha = MasterPassword::new(SENHA_MESTRA.to_owned());
+    let nova = MasterPassword::new("falso-mestra-ward-02".to_owned());
     let entradas = cofre_de_teste();
-    let geracao_do_arquivo = |s: &SenhaMestra| {
+    let geracao_do_arquivo = |s: &MasterPassword| {
         let arquivo = std::fs::read(&destino).unwrap();
-        abrir_entradas(&arquivo, s).unwrap().0.geracao()
+        abrir_entradas(&arquivo, s).unwrap().0.generation()
     };
 
-    let mut cofre = CofreAberto::novo(&senha, configuracao_nova()).unwrap();
-    assert_eq!(cofre.geracao(), 0);
-    gravar_entradas(&destino, &mut cofre, &entradas).unwrap();
-    let n = cofre.geracao();
+    let mut cofre = OpenVault::new(&senha, configuracao_nova()).unwrap();
+    assert_eq!(cofre.generation(), 0);
+    write_entries(&destino, &mut cofre, &entradas).unwrap();
+    let n = cofre.generation();
     assert_eq!(n, 1);
     assert_eq!(geracao_do_arquivo(&senha), n);
     let antigo = std::fs::read(&destino).unwrap();
 
-    // n+1 por `gravar_entradas`.
-    gravar_entradas(&destino, &mut cofre, &entradas).unwrap();
-    assert_eq!(cofre.geracao(), n + 1);
+    // n+1 por `write_entries`.
+    write_entries(&destino, &mut cofre, &entradas).unwrap();
+    assert_eq!(cofre.generation(), n + 1);
     assert_eq!(geracao_do_arquivo(&senha), n + 1);
 
     // Falha na gravação depois de selar (destino vira diretório, o rename falha): o
     // arquivo segue com n+1 e o cofre aberto fica com a geração que selou (D53).
     let diretorio = dir.0.join("sou-diretorio");
     std::fs::create_dir(&diretorio).unwrap();
-    assert!(gravar_entradas(&diretorio, &mut cofre, &entradas).is_err());
-    assert_eq!(cofre.geracao(), n + 2);
+    assert!(write_entries(&diretorio, &mut cofre, &entradas).is_err());
+    assert_eq!(cofre.generation(), n + 2);
     assert_eq!(geracao_do_arquivo(&senha), n + 1);
 
     // A troca de senha (mínimo n+1, o que o daemon viu; queimada n+2) sela n+3.
-    let (trocado, _) = trocar_senha(&destino, &senha, &nova, n + 1, cofre.geracao()).unwrap();
-    assert_eq!(trocado.geracao(), n + 3);
+    let (trocado, _) = change_password(&destino, &senha, &nova, n + 1, cofre.generation()).unwrap();
+    assert_eq!(trocado.generation(), n + 3);
     assert_eq!(geracao_do_arquivo(&nova), n + 3);
     let do_n3 = std::fs::read(&destino).unwrap();
     let (_, lidas) = abrir_entradas_desde(&do_n3, &nova, n + 3, n + 3).unwrap();
@@ -1569,8 +1574,8 @@ fn v2_44_geracao_sobe_e_retrocesso_e_recusado() {
     assert!(abrir_entradas_desde(&arquivo, &senha, n, 0).is_ok());
     // A troca de senha sobre o arquivo antigo também recusa, e não toca no disco.
     assert_eq!(
-        trocar_senha(&destino, &senha, &nova, n + 3, n + 3).unwrap_err(),
-        ErroGravacao::Retrocesso
+        change_password(&destino, &senha, &nova, n + 3, n + 3).unwrap_err(),
+        WriteError::Rollback
     );
     assert!(std::fs::read(&destino).unwrap() == antigo);
 }
@@ -1579,20 +1584,20 @@ fn v2_44_geracao_sobe_e_retrocesso_e_recusado() {
 #[cfg(unix)]
 #[test]
 fn v2_44_geracao_esgotada_nao_toca_no_disco() {
-    use crate::gravacao::{ErroGravacao, gravar_entradas};
+    use crate::atomic_write::{WriteError, write_entries};
 
     let dir = Dir::novo("esgotada");
     let destino = dir.0.join("cofre.ward");
-    let senha = SenhaMestra::nova(SENHA_MESTRA.to_owned());
-    let mut cofre = CofreAberto::novo(&senha, configuracao_nova()).unwrap();
-    gravar_entradas(&destino, &mut cofre, &[]).unwrap();
+    let senha = MasterPassword::new(SENHA_MESTRA.to_owned());
+    let mut cofre = OpenVault::new(&senha, configuracao_nova()).unwrap();
+    write_entries(&destino, &mut cofre, &[]).unwrap();
     let antes = std::fs::read(&destino).unwrap();
-    cofre.queimar(u64::MAX);
+    cofre.burn(u64::MAX);
     assert_eq!(
-        gravar_entradas(&destino, &mut cofre, &cofre_de_teste()).unwrap_err(),
-        ErroGravacao::GeracaoEsgotada
+        write_entries(&destino, &mut cofre, &cofre_de_teste()).unwrap_err(),
+        WriteError::GenerationExhausted
     );
-    assert_eq!(cofre.geracao(), u64::MAX);
+    assert_eq!(cofre.generation(), u64::MAX);
     assert!(std::fs::read(&destino).unwrap() == antes);
     let nomes: Vec<_> = std::fs::read_dir(&dir.0).unwrap().collect();
     assert_eq!(nomes.len(), 1, "sobrou temporário");
@@ -1723,10 +1728,10 @@ fn ataque_corpo_forjado_com_texto_variavel_e_usuario() {
 }
 
 /// V2.51 (D45): a mensagem de `GrandeDemais` sai das constantes de `limites` (mudar
-/// `MAX_CORPO` ou `MAX_ENTRADAS` muda a mensagem, e este teste confere contra elas).
+/// `MAX_BODY` ou `MAX_ENTRIES` muda a mensagem, e este teste confere contra elas).
 #[test]
 fn v2_51_mensagem_de_grande_demais_acompanha_os_limites() {
-    use crate::limites::{MAX_CORPO, MAX_ENTRADAS, MIB};
+    use crate::limits::{MAX_BODY, MAX_ENTRIES, MIB};
     let msg = format!("{}", ErroCorpo::GrandeDemais);
     let milhar = |n: usize| {
         let s = n.to_string();
@@ -1743,13 +1748,13 @@ fn v2_51_mensagem_de_grande_demais_acompanha_os_limites() {
         msg,
         format!(
             "cofre grande demais (limite de {} MiB e {} entradas)",
-            MAX_CORPO / MIB,
-            milhar(MAX_ENTRADAS)
+            MAX_BODY / MIB,
+            milhar(MAX_ENTRIES)
         )
     );
     const {
         assert!(
-            MAX_CORPO.is_multiple_of(MIB),
+            MAX_BODY.is_multiple_of(MIB),
             "o limite do corpo é um número inteiro de MiB"
         )
     };
@@ -1786,12 +1791,12 @@ fn v2_58_corpo_forjado_com_ultimo_rotulo_numerico() {
 
 // ---- Fase 22d: D65 d (datas de criação e alteração, corpo v4; V3.41) ----
 
-/// A regra das datas: faixa de 1 a `MAX_DATA`, criação só com alteração e não depois
+/// A regra das datas: faixa de 1 a `MAX_DATE`, criação só com alteração e não depois
 /// dela; a alteração nunca desce, nem com o relógio voltando.
 #[test]
 fn d65_regra_das_datas() {
     assert_eq!(Datas::carimbo_novo(0), None);
-    assert_eq!(Datas::carimbo_novo(MAX_DATA + 1), None);
+    assert_eq!(Datas::carimbo_novo(MAX_DATE + 1), None);
     assert_eq!(Datas::carimbo_novo(u64::MAX), None);
     let d = Datas::carimbo_novo(1_000).unwrap();
     assert_eq!((d.criada_em(), d.alterada_em()), (Some(1_000), Some(1_000)));
@@ -1807,7 +1812,7 @@ fn d65_regra_das_datas() {
         (Some(1_000), Some(5_000))
     );
     assert_eq!(depois.alterado(0), None);
-    assert_eq!(depois.alterado(MAX_DATA + 1), None);
+    assert_eq!(depois.alterado(MAX_DATE + 1), None);
     // Sem datas: a alteração ganha data, a criação segue desconhecida.
     let so_alterada = Datas::NENHUMA.alterado(77).unwrap();
     assert_eq!(
@@ -1876,14 +1881,14 @@ fn d65_datas_forjadas_no_corpo() {
     for (caso, criada, alterada) in [
         ("criação depois da alteração", 1_762_000_001, 1_762_000_000),
         ("criação sem alteração", 1_762_000_000, 0),
-        ("criação acima do máximo", MAX_DATA + 1, MAX_DATA + 1),
-        ("alteração acima do máximo", 0, MAX_DATA + 1),
+        ("criação acima do máximo", MAX_DATE + 1, MAX_DATE + 1),
+        ("alteração acima do máximo", 0, MAX_DATE + 1),
         ("as duas em u64::MAX", u64::MAX, u64::MAX),
         ("alteração em u64::MAX", 1, u64::MAX),
     ] {
         recusado(&com(criada, alterada), caso, &alterada.to_string());
     }
-    for (criada, alterada) in [(0, 0), (0, 7), (7, 7), (1, MAX_DATA), (MAX_DATA, MAX_DATA)] {
+    for (criada, alterada) in [(0, 0), (0, 7), (7, 7), (1, MAX_DATE), (MAX_DATE, MAX_DATE)] {
         let v = com(criada, alterada);
         let (c, entradas) = ler_tudo(&v).unwrap();
         conferir_aceito(&v, &c, &entradas);
@@ -1919,14 +1924,14 @@ fn d65_datas_so_mudam_os_16_bytes_da_entrada() {
 fn d65_cofre_v3_no_disco_recusado_sem_tocar_no_arquivo() {
     let dir = Dir::novo("v3");
     let destino = dir.0.join("cofre.ward");
-    let senha = SenhaMestra::nova(SENHA_MESTRA.to_owned());
-    let cofre = CofreAberto::novo(&senha, configuracao_nova()).unwrap();
-    let mut c = CruaCfg::de(cofre.configuracao());
+    let senha = MasterPassword::new(SENHA_MESTRA.to_owned());
+    let cofre = OpenVault::new(&senha, configuracao_nova()).unwrap();
+    let mut c = CruaCfg::de(cofre.config());
     c.geracao = Some(1);
     let base = cruas(&corpo_de_teste());
     let v3 = forjar_bruto(3, Some(&c), base.len() as u32, &base, false);
-    let arquivo = cofre.selar(&v3).unwrap();
-    crate::gravacao::gravar(&destino, &arquivo).unwrap();
+    let arquivo = cofre.seal(&v3).unwrap();
+    crate::atomic_write::write(&destino, &arquivo).unwrap();
     let antes = std::fs::read(&destino).unwrap();
     let meta = std::fs::metadata(&destino).unwrap();
     for (minima, queimada) in [(0, 0), (1, 1), (5, 9)] {
@@ -1943,5 +1948,5 @@ fn d65_cofre_v3_no_disco_recusado_sem_tocar_no_arquivo() {
     assert_eq!(nomes.len(), 1, "sobrou arquivo além do cofre");
     // Controle: o mesmo cofre com o corpo v4 abre.
     let v4 = forjar_bruto(4, Some(&c), base.len() as u32, &base, true);
-    assert!(abrir_entradas(&cofre.selar(&v4).unwrap(), &senha).is_ok());
+    assert!(abrir_entradas(&cofre.seal(&v4).unwrap(), &senha).is_ok());
 }

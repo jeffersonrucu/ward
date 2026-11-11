@@ -243,18 +243,18 @@ fn v6_2_preencher_so_na_origem_certa() {
         outra => panic!("esperava preenchimento: {:?}", outra.tipo()),
     }
     // TOTP: o código atual da semente, pelo relógio do daemon.
-    let esperado = Totp::de_semente(&ward_core::entrada::Segredo::de_bytes(
+    let esperado = Totp::from_seed(&ward_core::entrada::Segredo::de_bytes(
         SEMENTE.as_bytes().to_vec(),
     ))
     .unwrap()
-    .codigo_em(AGORA);
+    .code_at(AGORA);
     match preencher(
         &d,
         Papel::Extensao,
         "acme-totp-dev",
         "http://localhost:8083/",
     ) {
-        Resposta::Preenchimento { totp: Some(c), .. } => assert_eq!(&*c, esperado.codigo()),
+        Resposta::Preenchimento { totp: Some(c), .. } => assert_eq!(&*c, esperado.code()),
         outra => panic!("esperava preenchimento com TOTP: {:?}", outra.tipo()),
     }
 

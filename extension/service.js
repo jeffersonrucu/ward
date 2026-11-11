@@ -1,66 +1,69 @@
-// Service worker da extensão (Fase 42; V6.8; S1, S13): guarda, só em memória e por
-// pouco tempo, o login que o content script (`submit.js`) viu ser enviado, e o salva no
-// cofre quando o usuário confirma no popup.
+// Extension service worker (Phase 42; V6.8; S1, S13): keeps, only in memory and for a
+// short time, the login the content script (`submit.js`) saw being submitted, and saves
+// it to the vault when the user confirms in the popup.
 //
-// - A senha nunca sai daqui para o popup: o popup recebe só a origem e o usuário, e no
-//   "Salvar" manda nome, usuário, grupo e ambiente; quem junta a senha e manda
-//   `salvar_login` ao `ward-nm` é este service worker.
-// - Nada é guardado em disco (sem a permissão `storage`, sem armazenamento da página);
-//   o pendente some ao salvar, no "Agora não", ao fechar a aba, em 3 minutos ou quando o
-//   Chrome encerra o service worker.
-// - Quem manda cada mensagem sai do `sender` que o Chrome preenche, nunca do conteúdo:
-//   o envio só vale do content script do quadro principal de uma aba http/https; o
-//   pedido, o salvar e o descartar só valem do `popup.html` da própria extensão. Página
-//   nenhuma fala com a extensão (sem `externally_connectable`, V6.6).
-// - Só oferece login que o cofre não tem: o daemon responde `sugerir` para a origem, e
-//   o usuário enviado não pode estar entre as sugestões. Com o cofre travado (ou sem o
-//   Ward), o envio é descartado na hora.
-// - Fase 43: o `ward login` mora em `login.js` (porta de native messaging aberta com o
-//   `ward-nm`, que também mantém este service worker vivo).
-// - Fase 44c (D9): o preencher do popup numa origem `http` (`localhost`/`127.0.0.1`;
-//   Fase 44e: e de todo host desta máquina em `https`, `pedeJanela`) espera o usuário
-//   confirmar a origem na janela do Ward (até 2 min). O popup fecha quando a janela
-//   pega o foco, então quem espera e preenche é este service worker: o popup manda a
-//   aba, o `documentId` que a sonda dele achou, a entrada e a origem; a resposta do
-//   daemon vai direto como argumento ao preenchimento naquele documento e é apagada
-//   logo depois. Nada volta ao popup além de "ok" ou o código do erro.
+// - The password never leaves here for the popup: the popup gets only the origin and
+//   the username, and on "Save" it sends name, username, group and environment; this
+//   service worker is the one that adds the password and sends the save-login operation
+//   to `ward-nm`.
+// - Nothing is kept on disk (no `storage` permission, no page storage); the pending
+//   login goes away on save, on "Not now", when the tab closes, after 3 minutes or when
+//   Chrome stops the service worker.
+// - Who sends each message comes from the `sender` Chrome fills in, never from the
+//   content: the submit only counts from the content script of the main frame of an
+//   http/https tab; the pending query, the save and the discard only count from the
+//   extension's own `popup.html`. No page talks to the extension (no
+//   `externally_connectable`, V6.6).
+// - It only offers a login the vault does not have: the daemon answers the suggest
+//   operation for the origin, and the submitted username cannot be among the
+//   suggestions. With the vault locked (or without Ward), the submit is dropped at once.
+// - Phase 43: `ward login` lives in `login.js` (native messaging port opened with
+//   `ward-nm`, which also keeps this service worker alive).
+// - Phase 44c (D9): the popup fill on an `http` origin (`localhost`/`127.0.0.1`;
+//   Phase 44e: and on every host of this machine in `https`, `needsWindow`) waits for
+//   the user to confirm the origin in the Ward window (up to 2 min). The popup closes
+//   when the window takes the focus, so this service worker is the one that waits and
+//   fills: the popup sends the tab, the `documentId` its probe found, the entry and the
+//   origin; the daemon reply goes straight as an argument to the fill in that document
+//   and is wiped right after. Nothing goes back to the popup but "ok" or the error code.
 
-import { iniciarLogin } from './login.js';
-import { pedeJanela, preencherNaPagina } from './page.js';
+import { startLogin } from './login.js';
+import { needsWindow, fillInPage } from './page.js';
 
 const HOST = 'br.ward.nm';
 const POPUP = chrome.runtime.getURL('popup.html');
-const PRAZO_MS = 3 * 60 * 1000;
-// D25: usuário e senha até 2 KiB; nome, grupo e o resto o daemon valida.
+const TIMEOUT_MS = 3 * 60 * 1000;
+// D25: username and password up to 2 KiB; name, group and the rest the daemon validates.
 const MAX = 2048;
-const AMBIENTES = new Set(['dev', 'stage', 'prod']);
+const ENVIRONMENTS = new Set(['dev', 'stage', 'prod']);
 
-/** tabId → { origem, url, usuario, senha, timer }. Um por aba; o novo troca o velho. */
-const pendentes = new Map();
+/** tabId → { origin, url, username, password, timer }. One per tab; the new one replaces
+ * the old. */
+const pendingLogins = new Map();
 
-function descartar(aba) {
-  const p = pendentes.get(aba);
+function discard(tab) {
+  const p = pendingLogins.get(tab);
   if (!p) return;
   clearTimeout(p.timer);
-  p.senha = '';
-  p.usuario = '';
-  pendentes.delete(aba);
+  p.password = '';
+  p.username = '';
+  pendingLogins.delete(tab);
 }
 
-const texto = (v, max) =>
+const isText = (v, max) =>
   typeof v === 'string' && v.length > 0 && v.length <= max && !v.includes('\0');
 
-async function enviar(pedido) {
+async function send(request) {
   try {
-    const r = await chrome.runtime.sendNativeMessage(HOST, pedido);
+    const r = await chrome.runtime.sendNativeMessage(HOST, request);
     return r && typeof r === 'object' ? r : null;
   } catch {
     return null;
   }
 }
 
-/** Origem http/https de uma URL, ou `null`. */
-function origemDa(url) {
+/** http/https origin of a URL, or `null`. */
+function originOf(url) {
   try {
     const u = new URL(url);
     if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
@@ -70,56 +73,57 @@ function origemDa(url) {
   }
 }
 
-/** A URL da entrada: origem e caminho do documento enviado, sem consulta nem fragmento. */
-function urlDaEntrada(url) {
+/** The entry URL: origin and path of the submitted document, without query or
+ * fragment. */
+function entryUrl(url) {
   const u = new URL(url);
   return u.origin + u.pathname;
 }
 
-/** O envio veio do content script do quadro principal de uma aba http/https? */
-function doContentScript(sender) {
+/** Did the submit come from the content script of the main frame of an http/https tab? */
+function fromContentScript(sender) {
   if (sender.id !== chrome.runtime.id || !sender.tab || sender.tab.incognito) return null;
   if (sender.frameId !== 0 || !Number.isInteger(sender.tab.id) || sender.tab.id < 0) return null;
   if (sender.documentLifecycle !== undefined && sender.documentLifecycle !== 'active') return null;
-  const origem = origemDa(sender.url);
-  if (!origem || sender.origin !== origem) return null;
-  return { aba: sender.tab.id, janela: sender.tab.windowId, origem, url: urlDaEntrada(sender.url) };
+  const origin = originOf(sender.url);
+  if (!origin || sender.origin !== origin) return null;
+  return { tab: sender.tab.id, window: sender.tab.windowId, origin, url: entryUrl(sender.url) };
 }
 
-/** A mensagem veio do popup da própria extensão (página da extensão, sem aba)? */
-function doPopup(sender) {
+/** Did the message come from the extension's own popup (an extension page, no tab)? */
+function fromPopup(sender) {
   return sender.id === chrome.runtime.id && !sender.tab && sender.url === POPUP;
 }
 
-async function aoEnviar(msg, de) {
-  if (!texto(msg.usuario, MAX) || !texto(msg.senha, MAX)) return;
-  const r = await enviar({ v: 1, op: 'sugerir', dados: { origem: de.origem } });
+async function onSubmitted(msg, from) {
+  if (!isText(msg.usuario, MAX) || !isText(msg.senha, MAX)) return;
+  const r = await send({ v: 1, op: 'sugerir', 'dados': { 'origem': from.origin } });
   if (!r || r.tipo !== 'sugestoes' || !r.dados || !Array.isArray(r.dados.itens)) return;
   if (r.dados.itens.some((s) => s && s.usuario === msg.usuario)) return;
-  descartar(de.aba);
+  discard(from.tab);
   const p = {
-    origem: de.origem,
-    url: de.url,
-    usuario: msg.usuario,
-    senha: msg.senha,
-    timer: setTimeout(() => descartar(de.aba), PRAZO_MS),
+    origin: from.origin,
+    url: from.url,
+    username: msg.usuario,
+    password: msg.senha,
+    timer: setTimeout(() => discard(from.tab), TIMEOUT_MS),
   };
-  pendentes.set(de.aba, p);
+  pendingLogins.set(from.tab, p);
   try {
-    await chrome.action.openPopup({ windowId: de.janela });
+    await chrome.action.openPopup({ windowId: from.window });
   } catch {
-    // Sem janela em foco: o popup mostra o pendente quando o usuário clicar no ícone.
+    // No focused window: the popup shows the pending login when the user clicks the icon.
   }
 }
 
-/** Quanto esperar a resposta do `preencher` com a janela (o daemon espera 2 min). */
-const PRAZO_JANELA_MS = 130 * 1000;
+/** How long to wait for the reply of the fill with the window (the daemon waits 2 min). */
+const WINDOW_TIMEOUT_MS = 130 * 1000;
 
 /**
- * Um pedido ao host por uma porta própria: o `connectNative` mantém o service worker
- * vivo enquanto a janela de aprovação espera. `null` se o host não respondeu.
+ * A request to the host over a port of its own: `connectNative` keeps the service worker
+ * alive while the approval window waits. `null` if the host did not reply.
  */
-function pedirPorPorta(pedido) {
+function requestByPort(request) {
   return new Promise((ok) => {
     let p;
     try {
@@ -128,78 +132,78 @@ function pedirPorPorta(pedido) {
       ok(null);
       return;
     }
-    let feito = false;
-    let prazo = null;
-    const fim = (r) => {
-      if (feito) return;
-      feito = true;
-      clearTimeout(prazo);
+    let done = false;
+    let timeout = null;
+    const finish = (r) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timeout);
       try {
         p.disconnect();
       } catch {
-        // já fechada
+        // already closed
       }
       ok(r);
     };
-    prazo = setTimeout(() => fim(null), PRAZO_JANELA_MS);
-    p.onMessage.addListener((m) => fim(m && typeof m === 'object' ? m : null));
+    timeout = setTimeout(() => finish(null), WINDOW_TIMEOUT_MS);
+    p.onMessage.addListener((m) => finish(m && typeof m === 'object' ? m : null));
     p.onDisconnect.addListener(() => {
       void chrome.runtime.lastError;
-      fim(null);
+      finish(null);
     });
     try {
-      p.postMessage(pedido);
+      p.postMessage(request);
     } catch {
-      fim(null);
+      finish(null);
     }
   });
 }
 
-/** Fase 44c: o preencher do popup numa origem `http` (Fase 44e: ou de um host desta
- * máquina em `https`), com a janela do Ward. */
-async function preencherComJanela(msg) {
-  const origem = typeof msg.origem === 'string' ? origemDa(msg.origem) : null;
+/** Phase 44c: the popup fill on an `http` origin (Phase 44e: or on a host of this
+ * machine in `https`), with the Ward window. */
+async function fillWithWindow(msg) {
+  const origin = typeof msg.origem === 'string' ? originOf(msg.origem) : null;
   if (
-    !texto(msg.entrada, MAX) ||
+    !isText(msg.entrada, MAX) ||
     typeof msg.documento !== 'string' ||
     msg.documento.length === 0 ||
     msg.documento.length > MAX ||
-    !origem ||
-    origem !== msg.origem ||
-    !pedeJanela(origem)
+    !origin ||
+    origin !== msg.origem ||
+    !needsWindow(origin)
   ) {
-    return { erro: 'pedido_invalido' };
+    return { 'erro': 'pedido_invalido' };
   }
-  let r = await pedirPorPorta({ v: 1, op: 'preencher', dados: { entrada: msg.entrada, origem } });
+  let r = await requestByPort({ v: 1, op: 'preencher', 'dados': { 'entrada': msg.entrada, 'origem': origin } });
   if (!r || r.tipo !== 'preenchimento' || !r.dados) {
-    const codigo = r && r.tipo === 'erro' && r.dados ? String(r.dados.codigo) : 'sem_resposta';
-    return { erro: codigo };
+    const code = r && r.tipo === 'erro' && r.dados ? String(r.dados.codigo) : 'sem_resposta';
+    return { 'erro': code };
   }
   const d = r.dados;
-  const args = [origem, String(d.usuario ?? ''), String(d.senha ?? ''), String(d.totp ?? '')];
+  const args = [origin, String(d.usuario ?? ''), String(d.senha ?? ''), String(d.totp ?? '')];
   d.senha = '';
   d.totp = '';
   d.usuario = '';
   r = null;
-  let feito = null;
+  let done = null;
   try {
-    [feito] = await chrome.scripting.executeScript({
+    [done] = await chrome.scripting.executeScript({
       target: { tabId: msg.aba, documentIds: [msg.documento] },
       world: 'ISOLATED',
-      func: preencherNaPagina,
+      func: fillInPage,
       args,
     });
   } catch {
-    feito = null;
+    done = null;
   } finally {
     args.fill('');
   }
-  const v = feito && feito.result;
+  const v = done && done.result;
   if (v && v.ok === true) return { ok: true };
-  return { erro: (v && typeof v.motivo === 'string' && v.motivo) || 'origem' };
+  return { 'erro': (v && typeof v.reason === 'string' && v.reason) || 'origem' };
 }
 
-/** Base64 dos bytes UTF-8 (como o protocolo leva os segredos). */
+/** Base64 of the UTF-8 bytes (how the protocol carries the secrets). */
 function base64(s) {
   const bytes = new TextEncoder().encode(s);
   let bin = '';
@@ -208,79 +212,79 @@ function base64(s) {
   return btoa(bin);
 }
 
-async function salvar(msg) {
-  const p = pendentes.get(msg.aba);
-  if (!p) return { erro: 'expirou' };
+async function save(msg) {
+  const p = pendingLogins.get(msg.aba);
+  if (!p) return { 'erro': 'expirou' };
   if (
-    !texto(msg.nome, MAX) ||
-    !texto(msg.usuario, MAX) ||
+    !isText(msg.nome, MAX) ||
+    !isText(msg.usuario, MAX) ||
     typeof msg.grupo !== 'string' ||
     msg.grupo.length > MAX ||
-    !AMBIENTES.has(msg.ambiente)
+    !ENVIRONMENTS.has(msg.ambiente)
   ) {
-    return { erro: 'pedido_invalido' };
+    return { 'erro': 'pedido_invalido' };
   }
-  const pedido = {
+  const request = {
     v: 1,
     op: 'salvar_login',
-    dados: {
-      entrada: {
-        nome: msg.nome,
-        grupo: msg.grupo,
-        ambiente: msg.ambiente,
-        tipo: 'login',
-        campos: { url: p.url, usuario: msg.usuario, senha: base64(p.senha) },
+    'dados': {
+      'entrada': {
+        'nome': msg.nome,
+        'grupo': msg.grupo,
+        'ambiente': msg.ambiente,
+        'tipo': 'login',
+        'campos': { url: p.url, 'usuario': msg.usuario, 'senha': base64(p.password) },
       },
     },
   };
-  const r = await enviar(pedido);
-  pedido.dados.entrada.campos.senha = '';
+  const r = await send(request);
+  request.dados.entrada.campos.senha = '';
   if (r && r.tipo === 'ok') {
-    descartar(msg.aba);
+    discard(msg.aba);
     return { ok: true };
   }
   const d = r && r.tipo === 'erro' && r.dados ? r.dados : null;
-  if (!d) return { erro: 'sem_resposta' };
-  const problemas = Array.isArray(d.problemas)
+  if (!d) return { 'erro': 'sem_resposta' };
+  const problems = Array.isArray(d.problemas)
     ? d.problemas
         .filter((x) => x && typeof x.campo === 'string' && typeof x.motivo === 'string')
-        .map((x) => ({ campo: x.campo, motivo: x.motivo }))
+        .map((x) => ({ 'campo': x.campo, 'motivo': x.motivo }))
     : [];
-  return { erro: String(d.codigo), problemas };
+  return { 'erro': String(d.codigo), 'problemas': problems };
 }
 
-chrome.tabs.onRemoved.addListener((aba) => descartar(aba));
+chrome.tabs.onRemoved.addListener((tab) => discard(tab));
 
-iniciarLogin();
+startLogin();
 
-chrome.runtime.onMessage.addListener((msg, sender, responder) => {
+chrome.runtime.onMessage.addListener((msg, sender, respond) => {
   if (!msg || typeof msg !== 'object' || typeof msg.t !== 'string') return false;
   if (sender.tab) {
-    // Content script: só o envio, e sem resposta nenhuma.
-    const de = msg.t === 'enviado' ? doContentScript(sender) : null;
-    if (de) aoEnviar(msg, de);
+    // Content script: only the submit, and no reply at all.
+    const from = msg.t === 'enviado' ? fromContentScript(sender) : null;
+    if (from) onSubmitted(msg, from);
     return false;
   }
-  if (!doPopup(sender) || !Number.isInteger(msg.aba)) return false;
+  if (!fromPopup(sender) || !Number.isInteger(msg.aba)) return false;
   switch (msg.t) {
     case 'pendente': {
-      const p = pendentes.get(msg.aba);
-      responder(p ? { origem: p.origem, usuario: p.usuario } : null);
+      const p = pendingLogins.get(msg.aba);
+      respond(p ? { 'origem': p.origin, 'usuario': p.username } : null);
       return false;
     }
     case 'manter':
-      // O popup aberto mantém o service worker vivo enquanto o usuário preenche.
-      responder(pendentes.has(msg.aba));
+      // The open popup keeps the service worker alive while the user fills in.
+      respond(pendingLogins.has(msg.aba));
       return false;
     case 'descartar':
-      descartar(msg.aba);
-      responder(true);
+      discard(msg.aba);
+      respond(true);
       return false;
     case 'salvar':
-      salvar(msg).then(responder, () => responder({ erro: 'sem_resposta' }));
+      save(msg).then(respond, () => respond({ 'erro': 'sem_resposta' }));
       return true;
     case 'preencher':
-      preencherComJanela(msg).then(responder, () => responder({ erro: 'sem_resposta' }));
+      fillWithWindow(msg).then(respond, () => respond({ 'erro': 'sem_resposta' }));
       return true;
     default:
       return false;

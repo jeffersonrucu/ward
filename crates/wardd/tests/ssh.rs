@@ -26,7 +26,7 @@ use std::time::{Duration, Instant};
 
 use comum::*;
 use ward_core::entrada::Segredo;
-use ward_core::limites::MAX_QUADRO_COMUM;
+use ward_core::limits::MAX_COMMON_FRAME;
 use ward_core::protocolo::quadro::{self, LIMITE_RESPOSTA};
 use ward_core::protocolo::{self, ErroResposta, Fluxo, Janela, Papel, Pedido, Resposta};
 use wardd::aprovacao::{Motor, RelogioMotor, SemApp, SemCliente};
@@ -341,7 +341,7 @@ impl Sessao {
 
 fn mandar(s: &mut UnixStream, p: &Pedido) {
     let corpo = protocolo::codificar_pedido(Papel::Agente, p).unwrap();
-    quadro::escrever_quadro(s, &corpo, MAX_QUADRO_COMUM).unwrap();
+    quadro::escrever_quadro(s, &corpo, MAX_COMMON_FRAME).unwrap();
 }
 
 /// Roda a sessão como o servidor rodaria. `cli` recebe a ponta da CLI logo depois do
@@ -407,7 +407,7 @@ fn fechar_entrada(s: &mut UnixStream) {
         },
     )
     .unwrap();
-    let _ = quadro::escrever_quadro(s, &corpo, MAX_QUADRO_COMUM);
+    let _ = quadro::escrever_quadro(s, &corpo, MAX_COMMON_FRAME);
 }
 
 /// O registro de um programa falso: `campo → valores`, na ordem.

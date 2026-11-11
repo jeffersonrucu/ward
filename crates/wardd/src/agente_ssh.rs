@@ -216,7 +216,7 @@ impl AgenteSsh {
         let chave = Chave::ler(chave, passphrase)?;
         let publica = chave.publica_em_texto()?;
         ward_platform::prepare_dir(rt).map_err(|_| ErroAgente::Sistema)?;
-        let sufixo = ward_core::gerador::token_conectar().map_err(|_| ErroAgente::Sistema)?;
+        let sufixo = ward_core::generator::connect_token().map_err(|_| ErroAgente::Sistema)?;
         let sufixo = std::str::from_utf8(&sufixo.expor()[..16]).map_err(|_| ErroAgente::Sistema)?;
         let pasta = rt.join(format!("{PREFIXO_PASTA}{sufixo}"));
         // Pasta nova: nunca reaproveita uma que já existe.

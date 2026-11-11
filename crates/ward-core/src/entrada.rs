@@ -514,7 +514,7 @@ pub struct SegredoDaEntrada<'a> {
 ///   cliente têm data. Nenhuma decisão de segurança usa estas datas (o rollback é D39,
 ///   pela geração).
 /// - Regra (conferida na construção e na leitura do corpo): cada data vai de 1 a
-///   [`crate::limites::MAX_DATA`]; com `criada_em`, `alterada_em` existe e não é menor.
+///   [`crate::limits::MAX_DATE`]; com `criada_em`, `alterada_em` existe e não é menor.
 ///   Uma entrada sem datas (a do `make dev-vault`, por exemplo) pode ganhar só a de
 ///   alteração quando é editada: a criação continua desconhecida.
 /// - Fora do crate só se lê: o valor nasce de uma [`Entrada`] ou de [`Datas::carimbo`].
@@ -531,9 +531,9 @@ impl Datas {
         alterada_em: None,
     };
 
-    /// Um instante válido para carimbar (de 1 a `MAX_DATA`), ou `None`.
+    /// Um instante válido para carimbar (de 1 a `MAX_DATE`), ou `None`.
     pub fn instante(segundos: u64) -> Option<u64> {
-        (1..=crate::limites::MAX_DATA)
+        (1..=crate::limits::MAX_DATE)
             .contains(&segundos)
             .then_some(segundos)
     }

@@ -1132,6 +1132,29 @@ Telas `Settings`, `Unlock`, `ChangePassword`, `ChangePin`, `ChooseUsbDrive`, `li
 | `extensao/dist/` | `extension/dist/` |
 | `target/extensao/ward.crx` (saída do `make extensao-crx`) | `target/extension/ward.crx` (Fase 5) |
 
+Código da extensão e do montador (Fase 39). Os campos do protocolo de native messaging e
+das mensagens internas (`t`, `aba`, `usuario`, `senha`, `origem`, `erro`, `documento`,
+`entrada`, `nome`, `grupo`, `ambiente`, `problemas`…) ficam até a Fase 52 (seção 12;
+chaves entre aspas e `frozen.txt`); os motivos de `fillInPage` (`'origem'`, `'quadro'`,
+`'sem_campo'`, `'formulario'`, `'falha'`) e os desfechos do `ward login` (`'enviado'`,
+`'recusado'`, `'aba_mudou'`…) também, porque viram código de erro do fio.
+
+| Antigo | Novo |
+|---|---|
+| `page.js` › `pedeJanela`, `sondar`, `sondarDepois`, `preencherNaPagina(origemEsperada, usuario, senhaB64, totp, enviar)` | `needsWindow`, `probe`, `probeAfterSubmit`, `fillInPage(expectedOrigin, username, passwordB64, totp, submit)` |
+| resultado de `sondar`/`sondarDepois` `{ origem, topo, pronto, senha }` | `{ origin, top, ready, password }` |
+| resultado de `preencherNaPagina` `{ ok, motivo, enviado, usuario, totp }` | `{ ok, reason, submitted, username, totp }` (os valores de `reason` ficam) |
+| `login.js` › `iniciarLogin`, `porta`, `esperando`, `pedir`, `fechar`, `caiu`, `conectar`, `laco`, `atender`, `injetar`, `depoisDoEnvio`, `dormir` | `startLogin`, `port`, `waiting`, `request`, `close`, `dropped`, `connect`, `loop`, `serve`, `inject`, `afterSubmit`, `sleep` |
+| `service.js` › `pendentes`, `descartar`, `enviar`, `origemDa`, `urlDaEntrada`, `doContentScript`, `doPopup`, `aoEnviar`, `pedirPorPorta`, `preencherComJanela`, `salvar`, `PRAZO_MS`, `PRAZO_JANELA_MS`, `AMBIENTES` | `pendingLogins`, `discard`, `send`, `originOf`, `entryUrl`, `fromContentScript`, `fromPopup`, `onSubmitted`, `requestByPort`, `fillWithWindow`, `save`, `TIMEOUT_MS`, `WINDOW_TIMEOUT_MS`, `ENVIRONMENTS` |
+| `submit.js` › `aoEnviar`, `MINIMO`, `pegar`, `tipoDe`, `valorDe`, `desabilitado`, `atributo`, `dentro`, `retangulo`, `antes`, `ehForm`, `visivel` | `onSubmit`, `MINIMUM`, `getter`, `typeOf`, `valueOf`, `disabled`, `attribute`, `within`, `rect`, `before`, `isForm`, `visible` |
+| `popup.js` › `raiz`, `texto`, `icone`, `simbolo`, `cabecalho`, `botaoAbrirWard`, `mostrar`, `mostrarTravado`, `mostrarAviso`, `mostrarSugestoes`, `mostrarSalvar`, `falhou`, `preencher`, `pedirAoServico`, `sugestoesDoHost`, `campoTexto`, `campoSelect`, `codigoDe`, `iniciar` | `root`, `text`, `icon`, `symbol`, `header`, `openWardButton`, `show`, `showLocked`, `showNotice`, `showSuggestions`, `showSave`, `fail`, `fill`, `askService`, `hostSuggestions`, `textField`, `selectField`, `errorCode`, `start` |
+| `popup.js` › `NOTA`, `NOTA_VAZIA`, `FALHAS`, `AGUARDANDO_JANELA`, `FALHA_PADRAO`, `ROTULOS_HOST`, `ROTULO_CAMPO`, `FALHAS_SALVAR` | `NOTE`, `EMPTY_NOTE`, `FAILURES`, `WAITING_WINDOW`, `DEFAULT_FAILURE`, `HOST_LABELS`, `FIELD_OF_PROBLEM`, `SAVE_FAILURES` (novo: `STATUS_LABEL`, o texto `destravado`/`travado` do selo, que antes vinha da classe) |
+| classes do popup: `cabecalho`, `simbolo`, `simbolo-botao`, `nome-produto`, `estado` (`destravado`, `travado`), `corpo`, `origem`, `origem-textos`, `origem-rotulo`, `origem-valor`, `secundario`, `lista`, `item-textos`, `linha`, `item-nome`, `item-detalhe`, `badge-ambiente`, `badge-tipo`, `icone`, `nota`, `erro`, `rodape`, `botao`, `secundario-botao`, `primario` | `header`, `symbol`, `button-symbol`, `product-name`, `status` (`unlocked`, `locked`), `body`, `origin`, `origin-texts`, `origin-label`, `origin-value`, `secondary`, `list`, `item-texts`, `row`, `item-name`, `item-detail`, `badge-environment`, `badge-type`, `icon`, `note`, `error`, `footer`, `button`, `secondary-button`, `primary` (`item`, `avatar`, `popup`, `select` ficam) |
+| classes do travado e do salvar: `corpo-travado`, `avatar-grande`, `titulo-travado`, `texto-travado`, `com-formulario`, `popup-salvar`, `corpo-salvar`, `introducao`, `titulo-salvar`, `texto-salvar`, `campo`, `rotulo`, `entrada`, `entrada-mascara`, `mascara`, `entrada-select`, `ajuda`, `ajuda-fixa`, `com-erro`, `linha-dupla`, `nivel-inicial`, `nivel-textos`, `nivel-titulo`, `nivel-texto`, `rodape-salvar` | `locked-body`, `avatar-large`, `locked-title`, `locked-text`, `with-form`, `popup-save`, `save-body`, `intro`, `save-title`, `save-text`, `field`, `label`, `field-input`, `field-input-mask`, `mask`, `select-input`, `help`, `help-fixed`, `with-error`, `double-row`, `initial-level`, `level-texts`, `level-title`, `level-text`, `save-footer` |
+| ids do salvar `nome`, `usuario`, `tipo`, `ambiente`, `grupo`; `data-entrada` | `entry-name`, `entry-username`, `entry-type`, `entry-environment`, `entry-group`; `data-entry` |
+| `dist/`: `fontes.css`, `fontes/`, `marca.js` (`SIMBOLO` `{ caixa, t, d }`), `icones/extensao-<n>.png` | `fonts.css`, `fonts/`, `brand.js` (`SYMBOL` `{ box, t, d }`), `icons/extension-<n>.png` (a fonte `docs/design/icones/extensao-destravado-<n>.png` fica) |
+| `dev/extension/build.py` › `RAIZ`, `FONTE`, `ARQUIVOS`, `FONTES`, `TAMANHOS_ICONE`, `PERMISSOES`, `CHAVES_PROIBIDAS`, `PADROES_CONTENT`, `EXTENSOES`, `PROIBIDOS`, `PROIBIDOS_POR_ARQUIVO`, `falha`, `chave_publica`, `id_da_chave`, `id_do_host`, `conferir_manifesto`, `fontes_css`, `marca_js`, `conferir_pacote`; prefixo `montar-extensao:` | `ROOT`, `SOURCE`, `FILES`, `FONTS`, `ICON_SIZES`, `PERMISSIONS`, `FORBIDDEN_KEYS`, `CONTENT_PATTERNS`, `EXTENSIONS`, `FORBIDDEN`, `FORBIDDEN_PER_FILE`, `fail`, `public_key`, `key_id`, `host_id`, `check_manifest`, `fonts_css`, `brand_js`, `check_package`; `extension-build:` |
+
 ### Instalação (Fases 5 e 47)
 
 | Antigo | Novo |
@@ -1178,6 +1201,24 @@ Identificadores dos scripts `dev/tests/cli.py` e `extension.py` (Fase 40), pela 
 `interativo` → `interactive`, `capturar` → `capture`, `secao_fase_42` →
 `phase_42_section`, `tema_continua_escuro` → `theme_stays_dark`, `sem_prender` →
 `unstick`. Chaves do `qa.json`, nomes de fio, ids e classes do DOM ficam (literais).
+
+Identificadores de `dev/variations.py`, `dev/tests/variations_test.py`, `login.py` e
+`revealed_selection.py` (Fase 42), pela seção 2: `Recusa` → `Refusal`, `variacoes` →
+`variations`, `inteiro` → `whole`, `miolos_b64` → `b64_cores`, `escapadas` →
+`escaped_forms`, `aspas_duplas`/`aspas_simples` → `double_quoted`/`single_quoted`,
+`valores_da_linha` → `line_values`, `valores_json` → `json_values`, `campos_de_tab`
+(`_binarios`) → `tab_fields` (`binary_tab_fields`), `por_linha` → `per_line`,
+`de_linha` → `line_patterns`, `linhas_de_anexo` → `attachment_lines`, `da_entrada` →
+`entry_patterns` (chamada também pelo teste cruzado do `dev-vault.sh`), `coletar` →
+`collect`, `conferir_padroes` → `verify_patterns`, `validar_saida` → `validate_output`,
+`ler_do_repositorio` → `read_from_repo`, `listavel` → `listable`, `caracteres` →
+`char_count`; sentidos próprios: `BRANCO` (espaço em branco ASCII) → `WHITESPACE`,
+`BARRA` (`chr(92)`) → `BACKSLASH`, `ESQUEMAS` (esquema de URL) → `SCHEMES`. No
+`login.py`, como no `extension.py`: `envios` → `submissions`, `servir_paginas` →
+`serve_pages`, `atender_pausa` → `handle_pause`, `ward_nm_vivo` → `ward_nm_alive`. No
+`revealed_selection.py`: `modo_ler`/`modo_webkit` → `read_mode`/`webkit_mode`, `ler` →
+`read_selections` (e a opção interna `--ler` → `--read`), `no_principal` → `on_main`,
+`sem_valor` → `no_value`, `prova` → `proof`, `neutralizar` → `neutralize`.
 
 ### Evidência dos scripts (DT1; Fase 5)
 
@@ -2027,6 +2068,73 @@ com `Travada` → `Locked`, `SemTravar` → `NotLocked`; `PaiDiferente` → `Par
 `InsecureVariable`,
 `Depurador` → `Debugger`, `LerStatus` → `ReadStatus`, `LimiteMemlock` → `MemlockLimit`,
 `TravarMemoria` → `LockMemory`.
+
+Fase 10 (`ward-core`: `limits`, `crypto`, `totp`, `generator`, `origin`, `display`):
+`ErroTotp` → `TotpError` com `SementeInvalida` → `InvalidSeed`, `DigitosInvalidos` →
+`InvalidDigits`, `RelogioInvalido` → `InvalidClock`; `CodigoTotp` (o tipo do `totp`,
+não a resposta do protocolo) → `TotpCode` (`codigo()` → `code()`, `restante()` →
+`remaining()`), `Totp::de_semente`/`com_digitos`/`codigo_em`/`codigo_agora` →
+`from_seed`/`with_digits`/`code_at`/`code_now`; `ErroGerador` → `GeneratorError` com
+`TamanhoInvalido` → `InvalidSize`, `NenhumConjunto` → `NoSet`,
+`AleatorioIndisponivel` → `RandomUnavailable`; `OpcoesGerador { tamanho, minusculas,
+maiusculas, digitos, simbolos }` → `GeneratorOptions { size, lowercase, uppercase,
+digits, symbols }`; `gerar`/`gerar_com` → `generate`/`generate_with`,
+`token_conectar` → `connect_token`, `tokens_iguais` → `tokens_equal`; `cripto::Chave`
+→ `crypto::Key` (o `Key` do `chacha20poly1305` entra como `AeadKey`), `FalhaCripto` →
+`CryptoFailure`, `PhcPin` → `PinPhc`, `selar`/`abrir`/`aleatorio`/`chave_aleatoria`/
+`derivar_kek`/`conferir_pin`/`ler_phc_pin`/`iguais_em_tempo_constante` →
+`seal`/`open`/`random`/`random_key`/`derive_kek`/`verify_pin`/`read_pin_phc`/
+`constant_time_eq`, `TAM_CHAVE`/`TAM_NONCE`/`TAM_TAG` → `KEY_SIZE`/`NONCE_SIZE`/
+`TAG_SIZE`; `Origem::da_url` → `Origin::from_url`, `mesma_origem` → `same_origin`;
+`exibir_argumentos`/`exibir_texto`/`neutralizar`/`invisivel`/`AVISO_CORTE` →
+`display_args`/`display_text`/`neutralize`/`invisible`/`CUT_NOTICE`. Constantes de
+`limits` fora da regra direta: `MAX_BASE` → `MAX_DB_NAME`, `MAX_BASE_REDIS` →
+`MAX_REDIS_DB_NAME`, `MAX_ANEXOS_SOMADOS` → `MAX_ATTACHMENTS_TOTAL`, `LIMITE_PADROES`
+→ `PATTERN_LIMIT`, `ORCAMENTO_MASCARA` → `MASK_BUDGET`, `MINIMO_CONFIAVEL` →
+`TRUSTED_MINIMUM`, `MIN_CARACTERES_SENHA_MESTRA` → `MIN_MASTER_PASSWORD_CHARS`,
+`MINUTOS_TRAVA_PADRAO` → `DEFAULT_LOCK_MINUTES`, `MAX_QUADRO_COMUM`/`_APP`/`_RESPOSTA`
+→ `MAX_COMMON_FRAME`/`MAX_APP_FRAME`/`MAX_RESPONSE_FRAME`, `MAX_VARIAVEIS_AMBIENTE` →
+`MAX_ENV_VARIABLES`, `MAX_TEXTO_EXIBIDO` → `MAX_DISPLAYED_TEXT`. O `backup::MAX_NOME`
+(Fase 15) e o `MAX_CORPO` da ponte de teste (Fase 29) são outros itens e não mudaram.
+
+Fase 11 (`ward-core`: `format`, `atomic_write`): módulos `formato` → `format` e
+`gravacao` → `atomic_write`; `MAGIA`/`VERSAO`/`TAM_SAL`/`TAM_CABECALHO`/`MAX_CONTEUDO`
+→ `MAGIC`/`VERSION`/`SALT_SIZE`/`HEADER_SIZE`/`MAX_CONTENT` (a magia `WARDCOFR` fica);
+`ParametrosKdf { memoria_kib, passes, paralelismo }` → `KdfParams { memory_kib, passes,
+parallelism }` com `PADRAO`/`MINIMO`/`MAXIMO` → `DEFAULT`/`MINIMUM`/`MAXIMUM`;
+`Cabecalho { versao, kdf, tamanho_corpo }` → `Header { version, kdf, body_size }`;
+`ErroFormato` → `FormatError` com `SenhaOuArquivo` → `PasswordOrFile`,
+`VersaoNaoSuportada` → `UnsupportedVersion`, `ParametrosAbaixoDoMinimo`/
+`ParametrosAcimaDoMaximo` → `ParamsBelowMinimum`/`ParamsAboveMaximum`,
+`ConteudoGrande` → `ContentTooLarge`, `SenhaVazia` → `EmptyPassword`, `Aleatorio` →
+`Random`, `Cifrar` → `Encrypt`; `SenhaMestra` → `MasterPassword` (`nova`/`de_bytes`/
+`digitada`/`serve_de_nova` → `new`/`from_bytes`/`typed`/`is_valid_new`);
+`CofreAberto` → `OpenVault` (`novo`/`novo_com`/`depois_da_geracao`/`de_partes`/
+`geracao`/`proxima_geracao`/`queimar`/`parametros`/`configuracao`/`configuracao_mut`/
+`selar`/`autentica`/`geracao_selada` → `new`/`new_with`/`after_generation`/`from_parts`/
+`generation`/`next_generation`/`burn`/`params`/`config`/`config_mut`/`seal`/
+`authenticates`/`sealed_generation`); `ChavesCofre` → `VaultKeys` (`chave_dados` →
+`data_key`, `abrir_proprio` → `open_own`); `ler_cabecalho` → `read_header`, `abrir` →
+`open`, `trocar_senha` → `change_password`, `SenhaTrocada` → `PasswordChanged`.
+`IdentidadeArquivo` → `FileIdentity`; `Etapa` → `Step` com `Ler` → `Read`,
+`CriarTemporario` → `CreateTemp`, `Escrever` → `Write`, `FsyncTemporario` →
+`FsyncTemp`, `Renomear` → `Rename`, `FsyncDiretorio` → `FsyncDir`; `ErroGravacao` →
+`WriteError` com `GeracaoEsgotada` → `GenerationExhausted`, `Retrocesso` → `Rollback`,
+`NaoECofre` → `NotVault`, `Formato` → `Format`, `Corpo` → `Body`, `DestinoInvalido` →
+`InvalidDestination`, `Io { etapa, tipo, identidade }` → `Io { step, kind, identity }`;
+`Ponto` → `Point` com `DepoisDeCriar`/`Escrevendo`/`DepoisDeEscrever`/`DepoisDoFsync`/
+`DepoisDoRename`/`DepoisDoFsyncDir` → `AfterCreate`/`Writing`/`AfterWrite`/`AfterFsync`/
+`AfterRename`/`AfterFsyncDir`; `Gravado { identidade, backup }` → `Written { identity,
+backup }`; `gravar_entradas`(`_com_backup`) → `write_entries`(`_with_backup`),
+`trocar_senha_lido`/`trocar_senha_com_backup_lido` → `change_password_from_bytes`/
+`change_password_with_backup_from_bytes` ("lido" = com os bytes já lidos pelo
+chamador → `from_bytes`), `gravar_cofre` → `write_vault`, `gravar` → `write`,
+`limpar_temporarios` → `clean_temp_files` (só o do `atomic_write`: os
+`limpar_temporarios` de `wardd/execucao.rs` e `wardd/externo.rs` são outros e ficam
+para as fases deles), `gravar_novo_com_pontos` → `write_new_with_points`,
+`Temporario` → `TempFile`. Os ids `ErroResposta::Retrocesso`/`GeracaoEsgotada` do
+protocolo (Fase 17) e `ErroAbrir::Retrocesso` do corpo (Fase 14) são outros e não
+mudaram; o `backup::geracao_selada` (Fase 15) também não.
 
 Funções e métodos não estão listados um a um: o nome sai da seção 2 na ordem do inglês
 (`conferir_arquivo` → `verify_file`, `ler_cofre` → `read_vault`, `codificar_resposta` →

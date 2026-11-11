@@ -4,7 +4,7 @@
 use std::sync::OnceLock;
 
 use super::*;
-use crate::formato::{CofreAberto, SenhaMestra};
+use crate::format::{MasterPassword, OpenVault};
 
 const PIN: &[u8] = b"135790";
 
@@ -74,7 +74,7 @@ fn hash_e_phc_argon2id_padrao() {
     assert_eq!(campos.len(), 6);
     assert_eq!(campos[4].len(), 22);
     assert_eq!(campos[5].len(), 43);
-    assert!(t.len() <= MAX_HASH_PIN);
+    assert!(t.len() <= MAX_PIN_HASH);
     assert_eq!(hash().parametros(), KDF_PIN);
     let biblioteca = argon2::Argon2::default();
     assert!(biblioteca.verify_password(PIN, t).is_ok());
@@ -125,8 +125,8 @@ fn debug_e_erros_sem_segredo() {
     assert!(d.contains("••••"));
     let cfg = Configuracao::nova(HashPin::de_phc(t.as_bytes()).unwrap());
     let dc = format!("{cfg:?} {cfg:#?}");
-    let senha = SenhaMestra::nova("falso-mestra-ward-01".to_owned());
-    let cofre = CofreAberto::novo(&senha, cfg).unwrap();
+    let senha = MasterPassword::new("falso-mestra-ward-01".to_owned());
+    let cofre = OpenVault::new(&senha, cfg).unwrap();
     let dcofre = format!("{cofre:?} {cofre:#?}");
     for texto in [&d, &dc, &dcofre] {
         assert!(!texto.contains(&saida), "Debug com o hash");
@@ -151,7 +151,7 @@ fn debug_e_erros_sem_segredo() {
 fn configuracao_nova_tem_os_padroes() {
     let cfg = Configuracao::nova(HashPin::de_phc(hash().bytes()).unwrap());
     assert_eq!(cfg.minutos_trava(), 240);
-    assert_eq!(cfg.minutos_trava(), crate::limites::MINUTOS_TRAVA_PADRAO);
+    assert_eq!(cfg.minutos_trava(), crate::limits::DEFAULT_LOCK_MINUTES);
     assert!(!cfg.backup().ligado());
     assert_eq!(cfg.backup().uuid(), None);
     assert!(cfg.conferir_pin(PIN));
@@ -160,14 +160,14 @@ fn configuracao_nova_tem_os_padroes() {
 #[test]
 fn tempo_de_trava_na_faixa() {
     let mut cfg = Configuracao::nova(HashPin::de_phc(hash().bytes()).unwrap());
-    for invalido in [0, MAX_MINUTOS_TRAVA + 1, u32::MAX] {
+    for invalido in [0, MAX_LOCK_MINUTES + 1, u32::MAX] {
         assert_eq!(
             cfg.definir_minutos_trava(invalido),
             Err(ErroConfiguracao::TempoDeTrava)
         );
         assert_eq!(cfg.minutos_trava(), 240, "valor recusado não muda nada");
     }
-    for valido in [MIN_MINUTOS_TRAVA, 30, MAX_MINUTOS_TRAVA] {
+    for valido in [MIN_LOCK_MINUTES, 30, MAX_LOCK_MINUTES] {
         cfg.definir_minutos_trava(valido).unwrap();
         assert_eq!(cfg.minutos_trava(), valido);
     }

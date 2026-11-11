@@ -1,35 +1,35 @@
-// Funções que o popup injeta na aba com `chrome.scripting.executeScript` (Fase 41; D9;
-// V6.4, V6.6). Rodam no mundo isolado da extensão, só no quadro principal: a página
-// não vê nem altera as variáveis daqui, e nenhuma delas deixa ouvinte de mensagem
-// (`postMessage` ou `chrome.runtime`) para trás.
+// Functions the popup injects into the tab with `chrome.scripting.executeScript`
+// (Phase 41; D9; V6.4, V6.6). They run in the extension's isolated world, only in the
+// main frame: the page neither sees nor changes the variables here, and none of them
+// leaves a message listener (`postMessage` or `chrome.runtime`) behind.
 //
-// Cada função é serializada pelo Chrome (`func.toString()`): não pode usar nada de fora
-// dela. Por isso as duas repetem os mesmos auxiliares.
+// Chrome serializes each function (`func.toString()`): it cannot use anything from
+// outside itself. That is why they repeat the same helpers.
 //
-// DOM clobbering: elementos da página com `name`/`id` iguais a uma propriedade passam na
-// frente dela. As propriedades com nome do `<form>` chegam ao mundo isolado (um
-// `<input name="action">` troca o `form.action`, um `<input name="elements">` o
-// `form.elements`); as do `document` não chegam no Chrome de hoje (um
-// `<img name="querySelectorAll">` não troca o `document.querySelectorAll` daqui,
-// conferido na Fase 44a). O código não depende disso: todo acesso ao DOM vai pelos
-// protótipos do mundo isolado (`Document.prototype.querySelectorAll.call(...)`,
-// descritores de `HTMLFormElement.prototype` e `HTMLInputElement.prototype`), que a
-// página não alcança.
+// DOM clobbering: page elements whose `name`/`id` equals a property shadow it. The
+// named properties of the `<form>` reach the isolated world (an `<input name="action">`
+// replaces `form.action`, an `<input name="elements">` replaces `form.elements`); those
+// of the `document` do not reach it in today's Chrome (an `<img name="querySelectorAll">`
+// does not replace `document.querySelectorAll` here, checked in Phase 44a). The code does
+// not rely on that: every DOM access goes through the isolated world's prototypes
+// (`Document.prototype.querySelectorAll.call(...)`, descriptors of
+// `HTMLFormElement.prototype` and `HTMLInputElement.prototype`), which the page cannot
+// reach.
 
 /**
- * Fase 44e (D9): o preencher desta origem passa pela janela do Ward? Sim em `http`
- * e em todo host desta máquina em qualquer esquema (`localhost`, `*.localhost`,
- * `127.x.x.x`, `0.x.x.x` e todo IPv6 literal). Esta não é injetada: só o popup e o
- * service worker a usam para escolher o caminho. Quem decide é o daemon
- * (`ward_core::entrada::origem_local_da_url`); aqui a regra é mais larga de propósito:
- * o caminho do service worker serve a qualquer origem (só espera mais), e o caminho
- * direto numa origem que o daemon confirma perderia o preenchimento (o popup fecha
- * quando a janela pega o foco).
+ * Phase 44e (D9): does the fill for this origin go through the Ward window? Yes for
+ * `http` and for every host of this machine in any scheme (`localhost`, `*.localhost`,
+ * `127.x.x.x`, `0.x.x.x` and every IPv6 literal). This one is not injected: only the
+ * popup and the service worker use it to pick the path. The daemon decides (the local
+ * origin check of the entry URL in `ward_core`); the rule here is wider on purpose: the
+ * service worker path serves any origin (it only waits longer), and the direct path on
+ * an origin the daemon confirms would lose the fill (the popup closes when the window
+ * takes the focus).
  */
-export function pedeJanela(origem) {
+export function needsWindow(origin) {
   let u;
   try {
-    u = new URL(origem);
+    u = new URL(origin);
   } catch {
     return false;
   }
@@ -42,32 +42,32 @@ export function pedeJanela(origem) {
   return m !== null && (m[1] === '127' || m[1] === '0');
 }
 
-/** Sonda o documento do quadro principal: a origem dele e se é mesmo o topo. */
-export function sondar() {
+/** Probes the main frame document: its origin and whether it really is the top. */
+export function probe() {
   try {
     return {
-      origem: String(window.location.origin),
-      topo: window === window.top,
+      origin: String(window.location.origin),
+      top: window === window.top,
     };
   } catch {
-    return { origem: '', topo: false };
+    return { origin: '', top: false };
   }
 }
 
 /**
- * Depois do envio do `ward login` (Fase 43): a origem do documento do quadro principal,
- * se ele já carregou e se ainda há campo de senha visível (o site recusou o login).
- * Nenhum valor é lido.
+ * After the `ward login` submit (Phase 43): the origin of the main frame document,
+ * whether it has finished loading and whether a visible password field is still there
+ * (the site refused the login). No value is read.
  */
-export function sondarDepois() {
+export function probeAfterSubmit() {
   try {
-    const tipoDe = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'type').get;
-    const pronto = Object.getOwnPropertyDescriptor(Document.prototype, 'readyState').get;
-    const campos = Array.prototype.slice.call(
+    const typeOf = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'type').get;
+    const readyState = Object.getOwnPropertyDescriptor(Document.prototype, 'readyState').get;
+    const inputs = Array.prototype.slice.call(
       Document.prototype.querySelectorAll.call(document, 'input'),
     );
-    const senha = campos.some((el) => {
-      if (tipoDe.call(el) !== 'password') return false;
+    const password = inputs.some((el) => {
+      if (typeOf.call(el) !== 'password') return false;
       if (
         !Element.prototype.checkVisibility.call(el, { checkOpacity: true, checkVisibilityCSS: true })
       ) {
@@ -77,55 +77,56 @@ export function sondarDepois() {
       return r.width >= 4 && r.height >= 4;
     });
     return {
-      origem: String(window.location.origin),
-      topo: window === window.top,
-      pronto: pronto.call(document) === 'complete',
-      senha,
+      origin: String(window.location.origin),
+      top: window === window.top,
+      ready: readyState.call(document) === 'complete',
+      password,
     };
   } catch {
-    return { origem: '', topo: false, pronto: false, senha: false };
+    return { origin: '', top: false, ready: false, password: false };
   }
 }
 
 /**
- * Preenche usuário, senha e TOTP no documento do quadro principal, só se a origem dele
- * for a esperada. Devolve só o que preencheu (nunca valores). A senha chega em base64
- * (como no protocolo); os bytes decodificados são zerados logo depois de virar texto.
+ * Fills username, password and TOTP in the main frame document, only if its origin is
+ * the expected one. Returns only what it filled (never values). The password arrives in
+ * base64 (as in the protocol); the decoded bytes are zeroed right after becoming text.
  *
- * `enviar` (só o `ward login`, Fase 43): antes de escrever, exige um formulário de login
- * que dê para enviar com segurança: exatamente um campo de senha visível, dentro de um
- * `<form>` com método POST, destino (`action` e o `formaction` do botão) na mesma origem
- * e sem `target` para outro contexto, e o campo do usuário quando há usuário. Depois
- * envia (`requestSubmit`, que monta os dados do envio na hora) e limpa os campos.
+ * `submit` (only `ward login`, Phase 43): before writing, it requires a login form that
+ * can be submitted safely: exactly one visible password field, inside a `<form>` with
+ * method POST, destination (`action` and the button's `formaction`) on the same origin
+ * and no `target` to another context, and the username field when there is a username.
+ * Then it submits (`requestSubmit`, which builds the submitted data right away) and
+ * clears the fields.
  */
-export function preencherNaPagina(origemEsperada, usuario, senhaB64, totp, enviar) {
-  const desc = (proto, nome) => Object.getOwnPropertyDescriptor(proto, nome);
-  const pegar = (proto, nome) => {
-    const d = desc(proto, nome);
+export function fillInPage(expectedOrigin, username, passwordB64, totp, submit) {
+  const desc = (proto, name) => Object.getOwnPropertyDescriptor(proto, name);
+  const getter = (proto, name) => {
+    const d = desc(proto, name);
     return (el) => d.get.call(el);
   };
-  const tipoDe = pegar(HTMLInputElement.prototype, 'type');
-  const formDe = pegar(HTMLInputElement.prototype, 'form');
-  const desabilitado = pegar(HTMLInputElement.prototype, 'disabled');
-  const soLeitura = pegar(HTMLInputElement.prototype, 'readOnly');
-  const setValor = desc(HTMLInputElement.prototype, 'value').set;
-  const atributo = (el, nome) => Element.prototype.getAttribute.call(el, nome) || '';
-  const todos = (sel) =>
+  const typeOf = getter(HTMLInputElement.prototype, 'type');
+  const formOf = getter(HTMLInputElement.prototype, 'form');
+  const disabled = getter(HTMLInputElement.prototype, 'disabled');
+  const readOnly = getter(HTMLInputElement.prototype, 'readOnly');
+  const setValue = desc(HTMLInputElement.prototype, 'value').set;
+  const attribute = (el, name) => Element.prototype.getAttribute.call(el, name) || '';
+  const all = (sel) =>
     Array.prototype.slice.call(Document.prototype.querySelectorAll.call(document, sel));
-  const retangulo = (el) => Element.prototype.getBoundingClientRect.call(el);
-  const estilo = (el) => window.getComputedStyle(el);
-  const antes = (a, b) =>
+  const rect = (el) => Element.prototype.getBoundingClientRect.call(el);
+  const style = (el) => window.getComputedStyle(el);
+  const before = (a, b) =>
     (Node.prototype.compareDocumentPosition.call(a, b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
-  const disparar = (el, tipo) =>
-    EventTarget.prototype.dispatchEvent.call(el, new Event(tipo, { bubbles: true }));
+  const dispatch = (el, type) =>
+    EventTarget.prototype.dispatchEvent.call(el, new Event(type, { bubbles: true }));
 
-  // Campo de senha escondido (armadilha de preenchimento automático): só entra campo
-  // que o usuário vê. Fora: `display`/`visibility`/`opacity` em qualquer ancestral,
-  // menor que 4×4, fora da página, recortado por `clip`/`clip-path`, coberto por outro
-  // elemento no centro (quando o centro está na tela), desabilitado ou só leitura.
-  const MINIMO = 4;
-  const visivel = (el) => {
-    if (desabilitado(el) || soLeitura(el)) return false;
+  // Hidden password field (autofill trap): only a field the user sees counts. Out:
+  // `display`/`visibility`/`opacity` on any ancestor, smaller than 4×4, outside the page,
+  // clipped by `clip`/`clip-path`, covered by another element at the center (when the
+  // center is on screen), disabled or read-only.
+  const MINIMUM = 4;
+  const visible = (el) => {
+    if (disabled(el) || readOnly(el)) return false;
     if (
       !Element.prototype.checkVisibility.call(el, {
         checkOpacity: true,
@@ -135,146 +136,146 @@ export function preencherNaPagina(origemEsperada, usuario, senhaB64, totp, envia
     ) {
       return false;
     }
-    const r = retangulo(el);
-    if (r.width < MINIMO || r.height < MINIMO) return false;
-    const raiz = pegar(Document.prototype, 'documentElement')(document);
-    const largura = Math.max(raiz.scrollWidth, window.innerWidth);
-    const altura = Math.max(raiz.scrollHeight, window.innerHeight);
+    const r = rect(el);
+    if (r.width < MINIMUM || r.height < MINIMUM) return false;
+    const root = getter(Document.prototype, 'documentElement')(document);
+    const width = Math.max(root.scrollWidth, window.innerWidth);
+    const height = Math.max(root.scrollHeight, window.innerHeight);
     const x0 = r.left + window.scrollX;
     const y0 = r.top + window.scrollY;
-    if (x0 + r.width <= 0 || y0 + r.height <= 0 || x0 >= largura || y0 >= altura) return false;
-    const s = estilo(el);
+    if (x0 + r.width <= 0 || y0 + r.height <= 0 || x0 >= width || y0 >= height) return false;
+    const s = style(el);
     if (s.clipPath !== 'none' || (s.clip && s.clip !== 'auto')) return false;
     const cx = r.left + r.width / 2;
     const cy = r.top + r.height / 2;
     if (cx >= 0 && cy >= 0 && cx < window.innerWidth && cy < window.innerHeight) {
-      const topo = Document.prototype.elementFromPoint.call(document, cx, cy);
-      if (topo !== el && !(topo && Node.prototype.contains.call(el, topo))) {
-        // Um `<label>` por cima do próprio campo é comum; outro elemento, não.
-        const rotulo = topo && Element.prototype.closest.call(topo, 'label');
-        const controla = rotulo && pegar(HTMLLabelElement.prototype, 'control')(rotulo);
-        if (controla !== el) return false;
+      const hit = Document.prototype.elementFromPoint.call(document, cx, cy);
+      if (hit !== el && !(hit && Node.prototype.contains.call(el, hit))) {
+        // A `<label>` over its own field is common; another element is not.
+        const label = hit && Element.prototype.closest.call(hit, 'label');
+        const controls = label && getter(HTMLLabelElement.prototype, 'control')(label);
+        if (controls !== el) return false;
       }
     }
     return true;
   };
 
-  const escrever = (el, valor) => {
-    setValor.call(el, valor);
-    disparar(el, 'input');
-    disparar(el, 'change');
+  const write = (el, value) => {
+    setValue.call(el, value);
+    dispatch(el, 'input');
+    dispatch(el, 'change');
   };
 
   let bytes = null;
   try {
-    if (window !== window.top) return { ok: false, motivo: 'quadro' };
-    if (String(window.location.origin) !== origemEsperada) return { ok: false, motivo: 'origem' };
+    if (window !== window.top) return { ok: false, reason: 'quadro' };
+    if (String(window.location.origin) !== expectedOrigin) return { ok: false, reason: 'origem' };
 
-    const campos = todos('input').filter((el) => visivel(el));
-    const senhas = campos.filter((el) => tipoDe(el) === 'password');
-    if (senhas.length === 0) return { ok: false, motivo: 'sem_campo' };
-    const senhaCampo = senhas[0];
-    const form = formDe(senhaCampo);
-    const mesmoForm = (el) => formDe(el) === form;
+    const inputs = all('input').filter((el) => visible(el));
+    const passwords = inputs.filter((el) => typeOf(el) === 'password');
+    if (passwords.length === 0) return { ok: false, reason: 'sem_campo' };
+    const passwordField = passwords[0];
+    const form = formOf(passwordField);
+    const sameForm = (el) => formOf(el) === form;
 
-    const TEXTO = ['text', 'email', 'tel', ''];
-    const eTotp = (el) => {
-      const ac = atributo(el, 'autocomplete').toLowerCase();
+    const TEXT = ['text', 'email', 'tel', ''];
+    const isTotp = (el) => {
+      const ac = attribute(el, 'autocomplete').toLowerCase();
       if (ac.split(/\s+/).includes('one-time-code')) return true;
-      const nome = `${atributo(el, 'name')} ${atributo(el, 'id')}`.toLowerCase();
-      return /(^|[^a-z])(otp|totp|2fa|mfa|codigo|code|token)([^a-z]|$)/.test(nome);
+      const name = `${attribute(el, 'name')} ${attribute(el, 'id')}`.toLowerCase();
+      return /(^|[^a-z])(otp|totp|2fa|mfa|codigo|code|token)([^a-z]|$)/.test(name);
     };
-    const textos = campos.filter(
-      (el) => TEXTO.includes(tipoDe(el)) && mesmoForm(el) && !eTotp(el),
+    const texts = inputs.filter(
+      (el) => TEXT.includes(typeOf(el)) && sameForm(el) && !isTotp(el),
     );
-    const antesDaSenha = textos.filter((el) => antes(el, senhaCampo));
-    const usuarioCampo =
-      antesDaSenha.find((el) => /\busername\b/.test(atributo(el, 'autocomplete').toLowerCase())) ||
-      antesDaSenha[antesDaSenha.length - 1] ||
+    const beforePassword = texts.filter((el) => before(el, passwordField));
+    const usernameField =
+      beforePassword.find((el) => /\busername\b/.test(attribute(el, 'autocomplete').toLowerCase())) ||
+      beforePassword[beforePassword.length - 1] ||
       null;
-    const totpCampo = totp
-      ? campos.find(
+    const totpField = totp
+      ? inputs.find(
           (el) =>
-            ['text', 'tel', 'number', ''].includes(tipoDe(el)) && mesmoForm(el) && eTotp(el),
+            ['text', 'tel', 'number', ''].includes(typeOf(el)) && sameForm(el) && isTotp(el),
         ) || null
       : null;
 
-    const bin = atob(senhaB64);
+    const bin = atob(passwordB64);
     bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
-    const senha = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    const password = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
 
-    let envio = null;
-    if (enviar === true) {
-      if (senhas.length !== 1 || !form) return { ok: false, motivo: 'formulario' };
-      if (usuario && !usuarioCampo) return { ok: false, motivo: 'formulario' };
+    let doSubmit = null;
+    if (submit === true) {
+      if (passwords.length !== 1 || !form) return { ok: false, reason: 'formulario' };
+      if (username && !usernameField) return { ok: false, reason: 'formulario' };
       const F = HTMLFormElement.prototype;
-      const doForm = (k) => desc(F, k).get.call(form);
-      const destinoOk = (acao, metodo, alvo) => {
+      const ofForm = (k) => desc(F, k).get.call(form);
+      const destinationOk = (action, method, target) => {
         let u;
         try {
-          u = new URL(String(acao), String(window.location.href));
+          u = new URL(String(action), String(window.location.href));
         } catch {
           return false;
         }
         return (
-          u.origin === origemEsperada &&
-          String(metodo).toLowerCase() === 'post' &&
-          (!alvo || String(alvo) === '_self')
+          u.origin === expectedOrigin &&
+          String(method).toLowerCase() === 'post' &&
+          (!target || String(target) === '_self')
         );
       };
-      if (!destinoOk(doForm('action'), doForm('method'), doForm('target'))) {
-        return { ok: false, motivo: 'formulario' };
+      if (!destinationOk(ofForm('action'), ofForm('method'), ofForm('target'))) {
+        return { ok: false, reason: 'formulario' };
       }
       const B = HTMLButtonElement.prototype;
-      const ehBotao = (c) =>
+      const isButton = (c) =>
         (c instanceof HTMLButtonElement && desc(B, 'type').get.call(c) === 'submit') ||
-        (c instanceof HTMLInputElement && ['submit', 'image'].includes(tipoDe(c)));
-      const botaoVisivel = (c) =>
+        (c instanceof HTMLInputElement && ['submit', 'image'].includes(typeOf(c)));
+      const buttonVisible = (c) =>
         !desc(c instanceof HTMLButtonElement ? B : HTMLInputElement.prototype, 'disabled').get.call(c) &&
         Element.prototype.checkVisibility.call(c, { checkOpacity: true, checkVisibilityCSS: true });
-      const elementos = Array.prototype.slice.call(doForm('elements'));
-      const botao = elementos.find((c) => ehBotao(c) && botaoVisivel(c)) || null;
-      if (botao) {
-        const P = botao instanceof HTMLButtonElement ? B : HTMLInputElement.prototype;
-        const g = (k) => desc(P, k).get.call(botao);
-        const tem = (a) => Element.prototype.hasAttribute.call(botao, a);
+      const elements = Array.prototype.slice.call(ofForm('elements'));
+      const button = elements.find((c) => isButton(c) && buttonVisible(c)) || null;
+      if (button) {
+        const P = button instanceof HTMLButtonElement ? B : HTMLInputElement.prototype;
+        const g = (k) => desc(P, k).get.call(button);
+        const has = (a) => Element.prototype.hasAttribute.call(button, a);
         if (
-          !destinoOk(
-            tem('formaction') ? g('formAction') : doForm('action'),
-            tem('formmethod') ? g('formMethod') : doForm('method'),
-            tem('formtarget') ? g('formTarget') : doForm('target'),
+          !destinationOk(
+            has('formaction') ? g('formAction') : ofForm('action'),
+            has('formmethod') ? g('formMethod') : ofForm('method'),
+            has('formtarget') ? g('formTarget') : ofForm('target'),
           )
         ) {
-          return { ok: false, motivo: 'formulario' };
+          return { ok: false, reason: 'formulario' };
         }
       }
-      envio = () => F.requestSubmit.call(form, botao);
+      doSubmit = () => F.requestSubmit.call(form, button);
     }
 
-    if (usuarioCampo && usuario) escrever(usuarioCampo, usuario);
-    escrever(senhaCampo, senha);
-    if (totpCampo) escrever(totpCampo, totp);
-    if (envio) {
-      // Os dados do envio são montados dentro do `requestSubmit`; depois os campos
-      // voltam vazios (a janela de leitura pela página fica a menor possível).
+    if (usernameField && username) write(usernameField, username);
+    write(passwordField, password);
+    if (totpField) write(totpField, totp);
+    if (doSubmit) {
+      // The submitted data is built inside `requestSubmit`; then the fields go back to
+      // empty (the window in which the page can read them stays as small as possible).
       try {
-        envio();
+        doSubmit();
       } finally {
-        if (usuarioCampo && usuario) escrever(usuarioCampo, '');
-        escrever(senhaCampo, '');
-        if (totpCampo) escrever(totpCampo, '');
+        if (usernameField && username) write(usernameField, '');
+        write(passwordField, '');
+        if (totpField) write(totpField, '');
       }
-      return { ok: true, enviado: true };
+      return { ok: true, submitted: true };
     }
-    return { ok: true, usuario: Boolean(usuarioCampo && usuario), totp: Boolean(totpCampo) };
+    return { ok: true, username: Boolean(usernameField && username), totp: Boolean(totpField) };
   } catch {
-    return { ok: false, motivo: 'falha' };
+    return { ok: false, reason: 'falha' };
   } finally {
     if (bytes) bytes.fill(0);
     bytes = null;
-    senhaB64 = '';
+    passwordB64 = '';
     totp = '';
-    usuario = '';
+    username = '';
   }
 }

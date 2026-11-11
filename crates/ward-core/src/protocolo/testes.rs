@@ -9,14 +9,14 @@ use base64ct::{Base64, Encoding};
 use super::quadro::{self, ErroQuadro, ler_quadro, limite_do_quadro};
 use super::*;
 use crate as wc;
+use crate::atomic_write::WriteError;
 use crate::corpo::ErroAbrir;
 use crate::entrada::{
     Ambiente, Rascunho, RascunhoAnexo, RascunhoDados, RascunhoExtra, Segredo, TipoEntrada,
 };
-use crate::gravacao::ErroGravacao;
-use crate::limites::{
-    KIB, MAX_ANEXOS, MAX_ANEXOS_SOMADOS, MAX_EXTRAS, MAX_NOME_ANEXO, MAX_NOTA, MAX_QUADRO_APP,
-    MAX_QUADRO_COMUM, MAX_VALOR_EXTRA, MIB,
+use crate::limits::{
+    KIB, MAX_APP_FRAME, MAX_ATTACHMENT_NAME, MAX_ATTACHMENTS, MAX_ATTACHMENTS_TOTAL,
+    MAX_COMMON_FRAME, MAX_EXTRA_VALUE, MAX_EXTRAS, MAX_NOTE, MIB,
 };
 
 // O mesmo cofre de teste dos testes do corpo (o módulo deles é privado de `corpo`).
@@ -776,7 +776,7 @@ fn formato_conhecido_do_quadro() {
             .as_bytes()
     );
     let mut saida = Vec::new();
-    quadro::escrever_quadro(&mut saida, &q, MAX_QUADRO_COMUM).unwrap();
+    quadro::escrever_quadro(&mut saida, &q, MAX_COMMON_FRAME).unwrap();
     assert_eq!(&saida[..4], &(q.len() as u32).to_be_bytes());
     assert_eq!(&saida[4..], &q[..]);
     // `dados` ausente vale vazio.
@@ -923,7 +923,7 @@ fn executar_recusa_nul_igual_e_vazio() {
     assert!(q(&[b"ls"], b"/tmp", &[(b"A=B", b"c")]).is_err());
     assert!(q(&[b"ls"], b"/tmp", &[(b"", b"c")]).is_err());
     assert!(q(&[b"ls"], b"/tmp", &[(b"A", b"c\0")]).is_err());
-    let grande = vec![b'a'; crate::limites::MAX_ARGUMENTO + 1];
+    let grande = vec![b'a'; crate::limits::MAX_ARGUMENT + 1];
     assert!(q(&[&grande], b"/tmp", &[]).is_err());
 }
 
@@ -997,17 +997,17 @@ fn rascunho_com_anexos(tamanhos: &[usize]) -> Rascunho {
 fn d29_anexos_ate_256_kib_somados_pelo_app() {
     let no_limite = Pedido::SalvarEntrada {
         anterior: None,
-        rascunho: rascunho_com_anexos(&[MAX_ANEXOS_SOMADOS - 10 * KIB, 10 * KIB]),
+        rascunho: rascunho_com_anexos(&[MAX_ATTACHMENTS_TOTAL - 10 * KIB, 10 * KIB]),
         manter_anexos: Vec::new(),
     };
     let q = codificar_pedido(Papel::App, &no_limite).unwrap();
-    assert!(q.len() > MAX_ANEXOS_SOMADOS && q.len() < MAX_QUADRO_APP);
+    assert!(q.len() > MAX_ATTACHMENTS_TOTAL && q.len() < MAX_APP_FRAME);
     let Pedido::SalvarEntrada { rascunho, .. } = decodificar_pedido(Papel::App, &q).unwrap() else {
         panic!()
     };
     assert_eq!(
         rascunho.anexos[0].conteudo.expor(),
-        &cofre_teste::bytes_0_a_255(MAX_ANEXOS_SOMADOS - 10 * KIB)[..]
+        &cofre_teste::bytes_0_a_255(MAX_ATTACHMENTS_TOTAL - 10 * KIB)[..]
     );
     rascunho.validar().expect("entrada com anexos no limite");
     assert_eq!(
@@ -1018,7 +1018,7 @@ fn d29_anexos_ate_256_kib_somados_pelo_app() {
     // Um byte acima da soma: o cliente não codifica e o daemon não aceita.
     let acima = Pedido::SalvarEntrada {
         anterior: Some("clientex-stage-vpn".into()),
-        rascunho: rascunho_com_anexos(&[MAX_ANEXOS_SOMADOS - 10 * KIB, 10 * KIB + 1]),
+        rascunho: rascunho_com_anexos(&[MAX_ATTACHMENTS_TOTAL - 10 * KIB, 10 * KIB + 1]),
         manter_anexos: Vec::new(),
     };
     assert_eq!(
@@ -1065,7 +1065,7 @@ fn fase39b_manter_anexos_vai_e_volta() {
 }
 
 /// Ataques ao `manter_anexos`: numa entrada nova, nome vazio, repetido, longo demais,
-/// fora de lista de textos, e mantidos mais novos acima de `MAX_ANEXOS`.
+/// fora de lista de textos, e mantidos mais novos acima de `MAX_ATTACHMENTS`.
 #[test]
 fn fase39b_ataque_manter_anexos_forjado() {
     let base = dados_validos(Operacao::SalvarEntrada);
@@ -1082,10 +1082,13 @@ fn fase39b_ataque_manter_anexos_forjado() {
     // Sem `anterior`: não há de onde manter.
     let novo = base.replacen('{', r#"{"manter_anexos":["app.env"],"#, 1);
     assert_eq!(q(&novo).unwrap_err(), ErroResposta::PedidoInvalido);
-    let longo = format!(r#""manter_anexos":["{}"]"#, "a".repeat(MAX_NOME_ANEXO + 1));
+    let longo = format!(
+        r#""manter_anexos":["{}"]"#,
+        "a".repeat(MAX_ATTACHMENT_NAME + 1)
+    );
     let muitos = format!(
         r#""manter_anexos":[{}]"#,
-        (0..=MAX_ANEXOS)
+        (0..=MAX_ATTACHMENTS)
             .map(|i| format!(r#""a{i}.env""#))
             .collect::<Vec<_>>()
             .join(",")
@@ -1105,10 +1108,10 @@ fn fase39b_ataque_manter_anexos_forjado() {
             "{forjado}"
         );
     }
-    // Mantidos mais novos acima de `MAX_ANEXOS`: o cliente não codifica.
+    // Mantidos mais novos acima de `MAX_ATTACHMENTS`: o cliente não codifica.
     let p = Pedido::SalvarEntrada {
         anterior: Some("clientex-stage-vpn".into()),
-        rascunho: rascunho_com_anexos(&[1; MAX_ANEXOS]),
+        rascunho: rascunho_com_anexos(&[1; MAX_ATTACHMENTS]),
         manter_anexos: vec!["app.env".into()],
     };
     assert_eq!(
@@ -1172,18 +1175,18 @@ fn maior_entrada_cabe_no_quadro_do_app() {
         projeto: "portal".into(),
         tags: (0..16).map(|i| format!("tag-{i:02}")).collect(),
         dados: RascunhoDados::NotaSegura {
-            texto: Some(Segredo::de_bytes(vec![b'"'; MAX_NOTA])),
+            texto: Some(Segredo::de_bytes(vec![b'"'; MAX_NOTE])),
         },
         extras: (0..MAX_EXTRAS)
             .map(|i| RascunhoExtra {
                 nome: format!("EXTRA_{i:02}"),
-                valor: Segredo::de_bytes(vec![b'x'; MAX_VALOR_EXTRA]),
+                valor: Segredo::de_bytes(vec![b'x'; MAX_EXTRA_VALUE]),
                 segredo: i % 2 == 0,
             })
             .collect(),
         anexos: vec![RascunhoAnexo {
             nome: "tudo.bin".into(),
-            conteudo: Segredo::de_bytes(cofre_teste::bytes_0_a_255(MAX_ANEXOS_SOMADOS)),
+            conteudo: Segredo::de_bytes(cofre_teste::bytes_0_a_255(MAX_ATTACHMENTS_TOTAL)),
         }],
     };
     let p = Pedido::SalvarEntrada {
@@ -1192,8 +1195,8 @@ fn maior_entrada_cabe_no_quadro_do_app() {
         manter_anexos: Vec::new(),
     };
     let q = codificar_pedido(Papel::App, &p).unwrap();
-    assert!(q.len() > MAX_QUADRO_COMUM, "{}", q.len());
-    assert!(q.len() <= MAX_QUADRO_APP, "{}", q.len());
+    assert!(q.len() > MAX_COMMON_FRAME, "{}", q.len());
+    assert!(q.len() <= MAX_APP_FRAME, "{}", q.len());
     let Pedido::SalvarEntrada { rascunho, .. } = decodificar_pedido(Papel::App, &q).unwrap() else {
         panic!()
     };
@@ -1201,7 +1204,7 @@ fn maior_entrada_cabe_no_quadro_do_app() {
     assert_eq!(e.extras().len(), MAX_EXTRAS);
     // O mesmo quadro, pelo leitor de quadros: cabe no do app e não no comum.
     let mut bruto = Vec::new();
-    quadro::escrever_quadro(&mut bruto, &q, MAX_QUADRO_APP).unwrap();
+    quadro::escrever_quadro(&mut bruto, &q, MAX_APP_FRAME).unwrap();
     assert_eq!(
         ler_quadro(&mut &bruto[..], limite_do_quadro(Papel::Agente)).unwrap_err(),
         ErroQuadro::GrandeDemais
@@ -1238,7 +1241,7 @@ fn v3_4_quadros_recusados_antes_de_ler_o_corpo() {
     let mut corpo = Vec::new();
     for (cab, erro) in [
         ((2 * MIB) as u32, ErroQuadro::GrandeDemais),
-        ((MAX_QUADRO_COMUM + 1) as u32, ErroQuadro::GrandeDemais),
+        ((MAX_COMMON_FRAME + 1) as u32, ErroQuadro::GrandeDemais),
         (u32::MAX, ErroQuadro::GrandeDemais), // o -1 de 32 bits
         ((-2i32) as u32, ErroQuadro::GrandeDemais),
         (0, ErroQuadro::Vazio),
@@ -1250,18 +1253,18 @@ fn v3_4_quadros_recusados_antes_de_ler_o_corpo() {
             dados: &corpo,
             lidos: 0,
         };
-        assert_eq!(ler_quadro(&mut r, MAX_QUADRO_COMUM).unwrap_err(), erro);
+        assert_eq!(ler_quadro(&mut r, MAX_COMMON_FRAME).unwrap_err(), erro);
         assert_eq!(r.lidos, 4, "leu o corpo de um quadro recusado");
     }
     // 2 MiB também passa do quadro do cliente comum pelos dois papéis.
     assert!(2 * MIB > limite_do_quadro(Papel::Agente));
     assert!(2 * MIB > limite_do_quadro(Papel::Extensao));
     // No limite exato passa.
-    let mut q = (MAX_QUADRO_COMUM as u32).to_be_bytes().to_vec();
-    q.extend(std::iter::repeat_n(b' ', MAX_QUADRO_COMUM));
+    let mut q = (MAX_COMMON_FRAME as u32).to_be_bytes().to_vec();
+    q.extend(std::iter::repeat_n(b' ', MAX_COMMON_FRAME));
     assert_eq!(
-        ler_quadro(&mut &q[..], MAX_QUADRO_COMUM).unwrap().len(),
-        MAX_QUADRO_COMUM
+        ler_quadro(&mut &q[..], MAX_COMMON_FRAME).unwrap().len(),
+        MAX_COMMON_FRAME
     );
 }
 
@@ -1280,10 +1283,10 @@ fn v3_4_quadro_truncado_e_fechado() {
         ErroQuadro::Truncado
     );
     // Declarou 1 MiB e mandou 10 bytes: truncado, sem esperar o resto.
-    let mut q = (MAX_QUADRO_COMUM as u32).to_be_bytes().to_vec();
+    let mut q = (MAX_COMMON_FRAME as u32).to_be_bytes().to_vec();
     q.extend_from_slice(b"0123456789");
     assert_eq!(
-        ler_quadro(&mut &q[..], MAX_QUADRO_COMUM).unwrap_err(),
+        ler_quadro(&mut &q[..], MAX_COMMON_FRAME).unwrap_err(),
         ErroQuadro::Truncado
     );
     // Escrever também recusa vazio e acima do limite, sem escrever nada.
@@ -1429,7 +1432,7 @@ fn d39_erros_do_destravar_e_das_gravacoes() {
     assert_eq!(MSG_RETROCESSO, ErroAbrir::Retrocesso.to_string());
     assert_eq!(
         MSG_GERACAO_ESGOTADA,
-        ErroGravacao::GeracaoEsgotada.to_string()
+        WriteError::GenerationExhausted.to_string()
     );
     assert_eq!(MSG_COFRE_MUDOU, "o arquivo do cofre mudou fora do Ward");
     assert_eq!(
@@ -1437,15 +1440,15 @@ fn d39_erros_do_destravar_e_das_gravacoes() {
         ErroResposta::Retrocesso
     );
     assert_eq!(
-        ErroResposta::from(&ErroGravacao::GeracaoEsgotada),
+        ErroResposta::from(&WriteError::GenerationExhausted),
         ErroResposta::GeracaoEsgotada
     );
     assert_eq!(
-        ErroResposta::from(&ErroGravacao::Retrocesso),
+        ErroResposta::from(&WriteError::Rollback),
         ErroResposta::Retrocesso
     );
     assert_eq!(
-        ErroResposta::from(&ErroGravacao::DestinoInvalido),
+        ErroResposta::from(&WriteError::InvalidDestination),
         ErroResposta::FalhaAoGravar
     );
     for e in [
@@ -1691,7 +1694,7 @@ fn fuzz_quadro_e_json_aleatorios() {
             assert_eq!(q.len() + 4, r.lidos);
         }
     }
-    let _ = wc::limites::MAX_QUADRO_RESPOSTA;
+    let _ = wc::limits::MAX_RESPONSE_FRAME;
 }
 
 /// D50 (V3.26): a lista do agente vai sem o nível, a do app com ele. O daemon não
@@ -2477,7 +2480,7 @@ fn ataque_fase_39a_pedido_de_destrave_so_app_e_formato_estrito() {
     assert!(
         decodificar_resposta(Papel::App, dados(r#""a""#, "executar", "1", "").as_bytes()).is_ok()
     );
-    let grande = format!("\"{}\"", "a".repeat(wc::limites::MAX_TEXTO + 1));
+    let grande = format!("\"{}\"", "a".repeat(wc::limits::MAX_TEXT + 1));
     for ruim in [
         dados(r#""a""#, "executar", "0", ""),
         dados(r#""a""#, "executar", "121", ""),
@@ -2556,7 +2559,7 @@ fn ataque_pedido_de_aprovacao_com_origem_fora_da_forma() {
     p.confirmacao = false;
     assert!(!escreve(&p), "preencher com PIN");
     let mut p = base.clone();
-    p.origem = "x".repeat(crate::limites::MAX_TEXTO + 1);
+    p.origem = "x".repeat(crate::limits::MAX_TEXT + 1);
     assert!(!escreve(&p), "origem grande demais");
     // Fase 54b: o aviso da entrada padrão só no `executar` e no `ssh`, sem confirmação
     // de origem.

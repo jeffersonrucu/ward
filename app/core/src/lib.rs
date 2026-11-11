@@ -15,7 +15,7 @@
 //! - [`formulario`]: formulário de entrada (Fase 33). Segredo mantido e senha gerada
 //!   ficam no lado Rust; a semente TOTP e o `otpauth://` são normalizados aqui (D35).
 //! - [`gerador`]: gerador de senha avulso (Fase 37). A senha nasce em
-//!   `ward_core::gerador` e fica aqui; a interface recebe só tamanho, força e símbolos,
+//!   `ward_core::generator` e fica aqui; a interface recebe só tamanho, força e símbolos,
 //!   e o valor só no "revelar".
 //! - [`nivel`]: mudar o nível de acesso com PIN (Fase 35, S9); o PIN fica num tipo
 //!   que zera e só vai ao pedido `mudar_nivel`.

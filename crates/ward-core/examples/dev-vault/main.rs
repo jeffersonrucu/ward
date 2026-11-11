@@ -47,6 +47,7 @@ use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
 use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
 
+use ward_core::atomic_write::write_entries;
 use ward_core::configuracao::{Configuracao, HashPin, KDF_PIN};
 use ward_core::corpo::{abrir_entradas, serializar};
 use ward_core::entrada::{
@@ -54,9 +55,8 @@ use ward_core::entrada::{
     TipoEntrada,
 };
 use ward_core::entrega::{self, ErroEntrega, ErroRecurso, Recursos};
-use ward_core::formato::{CofreAberto, SenhaMestra};
-use ward_core::gravacao::gravar_entradas;
-use ward_core::limites::{MAX_ANEXOS_SOMADOS, MINUTOS_TRAVA_PADRAO};
+use ward_core::format::{MasterPassword, OpenVault};
+use ward_core::limits::{DEFAULT_LOCK_MINUTES, MAX_ATTACHMENTS_TOTAL};
 use ward_core::mascara::{MARCA, Mascara};
 use zeroize::Zeroizing;
 
@@ -79,7 +79,7 @@ const MAX_FIXTURES: u64 = 1024 * 1024;
 const MAX_KEY: u64 = 64 * 1024;
 /// Read limit of one attachment: the core's attachment limit (D29, D32; the
 /// validation checks the sum).
-const MAX_ATTACHMENT: u64 = MAX_ANEXOS_SOMADOS as u64;
+const MAX_ATTACHMENT: u64 = MAX_ATTACHMENTS_TOTAL as u64;
 /// Encrypted 64 MiB body (D26), with room for the header and the tag.
 const MAX_VAULT: u64 = 65 * 1024 * 1024;
 
@@ -216,9 +216,9 @@ fn run(args: impl Iterator<Item = OsString>) -> Result<(), Error> {
     // backup off). The PIN only exists here, in memory that is zeroed on exit.
     let hash = HashPin::criar(pin.as_bytes())
         .map_err(|e| Error::Vault(format!("não deu para criar o hash do PIN: {e}")))?;
-    let mut vault = CofreAberto::novo(&password, Configuracao::nova(hash))
+    let mut vault = OpenVault::new(&password, Configuracao::nova(hash))
         .map_err(|e| Error::Vault(format!("não deu para criar o cofre: {e}")))?;
-    gravar_entradas(&output, &mut vault, &expected)
+    write_entries(&output, &mut vault, &expected)
         .map_err(|e| Error::Vault(format!("não deu para gravar {shown}: {e}")))?;
     drop(vault);
     let (n, generation) = verify(&output, &password, &pin, &expected)?;
@@ -239,7 +239,7 @@ fn run(args: impl Iterator<Item = OsString>) -> Result<(), Error> {
 fn print_config(generation: u64) {
     println!(
         "dev-vault: configuração: geração {generation}, hash do PIN Argon2id (m={} KiB, t={}, p={}), trava em {} min, backup externo desligado",
-        KDF_PIN.memoria_kib, KDF_PIN.passes, KDF_PIN.paralelismo, MINUTOS_TRAVA_PADRAO
+        KDF_PIN.memory_kib, KDF_PIN.passes, KDF_PIN.parallelism, DEFAULT_LOCK_MINUTES
     );
 }
 
@@ -254,7 +254,7 @@ fn print_list(entries: &[Entrada]) {
 
 /// Password from stdin (only for the wrong password test), without echo and without
 /// argv.
-fn password_from_stdin() -> Result<SenhaMestra, Error> {
+fn password_from_stdin() -> Result<MasterPassword, Error> {
     let mut buf = Zeroizing::new(Vec::with_capacity(256));
     io::stdin()
         .take(256)
@@ -265,7 +265,7 @@ fn password_from_stdin() -> Result<SenhaMestra, Error> {
     }
     let mut bytes = Zeroizing::new(Vec::with_capacity(buf.len()));
     bytes.extend_from_slice(&buf);
-    Ok(SenhaMestra::de_bytes(bytes))
+    Ok(MasterPassword::from_bytes(bytes))
 }
 
 /// Reopens the file and verifies that the entries come back equal to the fixtures (same
@@ -275,7 +275,7 @@ fn password_from_stdin() -> Result<SenhaMestra, Error> {
 /// and the backup is off.
 fn verify(
     output: &Path,
-    password: &SenhaMestra,
+    password: &MasterPassword,
     pin: &str,
     expected: &[Entrada],
 ) -> Result<(usize, u64), Error> {
@@ -297,8 +297,8 @@ fn verify(
         .map_err(|e| Error::Vault(format!("o cofre não abriu: {e}")))?;
     // D39: the generation read (≥ 1; the reader refuses 0) goes into both sides of the
     // comparison.
-    let generation = vault.geracao();
-    let cfg = vault.configuracao();
+    let generation = vault.generation();
+    let cfg = vault.config();
     let a = serializar(cfg, generation, &loaded).map_err(|e| Error::Vault(format!("{e}")))?;
     let b = serializar(cfg, generation, expected).map_err(|e| Error::Vault(format!("{e}")))?;
     if *a != *b {
@@ -320,7 +320,7 @@ fn verify_config(cfg: &Configuracao, pin: &str) -> Result<(), Error> {
         ));
     }
     if cfg.hash_pin().parametros() != KDF_PIN
-        || cfg.minutos_trava() != MINUTOS_TRAVA_PADRAO
+        || cfg.minutos_trava() != DEFAULT_LOCK_MINUTES
         || cfg.backup().ligado()
         || cfg.backup().uuid().is_some()
     {
@@ -351,7 +351,7 @@ impl Recursos for FakeResources {
 
 /// Largest pattern accepted in a stdin line (the largest attachment of D29 in hex, with
 /// room to spare).
-const MAX_CROSS_LINE: usize = 4 * MAX_ANEXOS_SOMADOS + 1024;
+const MAX_CROSS_LINE: usize = 4 * MAX_ATTACHMENTS_TOTAL + 1024;
 
 fn hex_to_bytes(h: &[u8]) -> Option<Zeroizing<Vec<u8>>> {
     if !h.len().is_multiple_of(2) {
@@ -375,7 +375,7 @@ fn secret_left(output: &[u8], e: &Entrada) -> bool {
 
 /// V2.57: each pattern of the oracle, alone, comes out `••••` through the mask of its
 /// entry.
-fn cross(output: &Path, password: &SenhaMestra) -> Result<(), Error> {
+fn cross(output: &Path, password: &MasterPassword) -> Result<(), Error> {
     let bytes = fs::read(output).map_err(|_| Error::Vault("não deu para ler o cofre".into()))?;
     let (_, loaded) = abrir_entradas(&bytes, password)
         .map_err(|e| Error::Vault(format!("o cofre não abriu: {e}")))?;
@@ -983,7 +983,7 @@ type ReadFn<'a> = dyn FnMut(Source, &str) -> Result<Segredo, Error> + 'a;
 
 /// What the fixtures give: master password, PIN (in memory that is zeroed on exit) and
 /// entries.
-type Built = (SenhaMestra, Zeroizing<String>, Vec<Entrada>);
+type Built = (MasterPassword, Zeroizing<String>, Vec<Entrada>);
 
 /// Builds the master password, the PIN and the validated entries (with the level of the
 /// fixture) from the JSON. `read` reads the files named there (private key,
@@ -1015,7 +1015,7 @@ fn build(bytes: &[u8], read: &mut ReadFn<'_>) -> Result<Built, Error> {
     for (i, v) in list.into_iter().enumerate() {
         entries.push(entry(i, v, read)?);
     }
-    let password = SenhaMestra::nova(String::clone(&password));
+    let password = MasterPassword::new(String::clone(&password));
     Ok((password, pin, entries))
 }
 

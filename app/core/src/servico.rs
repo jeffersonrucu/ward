@@ -345,7 +345,7 @@ impl<D: Daemon, A: AreaTransferencia> Servico<D, A> {
     /// Soma e quantidade dos anexos guardados de `ed.entrada` que a tela mantém.
     fn base_da_edicao(&self, ed: &EdicaoDosAnexos) -> Result<Base, ErroApp> {
         validar_nome_entrada(&ed.entrada)?;
-        if ed.mantidos.len() > ward_core::limites::MAX_ANEXOS {
+        if ed.mantidos.len() > ward_core::limits::MAX_ATTACHMENTS {
             return Err(ErroApp::PedidoInvalido);
         }
         let det = cliente::detalhe(&mut *self.daemon()?, &ed.entrada)?;
@@ -499,7 +499,7 @@ impl<D: Daemon, A: AreaTransferencia> Servico<D, A> {
         self.copiador.copiar(valor)
     }
 
-    /// `gerar_senha`: gera no `ward_core::gerador` e guarda aqui. A resposta tem só
+    /// `gerar_senha`: gera no `ward_core::generator` e guarda aqui. A resposta tem só
     /// tamanho, força e símbolos; o valor não volta.
     pub fn gerar_senha(&self, opcoes: Opcoes) -> Result<Gerada, ErroApp> {
         self.gerador_travado()?.gerar(opcoes)
@@ -1145,7 +1145,7 @@ mod testes {
     #[test]
     fn ataque_nome_de_entrada_fora_do_formato_nem_chega_ao_daemon() {
         let (s, _) = servico();
-        let longo = "a".repeat(ward_core::limites::MAX_NOME + 1);
+        let longo = "a".repeat(ward_core::limits::MAX_NAME + 1);
         for nome in [
             "",
             " acme-pg-dev",

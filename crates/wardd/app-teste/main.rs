@@ -118,9 +118,9 @@ fn valores_do_app(s: &mut UnixStream) {
     let local = || {
         semente
             .as_ref()
-            .and_then(|s| Totp::de_semente(s).ok())
-            .and_then(|t| t.codigo_agora().ok())
-            .map(|c| c.codigo().to_owned())
+            .and_then(|s| Totp::from_seed(s).ok())
+            .and_then(|t| t.code_now().ok())
+            .map(|c| c.code().to_owned())
     };
     let antes = local();
     let r = pedir(

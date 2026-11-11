@@ -275,7 +275,7 @@ fn abrir_navegador(chrome: &Path, rt: &Path) -> Result<(Navegador, Cdp), ErroRes
     use std::os::unix::ffi::OsStrExt;
     let falhou = |_| ErroResposta::NavegadorFalhou;
     ward_platform::prepare_dir(rt).map_err(|_| ErroResposta::EntregaFalhou)?;
-    let sufixo = ward_core::gerador::token_conectar().map_err(|_| ErroResposta::Interno)?;
+    let sufixo = ward_core::generator::connect_token().map_err(|_| ErroResposta::Interno)?;
     let sufixo = std::str::from_utf8(&sufixo.expor()[..16]).map_err(|_| ErroResposta::Interno)?;
     let perfil = rt.join(format!("{PREFIXO_PERFIL}{sufixo}"));
     // Pasta nova: nunca reaproveita uma que já existe.
@@ -760,7 +760,8 @@ fn gravar_estado(rt: &Path, entrada: &str, estado: &[u8]) -> io::Result<PathBuf>
     ward_platform::prepare_dir(rt).map_err(erro)?;
     let pasta = pasta_sessoes(rt);
     ward_platform::prepare_dir(&pasta).map_err(erro)?;
-    let sufixo = ward_core::gerador::token_conectar().map_err(|_| io::Error::other("aleatório"))?;
+    let sufixo =
+        ward_core::generator::connect_token().map_err(|_| io::Error::other("aleatório"))?;
     let sufixo =
         std::str::from_utf8(&sufixo.expor()[..12]).map_err(|_| io::Error::other("aleatório"))?;
     let tmp = pasta.join(format!(".{entrada}.{sufixo}.tmp"));
@@ -824,11 +825,11 @@ impl Daemon {
             s.push_str(senha);
             let codigo = match &l.totp_semente {
                 Some(semente) => {
-                    let c = Totp::de_semente(semente)
-                        .and_then(|t| t.codigo_agora())
+                    let c = Totp::from_seed(semente)
+                        .and_then(|t| t.code_now())
                         .map_err(|_| ErroResposta::EntregaFalhou)?;
-                    let mut z = Zeroizing::new(String::with_capacity(c.codigo().len()));
-                    z.push_str(c.codigo());
+                    let mut z = Zeroizing::new(String::with_capacity(c.code().len()));
+                    z.push_str(c.code());
                     Some(z)
                 }
                 None => None,

@@ -142,10 +142,10 @@ fn v2_29_writes_reopens_and_verifies() {
     let (password, pin, built) = build(&f, &mut read).unwrap();
     let t = fake_root("ida-volta");
     let output = validate_output(&t.0, OsStr::new(DEFAULT_OUTPUT)).unwrap();
-    let mut vault = CofreAberto::novo(&password, configuracao_nova()).unwrap();
-    gravar_entradas(&output, &mut vault, &built).unwrap();
+    let mut vault = OpenVault::new(&password, configuracao_nova()).unwrap();
+    write_entries(&output, &mut vault, &built).unwrap();
     // Second write (V2.29 "runs twice"): replaces the file through the same path.
-    gravar_entradas(&output, &mut vault, &built).unwrap();
+    write_entries(&output, &mut vault, &built).unwrap();
     // The second write of the same open vault raises the generation (D39).
     assert_eq!(verify(&output, &password, &pin, &built).unwrap(), (22, 2));
     let mode = fs::metadata(&output).unwrap().permissions().mode() & 0o777;
@@ -159,7 +159,7 @@ fn v2_29_writes_reopens_and_verifies() {
         );
     }
 
-    let wrong = SenhaMestra::nova("falso-mestra-errada".to_owned());
+    let wrong = MasterPassword::new("falso-mestra-errada".to_owned());
     let e = verify(&output, &wrong, &pin, &built).unwrap_err();
     assert!(error_text(&e).contains("não abriu"));
 
@@ -171,19 +171,19 @@ fn v2_29_writes_reopens_and_verifies() {
     assert!(!msg.contains("246802") && !msg.contains(PIN_TESTE));
 
     // Configuration other than the default one (lock of 30 minutes) too.
-    let mut other = CofreAberto::novo(&password, configuracao_nova()).unwrap();
-    other.configuracao_mut().definir_minutos_trava(30).unwrap();
-    gravar_entradas(&output, &mut other, &built).unwrap();
+    let mut other = OpenVault::new(&password, configuracao_nova()).unwrap();
+    other.config_mut().definir_minutos_trava(30).unwrap();
+    write_entries(&output, &mut other, &built).unwrap();
     let e = verify(&output, &password, &pin, &built).unwrap_err();
     assert!(error_text(&e).contains("não é a padrão"));
-    gravar_entradas(&output, &mut vault, &built).unwrap();
+    write_entries(&output, &mut vault, &built).unwrap();
 
     // A vault with one entry less does not pass the verification.
     let fewer: Vec<Entrada> = cofre_de_teste()
         .into_iter()
         .filter(|e| e.nome() != "acme-totp-dev")
         .collect();
-    gravar_entradas(&output, &mut vault, &fewer).unwrap();
+    write_entries(&output, &mut vault, &fewer).unwrap();
     let e = verify(&output, &password, &pin, &built).unwrap_err();
     assert!(error_text(&e).contains("diferem"));
 
@@ -585,8 +585,8 @@ fn v2_39_generated_vault_has_the_configuration() {
     let t = fake_root("configuracao");
     let output = validate_output(&t.0, OsStr::new(DEFAULT_OUTPUT)).unwrap();
     let hash = HashPin::criar(pin.as_bytes()).unwrap();
-    let mut vault = CofreAberto::novo(&password, Configuracao::nova(hash)).unwrap();
-    gravar_entradas(&output, &mut vault, &built).unwrap();
+    let mut vault = OpenVault::new(&password, Configuracao::nova(hash)).unwrap();
+    write_entries(&output, &mut vault, &built).unwrap();
     drop(vault);
 
     let bytes = fs::read(&output).unwrap();
@@ -596,10 +596,10 @@ fn v2_39_generated_vault_has_the_configuration() {
             .any(|w| w == PIN_TESTE.as_bytes())
     );
     let (vault, loaded) = abrir_entradas(&bytes, &password).unwrap();
-    let cfg = vault.configuracao();
+    let cfg = vault.config();
     assert_eq!(loaded.len(), 22);
     // D39: a freshly created vault is at generation 1.
-    assert_eq!(vault.geracao(), 1);
+    assert_eq!(vault.generation(), 1);
     assert_eq!(cfg.minutos_trava(), 240);
     assert!(!cfg.backup().ligado() && cfg.backup().uuid().is_none());
     assert_eq!(cfg.hash_pin().parametros(), KDF_PIN);

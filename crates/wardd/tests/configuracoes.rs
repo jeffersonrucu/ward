@@ -11,7 +11,7 @@
 mod comum;
 
 use comum::*;
-use ward_core::limites::{MAX_MINUTOS_TRAVA, MIN_MINUTOS_TRAVA, MINUTOS_TRAVA_PADRAO};
+use ward_core::limits::{DEFAULT_LOCK_MINUTES, MAX_LOCK_MINUTES, MIN_LOCK_MINUTES};
 use ward_core::protocolo::{ErroResposta, Papel, Resposta};
 
 fn configuracao(d: &wardd::nucleo::Daemon) -> (u32, bool) {
@@ -70,8 +70,8 @@ fn trocar_senha(d: &wardd::nucleo::Daemon, papel: Papel, atual: &str, nova: &str
 fn v5_22_padrao_4h_desligado_e_tempo_alteravel_gravado_no_cofre() {
     let dir = Dir::novo("cfg-padrao");
     let (d, _) = cofre_de_teste(&dir);
-    assert_eq!(configuracao(&d), (MINUTOS_TRAVA_PADRAO, false));
-    assert_eq!(MINUTOS_TRAVA_PADRAO, 240);
+    assert_eq!(configuracao(&d), (DEFAULT_LOCK_MINUTES, false));
+    assert_eq!(DEFAULT_LOCK_MINUTES, 240);
     let antes = geracao_no_disco(&dir.caminhos().cofre, SENHA);
     assert!(ok(&tempo_trava(&d, Papel::App, 30)));
     assert_eq!(configuracao(&d), (30, false));
@@ -80,16 +80,16 @@ fn v5_22_padrao_4h_desligado_e_tempo_alteravel_gravado_no_cofre() {
     assert!(ok(&destravar(&d, SENHA)));
     assert_eq!(configuracao(&d), (30, false));
     // Os extremos de D45 passam; fora deles nem chega ao daemon.
-    assert!(ok(&tempo_trava(&d, Papel::App, MIN_MINUTOS_TRAVA)));
-    assert!(ok(&tempo_trava(&d, Papel::App, MAX_MINUTOS_TRAVA)));
-    for fora in [0, MAX_MINUTOS_TRAVA + 1, u32::MAX] {
+    assert!(ok(&tempo_trava(&d, Papel::App, MIN_LOCK_MINUTES)));
+    assert!(ok(&tempo_trava(&d, Papel::App, MAX_LOCK_MINUTES)));
+    for fora in [0, MAX_LOCK_MINUTES + 1, u32::MAX] {
         assert_eq!(
             erro(&tempo_trava(&d, Papel::App, fora)),
             Some(ErroResposta::PedidoInvalido),
             "{fora}"
         );
     }
-    assert_eq!(configuracao(&d), (MAX_MINUTOS_TRAVA, false));
+    assert_eq!(configuracao(&d), (MAX_LOCK_MINUTES, false));
 }
 
 /// Ataque (S9, D5): o agente e a extensão não leem a configuração nem mudam PIN, senha
@@ -109,7 +109,7 @@ fn ataque_agente_e_extensao_nao_leem_nem_mudam_a_configuracao() {
         let r = trocar_senha(&d, papel, SENHA, "falso-nova-mestra-02");
         assert_eq!(erro(&r), Some(ErroResposta::NaoAutorizado), "{papel:?}");
     }
-    assert_eq!(configuracao(&d), (MINUTOS_TRAVA_PADRAO, false));
+    assert_eq!(configuracao(&d), (DEFAULT_LOCK_MINUTES, false));
     assert_eq!(geracao_no_disco(&dir.caminhos().cofre, SENHA), geracao);
     // O PIN e a senha continuam os mesmos.
     assert!(ok(&mudar_nivel(&d, Papel::App, "t-aprov", "livre", PIN)));

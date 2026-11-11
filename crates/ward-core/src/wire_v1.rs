@@ -23,7 +23,7 @@
 use std::collections::BTreeSet;
 
 use crate::corpo;
-use crate::formato::{self, SenhaMestra};
+use crate::format::{self, MasterPassword};
 use crate::protocolo::{self, ErroResposta, Operacao, Papel, Resposta, TipoResposta, VERSAO};
 
 const PROTOCOL_V1: &[u8] = include_bytes!("../../../dev/fixtures/legacy/protocol-v1.jsonl");
@@ -184,8 +184,8 @@ fn v1_fixture_has_only_known_kinds() {
 
 /// Opens a 0.1.4 file and returns the decrypted body (zeroed on drop).
 fn body_of(file: &[u8]) -> zeroize::Zeroizing<Vec<u8>> {
-    let password = SenhaMestra::nova(TEST_PASSWORD.to_owned());
-    let (_keys, body) = formato::abrir(file, &password).expect("0.1.4 file does not open");
+    let password = MasterPassword::new(TEST_PASSWORD.to_owned());
+    let (_keys, body) = format::open(file, &password).expect("0.1.4 file does not open");
     body
 }
 
@@ -246,17 +246,17 @@ fn attack_renamed_wire_name_is_refused() {
 /// S6: one byte changed anywhere in the 0.1.4 file and it does not open.
 #[test]
 fn attack_vault_014_byte_flipped_does_not_open() {
-    let password = SenhaMestra::nova(TEST_PASSWORD.to_owned());
+    let password = MasterPassword::new(TEST_PASSWORD.to_owned());
     for pos in [0, 12, 100, VAULT.len() / 2, VAULT.len() - 1] {
         let mut file = VAULT.to_vec();
         file[pos] ^= 0x01;
         assert!(
-            formato::abrir(&file, &password).is_err(),
+            format::open(&file, &password).is_err(),
             "byte {pos} flipped opened"
         );
     }
-    let wrong = SenhaMestra::nova("falso-mestra-ward-02".to_owned());
-    assert!(formato::abrir(VAULT, &wrong).is_err());
+    let wrong = MasterPassword::new("falso-mestra-ward-02".to_owned());
+    assert!(format::open(VAULT, &wrong).is_err());
 }
 
 /// S2, m2:V1.7: the fixtures in git are sealed; no fake value of the test vault is in

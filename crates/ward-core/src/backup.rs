@@ -8,7 +8,7 @@
 //! - Data e hora em **UTC** (o núcleo não tem fuso horário; a interface mostra no fuso
 //!   local). Duas versões no mesmo segundo ganham sufixo: `ward-AAAAMMDD-HHMMSS-1.ward`
 //!   até `-99`, nessa ordem.
-//! - Gravação atômica pelo caminho interno de [`crate::gravacao`] (D27): temporário
+//! - Gravação atômica pelo caminho interno de [`crate::atomic_write`] (D27): temporário
 //!   `O_EXCL` 0600 → fsync → `link(2)` para o nome final, que **nunca sobrescreve** →
 //!   fsync do diretório. Uma gravação interrompida em qualquer ponto não mexe nos
 //!   backups que já estavam lá (S7, V7.3); o temporário que sobrar é cifrado e é
@@ -48,8 +48,8 @@ use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use crate::formato::CofreAberto;
-use crate::gravacao::{self, ErroGravacao, Ponto};
+use crate::atomic_write::{self, Point, WriteError};
+use crate::format::OpenVault;
 
 /// Quantas versões ficam na pasta (D17).
 pub const VERSOES: usize = 30;
@@ -199,7 +199,7 @@ pub enum ErroBackup {
     /// Os 100 nomes do mesmo segundo já existem.
     NomesEsgotados,
     /// Falha na gravação atômica (o que estava na pasta continua igual).
-    Gravacao(ErroGravacao),
+    Gravacao(WriteError),
     /// Falha de E/S ao listar ou ao apagar versões antigas.
     Io(io::ErrorKind),
 }
@@ -311,7 +311,7 @@ impl PastaBackup {
         &self,
         arquivo: &[u8],
         instante: SystemTime,
-        cofre: &CofreAberto,
+        cofre: &OpenVault,
     ) -> Result<Versao, ErroBackup> {
         self.guardar_com_pontos(
             arquivo,
@@ -328,16 +328,16 @@ impl PastaBackup {
         arquivo: &[u8],
         instante: SystemTime,
         geracao: &dyn Fn(&[u8]) -> Option<u64>,
-        ponto: &mut dyn FnMut(Ponto) -> io::Result<()>,
+        ponto: &mut dyn FnMut(Point) -> io::Result<()>,
     ) -> Result<Versao, ErroBackup> {
         self.conferir()?;
         let base = Versao::do_instante(instante).ok_or(ErroBackup::Relogio)?;
         // Temporários de uma gravação interrompida (cifrados), só os da pasta. Antes de
         // escrever: nunca sobra mais de um. Quem grava é só o daemon, uma vez por vez.
-        let _ = gravacao::limpar_temporarios(&self.dir.join(BASE_TEMPORARIO));
+        let _ = atomic_write::clean_temp_files(&self.dir.join(BASE_TEMPORARIO));
         let versoes: Vec<Versao> = (0..=MAX_SUFIXO).map(|s| base.com_sufixo(s)).collect();
         let nomes: Vec<OsString> = versoes.iter().map(|v| v.nome().into()).collect();
-        let (i, _) = gravacao::gravar_novo_com_pontos(
+        let (i, _) = atomic_write::write_new_with_points(
             &self.dir,
             BASE_TEMPORARIO.as_ref(),
             &nomes,
@@ -345,8 +345,8 @@ impl PastaBackup {
             ponto,
         )
         .map_err(|e| match e {
-            ErroGravacao::Io {
-                tipo: io::ErrorKind::AlreadyExists,
+            WriteError::Io {
+                kind: io::ErrorKind::AlreadyExists,
                 ..
             } => ErroBackup::NomesEsgotados,
             e => ErroBackup::Gravacao(e),
@@ -449,9 +449,8 @@ pub fn para_apagar_conferidas(
 /// de ser o mesmo do `lstat`.
 fn ler_versao_padrao(caminho: &Path, uid: u32) -> Option<Vec<u8>> {
     use std::io::Read;
-    let limite = (crate::formato::TAM_CABECALHO
-        + crate::formato::MAX_CONTEUDO
-        + crate::cripto::TAM_TAG) as u64;
+    let limite =
+        (crate::format::HEADER_SIZE + crate::format::MAX_CONTENT + crate::crypto::TAG_SIZE) as u64;
     let antes = fs::symlink_metadata(caminho).ok()?;
     if !antes.file_type().is_file() || antes.uid() != uid || antes.len() > limite {
         return None;
@@ -490,8 +489,8 @@ pub fn fora_de_ordem(lista: &[(Versao, Option<u64>)]) -> Vec<bool> {
 /// `cofre` aberto: autenticada pela AEAD, então não dá para forjar sem a chave. `None`
 /// quando é de outra chave (outra senha mestra, de antes de uma troca) ou não abre. O
 /// conteúdo decifrado zera ao sair; só o número sai daqui.
-pub fn geracao_selada(cofre: &CofreAberto, arquivo: &[u8]) -> Option<u64> {
-    cofre.geracao_selada(arquivo)
+pub fn geracao_selada(cofre: &OpenVault, arquivo: &[u8]) -> Option<u64> {
+    cofre.sealed_generation(arquivo)
 }
 
 /// Guarda o arquivo do cofre atual como backup antes de restaurar outra versão (D17).
@@ -500,11 +499,11 @@ pub fn geracao_selada(cofre: &CofreAberto, arquivo: &[u8]) -> Option<u64> {
 /// aberto que tem na memória.
 pub fn guardar_atual(
     pasta: &PastaBackup,
-    cofre: &CofreAberto,
+    cofre: &OpenVault,
     arquivo: &[u8],
     instante: SystemTime,
 ) -> Result<Versao, ErroBackup> {
-    if !cofre.autentica(arquivo) {
+    if !cofre.authenticates(arquivo) {
         return Err(ErroBackup::NaoAutentico);
     }
     pasta.guardar(arquivo, instante, cofre)

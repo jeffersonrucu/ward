@@ -126,9 +126,9 @@ Compilação de cada fase: `make compile`. Checador: os arquivos da fase.
   `testing.rs` e `lib.rs` (achado da Fase 7). — V2.1, V2.3
 
 `ward-core`:
-- [ ] Fase 10 — `lib.rs`, `limites` (+ testes), `cripto`, `totp` (+ testes), `gerador`
+- [x] Fase 10 — `lib.rs`, `limites` (+ testes), `cripto`, `totp` (+ testes), `gerador`
   (+ testes), `origem`, `exibicao`. — V2.1
-- [ ] Fase 11 — `formato` (+ testes), `gravacao` (+ testes). Gravação atômica intocada.
+- [x] Fase 11 — `formato` (+ testes), `gravacao` (+ testes). Gravação atômica intocada.
   — V2.1
 - [ ] Fase 12 — `entrada.rs`, `entrada/segredo.rs`, `entrada/validacao.rs` (os nomes
   gravados de `nome()`/`de_nome()` são literais congelados; os rótulos pt-BR ficam). —
@@ -143,7 +143,8 @@ Compilação de cada fase: `make compile`. Checador: os arquivos da fase.
 - [ ] Fase 17 — `protocolo.rs`, `campos.rs`, `quadro.rs`, `json.rs`, `erros.rs`,
   `pedido.rs` (nomes de operação, campo, erro e papel congelados como literais). —
   V2.1, V2.2
-- [ ] Fase 18 — `protocolo/resposta.rs`, `protocolo/testes.rs`. — V2.1, V2.2
+- [ ] Fase 18 — `protocolo/resposta.rs`, `protocolo/testes.rs`; `crates/ward-core/tests/fontes.rs`
+  e `tests/corpo_memoria.rs` (achado da Fase 10; o `fontes.rs` já exclui `tests`/`tests.rs`). — V2.1, V2.2
 
 `wardd`:
 - [ ] Fase 19 — `main.rs`, `lib.rs`, `config.rs`, `log.rs`, `lancamento.rs`,
@@ -164,7 +165,8 @@ Compilação de cada fase: `make compile`. Checador: os arquivos da fase.
 Clientes Rust:
 - [ ] Fase 28 — `crates/ward` (`args`, `cliente`, `comandos`, `texto`, testes;
   subcomandos e textos congelados) e `crates/ward-nm` (`ID_EXTENSAO` → `EXTENSION_ID`, com a leitura do
-  `pub const` em `dev/tests/extension.py`; mensagens congeladas). — V2.1
+  `pub const` em `dev/tests/extension.py` e o regex e as mensagens de
+  `dev/extension/build.py` (achado da Fase 39); mensagens congeladas). — V2.1
 - [ ] Fase 29 — `crates/ward-test-bridge` (`http.rs`, `main.rs`, `simulados.rs`,
   `tests/ataques.rs`). — V2.1
 - [ ] Fase 30 — `app/core`: `servico.rs`, `segredo.rs`, `erro.rs`, `lib.rs`. — V2.1
@@ -202,7 +204,7 @@ Trilha W (a 35 primeiro, depois 36–39 em paralelo):
 - [x] Fase 38 — **(UI)** `Settings.svelte`, `settings.js`, `Unlock.svelte`,
   `ChangePassword.svelte`, `ChangePin.svelte`, `ChooseUsbDrive.svelte`,
   `lib/bridge/*`, `lib/test/Showcase.svelte`. — V3.1, V3.2, V3.3
-- [ ] Fase 39 — **(UI)** Extensão: `extension/*.js`, `popup.html`, `popup.css` (classes),
+- [x] Fase 39 — **(UI)** Extensão: `extension/*.js`, `popup.html`, `popup.css` (classes),
   `manifest.json` (só comentários do montador; campos do Chrome não mudam), montador
   `dev/extension/` (`montar.py` → `build.py`). Mensagens de native messaging
   congeladas. Ajusta os literais de `dev/tests/extension.py` (`data-entrada`, classes do
@@ -212,7 +214,7 @@ Trilha S (fases independentes entre si):
 - [x] Fase 40 — `dev/tests/extension.py`, `dev/tests/cli.py`. — V3.1
 - [x] Fase 41 — `dev/tests/migration-guide.py` (`migracao.py`),
   `attacks-foundation.sh`, `skill.py`. — V3.1, V3.7
-- [ ] Fase 42 — `dev/variations.py`, `dev/tests/variations_test.py`, `login.py`,
+- [x] Fase 42 — `dev/variations.py`, `dev/tests/variations_test.py`, `login.py`,
   `revealed_selection.py`. — V3.1
 - [ ] Fase 43 — `dev/container-*` (`inside.sh` de plataforma, install e deb; units, uid;
   `falso.c` → `fake.c`), `dev/tests/clipboard.py`; exemplos `wardd-cliente-teste`,
@@ -266,14 +268,16 @@ Contrato: V4.1–V4.24. Sequencial. A partir daqui o fio muda.
   valores em inglês e tabela com rótulos pt-BR: imprime `label()`, não `nome()`, achado da Fase 1), `ward-nm`, `ward-test-bridge`,
   `app/core` (com o `daemon_falso`), testes Rust que montam JSON à mão. Compilação:
   `make compile`. — V4.13, V4.16, V4.17, V4.18
-- [ ] Fase 52 — Protocolo v2 em JS e Python: `extension/` (native messaging),
+- [ ] Fase 52 — Protocolo v2 em JS e Python: `extension/` (native messaging; motivos de `fillInPage` e códigos locais do service worker, que dividem `FAILURES`/`SAVE_FAILURES` do popup com os do daemon, achado da Fase 39),
   `app/src/lib/bridge`, ponte de teste do front-end, `dev/tests/*.py` que falam com o
   socket ou com o `ward-nm` (`socket_matrix.py`, `socket_attack.py`, `nm.py`,
   `extension.py`, `login.py`, `cli.py`, `chrome_policy.py`, `open-app.py`,
   `chrome_falso.py`, `ssh_falso.py`), servidor falso v1 para o V4.16. Esvazia de
   `frozen.txt` as chaves de mensagem. Compilação: `make compile`. — V4.13, V4.16, V5.10
 - [ ] Fase 53 — Variáveis entregues (DT11) no `ward-core` `delivery` e no `wardd`;
-  `make dev-vault` e `dev-vault-verify` com o `entries.json` novo; oráculo
+  `make dev-vault` e `dev-vault-verify` com o `entries.json` novo (chaves lidas por
+  `dev/variations.py` e `dev/tests/login.py`; heredoc do `dev-vault.sh` chama
+  `entry_patterns`/`database_url`; achado da Fase 42); oráculo
   `dev/variations.py` (formas das variáveis novas); o parser da tabela "Cofre de teste"
   em `dev/tests/dev-vault.sh` com os nomes v5 deste contrato; expectativas de
   `dev/tests/cli.py` e dos testes do `wardd` pela tabela "Entrega esperada". Compilação:

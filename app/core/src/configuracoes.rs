@@ -5,9 +5,9 @@
 //!   Argon2id do novo na configuração do cofre, com geração nova (D30, D39).
 //! - [`TrocaSenha`]: senha mestra atual, nova e a confirmação. A nova segue a mesma regra
 //!   do primeiro uso ([`crate::primeiro_uso::erros_da_senha`]: 12 caracteres ou mais,
-//!   até `MAX_SEGREDO` bytes); a atual só precisa existir e caber no limite (quem a
+//!   até `MAX_SECRET` bytes); a atual só precisa existir e caber no limite (quem a
 //!   confere é o daemon, `trocar_senha`).
-//! - Tempo de trava: de `MIN_MINUTOS_TRAVA` a `MAX_MINUTOS_TRAVA` (D45), gravado na
+//! - Tempo de trava: de `MIN_LOCK_MINUTES` a `MAX_LOCK_MINUTES` (D45), gravado na
 //!   configuração do cofre pelo daemon (`tempo_trava`).
 //! - [`Configuracoes`]: o que a tela mostra (tempo de trava e backup externo ligado ou
 //!   não), lido pela operação `configuracao`; nunca o hash do PIN nem o UUID.
@@ -16,7 +16,7 @@
 //! conferido aqui antes de ir ao daemon. Erros por campo, com texto fixo, sem valor.
 
 use serde::{Deserialize, Serialize};
-use ward_core::limites::{MAX_MINUTOS_TRAVA, MAX_SEGREDO, MIN_MINUTOS_TRAVA};
+use ward_core::limits::{MAX_LOCK_MINUTES, MAX_SECRET, MIN_LOCK_MINUTES};
 
 use crate::ErroApp;
 use crate::formulario::ErroCampo;
@@ -106,7 +106,7 @@ impl TrocaSenha {
     pub fn erros(&self) -> Vec<ErroCampo> {
         let mut erros = Vec::new();
         let atual = self.atual.bytes();
-        if atual.is_empty() || atual.len() > MAX_SEGREDO {
+        if atual.is_empty() || atual.len() > MAX_SECRET {
             erros.push(erro("atual", SENHA_ATUAL_VAZIA));
         }
         for mut e in erros_da_senha(&self.nova, &self.confirmacao) {
@@ -123,7 +123,7 @@ impl TrocaSenha {
 pub fn minutos_validos(minutos: u64) -> Result<u32, ErroApp> {
     u32::try_from(minutos)
         .ok()
-        .filter(|m| (MIN_MINUTOS_TRAVA..=MAX_MINUTOS_TRAVA).contains(m))
+        .filter(|m| (MIN_LOCK_MINUTES..=MAX_LOCK_MINUTES).contains(m))
         .ok_or(ErroApp::PedidoInvalido)
 }
 
@@ -207,7 +207,7 @@ mod testes {
         );
         assert_eq!(campos(senha(SENHA, NOVA, SENHA).erros()), ["confirmacao"]);
         assert_eq!(campos(senha("", NOVA, NOVA).erros()), ["atual"]);
-        let grande = "a".repeat(MAX_SEGREDO + 1);
+        let grande = "a".repeat(MAX_SECRET + 1);
         assert_eq!(campos(senha(&grande, NOVA, NOVA).erros()), ["atual"]);
         assert_eq!(campos(senha(SENHA, &grande, &grande).erros()), ["nova"]);
     }
@@ -248,7 +248,7 @@ mod testes {
     fn ataque_minutos_fora_da_faixa() {
         for m in [
             0,
-            u64::from(MAX_MINUTOS_TRAVA) + 1,
+            u64::from(MAX_LOCK_MINUTES) + 1,
             u64::from(u32::MAX) + 1,
             u64::MAX,
         ] {

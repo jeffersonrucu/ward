@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use ward_core::limites;
+use ward_core::limits;
 /// O tipo que [`AreaTransferencia::ler`] devolve, para quem implementa a área fora
 /// daqui sem depender do `zeroize` (o app Tauri).
 pub use zeroize::Zeroizing;
@@ -27,13 +27,13 @@ pub const PRAZO_LIMPEZA: Duration = Duration::from_secs(30);
 
 /// Maior valor que o "copiar" aceita (o limite de um segredo de texto do `ward-core`).
 /// Quem lê a área não precisa de mais que `MAX_VALOR + 1` bytes para comparar.
-pub const MAX_VALOR: usize = limites::MAX_SEGREDO;
+pub const MAX_VALOR: usize = limits::MAX_SECRET;
 
 /// Onde o valor copiado fica. Os testes usam uma área falsa.
 pub trait AreaTransferencia: Send + Sync + 'static {
     fn escrever(&self, valor: &[u8]) -> Result<(), ErroApp>;
     /// Conteúdo de texto atual (`None` se vazia ou sem texto), limitado a
-    /// `MAX_SEGREDO + 1` bytes: mais que isso não pode ser o valor copiado.
+    /// `MAX_SECRET + 1` bytes: mais que isso não pode ser o valor copiado.
     fn ler(&self) -> Result<Option<Zeroizing<Vec<u8>>>, ErroApp>;
     fn limpar(&self) -> Result<(), ErroApp>;
 }
@@ -70,7 +70,7 @@ impl<A: AreaTransferencia> Copiador<A> {
     /// Escreve o valor e agenda a limpeza. Uma cópia nova substitui a anterior: o
     /// prazo da anterior deixa de valer e só o da nova limpa.
     pub fn copiar(&self, segredo: Segredo) -> Result<(), ErroApp> {
-        if segredo.is_empty() || segredo.len() > limites::MAX_SEGREDO {
+        if segredo.is_empty() || segredo.len() > limits::MAX_SECRET {
             return Err(ErroApp::PedidoInvalido);
         }
         let geracao = {
@@ -240,7 +240,7 @@ mod testes {
             Err(ErroApp::PedidoInvalido)
         );
         assert_eq!(
-            c.copiar(Segredo::novo(vec![b'a'; limites::MAX_SEGREDO + 1])),
+            c.copiar(Segredo::novo(vec![b'a'; limits::MAX_SECRET + 1])),
             Err(ErroApp::PedidoInvalido)
         );
         assert_eq!(*area.conteudo.lock().unwrap(), None);

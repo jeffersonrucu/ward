@@ -948,7 +948,7 @@ fn ataque_fase_39a_destrave_com_entrada_e_comando_neutralizados() {
     let c = cena("destrave-39a");
     let rx = assinar(&c.d, 1);
     assert!(ok(&pedir(&c.d, Papel::Agente, "travar", "{}")));
-    let invisivel = |t: &str| t.chars().any(ward_core::exibicao::invisivel);
+    let invisivel = |t: &str| t.chars().any(ward_core::display::invisible);
     let nome_json = "t-livre\\u202e\\u001b[2K\\u200b\\udb40\\udc41";
     let argv: [&[u8]; 3] = [
         b"psql",

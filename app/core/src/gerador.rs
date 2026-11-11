@@ -1,6 +1,6 @@
 //! Gerador de senha avulso (Fase 37, tela `Gerador de senha / Avulso`).
 //!
-//! A senha nasce só em `ward_core::gerador` (RNG do sistema, sem viés, símbolos de D35),
+//! A senha nasce só em `ward_core::generator` (RNG do sistema, sem viés, símbolos de D35),
 //! nunca no JavaScript. Ela fica aqui, no lado Rust, num [`Segredo`] que zera ao sair:
 //!
 //! - `gerar_senha` devolve à interface só o que não é segredo: o tamanho, a força
@@ -15,19 +15,19 @@
 
 use std::fmt;
 
-use ward_core::gerador::{self as nucleo, OpcoesGerador};
+use ward_core::generator::{self as nucleo, GeneratorOptions};
 use zeroize::Zeroizing;
 
 use crate::ErroApp;
 use crate::segredo::Segredo;
 
 /// Menor tamanho da tela (o design diz "De 8 a 64"). Fica dentro de
-/// `ward_core::gerador::TAMANHO_MIN..=TAMANHO_MAX`.
+/// `ward_core::generator::MIN_SIZE..=MAX_SIZE`.
 pub const TAMANHO_MIN: usize = 8;
 /// Maior tamanho da tela.
 pub const TAMANHO_MAX: usize = 64;
 /// Tamanho inicial (o mesmo do gerador do núcleo e do design: "24 caracteres").
-pub const TAMANHO_PADRAO: usize = nucleo::TAMANHO_PADRAO;
+pub const TAMANHO_PADRAO: usize = nucleo::DEFAULT_SIZE;
 
 /// Opções que vieram da interface (não confiável): o tamanho é conferido aqui e de novo
 /// no núcleo.
@@ -41,7 +41,7 @@ pub struct Opcoes {
 }
 
 impl Opcoes {
-    fn validar(self) -> Result<OpcoesGerador, ErroApp> {
+    fn validar(self) -> Result<GeneratorOptions, ErroApp> {
         let tamanho = usize::try_from(self.tamanho).map_err(|_| ErroApp::PedidoInvalido)?;
         if !(TAMANHO_MIN..=TAMANHO_MAX).contains(&tamanho) {
             return Err(ErroApp::PedidoInvalido);
@@ -49,12 +49,12 @@ impl Opcoes {
         if !(self.minusculas || self.maiusculas || self.digitos || self.simbolos) {
             return Err(ErroApp::PedidoInvalido);
         }
-        Ok(OpcoesGerador {
-            tamanho,
-            minusculas: self.minusculas,
-            maiusculas: self.maiusculas,
-            digitos: self.digitos,
-            simbolos: self.simbolos,
+        Ok(GeneratorOptions {
+            size: tamanho,
+            lowercase: self.minusculas,
+            uppercase: self.maiusculas,
+            digits: self.digitos,
+            symbols: self.simbolos,
         })
     }
 }
@@ -96,31 +96,31 @@ pub struct Gerada {
     /// Entropia arredondada para baixo, de 10 em 10 ("cerca de 150 bits").
     pub bits: u32,
     pub forca: Forca,
-    /// Símbolos de D35, de `ward_core::gerador::SIMBOLOS`.
+    /// Símbolos de D35, de `ward_core::generator::SYMBOLS`.
     pub simbolos: &'static str,
 }
 
 /// Símbolos de D35 como texto (são ASCII).
 pub fn simbolos() -> &'static str {
     // `SIMBOLOS` é ASCII por construção; o teste confere.
-    core::str::from_utf8(nucleo::SIMBOLOS).unwrap_or("")
+    core::str::from_utf8(nucleo::SYMBOLS).unwrap_or("")
 }
 
 /// Entropia em bits de uma senha uniforme com essas opções, arredondada para baixo de
 /// 10 em 10. Ignora o pequeno desconto de "um de cada conjunto" (menos de 1 bit).
-fn bits(o: &OpcoesGerador) -> u32 {
+fn bits(o: &GeneratorOptions) -> u32 {
     let alfabeto = [
-        (o.minusculas, nucleo::MINUSCULAS.len()),
-        (o.maiusculas, nucleo::MAIUSCULAS.len()),
-        (o.digitos, nucleo::DIGITOS.len()),
-        (o.simbolos, nucleo::SIMBOLOS.len()),
+        (o.lowercase, nucleo::LOWERCASE.len()),
+        (o.uppercase, nucleo::UPPERCASE.len()),
+        (o.digits, nucleo::DIGITS.len()),
+        (o.symbols, nucleo::SYMBOLS.len()),
     ]
     .iter()
     .filter(|(m, _)| *m)
     .map(|(_, n)| *n)
     .sum::<usize>();
     // tamanho ≤ 64 e alfabeto ≤ 90: cabe com folga em f64 e em u32.
-    let total = f64::from(u32::try_from(o.tamanho).unwrap_or(0))
+    let total = f64::from(u32::try_from(o.size).unwrap_or(0))
         * f64::from(u32::try_from(alfabeto).unwrap_or(0)).log2();
     let inteiro = total.floor().clamp(0.0, 10_000.0) as u32;
     inteiro - inteiro % 10
@@ -161,9 +161,9 @@ impl Gerador {
         let o = opcoes.validar()?;
         // Antes de gerar: se o RNG falhar, não sobra a senha antiga com opções novas.
         self.atual = None;
-        let senha = nucleo::gerar(&o).map_err(|e| match e {
-            nucleo::ErroGerador::AleatorioIndisponivel => ErroApp::AleatorioIndisponivel,
-            nucleo::ErroGerador::TamanhoInvalido | nucleo::ErroGerador::NenhumConjunto => {
+        let senha = nucleo::generate(&o).map_err(|e| match e {
+            nucleo::GeneratorError::RandomUnavailable => ErroApp::AleatorioIndisponivel,
+            nucleo::GeneratorError::InvalidSize | nucleo::GeneratorError::NoSet => {
                 ErroApp::PedidoInvalido
             }
         })?;
@@ -172,7 +172,7 @@ impl Gerador {
         drop(senha);
         let bits = bits(&o);
         Ok(Gerada {
-            tamanho: o.tamanho,
+            tamanho: o.size,
             bits,
             forca: Forca::de_bits(bits),
             simbolos: simbolos(),
@@ -221,8 +221,8 @@ mod testes {
 
     #[test]
     fn limites_da_tela_dentro_do_nucleo() {
-        const { assert!(TAMANHO_MIN >= nucleo::TAMANHO_MIN) };
-        const { assert!(TAMANHO_MAX <= nucleo::TAMANHO_MAX) };
+        const { assert!(TAMANHO_MIN >= nucleo::MIN_SIZE) };
+        const { assert!(TAMANHO_MAX <= nucleo::MAX_SIZE) };
         const { assert!(TAMANHO_MIN <= TAMANHO_PADRAO && TAMANHO_PADRAO <= TAMANHO_MAX) };
     }
 

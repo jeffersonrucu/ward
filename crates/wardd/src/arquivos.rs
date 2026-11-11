@@ -1,11 +1,11 @@
 //! Arquivos do daemon no disco: o cofre (só leitura e identidade; quem grava é o
-//! `ward_core::gravacao`) e o arquivo de estado com as gerações de D39/D53.
+//! `ward_core::atomic_write`) e o arquivo de estado com as gerações de D39/D53.
 //!
 //! - Tudo é aberto com `O_NOFOLLOW`: link simbólico no lugar do cofre ou do estado é
 //!   recusado. Só arquivo comum do próprio usuário.
 //! - A identidade do cofre (`dev`, inode, `mtime` com nanossegundos e tamanho) vem do
 //!   `fstat` do mesmo fd que foi lido (D39); depois de gravar, do fd do temporário que
-//!   o `ward_core::gravacao` devolve (D62), nunca de um `stat` depois do rename.
+//!   o `ward_core::atomic_write` devolve (D62), nunca de um `stat` depois do rename.
 //! - O estado é texto pequeno, sem segredo, gravado de forma atômica (temporário com
 //!   `O_EXCL` + fsync + rename + fsync do diretório), 0600. Guarda as gerações (D53) e
 //!   as senhas erradas seguidas do papel agente (D20 revista pela D62).
@@ -16,13 +16,12 @@ use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-pub use ward_core::gravacao::IdentidadeArquivo as Identidade;
+pub use ward_core::atomic_write::FileIdentity as Identidade;
 
-use ward_core::formato;
+use ward_core::format;
 
 /// Maior arquivo de cofre que o formato aceita (cabeçalho + conteúdo + tag).
-pub(crate) const MAX_ARQUIVO_COFRE: u64 =
-    (formato::TAM_CABECALHO + formato::MAX_CONTEUDO + 16) as u64;
+pub(crate) const MAX_ARQUIVO_COFRE: u64 = (format::HEADER_SIZE + format::MAX_CONTENT + 16) as u64;
 /// Maior arquivo de estado aceito.
 const MAX_ESTADO: u64 = 256;
 /// Primeira linha do arquivo de estado.

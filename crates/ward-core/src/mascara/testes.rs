@@ -787,7 +787,7 @@ fn ataque_anexo_grande_demais_falha_fechado() {
             r.extras = vec![extra("X", "y", false)];
             r.anexos = vec![anexo(
                 "grande.bin",
-                &vec![b'z'; crate::limites::MAX_ANEXOS_SOMADOS],
+                &vec![b'z'; crate::limits::MAX_ATTACHMENTS_TOTAL],
             )];
             valida(r)
         })
@@ -796,14 +796,14 @@ fn ataque_anexo_grande_demais_falha_fechado() {
     let mut usadas = 0;
     for e in &grandes {
         let custo = custo_da_entrada(e).expect("cabe no orçamento");
-        assert!(custo <= ORCAMENTO_MASCARA);
+        assert!(custo <= MASK_BUDGET);
         soma += custo;
         usadas += 1;
-        if soma > LIMITE_PADROES {
+        if soma > PATTERN_LIMIT {
             break;
         }
     }
-    assert!(soma > LIMITE_PADROES, "o teste precisa passar do limite");
+    assert!(soma > PATTERN_LIMIT, "o teste precisa passar do limite");
     let mut c = ConstrutorMascara::new();
     for e in &grandes[..usadas] {
         c = c.entrada(e);
@@ -1012,9 +1012,9 @@ fn servidor_com_chave(chave: &str) -> Entrada {
 fn sem_linha_da_chave(caso: &str, saida: &[u8], chave: &str) {
     for linha in chave
         .lines()
-        .filter(|l| l.chars().count() >= MINIMO_CONFIAVEL)
+        .filter(|l| l.chars().count() >= TRUSTED_MINIMUM)
     {
-        for janela in linha.as_bytes().windows(MINIMO_CONFIAVEL) {
+        for janela in linha.as_bytes().windows(TRUSTED_MINIMUM) {
             assert!(
                 !saida.windows(janela.len()).any(|w| w == janela),
                 "{caso}: sobrou pedaço de uma linha da chave: {}",
@@ -1953,7 +1953,7 @@ fn v3_29_delta_api_simbolos_e_go_com_ensure_ascii() {
     let e = delta_api_simbolos();
     let m = mascara(&e);
     let custo = custo_da_entrada(&e).unwrap();
-    assert!(custo <= ORCAMENTO_MASCARA, "D29: {custo}");
+    assert!(custo <= MASK_BUDGET, "D29: {custo}");
     let contrato = br"falso-Ab3$k\u0026\u003c9\u003eZq!'/\u00e7-01".to_vec();
     let mut saidas: Vec<(&str, Vec<u8>)> = vec![
         ("Go + ensure_ascii (contrato)", contrato.clone()),
@@ -2093,7 +2093,7 @@ fn v3_31_json_numa_linha() {
     let e = valida(r);
     let m = mascara(&e);
     let custo = custo_da_entrada(&e).unwrap();
-    assert!(custo <= ORCAMENTO_MASCARA, "D29: {custo}");
+    assert!(custo <= MASK_BUDGET, "D29: {custo}");
     let cliente = core::str::from_utf8(client).unwrap();
     let casos: [(&str, &str, &str, &str); 5] = [
         (
@@ -2177,7 +2177,7 @@ fn v3_32_yaml_dotenv_e_tab_de_linha_binaria() {
     let nota = "url: https://x.example\nsenha: falso-yaml-coment-01 # comentario\nprivate key: falso-yaml-chave-espaco-02\naws/secret: falso-yaml-chave-barra-03\n  aninhado:\n    senha: falso-yaml-indent-04\nSENHA_DB=\"falso-env-coment-05\" # dotenv\ntok: 'falso-it''s-yaml-06'";
     let e = generico(&[nota]);
     let m = mascara(&e);
-    assert!(custo_da_entrada(&e).unwrap() <= ORCAMENTO_MASCARA);
+    assert!(custo_da_entrada(&e).unwrap() <= MASK_BUDGET);
     for alvo in [
         "falso-yaml-coment-01",
         "falso-yaml-chave-espaco-02",
@@ -2206,7 +2206,7 @@ fn v3_32_yaml_dotenv_e_tab_de_linha_binaria() {
     r.anexos = vec![anexo("cfg.ini", &an)];
     let ea = valida(r);
     let ma = mascara(&ea);
-    assert!(custo_da_entrada(&ea).unwrap() <= ORCAMENTO_MASCARA);
+    assert!(custo_da_entrada(&ea).unwrap() <= MASK_BUDGET);
     for (caso, script, alvo) in [
         (
             "cut -f2 (KEY=v)",

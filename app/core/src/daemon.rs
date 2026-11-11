@@ -28,7 +28,7 @@
 //!   D20 mais o Argon2, D62); sem ela, a conexão fecha (uma resposta atrasada seria
 //!   "resposta sem pedido").
 //! - Os quadros ficam em `Zeroizing` (o `copiar` traz segredo) e o limite é o de
-//!   `ward_core::limites`.
+//!   `ward_core::limits`.
 //!
 //! Conexão única (D47, Fase 29a): o app setgid conecta **uma vez**, antes do GTK, com o
 //! egid do grupo `ward-app` (o papel vem dele), e depois larga o grupo

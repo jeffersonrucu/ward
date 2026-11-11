@@ -178,3 +178,42 @@ app/src/screens/ChangePin.svelte codigo 54 code field of the command error
 app/src/screens/ChangePin.svelte mensagem 54 message field of the command error
 app/src/screens/ChooseUsbDrive.svelte codigo 54 code field of the command error
 app/src/screens/ChooseUsbDrive.svelte mensagem 54 message field of the command error
+
+# Phase 39 (extension): native messaging protocol fields (wire with ward-nm) and fields of
+# the extension's internal messages (chrome.runtime between content script, popup and
+# service worker; glossary section 12).
+extension/login.js tipo 52 type field of the protocol reply
+extension/login.js dados 52 data field of the protocol request and reply
+extension/login.js codigo 52 code field of the protocol error
+extension/login.js usuario 52 username field of the preenchimento reply
+extension/login.js senha 52 password field of the preenchimento reply
+extension/popup.js tipo 52 type field of the protocol reply
+extension/popup.js dados 52 data field of the protocol request and reply
+extension/popup.js codigo 52 code field of the protocol error
+extension/popup.js itens 52 items field of the sugestoes reply
+extension/popup.js nome 52 name field of a sugestoes item
+extension/popup.js usuario 52 username field of a sugestoes item, of the preenchimento reply and of the pendente internal reply
+extension/popup.js senha 52 password field of the preenchimento reply
+extension/popup.js ambiente 52 environment field of a sugestoes item
+extension/popup.js origem 52 origin field of the pendente internal reply
+extension/popup.js erro 52 error field of the internal replies of the service worker
+extension/popup.js problemas 52 problems field of the salvar internal reply (from the protocol error)
+extension/popup.js campo 52 field of a validation problem
+extension/popup.js motivo 52 reason field of a validation problem
+extension/service.js tipo 52 type field of the protocol reply; type field of the salvar_login entry
+extension/service.js dados 52 data field of the protocol request and reply
+extension/service.js codigo 52 code field of the protocol error
+extension/service.js itens 52 items field of the sugestoes reply
+extension/service.js usuario 52 username field of the internal messages, of a sugestoes item and of the preenchimento reply
+extension/service.js senha 52 password field of the enviado internal message and of the preenchimento reply
+extension/service.js aba 52 tab field of the internal messages from the popup
+extension/service.js documento 52 document field of the preencher internal message
+extension/service.js entrada 52 entry field of the preencher internal message and of the salvar_login request
+extension/service.js origem 52 origin field of the preencher internal message
+extension/service.js nome 52 name field of the salvar internal message
+extension/service.js grupo 52 group field of the salvar internal message
+extension/service.js ambiente 52 environment field of the salvar internal message
+extension/service.js campos 52 fields field of the salvar_login entry
+extension/service.js problemas 52 problems field of the protocol validation error
+extension/service.js campo 52 field of a validation problem
+extension/service.js motivo 52 reason field of a validation problem
