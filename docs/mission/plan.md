@@ -179,7 +179,7 @@ Clientes Rust:
 - [x] Fase 31 — `app/core`: `daemon_falso.rs` (com o reexport `SECRETS as SEGREDOS` e os usos, achado da Fase 14), `daemon.rs`, `cliente.rs`. — V2.1
 - [x] Fase 32 — `app/core`: `formulario.rs`, `aprovacao.rs`, `anexos.rs`,
   `restaurar.rs`, `bandeja.rs` (`serde` para a webview com `rename`). — V2.1
-- [ ] Fase 33 — `app/core`: `comandos.rs`, `configuracoes.rs`, `backup_externo.rs`,
+- [x] Fase 33 — `app/core`: `comandos.rs`, `configuracoes.rs`, `backup_externo.rs`,
   `terminal.rs`, `chave.rs`, `partida.rs`, `credenciais.rs`. — V2.1
 - [ ] Fase 34 — `app/core`: `destrave.rs`, `primeiro_uso.rs`, `gerador.rs`,
   `area_transferencia.rs`, `nivel.rs`; `app/src-tauri/src` (`main.rs` — o heredoc do

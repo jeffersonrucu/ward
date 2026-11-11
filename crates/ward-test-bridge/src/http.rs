@@ -13,8 +13,7 @@ use serde_json::{Value, json};
 use ward_app_core::AppError;
 use ward_app_core::area_transferencia::AreaTransferencia;
 use ward_app_core::attachments::AttachmentEdit;
-use ward_app_core::comandos::Comando;
-use ward_app_core::configuracoes::{TrocaPin, TrocaSenha};
+use ward_app_core::commands::Command;
 use ward_app_core::daemon::Daemon;
 use ward_app_core::destrave::SenhaMestra;
 use ward_app_core::form::Form;
@@ -23,6 +22,7 @@ use ward_app_core::nivel::Pin;
 use ward_app_core::primeiro_uso::NovoCofre;
 use ward_app_core::restore::Restore;
 use ward_app_core::service::Service;
+use ward_app_core::settings::{PasswordChange, PinChange};
 use zeroize::Zeroizing;
 
 /// Request head (line + headers).
@@ -183,7 +183,7 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Bridge<D, A> {
         {
             return Response::text(415);
         }
-        let Some(command) = Comando::de_nome(name) else {
+        let Some(command) = Command::from_name(name) else {
             return Response::error(404, AppError::InvalidRequest);
         };
         let Ok(Value::Object(mut args)) = serde_json::from_slice::<Value>(&p.body) else {
@@ -191,9 +191,9 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Bridge<D, A> {
         };
         // Phase 35: the PIN leaves the map (ownership, no copy) and becomes a `Pin` that zeroes.
         let pin = match command {
-            Comando::MudarNivel => args.remove("pin").map(serde_json::from_value::<Pin>),
+            Command::SetLevel => args.remove("pin").map(serde_json::from_value::<Pin>),
             // Phase 36: `null` (Deny) stays `None`; the rest becomes `Pin` or an error.
-            Comando::ResponderAprovacao => match args.remove("pin") {
+            Command::AnswerApproval => match args.remove("pin") {
                 None | Some(Value::Null) => None,
                 Some(v) => Some(serde_json::from_value::<Pin>(v)),
             },
@@ -202,7 +202,7 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Bridge<D, A> {
         // Phase 31: the master password also leaves the map (ownership) and becomes the
         // master password type of the app core, which zeroes.
         let password = match command {
-            Comando::Destravar => args
+            Command::Unlock => args
                 .remove("senha")
                 .map(serde_json::from_value::<SenhaMestra>),
             _ => None,
@@ -210,18 +210,20 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Bridge<D, A> {
         // Phase 38: the data of the changes also leave the map (ownership) and become typed
         // values that zero.
         let pin_change = match command {
-            Comando::TrocarPin => args.remove("dados").map(serde_json::from_value::<TrocaPin>),
+            Command::ChangePin => args
+                .remove("dados")
+                .map(serde_json::from_value::<PinChange>),
             _ => None,
         };
         let password_change = match command {
-            Comando::TrocarSenhaMestra => args
+            Command::ChangeMasterPassword => args
                 .remove("dados")
-                .map(serde_json::from_value::<TrocaSenha>),
+                .map(serde_json::from_value::<PasswordChange>),
             _ => None,
         };
         // Phase 47: the version password and the current PIN also leave the map (ownership).
         let restore = match command {
-            Comando::RestaurarBackup => args.remove("dados").map(serde_json::from_value::<Restore>),
+            Command::RestoreBackup => args.remove("dados").map(serde_json::from_value::<Restore>),
             _ => None,
         };
         let text = |key: &str| args.get(key).and_then(Value::as_str);
@@ -229,26 +231,26 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Bridge<D, A> {
         let result = match command {
             // Phase 31: with the vault locked, the request of the waiting agent (only id and the
             // seconds left).
-            Comando::EstadoDoCofre => self
+            Command::VaultStatus => self
                 .service
                 .vault_status()
                 .map(|e| json!({ "estado": e.code(), "pedido": self.service.request_info(e) })),
-            Comando::CopiarCampo => match (text("entrada"), text("campo")) {
+            Command::CopyField => match (text("entrada"), text("campo")) {
                 (Some(e), Some(c)) => self.service.copy_field(e, c).map(|()| Value::Null),
                 _ => Err(AppError::InvalidRequest),
             },
-            Comando::ListarCredenciais => self
+            Command::ListCredentials => self
                 .service
                 .list_credentials()
                 .and_then(|l| serde_json::to_value(l).map_err(|_| AppError::InvalidResponse)),
-            Comando::DetalheCredencial => match text("entrada") {
+            Command::CredentialDetail => match text("entrada") {
                 Some(e) => self
                     .service
                     .credential_detail(e)
                     .and_then(|d| serde_json::to_value(d).map_err(|_| AppError::InvalidResponse)),
                 None => Err(AppError::InvalidRequest),
             },
-            Comando::GerarSenha => match (
+            Command::GeneratePassword => match (
                 args.get("tamanho").and_then(Value::as_u64),
                 flag("minusculas"),
                 flag("maiusculas"),
@@ -275,49 +277,49 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Bridge<D, A> {
                 }
                 _ => Err(AppError::InvalidRequest),
             },
-            Comando::CopiarSenhaGerada => {
+            Command::CopyGeneratedPassword => {
                 self.service.copy_generated_password().map(|()| Value::Null)
             }
             // S11: the value only comes out on "reveal", as in the app.
-            Comando::RevelarSenhaGerada => self
+            Command::RevealGeneratedPassword => self
                 .service
                 .reveal_generated_password()
                 .map(|r| json!({ "valor": r.expor() })),
-            Comando::DescartarSenhaGerada => self
+            Command::DiscardGeneratedPassword => self
                 .service
                 .discard_generated_password()
                 .map(|()| Value::Null),
             // S11 (D65 b): the value only on "reveal", as in the app.
-            Comando::RevelarCampo => match (text("entrada"), text("campo")) {
+            Command::RevealField => match (text("entrada"), text("campo")) {
                 (Some(e), Some(c)) => self
                     .service
                     .reveal_field(e, c)
                     .map(|r| json!({ "valor": r.expor() })),
                 _ => Err(AppError::InvalidRequest),
             },
-            Comando::CodigoTotp => match text("entrada") {
+            Command::TotpCode => match text("entrada") {
                 Some(e) => self
                     .service
                     .totp_code(e)
                     .and_then(|c| serde_json::to_value(c).map_err(|_| AppError::InvalidResponse)),
                 None => Err(AppError::InvalidRequest),
             },
-            Comando::CopiarCodigoTotp => match text("entrada") {
+            Command::CopyTotpCode => match text("entrada") {
                 Some(e) => self.service.copy_totp_code(e).map(|()| Value::Null),
                 None => Err(AppError::InvalidRequest),
             },
-            Comando::UsarSenhaGerada => match text("campo") {
+            Command::UseGeneratedPassword => match text("campo") {
                 Some(c) => self
                     .service
                     .use_generated_password(c)
                     .map(|t| json!({ "tamanho": t })),
                 None => Err(AppError::InvalidRequest),
             },
-            Comando::DescartarFormulario => {
+            Command::DiscardForm => {
                 self.service.discard_form();
                 Ok(Value::Null)
             }
-            Comando::SalvarCredencial => {
+            Command::SaveCredential => {
                 let previous = match args.get("anterior") {
                     None | Some(Value::Null) => Ok(None),
                     Some(Value::String(a)) => Ok(Some(a.as_str())),
@@ -336,7 +338,7 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Bridge<D, A> {
                     _ => Err(AppError::InvalidRequest),
                 }
             }
-            Comando::MudarNivel => match (text("entrada"), text("nivel"), pin) {
+            Command::SetLevel => match (text("entrada"), text("nivel"), pin) {
                 (Some(e), Some(n), Some(Ok(pin))) => self
                     .service
                     .set_level(e, n, pin)
@@ -347,7 +349,7 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Bridge<D, A> {
             // size, or the notice (S11, V5.12).
             // Phase 39b: when editing, the edit object with the entry and the kept ids (the
             // stored attachments that remain count in the limits).
-            Comando::EscolherAnexo => {
+            Command::ChooseAttachment => {
                 let edit = match args.get("edicao") {
                     None | Some(Value::Null) => Ok(None),
                     Some(v) => serde_json::from_value::<AttachmentEdit>(v.clone())
@@ -357,13 +359,13 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Bridge<D, A> {
                 edit.and_then(|ed| self.service.choose_attachment(ed.as_ref()))
                     .and_then(|e| serde_json::to_value(e).map_err(|_| AppError::InvalidResponse))
             }
-            Comando::RemoverAnexo => match args.get("id").and_then(Value::as_u64) {
+            Command::RemoveAttachment => match args.get("id").and_then(Value::as_u64) {
                 Some(id) => self.service.remove_attachment(id).map(|()| Value::Null),
                 None => Err(AppError::InvalidRequest),
             },
             // Phase 53a: "load from file" of the private key; the file is picked,
             // read and checked on the Rust side; returns only the size, or the notice (S2, S11).
-            Comando::CarregarChave => match text("campo") {
+            Command::LoadKey => match text("campo") {
                 Some(c) if args.len() == 1 => self
                     .service
                     .load_key(c)
@@ -371,32 +373,32 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Bridge<D, A> {
                 _ => Err(AppError::InvalidRequest),
             },
             // D3: the token does not go back to the interface.
-            Comando::Conectar => match text("entrada") {
+            Command::Connect => match text("entrada") {
                 Some(e) => self.service.connect(e).map(|()| Value::Null),
                 None => Err(AppError::InvalidRequest),
             },
             // Phase 31: the response carries neither the password nor how many attempts there were.
-            Comando::Destravar => match password {
+            Command::Unlock => match password {
                 Some(Ok(password)) if args.is_empty() => {
                     self.service.unlock(password).map(|()| Value::Null)
                 }
                 _ => Err(AppError::InvalidRequest),
             },
             // Phase 39: "lock now"; clears the clipboard and the form first.
-            Comando::Travar if args.is_empty() => self.service.lock().map(|()| Value::Null),
-            Comando::Travar => Err(AppError::InvalidRequest),
+            Command::Lock if args.is_empty() => self.service.lock().map(|()| Value::Null),
+            Command::Lock => Err(AppError::InvalidRequest),
             // The Tauri channel does not exist in the bridge: the test screen polls the status
             // (`test-bridge.js` › `listenByPolling`).
-            Comando::OuvirAvisos => Err(AppError::InvalidRequest),
+            Command::ListenNotices => Err(AppError::InvalidRequest),
             // Phase 36: the approval window. The bridge has no separate windows (the per-window
             // ACL is Tauri's); the service checks id, decision and PIN the same way.
-            Comando::PedidoDeAprovacao => self
+            Command::ApprovalRequest => self
                 .service
                 .approval_request()
                 .and_then(|r| serde_json::to_value(r).map_err(|_| AppError::InvalidResponse)),
             // Phase 54b: the acknowledgement field (the stdin checkbox) only as
             // `true`/`false`.
-            Comando::ResponderAprovacao => match (
+            Command::AnswerApproval => match (
                 args.get("id").and_then(Value::as_u64),
                 text("decisao"),
                 pin,
@@ -414,7 +416,7 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Bridge<D, A> {
             // Phase 30: master password and PIN checked on the Rust side; the response carries
             // no value. The data field leaves the object through `remove`, without copying
             // the text.
-            Comando::CriarCofre => match args
+            Command::CreateVault => match args
                 .remove("dados")
                 .map(serde_json::from_value::<NovoCofre>)
             {
@@ -425,26 +427,26 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Bridge<D, A> {
                 _ => Err(AppError::InvalidRequest),
             },
             // Phase 38 (V5.22): no response carries a PIN, a password or a hash.
-            Comando::Configuracoes if args.is_empty() => self
+            Command::Settings if args.is_empty() => self
                 .service
                 .settings()
                 .and_then(|c| serde_json::to_value(c).map_err(|_| AppError::InvalidResponse)),
-            Comando::Configuracoes => Err(AppError::InvalidRequest),
-            Comando::TrocarPin => match pin_change {
+            Command::Settings => Err(AppError::InvalidRequest),
+            Command::ChangePin => match pin_change {
                 Some(Ok(t)) if args.is_empty() => self
                     .service
                     .change_pin(t)
                     .and_then(|r| serde_json::to_value(r).map_err(|_| AppError::InvalidResponse)),
                 _ => Err(AppError::InvalidRequest),
             },
-            Comando::TrocarSenhaMestra => match password_change {
+            Command::ChangeMasterPassword => match password_change {
                 Some(Ok(t)) if args.is_empty() => self
                     .service
                     .change_master_password(t)
                     .and_then(|r| serde_json::to_value(r).map_err(|_| AppError::InvalidResponse)),
                 _ => Err(AppError::InvalidRequest),
             },
-            Comando::DefinirTempoTrava => match args.get("minutos").and_then(Value::as_u64) {
+            Command::SetLockTimeout => match args.get("minutos").and_then(Value::as_u64) {
                 Some(m) if args.len() == 1 => self
                     .service
                     .set_lock_timeout(m)
@@ -453,31 +455,31 @@ impl<D: Daemon + 'static, A: AreaTransferencia> Bridge<D, A> {
             },
             // Phase 48 (V7.9): no mount path; the UUID is checked in the service
             // (format and the daemon's list).
-            Comando::BackupExterno if args.is_empty() => self
+            Command::ExternalBackup if args.is_empty() => self
                 .service
                 .external_backup()
                 .and_then(|b| serde_json::to_value(b).map_err(|_| AppError::InvalidResponse)),
-            Comando::ListarPendrives if args.is_empty() => self
+            Command::ListUsbDrives if args.is_empty() => self
                 .service
                 .list_usb_drives()
                 .and_then(|l| serde_json::to_value(l).map_err(|_| AppError::InvalidResponse)),
-            Comando::BackupExterno | Comando::ListarPendrives => Err(AppError::InvalidRequest),
+            Command::ExternalBackup | Command::ListUsbDrives => Err(AppError::InvalidRequest),
             // Phase 47 (V7.7): only name and instant of the versions; the restore response only
             // says restored and how many entries. The version is checked in the service
             // (format and the daemon's list).
-            Comando::ListarBackups if args.is_empty() => self
+            Command::ListBackups if args.is_empty() => self
                 .service
                 .list_backups()
                 .and_then(|l| serde_json::to_value(l).map_err(|_| AppError::InvalidResponse)),
-            Comando::ListarBackups => Err(AppError::InvalidRequest),
-            Comando::RestaurarBackup => match restore {
+            Command::ListBackups => Err(AppError::InvalidRequest),
+            Command::RestoreBackup => match restore {
                 Some(Ok(r)) if args.is_empty() => self
                     .service
                     .restore_backup(r)
                     .and_then(|r| serde_json::to_value(r).map_err(|_| AppError::InvalidResponse)),
                 _ => Err(AppError::InvalidRequest),
             },
-            Comando::DefinirBackupExterno => {
+            Command::SetExternalBackup => {
                 let uuid = match args.get("uuid") {
                     None | Some(Value::Null) => Ok(None),
                     Some(Value::String(u)) => Ok(Some(u.as_str())),

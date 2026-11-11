@@ -2416,6 +2416,63 @@ Quit }`, `ID_TITULO`/`ID_SUBTITULO`/`ID_ABRIR`/`ID_ACAO`/`ID_SAIR` → `ID_TITLE
 `unlocked_subtitle`, `pasta_dos_icones(_da_sessao)` → `(session_)icons_dir`,
 `biblioteca_disponivel`/`biblioteca_do_sistema` → `library_available`/`system_library`.
 O auxiliar de teste `trocar` do `credenciais.rs` → `exchange` (como o `Daemon::exchange`).
+Fase 33 (`app/core`: `commands`, `settings`, `external_backup`, `terminal`, `key`, `startup`,
+`credentials`): módulos `comandos` → `commands`, `configuracoes` → `settings`,
+`backup_externo` → `external_backup`, `chave` → `key`, `partida` → `startup`,
+`credenciais` → `credentials` (`terminal` fica). Comandos: as constantes seguem os nomes
+novos da seção 13 em maiúsculas (`ESTADO_DO_COFRE` → `VAULT_STATUS`, `COPIAR_CAMPO` →
+`COPY_FIELD`, `TROCAR_SENHA_MESTRA` → `CHANGE_MASTER_PASSWORD`, `LISTAR_PENDRIVES` →
+`LIST_USB_DRIVES`, `PEDIDO_DE_APROVACAO` → `APPROVAL_REQUEST` etc.; os valores, nomes do
+fio, ficam até a Fase 54), `COMANDOS` → `COMMANDS`, `COMANDOS_PRINCIPAL` →
+`MAIN_COMMANDS`, `COMANDOS_APROVACAO` → `APPROVAL_COMMANDS`, `COMANDOS_DAS_DUAS` →
+`SHARED_COMMANDS`, `permissao` → `permission`, `Comando` → `Command` (`de_nome` →
+`from_name`; variantes pelos mesmos nomes: `VaultStatus`, `CopyField`, …, `Lock`),
+`Referencia { entrada, campo }` → `Reference { entry, field }` (`nova` → `new`),
+`validar_nome_entrada` → `validate_entry_name`, `nome_valido` → `valid_name`.
+Configurações: `Configuracoes { minutos_trava, backup_externo, backup_local }` →
+`Settings { lock_minutes, external_backup, local_backup }`, `ResultadoTroca { trocado,
+erros }` → `ChangeResult { changed, errors }` (`com_erros`/`trocado` → `with_errors`/
+`changed`), `TrocaPin { atual, novo, confirmacao }` → `PinChange { current, new,
+confirmation }`, `TrocaSenha { atual, nova, confirmacao }` → `PasswordChange { current,
+new, confirmation }` (`erros` → `errors`), todos com `#[serde(rename = "<antigo>")]` até
+a Fase 54; `PIN_ATUAL_INVALIDO`/`SENHA_ATUAL_VAZIA` → `CURRENT_PIN_INVALID`/
+`CURRENT_PASSWORD_EMPTY`, `minutos_validos` → `valid_minutes`, `erro` (privado) →
+`field_error`. Backup externo: `PendriveVisto { uuid, rotulo, montado }` → `UsbDriveView
+{ uuid, label, mounted }` (`de` → `from_drive`), `BackupExternoVisto { ligado, uuid,
+pendrive, pendrives_visiveis }` → `ExternalBackupView { enabled, uuid, usb_drive,
+visible_usb_drives }` (com `rename`), `EscolhaDoPendrive { Ligar, Desligar }` →
+`UsbDriveChoice { Enable, Disable }` (`nova` → `new`), `uuid_valido` → `valid_uuid`,
+`achar` → `find`. Terminal: `Token::de_resposta`/`expor` → `from_response`/`expose`,
+`entrada_para_argv` → `entry_for_argv`, `Terminal::abrir` → `open`, `SemTerminal` →
+`NoTerminal`, `AMBIENTE_DO_TERMINAL` → `TERMINAL_ENV`, `TerminalDoSistema { emulador,
+ward }` → `SystemTerminal { emulator, ward }` (`com_caminhos`/`comando` → `with_paths`/
+`command`), `Abertura { comando, canal }` → `Opening { command, channel }` (`abrir` →
+`open`). Chave: `CAMPOS_CARREGAVEIS` → `LOADABLE_FIELDS`, `MAX_CHAVE` → `MAX_KEY`,
+`ROTULOS` → `LABELS`, `AVISO_LINK`/`AVISO_NAO_COMUM`/`AVISO_VAZIO`/`AVISO_LEITURA`/
+`AVISO_NAO_E_CHAVE` → `LINK_NOTICE`/`NOT_REGULAR_NOTICE`/`EMPTY_NOTICE`/`READ_NOTICE`/
+`NOT_A_KEY_NOTICE`, `aviso_grande` → `too_big_notice`, `Carregamento { Carregada {
+tamanho }, Cancelado, Aviso { motivo } }` → `Loading { Loaded { size }, Canceled, Notice {
+reason } }` (tag `resultado` e valores `carregada`/`cancelado`/`aviso` com `rename` por
+variante no lugar do `rename_all`), `ler_chave` → `read_key`, `ler_ate` → `read_up_to`,
+`Lido` → `ReadBuf`, `cabecalho_pem` → `pem_header`, `e_chave_privada` → `is_private_key`;
+teste `chave_falsa` → `fake_key`. Partida: `ErroPartida { Endurecer, Depurador, Ambiente,
+Pai, Daemon, SemCloexec, Grupo, Papel, Delegado }` → `StartupError { Harden, Debugger,
+Environment, Parent, Daemon, NoCloexec, Group, Role, Delegated }`, `Partida { ambiente,
+pai, daemon, vigia, argumentos }` → `Startup { environment, parent, daemon, watcher, args
+}`, `iniciar`/`iniciar_com` → `start`/`start_with`, `delegar` → `delegate`,
+`pedir_instancia` → `request_instance`, `conferir_papel` → `check_role`, `tomar_daemon` →
+`take_daemon`, `vigiar` → `watch`, `reexecutar_ou_sair` → `reexec_or_exit` (o heredoc do
+`dev/tests/webkit-real.sh` acompanha; a variável local `partida` do `main.rs` do Tauri é
+da Fase 34). Credenciais: `ItemCredencial { nome, tipo, grupo, ambiente, nivel, resumo,
+endereco, usuario }` → `CredentialItem { name, kind, group, environment, level, summary,
+address, username }`, `CampoTexto { id, rotulo, valor }` → `TextField { id, label, value
+}`, `CampoSecreto { id, rotulo }` → `SecretField { id, label }`, `Extra { nome, segredo,
+valor }` → `Extra { name, secret, value }`, `Anexo { nome, tamanho }` (o do `credentials`)
+→ `Attachment { name, size }`, `DetalheCredencial { …, projeto, subtitulo, campos,
+segredos, anexos, criada_em, alterada_em }` → `CredentialDetail { …, project, subtitle,
+fields, secrets, attachments, created_at, modified_at }`, todos com `rename` (`novo` →
+`new`); `rotulo_do_campo` → `field_label`, privados `campo`/`conexao`/`juntar`/`resumo` →
+`field`/`connection`/`join`/`summary`.
 Fase 28 (clientes `ward` e `ward-nm`; nomes próprios deles, os de `ward-core`/
 `ward-platform` ficam para as fases desses crates): módulos `cliente`/`comandos`/
 `texto`/`testes` → `client`/`commands`/`text`/`tests`; `principal` → `main`;

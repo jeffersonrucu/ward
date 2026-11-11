@@ -8,7 +8,7 @@
 //! janela, devtools só com a feature `test-mode`.
 //!
 //! D47/D57: a primeira coisa do `main` é a partida do app setgid
-//! (`ward_app_core::partida`), antes do GTK: ambiente de D57 conferido, conexão ao
+//! (`ward_app_core::startup`), antes do GTK: ambiente de D57 conferido, conexão ao
 //! daemon com o egid do grupo `ward-app`, grupo largado, não-dumpable de novo e o pai
 //! conferido. Fora disso o app sai com a mensagem, sem abrir janela.
 //!
@@ -46,20 +46,20 @@ use ward_app_core::AppError;
 use ward_app_core::approval::{self, ApprovalResult, DisplayedRequest};
 use ward_app_core::area_transferencia::Copiador;
 use ward_app_core::attachments::{AttachmentEdit, Choice, Picker};
-use ward_app_core::backup_externo::{BackupExternoVisto, PendriveVisto};
-use ward_app_core::chave::Carregamento;
-use ward_app_core::configuracoes::{Configuracoes, ResultadoTroca, TrocaPin, TrocaSenha};
-use ward_app_core::credenciais::{DetalheCredencial, ItemCredencial};
+use ward_app_core::credentials::{CredentialDetail, CredentialItem};
 use ward_app_core::daemon::DaemonSocket;
 use ward_app_core::destrave::{self, InfoPedido, SenhaMestra};
+use ward_app_core::external_backup::{ExternalBackupView, UsbDriveView};
 use ward_app_core::form::Form;
 use ward_app_core::gerador::Opcoes;
+use ward_app_core::key::Loading;
 use ward_app_core::nivel::{NivelMudado, Pin};
-use ward_app_core::partida;
 use ward_app_core::primeiro_uso::NovoCofre;
 use ward_app_core::restore::{Restore, Restored, VersionView};
 use ward_app_core::service::{CreateResult, SaveResult, Service, TotpCode};
-use ward_app_core::terminal::TerminalDoSistema;
+use ward_app_core::settings::{ChangeResult, PasswordChange, PinChange, Settings};
+use ward_app_core::startup;
+use ward_app_core::terminal::SystemTerminal;
 use ward_app_core::tray::{self, Action, Icon, TrayState};
 
 type ServicoApp = Service<DaemonSocket, AreaGtk>;
@@ -227,7 +227,7 @@ fn copiar_campo(entrada: String, campo: String, estado: State<'_, Estado>) -> Re
 
 /// Tela Credenciais (Fase 32): a lista, sem segredo.
 #[tauri::command]
-fn listar_credenciais(estado: State<'_, Estado>) -> Result<Vec<ItemCredencial>, Falha> {
+fn listar_credenciais(estado: State<'_, Estado>) -> Result<Vec<CredentialItem>, Falha> {
     Ok(estado.servico()?.list_credentials()?)
 }
 
@@ -237,7 +237,7 @@ fn listar_credenciais(estado: State<'_, Estado>) -> Result<Vec<ItemCredencial>, 
 fn detalhe_credencial(
     entrada: String,
     estado: State<'_, Estado>,
-) -> Result<DetalheCredencial, Falha> {
+) -> Result<CredentialDetail, Falha> {
     Ok(estado.servico()?.credential_detail(&entrada)?)
 }
 
@@ -392,7 +392,7 @@ fn remover_anexo(id: u64, estado: State<'_, Estado>) -> Result<(), Falha> {
 /// OpenSSH/PEM). A chave fica no lado Rust até salvar; a resposta traz só o tamanho ou
 /// o aviso. Síncrono, como o `escolher_anexo` (o GTK abre o diálogo na thread principal).
 #[tauri::command]
-fn carregar_chave(campo: String, estado: State<'_, Estado>) -> Result<Carregamento, Falha> {
+fn carregar_chave(campo: String, estado: State<'_, Estado>) -> Result<Loading, Falha> {
     Ok(estado.servico()?.load_key(&campo)?)
 }
 
@@ -414,17 +414,17 @@ fn criar_cofre(dados: NovoCofre, estado: State<'_, Estado>) -> Result<CreateResu
 fn configuracoes<R: Runtime>(
     app: AppHandle<R>,
     estado: State<'_, Estado>,
-) -> Result<Configuracoes, Falha> {
+) -> Result<Settings, Falha> {
     let c = estado.servico()?.settings()?;
     // Fase 39: a tela abriu (ação do usuário); a bandeja aproveita o tempo lido.
-    tempo_da_bandeja(&app, c.minutos_trava);
+    tempo_da_bandeja(&app, c.lock_minutes);
     Ok(c)
 }
 
 /// Trocar o PIN (Fase 38, V5.22, S9): atual, novo e confirmação em `Digitado` (zera);
 /// conferidos no núcleo, o atual pelo daemon. A resposta não traz valor.
 #[tauri::command]
-fn trocar_pin(dados: TrocaPin, estado: State<'_, Estado>) -> Result<ResultadoTroca, Falha> {
+fn trocar_pin(dados: PinChange, estado: State<'_, Estado>) -> Result<ChangeResult, Falha> {
     Ok(estado.servico()?.change_pin(dados)?)
 }
 
@@ -432,9 +432,9 @@ fn trocar_pin(dados: TrocaPin, estado: State<'_, Estado>) -> Result<ResultadoTro
 /// regra do primeiro uso. A resposta não traz valor.
 #[tauri::command]
 fn trocar_senha_mestra(
-    dados: TrocaSenha,
+    dados: PasswordChange,
     estado: State<'_, Estado>,
-) -> Result<ResultadoTroca, Falha> {
+) -> Result<ChangeResult, Falha> {
     Ok(estado.servico()?.change_master_password(dados)?)
 }
 
@@ -444,23 +444,23 @@ fn definir_tempo_trava<R: Runtime>(
     minutos: u64,
     app: AppHandle<R>,
     estado: State<'_, Estado>,
-) -> Result<Configuracoes, Falha> {
+) -> Result<Settings, Falha> {
     let c = estado.servico()?.set_lock_timeout(minutos)?;
     // Fase 39: o subtítulo da bandeja passa a dizer o tempo novo.
-    tempo_da_bandeja(&app, c.minutos_trava);
+    tempo_da_bandeja(&app, c.lock_minutes);
     Ok(c)
 }
 
 /// Backup externo (Fase 48, V7.9): ligado ou não, o UUID e, se conectado, o pendrive
 /// (rótulo neutralizado, D51). Nenhum caminho de montagem.
 #[tauri::command]
-fn backup_externo(estado: State<'_, Estado>) -> Result<BackupExternoVisto, Falha> {
+fn backup_externo(estado: State<'_, Estado>) -> Result<ExternalBackupView, Falha> {
     Ok(estado.servico()?.external_backup()?)
 }
 
 /// Os pendrives que o daemon vê, para escolher o do backup externo (Fase 48).
 #[tauri::command]
-fn listar_pendrives(estado: State<'_, Estado>) -> Result<Vec<PendriveVisto>, Falha> {
+fn listar_pendrives(estado: State<'_, Estado>) -> Result<Vec<UsbDriveView>, Falha> {
     Ok(estado.servico()?.list_usb_drives()?)
 }
 
@@ -471,7 +471,7 @@ fn definir_backup_externo(
     ligado: bool,
     uuid: Option<String>,
     estado: State<'_, Estado>,
-) -> Result<BackupExternoVisto, Falha> {
+) -> Result<ExternalBackupView, Falha> {
     Ok(estado
         .servico()?
         .set_external_backup(ligado, uuid.as_deref())?)
@@ -497,7 +497,7 @@ fn restaurar_backup<R: Runtime>(
     let r = servico.restore_backup(dados)?;
     // A versão traz a configuração dela (D30): a bandeja passa a dizer o tempo dela.
     if let Ok(c) = servico.settings() {
-        tempo_da_bandeja(&app, c.minutos_trava);
+        tempo_da_bandeja(&app, c.lock_minutes);
     }
     Ok(r)
 }
@@ -752,7 +752,7 @@ fn atualizar_bandeja<R: Runtime>(app: &AppHandle<R>) {
     // (destravou ou criou o cofre), nunca na consulta periódica nem na partida.
     let mut minutos = b.minutos.lock().unwrap_or_else(|e| e.into_inner());
     if tray::read_settings_on_transition(*atual, novo) {
-        *minutos = s.settings().ok().map(|c| c.minutos_trava);
+        *minutos = s.settings().ok().map(|c| c.lock_minutes);
     }
     let subtitulo = match novo {
         TrayState::Unlocked => tray::unlocked_subtitle(*minutos),
@@ -890,7 +890,7 @@ fn montar_servico(daemon: Result<DaemonSocket, AppError>) -> Result<ServicoApp, 
     // Fase 39f (S2): o valor copiado fica na memória do app (GTK), sem `wl-copy`.
     Ok(Service::new(daemon, Copiador::novo(AreaGtk::nova()))
         .with_picker(SeletorGtk)
-        .with_terminal(TerminalDoSistema::default()))
+        .with_terminal(SystemTerminal::default()))
 }
 
 /// Só a interface embutida: `tauri://localhost` (Linux). Qualquer outra URL (link,
@@ -944,20 +944,20 @@ fn com_comandos<R: Runtime>(builder: Builder<R>, estado: Estado) -> Builder<R> {
 
 fn main() {
     // Antes do GTK (D47, D57).
-    let mut partida = partida::iniciar().unwrap_or_else(|e| {
-        if matches!(e, partida::ErroPartida::Delegado) {
+    let mut partida = startup::start().unwrap_or_else(|e| {
+        if matches!(e, startup::StartupError::Delegated) {
             // Aberto pelo menu: o daemon abre a instância verdadeira (D57).
             std::process::exit(0)
         }
         eprintln!("ward-app: {e}");
         std::process::exit(1)
     });
-    let daemon = partida.tomar_daemon().ok_or(AppError::ConnectionLost);
+    let daemon = partida.take_daemon().ok_or(AppError::ConnectionLost);
     let fila = daemon.as_ref().ok().map(DaemonSocket::notices);
     let servico = Arc::new(montar_servico(daemon));
     let na_aprovacao = Arc::clone(&servico);
     let na_vigia = Arc::clone(&servico);
-    partida.vigiar(move || {
+    partida.watch(move || {
         if let Ok(s) = na_vigia.as_ref() {
             s.on_exit();
         }
