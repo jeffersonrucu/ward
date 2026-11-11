@@ -1,0 +1,15 @@
+     │       │   └── ward-test-bridge v0.2.0
+     │       ├── wardd v0.2.0 (*)
+     │       ├── zbus v6.2.1 (*)
+     │       ├── zbus_utils v6.1.0
+     │       │   ├── zbus v6.2.1 (*)
+     │       │   └── zbus_macros v6.2.1
+     │       │       └── zbus v6.2.1 (*)
+     │       └── zcheapstr v1.2.0
+     │           └── zbus v6.2.1 (*)
+     ├── serde_repr v0.1.21
+     │   └── zbus v6.2.1 (*)
+     ├── zbus_macros v6.2.1 (*)
+     └── zbus_utils v6.1.0 (*)
+
+advisories ok, bans ok, licenses ok, sources ok
