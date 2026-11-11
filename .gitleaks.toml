@@ -37,4 +37,9 @@ regexes = [
     '''^falso-REDIR-01$''',
     '''^falso-Ab3\$k&<9>Zq!'/ç-01$''',
     '''^falso-Ab3\$k&<9>Zq!'$''',
+    # The protocol carries every secret in base64; the v2 fixture
+    # (`dev/fixtures/protocol-v2.jsonl`, m2:DT8) has two D15 values under the key
+    # `password`: the test master password and the WordPress one, each matched whole.
+    '''^ZmFsc28tbWVzdHJhLXdhcmQtMDE=$''',
+    '''^ZmFsc28tV1Atc2VuaGEtMDE=$''',
 ]

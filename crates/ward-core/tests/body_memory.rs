@@ -656,7 +656,8 @@ fn s8_protocol_no_freed_block_has_secret() {
     };
     let q = protocol::encode_request(Role::Agent, &unlock).unwrap();
     let text = core::str::from_utf8(&q).unwrap();
-    let begin = text.find(r#""senha":""#).unwrap() + 9;
+    let key = r#""password":""#;
+    let begin = text.find(key).unwrap() + key.len();
     let end = begin + text[begin..].find('"').unwrap();
     let b64 = text.as_bytes()[begin..end].to_vec();
     assert!(b64.len() > 20);

@@ -36,3 +36,6 @@ pub mod atomic_write;
 // Wire tests against the 0.1.4 baseline in `dev/fixtures/legacy/` (m2:DT18, m2:V2.2).
 #[cfg(all(test, unix))]
 mod wire_v1;
+// Wire tests of the protocol v2 against `dev/fixtures/protocol-v2.jsonl` (m2:DT8).
+#[cfg(all(test, unix))]
+mod wire_v2;
