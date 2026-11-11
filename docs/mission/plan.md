@@ -275,38 +275,38 @@ Trilha S (fases independentes entre si):
 
 Contrato: V4.1–V4.24. Sequencial. A partir daqui o fio muda.
 
-- [ ] Fase 48 — Corpo v5 no `ward-core` (DT4). `BODY_VERSION` 5; nomes v5 em
+- [x] Fase 48 — Corpo v5 no `ward-core` (DT4). `BODY_VERSION` 5; nomes v5 em
   `name()`/`from_name()`; leitura do v4 por uma tabela fechada de conversão (só no
   caminho de leitura do v4); nome desconhecido recusa; a gravação só gera v5;
   `dev/fixtures/entries.json` com os nomes v5 (chaves em inglês, valores falsos iguais);
   testes novos (v4 → v5 igual em tudo, v5 com nome pt recusado, v4 com nome inglês
   recusado, byte alterado, vetores) escritos, não rodados. Atualiza o teste de fio do
   corpo (o v4 fica como leitura). Compilação: `make compile`. — V4.1, V4.2, V4.8, V4.9
-- [ ] Fase 49 — Migração no daemon e estado v2 (DT5, DT6; o `dev/daemon.sh` grava `ward-estado 1` quando falta o estado e muda junto, achado da Fase 46). Destrave de um v4 → grava v5
+- [ ] Fase 49 — (achado da Fase 48: a API pública do corpo ainda não diz se o lido era v4; p.ex. `open_entries_with_generation` devolver a versão) Migração no daemon e estado v2 (DT5, DT6; o `dev/daemon.sh` grava `ward-estado 1` quando falta o estado e muda junto, achado da Fase 46). Destrave de um v4 → grava v5
   pelo caminho atômico, geração + 1, estado, backup; erro na gravação = destrave com
   erro e v4 intacto; sem regravação de v5; restaurar v4 grava v5; rotação local e do
   pendrive lendo v4 e v5; `ward-state 2` lendo `ward-estado 1`; log sem segredo. Testes
   do `wardd` (morte em cada ponto da gravação por pontos de falha de `test-mode`,
   retrocesso, idempotência) escritos, não rodados. Compilação: `make compile`. — V4.3,
   V4.4, V4.5, V4.6, V4.7, V4.10, V4.11, V4.12
-- [ ] Fase 50 — Protocolo v2 no `ward-core` (DT8). `VERSION` 2; operações, respostas,
+- [ ] Fase 50 — (achado da Fase 48: os valores de tipo, nível e segurança SMTP já saem nos nomes v5 pelo `name()`/`from_name()`; as linhas de `protocol-v1.jsonl` com `servidor`/`livre`/`bloqueado` falham no `wire_v1` até esta fase) Protocolo v2 no `ward-core` (DT8). `VERSION` 2; operações, respostas,
   campos, erros e papéis pela tabela; campo desconhecido recusado; v1 →
   `unknown_version`; testes do protocolo (matriz de papéis igual, nenhum nome pt-BR,
   linhas de `protocol-v1.jsonl` recusadas) escritos. Compilação: só `cargo check` do
   `ward-core` (os clientes quebram até a Fase 51; o handoff diz isso). — V4.13, V4.14,
   V4.15
-- [ ] Fase 51 — Protocolo v2 nos clientes Rust: `wardd` (servidor, sessões, extensão,
+- [ ] Fase 51 — (achado da Fase 48: testes Rust que montam JSON com `banco`/`servidor`/`nota-segura`/`generico`/`bloqueado`/`com-aprovacao`/`livre`/`nenhuma` em `crates/wardd/tests/*`, `app/core`, `app/src-tauri/src/main.rs`, ponte, `ward-nm` e `ward` passam aos nomes v5; coluna TIPO do `ward list` por `label()`) Protocolo v2 nos clientes Rust: `wardd` (servidor, sessões, extensão,
   ponte), `ward` (conferência da versão antes da senha; `list --json` com chaves e
   valores em inglês e tabela com rótulos pt-BR: imprime `label()`, não `nome()`, achado da Fase 1), `ward-nm`, `ward-test-bridge`,
   `app/core` (com o `daemon_falso`), testes Rust que montam JSON à mão. Compilação:
   `make compile`. — V4.13, V4.16, V4.17, V4.18
-- [ ] Fase 52 — Protocolo v2 em JS e Python: `extension/` (native messaging; motivos de `fillInPage` e códigos locais do service worker, que dividem `FAILURES`/`SAVE_FAILURES` do popup com os do daemon, achado da Fase 39),
+- [ ] Fase 52 — (achado da Fase 48: o front-end `app/src` e `app/core/src/level.rs` ainda mandam `com-aprovacao`/`livre`/`banco`/`nenhuma`, que o `from_name` recusa desde a Fase 48; trocar pelos nomes v5 aqui ou na 54; `grep -rnE '"(banco|servidor|nota-segura|generico|bloqueado|com-aprovacao|livre|nenhuma)"'`) Protocolo v2 em JS e Python: `extension/` (native messaging; motivos de `fillInPage` e códigos locais do service worker, que dividem `FAILURES`/`SAVE_FAILURES` do popup com os do daemon, achado da Fase 39),
   `app/src/lib/bridge`, ponte de teste do front-end, `dev/tests/*.py` que falam com o
   socket ou com o `ward-nm` (`socket_matrix.py`, `socket_attack.py`, `nm.py`,
   `extension.py`, `login.py`, `cli.py`, `chrome_policy.py`, `open-app.py`,
   `fake_chrome.py`, `fake_ssh.py`), servidor falso v1 para o V4.16. Esvazia de
   `frozen.txt` as chaves de mensagem. Compilação: `make compile`. — V4.13, V4.16, V5.10
-- [ ] Fase 53 — Variáveis entregues (DT11) no `ward-core` `delivery` e no `wardd`;
+- [ ] Fase 53 — (achado da Fase 48: o `SMTP_SECURITY` entregue passa de `nenhuma` a `none`; registrar na tabela "Entrega esperada") Variáveis entregues (DT11) no `ward-core` `delivery` e no `wardd`;
   `make dev-vault` e `dev-vault-verify` com o `entries.json` novo (chaves lidas por
   `dev/variations.py` e `dev/tests/login.py`; heredoc do `dev-vault.sh` chama
   `entry_patterns`/`database_url`; achado da Fase 42); oráculo
