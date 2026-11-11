@@ -191,7 +191,7 @@ Clientes Rust:
   congelados até a Fase 54). Compilação: `make compile` (com o `cargo check` do
   `app/src-tauri`). — V2.1
 
-- [ ] Fase 34a — Resto do Rust (achado do fechamento do M2: `make english-check PATHS="crates app/core app/src-tauri/src"`
+- [x] Fase 34a — Resto do Rust (achado do fechamento do M2: `make english-check PATHS="crates app/core app/src-tauri/src"`
   dá 1158 achados): comentários dos `Cargo.toml` (`crates/wardd`, `crates/ward-core`, `app/core`), os binários de teste
   `crates/wardd/app-teste/main.rs` e `aprovador-teste/main.rs` (pastas e nomes de binário ficam para a Fase 56),
   `app/core/tests/configuracao_tauri.rs`, e os identificadores que sobraram em `fake_daemon.rs`, `client.rs`,
