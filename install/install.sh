@@ -26,6 +26,12 @@
 # of this process (the checks hold for the copy, not for the user's path, which a
 # process of the same uid could swap) -> groups (D60) -> files -> systemd.
 # Nothing is installed if a check fails.
+#
+# Upgrade over 0.1.x (m2:DT15, m2:DT16; upgrade.sh): the 0.1.x paths are verified with
+# the rest; on the system, the groups mark moves to its new name before the groups, the
+# `wardd@*` sockets and daemons stop before the files (the vault locks) and come back
+# after them; the 0.1.x extension dir is deleted after the files (the new Chrome policy
+# already points to the new dir). Uninstall also deletes the 0.1.x paths and both marks.
 
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export LC_ALL=C
@@ -130,6 +136,9 @@ verify_elf() {
 # --- core dump (Phase 51c): webkit_dir, apport_list and the core_pattern warning -------
 # shellcheck source=install/dump.sh
 . "$HERE/dump.sh"
+# --- upgrade over 0.1.x (m2:DT15, m2:DT16): old paths, stop and start of the wardd@* ---
+# shellcheck source=install/upgrade.sh
+. "$HERE/upgrade.sh"
 
 # --- dirs and files -------------------------------------------------------------------
 # Dir: no link; on the system, owned by root and not writable by group and others.
@@ -202,11 +211,13 @@ do_install() {
             verify_source "$src" "${ORIGINS[$i]}" $((1024 * 1024))
         fi
     done
-    conferir_politicas_chrome "$TARGET_ROOT/etc/opt/chrome/policies/managed"
+    verify_chrome_policies "$TARGET_ROOT/etc/opt/chrome/policies/managed"
+    # m2:DT15: the 0.1.x extension dir, deleted after the files, in the expected shape.
+    verify_legacy_paths "$TARGET_ROOT"
 
     # Generated (the id and the version already went through the expressions above: no
-    # quotes nor '<').
-    local ext=/usr/local/share/ward/extensao
+    # quotes nor '<'). The extension dir is the one of tree.txt (m2:DT15).
+    local ext=/usr/local/share/ward/extension
     cat >"$TMP/gen-nm" <<EOF
 {
   "name": "br.ward.nm",
@@ -253,17 +264,22 @@ EOF
     if [ "$SYSTEM" = 1 ]; then
         step "grupos de sistema (D47, D60)"
         # The mark of the created groups lives in /usr/local/lib/ward/ (Phase 51a): the
-        # dirs above it are verified first.
-            local p
+        # dirs above it are verified first. A 0.1.x mark moves to the new name first
+        # (m2:DT15; `ensure_group` also does it).
+        local p
         for p in usr usr/local usr/local/lib; do ensure_dir "/$p"; done
-        garantir_grupo ward-app
-        garantir_grupo ward-nm
+        migrate_legacy_mark
+        ensure_group ward-app
+        ensure_group ward-nm
         local ptrace suid
         ptrace="$(cat /proc/sys/kernel/yama/ptrace_scope 2>/dev/null || echo ?)"
         suid="$(cat /proc/sys/fs/suid_dumpable 2>/dev/null || echo ?)"
         [ "$ptrace" != 0 ] || warning "kernel.yama.ptrace_scope = 0: o daemon recusa os papéis app e extensão (D47)"
         [ "$suid" != 1 ] || warning "fs.suid_dumpable = 1: o daemon recusa os papéis app e extensão (D47)"
-        avisar_core_pattern
+        warn_core_pattern
+        # m2:DT16: no daemon of the old version stays up with the new clients.
+        step "systemd: parando os wardd@* em execução antes de trocar os binários (m2:DT16)"
+        stop_running_daemons
     fi
 
     step "arquivos em ${DESTDIR:-/}"
@@ -284,15 +300,18 @@ EOF
         install_file "$from" "$TARGET_ROOT/${PATHS[$i]}" "${MODES[$i]}" "${OWNERS[$i]}" "${OWNER_GROUPS[$i]}"
         printf '    %s %s:%s %s\n' "${MODES[$i]}" "${OWNERS[$i]}" "${OWNER_GROUPS[$i]}" "/${PATHS[$i]}"
     done
+    # m2:DT15: the 0.1.x extension dir (the new policy is already in place).
+    remove_legacy_paths "$TARGET_ROOT"
 
     if [ "$SYSTEM" = 1 ]; then
         step "systemd: /run/ward (tmpfiles.d) e wardd@$uid.socket (D46)"
         systemd-tmpfiles --create /usr/local/lib/tmpfiles.d/ward.conf
         systemctl daemon-reload
         systemctl enable --now "wardd@$uid.socket"
-        # Reinstall: the daemon already running moves to the new binary (the vault locks).
-        systemctl try-restart "wardd@$uid.service"
-        avisar_manifestos_de_usuario "$uid"
+        # The sockets stopped before the swap (other uids too) come back; the next
+        # connection starts the new binary (m2:DT16).
+        start_enabled_sockets
+        warn_user_manifests "$uid"
         step "pronto: o wardd sobe na primeira conexão; o uso diário não pede sudo"
     else
         step "pronto (DESTDIR: sem grupos, sem dono root e sem systemctl; donos e modos de verdade em install/tree.txt)"
@@ -333,11 +352,14 @@ do_uninstall() {
             printf '    removido /%s\n' "${PATHS[$i]}"
         fi
     done
+    # An install made by 0.1.x (m2:DT15): its extension dir goes too, before the dirs.
+    remove_legacy_paths "$TARGET_ROOT"
     if [ "$SYSTEM" = 1 ]; then
-        # Only the groups the install created (mark in /usr/local/lib/ward/, Phase 51a);
-        # before the dirs, so the mark goes with them.
+        # Only the groups the install created (mark in /usr/local/lib/ward/, Phase 51a;
+        # the new one or, without it, the 0.1.x one, m2:DT15); before the dirs, so both
+        # marks go with them.
         step "grupos"
-        apagar_grupos_marcados
+        delete_marked_groups
     fi
     for ((i = ${#PATHS[@]} - 1; i >= 0; i--)); do
         [ "${KINDS[$i]}" = d ] || continue

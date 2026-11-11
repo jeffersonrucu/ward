@@ -76,7 +76,7 @@ apport_list() {
 # systemd-coredump. Another program in `core_pattern` (pipe or socket) can write the core
 # of the WebKitGTK helpers. A file `core_pattern` honors the RLIMIT_CORE 0/0 the app
 # gives the helpers. The argument (default: the kernel's) is for the test.
-avisar_core_pattern() {
+warn_core_pattern() {
     local cp
     cp="$(head -c 4096 -- "${1:-/proc/sys/kernel/core_pattern}" 2>/dev/null || true)"
     case "$cp" in

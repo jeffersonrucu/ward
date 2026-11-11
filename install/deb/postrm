@@ -2,7 +2,8 @@
 # postrm of Ward's `.deb` (Phase 52; D47, D60; V9.9, V9.10). After dpkg deletes the
 # files: removes the overrides of the setgid binaries, /run/ward (if empty), the systemd
 # units and the `ward-app`/`ward-nm` groups the preinst created (mark in
-# /usr/local/lib/ward/grupos-criados, Phase 51a; like `make uninstall`). A group that
+# /usr/local/lib/ward/created-groups, Phase 51a, or, without it, the one a 0.1.x left,
+# m2:DT15; like `make uninstall`; both marks go). A group that
 # already existed before Ward stays. Never touches the home: the vault and the backups in
 # ~/.local/share/ward/ stay.
 #
@@ -15,14 +16,18 @@ export LC_ALL=C
 set -euo pipefail
 
 error() { printf "ward (postrm): %s\n" "$*" >&2; exit 1; }
+warning() { printf 'ward: aviso: %s\n' "$*" >&2; }
 step() { printf "ward: %s\n" "$*"; }
 
 #@GROUPS@
 
-# Ward's mark and dir (/usr/local/lib/ward): dpkg does not delete a dir with a file that
-# is not the package's (the mark), so it goes here.
+# The start of the sockets after an aborted upgrade (m2:DT16), from upgrade.sh.
+#@UPGRADE@
+
+# Ward's marks and dir (/usr/local/lib/ward): dpkg does not delete a dir with a file that
+# is not the package's (a mark), so it goes here.
 remove_groups() {
-    apagar_grupos_marcados
+    delete_marked_groups
     rmdir /usr/local/lib/ward 2>/dev/null || true
 }
 
@@ -55,7 +60,14 @@ case "${1:-}" in
         remove_overrides
         remove_groups
         ;;
-    upgrade | failed-upgrade | abort-upgrade | disappear) ;;
+    abort-upgrade)
+        # This version's preinst stopped the sockets (m2:DT16) and the upgrade failed: they
+        # come back with the binaries dpkg put back.
+        if [ -d /run/systemd/system ]; then
+            start_enabled_sockets
+        fi
+        ;;
+    upgrade | failed-upgrade | disappear) ;;
     *) printf 'ward (postrm): argumento desconhecido: %s\n' "${1:-}" >&2; exit 1 ;;
 esac
 exit 0

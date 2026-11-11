@@ -14,12 +14,17 @@
 #    "vault") and the refusals: `test-mode` artifact (V9.2), non-ELF, link, invalid
 #    extension id or one different from the package's, tampered package, PREFIX, relative
 #    DESTDIR or one with a link, a dir with a link in the path, and `make install` without
-#    root on the system. Every refusal exits ≠ 0 without leaving a Ward file.
+#    root on the system. Every refusal exits ≠ 0 without leaving a Ward file. Phase 57
+#    (m2:V5.6, m2:DT15, m2:DT16): the new extension dir, no 0.1.x path, the 0.1.x extension
+#    dir deleted by the install and by the uninstall (never through a link), the groups
+#    marks (`groups.sh`) and the stop of the daemons (`upgrade.sh`) with fake commands.
 # 2. `ubuntu:24.04` container with systemd and no network (`dev/container-install/`), where
 #    root exists only inside it: real `make install`/`make uninstall`
-#    (`dev/container-install/inside.sh`). Same permissions as `make test-units` (see the
-#    comment of `dev/tests/units.sh`): CAP_SYS_ADMIN and no AppArmor only for systemd to
-#    remount its cgroup subtree.
+#    (`dev/container-install/inside.sh`), and 0.2.0 over the 0.1.4 `make install` with
+#    its wardd unlocked (m2:V5.7) and the 0.2.0 uninstall over a 0.1.4 install (m2:V5.8),
+#    from `.dev/baseline/` (Phase 3) and the v0.1.4 tag. Same permissions as
+#    `make test-units` (see the comment of `dev/tests/units.sh`): CAP_SYS_ADMIN and no
+#    AppArmor only for systemd to remount its cgroup subtree.
 #
 # Stays out of `make check` (needs Docker). Usage: dev/tests/install.sh [--destdir-only]
 
@@ -77,6 +82,13 @@ mk() {
         BIN_WARD="$WARD" BIN_WARDD="$WARDD" BIN_NM="$NM" BIN_APP="$APP" WARD_UID= "$@"
 }
 
+# 0.1.4 names (installer interface and installed paths, m2:DT15), recorded as baseline
+# data in dev/fixtures/legacy/install-0.1.4.txt, and the 0.1.4 artifacts (Phase 57).
+# shellcheck source=dev/tests/legacy-baseline.sh
+. "$ROOT/dev/tests/legacy-baseline.sh"
+OLD_EXT_DIR="$(legacy_name extension_dir)" || exit 1
+OLD_MARK="$(legacy_name groups_mark)" || exit 1
+
 # "type mode path" lines of the tree.
 TREE="$TMP/tree"
 awk '!/^#/ && NF >= 5 {print $1, $2, $5}' "$ROOT/install/tree.txt" >"$TREE"
@@ -132,7 +144,7 @@ for u in wardd@.socket wardd@.service; do
     cmp -s "$ROOT/install/systemd/$u" "$D/usr/local/lib/systemd/system/$u" || failed "$u diferente"
 done
 cmp -s "$ROOT/install/tmpfiles.d/ward.conf" "$D/usr/local/lib/tmpfiles.d/ward.conf" || failed "tmpfiles diferente"
-cmp -s "$CRX" "$D/usr/local/share/ward/extensao/ward.crx" || failed "pacote da extensão diferente"
+cmp -s "$CRX" "$D/usr/local/share/ward/extension/ward.crx" || failed "pacote da extensão diferente"
 ok "units, tmpfiles.d e pacote iguais aos do repositório"
 
 # Phase 51c (S2, S8): the apport list and systemd-coredump without storage.
@@ -196,10 +208,105 @@ printf '%s' 'core' >"$TMP/cp-file"
 printf '%s' '|/usr/libexec/abrt-hook-ccpp %s %c %p %u %g %t %e' >"$TMP/cp-other"
 printf '%s' '@/run/outro/coredump.socket' >"$TMP/cp-socket"
 for c in apport systemd file; do
-    lacks "51c: core_pattern $c sem aviso" "$(dump "avisar_core_pattern $TMP/cp-$c")" "AVISO"
+    lacks "51c: core_pattern $c sem aviso" "$(dump "warn_core_pattern $TMP/cp-$c")" "AVISO"
 done
-verify "51c: core_pattern de outro programa avisa" "$(dump "avisar_core_pattern $TMP/cp-other")" "AVISO: kernel.core_pattern entrega o core a '|/usr/libexec/abrt-hook-ccpp'"
-verify "51c: core_pattern por outro socket avisa" "$(dump "avisar_core_pattern $TMP/cp-socket")" "AVISO: kernel.core_pattern"
+verify "51c: core_pattern de outro programa avisa" "$(dump "warn_core_pattern $TMP/cp-other")" "AVISO: kernel.core_pattern entrega o core a '|/usr/libexec/abrt-hook-ccpp'"
+verify "51c: core_pattern por outro socket avisa" "$(dump "warn_core_pattern $TMP/cp-socket")" "AVISO: kernel.core_pattern"
+# m2:DT15/DT16 from the inside: the groups marks of groups.sh and the stop of upgrade.sh,
+# with the marks in $TMP/marks and fake mark_dir, groupdel and systemctl (functions beat
+# commands: nothing reaches the host's groups nor its systemd; the host's /etc/group is
+# only read).
+M="$TMP/marks"
+mkdir -m 0700 "$M"
+upgrade_inside() {
+    env -i PATH=/usr/bin:/bin /bin/bash -p -c '
+        set -euo pipefail
+        error() { printf "ERRO: %s\n" "$*" >&2; exit 1; }
+        warning() { printf "AVISO: %s\n" "$*" >&2; }
+        step() { printf "PASSO: %s\n" "$*"; }
+        . "$1"; . "$2"; M="$3"; code="$4"
+        GROUPS_MARK="$M/created-groups" LEGACY_GROUPS_MARK="$M/legacy-mark"
+        mark_dir() { :; }
+        groupdel() { printf "groupdel %s\n" "$*"; }
+        # Fake systemd: active units in $M/active; a unit listed in $M/stuck does not stop.
+        systemctl() {
+            local last="${!#}"
+            printf "%s\n" "$*" >>"$M/log"
+            case "$1" in
+                list-units) { grep -E "\.${last##*.}\$" "$M/active" || true; } | sed "s/\$/ loaded active running x/" ;;
+                stop)
+                    [ ! -e "$M/fail" ] || return 1
+                    if ! grep -q -x -F -- "$2" "$M/stuck" 2>/dev/null; then
+                        { grep -v -x -F -- "$2" "$M/active" || true; } >"$M/active.new"
+                        mv -- "$M/active.new" "$M/active"
+                    fi ;;
+                *) ;;
+            esac
+        }
+        eval "$code"' _ "$ROOT/install/groups.sh" "$ROOT/install/upgrade.sh" "$M" "$1" 2>&1
+    echo "saiu=$?"
+}
+reset_marks() { rm -rf -- "${M:?}"/* "$M"/.[!.]* 2>/dev/null || true; }
+reset_marks
+printf 'ward-app 990\nward-nm 991\nward-x 5\nward-app 99999\n' >"$M/legacy-mark"
+r="$(upgrade_inside 'migrate_legacy_mark; cat "$GROUPS_MARK"; [ -e "$LEGACY_GROUPS_MARK" ] || echo antiga-apagada')"
+verify "m2:DT15: a marca da 0.1.x passa para created-groups com as mesmas linhas" "$r" $'ward-app 990\nward-nm 991\n'
+verify "m2:DT15: a marca da 0.1.x é apagada depois" "$r" "antiga-apagada"
+lacks "m2:DT15: linha inválida da marca antiga não passa" "$r" "ward-x"
+lacks "m2:DT15: gid fora do sistema na marca antiga não passa" "$r" "99999"
+verify "m2:DT15: migração sai 0" "$r" "saiu=0"
+reset_marks
+printf 'ward-app 990\n' >"$M/created-groups"
+printf 'ward-app 990\nward-nm 991\n' >"$M/legacy-mark"
+r="$(upgrade_inside 'migrate_legacy_mark; echo "nova=[$(cat "$GROUPS_MARK")]"; [ -e "$LEGACY_GROUPS_MARK" ] || echo antiga-apagada')"
+verify "m2:DT15: com as duas marcas, a nova vence" "$r" "nova=[ward-app 990]"
+verify "m2:DT15: com as duas marcas, a antiga é apagada" "$r" "antiga-apagada"
+reset_marks
+printf 'ward-nm 991\n' >"$M/legacy-mark"
+verify "m2:V5.8: sem a nova, a marca lida é a da 0.1.x" "$(upgrade_inside 'marked_groups')" $'ward-nm 991\nsaiu=0'
+reset_marks
+printf 'ward-app 990\n' >"$TMP/planted-mark"
+ln -s "$TMP/planted-mark" "$M/created-groups"
+printf 'ward-nm 991\n' >"$M/legacy-mark"
+verify "m2:DT15 ataque: marca nova por link não dá grupo nenhum (nem cai na antiga)" "$(upgrade_inside 'marked_groups')" "saiu=0"
+lacks "m2:DT15 ataque: marca nova por link: nada lido" "$(upgrade_inside 'marked_groups')" "ward-"
+reset_marks
+ln -s "$TMP/planted-mark" "$M/legacy-mark"
+r="$(upgrade_inside 'migrate_legacy_mark; [ -e "$GROUPS_MARK" ] && echo nova-criada; [ -L "$LEGACY_GROUPS_MARK" ] || echo link-apagado')"
+lacks "m2:DT15 ataque: marca antiga por link não é seguida" "$r" "nova-criada"
+verify "m2:DT15 ataque: o link da marca antiga é apagado" "$r" "link-apagado"
+verify "m2:DT15 ataque: o alvo do link intacto" "$(cat "$TMP/planted-mark")" "ward-app 990"
+reset_marks
+printf 'ward-app 990\n' >"$M/created-groups"
+printf 'ward-nm 991\n' >"$M/legacy-mark"
+r="$(upgrade_inside 'delete_marked_groups')"
+verify "m2:V5.8: delete_marked_groups sai 0" "$r" "saiu=0"
+lacks "m2:V5.8: o uninstall apaga as duas marcas" "$(ls -A "$M")" "mark"
+lacks "m2:V5.8: o uninstall apaga a created-groups" "$(ls -A "$M")" "created-groups"
+# m2:DT16: sockets stop before the daemons, the daemons before any file; a daemon that
+# stays up or a stop that fails refuses.
+reset_marks
+printf 'wardd@1000.socket\nwardd@1000.service\nwardd@1001.socket\n' >"$M/active"
+r="$(upgrade_inside 'stop_running_daemons')"
+verify "m2:DT16: stop_running_daemons sai 0" "$r" "saiu=0"
+verify "m2:DT16: avisa que para o daemon antes de trocar" "$r" "PASSO: parando wardd@1000.service antes de trocar os binários"
+verify "m2:DT16: os sockets param antes do daemon" "$(grep '^stop ' "$M/log" | tr '\n' ' ')" "stop wardd@1000.socket stop wardd@1001.socket stop wardd@1000.service "
+verify "m2:DT16: nenhum wardd@ ativo no fim" "[$(cat "$M/active")]" "[]"
+reset_marks
+printf 'wardd@1000.service\n' >"$M/active"
+printf 'wardd@1000.service\n' >"$M/stuck"
+r="$(upgrade_inside 'stop_running_daemons; echo trocou')"
+verify "m2:DT16 ataque: daemon que não para recusa" "$r" "continua no ar"
+lacks "m2:DT16 ataque: daemon que não para: nada depois" "$r" "trocou"
+lacks "m2:DT16 ataque: daemon que não para: não sai 0" "$r" "saiu=0"
+reset_marks
+printf 'wardd@1000.socket\n' >"$M/active"
+: >"$M/fail"
+r="$(upgrade_inside 'stop_running_daemons; echo trocou')"
+verify "m2:DT16: stop que falha recusa" "$r" "não deu para parar wardd@1000.socket"
+lacks "m2:DT16: stop que falha: nada depois" "$r" "trocou"
+reset_marks
+
 # V9.6, the policy and update.xml.
 r="$(/usr/bin/python3 -I - "$D" "$ID" <<'EOF'
 import json, sys, xml.etree.ElementTree as ET
@@ -219,14 +326,15 @@ assert pol["PasswordLeakDetectionEnabled"] is False, pol
 assert list(pol["ExtensionSettings"]) == [ident], pol
 e = pol["ExtensionSettings"][ident]
 assert e["installation_mode"] == "force_installed", e
-assert e["update_url"] == "file:///usr/local/share/ward/extensao/update.xml", e
+# m2:V5.6 (m2:DT15): the extension dir of 0.2.0.
+assert e["update_url"] == "file:///usr/local/share/ward/extension/update.xml", e
 print("politica ok")
 ns = "{http://www.google.com/update2/response}"
-root_el = ET.parse(d + "/usr/local/share/ward/extensao/update.xml").getroot()
+root_el = ET.parse(d + "/usr/local/share/ward/extension/update.xml").getroot()
 apps = root_el.findall(ns + "app")
 assert len(apps) == 1 and apps[0].get("appid") == ident
 uc = apps[0].findall(ns + "updatecheck")
-assert len(uc) == 1 and uc[0].get("codebase") == "file:///usr/local/share/ward/extensao/ward.crx"
+assert len(uc) == 1 and uc[0].get("codebase") == "file:///usr/local/share/ward/extension/ward.crx"
 assert uc[0].get("version") == "0.1.0"
 print("update ok")
 EOF
@@ -249,6 +357,40 @@ r="$(mk install "$D" 2>&1)" || { printf '%s\n' "$r"; failed "reinstalar"; }
 [ -f "$D/usr/local/bin/wardd" ] && [ ! -L "$D/usr/local/bin/wardd" ] && cmp -s "$WARDD" "$D/usr/local/bin/wardd" &&
     ok "reinstalar troca o link plantado pelo binário" || failed "o link plantado ficou"
 verify "o alvo do link plantado não foi escrito" "$(cat "$TMP/link-target")" "intacto"
+
+# m2:V5.6 (m2:DT15): the extension dir of 0.2.0 and no 0.1.x path; the mark of the created
+# groups is not in the tree (only the install on the system writes it) and tree.txt says why.
+[ -d "$D/usr/local/share/ward/extension" ] && [ -f "$D/usr/local/share/ward/extension/update.xml" ] &&
+    ok "m2:V5.6: usr/local/share/ward/extension/ com o update.xml" || failed "m2:V5.6: sem usr/local/share/ward/extension/"
+verify "m2:V5.6: nenhum caminho da 0.1.x na árvore" \
+    "[$(cd "$D" && find . -mindepth 1 -printf '%P\n' | grep -x -F -e "$OLD_EXT_DIR" -e "$OLD_MARK" -e "$OLD_EXT_DIR/ward.crx" -e "$OLD_EXT_DIR/update.xml" || true)]" "[]"
+lacks "m2:V5.6: tree.txt sem caminho da 0.1.x" "$(grep -v '^#' "$ROOT/install/tree.txt")" "$OLD_EXT_DIR"
+verify "m2:V5.6: tree.txt explica a marca usr/local/lib/ward/created-groups" \
+    "$(grep '^#' "$ROOT/install/tree.txt" | tr '\n' ' ')" "usr/local/lib/ward/created-groups, the mark of the groups the"
+lacks "m2:V5.6: a marca não sai com DESTDIR" "$(ls -A "$D/usr/local/lib/ward")" "created-groups"
+
+# m2:DT15: reinstall over a 0.1.x tree in the DESTDIR (the `.deb` staging case): the old
+# extension dir goes, its link in place of a file is deleted without touching the target.
+mkdir -p "$D/$OLD_EXT_DIR"
+printf 'pacote 0.1.x\n' >"$D/$OLD_EXT_DIR/ward.crx"
+printf 'alvo de fora\n' >"$TMP/legacy-target"
+ln -s "$TMP/legacy-target" "$D/$OLD_EXT_DIR/update.xml"
+r="$(mk install "$D" 2>&1)" || { printf '%s\n' "$r"; failed "m2:DT15: reinstalar por cima da 0.1.x"; }
+[ ! -e "$D/$OLD_EXT_DIR" ] && [ ! -L "$D/$OLD_EXT_DIR" ] && ok "m2:DT15: a pasta da extensão da 0.1.x foi apagada" ||
+    failed "m2:DT15: a pasta da extensão da 0.1.x ficou"
+verify "m2:DT15: a instalação diz o que apagou" "$r" "removido /$OLD_EXT_DIR/ward.crx (0.1.x)"
+verify "m2:DT15 ataque: o alvo do link no lugar do update.xml antigo intacto" "$(cat "$TMP/legacy-target")" "alvo de fora"
+# The same on uninstall (a 0.1.x install that the 0.2.0 uninstall undoes).
+mkdir -p "$D/$OLD_EXT_DIR"
+printf 'pacote 0.1.x\n' >"$D/$OLD_EXT_DIR/ward.crx"
+printf 'update 0.1.x\n' >"$D/$OLD_EXT_DIR/update.xml"
+LEGACY_UNINSTALL="$TMP/legacy-uninstall"
+cp -a "$D" "$LEGACY_UNINSTALL"
+r="$(mk uninstall "$LEGACY_UNINSTALL" 2>&1)" || { printf '%s\n' "$r"; failed "m2:V5.8: uninstall com a pasta da 0.1.x"; }
+[ ! -e "$LEGACY_UNINSTALL/usr/local/share/ward" ] && ok "m2:V5.8: o uninstall apaga a pasta da extensão da 0.1.x e usr/local/share/ward" ||
+    failed "m2:V5.8: usr/local/share/ward ficou depois do uninstall"
+rm -rf -- "$LEGACY_UNINSTALL"
+r="$(mk install "$D" 2>&1)" || { printf '%s\n' "$r"; failed "reinstalar"; }
 
 # V9.10: uninstall deletes what belongs to Ward and leaves the rest (a "vault" planted in the home).
 # Fake home inside the DESTDIR; name built in pieces so the V1.5 scan
@@ -346,6 +488,22 @@ for p in etc/apport/report-ignore etc/systemd/coredump.conf.d; do
     expect_refusal "51c: $p por link" "link simbólico" "$d"
     verify "51c: $p por link: nada escrito no alvo" "$(ls -A "$TMP/target-$n")" ""
 done
+# m2:DT15 attacks: the 0.1.x extension dir (or the Ward dir above it) by link, and a dir in
+# place of an old file, refuse before any change and never touch the link target.
+for p in "$OLD_EXT_DIR" usr/local/share/ward; do
+    new_dir
+    mkdir -p "$d/${p%/*}" "$TMP/victim-$n/extensao"
+    printf 'da vítima\n' >"$TMP/victim-$n/ward.crx"
+    printf 'da vítima\n' >"$TMP/victim-$n/extensao/ward.crx"
+    ln -s "$TMP/victim-$n" "$d/$p"
+    expect_refusal "m2:DT15 ataque: $p por link" "link simbólico" "$d"
+    verify "m2:DT15 ataque: $p por link: o alvo intacto" "$(cat "$TMP/victim-$n/ward.crx" "$TMP/victim-$n/extensao/ward.crx")" $'da vítima\nda vítima'
+done
+new_dir
+mkdir -p "$d/$OLD_EXT_DIR/ward.crx"
+expect_refusal "m2:DT15: pasta no lugar do ward.crx da 0.1.x" "não é um arquivo" "$d"
+[ -d "$d/$OLD_EXT_DIR/ward.crx" ] && ok "m2:DT15: a pasta no lugar do ward.crx ficou" || failed "m2:DT15: a pasta no lugar do ward.crx sumiu"
+
 # Relative DESTDIR (make passes it as it came).
 r="$(cd "$TMP" && /usr/bin/make -s -C "$ROOT" install DESTDIR=relative EXTENSION_ID="$ID" EXTENSION_CRX="$CRX" \
     BIN_WARD="$WARD" BIN_WARDD="$WARDD" BIN_NM="$NM" BIN_APP="$APP" 2>&1; echo "saiu=$?")"
@@ -382,7 +540,8 @@ mkdir -m 0755 "$C/repo/install" "$C/repo/install/systemd" "$C/repo/install/tmpfi
     "$C/repo/install/coredump.conf.d"
 install -m 0644 "$ROOT/install/tree.txt" "$C/repo/install/"
 install -m 0755 "$ROOT/install/install.sh" "$ROOT/install/crx.py" "$C/repo/install/"
-install -m 0644 "$ROOT/install/groups.sh" "$ROOT/install/chrome.sh" "$ROOT/install/dump.sh" "$C/repo/install/"
+install -m 0644 "$ROOT/install/groups.sh" "$ROOT/install/chrome.sh" "$ROOT/install/dump.sh" "$ROOT/install/upgrade.sh" \
+    "$C/repo/install/"
 install -m 0644 "$ROOT/install/coredump.conf.d/ward.conf" "$C/repo/install/coredump.conf.d/"
 install -m 0644 "$ROOT/install/systemd/wardd@.socket" "$ROOT/install/systemd/wardd@.service" "$C/repo/install/systemd/"
 install -m 0644 "$ROOT/install/tmpfiles.d/ward.conf" "$C/repo/install/tmpfiles.d/"
@@ -407,6 +566,22 @@ install -m 0644 "$TEST_VAULT" "$C/cofre.ward"
 /usr/bin/python3 -I -c 'import json,sys; sys.stdout.write(json.load(open(sys.argv[1]))["master_password"])' \
     "$ROOT/dev/fixtures/entries.json" >"$C/senha"
 chmod 0644 "$C/senha"
+# m2:V5.7/V5.8 (Phase 57): 0.1.4 installed by its own `make install` (the installer of the
+# tag), with its release binaries (`ward-app` = the 0.1.4 container start-up) and its fake
+# CRX3 package from .dev/baseline/, the 0.1.4 vault and state and the v1 client.
+O="$C/old"
+mkdir -m 0755 "$O" "$O/bin"
+for pair in ward:bin-release/ward wardd:bin-release/wardd ward-nm:bin-release/ward-nm ward-app:bin-release/partida-conteiner; do
+    f="$(baseline_file "${pair#*:}")" || exit 1
+    install -m 0755 "$f" "$O/bin/${pair%%:*}"
+done
+f="$(baseline_file deb-0.1.4/ward-fake.crx)" || exit 1
+install -m 0644 "$f" "$O/ward.crx"
+f="$(baseline_file deb-0.1.4/extension-id.txt)" || exit 1
+[[ "$(cat "$f")" =~ ^[a-p]{32}$ ]] || { echo "id da extensão 0.1.4 fora do formato em $f" >&2; exit 1; }
+install -m 0644 "$f" "$O/id"
+stage_legacy_installer "$O/repo"
+stage_legacy_fixtures "$C/legacy"
 
 IMAGE="ward-teste/install-systemd:1"
 docker build --quiet -t "$IMAGE" -f "$ROOT/dev/container-install/Dockerfile" "$ROOT/dev/container-units" >/dev/null
