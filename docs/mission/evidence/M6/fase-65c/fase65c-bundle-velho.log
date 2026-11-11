@@ -1,0 +1,11 @@
+==> daemon de teste em /run/user/1000/ward-test-e2e com a ponte (D63)
+daemon de teste no ar: pid 2411149, socket /run/user/1000/ward-test-e2e/wardd.sock, log <repo>/.dev/logs/wardd.log
+==> app de ponta a ponta (Chrome headless)
+ok - Chrome sem nenhuma extensão (guarda da Fase 65a)
+FALHOU - passo sem exceção (RuntimeError: a tela mostra um erro da ponte de teste em vez do destravar (app/dist-teste de outro build? rode 'make test-app-e2e'))
+app-e2e: 1 de 2 checagens ok
+==> varredura de logs (V5.27): .dev/logs com .dev/variations.txt
+limpo    .dev/logs/terminal-teste.saida (445 bytes)
+limpo    .dev/logs/ward-test-bridge.log (590 bytes)
+limpo    .dev/logs/wardd.log (8343 bytes)
+3 arquivo(s), 0 com segredo

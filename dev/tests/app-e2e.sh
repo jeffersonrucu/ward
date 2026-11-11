@@ -30,6 +30,14 @@ for f in "$DEV/test-vault.ward" "$DEV/variations.txt" "$ROOT/app/dist-teste/inde
     "$ROOT/target/debug/wardd" "$ROOT/target/debug/ward" "$ROOT/target/debug/ward-test-bridge"; do
     [[ -f "$f" ]] || { echo "app-e2e: falta ${f#"$ROOT"/} (make dev-vault, dev-variations, app-front)" >&2; exit 1; }
 done
+# Phase 65c: the test bundle has to be the one of the current sources. An older one (the
+# 0.1.x bundle calls the old bridge path, which the bridge no longer serves) stops on the unlock
+# screen with an invalid bridge reply error and the suite only sees a timeout.
+STALE="$(find "$ROOT/app/src" "$ROOT/app/index.html" "$ROOT/app/vite.config.js" \
+    "$ROOT/app/package.json" "$ROOT/app/package-lock.json" \
+    -newer "$ROOT/app/dist-teste/index.html" -print -quit)"
+[[ -z "$STALE" ]] \
+    || { echo "app-e2e: app/dist-teste é mais velho que ${STALE#"$ROOT"/}; rode 'make test-app-e2e' (refaz o pacote) ou 'make app-front'" >&2; exit 1; }
 (exec 3<>/dev/tcp/127.0.0.1/2224) 2> /dev/null \
     || { echo "app-e2e: o ssh-salto (2224) não responde; rode 'make dev-services-up'" >&2; exit 1; }
 

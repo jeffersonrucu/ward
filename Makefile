@@ -365,11 +365,18 @@ test-webkit-real: origins
 ## jump SSH service and the attacks on the token); log scan at the end; the test vault
 ## goes back to what it was.
 ## Needs `make dev-vault`, `make dev-variations`, `make app-front`, the services up and
-## the Python Playwright in PW_PYTHONPATH; out of `make check`
+## the Python Playwright in PW_PYTHONPATH; out of `make check`.
+## Phase 65c: the test bundle (the test Vite build) is rebuilt here, like the binaries: a
+## bundle left from an older build (the 0.1.x one calls the old bridge path, which the
+## current bridge does not serve) stopped the suite on the unlock screen with an invalid
+## bridge reply error. `npm ci` only if app/node_modules is missing, as in `compile`.
 test-app-e2e: origins
 	$(CARGO) build --quiet --locked -p wardd --features test-mode --bin wardd
 	$(CARGO) build --quiet --locked -p ward-test-bridge --features test-mode --bin ward-test-bridge
 	$(CARGO) build --quiet --locked -p ward --features test-mode --bin ward
+	@test -x "$(NODE_DIR)/node" || { echo "node não encontrado; use NODE_DIR=/caminho/do/node/bin" >&2; exit 1; }
+	@test -d app/node_modules || $(APP_NPM) ci --ignore-scripts --no-audit --no-fund
+	$(APP_NPM) run build:test
 	PW_PYTHONPATH="$(PW_PYTHONPATH)" WARD_DEV_SOCKET_DIR="$(WARD_DEV_SOCKET_DIR)" dev/tests/app-e2e.sh
 
 ## test-revealed-selection: Phase 39g (S2, S12): the value revealed in the secret field

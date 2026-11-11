@@ -142,7 +142,17 @@ def reload_page(page):
 
 
 def unlock(page):
-    page.wait_for_selector("#master-password", timeout=20000)
+    try:
+        page.wait_for_selector("#master-password", timeout=20000)
+    except Exception:
+        # Phase 65c: say why, instead of a bare timeout. The bridge error on the unlock
+        # screen means a test bundle that does not match the bridge (left from an older
+        # build).
+        text = page_text(page)
+        if "ponte de teste" in text:
+            raise RuntimeError("a tela mostra um erro da ponte de teste em vez do destravar "
+                               "(app/dist-teste de outro build? rode 'make test-app-e2e')") from None
+        raise
     page.fill("#master-password", PASSWORD)
     page.press("#master-password", "Enter")
     page.wait_for_selector("[data-entry]", timeout=60000)
