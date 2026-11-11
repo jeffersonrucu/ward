@@ -150,8 +150,8 @@ fn v6_12_session_saved_only_the_path_comes_back() {
     let r = c.playwright("t-livre");
     let expected = c.session("t-livre");
     match &r {
-        Response::PlaywrightSession { path: caminho } => {
-            assert_eq!(Path::new(caminho), expected);
+        Response::PlaywrightSession { path } => {
+            assert_eq!(Path::new(path), expected);
         }
         other => panic!("{other:?}"),
     }

@@ -3,7 +3,7 @@
 # path of the test daemon, nor `WARD_DEV_DIR`. Usage: dev/tests/app-release.sh
 # <binary> (or `make app-check`, which builds the release first).
 #
-# Devtools out of the release: guaranteed by the `configuracao_tauri` test (the
+# Devtools out of the release: guaranteed by the `tauri_config` test (the
 # `tauri/devtools` feature only comes in with `test-mode`) and by the window's
 # `.devtools(cfg!(feature = "test-mode"))`.
 

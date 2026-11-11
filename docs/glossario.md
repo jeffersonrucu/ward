@@ -2540,11 +2540,29 @@ acao, icone }` → `Tray { state, minutes, title, subtitle, action, icon }`,
 `navigation_allowed`, `com_comandos` → `with_commands`, `vigiar_avisos` →
 `watch_notices`; locais de `main` `partida`/`na_aprovacao`/`na_vigia` → `app_startup`/
 `for_approval`/`for_watcher` (o heredoc do `dev/tests/webkit-real.sh` e o padrão
-`.on_navigation(navigation_allowed)` do `app/core/tests/configuracao_tauri.rs`
+`.on_navigation(navigation_allowed)` do `app/core/tests/tauri_config.rs`
 acompanham); testes `sem_daemon`/`app_de_teste`/`chamar`/`ORIGEM` → `no_daemon`/
 `test_app`/`call`/`ORIGIN`. `build.rs`: `manifesto` → `manifest`. Os nomes de thread
 (`ward-app-destrave`, `ward-app-negar`, `ward-app-bandeja`, `ward-app-travar`,
 `ward-limpeza`), os avisos da tela e os textos mostrados ficam.
+Fase 34a (resto do Rust): `app/core/tests/configuracao_tauri.rs` → `tauri_config.rs`
+(testes `limites_do_gerador_na_interface_sao_os_do_rust`/
+`janela_de_aprovacao_segue_o_rust_e_nao_usa_html`/`ataque_capability_com_permissao_a_mais`/
+`ataque_csp_frouxa_ou_conteudo_remoto`/`ataque_devtools_ou_acl_dinamica_no_release`/
+`lista_de_comandos_da_interface_e_a_mesma`/`ataque_interface_guarda_ou_injeta_conteudo` →
+`generator_limits_in_the_interface_are_the_rust_ones`/
+`approval_window_follows_rust_and_does_not_use_html`/
+`attack_capability_with_extra_permission`/`attack_loose_csp_or_remote_content`/
+`attack_devtools_or_dynamic_acl_in_release`/`interface_command_list_is_the_same`/
+`attack_interface_stores_or_injects_content`; `fontes` → `sources`). Binários de teste do
+`wardd` (pastas `app-teste/`/`aprovador-teste/` e nomes `wardd-app-teste`/
+`wardd-aprovador-teste` ficam até a Fase 56): `pedir` → `ask`, `descrever` → `describe`,
+`esperado` → `expected`, `comparar` → `compare`, `contem` → `contains`, `valores_do_app` →
+`app_values`; `mandar`/`ler`/`modo` → `send`/`read`/`mode`. Ligações locais dos padrões
+de `Request`/`Response` que sobraram com o nome pt-BR (`codigo`, `restante`, `papel`,
+`dados`, `fluxo`, `caminho`, `senha`, `entrada`, `ligado`, `minutos_trava`…) viraram a
+forma curta com o nome do campo em inglês (`code`, `remaining`, `role`, `data`, `stream`,
+`path`, `password`, `entry`, `enabled`, `lock_minutes`…).
 Fase 28 (clientes `ward` e `ward-nm`; nomes próprios deles, os de `ward-core`/
 `ward-platform` ficam para as fases desses crates): módulos `cliente`/`comandos`/
 `texto`/`testes` → `client`/`commands`/`text`/`tests`; `principal` → `main`;

@@ -158,8 +158,8 @@ pub fn set_level(d: &Daemon, role: Role, name: &str, level: &str, pin: &str) -> 
     )
 }
 
-/// New test vault, unlocked, with: `t-aprov` (with approval), `t-livre` (free),
-/// `t-bloq` (blocked), the server `s1` and the database `b1` with a tunnel through `s1`.
+/// New test vault, unlocked, with one entry per level (with approval, free and blocked),
+/// the server `s1` and the database `b1` with a tunnel through `s1`.
 pub fn test_vault(dir: &Dir) -> (Daemon, FakeClock) {
     let (d, r) = daemon_at(dir.paths());
     let create = request(

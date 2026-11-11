@@ -176,15 +176,12 @@ fn read_session(s: &mut UnixStream) -> Session {
     let mut r = Session::default();
     loop {
         match receive(s) {
-            Some(Response::Output {
-                stream: fluxo,
-                data: dados,
-            }) => match fluxo {
-                Stream::Stdout => r.stdout.extend_from_slice(&dados),
-                Stream::Stderr => r.stderr.extend_from_slice(&dados),
+            Some(Response::Output { stream, data }) => match stream {
+                Stream::Stdout => r.stdout.extend_from_slice(&data),
+                Stream::Stderr => r.stderr.extend_from_slice(&data),
             },
-            Some(Response::Exit { code: codigo }) => {
-                r.end = Some(codigo);
+            Some(Response::Exit { code }) => {
+                r.end = Some(code);
                 break;
             }
             Some(Response::Error(e)) => {
@@ -680,7 +677,7 @@ fn v4_15_cli_that_drops_and_killed_daemon() {
     let mut read = Vec::new();
     while read.iter().filter(|b| **b == b'\n').count() < 2 {
         match receive(&mut s) {
-            Some(Response::Output { data: dados, .. }) => read.extend_from_slice(&dados),
+            Some(Response::Output { data, .. }) => read.extend_from_slice(&data),
             r => panic!("{r:?}"),
         }
     }
@@ -718,7 +715,7 @@ fn v4_15_cli_that_drops_and_killed_daemon() {
     let mut read = Vec::new();
     while !read.contains(&b'\n') {
         match receive(&mut s) {
-            Some(Response::Output { data: dados, .. }) => read.extend_from_slice(&dados),
+            Some(Response::Output { data, .. }) => read.extend_from_slice(&data),
             r => panic!("{r:?}"),
         }
     }
@@ -771,7 +768,7 @@ fn ra1_record_child_environ_readable_by_same_uid() {
     let mut s = connect(&w);
     send(&mut s, &run_request("t-gen", &sh("echo $$; sleep 30"), &[]));
     let pid: u32 = match receive(&mut s) {
-        Some(Response::Output { data: dados, .. }) => text(&dados).trim().parse().unwrap(),
+        Some(Response::Output { data, .. }) => text(&data).trim().parse().unwrap(),
         r => panic!("{r:?}"),
     };
     let environ = fs::read(format!("/proc/{pid}/environ")).unwrap_or_default();
@@ -907,7 +904,7 @@ fn f54_attack_ward_run_dies_on_lock() {
     send(&mut s, &run_request("t-livre", &sh(&script), &[]));
     send_stdin(&mut s, b"");
     let pid: u32 = match receive(&mut s) {
-        Some(Response::Output { data: dados, .. }) => text(&dados).trim().parse().unwrap(),
+        Some(Response::Output { data, .. }) => text(&data).trim().parse().unwrap(),
         r => panic!("{r:?}"),
     };
     assert!(alive(pid));
@@ -1003,7 +1000,7 @@ fn f55_attack_descendant_outside_group_dies_at_end_and_on_lock() {
     );
     send_stdin(&mut s, b"");
     let child: u32 = match receive(&mut s) {
-        Some(Response::Output { data: dados, .. }) => text(&dados).trim().parse().unwrap(),
+        Some(Response::Output { data, .. }) => text(&data).trim().parse().unwrap(),
         r => panic!("{r:?}"),
     };
     assert!(alive(child));

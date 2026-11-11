@@ -943,7 +943,7 @@ fn d53_body_that_does_not_serialize_does_not_burn() {
 /// V2.53 (D53, the auditor's generation repro): the attacker removes the read
 /// permission of the directory (0300), so the directory fsync fails after the rename.
 /// Write A (one entry less) returns an error with the open vault at n+1; B (the entry
-/// back) writes n+2; the copy of A put in the place of B is refused with `Retrocesso` by
+/// back) writes n+2; the copy of A put in the place of B is refused with `Rollback` by
 /// the minimum n+2, without entry and without value. Before D53, B wrote n+1 again and A
 /// opened with the minimum.
 #[test]

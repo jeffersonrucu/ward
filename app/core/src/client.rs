@@ -98,7 +98,7 @@ pub fn create_vault<D: Daemon + ?Sized>(
 /// connection.
 pub fn role<D: Daemon + ?Sized>(daemon: &mut D) -> Result<Role, AppError> {
     match ask(daemon, &Request::Status)? {
-        Response::Status { role: papel, .. } => Ok(papel),
+        Response::Status { role, .. } => Ok(role),
         _ => Err(AppError::InvalidResponse),
     }
 }
@@ -197,13 +197,11 @@ pub fn totp<D: Daemon + ?Sized>(daemon: &mut D, entry: &str) -> Result<TotpCode,
         entry: entry.to_owned(),
     };
     match ask(daemon, &request)? {
-        Response::TotpCode {
-            code: codigo,
-            remaining: restante,
-        } if codigo.len() == 6 && (1..=30).contains(&restante) => Ok(TotpCode {
-            code: codigo,
-            remaining: restante,
-        }),
+        Response::TotpCode { code, remaining }
+            if code.len() == 6 && (1..=30).contains(&remaining) =>
+        {
+            Ok(TotpCode { code, remaining })
+        }
         _ => Err(AppError::InvalidResponse),
     }
 }
@@ -341,13 +339,13 @@ pub fn unlock<D: Daemon + ?Sized>(
 pub fn settings<D: Daemon + ?Sized>(daemon: &mut D) -> Result<crate::settings::Settings, AppError> {
     match ask(daemon, &Request::Config)? {
         Response::Config {
-            lock_minutes: minutos_trava,
-            external_backup: backup_externo,
-            local_backup: backup_local,
+            lock_minutes,
+            external_backup,
+            local_backup,
         } => Ok(crate::settings::Settings {
-            lock_minutes: minutos_trava,
-            external_backup: backup_externo,
-            local_backup: backup_local,
+            lock_minutes,
+            external_backup,
+            local_backup,
         }),
         _ => Err(AppError::InvalidResponse),
     }
@@ -413,10 +411,7 @@ pub fn external_backup<D: Daemon + ?Sized>(
     daemon: &mut D,
 ) -> Result<(bool, Option<String>), AppError> {
     match ask(daemon, &Request::ExternalBackup)? {
-        Response::ExternalBackup {
-            enabled: ligado,
-            uuid,
-        } => Ok((ligado, uuid)),
+        Response::ExternalBackup { enabled, uuid } => Ok((enabled, uuid)),
         _ => Err(AppError::InvalidResponse),
     }
 }

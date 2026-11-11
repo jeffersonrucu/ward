@@ -6,37 +6,39 @@ edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 
-# Sem Tauri e sem GTK: compila e testa no `make check` do workspace raiz. O crate do
-# Tauri (`app/src-tauri`, workspace próprio) e a ponte de teste (`ward-test-bridge`) só
-# chamam o `Service` daqui, então os dois expõem exatamente os mesmos comandos.
+# No Tauri and no GTK: builds and tests in the `make check` of the root workspace. The
+# Tauri crate (`app/src-tauri`, its own workspace) and the test bridge
+# (`ward-test-bridge`) only call the `Service` from here, so both expose exactly the same
+# commands.
 [features]
-# D7: socket do daemon de teste (`/run/user/<uid>/ward-teste/`, pasta 0700 do usuário
-# e par do mesmo uid). Sem a feature, o caminho de teste e essa exceção nem existem no
-# binário: só o socket do systemd do sistema (D46).
+# D7: socket of the test daemon (a 0700 folder of the user under `/run/user/<uid>/`,
+# and a peer with the same uid). Without the feature, the test path and this exception
+# do not even exist in the binary: only the socket of the system's systemd (D46).
 test-mode = ["ward-platform/test-mode"]
 
 [dependencies]
-# Limites de nome de entrada e de campo (D32), numa fonte só.
+# Limits of entry name and field (D32), in a single source.
 ward-core.workspace = true
-# Conferência do servidor antes de qualquer byte (S5, D46): a mesma da CLI, numa fonte
-# só. Crate do workspace; a `libc` que ele usa já está no lockfile.
+# Server check before any byte (S5, D46): the same as the CLI's, in a single source.
+# Workspace crate; the `libc` it uses is already in the lockfile.
 ward-platform.workspace = true
-# Comparação em tempo constante do valor copiado com o que está na área de
-# transferência (o mesmo crate que o `ward-core` já usa; nada novo no lockfile).
+# Constant-time comparison of the copied value with what is in the clipboard (the same
+# crate that `ward-core` already uses; nothing new in the lockfile).
 ctutils = { version = "0.4.8", default-features = false }
-# Respostas da tela Credenciais (Fase 32) serializadas uma vez só, para o Tauri e para a
-# ponte de teste. Só tipos sem segredo derivam `Serialize` (o `Segredo` não). Já no
-# lockfile (serde_json, dev-dependência, puxa `serde`; `serde_derive` também está).
+# Responses of the Credentials screen (Phase 32) serialized only once, for Tauri and for
+# the test bridge. Only types without a secret derive `Serialize` (the secret type does
+# not). Already in the lockfile (serde_json, a dev-dependency, pulls `serde`;
+# `serde_derive` is there too).
 serde = { version = "1.0.229", default-features = false, features = ["std", "derive"] }
-# Fase 53a: só as constantes `O_NOFOLLOW`/`O_NONBLOCK`/`O_NOCTTY` e `ELOOP` para ler o
-# arquivo da chave privada sem seguir link nem prender numa FIFO (a mesma versão que o
-# `ward-platform` e o `wardd` já usam; nada novo no lockfile).
+# Phase 53a: only the `O_NOFOLLOW`/`O_NONBLOCK`/`O_NOCTTY` constants and `ELOOP`, to read
+# the private key file without following a link or getting stuck on a FIFO (the same
+# version that `ward-platform` and `wardd` already use; nothing new in the lockfile).
 libc = { version = "0.2.191", default-features = false }
-# Segredo em memória zerado ao sair (já no lockfile pelo `ward-core`).
+# Secret in memory cleared on drop (already in the lockfile through `ward-core`).
 zeroize = { version = "1.9.1", default-features = false, features = ["alloc"] }
 
 [dev-dependencies]
-# Só nos testes: lê `tauri.conf.json` e as capabilities para os testes de ataque de S11.
+# Only in the tests: reads `tauri.conf.json` and the capabilities for the S11 attack tests.
 serde_json = { version = "1.0.150", default-features = false, features = ["std"] }
 
 [lints]

@@ -563,22 +563,19 @@ fn restore_keeps_the_current_lock_timeout_and_external_backup() {
     assert_eq!(list_names(&d), entries);
     match request(&d, Role::App, "configuracao", "{}") {
         Response::Config {
-            lock_minutes: minutos_trava,
-            external_backup: backup_externo,
-            local_backup: backup_local,
+            lock_minutes,
+            external_backup,
+            local_backup,
         } => {
-            assert_eq!(minutos_trava, 30);
-            assert!(backup_externo);
-            assert!(backup_local);
+            assert_eq!(lock_minutes, 30);
+            assert!(external_backup);
+            assert!(local_backup);
         }
         r => panic!("{r:?}"),
     }
     match request(&d, Role::App, "backup_externo", "{}") {
-        Response::ExternalBackup {
-            enabled: ligado,
-            uuid,
-        } => {
-            assert!(ligado);
+        Response::ExternalBackup { enabled, uuid } => {
+            assert!(enabled);
             assert_eq!(uuid.as_deref(), Some("ABCD-1234"));
         }
         r => panic!("{r:?}"),

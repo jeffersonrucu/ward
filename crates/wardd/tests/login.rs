@@ -54,20 +54,20 @@ fn agent_login(d: &Daemon, client: &dyn Client, name: &str) -> Response {
 /// The extension's await-login request: `Some((id, entry))` or `None` (empty wait).
 fn await_login(d: &Daemon) -> Option<(String, String)> {
     match request(d, Role::Extension, "aguardar_login", "{}") {
-        Response::LoginRequest { id, entry: entrada } => {
+        Response::LoginRequest { id, entry } => {
             // S1: the request taken to the extension has no value of the entry at all.
             let q = encoded(
                 Role::Extension,
                 &Response::LoginRequest {
                     id: id.clone(),
-                    entry: entrada.clone(),
+                    entry: entry.clone(),
                 },
             );
             for s in SECRETS {
                 assert!(!contains(&q, s.as_bytes()));
                 assert!(!contains(&q, b64(s.as_bytes()).as_bytes()));
             }
-            Some((id, entrada))
+            Some((id, entry))
         }
         Response::Ok => None,
         r => panic!("{r:?}"),
@@ -122,12 +122,10 @@ fn v6_10_free_login_fills_on_the_right_origin_and_returns_ok() {
         assert_eq!(id.len(), 32);
         match fill(&d, &id, ORIGIN) {
             Response::Fill {
-                username: usuario,
-                password: senha,
-                ..
+                username, password, ..
             } => {
-                assert_eq!(usuario, "admin");
-                assert_eq!(senha.expose(), SECRETS[3].as_bytes());
+                assert_eq!(username, "admin");
+                assert_eq!(password.expose(), SECRETS[3].as_bytes());
             }
             r => panic!("{r:?}"),
         }

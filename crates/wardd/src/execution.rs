@@ -785,7 +785,7 @@ fn read_from_cli(
             }
         };
         match protocol::decode_request(Role::Agent, &bytes) {
-            Ok(Request::Stdin { data: dados }) if null_stdin && !dados.is_empty() => {
+            Ok(Request::Stdin { data }) if null_stdin && !data.is_empty() => {
                 if !end.load(Ordering::Acquire) {
                     warning!(
                         "executar: dado na entrada padrão declarada nula; o grupo do comando foi morto (D68)"
@@ -794,15 +794,15 @@ fn read_from_cli(
                 }
                 return;
             }
-            Ok(Request::Stdin { data: dados }) => {
-                if !stdin_open || (dados.is_empty() && pty.is_some()) {
+            Ok(Request::Stdin { data }) => {
+                if !stdin_open || (data.is_empty() && pty.is_some()) {
                     continue;
                 }
-                let item = if dados.is_empty() {
+                let item = if data.is_empty() {
                     stdin_open = false;
                     None
                 } else {
-                    Some(dados)
+                    Some(data)
                 };
                 if !enqueue(&queue, item, &s, &end, &group) {
                     return;

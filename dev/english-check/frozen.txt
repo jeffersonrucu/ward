@@ -261,6 +261,14 @@ crates/wardd/src/launch.rs extensao 56 variable WARD_DEV_EXTENSAO
 crates/wardd/src/main.rs extensao 56 variable WARD_DEV_EXTENSAO
 crates/wardd/src/lock.rs sistema 56 variable WARD_DEV_DBUS_SISTEMA
 
+# Phase 34a (rest of the Rust): test variables quoted in comments, and the folders and
+# names of the wardd test binaries (built and run by name by the Makefile and dev/tests).
+crates/wardd/src/server.rs extensao 56 variable WARD_DEV_EXTENSAO
+crates/wardd/src/udisks.rs sistema 56 variable WARD_DEV_DBUS_SISTEMA
+crates/wardd/app-teste* teste 56 folder and binary name wardd-app-teste
+crates/wardd/aprovador-teste* aprovador 56 folder and binary name wardd-aprovador-teste
+crates/wardd/aprovador-teste* teste 56 folder and binary name wardd-aprovador-teste
+
 # Phase 17 (ward-core protocol): v1 envelope keys and the error type quoted in the doc.
 crates/ward-core/src/protocol.rs dados 50 data key of the v1 envelope (v2: data)
 crates/ward-core/src/protocol.rs tipo 50 type key of the v1 response envelope (v2: type)

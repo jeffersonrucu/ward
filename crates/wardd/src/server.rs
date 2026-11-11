@@ -2,7 +2,7 @@
 //! the group (D47), reads frames with the role's limit and answers.
 //!
 //! - Different uid, or no process identity: closes without sending a single byte and
-//!   records `UidRecusado` with uid and pid (V3.2).
+//!   logs the refused-uid warning with uid and pid (V3.2).
 //! - At most [`MAX_CONNECTIONS`] agent and extension connections at the same time, one
 //!   thread each. Full: the oldest idle connection (waiting for a frame) among them is
 //!   dropped to make room for the new one; with no idle one, the new one gets the busy error

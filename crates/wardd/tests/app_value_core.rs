@@ -194,13 +194,10 @@ fn v3_39_app_totp_by_the_daemon_clock() {
         .unwrap()
         .code_at(59);
     match request(&d, Role::App, "totp", r#"{"entrada":"t-totp"}"#) {
-        Response::TotpCode {
-            code: codigo,
-            remaining: restante,
-        } => {
-            assert_eq!(codigo.as_str(), expected.code());
-            assert_eq!(codigo.len(), 6);
-            assert_eq!(restante, 1);
+        Response::TotpCode { code, remaining } => {
+            assert_eq!(code.as_str(), expected.code());
+            assert_eq!(code.len(), 6);
+            assert_eq!(remaining, 1);
         }
         other => panic!("esperava código: {:?}", other.kind()),
     }

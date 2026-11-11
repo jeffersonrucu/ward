@@ -6,30 +6,30 @@ edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 
-# Cripto só por bibliotecas auditadas (S6, V2.7). Motivo de cada uma no handoff da Fase 13.
+# Crypto only through audited libraries (S6, V2.7). Reason for each one in the Phase 13 handoff.
 [dependencies]
-# `password-hash` (Fase 19b, D30): só os tipos do texto PHC (`phc`) e a comparação em
-# tempo constante do `phc::Output`, para o hash do PIN. O hash em si passa por
-# `cripto::argon2id`. Não traz crate nova ao `Cargo.lock` (já estavam lá).
+# `password-hash` (Phase 19b, D30): only the PHC text types (`phc`) and the constant-time
+# comparison of `phc::Output`, for the PIN hash. The hash itself goes through
+# `crypto::argon2id`. Brings no new crate to `Cargo.lock` (they were already there).
 argon2 = { version = "0.6.0", default-features = false, features = ["alloc", "zeroize", "password-hash"] }
-# `ctutils` (Fase 19c, D40): o `CtEq` que compara a saída recalculada do hash do PIN
-# com a guardada, em tempo constante. É o mesmo crate que o `phc` já usa (estava no
-# `Cargo.lock`); nada novo entra na árvore.
+# `ctutils` (Phase 19c, D40): the `CtEq` that compares the recomputed output of the PIN
+# hash with the stored one, in constant time. It is the same crate that `phc` already
+# uses (it was in `Cargo.lock`); nothing new enters the tree.
 ctutils = { version = "0.4.8", default-features = false }
-# `base64ct` (Fase 20): base64 de tempo constante dos segredos no protocolo do socket
-# (RustCrypto). Já estava no `Cargo.lock` (dependência do `password-hash`/`phc`); nada
-# novo entra na árvore.
+# `base64ct` (Phase 20): constant-time base64 of the secrets in the socket protocol
+# (RustCrypto). It was already in `Cargo.lock` (a dependency of `password-hash`/`phc`);
+# nothing new enters the tree.
 base64ct = { version = "1.8.3", default-features = false }
 chacha20poly1305 = { version = "0.11.0", default-features = false, features = ["alloc", "zeroize"] }
 getrandom = { version = "0.4.3", default-features = false }
-# HMAC-SHA1 do TOTP (RFC 6238, Fase 18), do RustCrypto; `zeroize` zera o estado ao sair.
+# HMAC-SHA1 of TOTP (RFC 6238, Phase 18), from RustCrypto; `zeroize` clears the state on drop.
 hmac = { version = "0.13.0", default-features = false, features = ["zeroize"] }
 sha1 = { version = "0.11.0", default-features = false, features = ["zeroize"] }
-# NFC da senha mestra digitada (Fase 39c; handoff 30): o mesmo texto composto ou
-# decomposto tem de abrir o cofre pelo app e pela CLI. Não há NFC na biblioteca padrão
-# e fazer a tabela à mão seria pior. unicode-rs (o mesmo projeto do `unicode-ident`),
-# MIT/Apache-2.0; traz `tinyvec` e `tinyvec_macros` (Zlib/Apache-2.0/MIT), sem `unsafe`
-# de plataforma nem rede.
+# NFC of the typed master password (Phase 39c; handoff 30): the same text, composed or
+# decomposed, has to open the vault through the app and through the CLI. There is no NFC
+# in the standard library and building the table by hand would be worse. unicode-rs (the
+# same project as `unicode-ident`), MIT/Apache-2.0; brings `tinyvec` and
+# `tinyvec_macros` (Zlib/Apache-2.0/MIT), without platform `unsafe` or network.
 unicode-normalization = { version = "=0.1.25", default-features = false }
 zeroize = { version = "1.9.1", default-features = false, features = ["alloc"] }
 

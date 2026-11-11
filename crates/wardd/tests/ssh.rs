@@ -382,18 +382,15 @@ fn session_of(
             break;
         };
         match protocol::decode_response(Role::Agent, &b).unwrap() {
-            Response::Output {
-                stream: fluxo,
-                data: dados,
-            } => {
-                r.chunks.push((start.elapsed(), dados.to_vec()));
-                match fluxo {
-                    Stream::Stdout => r.stdout.extend_from_slice(&dados),
-                    Stream::Stderr => r.stderr.extend_from_slice(&dados),
+            Response::Output { stream, data } => {
+                r.chunks.push((start.elapsed(), data.to_vec()));
+                match stream {
+                    Stream::Stdout => r.stdout.extend_from_slice(&data),
+                    Stream::Stderr => r.stderr.extend_from_slice(&data),
                 }
             }
-            Response::Exit { code: codigo } => {
-                r.end = Some(codigo);
+            Response::Exit { code } => {
+                r.end = Some(code);
                 break;
             }
             Response::Error(e) => {

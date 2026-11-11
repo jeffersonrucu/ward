@@ -7,76 +7,76 @@ rust-version.workspace = true
 publish.workspace = true
 
 [features]
-# D7: daemon de teste. Cofre e estado em `WARD_DEV_DIR` (obrigatório) e socket num
-# diretório 0700 do usuário (`/run/user/<uid>/ward-teste/` ou `WARD_DEV_SOCKET_DIR`).
-# Só muda caminhos: nenhuma operação, papel ou aprovador a mais (D8, V3.15). A
-# instalação recusa artefato com esta feature (V9.2).
+# D7: test daemon. Vault and state in `WARD_DEV_DIR` (required) and the socket in a
+# 0700 directory of the user (`/run/user/<uid>/<test dir>/` or `WARD_DEV_SOCKET_DIR`).
+# It only changes paths: no extra operation, role or approver (D8, V3.15). The
+# installation refuses an artifact with this feature (V9.2).
 test-mode = ["ward-platform/test-mode"]
-# Scrutiny do M3: os ganchos dos testes de integração (`Daemon::with_hook_after_write`,
-# V3.35, e `Daemon::with_ssh_programs`, Fase 27) só existem com esta feature. Liga o
-# `test-mode`, então o artefato com ela é recusado pela instalação como o de teste
-# (V9.2) e o `make test-no-test-mode` acusa quem a ligar por dependência normal.
-# Nenhum pedido do socket chega a esses ganchos; o V3.15 aceita a feature só neles.
+# M3 scrutiny: the hooks of the integration tests (`Daemon::with_hook_after_write`,
+# V3.35, and `Daemon::with_ssh_programs`, Phase 27) only exist with this feature. It
+# turns on `test-mode`, so an artifact with it is refused by the installation like the
+# test one (V9.2) and `make test-no-test-mode` flags whoever turns it on through a normal
+# dependency. No socket request reaches these hooks; V3.15 accepts the feature only there.
 test-hooks = ["test-mode"]
 
-# Motivo de cada dependência no handoff da Fase 22 (S14). Nenhuma traz crate nova ao
+# Reason for each dependency in the Phase 22 handoff (S14). None brings a new crate to
 # `Cargo.lock`.
 [dependencies]
 ward-core = { workspace = true }
 ward-platform = { workspace = true }
-# `libc`: só as constantes `O_NOFOLLOW`/`O_CLOEXEC` para abrir o cofre e o estado sem
-# seguir link simbólico (nenhuma chamada; o crate não tem `unsafe`).
+# `libc`: only the `O_NOFOLLOW`/`O_CLOEXEC` constants, to open the vault and the state
+# without following a symbolic link (no call; the crate has no `unsafe`).
 libc = { version = "0.2.191", default-features = false }
 zeroize = { version = "1.9.1", default-features = false, features = ["alloc"] }
-# Fase 24 (motivo no handoff): cliente D-Bus do logind no barramento do sistema
-# (`Lock`, `LockedHint`, `PrepareForSleep` e o inibidor `delay`). A linha 5.x está
-# marcada sem manutenção (RUSTSEC-2026-0370/0371/0372: o `zvariant` entrou no `zbus` 6).
-# `default-rt`: o runtime interno do zbus (`zbus::block_on`), sem tokio, sem `proxy`,
-# `service`, `p2p` nem `tracing`.
+# Phase 24 (reason in the handoff): D-Bus client of logind on the system bus (`Lock`,
+# `LockedHint`, `PrepareForSleep` and the `delay` inhibitor). The 5.x line is marked
+# unmaintained (RUSTSEC-2026-0370/0371/0372: `zvariant` went into `zbus` 6).
+# `default-rt`: the internal runtime of zbus (`zbus::block_on`), without tokio, `proxy`,
+# `service`, `p2p` or `tracing`.
 zbus = { version = "=6.2.1", default-features = false, features = ["default-rt"] }
-# Só o trait `Stream`, para ler o `MessageStream` do zbus (já vem com ele; nenhuma crate nova).
+# Only the `Stream` trait, to read the zbus `MessageStream` (it already comes with it; no new crate).
 futures-core = { version = "0.3.34", default-features = false }
-# Fase 27 (motivo no handoff): agente SSH temporário do `ward ssh` com chave (D12). Lê
-# a chave OpenSSH da entrada (com passphrase: bcrypt-pbkdf + AES, pelo RustCrypto) e
-# assina com Ed25519 (`ed25519-dalek`) dentro do daemon; a chave nunca sai dele. Sem
-# `rsa` (RUSTSEC-2023-0071), sem `getrandom`/`std` padrão: só o necessário.
+# Phase 27 (reason in the handoff): temporary SSH agent of `ward ssh` with a key (D12).
+# Reads the OpenSSH key of the entry (with a passphrase: bcrypt-pbkdf + AES, from
+# RustCrypto) and signs with Ed25519 (`ed25519-dalek`) inside the daemon; the key never
+# leaves it. No `rsa` (RUSTSEC-2023-0071), no default `getrandom`/`std`: only what is needed.
 ssh-key = { version = "=0.7.0-rc.12", default-features = false, features = ["alloc", "ed25519", "encryption"] }
-# Fase 44 (motivo no handoff): o `ward playwright` conversa com o Chrome pelo DevTools
-# Protocol (JSON com números de ponto flutuante e negativos, que o leitor estrito do
-# protocolo recusa). Só structs próprias com os campos usados (o resto é pulado sem cópia)
-# e o storage state no formato do Playwright. Os dois já estão no `Cargo.lock` (pelo
-# `ward-app-core`); nenhuma crate nova entra na árvore.
+# Phase 44 (reason in the handoff): `ward playwright` talks to Chrome through the
+# DevTools Protocol (JSON with floating point and negative numbers, which the strict
+# protocol reader refuses). Only own structs with the fields in use (the rest is skipped
+# without a copy) and the storage state in the Playwright format. Both are already in
+# `Cargo.lock` (through `ward-app-core`); no new crate enters the tree.
 serde = { version = "1.0.229", default-features = false, features = ["std", "derive"] }
 serde_json = { version = "1.0.154", default-features = false, features = ["std"] }
 
 [dev-dependencies]
-# V3.8: o teste do observador de memória desembrulha a chave de dados do cofre de teste
-# com as mesmas bibliotecas auditadas do núcleo, para procurá-la nos blocos liberados.
+# V3.8: the memory watcher test unwraps the data key of the test vault with the same
+# audited libraries as the core, to look for it in the freed blocks.
 argon2 = { version = "0.6.0", default-features = false, features = ["alloc", "zeroize"] }
 chacha20poly1305 = { version = "0.11.0", default-features = false, features = ["alloc", "zeroize"] }
-# Fase 24: o logind falso dos testes serve o `Inhibit` (`service`, só nos testes).
+# Phase 24: the fake logind of the tests serves `Inhibit` (`service`, only in the tests).
 zbus = { version = "=6.2.1", default-features = false, features = ["default-rt", "service"] }
 
-# App de teste dos testes do `wardd` (D63, Fase 23a): o binário que o `abrir_app` do
-# daemon de teste abre pelo `WARD_DEV_APP`. Só com `test-mode`; fora de `src/` (o
-# V3.15 lê os arquivos de `src/`).
+# Test app of the `wardd` tests (D63, Phase 23a): the binary that the open-app request of
+# the test daemon opens through `WARD_DEV_APP`. Only with `test-mode`; outside `src/`
+# (V3.15 reads the files of `src/`).
 [[bin]]
 name = "wardd-app-teste"
 path = "app-teste/main.rs"
 required-features = ["test-mode"]
 
-# Janela de aprovação de teste das suítes de ponta a ponta do M6 (Fase 44c, D9): responde
-# os pedidos com o que a suíte escreveu em `$WARD_DEV_DIR/aprovador.modo`. Só com
-# `test-mode`, como o app de teste.
+# Test approval window of the M6 end-to-end suites (Phase 44c, D9): answers the requests
+# with what the suite wrote in the mode file under `$WARD_DEV_DIR`. Only with
+# `test-mode`, like the test app.
 [[bin]]
 name = "wardd-aprovador-teste"
 path = "aprovador-teste/main.rs"
 required-features = ["test-mode"]
 
-# Scrutiny do M4 (Fase 28b): os testes de integração que sobem o `wardd` de teste
-# (`WARD_DEV_DIR`, `WARD_DEV_SOCKET_DIR`, `WARD_DEV_APP`) ou usam os ganchos só existem
-# com a feature. Sem ela (`cargo test -p wardd`), o cargo os pula em vez de compilá-los
-# e falhar em tempo de execução contra um `wardd` de release.
+# M4 scrutiny (Phase 28b): the integration tests that start the test `wardd`
+# (`WARD_DEV_DIR`, `WARD_DEV_SOCKET_DIR`, `WARD_DEV_APP`) or use the hooks only exist
+# with the feature. Without it (`cargo test -p wardd`), cargo skips them instead of
+# building them and failing at run time against a release `wardd`.
 [[test]]
 name = "run"
 required-features = ["test-mode"]

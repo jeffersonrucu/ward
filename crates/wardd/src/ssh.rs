@@ -465,22 +465,22 @@ impl Daemon {
         request: Request,
     ) -> Result<Preparation, ResponseError> {
         let Request::Ssh {
-            entry: entrada,
-            command: comando,
+            entry,
+            command,
             token,
-            window_size: janela,
-            stdin_kind: tipo_entrada,
+            window_size,
+            stdin_kind,
         } = &request
         else {
             return Err(ResponseError::InvalidRequest);
         };
-        let with_command = !comando.is_empty();
+        let with_command = !command.is_empty();
         // Pty only in the interactive one: no command and with the size of the CLI's
         // terminal.
-        let window = if with_command { None } else { *janela };
-        let name = entrada.clone();
-        let null_stdin = *tipo_entrada == ward_core::protocol::StdinKind::Null;
-        debug!("ssh: entrada padrão {}", tipo_entrada.name());
+        let window = if with_command { None } else { *window_size };
+        let name = entry.clone();
+        let null_stdin = *stdin_kind == ward_core::protocol::StdinKind::Null;
+        debug!("ssh: entrada padrão {}", stdin_kind.name());
         // The level comes before the kind (V4.32: the made-up token on a database entry
         // with approval gives "approval unavailable"); the kind is verified afterwards,
         // under the lock.
@@ -496,10 +496,7 @@ impl Daemon {
             self.authorize_use(client, &request)?;
         }
         self.record_use();
-        let Request::Ssh {
-            command: comando, ..
-        } = request
-        else {
+        let Request::Ssh { command, .. } = request else {
             return Err(ResponseError::InvalidRequest);
         };
         // With the state locked: the entry may have changed during the approval.
@@ -611,7 +608,7 @@ impl Daemon {
         let program = if sftp {
             Program::Sftp
         } else {
-            Program::Ssh { command: &comando }
+            Program::Ssh { command: &command }
         };
         let destination = match &bridge {
             None => Destination {
