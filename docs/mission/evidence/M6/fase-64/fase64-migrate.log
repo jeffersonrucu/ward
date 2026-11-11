@@ -1,0 +1,104 @@
+==> m2:V4.3/V4.11/V4.5(0.2.0)/V4.6/V4.7/V4.10: wardd 0.2.0 sobre a cópia da 0.1.4
+ok    V4.11 subir com o estado v1 não regrava o estado
+      status: status - locked=True role=agent
+ok    travado antes do primeiro destrave
+ok -
+      app: papel=app destrave=["ok", "-"]
+ok    o processo aberto pelo daemon tem o papel app
+ok    V4.3 primeiro destrave da v4 responde ok
+ok    V4.3 o cofre migrado começa com WARDCOFR
+ok    V4.3 o arquivo do cofre foi regravado (v5)
+ok    cofre migrado 0600
+      estado: ward-state 2 seen 4 burned 4 agent_failures 0 modo 600
+ok    V4.11 o estado virou ward-state 2
+ok    V4.11 estado com geração g+1=4 e falhas do agente iguais (0)
+ok    V4.11 estado 0600
+<repo>/.dev/f64.ReGV8E/d020:
+total 60
+drwx------ 4 <user> <user>  4096 nov 11 14:56 .
+drwx------ 5 <user> <user>  4096 nov 11 14:56 ..
+drwx------ 2 <user> <user>  4096 nov 11 14:56 backups
+-rw------- 1 <user> <user> 13912 nov 11 14:56 f64-out-dump.json
+-rw------- 1 <user> <user>     6 nov 11 14:56 f64-pin
+-rw------- 1 <user> <user>     2 nov 11 14:56 f64-proto
+-rw------- 1 <user> <user>    20 nov 11 14:56 f64-pw
+-rw------- 1 <user> <user>     5 nov 11 14:56 f64-step
+drwx------ 2 <user> <user>  4096 nov 11 14:56 logs
+-rw------- 1 <user> <user>    46 nov 11 14:56 test-vault.state
+-rw------- 1 <user> <user>  5238 nov 11 14:56 test-vault.ward
+
+<repo>/.dev/f64.ReGV8E/d020/backups:
+total 32
+drwx------ 2 <user> <user> 4096 nov 11 14:56 .
+drwx------ 4 <user> <user> 4096 nov 11 14:56 ..
+-rw------- 1 <user> <user> 5278 nov 11 14:56 ward-20261110-213053.ward
+-rw------- 1 <user> <user> 5278 nov 11 14:56 ward-20261110-213054.ward
+-rw------- 1 <user> <user> 5238 nov 11 14:56 ward-20261111-175602.ward
+ok    nenhum temporário sobrou na pasta
+ok    S2: cofre, estado e backups sem padrão de variations.txt
+ok    S2: nenhum nome de tipo/nível em claro
+ok    V4.3 a migração gravou uma versão nova no backup local (3 versões)
+==> m2:V4.6: trava e destrava 3 vezes, e um daemon novo, sem regravar
+      rodada 1: ok - / ok -
+      rodada 2: ok - / ok -
+      rodada 3: ok - / ok -
+      daemon novo: ok -
+ok    V4.6 cofre com o mesmo inode, mtime, tamanho e sha256
+ok    V4.6 estado igual (geração igual)
+==> m2:V4.7: cópia v4 de volta
+      com o daemon rodando: error rollback msg="o cofre no disco é mais antigo que o último aberto"
+ok    V4.7 trocar com o daemon rodando é recusado (contrato: vault_changed)
+      nota: o daemon rodando respondeu rollback, não vault_changed
+ok    V4.7 a cópia v4 não foi regravada (daemon rodando)
+      daemon parado e subido de novo: error rollback msg="o cofre no disco é mais antigo que o último aberto"
+ok    V4.7 com o daemon parado, destravar a cópia v4 dá rollback
+ok    V4.7 a cópia v4 continua intacta
+ok    V4.7 o estado não mudou
+==> m2:V4.10: restaurar a versão v4 mais velha (geração 2) e a rotação
+      status: status - locked=True role=agent
+ok -
+      restaurar: ["ok", "-"]; versões: [["ward-20261111-175606-1.ward", true, false], ["ward-20261111-175606.ward", true, false], ["ward-20261111-175602.ward", true, false], ["ward-20261110-213054.ward", true, false], ["ward-20261110-213053.ward", true, false]]
+ok    V4.10 a versão v4 restaurada abre (ok)
+ok    V4.10 o cofre restaurado foi gravado de novo (não é a cópia v4)
+      estado: ward-state 2 seen 5 burned 5 agent_failures 0
+ok    V4.10 a restauração tem geração nova (5)
+ok -
+      restaurado (geração 2 da 0.1.4) × migrado (geração 3):
+      comparadas 22 entradas; diferenças 0
+cp: -r não especificado; omitindo o diretório '<repo>/.dev/f64.ReGV8E/d020/backups/'
+ok -
+      versões com lixo: [["ward-20261111-175606-1.ward", true, false], ["ward-20261111-175606.ward", true, false], ["ward-20261111-175602.ward", true, false], ["ward-20261111-000002.ward", false, false], ["ward-20261111-000001.ward", false, false], ["ward-20261110-213054.ward", true, false], ["ward-20261110-213053.ward", true, false]]
+ok    V4.10 as duas versões v4 da 0.1.4 conferidas
+ok    V4.10 versões v5 conferidas (3)
+FALHA V4.10 lixo conferido: {'ward-20261111-000001.ward': (False, False), 'ward-20261111-000002.ward': (False, False), 'ward-20261111-000003.ward': None}
+==> m2:V4.5: PIN (wrong, depois o certo) no 0.2.0
+ok -
+      pin errado: ["error", "wrong_pin"]; pin certo: ["ok", "-"]
+ok    V4.5 PIN errado recusado (wrong_pin)
+ok    V4.5 o PIN de teste confere no cofre migrado
+ok    S13: logs do wardd 0.2.0 (trace) sem padrão
+==> m2:V4.12: o wardd 0.1.4 diante do cofre já migrado (v5)
+      destravar no 0.1.4: erro cofre_invalido msg="o conteúdo do cofre é inválido"
+ok    V4.12 o 0.1.4 recusa o cofre v5
+      nota: a mensagem não cita versão (contrato: "versão do corpo desconhecida")
+      status 0.1.4: estado - locked=True role=agente
+ok    V4.12 o 0.1.4 não gravou o cofre (inode, mtime, sha256)
+ok    V4.12 nenhum arquivo novo na pasta
+      log: wardd: destravar recusado: corpo inválido
+      e com o estado v2 da 0.2.0 no lugar do v1:
+      destravar: erro retrocesso msg="o cofre no disco é mais antigo que o último aberto"
+ok    V4.12 o cofre continua intacto
+      o mesmo arquivo continua abrindo no 0.2.0:
+      destravar no 0.2.0: ok -
+ok    V4.12 o arquivo continua abrindo na 0.2.0
+==> m2:V4.5: o mesmo pelo wardd 0.1.4 em vault-0.1.4.ward, e a comparação
+      status 0.1.4: estado - locked=True role=agente
+ok -
+      app 0.1.4: papel=app destrave=["ok", "-"]
+ok -
+      0.1.4 pin errado: ["erro", "pin_incorreto"]; certo: ["ok", "-"]
+      DIFERENTE config diferente: ['configuracao', {'external_backup': False, 'local_backup': True, 'lock_minutes': 240}] × ['config', {'external_backup': False, 'local_backup': True, 'lock_minutes': 240}]
+      comparadas 22 entradas; diferenças 1
+FALHA V4.5 diferenças entre 0.1.4 e 0.2.0
+      entradas: 0.1.4=22 0.2.0=22; totp conferido pela semente em 3 entradas; config 0.1.4=['configuracao', {'external_backup': False, 'local_backup': True, 'lock_minutes': 240}] 0.2.0=['config', {'external_backup': False, 'local_backup': True, 'lock_minutes': 240}]
+fase64: 2 falha(s)

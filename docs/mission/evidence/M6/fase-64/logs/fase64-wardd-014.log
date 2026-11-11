@@ -1,0 +1,110 @@
+wardd: daemon de teste com a memória sem travar: RLIMIT_MEMLOCK de 2053808128 bytes, e não infinito; o processo trava toda a memória (mlockall) e sobe pela unit com LimitMEMLOCK=infinity
+wardd: daemon de TESTE (modo-teste): cofre de .dev/, nunca o real
+wardd: daemon de teste: abrir_app abre o app de teste da configuração
+wardd: daemon sem barramento do sistema: logind desligado; udisks2 (backup externo) desligado
+wardd: pronto
+wardd[debug]: estado (agente): estado
+wardd: app aberto (pid 2175309)
+wardd[debug]: abrir_app (agente): ok
+wardd[debug]: estado (app): estado
+wardd[debug]: destravar (app): ok
+wardd[debug]: lista (app): lista
+wardd[debug]: detalhe (app): detalhe
+wardd: revelar acme-pg-aprovacao senha
+wardd[debug]: revelar (app): segredo
+wardd[debug]: detalhe (app): detalhe
+wardd: revelar acme-pg-dev senha
+wardd[debug]: revelar (app): segredo
+wardd[debug]: detalhe (app): detalhe
+wardd: revelar acme-pg-prod senha
+wardd[debug]: revelar (app): segredo
+wardd[debug]: detalhe (app): detalhe
+wardd: revelar acme-pg-tunel senha
+wardd[debug]: revelar (app): segredo
+wardd[debug]: detalhe (app): detalhe
+wardd: revelar acme-ssh-chave-prod chave_privada
+wardd[debug]: revelar (app): segredo
+wardd: revelar acme-ssh-chave-prod passphrase
+wardd[debug]: revelar (app): segredo
+wardd[debug]: detalhe (app): detalhe
+wardd: revelar acme-ssh-interno chave_privada
+wardd[debug]: revelar (app): segredo
+wardd: revelar acme-ssh-interno passphrase
+wardd[debug]: revelar (app): segredo
+wardd[debug]: detalhe (app): detalhe
+wardd: revelar acme-ssh-interno-aprov chave_privada
+wardd[debug]: revelar (app): segredo
+wardd: revelar acme-ssh-interno-aprov passphrase
+wardd[debug]: revelar (app): segredo
+wardd[debug]: detalhe (app): detalhe
+wardd: revelar acme-ssh-salto senha
+wardd[debug]: revelar (app): segredo
+wardd[debug]: detalhe (app): detalhe
+wardd: revelar acme-ssh-salto-livre senha
+wardd[debug]: revelar (app): segredo
+wardd[debug]: detalhe (app): detalhe
+wardd: revelar acme-ssh-senha-stage senha
+wardd[debug]: revelar (app): segredo
+wardd[debug]: detalhe (app): detalhe
+wardd: revelar acme-totp-dev senha
+wardd[debug]: revelar (app): segredo
+wardd: revelar acme-totp-dev totp_semente
+wardd[debug]: revelar (app): segredo
+wardd: totp acme-totp-dev
+wardd[debug]: totp (app): codigo_totp
+wardd[debug]: detalhe (app): detalhe
+wardd: revelar acme-wp-dev senha
+wardd[debug]: revelar (app): segredo
+wardd: revelar acme-wp-dev totp_semente
+wardd[debug]: revelar (app): segredo
+wardd: totp acme-wp-dev
+wardd[debug]: totp (app): codigo_totp
+wardd[debug]: detalhe (app): detalhe
+wardd: revelar acme-wp-prod senha
+wardd[debug]: revelar (app): segredo
+wardd: revelar acme-wp-prod totp_semente
+wardd[debug]: revelar (app): segredo
+wardd: totp acme-wp-prod
+wardd[debug]: totp (app): codigo_totp
+wardd[debug]: detalhe (app): detalhe
+wardd: revelar beta-aws-dev secret_access_key
+wardd[debug]: revelar (app): segredo
+wardd: revelar beta-aws-dev session_token
+wardd[debug]: revelar (app): segredo
+wardd[debug]: detalhe (app): detalhe
+wardd: revelar beta-github-api token
+wardd[debug]: revelar (app): segredo
+wardd[debug]: detalhe (app): detalhe
+wardd: revelar beta-sftp-dev senha
+wardd[debug]: revelar (app): segredo
+wardd[debug]: detalhe (app): detalhe
+wardd: revelar beta-smtp-stage senha
+wardd[debug]: revelar (app): segredo
+wardd[debug]: detalhe (app): detalhe
+wardd: revelar delta-api-simbolos token
+wardd[debug]: revelar (app): segredo
+wardd: revelar delta-api-simbolos extra "SEGREDO_ASCII"
+wardd[debug]: revelar (app): segredo
+wardd[debug]: detalhe (app): detalhe
+wardd: revelar delta-redir senha
+wardd[debug]: revelar (app): segredo
+wardd[debug]: detalhe (app): detalhe
+wardd: revelar gama-bloqueada senha
+wardd[debug]: revelar (app): segredo
+wardd[debug]: detalhe (app): detalhe
+wardd: revelar gama-generico extra "CHAVE_LICENCA"
+wardd[debug]: revelar (app): segredo
+wardd[debug]: detalhe (app): detalhe
+wardd: revelar gama-nota texto
+wardd[debug]: revelar (app): segredo
+wardd[debug]: configuracao (app): configuracao
+wardd[debug]: backups (app): backups
+wardd: app (pid 2175309) saiu com código 0
+wardd: app aberto (pid 2175385)
+wardd[debug]: abrir_app (agente): ok
+wardd[debug]: estado (app): estado
+wardd[debug]: destravar (app): ok
+wardd[debug]: trocar_pin (app): pin_incorreto
+wardd[debug]: backup local gravado
+wardd[debug]: trocar_pin (app): ok
+wardd: app (pid 2175385) saiu com código 0
