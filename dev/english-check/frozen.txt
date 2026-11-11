@@ -179,15 +179,6 @@ app/src/screens/ChangePin.svelte mensagem 54 message field of the command error
 app/src/screens/ChooseUsbDrive.svelte codigo 54 code field of the command error
 app/src/screens/ChooseUsbDrive.svelte mensagem 54 message field of the command error
 
-# Phase 47 (install/, Makefile): shell functions that dev/tests/deb.sh (Phase 45) looks for
-# by name in the built maintainer scripts (`grep '^name()'`); Phase 57 renames them with
-# install/deb/* and dev/tests/deb.sh.
-install/groups.sh conferir_grupo 57 function the deb test greps in the built preinst
-install/chrome.sh conferir_politicas_chrome 57 function the deb test greps in the built preinst
-install/chrome.sh avisar_manifestos_de_usuario 57 function the deb test greps in the built postinst
-# Installed path of 0.1.x, frozen until Phase 57 (m2:DT15).
-install/deb/* grupos 57 installed mark path /usr/local/lib/ward/grupos-criados
-install/deb/* criados 57 installed mark path /usr/local/lib/ward/grupos-criados
 # Environment variables (m2:DT12), renamed by Phase 56 with all their uses.
 install/pack-extension.sh extensao 56 variable EXTENSAO_DIST, set by dev/tests/deb.sh
 install/pack-extension.sh saida 56 variable CRX_SAIDA, set by dev/tests/deb.sh

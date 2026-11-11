@@ -11,9 +11,10 @@
 #      give root's gid to whoever ran the binary. The 2755 with the right group comes
 #      from the `dpkg-statoverride` of the preinst.
 #   3. DEBIAN/: control (Depends with sshpass), preinst (groups from `groups.sh`, Chrome
-#      policies from `chrome.sh` and the common dirs of `tree.txt`), postinst (warning
-#      from `chrome.sh`), prerm and postrm (mark of the groups from `groups.sh`) from
-#      `install/deb/`.
+#      policies from `chrome.sh`, the common dirs of `tree.txt` and the stop of the
+#      running `wardd@*` from `upgrade.sh`, m2:DT16), postinst (warning from `chrome.sh`,
+#      0.1.x paths and sockets from `upgrade.sh`, m2:DT15), prerm and postrm (mark of the
+#      groups from `groups.sh`) from `install/deb/`.
 #   4. `dpkg-deb --build`, and the check of the result: the list of `dpkg-deb -c` is the
 #      staging's (V9.9), every path is root/root, no setuid/setgid bit nor write for
 #      group and others, Depends with sshpass.
@@ -64,12 +65,13 @@ find "$PACKAGE" -perm /6000 -exec chmod ug-s -- {} +
 find "$PACKAGE" -type d -exec chmod 0755 -- {} +
 
 # Maintainer scripts. The markers `#@GROUPS@` (groups.sh), `#@CHROME@` (chrome.sh),
-# `#@DUMP@` (dump.sh, Phase 51c) and `#@DIRS@` (common dirs of tree.txt) become the
-# content; each marker a template uses appears only once, and none is left over.
+# `#@DUMP@` (dump.sh, Phase 51c), `#@UPGRADE@` (upgrade.sh, m2:DT15/DT16) and `#@DIRS@`
+# (common dirs of tree.txt) become the content; each marker a template uses appears only
+# once, and none is left over.
 install -d -m 0755 -- "$PACKAGE/DEBIAN"
-/usr/bin/python3 -I -B - "$HERE/deb" "$HERE/groups.sh" "$HERE/chrome.sh" "$HERE/dump.sh" "$HERE/tree.txt" "$PACKAGE/DEBIAN" <<'EOF'
+/usr/bin/python3 -I -B - "$HERE/deb" "$HERE/groups.sh" "$HERE/chrome.sh" "$HERE/dump.sh" "$HERE/upgrade.sh" "$HERE/tree.txt" "$PACKAGE/DEBIAN" <<'EOF'
 import re, sys
-templates, groups, chrome, dump, tree, out_dir = sys.argv[1:]
+templates, groups, chrome, dump, upgrade, tree, out_dir = sys.argv[1:]
 dirs = []
 for line in open(tree, encoding="utf-8"):
     fields = line.split()
@@ -83,6 +85,7 @@ replacements = {
     "#@GROUPS@\n": open(groups, encoding="utf-8").read(),
     "#@CHROME@\n": open(chrome, encoding="utf-8").read(),
     "#@DUMP@\n": open(dump, encoding="utf-8").read(),
+    "#@UPGRADE@\n": open(upgrade, encoding="utf-8").read(),
     "#@DIRS@\n": "\n".join(dirs) + "\n",
 }
 for s in ("preinst", "postinst", "prerm", "postrm"):
@@ -138,6 +141,11 @@ awk '$2 != "root/root" {print "dono: " $0; bad = 1}
      $1 ~ /[sStT]/ {print "bit especial: " $0; bad = 1}
      substr($1, 6, 1) == "w" || substr($1, 9, 1) == "w" {print "escrita: " $0; bad = 1}
      END {exit bad}' <<<"$listing" >&2 || error "pacote com dono, link, bit especial ou escrita fora do esperado"
+# m2:DT15: no 0.1.x path in the package (dpkg deletes them on the upgrade because the new
+# package does not list them).
+if grep -E '^usr/local/share/ward/extensao(/|$)|^usr/local/lib/ward/grupos-criados$' <<<"$actual" >&2; then
+    error "o pacote tem caminho da 0.1.x"
+fi
 dep="$(dpkg-deb -f "$OUTPUT" Depends)"
 [[ ", $dep," == *", sshpass,"* ]] || error "o pacote não declara a dependência de sshpass"
 for s in preinst postinst prerm postrm; do

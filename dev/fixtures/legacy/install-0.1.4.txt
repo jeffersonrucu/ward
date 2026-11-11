@@ -1,0 +1,12 @@
+# Install interface and installed paths of 0.1.4 (tag v0.1.4), recorded for the upgrade
+# tests of Phase 57 (m2:V5.6-V5.9): `dev/tests/install.sh`, `dev/tests/deb.sh` and the
+# `inside.sh` of `dev/container-install/` and `dev/container-deb/` read the 0.1.4 names
+# from here, so the 0.2.0 code keeps none of them. One "key value" per line.
+script instalacao/instalar.sh
+tree instalacao/arvore.txt
+action_install instalar
+action_uninstall desinstalar
+var_extension_id EXTENSAO_ID
+var_extension_crx EXTENSAO_CRX
+extension_dir usr/local/share/ward/extensao
+groups_mark usr/local/lib/ward/grupos-criados

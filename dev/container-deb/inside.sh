@@ -4,7 +4,9 @@
 # without network; from the host comes only the read-only test mount under /opt: the
 # `.deb` built by `make deb` (artifacts without `test-mode`; the `ward-app` is
 # `startup-container`), the `tree.txt`, the minimal client and the id of the fake extension
-# package. The sshpass package is in /opt/debs (downloaded in the image build). Each check
+# package. The sshpass package is in /opt/debs (downloaded in the image build). Phase 57
+# (m2:V5.7, m2:V5.9): also the 0.1.4 `.deb` of .dev/baseline/, the 0.1.4 vault and state,
+# the v1 client and the test master password (fake, D15) for the upgrade. Each check
 # prints "ok:" or the failure marker; any failure exits ≠ 0.
 
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin
@@ -234,7 +236,7 @@ check "manifesto de native messaging com o id" "$(cat /etc/opt/chrome/native-mes
 check "Fase 51a: política com NativeMessagingUserLevelHosts false" "$(grep -c '^  "NativeMessagingUserLevelHosts": false,$' /etc/opt/chrome/policies/managed/ward.json)" "1"
 check "Fase 44c: política com PasswordManagerEnabled false" "$(grep -c '^  "PasswordManagerEnabled": false,$' /etc/opt/chrome/policies/managed/ward.json)" "1"
 check "Fase 44c: política com PasswordLeakDetectionEnabled false" "$(grep -c '^  "PasswordLeakDetectionEnabled": false,$' /etc/opt/chrome/policies/managed/ward.json)" "1"
-check "Fase 51a: marca dos grupos criados pelo preinst" "$(sort /usr/local/lib/ward/grupos-criados)" "$(for g in ward-app ward-nm; do echo "$g $(getent group "$g" | cut -d: -f3)"; done)"
+check "Fase 51a: marca dos grupos criados pelo preinst" "$(sort /usr/local/lib/ward/created-groups)" "$(for g in ward-app ward-nm; do echo "$g $(getent group "$g" | cut -d: -f3)"; done)"
 # Phase 51c: the list covers each helper of the package (real path from dpkg -L), and the
 # real apport and systemd-coredump write nothing; controls show it did not silence everything.
 for l in report-ignore blacklist.d; do
@@ -351,6 +353,150 @@ check "dpkg -r: ward-app (criado pelo preinst) apagado" "$(getent group ward-app
 [ ! -e /usr/local/lib/ward ] && ok "dpkg -r: /usr/local/lib/ward (com a marca) apagada" || failed "/usr/local/lib/ward ficou"
 groupdel ward-nm
 dpkg -P ward >/dev/null 2>&1 || true
+
+# --- Phase 57 (m2:V5.7, m2:V5.9, SEG; m2:DT15, m2:DT16): the 0.2.0 .deb over the 0.1.4 one --
+# /opt/teste/ward-0.1.4.deb is the 0.1.4 `.deb` of .dev/baseline/ (its release binaries and
+# a fake CRX3); /opt/teste/legacy has the 0.1.4 vault and state (fake values of D15), the v1
+# client and the 0.1.4 names of the install.
+L=$T/legacy
+OLD_DEB=$T/ward-0.1.4.deb
+legacy_name() { awk -v k="$1" '$1 == k {print $2; exit}' "$L/install-0.1.4.txt"; }
+OLD_EXT_DIR="/$(legacy_name extension_dir)"
+OLD_MARK="/$(legacy_name groups_mark)"
+MARK=/usr/local/lib/ward/created-groups
+# Lines of protocol-v1.jsonl (0.1.4 baseline): the agent's status and unlock requests, the
+# `ok` reply and the status reply of a locked vault.
+REQ_STATUS=1 REQ_UNLOCK=2 RESP_OK=37 RESP_LOCKED=38
+legacy_call() { as_1000 /usr/bin/python3 -I "$L/legacy_client.py" "$SOCK" "$L/protocol-v1.jsonl" "$1" "$2"; }
+PASSWORD="$(cat "$T/senha")"
+plant_old_vault() {
+    rm -rf -- "$VAULT_T"
+    install -d -m 0700 -o "$UID_T" -g "$UID_T" "$VAULT_T"
+    install -m 0600 -o "$UID_T" -g "$UID_T" "$L/vault-0.1.4.ward" "$VAULT_T/cofre.ward"
+    install -m 0600 -o "$UID_T" -g "$UID_T" "$L/state-0.1.4" "$VAULT_T/estado"
+}
+vault_sums() { (cd "$VAULT_T" && sha256sum cofre.ward estado; stat -c '%U %a' cofre.ward estado); }
+group_lines() { for g in ward-app ward-nm; do getent group "$g" || echo "$g ausente"; done; }
+mark_lines() { for g in ward-app ward-nm; do echo "$g $(getent group "$g" | cut -d: -f3)"; done; }
+old_paths_in() { grep -x -F -e "$OLD_EXT_DIR" -e "$OLD_EXT_DIR/ward.crx" -e "$OLD_EXT_DIR/update.xml" -e "$OLD_MARK" <<<"$1" || true; }
+# m2:DT16: "trocado" if the binary of the live process `$1` was replaced (its
+# /proc/<pid>/exe says "(deleted)") before it ended; "parado" when it ends. Polls every 10 ms.
+watch_swap() {
+    local pid="$1" out="$2" exe
+    : >"$out"
+    while [ -d "/proc/$pid" ]; do
+        exe="$(readlink "/proc/$pid/exe" 2>/dev/null || true)"
+        if [[ "$exe" == *' (deleted)' ]]; then
+            echo "trocado com o processo no ar" >>"$out"
+            break
+        fi
+        sleep 0.01
+    done
+    echo "parado" >>"$out"
+}
+install -d -m 0700 /tmp/v57
+# Control: the watcher sees a binary swapped under a live process (dpkg also swaps by rename).
+cp /usr/bin/sleep /tmp/v57/sleep
+/tmp/v57/sleep 30 &
+CTL=$!
+sleep 0.2
+watch_swap "$CTL" /tmp/v57/control &
+CTL_WATCH=$!
+sleep 0.2
+cp /usr/bin/sleep /tmp/v57/sleep.new && mv -f /tmp/v57/sleep.new /tmp/v57/sleep
+sleep 0.2
+kill "$CTL" 2>/dev/null || true
+wait "$CTL" 2>/dev/null || true
+wait "$CTL_WATCH" || true
+check "m2:V5.7 controle: o vigia vê um binário trocado com o processo no ar" "$(cat /tmp/v57/control)" "trocado com o processo no ar"
+
+clean_groups
+plant_old_vault
+r="$(SUDO_UID=$UID_T dpkg -i "$OLD_DEB" 2>&1; echo "saiu=$?")"
+check "m2:V5.9: o .deb 0.1.4 instala" "$r" "saiu=0"
+check "m2:V5.9: dpkg -L da 0.1.4 tem a pasta antiga da extensão (controle)" "$(dpkg -L ward)" "$OLD_EXT_DIR/update.xml"
+OLD_MARK_LINES="$(sort "$OLD_MARK" 2>/dev/null || true)"
+check "m2:V5.7: o preinst 0.1.4 gravou a marca no nome dela" "$OLD_MARK_LINES" "$(mark_lines)"
+OLD_GROUPS="$(group_lines)"
+OLD_WARDD_SUM="$(sha256sum </usr/local/bin/wardd)"
+check "m2:V5.7: o wardd 0.1.4 responde ao cliente v1 (cofre travado)" "$(legacy_call "$REQ_STATUS" "$RESP_LOCKED")" "same"
+check "m2:V5.7: o wardd 0.1.4 destrava o cofre 0.1.4" "$(legacy_call "$REQ_UNLOCK" "$RESP_OK")" "same"
+old_pid="$(systemctl show -p MainPID --value "wardd@$UID_T.service")"
+check "m2:V5.7: wardd 0.1.4 no ar" "$(sha256sum <"/proc/$old_pid/exe")" "$OLD_WARDD_SUM"
+VAULT_BEFORE="$(vault_sums)"
+watch_swap "$old_pid" /tmp/v57/order &
+WATCH=$!
+r="$(SUDO_UID=$UID_T dpkg -i "$DEB" 2>&1; echo "saiu=$?")"
+wait "$WATCH" || true
+check "m2:V5.9: o .deb 0.2.0 por cima do 0.1.4 sai 0" "$r" "saiu=0"
+check "m2:V5.9: pacote configurado" "$(status ward)" "ii"
+order="$(cat /tmp/v57/order)"
+check "m2:V5.7 (DT16): o wardd 0.1.4 terminou" "$order" "parado"
+lacks "m2:V5.7 (DT16): o dpkg não trocou o binário com o wardd 0.1.4 no ar" "$order" "trocado"
+check "m2:V5.7 (DT16): o preinst parou o wardd@$UID_T" "$r" "parando wardd@$UID_T.service antes de trocar os binários"
+check "m2:V5.9: dpkg -L depois da atualização sem caminho da 0.1.x" "[$(old_paths_in "$(dpkg -L ward)")]" "[]"
+check "m2:V5.9: dpkg -L com a pasta nova da extensão" "$(dpkg -L ward)" "/usr/local/share/ward/extension/update.xml"
+[ ! -e "$OLD_EXT_DIR" ] && [ ! -L "$OLD_EXT_DIR" ] && ok "m2:V5.7 (DT15): a pasta da extensão da 0.1.4 sumiu" || failed "m2:V5.7: $OLD_EXT_DIR ficou"
+[ ! -e "$OLD_MARK" ] && ok "m2:V5.7 (DT15): a marca no nome da 0.1.4 sumiu" || failed "m2:V5.7: $OLD_MARK ficou"
+check "m2:V5.7 (DT15): created-groups com os grupos que a 0.1.4 criou" "$(sort "$MARK" 2>&1)" "$OLD_MARK_LINES"
+check "m2:V5.7: os grupos não mudam de gid" "$(group_lines)" "$OLD_GROUPS"
+equal "m2:V5.9: statoverride 2755 dos binários novos" "$(overrides)" "$(printf 'root ward-app 2755 /usr/local/bin/ward-app\nroot ward-nm 2755 /usr/local/lib/ward/ward-nm')"
+check "m2:V5.9: ward-app root:ward-app 2755" "$(stat -c '%U:%G %a' /usr/local/bin/ward-app)" "root:ward-app 2755"
+check "m2:V5.9: ward-nm root:ward-nm 2755" "$(stat -c '%U:%G %a' /usr/local/lib/ward/ward-nm)" "root:ward-nm 2755"
+check "m2:V5.6: a política aponta para o caminho novo" "$(grep update_url /etc/opt/chrome/policies/managed/ward.json)" "file:///usr/local/share/ward/extension/update.xml"
+check "m2:V5.7: o socket religou" "$(systemctl is-active "wardd@$UID_T.socket" || true)" "active"
+check "m2:V5.7: o cofre não foi tocado pela atualização" "$(vault_sums)" "$VAULT_BEFORE"
+r="$(as_1000 "$T/bin/cliente" "$SOCK" estado)"
+check "m2:V5.7: a primeira conexão sobe o wardd 0.2.0" "$r" "resposta: status"
+new_pid="$(systemctl show -p MainPID --value "wardd@$UID_T.service")"
+NEW_WARDD_SUM="$(sha256sum </usr/local/bin/wardd)"
+[ "$NEW_WARDD_SUM" != "$OLD_WARDD_SUM" ] && [ "$(sha256sum <"/proc/$new_pid/exe")" = "$NEW_WARDD_SUM" ] &&
+    ok "m2:V5.7: o wardd no ar é o 0.2.0" || failed "m2:V5.7: o wardd no ar não é o 0.2.0"
+lacks "m2:V5.7: o wardd 0.2.0 não atende o cliente v1" "$(legacy_call "$REQ_STATUS" "$RESP_LOCKED")" "same"
+r="$(printf '%s' "$PASSWORD" | as_1000 "$T/bin/cliente" "$SOCK" destravar)"
+check "m2:V5.7: o wardd 0.2.0 destrava o cofre 0.1.4" "$r" "resposta: ok"
+lacks "m2:V5.7: o destrave migra o cofre (arquivo regravado)" "$(vault_sums)" "$(head -n 1 <<<"$VAULT_BEFORE")"
+check "m2:V5.7: estado no formato novo depois do destrave" "$(head -n 1 "$VAULT_T/estado")" "ward-state 2"
+VAULT_MIGRATED="$(vault_sums)"
+r="$(dpkg -r ward 2>&1; echo "saiu=$?")"
+check "m2:V5.9: dpkg -r depois da atualização sai 0" "$r" "saiu=0"
+check "m2:V5.9: dpkg -r apaga os grupos que a 0.1.4 criou" "$(getent group ward-app ward-nm || echo ausente)" "ausente"
+[ ! -e "$MARK" ] && [ ! -e "$OLD_MARK" ] && [ ! -e /usr/local/lib/ward ] && ok "m2:V5.9: dpkg -r apaga as marcas e /usr/local/lib/ward" || failed "m2:V5.9: marca ou /usr/local/lib/ward ficou"
+r="$(dpkg -P ward 2>&1; echo "saiu=$?")"
+check "m2:V5.9: dpkg -P sai 0" "$r" "saiu=0"
+check "m2:V5.9: dpkg -r/-P deixam o cofre migrado intacto" "$(vault_sums)" "$VAULT_MIGRATED"
+
+# --- Phase 57 (m2:DT15): 0.1.x leftovers no package owns (a 0.1.x `make install`) ---------
+r="$(SUDO_UID=$UID_T dpkg -i "$DEB" 2>&1; echo "saiu=$?")"
+check "m2:DT15: instalar o .deb 0.2.0" "$r" "saiu=0"
+MARK_LINES="$(sort "$MARK")"
+mkdir -p -m 0755 "$OLD_EXT_DIR"
+printf 'pacote 0.1.x\n' >"$OLD_EXT_DIR/ward.crx"
+printf 'update 0.1.x\n' >"$OLD_EXT_DIR/update.xml"
+mv "$MARK" "$OLD_MARK"
+r="$(SUDO_UID=$UID_T dpkg -i "$DEB" 2>&1; echo "saiu=$?")"
+check "m2:DT15: reinstalar por cima das sobras da 0.1.x sai 0" "$r" "saiu=0"
+check "m2:DT15: o postinst apaga a sobra que nenhum pacote tem" "$r" "removido $OLD_EXT_DIR/ward.crx (0.1.x)"
+[ ! -e "$OLD_EXT_DIR" ] && ok "m2:DT15: a pasta da 0.1.x sumiu" || failed "m2:DT15: $OLD_EXT_DIR ficou"
+check "m2:DT15: o preinst passou a marca antiga para created-groups" "$(sort "$MARK" 2>&1)" "$MARK_LINES"
+[ ! -e "$OLD_MARK" ] && ok "m2:DT15: a marca antiga sumiu" || failed "m2:DT15: $OLD_MARK ficou"
+# Attack: the 0.1.x extension dir by link to another dir: the preinst refuses before any
+# change (no stop, no file), and the link target stays.
+install -d -m 0755 /tmp/v57/victim
+printf 'da vítima\n' >/tmp/v57/victim/ward.crx
+ln -s /tmp/v57/victim "$OLD_EXT_DIR"
+as_1000 "$T/bin/cliente" "$SOCK" estado >/dev/null
+live_pid="$(systemctl show -p MainPID --value "wardd@$UID_T.service")"
+r="$(SUDO_UID=$UID_T dpkg -i "$DEB" 2>&1; echo "saiu=$?")"
+lacks "m2:DT15 ataque: pasta da 0.1.x por link: dpkg -i recusado" "$r" "saiu=0"
+check "m2:DT15 ataque: mensagem do preinst" "$r" "link simbólico"
+check "m2:DT15 ataque: o alvo do link intacto" "$(cat /tmp/v57/victim/ward.crx)" "da vítima"
+check "m2:DT15 ataque: recusado antes de parar o wardd" "$(systemctl show -p MainPID --value "wardd@$UID_T.service")" "$live_pid"
+rm -f "$OLD_EXT_DIR"
+dpkg -r ward >/dev/null 2>&1 || true
+dpkg -P ward >/dev/null 2>&1 || true
+clean_groups
+rm -rf /tmp/v57
 
 kill "$ACTIVATOR" "$TARGET" 2>/dev/null || true
 rm -f /var/crash/*.crash /var/lib/systemd/coredump/core.* "$CORE"

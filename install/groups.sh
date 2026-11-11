@@ -23,8 +23,11 @@
 #
 # Mark (Phase 51a): the group the install creates goes into GROUPS_MARK with its gid;
 # uninstall and `dpkg -r` only delete a group that is in the mark with the same gid. A
-# group the administrator already had (and that passes D60) stays.
-conferir_grupo() {
+# group the administrator already had (and that passes D60) stays. The 0.1.x mark had
+# another name (LEGACY_GROUPS_MARK, m2:DT15): the install moves it to the new name with
+# the same lines (`migrate_legacy_mark`), and uninstall reads the new mark or, without
+# it, the old one, and deletes both.
+verify_group() {
     local name="$1" lines n password gid members admins
     lines="$(grep -c -- "^${name}:" /etc/group || true)"
     [ "$lines" = 1 ] || { echo "o grupo $name aparece $lines vez(es) no /etc/group"; return 1; }
@@ -130,12 +133,23 @@ conferir_grupo() {
 }
 
 # --- mark of the created groups (Phase 51a) --------------------------------------------
-GROUPS_MARK=/usr/local/lib/ward/grupos-criados
+GROUPS_MARK=/usr/local/lib/ward/created-groups
+# Name of the mark up to 0.1.4 (m2:DT15): only read, moved and deleted, never written.
+LEGACY_GROUPS_MARK=/usr/local/lib/ward/grupos-criados
 
-# Valid "name gid" lines of the mark (only ward-app/ward-nm, system gid).
+# Valid "name gid" lines of the mark (only ward-app/ward-nm, system gid): the new mark
+# or, without it, the 0.1.x one. A link or a non-regular file is never read: in the new
+# name it gives no group at all (fail closed: nothing to delete), it does not fall back to
+# the old one.
 marked_groups() {
-    [ -f "$GROUPS_MARK" ] && [ ! -L "$GROUPS_MARK" ] || return 0
-    grep -a -x -E 'ward-(app|nm) [1-9][0-9]{0,2}' -- "$GROUPS_MARK" || true
+    local mark
+    for mark in "$GROUPS_MARK" "$LEGACY_GROUPS_MARK"; do
+        if [ -e "$mark" ] || [ -L "$mark" ]; then
+            [ -f "$mark" ] && [ ! -L "$mark" ] || return 0
+            grep -a -x -E 'ward-(app|nm) [1-9][0-9]{0,2}' -- "$mark" || true
+            return 0
+        fi
+    done
 }
 
 # Writes the whole mark (temporary file in the same dir and `rename`); empty, deletes it.
@@ -176,9 +190,24 @@ mark_group() {
     [ "$lines" = "$before" ] || write_mark "$lines"
 }
 
+# 0.1.x -> 0.2.0 (m2:DT15): the old mark goes to the new name with the same valid lines
+# (written by `write_mark`: temporary file and `rename`), then the old one is deleted.
+# If the new one already exists it wins (`marked_groups` reads it first) and the old one
+# only goes away. Interrupted between the two steps, the next run sees the new one and
+# finishes. Nothing to do without the old one.
+migrate_legacy_mark() {
+    [ -e "$LEGACY_GROUPS_MARK" ] || [ -L "$LEGACY_GROUPS_MARK" ] || return 0
+    mark_dir
+    if [ ! -e "$GROUPS_MARK" ] && [ ! -L "$GROUPS_MARK" ]; then
+        write_mark "$(marked_groups)"
+    fi
+    rm -f -- "$LEGACY_GROUPS_MARK"
+    step "marca dos grupos criados movida para $GROUPS_MARK (m2:DT15)"
+}
+
 # Deletes the groups of the mark that still have the marked gid; the others stay (with a
 # warning).
-apagar_grupos_marcados() {
+delete_marked_groups() {
     local g gid marked
     marked="$(marked_groups)"
     for g in ward-nm ward-app; do
@@ -190,13 +219,22 @@ apagar_grupos_marcados() {
             printf 'ward: aviso: o grupo %s não foi criado pelo Ward (sem marca em %s); ficou\n' "$g" "$GROUPS_MARK" >&2
         fi
     done
-    if [ -e "$GROUPS_MARK" ] || [ -L "$GROUPS_MARK" ]; then
-        rm -f -- "$GROUPS_MARK"
-    fi
+    # Both marks (m2:DT15), never through a linked dir.
+    local mark
+    for mark in "$GROUPS_MARK" "$LEGACY_GROUPS_MARK"; do
+        if [ -L "${mark%/*}" ]; then
+            printf 'ward: aviso: %s é um link simbólico; a marca %s ficou\n' "${mark%/*}" "$mark" >&2
+        elif [ -e "$mark" ] || [ -L "$mark" ]; then
+            rm -f -- "$mark"
+        fi
+    done
 }
 
-garantir_grupo() {
+ensure_group() {
     local name="$1" created=0 output
+    # A 0.1.x mark first: otherwise a group 0.1.x created would look like the
+    # administrator's and stay on uninstall.
+    migrate_legacy_mark
     if ! grep -q -- "^${name}:" /etc/group; then
         if getent group "$name" >/dev/null; then
             error "o grupo $name vem do NSS (fora do /etc/group); a instalação não o aceita"
@@ -206,7 +244,7 @@ garantir_grupo() {
         groupadd --system "$name"
         created=1
     fi
-    if ! output="$(conferir_grupo "$name")"; then
+    if ! output="$(verify_group "$name")"; then
         if [ "$created" = 1 ]; then
             groupdel "$name" || true
         fi

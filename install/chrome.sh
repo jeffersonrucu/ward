@@ -19,7 +19,7 @@ WARD_POLICIES='ExtensionSettings|NativeMessagingUserLevelHosts|PasswordManagerEn
 
 # Verifies a policies/managed dir: exits through `error` if another file of the dir
 # defines a name of the Ward policy. Missing dir: nothing to verify.
-conferir_politicas_chrome() {
+verify_chrome_policies() {
     local dir="$1" f base found
     [ -e "$dir" ] || [ -L "$dir" ] || return 0
     [ -d "$dir" ] && [ ! -L "$dir" ] || error "$dir não é uma pasta (link?)"
@@ -42,7 +42,7 @@ conferir_politicas_chrome() {
 # profile (1Password, Claude in Chrome...) stop. Only lists the names (reads and follows
 # nothing); copying them to /etc/opt/chrome/native-messaging-hosts/ is up to the user
 # (docs/instalacao.md, the section on other native messaging apps).
-avisar_manifestos_de_usuario() {
+warn_user_manifests() {
     local home f base names=()
     home="$(getent passwd "$1" | cut -d: -f6)"
     [[ "$home" == /* ]] || return 0

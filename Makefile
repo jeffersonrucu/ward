@@ -465,12 +465,15 @@ release: origins app-front
 ## `make release`): ward-app/ward-nm groups (D60), binaries (ward-app and ward-nm 2755),
 ## system units, /run/ward by tmpfiles.d, native messaging manifest, Chrome policy and
 ## `systemctl enable --now wardd@<SUDO_UID>.socket`. Refuses an artifact with
-## `test-mode` (V9.2). DESTDIR=<dir> only copies the tree
+## `test-mode` (V9.2). Over 0.1.x (m2:DT15, m2:DT16): stops the running wardd@* before
+## the binaries, deletes the old extension dir and moves the groups mark to
+## created-groups. DESTDIR=<dir> only copies the tree
 install:
 	install/install.sh install
 
 ## uninstall: `sudo make uninstall`: stops and disables wardd@*, deletes the files and the
-## groups; never touches the user's vault (V9.10)
+## groups (the created-groups mark or, without it, the 0.1.x one); never touches the
+## user's vault (V9.10, m2:V5.8)
 uninstall:
 	install/install.sh uninstall
 
@@ -479,7 +482,9 @@ uninstall:
 ## without network, `make install`/`uninstall` as root: groups (D60, V9.11), units
 ## without no_new_privs (D57), socket and first connection (V9.7), environment and
 ## dumpable of wardd (V9.4), app opened by the daemon with the app role, CLI refuses a
-## fake server (V9.3). Needs Docker (the image build uses the network), gcc and
+## fake server (V9.3); upgrade over the 0.1.4 `make install` with its wardd unlocked and
+## uninstall over a 0.1.4 install (m2:V5.6-V5.8, from `.dev/baseline/` of Phase 3 and the
+## v0.1.4 tag). Needs Docker (the image build uses the network), gcc and
 ## `make dev-vault`; out of `make check`
 test-install: origins
 	$(CARGO) build --quiet --locked -p wardd --bin wardd --example wardd-test-client --target-dir target/no-test-mode
@@ -543,8 +548,9 @@ extension-crx:
 ## with sshpass, refusals) and, in an ubuntu:24.04 container with systemd and without
 ## network, `dpkg -i` (missing sshpass, group outside D60, install, statoverride 2755,
 ## socket, first connection, the user's SSH dir and /etc/ssh untouched, V9.8),
-## reinstall, `dpkg -r`/`-P` with the vault untouched. Needs Docker (the image build uses
-## the network) and gcc; out of `make check`
+## reinstall, `dpkg -r`/`-P` with the vault untouched; upgrade over the 0.1.4 `.deb` of
+## `.dev/baseline/` with its wardd unlocked (m2:V5.7, m2:V5.9). Needs Docker (the image
+## build uses the network) and gcc; out of `make check`
 test-deb: origins
 	$(CARGO) build --quiet --locked -p wardd --bin wardd --example wardd-test-client --target-dir target/no-test-mode
 	$(CARGO) build --quiet --locked -p ward --bin ward --target-dir target/no-test-mode

@@ -6,8 +6,10 @@
 # (the `ward-app` is `startup-container`: the real app's startup without GTK), the test
 # `wardd` (for the refusal of V9.2), the minimal client, the platform helper (fake
 # Wayland/bus sockets and the environment of D57), the fake server, the mark library, a
-# fake CRX3 package, the test vault and the test password (fake, D15). Each check prints
-# "ok:" or the failure marker; any failure exits ≠ 0.
+# fake CRX3 package, the test vault and the test password (fake, D15). Phase 57 (m2:V5.7,
+# m2:V5.8): also the 0.1.4 installer of the v0.1.4 tag with its release binaries and fake
+# package (`old/` of the mount) and the 0.1.4 vault, state and v1 client (`legacy/`).
+# Each check prints "ok:" or the failure marker; any failure exits ≠ 0.
 
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 set -euo pipefail
@@ -162,7 +164,7 @@ check "V9.6: manifesto de native messaging do root" "$(stat -c '%U %a' /etc/opt/
 check "V9.6: allowed_origins só com o id" "$(grep allowed_origins /etc/opt/chrome/native-messaging-hosts/br.ward.nm.json)" "[\"chrome-extension://$ID/\"]"
 check "Fase 51a/44c: política com NativeMessagingUserLevelHosts, PasswordManagerEnabled e PasswordLeakDetectionEnabled false" "$(python3 -I -c 'import json,sys; p=json.load(open(sys.argv[1])); print(p["NativeMessagingUserLevelHosts"] is False and p["PasswordManagerEnabled"] is False and p["PasswordLeakDetectionEnabled"] is False, sorted(p))' /etc/opt/chrome/policies/managed/ward.json)" "True ['ExtensionSettings', 'NativeMessagingUserLevelHosts', 'PasswordLeakDetectionEnabled', 'PasswordManagerEnabled']"
 groups_mark="$(for g in ward-app ward-nm; do echo "$g $(getent group "$g" | cut -d: -f3)"; done)"
-check "Fase 51a: marca dos grupos criados (nome e gid)" "$(sort /usr/local/lib/ward/grupos-criados)" "$groups_mark"
+check "Fase 51a: marca dos grupos criados (nome e gid)" "$(sort /usr/local/lib/ward/created-groups)" "$groups_mark"
 # Phase 51c (S2, S8): without apport and libwebkit2gtk in the image, the folders are
 # created and the list comes out with the multiarch paths; systemd reads the drop-in of systemd-coredump.
 check "51c: sem o libwebkit2gtk-4.1-0, a instalação avisa" "$r" "libwebkit2gtk-4.1-0 ($(dpkg --print-architecture)) não está instalado"
@@ -175,7 +177,7 @@ cc="$(systemd-analyze cat-config systemd/coredump.conf 2>&1 || true)"
 check "51c: systemd-analyze cat-config lê o drop-in do Ward" "$cc" "# /etc/systemd/coredump.conf.d/ward.conf"
 check "51c: Storage=none" "$cc" "Storage=none"
 check "51c: ProcessSizeMax=0" "$cc" "ProcessSizeMax=0"
-check "Fase 51a: marca root 0644" "$(stat -c '%U %a' /usr/local/lib/ward/grupos-criados)" "root 644"
+check "Fase 51a: marca root 0644" "$(stat -c '%U %a' /usr/local/lib/ward/created-groups)" "root 644"
 
 # V9.11: the created groups.
 for g in ward-app ward-nm; do
@@ -364,13 +366,149 @@ groupadd --system ward-app
 admin_gid="$(getent group ward-app | cut -d: -f3)"
 r="$(install_ward 2>&1)" || { printf '%s\n' "$r"; failed "instalar com ward-app do administrador"; }
 check "grupo do administrador: aceito" "$r" "ward-app já existia e confere"
-lacks "grupo do administrador: fora da marca" "$(cat /usr/local/lib/ward/grupos-criados)" "ward-app"
+lacks "grupo do administrador: fora da marca" "$(cat /usr/local/lib/ward/created-groups)" "ward-app"
 r="$(make -s -C "$T/repo" uninstall 2>&1)" || { printf '%s\n' "$r"; failed "uninstall"; }
 check "uninstall: ward-app do administrador fica (mesmo gid)" "$(getent group ward-app | cut -d: -f3)" "$admin_gid"
 check "uninstall: avisa que ficou" "$r" "não foi criado pelo Ward"
 check "uninstall: ward-nm (criado pelo Ward) apagado" "$(getent group ward-nm || echo ausente)" "ausente"
 [ ! -e /usr/local/lib/ward ] && ok "uninstall: /usr/local/lib/ward (com a marca) apagada" || failed "/usr/local/lib/ward ficou"
 groupdel ward-app
+
+# --- Phase 57 (m2:V5.7, SEG; m2:DT15, m2:DT16): 0.2.0 over the 0.1.4 `make install` ------
+# 0.1.4 comes from /opt/teste/old (its installer from the v0.1.4 tag, its release binaries
+# and fake CRX3 package from .dev/baseline/) and /opt/teste/legacy (the 0.1.4 vault and
+# state, fake values of D15, the v1 client and the 0.1.4 names of the install).
+O=$T/old
+L=$T/legacy
+legacy_name() { awk -v k="$1" '$1 == k {print $2; exit}' "$L/install-0.1.4.txt"; }
+OLD_EXT_DIR="/$(legacy_name extension_dir)"
+OLD_MARK="/$(legacy_name groups_mark)"
+MARK=/usr/local/lib/ward/created-groups
+# Lines of protocol-v1.jsonl (0.1.4 baseline): the agent's status and unlock requests, the
+# `ok` reply and the status reply of a locked vault.
+REQ_STATUS=1 REQ_UNLOCK=2 RESP_OK=37 RESP_LOCKED=38
+legacy_call() { as_1000 /usr/bin/python3 -I "$L/legacy_client.py" "$SOCK" "$L/protocol-v1.jsonl" "$1" "$2"; }
+# The 0.1.4 installer with its own interface (`make install`/`make uninstall` of the tag).
+install_old() {
+    /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C WARD_UID="$UID_T" PREFIX=/usr/local DESTDIR= \
+        "$(legacy_name var_extension_id)=$(cat "$O/id")" "$(legacy_name var_extension_crx)=$O/ward.crx" \
+        BIN_WARD="$O/bin/ward" BIN_WARDD="$O/bin/wardd" BIN_NM="$O/bin/ward-nm" BIN_APP="$O/bin/ward-app" \
+        "$O/repo/$(legacy_name script)" "$(legacy_name "action_$1")"
+}
+# The vault of the container's user = the 0.1.4 one (v4 body, `ward-estado 1` state).
+plant_old_vault() {
+    rm -rf -- "$VAULT_T"
+    install -d -m 0700 -o "$UID_T" -g "$UID_T" "$VAULT_T"
+    install -m 0600 -o "$UID_T" -g "$UID_T" "$L/vault-0.1.4.ward" "$VAULT_T/cofre.ward"
+    install -m 0600 -o "$UID_T" -g "$UID_T" "$L/state-0.1.4" "$VAULT_T/estado"
+}
+vault_sums() { (cd "$VAULT_T" && sha256sum cofre.ward estado; stat -c '%U %a' cofre.ward estado); }
+group_lines() { for g in ward-app ward-nm; do getent group "$g" || echo "$g ausente"; done; }
+# m2:DT16: "trocado" if the binary of the live process `$1` was replaced (its
+# /proc/<pid>/exe says "(deleted)") before it ended; "parado" when it ends. Polls every 10 ms.
+watch_swap() {
+    local pid="$1" out="$2" exe
+    : >"$out"
+    while [ -d "/proc/$pid" ]; do
+        exe="$(readlink "/proc/$pid/exe" 2>/dev/null || true)"
+        if [[ "$exe" == *' (deleted)' ]]; then
+            echo "trocado com o processo no ar" >>"$out"
+            break
+        fi
+        sleep 0.01
+    done
+    echo "parado" >>"$out"
+}
+# Control: the watcher sees a binary swapped under a live process.
+install -d -m 0700 /tmp/v57
+cp /usr/bin/sleep /tmp/v57/sleep
+/tmp/v57/sleep 30 &
+CTL=$!
+sleep 0.2
+watch_swap "$CTL" /tmp/v57/control &
+CTL_WATCH=$!
+sleep 0.2
+cp /usr/bin/sleep /tmp/v57/sleep.new && mv -f /tmp/v57/sleep.new /tmp/v57/sleep
+sleep 0.2
+kill "$CTL" 2>/dev/null || true
+wait "$CTL" 2>/dev/null || true
+wait "$CTL_WATCH" || true
+check "m2:V5.7 controle: o vigia vê um binário trocado com o processo no ar" "$(cat /tmp/v57/control)" "trocado com o processo no ar"
+
+clean_groups
+rm -rf /usr/local/lib/ward /usr/local/share/ward
+plant_old_vault
+r="$(install_old install 2>&1)" || { printf '%s\n' "$r"; failed "m2:V5.7: make install da 0.1.4"; }
+check "m2:V5.7: a 0.1.4 instalou a extensão no caminho dela" "$(cat "$OLD_EXT_DIR/update.xml" 2>&1)" "$(cat "$O/id")"
+OLD_MARK_LINES="$(sort "$OLD_MARK" 2>/dev/null || true)"
+check "m2:V5.7: a 0.1.4 gravou a marca dos grupos no nome dela" "$OLD_MARK_LINES" \
+    "$(for g in ward-app ward-nm; do echo "$g $(getent group "$g" | cut -d: -f3)"; done)"
+OLD_GROUPS="$(group_lines)"
+cmp -s "$O/bin/wardd" /usr/local/bin/wardd && ok "m2:V5.7: /usr/local/bin/wardd é o 0.1.4" || failed "m2:V5.7: wardd instalado não é o 0.1.4"
+check "m2:V5.7: o wardd 0.1.4 responde ao cliente v1 (cofre travado)" "$(legacy_call "$REQ_STATUS" "$RESP_LOCKED")" "same"
+check "m2:V5.7: o wardd 0.1.4 destrava o cofre 0.1.4" "$(legacy_call "$REQ_UNLOCK" "$RESP_OK")" "same"
+old_pid="$(systemctl show -p MainPID --value "wardd@$UID_T.service")"
+check "m2:V5.7: wardd 0.1.4 no ar" "$(cmp -s "/proc/$old_pid/exe" "$O/bin/wardd" && echo 0.1.4)" "0.1.4"
+VAULT_BEFORE="$(vault_sums)"
+watch_swap "$old_pid" /tmp/v57/order &
+WATCH=$!
+r="$(install_ward 2>&1)" || { printf '%s\n' "$r"; failed "m2:V5.7: make install da 0.2.0 por cima da 0.1.4"; }
+wait "$WATCH" || true
+order="$(cat /tmp/v57/order)"
+check "m2:V5.7 (DT16): o wardd 0.1.4 terminou" "$order" "parado"
+lacks "m2:V5.7 (DT16): o binário não foi trocado com o wardd 0.1.4 no ar" "$order" "trocado"
+stop_line="$(grep -n "parando wardd@$UID_T.service antes de trocar os binários" <<<"$r" | head -n 1 | cut -d: -f1)"
+files_line="$(grep -n '^==> arquivos em' <<<"$r" | head -n 1 | cut -d: -f1)"
+[ -n "$stop_line" ] && [ -n "$files_line" ] && [ "$stop_line" -lt "$files_line" ] &&
+    ok "m2:V5.7 (DT16): a instalação parou o wardd@$UID_T antes dos arquivos" || failed "m2:V5.7 (DT16): sem parada antes dos arquivos ($stop_line/$files_line)"
+[ ! -e "$OLD_EXT_DIR" ] && [ ! -L "$OLD_EXT_DIR" ] && ok "m2:V5.7 (DT15): a pasta da extensão da 0.1.4 sumiu" || failed "m2:V5.7: $OLD_EXT_DIR ficou"
+[ ! -e "$OLD_MARK" ] && ok "m2:V5.7 (DT15): a marca no nome da 0.1.4 sumiu" || failed "m2:V5.7: $OLD_MARK ficou"
+check "m2:V5.7 (DT15): created-groups com os grupos que a 0.1.4 criou" "$(sort "$MARK" 2>&1)" "$OLD_MARK_LINES"
+check "m2:V5.7 (DT15): created-groups root 0644" "$(stat -c '%U %a' "$MARK")" "root 644"
+check "m2:V5.7: os grupos não mudam de gid" "$(group_lines)" "$OLD_GROUPS"
+check "m2:V5.7: ward-app novo root:ward-app 2755" "$(stat -c '%U:%G %a' /usr/local/bin/ward-app)" "root:ward-app 2755"
+check "m2:V5.7: ward-nm novo root:ward-nm 2755" "$(stat -c '%U:%G %a' /usr/local/lib/ward/ward-nm)" "root:ward-nm 2755"
+cmp -s "$B/ward-app" /usr/local/bin/ward-app && cmp -s "$B/wardd" /usr/local/bin/wardd && cmp -s "$B/ward-nm" /usr/local/lib/ward/ward-nm &&
+    ok "m2:V5.7: binários da 0.2.0 no lugar" || failed "m2:V5.7: binário da 0.2.0 fora do lugar"
+check "m2:V5.6: a política aponta para o caminho novo" "$(grep update_url /etc/opt/chrome/policies/managed/ward.json)" "file:///usr/local/share/ward/extension/update.xml"
+check "m2:V5.7: o socket religou" "$(systemctl is-active "wardd@$UID_T.socket" || true)" "active"
+check "m2:V5.7: nenhum wardd no ar antes da primeira conexão" "$(systemctl is-active "wardd@$UID_T.service" || true)" "inactive"
+check "m2:V5.7: o cofre não foi tocado pela instalação" "$(vault_sums)" "$VAULT_BEFORE"
+r="$(as_1000 "$B/cliente" "$SOCK" estado)"
+check "m2:V5.7: a primeira conexão sobe o wardd 0.2.0" "$r" "resposta: status"
+new_pid="$(systemctl show -p MainPID --value "wardd@$UID_T.service")"
+[ "$new_pid" != "$old_pid" ] && cmp -s "/proc/$new_pid/exe" "$B/wardd" && ok "m2:V5.7: o wardd no ar é o 0.2.0" || failed "m2:V5.7: o wardd no ar não é o 0.2.0"
+lacks "m2:V5.7: o wardd 0.2.0 não atende o cliente v1" "$(legacy_call "$REQ_STATUS" "$RESP_LOCKED")" "same"
+check "m2:V5.7: o cofre continua intacto até destravar" "$(vault_sums)" "$VAULT_BEFORE"
+r="$(printf '%s' "$PASSWORD" | as_1000 "$B/cliente" "$SOCK" destravar)"
+check "m2:V5.7: o wardd 0.2.0 destrava o cofre 0.1.4" "$r" "resposta: ok"
+lacks "m2:V5.7: o destrave migra o cofre (arquivo regravado)" "$(vault_sums)" "$(head -n 1 <<<"$VAULT_BEFORE")"
+check "m2:V5.7: estado no formato novo depois do destrave" "$(head -n 1 "$VAULT_T/estado")" "ward-state 2"
+check "m2:V5.7: cofre migrado continua 0600 do usuário" "$(stat -c '%U %a' "$VAULT_T/cofre.ward")" "$TEST_USER 600"
+
+# --- Phase 57 (m2:V5.8, SEG): 0.2.0 uninstall over a 0.1.4 install (only the old mark) ----
+r="$(make -s -C "$T/repo" uninstall 2>&1)" || { printf '%s\n' "$r"; failed "m2:V5.8: limpar"; }
+groupadd --system ward-app
+admin_gid="$(getent group ward-app | cut -d: -f3)"
+plant_old_vault
+r="$(install_old install 2>&1)" || { printf '%s\n' "$r"; failed "m2:V5.8: make install da 0.1.4"; }
+check "m2:V5.8: a 0.1.4 aceita o ward-app do administrador" "$r" "ward-app"
+lacks "m2:V5.8: marca da 0.1.4 sem o ward-app do administrador" "$(cat "$OLD_MARK" 2>&1)" "ward-app"
+check "m2:V5.8: marca da 0.1.4 com o ward-nm que ela criou" "$(cat "$OLD_MARK" 2>&1)" "ward-nm $(getent group ward-nm | cut -d: -f3)"
+[ ! -e "$MARK" ] && ok "m2:V5.8: só a marca no nome da 0.1.4" || failed "m2:V5.8: created-groups antes da 0.2.0"
+VAULT_BEFORE="$(vault_sums)"
+r="$(make -s -C "$T/repo" uninstall 2>&1)" || { printf '%s\n' "$r"; failed "m2:V5.8: make uninstall da 0.2.0"; }
+check "m2:V5.8: o ward-app do administrador fica (mesmo gid)" "$(getent group ward-app | cut -d: -f3)" "$admin_gid"
+check "m2:V5.8: avisa que o ward-app ficou" "$r" "não foi criado pelo Ward"
+check "m2:V5.8: o ward-nm da marca antiga é apagado" "$(getent group ward-nm || echo ausente)" "ausente"
+[ ! -e "$OLD_MARK" ] && [ ! -e "$MARK" ] && ok "m2:V5.8: as duas marcas apagadas" || failed "m2:V5.8: marca ficou"
+for d in "$OLD_EXT_DIR" /usr/local/share/ward /usr/local/lib/ward; do
+    [ ! -e "$d" ] && ok "m2:V5.8: $d apagada" || failed "m2:V5.8: $d ficou"
+done
+check "m2:V5.8: nenhum arquivo do Ward" "$(no_ward_file)" "nada"
+check "m2:V5.8: o cofre do usuário intacto" "$(vault_sums)" "$VAULT_BEFORE"
+groupdel ward-app
+rm -rf /tmp/v57
 
 if [ "$failures" -ne 0 ]; then
     echo "test-install (contêiner): $failures falha(s)"

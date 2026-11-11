@@ -9,6 +9,11 @@
 # nobody, with a login shell. It is only the socket: each wardd runs with its own uid and
 # only starts on the first connection; each one's socket lives in /run/ward/<uid>/, 0600
 # of the owner.
+#
+# Upgrade over 0.1.x (m2:DT15, m2:DT16): dpkg already deleted the 0.1.x extension dir (the
+# package no longer lists it); a copy left by a 0.1.x `make install` (no package owns it)
+# is deleted here, and the postinst fails if any 0.1.x path is left. The sockets the
+# preinst stopped (every enabled uid) start again.
 
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export LC_ALL=C
@@ -25,6 +30,9 @@ step() { printf 'ward: %s\n' "$*"; }
 # The core_pattern warning (Phase 51c), from dump.sh. The apport list and the
 # systemd-coredump drop-in come in the package (generated in the staging by install.sh).
 #@DUMP@
+
+# The 0.1.x paths and the start of the sockets (m2:DT15, m2:DT16), from upgrade.sh.
+#@UPGRADE@
 
 # setgid binary: root:<group> 2755, regular file. On the first install dpkg already read
 # the overrides database before the preinst registered Ward's, so the file arrives
@@ -75,14 +83,17 @@ enable_socket() {
     local uid="$1"
     systemctl enable --now "wardd@$uid.socket"
     step "wardd@$uid.socket ligado: o wardd sobe na primeira conexão; o uso diário não pede sudo"
-    avisar_manifestos_de_usuario "$uid"
+    warn_user_manifests "$uid"
 }
 
 case "${1:-}" in
     configure)
         verify_setgid ward-app /usr/local/bin/ward-app
         verify_setgid ward-nm /usr/local/lib/ward/ward-nm
-        avisar_core_pattern
+        warn_core_pattern
+        remove_legacy_paths ""
+        left="$(legacy_paths_left "")"
+        [ -z "$left" ] || error "caminho da 0.1.x ficou depois da atualização: $(tr '\n' ' ' <<<"$left")"
         if [ -d /run/systemd/system ]; then
             systemd-tmpfiles --create /usr/local/lib/tmpfiles.d/ward.conf
             systemctl daemon-reload
@@ -99,16 +110,21 @@ case "${1:-}" in
                 [ "$enabled" -gt 0 ] ||
                     step "nenhum usuário humano achado; ligue o socket do seu usuário com: sudo systemctl enable --now wardd@\$(id -u).socket"
             fi
-            # Upgrade: the daemon already running moves to the new binary (the vault locks).
-            while read -r u _; do
-                [[ "$u" =~ ^wardd@[0-9]+\.service$ ]] || continue
-                systemctl try-restart "$u" || printf 'ward: aviso: não deu para reiniciar %s\n' "$u" >&2
-            done < <(systemctl list-units --plain --no-legend --full --state=active 'wardd@*.service' 2>/dev/null || true)
+            # Upgrade: the sockets the preinst stopped come back (m2:DT16); a daemon still
+            # up moves to the new binary (the vault locks).
+            start_enabled_sockets
         else
             step "sem systemd no ar: rode 'systemd-tmpfiles --create' e ligue wardd@<uid>.socket depois"
         fi
         ;;
-    abort-upgrade | abort-remove | abort-deconfigure) ;;
+    abort-upgrade)
+        # An upgrade from this version failed after the new preinst stopped the sockets
+        # (m2:DT16): they come back with this version's binaries.
+        if [ -d /run/systemd/system ]; then
+            start_enabled_sockets
+        fi
+        ;;
+    abort-remove | abort-deconfigure) ;;
     *) error "argumento desconhecido: ${1:-}" ;;
 esac
 exit 0

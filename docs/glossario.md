@@ -1489,6 +1489,8 @@ também a forma nova, sem tirar a antiga.
 | `WARD_DEV_*` | `WARD_DEV_*` (com os nomes novos) | a recusa por `WARD_DEV_` pega as duas formas |
 | `/usr/local/share/ward/extensao/` | `/usr/local/share/ward/extension/` | a instalação apaga o antigo |
 | `/usr/local/lib/ward/grupos-criados` | `/usr/local/lib/ward/created-groups` | o uninstall lê os dois |
+| funções de `install/` procuradas pelo `dev/tests/deb.sh`: `garantir_grupo`, `conferir_grupo`, `conferir_politicas_chrome`, `apagar_grupos_marcados`, `avisar_manifestos_de_usuario`, `avisar_core_pattern` | `ensure_group`, `verify_group`, `verify_chrome_policies`, `delete_marked_groups`, `warn_user_manifests`, `warn_core_pattern` | Fase 57; "avisar" de aviso impresso vira `warn` (como `aviso` → `warning`), não `notify` |
+| (novos, Fase 57) | `install/upgrade.sh` (`LEGACY_FILES`, `LEGACY_DIR`, `verify_legacy_paths`, `remove_legacy_paths`, `legacy_paths_left`, `stop_running_daemons`, `start_enabled_sockets`), `LEGACY_GROUPS_MARK` e `migrate_legacy_mark` em `install/groups.sh`, `dev/tests/legacy-baseline.sh`, `dev/tests/legacy_client.py`, `dev/fixtures/legacy/install-0.1.4.txt` | atualização por cima da 0.1.x (DT15, DT16) |
 
 Ficam (PRD "Fora do escopo"): `/run/ward/<uid>/wardd.sock`, `wardd@.socket`,
 `wardd@.service`, grupos `ward-app`/`ward-nm`, binários `ward`, `wardd`, `ward-app`,
