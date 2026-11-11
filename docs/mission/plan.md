@@ -157,7 +157,7 @@ Compilação de cada fase: `make compile`. Checador: os arquivos da fase.
   do Chrome não mudam). — V2.1
 - [ ] Fase 23 — `servidor.rs`, `externo.rs`, `udisks.rs`; testes `comum/`, `units.rs`,
   `memoria.rs`, `socket.rs`, `datas.rs`. — V2.1, V2.4
-- [ ] Fase 24 — testes `ssh.rs`, `run.rs`, `ssh_falso.py`. — V2.1
+- [x] Fase 24 — testes `ssh.rs`, `run.rs`, `ssh_falso.py`. — V2.1
 - [ ] Fase 25 — testes `aprovacao.rs`, `trava.rs`, `nucleo.rs` (com o `[[test]]` `trava` no `Cargo.toml`, achado da Fase 4). — V2.1
 - [ ] Fase 26 — testes `externo.rs`, `backup.rs`, `configuracoes.rs`, `d62.rs`. — V2.1
 - [ ] Fase 27 — testes `playwright.rs`, `extensao.rs`, `login.rs`, `chrome_falso.py`,
