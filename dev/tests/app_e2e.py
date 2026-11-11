@@ -267,8 +267,8 @@ def steps(ctx):
         code, err = run_result(proc, timeout=30)
         check("V5.16 (1 hora): o pedido seguinte roda sem janela",
               code == 0 and os.path.exists(MARK) and no_request(apr), f"saida={code} {err.strip()[:120]}")
-        r = ward("travar")
-        check("V5.16 (1 hora): ward travar", r.returncode == 0, r.stderr.decode(errors="replace")[:120])
+        r = ward("lock")
+        check("V5.16 (1 hora): ward lock", r.returncode == 0, r.stderr.decode(errors="replace")[:120])
         reload_page(page)
         unlock(page)
         proc = run_in_background()

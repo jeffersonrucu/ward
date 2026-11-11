@@ -176,11 +176,11 @@ def fake_server():
 threading.Thread(target=fake_server, daemon=True).start()
 try:
     env = environment({"WARD_DEV_SOCKET_DIR": fake_dir})
-    code, screen, prompt = run_pty(["destravar"], to_type=PASSWORD, env=env, deadline=20)
+    code, screen, prompt = run_pty(["unlock"], to_type=PASSWORD, env=env, deadline=20)
     verify(code != 0, f"V4.2 destravar contra o falso sai ≠ 0 (saiu {code})")
     verify("servidor não é o wardd" in screen, "V4.2 mensagem 'servidor não é o wardd'")
     verify(not prompt, "V4.2 o prompt da senha não apareceu")
-    for args in (["lista", "--json"], ["travar"]):
+    for args in (["list", "--json"], ["lock"]):
         code, screen, _ = run_pty(args, env=env, deadline=20)
         verify(code != 0 and "servidor não é o wardd" in screen, f"V4.2 {args[0]} recusa o falso")
     time.sleep(0.2)
@@ -238,7 +238,7 @@ v1_srv = subprocess.Popen([sys.executable, "-I", "-c", V1_FAKE, os.path.join(v1_
 try:
     verify(v1_srv.stdout.readline().strip() == "pronto", "m2:V4.16 servidor falso v1 (não dumpable) no ar")
     env = environment({"WARD_DEV_SOCKET_DIR": v1_dir})
-    code, screen, prompt = run_pty(["destravar"], to_type=PASSWORD, env=env, deadline=20)
+    code, screen, prompt = run_pty(["unlock"], to_type=PASSWORD, env=env, deadline=20)
     verify(code != 0, f"m2:V4.16 destravar contra o servidor v1 sai ≠ 0 (saiu {code})")
     verify("incompatível" in screen, "m2:V4.16 mensagem pt-BR de versão incompatível")
     verify(not prompt, "m2:V4.16 o prompt da senha não apareceu")
@@ -258,7 +258,7 @@ try:
             ops.append("?")
         got = got[4 + n:]
     verify(all(o == "status" for o in ops), f"m2:V4.16 o servidor v1 só recebeu status ({ops})")
-    for args in (["lista", "--json"], ["travar"]):
+    for args in (["list", "--json"], ["lock"]):
         code, screen, _ = run_pty(args, env=env, deadline=20)
         verify(code != 0 and "incompatível" in screen, f"m2:V4.16 {args[0]} recusa o servidor v1")
 finally:
@@ -271,19 +271,64 @@ finally:
             pass
     os.rmdir(v1_dir)
 
+# --- 1c. m2:V5.1, m2:V5.2 (m2:DT10): English subcommands, no alias --------------------
+# The 0.1.x names exit 2 with the pt-BR "unknown command" before connecting: a listener on the
+# socket of a folder of its own accepts no connection. A password typed after the old
+# unlock name does not come back. `ward --help` differs from the 0.1.4 help only in the
+# subcommand names (and the padding that keeps the column).
+old_dir = f"/run/user/{UID}/ward-cli-old-{os.getpid()}"
+os.mkdir(old_dir, 0o700)
+old_path = os.path.join(old_dir, "wardd.sock")
+old_srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+old_srv.bind(old_path)
+old_srv.listen(8)
+old_srv.setblocking(False)
+try:
+    env = environment({"WARD_DEV_SOCKET_DIR": old_dir})
+    unlock_old = "des" + "travar"
+    for args in (["lista"], ["lista", "--json"], ["travar"], [unlock_old], [unlock_old, PASSWORD], ["ajuda"]):
+        r = subprocess.run([WARD, *args], env=env, capture_output=True, timeout=20, stdin=subprocess.DEVNULL)
+        err = r.stderr.decode(errors="replace")
+        verify(r.returncode == 2 and "comando desconhecido" in err,
+               f"m2:V5.1 `ward {args[0]}` sai 2 com 'comando desconhecido' (saiu {r.returncode})")
+        verify(PASSWORD.encode() not in r.stdout + r.stderr, f"m2:V5.1 `ward {args[0]}` não ecoa argumento")
+    try:
+        old_srv.accept()
+        accepted = True
+    except BlockingIOError:
+        accepted = False
+    verify(not accepted, "m2:V5.1 os nomes antigos não falam com o daemon (nenhuma conexão)")
+finally:
+    old_srv.close()
+    os.unlink(old_path)
+    os.rmdir(old_dir)
+
+for args in (["--help"], ["help"], ["-h"]):
+    r = subprocess.run([WARD, *args], env=environment(), capture_output=True, timeout=20)
+    verify(r.returncode == 0, f"m2:V5.1 `ward {args[0]}` sai 0")
+help_now = subprocess.run([WARD, "--help"], env=environment(), capture_output=True, timeout=20).stdout.decode()
+help_old = open(os.path.join(ROOT, "dev/fixtures/legacy/help-0.1.4.txt"), encoding="utf-8").read()
+for old, new in (("ward lista [--json]   ", "ward list [--json]    "),
+                 ("ward " + "des" + "travar        ", "ward unlock           "),
+                 ("ward travar           ", "ward lock             ")):
+    help_old = help_old.replace(old, new)
+verify(help_now == help_old, "m2:V5.2 `ward --help` = ajuda da 0.1.4 com só os nomes de subcomando trocados")
+r = subprocess.run([WARD, "--version"], env=environment(), capture_output=True, timeout=20)
+verify(r.returncode == 0 and r.stdout.decode().startswith("ward "), "m2:V5.1 `ward --version` sai 0")
+
 # --- 2. Against the test daemon -------------------------------------------------------
 sock = os.path.join(SOCKET_DIR, "wardd.sock")
 if not os.path.exists(sock):
     print("FALHA o daemon de teste não está no ar: rode 'make dev-daemon'")
     sys.exit(1)
 
-code, screen, _ = run_pty(["travar"])
+code, screen, _ = run_pty(["lock"])
 verify(code == 0 and "cofre travado" in screen, "travar")
-code, screen, _ = run_pty(["lista"])
-verify(code != 0 and "travado" in screen, "V4.22 lista depois de travar responde 'travado'")
+code, screen, _ = run_pty(["list"])
+verify(code != 0 and "travado" in screen, "V4.22 list depois de travar responde 'travado'")
 # Phase 54b (RA8, 54a): the unlock hint uses the full path, not the `ward` of the PATH.
-verify("`/usr/local/bin/ward destravar`" in screen,
-       "V4.22 a dica de destravar é `/usr/local/bin/ward destravar`")
+verify("`/usr/local/bin/ward unlock`" in screen,
+       "V4.22 a dica de destravar é `/usr/local/bin/ward unlock`")
 
 # V4.21 (D16), timed (M4 scrutiny, Phase 28b): locked and never unlocked, `ward run`
 # waits the daemon's 2 min and exits ≠ 0 in 120 s ± 2 s; with an unlock from
@@ -302,11 +347,11 @@ time.sleep(3)
 verify(v421.poll() is None, "V4.21 o ward run travado está esperando o destrave")
 t_v421 = time.monotonic()
 
-code, screen, prompt = run_pty(["destravar"], to_type="falso-errada-ward-99")
+code, screen, prompt = run_pty(["unlock"], to_type="falso-errada-ward-99")
 verify(prompt and code != 0 and "senha mestra incorreta" in screen, "destravar com senha errada")
 verify("falso-errada-ward-99" not in screen, "a senha errada não ecoou")
 
-code, screen, prompt = run_pty(["destravar"], to_type=PASSWORD)
+code, screen, prompt = run_pty(["unlock"], to_type=PASSWORD)
 verify(prompt, "destravar mostra o prompt da senha")
 verify(code == 0 and "cofre destravado" in screen, f"destravar com a senha certa (saiu {code})")
 verify(PASSWORD not in screen, "a senha não ecoou na tela")
@@ -318,13 +363,13 @@ except subprocess.TimeoutExpired:
 verify(v421.returncode == 0 and time.monotonic() - t_v421 < 120,
        f"V4.21 destravado em outro terminal, o ward run que esperava segue e sai 0 (saiu {v421.returncode})")
 
-code, screen, prompt = run_pty(["destravar"], to_type=PASSWORD)
+code, screen, prompt = run_pty(["unlock"], to_type=PASSWORD)
 verify(code == 0 and "já está destravado" in screen and not prompt, "destravar de novo não pede senha")
 
 # JSON list: plain stdout, no pty.
 
-r = subprocess.run([WARD, "lista", "--json"], env=environment(), capture_output=True, timeout=60)
-verify(r.returncode == 0, "V4.1 lista --json sai 0")
+r = subprocess.run([WARD, "list", "--json"], env=environment(), capture_output=True, timeout=60)
+verify(r.returncode == 0, "V4.1 list --json sai 0")
 items = json.loads(r.stdout)
 names = [i["name"] for i in items]
 verify("gama-bloqueada" not in names, "V4.1 sem a bloqueada")
@@ -337,8 +382,8 @@ fields = {"name", "type", "group", "environment", "project", "address"}
 verify(all(set(i) == fields for i in items), "V4.1 só name, type, group, environment, project e address")
 V5_TYPES = {"login", "database", "server", "api", "aws", "smtp", "ftp-sftp", "secure-note", "generic"}
 verify(all(i["type"] in V5_TYPES for i in items), "m2:V4.18 o type de cada entrada é um nome v5")
-r2 = subprocess.run([WARD, "lista"], env=environment(), capture_output=True, timeout=60)
-verify(r2.returncode == 0 and b"NOME" in r2.stdout, "V4.1 lista em texto")
+r2 = subprocess.run([WARD, "list"], env=environment(), capture_output=True, timeout=60)
+verify(r2.returncode == 0 and b"NOME" in r2.stdout, "V4.1 list em texto")
 
 variations_path = os.path.join(ROOT, ".dev/variations.txt")
 if os.path.exists(variations_path):
@@ -864,7 +909,7 @@ else:
         if entry == "acme-ssh-chave-prod":
             verify(wait_for(lambda: agents(), 20), "agente no ar (travar)")
         time.sleep(1)
-        code, _, _ = run_pty(["travar"])
+        code, _, _ = run_pty(["lock"])
         start = time.time()
         try:
             _, err = p.communicate(timeout=10)
@@ -879,7 +924,7 @@ else:
         verify(b"o cofre travou; o comando foi encerrado" in err, f"V4.26 (54c) aviso da trava ({err[-120:]!r})")
         verify(wait_for(lambda: not of_session(mark.encode()), 5),
                f"V4.26 (54c) nenhum ssh/sshpass da sessão {entry} sobra depois da trava")
-        code, screen, _ = run_pty(["destravar"], to_type=PASSWORD)
+        code, screen, _ = run_pty(["unlock"], to_type=PASSWORD)
         verify(code == 0, "destravar de novo")
 
     # V4.31 and the prefix oracle of the M4 audit (revised D34; V4.34 withdrawn) in a

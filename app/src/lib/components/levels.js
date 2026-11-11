@@ -11,8 +11,8 @@ export const ACCESS_LEVELS = Object.freeze({
     lower: 'bloqueado',
     icon: 'eye-closed',
     card:
-      'O Claude nem vê esta entrada: ela some do ward lista. Só você usa, pelo app. Mudar o nível pede o PIN.',
-    option: 'O Claude nem vê esta entrada: ela some do ward lista. Só você usa, pelo app.',
+      'O Claude nem vê esta entrada: ela some do ward list. Só você usa, pelo app. Mudar o nível pede o PIN.',
+    option: 'O Claude nem vê esta entrada: ela some do ward list. Só você usa, pelo app.',
   }),
   'approval': Object.freeze({
     label: 'Com aprovação',

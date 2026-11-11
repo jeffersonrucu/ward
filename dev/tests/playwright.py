@@ -205,7 +205,7 @@ class Watcher(threading.Thread):
 
 
 # --- unlock -------------------------------------------------------------------------
-code, screen = run_pty(["destravar"], typed=PASSWORD, timeout=120)
+code, screen = run_pty(["unlock"], typed=PASSWORD, timeout=120)
 verify(code == 0, f"destravar o cofre de teste (saiu {code})")
 log_before = posts_log()
 verify(log_before is not None, "posts.log do phish legível (serviços de pé)")
@@ -344,8 +344,8 @@ for entry, expected_text in (("gama-bloqueada", "entrada inexistente"), ("nao-ex
              f"{entry}: recusado com '{expected_text}' (saiu {code})")
 
 # --- V6.13: locking deletes the storage states -----------------------------------------
-code, _, _ = ward(["travar"])
-verify(code == 0 and not os.path.exists(expected), "V6.13 ward travar apaga o storage state")
+code, _, _ = ward(["lock"])
+verify(code == 0 and not os.path.exists(expected), "V6.13 ward lock apaga o storage state")
 verify(not os.listdir(os.path.join(RT, "playwright")) if os.path.isdir(os.path.join(RT, "playwright")) else True,
          "V6.13 <rt>playwright/ vazia depois de travar")
 

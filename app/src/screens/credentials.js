@@ -113,6 +113,6 @@ export const LEVELS = Object.freeze({
     label: 'Bloqueado',
     icon: 'eye-closed',
     explanation:
-      'O Claude nem vê esta entrada: ela some do ward lista. Só você usa, pelo app. Mudar o nível pede o PIN.',
+      'O Claude nem vê esta entrada: ela some do ward list. Só você usa, pelo app. Mudar o nível pede o PIN.',
   },
 });

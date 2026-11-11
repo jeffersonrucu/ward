@@ -368,7 +368,7 @@ for scenario in socket-velho sem-socket; do
         r="$(as_1000 /usr/local/bin/ward-servidor bind "$SOCK")"
         check "V4.2: nem o binário de teste (bind em $SOCK)" "$r" "bind=EACCES"
     fi
-    for cmd in destravar lista travar; do
+    for cmd in unlock list lock; do
         verify_cli "$scenario, ward $cmd" "$(cli_pty "$cmd")"
     done
 done
@@ -376,7 +376,7 @@ done
 rmdir /run/ward/1000
 r="$(as_1000 mkdir /run/ward/1000 2>&1; echo "saiu=$?")"
 lacks "V4.2: o uid 1000 não cria /run/ward/1000" "$r" "saiu=0"
-verify_cli "sem a pasta, ward destravar" "$(cli_pty destravar)"
+verify_cli "sem a pasta, ward unlock" "$(cli_pty unlock)"
 install -d -o root -g root -m 0755 /run/ward/1000
 
 kill "${FPIDS[@]}" 2>/dev/null || true
