@@ -218,7 +218,7 @@ pub(crate) fn random_key() -> Result<Key, CryptoFailure> {
 // the PHC text is built and read by the `phc` types (the same as `argon2`'s). The hash
 // comparison is the `CtEq` of `ctutils`, in constant time (D40). None of this is done
 // by hand. The `Copy` types of `phc` (`Output`, `Salt`) only serve to read and write
-// the stored PHC text, which already is the content of the `HashPin`; the recomputed
+// the stored PHC text, which already is the content of the `PinHash`; the recomputed
 // output stays in a `Zeroizing`.
 
 /// Salt of the PIN hash, in bytes (the one PHC recommends).

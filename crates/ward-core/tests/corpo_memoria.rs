@@ -24,7 +24,7 @@ use std::time::{Duration, Instant};
 
 use ward_core as wc;
 use ward_core::atomic_write::write_entries;
-use ward_core::configuracao::{Configuracao, HashPin};
+use ward_core::config::{PinHash, VaultConfig};
 use ward_core::corpo::{ErroCorpo, abrir_entradas, desserializar, serializar};
 use ward_core::entry::{AccessLevel, AttachmentDraft, DataDraft, Draft, Entry, ExtraDraft, Secret};
 use ward_core::format::{MasterPassword, OpenVault};
@@ -563,10 +563,10 @@ fn v2_33_nenhum_bloco_liberado_tem_segredo() {
         assert_eq!(voltaram.len(), 22);
         assert_eq!(reaberto.generation(), 1);
         // O PIN confere no hash lido do corpo (D30), e um hash novo nasce e morre.
-        assert!(reaberto.config().conferir_pin(PIN_TESTE.as_bytes()));
-        assert!(!reaberto.config().conferir_pin(b"135791"));
-        drop(Configuracao::nova(
-            HashPin::criar(PIN_TESTE.as_bytes()).unwrap(),
+        assert!(reaberto.config().verify_pin(PIN_TESTE.as_bytes()));
+        assert!(!reaberto.config().verify_pin(b"135791"));
+        drop(VaultConfig::new(
+            PinHash::create(PIN_TESTE.as_bytes()).unwrap(),
         ));
         write_entries(&destino, &mut reaberto, &voltaram).unwrap();
         let arquivo2 = std::fs::read(&destino).unwrap();
@@ -595,7 +595,7 @@ fn v2_33_nenhum_bloco_liberado_tem_segredo() {
 }
 
 /// A saída B64 do hash do PIN de `cfg`, num `Vec` comum (só para o controle).
-fn saida_vec(cfg: &Configuracao) -> Vec<u8> {
+fn saida_vec(cfg: &VaultConfig) -> Vec<u8> {
     let corpo = serializar(cfg, 1, &[]).unwrap();
     let n = u32::from_le_bytes(corpo[P_HASH..P_HASH + 4].try_into().unwrap()) as usize;
     let texto = &corpo[P_HASH + 4..P_HASH + 4 + n];

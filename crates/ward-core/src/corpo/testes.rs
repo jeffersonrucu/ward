@@ -18,7 +18,7 @@ use cofre_teste::*;
 
 /// A configuração do cofre de teste (hash do PIN de teste, 240 minutos, backup
 /// desligado), calculada uma vez.
-fn cfg() -> &'static Configuracao {
+fn cfg() -> &'static VaultConfig {
     configuracao_de_teste()
 }
 
@@ -27,7 +27,7 @@ fn corpo_de_teste() -> Zeroizing<Vec<u8>> {
 }
 
 /// Lê sem deixar o pânico passar: um pânico vira falha do teste com mensagem própria.
-fn ler_tudo(corpo: &[u8]) -> Result<(Configuracao, Vec<Entry>), ErroCorpo> {
+fn ler_tudo(corpo: &[u8]) -> Result<(VaultConfig, Vec<Entry>), ErroCorpo> {
     match catch_unwind(AssertUnwindSafe(|| desserializar(corpo))) {
         Ok(r) => r.map(|(c, _, e)| (c, e)),
         Err(_) => panic!("o decodificador entrou em pânico"),
@@ -197,15 +197,13 @@ fn conferir_ida_e_volta(originais: &[Entry], voltaram: &[Entry]) {
 /// O que o decodificador aceitou tem de ser um cofre válido: a configuração dentro das
 /// regras, cada entrada confere contra todas as outras (a conferência completa,
 /// quadrática, sem o índice do módulo) e serializar de novo dá os mesmos bytes.
-fn conferir_aceito(corpo: &[u8], configuracao: &Configuracao, entradas: &[Entry]) {
+fn conferir_aceito(corpo: &[u8], configuracao: &VaultConfig, entradas: &[Entry]) {
     // D39: a geração aceita é ≥ 1 e volta igual (ela está logo depois da versão).
     let geracao = desserializar(corpo).map(|(_, g, _)| g).unwrap();
     assert!(geracao >= 1, "aceitou geração 0");
-    assert!(configuracao::minutos_validos(configuracao.minutos_trava()));
-    assert!(configuracao::conferir_texto(
-        configuracao.hash_pin().bytes()
-    ));
-    assert!(!configuracao.backup().ligado() || configuracao.backup().uuid().is_some());
+    assert!(config::valid_minutes(configuracao.lock_minutes()));
+    assert!(config::verify_text(configuracao.pin_hash().bytes()));
+    assert!(!configuracao.backup().enabled() || configuracao.backup().uuid().is_some());
     for (i, e) in entradas.iter().enumerate() {
         let outras = entradas
             .iter()
@@ -259,12 +257,12 @@ impl CruaCfg {
         Self::de(cfg())
     }
 
-    fn de(c: &Configuracao) -> Self {
+    fn de(c: &VaultConfig) -> Self {
         Self {
             geracao: Some(1),
-            hash_pin: c.hash_pin().bytes().to_vec(),
-            minutos: c.minutos_trava(),
-            ligado: u8::from(c.backup().ligado()),
+            hash_pin: c.pin_hash().bytes().to_vec(),
+            minutos: c.lock_minutes(),
+            ligado: u8::from(c.backup().enabled()),
             uuid: c.backup().uuid().unwrap_or("").as_bytes().to_vec(),
         }
     }
@@ -489,7 +487,7 @@ fn v2_30_cofre_vazio() {
     // Só a configuração: versão 4, geração 1, hash do PIN, 240 minutos, backup desligado
     // sem UUID, zero entradas.
     let corpo = serializar(cfg(), 1, &[]).unwrap();
-    let hash = cfg().hash_pin().bytes();
+    let hash = cfg().pin_hash().bytes();
     let mut esperado = vec![4, 0];
     esperado.extend_from_slice(&1u64.to_le_bytes());
     esperado.extend_from_slice(&(hash.len() as u32).to_le_bytes());
@@ -500,7 +498,7 @@ fn v2_30_cofre_vazio() {
     assert!(corpo[..] == esperado[..]);
     let (c, entradas) = ler_tudo(&corpo).unwrap();
     assert!(entradas.is_empty());
-    assert!(c.conferir_pin(PIN_TESTE.as_bytes()));
+    assert!(c.verify_pin(PIN_TESTE.as_bytes()));
     assert!(serializar(&c, 1, &[]).unwrap()[..] == corpo[..]);
 }
 
@@ -567,7 +565,7 @@ fn v2_30_ida_e_volta_pelo_disco_com_anexos_no_limite() {
 
     write_entries(&destino, &mut cofre, &originais).unwrap();
     let arquivo = std::fs::read(&destino).unwrap();
-    let hash = cofre.config().hash_pin().bytes().to_vec();
+    let hash = cofre.config().pin_hash().bytes().to_vec();
     let hash = &hash[..];
     let marcas = SEGREDOS
         .iter()
@@ -584,15 +582,15 @@ fn v2_30_ida_e_volta_pelo_disco_com_anexos_no_limite() {
     conferir_ida_e_volta(&originais, &voltaram);
     // A configuração volta igual (D30), e o PIN de teste confere no hash lido.
     assert!(serializar(reaberto.config(), 1, &voltaram).unwrap()[..] == esperado[..]);
-    assert!(reaberto.config().hash_pin().bytes() == hash);
-    assert!(reaberto.config().conferir_pin(PIN_TESTE.as_bytes()));
+    assert!(reaberto.config().pin_hash().bytes() == hash);
+    assert!(reaberto.config().verify_pin(PIN_TESTE.as_bytes()));
 
     // Cofre vazio (só a configuração) também faz ida e volta pelo disco.
     write_entries(&destino, &mut cofre, &[]).unwrap();
     let arquivo = std::fs::read(&destino).unwrap();
     let (reaberto, voltaram) = abrir_entradas(&arquivo, &senha).unwrap();
     assert!(voltaram.is_empty());
-    assert!(reaberto.config().hash_pin().bytes() == hash);
+    assert!(reaberto.config().pin_hash().bytes() == hash);
 
     // Senha errada: erro do formato, não do corpo.
     let errada = MasterPassword::new("falso-mestra-ward-02".to_owned());
@@ -612,7 +610,7 @@ fn troca_de_senha_sela_e_grava_pelo_mesmo_caminho() {
     let atual = MasterPassword::new(SENHA_MESTRA.to_owned());
     let nova = MasterPassword::new("falso-mestra-ward-02".to_owned());
     let mut cofre = OpenVault::new(&atual, configuracao_nova()).unwrap();
-    let hash = cofre.config().hash_pin().bytes().to_vec();
+    let hash = cofre.config().pin_hash().bytes().to_vec();
     let originais = cofre_de_teste();
     write_entries(&destino, &mut cofre, &originais).unwrap();
     let antes = std::fs::read(&destino).unwrap();
@@ -626,7 +624,7 @@ fn troca_de_senha_sela_e_grava_pelo_mesmo_caminho() {
 
     let (mut novo, _) = change_password(&destino, &atual, &nova, 0, 0).unwrap();
     // A troca de senha mantém a configuração (o mesmo hash do PIN).
-    assert!(novo.config().hash_pin().bytes() == &hash[..]);
+    assert!(novo.config().pin_hash().bytes() == &hash[..]);
     let depois = std::fs::read(&destino).unwrap();
     assert!(abrir_entradas(&depois, &atual).is_err());
     let (_, voltaram) = abrir_entradas(&depois, &nova).unwrap();
@@ -648,7 +646,7 @@ fn formato_conhecido_de_uma_entrada() {
         v.extend_from_slice(&(b.len() as u32).to_le_bytes());
         v.extend_from_slice(b);
     };
-    campo(&mut v, cfg().hash_pin().bytes());
+    campo(&mut v, cfg().pin_hash().bytes());
     v.extend_from_slice(&240u32.to_le_bytes());
     v.push(0);
     campo(&mut v, b"");
@@ -1158,7 +1156,7 @@ fn phc(alg: &str, versao: &str, params: &str, sal: &str, hash: &str) -> Vec<u8> 
 
 /// As partes `sal` e `hash` (B64 do PHC) do hash do cofre de teste.
 fn partes_do_hash() -> (String, String) {
-    let texto = core::str::from_utf8(cfg().hash_pin().bytes()).unwrap();
+    let texto = core::str::from_utf8(cfg().pin_hash().bytes()).unwrap();
     let campos: Vec<&str> = texto.split('$').collect();
     assert_eq!(campos.len(), 6, "hash PHC com 5 campos");
     (campos[4].to_owned(), campos[5].to_owned())
@@ -1168,33 +1166,31 @@ fn partes_do_hash() -> (String, String) {
 fn v2_30_configuracao_volta_igual() {
     // Valores fora do padrão para provar que cada campo vai e volta.
     let mut c = configuracao_nova();
-    c.definir_minutos_trava(30).unwrap();
-    c.definir_backup(BackupExterno::novo(true, Some("1234-ABCD")).unwrap());
+    c.set_lock_minutes(30).unwrap();
+    c.set_backup(ExternalBackup::new(true, Some("1234-ABCD")).unwrap());
     let corpo = serializar(&c, 1, &cofre_de_teste()).unwrap();
     let (lida, entradas) = ler_tudo(&corpo).unwrap();
     assert_eq!(entradas.len(), 22);
-    assert_eq!(lida.minutos_trava(), 30);
+    assert_eq!(lida.lock_minutes(), 30);
     assert_eq!(
         lida.backup(),
-        &BackupExterno::novo(true, Some("1234-ABCD")).unwrap()
+        &ExternalBackup::new(true, Some("1234-ABCD")).unwrap()
     );
-    assert!(lida.hash_pin().bytes() == c.hash_pin().bytes());
-    assert!(lida.conferir_pin(PIN_TESTE.as_bytes()));
-    assert!(!lida.conferir_pin(b"135791"));
+    assert!(lida.pin_hash().bytes() == c.pin_hash().bytes());
+    assert!(lida.verify_pin(PIN_TESTE.as_bytes()));
+    assert!(!lida.verify_pin(b"135791"));
     assert!(serializar(&lida, 1, &entradas).unwrap()[..] == corpo[..]);
 
     // Backup desligado com UUID guardado também volta (o pendrive já escolhido).
-    c.definir_backup(
-        BackupExterno::novo(false, Some("0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0")).unwrap(),
-    );
+    c.set_backup(ExternalBackup::new(false, Some("0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0")).unwrap());
     let corpo = serializar(&c, 1, &[]).unwrap();
     let (lida, _) = ler_tudo(&corpo).unwrap();
     assert_eq!(lida.backup(), c.backup());
 
     // Padrão do cofre de teste: 240 minutos e backup desligado sem UUID.
     let (lida, _) = ler_tudo(&corpo_de_teste()).unwrap();
-    assert_eq!(lida.minutos_trava(), 240);
-    assert_eq!(lida.backup(), &BackupExterno::desligado());
+    assert_eq!(lida.lock_minutes(), 240);
+    assert_eq!(lida.backup(), &ExternalBackup::disabled());
 }
 
 /// V2.39: o PIN de teste não aparece em claro no corpo decifrado; só o hash PHC, com
@@ -1207,7 +1203,7 @@ fn v2_39_pin_so_como_hash_no_corpo() {
             .windows(PIN_TESTE.len())
             .any(|j| j == PIN_TESTE.as_bytes())
     );
-    let hash = cfg().hash_pin().bytes();
+    let hash = cfg().pin_hash().bytes();
     assert!(hash.starts_with(b"$argon2id$v=19$m=65536,t=3,p=1$"));
     assert!(corpo.windows(hash.len()).any(|j| j == hash));
     let (sal, saida) = partes_do_hash();
@@ -1477,7 +1473,7 @@ fn v2_39_hash_rebaixado_do_pin_certo_recusado() {
                 .is_ok()
         );
     }
-    // …mas o corpo que o traz é recusado, e o `HashPin` não nasce dele.
+    // …mas o corpo que o traz é recusado, e o `PinHash` não nasce dele.
     let corpo = corpo_de_teste();
     let base = cruas(&corpo);
     let c = CruaCfg {
@@ -1489,17 +1485,17 @@ fn v2_39_hash_rebaixado_do_pin_certo_recusado() {
         "hash rebaixado",
         "falso",
     );
-    assert!(HashPin::de_phc(rebaixado.as_bytes()).is_none());
+    assert!(PinHash::from_phc(rebaixado.as_bytes()).is_none());
 }
 
 /// O codificador também recusa uma configuração que não reabriria (tempo de trava fora
 /// da faixa só existe se alguém mexer por dentro do crate; o corpo nunca o grava).
 #[test]
 fn serializar_recusa_configuracao_fora_da_regra() {
-    let c = Configuracao::de_partes(
-        HashPin::de_phc(cfg().hash_pin().bytes()).unwrap(),
+    let c = VaultConfig::from_parts(
+        PinHash::from_phc(cfg().pin_hash().bytes()).unwrap(),
         0,
-        BackupExterno::desligado(),
+        ExternalBackup::disabled(),
     );
     assert_eq!(
         serializar(&c, 1, &[]).unwrap_err(),

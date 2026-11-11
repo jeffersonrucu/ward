@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use comum::*;
-use ward_core::configuracao::{Configuracao, HashPin};
+use ward_core::config::{PinHash, VaultConfig};
 use ward_core::format::{MasterPassword, OpenVault};
 use ward_core::protocolo::{ErroResposta, MSG_RETROCESSO, Papel, Resposta};
 use wardd::arquivos::{self, Geracoes};
@@ -280,7 +280,7 @@ fn v3_35_criar_cofre_com_estado_velho_e_copia_antiga() {
     let senha = MasterPassword::new(SENHA.to_owned());
     let mut velho = OpenVault::new(
         &senha,
-        Configuracao::nova(HashPin::criar(PIN.as_bytes()).unwrap()),
+        VaultConfig::new(PinHash::create(PIN.as_bytes()).unwrap()),
     )
     .unwrap()
     .after_generation(4);

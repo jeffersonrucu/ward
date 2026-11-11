@@ -11,7 +11,7 @@
 //!   zera a espera (a primeira tentativa depois da partida espera o que faltar, contado
 //!   da partida). O do app fica em memória. O destravar certo de qualquer papel zera os
 //!   dois. A resposta não diz quantas tentativas houve.
-//! - **PIN** (S9): confere pelo hash da configuração do cofre (`HashPin`, em tempo
+//! - **PIN** (S9): confere pelo hash da configuração do cofre (`PinHash`, em tempo
 //!   constante, D30); 5 erros seguidos travam o cofre, mesmo reconectando.
 //! - **Gerações** (D39, D53): o arquivo de estado guarda `vista` e `queimada`. Abre com
 //!   (`vista`, `queimada`); antes de cada gravação grava `queimada` = geração + 1 e só
@@ -58,7 +58,7 @@ use zeroize::Zeroizing;
 
 use ward_core::atomic_write::{self, Step, WriteError};
 use ward_core::backup::{self, ErroBackup, Versao};
-use ward_core::configuracao::{BackupExterno, Configuracao, HashPin};
+use ward_core::config::{ExternalBackup, PinHash, VaultConfig};
 use ward_core::corpo::{self, ErroAbrir, ErroCorpo};
 use ward_core::entry::{AccessLevel, Data, DataDraft, Dates, Draft, Entry, Secret};
 use ward_core::format::{MasterPassword, OpenVault};
@@ -583,7 +583,7 @@ impl Daemon {
     fn uuid_externo(&self) -> Option<String> {
         let est = self.estado();
         let b = est.aberto.as_ref()?.cofre.config().backup();
-        if b.ligado() {
+        if b.enabled() {
             b.uuid().map(str::to_owned)
         } else {
             None
@@ -757,7 +757,7 @@ impl Daemon {
         };
         // Lido com o estado travado: um uso de outra thread não fica "no futuro".
         let agora = self.relogio.agora();
-        let minutos = a.cofre.config().minutos_trava();
+        let minutos = a.cofre.config().lock_minutes();
         if !crate::trava::venceu(est.ultimo_uso, agora, minutos) {
             return false;
         }
@@ -1241,7 +1241,7 @@ impl Daemon {
         if est.aberto.is_some() || arquivos::cofre_existe(&self.caminhos.cofre) {
             return Err(ErroResposta::CofreJaExiste);
         }
-        let hash = HashPin::criar(pin.expose()).map_err(|_| ErroResposta::PedidoInvalido)?;
+        let hash = PinHash::create(pin.expose()).map_err(|_| ErroResposta::PedidoInvalido)?;
         // D62: um estado velho (cofre apagado) não desce. O cofre novo nasce na geração
         // `queimada` + 1, e uma cópia de um cofre anterior fica abaixo da `vista`.
         let velho = match arquivos::ler_estado(&self.caminhos.estado) {
@@ -1257,7 +1257,7 @@ impl Daemon {
         if velho.is_some() {
             aviso!("criar cofre: estado anterior na geração {q}; o cofre novo nasce na {primeira}");
         }
-        let mut cofre = OpenVault::new(&senha, Configuracao::nova(hash))
+        let mut cofre = OpenVault::new(&senha, VaultConfig::new(hash))
             .map_err(|_| ErroResposta::Interno)?
             .after_generation(q);
         if let Some(dir) = self.caminhos.cofre.parent() {
@@ -1477,7 +1477,7 @@ impl Daemon {
     /// Confere o PIN (S9): acerto zera a contagem; o 5.º erro seguido trava.
     pub(crate) fn conferir_pin(est: &mut Estado, pin: &Secret) -> Result<(), ErroResposta> {
         let a = est.aberto.as_ref().ok_or(ErroResposta::Travado)?;
-        if a.cofre.config().conferir_pin(pin.expose()) {
+        if a.cofre.config().verify_pin(pin.expose()) {
             est.erros_pin = 0;
             return Ok(());
         }
@@ -1524,9 +1524,9 @@ impl Daemon {
     fn trocar_pin(&self, atual: &Secret, novo: &Secret) -> Result<Resposta, ErroResposta> {
         let mut est = self.estado();
         Self::conferir_pin(&mut est, atual)?;
-        let hash = HashPin::criar(novo.expose()).map_err(|_| ErroResposta::PedidoInvalido)?;
+        let hash = PinHash::create(novo.expose()).map_err(|_| ErroResposta::PedidoInvalido)?;
         let a = est.aberto.as_mut().ok_or(ErroResposta::Travado)?;
-        a.cofre.config_mut().trocar_hash_pin(hash);
+        a.cofre.config_mut().change_pin_hash(hash);
         match self.gravar_ou_desfazer(&mut est, |_| {}) {
             Ok(r) => Ok(r),
             Err(e) => {
@@ -1541,13 +1541,13 @@ impl Daemon {
     fn tempo_trava(&self, minutos: u32) -> Result<Resposta, ErroResposta> {
         let mut est = self.estado();
         let a = est.aberto.as_mut().ok_or(ErroResposta::Travado)?;
-        let antes = a.cofre.config().minutos_trava();
+        let antes = a.cofre.config().lock_minutes();
         a.cofre
             .config_mut()
-            .definir_minutos_trava(minutos)
+            .set_lock_minutes(minutos)
             .map_err(|_| ErroResposta::PedidoInvalido)?;
         self.gravar_ou_desfazer(&mut est, move |a| {
-            let _ = a.cofre.config_mut().definir_minutos_trava(antes);
+            let _ = a.cofre.config_mut().set_lock_minutes(antes);
         })
     }
 
@@ -1644,8 +1644,8 @@ impl Daemon {
         // (o cofre é gravado sem backup). Só um sim/não: nenhum caminho.
         let backup_local = abrir_pasta(&self.caminhos).is_some_and(|p| p.pasta().listar().is_ok());
         Ok(Resposta::Configuracao {
-            minutos_trava: c.minutos_trava(),
-            backup_externo: c.backup().ligado(),
+            minutos_trava: c.lock_minutes(),
+            backup_externo: c.backup().enabled(),
             backup_local,
         })
     }
@@ -1696,7 +1696,7 @@ impl Daemon {
         let a = est.aberto.as_ref().ok_or(ErroResposta::Travado)?;
         let b = a.cofre.config().backup();
         Ok(Resposta::BackupExterno {
-            ligado: b.ligado(),
+            ligado: b.enabled(),
             uuid: b.uuid().map(str::to_owned),
         })
     }
@@ -1708,13 +1708,13 @@ impl Daemon {
         ligado: bool,
         uuid: Option<&str>,
     ) -> Result<Resposta, ErroResposta> {
-        let novo = BackupExterno::novo(ligado, uuid).map_err(|_| ErroResposta::PedidoInvalido)?;
+        let novo = ExternalBackup::new(ligado, uuid).map_err(|_| ErroResposta::PedidoInvalido)?;
         let mut est = self.estado();
         let a = est.aberto.as_mut().ok_or(ErroResposta::Travado)?;
         let antes = a.cofre.config().backup().clone();
-        a.cofre.config_mut().definir_backup(novo);
+        a.cofre.config_mut().set_backup(novo);
         let r = self.gravar_ou_desfazer(&mut est, move |a| {
-            a.cofre.config_mut().definir_backup(antes);
+            a.cofre.config_mut().set_backup(antes);
         });
         if r.is_ok() {
             aviso!(
@@ -1828,13 +1828,13 @@ impl Daemon {
         // aviso). PIN, senha e entradas são os da versão (D17).
         {
             let atual = a.cofre.config();
-            let minutos = atual.minutos_trava();
+            let minutos = atual.lock_minutes();
             let externo = atual.backup().clone();
             let c = restaurado.config_mut();
-            if c.definir_minutos_trava(minutos).is_err() {
+            if c.set_lock_minutes(minutos).is_err() {
                 aviso!("restaurar: tempo de trava atual fora da faixa; ficou o da versão");
             }
-            c.definir_backup(externo);
+            c.set_backup(externo);
         }
         // D39: geração = maior queimada + 1, queimada no estado antes de selar (D53).
         let q = a.geracoes.queimada.max(a.cofre.generation());

@@ -1,10 +1,10 @@
-//! Testes do modelo de entrada: V2.12, V2.13, V2.16 (parte de validação), V2.27 e V2.28,
-//! mais os ataques à validação (injeção de opção no `ssh`, texto invisível, variável
-//! perigosa, tamanhos, nível na edição). Só valores falsos do cofre de teste (D15).
+//! Tests of the entry model: V2.12, V2.13, V2.16 (validation part), V2.27 and V2.28,
+//! plus the attacks on validation (option injection into `ssh`, invisible text,
+//! dangerous variable, sizes, level on edit). Fake values of the test vault only (D15).
 
 use super::*;
 
-// ---- Ajudantes ----
+// ---- Helpers ----
 
 fn s(v: &str) -> Option<Secret> {
     Some(Secret::from_text(v.to_owned()))
@@ -14,24 +14,24 @@ fn t(v: &str) -> String {
     v.to_owned()
 }
 
-/// Chave privada falsa, montada em tempo de execução (o texto inteiro não fica no
-/// repositório, para não parecer chave real a uma varredura).
-fn chave_falsa() -> String {
-    let rotulo = ["OPENSSH", "PRIVATE KEY"].join(" ");
-    format!("-----BEGIN {rotulo}-----\nfalso-chave-ed25519-teste\n-----END {rotulo}-----\n")
+/// Fake private key, built at run time (the whole text is not in the repository, so it
+/// does not look like a real key to a scanner).
+fn fake_key() -> String {
+    let label = ["OPENSSH", "PRIVATE KEY"].join(" ");
+    format!("-----BEGIN {label}-----\nfalso-chave-ed25519-teste\n-----END {label}-----\n")
 }
 
-/// Função que monta os dados de um tipo.
-type FazDados = fn() -> DataDraft;
+/// Function that builds the data of a type.
+type MakeData = fn() -> DataDraft;
 
-fn rascunho(nome: &str, grupo: &str, ambiente: &str, dados: DataDraft) -> Draft {
+fn draft(name: &str, group: &str, environment: &str, data: DataDraft) -> Draft {
     Draft {
-        name: t(nome),
-        group: t(grupo),
-        environment: t(ambiente),
+        name: t(name),
+        group: t(group),
+        environment: t(environment),
         project: String::new(),
         tags: Vec::new(),
-        data: dados,
+        data,
         extras: Vec::new(),
         attachments: Vec::new(),
     }
@@ -46,7 +46,7 @@ fn login() -> DataDraft {
     }
 }
 
-fn banco() -> DataDraft {
+fn database() -> DataDraft {
     DataDraft::Database {
         engine: t("postgres"),
         host: t("127.0.0.1"),
@@ -58,7 +58,7 @@ fn banco() -> DataDraft {
     }
 }
 
-fn servidor_senha() -> DataDraft {
+fn server_password() -> DataDraft {
     DataDraft::Server {
         host: t("127.0.0.1"),
         port: t("2222"),
@@ -70,13 +70,13 @@ fn servidor_senha() -> DataDraft {
     }
 }
 
-fn servidor_chave() -> DataDraft {
+fn server_key() -> DataDraft {
     DataDraft::Server {
         host: t("127.0.0.1"),
         port: t("2223"),
         username: t("deploy"),
         password: None,
-        private_key: Some(Secret::from_text(chave_falsa())),
+        private_key: Some(Secret::from_text(fake_key())),
         passphrase: s("falso-passphrase-01"),
         jump: String::new(),
     }
@@ -122,55 +122,55 @@ fn sftp() -> DataDraft {
     }
 }
 
-fn nota() -> DataDraft {
+fn note() -> DataDraft {
     DataDraft::SecureNote {
         text: s("falso-nota-01"),
     }
 }
 
-fn extra(nome: &str, valor: &str, segredo: bool) -> ExtraDraft {
+fn extra(name: &str, value: &str, secret: bool) -> ExtraDraft {
     ExtraDraft {
-        name: t(nome),
-        value: Secret::from_text(t(valor)),
-        secret: segredo,
+        name: t(name),
+        value: Secret::from_text(t(value)),
+        secret,
     }
 }
 
-fn anexo(nome: &str, conteudo: &[u8]) -> AttachmentDraft {
+fn attachment(name: &str, content: &[u8]) -> AttachmentDraft {
     AttachmentDraft {
-        name: t(nome),
-        content: Secret::from_bytes(conteudo.to_vec()),
+        name: t(name),
+        content: Secret::from_bytes(content.to_vec()),
     }
 }
 
-fn generico() -> Draft {
-    let mut r = rascunho("gama-generico", "gama", "stage", DataDraft::Generic);
+fn generic() -> Draft {
+    let mut r = draft("gama-generico", "gama", "stage", DataDraft::Generic);
     r.extras = vec![
         extra("REGIAO", "r-01", false),
         extra("CHAVE_LICENCA", "falso-licenca-01", true),
     ];
-    r.attachments = vec![anexo("app.env", b"FALSO_ENV=falso-anexo-01\n")];
+    r.attachments = vec![attachment("app.env", b"FALSO_ENV=falso-anexo-01\n")];
     r
 }
 
-/// Um rascunho válido de cada tipo (servidor nas duas autenticações).
-fn um_de_cada() -> Vec<Draft> {
+/// One valid draft of each type (server with both kinds of auth).
+fn one_of_each() -> Vec<Draft> {
     vec![
-        rascunho("acme-wp-dev", "acme", "dev", login()),
-        rascunho("acme-pg-dev", "acme", "dev", banco()),
-        rascunho("acme-ssh-senha-stage", "acme", "stage", servidor_senha()),
-        rascunho("acme-ssh-chave-prod", "acme", "prod", servidor_chave()),
-        rascunho("beta-github-api", "beta", "dev", api()),
-        rascunho("beta-aws-dev", "beta", "dev", aws()),
-        rascunho("beta-smtp-stage", "beta", "stage", smtp()),
-        rascunho("beta-sftp-dev", "beta", "dev", sftp()),
-        rascunho("gama-nota", "gama", "dev", nota()),
-        generico(),
+        draft("acme-wp-dev", "acme", "dev", login()),
+        draft("acme-pg-dev", "acme", "dev", database()),
+        draft("acme-ssh-senha-stage", "acme", "stage", server_password()),
+        draft("acme-ssh-chave-prod", "acme", "prod", server_key()),
+        draft("beta-github-api", "beta", "dev", api()),
+        draft("beta-aws-dev", "beta", "dev", aws()),
+        draft("beta-smtp-stage", "beta", "stage", smtp()),
+        draft("beta-sftp-dev", "beta", "dev", sftp()),
+        draft("gama-nota", "gama", "dev", note()),
+        generic(),
     ]
 }
 
-/// Todos os valores secretos usados em [`um_de_cada`].
-fn segredos_de_teste() -> Vec<String> {
+/// All the secret values used in [`one_of_each`].
+fn test_secrets() -> Vec<String> {
     vec![
         t("falso-WP-senha-01"),
         t("JBSWY3DPEHPK3PXP"),
@@ -189,36 +189,36 @@ fn segredos_de_teste() -> Vec<String> {
     ]
 }
 
-fn valida(r: Draft) -> Entry {
+fn valid(r: Draft) -> Entry {
     match r.validate() {
         Ok(e) => e,
-        Err(erros) => panic!("devia validar: {erros}"),
+        Err(errors) => panic!("devia validar: {errors}"),
     }
 }
 
-fn erros(r: Draft) -> ValidationErrors {
+fn errors(r: Draft) -> ValidationErrors {
     match r.validate() {
         Ok(e) => panic!("devia recusar: {e}"),
-        Err(erros) => erros,
+        Err(errors) => errors,
     }
 }
 
-fn sem_segredo(texto: &str, onde: &str) {
-    for segredo in segredos_de_teste() {
-        assert!(!texto.contains(&segredo), "{onde} contém segredo");
+fn no_secret(text: &str, place: &str) {
+    for secret in test_secrets() {
+        assert!(!text.contains(&secret), "{place} contém segredo");
     }
 }
 
-// ---- Caminho feliz ----
+// ---- Happy path ----
 
 #[test]
-fn um_de_cada_tipo_valida() {
-    let entradas: Vec<Entry> = um_de_cada().into_iter().map(valida).collect();
-    let tipos: Vec<EntryType> = entradas.iter().map(Entry::kind).collect();
-    for tipo in EntryType::ALL {
-        assert!(tipos.contains(&tipo), "falta {tipo}");
+fn one_of_each_type_validates() {
+    let entries: Vec<Entry> = one_of_each().into_iter().map(valid).collect();
+    let kinds: Vec<EntryType> = entries.iter().map(Entry::kind).collect();
+    for kind in EntryType::ALL {
+        assert!(kinds.contains(&kind), "falta {kind}");
     }
-    for e in &entradas {
+    for e in &entries {
         assert_eq!(
             e.level(),
             AccessLevel::Approval,
@@ -228,451 +228,433 @@ fn um_de_cada_tipo_valida() {
 }
 
 #[test]
-fn cofre_de_teste_do_contrato_valida_e_confere() {
-    // As 20 entradas da tabela "Cofre de teste" (D15), com as referências de túnel e salto.
-    let mut rs = um_de_cada();
-    let mut wp_prod = rascunho("acme-wp-prod", "acme", "prod", login());
+fn contract_test_vault_validates_and_verifies() {
+    // The 20 entries of the contract's test vault table (D15), with the tunnel and jump
+    // references.
+    let mut rs = one_of_each();
+    let mut wp_prod = draft("acme-wp-prod", "acme", "prod", login());
     if let DataDraft::Login {
-        username: usuario,
-        password: senha,
-        ..
+        username, password, ..
     } = &mut wp_prod.data
     {
-        *usuario = t("wp_editor");
-        *senha = s("falso-WP-senha-02");
+        *username = t("wp_editor");
+        *password = s("falso-WP-senha-02");
     }
     rs.push(wp_prod);
-    rs.push(rascunho("acme-pg-aprovacao", "acme", "stage", banco()));
-    rs.push(rascunho("acme-pg-prod", "acme", "prod", banco()));
-    let mut tunel = rascunho("acme-pg-tunel", "acme", "stage", banco());
+    rs.push(draft("acme-pg-aprovacao", "acme", "stage", database()));
+    rs.push(draft("acme-pg-prod", "acme", "prod", database()));
+    let mut tunnel = draft("acme-pg-tunel", "acme", "stage", database());
     if let DataDraft::Database {
         host,
-        port: porta,
+        port,
         tunnel: t_,
         ..
-    } = &mut tunel.data
+    } = &mut tunnel.data
     {
         *host = t("postgres");
-        *porta = t("5432");
+        *port = t("5432");
         *t_ = t("acme-ssh-senha-stage");
     }
-    rs.push(tunel);
-    for nome in ["acme-ssh-salto", "acme-ssh-salto-livre"] {
-        let mut r = rascunho(nome, "acme", "prod", servidor_senha());
+    rs.push(tunnel);
+    for name in ["acme-ssh-salto", "acme-ssh-salto-livre"] {
+        let mut r = draft(name, "acme", "prod", server_password());
         if let DataDraft::Server {
-            port: porta,
-            username: usuario,
-            password: senha,
+            port,
+            username,
+            password,
             ..
         } = &mut r.data
         {
-            *porta = t("2224");
-            *usuario = t("salto");
-            *senha = s("falso-SALTO-01");
+            *port = t("2224");
+            *username = t("salto");
+            *password = s("falso-SALTO-01");
         }
         rs.push(r);
     }
-    for (nome, salto_de) in [
+    for (name, jump_from) in [
         ("acme-ssh-interno", "acme-ssh-salto-livre"),
         ("acme-ssh-interno-aprov", "acme-ssh-salto"),
     ] {
-        let mut r = rascunho(nome, "acme", "prod", servidor_chave());
+        let mut r = draft(name, "acme", "prod", server_key());
         if let DataDraft::Server {
-            host,
-            port: porta,
-            jump: salto,
-            ..
+            host, port, jump, ..
         } = &mut r.data
         {
             *host = t("ssh-interno");
-            *porta = t("22");
-            *salto = t(salto_de);
+            *port = t("22");
+            *jump = t(jump_from);
         }
         rs.push(r);
     }
-    let mut bloq = rascunho("gama-bloqueada", "gama", "prod", login());
+    let mut blocked = draft("gama-bloqueada", "gama", "prod", login());
     if let DataDraft::Login {
         url,
-        username: usuario,
-        password: senha,
-        totp_seed: totp_semente,
-    } = &mut bloq.data
+        username,
+        password,
+        totp_seed,
+    } = &mut blocked.data
     {
         *url = t("https://bloqueada.invalid");
-        *usuario = t("x");
-        *senha = s("falso-BLOQ-01");
-        *totp_semente = None;
+        *username = t("x");
+        *password = s("falso-BLOQ-01");
+        *totp_seed = None;
     }
-    rs.push(bloq);
-    let mut redir = rascunho("delta-redir", "delta", "dev", login());
+    rs.push(blocked);
+    let mut redir = draft("delta-redir", "delta", "dev", login());
     if let DataDraft::Login {
         url,
-        username: usuario,
-        password: senha,
-        totp_seed: totp_semente,
+        username,
+        password,
+        totp_seed,
     } = &mut redir.data
     {
         *url = t("http://localhost:8084/login");
-        *usuario = t("u");
-        *senha = s("falso-REDIR-01");
-        *totp_semente = None;
+        *username = t("u");
+        *password = s("falso-REDIR-01");
+        *totp_seed = None;
     }
     rs.push(redir);
 
-    let entradas: Vec<Entry> = rs.into_iter().map(valida).collect();
-    assert_eq!(entradas.len(), 20);
-    for (i, e) in entradas.iter().enumerate() {
-        let outras = entradas
+    let entries: Vec<Entry> = rs.into_iter().map(valid).collect();
+    assert_eq!(entries.len(), 20);
+    for (i, e) in entries.iter().enumerate() {
+        let others = entries
             .iter()
             .enumerate()
             .filter(move |(j, _)| *j != i)
             .map(|(_, o)| o);
-        e.verify_in_vault(outras)
-            .unwrap_or_else(|erros| panic!("{e}: {erros}"));
+        e.verify_in_vault(others)
+            .unwrap_or_else(|errors| panic!("{e}: {errors}"));
     }
 }
 
 #[test]
-fn porta_vazia_usa_a_padrao() {
-    let mut r = rascunho("x", "acme", "dev", banco());
+fn empty_port_uses_the_default() {
+    let mut r = draft("x", "acme", "dev", database());
     if let DataDraft::Database {
-        engine: motor,
-        port: porta,
-        db_name: base,
+        engine,
+        port,
+        db_name,
         ..
     } = &mut r.data
     {
-        *motor = t("redis");
-        *porta = String::new();
-        // No redis a base é número (D33).
-        *base = t("0");
+        *engine = t("redis");
+        *port = String::new();
+        // In redis the database name is a number (D33).
+        *db_name = t("0");
     }
-    let Data::Database(b) = valida(r).data else {
+    let Data::Database(b) = valid(r).data else {
         unreachable!()
     };
     assert_eq!(b.port, 6379);
-    for (motor, porta) in [
+    for (engine, port) in [
         ("postgres", 5432),
         ("mysql", 3306),
         ("mongo", 27017),
         ("sqlserver", 1433),
     ] {
         assert_eq!(
-            Engine::from_name(motor).map(Engine::default_port),
-            Some(porta)
+            Engine::from_name(engine).map(Engine::default_port),
+            Some(port)
         );
     }
 }
 
-// ---- V2.12: validação recusa com mensagem em português ----
+// ---- V2.12: validation refuses with a message in Portuguese ----
 
-/// Tira um campo do rascunho (o deixa vazio).
-fn sem(dados: DataDraft, campo: &str) -> DataDraft {
-    let mut d = dados;
-    macro_rules! vazio {
+/// Removes a field from the draft (leaves it empty).
+fn without(data: DataDraft, field: &str) -> DataDraft {
+    let mut d = data;
+    macro_rules! clear {
         ($($f:ident),*) => {{
-            $( if campo == stringify!($f) { *$f = Default::default(); } )*
+            $( if field == stringify!($f) { *$f = Default::default(); } )*
         }};
     }
     match &mut d {
         DataDraft::Login {
             url,
-            username: usuario,
-            password: senha,
-            totp_seed: totp_semente,
-        } => vazio!(url, usuario, senha, totp_semente),
+            username,
+            password,
+            totp_seed,
+        } => clear!(url, username, password, totp_seed),
         DataDraft::Database {
-            engine: motor,
+            engine,
             host,
-            port: porta,
-            db_name: base,
-            username: usuario,
-            password: senha,
-            tunnel: tunel,
-        } => vazio!(motor, host, porta, base, usuario, senha, tunel),
+            port,
+            db_name,
+            username,
+            password,
+            tunnel,
+        } => clear!(engine, host, port, db_name, username, password, tunnel),
         DataDraft::Server {
             host,
-            port: porta,
-            username: usuario,
-            password: senha,
-            private_key: chave_privada,
+            port,
+            username,
+            password,
+            private_key,
             passphrase,
-            jump: salto,
-        } => vazio!(
+            jump,
+        } => clear!(
             host,
-            porta,
-            usuario,
-            senha,
-            chave_privada,
+            port,
+            username,
+            password,
+            private_key,
             passphrase,
-            salto
+            jump
         ),
         DataDraft::Api {
             url,
             token,
-            variable: variavel,
-        } => vazio!(url, token, variavel),
+            variable,
+        } => clear!(url, token, variable),
         DataDraft::Aws {
             access_key_id,
             secret_access_key,
-            region: regiao,
+            region,
             role_arn,
             session_token,
-        } => vazio!(
+        } => clear!(
             access_key_id,
             secret_access_key,
-            regiao,
+            region,
             role_arn,
             session_token
         ),
         DataDraft::Smtp {
             host,
-            port: porta,
-            username: usuario,
-            password: senha,
-            security: seguranca,
-        } => vazio!(host, porta, usuario, senha, seguranca),
+            port,
+            username,
+            password,
+            security,
+        } => clear!(host, port, username, password, security),
         DataDraft::FtpSftp {
-            protocol: protocolo,
+            protocol,
             host,
-            port: porta,
-            username: usuario,
-            password: senha,
-            private_key: chave_privada,
+            port,
+            username,
+            password,
+            private_key,
             passphrase,
-        } => vazio!(
-            protocolo,
+        } => clear!(
+            protocol,
             host,
-            porta,
-            usuario,
-            senha,
-            chave_privada,
+            port,
+            username,
+            password,
+            private_key,
             passphrase
         ),
-        DataDraft::SecureNote { text: texto } => vazio!(texto),
+        DataDraft::SecureNote { text } => clear!(text),
         DataDraft::Generic => {}
     }
     d
 }
 
 #[test]
-fn v2_12_campo_obrigatorio_de_cada_tipo() {
-    // (dados, campo do rascunho, campo no erro)
-    let casos: Vec<(FazDados, &str, &str)> = vec![
+fn v2_12_required_field_of_each_type() {
+    // (data, draft field, field in the error)
+    let cases: Vec<(MakeData, &str, &str)> = vec![
         (login, "url", "url"),
-        (login, "usuario", "usuário"),
-        (login, "senha", "senha"),
-        (banco, "motor", "motor"),
-        (banco, "host", "host"),
-        (banco, "usuario", "usuário"),
-        (banco, "senha", "senha"),
-        (servidor_senha, "host", "host"),
-        (servidor_senha, "usuario", "usuário"),
-        (servidor_senha, "senha", "autenticação"),
-        (servidor_chave, "chave_privada", "autenticação"),
+        (login, "username", "usuário"),
+        (login, "password", "senha"),
+        (database, "engine", "motor"),
+        (database, "host", "host"),
+        (database, "username", "usuário"),
+        (database, "password", "senha"),
+        (server_password, "host", "host"),
+        (server_password, "username", "usuário"),
+        (server_password, "password", "autenticação"),
+        (server_key, "private_key", "autenticação"),
         (api, "token", "token"),
         (aws, "access_key_id", "access key ID"),
         (aws, "secret_access_key", "secret access key"),
-        (aws, "regiao", "região"),
+        (aws, "region", "região"),
         (smtp, "host", "host"),
-        (smtp, "usuario", "usuário"),
-        (smtp, "senha", "senha"),
-        (smtp, "seguranca", "segurança"),
-        (sftp, "protocolo", "protocolo"),
+        (smtp, "username", "usuário"),
+        (smtp, "password", "senha"),
+        (smtp, "security", "segurança"),
+        (sftp, "protocol", "protocolo"),
         (sftp, "host", "host"),
-        (sftp, "usuario", "usuário"),
-        (sftp, "senha", "autenticação"),
-        (nota, "texto", "texto"),
+        (sftp, "username", "usuário"),
+        (sftp, "password", "autenticação"),
+        (note, "text", "texto"),
     ];
-    for (dados, tirar, campo) in casos {
-        let r = rascunho("x", "acme", "dev", sem(dados(), tirar));
-        let e = erros(r);
+    for (data, remove, field) in cases {
+        let r = draft("x", "acme", "dev", without(data(), remove));
+        let e = errors(r);
         assert!(
-            e.has(campo),
-            "sem {tirar}: esperava erro em {campo}, veio {e}"
+            e.has(field),
+            "sem {remove}: esperava erro em {field}, veio {e}"
         );
         assert!(e.to_string().starts_with("entrada inválida: "), "{e}");
     }
-    // Sem a chave e sem senha: nenhuma autenticação (a passphrase sozinha não vale).
-    let r = rascunho(
+    // Without the key and without a password: no auth (the passphrase alone does not
+    // count).
+    let r = draft(
         "x",
         "acme",
         "dev",
-        sem(sem(servidor_chave(), "chave_privada"), "passphrase"),
+        without(without(server_key(), "private_key"), "passphrase"),
     );
-    assert!(erros(r).has_reason("autenticação", "informe a senha ou a chave"));
-    // Genérico sem extras.
-    let mut g = generico();
+    assert!(errors(r).has_reason("autenticação", "informe a senha ou a chave"));
+    // Generic without extras.
+    let mut g = generic();
     g.extras.clear();
-    assert!(erros(g).has_reason(
+    assert!(errors(g).has_reason(
         "campos extras",
         "o tipo genérico precisa de pelo menos um campo extra"
     ));
-    // Opcionais podem faltar.
-    for (dados, tirar) in [
-        (login as FazDados, "totp_semente"),
-        (banco, "base"),
-        (banco, "porta"),
-        (banco, "tunel"),
-        (servidor_chave, "passphrase"),
-        (servidor_senha, "porta"),
+    // Optional ones may be missing.
+    for (data, remove) in [
+        (login as MakeData, "totp_seed"),
+        (database, "db_name"),
+        (database, "port"),
+        (database, "tunnel"),
+        (server_key, "passphrase"),
+        (server_password, "port"),
         (api, "url"),
-        (api, "variavel"),
+        (api, "variable"),
         (aws, "role_arn"),
         (aws, "session_token"),
-        (smtp, "porta"),
-        (sftp, "porta"),
+        (smtp, "port"),
+        (sftp, "port"),
     ] {
-        valida(rascunho("x", "acme", "dev", sem(dados(), tirar)));
+        valid(draft("x", "acme", "dev", without(data(), remove)));
     }
 }
 
 #[test]
-fn v2_12_sem_grupo_sem_ambiente_e_ambiente_fora_da_lista() {
-    for r in um_de_cada() {
-        let tipo = r.data.kind();
-        let mut sem_grupo = r;
-        sem_grupo.group.clear();
-        let e = erros(sem_grupo);
-        assert!(e.has_reason("grupo", "obrigatório"), "{tipo}: {e}");
+fn v2_12_no_group_no_environment_and_environment_off_the_list() {
+    for r in one_of_each() {
+        let kind = r.data.kind();
+        let mut no_group = r;
+        no_group.group.clear();
+        let e = errors(no_group);
+        assert!(e.has_reason("grupo", "obrigatório"), "{kind}: {e}");
     }
-    for r in um_de_cada() {
-        let mut sem_ambiente = r;
-        sem_ambiente.environment.clear();
-        assert!(erros(sem_ambiente).has_reason("ambiente", "obrigatório"));
+    for r in one_of_each() {
+        let mut no_environment = r;
+        no_environment.environment.clear();
+        assert!(errors(no_environment).has_reason("ambiente", "obrigatório"));
     }
-    for fora in [
+    for outside in [
         "producao", "PROD", "Dev", " dev", "dev ", "staging", "qa", "prod\n",
     ] {
-        let r = rascunho("x", "acme", fora, nota());
+        let r = draft("x", "acme", outside, note());
         assert!(
-            erros(r).has_reason("ambiente", "deve ser dev, stage ou prod"),
-            "ambiente {fora:?} passou"
+            errors(r).has_reason("ambiente", "deve ser dev, stage ou prod"),
+            "ambiente {outside:?} passou"
         );
     }
     for ok in ["dev", "stage", "prod"] {
         assert_eq!(
-            valida(rascunho("x", "acme", ok, nota()))
-                .environment()
-                .name(),
+            valid(draft("x", "acme", ok, note())).environment().name(),
             ok
         );
     }
 }
 
 #[test]
-fn v2_12_servidor_com_senha_e_chave_ou_sem_nenhuma() {
-    let mut d = servidor_chave();
-    if let DataDraft::Server {
-        password: senha, ..
-    } = &mut d
-    {
-        *senha = s("falso-SSH-senha-01");
+fn v2_12_server_with_password_and_key_or_neither() {
+    let mut d = server_key();
+    if let DataDraft::Server { password, .. } = &mut d {
+        *password = s("falso-SSH-senha-01");
     }
-    let e = erros(rascunho("x", "acme", "dev", d));
+    let e = errors(draft("x", "acme", "dev", d));
     assert!(
         e.has_reason("autenticação", "use senha ou chave, não as duas"),
         "{e}"
     );
 
-    let d = sem(sem(servidor_senha(), "senha"), "chave_privada");
-    let e = erros(rascunho("x", "acme", "dev", d));
+    let d = without(without(server_password(), "password"), "private_key");
+    let e = errors(draft("x", "acme", "dev", d));
     assert!(
         e.has_reason("autenticação", "informe a senha ou a chave"),
         "{e}"
     );
 
-    // Mesmo vale para ftp/sftp.
+    // The same goes for ftp/sftp.
     let mut d = sftp();
-    if let DataDraft::FtpSftp {
-        private_key: chave_privada,
-        ..
-    } = &mut d
-    {
-        *chave_privada = Some(Secret::from_text(chave_falsa()));
+    if let DataDraft::FtpSftp { private_key, .. } = &mut d {
+        *private_key = Some(Secret::from_text(fake_key()));
     }
-    assert!(erros(rascunho("x", "acme", "dev", d)).has("autenticação"));
+    assert!(errors(draft("x", "acme", "dev", d)).has("autenticação"));
 
-    // Passphrase com senha não vale.
-    let mut d = servidor_senha();
+    // A passphrase with a password does not count.
+    let mut d = server_password();
     if let DataDraft::Server { passphrase, .. } = &mut d {
         *passphrase = s("falso-passphrase-01");
     }
     assert!(
-        erros(rascunho("x", "acme", "dev", d))
+        errors(draft("x", "acme", "dev", d))
             .has_reason("passphrase", "passphrase só vale com chave")
     );
 
-    // ftp (sem s) não aceita chave.
-    let mut d = sem(sftp(), "senha");
+    // ftp (without the s) does not accept a key.
+    let mut d = without(sftp(), "password");
     if let DataDraft::FtpSftp {
-        protocol: protocolo,
-        private_key: chave_privada,
+        protocol,
+        private_key,
         ..
     } = &mut d
     {
-        *protocolo = t("ftp");
-        *chave_privada = Some(Secret::from_text(chave_falsa()));
+        *protocol = t("ftp");
+        *private_key = Some(Secret::from_text(fake_key()));
     }
     assert!(
-        erros(rascunho("x", "acme", "dev", d))
+        errors(draft("x", "acme", "dev", d))
             .has_reason("autenticação", "ftp não aceita chave; use sftp ou senha")
     );
 
-    // Texto qualquer no lugar da chave.
-    let mut d = sem(servidor_chave(), "chave_privada");
-    if let DataDraft::Server {
-        private_key: chave_privada,
-        ..
-    } = &mut d
-    {
-        *chave_privada = s("falso-SSH-senha-01");
+    // Any text in place of the key.
+    let mut d = without(server_key(), "private_key");
+    if let DataDraft::Server { private_key, .. } = &mut d {
+        *private_key = s("falso-SSH-senha-01");
     }
-    assert!(erros(rascunho("x", "acme", "dev", d)).has("chave privada"));
+    assert!(errors(draft("x", "acme", "dev", d)).has("chave privada"));
 }
 
 #[test]
-fn v2_12_banco_com_motor_fora_da_lista() {
-    for motor in ["oracle", "Postgres", "postgresql", "sqlite", "postgres "] {
-        let mut d = banco();
+fn v2_12_database_with_engine_off_the_list() {
+    for engine in ["oracle", "Postgres", "postgresql", "sqlite", "postgres "] {
+        let mut d = database();
         if let DataDraft::Database { engine: m, .. } = &mut d {
-            *m = t(motor);
+            *m = t(engine);
         }
-        let e = erros(rascunho("x", "acme", "dev", d));
+        let e = errors(draft("x", "acme", "dev", d));
         assert!(
             e.has_reason(
                 "motor",
                 "fora da lista: postgres, mysql, mongo, redis ou sqlserver"
             ),
-            "motor {motor:?}: {e}"
+            "motor {engine:?}: {e}"
         );
     }
-    for motor in Engine::ALL {
-        let mut d = banco();
+    for engine in Engine::ALL {
+        let mut d = database();
         if let DataDraft::Database {
-            engine: m,
-            db_name: base,
-            ..
+            engine: m, db_name, ..
         } = &mut d
         {
-            *m = t(motor.name());
-            if motor == Engine::Redis {
-                // No redis a base é número (D33).
-                *base = t("1");
+            *m = t(engine.name());
+            if engine == Engine::Redis {
+                // In redis the database name is a number (D33).
+                *db_name = t("1");
             }
         }
-        valida(rascunho("x", "acme", "dev", d));
+        valid(draft("x", "acme", "dev", d));
     }
 }
 
 #[test]
-fn v2_12_outros_formatos() {
-    let casos: Vec<(DataDraft, &str)> = vec![
+fn v2_12_other_formats() {
+    let cases: Vec<(DataDraft, &str)> = vec![
         (
             {
-                let mut d = banco();
-                if let DataDraft::Database { port: porta, .. } = &mut d {
-                    *porta = t("0");
+                let mut d = database();
+                if let DataDraft::Database { port, .. } = &mut d {
+                    *port = t("0");
                 }
                 d
             },
@@ -680,9 +662,9 @@ fn v2_12_outros_formatos() {
         ),
         (
             {
-                let mut d = banco();
-                if let DataDraft::Database { port: porta, .. } = &mut d {
-                    *porta = t("65536");
+                let mut d = database();
+                if let DataDraft::Database { port, .. } = &mut d {
+                    *port = t("65536");
                 }
                 d
             },
@@ -690,9 +672,9 @@ fn v2_12_outros_formatos() {
         ),
         (
             {
-                let mut d = banco();
-                if let DataDraft::Database { port: porta, .. } = &mut d {
-                    *porta = t("+22");
+                let mut d = database();
+                if let DataDraft::Database { port, .. } = &mut d {
+                    *port = t("+22");
                 }
                 d
             },
@@ -721,12 +703,8 @@ fn v2_12_outros_formatos() {
         (
             {
                 let mut d = login();
-                if let DataDraft::Login {
-                    totp_seed: totp_semente,
-                    ..
-                } = &mut d
-                {
-                    *totp_semente = s("jbswy3dpehpk3pxp");
+                if let DataDraft::Login { totp_seed, .. } = &mut d {
+                    *totp_seed = s("jbswy3dpehpk3pxp");
                 }
                 d
             },
@@ -735,12 +713,8 @@ fn v2_12_outros_formatos() {
         (
             {
                 let mut d = login();
-                if let DataDraft::Login {
-                    totp_seed: totp_semente,
-                    ..
-                } = &mut d
-                {
-                    *totp_semente = s("JBSWY3DP");
+                if let DataDraft::Login { totp_seed, .. } = &mut d {
+                    *totp_seed = s("JBSWY3DP");
                 }
                 d
             },
@@ -749,12 +723,8 @@ fn v2_12_outros_formatos() {
         (
             {
                 let mut d = smtp();
-                if let DataDraft::Smtp {
-                    security: seguranca,
-                    ..
-                } = &mut d
-                {
-                    *seguranca = t("ssl");
+                if let DataDraft::Smtp { security, .. } = &mut d {
+                    *security = t("ssl");
                 }
                 d
             },
@@ -763,12 +733,8 @@ fn v2_12_outros_formatos() {
         (
             {
                 let mut d = sftp();
-                if let DataDraft::FtpSftp {
-                    protocol: protocolo,
-                    ..
-                } = &mut d
-                {
-                    *protocolo = t("ftps");
+                if let DataDraft::FtpSftp { protocol, .. } = &mut d {
+                    *protocol = t("ftps");
                 }
                 d
             },
@@ -777,8 +743,8 @@ fn v2_12_outros_formatos() {
         (
             {
                 let mut d = aws();
-                if let DataDraft::Aws { region: regiao, .. } = &mut d {
-                    *regiao = t("Sao Paulo");
+                if let DataDraft::Aws { region, .. } = &mut d {
+                    *region = t("Sao Paulo");
                 }
                 d
             },
@@ -797,44 +763,41 @@ fn v2_12_outros_formatos() {
         (
             {
                 let mut d = api();
-                if let DataDraft::Api {
-                    variable: variavel, ..
-                } = &mut d
-                {
-                    *variavel = t("github-token");
+                if let DataDraft::Api { variable, .. } = &mut d {
+                    *variable = t("github-token");
                 }
                 d
             },
             "variável",
         ),
     ];
-    for (dados, campo) in casos {
-        let e = erros(rascunho("x", "acme", "dev", dados));
-        assert!(e.has(campo), "esperava erro em {campo}: {e}");
+    for (data, field) in cases {
+        let e = errors(draft("x", "acme", "dev", data));
+        assert!(e.has(field), "esperava erro em {field}: {e}");
     }
-    // Nome da entrada.
-    for nome in ["", "Acme", "-x", ".x", "a b", "acme/dev", &"a".repeat(65)] {
+    // Entry name.
+    for name in ["", "Acme", "-x", ".x", "a b", "acme/dev", &"a".repeat(65)] {
         assert!(
-            erros(rascunho(nome, "acme", "dev", nota())).has("nome"),
-            "{nome:?}"
+            errors(draft(name, "acme", "dev", note())).has("nome"),
+            "{name:?}"
         );
     }
 }
 
 #[test]
-fn v2_12_junta_todos_os_erros() {
+fn v2_12_collects_all_errors() {
     let r = Draft {
         name: String::new(),
         group: String::new(),
         environment: t("qa"),
         project: String::new(),
         tags: vec![t("a b")],
-        data: sem(sem(banco(), "senha"), "host"),
+        data: without(without(database(), "password"), "host"),
         extras: vec![extra("", "x", false)],
-        attachments: vec![anexo("../x", b"y")],
+        attachments: vec![attachment("../x", b"y")],
     };
-    let e = erros(r);
-    for campo in [
+    let e = errors(r);
+    for field in [
         "nome",
         "grupo",
         "ambiente",
@@ -844,18 +807,18 @@ fn v2_12_junta_todos_os_erros() {
         "campos extras",
         "anexos",
     ] {
-        assert!(e.has(campo), "falta {campo}: {e}");
+        assert!(e.has(field), "falta {field}: {e}");
     }
     let tag = e.list().iter().find(|x| x.field == "tags").copied();
     assert_eq!(tag.and_then(|x| x.position), Some(1));
 }
 
-// ---- V2.13: campos secretos de cada tipo ----
+// ---- V2.13: secret fields of each type ----
 
 #[test]
-fn v2_13_campos_secretos_de_cada_tipo() {
+fn v2_13_secret_fields_of_each_type() {
     use SecretOrigin::{Attachment as A, Extra as X, Field as C};
-    let esperado: Vec<(&str, Vec<SecretOrigin<'static>>)> = vec![
+    let expected: Vec<(&str, Vec<SecretOrigin<'static>>)> = vec![
         ("acme-wp-dev", vec![C("senha"), C("semente TOTP")]),
         ("acme-pg-dev", vec![C("senha")]),
         ("acme-ssh-senha-stage", vec![C("senha")]),
@@ -873,18 +836,18 @@ fn v2_13_campos_secretos_de_cada_tipo() {
         ("gama-nota", vec![C("texto")]),
         ("gama-generico", vec![X("CHAVE_LICENCA"), A("app.env")]),
     ];
-    let entradas: Vec<Entry> = um_de_cada().into_iter().map(valida).collect();
-    for (e, (nome, origens)) in entradas.iter().zip(&esperado) {
-        assert_eq!(e.name(), *nome);
-        let achadas: Vec<SecretOrigin<'_>> = e.secrets().iter().map(|s| s.origin).collect();
-        assert_eq!(&achadas, origens, "{nome}");
-        // Os não secretos não estão na lista.
+    let entries: Vec<Entry> = one_of_each().into_iter().map(valid).collect();
+    for (e, (name, origins)) in entries.iter().zip(&expected) {
+        assert_eq!(e.name(), *name);
+        let found: Vec<SecretOrigin<'_>> = e.secrets().iter().map(|s| s.origin).collect();
+        assert_eq!(&found, origins, "{name}");
+        // The non-secret ones are not in the list.
         for sd in e.secrets() {
             assert!(!sd.value.is_empty());
         }
     }
-    // Os valores listados são exatamente os segredos de teste.
-    let mut valores: Vec<Vec<u8>> = entradas
+    // The listed values are exactly the test secrets.
+    let mut values: Vec<Vec<u8>> = entries
         .iter()
         .flat_map(|e| {
             e.secrets()
@@ -893,53 +856,54 @@ fn v2_13_campos_secretos_de_cada_tipo() {
                 .collect::<Vec<_>>()
         })
         .collect();
-    valores.sort();
-    for segredo in segredos_de_teste() {
+    values.sort();
+    for secret in test_secrets() {
         assert!(
-            valores
+            values
                 .iter()
-                .any(|v| v.windows(segredo.len()).any(|w| w == segredo.as_bytes())),
+                .any(|v| v.windows(secret.len()).any(|w| w == secret.as_bytes())),
             "segredo de teste fora da lista"
         );
     }
-    // Ftp/sftp com chave: chave e passphrase.
-    let mut d = sem(sftp(), "senha");
+    // Ftp/sftp with a key: key and passphrase.
+    let mut d = without(sftp(), "password");
     if let DataDraft::FtpSftp {
-        private_key: chave_privada,
+        private_key,
         passphrase,
         ..
     } = &mut d
     {
-        *chave_privada = Some(Secret::from_text(chave_falsa()));
+        *private_key = Some(Secret::from_text(fake_key()));
         *passphrase = s("falso-passphrase-01");
     }
-    let e = valida(rascunho("x", "beta", "dev", d));
-    let origens: Vec<_> = e.secrets().iter().map(|s| s.origin).collect();
-    assert_eq!(origens, vec![C("chave privada"), C("passphrase")]);
-    // Extra não secreto não entra; todo anexo entra, mesmo num tipo que não é genérico.
-    let mut r = rascunho("y", "acme", "dev", login());
+    let e = valid(draft("x", "beta", "dev", d));
+    let origins: Vec<_> = e.secrets().iter().map(|s| s.origin).collect();
+    assert_eq!(origins, vec![C("chave privada"), C("passphrase")]);
+    // A non-secret extra does not go in; every attachment does, even in a type that is
+    // not generic.
+    let mut r = draft("y", "acme", "dev", login());
     r.extras = vec![extra("SITE_ID", "7", false)];
-    r.attachments = vec![anexo("ca-teste.pem", b"conteudo falso")];
-    let e = valida(r);
-    let origens: Vec<_> = e.secrets().iter().map(|s| s.origin).collect();
+    r.attachments = vec![attachment("ca-teste.pem", b"conteudo falso")];
+    let e = valid(r);
+    let origins: Vec<_> = e.secrets().iter().map(|s| s.origin).collect();
     assert_eq!(
-        origens,
+        origins,
         vec![C("senha"), C("semente TOTP"), A("ca-teste.pem")]
     );
 }
 
-// ---- V2.16: nomes de extras e anexos (parte da validação) ----
+// ---- V2.16: names of extras and attachments (validation part) ----
 
 #[test]
-fn v2_16_normalizacao_e_repetidos() {
+fn v2_16_normalization_and_duplicates() {
     assert_eq!(variable_name("api-key"), "API_KEY");
     assert_eq!(variable_name("chave acesso.pem"), "CHAVE_ACESSO_PEM");
     assert_eq!(variable_name("região"), "REGI_O");
     assert_eq!(variable_name("app.env"), "APP_ENV");
 
-    let mut r = generico();
+    let mut r = generic();
     r.extras = vec![extra("api-key", "1", false), extra("API_KEY", "2", true)];
-    let e = erros(r);
+    let e = errors(r);
     assert!(
         e.has_reason(
             "campos extras",
@@ -949,35 +913,35 @@ fn v2_16_normalizacao_e_repetidos() {
     );
     assert_eq!(e.list()[0].position, Some(2));
 
-    let mut r = generico();
+    let mut r = generic();
     r.extras.push(extra("api key", "1", false));
     r.extras.push(extra("Api.Key", "2", false));
-    assert!(erros(r).has("campos extras"));
+    assert!(errors(r).has("campos extras"));
 
-    let mut r = generico();
+    let mut r = generic();
     r.attachments = vec![
-        anexo("chave acesso.pem", b"a"),
-        anexo("chave-acesso.pem", b"b"),
+        attachment("chave acesso.pem", b"a"),
+        attachment("chave-acesso.pem", b"b"),
     ];
-    assert!(erros(r).has_reason("anexos", "vira a mesma variável de outro anexo"));
+    assert!(errors(r).has_reason("anexos", "vira a mesma variável de outro anexo"));
 
-    let mut r = generico();
+    let mut r = generic();
     r.extras = vec![extra("api-key", "1", false)];
-    r.attachments = vec![anexo("chave acesso.pem", b"a")];
-    let e = valida(r);
+    r.attachments = vec![attachment("chave acesso.pem", b"a")];
+    let e = valid(r);
     assert_eq!(e.extras()[0].name(), "api-key");
     assert_eq!(e.attachments()[0].name(), "chave acesso.pem");
 }
 
-// ---- V2.27 (SEG): nenhuma formatação mostra segredo ----
+// ---- V2.27 (SEG): no formatting shows a secret ----
 
 #[test]
-fn v2_27_debug_e_display_sem_segredo() {
-    for r in um_de_cada() {
-        sem_segredo(&format!("{r:?}"), "Debug do rascunho");
-        sem_segredo(&format!("{r:#?}"), "Debug alternativo do rascunho");
-        let e = valida(r);
-        let saidas = [
+fn v2_27_debug_and_display_without_secret() {
+    for r in one_of_each() {
+        no_secret(&format!("{r:?}"), "Debug do rascunho");
+        no_secret(&format!("{r:#?}"), "Debug alternativo do rascunho");
+        let e = valid(r);
+        let outputs = [
             format!("{e:?}"),
             format!("{e:#?}"),
             format!("{e}"),
@@ -986,10 +950,10 @@ fn v2_27_debug_e_display_sem_segredo() {
             format!("{:?}", e.attachments()),
             format!("{:?}", e.secrets()),
         ];
-        for saida in &saidas {
-            sem_segredo(saida, "formatação da entrada");
+        for output in &outputs {
+            no_secret(output, "formatação da entrada");
         }
-        assert!(saidas[0].contains("••••") || e.secrets().is_empty());
+        assert!(outputs[0].contains("••••") || e.secrets().is_empty());
         for sd in e.secrets() {
             assert_eq!(format!("{:?}", sd.value), "Secret(••••)");
             assert_eq!(format!("{}", sd.value), "••••");
@@ -999,123 +963,126 @@ fn v2_27_debug_e_display_sem_segredo() {
 }
 
 #[test]
-fn v2_27_erros_nao_carregam_valor_do_usuario() {
-    // Ataque: o segredo vai parar em campos errados (nome, host, usuário, URL, extra,
-    // tag, motor, ambiente…) e em campos secretos inválidos. Nenhum erro o repete.
-    let alvo = "falso-PG:s3nha/01@#";
-    let invisivel = format!("{alvo}\u{202E}");
-    let mut d = banco();
+fn v2_27_errors_do_not_carry_user_value() {
+    // Attack: the secret ends up in wrong fields (name, host, username, URL, extra,
+    // tag, engine, environment…) and in invalid secret fields. No error repeats it.
+    let target = "falso-PG:s3nha/01@#";
+    let invisible = format!("{target}\u{202E}");
+    let mut d = database();
     if let DataDraft::Database {
-        engine: motor,
+        engine,
         host,
-        port: porta,
-        db_name: base,
-        username: usuario,
-        password: senha,
-        tunnel: tunel,
+        port,
+        db_name,
+        username,
+        password,
+        tunnel,
     } = &mut d
     {
-        *motor = t(alvo);
-        *host = t(alvo);
-        *porta = t(alvo);
-        *base = invisivel.clone();
-        *usuario = format!("-{alvo}");
-        *senha = Some(Secret::from_text(format!("{alvo}\0")));
-        *tunel = t(alvo);
+        *engine = t(target);
+        *host = t(target);
+        *port = t(target);
+        *db_name = invisible.clone();
+        *username = format!("-{target}");
+        *password = Some(Secret::from_text(format!("{target}\0")));
+        *tunnel = t(target);
     }
     let r = Draft {
-        name: t(alvo),
-        group: invisivel.clone(),
-        environment: t(alvo),
-        project: invisivel.clone(),
-        tags: vec![t(alvo), format!("{alvo} x")],
+        name: t(target),
+        group: invisible.clone(),
+        environment: t(target),
+        project: invisible.clone(),
+        tags: vec![t(target), format!("{target} x")],
         data: d,
-        extras: vec![extra(alvo, alvo, false), extra(&invisivel, alvo, true)],
-        attachments: vec![anexo(&format!("../{alvo}"), alvo.as_bytes())],
+        extras: vec![
+            extra(target, target, false),
+            extra(&invisible, target, true),
+        ],
+        attachments: vec![attachment(&format!("../{target}"), target.as_bytes())],
     };
-    let e = erros(r);
+    let e = errors(r);
     assert!(e.list().len() >= 10, "{e}");
-    for texto in [format!("{e}"), format!("{e:?}"), format!("{e:#?}")] {
-        sem_segredo(&texto, "erro de validação");
-        assert!(!texto.contains("s3nha"));
+    for text in [format!("{e}"), format!("{e:?}"), format!("{e:#?}")] {
+        no_secret(&text, "erro de validação");
+        assert!(!text.contains("s3nha"));
     }
     for x in e.list() {
-        sem_segredo(&x.to_string(), "erro de validação");
+        no_secret(&x.to_string(), "erro de validação");
     }
-    // Mesmo nos erros de conferência no cofre.
-    let a = valida(rascunho("a", "acme", "dev", banco()));
-    let outra = [valida(rascunho("a", "acme", "dev", nota()))];
-    let erro = a.verify_in_vault(&outra).expect_err("nome repetido");
-    sem_segredo(&format!("{erro} {erro:?}"), "erro de conferência");
+    // Also in the errors of the vault verification.
+    let a = valid(draft("a", "acme", "dev", database()));
+    let other = [valid(draft("a", "acme", "dev", note()))];
+    let error = a.verify_in_vault(&other).expect_err("nome repetido");
+    no_secret(&format!("{error} {error:?}"), "erro de conferência");
 }
 
-// ---- V2.28 (SEG): zera ao sair, sem Clone ----
+// ---- V2.28 (SEG): zeroed on drop, no Clone ----
 
-/// Falha a compilação se `T` implementar `Clone` (dois impls viram ambíguos).
-trait NaoClone<A> {
-    fn conferir() {}
+/// Fails to compile if `T` implements `Clone` (the two impls become ambiguous).
+trait NotClone<A> {
+    fn check() {}
 }
-impl<T> NaoClone<()> for T {}
+impl<T> NotClone<()> for T {}
 #[allow(dead_code)]
-struct ImplementaClone;
-impl<T: Clone> NaoClone<ImplementaClone> for T {}
+struct ImplementsClone;
+impl<T: Clone> NotClone<ImplementsClone> for T {}
 
-fn zera_ao_sair<T: zeroize::ZeroizeOnDrop>() {}
+fn zeroes_on_drop<T: zeroize::ZeroizeOnDrop>() {}
 
 #[test]
-fn v2_28_tipos_de_segredo_zeram_e_nao_clonam() {
-    // Em tempo de compilação: se um destes ganhar `Clone`, o teste não compila.
-    <Secret as NaoClone<_>>::conferir();
-    <Entry as NaoClone<_>>::conferir();
-    <Data as NaoClone<_>>::conferir();
-    <Login as NaoClone<_>>::conferir();
-    <Database as NaoClone<_>>::conferir();
-    <Server as NaoClone<_>>::conferir();
-    <Auth as NaoClone<_>>::conferir();
-    <Api as NaoClone<_>>::conferir();
-    <Aws as NaoClone<_>>::conferir();
-    <Smtp as NaoClone<_>>::conferir();
-    <FtpSftp as NaoClone<_>>::conferir();
-    <SecureNote as NaoClone<_>>::conferir();
-    <ExtraField as NaoClone<_>>::conferir();
-    <ExtraValue as NaoClone<_>>::conferir();
-    <Attachment as NaoClone<_>>::conferir();
-    <Draft as NaoClone<_>>::conferir();
-    <DataDraft as NaoClone<_>>::conferir();
-    <ExtraDraft as NaoClone<_>>::conferir();
-    <AttachmentDraft as NaoClone<_>>::conferir();
-    <crate::format::MasterPassword as NaoClone<_>>::conferir();
-    <crate::format::OpenVault as NaoClone<_>>::conferir();
-    <crate::format::VaultKeys as NaoClone<_>>::conferir();
-    // Configuração do corpo v2 (Fase 19b, D30).
-    <crate::configuracao::HashPin as NaoClone<_>>::conferir();
-    <crate::configuracao::Configuracao as NaoClone<_>>::conferir();
+fn v2_28_secret_types_zeroize_and_do_not_clone() {
+    // At compile time: if one of these gains `Clone`, the test does not compile.
+    <Secret as NotClone<_>>::check();
+    <Entry as NotClone<_>>::check();
+    <Data as NotClone<_>>::check();
+    <Login as NotClone<_>>::check();
+    <Database as NotClone<_>>::check();
+    <Server as NotClone<_>>::check();
+    <Auth as NotClone<_>>::check();
+    <Api as NotClone<_>>::check();
+    <Aws as NotClone<_>>::check();
+    <Smtp as NotClone<_>>::check();
+    <FtpSftp as NotClone<_>>::check();
+    <SecureNote as NotClone<_>>::check();
+    <ExtraField as NotClone<_>>::check();
+    <ExtraValue as NotClone<_>>::check();
+    <Attachment as NotClone<_>>::check();
+    <Draft as NotClone<_>>::check();
+    <DataDraft as NotClone<_>>::check();
+    <ExtraDraft as NotClone<_>>::check();
+    <AttachmentDraft as NotClone<_>>::check();
+    <crate::format::MasterPassword as NotClone<_>>::check();
+    <crate::format::OpenVault as NotClone<_>>::check();
+    <crate::format::VaultKeys as NotClone<_>>::check();
+    // Configuration of the v2 body (Phase 19b, D30).
+    <crate::config::PinHash as NotClone<_>>::check();
+    <crate::config::VaultConfig as NotClone<_>>::check();
 
-    zera_ao_sair::<Secret>();
-    zera_ao_sair::<Entry>();
-    zera_ao_sair::<Data>();
-    zera_ao_sair::<Auth>();
-    zera_ao_sair::<ExtraField>();
-    zera_ao_sair::<Attachment>();
-    // A chave de dados do formato (Fase 13) é `Zeroizing<[u8; 32]>`.
-    zera_ao_sair::<crate::crypto::Key>();
-    // A senha mestra e o cofre aberto (que guarda a chave de dados), Fase 15a.
-    zera_ao_sair::<crate::format::MasterPassword>();
-    zera_ao_sair::<crate::format::OpenVault>();
-    zera_ao_sair::<crate::format::VaultKeys>();
-    // O hash do PIN e a configuração que o guarda (Fase 19b, D30).
-    zera_ao_sair::<crate::configuracao::HashPin>();
-    zera_ao_sair::<crate::configuracao::Configuracao>();
+    zeroes_on_drop::<Secret>();
+    zeroes_on_drop::<Entry>();
+    zeroes_on_drop::<Data>();
+    zeroes_on_drop::<Auth>();
+    zeroes_on_drop::<ExtraField>();
+    zeroes_on_drop::<Attachment>();
+    // The format's data key (Phase 13) is `Zeroizing<[u8; 32]>`.
+    zeroes_on_drop::<crate::crypto::Key>();
+    // The master password and the open vault (which holds the data key), Phase 15a.
+    zeroes_on_drop::<crate::format::MasterPassword>();
+    zeroes_on_drop::<crate::format::OpenVault>();
+    zeroes_on_drop::<crate::format::VaultKeys>();
+    // The PIN hash and the configuration that holds it (Phase 19b, D30).
+    zeroes_on_drop::<crate::config::PinHash>();
+    zeroes_on_drop::<crate::config::VaultConfig>();
 
     assert!(core::mem::needs_drop::<Secret>());
 }
 
-// ---- Ataques à validação ----
+// ---- Attacks on validation ----
 
 #[test]
-fn ataque_host_e_usuario_viram_opcao_do_ssh() {
-    // `ward ssh` põe host e usuário no argv do `ssh`: começar com '-' viraria opção
-    // (ex.: -oProxyCommand=…, execução de comando).
+fn attack_host_and_username_become_ssh_option() {
+    // `ward ssh` puts host and username in the `ssh` argv: starting with '-' would turn
+    // into an option (e.g. -oProxyCommand=…, command execution).
     for host in [
         "-oProxyCommand=touch /tmp/x",
         "-p",
@@ -1123,43 +1090,40 @@ fn ataque_host_e_usuario_viram_opcao_do_ssh() {
         "a;b",
         "a\nb",
     ] {
-        let mut d = servidor_senha();
+        let mut d = server_password();
         if let DataDraft::Server { host: h, .. } = &mut d {
             *h = t(host);
         }
-        assert!(
-            erros(rascunho("x", "acme", "dev", d)).has("host"),
-            "{host:?}"
-        );
+        assert!(errors(draft("x", "acme", "dev", d)).has("host"), "{host:?}");
     }
-    for usuario in ["-oProxyCommand=id", "-l", "de ploy"] {
-        for dados in [servidor_senha(), sftp(), banco(), smtp()] {
-            let mut d = dados;
+    for username in ["-oProxyCommand=id", "-l", "de ploy"] {
+        for data in [server_password(), sftp(), database(), smtp()] {
+            let mut d = data;
             match &mut d {
                 DataDraft::Server { username: u, .. }
                 | DataDraft::FtpSftp { username: u, .. }
                 | DataDraft::Database { username: u, .. }
-                | DataDraft::Smtp { username: u, .. } => *u = t(usuario),
+                | DataDraft::Smtp { username: u, .. } => *u = t(username),
                 _ => unreachable!(),
             }
             assert!(
-                erros(rascunho("x", "acme", "dev", d)).has("usuário"),
-                "{usuario:?}"
+                errors(draft("x", "acme", "dev", d)).has("usuário"),
+                "{username:?}"
             );
         }
     }
-    // Salto e túnel com nome que viraria opção.
-    let mut d = servidor_senha();
-    if let DataDraft::Server { jump: salto, .. } = &mut d {
-        *salto = t("-J");
+    // Jump and tunnel with a name that would turn into an option.
+    let mut d = server_password();
+    if let DataDraft::Server { jump, .. } = &mut d {
+        *jump = t("-J");
     }
-    assert!(erros(rascunho("x", "acme", "dev", d)).has("servidor de salto"));
+    assert!(errors(draft("x", "acme", "dev", d)).has("servidor de salto"));
 }
 
 #[test]
-fn ataque_texto_invisivel_forja_a_janela_de_aprovacao() {
-    // Bidi override, largura zero, separador de linha e controle: o nome exibido na
-    // janela de aprovação e na lista não pode mentir.
+fn attack_invisible_text_forges_the_approval_window() {
+    // Bidi override, zero width, line separator and control: the name shown in the
+    // approval window and in the list cannot lie.
     for c in [
         '\u{202E}',
         '\u{200B}',
@@ -1172,12 +1136,12 @@ fn ataque_texto_invisivel_forja_a_janela_de_aprovacao() {
         '\u{E0041}',
         '\u{00AD}',
     ] {
-        let falso = format!("acme{c}prod");
-        let mut r = rascunho("x", &falso, "dev", nota());
-        r.project = falso.clone();
-        r.extras = vec![extra(&falso, "v", false), extra("OK", &falso, false)];
-        r.attachments = vec![anexo(&falso, b"y")];
-        let e = erros(r);
+        let fake = format!("acme{c}prod");
+        let mut r = draft("x", &fake, "dev", note());
+        r.project = fake.clone();
+        r.extras = vec![extra(&fake, "v", false), extra("OK", &fake, false)];
+        r.attachments = vec![attachment(&fake, b"y")];
+        let e = errors(r);
         assert!(e.has_reason("grupo", "caractere não permitido"), "{c:?}");
         assert!(e.has("projeto"), "{c:?}");
         assert_eq!(
@@ -1190,44 +1154,39 @@ fn ataque_texto_invisivel_forja_a_janela_de_aprovacao() {
         );
         assert!(e.has("anexos"), "{c:?}");
     }
-    // Nome com espaço nas pontas também.
-    assert!(erros(rascunho("x", " acme", "dev", nota())).has("grupo"));
-    // Extra secreto pode ter quebra de linha (vai para o ambiente), mas não nulo.
-    let mut r = generico();
+    // A name with a space at the ends too.
+    assert!(errors(draft("x", " acme", "dev", note())).has("grupo"));
+    // A secret extra may have a line break (it goes to the environment), but not NUL.
+    let mut r = generic();
     r.extras.push(extra("MULTI", "linha1\nlinha2", true));
-    valida(r);
-    let mut r = generico();
+    valid(r);
+    let mut r = generic();
     r.extras.push(extra("NULO", "a\0b", true));
-    assert!(erros(r).has_reason("campos extras", "não pode ter o caractere nulo"));
+    assert!(errors(r).has_reason("campos extras", "não pode ter o caractere nulo"));
 }
 
 #[test]
-fn ataque_segredo_com_nulo_ou_binario() {
+fn attack_secret_with_nul_or_binary() {
     let mut d = login();
-    if let DataDraft::Login {
-        password: senha, ..
-    } = &mut d
-    {
-        *senha = s("falso\0WP");
+    if let DataDraft::Login { password, .. } = &mut d {
+        *password = s("falso\0WP");
     }
     assert!(
-        erros(rascunho("x", "acme", "dev", d)).has_reason("senha", "não pode ter o caractere nulo")
+        errors(draft("x", "acme", "dev", d)).has_reason("senha", "não pode ter o caractere nulo")
     );
     let mut d = api();
     if let DataDraft::Api { token, .. } = &mut d {
         *token = Some(Secret::from_bytes(vec![0xff, 0xfe, b'a']));
     }
-    assert!(
-        erros(rascunho("x", "acme", "dev", d)).has_reason("token", "precisa ser texto (UTF-8)")
-    );
-    // Anexo pode ser binário.
-    let mut r = generico();
-    r.attachments = vec![anexo("cert.p12", &[0, 1, 2, 0xff])];
-    valida(r);
+    assert!(errors(draft("x", "acme", "dev", d)).has_reason("token", "precisa ser texto (UTF-8)"));
+    // An attachment may be binary.
+    let mut r = generic();
+    r.attachments = vec![attachment("cert.p12", &[0, 1, 2, 0xff])];
+    valid(r);
 }
 
 #[test]
-fn ataque_variavel_perigosa_no_api() {
+fn attack_dangerous_variable_in_api() {
     for var in [
         "LD_PRELOAD",
         "LD_LIBRARY_PATH",
@@ -1242,14 +1201,11 @@ fn ataque_variavel_perigosa_no_api() {
         "IFS",
     ] {
         let mut d = api();
-        if let DataDraft::Api {
-            variable: variavel, ..
-        } = &mut d
-        {
-            *variavel = t(var);
+        if let DataDraft::Api { variable, .. } = &mut d {
+            *variable = t(var);
         }
         assert!(
-            erros(rascunho("x", "beta", "dev", d)).has("variável"),
+            errors(draft("x", "beta", "dev", d)).has("variável"),
             "{var}"
         );
     }
@@ -1260,57 +1216,55 @@ fn ataque_variavel_perigosa_no_api() {
         "NPM_TOKEN",
     ] {
         let mut d = api();
-        if let DataDraft::Api {
-            variable: variavel, ..
-        } = &mut d
-        {
-            *variavel = t(var);
+        if let DataDraft::Api { variable, .. } = &mut d {
+            *variable = t(var);
         }
-        valida(rascunho("x", "beta", "dev", d));
+        valid(draft("x", "beta", "dev", d));
     }
 }
 
 #[test]
-fn ataque_extra_ou_anexo_sobrescreve_variavel_do_tipo() {
-    // Um extra "PASS" (não secreto) num login viraria WARD_PASS, por cima da senha.
-    let reservados: Vec<(FazDados, &str)> = vec![
+fn attack_extra_or_attachment_overrides_type_variable() {
+    // An extra "PASS" (not secret) in a login would become WARD_PASS, over the password.
+    let reserved: Vec<(MakeData, &str)> = vec![
         (login, "pass"),
         (login, "TOTP"),
         (login, "url"),
-        (servidor_senha, "host"),
-        (servidor_senha, "passphrase"),
+        (server_password, "host"),
+        (server_password, "passphrase"),
         (sftp, "protocolo"),
         (api, "token"),
-        (nota, "entrada"),
+        (note, "entrada"),
         (aws, "GRUPO"),
         (smtp, "ambiente"),
-        (banco, "arquivo_app_env"),
-        (banco, "arquivo"),
+        (database, "arquivo_app_env"),
+        (database, "arquivo"),
     ];
-    for (dados, nome) in reservados {
-        let mut r = rascunho("x", "acme", "dev", dados());
-        r.extras = vec![extra(nome, "v", false)];
+    for (data, name) in reserved {
+        let mut r = draft("x", "acme", "dev", data());
+        r.extras = vec![extra(name, "v", false)];
         assert!(
-            erros(r).has_reason("campos extras", "vira uma variável que o tipo já entrega"),
-            "{nome}"
+            errors(r).has_reason("campos extras", "vira uma variável que o tipo já entrega"),
+            "{name}"
         );
     }
-    // Anexo "chave" no servidor viraria WARD_ARQUIVO_CHAVE, a chave da entrada.
-    for dados in [servidor_senha(), sftp()] {
-        let mut r = rascunho("x", "acme", "dev", dados);
-        r.attachments = vec![anexo("chave", b"x")];
-        assert!(erros(r).has("anexos"));
+    // An attachment named like the key in the server would become the key file variable,
+    // over the entry's own key.
+    for data in [server_password(), sftp()] {
+        let mut r = draft("x", "acme", "dev", data);
+        r.attachments = vec![attachment("chave", b"x")];
+        assert!(errors(r).has("anexos"));
     }
-    // Em outros tipos, "PASS" e "chave" são nomes comuns.
-    let mut r = generico();
+    // In other types, those two are common names.
+    let mut r = generic();
     r.extras.push(extra("PASS", "v", true));
-    r.attachments.push(anexo("chave", b"x"));
-    valida(r);
+    r.attachments.push(attachment("chave", b"x"));
+    valid(r);
 }
 
 #[test]
-fn ataque_nome_de_anexo_sai_do_diretorio() {
-    for nome in [
+fn attack_attachment_name_leaves_the_directory() {
+    for name in [
         "../x",
         "a/b",
         "..",
@@ -1322,95 +1276,90 @@ fn ataque_nome_de_anexo_sai_do_diretorio() {
         "__",
         "...",
     ] {
-        let mut r = generico();
-        r.attachments = vec![anexo(nome, b"x")];
-        assert!(erros(r).has("anexos"), "{nome:?}");
+        let mut r = generic();
+        r.attachments = vec![attachment(name, b"x")];
+        assert!(errors(r).has("anexos"), "{name:?}");
     }
-    let mut r = generico();
-    r.attachments = vec![anexo("vazio.txt", b"")];
-    assert!(erros(r).has_reason("anexos", "anexo vazio"));
+    let mut r = generic();
+    r.attachments = vec![attachment("vazio.txt", b"")];
+    assert!(errors(r).has_reason("anexos", "anexo vazio"));
 }
 
 #[test]
-fn ataque_tamanhos_excessivos() {
-    let grande = |n: usize| Some(Secret::from_bytes(vec![b'a'; n]));
+fn attack_excessive_sizes() {
+    let large = |n: usize| Some(Secret::from_bytes(vec![b'a'; n]));
     let mut d = login();
-    if let DataDraft::Login {
-        password: senha, ..
-    } = &mut d
-    {
-        *senha = grande(64 * 1024 + 1);
+    if let DataDraft::Login { password, .. } = &mut d {
+        *password = large(64 * 1024 + 1);
     }
-    assert!(erros(rascunho("x", "acme", "dev", d)).has_reason("senha", "longo demais"));
+    assert!(errors(draft("x", "acme", "dev", d)).has_reason("senha", "longo demais"));
     let d = DataDraft::SecureNote {
-        text: grande(1024 * 1024 + 1),
+        text: large(1024 * 1024 + 1),
     };
-    assert!(erros(rascunho("x", "acme", "dev", d)).has_reason("texto", "longo demais"));
+    assert!(errors(draft("x", "acme", "dev", d)).has_reason("texto", "longo demais"));
     let d = DataDraft::SecureNote {
-        text: grande(1024 * 1024),
+        text: large(1024 * 1024),
     };
-    valida(rascunho("x", "acme", "dev", d));
+    valid(draft("x", "acme", "dev", d));
     let mut d = login();
-    if let DataDraft::Login {
-        totp_seed: totp_semente,
-        ..
-    } = &mut d
-    {
-        *totp_semente = Some(Secret::from_bytes(vec![b'A'; 129]));
+    if let DataDraft::Login { totp_seed, .. } = &mut d {
+        *totp_seed = Some(Secret::from_bytes(vec![b'A'; 129]));
     }
-    assert!(erros(rascunho("x", "acme", "dev", d)).has("semente TOTP"));
+    assert!(errors(draft("x", "acme", "dev", d)).has("semente TOTP"));
 
-    let mut r = generico();
+    let mut r = generic();
     r.attachments = vec![AttachmentDraft {
         name: t("grande.bin"),
         content: Secret::from_bytes(vec![0; crate::limits::MAX_ATTACHMENTS_TOTAL + 1]),
     }];
-    assert!(erros(r).has_reason("anexos", "longo demais"));
+    assert!(errors(r).has_reason("anexos", "longo demais"));
 
-    let mut r = generico();
+    let mut r = generic();
     r.extras = (0..65)
         .map(|i| extra(&format!("E{i}"), "v", false))
         .collect();
-    assert!(erros(r).has_reason("campos extras", "itens demais"));
-    let mut r = generico();
-    r.attachments = (0..33).map(|i| anexo(&format!("a{i}"), b"v")).collect();
-    assert!(erros(r).has_reason("anexos", "itens demais"));
-    let mut r = generico();
+    assert!(errors(r).has_reason("campos extras", "itens demais"));
+    let mut r = generic();
+    r.attachments = (0..33)
+        .map(|i| attachment(&format!("a{i}"), b"v"))
+        .collect();
+    assert!(errors(r).has_reason("anexos", "itens demais"));
+    let mut r = generic();
     r.tags = (0..17).map(|i| format!("t{i}")).collect();
-    assert!(erros(r).has_reason("tags", "itens demais"));
-    let mut r = generico();
+    assert!(errors(r).has_reason("tags", "itens demais"));
+    let mut r = generic();
     r.tags = vec![t("a"), t("a")];
-    assert!(erros(r).has_reason("tags", "tag repetida"));
-    let mut r = generico();
+    assert!(errors(r).has_reason("tags", "tag repetida"));
+    let mut r = generic();
     r.group = "g".repeat(257);
-    assert!(erros(r).has_reason("grupo", "longo demais"));
+    assert!(errors(r).has_reason("grupo", "longo demais"));
     let mut d = login();
     if let DataDraft::Login { url, .. } = &mut d {
         *url = format!("https://a/{}", "b".repeat(2048));
     }
-    assert!(erros(rascunho("x", "acme", "dev", d)).has_reason("url", "longo demais"));
+    assert!(errors(draft("x", "acme", "dev", d)).has_reason("url", "longo demais"));
 }
 
 #[test]
-fn ataque_nivel_nao_muda_ao_salvar_nem_ao_editar() {
-    // S9: entrada nova sempre "com aprovação" (o rascunho não tem nível).
-    let mut atual = valida(rascunho("acme-pg-prod", "acme", "prod", banco()));
-    assert_eq!(atual.level(), AccessLevel::Approval);
-    // O daemon (com PIN) bloqueia; uma edição sem PIN não pode desbloquear.
-    atual.set_level(AccessLevel::Blocked);
-    let editada = valida(rascunho("acme-pg-prod", "acme", "prod", banco()));
-    assert_eq!(editada.level(), AccessLevel::Approval);
-    atual.replace_with(editada).expect("mesmo tipo");
-    assert_eq!(atual.level(), AccessLevel::Blocked);
-    // O tipo não muda na edição.
-    let outra = valida(rascunho("acme-pg-prod", "acme", "prod", nota()));
-    let e = atual.replace_with(outra).expect_err("tipo mudou");
+fn attack_level_does_not_change_on_save_or_edit() {
+    // S9: a new entry always starts "with approval" (the draft has no level).
+    let mut current = valid(draft("acme-pg-prod", "acme", "prod", database()));
+    assert_eq!(current.level(), AccessLevel::Approval);
+    // The daemon (with the PIN) blocks; an edit without the PIN cannot unblock.
+    current.set_level(AccessLevel::Blocked);
+    let edited = valid(draft("acme-pg-prod", "acme", "prod", database()));
+    assert_eq!(edited.level(), AccessLevel::Approval);
+    current.replace_with(edited).expect("mesmo tipo");
+    assert_eq!(current.level(), AccessLevel::Blocked);
+    // The type does not change on edit.
+    let other = valid(draft("acme-pg-prod", "acme", "prod", note()));
+    let e = current.replace_with(other).expect_err("tipo mudou");
     assert!(e.has_reason("tipo", "o tipo não muda depois de criado"));
-    assert_eq!(atual.kind(), EntryType::Database);
+    assert_eq!(current.kind(), EntryType::Database);
 }
 
 #[test]
-fn nivel_combinado_e_nomes() {
+fn combined_level_and_names() {
     use AccessLevel::*;
     assert_eq!(Free.most_restrictive(Approval), Approval);
     assert_eq!(Approval.most_restrictive(Free), Approval);
@@ -1420,8 +1369,8 @@ fn nivel_combinado_e_nomes() {
     for n in AccessLevel::ALL {
         assert_eq!(AccessLevel::from_name(n.name()), Some(n));
     }
-    for tipo in EntryType::ALL {
-        assert_eq!(EntryType::from_name(tipo.name()), Some(tipo));
+    for kind in EntryType::ALL {
+        assert_eq!(EntryType::from_name(kind.name()), Some(kind));
     }
     assert_eq!(EntryType::FtpSftp.label(), "ftp/sftp");
     assert_eq!(EntryType::SecureNote.label(), "nota segura");
@@ -1429,128 +1378,127 @@ fn nivel_combinado_e_nomes() {
     assert_eq!(Approval.label(), "com aprovação");
 }
 
-// ---- Conferência no cofre (nome único, túnel e salto) ----
+// ---- Vault verification (unique name, tunnel and jump) ----
 
 #[test]
-fn conferir_no_cofre_referencias() {
-    let servidor = |nome: &str, salto: &str| {
-        let mut d = servidor_senha();
-        if let DataDraft::Server { jump: s_, .. } = &mut d {
-            *s_ = t(salto);
+fn verify_in_vault_references() {
+    let server = |name: &str, jump: &str| {
+        let mut d = server_password();
+        if let DataDraft::Server { jump: j, .. } = &mut d {
+            *j = t(jump);
         }
-        valida(rascunho(nome, "acme", "dev", d))
+        valid(draft(name, "acme", "dev", d))
     };
-    let banco_por = |nome: &str, tunel: &str| {
-        let mut d = banco();
+    let database_via = |name: &str, tunnel: &str| {
+        let mut d = database();
         if let DataDraft::Database { tunnel: t_, .. } = &mut d {
-            *t_ = t(tunel);
+            *t_ = t(tunnel);
         }
-        valida(rascunho(nome, "acme", "dev", d))
+        valid(draft(name, "acme", "dev", d))
     };
-    let cofre = vec![
-        servidor("salto", ""),
-        servidor("interno", "salto"),
-        valida(rascunho("site", "acme", "dev", login())),
+    let vault = vec![
+        server("salto", ""),
+        server("interno", "salto"),
+        valid(draft("site", "acme", "dev", login())),
     ];
 
-    // Ok: túnel e salto para um servidor sem salto.
-    banco_por("pg", "salto")
-        .verify_in_vault(&cofre)
+    // Ok: tunnel and jump to a server without a jump.
+    database_via("pg", "salto")
+        .verify_in_vault(&vault)
         .expect("ok");
-    servidor("novo", "salto")
-        .verify_in_vault(&cofre)
-        .expect("ok");
+    server("novo", "salto").verify_in_vault(&vault).expect("ok");
 
-    let casos = [
+    let cases = [
         (
-            servidor("salto", ""),
+            server("salto", ""),
             "nome",
             "já existe outra entrada com este nome",
         ),
         (
-            banco_por("pg", "nao-existe"),
+            database_via("pg", "nao-existe"),
             "túnel SSH",
             "precisa ser uma entrada servidor existente",
         ),
         (
-            banco_por("pg", "site"),
+            database_via("pg", "site"),
             "túnel SSH",
             "precisa ser uma entrada servidor existente",
         ),
         (
-            banco_por("pg", "interno"),
+            database_via("pg", "interno"),
             "túnel SSH",
             "o servidor do túnel não pode ter salto",
         ),
         (
-            servidor("eu", "eu"),
+            server("eu", "eu"),
             "servidor de salto",
             "aponta para a própria entrada",
         ),
         (
-            servidor("x", "interno"),
+            server("x", "interno"),
             "servidor de salto",
             "o servidor de salto não pode ter salto próprio",
         ),
         (
-            servidor("x", "site"),
+            server("x", "site"),
             "servidor de salto",
             "precisa ser uma entrada servidor existente",
         ),
     ];
-    for (e, campo, motivo) in casos {
-        let erro = e.verify_in_vault(&cofre).expect_err(motivo);
-        assert!(erro.has_reason(campo, motivo), "{erro}");
+    for (e, field, reason) in cases {
+        let error = e.verify_in_vault(&vault).expect_err(reason);
+        assert!(error.has_reason(field, reason), "{error}");
     }
 
-    // Um servidor usado como salto não pode ganhar salto próprio (viraria cadeia).
-    let salto_editado = servidor("salto", "outro");
-    let resto: Vec<Entry> = vec![servidor("interno", "salto"), servidor("outro", "")];
-    let erro = salto_editado.verify_in_vault(&resto).expect_err("cadeia");
-    assert!(erro.has_reason(
+    // A server used as a jump cannot gain its own jump (it would become a chain).
+    let edited_jump = server("salto", "outro");
+    let rest: Vec<Entry> = vec![server("interno", "salto"), server("outro", "")];
+    let error = edited_jump.verify_in_vault(&rest).expect_err("cadeia");
+    assert!(error.has_reason(
         "servidor de salto",
         "outra entrada usa este servidor como salto ou túnel; ele não pode ter salto"
     ));
 }
 
-// ---- D29, D33 (Fase 19a) ----
+// ---- D29, D33 (Phase 19a) ----
 
-/// Anexos de `tamanhos` bytes, com conteúdo que não vira padrão por linha (sem `\n`).
-fn anexos_de(tamanhos: &[usize]) -> Vec<AttachmentDraft> {
-    tamanhos
+/// Attachments of `sizes` bytes, with content that does not become a per-line pattern
+/// (no `\n`).
+fn attachments_of(sizes: &[usize]) -> Vec<AttachmentDraft> {
+    sizes
         .iter()
         .enumerate()
-        .map(|(i, &n)| anexo(&format!("a{i}.bin"), &vec![0x5a; n]))
+        .map(|(i, &n)| attachment(&format!("a{i}.bin"), &vec![0x5a; n]))
         .collect()
 }
 
 #[test]
-fn v2_36_anexos_somados_e_orcamento_ao_salvar() {
+fn v2_36_attachments_total_and_budget_on_save() {
     use crate::limits::{MAX_ATTACHMENTS_TOTAL, MAX_EXTRA_VALUE, MAX_EXTRAS};
     const KIB: usize = 1024;
 
-    // Um anexo de 256 KiB + 1 byte.
-    let mut r = generico();
-    r.attachments = anexos_de(&[MAX_ATTACHMENTS_TOTAL + 1]);
-    assert!(erros(r).has_reason("anexos", "longo demais"));
-    // Dois anexos de 200 KiB: cada um cabe, a soma não.
-    let mut r = generico();
-    r.attachments = anexos_de(&[200 * KIB, 200 * KIB]);
-    let e = erros(r);
+    // One attachment of 256 KiB + 1 byte.
+    let mut r = generic();
+    r.attachments = attachments_of(&[MAX_ATTACHMENTS_TOTAL + 1]);
+    assert!(errors(r).has_reason("anexos", "longo demais"));
+    // Two attachments of 200 KiB: each one fits, the sum does not.
+    let mut r = generic();
+    r.attachments = attachments_of(&[200 * KIB, 200 * KIB]);
+    let e = errors(r);
     assert!(
         e.has_reason("anexos", "os anexos somam mais de 256 KiB"),
         "{e}"
     );
-    // A soma exata no limite passa (com um anexo e com vários).
-    let mut r = generico();
-    r.attachments = anexos_de(&[MAX_ATTACHMENTS_TOTAL]);
-    valida(r);
-    let mut r = generico();
-    r.attachments = anexos_de(&[MAX_ATTACHMENTS_TOTAL / 2, MAX_ATTACHMENTS_TOTAL / 2]);
-    valida(r);
+    // The exact sum at the limit passes (with one attachment and with several).
+    let mut r = generic();
+    r.attachments = attachments_of(&[MAX_ATTACHMENTS_TOTAL]);
+    valid(r);
+    let mut r = generic();
+    r.attachments = attachments_of(&[MAX_ATTACHMENTS_TOTAL / 2, MAX_ATTACHMENTS_TOTAL / 2]);
+    valid(r);
 
-    // `api` com 64 extras secretos de 64 KiB: cada campo cabe, a máscara não.
-    let mut r = rascunho("beta-github-api", "beta", "dev", api());
+    // `api` with 64 secret extras of 64 KiB: each field fits, the mask does not.
+    let mut r = draft("beta-github-api", "beta", "dev", api());
     r.extras = (0..MAX_EXTRAS)
         .map(|i| ExtraDraft {
             name: format!("e{i:02}"),
@@ -1558,7 +1506,7 @@ fn v2_36_anexos_somados_e_orcamento_ao_salvar() {
             secret: true,
         })
         .collect();
-    let e = erros(r);
+    let e = errors(r);
     assert!(
         e.has_reason(
             "entrada",
@@ -1573,8 +1521,8 @@ fn v2_36_anexos_somados_e_orcamento_ao_salvar() {
     assert!(!e.to_string().contains("kkkk"));
     assert_eq!(e.list().len(), 1);
 
-    // A `nota segura` fica fora do orçamento (não tem entrega, D10).
-    let mut r = rascunho("gama-nota", "gama", "dev", nota());
+    // The secure note stays out of the budget (it has no delivery, D10).
+    let mut r = draft("gama-nota", "gama", "dev", note());
     r.extras = (0..MAX_EXTRAS)
         .map(|i| ExtraDraft {
             name: format!("e{i:02}"),
@@ -1582,27 +1530,27 @@ fn v2_36_anexos_somados_e_orcamento_ao_salvar() {
             secret: true,
         })
         .collect();
-    valida(r);
+    valid(r);
 }
 
 #[test]
-fn v2_37_base_do_banco() {
-    let com_base = |motor: &str, base: &str| {
-        let mut d = banco();
+fn v2_37_database_name() {
+    let with_db_name = |engine: &str, db_name: &str| {
+        let mut d = database();
         if let DataDraft::Database {
             engine: m,
             db_name: b,
             ..
         } = &mut d
         {
-            *m = t(motor);
-            *b = t(base);
+            *m = t(engine);
+            *b = t(db_name);
         }
-        rascunho("acme-pg-dev", "acme", "dev", d)
+        draft("acme-pg-dev", "acme", "dev", d)
     };
-    let longa = "b".repeat(crate::limits::MAX_DB_NAME + 1);
-    for motor in ["postgres", "mysql", "mongo", "sqlserver"] {
-        for base in [
+    let long = "b".repeat(crate::limits::MAX_DB_NAME + 1);
+    for engine in ["postgres", "mysql", "mongo", "sqlserver"] {
+        for db_name in [
             "b?x=1",
             "b#x",
             "../b",
@@ -1614,36 +1562,36 @@ fn v2_37_base_do_banco() {
             "b=c",
             "b\u{202e}c",
             "bá",
-            longa.as_str(),
+            long.as_str(),
         ] {
-            let e = erros(com_base(motor, base));
-            assert!(e.has("base"), "{motor} {base:?}");
-            // Mensagem em português, sem o valor.
-            assert!(!e.to_string().contains(base), "{motor} {base:?}");
+            let e = errors(with_db_name(engine, db_name));
+            assert!(e.has("base"), "{engine} {db_name:?}");
+            // Message in Portuguese, without the value.
+            assert!(!e.to_string().contains(db_name), "{engine} {db_name:?}");
         }
-        let e = erros(com_base(motor, "b?x=1"));
+        let e = errors(with_db_name(engine, "b?x=1"));
         assert!(e.has_reason(
             "base",
             "use letras, números, '_' ou '-', com até 63 caracteres"
         ));
-        let e = erros(com_base(motor, &longa));
+        let e = errors(with_db_name(engine, &long));
         assert!(e.has_reason("base", "longo demais"));
-        for base in [
+        for db_name in [
             "acme_db-1",
             "A",
             "app_teste",
             &"b".repeat(crate::limits::MAX_DB_NAME),
         ] {
-            let entrada = valida(com_base(motor, base));
-            let Data::Database(b) = entrada.data() else {
+            let entry = valid(with_db_name(engine, db_name));
+            let Data::Database(b) = entry.data() else {
                 panic!("banco")
             };
-            assert_eq!(b.db_name.as_deref(), Some(base));
+            assert_eq!(b.db_name.as_deref(), Some(db_name));
         }
-        // Base vazia segue opcional.
-        valida(com_base(motor, ""));
+        // An empty database name is still optional.
+        valid(with_db_name(engine, ""));
     }
-    for base in [
+    for db_name in [
         "abc",
         "b",
         "-1",
@@ -1654,75 +1602,69 @@ fn v2_37_base_do_banco() {
         "4294967296",
         " 3",
     ] {
-        let e = erros(com_base("redis", base));
-        assert!(e.has("base"), "redis {base:?}");
+        let e = errors(with_db_name("redis", db_name));
+        assert!(e.has("base"), "redis {db_name:?}");
     }
-    let e = erros(com_base("redis", "abc"));
+    let e = errors(with_db_name("redis", "abc"));
     assert!(e.has_reason("base", "no redis, a base é um número de 0 a 99999"));
-    for base in ["0", "3", "15", "99999"] {
-        valida(com_base("redis", base));
+    for db_name in ["0", "3", "15", "99999"] {
+        valid(with_db_name("redis", db_name));
     }
-    valida(com_base("redis", ""));
+    valid(with_db_name("redis", ""));
 }
 
 #[test]
-fn mensagens_citam_os_limites_atuais() {
-    // Se um limite mudar em `crate::limits`, a mensagem que o cita tem de mudar junto.
+fn messages_cite_the_current_limits() {
+    // If a limit changes in `crate::limits`, the message that cites it must change too.
     use crate::limits::{
         MAX_ATTACHMENTS_TOTAL, MAX_DB_NAME, MAX_REDIS_DB_NAME, MAX_TOTP, MIN_TOTP,
     };
-    let somados = format!("{} KiB", MAX_ATTACHMENTS_TOTAL / 1024);
-    let base = format!("até {MAX_DB_NAME} caracteres");
+    let total = format!("{} KiB", MAX_ATTACHMENTS_TOTAL / 1024);
+    let db_name = format!("até {MAX_DB_NAME} caracteres");
     let redis = format!("de 0 a {MAX_REDIS_DB_NAME}");
     let totp = format!("com {MIN_TOTP} a {MAX_TOTP} caracteres");
-    let mut r = generico();
-    r.attachments = anexos_de(&[MAX_ATTACHMENTS_TOTAL, 1]);
-    assert!(erros(r).to_string().contains(&somados));
-    let mut d = banco();
+    let mut r = generic();
+    r.attachments = attachments_of(&[MAX_ATTACHMENTS_TOTAL, 1]);
+    assert!(errors(r).to_string().contains(&total));
+    let mut d = database();
     if let DataDraft::Database { db_name: b, .. } = &mut d {
         *b = t("b.c");
     }
     assert!(
-        erros(rascunho("x", "acme", "dev", d))
+        errors(draft("x", "acme", "dev", d))
             .to_string()
-            .contains(&base)
+            .contains(&db_name)
     );
-    let mut d = banco();
+    let mut d = database();
     if let DataDraft::Database {
-        engine: motor,
-        db_name: b,
-        ..
+        engine, db_name: b, ..
     } = &mut d
     {
-        *motor = t("redis");
+        *engine = t("redis");
         *b = t("x");
     }
     assert!(
-        erros(rascunho("x", "acme", "dev", d))
+        errors(draft("x", "acme", "dev", d))
             .to_string()
             .contains(&redis)
     );
     let mut d = login();
-    if let DataDraft::Login {
-        totp_seed: totp_semente,
-        ..
-    } = &mut d
-    {
-        *totp_semente = s("abc1abc1abc1abc1");
+    if let DataDraft::Login { totp_seed, .. } = &mut d {
+        *totp_seed = s("abc1abc1abc1abc1");
     }
     assert!(
-        erros(rascunho("x", "acme", "dev", d))
+        errors(draft("x", "acme", "dev", d))
             .to_string()
             .contains(&totp)
     );
 }
 
-// ---- Fase 19c: D38, D41, D42, D43 ----
+// ---- Phase 19c: D38, D41, D42, D43 ----
 
-/// Caracteres que o repro `validacao.rs` do auditor mostrou passando (achado médio 3),
-/// mais os de V2.45: formato (Cf), preenchimento Hangul, braille em branco, seletor de
-/// variação, espaços fora do ASCII, combinante e emoji.
-const FORA_DA_LISTA: &[&str] = &[
+/// Characters that the auditor's validation repro showed passing (medium finding
+/// 3), plus those of V2.45: format (Cf), Hangul filler, blank braille, variation
+/// selector, non-ASCII spaces, combining mark and emoji.
+const OFF_THE_LIST: &[&str] = &[
     "\u{0600}",
     "\u{1D173}",
     "\u{13430}",
@@ -1744,50 +1686,47 @@ const FORA_DA_LISTA: &[&str] = &[
     "\u{D7}",
 ];
 
-/// O erro não traz o texto recusado (nem pelo `Display`, nem pelo `Debug`).
-fn sem_o_valor(e: &ValidationErrors, valor: &str) {
-    for texto in [format!("{e}"), format!("{e:?}")] {
-        assert!(!texto.contains(valor), "erro com o valor: {valor:?}");
+/// The error does not carry the refused text (neither through `Display` nor `Debug`).
+fn without_the_value(e: &ValidationErrors, value: &str) {
+    for text in [format!("{e}"), format!("{e:?}")] {
+        assert!(!text.contains(value), "erro com o valor: {value:?}");
     }
 }
 
-/// V2.45 (D38): o texto de exibição é lista branca (ASCII visível e o Latin-1/Latin
-/// Extended-A dos acentos); tudo fora dela é recusado em todo campo que a janela de
-/// aprovação e a lista mostram.
+/// V2.45 (D38): display text is an allowlist (visible ASCII and the Latin-1/Latin
+/// Extended-A of the accents); everything outside it is refused in every field that the
+/// approval window and the list show.
 #[test]
-fn v2_45_texto_de_exibicao_e_lista_branca() {
-    for c in FORA_DA_LISTA {
-        let falso = format!("acme{c}prod");
+fn v2_45_display_text_is_allowlist() {
+    for c in OFF_THE_LIST {
+        let fake = format!("acme{c}prod");
         let mut d = login();
-        if let DataDraft::Login {
-            username: usuario, ..
-        } = &mut d
-        {
-            *usuario = falso.clone();
+        if let DataDraft::Login { username, .. } = &mut d {
+            *username = fake.clone();
         }
-        let mut r = rascunho("x", &falso, "dev", d);
-        r.project = falso.clone();
-        r.tags = vec![falso.clone()];
-        r.extras = vec![extra(&falso, "v", false)];
-        r.attachments = vec![anexo(&falso, b"y")];
-        let e = erros(r);
-        for campo in ["grupo", "projeto", "usuário"] {
+        let mut r = draft("x", &fake, "dev", d);
+        r.project = fake.clone();
+        r.tags = vec![fake.clone()];
+        r.extras = vec![extra(&fake, "v", false)];
+        r.attachments = vec![attachment(&fake, b"y")];
+        let e = errors(r);
+        for field in ["grupo", "projeto", "usuário"] {
             assert!(
-                e.has_reason(campo, "caractere não permitido"),
-                "{campo} {c:?}"
+                e.has_reason(field, "caractere não permitido"),
+                "{field} {c:?}"
             );
         }
         assert!(e.has("tags"), "{c:?}");
         assert!(e.has("campos extras"), "{c:?}");
         assert!(e.has("anexos"), "{c:?}");
-        sem_o_valor(&e, c);
-        // Nome da entrada também.
+        without_the_value(&e, c);
+        // The entry name too.
         assert!(
-            erros(rascunho(&falso, "acme", "dev", nota())).has("nome"),
+            errors(draft(&fake, "acme", "dev", note())).has("nome"),
             "{c:?}"
         );
     }
-    for bom in [
+    for good in [
         "São Paulo",
         "ação",
         "Müller",
@@ -1795,25 +1734,23 @@ fn v2_45_texto_de_exibicao_e_lista_branca() {
         "Łódź",
         "acme-prod_01 (v2)",
     ] {
-        let mut r = rascunho("x", bom, "dev", nota());
-        r.project = t(bom);
-        valida(r);
+        let mut r = draft("x", good, "dev", note());
+        r.project = t(good);
+        valid(r);
     }
-    // Segredo não é texto de exibição: senha com U+200B e U+3164 passa.
+    // A secret is not display text: a password with U+200B and U+3164 passes.
     let mut d = login();
-    if let DataDraft::Login {
-        password: senha, ..
-    } = &mut d
-    {
-        *senha = s("falso\u{200B}senha\u{3164}01");
+    if let DataDraft::Login { password, .. } = &mut d {
+        *password = s("falso\u{200B}senha\u{3164}01");
     }
-    valida(rascunho("x", "acme", "dev", d));
+    valid(draft("x", "acme", "dev", d));
 }
 
-/// V2.47 (D41), achado médio 4: a URL do `login` e do `api` passa por um parser estrito.
+/// V2.47 (D41), medium finding 4: the URL of `login` and `api` goes through a strict
+/// parser.
 #[test]
-fn v2_47_url_estrita() {
-    let recusadas = [
+fn v2_47_strict_url() {
+    let refused = [
         "https://cliente.com.br@evil.example/",
         "https://evil.example\\@cliente.com.br/",
         "https://evil.example%2f@cliente.com.br",
@@ -1840,28 +1777,28 @@ fn v2_47_url_estrita() {
         "ftp://x.example",
         "https://x.example\u{202E}",
     ];
-    for url in recusadas {
+    for url in refused {
         let mut d = login();
         if let DataDraft::Login { url: u, .. } = &mut d {
             *u = t(url);
         }
-        let e = erros(rascunho("x", "acme", "dev", d));
+        let e = errors(draft("x", "acme", "dev", d));
         assert!(e.has("url"), "login {url:?}");
         let msg = format!("{e}");
         assert!(
             msg.contains("use https://") || msg.contains("caractere não permitido"),
             "{url:?}: {msg}"
         );
-        // "https://" sozinho é também o começo da mensagem, que o explica.
+        // "https://" alone is also the start of the message, which explains it.
         if url != "https://" {
-            sem_o_valor(&e, url);
+            without_the_value(&e, url);
         }
         let mut d = api();
         if let DataDraft::Api { url: u, .. } = &mut d {
             *u = t(url);
         }
         assert!(
-            erros(rascunho("x", "beta", "dev", d)).has("url"),
+            errors(draft("x", "beta", "dev", d)).has("url"),
             "api {url:?}"
         );
     }
@@ -1878,18 +1815,18 @@ fn v2_47_url_estrita() {
         if let DataDraft::Login { url: u, .. } = &mut d {
             *u = t(url);
         }
-        valida(rascunho("x", "acme", "dev", d));
+        valid(draft("x", "acme", "dev", d));
         let mut d = api();
         if let DataDraft::Api { url: u, .. } = &mut d {
             *u = t(url);
         }
-        valida(rascunho("x", "beta", "dev", d));
+        valid(draft("x", "beta", "dev", d));
     }
 }
 
-/// Variáveis que mudam o que um processo filho executa ou para onde ele manda os dados
-/// (o repro do auditor, achado médio 6) e as de V2.48.
-const VARIAVEIS_PERIGOSAS: &[&str] = &[
+/// Variables that change what a child process runs or where it sends the data (the
+/// auditor's repro, medium finding 6) and those of V2.48.
+const DANGEROUS_VARIABLES: &[&str] = &[
     "GIT_PROXY_COMMAND",
     "GIT_EXTERNAL_DIFF",
     "PAGER",
@@ -1919,8 +1856,8 @@ const VARIAVEIS_PERIGOSAS: &[&str] = &[
     "_TOKEN",
 ];
 
-/// As que passam (V2.48): terminam num sufixo de credencial.
-const VARIAVEIS_BOAS: &[&str] = &[
+/// The ones that pass (V2.48): they end in a credential suffix.
+const GOOD_VARIABLES: &[&str] = &[
     "GITHUB_TOKEN",
     "GH_TOKEN",
     "NPM_TOKEN",
@@ -1931,40 +1868,34 @@ const VARIAVEIS_BOAS: &[&str] = &[
     "SONAR_PAT",
 ];
 
-/// V2.48 (D42): a variável do `api` precisa do sufixo de credencial; a lista negra
-/// segue valendo por cima.
+/// V2.48 (D42): the `api` variable needs the credential suffix; the denylist still
+/// applies on top.
 #[test]
-fn v2_48_variavel_do_api_com_sufixo() {
-    for var in VARIAVEIS_PERIGOSAS {
+fn v2_48_api_variable_with_suffix() {
+    for var in DANGEROUS_VARIABLES {
         let mut d = api();
-        if let DataDraft::Api {
-            variable: variavel, ..
-        } = &mut d
-        {
-            *variavel = t(var);
+        if let DataDraft::Api { variable, .. } = &mut d {
+            *variable = t(var);
         }
-        let e = erros(rascunho("x", "beta", "dev", d));
+        let e = errors(draft("x", "beta", "dev", d));
         assert!(e.has("variável"), "{var}");
-        sem_o_valor(&e, var);
+        without_the_value(&e, var);
     }
-    for var in VARIAVEIS_BOAS {
+    for var in GOOD_VARIABLES {
         let mut d = api();
-        if let DataDraft::Api {
-            variable: variavel, ..
-        } = &mut d
-        {
-            *variavel = t(var);
+        if let DataDraft::Api { variable, .. } = &mut d {
+            *variable = t(var);
         }
-        valida(rascunho("x", "beta", "dev", d));
+        valid(draft("x", "beta", "dev", d));
     }
 }
 
-/// V2.49 (D43), achado baixo 8: o usuário do `servidor` e do `ftp/sftp` vai para o
-/// `ssh`/`sftp`. `@` passa (conta de domínio, decisão do usuário); `;`, `$(…)`, `%h`,
-/// espaço, barra invertida, acento e `-` no começo, não.
+/// V2.49 (D43), low finding 8: the username of the server and `ftp/sftp` types goes to
+/// `ssh`/`sftp`. `@` passes (domain account, the user's decision); `;`, `$(…)`, `%h`,
+/// space, backslash, accent and a leading `-` do not.
 #[test]
-fn v2_49_usuario_do_ssh() {
-    let ruins = [
+fn v2_49_ssh_username() {
+    let bad = [
         "u;id",
         "u'$(id)'",
         "u%h",
@@ -1981,24 +1912,24 @@ fn v2_49_usuario_do_ssh() {
         "u/x",
         "u:x",
     ];
-    for usuario in ruins {
-        for dados in [servidor_senha(), sftp()] {
-            let mut d = dados;
+    for username in bad {
+        for data in [server_password(), sftp()] {
+            let mut d = data;
             match &mut d {
                 DataDraft::Server { username: u, .. } | DataDraft::FtpSftp { username: u, .. } => {
-                    *u = t(usuario)
+                    *u = t(username)
                 }
                 _ => unreachable!(),
             }
-            let e = erros(rascunho("x", "acme", "dev", d));
-            assert!(e.has("usuário"), "{usuario:?}");
-            // "usuário" é também o nome do campo, que o erro traz.
-            if usuario != "usuário" {
-                sem_o_valor(&e, usuario);
+            let e = errors(draft("x", "acme", "dev", d));
+            assert!(e.has("usuário"), "{username:?}");
+            // This one is also the field label, which the error carries.
+            if username != "usuário" {
+                without_the_value(&e, username);
             }
         }
     }
-    for usuario in [
+    for username in [
         "deploy",
         "app_user",
         "j.silva",
@@ -2006,36 +1937,33 @@ fn v2_49_usuario_do_ssh() {
         "deploy@cliente.com.br",
         "a",
     ] {
-        for dados in [servidor_senha(), sftp()] {
-            let mut d = dados;
+        for data in [server_password(), sftp()] {
+            let mut d = data;
             match &mut d {
                 DataDraft::Server { username: u, .. } | DataDraft::FtpSftp { username: u, .. } => {
-                    *u = t(usuario)
+                    *u = t(username)
                 }
                 _ => unreachable!(),
             }
-            valida(rascunho("x", "acme", "dev", d));
+            valid(draft("x", "acme", "dev", d));
         }
     }
-    // Até o limite de usuário de `limites`.
-    let mut d = servidor_senha();
-    if let DataDraft::Server {
-        username: usuario, ..
-    } = &mut d
-    {
-        *usuario = "u".repeat(crate::limits::MAX_USERNAME + 1);
+    // Up to the username limit of `limits`.
+    let mut d = server_password();
+    if let DataDraft::Server { username, .. } = &mut d {
+        *username = "u".repeat(crate::limits::MAX_USERNAME + 1);
     }
-    assert!(erros(rascunho("x", "acme", "dev", d)).has("usuário"));
+    assert!(errors(draft("x", "acme", "dev", d)).has("usuário"));
 }
 
-/// V2.58 (D55, repro `url.rs` do auditor): o último rótulo de domínio que começa por
-/// dígito é recusado, porque o Chrome e o `curl` leem `0x7f000001`, `0x7f.0.0.1` e
-/// `1.2.3.0x4` como IPv4 (formas hex e numéricas do WHATWG) e `x.123` não é domínio.
-/// A mensagem é a de URL inválida, sem o valor. Os outros casos do repro que já eram
-/// recusados seguem recusados; os aceitos da V2.47 e os da V2.58 passam.
+/// V2.58 (D55, the auditor's `url.rs` repro): a last domain label that starts with a
+/// digit is refused, because Chrome and `curl` read `0x7f000001`, `0x7f.0.0.1` and
+/// `1.2.3.0x4` as IPv4 (WHATWG hex and numeric forms) and `x.123` is not a domain.
+/// The message is the invalid URL one, without the value. The other repro cases that
+/// were already refused stay refused; the accepted ones of V2.47 and V2.58 pass.
 #[test]
-fn v2_58_ultimo_rotulo_com_digito() {
-    let recusadas = [
+fn v2_58_last_label_with_digit() {
+    let refused = [
         // D55
         "https://0x7f000001/",
         "https://0x7f.0.0.1/",
@@ -2047,7 +1975,7 @@ fn v2_58_ultimo_rotulo_com_digito() {
         "https://017700000001/",
         "http://0x7f000001/",
         "https://x.example.0/",
-        // Do repro, já recusadas antes de D55.
+        // From the repro, already refused before D55.
         "https://127.0.0.1./",
         "https://cliente.com.br./",
         "http://localhost./",
@@ -2073,25 +2001,25 @@ fn v2_58_ultimo_rotulo_com_digito() {
         "https://x.example:44a/",
         "https://x.example\u{ff0e}com/",
     ];
-    for url in recusadas {
+    for url in refused {
         let mut d = login();
         if let DataDraft::Login { url: u, .. } = &mut d {
             *u = t(url);
         }
-        let e = erros(rascunho("x", "acme", "dev", d));
+        let e = errors(draft("x", "acme", "dev", d));
         assert!(e.has("url"), "login {url:?}");
         let msg = format!("{e}");
         assert!(
             msg.contains("use https://") || msg.contains("caractere não permitido"),
             "{url:?}: {msg}"
         );
-        sem_o_valor(&e, url);
+        without_the_value(&e, url);
         let mut d = api();
         if let DataDraft::Api { url: u, .. } = &mut d {
             *u = t(url);
         }
         assert!(
-            erros(rascunho("x", "beta", "dev", d)).has("url"),
+            errors(draft("x", "beta", "dev", d)).has("url"),
             "api {url:?}"
         );
     }
@@ -2113,20 +2041,20 @@ fn v2_58_ultimo_rotulo_com_digito() {
         if let DataDraft::Login { url: u, .. } = &mut d {
             *u = t(url);
         }
-        valida(rascunho("x", "acme", "dev", d));
+        valid(draft("x", "acme", "dev", d));
         let mut d = api();
         if let DataDraft::Api { url: u, .. } = &mut d {
             *u = t(url);
         }
-        valida(rascunho("x", "beta", "dev", d));
+        valid(draft("x", "beta", "dev", d));
     }
 }
 
-/// Fase 44 (D9): a origem inteira de uma URL, para o `ward playwright` comparar com a da
-/// página. Ataques: subdomínio, porta, esquema, userinfo disfarçado e `http` fora do
-/// `localhost` dão outra origem ou nenhuma.
+/// Phase 44 (D9): the whole origin of a URL, for `ward playwright` to compare with the
+/// page's. Attacks: subdomain, port, scheme, disguised userinfo and `http` outside
+/// `localhost` give another origin or none.
 #[test]
-fn d9_origem_da_url() {
+fn d9_url_origin() {
     let o = url_origin;
     assert_eq!(
         o("http://localhost:8081/wp-login.php").as_deref(),
@@ -2151,15 +2079,15 @@ fn d9_origem_da_url() {
     );
     assert_eq!(o("https://[::1]:9/").as_deref(), Some("https://[::1]:9"));
     let base = o("https://acme.com.br/login");
-    for outra in [
+    for other in [
         "https://www.acme.com.br/login",
         "https://acme.com.br.evil.io/login",
         "https://acme.com.br:444/login",
         "http://localhost:8082/wp-login.php",
     ] {
-        assert_ne!(o(outra), base, "{outra}");
+        assert_ne!(o(other), base, "{other}");
     }
-    for ruim in [
+    for bad in [
         "http://acme.com.br/login",
         "https://user@acme.com.br/",
         "https://acme.com.br%40evil.io/",
@@ -2171,18 +2099,18 @@ fn d9_origem_da_url() {
         "https://0x7f000001/",
         "",
     ] {
-        assert_eq!(o(ruim), None, "{ruim}");
+        assert_eq!(o(bad), None, "{bad}");
     }
 }
 
-/// Fase 44e (D9, 2ª auditoria do M6): todo host de loopback é origem local, em
-/// qualquer esquema. Ataque: `https://localhost`, `https://127.0.0.1` ou `https://[::1]`
-/// com um certificado de CA local (mkcert, `~/.pki`) iria sem janela; as formas
-/// disfarçadas do loopback também contam.
+/// Phase 44e (D9, 2nd audit of M6): every loopback host is a local origin, in any
+/// scheme. Attack: `https://localhost`, `https://127.0.0.1` or `https://[::1]` with a
+/// local CA certificate (mkcert, `~/.pki`) would go without a window; the disguised
+/// forms of loopback count too.
 #[test]
-fn ataque_origem_local_em_qualquer_esquema() {
+fn attack_local_origin_in_any_scheme() {
     let o = local_url_origin;
-    for (url, origem) in [
+    for (url, origin) in [
         (
             "http://localhost:8081/wp-login.php",
             "http://localhost:8081",
@@ -2202,9 +2130,9 @@ fn ataque_origem_local_em_qualquer_esquema() {
         ("https://wp.localhost/", "https://wp.localhost"),
         ("https://a.b.localhost:8443/", "https://a.b.localhost:8443"),
     ] {
-        assert_eq!(o(url).as_deref(), Some(origem), "{url}");
+        assert_eq!(o(url).as_deref(), Some(origin), "{url}");
     }
-    for fora in [
+    for outside in [
         "https://acme.com.br/login",
         "https://localhost.acme.com.br/",
         "https://localhostx/",
@@ -2214,12 +2142,12 @@ fn ataque_origem_local_em_qualquer_esquema() {
         "https://[::2]/",
         "https://[::ffff:8.8.8.8]/",
         "https://[2001:db8::1]/",
-        // Recusadas pelo parser: não têm origem nenhuma (e nada é usado).
+        // Refused by the parser: they have no origin at all (and nothing is used).
         "https://LOCALHOST/",
         "https://0x7f000001/",
         "http://evil.io/",
         "",
     ] {
-        assert_eq!(o(fora), None, "{fora}");
+        assert_eq!(o(outside), None, "{outside}");
     }
 }

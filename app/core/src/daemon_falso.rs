@@ -24,7 +24,7 @@
 //! (PIN atual conferido como no `mudar_nivel`, com a mesma contagem de erros) e
 //! `trocar_senha` (senha atual conferida em tempo constante; a nova passa a destravar).
 //! Backup externo (Fase 48): `backup_externo`, `definir_backup_externo` (a mesma
-//! conferência do `wardd`: `BackupExterno::novo`) e `pendrives`, com os pendrives falsos
+//! conferência do `wardd`: `ExternalBackup::new`) e `pendrives`, com os pendrives falsos
 //! de [`pendrives_de_teste`] (nenhum dispositivo de verdade; rótulos com HTML, direção de
 //! texto e largura zero para a QA da exibição).
 //! Restaurar (Fase 47): `backups` e `restaurar_backup` com a mesma ordem de conferência
@@ -41,7 +41,7 @@
 
 use zeroize::Zeroizing;
 
-use ward_core::configuracao::HashPin;
+use ward_core::config::PinHash;
 use ward_core::entry::{AccessLevel, Dates, Draft, Entry, EntryType, Secret as SegredoCore};
 use ward_core::protocolo::{
     self, Alvo, Decisao, DetalheEntrada, ErroResposta, ItemLista, Papel, Pedido, PedidoDeAprovacao,
@@ -66,7 +66,7 @@ pub struct DaemonFalso {
     /// `false` só no [`DaemonFalso::sem_cofre`] até o `criar_cofre` (Fase 30).
     existe: bool,
     /// Hash do PIN do cofre criado pelo `criar_cofre`, como o `wardd` o guarda (D30).
-    hash_pin: Option<HashPin>,
+    hash_pin: Option<PinHash>,
     /// Erros de PIN seguidos (S9). Zera no acerto.
     erros_pin: u32,
     travado: bool,
@@ -83,7 +83,7 @@ pub struct DaemonFalso {
     /// Id, entradas e se a entrada padrão é oculta (Fase 54b).
     aprovacoes: Vec<(u64, Vec<String>, bool)>,
     /// Backup externo da configuração (Fase 48; D30: desligado e sem UUID por padrão).
-    backup: wc::configuracao::BackupExterno,
+    backup: wc::config::ExternalBackup,
     /// Pendrives que o "udisks2" vê; `None` é o udisks2 sem resposta.
     pendrives: Option<Vec<Pendrive>>,
     /// Versões do backup local (Fase 47), da mais nova para a mais antiga; `None` é a
@@ -387,7 +387,7 @@ impl DaemonFalso {
             minutos_trava: wc::limits::DEFAULT_LOCK_MINUTES,
             senha: None,
             aprovacoes: Vec::new(),
-            backup: wc::configuracao::BackupExterno::desligado(),
+            backup: wc::config::ExternalBackup::disabled(),
             pendrives: Some(pendrives_de_teste()),
             backups: Some(Vec::new()),
             geracao: 1,
@@ -399,8 +399,8 @@ impl DaemonFalso {
     /// (`Configurações / Backup externo ligado`).
     pub fn backup_externo_ligado() -> DaemonFalso {
         let mut d = DaemonFalso::cheio();
-        d.backup = wc::configuracao::BackupExterno::novo(true, Some("7C1E-42A9"))
-            .unwrap_or_else(|_| wc::configuracao::BackupExterno::desligado());
+        d.backup = wc::config::ExternalBackup::new(true, Some("7C1E-42A9"))
+            .unwrap_or_else(|_| wc::config::ExternalBackup::disabled());
         d
     }
 
@@ -437,7 +437,7 @@ impl DaemonFalso {
 
     /// Backup externo da configuração (só para os testes).
     pub fn backup(&self) -> (bool, Option<String>) {
-        (self.backup.ligado(), self.backup.uuid().map(str::to_owned))
+        (self.backup.enabled(), self.backup.uuid().map(str::to_owned))
     }
 
     /// Fase 31: as entradas do cofre de teste com o cofre travado (`Destravar / *`). A
@@ -520,7 +520,7 @@ impl DaemonFalso {
 
     /// O PIN confere com o hash guardado pelo `criar_cofre` (só para os testes).
     pub fn pin_confere(&self, pin: &[u8]) -> bool {
-        self.hash_pin.as_ref().is_some_and(|h| h.conferir(pin))
+        self.hash_pin.as_ref().is_some_and(|h| h.verify(pin))
     }
 
     fn entrada(&self, nome: &str) -> Option<&Entry> {
@@ -536,7 +536,7 @@ impl DaemonFalso {
                     papel: Papel::App,
                 },
                 // Como o `wardd` (`nucleo.rs` › `criar_cofre`): só o hash do PIN fica.
-                Pedido::CriarCofre { senha: _, pin } => match HashPin::criar(pin.expose()) {
+                Pedido::CriarCofre { senha: _, pin } => match PinHash::create(pin.expose()) {
                     Ok(h) => {
                         self.hash_pin = Some(h);
                         self.existe = true;
@@ -651,17 +651,17 @@ impl DaemonFalso {
             // Fase 38: a configuração e as trocas (sem hash nem UUID na resposta).
             Pedido::Configuracao => Resposta::Configuracao {
                 minutos_trava: self.minutos_trava,
-                backup_externo: self.backup.ligado(),
+                backup_externo: self.backup.enabled(),
                 backup_local: self.backup_local,
             },
             // Fase 48: a mesma regra do `wardd` (Fase 46): só o formato de D45; ligado
             // exige UUID. Nada é copiado (não há pendrive de verdade).
             Pedido::BackupExterno => Resposta::BackupExterno {
-                ligado: self.backup.ligado(),
+                ligado: self.backup.enabled(),
                 uuid: self.backup.uuid().map(str::to_owned),
             },
             Pedido::DefinirBackupExterno { ligado, uuid } => {
-                match wc::configuracao::BackupExterno::novo(ligado, uuid.as_deref()) {
+                match wc::config::ExternalBackup::new(ligado, uuid.as_deref()) {
                     Ok(b) => {
                         self.backup = b;
                         Resposta::Ok
@@ -726,8 +726,8 @@ impl DaemonFalso {
     /// Argon2id da biblioteca (tempo constante); o 5º erro seguido trava.
     fn conferir_pin(&mut self, pin: &SegredoCore) -> Result<(), ErroResposta> {
         let confere = match &self.hash_pin {
-            Some(h) => h.conferir(pin.expose()),
-            None => cofre_teste::configuracao_de_teste().conferir_pin(pin.expose()),
+            Some(h) => h.verify(pin.expose()),
+            None => cofre_teste::configuracao_de_teste().verify_pin(pin.expose()),
         };
         if !confere {
             self.erros_pin = self.erros_pin.saturating_add(1);
@@ -745,7 +745,7 @@ impl DaemonFalso {
     fn trocar_pin(&mut self, atual: &SegredoCore, novo: &SegredoCore) -> Result<(), ErroResposta> {
         self.conferir_pin(atual)?;
         self.hash_pin =
-            Some(HashPin::criar(novo.expose()).map_err(|_| ErroResposta::PedidoInvalido)?);
+            Some(PinHash::create(novo.expose()).map_err(|_| ErroResposta::PedidoInvalido)?);
         Ok(())
     }
 

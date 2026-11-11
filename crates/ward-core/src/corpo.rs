@@ -19,7 +19,7 @@
 //! campo   = comprimento (u32) ‖ bytes
 //! ```
 //!
-//! - **Versão 3** (D30, D39): a configuração ([`Configuracao`]) vem antes das entradas e
+//! - **Versão 3** (D30, D39): a configuração ([`VaultConfig`]) vem antes das entradas e
 //!   é obrigatória, e começa pela **geração**: o número da versão gravada, que toda
 //!   gravação a partir de um [`OpenVault`] sobe em 1. Ela barra a troca do arquivo
 //!   por uma versão autêntica mais antiga ([`abrir_entradas_desde`] e
@@ -58,7 +58,7 @@ use core::fmt;
 
 use zeroize::Zeroizing;
 
-use crate::configuracao::{self, BackupExterno, Configuracao, HashPin};
+use crate::config::{self, ExternalBackup, PinHash, VaultConfig};
 use crate::entry::{
     AccessLevel, AttachmentDraft, Auth, Data, DataDraft, Dates, Draft, Entry, EntryType,
     ExtraDraft, ExtraValue, Secret,
@@ -219,7 +219,7 @@ pub fn abrir_entradas_lida(
 /// [`crate::atomic_write::change_password`] selam e gravam, e é a gravação que escolhe a
 /// geração (a do cofre aberto + 1).
 pub fn serializar(
-    configuracao: &Configuracao,
+    configuracao: &VaultConfig,
     geracao: u64,
     entradas: &[Entry],
 ) -> Result<Zeroizing<Vec<u8>>, ErroCorpo> {
@@ -265,7 +265,7 @@ pub fn serializar(
 }
 
 /// Corpo lido: a configuração, a geração (≥ 1) e as entradas, em ordem de nome.
-pub type CorpoLido = (Configuracao, u64, Vec<Entry>);
+pub type CorpoLido = (VaultConfig, u64, Vec<Entry>);
 
 /// Lê o corpo decifrado: a configuração, a geração e as entradas. Recusa o corpo
 /// inteiro com [`ErroCorpo::Invalido`] em qualquer problema.
@@ -450,7 +450,7 @@ impl Saida<'_> {
     }
 }
 
-fn escrever_corpo(s: &mut Saida<'_>, configuracao: &Configuracao, geracao: u64, ordem: &[&Entry]) {
+fn escrever_corpo(s: &mut Saida<'_>, configuracao: &VaultConfig, geracao: u64, ordem: &[&Entry]) {
     s.por(&VERSAO_CORPO.to_le_bytes());
     if geracao == 0 {
         s.erro = true;
@@ -463,14 +463,14 @@ fn escrever_corpo(s: &mut Saida<'_>, configuracao: &Configuracao, geracao: u64, 
     }
 }
 
-fn escrever_configuracao(s: &mut Saida<'_>, c: &Configuracao) {
-    s.campo(c.hash_pin().bytes(), MAX_PIN_HASH);
-    let minutos = c.minutos_trava();
-    if !configuracao::minutos_validos(minutos) {
+fn escrever_configuracao(s: &mut Saida<'_>, c: &VaultConfig) {
+    s.campo(c.pin_hash().bytes(), MAX_PIN_HASH);
+    let minutos = c.lock_minutes();
+    if !config::valid_minutes(minutos) {
         s.erro = true;
     }
     s.por(&minutos.to_le_bytes());
-    s.por(&[u8::from(c.backup().ligado())]);
+    s.por(&[u8::from(c.backup().enabled())]);
     s.campo(c.backup().uuid().unwrap_or("").as_bytes(), MAX_BACKUP_UUID);
 }
 
@@ -733,12 +733,12 @@ fn ler_configuracao<'a>(l: &mut Leitor<'a>) -> Result<BrutaConfiguracao<'a>, Err
         return Err(ErroCorpo::Invalido);
     }
     let hash_pin = l.campo(MAX_PIN_HASH)?;
-    if !configuracao::conferir_texto(hash_pin) {
+    if !config::verify_text(hash_pin) {
         return Err(ErroCorpo::Invalido);
     }
     let b = l.bytes(4)?;
     let minutos_trava = u32::from_le_bytes([b[0], b[1], b[2], b[3]]);
-    if !configuracao::minutos_validos(minutos_trava) {
+    if !config::valid_minutes(minutos_trava) {
         return Err(ErroCorpo::Invalido);
     }
     let ligado = match l.u8()? {
@@ -747,7 +747,7 @@ fn ler_configuracao<'a>(l: &mut Leitor<'a>) -> Result<BrutaConfiguracao<'a>, Err
         _ => return Err(ErroCorpo::Invalido),
     };
     let uuid = l.campo(MAX_BACKUP_UUID)?;
-    if (!uuid.is_empty() && !configuracao::uuid_valido(uuid)) || (ligado && uuid.is_empty()) {
+    if (!uuid.is_empty() && !config::valid_uuid(uuid)) || (ligado && uuid.is_empty()) {
         return Err(ErroCorpo::Invalido);
     }
     Ok(BrutaConfiguracao {
@@ -760,15 +760,15 @@ fn ler_configuracao<'a>(l: &mut Leitor<'a>) -> Result<BrutaConfiguracao<'a>, Err
 }
 
 /// 2ª passada da configuração: copia o hash para um tipo que zera ao sair.
-fn montar_configuracao(b: &BrutaConfiguracao<'_>) -> Result<Configuracao, ErroCorpo> {
-    let hash_pin = HashPin::de_phc(b.hash_pin).ok_or(ErroCorpo::Invalido)?;
+fn montar_configuracao(b: &BrutaConfiguracao<'_>) -> Result<VaultConfig, ErroCorpo> {
+    let hash_pin = PinHash::from_phc(b.hash_pin).ok_or(ErroCorpo::Invalido)?;
     let uuid = if b.uuid.is_empty() {
         None
     } else {
         Some(core::str::from_utf8(b.uuid).map_err(|_| ErroCorpo::Invalido)?)
     };
-    let backup = BackupExterno::novo(b.ligado, uuid).map_err(|_| ErroCorpo::Invalido)?;
-    Ok(Configuracao::de_partes(hash_pin, b.minutos_trava, backup))
+    let backup = ExternalBackup::new(b.ligado, uuid).map_err(|_| ErroCorpo::Invalido)?;
+    Ok(VaultConfig::from_parts(hash_pin, b.minutos_trava, backup))
 }
 
 fn ler_tag<'a>(l: &mut Leitor<'a>) -> Result<&'a [u8], ErroCorpo> {

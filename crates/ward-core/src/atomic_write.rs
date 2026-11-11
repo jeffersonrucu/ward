@@ -29,11 +29,11 @@
 //! Nor sealing and writing any body through the open vault (V2.50, D44):
 //!
 //! ```compile_fail,E0603
-//! use ward_core::configuracao::{Configuracao, HashPin};
+//! use ward_core::config::{PinHash, VaultConfig};
 //! use ward_core::format::{OpenVault, MasterPassword};
 //!
 //! let password = MasterPassword::new("falso-mestra-ward-01".to_owned());
-//! let config = Configuracao::nova(HashPin::criar(b"135790").unwrap());
+//! let config = VaultConfig::new(PinHash::create(b"135790").unwrap());
 //! let vault = OpenVault::new(&password, config).unwrap();
 //! // Body without a PIN hash: only the version and zero entries.
 //! let body = [3u8, 0, 0, 0, 0, 0];
@@ -43,12 +43,12 @@
 //! The public path:
 //!
 //! ```no_run
-//! use ward_core::configuracao::{Configuracao, HashPin};
+//! use ward_core::config::{PinHash, VaultConfig};
 //! use ward_core::format::{OpenVault, MasterPassword};
 //! use ward_core::atomic_write::write_entries;
 //!
 //! let password = MasterPassword::new("falso-mestra-ward-01".to_owned());
-//! let config = Configuracao::nova(HashPin::criar(b"135790").unwrap());
+//! let config = VaultConfig::new(PinHash::create(b"135790").unwrap());
 //! let mut vault = OpenVault::new(&password, config).unwrap();
 //! write_entries(std::path::Path::new("vault.ward"), &mut vault, &[]).unwrap();
 //! assert_eq!(vault.generation(), 1);

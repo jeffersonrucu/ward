@@ -8,7 +8,7 @@
 pub mod backup;
 
 // Vault configuration: PIN hash, lock timeout, backup (D30, Phase 19b).
-pub mod configuracao;
+pub mod config;
 // Vault body: configuration and entries ↔ bytes (D26, D30; Phases 15a and 19b).
 pub mod corpo;
 mod crypto;

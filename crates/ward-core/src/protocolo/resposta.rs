@@ -593,12 +593,11 @@ impl Resposta {
                 ok((MIN_LOCK_MINUTES..=MAX_LOCK_MINUTES).contains(minutos_trava))
             }
             Resposta::BackupExterno { ligado, uuid } => {
-                ok(crate::configuracao::BackupExterno::novo(*ligado, uuid.as_deref()).is_ok())
+                ok(crate::config::ExternalBackup::new(*ligado, uuid.as_deref()).is_ok())
             }
             Resposta::Pendrives(l) => ok(l.len() <= MAX_PENDRIVES
-                && l.iter().all(|p| {
-                    crate::configuracao::uuid_valido(p.uuid.as_bytes()) && rotulo_ok(&p.rotulo)
-                })),
+                && l.iter()
+                    .all(|p| crate::config::valid_uuid(p.uuid.as_bytes()) && rotulo_ok(&p.rotulo))),
             Resposta::Sugestoes(l) => ok(l.len() <= MAX_ENTRIES
                 && l.iter()
                     .all(|s| s.nome.len() <= MAX_NAME && s.usuario.len() <= MAX_TEXT)),

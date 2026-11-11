@@ -204,7 +204,7 @@ fn vault_014_body_v4_read_and_written_byte_for_byte() {
         .map(|e| (e.name(), e.kind().name(), e.level().name()))
         .collect();
     assert_eq!(got, ENTRIES_V4);
-    assert_eq!(config.minutos_trava(), 240);
+    assert_eq!(config.lock_minutes(), 240);
 }
 
 #[test]
