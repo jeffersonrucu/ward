@@ -33,9 +33,9 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use ward_core::protocolo::{
-    self, ErroResposta, Papel, Pedido, Resposta,
-    quadro::{self, ErroQuadro},
+use ward_core::protocol::{
+    self, Request, ResponseError, Resposta, Role,
+    frame::{self, FrameError},
 };
 use ward_platform::{AcceptError, Install, KernelPolicy, Listener, PeerClass, PeerProcess};
 
@@ -72,8 +72,8 @@ impl Slots {
     /// Reserves a slot in the role's group (app or the rest). Full: in the group of the
     /// rest, drops its oldest idle one; in the app's, refuses. A connection never drops
     /// one of another group.
-    fn reserve(&self, stream: &UnixStream, role: Papel) -> Option<(u64, Arc<AtomicBool>)> {
-        let app = role == Papel::App;
+    fn reserve(&self, stream: &UnixStream, role: Role) -> Option<(u64, Arc<AtomicBool>)> {
+        let app = role == Role::App;
         let mut list = self.list.lock().unwrap_or_else(|e| e.into_inner());
         let limit = if app {
             MAX_APP_CONNECTIONS
@@ -147,20 +147,20 @@ pub struct Roles {
 /// only for the process `pid` that the launcher opened and that is still alive (D63):
 /// another child of the daemon with the app's group (a `ward run` of `ward-app`, Phase
 /// 26) stays an agent.
-pub fn role_from_class(class: PeerClass, pid: u32, is_the_app: impl Fn(u32) -> bool) -> Papel {
+pub fn role_from_class(class: PeerClass, pid: u32, is_the_app: impl Fn(u32) -> bool) -> Role {
     match class {
-        PeerClass::App if is_the_app(pid) => Papel::App,
+        PeerClass::App if is_the_app(pid) => Role::App,
         PeerClass::App => {
             aviso!("papel app recusado (pid {pid}): não é o app aberto pelo lançador (D63)");
-            Papel::Agente
+            Role::Agent
         }
-        PeerClass::ExtensionHost => Papel::Extensao,
-        PeerClass::Common { .. } => Papel::Agente,
+        PeerClass::ExtensionHost => Role::Extension,
+        PeerClass::Common { .. } => Role::Agent,
     }
 }
 
 impl Roles {
-    fn role(&self, peer: &PeerProcess) -> Papel {
+    fn role(&self, peer: &PeerProcess) -> Role {
         let pid = peer.credentials().pid;
         // D63, test daemon: the launcher's pid and parent = daemon, without the egid. The
         // role comes from the same `role_from_class`.
@@ -185,7 +185,7 @@ impl Roles {
             return role_from_class(c, pid, |_| false);
         }
         let Some(inst) = &self.install else {
-            return Papel::Agente;
+            return Role::Agent;
         };
         match peer.classify(inst, &KernelPolicy::read()) {
             c @ (PeerClass::App | PeerClass::ExtensionHost) => {
@@ -197,7 +197,7 @@ impl Roles {
                 if cred.gid == inst.app_gid() || cred.gid == inst.extension_gid() {
                     aviso!("papel especial recusado (pid {}): {reason}", cred.pid);
                 }
-                Papel::Agente
+                Role::Agent
             }
         }
     }
@@ -205,16 +205,16 @@ impl Roles {
 
 /// Writes a response for the role. A response that the role cannot receive turns into
 /// an internal error (no credential ever goes out to the agent, S1).
-fn answer(stream: &mut UnixStream, role: Papel, r: &Resposta) -> Result<(), ErroQuadro> {
-    let q = match protocolo::codificar_resposta(role, r) {
+fn answer(stream: &mut UnixStream, role: Role, r: &Resposta) -> Result<(), FrameError> {
+    let q = match protocol::encode_response(role, r) {
         Ok(q) => q,
         Err(_) => {
-            aviso!("resposta recusada para o papel {}", role.nome());
-            protocolo::codificar_resposta(role, &Resposta::Erro(ErroResposta::Interno))
-                .map_err(|_| ErroQuadro::Io(io::ErrorKind::InvalidData))?
+            aviso!("resposta recusada para o papel {}", role.name());
+            protocol::encode_response(role, &Resposta::Erro(ResponseError::Internal))
+                .map_err(|_| FrameError::Io(io::ErrorKind::InvalidData))?
         }
     };
-    quadro::escrever_quadro(stream, &q, quadro::LIMITE_RESPOSTA)
+    frame::write_frame(stream, &q, frame::RESPONSE_LIMIT)
 }
 
 /// The connection of the app that subscribed: the engine writes on it with the same
@@ -227,7 +227,7 @@ struct SocketSubscriber {
 impl Assinante for SocketSubscriber {
     fn entregar(&mut self, r: &Resposta) -> bool {
         let _g = self.write_lock.lock().unwrap_or_else(|e| e.into_inner());
-        let ok = answer(&mut self.stream, Papel::App, r).is_ok();
+        let ok = answer(&mut self.stream, Role::App, r).is_ok();
         if !ok {
             let _ = self.stream.shutdown(Shutdown::Both);
         }
@@ -256,19 +256,19 @@ impl Cliente for SocketClient<'_> {
 fn serve_connection(
     mut stream: UnixStream,
     peer: PeerProcess,
-    role: Papel,
+    role: Role,
     daemon: &Daemon,
     slots: &Slots,
     id: u64,
 ) {
     let _ = stream.set_read_timeout(Some(READ_DEADLINE));
     let _ = stream.set_write_timeout(Some(WRITE_DEADLINE));
-    let limit = quadro::limite_do_quadro(role);
+    let limit = frame::frame_limit(role);
     let write_lock = Arc::new(Mutex::new(()));
     // D65 (a): only the app role's connection receives the engine's notices, and it has
     // no read deadline (open wait).
     let mut subscribed = false;
-    if role == Papel::App
+    if role == Role::App
         && let Ok(copy) = stream.try_clone()
     {
         let _ = stream.set_read_timeout(None);
@@ -283,30 +283,26 @@ fn serve_connection(
     }
     loop {
         slots.mark(id, true);
-        let bytes = match quadro::ler_quadro(&mut stream, limit) {
+        let bytes = match frame::read_frame(&mut stream, limit) {
             Ok(b) => b,
-            Err(ErroQuadro::Fechado) | Err(ErroQuadro::Io(_)) | Err(ErroQuadro::Truncado) => {
+            Err(FrameError::Closed) | Err(FrameError::Io(_)) | Err(FrameError::Truncated) => {
                 break;
             }
             Err(e) => {
-                depurar!("quadro recusado ({}): {e}", role.nome());
-                let _ = answer(
-                    &mut stream,
-                    role,
-                    &Resposta::Erro(protocolo::erro_do_quadro(e)),
-                );
+                depurar!("quadro recusado ({}): {e}", role.name());
+                let _ = answer(&mut stream, role, &Resposta::Erro(protocol::frame_error(e)));
                 break;
             }
         };
         slots.mark(id, false);
-        if role != Papel::Agente && peer.reverify_no_debugger().is_err() {
+        if role != Role::Agent && peer.reverify_no_debugger().is_err() {
             aviso!(
                 "cliente {} sob depurador ou encerrado: conexão fechada",
-                role.nome()
+                role.name()
             );
             break;
         }
-        let response = match protocolo::decodificar_pedido(role, &bytes) {
+        let response = match protocol::decode_request(role, &bytes) {
             Ok(p) => {
                 drop(bytes);
                 let client = SocketClient {
@@ -315,14 +311,14 @@ fn serve_connection(
                 };
                 // `ward run` (Phase 26): the session writes the responses; after a command
                 // is launched, the connection ends. Refused before that, it goes on.
-                if role == Papel::Agente && matches!(p, Pedido::Executar(_)) {
+                if role == Role::Agent && matches!(p, Request::Run(_)) {
                     if crate::execution::session(daemon, &client, &stream, p) {
                         continue;
                     }
                     break;
                 }
                 // `ward ssh` (Phase 27): the same session shape.
-                if role == Papel::Agente && matches!(p, Pedido::Ssh { .. }) {
+                if role == Role::Agent && matches!(p, Request::Ssh { .. }) {
                     if crate::ssh::session(daemon, &client, &stream, p) {
                         continue;
                     }
@@ -331,7 +327,7 @@ fn serve_connection(
                 daemon.atender_de(&client, role, p)
             }
             Err(e) => {
-                depurar!("pedido recusado ({}): {}", role.nome(), e.codigo());
+                depurar!("pedido recusado ({}): {}", role.name(), e.code());
                 Resposta::Erro(e)
             }
         };
@@ -382,7 +378,7 @@ pub fn serve(listener: &Listener, daemon: Arc<Daemon>, roles: Arc<Roles>) -> io:
         let Some((id, _)) = slots.reserve(&stream, role) else {
             let mut s = stream;
             let _ = s.set_write_timeout(Some(Duration::from_secs(1)));
-            let _ = answer(&mut s, role, &Resposta::Erro(ErroResposta::Ocupado));
+            let _ = answer(&mut s, role, &Resposta::Erro(ResponseError::Busy));
             continue;
         };
         let daemon = daemon.clone();
@@ -405,7 +401,7 @@ pub fn serve(listener: &Listener, daemon: Arc<Daemon>, roles: Arc<Roles>) -> io:
 mod tests {
     use super::*;
     use ward_core::entry::Environment;
-    use ward_core::protocolo::{Operacao, PedidoDeAprovacao, PedidoDeDestrave};
+    use ward_core::protocol::{Operation, PedidoDeAprovacao, PedidoDeDestrave};
 
     /// D63: without the group, the launcher's pid is not enough; with the group, only the
     /// launcher's pid. Holds in both builds (`make test-no-test-mode` runs without the
@@ -420,14 +416,11 @@ mod tests {
         ] {
             assert_eq!(
                 role_from_class(PeerClass::Common { reason }, 42, |_| true),
-                Papel::Agente
+                Role::Agent
             );
         }
-        assert_eq!(
-            role_from_class(PeerClass::App, 42, |_| false),
-            Papel::Agente
-        );
-        assert_eq!(role_from_class(PeerClass::App, 42, |p| p == 42), Papel::App);
+        assert_eq!(role_from_class(PeerClass::App, 42, |_| false), Role::Agent);
+        assert_eq!(role_from_class(PeerClass::App, 42, |p| p == 42), Role::App);
     }
 
     /// D63, through the socket: a child of this process (as the launcher would open it),
@@ -465,7 +458,7 @@ mod tests {
             test_app: None,
             test_extension: None,
         };
-        assert_eq!(roles.role(&peer), Papel::Agente);
+        assert_eq!(roles.role(&peer), Role::Agent);
         // Phase 41, only in the test daemon: with the extension exception on and the
         // installed Chrome as an accepted parent, this peer (child of the test, not of
         // Chrome) stays an agent. Without the feature, the exception is not even built.
@@ -479,7 +472,7 @@ mod tests {
             test_app: None,
             test_extension: extension,
         };
-        assert_eq!(roles.role(&peer), Papel::Agente);
+        assert_eq!(roles.role(&peer), Role::Agent);
         let _ = child.kill();
         let _ = child.wait();
         let _ = std::fs::remove_dir_all(&dir);
@@ -497,12 +490,12 @@ mod tests {
         let slots = Slots::default();
         // The app connects first and stays silent (waiting for notices).
         let (app_d, app_c) = UnixStream::pair().unwrap();
-        let (app_id, _) = slots.reserve(&app_d, Papel::App).unwrap();
+        let (app_id, _) = slots.reserve(&app_d, Role::App).unwrap();
         // 10 000 silent agents: the old ones are evicted among themselves.
         let mut agents = Vec::new();
         for _ in 0..10_000 {
             let (d, c) = UnixStream::pair().unwrap();
-            assert!(slots.reserve(&d, Papel::Agente).is_some());
+            assert!(slots.reserve(&d, Role::Agent).is_some());
             agents.push(c);
             if agents.len() > MAX_CONNECTIONS * 2 {
                 agents.remove(0);
@@ -528,18 +521,18 @@ mod tests {
             slots.mark(*id, false);
         }
         let (d, _c) = UnixStream::pair().unwrap();
-        assert!(slots.reserve(&d, Papel::Agente).is_none());
+        assert!(slots.reserve(&d, Role::Agent).is_none());
         let (d, _c2) = UnixStream::pair().unwrap();
-        assert!(slots.reserve(&d, Papel::Extensao).is_none());
+        assert!(slots.reserve(&d, Role::Extension).is_none());
         let mut apps = vec![(app_d, app_c)];
         for _ in 1..MAX_APP_CONNECTIONS {
             let (d, c) = UnixStream::pair().unwrap();
-            assert!(slots.reserve(&d, Papel::App).is_some());
+            assert!(slots.reserve(&d, Role::App).is_some());
             apps.push((d, c));
         }
         // Full app group: refuses and evicts nobody (neither app nor agent).
         let (d, _c3) = UnixStream::pair().unwrap();
-        assert!(slots.reserve(&d, Papel::App).is_none());
+        assert!(slots.reserve(&d, Role::App).is_none());
         for (_, c) in &apps {
             assert!(alive(c));
         }
@@ -550,7 +543,7 @@ mod tests {
         // Releasing an app slot makes room for another one.
         slots.release(app_id);
         let (d, _c4) = UnixStream::pair().unwrap();
-        assert!(slots.reserve(&d, Papel::App).is_some());
+        assert!(slots.reserve(&d, Role::App).is_some());
     }
 
     /// What the engine delivers to the app goes out as a whole response frame of the app
@@ -567,7 +560,7 @@ mod tests {
             id: 3,
             entradas: vec!["t-aprov".into()],
             ambiente: Environment::Prod,
-            operacao: Operacao::Executar,
+            operacao: Operation::Run,
             comando: "\"true\"".into(),
             diretorio: "\"/\"".into(),
             cadeia: vec!["claude".into()],
@@ -578,23 +571,23 @@ mod tests {
         assert!(s.entregar(&Resposta::PedidoDeAprovacao(p.clone())));
         let d = PedidoDeDestrave {
             entrada: "t-aprov".into(),
-            operacao: Operacao::Executar,
+            operacao: Operation::Run,
             comando: "\"true\"".into(),
             restante: 120,
         };
         assert!(s.entregar(&Resposta::PedidoDeDestrave(d.clone())));
-        let q = quadro::ler_quadro(&mut b, quadro::LIMITE_RESPOSTA).unwrap();
-        match protocolo::decodificar_resposta(Papel::App, &q).unwrap() {
+        let q = frame::read_frame(&mut b, frame::RESPONSE_LIMIT).unwrap();
+        match protocol::decode_response(Role::App, &q).unwrap() {
             Resposta::PedidoDeAprovacao(read) => assert_eq!(read, p),
             r => panic!("{r:?}"),
         }
-        let q = quadro::ler_quadro(&mut b, quadro::LIMITE_RESPOSTA).unwrap();
-        match protocolo::decodificar_resposta(Papel::App, &q).unwrap() {
+        let q = frame::read_frame(&mut b, frame::RESPONSE_LIMIT).unwrap();
+        match protocol::decode_response(Role::App, &q).unwrap() {
             Resposta::PedidoDeDestrave(read) => assert_eq!(read, d),
             r => panic!("{r:?}"),
         }
         // The agent does not read that frame.
-        assert!(protocolo::decodificar_resposta(Papel::Agente, &q).is_err());
+        assert!(protocol::decode_response(Role::Agent, &q).is_err());
         drop(b);
         // Another test running in parallel that does `fork` holds a copy of the fd until
         // the `exec` (CLOEXEC): the failure comes right after.

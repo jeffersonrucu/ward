@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use ward_core::protocolo::{self, ErroResposta, Papel, Pedido, Resposta};
+use ward_core::protocol::{self, Request, ResponseError, Resposta, Role};
 use wardd::nucleo::{Caminhos, Daemon, Relogio};
 
 pub const PASSWORD: &str = "falso-mestra-ward-01";
@@ -90,22 +90,22 @@ pub fn daemon_at(c: Caminhos) -> (Daemon, FakeClock) {
 }
 
 /// Reads the request as the socket would (the role is checked first).
-pub fn req(role: Papel, op: &str, data: &str) -> Result<Pedido, ErroResposta> {
-    protocolo::decodificar_pedido(
+pub fn req(role: Role, op: &str, data: &str) -> Result<Request, ResponseError> {
+    protocol::decode_request(
         role,
         format!(r#"{{"v":1,"op":"{op}","dados":{data}}}"#).as_bytes(),
     )
 }
 
 /// Requests and returns the response (the request has to go through the reading).
-pub fn request(d: &Daemon, role: Papel, op: &str, data: &str) -> Resposta {
+pub fn request(d: &Daemon, role: Role, op: &str, data: &str) -> Resposta {
     match req(role, op, data) {
         Ok(p) => d.atender(role, p),
         Err(e) => Resposta::Erro(e),
     }
 }
 
-pub fn error(r: &Resposta) -> Option<ErroResposta> {
+pub fn error(r: &Resposta) -> Option<ResponseError> {
     match r {
         Resposta::Erro(e) => Some(e.clone()),
         _ => None,
@@ -119,7 +119,7 @@ pub fn ok(r: &Resposta) -> bool {
 pub fn unlock(d: &Daemon, password: &str) -> Resposta {
     request(
         d,
-        Papel::Agente,
+        Role::Agent,
         "destravar",
         &format!(r#"{{"senha":"{}"}}"#, b64(password.as_bytes())),
     )
@@ -146,7 +146,7 @@ pub fn database(name: &str, tunnel: &str) -> String {
     )
 }
 
-pub fn set_level(d: &Daemon, role: Papel, name: &str, level: &str, pin: &str) -> Resposta {
+pub fn set_level(d: &Daemon, role: Role, name: &str, level: &str, pin: &str) -> Resposta {
     request(
         d,
         role,
@@ -164,7 +164,7 @@ pub fn test_vault(dir: &Dir) -> (Daemon, FakeClock) {
     let (d, r) = daemon_at(dir.paths());
     let create = request(
         &d,
-        Papel::App,
+        Role::App,
         "criar_cofre",
         &format!(
             r#"{{"senha":"{}","pin":"{}"}}"#,
@@ -180,16 +180,16 @@ pub fn test_vault(dir: &Dir) -> (Daemon, FakeClock) {
         server("s1"),
         database("b1", "s1"),
     ] {
-        let r = request(&d, Papel::App, "salvar_entrada", &q);
+        let r = request(&d, Role::App, "salvar_entrada", &q);
         assert!(ok(&r), "{r:?}");
     }
-    assert!(ok(&set_level(&d, Papel::App, "t-livre", "livre", PIN)));
-    assert!(ok(&set_level(&d, Papel::App, "t-bloq", "bloqueado", PIN)));
+    assert!(ok(&set_level(&d, Role::App, "t-livre", "livre", PIN)));
+    assert!(ok(&set_level(&d, Role::App, "t-bloq", "bloqueado", PIN)));
     (d, r)
 }
 
-pub fn encoded(role: Papel, r: &Resposta) -> Vec<u8> {
-    protocolo::codificar_resposta(role, r).unwrap().to_vec()
+pub fn encoded(role: Role, r: &Resposta) -> Vec<u8> {
+    protocol::encode_response(role, r).unwrap().to_vec()
 }
 
 pub fn contains(haystack: &[u8], needle: &[u8]) -> bool {
@@ -222,12 +222,12 @@ pub fn with_window<R>(
     decision: &str,
     pin: Option<&str>,
     f: impl FnOnce() -> R,
-) -> (R, Vec<protocolo::PedidoDeAprovacao>) {
+) -> (R, Vec<protocol::PedidoDeAprovacao>) {
     use std::sync::atomic::AtomicBool;
     use std::sync::mpsc;
     use wardd::aprovacao::Assinante;
 
-    struct FakeWindow(mpsc::Sender<protocolo::PedidoDeAprovacao>);
+    struct FakeWindow(mpsc::Sender<protocol::PedidoDeAprovacao>);
     impl Assinante for FakeWindow {
         fn entregar(&mut self, r: &Resposta) -> bool {
             if let Resposta::PedidoDeAprovacao(p) = r {
@@ -254,7 +254,7 @@ pub fn with_window<R>(
                     .unwrap_or_default();
                 let _ = request(
                     d,
-                    Papel::App,
+                    Role::App,
                     "responder_aprovacao",
                     &format!(r#"{{"pedido":{},"decisao":"{decision}"{pin}}}"#, p.id),
                 );

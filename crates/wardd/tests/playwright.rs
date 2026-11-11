@@ -17,7 +17,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::*;
-use ward_core::protocolo::{ErroResposta, Papel, Resposta};
+use ward_core::protocol::{ResponseError, Resposta, Role};
 use wardd::aprovacao::SemCliente;
 use wardd::nucleo::Daemon;
 
@@ -80,12 +80,12 @@ fn scene(label: &str, mode: &str) -> Scene {
 impl Scene {
     fn playwright(&self, entry: &str) -> Resposta {
         let p = req(
-            Papel::Agente,
+            Role::Agent,
             "playwright",
             &format!(r#"{{"entrada":"{entry}"}}"#),
         )
         .unwrap();
-        self.d.atender_de(&SemCliente, Papel::Agente, p)
+        self.d.atender_de(&SemCliente, Role::Agent, p)
     }
 
     fn records(&self) -> Vec<serde_json::Value> {
@@ -155,7 +155,7 @@ fn v6_12_session_saved_only_the_path_comes_back() {
         }
         other => panic!("{other:?}"),
     }
-    let enc = encoded(Papel::Agente, &r);
+    let enc = encoded(Role::Agent, &r);
     for f in password_forms() {
         assert!(!contains(&enc, &f), "a resposta tem a senha");
     }
@@ -254,7 +254,7 @@ fn v6_12_session_saved_only_the_path_comes_back() {
 fn v6_15_redirect_to_another_origin_refused() {
     let c = scene("redir", "redir");
     let r = c.playwright("t-livre");
-    assert_eq!(error(&r), Some(ErroResposta::OrigemDiferente), "{r:?}");
+    assert_eq!(error(&r), Some(ResponseError::OriginMismatch), "{r:?}");
     let d = c.events("decisao");
     assert_eq!(d.len(), 2, "{d:?}");
     assert_eq!(d[0]["seguiu"], true);
@@ -273,7 +273,7 @@ fn d9_origin_of_the_page_and_of_the_submission() {
     let c = scene("mente", "mente");
     assert_eq!(
         error(&c.playwright("t-livre")),
-        Some(ErroResposta::OrigemDiferente)
+        Some(ResponseError::OriginMismatch)
     );
     assert!(c.events("preencher").is_empty(), "a senha foi ao Chrome");
     assert!(c.no_profile());
@@ -281,7 +281,7 @@ fn d9_origin_of_the_page_and_of_the_submission() {
     let c = scene("posoutra", "pos_outra");
     assert_eq!(
         error(&c.playwright("t-livre")),
-        Some(ErroResposta::OrigemDiferente)
+        Some(ResponseError::OriginMismatch)
     );
     let d = c.events("decisao");
     assert_eq!(
@@ -298,7 +298,7 @@ fn d9_origin_of_the_page_and_of_the_submission() {
     let c = scene("formoutra", "form_outra");
     assert_eq!(
         error(&c.playwright("t-livre")),
-        Some(ErroResposta::OrigemDiferente)
+        Some(ResponseError::OriginMismatch)
     );
     assert!(!c.session("t-livre").exists());
     assert!(c.no_profile());
@@ -312,7 +312,7 @@ fn s1_session_with_the_password_is_not_saved() {
         let c = scene(mode, mode);
         assert_eq!(
             error(&c.playwright("t-livre")),
-            Some(ErroResposta::SessaoComSegredo),
+            Some(ResponseError::SessionHasSecret),
             "{mode}"
         );
         assert!(!c.session("t-livre").exists(), "{mode}");
@@ -333,7 +333,7 @@ fn browser_that_crashes_or_sends_garbage() {
         let c = scene(mode, mode);
         assert_eq!(
             error(&c.playwright("t-livre")),
-            Some(ErroResposta::NavegadorFalhou),
+            Some(ResponseError::BrowserFailed),
             "{mode}"
         );
         assert!(c.no_profile(), "{mode}");
@@ -352,7 +352,7 @@ fn d6_lock_during_the_session_nothing_saved() {
     });
     let r = c.playwright("t-livre");
     t.join().unwrap();
-    assert_eq!(error(&r), Some(ErroResposta::Travado), "{r:?}");
+    assert_eq!(error(&r), Some(ResponseError::Locked), "{r:?}");
     assert!(!c.session("t-livre").exists());
     assert!(c.no_profile());
 }
@@ -363,9 +363,9 @@ fn d6_lock_during_the_session_nothing_saved() {
 fn refusals_without_opening_the_browser() {
     let c = scene("recusas", "ok");
     for (entry, expected) in [
-        ("t-bloq", ErroResposta::EntradaInexistente),
-        ("nao-existe", ErroResposta::EntradaInexistente),
-        ("s1", ErroResposta::TipoSemEntrega),
+        ("t-bloq", ResponseError::EntryNotFound),
+        ("nao-existe", ResponseError::EntryNotFound),
+        ("s1", ResponseError::TypeWithoutDelivery),
     ] {
         assert_eq!(error(&c.playwright(entry)), Some(expected), "{entry}");
     }
@@ -375,10 +375,10 @@ fn refusals_without_opening_the_browser() {
     );
     assert!(c.events("inicio").is_empty(), "o navegador abriu");
     // The app role does not ask for `playwright`.
-    let p = req(Papel::Agente, "playwright", r#"{"entrada":"t-livre"}"#).unwrap();
+    let p = req(Role::Agent, "playwright", r#"{"entrada":"t-livre"}"#).unwrap();
     assert_eq!(
-        error(&c.d.atender_de(&SemCliente, Papel::App, p)),
-        Some(ErroResposta::NaoAutorizado)
+        error(&c.d.atender_de(&SemCliente, Role::App, p)),
+        Some(ResponseError::Unauthorized)
     );
     assert!(c.events("inicio").is_empty());
 }
@@ -543,20 +543,20 @@ struct RealScene {
 }
 
 /// The site's cases and what the daemon must answer (`None`: session saved).
-const CASES: [(&str, Option<ErroResposta>); 13] = [
+const CASES: [(&str, Option<ResponseError>); 13] = [
     ("ok", None),
     ("dom", None),
-    ("dom-recusa", Some(ErroResposta::LoginRecusado)),
+    ("dom-recusa", Some(ResponseError::LoginRefused)),
     ("iframe", None),
-    ("acao-fora", Some(ErroResposta::OrigemDiferente)),
-    ("clobber", Some(ErroResposta::OrigemDiferente)),
-    ("formaction", Some(ErroResposta::OrigemDiferente)),
-    ("redir", Some(ErroResposta::OrigemDiferente)),
-    ("get", Some(ErroResposta::LoginRecusado)),
-    ("alvo", Some(ErroResposta::LoginRecusado)),
-    ("dois", Some(ErroResposta::LoginRecusado)),
-    ("recusa", Some(ErroResposta::LoginRecusado)),
-    ("ls", Some(ErroResposta::SessaoComSegredo)),
+    ("acao-fora", Some(ResponseError::OriginMismatch)),
+    ("clobber", Some(ResponseError::OriginMismatch)),
+    ("formaction", Some(ResponseError::OriginMismatch)),
+    ("redir", Some(ResponseError::OriginMismatch)),
+    ("get", Some(ResponseError::LoginRefused)),
+    ("alvo", Some(ResponseError::LoginRefused)),
+    ("dois", Some(ResponseError::LoginRefused)),
+    ("recusa", Some(ResponseError::LoginRefused)),
+    ("ls", Some(ResponseError::SessionHasSecret)),
 ];
 
 fn page(case: &str, outside: &str, pp: u16) -> (u16, Vec<(String, String)>, String) {
@@ -649,12 +649,12 @@ fn real_scene(label: &str) -> RealScene {
         let name = format!("w-{case}");
         let r = request(
             &d,
-            Papel::App,
+            Role::App,
             "salvar_entrada",
             &login_at(&name, &url, LOGIN_PASSWORD),
         );
         assert!(ok(&r), "{r:?}");
-        assert!(ok(&set_level(&d, Papel::App, &name, "livre", PIN)));
+        assert!(ok(&set_level(&d, Role::App, &name, "livre", PIN)));
     }
     RealScene {
         d: Arc::new(d),
@@ -668,12 +668,12 @@ fn real_scene(label: &str) -> RealScene {
 impl RealScene {
     fn playwright(&self, entry: &str) -> Resposta {
         let p = req(
-            Papel::Agente,
+            Role::Agent,
             "playwright",
             &format!(r#"{{"entrada":"{entry}"}}"#),
         )
         .unwrap();
-        self.d.atender_de(&SemCliente, Papel::Agente, p)
+        self.d.atender_de(&SemCliente, Role::Agent, p)
     }
 
     /// The phishing site received no `POST` and never the password anywhere.
@@ -784,23 +784,23 @@ fn attack_playwright_http_free_only_with_confirmation() {
         r#"{{"entrada":{{"nome":"h-livre","grupo":"acme","ambiente":"prod","tipo":"login","campos":{{"url":"http://localhost:8081/wp-login.php","usuario":"wp_editor","senha":"{}"}}}}}}"#,
         b64(LOGIN_PASSWORD.as_bytes())
     );
-    assert!(ok(&request(&c.d, Papel::App, "salvar_entrada", &q)));
-    assert!(ok(&set_level(&c.d, Papel::App, "h-livre", "livre", PIN)));
+    assert!(ok(&request(&c.d, Role::App, "salvar_entrada", &q)));
+    assert!(ok(&set_level(&c.d, Role::App, "h-livre", "livre", PIN)));
     let r = c.playwright("h-livre");
-    assert_eq!(error(&r), Some(ErroResposta::AprovacaoIndisponivel));
+    assert_eq!(error(&r), Some(ResponseError::ApprovalUnavailable));
     assert!(c.events("inicio").is_empty(), "o Chrome abriu sem a janela");
     let (r, seen) = with_window(&c.d, "negar", None, || c.playwright("h-livre"));
-    assert_eq!(error(&r), Some(ErroResposta::Negado));
+    assert_eq!(error(&r), Some(ResponseError::Denied));
     assert!(
         c.events("inicio").is_empty(),
         "o Chrome abriu com a janela negada"
     );
     assert!(!c.session("h-livre").exists());
     let p = &seen[0];
-    assert_eq!(p.operacao, ward_core::protocolo::Operacao::Playwright);
+    assert_eq!(p.operacao, ward_core::protocol::Operation::Playwright);
     assert_eq!(p.origem, "http://localhost:8081");
     assert!(p.confirmacao);
-    let enc = encoded(Papel::App, &Resposta::PedidoDeAprovacao(p.clone()));
+    let enc = encoded(Role::App, &Resposta::PedidoDeAprovacao(p.clone()));
     for f in password_forms() {
         assert!(!contains(&enc, &f), "o pedido da janela tem a senha");
     }
@@ -835,22 +835,15 @@ fn attack_playwright_https_loopback_free_only_with_confirmation() {
             r#"{{"entrada":{{"nome":"{name}","grupo":"acme","ambiente":"prod","tipo":"login","campos":{{"url":"{url}","usuario":"wp_editor","senha":"{}"}}}}}}"#,
             b64(LOGIN_PASSWORD.as_bytes())
         );
+        assert!(ok(&request(&c.d, Role::App, "salvar_entrada", &q)), "{url}");
         assert!(
-            ok(&request(&c.d, Papel::App, "salvar_entrada", &q)),
-            "{url}"
-        );
-        assert!(
-            ok(&set_level(&c.d, Papel::App, &name, "livre", PIN)),
+            ok(&set_level(&c.d, Role::App, &name, "livre", PIN)),
             "{url}"
         );
         let r = c.playwright(&name);
-        assert_eq!(
-            error(&r),
-            Some(ErroResposta::AprovacaoIndisponivel),
-            "{url}"
-        );
+        assert_eq!(error(&r), Some(ResponseError::ApprovalUnavailable), "{url}");
         let (r, seen) = with_window(&c.d, "negar", None, || c.playwright(&name));
-        assert_eq!(error(&r), Some(ErroResposta::Negado), "{url}");
+        assert_eq!(error(&r), Some(ResponseError::Denied), "{url}");
         assert!(c.events("inicio").is_empty(), "o Chrome abriu: {url}");
         assert!(!c.session(&name).exists(), "{url}");
         assert_eq!(seen.len(), 1, "{url}");

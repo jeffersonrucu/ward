@@ -18,7 +18,7 @@ use std::cell::{Cell, RefCell};
 use chacha20poly1305::aead::AeadInOut;
 use chacha20poly1305::{Key, KeyInit, Tag, XChaCha20Poly1305, XNonce};
 use common::*;
-use ward_core::protocolo::Papel;
+use ward_core::protocol::Role;
 
 const MAX_MARKS: usize = 8;
 const MARK_SIZE: usize = 64;
@@ -146,22 +146,22 @@ fn v3_8_lock_zeroes_the_key_and_the_secrets_before_freeing() {
     let findings = searching(|| {
         assert!(ok(&unlock(&d, PASSWORD)));
         assert!(!d.travado());
-        let _ = request(&d, Papel::Agente, "lista", "{}");
-        let _ = request(&d, Papel::App, "detalhe", r#"{"entrada":"t-aprov"}"#);
-        assert!(ok(&set_level(&d, Papel::App, "t-aprov", "livre", PIN)));
+        let _ = request(&d, Role::Agent, "lista", "{}");
+        let _ = request(&d, Role::App, "detalhe", r#"{"entrada":"t-aprov"}"#);
+        assert!(ok(&set_level(&d, Role::App, "t-aprov", "livre", PIN)));
         assert!(ok(&request(
             &d,
-            Papel::App,
+            Role::App,
             "salvar_entrada",
             &login("t-memoria", SECRETS[3])
         )));
-        let _ = set_level(&d, Papel::App, "t-aprov", "livre", WRONG_PIN);
+        let _ = set_level(&d, Role::App, "t-aprov", "livre", WRONG_PIN);
         // V3.8: locking releases the open vault and the entries.
         d.travar();
         assert!(d.travado());
         assert_eq!(
-            error(&request(&d, Papel::App, "lista", "{}")),
-            Some(ward_core::protocolo::ErroResposta::Travado)
+            error(&request(&d, Role::App, "lista", "{}")),
+            Some(ward_core::protocol::ResponseError::Locked)
         );
     });
     assert_eq!(

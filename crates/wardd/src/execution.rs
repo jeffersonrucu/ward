@@ -44,8 +44,8 @@ use ward_core::delivery::{self, Delivery, DeliveryError, ResourceError, Resource
 use ward_core::entry::{AccessLevel, Data, Entry, Secret};
 use ward_core::limits::{MAX_COMMON_FRAME, MAX_DISPLAYED_TEXT};
 use ward_core::mask::{Mask, MaskBuilder};
-use ward_core::protocolo::{
-    self, ErroResposta, Fluxo, Janela, Papel, Pedido, Resposta, TipoEntradaPadrao, Variavel, quadro,
+use ward_core::protocol::{
+    self, Fluxo, Request, ResponseError, Resposta, Role, StdinKind, Variable, WindowSize, frame,
 };
 use ward_core::totp::Totp;
 use ward_platform::child::{self, Command, Group, Pty};
@@ -309,7 +309,7 @@ pub(crate) struct Preparation {
     /// accepting when the child's pid is known.
     pub(crate) bridge: Option<Bridge>,
     /// Interactive `ward ssh`: the child in a pty of this size (D13, D34).
-    pub(crate) pty: Option<Janela>,
+    pub(crate) pty: Option<WindowSize>,
     /// `ward ssh` with a key: the agent of D12, which serves only the child.
     pub(crate) agent: Option<PreparedAgent>,
     /// `ward run` and `ward ssh` (Phase 54 and 54c, S8): the child's group dies if the
@@ -466,11 +466,11 @@ pub(crate) struct Account {
 
 impl Account {
     /// The one of the daemon's uid (the same as the client's, D49).
-    pub(crate) fn from_passwd() -> Result<Account, ErroResposta> {
+    pub(crate) fn from_passwd() -> Result<Account, ResponseError> {
         use std::os::unix::ffi::OsStringExt;
         let (user, home) = ward_platform::user_account().map_err(|_| {
             aviso!("executar: usuário sem entrada no passwd");
-            ErroResposta::EntregaFalhou
+            ResponseError::DeliveryFailed
         })?;
         Ok(Account {
             user: user.into_vec(),
@@ -486,30 +486,30 @@ impl Account {
 /// environment. Returns how many CLI variables were left out.
 fn build_environment(
     cmd: &mut Command,
-    cli: &[Variavel],
+    cli: &[Variable],
     account: &Account,
     delivery: &Delivery,
-) -> Result<usize, ErroResposta> {
+) -> Result<usize, ResponseError> {
     let from_delivery: HashSet<&[u8]> = delivery.names().map(str::as_bytes).collect();
     // The delivery never changes what the daemon fixes (D42 already refuses; second
     // layer).
     if FROM_DAEMON.iter().any(|n| from_delivery.contains(n)) {
         aviso!("executar: a entrega traz uma variável fixa do daemon; nada foi executado");
-        return Err(ErroResposta::EntregaFalhou);
+        return Err(ResponseError::DeliveryFailed);
     }
     let mut seen: HashSet<&[u8]> = HashSet::new();
     let mut removed = 0;
     let mut env: Vec<(&[u8], &[u8])> = Vec::with_capacity(FROM_CLI.len() + 1);
     for v in cli {
-        let name: &[u8] = &v.nome;
-        if !enters_from_cli(name, v.valor.expose()) {
+        let name: &[u8] = &v.name;
+        if !enters_from_cli(name, v.value.expose()) {
             removed += 1;
             continue;
         }
         if from_delivery.contains(name) || !seen.insert(name) {
             continue;
         }
-        env.push((name, v.valor.expose()));
+        env.push((name, v.value.expose()));
     }
     let fixed: [(&[u8], &[u8]); 4] = [
         (b"PATH", COMMAND_PATH),
@@ -519,11 +519,11 @@ fn build_environment(
     ];
     for (k, v) in fixed.into_iter().chain(adjust_locale(env)) {
         cmd.variable(k, v)
-            .map_err(|_| ErroResposta::PedidoInvalido)?;
+            .map_err(|_| ResponseError::InvalidRequest)?;
     }
     for v in delivery.variables() {
         cmd.variable(v.name().as_bytes(), v.expose().as_bytes())
-            .map_err(|_| ErroResposta::EntregaFalhou)?;
+            .map_err(|_| ResponseError::DeliveryFailed)?;
     }
     Ok(removed)
 }
@@ -540,39 +540,39 @@ impl Daemon {
     fn prepare_run(
         &self,
         client: &dyn Cliente,
-        request: Pedido,
-    ) -> Result<Preparation, ErroResposta> {
-        let Pedido::Executar(x) = &request else {
-            return Err(ErroResposta::PedidoInvalido);
+        request: Request,
+    ) -> Result<Preparation, ResponseError> {
+        let Request::Run(x) = &request else {
+            return Err(ResponseError::InvalidRequest);
         };
         // Phase 54b: only the kind (fixed text), for the CLI suite to verify the `fstat`.
-        depurar!("executar: entrada padrão {}", x.tipo_entrada.nome());
+        depurar!("executar: entrada padrão {}", x.stdin_kind.name());
         // A visible secure note: refuses before asking for approval (V4.11).
         if let Some(a) = self.estado().aberto.as_ref()
-            && visible(&a.entradas, &x.entrada)
+            && visible(&a.entradas, &x.entry)
                 .is_some_and(|e| matches!(e.data(), Data::SecureNote(_)))
         {
-            return Err(ErroResposta::TipoSemEntrega);
+            return Err(ResponseError::TypeWithoutDelivery);
         }
         self.autorizar_uso(client, &request)?;
-        let Pedido::Executar(x) = request else {
-            return Err(ErroResposta::PedidoInvalido);
+        let Request::Run(x) = request else {
+            return Err(ResponseError::InvalidRequest);
         };
         self.registrar_uso();
         let (argv0, cwd) = match (x.argv.first(), x.cwd.is_empty()) {
             (Some(a), false) => (a, &x.cwd),
-            _ => return Err(ErroResposta::PedidoInvalido),
+            _ => return Err(ResponseError::InvalidRequest),
         };
-        let mut command = Command::new(argv0, cwd).map_err(|_| ErroResposta::PedidoInvalido)?;
+        let mut command = Command::new(argv0, cwd).map_err(|_| ResponseError::InvalidRequest)?;
         for a in &x.argv[1..] {
             command
                 .argument(a)
-                .map_err(|_| ErroResposta::PedidoInvalido)?;
+                .map_err(|_| ResponseError::InvalidRequest)?;
         }
         let st = self.estado();
-        let a = st.aberto.as_ref().ok_or(ErroResposta::Travado)?;
+        let a = st.aberto.as_ref().ok_or(ResponseError::Locked)?;
         // The entry may have changed during the approval: verify again.
-        let e = visible(&a.entradas, &x.entrada).ok_or(ErroResposta::EntradaInexistente)?;
+        let e = visible(&a.entradas, &x.entry).ok_or(ResponseError::EntryNotFound)?;
         let (locks, initial) = self.travas_agora(&st);
         let lock = DiesOnLock {
             sessions: self.sessoes_run(&st),
@@ -593,10 +593,12 @@ impl Daemon {
         };
         let delivery = match delivery::build(e, &mut resources) {
             Ok(g) => g,
-            Err(DeliveryError::TypeWithoutDelivery) => return Err(ErroResposta::TipoSemEntrega),
+            Err(DeliveryError::TypeWithoutDelivery) => {
+                return Err(ResponseError::TypeWithoutDelivery);
+            }
             Err(err) => {
                 aviso!("executar: {err}");
-                return Err(ErroResposta::EntregaFalhou);
+                return Err(ResponseError::DeliveryFailed);
             }
         };
         // D19: with a tunnel, the mask also covers the tunnel's server entry.
@@ -606,14 +608,14 @@ impl Daemon {
         }
         let mask = builder.build().map_err(|err| {
             aviso!("executar: {err}");
-            ErroResposta::EntregaFalhou
+            ResponseError::DeliveryFailed
         })?;
         let RunResources {
             temp_files, bridge, ..
         } = resources;
         drop(st);
         let account = Account::from_passwd()?;
-        let removed = build_environment(&mut command, &x.ambiente, &account, &delivery)?;
+        let removed = build_environment(&mut command, &x.env, &account, &delivery)?;
         if removed > 0 {
             depurar!("executar: {removed} variável(is) da CLI fora da lista (Fase 26a)");
         }
@@ -628,7 +630,7 @@ impl Daemon {
             pty: None,
             agent: None,
             lock: Some(lock),
-            null_stdin: x.tipo_entrada == TipoEntradaPadrao::Nula,
+            null_stdin: x.stdin_kind == StdinKind::Null,
         })
     }
 }
@@ -642,12 +644,12 @@ pub(crate) struct Cli(Arc<Mutex<UnixStream>>);
 impl Cli {
     /// Writes the response; `false` if the CLI is no longer there.
     fn send(&self, r: &Resposta) -> bool {
-        let Ok(q) = protocolo::codificar_resposta(Papel::Agente, r) else {
+        let Ok(q) = protocol::encode_response(Role::Agent, r) else {
             aviso!("executar: resposta recusada para o agente");
             return false;
         };
         let mut s = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        quadro::escrever_quadro(&mut *s, &q, quadro::LIMITE_RESPOSTA).is_ok()
+        frame::write_frame(&mut *s, &q, frame::RESPONSE_LIMIT).is_ok()
     }
 
     /// Sends the already masked output in frames of up to `MAX_DISPLAYED_TEXT` and empties
@@ -775,7 +777,7 @@ fn read_from_cli(
 ) {
     let mut stdin_open = !null_stdin;
     loop {
-        let bytes = match quadro::ler_quadro(&mut s, MAX_COMMON_FRAME) {
+        let bytes = match frame::read_frame(&mut s, MAX_COMMON_FRAME) {
             Ok(b) => b,
             Err(_) => {
                 if !end.load(Ordering::Acquire) {
@@ -785,8 +787,8 @@ fn read_from_cli(
                 return;
             }
         };
-        match protocolo::decodificar_pedido(Papel::Agente, &bytes) {
-            Ok(Pedido::EntradaPadrao { dados }) if null_stdin && !dados.is_empty() => {
+        match protocol::decode_request(Role::Agent, &bytes) {
+            Ok(Request::Stdin { data: dados }) if null_stdin && !dados.is_empty() => {
                 if !end.load(Ordering::Acquire) {
                     aviso!(
                         "executar: dado na entrada padrão declarada nula; o grupo do comando foi morto (D68)"
@@ -795,7 +797,7 @@ fn read_from_cli(
                 }
                 return;
             }
-            Ok(Pedido::EntradaPadrao { dados }) => {
+            Ok(Request::Stdin { data: dados }) => {
                 if !stdin_open || (dados.is_empty() && pty.is_some()) {
                     continue;
                 }
@@ -809,9 +811,9 @@ fn read_from_cli(
                     return;
                 }
             }
-            Ok(Pedido::Janela(j)) => {
+            Ok(Request::Resize(j)) => {
                 if let Some(p) = &pty {
-                    let _ = p.set_window_size(j.linhas, j.colunas);
+                    let _ = p.set_window_size(j.rows, j.cols);
                 }
             }
             _ => {
@@ -870,14 +872,14 @@ pub fn session(
     daemon: &Daemon,
     client: &dyn Cliente,
     stream: &UnixStream,
-    request: Pedido,
+    request: Request,
 ) -> bool {
     session_with(
         stream,
         |c| {
             let r = daemon.prepare_run(c, request);
             if let Err(e) = &r {
-                depurar!("executar (agente): {}", e.codigo());
+                depurar!("executar (agente): {}", e.code());
             }
             r
         },
@@ -895,7 +897,7 @@ enum Launched {
 /// same return as [`session`].
 pub(crate) fn session_with(
     stream: &UnixStream,
-    prepare: impl FnOnce(&dyn Cliente) -> Result<Preparation, ErroResposta>,
+    prepare: impl FnOnce(&dyn Cliente) -> Result<Preparation, ResponseError>,
     client: &dyn Cliente,
 ) -> bool {
     let Ok(writer) = stream.try_clone() else {
@@ -921,7 +923,7 @@ pub(crate) fn session_with(
     } = preparation;
     let launched = match pty {
         Some(j) => command
-            .launch_in_pty(j.linhas, j.colunas)
+            .launch_in_pty(j.rows, j.cols)
             .map(|(g, p)| (g, Launched::Pty(Arc::new(p)))),
         None => command.launch().map(|(g, p)| (g, Launched::Pipes(p))),
     };

@@ -9,7 +9,7 @@ mod common;
 use std::time::Duration;
 
 use common::{Dir, PIN, SECRETS, b64, error, ok, req, request};
-use ward_core::protocolo::{self, ErroResposta, Operacao, Papel, Resposta};
+use ward_core::protocol::{self, Operation, ResponseError, Resposta, Role};
 use ward_core::totp::Totp;
 use wardd::nucleo::{Daemon, Relogio};
 
@@ -47,7 +47,7 @@ fn vault(dir: &Dir) -> Daemon {
     let d = Daemon::novo(dir.paths(), Box::new(FixedClock));
     let create = request(
         &d,
-        Papel::App,
+        Role::App,
         "criar_cofre",
         &format!(
             r#"{{"senha":"{}","pin":"{}"}}"#,
@@ -88,12 +88,12 @@ fn vault(dir: &Dir) -> Daemon {
         common::server("s1"),
         common::database("b1", "s1"),
     ] {
-        let r = request(&d, Papel::App, "salvar_entrada", &q);
+        let r = request(&d, Role::App, "salvar_entrada", &q);
         assert!(ok(&r), "{r:?}");
     }
     assert!(ok(&common::set_level(
         &d,
-        Papel::App,
+        Role::App,
         "acme-wp-prod",
         "bloqueado",
         PIN
@@ -101,12 +101,12 @@ fn vault(dir: &Dir) -> Daemon {
     d
 }
 
-fn suggest(d: &Daemon, role: Papel, origin: &str) -> Resposta {
+fn suggest(d: &Daemon, role: Role, origin: &str) -> Resposta {
     request(d, role, "sugerir", &format!(r#"{{"origem":"{origin}"}}"#))
 }
 
 /// The popup's fill with no window at all (the test daemon's engine has no app).
-fn fill_raw(d: &Daemon, role: Papel, entry: &str, origin: &str) -> Resposta {
+fn fill_raw(d: &Daemon, role: Role, entry: &str, origin: &str) -> Resposta {
     request(
         d,
         role,
@@ -117,7 +117,7 @@ fn fill_raw(d: &Daemon, role: Papel, entry: &str, origin: &str) -> Resposta {
 
 /// The popup's fill with the user confirming the origin in the window (Phase
 /// 44c: `http` entries only fill after that).
-fn fill(d: &Daemon, role: Papel, entry: &str, origin: &str) -> Resposta {
+fn fill(d: &Daemon, role: Role, entry: &str, origin: &str) -> Resposta {
     common::with_window(d, "confirmar", None, || fill_raw(d, role, entry, origin)).0
 }
 
@@ -157,10 +157,10 @@ fn suggestion_carries_environment_and_whether_it_has_totp() {
         other => panic!("esperava sugestões: {:?}", other.tipo()),
     };
     assert_eq!(
-        summary(&suggest(&d, Papel::Extensao, "http://localhost:8083/login")),
+        summary(&suggest(&d, Role::Extension, "http://localhost:8083/login")),
         [("acme-totp-dev".to_owned(), Environment::Dev, true)]
     );
-    let r = suggest(&d, Papel::Extensao, "http://localhost:8081/");
+    let r = suggest(&d, Role::Extension, "http://localhost:8081/");
     assert_eq!(
         summary(&r),
         [
@@ -168,7 +168,7 @@ fn suggestion_carries_environment_and_whether_it_has_totp() {
             ("acme-wp-prod".to_owned(), Environment::Dev, false),
         ]
     );
-    let q = common::encoded(Papel::Extensao, &r);
+    let q = common::encoded(Role::Extension, &r);
     assert!(common::contains(&q, br#""ambiente":"dev","totp":false"#));
     no_secret(&q);
 }
@@ -177,7 +177,7 @@ fn suggestion_carries_environment_and_whether_it_has_totp() {
 fn v6_2_suggest_only_the_tab_origin() {
     let dir = Dir::new("ext-sugerir");
     let d = vault(&dir);
-    let r = suggest(&d, Papel::Extensao, "http://localhost:8081/wp-login.php");
+    let r = suggest(&d, Role::Extension, "http://localhost:8081/wp-login.php");
     assert_eq!(
         names(&r),
         [
@@ -187,13 +187,13 @@ fn v6_2_suggest_only_the_tab_origin() {
         ]
     );
     // The suggestion answer has no secret at all.
-    no_secret(&common::encoded(Papel::Extensao, &r));
+    no_secret(&common::encoded(Role::Extension, &r));
     assert_eq!(
-        names(&suggest(&d, Papel::Extensao, "http://localhost:8083/login")),
+        names(&suggest(&d, Role::Extension, "http://localhost:8083/login")),
         [("acme-totp-dev".to_owned(), "wp_admin".to_owned())]
     );
     assert_eq!(
-        names(&suggest(&d, Papel::Extensao, "https://app.clientex.com.br")).len(),
+        names(&suggest(&d, Role::Extension, "https://app.clientex.com.br")).len(),
         1
     );
     // V6.2 and look-alike origins: nothing suggested.
@@ -211,7 +211,7 @@ fn v6_2_suggest_only_the_tab_origin() {
         "",
     ] {
         assert!(
-            names(&suggest(&d, Papel::Extensao, tab)).is_empty(),
+            names(&suggest(&d, Role::Extension, tab)).is_empty(),
             "{tab:?}"
         );
     }
@@ -223,7 +223,7 @@ fn v6_2_fill_only_on_the_right_origin() {
     let d = vault(&dir);
     let r = fill(
         &d,
-        Papel::Extensao,
+        Role::Extension,
         "acme-wp-dev",
         "http://localhost:8081/wp-login.php",
     );
@@ -247,7 +247,7 @@ fn v6_2_fill_only_on_the_right_origin() {
     .code_at(NOW);
     match fill(
         &d,
-        Papel::Extensao,
+        Role::Extension,
         "acme-totp-dev",
         "http://localhost:8083/",
     ) {
@@ -266,33 +266,33 @@ fn v6_2_fill_only_on_the_right_origin() {
         "chrome-extension://abcdefghijklmnopabcdefghijklmnop/",
         "",
     ] {
-        let r = fill(&d, Papel::Extensao, "acme-wp-dev", tab);
-        assert_eq!(error(&r), Some(ErroResposta::OrigemDiferente), "{tab:?}");
-        no_secret(&common::encoded(Papel::Extensao, &r));
+        let r = fill(&d, Role::Extension, "acme-wp-dev", tab);
+        assert_eq!(error(&r), Some(ResponseError::OriginMismatch), "{tab:?}");
+        no_secret(&common::encoded(Role::Extension, &r));
     }
     // An entry that does not exist and an entry of another type answer the same.
     for name in ["nao-existe", "s1", "b1"] {
-        let r = fill(&d, Papel::Extensao, name, "http://localhost:8081/");
-        assert_eq!(error(&r), Some(ErroResposta::EntradaInexistente), "{name}");
+        let r = fill(&d, Role::Extension, name, "http://localhost:8081/");
+        assert_eq!(error(&r), Some(ResponseError::EntryNotFound), "{name}");
     }
     // Locked: nothing.
     d.travar();
     let r = fill(
         &d,
-        Papel::Extensao,
+        Role::Extension,
         "acme-wp-dev",
         "http://localhost:8081/wp-login.php",
     );
-    assert_eq!(error(&r), Some(ErroResposta::Travado));
-    let r = suggest(&d, Papel::Extensao, "http://localhost:8081/wp-login.php");
-    assert_eq!(error(&r), Some(ErroResposta::Travado));
+    assert_eq!(error(&r), Some(ResponseError::Locked));
+    let r = suggest(&d, Role::Extension, "http://localhost:8081/wp-login.php");
+    assert_eq!(error(&r), Some(ResponseError::Locked));
 }
 
 #[test]
 fn v6_1_agent_and_app_neither_suggest_nor_fill() {
     let dir = Dir::new("ext-papeis");
     let d = vault(&dir);
-    for role in [Papel::Agente, Papel::App] {
+    for role in [Role::Agent, Role::App] {
         // First layer: reading the request.
         assert_eq!(
             error(&fill(
@@ -301,22 +301,22 @@ fn v6_1_agent_and_app_neither_suggest_nor_fill() {
                 "acme-wp-dev",
                 "http://localhost:8081/wp-login.php"
             )),
-            Some(ErroResposta::NaoAutorizado)
+            Some(ResponseError::Unauthorized)
         );
         assert_eq!(
             error(&suggest(&d, role, "http://localhost:8081/")),
-            Some(ErroResposta::NaoAutorizado)
+            Some(ResponseError::Unauthorized)
         );
         // Second and third layers: the request already read as the extension, served
         // with another role (the role comes from the connection, never from the frame).
         let p = req(
-            Papel::Extensao,
+            Role::Extension,
             "preencher",
             r#"{"entrada":"acme-wp-dev","origem":"http://localhost:8081/"}"#,
         )
         .unwrap();
         let r = d.atender(role, p);
-        assert_eq!(error(&r), Some(ErroResposta::NaoAutorizado));
+        assert_eq!(error(&r), Some(ResponseError::Unauthorized));
         no_secret(&common::encoded(role, &r));
     }
 }
@@ -326,31 +326,31 @@ fn attack_extension_without_app_or_agent_operations() {
     let dir = Dir::new("ext-tabela");
     let d = vault(&dir);
     let allowed = [
-        Operacao::Estado,
-        Operacao::Sugerir,
-        Operacao::Preencher,
-        Operacao::SalvarLogin,
+        Operation::Status,
+        Operation::Suggest,
+        Operation::Fill,
+        Operation::SaveLogin,
         // Phase 43 (`ward login`): extension only.
-        Operacao::AguardarLogin,
-        Operacao::PreencherLogin,
-        Operacao::ResultadoLogin,
-        Operacao::AbrirApp,
+        Operation::AwaitLogin,
+        Operation::FillLogin,
+        Operation::LoginResult,
+        Operation::OpenApp,
     ];
-    for op in Operacao::TODAS {
+    for op in Operation::ALL {
         assert_eq!(
-            op.permitida(Papel::Extensao),
+            op.allowed(Role::Extension),
             allowed.contains(op),
             "{}",
-            op.nome()
+            op.name()
         );
         if !allowed.contains(op) {
             // Whatever the rest of the frame is.
             for data in ["{}", r#"{"entrada":"acme-wp-dev","campo":"senha"}"#] {
                 assert_eq!(
-                    req(Papel::Extensao, op.nome(), data).unwrap_err(),
-                    ErroResposta::NaoAutorizado,
+                    req(Role::Extension, op.name(), data).unwrap_err(),
+                    ResponseError::Unauthorized,
                     "{}",
-                    op.nome()
+                    op.name()
                 );
             }
         }
@@ -358,31 +358,31 @@ fn attack_extension_without_app_or_agent_operations() {
     // Well-formed app and agent requests, served with the extension role.
     for (role, op, data) in [
         (
-            Papel::App,
+            Role::App,
             "revelar",
             r#"{"entrada":"acme-wp-dev","campo":"senha"}"#,
         ),
         (
-            Papel::App,
+            Role::App,
             "copiar",
             r#"{"entrada":"acme-wp-dev","campo":"senha"}"#,
         ),
-        (Papel::App, "totp", r#"{"entrada":"acme-totp-dev"}"#),
-        (Papel::App, "detalhe", r#"{"entrada":"acme-wp-dev"}"#),
-        (Papel::App, "lista", "{}"),
-        (Papel::Agente, "lista", "{}"),
-        (Papel::App, "emitir_token", r#"{"entrada":"s1"}"#),
-        (Papel::Agente, "login", r#"{"entrada":"acme-wp-dev"}"#),
-        (Papel::Agente, "playwright", r#"{"entrada":"acme-wp-dev"}"#),
+        (Role::App, "totp", r#"{"entrada":"acme-totp-dev"}"#),
+        (Role::App, "detalhe", r#"{"entrada":"acme-wp-dev"}"#),
+        (Role::App, "lista", "{}"),
+        (Role::Agent, "lista", "{}"),
+        (Role::App, "emitir_token", r#"{"entrada":"s1"}"#),
+        (Role::Agent, "login", r#"{"entrada":"acme-wp-dev"}"#),
+        (Role::Agent, "playwright", r#"{"entrada":"acme-wp-dev"}"#),
     ] {
         let p = req(role, op, data).unwrap_or_else(|e| panic!("{op}: {e:?}"));
-        let r = d.atender(Papel::Extensao, p);
-        assert_eq!(error(&r), Some(ErroResposta::NaoAutorizado), "{op}");
+        let r = d.atender(Role::Extension, p);
+        assert_eq!(error(&r), Some(ResponseError::Unauthorized), "{op}");
     }
     let r = d.atender(
-        Papel::Extensao,
+        Role::Extension,
         req(
-            Papel::App,
+            Role::App,
             "mudar_nivel",
             &format!(
                 r#"{{"entrada":"acme-wp-dev","nivel":"livre","pin":"{}"}}"#,
@@ -391,16 +391,16 @@ fn attack_extension_without_app_or_agent_operations() {
         )
         .unwrap(),
     );
-    assert_eq!(error(&r), Some(ErroResposta::NaoAutorizado));
+    assert_eq!(error(&r), Some(ResponseError::Unauthorized));
     // What the extension receives: no secret, token or app list answer.
     for t in [
-        protocolo::TipoResposta::Segredo,
-        protocolo::TipoResposta::Token,
-        protocolo::TipoResposta::Lista,
-        protocolo::TipoResposta::Detalhe,
-        protocolo::TipoResposta::Saida,
+        protocol::ResponseType::Secret,
+        protocol::ResponseType::Token,
+        protocol::ResponseType::List,
+        protocol::ResponseType::Detail,
+        protocol::ResponseType::Output,
     ] {
-        assert!(!t.permitida(Papel::Extensao), "{}", t.nome());
+        assert!(!t.allowed(Role::Extension), "{}", t.name());
     }
 }
 
@@ -409,7 +409,7 @@ fn attack_extension_without_app_or_agent_operations() {
 /// Save-login request as the extension's service worker builds it: only name, group,
 /// environment, type and the URL, user and password fields; `extra` goes raw into the
 /// entry object (for the attacks).
-fn save_login(d: &Daemon, role: Papel, name: &str, password: &str, extra: &str) -> Resposta {
+fn save_login(d: &Daemon, role: Role, name: &str, password: &str, extra: &str) -> Resposta {
     request(
         d,
         role,
@@ -423,7 +423,7 @@ fn save_login(d: &Daemon, role: Papel, name: &str, password: &str, extra: &str) 
 
 /// Level of an entry in the app's list (`None` if it does not exist).
 fn level_in_list(d: &Daemon, name: &str) -> Option<ward_core::entry::AccessLevel> {
-    match request(d, Papel::App, "lista", "{}") {
+    match request(d, Role::App, "lista", "{}") {
         Resposta::Lista(l) => l.into_iter().find(|i| i.nome == name).and_then(|i| i.nivel),
         other => panic!("esperava a lista: {:?}", other.tipo()),
     }
@@ -440,10 +440,10 @@ fn v6_8_save_login_starts_with_approval() {
     use ward_core::entry::AccessLevel;
     let dir = Dir::new("ext-salvar");
     let d = vault(&dir);
-    let r = save_login(&d, Papel::Extensao, "localhost-8083", NEW_PASSWORD, "");
+    let r = save_login(&d, Role::Extension, "localhost-8083", NEW_PASSWORD, "");
     assert!(ok(&r), "{r:?}");
     assert!(!common::contains(
-        &common::encoded(Papel::Extensao, &r),
+        &common::encoded(Role::Extension, &r),
         NEW_PASSWORD.as_bytes()
     ));
     assert_eq!(
@@ -451,7 +451,7 @@ fn v6_8_save_login_starts_with_approval() {
         Some(AccessLevel::Approval)
     );
     assert_eq!(
-        names(&suggest(&d, Papel::Extensao, "http://localhost:8083/")),
+        names(&suggest(&d, Role::Extension, "http://localhost:8083/")),
         [
             ("acme-totp-dev".to_owned(), "wp_admin".to_owned()),
             ("localhost-8083".to_owned(), "novo.usuario".to_owned()),
@@ -459,7 +459,7 @@ fn v6_8_save_login_starts_with_approval() {
     );
     match fill(
         &d,
-        Papel::Extensao,
+        Role::Extension,
         "localhost-8083",
         "http://localhost:8083",
     ) {
@@ -470,7 +470,7 @@ fn v6_8_save_login_starts_with_approval() {
         other => panic!("esperava preenchimento: {:?}", other.tipo()),
     }
     // Saved on disk: after locking and unlocking, it is still there and with approval.
-    assert!(ok(&request(&d, Papel::App, "travar", "{}")));
+    assert!(ok(&request(&d, Role::App, "travar", "{}")));
     assert!(ok(&common::unlock(&d, common::PASSWORD)));
     assert_eq!(
         level_in_list(&d, "localhost-8083"),
@@ -487,9 +487,9 @@ fn attack_save_login_does_not_overwrite_entry() {
     let dir = Dir::new("ext-salvar-sobrescrever");
     let d = vault(&dir);
     for name in ["acme-wp-dev", "acme-wp-prod"] {
-        let r = save_login(&d, Papel::Extensao, name, NEW_PASSWORD, "");
+        let r = save_login(&d, Role::Extension, name, NEW_PASSWORD, "");
         assert!(
-            matches!(error(&r), Some(ErroResposta::Validacao(_))),
+            matches!(error(&r), Some(ResponseError::Validation(_))),
             "{name}: {r:?}"
         );
     }
@@ -501,7 +501,7 @@ fn attack_save_login_does_not_overwrite_entry() {
         level_in_list(&d, "acme-wp-dev"),
         Some(AccessLevel::Approval)
     );
-    match fill(&d, Papel::Extensao, "acme-wp-dev", "http://localhost:8081") {
+    match fill(&d, Role::Extension, "acme-wp-dev", "http://localhost:8081") {
         Resposta::Preenchimento { senha, .. } => assert_eq!(senha.expose(), SECRETS[0].as_bytes()),
         other => panic!("esperava preenchimento: {:?}", other.tipo()),
     }
@@ -530,28 +530,28 @@ fn attack_save_login_only_the_popup_fields() {
         ),
     ];
     for (extra, reaches_daemon) in &refused {
-        let r = save_login(&d, Papel::Extensao, "localhost-8083", NEW_PASSWORD, extra);
+        let r = save_login(&d, Role::Extension, "localhost-8083", NEW_PASSWORD, extra);
         let e = error(&r).unwrap_or_else(|| panic!("{extra}: aceito"));
         if *reaches_daemon {
-            assert_eq!(e, ErroResposta::PedidoInvalido, "{extra}");
+            assert_eq!(e, ResponseError::InvalidRequest, "{extra}");
         }
         assert_eq!(level_in_list(&d, "localhost-8083"), None, "{extra}");
     }
     // TOTP inside the login fields.
     let r = request(
         &d,
-        Papel::Extensao,
+        Role::Extension,
         "salvar_login",
         &format!(
             r#"{{"entrada":{{"nome":"localhost-8083","grupo":"g","ambiente":"dev","tipo":"login","campos":{{"url":"http://localhost:8083/","usuario":"u","senha":"{}","totp_semente":"{seed}"}}}}}}"#,
             b64(NEW_PASSWORD.as_bytes())
         ),
     );
-    assert_eq!(error(&r), Some(ErroResposta::PedidoInvalido));
+    assert_eq!(error(&r), Some(ResponseError::InvalidRequest));
     // Another type (database) through save login: reading the request refuses it.
     assert!(
         req(
-            Papel::Extensao,
+            Role::Extension,
             "salvar_login",
             &common::database("b9", "s1")
         )
@@ -573,23 +573,23 @@ fn attack_save_login_extension_only_and_unlocked() {
             b64(NEW_PASSWORD.as_bytes())
         )
     };
-    for role in [Papel::Agente, Papel::App] {
+    for role in [Role::Agent, Role::App] {
         assert_eq!(
             error(&request(&d, role, "salvar_login", &p("x1"))),
-            Some(ErroResposta::NaoAutorizado)
+            Some(ResponseError::Unauthorized)
         );
-        let read = req(Papel::Extensao, "salvar_login", &p("x2")).unwrap();
+        let read = req(Role::Extension, "salvar_login", &p("x2")).unwrap();
         assert_eq!(
             error(&d.atender(role, read)),
-            Some(ErroResposta::NaoAutorizado)
+            Some(ResponseError::Unauthorized)
         );
     }
     assert_eq!(level_in_list(&d, "x1"), None);
     assert_eq!(level_in_list(&d, "x2"), None);
-    assert!(ok(&request(&d, Papel::App, "travar", "{}")));
+    assert!(ok(&request(&d, Role::App, "travar", "{}")));
     assert_eq!(
-        error(&request(&d, Papel::Extensao, "salvar_login", &p("x3"))),
-        Some(ErroResposta::Travado)
+        error(&request(&d, Role::Extension, "salvar_login", &p("x3"))),
+        Some(ResponseError::Locked)
     );
     assert!(ok(&common::unlock(&d, common::PASSWORD)));
     assert_eq!(level_in_list(&d, "x3"), None);
@@ -610,23 +610,23 @@ fn attack_fill_http_without_confirming_nothing_leaves() {
     let d = vault(&dir);
     let tab = "http://localhost:8081/wp-login.php";
     // No app at all.
-    let r = fill_raw(&d, Papel::Extensao, "acme-wp-dev", tab);
-    assert_eq!(error(&r), Some(ErroResposta::AprovacaoIndisponivel));
-    no_secret(&common::encoded(Papel::Extensao, &r));
+    let r = fill_raw(&d, Role::Extension, "acme-wp-dev", tab);
+    assert_eq!(error(&r), Some(ResponseError::ApprovalUnavailable));
+    no_secret(&common::encoded(Role::Extension, &r));
     // Denied in the window.
     let (r, seen) = common::with_window(&d, "negar", None, || {
-        fill_raw(&d, Papel::Extensao, "acme-wp-dev", tab)
+        fill_raw(&d, Role::Extension, "acme-wp-dev", tab)
     });
-    assert_eq!(error(&r), Some(ErroResposta::Negado));
-    no_secret(&common::encoded(Papel::Extensao, &r));
+    assert_eq!(error(&r), Some(ResponseError::Denied));
+    no_secret(&common::encoded(Role::Extension, &r));
     assert_eq!(seen.len(), 1);
     let p = &seen[0];
-    assert_eq!(p.operacao, Operacao::Preencher);
+    assert_eq!(p.operacao, Operation::Fill);
     assert_eq!(p.entradas, ["acme-wp-dev".to_owned()]);
     assert_eq!(p.origem, "http://localhost:8081");
     assert!(p.confirmacao);
     no_secret(&common::encoded(
-        Papel::App,
+        Role::App,
         &Resposta::PedidoDeAprovacao(p.clone()),
     ));
     // The "Allow" answers with a PIN do not decide a confirmation (the forged window
@@ -645,22 +645,22 @@ fn attack_fill_http_without_confirming_nothing_leaves() {
             }
         }
         let p = req(
-            Papel::Extensao,
+            Role::Extension,
             "preencher",
             &format!(r#"{{"entrada":"acme-wp-dev","origem":"{tab}"}}"#),
         )
         .unwrap();
-        d.atender_de(&LeavesSoon(Default::default()), Papel::Extensao, p)
+        d.atender_de(&LeavesSoon(Default::default()), Role::Extension, p)
     });
     assert_eq!(
         error(&r),
-        Some(ErroResposta::Negado),
+        Some(ResponseError::Denied),
         "uma_vez decidiu uma confirmação"
     );
-    no_secret(&common::encoded(Papel::Extensao, &r));
+    no_secret(&common::encoded(Role::Extension, &r));
     // Confirmed: it fills.
     let (r, seen) = common::with_window(&d, "confirmar", None, || {
-        fill_raw(&d, Papel::Extensao, "acme-wp-dev", tab)
+        fill_raw(&d, Role::Extension, "acme-wp-dev", tab)
     });
     assert!(
         matches!(r, Resposta::Preenchimento { .. }),
@@ -672,7 +672,7 @@ fn attack_fill_http_without_confirming_nothing_leaves() {
     let (r, seen) = common::with_window(&d, "negar", None, || {
         fill_raw(
             &d,
-            Papel::Extensao,
+            Role::Extension,
             "clientex-portal",
             "https://app.clientex.com.br/login",
         )
@@ -685,9 +685,9 @@ fn attack_fill_http_without_confirming_nothing_leaves() {
     assert!(seen.is_empty(), "janela num preencher https");
     // Different origin: refused before asking.
     let (r, seen) = common::with_window(&d, "confirmar", None, || {
-        fill_raw(&d, Papel::Extensao, "acme-wp-dev", "http://127.0.0.1:8081/")
+        fill_raw(&d, Role::Extension, "acme-wp-dev", "http://127.0.0.1:8081/")
     });
-    assert_eq!(error(&r), Some(ErroResposta::OrigemDiferente));
+    assert_eq!(error(&r), Some(ResponseError::OriginMismatch));
     assert!(seen.is_empty());
 }
 
@@ -710,29 +710,25 @@ fn attack_fill_https_loopback_without_confirming_nothing_leaves() {
         let name = format!("l-{i}");
         let r = request(
             &d,
-            Papel::App,
+            Role::App,
             "salvar_entrada",
             &login(&name, url, "wp_admin", SECRETS[0], None),
         );
         assert!(ok(&r), "{r:?}");
-        let r = fill_raw(&d, Papel::Extensao, &name, url);
-        assert_eq!(
-            error(&r),
-            Some(ErroResposta::AprovacaoIndisponivel),
-            "{url}"
-        );
-        no_secret(&common::encoded(Papel::Extensao, &r));
+        let r = fill_raw(&d, Role::Extension, &name, url);
+        assert_eq!(error(&r), Some(ResponseError::ApprovalUnavailable), "{url}");
+        no_secret(&common::encoded(Role::Extension, &r));
         let (r, seen) = common::with_window(&d, "negar", None, || {
-            fill_raw(&d, Papel::Extensao, &name, url)
+            fill_raw(&d, Role::Extension, &name, url)
         });
-        assert_eq!(error(&r), Some(ErroResposta::Negado), "{url}");
-        no_secret(&common::encoded(Papel::Extensao, &r));
+        assert_eq!(error(&r), Some(ResponseError::Denied), "{url}");
+        no_secret(&common::encoded(Role::Extension, &r));
         assert_eq!(seen.len(), 1, "{url}");
-        assert_eq!(seen[0].operacao, Operacao::Preencher);
+        assert_eq!(seen[0].operacao, Operation::Fill);
         assert_eq!(seen[0].origem, origin, "{url}");
         assert!(seen[0].confirmacao, "{url}");
         let (r, _) = common::with_window(&d, "confirmar", None, || {
-            fill_raw(&d, Papel::Extensao, &name, url)
+            fill_raw(&d, Role::Extension, &name, url)
         });
         assert!(matches!(r, Resposta::Preenchimento { .. }), "{url}");
     }

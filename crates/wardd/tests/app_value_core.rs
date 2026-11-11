@@ -9,7 +9,7 @@ mod common;
 use std::time::Duration;
 
 use common::{Dir, PIN, SECRETS, b64, error, ok, request};
-use ward_core::protocolo::{self, Alvo, ErroResposta, Papel, Pedido, Resposta};
+use ward_core::protocol::{self, Request, ResponseError, Resposta, Role, Target};
 use ward_core::totp::Totp;
 use wardd::nucleo::{Daemon, Relogio};
 
@@ -49,7 +49,7 @@ fn vault(dir: &Dir, unix: Option<u64>) -> Daemon {
     let d = Daemon::novo(dir.paths(), Box::new(FixedClock(unix)));
     let create = request(
         &d,
-        Papel::App,
+        Role::App,
         "criar_cofre",
         &format!(
             r#"{{"senha":"{}","pin":"{}"}}"#,
@@ -64,11 +64,11 @@ fn vault(dir: &Dir, unix: Option<u64>) -> Daemon {
         common::server("s1"),
         with_totp("t-totp"),
     ] {
-        let r = request(&d, Papel::App, "salvar_entrada", &q);
+        let r = request(&d, Role::App, "salvar_entrada", &q);
         assert!(ok(&r), "{r:?}");
     }
     for n in ["t-bloq", "t-totp"] {
-        assert!(ok(&common::set_level(&d, Papel::App, n, "bloqueado", PIN)));
+        assert!(ok(&common::set_level(&d, Role::App, n, "bloqueado", PIN)));
     }
     d
 }
@@ -98,14 +98,14 @@ fn v3_39_app_reveals_and_copies_without_pin_or_approval_even_the_blocked_one() {
         // engine turned on).
         let r = request(
             &d,
-            Papel::App,
+            Role::App,
             op,
             &value_request("t-aprov", &field_target("senha")),
         );
         assert_eq!(value(&r), SECRETS[0].as_bytes(), "{op}");
         let r = request(
             &d,
-            Papel::App,
+            Role::App,
             op,
             &value_request("t-bloq", &field_target("senha")),
         );
@@ -113,21 +113,21 @@ fn v3_39_app_reveals_and_copies_without_pin_or_approval_even_the_blocked_one() {
         // The TOTP seed and the secret extra are secrets of the entry too.
         let r = request(
             &d,
-            Papel::App,
+            Role::App,
             op,
             &value_request("t-totp", &field_target("totp_semente")),
         );
         assert_eq!(value(&r), SEED.as_bytes());
         let r = request(
             &d,
-            Papel::App,
+            Role::App,
             op,
             &value_request("t-totp", r#""extra":"CHAVE""#),
         );
         assert_eq!(value(&r), EXTRA.as_bytes());
         let r = request(
             &d,
-            Papel::App,
+            Role::App,
             op,
             &value_request("s1", &field_target("senha")),
         );
@@ -143,46 +143,46 @@ fn v3_39_app_reveals_and_copies_without_pin_or_approval_even_the_blocked_one() {
             ("t-totp", r#""extra":"REGIAO""#.to_owned()),
             ("t-totp", r#""extra":"NAO_EXISTE""#.to_owned()),
         ] {
-            let r = request(&d, Papel::App, op, &value_request(entry, &target));
+            let r = request(&d, Role::App, op, &value_request(entry, &target));
             assert_eq!(
                 error(&r),
-                Some(ErroResposta::CampoInexistente),
+                Some(ResponseError::FieldNotFound),
                 "{op} {entry} {target}"
             );
         }
         let r = request(
             &d,
-            Papel::App,
+            Role::App,
             op,
             &value_request("nao-existe", &field_target("senha")),
         );
-        assert_eq!(error(&r), Some(ErroResposta::EntradaInexistente));
+        assert_eq!(error(&r), Some(ResponseError::EntryNotFound));
     }
     // The answer encoded for the app carries the value in base64; for the agent, it
     // does not go out.
     let r = request(
         &d,
-        Papel::App,
+        Role::App,
         "revelar",
         &value_request("t-aprov", &field_target("senha")),
     );
-    assert!(protocolo::codificar_resposta(Papel::App, &r).is_ok());
-    assert!(protocolo::codificar_resposta(Papel::Agente, &r).is_err());
-    assert!(protocolo::codificar_resposta(Papel::Extensao, &r).is_err());
+    assert!(protocol::encode_response(Role::App, &r).is_ok());
+    assert!(protocol::encode_response(Role::Agent, &r).is_err());
+    assert!(protocol::encode_response(Role::Extension, &r).is_err());
 
     // Locked: "locked", without a value.
     d.travar();
     for op in ["revelar", "copiar"] {
         let r = request(
             &d,
-            Papel::App,
+            Role::App,
             op,
             &value_request("t-aprov", &field_target("senha")),
         );
-        assert_eq!(error(&r), Some(ErroResposta::Travado), "{op}");
+        assert_eq!(error(&r), Some(ResponseError::Locked), "{op}");
     }
-    let r = request(&d, Papel::App, "totp", r#"{"entrada":"t-totp"}"#);
-    assert_eq!(error(&r), Some(ErroResposta::Travado));
+    let r = request(&d, Role::App, "totp", r#"{"entrada":"t-totp"}"#);
+    assert_eq!(error(&r), Some(ResponseError::Locked));
 }
 
 #[test]
@@ -193,7 +193,7 @@ fn v3_39_app_totp_by_the_daemon_clock() {
     let expected = Totp::from_seed(&ward_core::entry::Secret::from_text(SEED.into()))
         .unwrap()
         .code_at(59);
-    match request(&d, Papel::App, "totp", r#"{"entrada":"t-totp"}"#) {
+    match request(&d, Role::App, "totp", r#"{"entrada":"t-totp"}"#) {
         Resposta::CodigoTotp { codigo, restante } => {
             assert_eq!(codigo.as_str(), expected.code());
             assert_eq!(codigo.len(), 6);
@@ -202,16 +202,16 @@ fn v3_39_app_totp_by_the_daemon_clock() {
         other => panic!("esperava código: {:?}", other.tipo()),
     }
     // No seed: "field does not exist"; no entry: "entry does not exist".
-    let r = request(&d, Papel::App, "totp", r#"{"entrada":"t-aprov"}"#);
-    assert_eq!(error(&r), Some(ErroResposta::CampoInexistente));
-    let r = request(&d, Papel::App, "totp", r#"{"entrada":"nao-existe"}"#);
-    assert_eq!(error(&r), Some(ErroResposta::EntradaInexistente));
+    let r = request(&d, Role::App, "totp", r#"{"entrada":"t-aprov"}"#);
+    assert_eq!(error(&r), Some(ResponseError::FieldNotFound));
+    let r = request(&d, Role::App, "totp", r#"{"entrada":"nao-existe"}"#);
+    assert_eq!(error(&r), Some(ResponseError::EntryNotFound));
 
     // Unreadable wall clock: error, never a code (fails closed).
     let dir2 = Dir::new("totp-sem-relogio");
     let d2 = vault(&dir2, None);
-    let r = request(&d2, Papel::App, "totp", r#"{"entrada":"t-totp"}"#);
-    assert_eq!(error(&r), Some(ErroResposta::Interno));
+    let r = request(&d2, Role::App, "totp", r#"{"entrada":"t-totp"}"#);
+    assert_eq!(error(&r), Some(ResponseError::Internal));
 }
 
 #[test]
@@ -234,15 +234,15 @@ fn attack_v3_39_agent_and_extension_neither_reveal_nor_copy_nor_take_totp() {
             ),
         ),
     ];
-    for role in [Papel::Agente, Papel::Extensao] {
+    for role in [Role::Agent, Role::Extension] {
         for (op, data) in &requests {
             // Through the protocol (as the socket reads it).
             let r = request(&d, role, op, data);
             assert_eq!(
                 error(&r),
-                Some(ErroResposta::NaoAutorizado),
+                Some(ResponseError::Unauthorized),
                 "{} {op}",
-                role.nome()
+                role.name()
             );
             let q = common::encoded(role, &r);
             for s in SECRETS.iter().chain([&SEED, &EXTRA]) {
@@ -252,27 +252,27 @@ fn attack_v3_39_agent_and_extension_neither_reveal_nor_copy_nor_take_totp() {
         }
         // Request already decoded, handed straight to the core (second layer).
         for p in [
-            Pedido::Revelar {
-                entrada: "t-aprov".into(),
-                alvo: Alvo::Campo("senha".into()),
+            Request::Reveal {
+                entry: "t-aprov".into(),
+                target: Target::Field("senha".into()),
             },
-            Pedido::Copiar {
-                entrada: "t-bloq".into(),
-                alvo: Alvo::Campo("senha".into()),
+            Request::Copy {
+                entry: "t-bloq".into(),
+                target: Target::Field("senha".into()),
             },
-            Pedido::Totp {
-                entrada: "t-totp".into(),
+            Request::Totp {
+                entry: "t-totp".into(),
             },
         ] {
             let r = d.atender(role, p);
-            assert_eq!(error(&r), Some(ErroResposta::NaoAutorizado));
+            assert_eq!(error(&r), Some(ResponseError::Unauthorized));
         }
     }
     // The vault stays unlocked and the app still gets values (nothing locked or used
     // up a PIN).
     let r = request(
         &d,
-        Papel::App,
+        Role::App,
         "revelar",
         &value_request("t-aprov", &field_target("senha")),
     );
@@ -283,7 +283,7 @@ fn attack_v3_39_agent_and_extension_neither_reveal_nor_copy_nor_take_totp() {
 fn v3_40_app_list_with_summary_and_agent_list_without_level_or_summary() {
     let dir = Dir::new("lista-resumo");
     let d = vault(&dir, Some(59));
-    let Resposta::Lista(items) = request(&d, Papel::App, "lista", "{}") else {
+    let Resposta::Lista(items) = request(&d, Role::App, "lista", "{}") else {
         panic!("não é lista")
     };
     assert_eq!(items.len(), 4);
@@ -298,7 +298,7 @@ fn v3_40_app_list_with_summary_and_agent_list_without_level_or_summary() {
         vec!["senha".to_owned(), "totp_semente".to_owned()]
     );
     assert_eq!((r.extras, r.anexos), (2, 0));
-    let q = common::encoded(Papel::App, &Resposta::Lista(items));
+    let q = common::encoded(Role::App, &Resposta::Lista(items));
     for s in SECRETS.iter().chain([&SEED, &EXTRA]) {
         assert!(
             !common::contains(&q, s.as_bytes()),
@@ -307,8 +307,8 @@ fn v3_40_app_list_with_summary_and_agent_list_without_level_or_summary() {
         assert!(!common::contains(&q, b64(s.as_bytes()).as_bytes()));
     }
     // Agent: the non-blocked ones, without level, summary or user.
-    let r = request(&d, Papel::Agente, "lista", "{}");
-    let q = common::encoded(Papel::Agente, &r);
+    let r = request(&d, Role::Agent, "lista", "{}");
+    let q = common::encoded(Role::Agent, &r);
     let Resposta::Lista(items) = r else {
         panic!("não é lista")
     };

@@ -5,7 +5,7 @@
 
 use std::fmt::Write as _;
 
-use ward_core::protocolo::ItemLista;
+use ward_core::protocol::ItemLista;
 
 /// Character that cannot go out raw: control or invisible formatting.
 pub fn invisible(c: char) -> bool {

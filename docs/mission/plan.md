@@ -140,7 +140,7 @@ Compilação de cada fase: `make compile`. Checador: os arquivos da fase.
   congelados). — V2.1
 - [x] Fase 16 — `mascara.rs`, `mascara/automato.rs`, `mascara/testes.rs`. Lógica da
   máscara intocada. — V2.1, V2.5
-- [ ] Fase 17 — `protocolo.rs`, `campos.rs`, `quadro.rs`, `json.rs`, `erros.rs`,
+- [x] Fase 17 — `protocolo.rs`, `campos.rs`, `quadro.rs`, `json.rs`, `erros.rs`,
   `pedido.rs` (nomes de operação, campo, erro e papel congelados como literais; o
   `dev/tests/socket_matrix.py` lê `protocolo.rs`, `Operacao, `, `tabela!`, `TODOS`/
   `AGENTE_E_APP`/`SO_AGENTE` e muda junto, achado da Fase 45). —

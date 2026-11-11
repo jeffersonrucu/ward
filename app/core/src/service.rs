@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use serde::Serialize;
 use ward_core::entry::{AttachmentDraft, Draft, EntryType, Secret as CoreSecret};
-use ward_core::protocolo::Alvo;
+use ward_core::protocol::Target;
 
 use crate::AppError;
 use crate::approval::{self, ApprovalResult, Approvals, DisplayedRequest};
@@ -117,7 +117,7 @@ struct ServiceSources<'a, D: Daemon> {
 }
 
 impl<D: Daemon> Sources for ServiceSources<'_, D> {
-    fn stored(&mut self, target: Alvo) -> Result<CoreSecret, AppError> {
+    fn stored(&mut self, target: Target) -> Result<CoreSecret, AppError> {
         let entry = self.entry.ok_or(AppError::InvalidRequest)?;
         let s = client::reveal(self.daemon, entry, target)?;
         Ok(CoreSecret::from_bytes(s.expose().to_vec()))
@@ -230,13 +230,13 @@ impl<D: Daemon, A: Clipboard> Service<D, A> {
         acknowledged: bool,
     ) -> Result<ApprovalResult, AppError> {
         let decision = approval::decision_from_name(decision)?;
-        if decision.pede_pin() != pin.is_some() || (acknowledged && !decision.pede_pin()) {
+        if decision.requires_pin() != pin.is_some() || (acknowledged && !decision.requires_pin()) {
             return Err(AppError::InvalidRequest);
         }
         let result = match self.approvals.state_of(id) {
             None => return Err(AppError::InvalidRequest),
             Some(true) => {
-                if decision.pede_pin() {
+                if decision.requires_pin() {
                     return Err(AppError::Locked);
                 }
                 self.approvals.remove(id);
@@ -247,15 +247,15 @@ impl<D: Daemon, A: Clipboard> Service<D, A> {
                 // "Confirm"; the other requests never by "Confirm" (the daemon checks
                 // again).
                 let confirmation = self.approvals.confirmation(id).unwrap_or(false);
-                if decision != ward_core::protocolo::Decisao::Negar
-                    && confirmation != (decision == ward_core::protocolo::Decisao::Confirmar)
+                if decision != ward_core::protocol::Decision::Deny
+                    && confirmation != (decision == ward_core::protocol::Decision::Confirm)
                 {
                     return Err(AppError::InvalidRequest);
                 }
                 // Phase 54b: the default entry box only on the request that has the
                 // notice, and mandatory on an "Allow" of it.
                 let hidden = self.approvals.hidden_entry(id).unwrap_or(false);
-                if decision.pede_pin() && hidden != acknowledged {
+                if decision.requires_pin() && hidden != acknowledged {
                     return Err(AppError::InvalidRequest);
                 }
                 let r = client::answer_approval(
@@ -303,7 +303,7 @@ impl<D: Daemon, A: Clipboard> Service<D, A> {
                 let _ = client::answer_approval(
                     &mut *d,
                     id,
-                    ward_core::protocolo::Decisao::Negar,
+                    ward_core::protocol::Decision::Deny,
                     None,
                     false,
                 );
@@ -495,14 +495,14 @@ impl<D: Daemon, A: Clipboard> Service<D, A> {
             let detail = client::detail(&mut *d, reference.entry())?;
             let field = reference.field();
             if detail.segredos.iter().any(|s| s == field) {
-                client::copy(&mut *d, reference.entry(), Alvo::Campo(field.to_owned()))?
+                client::copy(&mut *d, reference.entry(), Target::Field(field.to_owned()))?
             } else if let Some((_, v)) = detail.campos.iter().find(|(k, _)| k == field) {
                 Secret::new(v.as_bytes().to_vec())
             } else if let Some(x) = detail.extras.iter().find(|x| x.nome == field) {
                 match &x.valor {
                     Some(v) => Secret::new(v.as_bytes().to_vec()),
                     None => {
-                        client::copy(&mut *d, reference.entry(), Alvo::Extra(field.to_owned()))?
+                        client::copy(&mut *d, reference.entry(), Target::Extra(field.to_owned()))?
                     }
                 }
             } else {
@@ -546,13 +546,13 @@ impl<D: Daemon, A: Clipboard> Service<D, A> {
         let detail = client::detail(&mut *d, reference.entry())?;
         let field = reference.field();
         let target = if detail.segredos.iter().any(|s| s == field) {
-            Alvo::Campo(field.to_owned())
+            Target::Field(field.to_owned())
         } else if detail
             .extras
             .iter()
             .any(|x| x.nome == field && x.valor.is_none())
         {
-            Alvo::Extra(field.to_owned())
+            Target::Extra(field.to_owned())
         } else {
             return Err(AppError::FieldNotFound);
         };
@@ -628,7 +628,7 @@ impl<D: Daemon, A: Clipboard> Service<D, A> {
         // has and each one once (the interface is not trusted). The content stays in the
         // daemon.
         let kept = std::mem::take(&mut f.kept_attachments);
-        let stored: &[ward_core::protocolo::AnexoDetalhe] =
+        let stored: &[ward_core::protocol::AnexoDetalhe] =
             edited.as_ref().map_or(&[], |d| d.anexos.as_slice());
         for (i, n) in kept.iter().enumerate() {
             if kept[..i].contains(n) || !stored.iter().any(|a| &a.nome == n) {

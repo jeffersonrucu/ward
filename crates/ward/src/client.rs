@@ -9,8 +9,8 @@ use std::os::unix::net::UnixStream;
 use std::time::Duration;
 
 use ward_core::limits::MAX_COMMON_FRAME;
-use ward_core::protocolo::quadro::{self, ErroQuadro, LIMITE_RESPOSTA};
-use ward_core::protocolo::{self, Papel, Pedido, Resposta};
+use ward_core::protocol::frame::{self, FrameError, RESPONSE_LIMIT};
+use ward_core::protocol::{self, Request, Resposta, Role};
 use ward_platform::{ExpectedServer, ServerRefusal, connect_server, verify_server};
 
 /// Time limit for the daemon to answer. The unlock can take the growing wait of D20
@@ -94,11 +94,11 @@ fn io_error(e: &io::Error) -> ConnectionError {
     }
 }
 
-fn frame_error(e: ErroQuadro) -> ConnectionError {
+fn frame_error(e: FrameError) -> ConnectionError {
     match e {
-        ErroQuadro::Fechado | ErroQuadro::Truncado => ConnectionError::Closed,
-        ErroQuadro::Vazio | ErroQuadro::GrandeDemais => ConnectionError::InvalidResponse,
-        ErroQuadro::Io(k) => io_error(&k.into()),
+        FrameError::Closed | FrameError::Truncated => ConnectionError::Closed,
+        FrameError::Empty | FrameError::TooLarge => ConnectionError::InvalidResponse,
+        FrameError::Io(k) => io_error(&k.into()),
     }
 }
 
@@ -189,7 +189,7 @@ impl Connection {
     /// limit goes back to normal afterwards.
     pub fn request_with_timeout(
         &mut self,
-        request: &Pedido,
+        request: &Request,
         timeout: Duration,
     ) -> Result<Resposta, ConnectionError> {
         self.stream
@@ -201,14 +201,13 @@ impl Connection {
     }
 
     /// Sends a request of the agent role and reads a response of the agent role.
-    pub fn request(&mut self, request: &Pedido) -> Result<Resposta, ConnectionError> {
-        let body = protocolo::codificar_pedido(Papel::Agente, request)
+    pub fn request(&mut self, request: &Request) -> Result<Resposta, ConnectionError> {
+        let body = protocol::encode_request(Role::Agent, request)
             .map_err(|_| ConnectionError::InvalidRequest)?;
-        quadro::escrever_quadro(&mut self.stream, &body, MAX_COMMON_FRAME).map_err(frame_error)?;
+        frame::write_frame(&mut self.stream, &body, MAX_COMMON_FRAME).map_err(frame_error)?;
         drop(body);
-        let response =
-            quadro::ler_quadro(&mut self.stream, LIMITE_RESPOSTA).map_err(frame_error)?;
-        protocolo::decodificar_resposta(Papel::Agente, &response)
+        let response = frame::read_frame(&mut self.stream, RESPONSE_LIMIT).map_err(frame_error)?;
+        protocol::decode_response(Role::Agent, &response)
             .map_err(|_| ConnectionError::InvalidResponse)
     }
 }
@@ -233,12 +232,12 @@ impl Connection {
     /// ends.
     pub fn open_session(
         self,
-        request: &Pedido,
+        request: &Request,
     ) -> Result<(Session, SessionWriter), ConnectionError> {
         let mut stream = self.stream;
-        let body = protocolo::codificar_pedido(Papel::Agente, request)
+        let body = protocol::encode_request(Role::Agent, request)
             .map_err(|_| ConnectionError::InvalidRequest)?;
-        quadro::escrever_quadro(&mut stream, &body, MAX_COMMON_FRAME).map_err(frame_error)?;
+        frame::write_frame(&mut stream, &body, MAX_COMMON_FRAME).map_err(frame_error)?;
         drop(body);
         stream
             .set_read_timeout(None)
@@ -253,25 +252,26 @@ impl Session {
     /// The next response of the daemon (of the agent role: one with a credential is
     /// refused).
     pub fn receive(&mut self) -> Result<Resposta, ConnectionError> {
-        let frame = quadro::ler_quadro(&mut self.reader, LIMITE_RESPOSTA).map_err(frame_error)?;
-        protocolo::decodificar_resposta(Papel::Agente, &frame)
-            .map_err(|_| ConnectionError::InvalidResponse)
+        let frame = frame::read_frame(&mut self.reader, RESPONSE_LIMIT).map_err(frame_error)?;
+        protocol::decode_response(Role::Agent, &frame).map_err(|_| ConnectionError::InvalidResponse)
     }
 }
 
 impl SessionWriter {
     /// Sends a chunk of the standard input (empty = end of input).
     pub fn send_stdin(&mut self, data: ward_core::entry::Secret) -> Result<(), ConnectionError> {
-        let body =
-            protocolo::codificar_pedido(Papel::Agente, &Pedido::EntradaPadrao { dados: data })
-                .map_err(|_| ConnectionError::InvalidRequest)?;
-        quadro::escrever_quadro(&mut self.writer, &body, MAX_COMMON_FRAME).map_err(frame_error)
+        let body = protocol::encode_request(Role::Agent, &Request::Stdin { data })
+            .map_err(|_| ConnectionError::InvalidRequest)?;
+        frame::write_frame(&mut self.writer, &body, MAX_COMMON_FRAME).map_err(frame_error)
     }
 
     /// Sends the new terminal size (interactive `ward ssh`, Phase 27).
-    pub fn send_window(&mut self, w: ward_core::protocolo::Janela) -> Result<(), ConnectionError> {
-        let body = protocolo::codificar_pedido(Papel::Agente, &Pedido::Janela(w))
+    pub fn send_window(
+        &mut self,
+        w: ward_core::protocol::WindowSize,
+    ) -> Result<(), ConnectionError> {
+        let body = protocol::encode_request(Role::Agent, &Request::Resize(w))
             .map_err(|_| ConnectionError::InvalidRequest)?;
-        quadro::escrever_quadro(&mut self.writer, &body, MAX_COMMON_FRAME).map_err(frame_error)
+        frame::write_frame(&mut self.writer, &body, MAX_COMMON_FRAME).map_err(frame_error)
     }
 }

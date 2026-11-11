@@ -30,7 +30,7 @@ use std::time::{Duration, Instant};
 
 use common::*;
 use ward_core::backup::VERSIONS;
-use ward_core::protocolo::{ErroResposta, Papel, Resposta};
+use ward_core::protocol::{ResponseError, Resposta, Role};
 use wardd::external::{ExternalError, Seen, UsbDriveSource};
 use wardd::nucleo::Daemon;
 use zbus::connection::Builder;
@@ -91,7 +91,7 @@ fn mount_point(dir: &Dir, name: &str) -> PathBuf {
     p
 }
 
-fn turn_on(d: &Daemon, role: Papel, uuid: &str) -> Resposta {
+fn turn_on(d: &Daemon, role: Role, uuid: &str) -> Resposta {
     request(
         d,
         role,
@@ -166,7 +166,7 @@ fn v7_4_off_by_default_writes_nothing() {
     let a = mount_point(&dir, "pendrive-a");
     let source = Source::with(vec![usb_drive(UUID_A, &a)]);
     let d = d.com_pendrives(Arc::new(source.clone()));
-    match request(&d, Papel::App, "backup_externo", "{}") {
+    match request(&d, Role::App, "backup_externo", "{}") {
         Resposta::BackupExterno { ligado, uuid } => {
             assert!(!ligado);
             assert_eq!(uuid, None);
@@ -177,7 +177,7 @@ fn v7_4_off_by_default_writes_nothing() {
     assert_eq!(source.queries(), 0, "desligado nem consulta o udisks2");
     assert!(tree(&a).is_empty(), "nada no pendrive");
     // The list of USB drives (for the app to choose from) works and writes nothing.
-    match request(&d, Papel::App, "pendrives", "{}") {
+    match request(&d, Role::App, "pendrives", "{}") {
         Resposta::Pendrives(l) => {
             assert_eq!(l.len(), 1);
             assert_eq!(l[0].uuid, UUID_A);
@@ -201,8 +201,8 @@ fn v7_5_v7_6_copies_only_to_the_chosen_drive_and_without_secret() {
     let a = mount_point(&dir, "pendrive-a");
     let b = mount_point(&dir, "pendrive-b");
     let source = Source::with(vec![usb_drive(UUID_B, &b)]);
-    assert!(ok(&turn_on(&d, Papel::App, UUID_A)));
-    match request(&d, Papel::App, "backup_externo", "{}") {
+    assert!(ok(&turn_on(&d, Role::App, UUID_A)));
+    match request(&d, Role::App, "backup_externo", "{}") {
         Resposta::BackupExterno { ligado, uuid } => {
             assert!(ligado);
             assert_eq!(uuid.as_deref(), Some(UUID_A));
@@ -246,7 +246,7 @@ fn v7_5_v7_6_copies_only_to_the_chosen_drive_and_without_secret() {
     // A new write: only it goes.
     let r = request(
         &d,
-        Papel::App,
+        Role::App,
         "salvar_entrada",
         &login("t-nova", SECRETS[3]),
     );
@@ -288,7 +288,7 @@ fn attack_swapped_drive_or_repeated_uuid_gets_nothing() {
     let (d, _) = test_vault(&dir);
     let a = mount_point(&dir, "pendrive-a");
     let b = mount_point(&dir, "pendrive-b");
-    assert!(ok(&turn_on(&d, Papel::App, UUID_A)));
+    assert!(ok(&turn_on(&d, Role::App, UUID_A)));
     // A device that is not the mounted directory's.
     let mut fake = usb_drive(UUID_A, &a);
     fake.device ^= 0x55;
@@ -344,7 +344,7 @@ fn attack_swapped_drive_or_repeated_uuid_gets_nothing() {
 fn attack_mount_or_folder_that_is_a_link() {
     let dir = Dir::new("ext-link");
     let (d, _) = test_vault(&dir);
-    assert!(ok(&turn_on(&d, Papel::App, UUID_A)));
+    assert!(ok(&turn_on(&d, Role::App, UUID_A)));
     let target = mount_point(&dir, "alvo");
     let link = dir.0.join("montagem-link");
     std::os::unix::fs::symlink(&target, &link).unwrap();
@@ -384,7 +384,7 @@ fn attack_mount_or_folder_that_is_a_link() {
 fn attack_existing_version_on_the_drive_is_not_overwritten() {
     let dir = Dir::new("ext-existe");
     let (d, _) = test_vault(&dir);
-    assert!(ok(&turn_on(&d, Papel::App, UUID_A)));
+    assert!(ok(&turn_on(&d, Role::App, UUID_A)));
     let a = mount_point(&dir, "pendrive-a");
     let destination = external_dir(&a);
     fs::create_dir(&destination).unwrap();
@@ -428,7 +428,7 @@ fn attack_existing_version_on_the_drive_is_not_overwritten() {
 fn drive_keeps_30_versions() {
     let dir = Dir::new("ext-rodar");
     let (d, _) = test_vault(&dir);
-    assert!(ok(&turn_on(&d, Papel::App, UUID_A)));
+    assert!(ok(&turn_on(&d, Role::App, UUID_A)));
     let a = mount_point(&dir, "pendrive-a");
     let destination = external_dir(&a);
     fs::create_dir(&destination).unwrap();
@@ -444,7 +444,7 @@ fn drive_keeps_30_versions() {
     for i in 0..VERSIONS + 5 {
         let r = request(
             &d,
-            Papel::App,
+            Role::App,
             "salvar_entrada",
             &login(&format!("t-rodar-{i}"), SECRETS[3]),
         );
@@ -484,7 +484,7 @@ fn drive_keeps_30_versions() {
 fn f54c_attack_names_planted_on_the_drive_do_not_delete_real_copies() {
     let dir = Dir::new("ext-plantados");
     let (d, _) = test_vault(&dir);
-    assert!(ok(&turn_on(&d, Papel::App, UUID_A)));
+    assert!(ok(&turn_on(&d, Role::App, UUID_A)));
     let a = mount_point(&dir, "pendrive-a");
     let source = Source::with(vec![usb_drive(UUID_A, &a)]);
     let c = d.sincronizar_externo(&source).unwrap().unwrap();
@@ -515,7 +515,7 @@ fn f54c_attack_names_planted_on_the_drive_do_not_delete_real_copies() {
     std::thread::sleep(Duration::from_millis(1100));
     let r = request(
         &d,
-        Papel::App,
+        Role::App,
         "salvar_entrada",
         &login("t-plantados", SECRETS[3]),
     );
@@ -538,7 +538,7 @@ fn f54c_attack_names_planted_on_the_drive_do_not_delete_real_copies() {
 fn attack_future_dated_versions_on_the_drive_do_not_delete_the_real_ones() {
     let dir = Dir::new("ext-futuro");
     let (d, _) = test_vault(&dir);
-    assert!(ok(&turn_on(&d, Papel::App, UUID_A)));
+    assert!(ok(&turn_on(&d, Role::App, UUID_A)));
     let a = mount_point(&dir, "pendrive-a");
     let source = Source::with(vec![usb_drive(UUID_A, &a)]);
     let c = d.sincronizar_externo(&source).unwrap().unwrap();
@@ -564,7 +564,7 @@ fn attack_future_dated_versions_on_the_drive_do_not_delete_the_real_ones() {
     // A new write and the copy: no real one leaves, the planted local one does not go.
     let r = request(
         &d,
-        Papel::App,
+        Role::App,
         "salvar_entrada",
         &login("t-futuro", SECRETS[3]),
     );
@@ -591,7 +591,7 @@ fn attack_future_dated_versions_on_the_drive_do_not_delete_the_real_ones() {
 fn attack_junk_in_the_local_backup_does_not_rotate_the_drive() {
     let dir = Dir::new("ext-lixo");
     let (d, _) = test_vault(&dir);
-    assert!(ok(&turn_on(&d, Papel::App, UUID_A)));
+    assert!(ok(&turn_on(&d, Role::App, UUID_A)));
     let a = mount_point(&dir, "pendrive-a");
     let destination = external_dir(&a);
     fs::create_dir(&destination).unwrap();
@@ -653,7 +653,7 @@ fn attack_junk_in_the_local_backup_does_not_rotate_the_drive() {
     std::thread::sleep(Duration::from_millis(1100));
     let r = request(
         &d,
-        Papel::App,
+        Role::App,
         "salvar_entrada",
         &login("t-lixo", SECRETS[3]),
     );
@@ -680,7 +680,7 @@ fn locked_or_off_does_not_copy() {
     let (d, _) = test_vault(&dir);
     let a = mount_point(&dir, "pendrive-a");
     let source = Source::with(vec![usb_drive(UUID_A, &a)]);
-    assert!(ok(&turn_on(&d, Papel::App, UUID_A)));
+    assert!(ok(&turn_on(&d, Role::App, UUID_A)));
     d.sincronizar_externo(&source).unwrap().unwrap();
     let before = tree(&a);
     assert!(!before.is_empty());
@@ -689,26 +689,26 @@ fn locked_or_off_does_not_copy() {
     assert_eq!(d.sincronizar_externo(&source), Ok(None));
     assert_eq!(source.queries(), n);
     assert_eq!(
-        error(&request(&d, Papel::App, "backup_externo", "{}")),
-        Some(ErroResposta::Travado)
+        error(&request(&d, Role::App, "backup_externo", "{}")),
+        Some(ResponseError::Locked)
     );
     assert_eq!(
-        error(&request(&d, Papel::App, "pendrives", "{}")),
-        Some(ErroResposta::Travado)
+        error(&request(&d, Role::App, "pendrives", "{}")),
+        Some(ResponseError::Locked)
     );
     assert!(ok(&unlock(&d, PASSWORD)));
     // The setting turned on came back with the vault (it is in the encrypted part).
     assert!(d.sincronizar_externo(&source).unwrap().is_some());
     let r = request(
         &d,
-        Papel::App,
+        Role::App,
         "definir_backup_externo",
         &format!(r#"{{"ligado":false,"uuid":"{UUID_A}"}}"#),
     );
     assert!(ok(&r), "{r:?}");
     let r = request(
         &d,
-        Papel::App,
+        Role::App,
         "salvar_entrada",
         &login("t-depois", SECRETS[3]),
     );
@@ -717,7 +717,7 @@ fn locked_or_off_does_not_copy() {
     assert_eq!(d.sincronizar_externo(&source), Ok(None));
     assert_eq!(source.queries(), n);
     assert_eq!(tree(&a), before, "nada novo, nada apagado");
-    match request(&d, Papel::App, "backup_externo", "{}") {
+    match request(&d, Role::App, "backup_externo", "{}") {
         Resposta::BackupExterno { ligado, uuid } => {
             assert!(!ligado);
             assert_eq!(uuid.as_deref(), Some(UUID_A));
@@ -737,7 +737,7 @@ fn v7_8_agent_and_extension_neither_turn_on_nor_read() {
     let source = Source::with(vec![usb_drive(UUID_A, &a)]);
     let d = d.com_pendrives(Arc::new(source.clone()));
     let vault = fs::read(&dir.paths().cofre).unwrap();
-    for role in [Papel::Agente, Papel::Extensao] {
+    for role in [Role::Agent, Role::Extension] {
         for (op, data) in [
             ("backup_externo", "{}".to_owned()),
             ("pendrives", "{}".to_owned()),
@@ -749,15 +749,15 @@ fn v7_8_agent_and_extension_neither_turn_on_nor_read() {
             // Through the protocol read.
             assert_eq!(
                 error(&request(&d, role, op, &data)),
-                Some(ErroResposta::NaoAutorizado),
+                Some(ResponseError::Unauthorized),
                 "{op} pelo {}",
-                role.nome()
+                role.name()
             );
             // Directly in the daemon, with the request read as the app.
-            let p = req(Papel::App, op, &data).unwrap();
+            let p = req(Role::App, op, &data).unwrap();
             assert_eq!(
                 error(&d.atender(role, p)),
-                Some(ErroResposta::NaoAutorizado)
+                Some(ResponseError::Unauthorized)
             );
         }
     }
@@ -774,25 +774,25 @@ fn usb_drives_without_udisks_and_invalid_uuid() {
     let dir = Dir::new("ext-sem");
     let (d, _) = test_vault(&dir);
     assert_eq!(
-        error(&request(&d, Papel::App, "pendrives", "{}")),
-        Some(ErroResposta::PendrivesIndisponiveis)
+        error(&request(&d, Role::App, "pendrives", "{}")),
+        Some(ResponseError::UsbDrivesUnavailable)
     );
     let vault = fs::read(&dir.paths().cofre).unwrap();
     for uuid in ["../x", "ABCD 1234", "-AB", ""] {
         assert_eq!(
-            error(&turn_on(&d, Papel::App, uuid)),
-            Some(ErroResposta::PedidoInvalido),
+            error(&turn_on(&d, Role::App, uuid)),
+            Some(ResponseError::InvalidRequest),
             "{uuid}"
         );
     }
     assert_eq!(
         error(&request(
             &d,
-            Papel::App,
+            Role::App,
             "definir_backup_externo",
             r#"{"ligado":true}"#
         )),
-        Some(ErroResposta::PedidoInvalido)
+        Some(ResponseError::InvalidRequest)
     );
     assert_eq!(fs::read(&dir.paths().cofre).unwrap(), vault);
 }
@@ -1065,7 +1065,7 @@ fn v7_5_udisks_signal_copies_to_the_mounted_drive() {
     );
     let source = Arc::new(wardd::udisks::Udisks::new(b.socket.clone()));
     let d = Arc::new(d.com_pendrives(source.clone()));
-    assert!(ok(&turn_on(&d, Papel::App, UUID_A)));
+    assert!(ok(&turn_on(&d, Role::App, UUID_A)));
     let nudges = d.ligar_copia_externa().unwrap();
     assert!(d.ligar_copia_externa().is_none(), "só uma thread de cópia");
     wardd::udisks::watch_copy(d.clone(), source, nudges).unwrap();
@@ -1080,7 +1080,7 @@ fn v7_5_udisks_signal_copies_to_the_mounted_drive() {
     .unwrap();
     rx.recv_timeout(Duration::from_secs(10))
         .expect("vigia conectou");
-    match request(&d, Papel::App, "pendrives", "{}") {
+    match request(&d, Role::App, "pendrives", "{}") {
         Resposta::Pendrives(l) => {
             assert_eq!(l.len(), 2);
             assert!(!l.iter().find(|p| p.uuid == UUID_A).unwrap().montado);
@@ -1106,7 +1106,7 @@ fn v7_5_udisks_signal_copies_to_the_mounted_drive() {
     // A write nudges the copy again.
     let r = request(
         &d,
-        Papel::App,
+        Role::App,
         "salvar_entrada",
         &login("t-sinal", SECRETS[3]),
     );

@@ -23,7 +23,7 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use common::Dir;
-use ward_core::protocolo::{self, ErroResposta, Papel, Resposta};
+use ward_core::protocol::{self, ResponseError, Resposta, Role};
 
 const WARDD: &str = env!("CARGO_BIN_EXE_wardd");
 const TEST_APP: &str = env!("CARGO_BIN_EXE_wardd-app-teste");
@@ -69,7 +69,7 @@ fn request(s: &mut UnixStream, op: &str, data: &str) -> Resposta {
     s.read_exact(&mut n).unwrap();
     let mut b = vec![0u8; u32::from_be_bytes(n) as usize];
     s.read_exact(&mut b).unwrap();
-    protocolo::decodificar_resposta(Papel::Agente, &b).unwrap()
+    protocol::decode_response(Role::Agent, &b).unwrap()
 }
 
 fn wait_for(mut f: impl FnMut() -> bool, what: &str) {
@@ -156,7 +156,7 @@ fn v3_37_only_the_app_opened_by_the_test_daemon_is_app() {
     assert!(matches!(
         request(&mut c, "estado", "{}"),
         Resposta::Estado {
-            papel: Papel::Agente,
+            papel: Role::Agent,
             ..
         }
     ));
@@ -195,7 +195,7 @@ fn v3_37_only_the_app_opened_by_the_test_daemon_is_app() {
     );
 
     // By hand (the same file) and a copy: agent, and reveal not authorized.
-    let not_authorized = ErroResposta::NaoAutorizado.codigo();
+    let not_authorized = ResponseError::Unauthorized.code();
     let copy = repo.0.join("bin/copia-do-app");
     fs::copy(&app, &copy).unwrap();
     for b in [&app, &copy] {
@@ -217,7 +217,7 @@ fn v3_37_only_the_app_opened_by_the_test_daemon_is_app() {
         r#"{"entrada":"acme-pg-dev","alvo":{"campo":"senha"}}"#,
     );
     assert!(
-        matches!(r, Resposta::Erro(ErroResposta::NaoAutorizado)),
+        matches!(r, Resposta::Erro(ResponseError::Unauthorized)),
         "{r:?}"
     );
 

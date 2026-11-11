@@ -52,8 +52,8 @@ use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
-use ward_core::protocolo::quadro::{self, ErroQuadro};
-use ward_core::protocolo::{self, Papel, PedidoDeAprovacao, PedidoDeDestrave, Resposta};
+use ward_core::protocol::frame::{self, FrameError};
+use ward_core::protocol::{self, PedidoDeAprovacao, PedidoDeDestrave, Resposta, Role};
 use ward_platform::{ExpectedServer, ServerRefusal, connect_server};
 
 use zeroize::Zeroizing;
@@ -116,7 +116,7 @@ impl Notice {
     pub fn test_unlock(entry: &str) -> Notice {
         Notice::Unlock(PedidoDeDestrave {
             entrada: entry.to_owned(),
-            operacao: protocolo::Operacao::Executar,
+            operacao: protocol::Operation::Run,
             comando: r#""psql" "-c" "select count(*) from pedidos""#.to_owned(),
             restante: 120,
         })
@@ -130,7 +130,7 @@ impl Notice {
     pub fn hostile_test_unlock() -> Notice {
         Notice::Unlock(PedidoDeDestrave {
             entrada: "acme-pg-\u{202E}vorpa\u{200B}<b>x</b>".to_owned(),
-            operacao: protocolo::Operacao::Executar,
+            operacao: protocol::Operation::Run,
             comando: "\"psql\" \"-c\" \"select 1\u{1b}[2K\" \"<img src=x onerror=alert(1)>\""
                 .to_owned(),
             restante: 120,
@@ -337,10 +337,10 @@ impl Transport {
         // with `waiting`, so this should find nothing).
         while p.responses.try_recv().is_ok() {}
         self.waiting.store(true, Ordering::Release);
-        let limit = quadro::limite_do_quadro(Papel::App);
-        match quadro::escrever_quadro(&mut p.writer, request, limit) {
+        let limit = frame::frame_limit(Role::App);
+        match frame::write_frame(&mut p.writer, request, limit) {
             Ok(()) => {}
-            Err(ErroQuadro::Vazio | ErroQuadro::GrandeDemais) => {
+            Err(FrameError::Empty | FrameError::TooLarge) => {
                 // Nothing was written: the connection is still in order.
                 self.waiting.store(false, Ordering::Release);
                 return Err(AppError::InvalidRequest);
@@ -382,8 +382,8 @@ fn read_loop(
     notices: &NoticeQueue,
 ) {
     // Closed, truncated, above the limit or I/O error: leaves.
-    while let Ok(q) = quadro::ler_quadro(&mut s, quadro::LIMITE_RESPOSTA) {
-        match protocolo::decodificar_resposta(Papel::App, &q) {
+    while let Ok(q) = frame::read_frame(&mut s, frame::RESPONSE_LIMIT) {
+        match protocol::decode_response(Role::App, &q) {
             Ok(Resposta::PedidoDeAprovacao(p)) => notices.push(Notice::Approval(p)),
             Ok(Resposta::PedidoDeDestrave(p)) => notices.push(Notice::Unlock(p)),
             Ok(_) => {
@@ -548,14 +548,14 @@ mod tests {
 
     use crate::client;
     use crate::commands::Reference;
-    use ward_core::protocolo::Alvo;
+    use ward_core::protocol::Target;
 
     impl DaemonSocket {
         fn status(&mut self) -> Result<VaultStatus, AppError> {
             client::status(self)
         }
         fn value_to_copy(&mut self, r: &Reference) -> Result<(), AppError> {
-            client::copy(self, r.entry(), Alvo::Campo(r.field().to_owned())).map(|_| ())
+            client::copy(self, r.entry(), Target::Field(r.field().to_owned())).map(|_| ())
         }
     }
 
@@ -766,20 +766,20 @@ mod tests {
     // --- Transport (D65 a, V5.33) with a fake daemon on the other side of a pair -------
 
     fn send(s: &mut UnixStream, r: &Resposta) {
-        let q = protocolo::codificar_resposta(Papel::App, r).unwrap();
-        quadro::escrever_quadro(s, &q, quadro::LIMITE_RESPOSTA).unwrap();
+        let q = protocol::encode_response(Role::App, r).unwrap();
+        frame::write_frame(s, &q, frame::RESPONSE_LIMIT).unwrap();
     }
 
-    fn read_request(s: &mut UnixStream) -> ward_core::protocolo::Pedido {
-        let q = quadro::ler_quadro(s, quadro::limite_do_quadro(Papel::App)).unwrap();
-        protocolo::decodificar_pedido(Papel::App, &q).unwrap()
+    fn read_request(s: &mut UnixStream) -> ward_core::protocol::Request {
+        let q = frame::read_frame(s, frame::frame_limit(Role::App)).unwrap();
+        protocol::decode_request(Role::App, &q).unwrap()
     }
 
     fn app_status() -> Resposta {
         Resposta::Estado {
             travado: false,
             cofre_existe: true,
-            papel: Papel::App,
+            papel: Role::App,
         }
     }
 
@@ -823,7 +823,7 @@ mod tests {
             id,
             entradas: vec!["acme-pg-dev".into()],
             ambiente: ward_core::entry::Environment::Dev,
-            operacao: ward_core::protocolo::Operacao::Executar,
+            operacao: ward_core::protocol::Operation::Run,
             comando: "\"psql\"".into(),
             diretorio: "\"/home/dev\"".into(),
             cadeia: vec!["claude".into(), "ward run".into()],
@@ -850,7 +850,7 @@ mod tests {
             for _ in 0..2 {
                 assert!(matches!(
                     read_request(&mut b),
-                    ward_core::protocolo::Pedido::Estado
+                    ward_core::protocol::Request::Status
                 ));
                 send(&mut b, &Resposta::PedidoDeAprovacao(approval(7)));
                 send(&mut b, &unlock_notice());
@@ -859,7 +859,7 @@ mod tests {
             b
         });
         assert_eq!(client::status(&mut d), Ok(VaultStatus::Unlocked));
-        assert_eq!(client::role(&mut d), Ok(Papel::App));
+        assert_eq!(client::role(&mut d), Ok(Role::App));
         let _b = server.join().unwrap();
         assert_eq!(notices.take(), Some(Notice::Approval(approval(7))));
         assert_eq!(
@@ -955,7 +955,7 @@ mod tests {
         let mut d = DaemonSocket::from_pair(a, Duration::from_secs(10));
         let server = std::thread::spawn(move || {
             read_request(&mut b);
-            let n = u32::try_from(quadro::LIMITE_RESPOSTA + 1).unwrap();
+            let n = u32::try_from(frame::RESPONSE_LIMIT + 1).unwrap();
             b.write_all(&n.to_be_bytes()).unwrap();
             let _ = b.write_all(&[b'{'; 64]);
             closed(&mut b)
@@ -968,7 +968,7 @@ mod tests {
     #[test]
     fn v5_33_agent_role_type_or_forged_closes_without_showing_anything() {
         use ward_core::entry::{EntryType, Environment};
-        use ward_core::protocolo::ItemLista;
+        use ward_core::protocol::ItemLista;
         // The agent list comes without a level (D50): not a response the app accepts.
         let item = ItemLista {
             nome: "acme-pg-dev".into(),
@@ -981,7 +981,7 @@ mod tests {
             endereco: None,
             resumo: None,
         };
-        let agent_list = protocolo::codificar_resposta(Papel::Agente, &Resposta::Lista(vec![item]))
+        let agent_list = protocol::encode_response(Role::Agent, &Resposta::Lista(vec![item]))
             .unwrap()
             .to_vec();
         let forged = br#"{"v":1,"tipo":"estado","dados":{"travado":false,"cofre_existe":true,"papel":"app","x":1}}"#.to_vec();
@@ -990,7 +990,7 @@ mod tests {
             let mut d = DaemonSocket::from_pair(a, Duration::from_secs(10));
             let server = std::thread::spawn(move || {
                 read_request(&mut b);
-                quadro::escrever_quadro(&mut b, &body, quadro::LIMITE_RESPOSTA).unwrap();
+                frame::write_frame(&mut b, &body, frame::RESPONSE_LIMIT).unwrap();
                 closed(&mut b)
             });
             assert_eq!(client::list(&mut d).err(), Some(AppError::ConnectionLost));
@@ -1006,10 +1006,10 @@ mod tests {
             read_request(&mut b);
             std::thread::sleep(Duration::from_millis(400));
             // The late response: the connection already closed on the app side.
-            let _ = quadro::escrever_quadro(
+            let _ = frame::write_frame(
                 &mut b,
-                &protocolo::codificar_resposta(Papel::App, &app_status()).unwrap(),
-                quadro::LIMITE_RESPOSTA,
+                &protocol::encode_response(Role::App, &app_status()).unwrap(),
+                frame::RESPONSE_LIMIT,
             );
             closed(&mut b)
         });
@@ -1022,7 +1022,7 @@ mod tests {
     fn request_too_large_does_not_go_out_and_the_connection_stays() {
         let (a, mut b) = UnixStream::pair().unwrap();
         let mut d = DaemonSocket::from_pair(a, Duration::from_secs(10));
-        let large = vec![b'x'; quadro::limite_do_quadro(Papel::App) + 1];
+        let large = vec![b'x'; frame::frame_limit(Role::App) + 1];
         assert_eq!(d.exchange(&large).err(), Some(AppError::InvalidRequest));
         let server = std::thread::spawn(move || {
             read_request(&mut b);

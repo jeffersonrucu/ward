@@ -33,7 +33,7 @@ use std::time::{Duration, Instant};
 use common::{Dir, b64};
 use ward_core::atomic_write::write_entries;
 use ward_core::format::{MasterPassword, OpenVault};
-use ward_core::protocolo::{self, ErroResposta, Papel, Resposta};
+use ward_core::protocol::{self, ResponseError, Resposta, Role};
 
 // The test vault through the public API (the same as the test app's and the fake
 // daemon's).
@@ -182,7 +182,7 @@ fn send(s: &mut UnixStream, json: &str) -> Resposta {
     s.read_exact(&mut n).unwrap();
     let mut b = vec![0u8; u32::from_be_bytes(n) as usize];
     s.read_exact(&mut b).unwrap();
-    protocolo::decodificar_resposta(Papel::Agente, &b).unwrap()
+    protocol::decode_response(Role::Agent, &b).unwrap()
 }
 
 #[test]
@@ -257,9 +257,9 @@ fn v3_39_v3_40_app_values_and_list_through_the_test_daemon() {
         assert_eq!(attacks.len(), 8, "{name}");
         for l in attacks {
             let (request, answer) = l.split_at(l.find('{').unwrap());
-            let r = protocolo::decodificar_resposta(Papel::Agente, answer.as_bytes());
+            let r = protocol::decode_response(Role::Agent, answer.as_bytes());
             assert!(
-                matches!(r, Ok(Resposta::Erro(ErroResposta::NaoAutorizado))),
+                matches!(r, Ok(Resposta::Erro(ResponseError::Unauthorized))),
                 "{name} {request}"
             );
         }

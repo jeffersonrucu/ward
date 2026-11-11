@@ -29,7 +29,7 @@ use serde::de::{self, Deserialize, Deserializer, Visitor};
 use ward_core::display::neutralize;
 use ward_core::entry::Secret as CoreSecret;
 use ward_core::limits::MAX_SECRET;
-use ward_core::protocolo::PedidoDeDestrave;
+use ward_core::protocol::PedidoDeDestrave;
 use zeroize::Zeroizing;
 
 use crate::AppError;
@@ -159,7 +159,7 @@ impl PendingRequest {
     fn mark_at(&self, p: &PedidoDeDestrave, now: Instant) {
         let text = Text {
             entry: neutralize(&p.entrada),
-            operation: p.operacao.nome(),
+            operation: p.operacao.name(),
             command: neutralize(&p.comando),
         };
         let left = Duration::from_secs(p.restante).min(REQUEST_TIMEOUT);

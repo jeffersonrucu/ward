@@ -252,3 +252,10 @@ crates/ward-core/src/entry/validation.rs chave 53 delivered variable WARD_ARQUIV
 app/core/src/service.rs livre 48 v4 vault name of AccessLevel::Free
 app/core/src/service.rs carregada 54 "loaded" value of a form secret sent by the webview
 app/core/src/service.rs chave 53 reserved attachment name CHAVE (delivered variable WARD_ARQUIVO_CHAVE)
+
+# Phase 17 (ward-core protocol): v1 envelope keys and the error type quoted in the doc.
+crates/ward-core/src/protocol.rs dados 50 data key of the v1 envelope (v2: data)
+crates/ward-core/src/protocol.rs tipo 50 type key of the v1 response envelope (v2: type)
+crates/ward-core/src/protocol.rs erro 50 error response type of v1 (v2: error)
+crates/ward-core/src/protocol.rs codigo 50 code key of the v1 error (v2: code)
+crates/ward-core/src/protocol.rs mensagem 50 message key of the v1 error (v2: message)
