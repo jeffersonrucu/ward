@@ -420,13 +420,14 @@ Depois das Fases 61–66 (e das correções), o orchestrator chama os três vali
   observação do disco (V4.4); retrocesso (V4.7); restauração e rotação (V4.10); estado
   (V4.11); `wardd` 0.1.4 no cofre migrado (V4.12); CLI 0.1.4 × daemon 0.2.0 e CLI 0.2.0
   × daemon 0.1.4 (V4.16, V4.17). — V4.3–V4.7, V4.10–V4.12, V4.16, V4.17
-- [ ] Fase 65 — Bateria E (navegador e app) **(UI)**: `make app-front`, `test-nm` (com a
+- [x] Fase 65 — Bateria E (navegador e app) **(UI)**: `make app-front`, `test-nm` (com a
   extensão 0.1.4 também, V5.10), `extension`, `test-extension`, `test-login`,
   `test-playwright`, `test-chrome-policy`, `test-webkit-real`, `test-app-e2e`,
   `test-clipboard`, `test-revealed-selection`, `test-app-logs`, `test-gst-channels`;
   capturas de cada tela comparadas com `docs/mission/arquivo/m1/evidence/final/`. —
   V3.2–V3.5, V4.22–V4.24, V5.10, V6.4, V6.5, V6.8, V6.9
-- [ ] Fase 66 — (achados da Fase 64, ajuste do contrato sem mudar produto: V4.7 dizer o estado do daemon — travado dá `rollback`, destravado dá `vault_changed` na gravação seguinte; V4.12 aceitar a mensagem `cofre_invalido` do 0.1.4; V4.17 aceitar "resposta inválida do daemon" da CLI 0.1.4 e trocar `executar` por `run`; registrar no handoff para o usuário) Artefatos 0.2.0 e roteiro do usuário: `make release`, `make extension`,
+- [ ] Fase 65a — Correção da Bateria E (handoff da 65; decisão do usuário 2026-11-11: guarda + contêiner): (1) **segurança dos testes**: toda suíte que abre Chrome (`test-nm`, `test-extension`, `test-login`, `test-chrome-policy`, `test-playwright`, `test-app-e2e`, `test-webkit-real` e afins) recusa rodar no host se houver política do Ward em `/etc/opt/chrome/policies/managed/` (ou qualquer `ExtensionSettings`/`force_installed` do id do Ward), com autoteste; nenhuma suíte pode alcançar `/usr/local/bin/ward-nm` nem o `wardd` instalado; (2) `test-nm`, `test-extension` e `test-login` rodam num contêiner `ubuntu:24.04` com o Chrome, serviços e `wardd` de teste dentro (sem a política do host), verdes; (3) `dev/tests/app_e2e.py › run_in_background` com `stdin=subprocess.DEVNULL` e o `test-app-e2e` verde; (4) `test-webkit-real` não grava em `/run/user/<uid>/ward-tray` (pasta do app instalado); (5) decidir/registrar a marca "fora de ordem" com cópia de mesma geração (achado 64/65). — V3.5, V5.10, V6.5, V6.6, V6.8, V2.8
+- [ ] Fase 66 — (achado da Fase 65: V6.5 para `ward playwright` diz "a origem da página não bate com a da entrada", igual à 0.1.4 — ajustar o contrato) (achados da Fase 64, ajuste do contrato sem mudar produto: V4.7 dizer o estado do daemon — travado dá `rollback`, destravado dá `vault_changed` na gravação seguinte; V4.12 aceitar a mensagem `cofre_invalido` do 0.1.4; V4.17 aceitar "resposta inválida do daemon" da CLI 0.1.4 e trocar `executar` por `run`; registrar no handoff para o usuário) Artefatos 0.2.0 e roteiro do usuário: `make release`, `make extension`,
   `make extension-crx` (chave `.dev/extension/key.pem`, id conferido), `make deb
   EXTENSION_ID=… EXTENSION_CRX=…`; `docs/mission/roteiro-usuario.md` (instalar por cima
   da 0.1.4, primeiro destrave pelo app ou por `/usr/local/bin/ward unlock` = migração,
