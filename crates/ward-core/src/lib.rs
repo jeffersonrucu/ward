@@ -25,7 +25,7 @@ pub mod limits;
 pub mod mask;
 pub mod origin;
 // Socket protocol: frames, messages, roles and the operation × role table (Phase 20).
-pub mod protocolo;
+pub mod protocol;
 // TOTP (RFC 6238) and password generator (Phase 18).
 pub mod generator;
 pub mod totp;

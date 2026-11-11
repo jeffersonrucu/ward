@@ -13,11 +13,11 @@ use std::time::Duration;
 
 use common::*;
 use ward_core::entry::AccessLevel;
-use ward_core::protocolo::{ErroResposta, Papel, Resposta};
+use ward_core::protocol::{ResponseError, Resposta, Role};
 use wardd::arquivos::{self, Geracoes};
 use wardd::nucleo::{ESPERA_MAXIMA, espera_destrave};
 
-fn list(d: &wardd::nucleo::Daemon, role: Papel) -> Vec<ward_core::protocolo::ItemLista> {
+fn list(d: &wardd::nucleo::Daemon, role: Role) -> Vec<ward_core::protocol::ItemLista> {
     match request(d, role, "lista", "{}") {
         Resposta::Lista(l) => l,
         r => panic!("{r:?}"),
@@ -25,7 +25,7 @@ fn list(d: &wardd::nucleo::Daemon, role: Papel) -> Vec<ward_core::protocolo::Ite
 }
 
 fn level_of(d: &wardd::nucleo::Daemon, name: &str) -> Option<AccessLevel> {
-    list(d, Papel::App)
+    list(d, Role::App)
         .into_iter()
         .find(|i| i.nome == name)
         .and_then(|i| i.nivel)
@@ -42,27 +42,27 @@ fn v3_10_lock_and_everything_answers_locked() {
     let dir = Dir::new("travar");
     let (d, _) = test_vault(&dir);
     assert!(!d.travado());
-    assert!(ok(&request(&d, Papel::Agente, "travar", "{}")));
+    assert!(ok(&request(&d, Role::Agent, "travar", "{}")));
     assert!(d.travado());
     let pin = b64(PIN.as_bytes());
     for (role, op, data) in [
-        (Papel::Agente, "lista", "{}".to_owned()),
-        (Papel::App, "lista", "{}".to_owned()),
-        (Papel::App, "detalhe", r#"{"entrada":"t-aprov"}"#.to_owned()),
+        (Role::Agent, "lista", "{}".to_owned()),
+        (Role::App, "lista", "{}".to_owned()),
+        (Role::App, "detalhe", r#"{"entrada":"t-aprov"}"#.to_owned()),
         (
-            Papel::App,
+            Role::App,
             "remover_entrada",
             r#"{"entrada":"t-aprov"}"#.to_owned(),
         ),
-        (Papel::App, "tempo_trava", r#"{"minutos":30}"#.to_owned()),
+        (Role::App, "tempo_trava", r#"{"minutos":30}"#.to_owned()),
         (
-            Papel::App,
+            Role::App,
             "mudar_nivel",
             format!(r#"{{"entrada":"t-aprov","nivel":"livre","pin":"{pin}"}}"#),
         ),
-        (Papel::App, "salvar_entrada", login("t-novo", SECRETS[0])),
+        (Role::App, "salvar_entrada", login("t-novo", SECRETS[0])),
         (
-            Papel::Agente,
+            Role::Agent,
             "executar",
             format!(
                 r#"{{"entrada":"t-livre","argv":["{}"],"cwd":"{}","tipo_entrada":"nula","ambiente":[]}}"#,
@@ -73,20 +73,20 @@ fn v3_10_lock_and_everything_answers_locked() {
     ] {
         assert_eq!(
             error(&request(&d, role, op, &data)),
-            Some(ErroResposta::Travado),
+            Some(ResponseError::Locked),
             "{op}"
         );
     }
-    match request(&d, Papel::Agente, "estado", "{}") {
+    match request(&d, Role::Agent, "estado", "{}") {
         Resposta::Estado {
             travado,
             cofre_existe,
             papel: role,
-        } => assert!(travado && cofre_existe && role == Papel::Agente),
+        } => assert!(travado && cofre_existe && role == Role::Agent),
         r => panic!("{r:?}"),
     }
     assert!(ok(&unlock(&d, PASSWORD)));
-    assert_eq!(list(&d, Papel::App).len(), 5);
+    assert_eq!(list(&d, Role::App).len(), 5);
 }
 
 /// V3.9 (D20): 10 wrong passwords in a row; each attempt waits longer than the previous
@@ -106,8 +106,8 @@ fn v3_9_wrong_password_growing_wait_without_count() {
     let mut frames = Vec::new();
     for i in 0..10 {
         let r = unlock(&d, &format!("falso-errada-{i:02}"));
-        assert_eq!(error(&r), Some(ErroResposta::SenhaIncorreta));
-        frames.push(encoded(Papel::Agente, &r));
+        assert_eq!(error(&r), Some(ResponseError::WrongPassword));
+        frames.push(encoded(Role::Agent, &r));
     }
     assert!(frames.windows(2).all(|w| w[0] == w[1]));
     let s = String::from_utf8_lossy(&frames[0]);
@@ -142,19 +142,19 @@ fn v3_11_change_level_requires_pin_and_app_role() {
     // No PIN: the request parsing refuses.
     let no_pin = request(
         &d,
-        Papel::App,
+        Role::App,
         "mudar_nivel",
         r#"{"entrada":"t-aprov","nivel":"bloqueado"}"#,
     );
-    assert_eq!(error(&no_pin), Some(ErroResposta::PedidoInvalido));
+    assert_eq!(error(&no_pin), Some(ResponseError::InvalidRequest));
     // Wrong PIN.
-    let r = set_level(&d, Papel::App, "t-aprov", "bloqueado", WRONG_PIN);
-    assert_eq!(error(&r), Some(ErroResposta::PinIncorreto));
+    let r = set_level(&d, Role::App, "t-aprov", "bloqueado", WRONG_PIN);
+    assert_eq!(error(&r), Some(ResponseError::WrongPin));
     // Agent, right PIN: not authorized, by the parsing and by the second layer.
-    let r = set_level(&d, Papel::Agente, "t-aprov", "bloqueado", PIN);
-    assert_eq!(error(&r), Some(ErroResposta::NaoAutorizado));
+    let r = set_level(&d, Role::Agent, "t-aprov", "bloqueado", PIN);
+    assert_eq!(error(&r), Some(ResponseError::Unauthorized));
     let p = req(
-        Papel::App,
+        Role::App,
         "mudar_nivel",
         &format!(
             r#"{{"entrada":"t-aprov","nivel":"bloqueado","pin":"{}"}}"#,
@@ -163,14 +163,14 @@ fn v3_11_change_level_requires_pin_and_app_role() {
     )
     .unwrap();
     assert_eq!(
-        error(&d.atender(Papel::Agente, p)),
-        Some(ErroResposta::NaoAutorizado)
+        error(&d.atender(Role::Agent, p)),
+        Some(ResponseError::Unauthorized)
     );
     assert_eq!(fs::read(&vault).unwrap(), before, "o arquivo mudou");
     assert_eq!(level_of(&d, "t-aprov"), Some(AccessLevel::Approval));
 
     // App with the right PIN: changes and stays on disk.
-    assert!(ok(&set_level(&d, Papel::App, "t-aprov", "bloqueado", PIN)));
+    assert!(ok(&set_level(&d, Role::App, "t-aprov", "bloqueado", PIN)));
     assert_ne!(fs::read(&vault).unwrap(), before);
     d.travar();
     assert!(ok(&unlock(&d, PASSWORD)));
@@ -184,13 +184,13 @@ fn v3_12_five_pin_errors_lock() {
     let dir = Dir::new("pin");
     let (d, _) = test_vault(&dir);
     for _ in 0..4 {
-        let r = set_level(&d, Papel::App, "t-aprov", "livre", WRONG_PIN);
-        assert_eq!(error(&r), Some(ErroResposta::PinIncorreto));
+        let r = set_level(&d, Role::App, "t-aprov", "livre", WRONG_PIN);
+        assert_eq!(error(&r), Some(ResponseError::WrongPin));
     }
     assert!(!d.travado());
     assert!(ok(&set_level(
         &d,
-        Papel::App,
+        Role::App,
         "t-aprov",
         "com-aprovacao",
         PIN
@@ -199,7 +199,7 @@ fn v3_12_five_pin_errors_lock() {
     for _ in 0..4 {
         let r = request(
             &d,
-            Papel::App,
+            Role::App,
             "trocar_pin",
             &format!(
                 r#"{{"atual":"{}","novo":"{}"}}"#,
@@ -207,20 +207,20 @@ fn v3_12_five_pin_errors_lock() {
                 b64(b"2468")
             ),
         );
-        assert_eq!(error(&r), Some(ErroResposta::PinIncorreto));
+        assert_eq!(error(&r), Some(ResponseError::WrongPin));
     }
     assert!(!d.travado());
-    let r = set_level(&d, Papel::App, "t-aprov", "livre", WRONG_PIN);
-    assert_eq!(error(&r), Some(ErroResposta::PinIncorreto));
+    let r = set_level(&d, Role::App, "t-aprov", "livre", WRONG_PIN);
+    assert_eq!(error(&r), Some(ResponseError::WrongPin));
     assert!(d.travado(), "o 5.º erro seguido tem de travar");
     assert_eq!(
-        error(&request(&d, Papel::App, "lista", "{}")),
-        Some(ErroResposta::Travado)
+        error(&request(&d, Role::App, "lista", "{}")),
+        Some(ResponseError::Locked)
     );
     // Unlocking resets the count.
     assert!(ok(&unlock(&d, PASSWORD)));
-    let r = set_level(&d, Papel::App, "t-aprov", "livre", WRONG_PIN);
-    assert_eq!(error(&r), Some(ErroResposta::PinIncorreto));
+    let r = set_level(&d, Role::App, "t-aprov", "livre", WRONG_PIN);
+    assert_eq!(error(&r), Some(ResponseError::WrongPin));
     assert!(!d.travado());
 }
 
@@ -231,29 +231,29 @@ fn v3_12_five_pin_errors_lock() {
 fn v3_17_v3_26_agent_list_and_blocked_equals_missing() {
     let dir = Dir::new("lista");
     let (d, _) = test_vault(&dir);
-    let agent = list(&d, Papel::Agente);
+    let agent = list(&d, Role::Agent);
     assert_eq!(agent.len(), 4);
     assert!(
         agent
             .iter()
             .all(|i| i.nome != "t-bloq" && i.nivel.is_none())
     );
-    let q = encoded(Papel::Agente, &Resposta::Lista(agent));
+    let q = encoded(Role::Agent, &Resposta::Lista(agent));
     assert!(!contains(&q, b"\"nivel\""));
     for s in SECRETS {
         assert!(!contains(&q, s.as_bytes()) && !contains(&q, b64(s.as_bytes()).as_bytes()));
     }
-    let app = list(&d, Papel::App);
+    let app = list(&d, Role::App);
     assert_eq!(app.len(), 5);
     assert!(app.iter().all(|i| i.nivel.is_some()));
     assert_eq!(level_of(&d, "t-bloq"), Some(AccessLevel::Blocked));
 
     let run = |name: &str| {
         encoded(
-            Papel::Agente,
+            Role::Agent,
             &request(
                 &d,
-                Papel::Agente,
+                Role::Agent,
                 "executar",
                 &format!(
                     r#"{{"entrada":"{name}","argv":["{}"],"cwd":"{}","tipo_entrada":"nula","ambiente":[]}}"#,
@@ -274,19 +274,19 @@ fn v3_17_v3_26_agent_list_and_blocked_equals_missing() {
             ""
         };
         let a = encoded(
-            Papel::Agente,
+            Role::Agent,
             &request(
                 &d,
-                Papel::Agente,
+                Role::Agent,
                 op,
                 &format!(r#"{{"entrada":"t-bloq"{extra}}}"#),
             ),
         );
         let b = encoded(
-            Papel::Agente,
+            Role::Agent,
             &request(
                 &d,
-                Papel::Agente,
+                Role::Agent,
                 op,
                 &format!(r#"{{"entrada":"nao-existe"{extra}}}"#),
             ),
@@ -305,7 +305,7 @@ fn v3_27_new_entry_starts_with_approval() {
     let (d, _) = test_vault(&dir);
     assert!(ok(&request(
         &d,
-        Papel::App,
+        Role::App,
         "salvar_entrada",
         &login("t-nova", SECRETS[0])
     )));
@@ -314,24 +314,24 @@ fn v3_27_new_entry_starts_with_approval() {
     let with_level =
         login("t-nova2", SECRETS[0]).replacen(r#""nome":"#, r#""nivel":"livre","nome":"#, 1);
     assert_eq!(
-        error(&request(&d, Papel::App, "salvar_entrada", &with_level)),
-        Some(ErroResposta::PedidoInvalido)
+        error(&request(&d, Role::App, "salvar_entrada", &with_level)),
+        Some(ResponseError::InvalidRequest)
     );
-    assert!(list(&d, Papel::App).iter().all(|i| i.nome != "t-nova2"));
+    assert!(list(&d, Role::App).iter().all(|i| i.nome != "t-nova2"));
     // Editing the free one keeps it free.
     let edit = login("t-livre", SECRETS[3]).replacen('{', r#"{"anterior":"t-livre","#, 1);
-    assert!(ok(&request(&d, Papel::App, "salvar_entrada", &edit)));
+    assert!(ok(&request(&d, Role::App, "salvar_entrada", &edit)));
     assert_eq!(level_of(&d, "t-livre"), Some(AccessLevel::Free));
     // Remove and recreate with the same name: back to "with approval".
     assert!(ok(&request(
         &d,
-        Papel::App,
+        Role::App,
         "remover_entrada",
         r#"{"entrada":"t-livre"}"#
     )));
     assert!(ok(&request(
         &d,
-        Papel::App,
+        Role::App,
         "salvar_entrada",
         &login("t-livre", SECRETS[3])
     )));
@@ -339,31 +339,31 @@ fn v3_27_new_entry_starts_with_approval() {
     // A repeated name is a validation error, and nothing changes.
     let r = request(
         &d,
-        Papel::App,
+        Role::App,
         "salvar_entrada",
         &login("t-livre", SECRETS[3]),
     );
     assert!(
-        matches!(error(&r), Some(ErroResposta::Validacao(_))),
+        matches!(error(&r), Some(ResponseError::Validation(_))),
         "{r:?}"
     );
     // Removing a server used as a tunnel would leave the vault unable to reopen: refused.
-    let r = request(&d, Papel::App, "remover_entrada", r#"{"entrada":"s1"}"#);
+    let r = request(&d, Role::App, "remover_entrada", r#"{"entrada":"s1"}"#);
     assert!(
-        matches!(error(&r), Some(ErroResposta::Validacao(_))),
+        matches!(error(&r), Some(ResponseError::Validation(_))),
         "{r:?}"
     );
     let rename = server("s2").replacen('{', r#"{"anterior":"s1","#, 1);
-    let r = request(&d, Papel::App, "salvar_entrada", &rename);
+    let r = request(&d, Role::App, "salvar_entrada", &rename);
     assert!(
-        matches!(error(&r), Some(ErroResposta::Validacao(_))),
+        matches!(error(&r), Some(ResponseError::Validation(_))),
         "{r:?}"
     );
-    assert!(list(&d, Papel::App).iter().any(|i| i.nome == "s1"));
+    assert!(list(&d, Role::App).iter().any(|i| i.nome == "s1"));
     // The vault still opens after all this.
     d.travar();
     assert!(ok(&unlock(&d, PASSWORD)));
-    assert_eq!(list(&d, Papel::App).len(), 6);
+    assert_eq!(list(&d, Role::App).len(), 6);
 }
 
 /// V3.22 (D39; S7, S9, S13): old copy on top with the daemon locked, deleted state,
@@ -377,13 +377,13 @@ fn v3_22_rollback_and_swapped_file() {
     let n = generation_on_disk(&c.cofre, PASSWORD);
     assert!(ok(&request(
         &d,
-        Papel::App,
+        Role::App,
         "tempo_trava",
         r#"{"minutos":30}"#
     )));
     assert!(ok(&request(
         &d,
-        Papel::App,
+        Role::App,
         "tempo_trava",
         r#"{"minutos":60}"#
     )));
@@ -401,9 +401,9 @@ fn v3_22_rollback_and_swapped_file() {
     // file is not rewritten.
     fs::write(&c.cofre, &copy_n).unwrap();
     let r = unlock(&d, PASSWORD);
-    assert_eq!(error(&r), Some(ErroResposta::Retrocesso));
+    assert_eq!(error(&r), Some(ResponseError::Rollback));
     assert!(contains(
-        &encoded(Papel::Agente, &r),
+        &encoded(Role::Agent, &r),
         "o cofre no disco é mais antigo que o último aberto".as_bytes()
     ));
     assert!(d.travado());
@@ -412,7 +412,7 @@ fn v3_22_rollback_and_swapped_file() {
     // Deleting the state: same refusal, even with the right vault back.
     fs::remove_file(&c.estado).unwrap();
     let r = unlock(&d, PASSWORD);
-    assert_eq!(error(&r), Some(ErroResposta::Retrocesso));
+    assert_eq!(error(&r), Some(ResponseError::Rollback));
     assert!(d.travado());
 
     // State back (n), unlocks copy n: the generation goes up with the writes.
@@ -426,7 +426,10 @@ fn v3_22_rollback_and_swapped_file() {
         },
     )
     .unwrap();
-    assert_eq!(error(&unlock(&d, PASSWORD)), Some(ErroResposta::CofreMudou));
+    assert_eq!(
+        error(&unlock(&d, PASSWORD)),
+        Some(ResponseError::VaultChanged)
+    );
     assert!(ok(&unlock(&d, PASSWORD)));
     // With the daemon unlocked, the file swapped by `mv` (new inode): does not write over
     // it, locks and warns.
@@ -434,10 +437,10 @@ fn v3_22_rollback_and_swapped_file() {
     fs::copy(&c.cofre, &other).unwrap();
     fs::rename(&other, &c.cofre).unwrap();
     let before = fs::read(&c.cofre).unwrap();
-    let r = request(&d, Papel::App, "tempo_trava", r#"{"minutos":90}"#);
-    assert_eq!(error(&r), Some(ErroResposta::CofreMudou));
+    let r = request(&d, Role::App, "tempo_trava", r#"{"minutos":90}"#);
+    assert_eq!(error(&r), Some(ResponseError::VaultChanged));
     assert!(contains(
-        &encoded(Papel::App, &r),
+        &encoded(Role::App, &r),
         "o arquivo do cofre mudou fora do Ward".as_bytes()
     ));
     assert!(d.travado());
@@ -447,15 +450,18 @@ fn v3_22_rollback_and_swapped_file() {
     assert!(ok(&unlock(&d, PASSWORD)));
     std::thread::sleep(Duration::from_millis(20));
     fs::write(&c.cofre, &before).unwrap();
-    let r = request(&d, Papel::App, "tempo_trava", r#"{"minutos":90}"#);
-    assert_eq!(error(&r), Some(ErroResposta::CofreMudou));
+    let r = request(&d, Role::App, "tempo_trava", r#"{"minutos":90}"#);
+    assert_eq!(error(&r), Some(ResponseError::VaultChanged));
     assert!(d.travado());
     // Swapped with the daemon locked (without changing the generation): unlocking warns once.
     assert!(ok(&unlock(&d, PASSWORD)));
     d.travar();
     std::thread::sleep(Duration::from_millis(20));
     fs::write(&c.cofre, &before).unwrap();
-    assert_eq!(error(&unlock(&d, PASSWORD)), Some(ErroResposta::CofreMudou));
+    assert_eq!(
+        error(&unlock(&d, PASSWORD)),
+        Some(ResponseError::VaultChanged)
+    );
     assert!(ok(&unlock(&d, PASSWORD)));
 
     // The state is 0600, with no secret.
@@ -497,9 +503,9 @@ fn v3_28_burned_generation_in_the_state() {
 
     // A: the rename happens, the directory fsync fails.
     fs::set_permissions(&dir.0, fs::Permissions::from_mode(0o300)).unwrap();
-    let r = request(&d, Papel::App, "tempo_trava", r#"{"minutos":30}"#);
+    let r = request(&d, Role::App, "tempo_trava", r#"{"minutos":30}"#);
     fs::set_permissions(&dir.0, fs::Permissions::from_mode(0o700)).unwrap();
-    assert_eq!(error(&r), Some(ErroResposta::FalhaAoGravar));
+    assert_eq!(error(&r), Some(ResponseError::WriteFailed));
     assert_eq!(
         generations_at(&c.estado),
         Geracoes {
@@ -523,7 +529,7 @@ fn v3_28_burned_generation_in_the_state() {
     );
     assert!(ok(&request(
         &d,
-        Papel::App,
+        Role::App,
         "tempo_trava",
         r#"{"minutos":45}"#
     )));
@@ -539,16 +545,16 @@ fn v3_28_burned_generation_in_the_state() {
     // The copy of A in place: rollback.
     d.travar();
     fs::write(&c.cofre, &copy_a).unwrap();
-    assert_eq!(error(&unlock(&d, PASSWORD)), Some(ErroResposta::Retrocesso));
+    assert_eq!(error(&unlock(&d, PASSWORD)), Some(ResponseError::Rollback));
     assert!(d.travado());
 
     // No restart: A fails after the rename, B writes n+4 (n+3 was burned by A).
     let (d, _) = vault_n2(&c, &dir);
     let g = generation_on_disk(&c.cofre, PASSWORD);
     fs::set_permissions(&dir.0, fs::Permissions::from_mode(0o300)).unwrap();
-    let r = request(&d, Papel::App, "tempo_trava", r#"{"minutos":31}"#);
+    let r = request(&d, Role::App, "tempo_trava", r#"{"minutos":31}"#);
     fs::set_permissions(&dir.0, fs::Permissions::from_mode(0o700)).unwrap();
-    assert_eq!(error(&r), Some(ErroResposta::FalhaAoGravar));
+    assert_eq!(error(&r), Some(ResponseError::WriteFailed));
     assert_eq!(
         generations_at(&c.estado),
         Geracoes {
@@ -558,7 +564,7 @@ fn v3_28_burned_generation_in_the_state() {
     );
     assert!(ok(&request(
         &d,
-        Papel::App,
+        Role::App,
         "tempo_trava",
         r#"{"minutos":32}"#
     )));
@@ -574,9 +580,9 @@ fn v3_28_burned_generation_in_the_state() {
     // The state does not write (read-only directory): the vault is not written.
     let before = fs::read(&c.cofre).unwrap();
     fs::set_permissions(&state_dir.0, fs::Permissions::from_mode(0o500)).unwrap();
-    let r = request(&d, Papel::App, "tempo_trava", r#"{"minutos":33}"#);
+    let r = request(&d, Role::App, "tempo_trava", r#"{"minutos":33}"#);
     fs::set_permissions(&state_dir.0, fs::Permissions::from_mode(0o700)).unwrap();
-    assert_eq!(error(&r), Some(ErroResposta::FalhaAoGravar));
+    assert_eq!(error(&r), Some(ResponseError::WriteFailed));
     assert_eq!(fs::read(&c.cofre).unwrap(), before);
     assert!(!d.travado());
 
@@ -586,7 +592,7 @@ fn v3_28_burned_generation_in_the_state() {
     fs::set_permissions(&dir.0, fs::Permissions::from_mode(0o300)).unwrap();
     let r = request(
         &d,
-        Papel::App,
+        Role::App,
         "trocar_senha",
         &format!(
             r#"{{"atual":"{}","nova":"{}"}}"#,
@@ -595,13 +601,13 @@ fn v3_28_burned_generation_in_the_state() {
         ),
     );
     fs::set_permissions(&dir.0, fs::Permissions::from_mode(0o700)).unwrap();
-    assert_eq!(error(&r), Some(ErroResposta::FalhaAoGravar));
+    assert_eq!(error(&r), Some(ResponseError::WriteFailed));
     assert!(d.travado());
     let q = generations_at(&c.estado).queimada;
     assert!(ok(&unlock(&d, new_password)));
     assert!(ok(&request(
         &d,
-        Papel::App,
+        Role::App,
         "tempo_trava",
         r#"{"minutos":34}"#
     )));
@@ -636,7 +642,7 @@ fn d52_change_password_with_wrong_password() {
     let change = |current: &str, new_password: &str| {
         request(
             &d,
-            Papel::App,
+            Role::App,
             "trocar_senha",
             &format!(
                 r#"{{"atual":"{}","nova":"{}"}}"#,
@@ -647,20 +653,20 @@ fn d52_change_password_with_wrong_password() {
     };
     assert_eq!(
         error(&change("falso-errada-01", "falso-nova-02")),
-        Some(ErroResposta::SenhaIncorreta)
+        Some(ResponseError::WrongPassword)
     );
     assert!(!d.travado());
     assert!(ok(&change(PASSWORD, "falso-nova-02")));
     assert!(ok(&request(
         &d,
-        Papel::App,
+        Role::App,
         "tempo_trava",
         r#"{"minutos":20}"#
     )));
     d.travar();
     assert_eq!(
         error(&unlock(&d, PASSWORD)),
-        Some(ErroResposta::SenhaIncorreta)
+        Some(ResponseError::WrongPassword)
     );
     assert!(ok(&unlock(&d, "falso-nova-02")));
 }
@@ -672,7 +678,7 @@ fn d52_change_password_with_wrong_password() {
 fn first_use_and_pin_only_as_hash() {
     let dir = Dir::new("primeiro");
     let (d, _) = daemon_at(dir.paths());
-    match request(&d, Papel::Agente, "estado", "{}") {
+    match request(&d, Role::Agent, "estado", "{}") {
         Resposta::Estado {
             travado,
             cofre_existe,
@@ -682,7 +688,7 @@ fn first_use_and_pin_only_as_hash() {
     }
     assert_eq!(
         error(&unlock(&d, PASSWORD)),
-        Some(ErroResposta::CofreInexistente)
+        Some(ResponseError::VaultNotFound)
     );
     // The agent does not create a vault.
     let create = format!(
@@ -691,19 +697,19 @@ fn first_use_and_pin_only_as_hash() {
         b64(PIN.as_bytes())
     );
     assert_eq!(
-        error(&request(&d, Papel::Agente, "criar_cofre", &create)),
-        Some(ErroResposta::NaoAutorizado)
+        error(&request(&d, Role::Agent, "criar_cofre", &create)),
+        Some(ResponseError::Unauthorized)
     );
     drop(d);
     let (d, _) = test_vault(&dir);
     assert_eq!(
-        error(&request(&d, Papel::App, "criar_cofre", &create)),
-        Some(ErroResposta::CofreJaExiste)
+        error(&request(&d, Role::App, "criar_cofre", &create)),
+        Some(ResponseError::VaultAlreadyExists)
     );
     d.travar();
     assert_eq!(
-        error(&request(&d, Papel::App, "criar_cofre", &create)),
-        Some(ErroResposta::CofreJaExiste)
+        error(&request(&d, Role::App, "criar_cofre", &create)),
+        Some(ResponseError::VaultAlreadyExists)
     );
     let c = dir.paths();
     for file in [&c.cofre, &c.estado] {
@@ -721,7 +727,7 @@ fn first_use_and_pin_only_as_hash() {
     assert!(ok(&unlock(&d, PASSWORD)));
     let r = request(
         &d,
-        Papel::App,
+        Role::App,
         "trocar_pin",
         &format!(
             r#"{{"atual":"{}","novo":"{}"}}"#,
@@ -733,8 +739,8 @@ fn first_use_and_pin_only_as_hash() {
     d.travar();
     assert!(ok(&unlock(&d, PASSWORD)));
     assert_eq!(
-        error(&set_level(&d, Papel::App, "t-aprov", "livre", PIN)),
-        Some(ErroResposta::PinIncorreto)
+        error(&set_level(&d, Role::App, "t-aprov", "livre", PIN)),
+        Some(ResponseError::WrongPin)
     );
-    assert!(ok(&set_level(&d, Papel::App, "t-aprov", "livre", "2468")));
+    assert!(ok(&set_level(&d, Role::App, "t-aprov", "livre", "2468")));
 }

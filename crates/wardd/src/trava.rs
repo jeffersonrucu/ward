@@ -41,7 +41,7 @@ use std::time::Duration;
 use std::future::poll_fn;
 use std::num::NonZeroUsize;
 use std::pin::Pin;
-use ward_core::protocolo::{Operacao, Papel, Resposta};
+use ward_core::protocol::{Operation, Resposta, Role};
 
 use futures_core::Stream;
 use zbus::connection::Builder;
@@ -82,7 +82,7 @@ const MAX_CAMINHO: usize = 107;
 ///
 /// `destravar` não entra: o destravar que abre o cofre já marca o início da contagem, e
 /// o que chega com o cofre aberto responde `ok` sem olhar a senha. Erro nunca conta.
-pub fn conta_como_uso(papel: Papel, op: Operacao, r: &Resposta) -> bool {
+pub fn conta_como_uso(papel: Role, op: Operation, r: &Resposta) -> bool {
     if matches!(r, Resposta::Erro(_)) {
         return false;
     }
@@ -91,23 +91,23 @@ pub fn conta_como_uso(papel: Papel, op: Operacao, r: &Resposta) -> bool {
         // mostrar o pedido, o `totp` que o formulário renova sozinho e a resposta da
         // janela (um "Negar" a um `ward run` repetido do agente) também não: o pedido
         // permitido anota o uso ele mesmo, depois da autorização.
-        Papel::App => !matches!(
+        Role::App => !matches!(
             op,
-            Operacao::Estado
-                | Operacao::Travar
-                | Operacao::Destravar
-                | Operacao::AbrirApp
-                | Operacao::Detalhe
-                | Operacao::Totp
-                | Operacao::ResponderAprovacao
+            Operation::Status
+                | Operation::Lock
+                | Operation::Unlock
+                | Operation::OpenApp
+                | Operation::Detail
+                | Operation::Totp
+                | Operation::AnswerApproval
         ),
-        Papel::Agente => matches!(
+        Role::Agent => matches!(
             op,
-            Operacao::Executar | Operacao::Ssh | Operacao::Login | Operacao::Playwright
+            Operation::Run | Operation::Ssh | Operation::Login | Operation::Playwright
         ),
-        Papel::Extensao => matches!(
+        Role::Extension => matches!(
             op,
-            Operacao::Preencher | Operacao::PreencherLogin | Operacao::SalvarLogin
+            Operation::Fill | Operation::FillLogin | Operation::SaveLogin
         ),
     }
 }
@@ -378,7 +378,7 @@ pub fn vigiar_inatividade(daemon: Arc<Daemon>, intervalo: Duration) -> io::Resul
 #[cfg(test)]
 mod testes {
     use super::*;
-    use ward_core::protocolo::ErroResposta;
+    use ward_core::protocol::ResponseError;
 
     const H: u64 = 3600;
 
@@ -400,69 +400,65 @@ mod testes {
     #[test]
     fn estado_travar_e_erro_nao_contam_como_uso() {
         let lista = Resposta::Lista(vec![]);
-        for p in [Papel::Agente, Papel::App, Papel::Extensao] {
-            assert!(!conta_como_uso(p, Operacao::Estado, &Resposta::Ok));
-            assert!(!conta_como_uso(p, Operacao::Travar, &Resposta::Ok));
-            assert!(!conta_como_uso(p, Operacao::Destravar, &Resposta::Ok));
-            assert!(!conta_como_uso(p, Operacao::AbrirApp, &Resposta::Ok));
+        for p in [Role::Agent, Role::App, Role::Extension] {
+            assert!(!conta_como_uso(p, Operation::Status, &Resposta::Ok));
+            assert!(!conta_como_uso(p, Operation::Lock, &Resposta::Ok));
+            assert!(!conta_como_uso(p, Operation::Unlock, &Resposta::Ok));
+            assert!(!conta_como_uso(p, Operation::OpenApp, &Resposta::Ok));
         }
         assert!(!conta_como_uso(
-            Papel::App,
-            Operacao::Lista,
-            &Resposta::Erro(ErroResposta::Travado)
+            Role::App,
+            Operation::List,
+            &Resposta::Erro(ResponseError::Locked)
         ));
         assert!(!conta_como_uso(
-            Papel::App,
-            Operacao::MudarNivel,
-            &Resposta::Erro(ErroResposta::PinIncorreto)
+            Role::App,
+            Operation::SetLevel,
+            &Resposta::Erro(ResponseError::WrongPin)
         ));
-        assert!(conta_como_uso(Papel::App, Operacao::Lista, &lista));
-        assert!(conta_como_uso(Papel::App, Operacao::Revelar, &Resposta::Ok));
+        assert!(conta_como_uso(Role::App, Operation::List, &lista));
+        assert!(conta_como_uso(Role::App, Operation::Reveal, &Resposta::Ok));
     }
 
     /// Fase 54: consulta do agente e da extensão não adia a trava; entrega, sim.
     #[test]
     fn ataque_lista_e_sugerir_nao_contam_como_uso() {
         let lista = Resposta::Lista(vec![]);
-        assert!(!conta_como_uso(Papel::Agente, Operacao::Lista, &lista));
+        assert!(!conta_como_uso(Role::Agent, Operation::List, &lista));
         assert!(!conta_como_uso(
-            Papel::Agente,
-            Operacao::EntradaPadrao,
+            Role::Agent,
+            Operation::Stdin,
             &Resposta::Ok
         ));
         assert!(!conta_como_uso(
-            Papel::Agente,
-            Operacao::Janela,
+            Role::Agent,
+            Operation::Resize,
             &Resposta::Ok
         ));
         assert!(!conta_como_uso(
-            Papel::Extensao,
-            Operacao::Sugerir,
+            Role::Extension,
+            Operation::Suggest,
             &Resposta::Ok
         ));
         assert!(!conta_como_uso(
-            Papel::Extensao,
-            Operacao::AguardarLogin,
+            Role::Extension,
+            Operation::AwaitLogin,
             &Resposta::Ok
         ));
         assert!(!conta_como_uso(
-            Papel::Extensao,
-            Operacao::ResultadoLogin,
+            Role::Extension,
+            Operation::LoginResult,
+            &Resposta::Ok
+        ));
+        assert!(conta_como_uso(Role::Agent, Operation::Run, &Resposta::Ok));
+        assert!(conta_como_uso(
+            Role::Extension,
+            Operation::Fill,
             &Resposta::Ok
         ));
         assert!(conta_como_uso(
-            Papel::Agente,
-            Operacao::Executar,
-            &Resposta::Ok
-        ));
-        assert!(conta_como_uso(
-            Papel::Extensao,
-            Operacao::Preencher,
-            &Resposta::Ok
-        ));
-        assert!(conta_como_uso(
-            Papel::Extensao,
-            Operacao::PreencherLogin,
+            Role::Extension,
+            Operation::FillLogin,
             &Resposta::Ok
         ));
     }
@@ -471,16 +467,16 @@ mod testes {
     #[test]
     fn ataque_f55_detalhe_totp_e_resposta_da_janela_nao_contam() {
         for op in [
-            Operacao::Detalhe,
-            Operacao::Totp,
-            Operacao::ResponderAprovacao,
+            Operation::Detail,
+            Operation::Totp,
+            Operation::AnswerApproval,
         ] {
-            assert!(!conta_como_uso(Papel::App, op, &Resposta::Ok), "{op:?}");
+            assert!(!conta_como_uso(Role::App, op, &Resposta::Ok), "{op:?}");
         }
-        assert!(conta_como_uso(Papel::App, Operacao::Copiar, &Resposta::Ok));
+        assert!(conta_como_uso(Role::App, Operation::Copy, &Resposta::Ok));
         assert!(conta_como_uso(
-            Papel::App,
-            Operacao::SalvarEntrada,
+            Role::App,
+            Operation::SaveEntry,
             &Resposta::Ok
         ));
     }

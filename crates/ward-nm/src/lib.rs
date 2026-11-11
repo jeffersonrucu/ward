@@ -31,7 +31,7 @@ use std::io::{self, Read, Write};
 use zeroize::Zeroizing;
 
 use ward_core::limits::KIB;
-use ward_core::protocolo::{self, ErroResposta, Operacao, Papel, Resposta, TipoResposta};
+use ward_core::protocol::{self, Operation, ResponseError, ResponseType, Resposta, Role};
 
 /// Largest message accepted from the extension. The largest legitimate request is a
 /// login save with the URL, the username and the password (each up to 2 KiB, D25) in
@@ -43,33 +43,33 @@ pub const MAX_MESSAGE_OUT: usize = 1024 * KIB;
 /// Operations the host takes to the daemon: those of the extension role in the protocol
 /// table. Explicit list: a new operation in the table does not pass without changing it
 /// here (the test `operations_are_the_extensions` ties the two).
-pub const OPERATIONS: [Operacao; 8] = [
-    Operacao::Estado,
-    Operacao::Sugerir,
-    Operacao::Preencher,
-    Operacao::SalvarLogin,
-    Operacao::AguardarLogin,
-    Operacao::PreencherLogin,
-    Operacao::ResultadoLogin,
-    Operacao::AbrirApp,
+pub const OPERATIONS: [Operation; 8] = [
+    Operation::Status,
+    Operation::Suggest,
+    Operation::Fill,
+    Operation::SaveLogin,
+    Operation::AwaitLogin,
+    Operation::FillLogin,
+    Operation::LoginResult,
+    Operation::OpenApp,
 ];
 
 /// Does the daemon's response fit the requested operation? An error fits all of them;
 /// apart from that, each operation has a single type (a fill never answers a
 /// suggestion request).
-pub fn response_fits(op: Operacao, kind: TipoResposta) -> bool {
-    kind == TipoResposta::Erro
+pub fn response_fits(op: Operation, kind: ResponseType) -> bool {
+    kind == ResponseType::Error
         || matches!(
             (op, kind),
-            (Operacao::Estado, TipoResposta::Estado)
-                | (Operacao::Sugerir, TipoResposta::Sugestoes)
-                | (Operacao::Preencher, TipoResposta::Preenchimento)
-                | (Operacao::SalvarLogin, TipoResposta::Ok)
+            (Operation::Status, ResponseType::Status)
+                | (Operation::Suggest, ResponseType::Suggestions)
+                | (Operation::Fill, ResponseType::Fill)
+                | (Operation::SaveLogin, ResponseType::Ok)
                 // `ward login` (Phase 43): `ok` is the wait that ended without a request.
-                | (Operacao::AguardarLogin, TipoResposta::PedidoDeLogin | TipoResposta::Ok)
-                | (Operacao::PreencherLogin, TipoResposta::Preenchimento)
-                | (Operacao::ResultadoLogin, TipoResposta::Ok)
-                | (Operacao::AbrirApp, TipoResposta::Ok)
+                | (Operation::AwaitLogin, ResponseType::LoginRequest | ResponseType::Ok)
+                | (Operation::FillLogin, ResponseType::Fill)
+                | (Operation::LoginResult, ResponseType::Ok)
+                | (Operation::OpenApp, ResponseType::Ok)
         )
 }
 
@@ -174,8 +174,8 @@ pub trait Daemon {
 }
 
 /// Body of the error response for the extension.
-fn error_body(e: ErroResposta) -> Zeroizing<Vec<u8>> {
-    protocolo::codificar_resposta(Papel::Extensao, &Resposta::Erro(e)).unwrap_or_else(|_| {
+fn error_body(e: ResponseError) -> Zeroizing<Vec<u8>> {
+    protocol::encode_response(Role::Extension, &Resposta::Erro(e)).unwrap_or_else(|_| {
         Zeroizing::new(
             br#"{"v":1,"tipo":"erro","dados":{"codigo":"interno","mensagem":"erro interno"}}"#
                 .to_vec(),
@@ -191,51 +191,51 @@ pub fn handle(
     daemon: &mut dyn Daemon,
     log: &mut dyn FnMut(&str),
 ) -> Zeroizing<Vec<u8>> {
-    let request = match protocolo::decodificar_pedido(Papel::Extensao, message) {
+    let request = match protocol::decode_request(Role::Extension, message) {
         Ok(p) => p,
         Err(e) => {
             log("mensagem da extensão recusada pela leitura do protocolo");
             return error_body(e);
         }
     };
-    let op = request.operacao();
+    let op = request.operation();
     if !OPERATIONS.contains(&op) {
         log("operação fora das da extensão");
-        return error_body(ErroResposta::NaoAutorizado);
+        return error_body(ResponseError::Unauthorized);
     }
-    let Ok(frame) = protocolo::codificar_pedido(Papel::Extensao, &request) else {
-        return error_body(ErroResposta::PedidoInvalido);
+    let Ok(frame) = protocol::encode_request(Role::Extension, &request) else {
+        return error_body(ResponseError::InvalidRequest);
     };
     drop(request);
     let body = match daemon.exchange(&frame) {
         Ok(c) => c,
         Err(f) => {
             log(f.text());
-            return error_body(ErroResposta::Interno);
+            return error_body(ResponseError::Internal);
         }
     };
     drop(frame);
-    let response = match protocolo::decodificar_resposta(Papel::Extensao, &body) {
+    let response = match protocol::decode_response(Role::Extension, &body) {
         Ok(r) if response_fits(op, r.tipo()) => r,
         _ => {
             log("resposta do daemon fora do papel extensão ou da operação");
-            return error_body(ErroResposta::Interno);
+            return error_body(ResponseError::Internal);
         }
     };
     // D63: the state response carries the role the daemon gave to this connection.
     // Without the extension role (the host was not opened by the installed Chrome, or it
     // is not the setgid binary), the extension gets only the unauthorized error.
     if let Resposta::Estado { papel, .. } = &response
-        && *papel != Papel::Extensao
+        && *papel != Role::Extension
     {
         log("o daemon não deu o papel extensão a este host");
-        return error_body(ErroResposta::NaoAutorizado);
+        return error_body(ResponseError::Unauthorized);
     }
-    match protocolo::codificar_resposta(Papel::Extensao, &response) {
+    match protocol::encode_response(Role::Extension, &response) {
         Ok(c) if c.len() <= MAX_MESSAGE_OUT => c,
         _ => {
             log("resposta grande demais para a extensão");
-            error_body(ErroResposta::Interno)
+            error_body(ResponseError::Internal)
         }
     }
 }
@@ -256,7 +256,7 @@ pub fn serve(
             Err(e) => {
                 log("mensagem da extensão vazia, grande demais ou cortada");
                 if matches!(e, MessageError::Empty | MessageError::TooLarge) {
-                    let _ = write_message(output, &error_body(ErroResposta::QuadroInvalido));
+                    let _ = write_message(output, &error_body(ResponseError::InvalidFrame));
                 }
                 return Err(e);
             }

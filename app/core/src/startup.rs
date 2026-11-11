@@ -39,7 +39,7 @@ use std::os::unix::net::UnixStream;
 use ward_platform::app::{self, Parent, ParentMismatch};
 use ward_platform::{AppEnvironment, SessionError, harden_process, verify_app_environment};
 
-use ward_core::protocolo::Papel;
+use ward_core::protocol::Role;
 
 use crate::AppError;
 use crate::client;
@@ -63,7 +63,7 @@ pub enum StartupError {
     /// `setresgid` did not leave the three gids at the real one.
     Group,
     /// The daemon did not give the app role to this connection (D63).
-    Role(Papel),
+    Role(Role),
     /// Opened outside the daemon: asked for the true instance (open app) and exits.
     Delegated,
 }
@@ -85,7 +85,7 @@ impl fmt::Display for StartupError {
             StartupError::Role(p) => write!(
                 f,
                 "o daemon deu o papel {} a este processo, não o de app; abra o Ward pelo menu ou pela bandeja",
-                p.nome()
+                p.name()
             ),
             StartupError::Delegated => f.write_str("pedido ao daemon; ele abre o app"),
         }
@@ -225,7 +225,7 @@ fn check_role(
         return Err(StartupError::Parent(e));
     }
     match role {
-        Ok(Papel::App) => Ok(()),
+        Ok(Role::App) => Ok(()),
         Ok(p) => Err(StartupError::Role(p)),
         Err(e) => Err(StartupError::Daemon(e)),
     }
@@ -310,17 +310,17 @@ mod tests {
 
     /// V3.38 (D63): the daemon on the other side of the pair answers the status with
     /// `role`; what it received comes back to the test.
-    fn daemon_giving(role: Papel) -> (DaemonSocket, std::thread::JoinHandle<Vec<String>>) {
-        use ward_core::protocolo::{self, Resposta, quadro};
+    fn daemon_giving(role: Role) -> (DaemonSocket, std::thread::JoinHandle<Vec<String>>) {
+        use ward_core::protocol::{self, Resposta, frame};
         let (a, mut b) = std::os::unix::net::UnixStream::pair().unwrap();
         let d = DaemonSocket::from_pair(a, std::time::Duration::from_secs(10));
         let h = std::thread::spawn(move || {
             let mut ops = Vec::new();
-            while let Ok(q) = quadro::ler_quadro(&mut b, quadro::limite_do_quadro(Papel::App)) {
-                let p = protocolo::decodificar_pedido(Papel::App, &q).unwrap();
-                ops.push(p.operacao().nome().to_owned());
+            while let Ok(q) = frame::read_frame(&mut b, frame::frame_limit(Role::App)) {
+                let p = protocol::decode_request(Role::App, &q).unwrap();
+                ops.push(p.operation().name().to_owned());
                 let r = match p {
-                    protocolo::Pedido::Estado => Resposta::Estado {
+                    protocol::Request::Status => Resposta::Estado {
                         travado: true,
                         cofre_existe: true,
                         papel: role,
@@ -328,8 +328,8 @@ mod tests {
                     _ => Resposta::Ok,
                 };
                 // The daemon writes the status in the role it gave (D63).
-                let q = protocolo::codificar_resposta(role, &r).unwrap();
-                quadro::escrever_quadro(&mut b, &q, quadro::LIMITE_RESPOSTA).unwrap();
+                let q = protocol::encode_response(role, &r).unwrap();
+                frame::write_frame(&mut b, &q, frame::RESPONSE_LIMIT).unwrap();
             }
             ops
         });
@@ -338,7 +338,7 @@ mod tests {
 
     #[test]
     fn attack_without_app_role_in_the_first_response_exits_without_using_the_connection() {
-        for role in [Papel::Agente, Papel::Extensao] {
+        for role in [Role::Agent, Role::Extension] {
             let (mut d, h) = daemon_giving(role);
             let r = check_role(&mut d, Ok(()));
             assert!(
@@ -349,7 +349,7 @@ mod tests {
             // Only the status: no screen request afterwards.
             assert_eq!(h.join().unwrap(), ["estado"]);
         }
-        let (mut d, h) = daemon_giving(Papel::App);
+        let (mut d, h) = daemon_giving(Role::App);
         assert!(check_role(&mut d, Ok(())).is_ok());
         drop(d);
         assert_eq!(h.join().unwrap(), ["estado"]);
@@ -359,7 +359,7 @@ mod tests {
     fn with_another_parent_asks_for_the_true_instance_and_exits() {
         // The app from the menu (any parent) received the agent role: asks open app and
         // exits (D57).
-        let (mut d, h) = daemon_giving(Papel::Agente);
+        let (mut d, h) = daemon_giving(Role::Agent);
         let r = check_role(&mut d, Err(ParentMismatch::NotDaemon));
         assert!(matches!(
             r,
@@ -374,7 +374,7 @@ mod tests {
         // The COSMIC launcher passes the whole session environment: the app does not
         // check the environment nor ask the status; only open app, and exits with no
         // screen.
-        let (mut d, h) = daemon_giving(Papel::Agente);
+        let (mut d, h) = daemon_giving(Role::Agent);
         assert!(matches!(request_instance(&mut d), StartupError::Delegated));
         drop(d);
         assert_eq!(h.join().unwrap(), ["abrir_app"]);

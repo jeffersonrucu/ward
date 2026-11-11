@@ -25,7 +25,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use ward_core::entry::Secret;
-use ward_core::protocolo::{self, Decisao, Papel, Pedido, Resposta};
+use ward_core::protocol::{self, Decision, Request, Resposta, Role};
 
 fn socket() -> Option<PathBuf> {
     match std::env::var_os("WARD_DEV_SOCKET_DIR") {
@@ -37,8 +37,8 @@ fn socket() -> Option<PathBuf> {
     }
 }
 
-fn mandar(s: &mut UnixStream, p: &Pedido) -> bool {
-    let Ok(corpo) = protocolo::codificar_pedido(Papel::App, p) else {
+fn mandar(s: &mut UnixStream, p: &Request) -> bool {
+    let Ok(corpo) = protocol::encode_request(Role::App, p) else {
         return false;
     };
     let Ok(n) = u32::try_from(corpo.len()) else {
@@ -60,19 +60,19 @@ fn ler(s: &mut UnixStream) -> Option<Vec<u8>> {
 
 /// A decisão do arquivo de modo (a suíte troca entre um caso e outro): decisão, PIN e a
 /// caixa da entrada padrão (Fase 54b).
-fn modo() -> Option<(Decisao, Option<Secret>, bool)> {
+fn modo() -> Option<(Decision, Option<Secret>, bool)> {
     let dev = PathBuf::from(std::env::var_os("WARD_DEV_DIR")?);
     let texto = std::fs::read_to_string(dev.join("aprovador.modo")).ok()?;
     let linha = texto.lines().next()?.trim();
     match linha.split_once(' ') {
         Some((m @ ("uma_vez" | "uma_vez_ciente"), pin)) => Some((
-            Decisao::PermitirUmaVez,
+            Decision::AllowOnce,
             Some(Secret::from_bytes(pin.trim().as_bytes().to_vec())),
             m == "uma_vez_ciente",
         )),
         _ => match linha {
-            "confirmar" => Some((Decisao::Confirmar, None, false)),
-            "negar" => Some((Decisao::Negar, None, false)),
+            "confirmar" => Some((Decision::Confirm, None, false)),
+            "negar" => Some((Decision::Deny, None, false)),
             _ => None,
         },
     }
@@ -86,17 +86,17 @@ fn main() -> ExitCode {
         println!("erro=conectar");
         return ExitCode::FAILURE;
     };
-    if !mandar(&mut s, &Pedido::Estado) {
+    if !mandar(&mut s, &Request::Status) {
         return ExitCode::FAILURE;
     }
     while let Some(corpo) = ler(&mut s) {
-        match protocolo::decodificar_resposta(Papel::App, &corpo) {
-            Ok(Resposta::Estado { papel, .. }) => println!("papel={}", papel.nome()),
+        match protocol::decode_response(Role::App, &corpo) {
+            Ok(Resposta::Estado { papel, .. }) => println!("papel={}", papel.name()),
             Ok(Resposta::PedidoDeAprovacao(p)) => {
                 let escolha = modo();
                 println!(
                     "pedido operacao={} entradas={} origem={} confirmacao={}{} decisao={}",
-                    p.operacao.nome(),
+                    p.operacao.name(),
                     p.entradas.join(","),
                     if p.origem.is_empty() { "-" } else { &p.origem },
                     u8::from(p.confirmacao),
@@ -105,14 +105,14 @@ fn main() -> ExitCode {
                     } else {
                         ""
                     },
-                    escolha.as_ref().map_or("nada", |(d, _, _)| d.nome()),
+                    escolha.as_ref().map_or("nada", |(d, _, _)| d.name()),
                 );
                 if let Some((decisao, pin, entrada_confirmada)) = escolha {
-                    let pedido = Pedido::ResponderAprovacao {
-                        pedido: p.id,
-                        decisao,
+                    let pedido = Request::AnswerApproval {
+                        request: p.id,
+                        decision: decisao,
                         pin,
-                        entrada_confirmada,
+                        confirmed_entry: entrada_confirmada,
                     };
                     if !mandar(&mut s, &pedido) {
                         break;
@@ -120,8 +120,8 @@ fn main() -> ExitCode {
                 }
             }
             Ok(Resposta::PedidoDeDestrave(_)) => println!("destrave"),
-            Ok(Resposta::Erro(e)) => println!("resposta={}", e.codigo()),
-            Ok(r) => println!("resposta={}", r.tipo().nome()),
+            Ok(Resposta::Erro(e)) => println!("resposta={}", e.code()),
+            Ok(r) => println!("resposta={}", r.tipo().name()),
             Err(_) => println!("resposta=invalida"),
         }
         let _ = std::io::stdout().flush();

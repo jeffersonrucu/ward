@@ -28,7 +28,7 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use ward_core::display::neutralize;
-use ward_core::protocolo::{Decisao, PedidoDeAprovacao};
+use ward_core::protocol::{Decision, PedidoDeAprovacao};
 
 use crate::AppError;
 use crate::daemon::{MAX_NOTICES, NoticeQueue};
@@ -47,14 +47,14 @@ pub const MAX_PENDING: usize = MAX_NOTICES;
 pub const CHAIN_SEPARATOR: char = '\u{2192}';
 
 /// The decision by the name that comes from the interface (untrusted).
-pub fn decision_from_name(name: &str) -> Result<Decisao, AppError> {
+pub fn decision_from_name(name: &str) -> Result<Decision, AppError> {
     match name {
-        "negar" => Ok(Decisao::Negar),
-        "uma_vez" => Ok(Decisao::PermitirUmaVez),
-        "uma_hora" => Ok(Decisao::PermitirUmaHora),
-        "sempre" => Ok(Decisao::PermitirSempre),
+        "negar" => Ok(Decision::Deny),
+        "uma_vez" => Ok(Decision::AllowOnce),
+        "uma_hora" => Ok(Decision::AllowOneHour),
+        "sempre" => Ok(Decision::AllowAlways),
         // Phase 44c: only the confirmation of the `http` origin (no PIN).
-        "confirmar" => Ok(Decisao::Confirmar),
+        "confirmar" => Ok(Decision::Confirm),
         _ => Err(AppError::InvalidRequest),
     }
 }
@@ -305,7 +305,7 @@ pub(crate) fn display(a: &Current) -> DisplayedRequest {
         id: p.id,
         entries,
         environment: p.ambiente.name(),
-        operation: p.operacao.nome(),
+        operation: p.operacao.name(),
         command: neutralize(&p.comando),
         directory: neutralize(&p.diretorio),
         chain: p.cadeia.iter().map(|c| display_process(c)).collect(),
@@ -344,14 +344,14 @@ mod tests {
     use super::*;
     use crate::daemon::Notice;
     use ward_core::entry::Environment;
-    use ward_core::protocolo::Operacao;
+    use ward_core::protocol::Operation;
 
     pub(crate) fn request(id: u64, command: &str, chain: &[&str]) -> PedidoDeAprovacao {
         PedidoDeAprovacao {
             id,
             entradas: vec!["acme-pg-aprovacao".into()],
             ambiente: Environment::Stage,
-            operacao: Operacao::Executar,
+            operacao: Operation::Run,
             comando: command.into(),
             diretorio: "\"/home/dev/projetos/acme\"".into(),
             cadeia: chain.iter().map(|c| (*c).to_owned()).collect(),
@@ -363,11 +363,11 @@ mod tests {
 
     #[test]
     fn decision_only_by_the_five_names() {
-        assert_eq!(decision_from_name("negar"), Ok(Decisao::Negar));
-        assert_eq!(decision_from_name("uma_vez"), Ok(Decisao::PermitirUmaVez));
-        assert_eq!(decision_from_name("uma_hora"), Ok(Decisao::PermitirUmaHora));
-        assert_eq!(decision_from_name("sempre"), Ok(Decisao::PermitirSempre));
-        assert_eq!(decision_from_name("confirmar"), Ok(Decisao::Confirmar));
+        assert_eq!(decision_from_name("negar"), Ok(Decision::Deny));
+        assert_eq!(decision_from_name("uma_vez"), Ok(Decision::AllowOnce));
+        assert_eq!(decision_from_name("uma_hora"), Ok(Decision::AllowOneHour));
+        assert_eq!(decision_from_name("sempre"), Ok(Decision::AllowAlways));
+        assert_eq!(decision_from_name("confirmar"), Ok(Decision::Confirm));
         for bad in ["", "Negar", "permitir", "uma-vez", "sempre ", "livre"] {
             assert_eq!(
                 decision_from_name(bad),
@@ -555,7 +555,7 @@ mod service_tests {
     use crate::service::Service;
     use std::sync::Mutex as M;
     use ward_core::entry::{AccessLevel, Environment};
-    use ward_core::protocolo;
+    use ward_core::protocol;
     use zeroize::Zeroizing;
 
     struct NoClipboard;
@@ -690,7 +690,7 @@ mod service_tests {
     #[test]
     fn attack_confirmation_only_by_confirm_and_request_with_pin_never() {
         let mut c = request(11, "", &["claude", "ward playwright"]);
-        c.operacao = ward_core::protocolo::Operacao::Playwright;
+        c.operacao = ward_core::protocol::Operation::Playwright;
         c.diretorio.clear();
         c.origem = "http://localhost:8081\u{202E}".into();
         c.confirmacao = true;
@@ -753,21 +753,21 @@ mod service_tests {
         );
         assert_eq!(pending_in_daemon(&f), [21, 22]);
         // The daemon also refuses (a forged interface that got past here).
-        let q = protocolo::codificar_pedido(
-            protocolo::Papel::App,
-            &protocolo::Pedido::ResponderAprovacao {
-                pedido: 21,
-                decisao: protocolo::Decisao::PermitirUmaVez,
+        let q = protocol::encode_request(
+            protocol::Role::App,
+            &protocol::Request::AnswerApproval {
+                request: 21,
+                decision: protocol::Decision::AllowOnce,
                 pin: Some(ward_core::entry::Secret::from_text(RIGHT_PIN.to_owned())),
-                entrada_confirmada: false,
+                confirmed_entry: false,
             },
         )
         .unwrap();
         let r = crate::daemon::Daemon::exchange(&mut *f.0.lock().unwrap(), &q).unwrap();
         assert!(matches!(
-            protocolo::decodificar_resposta(protocolo::Papel::App, &r),
-            Ok(protocolo::Resposta::Erro(
-                protocolo::ErroResposta::PedidoInvalido
+            protocol::decode_response(protocol::Role::App, &r),
+            Ok(protocol::Resposta::Erro(
+                protocol::ResponseError::InvalidRequest
             ))
         ));
         let r = s

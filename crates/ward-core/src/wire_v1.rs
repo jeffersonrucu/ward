@@ -24,7 +24,7 @@ use std::collections::BTreeSet;
 
 use crate::body;
 use crate::format::{self, MasterPassword};
-use crate::protocolo::{self, ErroResposta, Operacao, Papel, Resposta, TipoResposta, VERSAO};
+use crate::protocol::{self, Operation, ResponseError, ResponseType, Resposta, Role, VERSION};
 
 const PROTOCOL_V1: &[u8] = include_bytes!("../../../dev/fixtures/legacy/protocol-v1.jsonl");
 const VAULT: &[u8] = include_bytes!("../../../dev/fixtures/legacy/vault-0.1.4.ward");
@@ -66,7 +66,7 @@ const ENTRIES_V4: [(&str, &str, &str); 22] = [
 /// One line of `protocol-v1.jsonl`.
 struct Line<'a> {
     kind: &'a str,
-    role: Papel,
+    role: Role,
     frame: &'a [u8],
 }
 
@@ -88,7 +88,7 @@ fn parse_line(line: &[u8]) -> Line<'_> {
         .expect("fixture line without frame");
     Line {
         kind,
-        role: Papel::de_nome(role).expect("fixture role unknown"),
+        role: Role::from_name(role).expect("fixture role unknown"),
         frame: frame.as_bytes(),
     }
 }
@@ -108,7 +108,7 @@ fn lines() -> Vec<Line<'static>> {
 #[test]
 fn v1_fixture_is_version_1() {
     // Phase 50 moves the protocol to v2 on purpose; until then the version is 1.
-    assert_eq!(VERSAO, 1);
+    assert_eq!(VERSION, 1);
     for l in lines() {
         assert!(l.frame.starts_with(br#"{"v":1,"#));
     }
@@ -118,18 +118,18 @@ fn v1_fixture_is_version_1() {
 fn v1_requests_read_and_written_byte_for_byte() {
     let mut seen = Vec::new();
     for l in lines().into_iter().filter(|l| l.kind == "request") {
-        let request = protocolo::decodificar_pedido(l.role, l.frame)
+        let request = protocol::decode_request(l.role, l.frame)
             .unwrap_or_else(|_| panic!("v1 request refused: {}", String::from_utf8_lossy(l.frame)));
-        let again = protocolo::codificar_pedido(l.role, &request).expect("request not written");
+        let again = protocol::encode_request(l.role, &request).expect("request not written");
         assert_eq!(
             &again[..],
             l.frame,
             "request written differently from 0.1.4"
         );
-        seen.push(request.operacao());
+        seen.push(request.operation());
     }
     // One line per operation, in the order of the table.
-    assert_eq!(seen, Operacao::TODAS);
+    assert_eq!(seen, Operation::ALL);
 }
 
 #[test]
@@ -137,18 +137,18 @@ fn v1_responses_read_and_written_byte_for_byte() {
     let mut types = BTreeSet::new();
     let mut count = 0;
     for l in lines().into_iter().filter(|l| l.kind == "response") {
-        let response = protocolo::decodificar_resposta(l.role, l.frame)
+        let response = protocol::decode_response(l.role, l.frame)
             .unwrap_or_else(|_| panic!("v1 response refused (kind {})", l.kind));
-        let again = protocolo::codificar_resposta(l.role, &response).expect("response not written");
+        let again = protocol::encode_response(l.role, &response).expect("response not written");
         assert_eq!(
             &again[..],
             l.frame,
             "response written differently from 0.1.4"
         );
-        types.insert(response.tipo().nome());
+        types.insert(response.tipo().name());
         count += 1;
     }
-    let all: BTreeSet<_> = TipoResposta::TODAS.iter().map(|t| t.nome()).collect();
+    let all: BTreeSet<_> = ResponseType::ALL.iter().map(|t| t.name()).collect();
     assert_eq!(types, all, "every response type has a line");
     assert_eq!(count, 23);
 }
@@ -157,16 +157,16 @@ fn v1_responses_read_and_written_byte_for_byte() {
 fn v1_error_codes_read_and_written_byte_for_byte() {
     let mut codes = Vec::new();
     for l in lines().into_iter().filter(|l| l.kind == "error") {
-        let response = protocolo::decodificar_resposta(l.role, l.frame)
+        let response = protocol::decode_response(l.role, l.frame)
             .unwrap_or_else(|_| panic!("v1 error refused: {}", String::from_utf8_lossy(l.frame)));
-        let again = protocolo::codificar_resposta(l.role, &response).expect("error not written");
+        let again = protocol::encode_response(l.role, &response).expect("error not written");
         assert_eq!(&again[..], l.frame, "error written differently from 0.1.4");
         match response {
             Resposta::Erro(e) => codes.push(e),
             _ => panic!("error line is not an error"),
         }
     }
-    assert_eq!(codes, ErroResposta::SIMPLES);
+    assert_eq!(codes, ResponseError::SIMPLE);
 }
 
 #[test]
@@ -174,7 +174,7 @@ fn v1_fixture_has_only_known_kinds() {
     let all = lines();
     assert_eq!(
         all.len(),
-        Operacao::TODAS.len() + 23 + ErroResposta::SIMPLES.len()
+        Operation::ALL.len() + 23 + ResponseError::SIMPLE.len()
     );
     assert!(
         all.iter()
@@ -230,14 +230,14 @@ fn attack_renamed_wire_name_is_refused() {
         let (head, tail) = frame.split_once(r#""op":""#).unwrap();
         let renamed = format!(r#"{head}"op":"x_{tail}"#);
         assert_eq!(
-            protocolo::decodificar_pedido(l.role, renamed.as_bytes()).unwrap_err(),
-            ErroResposta::OperacaoDesconhecida
+            protocol::decode_request(l.role, renamed.as_bytes()).unwrap_err(),
+            ResponseError::UnknownOperation
         );
         if frame.contains(r#""entrada":"#) {
             let renamed = frame.replacen(r#""entrada":"#, r#""entry":"#, 1);
             assert_eq!(
-                protocolo::decodificar_pedido(l.role, renamed.as_bytes()).unwrap_err(),
-                ErroResposta::PedidoInvalido
+                protocol::decode_request(l.role, renamed.as_bytes()).unwrap_err(),
+                ResponseError::InvalidRequest
             );
         }
     }

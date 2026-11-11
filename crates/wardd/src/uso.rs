@@ -33,9 +33,9 @@
 use ward_core::display;
 use ward_core::entry::{AccessLevel, Data, Entry, Environment, Secret};
 use ward_core::limits::{MAX_DISPLAYED_TEXT, MAX_TEXT};
-use ward_core::protocolo::{
-    Decisao, ErroResposta, Operacao, Pedido, PedidoDeAprovacao, PedidoDeDestrave, Resposta,
-    TipoEntradaPadrao,
+use ward_core::protocol::{
+    Decision, Operation, PedidoDeAprovacao, PedidoDeDestrave, Request, ResponseError, Resposta,
+    StdinKind,
 };
 
 use crate::aprovacao::{Cliente, UMA_HORA};
@@ -75,10 +75,10 @@ fn mais_sensivel(a: Environment, b: Environment) -> Environment {
 }
 
 /// A outra entrada de um uso combinado (D19): túnel do `banco`, salto do `servidor`.
-fn segunda_entrada(e: &Entry, op: Operacao) -> Option<&str> {
+fn segunda_entrada(e: &Entry, op: Operation) -> Option<&str> {
     match (e.data(), op) {
-        (Data::Database(b), Operacao::Executar) => b.tunnel.as_deref(),
-        (Data::Server(s), Operacao::Executar | Operacao::Ssh) => s.jump.as_deref(),
+        (Data::Database(b), Operation::Run) => b.tunnel.as_deref(),
+        (Data::Server(s), Operation::Run | Operation::Ssh) => s.jump.as_deref(),
         _ => None,
     }
 }
@@ -89,9 +89,9 @@ fn segunda_entrada(e: &Entry, op: Operacao) -> Option<&str> {
 /// loopback conta, em qualquer esquema (`https://localhost`, `https://127.0.0.1`,
 /// `https://[::1]`…): um certificado de uma CA local (mkcert, `~/.pki`) não prova quem
 /// responde ([`ward_core::entry::local_url_origin`]).
-pub(crate) fn origem_a_confirmar(e: &Entry, op: Operacao) -> Option<String> {
+pub(crate) fn origem_a_confirmar(e: &Entry, op: Operation) -> Option<String> {
     match (e.data(), op) {
-        (Data::Login(l), Operacao::Login | Operacao::Playwright | Operacao::Preencher) => {
+        (Data::Login(l), Operation::Login | Operation::Playwright | Operation::Fill) => {
             ward_core::entry::local_url_origin(&l.url)
         }
         _ => None,
@@ -118,7 +118,7 @@ fn nivel_efetivo(
 
 /// O que o pedido do agente quer, para exibir.
 struct Descricao<'a> {
-    operacao: Operacao,
+    operacao: Operation,
     entrada: &'a str,
     /// O comando exato (D51).
     comando: String,
@@ -132,37 +132,37 @@ struct Descricao<'a> {
 }
 
 /// O que o pedido do agente quer: operação, entrada, o comando exato e o diretório.
-fn descrever(pedido: &Pedido) -> Option<Descricao<'_>> {
-    let oculta = |t: &TipoEntradaPadrao| t.oculta();
+fn descrever(pedido: &Request) -> Option<Descricao<'_>> {
+    let oculta = |t: &StdinKind| t.hidden();
     let (operacao, entrada, comando, diretorio, entrada_oculta) = match pedido {
-        Pedido::Executar(x) => (
-            Operacao::Executar,
-            x.entrada.as_str(),
+        Request::Run(x) => (
+            Operation::Run,
+            x.entry.as_str(),
             display::display_args(&x.argv, MAX_DISPLAYED_TEXT),
             display::display_args(&[x.cwd.as_slice()], MAX_DISPLAYED_TEXT),
-            oculta(&x.tipo_entrada),
+            oculta(&x.stdin_kind),
         ),
-        Pedido::Ssh {
-            entrada,
-            comando,
-            tipo_entrada,
+        Request::Ssh {
+            entry: entrada,
+            command: comando,
+            stdin_kind: tipo_entrada,
             ..
         } => (
-            Operacao::Ssh,
+            Operation::Ssh,
             entrada.as_str(),
             display::display_args(comando, MAX_DISPLAYED_TEXT),
             String::new(),
             oculta(tipo_entrada),
         ),
-        Pedido::Login { entrada } => (
-            Operacao::Login,
+        Request::Login { entry: entrada } => (
+            Operation::Login,
             entrada.as_str(),
             String::new(),
             String::new(),
             false,
         ),
-        Pedido::Playwright { entrada } => (
-            Operacao::Playwright,
+        Request::Playwright { entry: entrada } => (
+            Operation::Playwright,
             entrada.as_str(),
             String::new(),
             String::new(),
@@ -197,21 +197,21 @@ impl Daemon {
     pub fn autorizar_uso(
         &self,
         cliente: &dyn Cliente,
-        pedido: &Pedido,
-    ) -> Result<Autorizacao, ErroResposta> {
+        pedido: &Request,
+    ) -> Result<Autorizacao, ResponseError> {
         let Descricao {
             operacao: op,
             entrada: nome,
             comando,
             diretorio,
             entrada_oculta,
-        } = descrever(pedido).ok_or(ErroResposta::PedidoInvalido)?;
+        } = descrever(pedido).ok_or(ResponseError::InvalidRequest)?;
         // Nome vazio nunca é de uma entrada (o `ward-core` exige nome não vazio): responde
         // como inexistente antes de qualquer espera. Fase 39a: assim o aviso de destrave
         // nunca sai fora do formato (entrada vazia), o que fecharia a conexão do app e
         // negaria o que ele tinha na tela.
         if nome.is_empty() {
-            return Err(ErroResposta::EntradaInexistente);
+            return Err(ResponseError::EntryNotFound);
         }
         if self.travado() {
             // Fase 39a (D51): a tela de destravar mostra o que o agente pediu, com escape
@@ -229,12 +229,12 @@ impl Daemon {
         let agora = self.aprovacao.agora();
         let (nivel, entradas, ambiente, origem) = {
             let est = self.estado();
-            let a = est.aberto.as_ref().ok_or(ErroResposta::Travado)?;
+            let a = est.aberto.as_ref().ok_or(ResponseError::Locked)?;
             let e = a
                 .entradas
                 .iter()
                 .find(|e| e.name() == nome && e.level() != AccessLevel::Blocked)
-                .ok_or(ErroResposta::EntradaInexistente)?;
+                .ok_or(ResponseError::EntryNotFound)?;
             // Fase 54b: com a entrada padrão oculta, a liberação de 1 hora não cobre.
             let mut nivel = nivel_efetivo(a, e, agora, entrada_oculta);
             let origem = origem_a_confirmar(e, op);
@@ -279,7 +279,7 @@ impl Daemon {
             },
             AccessLevel::Blocked => {
                 aviso!("uso combinado com entrada bloqueada: negado sem perguntar (D19)");
-                Err(ErroResposta::Negado)
+                Err(ResponseError::Denied)
             }
             AccessLevel::Approval => {
                 if entrada_oculta {
@@ -302,38 +302,38 @@ impl Daemon {
     pub(crate) fn responder_aprovacao(
         &self,
         id: u64,
-        decisao: Decisao,
+        decisao: Decision,
         pin: Option<&Secret>,
         entrada_confirmada: bool,
-    ) -> Result<Resposta, ErroResposta> {
-        let entradas = self.aprovacao.pendente(id).ok_or(ErroResposta::Expirado)?;
+    ) -> Result<Resposta, ResponseError> {
+        let entradas = self.aprovacao.pendente(id).ok_or(ResponseError::Expired)?;
         let confirmacao = self
             .aprovacao
             .e_confirmacao(id)
-            .ok_or(ErroResposta::Expirado)?;
+            .ok_or(ResponseError::Expired)?;
         let entrada_oculta = self
             .aprovacao
             .e_entrada_oculta(id)
-            .ok_or(ErroResposta::Expirado)?;
-        if decisao == Decisao::Negar {
-            return if self.aprovacao.decidir(id, Err(ErroResposta::Negado)) {
+            .ok_or(ResponseError::Expired)?;
+        if decisao == Decision::Deny {
+            return if self.aprovacao.decidir(id, Err(ResponseError::Denied)) {
                 Ok(Resposta::Ok)
             } else {
-                Err(ErroResposta::Expirado)
+                Err(ResponseError::Expired)
             };
         }
         // Fase 44c: a confirmação de origem só aceita "Negar" e "Confirmar"; um pedido
         // que pede PIN nunca é decidido por "Confirmar" (sem PIN).
-        if confirmacao != (decisao == Decisao::Confirmar) {
+        if confirmacao != (decisao == Decision::Confirm) {
             aviso!("aprovação {id}: decisão que não cabe no pedido; recusada");
-            return Err(ErroResposta::PedidoInvalido);
+            return Err(ResponseError::InvalidRequest);
         }
-        if decisao == Decisao::Confirmar {
+        if decisao == Decision::Confirm {
             return if self.aprovacao.decidir(id, Ok(())) {
                 aviso!("aprovação {id}: origem confirmada");
                 Ok(Resposta::Ok)
             } else {
-                Err(ErroResposta::Expirado)
+                Err(ResponseError::Expired)
             };
         }
         // Fase 54b (D68): a caixa da entrada padrão, antes do PIN (nada conta como erro
@@ -342,41 +342,41 @@ impl Daemon {
             aviso!(
                 "aprovação {id}: permitir sem a confirmação da entrada padrão (ou com ela fora do aviso); recusado (D68)"
             );
-            return Err(ErroResposta::PedidoInvalido);
+            return Err(ResponseError::InvalidRequest);
         }
         // O protocolo já exige o PIN em todo "Permitir"; aqui é a segunda camada.
-        let pin = pin.ok_or(ErroResposta::PedidoInvalido)?;
+        let pin = pin.ok_or(ResponseError::InvalidRequest)?;
         let mut est = self.estado();
         // Fase 49a: com o estado preso, o pedido ainda tem de estar pendente. Um
         // restaurar entre a leitura acima e aqui cancelou o pedido; sem esta conferência,
         // o "permitir sempre" mudaria a entrada de mesmo nome da versão restaurada.
         if self.aprovacao.pendente(id).as_ref() != Some(&entradas) {
-            return Err(ErroResposta::Expirado);
+            return Err(ResponseError::Expired);
         }
         if let Err(e) = Self::conferir_pin(&mut est, pin) {
             if est.aberto.is_none() {
                 // O 5.º erro travou (ou o cofre travou no meio): o pedido é negado.
-                self.aprovacao.decidir(id, Err(ErroResposta::Negado));
+                self.aprovacao.decidir(id, Err(ResponseError::Denied));
             }
             return Err(e);
         }
         match decisao {
-            Decisao::Negar | Decisao::PermitirUmaVez | Decisao::Confirmar => {}
-            Decisao::PermitirUmaHora => {
+            Decision::Deny | Decision::AllowOnce | Decision::Confirm => {}
+            Decision::AllowOneHour => {
                 if !self.aprovacao.decidir(id, Ok(())) {
-                    return Err(ErroResposta::Expirado);
+                    return Err(ResponseError::Expired);
                 }
                 let ate = self.aprovacao.agora().saturating_add(UMA_HORA);
-                let a = est.aberto.as_mut().ok_or(ErroResposta::Travado)?;
+                let a = est.aberto.as_mut().ok_or(ResponseError::Locked)?;
                 for n in entradas {
                     a.liberacoes.insert(n, ate);
                 }
                 aviso!("aprovação {id}: permitida por 1 hora");
                 return Ok(Resposta::Ok);
             }
-            Decisao::PermitirSempre => {
+            Decision::AllowAlways => {
                 // As entradas do pedido que estão "com aprovação" viram "livre", no disco.
-                let a = est.aberto.as_mut().ok_or(ErroResposta::Travado)?;
+                let a = est.aberto.as_mut().ok_or(ResponseError::Locked)?;
                 let mut mudadas = Vec::new();
                 for e in a.entradas.iter_mut() {
                     if entradas.iter().any(|n| n == e.name()) && e.level() == AccessLevel::Approval
@@ -402,7 +402,7 @@ impl Daemon {
         if self.aprovacao.decidir(id, Ok(())) {
             Ok(Resposta::Ok)
         } else {
-            Err(ErroResposta::Expirado)
+            Err(ResponseError::Expired)
         }
     }
 }

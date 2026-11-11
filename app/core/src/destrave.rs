@@ -26,7 +26,7 @@ use serde::de::{self, Deserialize, Deserializer, Visitor};
 use ward_core::display::neutralize;
 use ward_core::entry::Secret as SegredoCore;
 use ward_core::limits::MAX_SECRET;
-use ward_core::protocolo::PedidoDeDestrave;
+use ward_core::protocol::PedidoDeDestrave;
 use zeroize::Zeroizing;
 
 use crate::AppError;
@@ -151,7 +151,7 @@ impl PedidoPendente {
     fn marcar_em(&self, p: &PedidoDeDestrave, agora: Instant) {
         let texto = Texto {
             entrada: neutralize(&p.entrada),
-            operacao: p.operacao.nome(),
+            operacao: p.operacao.name(),
             comando: neutralize(&p.comando),
         };
         let falta = Duration::from_secs(p.restante).min(PRAZO_PEDIDO);

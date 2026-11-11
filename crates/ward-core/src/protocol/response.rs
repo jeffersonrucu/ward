@@ -1,19 +1,19 @@
 //! Respostas e avisos do daemon ao cliente: os campos de cada tipo, a escrita (lado do
 //! daemon) e a leitura estrita (lado do cliente).
 //!
-//! Os tipos que levam credencial ([`super::TipoResposta::carrega_credencial`]) são só de
-//! app ou de extensão; [`super::codificar_resposta`] confere o papel antes de escrever.
+//! Os tipos que levam credencial ([`super::ResponseType::carries_credential`]) são só de
+//! app ou de extensão; [`super::encode_response`] confere o papel antes de escrever.
 //! [`ItemLista`] e [`DetalheEntrada`] são montados da [`Entry`] e por construção não
 //! têm segredo: o extra secreto vai sem valor, e dos segredos do tipo vai só o nome do
 //! campo preenchido.
 
 use zeroize::Zeroizing;
 
-use super::campos::{Campos, R, segredo_de, texto_de, textos_de};
-use super::erros::{ErroResposta, Problema};
-use super::json::{Escritor, JsonInvalido};
-use super::pedido::CAMPOS_SECRETOS;
-use super::{Operacao, Papel, TipoResposta};
+use super::errors::{Problem, ResponseError};
+use super::fields::{Fields, R, secret_of, text_of, texts_of};
+use super::json::{InvalidJson, Writer};
+use super::request::SECRET_FIELDS;
+use super::{Operation, ResponseType, Role};
 use crate::entry::{
     AccessLevel, Auth, Data, Dates, Entry, EntryType, Environment, ExtraValue, Secret,
 };
@@ -50,13 +50,13 @@ pub struct ItemLista {
     pub projeto: Option<String>,
     pub tags: Vec<String>,
     /// Nível de acesso: `Some` só na lista do app. A do agente vai sem ele (D50):
-    /// [`super::codificar_resposta`] recusa mandar ao agente um item com nível, e a
+    /// [`super::encode_response`] recusa mandar ao agente um item com nível, e a
     /// leitura do agente recusa um item que o traga.
     pub nivel: Option<AccessLevel>,
     /// URL (`login`, `api`) ou host (`banco`, `servidor`, `smtp`, `ftp/sftp`).
     pub endereco: Option<String>,
     /// Resumo para a 2ª linha e a busca do app (D65 c): `Some` só na lista do app, no
-    /// mesmo padrão do nível (D50). [`super::codificar_resposta`] recusa mandar ao
+    /// mesmo padrão do nível (D50). [`super::encode_response`] recusa mandar ao
     /// agente um item com resumo, e a leitura do agente recusa um item que o traga.
     pub resumo: Option<ResumoItem>,
 }
@@ -92,12 +92,12 @@ impl ResumoItem {
 
 /// Valores no JSON de um resumo, no máximo: o objeto, `campos`, `segredos`, `extras`,
 /// `anexos` e os itens de `campos` e de `segredos` (para o limite de nós da resposta).
-pub(crate) const MAX_NOS_RESUMO: usize = 5 + CAMPOS_TEXTO.len() + CAMPOS_SECRETOS.len();
+pub(crate) const MAX_NOS_RESUMO: usize = 5 + CAMPOS_TEXTO.len() + SECRET_FIELDS.len();
 
 impl ItemLista {
     /// O item de uma entrada para o papel: com o nível só para o app (D50). Quem filtra
     /// as bloqueadas para o agente é o daemon.
-    pub fn de_entrada(e: &Entry, papel: Papel) -> Self {
+    pub fn de_entrada(e: &Entry, papel: Role) -> Self {
         let endereco = match e.data() {
             Data::Login(l) => Some(l.url.clone()),
             Data::Api(a) => a.url.clone(),
@@ -114,9 +114,9 @@ impl ItemLista {
             ambiente: e.environment(),
             projeto: e.project().map(str::to_owned),
             tags: e.tags().to_vec(),
-            nivel: (papel == Papel::App).then(|| e.level()),
+            nivel: (papel == Role::App).then(|| e.level()),
             endereco,
-            resumo: (papel == Papel::App).then(|| ResumoItem::de_entrada(e)),
+            resumo: (papel == Role::App).then(|| ResumoItem::de_entrada(e)),
         }
     }
 }
@@ -312,7 +312,7 @@ pub struct PedidoDeAprovacao {
     pub entradas: Vec<String>,
     pub ambiente: Environment,
     /// `executar`, `ssh`, `login` ou `playwright`.
-    pub operacao: Operacao,
+    pub operacao: Operation,
     /// O comando exato.
     pub comando: String,
     /// O diretório de trabalho do comando no `executar` (Fase 26a: o da CLI, onde o
@@ -347,7 +347,7 @@ pub struct PedidoDeDestrave {
     /// O nome que o agente pediu, com escape visível.
     pub entrada: String,
     /// `executar`, `ssh`, `login` ou `playwright`.
-    pub operacao: Operacao,
+    pub operacao: Operation,
     /// O comando exato com escape visível (D51); vazio no `login` e no `playwright`.
     pub comando: String,
     /// Segundos que faltam do prazo do daemon (D16), de 1 a [`MAX_RESTANTE_DESTRAVE`].
@@ -401,9 +401,9 @@ pub enum Resposta {
         cofre_existe: bool,
         /// O papel que o daemon deu a esta conexão (D63), sem nenhum outro dado. O app e
         /// a ponte conferem na primeira resposta e, sem `app`, não usam a conexão.
-        papel: Papel,
+        papel: Role,
     },
-    Erro(ErroResposta),
+    Erro(ResponseError),
     Lista(Vec<ItemLista>),
     Saida {
         fluxo: Fluxo,
@@ -461,11 +461,11 @@ pub enum Resposta {
     Pendrives(Vec<Pendrive>),
 }
 
-const OPERACOES_APROVADAS: [Operacao; 4] = [
-    Operacao::Executar,
-    Operacao::Ssh,
-    Operacao::Login,
-    Operacao::Playwright,
+const OPERACOES_APROVADAS: [Operation; 4] = [
+    Operation::Run,
+    Operation::Ssh,
+    Operation::Login,
+    Operation::Playwright,
 ];
 
 fn digitos_totp(c: &str) -> bool {
@@ -474,35 +474,35 @@ fn digitos_totp(c: &str) -> bool {
 
 impl Resposta {
     /// O tipo desta resposta.
-    pub fn tipo(&self) -> TipoResposta {
+    pub fn tipo(&self) -> ResponseType {
         match self {
-            Resposta::Ok => TipoResposta::Ok,
-            Resposta::Estado { .. } => TipoResposta::Estado,
-            Resposta::Erro(_) => TipoResposta::Erro,
-            Resposta::Lista(_) => TipoResposta::Lista,
-            Resposta::Saida { .. } => TipoResposta::Saida,
-            Resposta::Fim { .. } => TipoResposta::Fim,
-            Resposta::SessaoPlaywright { .. } => TipoResposta::SessaoPlaywright,
-            Resposta::Detalhe(_) => TipoResposta::Detalhe,
-            Resposta::Segredo(_) => TipoResposta::Segredo,
-            Resposta::Token(_) => TipoResposta::Token,
-            Resposta::PedidoDeAprovacao(_) => TipoResposta::PedidoDeAprovacao,
-            Resposta::PedidoDeDestrave(_) => TipoResposta::PedidoDeDestrave,
-            Resposta::CodigoTotp { .. } => TipoResposta::CodigoTotp,
-            Resposta::Sugestoes(_) => TipoResposta::Sugestoes,
-            Resposta::Preenchimento { .. } => TipoResposta::Preenchimento,
-            Resposta::PedidoDeLogin { .. } => TipoResposta::PedidoDeLogin,
-            Resposta::Backups(_) => TipoResposta::Backups,
-            Resposta::Configuracao { .. } => TipoResposta::Configuracao,
-            Resposta::BackupExterno { .. } => TipoResposta::BackupExterno,
-            Resposta::Pendrives(_) => TipoResposta::Pendrives,
+            Resposta::Ok => ResponseType::Ok,
+            Resposta::Estado { .. } => ResponseType::Status,
+            Resposta::Erro(_) => ResponseType::Error,
+            Resposta::Lista(_) => ResponseType::List,
+            Resposta::Saida { .. } => ResponseType::Output,
+            Resposta::Fim { .. } => ResponseType::Exit,
+            Resposta::SessaoPlaywright { .. } => ResponseType::PlaywrightSession,
+            Resposta::Detalhe(_) => ResponseType::Detail,
+            Resposta::Segredo(_) => ResponseType::Secret,
+            Resposta::Token(_) => ResponseType::Token,
+            Resposta::PedidoDeAprovacao(_) => ResponseType::ApprovalRequest,
+            Resposta::PedidoDeDestrave(_) => ResponseType::UnlockRequest,
+            Resposta::CodigoTotp { .. } => ResponseType::TotpCode,
+            Resposta::Sugestoes(_) => ResponseType::Suggestions,
+            Resposta::Preenchimento { .. } => ResponseType::Fill,
+            Resposta::PedidoDeLogin { .. } => ResponseType::LoginRequest,
+            Resposta::Backups(_) => ResponseType::Backups,
+            Resposta::Configuracao { .. } => ResponseType::Config,
+            Resposta::BackupExterno { .. } => ResponseType::ExternalBackup,
+            Resposta::Pendrives(_) => ResponseType::UsbDrives,
         }
     }
 
     /// Confere os limites que a leitura confere, e o nível e o resumo da lista pelo
     /// papel (D50, D65 c: o app sempre recebe, o agente nunca).
-    pub(crate) fn conferir(&self, papel: Papel) -> R<()> {
-        let ok = |c: bool| if c { Ok(()) } else { Err(JsonInvalido) };
+    pub(crate) fn conferir(&self, papel: Role) -> R<()> {
+        let ok = |c: bool| if c { Ok(()) } else { Err(InvalidJson) };
         let item_ok = |i: &ItemLista| {
             i.nome.len() <= MAX_NAME
                 && i.grupo.len() <= MAX_TEXT
@@ -527,18 +527,17 @@ impl Resposta {
                 && (1..=MAX_RESTANTE_DESTRAVE).contains(&p.restante)),
             Resposta::Fim { .. } => Ok(()),
             Resposta::Erro(e) => ok(match e {
-                ErroResposta::Validacao(p) => {
+                ResponseError::Validation(p) => {
                     p.len() <= MAX_PROBLEMAS
                         && p.iter()
-                            .all(|p| p.campo.len() <= MAX_LINE && p.motivo.len() <= MAX_LINE)
+                            .all(|p| p.field.len() <= MAX_LINE && p.reason.len() <= MAX_LINE)
                 }
                 _ => true,
             }),
             Resposta::Lista(l) => ok(l.len() <= MAX_ENTRIES
                 && l.iter().all(item_ok)
-                && l.iter().all(|i| i.nivel.is_some() == (papel == Papel::App))
-                && l.iter()
-                    .all(|i| i.resumo.is_some() == (papel == Papel::App))),
+                && l.iter().all(|i| i.nivel.is_some() == (papel == Role::App))
+                && l.iter().all(|i| i.resumo.is_some() == (papel == Role::App))),
             Resposta::Saida { dados, .. } => ok(dados.len() <= MAX_DISPLAYED_TEXT),
             Resposta::SessaoPlaywright { caminho } => {
                 ok(!caminho.is_empty() && caminho.len() <= MAX_TEXT)
@@ -563,21 +562,21 @@ impl Resposta {
             Resposta::Token(t) => ok(!t.is_empty() && t.len() <= MAX_NAME),
             Resposta::PedidoDeAprovacao(p) => ok((1..=2).contains(&p.entradas.len())
                 && p.entradas.iter().all(|n| n.len() <= MAX_NAME)
-                && (OPERACOES_APROVADAS.contains(&p.operacao) || p.operacao == Operacao::Preencher)
+                && (OPERACOES_APROVADAS.contains(&p.operacao) || p.operacao == Operation::Fill)
                 && p.origem.len() <= MAX_TEXT
                 // Fase 44c: a origem só existe no preencher, no `login` e no
                 // `playwright`; a confirmação sempre tem origem; o popup só confirma.
                 && (p.origem.is_empty()
                     || matches!(
                         p.operacao,
-                        Operacao::Login | Operacao::Playwright | Operacao::Preencher
+                        Operation::Login | Operation::Playwright | Operation::Fill
                     ))
                 && (!p.confirmacao || !p.origem.is_empty())
-                && (p.operacao != Operacao::Preencher || p.confirmacao)
+                && (p.operacao != Operation::Fill || p.confirmacao)
                 // Fase 54b: só o `executar` e o `ssh` têm entrada padrão, e nunca numa
                 // confirmação de origem.
                 && (!p.entrada_oculta
-                    || (matches!(p.operacao, Operacao::Executar | Operacao::Ssh)
+                    || (matches!(p.operacao, Operation::Run | Operation::Ssh)
                         && !p.confirmacao))
                 && p.comando.len() <= MAX_DISPLAYED_TEXT
                 && p.diretorio.len() <= MAX_DISPLAYED_TEXT
@@ -609,83 +608,83 @@ impl Resposta {
                 && senha.len() <= MAX_SECRET
                 && totp.as_ref().is_none_or(|c| digitos_totp(c))),
             Resposta::PedidoDeLogin { id, entrada } => {
-                ok(super::id_login_ok(id) && !entrada.is_empty() && entrada.len() <= MAX_NAME)
+                ok(super::login_id_ok(id) && !entrada.is_empty() && entrada.len() <= MAX_NAME)
             }
         }
     }
 
     /// Escreve os `dados` da resposta.
-    pub(crate) fn escrever(&self, e: &mut Escritor) {
+    pub(crate) fn escrever(&self, e: &mut Writer) {
         match self {
             Resposta::Ok => {}
             Resposta::PedidoDeDestrave(p) => {
-                e.chave("entrada");
-                e.texto(&p.entrada);
-                e.chave("operacao");
-                e.texto(p.operacao.nome());
-                e.chave("comando");
-                e.texto(&p.comando);
-                e.chave("restante");
-                e.inteiro(p.restante);
+                e.key("entrada");
+                e.text(&p.entrada);
+                e.key("operacao");
+                e.text(p.operacao.name());
+                e.key("comando");
+                e.text(&p.comando);
+                e.key("restante");
+                e.integer(p.restante);
             }
             Resposta::Estado {
                 travado,
                 cofre_existe,
                 papel,
             } => {
-                e.chave("travado");
-                e.logico(*travado);
-                e.chave("cofre_existe");
-                e.logico(*cofre_existe);
-                e.chave("papel");
-                e.texto(papel.nome());
+                e.key("travado");
+                e.boolean(*travado);
+                e.key("cofre_existe");
+                e.boolean(*cofre_existe);
+                e.key("papel");
+                e.text(papel.name());
             }
             Resposta::Erro(x) => {
-                e.chave("codigo");
-                e.texto(x.codigo());
-                e.chave("mensagem");
-                e.texto(x.mensagem());
-                if let ErroResposta::Validacao(p) = x {
-                    e.chave("problemas");
-                    e.lista(|e| {
+                e.key("codigo");
+                e.text(x.code());
+                e.key("mensagem");
+                e.text(x.message());
+                if let ResponseError::Validation(p) = x {
+                    e.key("problemas");
+                    e.list(|e| {
                         for p in p {
                             e.item();
-                            e.objeto(|e| {
-                                e.chave("campo");
-                                e.texto(&p.campo);
-                                if let Some(n) = p.posicao {
-                                    e.chave("posicao");
-                                    e.inteiro(n);
+                            e.object(|e| {
+                                e.key("campo");
+                                e.text(&p.field);
+                                if let Some(n) = p.position {
+                                    e.key("posicao");
+                                    e.integer(n);
                                 }
-                                e.chave("motivo");
-                                e.texto(&p.motivo);
+                                e.key("motivo");
+                                e.text(&p.reason);
                             });
                         }
                     });
                 }
             }
             Resposta::Lista(l) => {
-                e.chave("itens");
-                e.lista(|e| {
+                e.key("itens");
+                e.list(|e| {
                     for i in l {
                         e.item();
-                        e.objeto(|e| {
+                        e.object(|e| {
                             cabecalho(
                                 e, &i.nome, i.tipo, &i.grupo, i.ambiente, &i.projeto, &i.tags,
                                 i.nivel,
                             );
                             if let Some(x) = &i.endereco {
-                                e.chave("endereco");
-                                e.texto(x);
+                                e.key("endereco");
+                                e.text(x);
                             }
                             if let Some(r) = &i.resumo {
-                                e.chave("resumo");
-                                e.objeto(|e| {
+                                e.key("resumo");
+                                e.object(|e| {
                                     escrever_campos(e, &r.campos, &r.segredos);
-                                    e.chave("extras");
-                                    e.inteiro(r.extras);
-                                    e.chave("anexos");
-                                    e.inteiro(r.anexos);
+                                    e.key("extras");
+                                    e.integer(r.extras);
+                                    e.key("anexos");
+                                    e.integer(r.anexos);
                                 });
                             }
                         });
@@ -693,18 +692,18 @@ impl Resposta {
                 });
             }
             Resposta::Saida { fluxo, dados } => {
-                e.chave("fluxo");
-                e.texto(fluxo.nome());
-                e.chave("dados");
+                e.key("fluxo");
+                e.text(fluxo.nome());
+                e.key("dados");
                 e.base64(dados);
             }
             Resposta::Fim { codigo } => {
-                e.chave("codigo");
-                e.inteiro(u64::from(*codigo));
+                e.key("codigo");
+                e.integer(u64::from(*codigo));
             }
             Resposta::SessaoPlaywright { caminho } => {
-                e.chave("caminho");
-                e.texto(caminho);
+                e.key("caminho");
+                e.text(caminho);
             }
             Resposta::Detalhe(d) => {
                 cabecalho(
@@ -718,92 +717,92 @@ impl Resposta {
                     Some(d.nivel),
                 );
                 escrever_campos(e, &d.campos, &d.segredos);
-                e.chave("extras");
-                e.lista(|e| {
+                e.key("extras");
+                e.list(|e| {
                     for x in &d.extras {
                         e.item();
-                        e.objeto(|e| {
-                            e.chave("nome");
-                            e.texto(&x.nome);
-                            e.chave("segredo");
-                            e.logico(x.valor.is_none());
+                        e.object(|e| {
+                            e.key("nome");
+                            e.text(&x.nome);
+                            e.key("segredo");
+                            e.boolean(x.valor.is_none());
                             if let Some(v) = &x.valor {
-                                e.chave("valor");
-                                e.texto(v);
+                                e.key("valor");
+                                e.text(v);
                             }
                         });
                     }
                 });
-                e.chave("anexos");
-                e.lista(|e| {
+                e.key("anexos");
+                e.list(|e| {
                     for a in &d.anexos {
                         e.item();
-                        e.objeto(|e| {
-                            e.chave("nome");
-                            e.texto(&a.nome);
-                            e.chave("tamanho");
-                            e.inteiro(a.tamanho);
+                        e.object(|e| {
+                            e.key("nome");
+                            e.text(&a.nome);
+                            e.key("tamanho");
+                            e.integer(a.tamanho);
                         });
                     }
                 });
                 // D65 d: só as datas que existem.
                 if let Some(c) = d.datas.created_at() {
-                    e.chave("criada_em");
-                    e.inteiro(c);
+                    e.key("criada_em");
+                    e.integer(c);
                 }
                 if let Some(a) = d.datas.modified_at() {
-                    e.chave("alterada_em");
-                    e.inteiro(a);
+                    e.key("alterada_em");
+                    e.integer(a);
                 }
             }
             Resposta::Segredo(s) => {
-                e.chave("valor");
+                e.key("valor");
                 e.base64(s.expose());
             }
             Resposta::Token(t) => {
-                e.chave("token");
+                e.key("token");
                 e.base64(t.expose());
             }
             Resposta::PedidoDeAprovacao(p) => {
-                e.chave("id");
-                e.inteiro(p.id);
-                e.chave("entradas");
+                e.key("id");
+                e.integer(p.id);
+                e.key("entradas");
                 escrever_textos(e, &p.entradas);
-                e.chave("ambiente");
-                e.texto(p.ambiente.name());
-                e.chave("operacao");
-                e.texto(p.operacao.nome());
-                e.chave("comando");
-                e.texto(&p.comando);
-                e.chave("diretorio");
-                e.texto(&p.diretorio);
-                e.chave("cadeia");
+                e.key("ambiente");
+                e.text(p.ambiente.name());
+                e.key("operacao");
+                e.text(p.operacao.name());
+                e.key("comando");
+                e.text(&p.comando);
+                e.key("diretorio");
+                e.text(&p.diretorio);
+                e.key("cadeia");
                 escrever_textos(e, &p.cadeia);
-                e.chave("origem");
-                e.texto(&p.origem);
-                e.chave("confirmacao");
-                e.logico(p.confirmacao);
-                e.chave("entrada_oculta");
-                e.logico(p.entrada_oculta);
+                e.key("origem");
+                e.text(&p.origem);
+                e.key("confirmacao");
+                e.boolean(p.confirmacao);
+                e.key("entrada_oculta");
+                e.boolean(p.entrada_oculta);
             }
             Resposta::CodigoTotp { codigo, restante } => {
-                e.chave("codigo");
-                e.texto(codigo);
-                e.chave("restante");
-                e.inteiro(*restante);
+                e.key("codigo");
+                e.text(codigo);
+                e.key("restante");
+                e.integer(*restante);
             }
             Resposta::Backups(l) => {
-                e.chave("versoes");
-                e.lista(|e| {
+                e.key("versoes");
+                e.list(|e| {
                     for v in l {
                         e.item();
-                        e.objeto(|e| {
-                            e.chave("nome");
-                            e.texto(&v.nome);
-                            e.chave("conferida");
-                            e.logico(v.conferida);
-                            e.chave("fora_de_ordem");
-                            e.logico(v.fora_de_ordem);
+                        e.object(|e| {
+                            e.key("nome");
+                            e.text(&v.nome);
+                            e.key("conferida");
+                            e.boolean(v.conferida);
+                            e.key("fora_de_ordem");
+                            e.boolean(v.fora_de_ordem);
                         });
                     }
                 });
@@ -813,51 +812,51 @@ impl Resposta {
                 backup_externo,
                 backup_local,
             } => {
-                e.chave("minutos_trava");
-                e.inteiro(u64::from(*minutos_trava));
-                e.chave("backup_externo");
-                e.logico(*backup_externo);
-                e.chave("backup_local");
-                e.logico(*backup_local);
+                e.key("minutos_trava");
+                e.integer(u64::from(*minutos_trava));
+                e.key("backup_externo");
+                e.boolean(*backup_externo);
+                e.key("backup_local");
+                e.boolean(*backup_local);
             }
             Resposta::BackupExterno { ligado, uuid } => {
-                e.chave("ligado");
-                e.logico(*ligado);
+                e.key("ligado");
+                e.boolean(*ligado);
                 if let Some(u) = uuid {
-                    e.chave("uuid");
-                    e.texto(u);
+                    e.key("uuid");
+                    e.text(u);
                 }
             }
             Resposta::Pendrives(l) => {
-                e.chave("itens");
-                e.lista(|e| {
+                e.key("itens");
+                e.list(|e| {
                     for p in l {
                         e.item();
-                        e.objeto(|e| {
-                            e.chave("uuid");
-                            e.texto(&p.uuid);
-                            e.chave("rotulo");
-                            e.texto(&p.rotulo);
-                            e.chave("montado");
-                            e.logico(p.montado);
+                        e.object(|e| {
+                            e.key("uuid");
+                            e.text(&p.uuid);
+                            e.key("rotulo");
+                            e.text(&p.rotulo);
+                            e.key("montado");
+                            e.boolean(p.montado);
                         });
                     }
                 });
             }
             Resposta::Sugestoes(l) => {
-                e.chave("itens");
-                e.lista(|e| {
+                e.key("itens");
+                e.list(|e| {
                     for s in l {
                         e.item();
-                        e.objeto(|e| {
-                            e.chave("nome");
-                            e.texto(&s.nome);
-                            e.chave("usuario");
-                            e.texto(&s.usuario);
-                            e.chave("ambiente");
-                            e.texto(s.ambiente.name());
-                            e.chave("totp");
-                            e.logico(s.totp);
+                        e.object(|e| {
+                            e.key("nome");
+                            e.text(&s.nome);
+                            e.key("usuario");
+                            e.text(&s.usuario);
+                            e.key("ambiente");
+                            e.text(s.ambiente.name());
+                            e.key("totp");
+                            e.boolean(s.totp);
                         });
                     }
                 });
@@ -867,20 +866,20 @@ impl Resposta {
                 senha,
                 totp,
             } => {
-                e.chave("usuario");
-                e.texto(usuario);
-                e.chave("senha");
+                e.key("usuario");
+                e.text(usuario);
+                e.key("senha");
                 e.base64(senha.expose());
                 if let Some(c) = totp {
-                    e.chave("totp");
-                    e.texto(c);
+                    e.key("totp");
+                    e.text(c);
                 }
             }
             Resposta::PedidoDeLogin { id, entrada } => {
-                e.chave("id");
-                e.texto(id);
-                e.chave("entrada");
-                e.texto(entrada);
+                e.key("id");
+                e.text(id);
+                e.key("entrada");
+                e.text(entrada);
             }
         }
     }
@@ -926,51 +925,49 @@ fn campos_ok(campos: &[(String, String)], segredos: &[String]) -> bool {
         && campos
             .iter()
             .all(|(k, v)| CAMPOS_TEXTO.contains(&k.as_str()) && v.len() <= MAX_TEXT)
-        && segredos.len() <= CAMPOS_SECRETOS.len()
-        && segredos
-            .iter()
-            .all(|k| CAMPOS_SECRETOS.contains(&k.as_str()))
+        && segredos.len() <= SECRET_FIELDS.len()
+        && segredos.iter().all(|k| SECRET_FIELDS.contains(&k.as_str()))
 }
 
-fn escrever_campos(e: &mut Escritor, campos: &[(String, String)], segredos: &[String]) {
-    e.chave("campos");
-    e.objeto(|e| {
+fn escrever_campos(e: &mut Writer, campos: &[(String, String)], segredos: &[String]) {
+    e.key("campos");
+    e.object(|e| {
         for (k, v) in campos {
-            e.chave(k);
-            e.texto(v);
+            e.key(k);
+            e.text(v);
         }
     });
-    e.chave("segredos");
+    e.key("segredos");
     escrever_textos(e, segredos);
 }
 
 /// Lê `campos` e `segredos` (do `detalhe` e do resumo): na ordem do quadro, só os
 /// campos de texto conhecidos (a chave repetida o JSON já recusou); a conferência no
 /// fim limita a quantidade e os identificadores dos segredos.
-fn ler_campos(c: &mut Campos) -> R<CamposESegredos> {
+fn ler_campos(c: &mut Fields) -> R<CamposESegredos> {
     let mut campos = Vec::new();
-    for (k, v) in c.objeto("campos")?.em_ordem() {
+    for (k, v) in c.object("campos")?.in_order() {
         if !CAMPOS_TEXTO.contains(&k.as_str()) {
-            return Err(JsonInvalido);
+            return Err(InvalidJson);
         }
-        campos.push((k, texto_de(v, MAX_TEXT)?));
+        campos.push((k, text_of(v, MAX_TEXT)?));
     }
-    let segredos = textos_de(c.lista("segredos", CAMPOS_SECRETOS.len())?, MAX_NAME)?;
+    let segredos = texts_of(c.list("segredos", SECRET_FIELDS.len())?, MAX_NAME)?;
     Ok((campos, segredos))
 }
 
-fn escrever_textos(e: &mut Escritor, l: &[String]) {
-    e.lista(|e| {
+fn escrever_textos(e: &mut Writer, l: &[String]) {
+    e.list(|e| {
         for t in l {
             e.item();
-            e.texto(t);
+            e.text(t);
         }
     });
 }
 
 #[allow(clippy::too_many_arguments)]
 fn cabecalho(
-    e: &mut Escritor,
+    e: &mut Writer,
     nome: &str,
     tipo: EntryType,
     grupo: &str,
@@ -979,23 +976,23 @@ fn cabecalho(
     tags: &[String],
     nivel: Option<AccessLevel>,
 ) {
-    e.chave("nome");
-    e.texto(nome);
-    e.chave("tipo");
-    e.texto(tipo.name());
-    e.chave("grupo");
-    e.texto(grupo);
-    e.chave("ambiente");
-    e.texto(ambiente.name());
+    e.key("nome");
+    e.text(nome);
+    e.key("tipo");
+    e.text(tipo.name());
+    e.key("grupo");
+    e.text(grupo);
+    e.key("ambiente");
+    e.text(ambiente.name());
     if let Some(p) = projeto {
-        e.chave("projeto");
-        e.texto(p);
+        e.key("projeto");
+        e.text(p);
     }
-    e.chave("tags");
+    e.key("tags");
     escrever_textos(e, tags);
     if let Some(nivel) = nivel {
-        e.chave("nivel");
-        e.texto(nivel.name());
+        e.key("nivel");
+        e.text(nivel.name());
     }
 }
 
@@ -1011,77 +1008,77 @@ struct Cabecalho {
 
 /// Lê o cabeçalho de um item ou detalhe. `com_nivel`: o nível é obrigatório (app) ou
 /// proibido (lista do agente, D50).
-fn ler_cabecalho(c: &mut Campos, com_nivel: bool) -> R<Cabecalho> {
+fn ler_cabecalho(c: &mut Fields, com_nivel: bool) -> R<Cabecalho> {
     Ok(Cabecalho {
-        nome: c.texto("nome", MAX_NAME)?,
-        tipo: EntryType::from_name(&c.texto("tipo", MAX_NAME)?).ok_or(JsonInvalido)?,
-        grupo: c.texto("grupo", MAX_TEXT)?,
-        ambiente: Environment::from_name(&c.texto("ambiente", MAX_NAME)?).ok_or(JsonInvalido)?,
-        projeto: c.texto_opc("projeto", MAX_TEXT)?,
-        tags: textos_de(c.lista("tags", MAX_TAGS)?, MAX_TAG)?,
-        nivel: match c.texto_opc("nivel", MAX_NAME)? {
-            Some(n) if com_nivel => Some(AccessLevel::from_name(&n).ok_or(JsonInvalido)?),
+        nome: c.text("nome", MAX_NAME)?,
+        tipo: EntryType::from_name(&c.text("tipo", MAX_NAME)?).ok_or(InvalidJson)?,
+        grupo: c.text("grupo", MAX_TEXT)?,
+        ambiente: Environment::from_name(&c.text("ambiente", MAX_NAME)?).ok_or(InvalidJson)?,
+        projeto: c.text_opt("projeto", MAX_TEXT)?,
+        tags: texts_of(c.list("tags", MAX_TAGS)?, MAX_TAG)?,
+        nivel: match c.text_opt("nivel", MAX_NAME)? {
+            Some(n) if com_nivel => Some(AccessLevel::from_name(&n).ok_or(InvalidJson)?),
             None if !com_nivel => None,
-            _ => return Err(JsonInvalido),
+            _ => return Err(InvalidJson),
         },
     })
 }
 
 /// Lê os `dados` de uma resposta do tipo (o papel já foi conferido).
-pub(crate) fn ler(papel: Papel, tipo: TipoResposta, mut c: Campos) -> R<Resposta> {
+pub(crate) fn ler(papel: Role, tipo: ResponseType, mut c: Fields) -> R<Resposta> {
     let r = match tipo {
-        TipoResposta::Ok => Resposta::Ok,
-        TipoResposta::PedidoDeDestrave => Resposta::PedidoDeDestrave(PedidoDeDestrave {
-            entrada: c.texto("entrada", MAX_TEXT)?,
-            operacao: Operacao::de_nome(&c.texto("operacao", MAX_NAME)?).ok_or(JsonInvalido)?,
-            comando: c.texto("comando", MAX_DISPLAYED_TEXT)?,
-            restante: c.inteiro("restante")?,
+        ResponseType::Ok => Resposta::Ok,
+        ResponseType::UnlockRequest => Resposta::PedidoDeDestrave(PedidoDeDestrave {
+            entrada: c.text("entrada", MAX_TEXT)?,
+            operacao: Operation::from_name(&c.text("operacao", MAX_NAME)?).ok_or(InvalidJson)?,
+            comando: c.text("comando", MAX_DISPLAYED_TEXT)?,
+            restante: c.integer("restante")?,
         }),
-        TipoResposta::Estado => Resposta::Estado {
-            travado: c.logico("travado")?,
-            cofre_existe: c.logico("cofre_existe")?,
+        ResponseType::Status => Resposta::Estado {
+            travado: c.boolean("travado")?,
+            cofre_existe: c.boolean("cofre_existe")?,
             // Lido como veio: quem recebe confere se é o papel que esperava.
-            papel: Papel::de_nome(&c.texto("papel", MAX_NAME)?).ok_or(JsonInvalido)?,
+            papel: Role::from_name(&c.text("papel", MAX_NAME)?).ok_or(InvalidJson)?,
         },
-        TipoResposta::Erro => {
-            let codigo = c.texto("codigo", MAX_NAME)?;
+        ResponseType::Error => {
+            let codigo = c.text("codigo", MAX_NAME)?;
             // A mensagem do quadro é ignorada: vale a fixa do código.
-            let _ = c.texto("mensagem", MAX_LINE)?;
-            let mut erro = ErroResposta::de_codigo(&codigo).ok_or(JsonInvalido)?;
-            if let ErroResposta::Validacao(lista) = &mut erro {
-                for v in c.lista("problemas", MAX_PROBLEMAS)? {
-                    let mut o = Campos::de(v)?;
-                    let campo = o.texto("campo", MAX_LINE)?;
-                    let posicao = match o.tirar("posicao") {
-                        Some(super::json::Valor::Inteiro(n)) => Some(n),
-                        Some(_) => return Err(JsonInvalido),
+            let _ = c.text("mensagem", MAX_LINE)?;
+            let mut erro = ResponseError::from_code(&codigo).ok_or(InvalidJson)?;
+            if let ResponseError::Validation(lista) = &mut erro {
+                for v in c.list("problemas", MAX_PROBLEMAS)? {
+                    let mut o = Fields::from_value(v)?;
+                    let campo = o.text("campo", MAX_LINE)?;
+                    let posicao = match o.take("posicao") {
+                        Some(super::json::Value::Integer(n)) => Some(n),
+                        Some(_) => return Err(InvalidJson),
                         None => None,
                     };
-                    let motivo = o.texto("motivo", MAX_LINE)?;
-                    o.fim()?;
-                    lista.push(Problema {
-                        campo,
-                        posicao,
-                        motivo,
+                    let motivo = o.text("motivo", MAX_LINE)?;
+                    o.finish()?;
+                    lista.push(Problem {
+                        field: campo,
+                        position: posicao,
+                        reason: motivo,
                     });
                 }
             }
             Resposta::Erro(erro)
         }
-        TipoResposta::Lista => {
+        ResponseType::List => {
             let mut itens = Vec::new();
-            for v in c.lista("itens", MAX_ENTRIES)? {
-                let mut o = Campos::de(v)?;
-                let k = ler_cabecalho(&mut o, papel == Papel::App)?;
-                let endereco = o.texto_opc("endereco", MAX_URL)?;
+            for v in c.list("itens", MAX_ENTRIES)? {
+                let mut o = Fields::from_value(v)?;
+                let k = ler_cabecalho(&mut o, papel == Role::App)?;
+                let endereco = o.text_opt("endereco", MAX_URL)?;
                 // D65 c: o resumo é obrigatório na lista do app e proibido na do agente.
-                let resumo = match o.tirar("resumo") {
-                    Some(v) if papel == Papel::App => {
-                        let mut r = Campos::de(v)?;
+                let resumo = match o.take("resumo") {
+                    Some(v) if papel == Role::App => {
+                        let mut r = Fields::from_value(v)?;
                         let (campos, segredos) = ler_campos(&mut r)?;
-                        let extras = r.inteiro("extras")?;
-                        let anexos = r.inteiro("anexos")?;
-                        r.fim()?;
+                        let extras = r.integer("extras")?;
+                        let anexos = r.integer("anexos")?;
+                        r.finish()?;
                         Some(ResumoItem {
                             campos,
                             segredos,
@@ -1089,10 +1086,10 @@ pub(crate) fn ler(papel: Papel, tipo: TipoResposta, mut c: Campos) -> R<Resposta
                             anexos,
                         })
                     }
-                    None if papel != Papel::App => None,
-                    _ => return Err(JsonInvalido),
+                    None if papel != Role::App => None,
+                    _ => return Err(InvalidJson),
                 };
-                o.fim()?;
+                o.finish()?;
                 itens.push(ItemLista {
                     nome: k.nome,
                     tipo: k.tipo,
@@ -1107,57 +1104,57 @@ pub(crate) fn ler(papel: Papel, tipo: TipoResposta, mut c: Campos) -> R<Resposta
             }
             Resposta::Lista(itens)
         }
-        TipoResposta::Saida => {
-            let fluxo = match c.texto("fluxo", MAX_NAME)?.as_str() {
+        ResponseType::Output => {
+            let fluxo = match c.text("fluxo", MAX_NAME)?.as_str() {
                 "saida" => Fluxo::Saida,
                 "erro" => Fluxo::Erro,
-                _ => return Err(JsonInvalido),
+                _ => return Err(InvalidJson),
             };
             Resposta::Saida {
                 fluxo,
                 dados: c.bytes("dados", MAX_DISPLAYED_TEXT)?,
             }
         }
-        TipoResposta::Fim => Resposta::Fim {
-            codigo: u8::try_from(c.inteiro("codigo")?).map_err(|_| JsonInvalido)?,
+        ResponseType::Exit => Resposta::Fim {
+            codigo: u8::try_from(c.integer("codigo")?).map_err(|_| InvalidJson)?,
         },
-        TipoResposta::SessaoPlaywright => Resposta::SessaoPlaywright {
-            caminho: c.texto("caminho", MAX_TEXT)?,
+        ResponseType::PlaywrightSession => Resposta::SessaoPlaywright {
+            caminho: c.text("caminho", MAX_TEXT)?,
         },
-        TipoResposta::Detalhe => {
+        ResponseType::Detail => {
             let k = ler_cabecalho(&mut c, true)?;
             let (campos, segredos) = ler_campos(&mut c)?;
             let mut extras = Vec::new();
-            for v in c.lista("extras", MAX_EXTRAS)? {
-                let mut o = Campos::de(v)?;
-                let nome = o.texto("nome", MAX_EXTRA_NAME)?;
-                let segredo = o.logico("segredo")?;
-                let valor = o.texto_opc("valor", MAX_EXTRA_VALUE)?;
+            for v in c.list("extras", MAX_EXTRAS)? {
+                let mut o = Fields::from_value(v)?;
+                let nome = o.text("nome", MAX_EXTRA_NAME)?;
+                let segredo = o.boolean("segredo")?;
+                let valor = o.text_opt("valor", MAX_EXTRA_VALUE)?;
                 // Extra secreto nunca leva valor; o comum sempre leva.
                 if segredo == valor.is_some() {
-                    return Err(JsonInvalido);
+                    return Err(InvalidJson);
                 }
-                o.fim()?;
+                o.finish()?;
                 extras.push(ExtraDetalhe { nome, valor });
             }
             let mut anexos = Vec::new();
-            for v in c.lista("anexos", MAX_ATTACHMENTS)? {
-                let mut o = Campos::de(v)?;
-                let nome = o.texto("nome", MAX_ATTACHMENT_NAME)?;
-                let tamanho = o.inteiro("tamanho")?;
-                o.fim()?;
+            for v in c.list("anexos", MAX_ATTACHMENTS)? {
+                let mut o = Fields::from_value(v)?;
+                let nome = o.text("nome", MAX_ATTACHMENT_NAME)?;
+                let tamanho = o.integer("tamanho")?;
+                o.finish()?;
                 anexos.push(AnexoDetalhe { nome, tamanho });
             }
             // D65 d: datas opcionais, pela regra de `Datas` (faixa, criação só com
             // alteração e não depois dela).
-            let mut data = |k: &str| match c.tirar(k) {
+            let mut data = |k: &str| match c.take(k) {
                 None => Ok(None),
-                Some(super::json::Valor::Inteiro(n)) => Ok(Some(n)),
-                Some(_) => Err(JsonInvalido),
+                Some(super::json::Value::Integer(n)) => Ok(Some(n)),
+                Some(_) => Err(InvalidJson),
             };
             let criada = data("criada_em")?;
             let alterada = data("alterada_em")?;
-            let datas = Dates::from_parts(criada, alterada).ok_or(JsonInvalido)?;
+            let datas = Dates::from_parts(criada, alterada).ok_or(InvalidJson)?;
             Resposta::Detalhe(DetalheEntrada {
                 nome: k.nome,
                 tipo: k.tipo,
@@ -1165,7 +1162,7 @@ pub(crate) fn ler(papel: Papel, tipo: TipoResposta, mut c: Campos) -> R<Resposta
                 ambiente: k.ambiente,
                 projeto: k.projeto,
                 tags: k.tags,
-                nivel: k.nivel.ok_or(JsonInvalido)?,
+                nivel: k.nivel.ok_or(InvalidJson)?,
                 campos,
                 segredos,
                 extras,
@@ -1173,21 +1170,21 @@ pub(crate) fn ler(papel: Papel, tipo: TipoResposta, mut c: Campos) -> R<Resposta
                 datas,
             })
         }
-        TipoResposta::Segredo => Resposta::Segredo(c.segredo("valor", crate::limits::MAX_NOTE)?),
-        TipoResposta::Token => Resposta::Token(c.segredo("token", MAX_NAME)?),
-        TipoResposta::PedidoDeAprovacao => {
-            let id = c.inteiro("id")?;
-            let entradas = textos_de(c.lista("entradas", 2)?, MAX_NAME)?;
+        ResponseType::Secret => Resposta::Segredo(c.secret("valor", crate::limits::MAX_NOTE)?),
+        ResponseType::Token => Resposta::Token(c.secret("token", MAX_NAME)?),
+        ResponseType::ApprovalRequest => {
+            let id = c.integer("id")?;
+            let entradas = texts_of(c.list("entradas", 2)?, MAX_NAME)?;
             let ambiente =
-                Environment::from_name(&c.texto("ambiente", MAX_NAME)?).ok_or(JsonInvalido)?;
+                Environment::from_name(&c.text("ambiente", MAX_NAME)?).ok_or(InvalidJson)?;
             let operacao =
-                Operacao::de_nome(&c.texto("operacao", MAX_NAME)?).ok_or(JsonInvalido)?;
-            let comando = c.texto("comando", MAX_DISPLAYED_TEXT)?;
-            let diretorio = c.texto("diretorio", MAX_DISPLAYED_TEXT)?;
-            let cadeia = textos_de(c.lista("cadeia", MAX_CADEIA)?, MAX_TEXT)?;
-            let origem = c.texto("origem", MAX_TEXT)?;
-            let confirmacao = c.logico("confirmacao")?;
-            let entrada_oculta = c.logico("entrada_oculta")?;
+                Operation::from_name(&c.text("operacao", MAX_NAME)?).ok_or(InvalidJson)?;
+            let comando = c.text("comando", MAX_DISPLAYED_TEXT)?;
+            let diretorio = c.text("diretorio", MAX_DISPLAYED_TEXT)?;
+            let cadeia = texts_of(c.list("cadeia", MAX_CADEIA)?, MAX_TEXT)?;
+            let origem = c.text("origem", MAX_TEXT)?;
+            let confirmacao = c.boolean("confirmacao")?;
+            let entrada_oculta = c.boolean("entrada_oculta")?;
             Resposta::PedidoDeAprovacao(PedidoDeAprovacao {
                 id,
                 entradas,
@@ -1201,23 +1198,23 @@ pub(crate) fn ler(papel: Papel, tipo: TipoResposta, mut c: Campos) -> R<Resposta
                 entrada_oculta,
             })
         }
-        TipoResposta::CodigoTotp => {
-            let codigo = c.texto("codigo", 8)?;
+        ResponseType::TotpCode => {
+            let codigo = c.text("codigo", 8)?;
             Resposta::CodigoTotp {
                 codigo: Zeroizing::new(codigo),
-                restante: c.inteiro("restante")?,
+                restante: c.integer("restante")?,
             }
         }
-        TipoResposta::Sugestoes => {
+        ResponseType::Suggestions => {
             let mut itens = Vec::new();
-            for v in c.lista("itens", MAX_ENTRIES)? {
-                let mut o = Campos::de(v)?;
-                let nome = o.texto("nome", MAX_NAME)?;
-                let usuario = o.texto("usuario", MAX_TEXT)?;
+            for v in c.list("itens", MAX_ENTRIES)? {
+                let mut o = Fields::from_value(v)?;
+                let nome = o.text("nome", MAX_NAME)?;
+                let usuario = o.text("usuario", MAX_TEXT)?;
                 let ambiente =
-                    Environment::from_name(&o.texto("ambiente", MAX_NAME)?).ok_or(JsonInvalido)?;
-                let totp = o.logico("totp")?;
-                o.fim()?;
+                    Environment::from_name(&o.text("ambiente", MAX_NAME)?).ok_or(InvalidJson)?;
+                let totp = o.boolean("totp")?;
+                o.finish()?;
                 itens.push(Sugestao {
                     nome,
                     usuario,
@@ -1227,14 +1224,14 @@ pub(crate) fn ler(papel: Papel, tipo: TipoResposta, mut c: Campos) -> R<Resposta
             }
             Resposta::Sugestoes(itens)
         }
-        TipoResposta::Backups => {
+        ResponseType::Backups => {
             let mut versoes = Vec::new();
-            for v in c.lista("versoes", MAX_BACKUPS)? {
-                let mut o = Campos::de(v)?;
-                let nome = o.texto("nome", crate::limits::MAX_NAME)?;
-                let conferida = o.logico("conferida")?;
-                let fora_de_ordem = o.logico("fora_de_ordem")?;
-                o.fim()?;
+            for v in c.list("versoes", MAX_BACKUPS)? {
+                let mut o = Fields::from_value(v)?;
+                let nome = o.text("nome", crate::limits::MAX_NAME)?;
+                let conferida = o.boolean("conferida")?;
+                let fora_de_ordem = o.boolean("fora_de_ordem")?;
+                o.finish()?;
                 versoes.push(VersaoBackup {
                     nome,
                     conferida,
@@ -1243,23 +1240,23 @@ pub(crate) fn ler(papel: Papel, tipo: TipoResposta, mut c: Campos) -> R<Resposta
             }
             Resposta::Backups(versoes)
         }
-        TipoResposta::Configuracao => Resposta::Configuracao {
-            minutos_trava: u32::try_from(c.inteiro("minutos_trava")?).map_err(|_| JsonInvalido)?,
-            backup_externo: c.logico("backup_externo")?,
-            backup_local: c.logico("backup_local")?,
+        ResponseType::Config => Resposta::Configuracao {
+            minutos_trava: u32::try_from(c.integer("minutos_trava")?).map_err(|_| InvalidJson)?,
+            backup_externo: c.boolean("backup_externo")?,
+            backup_local: c.boolean("backup_local")?,
         },
-        TipoResposta::BackupExterno => Resposta::BackupExterno {
-            ligado: c.logico("ligado")?,
-            uuid: c.texto_opc("uuid", crate::limits::MAX_BACKUP_UUID)?,
+        ResponseType::ExternalBackup => Resposta::BackupExterno {
+            ligado: c.boolean("ligado")?,
+            uuid: c.text_opt("uuid", crate::limits::MAX_BACKUP_UUID)?,
         },
-        TipoResposta::Pendrives => {
+        ResponseType::UsbDrives => {
             let mut itens = Vec::new();
-            for v in c.lista("itens", MAX_PENDRIVES)? {
-                let mut o = Campos::de(v)?;
-                let uuid = o.texto("uuid", crate::limits::MAX_BACKUP_UUID)?;
-                let rotulo = o.texto("rotulo", MAX_ROTULO)?;
-                let montado = o.logico("montado")?;
-                o.fim()?;
+            for v in c.list("itens", MAX_PENDRIVES)? {
+                let mut o = Fields::from_value(v)?;
+                let uuid = o.text("uuid", crate::limits::MAX_BACKUP_UUID)?;
+                let rotulo = o.text("rotulo", MAX_ROTULO)?;
+                let montado = o.boolean("montado")?;
+                o.finish()?;
                 itens.push(Pendrive {
                     uuid,
                     rotulo,
@@ -1268,17 +1265,17 @@ pub(crate) fn ler(papel: Papel, tipo: TipoResposta, mut c: Campos) -> R<Resposta
             }
             Resposta::Pendrives(itens)
         }
-        TipoResposta::Preenchimento => Resposta::Preenchimento {
-            usuario: c.texto("usuario", MAX_TEXT)?,
-            senha: segredo_de(c.tirar("senha").ok_or(JsonInvalido)?, MAX_SECRET)?,
-            totp: c.texto_opc("totp", 8)?.map(Zeroizing::new),
+        ResponseType::Fill => Resposta::Preenchimento {
+            usuario: c.text("usuario", MAX_TEXT)?,
+            senha: secret_of(c.take("senha").ok_or(InvalidJson)?, MAX_SECRET)?,
+            totp: c.text_opt("totp", 8)?.map(Zeroizing::new),
         },
-        TipoResposta::PedidoDeLogin => Resposta::PedidoDeLogin {
-            id: c.texto("id", MAX_NAME)?,
-            entrada: c.texto("entrada", MAX_NAME)?,
+        ResponseType::LoginRequest => Resposta::PedidoDeLogin {
+            id: c.text("id", MAX_NAME)?,
+            entrada: c.text("entrada", MAX_NAME)?,
         },
     };
-    c.fim()?;
+    c.finish()?;
     r.conferir(papel)?;
     Ok(r)
 }

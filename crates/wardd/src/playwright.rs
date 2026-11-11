@@ -40,7 +40,7 @@ use zeroize::Zeroizing;
 
 use ward_core::entry::{AccessLevel, Data, url_origin};
 use ward_core::mask::Mask;
-use ward_core::protocolo::{ErroResposta, Pedido, Resposta};
+use ward_core::protocol::{Request, ResponseError, Resposta};
 use ward_core::totp::Totp;
 use ward_platform::child::{Command, Group};
 
@@ -276,12 +276,13 @@ pub fn chrome_argv(chrome: &Path, profile: &Path) -> Option<Vec<Vec<u8>>> {
 }
 
 /// Creates the profile and opens Chrome with the debugging pipe.
-fn open_browser(chrome: &Path, rt: &Path) -> Result<(Browser, Cdp), ErroResposta> {
+fn open_browser(chrome: &Path, rt: &Path) -> Result<(Browser, Cdp), ResponseError> {
     use std::os::unix::ffi::OsStrExt;
-    let failed = |_| ErroResposta::NavegadorFalhou;
-    ward_platform::prepare_dir(rt).map_err(|_| ErroResposta::EntregaFalhou)?;
-    let suffix = ward_core::generator::connect_token().map_err(|_| ErroResposta::Interno)?;
-    let suffix = std::str::from_utf8(&suffix.expose()[..16]).map_err(|_| ErroResposta::Interno)?;
+    let failed = |_| ResponseError::BrowserFailed;
+    ward_platform::prepare_dir(rt).map_err(|_| ResponseError::DeliveryFailed)?;
+    let suffix = ward_core::generator::connect_token().map_err(|_| ResponseError::Internal)?;
+    let suffix =
+        std::str::from_utf8(&suffix.expose()[..16]).map_err(|_| ResponseError::Internal)?;
     let profile = rt.join(format!("{PROFILE_PREFIX}{suffix}"));
     // New directory: never reuses one that already exists.
     fs::DirBuilder::new()
@@ -308,11 +309,11 @@ fn open_browser(chrome: &Path, rt: &Path) -> Result<(Browser, Cdp), ErroResposta
         .open(profile.join("Default/Preferences"))
         .and_then(|mut f| f.write_all(PREFERENCES))
         .map_err(failed)?;
-    let argv = chrome_argv(chrome, &profile).ok_or(ErroResposta::NavegadorFalhou)?;
+    let argv = chrome_argv(chrome, &profile).ok_or(ResponseError::BrowserFailed)?;
     let p = profile.as_os_str().as_bytes();
-    let mut c = Command::new(&argv[0], p).map_err(|_| ErroResposta::NavegadorFalhou)?;
+    let mut c = Command::new(&argv[0], p).map_err(|_| ResponseError::BrowserFailed)?;
     for a in &argv[1..] {
-        c.argument(a).map_err(|_| ErroResposta::NavegadorFalhou)?;
+        c.argument(a).map_err(|_| ResponseError::BrowserFailed)?;
     }
     let joined = |s: &[u8]| [p, s].concat();
     let environment: [(&[u8], Vec<u8>); 8] = [
@@ -327,12 +328,11 @@ fn open_browser(chrome: &Path, rt: &Path) -> Result<(Browser, Cdp), ErroResposta
         (b"DBUS_SESSION_BUS_ADDRESS", b"disabled:".to_vec()),
     ];
     for (k, v) in &environment {
-        c.variable(k, v)
-            .map_err(|_| ErroResposta::NavegadorFalhou)?;
+        c.variable(k, v).map_err(|_| ResponseError::BrowserFailed)?;
     }
     let (group, pipe) = c.launch_with_debugging().map_err(|e| {
         aviso!("playwright: o Chrome não abriu ({})", e.message());
-        ErroResposta::NavegadorFalhou
+        ResponseError::BrowserFailed
     })?;
     browser.group = Some(group);
     let cdp = Cdp::new(
@@ -473,9 +473,9 @@ struct ItemPw<'a> {
     value: &'a str,
 }
 
-fn cdp_error(cdp: &Cdp, e: CdpError) -> ErroResposta {
+fn cdp_error(cdp: &Cdp, e: CdpError) -> ResponseError {
     if cdp.blocked {
-        return ErroResposta::OrigemDiferente;
+        return ResponseError::OriginMismatch;
     }
     aviso!(
         "playwright: a conversa com o navegador acabou ({})",
@@ -487,11 +487,11 @@ fn cdp_error(cdp: &Cdp, e: CdpError) -> ErroResposta {
             CdpError::Io => "leitura ou escrita",
         }
     );
-    ErroResposta::NavegadorFalhou
+    ResponseError::BrowserFailed
 }
 
 /// A JSON object of parameters with text pairs.
-fn params(pairs: &[(&str, &str)]) -> Result<Zeroizing<Vec<u8>>, ErroResposta> {
+fn params(pairs: &[(&str, &str)]) -> Result<Zeroizing<Vec<u8>>, ResponseError> {
     let cap = 2 + pairs
         .iter()
         .map(|(k, v)| worst_case(k) + worst_case(v) + 2)
@@ -503,11 +503,11 @@ fn params(pairs: &[(&str, &str)]) -> Result<Zeroizing<Vec<u8>>, ErroResposta> {
         e.text(v);
     }
     e.close_object();
-    e.finish().ok_or(ErroResposta::Interno)
+    e.finish().ok_or(ResponseError::Internal)
 }
 
 /// The main frame: its id, and whether its URL and origin are the entry's.
-fn origin_matches(cdp: &mut Cdp, origin: &str) -> Result<(String, bool), ErroResposta> {
+fn origin_matches(cdp: &mut Cdp, origin: &str) -> Result<(String, bool), ResponseError> {
     let a: FrameTree = cdp
         .command_as("Page.getFrameTree", b"{}", true)
         .map_err(|e| cdp_error(cdp, e))?;
@@ -523,7 +523,7 @@ fn in_isolated_world(
     frame: &str,
     function: &str,
     arguments: &[Option<&str>],
-) -> Result<Zeroizing<String>, ErroResposta> {
+) -> Result<Zeroizing<String>, ResponseError> {
     let p = params(&[("frameId", frame), ("worldName", "ward")])?;
     let w: World = cdp
         .command_as("Page.createIsolatedWorld", &p, true)
@@ -557,7 +557,7 @@ fn in_isolated_world(
     e.key("silent");
     e.boolean(true);
     e.close_object();
-    let p = e.finish().ok_or(ErroResposta::Interno)?;
+    let p = e.finish().ok_or(ResponseError::Internal)?;
     let msg = cdp
         .command("Runtime.callFunctionOn", &p, true)
         .map_err(|e| cdp_error(cdp, e))?;
@@ -566,12 +566,12 @@ fn in_isolated_world(
     struct R {
         result: Evaluation,
     }
-    let r: R = serde_json::from_slice(&msg).map_err(|_| ErroResposta::NavegadorFalhou)?;
+    let r: R = serde_json::from_slice(&msg).map_err(|_| ResponseError::BrowserFailed)?;
     if r.result.exception.is_some() {
-        return Err(ErroResposta::LoginRecusado);
+        return Err(ResponseError::LoginRefused);
     }
     Ok(Zeroizing::new(
-        r.result.result.value.ok_or(ErroResposta::LoginRecusado)?,
+        r.result.result.value.ok_or(ResponseError::LoginRefused)?,
     ))
 }
 
@@ -581,7 +581,7 @@ fn log_in(
     url: &str,
     origin: &str,
     cred: &Credential,
-) -> Result<Zeroizing<Vec<u8>>, ErroResposta> {
+) -> Result<Zeroizing<Vec<u8>>, ResponseError> {
     let ctx: Context = cdp
         .command_as(
             "Target.createBrowserContext",
@@ -600,7 +600,7 @@ fn log_in(
     e.key("flatten");
     e.boolean(true);
     e.close_object();
-    let p = e.finish().ok_or(ErroResposta::Interno)?;
+    let p = e.finish().ok_or(ResponseError::Internal)?;
     let attached: Attached = cdp
         .command_as("Target.attachToTarget", &p, false)
         .map_err(|e| cdp_error(cdp, e))?;
@@ -628,25 +628,25 @@ fn log_in(
         .command_as("Page.navigate", &p, true)
         .map_err(|e| cdp_error(cdp, e))?;
     if cdp.blocked {
-        return Err(ErroResposta::OrigemDiferente);
+        return Err(ResponseError::OriginMismatch);
     }
     if nav.error_text.is_some() {
         aviso!("playwright: a página da entrada não abriu");
-        return Err(ErroResposta::NavegadorFalhou);
+        return Err(ResponseError::BrowserFailed);
     }
     let loaded = cdp
         .wait_load(before, Instant::now() + LOAD_DEADLINE)
         .map_err(|e| cdp_error(cdp, e))?;
     if cdp.blocked {
-        return Err(ErroResposta::OrigemDiferente);
+        return Err(ResponseError::OriginMismatch);
     }
     if !loaded {
-        return Err(ErroResposta::NavegadorFalhou);
+        return Err(ResponseError::BrowserFailed);
     }
     let (f, ok) = origin_matches(cdp, origin)?;
     if !ok || f != frame {
         aviso!("playwright: a página não é da origem da entrada (D9)");
-        return Err(ErroResposta::OrigemDiferente);
+        return Err(ResponseError::OriginMismatch);
     }
     // Fills and submits.
     let before = cdp.loads;
@@ -665,34 +665,34 @@ fn log_in(
         "ok" => {}
         "origem" => {
             aviso!("playwright: o formulário envia para outra origem (D9)");
-            return Err(ErroResposta::OrigemDiferente);
+            return Err(ResponseError::OriginMismatch);
         }
         _ => {
             aviso!("playwright: a página não tem um formulário de login seguro");
-            return Err(ErroResposta::LoginRecusado);
+            return Err(ResponseError::LoginRefused);
         }
     }
     let loaded = cdp
         .wait_load(before, Instant::now() + LOAD_DEADLINE)
         .map_err(|e| cdp_error(cdp, e))?;
     if cdp.blocked {
-        return Err(ErroResposta::OrigemDiferente);
+        return Err(ResponseError::OriginMismatch);
     }
     if !loaded {
         aviso!("playwright: nenhuma página nova depois do envio");
-        return Err(ErroResposta::LoginRecusado);
+        return Err(ResponseError::LoginRefused);
     }
     // D6: the final origin is still the entry's.
     let (f, ok) = origin_matches(cdp, origin)?;
     if !ok {
         aviso!("playwright: a página final não é da origem da entrada (D9)");
-        return Err(ErroResposta::OrigemDiferente);
+        return Err(ResponseError::OriginMismatch);
     }
     let page = in_isolated_world(cdp, &f, READ_PAGE_SCRIPT, &[])?;
-    let page: PageState = serde_json::from_str(&page).map_err(|_| ErroResposta::NavegadorFalhou)?;
+    let page: PageState = serde_json::from_str(&page).map_err(|_| ResponseError::BrowserFailed)?;
     if page.password {
         aviso!("playwright: a página de login continua aberta (login recusado)");
-        return Err(ErroResposta::LoginRecusado);
+        return Err(ResponseError::LoginRefused);
     }
     let p = params(&[("browserContextId", &ctx.id)])?;
     let c: Cookies = cdp
@@ -706,7 +706,7 @@ fn build_state(
     cookies: &[CookieCdp],
     origin: &str,
     ls: &[(String, String)],
-) -> Result<Zeroizing<Vec<u8>>, ErroResposta> {
+) -> Result<Zeroizing<Vec<u8>>, ResponseError> {
     let mut list = Vec::with_capacity(cookies.len());
     for c in cookies {
         let same_site = match c.same_site.as_deref() {
@@ -746,7 +746,7 @@ fn build_state(
     };
     serde_json::to_vec_pretty(&state)
         .map(Zeroizing::new)
-        .map_err(|_| ErroResposta::Interno)
+        .map_err(|_| ResponseError::Internal)
 }
 
 /// S1/V6.13: the storage state must not have the password nor a variation of it
@@ -799,10 +799,10 @@ impl Daemon {
     pub(crate) fn playwright(
         &self,
         client: &dyn Cliente,
-        request: &Pedido,
-    ) -> Result<Resposta, ErroResposta> {
-        let Pedido::Playwright { entrada: entry } = request else {
-            return Err(ErroResposta::PedidoInvalido);
+        request: &Request,
+    ) -> Result<Resposta, ResponseError> {
+        let Request::Playwright { entry } = request else {
+            return Err(ResponseError::InvalidRequest);
         };
         // Type without a visible login: refuse before asking for approval.
         if let Some(a) = self.estado().aberto.as_ref()
@@ -811,44 +811,44 @@ impl Daemon {
                 .find(|e| e.name() == entry && e.level() != AccessLevel::Blocked)
                 .is_some_and(|e| !matches!(e.data(), Data::Login(_)))
         {
-            return Err(ErroResposta::TipoSemEntrega);
+            return Err(ResponseError::TypeWithoutDelivery);
         }
         self.autorizar_uso(client, request)?;
         self.registrar_uso();
         let rt = self
             .temporarios()
-            .ok_or(ErroResposta::EntregaFalhou)?
+            .ok_or(ResponseError::DeliveryFailed)?
             .to_path_buf();
         let (url, cred, mask, locks, initial) = {
             let st = self.estado();
-            let a = st.aberto.as_ref().ok_or(ErroResposta::Travado)?;
+            let a = st.aberto.as_ref().ok_or(ResponseError::Locked)?;
             // The entry may have changed during the approval: check again.
             let e = a
                 .entradas
                 .iter()
                 .find(|e| e.name() == entry && e.level() != AccessLevel::Blocked)
-                .ok_or(ErroResposta::EntradaInexistente)?;
+                .ok_or(ResponseError::EntryNotFound)?;
             let Data::Login(l) = e.data() else {
-                return Err(ErroResposta::TipoSemEntrega);
+                return Err(ResponseError::TypeWithoutDelivery);
             };
             let password = l
                 .password
                 .expose_text()
-                .ok_or(ErroResposta::EntregaFalhou)?;
+                .ok_or(ResponseError::DeliveryFailed)?;
             let mut s = Zeroizing::new(String::with_capacity(password.len()));
             s.push_str(password);
             let code = match &l.totp_seed {
                 Some(seed) => {
                     let c = Totp::from_seed(seed)
                         .and_then(|t| t.code_now())
-                        .map_err(|_| ErroResposta::EntregaFalhou)?;
+                        .map_err(|_| ResponseError::DeliveryFailed)?;
                     let mut z = Zeroizing::new(String::with_capacity(c.code().len()));
                     z.push_str(c.code());
                     Some(z)
                 }
                 None => None,
             };
-            let mask = Mask::from_entry(e, None).map_err(|_| ErroResposta::EntregaFalhou)?;
+            let mask = Mask::from_entry(e, None).map_err(|_| ResponseError::DeliveryFailed)?;
             let (locks, initial) = self.travas_agora(&st);
             (
                 l.url.clone(),
@@ -862,7 +862,7 @@ impl Daemon {
                 initial,
             )
         };
-        let origin = url_origin(&url).ok_or(ErroResposta::EntregaFalhou)?;
+        let origin = url_origin(&url).ok_or(ResponseError::DeliveryFailed)?;
         aviso!("playwright: abrindo o navegador");
         let (browser, mut cdp) = open_browser(self.chrome(), &rt)?;
         let result = log_in(&mut cdp, &url, &origin, &cred);
@@ -873,23 +873,23 @@ impl Daemon {
         let state = result?;
         if has_secret(&mask, &state) {
             aviso!("playwright: a sessão do site guarda a senha; nada foi gravado (S1)");
-            return Err(ErroResposta::SessaoComSegredo);
+            return Err(ResponseError::SessionHasSecret);
         }
         // Writes with the vault unlocked and no lock since the start; locking afterwards
         // deletes it.
         let st = self.estado();
         if st.aberto.is_none() || locks.load(std::sync::atomic::Ordering::Acquire) != initial {
-            return Err(ErroResposta::Travado);
+            return Err(ResponseError::Locked);
         }
         let path = write_state(&rt, entry, &state).map_err(|e| {
             aviso!("playwright: não deu para gravar a sessão ({})", e.kind());
-            ErroResposta::EntregaFalhou
+            ResponseError::DeliveryFailed
         })?;
         drop(st);
         let path = path
             .into_os_string()
             .into_string()
-            .map_err(|_| ErroResposta::Interno)?;
+            .map_err(|_| ResponseError::Internal)?;
         aviso!("playwright: sessão gravada");
         Ok(Resposta::SessaoPlaywright { caminho: path })
     }

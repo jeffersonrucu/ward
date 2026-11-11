@@ -2821,6 +2821,72 @@ Hex { start, high, high_char } }`, `Visao` → `View` (`andar`/`ler`/`fechar` �
 homônimos `ErroCodificar::GrandeDemais`, `ErroQuadro::GrandeDemais` e
 `ErroResposta::TipoSemEntrega` (Fase 17) são outros e não mudaram.
 
+Fase 17 (`ward-core`: `protocol`, `protocol/{fields,errors,json,request,frame}`): módulo
+`protocolo` → `protocol` (`campos`/`erros`/`pedido`/`quadro`/`resposta`/`testes` →
+`fields`/`errors`/`request`/`frame`/`response`/`tests`; os dois últimos só mudam de
+caminho, o conteúdo é da Fase 18). `VERSAO` → `VERSION`; `Papel { Agente, App, Extensao }`
+→ `Role { Agent, App, Extension }` (`TODOS` → `ALL`); `Papeis` → `Roles` (campos `agent`/
+`app`/`extension`, `de` → `of`, `tem` → `has`); as constantes da tabela pela seção 10; macro
+`tabela!` → `table!` (`TODAS` → `ALL`, `nome`/`papeis`/`de_nome`/`permitida` → `name`/
+`roles`/`from_name`/`allowed`); `Operacao` → `Operation` e `Pedido` → `Request` com as
+variantes pela operação v2 da seção 10 (`Estado` → `Status`, `EntradaPadrao` → `Stdin`,
+`Janela` → `Resize`, `Configuracao` → `Config`, `Pendrives` → `UsbDrives`, `ResultadoLogin`
+→ `LoginResult`…; `operacao()`/`conferir()`/`escrever()` → `operation()`/`check()`/
+`write()`); `TipoResposta` → `ResponseType` pelos tipos de resposta v2 (`Saida` →
+`Output`, `Fim` → `Exit`, `Preenchimento` → `Fill`…; `carrega_credencial` →
+`carries_credential`); `ErroCodificar { NaoPermitidaAoPapel, GrandeDemais, Invalida }` →
+`EncodeError { NotAllowedForRole, TooLarge, Invalid }`; `RespostaInvalida` →
+`InvalidResponse`; `codificar_pedido`/`decodificar_pedido`/`codificar_resposta`/
+`decodificar_resposta`/`erro_do_quadro` → `encode_request`/`decode_request`/
+`encode_response`/`decode_response`/`frame_error`; privados `Envelope { nome, topo }` →
+`Envelope { name, top }`, `ErroEnvelope { Json, Versao }` → `EnvelopeError { Json,
+Version }`, `ler_envelope` → `read_envelope`. Erros: `ErroResposta` → `ResponseError` com as
+variantes pelos códigos v2 da seção 10 (`NaoAutorizado` → `Unauthorized`, `Retrocesso` →
+`Rollback`, `Validacao` → `Validation`, `TipoSemEntrega` → `TypeWithoutDelivery`…),
+`SIMPLES` → `SIMPLE`, `codigo`/`mensagem`/`de_codigo`/`de_validacao` → `code`/`message`/
+`from_code`/`from_validation`; `Problema { campo, posicao, motivo }` → `Problem { field,
+position, reason }`; `MSG_RETROCESSO`/`MSG_COFRE_MUDOU`/`MSG_GERACAO_ESGOTADA` →
+`MSG_ROLLBACK`/`MSG_VAULT_CHANGED`/`MSG_GENERATION_EXHAUSTED`. Pedido: `Variavel { nome,
+valor }` → `Variable { name, value }` (homônimo do `delivery::Variable`, em outro módulo);
+`PedidoExecutar { entrada, argv, cwd, ambiente, tipo_entrada }` → `RunRequest { entry, argv,
+cwd, env, stdin_kind }`; `TipoEntradaPadrao { Terminal, Nula, Pipe, Arquivo, Outra }` →
+`StdinKind { Terminal, Null, Pipe, File, Other }` (`oculta` → `hidden`); `Janela { linhas,
+colunas }` → `WindowSize { rows, cols }`; `Alvo { Campo, Extra }` → `Target { Field, Extra }`
+(`segredo_em` → `secret_in`); `Decisao { Negar, PermitirUmaVez, PermitirUmaHora,
+PermitirSempre, Confirmar }` → `Decision { Deny, AllowOnce, AllowOneHour, AllowAlways,
+Confirm }` (`pede_pin` → `requires_pin`); `ResultadoLogin { Enviado, Recusado, SemFormulario,
+AbaMudou, Falha }` → `LoginResult { Submitted, Refused, NoForm, TabChanged, Failure }`;
+`id_login_ok` → `login_id_ok`; `juntar_anexos_mantidos` → `merge_kept_attachments`;
+`CAMPOS_SECRETOS` → `SECRET_FIELDS`; campos das variantes do `Request` pela tabela de campos
+da seção 10 (`senha` → `password`, `janela` → `window_size`, `tipo_entrada` → `stdin_kind`,
+`rascunho` → `draft`, `manter_anexos` → `keep_attachments`, `entrada_confirmada` →
+`confirmed_entry`, `atual`/`novo`/`nova` → `current`/`new`, `ligado` → `enabled`…);
+privados `CampoRascunho { Texto, Segredo }` → `DraftField { Text, Secret }`,
+`campos_do_rascunho`/`ler_rascunho`/`escrever_rascunho`/`ler_dados` → `draft_fields`/
+`read_draft`/`write_draft`/`read_data`. Quadro: `BLOCO`/`CABECALHO` → `BLOCK`/`HEADER`,
+`limite_do_quadro`/`LIMITE_RESPOSTA` → `frame_limit`/`RESPONSE_LIMIT`, `ErroQuadro { Fechado,
+Truncado, Vazio, GrandeDemais, Io }` → `FrameError { Closed, Truncated, Empty, TooLarge, Io }`,
+`ler_cabecalho`/`validar_tamanho`/`ler_quadro`/`escrever_quadro` → `read_header`/
+`validate_size`/`read_frame`/`write_frame`. Campos (crate): `Campos` → `Fields` (`de`/
+`sem_conferir`/`sem_repetidas`/`vazio`/`em_ordem`/`tirar`/`fim`/`exigir` → `from_value`/
+`unchecked`/`no_duplicates`/`empty`/`in_order`/`take`/`finish`/`require`; `texto`/
+`texto_ou_vazio`/`texto_opc`/`segredo`/`segredo_opc`/`inteiro`/`logico`/`lista`/
+`lista_ou_vazia`/`objeto`/`objeto_ou_vazio` → `text`/`text_or_empty`/`text_opt`/`secret`/
+`secret_opt`/`integer`/`boolean`/`list`/`list_or_empty`/`object`/`object_or_empty`),
+`texto_de`/`bytes_de`/`segredo_de`/`lista_de`/`textos_de` → `text_of`/`bytes_of`/
+`secret_of`/`list_of`/`texts_of`. JSON (crate): `Valor { Nulo, Logico, Inteiro, Texto, Lista,
+Objeto }` → `Value { Null, Bool, Integer, Text, List, Object }` (o `Debug` acompanha o nome,
+`"Text(••••)"`), `JsonInvalido` → `InvalidJson`, `Leitor` → `Reader`, `Escritor` → `Writer`
+(`abre_objeto`/`fecha_objeto`/`abre_lista`/`fecha_lista`/`chave`/`texto`/`inteiro`/`logico`/
+`objeto`/`lista` → `open_object`/`close_object`/`open_list`/`close_list`/`key`/`text`/
+`integer`/`boolean`/`object`/`list`), `GrandeDemais` → `TooLarge`, `ler`/`codificar` →
+`read`/`encode`, `de_base64`/`tamanho_base64` → `from_base64`/`base64_len`,
+`MAX_PROFUNDIDADE`/`MAX_NOS`/`MAX_NOS_RESPOSTA`/`MAX_CHAVES` → `MAX_DEPTH`/`MAX_NODES`/
+`MAX_RESPONSE_NODES`/`MAX_KEYS`. Os nomes de fio (operação, tipo, campo, código, papel e
+valores) continuam os literais v1 até a Fase 50. O `ler_cabecalho` de `resposta.rs` e o
+`Papeis` do `wardd/servidor.rs` são outros e não mudaram; o `ErroPartida::Papel` do
+`app/core` (variante) também não.
+
 Funções e métodos não estão listados um a um: o nome sai da seção 2 na ordem do inglês
 (`conferir_arquivo` → `verify_file`, `ler_cofre` → `read_vault`, `codificar_resposta` →
 `encode_response`, `exigir_pin` → `require_pin`). Os poucos fixados por outra seção:

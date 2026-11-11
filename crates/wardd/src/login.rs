@@ -33,7 +33,7 @@ use std::time::{Duration, Instant};
 
 use ward_core::entry::{AccessLevel, Data};
 use ward_core::generator;
-use ward_core::protocolo::{ErroResposta, Papel, Pedido, Resposta, ResultadoLogin};
+use ward_core::protocol::{LoginResult, Request, ResponseError, Resposta, Role};
 
 use crate::aprovacao::Cliente;
 use crate::aviso;
@@ -80,7 +80,7 @@ struct Job {
     id: String,
     entry: String,
     phase: Phase,
-    result: Option<Result<(), ErroResposta>>,
+    result: Option<Result<(), ResponseError>>,
 }
 
 /// One-slot queue of the `ward login` requests.
@@ -118,7 +118,7 @@ impl Logins {
 
     /// Finishes the request `id` (if it is still the current one and has not finished)
     /// and wakes up whoever waits.
-    fn finish(&self, id: &str, r: Result<(), ErroResposta>) -> bool {
+    fn finish(&self, id: &str, r: Result<(), ResponseError>) -> bool {
         let mut g = self.lock();
         let Some(t) = Self::by_id(&mut g, id) else {
             return false;
@@ -148,10 +148,10 @@ impl Daemon {
     pub(crate) fn login(
         &self,
         client: &dyn Cliente,
-        request: &Pedido,
-    ) -> Result<Resposta, ErroResposta> {
-        let Pedido::Login { entrada: entry } = request else {
-            return Err(ErroResposta::PedidoInvalido);
+        request: &Request,
+    ) -> Result<Resposta, ResponseError> {
+        let Request::Login { entry } = request else {
+            return Err(ResponseError::InvalidRequest);
         };
         // Type without login: refuse before asking for approval (like `playwright`).
         if let Some(a) = self.estado().aberto.as_ref()
@@ -160,33 +160,33 @@ impl Daemon {
                 .find(|e| e.name() == entry && e.level() != AccessLevel::Blocked)
                 .is_some_and(|e| !matches!(e.data(), Data::Login(_)))
         {
-            return Err(ErroResposta::TipoSemEntrega);
+            return Err(ResponseError::TypeWithoutDelivery);
         }
         self.autorizar_uso(client, request)?;
         self.registrar_uso();
         // The entry may have changed during the approval: check again.
         let name = {
             let st = self.estado();
-            let a = st.aberto.as_ref().ok_or(ErroResposta::Travado)?;
+            let a = st.aberto.as_ref().ok_or(ResponseError::Locked)?;
             let e = a
                 .entradas
                 .iter()
                 .find(|e| e.name() == entry && e.level() != AccessLevel::Blocked)
-                .ok_or(ErroResposta::EntradaInexistente)?;
+                .ok_or(ResponseError::EntryNotFound)?;
             if !matches!(e.data(), Data::Login(_)) {
-                return Err(ErroResposta::TipoSemEntrega);
+                return Err(ResponseError::TypeWithoutDelivery);
             }
             e.name().to_owned()
         };
         let id = {
-            let t = generator::connect_token().map_err(|_| ErroResposta::Interno)?;
-            String::from_utf8(t.expose().to_vec()).map_err(|_| ErroResposta::Interno)?
+            let t = generator::connect_token().map_err(|_| ResponseError::Internal)?;
+            String::from_utf8(t.expose().to_vec()).map_err(|_| ResponseError::Internal)?
         };
         let logins = self.logins();
         {
             let mut g = logins.lock();
             if g.is_some() {
-                return Err(ErroResposta::Ocupado);
+                return Err(ResponseError::Busy);
             }
             *g = Some(Job {
                 id: id.clone(),
@@ -201,7 +201,7 @@ impl Daemon {
         let r = self.wait_outcome(logins, &id, client);
         match &r {
             Ok(()) => aviso!("login {name}: formulário enviado"),
-            Err(e) => aviso!("login {name}: {}", e.codigo()),
+            Err(e) => aviso!("login {name}: {}", e.code()),
         }
         r.map(|()| Resposta::Ok)
     }
@@ -211,13 +211,13 @@ impl Daemon {
         logins: &Logins,
         id: &str,
         client: &dyn Cliente,
-    ) -> Result<(), ErroResposta> {
+    ) -> Result<(), ResponseError> {
         let start = Instant::now();
         let mut taken: Option<Instant> = None;
         let mut g = logins.lock();
         loop {
             let Some(t) = Logins::by_id(&mut g, id) else {
-                return Err(ErroResposta::Interno);
+                return Err(ResponseError::Internal);
             };
             if let Some(r) = t.result.clone() {
                 return r;
@@ -231,18 +231,18 @@ impl Daemon {
             };
             if expired {
                 // Nobody fills with this id anymore.
-                t.result = Some(Err(ErroResposta::NavegadorFalhou));
-                return Err(ErroResposta::NavegadorFalhou);
+                t.result = Some(Err(ResponseError::BrowserFailed));
+                return Err(ResponseError::BrowserFailed);
             }
             drop(g);
             // Outside the requests lock: the vault state has its own lock.
             if client.saiu() {
-                logins.finish(id, Err(ErroResposta::Negado));
-                return Err(ErroResposta::Negado);
+                logins.finish(id, Err(ResponseError::Denied));
+                return Err(ResponseError::Denied);
             }
             if self.travado() {
-                logins.finish(id, Err(ErroResposta::Travado));
-                return Err(ErroResposta::Travado);
+                logins.finish(id, Err(ResponseError::Locked));
+                return Err(ResponseError::Locked);
             }
             g = logins.lock();
             if Logins::by_id(&mut g, id).is_some_and(|t| t.result.is_none()) {
@@ -258,9 +258,9 @@ impl Daemon {
     /// The extension's wait for a login request (extension only): the next request not
     /// yet delivered, or `ok`
     /// after [`LoginDeadlines::wait`].
-    pub(crate) fn await_login(&self, role: Papel) -> Result<Resposta, ErroResposta> {
-        if role != Papel::Extensao {
-            return Err(ErroResposta::NaoAutorizado);
+    pub(crate) fn await_login(&self, role: Role) -> Result<Resposta, ResponseError> {
+        if role != Role::Extension {
+            return Err(ResponseError::Unauthorized);
         }
         let logins = self.logins();
         let end = Instant::now() + logins.deadlines.wait;
@@ -293,19 +293,19 @@ impl Daemon {
     /// once, if the tab's origin is the entry's (D9, through the fill of Phase 40).
     pub(crate) fn fill_login(
         &self,
-        role: Papel,
+        role: Role,
         id: &str,
         origin: &str,
-    ) -> Result<Resposta, ErroResposta> {
-        if role != Papel::Extensao {
-            return Err(ErroResposta::NaoAutorizado);
+    ) -> Result<Resposta, ResponseError> {
+        if role != Role::Extension {
+            return Err(ResponseError::Unauthorized);
         }
         let logins = self.logins();
         let entry = {
             let mut g = logins.lock();
-            let t = Logins::by_id(&mut g, id).ok_or(ErroResposta::Expirado)?;
+            let t = Logins::by_id(&mut g, id).ok_or(ResponseError::Expired)?;
             if t.phase != Phase::Delivered || t.result.is_some() {
-                return Err(ErroResposta::Expirado);
+                return Err(ResponseError::Expired);
             }
             // An id fills only once, whether it works or not.
             t.phase = Phase::Filled;
@@ -318,7 +318,7 @@ impl Daemon {
                 let mut g = logins.lock();
                 match Logins::by_id(&mut g, id) {
                     Some(t) if t.result.is_none() => Ok(r),
-                    _ => Err(ErroResposta::Expirado),
+                    _ => Err(ResponseError::Expired),
                 }
             }
             Err(e) => {
@@ -332,39 +332,37 @@ impl Daemon {
     /// `id`.
     pub(crate) fn login_result(
         &self,
-        role: Papel,
+        role: Role,
         id: &str,
-        outcome: ResultadoLogin,
-    ) -> Result<Resposta, ErroResposta> {
-        if role != Papel::Extensao {
-            return Err(ErroResposta::NaoAutorizado);
+        outcome: LoginResult,
+    ) -> Result<Resposta, ResponseError> {
+        if role != Role::Extension {
+            return Err(ResponseError::Unauthorized);
         }
         let logins = self.logins();
         {
             let mut g = logins.lock();
-            let t = Logins::by_id(&mut g, id).ok_or(ErroResposta::Expirado)?;
+            let t = Logins::by_id(&mut g, id).ok_or(ResponseError::Expired)?;
             if t.result.is_some() || t.phase == Phase::Waiting {
-                return Err(ErroResposta::Expirado);
+                return Err(ResponseError::Expired);
             }
             // "Submitted" and "refused" only after the fill.
-            if matches!(outcome, ResultadoLogin::Enviado | ResultadoLogin::Recusado)
+            if matches!(outcome, LoginResult::Submitted | LoginResult::Refused)
                 && t.phase != Phase::Filled
             {
-                return Err(ErroResposta::PedidoInvalido);
+                return Err(ResponseError::InvalidRequest);
             }
         }
         let r = match outcome {
-            ResultadoLogin::Enviado => Ok(()),
-            ResultadoLogin::Recusado | ResultadoLogin::SemFormulario => {
-                Err(ErroResposta::LoginRecusado)
-            }
-            ResultadoLogin::AbaMudou => Err(ErroResposta::OrigemDiferente),
-            ResultadoLogin::Falha => Err(ErroResposta::NavegadorFalhou),
+            LoginResult::Submitted => Ok(()),
+            LoginResult::Refused | LoginResult::NoForm => Err(ResponseError::LoginRefused),
+            LoginResult::TabChanged => Err(ResponseError::OriginMismatch),
+            LoginResult::Failure => Err(ResponseError::BrowserFailed),
         };
         if logins.finish(id, r) {
             Ok(Resposta::Ok)
         } else {
-            Err(ErroResposta::Expirado)
+            Err(ResponseError::Expired)
         }
     }
 }

@@ -18,7 +18,7 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use common::*;
-use ward_core::protocolo::{self, ErroResposta, Fluxo, Papel, Resposta};
+use ward_core::protocol::{self, Fluxo, ResponseError, Resposta, Role};
 
 const WARDD: &str = env!("CARGO_BIN_EXE_wardd");
 /// Password of the free test entry (fake).
@@ -104,7 +104,7 @@ fn receive(s: &mut UnixStream) -> Option<Resposta> {
     s.read_exact(&mut n).ok()?;
     let mut b = vec![0u8; u32::from_be_bytes(n) as usize];
     s.read_exact(&mut b).ok()?;
-    Some(protocolo::decodificar_resposta(Papel::Agente, &b).unwrap())
+    Some(protocol::decode_response(Role::Agent, &b).unwrap())
 }
 
 fn connect(w: &Wardd) -> UnixStream {
@@ -169,7 +169,7 @@ struct Session {
     stdout: Vec<u8>,
     stderr: Vec<u8>,
     end: Option<u8>,
-    failure: Option<ErroResposta>,
+    failure: Option<ResponseError>,
 }
 
 fn read_session(s: &mut UnixStream) -> Session {
@@ -239,11 +239,11 @@ fn vault(dev: &Dir) {
             b64(ATTACHMENT.as_bytes())
         ),
     ] {
-        let r = request(&d, Papel::App, "salvar_entrada", &q);
+        let r = request(&d, Role::App, "salvar_entrada", &q);
         assert!(ok(&r), "{r:?}");
     }
     for n in ["t-nota", "t-gen"] {
-        assert!(ok(&set_level(&d, Papel::App, n, "livre", PIN)));
+        assert!(ok(&set_level(&d, Role::App, n, "livre", PIN)));
     }
     d.travar();
 }
@@ -438,8 +438,11 @@ fn v4_delivery_mask_code_and_refusals() {
         &["/usr/bin/touch", mark.to_str().unwrap()],
         &[],
     );
-    assert_eq!(r.failure, Some(ErroResposta::TipoSemEntrega), "{r:?}");
-    assert_eq!(ErroResposta::TipoSemEntrega.mensagem(), "tipo sem entrega");
+    assert_eq!(r.failure, Some(ResponseError::TypeWithoutDelivery), "{r:?}");
+    assert_eq!(
+        ResponseError::TypeWithoutDelivery.message(),
+        "tipo sem entrega"
+    );
     assert!(!mark.exists());
     // V4.20: needs approval and no app → approval unavailable, nothing run.
     let r = run(
@@ -448,11 +451,7 @@ fn v4_delivery_mask_code_and_refusals() {
         &["/usr/bin/touch", mark.to_str().unwrap()],
         &[],
     );
-    assert_eq!(
-        r.failure,
-        Some(ErroResposta::AprovacaoIndisponivel),
-        "{r:?}"
-    );
+    assert_eq!(r.failure, Some(ResponseError::ApprovalUnavailable), "{r:?}");
     assert!(!mark.exists());
     // Blocked = nonexistent (V3.17); the database tunnel is Phase 28 (nothing run).
     let r = run(
@@ -461,14 +460,14 @@ fn v4_delivery_mask_code_and_refusals() {
         &["/usr/bin/touch", mark.to_str().unwrap()],
         &[],
     );
-    assert_eq!(r.failure, Some(ErroResposta::EntradaInexistente), "{r:?}");
+    assert_eq!(r.failure, Some(ResponseError::EntryNotFound), "{r:?}");
     assert!(!mark.exists());
     // Refused before launching, the connection goes on to the next request.
     let mut s = connect(&w);
     send(&mut s, &run_request("t-nota", &["/bin/true"], &[]));
     assert!(matches!(
         receive(&mut s),
-        Some(Resposta::Erro(ErroResposta::TipoSemEntrega))
+        Some(Resposta::Erro(ResponseError::TypeWithoutDelivery))
     ));
     send(&mut s, &run_request("t-livre", &sh("exit 4"), &[]));
     send_stdin(&mut s, b"");
@@ -816,7 +815,7 @@ fn d52_oversized_request_refused_by_daemon() {
     let r = read_session(&mut s);
     assert!(r.end.is_none(), "{r:?}");
     assert!(
-        matches!(r.failure, None | Some(ErroResposta::QuadroInvalido)),
+        matches!(r.failure, None | Some(ResponseError::InvalidFrame)),
         "{r:?}"
     );
     std::thread::sleep(Duration::from_millis(200));

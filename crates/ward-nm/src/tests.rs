@@ -2,7 +2,7 @@
 
 use super::*;
 use ward_core::entry::Secret;
-use ward_core::protocolo::Sugestao;
+use ward_core::protocol::Sugestao;
 
 const FAKE_PASSWORD: &str = "falso-WP-senha-01";
 
@@ -37,9 +37,9 @@ struct FakeDaemon {
 
 impl FakeDaemon {
     fn replying(r: Resposta) -> FakeDaemon {
-        let body = protocolo::codificar_resposta(Papel::App, &r)
-            .or_else(|_| protocolo::codificar_resposta(Papel::Extensao, &r))
-            .or_else(|_| protocolo::codificar_resposta(Papel::Agente, &r))
+        let body = protocol::encode_response(Role::App, &r)
+            .or_else(|_| protocol::encode_response(Role::Extension, &r))
+            .or_else(|_| protocol::encode_response(Role::Agent, &r))
             .unwrap()
             .to_vec();
         FakeDaemon::raw(body)
@@ -81,12 +81,12 @@ const FILL: &str = r#"{"v":1,"op":"preencher","dados":{"entrada":"acme-wp-dev","
 
 #[test]
 fn operations_are_the_extensions() {
-    for op in Operacao::TODAS {
+    for op in Operation::ALL {
         assert_eq!(
             OPERATIONS.contains(op),
-            op.permitida(Papel::Extensao),
+            op.allowed(Role::Extension),
             "{}",
-            op.nome()
+            op.name()
         );
     }
 }
@@ -124,8 +124,8 @@ fn fill_goes_through_the_daemon_and_comes_back_canonical() {
     // The request to the daemon is the canonical form of the protocol, in the extension
     // role.
     assert_eq!(d.requests.len(), 1);
-    let p = protocolo::decodificar_pedido(Papel::Extensao, &d.requests[0]).unwrap();
-    assert_eq!(p.operacao(), Operacao::Preencher);
+    let p = protocol::decode_request(Role::Extension, &d.requests[0]).unwrap();
+    assert_eq!(p.operation(), Operation::Fill);
 }
 
 #[test]
@@ -275,9 +275,9 @@ fn messages(mut output: &[u8]) -> Vec<String> {
 
 #[test]
 fn state_without_the_extension_role_becomes_unauthorized() {
-    for role in [Papel::Agente, Papel::App] {
+    for role in [Role::Agent, Role::App] {
         let mut d = FakeDaemon::raw(
-            format!(r#"{{"v":1,"tipo":"estado","dados":{{"travado":false,"cofre_existe":true,"papel":"{}"}}}}"#, role.nome())
+            format!(r#"{{"v":1,"tipo":"estado","dados":{{"travado":false,"cofre_existe":true,"papel":"{}"}}}}"#, role.name())
                 .into_bytes(),
         );
         let r = handle_with(r#"{"v":1,"op":"estado"}"#, &mut d);
@@ -292,7 +292,7 @@ fn loop_many_messages_and_normal_end() {
     let mut d = FakeDaemon::replying(Resposta::Estado {
         travado: false,
         cofre_existe: true,
-        papel: Papel::Extensao,
+        papel: Role::Extension,
     });
     let mut output = Vec::new();
     serve(&mut &input[..], &mut output, &mut d, &mut |_| {}).unwrap();

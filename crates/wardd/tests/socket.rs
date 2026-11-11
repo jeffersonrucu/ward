@@ -17,7 +17,7 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use common::*;
-use ward_core::protocolo::{self, ErroResposta, Papel, Resposta};
+use ward_core::protocol::{self, ResponseError, Resposta, Role};
 
 const WARDD: &str = env!("CARGO_BIN_EXE_wardd");
 
@@ -107,7 +107,7 @@ fn receive(s: &mut UnixStream) -> Option<Vec<u8>> {
 fn request_on(s: &mut UnixStream, op: &str, data: &str) -> (Vec<u8>, Resposta) {
     send(s, &format!(r#"{{"v":1,"op":"{op}","dados":{data}}}"#));
     let b = receive(s).expect("sem resposta");
-    let r = protocolo::decodificar_resposta(Papel::Agente, &b).unwrap();
+    let r = protocol::decode_response(Role::Agent, &b).unwrap();
     (b, r)
 }
 
@@ -165,14 +165,14 @@ fn v3_20_cycle_through_the_socket_without_secret_in_the_log() {
             Resposta::Estado {
                 travado: true,
                 cofre_existe: true,
-                papel: Papel::Agente,
+                papel: Role::Agent,
             }
         ),
         "{r:?}"
     );
     // Wrong password: same response, no count; the right one (which waits 1 s) unlocks.
     let (q1, r) = request_on(&mut s, "destravar", &password_json("falso-errada-01"));
-    assert_eq!(protocol_error(&r), Some(ErroResposta::SenhaIncorreta));
+    assert_eq!(protocol_error(&r), Some(ResponseError::WrongPassword));
     let (_, r) = request_on(&mut s, "destravar", &password_json(PASSWORD));
     assert!(ok(&r), "{r:?}");
 
@@ -203,13 +203,13 @@ fn v3_20_cycle_through_the_socket_without_secret_in_the_log() {
             b64(PIN.as_bytes())
         ),
     );
-    assert_eq!(protocol_error(&r), Some(ErroResposta::NaoAutorizado));
+    assert_eq!(protocol_error(&r), Some(ResponseError::Unauthorized));
     // Phase 23: the agent does not answer approvals (and there is no operation to
     // receive the notices: only the app role's connection receives them, D65); the
     // request to open the app without an install (test daemon, D63 without 23a) is "approval
     // unavailable", and so is the use with approval (D21).
     let (_, r) = request_on(&mut s, "receber_pedidos", "{}");
-    assert_eq!(protocol_error(&r), Some(ErroResposta::OperacaoDesconhecida));
+    assert_eq!(protocol_error(&r), Some(ResponseError::UnknownOperation));
     let (_, r) = request_on(
         &mut s,
         "responder_aprovacao",
@@ -218,7 +218,7 @@ fn v3_20_cycle_through_the_socket_without_secret_in_the_log() {
             b64(PIN.as_bytes())
         ),
     );
-    assert_eq!(protocol_error(&r), Some(ErroResposta::NaoAutorizado));
+    assert_eq!(protocol_error(&r), Some(ResponseError::Unauthorized));
     let (_, r) = request_on(&mut s, "abrir_app", "{}");
     // Without `WARD_DEV_APP`, the test daemon uses the launcher of the installed
     // `ward-app`: on a machine without Ward it is "approval unavailable"; with it
@@ -226,14 +226,11 @@ fn v3_20_cycle_through_the_socket_without_secret_in_the_log() {
     let installed = std::path::Path::new("/usr/local/bin/ward-app").exists();
     let e = protocol_error(&r);
     assert!(
-        e == Some(ErroResposta::AprovacaoIndisponivel) || (installed && e.is_none()),
+        e == Some(ResponseError::ApprovalUnavailable) || (installed && e.is_none()),
         "abrir_app: {e:?}"
     );
     let (_, r) = request_on(&mut s, "executar", &exec("t-aprov"));
-    assert_eq!(
-        protocol_error(&r),
-        Some(ErroResposta::AprovacaoIndisponivel)
-    );
+    assert_eq!(protocol_error(&r), Some(ResponseError::ApprovalUnavailable));
 
     // V3.4: 70 stalled connections do not take the service away (the oldest stalled
     // one leaves).
@@ -269,7 +266,7 @@ fn v3_20_cycle_through_the_socket_without_secret_in_the_log() {
     let (_, r) = request_on(&mut s, "travar", "{}");
     assert!(ok(&r));
     let (_, r) = request_on(&mut s, "lista", "{}");
-    assert_eq!(protocol_error(&r), Some(ErroResposta::Travado));
+    assert_eq!(protocol_error(&r), Some(ResponseError::Locked));
     drop(s);
     drop(fresh);
 
@@ -292,7 +289,7 @@ fn v3_20_cycle_through_the_socket_without_secret_in_the_log() {
     assert!(!contains(&q1, b"falso"));
 }
 
-fn protocol_error(r: &Resposta) -> Option<ErroResposta> {
+fn protocol_error(r: &Resposta) -> Option<ResponseError> {
     error(r)
 }
 
@@ -321,7 +318,7 @@ fn v3_33_kill_9_between_the_wrong_passwords() {
         let t = Instant::now();
         let (_, r) = request_on(&mut s, "destravar", &password_json("falso-errada-k9"));
         waits.push(t.elapsed());
-        assert_eq!(protocol_error(&r), Some(ErroResposta::SenhaIncorreta));
+        assert_eq!(protocol_error(&r), Some(ResponseError::WrongPassword));
         // Written (with fsync) before the response: the `kill -9` right after loses
         // nothing.
         w.child.kill().unwrap();

@@ -16,7 +16,7 @@ use std::time::Duration;
 use common::*;
 use ward_core::config::{PinHash, VaultConfig};
 use ward_core::format::{MasterPassword, OpenVault};
-use ward_core::protocolo::{ErroResposta, MSG_RETROCESSO, Papel, Resposta};
+use ward_core::protocol::{MSG_ROLLBACK, ResponseError, Resposta, Role};
 use wardd::arquivos::{self, Geracoes};
 use wardd::nucleo::{Caminhos, Daemon, ESPERA_MAXIMA, Relogio, espera_destrave};
 
@@ -51,7 +51,7 @@ fn movable_daemon(c: Caminhos, r: &MovableClock) -> Daemon {
     Daemon::novo(c, Box::new(r.clone()))
 }
 
-fn unlock_as(d: &Daemon, role: Papel, password: &str) -> Resposta {
+fn unlock_as(d: &Daemon, role: Role, password: &str) -> Resposta {
     request(
         d,
         role,
@@ -86,8 +86,8 @@ fn v3_33_agent_wait_survives_the_restart() {
     let r = MovableClock::default();
     let d = movable_daemon(dir.paths(), &r);
     for i in 0..10u32 {
-        let resp = unlock_as(&d, Papel::Agente, &format!("falso-errada-{i:02}"));
-        assert_eq!(error(&resp), Some(ErroResposta::SenhaIncorreta));
+        let resp = unlock_as(&d, Role::Agent, &format!("falso-errada-{i:02}"));
+        assert_eq!(error(&resp), Some(ResponseError::WrongPassword));
         // Already on disk when the reply goes out (fsync before the reply).
         assert_eq!(failures_on_disk(&dir), i + 1);
     }
@@ -99,8 +99,8 @@ fn v3_33_agent_wait_survives_the_restart() {
     let r = MovableClock::default();
     let d = movable_daemon(dir.paths(), &r);
     assert_eq!(
-        error(&unlock_as(&d, Papel::Agente, "falso-errada-xx")),
-        Some(ErroResposta::SenhaIncorreta)
+        error(&unlock_as(&d, Role::Agent, "falso-errada-xx")),
+        Some(ResponseError::WrongPassword)
     );
     assert_eq!(r.waits(), [ESPERA_MAXIMA]);
     assert_eq!(failures_on_disk(&dir), 11);
@@ -110,9 +110,9 @@ fn v3_33_agent_wait_survives_the_restart() {
     let r = MovableClock::default();
     let d = movable_daemon(dir.paths(), &r);
     r.advance(Duration::from_secs(20));
-    let _ = unlock_as(&d, Papel::Agente, "falso-errada-yy");
+    let _ = unlock_as(&d, Role::Agent, "falso-errada-yy");
     // The next one already waits the whole time.
-    let _ = unlock_as(&d, Papel::Agente, "falso-errada-zz");
+    let _ = unlock_as(&d, Role::Agent, "falso-errada-zz");
     assert_eq!(
         r.waits(),
         [Duration::from_secs(10), ESPERA_MAXIMA],
@@ -123,16 +123,16 @@ fn v3_33_agent_wait_survives_the_restart() {
     let r = MovableClock::default();
     let d = movable_daemon(dir.paths(), &r);
     r.advance(Duration::from_secs(45));
-    let _ = unlock_as(&d, Papel::Agente, "falso-errada-ww");
-    let _ = unlock_as(&d, Papel::Agente, "falso-errada-vv");
+    let _ = unlock_as(&d, Role::Agent, "falso-errada-ww");
+    let _ = unlock_as(&d, Role::Agent, "falso-errada-vv");
     assert_eq!(r.waits(), [Duration::ZERO, ESPERA_MAXIMA]);
 
     // The right unlock zeroes both, on disk too.
-    assert!(ok(&unlock_as(&d, Papel::Agente, PASSWORD)));
+    assert!(ok(&unlock_as(&d, Role::Agent, PASSWORD)));
     assert_eq!(failures_on_disk(&dir), 0);
     d.travar();
-    let _ = unlock_as(&d, Papel::Agente, "falso-errada-uu");
-    let _ = unlock_as(&d, Papel::App, "falso-errada-tt");
+    let _ = unlock_as(&d, Role::Agent, "falso-errada-uu");
+    let _ = unlock_as(&d, Role::App, "falso-errada-tt");
     assert_eq!(r.waits()[1..], [Duration::ZERO, Duration::ZERO]);
 }
 
@@ -174,12 +174,12 @@ fn attack_agent_in_the_middle_of_the_wait_does_not_delay_the_app() {
     ));
     // Three wrong ones from the agent: its next one waits 4 s.
     for i in 0..3 {
-        let resp = unlock_as(&d, Papel::Agente, &format!("falso-errada-{i}"));
-        assert_eq!(error(&resp), Some(ErroResposta::SenhaIncorreta));
+        let resp = unlock_as(&d, Role::Agent, &format!("falso-errada-{i}"));
+        assert_eq!(error(&resp), Some(ResponseError::WrongPassword));
     }
     let agent = {
         let d = d.clone();
-        std::thread::spawn(move || unlock_as(&d, Papel::Agente, "falso-errada-3"))
+        std::thread::spawn(move || unlock_as(&d, Role::Agent, "falso-errada-3"))
     };
     // The agent is stuck in the 4 s wait.
     assert_eq!(
@@ -188,7 +188,7 @@ fn attack_agent_in_the_middle_of_the_wait_does_not_delay_the_app() {
     );
     // The app gets it right without waiting: its counter is another one, and the agent's
     // turn does not hold it.
-    assert!(ok(&unlock_as(&d, Papel::App, PASSWORD)));
+    assert!(ok(&unlock_as(&d, Role::App, PASSWORD)));
     assert!(!d.travado());
     tx_release.send(()).unwrap();
     // The agent wakes up with the vault already open.
@@ -209,10 +209,10 @@ fn attack_agent_in_the_middle_of_the_wait_does_not_delay_the_app() {
     assert_eq!(failures_on_disk(&dir), 0);
     d.travar();
     waits.lock().unwrap().clear();
-    let _ = unlock_as(&d, Papel::Agente, "falso-errada-4");
-    let _ = unlock_as(&d, Papel::App, "falso-errada-5");
+    let _ = unlock_as(&d, Role::Agent, "falso-errada-4");
+    let _ = unlock_as(&d, Role::App, "falso-errada-5");
     // An app error does not delay the agent, and vice versa.
-    let _ = unlock_as(&d, Papel::Agente, "falso-errada-6");
+    let _ = unlock_as(&d, Role::Agent, "falso-errada-6");
     assert_eq!(
         *waits.lock().unwrap(),
         [(s(0), false), (s(0), false), (s(1), false)]
@@ -237,7 +237,7 @@ fn v3_33_old_format_and_state_without_secret() {
     .unwrap();
     let r = MovableClock::default();
     let d = movable_daemon(dir.paths(), &r);
-    let _ = unlock_as(&d, Papel::Agente, "falso-errada-01");
+    let _ = unlock_as(&d, Role::Agent, "falso-errada-01");
     assert_eq!(r.waits(), [Duration::ZERO]);
     assert_eq!(
         state_text(&dir),
@@ -247,7 +247,7 @@ fn v3_33_old_format_and_state_without_secret() {
         )
     );
     // The app does not go to disk.
-    let _ = unlock_as(&d, Papel::App, "falso-errada-02");
+    let _ = unlock_as(&d, Role::App, "falso-errada-02");
     assert_eq!(failures_on_disk(&dir), 1);
     let text = fs::read(dir.paths().estado).unwrap();
     for s in SECRETS
@@ -302,7 +302,7 @@ fn v3_35_create_vault_with_old_state_and_old_copy() {
     let (d, _) = daemon_at(c.clone());
     let create = request(
         &d,
-        Papel::App,
+        Role::App,
         "criar_cofre",
         &format!(
             r#"{{"senha":"{}","pin":"{}"}}"#,
@@ -324,15 +324,12 @@ fn v3_35_create_vault_with_old_state_and_old_copy() {
     d.travar();
     fs::copy(&old, &c.cofre).unwrap();
     let r = unlock(&d, PASSWORD);
-    assert_eq!(error(&r), Some(ErroResposta::Retrocesso));
-    assert_eq!(ErroResposta::Retrocesso.mensagem(), MSG_RETROCESSO);
+    assert_eq!(error(&r), Some(ResponseError::Rollback));
+    assert_eq!(ResponseError::Rollback.message(), MSG_ROLLBACK);
     assert!(d.travado());
     // Not even a new daemon opens it.
     let (d2, _) = daemon_at(c.clone());
-    assert_eq!(
-        error(&unlock(&d2, PASSWORD)),
-        Some(ErroResposta::Retrocesso)
-    );
+    assert_eq!(error(&unlock(&d2, PASSWORD)), Some(ResponseError::Rollback));
 }
 
 /// V3.35 (D62): without a state, the vault is born at generation 1 (the usual first
@@ -350,12 +347,12 @@ fn v3_35_create_vault_without_state_and_with_invalid_state() {
     fs::write(&c.estado, "ward-estado 1\nvista 9\n").unwrap();
     let (d, _) = daemon_at(c.clone());
     assert_eq!(
-        error(&request(&d, Papel::App, "criar_cofre", &create)),
-        Some(ErroResposta::FalhaAoGravar)
+        error(&request(&d, Role::App, "criar_cofre", &create)),
+        Some(ResponseError::WriteFailed)
     );
     assert!(!c.cofre.exists());
     fs::remove_file(&c.estado).unwrap();
-    assert!(ok(&request(&d, Papel::App, "criar_cofre", &create)));
+    assert!(ok(&request(&d, Role::App, "criar_cofre", &create)));
     assert_eq!(generation_on_disk(&c.cofre, PASSWORD), 1);
     assert_eq!(
         generations(&dir),
@@ -403,24 +400,24 @@ fn v3_35_swap_right_after_the_rename_is_refused() {
     // Without a swap, writing twice works.
     assert!(ok(&request(
         &d,
-        Papel::App,
+        Role::App,
         "tempo_trava",
         r#"{"minutos":30}"#
     )));
     armed.store(true, Ordering::SeqCst);
     assert!(ok(&request(
         &d,
-        Papel::App,
+        Role::App,
         "tempo_trava",
         r#"{"minutos":31}"#
     )));
     assert!(swapped.load(Ordering::SeqCst), "o gancho não rodou");
     let swapped_bytes = fs::read(&c.cofre).unwrap();
-    let r = request(&d, Papel::App, "tempo_trava", r#"{"minutos":32}"#);
-    assert_eq!(error(&r), Some(ErroResposta::CofreMudou));
+    let r = request(&d, Role::App, "tempo_trava", r#"{"minutos":32}"#);
+    assert_eq!(error(&r), Some(ResponseError::VaultChanged));
     assert_eq!(
-        ErroResposta::CofreMudou.mensagem(),
-        ward_core::protocolo::MSG_COFRE_MUDOU
+        ResponseError::VaultChanged.message(),
+        ward_core::protocol::MSG_VAULT_CHANGED
     );
     assert!(d.travado());
     assert_eq!(
@@ -449,7 +446,7 @@ fn v3_35_swap_right_after_the_rename_is_refused() {
     let new_password = "falso-nova-ward-03";
     assert!(ok(&request(
         &d2,
-        Papel::App,
+        Role::App,
         "trocar_senha",
         &format!(
             r#"{{"atual":"{}","nova":"{}"}}"#,
@@ -458,8 +455,8 @@ fn v3_35_swap_right_after_the_rename_is_refused() {
         ),
     )));
     let swapped_bytes = fs::read(&c2.cofre).unwrap();
-    let r = request(&d2, Papel::App, "tempo_trava", r#"{"minutos":33}"#);
-    assert_eq!(error(&r), Some(ErroResposta::CofreMudou));
+    let r = request(&d2, Role::App, "tempo_trava", r#"{"minutos":33}"#);
+    assert_eq!(error(&r), Some(ResponseError::VaultChanged));
     assert!(d2.travado());
     assert_eq!(fs::read(&c2.cofre).unwrap(), swapped_bytes);
 }

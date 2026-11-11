@@ -36,7 +36,7 @@ use ward_core::entry::{
     TOO_LARGE_FOR_MASK,
 };
 use ward_core::limits;
-use ward_core::protocolo::{ErroResposta, Problema};
+use ward_core::protocol::{Problem, ResponseError};
 use zeroize::Zeroizing;
 
 use crate::AppError;
@@ -235,29 +235,29 @@ const MAX_REASON: usize = 200;
 /// comes from a fixed table and the reason only passes if it is a short text, without
 /// control nor Unicode formatting characters; otherwise it becomes the fixed "invalid"
 /// text.
-pub fn daemon_errors(problems: &[Problema]) -> Vec<FieldError> {
+pub fn daemon_errors(problems: &[Problem]) -> Vec<FieldError> {
     problems
         .iter()
         .take(limits::MAX_EXTRAS + 32)
         .map(|p| {
-            let clean = p.motivo.chars().count() <= MAX_REASON
-                && !p.motivo.is_empty()
+            let clean = p.reason.chars().count() <= MAX_REASON
+                && !p.reason.is_empty()
                 && !p
-                    .motivo
+                    .reason
                     .chars()
                     .any(|c| c.is_control() || is_format_char(c));
             // D29: the mask budget refusal comes from the whole entry; the screen shows
             // it on the attachments field, the one that weighs most on the budget.
-            let field = if p.campo == "entrada" && p.motivo == TOO_LARGE_FOR_MASK {
+            let field = if p.field == "entrada" && p.reason == TOO_LARGE_FOR_MASK {
                 "anexos"
             } else {
-                problem_field(&p.campo)
+                problem_field(&p.field)
             };
             FieldError {
                 field,
-                position: p.posicao.filter(|n| (1..=1024).contains(n)),
+                position: p.position.filter(|n| (1..=1024).contains(n)),
                 reason: if clean {
-                    p.motivo.clone()
+                    p.reason.clone()
                 } else {
                     "inválido".to_owned()
                 },
@@ -387,7 +387,7 @@ pub fn normalize_seed(typed: &str) -> Result<Zeroizing<String>, &'static str> {
 pub trait Sources {
     /// Stored value of a secret field (field target) or of a secret extra (extra target)
     /// of the edited entry.
-    fn stored(&mut self, target: ward_core::protocolo::Alvo) -> Result<CoreSecret, AppError>;
+    fn stored(&mut self, target: ward_core::protocol::Target) -> Result<CoreSecret, AppError>;
     /// Password generated for this field (the "use this password" button).
     fn generated(&mut self, field: &str) -> Result<CoreSecret, AppError>;
     /// Key read from the file for this field (the "load from file" button, Phase 53a).
@@ -467,7 +467,7 @@ pub fn build(
             SecretValue::New(t) => Some(CoreSecret::from_bytes(t.0.as_bytes().to_vec())),
             SecretValue::Keep => match editing {
                 Some((stored, _)) if stored.iter().any(|g| g == id) => {
-                    Some(sources.stored(ward_core::protocolo::Alvo::Campo(id.to_owned()))?)
+                    Some(sources.stored(ward_core::protocol::Target::Field(id.to_owned()))?)
                 }
                 _ => return Err(AppError::InvalidRequest.into()),
             },
@@ -539,7 +539,7 @@ pub fn build(
             ExtraValue::New(t) => CoreSecret::from_bytes(t.0.as_bytes().to_vec()),
             ExtraValue::Keep(name) => match editing {
                 Some((_, stored)) if stored.contains(&name) => {
-                    sources.stored(ward_core::protocolo::Alvo::Extra(name))?
+                    sources.stored(ward_core::protocol::Target::Extra(name))?
                 }
                 _ => return Err(AppError::InvalidRequest.into()),
             },
@@ -707,8 +707,8 @@ pub fn validate_local(r: &Draft) -> Result<(), Vec<FieldError>> {
             drop(entry);
             Ok(())
         }
-        Err(e) => Err(daemon_errors(&match ErroResposta::de_validacao(&e) {
-            ErroResposta::Validacao(p) => p,
+        Err(e) => Err(daemon_errors(&match ResponseError::from_validation(&e) {
+            ResponseError::Validation(p) => p,
             _ => Vec::new(),
         })),
     }
@@ -769,10 +769,10 @@ mod tests {
 
     #[test]
     fn attack_problem_forged_by_the_daemon_does_not_become_free_text() {
-        let p = |field: &str, reason: &str| Problema {
-            campo: field.to_owned(),
-            posicao: None,
-            motivo: reason.to_owned(),
+        let p = |field: &str, reason: &str| Problem {
+            field: field.to_owned(),
+            position: None,
+            reason: reason.to_owned(),
         };
         let e = daemon_errors(&[
             p("senha", "obrigatório"),
@@ -794,10 +794,10 @@ mod tests {
     /// attachment error.
     #[test]
     fn mask_budget_refusal_goes_to_the_attachments() {
-        let p = |field: &str, reason: &str| Problema {
-            campo: field.to_owned(),
-            posicao: None,
-            motivo: reason.to_owned(),
+        let p = |field: &str, reason: &str| Problem {
+            field: field.to_owned(),
+            position: None,
+            reason: reason.to_owned(),
         };
         let e = daemon_errors(&[
             p("entrada", TOO_LARGE_FOR_MASK),

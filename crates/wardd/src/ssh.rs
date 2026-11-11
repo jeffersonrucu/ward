@@ -45,7 +45,7 @@ use std::time::Duration;
 
 use ward_core::entry::{AccessLevel, Auth, Data, Entry, Protocol, Secret};
 use ward_core::mask::{Mask, MaskBuilder};
-use ward_core::protocolo::{ErroResposta, Papel, Pedido, Resposta};
+use ward_core::protocol::{Request, ResponseError, Resposta, Role};
 use ward_platform::child::Command;
 use zeroize::Zeroizing;
 
@@ -327,22 +327,22 @@ impl Daemon {
     /// Token issuing (app only; D3): random single-use token, 30 s, bound to a
     /// server entry. Goes away on lock. The value only goes in the response to the
     /// app.
-    pub(crate) fn issue_token(&self, role: Papel, name: &str) -> Result<Resposta, ErroResposta> {
-        if role != Papel::App {
-            return Err(ErroResposta::NaoAutorizado);
+    pub(crate) fn issue_token(&self, role: Role, name: &str) -> Result<Resposta, ResponseError> {
+        if role != Role::App {
+            return Err(ResponseError::Unauthorized);
         }
         let now = self.aprovacao.agora();
         let mut st = self.estado();
-        let a = st.aberto.as_mut().ok_or(ErroResposta::Travado)?;
+        let a = st.aberto.as_mut().ok_or(ResponseError::Locked)?;
         let e = a
             .entradas
             .iter()
             .find(|e| e.name() == name)
-            .ok_or(ErroResposta::EntradaInexistente)?;
+            .ok_or(ResponseError::EntryNotFound)?;
         if !matches!(e.data(), Data::Server(_)) {
-            return Err(ErroResposta::PedidoInvalido);
+            return Err(ResponseError::InvalidRequest);
         }
-        let value = ward_core::generator::connect_token().map_err(|_| ErroResposta::Interno)?;
+        let value = ward_core::generator::connect_token().map_err(|_| ResponseError::Internal)?;
         a.tokens.retain(|t| now < t.until);
         if a.tokens.len() >= MAX_TOKENS {
             a.tokens.remove(0);
@@ -411,10 +411,10 @@ pub(crate) fn cred_from(a: &Auth) -> Cred {
 pub(crate) fn intermediate<'a>(
     entries: &'a [Entry],
     name: &str,
-) -> Result<(&'a Entry, Intermediate), ErroResposta> {
+) -> Result<(&'a Entry, Intermediate), ResponseError> {
     let Some(e) = visible(entries, name) else {
         aviso!("salto ou túnel: a outra entrada sumiu ou foi bloqueada; negado (D19)");
-        return Err(ErroResposta::Negado);
+        return Err(ResponseError::Denied);
     };
     match e.data() {
         Data::Server(s) if s.jump.is_none() => Ok((
@@ -428,7 +428,7 @@ pub(crate) fn intermediate<'a>(
         )),
         _ => {
             aviso!("salto ou túnel: a outra entrada não é um servidor sem salto");
-            Err(ErroResposta::EntregaFalhou)
+            Err(ResponseError::DeliveryFailed)
         }
     }
 }
@@ -442,17 +442,17 @@ fn visible<'a>(entries: &'a [Entry], name: &str) -> Option<&'a Entry> {
 
 /// Does the kind accept `ward ssh`? A server entry, or FTP/SFTP with `sftp` and without a
 /// command (`sftp` reads the commands from the input). The others: "type without delivery".
-fn verify_kind(e: &Entry, with_command: bool) -> Result<(), ErroResposta> {
+fn verify_kind(e: &Entry, with_command: bool) -> Result<(), ResponseError> {
     match e.data() {
         Data::Server(_) => Ok(()),
         Data::FtpSftp(f) if f.protocol == Protocol::Sftp => {
             if with_command {
-                Err(ErroResposta::PedidoInvalido)
+                Err(ResponseError::InvalidRequest)
             } else {
                 Ok(())
             }
         }
-        _ => Err(ErroResposta::TipoSemEntrega),
+        _ => Err(ResponseError::TypeWithoutDelivery),
     }
 }
 
@@ -462,25 +462,25 @@ impl Daemon {
     pub(crate) fn prepare_ssh(
         &self,
         client: &dyn Cliente,
-        request: Pedido,
-    ) -> Result<Preparation, ErroResposta> {
-        let Pedido::Ssh {
-            entrada,
-            comando,
+        request: Request,
+    ) -> Result<Preparation, ResponseError> {
+        let Request::Ssh {
+            entry: entrada,
+            command: comando,
             token,
-            janela,
-            tipo_entrada,
+            window_size: janela,
+            stdin_kind: tipo_entrada,
         } = &request
         else {
-            return Err(ErroResposta::PedidoInvalido);
+            return Err(ResponseError::InvalidRequest);
         };
         let with_command = !comando.is_empty();
         // Pty only in the interactive one: no command and with the size of the CLI's
         // terminal.
         let window = if with_command { None } else { *janela };
         let name = entrada.clone();
-        let null_stdin = *tipo_entrada == ward_core::protocolo::TipoEntradaPadrao::Nula;
-        depurar!("ssh: entrada padrão {}", tipo_entrada.nome());
+        let null_stdin = *tipo_entrada == ward_core::protocol::StdinKind::Null;
+        depurar!("ssh: entrada padrão {}", tipo_entrada.name());
         // The level comes before the kind (V4.32: the made-up token on a database entry
         // with approval gives "approval unavailable"); the kind is verified afterwards,
         // under the lock.
@@ -496,14 +496,17 @@ impl Daemon {
             self.autorizar_uso(client, &request)?;
         }
         self.registrar_uso();
-        let Pedido::Ssh { comando, .. } = request else {
-            return Err(ErroResposta::PedidoInvalido);
+        let Request::Ssh {
+            command: comando, ..
+        } = request
+        else {
+            return Err(ResponseError::InvalidRequest);
         };
         // With the state locked: the entry may have changed during the approval.
         let (host, port, username, cred, sftp, mask, locks, initial, jump, sessions) = {
             let st = self.estado();
-            let a = st.aberto.as_ref().ok_or(ErroResposta::Travado)?;
-            let e = visible(&a.entradas, &name).ok_or(ErroResposta::EntradaInexistente)?;
+            let a = st.aberto.as_ref().ok_or(ResponseError::Locked)?;
+            let e = visible(&a.entradas, &name).ok_or(ResponseError::EntryNotFound)?;
             verify_kind(e, with_command)?;
             let (host, port, username, auth, sftp, jump_name) = match e.data() {
                 Data::Server(s) => (
@@ -515,11 +518,11 @@ impl Daemon {
                     s.jump.as_deref(),
                 ),
                 Data::FtpSftp(f) => (&f.host, f.port, &f.username, &f.auth, true, None),
-                _ => return Err(ErroResposta::TipoSemEntrega),
+                _ => return Err(ResponseError::TypeWithoutDelivery),
             };
             let failed = |err: ward_core::mask::MaskError| {
                 aviso!("ssh: {err}");
-                ErroResposta::EntregaFalhou
+                ResponseError::DeliveryFailed
             };
             // D19: with a jump, the mask covers both entries (one for the main `ssh`'s
             // output, another for the `stderr` of the bridge's `ssh`).
@@ -554,7 +557,7 @@ impl Daemon {
         // Ward's `known_hosts` verified (0700/0600, no link) before any `ssh`.
         let known_hosts = self.known_hosts().map_err(|m| {
             aviso!("ssh: {m}");
-            ErroResposta::EntregaFalhou
+            ResponseError::DeliveryFailed
         })?;
         // Jump: the bridge listens before the main `ssh` exists; the peer is only
         // accepted afterwards, when its pid is known.
@@ -574,7 +577,7 @@ impl Daemon {
                 })
                 .map_err(|m| {
                     aviso!("ssh: {m}");
-                    ErroResposta::EntregaFalhou
+                    ResponseError::DeliveryFailed
                 })?,
             ),
         };
@@ -582,17 +585,17 @@ impl Daemon {
             None => None,
             Some(_) => Some(destination_alias(&host, port).ok_or_else(|| {
                 aviso!("ssh: host fora do formato; nada foi executado");
-                ErroResposta::EntregaFalhou
+                ResponseError::DeliveryFailed
             })?),
         };
         let (password, agent) = match cred {
             Cred::Password(s) => (Some(s), None),
             Cred::Key { key, passphrase } => {
-                let rt = self.temporarios().ok_or(ErroResposta::EntregaFalhou)?;
+                let rt = self.temporarios().ok_or(ResponseError::DeliveryFailed)?;
                 let ag =
                     SshAgent::create(rt, &key, passphrase.as_ref()).map_err(|e: AgentError| {
                         aviso!("ssh: {e}");
-                        ErroResposta::EntregaFalhou
+                        ResponseError::DeliveryFailed
                     })?;
                 (None, Some(ag))
             }
@@ -632,7 +635,7 @@ impl Daemon {
         )
         .ok_or_else(|| {
             aviso!("ssh: host, usuário ou caminho fora do formato; nada foi executado");
-            ErroResposta::EntregaFalhou
+            ResponseError::DeliveryFailed
         })?;
         let cwd = {
             use std::os::unix::ffi::OsStringExt;
@@ -640,7 +643,7 @@ impl Daemon {
                 .map(OsStringExt::into_vec)
                 .unwrap_or_else(|_| b"/".to_vec())
         };
-        let invalid = |_| ErroResposta::EntregaFalhou;
+        let invalid = |_| ResponseError::DeliveryFailed;
         let mut cmd = Command::new(&argv[0], &cwd).map_err(invalid)?;
         for x in &argv[1..] {
             cmd.argument(x).map_err(invalid)?;
@@ -697,14 +700,14 @@ pub fn session(
     daemon: &Daemon,
     client: &dyn Cliente,
     stream: &std::os::unix::net::UnixStream,
-    request: Pedido,
+    request: Request,
 ) -> bool {
     crate::execution::session_with(
         stream,
         |c| {
             let r = daemon.prepare_ssh(c, request);
             if let Err(e) = &r {
-                depurar!("ssh (agente): {}", e.codigo());
+                depurar!("ssh (agente): {}", e.code());
             }
             r
         },

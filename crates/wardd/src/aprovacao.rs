@@ -25,8 +25,8 @@
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
-use ward_core::protocolo::{
-    ErroResposta, MAX_RESTANTE_DESTRAVE, PedidoDeAprovacao, PedidoDeDestrave, Resposta,
+use ward_core::protocol::{
+    MAX_RESTANTE_DESTRAVE, PedidoDeAprovacao, PedidoDeDestrave, ResponseError, Resposta,
 };
 
 use crate::{aviso, depurar};
@@ -124,7 +124,7 @@ struct Pendente {
     pedido: PedidoDeAprovacao,
     /// Id do assinante que recebeu.
     entregue_a: Option<u64>,
-    resultado: Option<Result<(), ErroResposta>>,
+    resultado: Option<Result<(), ResponseError>>,
 }
 
 /// Um uso do agente esperando o destrave: o aviso (sem `restante`, que é calculado na
@@ -201,7 +201,7 @@ impl Estado {
         }
         for p in self.pendentes.iter_mut() {
             if p.entregue_a == Some(aid) && p.resultado.is_none() {
-                p.resultado = Some(Err(ErroResposta::Negado));
+                p.resultado = Some(Err(ResponseError::Denied));
             }
         }
     }
@@ -223,7 +223,7 @@ impl Interno {
         if g.assinante.is_none() {
             for p in g.pendentes.iter_mut() {
                 if p.entregue_a.is_none() && p.resultado.is_none() {
-                    p.resultado = Some(Err(ErroResposta::AprovacaoIndisponivel));
+                    p.resultado = Some(Err(ResponseError::ApprovalUnavailable));
                 }
             }
         }
@@ -293,9 +293,8 @@ impl Motor {
     }
 
     /// Operação `abrir_app` (D57): de qualquer papel, sem campo, sem segredo.
-    pub fn abrir_app(&self) -> Result<(), ErroResposta> {
-        self.abrir()
-            .map_err(|_| ErroResposta::AprovacaoIndisponivel)
+    pub fn abrir_app(&self) -> Result<(), ResponseError> {
+        self.abrir().map_err(|_| ResponseError::ApprovalUnavailable)
     }
 
     /// A conexão `id` do papel app passa a receber os avisos. Uma por
@@ -335,7 +334,7 @@ impl Motor {
         &self,
         mut pedido: PedidoDeAprovacao,
         cliente: &dyn Cliente,
-    ) -> Result<(), ErroResposta> {
+    ) -> Result<(), ResponseError> {
         let mut g = self.interno.estado();
         let id = g.proximo_id;
         g.proximo_id = g.proximo_id.saturating_add(1);
@@ -353,7 +352,7 @@ impl Motor {
             if self.abrir().is_err() {
                 aviso!("aprovação {id}: app indisponível; negado (D21)");
                 self.interno.estado().tirar(id);
-                return Err(ErroResposta::AprovacaoIndisponivel);
+                return Err(ResponseError::ApprovalUnavailable);
             }
             g = self.interno.estado();
         }
@@ -363,19 +362,19 @@ impl Motor {
                 g.tirar(id);
                 match &r {
                     Ok(()) => depurar!("aprovação {id}: permitida"),
-                    Err(e) => aviso!("aprovação {id}: {}", e.codigo()),
+                    Err(e) => aviso!("aprovação {id}: {}", e.code()),
                 }
                 return r;
             }
             if self.relogio.agora() >= prazo {
                 g.tirar(id);
                 aviso!("aprovação {id}: expirou em 2 min (S10)");
-                return Err(ErroResposta::Expirado);
+                return Err(ResponseError::Expired);
             }
             if cliente.saiu() {
                 g.tirar(id);
                 aviso!("aprovação {id}: o cliente saiu; cancelada");
-                return Err(ErroResposta::Negado);
+                return Err(ResponseError::Denied);
             }
             g = self
                 .interno
@@ -395,7 +394,7 @@ impl Motor {
         let mut n = 0;
         for p in g.pendentes.iter_mut() {
             if p.resultado.is_none() {
-                p.resultado = Some(Err(ErroResposta::Negado));
+                p.resultado = Some(Err(ResponseError::Denied));
                 n += 1;
             }
         }
@@ -431,7 +430,7 @@ impl Motor {
 
     /// Decide o pedido `id`. `false`: não está mais pendente (expirou, foi cancelado ou
     /// já decidido).
-    pub fn decidir(&self, id: u64, r: Result<(), ErroResposta>) -> bool {
+    pub fn decidir(&self, id: u64, r: Result<(), ResponseError>) -> bool {
         let mut g = self.interno.estado();
         let Some(p) = g.pendente(id).filter(|p| p.resultado.is_none()) else {
             return false;
@@ -451,7 +450,7 @@ impl Motor {
         aviso: PedidoDeDestrave,
         travado: &dyn Fn() -> bool,
         cliente: &dyn Cliente,
-    ) -> Result<(), ErroResposta> {
+    ) -> Result<(), ResponseError> {
         let agora = self.relogio.agora();
         let prazo = agora.saturating_add(PRAZO_DESTRAVE);
         let espera;
@@ -483,7 +482,7 @@ impl Motor {
                         // Ninguém mostraria a tela; quem pediu fica sabendo já.
                         self.sair_destrave(espera);
                         aviso!("pedido com o cofre travado: app indisponível");
-                        return Err(ErroResposta::Travado);
+                        return Err(ResponseError::Locked);
                     }
                     // V4.21: o usuário pode destravar pela CLI; a CLI avisa quem pediu.
                     aviso!("pedido com o cofre travado: app indisponível; esperando a CLI");
@@ -497,10 +496,10 @@ impl Motor {
             }
             if self.relogio.agora() >= prazo {
                 aviso!("pedido com o cofre travado: tempo esgotado");
-                break Err(ErroResposta::TravadoTempoEsgotado);
+                break Err(ResponseError::LockedTimedOut);
             }
             if cliente.saiu() {
-                break Err(ErroResposta::Travado);
+                break Err(ResponseError::Locked);
             }
             std::thread::sleep(PASSO);
         };

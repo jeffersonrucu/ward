@@ -19,9 +19,9 @@ use std::time::Duration;
 
 use ward_core::entry::Secret;
 use ward_core::limits::{KIB, MAX_ARGUMENT, MAX_ARGUMENTS, MAX_ENV_VARIABLES, MAX_SECRET};
-use ward_core::protocolo::{
-    ErroCodificar, ErroResposta, Fluxo, Janela, Papel, Pedido, PedidoExecutar, Resposta,
-    TipoEntradaPadrao, Variavel,
+use ward_core::protocol::{
+    EncodeError, Fluxo, Request, ResponseError, Resposta, Role, RunRequest, StdinKind, Variable,
+    WindowSize,
 };
 use ward_platform::connect::ChannelError;
 use ward_platform::{ExpectedServer, TerminalError};
@@ -79,12 +79,12 @@ pub trait Env {
     }
     /// Phase 54b (D68): what the standard input is (`fstat` of fd 0), so the daemon
     /// warns in the window when the command receives data the window does not show.
-    fn stdin_kind(&self) -> TipoEntradaPadrao {
+    fn stdin_kind(&self) -> StdinKind {
         detect_stdin_kind()
     }
     /// Interactive `ward ssh` (Phase 27): the terminal size, if standard input and
     /// output are terminals; `None` without a terminal (pipe, file).
-    fn terminal(&self) -> Option<Janela> {
+    fn terminal(&self) -> Option<WindowSize> {
         if !ward_platform::terminal::is_terminal(io::stdin())
             || !ward_platform::terminal::is_terminal(io::stdout())
         {
@@ -112,7 +112,7 @@ const DEV_NULL: u64 = (1 << 8) | 3;
 
 /// Phase 54b (D68): the kind of the standard input by the `fstat` of fd 0 (a copy of
 /// the fd, without `unsafe`). Closed (no fd 0) counts as null.
-pub fn detect_stdin_kind() -> TipoEntradaPadrao {
+pub fn detect_stdin_kind() -> StdinKind {
     use std::io::IsTerminal;
     use std::os::fd::AsFd;
     let meta = io::stdin()
@@ -125,31 +125,31 @@ pub fn detect_stdin_kind() -> TipoEntradaPadrao {
 
 /// Phase 54b: the classification, separate for the tests. `None`: the `fstat` failed
 /// (fd 0 closed).
-pub fn classify_stdin(meta: Option<&std::fs::Metadata>, terminal: bool) -> TipoEntradaPadrao {
+pub fn classify_stdin(meta: Option<&std::fs::Metadata>, terminal: bool) -> StdinKind {
     use std::os::unix::fs::{FileTypeExt, MetadataExt};
     let Some(m) = meta else {
-        return TipoEntradaPadrao::Nula;
+        return StdinKind::Null;
     };
     let t = m.file_type();
     if t.is_char_device() && m.rdev() == DEV_NULL {
-        TipoEntradaPadrao::Nula
+        StdinKind::Null
     } else if terminal && t.is_char_device() {
-        TipoEntradaPadrao::Terminal
+        StdinKind::Terminal
     } else if t.is_fifo() || t.is_socket() {
-        TipoEntradaPadrao::Pipe
+        StdinKind::Pipe
     } else if t.is_file() {
-        TipoEntradaPadrao::Arquivo
+        StdinKind::File
     } else {
-        TipoEntradaPadrao::Outra
+        StdinKind::Other
     }
 }
 
 /// Terminal size for the protocol (24×80 when the terminal does not say).
-fn window_from(t: Option<(u16, u16)>) -> Janela {
+fn window_from(t: Option<(u16, u16)>) -> WindowSize {
     let (rows, columns) = t.unwrap_or((24, 80));
-    Janela {
-        linhas: rows.clamp(1, 10_000),
-        colunas: columns.clamp(1, 10_000),
+    WindowSize {
+        rows: rows.clamp(1, 10_000),
+        cols: columns.clamp(1, 10_000),
     }
 }
 
@@ -185,14 +185,14 @@ fn fail(e: &mut dyn Env, msg: &str) -> u8 {
 }
 
 /// Message of a daemon error, with the hint of what to do when there is one.
-pub fn daemon_message(error: &ErroResposta) -> String {
+pub fn daemon_message(error: &ResponseError) -> String {
     match error {
         // Phase 54a (RA8): by the full path, not by the `ward` of the `PATH`.
-        ErroResposta::Travado => {
+        ResponseError::Locked => {
             "travado: destrave com `/usr/local/bin/ward destravar` ou pelo app".to_owned()
         }
-        ErroResposta::CofreInexistente => "ainda não existe cofre; crie pelo app".to_owned(),
-        e => e.mensagem().to_owned(),
+        ResponseError::VaultNotFound => "ainda não existe cofre; crie pelo app".to_owned(),
+        e => e.message().to_owned(),
     }
 }
 
@@ -221,7 +221,7 @@ pub fn execute(cmd: Command, e: &mut dyn Env) -> u8 {
     }
 }
 
-fn request(e: &mut dyn Env, c: &mut Connection, p: &Pedido) -> Result<Resposta, u8> {
+fn request(e: &mut dyn Env, c: &mut Connection, p: &Request) -> Result<Resposta, u8> {
     match c.request(p) {
         Ok(Resposta::Erro(error)) => Err(fail(e, &daemon_message(&error))),
         Ok(r) => Ok(r),
@@ -238,7 +238,7 @@ fn list(e: &mut dyn Env, json: bool) -> u8 {
         Ok(c) => c,
         Err(code) => return code,
     };
-    match request(e, &mut c, &Pedido::Lista) {
+    match request(e, &mut c, &Request::List) {
         Ok(Resposta::Lista(items)) => {
             let out = if json {
                 text::list_json(&items)
@@ -260,7 +260,7 @@ fn lock(e: &mut dyn Env) -> u8 {
         Ok(c) => c,
         Err(code) => return code,
     };
-    match request(e, &mut c, &Pedido::Travar) {
+    match request(e, &mut c, &Request::Lock) {
         Ok(Resposta::Ok) => {
             let _ = writeln!(e.stdout(), "cofre travado");
             EXIT_OK
@@ -277,11 +277,11 @@ fn unlock(e: &mut dyn Env) -> u8 {
         Err(code) => return code,
     };
     // 2. State, without secret.
-    match request(e, &mut c, &Pedido::Estado) {
+    match request(e, &mut c, &Request::Status) {
         Ok(Resposta::Estado {
             cofre_existe: false,
             ..
-        }) => return fail(e, &daemon_message(&ErroResposta::CofreInexistente)),
+        }) => return fail(e, &daemon_message(&ResponseError::VaultNotFound)),
         Ok(Resposta::Estado { travado: false, .. }) => {
             let _ = writeln!(e.stdout(), "o cofre já está destravado");
             return EXIT_OK;
@@ -319,7 +319,7 @@ fn unlock(e: &mut dyn Env) -> u8 {
     // The password moves from the `Zeroizing` to the `Secret` without a copy.
     let password = Secret::from_bytes(std::mem::take(&mut *read));
     drop(read);
-    let r = request(e, &mut c, &Pedido::Destravar { senha: password });
+    let r = request(e, &mut c, &Request::Unlock { password });
     match r {
         Ok(Resposta::Ok) => {
             let _ = writeln!(e.stdout(), "cofre destravado");
@@ -342,8 +342,8 @@ pub fn run_request(
     argv: Vec<OsString>,
     cwd: PathBuf,
     environment: Vec<(OsString, OsString)>,
-    stdin_kind: TipoEntradaPadrao,
-) -> Result<Pedido, &'static str> {
+    stdin_kind: StdinKind,
+) -> Result<Request, &'static str> {
     use std::os::unix::ffi::OsStringExt;
     let argv: Vec<Vec<u8>> = argv.into_iter().map(OsStringExt::into_vec).collect();
     let cwd = cwd.into_os_string().into_vec();
@@ -371,23 +371,23 @@ pub fn run_request(
     if field_too_large || argv.len() > MAX_ARGUMENTS || environment.len() > MAX_ENV_VARIABLES {
         return Err(MSG_RUN_FIELD);
     }
-    let request = Pedido::Executar(PedidoExecutar {
-        entrada: entry,
+    let request = Request::Run(RunRequest {
+        entry,
         argv: argv.into_iter().map(Zeroizing::new).collect(),
         cwd: Zeroizing::new(cwd),
-        ambiente: environment
+        env: environment
             .into_iter()
-            .map(|(k, v)| Variavel {
-                nome: Zeroizing::new(k),
-                valor: Secret::from_bytes(v),
+            .map(|(k, v)| Variable {
+                name: Zeroizing::new(k),
+                value: Secret::from_bytes(v),
             })
             .collect(),
-        tipo_entrada: stdin_kind,
+        stdin_kind,
     });
     // The whole frame (with the JSON names) also fits in the limit.
-    match ward_core::protocolo::codificar_pedido(Papel::Agente, &request) {
+    match ward_core::protocol::encode_request(Role::Agent, &request) {
         Ok(_) => Ok(request),
-        Err(ErroCodificar::GrandeDemais) => Err(MSG_RUN_TOO_LARGE),
+        Err(EncodeError::TooLarge) => Err(MSG_RUN_TOO_LARGE),
         Err(_) => Err(MSG_RUN_FIELD),
     }
 }
@@ -416,11 +416,11 @@ fn run(e: &mut dyn Env, entry: String, argv: Vec<OsString>) -> u8 {
         Ok(c) => c,
         Err(error) => return fail_run(e, &error.message()),
     };
-    match c.request(&Pedido::Estado) {
+    match c.request(&Request::Status) {
         Ok(Resposta::Estado {
             cofre_existe: false,
             ..
-        }) => return fail_run(e, &daemon_message(&ErroResposta::CofreInexistente)),
+        }) => return fail_run(e, &daemon_message(&ResponseError::VaultNotFound)),
         Ok(Resposta::Estado { travado: true, .. }) => {
             let _ = writeln!(e.stderr(), "ward: {MSG_RUN_LOCKED}");
         }
@@ -442,8 +442,8 @@ fn run(e: &mut dyn Env, entry: String, argv: Vec<OsString>) -> u8 {
 /// The standard input goes to the command in a thread; at its end, an empty frame.
 /// Phase 54b: declared null, nothing is read (fd 0 may even be another file, if it was
 /// closed) and only the empty frame goes.
-fn forward_stdin(e: &mut dyn Env, writer: Arc<Mutex<SessionWriter>>, kind: TipoEntradaPadrao) {
-    let mut source = if kind == TipoEntradaPadrao::Nula {
+fn forward_stdin(e: &mut dyn Env, writer: Arc<Mutex<SessionWriter>>, kind: StdinKind) {
+    let mut source = if kind == StdinKind::Null {
         Box::new(io::empty())
     } else {
         e.stdin()
@@ -499,9 +499,9 @@ pub fn ssh_request(
     entry: String,
     token: Option<Secret>,
     command: Vec<OsString>,
-    window: Option<Janela>,
-    stdin_kind: TipoEntradaPadrao,
-) -> Result<Pedido, &'static str> {
+    window: Option<WindowSize>,
+    stdin_kind: StdinKind,
+) -> Result<Request, &'static str> {
     use std::os::unix::ffi::OsStringExt;
     let command: Vec<Vec<u8>> = command.into_iter().map(OsStringExt::into_vec).collect();
     if command.iter().map(Vec::len).sum::<usize>() > MAX_RUN {
@@ -510,16 +510,16 @@ pub fn ssh_request(
     if command.len() > MAX_ARGUMENTS || command.iter().any(|a| a.len() > MAX_ARGUMENT) {
         return Err(MSG_RUN_FIELD);
     }
-    let request = Pedido::Ssh {
-        entrada: entry,
-        comando: command.into_iter().map(Zeroizing::new).collect(),
+    let request = Request::Ssh {
+        entry,
+        command: command.into_iter().map(Zeroizing::new).collect(),
         token,
-        janela: window,
-        tipo_entrada: stdin_kind,
+        window_size: window,
+        stdin_kind,
     };
-    match ward_core::protocolo::codificar_pedido(Papel::Agente, &request) {
+    match ward_core::protocol::encode_request(Role::Agent, &request) {
         Ok(_) => Ok(request),
-        Err(ErroCodificar::GrandeDemais) => Err(MSG_RUN_TOO_LARGE),
+        Err(EncodeError::TooLarge) => Err(MSG_RUN_TOO_LARGE),
         Err(_) => Err(MSG_RUN_FIELD),
     }
 }
@@ -567,11 +567,11 @@ fn ssh(e: &mut dyn Env, entry: String, token_fd: Option<u32>, command: Vec<OsStr
         Ok(c) => c,
         Err(error) => return fail_run(e, &error.message()),
     };
-    match c.request(&Pedido::Estado) {
+    match c.request(&Request::Status) {
         Ok(Resposta::Estado {
             cofre_existe: false,
             ..
-        }) => return fail_run(e, &daemon_message(&ErroResposta::CofreInexistente)),
+        }) => return fail_run(e, &daemon_message(&ResponseError::VaultNotFound)),
         Ok(Resposta::Estado { travado: true, .. }) => {
             let _ = writeln!(e.stderr(), "ward: {MSG_RUN_LOCKED}");
         }
@@ -607,11 +607,11 @@ fn playwright(e: &mut dyn Env, entry: String) -> u8 {
         Ok(c) => c,
         Err(code) => return code,
     };
-    match c.request(&Pedido::Estado) {
+    match c.request(&Request::Status) {
         Ok(Resposta::Estado {
             cofre_existe: false,
             ..
-        }) => return fail(e, &daemon_message(&ErroResposta::CofreInexistente)),
+        }) => return fail(e, &daemon_message(&ResponseError::VaultNotFound)),
         Ok(Resposta::Estado { travado: true, .. }) => {
             let _ = writeln!(e.stderr(), "ward: {MSG_RUN_LOCKED}");
         }
@@ -621,7 +621,7 @@ fn playwright(e: &mut dyn Env, entry: String) -> u8 {
         Err(error) => return fail(e, &error.message()),
     }
     // Waits for the unlock and the approval (2 min each, D16, S10) plus the browser.
-    match c.request_with_timeout(&Pedido::Playwright { entrada: entry }, PLAYWRIGHT_TIMEOUT) {
+    match c.request_with_timeout(&Request::Playwright { entry }, PLAYWRIGHT_TIMEOUT) {
         Ok(Resposta::SessaoPlaywright { caminho })
             if caminho.starts_with('/') && !caminho.chars().any(char::is_control) =>
         {
@@ -644,11 +644,11 @@ fn login(e: &mut dyn Env, entry: String) -> u8 {
         Ok(c) => c,
         Err(code) => return code,
     };
-    match c.request(&Pedido::Estado) {
+    match c.request(&Request::Status) {
         Ok(Resposta::Estado {
             cofre_existe: false,
             ..
-        }) => return fail(e, &daemon_message(&ErroResposta::CofreInexistente)),
+        }) => return fail(e, &daemon_message(&ResponseError::VaultNotFound)),
         Ok(Resposta::Estado { travado: true, .. }) => {
             let _ = writeln!(e.stderr(), "ward: {MSG_RUN_LOCKED}");
         }
@@ -658,8 +658,8 @@ fn login(e: &mut dyn Env, entry: String) -> u8 {
         Err(error) => return fail(e, &error.message()),
     }
     match c.request_with_timeout(
-        &Pedido::Login {
-            entrada: entry.clone(),
+        &Request::Login {
+            entry: entry.clone(),
         },
         PLAYWRIGHT_TIMEOUT,
     ) {
@@ -676,13 +676,13 @@ fn login(e: &mut dyn Env, entry: String) -> u8 {
 }
 
 /// Message of a `ward login` error: the origin and the extension get their own text.
-pub fn login_message(error: &ErroResposta) -> String {
+pub fn login_message(error: &ResponseError) -> String {
     match error {
-        ErroResposta::OrigemDiferente => {
+        ResponseError::OriginMismatch => {
             "domínio não confere: a origem da aba ativa não é a da entrada; nada foi preenchido"
                 .to_owned()
         }
-        ErroResposta::NavegadorFalhou => {
+        ResponseError::BrowserFailed => {
             "a extensão do Ward no Chrome não respondeu (o Chrome está aberto?)".to_owned()
         }
         e => daemon_message(e),
@@ -697,7 +697,7 @@ const PLAYWRIGHT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3
 /// every [`WINDOW_STEP`]).
 fn track_window(
     e: &mut dyn Env,
-    initial: Janela,
+    initial: WindowSize,
     writer: Arc<Mutex<SessionWriter>>,
     done: Arc<AtomicBool>,
 ) {
