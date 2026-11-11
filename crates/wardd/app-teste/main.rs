@@ -9,7 +9,7 @@
 //! - `ambiente=<nomes das variáveis, em ordem>`;
 //! - `argumentos=<n>`;
 //! - D65 b e c (Fase 22c, V3.39 e V3.40), só quando o papel é app, contra o cofre de
-//!   teste de `crates/ward-core/src/corpo/cofre_teste.rs` (o teste grava o mesmo):
+//!   teste de `crates/ward-core/src/body/test_vault.rs` (o teste grava o mesmo):
 //!   `revelar_pg`, `revelar_bloqueada` e `copiar_pg` (`igual` quando o valor bate com o
 //!   da entrada, `diferente`, ou o tipo/código), `totp` (`igual` quando bate com o
 //!   código local do mesmo período), `campo_inexistente` (o código), `lista` (`resumo`
@@ -32,8 +32,8 @@ use ward_core::totp::Totp;
 
 // O cofre de teste (só valores falsos) pela API pública, como o daemon falso do app.
 use ward_core as wc;
-#[path = "../../ward-core/src/corpo/cofre_teste.rs"]
-mod cofre_teste;
+#[path = "../../ward-core/src/body/test_vault.rs"]
+mod test_vault;
 
 fn pedir(s: &mut UnixStream, p: &Pedido) -> Option<Vec<u8>> {
     let corpo = protocolo::codificar_pedido(Papel::App, p).ok()?;
@@ -85,7 +85,7 @@ fn contem(palheiro: &[u8], agulha: &[u8]) -> bool {
 
 /// D65 b e c contra o cofre de teste: o que o app recebe, comparado sem imprimir.
 fn valores_do_app(s: &mut UnixStream) {
-    let entradas = cofre_teste::cofre_de_teste();
+    let entradas = test_vault::test_vault_entries();
     let senha = || Alvo::Campo("senha".into());
     for (rotulo, revelar, nome) in [
         ("revelar_pg", true, "acme-pg-dev"),
@@ -171,10 +171,7 @@ fn valores_do_app(s: &mut UnixStream) {
                 .all(|i| i.resumo.is_some() && i.nivel.is_some())
             {
                 "sem_resumo".to_owned()
-            } else if cofre_teste::SEGREDOS
-                .iter()
-                .any(|v| contem(c, v.as_bytes()))
-            {
+            } else if test_vault::SECRETS.iter().any(|v| contem(c, v.as_bytes())) {
                 "com_segredo".to_owned()
             } else {
                 "resumo".to_owned()

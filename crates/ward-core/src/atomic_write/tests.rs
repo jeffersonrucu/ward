@@ -846,17 +846,17 @@ fn v2_10_v2_11_strace_order_and_nothing_in_clear() {
 
 /// The test vault of D15 (the same entries as the body tests). The body test module is
 /// private to it; including the file again here avoids opening the visibility of
-/// `corpo::testes` only for the write tests.
+/// `body::tests` only for the write tests.
 #[allow(clippy::duplicate_mod)]
-#[path = "../corpo/cofre_teste.rs"]
-mod cofre_teste;
+#[path = "../body/test_vault.rs"]
+mod test_vault;
 use crate as wc;
 
 /// Generation written in the file (opens with no minimum nor burned).
 fn generation_on_disk(path: &Path) -> u64 {
     let bytes = fs::read(path).unwrap();
     let _g = ARGON.lock().unwrap_or_else(|e| e.into_inner());
-    crate::corpo::abrir_entradas(&bytes, &password())
+    crate::body::open_entries(&bytes, &password())
         .unwrap()
         .0
         .generation()
@@ -874,7 +874,7 @@ fn same_point(a: Point, b: Point) -> bool {
 
 /// Error and `Debug` of the error without a value of the test vault.
 fn without_value(text: &str) {
-    for s in cofre_teste::SEGREDOS {
+    for s in test_vault::SECRETS {
         assert!(!text.contains(s), "erro com segredo de teste");
     }
     assert!(!text.contains("falso") && !text.contains("acme"), "{text}");
@@ -886,7 +886,7 @@ fn without_value(text: &str) {
 /// n+2. No pair of sealed files has the same generation.
 #[test]
 fn v2_44_failure_at_each_point_burns_the_generation() {
-    let entries = cofre_teste::cofre_de_teste();
+    let entries = test_vault::test_vault_entries();
     for (i, target) in POINTS.iter().enumerate() {
         let d = Dir::new("queimada");
         let mut c = new_vault();
@@ -931,8 +931,8 @@ fn d53_body_that_does_not_serialize_does_not_burn() {
     write_entries(&d.vault(), &mut c, &[]).unwrap();
     let before = fs::read(d.vault()).unwrap();
     // Two entries with the same name do not become a body.
-    let one = cofre_teste::cofre_de_teste().remove(0);
-    let two = cofre_teste::cofre_de_teste().remove(0);
+    let one = test_vault::test_vault_entries().remove(0);
+    let two = test_vault::test_vault_entries().remove(0);
     let r = write_entries(&d.vault(), &mut c, &[one, two]);
     assert!(matches!(r, Err(WriteError::Body(_))), "{r:?}");
     assert_eq!(c.generation(), 1);
@@ -950,7 +950,7 @@ fn d53_body_that_does_not_serialize_does_not_burn() {
 fn v2_53_directory_fsync_fails_and_the_generation_does_not_repeat() {
     let d = Dir::new("v2-53");
     let mut c = new_vault();
-    let mut entries = cofre_teste::cofre_de_teste();
+    let mut entries = test_vault::test_vault_entries();
     write_entries(&d.vault(), &mut c, &entries).unwrap();
     let n = c.generation();
     let file_n = fs::read(d.vault()).unwrap();
@@ -991,7 +991,7 @@ fn v2_53_directory_fsync_fails_and_the_generation_does_not_repeat() {
         .iter()
         .map(|b| {
             let _g = ARGON.lock().unwrap_or_else(|e| e.into_inner());
-            crate::corpo::abrir_entradas(b, &password())
+            crate::body::open_entries(b, &password())
                 .unwrap()
                 .0
                 .generation()
@@ -1003,10 +1003,10 @@ fn v2_53_directory_fsync_fails_and_the_generation_does_not_repeat() {
     // (n+2).
     {
         let _g = ARGON.lock().unwrap_or_else(|e| e.into_inner());
-        match crate::corpo::abrir_entradas_desde(&file_a, &password(), n + 2, n + 2) {
+        match crate::body::open_entries_since(&file_a, &password(), n + 2, n + 2) {
             Ok(_) => panic!("a cópia de A abriu com o mínimo de B"),
             Err(e) => {
-                assert_eq!(e, crate::corpo::ErroAbrir::Retrocesso);
+                assert_eq!(e, crate::body::OpenError::Rollback);
                 without_value(&format!("{e} {e:?}"));
             }
         }
@@ -1017,7 +1017,7 @@ fn v2_53_directory_fsync_fails_and_the_generation_does_not_repeat() {
     fs::write(d.vault(), &file_a).unwrap();
     let (mut reopened, read) = {
         let _g = ARGON.lock().unwrap_or_else(|e| e.into_inner());
-        crate::corpo::abrir_entradas_desde(&file_a, &password(), n, n + 2).unwrap()
+        crate::body::open_entries_since(&file_a, &password(), n, n + 2).unwrap()
     };
     assert_eq!(reopened.generation(), n + 2);
     write_entries(&d.vault(), &mut reopened, &read).unwrap();
@@ -1035,7 +1035,7 @@ fn v2_53_directory_fsync_fails_and_the_generation_does_not_repeat() {
     assert_eq!(changed.generation(), n + 6);
     let bytes = fs::read(d.vault()).unwrap();
     let _g = ARGON.lock().unwrap_or_else(|e| e.into_inner());
-    let (opened, _) = crate::corpo::abrir_entradas(&bytes, &new).unwrap();
+    let (opened, _) = crate::body::open_entries(&bytes, &new).unwrap();
     assert_eq!(opened.generation(), n + 6);
 }
 
@@ -1052,7 +1052,7 @@ fn d53_burned_lower_than_the_disk_does_not_go_down() {
     assert_eq!(c.generation(), 3);
     let bytes = fs::read(d.vault()).unwrap();
     let _g = ARGON.lock().unwrap_or_else(|e| e.into_inner());
-    let (opened, _) = crate::corpo::abrir_entradas_desde(&bytes, &password(), 0, 1).unwrap();
+    let (opened, _) = crate::body::open_entries_since(&bytes, &password(), 0, 1).unwrap();
     assert_eq!(opened.generation(), 3);
     let new = MasterPassword::new("falso-mestra-ward-02".to_owned());
     let (changed, _) = change_password(&d.vault(), &password(), &new, 3, 2).unwrap();
@@ -1118,7 +1118,7 @@ fn d62_new_vault_after_the_burned_generation() {
 /// body goes past `LARGE_SIZE`, so there is a point in the middle of the write. The three
 /// entries have the same size.
 fn v4_body_with_dates(version: u64) -> zeroize::Zeroizing<Vec<u8>> {
-    use crate::corpo::serializar;
+    use crate::body::serialize;
     use crate::entry::{DataDraft, Dates, Draft, Secret};
     let entries: Vec<_> = (0..3u64)
         .map(|i| {
@@ -1146,11 +1146,11 @@ fn v4_body_with_dates(version: u64) -> zeroize::Zeroizing<Vec<u8>> {
             e
         })
         .collect();
-    serializar(vault().config(), 1 + version, &entries).unwrap()
+    serialize(vault().config(), 1 + version, &entries).unwrap()
 }
 
 fn body_dates(content: &[u8]) -> Vec<(Option<u64>, Option<u64>)> {
-    crate::corpo::desserializar(content)
+    crate::body::deserialize(content)
         .unwrap()
         .2
         .iter()
@@ -1192,7 +1192,7 @@ fn d65_v4_sigkill_at_each_point_keeps_the_dates() {
 #[test]
 fn d65_v4_byte_changed_in_the_dates_fails_the_opening() {
     let body = v4_body_with_dates(7);
-    let empty = crate::corpo::serializar(vault().config(), 8, &[])
+    let empty = crate::body::serialize(vault().config(), 8, &[])
         .unwrap()
         .len();
     let size = (body.len() - empty) / 3;

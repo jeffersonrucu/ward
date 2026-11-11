@@ -36,7 +36,7 @@
 //!   link").
 //!
 //! Restaurar é do daemon, só pelo papel app (D17, D39, V7.8): abre a versão com a
-//! senha dela ([`crate::corpo::abrir_entradas_lida`] sem geração mínima), guarda o cofre
+//! senha dela ([`crate::body::open_entries_with_generation`] sem geração mínima), guarda o cofre
 //! atual como backup ([`guardar_atual`]) e sela a versão de novo com geração = maior
 //! queimada + 1 pela gravação normal.
 

@@ -572,7 +572,7 @@ fn restaurar_mantem_tempo_de_trava_e_backup_externo_atuais() {
     // No disco também (o destravar lê a configuração do arquivo).
     let bytes = fs::read(&c.cofre).unwrap();
     let s = ward_core::format::MasterPassword::new(SENHA.to_owned());
-    let (aberto, _, _) = ward_core::corpo::abrir_entradas_lida(&bytes, &s, 0, 0).unwrap();
+    let (aberto, _, _) = ward_core::body::open_entries_with_generation(&bytes, &s, 0, 0).unwrap();
     assert_eq!(aberto.config().lock_minutes(), 30);
     assert!(aberto.config().backup().enabled());
 }

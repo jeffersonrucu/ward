@@ -427,7 +427,7 @@ impl OpenVault {
     /// in the file name is not.
     pub(crate) fn sealed_generation(&self, file: &[u8]) -> Option<u64> {
         let content = self.keys.open_own(file).ok()?;
-        crate::corpo::geracao_do_corpo(&content)
+        crate::body::body_generation(&content)
     }
 }
 
@@ -604,7 +604,7 @@ pub fn read_header(file: &[u8]) -> Result<Header, FormatError> {
 
 /// Opens the vault: checks structure and parameters, derives the KEK, unwraps the data
 /// key and decrypts the content. The clear content zeroes on drop. Only inside the
-/// crate: from outside, the path is [`crate::corpo::abrir_entradas`], which reads the
+/// crate: from outside, the path is [`crate::body::open_entries`], which reads the
 /// body and the config.
 pub(crate) fn open(
     file: &[u8],

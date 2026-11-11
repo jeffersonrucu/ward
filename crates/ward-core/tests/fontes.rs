@@ -22,7 +22,7 @@ fn fontes_de_producao() -> Vec<(PathBuf, String)> {
             } else if nome.ends_with(".rs")
                 && nome != "testes.rs"
                 && nome != "tests.rs"
-                && nome != "cofre_teste.rs"
+                && nome != "test_vault.rs"
             {
                 let texto = fs::read_to_string(&p).unwrap();
                 saida.push((p, texto));
@@ -166,11 +166,11 @@ fn v2_50_unicas_gravacoes_publicas() {
     assert!(corpo_de("write_entries_with_backup").contains("write_entries_sealed("));
     assert!(
         corpo_de("write_entries_sealed")
-            .contains("corpo::serializar(vault.config(), generation, entries)")
+            .contains("body::serialize(vault.config(), generation, entries)")
     );
     assert!(corpo_de("change_password_from_bytes").contains("change_password_sealed("));
     assert!(corpo_de("change_password_with_backup_from_bytes").contains("change_password_sealed("));
     let troca = corpo_de("change_password_sealed");
-    assert!(troca.contains("corpo::desserializar(&content)"));
+    assert!(troca.contains("body::deserialize(&content)"));
     assert!(troca.contains("write_entries_sealed(destination, &mut vault, &entries"));
 }

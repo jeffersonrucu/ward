@@ -8,8 +8,8 @@
 use zeroize::Zeroizing;
 
 use super::*;
+use crate::body::{BodyError, deserialize, serialize};
 use crate::config::{PinHash, VaultConfig};
-use crate::corpo::{ErroCorpo, desserializar, serializar};
 use crate::entrega::{self, Entrega, ErroRecurso, Recursos};
 use crate::entry::{
     AttachmentDraft, DataDraft, Draft, Entry, EntryType, ExtraDraft, Secret, TOO_LARGE_FOR_MASK,
@@ -307,8 +307,8 @@ fn v2_35_validation_and_body_at_the_same_attachment_limit() {
     };
     // At the limit: validation accepts, the body writes and reads.
     let at_limit = generic(&[MAX_ATTACHMENTS_TOTAL - 1, 1]).validate().unwrap();
-    let body = serializar(cfg(), 1, core::slice::from_ref(&at_limit)).unwrap();
-    assert_eq!(desserializar(&body).map(|(_, _, v)| v.len()), Ok(1));
+    let body = serialize(cfg(), 1, core::slice::from_ref(&at_limit)).unwrap();
+    assert_eq!(deserialize(&body).map(|(_, _, v)| v.len()), Ok(1));
     // One byte above: validation refuses, and so does the body with that extra byte.
     assert!(generic(&[MAX_ATTACHMENTS_TOTAL, 1]).validate().is_err());
     let mut forged = body.to_vec();
@@ -317,11 +317,11 @@ fn v2_35_validation_and_body_at_the_same_attachment_limit() {
     let n = forged.len();
     forged[n - 5..n - 1].copy_from_slice(&2u32.to_le_bytes());
     forged.push(0x5a);
-    assert_eq!(desserializar(&forged).err(), Some(ErroCorpo::Invalido));
+    assert_eq!(deserialize(&forged).err(), Some(BodyError::Invalid));
     // And the same body without the extra byte opens again (the forger is right).
     forged[n - 5..n - 1].copy_from_slice(&1u32.to_le_bytes());
     forged.pop();
-    assert_eq!(desserializar(&forged).map(|(_, _, v)| v.len()), Ok(1));
+    assert_eq!(deserialize(&forged).map(|(_, _, v)| v.len()), Ok(1));
 }
 
 #[test]

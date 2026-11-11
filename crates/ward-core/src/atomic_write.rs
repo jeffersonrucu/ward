@@ -69,7 +69,7 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use crate::backup::{ErroBackup, PastaBackup, Versao};
-use crate::corpo::{self, ErroCorpo};
+use crate::body::{self, BodyError};
 use crate::crypto;
 use crate::entry::Entry;
 use crate::format::{self, FormatError, MasterPassword, OpenVault};
@@ -151,7 +151,7 @@ pub enum WriteError {
     Format(FormatError),
     /// The entries do not become a writable body (too large or inconsistent; nothing was
     /// written).
-    Body(ErroCorpo),
+    Body(BodyError),
     /// The destination has no file name (`/`, `..`, empty).
     InvalidDestination,
     /// I/O failure in a step. Before [`Step::FsyncDir`], the destination keeps the
@@ -242,8 +242,7 @@ fn write_entries_sealed(
     let generation = vault
         .next_generation()
         .ok_or(WriteError::GenerationExhausted)?;
-    let content =
-        corpo::serializar(vault.config(), generation, entries).map_err(WriteError::Body)?;
+    let content = body::serialize(vault.config(), generation, entries).map_err(WriteError::Body)?;
     let file = vault.seal(&content).map_err(WriteError::Format)?;
     drop(content);
     // D53: the generation is sealed; from here on it is not used again.
@@ -408,7 +407,7 @@ fn change_password_sealed(
     }
     let (keys, content) =
         format::change_password(file, current, new).map_err(WriteError::Format)?;
-    let (config, generation, entries) = corpo::desserializar(&content).map_err(WriteError::Body)?;
+    let (config, generation, entries) = body::deserialize(&content).map_err(WriteError::Body)?;
     drop(content);
     if generation < min_generation {
         return Err(WriteError::Rollback);

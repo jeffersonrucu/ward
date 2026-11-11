@@ -10,7 +10,7 @@ use super::quadro::{self, ErroQuadro, ler_quadro, limite_do_quadro};
 use super::*;
 use crate as wc;
 use crate::atomic_write::WriteError;
-use crate::corpo::ErroAbrir;
+use crate::body::OpenError;
 use crate::entry::{AttachmentDraft, DataDraft, Draft, EntryType, Environment, ExtraDraft, Secret};
 use crate::limits::{
     KIB, MAX_APP_FRAME, MAX_ATTACHMENT_NAME, MAX_ATTACHMENTS, MAX_ATTACHMENTS_TOTAL,
@@ -19,9 +19,9 @@ use crate::limits::{
 
 // O mesmo cofre de teste dos testes do corpo (o módulo deles é privado de `corpo`).
 #[allow(clippy::duplicate_mod)]
-#[path = "../corpo/cofre_teste.rs"]
-mod cofre_teste;
-use cofre_teste::cofre_de_teste;
+#[path = "../body/test_vault.rs"]
+mod test_vault;
+use test_vault::test_vault_entries;
 
 // ---- Ajudantes ----
 
@@ -150,7 +150,7 @@ fn item(nome: &str) -> ItemLista {
 
 /// Uma resposta de cada tipo, com credenciais falsas onde o tipo leva.
 fn uma_resposta_de_cada() -> Vec<Resposta> {
-    let entradas = cofre_de_teste();
+    let entradas = test_vault_entries();
     let servidor = entradas
         .iter()
         .find(|e| e.kind() == EntryType::Server)
@@ -663,7 +663,7 @@ fn contem(palheiro: &[u8], agulha: &[u8]) -> bool {
 /// para o app não têm segredo nenhum, em nenhuma forma.
 #[test]
 fn v3_3_lista_e_detalhe_do_cofre_de_teste_sem_segredo() {
-    let entradas = cofre_de_teste();
+    let entradas = test_vault_entries();
     assert_eq!(entradas.len(), 22);
     let lista = Resposta::Lista(
         entradas
@@ -983,7 +983,7 @@ fn rascunho_com_anexos(tamanhos: &[usize]) -> Draft {
             .enumerate()
             .map(|(i, &n)| AttachmentDraft {
                 name: format!("cliente-{i}.ovpn"),
-                content: Secret::from_bytes(cofre_teste::bytes_0_a_255(n)),
+                content: Secret::from_bytes(test_vault::bytes_0_to_255(n)),
             })
             .collect(),
     }
@@ -1005,7 +1005,7 @@ fn d29_anexos_ate_256_kib_somados_pelo_app() {
     };
     assert_eq!(
         rascunho.attachments[0].content.expose(),
-        &cofre_teste::bytes_0_a_255(MAX_ATTACHMENTS_TOTAL - 10 * KIB)[..]
+        &test_vault::bytes_0_to_255(MAX_ATTACHMENTS_TOTAL - 10 * KIB)[..]
     );
     rascunho.validate().expect("entrada com anexos no limite");
     assert_eq!(
@@ -1024,8 +1024,8 @@ fn d29_anexos_ate_256_kib_somados_pelo_app() {
         ErroCodificar::Invalida
     );
     let forjado = String::from_utf8(q.to_vec()).unwrap().replace(
-        &b64(&cofre_teste::bytes_0_a_255(10 * KIB)),
-        &b64(&cofre_teste::bytes_0_a_255(10 * KIB + 1)),
+        &b64(&test_vault::bytes_0_to_255(10 * KIB)),
+        &b64(&test_vault::bytes_0_to_255(10 * KIB + 1)),
     );
     assert_eq!(
         ped(Papel::App, &forjado).unwrap_err(),
@@ -1184,7 +1184,7 @@ fn maior_entrada_cabe_no_quadro_do_app() {
             .collect(),
         attachments: vec![AttachmentDraft {
             name: "tudo.bin".into(),
-            content: Secret::from_bytes(cofre_teste::bytes_0_a_255(MAX_ATTACHMENTS_TOTAL)),
+            content: Secret::from_bytes(test_vault::bytes_0_to_255(MAX_ATTACHMENTS_TOTAL)),
         }],
     };
     let p = Pedido::SalvarEntrada {
@@ -1427,14 +1427,14 @@ fn texto_com_escape_vai_e_volta() {
 
 #[test]
 fn d39_erros_do_destravar_e_das_gravacoes() {
-    assert_eq!(MSG_RETROCESSO, ErroAbrir::Retrocesso.to_string());
+    assert_eq!(MSG_RETROCESSO, OpenError::Rollback.to_string());
     assert_eq!(
         MSG_GERACAO_ESGOTADA,
         WriteError::GenerationExhausted.to_string()
     );
     assert_eq!(MSG_COFRE_MUDOU, "o arquivo do cofre mudou fora do Ward");
     assert_eq!(
-        ErroResposta::from(&ErroAbrir::Retrocesso),
+        ErroResposta::from(&OpenError::Rollback),
         ErroResposta::Retrocesso
     );
     assert_eq!(
@@ -1507,7 +1507,7 @@ fn entrada_inexistente_tem_um_quadro_so() {
 /// com valor, campo inventado no detalhe, código TOTP com letra.
 #[test]
 fn leitura_da_resposta_e_estrita() {
-    let entradas = cofre_de_teste();
+    let entradas = test_vault_entries();
     let e = entradas.iter().find(|e| !e.extras().is_empty()).unwrap();
     let q = codificar_resposta(
         Papel::App,
@@ -1700,7 +1700,7 @@ fn fuzz_quadro_e_json_aleatorios() {
 /// recusado pela leitura do agente (e um sem nível, pela do app).
 #[test]
 fn d50_lista_do_agente_sem_nivel_e_do_app_com_nivel() {
-    let entradas = cofre_de_teste();
+    let entradas = test_vault_entries();
     let do_papel = |p: Papel| {
         Resposta::Lista(
             entradas
@@ -1745,7 +1745,7 @@ fn d50_lista_do_agente_sem_nivel_e_do_app_com_nivel() {
 /// item sem resumo ou com resumo que leve segredo.
 #[test]
 fn d65_lista_do_app_com_resumo_e_do_agente_sem() {
-    let entradas = cofre_de_teste();
+    let entradas = test_vault_entries();
     let do_papel = |p: Papel| {
         Resposta::Lista(
             entradas
@@ -1774,7 +1774,7 @@ fn d65_lista_do_app_com_resumo_e_do_agente_sem() {
     let generico = itens.iter().find(|i| i.nome == "gama-generico").unwrap();
     assert_eq!(generico.resumo.as_ref().unwrap().extras, 2);
     // Nenhum segredo do cofre de teste no quadro do app, nem em base64.
-    for s in cofre_teste::SEGREDOS {
+    for s in test_vault::SECRETS {
         assert!(!contem(&q_app, s.as_bytes()), "segredo na lista do app");
         let b = Base64::encode_string(s.as_bytes());
         assert!(!contem(&q_app, b.as_bytes()), "segredo em base64 na lista");
@@ -1859,7 +1859,7 @@ fn d65_lista_do_app_com_resumo_e_do_agente_sem() {
 /// vazio, extra comum e extra inexistente dão `None`.
 #[test]
 fn d65_alvo_acha_so_os_segredos_da_entrada() {
-    let entradas = cofre_de_teste();
+    let entradas = test_vault_entries();
     for e in &entradas {
         let d = DetalheEntrada::de_entrada(e);
         let todos: Vec<&[u8]> = e.secrets().iter().map(|s| s.value.expose()).collect();
@@ -2064,7 +2064,7 @@ fn vb(nome: &str, conferida: bool, fora_de_ordem: bool) -> VersaoBackup {
 #[test]
 fn d65_datas_so_no_detalhe_do_app() {
     use crate::entry::{AccessLevel, Dates};
-    let mut entradas = cofre_de_teste();
+    let mut entradas = test_vault_entries();
     let i = entradas
         .iter()
         .position(|e| e.name() == "acme-pg-dev")
@@ -2120,7 +2120,7 @@ fn d65_datas_so_no_detalhe_do_app() {
 /// é recusado pela leitura do app.
 #[test]
 fn ataque_d65_detalhe_com_data_forjada_recusado() {
-    let entradas = cofre_de_teste();
+    let entradas = test_vault_entries();
     let e = entradas.iter().find(|e| e.name() == "acme-pg-dev").unwrap();
     let q = codificar_resposta(
         Papel::App,

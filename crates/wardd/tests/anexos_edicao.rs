@@ -41,7 +41,7 @@ fn editar(anterior: &str, manter: &[&str], novos: &[(&str, &[u8])]) -> String {
 fn no_disco(dir: &Dir) -> Vec<Entry> {
     let bytes = std::fs::read(dir.caminhos().cofre).unwrap();
     let s = ward_core::format::MasterPassword::new(SENHA.to_owned());
-    ward_core::corpo::abrir_entradas_lida(&bytes, &s, 0, 0)
+    ward_core::body::open_entries_with_generation(&bytes, &s, 0, 0)
         .unwrap()
         .1
 }

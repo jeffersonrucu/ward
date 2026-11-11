@@ -1,6 +1,6 @@
 //! Daemon falso, só nos testes e no `test-mode` (D7): responde pelo protocolo da Fase
 //! 20 com as entradas falsas do cofre de teste (D15 + `acme-totp-dev`, as mesmas de
-//! `dev/fixtures/entries.json`, montadas por `crates/ward-core/src/corpo/cofre_teste.rs`).
+//! `dev/fixtures/entries.json`, montadas por `crates/ward-core/src/body/test_vault.rs`).
 //!
 //! Serve para a interface ser conferida no Chrome pela ponte de teste antes do `wardd`
 //! da Fase 22. Recebe o corpo do quadro, lê com `decodificar_pedido` no papel app, monta
@@ -54,11 +54,11 @@ use crate::daemon::Daemon;
 
 // O arquivo do cofre de teste usa a API pública do `ward-core` pelo apelido `wc`.
 use ward_core as wc;
-#[path = "../../../crates/ward-core/src/corpo/cofre_teste.rs"]
-mod cofre_teste;
+#[path = "../../../crates/ward-core/src/body/test_vault.rs"]
+mod test_vault;
 
 /// Os valores secretos do cofre de teste (as agulhas dos testes de ataque).
-pub use cofre_teste::SEGREDOS;
+pub use test_vault::SECRETS as SEGREDOS;
 
 /// Daemon falso com as entradas em memória.
 pub struct DaemonFalso {
@@ -119,7 +119,7 @@ enum EntradasDoBackup {
 }
 
 fn cofre_de_teste_menos(menos: usize) -> Vec<Entry> {
-    let mut e = cofre_teste::cofre_de_teste();
+    let mut e = test_vault::test_vault_entries();
     e.truncate(e.len().saturating_sub(menos));
     e
 }
@@ -153,7 +153,7 @@ pub fn backups_de_teste(agora: std::time::SystemTime) -> Vec<BackupFalso> {
             Some(BackupFalso {
                 nome,
                 geracao: u64::try_from(VERSOES_FALSAS - i).ok(),
-                senha: Zeroizing::new(cofre_teste::SENHA_MESTRA.as_bytes().to_vec()),
+                senha: Zeroizing::new(test_vault::MASTER_PASSWORD.as_bytes().to_vec()),
                 entradas: EntradasDoBackup::Teste { menos: i.min(6) },
             })
         })
@@ -216,7 +216,7 @@ pub fn aprovacoes_simuladas(modo: &str) -> Option<Vec<AprovacaoSimulada>> {
     // Fase 44e: ambiente e origem da entrada de verdade do cofre de teste
     // (`acme-wp-dev` é dev, `acme-wp-prod` é prod), como o `wardd` montaria.
     let na_origem = |id, entrada: &str, operacao, confirmacao, cadeia: &[&str]| {
-        let entradas = cofre_teste::cofre_de_teste();
+        let entradas = test_vault::test_vault_entries();
         let e = entradas.iter().find(|e| e.name() == entrada)?;
         let ward_core::entry::Data::Login(l) = e.data() else {
             return None;
@@ -338,7 +338,7 @@ impl DaemonFalso {
     /// As 21 entradas do cofre de teste.
     pub fn cheio() -> DaemonFalso {
         DaemonFalso {
-            entradas: cofre_teste::cofre_de_teste(),
+            entradas: test_vault::test_vault_entries(),
             backups: Some(backups_de_teste(std::time::SystemTime::now())),
             geracao: VERSOES_FALSAS as u64 + 1,
             ..DaemonFalso::vazio()
@@ -357,7 +357,7 @@ impl DaemonFalso {
                 BackupFalso {
                     nome: v.nome(),
                     geracao: Some(3),
-                    senha: Zeroizing::new(cofre_teste::SENHA_MESTRA.as_bytes().to_vec()),
+                    senha: Zeroizing::new(test_vault::MASTER_PASSWORD.as_bytes().to_vec()),
                     entradas: EntradasDoBackup::Teste { menos: 6 },
                 },
             );
@@ -495,7 +495,7 @@ impl DaemonFalso {
         use ctutils::CtEq;
         let certa: &[u8] = match &self.senha {
             Some(s) => s,
-            None => cofre_teste::SENHA_MESTRA.as_bytes(),
+            None => test_vault::MASTER_PASSWORD.as_bytes(),
         };
         senha.expose().len() == certa.len() && senha.expose().ct_eq(certa).to_bool()
     }
@@ -727,7 +727,7 @@ impl DaemonFalso {
     fn conferir_pin(&mut self, pin: &SegredoCore) -> Result<(), ErroResposta> {
         let confere = match &self.hash_pin {
             Some(h) => h.verify(pin.expose()),
-            None => cofre_teste::configuracao_de_teste().verify_pin(pin.expose()),
+            None => test_vault::test_config().verify_pin(pin.expose()),
         };
         if !confere {
             self.erros_pin = self.erros_pin.saturating_add(1);
@@ -788,7 +788,7 @@ impl DaemonFalso {
             .nome();
         let senha_atual = match &self.senha {
             Some(s) => s.clone(),
-            None => Zeroizing::new(cofre_teste::SENHA_MESTRA.as_bytes().to_vec()),
+            None => Zeroizing::new(test_vault::MASTER_PASSWORD.as_bytes().to_vec()),
         };
         let atual = BackupFalso {
             nome: agora,

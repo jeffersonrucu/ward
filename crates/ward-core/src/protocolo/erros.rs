@@ -7,7 +7,7 @@ use core::fmt;
 
 #[cfg(unix)]
 use crate::atomic_write::WriteError;
-use crate::corpo::ErroAbrir;
+use crate::body::OpenError;
 use crate::entry::ValidationErrors;
 
 /// Um problema de validação da entrada (campo, posição na lista e motivo), copiado de
@@ -257,12 +257,12 @@ impl fmt::Display for ErroResposta {
 impl std::error::Error for ErroResposta {}
 
 /// Erro do destravar (D39): `Retrocesso` vira o aviso próprio, sem as gerações.
-impl From<&ErroAbrir> for ErroResposta {
-    fn from(e: &ErroAbrir) -> Self {
+impl From<&OpenError> for ErroResposta {
+    fn from(e: &OpenError) -> Self {
         match e {
-            ErroAbrir::Formato(_) => Self::SenhaIncorreta,
-            ErroAbrir::Corpo(_) => Self::CofreInvalido,
-            ErroAbrir::Retrocesso => Self::Retrocesso,
+            OpenError::Format(_) => Self::SenhaIncorreta,
+            OpenError::Body(_) => Self::CofreInvalido,
+            OpenError::Rollback => Self::Retrocesso,
         }
     }
 }
