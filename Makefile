@@ -526,11 +526,13 @@ test-install: origins
 ## Chrome in a bwrap with /etc/opt/chrome swapped for a dir in .dev/chrome-policy.*:
 ## without it the manifest planted in the profile wins and the audit attack takes
 ## passwords from the test wardd (control); with it the profile host does not run and the
-## system one does. Never touches the real Chrome profile. Needs bwrap, openssl,
-## `make dev-vault`, `make dev-variations` and Chrome in /opt/google/chrome; out of
-## `make check`
+## system one does. Never touches the real Chrome profile. m2:Phase 66c: the policy is
+## built on the host and the rounds run in the browser container of Phase 65a
+## (dev/tests/browser-container.sh chrome-policy; /etc/opt/chrome = the dir of the test,
+## the guard inside, Chrome sandboxed by the seccomp profile of dev/container-browser/);
+## never a Chrome on the host. Needs Docker, openssl, `make dev-vault` and
+## `make dev-variations`; out of `make check`
 test-chrome-policy: origins
-	$(PYTHON) dev/tests/chrome_guard.py check
 	$(CARGO) build --quiet --locked -p wardd --bin wardd --target-dir target/no-test-mode
 	$(CARGO) build --quiet --locked -p ward --bin ward --target-dir target/no-test-mode
 	$(CARGO) build --quiet --locked -p ward-nm --bin ward-nm --target-dir target/no-test-mode
@@ -625,14 +627,21 @@ test-ssh-home: origins
 ## (`cargo test --ignored`) and, with the services up, WordPress and phish against a test
 ## `wardd` of its own (its own WARD_DEV_SOCKET_DIR). Needs `make dev-vault`,
 ## `make dev-variations` and the Python Playwright in PW_PYTHONPATH (or
-## NO_PLAYWRIGHT_PYTHON=1); out of `make check`
+## NO_PLAYWRIGHT_PYTHON=1); out of `make check`. m2:Phase 66c: everything that opens
+## Chrome (the `--ignored` test binary, built here, and dev/tests/playwright.sh) runs in
+## the browser container of Phase 65a (dev/tests/browser-container.sh playwright; the
+## guard inside, the services through the relay, Chrome sandboxed by the seccomp profile
+## of dev/container-browser/); never a Chrome on the host. Needs Docker and the services
+## up
 test-playwright: origins
-	$(PYTHON) dev/tests/chrome_guard.py check
 	$(CARGO) build --quiet --locked -p wardd --features test-mode --bin wardd --bin wardd-test-approver
 	$(CARGO) build --quiet --locked -p ward --features test-mode --bin ward
-	$(CARGO) test --quiet --locked -p wardd --all-features --test playwright -- --ignored
+	$(CARGO) test --quiet --locked -p wardd --all-features --test playwright --no-run \
+		--message-format=json > target/playwright-test.json
+	bin="$$($(PYTHON) dev/tests/test_binary.py "$(CURDIR)" playwright < target/playwright-test.json)" && \
 	PW_PYTHONPATH="$(PW_PYTHONPATH)" NO_PLAYWRIGHT_PYTHON="$(NO_PLAYWRIGHT_PYTHON)" \
-		dev/tests/playwright.sh target/debug/wardd target/debug/ward target/debug/wardd-test-approver
+		dev/tests/browser-container.sh playwright "$$bin" \
+		target/debug/wardd target/debug/ward target/debug/wardd-test-approver
 
 ## test-no-test-mode: D63/V3.37: no member turns on test-mode in a normal dependency,
 ## unit tests of wardd and ward-platform without the feature and release strings without
@@ -741,7 +750,8 @@ dev-daemon-stop:
 ## code; every button of the detail clicked without any call naming the seed or any reply
 ## or page carrying it; control: the edit form still reveals it and the same detector
 ## sees it. Copy is answered by the test (the session clipboard is not touched). Needs
-## `make app-front`, Chrome in /opt/google/chrome and the Python Playwright in
+## `make app-front`, Chrome in /opt/google/chrome (m2:Phase 66c: through
+## dev/tests/chrome-isolated.sh, with the guard inside) and the Python Playwright in
 ## PW_PYTHONPATH; out of `make check`
 .PHONY: test-totp-detail
 test-totp-detail: origins

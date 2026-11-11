@@ -9,6 +9,7 @@ import json
 import os
 import pty
 import select
+import shutil
 import stat
 import subprocess
 import sys
@@ -19,6 +20,13 @@ WARD, ROOT, RT, WORK_DIR = sys.argv[1:5]
 PASSWORD = json.load(open(os.path.join(ROOT, "dev/fixtures/entries.json")))["master_password"]
 PATTERNS = [l for l in open(os.path.join(ROOT, ".dev/variations.txt"), "rb").read().split(b"\n") if l]
 failures = []
+# m2:Phase 66c: the browser container (`dev/container-browser/`) has no `ss`; there the
+# V6.14 port check is the `/proc/net/tcp*` one only (the same network namespace as
+# Chrome). On the host, `ss` is required.
+IN_CONTAINER = os.environ.get("WARD_TEST_IN_CONTAINER") == "1" and os.path.exists("/.dockerenv")
+SS = shutil.which("ss", path="/usr/bin:/bin")
+if SS is None and not IN_CONTAINER:
+    sys.exit("playwright.py: falta o ss (iproute2)")
 
 
 APPROVER_LOG = os.path.join(WORK_DIR, "logs", "wardd-test-approver.log")
@@ -89,8 +97,10 @@ def ward(args, timeout=200):
 
 
 def posts_log():
-    p = subprocess.run([os.path.join(ROOT, "dev/services/compose.sh"), "exec", "-T", "phish",
-                        "cat", "/registro/posts.log"], capture_output=True, timeout=60)
+    # m2:Phase 66c: through `service_relay.py cat`, which in the browser container goes to
+    # the relay and on the host calls `compose.sh exec` as before.
+    p = subprocess.run(["/usr/bin/python3", "-I", "-B", os.path.join(ROOT, "dev/tests/service_relay.py"),
+                        "cat", "phish", "/registro/posts.log"], capture_output=True, timeout=120)
     if p.returncode == 0:
         return p.stdout
     # With the services just started, phish has not created `posts.log` yet (tmpfs):
@@ -180,8 +190,8 @@ class Watcher(threading.Thread):
                         continue
                     if pipes & set(fds(int(other)).values()):
                         self.pipe_outside.append(int(other))
-            if procs:
-                s = subprocess.run(["ss", "-ltnp"], capture_output=True, text=True)
+            if procs and SS:
+                s = subprocess.run([SS, "-ltnp"], capture_output=True, text=True)
                 if "chrome" in s.stdout:
                     self.ss_chrome = True
             for name in os.listdir(RT):
@@ -242,7 +252,8 @@ verify(any(b"--remote-debugging-pipe" in a for a in watcher.argvs.values()), "V6
 verify(not any(b"remote-debugging-port" in a for a in watcher.argvs.values()), "V6.14 nenhum --remote-debugging-port")
 verify(not any(has_secret(a) for a in watcher.argvs.values()), "V6.14 nenhum argv do Chrome com segredo")
 verify(not watcher.listening, f"V6.14 nenhum processo do Chrome escutando em TCP ({watcher.listening})")
-verify(not watcher.ss_chrome, "V6.14 ss -ltnp não mostra o Chrome")
+verify(not watcher.ss_chrome, "V6.14 ss -ltnp não mostra o Chrome" if SS
+       else "V6.14 no contêiner, sem ss: a porta conferida só por /proc/net/tcp*")
 verify(not watcher.pipe_outside, f"V6.14 o pipe de depuração só no Chrome principal ({watcher.pipe_outside})")
 verify(watcher.reads > 0, f"V6.13 perfil temporário lido durante a sessão ({watcher.reads} leituras, {len(watcher.profiles)} perfil)")
 verify(not watcher.profile_with_secret, f"V6.13 perfil temporário sem a senha ({watcher.profile_with_secret[:3]})")

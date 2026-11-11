@@ -1,0 +1,61 @@
+origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
+<home>/.cargo/bin/cargo build --quiet --locked -p wardd --features test-mode --bin wardd --bin wardd-test-approver
+<home>/.cargo/bin/cargo build --quiet --locked -p ward --features test-mode --bin ward
+<home>/.cargo/bin/cargo test --quiet --locked -p wardd --all-features --test playwright --no-run \
+	--message-format=json > target/playwright-test.json
+bin="$(/usr/bin/python3 -I -B dev/tests/test_binary.py "<repo>" playwright < target/playwright-test.json)" && \
+PW_PYTHONPATH="<repo>/.dev/pw-lib/site" NO_PLAYWRIGHT_PYTHON="" \
+	dev/tests/browser-container.sh playwright "$bin" \
+	target/debug/wardd target/debug/ward target/debug/wardd-test-approver
+==> imagem ward-teste/browser:1 (o build usa a rede; o teste não)
+==> make test-playwright no contêiner (sem rede; Chrome sem política nem host do Ward)
+chrome-guard: ok, o Chrome não vê política nem host do Ward
+[1111/202956.888433:WARNING:chrome/app/chrome_main_linux.cc:84] Read channel stable from /opt/google/chrome/CHROME_VERSION_EXTRA
+contêiner: Google Chrome 157.0.8103.50 , uid 1000, sem rede
+
+running 1 test
+test real_chrome_login_and_attacks ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out; finished in 6.44s
+
+chrome-guard: ok, o Chrome não vê política nem host do Ward
+wardd de teste só deste script: pid 2505, socket /run/user/1000/ward-pw-2490/wardd.sock
+ok    destravar o cofre de teste (saiu 0)
+ok    posts.log do phish legível (serviços de pé)
+ok    Fase 44c: acme-wp-prod (livre, http) só depois da confirmação da origem, sem PIN (['pedido operacao=playwright entradas=acme-wp-prod origem=http://localhost:8081 confirmacao=1 decisao=confirm'])
+ok    V6.12 ward playwright acme-wp-prod sai 0 (saiu 0, 0.6 s; erro: )
+ok    V6.12 imprime só o caminho /run/user/1000/ward-pw-2490/playwright/acme-wp-prod.json
+ok    V6.13 saída e erro sem padrão do cofre
+ok    V6.12 storage state 0600
+ok    V6.13 storage state sem a senha nem variação
+ok    V6.12 cookie de sessão do WordPress no storage state
+ok    V6.14 o Chrome foi visto rodando (14 processos)
+ok    V6.14 Chrome com --remote-debugging-pipe
+ok    V6.14 nenhum --remote-debugging-port
+ok    V6.14 nenhum argv do Chrome com segredo
+ok    V6.14 nenhum processo do Chrome escutando em TCP ([])
+ok    V6.14 no contêiner, sem ss: a porta conferida só por /proc/net/tcp*
+ok    V6.14 o pipe de depuração só no Chrome principal ([])
+ok    V6.13 perfil temporário lido durante a sessão (390 leituras, 1 perfil)
+ok    V6.13 perfil temporário sem a senha ([])
+ok    V6.13 o perfil temporário sumiu no fim
+ok    V6.13 nenhum processo do Chrome sobrou
+ok    V6.12 Playwright em Python com o storage_state abre /wp-admin/ logado ('http://localhost:8081/wp-admin/\nADMINBAR' '')
+ok    V6.15 delta-redir recusado por origem (saiu 1: ward: a origem da página não bate com a da entrada)
+ok    V6.15 nenhum storage state do delta-redir
+ok    V6.15 posts.log do phish não mudou
+ok    V6.15 posts.log sem padrão do cofre
+ok    V6.15 Chrome e perfil sumiram depois da recusa
+ok    ataque [::1]: o falso escuta em [::1]:8081
+ok    ataque [::1], janela negada: `ward playwright acme-wp-prod` sai ≠ 0 com "negado" (saiu 1)
+ok    ataque [::1], janela negada: o pedido mostra a origem (['pedido operacao=playwright entradas=acme-wp-prod origem=http://localhost:8081 confirmacao=1 decisao=deny'])
+ok    ataque [::1], confirmado: o login vai ao WordPress de 127.0.0.1 (saiu 0: )
+ok    ataque [::1]: o falso de [::1]:8081 não recebeu nenhum POST (0 bytes)
+ok    gama-bloqueada: recusado com 'entrada inexistente' (saiu 1)
+ok    nao-existe: recusado com 'entrada inexistente' (saiu 1)
+ok    acme-pg-dev: recusado com 'tipo sem entrega' (saiu 1)
+ok    V6.13 ward lock apaga o storage state
+ok    V6.13 <rt>playwright/ vazia depois de travar
+playwright.py: tudo ok
+ok    V6.16 log do daemon (50 linhas) sem padrão de .dev/variations.txt
+test-playwright: ok
