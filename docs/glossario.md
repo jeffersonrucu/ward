@@ -1220,6 +1220,26 @@ Identificadores de `dev/variations.py`, `dev/tests/variations_test.py`, `login.p
 `read_selections` (e a opção interna `--ler` → `--read`), `no_principal` → `on_main`,
 `sem_valor` → `no_value`, `prova` → `proof`, `neutralizar` → `neutralize`.
 
+Identificadores de `dev/tests/dev-vault.sh`, `ssh_home.py`, `install.sh`,
+`attacks-services.sh`, `chrome_policy.py`, `app_e2e.py` e `playwright.py` (Fase 44), pela
+seção 2 e como nas Fases 40–42: `LISTA` (lista de padrões) → `PATTERN_LIST`, `TRAVA`
+(arquivo do `flock`) → `LOCK_FILE`, `limpar` → `cleanup`, `sem_segredo` → `no_secret`,
+`cofre_duas_vezes` → `vault_twice`, `cruzado` (teste) → `cross_check`, `saida_fora`/
+`saida_dentro` → `output_outside`/`output_inside`, `faltou` → `missing`; `CASA` (home do
+passwd, no Python) → `PASSWD_HOME`, `fase` (etapa do teste) → `stage`, `escritor` →
+`writer`, `acusados` → `flagged`, `pastas_vigiadas` → `watched_dirs`, `pty_rodar` →
+`pty_run`, `encerrar_daemon` → `stop_daemon`; `confere` (contém) → `verify`, `nao_tem` →
+`lacks`, `recusa` (espera recusa) → `expect_refusal`, `recusado` (idem, comando) →
+`expect_refused`, `nada_do_ward` → `nothing_from_ward`, `despejo` → `dump`,
+`politica_outra` → `other_policy`, `nao_saiu0` → `not_exit0`, opção `--so-destdir` →
+`--destdir-only`; `cenario` → `scenario`, `rotulo` → `label`, `ler_pagina_de_politicas` →
+`read_policy_page`, `FOLHAS` → `LEAVES`; `checar` → `check`, `pedido_na_janela` →
+`request_in_window`, `responder` (botão) → `answer`, `fim_do_run` → `run_result`,
+`run_em_fundo` → `run_in_background`; `Vigia` → `Watcher`, `pids_do_chrome` →
+`chrome_pids`, `inodes_escutando` → `listening_inodes`. O `RAIZ` de `common.sh` e o
+`CASA_PASSWD` de `env.sh` ficam para a Fase 46 (os scripts que leem `common.sh` fazem
+`RAIZ="$ROOT"` antes do `.`).
+
 ### Evidência dos scripts (DT1; Fase 5)
 
 `docs/mission/evidence/fase-NN/` → `docs/mission/evidence/<suíte>/`, pelo alvo novo:

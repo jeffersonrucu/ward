@@ -1,30 +1,32 @@
 #!/usr/bin/python3 -IB
-"""Ponta a ponta do app pela ponte de teste (Fase 39c; V5.10, V5.16, V5.24; D2, D3, S10).
+"""End to end of the app through the test bridge (Phase 39c; V5.10, V5.16, V5.24; D2, D3, S10).
 
-Roda dentro de `dev/tests/app-e2e.sh` (`make test-app-e2e`), que já subiu um `wardd` de
-teste só dele (socket em `WARD_DEV_SOCKET_DIR`) com a ponte aberta pelo daemon e o cofre
-de teste recém-criado. A URL da ponte (com o token) chega pela entrada padrão, nunca em
-argv. O Chrome é o instalado, headless, com perfil temporário do Playwright; nada do
-perfil do usuário é tocado.
+Runs inside `dev/tests/app-e2e.sh` (`make test-app-e2e`), which already started a test
+`wardd` of its own (socket in `WARD_DEV_SOCKET_DIR`) with the bridge opened by the daemon
+and a newly created test vault. The bridge URL (with the token) comes through standard
+input, never in argv. Chrome is the installed one, headless, with a temporary Playwright
+profile; nothing of the user's profile is touched.
 
-Passos (cada `ward` é a CLI de teste de verdade, como o agente a chamaria):
-- V5.10: Novo vazio com "Salvar" desabilitado; com o nome, habilita e salvar mostra o erro
-  no campo obrigatório que falta.
-- V5.16: `ward run acme-pg-aprovacao -- touch .dev/e2e-mark` abre a janela de aprovação
-  com a entrada, o ambiente e o comando. Negar → a CLI sai ≠ 0 e a marca não existe;
-  "Fechar e negar" → igual; "Permitir uma vez" com o PIN → executa, e o pedido seguinte
-  abre a janela de novo; "Permitir por 1 hora" → o pedido seguinte não abre janela;
-  `ward travar` e destravar → abre de novo; "Permitir sempre" → executa, a entrada passa
-  a "Livre" no app e o pedido seguinte roda sem janela.
-- V5.24: "Conectar" em `acme-ssh-salto` (com aprovação) abre o "terminal" do repositório
-  (`dev/tests/terminal-test.py`) com `ward ssh --token-fd` de verdade contra o
-  `ssh-salto` (2224): conecta sem janela nem PIN. Ataques pelo próprio terminal, que tem o
-  token: varrer `/proc/*/cmdline` e `environ` (0 achados); reusar o token (vale o nível:
-  a janela abre e o QA nega); usar depois de 30 s (idem); usar o token de
-  `acme-ssh-salto` em `acme-ssh-interno-aprov`, que salta por ele (idem).
+Steps (each `ward` is the real test CLI, as the agent would call it):
+- V5.10: an empty New with the save button disabled; with the name, it enables and saving
+  shows the error on the missing required field.
+- V5.16: `ward run` on the approval-level Postgres entry with `touch .dev/e2e-mark` opens
+  the approval window with the entry, the environment and the command. Deny → the CLI
+  exits ≠ 0 and the mark does not exist; close-and-deny → the same; allow once with the
+  PIN → runs, and the next request opens the window again; allow for 1 hour → the next
+  request does not open a window; locking and unlocking through the CLI → it opens again;
+  allow always → runs, the entry turns to the free level in the app and the next request
+  runs with no window.
+- V5.24: the connect button on the jump host entry (approval level) opens the
+  repository's "terminal" (`dev/tests/terminal-test.py`) with a real
+  `ward ssh --token-fd` against the jump host service (2224): it connects with no window
+  nor PIN. Attacks by the terminal itself, which holds the token: scan `/proc/*/cmdline`
+  and `environ` (0 found); reuse the token (the level applies: the window opens and QA
+  denies); use it after 30 s (same); use the jump host entry's token on the internal host
+  entry with approval, which jumps through it (same).
 
-Grava `qa.json` e as capturas em `docs/mission/evidence/test-app-e2e/`. Sai 1 se algum
-passo falhar. Nunca imprime a URL, o token da ponte nem valor do cofre.
+Writes `qa.json` and the screenshots to `docs/mission/evidence/test-app-e2e/`. Exits 1 if
+any step fails. Never prints the URL, the bridge token nor a vault value.
 """
 
 import json
@@ -36,20 +38,20 @@ import time
 if len(sys.argv) != 4:
     print("uso: app_e2e.py <raiz> <WARD_DEV_SOCKET_DIR> <site-packages do Playwright> < url", file=sys.stderr)
     sys.exit(2)
-RAIZ, SOCKDIR, PW = sys.argv[1:4]
+ROOT, SOCKDIR, PW = sys.argv[1:4]
 sys.path.insert(0, PW)
 from playwright.sync_api import sync_playwright  # noqa: E402
 
 URL = sys.stdin.readline().strip()
 assert URL.startswith("http://127.0.0.1:") and "#token=" in URL, "URL da ponte fora da forma"
-DEV = RAIZ + "/.dev"
-WARD = RAIZ + "/target/debug/ward"
-MARCA = DEV + "/e2e-mark"
-SENHA = "falso-mestra-ward-01"  # D15 (falsa)
-PIN = "135790"  # D15 (falso)
-EVID = RAIZ + "/docs/mission/evidence/test-app-e2e"
-LOG_TERMINAL = DEV + "/logs/terminal-teste.log"
-os.makedirs(EVID, exist_ok=True)
+DEV = ROOT + "/.dev"
+WARD = ROOT + "/target/debug/ward"
+MARK = DEV + "/e2e-mark"
+PASSWORD = "falso-mestra-ward-01"  # D15 (fake)
+PIN = "135790"  # D15 (fake)
+EVIDENCE = ROOT + "/docs/mission/evidence/test-app-e2e"
+TERMINAL_LOG = DEV + "/logs/terminal-teste.log"
+os.makedirs(EVIDENCE, exist_ok=True)
 
 ENV = {
     "PATH": "/usr/bin:/bin",
@@ -58,301 +60,302 @@ ENV = {
     "WARD_DEV_SOCKET_DIR": SOCKDIR,
 }
 
-resultados = []
+results = []
 
 
-def checar(nome, ok, detalhe=""):
-    resultados.append({"checagem": nome, "ok": bool(ok), "detalhe": detalhe})
-    print(("ok - " if ok else "FALHOU - ") + nome + (f" ({detalhe})" if detalhe and not ok else ""))
+def check(name, ok, detail=""):
+    results.append({"checagem": name, "ok": bool(ok), "detalhe": detail})
+    print(("ok - " if ok else "FALHOU - ") + name + (f" ({detail})" if detail and not ok else ""))
 
 
-def ward(*args, prazo=180):
-    return subprocess.run([WARD, *args], env=ENV, cwd=RAIZ, capture_output=True, timeout=prazo)
+def ward(*args, timeout=180):
+    return subprocess.run([WARD, *args], env=ENV, cwd=ROOT, capture_output=True, timeout=timeout)
 
 
-def run_em_fundo():
-    if os.path.exists(MARCA):
-        os.unlink(MARCA)
-    return subprocess.Popen([WARD, "run", "acme-pg-aprovacao", "--", "touch", MARCA], env=ENV, cwd=RAIZ,
+def run_in_background():
+    if os.path.exists(MARK):
+        os.unlink(MARK)
+    return subprocess.Popen([WARD, "run", "acme-pg-aprovacao", "--", "touch", MARK], env=ENV, cwd=ROOT,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
 
-def esperar(cond, prazo=30.0, passo=0.25):
-    fim = time.monotonic() + prazo
-    while time.monotonic() < fim:
+def wait_for(cond, timeout=30.0, step=0.25):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
         v = cond()
         if v:
             return v
-        time.sleep(passo)
+        time.sleep(step)
     return None
 
 
-def texto(p):
+def page_text(p):
     return p.inner_text("body")
 
 
-def pedido_na_janela(apr, entrada, prazo=40.0):
-    """Espera a janela de aprovação mostrar um pedido de `entrada`."""
-    def tem():
+def request_in_window(apr, entry, timeout=40.0):
+    """Waits for the approval window to show a request for `entry`."""
+    def has_request():
         try:
-            t = texto(apr)
+            t = page_text(apr)
         except Exception:
             return None
-        return t if entrada in t and "Negar" in t and apr.locator("#approval-deny").count() else None
-    return esperar(tem, prazo)
+        return t if entry in t and "Negar" in t and apr.locator("#approval-deny").count() else None
+    return wait_for(has_request, timeout)
 
 
-def sem_pedido(apr):
-    return "Nenhum pedido de aprovação esperando." in texto(apr)
+def no_request(apr):
+    return "Nenhum pedido de aprovação esperando." in page_text(apr)
 
 
-def responder(apr, botao, pin=None):
+def answer(apr, button, pin=None):
     if pin is not None:
         apr.fill("#approval-pin", pin)
-    if botao == "negar":
+    if button == "negar":
         apr.click("#approval-deny")
-    elif botao == "fechar":
+    elif button == "fechar":
         apr.get_by_role("button", name="Fechar e negar").click()
     else:
-        apr.get_by_role("button", name=botao, exact=True).click()
-    # O próximo pedido só depois de este sair da janela (senão o clique seguinte cai no
-    # pedido velho, já respondido).
-    esperar(lambda: sem_pedido(apr), 15)
+        apr.get_by_role("button", name=button, exact=True).click()
+    # The next request only after this one leaves the window (otherwise the next click
+    # lands on the old, already answered request).
+    wait_for(lambda: no_request(apr), 15)
 
 
-def fim_do_run(proc, prazo=60):
+def run_result(proc, timeout=60):
     try:
-        out, err = proc.communicate(timeout=prazo)
+        out, err = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
         proc.kill()
         out, err = proc.communicate()
     return proc.returncode, err.decode(errors="replace")
 
 
-def recarregar(pag):
-    """A ponte tira o token da URL depois de ler: recarregar perderia o token. Abre de
-    novo a URL de abertura (passando por about:blank para não virar só troca de hash)."""
-    pag.goto("about:blank")
-    pag.goto(URL)
+def reload_page(page):
+    """The bridge removes the token from the URL after reading it: reloading would lose the
+    token. Opens the opening URL again (through about:blank so it is not just a hash change)."""
+    page.goto("about:blank")
+    page.goto(URL)
 
 
-def destravar(pag):
-    pag.wait_for_selector("#master-password", timeout=20000)
-    pag.fill("#master-password", SENHA)
-    pag.press("#master-password", "Enter")
-    pag.wait_for_selector("[data-entry]", timeout=60000)
+def unlock(page):
+    page.wait_for_selector("#master-password", timeout=20000)
+    page.fill("#master-password", PASSWORD)
+    page.press("#master-password", "Enter")
+    page.wait_for_selector("[data-entry]", timeout=60000)
 
 
-def abrir_entrada(pag, nome):
-    pag.locator(f'[data-entry="{nome}"]').first.click()
-    pag.wait_for_selector(f'h2:has-text("{nome}")', timeout=10000)
+def open_entry(page, name):
+    page.locator(f'[data-entry="{name}"]').first.click()
+    page.wait_for_selector(f'h2:has-text("{name}")', timeout=10000)
 
 
-def linhas_terminal():
+def terminal_lines():
     try:
-        with open(LOG_TERMINAL) as f:
+        with open(TERMINAL_LOG) as f:
             return f.read().splitlines()
     except FileNotFoundError:
         return []
 
 
-def modo_terminal(modo):
+def set_terminal_mode(mode):
     fd = os.open(DEV + "/terminal-teste.modo", os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
     with os.fdopen(fd, "w") as f:
-        f.write(modo + "\n")
+        f.write(mode + "\n")
 
 
-def conectar(pag):
-    abrir_entrada(pag, "acme-ssh-salto")
-    pag.get_by_role("button", name="Editar").click()
-    pag.get_by_role("button", name="Conectar").click()
+def connect(page):
+    open_entry(page, "acme-ssh-salto")
+    page.get_by_role("button", name="Editar").click()
+    page.get_by_role("button", name="Conectar").click()
 
 
-def novas_linhas(antes, prazo, cond):
-    def ver():
-        n = linhas_terminal()[antes:]
+def new_lines(before, timeout, cond):
+    def probe():
+        n = terminal_lines()[before:]
         return n if cond(n) else None
-    return esperar(ver, prazo) or linhas_terminal()[antes:]
+    return wait_for(probe, timeout) or terminal_lines()[before:]
 
 
-PAGINAS = []
+PAGES = []
 
 
 def main():
     with sync_playwright() as p:
-        nav = p.chromium.launch(executable_path="/opt/google/chrome/chrome", headless=True)
-        ctx = nav.new_context(viewport={"width": 1280, "height": 800})
+        browser = p.chromium.launch(executable_path="/opt/google/chrome/chrome", headless=True)
+        ctx = browser.new_context(viewport={"width": 1280, "height": 800})
         try:
-            passos(ctx)
-        except Exception as e:  # o passo que quebrou vira uma falha, com captura
-            checar("passo sem exceção", False, f"{type(e).__name__}: {str(e)[:300]}")
-            for i, pg in enumerate(PAGINAS):
+            steps(ctx)
+        except Exception as e:  # the step that broke becomes a failure, with a screenshot
+            check("passo sem exceção", False, f"{type(e).__name__}: {str(e)[:300]}")
+            for i, pg in enumerate(PAGES):
                 try:
-                    pg.screenshot(path=f"{EVID}/falha-{i}.png")
+                    pg.screenshot(path=f"{EVIDENCE}/falha-{i}.png")
                 except Exception:
                     pass
-        nav.close()
+        browser.close()
 
-    with open(EVID + "/qa.json", "w") as f:
-        json.dump(resultados, f, ensure_ascii=False, indent=1)
-    falhas = [r for r in resultados if not r["ok"]]
-    print(f"app-e2e: {len(resultados) - len(falhas)} de {len(resultados)} checagens ok")
-    return 1 if falhas else 0
+    with open(EVIDENCE + "/qa.json", "w") as f:
+        json.dump(results, f, ensure_ascii=False, indent=1)
+    failures = [r for r in results if not r["ok"]]
+    print(f"app-e2e: {len(results) - len(failures)} de {len(results)} checagens ok")
+    return 1 if failures else 0
 
 
-def passos(ctx):
+def steps(ctx):
     if True:
-        pag = ctx.new_page()
-        PAGINAS.append(pag)
-        pag.goto(URL)
-        destravar(pag)
-        checar("destravar pelo app com a senha de teste", True)
+        page = ctx.new_page()
+        PAGES.append(page)
+        page.goto(URL)
+        unlock(page)
+        check("destravar pelo app com a senha de teste", True)
         apr = ctx.new_page()
-        PAGINAS.append(apr)
+        PAGES.append(apr)
         apr.set_viewport_size({"width": 560, "height": 760})
         apr.goto(URL + "&tela=aprovacao")
         apr.wait_for_load_state("networkidle")
-        checar("janela de aprovação aberta sem pedido", esperar(lambda: sem_pedido(apr), 10))
+        check("janela de aprovação aberta sem pedido", wait_for(lambda: no_request(apr), 10))
 
-        # --- V5.10: Salvar desabilitado no Novo vazio ----------------------------------
-        pag.get_by_role("button", name="Nova credencial").click()
-        pag.locator("button:has-text(\"URL, usuário, senha e TOTP\")").click()
-        salvar = pag.get_by_role("button", name="Salvar", exact=True)
-        salvar.wait_for(timeout=10000)
-        checar("V5.10: Novo vazio com Salvar desabilitado", salvar.is_disabled())
-        pag.screenshot(path=EVID + "/formulario-novo-vazio.png")
-        pag.fill("#form-name", "acme-e2e-novo")
-        checar("V5.10: com o nome preenchido, Salvar habilita", esperar(lambda: salvar.is_enabled(), 5))
-        salvar.click()
-        erro_campo = esperar(lambda: "obrigat" in texto(pag).lower() or "preencha" in texto(pag).lower(), 10)
-        checar("V5.10: salvar sem grupo e ambiente mostra o erro no campo", erro_campo)
-        pag.screenshot(path=EVID + "/formulario-novo-erro-no-campo.png")
-        pag.get_by_role("button", name="Cancelar").first.click()
+        # --- V5.10: Save disabled on an empty New ---------------------------------------
+        page.get_by_role("button", name="Nova credencial").click()
+        page.locator("button:has-text(\"URL, usuário, senha e TOTP\")").click()
+        save_button = page.get_by_role("button", name="Salvar", exact=True)
+        save_button.wait_for(timeout=10000)
+        check("V5.10: Novo vazio com Salvar desabilitado", save_button.is_disabled())
+        page.screenshot(path=EVIDENCE + "/formulario-novo-vazio.png")
+        page.fill("#form-name", "acme-e2e-novo")
+        check("V5.10: com o nome preenchido, Salvar habilita", wait_for(lambda: save_button.is_enabled(), 5))
+        save_button.click()
+        field_error = wait_for(lambda: "obrigat" in page_text(page).lower() or "preencha" in page_text(page).lower(), 10)
+        check("V5.10: salvar sem grupo e ambiente mostra o erro no campo", field_error)
+        page.screenshot(path=EVIDENCE + "/formulario-novo-erro-no-campo.png")
+        page.get_by_role("button", name="Cancelar").first.click()
 
-        # --- V5.16: Negar e Fechar ---------------------------------------------------------
-        for como in ("negar", "fechar"):
-            proc = run_em_fundo()
-            t = pedido_na_janela(apr, "acme-pg-aprovacao")
-            checar(f"V5.16 ({como}): a janela mostra entrada, ambiente e comando",
-                   t and "stage" in t and "touch" in t and MARCA in t, (t or "")[:200])
-            if como == "negar":
-                apr.screenshot(path=EVID + "/aprovacao-ward-run-real.png")
-            responder(apr, como)
-            codigo, err = fim_do_run(proc)
-            checar(f"V5.16 ({como}): a CLI sai ≠ 0 e a marca não existe",
-                   codigo != 0 and not os.path.exists(MARCA), f"saida={codigo} {err.strip()[:120]}")
+        # --- V5.16: Deny and Close -----------------------------------------------------------
+        for how in ("negar", "fechar"):
+            proc = run_in_background()
+            t = request_in_window(apr, "acme-pg-aprovacao")
+            check(f"V5.16 ({how}): a janela mostra entrada, ambiente e comando",
+                  t and "stage" in t and "touch" in t and MARK in t, (t or "")[:200])
+            if how == "negar":
+                apr.screenshot(path=EVIDENCE + "/aprovacao-ward-run-real.png")
+            answer(apr, how)
+            code, err = run_result(proc)
+            check(f"V5.16 ({how}): a CLI sai ≠ 0 e a marca não existe",
+                  code != 0 and not os.path.exists(MARK), f"saida={code} {err.strip()[:120]}")
 
-        # --- Permitir uma vez --------------------------------------------------------------
-        proc = run_em_fundo()
-        pedido_na_janela(apr, "acme-pg-aprovacao")
-        responder(apr, "Permitir uma vez", PIN)
-        codigo, err = fim_do_run(proc)
-        checar("V5.16 (uma vez): executa com o PIN", codigo == 0 and os.path.exists(MARCA),
-               f"saida={codigo} {err.strip()[:120]}")
-        proc = run_em_fundo()
-        checar("V5.16 (uma vez): o pedido seguinte abre a janela de novo",
-               pedido_na_janela(apr, "acme-pg-aprovacao"))
-        responder(apr, "negar")
-        fim_do_run(proc)
+        # --- Allow once ----------------------------------------------------------------------
+        proc = run_in_background()
+        request_in_window(apr, "acme-pg-aprovacao")
+        answer(apr, "Permitir uma vez", PIN)
+        code, err = run_result(proc)
+        check("V5.16 (uma vez): executa com o PIN", code == 0 and os.path.exists(MARK),
+              f"saida={code} {err.strip()[:120]}")
+        proc = run_in_background()
+        check("V5.16 (uma vez): o pedido seguinte abre a janela de novo",
+              request_in_window(apr, "acme-pg-aprovacao"))
+        answer(apr, "negar")
+        run_result(proc)
 
-        # --- Permitir por 1 hora ------------------------------------------------------------
-        proc = run_em_fundo()
-        pedido_na_janela(apr, "acme-pg-aprovacao")
-        responder(apr, "Permitir por 1 hora", PIN)
-        codigo, err = fim_do_run(proc)
-        checar("V5.16 (1 hora): executa com o PIN", codigo == 0 and os.path.exists(MARCA), f"saida={codigo}")
-        proc = run_em_fundo()
-        codigo, err = fim_do_run(proc, prazo=30)
-        checar("V5.16 (1 hora): o pedido seguinte roda sem janela",
-               codigo == 0 and os.path.exists(MARCA) and sem_pedido(apr), f"saida={codigo} {err.strip()[:120]}")
+        # --- Allow for 1 hour ------------------------------------------------------------------
+        proc = run_in_background()
+        request_in_window(apr, "acme-pg-aprovacao")
+        answer(apr, "Permitir por 1 hora", PIN)
+        code, err = run_result(proc)
+        check("V5.16 (1 hora): executa com o PIN", code == 0 and os.path.exists(MARK), f"saida={code}")
+        proc = run_in_background()
+        code, err = run_result(proc, timeout=30)
+        check("V5.16 (1 hora): o pedido seguinte roda sem janela",
+              code == 0 and os.path.exists(MARK) and no_request(apr), f"saida={code} {err.strip()[:120]}")
         r = ward("travar")
-        checar("V5.16 (1 hora): ward travar", r.returncode == 0, r.stderr.decode(errors="replace")[:120])
-        recarregar(pag)
-        destravar(pag)
-        proc = run_em_fundo()
-        checar("V5.16 (1 hora): depois de travar e destravar, a janela abre de novo",
-               pedido_na_janela(apr, "acme-pg-aprovacao"))
-        responder(apr, "negar")
-        codigo, _ = fim_do_run(proc)
-        checar("V5.16 (1 hora): negado depois de travar", codigo != 0 and not os.path.exists(MARCA))
+        check("V5.16 (1 hora): ward travar", r.returncode == 0, r.stderr.decode(errors="replace")[:120])
+        reload_page(page)
+        unlock(page)
+        proc = run_in_background()
+        check("V5.16 (1 hora): depois de travar e destravar, a janela abre de novo",
+              request_in_window(apr, "acme-pg-aprovacao"))
+        answer(apr, "negar")
+        code, _ = run_result(proc)
+        check("V5.16 (1 hora): negado depois de travar", code != 0 and not os.path.exists(MARK))
 
-        # --- V5.24: Conectar ---------------------------------------------------------------
-        modo_terminal("normal")
-        antes = len(linhas_terminal())
-        conectar(pag)
-        n = novas_linhas(antes, 90, lambda n: any(" uso=1 " in x for x in n))
-        uso = next((x for x in n if " uso=1 " in x), "")
-        checar("V5.24: Conectar abre o terminal com ward ssh e conecta sem janela nem PIN",
-               "saida=0" in uso and "conectou=sim" in uso and sem_pedido(apr), uso)
-        pag.screenshot(path=EVID + "/conectar-acme-ssh-salto.png")
-        pag.get_by_role("button", name="Cancelar").first.click()
+        # --- V5.24: Connect ----------------------------------------------------------------
+        set_terminal_mode("normal")
+        before = len(terminal_lines())
+        connect(page)
+        n = new_lines(before, 90, lambda n: any(" uso=1 " in x for x in n))
+        use_line = next((x for x in n if " uso=1 " in x), "")
+        check("V5.24: Conectar abre o terminal com ward ssh e conecta sem janela nem PIN",
+              "saida=0" in use_line and "conectou=sim" in use_line and no_request(apr), use_line)
+        page.screenshot(path=EVIDENCE + "/conectar-acme-ssh-salto.png")
+        page.get_by_role("button", name="Cancelar").first.click()
 
-        # Reuso: o mesmo token duas vezes (e a varredura do /proc).
-        modo_terminal("reuso")
-        antes = len(linhas_terminal())
-        conectar(pag)
-        n = novas_linhas(antes, 90, lambda n: any(" uso=1 " in x for x in n))
-        proc_l = next((x for x in n if " proc=" in x), "")
-        checar("V5.24 (ataque): o token não aparece em /proc/*/cmdline nem environ",
-               proc_l.split("proc=")[-1].startswith("0/"), proc_l)
-        uso1 = next((x for x in n if " uso=1 " in x), "")
-        checar("V5.24 (reuso): o primeiro uso conecta", "saida=0" in uso1 and "conectou=sim" in uso1, uso1)
-        t = pedido_na_janela(apr, "acme-ssh-salto", prazo=60)
-        checar("V5.24 (ataque): reusar o token vale o nível (a janela abre)", t)
+        # Reuse: the same token twice (and the /proc scan).
+        set_terminal_mode("reuso")
+        before = len(terminal_lines())
+        connect(page)
+        n = new_lines(before, 90, lambda n: any(" uso=1 " in x for x in n))
+        proc_line = next((x for x in n if " proc=" in x), "")
+        check("V5.24 (ataque): o token não aparece em /proc/*/cmdline nem environ",
+              proc_line.split("proc=")[-1].startswith("0/"), proc_line)
+        use1 = next((x for x in n if " uso=1 " in x), "")
+        check("V5.24 (reuso): o primeiro uso conecta", "saida=0" in use1 and "conectou=sim" in use1, use1)
+        t = request_in_window(apr, "acme-ssh-salto", timeout=60)
+        check("V5.24 (ataque): reusar o token vale o nível (a janela abre)", t)
         if t:
-            apr.screenshot(path=EVID + "/conectar-reuso-pede-aprovacao.png")
-            responder(apr, "negar")
-        n = novas_linhas(antes, 60, lambda n: any(" uso=2 " in x for x in n))
-        uso2 = next((x for x in n if " uso=2 " in x), "")
-        checar("V5.24 (ataque): reuso negado, não conecta", "conectou=nao" in uso2 and "saida=0" not in uso2, uso2)
-        pag.get_by_role("button", name="Cancelar").first.click()
+            apr.screenshot(path=EVIDENCE + "/conectar-reuso-pede-aprovacao.png")
+            answer(apr, "negar")
+        n = new_lines(before, 60, lambda n: any(" uso=2 " in x for x in n))
+        use2 = next((x for x in n if " uso=2 " in x), "")
+        check("V5.24 (ataque): reuso negado, não conecta", "conectou=nao" in use2 and "saida=0" not in use2, use2)
+        page.get_by_role("button", name="Cancelar").first.click()
 
-        # Token de acme-ssh-salto em acme-ssh-interno-aprov (que salta pelo acme-ssh-salto).
-        modo_terminal("outra-entrada")
-        antes = len(linhas_terminal())
-        conectar(pag)
-        t = pedido_na_janela(apr, "acme-ssh-", prazo=60)
-        checar("V5.24 (ataque): o token de acme-ssh-salto em acme-ssh-interno-aprov vale o nível", t,
-               (t or "")[:200])
+        # The jump host entry's token on the internal host entry with approval (which jumps
+        # through the jump host entry).
+        set_terminal_mode("outra-entrada")
+        before = len(terminal_lines())
+        connect(page)
+        t = request_in_window(apr, "acme-ssh-", timeout=60)
+        check("V5.24 (ataque): o token de acme-ssh-salto em acme-ssh-interno-aprov vale o nível", t,
+              (t or "")[:200])
         if t:
-            apr.screenshot(path=EVID + "/conectar-outra-entrada-pede-aprovacao.png")
+            apr.screenshot(path=EVIDENCE + "/conectar-outra-entrada-pede-aprovacao.png")
         if t:
-            responder(apr, "negar")
-        n = novas_linhas(antes, 60, lambda n: any(" uso=1 " in x for x in n))
-        uso = next((x for x in n if " uso=1 " in x), "")
-        checar("V5.24 (ataque): outra entrada negada", "conectou=nao" in uso and "saida=0" not in uso, uso)
-        pag.get_by_role("button", name="Cancelar").first.click()
+            answer(apr, "negar")
+        n = new_lines(before, 60, lambda n: any(" uso=1 " in x for x in n))
+        use_line = next((x for x in n if " uso=1 " in x), "")
+        check("V5.24 (ataque): outra entrada negada", "conectou=nao" in use_line and "saida=0" not in use_line, use_line)
+        page.get_by_role("button", name="Cancelar").first.click()
 
-        # Depois de 30 s.
-        modo_terminal("expirado")
-        antes = len(linhas_terminal())
-        conectar(pag)
-        t = pedido_na_janela(apr, "acme-ssh-salto", prazo=90)
-        checar("V5.24 (ataque): usar o token depois de 30 s vale o nível", t)
+        # After 30 s.
+        set_terminal_mode("expirado")
+        before = len(terminal_lines())
+        connect(page)
+        t = request_in_window(apr, "acme-ssh-salto", timeout=90)
+        check("V5.24 (ataque): usar o token depois de 30 s vale o nível", t)
         if t:
-            responder(apr, "negar")
-        n = novas_linhas(antes, 60, lambda n: any(" uso=1 " in x for x in n))
-        uso = next((x for x in n if " uso=1 " in x), "")
-        checar("V5.24 (ataque): token vencido negado", "conectou=nao" in uso and "saida=0" not in uso, uso)
-        pag.get_by_role("button", name="Cancelar").first.click()
-        modo_terminal("normal")
+            answer(apr, "negar")
+        n = new_lines(before, 60, lambda n: any(" uso=1 " in x for x in n))
+        use_line = next((x for x in n if " uso=1 " in x), "")
+        check("V5.24 (ataque): token vencido negado", "conectou=nao" in use_line and "saida=0" not in use_line, use_line)
+        page.get_by_role("button", name="Cancelar").first.click()
+        set_terminal_mode("normal")
 
-        # --- Permitir sempre ----------------------------------------------------------------
-        proc = run_em_fundo()
-        pedido_na_janela(apr, "acme-pg-aprovacao")
-        responder(apr, "Permitir sempre", PIN)
-        codigo, err = fim_do_run(proc)
-        checar("V5.16 (sempre): executa com o PIN", codigo == 0 and os.path.exists(MARCA), f"saida={codigo}")
-        recarregar(pag)
-        pag.wait_for_selector("[data-entry]", timeout=30000)
-        abrir_entrada(pag, "acme-pg-aprovacao")
-        cartao = esperar(lambda: "Livre" in texto(pag), 10)
-        checar("V5.16 (sempre): a entrada passa a Livre no app", cartao)
-        pag.screenshot(path=EVID + "/sempre-entrada-livre.png")
-        proc = run_em_fundo()
-        codigo, _ = fim_do_run(proc, prazo=30)
-        checar("V5.16 (sempre): o pedido seguinte roda sem janela",
-               codigo == 0 and os.path.exists(MARCA) and sem_pedido(apr), f"saida={codigo}")
+        # --- Allow always ----------------------------------------------------------------
+        proc = run_in_background()
+        request_in_window(apr, "acme-pg-aprovacao")
+        answer(apr, "Permitir sempre", PIN)
+        code, err = run_result(proc)
+        check("V5.16 (sempre): executa com o PIN", code == 0 and os.path.exists(MARK), f"saida={code}")
+        reload_page(page)
+        page.wait_for_selector("[data-entry]", timeout=30000)
+        open_entry(page, "acme-pg-aprovacao")
+        card = wait_for(lambda: "Livre" in page_text(page), 10)
+        check("V5.16 (sempre): a entrada passa a Livre no app", card)
+        page.screenshot(path=EVIDENCE + "/sempre-entrada-livre.png")
+        proc = run_in_background()
+        code, _ = run_result(proc, timeout=30)
+        check("V5.16 (sempre): o pedido seguinte roda sem janela",
+              code == 0 and os.path.exists(MARK) and no_request(apr), f"saida={code}")
 
 
 if __name__ == "__main__":
