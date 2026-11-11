@@ -60,7 +60,7 @@ for d in "$HOME_T/.local" "$HOME_T/.local/share" "$VAULT_T"; do
     install -d -m 0700 -o "$UID_T" -g "$UID_T" "$d"
 done
 install -m 0600 -o "$UID_T" -g "$UID_T" /opt/teste/cofre.ward "$VAULT_T/cofre.ward"
-printf 'ward-estado 1\nvista 0\nqueimada 0\n' >"$VAULT_T/estado"
+printf 'ward-state 2\nseen 0\nburned 0\nagent_failures 0\n' >"$VAULT_T/estado"
 chown "$UID_T:$UID_T" "$VAULT_T/estado"
 chmod 0600 "$VAULT_T/estado"
 # Test master password (D15, fake) through stdin, never in argv.

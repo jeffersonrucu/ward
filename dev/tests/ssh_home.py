@@ -199,7 +199,7 @@ open(os.path.join(CWD, "none"), "w").close()
 shutil.copyfile(os.path.join(ROOT, ".dev/test-vault.ward"), os.path.join(WORK_DIR, "test-vault.ward"))
 os.chmod(os.path.join(WORK_DIR, "test-vault.ward"), 0o600)
 with open(os.path.join(WORK_DIR, "test-vault.state"), "w") as f:
-    f.write("ward-estado 1\nvista 0\nqueimada 0\n")
+    f.write("ward-state 2\nseen 0\nburned 0\nagent_failures 0\n")
 LOG = os.path.join(WORK_DIR, "wardd.log")
 daemon_env = {
     "HOME": PASSWD_HOME, "PATH": "/usr/bin:/bin", "XDG_RUNTIME_DIR": RUNTIME, "LANG": "C.UTF-8",

@@ -109,7 +109,7 @@ start() {
     # one starts at 0 and goes up to the file's generation on the first unlock. Only here,
     # only for the test vault: the real daemon never creates that file by itself.
     if [ ! -e "$STATE" ]; then
-        printf 'ward-estado 1\nvista 0\nqueimada 0\n' > "$STATE"
+        printf 'ward-state 2\nseen 0\nburned 0\nagent_failures 0\n' > "$STATE"
     fi
     env -i \
         HOME="$PASSWD_HOME" \

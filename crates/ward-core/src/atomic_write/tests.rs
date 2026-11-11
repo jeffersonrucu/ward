@@ -1233,3 +1233,120 @@ fn d65_v4_byte_changed_in_the_dates_fails_the_opening() {
         Err(crate::format::FormatError::PasswordOrFile)
     );
 }
+
+// --- m2:DT5: the v4 → v5 migration goes through the same write (m2:V4.3) ----------------
+
+/// The 0.1.4 vault (body v4, generation 3; fake values, test password of D15).
+const VAULT_014: &[u8] = include_bytes!("../../../../dev/fixtures/legacy/vault-0.1.4.ward");
+
+/// The v5 form of the 0.1.4 vault, sealed with the same keys at generation + 1 (what
+/// the daemon's migration writes), with its clear body and the entries read.
+fn vault_014_and_v5() -> (Vec<u8>, Vec<u8>, Vec<Entry>) {
+    let (opened, entries, read) = {
+        let _g = ARGON.lock().unwrap_or_else(|e| e.into_inner());
+        crate::body::open_entries_with_version(VAULT_014, &password(), 0, 0).unwrap()
+    };
+    assert!(read.is_legacy(), "a 0.1.4 tem corpo v4");
+    assert_eq!(read.version, crate::body::LEGACY_BODY_VERSION);
+    let next = opened.next_generation().unwrap();
+    assert_eq!(next, read.generation + 1);
+    let body = crate::body::serialize(opened.config(), next, &entries).unwrap();
+    assert_eq!(
+        u16::from_le_bytes([body[0], body[1]]),
+        crate::body::BODY_VERSION
+    );
+    (opened.seal(&body).unwrap(), body.to_vec(), entries)
+}
+
+/// m2:V4.3 (S7) at the core level: SIGKILL at each point of the write of the migration
+/// (after creating the temp file, after the write, after the fsync, after the rename,
+/// after the directory fsync). Before the rename the v4 stays byte for byte; after it,
+/// the whole v5, which opens as v5 with the same entries and generation + 1. Never
+/// anything else. The temp file left behind is encrypted and is a prefix of the v5. The
+/// point in the middle of a chunk does not exist here: the vault is smaller than one.
+#[test]
+fn dt5_sigkill_at_each_point_v4_to_v5() {
+    let (new, body, entries) = vault_014_and_v5();
+    assert!(new.len() < CHUNK);
+    for (i, target) in POINTS.iter().enumerate() {
+        if matches!(target, Point::Writing(_)) {
+            continue;
+        }
+        let d = Dir::new("dt5-sigkill");
+        write(&d.vault(), VAULT_014).unwrap();
+        fs::write(d.0.join("novo"), &new).unwrap();
+        let mut f = child(&format!("ponto:{i}"), &d.0);
+        wait_line(&mut f, "WARD-PONTO");
+        kill(f);
+        let left = fs::read(d.vault()).unwrap();
+        let temps = d.temp_files();
+        if i < BEFORE_RENAME {
+            assert!(left == VAULT_014, "{target:?}: a v4 tem de ficar intacta");
+            assert_eq!(temps.len(), 1, "{target:?}");
+        } else {
+            assert!(left == new, "{target:?}: a v5 tem de estar inteira");
+            assert!(temps.is_empty(), "{target:?}");
+        }
+        for t in &temps {
+            let b = fs::read(t).unwrap();
+            assert!(
+                new.starts_with(&b),
+                "{target:?}: temporário fora do cifrado novo"
+            );
+            assert_eq!(mode(t), 0o600);
+        }
+        assert_eq!(clean_temp_files(&d.vault()).unwrap(), temps.len());
+        assert_eq!(mode(&d.vault()), 0o600);
+    }
+    // The v5 that stays after the rename opens as v5, with the same entries (the body
+    // is canonical: the same entries give the same bytes).
+    assert!(open_content(&new) == body);
+    let _g = ARGON.lock().unwrap_or_else(|e| e.into_inner());
+    let (opened, again, read) =
+        crate::body::open_entries_with_version(&new, &password(), 0, 0).unwrap();
+    assert!(!read.is_legacy());
+    assert_eq!(read.version, crate::body::BODY_VERSION);
+    assert_eq!(read.generation, 4);
+    assert_eq!(again.len(), entries.len());
+    let reserialized = crate::body::serialize(opened.config(), 4, &again).unwrap();
+    assert!(*reserialized == body, "a migração mudou alguma entrada");
+}
+
+/// m2:V4.4 (S2): the bytes of the migration (the v5 file and any prefix that a temp file
+/// can hold) carry neither the stored names of type and level in clear (v4 or v5) nor
+/// the fake secrets of the 0.1.4 vault: only the `WARDCOFR` magic and encrypted bytes.
+#[test]
+fn dt5_attack_migration_bytes_have_no_clear_name() {
+    let (new, _, entries) = vault_014_and_v5();
+    assert!(new.starts_with(b"WARDCOFR"));
+    let mut needles: Vec<Vec<u8>> = [
+        "banco",
+        "servidor",
+        "nota-segura",
+        "generico",
+        "bloqueado",
+        "com-aprovacao",
+        "livre",
+        "database",
+        "server",
+        "secure-note",
+        "generic",
+        "blocked",
+        "approval",
+        "acme-",
+        "clientex",
+    ]
+    .iter()
+    .map(|s| s.as_bytes().to_vec())
+    .collect();
+    for e in &entries {
+        needles.push(e.name().as_bytes().to_vec());
+    }
+    for n in &needles {
+        assert!(
+            !contains(&new, n),
+            "{:?} em claro no v5",
+            String::from_utf8_lossy(n)
+        );
+    }
+}
