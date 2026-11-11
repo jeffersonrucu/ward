@@ -1,0 +1,52 @@
+[
+ {
+  "checagem": "destravar pelo app com a senha de teste",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "janela de aprovação aberta sem pedido",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V5.10: Novo vazio com Salvar desabilitado",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V5.10: com o nome preenchido, Salvar habilita",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V5.10: salvar sem grupo e ambiente mostra o erro no campo",
+  "ok": true,
+  "detalhe": ""
+ },
+ {
+  "checagem": "V5.16 (negar): a janela mostra entrada, ambiente e comando",
+  "ok": true,
+  "detalhe": "Pedido de aprovação\n\nClaude Code pediu uma credencial\n\n2:00 restantes\n\nO comando recebe dados pela entrada padrão, que esta janela não mostra. Esses dados podem usar a credencial do jeito que quiserem"
+ },
+ {
+  "checagem": "V5.16 (negar): a CLI sai ≠ 0 e a marca não existe",
+  "ok": true,
+  "detalhe": "saida=125 ward: pedido negado"
+ },
+ {
+  "checagem": "V5.16 (fechar): a janela mostra entrada, ambiente e comando",
+  "ok": true,
+  "detalhe": "Pedido de aprovação\n\nClaude Code pediu uma credencial\n\n1:59 restantes\n\nO comando recebe dados pela entrada padrão, que esta janela não mostra. Esses dados podem usar a credencial do jeito que quiserem"
+ },
+ {
+  "checagem": "V5.16 (fechar): a CLI sai ≠ 0 e a marca não existe",
+  "ok": true,
+  "detalhe": "saida=125 ward: pedido negado"
+ },
+ {
+  "checagem": "passo sem exceção",
+  "ok": false,
+  "detalhe": "TimeoutError: Locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for get_by_role(\"button\", name=\"Permitir uma vez\", exact=True)\n    - locator resolved to <button disabled type=\"button\" class=\"button primary svelte-18sv61c\">…</button>\n  - attempting click action\n    2 × waiting for element to be visibl"
+ }
+]

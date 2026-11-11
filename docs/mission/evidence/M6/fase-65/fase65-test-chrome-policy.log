@@ -1,0 +1,39 @@
+origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
+<home>/.cargo/bin/cargo build --quiet --locked -p wardd --bin wardd --target-dir target/no-test-mode
+<home>/.cargo/bin/cargo build --quiet --locked -p ward --bin ward --target-dir target/no-test-mode
+<home>/.cargo/bin/cargo build --quiet --locked -p ward-nm --bin ward-nm --target-dir target/no-test-mode
+<home>/.cargo/bin/cargo build --quiet --locked -p ward-app-core --example startup-container --target-dir target/no-test-mode
+<home>/.cargo/bin/cargo build --quiet --locked -p wardd --features test-mode --bin wardd --bin wardd-test-approver
+<home>/.cargo/bin/cargo build --quiet --locked -p ward-nm --features test-mode --bin ward-nm
+dev/tests/chrome-policy.sh target/debug/wardd target/debug/ward-nm \
+	target/no-test-mode/debug/ward target/no-test-mode/debug/wardd \
+	target/no-test-mode/debug/ward-nm target/no-test-mode/debug/examples/startup-container \
+	target/debug/wardd-test-approver
+ok: a política gerada pelo install.sh tem NativeMessagingUserLevelHosts false
+ok: a política gerada pelo install.sh tem PasswordManagerEnabled false
+ok: a política gerada pelo install.sh tem PasswordLeakDetectionEnabled false
+==> 1. precedência sem política (controle)
+    {"sistema": false, "usuario": true}
+ok: sem a política, o manifesto plantado no perfil vence (o ataque da auditoria)
+==> 2. precedência com a política do Ward
+    {"sistema": true, "usuario": false}
+ok: com a política, o manifesto plantado no perfil não é chamado
+ok: com a política, o manifesto do sistema é chamado
+==> 2b. chrome://policy em execução
+    sem política: {"NativeMessagingUserLevelHosts": {"valor": "Not set.", "ok": false}, "PasswordManagerEnabled": {"valor": "Not set.", "ok": false}, "PasswordLeakDetectionEnabled": {"valor": "Not set.", "ok": false}}
+    com a política: {"NativeMessagingUserLevelHosts": {"valor": "false", "ok": true}, "PasswordManagerEnabled": {"valor": "false", "ok": true}, "PasswordLeakDetectionEnabled": {"valor": "false", "ok": true}}
+ok: controle: sem a política, chrome://policy mostra NativeMessagingUserLevelHosts sem valor
+ok: chrome://policy mostra NativeMessagingUserLevelHosts = false, obrigatória, da máquina, OK
+ok: controle: sem a política, chrome://policy mostra PasswordManagerEnabled sem valor
+ok: chrome://policy mostra PasswordManagerEnabled = false, obrigatória, da máquina, OK
+ok: controle: sem a política, chrome://policy mostra PasswordLeakDetectionEnabled sem valor
+ok: chrome://policy mostra PasswordLeakDetectionEnabled = false, obrigatória, da máquina, OK
+==> 3. ataque da auditoria sem política (controle, fora do bwrap)
+    {"pulado": "o host j\u00e1 tem /etc/opt/chrome; o controle precisa de um Chrome sem pol\u00edtica"}
+pulado: rodada 3 (o host já tem /etc/opt/chrome; o controle precisa de um Chrome sem política)
+==> 4. ataque da auditoria com a política do Ward
+    {"atacante_rodou": false, "sistema_rodou": true, "respostas": {}, "com_segredo": 0}
+ok: com a política, o host do atacante (no perfil) nem roda
+ok: com a política, o Chrome abre o host do sistema
+ok: com a política, nenhuma senha sai
+test-chrome-policy: tudo ok

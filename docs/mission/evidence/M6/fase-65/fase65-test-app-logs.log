@@ -1,0 +1,10 @@
+/usr/bin/python3 -I -B dev/tests/log-scan.py --self-test
+limpo    .dev/log-scan-self-test/clean.log (30 bytes)
+1 arquivo(s), 0 com segredo
+SEGREDO  .dev/log-scan-self-test/dirty.log: 4 padrão(ões) de .dev/variations.txt
+1 arquivo(s), 1 com segredo
+autoteste ok
+/usr/bin/python3 -I -B dev/tests/log-scan.py 
+limpo    .dev/logs/ward-test-bridge.log (453 bytes)
+limpo    .dev/logs/wardd.log (5812 bytes)
+2 arquivo(s), 0 com segredo

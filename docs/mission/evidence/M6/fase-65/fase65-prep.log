@@ -1,0 +1,41 @@
+origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
+<home>/.cargo/bin/cargo install --locked cargo-audit@0.22.2 cargo-deny@0.20.2
+     Ignored package `cargo-audit v0.22.2` is already installed, use --force to override
+     Ignored package `cargo-deny v0.20.2` is already installed, use --force to override
+     Summary Successfully installed cargo-audit, cargo-deny!
+8.30.1
+/usr/bin/python3 -I -B dev/services/generate.py
+dev-services: pronto em .dev/services/
+origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
+/usr/bin/python3 -I -B dev/services/generate.py
+dev-services: pronto em .dev/services/
+<home>/.cargo/bin/cargo run --quiet --locked -p ward-core --example dev-vault -- --output "$WARD_DEV_OUTPUT"
+dev-vault: gravado .dev/test-vault.ward (0600) com 22 entradas; reaberto e conferido
+dev-vault: configuração: geração 1, hash do PIN Argon2id (m=65536 KiB, t=3, p=1), trava em 240 min, backup externo desligado
+  acme-pg-aprovacao	database	approval
+  acme-pg-dev	database	free
+  acme-pg-prod	database	approval
+  acme-pg-tunel	database	free
+  acme-ssh-chave-prod	server	free
+  acme-ssh-interno	server	free
+  acme-ssh-interno-aprov	server	free
+  acme-ssh-salto	server	approval
+  acme-ssh-salto-livre	server	free
+  acme-ssh-senha-stage	server	free
+  acme-totp-dev	login	free
+  acme-wp-dev	login	approval
+  acme-wp-prod	login	free
+  beta-aws-dev	aws	free
+  beta-github-api	api	free
+  beta-sftp-dev	ftp-sftp	free
+  beta-smtp-stage	smtp	free
+  delta-api-simbolos	api	free
+  delta-redir	login	free
+  gama-bloqueada	login	blocked
+  gama-generico	generic	free
+  gama-nota	secure-note	free
+rm -f -- "${WARD_DEV_OUTPUT%.ward}.state"
+/usr/bin/python3 -I -B dev/services/generate.py
+dev-services: pronto em .dev/services/
+/usr/bin/python3 -I -B dev/variations.py --output "$WARD_DEV_OUTPUT"
+dev-variations: gravado .dev/variations.txt (0600) com 279 padrões; uso: grep -F -f .dev/variations.txt

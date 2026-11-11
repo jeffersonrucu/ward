@@ -1,0 +1,29 @@
+origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
+<home>/.cargo/bin/cargo build --quiet --locked -p wardd --features test-mode --bin wardd
+<home>/.cargo/bin/cargo build --quiet --locked -p ward-test-bridge --features test-mode --bin ward-test-bridge
+<home>/.cargo/bin/cargo build --quiet --locked -p ward --features test-mode --bin ward
+PW_PYTHONPATH="<repo>/.dev/pw-lib/site" WARD_DEV_SOCKET_DIR="" dev/tests/app-e2e.sh
+==> daemon de teste em <rt>/ward-test-e2e com a ponte (D63)
+daemon de teste no ar: pid 2237247, socket <rt>/ward-test-e2e/wardd.sock, log <repo>/.dev/logs/wardd.log
+==> app de ponta a ponta (Chrome headless)
+ok - destravar pelo app com a senha de teste
+ok - janela de aprovação aberta sem pedido
+ok - V5.10: Novo vazio com Salvar desabilitado
+ok - V5.10: com o nome preenchido, Salvar habilita
+ok - V5.10: salvar sem grupo e ambiente mostra o erro no campo
+ok - V5.16 (negar): a janela mostra entrada, ambiente e comando
+ok - V5.16 (negar): a CLI sai ≠ 0 e a marca não existe
+ok - V5.16 (fechar): a janela mostra entrada, ambiente e comando
+ok - V5.16 (fechar): a CLI sai ≠ 0 e a marca não existe
+FALHOU - passo sem exceção (TimeoutError: Locator.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for get_by_role("button", name="Permitir uma vez", exact=True)
+    - locator resolved to <button disabled type="button" class="button primary svelte-18sv61c">…</button>
+  - attempting click action
+    2 × waiting for element to be visibl)
+app-e2e: 9 de 10 checagens ok
+==> varredura de logs (V5.27): .dev/logs com .dev/variations.txt
+limpo    .dev/logs/ward-test-bridge.log (302 bytes)
+limpo    .dev/logs/wardd.log (3415 bytes)
+2 arquivo(s), 0 com segredo
+make: *** [Makefile:369: test-app-e2e] Erro 1
