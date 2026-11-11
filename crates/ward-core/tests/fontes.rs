@@ -99,12 +99,12 @@ fn v2_46_chave_no_heap_e_sem_hash_password() {
     }
 }
 
-/// V2.50 (D44, D27): os únicos `pub fn` que gravam o cofre são `gravar_entradas` e
-/// `gravacao::trocar_senha_lido` (Fase 55: com os bytes que o daemon leu) e as
+/// V2.50 (D44, D27): os únicos `pub fn` que gravam o cofre são `write_entries` e
+/// `atomic_write::change_password_from_bytes` (Fase 55: com os bytes que o daemon leu) e as
 /// variantes com backup da Fase 45 (que gravam os mesmos
-/// bytes já selados por elas na pasta de backups), mais `limpar_temporarios`, que só
-/// apaga temporários. Só `gravacao.rs` escreve arquivo (o `backup.rs` só lista e apaga
-/// versões velhas), e `selar`/`gravar_cofre`/`gravar` são `pub(crate)`.
+/// bytes já selados por elas na pasta de backups), mais `clean_temp_files`, que só
+/// apaga temporários. Só `atomic_write.rs` escreve arquivo (o `backup.rs` só lista e apaga
+/// versões velhas), e `seal`/`write_vault`/`write` são `pub(crate)`.
 #[test]
 fn v2_50_unicas_gravacoes_publicas() {
     let fontes = fontes_de_producao();
@@ -122,15 +122,14 @@ fn v2_50_unicas_gravacoes_publicas() {
                 "linkat",
             ] {
                 if l.contains(escrita) {
-                    assert_eq!(nome, "gravacao.rs", "{}:{n}: {l}", p.display());
+                    assert_eq!(nome, "atomic_write.rs", "{}:{n}: {l}", p.display());
                 }
             }
-            if nome == "gravacao.rs" && l.starts_with("pub fn ") {
+            if nome == "atomic_write.rs" && l.starts_with("pub fn ") {
                 let f = l["pub fn ".len()..].split('(').next().unwrap().to_owned();
                 publicas.push(f);
             }
-            if l.contains("fn selar(") || l.contains("fn gravar_cofre(") || l.contains("fn gravar(")
-            {
+            if l.contains("fn seal(") || l.contains("fn write_vault(") || l.contains("fn write(") {
                 assert!(
                     l.starts_with("pub(crate) fn") || l.starts_with("fn"),
                     "{}:{n}: {l}",
@@ -143,18 +142,18 @@ fn v2_50_unicas_gravacoes_publicas() {
     assert_eq!(
         publicas,
         [
-            "gravar_entradas",
-            "gravar_entradas_com_backup",
-            "limpar_temporarios",
-            "trocar_senha_com_backup_lido",
-            "trocar_senha_lido"
+            "write_entries",
+            "write_entries_with_backup",
+            "clean_temp_files",
+            "change_password_with_backup_from_bytes",
+            "change_password_from_bytes"
         ],
-        "pub fn de gravacao.rs"
+        "pub fn de atomic_write.rs"
     );
     // Os dois serializam ou desserializam o corpo antes de selar.
     let gravacao = &fontes
         .iter()
-        .find(|(p, _)| p.ends_with("src/gravacao.rs"))
+        .find(|(p, _)| p.ends_with("src/atomic_write.rs"))
         .unwrap()
         .1;
     let corpo_de = |f: &str| {
@@ -162,16 +161,16 @@ fn v2_50_unicas_gravacoes_publicas() {
         let fim = gravacao[i..].find("\n}\n").unwrap();
         gravacao[i..i + fim].to_owned()
     };
-    assert!(corpo_de("gravar_entradas").contains("gravar_entradas_com_pontos"));
-    assert!(corpo_de("gravar_entradas_com_pontos").contains("gravar_entradas_selado("));
-    assert!(corpo_de("gravar_entradas_com_backup").contains("gravar_entradas_selado("));
+    assert!(corpo_de("write_entries").contains("write_entries_with_points"));
+    assert!(corpo_de("write_entries_with_points").contains("write_entries_sealed("));
+    assert!(corpo_de("write_entries_with_backup").contains("write_entries_sealed("));
     assert!(
-        corpo_de("gravar_entradas_selado")
-            .contains("corpo::serializar(cofre.configuracao(), geracao, entradas)")
+        corpo_de("write_entries_sealed")
+            .contains("corpo::serializar(vault.config(), generation, entries)")
     );
-    assert!(corpo_de("trocar_senha_lido").contains("trocar_senha_selado("));
-    assert!(corpo_de("trocar_senha_com_backup_lido").contains("trocar_senha_selado("));
-    let troca = corpo_de("trocar_senha_selado");
-    assert!(troca.contains("corpo::desserializar(&conteudo)"));
-    assert!(troca.contains("gravar_entradas_selado(destino, &mut cofre, &entradas"));
+    assert!(corpo_de("change_password_from_bytes").contains("change_password_sealed("));
+    assert!(corpo_de("change_password_with_backup_from_bytes").contains("change_password_sealed("));
+    let troca = corpo_de("change_password_sealed");
+    assert!(troca.contains("corpo::desserializar(&content)"));
+    assert!(troca.contains("write_entries_sealed(destination, &mut vault, &entries"));
 }

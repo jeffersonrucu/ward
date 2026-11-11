@@ -1,7 +1,7 @@
 //! `make dev-vault` (Fase 19, V2.29): monta o cofre de teste a partir de
 //! `dev/fixtures/entries.json` (D15 + `acme-totp-dev` de D28) pela API pública do
 //! `ward-core` (validação da Fase 15, corpo v4 com a configuração de D30 e a geração de
-//! D39, `gravar_entradas` de D27/D44) e o reabre com a senha de teste para conferir. O
+//! D39, `write_entries` de D27/D44) e o reabre com a senha de teste para conferir. O
 //! cofre recém-criado está sempre na geração 1, e as entradas nascem sem as datas de
 //! D65 d (só o daemon carimba, pelo relógio dele; a tela não mostra o rodapé). O PIN de
 //! teste da fixture só entra no cofre como hash Argon2id (D30); nunca em claro.
@@ -45,6 +45,7 @@ use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
 use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
 
+use ward_core::atomic_write::write_entries;
 use ward_core::configuracao::{Configuracao, HashPin, KDF_PIN};
 use ward_core::corpo::{abrir_entradas, serializar};
 use ward_core::entrada::{
@@ -52,8 +53,7 @@ use ward_core::entrada::{
     TipoEntrada,
 };
 use ward_core::entrega::{self, ErroEntrega, ErroRecurso, Recursos};
-use ward_core::formato::{CofreAberto, SenhaMestra};
-use ward_core::gravacao::gravar_entradas;
+use ward_core::format::{MasterPassword, OpenVault};
 use ward_core::limits::{DEFAULT_LOCK_MINUTES, MAX_ATTACHMENTS_TOTAL};
 use ward_core::mascara::{MARCA, Mascara};
 use zeroize::Zeroizing;
@@ -66,7 +66,7 @@ use ward_core as wc;
 mod cofre_teste;
 
 const FIXTURES: &str = "dev/fixtures/entries.json";
-/// Geração de um cofre recém-gravado (D39): a primeira gravação de um `CofreAberto` novo.
+/// Geração de um cofre recém-gravado (D39): a primeira gravação de um `OpenVault` novo.
 const GERACAO_NOVA: u64 = 1;
 const SAIDA_PADRAO: &str = ".dev/test-vault.ward";
 const DIR_DEV: &str = ".dev";
@@ -214,9 +214,9 @@ fn executar(args: impl Iterator<Item = OsString>) -> Result<(), Erro> {
     // desligado). O PIN só existe aqui, em memória que zera ao sair.
     let hash = HashPin::criar(pin.as_bytes())
         .map_err(|e| Erro::Cofre(format!("não deu para criar o hash do PIN: {e}")))?;
-    let mut cofre = CofreAberto::novo(&senha, Configuracao::nova(hash))
+    let mut cofre = OpenVault::new(&senha, Configuracao::nova(hash))
         .map_err(|e| Erro::Cofre(format!("não deu para criar o cofre: {e}")))?;
-    gravar_entradas(&saida, &mut cofre, &esperadas)
+    write_entries(&saida, &mut cofre, &esperadas)
         .map_err(|e| Erro::Cofre(format!("não deu para gravar {exibir}: {e}")))?;
     drop(cofre);
     let (n, geracao) = conferir(&saida, &senha, &pin, &esperadas)?;
@@ -236,7 +236,7 @@ fn executar(args: impl Iterator<Item = OsString>) -> Result<(), Erro> {
 fn imprimir_configuracao(geracao: u64) {
     println!(
         "dev-cofre: configuração: geração {geracao}, hash do PIN Argon2id (m={} KiB, t={}, p={}), trava em {} min, backup externo desligado",
-        KDF_PIN.memoria_kib, KDF_PIN.passes, KDF_PIN.paralelismo, DEFAULT_LOCK_MINUTES
+        KDF_PIN.memory_kib, KDF_PIN.passes, KDF_PIN.parallelism, DEFAULT_LOCK_MINUTES
     );
 }
 
@@ -250,7 +250,7 @@ fn imprimir_lista(entradas: &[Entrada]) {
 }
 
 /// Senha do stdin (só para o teste de senha errada), sem eco e sem argv.
-fn senha_do_stdin() -> Result<SenhaMestra, Erro> {
+fn senha_do_stdin() -> Result<MasterPassword, Erro> {
     let mut buf = Zeroizing::new(Vec::with_capacity(256));
     io::stdin()
         .take(256)
@@ -261,7 +261,7 @@ fn senha_do_stdin() -> Result<SenhaMestra, Erro> {
     }
     let mut bytes = Zeroizing::new(Vec::with_capacity(buf.len()));
     bytes.extend_from_slice(&buf);
-    Ok(SenhaMestra::de_bytes(bytes))
+    Ok(MasterPassword::from_bytes(bytes))
 }
 
 /// Reabre o arquivo e confere que as entradas voltam iguais às das fixtures (mesmos
@@ -271,7 +271,7 @@ fn senha_do_stdin() -> Result<SenhaMestra, Erro> {
 /// desligado.
 fn conferir(
     saida: &Path,
-    senha: &SenhaMestra,
+    senha: &MasterPassword,
     pin: &str,
     esperadas: &[Entrada],
 ) -> Result<(usize, u64), Erro> {
@@ -292,8 +292,8 @@ fn conferir(
     let (cofre, lidas) = abrir_entradas(&bytes, senha)
         .map_err(|e| Erro::Cofre(format!("o cofre não abriu: {e}")))?;
     // D39: a geração lida (≥ 1; a leitura recusa 0) entra nos dois lados da comparação.
-    let geracao = cofre.geracao();
-    let cfg = cofre.configuracao();
+    let geracao = cofre.generation();
+    let cfg = cofre.config();
     let a = serializar(cfg, geracao, &lidas).map_err(|e| Erro::Cofre(format!("{e}")))?;
     let b = serializar(cfg, geracao, esperadas).map_err(|e| Erro::Cofre(format!("{e}")))?;
     if *a != *b {
@@ -367,7 +367,7 @@ fn sobra_segredo(saida: &[u8], e: &Entrada) -> bool {
 }
 
 /// V2.57: cada padrão do oráculo, sozinho, sai `••••` pela máscara da entrada dele.
-fn cruzado(saida: &Path, senha: &SenhaMestra) -> Result<(), Erro> {
+fn cruzado(saida: &Path, senha: &MasterPassword) -> Result<(), Erro> {
     let bytes = fs::read(saida).map_err(|_| Erro::Cofre("não deu para ler o cofre".into()))?;
     let (_, lidas) = abrir_entradas(&bytes, senha)
         .map_err(|e| Erro::Cofre(format!("o cofre não abriu: {e}")))?;
@@ -973,7 +973,7 @@ impl Obj {
 type Leitura<'a> = dyn FnMut(Origem, &str) -> Result<Segredo, Erro> + 'a;
 
 /// O que as fixtures dão: senha mestra, PIN (em memória que zera ao sair) e entradas.
-type Montado = (SenhaMestra, Zeroizing<String>, Vec<Entrada>);
+type Montado = (MasterPassword, Zeroizing<String>, Vec<Entrada>);
 
 /// Monta a senha mestra, o PIN e as entradas validadas (com o nível da fixture) a
 /// partir do JSON. `ler` lê os arquivos citados (chave privada, anexos).
@@ -1004,7 +1004,7 @@ fn montar(bytes: &[u8], ler: &mut Leitura<'_>) -> Result<Montado, Erro> {
     for (i, v) in lista.into_iter().enumerate() {
         entradas.push(entrada(i, v, ler)?);
     }
-    let senha = SenhaMestra::nova(String::clone(&senha));
+    let senha = MasterPassword::new(String::clone(&senha));
     Ok((senha, pin, entradas))
 }
 

@@ -9,11 +9,11 @@ use base64ct::{Base64, Encoding};
 use super::quadro::{self, ErroQuadro, ler_quadro, limite_do_quadro};
 use super::*;
 use crate as wc;
+use crate::atomic_write::WriteError;
 use crate::corpo::ErroAbrir;
 use crate::entrada::{
     Ambiente, Rascunho, RascunhoAnexo, RascunhoDados, RascunhoExtra, Segredo, TipoEntrada,
 };
-use crate::gravacao::ErroGravacao;
 use crate::limits::{
     KIB, MAX_APP_FRAME, MAX_ATTACHMENT_NAME, MAX_ATTACHMENTS, MAX_ATTACHMENTS_TOTAL,
     MAX_COMMON_FRAME, MAX_EXTRA_VALUE, MAX_EXTRAS, MAX_NOTE, MIB,
@@ -1432,7 +1432,7 @@ fn d39_erros_do_destravar_e_das_gravacoes() {
     assert_eq!(MSG_RETROCESSO, ErroAbrir::Retrocesso.to_string());
     assert_eq!(
         MSG_GERACAO_ESGOTADA,
-        ErroGravacao::GeracaoEsgotada.to_string()
+        WriteError::GenerationExhausted.to_string()
     );
     assert_eq!(MSG_COFRE_MUDOU, "o arquivo do cofre mudou fora do Ward");
     assert_eq!(
@@ -1440,15 +1440,15 @@ fn d39_erros_do_destravar_e_das_gravacoes() {
         ErroResposta::Retrocesso
     );
     assert_eq!(
-        ErroResposta::from(&ErroGravacao::GeracaoEsgotada),
+        ErroResposta::from(&WriteError::GenerationExhausted),
         ErroResposta::GeracaoEsgotada
     );
     assert_eq!(
-        ErroResposta::from(&ErroGravacao::Retrocesso),
+        ErroResposta::from(&WriteError::Rollback),
         ErroResposta::Retrocesso
     );
     assert_eq!(
-        ErroResposta::from(&ErroGravacao::DestinoInvalido),
+        ErroResposta::from(&WriteError::InvalidDestination),
         ErroResposta::FalhaAoGravar
     );
     for e in [

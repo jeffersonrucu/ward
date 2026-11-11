@@ -40,7 +40,7 @@ fn editar(anterior: &str, manter: &[&str], novos: &[(&str, &[u8])]) -> String {
 /// As entradas como estão no disco (abre com a senha de teste).
 fn no_disco(dir: &Dir) -> Vec<Entrada> {
     let bytes = std::fs::read(dir.caminhos().cofre).unwrap();
-    let s = ward_core::formato::SenhaMestra::nova(SENHA.to_owned());
+    let s = ward_core::format::MasterPassword::new(SENHA.to_owned());
     ward_core::corpo::abrir_entradas_lida(&bytes, &s, 0, 0)
         .unwrap()
         .1

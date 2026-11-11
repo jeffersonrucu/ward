@@ -2035,6 +2035,45 @@ digits, symbols }`; `gerar`/`gerar_com` → `generate`/`generate_with`,
 `MAX_ENV_VARIABLES`, `MAX_TEXTO_EXIBIDO` → `MAX_DISPLAYED_TEXT`. O `backup::MAX_NOME`
 (Fase 15) e o `MAX_CORPO` da ponte de teste (Fase 29) são outros itens e não mudaram.
 
+Fase 11 (`ward-core`: `format`, `atomic_write`): módulos `formato` → `format` e
+`gravacao` → `atomic_write`; `MAGIA`/`VERSAO`/`TAM_SAL`/`TAM_CABECALHO`/`MAX_CONTEUDO`
+→ `MAGIC`/`VERSION`/`SALT_SIZE`/`HEADER_SIZE`/`MAX_CONTENT` (a magia `WARDCOFR` fica);
+`ParametrosKdf { memoria_kib, passes, paralelismo }` → `KdfParams { memory_kib, passes,
+parallelism }` com `PADRAO`/`MINIMO`/`MAXIMO` → `DEFAULT`/`MINIMUM`/`MAXIMUM`;
+`Cabecalho { versao, kdf, tamanho_corpo }` → `Header { version, kdf, body_size }`;
+`ErroFormato` → `FormatError` com `SenhaOuArquivo` → `PasswordOrFile`,
+`VersaoNaoSuportada` → `UnsupportedVersion`, `ParametrosAbaixoDoMinimo`/
+`ParametrosAcimaDoMaximo` → `ParamsBelowMinimum`/`ParamsAboveMaximum`,
+`ConteudoGrande` → `ContentTooLarge`, `SenhaVazia` → `EmptyPassword`, `Aleatorio` →
+`Random`, `Cifrar` → `Encrypt`; `SenhaMestra` → `MasterPassword` (`nova`/`de_bytes`/
+`digitada`/`serve_de_nova` → `new`/`from_bytes`/`typed`/`is_valid_new`);
+`CofreAberto` → `OpenVault` (`novo`/`novo_com`/`depois_da_geracao`/`de_partes`/
+`geracao`/`proxima_geracao`/`queimar`/`parametros`/`configuracao`/`configuracao_mut`/
+`selar`/`autentica`/`geracao_selada` → `new`/`new_with`/`after_generation`/`from_parts`/
+`generation`/`next_generation`/`burn`/`params`/`config`/`config_mut`/`seal`/
+`authenticates`/`sealed_generation`); `ChavesCofre` → `VaultKeys` (`chave_dados` →
+`data_key`, `abrir_proprio` → `open_own`); `ler_cabecalho` → `read_header`, `abrir` →
+`open`, `trocar_senha` → `change_password`, `SenhaTrocada` → `PasswordChanged`.
+`IdentidadeArquivo` → `FileIdentity`; `Etapa` → `Step` com `Ler` → `Read`,
+`CriarTemporario` → `CreateTemp`, `Escrever` → `Write`, `FsyncTemporario` →
+`FsyncTemp`, `Renomear` → `Rename`, `FsyncDiretorio` → `FsyncDir`; `ErroGravacao` →
+`WriteError` com `GeracaoEsgotada` → `GenerationExhausted`, `Retrocesso` → `Rollback`,
+`NaoECofre` → `NotVault`, `Formato` → `Format`, `Corpo` → `Body`, `DestinoInvalido` →
+`InvalidDestination`, `Io { etapa, tipo, identidade }` → `Io { step, kind, identity }`;
+`Ponto` → `Point` com `DepoisDeCriar`/`Escrevendo`/`DepoisDeEscrever`/`DepoisDoFsync`/
+`DepoisDoRename`/`DepoisDoFsyncDir` → `AfterCreate`/`Writing`/`AfterWrite`/`AfterFsync`/
+`AfterRename`/`AfterFsyncDir`; `Gravado { identidade, backup }` → `Written { identity,
+backup }`; `gravar_entradas`(`_com_backup`) → `write_entries`(`_with_backup`),
+`trocar_senha_lido`/`trocar_senha_com_backup_lido` → `change_password_from_bytes`/
+`change_password_with_backup_from_bytes` ("lido" = com os bytes já lidos pelo
+chamador → `from_bytes`), `gravar_cofre` → `write_vault`, `gravar` → `write`,
+`limpar_temporarios` → `clean_temp_files` (só o do `atomic_write`: os
+`limpar_temporarios` de `wardd/execucao.rs` e `wardd/externo.rs` são outros e ficam
+para as fases deles), `gravar_novo_com_pontos` → `write_new_with_points`,
+`Temporario` → `TempFile`. Os ids `ErroResposta::Retrocesso`/`GeracaoEsgotada` do
+protocolo (Fase 17) e `ErroAbrir::Retrocesso` do corpo (Fase 14) são outros e não
+mudaram; o `backup::geracao_selada` (Fase 15) também não.
+
 Funções e métodos não estão listados um a um: o nome sai da seção 2 na ordem do inglês
 (`conferir_arquivo` → `verify_file`, `ler_cofre` → `read_vault`, `codificar_resposta` →
 `encode_response`, `exigir_pin` → `require_pin`). Os poucos fixados por outra seção:

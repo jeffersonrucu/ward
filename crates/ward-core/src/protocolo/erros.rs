@@ -5,10 +5,10 @@
 
 use core::fmt;
 
+#[cfg(unix)]
+use crate::atomic_write::WriteError;
 use crate::corpo::ErroAbrir;
 use crate::entrada::ErrosValidacao;
-#[cfg(unix)]
-use crate::gravacao::ErroGravacao;
 
 /// Um problema de validação da entrada (campo, posição na lista e motivo), copiado de
 /// [`crate::entrada::ErroValidacao`], que só tem textos fixos.
@@ -100,7 +100,7 @@ pub const MSG_RETROCESSO: &str = "o cofre no disco é mais antigo que o último 
 /// Mensagem fixa de [`ErroResposta::CofreMudou`] (D39).
 pub const MSG_COFRE_MUDOU: &str = "o arquivo do cofre mudou fora do Ward";
 /// Mensagem fixa de [`ErroResposta::GeracaoEsgotada`] (igual à de
-/// [`crate::gravacao::ErroGravacao::GeracaoEsgotada`]).
+/// [`crate::atomic_write::WriteError::GenerationExhausted`]).
 pub const MSG_GERACAO_ESGOTADA: &str =
     "recusado gravar: o contador de versões do cofre chegou ao fim";
 
@@ -272,16 +272,16 @@ impl From<&ErroAbrir> for ErroResposta {
 /// senha atual errada: o daemon, que sabe qual operação fez, responde
 /// [`ErroResposta::SenhaIncorreta`] nesse caso.
 #[cfg(unix)]
-impl From<&ErroGravacao> for ErroResposta {
-    fn from(e: &ErroGravacao) -> Self {
+impl From<&WriteError> for ErroResposta {
+    fn from(e: &WriteError) -> Self {
         match e {
-            ErroGravacao::GeracaoEsgotada => Self::GeracaoEsgotada,
-            ErroGravacao::Retrocesso => Self::Retrocesso,
-            ErroGravacao::Formato(_)
-            | ErroGravacao::NaoECofre
-            | ErroGravacao::Corpo(_)
-            | ErroGravacao::DestinoInvalido
-            | ErroGravacao::Io { .. } => Self::FalhaAoGravar,
+            WriteError::GenerationExhausted => Self::GeracaoEsgotada,
+            WriteError::Rollback => Self::Retrocesso,
+            WriteError::Format(_)
+            | WriteError::NotVault
+            | WriteError::Body(_)
+            | WriteError::InvalidDestination
+            | WriteError::Io { .. } => Self::FalhaAoGravar,
         }
     }
 }

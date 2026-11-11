@@ -23,13 +23,13 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::time::{Duration, Instant};
 
 use ward_core as wc;
+use ward_core::atomic_write::write_entries;
 use ward_core::configuracao::{Configuracao, HashPin};
 use ward_core::corpo::{ErroCorpo, abrir_entradas, desserializar, serializar};
 use ward_core::entrada::{
     Entrada, NivelAcesso, Rascunho, RascunhoAnexo, RascunhoDados, RascunhoExtra, Segredo,
 };
-use ward_core::formato::{CofreAberto, SenhaMestra};
-use ward_core::gravacao::gravar_entradas;
+use ward_core::format::{MasterPassword, OpenVault};
 use ward_core::limits::{
     MAX_ATTACHMENTS_TOTAL, MAX_BODY, MAX_ENTRIES, MAX_EXTRA_VALUE, MAX_EXTRAS, MAX_NOTE,
 };
@@ -547,30 +547,30 @@ fn v2_33_nenhum_bloco_liberado_tem_segredo() {
     assert!(achados >= 1, "o detector não viu a realocação");
 
     // O caminho inteiro: montar as entradas, serializar, desserializar, gravar pelo
-    // caminho público (`gravar_entradas`, D44: selar não é público) num diretório
+    // caminho público (`write_entries`, D44: selar não é público) num diretório
     // temporário, ler, abrir, gravar de novo e soltar tudo.
     let dir = DirTemporario::novo("v2-33");
     let destino = dir.0.join("cofre.ward");
     let achados = procurando(|| {
-        let senha = SenhaMestra::nova(SENHA_MESTRA.to_owned());
+        let senha = MasterPassword::new(SENHA_MESTRA.to_owned());
         let entradas = cofre_de_teste();
         let corpo = serializar(&cfg, 1, &entradas).unwrap();
         let (_, _, lidas) = desserializar(&corpo).unwrap();
         assert_eq!(lidas.len(), 22);
         drop(corpo);
-        let mut cofre = CofreAberto::novo(&senha, cfg).unwrap();
-        gravar_entradas(&destino, &mut cofre, &entradas).unwrap();
+        let mut cofre = OpenVault::new(&senha, cfg).unwrap();
+        write_entries(&destino, &mut cofre, &entradas).unwrap();
         let arquivo = std::fs::read(&destino).unwrap();
         let (mut reaberto, voltaram) = abrir_entradas(&arquivo, &senha).unwrap();
         assert_eq!(voltaram.len(), 22);
-        assert_eq!(reaberto.geracao(), 1);
+        assert_eq!(reaberto.generation(), 1);
         // O PIN confere no hash lido do corpo (D30), e um hash novo nasce e morre.
-        assert!(reaberto.configuracao().conferir_pin(PIN_TESTE.as_bytes()));
-        assert!(!reaberto.configuracao().conferir_pin(b"135791"));
+        assert!(reaberto.config().conferir_pin(PIN_TESTE.as_bytes()));
+        assert!(!reaberto.config().conferir_pin(b"135791"));
         drop(Configuracao::nova(
             HashPin::criar(PIN_TESTE.as_bytes()).unwrap(),
         ));
-        gravar_entradas(&destino, &mut reaberto, &voltaram).unwrap();
+        write_entries(&destino, &mut reaberto, &voltaram).unwrap();
         let arquivo2 = std::fs::read(&destino).unwrap();
         drop((entradas, lidas, voltaram, arquivo, arquivo2));
         drop((cofre, reaberto, senha));

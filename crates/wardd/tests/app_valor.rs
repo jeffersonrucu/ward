@@ -28,8 +28,8 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use comum::{Dir, b64};
-use ward_core::formato::{CofreAberto, SenhaMestra};
-use ward_core::gravacao::gravar_entradas;
+use ward_core::atomic_write::write_entries;
+use ward_core::format::{MasterPassword, OpenVault};
 use ward_core::protocolo::{self, ErroResposta, Papel, Resposta};
 
 // O cofre de teste pela API pública (o mesmo do app de teste e do daemon falso).
@@ -203,9 +203,9 @@ fn v3_39_v3_40_valores_e_lista_do_app_pelo_daemon_de_teste() {
     .unwrap();
     let mut entradas = cofre_teste::cofre_de_teste();
     entradas.sort_by(|a, b| a.nome().cmp(b.nome()));
-    let senha = SenhaMestra::nova(cofre_teste::SENHA_MESTRA.to_owned());
-    let mut cofre = CofreAberto::novo(&senha, cofre_teste::configuracao_nova()).unwrap();
-    gravar_entradas(&dev.join("test-vault.ward"), &mut cofre, &entradas).unwrap();
+    let senha = MasterPassword::new(cofre_teste::SENHA_MESTRA.to_owned());
+    let mut cofre = OpenVault::new(&senha, cofre_teste::configuracao_nova()).unwrap();
+    write_entries(&dev.join("test-vault.ward"), &mut cofre, &entradas).unwrap();
     drop(cofre);
 
     let sock = DirSocket::novo("v339");

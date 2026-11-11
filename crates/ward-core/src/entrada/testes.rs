@@ -1033,9 +1033,9 @@ fn v2_28_tipos_de_segredo_zeram_e_nao_clonam() {
     <RascunhoDados as NaoClone<_>>::conferir();
     <RascunhoExtra as NaoClone<_>>::conferir();
     <RascunhoAnexo as NaoClone<_>>::conferir();
-    <crate::formato::SenhaMestra as NaoClone<_>>::conferir();
-    <crate::formato::CofreAberto as NaoClone<_>>::conferir();
-    <crate::formato::ChavesCofre as NaoClone<_>>::conferir();
+    <crate::format::MasterPassword as NaoClone<_>>::conferir();
+    <crate::format::OpenVault as NaoClone<_>>::conferir();
+    <crate::format::VaultKeys as NaoClone<_>>::conferir();
     // Configuração do corpo v2 (Fase 19b, D30).
     <crate::configuracao::HashPin as NaoClone<_>>::conferir();
     <crate::configuracao::Configuracao as NaoClone<_>>::conferir();
@@ -1049,9 +1049,9 @@ fn v2_28_tipos_de_segredo_zeram_e_nao_clonam() {
     // A chave de dados do formato (Fase 13) é `Zeroizing<[u8; 32]>`.
     zera_ao_sair::<crate::crypto::Key>();
     // A senha mestra e o cofre aberto (que guarda a chave de dados), Fase 15a.
-    zera_ao_sair::<crate::formato::SenhaMestra>();
-    zera_ao_sair::<crate::formato::CofreAberto>();
-    zera_ao_sair::<crate::formato::ChavesCofre>();
+    zera_ao_sair::<crate::format::MasterPassword>();
+    zera_ao_sair::<crate::format::OpenVault>();
+    zera_ao_sair::<crate::format::VaultKeys>();
     // O hash do PIN e a configuração que o guarda (Fase 19b, D30).
     zera_ao_sair::<crate::configuracao::HashPin>();
     zera_ao_sair::<crate::configuracao::Configuracao>();
