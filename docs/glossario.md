@@ -2540,6 +2540,45 @@ stdout, stderr, chunks, end, failure }` (`texto` → `text`), `salvar` → `save
 `esperar`, `continuar`, `pty-pronto`…) e as chaves do registro (`agente.lista`, `neto`,
 `depois`…) são literais e ficam. Os nomes do `comum` (Fase 23), do `nucleo`/`aprovacao`
 (Fase 20) e do `ward-core` (`protocolo`, Fases 17–18) ficam como estão até as fases deles.
+Fase 27 (testes do `wardd`: `playwright.rs`, `login.rs` ficam; `extensao.rs` →
+`extension.rs`, `app_teste.rs` → `test_app.rs`, `app_valor.rs` → `app_value_binary.rs`,
+`valor_app.rs` → `app_value_core.rs`, `anexos_edicao.rs` → `attachment_edit.rs`,
+`chrome_falso.py` → `fake_chrome.py`; `[[test]]` `app_teste`/`app_valor` →
+`test_app`/`app_value_binary`): em `playwright.rs`, `SENHA_LOGIN` → `LOGIN_PASSWORD`,
+`Rt::novo` → `Rt::new`, `Cena`/`cena` → `Scene`/`scene` (`registro`/`eventos`/`sessao`/
+`sem_perfil` → `records`/`events`/`session`/`no_profile`), `formas_da_senha` →
+`password_forms`, `site::{Pedido { metodo, caminho, corpo }, porta, pedidos, Rota, subir,
+atender}` → `site::{Request { method, path, body }, port, requests, Route, start,
+serve}`, `formulario` → `form`, `com_clobber` → `with_clobber`, `login_em` → `login_at`,
+`CenaReal`/`cena_real` → `RealScene`/`real_scene` (`phish_limpo`/`senha_fora_da_url` →
+`phish_clean`/`password_out_of_url`), `CASOS` → `CASES`, `pagina` → `page`. Em
+`extension.rs`, `SEMENTE`/`AGORA` → `SEED`/`NOW`, `RelogioFixo` → `FixedClock`, `cofre`
+→ `vault`, `sugerir` → `suggest`, `preencher_cru`/`preencher` → `fill_raw`/`fill`,
+`nomes` → `names`, `sem_segredo` → `no_secret`, `salvar_login` → `save_login`,
+`nivel_na_lista` → `level_in_list`, `SENHA_NOVA` → `NEW_PASSWORD`, `SaiLogo` →
+`LeavesSoon`. Em `login.rs`, `ORIGEM` → `ORIGIN`, `prazos` → `deadlines` (`retirada_ms` →
+`pickup_ms`), `cofre` → `vault`, `login_do_agente` → `agent_login`, `aguardar` →
+`await_login`, `pegar` → `take`, `preencher` → `fill`, `resultado` → `outcome`,
+`sem_valor` → `no_value`, `ClienteQueSai` → `LeavingClient`, `RelogioParado` →
+`StoppedClock`, `AppFalso` → `FakeApp`, `SemAbrir` → `NoOpen`, `responder` → `answer`,
+`login_http`/`login_na_url`/`login_http_completo` → `http_login`/`login_at_url`/
+`full_http_login`, `CaiDepois` → `DropsLater`. Em `app_value_binary.rs` e
+`test_app.rs`, `APP_TESTE` → `TEST_APP`, `CLIENTE` → `CLIENT`, `DirSocket::novo` →
+`SocketDir::new`, `esperar` → `wait_for`, `ler` → `read`, `agulhas` → `needles`,
+`sem_segredo` → `no_secret`, `cliente_python` → `python_client`, `mandar` → `send`,
+`pedir` (local) → `request`, `a_mao` → `by_hand`. Em `app_value_core.rs`, `RelogioFixo`
+→ `FixedClock`, `com_totp` → `with_totp`, `alvo_campo` → `field_target`, `valor` →
+`value`, `pedido_valor` → `value_request`. Em `attachment_edit.rs`, `ANEXO_A`/`ANEXO_B`
+→ `ATTACHMENT_A`/`ATTACHMENT_B`, `generico` → `generic`, `editar` → `edit`, `no_disco`/
+`anexos_no_disco` → `on_disk`/`attachments_on_disk`. Em `fake_chrome.py`, `PASTA`/`MODO`
+→ `FOLDER`/`MODE`, `registrar` → `record` (recebe um dict; as chaves ficam), `origem` →
+`origin`, `ler`/`escrever` → `read_message`/`write_message`, `responder` → `reply`,
+`evento` → `event`, `pendentes`/`contador` → `pending`/`counter`, `pausar` → `pause`,
+`url_atual` → `current_url`, `usuario_senha` → `credentials`, `proximo` →
+`next_command`. Os arquivos `modo`/`registro`, os modos (`mente`, `morre`…) e as chaves
+do registro (`evento`, `inicio`, `preencher`, `decisao`, `seguiu`, `ambiente`, `alvos`…)
+são literais e ficam, como o código `"usuario, senha"` que o falso procura no script do
+daemon. O código Python embutido no `CLIENT` de `app_value_binary.rs` é literal e fica.
 
 Funções e métodos não estão listados um a um: o nome sai da seção 2 na ordem do inglês
 (`conferir_arquivo` → `verify_file`, `ler_cofre` → `read_vault`, `codificar_resposta` →
