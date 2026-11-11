@@ -220,7 +220,7 @@ Trilha S (fases independentes entre si):
   `falso.c` → `fake.c`), `dev/tests/clipboard.py`; exemplos `wardd-cliente-teste`,
   `pai-chrome`, `chrome-falso`, `dev-cofre` e `partida-conteiner` com todos os usos
   (achado da Fase 4). — V3.1, V3.7
-- [ ] Fase 44 — `dev/tests/dev-vault.sh`, `ssh_home.py`, `install.sh`,
+- [x] Fase 44 — `dev/tests/dev-vault.sh`, `ssh_home.py`, `install.sh`,
   `attacks-services.sh`, `chrome_policy.py`, `app_e2e.py`, `playwright.py`. — V3.1,
   V3.7
 - [ ] Fase 45 — `dev/tests/real-home.sh`, `webkit-real.sh`, `dev/origins.py`,
@@ -229,7 +229,7 @@ Trilha S (fases independentes entre si):
   NO_39C=1` passa `--no-mps--no-39c` grudado (achado da Fase 6). — V3.1, V3.7
 - [ ] Fase 46 — o resto de `dev/` (scripts com menos de 150 linhas, `daemon.sh`,
   `bridge.sh`, `open-app.py`, `dev/services/*`, Dockerfiles, `entrypoint.sh`,
-  `pg_select.py`, `bidi*`, `gst-channels.sh`, `terminal-test.py`, `log-scan.py` …); `CASA_PASSWD` → `PASSWD_HOME` em todos os usos
+  `pg_select.py`, `bidi*`, `gst-channels.sh`, `terminal-test.py`, `log-scan.py` …); `CASA_PASSWD` → `PASSWD_HOME` e `RAIZ` → `ROOT` (apagar os `RAIZ="$ROOT"` do `install.sh`/`attacks-services.sh`) e as funções do `common.sh` (`exigir`, `cliente`, `ssh_senha`…, achar por grep) em todos os usos
   (achado da Fase 41). —
   V3.1, V3.7
 - [ ] Fase 47 — `install/` (`install.sh`, `groups.sh`, `dump.sh`, `chrome.sh`,
