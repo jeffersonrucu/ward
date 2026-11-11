@@ -255,7 +255,7 @@ Contrato: V4.1–V4.24. Sequencial. A partir daqui o fio muda.
   testes novos (v4 → v5 igual em tudo, v5 com nome pt recusado, v4 com nome inglês
   recusado, byte alterado, vetores) escritos, não rodados. Atualiza o teste de fio do
   corpo (o v4 fica como leitura). Compilação: `make compile`. — V4.1, V4.2, V4.8, V4.9
-- [ ] Fase 49 — Migração no daemon e estado v2 (DT5, DT6). Destrave de um v4 → grava v5
+- [ ] Fase 49 — Migração no daemon e estado v2 (DT5, DT6; o `dev/daemon.sh` grava `ward-estado 1` quando falta o estado e muda junto, achado da Fase 46). Destrave de um v4 → grava v5
   pelo caminho atômico, geração + 1, estado, backup; erro na gravação = destrave com
   erro e v4 intacto; sem regravação de v5; restaurar v4 grava v5; rotação local e do
   pendrive lendo v4 e v5; `ward-state 2` lendo `ward-estado 1`; log sem segredo. Testes
