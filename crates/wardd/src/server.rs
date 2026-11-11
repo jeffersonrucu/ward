@@ -597,6 +597,13 @@ mod tests {
         }
         // The agent does not read that frame.
         assert!(protocol::decode_response(Role::Agent, &q).is_err());
+        // `show_window` (port of 0.1.5): the empty frame, only for the app.
+        assert!(s.deliver(&Response::ShowWindow));
+        let q = frame::read_frame(&mut b, frame::RESPONSE_LIMIT).unwrap();
+        assert_eq!(&q[..], br#"{"v":2,"type":"show_window","data":{}}"#);
+        for role in [Role::Agent, Role::Extension] {
+            assert!(protocol::decode_response(role, &q).is_err());
+        }
         drop(b);
         // Another test running in parallel that does `fork` holds a copy of the fd until
         // the `exec` (CLOEXEC): the failure comes right after.

@@ -220,7 +220,8 @@ com os nomes novos. O que muda para cada um:
   muda). A magia `WARDCOFR` fica: é a assinatura do arquivo do cofre real e dos
   backups.
 - **DT7 — Volta para a 0.1.x**: não é suportada com o cofre migrado. A 0.1.x recusa o
-  corpo v5 ("versão do corpo desconhecida") sem gravar nada. `docs/instalacao.md`
+  corpo v5 sem gravar nada: com o estado `ward-estado 1`, com `cofre_invalido` ("o
+  conteúdo do cofre é inválido"); com o `ward-state 2`, como retrocesso (Fase 64). `docs/instalacao.md`
   ensina a voltar restaurando à mão uma versão v4 do backup. A Fase 64 confere com o
   `wardd` 0.1.4 da linha de base.
 - **DT8 — Protocolo v2**: `VERSAO` 1 → 2. Operações, respostas, campos, códigos de erro

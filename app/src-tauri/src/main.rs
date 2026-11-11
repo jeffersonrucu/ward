@@ -213,6 +213,23 @@ fn watch_notices<R: Runtime>(
     let (Some(queue), Ok(s)) = (queue, state.service()) else {
         return;
     };
+    // The menu found the app already up (window closed, in the tray): the daemon asks
+    // for the window (port of 0.1.5).
+    let h = app.clone();
+    let watched = Arc::clone(&queue);
+    let r = std::thread::Builder::new()
+        .name("ward-app-show".into())
+        .spawn(move || {
+            loop {
+                if watched.wait_show(Duration::from_secs(3600)) {
+                    let h2 = h.clone();
+                    let _ = h.run_on_main_thread(move || show_main(&h2));
+                }
+            }
+        });
+    if r.is_err() {
+        eprintln!("ward-app: não foi possível vigiar o pedido de mostrar a janela");
+    }
     let channels = Arc::clone(&state.channels);
     let h = app.clone();
     let r = unlock::watch(queue, s.unlock_request(), move || {
