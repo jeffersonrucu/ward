@@ -1,0 +1,66 @@
+origens: só configs e variáveis permitidas, toolchain fixo, crates.io e paths dentro do repositório
+/usr/bin/python3 -I -B dev/extension/build.py
+extensão montada em extension/dist/ (id nhkehjnmlgkebhmelajfpmpblepaichf)
+<home>/.cargo/bin/cargo build --quiet --locked -p wardd --features test-mode --bin wardd --bin wardd-test-approver
+<home>/.cargo/bin/cargo build --quiet --locked -p ward-nm --features test-mode --bin ward-nm
+<home>/.cargo/bin/cargo build --quiet --locked -p ward --features test-mode --bin ward
+dev/tests/browser-container.sh login target/debug/wardd target/debug/ward-nm target/debug/ward target/debug/wardd-test-approver
+==> imagem ward-teste/browser:1 (o build usa a rede; o teste não)
+==> make test-login no contêiner (sem rede; Chrome sem política nem host do Ward)
+chrome-guard: ok, o Chrome não vê política nem host do Ward
+[1111/210901.216993:WARNING:chrome/app/chrome_main_linux.cc:84] Read channel stable from /opt/google/chrome/CHROME_VERSION_EXTRA
+contêiner: Google Chrome 157.0.8103.50 , uid 1000, sem rede
+chrome-guard: ok, o Chrome não vê política nem host do Ward
+wardd de teste só deste script (WARD_DEV_EXTENSION=chrome): pid 51, socket /run/user/1000/ward-login-test-20-GmqsNV/wardd.sock
+chrome-guard: ok, o Chrome não vê política nem host do Ward
+ok    destravou o cofre de teste (cópia) pelo socket
+ok    posts.log do phishing lido antes do teste
+ok    extensão carregada com o id fixo (nhkehjnmlgkebhmelajfpmpblepaichf)
+ok    o service worker abriu o ward-nm (filho direto do Chrome) e espera o pedido
+ok    ataque [::1]: a aba em localhost:8081 caiu no falso de [::1] (título 'falso-v6')
+ok    ataque [::1], janela negar: `ward login acme-wp-prod` sai ≠ 0 e nada é preenchido (saiu 1; ward: pedido negado)
+ok    ataque [::1], janela negar: o pedido mostra a origem (['pedido operacao=login entradas=acme-wp-prod origem=http://localhost:8081 confirmacao=1 decisao=deny'])
+ok    ataque [::1]: o falso não recebeu nenhum POST (0 bytes)
+ok    V6.11: acme-wp-dev (com aprovação) negado na janela: sai ≠ 0 e nada é preenchido (saiu 1; ward: pedido negado; campos (False, False, 'http://localhost:8081/wp-login.php'))
+info  mensagem do `ward login` negado: 'ward: pedido negado'
+ok    Fase 44c: o pedido de acme-wp-dev (com aprovação) mostra a origem http e pede o PIN (['pedido operacao=login entradas=acme-wp-dev origem=http://localhost:8081 confirmacao=0 decisao=deny'])
+ok    V6.10: `ward login acme-wp-prod` sai 0 (saiu 0: )
+ok    Fase 44c: acme-wp-prod (livre, http) só depois da confirmação da origem, sem PIN (['pedido operacao=login entradas=acme-wp-prod origem=http://localhost:8081 confirmacao=1 decisao=confirm'])
+ok    V6.10: a saída da CLI não tem padrão de .dev/variations.txt
+ok    V6.10: a aba chega ao painel do WordPress logado (/wp-admin/ com a barra de admin)
+ok    V6.10: o formulário foi enviado uma vez, à origem certa, com a senha da entrada
+ok    V6.10: site que recusa o login: a CLI sai ≠ 0 dizendo isso (saiu 1)
+ok    V6.10: depois do envio recusado os campos estão vazios
+ok    página que trata o envio por script: o envio aconteceu (submit)
+ok    página que não navega: depois do envio os campos ficam vazios (no mesmo documento)
+ok    página que ainda pede a senha: a CLI sai ≠ 0 (saiu 1)
+ok    V6.3: aba no phishing (8082): sai ≠ 0 com "domínio não confere" (saiu 1)
+ok    V6.3: nada preenchido na página do phishing
+ok    V6.15: a aba do 8084 terminou no phishing (8082)
+ok    V6.15: `ward login delta-redir` recusa por origem (saiu 1)
+ok    V6.15: nada preenchido
+ok    ataque action para o phishing: a CLI sai ≠ 0 (formulário recusado; saiu 1)
+ok    ataque action para o phishing: nada preenchido, nada enviado, a aba não saiu da página
+ok    ataque formaction do botão para o phishing: a CLI sai ≠ 0 (formulário recusado; saiu 1)
+ok    ataque formaction do botão para o phishing: nada preenchido, nada enviado, a aba não saiu da página
+ok    ataque formulário GET: a CLI sai ≠ 0 (formulário recusado; saiu 1)
+ok    ataque formulário GET: nada preenchido, nada enviado, a aba não saiu da página
+ok    ataque target=_blank: a CLI sai ≠ 0 (formulário recusado; saiu 1)
+ok    ataque target=_blank: nada preenchido, nada enviado, a aba não saiu da página
+ok    ataque dois campos de senha: a CLI sai ≠ 0 (formulário recusado; saiu 1)
+ok    ataque dois campos de senha: nada preenchido, nada enviado, a aba não saiu da página
+ok    ataque action para fora tapado por <input name=action>: a CLI sai ≠ 0 (formulário recusado; saiu 1)
+ok    ataque action para fora tapado por <input name=action>: nada preenchido, nada enviado, a aba não saiu da página
+ok    gama-bloqueada: "entrada inexistente" (V3.17)
+ok    acme-pg-dev (banco): recusado
+ok    posts.log do phishing (8082) sem mudança
+ok    perfil: nada da extensão com padrão de .dev/variations.txt (0 arquivo(s))
+login.py: tudo certo
+ok    wardd.log sem padrão de .dev/variations.txt
+ok    chrome.log sem padrão de .dev/variations.txt
+ok    console.log sem padrão de .dev/variations.txt
+ok    cli.log sem padrão de .dev/variations.txt
+ok    wardd-test-approver.log sem padrão de .dev/variations.txt
+ok    log do daemon sem as origens
+ok    o daemon registrou o login enviado (só o nome da entrada)
+test-login: tudo certo
