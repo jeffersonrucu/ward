@@ -17,8 +17,8 @@ use common::*;
 use ward_core::backup::Version;
 use ward_core::entry::Secret;
 use ward_core::protocol::{BackupVersion, MSG_ROLLBACK, Request, Response, ResponseError, Role};
+use wardd::core::Daemon;
 use wardd::files::Generations;
-use wardd::nucleo::Daemon;
 
 fn backup_dir(dir: &Dir) -> PathBuf {
     dir.0.join("backups")
@@ -94,7 +94,7 @@ fn v7_1_each_daemon_write_goes_to_the_backup() {
     }
     assert_eq!(
         fs::read(backup_dir(&dir).join(&list[0])).unwrap(),
-        fs::read(&c.cofre).unwrap(),
+        fs::read(&c.vault).unwrap(),
         "a mais nova é o cofre atual"
     );
     // The generation of each version: 1 (create) up to 8, from oldest to newest.
@@ -122,8 +122,8 @@ fn v7_8_agent_and_extension_do_not_restore() {
     let c = dir.paths();
     let (d, _) = test_vault(&dir);
     let target = backups(&d).pop().unwrap();
-    let before = fs::read(&c.cofre).unwrap();
-    let state_before = fs::read(&c.estado).unwrap();
+    let before = fs::read(&c.vault).unwrap();
+    let state_before = fs::read(&c.state).unwrap();
     for role in [Role::Agent, Role::Extension] {
         let r = request(
             &d,
@@ -149,7 +149,7 @@ fn v7_8_agent_and_extension_do_not_restore() {
             role.name()
         );
         // Second layer: the request built in memory, without going through the protocol.
-        let r = d.atender(
+        let r = d.serve(
             role,
             Request::RestoreBackup {
                 version: target.clone(),
@@ -164,13 +164,13 @@ fn v7_8_agent_and_extension_do_not_restore() {
             role.name()
         );
         assert_eq!(
-            error(&d.atender(role, Request::Backups)),
+            error(&d.serve(role, Request::Backups)),
             Some(ResponseError::Unauthorized)
         );
     }
-    assert_eq!(fs::read(&c.cofre).unwrap(), before);
-    assert_eq!(fs::read(&c.estado).unwrap(), state_before);
-    assert!(!d.travado());
+    assert_eq!(fs::read(&c.vault).unwrap(), before);
+    assert_eq!(fs::read(&c.state).unwrap(), state_before);
+    assert!(!d.is_locked());
 }
 
 /// V7.11 (D39, D17; S7, S9): vault at generation n+2 and the backup of generation n.
@@ -183,7 +183,7 @@ fn v7_11_restore_seals_a_new_generation_and_hand_copy_is_rollback() {
     let dir = Dir::new("bk-v7-11");
     let c = dir.paths();
     let (d, _) = test_vault(&dir);
-    let n = generation_on_disk(&c.cofre, PASSWORD);
+    let n = generation_on_disk(&c.vault, PASSWORD);
     let version_n = backups(&d)[0].clone();
     assert_eq!(
         generation_on_disk(&backup_dir(&dir).join(&version_n), PASSWORD),
@@ -201,13 +201,13 @@ fn v7_11_restore_seals_a_new_generation_and_hand_copy_is_rollback() {
     );
     assert!(ok(&r), "{r:?}");
     lock_timeout(&d, 30);
-    assert_eq!(generation_on_disk(&c.cofre, PASSWORD), n + 2);
-    let current_n2 = fs::read(&c.cofre).unwrap();
+    assert_eq!(generation_on_disk(&c.vault, PASSWORD), n + 2);
+    let current_n2 = fs::read(&c.vault).unwrap();
     assert_ne!(list_names(&d), entries_n);
 
     let r = restore(&d, &version_n, PASSWORD, PIN);
     assert!(ok(&r), "{r:?}");
-    assert_eq!(generation_on_disk(&c.cofre, PASSWORD), n + 3);
+    assert_eq!(generation_on_disk(&c.vault, PASSWORD), n + 3);
     assert_eq!(
         generations(&dir),
         Generations {
@@ -221,7 +221,7 @@ fn v7_11_restore_seals_a_new_generation_and_hand_copy_is_rollback() {
     let list = backups(&d);
     assert_eq!(
         fs::read(backup_dir(&dir).join(&list[0])).unwrap(),
-        fs::read(&c.cofre).unwrap()
+        fs::read(&c.vault).unwrap()
     );
     assert!(
         list.iter()
@@ -232,23 +232,23 @@ fn v7_11_restore_seals_a_new_generation_and_hand_copy_is_rollback() {
     assert_eq!(fs::read(backup_dir(&dir).join(&version_n)).unwrap(), copy_n);
 
     // Lock and unlock with the version's password: the entries of version n.
-    d.travar();
+    d.lock();
     let r = unlock(&d, PASSWORD);
     assert!(ok(&r), "{r:?}");
     assert_eq!(list_names(&d), entries_n);
-    d.travar();
+    d.lock();
 
     // Hand copy of the same backup: generation n is lower than the seen one (n+3).
-    fs::write(&c.cofre, &copy_n).unwrap();
+    fs::write(&c.vault, &copy_n).unwrap();
     let r = unlock(&d, PASSWORD);
     assert_eq!(error(&r), Some(ResponseError::Rollback));
     assert!(contains(&encoded(Role::Agent, &r), MSG_ROLLBACK.as_bytes()));
-    assert!(d.travado());
+    assert!(d.is_locked());
     // In a new daemon, straight to the rollback; the copied file is not rewritten.
     drop(d);
     let (d2, _) = daemon_at(dir.paths());
     assert_eq!(error(&unlock(&d2, PASSWORD)), Some(ResponseError::Rollback));
-    assert_eq!(fs::read(&c.cofre).unwrap(), copy_n);
+    assert_eq!(fs::read(&c.vault).unwrap(), copy_n);
 }
 
 /// S9: restoring requires the vault unlocked and the current PIN (the error counts
@@ -260,8 +260,8 @@ fn attack_restore_without_pin_wrong_password_and_locked() {
     let c = dir.paths();
     let (d, _) = test_vault(&dir);
     let target = backups(&d).pop().unwrap();
-    let before = fs::read(&c.cofre).unwrap();
-    let state = fs::read(&c.estado).unwrap();
+    let before = fs::read(&c.vault).unwrap();
+    let state = fs::read(&c.state).unwrap();
     let n_backups = backups(&d).len();
 
     let r = restore(&d, &target, PASSWORD, WRONG_PIN);
@@ -272,8 +272,8 @@ fn attack_restore_without_pin_wrong_password_and_locked() {
     assert_eq!(error(&r), Some(ResponseError::BackupNotFound));
     let r = restore(&d, "../test-vault.ward", PASSWORD, PIN);
     assert_eq!(error(&r), Some(ResponseError::InvalidRequest));
-    assert_eq!(fs::read(&c.cofre).unwrap(), before);
-    assert_eq!(fs::read(&c.estado).unwrap(), state);
+    assert_eq!(fs::read(&c.vault).unwrap(), before);
+    assert_eq!(fs::read(&c.state).unwrap(), state);
     assert_eq!(backups(&d).len(), n_backups);
 
     // 5 wrong PINs in a row through the restore lock the vault.
@@ -281,7 +281,7 @@ fn attack_restore_without_pin_wrong_password_and_locked() {
         let r = restore(&d, &target, PASSWORD, WRONG_PIN);
         assert_eq!(error(&r), Some(ResponseError::WrongPin), "tentativa {i}");
     }
-    assert!(d.travado());
+    assert!(d.is_locked());
     // Locked: neither lists nor restores, with the right PIN.
     assert_eq!(
         error(&request(&d, Role::App, "backups", "{}")),
@@ -291,7 +291,7 @@ fn attack_restore_without_pin_wrong_password_and_locked() {
         error(&restore(&d, &target, PASSWORD, PIN)),
         Some(ResponseError::Locked)
     );
-    assert_eq!(fs::read(&c.cofre).unwrap(), before);
+    assert_eq!(fs::read(&c.vault).unwrap(), before);
 }
 
 /// The backups folder swapped for a symbolic link to another folder (with an authentic
@@ -322,15 +322,15 @@ fn attack_backups_folder_swapped_for_a_link() {
         error(&request(&d, Role::App, "backups", "{}")),
         Some(ResponseError::BackupUnavailable)
     );
-    let before = fs::read(&c.cofre).unwrap();
+    let before = fs::read(&c.vault).unwrap();
     assert_eq!(
         error(&restore(&d, &target_version, PASSWORD, PIN)),
         Some(ResponseError::BackupUnavailable)
     );
-    assert_eq!(fs::read(&c.cofre).unwrap(), before);
+    assert_eq!(fs::read(&c.vault).unwrap(), before);
     // The write goes on and does not write at the link target.
     lock_timeout(&d, 45);
-    assert_ne!(fs::read(&c.cofre).unwrap(), before);
+    assert_ne!(fs::read(&c.vault).unwrap(), before);
     let at_target: Vec<_> = fs::read_dir(&other).unwrap().collect();
     assert_eq!(at_target.len(), 1, "o backup foi gravado através do link");
 
@@ -359,15 +359,15 @@ fn attack_version_swapped_for_a_link() {
     fs::rename(backup_dir(&dir).join(&v), &outside).unwrap();
     symlink(&outside, backup_dir(&dir).join(&v)).unwrap();
     assert!(!backups(&d).contains(&v));
-    let before = fs::read(&c.cofre).unwrap();
+    let before = fs::read(&c.vault).unwrap();
     // Phase 49a: the restore only accepts a version from the list (which ignores links);
     // the read with `O_NOFOLLOW` stays for the swap between the list and the open.
     assert_eq!(
         error(&restore(&d, &v, PASSWORD, PIN)),
         Some(ResponseError::BackupNotFound)
     );
-    assert_eq!(fs::read(&c.cofre).unwrap(), before);
-    assert!(!d.travado());
+    assert_eq!(fs::read(&c.vault).unwrap(), before);
+    assert!(!d.is_locked());
 }
 
 /// D39: the vault file swapped outside Ward before the restore (another inode, same
@@ -378,18 +378,18 @@ fn attack_restore_with_vault_swapped_outside_ward() {
     let c = dir.paths();
     let (d, _) = test_vault(&dir);
     let v = backups(&d).pop().unwrap();
-    let bytes = fs::read(&c.cofre).unwrap();
+    let bytes = fs::read(&c.vault).unwrap();
     let tmp = dir.0.join("troca");
     fs::write(&tmp, &bytes).unwrap();
     fs::set_permissions(&tmp, fs::Permissions::from_mode(0o600)).unwrap();
-    fs::rename(&tmp, &c.cofre).unwrap();
+    fs::rename(&tmp, &c.vault).unwrap();
     let n_backups = backups(&d).len();
     assert_eq!(
         error(&restore(&d, &v, PASSWORD, PIN)),
         Some(ResponseError::VaultChanged)
     );
-    assert!(d.travado());
-    assert_eq!(fs::read(&c.cofre).unwrap(), bytes);
+    assert!(d.is_locked());
+    assert_eq!(fs::read(&c.vault).unwrap(), bytes);
     let (d2, _) = daemon_at(dir.paths());
     assert!(ok(&unlock(&d2, PASSWORD)));
     assert_eq!(backups(&d2).len(), n_backups, "nada novo na pasta");
@@ -404,20 +404,20 @@ fn attack_restore_without_writing_the_state_does_not_swap_the_vault() {
     let c = dir.paths();
     let (d, _) = test_vault(&dir);
     let v = backups(&d).pop().unwrap();
-    let before = fs::read(&c.cofre).unwrap();
+    let before = fs::read(&c.vault).unwrap();
     let list_before = list_names(&d);
     // The vault directory without write permission: the state's temp file is not born.
     fs::set_permissions(&dir.0, fs::Permissions::from_mode(0o500)).unwrap();
     let r = restore(&d, &v, PASSWORD, PIN);
     fs::set_permissions(&dir.0, fs::Permissions::from_mode(0o700)).unwrap();
     assert_eq!(error(&r), Some(ResponseError::WriteFailed));
-    assert_eq!(fs::read(&c.cofre).unwrap(), before);
-    assert!(!d.travado());
+    assert_eq!(fs::read(&c.vault).unwrap(), before);
+    assert!(!d.is_locked());
     assert_eq!(list_names(&d), list_before);
     // The next common write works and the generation does not repeat.
-    let g = generation_on_disk(&c.cofre, PASSWORD);
+    let g = generation_on_disk(&c.vault, PASSWORD);
     lock_timeout(&d, 50);
-    assert!(generation_on_disk(&c.cofre, PASSWORD) > g);
+    assert!(generation_on_disk(&c.vault, PASSWORD) > g);
 }
 
 /// The password change goes to the backup with the new password, and restoring the
@@ -444,7 +444,7 @@ fn restore_asks_for_the_version_password() {
     assert_ne!(after, old);
     assert_eq!(
         fs::read(backup_dir(&dir).join(&after)).unwrap(),
-        fs::read(&c.cofre).unwrap()
+        fs::read(&c.vault).unwrap()
     );
     // The old version only opens with the old password.
     assert_eq!(
@@ -452,7 +452,7 @@ fn restore_asks_for_the_version_password() {
         Some(ResponseError::WrongPassword)
     );
     assert!(ok(&restore(&d, &old, PASSWORD, PIN)));
-    d.travar();
+    d.lock();
     assert_eq!(
         error(&unlock(&d, new_password)),
         Some(ResponseError::WrongPassword)
@@ -514,14 +514,14 @@ fn attack_future_dated_versions_neither_delete_the_real_ones_nor_restore() {
         assert_eq!(x.out_of_order, near.contains(&x.name), "{}", x.name);
     }
     // Restoring one past the margin: nonexistent, nothing changes.
-    let before = fs::read(&c.cofre).unwrap();
-    let state = fs::read(&c.estado).unwrap();
+    let before = fs::read(&c.vault).unwrap();
+    let state = fs::read(&c.state).unwrap();
     assert_eq!(
         error(&restore(&d, &far[0], PASSWORD, PIN)),
         Some(ResponseError::BackupNotFound)
     );
-    assert_eq!(fs::read(&c.cofre).unwrap(), before);
-    assert_eq!(fs::read(&c.estado).unwrap(), state);
+    assert_eq!(fs::read(&c.vault).unwrap(), before);
+    assert_eq!(fs::read(&c.state).unwrap(), state);
     // 40 more writes: 30 dated up to now remain; the 2036 ones are still there.
     for i in 0..40u32 {
         lock_timeout(&d, 30 + (i % 2));
@@ -584,7 +584,7 @@ fn restore_keeps_the_current_lock_timeout_and_external_backup() {
         r => panic!("{r:?}"),
     }
     // On disk too (the unlock reads the settings from the file).
-    let bytes = fs::read(&c.cofre).unwrap();
+    let bytes = fs::read(&c.vault).unwrap();
     let s = ward_core::format::MasterPassword::new(PASSWORD.to_owned());
     let (opened, _, _) = ward_core::body::open_entries_with_generation(&bytes, &s, 0, 0).unwrap();
     assert_eq!(opened.config().lock_minutes(), 30);
@@ -632,8 +632,8 @@ fn state_temp_files_go_away_at_startup() {
     let c = dir.paths();
     let (d, _) = test_vault(&dir);
     drop(d);
-    let parent = c.estado.parent().unwrap().to_path_buf();
-    let name = c.estado.file_name().unwrap().to_string_lossy().into_owned();
+    let parent = c.state.parent().unwrap().to_path_buf();
+    let name = c.state.file_name().unwrap().to_string_lossy().into_owned();
     let stale = parent.join(format!(".{name}.tmp-4194301-7"));
     let stale2 = parent.join(format!(".{name}.tmp-12-0"));
     fs::write(&stale, b"vista 3\nqueimada 3\n").unwrap();
@@ -731,5 +731,5 @@ fn f54l_attack_fifo_swapped_in_place_of_the_version_does_not_hold_the_daemon() {
     // The real version checks again; the daemon stays unlocked.
     let l = versions(&d);
     assert!(l.iter().any(|x| x.name == v && x.verified), "{l:?}");
-    assert!(!d.travado());
+    assert!(!d.is_locked());
 }

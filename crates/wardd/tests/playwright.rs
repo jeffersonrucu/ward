@@ -3,7 +3,7 @@
 //! (fds 3 and 4) and never opens the network. The end-to-end test with the real Chrome
 //! and the test services is `make test-playwright` (`dev/tests/playwright.sh`).
 //!
-//! The fake Chrome comes in through `Daemon::com_chrome`, which only exists with the
+//! The fake Chrome comes in through `Daemon::with_chrome`, which only exists with the
 //! `test-hooks` feature (`make test` turns them all on).
 
 #![cfg(feature = "test-hooks")]
@@ -18,8 +18,8 @@ use std::time::Duration;
 
 use common::*;
 use ward_core::protocol::{Response, ResponseError, Role};
-use wardd::aprovacao::SemCliente;
-use wardd::nucleo::Daemon;
+use wardd::approval::NoClient;
+use wardd::core::Daemon;
 
 /// Password of the free login entry of the common test vault (fake).
 const LOGIN_PASSWORD: &str = SECRETS[3];
@@ -68,7 +68,7 @@ fn scene(label: &str, mode: &str) -> Scene {
     fs::set_permissions(&chrome, fs::Permissions::from_mode(0o700)).unwrap();
     fs::write(base.join("modo"), mode).unwrap();
     let rt = Rt::new(label);
-    let d = d.com_chrome(chrome).com_temporarios(rt.0.clone());
+    let d = d.with_chrome(chrome).with_temp_root(rt.0.clone());
     Scene {
         d: Arc::new(d),
         _dir: dir,
@@ -85,7 +85,7 @@ impl Scene {
             &format!(r#"{{"entrada":"{entry}"}}"#),
         )
         .unwrap();
-        self.d.atender_de(&SemCliente, Role::Agent, p)
+        self.d.serve_from(&NoClient, Role::Agent, p)
     }
 
     fn records(&self) -> Vec<serde_json::Value> {
@@ -244,7 +244,7 @@ fn v6_12_session_saved_only_the_path_comes_back() {
     );
     assert!(c.no_profile(), "o perfil temporário ficou");
     // D6: locking deletes the session.
-    c.d.travar();
+    c.d.lock();
     assert!(!expected.exists(), "a sessão sobreviveu à trava");
 }
 
@@ -348,7 +348,7 @@ fn d6_lock_during_the_session_nothing_saved() {
     let d = c.d.clone();
     let t = std::thread::spawn(move || {
         std::thread::sleep(Duration::from_millis(700));
-        d.travar();
+        d.lock();
     });
     let r = c.playwright("t-livre");
     t.join().unwrap();
@@ -377,7 +377,7 @@ fn refusals_without_opening_the_browser() {
     // The app role does not ask for `playwright`.
     let p = req(Role::Agent, "playwright", r#"{"entrada":"t-livre"}"#).unwrap();
     assert_eq!(
-        error(&c.d.atender_de(&SemCliente, Role::App, p)),
+        error(&c.d.serve_from(&NoClient, Role::App, p)),
         Some(ResponseError::Unauthorized)
     );
     assert!(c.events("inicio").is_empty());
@@ -643,7 +643,7 @@ fn real_scene(label: &str) -> RealScene {
     let dir = Dir::new(label);
     let (d, _) = test_vault(&dir);
     let rt = Rt::new(label);
-    let d = d.com_temporarios(rt.0.clone());
+    let d = d.with_temp_root(rt.0.clone());
     for (case, _) in CASES {
         let url = format!("http://127.0.0.1:{}/{case}", site.port);
         let name = format!("w-{case}");
@@ -673,7 +673,7 @@ impl RealScene {
             &format!(r#"{{"entrada":"{entry}"}}"#),
         )
         .unwrap();
-        self.d.atender_de(&SemCliente, Role::Agent, p)
+        self.d.serve_from(&NoClient, Role::Agent, p)
     }
 
     /// The phishing site received no `POST` and never the password anywhere.

@@ -16,7 +16,7 @@
 //!   `org.freedesktop.UDisks2` (`InterfacesAdded`, `PropertiesChanged` of
 //!   `MountPoints`…) and, on each one, pokes the copy thread, which waits a bit (the
 //!   signals come in bursts), asks the daemon for the copy
-//!   ([`Daemon::sincronizar_externo`]) and records the result with a fixed text. The
+//!   ([`Daemon::sync_external`]) and records the result with a fixed text. The
 //!   copy is also poked by the daemon itself (unlocking, writing, turning the external
 //!   backup on) and runs every [`COPY_INTERVAL`], so that a lost signal does not leave
 //!   the USB drive without a copy.
@@ -47,9 +47,9 @@ use zbus::{Connection, MatchRule, MessageStream, OwnedObjectPath, OwnedVariant, 
 use ward_core::config::ExternalBackup;
 use ward_core::protocol::MAX_LABEL;
 
+use crate::core::Daemon;
 use crate::external::{ExternalError, Seen, UsbDriveSource};
 use crate::lock::{MAX_BUS_WAIT, connect};
-use crate::nucleo::Daemon;
 use crate::{debug, warning};
 
 const UDISKS: &str = "org.freedesktop.UDisks2";
@@ -246,9 +246,9 @@ async fn session(daemon: &Daemon, socket: &Path, ready: &dyn Fn()) -> bool {
     debug!("udisks2: vigiando pendrives");
     ready();
     // The USB drive may already be connected.
-    daemon.cutucar_externo();
+    daemon.poke_external();
     while let Some(Ok(_)) = next_message(&mut signals).await {
-        daemon.cutucar_externo();
+        daemon.poke_external();
     }
     true
 }
@@ -284,7 +284,7 @@ pub fn watch_copy(
                 }
                 std::thread::sleep(BURST_WAIT);
                 while pokes.try_recv().is_ok() {}
-                record(&daemon.sincronizar_externo(&*source));
+                record(&daemon.sync_external(&*source));
             }
         })
 }

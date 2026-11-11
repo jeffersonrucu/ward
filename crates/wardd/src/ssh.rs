@@ -49,10 +49,10 @@ use ward_core::protocol::{Request, Response, ResponseError, Role};
 use ward_platform::child::Command;
 use zeroize::Zeroizing;
 
-use crate::aprovacao::Cliente;
+use crate::approval::Client;
 use crate::bridge::{Bridge, Intermediate, JUMP_LIMITS, Opening};
+use crate::core::Daemon;
 use crate::execution::{DiesOnLock, Preparation, PreparedAgent};
-use crate::nucleo::Daemon;
 use crate::ssh_agent::{AgentError, SshAgent};
 use crate::{debug, warning};
 
@@ -331,11 +331,11 @@ impl Daemon {
         if role != Role::App {
             return Err(ResponseError::Unauthorized);
         }
-        let now = self.aprovacao.agora();
-        let mut st = self.estado();
-        let a = st.aberto.as_mut().ok_or(ResponseError::Locked)?;
+        let now = self.approval.now();
+        let mut st = self.state();
+        let a = st.open.as_mut().ok_or(ResponseError::Locked)?;
         let e = a
-            .entradas
+            .entries
             .iter()
             .find(|e| e.name() == name)
             .ok_or(ResponseError::EntryNotFound)?;
@@ -359,9 +359,9 @@ impl Daemon {
     /// Is the token valid for `entry`? Every token that exists dies here (single use),
     /// even when presented with another entry. Constant-time comparison.
     fn use_token(&self, token: &Secret, entry: &str) -> bool {
-        let now = self.aprovacao.agora();
-        let mut st = self.estado();
-        let Some(a) = st.aberto.as_mut() else {
+        let now = self.approval.now();
+        let mut st = self.state();
+        let Some(a) = st.open.as_mut() else {
             return false;
         };
         a.tokens.retain(|t| now < t.until);
@@ -461,7 +461,7 @@ impl Daemon {
     /// agent.
     pub(crate) fn prepare_ssh(
         &self,
-        client: &dyn Cliente,
+        client: &dyn Client,
         request: Request,
     ) -> Result<Preparation, ResponseError> {
         let Request::Ssh {
@@ -495,7 +495,7 @@ impl Daemon {
             }
             self.authorize_use(client, &request)?;
         }
-        self.registrar_uso();
+        self.record_use();
         let Request::Ssh {
             command: comando, ..
         } = request
@@ -504,9 +504,9 @@ impl Daemon {
         };
         // With the state locked: the entry may have changed during the approval.
         let (host, port, username, cred, sftp, mask, locks, initial, jump, sessions) = {
-            let st = self.estado();
-            let a = st.aberto.as_ref().ok_or(ResponseError::Locked)?;
-            let e = visible(&a.entradas, &name).ok_or(ResponseError::EntryNotFound)?;
+            let st = self.state();
+            let a = st.open.as_ref().ok_or(ResponseError::Locked)?;
+            let e = visible(&a.entries, &name).ok_or(ResponseError::EntryNotFound)?;
             verify_kind(e, with_command)?;
             let (host, port, username, auth, sftp, jump_name) = match e.data() {
                 Data::Server(s) => (
@@ -529,7 +529,7 @@ impl Daemon {
             let (mask, jump) = match jump_name {
                 None => (Mask::from_entry(e, None).map_err(failed)?, None),
                 Some(jn) => {
-                    let (es, via) = intermediate(&a.entradas, jn)?;
+                    let (es, via) = intermediate(&a.entries, jn)?;
                     let both = || {
                         MaskBuilder::new()
                             .entry(e)
@@ -540,7 +540,7 @@ impl Daemon {
                     (both()?, Some((via, both()?)))
                 }
             };
-            let (locks, initial) = self.travas_agora(&st);
+            let (locks, initial) = self.locks_now(&st);
             (
                 host.clone(),
                 port,
@@ -551,7 +551,7 @@ impl Daemon {
                 locks,
                 initial,
                 jump,
-                self.sessoes_run(&st),
+                self.run_sessions(&st),
             )
         };
         // Ward's `known_hosts` verified (0700/0600, no link) before any `ssh`.
@@ -568,9 +568,9 @@ impl Daemon {
                     via,
                     target_host: &host,
                     target_port: port,
-                    programs: self.programas_ssh(),
+                    programs: self.ssh_programs(),
                     known_hosts: &known_hosts,
-                    rt: self.temporarios(),
+                    rt: self.temp_root(),
                     mask: bridge_mask,
                     limits: JUMP_LIMITS,
                     locks: (locks.clone(), initial),
@@ -591,7 +591,7 @@ impl Daemon {
         let (password, agent) = match cred {
             Cred::Password(s) => (Some(s), None),
             Cred::Key { key, passphrase } => {
-                let rt = self.temporarios().ok_or(ResponseError::DeliveryFailed)?;
+                let rt = self.temp_root().ok_or(ResponseError::DeliveryFailed)?;
                 let ag =
                     SshAgent::create(rt, &key, passphrase.as_ref()).map_err(|e: AgentError| {
                         warning!("ssh: {e}");
@@ -626,7 +626,7 @@ impl Daemon {
             },
         };
         let argv = build_argv_with_alias(
-            self.programas_ssh(),
+            self.ssh_programs(),
             &known_hosts,
             destination,
             auth,
@@ -698,7 +698,7 @@ impl Daemon {
 /// `ward run`.
 pub fn session(
     daemon: &Daemon,
-    client: &dyn Cliente,
+    client: &dyn Client,
     stream: &std::os::unix::net::UnixStream,
     request: Request,
 ) -> bool {

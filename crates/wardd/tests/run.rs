@@ -248,7 +248,7 @@ fn vault(dev: &Dir) {
     for n in ["t-nota", "t-gen"] {
         assert!(ok(&set_level(&d, Role::App, n, "livre", PIN)));
     }
-    d.travar();
+    d.lock();
 }
 
 fn text(b: &[u8]) -> String {

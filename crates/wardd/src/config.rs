@@ -20,12 +20,12 @@
 use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
 
-use crate::nucleo::Caminhos;
+use crate::core::Paths;
 
 /// Configuration read from the environment.
 #[derive(Debug, Clone)]
 pub struct Config {
-    pub paths: Caminhos,
+    pub paths: Paths,
     /// Socket directory of the test daemon (`None` in the release).
     pub test_socket_dir: Option<PathBuf>,
     /// The binary that the test daemon's open-app operation opens (D63).
@@ -99,9 +99,9 @@ impl Config {
             .ok_or("HOME ausente ou não absoluto")?;
         let dir = home.join(".local/share/ward");
         Ok(Config {
-            paths: Caminhos {
-                cofre: dir.join("cofre.ward"),
-                estado: dir.join("estado"),
+            paths: Paths {
+                vault: dir.join("cofre.ward"),
+                state: dir.join("estado"),
             },
             test_socket_dir: None,
             rt: ward_platform::socket::runtime_dir().join(ward_platform::socket::DIR_NAME),
@@ -142,10 +142,10 @@ impl Config {
 }
 
 /// Vault and state of the test daemon inside `dev` (D7).
-pub fn test_paths(dev: &Path) -> Caminhos {
-    Caminhos {
-        cofre: dev.join("test-vault.ward"),
-        estado: dev.join("test-vault.state"),
+pub fn test_paths(dev: &Path) -> Paths {
+    Paths {
+        vault: dev.join("test-vault.ward"),
+        state: dev.join("test-vault.state"),
     }
 }
 
@@ -168,8 +168,8 @@ mod tests {
     fn test_mode_requires_dev_dir() {
         assert!(Config::from_vars(|_| None).is_err());
         let c = Config::from_vars(|k| (k == "WARD_DEV_DIR").then(|| "/x/.dev".into())).unwrap();
-        assert_eq!(c.paths.cofre, Path::new("/x/.dev/test-vault.ward"));
-        assert_eq!(c.paths.estado, Path::new("/x/.dev/test-vault.state"));
+        assert_eq!(c.paths.vault, Path::new("/x/.dev/test-vault.ward"));
+        assert_eq!(c.paths.state, Path::new("/x/.dev/test-vault.state"));
         assert!(c.test_socket_dir.unwrap().ends_with("ward-teste"));
         assert!(!c.test_extension);
     }

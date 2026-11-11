@@ -11,7 +11,7 @@ use std::time::Duration;
 use common::{Dir, PIN, SECRETS, b64, error, ok, request};
 use ward_core::protocol::{self, Request, Response, ResponseError, Role, Target};
 use ward_core::totp::Totp;
-use wardd::nucleo::{Daemon, Relogio};
+use wardd::core::{Clock, Daemon};
 
 /// Fake TOTP seed (the one of `acme-totp-dev`, D28).
 const SEED: &str = "JBSWY3DPEHPK3PXP";
@@ -21,14 +21,14 @@ const EXTRA: &str = "falso-extra-ward-10";
 /// Fixed wall clock (or unreadable, with `None`).
 struct FixedClock(Option<u64>);
 
-impl Relogio for FixedClock {
-    fn dormir(&self, _d: Duration) {}
+impl Clock for FixedClock {
+    fn sleep(&self, _d: Duration) {}
 
-    fn agora(&self) -> Option<Duration> {
+    fn now(&self) -> Option<Duration> {
         Some(Duration::from_secs(1000))
     }
 
-    fn segundos_unix(&self) -> Option<u64> {
+    fn unix_seconds(&self) -> Option<u64> {
         self.0
     }
 }
@@ -46,7 +46,7 @@ fn with_totp(name: &str) -> String {
 /// The common test vault in a daemon with the given clock, plus
 /// `t-totp` (login with seed and extras), blocked.
 fn vault(dir: &Dir, unix: Option<u64>) -> Daemon {
-    let d = Daemon::novo(dir.paths(), Box::new(FixedClock(unix)));
+    let d = Daemon::new(dir.paths(), Box::new(FixedClock(unix)));
     let create = request(
         &d,
         Role::App,
@@ -171,7 +171,7 @@ fn v3_39_app_reveals_and_copies_without_pin_or_approval_even_the_blocked_one() {
     assert!(protocol::encode_response(Role::Extension, &r).is_err());
 
     // Locked: "locked", without a value.
-    d.travar();
+    d.lock();
     for op in ["revelar", "copiar"] {
         let r = request(
             &d,
@@ -267,7 +267,7 @@ fn attack_v3_39_agent_and_extension_neither_reveal_nor_copy_nor_take_totp() {
                 entry: "t-totp".into(),
             },
         ] {
-            let r = d.atender(role, p);
+            let r = d.serve(role, p);
             assert_eq!(error(&r), Some(ResponseError::Unauthorized));
         }
     }

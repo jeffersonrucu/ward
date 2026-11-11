@@ -3044,8 +3044,75 @@ privados `CAMPOS_TEXTO` → `TEXT_FIELDS`, `OPERACOES_APROVADAS` → `APPROVED_O
 `read_header`, `escrever_campos`/`ler_campos`/`escrever_textos` → `write_fields`/
 `read_fields`/`write_texts`, `rotulo_ok`/`campos_ok`/`digitos_totp` → `label_ok`/
 `fields_ok`/`totp_digits`. Os nomes de fio (chaves e valores do JSON) continuam os literais
-v1 até a Fase 50. A variante `FalhaGravar::Resposta` do `wardd/nucleo.rs` é outra e não
-mudou.
+v1 até a Fase 50. A variante `FalhaGravar::Resposta` do `wardd/nucleo.rs` (hoje
+`WriteFailure::Response` do `wardd/core.rs`, Fase 20) é outra e não mudou aqui.
+
+Fase 20 (`wardd`: `core`, `approval`): módulos `nucleo` → `core` e `aprovacao` →
+`approval` (o `core` do `wardd` convive com o crate `core` da biblioteca padrão: só a raiz
+do crate veria os dois, e lá ninguém usa `core::`; o link da doc do `lib.rs` vai por
+`crate::core`). `approval`: `PRAZO_APROVACAO`/`PRAZO_DESTRAVE`/`UMA_HORA`/`PASSO` →
+`APPROVAL_DEADLINE`/`UNLOCK_DEADLINE`/`ONE_HOUR`/`STEP`; `RelogioMotor` → `EngineClock`
+(`agora` → `now`), `RelogioMonotonico` → `MonotonicClock` (`novo` → `new`); `ErroAbrirApp
+{ JaAberto, Indisponivel }` → `OpenAppError { AlreadyOpen, Unavailable }`; `AbridorApp` →
+`AppOpener` (`abrir(ao_sair)` → `open(on_exit)`); `SemApp` → `NoApp`; `Assinante` →
+`Subscriber` (`entregar` → `deliver`); `Cliente` → `Client` (`cadeia`/`saiu` → `chain`/
+`exited`); `SemCliente` → `NoClient`; `Motor` → `Engine` (`novo`/`esperando_sem_app`/
+`sem_app`/`agora`/`abrir_app`/`assinar`/`desassinar`/`tem_assinante`/`pedir_aprovacao`/
+`cancelar_pendentes`/`pendente`/`e_confirmacao`/`e_entrada_oculta`/`decidir`/
+`esperar_destrave` → `new`/`waiting_without_app`/`without_app`/`now`/`open_app`/`subscribe`/
+`unsubscribe`/`has_subscriber`/`request_approval`/`cancel_pending`/`pending`/
+`is_confirmation`/`is_hidden_stdin`/`decide`/`wait_for_unlock`); privados `Pendente {
+pedido, entregue_a, resultado }` → `Pending { request, delivered_to, result }`,
+`EsperaDestrave { prazo, aviso }` → `UnlockWait { deadline, notice }` (`aviso_em` →
+`notice_at`), `Estado { proximo_id, pendentes, assinante, esperando_destrave }` → `State {
+next_id, pending, subscriber, awaiting_unlock }` (`pendente`/`tirar`/`entregar_pendentes`/
+`sair_assinante` → `find_pending`/`take`/`deliver_pending`/`drop_subscriber`), `Interno {
+estado, mudou }` → `Inner { state, changed }` (`app_saiu` → `app_exited`), `sair_destrave` →
+`leave_unlock_wait`. `core`: `MAX_ERROS_PIN`/`ESPERA_MAXIMA` → `MAX_PIN_ERRORS`/`MAX_WAIT`,
+`espera_destrave` → `unlock_wait`; `Relogio` → `Clock` (`dormir`/`agora`/`segundos_unix` →
+`sleep`/`now`/`unix_seconds`), `RelogioReal` → `RealClock`; `Caminhos { cofre, estado }` →
+`Paths { vault, state }`; `Aberto { cofre, entradas, liberacoes, tokens, identidade,
+geracoes }` → `Open { vault, entries, grants, tokens, identity, generations }` (a "liberação
+de 1 hora" do `wardd` é `grant`, como o `without_grant` da Fase 19, não o `release` da
+seção 2, que se confundiria com o build de release); `Estado { aberto,
+identidade_conhecida, erros_pin, ultimo_uso, falhas_agente, falhas_app, primeira_do_agente,
+travas, sessoes_run }` → `State { open, known_identity, pin_errors, last_use,
+agent_failures, app_failures, agent_first, locks, run_sessions }` (`travar`/`travar_mudou` →
+`lock`/`lock_changed`); `SessoesRun { grupos }` → `RunSessions { groups }` (`registrar`/
+`travar` → `register`/`lock`); `Gancho` → `Hook`; privados `FalhaGravar { Resposta, Mudou }`
+→ `WriteFailure { Response, Changed }`, `problema`/`senha_de`/`SENHA_CURTA`/`senha_nova`/
+`gravar`/`abrir_pasta`/`codigo_backup`/`registrar_backup`/`gravar_com_backup`/`confirmar`/
+`muda_o_externo`/`codigo_gravacao` → `problem`/`password_from`/`SHORT_PASSWORD`/
+`new_password`/`write_vault`/`open_backups`/`backup_code`/`log_backup`/`write_with_backup`/
+`confirm_write`/`changes_external`/`write_code`. `Daemon`: campos `caminhos`/`estado`/
+`vez_agente`/`vez_app`/`partida`/`relogio`/`gancho_gravado`/`aprovacao`/`temporarios`/
+`pendrives`/`cutucao`/`vez_externo`/`programas_ssh` → `paths`/`state`/`agent_turn`/
+`app_turn`/`startup`/`clock`/`write_hook`/`approval`/`temp_root`/`usb_drives`/`poke`/
+`external_turn`/`ssh_programs` (aqui "vez" é a vez de cada papel, `turn`, não o `time(s)`
+da seção 2); métodos `novo`/`com_pendrives`/`ligar_copia_externa`/`cutucar_externo`/
+`uuid_externo`/`sincronizar_externo`/`com_programas_ssh`/`com_chrome`/`com_prazos_login`/
+`programas_ssh`/`travas_agora`/`sessoes_run`/`com_temporarios`/`temporarios`/
+`com_gancho_depois_de_gravar`/`com_motor`/`motor`/`estado`/`travado`/`travar`/
+`travar_se_inativo`/`registrar_uso`/`atender`/`atender_de`/`atender_permitido`/`espera_de`/
+`destravar`/`contar_falha`/`lista`/`valor_do_app`/`totp_do_app`/`sugerir`/
+`preencher_do_popup`/`preencher`/`criar_cofre`/`detalhe`/`gravar_ou_desfazer`/
+`agora_para_datas`/`alterado`/`salvar_entrada`/`salvar_login`/`remover_entrada`/
+`conferir_pin`/`mudar_nivel`/`trocar_pin`/`tempo_trava`/`trocar_senha`/`configuracao`/
+`backup_externo`/`definir_backup_externo`/`pendrives`/`restaurar_backup` → `new`/
+`with_usb_drives`/`enable_external_copy`/`poke_external`/`external_uuid`/`sync_external`/
+`with_ssh_programs`/`with_chrome`/`with_login_deadlines`/`ssh_programs`/`locks_now`/
+`run_sessions`/`with_temp_root`/`temp_root`/`with_hook_after_write`/`with_engine`/`engine`/
+`state`/`is_locked`/`lock`/`lock_if_idle`/`record_use`/`serve`/`serve_from`/`serve_allowed`/
+`wait_for`/`unlock`/`count_failure`/`list`/`app_value`/`app_totp`/`suggest`/
+`fill_from_popup`/`fill`/`create_vault`/`detail`/`write_or_undo`/`now_for_dates`/`modified`/
+`save_entry`/`save_login`/`remove_entry`/`verify_pin`/`set_level`/`change_pin`/
+`lock_timeout`/`change_password`/`settings`/`external_backup`/`set_external_backup`/
+`usb_drives`/`restore_backup`. Os ganchos de teste que o V3.15 (`tests/approval.rs`)
+procura pelo nome (`TEST_HOOKS`, em ordem alfabética) passam a `with_chrome`,
+`with_hook_after_write`, `with_login_deadlines`, `with_ssh_programs`, e a lista de arquivos
+a `"core.rs"`/`"approval.rs"`. Os nomes do `ward-core` (`protocol`: `Resposta`,
+`PedidoDeAprovacao`, `PedidoDeDestrave` e campos, `MAX_RESTANTE_DESTRAVE`…) são da Fase 18 e
+ficam; as mensagens de log são literais e ficam.
 
 Funções e métodos não estão listados um a um: o nome sai da seção 2 na ordem do inglês
 (`conferir_arquivo` → `verify_file`, `ler_cofre` → `read_vault`, `codificar_resposta` →

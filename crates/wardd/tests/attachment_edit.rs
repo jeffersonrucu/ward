@@ -39,7 +39,7 @@ fn edit(previous: &str, keep: &[&str], new: &[(&str, &[u8])]) -> String {
 
 /// The entries as they are on disk (opens with the test password).
 fn on_disk(dir: &Dir) -> Vec<Entry> {
-    let bytes = std::fs::read(dir.paths().cofre).unwrap();
+    let bytes = std::fs::read(dir.paths().vault).unwrap();
     let s = ward_core::format::MasterPassword::new(PASSWORD.to_owned());
     ward_core::body::open_entries_with_generation(&bytes, &s, 0, 0)
         .unwrap()

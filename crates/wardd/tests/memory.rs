@@ -131,8 +131,8 @@ fn data_key(file: &[u8], password: &str) -> Box<[u8; 32]> {
 fn v3_8_lock_zeroes_the_key_and_the_secrets_before_freeing() {
     let dir = Dir::new("memory");
     let (d, _) = test_vault(&dir);
-    d.travar();
-    let file = std::fs::read(dir.paths().cofre).unwrap();
+    d.lock();
+    let file = std::fs::read(dir.paths().vault).unwrap();
     let key = data_key(&file, PASSWORD);
     drop(file);
     assert_ne!(*key, [0u8; 32]);
@@ -145,7 +145,7 @@ fn v3_8_lock_zeroes_the_key_and_the_secrets_before_freeing() {
 
     let findings = searching(|| {
         assert!(ok(&unlock(&d, PASSWORD)));
-        assert!(!d.travado());
+        assert!(!d.is_locked());
         let _ = request(&d, Role::Agent, "lista", "{}");
         let _ = request(&d, Role::App, "detalhe", r#"{"entrada":"t-aprov"}"#);
         assert!(ok(&set_level(&d, Role::App, "t-aprov", "livre", PIN)));
@@ -157,8 +157,8 @@ fn v3_8_lock_zeroes_the_key_and_the_secrets_before_freeing() {
         )));
         let _ = set_level(&d, Role::App, "t-aprov", "livre", WRONG_PIN);
         // V3.8: locking releases the open vault and the entries.
-        d.travar();
-        assert!(d.travado());
+        d.lock();
+        assert!(d.is_locked());
         assert_eq!(
             error(&request(&d, Role::App, "lista", "{}")),
             Some(ward_core::protocol::ResponseError::Locked)

@@ -14,17 +14,17 @@ use std::time::Duration;
 use common::*;
 use ward_core::entry::AccessLevel;
 use ward_core::protocol::{Response, ResponseError, Role};
+use wardd::core::{MAX_WAIT, unlock_wait};
 use wardd::files::{self, Generations};
-use wardd::nucleo::{ESPERA_MAXIMA, espera_destrave};
 
-fn list(d: &wardd::nucleo::Daemon, role: Role) -> Vec<ward_core::protocol::ListItem> {
+fn list(d: &wardd::core::Daemon, role: Role) -> Vec<ward_core::protocol::ListItem> {
     match request(d, role, "lista", "{}") {
         Response::List(l) => l,
         r => panic!("{r:?}"),
     }
 }
 
-fn level_of(d: &wardd::nucleo::Daemon, name: &str) -> Option<AccessLevel> {
+fn level_of(d: &wardd::core::Daemon, name: &str) -> Option<AccessLevel> {
     list(d, Role::App)
         .into_iter()
         .find(|i| i.name == name)
@@ -41,9 +41,9 @@ fn is_root() -> bool {
 fn v3_10_lock_and_everything_answers_locked() {
     let dir = Dir::new("travar");
     let (d, _) = test_vault(&dir);
-    assert!(!d.travado());
+    assert!(!d.is_locked());
     assert!(ok(&request(&d, Role::Agent, "travar", "{}")));
-    assert!(d.travado());
+    assert!(d.is_locked());
     let pin = b64(PIN.as_bytes());
     for (role, op, data) in [
         (Role::Agent, "lista", "{}".to_owned()),
@@ -96,13 +96,13 @@ fn v3_10_lock_and_everything_answers_locked() {
 fn v3_9_wrong_password_growing_wait_without_count() {
     let expected: Vec<u64> = vec![0, 1, 2, 4, 8, 16, 30, 30, 30, 30];
     for (i, s) in expected.iter().enumerate() {
-        assert_eq!(espera_destrave(i as u32), Duration::from_secs(*s));
+        assert_eq!(unlock_wait(i as u32), Duration::from_secs(*s));
     }
-    assert_eq!(espera_destrave(u32::MAX), ESPERA_MAXIMA);
+    assert_eq!(unlock_wait(u32::MAX), MAX_WAIT);
 
     let dir = Dir::new("espera");
     let (d, clock) = test_vault(&dir);
-    d.travar();
+    d.lock();
     let mut frames = Vec::new();
     for i in 0..10 {
         let r = unlock(&d, &format!("falso-errada-{i:02}"));
@@ -123,10 +123,10 @@ fn v3_9_wrong_password_growing_wait_without_count() {
     assert!(waits.windows(2).all(|w| w[1] >= w[0]) && waits[6] == 30);
     // The right one waits the 30 s and unlocks; afterwards, the wait goes back to 0.
     assert!(ok(&unlock(&d, PASSWORD)));
-    d.travar();
+    d.lock();
     let _ = unlock(&d, "falso-errada-xx");
     let waits = clock.0.lock().unwrap().clone();
-    assert_eq!(waits[10], ESPERA_MAXIMA);
+    assert_eq!(waits[10], MAX_WAIT);
     assert_eq!(waits[11], Duration::ZERO);
 }
 
@@ -136,7 +136,7 @@ fn v3_9_wrong_password_growing_wait_without_count() {
 fn v3_11_change_level_requires_pin_and_app_role() {
     let dir = Dir::new("nivel");
     let (d, _) = test_vault(&dir);
-    let vault = dir.paths().cofre;
+    let vault = dir.paths().vault;
     let before = fs::read(&vault).unwrap();
 
     // No PIN: the request parsing refuses.
@@ -163,7 +163,7 @@ fn v3_11_change_level_requires_pin_and_app_role() {
     )
     .unwrap();
     assert_eq!(
-        error(&d.atender(Role::Agent, p)),
+        error(&d.serve(Role::Agent, p)),
         Some(ResponseError::Unauthorized)
     );
     assert_eq!(fs::read(&vault).unwrap(), before, "o arquivo mudou");
@@ -172,7 +172,7 @@ fn v3_11_change_level_requires_pin_and_app_role() {
     // App with the right PIN: changes and stays on disk.
     assert!(ok(&set_level(&d, Role::App, "t-aprov", "bloqueado", PIN)));
     assert_ne!(fs::read(&vault).unwrap(), before);
-    d.travar();
+    d.lock();
     assert!(ok(&unlock(&d, PASSWORD)));
     assert_eq!(level_of(&d, "t-aprov"), Some(AccessLevel::Blocked));
 }
@@ -187,7 +187,7 @@ fn v3_12_five_pin_errors_lock() {
         let r = set_level(&d, Role::App, "t-aprov", "livre", WRONG_PIN);
         assert_eq!(error(&r), Some(ResponseError::WrongPin));
     }
-    assert!(!d.travado());
+    assert!(!d.is_locked());
     assert!(ok(&set_level(
         &d,
         Role::App,
@@ -209,10 +209,10 @@ fn v3_12_five_pin_errors_lock() {
         );
         assert_eq!(error(&r), Some(ResponseError::WrongPin));
     }
-    assert!(!d.travado());
+    assert!(!d.is_locked());
     let r = set_level(&d, Role::App, "t-aprov", "livre", WRONG_PIN);
     assert_eq!(error(&r), Some(ResponseError::WrongPin));
-    assert!(d.travado(), "o 5.º erro seguido tem de travar");
+    assert!(d.is_locked(), "o 5.º erro seguido tem de travar");
     assert_eq!(
         error(&request(&d, Role::App, "lista", "{}")),
         Some(ResponseError::Locked)
@@ -221,7 +221,7 @@ fn v3_12_five_pin_errors_lock() {
     assert!(ok(&unlock(&d, PASSWORD)));
     let r = set_level(&d, Role::App, "t-aprov", "livre", WRONG_PIN);
     assert_eq!(error(&r), Some(ResponseError::WrongPin));
-    assert!(!d.travado());
+    assert!(!d.is_locked());
 }
 
 /// V3.17, V3.26 (S1, D50): the agent list has neither the blocked entry nor the level;
@@ -361,7 +361,7 @@ fn v3_27_new_entry_starts_with_approval() {
     );
     assert!(list(&d, Role::App).iter().any(|i| i.name == "s1"));
     // The vault still opens after all this.
-    d.travar();
+    d.lock();
     assert!(ok(&unlock(&d, PASSWORD)));
     assert_eq!(list(&d, Role::App).len(), 6);
 }
@@ -373,8 +373,8 @@ fn v3_22_rollback_and_swapped_file() {
     let dir = Dir::new("rollback");
     let c = dir.paths();
     let (d, _) = test_vault(&dir);
-    let copy_n = fs::read(&c.cofre).unwrap();
-    let n = generation_on_disk(&c.cofre, PASSWORD);
+    let copy_n = fs::read(&c.vault).unwrap();
+    let n = generation_on_disk(&c.vault, PASSWORD);
     assert!(ok(&request(
         &d,
         Role::App,
@@ -387,7 +387,7 @@ fn v3_22_rollback_and_swapped_file() {
         "tempo_trava",
         r#"{"minutos":60}"#
     )));
-    assert_eq!(generation_on_disk(&c.cofre, PASSWORD), n + 2);
+    assert_eq!(generation_on_disk(&c.vault, PASSWORD), n + 2);
     assert_eq!(
         generations(&dir),
         Generations {
@@ -395,31 +395,31 @@ fn v3_22_rollback_and_swapped_file() {
             burned: n + 2
         }
     );
-    d.travar();
+    d.lock();
 
     // `cp` of the authentic copy of n on top and unlock: rollback, stays locked and the
     // file is not rewritten.
-    fs::write(&c.cofre, &copy_n).unwrap();
+    fs::write(&c.vault, &copy_n).unwrap();
     let r = unlock(&d, PASSWORD);
     assert_eq!(error(&r), Some(ResponseError::Rollback));
     assert!(contains(
         &encoded(Role::Agent, &r),
         "o cofre no disco é mais antigo que o último aberto".as_bytes()
     ));
-    assert!(d.travado());
-    assert_eq!(fs::read(&c.cofre).unwrap(), copy_n);
+    assert!(d.is_locked());
+    assert_eq!(fs::read(&c.vault).unwrap(), copy_n);
 
     // Deleting the state: same refusal, even with the right vault back.
-    fs::remove_file(&c.estado).unwrap();
+    fs::remove_file(&c.state).unwrap();
     let r = unlock(&d, PASSWORD);
     assert_eq!(error(&r), Some(ResponseError::Rollback));
-    assert!(d.travado());
+    assert!(d.is_locked());
 
     // State back (n), unlocks copy n: the generation goes up with the writes.
     // The file is a different one since the last lock: the first unlock warns that it
     // changed outside Ward; the next one decides by the generation only.
     files::write_state(
-        &c.estado,
+        &c.state,
         Generations {
             seen: n,
             burned: n + 2,
@@ -434,30 +434,30 @@ fn v3_22_rollback_and_swapped_file() {
     // With the daemon unlocked, the file swapped by `mv` (new inode): does not write over
     // it, locks and warns.
     let other = dir.0.join("outro.ward");
-    fs::copy(&c.cofre, &other).unwrap();
-    fs::rename(&other, &c.cofre).unwrap();
-    let before = fs::read(&c.cofre).unwrap();
+    fs::copy(&c.vault, &other).unwrap();
+    fs::rename(&other, &c.vault).unwrap();
+    let before = fs::read(&c.vault).unwrap();
     let r = request(&d, Role::App, "tempo_trava", r#"{"minutos":90}"#);
     assert_eq!(error(&r), Some(ResponseError::VaultChanged));
     assert!(contains(
         &encoded(Role::App, &r),
         "o arquivo do cofre mudou fora do Ward".as_bytes()
     ));
-    assert!(d.travado());
-    assert_eq!(fs::read(&c.cofre).unwrap(), before);
+    assert!(d.is_locked());
+    assert_eq!(fs::read(&c.vault).unwrap(), before);
 
     // Rewritten in place (same inode, new `mtime`): the same.
     assert!(ok(&unlock(&d, PASSWORD)));
     std::thread::sleep(Duration::from_millis(20));
-    fs::write(&c.cofre, &before).unwrap();
+    fs::write(&c.vault, &before).unwrap();
     let r = request(&d, Role::App, "tempo_trava", r#"{"minutos":90}"#);
     assert_eq!(error(&r), Some(ResponseError::VaultChanged));
-    assert!(d.travado());
+    assert!(d.is_locked());
     // Swapped with the daemon locked (without changing the generation): unlocking warns once.
     assert!(ok(&unlock(&d, PASSWORD)));
-    d.travar();
+    d.lock();
     std::thread::sleep(Duration::from_millis(20));
-    fs::write(&c.cofre, &before).unwrap();
+    fs::write(&c.vault, &before).unwrap();
     assert_eq!(
         error(&unlock(&d, PASSWORD)),
         Some(ResponseError::VaultChanged)
@@ -465,9 +465,9 @@ fn v3_22_rollback_and_swapped_file() {
     assert!(ok(&unlock(&d, PASSWORD)));
 
     // The state is 0600, with no secret.
-    let m = fs::metadata(&c.estado).unwrap();
+    let m = fs::metadata(&c.state).unwrap();
     assert_eq!(m.permissions().mode() & 0o777, 0o600);
-    let text = fs::read(&c.estado).unwrap();
+    let text = fs::read(&c.state).unwrap();
     for s in SECRETS.iter().chain([&PASSWORD, &PIN]) {
         assert!(!contains(&text, s.as_bytes()));
     }
@@ -485,18 +485,15 @@ fn v3_28_burned_generation_in_the_state() {
     let dir = Dir::new("queimada");
     let state_dir = Dir::new("queimada-estado");
     let mut c = dir.paths();
-    c.estado = state_dir.0.join("estado");
+    c.state = state_dir.0.join("estado");
     // The test vault is born in the default state directory; moves to the separate one.
     let (d0, _) = test_vault(&dir);
     drop(d0);
-    fs::copy(dir.paths().estado, &c.estado).unwrap();
+    fs::copy(dir.paths().state, &c.state).unwrap();
     let (d, _) = daemon_at(c.clone());
     assert!(ok(&unlock(&d, PASSWORD)));
-    let n = generation_on_disk(&c.cofre, PASSWORD);
-    assert_eq!(
-        generations_at(&c.estado),
-        Generations { seen: n, burned: n }
-    );
+    let n = generation_on_disk(&c.vault, PASSWORD);
+    assert_eq!(generations_at(&c.state), Generations { seen: n, burned: n });
 
     // A: the rename happens, the directory fsync fails.
     fs::set_permissions(&dir.0, fs::Permissions::from_mode(0o300)).unwrap();
@@ -504,21 +501,21 @@ fn v3_28_burned_generation_in_the_state() {
     fs::set_permissions(&dir.0, fs::Permissions::from_mode(0o700)).unwrap();
     assert_eq!(error(&r), Some(ResponseError::WriteFailed));
     assert_eq!(
-        generations_at(&c.estado),
+        generations_at(&c.state),
         Generations {
             seen: n,
             burned: n + 1
         }
     );
-    assert_eq!(generation_on_disk(&c.cofre, PASSWORD), n + 1);
-    let copy_a = fs::read(&c.cofre).unwrap();
+    assert_eq!(generation_on_disk(&c.vault, PASSWORD), n + 1);
+    let copy_a = fs::read(&c.vault).unwrap();
 
     // Restart between A and B: the new daemon opens with (n, n+1) and B writes n+2.
     drop(d);
     let (d, _) = daemon_at(c.clone());
     assert!(ok(&unlock(&d, PASSWORD)));
     assert_eq!(
-        generations_at(&c.estado),
+        generations_at(&c.state),
         Generations {
             seen: n + 1,
             burned: n + 1
@@ -530,9 +527,9 @@ fn v3_28_burned_generation_in_the_state() {
         "tempo_trava",
         r#"{"minutos":45}"#
     )));
-    assert_eq!(generation_on_disk(&c.cofre, PASSWORD), n + 2);
+    assert_eq!(generation_on_disk(&c.vault, PASSWORD), n + 2);
     assert_eq!(
-        generations_at(&c.estado),
+        generations_at(&c.state),
         Generations {
             seen: n + 2,
             burned: n + 2
@@ -540,20 +537,20 @@ fn v3_28_burned_generation_in_the_state() {
     );
 
     // The copy of A in place: rollback.
-    d.travar();
-    fs::write(&c.cofre, &copy_a).unwrap();
+    d.lock();
+    fs::write(&c.vault, &copy_a).unwrap();
     assert_eq!(error(&unlock(&d, PASSWORD)), Some(ResponseError::Rollback));
-    assert!(d.travado());
+    assert!(d.is_locked());
 
     // No restart: A fails after the rename, B writes n+4 (n+3 was burned by A).
     let (d, _) = vault_n2(&c, &dir);
-    let g = generation_on_disk(&c.cofre, PASSWORD);
+    let g = generation_on_disk(&c.vault, PASSWORD);
     fs::set_permissions(&dir.0, fs::Permissions::from_mode(0o300)).unwrap();
     let r = request(&d, Role::App, "tempo_trava", r#"{"minutos":31}"#);
     fs::set_permissions(&dir.0, fs::Permissions::from_mode(0o700)).unwrap();
     assert_eq!(error(&r), Some(ResponseError::WriteFailed));
     assert_eq!(
-        generations_at(&c.estado),
+        generations_at(&c.state),
         Generations {
             seen: g,
             burned: g + 1
@@ -565,9 +562,9 @@ fn v3_28_burned_generation_in_the_state() {
         "tempo_trava",
         r#"{"minutos":32}"#
     )));
-    assert_eq!(generation_on_disk(&c.cofre, PASSWORD), g + 2);
+    assert_eq!(generation_on_disk(&c.vault, PASSWORD), g + 2);
     assert_eq!(
-        generations_at(&c.estado),
+        generations_at(&c.state),
         Generations {
             seen: g + 2,
             burned: g + 2
@@ -575,13 +572,13 @@ fn v3_28_burned_generation_in_the_state() {
     );
 
     // The state does not write (read-only directory): the vault is not written.
-    let before = fs::read(&c.cofre).unwrap();
+    let before = fs::read(&c.vault).unwrap();
     fs::set_permissions(&state_dir.0, fs::Permissions::from_mode(0o500)).unwrap();
     let r = request(&d, Role::App, "tempo_trava", r#"{"minutos":33}"#);
     fs::set_permissions(&state_dir.0, fs::Permissions::from_mode(0o700)).unwrap();
     assert_eq!(error(&r), Some(ResponseError::WriteFailed));
-    assert_eq!(fs::read(&c.cofre).unwrap(), before);
-    assert!(!d.travado());
+    assert_eq!(fs::read(&c.vault).unwrap(), before);
+    assert!(!d.is_locked());
 
     // A password change that fails after sealing: locks, and the next unlock opens (with
     // the new password, which reached the disk) above the burned one.
@@ -599,8 +596,8 @@ fn v3_28_burned_generation_in_the_state() {
     );
     fs::set_permissions(&dir.0, fs::Permissions::from_mode(0o700)).unwrap();
     assert_eq!(error(&r), Some(ResponseError::WriteFailed));
-    assert!(d.travado());
-    let q = generations_at(&c.estado).burned;
+    assert!(d.is_locked());
+    let q = generations_at(&c.state).burned;
     assert!(ok(&unlock(&d, new_password)));
     assert!(ok(&request(
         &d,
@@ -608,18 +605,18 @@ fn v3_28_burned_generation_in_the_state() {
         "tempo_trava",
         r#"{"minutos":34}"#
     )));
-    assert!(generation_on_disk(&c.cofre, new_password) > q);
+    assert!(generation_on_disk(&c.vault, new_password) > q);
 }
 
 /// New daemon unlocked in the current state (after a test rollback: puts back the
 /// newest vault through the state itself).
-fn vault_n2(c: &wardd::nucleo::Caminhos, dir: &Dir) -> (wardd::nucleo::Daemon, FakeClock) {
+fn vault_n2(c: &wardd::core::Paths, dir: &Dir) -> (wardd::core::Daemon, FakeClock) {
     // Recreates the vault from scratch in this directory, with the separate state.
-    let _ = fs::remove_file(&c.cofre);
-    let _ = fs::remove_file(&c.estado);
+    let _ = fs::remove_file(&c.vault);
+    let _ = fs::remove_file(&c.state);
     let (d0, _) = test_vault(dir);
     drop(d0);
-    fs::copy(dir.paths().estado, &c.estado).unwrap();
+    fs::copy(dir.paths().state, &c.state).unwrap();
     let (d, r) = daemon_at(c.clone());
     assert!(ok(&unlock(&d, PASSWORD)));
     (d, r)
@@ -652,7 +649,7 @@ fn d52_change_password_with_wrong_password() {
         error(&change("falso-errada-01", "falso-nova-02")),
         Some(ResponseError::WrongPassword)
     );
-    assert!(!d.travado());
+    assert!(!d.is_locked());
     assert!(ok(&change(PASSWORD, "falso-nova-02")));
     assert!(ok(&request(
         &d,
@@ -660,7 +657,7 @@ fn d52_change_password_with_wrong_password() {
         "tempo_trava",
         r#"{"minutos":20}"#
     )));
-    d.travar();
+    d.lock();
     assert_eq!(
         error(&unlock(&d, PASSWORD)),
         Some(ResponseError::WrongPassword)
@@ -703,13 +700,13 @@ fn first_use_and_pin_only_as_hash() {
         error(&request(&d, Role::App, "criar_cofre", &create)),
         Some(ResponseError::VaultAlreadyExists)
     );
-    d.travar();
+    d.lock();
     assert_eq!(
         error(&request(&d, Role::App, "criar_cofre", &create)),
         Some(ResponseError::VaultAlreadyExists)
     );
     let c = dir.paths();
-    for file in [&c.cofre, &c.estado] {
+    for file in [&c.vault, &c.state] {
         let b = fs::read(file).unwrap();
         assert!(!contains(&b, PIN.as_bytes()) && !contains(&b, PASSWORD.as_bytes()));
         for s in SECRETS {
@@ -733,7 +730,7 @@ fn first_use_and_pin_only_as_hash() {
         ),
     );
     assert!(ok(&r), "{r:?}");
-    d.travar();
+    d.lock();
     assert!(ok(&unlock(&d, PASSWORD)));
     assert_eq!(
         error(&set_level(&d, Role::App, "t-aprov", "livre", PIN)),

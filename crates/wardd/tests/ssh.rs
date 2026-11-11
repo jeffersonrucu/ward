@@ -29,8 +29,8 @@ use ward_core::entry::Secret;
 use ward_core::limits::MAX_COMMON_FRAME;
 use ward_core::protocol::frame::{self, RESPONSE_LIMIT};
 use ward_core::protocol::{self, Request, Response, ResponseError, Role, Stream, WindowSize};
-use wardd::aprovacao::{Motor, RelogioMotor, SemApp, SemCliente};
-use wardd::nucleo::Daemon;
+use wardd::approval::{Engine, EngineClock, NoApp, NoClient};
+use wardd::core::Daemon;
 use wardd::ssh::SshPrograms;
 use zeroize::Zeroizing;
 
@@ -48,8 +48,8 @@ impl ManualClock {
     }
 }
 
-impl RelogioMotor for ManualClock {
-    fn agora(&self) -> Duration {
+impl EngineClock for ManualClock {
+    fn now(&self) -> Duration {
         *self.0.lock().unwrap()
     }
 }
@@ -153,13 +153,13 @@ fn scene(label: &str) -> Scene {
     let rt = Rt::new(label);
     let clock = ManualClock::default();
     let d = d
-        .com_motor(Motor::novo(Arc::new(clock.clone()), Box::new(SemApp)))
-        .com_programas_ssh(SshPrograms {
+        .with_engine(Engine::new(Arc::new(clock.clone()), Box::new(NoApp)))
+        .with_ssh_programs(SshPrograms {
             ssh: base.join("ssh"),
             sshpass: base.join("sshpass"),
             sftp: base.join("sftp"),
         })
-        .com_temporarios(rt.0.clone());
+        .with_temp_root(rt.0.clone());
     let (key, pp) = generate_key(&dir.0);
     let key_auth = format!(
         r#""chave_privada":"{}","passphrase":"{}""#,
@@ -292,7 +292,7 @@ impl Scene {
     }
 
     fn token(&self, entry: &str) -> Secret {
-        match self.d.atender(
+        match self.d.serve(
             Role::App,
             Request::IssueToken {
                 entry: entry.into(),
@@ -369,9 +369,9 @@ fn session_of(
     let d = c.d.clone();
     let t = std::thread::spawn(move || {
         if run {
-            wardd::execution::session(&d, &SemCliente, &daemon_end, request)
+            wardd::execution::session(&d, &NoClient, &daemon_end, request)
         } else {
-            wardd::ssh::session(&d, &SemCliente, &daemon_end, request)
+            wardd::ssh::session(&d, &NoClient, &daemon_end, request)
         }
     });
     let start = Instant::now();
@@ -739,7 +739,7 @@ fn d12_lock_brings_down_the_agent() {
                         .starts_with("registro-ssh-")
                 })
             }));
-            d.travar();
+            d.lock();
             assert!(wait_for(Duration::from_secs(5), || {
                 fs::read_dir(&rt).map_or(true, |d| {
                     d.filter_map(Result::ok)
@@ -776,7 +776,7 @@ fn f54c_attack_ward_ssh_dies_on_lock() {
                 !c.records("ssh").is_empty()
             }));
             std::thread::sleep(Duration::from_millis(300));
-            c.d.travar();
+            c.d.lock();
             locked.set(Some(Instant::now()));
         });
         let after = locked.get().unwrap().elapsed();
@@ -835,7 +835,7 @@ fn f54l_attack_cli_drops_in_ward_ssh_no_ssh_left() {
         let (mut cli_end, daemon_end) = UnixStream::pair().unwrap();
         let d = c.d.clone();
         let t = std::thread::spawn(move || {
-            let _ = wardd::ssh::session(&d, &SemCliente, &daemon_end, request);
+            let _ = wardd::ssh::session(&d, &NoClient, &daemon_end, request);
         });
         close_stdin(&mut cli_end);
         assert!(
@@ -1087,7 +1087,7 @@ fn v5_24_connect_token() {
 
     // Only the app issues; no token for a kind without `ward ssh`.
     for role in [Role::Agent, Role::Extension] {
-        let r = c.d.atender(
+        let r = c.d.serve(
             role,
             Request::IssueToken {
                 entry: "s-outro".into(),
@@ -1095,7 +1095,7 @@ fn v5_24_connect_token() {
         );
         assert_eq!(error(&r), Some(ResponseError::Unauthorized), "{role:?}");
     }
-    let r = c.d.atender(
+    let r = c.d.serve(
         Role::App,
         Request::IssueToken {
             entry: "t-livre".into(),
@@ -1134,7 +1134,7 @@ fn v5_24_connect_token() {
 
     // Locking erases the tokens.
     let t = c.token("s-outro");
-    c.d.travar();
+    c.d.lock();
     assert!(ok(&unlock(&c.d, PASSWORD)));
     assert_eq!(run(Some(&t), "s-outro").failure, unavailable);
 
@@ -1550,7 +1550,7 @@ except OSError as e:
             assert!(wait_for(Duration::from_secs(30), || {
                 fs::read_to_string(&port_file).is_ok_and(|t| t.parse::<u16>().is_ok())
             }));
-            c.d.travar();
+            c.d.lock();
             std::thread::sleep(Duration::from_millis(400));
             fs::write(&mark, "").unwrap();
         },

@@ -52,6 +52,13 @@
   fmt e `make compile` 0. `docs/mission/plan.md`: caminhos da Fase 18 atualizados
   (`protocol/response.rs`, `protocol/tests.rs`, `tests/sources.rs`,
   `tests/body_memory.rs`), a pedido do orchestrator.
+- Merge com o master `e2bd555` (Fase 20): `wardd/src/nucleo.rs`/`aprovacao.rs`
+  (apagados lá) saíram; conflitos em `server.rs`, `usage.rs` e em 12 testes do `wardd`
+  resolvidos com a versão do master e os usos do protocolo reaplicados (script de
+  renomeação + corretor) em `core.rs`, `approval.rs` e nesses arquivos.
+  `WriteFailure::Response` (Fase 20) é outro tipo e não foi tocado. Glossário: os
+  parágrafos das Fases 18 e 20 ficaram juntos. Literais iguais aos do master fora dos
+  três arquivos da fase; `protocol wire_v1` 58/58; check, clippy, fmt e `make compile` 0.
 
 ## Literais alterados (PRD regra 5)
 
@@ -139,7 +146,7 @@ que o rustfmt tirou ou pôs nos braços de `match` (nomes mais curtos/longos) e
 | `crates/ward-core/src/protocol.rs`, `protocol/json.rs`, `wire_v1.rs` | alterado (usos) |
 | `crates/ward/src/{client,commands,tests,text}.rs` | alterado (usos) |
 | `crates/ward-nm/src/{lib,tests}.rs` | alterado (usos) |
-| `crates/wardd/src/{aprovacao,execution,lock,login,nucleo,playwright,server,ssh,udisks,usage}.rs` | alterado (usos; `lock`/`usage` da Fase 19) |
+| `crates/wardd/src/{approval,core,execution,lock,login,playwright,server,ssh,udisks,usage}.rs` | alterado (usos; `lock`/`usage` da Fase 19, `approval`/`core` da Fase 20) |
 | `crates/wardd/{app-teste,aprovador-teste}/main.rs`, `crates/wardd/examples/test-client.rs` | alterado (usos) |
 | `crates/wardd/tests/{app_value_binary,app_value_core,approval,attachment_edit,backup,common/mod,core,d62,dates,extension,external,lock,login,playwright,run,settings,socket,ssh,test_app}.rs` | alterado (usos) |
 | `app/core/src/{approval,client,credentials,daemon,unlock,external_backup,fake_daemon,restore,service,startup}.rs` | alterado (usos; `unlock` da Fase 34) |

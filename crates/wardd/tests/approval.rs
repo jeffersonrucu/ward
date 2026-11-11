@@ -19,10 +19,8 @@ use ward_core::protocol::{
     ApprovalRequest, Operation, Response, ResponseError, Role, UnlockRequest,
 };
 use ward_platform::{PeerClass, Refusal};
-use wardd::aprovacao::{
-    AbridorApp, Assinante, Cliente, ErroAbrirApp, Motor, RelogioMotor, SemCliente,
-};
-use wardd::nucleo::Daemon;
+use wardd::approval::{AppOpener, Client, Engine, EngineClock, NoClient, OpenAppError, Subscriber};
+use wardd::core::Daemon;
 use wardd::server::role_from_class;
 use wardd::usage::Authorization;
 
@@ -40,8 +38,8 @@ impl ManualClock {
     }
 }
 
-impl RelogioMotor for ManualClock {
-    fn agora(&self) -> Duration {
+impl EngineClock for ManualClock {
+    fn now(&self) -> Duration {
         *self.0.lock().unwrap()
     }
 }
@@ -55,8 +53,8 @@ enum Received {
 
 struct FakeApp(Sender<Received>);
 
-impl Assinante for FakeApp {
-    fn entregar(&mut self, r: &Response) -> bool {
+impl Subscriber for FakeApp {
+    fn deliver(&mut self, r: &Response) -> bool {
         let x = match r {
             Response::ApprovalRequest(p) => Received::Approval(p.clone()),
             Response::UnlockRequest(p) => Received::Unlock(p.clone()),
@@ -71,13 +69,13 @@ type OnExit = Box<dyn FnOnce() + Send>;
 /// Fake opener: counts the openings and keeps the `on_exit`.
 #[derive(Clone)]
 struct FakeOpener {
-    result: Result<(), ErroAbrirApp>,
+    result: Result<(), OpenAppError>,
     opens: Arc<AtomicU32>,
     on_exit: Arc<Mutex<Option<OnExit>>>,
 }
 
 impl FakeOpener {
-    fn new(result: Result<(), ErroAbrirApp>) -> Self {
+    fn new(result: Result<(), OpenAppError>) -> Self {
         Self {
             result,
             opens: Arc::default(),
@@ -91,8 +89,8 @@ impl FakeOpener {
     }
 }
 
-impl AbridorApp for FakeOpener {
-    fn abrir(&self, on_exit: Box<dyn FnOnce() + Send>) -> Result<(), ErroAbrirApp> {
+impl AppOpener for FakeOpener {
+    fn open(&self, on_exit: Box<dyn FnOnce() + Send>) -> Result<(), OpenAppError> {
         self.opens.fetch_add(1, Ordering::SeqCst);
         if self.result.is_ok() {
             *self.on_exit.lock().unwrap() = Some(on_exit);
@@ -108,12 +106,12 @@ struct Scene {
     opener: FakeOpener,
 }
 
-fn scene_with(label: &str, open: Result<(), ErroAbrirApp>) -> Scene {
+fn scene_with(label: &str, open: Result<(), OpenAppError>) -> Scene {
     let dir = Dir::new(label);
     let (d, _) = test_vault(&dir);
     let clock = ManualClock::default();
     let opener = FakeOpener::new(open);
-    let d = d.com_motor(Motor::novo(
+    let d = d.with_engine(Engine::new(
         Arc::new(clock.clone()),
         Box::new(opener.clone()),
     ));
@@ -132,7 +130,7 @@ fn scene(label: &str) -> Scene {
 /// The fake app subscribes (like the app role connection in the server).
 fn subscribe(d: &Daemon, id: u64) -> Receiver<Received> {
     let (tx, rx) = mpsc::channel();
-    d.motor().assinar(id, Box::new(FakeApp(tx)));
+    d.engine().subscribe(id, Box::new(FakeApp(tx)));
     rx
 }
 
@@ -149,7 +147,7 @@ fn run_json_in(name: &str, argv: &[&[u8]], cwd: &[u8]) -> String {
     )
 }
 
-fn use_entry(d: &Daemon, client: &dyn Cliente, name: &str) -> Result<Authorization, ResponseError> {
+fn use_entry(d: &Daemon, client: &dyn Client, name: &str) -> Result<Authorization, ResponseError> {
     let p = req(Role::Agent, "executar", &run_json(name, &[b"true"])).unwrap();
     d.authorize_use(client, &p)
 }
@@ -203,7 +201,7 @@ fn with_approval_window(
     answer: impl FnOnce(&ApprovalRequest),
 ) -> Result<Authorization, ResponseError> {
     std::thread::scope(|s| {
-        let t = s.spawn(|| use_entry(&c.d, &SemCliente, name));
+        let t = s.spawn(|| use_entry(&c.d, &NoClient, name));
         let _g = ExpireOnPanic(&c.clock);
         let p = approval_request(rx);
         answer(&p);
@@ -220,7 +218,7 @@ fn v3_14_no_answer_expires_in_2_min() {
         c.clock.set(Duration::from_secs(119));
         std::thread::sleep(Duration::from_millis(150));
         assert!(
-            c.d.motor().pendente(p.id).is_some(),
+            c.d.engine().pending(p.id).is_some(),
             "expirou antes de 2 min"
         );
         c.clock.set(Duration::from_secs(120));
@@ -244,9 +242,9 @@ fn v3_14_deny_and_close_deny() {
         assert!(ok(&answer(&c.d, Role::App, p.id, "negar", None)));
     });
     assert_eq!(r, Err(ResponseError::Denied));
-    let r = with_approval_window(&c, &rx, "t-aprov", |_| c.d.motor().desassinar(1));
+    let r = with_approval_window(&c, &rx, "t-aprov", |_| c.d.engine().unsubscribe(1));
     assert_eq!(r, Err(ResponseError::Denied));
-    assert!(!c.d.motor().tem_assinante());
+    assert!(!c.d.engine().has_subscriber());
 }
 
 /// V3.14: "Allow once" holds only for that request; the next one asks again.
@@ -278,7 +276,7 @@ fn v3_14_one_hour_until_59_59_and_lock_ends_it() {
     for t in [1001, 2000, 1000 + 3599] {
         c.clock.set(Duration::from_secs(t));
         assert_eq!(
-            use_entry(&c.d, &SemCliente, "t-aprov"),
+            use_entry(&c.d, &NoClient, "t-aprov"),
             Ok(Authorization::WithoutAsking)
         );
     }
@@ -294,7 +292,7 @@ fn v3_14_one_hour_until_59_59_and_lock_ends_it() {
     });
     assert_eq!(r, Ok(Authorization::Approved));
     assert_eq!(
-        use_entry(&c.d, &SemCliente, "t-aprov"),
+        use_entry(&c.d, &NoClient, "t-aprov"),
         Ok(Authorization::WithoutAsking)
     );
     // Lock and unlock: asks again.
@@ -332,7 +330,7 @@ fn v3_14_always_leaves_free_in_the_file() {
     assert!(ok(&unlock(&c.d, PASSWORD)));
     assert_eq!(level(&c.d, "t-aprov"), Some(AccessLevel::Free));
     assert_eq!(
-        use_entry(&c.d, &SemCliente, "t-aprov"),
+        use_entry(&c.d, &NoClient, "t-aprov"),
         Ok(Authorization::WithoutAsking)
     );
 }
@@ -350,7 +348,7 @@ fn attack_49a_restore_cancels_pending_request() {
         r => panic!("{r:?}"),
     };
     let r = std::thread::scope(|s| {
-        let t = s.spawn(|| use_entry(&c.d, &SemCliente, "t-aprov"));
+        let t = s.spawn(|| use_entry(&c.d, &NoClient, "t-aprov"));
         let _g = ExpireOnPanic(&c.clock);
         let p = approval_request(&rx);
         let r = request(
@@ -406,7 +404,7 @@ fn attack_allow_without_valid_pin() {
                 "{i}"
             );
             assert!(
-                c.d.motor().pendente(p.id).is_some(),
+                c.d.engine().pending(p.id).is_some(),
                 "o pedido saiu no erro {i}"
             );
         }
@@ -416,7 +414,7 @@ fn attack_allow_without_valid_pin() {
         );
     });
     assert_eq!(r, Err(ResponseError::Denied));
-    assert!(c.d.travado());
+    assert!(c.d.is_locked());
     assert!(ok(&unlock(&c.d, PASSWORD)));
     assert_eq!(level(&c.d, "t-aprov"), Some(AccessLevel::Approval));
 }
@@ -443,11 +441,11 @@ fn attack_agent_answers_the_approval() {
                 confirmed_entry: false,
             };
             assert_eq!(
-                error(&c.d.atender(role, q)),
+                error(&c.d.serve(role, q)),
                 Some(ResponseError::Unauthorized)
             );
         }
-        assert!(c.d.motor().pendente(p.id).is_some());
+        assert!(c.d.engine().pending(p.id).is_some());
         assert!(ok(&answer(&c.d, Role::App, p.id, "negar", None)));
     });
     assert_eq!(r, Err(ResponseError::Denied));
@@ -494,10 +492,10 @@ fn rs_sources(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
 /// The login deadlines hook (Phase 43) only shortens the `ward login` waits in the tests;
 /// it does not touch the approval nor deliver a value.
 const TEST_HOOKS: [&str; 4] = [
-    "com_chrome",
-    "com_gancho_depois_de_gravar",
-    "com_prazos_login",
-    "com_programas_ssh",
+    "with_chrome",
+    "with_hook_after_write",
+    "with_login_deadlines",
+    "with_ssh_programs",
 ];
 const CFG_HOOKS: &str = "#[cfg(feature = \"test-hooks\")]";
 
@@ -514,7 +512,7 @@ fn check_v3_15(rel: &str, text: &str, hooks: &mut Vec<&'static str>) {
         let rest = &text[i..];
         if rest.starts_with("cfg(feature = \"test-mode\")") {
             assert!(
-                !["aprovacao.rs", "usage.rs", "server.rs", "nucleo.rs"].contains(&rel),
+                !["approval.rs", "usage.rs", "server.rs", "core.rs"].contains(&rel),
                 "{rel}: test-mode no caminho da aprovação"
             );
             continue;
@@ -523,7 +521,7 @@ fn check_v3_15(rel: &str, text: &str, hooks: &mut Vec<&'static str>) {
             rest.starts_with(&CFG_HOOKS[2..]),
             "{rel}: feature desconhecida"
         );
-        assert_eq!(rel, "nucleo.rs", "test-hooks fora do núcleo");
+        assert_eq!(rel, "core.rs", "test-hooks fora do núcleo");
         // The first line after the attribute that is neither an attribute nor a comment
         // must be the `pub fn` of one of the hooks.
         let after = rest.split_once('\n').map(|(_, d)| d).unwrap_or_default();
@@ -557,25 +555,25 @@ fn check_v3_15(rel: &str, text: &str, hooks: &mut Vec<&'static str>) {
 #[test]
 fn attack_v3_15_hook_without_feature_or_out_of_place() {
     let right =
-        "#[cfg(feature = \"test-hooks\")]\n#[doc(hidden)]\npub fn com_programas_ssh(x) {}\n";
+        "#[cfg(feature = \"test-hooks\")]\n#[doc(hidden)]\npub fn with_ssh_programs(x) {}\n";
     let mut g = Vec::new();
-    check_v3_15("nucleo.rs", right, &mut g);
-    assert_eq!(g, ["com_programas_ssh"]);
+    check_v3_15("core.rs", right, &mut g);
+    assert_eq!(g, ["with_ssh_programs"]);
     let cases = [
-        ("nucleo.rs", "pub fn com_gancho_depois_de_gravar(x) {}\n"),
+        ("core.rs", "pub fn with_hook_after_write(x) {}\n"),
         (
-            "nucleo.rs",
+            "core.rs",
             "#[cfg(feature = \"test-hooks\")]\npub fn aprovar_tudo() {}\n",
         ),
         ("server.rs", right),
-        ("nucleo.rs", "#[cfg(feature = \"aprovador\")]\nfn x() {}\n"),
+        ("core.rs", "#[cfg(feature = \"aprovador\")]\nfn x() {}\n"),
         ("sub/config.rs", "let _ = std::env::var(\"X\");\n"),
         ("usage.rs", "#[cfg(feature = \"test-mode\")]\nfn x() {}\n"),
         // m2:V1.8: the pre-rename feature names are unknown features now.
         ("config.rs", "#[cfg(feature = \"modo-teste\")]\nfn x() {}\n"),
         (
-            "nucleo.rs",
-            "#[cfg(feature = \"ganchos-teste\")]\n#[doc(hidden)]\npub fn com_programas_ssh(x) {}\n",
+            "core.rs",
+            "#[cfg(feature = \"ganchos-teste\")]\n#[doc(hidden)]\npub fn with_ssh_programs(x) {}\n",
         ),
     ];
     for (rel, text) in cases {
@@ -596,7 +594,7 @@ fn v3_16_prod_has_the_same_levels_and_buttons() {
     assert!(ok(&set_level(&c.d, Role::App, "p-livre", "livre", PIN)));
     let rx = subscribe(&c.d, 1);
     assert_eq!(
-        use_entry(&c.d, &SemCliente, "p-livre"),
+        use_entry(&c.d, &NoClient, "p-livre"),
         Ok(Authorization::WithoutAsking)
     );
     assert!(rx.try_recv().is_err());
@@ -640,7 +638,7 @@ fn d19_combined_level() {
     assert_eq!(r, Ok(Authorization::Approved));
     // The grant holds for both.
     assert_eq!(
-        use_entry(&c.d, &SemCliente, "b1"),
+        use_entry(&c.d, &NoClient, "b1"),
         Ok(Authorization::WithoutAsking)
     );
     assert!(ok(&request(&c.d, Role::Agent, "travar", "{}")));
@@ -655,20 +653,17 @@ fn d19_combined_level() {
     // Both free: passes.
     assert!(ok(&set_level(&c.d, Role::App, "s1", "livre", PIN)));
     assert_eq!(
-        use_entry(&c.d, &SemCliente, "b1"),
+        use_entry(&c.d, &NoClient, "b1"),
         Ok(Authorization::WithoutAsking)
     );
     // The other one blocked: denies without opening a window.
     assert!(ok(&set_level(&c.d, Role::App, "s1", "bloqueado", PIN)));
-    assert_eq!(
-        use_entry(&c.d, &SemCliente, "b1"),
-        Err(ResponseError::Denied)
-    );
+    assert_eq!(use_entry(&c.d, &NoClient, "b1"), Err(ResponseError::Denied));
     assert!(rx.try_recv().is_err());
     // The blocked one itself is still the same as a missing one (V3.17).
     assert_eq!(
-        use_entry(&c.d, &SemCliente, "s1"),
-        use_entry(&c.d, &SemCliente, "nao-existe")
+        use_entry(&c.d, &NoClient, "s1"),
+        use_entry(&c.d, &NoClient, "nao-existe")
     );
     // "Always" on the combined use leaves free both that asked for approval.
     assert!(ok(&set_level(&c.d, Role::App, "s1", "com-aprovacao", PIN)));
@@ -686,28 +681,28 @@ fn d19_combined_level() {
 /// unavailable".
 #[test]
 fn d21_approval_unavailable() {
-    let c = scene_with("indisponivel", Err(ErroAbrirApp::Indisponivel));
+    let c = scene_with("indisponivel", Err(OpenAppError::Unavailable));
     assert_eq!(
-        use_entry(&c.d, &SemCliente, "t-aprov"),
+        use_entry(&c.d, &NoClient, "t-aprov"),
         Err(ResponseError::ApprovalUnavailable)
     );
     assert_eq!(c.opener.opens.load(Ordering::SeqCst), 1);
     // Free does not need the app.
     assert_eq!(
-        use_entry(&c.d, &SemCliente, "t-livre"),
+        use_entry(&c.d, &NoClient, "t-livre"),
         Ok(Authorization::WithoutAsking)
     );
     // The daemon without an engine (plain constructor) too.
     let dir = Dir::new("sem-motor");
     let (d, _) = test_vault(&dir);
     assert_eq!(
-        use_entry(&d, &SemCliente, "t-aprov"),
+        use_entry(&d, &NoClient, "t-aprov"),
         Err(ResponseError::ApprovalUnavailable)
     );
 
     let c = scene("app-saiu");
     let r = std::thread::scope(|s| {
-        let t = s.spawn(|| use_entry(&c.d, &SemCliente, "t-aprov"));
+        let t = s.spawn(|| use_entry(&c.d, &NoClient, "t-aprov"));
         while c.opener.opens.load(Ordering::SeqCst) == 0 {
             std::thread::sleep(Duration::from_millis(5));
         }
@@ -723,7 +718,7 @@ fn d21_approval_unavailable() {
 fn opened_app_receives_the_request_on_subscribe() {
     let c = scene("abre-e-assina");
     let r = std::thread::scope(|s| {
-        let t = s.spawn(|| use_entry(&c.d, &SemCliente, "t-aprov"));
+        let t = s.spawn(|| use_entry(&c.d, &NoClient, "t-aprov"));
         while c.opener.opens.load(Ordering::SeqCst) == 0 {
             std::thread::sleep(Duration::from_millis(5));
         }
@@ -740,11 +735,11 @@ fn opened_app_receives_the_request_on_subscribe() {
 #[test]
 fn d51_command_and_chain_with_visible_escape() {
     struct ForgedClient;
-    impl Cliente for ForgedClient {
-        fn cadeia(&self) -> Vec<String> {
+    impl Client for ForgedClient {
+        fn chain(&self) -> Vec<String> {
             vec!["claude".into(), "ba\u{202E}hs".into(), "ward\x1b[2K".into()]
         }
-        fn saiu(&self) -> bool {
+        fn exited(&self) -> bool {
             false
         }
     }
@@ -786,7 +781,7 @@ fn f26a_working_directory_goes_to_the_window_with_visible_escape() {
                 "/tmp/atacante/\u{202E}hs.yolped\x1b[2K /home/dev".as_bytes(),
             );
             let p = req(Role::Agent, "executar", &q).unwrap();
-            c.d.authorize_use(&SemCliente, &p)
+            c.d.authorize_use(&NoClient, &p)
         });
         let _g = ExpireOnPanic(&c.clock);
         let p = approval_request(&rx);
@@ -805,11 +800,11 @@ fn f26a_working_directory_goes_to_the_window_with_visible_escape() {
 #[test]
 fn client_that_drops_cancels() {
     struct Dropped(std::sync::atomic::AtomicBool);
-    impl Cliente for Dropped {
-        fn cadeia(&self) -> Vec<String> {
+    impl Client for Dropped {
+        fn chain(&self) -> Vec<String> {
             Vec::new()
         }
-        fn saiu(&self) -> bool {
+        fn exited(&self) -> bool {
             self.0.load(Ordering::SeqCst)
         }
     }
@@ -821,7 +816,7 @@ fn client_that_drops_cancels() {
         let p = approval_request(&rx);
         cli.0.store(true, Ordering::SeqCst);
         let r = t.join().unwrap();
-        assert!(c.d.motor().pendente(p.id).is_none());
+        assert!(c.d.engine().pending(p.id).is_none());
         r
     });
     assert_eq!(r, Err(ResponseError::Denied));
@@ -836,7 +831,7 @@ fn v3_18_waits_for_unlock_up_to_2_min() {
     let rx = subscribe(&c.d, 1);
     assert!(ok(&request(&c.d, Role::Agent, "travar", "{}")));
     let r = std::thread::scope(|s| {
-        let t = s.spawn(|| use_entry(&c.d, &SemCliente, "t-livre"));
+        let t = s.spawn(|| use_entry(&c.d, &NoClient, "t-livre"));
         assert!(matches!(
             rx.recv_timeout(DEADLINE).unwrap(),
             Received::Unlock(_)
@@ -852,7 +847,7 @@ fn v3_18_waits_for_unlock_up_to_2_min() {
     // Unlock and then approval: the two deadlines separately.
     assert!(ok(&request(&c.d, Role::Agent, "travar", "{}")));
     let r = std::thread::scope(|s| {
-        let t = s.spawn(|| use_entry(&c.d, &SemCliente, "t-aprov"));
+        let t = s.spawn(|| use_entry(&c.d, &NoClient, "t-aprov"));
         assert!(matches!(
             rx.recv_timeout(DEADLINE).unwrap(),
             Received::Unlock(_)
@@ -862,7 +857,7 @@ fn v3_18_waits_for_unlock_up_to_2_min() {
         let p = approval_request(&rx);
         c.clock.advance(Duration::from_secs(100));
         std::thread::sleep(Duration::from_millis(100));
-        assert!(c.d.motor().pendente(p.id).is_some());
+        assert!(c.d.engine().pending(p.id).is_some());
         assert!(ok(&answer(&c.d, Role::App, p.id, "uma_vez", Some(PIN))));
         t.join().unwrap()
     });
@@ -870,7 +865,7 @@ fn v3_18_waits_for_unlock_up_to_2_min() {
 
     assert!(ok(&request(&c.d, Role::Agent, "travar", "{}")));
     let r = std::thread::scope(|s| {
-        let t = s.spawn(|| use_entry(&c.d, &SemCliente, "t-livre"));
+        let t = s.spawn(|| use_entry(&c.d, &NoClient, "t-livre"));
         assert!(matches!(
             rx.recv_timeout(DEADLINE).unwrap(),
             Received::Unlock(_)
@@ -880,7 +875,7 @@ fn v3_18_waits_for_unlock_up_to_2_min() {
     });
     assert_eq!(r, Err(ResponseError::LockedTimedOut));
     // Through the protocol, the same answer.
-    let s2 = scene_with("destrave-sem-app", Err(ErroAbrirApp::Indisponivel));
+    let s2 = scene_with("destrave-sem-app", Err(OpenAppError::Unavailable));
     assert!(ok(&request(&s2.d, Role::Agent, "travar", "{}")));
     assert_eq!(
         error(&request(
@@ -924,7 +919,7 @@ fn attack_phase_39a_unlock_with_entry_and_command_neutralized() {
     let r = std::thread::scope(|s| {
         let t = s.spawn(|| {
             let p = req(Role::Agent, "executar", &run_json(name_json, &argv)).unwrap();
-            c.d.authorize_use(&SemCliente, &p)
+            c.d.authorize_use(&NoClient, &p)
         });
         let p = unlock_request(&rx);
         assert_eq!(p.operation, Operation::Run);
@@ -954,7 +949,7 @@ fn attack_phase_39a_unlock_with_entry_and_command_neutralized() {
                 r#"{"entrada":"t-aprov","tipo_entrada":"terminal"}"#,
             )
             .unwrap();
-            c.d.authorize_use(&SemCliente, &p)
+            c.d.authorize_use(&NoClient, &p)
         });
         let n = unlock_request(&rx2);
         assert_eq!(
@@ -1003,15 +998,15 @@ fn attack_phase_39a_empty_entry_does_not_bring_down_the_app() {
         },
     ] {
         assert_eq!(
-            c.d.authorize_use(&SemCliente, &p),
+            c.d.authorize_use(&NoClient, &p),
             Err(ResponseError::EntryNotFound)
         );
     }
     assert!(rx.recv_timeout(Duration::from_millis(200)).is_err());
-    assert!(c.d.motor().tem_assinante());
+    assert!(c.d.engine().has_subscriber());
     // The app keeps receiving the next request, with a name.
     let r = std::thread::scope(|s| {
-        let t = s.spawn(|| use_entry(&c.d, &SemCliente, "t-livre"));
+        let t = s.spawn(|| use_entry(&c.d, &NoClient, "t-livre"));
         assert_eq!(unlock_request(&rx).entry, "t-livre");
         assert!(ok(&unlock(&c.d, PASSWORD)));
         t.join().unwrap()
@@ -1040,12 +1035,12 @@ fn d57_open_app() {
         );
     }
     assert_eq!(c.opener.opens.load(Ordering::SeqCst), 3);
-    let s = scene_with("abrir-app-sem", Err(ErroAbrirApp::Indisponivel));
+    let s = scene_with("abrir-app-sem", Err(OpenAppError::Unavailable));
     assert_eq!(
         error(&request(&s.d, Role::Agent, "abrir_app", "{}")),
         Some(ResponseError::ApprovalUnavailable)
     );
-    let s = scene_with("abrir-app-ja", Err(ErroAbrirApp::JaAberto));
+    let s = scene_with("abrir-app-ja", Err(OpenAppError::AlreadyOpen));
     assert!(ok(&request(&s.d, Role::Agent, "abrir_app", "{}")));
 }
 
@@ -1099,7 +1094,7 @@ fn use_with_stdin(d: &Daemon, name: &str, kind: &str) -> Result<Authorization, R
         &format!(r#""tipo_entrada":"{kind}""#),
     );
     let p = req(Role::Agent, "executar", &q).unwrap();
-    d.authorize_use(&SemCliente, &p)
+    d.authorize_use(&NoClient, &p)
 }
 
 /// A use with input `kind` that asks: the result after `respond`.
@@ -1153,7 +1148,7 @@ fn f54b_attack_pipe_on_approval_without_the_box_does_not_pass() {
                     );
                 }
             }
-            assert!(c.d.motor().pendente(p.id).is_some(), "{kind}");
+            assert!(c.d.engine().pending(p.id).is_some(), "{kind}");
             // "Confirm" (no PIN) does not decide such a request either.
             assert!(error(&answer(&c.d, Role::App, p.id, "confirmar", None)).is_some());
             assert!(ok(&answer_confirmed(&c.d, p.id, "uma_vez", PIN)));
@@ -1161,7 +1156,7 @@ fn f54b_attack_pipe_on_approval_without_the_box_does_not_pass() {
         assert_eq!(r, Ok(Authorization::Approved), "{kind}");
     }
     // None of the "Allow" without the box counted as a wrong PIN: the vault stays open.
-    assert!(!c.d.travado());
+    assert!(!c.d.is_locked());
     // Deny still needs neither PIN nor box.
     let r = with_window_and_stdin(&c, &rx, "t-aprov", "pipe", |p| {
         assert!(ok(&answer(&c.d, Role::App, p.id, "negar", None)));
@@ -1265,7 +1260,7 @@ fn f54b_ssh_with_pipe_warns() {
                 r#"{"entrada":"s1","tipo_entrada":"pipe"}"#,
             )
             .unwrap();
-            c.d.authorize_use(&SemCliente, &p)
+            c.d.authorize_use(&NoClient, &p)
         });
         let _g = ExpireOnPanic(&c.clock);
         let p = approval_request(&rx);

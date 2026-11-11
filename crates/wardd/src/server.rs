@@ -39,9 +39,9 @@ use ward_core::protocol::{
 };
 use ward_platform::{AcceptError, Install, KernelPolicy, Listener, PeerClass, PeerProcess};
 
-use crate::aprovacao::{Assinante, Cliente};
+use crate::approval::{Client, Subscriber};
+use crate::core::Daemon;
 use crate::launch::{LaunchedApp, TestApp, TestExtension};
-use crate::nucleo::Daemon;
 use crate::{debug, warning};
 
 /// Agent and extension connections served at the same time.
@@ -224,8 +224,8 @@ struct SocketSubscriber {
     write_lock: Arc<Mutex<()>>,
 }
 
-impl Assinante for SocketSubscriber {
-    fn entregar(&mut self, r: &Response) -> bool {
+impl Subscriber for SocketSubscriber {
+    fn deliver(&mut self, r: &Response) -> bool {
         let _g = self.write_lock.lock().unwrap_or_else(|e| e.into_inner());
         let ok = answer(&mut self.stream, Role::App, r).is_ok();
         if !ok {
@@ -241,14 +241,14 @@ struct SocketClient<'a> {
     peer: &'a PeerProcess,
 }
 
-impl Cliente for SocketClient<'_> {
-    fn cadeia(&self) -> Vec<String> {
+impl Client for SocketClient<'_> {
+    fn chain(&self) -> Vec<String> {
         self.peer.chain().into_iter().map(|e| e.name).collect()
     }
 
     /// Looks without reading nor waiting (`poll`): end of file or error is a client that
     /// went away.
-    fn saiu(&self) -> bool {
+    fn exited(&self) -> bool {
         ward_platform::peer_closed(self.stream)
     }
 }
@@ -272,7 +272,7 @@ fn serve_connection(
         && let Ok(copy) = stream.try_clone()
     {
         let _ = stream.set_read_timeout(None);
-        daemon.motor().assinar(
+        daemon.engine().subscribe(
             id,
             Box::new(SocketSubscriber {
                 stream: copy,
@@ -328,7 +328,7 @@ fn serve_connection(
                     }
                     break;
                 }
-                daemon.atender_de(&client, role, p)
+                daemon.serve_from(&client, role, p)
             }
             Err(e) => {
                 debug!("pedido recusado ({}): {}", role.name(), e.code());
@@ -342,7 +342,7 @@ fn serve_connection(
     }
     if subscribed {
         // Closing the window (or the app) denies what it received (S10).
-        daemon.motor().desassinar(id);
+        daemon.engine().unsubscribe(id);
     }
 }
 
@@ -572,14 +572,14 @@ mod tests {
             confirmation: false,
             hidden_entry: true,
         };
-        assert!(s.entregar(&Response::ApprovalRequest(p.clone())));
+        assert!(s.deliver(&Response::ApprovalRequest(p.clone())));
         let d = UnlockRequest {
             entry: "t-aprov".into(),
             operation: Operation::Run,
             command: "\"true\"".into(),
             remaining: 120,
         };
-        assert!(s.entregar(&Response::UnlockRequest(d.clone())));
+        assert!(s.deliver(&Response::UnlockRequest(d.clone())));
         let q = frame::read_frame(&mut b, frame::RESPONSE_LIMIT).unwrap();
         match protocol::decode_response(Role::App, &q).unwrap() {
             Response::ApprovalRequest(read) => assert_eq!(read, p),
@@ -596,7 +596,7 @@ mod tests {
         // Another test running in parallel that does `fork` holds a copy of the fd until
         // the `exec` (CLOEXEC): the failure comes right after.
         let failed = (0..200).any(|_| {
-            let f = !s.entregar(&Response::UnlockRequest(d.clone()));
+            let f = !s.deliver(&Response::UnlockRequest(d.clone()));
             if !f {
                 std::thread::sleep(std::time::Duration::from_millis(10));
             }

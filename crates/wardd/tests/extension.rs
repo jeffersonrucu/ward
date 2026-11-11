@@ -11,7 +11,7 @@ use std::time::Duration;
 use common::{Dir, PIN, SECRETS, b64, error, ok, req, request};
 use ward_core::protocol::{self, Operation, Response, ResponseError, Role};
 use ward_core::totp::Totp;
-use wardd::nucleo::{Daemon, Relogio};
+use wardd::core::{Clock, Daemon};
 
 /// Fake TOTP seed (the one of `acme-totp-dev`, D28).
 const SEED: &str = "JBSWY3DPEHPK3PXP";
@@ -19,14 +19,14 @@ const NOW: u64 = 1_700_000_000;
 
 struct FixedClock;
 
-impl Relogio for FixedClock {
-    fn dormir(&self, _d: Duration) {}
+impl Clock for FixedClock {
+    fn sleep(&self, _d: Duration) {}
 
-    fn agora(&self) -> Option<Duration> {
+    fn now(&self) -> Option<Duration> {
         Some(Duration::from_secs(1000))
     }
 
-    fn segundos_unix(&self) -> Option<u64> {
+    fn unix_seconds(&self) -> Option<u64> {
         Some(NOW)
     }
 }
@@ -44,7 +44,7 @@ fn login(name: &str, url: &str, user: &str, password: &str, seed: Option<&str>) 
 /// Test vault with logins on `localhost:8081` (one of them blocked), one with TOTP on
 /// `localhost:8083`, one on `https`, a server and a database.
 fn vault(dir: &Dir) -> Daemon {
-    let d = Daemon::novo(dir.paths(), Box::new(FixedClock));
+    let d = Daemon::new(dir.paths(), Box::new(FixedClock));
     let create = request(
         &d,
         Role::App,
@@ -276,7 +276,7 @@ fn v6_2_fill_only_on_the_right_origin() {
         assert_eq!(error(&r), Some(ResponseError::EntryNotFound), "{name}");
     }
     // Locked: nothing.
-    d.travar();
+    d.lock();
     let r = fill(
         &d,
         Role::Extension,
@@ -315,7 +315,7 @@ fn v6_1_agent_and_app_neither_suggest_nor_fill() {
             r#"{"entrada":"acme-wp-dev","origem":"http://localhost:8081/"}"#,
         )
         .unwrap();
-        let r = d.atender(role, p);
+        let r = d.serve(role, p);
         assert_eq!(error(&r), Some(ResponseError::Unauthorized));
         no_secret(&common::encoded(role, &r));
     }
@@ -376,10 +376,10 @@ fn attack_extension_without_app_or_agent_operations() {
         (Role::Agent, "playwright", r#"{"entrada":"acme-wp-dev"}"#),
     ] {
         let p = req(role, op, data).unwrap_or_else(|e| panic!("{op}: {e:?}"));
-        let r = d.atender(Role::Extension, p);
+        let r = d.serve(Role::Extension, p);
         assert_eq!(error(&r), Some(ResponseError::Unauthorized), "{op}");
     }
-    let r = d.atender(
+    let r = d.serve(
         Role::Extension,
         req(
             Role::App,
@@ -586,7 +586,7 @@ fn attack_save_login_extension_only_and_unlocked() {
         );
         let read = req(Role::Extension, "salvar_login", &p("x2")).unwrap();
         assert_eq!(
-            error(&d.atender(role, read)),
+            error(&d.serve(role, read)),
             Some(ResponseError::Unauthorized)
         );
     }
@@ -642,11 +642,11 @@ fn attack_fill_http_without_confirming_nothing_leaves() {
         // With no accepted decision, the request would stay pending until it expired
         // (2 min): the test ends it through the client that leaves.
         struct LeavesSoon(std::sync::atomic::AtomicU32);
-        impl wardd::aprovacao::Cliente for LeavesSoon {
-            fn cadeia(&self) -> Vec<String> {
+        impl wardd::approval::Client for LeavesSoon {
+            fn chain(&self) -> Vec<String> {
                 vec!["chrome".into(), "ward-nm".into()]
             }
-            fn saiu(&self) -> bool {
+            fn exited(&self) -> bool {
                 self.0.fetch_add(1, std::sync::atomic::Ordering::AcqRel) > 40
             }
         }
@@ -656,7 +656,7 @@ fn attack_fill_http_without_confirming_nothing_leaves() {
             &format!(r#"{{"entrada":"acme-wp-dev","origem":"{tab}"}}"#),
         )
         .unwrap();
-        d.atender_de(&LeavesSoon(Default::default()), Role::Extension, p)
+        d.serve_from(&LeavesSoon(Default::default()), Role::Extension, p)
     });
     assert_eq!(
         error(&r),

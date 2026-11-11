@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use common::{Dir, PIN, SECRETS, b64, error, login, ok, request, set_level};
 use ward_core::protocol::{self, EntryDetail, Response, ResponseError, Role, decode_response};
-use wardd::nucleo::{Daemon, Relogio};
+use wardd::core::{Clock, Daemon};
 
 /// 2026-11-02 00:00 UTC and following (the footer of the frame approved in M0).
 const T0: u64 = 1_762_041_600;
@@ -28,20 +28,20 @@ impl WallClock {
     }
 }
 
-impl Relogio for WallClock {
-    fn dormir(&self, _d: Duration) {}
+impl Clock for WallClock {
+    fn sleep(&self, _d: Duration) {}
 
-    fn agora(&self) -> Option<Duration> {
+    fn now(&self) -> Option<Duration> {
         Some(Duration::from_secs(1000))
     }
 
-    fn segundos_unix(&self) -> Option<u64> {
+    fn unix_seconds(&self) -> Option<u64> {
         Some(self.0.load(Ordering::SeqCst)).filter(|s| *s != 0)
     }
 }
 
 fn daemon(dir: &Dir, clock: &WallClock) -> Daemon {
-    Daemon::novo(dir.paths(), Box::new(clock.clone()))
+    Daemon::new(dir.paths(), Box::new(clock.clone()))
 }
 
 fn create(dir: &Dir, clock: &WallClock) -> Daemon {
@@ -190,7 +190,7 @@ fn attack_v3_41_date_from_the_client_refused() {
     let clock = WallClock(Arc::new(AtomicU64::new(T0)));
     let d = create(&dir, &clock);
     save(&d, &login("t-datas", SECRETS[0]));
-    let before = std::fs::read(&dir.paths().cofre).unwrap();
+    let before = std::fs::read(&dir.paths().vault).unwrap();
     clock.set(T0 + DAY);
     for forged in [
         edit("t-datas", "t-datas", SECRETS[1]).replacen(
@@ -211,7 +211,7 @@ fn attack_v3_41_date_from_the_client_refused() {
         assert_eq!(error(&r), Some(ResponseError::InvalidRequest), "{forged}");
     }
     assert_eq!(dates(&d, "t-datas"), (Some(T0), Some(T0)));
-    assert!(std::fs::read(&dir.paths().cofre).unwrap() == before);
+    assert!(std::fs::read(&dir.paths().vault).unwrap() == before);
     assert!(
         error(&request(
             &d,

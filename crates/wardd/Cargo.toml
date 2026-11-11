@@ -12,8 +12,8 @@ publish.workspace = true
 # Só muda caminhos: nenhuma operação, papel ou aprovador a mais (D8, V3.15). A
 # instalação recusa artefato com esta feature (V9.2).
 test-mode = ["ward-platform/test-mode"]
-# Scrutiny do M3: os ganchos dos testes de integração (`Daemon::com_gancho_depois_de_gravar`,
-# V3.35, e `Daemon::com_programas_ssh`, Fase 27) só existem com esta feature. Liga o
+# Scrutiny do M3: os ganchos dos testes de integração (`Daemon::with_hook_after_write`,
+# V3.35, e `Daemon::with_ssh_programs`, Fase 27) só existem com esta feature. Liga o
 # `test-mode`, então o artefato com ela é recusado pela instalação como o de teste
 # (V9.2) e o `make test-no-test-mode` acusa quem a ligar por dependência normal.
 # Nenhum pedido do socket chega a esses ganchos; o V3.15 aceita a feature só neles.
