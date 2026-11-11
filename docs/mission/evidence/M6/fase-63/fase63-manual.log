@@ -1,0 +1,89 @@
+ok: systemd de pé
+info: ptrace_scope=1 suid_dumpable=2
+info: core_pattern=|/usr/share/apport/apport -p%p -s%s -c%c -d%d -P%P -u%u -g%g -F%F -- %E
+ok: V2.6 LD_PRELOAD: o daemon não responde
+ok: V2.6 LD_PRELOAD: o serviço não fica ativo (failed)
+info: LD_PRELOAD journal: ERROR: ld.so: object '/tmp/x.so' from LD_PRELOAD cannot be preloaded (cannot open shared object file): ignored.|wardd: variável LD_PRELOAD definida no ambiente; o processo não sobe com LD_*, GLIBC_TUNABLES, GCONV_PATH e as outras da lista insegura da glibc|
+ok: V2.6 LD_PRELOAD: o journal registra a recusa
+ok: V2.6 LD_AUDIT: o daemon não responde
+ok: V2.6 LD_AUDIT: o serviço não fica ativo (failed)
+info: LD_AUDIT journal: ERROR: ld.so: object '/tmp/x.so' cannot be loaded as audit interface: cannot open shared object file; ignored.|wardd: variável LD_AUDIT definida no ambiente; o processo não sobe com LD_*, GLIBC_TUNABLES, GCONV_PATH e as outras da lista insegura da glibc|
+ok: V2.6 LD_AUDIT: o journal registra a recusa
+ok: V2.6 LD_LIBRARY_PATH: o daemon não responde
+ok: V2.6 LD_LIBRARY_PATH: o serviço não fica ativo (failed)
+info: LD_LIBRARY_PATH journal: wardd: variável LD_LIBRARY_PATH definida no ambiente; o processo não sobe com LD_*, GLIBC_TUNABLES, GCONV_PATH e as outras da lista insegura da glibc|wardd: variável LD_LIBRARY_PATH definida no ambiente; o processo não sobe com LD_*, GLIBC_TUNABLES, GCONV_PATH e as outras da lista insegura da glibc|
+ok: V2.6 LD_LIBRARY_PATH: o journal registra a recusa
+ok: o daemon sobe na primeira conexão
+ok: V2.6 /proc/<pid>/environ do wardd é do root (não-dumpable)
+ok: controle: /proc/<pid>/environ de um processo comum do uid é dele
+ok: V2.6 o uid não lê o environ do wardd
+ok: V2.6 strace -p do mesmo uid falha
+ok: V2.6 gdb -p do mesmo uid falha
+info: gdb: Could not attach to process.  If your uid matches the uid of the target|process, check the setting of /proc/sys/kernel/yama/ptrace_scope, or try|again as the root user.  For more details, see /etc/sysctl.d/10-ptrace.conf|
+ok: destrava o cofre de teste
+ok: V2.7 descendente com setsid no ar (306)
+ok: V2.7 o descendente está em outra sessão
+info: controle (filho do ward run): regiões=34 bytes=3186688 padrões_achados=4
+ok: controle: a varredura acha o segredo no filho do ward run
+info: wardd destravado, com o ward run no ar: regiões=52 bytes=25120768 padrões_achados=38
+info: ward lock: cofre travado
+ok: V2.7 a CLI do ward run sai 137
+ok: V2.7 mensagem do ward run
+ok: V2.7 o filho do ward run morreu
+ok: V2.7 o descendente com setsid morreu
+ok: V2.7 o daemon continua no ar (mesmo pid)
+ok: V2.7 o cofre está travado
+info: status depois da trava: resposta: status papel=agent
+info: dump do wardd depois da trava (root): regiões=48 bytes=26124288 padrões_achados=0
+ok: V2.7 dump da memória do wardd depois da trava sem padrão
+info: cwd do wardd: /; core limit: 0 0
+ok: V2.6 kill -SEGV: nenhum core no contêiner
+ok: V2.6 kill -SEGV: nenhum core na pasta do daemon
+info: journal depois do SEGV: wardd: logind: barramento do sistema indisponível; só a trava por inatividade vale até conectar|wardd: udisks2: barramento indisponível; backup externo parado até conectar|wardd: 1 ward run/ssh encerrado(s) ao travar (S8)|
+ok: V4.4: o cofre 0.1.4 começa v4 (WARDCOFR)
+ok: o wardd sobe travado com o cofre 0.1.4
+ok: V4.4: destrave do cofre 0.1.4 (migra)
+info: eventos inotify: 17
+info:   CREATE <cofre>/.cofre.ward.ward-tmp-6cd796d53f7aa1f053f7cd7d64c28d63
+info:   CREATE <cofre>/.estado.tmp-353-0
+info:   CREATE <cofre>/.estado.tmp-353-1
+info:   CREATE,ISDIR <cofre>/backups
+info:   CREATE <cofre>/backups/.backup.ward-tmp-21c2fde29066f7b489efa0a9373b8e6f
+info:   CREATE <cofre>/backups/ward-20261111-162140.ward
+info:   MOVED_TO <cofre>/cofre.ward
+info:   MOVED_TO <cofre>/estado
+info: arquivos capturados: 5
+ok: V4.4: o cofre virou v5 (WARDCOFR)
+ok: V4.4: estado novo
+ok: V4.4: 0001-.estado.tmp-353-0 sem padrão
+ok: V4.4: 0001-.estado.tmp-353-0 é o estado
+ok: V4.4: 0004-estado sem padrão
+ok: V4.4: 0004-estado é o estado
+ok: V4.4: 0009-cofre.ward sem padrão
+ok: V4.4: 0009-cofre.ward sem nome de tipo em claro
+ok: V4.4: 0009-cofre.ward começa com WARDCOFR
+ok: V4.4: 0013-ward-20261111-162140.ward sem padrão
+ok: V4.4: 0013-ward-20261111-162140.ward sem nome de tipo em claro
+ok: V4.4: 0013-ward-20261111-162140.ward começa com WARDCOFR
+ok: V4.4: 0017-estado sem padrão
+ok: V4.4: 0017-estado é o estado
+ok: V4.4: backups/ward-20261111-162140.ward sem padrão
+ok: V4.4: backups/ward-20261111-162140.ward sem nome de tipo em claro
+ok: V4.4: backups/ward-20261111-162140.ward começa com WARDCOFR
+ok: V4.4: cofre.ward sem padrão
+ok: V4.4: cofre.ward sem nome de tipo em claro
+ok: V4.4: cofre.ward começa com WARDCOFR
+ok: V4.4: estado sem padrão
+ok: V4.4: estado é o estado
+ok: V4.4: o strace do wardd (openat/write/rename) sem padrão
+info: linhas do strace: 35; renames: 3
+info:   openat(AT_FDCWD, "<cofre>/.estado.tmp-353-0", O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW|O_CLOEXEC, 0600) = 8
+info:   rename("<cofre>/.estado.tmp-353-0", "<cofre>/estado") = 0
+info:   openat(AT_FDCWD, "<cofre>/.cofre.ward.ward-tmp-6cd796d53f7aa1f053f7cd7d64c28d63", O_WRONLY|O_CREAT|O_EXCL|O_CLOEXEC, 0600) = 9
+info:   rename("<cofre>/.cofre.ward.ward-tmp-6cd796d53f7aa1f053f7cd7d64c28d63", "<cofre>/cofre.ward") = 0
+info:   openat(AT_FDCWD, "/proc/self/fd/8/.backup.ward-tmp-21c2fde29066f7b489efa0a9373b8e6f", O_WRONLY|O_CREAT|O_EXCL|O_CLOEXEC, 0600) = 9
+info:   openat(AT_FDCWD, "<cofre>/.estado.tmp-353-1", O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW|O_CLOEXEC, 0600) = 8
+info:   rename("<cofre>/.estado.tmp-353-1", "<cofre>/estado") = 0
+
+fase63 manual: tudo ok
+ok: V2.6 host: nenhum arquivo novo do wardd em /var/crash
